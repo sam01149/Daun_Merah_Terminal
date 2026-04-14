@@ -1,6 +1,22 @@
-const { getDeployStore } = require('@netlify/blobs');
+// Upstash Redis REST API — no SDK needed, pure fetch
+const REDIS_URL   = process.env.UPSTASH_REDIS_REST_URL;
+const REDIS_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
 
-exports.handler = async function(event, context) {
+async function redisCmd(...args) {
+  const res = await fetch(`${REDIS_URL}`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${REDIS_TOKEN}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(args),
+    signal: AbortSignal.timeout(8000),
+  });
+  const data = await res.json();
+  return data.result;
+}
+
+exports.handler = async function(event) {
   if (event.httpMethod === 'OPTIONS') {
     return {
       statusCode: 204,
@@ -15,24 +31,26 @@ exports.handler = async function(event, context) {
 
   const headers = { 'Access-Control-Allow-Origin': '*', 'Content-Type': 'application/json' };
 
+  if (!REDIS_URL || !REDIS_TOKEN) {
+    return { statusCode: 500, headers, body: JSON.stringify({ error: 'Redis not configured' }) };
+  }
+
   try {
-    // getDeployStore uses context automatically injected by Netlify runtime
-    const store = getDeployStore({ name: 'push-subscriptions' });
     const body = JSON.parse(event.body || '{}');
 
     if (event.httpMethod === 'DELETE') {
       const { endpoint } = body;
       if (!endpoint) return { statusCode: 400, headers, body: JSON.stringify({ error: 'Missing endpoint' }) };
-      const key = Buffer.from(endpoint).toString('base64').slice(0, 100);
-      await store.delete(key);
+      const key = Buffer.from(endpoint).toString('base64').slice(0, 80);
+      await redisCmd('HDEL', 'push_subs', key);
       return { statusCode: 200, headers, body: JSON.stringify({ ok: true }) };
     }
 
     if (event.httpMethod === 'POST') {
       const { subscription } = body;
       if (!subscription?.endpoint) return { statusCode: 400, headers, body: JSON.stringify({ error: 'Invalid subscription' }) };
-      const key = Buffer.from(subscription.endpoint).toString('base64').slice(0, 100);
-      await store.set(key, JSON.stringify(subscription));
+      const key = Buffer.from(subscription.endpoint).toString('base64').slice(0, 80);
+      await redisCmd('HSET', 'push_subs', key, JSON.stringify(subscription));
       return { statusCode: 201, headers, body: JSON.stringify({ ok: true }) };
     }
 
