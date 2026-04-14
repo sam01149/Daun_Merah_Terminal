@@ -1,4 +1,4 @@
-const { getStore } = require('@netlify/blobs');
+const { getDeployStore } = require('@netlify/blobs');
 const { schedule } = require('@netlify/functions');
 const { createECDH, createHmac, createCipheriv, randomBytes } = require('crypto');
 
@@ -116,8 +116,8 @@ const handler = async function() {
     return { statusCode: 200, body: 'No VAPID' };
   }
 
-  const rssStore = getStore({ name: 'rss-cache',          consistency: 'strong' });
-  const subStore = getStore({ name: 'push-subscriptions', consistency: 'strong' });
+  const rssStore = getDeployStore({ name: 'rss-cache',          consistency: 'strong' });
+  const subStore = getDeployStore({ name: 'push-subscriptions', consistency: 'strong' });
 
   // Load seen GUIDs
   let seenGuids = new Set();

@@ -1,16 +1,4 @@
-const { getStore } = require('@netlify/blobs');
-
-function getStoreWithContext(context, name) {
-  // Netlify injects siteID and token via context.clientContext or env vars
-  const siteID = process.env.SITE_ID || process.env.NETLIFY_SITE_ID;
-  const token  = process.env.NETLIFY_BLOBS_TOKEN || process.env.TOKEN;
-
-  if (siteID && token) {
-    return getStore({ name, siteID, token, consistency: 'strong' });
-  }
-  // Fall back to auto-detection (works when properly deployed via Git)
-  return getStore({ name, consistency: 'strong' });
-}
+const { getDeployStore } = require('@netlify/blobs');
 
 exports.handler = async function(event, context) {
   if (event.httpMethod === 'OPTIONS') {
@@ -28,8 +16,9 @@ exports.handler = async function(event, context) {
   const headers = { 'Access-Control-Allow-Origin': '*', 'Content-Type': 'application/json' };
 
   try {
+    // getDeployStore uses context automatically injected by Netlify runtime
+    const store = getDeployStore({ name: 'push-subscriptions' });
     const body = JSON.parse(event.body || '{}');
-    const store = getStoreWithContext(context, 'push-subscriptions');
 
     if (event.httpMethod === 'DELETE') {
       const { endpoint } = body;
@@ -43,7 +32,7 @@ exports.handler = async function(event, context) {
       const { subscription } = body;
       if (!subscription?.endpoint) return { statusCode: 400, headers, body: JSON.stringify({ error: 'Invalid subscription' }) };
       const key = Buffer.from(subscription.endpoint).toString('base64').slice(0, 100);
-      await store.set(key, JSON.stringify(subscription), { metadata: { subscribedAt: Date.now() } });
+      await store.set(key, JSON.stringify(subscription));
       return { statusCode: 201, headers, body: JSON.stringify({ ok: true }) };
     }
 
