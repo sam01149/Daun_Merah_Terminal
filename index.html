@@ -550,8 +550,8 @@ async function requestNotif() {
         throw new Error('Subscribe failed: ' + res.status);
       }
     } catch(e) {
-      console.warn('Web Push failed, falling back to local notif:', e.message);
-      showToast('Notifikasi Aktif ✓', 'Notif aktif (mode terbatas — tab harus terbuka)', 4000);
+      console.warn('Web Push failed:', e.message);
+      showToast('Notifikasi Aktif ✓', 'Notif aktif saat tab terbuka. Untuk background notif, pastikan sudah install PWA.', 5000);
     }
   } else {
     showToast('Notifikasi Aktif ✓', 'Notif aktif (mode terbatas — tab harus terbuka)', 4000);
@@ -693,11 +693,26 @@ function renderFeed(markNew = false) {
     return;
   }
 
+function sanitizeDesc(html) {
+  if (!html) return '';
+  // Strip script tags and their content entirely
+  let clean = html.replace(/<script[\s\S]*?<\/script>/gi, '');
+  // Strip style tags
+  clean = clean.replace(/<style[\s\S]*?<\/style>/gi, '');
+  // Strip all remaining HTML tags but keep text
+  clean = clean.replace(/<[^>]+>/g, ' ');
+  // Decode common HTML entities
+  clean = clean.replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&nbsp;/g,' ').replace(/&#39;/g,"'").replace(/&quot;/g,'"');
+  // Collapse whitespace
+  clean = clean.replace(/\s+/g, ' ').trim();
+  return clean;
+}
+
   scroll.innerHTML = items.map((item, idx) => {
     const cat = detectCat(item.title);
     const isNew = markNew && newGuids.has(item.guid) && idx < 5;
-    const hasDesc = item.desc?.trim().length > 0;
-    const descHtml = hasDesc ? `<div class="item-desc">${item.desc}</div>` : '';
+    const rawDesc = sanitizeDesc(item.desc);
+    const descHtml = rawDesc.length > 10 ? `<div class="item-desc">${rawDesc}</div>` : '';
     const newBadge = isNew ? `<span class="new-badge">NEW</span>` : '';
     return `
       <div class="feed-item cat-${cat}" onclick="openLink('${item.link}')" style="animation-delay:${Math.min(idx,15)*0.025}s">
