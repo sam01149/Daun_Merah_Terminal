@@ -1,4 +1,4 @@
-// netlify/functions/calendar.js
+// TEMPORARY DEBUG VERSION - netlify/functions/calendar.js
 const FF_THIS_WEEK = 'https://nfs.faireconomy.media/ff_calendar_thisweek.xml';
 const FF_NEXT_WEEK = 'https://nfs.faireconomy.media/ff_calendar_nextweek.xml';
 const MAJOR_CURRENCIES = new Set(['USD','EUR','GBP','JPY','CAD','AUD','NZD','CHF']);
@@ -26,52 +26,45 @@ exports.handler = async function(event, context) {
       }
     }
 
-    if (allEvents.length === 0) throw new Error('No events parsed from FF feeds');
-
-    // Today + next 4 days in WIB (covers weekend gaps & week boundary)
+    // DEBUG: show first 5 parsed events raw, and date range
     const nowWib = new Date(Date.now() + 7 * 3600000);
     const dateRange = new Set();
     for (let i = 0; i <= 4; i++) {
       dateRange.add(toDateStr(new Date(nowWib.getTime() + i * 86400000)));
     }
 
+    const sample = allEvents.slice(0, 8).map(e => ({
+      date: e.date,
+      currency: e.currency,
+      impact: e.impact,
+      event: e.event.substring(0, 30),
+    }));
+
+    const highOnly = allEvents.filter(e => e.impact === 'High');
+    const majorOnly = allEvents.filter(e => MAJOR_CURRENCIES.has(e.currency));
+    const inRange = allEvents.filter(e => dateRange.has(e.date));
     const filtered = allEvents.filter(e =>
-      dateRange.has(e.date) &&
-      e.impact === 'High' &&
-      MAJOR_CURRENCIES.has(e.currency)
+      dateRange.has(e.date) && e.impact === 'High' && MAJOR_CURRENCIES.has(e.currency)
     );
-
-    // Deduplicate
-    const seen = new Set();
-    const deduped = filtered.filter(e => {
-      const key = `${e.date}|${e.time_wib}|${e.currency}|${e.event}`;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-
-    deduped.sort((a, b) => {
-      const ka = a.date + (a.time_wib || '');
-      const kb = b.date + (b.time_wib || '');
-      return ka.localeCompare(kb);
-    });
 
     return {
       statusCode: 200,
-      headers: {
-        'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*',
-        'Cache-Control': 'max-age=900',
-      },
+      headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
       body: JSON.stringify({
-        events: deduped,
-        count: deduped.length,
-        fetched_at: new Date().toISOString(),
+        debug: true,
+        total_parsed: allEvents.length,
+        date_range: [...dateRange],
+        server_wib_now: nowWib.toISOString(),
+        high_impact_count: highOnly.length,
+        major_currency_count: majorOnly.length,
+        in_range_count: inRange.length,
+        final_filtered: filtered.length,
+        sample_events: sample,
+        sample_high: highOnly.slice(0,5).map(e => ({ date: e.date, currency: e.currency, event: e.event.substring(0,30) })),
       }),
     };
 
   } catch(e) {
-    console.error('Calendar fetch error:', e.message);
     return {
       statusCode: 502,
       headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
@@ -95,9 +88,7 @@ function parseFFXML(xml) {
     const block = m[1];
     const get = (tag) => {
       const r = new RegExp(`<${tag}>([\\s\\S]*?)<\\/${tag}>`).exec(block);
-      if (!r) return '';
-      // Strip CDATA wrapper: <![CDATA[value]]> → value
-      return r[1].replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1').trim();
+      return r ? r[1].trim() : '';
     };
     const title    = get('title');
     const country  = get('country').toUpperCase();
@@ -106,43 +97,11 @@ function parseFFXML(xml) {
     const impact   = get('impact');
     const forecast = get('forecast');
     const previous = get('previous');
-
     if (!title || !country) continue;
-
-    // MM-DD-YYYY → YYYY-MM-DD
     const dateParts = date.match(/(\d{2})-(\d{2})-(\d{4})/);
     if (!dateParts) continue;
     const dateIso = `${dateParts[3]}-${dateParts[1]}-${dateParts[2]}`;
-
-    events.push({
-      date: dateIso,
-      time_wib: convertToWIB(time),
-      currency: country,
-      event: title,
-      impact,
-      forecast: forecast || null,
-      previous: previous || null,
-    });
+    events.push({ date: dateIso, time_wib: time, currency: country, event: title, impact });
   }
   return events;
-}
-
-function convertToWIB(timeStr) {
-  if (!timeStr || timeStr === 'All Day' || timeStr === 'Tentative') return 'Tentative';
-  const m = timeStr.match(/(\d{1,2}):(\d{2})(am|pm)/i);
-  if (!m) return timeStr;
-
-  let hour = parseInt(m[1]);
-  const min = parseInt(m[2]);
-  const ampm = m[3].toLowerCase();
-  if (ampm === 'pm' && hour !== 12) hour += 12;
-  if (ampm === 'am' && hour === 12) hour = 0;
-
-  // FF = US Eastern Time
-  // EDT (UTC-4) Mar-Nov: WIB offset = +11
-  // EST (UTC-5) Nov-Mar: WIB offset = +12
-  const nowMonth = new Date().getUTCMonth() + 1;
-  const isDST = nowMonth >= 3 && nowMonth <= 10;
-  const wibHour = (hour + (isDST ? 11 : 12)) % 24;
-  return `${String(wibHour).padStart(2,'0')}:${String(min).padStart(2,'0')} WIB`;
 }
