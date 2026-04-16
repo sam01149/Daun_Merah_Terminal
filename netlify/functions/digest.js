@@ -50,18 +50,28 @@ exports.handler = async function(event, context) {
 
   if (GEMINI_KEY) {
     try {
-      const prompt = `Kamu adalah analis pasar keuangan senior yang menulis untuk trader forex dan komoditas Indonesia.
+      const prompt = `Kamu adalah analis pasar keuangan senior yang menulis untuk trader forex Indonesia dengan gaya trading macro discretionary.
 
 Berikut ${recent.length} headline berita keuangan terbaru menjelang ${label.id}:
 
 ${headlines}
 
 TUGAS:
-Tulis SATU PARAGRAF ringkasan dalam Bahasa Indonesia yang baik dan benar (3-4 kalimat padat). Fokus pada: tema dominan pasar, berita paling berpengaruh terhadap pergerakan harga, dan implikasi singkat bagi trader. Gunakan kalimat aktif, langsung ke poin, tanpa bullet list, tanpa heading, tanpa emoji.
+Tulis ringkasan dalam TIGA PARAGRAF terpisah (pisahkan dengan baris kosong).
 
-WAJIB: Seluruh output hanya dalam Bahasa Indonesia. Tidak boleh ada kata atau frasa bahasa Inggris.
+Paragraf 1 — FAKTA: Apa yang terjadi. Tema dominan pasar dan berita paling signifikan dari headlines di atas. Kalimat faktual, langsung.
 
-Balas hanya dengan paragraf tersebut, tidak ada teks lain.`;
+Paragraf 2 — IMPLIKASI: Dampak terhadap currency atau pair utama yang terdampak (USD, EUR, GBP, JPY, CAD, AUD, NZD, CHF). Sebutkan pair spesifik jika relevan. Jelaskan arah tekanan dan potensi pergerakan.
+
+Paragraf 3 — KONTEKS BIAS: Apakah informasi ini mengkonfirmasi atau mengontradiksi bias macro yang sedang berlaku di pasar saat ini? Berikan penilaian singkat untuk trader yang sudah memiliki directional bias dan sedang menunggu timing entry.
+
+FORMAT WAJIB:
+- Tiga paragraf terpisah dengan baris kosong di antara
+- Tidak ada bullet list, tidak ada heading, tidak ada emoji
+- Kalimat aktif, langsung ke poin
+- Seluruh output hanya dalam Bahasa Indonesia
+
+Balas hanya dengan tiga paragraf tersebut, tidak ada teks lain.`;
 
       const gemRes = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_KEY}`,
@@ -70,27 +80,37 @@ Balas hanya dengan paragraf tersebut, tidak ada teks lain.`;
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             contents: [{ parts: [{ text: prompt }] }],
-            generationConfig: { temperature: 0.3, maxOutputTokens: 300 },
-          }),
-          signal: AbortSignal.timeout(20000),
-        }
-      );
+            generationConfig: { temperature: 0.3, maxOutputTokens: 700 },
+            signal: AbortSignal.timeout(20000),
+          }
+        );
 
       if (gemRes.ok) {
         const gemData = await gemRes.json();
         const raw = gemData?.candidates?.[0]?.content?.parts?.[0]?.text || '';
         summary_id = raw.trim();
         // English version — second call
-        const promptEn = `You are a senior financial market analyst writing for forex and commodity traders.
+        const promptEn = `You are a senior financial market analyst writing for forex macro discretionary traders.
 
 Here are ${recent.length} recent financial headlines ahead of the ${label.en}:
 
 ${headlines}
 
 TASK:
-Write ONE paragraph summary in English (3-4 concise sentences). Focus on: dominant market themes, most price-moving news, brief implication for traders. Use active voice, direct to the point, no bullet points, no headings, no emoji.
+Write a summary in THREE separate paragraphs (separated by a blank line).
 
-Reply with only the paragraph, nothing else.`;
+Paragraph 1 — FACTS: What is happening. Dominant market themes and most significant headlines. Factual, direct sentences.
+
+Paragraph 2 — IMPLICATIONS: Impact on specific major currency pairs (USD, EUR, GBP, JPY, CAD, AUD, NZD, CHF). Name specific pairs where relevant. Explain the direction of pressure and potential movement.
+
+Paragraph 3 — BIAS CONTEXT: Does this confirm or contradict the prevailing macro bias in the market? Brief assessment for a trader who already has a directional bias and is waiting for entry timing.
+
+REQUIRED FORMAT:
+- Three paragraphs separated by blank lines
+- No bullet points, no headings, no emoji
+- Active voice, direct to the point
+
+Reply with only the three paragraphs, nothing else.`;
 
         const gemRes2 = await fetch(
           `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_KEY}`,
@@ -99,7 +119,7 @@ Reply with only the paragraph, nothing else.`;
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               contents: [{ parts: [{ text: promptEn }] }],
-              generationConfig: { temperature: 0.3, maxOutputTokens: 300 },
+              generationConfig: { temperature: 0.3, maxOutputTokens: 700 },
             }),
             signal: AbortSignal.timeout(20000),
           }
