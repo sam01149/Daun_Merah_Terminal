@@ -81,9 +81,10 @@ Balas hanya dengan tiga paragraf tersebut, tidak ada teks lain.`;
           body: JSON.stringify({
             contents: [{ parts: [{ text: prompt }] }],
             generationConfig: { temperature: 0.3, maxOutputTokens: 700 },
-            signal: AbortSignal.timeout(20000),
-          }
-        );
+          }),
+          signal: AbortSignal.timeout(20000),
+        }
+      );
 
       if (gemRes.ok) {
         const gemData = await gemRes.json();

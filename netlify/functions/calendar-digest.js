@@ -1,13 +1,14 @@
 // netlify/functions/calendar-digest.js
-// Synthesizes economic calendar events + relevant FJ headlines
-// into actionable avoidance/awareness recommendations for forex trader
-
+const FF_THIS_WEEK = 'https://nfs.faireconomy.media/ff_calendar_thisweek.xml';
+const FF_NEXT_WEEK = 'https://nfs.faireconomy.media/ff_calendar_nextweek.xml';
 const RSS_URL = 'https://www.financialjuice.com/feed.ashx?xy=rss';
 const GEMINI_MODEL = 'gemini-2.0-flash';
+const MAJOR_CURRENCIES = new Set(['USD','EUR','GBP','JPY','CAD','AUD','NZD','CHF']);
 
 exports.handler = async function(event, context) {
   const params = event.queryStringParameters || {};
-  const currencies = (params.currencies || 'USD,EUR,GBP,JPY,CAD,AUD,NZD,CHF').split(',').map(s => s.trim().toUpperCase());
+  const currencies = (params.currencies || 'USD,EUR,GBP,JPY,CAD,AUD,NZD,CHF')
+    .split(',').map(s => s.trim().toUpperCase()).filter(c => MAJOR_CURRENCIES.has(c));
 
   const GEMINI_KEY = process.env.GEMINI_API_KEY;
   if (!GEMINI_KEY) {
@@ -18,19 +19,41 @@ exports.handler = async function(event, context) {
     };
   }
 
-  // 1. Fetch calendar events (reuse same Investing.com endpoint)
+  // 1. Fetch calendar directly from FF feed
   let calEvents = [];
   try {
-    const calRes = await fetch(
-      `${getBaseUrl(event)}/.netlify/functions/calendar`,
-      { signal: AbortSignal.timeout(12000) }
-    );
-    if (calRes.ok) {
-      const calData = await calRes.json();
-      calEvents = (calData.events || []).filter(e => currencies.includes(e.currency));
+    const [resThis, resNext] = await Promise.allSettled([
+      fetch(FF_THIS_WEEK, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; FJFeed/1.0)' },
+        signal: AbortSignal.timeout(10000),
+      }),
+      fetch(FF_NEXT_WEEK, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; FJFeed/1.0)' },
+        signal: AbortSignal.timeout(10000),
+      }),
+    ]);
+
+    let allEvents = [];
+    for (const result of [resThis, resNext]) {
+      if (result.status === 'fulfilled' && result.value.ok) {
+        const xml = await result.value.text();
+        if (xml.includes('<event>')) allEvents = allEvents.concat(parseFFXML(xml));
+      }
     }
+
+    const nowWib = new Date(Date.now() + 7 * 3600000);
+    const dateRange = new Set();
+    for (let i = 0; i <= 4; i++) {
+      dateRange.add(toDateStr(new Date(nowWib.getTime() + i * 86400000)));
+    }
+
+    calEvents = allEvents.filter(e =>
+      dateRange.has(e.date) &&
+      e.impact === 'High' &&
+      currencies.includes(e.currency)
+    );
   } catch(e) {
-    console.warn('Calendar fetch for digest failed:', e.message);
+    console.warn('FF fetch failed in calendar-digest:', e.message);
   }
 
   // 2. Fetch FJ RSS, filter relevant headlines
@@ -43,28 +66,25 @@ exports.handler = async function(event, context) {
     if (rssRes.ok) {
       const xml = await rssRes.text();
       const allItems = parseRSS(xml);
-      const cutoff = Date.now() - 12 * 60 * 60 * 1000; // last 12 hours
-      const recent = allItems.filter(i => new Date(i.pubDate).getTime() > cutoff).slice(0, 100);
-
-      // Filter headlines relevant to the currencies in question
-      relevantHeadlines = recent
+      const cutoff = Date.now() - 12 * 60 * 60 * 1000;
+      relevantHeadlines = allItems
+        .filter(i => new Date(i.pubDate).getTime() > cutoff)
         .filter(i => isRelevantToCurrencies(i.title, currencies))
         .slice(0, 25)
         .map(i => i.title);
     }
   } catch(e) {
-    console.warn('RSS fetch for digest failed:', e.message);
+    console.warn('RSS fetch failed in calendar-digest:', e.message);
   }
 
   // 3. Build prompt
-  const today = new Date();
-  const wibNow = new Date(today.getTime() + 7 * 3600000);
+  const wibNow = new Date(Date.now() + 7 * 3600000);
   const dateStr = `${String(wibNow.getUTCDate()).padStart(2,'0')}/${String(wibNow.getUTCMonth()+1).padStart(2,'0')}/${wibNow.getUTCFullYear()}`;
   const timeStr = `${String(wibNow.getUTCHours()).padStart(2,'0')}:${String(wibNow.getUTCMinutes()).padStart(2,'0')} WIB`;
 
   const calSection = calEvents.length > 0
     ? calEvents.map(e => `- ${e.time_wib} | ${e.currency} | ${e.event}`).join('\n')
-    : '(Tidak ada event high-impact terdeteksi hari ini)';
+    : '(Tidak ada event high-impact terdeteksi dalam 4 hari ke depan)';
 
   const newsSection = relevantHeadlines.length > 0
     ? relevantHeadlines.map((h, i) => `${i+1}. ${h}`).join('\n')
@@ -73,33 +93,30 @@ exports.handler = async function(event, context) {
   const prompt = `Kamu adalah analis pasar keuangan senior yang membantu trader forex Indonesia dengan gaya trading macro discretionary.
 
 TANGGAL DAN WAKTU SAAT INI: ${dateStr}, ${timeStr}
-
 CURRENCY YANG DIPANTAU: ${currencies.join(', ')}
 
-=== EVENT KALENDER EKONOMI HIGH-IMPACT HARI INI ===
+=== EVENT KALENDER EKONOMI HIGH-IMPACT ===
 ${calSection}
 
 === HEADLINE BERITA TERKINI (relevan untuk currency di atas) ===
 ${newsSection}
 
 TUGAS:
-Berdasarkan kedua sumber informasi di atas, tulis analisis dalam DUA bagian:
+Tulis analisis dalam DUA bagian:
 
-Bagian 1 — KONTEKS PASAR SAAT INI:
-Satu paragraf. Jelaskan kondisi pasar terkini untuk currency yang dipantau berdasarkan berita yang ada. Apa sentimen dominan? Apakah ada narrative macro yang sedang terbentuk?
+KONTEKS PASAR: (satu paragraf) Jelaskan kondisi pasar terkini untuk currency yang dipantau berdasarkan berita yang ada. Sentimen dominan dan narrative macro yang sedang terbentuk.
 
-Bagian 2 — REKOMENDASI TINDAKAN PER EVENT:
-Untuk setiap event kalender yang ada, tulis satu baris rekomendasi dengan format:
-[WAKTU WIB] [CURRENCY] [NAMA EVENT] → [REKOMENDASI: "Hindari entry 30 menit sebelum-sesudah rilis" ATAU "Aware — potensi volatilitas [tinggi/sedang]" ATAU "Tidak material untuk bias macro saat ini"] + [alasan singkat 1 kalimat]
+REKOMENDASI EVENT: Untuk setiap event kalender, tulis satu baris dengan format:
+[WAKTU WIB] [CURRENCY] [NAMA EVENT] → [REKOMENDASI] + alasan singkat 1 kalimat
 
-FORMAT WAJIB:
-- Bagian 1 diberi label "KONTEKS PASAR:" di awal paragraf
-- Bagian 2 diberi label "REKOMENDASI EVENT:" diikuti daftar per event
-- Tidak ada bullet list berlebihan, tidak ada heading lain, tidak ada emoji
-- Kalimat aktif, langsung ke poin
-- Seluruh output dalam Bahasa Indonesia
+REKOMENDASI hanya boleh salah satu dari:
+- "Hindari entry 30 menit sebelum dan sesudah rilis" (untuk event dengan potensi whipsaw tinggi)
+- "Aware — potensi volatilitas tinggi" (untuk event yang searah dengan bias macro)
+- "Tidak material untuk bias macro saat ini" (untuk event yang unlikely mengubah arah)
 
-Balas hanya dengan kedua bagian tersebut, tidak ada teks lain.`;
+FORMAT: Tidak ada bullet berlebihan, tidak ada heading lain, tidak ada emoji. Kalimat aktif. Seluruh output Bahasa Indonesia.
+
+Balas hanya dengan kedua bagian tersebut.`;
 
   try {
     const gemRes = await fetch(
@@ -145,11 +162,53 @@ Balas hanya dengan kedua bagian tersebut, tidak ada teks lain.`;
   }
 };
 
-function getBaseUrl(event) {
-  // Reconstruct base URL from Netlify event headers
-  const host = event.headers?.host || 'localhost:8888';
-  const proto = event.headers?.['x-forwarded-proto'] || 'https';
-  return `${proto}://${host}`;
+function toDateStr(d) {
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}-${String(d.getUTCDate()).padStart(2,'0')}`;
+}
+
+function parseFFXML(xml) {
+  const events = [];
+  const eventRe = /<event>([\s\S]*?)<\/event>/g;
+  let m;
+  while ((m = eventRe.exec(xml)) !== null) {
+    const block = m[1];
+    const get = (tag) => {
+      const r = new RegExp(`<${tag}>([\\s\\S]*?)<\\/${tag}>`).exec(block);
+      if (!r) return '';
+      return r[1].replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1').trim();
+    };
+    const title   = get('title');
+    const country = get('country').toUpperCase();
+    const date    = get('date');
+    const time    = get('time');
+    const impact  = get('impact');
+    if (!title || !country) continue;
+    const dp = date.match(/(\d{2})-(\d{2})-(\d{4})/);
+    if (!dp) continue;
+    events.push({
+      date: `${dp[3]}-${dp[1]}-${dp[2]}`,
+      time_wib: convertToWIB(time),
+      currency: country,
+      event: title,
+      impact,
+    });
+  }
+  return events;
+}
+
+function convertToWIB(timeStr) {
+  if (!timeStr || timeStr === 'All Day' || timeStr === 'Tentative') return 'Tentative';
+  const m = timeStr.match(/(\d{1,2}):(\d{2})(am|pm)/i);
+  if (!m) return timeStr;
+  let hour = parseInt(m[1]);
+  const min = parseInt(m[2]);
+  const ampm = m[3].toLowerCase();
+  if (ampm === 'pm' && hour !== 12) hour += 12;
+  if (ampm === 'am' && hour === 12) hour = 0;
+  const nowMonth = new Date().getUTCMonth() + 1;
+  const isDST = nowMonth >= 3 && nowMonth <= 10;
+  const wibHour = (hour + (isDST ? 11 : 12)) % 24;
+  return `${String(wibHour).padStart(2,'0')}:${String(min).padStart(2,'0')} WIB`;
 }
 
 function parseRSS(xml) {
@@ -163,8 +222,8 @@ function parseRSS(xml) {
       const r2 = new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`).exec(b);
       return (r1 || r2)?.[1]?.trim() || '';
     };
-    const title = get('title').replace(/^FinancialJuice:\s*/i, '').trim();
-    const guid  = get('guid');
+    const title   = get('title').replace(/^FinancialJuice:\s*/i, '').trim();
+    const guid    = get('guid');
     const pubDate = get('pubDate');
     if (guid && title) items.push({ title, guid, pubDate });
   }
@@ -173,18 +232,16 @@ function parseRSS(xml) {
 
 function isRelevantToCurrencies(title, currencies) {
   const t = title.toLowerCase();
-
   const CUR_KEYWORDS = {
-    USD: ['dollar','usd','fed ','fomc','powell','federal reserve','nfp','cpi','us ','united states','wall street','treasury','dxy'],
-    EUR: ['euro','eur','ecb','lagarde','eurozone','euro zone','euro area','germany','german','france','french','italy','italian','spain','spanish'],
-    GBP: ['pound','gbp','sterling','cable','boe','bank of england','bailey','uk ','united kingdom','britain','british'],
+    USD: ['dollar','usd','fed ','fomc','powell','federal reserve','nfp','cpi','us ','united states','treasury','dxy'],
+    EUR: ['euro','eur','ecb','lagarde','eurozone','euro zone','germany','german','france','french'],
+    GBP: ['pound','gbp','sterling','cable','boe','bank of england','bailey','uk ','britain','british'],
     JPY: ['yen','jpy','boj','bank of japan','ueda','japan','japanese'],
-    CAD: ['canadian','cad','loonie','boc','bank of canada','canada','canadian dollar'],
+    CAD: ['canadian','cad','loonie','boc','bank of canada','canada'],
     AUD: ['aussie','aud','rba','reserve bank of australia','australia','australian'],
-    NZD: ['kiwi','nzd','rbnz','new zealand','nz '],
-    CHF: ['franc','chf','snb','swiss','switzerland','swissy'],
+    NZD: ['kiwi','nzd','rbnz','new zealand'],
+    CHF: ['franc','chf','snb','swiss','switzerland'],
   };
-
   return currencies.some(cur => {
     const kws = CUR_KEYWORDS[cur] || [cur.toLowerCase()];
     return kws.some(kw => t.includes(kw));
