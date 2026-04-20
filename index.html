@@ -161,7 +161,6 @@ body {
 .feed-item:active { transform:scale(.98); }
 @keyframes fadeUp { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:translateY(0)} }
 
-/* category left border colors */
 .feed-item::before {
   content:''; position:absolute; left:0; top:0; bottom:0;
   width:3px; border-radius:3px 0 0 3px;
@@ -172,7 +171,7 @@ body {
 .cat-commodities::before { background:#f59e0b; }
 .cat-energy::before { background:var(--orange); }
 .cat-bonds::before { background:#60a5fa; }
-.cat-crypto::before { background:#f472b6; }
+.cat-crypto::before { background:var(--pink); }
 .cat-indexes::before { background:#34d399; }
 .cat-macro::before { background:var(--accent); }
 .cat-econ-data::before { background:#c084fc; }
@@ -206,7 +205,6 @@ body {
   border-top:1px solid var(--border); padding-top:8px;
 }
 
-/* NEW badge */
 .new-badge {
   font-size:8px; padding:2px 5px; border-radius:3px;
   background:var(--red); color:#fff; letter-spacing:.3px;
@@ -214,12 +212,10 @@ body {
 }
 @keyframes pulse-badge { 0%,100%{opacity:1} 50%{opacity:.4} }
 
-/* EMPTY STATE */
 .state-box { text-align:center; padding:60px 20px; color:var(--muted); }
 .state-box .icon { font-size:36px; margin-bottom:14px; }
 .state-box p { font-size:12px; line-height:1.7; }
 
-/* NOTIFICATION TOAST */
 .toast {
   position:fixed; top:70px; left:12px; right:12px;
   background:var(--surface); border:1px solid var(--accent);
@@ -230,88 +226,81 @@ body {
 .toast-title { font-family:'Syne',sans-serif; font-size:12px; color:var(--accent); margin-bottom:4px; }
 .toast-body { font-size:11px; color:var(--muted); line-height:1.4; }
 
-/* DIGEST TAB HIGHLIGHT */
-.ftab[data-view="digest"] { color: var(--yellow); border-bottom-color: transparent; }
-.ftab[data-view="digest"].active { color: var(--bg); background: var(--yellow); border-radius: 4px 4px 0 0; border-bottom-color: var(--yellow); }
+/* ── RINGKASAN TAB ── */
+.ftab[data-view="ringkasan"] { color: var(--yellow); }
+.ftab[data-view="ringkasan"].active {
+  color: var(--bg); background: var(--yellow);
+  border-radius: 4px 4px 0 0; border-bottom-color: var(--yellow);
+}
 
-/* DIGEST PANEL */
-.digest-header {
-  padding: 16px 0 10px;
+/* RINGKASAN PANEL */
+.ringkasan-inner {
+  padding: 14px 12px 20px;
+}
+.ringkasan-meta {
   display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 14px; flex-wrap: wrap; gap: 6px;
 }
-.digest-title {
-  font-family: 'Syne', sans-serif; font-size: 15px; font-weight: 700;
-  color: var(--yellow);
+.ringkasan-meta-left {
+  font-size: 10px; color: var(--muted);
 }
-.digest-meta { font-size: 10px; color: var(--muted); }
-.digest-method {
-  font-size: 9px; padding: 2px 7px; border-radius: 3px;
-  letter-spacing: .5px;
+.ringkasan-method {
+  font-size: 9px; padding: 2px 8px; border-radius: 3px; letter-spacing: .5px;
 }
-.digest-method.gemini { background: rgba(255,211,42,.1); color: var(--yellow); }
-.digest-method.fallback { background: rgba(255,255,255,.06); color: var(--muted); }
+.ringkasan-method.gemini   { background: rgba(255,211,42,.1); color: var(--yellow); }
+.ringkasan-method.fallback { background: rgba(255,255,255,.06); color: var(--muted); }
 
-.digest-card {
+.ringkasan-card {
   background: var(--surface); border: 1px solid var(--border);
-  border-radius: 10px; padding: 14px 16px; margin-bottom: 10px;
+  border-radius: 10px; padding: 16px 18px; margin-bottom: 14px;
   position: relative; overflow: hidden;
 }
-.digest-card::before {
+.ringkasan-card::before {
   content: ''; position: absolute; left: 0; top: 0; bottom: 0;
   width: 3px; background: var(--yellow);
 }
-.digest-lang {
-  font-size: 10px; color: var(--yellow); letter-spacing: .5px;
-  margin-bottom: 8px; text-transform: uppercase;
-}
-.digest-text {
+.ringkasan-text {
   font-family: 'Syne', sans-serif; font-size: 13px; font-weight: 400;
-  line-height: 1.6; color: var(--text); white-space: pre-line;
+  line-height: 1.7; color: var(--text); white-space: pre-line;
 }
-.digest-headlines {
-  margin-top: 12px; border-top: 1px solid var(--border); padding-top: 10px;
-}
-.digest-hl-title { font-size: 9px; color: var(--muted); letter-spacing: .5px; margin-bottom: 6px; text-transform: uppercase; }
-.digest-hl-item {
-  font-size: 11px; color: var(--muted); padding: 4px 0;
-  border-bottom: 1px solid rgba(255,255,255,.03); line-height: 1.4;
-}
-.digest-hl-item:last-child { border-bottom: none; }
 
-.digest-sessions {
-  display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap;
+.ringkasan-stats {
+  display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap;
 }
-.sess-btn {
-  padding: 6px 14px; border-radius: 20px;
-  border: 1px solid var(--border); background: transparent;
-  color: var(--muted); font-family: 'DM Mono', monospace; font-size: 10px;
-  cursor: pointer; transition: all .2s; letter-spacing: .3px;
+.rstat {
+  flex: 1; min-width: 80px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 8px; padding: 8px 12px; text-align: center;
 }
-.sess-btn.active { background: var(--yellow); color: var(--bg); border-color: var(--yellow); }
-.sess-btn:active { transform: scale(.95); }
+.rstat-val {
+  font-family: 'Syne', sans-serif; font-size: 18px; font-weight: 700;
+  color: var(--accent);
+}
+.rstat-label { font-size: 9px; color: var(--muted); letter-spacing: .4px; margin-top: 2px; }
 
-.digest-gen-btn {
-  width: 100%; padding: 12px; border-radius: 8px;
+.ringkasan-gen-btn {
+  width: 100%; padding: 13px; border-radius: 8px;
   border: 1px solid var(--yellow); background: transparent;
   color: var(--yellow); font-family: 'DM Mono', monospace; font-size: 11px;
   cursor: pointer; transition: all .2s; letter-spacing: .5px;
   display: flex; align-items: center; justify-content: center; gap: 8px;
 }
-.digest-gen-btn:active { background: var(--yellow); color: var(--bg); }
-.digest-gen-btn.loading { opacity: .6; pointer-events: none; }
-.digest-gen-btn svg { animation: none; }
-.digest-gen-btn.loading svg { animation: spin .7s linear infinite; }
+.ringkasan-gen-btn:active { background: var(--yellow); color: var(--bg); }
+.ringkasan-gen-btn.loading { opacity: .6; pointer-events: none; }
+.ringkasan-gen-btn.loading svg { animation: spin .7s linear infinite; }
 
-.next-digest {
+.ringkasan-ts {
   font-size: 10px; color: var(--muted); text-align: center;
-  padding: 8px 0 4px;
+  margin-top: 6px; padding-bottom: 4px;
 }
-.next-digest span { color: var(--yellow); }
-/* CAL TAB */
-.ftab[data-view="cal"] { color: var(--green); border-bottom-color: transparent; }
-.ftab[data-view="cal"].active { color: var(--bg); background: var(--green); border-radius: 4px 4px 0 0; border-bottom-color: var(--green); }
 
-/* CALENDAR PANEL */
+/* ── CALENDAR TAB ── */
+.ftab[data-view="cal"] { color: var(--green); }
+.ftab[data-view="cal"].active {
+  color: var(--bg); background: var(--green);
+  border-radius: 4px 4px 0 0; border-bottom-color: var(--green);
+}
+
 .cal-panel-inner { padding: 10px 12px 16px; }
 .cal-date-group { margin-bottom: 18px; }
 .cal-date-label {
@@ -337,12 +326,10 @@ body {
 .cal-cur-AUD::before { background: var(--green); }
 .cal-cur-NZD::before { background: #34d399; }
 .cal-cur-CHF::before { background: var(--red); }
-.cal-cur-CNY::before, .cal-cur-CNH::before { background: #f59e0b; }
 
 .cal-time {
   font-family: 'DM Mono', monospace; font-size: 11px;
-  color: var(--accent); min-width: 52px; padding-top: 1px;
-  flex-shrink: 0;
+  color: var(--accent); min-width: 52px; padding-top: 1px; flex-shrink: 0;
 }
 .cal-body { flex: 1; }
 .cal-event-name {
@@ -351,50 +338,14 @@ body {
 }
 .cal-cur-tag {
   display: inline-block; font-size: 8px; padding: 2px 6px;
-  border-radius: 3px; letter-spacing: .5px; font-weight: 400;
-  background: rgba(255,255,255,.06); color: var(--muted);
-  margin-right: 4px;
+  border-radius: 3px; letter-spacing: .5px;
+  background: rgba(255,255,255,.06); color: var(--muted); margin-right: 4px;
 }
 .cal-impact-high {
   display: inline-block; font-size: 8px; padding: 2px 6px;
   border-radius: 3px; letter-spacing: .5px;
   background: rgba(255,71,87,.15); color: #ff4757;
 }
-
-/* CAL AI SYNTHESIS */
-.cal-ai-box {
-  background: var(--surface); border: 1px solid var(--border);
-  border-radius: 10px; padding: 14px 16px; margin-bottom: 14px;
-  position: relative; overflow: hidden;
-}
-.cal-ai-box::before {
-  content: ''; position: absolute; left: 0; top: 0; bottom: 0;
-  width: 3px; background: var(--green);
-}
-.cal-ai-label {
-  font-size: 9px; color: var(--green); letter-spacing: .8px;
-  text-transform: uppercase; margin-bottom: 8px;
-}
-.cal-ai-text {
-  font-family: 'Syne', sans-serif; font-size: 12px;
-  color: var(--text); line-height: 1.65; white-space: pre-line;
-}
-.cal-ai-ts {
-  font-size: 9px; color: var(--muted); margin-top: 8px;
-  border-top: 1px solid var(--border); padding-top: 6px;
-}
-.cal-ai-btn {
-  width: 100%; padding: 10px; border-radius: 8px;
-  border: 1px solid var(--green); background: transparent;
-  color: var(--green); font-family: 'DM Mono', monospace; font-size: 10px;
-  cursor: pointer; transition: all .2s; letter-spacing: .5px;
-  display: flex; align-items: center; justify-content: center; gap: 8px;
-  margin-bottom: 14px;
-}
-.cal-ai-btn:active { background: var(--green); color: var(--bg); }
-.cal-ai-btn.loading { opacity: .6; pointer-events: none; }
-.cal-ai-btn.loading svg { animation: spin .7s linear infinite; }
-
 .cal-empty { text-align: center; padding: 50px 20px; color: var(--muted); font-size: 12px; line-height: 1.7; }
 
 .install-banner {
@@ -441,7 +392,7 @@ body {
 
 <!-- FILTER TABS -->
 <div class="filter-wrap" id="filterWrap">
-  <button class="ftab" data-view="digest" id="digestTab">📋 DIGEST</button>
+  <button class="ftab" data-view="ringkasan" id="ringkasanTab">📋 RINGKASAN</button>
   <button class="ftab active" data-cat="all">All</button>
   <button class="ftab" data-cat="market-moving">Mkt Moving</button>
   <button class="ftab" data-cat="forex">Forex</button>
@@ -480,8 +431,21 @@ body {
   </div>
 </div>
 
-<!-- DIGEST PANEL -->
-<div class="feed-scroll" id="digestPanel" style="display:none"></div>
+<!-- RINGKASAN PANEL -->
+<div class="feed-scroll" id="ringkasanPanel" style="display:none">
+  <div class="ringkasan-inner" id="ringkasanInner">
+    <div class="state-box">
+      <div class="icon">📋</div>
+      <p>Tap tombol di bawah untuk<br>generate ringkasan pasar.</p>
+    </div>
+    <button class="ringkasan-gen-btn" id="ringkasanBtn" onclick="generateRingkasan()">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+        <circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/>
+      </svg>
+      <span>Generate Ringkasan</span>
+    </button>
+  </div>
+</div>
 
 <!-- CALENDAR PANEL -->
 <div class="feed-scroll" id="calPanel" style="display:none">
@@ -497,37 +461,27 @@ body {
 </div>
 
 <script>
-// Netlify Function endpoint — same origin, no CORS issue
 const FETCH_URL = '/.netlify/functions/rss';
 
 const CATS = {
   'market-moving': ['market moving','breaking','flash','urgent','alert','war','blockade'],
   'forex': [
-    // Pair notations — all majors + crosses
     'eur/usd','gbp/usd','usd/jpy','aud/usd','usd/cad','nzd/usd','usd/chf','usd/cnh','usd/cny',
     'eur/gbp','eur/jpy','eur/chf','eur/cad','eur/aud','eur/nzd',
     'gbp/jpy','gbp/chf','gbp/cad','gbp/aud','gbp/nzd',
-    'aud/jpy','aud/cad','aud/chf','aud/nzd',
-    'nzd/jpy','nzd/cad','nzd/chf',
-    'cad/jpy','cad/chf',
-    'chf/jpy',
-    // Reverse notation
+    'aud/jpy','aud/cad','aud/chf','aud/nzd','nzd/jpy','nzd/cad','nzd/chf',
+    'cad/jpy','cad/chf','chf/jpy',
     '/usd','/eur','/gbp','/jpy','/cad','/chf','/aud','/nzd','/cnh',
-    // Currency names — specific enough to avoid false positives
     'us dollar','euro zone','euro area','the euro','sterling','pound sterling',
     'japanese yen','swiss franc','canadian dollar','australian dollar','new zealand dollar',
     'chinese yuan','chinese renminbi','offshore yuan',
     'loonie','aussie dollar','kiwi dollar','cable','swissy','fiber','greenback',
-    // FX market terms
     'fx options','options expir','dollar index','dxy','currency pair',
     'forex','foreign exchange','spot rate','exchange rate',
-    // Central bank implied FX
-    'boc rate','rba rate','rbnz rate',
-    // Exotic mentions common in FJ
     'forint','zloty','krona','won','ringgit','lira','rupee','peso','rand',
   ],
   'equities': ['s&p','nasdaq','dow jones','ftse','dax','nikkei','hang seng','stock','equity','shares','earnings','ipo','nyse','spx','nvda','apple','tesla','meta ','alphabet','microsoft','amazon','samsung','tsmc'],
-  'commodities':['gold','silver','copper','wheat','corn','soybean','coffee','cocoa','cotton','lumber','palladium','platinum','xau','xag','commodity','zinc','nickel','iron ore','steel','alumin'],
+  'commodities': ['gold','silver','copper','wheat','corn','soybean','coffee','cocoa','cotton','lumber','palladium','platinum','xau','xag','commodity','zinc','nickel','iron ore','steel','alumin'],
   'energy':   ['oil','crude','brent','wti','opec','gasoline','diesel','natural gas','barrel','petroleum','hormuz','strait','iea','tanker','refiner','pipeline','lng','energy price','fuel'],
   'bonds':    ['bond','yield','treasury','gilt','bund','t-note','10-year','2-year','30-year','basis point','bps','fixed income','debt','sovereign','auction'],
   'crypto':   ['bitcoin','btc','ethereum','eth','crypto','blockchain','coinbase','binance','stablecoin','defi','nft','altcoin','ripple','xrp','solana'],
@@ -545,29 +499,26 @@ function detectCat(title) {
   return 'macro';
 }
 
-let allItems = [];
-let seenGuids = new Set();
+let allItems     = [];
+let seenGuids    = new Set();
 let activeFilter = 'all';
 let autoInterval = null;
-let cdInterval = null;
-let cdVal = 60;
+let cdInterval   = null;
+let cdVal        = 60;
 let notifEnabled = false;
 let deferredInstall = null;
-let sw = null;
+let activeView   = 'feed';
 
 // Calendar state
-let calData = null;          // raw array of events from API
-let calFetchedAt = 0;        // timestamp of last successful calendar fetch
-let calAiCache = null;       // AI synthesis result
-let calAiFetchedAt = 0;      // timestamp of last AI synthesis
+let calData       = null;
+let calFetchedAt  = 0;
 
-// ── SERVICE WORKER ──────────────────────────────────────
+// Ringkasan state
+let ringkasanCache = null;
+
+// ── SERVICE WORKER ───────────────────────────────────────
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').then(reg => {
-    sw = reg;
-    console.log('[SW] registered');
-
-    // Request periodic sync if supported
     if ('periodicSync' in reg) {
       navigator.permissions.query({ name:'periodic-background-sync' }).then(status => {
         if (status.state === 'granted') {
@@ -578,9 +529,7 @@ if ('serviceWorker' in navigator) {
   }).catch(e => console.warn('[SW] failed', e));
 
   navigator.serviceWorker.addEventListener('message', e => {
-    if (e.data.type === 'NEW_ITEMS') {
-      handleNewItems(e.data.items);
-    }
+    if (e.data.type === 'NEW_ITEMS') handleNewItems(e.data.items);
   });
 }
 
@@ -611,21 +560,11 @@ function urlBase64ToUint8Array(base64String) {
 }
 
 async function requestNotif() {
-  if (!('Notification' in window)) {
-    showToast('Tidak Didukung', 'Browser ini tidak support notifikasi');
-    return;
-  }
-
+  if (!('Notification' in window)) { showToast('Tidak Didukung', 'Browser ini tidak support notifikasi'); return; }
   const perm = await Notification.requestPermission();
-  if (perm !== 'granted') {
-    showToast('Ditolak', 'Izinkan notifikasi di pengaturan browser');
-    return;
-  }
-
+  if (perm !== 'granted') { showToast('Ditolak', 'Izinkan notifikasi di pengaturan browser'); return; }
   notifEnabled = true;
   document.getElementById('notifBtn').classList.add('enabled');
-
-  // Try Web Push (server-side push — works when HP off)
   if ('serviceWorker' in navigator && 'PushManager' in window) {
     try {
       const reg = await navigator.serviceWorker.ready;
@@ -636,7 +575,6 @@ async function requestNotif() {
           applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
         });
       }
-      // Send subscription to server
       const res = await fetch('/.netlify/functions/subscribe', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -645,48 +583,26 @@ async function requestNotif() {
       if (res.ok) {
         showToast('Notifikasi Aktif ✓', 'Push notif aktif — bekerja bahkan saat HP mati layar', 4000);
         localStorage.setItem('pushSubscribed', '1');
-      } else {
-        throw new Error('Subscribe failed: ' + res.status);
-      }
+      } else throw new Error('Subscribe failed: ' + res.status);
     } catch(e) {
       console.warn('Web Push failed:', e.message);
-      showToast('Notifikasi Aktif ✓', 'Notif aktif saat tab terbuka. Untuk background notif, pastikan sudah install PWA.', 5000);
+      showToast('Notifikasi Aktif ✓', 'Notif aktif saat tab terbuka.', 4000);
     }
-  } else {
-    showToast('Notifikasi Aktif ✓', 'Notif aktif (mode terbatas — tab harus terbuka)', 4000);
   }
-
   sendToSW({ type: 'INIT_GUIDS', guids: [...seenGuids] });
 }
 
 function sendToSW(msg) {
-  if (navigator.serviceWorker.controller) {
-    navigator.serviceWorker.controller.postMessage(msg);
-  }
+  if (navigator.serviceWorker.controller) navigator.serviceWorker.controller.postMessage(msg);
 }
 
-function sendLocalNotif(title, body, tag) {
-  if (!notifEnabled || Notification.permission !== 'granted') return;
-  try {
-    new Notification(`[${detectCat(title).replace('-',' ').toUpperCase()}] FJFeed`, {
-      body: title,
-      tag: tag || 'fjfeed',
-      icon: './manifest.json',
-      silent: false
-    });
-  } catch(e) {}
-}
-
-// ── FETCH ────────────────────────────────────────────────
+// ── FETCH RSS ────────────────────────────────────────────
 async function fetchRSS() {
   try {
     const c = new AbortController();
     setTimeout(() => c.abort(), 12000);
     const r = await fetch(FETCH_URL, { signal: c.signal });
-    if (r.ok) {
-      const t = await r.text();
-      if (t.includes('<rss')) return t;
-    }
+    if (r.ok) { const t = await r.text(); if (t.includes('<rss')) return t; }
   } catch(e) {}
   return null;
 }
@@ -713,23 +629,14 @@ function parseRSS(xml) {
 }
 
 function handleNewItems(newItems) {
-  // Prepend new items
   allItems = [...newItems, ...allItems].slice(0, 200);
   newItems.forEach(i => seenGuids.add(i.guid));
-
   updateStats();
   renderFeed(true);
-
-  // In-app toast
   if (newItems.length === 1) {
     showToast(`📰 ${detectCat(newItems[0].title).replace('-',' ').toUpperCase()}`, newItems[0].title, 4000);
   } else if (newItems.length > 1) {
     showToast(`📰 ${newItems.length} berita baru`, newItems.map(i=>i.title).slice(0,2).join(' / '), 4000);
-  }
-
-  // Local notif fallback (when SW notification didn't fire)
-  if (!navigator.serviceWorker.controller) {
-    newItems.slice(0, 3).forEach(i => sendLocalNotif(i.title, '', i.guid));
   }
 }
 
@@ -737,28 +644,19 @@ async function fetchFeed() {
   const btn = document.getElementById('refreshBtn');
   btn.classList.add('spinning');
   setStatus('loading','FETCHING');
-
   const xml = await fetchRSS();
   btn.classList.remove('spinning');
-
   if (!xml) {
     setStatus('error','FAILED');
     if (allItems.length === 0) {
       document.getElementById('feedScroll').innerHTML = `
-        <div class="state-box">
-          <div class="icon">⚠️</div>
-          <p>Gagal fetch dari server.<br>
-          Pastikan Netlify Functions ter-deploy<br>via GitHub atau Netlify CLI.<br><br>
-          <span style="color:#4a5568">Drag & drop tidak support Functions.</span></p>
-        </div>`;
+        <div class="state-box"><div class="icon">⚠️</div>
+        <p>Gagal fetch dari server.<br>Pastikan Netlify Functions ter-deploy.</p></div>`;
     }
     setTimeout(fetchFeed, 8000);
     return;
   }
-
   const parsed = parseRSS(xml);
-
-  // First load
   if (seenGuids.size === 0) {
     allItems = parsed;
     parsed.forEach(i => seenGuids.add(i.guid));
@@ -767,46 +665,31 @@ async function fetchFeed() {
     const newItems = parsed.filter(i => !seenGuids.has(i.guid));
     if (newItems.length > 0) handleNewItems(newItems);
   }
-
   const now = new Date();
-  const h = String(now.getHours()).padStart(2,'0');
-  const mn = String(now.getMinutes()).padStart(2,'0');
-  document.getElementById('lastUpdate').textContent = `${h}:${mn} WIB`;
+  document.getElementById('lastUpdate').textContent =
+    `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')} WIB`;
   setStatus('live','LIVE');
-
   updateStats();
   renderFeed();
 }
 
 // ── RENDER ───────────────────────────────────────────────
+function sanitizeDesc(html) {
+  if (!html) return '';
+  let c = html.replace(/<script[\s\S]*?<\/script>/gi,'').replace(/<style[\s\S]*?<\/style>/gi,'');
+  c = c.replace(/<[^>]+>/g,' ');
+  c = c.replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&nbsp;/g,' ').replace(/&#39;/g,"'").replace(/&quot;/g,'"');
+  return c.replace(/\s+/g,' ').trim();
+}
+
 function renderFeed(markNew = false) {
   const scroll = document.getElementById('feedScroll');
-  const newGuids = markNew ? new Set(allItems.slice(0, 10).map(i=>i.guid)) : new Set();
-
-  let items = activeFilter === 'all'
-    ? allItems
-    : allItems.filter(i => detectCat(i.title) === activeFilter);
-
+  const newGuids = markNew ? new Set(allItems.slice(0,10).map(i=>i.guid)) : new Set();
+  let items = activeFilter === 'all' ? allItems : allItems.filter(i => detectCat(i.title) === activeFilter);
   if (items.length === 0) {
     scroll.innerHTML = `<div class="state-box"><div class="icon">🔍</div><p>Tidak ada berita untuk kategori ini</p></div>`;
     return;
   }
-
-function sanitizeDesc(html) {
-  if (!html) return '';
-  // Strip script tags and their content entirely
-  let clean = html.replace(/<script[\s\S]*?<\/script>/gi, '');
-  // Strip style tags
-  clean = clean.replace(/<style[\s\S]*?<\/style>/gi, '');
-  // Strip all remaining HTML tags but keep text
-  clean = clean.replace(/<[^>]+>/g, ' ');
-  // Decode common HTML entities
-  clean = clean.replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&nbsp;/g,' ').replace(/&#39;/g,"'").replace(/&quot;/g,'"');
-  // Collapse whitespace
-  clean = clean.replace(/\s+/g, ' ').trim();
-  return clean;
-}
-
   scroll.innerHTML = items.map((item, idx) => {
     const cat = detectCat(item.title);
     const isNew = markNew && newGuids.has(item.guid) && idx < 5;
@@ -831,20 +714,20 @@ function openLink(url) { if(url) window.open(url,'_blank'); }
 function fmtTime(ds) {
   const d = new Date(ds);
   const wib = new Date(d.getTime() + 7*3600000);
-  const h = String(wib.getUTCHours()).padStart(2,'0');
-  const m = String(wib.getUTCMinutes()).padStart(2,'0');
+  const h  = String(wib.getUTCHours()).padStart(2,'0');
+  const mn = String(wib.getUTCMinutes()).padStart(2,'0');
   const dd = String(wib.getUTCDate()).padStart(2,'0');
   const mo = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][wib.getUTCMonth()];
-  return `${h}:${m} · ${dd} ${mo}`;
+  return `${h}:${mn} · ${dd} ${mo}`;
 }
 
 function updateStats() {
-  document.getElementById('sTotal').textContent = allItems.length;
+  document.getElementById('sTotal').textContent  = allItems.length;
   document.getElementById('sMoving').textContent = allItems.filter(i=>detectCat(i.title)==='market-moving').length;
-  document.getElementById('sFx').textContent = allItems.filter(i=>detectCat(i.title)==='forex').length;
-  document.getElementById('sMacro').textContent = allItems.filter(i=>detectCat(i.title)==='macro').length;
+  document.getElementById('sFx').textContent     = allItems.filter(i=>detectCat(i.title)==='forex').length;
+  document.getElementById('sMacro').textContent  = allItems.filter(i=>detectCat(i.title)==='macro').length;
   document.getElementById('sEnergy').textContent = allItems.filter(i=>detectCat(i.title)==='energy').length;
-  document.getElementById('sGeo').textContent = allItems.filter(i=>detectCat(i.title)==='geopolitical').length;
+  document.getElementById('sGeo').textContent    = allItems.filter(i=>detectCat(i.title)==='geopolitical').length;
 }
 
 function setStatus(state, text) {
@@ -859,7 +742,7 @@ function toggleAuto() {
   if (on) {
     cdVal = 60; cd.textContent = '60s';
     autoInterval = setInterval(() => { fetchFeed(); cdVal=60; }, 60000);
-    cdInterval = setInterval(() => { cdVal--; cd.textContent=cdVal+'s'; if(cdVal<=0)cdVal=60; }, 1000);
+    cdInterval   = setInterval(() => { cdVal--; cd.textContent=cdVal+'s'; if(cdVal<=0)cdVal=60; }, 1000);
     sendToSW({ type:'CHECK_NOW' });
   } else {
     clearInterval(autoInterval); clearInterval(cdInterval);
@@ -872,7 +755,7 @@ let toastTimer = null;
 function showToast(title, body, ms=3000) {
   const t = document.getElementById('toast');
   document.getElementById('toastTitle').textContent = title;
-  document.getElementById('toastBody').textContent = body;
+  document.getElementById('toastBody').textContent  = body;
   t.style.display = 'block';
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => t.style.display='none', ms);
@@ -881,232 +764,80 @@ document.getElementById('toast').addEventListener('click', () => {
   document.getElementById('toast').style.display='none';
 });
 
-// ── DIGEST ───────────────────────────────────────────────
+// ── RINGKASAN ────────────────────────────────────────────
+async function generateRingkasan() {
+  const btn = document.getElementById('ringkasanBtn');
+  btn.classList.add('loading');
+  btn.querySelector('span').textContent = 'Generating...';
 
-const SESSIONS = {
-  morning:   { label_id:'Sesi Asia',    label_en:'Asia Session',     time:'06:55', wib:[6,55]  },
-  afternoon: { label_id:'Sesi London',  label_en:'London Session',   time:'13:55', wib:[13,55] },
-  evening:   { label_id:'Sesi New York',label_en:'New York Session', time:'20:25', wib:[20,25] },
-};
-
-let currentSession = 'morning';
-let digestCache = {}; // { session: digestData }
-let digestCheckInterval = null;
-let activeView = 'feed'; // 'feed' | 'digest'
-
-function getWIBNow() {
-  const now = new Date();
-  return new Date(now.getTime() + 7 * 3600000);
-}
-
-function getNextDigestInfo() {
-  const wib = getWIBNow();
-  const hNow = wib.getUTCHours();
-  const mNow = wib.getUTCMinutes();
-  const totalNow = hNow * 60 + mNow;
-
-  const times = [
-    { session:'morning',   total: 6*60+55  },
-    { session:'afternoon', total:13*60+55  },
-    { session:'evening',   total:20*60+25  },
-  ];
-
-  for (const t of times) {
-    if (totalNow < t.total) {
-      const diff = t.total - totalNow;
-      return { session: t.session, minutesLeft: diff };
-    }
-  }
-  // Past 20:25 → next is tomorrow morning
-  const diff = (24*60 + 6*60+55) - totalNow;
-  return { session: 'morning', minutesLeft: diff };
-}
-
-function getCurrentSession() {
-  const wib = getWIBNow();
-  const h = wib.getUTCHours(), m = wib.getUTCMinutes();
-  const total = h * 60 + m;
-  if (total >= 6*60+55  && total < 13*60+55) return 'morning';
-  if (total >= 13*60+55 && total < 20*60+25) return 'afternoon';
-  if (total >= 20*60+25) return 'evening';
-  return 'morning';
-}
-
-function startDigestScheduler() {
-  if (digestCheckInterval) clearInterval(digestCheckInterval);
-  digestCheckInterval = setInterval(() => {
-    const wib = getWIBNow();
-    const h = wib.getUTCHours(), m = wib.getUTCMinutes(), s = wib.getUTCSeconds();
-    // Trigger at xx:55:00 or 20:25:00 (within first 30s window)
-    const isTrigger = (
-      ((h === 6  && m === 55) ||
-       (h === 13 && m === 55) ||
-       (h === 20 && m === 25)) && s < 30
-    );
-    if (isTrigger) {
-      const sess = getCurrentSession();
-      autoGenerateDigest(sess);
-    }
-    // Update next digest countdown in panel if visible
-    if (activeView === 'digest') updateNextDigestLabel();
-  }, 15000); // check every 15s
-}
-
-async function autoGenerateDigest(session) {
-  // Generate silently
-  const data = await callDigestAPI(session);
-  if (!data) return;
-  digestCache[session] = data;
-
-  // Push notification
-  const sess = SESSIONS[session];
-  const notifBody = `${data.summary_id.substring(0, 120)}...`;
-  if (notifEnabled && Notification.permission === 'granted') {
-    sendToSW({
-      type: 'SHOW_DIGEST_NOTIF',
-      title: `📋 ${sess.label_id} Digest`,
-      body: notifBody,
-      session,
-    });
-    // Fallback direct notif
-    try {
-      new Notification(`📋 ${sess.label_id} — FJFeed`, { body: notifBody, tag: 'digest-'+session });
-    } catch(e) {}
-  }
-
-  // In-app toast
-  showToast(`📋 ${sess.label_id} Digest Ready`, `Tap tab DIGEST untuk lihat ringkasan`, 5000);
-
-  // Badge digest tab
-  const dt = document.getElementById('digestTab');
-  if (dt) {
-    dt.textContent = '📋 DIGEST 🔴';
-    setTimeout(() => { dt.textContent = '📋 DIGEST'; }, 30000);
-  }
-
-  // If user is on digest panel, refresh
-  if (activeView === 'digest') renderDigestPanel();
-}
-
-async function callDigestAPI(session) {
   try {
-    const res = await fetch(`/.netlify/functions/digest?session=${session}`, {
-      signal: AbortSignal.timeout(25000),
+    const res = await fetch('/.netlify/functions/unified-digest', {
+      signal: AbortSignal.timeout(30000),
     });
     if (!res.ok) throw new Error('HTTP ' + res.status);
-    return await res.json();
+    const data = await res.json();
+    ringkasanCache = data;
+    renderRingkasan();
   } catch(e) {
-    console.warn('Digest API failed:', e.message);
-    return null;
+    showToast('Gagal', 'Ringkasan tidak merespons: ' + e.message, 4000);
+    btn.classList.remove('loading');
+    btn.querySelector('span').textContent = 'Generate Ringkasan';
   }
 }
 
-async function generateDigestManual(session) {
-  const btn = document.getElementById('digestGenBtn');
-  if (btn) { btn.classList.add('loading'); btn.querySelector('span').textContent = 'Generating...'; }
+function renderRingkasan() {
+  const inner = document.getElementById('ringkasanInner');
+  const d = ringkasanCache;
 
-  const data = await callDigestAPI(session);
-  if (btn) { btn.classList.remove('loading'); btn.querySelector('span').textContent = 'Generate Now'; }
-
-  if (!data) {
-    showToast('Gagal', 'Digest API tidak merespons. Coba lagi.', 3000);
+  if (!d) {
+    inner.innerHTML = `
+      <div class="state-box">
+        <div class="icon">📋</div>
+        <p>Tap tombol di bawah untuk<br>generate ringkasan pasar.</p>
+      </div>
+      <button class="ringkasan-gen-btn" id="ringkasanBtn" onclick="generateRingkasan()">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/>
+        </svg>
+        <span>Generate Ringkasan</span>
+      </button>`;
     return;
   }
-  digestCache[session] = data;
-  renderDigestPanel();
-}
 
-function renderDigestPanel() {
-  const panel = document.getElementById('digestPanel');
-  const next = getNextDigestInfo();
-  const nextSess = SESSIONS[next.session];
-  const h = Math.floor(next.minutesLeft / 60);
-  const m = next.minutesLeft % 60;
-  const nextLabel = h > 0 ? `${h}j ${m}m` : `${m} menit`;
+  const ts  = new Date(d.generated_at);
+  const wib = new Date(ts.getTime() + 7*3600000);
+  const tsStr = `${String(wib.getUTCHours()).padStart(2,'0')}:${String(wib.getUTCMinutes()).padStart(2,'0')} WIB`;
 
-  let html = `
-    <div class="digest-sessions">
-      ${Object.entries(SESSIONS).map(([key, s]) => `
-        <button class="sess-btn ${currentSession===key?'active':''}"
-          onclick="switchDigestSession('${key}')">${s.label_id}<br><small>${s.time} WIB</small></button>
-      `).join('')}
+  inner.innerHTML = `
+    <div class="ringkasan-meta">
+      <div class="ringkasan-meta-left">${tsStr} · ${d.news_count} berita · ${d.cal_count} event kalender</div>
+      <span class="ringkasan-method ${d.method}">${d.method === 'gemini' ? '✨ Gemini AI' : '⚙️ Auto'}</span>
     </div>
-    <div class="next-digest">Digest berikutnya: <span>${nextSess.label_id}</span> dalam <span>${nextLabel}</span></div>
-  `;
 
-  const data = digestCache[currentSession];
-  const sess = SESSIONS[currentSession];
-
-  if (data) {
-    const ts = new Date(data.generated_at);
-    const wibTs = new Date(ts.getTime() + 7*3600000);
-    const timeStr = `${String(wibTs.getUTCHours()).padStart(2,'0')}:${String(wibTs.getUTCMinutes()).padStart(2,'0')} WIB`;
-
-    html += `
-      <div class="digest-header">
-        <div>
-          <div class="digest-title">📋 ${sess.label_id}</div>
-          <div class="digest-meta">${data.count} berita · ${timeStr} · <span class="digest-method ${data.method}">${data.method === 'gemini' ? '✨ Gemini AI' : '⚙️ Auto'}</span></div>
-        </div>
+    <div class="ringkasan-stats">
+      <div class="rstat">
+        <div class="rstat-val">${d.news_count}</div>
+        <div class="rstat-label">Berita (6j)</div>
       </div>
-
-      <div class="digest-card">
-        <div class="digest-lang">🇮🇩 Bahasa Indonesia</div>
-        <div class="digest-text">${escHtml(data.summary_id)}</div>
+      <div class="rstat">
+        <div class="rstat-val">${d.cal_count}</div>
+        <div class="rstat-label">Event Kalender</div>
       </div>
+    </div>
 
-      <div class="digest-card">
-        <div class="digest-lang">🇬🇧 English</div>
-        <div class="digest-text">${escHtml(data.summary_en)}</div>
-      </div>
+    <div class="ringkasan-card">
+      <div class="ringkasan-text">${escHtml(d.article)}</div>
+    </div>
 
-      ${data.items?.length > 0 ? `
-        <div class="digest-card">
-          <div class="digest-hl-title">Top Headlines</div>
-          <div class="digest-headlines">
-            ${data.items.map(i => `<div class="digest-hl-item">• ${escHtml(i.title)}</div>`).join('')}
-          </div>
-        </div>
-      ` : ''}
-    `;
-  } else {
-    html += `
-      <div class="state-box" style="padding:40px 20px">
-        <div class="icon">📋</div>
-        <p>Belum ada digest untuk ${sess.label_id}.<br>
-        Akan auto-generate pukul ${sess.time} WIB.<br>
-        Atau generate sekarang:</p>
-      </div>
-    `;
-  }
-
-  html += `
-    <button class="digest-gen-btn" id="digestGenBtn" onclick="generateDigestManual('${currentSession}')">
+    <button class="ringkasan-gen-btn" id="ringkasanBtn" onclick="generateRingkasan()">
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
         <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>
         <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
       </svg>
-      <span>Generate ${data ? 'Ulang' : 'Now'}</span>
+      <span>Generate Ulang</span>
     </button>
+    <div class="ringkasan-ts">Data: ${d.news_count} headline + ${d.cal_count} event high-impact</div>
   `;
-
-  panel.innerHTML = html;
-}
-
-function switchDigestSession(session) {
-  currentSession = session;
-  renderDigestPanel();
-}
-
-function updateNextDigestLabel() {
-  const el = document.querySelector('.next-digest');
-  if (!el) return;
-  const next = getNextDigestInfo();
-  const nextSess = SESSIONS[next.session];
-  const h = Math.floor(next.minutesLeft / 60);
-  const m = next.minutesLeft % 60;
-  const nextLabel = h > 0 ? `${h}j ${m}m` : `${m} menit`;
-  el.innerHTML = `Digest berikutnya: <span>${nextSess.label_id}</span> dalam <span>${nextLabel}</span>`;
 }
 
 function escHtml(s) {
@@ -1114,32 +845,26 @@ function escHtml(s) {
 }
 
 // ── VIEW SWITCHING ────────────────────────────────────────
-
 document.querySelectorAll('.ftab').forEach(btn => {
   btn.addEventListener('click', () => {
     document.querySelectorAll('.ftab').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
 
-    const view = btn.dataset.view;
-    document.getElementById('feedScroll').style.display = 'none';
-    document.getElementById('digestPanel').style.display = 'none';
-    document.getElementById('calPanel').style.display = 'none';
+    document.getElementById('feedScroll').style.display     = 'none';
+    document.getElementById('ringkasanPanel').style.display = 'none';
+    document.getElementById('calPanel').style.display       = 'none';
 
-    if (view === 'digest') {
-      activeView = 'digest';
-      document.getElementById('digestPanel').style.display = 'block';
-      currentSession = getCurrentSession();
-      renderDigestPanel();
+    const view = btn.dataset.view;
+    if (view === 'ringkasan') {
+      activeView = 'ringkasan';
+      document.getElementById('ringkasanPanel').style.display = 'block';
+      renderRingkasan();
     } else if (view === 'cal') {
       activeView = 'cal';
       document.getElementById('calPanel').style.display = 'block';
-      // Lazy load: only fetch if not yet loaded or stale (>30 min)
       const now = Date.now();
-      if (!calData || (now - calFetchedAt) > 30 * 60 * 1000) {
-        fetchCalendar();
-      } else {
-        renderCalendar();
-      }
+      if (!calData || (now - calFetchedAt) > 30 * 60 * 1000) fetchCalendar();
+      else renderCalendar();
     } else {
       activeView = 'feed';
       document.getElementById('feedScroll').style.display = 'block';
@@ -1149,34 +874,21 @@ document.querySelectorAll('.ftab').forEach(btn => {
   });
 });
 
-
 // ── CALENDAR ─────────────────────────────────────────────
-
-const CAL_CURRENCIES = ['USD','EUR','GBP','JPY','CAD','AUD','NZD','CHF'];
-
-// Currency → Investing.com country code mapping
-const CUR_COUNTRY = {
-  USD: 5, EUR: 72, GBP: 4, JPY: 35, CAD: 6,
-  AUD: 25, NZD: 43, CHF: 12,
-};
-
 async function fetchCalendar() {
   const inner = document.getElementById('calPanelInner');
   inner.innerHTML = `<div class="cal-empty">Memuat kalender ekonomi...</div>`;
-
   try {
-    const res = await fetch('/.netlify/functions/calendar', {
-      signal: AbortSignal.timeout(15000),
-    });
+    const res = await fetch('/.netlify/functions/calendar', { signal: AbortSignal.timeout(15000) });
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
     if (!Array.isArray(data.events)) throw new Error('Invalid response');
-    calData = data.events;
+    calData      = data.events;
     calFetchedAt = Date.now();
     renderCalendar();
   } catch(e) {
     inner.innerHTML = `<div class="cal-empty">Gagal memuat kalender.<br><small style="color:#4a5568">${e.message}</small><br><br>
-      <button class="cal-ai-btn" style="margin:0 auto;width:auto;padding:8px 20px" onclick="fetchCalendar()">Coba Lagi</button></div>`;
+      <button class="ringkasan-gen-btn" style="margin:0 auto;width:auto;padding:8px 20px" onclick="fetchCalendar()">Coba Lagi</button></div>`;
   }
 }
 
@@ -1186,31 +898,12 @@ function renderCalendar() {
     inner.innerHTML = `<div class="cal-empty">Tidak ada event high-impact hari ini / besok.</div>`;
     return;
   }
-
-  // Group by date
   const groups = {};
   calData.forEach(ev => {
     if (!groups[ev.date]) groups[ev.date] = [];
     groups[ev.date].push(ev);
   });
-
-  const aiSection = calAiCache
-    ? `<div class="cal-ai-box">
-        <div class="cal-ai-label">✦ Analisis AI — Avoidance & Awareness</div>
-        <div class="cal-ai-text">${escHtml(calAiCache.text)}</div>
-        <div class="cal-ai-ts">Berdasarkan data fetch ${calAiCache.ts}</div>
-      </div>`
-    : '';
-
-  const aiBtn = `
-    <button class="cal-ai-btn" id="calAiBtn" onclick="generateCalAI()">
-      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-        <circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/>
-      </svg>
-      <span>${calAiCache ? 'Refresh Analisis AI' : 'Analisis AI'}</span>
-    </button>`;
-
-  const eventsHtml = Object.entries(groups).map(([date, events]) => {
+  inner.innerHTML = Object.entries(groups).map(([date, events]) => {
     const label = formatCalDate(date);
     const rows = events.map(ev => `
       <div class="cal-event cal-cur-${ev.currency}">
@@ -1222,50 +915,19 @@ function renderCalendar() {
         </div>
       </div>`).join('');
     return `<div class="cal-date-group">
-      <div class="cal-date-label">${label}</div>
-      ${rows}
-    </div>`;
+      <div class="cal-date-label">${label}</div>${rows}</div>`;
   }).join('');
-
-  inner.innerHTML = aiSection + aiBtn + eventsHtml;
 }
 
 function formatCalDate(dateStr) {
-  // dateStr format: YYYY-MM-DD
   const d = new Date(dateStr + 'T00:00:00Z');
-  const days = ['Minggu','Senin','Selasa','Rabu','Kamis','Jumat','Sabtu'];
+  const days   = ['Minggu','Senin','Selasa','Rabu','Kamis','Jumat','Sabtu'];
   const months = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Ags','Sep','Okt','Nov','Des'];
   return `${days[d.getUTCDay()]}, ${d.getUTCDate()} ${months[d.getUTCMonth()]}`;
 }
 
-async function generateCalAI() {
-  const btn = document.getElementById('calAiBtn');
-  if (btn) { btn.classList.add('loading'); btn.querySelector('span').textContent = 'Menganalisis...'; }
-
-  try {
-    // Build currency list from today's events
-    const todayCurrencies = [...new Set(calData.map(e => e.currency))].join(',');
-    const res = await fetch(`/.netlify/functions/calendar-digest?currencies=${todayCurrencies}`, {
-      signal: AbortSignal.timeout(25000),
-    });
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    const data = await res.json();
-
-    const wibNow = new Date(Date.now() + 7*3600000);
-    const ts = `${String(wibNow.getUTCHours()).padStart(2,'0')}:${String(wibNow.getUTCMinutes()).padStart(2,'0')} WIB`;
-    calAiCache = { text: data.analysis, ts };
-    calAiFetchedAt = Date.now();
-    renderCalendar();
-  } catch(e) {
-    showToast('Gagal', 'AI synthesis tidak merespons: ' + e.message, 3000);
-    if (btn) { btn.classList.remove('loading'); btn.querySelector('span').textContent = calAiCache ? 'Refresh Analisis AI' : 'Analisis AI'; }
-  }
-}
-
-// Start scheduler on load
-startDigestScheduler();
+// ── INIT ─────────────────────────────────────────────────
 window.addEventListener('load', () => {
-  // Check notif permission
   if (Notification.permission === 'granted') {
     notifEnabled = true;
     document.getElementById('notifBtn').classList.add('enabled');
