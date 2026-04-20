@@ -461,7 +461,7 @@ body {
 </div>
 
 <script>
-const FETCH_URL = '/.netlify/functions/rss';
+const FETCH_URL = '/api/rss';
 
 const CATS = {
   'market-moving': ['market moving','breaking','flash','urgent','alert','war','blockade'],
@@ -575,7 +575,7 @@ async function requestNotif() {
           applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
         });
       }
-      const res = await fetch('/.netlify/functions/subscribe', {
+      const res = await fetch('/api/subscribe', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ subscription: sub.toJSON() }),
@@ -771,7 +771,7 @@ async function generateRingkasan() {
   btn.querySelector('span').textContent = 'Generating...';
 
   try {
-    const res = await fetch('/.netlify/functions/unified-digest', {
+    const res = await fetch('/api/unified-digest', {
       signal: AbortSignal.timeout(30000),
     });
     if (!res.ok) throw new Error('HTTP ' + res.status);
@@ -879,7 +879,7 @@ async function fetchCalendar() {
   const inner = document.getElementById('calPanelInner');
   inner.innerHTML = `<div class="cal-empty">Memuat kalender ekonomi...</div>`;
   try {
-    const res = await fetch('/.netlify/functions/calendar', { signal: AbortSignal.timeout(15000) });
+    const res = await fetch('/api/calendar', { signal: AbortSignal.timeout(15000) });
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
     if (!Array.isArray(data.events)) throw new Error('Invalid response');
