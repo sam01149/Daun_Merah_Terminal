@@ -10,12 +10,25 @@ module.exports = async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-cache');
   const GEMINI_KEY = process.env.GEMINI_API_KEY;
 
-  // 1. RSS
+  // 1. RSS — try multiple user agents, Vercel egress can be blocked by FJ
   let rssItems = [];
-  try {
-    const r = await fetch(RSS_URL, { headers: { 'User-Agent': 'Mozilla/5.0 (compatible; FJFeed/1.0)' }, signal: AbortSignal.timeout(10000) });
-    if (r.ok) { const xml = await r.text(); if (xml.includes('<rss')) rssItems = parseRSS(xml); }
-  } catch(e) { console.warn('RSS:', e.message); }
+  const RSS_UAS = [
+    'Feedly/1.0 (+http://www.feedly.com/fetcher.html; like FeedFetcher-Google)',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+    'NewsBlur Feed Fetcher - 1000000 subscribers',
+  ];
+  for (const ua of RSS_UAS) {
+    try {
+      const r = await fetch(RSS_URL, {
+        headers: { 'User-Agent': ua, 'Referer': 'https://www.financialjuice.com/', 'Accept': 'application/rss+xml, application/xml, */*' },
+        signal: AbortSignal.timeout(12000),
+      });
+      if (r.ok) {
+        const xml = await r.text();
+        if (xml.includes('<rss')) { rssItems = parseRSS(xml); break; }
+      }
+    } catch(e) { console.warn('RSS attempt failed:', e.message); }
+  }
 
   const cutoff = Date.now() - 6 * 60 * 60 * 1000;
   const recentItems = rssItems.filter(i => new Date(i.pubDate).getTime() > cutoff).slice(0, 80);
