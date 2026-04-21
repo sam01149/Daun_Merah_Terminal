@@ -9,7 +9,11 @@ const MAJOR_CURRENCIES = new Set(['USD','EUR','GBP','JPY','CAD','AUD','NZD','CHF
 module.exports = async function handler(req, res) {
   console.log('market-digest v2 START', new Date().toISOString());
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  res.setHeader('Surrogate-Control', 'no-store');
+  res.setHeader('x-vercel-cache', 'BYPASS');
   const GROQ_KEY = process.env.GROQ_API_KEY;
 
   // 1. RSS — try multiple user agents, Vercel egress can be blocked by FJ
