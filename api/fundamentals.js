@@ -1,6 +1,7 @@
 // api/fundamentals.js
 // Fetches ForexFactory actuals directly, caches in Redis for 15 minutes
 
+const FF_LAST_WEEK = 'https://nfs.faireconomy.media/ff_calendar_lastweek.xml';
 const FF_THIS_WEEK = 'https://nfs.faireconomy.media/ff_calendar_thisweek.xml';
 const FF_NEXT_WEEK = 'https://nfs.faireconomy.media/ff_calendar_nextweek.xml';
 const CACHE_TTL_MS = 15 * 60 * 1000;
@@ -54,13 +55,14 @@ module.exports = async function handler(req, res) {
   } catch(e) {}
 
   // Fetch fresh from ForexFactory
-  const [r1, r2] = await Promise.allSettled([
+  const [r0, r1, r2] = await Promise.allSettled([
+    fetch(FF_LAST_WEEK, { headers:{'User-Agent':'Mozilla/5.0 (compatible; FJFeed/1.0)'}, signal:AbortSignal.timeout(12000) }),
     fetch(FF_THIS_WEEK, { headers:{'User-Agent':'Mozilla/5.0 (compatible; FJFeed/1.0)'}, signal:AbortSignal.timeout(12000) }),
     fetch(FF_NEXT_WEEK, { headers:{'User-Agent':'Mozilla/5.0 (compatible; FJFeed/1.0)'}, signal:AbortSignal.timeout(12000) }),
   ]);
 
   let events = [];
-  for (const r of [r1, r2]) {
+  for (const r of [r0, r1, r2]) {
     if (r.status === 'fulfilled' && r.value.ok) {
       const xml = await r.value.text();
       events = events.concat(parseFFXML(xml));

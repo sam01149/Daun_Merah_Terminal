@@ -1327,14 +1327,14 @@ async function fetchFundamentals() {
   } catch(e) {
     console.warn('Fundamental fetch failed:', e.message);
     document.getElementById('fundamentalGrid').innerHTML =
-      '<div class="fundamental-empty">Data fundamental belum tersedia — akan muncul setelah cron berikutnya berjalan.</div>';
+      '<div class="fundamental-empty">Gagal memuat data fundamental. Coba refresh tab CAL.</div>';
   }
 }
 
 function renderFundamentals() {
   const grid = document.getElementById('fundamentalGrid');
   if (!fundamentalData || Object.keys(fundamentalData).length === 0) {
-    grid.innerHTML = '<div class="fundamental-empty">Belum ada data fundamental. Cron akan mengisi data ini secara otomatis dari rilis ForexFactory.</div>';
+    grid.innerHTML = '<div class="fundamental-empty">Belum ada actual release yang terdeteksi. Data muncul otomatis setelah event ekonomi dirilis di ForexFactory.</div>';
     return;
   }
 
