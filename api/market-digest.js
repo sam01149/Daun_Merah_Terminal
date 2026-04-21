@@ -73,7 +73,7 @@ module.exports = async function handler(req, res) {
   // 4. Gemini
   let article = null, method = 'groq';
   if (GROQ_KEY && recentItems.length > 0) {
-    const prompt = `Kamu adalah analis pasar keuangan senior yang menulis untuk trader forex Indonesia dengan gaya trading macro discretionary.
+    const prompt = `Kamu adalah analis pasar keuangan senior yang menulis market briefing harian untuk trader forex Indonesia dengan gaya macro discretionary.
 
 WAKTU SAAT INI: ${dateStr}, ${timeStr}
 
@@ -84,22 +84,25 @@ ${headlinesBlock}
 ${calBlock}
 
 TUGAS:
-Tulis analisis pasar dalam TIGA PARAGRAF terpisah dengan baris kosong di antara paragraf.
+Tulis market briefing komprehensif untuk trader profesional. Tidak ada batasan jumlah paragraf — tulis sepanjang yang diperlukan agar semua informasi relevan tersampaikan. Bisa lebih atau kurang dari 3 paragraf tergantung kompleksitas situasi pasar saat ini.
 
-Paragraf 1 — KONDISI PASAR: Tema dominan dan berita paling signifikan dari headlines di atas. Apa yang sedang terjadi di pasar saat ini. Kalimat faktual, langsung.
+Cakup semua tema berikut yang relevan berdasarkan data di atas (lewati jika tidak ada data yang relevan):
 
-Paragraf 2 — DAMPAK CURRENCY: Dampak terhadap pair utama yang terdampak (sebutkan pair spesifik seperti EUR/USD, USD/JPY, dll jika relevan). Jelaskan arah tekanan dan potensi pergerakan berdasarkan berita yang ada.
+Kondisi pasar dan narrative macro dominan — apa yang sedang terjadi, mengapa penting, dan bagaimana korelasinya antar aset.
 
-Paragraf 3 — KONTEKS KALENDER: Berdasarkan event high-impact yang akan datang, mana yang paling berpotensi menggerakkan pasar? Berikan konteks singkat apakah event tersebut mengkonfirmasi atau mengontradiksi kondisi pasar saat ini. Sertakan waktu WIB-nya.
+Dampak per currency dan pair — untuk setiap currency atau pair yang terdampak oleh headline, jelaskan arah tekanan, sentimen pasar terhadap CB terkait, dan potensi pergerakan. Sebutkan pair spesifik (EUR/USD, USD/JPY, GBP/USD, dll) kalau relevan.
 
-FORMAT WAJIB:
-- Tiga paragraf terpisah dengan baris kosong di antara
-- Tidak ada bullet list, tidak ada heading, tidak ada emoji, tidak ada bold
-- Kalimat aktif, langsung ke poin
-- Maksimal 3 paragraf, tidak lebih
-- Seluruh output hanya dalam Bahasa Indonesia
+Konteks kalender — event high-impact paling krusial dalam 3 hari ke depan beserta waktu WIB-nya. Apakah event tersebut mengkonfirmasi atau mengontradiksi kondisi pasar saat ini, dan implikasinya untuk timing entry/exit.
 
-Balas hanya dengan tiga paragraf tersebut, tidak ada teks lain.`;
+Risiko dan divergensi — jika ada geopolitical risk, divergensi kebijakan antar CB, atau kondisi pasar yang memerlukan kehati-hatian ekstra sebelum mengambil posisi.
+
+FORMAT:
+- Paragraf naratif mengalir tanpa bullet list, tanpa heading, tanpa label section, tanpa emoji, tanpa bold/italic
+- Kalimat aktif dan langsung ke poin
+- Seluruh output dalam Bahasa Indonesia
+- Tidak ada kalimat pembuka seperti "Berikut adalah..." atau penutup seperti "Demikian briefing..."
+
+Balas hanya dengan briefing tersebut.`;
 
     try {
       const groqRes = await fetch(GROQ_URL, {
@@ -112,7 +115,7 @@ Balas hanya dengan tiga paragraf tersebut, tidak ada teks lain.`;
           model: GROQ_MODEL,
           messages: [{ role: 'user', content: prompt }],
           temperature: 0.3,
-          max_tokens: 800,
+          max_tokens: 1500,
         }),
         signal: AbortSignal.timeout(25000),
       });

@@ -61,6 +61,9 @@ module.exports = async function handler(req, res) {
   items.forEach(i => seenGuids.add(i.guid));
   try { await redisCmd('SET','seen_guids',JSON.stringify([...seenGuids].slice(-500)),'EX',86400); } catch(e) {}
 
+  // Update fundamental snapshot from ForexFactory actuals (runs every cron tick)
+  updateFundamentalSnapshot().catch(e => console.warn('Fundamental update error:', e.message));
+
   if (newItems.length === 0) return res.status(200).json({ status: isFirst ? 'Initialized' : 'No new items' });
 
   await sendTelegram(newItems);
@@ -118,6 +121,88 @@ function parseRSS(xml) {
     if(guid&&title)items.push({title,guid,link});
   }
   return items;
+}
+
+async function updateFundamentalSnapshot() {
+  const FF_THIS_WEEK = 'https://nfs.faireconomy.media/ff_calendar_thisweek.xml';
+  const FF_NEXT_WEEK = 'https://nfs.faireconomy.media/ff_calendar_nextweek.xml';
+  const MAJOR_CURRENCIES = new Set(['USD','EUR','GBP','JPY','CAD','AUD','NZD','CHF']);
+  const INDICATORS = {
+    'CPI y/y':           ['cpi y/y'],
+    'Core CPI y/y':      ['core cpi y/y'],
+    'CPI q/q':           ['cpi q/q'],
+    'CPI m/m':           ['cpi m/m'],
+    'Unemployment Rate': ['unemployment rate'],
+    'Non-Farm Payrolls': ['non-farm payrolls', 'nonfarm payroll'],
+    'Employment Change': ['employment change'],
+    'GDP q/q':           ['gdp q/q'],
+    'GDP m/m':           ['gdp m/m'],
+    'Retail Sales m/m':  ['retail sales m/m'],
+    'Trade Balance':     ['trade balance'],
+    'Manufacturing PMI': ['manufacturing pmi', 'ism manufacturing'],
+    'Services PMI':      ['services pmi', 'ism services', 'composite pmi'],
+  };
+
+  const [r1, r2] = await Promise.allSettled([
+    fetch(FF_THIS_WEEK, { headers:{'User-Agent':'Mozilla/5.0 (compatible; FJFeed/1.0)'}, signal:AbortSignal.timeout(10000) }),
+    fetch(FF_NEXT_WEEK, { headers:{'User-Agent':'Mozilla/5.0 (compatible; FJFeed/1.0)'}, signal:AbortSignal.timeout(10000) }),
+  ]);
+
+  let events = [];
+  for (const r of [r1, r2]) {
+    if (r.status === 'fulfilled' && r.value.ok) {
+      const xml = await r.value.text();
+      events = events.concat(parseFFXMLBasic(xml));
+    }
+  }
+
+  const withActuals = events.filter(e => e.actual && MAJOR_CURRENCIES.has(e.currency));
+  if (withActuals.length === 0) return;
+
+  let snapshot = {};
+  try { const raw = await redisCmd('GET','fundamental_snapshot'); if (raw) snapshot = JSON.parse(raw); } catch(e) {}
+
+  let updated = false;
+  for (const ev of withActuals) {
+    const name = ev.event.toLowerCase();
+    for (const [indicator, kws] of Object.entries(INDICATORS)) {
+      if (kws.some(kw => name.includes(kw))) {
+        if (!snapshot[ev.currency]) snapshot[ev.currency] = {};
+        const existing = snapshot[ev.currency][indicator];
+        if (!existing || ev.date >= existing.date) {
+          snapshot[ev.currency][indicator] = {
+            actual: ev.actual,
+            previous: ev.previous || null,
+            forecast: ev.forecast || null,
+            date: ev.date,
+            event: ev.event,
+            updated_at: new Date().toISOString(),
+          };
+          updated = true;
+        }
+        break;
+      }
+    }
+  }
+
+  if (updated) {
+    await redisCmd('SET', 'fundamental_snapshot', JSON.stringify(snapshot));
+    console.log('Fundamental snapshot updated:', Object.keys(snapshot).join(','));
+  }
+}
+
+function parseFFXMLBasic(xml) {
+  const events = [], re = /<event>([\s\S]*?)<\/event>/g; let m;
+  while ((m = re.exec(xml)) !== null) {
+    const b = m[1];
+    const get = tag => { const r = new RegExp(`<${tag}>([\\s\\S]*?)<\\/${tag}>`).exec(b); if (!r) return ''; return r[1].replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g,'$1').trim(); };
+    const title = get('title'), country = get('country').toUpperCase(), date = get('date');
+    const actual = get('actual'), previous = get('previous'), forecast = get('forecast');
+    if (!title || !country || !actual) continue;
+    const dp = date.match(/(\d{2})-(\d{2})-(\d{4})/); if (!dp) continue;
+    events.push({ date:`${dp[3]}-${dp[1]}-${dp[2]}`, currency:country, event:title, actual, previous, forecast });
+  }
+  return events;
 }
 
 function detectCat(t) {
