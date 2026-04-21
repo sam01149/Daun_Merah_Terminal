@@ -301,52 +301,142 @@ body {
   border-radius: 4px 4px 0 0; border-bottom-color: var(--green);
 }
 
-.cal-panel-inner { padding: 10px 12px 16px; }
-.cal-date-group { margin-bottom: 18px; }
-.cal-date-label {
-  font-size: 9px; color: var(--muted); letter-spacing: .8px;
-  text-transform: uppercase; padding: 6px 0 8px;
-  border-bottom: 1px solid var(--border); margin-bottom: 8px;
+/* CAL TOOLBAR */
+.cal-toolbar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 12px 6px; gap: 8px; flex-wrap: wrap;
 }
+.cal-filter-group { display: flex; gap: 6px; flex-wrap: wrap; }
+.cal-filter-btn {
+  padding: 4px 10px; border-radius: 20px; border: 1px solid var(--border);
+  background: transparent; color: var(--muted);
+  font-family: 'DM Mono', monospace; font-size: 9px; letter-spacing: .4px;
+  cursor: pointer; transition: all .15s; text-transform: uppercase;
+}
+.cal-filter-btn.active-high   { border-color: #ff4757; color: #ff4757; background: rgba(255,71,87,.1); }
+.cal-filter-btn.active-medium { border-color: var(--yellow); color: var(--yellow); background: rgba(255,211,42,.1); }
+.cal-filter-btn.active-all    { border-color: var(--accent); color: var(--accent); background: rgba(0,229,255,.08); }
+.cal-count-badge {
+  font-size: 9px; color: var(--muted); padding: 4px 0;
+  letter-spacing: .3px;
+}
+
+.cal-panel-inner { padding: 4px 12px 16px; }
+.cal-date-group { margin-bottom: 20px; }
+.cal-date-label {
+  font-size: 9px; color: var(--muted); letter-spacing: 1px;
+  text-transform: uppercase; padding: 8px 0 10px;
+  border-bottom: 1px solid var(--border); margin-bottom: 10px;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.cal-date-count { font-size: 9px; color: var(--muted); }
+
+/* EVENT CARD */
 .cal-event {
   background: var(--surface); border: 1px solid var(--border);
-  border-radius: 8px; padding: 10px 12px; margin-bottom: 6px;
-  display: flex; align-items: flex-start; gap: 10px;
+  border-radius: 10px; padding: 0; margin-bottom: 8px;
   position: relative; overflow: hidden;
+  transition: border-color .15s;
 }
+.cal-event:hover { border-color: rgba(255,255,255,.12); }
 .cal-event::before {
   content: ''; position: absolute; left: 0; top: 0; bottom: 0;
   width: 3px; border-radius: 3px 0 0 3px;
 }
-.cal-cur-USD::before { background: #60a5fa; }
-.cal-cur-EUR::before { background: var(--accent); }
-.cal-cur-GBP::before { background: var(--purple); }
-.cal-cur-JPY::before { background: var(--yellow); }
-.cal-cur-CAD::before { background: var(--orange); }
-.cal-cur-AUD::before { background: var(--green); }
-.cal-cur-NZD::before { background: #34d399; }
-.cal-cur-CHF::before { background: var(--red); }
+.cal-event.impact-high::before   { background: #ff4757; box-shadow: 2px 0 8px rgba(255,71,87,.25); }
+.cal-event.impact-medium::before { background: var(--yellow); }
 
+.cal-cur-USD::before { background: #60a5fa !important; }
+.cal-cur-EUR::before { background: var(--accent) !important; }
+.cal-cur-GBP::before { background: var(--purple) !important; }
+.cal-cur-JPY::before { background: var(--yellow) !important; }
+.cal-cur-CAD::before { background: var(--orange) !important; }
+.cal-cur-AUD::before { background: var(--green) !important; }
+.cal-cur-NZD::before { background: #34d399 !important; }
+.cal-cur-CHF::before { background: var(--red) !important; }
+
+.cal-event-main {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 12px 14px 10px 16px;
+}
+.cal-time-col { flex-shrink: 0; min-width: 54px; }
 .cal-time {
-  font-family: 'DM Mono', monospace; font-size: 11px;
-  color: var(--accent); min-width: 52px; padding-top: 1px; flex-shrink: 0;
+  font-family: 'DM Mono', monospace; font-size: 12px;
+  color: var(--accent); font-weight: 400; line-height: 1;
 }
-.cal-body { flex: 1; }
+.cal-time-label {
+  font-size: 8px; color: var(--muted); margin-top: 3px; letter-spacing: .3px;
+}
+.cal-body { flex: 1; min-width: 0; }
+.cal-event-header {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 8px; margin-bottom: 6px;
+}
 .cal-event-name {
-  font-family: 'Syne', sans-serif; font-size: 12px;
-  color: var(--text); line-height: 1.4; margin-bottom: 4px;
+  font-family: 'Syne', sans-serif; font-size: 13px; font-weight: 400;
+  color: var(--text); line-height: 1.35; flex: 1;
 }
+.cal-badges { display: flex; align-items: center; gap: 5px; flex-shrink: 0; }
 .cal-cur-tag {
-  display: inline-block; font-size: 8px; padding: 2px 6px;
-  border-radius: 3px; letter-spacing: .5px;
-  background: rgba(255,255,255,.06); color: var(--muted); margin-right: 4px;
+  display: inline-flex; align-items: center;
+  font-size: 9px; padding: 2px 7px; border-radius: 3px;
+  letter-spacing: .5px; font-weight: 400;
+  background: rgba(255,255,255,.06); color: var(--text);
 }
-.cal-impact-high {
-  display: inline-block; font-size: 8px; padding: 2px 6px;
-  border-radius: 3px; letter-spacing: .5px;
-  background: rgba(255,71,87,.15); color: #ff4757;
+.cal-impact-badge {
+  display: inline-flex; align-items: center; gap: 3px;
+  font-size: 8px; padding: 2px 6px; border-radius: 3px; letter-spacing: .5px;
 }
+.cal-impact-badge.high   { background: rgba(255,71,87,.15); color: #ff4757; }
+.cal-impact-badge.medium { background: rgba(255,211,42,.12); color: var(--yellow); }
+
+/* DATA ROW: forecast / previous / actual */
+.cal-data-row {
+  display: flex; gap: 0;
+  border-top: 1px solid var(--border);
+  background: rgba(0,0,0,.15);
+}
+.cal-data-cell {
+  flex: 1; padding: 7px 10px; text-align: center;
+  border-right: 1px solid var(--border);
+}
+.cal-data-cell:last-child { border-right: none; }
+.cal-data-label {
+  font-size: 8px; color: var(--muted); letter-spacing: .5px;
+  text-transform: uppercase; margin-bottom: 3px;
+}
+.cal-data-val {
+  font-family: 'DM Mono', monospace; font-size: 12px;
+  color: var(--text); font-weight: 400;
+}
+.cal-data-val.actual-beat   { color: var(--green); }
+.cal-data-val.actual-miss   { color: var(--red); }
+.cal-data-val.actual-inline { color: var(--yellow); }
+.cal-data-val.no-data       { color: var(--muted); font-size: 10px; }
+
+/* CURRENCY LEGEND */
+.cal-legend {
+  display: flex; flex-wrap: wrap; gap: 6px;
+  padding: 8px 12px 4px;
+}
+.cal-legend-item {
+  display: flex; align-items: center; gap: 4px;
+  font-size: 9px; color: var(--muted); letter-spacing: .3px;
+}
+.cal-legend-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+}
+
 .cal-empty { text-align: center; padding: 50px 20px; color: var(--muted); font-size: 12px; line-height: 1.7; }
+.cal-refresh-btn {
+  display: flex; align-items: center; gap: 5px;
+  padding: 5px 12px; border-radius: 5px;
+  border: 1px solid var(--border); background: transparent;
+  color: var(--muted); font-family: 'DM Mono', monospace; font-size: 9px;
+  cursor: pointer; transition: all .2s;
+}
+.cal-refresh-btn:active { border-color: var(--green); color: var(--green); }
+.cal-refresh-btn.spinning svg { animation: spin .7s linear infinite; }
 
 .install-banner {
   flex-shrink:0; display:none;
@@ -449,8 +539,25 @@ body {
 
 <!-- CALENDAR PANEL -->
 <div class="feed-scroll" id="calPanel" style="display:none">
+  <div class="cal-toolbar">
+    <div class="cal-filter-group">
+      <button class="cal-filter-btn active-all" id="calFilterAll" onclick="setCalFilter('all')">Semua</button>
+      <button class="cal-filter-btn" id="calFilterHigh" onclick="setCalFilter('high')">🔴 High</button>
+      <button class="cal-filter-btn" id="calFilterMed" onclick="setCalFilter('medium')">🟡 Medium</button>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px">
+      <span class="cal-count-badge" id="calCountBadge">—</span>
+      <button class="cal-refresh-btn" id="calRefreshBtn" onclick="fetchCalendar()">
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>
+          <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+        </svg>
+        REFRESH
+      </button>
+    </div>
+  </div>
   <div class="cal-panel-inner" id="calPanelInner">
-    <div class="cal-empty">Tap tombol di bawah untuk load kalender ekonomi.</div>
+    <div class="cal-empty">Memuat kalender ekonomi...</div>
   </div>
 </div>
 
@@ -863,7 +970,7 @@ document.querySelectorAll('.ftab').forEach(btn => {
       activeView = 'cal';
       document.getElementById('calPanel').style.display = 'block';
       const now = Date.now();
-      if (!calData || (now - calFetchedAt) > 30 * 60 * 1000) fetchCalendar();
+      if (!calData || (now - calFetchedAt) > 15 * 60 * 1000) fetchCalendar();
       else renderCalendar();
     } else {
       activeView = 'feed';
@@ -877,7 +984,9 @@ document.querySelectorAll('.ftab').forEach(btn => {
 // ── CALENDAR ─────────────────────────────────────────────
 async function fetchCalendar() {
   const inner = document.getElementById('calPanelInner');
+  const btn = document.getElementById('calRefreshBtn');
   inner.innerHTML = `<div class="cal-empty">Memuat kalender ekonomi...</div>`;
+  if (btn) btn.classList.add('spinning');
   try {
     const res = await fetch('/api/calendar', { signal: AbortSignal.timeout(15000) });
     if (!res.ok) throw new Error('HTTP ' + res.status);
@@ -889,34 +998,132 @@ async function fetchCalendar() {
   } catch(e) {
     inner.innerHTML = `<div class="cal-empty">Gagal memuat kalender.<br><small style="color:#4a5568">${e.message}</small><br><br>
       <button class="ringkasan-gen-btn" style="margin:0 auto;width:auto;padding:8px 20px" onclick="fetchCalendar()">Coba Lagi</button></div>`;
+  } finally {
+    if (btn) btn.classList.remove('spinning');
   }
 }
+
+// Calendar filter state
+let calFilter = 'all'; // 'all' | 'high' | 'medium'
+
+function setCalFilter(f) {
+  calFilter = f;
+  document.getElementById('calFilterAll').className  = 'cal-filter-btn' + (f==='all'    ? ' active-all'    : '');
+  document.getElementById('calFilterHigh').className = 'cal-filter-btn' + (f==='high'   ? ' active-high'   : '');
+  document.getElementById('calFilterMed').className  = 'cal-filter-btn' + (f==='medium' ? ' active-medium' : '');
+  renderCalendar();
+}
+
+function compareActualForecast(actual, forecast) {
+  if (!actual || !forecast) return '';
+  const a = parseFloat(actual.replace(/[^0-9.\-]/g,''));
+  const f = parseFloat(forecast.replace(/[^0-9.\-]/g,''));
+  if (isNaN(a) || isNaN(f)) return '';
+  if (a > f) return 'actual-beat';
+  if (a < f) return 'actual-miss';
+  return 'actual-inline';
+}
+
+const CUR_COLORS = {
+  USD:'#60a5fa', EUR:'#00e5ff', GBP:'#a78bfa',
+  JPY:'#ffd32a', CAD:'#ff6b35', AUD:'#00c896',
+  NZD:'#34d399', CHF:'#ff4757',
+};
 
 function renderCalendar() {
   const inner = document.getElementById('calPanelInner');
   if (!calData || calData.length === 0) {
-    inner.innerHTML = `<div class="cal-empty">Tidak ada event high-impact hari ini / besok.</div>`;
+    inner.innerHTML = `<div class="cal-empty">Tidak ada event kalender untuk ditampilkan.</div>`;
+    document.getElementById('calCountBadge').textContent = '0 event';
     return;
   }
+
+  // Apply filter
+  const filtered = calFilter === 'all' ? calData
+    : calData.filter(e => e.impact.toLowerCase() === calFilter);
+
+  document.getElementById('calCountBadge').textContent = `${filtered.length} event`;
+
+  if (filtered.length === 0) {
+    inner.innerHTML = `<div class="cal-empty">Tidak ada event untuk filter ini.</div>`;
+    return;
+  }
+
+  // Group by date
   const groups = {};
-  calData.forEach(ev => {
+  filtered.forEach(ev => {
     if (!groups[ev.date]) groups[ev.date] = [];
     groups[ev.date].push(ev);
   });
-  inner.innerHTML = Object.entries(groups).map(([date, events]) => {
+
+  // Currency legend
+  const currencies = [...new Set(filtered.map(e => e.currency))].sort();
+  const legend = `<div class="cal-legend">
+    ${currencies.map(c => `
+      <div class="cal-legend-item">
+        <div class="cal-legend-dot" style="background:${CUR_COLORS[c]||'#888'}"></div>
+        ${c}
+      </div>`).join('')}
+  </div>`;
+
+  const eventsHtml = Object.entries(groups).map(([date, events]) => {
     const label = formatCalDate(date);
-    const rows = events.map(ev => `
-      <div class="cal-event cal-cur-${ev.currency}">
-        <div class="cal-time">${ev.time_wib}</div>
-        <div class="cal-body">
-          <div class="cal-event-name">${escHtml(ev.event)}</div>
-          <span class="cal-cur-tag">${ev.currency}</span>
-          <span class="cal-impact-high">HIGH</span>
-        </div>
-      </div>`).join('');
+    const wibNow = new Date(Date.now() + 7*3600000);
+    const todayStr = `${wibNow.getUTCFullYear()}-${String(wibNow.getUTCMonth()+1).padStart(2,'0')}-${String(wibNow.getUTCDate()).padStart(2,'0')}`;
+    const isToday = date === todayStr;
+
+    const rows = events.map(ev => {
+      const impactClass = ev.impact === 'High' ? 'high' : 'medium';
+      const hasData = ev.forecast || ev.previous || ev.actual;
+      const actualClass = compareActualForecast(ev.actual, ev.forecast);
+
+      const dataRow = hasData ? `
+        <div class="cal-data-row">
+          <div class="cal-data-cell">
+            <div class="cal-data-label">Forecast</div>
+            <div class="cal-data-val ${!ev.forecast?'no-data':''}">${ev.forecast || '—'}</div>
+          </div>
+          <div class="cal-data-cell">
+            <div class="cal-data-label">Previous</div>
+            <div class="cal-data-val ${!ev.previous?'no-data':''}">${ev.previous || '—'}</div>
+          </div>
+          <div class="cal-data-cell">
+            <div class="cal-data-label">Actual</div>
+            <div class="cal-data-val ${ev.actual ? actualClass : 'no-data'}">${ev.actual || '—'}</div>
+          </div>
+        </div>` : '';
+
+      return `
+        <div class="cal-event cal-cur-${ev.currency} impact-${impactClass}">
+          <div class="cal-event-main">
+            <div class="cal-time-col">
+              <div class="cal-time">${ev.time_wib === 'Tentative' ? 'TBD' : ev.time_wib.replace(' WIB','')}</div>
+              <div class="cal-time-label">${ev.time_wib === 'Tentative' ? 'Tentative' : 'WIB'}</div>
+            </div>
+            <div class="cal-body">
+              <div class="cal-event-header">
+                <div class="cal-event-name">${escHtml(ev.event)}</div>
+                <div class="cal-badges">
+                  <span class="cal-cur-tag" style="color:${CUR_COLORS[ev.currency]||'#888'};background:${CUR_COLORS[ev.currency]||'#888'}22">${ev.currency}</span>
+                  <span class="cal-impact-badge ${impactClass}">${ev.impact === 'High' ? '● HIGH' : '● MED'}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          ${dataRow}
+        </div>`;
+    }).join('');
+
     return `<div class="cal-date-group">
-      <div class="cal-date-label">${label}</div>${rows}</div>`;
+      <div class="cal-date-label">
+        <span>${isToday ? '▶ TODAY — ' : ''}${label}</span>
+        <span class="cal-date-count">${events.length} event</span>
+      </div>
+      ${rows}
+    </div>`;
   }).join('');
+
+  inner.innerHTML = legend + eventsHtml;
 }
 
 function formatCalDate(dateStr) {
