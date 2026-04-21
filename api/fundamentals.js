@@ -7,19 +7,35 @@ const CACHE_TTL_MS = 15 * 60 * 1000;
 const MAJOR_CURRENCIES = new Set(['USD','EUR','GBP','JPY','CAD','AUD','NZD','CHF']);
 
 const INDICATORS = {
-  'CPI y/y':           ['cpi y/y'],
-  'Core CPI y/y':      ['core cpi y/y'],
-  'CPI q/q':           ['cpi q/q'],
-  'CPI m/m':           ['cpi m/m'],
-  'Unemployment Rate': ['unemployment rate'],
-  'Non-Farm Payrolls': ['non-farm payrolls', 'nonfarm payroll'],
-  'Employment Change': ['employment change'],
-  'GDP q/q':           ['gdp q/q'],
-  'GDP m/m':           ['gdp m/m'],
-  'Retail Sales m/m':  ['retail sales m/m'],
-  'Trade Balance':     ['trade balance'],
-  'Manufacturing PMI': ['manufacturing pmi', 'ism manufacturing'],
-  'Services PMI':      ['services pmi', 'ism services', 'composite pmi'],
+  // Inflation
+  'CPI y/y':              ['cpi y/y'],
+  'Core CPI y/y':         ['core cpi y/y'],
+  'CPI q/q':              ['cpi q/q'],
+  'CPI m/m':              ['cpi m/m'],
+  'Flash CPI y/y':        ['flash cpi y/y', 'cpi flash estimate y/y', 'hicp flash y/y'],
+  'Core Flash CPI y/y':   ['core flash cpi y/y', 'core hicp flash y/y'],
+  'PCE Price Index y/y':  ['pce price index y/y', 'core pce price index y/y', 'core pce'],
+  'National CPI y/y':     ['national cpi y/y'],
+  'PPI m/m':              ['ppi m/m', 'producer price index m/m'],
+  // Labor Market
+  'Unemployment Rate':    ['unemployment rate'],
+  'Non-Farm Payrolls':    ['non-farm payrolls', 'nonfarm payroll'],
+  'Employment Change':    ['employment change'],
+  'Claimant Count Change':['claimant count change', 'claimant count'],
+  'Initial Jobless Claims':['initial jobless claims', 'unemployment claims'],
+  'Average Earnings':     ['average earnings', 'average hourly earnings'],
+  // Growth
+  'GDP q/q':              ['gdp q/q', 'gdp growth rate q/q'],
+  'GDP y/y':              ['gdp y/y', 'gdp growth rate y/y'],
+  'GDP m/m':              ['gdp m/m'],
+  // Consumption & Trade
+  'Retail Sales m/m':     ['retail sales m/m'],
+  'Retail Sales y/y':     ['retail sales y/y'],
+  'Trade Balance':        ['trade balance'],
+  'Current Account':      ['current account'],
+  // PMI
+  'Manufacturing PMI':    ['manufacturing pmi', 'ism manufacturing'],
+  'Services PMI':         ['services pmi', 'ism services', 'composite pmi'],
 };
 
 module.exports = async function handler(req, res) {
