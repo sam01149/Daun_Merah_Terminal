@@ -207,6 +207,7 @@ Balas hanya dengan tiga paragraf tersebut, tidak ada teks lain.`;
           console.log('Groq bias parsed:', JSON.stringify(parsed));
 
           const VALID_BIASES = ['Hawkish','Cautious Hawkish','Neutral','Data Dependent','On Hold','Cautious Dovish','Dovish','Split'];
+          const VALID_CURRENCIES = new Set(['USD','EUR','GBP','JPY','CAD','AUD','NZD','CHF']);
           const now = new Date().toISOString();
 
           // Load existing bias from Redis
@@ -216,16 +217,19 @@ Balas hanya dengan tiga paragraf tersebut, tidak ada teks lain.`;
             if (raw) existing = JSON.parse(raw);
           } catch(e) {}
 
-          // Merge new bias
+          // Merge new bias — only 8 major currencies
           for (const [cur, bias] of Object.entries(parsed)) {
-            if (VALID_BIASES.includes(bias)) {
+            if (VALID_CURRENCIES.has(cur) && VALID_BIASES.includes(bias)) {
               existing[cur] = { bias, updated_at: now };
               biasUpdated.push(cur);
             }
           }
 
-          // Save back to Redis (no expiry — persist until next update)
-          await redisCmd('SET', 'cb_bias', JSON.stringify(existing));
+          // Save back to Redis
+          if (biasUpdated.length > 0) {
+            await redisCmd('SET', 'cb_bias', JSON.stringify(existing));
+            console.log('CB bias saved:', JSON.stringify(biasUpdated));
+          }
         }
       } catch(e) {
         console.warn('Bias assessment failed:', e.message);

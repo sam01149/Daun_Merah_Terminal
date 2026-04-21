@@ -33,7 +33,9 @@ module.exports = async function handler(req, res) {
   let biasData = {};
   try {
     const raw = await redisCmd('GET', 'cb_bias');
+    console.log('cb_bias raw from Redis:', raw ? raw.substring(0,200) : 'NULL');
     if (raw) biasData = JSON.parse(raw);
+    console.log('cb_bias parsed keys:', Object.keys(biasData));
   } catch(e) {
     console.warn('Redis cb_bias fetch failed:', e.message);
   }
