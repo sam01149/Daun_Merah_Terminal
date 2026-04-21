@@ -4,7 +4,7 @@
 const FF_LAST_WEEK = 'https://nfs.faireconomy.media/ff_calendar_lastweek.xml';
 const FF_THIS_WEEK = 'https://nfs.faireconomy.media/ff_calendar_thisweek.xml';
 const FF_NEXT_WEEK = 'https://nfs.faireconomy.media/ff_calendar_nextweek.xml';
-const CACHE_TTL_MS = 15 * 60 * 1000;
+const CACHE_TTL_MS = 3 * 60 * 1000;
 const MAJOR_CURRENCIES = new Set(['USD','EUR','GBP','JPY','CAD','AUD','NZD','CHF']);
 
 const INDICATORS = {

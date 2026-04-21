@@ -716,7 +716,10 @@ body {
   <div class="fundamental-section" id="fundamentalSection">
     <div class="fundamental-title">
       <span>Fundamental Snapshot</span>
-      <span id="fundamentalUpdatedAt" style="color:var(--muted);font-size:8px"></span>
+      <div style="display:flex;align-items:center;gap:8px">
+        <span id="fundamentalUpdatedAt" style="color:var(--muted);font-size:8px"></span>
+        <button onclick="forceFetchFundamentals()" style="background:none;border:1px solid var(--border);color:var(--muted);font-size:8px;padding:2px 6px;border-radius:3px;cursor:pointer">↻ REFRESH</button>
+      </div>
     </div>
     <div id="fundamentalGrid">
       <div class="fundamental-empty">Memuat data fundamental...</div>
@@ -1315,6 +1318,11 @@ const CUR_COLORS_FUND = {
   NZD:'#34d399', CHF:'#ff4757',
 };
 const CURRENCY_ORDER = ['USD','EUR','GBP','JPY','CAD','AUD','NZD','CHF'];
+
+async function forceFetchFundamentals() {
+  fundamentalFetchedAt = 0; // reset client cache
+  await fetchFundamentals();
+}
 
 async function fetchFundamentals() {
   try {
