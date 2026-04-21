@@ -168,6 +168,8 @@ Balas hanya dengan tiga paragraf tersebut, tidak ada teks lain.`;
       }
     }
 
+    console.log('relevantCurrencies:', JSON.stringify(relevantCurrencies));
+    console.log('recentItems sample:', recentItems.slice(0,3).map(i=>i.title));
     if (relevantCurrencies.length > 0) {
       const biasHeadlines = recentItems.map((i,idx) => (idx+1) + '. ' + i.title).join('\n');
       const biasCurrencies = relevantCurrencies.join(', ');
