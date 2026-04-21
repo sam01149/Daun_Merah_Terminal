@@ -183,6 +183,7 @@ Balas hanya dengan tiga paragraf tersebut, tidak ada teks lain.`;
         'Only include currencies where you have enough evidence from the headlines. If insufficient evidence for a currency, omit it.',
       ].join('\n');
 
+      console.log('Starting Groq Call 2 for currencies:', relevantCurrencies);
       try {
         const biasRes = await fetch(GROQ_URL, {
           method: 'POST',
@@ -196,6 +197,7 @@ Balas hanya dengan tiga paragraf tersebut, tidak ada teks lain.`;
           signal: AbortSignal.timeout(15000),
         });
 
+        console.log('Groq Call 2 status:', biasRes.status);
         if (biasRes.ok) {
           const biasData = await biasRes.json();
           const rawBias = biasData?.choices?.[0]?.message?.content?.trim() || '';
