@@ -1,9 +1,6 @@
 // api/cb-status.js
 // Returns static CB data merged with latest bias from Redis
 
-const REDIS_URL   = process.env.UPSTASH_REDIS_REST_URL;
-const REDIS_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
-
 const CB_DATA = {
   USD: { currency:'USD', bank:'Federal Reserve',            short:'Fed',  rate:4.50, last_meeting:'2026-03-19', last_decision:'hold', last_bps:0   },
   EUR: { currency:'EUR', bank:'European Central Bank',      short:'ECB',  rate:2.40, last_meeting:'2026-03-06', last_decision:'cut',  last_bps:-25 },
@@ -16,6 +13,12 @@ const CB_DATA = {
 };
 
 async function redisCmd(...args) {
+  const REDIS_URL   = process.env.UPSTASH_REDIS_REST_URL;
+  const REDIS_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
+  if (!REDIS_URL || !REDIS_TOKEN) {
+    console.warn('Redis env vars missing in cb-status');
+    return null;
+  }
   const res = await fetch(REDIS_URL, {
     method: 'POST',
     headers: { 'Authorization': `Bearer ${REDIS_TOKEN}`, 'Content-Type': 'application/json' },
