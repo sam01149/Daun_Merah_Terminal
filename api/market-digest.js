@@ -83,7 +83,7 @@ module.exports = async function handler(req, res) {
   // 4. Groq Call 1: market briefing
   let article = null, method = 'groq';
   if (GROQ_KEY && recentItems.length > 0) {
-    const prompt = `Kamu adalah analis pasar keuangan senior yang menulis untuk trader forex Indonesia dengan gaya macro discretionary. Kamu menulis untuk trader yang sudah berpengalaman — tidak perlu penjelasan dasar.
+    const prompt = `Kamu adalah analis pasar keuangan senior. Pembacamu adalah trader forex Indonesia yang sudah berpengalaman dengan gaya macro discretionary. Mereka sudah tahu cara baca chart dan sudah punya bias — yang mereka butuhkan dari kamu adalah konteks yang tidak bisa mereka lihat sendiri dari harga.
 
 WAKTU SAAT INI: ${dateStr}, ${timeStr}
 
@@ -96,21 +96,32 @@ ${calBlock}
 === RINGKASAN SESI SEBELUMNYA ===
 ${historyBlock}
 
-TUGAS:
-Tulis analisis pasar berdasarkan data di atas.
+CARA MENULIS:
 
-ATURAN WAJIB:
-- Setiap kalimat harus membawa informasi yang tidak bisa disimpulkan sendiri oleh trader hanya dari melihat harga
-- Kalau ada sinyal yang kontradiktif antara satu berita dengan berita lain, sebutkan secara eksplisit — jangan dihindari atau dihaluskan
-- Tidak ada kalimat generik: dilarang tulis "trader harus berhati-hati", "pasar masih volatile", "pergerakan tergantung data", atau frasa serupa yang tidak membawa informasi spesifik
-- Kesimpulan bias harus tegas — konfirmasi atau kontradiksi terhadap narrative macro yang berlaku, bukan "tergantung"
-- Kalau data di atas tidak cukup untuk kesimpulan tertentu, nyatakan itu secara eksplisit daripada mengkarang
-- Singgung pidato atau statement pejabat central bank kalau ada di headlines — ini penting untuk bias assessment
-- Panjang tulisan mengikuti kadar informasi yang tersedia — jangan padding, jangan potong kalau masih ada yang substansial
-- Seluruh output dalam Bahasa Indonesia
-- Tidak ada bullet list, tidak ada heading, tidak ada emoji, tidak ada bold
+Tulis seperti seorang analis yang sedang briefing rekan sesama trader sebelum sesi dimulai. Langsung ke poin. Tidak ada basa-basi pembuka.
 
-Tulis analisis sekarang.`;
+Untuk setiap tema yang kamu tulis, ikuti pola ini:
+— Apa yang terjadi (fakta spesifik dari headlines, sebut angka kalau ada)
+— Apa artinya untuk pair atau currency yang terdampak (arah tekanan, bukan sekadar "berpengaruh")
+— Kalau ada sinyal yang saling bertentangan dalam tema yang sama, sebut kedua sisi dan nyatakan mana yang lebih dominan menurut kamu
+
+Untuk event kalender:
+— Sebut event paling krusial, waktu WIB-nya, dan konteksnya: apakah data ini akan konfirmasi atau tantang narrative yang sedang berjalan?
+
+Untuk statement pejabat central bank yang ada di headlines:
+— Kalau mereka bicara soal rate path atau inflation — analisa implikasinya
+— Kalau mereka tidak bicara soal itu (misalnya bicara soal teknologi, regulasi, dll) — nyatakan bahwa tidak ada sinyal kebijakan dari mereka hari ini, itu sendiri informasi
+
+Akhiri dengan satu kalimat tegas: apakah kondisi hari ini secara keseluruhan mengkonfirmasi atau mengontradiksi bias macro yang dominan di pasar saat ini?
+
+LARANGAN ABSOLUT — kalau kamu menulis salah satu dari ini, analisismu gagal:
+— "trader harus berhati-hati"
+— "pasar masih volatile"
+— "pergerakan tergantung data selanjutnya"
+— "sentimen pasar masih mixed"
+— Kalimat apapun yang bisa ditulis tanpa membaca headlines sama sekali
+
+Seluruh output dalam Bahasa Indonesia. Tidak ada bullet list, tidak ada heading, tidak ada emoji, tidak ada bold.`;
 
     try {
       const groqRes = await fetch(GROQ_URL, {
