@@ -1494,6 +1494,11 @@ function renderCBTracker() {
     const biasLabel = cb.bias || '—';
     const biasClass = cb.bias ? (BIAS_CLASS[cb.bias] || 'unknown') : 'unknown';
 
+    const CONFIDENCE_COLOR = { 'High': '#27ae60', 'Medium': '#e67e22', 'Low': '#c0392b' };
+    const confidenceDot = cb.confidence
+      ? `<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:${CONFIDENCE_COLOR[cb.confidence] || '#6b6860'};margin-left:5px;vertical-align:middle;box-shadow:0 0 4px ${CONFIDENCE_COLOR[cb.confidence] || '#6b6860'}55;" title="${cb.confidence} confidence"></span>`
+      : '';
+
     const updatedStr = cb.bias_updated
       ? fmtCBTime(cb.bias_updated)
       : '';
@@ -1510,7 +1515,7 @@ function renderCBTracker() {
         <div class="cb-rate-label">Interest Rate</div>
         <div class="cb-decision ${decisionClass}">${decisionText}</div>
         <br>
-        <div class="cb-bias ${biasClass}">${biasLabel}</div>
+        <div class="cb-bias ${biasClass}">${biasLabel}${confidenceDot}</div>
         ${updatedStr ? `<div class="cb-updated">↻ ${updatedStr}</div>` : ''}
       </div>`;
   }).join('');

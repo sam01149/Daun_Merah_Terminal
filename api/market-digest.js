@@ -214,9 +214,13 @@ Seluruh output dalam Bahasa Indonesia. Tidak ada bullet list, tidak ada heading,
         '',
         'Return ONLY a valid JSON object. No explanation, no markdown, no code block. Just the raw JSON.',
         'Use ONLY these exact bias values: "Hawkish", "Cautious Hawkish", "Neutral", "Data Dependent", "On Hold", "Cautious Dovish", "Dovish", "Split"',
+        'For confidence, use ONLY: "High", "Medium", "Low"',
+        '  High = multiple clear, direct signals from officials or data',
+        '  Medium = some signals but mixed or indirect',
+        '  Low = minimal or ambiguous evidence',
         '',
         'Example format:',
-        '{"USD":"Cautious Hawkish","EUR":"Dovish"}',
+        '{"USD":{"bias":"Cautious Hawkish","confidence":"High"},"EUR":{"bias":"Dovish","confidence":"Medium"}}',
         '',
         'Only include currencies where you have enough evidence from the headlines. If insufficient evidence for a currency, omit it.',
       ].join('\n');
@@ -247,6 +251,7 @@ Seluruh output dalam Bahasa Indonesia. Tidak ada bullet list, tidak ada heading,
           console.log('Groq bias parsed:', JSON.stringify(parsed));
 
           const VALID_BIASES = ['Hawkish','Cautious Hawkish','Neutral','Data Dependent','On Hold','Cautious Dovish','Dovish','Split'];
+          const VALID_CONFIDENCES = ['High','Medium','Low'];
           const VALID_CURRENCIES = new Set(['USD','EUR','GBP','JPY','CAD','AUD','NZD','CHF']);
           const now = new Date().toISOString();
 
@@ -259,12 +264,16 @@ Seluruh output dalam Bahasa Indonesia. Tidak ada bullet list, tidak ada heading,
 
           // Merge new bias — only 8 major currencies
           console.log('Bias parsed entries:', JSON.stringify(Object.entries(parsed)));
-          for (const [cur, bias] of Object.entries(parsed)) {
+          for (const [cur, entry] of Object.entries(parsed)) {
             const curOk = VALID_CURRENCIES.has(cur);
+            // Support both new {bias, confidence} format and legacy string format
+            const bias = (typeof entry === 'object' && entry !== null) ? entry.bias : entry;
+            const confidence = (typeof entry === 'object' && entry !== null) ? entry.confidence : null;
             const biasOk = VALID_BIASES.includes(bias);
-            console.log('Check', cur, bias, '→ cur:', curOk, 'bias:', biasOk);
+            const confidenceOk = VALID_CONFIDENCES.includes(confidence);
+            console.log('Check', cur, bias, confidence, '→ cur:', curOk, 'bias:', biasOk, 'conf:', confidenceOk);
             if (curOk && biasOk) {
-              existing[cur] = { bias, updated_at: now };
+              existing[cur] = { bias, confidence: confidenceOk ? confidence : 'Low', updated_at: now };
               biasUpdated.push(cur);
             }
           }

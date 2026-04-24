@@ -47,6 +47,7 @@ module.exports = async function handler(req, res) {
   const result = Object.values(CB_DATA).map(cb => ({
     ...cb,
     bias:         biasData[cb.currency]?.bias         || null,
+    confidence:   biasData[cb.currency]?.confidence   || null,
     bias_updated: biasData[cb.currency]?.updated_at   || null,
   }));
 
