@@ -2,7 +2,7 @@
 const RSS_URL      = 'https://www.financialjuice.com/feed.ashx?xy=rss';
 const FF_THIS_WEEK = 'https://nfs.faireconomy.media/ff_calendar_thisweek.xml';
 const FF_NEXT_WEEK = 'https://nfs.faireconomy.media/ff_calendar_nextweek.xml';
-const GROQ_MODEL   = 'qwen-qwq-32b';
+const GROQ_MODEL   = 'llama-3.3-70b-versatile';
 const GROQ_URL     = 'https://api.groq.com/openai/v1/chat/completions';
 const MAJOR_CURRENCIES = new Set(['USD','EUR','GBP','JPY','CAD','AUD','NZD','CHF']);
 
@@ -16,24 +16,20 @@ module.exports = async function handler(req, res) {
   res.setHeader('x-vercel-cache', 'BYPASS');
   const GROQ_KEY = process.env.GROQ_API_KEY;
 
-  // 1. RSS — try multiple user agents, Vercel egress can be blocked by FJ
+  // 1. RSS — fetch from internal /api/rss (cached) to avoid direct FJ blocking
   let rssItems = [];
-  const RSS_UAS = [
-    'Feedly/1.0 (+http://www.feedly.com/fetcher.html; like FeedFetcher-Google)',
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-    'NewsBlur Feed Fetcher - 1000000 subscribers',
-  ];
-  for (const ua of RSS_UAS) {
-    try {
-      const r = await fetch(RSS_URL, {
-        headers: { 'User-Agent': ua, 'Referer': 'https://www.financialjuice.com/', 'Accept': 'application/rss+xml, application/xml, */*' },
-        signal: AbortSignal.timeout(12000),
-      });
-      if (r.ok) {
-        const xml = await r.text();
-        if (xml.includes('<rss')) { rssItems = parseRSS(xml); break; }
-      }
-    } catch(e) { console.warn('RSS attempt failed:', e.message); }
+  try {
+    const host = req.headers.host || 'financial-feed-app.vercel.app';
+    const proto = host.includes('localhost') ? 'http' : 'https';
+    const r = await fetch(`${proto}://${host}/api/rss`, {
+      signal: AbortSignal.timeout(12000),
+    });
+    if (r.ok) {
+      const xml = await r.text();
+      if (xml.includes('<rss')) rssItems = parseRSS(xml);
+    }
+  } catch(e) {
+    console.warn('Internal RSS fetch failed:', e.message);
   }
 
   const cutoff = Date.now() - 12 * 60 * 60 * 1000;
