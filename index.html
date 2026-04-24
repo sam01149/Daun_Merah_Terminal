@@ -1595,16 +1595,18 @@ function renderEcoData() {
     if (v === null || v === undefined) return '—';
     if (metric === 'nfp') return (v > 0 ? '+' : '') + v.toLocaleString() + 'K';
     if (metric === 'cpi') return v.toFixed(1);
-    return v.toFixed(1) + (metric === 'unemployment' || metric === 'gdp_growth' ? '%' : '');
+    if (metric === 'gdp_growth') return v.toFixed(2) + '%';
+    if (metric === 'unemployment') return v.toFixed(1) + '%';
+    return v.toFixed(2);
   }
 
   function fmtChg(metric, delta) {
-    if (delta === null || isNaN(delta)) return '';
-    const abs = Math.abs(delta);
-    let str;
-    if (metric === 'nfp') str = (delta > 0 ? '+' : '') + Math.round(delta).toLocaleString() + 'K';
-    else str = (delta > 0 ? '+' : '') + abs.toFixed(2) + (metric === 'unemployment' || metric === 'gdp_growth' ? 'pp' : '');
-    return str;
+    if (delta === null || delta === undefined || isNaN(delta)) return '';
+    if (metric === 'nfp') return (delta > 0 ? '+' : '') + Math.round(delta).toLocaleString() + 'K';
+    if (metric === 'gdp_growth') return (delta > 0 ? '+' : '') + delta.toFixed(2) + 'pp';
+    if (metric === 'unemployment') return (delta > 0 ? '+' : '') + delta.toFixed(2) + 'pp';
+    // CPI: show raw index change
+    return (delta > 0 ? '+' : '') + Math.abs(delta).toFixed(2);
   }
 
   const METRIC_LABELS = { cpi: 'CPI', gdp_growth: 'GDP Growth', unemployment: 'Unemployment', nfp: 'NFP' };

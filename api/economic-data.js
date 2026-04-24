@@ -1,38 +1,52 @@
 // api/economic-data.js
-// Fetches macroeconomic data from FRED API for 8 major currencies
-// Cached in Redis 6 hours — data updates daily/monthly at most
-
 const CACHE_TTL = 6 * 60 * 60 * 1000;
 const FRED_BASE = 'https://api.stlouisfed.org/fred/series/observations';
 
-// [seriesId, currency, metric, unit, limit]
-// limit=3 for NFP to compute monthly change (need 3 levels)
+// type:
+//   'raw'  — value IS already the metric (rate, index). limit=2
+//   'qoq'  — value is a level; compute QoQ % change. limit=3
+//   'nfp'  — level; compute monthly change. limit=3
 const SERIES = [
-  ['CPIAUCSL',           'USD', 'cpi',          'Index', 2],
-  ['A191RL1Q225SBEA',    'USD', 'gdp_growth',   '%',     2],
-  ['UNRATE',             'USD', 'unemployment', '%',     2],
-  ['PAYEMS',             'USD', 'nfp',          'K',     3],
-  ['CP0000EZ19M086NEST', 'EUR', 'cpi',          'Index', 2],
-  ['EURGDPNQDSMEI',      'EUR', 'gdp_growth',   'Index', 2],
-  ['LRHUTTTTEZM156S',    'EUR', 'unemployment', '%',     2],
-  ['GBRCPIALLMINMEI',    'GBP', 'cpi',          'Index', 2],
-  ['CLVMNACSCAB1GQUK',   'GBP', 'gdp_growth',   'Index', 2],
-  ['LRHUTTTTGBM156S',    'GBP', 'unemployment', '%',     2],
-  ['JPNCPIALLMINMEI',    'JPY', 'cpi',          'Index', 2],
-  ['JPNRGDPEXP',         'JPY', 'gdp_growth',   '%',     2],
-  ['LRHUTTTTJPM156S',    'JPY', 'unemployment', '%',     2],
-  ['CANCPIALLMINMEI',    'CAD', 'cpi',          'Index', 2],
-  ['CANGDPNQDSMEI',      'CAD', 'gdp_growth',   'Index', 2],
-  ['LRHUTTTTCAM156S',    'CAD', 'unemployment', '%',     2],
-  ['AUSCPIALLQINMEI',    'AUD', 'cpi',          'Index', 2],
-  ['AUSGDPNQDSMEI',      'AUD', 'gdp_growth',   'Index', 2],
-  ['LRHUTTTTAUM156S',    'AUD', 'unemployment', '%',     2],
-  ['NZLCPIALLQINMEI',    'NZD', 'cpi',          'Index', 2],
-  ['NZLGDPNQDSMEI',      'NZD', 'gdp_growth',   'Index', 2],
-  ['LRHUTTTTNZM156S',    'NZD', 'unemployment', '%',     2],
-  ['CHECPIALLMINMEI',    'CHF', 'cpi',          'Index', 2],
-  ['CHEGDPNQDSMEI',      'CHF', 'gdp_growth',   'Index', 2],
-  ['LRHUTTTTCHM156S',    'CHF', 'unemployment', '%',     2],
+  // USD — A191RL1Q225SBEA is already a % growth rate
+  ['CPIAUCSL',           'USD', 'cpi',          'raw'],
+  ['A191RL1Q225SBEA',    'USD', 'gdp_growth',   'raw'],
+  ['UNRATE',             'USD', 'unemployment', 'raw'],
+  ['PAYEMS',             'USD', 'nfp',          'nfp'],
+
+  // EUR
+  ['CP0000EZ19M086NEST', 'EUR', 'cpi',          'raw'],
+  ['EURGDPNQDSMEI',      'EUR', 'gdp_growth',   'qoq'],
+  ['LRHUTTTTEZM156S',    'EUR', 'unemployment', 'raw'],
+
+  // GBP
+  ['GBRCPIALLMINMEI',    'GBP', 'cpi',          'raw'],
+  ['CLVMNACSCAB1GQUK',   'GBP', 'gdp_growth',   'qoq'],
+  ['LRHUTTTTGBM156S',    'GBP', 'unemployment', 'raw'],
+
+  // JPY — JPNCPIALLMINMEI sometimes lags; JPNRGDPNQDSMEI is the OECD quarterly level
+  ['JPNCPIALLMINMEI',    'JPY', 'cpi',          'raw'],
+  ['JPNRGDPNQDSMEI',     'JPY', 'gdp_growth',   'qoq'],
+  ['LRHUTTTTJPM156S',    'JPY', 'unemployment', 'raw'],
+
+  // CAD
+  ['CANCPIALLMINMEI',    'CAD', 'cpi',          'raw'],
+  ['CANGDPNQDSMEI',      'CAD', 'gdp_growth',   'qoq'],
+  ['LRHUTTTTCAM156S',    'CAD', 'unemployment', 'raw'],
+
+  // AUD
+  ['AUSCPIALLQINMEI',    'AUD', 'cpi',          'raw'],
+  ['AUSGDPNQDSMEI',      'AUD', 'gdp_growth',   'qoq'],
+  ['LRHUTTTTAUM156S',    'AUD', 'unemployment', 'raw'],
+
+  // NZD
+  ['NZLCPIALLQINMEI',    'NZD', 'cpi',          'raw'],
+  ['NZLGDPNQDSMEI',      'NZD', 'gdp_growth',   'qoq'],
+  ['LRHUTTTTNZM156S',    'NZD', 'unemployment', 'raw'],
+
+  // CHF
+  ['CHECPIALLMINMEI',    'CHF', 'cpi',          'raw'],
+  ['CHEGDPNQDSMEI',      'CHF', 'gdp_growth',   'qoq'],
+  ['LRHUTTTTCHM156S',    'CHF', 'unemployment', 'raw'],
 ];
 
 module.exports = async function handler(req, res) {
@@ -42,10 +56,9 @@ module.exports = async function handler(req, res) {
   const FRED_KEY = process.env.FRED_API_KEY;
   const force = req.query?.force === '1';
 
-  // Serve Redis cache if fresh and not force-refreshing
   if (!force) {
     try {
-      const cached = await redisCmd('GET', 'economic_data');
+      const cached = await redisCmd('GET', 'economic_data_v2');
       if (cached) {
         const parsed = JSON.parse(cached);
         if (Date.now() - new Date(parsed.fetched_at).getTime() < CACHE_TTL) {
@@ -57,26 +70,26 @@ module.exports = async function handler(req, res) {
 
   if (!FRED_KEY) {
     try {
-      const stale = await redisCmd('GET', 'economic_data');
+      const stale = await redisCmd('GET', 'economic_data_v2');
       if (stale) return res.status(200).json({ ...JSON.parse(stale), stale: true });
     } catch(e) {}
     return res.status(200).json({ error: 'FRED_API_KEY not configured', data: {}, fetched_at: null });
   }
 
-  // Fetch all series in parallel
   const results = await Promise.allSettled(
-    SERIES.map(([seriesId, , , , limit]) =>
-      fetch(`${FRED_BASE}?series_id=${seriesId}&api_key=${FRED_KEY}&limit=${limit}&sort_order=desc&file_type=json`, {
-        headers: { 'Accept': 'application/json' },
-        signal: AbortSignal.timeout(8000),
-      }).then(r => r.json())
-    )
+    SERIES.map(([seriesId, , , type]) => {
+      const limit = type === 'raw' ? 2 : 3;
+      return fetch(
+        `${FRED_BASE}?series_id=${seriesId}&api_key=${FRED_KEY}&limit=${limit}&sort_order=desc&file_type=json`,
+        { headers: { 'Accept': 'application/json' }, signal: AbortSignal.timeout(8000) }
+      ).then(r => r.json());
+    })
   );
 
   const data = {};
 
   results.forEach((result, i) => {
-    const [seriesId, currency, metric, unit] = SERIES[i];
+    const [seriesId, currency, metric, type] = SERIES[i];
     if (result.status !== 'fulfilled') {
       console.warn('FRED fetch failed:', seriesId, result.reason?.message);
       return;
@@ -87,39 +100,46 @@ module.exports = async function handler(req, res) {
       return;
     }
 
-    // Filter out missing values ('.' or 'NA')
     const obs = json.observations.filter(o => o.value && o.value !== '.' && o.value !== 'NA');
-
     if (!data[currency]) data[currency] = {};
 
-    if (metric === 'nfp') {
+    if (type === 'nfp') {
       if (obs.length < 3) return;
-      const curr  = parseFloat(obs[0].value);
-      const prev  = parseFloat(obs[1].value);
-      const prev2 = parseFloat(obs[2].value);
-      if (isNaN(curr) || isNaN(prev) || isNaN(prev2)) return;
+      const [v0, v1, v2] = obs.map(o => parseFloat(o.value));
+      if ([v0, v1, v2].some(isNaN)) return;
       data[currency][metric] = {
-        value:    Math.round(curr - prev),
-        previous: Math.round(prev - prev2),
-        date:     obs[0].date,
-        unit,
+        value: Math.round(v0 - v1), previous: Math.round(v1 - v2),
+        date: obs[0].date, unit: 'K',
       };
-    } else {
-      if (obs.length < 2) return;
-      const curr = parseFloat(obs[0].value);
-      const prev = parseFloat(obs[1].value);
-      if (isNaN(curr) || isNaN(prev)) return;
+
+    } else if (type === 'qoq') {
+      // Quarter-over-quarter % change from level series
+      if (obs.length < 3) return;
+      const [v0, v1, v2] = obs.map(o => parseFloat(o.value));
+      if ([v0, v1, v2].some(isNaN) || v1 === 0 || v2 === 0) return;
+      const currGrowth = ((v0 - v1) / Math.abs(v1)) * 100;
+      const prevGrowth = ((v1 - v2) / Math.abs(v2)) * 100;
       data[currency][metric] = {
-        value:    Math.round(curr * 100) / 100,
-        previous: Math.round(prev * 100) / 100,
-        date:     obs[0].date,
-        unit,
+        value:    Math.round(currGrowth * 100) / 100,
+        previous: Math.round(prevGrowth * 100) / 100,
+        date: obs[0].date, unit: '%',
+      };
+
+    } else {
+      // 'raw' — use value directly
+      if (obs.length < 2) return;
+      const [v0, v1] = obs.map(o => parseFloat(o.value));
+      if (isNaN(v0) || isNaN(v1)) return;
+      data[currency][metric] = {
+        value:    Math.round(v0 * 100) / 100,
+        previous: Math.round(v1 * 100) / 100,
+        date: obs[0].date, unit: metric === 'cpi' ? 'Index' : '%',
       };
     }
   });
 
   const payload = { data, fetched_at: new Date().toISOString() };
-  redisCmd('SET', 'economic_data', JSON.stringify(payload)).catch(() => {});
+  redisCmd('SET', 'economic_data_v2', JSON.stringify(payload)).catch(() => {});
   return res.status(200).json(payload);
 };
 
