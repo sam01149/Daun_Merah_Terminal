@@ -3,26 +3,30 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<meta name="theme-color" content="#080b0f">
+<meta name="theme-color" content="#0a0a08">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="FJFeed">
-<title>FJFeed</title>
+<meta name="apple-mobile-web-app-title" content="Daun Merah">
+<title>Daun Merah</title>
 <link rel="manifest" href="manifest.json">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;700;800&family=DM+Mono:wght@300;400&display=swap" rel="stylesheet">
 <style>
 :root {
-  --bg: #080b0f;
-  --surface: #0e1318;
-  --border: #1a2230;
-  --accent: #00e5ff;
-  --text: #e2e8f0;
-  --muted: #4a5568;
-  --green: #00c896;
-  --red: #ff4757;
-  --yellow: #ffd32a;
-  --orange: #ff6b35;
+  --bg: #0a0a08;
+  --surface: #111110;
+  --border: #222220;
+  --accent: #c0392b;
+  --accent-dim: #7a1f17;
+  --gate: #8b1a1a;
+  --text: #e8e4d9;
+  --muted: #6b6860;
+  --text-mid: #a8a49a;
+  --green: #27ae60;
+  --green-dim: #1a5e38;
+  --red: #c0392b;
+  --yellow: #e67e22;
+  --orange: #e67e22;
   --purple: #a78bfa;
   --pink: #f472b6;
 }
@@ -39,7 +43,7 @@ body {
 /* HEADER */
 .header {
   flex-shrink: 0;
-  background: rgba(8,11,15,0.97);
+  background: rgba(10,10,8,0.97);
   backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--border);
   padding: 12px 16px;
@@ -131,7 +135,7 @@ body {
   left:3px; top:3px; background:var(--muted);
   border-radius:50%; transition:.3s;
 }
-.toggle input:checked + .tslider { background:rgba(0,229,255,.15); }
+.toggle input:checked + .tslider { background:rgba(192,57,43,.15); }
 .toggle input:checked + .tslider:before { transform:translateX(16px); background:var(--accent); }
 
 .refresh-btn {
@@ -192,7 +196,7 @@ body {
 .tag-bonds         { background:rgba(96,165,250,.12); color:#60a5fa; }
 .tag-crypto        { background:rgba(244,114,182,.12); color:var(--pink); }
 .tag-indexes       { background:rgba(52,211,153,.12); color:#34d399; }
-.tag-macro         { background:rgba(0,229,255,.1); color:var(--accent); }
+.tag-macro         { background:rgba(192,57,43,.1); color:var(--accent); }
 .tag-econ-data     { background:rgba(192,132,252,.12); color:#c084fc; }
 .tag-geopolitical  { background:rgba(251,146,60,.12); color:#fb923c; }
 
@@ -227,10 +231,10 @@ body {
 .toast-body { font-size:11px; color:var(--muted); line-height:1.4; }
 
 /* ── RINGKASAN TAB ── */
-.ftab[data-view="ringkasan"] { color: var(--yellow); }
+.ftab[data-view="ringkasan"] { color: var(--accent); }
 .ftab[data-view="ringkasan"].active {
-  color: var(--bg); background: var(--yellow);
-  border-radius: 4px 4px 0 0; border-bottom-color: var(--yellow);
+  color: var(--text); background: var(--accent);
+  border-radius: 4px 4px 0 0; border-bottom-color: var(--accent);
 }
 
 /* RINGKASAN PANEL */
@@ -257,7 +261,7 @@ body {
 }
 .ringkasan-card::before {
   content: ''; position: absolute; left: 0; top: 0; bottom: 0;
-  width: 3px; background: var(--yellow);
+  width: 3px; background: var(--accent);
 }
 .ringkasan-text {
   font-family: 'Syne', sans-serif; font-size: 13px; font-weight: 400;
@@ -280,12 +284,12 @@ body {
 
 .ringkasan-gen-btn {
   width: 100%; padding: 13px; border-radius: 8px;
-  border: 1px solid var(--yellow); background: transparent;
-  color: var(--yellow); font-family: 'DM Mono', monospace; font-size: 11px;
+  border: 1px solid var(--accent); background: transparent;
+  color: var(--accent); font-family: 'DM Mono', monospace; font-size: 11px;
   cursor: pointer; transition: all .2s; letter-spacing: .5px;
   display: flex; align-items: center; justify-content: center; gap: 8px;
 }
-.ringkasan-gen-btn:active { background: var(--yellow); color: var(--bg); }
+.ringkasan-gen-btn:active { background: var(--accent); color: var(--text); }
 .ringkasan-gen-btn.loading { opacity: .6; pointer-events: none; }
 .ringkasan-gen-btn.loading svg { animation: spin .7s linear infinite; }
 
@@ -401,7 +405,7 @@ body {
 }
 .cal-filter-btn.active-high   { border-color: #ff4757; color: #ff4757; background: rgba(255,71,87,.1); }
 .cal-filter-btn.active-medium { border-color: var(--yellow); color: var(--yellow); background: rgba(255,211,42,.1); }
-.cal-filter-btn.active-all    { border-color: var(--accent); color: var(--accent); background: rgba(0,229,255,.08); }
+.cal-filter-btn.active-all    { border-color: var(--accent); color: var(--accent); background: rgba(192,57,43,.08); }
 .cal-count-badge {
   font-size: 9px; color: var(--muted); padding: 4px 0;
   letter-spacing: .3px;
@@ -575,7 +579,7 @@ body {
 .cb-bias.hawkish          { background: rgba(255,71,87,.15);   color: #ff4757; }
 .cb-bias.cautious-hawkish { background: rgba(255,107,53,.12);  color: var(--orange); }
 .cb-bias.neutral          { background: rgba(255,255,255,.06); color: var(--muted); }
-.cb-bias.data-dependent   { background: rgba(0,229,255,.08);   color: var(--accent); }
+.cb-bias.data-dependent   { background: rgba(192,57,43,.08);   color: var(--accent); }
 .cb-bias.on-hold          { background: rgba(255,255,255,.06); color: var(--muted); }
 .cb-bias.cautious-dovish  { background: rgba(52,211,153,.1);   color: #34d399; }
 .cb-bias.dovish           { background: rgba(0,200,150,.12);   color: var(--green); }
@@ -596,7 +600,7 @@ body {
 
 .install-banner {
   flex-shrink:0; display:none;
-  background:rgba(0,229,255,.07); border-bottom:1px solid rgba(0,229,255,.2);
+  background:rgba(192,57,43,.07); border-bottom:1px solid rgba(192,57,43,.2);
   padding:10px 14px; align-items:center; gap:10px;
 }
 .install-banner p { font-size:11px; color:var(--accent); flex:1; line-height:1.4; }
@@ -655,7 +659,7 @@ body {
 <body>
 
 <div class="header">
-  <div class="logo">FJ<span>Feed</span></div>
+  <div class="logo">Daun<span> Merah</span></div>
   <div class="header-right">
     <div class="status-pill">
       <div class="dot" id="dot"></div>
@@ -666,7 +670,7 @@ body {
 </div>
 
 <div class="install-banner" id="installBanner">
-  <p>Install FJFeed ke homescreen untuk notifikasi background</p>
+  <p>Install Daun Merah ke homescreen untuk notifikasi background</p>
   <button class="install-btn" id="installBtn">INSTALL</button>
 </div>
 
@@ -682,7 +686,7 @@ body {
 
 <!-- FILTER TABS -->
 <div class="filter-wrap" id="filterWrap">
-  <button class="ftab" data-view="ringkasan" id="ringkasanTab">📋 RINGKASAN</button>
+  <button class="ftab" data-view="ringkasan" id="ringkasanTab">RINGKASAN</button>
   <button class="ftab active" data-cat="all">All</button>
   <button class="ftab" data-cat="market-moving">Mkt Moving</button>
   <button class="ftab" data-cat="forex">Forex</button>
@@ -690,8 +694,8 @@ body {
   <button class="ftab" data-cat="econ-data">Econ Data</button>
   <button class="ftab" data-cat="energy">Energy</button>
   <button class="ftab" data-cat="geopolitical">Geopolitical</button>
-  <button class="ftab" data-view="cal" id="calTab">📅 CAL</button>
-  <button class="ftab" data-view="cot" id="cotTab">📊 COT</button>
+  <button class="ftab" data-view="cal" id="calTab">CAL</button>
+  <button class="ftab" data-view="cot" id="cotTab">COT</button>
 </div>
 
 <!-- TOOLBAR -->
@@ -1250,7 +1254,7 @@ async function fetchCalendar() {
     calFetchedAt = Date.now();
     renderCalendar();
   } catch(e) {
-    inner.innerHTML = `<div class="cal-empty">Gagal memuat kalender.<br><small style="color:#4a5568">${e.message}</small><br><br>
+    inner.innerHTML = `<div class="cal-empty">Gagal memuat kalender.<br><small style="color:#6b6860">${e.message}</small><br><br>
       <button class="ringkasan-gen-btn" style="margin:0 auto;width:auto;padding:8px 20px" onclick="fetchCalendar()">Coba Lagi</button></div>`;
   } finally {
     if (btn) btn.classList.remove('spinning');
@@ -1260,7 +1264,7 @@ async function fetchCalendar() {
 // ── CB TRACKER ───────────────────────────────────────────
 
 const CUR_COLORS_CB = {
-  USD:'#60a5fa', EUR:'#00e5ff', GBP:'#a78bfa',
+  USD:'#60a5fa', EUR:'#c0392b', GBP:'#a78bfa',
   JPY:'#ffd32a', CAD:'#ff6b35', AUD:'#00c896',
   NZD:'#34d399', CHF:'#ff4757',
 };
@@ -1381,7 +1385,7 @@ function renderCOT() {
 
   const ORDER = ['EUR','GBP','JPY','CAD','AUD','NZD','CHF'];
   const CUR_COLORS_COT = {
-    EUR:'#00e5ff', GBP:'#a78bfa', JPY:'#ffd32a',
+    EUR:'#c0392b', GBP:'#a78bfa', JPY:'#ffd32a',
     CAD:'#ff6b35', AUD:'#00c896', NZD:'#34d399', CHF:'#ff4757',
   };
 
@@ -1449,7 +1453,7 @@ function compareActualForecast(actual, forecast) {
 }
 
 const CUR_COLORS = {
-  USD:'#60a5fa', EUR:'#00e5ff', GBP:'#a78bfa',
+  USD:'#60a5fa', EUR:'#c0392b', GBP:'#a78bfa',
   JPY:'#ffd32a', CAD:'#ff6b35', AUD:'#00c896',
   NZD:'#34d399', CHF:'#ff4757',
 };
