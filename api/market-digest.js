@@ -25,7 +25,7 @@ module.exports = async function handler(req, res) {
   try {
     const host = req.headers.host || 'financial-feed-app.vercel.app';
     const proto = host.includes('localhost') ? 'http' : 'https';
-    const r = await fetch(`${proto}://${host}/api/rss`, {
+    const r = await fetch(`${proto}://${host}/api/feeds?type=rss`, {
       signal: AbortSignal.timeout(12000),
     });
     if (r.ok) {
