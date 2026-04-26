@@ -937,10 +937,27 @@ body {
 .pt-rule-text { font-size: 10px; line-height: 1.6; color: var(--text-mid); }
 .pt-rule-text strong { color: var(--text); font-family: 'Syne', sans-serif; font-size: 10px; font-weight: 700; display: block; margin-bottom: 1px; }
 .pt-note { background: rgba(96,165,250,0.07); border: 1px solid rgba(96,165,250,0.2); border-radius: 6px; padding: 12px 14px; font-size: 10px; color: #93c5fd; line-height: 1.7; }
-@media (max-width: 480px) {
-  .pt-row { grid-template-columns: 22px 1fr; }
-  .pt-step-why { display: none; }
+@media (max-width: 767px) {
+  .pt-wrap { padding: 10px 10px 24px; gap: 14px; }
+  .pt-hero { padding: 12px 0 4px; }
   .pt-hero-title { font-size: 15px; }
+  .pt-hero-sub { font-size: 8px; }
+  .pt-row { grid-template-columns: 20px 1fr; gap: 0; }
+  .pt-step-why { display: none; }
+  .pt-step-num { font-size: 8px; }
+  .pt-step-action { font-size: 11px; }
+  .pt-step-action strong { font-size: 9px; }
+  .pt-section-hdr { font-size: 10px; padding: 9px 12px; }
+  .pt-flow { padding: 10px 12px; gap: 0; }
+  .pt-flow-item { padding: 6px 0; gap: 8px; }
+  .pt-flow-tag { font-size: 7px; padding: 3px 6px; min-width: 62px; }
+  .pt-flow-desc { font-size: 10px; }
+  .pt-flow-arrow { padding-left: 70px; font-size: 9px; }
+  .pt-rules { padding: 10px 12px; gap: 8px; }
+  .pt-rule-icon { font-size: 13px; }
+  .pt-rule-text { font-size: 10px; }
+  .pt-rule-text strong { font-size: 9px; }
+  .pt-note { font-size: 9px; padding: 10px 12px; line-height: 1.6; }
 }
 
 /* ── MOBILE BOTTOM NAV ── */
