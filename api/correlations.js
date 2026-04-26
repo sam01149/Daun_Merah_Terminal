@@ -1,6 +1,6 @@
 // api/correlations.js
-// Fetches 60-day daily closes for key cross-asset instruments and computes
-// rolling 20-day correlation matrix. Flags pairs deviating >1.5 std from mean.
+// Fetches 60-day daily closes via Yahoo Finance and computes
+// rolling 20-day correlation matrix. Flags pairs deviating >0.4 from 60d mean.
 // Redis cache: correlations, TTL 24 hours (86400s).
 
 const rateLimit = require('./_ratelimit');
@@ -8,18 +8,18 @@ const CORS = { 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-cache' }
 const CACHE_KEY = 'correlations';
 const CACHE_TTL = 86400;
 
-// Stooq symbols for free daily price data
+// Yahoo Finance symbols
 const INSTRUMENTS = {
-  DXY:   '^dxy',
-  EURUSD:'eurusd',
-  GBPUSD:'gbpusd',
-  USDJPY:'usdjpy',
-  AUDUSD:'audusd',
-  Gold:  'xauusd',
-  WTI:   'cl.f',
-  SPX:   '^spx',
-  VIX:   '^vix',
-  US10Y: '^tnx',
+  DXY:   'DX-Y.NYB',
+  EURUSD:'EURUSD=X',
+  GBPUSD:'GBPUSD=X',
+  USDJPY:'USDJPY=X',
+  AUDUSD:'AUDUSD=X',
+  Gold:  'GC=F',
+  WTI:   'CL=F',
+  SPX:   '^GSPC',
+  VIX:   '^VIX',
+  US10Y: '^TNX',
 };
 
 async function redisCmd(...args) {
@@ -35,28 +35,30 @@ async function redisCmd(...args) {
   return (await r.json()).result;
 }
 
-async function fetchStooqCSV(symbol) {
-  const end = new Date();
-  const start = new Date(end.getTime() - 70 * 86400000); // 70 days for buffer
-  const fmt = d => `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`;
-  const url = `https://stooq.com/q/d/l/?s=${symbol}&d1=${fmt(start)}&d2=${fmt(end)}&i=d`;
+async function fetchYahoo(symbol) {
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=3mo`;
   const r = await fetch(url, {
-    headers: { 'User-Agent': 'Mozilla/5.0 (compatible; DaunMerah/1.0)' },
-    signal: AbortSignal.timeout(10000),
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+      'Accept': 'application/json',
+    },
+    signal: AbortSignal.timeout(12000),
   });
-  if (!r.ok) throw new Error(`Stooq HTTP ${r.status} for ${symbol}`);
-  const text = await r.text();
-  if (!text.includes('Date')) throw new Error(`Stooq invalid response for ${symbol}`);
-  const lines = text.trim().split('\n').slice(1); // skip header
+  if (!r.ok) throw new Error(`Yahoo HTTP ${r.status} for ${symbol}`);
+  const json = await r.json();
+  const result = json?.chart?.result?.[0];
+  if (!result) throw new Error(`Yahoo no result for ${symbol}`);
+  const timestamps = result.timestamp || [];
+  const closes = result.indicators?.quote?.[0]?.close || [];
   const prices = [];
-  for (const line of lines) {
-    const cols = line.split(',');
-    if (cols.length < 5) continue;
-    const date  = cols[0].trim();
-    const close = parseFloat(cols[4]); // Close column
-    if (!isNaN(close) && close > 0) prices.push({ date, close });
+  for (let i = 0; i < timestamps.length; i++) {
+    const close = closes[i];
+    if (close == null || isNaN(close) || close <= 0) continue;
+    const date = new Date(timestamps[i] * 1000).toISOString().slice(0, 10);
+    prices.push({ date, close });
   }
-  return prices.reverse(); // oldest first
+  if (prices.length < 10) throw new Error(`Yahoo insufficient data for ${symbol}: ${prices.length} rows`);
+  return prices; // already oldest-first
 }
 
 function pearson(x, y) {
@@ -73,7 +75,6 @@ function pearson(x, y) {
 }
 
 function alignSeries(a, b) {
-  // Align by date
   const bMap = {};
   b.forEach(p => { bMap[p.date] = p.close; });
   const xa = [], xb = [];
@@ -95,7 +96,6 @@ module.exports = async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(204).end();
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
 
-  // Correlations fetches 10 Stooq CSVs — rate limit to 5 req/min per IP
   if (await rateLimit(req, res, { limit: 5, windowSecs: 60, endpoint: 'correlations' })) return;
 
   // Try Redis cache first
@@ -113,12 +113,12 @@ module.exports = async function handler(req, res) {
     console.warn('correlations cache read failed:', e.message);
   }
 
-  // Fetch all instruments in parallel
+  // Fetch all instruments in parallel from Yahoo Finance
   const names = Object.keys(INSTRUMENTS);
   const fetches = names.map(name =>
-    fetchStooqCSV(INSTRUMENTS[name])
+    fetchYahoo(INSTRUMENTS[name])
       .then(prices => ({ name, prices, ok: true }))
-      .catch(e => { console.warn(`correlations: ${name} fetch failed:`, e.message); return { name, prices: [], ok: false }; })
+      .catch(e => { console.warn(`correlations: ${name} failed:`, e.message); return { name, prices: [], ok: false }; })
   );
   const results = await Promise.all(fetches);
 
@@ -127,8 +127,9 @@ module.exports = async function handler(req, res) {
     if (prices.length >= 10) series[name] = prices;
   });
 
+  console.log(`correlations: got data for ${Object.keys(series).length}/${names.length} instruments:`, Object.keys(series).join(', '));
+
   if (Object.keys(series).length < 3) {
-    // Try stale cache
     try {
       const cached = await redisCmd('GET', CACHE_KEY);
       if (cached) return res.status(200).json({ ...JSON.parse(cached), stale: true });
@@ -151,12 +152,11 @@ module.exports = async function handler(req, res) {
       matrix20[key] = r20;
       matrix60[key] = r60;
 
-      // Flag if 20d deviates >1.5 from 60d (sign flip or large magnitude shift)
       if (r20 !== null && r60 !== null && Math.abs(r20 - r60) > 0.4) {
         anomalies.push({
           pair: key,
-          r20: r20,
-          r60: r60,
+          r20,
+          r60,
           delta: Math.round((r20 - r60) * 1000) / 1000,
           label: `${a} vs ${b}`,
         });
