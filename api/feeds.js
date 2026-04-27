@@ -28,7 +28,7 @@ async function redisCmd(...args) {
 
 // ── RSS handler (was api/rss.js) ──────────────────────────────────────────────
 
-const rssMemCache = { xml: null, fetchedAt: 0 };
+// No module-level in-memory cache — cold-start safe, Redis is the only cache layer
 const RSS_CACHE_TTL_MS = 50 * 1000;
 const RSS_CACHE_KEY    = 'rss_cache';
 const RSS_URL          = 'https://www.financialjuice.com/feed.ashx?xy=rss';
@@ -44,18 +44,11 @@ async function rssHandler(req, res) {
 
   const now = Date.now();
 
-  if (rssMemCache.xml && now - rssMemCache.fetchedAt < RSS_CACHE_TTL_MS) {
-    res.setHeader('X-Cache-Source', 'MEMORY');
-    return res.status(200).send(rssMemCache.xml);
-  }
-
   try {
     const cached = await redisCmd('GET', RSS_CACHE_KEY);
     if (cached) {
       const obj = JSON.parse(cached);
       if (now - obj.fetchedAt < RSS_CACHE_TTL_MS) {
-        rssMemCache.xml = obj.xml;
-        rssMemCache.fetchedAt = obj.fetchedAt;
         res.setHeader('X-Cache-Source', 'REDIS');
         return res.status(200).send(obj.xml);
       }
@@ -85,18 +78,12 @@ async function rssHandler(req, res) {
         return res.status(200).send(obj.xml);
       }
     } catch(e2) {}
-    if (rssMemCache.xml) {
-      res.setHeader('X-Cache-Source', 'STALE');
-      return res.status(200).send(rssMemCache.xml);
-    }
     res.setHeader('Content-Type', 'application/json');
     return res.status(502).json({ error: 'Upstream fetch failed', detail: fetchError });
   }
 
   const payload = JSON.stringify({ xml, fetchedAt: now });
   redisCmd('SET', RSS_CACHE_KEY, payload, 'EX', 60).catch(() => {});
-  rssMemCache.xml = xml;
-  rssMemCache.fetchedAt = now;
 
   res.setHeader('X-Cache-Source', 'UPSTREAM');
   return res.status(200).send(xml);

@@ -87,6 +87,19 @@ function parseFFXML(xml) {
   return events;
 }
 
+// ForexFactory XML stores time in US/Eastern (EST = UTC-5, EDT = UTC-4), not UTC.
+// EST → WIB (UTC+7) = +12h. EDT → WIB = +11h.
+function isUSDST(date) {
+  const y = date.getUTCFullYear();
+  // 2nd Sunday of March (between Mar 8-14)
+  const mar8 = new Date(Date.UTC(y, 2, 8));
+  const dstStart = new Date(Date.UTC(y, 2, 8 + (7 - mar8.getUTCDay()) % 7));
+  // 1st Sunday of November (between Nov 1-7)
+  const nov1 = new Date(Date.UTC(y, 10, 1));
+  const dstEnd = new Date(Date.UTC(y, 10, 1 + (7 - nov1.getUTCDay()) % 7));
+  return date >= dstStart && date < dstEnd;
+}
+
 function convertToWIB(timeStr) {
   if (!timeStr || timeStr === 'All Day' || timeStr === 'Tentative') return 'Tentative';
   const m = timeStr.match(/(\d{1,2}):(\d{2})(am|pm)/i);
@@ -95,6 +108,7 @@ function convertToWIB(timeStr) {
   const min = parseInt(m[2]), ampm = m[3].toLowerCase();
   if (ampm === 'pm' && hour !== 12) hour += 12;
   if (ampm === 'am' && hour === 12) hour = 0;
-  // FF XML stores time in UTC — convert to WIB (UTC+7)
-  return `${String((hour + 7) % 24).padStart(2,'0')}:${String(min).padStart(2,'0')} WIB`;
+  // FF XML uses US/Eastern: EST (UTC-5) or EDT (UTC-4). WIB = UTC+7.
+  const offset = isUSDST(new Date()) ? 11 : 12;
+  return `${String((hour + offset) % 24).padStart(2,'0')}:${String(min).padStart(2,'0')} WIB`;
 }

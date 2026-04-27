@@ -63,8 +63,10 @@ module.exports = async function handler(req, res) {
   const vix      = vixData  ? vixData.latest  : null
   const move     = moveData ? moveData.latest  : null
   const hySpread = hyData   ? hyData.latest    : null
-  // 2-day change in HY spread: positive = widening = risk-off pressure
-  const hyChange = hyData && hyData.prev != null ? +(hyData.latest - hyData.prev).toFixed(4) : null
+  // 2-day changes: positive = rising/widening
+  const vixChange  = vixData  && vixData.prev  != null ? +(vixData.latest  - vixData.prev).toFixed(2)  : null
+  const moveChange = moveData && moveData.prev != null ? +(moveData.latest - moveData.prev).toFixed(1) : null
+  const hyChange   = hyData   && hyData.prev   != null ? +(hyData.latest   - hyData.prev).toFixed(4)   : null
 
   const components = {
     vix_trigger:  vix  != null ? vix  > 25          : null,
@@ -80,7 +82,9 @@ module.exports = async function handler(req, res) {
   const payload = {
     regime,
     vix,
+    vix_change_2d: vixChange,
     move,
+    move_change_2d: moveChange,
     hy_spread: hySpread,
     hy_change_2d: hyChange,
     components,

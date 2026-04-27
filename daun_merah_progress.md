@@ -1,11 +1,11 @@
 # DAUN MERAH — PROGRESS & STATUS
 
-> **Last updated:** 2026-04-26
-> **Branch:** main — semua deployed ke production
+> **Last updated:** 2026-04-27
+> **Branch:** main
 
 ---
 
-## STATUS SEMUA FITUR
+## FITUR UTAMA (SELESAI)
 
 ```
 Task 1   ✅  Risk Regime Indicator          commit a3baa1e
@@ -26,81 +26,61 @@ Task 10f ✅  Health Monitoring              commit 658a1a6
 Task 10g ✅  Redis Key Registry             commit 658a1a6
 Task 10h ✅  Rate Limiting                  commit 658a1a6
 
-[POST-TASK UPDATES]
+[POST-TASK]
 FIX      ✅  Vercel 12-function limit       commit 95db702
 FIX      ✅  Mobile bottom nav + SVG icon   commit 108ffab
 FIX      ✅  market-digest RSS URL broken   commit 6f48bcb
 FEAT     ✅  Tab PETUNJUK (SOP)             commit b1729e9
-FEAT     ✅  Prompt XAUUSD scalping         (termasuk dalam session konsolidasi)
+FEAT     ✅  Prompt XAUUSD scalping         (dalam session konsolidasi)
 ```
 
 ---
 
-## FITUR YANG ADA DI APLIKASI
+## BUG FIX SESSION 2026-04-27 (Gap Analysis)
 
-### 8 Tab Utama
-1. **NEWS** — FinancialJuice RSS real-time, filter per kategori, auto-refresh
-2. **RINGKASAN** — AI market digest (Bahasa Indonesia) + XAUUSD scalping lens + AI thesis card + Cross-asset correlations
-3. **CAL** — Economic calendar + CB tracker (8 currencies) + Real yields + Rate path USD
-4. **COT** — CFTC positioning: Leveraged Funds + Asset Manager net untuk 7 pairs
-5. **CHECKLIST** — 4 playbook dengan REGIME CHECK gate (auto-tick dari live data)
-6. **SIZING** — Position sizing calculator, hard block >2% risk
-7. **JURNAL** — Trade journal CRUD, auto-snapshot makro, prefill dari AI thesis
-8. **PETUNJUK** — SOP end-to-end, panduan penggunaan aplikasi
+Gap analysis dari AI eksternal menemukan bug-bug berikut (semua P0 dikonfirmasi valid lewat review kode manual):
 
-### Infrastructure
-- PWA: installable, push notifications, service worker
-- Icon: dual-leaf SVG (bear merah + bull teal)
-- Mobile: fixed bottom nav 8 tombol (≤767px)
-- Rate limiting: market-digest 4/min, correlations 5/min
-- Health monitoring: probe 6 sumber eksternal, Telegram alert
-- Admin: prompts updatable tanpa redeploy, Redis key registry
-- Correlations: data source Yahoo Finance (Stooq diganti — blokir Vercel IPs)
-- Mobile nav: event delegation fix (tombol Digest/Cal/COT/dll bisa diklik)
-- Checklist mobile: column layout + sidebar hidden ≤767px
-- Market digest prompt: diupgrade ke structured macro briefing (METODE, CONTINUITY, KALENDER beat/miss, 3-channel XAUUSD)
+```
+P0-1  ✅  sw.js FETCH_URL Netlify → /api/feeds?type=rss
+P0-2  ✅  rc4: ev.impact !== 'high' (lowercase) → 'High' (match API)
+P0-3  ✅  rc4: ev.datetime undefined → construct dari ev.date + ev.time_wib (WIB=UTC+7)
+P0-4  ✅  convertToWIB: +7 (UTC asumsi salah) → +12/+11 (EST/EDT ke WIB, auto DST detect)
+P0-5  ✅  rate-path UI: tambah label "(Est.)" + tooltip "Estimasi — bukan probabilitas pasar"
+P1-1  ✅  _ratelimit.js: INCR+EXPIRE fire-and-forget → SET NX EX + INCR (atomic, no orphan keys)
+P1-2  ✅  subscribe.js: base64 slice(0,80) → crypto.createHash('sha256') full hex (no collision)
+P2-1  ✅  market-digest.js digest_history: GET/SET → LPUSH/LTRIM (atomic list, no race)
+P2-2  ✅  feeds.js rssMemCache module-level var → removed, Redis-only (cold-start safe)
+P3-1  ✅  _lastThesis: persist ke localStorage + load saat init (tombol jurnal tidak fail lagi)
+```
 
 ---
 
-## TIDAK ADA TASK YANG TERTUNDA
+## ISSUES YANG MASIH TERBUKA (P1-P3)
 
-Project feature-complete. Constraint utama yang harus dijaga:
-- **Vercel Hobby: tepat 12 fungsi** di `api/` (kecuali prefix `_`)
-- **Endpoint URLs yang benar:**
-  - RSS → `/api/feeds?type=rss` (bukan `/api/rss`)
-  - COT → `/api/feeds?type=cot` (bukan `/api/cot`)
-  - Push → `/api/admin?action=push` (bukan `/api/push`)
-  - Health → `/api/admin?action=health`
+### P1 — Akurasi/Modal
+- [ ] Pip value cross-pair approximation — error 10-30% untuk pair tanpa USD direct (EUR/JPY, GBP/JPY dll). Risk sizing 2% limit bisa bocor.
+- [ ] CB rates stale — ECB/BOE/RBA/RBNZ di `api/cb-status.js` kemungkinan perlu update manual. Cek meeting April-May 2026.
+- [ ] Real yields stale — EUR `as_of` 2026-01-15 sudah >90 hari. Update `api/real-yields.js` setelah ECB SPF Q2 release.
 
----
+### P2 — Robustness
+- [ ] cb_bias race condition — merge logic di `market-digest.js` masih read-modify-write. Low frequency tapi ada.
+- [ ] Groq error isolation — 3 Groq calls sequential; Call 1 timeout → seluruh endpoint gagal. Partial response handling tidak ada.
+- [ ] Service Worker update flow — tidak ada skipWaiting notification, cache versioning tidak berfungsi.
+- [ ] COT column validation — parser assume kolom 4-9 tanpa sanity check. Silent wrong data jika CFTC reformat.
 
-## CB RATES (Update Manual Setelah Meeting)
-
-File: `api/cb-status.js`, object `CB_DATA`
-
-| CB | Rate | Last Meeting | Decision |
-|----|------|-------------|----------|
-| Fed | 4.50% | 2026-03-19 | hold |
-| ECB | 2.40% | 2026-03-06 | cut -25bps |
-| BOE | 4.50% | 2026-02-06 | cut -25bps |
-| BOJ | 0.50% | 2026-03-19 | hold |
-| BOC | 2.75% | 2026-03-12 | hold |
-| RBA | 4.10% | 2026-02-18 | cut -25bps |
-| RBNZ | 3.50% | 2026-02-19 | cut -50bps |
-| SNB | 0.25% | 2026-03-20 | cut -25bps |
+### P3 — Polish
+- [ ] Checklist state per-pair — `ckState` shared; manual items carry over saat ganti pair.
+- [ ] Journal N+1 query — 51 Redis roundtrips untuk 50 entries. Gunakan MGET.
+- [ ] SOP/Petunjuk stale — masih sebut 2 playbook, sekarang ada 4.
+- [ ] Push dedup `seen_guids` max 500 — edge case republish FinancialJuice.
+- [ ] `correlations.js` Yahoo Finance fragile — tidak ada User-Agent rotation, tidak ada fallback source.
+- [ ] Manifest icons SVG only — iOS Safari butuh PNG fallback.
 
 ---
 
-## FOMC DATES HARDCODED (Update Tiap Awal Tahun)
+## CATATAN PENTING UNTUK SESSION BERIKUTNYA
 
-File: `api/rate-path.js`
-
-2026: May 7, Jun 18, Jul 30, Sep 17, Nov 5, Dec 17
-
----
-
-## INFLATION EXPECTATIONS HARDCODED (Update Quarterly)
-
-File: `api/real-yields.js`, object `INFLATION_EXPECTATIONS`
-
-Source: ECB SPF, BoE IAS, BoJ Tankan — cek `as_of` field, update jika > 90 hari.
+1. **CB rates perlu update manual** — cek ECB April 2026 meeting, BOE update, update `api/cb-status.js` object `CB_DATA`.
+2. **Real yields perlu update manual** — ECB SPF Q2 biasanya release April. Update `api/real-yields.js` jika sudah ada data baru.
+3. **FOMC dates 2027** — `api/rate-path.js` masih punya 2027-04-29 yang spekulatif. Diberi label estimate di kode, tapi verifikasi ketika Fed publish kalender resmi.
+4. **Pip value calculator** — fix yang proper butuh fetch USD/quote spot untuk cross-pair conversion. Atau batasi calculator ke pairs dengan USD direct dan tampilkan disclaimer untuk yang lain.

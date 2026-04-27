@@ -70,11 +70,11 @@ module.exports = async function handler(req, res) {
   const headlinesBlock = recentItems.length > 0 ? recentItems.map((i,idx)=>`${idx+1}. ${i.title}`).join('\n') : '(Tidak ada headline)';
   const calBlock = calEvents.length > 0 ? calEvents.map(e=>`- ${e.date} | ${e.time_wib} | ${e.currency} | ${e.event}`).join('\n') : '(Tidak ada event high-impact)';
 
-  // 3b. Load digest history
+  // 3b. Load digest history — stored as Redis list (LPUSH head = newest, index 0 = latest)
   let digestHistory = [];
   try {
-    const rawHist = await redisCmd('GET', 'digest_history');
-    if (rawHist) digestHistory = JSON.parse(rawHist);
+    const rawHist = await redisCmd('LRANGE', 'digest_history', 0, 6);
+    if (Array.isArray(rawHist)) digestHistory = rawHist.map(e => { try { return JSON.parse(e); } catch(_) { return null; } }).filter(Boolean);
   } catch(e) {}
   const historyBlock = digestHistory.length > 0
     ? digestHistory.map(h => `[${h.wib}] ${h.summary}`).join('\n')
@@ -184,16 +184,16 @@ ${historyBlock}`;
     }
   }
 
-  // ── 5b. Save current digest to history (max 7 entries) ──
+  // ── 5b. Save current digest to history via LPUSH+LTRIM (atomic, no race condition) ──
   if (article && method === 'groq') {
     try {
       const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
       const wibStr = `${String(wibNow.getUTCDate()).padStart(2,'0')} ${MONTHS[wibNow.getUTCMonth()]} ${String(wibNow.getUTCHours()).padStart(2,'0')}:${String(wibNow.getUTCMinutes()).padStart(2,'0')} WIB`;
       const summary = article.replace(/\n/g, ' ').slice(0, 200);
-      digestHistory.push({ at: new Date().toISOString(), wib: wibStr, summary });
-      if (digestHistory.length > 7) digestHistory.splice(0, digestHistory.length - 7);
-      await redisCmd('SET', 'digest_history', JSON.stringify(digestHistory));
-      console.log('Digest history saved, entries:', digestHistory.length);
+      const entry = JSON.stringify({ at: new Date().toISOString(), wib: wibStr, summary });
+      await redisCmd('LPUSH', 'digest_history', entry);
+      await redisCmd('LTRIM', 'digest_history', 0, 6); // keep newest 7
+      console.log('Digest history saved (LPUSH/LTRIM)');
     } catch(e) { console.warn('Digest history save failed:', e.message); }
   }
 

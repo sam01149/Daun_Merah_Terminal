@@ -1,6 +1,12 @@
 // api/subscribe.js
+const crypto      = require('crypto');
 const REDIS_URL   = process.env.UPSTASH_REDIS_REST_URL;
 const REDIS_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
+
+// Full SHA-256 hex of endpoint URL — no truncation, no collision risk
+function subKey(endpoint) {
+  return crypto.createHash('sha256').update(endpoint).digest('hex');
+}
 
 async function redisCmd(...args) {
   const res = await fetch(REDIS_URL, {
@@ -24,13 +30,13 @@ module.exports = async function handler(req, res) {
     if (req.method === 'DELETE') {
       const { endpoint } = body;
       if (!endpoint) return res.status(400).json({ error: 'Missing endpoint' });
-      await redisCmd('HDEL', 'push_subs', Buffer.from(endpoint).toString('base64').slice(0,80));
+      await redisCmd('HDEL', 'push_subs', subKey(endpoint));
       return res.status(200).json({ ok: true });
     }
     if (req.method === 'POST') {
       const { subscription } = body;
       if (!subscription?.endpoint) return res.status(400).json({ error: 'Invalid subscription' });
-      await redisCmd('HSET', 'push_subs', Buffer.from(subscription.endpoint).toString('base64').slice(0,80), JSON.stringify(subscription));
+      await redisCmd('HSET', 'push_subs', subKey(subscription.endpoint), JSON.stringify(subscription));
       return res.status(201).json({ ok: true });
     }
     return res.status(405).json({ error: 'Method not allowed' });

@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-04-26
+> **Last updated:** 2026-04-27
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Downloads\Financial_Feed_App`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -76,9 +76,7 @@ Financial_Feed_App/
 ## API Endpoints
 
 ### `GET /api/feeds?type=rss`
-Proxy RSS FinancialJuice. In-memory cache 50s + Redis `rss_cache` TTL 60s. Header `X-Cache-Source: MEMORY/REDIS/UPSTREAM/STALE`.
-
-> **Kenapa konsolidasi:** `market-digest.js` fetch RSS via internal URL ini untuk menghindari IP block FinancialJuice. Setelah rss.js dihapus, market-digest.js sudah diupdate ke `/api/feeds?type=rss`.
+Proxy RSS FinancialJuice. Redis `rss_cache` TTL 60s. Header `X-Cache-Source: REDIS/UPSTREAM/STALE`.
 
 ### `GET /api/feeds?type=cot`
 Scrape CFTC, parse Leveraged Funds + Asset Manager positions. Redis `cot_cache_v2` TTL 6 jam. Fallback ke stale jika parsed currencies < 5.
@@ -102,7 +100,7 @@ Main AI endpoint. Flow:
 3. Fetch ForexFactory kalender (this week + next week)
 4. Load `digest_history` dari Redis
 5. **Groq Call 1:** Market briefing (Bahasa Indonesia, termasuk paragraf XAUUSD scalping)
-6. Save ke `digest_history` (Redis, max 7 entri)
+6. Save ke `digest_history` (Redis, LPUSH/LTRIM max 7)
 7. **Groq Call 2:** CB Bias Assessment — JSON per currency
 8. Merge + save ke Redis `cb_bias`
 9. **Groq Call 3:** Structured thesis JSON
@@ -114,7 +112,9 @@ Rate limited: 4 req/min per IP.
 Static CB data (rates, last meeting) + bias dari Redis `cb_bias`.
 
 ### `GET /api/calendar`
-ForexFactory high-impact events, 5 hari ke depan (WIB).
+ForexFactory high-impact + medium-impact events, 5 hari ke depan. Waktu dikonversi ke WIB (UTC+7).
+Return fields per event: `{ date, time_wib, currency, event, impact, forecast, previous, actual }`
+**TIDAK ADA field `datetime`** — frontend harus construct dari `date` + `time_wib`.
 
 ### `GET /api/risk-regime`
 Classifier Risk-On/Neutral/Risk-Off dari VIX (FRED), MOVE (Stooq), HY OAS (FRED). Redis `risk_regime` TTL 1800s.
@@ -123,10 +123,10 @@ Classifier Risk-On/Neutral/Risk-Off dari VIX (FRED), MOVE (Stooq), HY OAS (FRED)
 Real yield differential. USD: DGS10 − T10YIE. 7 currencies lain hardcoded inflation expectations. Redis `real_yields` TTL 21600s.
 
 ### `GET /api/rate-path`
-USD rate path approximation. FRED SOFR/EFFR + heuristic. BUKAN CME FedWatch (SPA). Redis `rate_path` TTL 14400s.
+USD rate path **HEURISTIC** (bukan CME FedWatch / market-implied). FRED SOFR/EFFR + step-function probability. UI menampilkan label "Estimasi (bukan probabilitas pasar)". Redis `rate_path` TTL 14400s.
 
 ### `GET /api/correlations`
-Cross-asset Pearson 20d + 60d, 10 instrumen via Yahoo Finance (Stooq diganti — blokir Vercel IPs). On-demand via button. Redis `correlations` TTL 86400s. Rate limited: 5/min.
+Cross-asset Pearson 20d + 60d, 10 instrumen via Yahoo Finance. On-demand via button. Redis `correlations` TTL 86400s. Rate limited: 5/min.
 
 ### `POST/GET /api/sizing-history`
 History sizing calculations per device. Redis sorted set `sizing_history:{device_id}`, max 10.
@@ -178,46 +178,35 @@ Font: **Syne** (logo/heading), **DM Mono** (semua teks lainnya)
 | PETUNJUK | `petunjuk` | `#60a5fa` |
 
 ### Mobile — Bottom Nav (`#botNav`, `.bot-nav`)
-Fixed bottom bar, hanya muncul di ≤767px. Top nav disembunyikan di mobile. 8 tombol dengan SVG icon + label pendek. Active state disinkronkan dua arah dengan top nav.  
-**Catatan implementasi:** Event listener pakai event delegation pada `document` (bukan `querySelectorAll` langsung) karena `#botNav` HTML berada setelah `</script>` tag — script harus jalan sebelum elemen ada di DOM.
+Fixed bottom bar, hanya muncul di ≤767px. Top nav disembunyikan di mobile. 8 tombol dengan SVG icon + label pendek. Active state disinkronkan dua arah dengan top nav.
+**Catatan implementasi:** Event listener pakai event delegation pada `document` (bukan `querySelectorAll` langsung) karena `#botNav` HTML berada setelah `</script>` tag.
 
 ### Category Filters (`.nav-filters`)
 Hanya muncul di view NEWS: All, Mkt Moving, Forex, Macro, Econ Data, Energy, Geopolitical.
 
 ---
 
-## Panel-Panel
+## Checklist — Detail Teknis
 
-### NEWS (`feedScroll`)
-FinancialJuice RSS real-time. Auto-refresh toggle 50 detik. Filter per kategori.
+DOM: item = `div.ck-item`, checkbox = `div.ck-box` dengan `id="ckbox_{id}"` (**bukan `<input>`**).
 
-### RINGKASAN (`ringkasanPanel`)
-AI Market Briefing (3 Groq calls) + Cross-Asset Correlations section.  
-Prompt: structured macro briefing — METODE per-tema (mekanisme konkret FX, magnitude, konflik), CONTINUITY (berubah vs tetap vs sesi sebelumnya), KALENDER beat/miss scenarios, penutup wajib sebut nama currency terkuat/terlemah. XAUUSD: 3-channel framework (USD/real yields, safe haven, risk sentiment ekuitas) dengan resolusi konflik eksplisit + trigger spike dengan waktu WIB.
+```js
+const PLAYBOOKS = {
+  smc_ict:        { name, color, sections:[...], quick:[...], gates:[...] },
+  macro_momentum: { ... },
+  event_driven:   { ... },
+  mean_reversion: { ... },
+};
+const PB_REGIME_CHECK = { id:'regime_check', num:'00', ... }; // shared semua playbook
+let ckActivePlaybook = localStorage.getItem('daun_merah_playbook') || 'smc_ict';
+```
 
-### CAL (`calPanel`)
-Economic calendar + CB tracker + Real Yields + Rate Path (USD).
+localStorage keys: `daunmerah_v2` (state), `daun_merah_playbook` (active), `daun_merah_device_id` (device ID)
 
-### COT (`cotPanel`)
-CFTC Commitment of Traders — Leveraged Funds + Asset Manager net positions 7 currencies.
-
-### CHECKLIST (`checklistPanel`)
-4 playbook: `smc_ict`, `macro_momentum`, `event_driven`, `mean_reversion`. Section REGIME CHECK (num='00') di semua playbook dengan 5 item auto-tick.  
-**Mobile layout:** `ck-wrap` di ≤767px diubah ke `flex-direction:column` dan `.ck-sidebar` disembunyikan. Sidebar (verdict/progress/quick check) digantikan oleh `.ck-mobile-bar` yang muncul di dalam `.ck-sections`.
-
-### SIZING (`sizingPanel`)
-Position sizing calculator. Input: equity/risk%/pair/stop pips. Hard block >2% risk.
-
-### JURNAL (`jurnalPanel`)
-Trade journal. Auto-snapshot makro saat entry. Prefill dari AI thesis via `jnPrefillFromThesis()`.
-
-### PETUNJUK (`petunjukPanel`)
-SOP end-to-end penggunaan aplikasi. Statis (tidak ada API call). Berisi:
-- Alur keputusan quick-reference (COT → RINGKASAN → CAL → NEWS → CHECKLIST → SIZING → JURNAL)
-- Fase 1: Pre-Session (4 langkah)
-- Fase 2: Live Session (4 langkah)
-- Fase 3: Post-Trade (2 langkah)
-- 6 Aturan Kunci (3 larangan + 3 keharusan)
+**rc4 auto-tick logic** — `ckAutoTickRegimeCheck()` di `index.html`:
+- Cek apakah ada event `impact === 'High'` (kapital) untuk base/quote currency dalam 6 jam ke depan
+- Timestamp di-construct dari `ev.date` + `ev.time_wib` (WIB = UTC+7), bukan `ev.datetime` (field tidak ada)
+- Jika `dangerous.length === 0` → auto-tick PASS; else → auto-block FAIL
 
 ---
 
@@ -228,7 +217,7 @@ SOP end-to-end penggunaan aplikasi. Statis (tidak ada API call). Berisi:
 | `rss_cache` | `{xml, fetchedAt}` | 60s | `api/feeds.js` |
 | `cot_cache_v2` | Full COT payload | no TTL (6h manual) | `api/feeds.js` |
 | `cb_bias` | `{USD:{bias,confidence,updated_at},...}` | no TTL | `api/market-digest.js` |
-| `digest_history` | Array max 7 entri digest AI | no TTL | `api/market-digest.js` |
+| `digest_history` | Redis list max 7 entri digest AI (LPUSH/LTRIM) | no TTL | `api/market-digest.js` |
 | `latest_thesis` | Structured thesis JSON | 21600s | `api/market-digest.js` |
 | `risk_regime` | VIX/MOVE/HY payload | 1800s | `api/risk-regime.js` |
 | `real_yields` | `{currencies:{...}, computed_at}` | 21600s | `api/real-yields.js` |
@@ -262,49 +251,46 @@ szGetDeviceId()           // get/create device ID dari localStorage
 ckAutoTick(id, hint)      // auto-centang item checklist
 ckAutoBlock(id, hint)     // auto-block item checklist (merah)
 ckSwitchPlaybook(id)      // ganti playbook + reset state
+ckAutoTickRegimeCheck(pair) // auto-tick rc1-rc4 dari live data
 ```
 
 ---
 
-## Checklist — Detail Teknis
+## Bug History
 
-DOM: item = `div.ck-item`, checkbox = `div.ck-box` dengan `id="ckbox_{id}"` (**bukan `<input>`**).
-
-```js
-const PLAYBOOKS = {
-  smc_ict:        { name, color, sections:[...], quick:[...], gates:[...] },
-  macro_momentum: { ... },
-  event_driven:   { ... },
-  mean_reversion: { ... },
-};
-const PB_REGIME_CHECK = { id:'regime_check', num:'00', ... }; // shared semua playbook
-let ckActivePlaybook = localStorage.getItem('daun_merah_playbook') || 'smc_ict';
-```
-
-localStorage keys: `daunmerah_v2` (state), `daun_merah_playbook` (active), `daun_merah_device_id` (device ID)
-
----
-
-## Commit History (Terbaru)
-
-```
-b1729e9  feat: add PETUNJUK tab — end-to-end SOP for trading workflow
-6f48bcb  fix: market-digest internal RSS call pointing to deleted /api/rss endpoint
-108ffab  feat: mobile bottom nav + SVG icon (Daun Merah dual-leaf)
-95db702  fix: consolidate API routes to stay within Vercel Hobby 12-function limit
-658a1a6  feat: Task 10f/g/h — Health Monitoring, Redis Key Registry, Rate Limiting
-022dc40  feat: Task 7-9, Task 10a/b/e — Regime Gate, Journal, Thesis, Playbooks, Correlations, Rate Path, Hardening
-9e5f7fa  feat: Task 4 — Position Sizing Calculator (SIZING tab + backend)
-```
-
----
-
-## Bug History yang Penting
-
-- **RINGKASAN "0 berita"** — `market-digest.js` masih memanggil `/api/rss` (sudah dihapus saat konsolidasi). Fix: update ke `/api/feeds?type=rss` (commit 6f48bcb).
-- **Vercel 12-function limit** — 17 fungsi melebihi Vercel Hobby limit. Fix: konsolidasi ke 12 (commit 95db702). File `feeds.js` = rss.js + cot.js. File `admin.js` = health.js + redis-keys.js + admin-prompts.js + push.js.
-- **`sendTelegram` naming conflict** — saat merge push.js + health.js ke admin.js, keduanya punya `sendTelegram`. Fix: rename ke `sendHealthTelegram` + `sendPushTelegram`.
+- **RINGKASAN "0 berita"** — `market-digest.js` masih memanggil `/api/rss` (sudah dihapus). Fix: update ke `/api/feeds?type=rss` (commit 6f48bcb).
+- **Vercel 12-function limit** — 17 fungsi melebihi Vercel Hobby limit. Fix: konsolidasi ke 12 (commit 95db702).
+- **`sendTelegram` naming conflict** — saat merge push.js + health.js ke admin.js. Fix: rename ke `sendHealthTelegram` + `sendPushTelegram`.
 - **qwen-qwq-32b timeout** — model reasoning overhead melewati Vercel 25s limit. Rollback ke `llama-3.3-70b-versatile`.
+- **sw.js FETCH_URL Netlify** — endpoint `/.netlify/functions/rss` mati sejak migrasi ke Vercel. Fix: update ke `/api/feeds?type=rss` (session 2026-04-27).
+- **rc4 auto-tick false positive** — `ckAutoTickRegimeCheck` compare `ev.impact !== 'high'` (lowercase) tapi API return `'High'` (kapitalized). Dan `ev.datetime` tidak ada — construct dari `ev.date` + `ev.time_wib`. Fix: session 2026-04-27.
+- **convertToWIB UTC offset salah** — ForexFactory XML pakai US/Eastern (EST/EDT), bukan UTC. Comment di code salah. `+7` seharusnya `+12` (EST) atau `+11` (EDT). Semua jam event di tab CAL off ~5 jam. Fix: session 2026-04-27.
+- **rate-path heuristic tidak honest** — UI tampilkan probabilitas hold/cut tanpa label bahwa ini bukan market-implied. Fix: tambah label "Estimasi" di session 2026-04-27.
+
+---
+
+## Known Issues (P1-P3, belum difix)
+
+### P1 — Risiko akurasi/keamanan modal
+- **Pip value cross-pair approximation** — `calcPipValueUSD` untuk cross pairs (EUR/JPY, GBP/JPY dll) pakai `(pipSize/entryPrice)*lotUnits`. Error bisa 10-30%. Risk sizing 2% limit bisa bocor ke 2.5% real risk.
+- **Push subscription key collision** — `Buffer.from(endpoint).toString('base64').slice(0,80)` bisa collision. Ganti ke SHA-256 hex.
+- **CB rates stale** — `api/cb-status.js` data ECB/BOE/RBA/RBNZ kemungkinan sudah ada meeting baru. Update manual diperlukan setelah setiap meeting.
+- **Real yields stale** — `api/real-yields.js` data EUR `as_of` 2026-01-15, sekarang Apr 2026 = ~100 hari. Flag stale lebih visible di UI.
+
+### P2 — Robustness
+- **digest_history race condition** — multi-tab read-modify-write tanpa atomic. Gunakan LPUSH/LTRIM.
+- **cb_bias race condition** — merge logic `market-digest.js` sama pattern. Gunakan HSET per currency (already atomic) atau lock SETNX.
+- **rate limiter INCR/EXPIRE window** — antara INCR dan EXPIRE ada window orphan key. Gunakan `SET NX EX` / Lua script.
+- **Groq calls error isolation** — Call 1/2/3 sequential. Jika Call 1 timeout, 2 dan 3 skip. Tidak ada partial response handling.
+- **Service Worker update flow** — tidak ada skipWaiting dengan client notification, tidak ada cache versioning berfungsi.
+- **feeds.js rssMemCache** — `const rssMemCache = { xml: null, fetchedAt: 0 }` module-level. Violates cold-start safe constraint. Redis backup ada tapi behavior unpredictable.
+
+### P3 — Polish
+- **`_lastThesis` tidak persist** — refresh halaman → `_lastThesis = null` → tombol "Gunakan untuk mulai jurnal" silently fail. Load dari Redis `latest_thesis` saat app init.
+- **Checklist state per-pair** — `ckState` shared semua pair. Manual items (rc5, gates teknikal) carry over saat ganti pair.
+- **Journal N+1 query** — ZRANGE + GET per-id = 51 Redis roundtrips untuk 50 entries. Gunakan MGET.
+- **SOP/Petunjuk stale** — menyebut 2 playbook, sekarang ada 4.
+- **COT column parsing tidak validated** — kolom 4-9 assumed, tidak ada sanity check.
 
 ---
 
@@ -312,10 +298,61 @@ b1729e9  feat: add PETUNJUK tab — end-to-end SOP for trading workflow
 
 1. No new npm dependencies
 2. Frontend tetap single `index.html` — no bundler, no framework
-3. Vercel Hobby: max 12 serverless functions — jangan tambah file baru di `api/` tanpa menghapus yang lain
+3. **Vercel Hobby: TEPAT 12 serverless functions** — files dengan prefix `_` tidak dihitung
 4. Setiap external API call harus ada Redis cache dengan explicit TTL
 5. Cold-start safe — pakai Redis, bukan module-level cache
 6. No silent failures — log context di setiap failure
 7. Honest data — tampilkan "unavailable" bukan angka palsu
-8. Mobile-first — test 380px viewport
+8. Mobile-first — test 380px viewport, bottom nav di ≤767px
 9. Indonesian UI text, English code/comments/variables
+
+---
+
+## CB Rates (Update Manual Setelah Meeting)
+
+File: `api/cb-status.js`, object `CB_DATA`
+
+| CB | Rate | Last Meeting | Decision |
+|----|------|-------------|----------|
+| Fed | 4.50% | 2026-03-19 | hold |
+| ECB | 2.40% | 2026-03-06 | cut -25bps |
+| BOE | 4.50% | 2026-02-06 | cut -25bps |
+| BOJ | 0.50% | 2026-03-19 | hold |
+| BOC | 2.75% | 2026-03-12 | hold |
+| RBA | 4.10% | 2026-02-18 | cut -25bps |
+| RBNZ | 3.50% | 2026-02-19 | cut -50bps |
+| SNB | 0.25% | 2026-03-20 | cut -25bps |
+
+> **Perlu dicek:** ECB meeting cycle 6 minggu — antara 2026-03-06 dan 2026-04-27 mungkin sudah ada meeting April. Verifikasi sebelum update.
+
+---
+
+## FOMC Dates Hardcoded
+
+File: `api/rate-path.js`
+
+2026: May 7, Jun 18, Jul 30, Sep 17, Nov 5, Dec 17
+2027: Jan 28, Mar 18 (estimasi — belum dipublikasi Fed, diberi label sebagai estimate)
+
+---
+
+## Inflation Expectations Hardcoded (Update Quarterly)
+
+File: `api/real-yields.js`, object `INFLATION_EXPECTATIONS`
+
+Source: ECB SPF, BoE IAS, BoJ Tankan — cek `as_of` field, update jika > 90 hari.
+
+---
+
+## Environment
+
+```
+Stack:  Vanilla JS + HTML, Vercel Serverless Functions (Node.js CommonJS), Upstash Redis REST
+AI:     Groq llama-3.3-70b-versatile (max 25s Vercel timeout)
+Font:   Syne (heading) + DM Mono (body)
+Colors: --accent: #c0392b (red), --pink: #f472b6 (jurnal), #60a5fa (petunjuk)
+Redis:  Upstash REST — pattern: async function redisCmd(...args) di setiap api/*.js
+Env:    GROQ_API_KEY, UPSTASH_REDIS_REST_URL, UPSTASH_REDIS_REST_TOKEN,
+        FRED_API_KEY, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_SUBJECT,
+        TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, CRON_SECRET
+```

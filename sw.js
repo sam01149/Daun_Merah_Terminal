@@ -1,5 +1,5 @@
 const CACHE_NAME = 'fjfeed-v1';
-const FETCH_URL = '/.netlify/functions/rss';
+const FETCH_URL = '/api/feeds?type=rss';
 
 let seenGuids = new Set();
 

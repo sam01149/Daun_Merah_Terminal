@@ -1918,10 +1918,13 @@ function escHtml(s) {
   return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
-let _lastThesis = null;
+let _lastThesis = (() => {
+  try { return JSON.parse(localStorage.getItem('daun_merah_thesis') || 'null'); } catch(_) { return null; }
+})();
 
 function renderThesisCard(t) {
   _lastThesis = t;
+  try { localStorage.setItem('daun_merah_thesis', JSON.stringify(t)); } catch(_) {}
   const stars = '★'.repeat(t.confidence_1_to_5) + '☆'.repeat(5 - t.confidence_1_to_5);
   const dirClass = t.direction === 'long' ? 'long' : 'short';
   const dirLabel = t.direction === 'no_trade' ? 'NO TRADE' : t.direction.toUpperCase();
@@ -2168,8 +2171,8 @@ function renderCBTracker() {
           const holdPct = Math.round((nm.prob_hold || 0) * 100);
           const cutPct  = Math.round((nm.prob_cut25 || 0) * 100);
           const imp6 = rp.cumulative_6m_bps;
-          const imp6Str = imp6 !== undefined ? ` · 6M implied: ${imp6 >= 0 ? '+' : ''}${imp6}bps` : '';
-          return `<div class="cb-updated" style="color:var(--text-mid)">Hold ${holdPct}% / Cut ${cutPct}%${imp6Str}</div>`;
+          const imp6Str = imp6 !== undefined ? ` · 6M: ${imp6 >= 0 ? '+' : ''}${imp6}bps` : '';
+          return `<div class="cb-updated" style="color:var(--text-mid)" title="Estimasi heuristik — bukan probabilitas pasar (CME FedWatch)">Hold ${holdPct}% / Cut ${cutPct}%${imp6Str} <span style="color:var(--muted);font-size:9px">(Est.)</span></div>`;
         })()}
       </div>`;
   }).join('');
@@ -2520,13 +2523,19 @@ function renderRegimeBanner(data) {
 
   const LABELS = { risk_on: 'RISK-ON', neutral: 'NEUTRAL', risk_off: 'RISK-OFF' }
   const CLASSES = { risk_on: 'risk-on', neutral: 'neutral', risk_off: 'risk-off' }
+  const IMPLICATIONS = {
+    risk_on:  'Appetite risiko tinggi · Favor AUD, NZD, CAD · Kurangi JPY/CHF long',
+    neutral:  'Sinyal campuran · Ikuti CB bias & data · Selektif dalam pair',
+    risk_off: 'Penghindaran risiko · Favor JPY, CHF, USD · Hindari AUD/NZD/CAD',
+  }
 
-  const arrow = v => v == null ? '' : v > 0 ? ' ▲' : v < 0 ? ' ▼' : ''
+  const chgArrow = v => v == null ? '' : v > 0 ? ' ▲' : v < 0 ? ' ▼' : ' →'
+  const fmtChg   = (v, dec=2) => v == null ? '' : ` (Δ ${v > 0 ? '+' : ''}${v.toFixed(dec)})`
 
   const parts = []
-  if (data.vix   != null) parts.push(`VIX ${data.vix.toFixed(1)}${arrow(data.vix - 20)}`)
-  if (data.move  != null) parts.push(`MOVE ${Math.round(data.move)}${arrow(data.move - 110)}`)
-  if (data.hy_spread != null) parts.push(`HY ${data.hy_spread.toFixed(2)}%${arrow(data.hy_change_2d)}`)
+  if (data.vix      != null) parts.push(`VIX ${data.vix.toFixed(1)}${chgArrow(data.vix_change_2d)}`)
+  if (data.move     != null) parts.push(`MOVE ${Math.round(data.move)}${chgArrow(data.move_change_2d)}`)
+  if (data.hy_spread != null) parts.push(`HY ${data.hy_spread.toFixed(2)}%${chgArrow(data.hy_change_2d)}`)
 
   const updTime = data.data_date
     ? new Date(data.data_date).toLocaleDateString('id-ID', { day:'numeric', month:'short' })
@@ -2540,21 +2549,45 @@ function renderRegimeBanner(data) {
 
   // Breakdown detail (shown on tap)
   const comp = data.components || {}
+  const triggerCount = [comp.vix_trigger, comp.move_trigger, comp.hy_trigger].filter(Boolean).length
+  const availCount   = [comp.vix_trigger, comp.move_trigger, comp.hy_trigger].filter(v => v != null).length
+
   const rows = []
+
+  // Implication line
+  const impl = IMPLICATIONS[data.regime]
+  if (impl) rows.push(`<div style="font-weight:700;opacity:.95;margin-bottom:4px">${impl}</div>`)
+
+  // VIX row
   if (data.vix != null) {
-    const cls = comp.vix_trigger ? 'regime-trigger active' : 'regime-trigger'
-    rows.push(`<div class="${cls}">VIX ${data.vix.toFixed(1)} ${comp.vix_trigger ? '> 25 → Risk-Off trigger' : '≤ 25 → OK'}</div>`)
+    const cls    = comp.vix_trigger ? 'regime-trigger active' : 'regime-trigger'
+    const chg    = fmtChg(data.vix_change_2d)
+    const status = comp.vix_trigger ? '> 25 → TRIGGER' : '≤ 25 → aman'
+    rows.push(`<div class="${cls}">VIX (vol. saham) ${data.vix.toFixed(1)}${chg} — ${status}</div>`)
   }
+
+  // MOVE row
   if (data.move != null) {
-    const cls = comp.move_trigger ? 'regime-trigger active' : 'regime-trigger'
-    rows.push(`<div class="${cls}">MOVE ${Math.round(data.move)} ${comp.move_trigger ? '> 130 → Risk-Off trigger' : '≤ 130 → OK'}</div>`)
+    const cls    = comp.move_trigger ? 'regime-trigger active' : 'regime-trigger'
+    const chg    = fmtChg(data.move_change_2d, 1)
+    const status = comp.move_trigger ? '> 130 → TRIGGER' : '≤ 130 → aman'
+    rows.push(`<div class="${cls}">MOVE (vol. obligasi) ${Math.round(data.move)}${chg} — ${status}</div>`)
   }
+
+  // HY OAS row
   if (data.hy_spread != null) {
-    const cls = comp.hy_trigger ? 'regime-trigger active' : 'regime-trigger'
-    const chg = data.hy_change_2d != null ? ` (Δ2d ${data.hy_change_2d > 0 ? '+' : ''}${data.hy_change_2d.toFixed(2)}%)` : ''
-    rows.push(`<div class="${cls}">HY OAS ${data.hy_spread.toFixed(2)}%${chg} ${comp.hy_trigger ? '> +0.15% widening → Risk-Off trigger' : '→ OK'}</div>`)
+    const cls    = comp.hy_trigger ? 'regime-trigger active' : 'regime-trigger'
+    const chg    = fmtChg(data.hy_change_2d)
+    const status = comp.hy_trigger ? 'melebar > +0.15% → TRIGGER' : '→ stabil'
+    rows.push(`<div class="${cls}">HY OAS (spread kredit) ${data.hy_spread.toFixed(2)}%${chg} — ${status}</div>`)
   }
-  rows.push(`<div style="opacity:.45;margin-top:3px">Risk-On = VIX<15 + MOVE<90 + HY tidak melebar · Risk-Off = salah satu threshold terlampaui</div>`)
+
+  // Trigger summary
+  rows.push(`<div style="margin-top:4px;opacity:.55">${triggerCount}/${availCount} Risk-Off trigger aktif · Risk-On = semua benign (VIX<15, MOVE<90, HY tidak melebar)</div>`)
+
+  // Data note
+  rows.push(`<div style="opacity:.35;margin-top:2px">Data EOD · diperbarui setelah market close AS · cache 30 menit</div>`)
+
   detail.innerHTML = rows.join('')
 }
 
@@ -3172,18 +3205,24 @@ function ckAutoTickRegimeCheck(pair) {
   }
 
   // rc4: no high-impact event <6 hours for base or quote
+  // API returns impact='High' (capitalized) and no datetime field — construct from date + time_wib (WIB=UTC+7)
   if (calData) {
     const now = Date.now();
     const sixH = 6 * 60 * 60 * 1000;
     const dangerous = calData.filter(ev => {
-      if (ev.impact !== 'high') return false;
-      const t = new Date(ev.datetime).getTime();
+      if (ev.impact !== 'High') return false;
+      if (ev.time_wib === 'Tentative') return false;
+      const wibMatch = ev.time_wib.match(/(\d{2}):(\d{2})/);
+      if (!wibMatch) return false;
+      // WIB is UTC+7: convert to UTC by subtracting 7h, then add to date midnight UTC
+      const t = new Date(ev.date + 'T00:00:00Z').getTime()
+        + (parseInt(wibMatch[1]) * 60 + parseInt(wibMatch[2]) - 420) * 60000;
       return t > now && t < now + sixH && (ev.currency === base || ev.currency === quote);
     });
     if (dangerous.length === 0) {
       ckAutoTick('rc4', 'Tidak ada event high-impact <6 jam');
     } else {
-      ckAutoBlock('rc4', `${dangerous.length} event high-impact <6 jam: ${dangerous.map(e => e.title).join(', ')}`);
+      ckAutoBlock('rc4', `${dangerous.length} event high-impact <6 jam: ${dangerous.map(e => e.event).join(', ')}`);
     }
   }
 

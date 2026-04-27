@@ -79,12 +79,11 @@ module.exports = async function rateLimit(req, res, opts = {}) {
 
   let count = null;
   try {
-    // Atomic increment + set TTL only on first write
+    // SET NX EX atomically creates key with TTL on first write, avoiding INCR+EXPIRE race.
+    // If SET succeeds (null → key was new), count = 1. Otherwise INCR on existing key.
+    const created = await redisCmd(REDIS_URL, REDIS_TOKEN, 'SET', key, '0', 'NX', 'EX', windowSecs * 2);
     count = await redisCmd(REDIS_URL, REDIS_TOKEN, 'INCR', key);
-    if (count === 1) {
-      // New key — set expiry to twice the window for safety
-      redisCmd(REDIS_URL, REDIS_TOKEN, 'EXPIRE', key, windowSecs * 2).catch(() => {});
-    }
+    void created; // used only for side-effect of creating key with TTL
   } catch(e) {
     console.warn('ratelimit: Redis error — failing open:', e.message);
     return false;
