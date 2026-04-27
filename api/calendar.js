@@ -73,9 +73,10 @@ function parseFFXML(xml) {
     if (!title || !country) continue;
     const dp = date.match(/(\d{2})-(\d{2})-(\d{4})/);
     if (!dp) continue;
+    const wib = convertToWIB(time, `${dp[3]}-${dp[1]}-${dp[2]}`);
     events.push({
-      date:     `${dp[3]}-${dp[1]}-${dp[2]}`,
-      time_wib: convertToWIB(time),
+      date:     wib.date,
+      time_wib: wib.time_wib,
       currency: country,
       event:    title,
       impact,
@@ -87,28 +88,21 @@ function parseFFXML(xml) {
   return events;
 }
 
-// ForexFactory XML stores time in US/Eastern (EST = UTC-5, EDT = UTC-4), not UTC.
-// EST → WIB (UTC+7) = +12h. EDT → WIB = +11h.
-function isUSDST(date) {
-  const y = date.getUTCFullYear();
-  // 2nd Sunday of March (between Mar 8-14)
-  const mar8 = new Date(Date.UTC(y, 2, 8));
-  const dstStart = new Date(Date.UTC(y, 2, 8 + (7 - mar8.getUTCDay()) % 7));
-  // 1st Sunday of November (between Nov 1-7)
-  const nov1 = new Date(Date.UTC(y, 10, 1));
-  const dstEnd = new Date(Date.UTC(y, 10, 1 + (7 - nov1.getUTCDay()) % 7));
-  return date >= dstStart && date < dstEnd;
-}
-
-function convertToWIB(timeStr) {
-  if (!timeStr || timeStr === 'All Day' || timeStr === 'Tentative') return 'Tentative';
+// nfs.faireconomy.media XML stores event times in UTC. WIB = UTC+7.
+function convertToWIB(timeStr, dateStr) {
+  if (!timeStr || timeStr === 'All Day' || timeStr === 'Tentative') return { time_wib: 'Tentative', date: dateStr };
   const m = timeStr.match(/(\d{1,2}):(\d{2})(am|pm)/i);
-  if (!m) return timeStr;
+  if (!m) return { time_wib: timeStr, date: dateStr };
   let hour = parseInt(m[1]);
   const min = parseInt(m[2]), ampm = m[3].toLowerCase();
   if (ampm === 'pm' && hour !== 12) hour += 12;
   if (ampm === 'am' && hour === 12) hour = 0;
-  // FF XML uses US/Eastern: EST (UTC-5) or EDT (UTC-4). WIB = UTC+7.
-  const offset = isUSDST(new Date()) ? 11 : 12;
-  return `${String((hour + offset) % 24).padStart(2,'0')}:${String(min).padStart(2,'0')} WIB`;
+  const wibHour = hour + 7;
+  let dateOut = dateStr;
+  if (wibHour >= 24) {
+    const d = new Date(dateStr + 'T00:00:00Z');
+    d.setUTCDate(d.getUTCDate() + 1);
+    dateOut = toDateStr(d);
+  }
+  return { time_wib: `${String(wibHour % 24).padStart(2,'0')}:${String(min).padStart(2,'0')} WIB`, date: dateOut };
 }
