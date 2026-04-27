@@ -56,7 +56,7 @@ Financial_Feed_App/
     ├── admin.js            # Consolidated: health + redis-keys + admin-prompts + push
     ├── calendar.js         # ForexFactory calendar
     ├── cb-status.js        # CB tracker + bias dari Redis
-    ├── correlations.js     # Cross-asset correlation (Stooq), rate limited 5/min
+    ├── correlations.js     # Cross-asset correlation (Yahoo Finance), rate limited 5/min
     ├── feeds.js            # Consolidated: RSS proxy + COT scraper
     ├── journal.js          # Trade journal CRUD
     ├── market-digest.js    # AI briefing (3 Groq calls), rate limited 4/min
@@ -126,7 +126,7 @@ Real yield differential. USD: DGS10 − T10YIE. 7 currencies lain hardcoded infl
 USD rate path approximation. FRED SOFR/EFFR + heuristic. BUKAN CME FedWatch (SPA). Redis `rate_path` TTL 14400s.
 
 ### `GET /api/correlations`
-Cross-asset Pearson 20d + 60d, 10 instrumen Stooq. On-demand via button. Redis `correlations` TTL 86400s. Rate limited: 5/min.
+Cross-asset Pearson 20d + 60d, 10 instrumen via Yahoo Finance (Stooq diganti — blokir Vercel IPs). On-demand via button. Redis `correlations` TTL 86400s. Rate limited: 5/min.
 
 ### `POST/GET /api/sizing-history`
 History sizing calculations per device. Redis sorted set `sizing_history:{device_id}`, max 10.
@@ -178,7 +178,8 @@ Font: **Syne** (logo/heading), **DM Mono** (semua teks lainnya)
 | PETUNJUK | `petunjuk` | `#60a5fa` |
 
 ### Mobile — Bottom Nav (`#botNav`, `.bot-nav`)
-Fixed bottom bar, hanya muncul di ≤767px. Top nav disembunyikan di mobile. 8 tombol dengan SVG icon + label pendek. Active state disinkronkan dua arah dengan top nav.
+Fixed bottom bar, hanya muncul di ≤767px. Top nav disembunyikan di mobile. 8 tombol dengan SVG icon + label pendek. Active state disinkronkan dua arah dengan top nav.  
+**Catatan implementasi:** Event listener pakai event delegation pada `document` (bukan `querySelectorAll` langsung) karena `#botNav` HTML berada setelah `</script>` tag — script harus jalan sebelum elemen ada di DOM.
 
 ### Category Filters (`.nav-filters`)
 Hanya muncul di view NEWS: All, Mkt Moving, Forex, Macro, Econ Data, Energy, Geopolitical.
@@ -192,7 +193,7 @@ FinancialJuice RSS real-time. Auto-refresh toggle 50 detik. Filter per kategori.
 
 ### RINGKASAN (`ringkasanPanel`)
 AI Market Briefing (3 Groq calls) + Cross-Asset Correlations section.  
-Prompt tambahan: paragraf XAUUSD scalping setelah analisis utama (driver dominan, bias sesi, risiko spike 24 jam).
+Prompt: structured macro briefing — METODE per-tema (mekanisme konkret FX, magnitude, konflik), CONTINUITY (berubah vs tetap vs sesi sebelumnya), KALENDER beat/miss scenarios, penutup wajib sebut nama currency terkuat/terlemah. XAUUSD: 3-channel framework (USD/real yields, safe haven, risk sentiment ekuitas) dengan resolusi konflik eksplisit + trigger spike dengan waktu WIB.
 
 ### CAL (`calPanel`)
 Economic calendar + CB tracker + Real Yields + Rate Path (USD).
@@ -201,7 +202,8 @@ Economic calendar + CB tracker + Real Yields + Rate Path (USD).
 CFTC Commitment of Traders — Leveraged Funds + Asset Manager net positions 7 currencies.
 
 ### CHECKLIST (`checklistPanel`)
-4 playbook: `smc_ict`, `macro_momentum`, `event_driven`, `mean_reversion`. Section REGIME CHECK (num='00') di semua playbook dengan 5 item auto-tick.
+4 playbook: `smc_ict`, `macro_momentum`, `event_driven`, `mean_reversion`. Section REGIME CHECK (num='00') di semua playbook dengan 5 item auto-tick.  
+**Mobile layout:** `ck-wrap` di ≤767px diubah ke `flex-direction:column` dan `.ck-sidebar` disembunyikan. Sidebar (verdict/progress/quick check) digantikan oleh `.ck-mobile-bar` yang muncul di dalam `.ck-sections`.
 
 ### SIZING (`sizingPanel`)
 Position sizing calculator. Input: equity/risk%/pair/stop pips. Hard block >2% risk.

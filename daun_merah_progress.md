@@ -55,6 +55,10 @@ FEAT     ✅  Prompt XAUUSD scalping         (termasuk dalam session konsolidasi
 - Rate limiting: market-digest 4/min, correlations 5/min
 - Health monitoring: probe 6 sumber eksternal, Telegram alert
 - Admin: prompts updatable tanpa redeploy, Redis key registry
+- Correlations: data source Yahoo Finance (Stooq diganti — blokir Vercel IPs)
+- Mobile nav: event delegation fix (tombol Digest/Cal/COT/dll bisa diklik)
+- Checklist mobile: column layout + sidebar hidden ≤767px
+- Market digest prompt: diupgrade ke structured macro briefing (METODE, CONTINUITY, KALENDER beat/miss, 3-channel XAUUSD)
 
 ---
 

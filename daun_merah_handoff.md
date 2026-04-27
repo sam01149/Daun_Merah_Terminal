@@ -51,6 +51,12 @@ Vercel Hobby = max 12 serverless functions. Dari 17 → 12:
 - `<nav class="bot-nav" id="botNav">` — fixed bottom bar, 8 tombol: News/Digest/Cal/COT/Check/Sizing/Jurnal/SOP
 - Active state disinkronkan dua arah antara top nav dan bottom nav
 - `.feed-scroll` dan `.ck-sections` dapat `padding-bottom: calc(60px + env(safe-area-inset-bottom))` di mobile
+- **Event listener pakai event delegation pada `document`** — `#botNav` HTML ada setelah `</script>`, jadi `querySelectorAll` saat parse time hasilnya kosong
+
+### ✅ Checklist Mobile Layout
+- `ck-wrap` adalah `display:flex` (row) — di mobile `.ck-sidebar` (232px fixed) mengambil sebagian besar layar
+- Fix: di ≤767px, `ck-wrap` diubah ke `flex-direction:column` dan `.ck-sidebar` di-`display:none`
+- Verdict/progress di mobile ditangani oleh `.ck-mobile-bar` yang sudah ada di `.ck-sections`
 
 ### ✅ Tab PETUNJUK
 - Tab ke-8: `data-view="petunjuk"`, warna `#60a5fa`
