@@ -999,6 +999,11 @@ body {
   .bot-nav-btn span { white-space: nowrap; overflow: hidden; text-overflow: clip; max-width: 100%; }
   .feed-scroll { padding-bottom: calc(60px + env(safe-area-inset-bottom)); }
   .ck-sections { padding-bottom: calc(60px + env(safe-area-inset-bottom)); }
+
+  /* Checklist: stack vertically, hide desktop sidebar */
+  .ck-wrap { flex-direction: column; }
+  .ck-sidebar { display: none; }
+  .ck-sections { flex: 1; }
 }
 </style>
 </head>
