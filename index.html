@@ -301,6 +301,13 @@ body {
 }
 @keyframes pulse-badge { 0%,100%{opacity:1} 50%{opacity:.4} }
 
+.source-badge {
+  font-size:8px; padding:2px 5px; border-radius:3px;
+  letter-spacing:.3px; font-weight:600; flex-shrink:0;
+}
+.source-fj { background:rgba(100,160,255,.12); color:#64a0ff; }
+.source-x  { background:rgba(255,255,255,.08); color:var(--muted); }
+
 .state-box { text-align:center; padding:60px 20px; color:var(--muted); }
 .state-box .icon { font-size:36px; margin-bottom:14px; }
 .state-box p { font-size:12px; line-height:1.7; }
@@ -1505,7 +1512,8 @@ body {
 </div>
 
 <script>
-const FETCH_URL = '/api/feeds?type=rss';
+const FETCH_URL        = '/api/feeds?type=rss';
+const FETCH_NITTER_URL = '/api/feeds?type=nitter';
 
 const CATS = {
   'market-moving': ['market moving','breaking','flash','urgent','alert','war','blockade'],
@@ -1714,6 +1722,16 @@ async function fetchRSS() {
   return null;
 }
 
+async function fetchNitter() {
+  try {
+    const c = new AbortController();
+    setTimeout(() => c.abort(), 12000);
+    const r = await fetch(FETCH_NITTER_URL, { signal: c.signal });
+    if (r.ok) { const t = await r.text(); if (t.includes('<rss') || t.includes('<feed')) return t; }
+  } catch(e) {}
+  return null;
+}
+
 function parseRSS(xml) {
   const items = [];
   const re = /<item>([\s\S]*?)<\/item>/g;
@@ -1730,13 +1748,41 @@ function parseRSS(xml) {
     const pubDate = get('pubDate');
     const link  = b.match(/<link>(.*?)<\/link>/)?.[1] || '';
     const desc  = get('description');
-    if (guid && title) items.push({ title, guid, pubDate, link, desc });
+    if (guid && title) items.push({ title, guid, pubDate, link, desc, source: 'fj' });
+  }
+  return items;
+}
+
+function parseNitterRSS(xml) {
+  const items = [];
+  const re = /<item>([\s\S]*?)<\/item>/g;
+  let m;
+  while ((m = re.exec(xml)) !== null) {
+    const b = m[1];
+    const get = (tag) => {
+      const r1 = new RegExp(`<${tag}[^>]*><!\\[CDATA\\[([\\s\\S]*?)\\]\\]><\\/${tag}>`).exec(b);
+      const r2 = new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`).exec(b);
+      return (r1||r2)?.[1]?.trim() || '';
+    };
+    let title = get('title')
+      .replace(/^R to @\w+:\s*/i, '')
+      .replace(/^@DeItaone:\s*/i, '')
+      .trim();
+    const guid    = get('guid') || get('link');
+    const pubDate = get('pubDate');
+    // Rewrite nitter.net links → twitter.com
+    const rawLink = b.match(/<link>(.*?)<\/link>/)?.[1] || '';
+    const link    = rawLink.replace(/https?:\/\/[^/]*nitter[^/]*/i, 'https://x.com');
+    const desc    = get('description');
+    if (guid && title) items.push({ title, guid: 'x_' + guid, pubDate, link, desc, source: 'x' });
   }
   return items;
 }
 
 function handleNewItems(newItems) {
-  allItems = [...newItems, ...allItems].slice(0, 200);
+  allItems = [...newItems, ...allItems]
+    .sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate))
+    .slice(0, 200);
   newItems.forEach(i => seenGuids.add(i.guid));
   updateStats();
   renderFeed(true);
@@ -1751,7 +1797,9 @@ async function fetchFeed() {
   const btn = document.getElementById('refreshBtn');
   btn.classList.add('spinning');
   setStatus('loading','FETCHING');
-  const xml = await fetchRSS();
+
+  const [xml, nitterXml] = await Promise.all([fetchRSS(), fetchNitter()]);
+
   btn.classList.remove('spinning');
   if (!xml) {
     setStatus('error','FAILED');
@@ -1763,13 +1811,20 @@ async function fetchFeed() {
     setTimeout(fetchFeed, 8000);
     return;
   }
-  const parsed = parseRSS(xml);
+
+  const fjItems = parseRSS(xml);
+  const xItems  = nitterXml ? parseNitterRSS(nitterXml) : [];
+  // Merge and sort by pubDate descending
+  const merged  = [...fjItems, ...xItems].sort((a, b) =>
+    new Date(b.pubDate) - new Date(a.pubDate)
+  );
+
   if (seenGuids.size === 0) {
-    allItems = parsed;
-    parsed.forEach(i => seenGuids.add(i.guid));
+    allItems = merged;
+    merged.forEach(i => seenGuids.add(i.guid));
     sendToSW({ type:'INIT_GUIDS', guids:[...seenGuids] });
   } else {
-    const newItems = parsed.filter(i => !seenGuids.has(i.guid));
+    const newItems = merged.filter(i => !seenGuids.has(i.guid));
     if (newItems.length > 0) handleNewItems(newItems);
   }
   const now = new Date();
@@ -1802,12 +1857,17 @@ function renderFeed(markNew = false) {
     const isNew = markNew && newGuids.has(item.guid) && idx < 5;
     const rawDesc = sanitizeDesc(item.desc);
     const descHtml = rawDesc.length > 10 ? `<div class="item-desc">${rawDesc}</div>` : '';
-    const newBadge = isNew ? `<span class="new-badge">NEW</span>` : '';
+    const newBadge    = isNew ? `<span class="new-badge">NEW</span>` : '';
+    const sourceBadge = item.source === 'x'
+      ? `<span class="source-badge source-x">Δ1</span>`
+      : `<span class="source-badge source-fj">FJ</span>`;
+    const safeLink = (item.link || '').replace(/'/g, "\\'");
     return `
-      <div class="feed-item cat-${cat}" onclick="openLink('${item.link}')" style="animation-delay:${Math.min(idx,15)*0.025}s">
+      <div class="feed-item cat-${cat}" onclick="openLink('${safeLink}')" style="animation-delay:${Math.min(idx,15)*0.025}s">
         <div class="item-meta">
           <span class="item-time">${fmtTime(item.pubDate)}</span>
           <span class="item-tag tag-${cat}">${cat.replace('-',' ')}</span>
+          ${sourceBadge}
           ${newBadge}
         </div>
         <div class="item-title">${item.title}</div>
