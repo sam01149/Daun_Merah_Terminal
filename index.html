@@ -2246,7 +2246,15 @@ function renderCBTracker() {
             <div class="cb-short">${cb.short}</div>
           </div>
         </div>
-        <div class="cb-rate">${cb.rate.toFixed(2)}%</div>
+        <div class="cb-rate">
+          ${cb.rate.toFixed(2)}%
+          ${cb.rate_source && cb.rate_source !== 'fallback'
+            ? `<span style="font-size:8px;color:var(--green);margin-left:5px;vertical-align:middle;" title="Live dari sumber resmi bank sentral">●</span>`
+            : `<span style="font-size:8px;color:var(--muted);margin-left:5px;vertical-align:middle;" title="Data hardcoded — scraping gagal">○</span>`}
+          ${cb.rate_stale
+            ? `<span style="font-size:8px;color:var(--yellow);margin-left:3px;vertical-align:middle;" title="Live rate berbeda dari fallback — mungkin ada keputusan baru">!</span>`
+            : ''}
+        </div>
         <div class="cb-rate-label">Interest Rate</div>
         ${(() => {
           const ry = realYieldsData && realYieldsData[cb.currency];
