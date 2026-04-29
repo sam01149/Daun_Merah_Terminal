@@ -6,10 +6,35 @@ const FF_NEXT_WEEK = 'https://nfs.faireconomy.media/ff_calendar_nextweek.xml';
 const GROQ_MODEL   = 'llama-3.3-70b-versatile';
 const GROQ_URL     = 'https://api.groq.com/openai/v1/chat/completions';
 const MAJOR_CURRENCIES = new Set(['USD','EUR','GBP','JPY','CAD','AUD','NZD','CHF']);
+const GOLD_KEYWORDS = [
+  // Direct gold references
+  'gold','xau','bullion','spot gold','precious metal','gold price','gold demand','gold rally','gold drop',
+  // Real yield / USD channel (gold's #1 driver)
+  'real yield','tips yield','breakeven','inflation expect','10y yield','10-year yield','treasury yield','us yield','yield curve',
+  'dxy','dollar index',
+  // ETF / flow
+  'gld','gold etf','etf flow','bullion etf','central bank buy','central bank gold','gold reserve',
+  // Safe haven — gold-specific phrasing only
+  'safe haven','haven demand','flight to safety','flight to gold',
+  // Geopolitical — only phrasing explicitly tied to haven/gold impact
+  'middle east tension','iran nuclear','russia ukraine','ukraine war','gold safe',
+  // Risk sentiment — specific to market moves
+  'risk aversion','risk-off','risk off',
+];
+
 
 module.exports = async function handler(req, res) {
   console.log('market-digest v2 START', new Date().toISOString());
   res.setHeader('Access-Control-Allow-Origin', '*');
+
+  // Cached mode — serve last saved digest from Redis, no Groq calls
+  if (req.query?.mode === 'cached') {
+    try {
+      const raw = await redisCmd('GET', 'latest_article');
+      if (raw) return res.status(200).json({ ...JSON.parse(raw), from_cache: true });
+    } catch(e) { console.warn('cached mode Redis read failed:', e.message); }
+    return res.status(200).json({ from_cache: true, article: null });
+  }
 
   // 3 Groq calls per request — rate limit to 4 req/min per IP
   if (await rateLimit(req, res, { limit: 4, windowSecs: 60, endpoint: 'market-digest' })) return;
@@ -70,15 +95,31 @@ module.exports = async function handler(req, res) {
   const headlinesBlock = recentItems.length > 0 ? recentItems.map((i,idx)=>`${idx+1}. ${i.title}`).join('\n') : '(Tidak ada headline)';
   const calBlock = calEvents.length > 0 ? calEvents.map(e=>`- ${e.date} | ${e.time_wib} | ${e.currency} | ${e.event}`).join('\n') : '(Tidak ada event high-impact)';
 
-  // 3b. Load digest history — stored as Redis list (LPUSH head = newest, index 0 = latest)
-  let digestHistory = [];
+  // Gold-specific headline filter — injected as dedicated block for XAUUSD analysis
+  const goldItems = recentItems.filter(i => {
+    const lower = i.title.toLowerCase();
+    return GOLD_KEYWORDS.some(kw => lower.includes(kw));
+  }).slice(0, 25);
+  const goldBlock = goldItems.length > 0
+    ? goldItems.map((i, idx) => `${idx + 1}. ${i.title}`).join('\n')
+    : '(Tidak ada headline relevan untuk XAU/USD dalam 12 jam terakhir)';
+
+  // 3b. Load digest history + xau history in parallel
+  let digestHistory = [], xauHistory = [];
   try {
-    const rawHist = await redisCmd('LRANGE', 'digest_history', 0, 6);
+    const [rawHist, rawXauHist] = await Promise.all([
+      redisCmd('LRANGE', 'digest_history', 0, 6),
+      redisCmd('LRANGE', 'xau_history', 0, 3),
+    ]);
     if (Array.isArray(rawHist)) digestHistory = rawHist.map(e => { try { return JSON.parse(e); } catch(_) { return null; } }).filter(Boolean);
+    if (Array.isArray(rawXauHist)) xauHistory = rawXauHist.map(e => { try { return JSON.parse(e); } catch(_) { return null; } }).filter(Boolean);
   } catch(e) {}
   const historyBlock = digestHistory.length > 0
     ? digestHistory.map(h => `[${h.wib}] ${h.summary}`).join('\n')
     : '(Belum ada riwayat — ini sesi pertama)';
+  const xauHistoryBlock = xauHistory.length > 0
+    ? xauHistory.map(h => `[${h.wib}] ${h.xau_summary}`).join('\n')
+    : '(Belum ada riwayat XAU — ini sesi pertama)';
 
   // 3c. Load externalized prompts from Redis (Task 10e) — fall back to hardcoded if missing
   let promptDigestInstr = null;
@@ -114,11 +155,19 @@ Ringkasan sesi sebelumnya disediakan di bawah. WAJIB sebut: apa yang BERUBAH (da
 PENUTUP:
 Satu kalimat: dari semua yang di atas, currency mana yang paling terkonfirmasi kuat dan mana paling terkonfirmasi lemah untuk sesi ini. Bukan "pasar volatile" — nama currency.
 
-XAUUSD (SCALPING LENS):
-Setelah penutup, tambahkan paragraf terpisah diawali kata XAUUSD: (tanpa spasi sebelum titik dua). Paragraf ini ditujukan untuk scalper gold, dibaca berdiri sendiri.
-- Driver dominan SAAT INI dari ketiga channel: (a) USD/real yields, (b) safe haven/geopolitik, (c) risk sentiment ekuitas. Pilih SATU yang paling dominan, sebut angka pendukungnya. Kalau dua channel saling konflik (mis. USD kuat tapi geopolitik tense), sebut konfliknya dan mana yang menang sekarang.
-- Arah tekanan dominan beberapa jam ke depan. Tegas, bukan netral.
-- Satu trigger 24 jam ke depan yang paling berpotensi spike — sebut event/waktu WIB/skenario yang akan memicu spike, bukan sekadar nama event-nya.
+XAUUSD (ANALISIS FUNDAMENTAL — TANPA DATA HARGA LIVE):
+Setelah penutup, tambahkan paragraf terpisah diawali tepat dengan "XAUUSD:" (tanpa spasi sebelum titik dua). Paragraf ini dibaca berdiri sendiri oleh trader gold.
+
+PENTING: Kamu tidak memiliki data harga live XAU/USD, level chart, atau posisi pasar saat ini. Semua arah yang kamu sebut adalah tekanan fundamental dari berita — bukan prediksi harga. Jangan sebut angka harga XAU kecuali ada di headline.
+
+Gunakan HANYA headline dari blok "HEADLINE RELEVAN XAUUSD" yang disediakan terpisah di bawah. Jika blok itu berisi kurang dari 3 headline substantif, nyatakan "sinyal gold tipis hari ini" di kalimat pertama, lalu persingkat — jangan paksa analisis dari data yang tidak ada.
+
+CONTINUITY XAUUSD: Gunakan blok "RIWAYAT XAUUSD SESI SEBELUMNYA" untuk menyebut apa yang BERUBAH pada driver gold (driver baru, pergeseran channel dominan) dan apa yang TETAP. Jika driver hari ini sama persis dengan sesi sebelumnya, nyatakan "driver tidak berubah dari sesi sebelumnya" — itu informasi valid, bukan kelemahan.
+
+Struktur analisis (prosa mengalir, tanpa bullet, tanpa heading):
+1. DRIVER DOMINAN: Dari tiga channel — (a) USD/real yields, (b) safe haven/geopolitik, (c) risk sentiment ekuitas — tentukan SATU yang paling banyak didukung headline hari ini. Wajib sebut angka atau nama event konkret dari headline sebagai bukti. Jika dua channel saling berlawanan (contoh: DXY menguat TAPI geopolitik memanas), sebut konflik ini secara eksplisit, putuskan mana yang lebih dominan, dan jelaskan alasannya dalam satu kalimat.
+2. TEKANAN FUNDAMENTAL: Berdasarkan driver di atas, arah tekanan XAU/USD dalam beberapa jam ke depan — bullish pressure, bearish pressure, atau conflicting. "Conflicting" boleh dipakai HANYA jika dua channel berlawanan dan tidak ada yang jelas lebih berat.
+3. TRIGGER TERDEKAT: Satu event dari kalender atau headline dalam 24 jam ke depan yang paling berpotensi menggerakkan XAU secara signifikan. Sebut waktu WIB, nama event, dan skenario spesifik yang akan memicu pergerakan (bukan sekadar nama event-nya).
 
 ATURAN HIGIENIS:
 - Dilarang: kalimat yang masih benar kalau headlines diganti dengan headlines hari lain. Tes: apakah kalimat ini bisa ditulis tanpa membaca block headlines? Kalau ya, hapus.
@@ -134,11 +183,17 @@ WAKTU SAAT INI: ${dateStr}, ${timeStr}
 === HEADLINE BERITA TERKINI (${recentItems.length} berita, 12 jam terakhir) ===
 ${headlinesBlock}
 
+=== HEADLINE RELEVAN XAUUSD (${goldItems.length} dari ${recentItems.length} berita, difilter) ===
+${goldBlock}
+
 === EVENT KALENDER EKONOMI HIGH-IMPACT (3 hari ke depan) ===
 ${calBlock}
 
-=== RINGKASAN SESI SEBELUMNYA ===
-${historyBlock}`;
+=== RINGKASAN SESI SEBELUMNYA (FX) ===
+${historyBlock}
+
+=== RIWAYAT XAUUSD SESI SEBELUMNYA (4 sesi terakhir) ===
+${xauHistoryBlock}`;
 
     try {
       const groqRes = await fetch(GROQ_URL, {
@@ -184,16 +239,28 @@ ${historyBlock}`;
     }
   }
 
-  // ── 5b. Save current digest to history via LPUSH+LTRIM (atomic, no race condition) ──
+  // ── 5b. Save digest + xau history (parallel) ──
   if (article && method === 'groq') {
     try {
       const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
       const wibStr = `${String(wibNow.getUTCDate()).padStart(2,'0')} ${MONTHS[wibNow.getUTCMonth()]} ${String(wibNow.getUTCHours()).padStart(2,'0')}:${String(wibNow.getUTCMinutes()).padStart(2,'0')} WIB`;
-      const summary = article.replace(/\n/g, ' ').slice(0, 200);
-      const entry = JSON.stringify({ at: new Date().toISOString(), wib: wibStr, summary });
-      await redisCmd('LPUSH', 'digest_history', entry);
-      await redisCmd('LTRIM', 'digest_history', 0, 6); // keep newest 7
-      console.log('Digest history saved (LPUSH/LTRIM)');
+
+      // FX digest history — first 700 chars (FX section)
+      const xauIdx = article.indexOf('XAUUSD:');
+      const fxSummary = (xauIdx > 0 ? article.slice(0, xauIdx) : article).replace(/\n/g, ' ').slice(0, 700);
+      const fxEntry = JSON.stringify({ at: new Date().toISOString(), wib: wibStr, summary: fxSummary });
+
+      // XAU-specific history — extract XAUUSD paragraph only
+      const xauParagraph = xauIdx !== -1 ? article.slice(xauIdx, xauIdx + 600).replace(/\n/g, ' ') : null;
+      const saves = [
+        redisCmd('LPUSH', 'digest_history', fxEntry).then(() => redisCmd('LTRIM', 'digest_history', 0, 6)),
+      ];
+      if (xauParagraph) {
+        const xauEntry = JSON.stringify({ at: new Date().toISOString(), wib: wibStr, xau_summary: xauParagraph });
+        saves.push(redisCmd('LPUSH', 'xau_history', xauEntry).then(() => redisCmd('LTRIM', 'xau_history', 0, 3)));
+      }
+      await Promise.all(saves);
+      console.log('Digest + XAU history saved');
     } catch(e) { console.warn('Digest history save failed:', e.message); }
   }
 
@@ -223,7 +290,11 @@ ${historyBlock}`;
     console.log('relevantCurrencies:', JSON.stringify(relevantCurrencies));
     console.log('recentItems sample:', recentItems.slice(0,3).map(i=>i.title));
     if (relevantCurrencies.length > 0) {
-      const biasHeadlines = recentItems.map((i,idx) => (idx+1) + '. ' + i.title).join('\n');
+      const relevantHeadlines = recentItems.filter(i => {
+        const lower = i.title.toLowerCase();
+        return relevantCurrencies.some(cur => CB_KEYWORDS[cur].some(kw => lower.includes(kw)));
+      });
+      const biasHeadlines = relevantHeadlines.map((i,idx) => (idx+1) + '. ' + i.title).join('\n');
       const biasCurrencies = relevantCurrencies.join(', ');
       const biasPrompt = [
         'You are a central bank policy analyst. Based ONLY on the following recent financial news headlines, assess the current monetary policy stance for each central bank mentioned.',
@@ -255,7 +326,7 @@ ${historyBlock}`;
             model: GROQ_MODEL,
             messages: [{ role: 'user', content: biasPrompt }],
             temperature: 0.1,
-            max_tokens: 200,
+            max_tokens: 400,
           }),
           signal: AbortSignal.timeout(15000),
         });
@@ -328,12 +399,22 @@ ${historyBlock}`;
     const cbSummary = biasUpdated.length > 0
       ? `CB biases just updated for: ${biasUpdated.join(', ')}`
       : 'CB biases unchanged this cycle';
+    // Extract XAUUSD section from article to ensure thesis AI sees it (it's near the end)
+    const xauSectionMatch = article.indexOf('XAUUSD:');
+    const xauSection = xauSectionMatch !== -1 ? article.slice(xauSectionMatch, xauSectionMatch + 700) : '';
+    const briefingForThesis = article.slice(0, 900) + (xauSection && xauSectionMatch > 900 ? '\n\n' + xauSection : '');
+    const goldHeadlinesForThesis = goldItems.slice(0, 15).map((i, idx) => `${idx + 1}. ${i.title}`).join('\n') || '(none)';
+
     const thesisPrompt = [
-      'You are a macro FX strategist. Based on the market context below, output a structured JSON trade thesis.',
+      'You are a macro FX and gold strategist. Based on the market context below, output a structured JSON with both an FX trade thesis and an XAU/USD fundamental thesis.',
       '',
-      `Market briefing (current session): ${article.slice(0, 800)}`,
+      `Market briefing (current session): ${briefingForThesis}`,
       '',
       cbSummary,
+      '',
+      `Upcoming high-impact calendar events (next 3 days, WIB): ${calBlock}`,
+      '',
+      `Gold-relevant headlines: ${goldHeadlinesForThesis}`,
       '',
       'Return ONLY valid JSON with this exact schema (no markdown, no explanation):',
       '{',
@@ -345,12 +426,26 @@ ${historyBlock}`;
       '  "confidence_1_to_5": 3,',
       '  "invalidation_condition": "string",',
       '  "time_horizon_days": 5,',
-      '  "catalyst_dependency": "string"',
+      '  "catalyst_dependency": "string",',
+      '  "xau_bias": "bullish" | "bearish" | "neutral" | "conflicting",',
+      '  "xau_dominant_driver": "real_yield" | "safe_haven" | "risk_sentiment" | "usd_strength" | "insufficient_data",',
+      '  "xau_driver_evidence": "string — specific data point or event from headlines",',
+      '  "xau_key_trigger": "string — event name + WIB time + specific spike scenario, or \'No clear trigger in 24h\' if none",',
+      '  "xau_confidence": 3',
       '}',
       '',
+      'FX rules:',
       'Use only 8 major currencies: USD EUR GBP JPY CAD AUD NZD CHF.',
       'Set direction to "no_trade" and confidence to 1-2 if conviction is low.',
       'Only recommend a pair if CB bias divergence between the two currencies is at least 2 levels apart (e.g. Hawkish vs Dovish).',
+      'Use the calendar events to inform invalidation_condition — if a high-impact event for one of the pair currencies is scheduled within time_horizon_days, name it as the primary invalidation trigger.',
+      '',
+      'XAU rules:',
+      'xau_bias must be based on fundamental pressure from headlines, NOT price prediction.',
+      'xau_driver_evidence must cite a specific number, official name, or event from the gold headlines — not a generic statement.',
+      'If gold headlines are sparse (fewer than 3 substantive), set xau_dominant_driver to "insufficient_data" and xau_confidence to 1.',
+      'xau_key_trigger must include WIB time if available from calendar, otherwise note "time TBD".',
+      'xau_confidence: 1-5 where 5 = multiple converging headlines with clear direction.',
     ].join('\n');
 
     let thesisRaw = null;
@@ -363,7 +458,7 @@ ${historyBlock}`;
             model: GROQ_MODEL,
             messages: [{ role: 'user', content: thesisPrompt }],
             temperature: 0.1,
-            max_tokens: 300,
+            max_tokens: 500,
           }),
           signal: AbortSignal.timeout(15000),
         });
@@ -376,12 +471,17 @@ ${historyBlock}`;
           const VALID_DIR = ['long', 'short', 'no_trade'];
           const VALID_REG = ['risk_on', 'risk_off', 'neutral'];
           const VALID_CURR = new Set(['USD','EUR','GBP','JPY','CAD','AUD','NZD','CHF']);
+          const VALID_XAU_BIAS = ['bullish', 'bearish', 'neutral', 'conflicting'];
+          const VALID_XAU_DRIVER = ['real_yield', 'safe_haven', 'risk_sentiment', 'usd_strength', 'insufficient_data'];
           if (
             VALID_REG.includes(parsed.dominant_regime) &&
             VALID_CURR.has(parsed.strongest_currency) &&
             VALID_CURR.has(parsed.weakest_currency) &&
             VALID_DIR.includes(parsed.direction) &&
-            typeof parsed.confidence_1_to_5 === 'number'
+            typeof parsed.confidence_1_to_5 === 'number' &&
+            parsed.confidence_1_to_5 >= 1 && parsed.confidence_1_to_5 <= 5 &&
+            VALID_XAU_BIAS.includes(parsed.xau_bias) &&
+            VALID_XAU_DRIVER.includes(parsed.xau_dominant_driver)
           ) {
             thesisRaw = parsed;
             break;
@@ -407,13 +507,21 @@ ${historyBlock}`;
     }
   }
 
-  return res.status(200).json({
+  const payload = {
     article, method, thesis,
     news_count:   recentItems.length,
+    gold_count:   goldItems.length,
     cal_count:    calEvents.length,
     bias_updated: biasUpdated,
     generated_at: new Date().toISOString(),
-  });
+  };
+
+  // Persist full payload to Redis so cached mode and page refreshes work
+  if (article && method === 'groq') {
+    redisCmd('SET', 'latest_article', JSON.stringify(payload), 'EX', 21600).catch(() => {});
+  }
+
+  return res.status(200).json(payload);
 };
 
 async function redisCmd(...args) {

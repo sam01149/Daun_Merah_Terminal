@@ -1563,6 +1563,45 @@ let cbFetchedAt   = 0;
 
 // Ringkasan state
 let ringkasanCache = null;
+let ringkasanCooldownEnd = parseInt(localStorage.getItem('ringkasan_cooldown_end') || '0');
+let ringkasanCooldownInterval = null;
+
+function startCooldown() {
+  ringkasanCooldownEnd = Date.now() + 90000;
+  localStorage.setItem('ringkasan_cooldown_end', ringkasanCooldownEnd);
+  tickCooldown();
+}
+
+function tickCooldown() {
+  clearInterval(ringkasanCooldownInterval);
+  ringkasanCooldownInterval = setInterval(() => {
+    const remaining = Math.ceil((ringkasanCooldownEnd - Date.now()) / 1000);
+    const btn = document.getElementById('ringkasanBtn');
+    if (!btn) { clearInterval(ringkasanCooldownInterval); return; }
+    if (remaining > 0) {
+      btn.classList.add('loading');
+      btn.querySelector('span').textContent = 'Tunggu ' + remaining + 's';
+    } else {
+      clearInterval(ringkasanCooldownInterval);
+      btn.classList.remove('loading');
+      btn.querySelector('span').textContent = ringkasanCache ? 'Generate Ulang' : 'Generate Ringkasan';
+    }
+  }, 1000);
+}
+
+async function loadCachedRingkasan() {
+  try {
+    const res = await fetch('/api/market-digest?mode=cached', { signal: AbortSignal.timeout(8000) });
+    if (!res.ok) return;
+    const data = await res.json();
+    if (data.article) {
+      ringkasanCache = data;
+      renderRingkasan();
+      // tick cooldown after render (button might have been re-created)
+      if (Date.now() < ringkasanCooldownEnd) tickCooldown();
+    }
+  } catch(e) { /* silent fail — user can still press Generate */ }
+}
 
 // COT state
 let cotData      = null;
@@ -1840,20 +1879,18 @@ async function generateRingkasan() {
 
   try {
     const res = await fetch('/api/market-digest', {
-      signal: AbortSignal.timeout(30000),
+      signal: AbortSignal.timeout(45000),
     });
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
     ringkasanCache = data;
+    startCooldown();
     renderRingkasan();
-    // Refresh CB tracker if bias was updated
-    if (data.bias_updated && data.bias_updated.length > 0) {
-      fetchCBStatus();
-    }
+    if (data.bias_updated && data.bias_updated.length > 0) fetchCBStatus();
   } catch(e) {
     showToast('Gagal', 'Ringkasan tidak merespons: ' + e.message, 4000);
     btn.classList.remove('loading');
-    btn.querySelector('span').textContent = 'Generate Ringkasan';
+    btn.querySelector('span').textContent = ringkasanCache ? 'Generate Ulang' : 'Generate Ringkasan';
   }
 }
 
@@ -1882,8 +1919,8 @@ function renderRingkasan() {
 
   inner.innerHTML = `
     <div class="ringkasan-meta">
-      <div class="ringkasan-meta-left">${tsStr} · ${d.news_count} berita · ${d.cal_count} event kalender</div>
-      <span class="ringkasan-method ${d.method}">${d.method === 'gemini' ? '✨ Gemini AI' : '⚙️ Auto'}</span>
+      <div class="ringkasan-meta-left">${tsStr} · ${d.news_count} berita${d.gold_count ? ' · ' + d.gold_count + ' XAU' : ''} · ${d.cal_count} kalender${d.from_cache ? ' · cache' : ''}</div>
+      <span class="ringkasan-method ${d.method}">${d.method === 'groq' ? '⚡ Groq AI' : d.method === 'gemini' ? '✨ Gemini AI' : '⚙️ Auto'}</span>
     </div>
 
     <div class="ringkasan-stats">
@@ -1999,7 +2036,8 @@ document.querySelectorAll('#navViews .nvtab').forEach(btn => {
       setFeedUI(false);
       activeView = 'ringkasan';
       document.getElementById('ringkasanPanel').style.display = 'block';
-      renderRingkasan();
+      if (!ringkasanCache) loadCachedRingkasan(); else renderRingkasan();
+      if (Date.now() < ringkasanCooldownEnd) tickCooldown();
     } else if (view === 'cal') {
       setFeedUI(false);
       activeView = 'cal';
