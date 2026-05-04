@@ -102,6 +102,7 @@ module.exports = async function handler(req, res) {
         nominal: null, inflation_exp: inf.value, real: null,
         source_nominal: FRED_NOMINAL_SERIES[cur],
         source_inflation: inf.source,
+        inflation_as_of: inf.as_of,
         as_of: null,
         stale,
         error: 'nominal_unavailable',
@@ -115,6 +116,7 @@ module.exports = async function handler(req, res) {
       nominal, inflation_exp: inf.value, real,
       source_nominal: FRED_NOMINAL_SERIES[cur],
       source_inflation: inf.source,
+      inflation_as_of: inf.as_of,
       as_of: data.date,
       stale,
     }

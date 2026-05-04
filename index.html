@@ -1347,6 +1347,11 @@ body {
         <div class="pt-step-action"><strong>Cek Tab CAL</strong>Lihat event High-impact hari ini dan jam rilisnya (sudah dikonversi ke WIB). Buat "no-trade window" 15 menit sebelum dan sesudah rilis.</div>
         <div class="pt-step-why">Spread melebar dan pergerakan tidak terprediksi saat news rilis. Trading di dalam window ini adalah gambling, bukan edge.</div>
       </div>
+      <div class="pt-row">
+        <div class="pt-step-num">1.5</div>
+        <div class="pt-step-action"><strong>Opsional: Cek Korelasi Cross-Asset (RINGKASAN tab)</strong>Scroll ke bawah di tab RINGKASAN → tap "Muat Korelasi". Lihat tabel XAU/USD dan bagian Anomali. Cache 24 jam — cukup sekali per hari.</div>
+        <div class="pt-step-why">Korelasi 20d vs 60d memperlihatkan apakah hubungan yang biasanya stabil mulai breakdown — misal Gold tidak bergerak bersama DXY seperti biasa (bearish real yield sedang disconnect). Ini bukan sinyal entry, tapi konteks konfirmasi.</div>
+      </div>
     </div>
   </div>
 
@@ -1369,7 +1374,7 @@ body {
       </div>
       <div class="pt-row">
         <div class="pt-step-num">2.3</div>
-        <div class="pt-step-action"><strong>Setup ditemukan? Jalankan CHECKLIST</strong>Buka CHECKLIST, pilih playbook (SMC/ICT atau Macro Momentum), pilih pair. Centang setiap kondisi secara jujur.</div>
+        <div class="pt-step-action"><strong>Setup ditemukan? Jalankan CHECKLIST</strong>Buka CHECKLIST, pilih playbook yang sesuai konteks — <strong>SMC/ICT</strong> (struktur & order block), <strong>Macro Momentum</strong> (CB divergence), <strong>Event-Driven</strong> (FOMC/CPI/NFP), atau <strong>Mean Reversion</strong> (range). Pilih pair, centang setiap kondisi secara jujur.</div>
         <div class="pt-step-why">Checklist menghilangkan bias konfirmasi. Banyak loss terjadi karena trader skip validasi saat emosi tinggi. Checklist adalah rem.</div>
       </div>
       <div class="pt-row">
@@ -2226,6 +2231,12 @@ function renderCBTracker() {
       : 'Hold';
     const decisionClass = cb.last_bps > 0 ? 'hike' : cb.last_bps < 0 ? 'cut' : 'hold';
 
+    // Meeting staleness — warn trader if meeting metadata may be outdated
+    const daysSinceMeeting = cb.last_meeting
+      ? Math.floor((Date.now() - new Date(cb.last_meeting).getTime()) / 86400000)
+      : null;
+    const meetingStale = daysSinceMeeting !== null && daysSinceMeeting > 45;
+
     const biasLabel = cb.bias || '—';
     const biasClass = cb.bias ? (BIAS_CLASS[cb.bias] || 'unknown') : 'unknown';
 
@@ -2260,12 +2271,25 @@ function renderCBTracker() {
           const ry = realYieldsData && realYieldsData[cb.currency];
           if (!ry || ry.real == null) return '';
           const sign = ry.real >= 0 ? '+' : '';
-          const col  = ry.real >= 0 ? 'var(--green)' : 'var(--red)';
-          const staleEl = ry.stale ? `<span style="display:inline-block;width:5px;height:5px;border-radius:50%;background:var(--yellow);margin-left:4px;vertical-align:middle;" title="Data inflasi >90 hari"></span>` : '';
-          const tooltip = `Nom ${ry.nominal != null ? ry.nominal.toFixed(2) : '?'}% − Inf ${ry.inflation_exp.toFixed(2)}%`;
-          return `<div class="cb-rate-label" style="color:${col};margin-top:2px" title="${tooltip}">Real: ${sign}${ry.real.toFixed(2)}%${staleEl}<br><span style="font-size:9px;opacity:.6">${tooltip}</span></div>`;
+          // Yellow when inflation data is stale (>90d) — value less reliable
+          const col  = ry.stale ? 'var(--yellow)' : (ry.real >= 0 ? 'var(--green)' : 'var(--accent)');
+          const staleDays = ry.inflation_as_of
+            ? Math.floor((Date.now() - new Date(ry.inflation_as_of).getTime()) / 86400000)
+            : null;
+          const staleEl = ry.stale
+            ? `<span style="font-size:8px;color:var(--yellow);margin-left:3px" title="${ry.source_inflation || 'inflasi'}${staleDays ? ` · ${staleDays} hari lalu` : ''} — perlu update manual">(lama)</span>`
+            : '';
+          const nomStr = ry.nominal != null ? ry.nominal.toFixed(2) : '?';
+          const staleNote = ry.stale && staleDays ? ` · ⚠ ${ry.source_inflation || 'inflasi'} ${staleDays}h lalu` : '';
+          const tooltip = `Nom ${nomStr}% − Inf ${ry.inflation_exp.toFixed(2)}%${staleNote}`;
+          return `<div class="cb-rate-label" style="color:${col};margin-top:2px" title="${tooltip}">Real: ${sign}${ry.real.toFixed(2)}%${staleEl}<br><span style="font-size:9px;opacity:.6">${nomStr}% − ${ry.inflation_exp.toFixed(2)}%</span></div>`;
         })()}
         <div class="cb-decision ${decisionClass}">${decisionText}</div>
+        ${cb.last_meeting
+          ? `<div style="font-size:8px;font-family:'DM Mono',monospace;margin-top:3px;${meetingStale ? 'color:var(--accent)' : 'color:var(--muted)'}">
+              ${meetingStale ? '⚠ ' : ''}${cb.last_meeting}${meetingStale ? ` · ${daysSinceMeeting}h lalu — cek ulang` : ''}
+            </div>`
+          : ''}
         <br>
         <div class="cb-bias ${biasClass}">${biasLabel}${confidenceDot}</div>
         ${updatedStr ? `<div class="cb-updated">↻ ${updatedStr}</div>` : ''}
@@ -2296,8 +2320,14 @@ function renderCBTracker() {
 
 function fmtCBTime(iso) {
   const d = new Date(iso);
-  const wib = new Date(d.getTime() + 7*3600000);
-  return `${String(wib.getUTCHours()).padStart(2,'0')}:${String(wib.getUTCMinutes()).padStart(2,'0')} WIB`;
+  const wib = new Date(d.getTime() + 7 * 3600000);
+  const hhmm = `${String(wib.getUTCHours()).padStart(2,'0')}:${String(wib.getUTCMinutes()).padStart(2,'0')} WIB`;
+  // If older than 12h, show date so trader doesn't mistake yesterday's bias for today's
+  if (Date.now() - d.getTime() > 12 * 3600000) {
+    const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    return `${wib.getUTCDate()} ${MONTHS[wib.getUTCMonth()]}, ${hhmm}`;
+  }
+  return hhmm;
 }
 
 async function fetchCorrelations() {
