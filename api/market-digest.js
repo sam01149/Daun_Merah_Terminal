@@ -12,14 +12,24 @@ const GOLD_KEYWORDS = [
   // Real yield / USD channel (gold's #1 driver)
   'real yield','tips yield','breakeven','inflation expect','10y yield','10-year yield','treasury yield','us yield','yield curve',
   'dxy','dollar index',
+  // Fed / FOMC — USD fundamentals that directly drive XAU via rate/real yield channel
+  'powell','fomc','federal reserve','fed rate','fed minutes','fed pivot','rate cut','rate hike',
+  'us cpi','us inflation','nonfarm','nfp','us gdp','us jobs','us unemployment',
   // ETF / flow
   'gld','gold etf','etf flow','bullion etf','central bank buy','central bank gold','gold reserve',
   // Safe haven — gold-specific phrasing only
   'safe haven','haven demand','flight to safety','flight to gold',
   // Geopolitical — only phrasing explicitly tied to haven/gold impact
   'middle east tension','iran nuclear','russia ukraine','ukraine war','gold safe',
-  // Risk sentiment — specific to market moves
-  'risk aversion','risk-off','risk off',
+  // Risk sentiment — equities as risk-off/on proxy for haven demand
+  'risk aversion','risk-off','risk off','risk-on','risk on',
+  'vix spike','vix surge','equity sell-off','stock market crash','market rout','flight to bonds',
+  // Geopolitical — broader triggers with clear haven implication
+  'trade war','us china tariff','sanction escalat','nuclear threat','conflict escalat',
+  // Dollar moves (non-DXY phrasing)
+  'dollar rally','dollar drop','dollar strengthen','dollar weaken','usd rally','usd drop',
+  // Precious metals family — comex is gold's primary venue
+  'comex','silver price','silver rally','silver drop',
 ];
 
 
@@ -99,7 +109,7 @@ module.exports = async function handler(req, res) {
   const goldItems = recentItems.filter(i => {
     const lower = i.title.toLowerCase();
     return GOLD_KEYWORDS.some(kw => lower.includes(kw));
-  }).slice(0, 25);
+  }).slice(0, 30);
   const goldBlock = goldItems.length > 0
     ? goldItems.map((i, idx) => `${idx + 1}. ${i.title}`).join('\n')
     : '(Tidak ada headline relevan untuk XAU/USD dalam 12 jam terakhir)';
