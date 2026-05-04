@@ -1,26 +1,44 @@
 // api/correlations.js
 // Fetches 60-day daily closes via Yahoo Finance and computes
-// rolling 20-day correlation matrix. Flags pairs deviating >0.4 from 60d mean.
+// rolling 20-day correlation matrix. Flags pairs deviating >0.4 from 60d norm.
+// Also returns dedicated gold_correlations section (always computed, not just anomalies).
 // Redis cache: correlations, TTL 24 hours (86400s).
 
 const rateLimit = require('./_ratelimit');
 const CORS = { 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-cache' };
-const CACHE_KEY = 'correlations';
+const CACHE_KEY = 'correlations_v2';
 const CACHE_TTL = 86400;
 
-// Yahoo Finance symbols
+// Yahoo Finance symbols.
+// All FX quoted as X/USD (X stronger = higher value).
+// JPY: fetched as USDJPY=X then inverted (1/close) so JPY stronger = higher value.
 const INSTRUMENTS = {
-  DXY:   'DX-Y.NYB',
-  EURUSD:'EURUSD=X',
-  GBPUSD:'GBPUSD=X',
-  USDJPY:'USDJPY=X',
-  AUDUSD:'AUDUSD=X',
-  Gold:  'GC=F',
-  WTI:   'CL=F',
-  SPX:   '^GSPC',
-  VIX:   '^VIX',
-  US10Y: '^TNX',
+  // Dollar
+  DXY:    'DX-Y.NYB',
+  // Major FX — all X/USD direction (currency stronger = price up)
+  EUR:    'EURUSD=X',
+  GBP:    'GBPUSD=X',
+  JPY:    'USDJPY=X',   // inverted post-fetch → JPY stronger = higher
+  AUD:    'AUDUSD=X',
+  // Precious metals
+  Gold:   'GC=F',
+  Silver: 'SI=F',
+  // Industrial metals (growth/risk proxy)
+  Copper: 'HG=F',
+  // Energy
+  WTI:    'CL=F',
+  // Equities & risk
+  SPX:    '^GSPC',
+  VIX:    '^VIX',
+  // Rates
+  US10Y:  '^TNX',
 };
+
+// Instruments whose raw price must be inverted (1/close) so direction is consistent
+const INVERT = new Set(['JPY']);
+
+// Gold's key cross-asset relationships — always shown even without anomaly
+const GOLD_CORR_ASSETS = ['DXY', 'Silver', 'Copper', 'WTI', 'US10Y', 'SPX', 'VIX', 'JPY', 'AUD', 'EUR'];
 
 async function redisCmd(...args) {
   const REDIS_URL   = process.env.UPSTASH_REDIS_REST_URL;
@@ -58,7 +76,7 @@ async function fetchYahoo(symbol) {
     prices.push({ date, close });
   }
   if (prices.length < 10) throw new Error(`Yahoo insufficient data for ${symbol}: ${prices.length} rows`);
-  return prices; // already oldest-first
+  return prices;
 }
 
 function pearson(x, y) {
@@ -117,7 +135,13 @@ module.exports = async function handler(req, res) {
   const names = Object.keys(INSTRUMENTS);
   const fetches = names.map(name =>
     fetchYahoo(INSTRUMENTS[name])
-      .then(prices => ({ name, prices, ok: true }))
+      .then(prices => {
+        // Invert JPY so direction matches X/USD format (JPY stronger = higher)
+        if (INVERT.has(name)) {
+          prices = prices.map(p => ({ date: p.date, close: 1 / p.close }));
+        }
+        return { name, prices, ok: true };
+      })
       .catch(e => { console.warn(`correlations: ${name} failed:`, e.message); return { name, prices: [], ok: false }; })
   );
   const results = await Promise.all(fetches);
@@ -166,11 +190,30 @@ module.exports = async function handler(req, res) {
 
   anomalies.sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
 
+  // Gold correlation table — always computed regardless of anomaly threshold
+  const goldCorr = {};
+  if (series['Gold']) {
+    for (const asset of GOLD_CORR_ASSETS) {
+      if (!series[asset]) continue;
+      const [xg, xa] = alignSeries(series['Gold'], series[asset]);
+      const r20 = pearson(lastN(xg, 20), lastN(xa, 20));
+      const r60 = pearson(xg, xa);
+      if (r20 !== null || r60 !== null) {
+        goldCorr[asset] = {
+          r20,
+          r60,
+          delta: (r20 !== null && r60 !== null) ? Math.round((r20 - r60) * 1000) / 1000 : null,
+        };
+      }
+    }
+  }
+
   const data = {
     instruments: pairNames,
     matrix_20d: matrix20,
     matrix_60d: matrix60,
-    anomalies: anomalies.slice(0, 8),
+    anomalies: anomalies.slice(0, 10),
+    gold_correlations: goldCorr,
     computed_at: new Date().toISOString(),
   };
 
