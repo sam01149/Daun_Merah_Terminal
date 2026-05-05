@@ -87,8 +87,37 @@ async function rssHandler(req, res) {
   const payload = JSON.stringify({ xml, fetchedAt: now });
   redisCmd('SET', RSS_CACHE_KEY, payload, 'EX', 60).catch(() => {});
 
+  // Fire-and-forget: persist items to 36h rolling history for market-digest
+  storeNewsHistory(xml, now).catch(() => {});
+
   res.setHeader('X-Cache-Source', 'UPSTREAM');
   return res.status(200).send(xml);
+}
+
+async function storeNewsHistory(xml, now) {
+  const items = parseRSSItems(xml);
+  if (items.length === 0) return;
+  const cutoff = now - 36 * 60 * 60 * 1000;
+  const args = ['ZADD', 'news_history', 'NX'];
+  for (const item of items) {
+    const ts = new Date(item.pubDate).getTime();
+    if (!isNaN(ts) && ts > cutoff) args.push(ts, JSON.stringify(item));
+  }
+  if (args.length > 3) await redisCmd(...args);
+  await redisCmd('ZREMRANGEBYSCORE', 'news_history', '-inf', cutoff);
+}
+
+function parseRSSItems(xml) {
+  const items = [], re = /<item>([\s\S]*?)<\/item>/g; let m;
+  while ((m = re.exec(xml)) !== null) {
+    const b = m[1];
+    const get = tag => { const r1 = new RegExp(`<${tag}[^>]*><!\\[CDATA\\[([\\s\\S]*?)\\]\\]><\\/${tag}>`).exec(b); const r2 = new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`).exec(b); return (r1||r2)?.[1]?.trim()||''; };
+    const title = get('title').replace(/^FinancialJuice:\s*/i,'').trim();
+    const guid = get('guid'), pubDate = get('pubDate');
+    const link = b.match(/<link>(.*?)<\/link>/)?.[1] || '';
+    if (guid && title) items.push({ title, guid, pubDate, link });
+  }
+  return items;
 }
 
 // ── Nitter handler (@DeItaone) ────────────────────────────────────────────────

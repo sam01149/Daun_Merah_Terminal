@@ -55,24 +55,41 @@ module.exports = async function handler(req, res) {
   res.setHeader('x-vercel-cache', 'BYPASS');
   const GROQ_KEY = process.env.GROQ_API_KEY;
 
-  // 1. RSS — fetch from internal /api/rss (cached) to avoid direct FJ blocking
+  // 1. RSS — current feed + 36h Redis history in parallel
   let rssItems = [];
   try {
     const host = req.headers.host || 'financial-feed-app.vercel.app';
     const proto = host.includes('localhost') ? 'http' : 'https';
-    const r = await fetch(`${proto}://${host}/api/feeds?type=rss`, {
-      signal: AbortSignal.timeout(12000),
-    });
-    if (r.ok) {
-      const xml = await r.text();
-      if (xml.includes('<rss')) rssItems = parseRSS(xml);
+    const cutoff36h = Date.now() - 36 * 60 * 60 * 1000;
+    const [rssRes, histRaw] = await Promise.allSettled([
+      fetch(`${proto}://${host}/api/feeds?type=rss`, { signal: AbortSignal.timeout(12000) }),
+      redisCmd('ZRANGEBYSCORE', 'news_history', cutoff36h, '+inf'),
+    ]);
+
+    let currentItems = [];
+    if (rssRes.status === 'fulfilled' && rssRes.value.ok) {
+      const xml = await rssRes.value.text();
+      if (xml.includes('<rss')) currentItems = parseRSS(xml);
     }
+
+    let historyItems = [];
+    if (histRaw.status === 'fulfilled' && Array.isArray(histRaw.value)) {
+      historyItems = histRaw.value.map(s => { try { return JSON.parse(s); } catch(_) { return null; } }).filter(Boolean);
+    }
+
+    // Merge: current RSS takes priority, dedup by guid
+    const seen = new Set(currentItems.map(i => i.guid));
+    const merged = [...currentItems, ...historyItems.filter(i => i.guid && !seen.has(i.guid))];
+    rssItems = merged
+      .filter(i => new Date(i.pubDate).getTime() > cutoff36h)
+      .sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate));
+
+    console.log(`RSS items: ${currentItems.length} current + ${historyItems.length} history → ${rssItems.length} merged`);
   } catch(e) {
-    console.warn('Internal RSS fetch failed:', e.message);
+    console.warn('RSS/history fetch failed:', e.message);
   }
 
-  const cutoff = Date.now() - 12 * 60 * 60 * 1000;
-  const recentItems = rssItems.filter(i => new Date(i.pubDate).getTime() > cutoff).slice(0, 80);
+  const recentItems = rssItems.slice(0, 150);
 
   // 2. Calendar
   let calEvents = [];
@@ -102,7 +119,8 @@ module.exports = async function handler(req, res) {
   const wibNow  = new Date(Date.now() + 7 * 3600000);
   const dateStr = `${String(wibNow.getUTCDate()).padStart(2,'0')}/${String(wibNow.getUTCMonth()+1).padStart(2,'0')}/${wibNow.getUTCFullYear()}`;
   const timeStr = `${String(wibNow.getUTCHours()).padStart(2,'0')}:${String(wibNow.getUTCMinutes()).padStart(2,'0')} WIB`;
-  const headlinesBlock = recentItems.length > 0 ? recentItems.map((i,idx)=>`${idx+1}. ${i.title}`).join('\n') : '(Tidak ada headline)';
+  const headlinesForBriefing = recentItems.slice(0, 80);
+  const headlinesBlock = headlinesForBriefing.length > 0 ? headlinesForBriefing.map((i,idx)=>`${idx+1}. ${i.title}`).join('\n') : '(Tidak ada headline)';
   const calBlock = calEvents.length > 0 ? calEvents.map(e=>`- ${e.date} | ${e.time_wib} | ${e.currency} | ${e.event}`).join('\n') : '(Tidak ada event high-impact)';
 
   // Gold-specific headline filter — injected as dedicated block for XAUUSD analysis
@@ -112,7 +130,7 @@ module.exports = async function handler(req, res) {
   }).slice(0, 30);
   const goldBlock = goldItems.length > 0
     ? goldItems.map((i, idx) => `${idx + 1}. ${i.title}`).join('\n')
-    : '(Tidak ada headline relevan untuk XAU/USD dalam 12 jam terakhir)';
+    : '(Tidak ada headline relevan untuk XAU/USD dalam 36 jam terakhir)';
 
   // 3b. Load digest history + xau history in parallel
   let digestHistory = [], xauHistory = [];
@@ -190,10 +208,10 @@ ATURAN HIGIENIS:
 
 WAKTU SAAT INI: ${dateStr}, ${timeStr}
 
-=== HEADLINE BERITA TERKINI (${recentItems.length} berita, 12 jam terakhir) ===
+=== HEADLINE BERITA TERKINI (${headlinesForBriefing.length} dari ${recentItems.length} berita, 36 jam terakhir) ===
 ${headlinesBlock}
 
-=== HEADLINE RELEVAN XAUUSD (${goldItems.length} dari ${recentItems.length} berita, difilter) ===
+=== HEADLINE RELEVAN XAUUSD (${goldItems.length} dari ${recentItems.length} berita, 36 jam, difilter) ===
 ${goldBlock}
 
 === EVENT KALENDER EKONOMI HIGH-IMPACT (3 hari ke depan) ===
@@ -236,7 +254,7 @@ ${xauHistoryBlock}`;
   if (!article) {
     method = 'fallback';
     if (recentItems.length === 0) {
-      article = 'Tidak ada berita baru dalam 12 jam terakhir.';
+      article = 'Tidak ada berita baru dalam 36 jam terakhir.';
     } else {
       const catGroups = {};
       recentItems.forEach(i => { const c=detectCat(i.title); if(!catGroups[c])catGroups[c]=[]; catGroups[c].push(i.title); });
@@ -304,7 +322,7 @@ ${xauHistoryBlock}`;
         const lower = i.title.toLowerCase();
         return relevantCurrencies.some(cur => CB_KEYWORDS[cur].some(kw => lower.includes(kw)));
       });
-      const biasHeadlines = relevantHeadlines.map((i,idx) => (idx+1) + '. ' + i.title).join('\n');
+      const biasHeadlines = relevantHeadlines.slice(0, 50).map((i,idx) => (idx+1) + '. ' + i.title).join('\n');
       const biasCurrencies = relevantCurrencies.join(', ');
       const biasPrompt = [
         'You are a central bank policy analyst. Based ONLY on the following recent financial news headlines, assess the current monetary policy stance for each central bank mentioned.',
