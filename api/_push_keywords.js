@@ -5,14 +5,13 @@
 module.exports = {
 
   // 🔴 Berita yang langsung menggerakkan pasar secara besar
+  // Hanya kata yang benar-benar eksklusif untuk kejadian besar — jangan terlalu luas
   MARKET_MOVING: [
     'market moving', 'breaking', 'blockade',
     'flash crash', 'circuit breaker', 'trading halt', 'market halt',
     'emergency meeting', 'surprise rate', 'unexpected rate', 'shock decision',
     'market crash', 'market rout', 'market meltdown', 'market turmoil',
-    'black swan', 'limit up', 'limit down',
-    'catastrophic', 'unprecedented move', 'historic high', 'historic low',
-    'all-time high', 'all-time low', 'record high', 'record low',
+    'black swan',
   ],
 
   // 💱 Mata uang, pair FX, gold/silver sebagai instrumen forex
@@ -23,17 +22,18 @@ module.exports = {
     // indices
     'dxy', 'dollar index', 'usdx', 'trade-weighted dollar',
     // currency nicknames
-    'loonie', 'aussie', 'cable', 'kiwi', 'sterling', 'greenback', 'swissy',
+    'loonie', 'aussie', 'cable', 'kiwi', 'sterling', 'greenback',
     // currency names
-    'yen', 'euro', 'pound', 'franc', 'yuan', 'renminbi', 'rupiah',
-    // gold & silver (FX instruments XAU/USD, XAG/USD)
+    'yen', 'euro', 'pound', 'franc', 'yuan', 'renminbi',
+    // gold & silver (instrumen FX: XAU/USD, XAG/USD)
     'gold', 'xau', 'silver', 'xag',
-    // dollar movement — verb variations
+    // dollar movement — semua variasi verb yang umum di headline
     'dollar rallies', 'dollar drops', 'dollar falls', 'dollar rises',
     'dollar weakens', 'dollar strengthens', 'dollar gains', 'dollar jumps',
     'dollar slides', 'dollar surges', 'dollar plunges', 'dollar rebounds',
     'dollar slips', 'dollar tumbles', 'dollar edges higher', 'dollar edges lower',
     'dollar retreats', 'dollar soars', 'dollar recovers', 'dollar steadies',
+    'dollar pares',
     // yen movement (sering headline tanpa pair)
     'yen rises', 'yen falls', 'yen weakens', 'yen strengthens', 'yen gains',
     'yen drops', 'yen surges', 'yen slides', 'yen hits', 'yen near',
@@ -44,9 +44,10 @@ module.exports = {
     'pound rises', 'pound falls', 'pound weakens', 'pound strengthens', 'pound gains',
     'pound drops', 'pound slides', 'pound surges', 'pound hits', 'pound near',
     // FX market generic
-    'fx market', 'forex market', 'currency pair', 'currency market', 'spot fx',
+    'fx market', 'forex market', 'currency pair', 'currency market',
     'currency war', 'competitive devaluation', 'currency intervention',
     'fx intervention', 'verbal intervention', 'safe haven',
+    'carry trade',
   ],
 
   // ⚡ Energi — minyak, gas, komoditas energi
@@ -65,7 +66,7 @@ module.exports = {
   MACRO: [
     // Fed / AS
     'fed ', 'fomc', 'powell', 'federal reserve', 'fed minutes', 'beige book',
-    'fed funds', 'fed pivot', 'fed hold', 'fed pause',
+    'fed funds', 'fed pivot', 'fed hold', 'fed pause', 'dot plot',
     // ECB / Eropa
     'ecb', 'lagarde', 'european central bank', 'ecb minutes',
     // BOE / UK
@@ -78,8 +79,8 @@ module.exports = {
     'rba', 'bullock', 'reserve bank of australia',
     // RBNZ / Selandia Baru
     'rbnz', 'orr', 'reserve bank of new zealand',
-    // SNB / Swiss
-    'snb', 'jordan', 'swiss national bank',
+    // SNB / Swiss — jordan pensiun okt 2024, diganti schlegel
+    'snb', 'schlegel', 'swiss national bank',
     // BOC / Kanada
     'boc', 'bank of canada', 'macklem',
     // Lainnya
@@ -105,14 +106,13 @@ module.exports = {
     // Peristiwa geopolitik
     'war', 'ceasefire', 'peace talks', 'military', 'invasion',
     'airstrike', 'missile', 'nuclear', 'sanctions', 'blockade',
-    // Perdagangan internasional
+    // Perdagangan internasional (kata yang murni politis, bukan data rilis)
     'tariff', 'trade deal', 'trade war', 'trade tension',
-    'import duty', 'export ban', 'embargo', 'trade deficit', 'trade surplus',
+    'import duty', 'export ban', 'embargo',
     // Forum internasional
     'g7', 'g20', 'imf', 'world bank', 'wto', 'un security',
     // Politik domestik berdampak pasar
-    'election', 'referendum', 'coup', 'government shutdown',
-    'debt ceiling', 'fiscal cliff',
+    'election', 'referendum', 'coup', 'government shutdown', 'debt ceiling',
   ],
 
   // 📋 Data ekonomi — rilis & indikator makro
@@ -120,7 +120,7 @@ module.exports = {
     // Penanda rilis (dari feed FinancialJuice)
     'actual', 'forecast', 'previous',
     // AS
-    'cpi', 'nfp', 'unemployment', 'payroll', 'jobs report', 'job openings',
+    'cpi', 'nfp', 'nonfarm', 'unemployment', 'payroll', 'jobs report', 'job openings',
     'jolts', 'adp employment', 'initial claims', 'jobless claims', 'continuing claims',
     'average hourly earnings', 'participation rate', 'labor force',
     'pce', 'core inflation', 'core cpi', 'core pce',
@@ -132,6 +132,8 @@ module.exports = {
     'housing starts', 'building permits', 'existing home sales', 'new home sales',
     'consumer confidence', 'consumer sentiment', 'michigan sentiment',
     'chicago pmi', 'producer price', 'ppi',
+    // UK
+    'claimant count',
     // Internasional
     'flash pmi', 'caixin', 'ifo', 'zew', 'gfk',
     'unemployment rate', 'employment change', 'wage growth',
