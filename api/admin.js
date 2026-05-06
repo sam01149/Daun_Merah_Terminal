@@ -235,15 +235,17 @@ const KEY_REGISTRY = [
   { key: 'prompt_thesis',      owner: 'api/admin.js',          ttl_expected: null,   note: 'Groq prompt for structured thesis JSON' },
   { key: 'health_last_ok',     owner: 'api/admin.js',          ttl_expected: null,   note: 'HSET: source → last OK timestamp for alerting' },
   { key: 'push_subs',          owner: 'api/admin.js',          ttl_expected: null,   note: 'HSET push subscriptions endpoint → JSON' },
-  { key: 'seen_guids',         owner: 'api/admin.js',          ttl_expected: 86400,  note: 'Set of seen RSS GUIDs for push dedup' },
+  { key: 'seen_guids_set',     owner: 'api/admin.js',          ttl_expected: 86400,  note: 'Redis SET of seen RSS GUIDs for push dedup (SADD/SMEMBERS, atomic)' },
+  { key: 'push_lock',          owner: 'api/admin.js',          ttl_expected: 55,     note: 'Distributed lock to prevent concurrent push cron runs' },
   { key: 'sizing_history:*',   owner: 'api/sizing-history.js', ttl_expected: null,   note: 'Sorted set: sizing calculations per device (max 10 entries)' },
   { key: 'journal:*',          owner: 'api/journal.js',        ttl_expected: null,   note: 'Full journal entry JSON per device' },
   { key: 'journal_index:*',    owner: 'api/journal.js',        ttl_expected: null,   note: 'Sorted set: journal entry IDs by created_at timestamp' },
 ];
 
 const DEPRECATED_KEYS = [
-  { key: 'cot_cache',          replaced_by: 'cot_cache_v2',  note: 'Old COT format, superseded in Task 10b' },
-  { key: 'fundamentals_cache', replaced_by: null,            note: 'Fundamentals tab removed from UI' },
+  { key: 'cot_cache',          replaced_by: 'cot_cache_v2',    note: 'Old COT format, superseded in Task 10b' },
+  { key: 'fundamentals_cache', replaced_by: null,              note: 'Fundamentals tab removed from UI' },
+  { key: 'seen_guids',         replaced_by: 'seen_guids_set',  note: 'JSON array replaced by Redis native SET for atomic dedup' },
 ];
 
 async function getKeyInfo(key) {
@@ -396,8 +398,17 @@ async function pushHandler(req, res) {
 
   webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC, VAPID_PRIVATE);
 
+  // Distributed lock: prevent concurrent cron runs from double-sending
+  const lockAcquired = await redisCmd('SET', 'push_lock', String(Date.now()), 'NX', 'EX', '55');
+  if (!lockAcquired) {
+    return res.status(200).json({ status: 'Locked — concurrent run skipped' });
+  }
+
   let seenGuids = new Set();
-  try { const raw = await redisCmd('GET', 'seen_guids'); if (raw) seenGuids = new Set(JSON.parse(raw)); } catch(e) {}
+  try {
+    const members = await redisCmd('SMEMBERS', 'seen_guids_set');
+    if (Array.isArray(members) && members.length > 0) seenGuids = new Set(members);
+  } catch(e) {}
 
   let xml = null;
   const RSS_UAS = [
@@ -419,14 +430,24 @@ async function pushHandler(req, res) {
       }
     } catch(e) { console.warn('RSS attempt failed:', ua.substring(0, 20), e.message); }
   }
-  if (!xml) return res.status(200).json({ status: 'RSS unavailable' });
+  if (!xml) {
+    await redisCmd('DEL', 'push_lock').catch(() => {});
+    return res.status(200).json({ status: 'RSS unavailable' });
+  }
 
   const items = parsePushRSS(xml);
   const isFirst = seenGuids.size === 0;
   const newItems = isFirst ? [] : items.filter(i => !seenGuids.has(i.guid));
 
-  items.forEach(i => seenGuids.add(i.guid));
-  try { await redisCmd('SET', 'seen_guids', JSON.stringify([...seenGuids].slice(-500)), 'EX', 86400); } catch(e) {}
+  // SADD is atomic — safe even if two runs overlap at this point
+  if (items.length > 0) {
+    try {
+      await redisCmd('SADD', 'seen_guids_set', ...items.map(i => i.guid));
+      await redisCmd('EXPIRE', 'seen_guids_set', '86400');
+    } catch(e) { console.warn('push: seen_guids_set write failed:', e.message); }
+  }
+
+  await redisCmd('DEL', 'push_lock').catch(() => {});
 
   if (newItems.length === 0) return res.status(200).json({ status: isFirst ? 'Initialized' : 'No new items' });
 
@@ -484,11 +505,11 @@ function parsePushRSS(xml) {
 
 function detectPushCat(t) {
   t = t.toLowerCase();
-  if (['market moving', 'breaking', 'blockade'].some(k => t.includes(k))) return 'market-moving';
-  if (['eur/', 'gbp/', 'usd/', 'aud/', 'nzd/', 'cad/', 'chf/', 'jpy/', '/usd', '/jpy', 'dxy', 'loonie', 'aussie', 'cable'].some(k => t.includes(k))) return 'forex';
-  if (['oil', 'crude', 'brent', 'wti', 'natural gas', 'hormuz', 'iea'].some(k => t.includes(k))) return 'energy';
-  if (['fed ', 'fomc', 'powell', 'federal reserve', 'rate cut', 'ecb', 'boe', 'boj', 'pboc'].some(k => t.includes(k))) return 'macro';
-  if (['iran', 'israel', 'russia', 'ukraine', 'china', 'trump', 'nato', 'war', 'tariff'].some(k => t.includes(k))) return 'geopolitical';
-  if (['actual', 'forecast', 'previous', 'cpi', 'nfp', 'unemployment'].some(k => t.includes(k))) return 'econ-data';
+  if (['market moving', 'breaking', 'blockade', 'flash crash', 'circuit breaker', 'trading halt', 'market halt'].some(k => t.includes(k))) return 'market-moving';
+  if (['eur/', 'gbp/', 'usd/', 'aud/', 'nzd/', 'cad/', 'chf/', 'jpy/', '/usd', '/jpy', 'dxy', 'loonie', 'aussie', 'cable', 'kiwi', 'sterling', 'greenback', 'dollar index', 'yuan', 'renminbi', 'dollar rallies', 'dollar drops', 'dollar falls', 'dollar rises', 'dollar weakens', 'dollar strengthens', 'fx market', 'forex market', 'currency pair'].some(k => t.includes(k))) return 'forex';
+  if (['oil', 'crude', 'brent', 'wti', 'natural gas', 'hormuz', 'iea', 'opec', 'lng', 'gasoline', 'petroleum', 'refinery', 'pipeline'].some(k => t.includes(k))) return 'energy';
+  if (['fed ', 'fomc', 'powell', 'federal reserve', 'rate cut', 'rate hike', 'ecb', 'boe', 'boj', 'pboc', 'rba', 'rbnz', 'snb', 'norges bank', 'riksbank', 'interest rate', 'monetary policy', 'central bank', 'lagarde', 'bailey', 'ueda', 'bullock'].some(k => t.includes(k))) return 'macro';
+  if (['iran', 'israel', 'russia', 'ukraine', 'china', 'trump', 'nato', 'war', 'tariff', 'taiwan', 'north korea', 'sanctions', 'middle east', 'trade deal', 'trade war', 'g7', 'g20'].some(k => t.includes(k))) return 'geopolitical';
+  if (['actual', 'forecast', 'previous', 'cpi', 'nfp', 'unemployment', 'gdp', 'pmi', 'retail sales', 'payroll', 'jobless', 'pce', 'core inflation', 'trade balance', 'housing starts', 'durable goods', 'ism ', 'jobs report'].some(k => t.includes(k))) return 'econ-data';
   return 'news';
 }
