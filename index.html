@@ -3891,6 +3891,29 @@ document.addEventListener('click', function(e) {
   if (topBtn) topBtn.click();
   document.querySelectorAll('#botNav .bot-nav-btn').forEach(b => b.classList.toggle('active', b.dataset.view === view));
 });
+
+// ── SWIPE NAVIGATION ─────────────────────────────────────────
+(function() {
+  const VIEWS = ['feed','ringkasan','cal','cot','checklist','sizing','jurnal','petunjuk'];
+  const MIN_X = 60;
+  let sx = 0, sy = 0;
+  document.addEventListener('touchstart', function(e) {
+    sx = e.changedTouches[0].clientX;
+    sy = e.changedTouches[0].clientY;
+  }, { passive: true });
+  document.addEventListener('touchend', function(e) {
+    const dx = e.changedTouches[0].clientX - sx;
+    const dy = e.changedTouches[0].clientY - sy;
+    if (Math.abs(dx) < MIN_X || Math.abs(dy) > Math.abs(dx)) return;
+    if (e.target.closest('#navViews, #navFilters, #botNav, input, select, textarea')) return;
+    const idx = VIEWS.indexOf(activeView);
+    if (idx === -1) return;
+    const next = dx < 0 ? idx + 1 : idx - 1;
+    if (next < 0 || next >= VIEWS.length) return;
+    const btn = document.querySelector('#navViews .nvtab[data-view="' + VIEWS[next] + '"]');
+    if (btn) btn.click();
+  }, { passive: true });
+})();
 </script>
 
 <!-- MOBILE BOTTOM NAV -->
