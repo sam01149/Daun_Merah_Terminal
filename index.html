@@ -302,6 +302,11 @@ body {
 @keyframes pulse-badge { 0%,100%{opacity:1} 50%{opacity:.4} }
 
 
+@keyframes swipeInRight { from { transform:translateX(40px); opacity:0; } to { transform:translateX(0); opacity:1; } }
+@keyframes swipeInLeft  { from { transform:translateX(-40px); opacity:0; } to { transform:translateX(0); opacity:1; } }
+.swipe-in-right { animation: swipeInRight 220ms cubic-bezier(.25,.46,.45,.94) both; }
+.swipe-in-left  { animation: swipeInLeft  220ms cubic-bezier(.25,.46,.45,.94) both; }
+
 .state-box { text-align:center; padding:60px 20px; color:var(--muted); }
 .state-box .icon { font-size:36px; margin-bottom:14px; }
 .state-box p { font-size:12px; line-height:1.7; }
@@ -3885,6 +3890,7 @@ document.addEventListener('click', function(e) {
 // ── SWIPE NAVIGATION ─────────────────────────────────────────
 (function() {
   const VIEWS = ['feed','ringkasan','cal','cot','checklist','sizing','jurnal','petunjuk'];
+  const PANEL_ID = { feed:'feedScroll', ringkasan:'ringkasanPanel', cal:'calPanel', cot:'cotPanel', checklist:'checklistPanel', sizing:'sizingPanel', jurnal:'jurnalPanel', petunjuk:'petunjukPanel' };
   const MIN_X = 60;
   let sx = 0, sy = 0;
   document.addEventListener('touchstart', function(e) {
@@ -3898,10 +3904,21 @@ document.addEventListener('click', function(e) {
     if (e.target.closest('#navViews, #navFilters, #botNav, input, select, textarea')) return;
     const idx = VIEWS.indexOf(activeView);
     if (idx === -1) return;
-    const next = dx < 0 ? idx + 1 : idx - 1;
+    // swipe left = next tab, swipe right = prev tab
+    const goNext = dx < 0;
+    const next = goNext ? idx + 1 : idx - 1;
     if (next < 0 || next >= VIEWS.length) return;
     const btn = document.querySelector('#navViews .nvtab[data-view="' + VIEWS[next] + '"]');
-    if (btn) btn.click();
+    if (!btn) return;
+    btn.click();
+    // slide-in animation on incoming panel
+    const el = document.getElementById(PANEL_ID[VIEWS[next]]);
+    if (!el) return;
+    const cls = goNext ? 'swipe-in-right' : 'swipe-in-left';
+    el.classList.remove('swipe-in-right', 'swipe-in-left');
+    void el.offsetWidth; // force reflow so animation restarts
+    el.classList.add(cls);
+    el.addEventListener('animationend', () => el.classList.remove(cls), { once: true });
   }, { passive: true });
 })();
 </script>
