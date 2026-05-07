@@ -301,12 +301,6 @@ body {
 }
 @keyframes pulse-badge { 0%,100%{opacity:1} 50%{opacity:.4} }
 
-.source-badge {
-  font-size:8px; padding:2px 5px; border-radius:3px;
-  letter-spacing:.3px; font-weight:600; flex-shrink:0;
-}
-.source-fj { background:rgba(100,160,255,.12); color:#64a0ff; }
-.source-x  { background:rgba(255,255,255,.08); color:var(--muted); }
 
 .state-box { text-align:center; padding:60px 20px; color:var(--muted); }
 .state-box .icon { font-size:36px; margin-bottom:14px; }
@@ -1826,17 +1820,13 @@ function renderFeed(markNew = false) {
     const isNew = markNew && newGuids.has(item.guid) && idx < 5;
     const rawDesc = sanitizeDesc(item.desc);
     const descHtml = rawDesc.length > 10 ? `<div class="item-desc">${rawDesc}</div>` : '';
-    const newBadge    = isNew ? `<span class="new-badge">NEW</span>` : '';
-    const sourceBadge = item.source === 'x'
-      ? `<span class="source-badge source-x">Δ1</span>`
-      : `<span class="source-badge source-fj">FJ</span>`;
+    const newBadge = isNew ? `<span class="new-badge">NEW</span>` : '';
     const safeLink = (item.link || '').replace(/'/g, "\\'");
     return `
       <div class="feed-item cat-${cat}" onclick="openLink('${safeLink}')" style="animation-delay:${Math.min(idx,15)*0.025}s">
         <div class="item-meta">
           <span class="item-time">${fmtTime(item.pubDate)}</span>
           <span class="item-tag tag-${cat}">${cat.replace('-',' ')}</span>
-          ${sourceBadge}
           ${newBadge}
         </div>
         <div class="item-title">${item.title}</div>
