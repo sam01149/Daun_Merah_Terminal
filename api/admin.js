@@ -530,6 +530,7 @@ const GROQ_MODEL_FUND = 'llama-3.3-70b-versatile';
 
 const FUND_SEED = {
   USD: {
+    'Fed Rate':          { actual:'3.75%',      period:'Apr 2026',    date:'—', source:'seed' },
     'CPI YoY':           { actual:'3.3%',       period:'Apr 2026',    date:'—', source:'seed' },
     'Core CPI MoM':      { actual:'0.2%',       period:'Apr 2026',    date:'—', source:'seed' },
     'NFP':               { actual:'178K',       period:'Apr 2026',    date:'—', source:'seed' },

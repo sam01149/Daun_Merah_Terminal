@@ -2671,7 +2671,7 @@ function renderFundamental() {
     const col  = CUR_COLORS[cur] || '#888';
 
     // Find rate indicator for this currency
-    const RATE_KEYS = { USD:'NFP', EUR:'ECB Rate', GBP:'BOE Rate', JPY:'BOJ Rate', CAD:'BOC Rate', AUD:'RBA Rate', NZD:'RBNZ Rate', CHF:'SNB Rate' };
+    const RATE_KEYS = { USD:'Fed Rate', EUR:'ECB Rate', GBP:'BOE Rate', JPY:'BOJ Rate', CAD:'BOC Rate', AUD:'RBA Rate', NZD:'RBNZ Rate', CHF:'SNB Rate' };
     const rateKey   = RATE_KEYS[cur];
     const rateVal   = rateKey && data[rateKey] ? data[rateKey].actual : null;
 
