@@ -1,6 +1,6 @@
 # Daun Merah — Rencana Pengembangan
 
-*Terakhir diupdate: 2026-05-08*
+*Terakhir diupdate: 2026-05-08 (sesi 2)*
 
 ---
 
@@ -33,6 +33,12 @@ Input: open journal entries (`thesis_text` + `pair` + `direction`) + batch headl
 ### Env vars yang perlu ditambahkan di Vercel
 - `CEREBRAS_API_KEY` — dari https://cloud.cerebras.ai
 - `SAMBANOVA_API_KEY` — dari https://cloud.sambanova.ai
+
+---
+
+## XAU/USD di Journal ✅ (diimplementasi 2026-05-08)
+
+Tambah `XAU/USD` ke array `SZ_PAIRS` di index.html — pair ini dipakai oleh selector di tab JURNAL dan SIZING.
 
 ---
 
