@@ -529,6 +529,50 @@ body {
   letter-spacing: .3px;
 }
 
+/* COUNTDOWN TIMER */
+.cal-countdown-wrap {
+  margin: 10px 12px 4px;
+}
+.cal-countdown {
+  padding: 10px 14px; border-radius: 10px;
+  background: var(--surface); border: 1px solid var(--border);
+  display: flex; align-items: center; gap: 10px;
+  transition: border-color .2s, background .2s;
+}
+.cal-countdown.warning {
+  border-color: rgba(255,71,87,.5);
+  background: rgba(255,71,87,.06);
+  animation: pulseWarn 1.5s ease-in-out infinite;
+}
+@keyframes pulseWarn {
+  0%,100% { box-shadow: 0 0 0 0 rgba(255,71,87,0); }
+  50%      { box-shadow: 0 0 8px 2px rgba(255,71,87,.25); }
+}
+.cal-countdown-icon { font-size: 14px; flex-shrink: 0; }
+.cal-countdown-body { flex: 1; min-width: 0; }
+.cal-countdown-label {
+  font-size: 8px; color: var(--muted); letter-spacing: .6px;
+  text-transform: uppercase; font-family: 'DM Mono', monospace; margin-bottom: 3px;
+}
+.cal-countdown-name {
+  font-size: 11px; font-family: 'DM Mono', monospace; color: var(--text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.cal-countdown-name.warning { color: #ff4757; }
+.cal-countdown-time {
+  font-size: 18px; font-weight: 700; font-family: 'DM Mono', monospace;
+  color: var(--text); flex-shrink: 0; letter-spacing: -.5px;
+}
+.cal-countdown-time.warning { color: #ff4757; }
+/* Badge on CAL tab */
+.nvtab-badge {
+  display: inline-block; margin-left: 4px;
+  background: #ff4757; color: #fff;
+  font-size: 7px; font-family: 'DM Mono', monospace;
+  padding: 1px 4px; border-radius: 8px; vertical-align: middle;
+  line-height: 1.4; letter-spacing: .3px;
+}
+
 .cal-panel-inner { padding: 4px 12px 16px; }
 .cal-date-group { margin-bottom: 20px; }
 .cal-date-label {
@@ -1078,7 +1122,7 @@ body {
 <div class="nav-views" id="navViews">
   <button class="nvtab active" data-view="feed" id="feedNavTab">NEWS</button>
   <button class="nvtab" data-view="ringkasan" id="ringkasanTab">RINGKASAN</button>
-  <button class="nvtab" data-view="cal" id="calTab">CAL</button>
+  <button class="nvtab" data-view="cal" id="calTab">CAL<span id="calTabBadge" class="nvtab-badge" style="display:none">!</span></button>
   <button class="nvtab" data-view="cot" id="cotTab">COT</button>
   <button class="nvtab" data-view="checklist" id="checklistTab">CHECKLIST</button>
   <button class="nvtab" data-view="sizing" id="sizingTab">SIZING</button>
@@ -1152,6 +1196,17 @@ body {
 
 <!-- CALENDAR PANEL -->
 <div class="feed-scroll" id="calPanel" style="display:none">
+  <!-- COUNTDOWN TIMER -->
+  <div class="cal-countdown-wrap" id="calCountdownWrap" style="display:none">
+    <div class="cal-countdown" id="calCountdownCard">
+      <div class="cal-countdown-icon">⏱</div>
+      <div class="cal-countdown-body">
+        <div class="cal-countdown-label">Event High-Impact Berikutnya</div>
+        <div class="cal-countdown-name" id="calCountdownName">—</div>
+      </div>
+      <div class="cal-countdown-time" id="calCountdownTime">—</div>
+    </div>
+  </div>
   <div class="cb-section" id="cbSection">
     <div class="cb-section-title">
       <span>Central Bank Tracker</span>
@@ -1590,8 +1645,9 @@ let deferredInstall = null;
 let activeView   = 'feed';
 
 // Calendar state
-let calData       = null;
-let calFetchedAt  = 0;
+let calData          = null;
+let calFetchedAt     = 0;
+let _countdownTimer  = null;
 
 // CB Tracker state
 let cbData        = null;
@@ -2096,6 +2152,7 @@ document.querySelectorAll('#navViews .nvtab').forEach(btn => {
     btn.classList.add('active');
     document.querySelectorAll('#botNav .bot-nav-btn').forEach(b => b.classList.toggle('active', b.dataset.view === btn.dataset.view));
     hideAllPanels();
+    if (btn.dataset.view !== 'cal') stopCountdownTimer();
     const view = btn.dataset.view;
     if (view === 'feed') {
       setFeedUI(true);
@@ -2114,7 +2171,7 @@ document.querySelectorAll('#navViews .nvtab').forEach(btn => {
       document.getElementById('calPanel').style.display = 'block';
       const now = Date.now();
       if (!calData || (now - calFetchedAt) > 60 * 60 * 1000) fetchCalendar();
-      else renderCalendar();
+      else { renderCalendar(); startCountdownTimer(); }
       if (!cbData || (now - cbFetchedAt) > 5 * 60 * 1000) fetchCBStatus();
       else renderCBTracker();
       if (!realYieldsData || (now - realYieldsFetAt) > 6 * 60 * 60 * 1000) fetchRealYields();
@@ -2180,6 +2237,7 @@ async function fetchCalendar() {
     calFetchedAt = Date.now();
     updateCalLastUpdated();
     renderCalendar();
+    startCountdownTimer();
     const _calSel = document.getElementById('ckPairSelector');
     if (_calSel && _calSel.value) ckAutoTickRegimeCheck(_calSel.value);
   } catch(e) {
@@ -2683,6 +2741,78 @@ function renderCalendar() {
   inner.innerHTML = legend + eventsHtml;
 }
 
+function startCountdownTimer() {
+  if (_countdownTimer) clearInterval(_countdownTimer);
+  renderCountdown();
+  _countdownTimer = setInterval(renderCountdown, 30000);
+}
+
+function stopCountdownTimer() {
+  if (_countdownTimer) { clearInterval(_countdownTimer); _countdownTimer = null; }
+}
+
+function renderCountdown() {
+  const wrap   = document.getElementById('calCountdownWrap');
+  const card   = document.getElementById('calCountdownCard');
+  const nameEl = document.getElementById('calCountdownName');
+  const timeEl = document.getElementById('calCountdownTime');
+  const badge  = document.getElementById('calTabBadge');
+  if (!wrap) return;
+
+  if (!calData || calData.length === 0) {
+    wrap.style.display = 'none';
+    if (badge) badge.style.display = 'none';
+    return;
+  }
+
+  const nowMs   = Date.now();
+  const limit   = nowMs + 24 * 3600 * 1000;
+
+  const upcoming = [];
+  calData.forEach(ev => {
+    if (ev.impact !== 'High') return;
+    if (!ev.time_wib || ev.time_wib === 'Tentative') return;
+    const timeStr = ev.time_wib.replace(' WIB', '');
+    const [hStr, mStr] = timeStr.split(':');
+    const h = parseInt(hStr, 10), m = parseInt(mStr, 10);
+    if (isNaN(h) || isNaN(m)) return;
+    const [y, mo, d] = ev.date.split('-').map(Number);
+    // WIB = UTC+7 → subtract 7h to convert to UTC epoch
+    const evMs = Date.UTC(y, mo - 1, d, h - 7, m);
+    if (evMs > nowMs && evMs <= limit) upcoming.push({ ev, evMs });
+  });
+
+  if (upcoming.length === 0) {
+    wrap.style.display = 'none';
+    if (badge) badge.style.display = 'none';
+    return;
+  }
+
+  upcoming.sort((a, b) => a.evMs - b.evMs);
+  const { ev, evMs } = upcoming[0];
+  const diffMin = Math.floor((evMs - nowMs) / 60000);
+  const hours   = Math.floor(diffMin / 60);
+  const mins    = diffMin % 60;
+
+  let timeStr;
+  if (diffMin < 5)      timeStr = '< 5 menit ⚠';
+  else if (hours > 0)   timeStr = `${hours}j ${mins}m`;
+  else                  timeStr = `${mins}m`;
+
+  const isWarning = diffMin < 30;
+  card.className   = 'cal-countdown' + (isWarning ? ' warning' : '');
+  nameEl.className = 'cal-countdown-name' + (isWarning ? ' warning' : '');
+  timeEl.className = 'cal-countdown-time' + (isWarning ? ' warning' : '');
+  nameEl.textContent = `${ev.currency} · ${ev.event}`;
+  timeEl.textContent = timeStr;
+
+  wrap.style.display = 'block';
+  if (badge) {
+    badge.style.display = isWarning ? 'inline-block' : 'none';
+    badge.textContent   = isWarning ? '!' : '';
+  }
+}
+
 function formatCalDate(dateStr) {
   const d = new Date(dateStr + 'T00:00:00Z');
   const days   = ['Minggu','Senin','Selasa','Rabu','Kamis','Jumat','Sabtu'];
@@ -2817,6 +2947,27 @@ window.addEventListener('load', () => {
   setInterval(fetchRegime, 15 * 60 * 1000);
   setInterval(updateCalLastUpdated, 60 * 1000);
 });
+
+// Global ticker: update CAL tab badge every minute regardless of active tab
+setInterval(() => {
+  if (activeView !== 'cal' && calData) {
+    const badge  = document.getElementById('calTabBadge');
+    if (!badge) return;
+    const nowMs  = Date.now();
+    const limit  = nowMs + 24 * 3600 * 1000;
+    const hasWarn = calData.some(ev => {
+      if (ev.impact !== 'High' || !ev.time_wib || ev.time_wib === 'Tentative') return false;
+      const [hStr, mStr] = ev.time_wib.replace(' WIB','').split(':');
+      const h = parseInt(hStr,10), m = parseInt(mStr,10);
+      if (isNaN(h)||isNaN(m)) return false;
+      const [y,mo,d] = ev.date.split('-').map(Number);
+      const evMs = Date.UTC(y, mo-1, d, h-7, m);
+      return evMs > nowMs && evMs <= limit && Math.floor((evMs-nowMs)/60000) < 30;
+    });
+    badge.style.display = hasWarn ? 'inline-block' : 'none';
+    if (hasWarn) badge.textContent = '!';
+  }
+}, 60000);
 
 // Restart auto-refresh intervals when tab becomes visible again (fixes background throttle)
 document.addEventListener('visibilitychange', () => {
