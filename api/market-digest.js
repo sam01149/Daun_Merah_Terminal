@@ -624,6 +624,13 @@ ${xauHistoryBlock}`;
     }
   }
 
+  // ── Auto-update fundamental data + CB decisions from headlines ───────────────
+  try {
+    await autoUpdateFundamentals(recentItems.slice(0, 100));
+  } catch(e) {
+    console.warn('autoUpdateFundamentals failed:', e.message);
+  }
+
   const payload = {
     article, method, thesis,
     thesis_alerts:  thesisAlerts,
@@ -688,6 +695,173 @@ function convertToWIB(timeStr) {
   let hour=parseInt(m[1]); const min=parseInt(m[2]), ampm=m[3].toLowerCase();
   if(ampm==='pm'&&hour!==12)hour+=12; if(ampm==='am'&&hour===12)hour=0;
   return `${String((hour+7)%24).padStart(2,'0')}:${String(min).padStart(2,'0')} WIB`;
+}
+
+// ── Fundamental + CB decision auto-parser ────────────────────────────────────
+
+// Map headline prefix/keyword → currency
+const FUND_PREFIX_MAP = [
+  { kw: ['non-farm payroll','nonfarm payroll','non farm payroll',' nfp ','jobless claim','initial claim','unemployment claim','ism manufacturing','ism non-manuf','ism pmi','ism services','core pce','core cpi','personal consumption expend'], cur: 'USD' },
+  { kw: ['us cpi','us gdp','us ppi','us retail','us trade','us employ','us unemploy','us job','us inflation','u.s. cpi','u.s. gdp'], cur: 'USD' },
+  { kw: ['german cpi','german gdp','german ifo','german retail','german inflation','germany cpi','germany gdp','ifo business'], cur: 'EUR' },
+  { kw: ['eurozone cpi','eurozone gdp','euro zone cpi','euro area cpi','ez cpi','ez gdp','eurozone pmi','euro area pmi','zew'], cur: 'EUR' },
+  { kw: ['uk cpi','uk gdp','uk retail','uk employ','uk unemploy','uk inflation','british cpi','british gdp','claimant count'], cur: 'GBP' },
+  { kw: ['japan cpi','japan gdp','japan retail','japan trade','japan industrial','japanese cpi','japanese gdp','tankan'], cur: 'JPY' },
+  { kw: ['canada cpi','canada gdp','canada employ','canada unemploy','canada retail','canada trade','canadian cpi','canadian gdp','canadian employ','ivey pmi','ivey purchasing'], cur: 'CAD' },
+  { kw: ['australia cpi','australia gdp','australia employ','australia unemploy','australia retail','australia trade','australian cpi','australian gdp','australian employ','nab business','nab confidence'], cur: 'AUD' },
+  { kw: ['new zealand cpi','new zealand gdp','new zealand employ','new zealand unemploy','new zealand trade','nz cpi','nz gdp','nz employ'], cur: 'NZD' },
+  { kw: ['swiss cpi','swiss gdp','swiss trade','switzerland cpi','switzerland gdp','kof economic','kof barometer','sz cpi','sz gdp','ch cpi'], cur: 'CHF' },
+];
+
+// Map keyword → indicator key
+const FUND_INDICATOR_MAP = [
+  { kw: ['non-farm payroll','nonfarm payroll','non farm payroll',' nfp '],  key: 'NFP' },
+  { kw: ['jobless claim','initial claim','unemployment claim'],              key: 'Jobless Claims' },
+  { kw: ['ism manufacturing','ism pmi manufactur'],                         key: 'ISM Manufacturing' },
+  { kw: ['ism services','ism non-manuf','ism non manuf'],                   key: 'ISM Services' },
+  { kw: ['core pce','personal consumption expend'],                         key: 'Core PCE' },
+  { kw: ['core cpi','core consumer price'],                                 key: 'Core CPI MoM' },
+  { kw: ['tankan'],                                                         key: 'Tankan Mfg Index' },
+  { kw: ['ivey pmi','ivey purchasing'],                                     key: 'Ivey PMI' },
+  { kw: ['nab business','nab confidence'],                                  key: 'NAB Business Conf' },
+  { kw: ['zew'],                                                            key: 'ZEW Sentiment' },
+  { kw: ['ifo business','ifo climate'],                                     key: 'IFO Business' },
+  { kw: ['claimant count'],                                                 key: 'Claimant Count' },
+  { kw: ['kof economic','kof barometer'],                                   key: 'KOF Barometer' },
+  { kw: ['manufacturing pmi'],                                              key: 'Manufacturing PMI' },
+  { kw: ['services pmi','service pmi','non-manufacturing pmi'],             key: 'Services PMI' },
+  { kw: ['industrial production'],                                          key: 'Industrial Production' },
+  { kw: ['trade balance'],                                                  key: 'Trade Balance' },
+  { kw: ['employment change','employment count','jobs change'],             key: 'Employment Change' },
+  { kw: ['unemployment rate'],                                              key: 'Unemployment Rate' },
+  { kw: ['retail sales'],                                                   key: 'Retail Sales MoM' },
+  { kw: ['producer price',' ppi ','ppi m/m'],                              key: 'PPI MoM' },
+  { kw: ['flash cpi','cpi flash'],                                         key: 'CPI Flash YoY' },
+  { kw: ['german cpi','germany cpi'],                                       key: 'German CPI YoY' },
+  { kw: ['cpi y/y','cpi yoy','cpi annual','consumer price index y'],       key: 'CPI YoY' },
+  { kw: ['cpi q/q','cpi qq','cpi quarter'],                                key: 'CPI QoQ' },
+  { kw: ['cpi m/m','cpi mom','consumer price index m'],                    key: 'CPI MoM' },
+  { kw: ['gdp q/q','gdp qq','gdp quarter','gdp prelim','gdp flash','gdp growth'], key: 'GDP QoQ' },
+  { kw: ['gdp m/m','gdp mom','gdp monthly'],                               key: 'GDP MoM' },
+  { kw: ['gdp'],                                                            key: 'GDP QoQ' },
+  { kw: ['retail sales yoy','retail sales y/y','retail sales annual'],     key: 'Retail Sales YoY' },
+];
+
+// CB bank → currency map for rate decision detection
+const CB_RATE_MAP = [
+  { kw: ['federal reserve','fed ','fomc rate','fed rate','fed funds'],                          cur: 'USD' },
+  { kw: ['european central bank','ecb rate','ecb deposit','ecb interest'],                      cur: 'EUR' },
+  { kw: ['bank of england','boe rate','boe bank rate','mpc rate'],                              cur: 'GBP' },
+  { kw: ['bank of japan','boj rate','boj policy','boj interest'],                               cur: 'JPY' },
+  { kw: ['reserve bank of australia','rba rate','rba cash rate'],                               cur: 'AUD' },
+  { kw: ['reserve bank of new zealand','rbnz rate','rbnz ocr'],                                 cur: 'NZD' },
+  { kw: ['bank of canada','boc rate','boc overnight','boc interest'],                           cur: 'CAD' },
+  { kw: ['swiss national bank','snb rate','snb policy'],                                        cur: 'CHF' },
+];
+
+function parseFundamentalFromHeadline(title) {
+  const t = title.toLowerCase();
+
+  // Step 1: determine currency
+  let currency = null;
+  for (const { kw, cur } of FUND_PREFIX_MAP) {
+    if (kw.some(k => t.includes(k))) { currency = cur; break; }
+  }
+  if (!currency) return null;
+
+  // Step 2: determine indicator key
+  let indicatorKey = null;
+  for (const { kw, key } of FUND_INDICATOR_MAP) {
+    if (kw.some(k => t.includes(k))) { indicatorKey = key; break; }
+  }
+  if (!indicatorKey) return null;
+
+  // Step 3: extract first numeric value with optional unit
+  const m = title.match(/([+-]?\d+\.?\d*)\s*(K|M|B|%|bps|pts?|points?)?(?:\s|$|,|\(|vs)/);
+  if (!m) return null;
+  const value = m[1] + (m[2] || '');
+
+  return { currency, key: indicatorKey, value };
+}
+
+function parseCBDecision(title) {
+  const t = title.toLowerCase();
+
+  // Must mention rate decision language
+  if (!/rate|interest|bps|basis point|hold|hike|cut|raise|lower|unchanged/i.test(t)) return null;
+
+  // Detect CB / currency
+  let currency = null;
+  for (const { kw, cur } of CB_RATE_MAP) {
+    if (kw.some(k => t.includes(k))) { currency = cur; break; }
+  }
+  if (!currency) return null;
+
+  // Detect decision type
+  const isCut  = /\bcut\b|\blower\b|\breduced?\b/i.test(t);
+  const isHike = /\bhike\b|\braise[sd]?\b|\bincreas\b|\btighten/i.test(t);
+  const isHold = /\bhold\b|\bunchanged\b|\bleave[sd]?\b|\bkeep[s]?\b|\bmaintain/i.test(t);
+  if (!isCut && !isHike && !isHold) return null;
+  const decision = isCut ? 'cut' : isHike ? 'hike' : 'hold';
+
+  // Extract absolute rate "at X%" or "to X%"
+  const absM = title.match(/(?:at|to)\s+([+-]?\d+\.?\d*)\s*%/i);
+  // Extract bps change "Xbps" or "X bps"
+  const bpsM = title.match(/(\d+\.?\d*)\s*bps/i);
+
+  const rate = absM ? parseFloat(absM[1]) : null;
+  let   bps  = bpsM ? parseFloat(bpsM[1]) : null;
+  if (bps !== null && isCut && bps > 0) bps = -bps;
+
+  // Must have at least one concrete number
+  if (rate === null && bps === null) return null;
+
+  return { currency, rate, bps, decision };
+}
+
+async function autoUpdateFundamentals(headlines) {
+  const byCurrency = {};
+  const now = new Date().toISOString().slice(0, 10);
+
+  for (const item of headlines) {
+    // Parse economic data
+    const fund = parseFundamentalFromHeadline(item.title);
+    if (fund) {
+      if (!byCurrency[fund.currency]) byCurrency[fund.currency] = [];
+      byCurrency[fund.currency].push({ key: fund.key, value: fund.value });
+    }
+
+    // Parse CB rate decisions
+    const cb = parseCBDecision(item.title);
+    if (cb) {
+      try {
+        const existing = await redisCmd('HGET', 'cb_decisions', cb.currency);
+        const prev = existing ? JSON.parse(existing) : {};
+        const entry = {
+          rate:          cb.rate ?? prev.rate ?? null,
+          last_bps:      cb.bps  ?? prev.last_bps ?? 0,
+          last_decision: cb.decision,
+          last_meeting:  now,
+          updated_at:    new Date().toISOString(),
+          source_headline: item.title.slice(0, 120),
+        };
+        await redisCmd('HSET', 'cb_decisions', cb.currency, JSON.stringify(entry));
+        console.log(`CB decision detected: ${cb.currency} ${cb.decision} bps=${cb.bps} rate=${cb.rate}`);
+      } catch(e) { console.warn('cb_decisions write failed:', e.message); }
+    }
+  }
+
+  // Batch HSET per currency
+  for (const [currency, items] of Object.entries(byCurrency)) {
+    try {
+      const args = ['HSET', `fundamental:${currency}`];
+      for (const { key, value } of items) {
+        args.push(key, JSON.stringify({ actual: value, period: '—', date: now, source: 'headline' }));
+      }
+      await redisCmd(...args);
+      console.log(`Fundamental updated: ${currency} — ${items.map(i => i.key).join(', ')}`);
+    } catch(e) { console.warn(`fundamental HSET failed for ${currency}:`, e.message); }
+  }
 }
 
 function detectCat(title) {

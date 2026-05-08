@@ -231,25 +231,37 @@ module.exports = async function handler(req, res) {
     }
   }
 
+  // Load CB decisions detected from headlines (overrides hardcoded meeting metadata)
+  let cbDecisions = {};
+  try {
+    const raw = await redisCmd('HGETALL', 'cb_decisions');
+    if (Array.isArray(raw)) {
+      for (let i = 0; i < raw.length; i += 2) {
+        try { cbDecisions[raw[i]] = JSON.parse(raw[i + 1]); } catch(_) {}
+      }
+    }
+  } catch(e) { console.warn('cb_decisions load failed:', e.message); }
+
   // Merge: live rate overrides fallback rate; meeting metadata from fallback
   const result = Object.entries(CB_FALLBACK).map(([cur, fb]) => {
     const live = liveRates[cur];
     const rate = live?.rate ?? fb.rate;
+    const dec  = cbDecisions[cur];
 
     // Detect undocumented rate change (live differs from fallback by ≥5bps)
     const diff = live?.rate != null ? Math.round((live.rate - fb.rate) * 100) : 0;
     const rateChanged = Math.abs(diff) >= 5;
 
     return {
-      currency:     cur,
-      bank:         fb.bank,
-      short:        fb.short,
+      currency:      cur,
+      bank:          fb.bank,
+      short:         fb.short,
       rate,
-      last_meeting: fb.last_meeting,
-      last_decision: rateChanged ? (diff > 0 ? 'hike' : 'cut') : fb.last_decision,
-      last_bps:      rateChanged ? diff                          : fb.last_bps,
+      last_meeting:  dec?.last_meeting  || fb.last_meeting,
+      last_decision: rateChanged ? (diff > 0 ? 'hike' : 'cut') : (dec?.last_decision || fb.last_decision),
+      last_bps:      rateChanged ? diff : (dec?.last_bps ?? fb.last_bps),
       rate_source:   live ? rateSource : 'fallback',
-      rate_stale:    rateChanged,   // true = live rate diverged from fallback
+      rate_stale:    rateChanged,
       bias:          biasData[cur]?.bias       || null,
       confidence:    biasData[cur]?.confidence || null,
       bias_updated:  biasData[cur]?.updated_at || null,

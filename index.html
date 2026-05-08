@@ -507,6 +507,60 @@ body {
   display: flex; align-items: center;
 }
 
+/* ── FUNDAMENTAL TAB ──*/
+.fund-panel { padding: 10px 12px 24px; }
+.fund-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 12px;
+}
+.fund-title { font-size: 9px; color: var(--muted); letter-spacing: 1px; text-transform: uppercase; font-family: 'DM Mono', monospace; }
+.fund-meta  { font-size: 9px; color: var(--muted); font-family: 'DM Mono', monospace; }
+.fund-grid  { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 14px; }
+@media (min-width: 600px) { .fund-grid { grid-template-columns: repeat(4, 1fr); } }
+.fund-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 10px; padding: 10px 10px 8px; position: relative;
+  border-left-width: 3px !important;
+}
+.fund-card-header { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 8px; }
+.fund-cur  { font-size: 13px; font-weight: 700; font-family: 'Syne', sans-serif; }
+.fund-rate { font-size: 9px; color: var(--muted); font-family: 'DM Mono', monospace; }
+.fund-rows { display: flex; flex-direction: column; gap: 4px; }
+.fund-row  { display: flex; align-items: baseline; justify-content: space-between; gap: 4px; }
+.fund-ind  { font-size: 8px; color: var(--muted); font-family: 'DM Mono', monospace; letter-spacing: .2px; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fund-val  { font-size: 9px; font-family: 'DM Mono', monospace; color: var(--text); flex-shrink: 0; }
+.fund-val.no-data { color: var(--muted); }
+.fund-period { font-size: 7px; color: var(--muted); opacity: .7; flex-shrink: 0; }
+/* AI Analysis section */
+.fund-analysis-wrap { margin-top: 4px; }
+.fund-analysis-btn {
+  width: 100%; padding: 10px; border-radius: 10px;
+  background: rgba(192,57,43,.08); border: 1px solid rgba(192,57,43,.3);
+  color: var(--accent); font-family: 'DM Mono', monospace; font-size: 10px;
+  letter-spacing: .5px; cursor: pointer; text-transform: uppercase; transition: all .2s;
+}
+.fund-analysis-btn:hover { background: rgba(192,57,43,.14); }
+.fund-analysis-btn:disabled { opacity: .5; cursor: not-allowed; }
+.fund-analysis-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 10px; padding: 14px; margin-top: 10px;
+}
+.fund-analysis-header {
+  font-size: 8px; color: var(--muted); letter-spacing: .8px; text-transform: uppercase;
+  font-family: 'DM Mono', monospace; margin-bottom: 10px;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.fund-analysis-text {
+  font-size: 11px; line-height: 1.65; color: var(--text);
+  white-space: pre-wrap; font-family: 'DM Mono', monospace;
+}
+.fund-refresh-btn {
+  background: transparent; border: none; cursor: pointer; color: var(--muted);
+  padding: 2px; display: flex; align-items: center; transition: color .15s;
+}
+.fund-refresh-btn:hover { color: var(--text); }
+.fund-refresh-btn.spinning svg { animation: spin .7s linear infinite; }
+
 /* ── CALENDAR TAB ──*/
 
 /* CAL TOOLBAR */
@@ -1124,6 +1178,7 @@ body {
   <button class="nvtab" data-view="ringkasan" id="ringkasanTab">RINGKASAN</button>
   <button class="nvtab" data-view="cal" id="calTab">CAL<span id="calTabBadge" class="nvtab-badge" style="display:none">!</span></button>
   <button class="nvtab" data-view="cot" id="cotTab">COT</button>
+  <button class="nvtab" data-view="fundamental" id="fundamentalTab">FUNDAMENTAL</button>
   <button class="nvtab" data-view="checklist" id="checklistTab">CHECKLIST</button>
   <button class="nvtab" data-view="sizing" id="sizingTab">SIZING</button>
   <button class="nvtab" data-view="jurnal" id="jurnalTab">JURNAL</button>
@@ -1544,6 +1599,41 @@ body {
   </div>
 </div>
 
+<!-- FUNDAMENTAL PANEL -->
+<div class="feed-scroll" id="fundamentalPanel" style="display:none">
+  <div class="fund-panel">
+    <div class="fund-header">
+      <span class="fund-title">Fundamental Data</span>
+      <div style="display:flex;align-items:center;gap:8px">
+        <span class="fund-meta" id="fundLastUpdated"></span>
+        <button class="fund-refresh-btn" id="fundRefreshBtn" onclick="fetchFundamental()" title="Refresh data">
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>
+            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+    <div class="fund-grid" id="fundGrid">
+      <div style="grid-column:1/-1;text-align:center;padding:20px;color:var(--muted);font-size:11px">Memuat data fundamental...</div>
+    </div>
+    <div class="fund-analysis-wrap">
+      <button class="fund-analysis-btn" id="fundAnalysisBtn" onclick="generateFundamentalAnalysis()">
+        Analisis AI — Currency Terkuat / Terlemah
+      </button>
+      <div id="fundAnalysisCard" style="display:none">
+        <div class="fund-analysis-card">
+          <div class="fund-analysis-header">
+            <span>Analisis Fundamental</span>
+            <span id="fundAnalysisAge" style="color:var(--muted)"></span>
+          </div>
+          <div class="fund-analysis-text" id="fundAnalysisText"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- CHECKLIST PANEL -->
 <div id="checklistPanel" class="ck-wrap" style="display:none">
   <div style="padding:8px 12px;border-bottom:1px solid var(--border);flex-shrink:0;display:flex;flex-direction:column;gap:6px">
@@ -1648,6 +1738,10 @@ let activeView   = 'feed';
 let calData          = null;
 let calFetchedAt     = 0;
 let _countdownTimer  = null;
+
+// Fundamental state
+let fundData      = null;
+let fundFetchedAt = 0;
 
 // CB Tracker state
 let cbData        = null;
@@ -2142,7 +2236,7 @@ function setFeedUI(show) {
 }
 
 function hideAllPanels() {
-  ['feedScroll','ringkasanPanel','calPanel','cotPanel','checklistPanel','sizingPanel','jurnalPanel','petunjukPanel']
+  ['feedScroll','ringkasanPanel','calPanel','cotPanel','fundamentalPanel','checklistPanel','sizingPanel','jurnalPanel','petunjukPanel']
     .forEach(id => { document.getElementById(id).style.display = 'none'; });
 }
 
@@ -2183,6 +2277,13 @@ document.querySelectorAll('#navViews .nvtab').forEach(btn => {
       const now = Date.now();
       if (!cotData || (now - cotFetchedAt) > 30 * 60 * 1000) fetchCOT();
       else renderCOT();
+    } else if (view === 'fundamental') {
+      setFeedUI(false);
+      activeView = 'fundamental';
+      document.getElementById('fundamentalPanel').style.display = 'block';
+      const now = Date.now();
+      if (!fundData || (now - fundFetchedAt) > 30 * 60 * 1000) fetchFundamental();
+      else renderFundamental();
     } else if (view === 'checklist') {
       setFeedUI(false);
       activeView = 'checklist';
@@ -2528,6 +2629,100 @@ async function fetchRealYields() {
     if (_rySel && _rySel.value) ckAutoTickRegimeCheck(_rySel.value);
   } catch(e) {
     console.warn('Real yields fetch failed:', e.message);
+  }
+}
+
+// ── FUNDAMENTAL DATA ──────────────────────────────────────
+
+const FUND_CUR_ORDER = ['USD','EUR','GBP','JPY','CAD','AUD','NZD','CHF'];
+
+async function fetchFundamental() {
+  const grid = document.getElementById('fundGrid');
+  const btn  = document.getElementById('fundRefreshBtn');
+  if (btn) btn.classList.add('spinning');
+  try {
+    const res = await fetch('/api/admin?action=fundamental_get', { signal: AbortSignal.timeout(10000) });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const json = await res.json();
+    fundData      = json.data;
+    fundFetchedAt = Date.now();
+    const el = document.getElementById('fundLastUpdated');
+    if (el) el.textContent = 'baru saja';
+    renderFundamental();
+  } catch(e) {
+    if (grid) grid.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:20px;color:var(--muted);font-size:11px">Gagal memuat: ${escHtml(e.message)}</div>`;
+  } finally {
+    if (btn) btn.classList.remove('spinning');
+  }
+}
+
+function renderFundamental() {
+  const grid = document.getElementById('fundGrid');
+  if (!grid || !fundData) return;
+
+  const el = document.getElementById('fundLastUpdated');
+  if (el && fundFetchedAt) {
+    const mins = Math.floor((Date.now() - fundFetchedAt) / 60000);
+    el.textContent = mins < 1 ? 'baru saja' : `${mins}m lalu`;
+  }
+
+  grid.innerHTML = FUND_CUR_ORDER.map(cur => {
+    const data = fundData[cur] || {};
+    const col  = CUR_COLORS[cur] || '#888';
+
+    // Find rate indicator for this currency
+    const RATE_KEYS = { USD:'NFP', EUR:'ECB Rate', GBP:'BOE Rate', JPY:'BOJ Rate', CAD:'BOC Rate', AUD:'RBA Rate', NZD:'RBNZ Rate', CHF:'SNB Rate' };
+    const rateKey   = RATE_KEYS[cur];
+    const rateVal   = rateKey && data[rateKey] ? data[rateKey].actual : null;
+
+    const rows = Object.entries(data)
+      .filter(([k]) => k !== rateKey)
+      .map(([k, v]) => {
+        const period = v.period && v.period !== '—' ? v.period : '';
+        return `<div class="fund-row">
+          <span class="fund-ind" title="${escHtml(k)}">${escHtml(k)}</span>
+          <span class="fund-val${v.actual ? '' : ' no-data'}">${escHtml(v.actual || '—')}</span>
+          ${period ? `<span class="fund-period">${escHtml(period)}</span>` : ''}
+        </div>`;
+      }).join('');
+
+    return `<div class="fund-card" style="border-left:3px solid ${col};border-radius:10px">
+      <div class="fund-card-header">
+        <span class="fund-cur" style="color:${col}">${cur}</span>
+        ${rateVal ? `<span class="fund-rate">${escHtml(rateVal)}</span>` : ''}
+      </div>
+      <div class="fund-rows">${rows || '<div class="fund-ind" style="padding:4px 0">Tidak ada data</div>'}</div>
+    </div>`;
+  }).join('');
+}
+
+async function generateFundamentalAnalysis() {
+  const btn     = document.getElementById('fundAnalysisBtn');
+  const card    = document.getElementById('fundAnalysisCard');
+  const textEl  = document.getElementById('fundAnalysisText');
+  const ageEl   = document.getElementById('fundAnalysisAge');
+  if (!btn) return;
+
+  btn.disabled    = true;
+  btn.textContent = 'Menganalisis...';
+  try {
+    const res = await fetch('/api/admin?action=fundamental_analysis', { signal: AbortSignal.timeout(30000) });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const json = await res.json();
+    if (json.analysis) {
+      textEl.textContent = json.analysis;
+      const ageMin = Math.floor((Date.now() - new Date(json.generated_at).getTime()) / 60000);
+      ageEl.textContent  = json.from_cache
+        ? (ageMin < 1 ? 'baru saja' : `${ageMin}m lalu · dari cache`)
+        : 'baru digenerate';
+      card.style.display = 'block';
+    }
+  } catch(e) {
+    if (textEl) textEl.textContent = 'Gagal: ' + e.message;
+    if (card)   card.style.display = 'block';
+  } finally {
+    btn.disabled    = false;
+    btn.textContent = 'Analisis AI — Currency Terkuat / Terlemah';
   }
 }
 
@@ -4081,8 +4276,8 @@ document.addEventListener('click', function(e) {
 
 // ── SWIPE NAVIGATION ─────────────────────────────────────────
 (function() {
-  const VIEWS = ['feed','ringkasan','cal','cot','checklist','sizing','jurnal','petunjuk'];
-  const PANEL_ID = { feed:'feedScroll', ringkasan:'ringkasanPanel', cal:'calPanel', cot:'cotPanel', checklist:'checklistPanel', sizing:'sizingPanel', jurnal:'jurnalPanel', petunjuk:'petunjukPanel' };
+  const VIEWS = ['feed','ringkasan','cal','cot','fundamental','checklist','sizing','jurnal','petunjuk'];
+  const PANEL_ID = { feed:'feedScroll', ringkasan:'ringkasanPanel', cal:'calPanel', cot:'cotPanel', fundamental:'fundamentalPanel', checklist:'checklistPanel', sizing:'sizingPanel', jurnal:'jurnalPanel', petunjuk:'petunjukPanel' };
   const MIN_X = 60;
   let sx = 0, sy = 0;
   document.addEventListener('touchstart', function(e) {
@@ -4132,6 +4327,10 @@ document.addEventListener('click', function(e) {
   <button class="bot-nav-btn" data-view="cot">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
     <span>COT</span>
+  </button>
+  <button class="bot-nav-btn" data-view="fundamental">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+    <span>Fundm</span>
   </button>
   <button class="bot-nav-btn" data-view="checklist">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>

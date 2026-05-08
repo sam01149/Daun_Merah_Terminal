@@ -18,8 +18,11 @@ module.exports = async function handler(req, res) {
   if (action === 'health')        return healthHandler(req, res);
   if (action === 'redis-keys')    return redisKeysHandler(req, res);
   if (action === 'admin-prompts') return adminPromptsHandler(req, res);
-  if (action === 'push')          return pushHandler(req, res);
-  return res.status(400).json({ error: 'Missing ?action= — use health, redis-keys, admin-prompts, or push' });
+  if (action === 'push')                return pushHandler(req, res);
+  if (action === 'fundamental_get')     return fundamentalGetHandler(req, res);
+  if (action === 'fundamental_seed')    return fundamentalSeedHandler(req, res);
+  if (action === 'fundamental_analysis') return fundamentalAnalysisHandler(req, res);
+  return res.status(400).json({ error: 'Missing ?action= — use health, redis-keys, admin-prompts, push, fundamental_get, fundamental_seed, or fundamental_analysis' });
 };
 
 // ── Shared Redis helper ────────────────────────────────────────────────────────
@@ -240,7 +243,10 @@ const KEY_REGISTRY = [
   { key: 'push_lock',          owner: 'api/admin.js',          ttl_expected: 55,     note: 'Distributed lock to prevent concurrent push cron runs' },
   { key: 'sizing_history:*',   owner: 'api/sizing-history.js', ttl_expected: null,   note: 'Sorted set: sizing calculations per device (max 10 entries)' },
   { key: 'journal:*',          owner: 'api/journal.js',        ttl_expected: null,   note: 'Full journal entry JSON per device' },
-  { key: 'journal_index:*',    owner: 'api/journal.js',        ttl_expected: null,   note: 'Sorted set: journal entry IDs by created_at timestamp' },
+  { key: 'journal_index:*',      owner: 'api/journal.js',        ttl_expected: null,   note: 'Sorted set: journal entry IDs by created_at timestamp' },
+  { key: 'fundamental:*',        owner: 'api/admin.js',          ttl_expected: null,   note: 'HSET fundamental data per currency (no TTL — overwritten when new data)' },
+  { key: 'fundamental_analysis', owner: 'api/admin.js',          ttl_expected: 21600,  note: 'Groq AI analysis of fundamental data, cached 6h' },
+  { key: 'cb_decisions',         owner: 'api/market-digest.js',  ttl_expected: null,   note: 'HSET CB rate decisions detected from headlines, overrides CB_FALLBACK metadata' },
 ];
 
 const DEPRECATED_KEYS = [
@@ -513,4 +519,226 @@ function detectPushCat(t) {
   if (PUSH_KW.GEOPOLITICAL.some(k => t.includes(k)))  return 'geopolitical';
   if (PUSH_KW.ECON_DATA.some(k => t.includes(k)))     return 'econ-data';
   return 'news';
+}
+
+// ── Fundamental Data handlers ──────────────────────────────────────────────────
+
+const FUND_CURRENCIES = ['USD','EUR','GBP','JPY','CAD','AUD','NZD','CHF'];
+const GROQ_URL_FUND   = 'https://api.groq.com/openai/v1/chat/completions';
+const GROQ_MODEL_FUND = 'llama-3.3-70b-versatile';
+
+const FUND_SEED = {
+  USD: {
+    'CPI YoY':           { actual:'3.3%',       period:'Apr 2026',    date:'—', source:'seed' },
+    'Core CPI MoM':      { actual:'0.2%',       period:'Apr 2026',    date:'—', source:'seed' },
+    'NFP':               { actual:'178K',       period:'Apr 2026',    date:'—', source:'seed' },
+    'Unemployment Rate': { actual:'4.3%',       period:'Apr 2026',    date:'—', source:'seed' },
+    'GDP QoQ':           { actual:'2.0%',       period:'Q1 2026',     date:'—', source:'seed' },
+    'Core PCE':          { actual:'0.3%',       period:'Mar 2026',    date:'—', source:'seed' },
+    'Jobless Claims':    { actual:'200K',       period:'May W1 2026', date:'—', source:'seed' },
+    'Retail Sales MoM':  { actual:'1.7%',       period:'Apr 2026',    date:'—', source:'seed' },
+    'ISM Manufacturing': { actual:'54.5',       period:'Apr 2026',    date:'—', source:'seed' },
+    'ISM Services':      { actual:'51.0',       period:'Apr 2026',    date:'—', source:'seed' },
+    'PPI MoM':           { actual:'0.2%',       period:'Apr 2026',    date:'—', source:'seed' },
+  },
+  EUR: {
+    'CPI Flash YoY':     { actual:'3.0%',       period:'Apr 2026',    date:'—', source:'seed' },
+    'German CPI YoY':    { actual:'2.9%',       period:'Apr 2026',    date:'—', source:'seed' },
+    'GDP QoQ Flash':     { actual:'0.1%',       period:'Q1 2026',     date:'—', source:'seed' },
+    'ECB Rate':          { actual:'2.15%',      period:'Apr 2026',    date:'—', source:'seed' },
+    'Manufacturing PMI': { actual:'52.2',       period:'Apr 2026',    date:'—', source:'seed' },
+    'Services PMI':      { actual:'47.6',       period:'Apr 2026',    date:'—', source:'seed' },
+    'Unemployment Rate': { actual:'6.2%',       period:'Mar 2026',    date:'—', source:'seed' },
+    'ZEW Sentiment':     { actual:'-17.2',      period:'Apr 2026',    date:'—', source:'seed' },
+    'IFO Business':      { actual:'84.4',       period:'Apr 2026',    date:'—', source:'seed' },
+    'Retail Sales MoM':  { actual:'-0.1%',      period:'Mar 2026',    date:'—', source:'seed' },
+  },
+  GBP: {
+    'CPI YoY':           { actual:'3.3%',       period:'Mar 2026',    date:'—', source:'seed' },
+    'GDP MoM':           { actual:'0.1%',       period:'Mar 2026',    date:'—', source:'seed' },
+    'BOE Rate':          { actual:'3.75%',      period:'May 2026',    date:'—', source:'seed' },
+    'Manufacturing PMI': { actual:'53.7',       period:'Apr 2026',    date:'—', source:'seed' },
+    'Services PMI':      { actual:'52.7',       period:'Apr 2026',    date:'—', source:'seed' },
+    'Employment Change': { actual:'25K',        period:'Mar 2026',    date:'—', source:'seed' },
+    'Claimant Count':    { actual:'26.8K',      period:'Apr 2026',    date:'—', source:'seed' },
+    'Retail Sales MoM':  { actual:'0.7%',       period:'Mar 2026',    date:'—', source:'seed' },
+  },
+  JPY: {
+    'CPI YoY':              { actual:'1.5%',    period:'Mar 2026',    date:'—', source:'seed' },
+    'GDP QoQ':              { actual:'0.3%',    period:'Q4 2025',     date:'—', source:'seed' },
+    'BOJ Rate':             { actual:'0.75%',   period:'Apr 2026',    date:'—', source:'seed' },
+    'Tankan Mfg Index':     { actual:'17',      period:'Q1 2026',     date:'—', source:'seed' },
+    'Unemployment Rate':    { actual:'2.7%',    period:'Mar 2026',    date:'—', source:'seed' },
+    'Retail Sales YoY':     { actual:'1.7%',    period:'Mar 2026',    date:'—', source:'seed' },
+    'Industrial Production':{ actual:'-0.5%',   period:'Mar 2026',    date:'—', source:'seed' },
+    'Trade Balance':        { actual:'667B JPY',period:'Mar 2026',    date:'—', source:'seed' },
+  },
+  CAD: {
+    'CPI YoY':           { actual:'2.4%',       period:'Mar 2026',    date:'—', source:'seed' },
+    'BOC Rate':          { actual:'2.25%',      period:'Apr 2026',    date:'—', source:'seed' },
+    'Employment Change': { actual:'14.1K',      period:'Apr 2026',    date:'—', source:'seed' },
+    'Unemployment Rate': { actual:'6.7%',       period:'Apr 2026',    date:'—', source:'seed' },
+    'GDP MoM':           { actual:'0.2%',       period:'Feb 2026',    date:'—', source:'seed' },
+    'Retail Sales MoM':  { actual:'0.6%',       period:'Feb 2026',    date:'—', source:'seed' },
+    'Trade Balance':     { actual:'1780M CAD',  period:'Mar 2026',    date:'—', source:'seed' },
+    'Ivey PMI':          { actual:'57.7',       period:'Apr 2026',    date:'—', source:'seed' },
+  },
+  AUD: {
+    'Employment Change': { actual:'17.9K',      period:'Mar 2026',    date:'—', source:'seed' },
+    'CPI QoQ':           { actual:'0.6%',       period:'Q1 2026',     date:'—', source:'seed' },
+    'GDP QoQ':           { actual:'0.8%',       period:'Q4 2025',     date:'—', source:'seed' },
+    'RBA Rate':          { actual:'4.35%',      period:'May 2026',    date:'—', source:'seed' },
+    'Unemployment Rate': { actual:'4.3%',       period:'Mar 2026',    date:'—', source:'seed' },
+    'Retail Sales MoM':  { actual:'0.2%',       period:'Mar 2026',    date:'—', source:'seed' },
+    'Trade Balance':     { actual:'-1841M AUD', period:'Mar 2026',    date:'—', source:'seed' },
+    'NAB Business Conf': { actual:'-29',        period:'Apr 2026',    date:'—', source:'seed' },
+  },
+  NZD: {
+    'CPI QoQ':           { actual:'0.6%',       period:'Q4 2025',     date:'—', source:'seed' },
+    'GDP QoQ':           { actual:'0.2%',       period:'Q4 2025',     date:'—', source:'seed' },
+    'RBNZ Rate':         { actual:'2.25%',      period:'Apr 2026',    date:'—', source:'seed' },
+    'Employment Change': { actual:'0.2%',       period:'Q4 2025',     date:'—', source:'seed' },
+    'Unemployment Rate': { actual:'5.3%',       period:'Q4 2025',     date:'—', source:'seed' },
+    'Trade Balance':     { actual:'698M NZD',   period:'Mar 2026',    date:'—', source:'seed' },
+  },
+  CHF: {
+    'GDP QoQ':           { actual:'0.2%',       period:'Q4 2025',     date:'—', source:'seed' },
+    'SNB Rate':          { actual:'0.0%',       period:'Mar 2026',    date:'—', source:'seed' },
+    'CPI YoY':           { actual:'0.6%',       period:'Apr 2026',    date:'—', source:'seed' },
+    'KOF Barometer':     { actual:'97.9',       period:'Apr 2026',    date:'—', source:'seed' },
+  },
+};
+
+async function fundamentalGetHandler(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Cache-Control', 'no-cache');
+  if (req.method === 'OPTIONS') return res.status(204).end();
+  try {
+    const pairs = await Promise.all(FUND_CURRENCIES.map(async cur => {
+      const raw = await redisCmd('HGETALL', `fundamental:${cur}`);
+      const data = {};
+      if (Array.isArray(raw)) {
+        for (let i = 0; i < raw.length; i += 2) {
+          try { data[raw[i]] = JSON.parse(raw[i + 1]); } catch(_) { data[raw[i]] = { actual: raw[i + 1] }; }
+        }
+      }
+      return [cur, data];
+    }));
+    return res.status(200).json({ ok: true, data: Object.fromEntries(pairs), fetched_at: new Date().toISOString() });
+  } catch(e) {
+    return res.status(500).json({ error: e.message });
+  }
+}
+
+async function fundamentalSeedHandler(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  if (req.method === 'OPTIONS') return res.status(204).end();
+  const CRON_SECRET = process.env.CRON_SECRET;
+  if (CRON_SECRET && req.headers['x-admin-secret'] !== CRON_SECRET) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
+  try {
+    const written = [];
+    for (const [cur, indicators] of Object.entries(FUND_SEED)) {
+      const args = ['HSET', `fundamental:${cur}`];
+      for (const [key, val] of Object.entries(indicators)) args.push(key, JSON.stringify(val));
+      await redisCmd(...args);
+      written.push(cur);
+    }
+    return res.status(200).json({ ok: true, seeded: written });
+  } catch(e) {
+    return res.status(500).json({ error: e.message });
+  }
+}
+
+async function fundamentalAnalysisHandler(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Cache-Control', 'no-cache');
+  if (req.method === 'OPTIONS') return res.status(204).end();
+  const GROQ_KEY = process.env.GROQ_API_KEY;
+  if (!GROQ_KEY) return res.status(500).json({ error: 'GROQ_API_KEY not configured' });
+
+  // Return cached if fresh (6h)
+  if (req.query.force !== 'true') {
+    try {
+      const cached = await redisCmd('GET', 'fundamental_analysis');
+      if (cached) {
+        const obj = JSON.parse(cached);
+        if (Date.now() - new Date(obj.generated_at).getTime() < 6 * 3600 * 1000) {
+          return res.status(200).json({ ...obj, from_cache: true });
+        }
+      }
+    } catch(e) {}
+  }
+
+  // Load all fundamental data
+  const fundData = {};
+  for (const cur of FUND_CURRENCIES) {
+    const raw = await redisCmd('HGETALL', `fundamental:${cur}`);
+    const d = {};
+    if (Array.isArray(raw)) {
+      for (let i = 0; i < raw.length; i += 2) {
+        try { d[raw[i]] = JSON.parse(raw[i + 1]); } catch(_) {}
+      }
+    }
+    fundData[cur] = d;
+  }
+
+  const dataBlock = FUND_CURRENCIES.map(cur => {
+    const d = fundData[cur] || {};
+    const lines = Object.entries(d)
+      .map(([k, v]) => `  ${k}: ${v.actual || '—'} (${v.period || '—'})`)
+      .join('\n');
+    return `${cur}:\n${lines || '  (no data)'}`;
+  }).join('\n\n');
+
+  const prompt = `Kamu adalah analis forex makro. Berikut data fundamental ekonomi terbaru per currency:
+
+${dataBlock}
+
+Berdasarkan data di atas, analisis dan rankingkan 8 currency dari TERKUAT hingga TERLEMAH dari sisi fundamental ekonomi.
+
+Pertimbangkan:
+- Pertumbuhan GDP vs ekspektasi global
+- Tingkat inflasi vs target bank sentral (umumnya 2%)
+- Kondisi pasar tenaga kerja (unemployment rate, employment change)
+- Arah kebijakan moneter (tingkat suku bunga — makin tinggi = makin hawkish)
+- PMI: >50 = ekspansi, <50 = kontraksi
+- Untuk JPY: CPI rendah = deflasi = lemah secara fundamental; untuk CHF: CPI rendah biasa karena franc kuat secara struktural
+
+Format jawaban WAJIB (Bahasa Indonesia, singkat dan actionable):
+
+RANKING FUNDAMENTAL:
+1. [currency] — [alasan satu kalimat]
+2. [currency] — [alasan satu kalimat]
+... (8 currency)
+
+TERKUAT: [currency]
+[2 kalimat ringkasan kenapa paling kuat]
+
+TERLEMAH: [currency]
+[2 kalimat ringkasan kenapa paling lemah]
+
+DIVERGENSI TERBESAR: [currency A] vs [currency B]
+[1 kalimat kenapa pasangan ini memiliki divergensi fundamental paling besar — bukan rekomendasi entry]`;
+
+  try {
+    const r = await fetch(GROQ_URL_FUND, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${GROQ_KEY}` },
+      body: JSON.stringify({ model: GROQ_MODEL_FUND, messages: [{ role: 'user', content: prompt }], max_tokens: 700, temperature: 0.3 }),
+      signal: AbortSignal.timeout(25000),
+    });
+    if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e?.error?.message || `HTTP ${r.status}`); }
+    const data = await r.json();
+    const analysis = data?.choices?.[0]?.message?.content?.trim() || '';
+    if (!analysis) throw new Error('Empty response');
+    const result = { analysis, generated_at: new Date().toISOString(), from_cache: false };
+    await redisCmd('SET', 'fundamental_analysis', JSON.stringify(result), 'EX', '21600');
+    return res.status(200).json(result);
+  } catch(e) {
+    console.warn('fundamental_analysis Groq failed:', e.message);
+    return res.status(500).json({ error: e.message });
+  }
 }
