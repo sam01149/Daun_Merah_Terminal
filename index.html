@@ -468,23 +468,20 @@ body {
   font-size: 11px; color: var(--muted); text-align: center;
   padding: 12px 0 8px; font-style: italic;
 }
-.cot-row { display: flex; flex-direction: column; gap: 5px; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,.04); }
+.cot-row { display: grid; grid-template-columns: 36px 46px 1fr auto; align-items: center; gap: 8px; padding: 7px 0; border-bottom: 1px solid rgba(255,255,255,.04); }
 .cot-row:last-child { border-bottom: none; }
-.cot-row-top { display: flex; align-items: center; gap: 6px; }
-.cot-cur { font-family: 'Syne', sans-serif; font-weight: 700; font-size: 11px; min-width: 36px; }
-.cot-ls-vals { display: flex; gap: 10px; flex: 1; }
+.cot-cur { font-family: 'Syne', sans-serif; font-weight: 700; font-size: 11px; }
+.cot-pie { display: flex; align-items: center; justify-content: center; }
+.cot-ls-vals { display: flex; flex-direction: column; gap: 2px; }
 .cot-long-lbl { font-size: 9px; font-family: 'DM Mono', monospace; color: var(--green); }
 .cot-short-lbl { font-size: 9px; font-family: 'DM Mono', monospace; color: var(--red); }
-.cot-net-wrap { display: flex; flex-direction: column; align-items: flex-end; gap: 1px; }
+.cot-net-wrap { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
 .cot-net { font-family: 'Syne', sans-serif; font-size: 11px; font-weight: 700; }
 .cot-net.long  { color: var(--green); }
 .cot-net.short { color: var(--red); }
 .cot-change { font-size: 9px; color: var(--muted); }
 .cot-change.up   { color: var(--green); }
 .cot-change.down { color: var(--red); }
-.cot-stacked-wrap { height: 5px; display: flex; border-radius: 3px; overflow: hidden; background: rgba(255,255,255,.06); }
-.cot-stacked-long  { background: var(--green); height: 100%; transition: width .3s; }
-.cot-stacked-short { background: var(--red);   height: 100%; transition: width .3s; }
 .cot-group-label {
   font-size: 9px; letter-spacing: .8px; text-transform: uppercase;
   color: var(--accent); padding: 6px 0 8px;
@@ -514,9 +511,9 @@ body {
 .fund-table tr:last-child { border-bottom: none; }
 .fund-table td { padding: 3px 0; vertical-align: baseline; font-family: 'DM Mono', monospace; }
 .fund-td-ind { font-size: 9px; color: var(--muted); letter-spacing: .2px; }
-.fund-td-val { font-size: 10px; color: var(--text); text-align: right; padding-left: 8px; white-space: nowrap; }
+.fund-td-val { font-size: 10px; color: var(--text); text-align: right; padding-left: 8px; white-space: nowrap; width: 80px; }
 .fund-td-val.no-data { color: var(--muted); }
-.fund-td-per { font-size: 8px; color: var(--muted); opacity: .7; text-align: right; padding-left: 10px; white-space: nowrap; }
+.fund-td-per { font-size: 8px; color: var(--muted); opacity: .7; text-align: right; padding-left: 10px; white-space: nowrap; width: 72px; }
 /* AI Analysis section */
 .fund-analysis-wrap { margin-top: 4px; }
 .fund-analysis-btn {
@@ -2765,6 +2762,21 @@ function renderCOT() {
     return (n > 0 ? '+' : '') + n;
   }
 
+  function makePie(longPct, sz=44, sw=7) {
+    const r = (sz - sw) / 2, cx = sz / 2, cy = sz / 2;
+    const circ = 2 * Math.PI * r;
+    const longLen  = circ * longPct / 100;
+    const shortLen = circ - longLen;
+    const off = circ / 4;
+    return `<svg width="${sz}" height="${sz}" viewBox="0 0 ${sz} ${sz}">
+      <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="rgba(255,255,255,.08)" stroke-width="${sw}"/>
+      <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="var(--green)" stroke-width="${sw}"
+        stroke-dasharray="${longLen.toFixed(2)} ${(circ-longLen).toFixed(2)}" stroke-dashoffset="${off.toFixed(2)}"/>
+      <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="var(--red)" stroke-width="${sw}"
+        stroke-dasharray="${shortLen.toFixed(2)} ${(circ-shortLen).toFixed(2)}" stroke-dashoffset="${(off-longLen).toFixed(2)}"/>
+    </svg>`;
+  }
+
   function makeRows(netKey, changeKey, longKey, shortKey) {
     const resolveNet = (d, k) => d[k] !== undefined ? d[k] : (k === 'lev_net' ? d.net : null);
     const resolveChg = (d, k) => d[k] !== undefined ? d[k] : (k === 'lev_change_net' ? d.change_net : null);
@@ -2779,25 +2791,19 @@ function renderCOT() {
       const shortVal = d[shortKey] || 0;
       const total    = longVal + shortVal;
       const longPct  = total > 0 ? Math.round(longVal / total * 100) : 50;
-      const shortPct = 100 - longPct;
       const isLong   = net === null ? true : net >= 0;
       const chgClass = chg === null ? '' : chg > 0 ? 'up' : chg < 0 ? 'down' : '';
       const chgIcon  = chg === null ? '' : chg > 0 ? '▲' : chg < 0 ? '▼' : '→';
       return `<div class="cot-row">
-        <div class="cot-row-top">
-          <span class="cot-cur" style="color:${color}">${cur}</span>
-          <div class="cot-ls-vals">
-            <span class="cot-long-lbl">L +${fmtAbs(longVal)}</span>
-            <span class="cot-short-lbl">S -${fmtAbs(shortVal)}</span>
-          </div>
-          <div class="cot-net-wrap">
-            <span class="cot-net ${isLong ? 'long' : 'short'}">${fmtK(net)}</span>
-            ${chg !== null ? `<span class="cot-change ${chgClass}">${chgIcon} ${fmtK(chg)}</span>` : ''}
-          </div>
+        <span class="cot-cur" style="color:${color}">${cur}</span>
+        <div class="cot-pie">${makePie(longPct)}</div>
+        <div class="cot-ls-vals">
+          <span class="cot-long-lbl">L +${fmtAbs(longVal)}</span>
+          <span class="cot-short-lbl">S -${fmtAbs(shortVal)}</span>
         </div>
-        <div class="cot-stacked-wrap">
-          <div class="cot-stacked-long" style="width:${longPct}%"></div>
-          <div class="cot-stacked-short" style="width:${shortPct}%"></div>
+        <div class="cot-net-wrap">
+          <span class="cot-net ${isLong ? 'long' : 'short'}">${fmtK(net)}</span>
+          ${chg !== null ? `<span class="cot-change ${chgClass}">${chgIcon} ${fmtK(chg)}</span>` : ''}
         </div>
       </div>`;
     }).join('');
