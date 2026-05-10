@@ -1,5 +1,10 @@
 // api/unified-digest.js
 const rateLimit = require('./_ratelimit');
+const cb        = require('./_circuit_breaker');
+
+// AI provider failure threshold before circuit opens (fewer than external sources
+// because AI errors are faster to detect and providers recover quickly)
+const AI_CB_THRESHOLD = 2;
 const RSS_URL      = 'https://www.financialjuice.com/feed.ashx?xy=rss';
 const FF_THIS_WEEK = 'https://nfs.faireconomy.media/ff_calendar_thisweek.xml';
 const FF_NEXT_WEEK = 'https://nfs.faireconomy.media/ff_calendar_nextweek.xml';
@@ -263,19 +268,23 @@ ${xauHistoryBlock}`;
 
     const call1Messages = [{ role: 'user', content: prompt }];
 
-    // Primary: Cerebras
-    if (CEREBRAS_KEY) {
+    // Primary: Cerebras (circuit breaker — skip if recently failing)
+    if (CEREBRAS_KEY && await cb.canCall('ai:cerebras')) {
       try {
         console.log('Call 1: trying Cerebras');
         const raw = await aiCall(CEREBRAS_URL, CEREBRAS_KEY, CEREBRAS_MODEL, call1Messages, 1500, 0.3, 20000);
         if (raw.trim()) { article = raw.trim(); method = 'cerebras'; }
         console.log('Call 1: Cerebras OK, length', article?.length);
+        await cb.onSuccess('ai:cerebras');
       } catch(e) {
         console.warn('Call 1 Cerebras failed:', e.status || e.message);
+        await cb.onFailure('ai:cerebras', AI_CB_THRESHOLD);
       }
+    } else if (CEREBRAS_KEY) {
+      console.log('Call 1: Cerebras circuit OPEN — skipping to Groq');
     }
 
-    // Fallback: Groq
+    // Fallback: Groq (no circuit breaker — last resort, always attempt)
     if (!article && GROQ_KEY) {
       try {
         console.log('Call 1: falling back to Groq');
@@ -391,18 +400,22 @@ ${xauHistoryBlock}`;
       const call2Messages = [{ role: 'user', content: biasPrompt }];
       let biasRaw = null;
 
-      // Primary: SambaNova
-      if (SAMBANOVA_KEY) {
+      // Primary: SambaNova (circuit breaker)
+      if (SAMBANOVA_KEY && await cb.canCall('ai:sambanova')) {
         try {
           console.log('Call 2: trying SambaNova');
           biasRaw = await aiCall(SAMBANOVA_URL, SAMBANOVA_KEY, SAMBANOVA_MODEL, call2Messages, 400, 0.1, 20000);
           console.log('Call 2: SambaNova OK');
+          await cb.onSuccess('ai:sambanova');
         } catch(e) {
           console.warn('Call 2 SambaNova failed:', e.status || e.message);
+          await cb.onFailure('ai:sambanova', AI_CB_THRESHOLD);
         }
+      } else if (SAMBANOVA_KEY) {
+        console.log('Call 2: SambaNova circuit OPEN — skipping to Groq');
       }
 
-      // Fallback: Groq
+      // Fallback: Groq (no circuit breaker — always attempt)
       if (!biasRaw && GROQ_KEY) {
         try {
           console.log('Call 2: falling back to Groq');
@@ -536,6 +549,12 @@ ${xauHistoryBlock}`;
 
     for (const provider of call3Providers) {
       if (thesis) break;
+      // Check circuit breaker for SambaNova; Groq fallback is always allowed
+      const circuitSource = provider.label.startsWith('SambaNova') ? 'ai:sambanova' : null;
+      if (circuitSource && !await cb.canCall(circuitSource)) {
+        console.log('Call 3:', provider.label, 'circuit OPEN — skipping');
+        continue;
+      }
       try {
         console.log('Call 3: trying', provider.label);
         const raw = await aiCall(provider.url, provider.key, provider.model, call3Messages, 500, 0.1, provider.timeout);
@@ -544,11 +563,14 @@ ${xauHistoryBlock}`;
         if (validateThesis(parsed)) {
           thesis = parsed;
           console.log('Call 3: OK via', provider.label);
+          if (circuitSource) await cb.onSuccess(circuitSource);
         } else {
           console.warn('Call 3: schema invalid via', provider.label, JSON.stringify(parsed).slice(0, 200));
+          // Schema invalid ≠ provider failure — don't penalize circuit
         }
       } catch(e) {
         console.warn('Call 3', provider.label, 'failed:', e.status || e.message);
+        if (circuitSource) await cb.onFailure(circuitSource, AI_CB_THRESHOLD);
       }
     }
 

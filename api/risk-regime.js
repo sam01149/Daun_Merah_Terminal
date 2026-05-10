@@ -3,6 +3,8 @@
 // Sources: FRED (VIX, HY OAS), Stooq (MOVE index)
 // Cached in Redis under 'risk_regime' for 30 minutes (data is EOD, refreshing more often is wasteful)
 
+const cb = require('./_circuit_breaker');
+
 const CACHE_KEY = 'risk_regime'
 const CACHE_TTL = 30 * 60 // 30 minutes in seconds
 
@@ -36,16 +38,34 @@ module.exports = async function handler(req, res) {
     console.warn('risk-regime: Redis GET failed:', e.message)
   }
 
-  // Fetch all three sources in parallel; partial failures are tolerable
+  // Fetch all three sources in parallel; partial failures are tolerable.
+  // Circuit breaker gates each fetch: if a source has been repeatedly failing,
+  // skip it immediately rather than burning 10s on a timeout.
+  const [fredVixAllowed, stooqAllowed, fredHyAllowed] = await Promise.all([
+    cb.canCall('fred'),
+    cb.canCall('stooq'),
+    cb.canCall('fred'),
+  ])
+
   const [vixResult, moveResult, hyResult] = await Promise.allSettled([
-    fetchFredSeries('VIXCLS'),
-    fetchMove(),
-    fetchFredSeries('BAMLH0A0HYM2'),
+    fredVixAllowed  ? fetchFredSeries('VIXCLS')        : Promise.reject(new Error('circuit:fred OPEN')),
+    stooqAllowed    ? fetchMove()                       : Promise.reject(new Error('circuit:stooq OPEN')),
+    fredHyAllowed   ? fetchFredSeries('BAMLH0A0HYM2')  : Promise.reject(new Error('circuit:fred OPEN')),
   ])
 
   const vixData  = vixResult.status  === 'fulfilled' ? vixResult.value  : null
   const moveData = moveResult.status === 'fulfilled' ? moveResult.value : null
   const hyData   = hyResult.status   === 'fulfilled' ? hyResult.value   : null
+
+  // Update circuit breaker state based on fetch outcomes
+  if (fredVixAllowed) {
+    if (vixData) cb.onSuccess('fred').catch(() => {});
+    else         cb.onFailure('fred').catch(() => {});
+  }
+  if (stooqAllowed) {
+    if (moveData) cb.onSuccess('stooq').catch(() => {});
+    else          cb.onFailure('stooq').catch(() => {});
+  }
 
   if (!vixData)  console.warn('risk-regime: VIX fetch failed')
   if (!moveData) console.warn('risk-regime: MOVE fetch failed — Stooq may have blocked')

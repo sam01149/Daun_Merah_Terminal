@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-05-08 (session 6)
+> **Last updated:** 2026-05-10 (session 7)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Downloads\Financial_Feed_App`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -54,8 +54,10 @@ Financial_Feed_App/
 ├── vercel.json             # Security headers config
 ├── package.json            # name: "daun-merah", deps: web-push
 └── api/                    # TEPAT 12 serverless functions (Vercel Hobby limit)
+    ├── _circuit_breaker.js # Self-healing: Redis-backed circuit breaker (CLOSED→OPEN→HALF_OPEN)
     ├── _push_keywords.js   # Keyword lists untuk detectPushCat() — edit di sini untuk update kategori
     ├── _ratelimit.js       # Shared rate limiter helper — prefix _ = bukan route publik
+    ├── _retry.js           # Exponential backoff fetch wrapper — prefix _ = bukan route publik
     ├── admin.js            # Consolidated: health + redis-keys + admin-prompts + push
     ├── calendar.js         # ForexFactory calendar
     ├── cb-status.js        # CB tracker + bias dari Redis
@@ -262,6 +264,7 @@ localStorage keys: `daunmerah_v2` (state), `daun_merah_playbook` (active), `daun
 | `fundamental:{currency}` | Hash: indicator → `{actual,period,date,source}` | no TTL (overwrite) | `api/admin.js` + `api/market-digest.js` |
 | `fundamental_analysis` | JSON AI analysis currency terkuat/terlemah | 21600s | `api/admin.js` |
 | `cb_decisions` | Hash: currency → `{last_meeting,last_decision,last_bps}` dari headline | no TTL | `api/market-digest.js` |
+| `circuit:{source}` | JSON: `{state,failures,openUntil,lastFailure,lastSuccess}` — circuit breaker per sumber | 3600s | `api/_circuit_breaker.js` |
 
 **Deprecated (sudah bisa dihapus):** `cot_cache`, `fundamentals_cache`, `seen_guids`
 
@@ -356,6 +359,7 @@ generateFundamentalAnalysis() // POST /api/admin?action=fundamental_analysis
 - ✅ Multi-provider AI: Cerebras (Call 1), SambaNova (Call 2–3), Groq (Call 4 + fallback) + Thesis Invalidation Monitor (2026-05-08)
 - ✅ XAU/USD ditambahkan ke pair selector JURNAL dan SIZING (2026-05-08)
 - ✅ `journal_import` endpoint — bulk import historical trades dengan timestamp asli, auth `x-admin-secret` (2026-05-08)
+- ✅ **Self-healing system** — `_circuit_breaker.js` (Redis-backed: CLOSED→OPEN→HALF_OPEN, 3 failures → 5 min pause), `_retry.js` (exponential backoff fetch). Circuit breaker aktif di: `market-digest.js` (Cerebras + SambaNova), `risk-regime.js` (FRED + Stooq). `admin.js` health check kini: auto-clear cache sumber DOWN, Telegram notif saat source recover (2026-05-10)
 
 ---
 

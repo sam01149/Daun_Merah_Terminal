@@ -46,6 +46,19 @@ async function redisCmd(...args) {
 const HEALTH_CORS            = { 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-cache' };
 const HEALTH_ALERT_THRESHOLD = 2 * 60 * 60 * 1000;
 const HEALTH_REDIS_KEY       = 'health_last_ok';
+const HEALTH_RECOVER_THRESHOLD_MS = 5 * 60 * 1000; // 5 min down before recovery event
+
+// Maps each health source to the Redis cache keys it populates.
+// When a source goes DOWN, its cache is cleared so the next live request
+// fetches fresh data immediately after recovery rather than serving stale.
+const SOURCE_CACHE_KEYS = {
+  fred:           ['real_yields', 'risk_regime'],
+  stooq:          ['risk_regime'],
+  financialjuice: ['rss_cache'],
+  cftc:           ['cot_cache_v2'],
+  forexfactory:   [],
+  redis:          [], // can't clear Redis keys if Redis itself is down
+};
 
 async function sendHealthTelegram(text) {
   const TG_TOKEN   = process.env.TELEGRAM_BOT_TOKEN;
@@ -182,11 +195,16 @@ async function healthHandler(req, res) {
   const now = new Date().toISOString();
   const report = {};
   const toAlert = [];
+  const toRecover = [];
 
   for (const r of settled) {
     const { key, label, status, latency_ms, detail, error } = r.value;
-    const lastOk   = lastOkMap[key] || null;
-    const downMs   = status === 'DOWN' && lastOk ? Date.now() - new Date(lastOk).getTime() : null;
+    const lastOk = lastOkMap[key] || null;
+    const gapMs  = lastOk ? Date.now() - new Date(lastOk).getTime() : null;
+
+    // For DOWN sources: gapMs = how long it's been since last OK (= downtime duration)
+    // For OK sources that just recovered: gapMs = how long the gap was while it was down
+    const downMs   = status === 'DOWN' && gapMs != null ? gapMs : null;
     const downMins = downMs ? Math.round(downMs / 60000) : null;
 
     report[key] = {
@@ -199,8 +217,24 @@ async function healthHandler(req, res) {
 
     if (status === 'OK') {
       redisCmd('HSET', HEALTH_REDIS_KEY, key, now).catch(() => {});
-    } else if (!lastOk || downMs > HEALTH_ALERT_THRESHOLD) {
-      toAlert.push({ label, error, lastOk });
+
+      // Recovery detection: OK now but was down for > threshold
+      if (lastOk && gapMs > HEALTH_RECOVER_THRESHOLD_MS) {
+        toRecover.push({ key, label, downMins: Math.round(gapMs / 60000) });
+      }
+    } else {
+      if (!lastOk || downMs > HEALTH_ALERT_THRESHOLD) {
+        toAlert.push({ label, error, lastOk });
+      }
+
+      // Auto-recovery: clear this source's stale Redis cache keys.
+      // On next live request, the handler will attempt a fresh fetch
+      // rather than serving cached data from before the outage.
+      const cacheKeys = SOURCE_CACHE_KEYS[key] || [];
+      for (const ck of cacheKeys) {
+        redisCmd('DEL', ck).catch(() => {});
+        console.log(`health: auto-cleared cache key "${ck}" — ${label} is DOWN`);
+      }
     }
   }
 
@@ -209,6 +243,11 @@ async function healthHandler(req, res) {
       `• *${d.label}*: ${d.error}${d.lastOk ? ` (OK terakhir: ${d.lastOk.substring(0, 16)} UTC)` : ' (belum pernah OK)'}`
     ).join('\n');
     sendHealthTelegram(`🔴 *Daun Merah — Source Alert*\n\n${lines}\n\n_Dicek: ${now.substring(0, 16)} UTC_`);
+  }
+
+  if (toRecover.length > 0) {
+    const lines = toRecover.map(d => `• *${d.label}*: kembali OK setelah ${d.downMins} menit`).join('\n');
+    sendHealthTelegram(`✅ *Daun Merah — Recovery*\n\n${lines}\n\n_Dicek: ${now.substring(0, 16)} UTC_`);
   }
 
   const statuses = Object.values(report).map(r => r.status);
