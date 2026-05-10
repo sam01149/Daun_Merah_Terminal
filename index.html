@@ -468,38 +468,23 @@ body {
   font-size: 11px; color: var(--muted); text-align: center;
   padding: 12px 0 8px; font-style: italic;
 }
-.cot-row {
-  display: grid;
-  grid-template-columns: 38px 1fr auto auto;
-  align-items: center; gap: 8px;
-  padding: 5px 0;
-  border-bottom: 1px solid rgba(255,255,255,.04);
-}
+.cot-row { display: flex; flex-direction: column; gap: 5px; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,.04); }
 .cot-row:last-child { border-bottom: none; }
-.cot-cur {
-  font-family: 'Syne', sans-serif; font-weight: 700;
-  font-size: 11px;
-}
-.cot-bar-wrap {
-  height: 6px; background: rgba(255,255,255,.06); border-radius: 3px; overflow: hidden;
-  position: relative;
-}
-.cot-bar {
-  height: 100%; border-radius: 3px; transition: width .3s;
-}
-.cot-bar.long  { background: var(--green); }
-.cot-bar.short { background: var(--red); margin-left: auto; }
-.cot-net {
-  font-family: 'Syne', sans-serif; font-size: 11px; font-weight: 700;
-  text-align: right; min-width: 56px;
-}
+.cot-row-top { display: flex; align-items: center; gap: 6px; }
+.cot-cur { font-family: 'Syne', sans-serif; font-weight: 700; font-size: 11px; min-width: 36px; }
+.cot-ls-vals { display: flex; gap: 10px; flex: 1; }
+.cot-long-lbl { font-size: 9px; font-family: 'DM Mono', monospace; color: var(--green); }
+.cot-short-lbl { font-size: 9px; font-family: 'DM Mono', monospace; color: var(--red); }
+.cot-net-wrap { display: flex; flex-direction: column; align-items: flex-end; gap: 1px; }
+.cot-net { font-family: 'Syne', sans-serif; font-size: 11px; font-weight: 700; }
 .cot-net.long  { color: var(--green); }
 .cot-net.short { color: var(--red); }
-.cot-change {
-  font-size: 9px; text-align: right; min-width: 44px; color: var(--muted);
-}
+.cot-change { font-size: 9px; color: var(--muted); }
 .cot-change.up   { color: var(--green); }
 .cot-change.down { color: var(--red); }
+.cot-stacked-wrap { height: 5px; display: flex; border-radius: 3px; overflow: hidden; background: rgba(255,255,255,.06); }
+.cot-stacked-long  { background: var(--green); height: 100%; transition: width .3s; }
+.cot-stacked-short { background: var(--red);   height: 100%; transition: width .3s; }
 .cot-group-label {
   font-size: 9px; letter-spacing: .8px; text-transform: uppercase;
   color: var(--accent); padding: 6px 0 8px;
@@ -515,22 +500,23 @@ body {
 }
 .fund-title { font-size: 9px; color: var(--muted); letter-spacing: 1px; text-transform: uppercase; font-family: 'DM Mono', monospace; }
 .fund-meta  { font-size: 9px; color: var(--muted); font-family: 'DM Mono', monospace; }
-.fund-grid  { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 14px; }
-@media (min-width: 600px) { .fund-grid { grid-template-columns: repeat(4, 1fr); } }
+.fund-grid  { display: flex; flex-direction: column; gap: 10px; margin-bottom: 14px; }
 .fund-card {
   background: var(--surface); border: 1px solid var(--border);
-  border-radius: 10px; padding: 10px 10px 8px; position: relative;
+  border-radius: 10px; padding: 10px 12px 10px; position: relative;
   border-left-width: 3px !important;
 }
 .fund-card-header { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 8px; }
 .fund-cur  { font-size: 13px; font-weight: 700; font-family: 'Syne', sans-serif; }
-.fund-rate { font-size: 9px; color: var(--muted); font-family: 'DM Mono', monospace; }
-.fund-rows { display: flex; flex-direction: column; gap: 4px; }
-.fund-row  { display: flex; align-items: baseline; justify-content: space-between; gap: 4px; }
-.fund-ind  { font-size: 8px; color: var(--muted); font-family: 'DM Mono', monospace; letter-spacing: .2px; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.fund-val  { font-size: 9px; font-family: 'DM Mono', monospace; color: var(--text); flex-shrink: 0; }
-.fund-val.no-data { color: var(--muted); }
-.fund-period { font-size: 7px; color: var(--muted); opacity: .7; flex-shrink: 0; }
+.fund-rate { font-size: 11px; font-weight: 700; font-family: 'DM Mono', monospace; color: var(--text); }
+.fund-table { width: 100%; border-collapse: collapse; }
+.fund-table tr { border-bottom: 1px solid rgba(255,255,255,.04); }
+.fund-table tr:last-child { border-bottom: none; }
+.fund-table td { padding: 3px 0; vertical-align: baseline; font-family: 'DM Mono', monospace; }
+.fund-td-ind { font-size: 9px; color: var(--muted); letter-spacing: .2px; }
+.fund-td-val { font-size: 10px; color: var(--text); text-align: right; padding-left: 8px; white-space: nowrap; }
+.fund-td-val.no-data { color: var(--muted); }
+.fund-td-per { font-size: 8px; color: var(--muted); opacity: .7; text-align: right; padding-left: 10px; white-space: nowrap; }
 /* AI Analysis section */
 .fund-analysis-wrap { margin-top: 4px; }
 .fund-analysis-btn {
@@ -2679,19 +2665,21 @@ function renderFundamental() {
       .filter(([k]) => k !== rateKey)
       .map(([k, v]) => {
         const period = v.period && v.period !== '—' ? v.period : '';
-        return `<div class="fund-row">
-          <span class="fund-ind" title="${escHtml(k)}">${escHtml(k)}</span>
-          <span class="fund-val${v.actual ? '' : ' no-data'}">${escHtml(v.actual || '—')}</span>
-          ${period ? `<span class="fund-period">${escHtml(period)}</span>` : ''}
-        </div>`;
+        return `<tr>
+          <td class="fund-td-ind" title="${escHtml(k)}">${escHtml(k)}</td>
+          <td class="fund-td-val${v.actual ? '' : ' no-data'}">${escHtml(v.actual || '—')}</td>
+          <td class="fund-td-per">${escHtml(period)}</td>
+        </tr>`;
       }).join('');
 
-    return `<div class="fund-card" style="border-left:3px solid ${col};border-radius:10px">
+    return `<div class="fund-card" style="border-left:3px solid ${col}">
       <div class="fund-card-header">
         <span class="fund-cur" style="color:${col}">${cur}</span>
         ${rateVal ? `<span class="fund-rate">${escHtml(rateVal)}</span>` : ''}
       </div>
-      <div class="fund-rows">${rows || '<div class="fund-ind" style="padding:4px 0">Tidak ada data</div>'}</div>
+      <table class="fund-table">
+        ${rows || '<tr><td colspan="3" class="fund-td-ind" style="padding:4px 0">Tidak ada data</td></tr>'}
+      </table>
     </div>`;
   }).join('');
 }
@@ -2777,39 +2765,49 @@ function renderCOT() {
     return (n > 0 ? '+' : '') + n;
   }
 
-  function makeRows(netKey, changeKey) {
-    // backward-compat: old cache used 'net'/'change_net' for leveraged funds
+  function makeRows(netKey, changeKey, longKey, shortKey) {
     const resolveNet = (d, k) => d[k] !== undefined ? d[k] : (k === 'lev_net' ? d.net : null);
     const resolveChg = (d, k) => d[k] !== undefined ? d[k] : (k === 'lev_change_net' ? d.change_net : null);
+    const fmtAbs = n => { if (!n && n !== 0) return '—'; const a = Math.abs(n); return a >= 1000 ? (a / 1000).toFixed(1) + 'K' : String(a); };
 
-    const nets = ORDER.map(c => resolveNet(cotData.positions[c] || {}, netKey) || 0);
-    const maxNet = Math.max(...nets.map(Math.abs)) || 1;
     return ORDER.filter(c => cotData.positions[c]).map(cur => {
-      const d = cotData.positions[cur];
+      const d        = cotData.positions[cur];
       const color    = CUR_COLORS_COT[cur] || '#fff';
       const net      = resolveNet(d, netKey);
       const chg      = resolveChg(d, changeKey);
-      const isLong   = net >= 0;
-      const barPct   = Math.min(100, Math.round(Math.abs(net) / maxNet * 100));
+      const longVal  = d[longKey] || 0;
+      const shortVal = d[shortKey] || 0;
+      const total    = longVal + shortVal;
+      const longPct  = total > 0 ? Math.round(longVal / total * 100) : 50;
+      const shortPct = 100 - longPct;
+      const isLong   = net === null ? true : net >= 0;
       const chgClass = chg === null ? '' : chg > 0 ? 'up' : chg < 0 ? 'down' : '';
-      const chgIcon  = chg > 0 ? '▲' : chg < 0 ? '▼' : '→';
-      const barHtml  = isLong
-        ? `<div class="cot-bar-wrap"><div class="cot-bar long" style="width:${barPct}%"></div></div>`
-        : `<div class="cot-bar-wrap" style="direction:rtl"><div class="cot-bar short" style="width:${barPct}%"></div></div>`;
+      const chgIcon  = chg === null ? '' : chg > 0 ? '▲' : chg < 0 ? '▼' : '→';
       return `<div class="cot-row">
-        <span class="cot-cur" style="color:${color}">${cur}</span>
-        ${barHtml}
-        <span class="cot-net ${isLong ? 'long' : 'short'}">${fmtK(net)}</span>
-        <span class="cot-change ${chgClass}">${chgIcon} ${fmtK(chg)}</span>
+        <div class="cot-row-top">
+          <span class="cot-cur" style="color:${color}">${cur}</span>
+          <div class="cot-ls-vals">
+            <span class="cot-long-lbl">L +${fmtAbs(longVal)}</span>
+            <span class="cot-short-lbl">S -${fmtAbs(shortVal)}</span>
+          </div>
+          <div class="cot-net-wrap">
+            <span class="cot-net ${isLong ? 'long' : 'short'}">${fmtK(net)}</span>
+            ${chg !== null ? `<span class="cot-change ${chgClass}">${chgIcon} ${fmtK(chg)}</span>` : ''}
+          </div>
+        </div>
+        <div class="cot-stacked-wrap">
+          <div class="cot-stacked-long" style="width:${longPct}%"></div>
+          <div class="cot-stacked-short" style="width:${shortPct}%"></div>
+        </div>
       </div>`;
     }).join('');
   }
 
   grid.innerHTML = `
     <div class="cot-group-label">Leveraged Funds <span style="color:var(--muted);font-size:8px;margin-left:4px">Hedge Fund · Spekulan aktif</span></div>
-    ${makeRows('lev_net', 'lev_change_net')}
+    ${makeRows('lev_net', 'lev_change_net', 'lev_long', 'lev_short')}
     <div class="cot-group-label" style="margin-top:14px">Asset Manager <span style="color:var(--muted);font-size:8px;margin-left:4px">Institusi · Posisi jangka panjang</span></div>
-    ${makeRows('am_net', 'am_change_net')}
+    ${makeRows('am_net', 'am_change_net', 'am_long', 'am_short')}
   `;
 }
 

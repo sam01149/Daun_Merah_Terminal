@@ -277,5 +277,25 @@ async function cotHandler(req, res) {
   };
 
   redisCmd('SET', 'cot_cache_v2', JSON.stringify(payload), 'EX', 21600).catch(() => {});
+
+  // Fire-and-forget: accumulate weekly snapshots for future trend display
+  storeCOTHistory(positions, reportDate).catch(() => {});
+
   return res.status(200).json(payload);
+}
+
+async function storeCOTHistory(positions, reportDate) {
+  if (!reportDate) return;
+  // Lock key per reportDate week — prevents duplicate storage of the same weekly report
+  const dateKey = reportDate.replace(/\W/g, '');
+  const lock = await redisCmd('SET', `cot_hist_lock:${dateKey}`, '1', 'EX', 604800, 'NX'); // 7-day TTL
+  if (!lock) return;
+
+  const ts    = Date.now();
+  const entry = JSON.stringify({ positions, report_date: reportDate, stored_at: new Date().toISOString() });
+  await redisCmd('ZADD', 'cot_history', 'NX', ts, entry);
+
+  // Keep 90-day rolling window
+  const cutoff = ts - 90 * 24 * 60 * 60 * 1000;
+  await redisCmd('ZREMRANGEBYSCORE', 'cot_history', '-inf', cutoff);
 }
