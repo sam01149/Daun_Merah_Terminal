@@ -276,6 +276,6 @@ async function cotHandler(req, res) {
     fetched_at: new Date().toISOString(),
   };
 
-  redisCmd('SET', 'cot_cache_v2', JSON.stringify(payload)).catch(() => {});
+  redisCmd('SET', 'cot_cache_v2', JSON.stringify(payload), 'EX', 21600).catch(() => {});
   return res.status(200).json(payload);
 }
