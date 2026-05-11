@@ -33,11 +33,18 @@ const GOLD_KEYWORDS = [
   'safe haven','haven demand','flight to safety','flight to gold',
   // Geopolitical — only phrasing explicitly tied to haven/gold impact
   'middle east tension','iran nuclear','russia ukraine','ukraine war','gold safe',
+  // Iran / Hormuz — direct geopolitical risk → safe haven gold channel
+  // 'iran' standalone: nearly all Iran headlines in financial news imply geopolitical risk
+  'iran','hormuz','strait of hormuz','ofac sanction','iran nuclear deal',
+  'iran oil','iran blockade','us-iran',
   // Risk sentiment — equities as risk-off/on proxy for haven demand
   'risk aversion','risk-off','risk off','risk-on','risk on',
   'vix spike','vix surge','equity sell-off','stock market crash','market rout','flight to bonds',
   // Geopolitical — broader triggers with clear haven implication
   'trade war','us china tariff','sanction escalat','nuclear threat','conflict escalat',
+  // US-China trade / Trump geopolitical — risk-on/off driver affecting gold via sentiment channel
+  // 'beijing' captures Trump China visit; 'trump xi' captures summit headlines
+  'trump xi','beijing','china visit','us china trade','china trade deal','rare earth',
   // Dollar moves (non-DXY phrasing)
   'dollar rally','dollar drop','dollar strengthen','dollar weaken','usd rally','usd drop',
   // Precious metals family — comex is gold's primary venue
