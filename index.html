@@ -1255,6 +1255,65 @@ body {
   text-transform: uppercase; letter-spacing: .04em;
 }
 .tek-news-title { font: 11px 'DM Mono',monospace; color: var(--text); line-height: 1.45; }
+
+/* ── DRAWER / OVERFLOW NAV ── */
+/* Sembunyikan tab sekunder dari top nav + bottom nav */
+#navViews .nvtab[data-view="cot"],
+#navViews .nvtab[data-view="fundamental"],
+#navViews .nvtab[data-view="sizing"],
+#navViews .nvtab[data-view="jurnal"],
+#navViews .nvtab[data-view="petunjuk"] { display: none; }
+#botNav .bot-nav-btn[data-view="cot"],
+#botNav .bot-nav-btn[data-view="fundamental"],
+#botNav .bot-nav-btn[data-view="sizing"],
+#botNav .bot-nav-btn[data-view="jurnal"],
+#botNav .bot-nav-btn[data-view="petunjuk"] { display: none; }
+
+.nvtab-more {
+  flex-shrink: 0; padding: 11px 14px;
+  font: 700 10px 'DM Mono',monospace; letter-spacing: 1px; text-transform: uppercase;
+  color: var(--muted); background: transparent; border: none; border-bottom: 2px solid transparent;
+  cursor: pointer; white-space: nowrap; transition: all .15s;
+  display: flex; align-items: center; gap: 4px;
+}
+.nvtab-more:hover { color: var(--text-mid); }
+.nvtab-more.has-active { color: var(--text); border-bottom-color: var(--text-mid); }
+
+.drawer-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,.55); z-index: 300;
+  opacity: 0; pointer-events: none; transition: opacity .2s;
+}
+.drawer-overlay.open { opacity: 1; pointer-events: all; }
+.drawer-panel {
+  position: fixed; top: 0; right: 0; height: 100%; width: 260px;
+  background: #111110; border-left: 1px solid var(--border);
+  z-index: 301; transform: translateX(100%); transition: transform .22s ease;
+  display: flex; flex-direction: column;
+}
+.drawer-panel.open { transform: translateX(0); }
+.drawer-hdr {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 16px 12px; border-bottom: 1px solid var(--border); flex-shrink: 0;
+}
+.drawer-hdr-title { font: 700 10px 'Syne',sans-serif; color: var(--muted); letter-spacing: .12em; text-transform: uppercase; }
+.drawer-close {
+  background: none; border: none; color: var(--muted); cursor: pointer;
+  font-size: 20px; line-height: 1; padding: 0 4px; transition: color .12s;
+}
+.drawer-close:hover { color: var(--text); }
+.drawer-nav { flex: 1; padding: 6px 0 32px; overflow-y: auto; }
+.drawer-item {
+  display: flex; align-items: center; width: 100%; padding: 13px 18px 12px;
+  background: none; border: none; border-left: 3px solid transparent;
+  color: var(--text-mid); cursor: pointer; gap: 12px; text-align: left;
+  transition: all .12s;
+}
+.drawer-item:hover { background: rgba(255,255,255,.04); color: var(--text); }
+.drawer-item.active { color: var(--text); }
+.drawer-item-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.drawer-item-label { font: 700 11px 'Syne',sans-serif; letter-spacing: .07em; text-transform: uppercase; line-height: 1.3; }
+.drawer-item-desc { font: 9px 'DM Mono',monospace; color: var(--muted); margin-top: 2px; }
+.drawer-item.active .drawer-item-desc { color: var(--text-mid); }
 </style>
 </head>
 <body>
@@ -1306,6 +1365,9 @@ body {
   <button class="nvtab" data-view="jurnal" id="jurnalTab">JURNAL</button>
   <button class="nvtab" data-view="petunjuk" id="petunjukTab">PETUNJUK</button>
   <button class="nvtab" data-view="teknikal" id="teknikalTab">TEK</button>
+  <button class="nvtab-more" id="navMoreBtn" onclick="openDrawer()">
+    <svg width="13" height="11" viewBox="0 0 13 11" fill="none"><rect y="0" width="13" height="1.5" rx=".75" fill="currentColor"/><rect y="4.75" width="13" height="1.5" rx=".75" fill="currentColor"/><rect y="9.5" width="13" height="1.5" rx=".75" fill="currentColor"/></svg>
+  </button>
 </div>
 
 <!-- CATEGORY FILTERS -->
@@ -2496,6 +2558,7 @@ document.querySelectorAll('#navViews .nvtab').forEach(btn => {
       document.getElementById('teknikalPanel').style.display = 'flex';
       initTeknikal();
     }
+    updateDrawerBtn();
   });
 });
 
@@ -4833,6 +4896,58 @@ function initTeknikal() {
   createTVChart();
 }
 
+// ── DRAWER ────────────────────────────────────────────────
+const DRAWER_ITEMS = [
+  { view:'sizing',      label:'Sizing',      desc:'Kalkulator lot size & risk',      col:'#60a5fa' },
+  { view:'jurnal',      label:'Jurnal',      desc:'Trade journal & review',           col:'#f472b6' },
+  { view:'fundamental', label:'Fundamental', desc:'Data fundamental 8 mata uang',    col:'#a78bfa' },
+  { view:'cot',         label:'COT',         desc:'COT positioning data mingguan',   col:'#a78bfa' },
+  { view:'petunjuk',    label:'Petunjuk',    desc:'SOP panduan trading end-to-end',  col:'#60a5fa' },
+];
+
+function openDrawer() {
+  renderDrawer();
+  document.getElementById('drawerOverlay').classList.add('open');
+  document.getElementById('drawerPanel').classList.add('open');
+}
+
+function closeDrawer() {
+  document.getElementById('drawerOverlay').classList.remove('open');
+  document.getElementById('drawerPanel').classList.remove('open');
+}
+
+function renderDrawer() {
+  const nav = document.getElementById('drawerNav');
+  if (!nav) return;
+  nav.innerHTML = DRAWER_ITEMS.map(item => {
+    const isActive = activeView === item.view;
+    const borderCol = isActive ? item.col : 'transparent';
+    return '<button class="drawer-item' + (isActive ? ' active' : '') + '"'
+      + ' style="border-left-color:' + borderCol + '"'
+      + ' data-view="' + item.view + '">'
+      + '<span class="drawer-item-dot" style="background:' + item.col + '"></span>'
+      + '<div>'
+      + '<div class="drawer-item-label">' + item.label + '</div>'
+      + '<div class="drawer-item-desc">' + item.desc + '</div>'
+      + '</div>'
+      + '</button>';
+  }).join('');
+
+  nav.querySelectorAll('.drawer-item').forEach(btn => {
+    btn.addEventListener('click', () => {
+      closeDrawer();
+      const topBtn = document.querySelector('#navViews .nvtab[data-view="' + btn.dataset.view + '"]');
+      if (topBtn) topBtn.click();
+    });
+  });
+}
+
+function updateDrawerBtn() {
+  const secondary = DRAWER_ITEMS.map(i => i.view);
+  const btn = document.getElementById('navMoreBtn');
+  if (btn) btn.classList.toggle('has-active', secondary.includes(activeView));
+}
+
 // Mobile bottom nav — use event delegation because #botNav HTML is after this script
 document.addEventListener('click', function(e) {
   const btn = e.target.closest('#botNav .bot-nav-btn');
@@ -4922,5 +5037,15 @@ document.addEventListener('click', function(e) {
     <span>Tek</span>
   </button>
 </nav>
+
+<!-- DRAWER -->
+<div class="drawer-overlay" id="drawerOverlay" onclick="closeDrawer()"></div>
+<div class="drawer-panel" id="drawerPanel">
+  <div class="drawer-hdr">
+    <span class="drawer-hdr-title">Menu Lainnya</span>
+    <button class="drawer-close" onclick="closeDrawer()">&#x2715;</button>
+  </div>
+  <div class="drawer-nav" id="drawerNav"></div>
+</div>
 </body>
 </html>
