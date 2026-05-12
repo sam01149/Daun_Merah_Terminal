@@ -1,23 +1,63 @@
 const CACHE_NAME = 'fjfeed-v1';
 const FETCH_URL = '/api/feeds?type=rss';
+const STATE_CACHE = 'daun-merah-state';
+const SEEN_GUIDS_URL = '/sw-seen-guids';
 
 let seenGuids = new Set();
 
 self.addEventListener('install', e => { self.skipWaiting(); });
-self.addEventListener('activate', e => { e.waitUntil(clients.claim()); });
+
+self.addEventListener('activate', e => {
+  e.waitUntil(clients.claim().then(() => loadSeenGuids()));
+});
+
+// Persist seenGuids ke Cache Storage agar tidak hilang saat SW di-restart
+async function loadSeenGuids() {
+  try {
+    const cache = await caches.open(STATE_CACHE);
+    const res = await cache.match(SEEN_GUIDS_URL);
+    if (res) {
+      const arr = await res.json();
+      if (Array.isArray(arr)) seenGuids = new Set(arr);
+    }
+  } catch(e) {}
+}
+
+async function saveSeenGuids() {
+  try {
+    const cache = await caches.open(STATE_CACHE);
+    // Simpan max 200 GUID terbaru
+    const arr = [...seenGuids].slice(-200);
+    await cache.put(SEEN_GUIDS_URL, new Response(JSON.stringify(arr), {
+      headers: { 'Content-Type': 'application/json' }
+    }));
+  } catch(e) {}
+}
 
 self.addEventListener('periodicsync', e => {
   if (e.tag === 'fjfeed-sync') e.waitUntil(checkForNewItems());
 });
 
 self.addEventListener('message', e => {
-  if (e.data.type === 'INIT_GUIDS') seenGuids = new Set(e.data.guids);
-  if (e.data.type === 'CHECK_NOW') checkForNewItems();
-  if (e.data.type === 'ADD_GUID') seenGuids.add(e.data.guid);
+  if (e.data.type === 'INIT_GUIDS') {
+    seenGuids = new Set(e.data.guids);
+    saveSeenGuids();
+  }
+  if (e.data.type === 'CHECK_NOW') {
+    // Terima guids terkini dari halaman agar tidak ada race condition
+    if (Array.isArray(e.data.guids)) seenGuids = new Set(e.data.guids);
+    checkForNewItems();
+  }
+  if (e.data.type === 'ADD_GUID') {
+    seenGuids.add(e.data.guid);
+    saveSeenGuids();
+  }
   if (e.data.type === 'SHOW_DIGEST_NOTIF') {
     self.registration.showNotification(e.data.title, {
       body: e.data.body,
       tag: 'digest-' + e.data.session,
+      icon: './icon.svg',
+      badge: './icon.svg',
       vibrate: [200, 100, 200],
       data: { url: '/' },
     });
@@ -84,33 +124,39 @@ async function checkForNewItems() {
 
   if (newItems.length === 0) return;
 
-  // Add to seen
   newItems.forEach(i => seenGuids.add(i.guid));
+  await saveSeenGuids();
 
-  // Send to open clients
-  const allClients = await clients.matchAll({ type: 'window' });
+  // Kirim ke semua tab yang terbuka
+  const allClients = await clients.matchAll({ type: 'window', includeUncontrolled: true });
   allClients.forEach(c => c.postMessage({ type: 'NEW_ITEMS', items: newItems }));
 
-  // Show notifications
-  for (const item of newItems.slice(0, 5)) {
+  // Jika app sedang terbuka dan visible, skip browser notification
+  // — halaman sudah menerima update via postMessage di atas
+  const hasVisible = allClients.some(c => c.visibilityState === 'visible');
+  if (hasVisible) return;
+
+  // App ditutup atau di background — tampilkan notifikasi
+  const toNotify = newItems.slice(0, 3);
+  for (const item of toNotify) {
     const cat = detectCat(item.title);
-    const catLabel = cat.replace('-', ' ').toUpperCase();
-    await self.registration.showNotification(`[${catLabel}] FJFeed`, {
+    const catLabel = cat.replace(/-/g, ' ').toUpperCase();
+    await self.registration.showNotification(`[${catLabel}] Daun Merah`, {
       body: item.title,
       icon: './icon.svg',
       badge: './icon.svg',
       tag: item.guid,
-      data: { url: item.link },
+      data: { url: item.link || '/' },
       vibrate: [100, 50, 100],
       requireInteraction: false,
       silent: false
     });
   }
 
-  // If more than 5 new at once, batch notify
-  if (newItems.length > 5) {
-    await self.registration.showNotification(`FJFeed — ${newItems.length} berita baru`, {
-      body: newItems.slice(0, 3).map(i => i.title).join('\n'),
+  if (newItems.length > 3) {
+    await self.registration.showNotification(`Daun Merah — ${newItems.length} berita baru`, {
+      body: newItems.slice(0, 2).map(i => i.title).join('\n'),
+      icon: './icon.svg',
       tag: 'batch-' + Date.now(),
       vibrate: [100, 50, 100]
     });
@@ -120,13 +166,13 @@ async function checkForNewItems() {
 self.addEventListener('push', e => {
   if (!e.data) return;
   let data = {};
-  try { data = e.data.json(); } catch(err) { data = { title: 'FJFeed', body: e.data.text() }; }
+  try { data = e.data.json(); } catch(err) { data = { title: 'Daun Merah', body: e.data.text() }; }
   e.waitUntil(
-    self.registration.showNotification(data.title || 'FJFeed', {
+    self.registration.showNotification(data.title || 'Daun Merah', {
       body: data.body || '',
       icon: '/icon.svg',
       badge: '/icon.svg',
-      tag: 'fjfeed-push-' + Date.now(),
+      tag: 'push-' + Date.now(),
       data: { url: data.url || '/' },
       vibrate: [100, 50, 100],
       requireInteraction: false,

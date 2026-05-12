@@ -1879,28 +1879,32 @@ async function requestNotif() {
   if (perm !== 'granted') { showToast('Ditolak', 'Izinkan notifikasi di pengaturan browser'); return; }
   notifEnabled = true;
   document.getElementById('notifBtn').classList.add('enabled');
+  localStorage.removeItem('pushSubscribed');
   if ('serviceWorker' in navigator && 'PushManager' in window) {
     try {
       const reg = await navigator.serviceWorker.ready;
+      // Paksa daftar ulang agar subscription segar
       let sub = await reg.pushManager.getSubscription();
-      if (!sub) {
-        sub = await reg.pushManager.subscribe({
-          userVisibleOnly: true,
-          applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
-        });
-      }
+      if (sub) await sub.unsubscribe();
+      sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+      });
       const res = await fetch('/api/subscribe', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ subscription: sub.toJSON() }),
       });
       if (res.ok) {
-        showToast('Notifikasi Aktif ✓', 'Push notif aktif — bekerja bahkan saat HP mati layar', 4000);
+        showToast('Push Notif Aktif ✓', 'Notif akan datang meski app ditutup & layar mati.', 4000);
         localStorage.setItem('pushSubscribed', '1');
-      } else throw new Error('Subscribe failed: ' + res.status);
+      } else {
+        throw new Error('Server tolak subscription: HTTP ' + res.status);
+      }
     } catch(e) {
       console.warn('Web Push failed:', e.message);
-      showToast('Notifikasi Aktif ✓', 'Notif aktif saat tab terbuka.', 4000);
+      localStorage.removeItem('pushSubscribed');
+      showToast('Notifikasi Terbatas ⚠', 'Notif hanya aktif saat app terbuka. Push background gagal: ' + e.message, 7000);
     }
   }
   sendToSW({ type: 'INIT_GUIDS', guids: [...seenGuids] });
@@ -2068,7 +2072,7 @@ function startAutoRefresh() {
   clearInterval(autoInterval); clearInterval(cdInterval);
   autoInterval = setInterval(() => { fetchFeed(); cdVal=60; }, 60000);
   cdInterval   = setInterval(() => { cdVal--; cd.textContent=cdVal+'s'; if(cdVal<=0)cdVal=60; }, 1000);
-  sendToSW({ type:'CHECK_NOW' });
+  sendToSW({ type:'CHECK_NOW', guids: [...seenGuids] });
 }
 
 function stopAutoRefresh() {

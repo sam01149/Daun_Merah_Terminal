@@ -10,8 +10,13 @@
 //   /api/health → /api/admin?action=health
 //   /api/push   → /api/admin?action=push
 
+const crypto   = require('crypto');
 const webpush  = require('web-push');
 const PUSH_KW  = require('./_push_keywords');
+
+function subKey(endpoint) {
+  return crypto.createHash('sha256').update(endpoint).digest('hex');
+}
 
 module.exports = async function handler(req, res) {
   const action = req.query.action;
@@ -500,10 +505,15 @@ async function pushHandler(req, res) {
 
   await sendPushTelegram(newItems, TG_TOKEN, TG_CHAT_ID);
 
+  // Baca semua subscription — raw HGETALL = [key, value, key, value, ...]
   let subs = [];
   try {
     const raw = await redisCmd('HGETALL', 'push_subs');
-    if (raw && Array.isArray(raw)) { for (let i = 1; i < raw.length; i += 2) { try { subs.push(JSON.parse(raw[i])); } catch(e) {} } }
+    if (raw && Array.isArray(raw)) {
+      for (let i = 0; i < raw.length; i += 2) {
+        try { subs.push(JSON.parse(raw[i + 1])); } catch(e) {}
+      }
+    }
   } catch(e) {}
 
   if (subs.length > 0) {
@@ -513,12 +523,13 @@ async function pushHandler(req, res) {
       title: newItems.length === 1 ? `${EMOJI[cat] || '📰'} Daun Merah` : `📰 Daun Merah — ${newItems.length} berita baru`,
       body:  newItems.length === 1 ? newItems[0].title : newItems.slice(0, 2).map(i => `• ${i.title}`).join('\n'),
       url:   newItems[0]?.link || '/',
-      icon:  '/icon-192.png',
+      icon:  '/icon.svg',
     });
     const staleKeys = [];
     await Promise.allSettled(subs.map(async sub => {
       try { await webpush.sendNotification(sub, payload); }
-      catch(e) { if (e.statusCode === 410 || e.statusCode === 404) staleKeys.push(Buffer.from(sub.endpoint).toString('base64').slice(0, 80)); }
+      // Gunakan subKey() agar cocok dengan format yang disimpan subscribe.js
+      catch(e) { if (e.statusCode === 410 || e.statusCode === 404) staleKeys.push(subKey(sub.endpoint)); }
     }));
     if (staleKeys.length > 0) await redisCmd('HDEL', 'push_subs', ...staleKeys);
   }
