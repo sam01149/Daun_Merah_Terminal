@@ -1201,33 +1201,6 @@ body {
   border-bottom: 1px solid var(--border); flex-direction: column; gap: 8px;
 }
 .tek-mtf-section { padding: 14px 14px 10px; }
-.tek-mtf-title {
-  font: 700 10px 'Syne',sans-serif; color: var(--muted); letter-spacing: .1em;
-  text-transform: uppercase; margin-bottom: 10px; display: flex; align-items: center; gap: 6px;
-}
-.tek-mtf-title span { color: #38bdf8; font-size: 11px; }
-.tek-mtf-table { width: 100%; border-collapse: collapse; }
-.tek-mtf-table thead th {
-  font: 10px 'DM Mono',monospace; color: var(--muted); padding: 5px 6px;
-  text-align: center; border-bottom: 1px solid var(--border); letter-spacing: .06em; text-transform: uppercase;
-}
-.tek-mtf-table thead th:first-child { text-align: left; width: 42px; }
-.tek-mtf-table tbody tr { border-bottom: 1px solid rgba(34,34,32,.6); }
-.tek-mtf-tf { font: 700 12px 'DM Mono',monospace; color: var(--text-mid); padding: 10px 6px; width: 42px; }
-.tek-bias-btn {
-  padding: 8px 0; border-radius: 5px; border: 1px solid transparent;
-  background: rgba(255,255,255,.04); color: var(--muted);
-  font: 11px 'DM Mono',monospace; cursor: pointer; transition: all .12s; width: 100%;
-}
-.tek-bias-btn:hover { border-color: var(--border); color: var(--text-mid); }
-.tek-bias-btn.active-bull { background: rgba(39,174,96,.15); color: #4caf50; border-color: #27ae60; font-weight: 700; }
-.tek-bias-btn.active-bear { background: rgba(192,57,43,.15); color: #e74c3c; border-color: #c0392b; font-weight: 700; }
-.tek-bias-btn.active-neut { background: rgba(127,140,141,.15); color: #95a5a6; border-color: #7f8c8d; font-weight: 700; }
-.tek-align-row {
-  margin: 10px 0 8px; padding: 8px 12px; background: var(--surface);
-  border-radius: 6px; border: 1px solid var(--border);
-  font: 11px 'DM Mono',monospace; color: var(--muted);
-}
 .tek-note-wrap { padding: 4px 0 8px; }
 .tek-note-label { font: 9px 'DM Mono',monospace; color: var(--muted); margin-bottom: 5px; letter-spacing: .08em; text-transform: uppercase; }
 .tek-note-wrap textarea {
@@ -1794,19 +1767,6 @@ body {
     <div id="tekChartContainer"></div>
   </div>
   <div class="tek-mtf-section">
-    <div class="tek-mtf-title">MTF BIAS — <span id="tekMtfPairLabel">EURUSD</span></div>
-    <table class="tek-mtf-table">
-      <thead>
-        <tr>
-          <th></th>
-          <th>BULL</th>
-          <th>BEAR</th>
-          <th>NEUT</th>
-        </tr>
-      </thead>
-      <tbody id="tekMtfBody"></tbody>
-    </table>
-    <div class="tek-align-row" id="tekAlignRow" style="display:none"></div>
     <div class="tek-note-wrap">
       <div class="tek-note-label">Catatan analisa</div>
       <textarea id="tekNote" placeholder="Key levels, setup yang dipantau, atau catatan sesi..." oninput="saveTekNote()"></textarea>
@@ -4740,8 +4700,6 @@ function renderTekNews() {
   sec.innerHTML = html;
 }
 
-const TEK_TFS = ['D','240','60','15'];
-const TEK_TF_MAP = { 'D':'D1', '240':'H4', '60':'H1', '15':'M15' };
 const TEK_TV_SYM = {
   EURUSD:'FX:EURUSD', GBPUSD:'FX:GBPUSD', USDJPY:'FX:USDJPY',
   AUDUSD:'FX:AUDUSD', NZDUSD:'FX:NZDUSD', USDCAD:'FX:USDCAD',
@@ -4750,66 +4708,22 @@ const TEK_TV_SYM = {
 
 let tekPair = 'EURUSD';
 let tekTF = '240';
-let tekBias = {};
 let tekNotes = {};
 let tvScriptLoaded = false;
 let tekInited = false;
 
-function loadTekStorage() {
+function loadTekNotes() {
   try {
-    const b = localStorage.getItem('tek_bias_v2');
-    if (b) tekBias = JSON.parse(b);
     const n = localStorage.getItem('tek_notes');
     if (n) tekNotes = JSON.parse(n);
   } catch(e) {}
 }
 
-function saveTekBias() {
-  localStorage.setItem('tek_bias_v2', JSON.stringify(tekBias));
-}
-
 function saveTekNote() {
   const v = document.getElementById('tekNote');
   if (!v) return;
-  if (!tekNotes) tekNotes = {};
   tekNotes[tekPair] = v.value;
   localStorage.setItem('tek_notes', JSON.stringify(tekNotes));
-}
-
-function setTekBias(tf, bias) {
-  if (!tekBias[tekPair]) tekBias[tekPair] = {};
-  tekBias[tekPair][tf] = (tekBias[tekPair][tf] === bias) ? null : bias;
-  saveTekBias();
-  renderTekMtfTable();
-}
-
-function renderTekMtfTable() {
-  const tbody = document.getElementById('tekMtfBody');
-  if (!tbody) return;
-  const pairData = tekBias[tekPair] || {};
-  let bullCt = 0, bearCt = 0, neutCt = 0, filledCt = 0;
-
-  tbody.innerHTML = TEK_TFS.map(tf => {
-    const active = pairData[tf] || null;
-    if (active === 'bull') { bullCt++; filledCt++; }
-    else if (active === 'bear') { bearCt++; filledCt++; }
-    else if (active === 'neut') { neutCt++; filledCt++; }
-    return '<tr>'
-      + '<td class="tek-mtf-tf">' + TEK_TF_MAP[tf] + '</td>'
-      + '<td style="padding:3px 3px"><button class="tek-bias-btn ' + (active==='bull'?'active-bull':'') + '" onclick="setTekBias(\'' + tf + '\',\'bull\')">▲ Bull</button></td>'
-      + '<td style="padding:3px 3px"><button class="tek-bias-btn ' + (active==='bear'?'active-bear':'') + '" onclick="setTekBias(\'' + tf + '\',\'bear\')">▼ Bear</button></td>'
-      + '<td style="padding:3px 3px"><button class="tek-bias-btn ' + (active==='neut'?'active-neut':'') + '" onclick="setTekBias(\'' + tf + '\',\'neut\')">→ Neut</button></td>'
-      + '</tr>';
-  }).join('');
-
-  const alignRow = document.getElementById('tekAlignRow');
-  if (!alignRow) return;
-  if (filledCt === 0) { alignRow.style.display = 'none'; return; }
-  alignRow.style.display = 'block';
-  const dom = bullCt > bearCt ? 'BULLISH' : bearCt > bullCt ? 'BEARISH' : 'MIXED';
-  const col = dom === 'BULLISH' ? '#4caf50' : dom === 'BEARISH' ? '#e74c3c' : '#e67e22';
-  alignRow.innerHTML = 'Alignment: <span style="color:' + col + ';font-weight:700">' + dom + '</span>'
-    + ' &nbsp;▲' + bullCt + ' ▼' + bearCt + ' →' + neutCt;
 }
 
 function loadTVScript(cb) {
@@ -4867,11 +4781,8 @@ function createTVChart() {
 
 function onTekPairChange() {
   tekPair = document.getElementById('tekPairSelect').value;
-  const lbl = document.getElementById('tekMtfPairLabel');
-  if (lbl) lbl.textContent = tekPair;
   const note = document.getElementById('tekNote');
   if (note) note.value = tekNotes[tekPair] || '';
-  renderTekMtfTable();
   renderTekNews();
   createTVChart();
 }
@@ -4882,16 +4793,13 @@ function onTekTFChange() {
 }
 
 function initTeknikal() {
-  if (!tekInited) { loadTekStorage(); tekInited = true; }
+  if (!tekInited) { loadTekNotes(); tekInited = true; }
   const sel = document.getElementById('tekPairSelect');
   if (sel) sel.value = tekPair;
   const tf = document.getElementById('tekTFSelect');
   if (tf) tf.value = tekTF;
-  const lbl = document.getElementById('tekMtfPairLabel');
-  if (lbl) lbl.textContent = tekPair;
   const note = document.getElementById('tekNote');
   if (note) note.value = tekNotes[tekPair] || '';
-  renderTekMtfTable();
   renderTekNews();
   createTVChart();
 }
