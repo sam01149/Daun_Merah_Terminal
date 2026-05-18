@@ -11,12 +11,11 @@ const FF_NEXT_WEEK = 'https://nfs.faireconomy.media/ff_calendar_nextweek.xml';
 
 // AI providers
 const CEREBRAS_URL    = 'https://api.cerebras.ai/v1/chat/completions';
-const CEREBRAS_MODEL  = 'qwen-3-32b';                     // Call 1: briefing prose (Qwen3-32B — stronger Indonesian IF)
+const CEREBRAS_MODEL  = 'qwen-3-235b-a22b-instruct-2507'; // Call 1: briefing prose (Qwen3-235B — strongest available on Cerebras free tier)
 const SAMBANOVA_URL   = 'https://api.sambanova.ai/v1/chat/completions';
 const SAMBANOVA_MODEL = 'DeepSeek-V3-0324';               // Call 2 & 3: structured JSON
 const GROQ_URL        = 'https://api.groq.com/openai/v1/chat/completions';
 const GROQ_MODEL      = 'llama-3.3-70b-versatile';        // Call 4 + fallback all calls
-const GROQ_MODEL_BRIEF = 'qwen/qwen3-32b';                // Call 1 fallback (Qwen3-32B on Groq)
 
 const MAJOR_CURRENCIES = new Set(['USD','EUR','GBP','JPY','CAD','AUD','NZD','CHF']);
 const GOLD_KEYWORDS = [
@@ -286,27 +285,15 @@ ${xauHistoryBlock}`;
       console.log('Call 1: Cerebras circuit OPEN — skipping to Groq');
     }
 
-    // Fallback 1: Groq Qwen3-32B
-    if (!article && GROQ_KEY) {
-      try {
-        console.log('Call 1: falling back to Groq Qwen3-32B');
-        const raw = await aiCall(GROQ_URL, GROQ_KEY, GROQ_MODEL_BRIEF, call1Messages, 2000, 0.25, 25000);
-        if (raw.trim()) { article = raw.trim(); method = 'groq'; }
-        console.log('Call 1: Groq Qwen3 OK, length', article?.length);
-      } catch(e) {
-        console.warn('Call 1 Groq Qwen3 failed:', e.status || e.message);
-      }
-    }
-
-    // Fallback 2: Groq llama-3.3-70b (proven reliable, last resort before template)
+    // Fallback: Groq llama-3.3-70b (proven reliable, last resort before template)
     if (!article && GROQ_KEY) {
       try {
         console.log('Call 1: falling back to Groq llama-3.3-70b');
         const raw = await aiCall(GROQ_URL, GROQ_KEY, GROQ_MODEL, call1Messages, 2000, 0.25, 25000);
         if (raw.trim()) { article = raw.trim(); method = 'groq'; }
-        console.log('Call 1: Groq llama fallback OK, length', article?.length);
+        console.log('Call 1: Groq fallback OK, length', article?.length);
       } catch(e) {
-        console.warn('Call 1 Groq llama fallback failed:', e.status || e.message);
+        console.warn('Call 1 Groq fallback failed:', e.status || e.message);
         method = e.status === 429 ? 'fallback_quota' : 'fallback';
       }
     }
