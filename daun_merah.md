@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-05-18 (session 16)
+> **Last updated:** 2026-05-18 (session 17)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Downloads\Financial_Feed_App`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -104,15 +104,18 @@ Main AI endpoint. Multi-provider: Cerebras (Call 1), SambaNova (Call 2–3), Gro
 1. Load `prompt_digest` dari Redis (fallback ke hardcoded `DIGEST_INSTR_DEFAULT`)
 2. Fetch RSS via internal `/api/feeds?type=rss`
 3. Fetch ForexFactory kalender (this week + next week)
-4. Load `digest_history` dari Redis
-5. **Cerebras Call 1:** Market briefing (Bahasa Indonesia, termasuk paragraf XAUUSD scalping)
-6. Save ke `digest_history` (Redis, LPUSH/LTRIM max 7)
-7. **SambaNova Call 2:** CB Bias Assessment — JSON per currency
-8. Merge + save ke Redis `cb_bias`
-9. **SambaNova Call 3:** Structured thesis JSON
-10. **Groq Call 4:** Thesis Invalidation Monitor — scan open journal entries vs headlines, push notif jika ada kontradiksi
-11. **`autoUpdateFundamentals`** — parse 100 headline terbaru → HSET `fundamental:{currency}`, deteksi CB rate decision → `cb_decisions`
-12. Return: `{article, method, news_count, cal_count, bias_updated, generated_at, thesis}`
+4. Load `digest_history` + `real_yields` + **`xau_spot`** dari Redis paralel
+5. **`fetchXauSpot()`** — Yahoo Finance `GC=F` → fallback Binance PAXGUSDT. Cache Redis `xau_spot` TTL 5 menit. Inject ke prompt sebagai jangkar harga `$xxx.xx (+y%)`.
+6. **Cerebras Call 1:** Market briefing (Bahasa Indonesia). XAUUSD paragraf menggunakan pendekatan **benang merah**: buka dengan harga live, rajut headline + real yield + geopolitik secara natural tanpa rantai kausal kaku.
+7. Save ke `digest_history` (Redis, LPUSH/LTRIM max 7)
+8. **SambaNova Call 2:** CB Bias Assessment — JSON per currency
+9. Merge + save ke Redis `cb_bias`
+10. **SambaNova Call 3:** Structured thesis JSON
+11. **Groq Call 4:** Thesis Invalidation Monitor — scan open journal entries vs headlines, push notif jika ada kontradiksi
+12. **`autoUpdateFundamentals`** — parse 100 headline terbaru → HSET `fundamental:{currency}`, deteksi CB rate decision → `cb_decisions`
+13. Return: `{article, method, news_count, cal_count, bias_updated, generated_at, thesis}`
+
+**Redis keys baru:** `xau_spot` (TTL 300s) — harga XAU/USD live dari Yahoo GC=F atau Binance PAXG.
 
 Rate limited: 4 req/min per IP.
 

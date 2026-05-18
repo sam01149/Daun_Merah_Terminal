@@ -51,6 +51,61 @@ const GOLD_KEYWORDS = [
   'comex','silver price','silver rally','silver drop',
 ];
 
+// ── XAU/USD spot price fetch (Yahoo GC=F → Binance PAXG fallback) ─────────────
+async function fetchXauSpot() {
+  try {
+    const cached = await redisCmd('GET', 'xau_spot');
+    if (cached) {
+      const d = JSON.parse(cached);
+      if (Date.now() - new Date(d.fetched_at).getTime() < 5 * 60 * 1000) return d;
+    }
+  } catch(e) {}
+
+  // Primary: Yahoo Finance GC=F (COMEX gold front-month futures)
+  try {
+    const r = await fetch('https://query1.finance.yahoo.com/v8/finance/chart/GC=F?range=1d&interval=5m', {
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+      signal: AbortSignal.timeout(8000),
+    });
+    if (r.ok) {
+      const json = await r.json();
+      const meta  = json?.chart?.result?.[0]?.meta;
+      const price = meta?.regularMarketPrice;
+      const prev  = meta?.previousClose || meta?.chartPreviousClose;
+      if (price && price > 0) {
+        const changePct = prev ? +((price - prev) / prev * 100).toFixed(2) : null;
+        const wib = new Date(Date.now() + 7 * 3600000);
+        const asOf = `${String(wib.getUTCHours()).padStart(2,'0')}:${String(wib.getUTCMinutes()).padStart(2,'0')} WIB`;
+        const result = { price, prev_close: prev || null, change_pct: changePct, source: 'Yahoo GC=F', fetched_at: new Date().toISOString(), as_of: asOf };
+        await redisCmd('SET', 'xau_spot', JSON.stringify(result), 'EX', 300);
+        return result;
+      }
+    }
+  } catch(e) { console.warn('fetchXauSpot Yahoo failed:', e.message); }
+
+  // Fallback: Binance PAXGUSDT (24/7, no auth, tracks spot 1:1)
+  try {
+    const r = await fetch('https://api.binance.com/api/v3/ticker/24hr?symbol=PAXGUSDT', {
+      signal: AbortSignal.timeout(6000),
+    });
+    if (r.ok) {
+      const d = await r.json();
+      const price     = parseFloat(d.lastPrice);
+      const changePct = parseFloat(d.priceChangePercent);
+      const prev      = parseFloat(d.openPrice);
+      if (price > 0) {
+        const wib = new Date(Date.now() + 7 * 3600000);
+        const asOf = `${String(wib.getUTCHours()).padStart(2,'0')}:${String(wib.getUTCMinutes()).padStart(2,'0')} WIB`;
+        const result = { price, prev_close: prev || null, change_pct: +changePct.toFixed(2), source: 'Binance PAXG', fetched_at: new Date().toISOString(), as_of: asOf };
+        await redisCmd('SET', 'xau_spot', JSON.stringify(result), 'EX', 300);
+        return result;
+      }
+    }
+  } catch(e) { console.warn('fetchXauSpot Binance failed:', e.message); }
+
+  return null;
+}
+
 // Shared low-level fetch for any OpenAI-compatible provider
 async function aiCall(url, apiKey, model, messages, maxTokens, temperature, timeoutMs) {
   const res = await fetch(url, {
@@ -183,17 +238,20 @@ module.exports = async function handler(req, res) {
       : '\n[KONTEKS HISTORIS 12-36 JAM LALU] (tidak ada)',
   ].join('');
 
-  // 3b. Load digest history + xau history + real yields in parallel
-  let digestHistory = [], xauHistory = [], realYieldsData = null;
+  // 3b. Load digest history + xau history + real yields + XAU spot in parallel
+  let digestHistory = [], xauHistory = [], realYieldsData = null, xauSpot = null;
   try {
-    const [rawHist, rawXauHist, rawRY] = await Promise.all([
+    const [rawHist, rawXauHist, rawRY, spotResult] = await Promise.all([
       redisCmd('LRANGE', 'digest_history', 0, 6),
       redisCmd('LRANGE', 'xau_history', 0, 3),
       redisCmd('GET', 'real_yields'),
+      fetchXauSpot(),
     ]);
     if (Array.isArray(rawHist)) digestHistory = rawHist.map(e => { try { return JSON.parse(e); } catch(_) { return null; } }).filter(Boolean);
     if (Array.isArray(rawXauHist)) xauHistory = rawXauHist.map(e => { try { return JSON.parse(e); } catch(_) { return null; } }).filter(Boolean);
     if (rawRY) realYieldsData = JSON.parse(rawRY);
+    xauSpot = spotResult;
+    console.log('XAU spot:', xauSpot ? `$${xauSpot.price} (${xauSpot.source})` : 'unavailable');
   } catch(e) {}
   const historyBlock = digestHistory.length > 0
     ? digestHistory.map(h => `[${h.wib}] ${h.summary}`).join('\n')
@@ -208,6 +266,14 @@ module.exports = async function handler(req, res) {
     const ry = realYieldsData.currencies.USD;
     const trendNote = ry.real > 2.0 ? 'ELEVATED — tekanan struktural bearish pada XAU' : ry.real > 1.0 ? 'moderat' : 'rendah/negatif — relatif supportif XAU';
     realYieldBlock = `USD 10Y Nominal: ${ry.nominal}% | TIPS Breakeven: ${ry.inflation_exp}% | Real Yield: ${ry.real}% (${trendNote}) | per ${ry.as_of}`;
+  }
+
+  // Build XAU spot block
+  let xauSpotBlock = '(Data harga XAU tidak tersedia sesi ini — gunakan tekanan fundamental saja)';
+  if (xauSpot) {
+    const sign  = xauSpot.change_pct > 0 ? '+' : '';
+    const pctStr = xauSpot.change_pct !== null ? ` (${sign}${xauSpot.change_pct}% dari sesi sebelumnya)` : '';
+    xauSpotBlock = `${xauSpot.source}: $${xauSpot.price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${pctStr} | per ${xauSpot.as_of}`;
   }
 
   // 3c. Load externalized prompts from Redis — fall back to hardcoded if missing
@@ -245,22 +311,27 @@ Penutup FX: Satu kalimat menyebut currency paling terkonfirmasi kuat dan paling 
 
 ATURAN XAUUSD (paragraf baru, mulai tepat "XAUUSD:"):
 Trader gold baca ini standalone — harus self-contained.
-Kamu tidak punya data harga live. Semua arah = tekanan fundamental, bukan prediksi harga.
 Gunakan HANYA headline dari blok HEADLINE RELEVAN XAUUSD di bawah.
-< 3 headline substantif → buka "Sinyal gold tipis" dan persingkat.
+< 3 headline substantif → buka "Sinyal gold tipis" dan persingkat ke 2-3 kalimat saja.
 ANTI-HALLUCINATION: Jangan gabungkan dua headline berbeda menjadi satu klaim baru yang tidak ada di headline aslinya. Jika headline A menyebut X dan headline B menyebut Y, jangan tulis "X berkoordinasi dengan Y" kecuali kalimat itu memang ada di salah satu headline.
-Channel dominan: (a) USD/real yields, (b) safe haven/geopolitik, atau (c) risk sentiment ekuitas — wajib sebut teks headline konkret sebagai bukti, bukan sintesis.
-Dua channel berlawanan → sebut keduanya, putuskan mana lebih berat, jelaskan dalam satu kalimat.
-Data real yield live: Jika blok DATA REAL YIELD USD tersedia, gunakan angka tersebut sebagai anchor. Jika real yield > 2%, klaim "safe haven dominant" harus disertai bukti nyata flight-to-safety yang cukup besar untuk offset tekanan struktural dari yield — jangan asumsikan safe haven otomatis menang.
-Geopolitik melibatkan energi/minyak (Iran, Hormuz, OPEC, sanksi minyak, embargo): WAJIB trace dua rantai kausal sebelum menyimpulkan — (1) oil naik → ekspektasi inflasi naik → Fed lebih hawkish → real yield naik → tekanan bearish XAU; (2) risk aversion → flight to safety → tekanan bullish XAU. Bandingkan magnitude keduanya secara eksplisit. Jika kedua channel berkonflik, sebut ini konflik, nyatakan mana yang lebih berat dan kenapa, bukan langsung pilih satu.
-Trigger terdekat 24 jam: Pilih event dari kalender dengan PRIORITAS TERTINGGI yang tersedia: (1) FOMC/Fed — Minutes, pidato Powell, rate decision; (2) US data — CPI, NFP, GDP; (3) event major currency lain. Gunakan event prioritas tertinggi meski waktunya lebih jauh dari event prioritas rendah. Format wajib: "[EVENT] [TIME WIB] — jika [outcome]: tekanan [bullish/bearish] XAU karena [mekanisme]; jika [outcome berlawanan]: tekanan [bullish/bearish] XAU karena [mekanisme]." Harus ada DUA skenario. Jika tidak ada event kalender relevan untuk XAU dalam 24 jam, tulis "Tidak ada trigger kalender untuk XAU dalam 24 jam ke depan."
-Driver sama dengan sesi sebelumnya → nyatakan eksplisit, itu informasi valid.
+
+PENDEKATAN BENANG MERAH — ikuti urutan ini:
+1. JANGKAR HARGA: Jika blok HARGA XAU/USD LIVE tersedia, buka dengan harga dan pergerakan hari ini (naik/turun berapa persen). Ini titik awal narasi — semua fakta berikutnya menjelaskan MENGAPA harga ada di sini.
+2. RAJUT FAKTA: Hubungkan harga → headline → real yield → geopolitik secara natural, seperti analis yang bercerita. Tidak perlu rantai kausal formal. Cukup: "kenaikan ini didukung oleh X, meski dibatasi oleh Y." Fakta yang saling memperkuat → gabungkan. Fakta yang berlawanan → sebut keduanya, putuskan mana lebih berat dalam satu kalimat.
+3. REAL YIELD sebagai pembatas: Jika real yield > 2%, emas mahal secara struktural — wajib disebut sebagai rem, bukan diabaikan. Tapi jika harga tetap naik meski yield tinggi, artinya tekanan bullish cukup kuat untuk offset — nyatakan ini secara eksplisit.
+4. TIDAK ADA RANTAI KAUSAL WAJIB: Untuk geopolitik minyak (Iran, Hormuz, OPEC) — tidak perlu trace oil→inflasi→Fed→yield secara kaku. Cukup: apakah ada bukti di headline bahwa ini mempengaruhi XAU? Jika ya, sebut. Jika tidak, skip.
+5. Driver sama dengan sesi sebelumnya → nyatakan eksplisit, itu informasi valid.
+
+TRIGGER TERDEKAT 24 JAM: Pilih event dari kalender dengan PRIORITAS TERTINGGI: (1) FOMC/Fed — Minutes, pidato Powell, rate decision; (2) US data — CPI, NFP, GDP; (3) event major currency lain. Format wajib: "[EVENT] [TIME WIB] — jika [outcome]: tekanan [bullish/bearish] XAU karena [mekanisme]; jika [outcome berlawanan]: tekanan [bullish/bearish] XAU karena [mekanisme]." Harus ada DUA skenario. Jika tidak ada event kalender relevan untuk XAU dalam 24 jam, tulis "Tidak ada trigger kalender untuk XAU dalam 24 jam ke depan."
 
 REMINDER FINAL: SEBELUM MERESPONS, pastikan tidak ada kata "dapat mempengaruhi", "berpotensi", "mungkin", atau "dalam beberapa jam ke depan". Jika ada, ubah menjadi kalimat pernyataan tegas.`;
 
     const digestSystemMsg = promptDigestInstr || DIGEST_SYSTEM_DEFAULT;
     const digestUserMsg = `/no_think
 WAKTU: ${dayStr}, ${dateStr}, ${timeStr}${weekendNote}
+
+=== HARGA XAU/USD LIVE (jangkar harga — gunakan sebagai titik awal narasi) ===
+${xauSpotBlock}
 
 === DATA REAL YIELD USD (LIVE — gunakan ini, jangan inferensi dari headline) ===
 ${realYieldBlock}
