@@ -10,12 +10,13 @@ const FF_THIS_WEEK = 'https://nfs.faireconomy.media/ff_calendar_thisweek.xml';
 const FF_NEXT_WEEK = 'https://nfs.faireconomy.media/ff_calendar_nextweek.xml';
 
 // AI providers
-const CEREBRAS_URL   = 'https://api.cerebras.ai/v1/chat/completions';
-const CEREBRAS_MODEL = 'llama-4-scout-17b-16e-instruct';  // Call 1: briefing prose
-const SAMBANOVA_URL  = 'https://api.sambanova.ai/v1/chat/completions';
+const CEREBRAS_URL    = 'https://api.cerebras.ai/v1/chat/completions';
+const CEREBRAS_MODEL  = 'qwen-3-32b';                     // Call 1: briefing prose (Qwen3-32B — stronger Indonesian IF)
+const SAMBANOVA_URL   = 'https://api.sambanova.ai/v1/chat/completions';
 const SAMBANOVA_MODEL = 'DeepSeek-V3-0324';               // Call 2 & 3: structured JSON
-const GROQ_URL       = 'https://api.groq.com/openai/v1/chat/completions';
-const GROQ_MODEL     = 'llama-3.3-70b-versatile';         // Call 4 + fallback all calls
+const GROQ_URL        = 'https://api.groq.com/openai/v1/chat/completions';
+const GROQ_MODEL      = 'llama-3.3-70b-versatile';        // Call 4 + fallback all calls
+const GROQ_MODEL_BRIEF = 'qwen/qwen3-32b';                // Call 1 fallback (Qwen3-32B on Groq)
 
 const MAJOR_CURRENCIES = new Set(['USD','EUR','GBP','JPY','CAD','AUD','NZD','CHF']);
 const GOLD_KEYWORDS = [
@@ -211,7 +212,8 @@ module.exports = async function handler(req, res) {
   // ── 4. Call 1: Market Briefing — Cerebras → Groq fallback ────────────────────
   let article = null, method = 'fallback';
   if (recentItems.length > 0) {
-    const DIGEST_SYSTEM_DEFAULT = `Kamu analis macro FX senior. Tulis briefing pre-session Bahasa Indonesia untuk trader Indonesia yang sudah fasih: DXY, real yield, carry, risk-on/off, basis point — jangan jelaskan istilah ini.
+    const DIGEST_SYSTEM_DEFAULT = `/no_think
+Kamu analis macro FX senior. Tulis briefing pre-session Bahasa Indonesia untuk trader Indonesia yang sudah fasih: DXY, real yield, carry, risk-on/off, basis point — jangan jelaskan istilah ini.
 
 FORMAT OUTPUT:
 - Prosa mengalir. Tanpa bullet, heading, bold, emoji.
@@ -231,7 +233,7 @@ Konflik: Dua signal berlawanan dalam satu tema? Sebut keduanya, putuskan mana le
 Kalender: Hanya event dengan asymmetri beat/miss jelas. Wajib: waktu WIB, skenario beat, skenario miss, pair paling sensitif. Event tanpa edge antisipatif → skip.
 Pejabat CB: Hanya analisa jika menyentuh rate path, balance sheet, atau inflation framework. Non-policy → sebut sekali "tidak ada sinyal kebijakan dari [nama]" lalu lanjut.
 Continuity: Apa yang BERUBAH vs TETAP dari sesi sebelumnya. Tidak ada perubahan material? Nyatakan — itu informasi valid.
-Penutup FX: Satu kalimat menyebut currency paling terkonfirmasi kuat dan paling terkonfirmasi lemah — dengan alasan spesifik dari headline, bukan "pasar volatile".
+Penutup FX: Satu kalimat menyebut currency paling terkonfirmasi kuat dan paling terkonfirmasi lemah (HANYA pilih dari 8 majors: USD, EUR, GBP, JPY, CAD, AUD, NZD, CHF) — dengan alasan spesifik dari headline, bukan "pasar volatile".
 
 ATURAN XAUUSD (paragraf baru, mulai tepat "XAUUSD:"):
 Trader gold baca ini standalone — harus self-contained.
@@ -240,8 +242,10 @@ Gunakan HANYA headline dari blok HEADLINE RELEVAN XAUUSD di bawah.
 < 3 headline substantif → buka "Sinyal gold tipis" dan persingkat.
 Channel dominan: (a) USD/real yields, (b) safe haven/geopolitik, atau (c) risk sentiment ekuitas — wajib sebut bukti headline konkret.
 Dua channel berlawanan → sebut keduanya, putuskan mana lebih berat, jelaskan dalam satu kalimat.
-Trigger terdekat 24 jam: waktu WIB, nama event, skenario spesifik — bukan sekadar nama event.
-Driver sama dengan sesi sebelumnya → nyatakan eksplisit, itu informasi valid.`;
+Trigger terdekat 24 jam: WAJIB sebut waktu WIB, nama event, dan skenario spesifik. Jika data tidak spesifik, tulis "Tidak ada trigger spesifik 24 jam ke depan".
+Driver sama dengan sesi sebelumnya → nyatakan eksplisit, itu informasi valid.
+
+REMINDER FINAL: SEBELUM MERESPONS, pastikan tidak ada kata "dapat mempengaruhi", "berpotensi", "mungkin", atau "dalam beberapa jam ke depan". Jika ada, ubah menjadi kalimat pernyataan tegas.`;
 
     const digestSystemMsg = promptDigestInstr || DIGEST_SYSTEM_DEFAULT;
     const digestUserMsg = `WAKTU: ${dayStr}, ${dateStr}, ${timeStr}${weekendNote}
@@ -282,11 +286,11 @@ ${xauHistoryBlock}`;
       console.log('Call 1: Cerebras circuit OPEN — skipping to Groq');
     }
 
-    // Fallback: Groq (no circuit breaker — last resort, always attempt)
+    // Fallback: Groq Qwen3-32B (no circuit breaker — last resort, always attempt)
     if (!article && GROQ_KEY) {
       try {
-        console.log('Call 1: falling back to Groq');
-        const raw = await aiCall(GROQ_URL, GROQ_KEY, GROQ_MODEL, call1Messages, 2000, 0.25, 25000);
+        console.log('Call 1: falling back to Groq Qwen3-32B');
+        const raw = await aiCall(GROQ_URL, GROQ_KEY, GROQ_MODEL_BRIEF, call1Messages, 2000, 0.25, 25000);
         if (raw.trim()) { article = raw.trim(); method = 'groq'; }
         console.log('Call 1: Groq fallback OK, length', article?.length);
       } catch(e) {
