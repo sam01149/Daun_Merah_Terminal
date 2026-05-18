@@ -183,15 +183,17 @@ module.exports = async function handler(req, res) {
       : '\n[KONTEKS HISTORIS 12-36 JAM LALU] (tidak ada)',
   ].join('');
 
-  // 3b. Load digest history + xau history in parallel
-  let digestHistory = [], xauHistory = [];
+  // 3b. Load digest history + xau history + real yields in parallel
+  let digestHistory = [], xauHistory = [], realYieldsData = null;
   try {
-    const [rawHist, rawXauHist] = await Promise.all([
+    const [rawHist, rawXauHist, rawRY] = await Promise.all([
       redisCmd('LRANGE', 'digest_history', 0, 6),
       redisCmd('LRANGE', 'xau_history', 0, 3),
+      redisCmd('GET', 'real_yields'),
     ]);
     if (Array.isArray(rawHist)) digestHistory = rawHist.map(e => { try { return JSON.parse(e); } catch(_) { return null; } }).filter(Boolean);
     if (Array.isArray(rawXauHist)) xauHistory = rawXauHist.map(e => { try { return JSON.parse(e); } catch(_) { return null; } }).filter(Boolean);
+    if (rawRY) realYieldsData = JSON.parse(rawRY);
   } catch(e) {}
   const historyBlock = digestHistory.length > 0
     ? digestHistory.map(h => `[${h.wib}] ${h.summary}`).join('\n')
@@ -199,6 +201,14 @@ module.exports = async function handler(req, res) {
   const xauHistoryBlock = xauHistory.length > 0
     ? xauHistory.map(h => `[${h.wib}] ${h.xau_summary}`).join('\n')
     : '(Belum ada riwayat XAU — ini sesi pertama)';
+
+  // Build real yield block for Call 1 context
+  let realYieldBlock = '(Data real yield tidak tersedia — inferensi dari headline saja)';
+  if (realYieldsData?.currencies?.USD) {
+    const ry = realYieldsData.currencies.USD;
+    const trendNote = ry.real > 2.0 ? 'ELEVATED — tekanan struktural bearish pada XAU' : ry.real > 1.0 ? 'moderat' : 'rendah/negatif — relatif supportif XAU';
+    realYieldBlock = `USD 10Y Nominal: ${ry.nominal}% | TIPS Breakeven: ${ry.inflation_exp}% | Real Yield: ${ry.real}% (${trendNote}) | per ${ry.as_of}`;
+  }
 
   // 3c. Load externalized prompts from Redis — fall back to hardcoded if missing
   let promptDigestInstr = null;
@@ -241,6 +251,8 @@ Gunakan HANYA headline dari blok HEADLINE RELEVAN XAUUSD di bawah.
 ANTI-HALLUCINATION: Jangan gabungkan dua headline berbeda menjadi satu klaim baru yang tidak ada di headline aslinya. Jika headline A menyebut X dan headline B menyebut Y, jangan tulis "X berkoordinasi dengan Y" kecuali kalimat itu memang ada di salah satu headline.
 Channel dominan: (a) USD/real yields, (b) safe haven/geopolitik, atau (c) risk sentiment ekuitas — wajib sebut teks headline konkret sebagai bukti, bukan sintesis.
 Dua channel berlawanan → sebut keduanya, putuskan mana lebih berat, jelaskan dalam satu kalimat.
+Data real yield live: Jika blok DATA REAL YIELD USD tersedia, gunakan angka tersebut sebagai anchor. Jika real yield > 2%, klaim "safe haven dominant" harus disertai bukti nyata flight-to-safety yang cukup besar untuk offset tekanan struktural dari yield — jangan asumsikan safe haven otomatis menang.
+Geopolitik melibatkan energi/minyak (Iran, Hormuz, OPEC, sanksi minyak, embargo): WAJIB trace dua rantai kausal sebelum menyimpulkan — (1) oil naik → ekspektasi inflasi naik → Fed lebih hawkish → real yield naik → tekanan bearish XAU; (2) risk aversion → flight to safety → tekanan bullish XAU. Bandingkan magnitude keduanya secara eksplisit. Jika kedua channel berkonflik, sebut ini konflik, nyatakan mana yang lebih berat dan kenapa, bukan langsung pilih satu.
 Trigger terdekat 24 jam: Pilih event dari kalender dengan PRIORITAS TERTINGGI yang tersedia: (1) FOMC/Fed — Minutes, pidato Powell, rate decision; (2) US data — CPI, NFP, GDP; (3) event major currency lain. Gunakan event prioritas tertinggi meski waktunya lebih jauh dari event prioritas rendah. Format wajib: "[EVENT] [TIME WIB] — jika [outcome]: tekanan [bullish/bearish] XAU karena [mekanisme]; jika [outcome berlawanan]: tekanan [bullish/bearish] XAU karena [mekanisme]." Harus ada DUA skenario. Jika tidak ada event kalender relevan untuk XAU dalam 24 jam, tulis "Tidak ada trigger kalender untuk XAU dalam 24 jam ke depan."
 Driver sama dengan sesi sebelumnya → nyatakan eksplisit, itu informasi valid.
 
@@ -249,6 +261,9 @@ REMINDER FINAL: SEBELUM MERESPONS, pastikan tidak ada kata "dapat mempengaruhi",
     const digestSystemMsg = promptDigestInstr || DIGEST_SYSTEM_DEFAULT;
     const digestUserMsg = `/no_think
 WAKTU: ${dayStr}, ${dateStr}, ${timeStr}${weekendNote}
+
+=== DATA REAL YIELD USD (LIVE — gunakan ini, jangan inferensi dari headline) ===
+${realYieldBlock}
 
 === HEADLINE BERITA TERKINI (${headlinesForBriefing.length} dari ${recentItems.length} berita, 36 jam terakhir) ===
 ${headlinesBlock}
