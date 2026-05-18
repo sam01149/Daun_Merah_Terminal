@@ -4266,31 +4266,35 @@ const SZ_PAIRS = [
   'XAU/USD',
 ];
 
-// Pip value per 1 standard lot (100,000 units) in USD account
-// For XXX/USD pairs: pip = 0.0001 * 100000 = $10
-// For USD/YYY pairs: pip = (0.0001 / spot) * 100000 — needs entry price
-// For cross pairs: approximate via USD/quote triangulation — needs entry price
-// JPY pairs: pip = 0.01 (not 0.0001)
-function calcPipValueUSD(pair, entryPrice) {
+let szLiveRates = null;
+
+function calcPipValueUSD(pair, entryPrice, rates) {
   const [base, quote] = pair.split('/');
-  const isJPY = quote === 'JPY';
-  const pipSize = isJPY ? 0.01 : 0.0001;
+  const pipSize = quote === 'JPY' ? 0.01 : 0.0001;
   const lotUnits = 100000;
 
-  if (quote === 'USD') {
-    // EUR/USD, GBP/USD, AUD/USD, NZD/USD — pip value always $10
-    return pipSize * lotUnits; // = 10
-  }
+  if (quote === 'USD') return pipSize * lotUnits;
+
   if (base === 'USD') {
-    // USD/CAD, USD/CHF, USD/JPY — pip value = (pipSize / spot) * lotUnits
+    if (rates && rates[`USD${quote}`]) return (pipSize / rates[`USD${quote}`]) * lotUnits;
     if (!entryPrice || entryPrice <= 0) return null;
     return (pipSize / entryPrice) * lotUnits;
   }
-  // Cross pairs (EUR/JPY, GBP/CAD, etc.) — approximate using entry price as USD value proxy
-  // Not perfect without live USD/quote rate, but accurate enough for sizing
+
+  // Cross pairs: triangulate via live USD/quote rate
+  if (rates) {
+    let usdQuoteRate = null;
+    if (['JPY', 'CAD', 'CHF'].includes(quote)) {
+      usdQuoteRate = rates[`USD${quote}`];
+    } else if (['EUR', 'GBP', 'AUD', 'NZD'].includes(quote)) {
+      const quoteUsd = rates[`${quote}USD`];
+      if (quoteUsd) usdQuoteRate = 1 / quoteUsd;
+    }
+    if (usdQuoteRate) return (pipSize / usdQuoteRate) * lotUnits;
+  }
+
+  // Fallback: entry price approximation (error ~10-30% on cross pairs)
   if (!entryPrice || entryPrice <= 0) return null;
-  // For JPY cross (EUR/JPY etc): pip value in USD = (0.01 / entry) * 100000 * USD/JPY_approx
-  // We don't have USD/JPY live, so we use approximate: pip in quote / entry * lotUnits
   return (pipSize / entryPrice) * lotUnits;
 }
 
@@ -4306,6 +4310,24 @@ function szGetDeviceId() {
   return id;
 }
 
+async function fetchSizingRates() {
+  try {
+    const cached = localStorage.getItem('daun_merah_rates');
+    if (cached) {
+      const d = JSON.parse(cached);
+      if (Date.now() - d.ts < 4 * 3600 * 1000) { szLiveRates = d.rates; return; }
+    }
+    const r = await fetch('/api/correlations?action=rates');
+    if (r.ok) {
+      const d = await r.json();
+      if (d.rates) {
+        szLiveRates = d.rates;
+        localStorage.setItem('daun_merah_rates', JSON.stringify({ rates: d.rates, ts: Date.now() }));
+      }
+    }
+  } catch(e) { console.warn('fetchSizingRates failed:', e.message); }
+}
+
 function initSizing() {
   if (!szInitialized) {
     const sel = document.getElementById('szPair');
@@ -4316,6 +4338,7 @@ function initSizing() {
     });
     szInitialized = true;
     szLoadHistory();
+    fetchSizingRates();
   }
 }
 
@@ -4339,11 +4362,14 @@ function calcSizing() {
   if (!pair || equity <= 0 || riskPct <= 0 || stopPips <= 0) return;
 
   const dollarRisk = equity * (riskPct / 100);
-  const pipVal = calcPipValueUSD(pair, entry);
+  const pipVal = calcPipValueUSD(pair, entry, szLiveRates);
 
   if (pipVal === null) {
     resultEl.style.display = 'block';
-    resultEl.innerHTML = `<div class="sz-result-block"><div class="sz-sub" style="color:var(--yellow)">Masukkan Entry Price untuk pair ini agar pip value bisa dihitung.</div></div>`;
+    const msg = szLiveRates
+      ? 'Masukkan Entry Price untuk pair ini agar pip value bisa dihitung.'
+      : 'Masukkan Entry Price. (Rates live sedang dimuat — coba hitung ulang sebentar lagi)';
+    resultEl.innerHTML = `<div class="sz-result-block"><div class="sz-sub" style="color:var(--yellow)">${msg}</div></div>`;
     return;
   }
 

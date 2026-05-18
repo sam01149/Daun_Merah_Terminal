@@ -205,6 +205,45 @@ module.exports = async function handler(req, res) {
 
   if (await rateLimit(req, res, { limit: 5, windowSecs: 60, endpoint: 'correlations' })) return;
 
+  // --- SIZING RATES: live FX rates for accurate cross-pair pip value calculation ---
+  if (req.query.action === 'rates') {
+    const RATES_KEY = 'sizing_rates';
+    const RATES_TTL = 300; // 5 minutes
+    try {
+      const cached = await redisCmd('GET', RATES_KEY);
+      if (cached) {
+        const d = JSON.parse(cached);
+        if (Date.now() - new Date(d.fetched_at).getTime() < RATES_TTL * 1000)
+          return res.status(200).json({ rates: d.rates, from_cache: true });
+      }
+    } catch(e) {}
+
+    try {
+      const symbols = 'EURUSD=X,GBPUSD=X,AUDUSD=X,NZDUSD=X,USDJPY=X,USDCAD=X,USDCHF=X';
+      const r = await fetch(
+        `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${symbols}`,
+        { headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }, signal: AbortSignal.timeout(8000) }
+      );
+      if (!r.ok) throw new Error(`Yahoo HTTP ${r.status}`);
+      const d = await r.json();
+      const rates = {};
+      (d.quoteResponse?.result || []).forEach(q => {
+        if (q.regularMarketPrice) rates[q.symbol.replace('=X', '')] = q.regularMarketPrice;
+      });
+      if (Object.keys(rates).length === 0) throw new Error('Yahoo returned no rates');
+      const payload = { rates, fetched_at: new Date().toISOString() };
+      await redisCmd('SET', RATES_KEY, JSON.stringify(payload), 'EX', RATES_TTL);
+      return res.status(200).json({ rates, from_cache: false });
+    } catch(e) {
+      // Serve stale cache rather than hard error
+      try {
+        const stale = await redisCmd('GET', RATES_KEY);
+        if (stale) return res.status(200).json({ ...JSON.parse(stale), stale: true });
+      } catch(_) {}
+      return res.status(500).json({ error: e.message });
+    }
+  }
+
   // Try Redis cache first
   try {
     const cached = await redisCmd('GET', CACHE_KEY);
