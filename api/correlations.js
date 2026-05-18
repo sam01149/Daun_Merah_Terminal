@@ -53,8 +53,8 @@ async function redisCmd(...args) {
   return (await r.json()).result;
 }
 
-async function fetchYahoo(symbol) {
-  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=3mo`;
+async function fetchYahoo(symbol, interval = '1d', range = '3mo') {
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=${interval}&range=${range}`;
   const r = await fetch(url, {
     headers: {
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
@@ -68,12 +68,14 @@ async function fetchYahoo(symbol) {
   if (!result) throw new Error(`Yahoo no result for ${symbol}`);
   const timestamps = result.timestamp || [];
   const closes = result.indicators?.quote?.[0]?.close || [];
+  const volumes = result.indicators?.quote?.[0]?.volume || [];
   const prices = [];
   for (let i = 0; i < timestamps.length; i++) {
     const close = closes[i];
+    const volume = volumes[i] || 0;
     if (close == null || isNaN(close) || close <= 0) continue;
     const date = new Date(timestamps[i] * 1000).toISOString().slice(0, 10);
-    prices.push({ date, close });
+    prices.push({ date, close, volume });
   }
   if (prices.length < 10) throw new Error(`Yahoo insufficient data for ${symbol}: ${prices.length} rows`);
   return prices;
@@ -90,6 +92,33 @@ function pearson(x, y) {
   const num = n*sxy - sx*sy;
   const den = Math.sqrt((n*sx2 - sx*sx) * (n*sy2 - sy*sy));
   return den === 0 ? null : Math.round((num / den) * 1000) / 1000;
+}
+
+// --- Kalkulator Indikator Teknikal (Pure JS) ---
+function calcSMA(data, period, key = 'close') {
+  if (data.length < period) return null;
+  const slice = data.slice(-period);
+  const sum = slice.reduce((acc, val) => acc + val[key], 0);
+  return sum / period;
+}
+
+function calcRSI(data, period = 14) {
+  if (data.length <= period) return null;
+  let gains = 0, losses = 0;
+  for (let i = 1; i <= period; i++) {
+    const change = data[i].close - data[i-1].close;
+    if (change > 0) gains += change;
+    else losses -= change;
+  }
+  let avgGain = gains / period;
+  let avgLoss = losses / period;
+  for (let i = period + 1; i < data.length; i++) {
+    const change = data[i].close - data[i-1].close;
+    avgGain = ((avgGain * (period - 1)) + (change > 0 ? change : 0)) / period;
+    avgLoss = ((avgLoss * (period - 1)) + (change < 0 ? -change : 0)) / period;
+  }
+  if (avgLoss === 0) return 100;
+  return 100 - (100 / (1 + (avgGain / avgLoss)));
 }
 
 function alignSeries(a, b) {
@@ -113,6 +142,66 @@ module.exports = async function handler(req, res) {
   Object.entries(CORS).forEach(([k, v]) => res.setHeader(k, v));
   if (req.method === 'OPTIONS') return res.status(204).end();
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
+
+  // --- ENDPOINT TEKNIKAL ANALISIS (TA) ---
+  if (req.query.action === 'ta') {
+    if (await rateLimit(req, res, { limit: 5, windowSecs: 60, endpoint: 'correlations' })) return;
+
+    const symbol   = req.query.symbol   || 'GC=F';
+    const interval = req.query.interval || '1d';
+
+    // Range caps per interval — Yahoo rejects out-of-bounds combinations
+    const RANGE_MAP = { '5m':'5d', '15m':'60d', '30m':'60d', '1h':'60d', '4h':'60d', '1d':'1y', '1wk':'5y' };
+    const range = RANGE_MAP[interval] || '1y';
+
+    // FX OTC pairs have meaningless volume from Yahoo — only show for futures/equities
+    const isFxPair = /=[Xx]$/.test(symbol);
+
+    const cacheKey = `ta:${symbol}:${interval}`;
+    const cacheTTL = interval === '1d' ? 1800 : 600; // 30min daily, 10min intraday
+
+    try {
+      // Serve Redis cache if fresh
+      const cached = await redisCmd('GET', cacheKey);
+      if (cached) {
+        const d = JSON.parse(cached);
+        if (Date.now() - new Date(d.computed_at).getTime() < cacheTTL * 1000) {
+          return res.status(200).json({ ...d, from_cache: true });
+        }
+      }
+
+      const prices  = await fetchYahoo(symbol, interval, range);
+      const current = prices[prices.length - 1];
+      const rsi14   = calcRSI(prices, 14);
+      const sma50   = calcSMA(prices, 50,  'close');
+      const sma200  = calcSMA(prices, 200, 'close');
+      const volSma20 = isFxPair ? null : calcSMA(prices, 20, 'volume');
+
+      const payload = {
+        symbol, interval, range,
+        current_price:  +current.close.toFixed(5),
+        rsi_14:         rsi14  != null ? Math.round(rsi14  * 100) / 100 : null,
+        sma_50:         sma50  != null ? Math.round(sma50  * 100) / 100 : null,
+        sma_200:        sma200 != null ? Math.round(sma200 * 100) / 100 : null,
+        price_vs_sma50:  sma50  != null ? (current.close > sma50  ? 'above' : 'below') : null,
+        price_vs_sma200: sma200 != null ? (current.close > sma200 ? 'above' : 'below') : null,
+        // Volume — only for futures/equities (not FX OTC)
+        current_volume:  isFxPair ? null : (current.volume || null),
+        volume_sma_20:   isFxPair ? null : (volSma20 != null ? Math.round(volSma20) : null),
+        volume_status:   isFxPair ? null : (
+          volSma20 == null ? null :
+          current.volume > volSma20 * 1.5 ? 'High' :
+          current.volume < volSma20 * 0.7 ? 'Low' : 'Normal'
+        ),
+        computed_at: new Date().toISOString(),
+      };
+
+      await redisCmd('SET', cacheKey, JSON.stringify(payload), 'EX', cacheTTL);
+      return res.status(200).json({ ...payload, from_cache: false });
+    } catch(e) {
+      return res.status(500).json({ error: e.message });
+    }
+  }
 
   if (await rateLimit(req, res, { limit: 5, windowSecs: 60, endpoint: 'correlations' })) return;
 

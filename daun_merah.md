@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-05-18 (session 18)
+> **Last updated:** 2026-05-18 (session 19)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Downloads\Financial_Feed_App`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -128,11 +128,7 @@ Return fields per event: `{ date, time_wib, currency, event, impact, forecast, p
 **TIDAK ADA field `datetime`** — frontend harus construct dari `date` + `time_wib`.
 
 ### `GET /api/risk-regime`
-Classifier Risk-On/Neutral/Risk-Off. Redis `risk_regime` TTL 300s (5 menit).
-- **VIX**: Yahoo Finance `^VIX` primary (near real-time, 15-min delay) → FRED `VIXCLS` fallback (EOD). Field `vix_source`: `'yahoo'` atau `'fred'`.
-- **MOVE**: Stooq EOD. **HY OAS**: FRED `BAMLH0A0HYM2` EOD.
-- UI: banner tampilkan "VIX live · MOVE/HY Data [tanggal]" jika Yahoo berhasil, "Data [tanggal]" jika FRED fallback.
-- Response fields: `vix`, `vix_change_2d`, `vix_source`, `move`, `hy_spread`, `components`, `data_date` (EOD date MOVE/HY), `vix_date`, `regime`.
+Classifier Risk-On/Neutral/Risk-Off dari VIX (FRED), MOVE (Stooq), HY OAS (FRED). Redis `risk_regime` TTL 1800s.
 
 ### `GET /api/real-yields`
 Real yield differential. USD: DGS10 − T10YIE. 7 currencies lain hardcoded inflation expectations. Redis `real_yields` TTL 21600s.
@@ -144,6 +140,14 @@ USD rate path **HEURISTIC** (bukan CME FedWatch / market-implied). FRED SOFR/EFF
 ### `GET /api/correlations`
 Cross-asset Pearson 20d + 60d, 12 instrumen via Yahoo Finance. On-demand via button. Redis `correlations_v2` TTL 86400s. Rate limited: 5/min.
 Response fields: `instruments`, `matrix_20d`, `matrix_60d`, `anomalies` (max 10, delta >0.4), `gold_correlations` (Gold vs 10 aset: DXY/Silver/Copper/WTI/US10Y/SPX/VIX/JPY/AUD/EUR — selalu ada, bukan hanya anomali), `computed_at`, `stale`.
+
+### `GET /api/correlations?action=ta&symbol=...`
+Endpoint TA murni (RSI 14, SMA 50, SMA 200, Volume) dari Yahoo Finance. Rate limited: 5/min (shared dengan correlations).
+- `symbol`: default `GC=F`. FX: `EURUSD=X`, `USDJPY=X`, dll. Futures: `GC=F`, `CL=F`. Equities: `^GSPC`.
+- `interval`: `5m` `15m` `30m` `1h` `4h` `1d`(default) `1wk`. Range dikunci otomatis per interval (misal `1h`→`60d`, `1d`→`1y`).
+- Volume (`current_volume`, `volume_sma_20`, `volume_status`) hanya tersedia untuk futures/equities — `null` untuk FX OTC (`EURUSD=X` dll) karena Yahoo tidak menyediakan data volume OTC yang reliable.
+- Redis cache per `ta:{symbol}:{interval}`: TTL 1800s (daily), 600s (intraday).
+- Response fields: `symbol`, `interval`, `range`, `current_price`, `rsi_14`, `sma_50`, `sma_200`, `price_vs_sma50`, `price_vs_sma200`, `current_volume`, `volume_sma_20`, `volume_status`, `computed_at`, `from_cache`.
 
 ### `POST/GET /api/sizing-history`
 History sizing calculations per device. Redis sorted set `sizing_history:{device_id}`, max 10.
@@ -258,7 +262,7 @@ localStorage keys: `daunmerah_v2` (state), `daun_merah_playbook` (active), `daun
 | `cb_bias` | `{USD:{bias,confidence,updated_at},...}` | no TTL | `api/market-digest.js` |
 | `digest_history` | Redis list max 7 entri digest AI (LPUSH/LTRIM) | no TTL | `api/market-digest.js` |
 | `latest_thesis` | Structured thesis JSON | 21600s | `api/market-digest.js` |
-| `risk_regime` | VIX/MOVE/HY payload | 300s | `api/risk-regime.js` |
+| `risk_regime` | VIX/MOVE/HY payload | 1800s | `api/risk-regime.js` |
 | `real_yields` | `{currencies:{...}, computed_at}` | 21600s | `api/real-yields.js` |
 | `rate_path` | `{USD:{probHold,...}}` | 14400s | `api/rate-path.js` |
 | `correlations_v2` | Correlation matrix 20d+60d + gold_correlations | 86400s | `api/correlations.js` |
