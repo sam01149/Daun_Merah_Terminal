@@ -238,9 +238,10 @@ Trader gold baca ini standalone — harus self-contained.
 Kamu tidak punya data harga live. Semua arah = tekanan fundamental, bukan prediksi harga.
 Gunakan HANYA headline dari blok HEADLINE RELEVAN XAUUSD di bawah.
 < 3 headline substantif → buka "Sinyal gold tipis" dan persingkat.
-Channel dominan: (a) USD/real yields, (b) safe haven/geopolitik, atau (c) risk sentiment ekuitas — wajib sebut bukti headline konkret.
+ANTI-HALLUCINATION: Jangan gabungkan dua headline berbeda menjadi satu klaim baru yang tidak ada di headline aslinya. Jika headline A menyebut X dan headline B menyebut Y, jangan tulis "X berkoordinasi dengan Y" kecuali kalimat itu memang ada di salah satu headline.
+Channel dominan: (a) USD/real yields, (b) safe haven/geopolitik, atau (c) risk sentiment ekuitas — wajib sebut teks headline konkret sebagai bukti, bukan sintesis.
 Dua channel berlawanan → sebut keduanya, putuskan mana lebih berat, jelaskan dalam satu kalimat.
-Trigger terdekat 24 jam: WAJIB gunakan format prosa ini persis: "[EVENT] [TIME WIB] — jika [outcome hawkish/strong/beat]: tekanan [bullish/bearish] XAU karena [mekanisme]; jika [outcome dovish/weak/miss]: tekanan [bullish/bearish] XAU karena [mekanisme]." Harus ada DUA skenario berlawanan. Jika tidak ada event kalender dalam 24 jam yang relevan untuk XAU, tulis "Tidak ada trigger kalender untuk XAU dalam 24 jam ke depan."
+Trigger terdekat 24 jam: Pilih event dari kalender dengan PRIORITAS TERTINGGI yang tersedia: (1) FOMC/Fed — Minutes, pidato Powell, rate decision; (2) US data — CPI, NFP, GDP; (3) event major currency lain. Gunakan event prioritas tertinggi meski waktunya lebih jauh dari event prioritas rendah. Format wajib: "[EVENT] [TIME WIB] — jika [outcome]: tekanan [bullish/bearish] XAU karena [mekanisme]; jika [outcome berlawanan]: tekanan [bullish/bearish] XAU karena [mekanisme]." Harus ada DUA skenario. Jika tidak ada event kalender relevan untuk XAU dalam 24 jam, tulis "Tidak ada trigger kalender untuk XAU dalam 24 jam ke depan."
 Driver sama dengan sesi sebelumnya → nyatakan eksplisit, itu informasi valid.
 
 REMINDER FINAL: SEBELUM MERESPONS, pastikan tidak ada kata "dapat mempengaruhi", "berpotensi", "mungkin", atau "dalam beberapa jam ke depan". Jika ada, ubah menjadi kalimat pernyataan tegas.`;
