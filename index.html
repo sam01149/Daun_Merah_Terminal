@@ -387,7 +387,16 @@ body {
 }
 .ringkasan-text {
   font-family: 'Syne', sans-serif; font-size: 13px; font-weight: 400;
-  line-height: 1.7; color: var(--text); white-space: pre-line;
+  line-height: 1.7; color: var(--text);
+}
+.ringkasan-text .r-para {
+  margin: 0 0 .85em; padding: 0;
+}
+.ringkasan-text .r-para:last-child { margin-bottom: 0; }
+.ringkasan-card-xau::before { background: #c9a227; }
+.ringkasan-xau-label {
+  font-size: 9px; font-family: 'DM Mono', monospace; letter-spacing: .12em;
+  color: #c9a227; margin-bottom: 10px; font-weight: 600;
 }
 
 .thesis-card {
@@ -2375,9 +2384,7 @@ function renderRingkasan() {
 
     ${d.thesis_alerts && d.thesis_alerts.length > 0 ? renderThesisAlerts(d.thesis_alerts) : ''}
 
-    <div class="ringkasan-card">
-      <div class="ringkasan-text">${escHtml(d.article)}</div>
-    </div>
+    ${renderArticleSections(d.article)}
 
     <button class="ringkasan-gen-btn" id="ringkasanBtn" onclick="generateRingkasan()">
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
@@ -2392,6 +2399,31 @@ function renderRingkasan() {
 
 function escHtml(s) {
   return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function articleToHtml(text) {
+  return text.trim().split(/\n\n+/).map(para => {
+    const escaped = escHtml(para.trim()).replace(/\n/g, '<br>');
+    return `<p class="r-para">${escaped}</p>`;
+  }).join('');
+}
+
+function renderArticleSections(article) {
+  if (!article) return '';
+  const xauIdx = article.indexOf('XAUUSD:');
+  if (xauIdx === -1) {
+    return `<div class="ringkasan-card"><div class="ringkasan-text">${articleToHtml(article)}</div></div>`;
+  }
+  const fxPart  = article.slice(0, xauIdx).trim();
+  const xauPart = article.slice(xauIdx + 'XAUUSD:'.length).trim();
+  return `
+    <div class="ringkasan-card">
+      <div class="ringkasan-text">${articleToHtml(fxPart)}</div>
+    </div>
+    <div class="ringkasan-card ringkasan-card-xau">
+      <div class="ringkasan-xau-label">XAUUSD</div>
+      <div class="ringkasan-text">${articleToHtml(xauPart)}</div>
+    </div>`;
 }
 
 let _lastThesis = (() => {

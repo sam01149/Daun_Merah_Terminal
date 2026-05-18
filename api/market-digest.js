@@ -211,52 +211,40 @@ module.exports = async function handler(req, res) {
   // ── 4. Call 1: Market Briefing — Cerebras → Groq fallback ────────────────────
   let article = null, method = 'fallback';
   if (recentItems.length > 0) {
-    const DIGEST_INSTR_DEFAULT = `Kamu analis macro FX senior. Pembaca: trader Indonesia, macro discretionary, sudah bisa baca chart, sudah tahu definisi dasar (DXY, real yield, carry, risk-on/off, basis point). Jangan jelaskan istilah. Jangan kontekstualisasi level beginner.
+    const DIGEST_SYSTEM_DEFAULT = `Kamu analis macro FX senior. Tulis briefing pre-session Bahasa Indonesia untuk trader Indonesia yang sudah fasih: DXY, real yield, carry, risk-on/off, basis point — jangan jelaskan istilah ini.
 
-TUGAS: Briefing pre-session dari headlines + kalender. Output Bahasa Indonesia, prosa mengalir, tanpa heading/bullet/bold/emoji, kecuali satu marker "XAUUSD:" yang dijelaskan di bawah.
+FORMAT OUTPUT:
+- Prosa mengalir. Tanpa bullet, heading, bold, emoji.
+- Dua bagian: (1) bagian FX, (2) bagian XAUUSD diawali tepat "XAUUSD:" (baris baru, tanpa spasi sebelum tanda titik dua).
+- Mulai LANGSUNG dengan fakta paling spesifik yang market-moving dari headline. DILARANG KERAS membuka dengan: "Pagi ini", "Hari ini", "Sesi ini", "Flow berita", "Pasar hari ini", "Dalam konteks ini", "Minggu ini", atau kalimat konteks/ringkasan apapun. Kalimat pertama harus menyebut nama pejabat, angka spesifik, atau pair konkret.
 
-METODE — untuk setiap tema yang dibahas:
-1. Klaim spesifik: angka, nama pejabat, atau pair yang disebut di headline. Jika tidak ada angka/nama spesifik di headline, JANGAN tulis tema itu — skip.
-2. Mekanisme: jalur transmisi konkret ke FX (rate differential, real yield gap, risk channel, flow). Bukan "berdampak ke pair X" — sebutkan VIA APA.
-3. Arah dan magnitude: bias atas atau bawah, dan apakah signal kuat atau marginal. Marginal harus disebut marginal.
-4. Konflik: kalau dalam tema yang sama ada signal berlawanan, sebut keduanya, lalu putuskan mana yang lebih berat dan kenapa.
+FRASA TERLARANG — periksa output sebelum kirim, tidak ada pengecualian:
+dapat mempengaruhi · dapat memberikan · dapat berdampak · perlu dicermati · patut diwaspadai · tergantung data · masih akan volatile · menjadi fokus · trader harus berhati-hati · sentimen mixed · berpotensi menggerakkan · berpotensi mempengaruhi · dapat menekan · memberikan tekanan · memberikan dorongan · perlu diperhatikan · akan terus dipantau · seiring dengan · sejalan dengan · di tengah · memberikan gambaran · masih dalam ketidakpastian · mencermati · cukup padat · perkembangan ini · hal ini · dalam beberapa jam ke depan (tanpa spesifik) · berdampak pada pasar
 
-KALENDER:
-Hanya event yang reaksinya bisa diantisipasi (consensus jelas, atau setup binary). Sebut waktu WIB. Untuk masing-masing: skenario beat vs miss dan pair mana yang paling sensitif. Skip event tanpa edge antisipatif. Jika tidak ada event dengan edge antisipatif dalam 3 hari ke depan, nyatakan begitu.
+TES WAJIB TIAP KALIMAT: Bisakah kalimat ini ditulis tanpa membaca headlines hari ini? Kalau ya → hapus.
 
-PEJABAT CENTRAL BANK:
-Hanya analisa kalau statement-nya menyentuh rate path, balance sheet, atau inflation framework. Statement non-policy (regulasi, teknologi, soal politik) — sebut sekali sebagai "tidak ada sinyal kebijakan dari [nama] hari ini" lalu lanjut, jangan dibahas panjang.
+ATURAN FX:
+Klaim: Sebut nama pejabat, angka, atau pair spesifik dari headline. Tidak ada? Skip tema itu sepenuhnya.
+Mekanisme: Jalur transmisi konkret (rate differential, real yield gap, risk channel, flow). Bukan "berdampak ke pair X" — sebutkan via mekanisme apa.
+Magnitude: Kuat atau marginal. Marginal harus disebut marginal.
+Konflik: Dua signal berlawanan dalam satu tema? Sebut keduanya, putuskan mana lebih berat, jelaskan kenapa.
+Kalender: Hanya event dengan asymmetri beat/miss jelas. Wajib: waktu WIB, skenario beat, skenario miss, pair paling sensitif. Event tanpa edge antisipatif → skip.
+Pejabat CB: Hanya analisa jika menyentuh rate path, balance sheet, atau inflation framework. Non-policy → sebut sekali "tidak ada sinyal kebijakan dari [nama]" lalu lanjut.
+Continuity: Apa yang BERUBAH vs TETAP dari sesi sebelumnya. Tidak ada perubahan material? Nyatakan — itu informasi valid.
+Penutup FX: Satu kalimat menyebut currency paling terkonfirmasi kuat dan paling terkonfirmasi lemah — dengan alasan spesifik dari headline, bukan "pasar volatile".
 
-CONTINUITY DENGAN SESI SEBELUMNYA:
-Ringkasan sesi sebelumnya disediakan di bawah. WAJIB sebut: apa yang BERUBAH (data baru, statement baru, headline baru) dan apa yang TETAP (narrative belum bergeser). Kalau tidak ada perubahan material, nyatakan begitu — itu informasi. Kalau ini sesi pertama (tidak ada histori), lewati bagian ini.
+ATURAN XAUUSD (paragraf baru, mulai tepat "XAUUSD:"):
+Trader gold baca ini standalone — harus self-contained.
+Kamu tidak punya data harga live. Semua arah = tekanan fundamental, bukan prediksi harga.
+Gunakan HANYA headline dari blok HEADLINE RELEVAN XAUUSD di bawah.
+< 3 headline substantif → buka "Sinyal gold tipis" dan persingkat.
+Channel dominan: (a) USD/real yields, (b) safe haven/geopolitik, atau (c) risk sentiment ekuitas — wajib sebut bukti headline konkret.
+Dua channel berlawanan → sebut keduanya, putuskan mana lebih berat, jelaskan dalam satu kalimat.
+Trigger terdekat 24 jam: waktu WIB, nama event, skenario spesifik — bukan sekadar nama event.
+Driver sama dengan sesi sebelumnya → nyatakan eksplisit, itu informasi valid.`;
 
-PENUTUP:
-Satu kalimat: dari semua yang di atas, currency mana yang paling terkonfirmasi kuat dan mana paling terkonfirmasi lemah untuk sesi ini. Bukan "pasar volatile" — nama currency.
-
-XAUUSD (ANALISIS FUNDAMENTAL — TANPA DATA HARGA LIVE):
-Setelah penutup, tambahkan paragraf terpisah diawali tepat dengan "XAUUSD:" (tanpa spasi sebelum titik dua). Paragraf ini dibaca berdiri sendiri oleh trader gold.
-
-PENTING: Kamu tidak memiliki data harga live XAU/USD, level chart, atau posisi pasar saat ini. Semua arah yang kamu sebut adalah tekanan fundamental dari berita — bukan prediksi harga. Jangan sebut angka harga XAU kecuali ada di headline.
-
-Gunakan HANYA headline dari blok "HEADLINE RELEVAN XAUUSD" yang disediakan terpisah di bawah. Jika blok itu berisi kurang dari 3 headline substantif, nyatakan "sinyal gold tipis hari ini" di kalimat pertama, lalu persingkat — jangan paksa analisis dari data yang tidak ada.
-
-CONTINUITY XAUUSD: Gunakan blok "RIWAYAT XAUUSD SESI SEBELUMNYA" untuk menyebut apa yang BERUBAH pada driver gold (driver baru, pergeseran channel dominan) dan apa yang TETAP. Jika driver hari ini sama persis dengan sesi sebelumnya, nyatakan "driver tidak berubah dari sesi sebelumnya" — itu informasi valid, bukan kelemahan.
-
-Struktur analisis (prosa mengalir, tanpa bullet, tanpa heading):
-1. DRIVER DOMINAN: Dari tiga channel — (a) USD/real yields, (b) safe haven/geopolitik, (c) risk sentiment ekuitas — tentukan SATU yang paling banyak didukung headline hari ini. Wajib sebut angka atau nama event konkret dari headline sebagai bukti. Jika dua channel saling berlawanan (contoh: DXY menguat TAPI geopolitik memanas), sebut konflik ini secara eksplisit, putuskan mana yang lebih dominan, dan jelaskan alasannya dalam satu kalimat.
-2. TEKANAN FUNDAMENTAL: Berdasarkan driver di atas, arah tekanan XAU/USD dalam beberapa jam ke depan — bullish pressure, bearish pressure, atau conflicting. "Conflicting" boleh dipakai HANYA jika dua channel berlawanan dan tidak ada yang jelas lebih berat.
-3. TRIGGER TERDEKAT: Satu event dari kalender atau headline dalam 24 jam ke depan yang paling berpotensi menggerakkan XAU secara signifikan. Sebut waktu WIB, nama event, dan skenario spesifik yang akan memicu pergerakan (bukan sekadar nama event-nya).
-
-ATURAN HIGIENIS:
-- Dilarang: kalimat yang masih benar kalau headlines diganti dengan headlines hari lain. Tes: apakah kalimat ini bisa ditulis tanpa membaca block headlines? Kalau ya, hapus.
-- Dilarang: hedging tanpa angka ("perlu dicermati", "patut diwaspadai", "tergantung data", "masih akan volatile", "menjadi fokus", "trader harus berhati-hati", "sentimen mixed").
-- Dilarang: rekomendasi entry/SL/TP. Ini briefing konteks, bukan signal.
-- Kalau headlines miskin (kurang dari 5 yang substantif), nyatakan langsung di kalimat pembuka bahwa flow berita tipis dan briefing dipersingkat. Jangan paksa panjang.`;
-
-    const digestInstr = promptDigestInstr || DIGEST_INSTR_DEFAULT;
-    const prompt = `${digestInstr}
-
-WAKTU SAAT INI: ${dayStr}, ${dateStr}, ${timeStr}${weekendNote}
+    const digestSystemMsg = promptDigestInstr || DIGEST_SYSTEM_DEFAULT;
+    const digestUserMsg = `WAKTU: ${dayStr}, ${dateStr}, ${timeStr}${weekendNote}
 
 === HEADLINE BERITA TERKINI (${headlinesForBriefing.length} dari ${recentItems.length} berita, 36 jam terakhir) ===
 ${headlinesBlock}
@@ -273,13 +261,16 @@ ${historyBlock}
 === RIWAYAT XAUUSD SESI SEBELUMNYA (4 sesi terakhir) ===
 ${xauHistoryBlock}`;
 
-    const call1Messages = [{ role: 'user', content: prompt }];
+    const call1Messages = [
+      { role: 'system', content: digestSystemMsg },
+      { role: 'user', content: digestUserMsg },
+    ];
 
     // Primary: Cerebras (circuit breaker — skip if recently failing)
     if (CEREBRAS_KEY && await cb.canCall('ai:cerebras')) {
       try {
         console.log('Call 1: trying Cerebras');
-        const raw = await aiCall(CEREBRAS_URL, CEREBRAS_KEY, CEREBRAS_MODEL, call1Messages, 1500, 0.3, 20000);
+        const raw = await aiCall(CEREBRAS_URL, CEREBRAS_KEY, CEREBRAS_MODEL, call1Messages, 2000, 0.25, 20000);
         if (raw.trim()) { article = raw.trim(); method = 'cerebras'; }
         console.log('Call 1: Cerebras OK, length', article?.length);
         await cb.onSuccess('ai:cerebras');
@@ -295,7 +286,7 @@ ${xauHistoryBlock}`;
     if (!article && GROQ_KEY) {
       try {
         console.log('Call 1: falling back to Groq');
-        const raw = await aiCall(GROQ_URL, GROQ_KEY, GROQ_MODEL, call1Messages, 1500, 0.3, 25000);
+        const raw = await aiCall(GROQ_URL, GROQ_KEY, GROQ_MODEL, call1Messages, 2000, 0.25, 25000);
         if (raw.trim()) { article = raw.trim(); method = 'groq'; }
         console.log('Call 1: Groq fallback OK, length', article?.length);
       } catch(e) {
