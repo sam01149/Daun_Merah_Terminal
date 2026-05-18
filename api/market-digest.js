@@ -228,7 +228,7 @@ Klaim: Sebut nama pejabat, angka, atau pair spesifik dari headline. Tidak ada? S
 Mekanisme: Jalur transmisi konkret (rate differential, real yield gap, risk channel, flow). Bukan "berdampak ke pair X" — sebutkan via mekanisme apa.
 Magnitude: Kuat atau marginal. Marginal harus disebut marginal.
 Konflik: Dua signal berlawanan dalam satu tema? Sebut keduanya, putuskan mana lebih berat, jelaskan kenapa.
-Kalender: Hanya event dengan asymmetri beat/miss jelas. Wajib: waktu WIB, skenario beat, skenario miss, pair paling sensitif. Event tanpa edge antisipatif → skip.
+Kalender: Hanya event dengan asymmetri beat/miss jelas. Untuk setiap event yang dianalisis, gunakan format prosa ini persis: "[EVENT] ([CURRENCY]) [TIME WIB] — jika beat: [pair] [naik/turun] karena [mekanisme konkret]; jika miss: [pair] [naik/turun] karena [mekanisme konkret]." Event tanpa edge antisipatif → skip sepenuhnya, jangan disebutkan.
 Pejabat CB: Hanya analisa jika menyentuh rate path, balance sheet, atau inflation framework. Non-policy → sebut sekali "tidak ada sinyal kebijakan dari [nama]" lalu lanjut.
 Continuity: Apa yang BERUBAH vs TETAP dari sesi sebelumnya. Tidak ada perubahan material? Nyatakan — itu informasi valid.
 Penutup FX: Satu kalimat menyebut currency paling terkonfirmasi kuat dan paling terkonfirmasi lemah (HANYA pilih dari 8 majors: USD, EUR, GBP, JPY, CAD, AUD, NZD, CHF) — dengan alasan spesifik dari headline, bukan "pasar volatile".
@@ -240,7 +240,7 @@ Gunakan HANYA headline dari blok HEADLINE RELEVAN XAUUSD di bawah.
 < 3 headline substantif → buka "Sinyal gold tipis" dan persingkat.
 Channel dominan: (a) USD/real yields, (b) safe haven/geopolitik, atau (c) risk sentiment ekuitas — wajib sebut bukti headline konkret.
 Dua channel berlawanan → sebut keduanya, putuskan mana lebih berat, jelaskan dalam satu kalimat.
-Trigger terdekat 24 jam: WAJIB sebut waktu WIB, nama event, dan skenario spesifik. Jika data tidak spesifik, tulis "Tidak ada trigger spesifik 24 jam ke depan".
+Trigger terdekat 24 jam: WAJIB gunakan format prosa ini persis: "[EVENT] [TIME WIB] — jika [outcome hawkish/strong/beat]: tekanan [bullish/bearish] XAU karena [mekanisme]; jika [outcome dovish/weak/miss]: tekanan [bullish/bearish] XAU karena [mekanisme]." Harus ada DUA skenario berlawanan. Jika tidak ada event kalender dalam 24 jam yang relevan untuk XAU, tulis "Tidak ada trigger kalender untuk XAU dalam 24 jam ke depan."
 Driver sama dengan sesi sebelumnya → nyatakan eksplisit, itu informasi valid.
 
 REMINDER FINAL: SEBELUM MERESPONS, pastikan tidak ada kata "dapat mempengaruhi", "berpotensi", "mungkin", atau "dalam beberapa jam ke depan". Jika ada, ubah menjadi kalimat pernyataan tegas.`;
