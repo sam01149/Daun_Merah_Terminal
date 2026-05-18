@@ -106,6 +106,21 @@ async function fetchXauSpot() {
   return null;
 }
 
+// Read XAU/USD daily TA from Redis cache (written by /api/correlations?action=ta)
+async function fetchXauTA() {
+  try {
+    const cached = await redisCmd('GET', 'ta:GC=F:1d');
+    if (!cached) return null;
+    const d = JSON.parse(cached);
+    // Allow up to 2h stale — daily TA doesn't change fast
+    if (Date.now() - new Date(d.computed_at).getTime() > 2 * 3600 * 1000) return null;
+    return d;
+  } catch(e) {
+    console.warn('fetchXauTA failed:', e.message);
+    return null;
+  }
+}
+
 // Shared low-level fetch for any OpenAI-compatible provider
 async function aiCall(url, apiKey, model, messages, maxTokens, temperature, timeoutMs) {
   const res = await fetch(url, {
@@ -238,20 +253,23 @@ module.exports = async function handler(req, res) {
       : '\n[KONTEKS HISTORIS 12-36 JAM LALU] (tidak ada)',
   ].join('');
 
-  // 3b. Load digest history + xau history + real yields + XAU spot in parallel
-  let digestHistory = [], xauHistory = [], realYieldsData = null, xauSpot = null;
+  // 3b. Load digest history + xau history + real yields + XAU spot + XAU TA in parallel
+  let digestHistory = [], xauHistory = [], realYieldsData = null, xauSpot = null, xauTa = null;
   try {
-    const [rawHist, rawXauHist, rawRY, spotResult] = await Promise.all([
+    const [rawHist, rawXauHist, rawRY, spotResult, taResult] = await Promise.all([
       redisCmd('LRANGE', 'digest_history', 0, 6),
       redisCmd('LRANGE', 'xau_history', 0, 3),
       redisCmd('GET', 'real_yields'),
       fetchXauSpot(),
+      fetchXauTA(),
     ]);
     if (Array.isArray(rawHist)) digestHistory = rawHist.map(e => { try { return JSON.parse(e); } catch(_) { return null; } }).filter(Boolean);
     if (Array.isArray(rawXauHist)) xauHistory = rawXauHist.map(e => { try { return JSON.parse(e); } catch(_) { return null; } }).filter(Boolean);
     if (rawRY) realYieldsData = JSON.parse(rawRY);
     xauSpot = spotResult;
+    xauTa   = taResult;
     console.log('XAU spot:', xauSpot ? `$${xauSpot.price} (${xauSpot.source})` : 'unavailable');
+    console.log('XAU TA:', xauTa ? `RSI=${xauTa.rsi_14} SMA50=${xauTa.price_vs_sma50}` : 'unavailable (cache cold)');
   } catch(e) {}
   const historyBlock = digestHistory.length > 0
     ? digestHistory.map(h => `[${h.wib}] ${h.summary}`).join('\n')
@@ -274,6 +292,21 @@ module.exports = async function handler(req, res) {
     const sign  = xauSpot.change_pct > 0 ? '+' : '';
     const pctStr = xauSpot.change_pct !== null ? ` (${sign}${xauSpot.change_pct}% dari sesi sebelumnya)` : '';
     xauSpotBlock = `${xauSpot.source}: $${xauSpot.price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${pctStr} | per ${xauSpot.as_of}`;
+  }
+
+  // Build XAU daily TA block
+  let xauTaBlock = '(Cache TA belum tersedia — kunjungi tab TEK untuk mengisi cache, atau abaikan bagian ini)';
+  if (xauTa) {
+    const parts = [];
+    if (xauTa.rsi_14 != null) {
+      const rsiLabel = xauTa.rsi_14 > 70 ? 'Overbought' : xauTa.rsi_14 < 30 ? 'Oversold' : 'Netral';
+      parts.push(`RSI 14: ${xauTa.rsi_14.toFixed(1)} (${rsiLabel})`);
+    }
+    if (xauTa.sma_50 != null && xauTa.price_vs_sma50)
+      parts.push(`SMA 50: ${xauTa.sma_50.toLocaleString('en-US', {maximumFractionDigits:2})} — harga ${xauTa.price_vs_sma50 === 'above' ? 'di atas' : 'di bawah'}`);
+    if (xauTa.sma_200 != null && xauTa.price_vs_sma200)
+      parts.push(`SMA 200: ${xauTa.sma_200.toLocaleString('en-US', {maximumFractionDigits:2})} — harga ${xauTa.price_vs_sma200 === 'above' ? 'di atas' : 'di bawah'}`);
+    xauTaBlock = parts.length > 0 ? parts.join(' | ') : '(Data TA terbatas)';
   }
 
   // 3c. Load externalized prompts from Redis — fall back to hardcoded if missing
@@ -317,7 +350,7 @@ ANTI-HALLUCINATION: Jangan gabungkan dua headline berbeda menjadi satu klaim bar
 
 PENDEKATAN BENANG MERAH — ikuti urutan ini:
 1. JANGKAR HARGA: Jika blok HARGA XAU/USD LIVE tersedia, buka dengan harga dan pergerakan hari ini (naik/turun berapa persen). Ini titik awal narasi — semua fakta berikutnya menjelaskan MENGAPA harga ada di sini.
-2. RAJUT FAKTA: Hubungkan harga → headline → real yield → geopolitik secara natural, seperti analis yang bercerita. Tidak perlu rantai kausal formal. Cukup: "kenaikan ini didukung oleh X, meski dibatasi oleh Y." Fakta yang saling memperkuat → gabungkan. Fakta yang berlawanan → sebut keduanya, putuskan mana lebih berat dalam satu kalimat.
+2. RAJUT FAKTA: Hubungkan harga → headline → real yield → geopolitik secara natural, seperti analis yang bercerita. Tidak perlu rantai kausal formal. Cukup: "kenaikan ini didukung oleh X, meski dibatasi oleh Y." Fakta yang saling memperkuat → gabungkan. Fakta yang berlawanan → sebut keduanya, putuskan mana lebih berat dalam satu kalimat. Jika blok TEKNIKAL XAU tersedia, sisipkan RSI dan posisi vs SMA dalam satu kalimat natural sebagai konteks teknikal pendukung (misal: "secara teknikal harga masih di atas SMA 50 dengan RSI 45 di zona netral") — bukan paragraf terpisah.
 3. REAL YIELD sebagai pembatas: Jika real yield > 2%, emas mahal secara struktural — wajib disebut sebagai rem, bukan diabaikan. Tapi jika harga tetap naik meski yield tinggi, artinya tekanan bullish cukup kuat untuk offset — nyatakan ini secara eksplisit.
 4. TIDAK ADA RANTAI KAUSAL WAJIB: Untuk geopolitik minyak (Iran, Hormuz, OPEC) — tidak perlu trace oil→inflasi→Fed→yield secara kaku. Cukup: apakah ada bukti di headline bahwa ini mempengaruhi XAU? Jika ya, sebut. Jika tidak, skip.
 5. Driver sama dengan sesi sebelumnya → nyatakan eksplisit, itu informasi valid.
@@ -332,6 +365,9 @@ WAKTU: ${dayStr}, ${dateStr}, ${timeStr}${weekendNote}
 
 === HARGA XAU/USD LIVE (jangkar harga — gunakan sebagai titik awal narasi) ===
 ${xauSpotBlock}
+
+=== TEKNIKAL XAU/USD DAILY (dari Yahoo GC=F — sebutkan singkat dalam 1 kalimat sebagai konteks, bukan analisa teknikal terpisah) ===
+${xauTaBlock}
 
 === DATA REAL YIELD USD (LIVE — gunakan ini, jangan inferensi dari headline) ===
 ${realYieldBlock}
