@@ -128,6 +128,7 @@ const CFTC_URL      = 'https://www.cftc.gov/dea/options/financial_lof.htm';
 const COT_CACHE_TTL = 6 * 60 * 60 * 1000;
 
 const MARKET_MARKERS = {
+  USD: ['u.s. dollar index', 'dollar index'],
   EUR: ['euro fx'],
   GBP: ['british pound'],
   JPY: ['japanese yen'],
@@ -261,12 +262,12 @@ async function cotHandler(req, res) {
   const parsedCount = Object.keys(positions).length;
 
   if (parsedCount < 5) {
-    console.warn(`COT parser: only ${parsedCount} currencies parsed — expected 7. Possible format change. Falling back to stale cache.`);
+    console.warn(`COT parser: only ${parsedCount} currencies parsed — expected 8. Possible format change. Falling back to stale cache.`);
     try {
       const stale = await redisCmd('GET', 'cot_cache_v2');
-      if (stale) return res.status(200).json({ ...JSON.parse(stale), stale: true, parse_warning: `Only ${parsedCount}/7 currencies parsed from fresh fetch` });
+      if (stale) return res.status(200).json({ ...JSON.parse(stale), stale: true, parse_warning: `Only ${parsedCount}/8 currencies parsed from fresh fetch` });
     } catch(e2) {}
-    return res.status(500).json({ error: `COT parser degraded: only ${parsedCount}/7 currencies parsed`, positions });
+    return res.status(500).json({ error: `COT parser degraded: only ${parsedCount}/8 currencies parsed`, positions });
   }
 
   const payload = {

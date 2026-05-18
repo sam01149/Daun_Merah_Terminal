@@ -3138,8 +3138,9 @@ function renderCOT() {
   }
   if (staleBadge) staleBadge.style.display = cotData.stale ? 'inline' : 'none';
 
-  const ORDER = ['EUR','GBP','JPY','CAD','AUD','NZD','CHF'];
+  const ORDER = ['USD','EUR','GBP','JPY','CAD','AUD','NZD','CHF'];
   const CUR_COLORS_COT = {
+    USD:'#38bdf8',
     EUR:'#c0392b', GBP:'#a78bfa', JPY:'#ffd32a',
     CAD:'#ff6b35', AUD:'#00c896', NZD:'#34d399', CHF:'#ff4757',
   };
