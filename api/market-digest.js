@@ -396,7 +396,7 @@ ${xauHistoryBlock}`;
     if (CEREBRAS_KEY && await cb.canCall('ai:cerebras')) {
       try {
         console.log('Call 1: trying Cerebras');
-        const raw = await aiCall(CEREBRAS_URL, CEREBRAS_KEY, CEREBRAS_MODEL, call1Messages, 2000, 0.25, 20000);
+        const raw = await aiCall(CEREBRAS_URL, CEREBRAS_KEY, CEREBRAS_MODEL, call1Messages, 2000, 0.25, 8000);
         if (raw.trim()) { article = raw.trim(); method = 'cerebras'; }
         console.log('Call 1: Cerebras OK, length', article?.length);
         await cb.onSuccess('ai:cerebras');
@@ -412,7 +412,7 @@ ${xauHistoryBlock}`;
     if (!article && GROQ_KEY) {
       try {
         console.log('Call 1: falling back to Groq llama-3.3-70b');
-        const raw = await aiCall(GROQ_URL, GROQ_KEY, GROQ_MODEL, call1Messages, 2000, 0.25, 25000);
+        const raw = await aiCall(GROQ_URL, GROQ_KEY, GROQ_MODEL, call1Messages, 2000, 0.25, 14000);
         if (raw.trim()) { article = raw.trim(); method = 'groq'; }
         console.log('Call 1: Groq fallback OK, length', article?.length);
       } catch(e) {
@@ -528,7 +528,7 @@ ${xauHistoryBlock}`;
       if (SAMBANOVA_KEY && await cb.canCall('ai:sambanova')) {
         try {
           console.log('Call 2: trying SambaNova');
-          biasRaw = await aiCall(SAMBANOVA_URL, SAMBANOVA_KEY, SAMBANOVA_MODEL, call2Messages, 400, 0.1, 20000);
+          biasRaw = await aiCall(SAMBANOVA_URL, SAMBANOVA_KEY, SAMBANOVA_MODEL, call2Messages, 400, 0.1, 8000);
           console.log('Call 2: SambaNova OK');
           await cb.onSuccess('ai:sambanova');
         } catch(e) {
@@ -543,7 +543,7 @@ ${xauHistoryBlock}`;
       if (!biasRaw && GROQ_KEY) {
         try {
           console.log('Call 2: falling back to Groq');
-          biasRaw = await aiCall(GROQ_URL, GROQ_KEY, GROQ_MODEL, call2Messages, 400, 0.1, 15000);
+          biasRaw = await aiCall(GROQ_URL, GROQ_KEY, GROQ_MODEL, call2Messages, 400, 0.1, 12000);
           console.log('Call 2: Groq fallback OK');
         } catch(e) {
           console.warn('Call 2 Groq fallback failed:', e.status || e.message);
@@ -562,6 +562,10 @@ ${xauHistoryBlock}`;
           const VALID_CURRENCIES = new Set(['USD','EUR','GBP','JPY','CAD','AUD','NZD','CHF']);
           const now = new Date().toISOString();
 
+          // Distributed lock to prevent race condition across concurrent functions
+          const lockAcquired = await redisCmd('SET', 'cb_bias_lock', '1', 'NX', 'EX', '10');
+          if (lockAcquired) {
+            
           let existing = {};
           try {
             const raw = await redisCmd('GET', 'cb_bias');
@@ -583,6 +587,8 @@ ${xauHistoryBlock}`;
           if (biasUpdated.length > 0) {
             const saveResult = await redisCmd('SET', 'cb_bias', JSON.stringify(existing));
             console.log('CB bias Redis SET result:', saveResult);
+          }
+            await redisCmd('DEL', 'cb_bias_lock').catch(()=>{});
           }
         } catch(e) {
           console.warn('Call 2 bias parse/save failed:', e.message);
@@ -665,11 +671,10 @@ ${xauHistoryBlock}`;
       );
     }
 
-    // Try SambaNova (2 attempts), then Groq fallback (1 attempt)
+    // Try SambaNova, then Groq fallback
     const call3Providers = [];
-    if (SAMBANOVA_KEY) call3Providers.push({ url: SAMBANOVA_URL, key: SAMBANOVA_KEY, model: SAMBANOVA_MODEL, label: 'SambaNova', timeout: 20000 });
-    if (SAMBANOVA_KEY) call3Providers.push({ url: SAMBANOVA_URL, key: SAMBANOVA_KEY, model: SAMBANOVA_MODEL, label: 'SambaNova retry', timeout: 20000 });
-    if (GROQ_KEY)      call3Providers.push({ url: GROQ_URL,      key: GROQ_KEY,      model: GROQ_MODEL,      label: 'Groq fallback', timeout: 15000 });
+    if (SAMBANOVA_KEY) call3Providers.push({ url: SAMBANOVA_URL, key: SAMBANOVA_KEY, model: SAMBANOVA_MODEL, label: 'SambaNova', timeout: 8000 });
+    if (GROQ_KEY)      call3Providers.push({ url: GROQ_URL,      key: GROQ_KEY,      model: GROQ_MODEL,      label: 'Groq fallback', timeout: 12000 });
 
     for (const provider of call3Providers) {
       if (thesis) break;
@@ -755,7 +760,7 @@ ${xauHistoryBlock}`;
           'If no genuine contradictions found: {"alerts":[]}',
         ].join('\n');
 
-        const raw = await aiCall(GROQ_URL, GROQ_KEY, GROQ_MODEL, [{ role: 'user', content: monitorPrompt }], 400, 0.1, 15000);
+        const raw = await aiCall(GROQ_URL, GROQ_KEY, GROQ_MODEL, [{ role: 'user', content: monitorPrompt }], 400, 0.1, 8000);
         const clean = raw.replace(/```json|```/g, '').trim();
         const parsed = JSON.parse(clean);
         if (Array.isArray(parsed.alerts)) {
