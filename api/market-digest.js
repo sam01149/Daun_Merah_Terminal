@@ -212,8 +212,7 @@ module.exports = async function handler(req, res) {
   // ── 4. Call 1: Market Briefing — Cerebras → Groq fallback ────────────────────
   let article = null, method = 'fallback';
   if (recentItems.length > 0) {
-    const DIGEST_SYSTEM_DEFAULT = `/no_think
-Kamu analis macro FX senior. Tulis briefing pre-session Bahasa Indonesia untuk trader Indonesia yang sudah fasih: DXY, real yield, carry, risk-on/off, basis point — jangan jelaskan istilah ini.
+    const DIGEST_SYSTEM_DEFAULT = `Kamu analis macro FX senior. Tulis briefing pre-session Bahasa Indonesia untuk trader Indonesia yang sudah fasih: DXY, real yield, carry, risk-on/off, basis point — jangan jelaskan istilah ini.
 
 FORMAT OUTPUT:
 - Prosa mengalir. Tanpa bullet, heading, bold, emoji.
@@ -248,7 +247,8 @@ Driver sama dengan sesi sebelumnya → nyatakan eksplisit, itu informasi valid.
 REMINDER FINAL: SEBELUM MERESPONS, pastikan tidak ada kata "dapat mempengaruhi", "berpotensi", "mungkin", atau "dalam beberapa jam ke depan". Jika ada, ubah menjadi kalimat pernyataan tegas.`;
 
     const digestSystemMsg = promptDigestInstr || DIGEST_SYSTEM_DEFAULT;
-    const digestUserMsg = `WAKTU: ${dayStr}, ${dateStr}, ${timeStr}${weekendNote}
+    const digestUserMsg = `/no_think
+WAKTU: ${dayStr}, ${dateStr}, ${timeStr}${weekendNote}
 
 === HEADLINE BERITA TERKINI (${headlinesForBriefing.length} dari ${recentItems.length} berita, 36 jam terakhir) ===
 ${headlinesBlock}
@@ -286,15 +286,27 @@ ${xauHistoryBlock}`;
       console.log('Call 1: Cerebras circuit OPEN — skipping to Groq');
     }
 
-    // Fallback: Groq Qwen3-32B (no circuit breaker — last resort, always attempt)
+    // Fallback 1: Groq Qwen3-32B
     if (!article && GROQ_KEY) {
       try {
         console.log('Call 1: falling back to Groq Qwen3-32B');
         const raw = await aiCall(GROQ_URL, GROQ_KEY, GROQ_MODEL_BRIEF, call1Messages, 2000, 0.25, 25000);
         if (raw.trim()) { article = raw.trim(); method = 'groq'; }
-        console.log('Call 1: Groq fallback OK, length', article?.length);
+        console.log('Call 1: Groq Qwen3 OK, length', article?.length);
       } catch(e) {
-        console.warn('Call 1 Groq fallback failed:', e.status || e.message);
+        console.warn('Call 1 Groq Qwen3 failed:', e.status || e.message);
+      }
+    }
+
+    // Fallback 2: Groq llama-3.3-70b (proven reliable, last resort before template)
+    if (!article && GROQ_KEY) {
+      try {
+        console.log('Call 1: falling back to Groq llama-3.3-70b');
+        const raw = await aiCall(GROQ_URL, GROQ_KEY, GROQ_MODEL, call1Messages, 2000, 0.25, 25000);
+        if (raw.trim()) { article = raw.trim(); method = 'groq'; }
+        console.log('Call 1: Groq llama fallback OK, length', article?.length);
+      } catch(e) {
+        console.warn('Call 1 Groq llama fallback failed:', e.status || e.message);
         method = e.status === 429 ? 'fallback_quota' : 'fallback';
       }
     }
