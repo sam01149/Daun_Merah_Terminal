@@ -1245,6 +1245,18 @@ body {
   font: 12px 'DM Mono',monospace; resize: vertical; outline: none; transition: border-color .15s;
 }
 .tek-note-wrap textarea:focus { border-color: #38bdf8; }
+/* ── TA Indicator Panel ── */
+.tek-ta-panel { padding: 8px 14px; border-bottom: 1px solid var(--border); flex-shrink: 0; background: var(--surface); }
+.tek-ta-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; }
+.tek-ta-cell { background: var(--bg); border-radius: 5px; padding: 7px 9px; min-width: 0; }
+.tek-ta-label { font: 9px 'DM Mono',monospace; color: var(--muted); text-transform: uppercase; letter-spacing: .07em; margin-bottom: 3px; }
+.tek-ta-val { font: 700 13px 'DM Mono',monospace; color: var(--text); line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tek-ta-sub { font: 9px 'DM Mono',monospace; color: var(--muted); margin-top: 2px; white-space: nowrap; }
+.tek-ta-bull { color: #4ade80; }
+.tek-ta-bear { color: #f87171; }
+.tek-ta-warn { color: #fbbf24; }
+.tek-ta-muted { color: var(--muted); }
+.tek-ta-loading { font: 10px 'DM Mono',monospace; color: var(--muted); padding: 4px 0; }
 .tek-news-hdr {
   display: flex; align-items: center; justify-content: space-between;
   padding: 10px 0 6px; border-top: 1px solid var(--border); margin-top: 8px;
@@ -1808,6 +1820,10 @@ body {
     <div class="tek-mtf-cell"><span class="tek-mtf-lbl">H1</span><select class="tek-mtf-sel" id="mtfSelH1" onchange="onMtfChange()"><option value="">—</option><option value="bull">Bull</option><option value="bear">Bear</option><option value="neut">Neut</option></select></div>
     <div class="tek-mtf-cell"><span class="tek-mtf-lbl">M15</span><select class="tek-mtf-sel" id="mtfSelM15" onchange="onMtfChange()"><option value="">—</option><option value="bull">Bull</option><option value="bear">Bear</option><option value="neut">Neut</option></select></div>
     <div class="tek-mtf-align" id="mtfAlignBadge"></div>
+  </div>
+  <div id="tekTaPanel" class="tek-ta-panel">
+    <div class="tek-ta-loading" id="tekTaLoading">Memuat indikator...</div>
+    <div class="tek-ta-grid" id="tekTaGrid" style="display:none"></div>
   </div>
   <div class="tek-mtf-section">
     <div class="tek-note-wrap">
@@ -4925,11 +4941,118 @@ function onTekPairChange() {
   loadMtfForPair();
   renderTekNews();
   createTVChart();
+  fetchTaData();
 }
 
 function onTekTFChange() {
   tekTF = document.getElementById('tekTFSelect').value;
   createTVChart();
+  fetchTaData();
+}
+
+// ── TA Panel ─────────────────────────────────────────────────────────────────
+
+// Maps tekPair values → Yahoo Finance symbols used by /api/correlations?action=ta
+const TEK_YAHOO_SYM = {
+  EURUSD:'EURUSD=X', GBPUSD:'GBPUSD=X', USDJPY:'USDJPY=X',
+  AUDUSD:'AUDUSD=X', NZDUSD:'NZDUSD=X', USDCAD:'USDCAD=X',
+  USDCHF:'USDCHF=X', XAUUSD:'GC=F',
+};
+
+// TradingView interval codes → Yahoo Finance interval param
+const TEK_TV_TO_API_TF = { 'D':'1d', '240':'4h', '60':'1h', '15':'15m' };
+
+let tekTaCache = {};
+
+async function fetchTaData() {
+  const sym = TEK_YAHOO_SYM[tekPair];
+  if (!sym) return;
+  const interval = TEK_TV_TO_API_TF[tekTF] || '1d';
+  const cacheKey = `${sym}:${interval}`;
+
+  const loadEl = document.getElementById('tekTaLoading');
+  const gridEl = document.getElementById('tekTaGrid');
+  if (!loadEl || !gridEl) return;
+
+  // Client-side 90s cache — avoids re-fetching on every pair/TF click
+  const cached = tekTaCache[cacheKey];
+  if (cached && Date.now() - cached.ts < 90000) {
+    renderTaPanel(cached.data);
+    return;
+  }
+
+  loadEl.textContent = 'Memuat indikator...';
+  loadEl.style.display = '';
+  gridEl.style.display = 'none';
+
+  try {
+    const r = await fetch(`/api/correlations?action=ta&symbol=${encodeURIComponent(sym)}&interval=${interval}`);
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const d = await r.json();
+    if (d.error) throw new Error(d.error);
+    tekTaCache[cacheKey] = { data: d, ts: Date.now() };
+    renderTaPanel(d);
+  } catch(e) {
+    loadEl.textContent = 'Indikator tidak tersedia';
+  }
+}
+
+function renderTaPanel(d) {
+  const loadEl = document.getElementById('tekTaLoading');
+  const gridEl = document.getElementById('tekTaGrid');
+  if (!loadEl || !gridEl) return;
+
+  // RSI
+  const rsiVal = d.rsi_14 != null ? d.rsi_14.toFixed(1) : '—';
+  const rsiCls  = d.rsi_14 == null ? '' : d.rsi_14 > 70 ? 'tek-ta-warn' : d.rsi_14 < 30 ? 'tek-ta-bull' : '';
+  const rsiLbl  = d.rsi_14 == null ? '' : d.rsi_14 > 70 ? 'Overbought' : d.rsi_14 < 30 ? 'Oversold' : 'Netral';
+
+  // SMA 50
+  const sma50Cls = d.price_vs_sma50 === 'above' ? 'tek-ta-bull' : d.price_vs_sma50 === 'below' ? 'tek-ta-bear' : '';
+  const sma50Lbl = d.price_vs_sma50 === 'above' ? 'Di atas ↑' : d.price_vs_sma50 === 'below' ? 'Di bawah ↓' : '—';
+  const sma50Val = d.sma_50 != null ? d.sma_50.toLocaleString('id-ID', {maximumFractionDigits:2}) : '—';
+
+  // SMA 200
+  const sma200Cls = d.price_vs_sma200 === 'above' ? 'tek-ta-bull' : d.price_vs_sma200 === 'below' ? 'tek-ta-bear' : 'tek-ta-muted';
+  const sma200Lbl = d.price_vs_sma200 === 'above' ? 'Di atas ↑' : d.price_vs_sma200 === 'below' ? 'Di bawah ↓' : 'data kurang';
+  const sma200Val = d.sma_200 != null ? d.sma_200.toLocaleString('id-ID', {maximumFractionDigits:2}) : '—';
+
+  // Volume (null for FX pairs)
+  const volNA    = d.volume_status === null && d.current_volume === null;
+  const volCls   = d.volume_status === 'High' ? 'tek-ta-warn' : d.volume_status === 'Low' ? 'tek-ta-muted' : '';
+  const volVal   = volNA ? 'n/a' : (d.volume_status || '—');
+  const volSub   = volNA ? 'FX OTC' : (d.current_volume != null ? fmtVol(d.current_volume) : '—');
+
+  gridEl.innerHTML =
+    `<div class="tek-ta-cell">` +
+      `<div class="tek-ta-label">RSI 14</div>` +
+      `<div class="tek-ta-val ${rsiCls}">${rsiVal}</div>` +
+      `<div class="tek-ta-sub">${rsiLbl}</div>` +
+    `</div>` +
+    `<div class="tek-ta-cell">` +
+      `<div class="tek-ta-label">SMA 50</div>` +
+      `<div class="tek-ta-val">${sma50Val}</div>` +
+      `<div class="tek-ta-sub ${sma50Cls}">${sma50Lbl}</div>` +
+    `</div>` +
+    `<div class="tek-ta-cell">` +
+      `<div class="tek-ta-label">SMA 200</div>` +
+      `<div class="tek-ta-val">${sma200Val}</div>` +
+      `<div class="tek-ta-sub ${sma200Cls}">${sma200Lbl}</div>` +
+    `</div>` +
+    `<div class="tek-ta-cell">` +
+      `<div class="tek-ta-label">Volume</div>` +
+      `<div class="tek-ta-val ${volCls}">${volVal}</div>` +
+      `<div class="tek-ta-sub">${volSub}</div>` +
+    `</div>`;
+
+  loadEl.style.display = 'none';
+  gridEl.style.display = 'grid';
+}
+
+function fmtVol(v) {
+  if (v >= 1e6) return (v / 1e6).toFixed(1) + 'M';
+  if (v >= 1e3) return (v / 1e3).toFixed(1) + 'K';
+  return String(v);
 }
 
 function initTeknikal() {
@@ -4943,6 +5066,7 @@ function initTeknikal() {
   loadMtfForPair();
   renderTekNews();
   createTVChart();
+  fetchTaData();
 }
 
 // ── DRAWER ────────────────────────────────────────────────
