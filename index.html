@@ -387,12 +387,23 @@ body {
 }
 .ringkasan-text {
   font-family: 'Syne', sans-serif; font-size: 13px; font-weight: 400;
-  line-height: 1.7; color: var(--text);
+  line-height: 1.75; color: var(--text);
 }
 .ringkasan-text .r-para {
-  margin: 0 0 .85em; padding: 0;
+  margin: 0 0 1.2em; padding: 0;
 }
 .ringkasan-text .r-para:last-child { margin-bottom: 0; }
+.r-cal {
+  background: rgba(255,255,255,.03);
+  border-left: 2px solid rgba(255,255,255,.14);
+  padding: 8px 10px 8px 12px;
+  border-radius: 0 5px 5px 0;
+  margin-left: -2px;
+}
+.hl-num  { color: var(--yellow); }
+.hl-cur  { color: var(--accent); font-weight: 600; }
+.hl-bull { color: var(--green);  font-family: 'DM Mono', monospace; font-size: 11px; }
+.hl-bear { color: var(--pink);   font-family: 'DM Mono', monospace; font-size: 11px; }
 .ringkasan-card-xau::before { background: #c9a227; }
 .ringkasan-xau-label {
   font-size: 9px; font-family: 'DM Mono', monospace; letter-spacing: .12em;
@@ -2401,10 +2412,28 @@ function escHtml(s) {
   return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
+function highlightInline(html) {
+  // Standalone currency codes — skip if adjacent to / (part of pair like EUR/USD)
+  html = html.replace(/\b(USD|EUR|GBP|JPY|CAD|AUD|NZD|CHF|CNY|DXY|XAU)\b/g, (m, _, offset, str) => {
+    if (str[offset - 1] === '/' || str[offset + m.length] === '/') return m;
+    return `<span class="hl-cur">${m}</span>`;
+  });
+  // Numbers: $amount, percentage, bps
+  html = html.replace(/(\$[\d,.]+|\b\d+(?:[,.]\d+)?\s*(?:%|bps)\b)/g, '<span class="hl-num">$1</span>');
+  // Calendar triggers — "jika beat/hawkish" green, "jika miss/dovish" red
+  html = html.replace(/(jika\s+(?:beat|hawkish):)/gi, '<span class="hl-bull">$1</span>');
+  html = html.replace(/(jika\s+(?:miss|dovish):)/gi,  '<span class="hl-bear">$1</span>');
+  return html;
+}
+
 function articleToHtml(text) {
   return text.trim().split(/\n\n+/).map(para => {
-    const escaped = escHtml(para.trim()).replace(/\n/g, '<br>');
-    return `<p class="r-para">${escaped}</p>`;
+    const t = para.trim();
+    const escaped = escHtml(t).replace(/\n/g, '<br>');
+    const highlighted = highlightInline(escaped);
+    // Calendar paragraph: has "jika beat/miss/hawkish/dovish" + WIB time — render with left border
+    const isCal = /jika\s+(?:beat|miss|hawkish|dovish)/i.test(t) && /\bWIB\b/.test(t);
+    return `<p class="r-para${isCal ? ' r-cal' : ''}">${highlighted}</p>`;
   }).join('');
 }
 
