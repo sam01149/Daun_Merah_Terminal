@@ -6,7 +6,7 @@
 const cb = require('./_circuit_breaker');
 
 const CACHE_KEY = 'risk_regime'
-const CACHE_TTL = 30 * 60 // 30 minutes in seconds
+const CACHE_TTL = 5 * 60 // 5 minutes — VIX now from Yahoo (15-min delay), worth refreshing often
 
 // FRED series: VIXCLS = CBOE VIX, BAMLH0A0HYM2 = ICE BofA US HY OAS spread
 const FRED_BASE = 'https://api.stlouisfed.org/fred/series/observations'
@@ -38,36 +38,43 @@ module.exports = async function handler(req, res) {
     console.warn('risk-regime: Redis GET failed:', e.message)
   }
 
-  // Fetch all three sources in parallel; partial failures are tolerable.
-  // Circuit breaker gates each fetch: if a source has been repeatedly failing,
-  // skip it immediately rather than burning 10s on a timeout.
-  const [fredVixAllowed, stooqAllowed, fredHyAllowed] = await Promise.all([
-    cb.canCall('fred'),
+  // Fetch all sources in parallel; partial failures are tolerable.
+  // VIX: Yahoo Finance primary (near real-time, 15-min delay) → FRED fallback (EOD).
+  // MOVE + HY: EOD only — no free real-time alternative exists.
+  const [stooqAllowed, fredAllowed] = await Promise.all([
     cb.canCall('stooq'),
     cb.canCall('fred'),
   ])
 
   const [vixResult, moveResult, hyResult] = await Promise.allSettled([
-    fredVixAllowed  ? fetchFredSeries('VIXCLS')        : Promise.reject(new Error('circuit:fred OPEN')),
-    stooqAllowed    ? fetchMove()                       : Promise.reject(new Error('circuit:stooq OPEN')),
-    fredHyAllowed   ? fetchFredSeries('BAMLH0A0HYM2')  : Promise.reject(new Error('circuit:fred OPEN')),
+    fetchYahooVix(),
+    stooqAllowed ? fetchMove()                      : Promise.reject(new Error('circuit:stooq OPEN')),
+    fredAllowed  ? fetchFredSeries('BAMLH0A0HYM2') : Promise.reject(new Error('circuit:fred OPEN')),
   ])
 
-  const vixData  = vixResult.status  === 'fulfilled' ? vixResult.value  : null
+  // VIX: use Yahoo result; fall back to FRED if Yahoo failed
+  let vixData = vixResult.status === 'fulfilled' ? vixResult.value : null
+  if (!vixData && fredAllowed) {
+    console.warn('risk-regime: Yahoo VIX failed, trying FRED fallback')
+    try {
+      vixData = await fetchFredSeries('VIXCLS')
+      if (vixData) vixData.source = 'fred'
+    } catch(e) {
+      console.warn('risk-regime: FRED VIX fallback also failed:', e.message)
+      cb.onFailure('fred').catch(() => {})
+    }
+  }
+
   const moveData = moveResult.status === 'fulfilled' ? moveResult.value : null
   const hyData   = hyResult.status   === 'fulfilled' ? hyResult.value   : null
 
-  // Update circuit breaker state based on fetch outcomes
-  if (fredVixAllowed) {
-    if (vixData) cb.onSuccess('fred').catch(() => {});
-    else         cb.onFailure('fred').catch(() => {});
-  }
   if (stooqAllowed) {
     if (moveData) cb.onSuccess('stooq').catch(() => {});
     else          cb.onFailure('stooq').catch(() => {});
   }
+  if (fredAllowed && hyData) cb.onSuccess('fred').catch(() => {})
 
-  if (!vixData)  console.warn('risk-regime: VIX fetch failed')
+  if (!vixData)  console.warn('risk-regime: VIX fetch failed (Yahoo + FRED both failed)')
   if (!moveData) console.warn('risk-regime: MOVE fetch failed — Stooq may have blocked')
   if (!hyData)   console.warn('risk-regime: HY spread fetch failed')
 
@@ -96,20 +103,24 @@ module.exports = async function handler(req, res) {
 
   const regime = classifyRegime(vix, move, hyChange, hySpread)
 
-  // data_date: use the most recent date available from any source
-  const dataDate = [vixData?.date, moveData?.date, hyData?.date].filter(Boolean).sort().pop() || null
+  // eod_date: most recent date from EOD sources (MOVE + HY) — shown in UI as "Data [tanggal]"
+  // vix_date: separate, used only when vix_source = 'fred' (also EOD)
+  const eodDate  = [moveData?.date, hyData?.date].filter(Boolean).sort().pop() || null
+  const vixDate  = vixData?.date || null
 
   const payload = {
     regime,
     vix,
     vix_change_2d: vixChange,
+    vix_source: vixData?.source || null, // 'yahoo' = near real-time | 'fred' = EOD fallback
     move,
     move_change_2d: moveChange,
     hy_spread: hySpread,
     hy_change_2d: hyChange,
     components,
     computed_at: new Date().toISOString(),
-    data_date: dataDate,
+    data_date: eodDate,   // EOD label (MOVE + HY)
+    vix_date:  vixDate,   // kept for debugging; frontend uses vix_source to decide display
   }
 
   redisCmd('SET', CACHE_KEY, JSON.stringify(payload), 'EX', CACHE_TTL).catch(e => {
@@ -142,6 +153,25 @@ function classifyRegime(vix, move, hyChange) {
 }
 
 // ── Data fetchers ─────────────────────────────────────────────────────────────
+
+// Yahoo Finance ^VIX — near real-time (15-min delay), updates during market hours
+async function fetchYahooVix() {
+  const r = await fetch('https://query1.finance.yahoo.com/v8/finance/chart/%5EVIX?range=1d&interval=5m', {
+    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+    signal: AbortSignal.timeout(8000),
+  })
+  if (!r.ok) throw new Error(`Yahoo VIX HTTP ${r.status}`)
+  const json = await r.json()
+  const meta  = json?.chart?.result?.[0]?.meta
+  const price = meta?.regularMarketPrice
+  const prev  = meta?.previousClose || meta?.chartPreviousClose
+  if (!price || price <= 0) throw new Error('Yahoo VIX: no valid price')
+  const marketTime = meta?.regularMarketTime
+  const date = marketTime
+    ? new Date(marketTime * 1000).toISOString().slice(0, 10)
+    : new Date().toISOString().slice(0, 10)
+  return { latest: +price.toFixed(2), prev: prev ? +prev.toFixed(2) : null, date, source: 'yahoo' }
+}
 
 async function fetchFredSeries(seriesId) {
   const apiKey = process.env.FRED_API_KEY

@@ -3404,13 +3404,17 @@ function renderRegimeBanner(data) {
   if (data.move     != null) parts.push(`MOVE ${Math.round(data.move)}${chgArrow(data.move_change_2d)}`)
   if (data.hy_spread != null) parts.push(`HY ${data.hy_spread.toFixed(2)}%${chgArrow(data.hy_change_2d)}`)
 
-  const updTime = data.data_date
-    ? new Date(data.data_date).toLocaleDateString('id-ID', { day:'numeric', month:'short' })
-    : '—'
+  const eodLabel = data.data_date
+    ? 'Data ' + new Date(data.data_date).toLocaleDateString('id-ID', { day:'numeric', month:'short' })
+    : null
+  const vixLive  = data.vix_source === 'yahoo'
+  const dataLabel = vixLive
+    ? (eodLabel ? `VIX live · MOVE/HY ${eodLabel}` : 'VIX live')
+    : (eodLabel || 'Data —')
 
   banner.className = `regime-banner ${CLASSES[data.regime] || 'neutral'}`
   label.textContent = `REGIME: ${LABELS[data.regime] || data.regime.toUpperCase()}`
-  meta.textContent  = parts.length ? `· ${parts.join(' · ')} · Data ${updTime}` : ''
+  meta.textContent  = parts.length ? `· ${parts.join(' · ')} · ${dataLabel}` : ''
 
   if (data.stale) meta.textContent += ' (stale)'
 
@@ -3430,7 +3434,8 @@ function renderRegimeBanner(data) {
     const cls    = comp.vix_trigger ? 'regime-trigger active' : 'regime-trigger'
     const chg    = fmtChg(data.vix_change_2d)
     const status = comp.vix_trigger ? '> 25 → TRIGGER' : '≤ 25 → aman'
-    rows.push(`<div class="${cls}">VIX (vol. saham) ${data.vix.toFixed(1)}${chg} — ${status}</div>`)
+    const src    = data.vix_source === 'yahoo' ? ' · live (15m delay)' : ' · EOD'
+    rows.push(`<div class="${cls}">VIX (vol. saham) ${data.vix.toFixed(1)}${chg} — ${status}${src}</div>`)
   }
 
   // MOVE row
