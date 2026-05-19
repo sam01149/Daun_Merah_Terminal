@@ -305,12 +305,13 @@ async function storeCOTHistory(positions, reportDate) {
 
 // ── CB Research handler ───────────────────────────────────────────────────────
 
+// Sources verified accessible from Vercel serverless IPs (no WAF block)
+// BIS/IMF/FRED/BOE/NY Fed → 403 from Vercel — removed
 const CB_RESEARCH_SOURCES = [
-  { key: 'FED', name: 'Federal Reserve', url: 'https://www.federalreserve.gov/feeds/speeches.xml' },
-  { key: 'ECB', name: 'ECB',             url: 'https://www.ecb.europa.eu/rss/press.html' },
-  { key: 'BIS', name: 'BIS',             url: 'https://www.bis.org/doclist/cbspeeches.rss' },
-  { key: 'IMF', name: 'IMF Blog',        url: 'https://www.imf.org/en/Blogs/rss' },
-  { key: 'FRED', name: 'FRED Blog',      url: 'https://fredblog.stlouisfed.org/feed/' },
+  { key: 'FED',  url: 'https://www.federalreserve.gov/feeds/speeches.xml' },
+  { key: 'FOMC', url: 'https://www.federalreserve.gov/feeds/press_monetary.xml' },
+  { key: 'ECB',  url: 'https://www.ecb.europa.eu/rss/press.html' },
+  { key: 'ECBB', url: 'https://www.ecb.europa.eu/rss/blog.html' },
 ];
 const RESEARCH_CACHE_KEY    = 'research_cache';
 const RESEARCH_CACHE_TTL_MS = 6 * 60 * 60 * 1000;

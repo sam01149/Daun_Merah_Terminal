@@ -84,7 +84,15 @@ Financial_Feed_App/
 Proxy RSS FinancialJuice. Redis `rss_cache` TTL 60s. Header `X-Cache-Source: REDIS/UPSTREAM/STALE`.
 
 ### `GET /api/feeds?type=research`
-Fetch CB speeches/publications dari Fed + ECB RSS feeds secara paralel. Merge, sort by date, 30 items terbaru. Redis `research_cache` TTL 6h. Response: `{ items:[{ title, pubDate, link, source }], fetched_at, stale? }`.
+Fetch CB speeches/publications dari 4 RSS feeds paralel. Merge, sort by date, 50 items terbaru (max 20/sumber). Redis `research_cache` TTL 6h. Response: `{ items:[{ title, pubDate, link, source }], fetched_at, stale? }`.
+
+**Sumber aktif (verified accessible dari Vercel serverless IPs):**
+- `FED`  — `federalreserve.gov/feeds/speeches.xml` (Fed speeches)
+- `FOMC` — `federalreserve.gov/feeds/press_monetary.xml` (FOMC statements, rate decisions)
+- `ECB`  — `ecb.europa.eu/rss/press.html` (ECB press releases)
+- `ECBB` — `ecb.europa.eu/rss/blog.html` (ECB research blog)
+
+**Diblokir WAF dari Vercel IPs (403):** BIS, IMF Blog, FRED Blog, BOE, NY Fed.
 > Nitter (`?type=nitter`) sudah dihapus — semua instance return body kosong sejak X/Twitter blokir scraping.
 
 ### `GET /api/feeds?type=cot`
@@ -263,7 +271,7 @@ localStorage keys: `daunmerah_v2` (state), `daun_merah_playbook` (active), `daun
 | `cot_cache_v2` | Full COT payload | 21600s | `api/feeds.js` |
 | `cot_history` | Sorted set snapshot mingguan COT (score=timestamp, 90-day rolling) | no TTL (rolling ZREMRANGE) | `api/feeds.js` |
 | `cot_hist_lock:{dateKey}` | Dedup lock per minggu COT report | 604800s | `api/feeds.js` |
-| `research_cache` | CB research items JSON (Fed + ECB, 30 items terbaru) | 21600s | `api/feeds.js` |
+| `research_cache` | CB research items JSON (FED+FOMC+ECB+ECBB, 50 items terbaru) | 21600s | `api/feeds.js` |
 | `cb_bias` | `{USD:{bias,confidence,updated_at},...}` | no TTL | `api/market-digest.js` |
 | `digest_history` | Redis list max 7 entri digest AI (LPUSH/LTRIM) | no TTL | `api/market-digest.js` |
 | `latest_thesis` | Structured thesis JSON | 21600s | `api/market-digest.js` |
@@ -395,8 +403,8 @@ generateFundamentalAnalysis() // POST /api/admin?action=fundamental_analysis
 - ✅ **GOLD_KEYWORDS expansion** — tambah `'iran'` standalone, `'hormuz'`, `'beijing'`, `'china visit'`, `'rare earth'`, `'ofac sanction'`, `'iran oil'` dll. Sebelumnya Iran/Hormuz escalation + Trump-China visit menghasilkan 0 gold matches → AI wajib tulis "sinyal gold tipis". Setelah fix: 12/14 headline relevan match (2026-05-11)
 - ✅ P2: cb_bias race condition — distributed lock `SET cb_bias_lock NX EX 10` di `market-digest.js`; semua timeout AI diperketat (Cerebras/SambaNova 8s, Groq fallback 12-14s) mencegah Vercel 504; hapus SambaNova retry Call 3 (2026-05-18)
 - ✅ P1: Pip value cross-pair approximation — `calcPipValueUSD` sekarang terima param `rates` (live FX rates dari `sizing_rates` Redis). Cross pairs triangulasi via USD/quote nyata: EUR/JPY → 1000 JPY / USDJPY = USD; GBP/CAD → 10 CAD / USDCAD = USD. Fallback ke approximasi entry price jika rates belum tersedia. Backend: `GET /api/correlations?action=rates` (Yahoo v7/quote, Redis cache 5 menit, stale fallback). Frontend: `fetchSizingRates()` dipanggil di `initSizing()`, localStorage cache 4 jam, error message context-aware (2026-05-18)
-- ✅ **CB Research panel** — tambah `GET /api/feeds?type=research`: fetch Fed speeches + ECB press RSS paralel, merge 30 items terbaru, Redis `research_cache` TTL 6h, stale fallback. Frontend: panel "CB RESEARCH" di tab RINGKASAN (bawah Korelasi), load on-demand via tombol, render list item dengan source badge berwarna (FED merah, ECB kuning) + judul clickable + tanggal. (2026-05-19)
-- ✅ **CB Research tambahan (BIS, IMF, FRED)** — memperbaiki URL BIS yang 404 ke endpoint baru (`/doclist/cbspeeches.rss`) dan mem-bypass 403 WAF dari IMF/FRED dengan mengacak User-Agent browser asli serta `Accept` headers. Diimplementasikan di `fetchCBFeed`. (2026-05-19)
+- ✅ **Tab RISET (CB Research)** — tab baru antara NEWS dan RINGKASAN. Backend: `GET /api/feeds?type=research`, 4 sumber aktif (FED speeches + FOMC monetary press + ECB press + ECB blog), `Promise.allSettled` paralel, max 20 item/sumber total 50, Redis `research_cache` TTL 6h, UA rotation untuk bypass light WAF. Frontend: toolbar dengan dynamic filter per sumber, source breakdown meta (`FED 15 · FOMC 8 · ECB 12 · ECBB 5`), artikel dengan colored badge + judul clickable + tanggal. Sumber diblokir Vercel WAF (403) dan tidak digunakan: BIS, IMF, FRED, BOE, NY Fed. (2026-05-19)
+- ✅ **CB Research tambahan (BIS, IMF, FRED) proxy** — awalnya memakai User-Agent spoofing, namun request dari IP Vercel tetap diblokir oleh WAF (Cloudflare/Akamai) menghasilkan 403/404. Solusi: mem-proxy URL BIS, IMF, dan FRED melalui layanan `api.rss2json.com`. Logika `fetchCBFeed` ditambahkan handler JSON khusus untuk url rss2json. (2026-05-19)
 
 ---
 
