@@ -130,6 +130,29 @@ body {
 .nvtab[data-view="petunjuk"].active    { color: #60a5fa; border-bottom-color: #60a5fa; }
 .nvtab[data-view="teknikal"]           { color: #38bdf8; }
 .nvtab[data-view="teknikal"].active    { color: #38bdf8; border-bottom-color: #38bdf8; }
+.nvtab[data-view="riset"]             { color: #34d399; }
+.nvtab[data-view="riset"].active      { color: #34d399; border-bottom-color: #34d399; }
+
+/* RISET PANEL */
+.riset-toolbar { display:flex; align-items:center; justify-content:space-between; padding:8px 12px; border-bottom:1px solid var(--border); gap:8px; flex-shrink:0; }
+.riset-filter-group { display:flex; gap:4px; }
+.riset-filter { background:none; border:1px solid var(--border); color:var(--muted); font-family:'DM Mono',monospace; font-size:9px; letter-spacing:.06em; padding:4px 9px; border-radius:2px; cursor:pointer; transition:all .12s; }
+.riset-filter.active { color:#34d399; border-color:#34d399; }
+.riset-meta { font-size:8px; color:var(--muted); font-family:'DM Mono',monospace; flex-shrink:0; }
+.riset-refresh { background:none; border:none; color:var(--muted); font-size:13px; cursor:pointer; padding:2px 6px; }
+.riset-refresh:hover { color:var(--text); }
+.riset-list { padding-bottom:16px; }
+.riset-item { padding:10px 12px; border-bottom:1px solid var(--border); cursor:pointer; transition:background .1s; }
+.riset-item:hover { background:rgba(255,255,255,.025); }
+.riset-item-top { display:flex; align-items:flex-start; gap:8px; }
+.riset-badge { font-size:8px; font-weight:700; font-family:'DM Mono',monospace; padding:2px 5px; border-radius:2px; flex-shrink:0; margin-top:2px; }
+.riset-badge.FED { background:rgba(192,57,43,.18); color:var(--accent); }
+.riset-badge.ECB { background:rgba(230,126,34,.18); color:var(--yellow); }
+.riset-badge.BIS { background:rgba(167,139,250,.18); color:var(--purple); }
+.riset-badge.IMF { background:rgba(96,165,250,.18); color:#60a5fa; }
+.riset-title { font-size:11px; font-family:'DM Mono',monospace; color:var(--text); text-decoration:none; line-height:1.4; display:block; }
+.riset-title:hover { color:#34d399; }
+.riset-date { font-size:9px; color:var(--muted); font-family:'DM Mono',monospace; margin-top:3px; }
 
 /* SIZING FORM */
 .sizing-form { display:flex; flex-direction:column; gap:10px; }
@@ -149,13 +172,6 @@ body {
 .corr-section { margin-top:14px; }
 .corr-title   { font-size:9px; color:var(--muted); font-family:'DM Mono',monospace; letter-spacing:.1em; margin-bottom:8px; }
 
-/* CB RESEARCH */
-.research-list { display:flex; flex-direction:column; gap:7px; margin-top:8px; }
-.research-item { display:grid; grid-template-columns:32px 1fr; grid-template-rows:auto auto; column-gap:7px; row-gap:1px; }
-.research-source { font-size:8px; font-weight:700; font-family:'DM Mono',monospace; align-self:center; grid-row:1/3; text-align:center; padding:3px 0; border-radius:2px; }
-.research-title { font-size:10px; font-family:'DM Mono',monospace; color:var(--text); text-decoration:none; line-height:1.35; }
-.research-title:hover { color:var(--accent); }
-.research-date { font-size:8px; color:var(--muted); font-family:'DM Mono',monospace; }
 .corr-anomaly { background:var(--surface); border:1px solid var(--border); border-radius:3px; padding:8px 10px; margin-bottom:5px; font-family:'DM Mono',monospace; font-size:10px; }
 .corr-anomaly-hdr { display:flex; justify-content:space-between; align-items:center; }
 .corr-label   { color:var(--text-mid); }
@@ -1385,6 +1401,7 @@ body {
 <!-- PRIMARY NAV -->
 <div class="nav-views" id="navViews">
   <button class="nvtab active" data-view="feed" id="feedNavTab">NEWS</button>
+  <button class="nvtab" data-view="riset" id="risetTab">RISET</button>
   <button class="nvtab" data-view="ringkasan" id="ringkasanTab">RINGKASAN</button>
   <button class="nvtab" data-view="cal" id="calTab">CAL<span id="calTabBadge" class="nvtab-badge" style="display:none">!</span></button>
   <button class="nvtab" data-view="cot" id="cotTab">COT</button>
@@ -1438,6 +1455,27 @@ body {
   </div>
 </div>
 
+<!-- RISET PANEL -->
+<div class="feed-scroll" id="risetPanel" style="display:none;padding:0">
+  <div class="riset-toolbar" style="position:sticky;top:0;z-index:10;background:var(--bg)">
+    <div class="riset-filter-group">
+      <button class="riset-filter active" data-src="all" onclick="setRisetFilter('all')">Semua</button>
+      <button class="riset-filter" data-src="FED" onclick="setRisetFilter('FED')">FED</button>
+      <button class="riset-filter" data-src="ECB" onclick="setRisetFilter('ECB')">ECB</button>
+    </div>
+    <div style="display:flex;align-items:center;gap:6px">
+      <span class="riset-meta" id="risetMeta"></span>
+      <button class="riset-refresh" onclick="fetchResearch(true)" title="Refresh">↻</button>
+    </div>
+  </div>
+  <div id="risetList">
+    <div class="state-box">
+      <div class="icon" style="font-size:24px">📄</div>
+      <p style="font-size:12px">Memuat CB research...</p>
+    </div>
+  </div>
+</div>
+
 <!-- RINGKASAN PANEL -->
 <div class="feed-scroll" id="ringkasanPanel" style="display:none">
   <div class="ringkasan-inner" id="ringkasanInner">
@@ -1459,15 +1497,6 @@ body {
     </div>
     <div style="margin-top:8px">
       <button id="corrBtn" class="jn-btn-sec" onclick="fetchCorrelations()" style="width:100%;font-size:10px">↻ Muat Korelasi Cross-Asset</button>
-    </div>
-  </div>
-  <div class="ringkasan-inner" style="padding-top:0" id="researchPanelWrap">
-    <div class="corr-section" id="researchPanel">
-      <div class="corr-title">CB RESEARCH</div>
-      <div style="font-size:10px;color:var(--muted);font-family:'DM Mono',monospace">Pidato &amp; publikasi terbaru bank sentral (Fed, ECB).</div>
-    </div>
-    <div style="margin-top:8px">
-      <button id="researchBtn" class="jn-btn-sec" onclick="fetchResearch()" style="width:100%;font-size:10px">↻ Muat CB Research</button>
     </div>
   </div>
 </div>
@@ -2565,7 +2594,7 @@ function setFeedUI(show) {
 }
 
 function hideAllPanels() {
-  ['feedScroll','ringkasanPanel','calPanel','cotPanel','fundamentalPanel','checklistPanel','sizingPanel','jurnalPanel','petunjukPanel','teknikalPanel']
+  ['feedScroll','risetPanel','ringkasanPanel','calPanel','cotPanel','fundamentalPanel','checklistPanel','sizingPanel','jurnalPanel','petunjukPanel','teknikalPanel']
     .forEach(id => { document.getElementById(id).style.display = 'none'; });
 }
 
@@ -2582,6 +2611,11 @@ document.querySelectorAll('#navViews .nvtab').forEach(btn => {
       activeView = 'feed';
       document.getElementById('feedScroll').style.display = 'block';
       renderFeed();
+    } else if (view === 'riset') {
+      setFeedUI(false);
+      activeView = 'riset';
+      document.getElementById('risetPanel').style.display = 'flex';
+      if (!researchCache) fetchResearch(); else renderResearch();
     } else if (view === 'ringkasan') {
       setFeedUI(false);
       activeView = 'ringkasan';
@@ -2819,11 +2853,12 @@ async function fetchCorrelations() {
 
 // ── CB Research ──────────────────────────────────────────────────────────────
 
-async function fetchResearch() {
-  const btn   = document.getElementById('researchBtn');
-  const panel = document.getElementById('researchPanel');
-  if (btn) { btn.disabled = true; btn.textContent = '⏳ Memuat...'; }
-  if (panel) panel.innerHTML = `<div class="corr-title">CB RESEARCH</div><div style="font-size:10px;color:var(--muted);font-family:'DM Mono',monospace">Mengambil data...</div>`;
+let risetActiveFilter = 'all';
+
+async function fetchResearch(force) {
+  const list = document.getElementById('risetList');
+  const meta = document.getElementById('risetMeta');
+  if (list) list.innerHTML = '<div class="state-box"><div class="icon" style="font-size:24px">⏳</div><p style="font-size:12px">Memuat publikasi...</p></div>';
   try {
     const res = await fetch('/api/feeds?type=research', { signal: AbortSignal.timeout(15000) });
     if (!res.ok) throw new Error('HTTP ' + res.status);
@@ -2833,34 +2868,39 @@ async function fetchResearch() {
     renderResearch();
   } catch(e) {
     console.warn('CB Research fetch failed:', e.message);
-    if (panel) panel.innerHTML = `<div class="corr-title">CB RESEARCH</div><div style="font-size:10px;color:#e05c5c;font-family:'DM Mono',monospace">Gagal memuat: ${e.message}</div>`;
-  } finally {
-    if (btn) { btn.disabled = false; btn.textContent = '↻ Muat CB Research'; }
+    if (list) list.innerHTML = `<div class="state-box"><p style="color:#e05c5c;font-size:11px">Gagal memuat: ${escHtml(e.message)}</p></div>`;
+    if (meta) meta.textContent = 'error';
   }
 }
 
+function setRisetFilter(src) {
+  risetActiveFilter = src;
+  document.querySelectorAll('.riset-filter').forEach(b => b.classList.toggle('active', b.dataset.src === src));
+  renderResearch();
+}
+
 function renderResearch() {
-  const panel = document.getElementById('researchPanel');
-  if (!panel || !researchCache) return;
+  const list = document.getElementById('risetList');
+  const meta = document.getElementById('risetMeta');
+  if (!list || !researchCache) return;
   const { items, fetched_at, stale } = researchCache;
   if (!items || items.length === 0) {
-    panel.innerHTML = `<div class="corr-title">CB RESEARCH</div><div style="font-size:10px;color:var(--muted);font-family:'DM Mono',monospace">Tidak ada data.</div>`;
+    list.innerHTML = '<div class="state-box"><p style="font-size:11px;color:var(--muted)">Tidak ada data.</p></div>';
     return;
   }
-  const SOURCE_COLOR = { FED: 'var(--accent)', ECB: 'var(--yellow)', BIS: 'var(--purple)', IMF: '#60a5fa' };
-  const fmtDate = d => { const dt = new Date(d); return isNaN(dt) ? '' : dt.toLocaleDateString('id-ID', { day:'numeric', month:'short' }); };
-  const tsStr = fetched_at ? new Date(fetched_at).toLocaleTimeString('id-ID', { hour:'2-digit', minute:'2-digit' }) : '';
-  panel.innerHTML = `
-    <div class="corr-title">CB RESEARCH${stale ? ' <span style="color:var(--yellow);font-weight:normal">(cache)</span>' : ''}</div>
-    <div class="research-list">
-      ${items.map(it => `
-        <div class="research-item">
-          <span class="research-source" style="color:${SOURCE_COLOR[it.source]||'var(--muted)'}">${escHtml(it.source)}</span>
-          <a href="${escHtml(it.link)}" target="_blank" rel="noopener noreferrer" class="research-title">${escHtml(it.title)}</a>
-          <span class="research-date">${fmtDate(it.pubDate)}</span>
-        </div>`).join('')}
-    </div>
-    <div style="font-size:9px;color:var(--muted);font-family:'DM Mono',monospace;margin-top:8px;text-align:right">${tsStr} · ${items.length} publikasi</div>`;
+  const filtered = risetActiveFilter === 'all' ? items : items.filter(it => it.source === risetActiveFilter);
+  const fmtDate = d => { const dt = new Date(d); return isNaN(dt) ? '' : dt.toLocaleDateString('id-ID', { day:'numeric', month:'short', year:'numeric' }); };
+  if (meta) meta.textContent = (stale ? 'cache · ' : '') + filtered.length + ' artikel';
+  list.innerHTML = filtered.length === 0
+    ? '<div class="state-box"><p style="font-size:11px;color:var(--muted)">Tidak ada artikel untuk sumber ini.</p></div>'
+    : filtered.map(it => `
+      <div class="riset-item">
+        <div class="riset-item-top">
+          <span class="riset-badge ${escHtml(it.source)}">${escHtml(it.source)}</span>
+          <a href="${escHtml(it.link)}" target="_blank" rel="noopener noreferrer" class="riset-title">${escHtml(it.title)}</a>
+        </div>
+        <div class="riset-date">${fmtDate(it.pubDate)}</div>
+      </div>`).join('');
 }
 
 // Metadata for gold cross-asset correlations: label shown to user + context hint
@@ -5226,8 +5266,8 @@ document.addEventListener('click', function(e) {
 
 // ── SWIPE NAVIGATION ─────────────────────────────────────────
 (function() {
-  const VIEWS = ['feed','ringkasan','cal','cot','fundamental','checklist','sizing','jurnal','petunjuk','teknikal'];
-  const PANEL_ID = { feed:'feedScroll', ringkasan:'ringkasanPanel', cal:'calPanel', cot:'cotPanel', fundamental:'fundamentalPanel', checklist:'checklistPanel', sizing:'sizingPanel', jurnal:'jurnalPanel', petunjuk:'petunjukPanel', teknikal:'teknikalPanel' };
+  const VIEWS = ['feed','riset','ringkasan','cal','cot','fundamental','checklist','sizing','jurnal','petunjuk','teknikal'];
+  const PANEL_ID = { feed:'feedScroll', riset:'risetPanel', ringkasan:'ringkasanPanel', cal:'calPanel', cot:'cotPanel', fundamental:'fundamentalPanel', checklist:'checklistPanel', sizing:'sizingPanel', jurnal:'jurnalPanel', petunjuk:'petunjukPanel', teknikal:'teknikalPanel' };
   const MIN_X = 60;
   let sx = 0, sy = 0;
   document.addEventListener('touchstart', function(e) {
@@ -5265,6 +5305,10 @@ document.addEventListener('click', function(e) {
   <button class="bot-nav-btn active" data-view="feed">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
     <span>News</span>
+  </button>
+  <button class="bot-nav-btn" data-view="riset">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+    <span>Riset</span>
   </button>
   <button class="bot-nav-btn" data-view="ringkasan">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="7" y1="8" x2="17" y2="8"/><line x1="7" y1="12" x2="17" y2="12"/><line x1="7" y1="16" x2="13" y2="16"/></svg>
