@@ -336,7 +336,7 @@ async function researchHandler(req, res) {
     if (r.status === 'fulfilled') items = items.concat(r.value);
   }
   items.sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate));
-  items = items.slice(0, 30);
+  items = items.slice(0, 50);
 
   if (items.length === 0) {
     try {
@@ -393,5 +393,5 @@ function parseCBRSSItems(xml, sourceKey) {
     const link    = b.match(/<link>\s*(https?:\/\/[^\s<]+)\s*<\/link>/)?.[1] || get('link');
     if (title && pubDate) items.push({ title, pubDate, link: link || '', source: sourceKey });
   }
-  return items.slice(0, 15);
+  return items.slice(0, 20);
 }
