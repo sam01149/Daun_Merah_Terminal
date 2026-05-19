@@ -1,12 +1,14 @@
 // api/feeds.js — consolidated feeds endpoint
-// GET /api/feeds?type=rss → FinancialJuice RSS XML (50s cache)
-// GET /api/feeds?type=cot → CFTC COT JSON (6h cache)
+// GET /api/feeds?type=rss      → FinancialJuice RSS XML (50s cache)
+// GET /api/feeds?type=cot      → CFTC COT JSON (6h cache)
+// GET /api/feeds?type=research → CB speeches/publications JSON (6h cache)
 
 module.exports = async function handler(req, res) {
   const type = req.query.type;
-  if (type === 'rss') return rssHandler(req, res);
-  if (type === 'cot') return cotHandler(req, res);
-  return res.status(400).json({ error: 'Missing ?type= — use rss or cot' });
+  if (type === 'rss')      return rssHandler(req, res);
+  if (type === 'cot')      return cotHandler(req, res);
+  if (type === 'research') return researchHandler(req, res);
+  return res.status(400).json({ error: 'Missing ?type= — use rss, cot, or research' });
 };
 
 // ── Shared Redis helper ────────────────────────────────────────────────────────
@@ -299,4 +301,83 @@ async function storeCOTHistory(positions, reportDate) {
   // Keep 90-day rolling window
   const cutoff = ts - 90 * 24 * 60 * 60 * 1000;
   await redisCmd('ZREMRANGEBYSCORE', 'cot_history', '-inf', cutoff);
+}
+
+// ── CB Research handler ───────────────────────────────────────────────────────
+
+const CB_RESEARCH_SOURCES = [
+  { key: 'FED', name: 'Federal Reserve', url: 'https://www.federalreserve.gov/feeds/speeches.xml' },
+  { key: 'ECB', name: 'ECB',             url: 'https://www.ecb.europa.eu/rss/press.html' },
+];
+const RESEARCH_CACHE_KEY    = 'research_cache';
+const RESEARCH_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+
+async function researchHandler(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Cache-Control', 'no-cache');
+
+  try {
+    const cached = await redisCmd('GET', RESEARCH_CACHE_KEY);
+    if (cached) {
+      const obj = JSON.parse(cached);
+      if (Date.now() - new Date(obj.fetched_at).getTime() < RESEARCH_CACHE_TTL_MS) {
+        return res.json(obj);
+      }
+    }
+  } catch(e) {}
+
+  const results = await Promise.allSettled(CB_RESEARCH_SOURCES.map(fetchCBFeed));
+
+  let items = [];
+  for (const r of results) {
+    if (r.status === 'fulfilled') items = items.concat(r.value);
+  }
+  items.sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate));
+  items = items.slice(0, 30);
+
+  if (items.length === 0) {
+    try {
+      const stale = await redisCmd('GET', RESEARCH_CACHE_KEY);
+      if (stale) return res.json({ ...JSON.parse(stale), stale: true });
+    } catch(e) {}
+    return res.status(502).json({ error: 'All CB research feeds failed' });
+  }
+
+  const payload = { items, fetched_at: new Date().toISOString() };
+  redisCmd('SET', RESEARCH_CACHE_KEY, JSON.stringify(payload), 'EX', 21600).catch(() => {});
+  return res.json(payload);
+}
+
+async function fetchCBFeed(source) {
+  try {
+    const r = await fetch(source.url, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; DaunMerah/1.0)', 'Accept': 'application/rss+xml,*/*' },
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const xml = await r.text();
+    return parseCBRSSItems(xml, source.key);
+  } catch(e) {
+    console.warn(`CB research fetch failed [${source.key}]:`, e.message);
+    return [];
+  }
+}
+
+function parseCBRSSItems(xml, sourceKey) {
+  const items = [];
+  const re = /<item>([\s\S]*?)<\/item>/g;
+  let m;
+  while ((m = re.exec(xml)) !== null) {
+    const b = m[1];
+    const get = tag => {
+      const r1 = new RegExp(`<${tag}[^>]*><!\\[CDATA\\[([\\s\\S]*?)\\]\\]><\\/${tag}>`).exec(b);
+      const r2 = new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`).exec(b);
+      return (r1 || r2)?.[1]?.trim() || '';
+    };
+    const title   = get('title');
+    const pubDate = get('pubDate');
+    const link    = b.match(/<link>\s*(https?:\/\/[^\s<]+)\s*<\/link>/)?.[1] || get('link');
+    if (title && pubDate) items.push({ title, pubDate, link: link || '', source: sourceKey });
+  }
+  return items.slice(0, 15);
 }

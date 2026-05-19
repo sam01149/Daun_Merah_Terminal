@@ -148,6 +148,14 @@ body {
 /* CORRELATIONS */
 .corr-section { margin-top:14px; }
 .corr-title   { font-size:9px; color:var(--muted); font-family:'DM Mono',monospace; letter-spacing:.1em; margin-bottom:8px; }
+
+/* CB RESEARCH */
+.research-list { display:flex; flex-direction:column; gap:7px; margin-top:8px; }
+.research-item { display:grid; grid-template-columns:32px 1fr; grid-template-rows:auto auto; column-gap:7px; row-gap:1px; }
+.research-source { font-size:8px; font-weight:700; font-family:'DM Mono',monospace; align-self:center; grid-row:1/3; text-align:center; padding:3px 0; border-radius:2px; }
+.research-title { font-size:10px; font-family:'DM Mono',monospace; color:var(--text); text-decoration:none; line-height:1.35; }
+.research-title:hover { color:var(--accent); }
+.research-date { font-size:8px; color:var(--muted); font-family:'DM Mono',monospace; }
 .corr-anomaly { background:var(--surface); border:1px solid var(--border); border-radius:3px; padding:8px 10px; margin-bottom:5px; font-family:'DM Mono',monospace; font-size:10px; }
 .corr-anomaly-hdr { display:flex; justify-content:space-between; align-items:center; }
 .corr-label   { color:var(--text-mid); }
@@ -1453,6 +1461,15 @@ body {
       <button id="corrBtn" class="jn-btn-sec" onclick="fetchCorrelations()" style="width:100%;font-size:10px">↻ Muat Korelasi Cross-Asset</button>
     </div>
   </div>
+  <div class="ringkasan-inner" style="padding-top:0" id="researchPanelWrap">
+    <div class="corr-section" id="researchPanel">
+      <div class="corr-title">CB RESEARCH</div>
+      <div style="font-size:10px;color:var(--muted);font-family:'DM Mono',monospace">Pidato &amp; publikasi terbaru bank sentral (Fed, ECB).</div>
+    </div>
+    <div style="margin-top:8px">
+      <button id="researchBtn" class="jn-btn-sec" onclick="fetchResearch()" style="width:100%;font-size:10px">↻ Muat CB Research</button>
+    </div>
+  </div>
 </div>
 
 <!-- CALENDAR PANEL -->
@@ -2072,6 +2089,9 @@ let ratePathFetAt   = 0;
 // Correlations state
 let corrData        = null;
 let corrFetAt       = 0;
+
+// CB Research state
+let researchCache   = null;
 
 // ── SERVICE WORKER ───────────────────────────────────────
 if ('serviceWorker' in navigator) {
@@ -2795,6 +2815,52 @@ async function fetchCorrelations() {
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = '↻ Muat Korelasi Cross-Asset'; }
   }
+}
+
+// ── CB Research ──────────────────────────────────────────────────────────────
+
+async function fetchResearch() {
+  const btn   = document.getElementById('researchBtn');
+  const panel = document.getElementById('researchPanel');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Memuat...'; }
+  if (panel) panel.innerHTML = `<div class="corr-title">CB RESEARCH</div><div style="font-size:10px;color:var(--muted);font-family:'DM Mono',monospace">Mengambil data...</div>`;
+  try {
+    const res = await fetch('/api/feeds?type=research', { signal: AbortSignal.timeout(15000) });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    researchCache = data;
+    renderResearch();
+  } catch(e) {
+    console.warn('CB Research fetch failed:', e.message);
+    if (panel) panel.innerHTML = `<div class="corr-title">CB RESEARCH</div><div style="font-size:10px;color:#e05c5c;font-family:'DM Mono',monospace">Gagal memuat: ${e.message}</div>`;
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '↻ Muat CB Research'; }
+  }
+}
+
+function renderResearch() {
+  const panel = document.getElementById('researchPanel');
+  if (!panel || !researchCache) return;
+  const { items, fetched_at, stale } = researchCache;
+  if (!items || items.length === 0) {
+    panel.innerHTML = `<div class="corr-title">CB RESEARCH</div><div style="font-size:10px;color:var(--muted);font-family:'DM Mono',monospace">Tidak ada data.</div>`;
+    return;
+  }
+  const SOURCE_COLOR = { FED: 'var(--accent)', ECB: 'var(--yellow)', BIS: 'var(--purple)', IMF: '#60a5fa' };
+  const fmtDate = d => { const dt = new Date(d); return isNaN(dt) ? '' : dt.toLocaleDateString('id-ID', { day:'numeric', month:'short' }); };
+  const tsStr = fetched_at ? new Date(fetched_at).toLocaleTimeString('id-ID', { hour:'2-digit', minute:'2-digit' }) : '';
+  panel.innerHTML = `
+    <div class="corr-title">CB RESEARCH${stale ? ' <span style="color:var(--yellow);font-weight:normal">(cache)</span>' : ''}</div>
+    <div class="research-list">
+      ${items.map(it => `
+        <div class="research-item">
+          <span class="research-source" style="color:${SOURCE_COLOR[it.source]||'var(--muted)'}">${escHtml(it.source)}</span>
+          <a href="${escHtml(it.link)}" target="_blank" rel="noopener noreferrer" class="research-title">${escHtml(it.title)}</a>
+          <span class="research-date">${fmtDate(it.pubDate)}</span>
+        </div>`).join('')}
+    </div>
+    <div style="font-size:9px;color:var(--muted);font-family:'DM Mono',monospace;margin-top:8px;text-align:right">${tsStr} · ${items.length} publikasi</div>`;
 }
 
 // Metadata for gold cross-asset correlations: label shown to user + context hint

@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-05-18 (session 20)
+> **Last updated:** 2026-05-19 (session 21)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Downloads\Financial_Feed_App`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -82,6 +82,9 @@ Financial_Feed_App/
 
 ### `GET /api/feeds?type=rss`
 Proxy RSS FinancialJuice. Redis `rss_cache` TTL 60s. Header `X-Cache-Source: REDIS/UPSTREAM/STALE`.
+
+### `GET /api/feeds?type=research`
+Fetch CB speeches/publications dari Fed + ECB RSS feeds secara paralel. Merge, sort by date, 30 items terbaru. Redis `research_cache` TTL 6h. Response: `{ items:[{ title, pubDate, link, source }], fetched_at, stale? }`.
 > Nitter (`?type=nitter`) sudah dihapus — semua instance return body kosong sejak X/Twitter blokir scraping.
 
 ### `GET /api/feeds?type=cot`
@@ -260,6 +263,7 @@ localStorage keys: `daunmerah_v2` (state), `daun_merah_playbook` (active), `daun
 | `cot_cache_v2` | Full COT payload | 21600s | `api/feeds.js` |
 | `cot_history` | Sorted set snapshot mingguan COT (score=timestamp, 90-day rolling) | no TTL (rolling ZREMRANGE) | `api/feeds.js` |
 | `cot_hist_lock:{dateKey}` | Dedup lock per minggu COT report | 604800s | `api/feeds.js` |
+| `research_cache` | CB research items JSON (Fed + ECB, 30 items terbaru) | 21600s | `api/feeds.js` |
 | `cb_bias` | `{USD:{bias,confidence,updated_at},...}` | no TTL | `api/market-digest.js` |
 | `digest_history` | Redis list max 7 entri digest AI (LPUSH/LTRIM) | no TTL | `api/market-digest.js` |
 | `latest_thesis` | Structured thesis JSON | 21600s | `api/market-digest.js` |
@@ -391,6 +395,7 @@ generateFundamentalAnalysis() // POST /api/admin?action=fundamental_analysis
 - ✅ **GOLD_KEYWORDS expansion** — tambah `'iran'` standalone, `'hormuz'`, `'beijing'`, `'china visit'`, `'rare earth'`, `'ofac sanction'`, `'iran oil'` dll. Sebelumnya Iran/Hormuz escalation + Trump-China visit menghasilkan 0 gold matches → AI wajib tulis "sinyal gold tipis". Setelah fix: 12/14 headline relevan match (2026-05-11)
 - ✅ P2: cb_bias race condition — distributed lock `SET cb_bias_lock NX EX 10` di `market-digest.js`; semua timeout AI diperketat (Cerebras/SambaNova 8s, Groq fallback 12-14s) mencegah Vercel 504; hapus SambaNova retry Call 3 (2026-05-18)
 - ✅ P1: Pip value cross-pair approximation — `calcPipValueUSD` sekarang terima param `rates` (live FX rates dari `sizing_rates` Redis). Cross pairs triangulasi via USD/quote nyata: EUR/JPY → 1000 JPY / USDJPY = USD; GBP/CAD → 10 CAD / USDCAD = USD. Fallback ke approximasi entry price jika rates belum tersedia. Backend: `GET /api/correlations?action=rates` (Yahoo v7/quote, Redis cache 5 menit, stale fallback). Frontend: `fetchSizingRates()` dipanggil di `initSizing()`, localStorage cache 4 jam, error message context-aware (2026-05-18)
+- ✅ **CB Research panel** — tambah `GET /api/feeds?type=research`: fetch Fed speeches + ECB press RSS paralel, merge 30 items terbaru, Redis `research_cache` TTL 6h, stale fallback. Frontend: panel "CB RESEARCH" di tab RINGKASAN (bawah Korelasi), load on-demand via tombol, render list item dengan source badge berwarna (FED merah, ECB kuning) + judul clickable + tanggal. (2026-05-19)
 
 ---
 
