@@ -1469,7 +1469,7 @@ body {
       <button class="riset-refresh" onclick="fetchResearch(true)" title="Refresh">↻</button>
     </div>
   </div>
-  <div id="risetList">
+  <div id="risetList" class="riset-list">
     <div class="state-box">
       <div class="icon" style="font-size:24px">📄</div>
       <p style="font-size:12px">Memuat CB research...</p>
@@ -2861,7 +2861,8 @@ async function fetchResearch(force) {
   const meta = document.getElementById('risetMeta');
   if (list) list.innerHTML = '<div class="state-box"><div class="icon" style="font-size:24px">⏳</div><p style="font-size:12px">Memuat publikasi...</p></div>';
   try {
-    const res = await fetch('/api/feeds?type=research', { signal: AbortSignal.timeout(15000) });
+    const url = force ? '/api/feeds?type=research&force=1' : '/api/feeds?type=research';
+    const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
     if (data.error) throw new Error(data.error);

@@ -321,15 +321,19 @@ async function researchHandler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Cache-Control', 'no-cache');
 
-  try {
-    const cached = await redisCmd('GET', RESEARCH_CACHE_KEY);
-    if (cached) {
-      const obj = JSON.parse(cached);
-      if (Date.now() - new Date(obj.fetched_at).getTime() < RESEARCH_CACHE_TTL_MS) {
-        return res.json(obj);
+  const forceRefresh = req.query.force === '1';
+
+  if (!forceRefresh) {
+    try {
+      const cached = await redisCmd('GET', RESEARCH_CACHE_KEY);
+      if (cached) {
+        const obj = JSON.parse(cached);
+        if (Date.now() - new Date(obj.fetched_at).getTime() < RESEARCH_CACHE_TTL_MS) {
+          return res.json(obj);
+        }
       }
-    }
-  } catch(e) {}
+    } catch(e) {}
+  }
 
   const results = await Promise.allSettled(CB_RESEARCH_SOURCES.map(fetchCBFeed));
 
