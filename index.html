@@ -148,8 +148,9 @@ body {
 .riset-badge { font-size:8px; font-weight:700; font-family:'DM Mono',monospace; padding:2px 5px; border-radius:2px; flex-shrink:0; margin-top:2px; }
 .riset-badge.FED { background:rgba(192,57,43,.18); color:var(--accent); }
 .riset-badge.ECB { background:rgba(230,126,34,.18); color:var(--yellow); }
-.riset-badge.BIS { background:rgba(167,139,250,.18); color:var(--purple); }
-.riset-badge.IMF { background:rgba(96,165,250,.18); color:#60a5fa; }
+.riset-badge.BIS  { background:rgba(167,139,250,.18); color:var(--purple); }
+.riset-badge.IMF  { background:rgba(96,165,250,.18);  color:#60a5fa; }
+.riset-badge.FRED { background:rgba(39,174,96,.18);   color:var(--green); }
 .riset-title { font-size:11px; font-family:'DM Mono',monospace; color:var(--text); text-decoration:none; line-height:1.4; display:block; }
 .riset-title:hover { color:#34d399; }
 .riset-date { font-size:9px; color:var(--muted); font-family:'DM Mono',monospace; margin-top:3px; }
@@ -1459,9 +1460,12 @@ body {
 <div class="feed-scroll" id="risetPanel" style="display:none;padding:0">
   <div class="riset-toolbar" style="position:sticky;top:0;z-index:10;background:var(--bg)">
     <div class="riset-filter-group">
-      <button class="riset-filter active" data-src="all" onclick="setRisetFilter('all')">Semua</button>
-      <button class="riset-filter" data-src="FED" onclick="setRisetFilter('FED')">FED</button>
-      <button class="riset-filter" data-src="ECB" onclick="setRisetFilter('ECB')">ECB</button>
+      <button class="riset-filter active" data-src="all"  onclick="setRisetFilter('all')">Semua</button>
+      <button class="riset-filter" data-src="FED"  onclick="setRisetFilter('FED')">FED</button>
+      <button class="riset-filter" data-src="ECB"  onclick="setRisetFilter('ECB')">ECB</button>
+      <button class="riset-filter" data-src="BIS"  onclick="setRisetFilter('BIS')">BIS</button>
+      <button class="riset-filter" data-src="IMF"  onclick="setRisetFilter('IMF')">IMF</button>
+      <button class="riset-filter" data-src="FRED" onclick="setRisetFilter('FRED')">FRED</button>
     </div>
     <div style="display:flex;align-items:center;gap:6px">
       <span class="riset-meta" id="risetMeta"></span>

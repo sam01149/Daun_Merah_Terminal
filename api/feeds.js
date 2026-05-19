@@ -308,6 +308,9 @@ async function storeCOTHistory(positions, reportDate) {
 const CB_RESEARCH_SOURCES = [
   { key: 'FED', name: 'Federal Reserve', url: 'https://www.federalreserve.gov/feeds/speeches.xml' },
   { key: 'ECB', name: 'ECB',             url: 'https://www.ecb.europa.eu/rss/press.html' },
+  { key: 'BIS', name: 'BIS',             url: 'https://www.bis.org/doclist/cbspeeches.rss' },
+  { key: 'IMF', name: 'IMF Blog',        url: 'https://www.imf.org/en/Blogs/rss' },
+  { key: 'FRED', name: 'FRED Blog',      url: 'https://fredblog.stlouisfed.org/feed/' },
 ];
 const RESEARCH_CACHE_KEY    = 'research_cache';
 const RESEARCH_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
@@ -348,10 +351,21 @@ async function researchHandler(req, res) {
   return res.json(payload);
 }
 
+const RESEARCH_UAS = [
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4.1 Safari/605.1.15',
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:125.0) Gecko/20100101 Firefox/125.0'
+];
+
 async function fetchCBFeed(source) {
   try {
+    const ua = RESEARCH_UAS[Math.floor(Math.random() * RESEARCH_UAS.length)];
     const r = await fetch(source.url, {
-      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; DaunMerah/1.0)', 'Accept': 'application/rss+xml,*/*' },
+      headers: { 
+        'User-Agent': ua, 
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.5'
+      },
       signal: AbortSignal.timeout(8000),
     });
     if (!r.ok) throw new Error('HTTP ' + r.status);
