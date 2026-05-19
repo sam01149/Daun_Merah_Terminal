@@ -153,6 +153,7 @@ body {
 .riset-badge.ECB  { background:rgba(230,126,34,.18); color:var(--yellow); }
 .riset-badge.ECBB { background:rgba(230,126,34,.18); color:var(--yellow); }
 .riset-badge.BIS  { background:rgba(167,139,250,.18); color:var(--purple); }
+.riset-badge.FEDN { background:rgba(52,211,153,.18);  color:#34d399; }
 .riset-title { font-size:11px; font-family:'DM Mono',monospace; color:var(--text); text-decoration:none; line-height:1.4; display:block; }
 .riset-title:hover { color:#34d399; }
 .riset-date { font-size:9px; color:var(--muted); font-family:'DM Mono',monospace; margin-top:3px; }
@@ -1404,7 +1405,7 @@ body {
 <!-- PRIMARY NAV -->
 <div class="nav-views" id="navViews">
   <button class="nvtab active" data-view="feed" id="feedNavTab">NEWS</button>
-  <button class="nvtab" data-view="riset" id="risetTab">RISET</button>
+  <button class="nvtab" data-view="riset" id="risetTab">CB WATCH</button>
   <button class="nvtab" data-view="ringkasan" id="ringkasanTab">RINGKASAN</button>
   <button class="nvtab" data-view="cal" id="calTab">CAL<span id="calTabBadge" class="nvtab-badge" style="display:none">!</span></button>
   <button class="nvtab" data-view="cot" id="cotTab">COT</button>
@@ -5321,7 +5322,7 @@ document.addEventListener('click', function(e) {
   </button>
   <button class="bot-nav-btn" data-view="riset">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
-    <span>Riset</span>
+    <span>CB</span>
   </button>
   <button class="bot-nav-btn" data-view="ringkasan">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="7" y1="8" x2="17" y2="8"/><line x1="7" y1="12" x2="17" y2="12"/><line x1="7" y1="16" x2="13" y2="16"/></svg>

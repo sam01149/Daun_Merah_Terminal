@@ -308,10 +308,11 @@ async function storeCOTHistory(positions, reportDate) {
 // Direct sources — verified accessible from Vercel serverless IPs
 // rss2json proxy — bypass WAF blocking on Vercel IPs (BIS blocks Vercel but allows rss2json)
 const CB_RESEARCH_SOURCES = [
-  { key: 'FED',  url: 'https://www.federalreserve.gov/feeds/speeches.xml' },
-  { key: 'FOMC', url: 'https://www.federalreserve.gov/feeds/press_monetary.xml' },
-  { key: 'ECB',  url: 'https://www.ecb.europa.eu/rss/press.html' },
-  { key: 'ECBB', url: 'https://www.ecb.europa.eu/rss/blog.html' },
+  { key: 'FED',  url: 'https://www.federalreserve.gov/feeds/speeches.xml' },        // Fed governor speeches
+  { key: 'FOMC', url: 'https://www.federalreserve.gov/feeds/press_monetary.xml' },  // FOMC rate decisions
+  { key: 'FEDN', url: 'https://www.federalreserve.gov/feeds/feds_notes.xml' },       // FEDS Notes — analytical pieces
+  { key: 'ECB',  url: 'https://www.ecb.europa.eu/rss/press.html' },                 // ECB press releases
+  { key: 'ECBB', url: 'https://www.ecb.europa.eu/rss/blog.html' },                  // ECB research blog
   { key: 'BIS',  url: 'https://api.rss2json.com/v1/api.json?rss_url=https%3A%2F%2Fwww.bis.org%2Fdoclist%2Fcbspeeches.rss' },
 ];
 const RESEARCH_CACHE_KEY    = 'research_cache';
