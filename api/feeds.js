@@ -305,13 +305,14 @@ async function storeCOTHistory(positions, reportDate) {
 
 // ── CB Research handler ───────────────────────────────────────────────────────
 
-// Sources verified accessible from Vercel serverless IPs (no WAF block)
-// BIS/IMF/FRED/BOE/NY Fed → 403 from Vercel — removed
+// Direct sources — verified accessible from Vercel serverless IPs
+// rss2json proxy — bypass WAF blocking on Vercel IPs (BIS blocks Vercel but allows rss2json)
 const CB_RESEARCH_SOURCES = [
   { key: 'FED',  url: 'https://www.federalreserve.gov/feeds/speeches.xml' },
   { key: 'FOMC', url: 'https://www.federalreserve.gov/feeds/press_monetary.xml' },
   { key: 'ECB',  url: 'https://www.ecb.europa.eu/rss/press.html' },
   { key: 'ECBB', url: 'https://www.ecb.europa.eu/rss/blog.html' },
+  { key: 'BIS',  url: 'https://api.rss2json.com/v1/api.json?rss_url=https%3A%2F%2Fwww.bis.org%2Fdoclist%2Fcbspeeches.rss' },
 ];
 const RESEARCH_CACHE_KEY    = 'research_cache';
 const RESEARCH_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
@@ -370,8 +371,22 @@ async function fetchCBFeed(source) {
       signal: AbortSignal.timeout(8000),
     });
     if (!r.ok) throw new Error('HTTP ' + r.status);
-    const xml = await r.text();
-    return parseCBRSSItems(xml, source.key);
+    
+    const text = await r.text();
+    
+    // Handler khusus untuk bypass via rss2json (mengembalikan JSON, bukan XML)
+    if (source.url.includes('rss2json.com')) {
+      const json = JSON.parse(text);
+      if (json.status !== 'ok') throw new Error('rss2json error');
+      return (json.items || []).map(it => ({
+        title: it.title,
+        pubDate: it.pubDate,
+        link: it.link || '',
+        source: source.key
+      })).slice(0, 20);
+    }
+
+    return parseCBRSSItems(text, source.key);
   } catch(e) {
     console.warn(`CB research fetch failed [${source.key}]:`, e.message);
     return [];
