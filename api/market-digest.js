@@ -1093,12 +1093,22 @@ async function autoUpdateFundamentals(headlines) {
     }
   }
 
-  // Batch HSET per currency
+  // Batch HSET per currency — fetch existing first to preserve previous values
   for (const [currency, items] of Object.entries(byCurrency)) {
     try {
+      // Fetch existing values in one HMGET call to capture previous actuals
+      const existingRaw = await redisCmd('HMGET', `fundamental:${currency}`, ...items.map(i => i.key));
       const args = ['HSET', `fundamental:${currency}`];
-      for (const { key, value } of items) {
-        args.push(key, JSON.stringify({ actual: value, period: '—', date: now, source: 'headline' }));
+      for (let i = 0; i < items.length; i++) {
+        const { key, value } = items[i];
+        const entry = { actual: value, period: '—', date: now, source: 'headline' };
+        if (existingRaw && existingRaw[i]) {
+          try {
+            const prev = JSON.parse(existingRaw[i]);
+            if (prev.actual && prev.actual !== value) entry.previous = prev.actual;
+          } catch(_) {}
+        }
+        args.push(key, JSON.stringify(entry));
       }
       await redisCmd(...args);
       console.log(`Fundamental updated: ${currency} — ${items.map(i => i.key).join(', ')}`);

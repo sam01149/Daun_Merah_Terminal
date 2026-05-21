@@ -624,6 +624,8 @@ body {
 .fund-td-val.no-data { color: var(--muted); }
 .fund-td-val.bull { color: var(--green); }
 .fund-td-val.bear { color: var(--red); }
+.fund-arrow { margin-left: 2px; font-size: 8px; }
+.fund-prev  { margin-left: 3px; font-size: 7px; color: var(--muted); opacity: .65; }
 .fund-td-per { display: none; }
 .fund-score-row { display: flex; align-items: center; gap: 5px; margin-bottom: 5px; }
 .fund-score-bar  { flex: 1; height: 2px; background: rgba(255,255,255,.07); border-radius: 1px; overflow: hidden; }
@@ -3073,22 +3075,52 @@ const FUND_SCORE_RULES = {
   'GDP MoM':          { dir: 1,  threshold: 0     },
 };
 
+// Direction map for all known indicators
+const IND_DIR = {
+  'NFP':1,'Employment Change':1,'Industrial Production':1,'Trade Balance':1,
+  'Current Account':1,'NAB Business Conf':1,'Ivey PMI':1,'Tankan Mfg Index':1,
+  'CPI YoY':1,'CPI MoM':1,'CPI QoQ':1,'Core CPI MoM':1,'Core PCE':1,
+  'CPI Flash YoY':1,'German CPI YoY':1,'PPI MoM':1,
+  'GDP QoQ':1,'GDP QoQ Flash':1,'GDP MoM':1,
+  'ISM Services':1,'ISM Manufacturing':1,'Manufacturing PMI':1,'Services PMI':1,'Composite PMI':1,
+  'IFO Business':1,'ZEW Sentiment':1,'KOF Barometer':1,
+  'Retail Sales MoM':1,'Retail Sales YoY':1,'Participation Rate':1,
+  'Wage Growth':1,'Building Approvals':1,'Consumer Confidence':1,
+  'Business Confidence':1,'Housing Starts':1,'Durable Goods Orders':1,
+  'Unemployment Rate':-1,'Jobless Claims':-1,'Claimant Count':-1,
+};
+
+// Keyword-based direction guess for dynamic indicators
+function guessDir(key) {
+  const k = key.toLowerCase();
+  if (/unemploy|jobless|claim/.test(k)) return -1;
+  if (/employ|gdp|growth|sales|pmi|confidence|sentiment|output|production|earn|wage|approv|start|export|surplus|balance/.test(k)) return 1;
+  return null;
+}
+
 function parseIndVal(str) {
   if (!str || str === '—') return null;
   const s = str.replace(/,/g, '').trim();
   const kM = s.match(/^(-?[\d.]+)K$/i);
-  if (kM) return parseFloat(kM[1]); // keep in K unit, matches thresholds above
+  if (kM) return parseFloat(kM[1]);
   const pM = s.match(/^(-?[\d.]+)%$/);
   if (pM) return parseFloat(pM[1]);
   const n = parseFloat(s);
   return isNaN(n) ? null : n;
 }
 
-function scoreInd(key, valStr) {
+// scoring: change vs previous (primary), static threshold (fallback)
+function scoreInd(key, valStr, prevStr) {
   const rule = FUND_SCORE_RULES[key];
-  if (!rule) return null;
+  const dir  = rule ? rule.dir : (IND_DIR[key] ?? guessDir(key));
+  if (!dir) return null;
   const n = parseIndVal(valStr);
   if (n === null) return null;
+  if (prevStr && prevStr !== '—') {
+    const p = parseIndVal(prevStr);
+    if (p !== null && n !== p) return ((n > p) === (dir === 1)) ? 1 : -1;
+  }
+  if (!rule) return null;
   return (rule.dir === 1 ? n > rule.threshold : n <= rule.threshold) ? 1 : -1;
 }
 
@@ -3132,7 +3164,7 @@ function renderFundamental() {
     let bullCt = 0, bearCt = 0, scoredCt = 0;
     Object.entries(data).forEach(([k, v]) => {
       if (k === rateKey) return;
-      const s = scoreInd(k, v.actual);
+      const s = scoreInd(k, v.actual, v.previous);
       if (s !== null) { scoredCt++; if (s > 0) bullCt++; else bearCt++; }
     });
     const score      = scoredCt > 0 ? Math.round(bullCt / scoredCt * 100) : null;
@@ -3170,12 +3202,14 @@ function renderFundamental() {
     const rows = Object.entries(data)
       .filter(([k]) => k !== rateKey)
       .map(([k, v]) => {
-        const period = v.period && v.period !== '—' ? v.period : '';
-        const sig    = scoreInd(k, v.actual);
-        const sigCls = sig === 1 ? ' bull' : sig === -1 ? ' bear' : '';
+        const period  = v.period && v.period !== '—' ? v.period : '';
+        const sig     = scoreInd(k, v.actual, v.previous);
+        const sigCls  = sig === 1 ? ' bull' : sig === -1 ? ' bear' : '';
+        const arrow   = sig === 1 ? '↑' : sig === -1 ? '↓' : '';
+        const prevHtml = v.previous ? `<span class="fund-prev">${escHtml(v.previous)}</span>` : '';
         return `<tr>
           <td class="fund-td-ind" title="${escHtml(k)}">${escHtml(k)}</td>
-          <td class="fund-td-val${v.actual ? sigCls : ' no-data'}">${escHtml(v.actual || '—')}</td>
+          <td class="fund-td-val${v.actual ? sigCls : ' no-data'}">${escHtml(v.actual || '—')}${arrow ? `<span class="fund-arrow">${arrow}</span>` : ''}${prevHtml}</td>
           <td class="fund-td-per">${escHtml(period)}</td>
         </tr>`;
       }).join('');
