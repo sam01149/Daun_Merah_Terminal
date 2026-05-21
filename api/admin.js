@@ -578,16 +578,52 @@ function detectPushCat(t) {
 
 const FUND_CURRENCIES = ['USD','EUR','GBP','JPY','CAD','AUD','NZD','CHF'];
 
+const FJ_RSS_URL = 'https://www.financialjuice.com/feed.ashx?xy=rss';
+
+function parseRSSHeadlines(xml) {
+  const items = [], re = /<item>([\s\S]*?)<\/item>/g; let m;
+  while ((m = re.exec(xml)) !== null) {
+    const b = m[1];
+    const get = tag => { const r1=new RegExp(`<${tag}[^>]*><!\\[CDATA\\[([\\s\\S]*?)\\]\\]><\\/${tag}>`).exec(b); const r2=new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`).exec(b); return (r1||r2)?.[1]?.trim()||''; };
+    const title=get('title').replace(/^FinancialJuice:\s*/i,'').trim(), guid=get('guid'), pubDate=get('pubDate');
+    if (guid && title) items.push({ title, guid, pubDate });
+  }
+  return items;
+}
+
 async function fundamentalRefreshHandler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Cache-Control', 'no-cache');
   if (req.method === 'OPTIONS') return res.status(204).end();
   try {
-    const raw = await redisCmd('ZREVRANGE', 'news_history', 0, 99);
-    if (!raw || raw.length === 0) return res.status(200).json({ updated: {}, headlines: 0 });
+    // Fetch live FJ RSS + news_history in parallel for maximum coverage
+    const [rssResult, histRaw] = await Promise.allSettled([
+      fetch(FJ_RSS_URL, { headers: { 'User-Agent': 'Mozilla/5.0 (compatible; FJFeed/1.0)' }, signal: AbortSignal.timeout(10000) }),
+      redisCmd('ZREVRANGE', 'news_history', 0, 149),
+    ]);
 
+    const seen = new Set();
     const headlines = [];
-    for (const entry of raw) { try { headlines.push(JSON.parse(entry)); } catch(_) {} }
+
+    // Live RSS first (most current)
+    if (rssResult.status === 'fulfilled' && rssResult.value.ok) {
+      const xml = await rssResult.value.text();
+      for (const item of parseRSSHeadlines(xml)) {
+        if (!seen.has(item.guid)) { seen.add(item.guid); headlines.push(item); }
+      }
+    }
+
+    // news_history as supplement (last 36h)
+    if (histRaw.status === 'fulfilled' && Array.isArray(histRaw.value)) {
+      for (const entry of histRaw.value) {
+        try {
+          const item = JSON.parse(entry);
+          if (item.guid && !seen.has(item.guid)) { seen.add(item.guid); headlines.push(item); }
+        } catch(_) {}
+      }
+    }
+
+    if (headlines.length === 0) return res.status(200).json({ updated: {}, headlines: 0 });
 
     const updated = await autoUpdateFundamentals(headlines, redisCmd);
     return res.status(200).json({ updated, headlines: headlines.length });
