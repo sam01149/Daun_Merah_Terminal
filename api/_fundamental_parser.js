@@ -250,40 +250,4 @@ async function autoUpdateFundamentals(headlines, redisCmd) {
   return updated;
 }
 
-// Update fundamentals directly from structured FF calendar events (actual values)
-async function autoUpdateFundamentalsFromCalendar(events, redisCmd) {
-  const byCurrency = {};
-  const now = new Date().toISOString().slice(0, 10);
-
-  for (const evt of events) {
-    if (!evt.actual || !evt.currency) continue;
-    const t = evt.event.toLowerCase();
-    let indicatorKey = null;
-    for (const { kw, key } of FUND_INDICATOR_MAP) {
-      if (kw.some(k => t.includes(k))) { indicatorKey = key; break; }
-    }
-    if (!indicatorKey) {
-      indicatorKey = evt.event.trim().split(/\s+/).map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
-    }
-    if (!byCurrency[evt.currency]) byCurrency[evt.currency] = [];
-    byCurrency[evt.currency].push({ key: indicatorKey, actual: evt.actual, previous: evt.previous || null });
-  }
-
-  const updated = {};
-  for (const [currency, items] of Object.entries(byCurrency)) {
-    try {
-      const args = ['HSET', `fundamental:${currency}`];
-      for (const { key, actual, previous } of items) {
-        const entry = { actual, period: '—', date: now, source: 'ff_calendar' };
-        if (previous) entry.previous = previous;
-        args.push(key, JSON.stringify(entry));
-      }
-      await redisCmd(...args);
-      updated[currency] = items.map(i => i.key);
-      console.log(`Fundamental (calendar) updated: ${currency} — ${items.map(i => i.key).join(', ')}`);
-    } catch(e) { console.warn(`fundamental (calendar) HSET failed for ${currency}:`, e.message); }
-  }
-  return updated;
-}
-
-module.exports = { parseFundamentalFromHeadline, parseCBDecision, autoUpdateFundamentals, autoUpdateFundamentalsFromCalendar };
+module.exports = { parseFundamentalFromHeadline, parseCBDecision, autoUpdateFundamentals };

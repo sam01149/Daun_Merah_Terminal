@@ -1,7 +1,7 @@
 // api/unified-digest.js
 const rateLimit    = require('./_ratelimit');
 const cb           = require('./_circuit_breaker');
-const { autoUpdateFundamentals, autoUpdateFundamentalsFromCalendar } = require('./_fundamental_parser');
+const { autoUpdateFundamentals } = require('./_fundamental_parser');
 
 // AI provider failure threshold before circuit opens (fewer than external sources
 // because AI errors are faster to detect and providers recover quickly)
@@ -225,12 +225,6 @@ module.exports = async function handler(req, res) {
       .filter(e => dateRange.has(e.date) && e.impact === 'High' && MAJOR_CURRENCIES.has(e.currency))
       .filter(e => { const k=`${e.date}|${e.time_wib}|${e.currency}|${e.event}`; if(seen.has(k))return false; seen.add(k); return true; })
       .sort((a,b) => (a.date+a.time_wib).localeCompare(b.date+b.time_wib));
-
-    // Update fundamentals from FF calendar actual values (covers events not in FJ RSS)
-    const eventsWithActuals = allEvents.filter(e => e.actual && MAJOR_CURRENCIES.has(e.currency));
-    if (eventsWithActuals.length > 0) {
-      autoUpdateFundamentalsFromCalendar(eventsWithActuals, redisCmd).catch(e => console.warn('calendarFundamentals failed:', e.message));
-    }
   } catch(e) { console.warn('Cal:', e.message); }
 
   // 3. Context
@@ -840,11 +834,9 @@ function parseFFXML(xml) {
     const block = m[1];
     const get = tag => { const r=new RegExp(`<${tag}>([\\s\\S]*?)<\\/${tag}>`).exec(block); if(!r)return''; return r[1].replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g,'$1').trim(); };
     const title=get('title'), country=get('country').toUpperCase(), date=get('date'), time=get('time'), impact=get('impact');
-    const actual=get('actual'), forecast=get('forecast'), previous=get('previous');
     if (!title||!country) continue;
     const dp=date.match(/(\d{2})-(\d{2})-(\d{4})/); if(!dp) continue;
-    events.push({ date:`${dp[3]}-${dp[1]}-${dp[2]}`, time_wib:convertToWIB(time), currency:country, event:title, impact,
-      actual: actual||null, forecast: forecast||null, previous: previous||null });
+    events.push({ date:`${dp[3]}-${dp[1]}-${dp[2]}`, time_wib:convertToWIB(time), currency:country, event:title, impact });
   }
   return events;
 }

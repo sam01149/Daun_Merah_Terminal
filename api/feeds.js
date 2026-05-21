@@ -3,6 +3,8 @@
 // GET /api/feeds?type=cot      → CFTC COT JSON (6h cache)
 // GET /api/feeds?type=research → CB speeches/publications JSON (6h cache)
 
+const { autoUpdateFundamentals } = require('./_fundamental_parser');
+
 module.exports = async function handler(req, res) {
   const type = req.query.type;
   if (type === 'rss')      return rssHandler(req, res);
@@ -109,6 +111,9 @@ async function storeNewsHistory(xml, now) {
   }
   if (args.length > 3) await redisCmd(...args);
   await redisCmd('ZREMRANGEBYSCORE', 'news_history', '-inf', cutoff);
+
+  // Update fundamental data from latest headlines (fire-and-forget)
+  autoUpdateFundamentals(items.slice(0, 50), redisCmd).catch(() => {});
 }
 
 function parseRSSItems(xml) {

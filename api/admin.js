@@ -13,7 +13,7 @@
 const crypto   = require('crypto');
 const webpush  = require('web-push');
 const PUSH_KW  = require('./_push_keywords');
-const { autoUpdateFundamentals, autoUpdateFundamentalsFromCalendar } = require('./_fundamental_parser');
+const { autoUpdateFundamentals } = require('./_fundamental_parser');
 
 function subKey(endpoint) {
   return crypto.createHash('sha256').update(endpoint).digest('hex');
@@ -578,53 +578,19 @@ function detectPushCat(t) {
 
 const FUND_CURRENCIES = ['USD','EUR','GBP','JPY','CAD','AUD','NZD','CHF'];
 
-const FF_THIS_WEEK_ADMIN = 'https://nfs.faireconomy.media/ff_calendar_thisweek.xml';
-const FF_LAST_WEEK_ADMIN = 'https://nfs.faireconomy.media/ff_calendar_lastweek.xml';
-const MAJOR_CURRENCIES_ADMIN = new Set(['USD','EUR','GBP','JPY','CAD','AUD','NZD','CHF']);
-
 async function fundamentalRefreshHandler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Cache-Control', 'no-cache');
   if (req.method === 'OPTIONS') return res.status(204).end();
   try {
-    // 1. Update from FJ RSS news_history headlines
-    let updatedFromRss = {};
     const raw = await redisCmd('ZREVRANGE', 'news_history', 0, 99);
+    if (!raw || raw.length === 0) return res.status(200).json({ updated: {}, headlines: 0 });
+
     const headlines = [];
-    if (raw && raw.length > 0) {
-      for (const entry of raw) { try { headlines.push(JSON.parse(entry)); } catch(_) {} }
-      updatedFromRss = await autoUpdateFundamentals(headlines, redisCmd);
-    }
+    for (const entry of raw) { try { headlines.push(JSON.parse(entry)); } catch(_) {} }
 
-    // 2. Update from FF calendar actual values (this week + last week to catch recent releases)
-    let updatedFromCal = {};
-    try {
-      const [resThis, resLast] = await Promise.allSettled([
-        fetch(FF_THIS_WEEK_ADMIN, { headers: { 'User-Agent': 'Mozilla/5.0 (compatible; FJFeed/1.0)' }, signal: AbortSignal.timeout(10000) }),
-        fetch(FF_LAST_WEEK_ADMIN, { headers: { 'User-Agent': 'Mozilla/5.0 (compatible; FJFeed/1.0)' }, signal: AbortSignal.timeout(10000) }),
-      ]);
-      let calEvents = [];
-      for (const result of [resThis, resLast]) {
-        if (result.status === 'fulfilled' && result.value.ok) {
-          const xml = await result.value.text();
-          const re = /<event>([\s\S]*?)<\/event>/g; let m;
-          while ((m = re.exec(xml)) !== null) {
-            const block = m[1];
-            const get = tag => { const r=new RegExp(`<${tag}>([\\s\\S]*?)<\\/${tag}>`).exec(block); if(!r)return''; return r[1].replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g,'$1').trim(); };
-            const title=get('title'), country=get('country').toUpperCase(), actual=get('actual'), previous=get('previous'), impact=get('impact');
-            if (title && country && actual && MAJOR_CURRENCIES_ADMIN.has(country)) {
-              calEvents.push({ currency: country, event: title, actual, previous: previous||null, impact });
-            }
-          }
-        }
-      }
-      if (calEvents.length > 0) updatedFromCal = await autoUpdateFundamentalsFromCalendar(calEvents, redisCmd);
-    } catch(e) { console.warn('FF calendar fetch in refresh failed:', e.message); }
-
-    const updated = {};
-    for (const [k, v] of Object.entries(updatedFromRss)) updated[k] = [...(updated[k]||[]), ...v];
-    for (const [k, v] of Object.entries(updatedFromCal)) updated[k] = [...new Set([...(updated[k]||[]), ...v])];
-    return res.status(200).json({ updated, headlines: headlines.length, cal_events_with_actual: Object.values(updatedFromCal).flat().length });
+    const updated = await autoUpdateFundamentals(headlines, redisCmd);
+    return res.status(200).json({ updated, headlines: headlines.length });
   } catch(e) {
     return res.status(500).json({ error: e.message });
   }
