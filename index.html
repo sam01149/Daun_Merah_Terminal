@@ -1912,7 +1912,7 @@ body {
       <span class="fund-title">Fundamental Data</span>
       <div style="display:flex;align-items:center;gap:8px">
         <span class="fund-meta" id="fundLastUpdated"></span>
-        <button class="fund-refresh-btn" id="fundRefreshBtn" onclick="fetchFundamental()" title="Refresh data">
+        <button class="fund-refresh-btn" id="fundRefreshBtn" onclick="fetchFundamental(true)" title="Refresh data">
           <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
             <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>
             <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
@@ -3124,11 +3124,17 @@ function scoreInd(key, valStr, prevStr) {
   return (rule.dir === 1 ? n > rule.threshold : n <= rule.threshold) ? 1 : -1;
 }
 
-async function fetchFundamental() {
+async function fetchFundamental(refresh = false) {
   const grid = document.getElementById('fundGrid');
   const btn  = document.getElementById('fundRefreshBtn');
   if (btn) btn.classList.add('spinning');
   try {
+    // If refresh=true, parse latest FJ headlines first before fetching display data
+    if (refresh) {
+      await fetch('/api/admin?action=fundamental_refresh', {
+        method: 'POST', signal: AbortSignal.timeout(12000),
+      }).catch(() => {}); // non-blocking — ignore failure, still show current data
+    }
     const res = await fetch('/api/admin?action=fundamental_get', { signal: AbortSignal.timeout(10000) });
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const json = await res.json();

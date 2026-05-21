@@ -13,6 +13,7 @@
 const crypto   = require('crypto');
 const webpush  = require('web-push');
 const PUSH_KW  = require('./_push_keywords');
+const { autoUpdateFundamentals } = require('./_fundamental_parser');
 
 function subKey(endpoint) {
   return crypto.createHash('sha256').update(endpoint).digest('hex');
@@ -26,9 +27,10 @@ module.exports = async function handler(req, res) {
   if (action === 'push')                return pushHandler(req, res);
   if (action === 'fundamental_get')     return fundamentalGetHandler(req, res);
   if (action === 'fundamental_seed')    return fundamentalSeedHandler(req, res);
+  if (action === 'fundamental_refresh') return fundamentalRefreshHandler(req, res);
   if (action === 'fundamental_analysis') return fundamentalAnalysisHandler(req, res);
   if (action === 'journal_import')      return journalImportHandler(req, res);
-  return res.status(400).json({ error: 'Missing ?action= — use health, redis-keys, admin-prompts, push, fundamental_get, fundamental_seed, fundamental_analysis, or journal_import' });
+  return res.status(400).json({ error: 'Missing ?action= — use health, redis-keys, admin-prompts, push, fundamental_get, fundamental_seed, fundamental_refresh, fundamental_analysis, or journal_import' });
 };
 
 // ── Shared Redis helper ────────────────────────────────────────────────────────
@@ -575,6 +577,27 @@ function detectPushCat(t) {
 // ── Fundamental Data handlers ──────────────────────────────────────────────────
 
 const FUND_CURRENCIES = ['USD','EUR','GBP','JPY','CAD','AUD','NZD','CHF'];
+
+async function fundamentalRefreshHandler(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Cache-Control', 'no-cache');
+  if (req.method === 'OPTIONS') return res.status(204).end();
+  try {
+    // Read 100 most recent FJ headlines from news_history sorted set
+    const raw = await redisCmd('ZREVRANGE', 'news_history', 0, 99);
+    if (!raw || raw.length === 0) return res.status(200).json({ updated: {}, headlines: 0 });
+
+    const headlines = [];
+    for (const entry of raw) {
+      try { headlines.push(JSON.parse(entry)); } catch(_) {}
+    }
+
+    const updated = await autoUpdateFundamentals(headlines, redisCmd);
+    return res.status(200).json({ updated, headlines: headlines.length });
+  } catch(e) {
+    return res.status(500).json({ error: e.message });
+  }
+}
 const GROQ_URL_FUND   = 'https://api.groq.com/openai/v1/chat/completions';
 const GROQ_MODEL_FUND = 'llama-3.3-70b-versatile';
 
