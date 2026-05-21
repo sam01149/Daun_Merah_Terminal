@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-05-21 (session 22)
+> **Last updated:** 2026-05-21 (session 23)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Downloads\Financial_Feed_App`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -127,6 +127,7 @@ Main AI endpoint. Multi-provider: Cerebras (Call 1), SambaNova (Call 2–3), Gro
 10. **SambaNova Call 3:** Structured thesis JSON
 11. **Groq Call 4:** Thesis Invalidation Monitor — scan open journal entries vs headlines, push notif jika ada kontradiksi
 12. **`autoUpdateFundamentals`** — parse 100 headline terbaru → HSET `fundamental:{currency}`, deteksi CB rate decision → `cb_decisions`
+13. **`autoUpdateFundamentalsFromCalendar`** — FF calendar events dengan `actual` non-null langsung update `fundamental:{currency}` tanpa parsing teks (source: `ff_calendar`)
 13. Return: `{article, method, news_count, cal_count, bias_updated, generated_at, thesis}`
 
 **Redis keys baru:** `xau_spot` (TTL 300s) — harga XAU/USD live dari Yahoo GC=F atau Binance PAXG.
@@ -178,6 +179,9 @@ Return semua data fundamental per 8 currency dari Redis (`fundamental:{currency}
 
 ### `POST /api/admin?action=fundamental_seed`
 Seed data awal fundamental (dijalankan sekali). Auth: `x-admin-secret`.
+
+### `POST /api/admin?action=fundamental_refresh`
+Refresh fundamental dari dua sumber: (1) `news_history` Redis — 100 headline FJ terbaru, (2) FF calendar (this week + last week) — ambil events dengan `actual` non-null. Kedua sumber diproses paralel dan hasilnya di-merge. Auth: `x-admin-secret`.
 
 ### `POST /api/admin?action=fundamental_analysis`
 AI analysis currency terkuat/terlemah dari data fundamental. Cache Redis `fundamental_analysis` TTL 6h. Provider: Groq `llama-3.3-70b-versatile`.
