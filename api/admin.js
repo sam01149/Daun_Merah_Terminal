@@ -658,6 +658,7 @@ const FUND_SEED = {
     'SNB Rate':          { actual:'0.0%',       period:'Mar 2026',    date:'—', source:'seed' },
     'CPI YoY':           { actual:'0.6%',       period:'Apr 2026',    date:'—', source:'seed' },
     'KOF Barometer':     { actual:'97.9',       period:'Apr 2026',    date:'—', source:'seed' },
+    'Unemployment Rate': { actual:'2.8%',       period:'Q1 2026',     date:'—', source:'seed' },
   },
 };
 

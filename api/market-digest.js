@@ -850,52 +850,117 @@ function convertToWIB(timeStr) {
 
 // ── Fundamental + CB decision auto-parser ────────────────────────────────────
 
-// Map headline prefix/keyword → currency
+// Map headline keyword → currency (comprehensive: country name + adjective + key indicators)
 const FUND_PREFIX_MAP = [
-  { kw: ['non-farm payroll','nonfarm payroll','non farm payroll',' nfp ','jobless claim','initial claim','unemployment claim','ism manufacturing','ism non-manuf','ism pmi','ism services','core pce','core cpi','personal consumption expend'], cur: 'USD' },
-  { kw: ['us cpi','us gdp','us ppi','us retail','us trade','us employ','us unemploy','us job','us inflation','u.s. cpi','u.s. gdp'], cur: 'USD' },
-  { kw: ['german cpi','german gdp','german ifo','german retail','german inflation','germany cpi','germany gdp','ifo business'], cur: 'EUR' },
-  { kw: ['eurozone cpi','eurozone gdp','euro zone cpi','euro area cpi','ez cpi','ez gdp','eurozone pmi','euro area pmi','zew'], cur: 'EUR' },
-  { kw: ['uk cpi','uk gdp','uk retail','uk employ','uk unemploy','uk inflation','british cpi','british gdp','claimant count'], cur: 'GBP' },
-  { kw: ['japan cpi','japan gdp','japan retail','japan trade','japan industrial','japanese cpi','japanese gdp','tankan'], cur: 'JPY' },
-  { kw: ['canada cpi','canada gdp','canada employ','canada unemploy','canada retail','canada trade','canadian cpi','canadian gdp','canadian employ','ivey pmi','ivey purchasing'], cur: 'CAD' },
-  { kw: ['australia cpi','australia gdp','australia employ','australia unemploy','australia retail','australia trade','australian cpi','australian gdp','australian employ','nab business','nab confidence'], cur: 'AUD' },
-  { kw: ['new zealand cpi','new zealand gdp','new zealand employ','new zealand unemploy','new zealand trade','nz cpi','nz gdp','nz employ'], cur: 'NZD' },
-  { kw: ['swiss cpi','swiss gdp','swiss trade','switzerland cpi','switzerland gdp','kof economic','kof barometer','sz cpi','sz gdp','ch cpi'], cur: 'CHF' },
+  { kw: [
+      'non-farm payroll','nonfarm payroll','non farm payroll',' nfp ','nfp:',
+      'jobless claim','initial claim','unemployment claim',
+      'ism manufacturing','ism non-manuf','ism pmi','ism services',
+      'core pce','personal consumption expend',
+      'us cpi','us gdp','us ppi','us retail','us trade','us employ','us unemploy',
+      'us job','us inflation','us consumer','us producer','us housing','us wage',
+      'u.s. cpi','u.s. gdp','u.s. employ','u.s. unemploy',
+      'united states cpi','united states gdp','united states unemploy',
+    ], cur: 'USD' },
+  { kw: [
+      'german cpi','german gdp','german ifo','german retail','german inflation','german unemploy','german pmi','german trade','german wage',
+      'germany cpi','germany gdp','germany unemploy','germany retail','germany pmi','germany trade',
+      'eurozone cpi','eurozone gdp','eurozone unemploy','eurozone pmi','eurozone retail','eurozone inflation','eurozone trade',
+      'euro zone cpi','euro zone gdp','euro zone unemploy',
+      'euro area cpi','euro area gdp','euro area unemploy','euro area pmi',
+      'ez cpi','ez gdp','ez pmi',
+      'zew','ifo business','ifo climate',
+      'french cpi','french gdp','french unemploy','france cpi','france gdp',
+      'italian cpi','italian gdp','italy cpi','italy gdp',
+    ], cur: 'EUR' },
+  { kw: [
+      'uk cpi','uk gdp','uk retail','uk employ','uk unemploy','uk inflation','uk pmi','uk trade','uk wage','uk earnings','uk industrial',
+      'u.k. cpi','u.k. gdp','u.k. unemploy',
+      'british cpi','british gdp','british unemploy','british retail',
+      'united kingdom cpi','united kingdom gdp','united kingdom unemploy',
+      'claimant count',
+    ], cur: 'GBP' },
+  { kw: [
+      'japan cpi','japan gdp','japan retail','japan trade','japan industrial','japan unemploy','japan pmi','japan wage','japan inflation',
+      'japanese cpi','japanese gdp','japanese retail','japanese trade','japanese industrial','japanese unemploy','japanese pmi','japanese wage',
+      'tankan',
+    ], cur: 'JPY' },
+  { kw: [
+      'canada cpi','canada gdp','canada employ','canada unemploy','canada retail','canada trade','canada inflation','canada pmi','canada housing',
+      'canadian cpi','canadian gdp','canadian employ','canadian unemploy','canadian retail','canadian trade','canadian inflation','canadian pmi',
+      'ivey pmi','ivey purchasing',
+    ], cur: 'CAD' },
+  { kw: [
+      'australia cpi','australia gdp','australia employ','australia unemploy','australia retail','australia trade','australia inflation','australia pmi','australia building','australia consumer','australia business','australia wage',
+      'australian cpi','australian gdp','australian employ','australian unemploy','australian retail','australian trade','australian inflation','australian pmi','australian building','australian consumer','australian business','australian wage',
+      'nab business','nab confidence','nab survey',
+    ], cur: 'AUD' },
+  { kw: [
+      'new zealand cpi','new zealand gdp','new zealand employ','new zealand unemploy','new zealand trade','new zealand retail','new zealand inflation','new zealand pmi','new zealand business',
+      'nz cpi','nz gdp','nz employ','nz unemploy','nz trade','nz retail','nz pmi','nz inflation',
+    ], cur: 'NZD' },
+  { kw: [
+      'swiss cpi','swiss gdp','swiss trade','swiss unemploy','swiss employ','swiss inflation','swiss pmi','swiss retail','swiss industrial','swiss consumer','swiss business','swiss wage',
+      'switzerland cpi','switzerland gdp','switzerland unemploy','switzerland employ','switzerland trade','switzerland retail','switzerland inflation','switzerland pmi','switzerland industrial',
+      'kof economic','kof barometer',
+    ], cur: 'CHF' },
 ];
 
-// Map keyword → indicator key
+// Country/adjective terms per currency — used to strip prefix when extracting dynamic indicator names
+const COUNTRY_STRIP = {
+  USD: ['united states ','u.s. ','us '],
+  EUR: ['euro area ','eurozone ','euro zone ','german ','germany ','french ','france ','italian ','italy ','ez '],
+  GBP: ['united kingdom ','british ','england ','uk ','u.k. '],
+  JPY: ['japanese ','japan '],
+  CAD: ['canadian ','canada '],
+  AUD: ['australian ','australia '],
+  NZD: ['new zealand ','nz '],
+  CHF: ['switzerland ','swiss '],
+};
+
+// Map keyword → indicator key (known indicators)
 const FUND_INDICATOR_MAP = [
-  { kw: ['non-farm payroll','nonfarm payroll','non farm payroll',' nfp '],  key: 'NFP' },
-  { kw: ['jobless claim','initial claim','unemployment claim'],              key: 'Jobless Claims' },
-  { kw: ['ism manufacturing','ism pmi manufactur'],                         key: 'ISM Manufacturing' },
-  { kw: ['ism services','ism non-manuf','ism non manuf'],                   key: 'ISM Services' },
-  { kw: ['core pce','personal consumption expend'],                         key: 'Core PCE' },
-  { kw: ['core cpi','core consumer price'],                                 key: 'Core CPI MoM' },
-  { kw: ['tankan'],                                                         key: 'Tankan Mfg Index' },
-  { kw: ['ivey pmi','ivey purchasing'],                                     key: 'Ivey PMI' },
-  { kw: ['nab business','nab confidence'],                                  key: 'NAB Business Conf' },
-  { kw: ['zew'],                                                            key: 'ZEW Sentiment' },
-  { kw: ['ifo business','ifo climate'],                                     key: 'IFO Business' },
-  { kw: ['claimant count'],                                                 key: 'Claimant Count' },
-  { kw: ['kof economic','kof barometer'],                                   key: 'KOF Barometer' },
-  { kw: ['manufacturing pmi'],                                              key: 'Manufacturing PMI' },
-  { kw: ['services pmi','service pmi','non-manufacturing pmi'],             key: 'Services PMI' },
-  { kw: ['industrial production'],                                          key: 'Industrial Production' },
-  { kw: ['trade balance'],                                                  key: 'Trade Balance' },
-  { kw: ['employment change','employment count','jobs change'],             key: 'Employment Change' },
-  { kw: ['unemployment rate'],                                              key: 'Unemployment Rate' },
-  { kw: ['retail sales'],                                                   key: 'Retail Sales MoM' },
-  { kw: ['producer price',' ppi ','ppi m/m'],                              key: 'PPI MoM' },
-  { kw: ['flash cpi','cpi flash'],                                         key: 'CPI Flash YoY' },
-  { kw: ['german cpi','germany cpi'],                                       key: 'German CPI YoY' },
-  { kw: ['cpi y/y','cpi yoy','cpi annual','consumer price index y'],       key: 'CPI YoY' },
-  { kw: ['cpi q/q','cpi qq','cpi quarter'],                                key: 'CPI QoQ' },
-  { kw: ['cpi m/m','cpi mom','consumer price index m'],                    key: 'CPI MoM' },
-  { kw: ['gdp q/q','gdp qq','gdp quarter','gdp prelim','gdp flash','gdp growth'], key: 'GDP QoQ' },
-  { kw: ['gdp m/m','gdp mom','gdp monthly'],                               key: 'GDP MoM' },
-  { kw: ['gdp'],                                                            key: 'GDP QoQ' },
-  { kw: ['retail sales yoy','retail sales y/y','retail sales annual'],     key: 'Retail Sales YoY' },
+  { kw: ['non-farm payroll','nonfarm payroll','non farm payroll',' nfp ','nfp:'], key: 'NFP' },
+  { kw: ['jobless claim','initial claim','unemployment claim'],                   key: 'Jobless Claims' },
+  { kw: ['ism manufacturing','ism pmi manufactur'],                               key: 'ISM Manufacturing' },
+  { kw: ['ism services','ism non-manuf','ism non manuf'],                         key: 'ISM Services' },
+  { kw: ['core pce','personal consumption expend'],                               key: 'Core PCE' },
+  { kw: ['core cpi','core consumer price'],                                       key: 'Core CPI MoM' },
+  { kw: ['tankan'],                                                               key: 'Tankan Mfg Index' },
+  { kw: ['ivey pmi','ivey purchasing'],                                           key: 'Ivey PMI' },
+  { kw: ['nab business','nab confidence','nab survey'],                           key: 'NAB Business Conf' },
+  { kw: ['zew'],                                                                  key: 'ZEW Sentiment' },
+  { kw: ['ifo business','ifo climate'],                                           key: 'IFO Business' },
+  { kw: ['claimant count'],                                                       key: 'Claimant Count' },
+  { kw: ['kof economic','kof barometer'],                                         key: 'KOF Barometer' },
+  { kw: ['manufacturing pmi'],                                                    key: 'Manufacturing PMI' },
+  { kw: ['services pmi','service pmi','non-manufacturing pmi'],                   key: 'Services PMI' },
+  { kw: ['composite pmi'],                                                        key: 'Composite PMI' },
+  { kw: ['industrial production'],                                                key: 'Industrial Production' },
+  { kw: ['trade balance'],                                                        key: 'Trade Balance' },
+  { kw: ['current account'],                                                      key: 'Current Account' },
+  { kw: ['employment change','employment count','jobs change'],                   key: 'Employment Change' },
+  { kw: ['unemployment rate'],                                                    key: 'Unemployment Rate' },
+  { kw: ['participation rate'],                                                   key: 'Participation Rate' },
+  { kw: ['average earnings','average hourly earnings','wage growth'],             key: 'Wage Growth' },
+  { kw: ['retail sales'],                                                         key: 'Retail Sales MoM' },
+  { kw: ['producer price',' ppi ','ppi m/m'],                                    key: 'PPI MoM' },
+  { kw: ['flash cpi','cpi flash'],                                                key: 'CPI Flash YoY' },
+  { kw: ['german cpi','germany cpi'],                                             key: 'German CPI YoY' },
+  { kw: ['cpi y/y','cpi yoy','cpi annual','consumer price index y'],             key: 'CPI YoY' },
+  { kw: ['cpi q/q','cpi qq','cpi quarter'],                                      key: 'CPI QoQ' },
+  { kw: ['cpi m/m','cpi mom','consumer price index m'],                          key: 'CPI MoM' },
+  { kw: ['consumer price index','consumer prices'],                               key: 'CPI YoY' },
+  { kw: ['gdp q/q','gdp qq','gdp quarter','gdp prelim','gdp flash','gdp growth'],key: 'GDP QoQ' },
+  { kw: ['gdp m/m','gdp mom','gdp monthly'],                                     key: 'GDP MoM' },
+  { kw: ['gdp'],                                                                  key: 'GDP QoQ' },
+  { kw: ['retail sales yoy','retail sales y/y','retail sales annual'],           key: 'Retail Sales YoY' },
+  { kw: ['building approval','construction approval','building permit'],          key: 'Building Approvals' },
+  { kw: ['consumer confidence','consumer sentiment','consumer morale'],           key: 'Consumer Confidence' },
+  { kw: ['business confidence','business sentiment','business climate'],          key: 'Business Confidence' },
+  { kw: ['housing start','home start'],                                           key: 'Housing Starts' },
+  { kw: ['durable goods'],                                                        key: 'Durable Goods Orders' },
+  { kw: ['flash gdp','gdp advance'],                                              key: 'GDP QoQ Flash' },
 ];
 
 // CB bank → currency map for rate decision detection
@@ -920,17 +985,43 @@ function parseFundamentalFromHeadline(title) {
   }
   if (!currency) return null;
 
-  // Step 2: determine indicator key
+  // Step 2: determine indicator key — known map first, then dynamic extraction
   let indicatorKey = null;
   for (const { kw, key } of FUND_INDICATOR_MAP) {
     if (kw.some(k => t.includes(k))) { indicatorKey = key; break; }
   }
+
+  if (!indicatorKey) {
+    // Dynamic: strip country prefix, strip value suffix, use remaining as key
+    let stripped = title.trim();
+    const strips = (COUNTRY_STRIP[currency] || []).sort((a, b) => b.length - a.length);
+    for (const term of strips) {
+      const re = new RegExp(`^${term}`, 'i');
+      if (re.test(stripped)) { stripped = stripped.replace(re, '').trim(); break; }
+    }
+    // Remove "Actual X% ..." / "X% ..." / "(..." suffix
+    stripped = stripped
+      .replace(/\s*[:\-]?\s*(?:actual|act\.?)\s+[+-]?\d+.*$/i, '')
+      .replace(/\s+[+-]?\d+\.?\d*\s*(?:%|[KMBbps]|pts?).*$/i, '')
+      .replace(/\s*\(.*$/i, '')
+      .trim();
+    if (stripped && stripped.length >= 3 && stripped.length <= 60) {
+      indicatorKey = stripped.split(/\s+/).map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
+    }
+  }
+
   if (!indicatorKey) return null;
 
-  // Step 3: extract first numeric value with optional unit
-  const m = title.match(/([+-]?\d+\.?\d*)\s*(K|M|B|%|bps|pts?|points?)?(?:\s|$|,|\(|vs)/);
-  if (!m) return null;
-  const value = m[1] + (m[2] || '');
+  // Step 3: extract actual value — prefer "Actual X%" format (Financial Juice style)
+  let value = null;
+  const fjActual = title.match(/[Aa]ctual\s+([+-]?\d+\.?\d*)\s*(K|M|B|%|bps|pts?|points?)?/);
+  if (fjActual) {
+    value = fjActual[1] + (fjActual[2] || '');
+  } else {
+    const m = title.match(/([+-]?\d+\.?\d*)\s*(K|M|B|%|bps|pts?|points?)?(?:\s|$|,|\(|vs)/);
+    if (m) value = m[1] + (m[2] || '');
+  }
+  if (!value) return null;
 
   return { currency, key: indicatorKey, value };
 }
