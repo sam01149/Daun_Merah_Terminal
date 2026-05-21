@@ -167,7 +167,11 @@ function parseFundamentalFromHeadline(title) {
   }
   if (!value) return null;
 
-  return { currency, key: indicatorKey, value };
+  let previous = null;
+  const fjPrev = title.match(/[Pp]revious\s+([+-]?\d+\.?\d*)\s*(K|M|B|%|bps|pts?|points?)?/);
+  if (fjPrev) previous = fjPrev[1] + (fjPrev[2] || '');
+
+  return { currency, key: indicatorKey, value, previous };
 }
 
 function parseCBDecision(title) {
@@ -205,7 +209,7 @@ async function autoUpdateFundamentals(headlines, redisCmd) {
     const fund = parseFundamentalFromHeadline(item.title);
     if (fund) {
       if (!byCurrency[fund.currency]) byCurrency[fund.currency] = [];
-      byCurrency[fund.currency].push({ key: fund.key, value: fund.value });
+      byCurrency[fund.currency].push({ key: fund.key, value: fund.value, headlinePrev: fund.previous });
     }
 
     const cb = parseCBDecision(item.title);
@@ -232,9 +236,12 @@ async function autoUpdateFundamentals(headlines, redisCmd) {
       const existingRaw = await redisCmd('HMGET', `fundamental:${currency}`, ...items.map(i => i.key));
       const args = ['HSET', `fundamental:${currency}`];
       for (let i = 0; i < items.length; i++) {
-        const { key, value } = items[i];
+        const { key, value, headlinePrev } = items[i];
         const entry = { actual: value, period: '—', date: now, source: 'headline' };
-        if (existingRaw && existingRaw[i]) {
+        // Headline "Previous X" takes priority; fall back to existing Redis value
+        if (headlinePrev && headlinePrev !== value) {
+          entry.previous = headlinePrev;
+        } else if (existingRaw && existingRaw[i]) {
           try {
             const prev = JSON.parse(existingRaw[i]);
             if (prev.actual && prev.actual !== value) entry.previous = prev.actual;

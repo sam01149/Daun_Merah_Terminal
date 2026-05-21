@@ -3121,7 +3121,7 @@ function scoreInd(key, valStr, prevStr) {
     if (p !== null && n !== p) return ((n > p) === (dir === 1)) ? 1 : -1;
   }
   if (!rule) return null;
-  return (rule.dir === 1 ? n > rule.threshold : n <= rule.threshold) ? 1 : -1;
+  return (rule.dir === 1 ? n > rule.threshold : n < rule.threshold) ? 1 : -1;
 }
 
 async function fetchFundamental(refresh = false) {
