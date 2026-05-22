@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-05-21 (session 23)
+> **Last updated:** 2026-05-23 (session 24)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Downloads\Financial_Feed_App`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -164,6 +164,15 @@ Endpoint TA murni (RSI 14, SMA 50, SMA 200, Volume) dari Yahoo Finance. Rate lim
 - Redis cache per `ta:{symbol}:{interval}`: TTL 1800s (daily), 600s (intraday).
 - Response fields: `symbol`, `interval`, `range`, `current_price`, `rsi_14`, `sma_50`, `sma_200`, `price_vs_sma50`, `price_vs_sma200`, `current_volume`, `volume_sma_20`, `volume_status`, `computed_at`, `from_cache`.
 - **Frontend integrasi (session 20):** Panel TA 4-kotak ditampilkan di tab TEK, di bawah MTF bar dan di atas catatan analisa. Auto-fetch saat pair/TF berganti. Client-side cache 90s. FX OTC: volume ditampilkan "n/a FX OTC". TEK_YAHOO_SYM mapping: EURUSD→EURUSD=X, ..., XAUUSD→GC=F.
+
+### `GET /api/correlations?action=ohlcv&symbol=...&tf=...`
+Endpoint OHLCV candle data untuk Lightweight Charts (session 24). Rate limited: 10/min.
+- `symbol`: Yahoo Finance symbol (e.g. `EURUSD=X`, `GC=F`).
+- `tf`: `1d` | `1h` | `4h` | `15m`. Note: `4h` di-fetch sebagai `1h` lalu di-resample ke 4h server-side via `resample4h()` (Yahoo tidak support 4h native).
+- Range otomatis per tf: `15m`→`5d`, `1h`→`30d`, `4h`→`60d`, `1d`→`1y`.
+- Redis cache per `ohlcv:{symbol}:{tf}`: TTL 1800s (daily), 300s (intraday).
+- Response: `{ symbol, tf, candles:[{time, open, high, low, close}], fetched_at }`.
+- **Frontend (session 24):** Chart engine diganti dari TradingView embedded widget ke Lightweight Charts v4 (open-source, supports custom drawing). Drawing tools: horizontal line (S/R level), trendline, rectangle (supply-demand zone). Drawing disimpan ke `localStorage['tek_drawings']` per pair+TF key (e.g. `EURUSD_240`). Toolbar: cursor, 4 alat drawing, 4 pilihan warna, undo terakhir, hapus semua. Chart tinggi diperpanjang: `clamp(420px, 62vh, 780px)`.
 
 ### `POST/GET /api/sizing-history`
 History sizing calculations per device. Redis sorted set `sizing_history:{device_id}`, max 10.

@@ -13,6 +13,7 @@
 <link rel="apple-touch-icon" href="icon.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;700;800&family=DM+Mono:wght@300;400&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
 <style>
 :root {
   --bg: #0a0a08;
@@ -1243,7 +1244,7 @@ body {
 }
 .tek-pair-select { flex: 1; font-size: 14px; font-weight: 700; color: #38bdf8; }
 .tek-tf-select { font-size: 11px; }
-.tek-chart-wrap { width: 100%; height: clamp(320px, 48vh, 560px); background: #0d0f14; overflow: hidden; flex-shrink: 0; }
+.tek-chart-wrap { width: 100%; height: clamp(420px, 62vh, 780px); background: #0d0f14; overflow: hidden; flex-shrink: 0; }
 #tekChartContainer { width: 100%; height: 100%; }
 .tek-chart-offline {
   height: 100%; display: flex; align-items: center; justify-content: center;
@@ -1306,6 +1307,32 @@ body {
   text-transform: uppercase; letter-spacing: .04em;
 }
 .tek-news-title { font: 11px 'DM Mono',monospace; color: var(--text); line-height: 1.45; }
+
+/* ── Drawing Toolbar ── */
+.tek-drawing-bar {
+  display: flex; align-items: center; gap: 3px;
+  padding: 5px 10px; background: var(--surface);
+  border-bottom: 1px solid var(--border); flex-shrink: 0;
+}
+.tek-draw-btn {
+  display: flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px; border: 1px solid var(--border);
+  border-radius: 5px; background: var(--bg); color: var(--muted);
+  cursor: pointer; transition: all .15s; padding: 0; flex-shrink: 0;
+}
+.tek-draw-btn:hover { color: var(--text); border-color: #444; }
+.tek-draw-btn.active { color: #38bdf8; border-color: #38bdf8; background: rgba(56,189,248,.1); }
+.tek-draw-btn.tek-draw-clear:hover { color: #f87171; border-color: #f87171; }
+.tek-draw-btn.tek-draw-undo:hover { color: #fbbf24; border-color: #fbbf24; }
+.tek-draw-divider { width: 1px; height: 18px; background: var(--border); margin: 0 3px; flex-shrink: 0; }
+.tek-draw-colors { display: flex; align-items: center; gap: 5px; }
+.tek-draw-color {
+  width: 14px; height: 14px; border-radius: 50%; cursor: pointer;
+  border: 2px solid transparent; transition: border-color .15s;
+  display: inline-block; box-sizing: border-box; flex-shrink: 0;
+}
+.tek-draw-color.active { border-color: #fff; }
+.tek-draw-color:hover { opacity: .8; }
 
 /* ── DRAWER / OVERFLOW NAV ── */
 /* Sembunyikan tab sekunder dari top nav + bottom nav */
@@ -1860,6 +1887,34 @@ body {
       <option value="60">H1</option>
       <option value="15">M15</option>
     </select>
+  </div>
+  <div class="tek-drawing-bar" id="tekDrawingBar">
+    <button class="tek-draw-btn active" id="dToolCursor" onclick="setDrawTool(null)" title="Pilih / Nonaktif">
+      <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M2 1l8 4-4 1.5L4.5 11 2 1z" fill="currentColor"/></svg>
+    </button>
+    <button class="tek-draw-btn" id="dToolHline" onclick="setDrawTool('hline')" title="Garis Horizontal (Support/Resistance)">
+      <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><line x1="1" y1="6.5" x2="12" y2="6.5" stroke="currentColor" stroke-width="1.4" stroke-dasharray="2.5 1.8"/><circle cx="6.5" cy="6.5" r="1.4" fill="currentColor"/></svg>
+    </button>
+    <button class="tek-draw-btn" id="dToolTrend" onclick="setDrawTool('trendline')" title="Trendline">
+      <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><line x1="2" y1="11" x2="11" y2="2" stroke="currentColor" stroke-width="1.4" stroke-dasharray="2.5 1.8"/><circle cx="2" cy="11" r="1.4" fill="currentColor"/><circle cx="11" cy="2" r="1.4" fill="currentColor"/></svg>
+    </button>
+    <button class="tek-draw-btn" id="dToolRect" onclick="setDrawTool('rect')" title="Rectangle / Zona Supply-Demand">
+      <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><rect x="1.5" y="3.5" width="10" height="6" rx="1" stroke="currentColor" stroke-width="1.4" fill="currentColor" fill-opacity=".15"/></svg>
+    </button>
+    <div class="tek-draw-divider"></div>
+    <div class="tek-draw-colors">
+      <span class="tek-draw-color active" data-color="#38bdf8" onclick="setDrawColor(this)" style="background:#38bdf8" title="Biru"></span>
+      <span class="tek-draw-color" data-color="#4ade80" onclick="setDrawColor(this)" style="background:#4ade80" title="Hijau"></span>
+      <span class="tek-draw-color" data-color="#f87171" onclick="setDrawColor(this)" style="background:#f87171" title="Merah"></span>
+      <span class="tek-draw-color" data-color="#fbbf24" onclick="setDrawColor(this)" style="background:#fbbf24" title="Kuning"></span>
+    </div>
+    <div class="tek-draw-divider"></div>
+    <button class="tek-draw-btn tek-draw-undo" onclick="deleteLastDrawing()" title="Hapus Drawing Terakhir">
+      <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M4.5 2.5L2 5l2.5 2.5M2 5h6a2.5 2.5 0 010 5H4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
+    <button class="tek-draw-btn tek-draw-clear" onclick="clearAllDrawings()" title="Hapus Semua Drawing">
+      <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><line x1="3" y1="3" x2="10" y2="10" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><line x1="10" y1="3" x2="3" y2="10" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+    </button>
   </div>
   <div class="tek-chart-wrap">
     <div id="tekChartContainer"></div>
@@ -5003,17 +5058,17 @@ function renderTekNews() {
   sec.innerHTML = html;
 }
 
-const TEK_TV_SYM = {
-  EURUSD:'FX:EURUSD', GBPUSD:'FX:GBPUSD', USDJPY:'FX:USDJPY',
-  AUDUSD:'FX:AUDUSD', NZDUSD:'FX:NZDUSD', USDCAD:'FX:USDCAD',
-  USDCHF:'FX:USDCHF', XAUUSD:'FOREXCOM:XAUUSD',
-};
-
 let tekPair = 'EURUSD';
 let tekTF = '240';
 let tekNotes = {};
-let tvScriptLoaded = false;
 let tekInited = false;
+
+// Drawing state
+let tekDrawings = {};
+let lwChart = null, lwSeries = null, lwPriceLines = {};
+let drawTool = null, drawColor = '#38bdf8';
+let lwCanvas = null, lwCtx = null;
+let lwDragging = false, lwDragP1 = null, lwDragP2 = null;
 
 const MTF_SELS = [
   { id:'mtfSelD1', key:'D1' }, { id:'mtfSelH4', key:'H4' },
@@ -5027,6 +5082,8 @@ function loadTekNotes() {
     if (n) tekNotes = JSON.parse(n);
     const m = localStorage.getItem('tek_mtf_v2');
     if (m) tekMtf = JSON.parse(m);
+    const dr = localStorage.getItem('tek_drawings');
+    if (dr) tekDrawings = JSON.parse(dr);
   } catch(e) {}
 }
 
@@ -5079,57 +5136,262 @@ function saveTekNote() {
   localStorage.setItem('tek_notes', JSON.stringify(tekNotes));
 }
 
-function loadTVScript(cb) {
-  if (tvScriptLoaded && typeof TradingView !== 'undefined') { cb(); return; }
-  if (document.getElementById('tvScript')) {
-    const wait = setInterval(() => {
-      if (typeof TradingView !== 'undefined') { clearInterval(wait); tvScriptLoaded = true; cb(); }
-    }, 200);
-    return;
-  }
-  const s = document.createElement('script');
-  s.id = 'tvScript';
-  s.src = 'https://s3.tradingview.com/tv.js';
-  s.onload = () => { tvScriptLoaded = true; cb(); };
-  s.onerror = () => {
-    const c = document.getElementById('tekChartContainer');
-    if (c) c.innerHTML = '<div class="tek-chart-offline"><span>Chart tidak tersedia</span><span style="font-size:9px">Periksa koneksi internet</span></div>';
-  };
-  document.head.appendChild(s);
+// ── DRAWING HELPERS ──────────────────────────────────────────
+function tekDrawKey() { return tekPair + '_' + tekTF; }
+
+function saveDrawings() {
+  try { localStorage.setItem('tek_drawings', JSON.stringify(tekDrawings)); } catch(e) {}
 }
 
-function createTVChart() {
+function getDrawings() { return tekDrawings[tekDrawKey()] || []; }
+
+function addDrawing(dr) {
+  const key = tekDrawKey();
+  if (!tekDrawings[key]) tekDrawings[key] = [];
+  tekDrawings[key].push({ ...dr, id: Date.now() + '_' + Math.random().toString(36).slice(2) });
+  saveDrawings();
+}
+
+function deleteLastDrawing() {
+  const key = tekDrawKey();
+  const arr = tekDrawings[key];
+  if (!arr || !arr.length) return;
+  const last = arr[arr.length - 1];
+  arr.pop();
+  saveDrawings();
+  if (last.type === 'hline' && lwPriceLines[last.id]) {
+    try { lwSeries.removePriceLine(lwPriceLines[last.id]); } catch(e) {}
+    delete lwPriceLines[last.id];
+  }
+  renderCanvasDrawings();
+}
+
+function clearAllDrawings() {
+  if (!confirm('Hapus semua drawing pada chart ini?')) return;
+  tekDrawings[tekDrawKey()] = [];
+  saveDrawings();
+  Object.values(lwPriceLines).forEach(pl => { try { lwSeries.removePriceLine(pl); } catch(e) {} });
+  lwPriceLines = {};
+  renderCanvasDrawings();
+}
+
+function setDrawTool(tool) {
+  drawTool = tool;
+  ['dToolCursor','dToolHline','dToolTrend','dToolRect'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.classList.remove('active');
+  });
+  const activeId = { null: 'dToolCursor', hline: 'dToolHline', trendline: 'dToolTrend', rect: 'dToolRect' }[tool] || 'dToolCursor';
+  const el = document.getElementById(activeId);
+  if (el) el.classList.add('active');
+  if (lwCanvas) { lwCanvas.style.pointerEvents = tool ? 'auto' : 'none'; lwCanvas.style.cursor = tool ? 'crosshair' : 'default'; }
+}
+
+function setDrawColor(el) {
+  document.querySelectorAll('.tek-draw-color').forEach(c => c.classList.remove('active'));
+  el.classList.add('active');
+  drawColor = el.dataset.color;
+}
+
+// ── LIGHTWEIGHT CHARTS ────────────────────────────────────────
+async function createLWChart() {
   const container = document.getElementById('tekChartContainer');
   if (!container) return;
-  container.innerHTML = '<div style="height:100%;display:flex;align-items:center;justify-content:center;color:var(--muted);font:11px DM Mono,monospace">Memuat chart TradingView...</div>';
-  loadTVScript(() => {
-    if (typeof TradingView === 'undefined') {
-      container.innerHTML = '<div class="tek-chart-offline"><span>TradingView tidak tersedia</span></div>';
-      return;
-    }
-    container.innerHTML = '';
-    const id = 'tvw_' + Date.now();
-    const div = document.createElement('div');
-    div.id = id;
-    div.style.height = '100%';
-    container.appendChild(div);
-    new TradingView.widget({
-      autosize: true,
-      symbol: TEK_TV_SYM[tekPair] || 'FX:EURUSD',
-      interval: tekTF,
-      timezone: 'Asia/Jakarta',
-      theme: 'dark',
-      style: '1',
-      locale: 'id',
-      toolbar_bg: '#0d0f14',
-      enable_publishing: false,
-      withdateranges: false,
-      hide_side_toolbar: true,
-      allow_symbol_change: false,
-      save_image: false,
-      container_id: id,
-    });
+
+  if (lwChart) {
+    try { lwChart.remove(); } catch(e) {}
+    lwChart = null; lwSeries = null; lwPriceLines = {};
+  }
+  if (lwCanvas) {
+    lwCanvas.removeEventListener('mousedown', onCanvasMouseDown);
+    lwCanvas.removeEventListener('mousemove', onCanvasMouseMove);
+    lwCanvas.removeEventListener('mouseup', onCanvasMouseUp);
+    lwCanvas.removeEventListener('mouseleave', onCanvasMouseLeave);
+    lwCanvas = null; lwCtx = null;
+  }
+
+  container.innerHTML = '<div style="height:100%;display:flex;align-items:center;justify-content:center;color:var(--muted);font:11px DM Mono,monospace">Memuat chart...</div>';
+
+  if (typeof LightweightCharts === 'undefined') {
+    container.innerHTML = '<div class="tek-chart-offline"><span>Chart tidak tersedia</span><span style="font-size:9px">Periksa koneksi internet</span></div>';
+    return;
+  }
+
+  const sym = TEK_YAHOO_SYM[tekPair];
+  const tf  = TEK_TV_TO_API_TF[tekTF] || '1d';
+  let candles;
+  try {
+    const r = await fetch('/api/correlations?action=ohlcv&symbol=' + encodeURIComponent(sym) + '&tf=' + tf);
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const d = await r.json();
+    if (d.error) throw new Error(d.error);
+    candles = d.candles;
+    if (!candles || !candles.length) throw new Error('Tidak ada data');
+  } catch(e) {
+    container.innerHTML = '<div class="tek-chart-offline"><span>Data tidak tersedia</span><span style="font-size:9px">' + escHtml(e.message) + '</span></div>';
+    return;
+  }
+
+  container.innerHTML = '';
+  container.style.position = 'relative';
+
+  const chartDiv = document.createElement('div');
+  chartDiv.style.cssText = 'width:100%;height:100%;';
+  container.appendChild(chartDiv);
+
+  lwCanvas = document.createElement('canvas');
+  lwCanvas.style.cssText = 'position:absolute;top:0;left:0;pointer-events:none;z-index:5;';
+  container.appendChild(lwCanvas);
+  lwCtx = lwCanvas.getContext('2d');
+
+  lwChart = LightweightCharts.createChart(chartDiv, {
+    width: container.clientWidth,
+    height: container.clientHeight,
+    layout: { background: { color: '#0d0f14' }, textColor: '#94a3b8' },
+    grid: { vertLines: { color: '#1a1d24' }, horzLines: { color: '#1a1d24' } },
+    crosshair: { mode: 1 },
+    rightPriceScale: { borderColor: '#2a2d38', scaleMargins: { top: 0.05, bottom: 0.05 } },
+    timeScale: { borderColor: '#2a2d38', timeVisible: tf !== '1d', secondsVisible: false },
+    handleScale: { mouseWheel: true, pinch: true, axisPressedMouseMove: true },
+    handleScroll: { mouseWheel: true, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: false },
   });
+
+  lwSeries = lwChart.addCandlestickSeries({
+    upColor: '#4ade80', downColor: '#f87171',
+    borderUpColor: '#4ade80', borderDownColor: '#f87171',
+    wickUpColor: '#4ade80', wickDownColor: '#f87171',
+  });
+
+  lwSeries.setData(candles);
+  lwChart.timeScale().fitContent();
+
+  syncLWCanvas();
+  renderPriceLineDrawings();
+  renderCanvasDrawings();
+
+  lwChart.timeScale().subscribeVisibleLogicalRangeChange(renderCanvasDrawings);
+
+  new ResizeObserver(() => {
+    if (!lwChart) return;
+    lwChart.applyOptions({ width: container.clientWidth, height: container.clientHeight });
+    syncLWCanvas();
+    renderCanvasDrawings();
+  }).observe(container);
+
+  lwCanvas.addEventListener('mousedown', onCanvasMouseDown);
+  lwCanvas.addEventListener('mousemove', onCanvasMouseMove);
+  lwCanvas.addEventListener('mouseup', onCanvasMouseUp);
+  lwCanvas.addEventListener('mouseleave', onCanvasMouseLeave);
+}
+
+function syncLWCanvas() {
+  if (!lwCanvas) return;
+  const c = document.getElementById('tekChartContainer');
+  if (!c) return;
+  lwCanvas.width  = c.clientWidth;
+  lwCanvas.height = c.clientHeight;
+}
+
+function lwPriceToY(p) { try { return lwSeries ? lwSeries.priceToCoordinate(p) : null; } catch(e) { return null; } }
+function lwTimeToX(t)  { try { return lwChart  ? lwChart.timeScale().timeToCoordinate(t) : null; } catch(e) { return null; } }
+function lwYToPrice(y) { try { return lwSeries ? lwSeries.coordinateToPrice(y) : null; } catch(e) { return null; } }
+function lwXToTime(x)  { try { return lwChart  ? lwChart.timeScale().coordinateToTime(x) : null; } catch(e) { return null; } }
+
+function renderPriceLineDrawings() {
+  if (!lwSeries) return;
+  Object.values(lwPriceLines).forEach(pl => { try { lwSeries.removePriceLine(pl); } catch(e) {} });
+  lwPriceLines = {};
+  getDrawings().filter(d => d.type === 'hline').forEach(d => {
+    const pl = lwSeries.createPriceLine({ price: d.price, color: d.color, lineStyle: 2, lineWidth: 1, axisLabelVisible: true, title: '' });
+    lwPriceLines[d.id] = pl;
+  });
+}
+
+function renderCanvasDrawings() {
+  if (!lwCtx || !lwCanvas) return;
+  lwCtx.clearRect(0, 0, lwCanvas.width, lwCanvas.height);
+  const ctx = lwCtx;
+
+  getDrawings().forEach(d => {
+    if (d.type === 'hline') return;
+    const x1 = lwTimeToX(d.p1.time), y1 = lwPriceToY(d.p1.price);
+    const x2 = lwTimeToX(d.p2.time), y2 = lwPriceToY(d.p2.price);
+    if (x1 == null || y1 == null || x2 == null || y2 == null) return;
+    ctx.save();
+    ctx.strokeStyle = d.color;
+    ctx.lineWidth = 1.5;
+    if (d.type === 'trendline') {
+      ctx.setLineDash([5, 3]);
+      ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = d.color;
+      [[x1,y1],[x2,y2]].forEach(([px,py]) => { ctx.beginPath(); ctx.arc(px, py, 3, 0, Math.PI*2); ctx.fill(); });
+    } else if (d.type === 'rect') {
+      const rx = Math.min(x1,x2), ry = Math.min(y1,y2), rw = Math.abs(x2-x1), rh = Math.abs(y2-y1);
+      ctx.fillStyle = d.color + '28';
+      ctx.fillRect(rx, ry, rw, rh);
+      ctx.strokeRect(rx, ry, rw, rh);
+    }
+    ctx.restore();
+  });
+
+  if (lwDragging && lwDragP1 && lwDragP2 && drawTool) {
+    ctx.save();
+    ctx.strokeStyle = drawColor;
+    ctx.lineWidth = 1.5;
+    if (drawTool === 'hline') {
+      ctx.setLineDash([5, 3]);
+      ctx.beginPath(); ctx.moveTo(0, lwDragP1.y); ctx.lineTo(lwCanvas.width, lwDragP1.y); ctx.stroke();
+    } else if (drawTool === 'trendline') {
+      ctx.setLineDash([5, 3]);
+      ctx.beginPath(); ctx.moveTo(lwDragP1.x, lwDragP1.y); ctx.lineTo(lwDragP2.x, lwDragP2.y); ctx.stroke();
+    } else if (drawTool === 'rect') {
+      const rx = Math.min(lwDragP1.x,lwDragP2.x), ry = Math.min(lwDragP1.y,lwDragP2.y);
+      const rw = Math.abs(lwDragP2.x-lwDragP1.x), rh = Math.abs(lwDragP2.y-lwDragP1.y);
+      ctx.fillStyle = drawColor + '28';
+      ctx.fillRect(rx, ry, rw, rh);
+      ctx.strokeRect(rx, ry, rw, rh);
+    }
+    ctx.restore();
+  }
+}
+
+function onCanvasMouseDown(e) {
+  if (!drawTool) return;
+  lwDragging = true;
+  lwDragP1 = { x: e.offsetX, y: e.offsetY };
+  lwDragP2 = { x: e.offsetX, y: e.offsetY };
+}
+
+function onCanvasMouseMove(e) {
+  if (!lwDragging) return;
+  lwDragP2 = { x: e.offsetX, y: e.offsetY };
+  renderCanvasDrawings();
+}
+
+function onCanvasMouseUp(e) {
+  if (!lwDragging || !drawTool) return;
+  lwDragging = false;
+  const x2 = e.offsetX, y2 = e.offsetY;
+  if (drawTool === 'hline') {
+    const price = lwYToPrice(lwDragP1.y);
+    if (price != null) { addDrawing({ type: 'hline', price, color: drawColor }); renderPriceLineDrawings(); }
+  } else {
+    const t1 = lwXToTime(lwDragP1.x), p1 = lwYToPrice(lwDragP1.y);
+    const t2 = lwXToTime(x2), p2 = lwYToPrice(y2);
+    if (t1 != null && p1 != null && t2 != null && p2 != null) {
+      addDrawing({ type: drawTool, p1: { time: t1, price: p1 }, p2: { time: t2, price: p2 }, color: drawColor });
+    }
+  }
+  lwDragP1 = null; lwDragP2 = null;
+  renderCanvasDrawings();
+}
+
+function onCanvasMouseLeave() {
+  if (!lwDragging) return;
+  lwDragging = false;
+  lwDragP1 = null; lwDragP2 = null;
+  renderCanvasDrawings();
 }
 
 function onTekPairChange() {
@@ -5138,13 +5400,13 @@ function onTekPairChange() {
   if (note) note.value = tekNotes[tekPair] || '';
   loadMtfForPair();
   renderTekNews();
-  createTVChart();
+  createLWChart();
   fetchTaData();
 }
 
 function onTekTFChange() {
   tekTF = document.getElementById('tekTFSelect').value;
-  createTVChart();
+  createLWChart();
   fetchTaData();
 }
 
@@ -5263,7 +5525,7 @@ function initTeknikal() {
   if (note) note.value = tekNotes[tekPair] || '';
   loadMtfForPair();
   renderTekNews();
-  createTVChart();
+  createLWChart();
   fetchTaData();
 }
 

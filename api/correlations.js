@@ -138,10 +138,80 @@ function lastN(arr, n) {
   return arr.slice(Math.max(0, arr.length - n));
 }
 
+function resample4h(candles1h) {
+  const bucket = 4 * 3600;
+  const map = new Map();
+  for (const c of candles1h) {
+    const key = Math.floor(c.time / bucket) * bucket;
+    if (!map.has(key)) {
+      map.set(key, { time: key, open: c.open, high: c.high, low: c.low, close: c.close });
+    } else {
+      const b = map.get(key);
+      b.high  = Math.max(b.high, c.high);
+      b.low   = Math.min(b.low, c.low);
+      b.close = c.close;
+    }
+  }
+  return [...map.values()].sort((a, b) => a.time - b.time);
+}
+
 module.exports = async function handler(req, res) {
   Object.entries(CORS).forEach(([k, v]) => res.setHeader(k, v));
   if (req.method === 'OPTIONS') return res.status(204).end();
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
+
+  // --- OHLCV CANDLE DATA FOR CHART ---
+  if (req.query.action === 'ohlcv') {
+    if (await rateLimit(req, res, { limit: 10, windowSecs: 60, endpoint: 'correlations' })) return;
+
+    const symbol = req.query.symbol || 'GC=F';
+    const tf     = req.query.tf     || '1d'; // '1d','4h','1h','15m'
+
+    const fetchInterval = tf === '4h' ? '1h' : tf;
+    const rangeMap = { '15m': '5d', '1h': '30d', '4h': '60d', '1d': '1y' };
+    const range = rangeMap[tf] || '60d';
+
+    const cacheKey = `ohlcv:${symbol}:${tf}`;
+    const cacheTTL = tf === '1d' ? 1800 : 300;
+
+    try {
+      const cached = await redisCmd('GET', cacheKey);
+      if (cached) {
+        const d = JSON.parse(cached);
+        if (Date.now() - new Date(d.fetched_at).getTime() < cacheTTL * 1000)
+          return res.status(200).json({ ...d, from_cache: true });
+      }
+
+      const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=${fetchInterval}&range=${range}`;
+      const r = await fetch(url, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36', 'Accept': 'application/json' },
+        signal: AbortSignal.timeout(12000),
+      });
+      if (!r.ok) throw new Error(`Yahoo HTTP ${r.status}`);
+      const json = await r.json();
+      const result = json?.chart?.result?.[0];
+      if (!result) throw new Error('Yahoo no result');
+
+      const timestamps = result.timestamp || [];
+      const q = result.indicators?.quote?.[0] || {};
+      let candles = [];
+      for (let i = 0; i < timestamps.length; i++) {
+        const o = q.open?.[i], h = q.high?.[i], l = q.low?.[i], c = q.close?.[i];
+        if (o == null || h == null || l == null || c == null) continue;
+        if (isNaN(o) || isNaN(h) || isNaN(l) || isNaN(c)) continue;
+        candles.push({ time: timestamps[i], open: +o.toFixed(6), high: +h.toFixed(6), low: +l.toFixed(6), close: +c.toFixed(6) });
+      }
+
+      if (tf === '4h') candles = resample4h(candles);
+      if (candles.length === 0) throw new Error('No candle data returned');
+
+      const payload = { symbol, tf, candles, fetched_at: new Date().toISOString() };
+      await redisCmd('SET', cacheKey, JSON.stringify(payload), 'EX', cacheTTL);
+      return res.status(200).json({ ...payload, from_cache: false });
+    } catch(e) {
+      return res.status(500).json({ error: e.message });
+    }
+  }
 
   // --- ENDPOINT TEKNIKAL ANALISIS (TA) ---
   if (req.query.action === 'ta') {
