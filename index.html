@@ -1596,17 +1596,40 @@ body {
     <div style="font-size:11px;color:var(--muted);margin-bottom:16px;font-family:'DM Mono',monospace;letter-spacing:.05em">POSITION SIZING CALCULATOR</div>
     <div class="sizing-form">
       <label>Equity (USD)<input type="number" id="szEquity" value="10000" min="100"></label>
-      <label>Risk %<input type="number" id="szRisk" value="0.5" min="0.01" max="2" step="0.1"></label>
+      <label>Risk %<input type="number" id="szRisk" value="0.5" min="0.01" step="0.1"></label>
       <label>Pair
-        <select id="szPair"></select>
+        <select id="szPair" onchange="szUpdatePipInfo()"></select>
       </label>
-      <label>Stop Distance (pips)<input type="number" id="szStop" value="20" min="1"></label>
-      <label>Entry Price<input type="number" id="szEntry" value="" step="0.00001"></label>
+      <div id="szPipInfo" style="font-size:9px;color:var(--muted);font-family:'DM Mono',monospace;margin-top:-4px;padding:4px 0"></div>
+      <!-- Direction toggle -->
+      <div>
+        <div style="font-size:10px;color:var(--muted);font-family:'DM Mono',monospace;letter-spacing:.05em;text-transform:uppercase;margin-bottom:4px">Direction</div>
+        <div style="display:flex;gap:6px">
+          <button id="szDirLong" onclick="szSetDir('long')" style="flex:1;padding:7px;font-family:'DM Mono',monospace;font-size:11px;border-radius:3px;border:1px solid var(--green);background:var(--green);color:#fff;cursor:pointer;font-weight:700">▲ LONG</button>
+          <button id="szDirShort" onclick="szSetDir('short')" style="flex:1;padding:7px;font-family:'DM Mono',monospace;font-size:11px;border-radius:3px;border:1px solid var(--border);background:transparent;color:var(--muted);cursor:pointer">▼ SHORT</button>
+        </div>
+      </div>
+      <!-- SL mode toggle -->
+      <div>
+        <div style="font-size:10px;color:var(--muted);font-family:'DM Mono',monospace;letter-spacing:.05em;text-transform:uppercase;margin-bottom:4px">Mode Stop Loss</div>
+        <div style="display:flex;gap:6px;margin-bottom:8px">
+          <button id="szModePips" onclick="szSetMode('pips')" style="flex:1;padding:6px;font-family:'DM Mono',monospace;font-size:10px;border-radius:3px;border:1px solid var(--accent);background:var(--accent);color:#fff;cursor:pointer">PIPS</button>
+          <button id="szModePrice" onclick="szSetMode('price')" style="flex:1;padding:6px;font-family:'DM Mono',monospace;font-size:10px;border-radius:3px;border:1px solid var(--border);background:transparent;color:var(--muted);cursor:pointer">HARGA</button>
+        </div>
+        <div id="szStopPipsRow"><label>Stop Distance (pips)<input type="number" id="szStop" value="20" min="1"></label></div>
+        <div id="szStopPriceRow" style="display:none">
+          <label>Entry Price<input type="number" id="szEntryPrice" value="" step="0.00001" oninput="szAutoComputePips()"></label>
+          <label style="margin-top:6px">SL Price<input type="number" id="szSLPrice" value="" step="0.00001" oninput="szAutoComputePips()"></label>
+          <div id="szAutoStopInfo" style="font-size:9px;color:var(--yellow);font-family:'DM Mono',monospace;margin-top:4px"></div>
+        </div>
+      </div>
+      <!-- Entry price (pips mode) -->
+      <div id="szEntryPipsRow"><label>Entry Price (opsional — untuk harga di R-table)<input type="number" id="szEntry" value="" step="0.00001"></label></div>
+      <!-- R:R -->
+      <label>Target R:R<input type="number" id="szRR" value="2" min="0.5" max="20" step="0.5"></label>
       <button onclick="calcSizing()">HITUNG</button>
     </div>
-    <div id="szBlockWarning" style="display:none;color:var(--red);padding:12px;border:1px solid var(--red);border-radius:4px;font-size:11px;margin-top:12px;font-family:'DM Mono',monospace;line-height:1.5">
-      ⚠ Risk per trade di atas 2% secara historis berasosiasi dengan blow-up rate >70% untuk akun retail. Sistem ini menolak input ini untuk melindungi modal.
-    </div>
+    <div id="szBlockWarning" style="display:none;padding:12px;border-radius:4px;font-size:11px;margin-top:12px;font-family:'DM Mono',monospace;line-height:1.5"></div>
     <div id="szResult" style="display:none"></div>
     <div id="szHistory" style="margin-top:24px"></div>
   </div>
@@ -1677,9 +1700,10 @@ body {
     <!-- Close trade modal (inline) -->
     <div id="jnCloseView" style="display:none">
       <div style="font-size:11px;color:var(--pink);font-family:'DM Mono',monospace;margin-bottom:12px;letter-spacing:.05em">TUTUP TRADE</div>
+      <div id="jnCloseRef" style="display:none;font-size:10px;color:var(--text-mid);font-family:'DM Mono',monospace;padding:8px;background:var(--surface);border:1px solid var(--border);border-radius:3px;margin-bottom:10px"></div>
       <div class="jn-form">
         <div class="jn-form-row">
-          <label>Exit Price<input type="number" id="jnExitPrice" step="0.00001"></label>
+          <label>Exit Price<input type="number" id="jnExitPrice" step="0.00001" oninput="jnAutoComputeR()"></label>
           <label>R Actual<input type="number" id="jnRAct" step="0.1"></label>
         </div>
         <label>Alasan Exit
@@ -4428,6 +4452,14 @@ function ckPrefillJurnal() {
     if (dirSel) dirSel.value = direction;
     const thesisTA = document.getElementById('jnThesis');
     if (thesisTA) thesisTA.value = lines.join('\n');
+    // Prefill sizing data if last sizing matches current pair
+    const sz = window._lastSizing;
+    if (sz && sz.pair === pair) {
+      if (sz.lots)    { const el = document.getElementById('jnLots');   if (el) el.value = sz.lots; }
+      if (sz.entry)   { const el = document.getElementById('jnEntry');  if (el) el.value = sz.entry; }
+      if (sz.slPrice) { const el = document.getElementById('jnStop');   if (el) el.value = sz.slPrice.toFixed(5); }
+      if (sz.tpPrice) { const el = document.getElementById('jnTarget'); if (el) el.value = sz.tpPrice.toFixed(5); }
+    }
     jnSnapshotInfo();
   }, 150);
 }
@@ -4784,6 +4816,9 @@ const SZ_PAIRS = [
 let szLiveRates = null;
 
 function calcPipValueUSD(pair, entryPrice, rates) {
+  // XAU/USD: 1 lot = 100 oz, pip = $0.01 → pip value = $1/lot
+  if (pair === 'XAU/USD') return 0.01 * 100;
+
   const [base, quote] = pair.split('/');
   const pipSize = quote === 'JPY' ? 0.01 : 0.0001;
   const lotUnits = 100000;
@@ -4814,6 +4849,8 @@ function calcPipValueUSD(pair, entryPrice, rates) {
 }
 
 let szInitialized = false;
+let szMode = 'pips'; // 'pips' | 'price'
+let szDir  = 'long'; // 'long' | 'short'
 const SZ_DEVICE_KEY = 'daun_merah_device_id';
 
 function szGetDeviceId() {
@@ -4823,6 +4860,63 @@ function szGetDeviceId() {
     localStorage.setItem(SZ_DEVICE_KEY, id);
   }
   return id;
+}
+
+function szSetDir(dir) {
+  szDir = dir;
+  const longBtn  = document.getElementById('szDirLong');
+  const shortBtn = document.getElementById('szDirShort');
+  const applyActive = (btn, active, activeColor) => {
+    btn.style.background   = active ? activeColor : 'transparent';
+    btn.style.borderColor  = active ? activeColor : 'var(--border)';
+    btn.style.color        = active ? '#fff' : 'var(--muted)';
+  };
+  applyActive(longBtn,  dir === 'long',  'var(--green)');
+  applyActive(shortBtn, dir === 'short', 'var(--accent)');
+}
+
+function szSetMode(mode) {
+  szMode = mode;
+  const pipsBtn  = document.getElementById('szModePips');
+  const priceBtn = document.getElementById('szModePrice');
+  const pipsRow  = document.getElementById('szStopPipsRow');
+  const priceRow = document.getElementById('szStopPriceRow');
+  const entryRow = document.getElementById('szEntryPipsRow');
+  const applyActive = (btn, active) => {
+    btn.style.background  = active ? 'var(--accent)' : 'transparent';
+    btn.style.borderColor = active ? 'var(--accent)' : 'var(--border)';
+    btn.style.color       = active ? '#fff' : 'var(--muted)';
+  };
+  applyActive(pipsBtn,  mode === 'pips');
+  applyActive(priceBtn, mode === 'price');
+  pipsRow.style.display  = mode === 'pips'  ? 'block' : 'none';
+  priceRow.style.display = mode === 'price' ? 'block' : 'none';
+  entryRow.style.display = mode === 'pips'  ? 'block' : 'none';
+}
+
+function szAutoComputePips() {
+  const pair  = document.getElementById('szPair').value;
+  const entry = parseFloat(document.getElementById('szEntryPrice').value);
+  const sl    = parseFloat(document.getElementById('szSLPrice').value);
+  const info  = document.getElementById('szAutoStopInfo');
+  if (!entry || !sl || isNaN(entry) || isNaN(sl)) { info.textContent = ''; return; }
+  const pipSize = pair === 'XAU/USD' ? 0.01 : (pair.includes('JPY') ? 0.01 : 0.0001);
+  const dist = Math.abs(entry - sl);
+  const pips = Math.round(dist / pipSize);
+  info.textContent = `= ${pips} pips`;
+}
+
+function szUpdatePipInfo() {
+  const pair   = document.getElementById('szPair').value;
+  const infoEl = document.getElementById('szPipInfo');
+  if (!infoEl) return;
+  if (pair === 'XAU/USD') {
+    infoEl.textContent = '1 pip = $0.01 · pip value = $1/lot (100 oz/lot)';
+  } else if (pair.includes('JPY')) {
+    infoEl.textContent = '1 pip = 0.01 · pip value ≈ $X/lot (live)';
+  } else {
+    infoEl.textContent = '1 pip = 0.0001 · pip value ≈ $10/lot (majors)';
+  }
 }
 
 async function fetchSizingRates() {
@@ -4852,6 +4946,7 @@ function initSizing() {
       sel.appendChild(opt);
     });
     szInitialized = true;
+    szUpdatePipInfo();
     szLoadHistory();
     fetchSizingRates();
   }
@@ -4861,23 +4956,52 @@ function calcSizing() {
   const equity  = parseFloat(document.getElementById('szEquity').value) || 0;
   const riskPct = parseFloat(document.getElementById('szRisk').value) || 0;
   const pair    = document.getElementById('szPair').value;
-  const stopPips = parseFloat(document.getElementById('szStop').value) || 0;
-  const entry   = parseFloat(document.getElementById('szEntry').value) || 0;
+  const rrTarget = parseFloat(document.getElementById('szRR').value) || 2;
+
+  // Resolve entry price and stop pips based on mode
+  let stopPips, entry, slPrice;
+  const pipSize = pair === 'XAU/USD' ? 0.01 : (pair.includes('JPY') ? 0.01 : 0.0001);
+  const priceDp = pair === 'XAU/USD' ? 2 : (pair.includes('JPY') ? 3 : 5);
+
+  if (szMode === 'price') {
+    entry   = parseFloat(document.getElementById('szEntryPrice').value) || 0;
+    slPrice = parseFloat(document.getElementById('szSLPrice').value) || 0;
+    if (!entry || !slPrice) {
+      showToast('Input tidak lengkap', 'Isi Entry Price dan SL Price terlebih dahulu.');
+      return;
+    }
+    const dist = Math.abs(entry - slPrice);
+    stopPips = Math.round(dist / pipSize);
+    if (stopPips < 1) {
+      showToast('Stop terlalu sempit', 'Jarak entry dan SL terlalu kecil.');
+      return;
+    }
+  } else {
+    stopPips = parseFloat(document.getElementById('szStop').value) || 0;
+    entry    = parseFloat(document.getElementById('szEntry').value) || 0;
+    slPrice  = entry ? (szDir === 'long' ? entry - stopPips * pipSize : entry + stopPips * pipSize) : null;
+  }
 
   const warnEl   = document.getElementById('szBlockWarning');
   const resultEl = document.getElementById('szResult');
-
   warnEl.style.display = 'none';
   resultEl.style.display = 'none';
 
-  if (riskPct > 2) {
-    warnEl.style.display = 'block';
+  // Risk warnings: >2% soft, >5% hard block
+  if (riskPct > 5) {
+    warnEl.style.cssText = 'display:block;color:var(--accent);padding:12px;border:1px solid var(--accent);border-radius:4px;font-size:11px;margin-top:12px;font-family:"DM Mono",monospace;line-height:1.5';
+    warnEl.textContent = '⛔ Risk >5% — hard block. Ini territory blow-up. Turunkan risk % sebelum melanjutkan.';
     return;
   }
+  if (riskPct > 2) {
+    warnEl.style.cssText = 'display:block;color:var(--yellow);padding:12px;border:1px solid var(--yellow);border-radius:4px;font-size:11px;margin-top:12px;font-family:"DM Mono",monospace;line-height:1.5';
+    warnEl.textContent = '⚠ Risk >2% — secara historis berasosiasi dengan blow-up rate >70% untuk akun retail. Lanjut dengan hati-hati.';
+  }
+
   if (!pair || equity <= 0 || riskPct <= 0 || stopPips <= 0) return;
 
   const dollarRisk = equity * (riskPct / 100);
-  const pipVal = calcPipValueUSD(pair, entry, szLiveRates);
+  const pipVal = calcPipValueUSD(pair, entry || slPrice, szLiveRates);
 
   if (pipVal === null) {
     resultEl.style.display = 'block';
@@ -4888,49 +5012,120 @@ function calcSizing() {
     return;
   }
 
-  const lotsRaw = dollarRisk / (stopPips * pipVal);
-  const lots = Math.floor(lotsRaw * 100) / 100; // round down to 2dp
-  const miniLots = Math.floor(lotsRaw * 10 * 100) / 100;
+  const lotsRaw   = dollarRisk / (stopPips * pipVal);
+  const lots      = Math.floor(lotsRaw * 100) / 100;
+  const miniLots  = Math.floor(lotsRaw * 10 * 100) / 100;
   const microLots = Math.floor(lotsRaw * 100 * 100) / 100;
+
+  // Compute TP price from R:R
+  const stopDistPrice = stopPips * pipSize;
+  const tpPrice = entry
+    ? (szDir === 'long' ? entry + rrTarget * stopDistPrice : entry - rrTarget * stopDistPrice)
+    : null;
+
+  // Update pip info label with live value
+  const infoEl = document.getElementById('szPipInfo');
+  if (infoEl) {
+    if (pair === 'XAU/USD') {
+      infoEl.textContent = `1 pip = $0.01 · pip value = $${pipVal.toFixed(2)}/lot (100 oz/lot)`;
+    } else {
+      infoEl.textContent = `1 pip = ${pipSize} · pip value = $${pipVal.toFixed(2)}/lot`;
+    }
+  }
 
   const warnings = [];
   if (stopPips < 5) warnings.push('Stop terlalu sempit — slippage bisa hit prematurely');
 
-  // R-multiple table
-  const pipValPerLot = pipVal;
+  // R-multiple table — rows: -2R to +3R
   const rDollar = dollarRisk;
+  const dirSign = szDir === 'long' ? 1 : -1;
   const rows = [
     { label: '-2R', mult: -2 },
-    { label: '-1R', mult: -1 },
+    { label: '-1R (SL)', mult: -1, isSL: true },
     { label: 'Entry', mult: 0, isEntry: true },
-    { label: '+1R', mult: 1 },
-    { label: '+2R', mult: 2 },
+    { label: `+1R`, mult: 1 },
+    { label: `+${rrTarget}R (TP)`, mult: rrTarget, isTP: true },
     { label: '+3R', mult: 3 },
   ];
+  // Deduplicate if rrTarget is 1 or 3
+  const uniqueRows = rows.filter((r, i, arr) => arr.findIndex(x => x.mult === r.mult) === i);
 
-  const rTableRows = rows.map(r => {
-    const pnl = r.mult * rDollar;
-    const eq  = equity + pnl;
+  const hasPrice = entry > 0;
+  const thCols = hasPrice ? '<th>R</th><th>Equity</th><th>P/L</th><th>Harga</th>' : '<th>R</th><th>Equity</th><th>P/L</th>';
+
+  const rTableRows = uniqueRows.map(r => {
+    const pnl  = r.mult * rDollar;
+    const eq   = equity + pnl;
     const sign = pnl > 0 ? '+' : '';
-    const col = pnl > 0 ? 'var(--green)' : pnl < 0 ? 'var(--red)' : 'var(--text)';
-    if (r.isEntry) {
-      return `<tr class="entry-row"><td>${r.label}</td><td style="color:var(--text)">$${equity.toLocaleString()}</td><td></td></tr>`;
+    const col  = r.isEntry ? 'var(--text)' : pnl > 0 ? 'var(--green)' : 'var(--accent)';
+
+    let priceCell = '';
+    if (hasPrice) {
+      if (r.isEntry) {
+        priceCell = `<td style="color:var(--text)">${entry.toFixed(priceDp)}</td>`;
+      } else {
+        const price = entry + dirSign * r.mult * stopDistPrice;
+        const highlight = r.isTP ? 'var(--green)' : r.isSL ? 'var(--accent)' : col;
+        priceCell = `<td style="color:${highlight}">${price.toFixed(priceDp)}</td>`;
+      }
     }
-    return `<tr><td style="color:${col}">${r.label}</td><td style="color:${col}">$${eq.toLocaleString('en',{minimumFractionDigits:0,maximumFractionDigits:0})}</td><td style="color:${col}">${sign}$${Math.abs(pnl).toLocaleString('en',{minimumFractionDigits:0,maximumFractionDigits:0})}</td></tr>`;
+
+    if (r.isEntry) {
+      return `<tr class="entry-row"><td>${r.label}</td><td style="color:var(--text)">$${equity.toLocaleString()}</td><td></td>${hasPrice ? `<td style="color:var(--text)">${entry.toFixed(priceDp)}</td>` : ''}</tr>`;
+    }
+    return `<tr>
+      <td style="color:${col}">${r.label}</td>
+      <td style="color:${col}">$${eq.toLocaleString('en',{minimumFractionDigits:0,maximumFractionDigits:0})}</td>
+      <td style="color:${col}">${sign}$${Math.abs(pnl).toLocaleString('en',{minimumFractionDigits:0,maximumFractionDigits:0})}</td>
+      ${priceCell}
+    </tr>`;
   }).join('');
+
+  const tpStr = tpPrice
+    ? `<div class="sz-sub" style="margin-top:6px;color:var(--green)">TP (${rrTarget}R): ${tpPrice.toFixed(priceDp)} · +$${(rrTarget * dollarRisk).toFixed(2)}</div>`
+    : '';
+  const slStr = slPrice
+    ? `<div class="sz-sub" style="color:var(--accent)">SL: ${slPrice.toFixed(priceDp)}</div>`
+    : '';
 
   resultEl.style.display = 'block';
   resultEl.innerHTML = `
     <div class="sz-result-block">
-      <div class="sz-main">${lots.toFixed(2)} lots</div>
+      <div class="sz-main">${lots.toFixed(2)} lots <span style="font-size:14px;color:var(--muted)">${szDir.toUpperCase()}</span></div>
       <div class="sz-sub">${miniLots.toFixed(2)} mini · ${microLots.toFixed(2)} micro</div>
-      <div class="sz-sub" style="margin-top:6px">Dollar at risk: <span style="color:var(--red)">$${dollarRisk.toFixed(2)}</span> · Pip value: $${pipVal.toFixed(2)}/lot</div>
+      <div class="sz-sub" style="margin-top:6px">At risk: <span style="color:var(--accent)">$${dollarRisk.toFixed(2)}</span> · Pip value: $${pipVal.toFixed(2)}/lot</div>
+      ${slStr}${tpStr}
       ${warnings.map(w => `<div style="color:var(--yellow);font-size:10px;margin-top:6px">⚠ ${w}</div>`).join('')}
-      <table class="sz-r-table">${rTableRows}</table>
+      <table class="sz-r-table"><thead><tr style="color:var(--muted);font-size:9px">${thCols}</tr></thead><tbody>${rTableRows}</tbody></table>
+      <button onclick="szPrefillJurnal()" style="margin-top:10px;width:100%;padding:9px;background:transparent;border:1px solid var(--pink);color:var(--pink);font-family:'DM Mono',monospace;font-size:11px;border-radius:3px;cursor:pointer;letter-spacing:.05em">→ BUAT TRADE DI JURNAL</button>
     </div>`;
+
+  // Store last sizing for journal bridge
+  window._lastSizing = { pair, direction: szDir, lots, entry: entry || null, slPrice: slPrice || null, tpPrice: tpPrice || null, stopPips, riskPct, dollarRisk };
 
   // Save to history
   szSaveHistory({ pair, riskPct, lotSize: lots, equity, stopPips, dollarRisk });
+}
+
+function szPrefillJurnal() {
+  const s = window._lastSizing;
+  if (!s) return;
+  // Switch to jurnal tab
+  document.getElementById('jurnalTab').click();
+  jnShowView('new');
+  // Set pair
+  const pairSel = document.getElementById('jnPair');
+  if (pairSel) { pairSel.value = s.pair; }
+  // Set direction
+  const dirSel = document.getElementById('jnDir');
+  if (dirSel) dirSel.value = s.direction;
+  // Set prices
+  if (s.entry)   { const el = document.getElementById('jnEntry');  if (el) el.value = s.entry; }
+  if (s.slPrice) { const el = document.getElementById('jnStop');   if (el) el.value = s.slPrice.toFixed(5); }
+  if (s.tpPrice) { const el = document.getElementById('jnTarget'); if (el) el.value = s.tpPrice.toFixed(5); }
+  if (s.lots)    { const el = document.getElementById('jnLots');   if (el) el.value = s.lots; }
+  jnSnapshotInfo();
+  showToast('Sizing ditransfer', `${s.pair} ${s.direction.toUpperCase()} ${s.lots} lots → jurnal`);
 }
 
 async function szSaveHistory(entry) {
@@ -5019,7 +5214,7 @@ async function jnSave() {
   const horizon  = document.getElementById('jnHorizon').value;
 
   if (!pair || !dir || !thesis) {
-    alert('Pair, direction, dan thesis wajib diisi.');
+    showToast('Input tidak lengkap', 'Pair, direction, dan thesis wajib diisi.');
     return;
   }
 
@@ -5059,11 +5254,17 @@ async function jnSave() {
       signal: AbortSignal.timeout(8000),
     });
     if (!res.ok) throw new Error('HTTP ' + res.status);
-    document.getElementById('jnThesis').value = '';
+    // Clear all form fields after successful save
+    ['jnThesis','jnEntry','jnStop','jnTarget'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.value = '';
+    });
+    const lotsEl = document.getElementById('jnLots');
+    if (lotsEl) lotsEl.value = '0.01';
     jnShowView('list');
   } catch(e) {
     console.error('jnSave failed:', e.message);
-    alert('Gagal menyimpan: ' + e.message);
+    showToast('Gagal simpan', e.message);
   }
 }
 
@@ -5084,6 +5285,22 @@ async function jnLoadEntries() {
   }
 }
 
+function jnFmtPrice(pair, price) {
+  if (price == null) return null;
+  const dp = pair === 'XAU/USD' ? 2 : (pair && pair.includes('JPY') ? 3 : 5);
+  return parseFloat(price).toFixed(dp);
+}
+
+function jnExpandThesis(id) {
+  const entry = jnAllEntries.find(e => e.id === id);
+  if (!entry) return;
+  const el = document.getElementById(`jn-th-${id}`);
+  if (el) el.innerHTML = entry.thesis_text.replace(/\n/g, '<br>');
+  // Hide the expand button
+  const btn = el && el.nextElementSibling;
+  if (btn && btn.tagName === 'BUTTON') btn.style.display = 'none';
+}
+
 function jnRenderEntries() {
   const listEl = document.getElementById('jnList');
   if (!listEl) return;
@@ -5099,14 +5316,38 @@ function jnRenderEntries() {
   listEl.innerHTML = filtered.map(e => {
     const d = new Date(e.created_at);
     const fmt = `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
-    const rrStr = e.rr_planned ? ` · RR ${e.rr_planned}:1` : '';
-    const rActStr = e.r_actual != null ? ` · Actual ${e.r_actual >= 0 ? '+' : ''}${e.r_actual}R` : '';
+    const rrStr    = e.rr_planned ? ` · RR ${e.rr_planned}:1` : '';
+    const rActStr  = e.r_actual != null ? ` · Actual ${e.r_actual >= 0 ? '+' : ''}${e.r_actual}R` : '';
+    const lotsStr  = e.size_lots ? ` · ${e.size_lots} lots` : '';
+
+    // Price row
+    const priceParts = [];
+    if (e.entry_price)  priceParts.push(`Entry ${jnFmtPrice(e.pair, e.entry_price)}`);
+    if (e.stop_price)   priceParts.push(`SL ${jnFmtPrice(e.pair, e.stop_price)}`);
+    if (e.target_price) priceParts.push(`TP ${jnFmtPrice(e.pair, e.target_price)}`);
+    if (e.size_lots)    priceParts.push(`${e.size_lots} lots`);
+    const priceRow = priceParts.length
+      ? `<div style="font-size:10px;color:var(--text-mid);margin-top:4px;font-family:'DM Mono',monospace">${priceParts.join(' · ')}</div>`
+      : '';
+
+    // Thesis with expand
+    let thesisHtml = '';
+    if (e.thesis_text) {
+      const short   = e.thesis_text.slice(0, 120);
+      const hasMore = e.thesis_text.length > 120;
+      thesisHtml = `<div style="font-size:11px;color:var(--text-mid);margin-top:6px;line-height:1.5;font-family:'DM Mono',monospace">
+        <span id="jn-th-${e.id}">${short}${hasMore ? '…' : ''}</span>
+        ${hasMore ? `<button onclick="jnExpandThesis('${e.id}')" style="background:none;border:none;color:var(--pink);font-family:'DM Mono',monospace;font-size:9px;cursor:pointer;padding:0;margin-left:4px">lihat semua</button>` : ''}
+      </div>`;
+    }
+
     const closeBtn = e.status === 'open'
       ? `<button class="jn-btn-sec" style="font-size:9px" onclick="jnStartClose('${e.id}')">Tutup</button>`
       : '';
     const archBtn = e.status === 'archived'
       ? `<button class="jn-btn-sec" style="font-size:9px;margin-left:4px;color:var(--green);border-color:var(--green)" onclick="jnUnarchive('${e.id}')">Pulihkan</button>`
       : `<button class="jn-btn-sec" style="font-size:9px;margin-left:4px" onclick="jnArchive('${e.id}')">Arsip</button>`;
+
     return `<div class="jn-card">
       <div class="jn-card-hdr">
         <span class="jn-pair">${e.pair}</span>
@@ -5119,18 +5360,46 @@ function jnRenderEntries() {
         ${fmt}${rrStr}${rActStr}
         ${e.regime_at_entry ? ` · Regime: ${e.regime_at_entry.replace('_',' ').toUpperCase()}` : ''}
       </div>
-      ${e.thesis_text ? `<div style="font-size:11px;color:var(--text-mid);margin-top:6px;line-height:1.5;font-family:'DM Mono',monospace">${e.thesis_text.slice(0, 120)}${e.thesis_text.length > 120 ? '…' : ''}</div>` : ''}
-      ${e.status === 'closed' && e.attribution_notes ? `<div style="font-size:10px;color:var(--muted);margin-top:4px;font-family:'DM Mono',monospace;font-style:italic">${e.attribution_notes.slice(0, 100)}</div>` : ''}
+      ${priceRow}
+      ${thesisHtml}
+      ${e.status === 'closed' && e.attribution_notes ? `<div style="font-size:10px;color:var(--muted);margin-top:4px;font-family:'DM Mono',monospace;font-style:italic">${e.attribution_notes.slice(0, 150)}${e.attribution_notes.length > 150 ? '…' : ''}</div>` : ''}
       <div style="margin-top:8px;display:flex;gap:4px">${closeBtn}${archBtn}</div>
     </div>`;
   }).join('');
 }
 
+window._jnClosingEntry = null;
+
+function jnAutoComputeR() {
+  const e = window._jnClosingEntry;
+  if (!e || !e.entry_price || !e.stop_price) return;
+  const exitVal = parseFloat(document.getElementById('jnExitPrice').value);
+  if (isNaN(exitVal)) return;
+  const dirSign = e.direction === 'long' ? 1 : -1;
+  const r = dirSign * (exitVal - e.entry_price) / Math.abs(e.entry_price - e.stop_price);
+  document.getElementById('jnRAct').value = Math.round(r * 100) / 100;
+}
+
 function jnStartClose(id) {
+  window._jnClosingEntry = jnAllEntries.find(e => e.id === id) || null;
   document.getElementById('jnCloseId').value = id;
   document.getElementById('jnExitPrice').value = '';
   document.getElementById('jnRAct').value = '';
   document.getElementById('jnAttrib').value = '';
+
+  // Show reference info
+  const refEl = document.getElementById('jnCloseRef');
+  if (refEl && window._jnClosingEntry) {
+    const ce = window._jnClosingEntry;
+    const parts = [];
+    if (ce.entry_price)  parts.push(`Entry ${jnFmtPrice(ce.pair, ce.entry_price)}`);
+    if (ce.stop_price)   parts.push(`SL ${jnFmtPrice(ce.pair, ce.stop_price)}`);
+    if (ce.target_price) parts.push(`TP ${jnFmtPrice(ce.pair, ce.target_price)}`);
+    if (ce.size_lots)    parts.push(`${ce.size_lots} lots`);
+    refEl.textContent = parts.length ? parts.join(' · ') : '';
+    refEl.style.display = parts.length ? 'block' : 'none';
+  }
+
   jnShowView('close');
 }
 
@@ -5156,10 +5425,11 @@ async function jnCloseTrade() {
       signal: AbortSignal.timeout(8000),
     });
     if (!res.ok) throw new Error('HTTP ' + res.status);
+    window._jnClosingEntry = null;
     jnShowView('list');
   } catch(e) {
     console.error('jnClose failed:', e.message);
-    alert('Gagal menutup trade: ' + e.message);
+    showToast('Gagal tutup trade', e.message);
   }
 }
 
