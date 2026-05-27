@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-05-27 (session 27)
+> **Last updated:** 2026-05-27 (session 28)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Downloads\Financial_Feed_App`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -245,6 +245,32 @@ Font: **Syne** (logo/heading), **DM Mono** (semua teks lainnya)
 ### Mobile — Bottom Nav (`#botNav`, `.bot-nav`)
 Fixed bottom bar, hanya muncul di ≤767px. Top nav disembunyikan di mobile. 8 tombol dengan SVG icon + label pendek. Active state disinkronkan dua arah dengan top nav.
 **Catatan implementasi:** Event listener pakai event delegation pada `document` (bukan `querySelectorAll` langsung) karena `#botNav` HTML berada setelah `</script>` tag.
+
+### Keyboard Shortcuts (2026-05-27)
+Bloomberg-style keyboard navigation. Aktif hanya saat tidak ada input/textarea yang fokus.
+
+**G + huruf — navigasi antar fitur:**
+| Shortcut | Tujuan |
+|----------|--------|
+| `G N` | News (feed) |
+| `G B` | CB Watch |
+| `G R` | Ringkasan |
+| `G K` | Kalender |
+| `G C` | COT |
+| `G F` | Fundamental |
+| `G L` | Checklist |
+| `G S` | Sizing |
+| `G J` | Jurnal |
+| `G P` | Petunjuk |
+| `G T` | Teknikal |
+
+**Angka 1–7 — sub-filter News** (hanya aktif saat di tab News): All, Mkt Moving, Forex, Macro, Econ Data, Energy, Geopolitical.
+
+**Checklist navigation**: `↑`/`↓` navigasi item, `Space`/`Enter` centang/uncentang, `Esc` lepas fokus. Item terfokus diberi highlight kuning `.ck-focused`.
+
+**Global**: `?` buka/tutup help overlay shortcut. `Esc` tutup overlay / lepas fokus checklist.
+
+**G-mode indicator**: Saat `G` ditekan, muncul badge kecil di bawah layar ("G —") selama 1 detik sebagai feedback visual. Implementasi: `kbGSeq` flag + `setTimeout` 1000ms. Semua logika di `// ── KEYBOARD SHORTCUTS ──` section, sebelum `</script>`.
 
 ### Swipe Gesture (2026-05-07)
 Navigasi antar tab dengan swipe kiri/kanan. Implementasi: `touchstart`/`touchend` listener pada `document` (passive). Logika: `|dx| ≥ 60px` AND `|dx| > |dy|` → navigate. Swipe kiri = tab berikutnya, swipe kanan = tab sebelumnya. Diabaikan jika touch dimulai di `#navViews`, `#navFilters`, `#botNav`, `input`, `select`, atau `textarea`. Reuse logika tab via `.click()` sehingga data fetch otomatis berjalan. Tab order: feed → ringkasan → cal → cot → checklist → sizing → jurnal → petunjuk.
