@@ -4520,6 +4520,26 @@ function ckSwitchPlaybook(id) {
   }
 }
 
+async function ckFetchDataIfNeeded() {
+  const now = Date.now();
+  const S30M = 30 * 60 * 1000, S6H = 6 * 3600 * 1000;
+  const fetches = [];
+  if (!regimeData     || (now - regimeFetchedAt)  > S30M)
+    fetches.push(fetch('/api/risk-regime').then(r=>r.json()).then(d=>{ regimeData=d; regimeFetchedAt=now; }).catch(()=>{}));
+  if (!cbData         || (now - cbFetchedAt)       > S30M)
+    fetches.push(fetch('/api/cb-status').then(r=>r.json()).then(d=>{ cbData=d.banks; cbFetchedAt=now; }).catch(()=>{}));
+  if (!calData        || (now - calFetchedAt)      > S30M)
+    fetches.push(fetch('/api/calendar').then(r=>r.json()).then(d=>{ if(Array.isArray(d.events)){calData=d.events;calFetchedAt=now;} }).catch(()=>{}));
+  if (!realYieldsData || (now - realYieldsFetAt)   > S6H)
+    fetches.push(fetch('/api/real-yields').then(r=>r.json()).then(d=>{ realYieldsData=d.currencies; realYieldsFetAt=now; }).catch(()=>{}));
+  if (!cotData        || (now - cotFetchedAt)      > S6H)
+    fetches.push(fetch('/api/feeds?type=cot').then(r=>r.json()).then(d=>{ cotData=d; cotFetchedAt=now; }).catch(()=>{}));
+  if (fetches.length === 0) return;
+  await Promise.allSettled(fetches);
+  const pair = document.getElementById('ckPairSelector')?.value;
+  if (pair) ckAutoTickRegimeCheck(pair);
+}
+
 function initChecklist() {
   if (!ckInitialized) {
     ckLoad();
@@ -4540,6 +4560,7 @@ function initChecklist() {
     }
   }
   ckRender();
+  ckFetchDataIfNeeded();
 }
 
 // ── POSITION SIZING CALCULATOR ───────────────────────────
