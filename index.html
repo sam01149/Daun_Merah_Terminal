@@ -3770,7 +3770,7 @@ const PB_REGIME_CHECK = {
     { id:'rc2', label:'CB bias kedua currency dalam pair sudah dikonfirmasi', auto: true },
     { id:'rc3', label:'COT positioning aligned dengan directional bias', auto: true },
     { id:'rc4', label:'Tidak ada high-impact event <6 jam ke depan untuk pair ini', auto: true },
-    { id:'rc5', label:'Real yield differential mendukung directional bias (konfirmasi manual)', auto: false },
+    { id:'rc5', label:'Real yield differential mendukung directional bias', auto: true },
   ]
 };
 
@@ -4378,11 +4378,23 @@ function ckAutoTickRegimeCheck(pair) {
   if (realYieldsData) {
     const ryB = realYieldsData[base], ryQ = realYieldsData[quote];
     if (ryB && ryQ && ryB.real != null && ryQ.real != null) {
-      const diff = (ryB.real - ryQ.real).toFixed(2);
+      const diff = ryB.real - ryQ.real;
       const sign = diff >= 0 ? '+' : '';
       const hint = document.getElementById('ckPairHint');
       if (hint) hint.textContent =
-        `Real yield ${base} ${ryB.real >= 0 ? '+' : ''}${ryB.real.toFixed(2)}% vs ${quote} ${ryQ.real >= 0 ? '+' : ''}${ryQ.real.toFixed(2)}% → spread ${sign}${diff}%`;
+        `Real yield ${base} ${ryB.real >= 0 ? '+' : ''}${ryB.real.toFixed(2)}% vs ${quote} ${ryQ.real >= 0 ? '+' : ''}${ryQ.real.toFixed(2)}% → spread ${sign}${diff.toFixed(2)}%`;
+      // Auto-tick rc5: spread >0.3% AND arah selaras CB bias
+      if (Math.abs(diff) > 0.3 && cbData) {
+        const b = cbData.find(c => c.currency === base);
+        const q = cbData.find(c => c.currency === quote);
+        if (b && q && b.bias && q.bias) {
+          const bLvl = CB_BIAS_LEVEL[b.bias.toLowerCase()] ?? 2;
+          const qLvl = CB_BIAS_LEVEL[q.bias.toLowerCase()] ?? 2;
+          const aligned = (bLvl > qLvl && diff > 0) || (bLvl < qLvl && diff < 0);
+          if (aligned)
+            ckAutoTick('rc5', `Spread ${sign}${diff.toFixed(2)}% selaras: ${base} ${b.bias} real yield lebih ${diff > 0 ? 'tinggi' : 'rendah'} dari ${quote} ${q.bias}`);
+        }
+      }
     }
   }
 
