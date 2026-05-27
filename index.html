@@ -981,8 +981,10 @@ body {
 }
 @media (max-width: 600px) { .ck-mobile-bar { display: flex; } }
 .ck-mobile-verdict { font-family: 'Syne', sans-serif; font-size: 13px; font-weight: 700; }
-.ck-mobile-verdict.pass { color: var(--green); }
-.ck-mobile-verdict.fail { color: var(--accent); }
+.ck-mobile-verdict.pass    { color: var(--green); }
+.ck-mobile-verdict.ready   { color: #7dba84; }
+.ck-mobile-verdict.warn    { color: var(--yellow); }
+.ck-mobile-verdict.fail    { color: var(--accent); }
 .ck-mobile-verdict.pending { color: var(--muted); }
 .ck-mobile-prog { display: flex; align-items: center; gap: 8px; flex: 1; }
 .ck-mobile-pb-bg { flex: 1; height: 2px; background: var(--border); }
@@ -1055,14 +1057,20 @@ body {
 .ck-w-ttl { font-size: 9px; color: var(--muted); letter-spacing: 2px; text-transform: uppercase; margin-bottom: 8px; display: flex; justify-content: space-between; }
 .ck-verdict-val {
   font-family: 'Syne', sans-serif; font-size: 22px; font-weight: 800;
-  letter-spacing: -1px; text-align: center; padding: 6px 0 4px; transition: color .3s;
+  letter-spacing: -1px; text-align: center; padding: 6px 0 2px; transition: color .3s;
 }
-.ck-verdict-val.pass { color: var(--green); }
-.ck-verdict-val.fail { color: var(--accent); }
+.ck-verdict-val.pass    { color: var(--green); }
+.ck-verdict-val.ready   { color: #7dba84; }
+.ck-verdict-val.warn    { color: var(--yellow); }
+.ck-verdict-val.fail    { color: var(--accent); }
 .ck-verdict-val.pending { color: var(--muted); }
+.ck-score-pct { font-size: 11px; font-family: 'DM Mono',monospace; text-align: center; margin-bottom: 3px; transition: color .3s; }
 .ck-verdict-sub { font-size: 9px; color: var(--muted); text-align: center; letter-spacing: .4px; }
-.ck-pb-bg { height: 2px; background: var(--border); margin-bottom: 8px; }
-.ck-pb-fill { height: 100%; background: var(--green); transition: width .4s; }
+.ck-pb-bg { height: 3px; background: var(--border); margin-bottom: 8px; border-radius: 2px; }
+.ck-pb-fill { height: 100%; background: var(--green); transition: width .4s, background .3s; border-radius: 2px; }
+.ck-pb-fill.fail { background: var(--accent); }
+.ck-pb-fill.warn { background: var(--yellow); }
+.ck-pb-fill.ready { background: #7dba84; }
 .ck-sp { display: flex; flex-direction: column; gap: 4px; }
 .ck-sp-row { display: flex; align-items: center; gap: 5px; }
 .ck-sp-name { font-size: 8px; color: var(--muted); width: 52px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1972,6 +1980,7 @@ body {
     <div class="ck-w">
       <div class="ck-w-ttl">Keputusan</div>
       <div class="ck-verdict-val pending" id="ckVerdictVal">—</div>
+      <div class="ck-score-pct" id="ckScorePct" style="color:var(--muted)"></div>
       <div class="ck-verdict-sub" id="ckVerdictSub">Lengkapi checklist</div>
     </div>
     <div class="ck-w">
@@ -3779,7 +3788,7 @@ const PLAYBOOKS = {
       {id:'qq7', label:'RR valid',               sid:'risk'},
       {id:'qq8', label:'Timing valid',           sid:'timing'},
     ],
-    gates: ['regime_check','gate','fundamental','premarket','struktur','entry','trigger','risk','timing'],
+    gates: ['regime_check','gate','risk'],
   },
   macro_momentum: {
     name: 'Macro Momentum',
@@ -3790,12 +3799,12 @@ const PLAYBOOKS = {
       {id:'mmq3', label:'COT support',         sid:'mm_cot'},
       {id:'mmq4', label:'RR valid',            sid:'mm_risk'},
     ],
-    gates: ['regime_check','mm_trend','mm_cb','mm_risk'],
+    gates: ['regime_check','mm_trend','mm_risk'],
     sections: [
       PB_REGIME_CHECK,
       {
         id:'mm_trend', num:'01', title:'TREND MAKRO', badge:'GATE',
-        stopNote:'Jika tidak ada trend → NO TRADE',
+        stopNote:'Bobot ×2 — tanpa trend makro, strategi ini tidak applicable.',
         items:[
           {id:'mm_t1', label:'Ada trend makro yang jelas (>4 minggu)'},
           {id:'mm_t2', label:'Higher highs / lower lows terkonfirmasi di TF daily'},
@@ -3805,7 +3814,7 @@ const PLAYBOOKS = {
       },
       {
         id:'mm_cb', num:'02', title:'CB DIVERGENCE', badge:'GATE',
-        stopNote:'Jika divergence tipis → TUNGGU',
+        stopNote:'Semakin jelas divergence, semakin kuat trade.',
         items:[
           {id:'mm_cb1', label:'Salah satu CB hawkish, yang lain dovish/netral'},
           {id:'mm_cb2', label:'Perbedaan bias minimal 2 level (misal Hawkish vs Dovish)'},
@@ -3831,7 +3840,7 @@ const PLAYBOOKS = {
       },
       {
         id:'mm_risk', num:'05', title:'RISK MANAGEMENT', badge:'GATE',
-        stopNote:'Wajib dipenuhi',
+        stopNote:'Bobot ×2 — horizon 1-4 minggu, SL dan RR wajib terencana.',
         items:[
           {id:'mm_r1', label:'Horizon trade: 1-4 minggu (swing)'},
           {id:'mm_r2', label:'Stop di balik struktur harian / swing low/high'},
@@ -3850,12 +3859,12 @@ const PLAYBOOKS = {
       {id:'edq3', label:'Timing valid',           sid:'ed_timing'},
       {id:'edq4', label:'RR valid',               sid:'ed_risk'},
     ],
-    gates: ['regime_check','ed_event','ed_thesis','ed_timing','ed_risk'],
+    gates: ['regime_check','ed_event','ed_risk'],
     sections: [
       PB_REGIME_CHECK,
       {
         id:'ed_event', num:'01', title:'IDENTIFIKASI EVENT', badge:'GATE',
-        stopNote:'Jika event tidak ada → strategi ini tidak applicable',
+        stopNote:'Bobot ×2 — tanpa event katalisa, strategi ini tidak applicable.',
         items:[
           {id:'ed_ev1', label:'Event high-impact dalam 24 jam ke depan'},
           {id:'ed_ev2', label:'Jenis event: FOMC / CPI / NFP / GDP / CB meeting'},
@@ -3865,7 +3874,7 @@ const PLAYBOOKS = {
       },
       {
         id:'ed_thesis', num:'02', title:'THESIS ARAH EVENT', badge:'GATE',
-        stopNote:'Jika tidak ada thesis bersih → NO TRADE',
+        stopNote:'Thesis bersih = skenario beat/miss sudah terdefinisi sebelum event.',
         items:[
           {id:'ed_th1', label:'Ada skenario jelas: hawkish surprise / dovish surprise'},
           {id:'ed_th2', label:'Skenario counter (sebaliknya) sudah dipikirkan'},
@@ -3883,7 +3892,7 @@ const PLAYBOOKS = {
       },
       {
         id:'ed_timing', num:'04', title:'TIMING', badge:'GATE',
-        stopNote:'Jika timing salah → TUNGGU',
+        stopNote:'Size dan entry point berbeda sebelum vs sesudah event.',
         items:[
           {id:'ed_tm1', label:'Pre-event: entry dengan stop ketat, size kecil'},
           {id:'ed_tm2', label:'Post-event: tunggu candle rilis, konfirmasi arah'},
@@ -3892,7 +3901,7 @@ const PLAYBOOKS = {
       },
       {
         id:'ed_risk', num:'05', title:'RISK MANAGEMENT', badge:'GATE',
-        stopNote:'Wajib',
+        stopNote:'Bobot ×2 — size 50% dari normal, stop sebelum event wajib.',
         items:[
           {id:'ed_r1', label:'Size trade 50% dari ukuran normal (karena volatilitas tinggi)'},
           {id:'ed_r2', label:'Stop sudah dipasang sebelum event'},
@@ -3910,12 +3919,12 @@ const PLAYBOOKS = {
       {id:'mrq3', label:'Konfirmasi reversal',    sid:'mr_confirm'},
       {id:'mrq4', label:'RR valid',               sid:'mr_risk'},
     ],
-    gates: ['regime_check','mr_range','mr_level','mr_confirm','mr_risk'],
+    gates: ['regime_check','mr_range','mr_risk'],
     sections: [
       PB_REGIME_CHECK,
       {
         id:'mr_range', num:'01', title:'IDENTIFIKASI RANGE', badge:'GATE',
-        stopNote:'Jika bukan range → gunakan playbook lain',
+        stopNote:'Bobot ×2 — konfirmasi range dulu sebelum lanjut.',
         items:[
           {id:'mr_ra1', label:'Market dalam kondisi ranging (bukan trending)'},
           {id:'mr_ra2', label:'Range sudah hold minimal 2-3 kali di kedua sisi'},
@@ -3925,7 +3934,7 @@ const PLAYBOOKS = {
       },
       {
         id:'mr_level', num:'02', title:'LEVEL EKSTREM', badge:'GATE',
-        stopNote:'Jika belum di level → TUNGGU',
+        stopNote:'Jangan entry di tengah range — tunggu sentuh high/low.',
         items:[
           {id:'mr_lv1', label:'Harga di area high/low range yang terkonfirmasi'},
           {id:'mr_lv2', label:'RSI oversold/overbought (opsional, konfirmasi tambahan)'},
@@ -3934,7 +3943,7 @@ const PLAYBOOKS = {
       },
       {
         id:'mr_confirm', num:'03', title:'KONFIRMASI REVERSAL', badge:'GATE',
-        stopNote:'Jika tidak ada konfirmasi → NO ENTRY',
+        stopNote:'Konfirmasi mencegah entry prematur di level palsu.',
         items:[
           {id:'mr_co1', label:'Ada rejection candle (doji, engulfing, pin bar) di level'},
           {id:'mr_co2', label:'Volume spike saat rejection'},
@@ -3943,7 +3952,7 @@ const PLAYBOOKS = {
       },
       {
         id:'mr_risk', num:'04', title:'RISK MANAGEMENT', badge:'GATE',
-        stopNote:'Wajib',
+        stopNote:'Bobot ×2 — stop di luar range, exit plan jika break wajib ada.',
         items:[
           {id:'mr_r1', label:'Stop di luar range (bukan di dalam range)'},
           {id:'mr_r2', label:'Target: tengah range atau sisi opposite'},
@@ -3958,8 +3967,8 @@ const PLAYBOOKS = {
 PLAYBOOKS.smc_ict.sections = [
   PB_REGIME_CHECK,
   {
-    id:'gate', num:'00', title:'VALIDITAS DRIVER', badge:'GATE AWAL',
-    stopNote:'Jika 1 gagal → STOP (NO TRADE)',
+    id:'gate', num:'00', title:'VALIDITAS DRIVER', badge:'GATE',
+    stopNote:'Bobot ×2 — kritis. Jika driver tidak valid, score turun drastis.',
     items:[
       {id:'g1', label:'Driver bukan asumsi pribadi'},
       {id:'g2', label:'Ada bukti nyata (data rilis / statement resmi / event aktual)'},
@@ -3973,7 +3982,7 @@ PLAYBOOKS.smc_ict.sections = [
   },
   {
     id:'fundamental', num:'01', title:'FUNDAMENTAL BIAS',
-    stopNote:'Jika 1 gagal → STOP',
+    stopNote:'Semakin banyak terpenuhi, semakin kuat bias.',
     items:[
       {id:'f1', label:'Ada driver utama yang jelas'},
       {id:'f2', label:'Currency A jelas menguat'},
@@ -3988,7 +3997,7 @@ PLAYBOOKS.smc_ict.sections = [
   },
   {
     id:'premarket', num:'02', title:'PRE-MARKET DECISION',
-    stopNote:'Jika belum jelas → NO TRADE HARI ITU',
+    stopNote:'Idealnya semua terpenuhi sebelum London buka.',
     items:[
       {id:'p1', label:'Bias sudah ditentukan sebelum London'},
       {id:'p2', label:'Tidak berubah tanpa news besar'},
@@ -4000,7 +4009,7 @@ PLAYBOOKS.smc_ict.sections = [
   },
   {
     id:'struktur', num:'03', title:'STRUKTUR TEKNIKAL',
-    stopNote:'Jika 1 gagal → STOP',
+    stopNote:'Konfirmasi teknikal — semakin banyak, semakin valid setup.',
     items:[
       {id:'s1', label:'Arah teknikal sejalan dengan fundamental'},
       {id:'s2', label:'Ada Break of Structure (BOS) / shift'},
@@ -4015,7 +4024,7 @@ PLAYBOOKS.smc_ict.sections = [
   },
   {
     id:'entry', num:'04', title:'ENTRY LOCATION',
-    stopNote:'Jika tidak terpenuhi → TUNGGU / NO TRADE',
+    stopNote:'Entry buruk bisa invalidasi setup yang bagus — terapkan disiplin.',
     items:[
       {id:'e1', label:'Entry hanya di area valid', subs:[
         {id:'e1a', label:'Pullback'}, {id:'e1b', label:'Retest'}, {id:'e1c', label:'Liquidity sweep'},
@@ -4027,7 +4036,7 @@ PLAYBOOKS.smc_ict.sections = [
   },
   {
     id:'trigger', num:'05', title:'TRIGGER ENTRY',
-    stopNote:'Jika tidak ada trigger → NO ENTRY',
+    stopNote:'Konfirmasi candle penting — hindari anticipatory entry.',
     items:[
       {id:'t1', label:'Ada konfirmasi candle', subs:[
         {id:'t1a', label:'Rejection'}, {id:'t1b', label:'Engulfing'}, {id:'t1c', label:'Momentum shift'},
@@ -4037,7 +4046,7 @@ PLAYBOOKS.smc_ict.sections = [
   },
   {
     id:'risk', num:'06', title:'RISK MANAGEMENT',
-    stopNote:'Jika tidak terpenuhi → BATAL TRADE',
+    stopNote:'Bobot ×2 — wajib. RR dan SL non-negotiable.',
     items:[
       {id:'r1', label:'Risk/Reward ≥ 1:2 (ideal ≥ 1:3)'},
       {id:'r2', label:'Stop Loss di balik struktur — bukan angka random'},
@@ -4047,7 +4056,7 @@ PLAYBOOKS.smc_ict.sections = [
   },
   {
     id:'timing', num:'07', title:'TIMING',
-    stopNote:'Jika tidak terpenuhi → TUNGGU',
+    stopNote:'Session dan event proximity menentukan kualitas eksekusi.',
     items:[
       {id:'tm1', label:'Entry di sesi valid', subs:[
         {id:'tm1a', label:'London session'}, {id:'tm1b', label:'New York session'},
@@ -4057,19 +4066,13 @@ PLAYBOOKS.smc_ict.sections = [
     ]
   },
   {
-    id:'postentry', num:'09', title:'POST-ENTRY DISCIPLINE',
+    id:'disiplin', num:'09', title:'DISIPLIN',
     items:[
       {id:'pe1', label:'Tidak geser SL tanpa alasan struktural'},
       {id:'pe2', label:'Tidak close posisi karena emosi'},
-      {id:'pe3', label:'Ikuti plan', subs:[{id:'pe3a', label:'TP / trailing / partial'}]},
-    ]
-  },
-  {
-    id:'antibias', num:'10', title:'ANTI-BIAS CONTROL',
-    items:[
-      {id:'ab1', label:'Tidak membangun narasi tanpa bukti'},
-      {id:'ab2', label:'Tidak menggabungkan beberapa asumsi jadi keyakinan'},
-      {id:'ab3', label:'Jika harga tidak sesuai bias — akui bias salah'},
+      {id:'pe3', label:'Ikuti plan (TP / trailing / partial)'},
+      {id:'ab1', label:'Tidak entry dari narasi tanpa bukti nyata'},
+      {id:'ab3', label:'Jika harga tidak sesuai bias — akui salah'},
       {id:'ab4', label:'Tidak entry karena "merasa akan terjadi sesuatu"'},
     ]
   },
@@ -4113,17 +4116,24 @@ function ckGetScore(sec) {
 function ckIsComplete(sec) { const { checked, total } = ckGetScore(sec); return checked === total; }
 
 function ckGetVerdict() {
-  let totalChecked = 0, total = 0;
+  let ws = 0, tw = 0;
   CK_SECTIONS.forEach(sec => {
-    const ids = ckGetItems(sec);
-    total += ids.length;
-    totalChecked += ids.filter(id => ckState[id]).length;
+    const w = CK_GATES.includes(sec.id) ? 2 : 1;
+    // Only parent items count in score (subs are guidance)
+    sec.items.forEach(it => {
+      tw += w;
+      if (ckState[it.id]) ws += w;
+    });
   });
-  const gatePassed = CK_GATES.every(sid => {
-    const sec = CK_SECTIONS.find(s => s.id === sid);
-    return sec && ckIsComplete(sec);
-  });
-  return { gatePassed, totalChecked, total };
+  const pct = tw === 0 ? 0 : Math.round(ws / tw * 100);
+  const anyChecked = ws > 0;
+  let verdict, cls, sub;
+  if (!anyChecked)  { verdict = '—';             cls = 'pending'; sub = 'Lengkapi checklist'; }
+  else if (pct < 50){ verdict = 'NO TRADE';       cls = 'fail';    sub = `${pct}% — syarat belum cukup`; }
+  else if (pct < 75){ verdict = 'PERTIMBANGKAN';  cls = 'warn';    sub = `${pct}% — ada celah, review ulang`; }
+  else if (pct < 90){ verdict = 'SIAP TRADE';     cls = 'ready';   sub = `${pct}% — kondisi terpenuhi`; }
+  else              { verdict = 'ENTRY';           cls = 'pass';    sub = `${pct}% — semua kondisi kuat`; }
+  return { pct, verdict, cls, sub, ws, tw };
 }
 
 function ckBuildUI() {
@@ -4222,27 +4232,34 @@ function ckRender() {
     if (dot) dot.classList.toggle('on', !!done);
     if (lbl) lbl.classList.toggle('on', !!done);
   });
-  const { gatePassed, totalChecked, total } = ckGetVerdict();
+  const { pct, verdict, cls, sub } = ckGetVerdict();
+  // Count all items (incl subs) for display counter
+  let totalChecked = 0, total = 0;
+  CK_SECTIONS.forEach(sec => {
+    const ids = ckGetItems(sec);
+    total += ids.length;
+    totalChecked += ids.filter(id => ckState[id]).length;
+  });
   const vv = document.getElementById('ckVerdictVal');
   const vs = document.getElementById('ckVerdictSub');
+  const sp = document.getElementById('ckScorePct');
   const pb = document.getElementById('ckPbFill');
   const ct = document.getElementById('ckTotalCt');
-  const pct = total === 0 ? 0 : Math.round(totalChecked / total * 100);
-  if (pb) pb.style.width = pct + '%';
+  if (pb) { pb.style.width = pct + '%'; pb.className = 'ck-pb-fill ' + cls; }
   if (ct) ct.textContent = `${totalChecked}/${total}`;
-  const verdictLabel = gatePassed ? 'ENTRY' : (totalChecked === 0 ? '—' : 'NO TRADE');
-  const verdictCls   = gatePassed ? 'pass'  : (totalChecked === 0 ? 'pending' : 'fail');
-  const verdictSub   = gatePassed ? 'Semua gate terpenuhi' : (totalChecked === 0 ? 'Lengkapi checklist' : 'Ada gate yang belum terpenuhi');
-
   if (vv && vs) {
-    vv.textContent = verdictLabel; vv.className = 'ck-verdict-val ' + verdictCls;
-    vs.textContent = verdictSub;
+    vv.textContent = verdict; vv.className = 'ck-verdict-val ' + cls;
+    vs.textContent = sub;
+  }
+  if (sp) {
+    sp.textContent = pct > 0 ? `Score: ${pct}%` : '';
+    sp.style.color = cls === 'pass' ? 'var(--green)' : cls === 'ready' ? '#7dba84' : cls === 'warn' ? 'var(--yellow)' : cls === 'fail' ? 'var(--accent)' : 'var(--muted)';
   }
 
   const mv = document.getElementById('ckMobileVerdict');
   const mp = document.getElementById('ckMobilePb');
   const mc = document.getElementById('ckMobileCt');
-  if (mv) { mv.textContent = verdictLabel; mv.className = 'ck-mobile-verdict ' + verdictCls; }
+  if (mv) { mv.textContent = verdict; mv.className = 'ck-mobile-verdict ' + cls; }
   if (mp) mp.style.width = pct + '%';
   if (mc) mc.textContent = `${totalChecked}/${total}`;
 }
@@ -4306,28 +4323,36 @@ function ckAutoBlock(id, hint) {
   ckSave(); ckRender();
 }
 
+const CB_BIAS_LEVEL = {
+  'very hawkish':4, 'hawkish':3, 'neutral':2, 'dovish':1, 'very dovish':0
+};
+
+function _ckEvTimestamp(ev) {
+  if (!ev.date || !ev.time_wib || ev.time_wib === 'Tentative') return null;
+  const wibMatch = ev.time_wib.match(/(\d{2}):(\d{2})/);
+  if (!wibMatch) return null;
+  return new Date(ev.date + 'T00:00:00Z').getTime()
+    + (parseInt(wibMatch[1]) * 60 + parseInt(wibMatch[2]) - 420) * 60000;
+}
+
 function ckAutoTickRegimeCheck(pair) {
   if (!pair) return;
   const [base, quote] = pair.split('/');
+  const now = Date.now();
 
-  // rc1: regime data fresh (<30 min)
-  if (regimeData && (Date.now() - regimeFetchedAt) < 30 * 60 * 1000) {
+  // ── SHARED REGIME CHECK (rc1–rc5) ── present in all playbooks
+  if (regimeData && (now - regimeFetchedAt) < 30 * 60 * 1000)
     ckAutoTick('rc1', `Regime: ${regimeData.regime}`);
-  }
 
-  // rc2: CB bias known for both currencies
   if (cbData) {
     const b = cbData.find(c => c.currency === base);
     const q = cbData.find(c => c.currency === quote);
-    if (b && b.bias && q && q.bias) {
+    if (b && b.bias && q && q.bias)
       ckAutoTick('rc2', `${base}: ${b.bias} | ${quote}: ${q.bias}`);
-    }
   }
 
-  // rc3: COT alignment check — passes if both currencies have position data
   if (cotData && cotData.positions) {
-    const bPos = cotData.positions[base];
-    const qPos = cotData.positions[quote];
+    const bPos = cotData.positions[base], qPos = cotData.positions[quote];
     if (bPos || qPos) {
       const bNet = bPos ? (bPos.lev_net || bPos.net || 0) : null;
       const qNet = qPos ? (qPos.lev_net || qPos.net || 0) : null;
@@ -4338,32 +4363,20 @@ function ckAutoTickRegimeCheck(pair) {
     }
   }
 
-  // rc4: no high-impact event <6 hours for base or quote
-  // API returns impact='High' (capitalized) and no datetime field — construct from date + time_wib (WIB=UTC+7)
   if (calData) {
-    const now = Date.now();
-    const sixH = 6 * 60 * 60 * 1000;
+    const sixH = 6 * 3600 * 1000;
     const dangerous = calData.filter(ev => {
       if (ev.impact !== 'High') return false;
-      if (ev.time_wib === 'Tentative') return false;
-      const wibMatch = ev.time_wib.match(/(\d{2}):(\d{2})/);
-      if (!wibMatch) return false;
-      // WIB is UTC+7: convert to UTC by subtracting 7h, then add to date midnight UTC
-      const t = new Date(ev.date + 'T00:00:00Z').getTime()
-        + (parseInt(wibMatch[1]) * 60 + parseInt(wibMatch[2]) - 420) * 60000;
-      return t > now && t < now + sixH && (ev.currency === base || ev.currency === quote);
+      const t = _ckEvTimestamp(ev);
+      return t && t > now && t < now + sixH && (ev.currency === base || ev.currency === quote);
     });
-    if (dangerous.length === 0) {
-      ckAutoTick('rc4', 'Tidak ada event high-impact <6 jam');
-    } else {
-      ckAutoBlock('rc4', `${dangerous.length} event high-impact <6 jam: ${dangerous.map(e => e.event).join(', ')}`);
-    }
+    dangerous.length === 0
+      ? ckAutoTick('rc4', 'Tidak ada event high-impact <6 jam')
+      : ckAutoBlock('rc4', `${dangerous.length} event high-impact <6 jam: ${dangerous.map(e => e.event).join(', ')}`);
   }
 
-  // rc5: real yield hint (manual confirm required — just update the hint text)
   if (realYieldsData) {
-    const ryB = realYieldsData[base];
-    const ryQ = realYieldsData[quote];
+    const ryB = realYieldsData[base], ryQ = realYieldsData[quote];
     if (ryB && ryQ && ryB.real != null && ryQ.real != null) {
       const diff = (ryB.real - ryQ.real).toFixed(2);
       const sign = diff >= 0 ? '+' : '';
@@ -4371,6 +4384,98 @@ function ckAutoTickRegimeCheck(pair) {
       if (hint) hint.textContent =
         `Real yield ${base} ${ryB.real >= 0 ? '+' : ''}${ryB.real.toFixed(2)}% vs ${quote} ${ryQ.real >= 0 ? '+' : ''}${ryQ.real.toFixed(2)}% → spread ${sign}${diff}%`;
     }
+  }
+
+  // ── PLAYBOOK-SPECIFIC AUTO-POPULATE ──
+  if (ckActivePlaybook === 'smc_ict') {
+    _ckAutoSMC(base, quote);
+  } else if (ckActivePlaybook === 'macro_momentum') {
+    _ckAutoMacro(base, quote);
+  } else if (ckActivePlaybook === 'event_driven') {
+    _ckAutoEvent(base, quote);
+  } else if (ckActivePlaybook === 'mean_reversion') {
+    _ckAutoMeanRev();
+  }
+}
+
+function _ckAutoSMC(base, quote) {
+  if (cbData) {
+    const b = cbData.find(c => c.currency === base);
+    const q = cbData.find(c => c.currency === quote);
+    if (b && q && b.bias && q.bias) {
+      const bLvl = CB_BIAS_LEVEL[b.bias.toLowerCase()] ?? 2;
+      const qLvl = CB_BIAS_LEVEL[q.bias.toLowerCase()] ?? 2;
+      const bBull = bLvl >= 3, qBear = qLvl <= 1;
+      if (bBull) ckAutoTick('f2', `${base} bias: ${b.bias}`);
+      if (qBear) ckAutoTick('f3', `${quote} bias: ${q.bias}`);
+      if (bBull && qBear) {
+        ckAutoTick('f1', `CB driver: ${base} ${b.bias} vs ${quote} ${q.bias}`);
+        ckAutoTick('f4b', `CB divergence: ${base} ${b.bias} vs ${quote} ${q.bias}`);
+        ckAutoTick('f6', `${base} strong vs ${quote} weak — divergence terkonfirmasi`);
+      }
+    }
+  }
+  // Session timing auto-tick
+  const h = new Date().getUTCHours();
+  if (h >= 8 && h < 16)  ckAutoTick('tm1a', 'London session aktif');
+  if (h >= 13 && h < 21) ckAutoTick('tm1b', 'New York session aktif');
+}
+
+function _ckAutoMacro(base, quote) {
+  if (cbData) {
+    const b = cbData.find(c => c.currency === base);
+    const q = cbData.find(c => c.currency === quote);
+    if (b && q && b.bias && q.bias) {
+      const bLvl = CB_BIAS_LEVEL[b.bias.toLowerCase()] ?? 2;
+      const qLvl = CB_BIAS_LEVEL[q.bias.toLowerCase()] ?? 2;
+      const div  = Math.abs(bLvl - qLvl);
+      const oneHawk = (bLvl >= 3 && qLvl <= 2) || (qLvl >= 3 && bLvl <= 2);
+      if (oneHawk) ckAutoTick('mm_cb1', `${base}: ${b.bias} vs ${quote}: ${q.bias}`);
+      if (div >= 2) ckAutoTick('mm_cb2', `Divergence ${div} level (${base} ${b.bias} vs ${quote} ${q.bias})`);
+    }
+  }
+  if (realYieldsData) {
+    const ryB = realYieldsData[base], ryQ = realYieldsData[quote];
+    if (ryB && ryQ && ryB.real != null && ryQ.real != null) {
+      const diff = ryB.real - ryQ.real;
+      if (Math.abs(diff) > 0.3)
+        ckAutoTick('mm_cb4', `Real yield spread ${diff > 0 ? '+' : ''}${diff.toFixed(2)}% (${base} vs ${quote})`);
+    }
+  }
+  if (cotData && cotData.positions) {
+    const bPos = cotData.positions[base], qPos = cotData.positions[quote];
+    const bAM  = bPos ? (bPos.am_net || null) : null;
+    const qAM  = qPos ? (qPos.am_net || null) : null;
+    if (bAM != null || qAM != null) {
+      const parts = [];
+      if (bAM != null) parts.push(`${base} AM Net: ${bAM > 0 ? '+' : ''}${bAM}`);
+      if (qAM != null) parts.push(`${quote} AM Net: ${qAM > 0 ? '+' : ''}${qAM}`);
+      ckAutoTick('mm_co2', parts.join(' | '));
+    }
+  }
+}
+
+function _ckAutoEvent(base, quote) {
+  if (!calData) return;
+  const now = Date.now();
+  const h24 = 24 * 3600 * 1000;
+  const soon = calData.filter(ev => {
+    if (ev.impact !== 'High') return false;
+    const t = _ckEvTimestamp(ev);
+    return t && t > now && t < now + h24 && (ev.currency === base || ev.currency === quote);
+  });
+  if (soon.length > 0) {
+    ckAutoTick('ed_ev1', `${soon.length} high-impact event <24 jam untuk ${base}/${quote}`);
+    const withData = soon.filter(ev => ev.forecast != null || ev.previous != null);
+    if (withData.length > 0)
+      ckAutoTick('ed_ev3', `Forecast/previous tersedia: ${withData.map(e => e.event).join(', ')}`);
+  }
+}
+
+function _ckAutoMeanRev() {
+  if (regimeData && (Date.now() - regimeFetchedAt) < 30 * 60 * 1000) {
+    if (regimeData.regime === 'Neutral')
+      ckAutoTick('mr_ra4', `Regime: ${regimeData.regime} — ideal untuk range trade`);
   }
 }
 

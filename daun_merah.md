@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-05-23 (session 24)
+> **Last updated:** 2026-05-27 (session 25)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Downloads\Financial_Feed_App`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -272,10 +272,62 @@ let ckActivePlaybook = localStorage.getItem('daun_merah_playbook') || 'smc_ict';
 
 localStorage keys: `daunmerah_v2` (state), `daun_merah_playbook` (active), `daun_merah_device_id` (device ID)
 
-**rc4 auto-tick logic** — `ckAutoTickRegimeCheck()` di `index.html`:
-- Cek apakah ada event `impact === 'High'` (kapital) untuk base/quote currency dalam 6 jam ke depan
-- Timestamp di-construct dari `ev.date` + `ev.time_wib` (WIB = UTC+7), bukan `ev.datetime` (field tidak ada)
-- Jika `dangerous.length === 0` → auto-tick PASS; else → auto-block FAIL
+### Scoring System (session 2026-05-27)
+- **Weighted scoring** — gate sections (3 per playbook) mendapat bobot ×2, section biasa bobot ×1
+- **Hanya parent items** yang dihitung dalam scoring; sub-items tetap interaktif tapi bersifat guidance
+- **4 verdict zones:**
+  - `0%` → `—` (pending)
+  - `1–49%` → `NO TRADE` (merah)
+  - `50–74%` → `PERTIMBANGKAN` (kuning)
+  - `75–89%` → `SIAP TRADE` (hijau muda)
+  - `90–100%` → `ENTRY` (hijau)
+- Skor ditampilkan sebagai `Score: X%` di bawah verdict label
+
+### Gate Sections (3 kritis per playbook)
+| Playbook | Gates (bobot ×2) |
+|---|---|
+| SMC/ICT | `regime_check`, `gate` (Driver Validity), `risk` |
+| Macro Momentum | `regime_check`, `mm_trend`, `mm_risk` |
+| Event-Driven | `regime_check`, `ed_event`, `ed_risk` |
+| Mean Reversion | `regime_check`, `mr_range`, `mr_risk` |
+
+### SMC/ICT Simplification
+- `postentry` (09) + `antibias` (10) → merge jadi `disiplin` (09), 6 items, tanpa sub-items
+
+### Auto-populate Logic — `ckAutoTickRegimeCheck(pair)` + helper functions
+**Shared (rc1–rc5, semua playbook):**
+- `rc1` ← regimeData fresh (<30 min)
+- `rc2` ← cbData bias untuk base + quote tersedia
+- `rc3` ← cotData positions tersedia
+- `rc4` ← calData: tidak ada High-impact event <6 jam → auto-tick; ada → auto-block
+- `rc5` (hint) ← realYieldsData spread ditampilkan di `#ckPairHint`
+
+**SMC/ICT** — `_ckAutoSMC(base, quote)`:
+- `f2` ← cbData[base].bias ≥ Hawkish (level ≥3)
+- `f3` ← cbData[quote].bias ≤ Dovish (level ≤1)
+- `f1`, `f4b`, `f6` ← kedua kondisi di atas terpenuhi
+- `tm1a` ← jam UTC 08–15 (London session)
+- `tm1b` ← jam UTC 13–20 (NY session)
+
+**Macro Momentum** — `_ckAutoMacro(base, quote)`:
+- `mm_cb1` ← salah satu CB hawkish, yang lain dovish/netral (dari cbData)
+- `mm_cb2` ← divergence ≥2 level dari `CB_BIAS_LEVEL` map
+- `mm_cb4` ← real yield spread >0.3% mendukung arah
+- `mm_co2` ← cotData Asset Manager net positions tersedia
+
+**Event-Driven** — `_ckAutoEvent(base, quote)`:
+- `ed_ev1` ← calData: ada High-impact event <24 jam untuk pair
+- `ed_ev3` ← calData: event tersebut punya forecast atau previous
+
+**Mean Reversion** — `_ckAutoMeanRev()`:
+- `mr_ra4` ← regimeData.regime === 'Neutral'
+
+**CB_BIAS_LEVEL mapping** (digunakan semua helper):
+```js
+const CB_BIAS_LEVEL = { 'very hawkish':4, 'hawkish':3, 'neutral':2, 'dovish':1, 'very dovish':0 };
+```
+
+**Helper `_ckEvTimestamp(ev)`** — construct UTC ms dari `ev.date` + `ev.time_wib` (WIB=UTC+7), replace duplikasi konstruksi timestamp di rc4 dan _ckAutoEvent.
 
 ---
 
@@ -370,6 +422,7 @@ generateFundamentalAnalysis() // POST /api/admin?action=fundamental_analysis
 - **Kualitas output ringkasan jelek** — AI output melanggar aturan prompt: membuka dengan kalimat generik ("Pagi ini..."), menggunakan hedging phrases ("dapat mempengaruhi", "dapat memberikan"), kalender hanya list event tanpa skenario beat/miss, XAUUSD section tidak dipisah secara visual. Root cause: (1) prompt dalam satu user message — instruksi tenggelam di bawah data; (2) max_tokens 1500 terlalu pendek; (3) rendering flat tanpa paragraph break atau pemisahan visual FX vs XAUUSD. Fix: (1) split prompt menjadi `system` message (aturan + frasa terlarang eksplisit + tes kalimat) + `user` message (data saja), temperature turun 0.30→0.25, max_tokens naik 1500→2000; (2) `renderArticleSections()` pisah artikel di marker `XAUUSD:` → dua card terpisah, FX card dengan accent merah, XAUUSD card dengan accent gold (#c9a227) + label `XAUUSD`; (3) `articleToHtml()` konversi `\n\n` ke `<p>` paragraf proper (tidak lagi `white-space: pre-line`). (2026-05-18).
 - **Analisa XAU bisa menyesatkan: safe haven vs real yield tidak dihubungkan** — AI mengandalkan headline saja tanpa data numerik real yield, sehingga untuk event geopolitik energi (Iran/Hormuz) bisa langsung menyimpulkan "safe haven dominant" tanpa trace second-order: oil naik → inflasi → Fed hawkish → real yield naik → XAU bearish. Ini kebalikan dari safe haven narrative. Fix: (1) inject data real yield USD live dari Redis `real_yields` ke context Call 1 sebagai blok `DATA REAL YIELD USD (LIVE)` — AI kini punya angka USD 10Y nominal, TIPS breakeven, dan real yield aktual, bukan inferensi dari headline; (2) tambah aturan wajib di prompt: untuk geopolitik melibatkan energi/minyak, AI harus trace DUA rantai kausal (oil→inflation→Fed→real yield naik → bearish vs risk aversion→safe haven→bullish) dan bandingkan magnitude keduanya secara eksplisit sebelum menyimpulkan; (3) jika real yield > 2%, safe haven hanya bisa "dominant" jika ada bukti nyata flight-to-safety, bukan hanya narasi geopolitik. (2026-05-18).
 - **market-digest.js Vercel 504 + cb_bias race condition** — timeout AI calls lama (20-25s) bisa menyebabkan total eksekusi melewati 25s Vercel limit → 504 Gateway Timeout pada worst case (semua provider gagal dan retry). Race condition: dua invokasi concurrent bisa GET-merge-SET cb_bias secara overlapping → update dari satu invokasi bisa ditimpa. Fix: (1) perketat semua timeout — Cerebras 20s→8s, SambaNova 20s→8s, Groq fallback Call1 25s→14s / Call2 15s→12s / Call3 15s→12s / Call4 15s→8s; (2) hapus SambaNova retry di Call 3 (menghemat 8s worst case); (3) tambah distributed lock `cb_bias_lock` (SET NX EX 10) — hanya satu invokasi yang bisa write cb_bias dalam satu window 10s, sisanya skip (tidak fail, hanya lewat). (2026-05-18).
+- **Checklist terlalu ketat dan generik** — sistem binary gate (jika 1 gagal → NO TRADE) terlalu mekanis untuk trading discretionary; item-item penting seperti CB divergence, real yield, COT, dan session timing tidak otomatis terhubung ke data live yang sudah ada di app. Fix (2026-05-27): (1) **Weighted scoring** — gate sections (3 per playbook, bukan semua) bobot ×2, regular sections bobot ×1; hanya parent items dihitung (sub-items tetap interaktif sebagai guidance); (2) **4 verdict zones** — `—` / `NO TRADE` (<50%) / `PERTIMBANGKAN` (50-74%) / `SIAP TRADE` (75-89%) / `ENTRY` (≥90%) menggantikan binary pass/fail; (3) **Structural simplification** SMC/ICT — `postentry`+`antibias` di-merge jadi `DISIPLIN` (6 items); gates dikurangi dari 9 → 3 (hanya `regime_check`, `gate`, `risk`); (4) **Expanded auto-populate** via `_ckAutoSMC`, `_ckAutoMacro`, `_ckAutoEvent`, `_ckAutoMeanRev` — SMC auto-tick f1/f2/f3/f4b/f6/tm1a/tm1b dari cbData+session; Macro auto-tick mm_cb1/mm_cb2/mm_cb4/mm_co2 dari cbData+realYields+cotData; Event-Driven auto-tick ed_ev1/ed_ev3 dari calData; MeanRev auto-tick mr_ra4 dari regimeData; (5) **stopNote teks** diupdate dari bahasa "STOP" ke guidance kontekstual.
 
 ---
 
