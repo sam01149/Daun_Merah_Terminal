@@ -1103,19 +1103,23 @@ body {
   border-radius: 4px; transition: background .2s, border-color .2s; margin-bottom: 6px;
 }
 .ck-jurnal-btn:hover { background: rgba(244,114,182,0.18); border-color: #f472b6; }
+.ck-pb-info-wrap { position: relative; display: inline-flex; }
 .ck-pb-info-btn {
   background: transparent; border: 1px solid var(--border); color: var(--muted);
   font-family: 'DM Mono', monospace; font-size: 9px; padding: 2px 7px; cursor: pointer;
   border-radius: 3px; transition: color .2s, border-color .2s; flex-shrink: 0;
 }
 .ck-pb-info-btn:hover, .ck-pb-info-btn.open { color: var(--text); border-color: var(--muted); }
-.ck-pb-info-box {
-  display: none; background: rgba(167,139,250,0.07); border: 1px solid rgba(167,139,250,0.2);
-  border-radius: 4px; padding: 10px 12px; font-size: 10px; color: var(--text-mid); line-height: 1.65;
-  margin-top: 6px; word-wrap: break-word; overflow-wrap: break-word; max-width: 100%;
+.ck-pb-info-tip {
+  display: none; position: absolute; top: calc(100% + 6px); left: 0; z-index: 200;
+  background: #1a1a18; border: 1px solid rgba(167,139,250,0.3);
+  border-radius: 6px; padding: 10px 12px; width: 280px; max-width: 90vw;
+  font-size: 10px; color: var(--text-mid); line-height: 1.65;
+  word-wrap: break-word; overflow-wrap: break-word;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.5);
 }
-.ck-pb-info-box.open { display: block; }
-.ck-pb-info-title { color: #a78bfa; font-size: 9px; letter-spacing: .08em; text-transform: uppercase; margin-bottom: 5px; }
+.ck-pb-info-tip.open { display: block; }
+.ck-pb-info-title { color: #a78bfa; font-size: 9px; letter-spacing: .08em; text-transform: uppercase; margin-bottom: 5px; font-weight: 700; }
 .ck-mobile-jurnal-btn {
   display: none; width: 100%; padding: 8px; background: rgba(244,114,182,0.1);
   border: 1px solid rgba(244,114,182,0.35); color: #f472b6; font-family: 'DM Mono', monospace;
@@ -2019,11 +2023,13 @@ body {
         <option value="event_driven">Event-Driven</option>
         <option value="mean_reversion">Mean Reversion</option>
       </select>
-      <button class="ck-pb-info-btn" id="ckPbInfoBtn" onclick="ckTogglePbInfo()">ⓘ</button>
-    </div>
-    <div class="ck-pb-info-box" id="ckPbInfoBox">
-      <div class="ck-pb-info-title" id="ckPbInfoTitle"></div>
-      <div id="ckPbInfoBody"></div>
+      <div class="ck-pb-info-wrap">
+        <button class="ck-pb-info-btn" id="ckPbInfoBtn" onclick="ckTogglePbInfo()">ⓘ</button>
+        <div class="ck-pb-info-tip" id="ckPbInfoBox">
+          <div class="ck-pb-info-title" id="ckPbInfoTitle"></div>
+          <div id="ckPbInfoBody"></div>
+        </div>
+      </div>
     </div>
     <div style="display:flex;align-items:center;gap:8px">
       <select id="ckPairSelector" onchange="ckOnPairChange()" style="background:var(--surface);color:var(--text);border:1px solid var(--border);padding:4px 8px;font-family:'DM Mono',monospace;font-size:11px;flex:1">
