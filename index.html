@@ -2355,7 +2355,7 @@ async function fetchFeed() {
     if (allItems.length === 0) {
       document.getElementById('feedScroll').innerHTML = `
         <div class="state-box"><div class="icon">⚠️</div>
-        <p>Gagal fetch dari server.<br>Pastikan Netlify Functions ter-deploy.</p></div>`;
+        <p>Gagal fetch berita dari server.<br>Sumber mungkin sementara tidak tersedia — coba refresh atau tunggu sebentar.</p></div>`;
     }
     setTimeout(fetchFeed, 8000);
     return;
