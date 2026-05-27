@@ -2035,7 +2035,7 @@ body {
       <select id="ckPairSelector" onchange="ckOnPairChange()" style="background:var(--surface);color:var(--text);border:1px solid var(--border);padding:4px 8px;font-family:'DM Mono',monospace;font-size:11px;flex:1">
         <option value="">— Pilih pair untuk auto-tick —</option>
       </select>
-      <span id="ckPairHint" style="font-size:9px;color:var(--muted);flex:1"></span>
+      <span id="ckPairHint" style="font-size:9px;color:var(--muted);white-space:nowrap;cursor:default"></span>
     </div>
   </div>
   <div class="ck-sections" id="ckSectionsContainer"></div>
@@ -4580,8 +4580,10 @@ function ckAutoTickRegimeCheck(pair) {
       const diff = ryB.real - ryQ.real;
       const sign = diff >= 0 ? '+' : '';
       const hint = document.getElementById('ckPairHint');
-      if (hint) hint.textContent =
-        `Real yield ${base} ${ryB.real >= 0 ? '+' : ''}${ryB.real.toFixed(2)}% vs ${quote} ${ryQ.real >= 0 ? '+' : ''}${ryQ.real.toFixed(2)}% → spread ${sign}${diff.toFixed(2)}%`;
+      if (hint) {
+        hint.textContent = `Δ yield ${sign}${diff.toFixed(2)}%`;
+        hint.title = `Real yield ${base} ${ryB.real >= 0 ? '+' : ''}${ryB.real.toFixed(2)}% vs ${quote} ${ryQ.real >= 0 ? '+' : ''}${ryQ.real.toFixed(2)}% → spread ${sign}${diff.toFixed(2)}%`;
+      }
       // Auto-tick rc5: spread >0.3% AND arah selaras CB bias
       if (Math.abs(diff) > 0.3 && cbData) {
         const b = cbData.find(c => c.currency === base);
