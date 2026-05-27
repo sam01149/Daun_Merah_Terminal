@@ -1433,7 +1433,7 @@ body {
 }
 .kb-desc { font-size: 10px; color: var(--text-mid); }
 /* Checklist keyboard focus */
-.ck-item.ck-focused {
+.ck-item.ck-focused, .ck-sub.ck-focused {
   background: rgba(234,179,8,.06);
   outline: 1px solid rgba(234,179,8,.35);
   border-radius: 3px;
@@ -6038,7 +6038,7 @@ function toggleKbHelp() { document.getElementById('kbOverlay').classList.toggle(
 let ckFocusIdx = -1;
 
 function ckGetNavItems() {
-  return Array.from(document.querySelectorAll('#checklistPanel .ck-item'));
+  return Array.from(document.querySelectorAll('#checklistPanel .ck-item, #checklistPanel .ck-sub'));
 }
 function ckNavSetFocus(idx) {
   const items = ckGetNavItems();
@@ -6046,7 +6046,13 @@ function ckNavSetFocus(idx) {
   idx = Math.max(0, Math.min(idx, items.length - 1));
   ckFocusIdx = idx;
   items.forEach((el, i) => el.classList.toggle('ck-focused', i === idx));
-  items[idx].scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  const target = items[idx];
+  // Auto-expand section jika masih collapsed
+  const body = target.closest('.ck-sec-body');
+  if (body && !body.classList.contains('open')) {
+    ckToggleSection(body.id.replace('ckb_', ''));
+  }
+  target.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
 }
 function ckNavClearFocus() {
   ckFocusIdx = -1;
