@@ -1112,7 +1112,7 @@ body {
 .ck-pb-info-box {
   display: none; background: rgba(167,139,250,0.07); border: 1px solid rgba(167,139,250,0.2);
   border-radius: 4px; padding: 10px 12px; font-size: 10px; color: var(--text-mid); line-height: 1.65;
-  margin-top: 6px;
+  margin-top: 6px; word-wrap: break-word; overflow-wrap: break-word; max-width: 100%;
 }
 .ck-pb-info-box.open { display: block; }
 .ck-pb-info-title { color: #a78bfa; font-size: 9px; letter-spacing: .08em; text-transform: uppercase; margin-bottom: 5px; }
@@ -4696,6 +4696,11 @@ function ckSwitchPlaybook(id) {
   CK_SECTIONS = PLAYBOOKS[id].sections;
   CK_QUICK    = PLAYBOOKS[id].quick;
   CK_GATES    = PLAYBOOKS[id].gates;
+  // Close info box on playbook switch
+  const box = document.getElementById('ckPbInfoBox');
+  const btn = document.getElementById('ckPbInfoBtn');
+  if (box) box.classList.remove('open');
+  if (btn) btn.classList.remove('open');
   // Reset state for new playbook
   ckState = {};
   ckSave();
