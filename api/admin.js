@@ -915,7 +915,7 @@ async function journalImportHandler(req, res) {
 
 // ── Circuit breaker status + reset ───────────────────────────────────────────
 
-const KNOWN_CIRCUITS = ['ai:cerebras', 'ai:sambanova', 'fred', 'stooq', 'ff', 'fj', 'cftc', 'redis'];
+const KNOWN_CIRCUITS = ['ai:openrouter', 'ai:cerebras', 'ai:sambanova', 'fred', 'stooq', 'ff', 'fj', 'cftc', 'redis'];
 
 async function circuitStatusHandler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
