@@ -132,11 +132,11 @@ function stripThinking(text) {
 }
 
 // Shared low-level fetch for any OpenAI-compatible provider
-async function aiCall(url, apiKey, model, messages, maxTokens, temperature, timeoutMs, extraHeaders = {}) {
+async function aiCall(url, apiKey, model, messages, maxTokens, temperature, timeoutMs, extraHeaders = {}, extraBody = {}) {
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}`, ...extraHeaders },
-    body: JSON.stringify({ model, messages, max_tokens: maxTokens, temperature }),
+    body: JSON.stringify({ model, messages, max_tokens: maxTokens, temperature, ...extraBody }),
     signal: AbortSignal.timeout(timeoutMs),
   });
   if (!res.ok) {
@@ -419,24 +419,27 @@ ${xauHistoryBlock}`;
       console.log('Call 1: OpenRouter circuit OPEN — skipping to Groq');
     }
 
-    // Fallback: Groq qwen3-32b → llama-3.3-70b (ANY failure, not just quota)
+    // Fallback: Groq qwen3-32b → llama-3.3-70b (ANY failure or empty result)
     if (!article && GROQ_KEY) {
       try {
         console.log('Call 1: falling back to Groq qwen3-32b');
-        const raw = await aiCall(GROQ_URL, GROQ_KEY, GROQ_MODEL_PROSE, call1Messages, 2000, 0.25, 14000);
+        const raw = await aiCall(GROQ_URL, GROQ_KEY, GROQ_MODEL_PROSE, call1Messages, 1800, 0.25, 20000, {}, { enable_thinking: false });
         if (raw.trim()) { article = raw.trim(); method = 'groq-qwen3'; }
         console.log('Call 1: Groq qwen3 OK, length', article?.length);
       } catch(e) {
         console.warn('Call 1 Groq qwen3 failed:', e.status || e.message);
+      }
+      // Always try llama if qwen3 failed or returned empty
+      if (!article) {
         try {
-          console.log('Call 1: qwen3 failed — falling back to Groq llama-3.3-70b');
+          console.log('Call 1: falling back to Groq llama-3.3-70b');
           const raw2 = await aiCall(GROQ_URL, GROQ_KEY, GROQ_MODEL, call1Messages, 2000, 0.25, 14000);
           if (raw2.trim()) { article = raw2.trim(); method = 'groq'; }
         } catch(e2) {
           console.warn('Call 1 Groq llama fallback failed:', e2.status || e2.message);
         }
-        if (!article) method = e.status === 429 ? 'fallback_quota' : 'fallback';
       }
+      if (!article) method = 'fallback';
     }
   } else {
     method = 'fallback';
