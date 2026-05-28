@@ -11,14 +11,15 @@ const FF_THIS_WEEK = 'https://nfs.faireconomy.media/ff_calendar_thisweek.xml';
 const FF_NEXT_WEEK = 'https://nfs.faireconomy.media/ff_calendar_nextweek.xml';
 
 // AI providers
-const OPENROUTER_URL     = 'https://openrouter.ai/api/v1/chat/completions';
-const OPENROUTER_MODEL   = 'openai/gpt-oss-120b:free'; // Call 1 primary: terbukti stabil, output Bahasa Indonesia confirmed
-const OPENROUTER_HEADERS = { 'HTTP-Referer': 'https://financial-feed-app.vercel.app', 'X-Title': 'Daun Merah' };
-const SAMBANOVA_URL   = 'https://api.sambanova.ai/v1/chat/completions';
-const SAMBANOVA_MODEL = 'DeepSeek-V3-0324';               // Call 2 & 3: structured JSON
+const SAMBANOVA_URL       = 'https://api.sambanova.ai/v1/chat/completions';
+const SAMBANOVA_MODEL     = 'DeepSeek-V3.1';              // Call 2 & 3: structured JSON (akun 1) — 128K ctx, MoE reasoning
+const SAMBANOVA_URL_CALL1 = 'https://api.sambanova.ai/v1/chat/completions';
+const SAMBANOVA_MODEL_CALL1 = 'DeepSeek-V3.2';            // Call 1: prose (akun 2) — preview, tapi kualitas superior untuk Indonesian
 const GROQ_URL        = 'https://api.groq.com/openai/v1/chat/completions';
 const GROQ_MODEL      = 'llama-3.3-70b-versatile';        // Call 2, 3, 4: JSON + thesis
-const GROQ_MODEL_PROSE = 'qwen/qwen3-32b';                // Call 1 fallback: Qwen3 quality untuk Indonesian prose
+const OPENROUTER_URL     = 'https://openrouter.ai/api/v1/chat/completions';
+const OPENROUTER_MODEL   = 'openai/gpt-oss-120b:free'; // Call 1 fallback 2: proven stabil, output Bahasa Indonesia
+const OPENROUTER_HEADERS = { 'HTTP-Referer': 'https://financial-feed-app.vercel.app', 'X-Title': 'Daun Merah' };
 
 const MAJOR_CURRENCIES = new Set(['USD','EUR','GBP','JPY','CAD','AUD','NZD','CHF']);
 const GOLD_KEYWORDS = [
@@ -174,6 +175,7 @@ module.exports = async function handler(req, res) {
 
   const OPENROUTER_KEY = process.env.OPENROUTER_API_KEY;
   const SAMBANOVA_KEY  = process.env.SAMBANOVA_API_KEY;
+  const SAMBANOVA_KEY_CALL1 = process.env.SAMBANOVA_API_KEY_CALL1;
   const GROQ_KEY       = process.env.GROQ_API_KEY;
 
   // 1. RSS — current feed + 36h Redis history in parallel
@@ -404,44 +406,47 @@ ${xauHistoryBlock}`;
       { role: 'user', content: digestUserMsg },
     ];
 
-    // Primary: OpenRouter DeepSeek V4 Flash → gpt-oss-120b secondary (circuit breaker)
-    if (OPENROUTER_KEY && await cb.canCall('ai:openrouter')) {
+    // Primary: SambaNova DeepSeek-V3.2 (akun 2, Call 1 prose only) — circuit breaker
+    if (SAMBANOVA_KEY_CALL1 && await cb.canCall('ai:sambanova')) {
       try {
-        console.log('Call 1: trying OpenRouter', OPENROUTER_MODEL);
-        const raw = await aiCall(OPENROUTER_URL, OPENROUTER_KEY, OPENROUTER_MODEL, call1Messages, 800, 0.25, 28000, OPENROUTER_HEADERS);
-        if (raw.trim()) { article = raw.trim(); method = 'openrouter'; }
-        console.log('Call 1: OpenRouter OK, length', article?.length);
-        await cb.onSuccess('ai:openrouter');
+        console.log('Call 1: trying SambaNova DeepSeek-V3.2 (akun 2 prose)');
+        const raw = await aiCall(SAMBANOVA_URL_CALL1, SAMBANOVA_KEY_CALL1, SAMBANOVA_MODEL_CALL1, call1Messages, 800, 0.25, 28000);
+        if (raw.trim()) { article = raw.trim(); method = 'deepseek-v3.2'; }
+        console.log('Call 1: SambaNova V3.2 OK, length', article?.length);
+        await cb.onSuccess('ai:sambanova');
       } catch(e) {
-        console.warn('Call 1 OpenRouter failed:', e.status || e.message);
-        await cb.onFailure('ai:openrouter', AI_CB_THRESHOLD);
+        console.warn('Call 1 SambaNova V3.2 failed:', e.status || e.message);
+        await cb.onFailure('ai:sambanova', AI_CB_THRESHOLD);
       }
-    } else if (OPENROUTER_KEY) {
-      console.log('Call 1: OpenRouter circuit OPEN — skipping to Groq');
+    } else if (SAMBANOVA_KEY_CALL1) {
+      console.log('Call 1: SambaNova circuit OPEN — skipping to OpenRouter');
     }
 
-    // Fallback: Groq qwen3-32b → llama-3.3-70b (ANY failure or empty result)
+    // Fallback 2: OpenRouter gpt-oss-120b (if SambaNova failed/empty)
+    if (!article && OPENROUTER_KEY) {
+      try {
+        console.log('Call 1: fallback 2 to OpenRouter gpt-oss-120b:free');
+        const raw = await aiCall(OPENROUTER_URL, OPENROUTER_KEY, OPENROUTER_MODEL, call1Messages, 800, 0.25, 28000, OPENROUTER_HEADERS);
+        if (raw.trim()) { article = raw.trim(); method = 'gpt-oss-120b'; }
+        console.log('Call 1: OpenRouter OK, length', article?.length);
+      } catch(e) {
+        console.warn('Call 1 OpenRouter fallback failed:', e.status || e.message);
+      }
+    }
+
+    // Fallback 3: Groq qwen3-32b (if OpenRouter failed/empty)
     if (!article && GROQ_KEY) {
       try {
-        console.log('Call 1: falling back to Groq qwen3-32b');
+        console.log('Call 1: fallback 3 to Groq qwen3-32b');
         const raw = await aiCall(GROQ_URL, GROQ_KEY, GROQ_MODEL_PROSE, call1Messages, 1800, 0.25, 20000);
-        if (raw.trim()) { article = raw.trim(); method = 'groq-qwen3'; }
+        if (raw.trim()) { article = raw.trim(); method = 'qwen3-32b'; }
         console.log('Call 1: Groq qwen3 OK, length', article?.length);
       } catch(e) {
-        console.warn('Call 1 Groq qwen3 failed:', e.status || e.message);
+        console.warn('Call 1 Groq qwen3 fallback failed:', e.status || e.message);
       }
-      // Always try llama if qwen3 failed or returned empty
-      if (!article) {
-        try {
-          console.log('Call 1: falling back to Groq llama-3.3-70b');
-          const raw2 = await aiCall(GROQ_URL, GROQ_KEY, GROQ_MODEL, call1Messages, 2000, 0.25, 14000);
-          if (raw2.trim()) { article = raw2.trim(); method = 'groq'; }
-        } catch(e2) {
-          console.warn('Call 1 Groq llama fallback failed:', e2.status || e2.message);
-        }
-      }
-      if (!article) method = 'fallback';
     }
+
+    if (!article) method = 'fallback';
   } else {
     method = 'fallback';
   }

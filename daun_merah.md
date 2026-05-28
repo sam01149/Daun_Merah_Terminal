@@ -21,7 +21,7 @@ Daun Merah adalah forex news PWA (Progressive Web App) untuk trader forex Indone
 |-------|-----------|
 | Frontend | Vanilla JS + HTML/CSS, single file `index.html` (~4200+ baris) |
 | Backend | Vercel Serverless Functions (Node.js, CommonJS `module.exports`) |
-| AI | **Multi-provider:** OpenRouter `openai/gpt-oss-120b:free` (Call 1 primary), Groq `qwen/qwen3-32b` (Call 1 fallback 1), Groq `llama-3.3-70b-versatile` (Call 1 fallback 2 + Call 4), SambaNova DeepSeek-V3-0324 (Call 2–3 bias+thesis, circuit breaker) |
+| AI | **Multi-provider dual-account strategy:** Call 1 prose: SambaNova `DeepSeek-V3.2` (akun 2, primary), OpenRouter `gpt-oss-120b:free` (fallback 2), Groq `qwen/qwen3-32b` (fallback 3); Call 2–3 bias+thesis: SambaNova `DeepSeek-V3.1` (akun 1, 128K ctx); Call 4: Groq `llama-3.3-70b-versatile` |
 | Cache/DB | Upstash Redis REST API |
 | RSS sumber berita | FinancialJuice (`https://www.financialjuice.com/feed.ashx?xy=rss`) — satu-satunya sumber (Nitter dihapus 2026-05-05) |
 | Kalender ekonomi | ForexFactory XML (`nfs.faireconomy.media`) |
@@ -129,9 +129,9 @@ Main AI endpoint. Multi-provider chain dengan circuit breaker. Flow:
    - Instruksi `PENTING: TULIS SELURUH OUTPUT DALAM BAHASA INDONESIA` ditambahkan ke user message — fix bahasa Inggris yang muncul saat model diabaikan system prompt
    - DeepSeek V4 Flash free dites tapi tidak dipakai — upstream Crucible konsisten 429, tidak reliable
 7. Save ke `digest_history` (Redis, LPUSH/LTRIM max 7)
-8. **SambaNova Call 2:** CB Bias Assessment — JSON per currency (circuit breaker `ai:sambanova`)
+8. **SambaNova Call 2:** CB Bias Assessment — JSON per currency (circuit breaker `ai:sambanova`) — **DeepSeek-V3.1** (upgraded 28-May, 128K ctx)
 9. Merge + save ke Redis `cb_bias`
-10. **SambaNova Call 3:** Structured thesis JSON → fallback Groq llama jika sambanova OPEN
+10. **SambaNova Call 3:** Structured thesis JSON → fallback Groq llama jika sambanova OPEN — **DeepSeek-V3.1**
 11. **Groq Call 4:** Thesis Invalidation Monitor — scan open journal entries vs headlines, push notif jika ada kontradiksi
 12. **`autoUpdateFundamentals`** — parse 100 headline terbaru → HSET `fundamental:{currency}`, deteksi CB rate decision → `cb_decisions`
 13. **`autoUpdateFundamentalsFromCalendar`** — FF calendar events dengan `actual` non-null langsung update `fundamental:{currency}` tanpa parsing teks (source: `ff_calendar`)
