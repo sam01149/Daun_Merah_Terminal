@@ -12,7 +12,7 @@ const FF_NEXT_WEEK = 'https://nfs.faireconomy.media/ff_calendar_nextweek.xml';
 
 // AI providers
 const OPENROUTER_URL     = 'https://openrouter.ai/api/v1/chat/completions';
-const OPENROUTER_MODEL   = 'nvidia/nemotron-3-super-120b-a12b:free'; // Call 1 primary: Nemotron 3 Super 120B — satu-satunya free tier yang stabil di OpenRouter
+const OPENROUTER_MODEL   = 'openai/gpt-oss-120b:free'; // Call 1 primary: GPT-OSS 120B via Cerebras — paling cepat di free tier OpenRouter (~19s/400t)
 const OPENROUTER_HEADERS = { 'HTTP-Referer': 'https://financial-feed-app.vercel.app', 'X-Title': 'Daun Merah' };
 const SAMBANOVA_URL   = 'https://api.sambanova.ai/v1/chat/completions';
 const SAMBANOVA_MODEL = 'DeepSeek-V3-0324';               // Call 2 & 3: structured JSON
