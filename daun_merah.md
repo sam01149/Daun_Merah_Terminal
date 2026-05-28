@@ -21,7 +21,7 @@ Daun Merah adalah forex news PWA (Progressive Web App) untuk trader forex Indone
 |-------|-----------|
 | Frontend | Vanilla JS + HTML/CSS, single file `index.html` (~4200+ baris) |
 | Backend | Vercel Serverless Functions (Node.js, CommonJS `module.exports`) |
-| AI | **Multi-provider:** Cerebras `qwen-3-32b` (Call 1 briefing), SambaNova (Call 2–3 bias+thesis), Groq (Call 4 thesis-invalidation + fallback semua call) |
+| AI | **Multi-provider:** OpenRouter `deepseek/deepseek-v3:free` (Call 1 primary), Groq `qwen/qwen3-32b` (Call 1 fallback), SambaNova (Call 2–3 bias+thesis), Groq (Call 4 thesis-invalidation + last resort) |
 | Cache/DB | Upstash Redis REST API |
 | RSS sumber berita | FinancialJuice (`https://www.financialjuice.com/feed.ashx?xy=rss`) — satu-satunya sumber (Nitter dihapus 2026-05-05) |
 | Kalender ekonomi | ForexFactory XML (`nfs.faireconomy.media`) |
@@ -32,7 +32,7 @@ Daun Merah adalah forex news PWA (Progressive Web App) untuk trader forex Indone
 
 **Env vars yang dibutuhkan (di Vercel):**
 - `GROQ_API_KEY`
-- `CEREBRAS_API_KEY`
+- `OPENROUTER_API_KEY`
 - `SAMBANOVA_API_KEY`
 - `UPSTASH_REDIS_REST_URL`
 - `UPSTASH_REDIS_REST_TOKEN`
