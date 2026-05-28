@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-05-28 (session 30)
+> **Last updated:** 2026-05-28 (session 31)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Downloads\Financial_Feed_App`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -21,7 +21,7 @@ Daun Merah adalah forex news PWA (Progressive Web App) untuk trader forex Indone
 |-------|-----------|
 | Frontend | Vanilla JS + HTML/CSS, single file `index.html` (~4200+ baris) |
 | Backend | Vercel Serverless Functions (Node.js, CommonJS `module.exports`) |
-| AI | **Multi-provider:** OpenRouter `deepseek/deepseek-v3:free` (Call 1 primary), Groq `qwen/qwen3-32b` (Call 1 fallback), SambaNova (Call 2–3 bias+thesis), Groq (Call 4 thesis-invalidation + last resort) |
+| AI | **Multi-provider:** OpenRouter `openai/gpt-oss-120b:free` via Cerebras (Call 1 primary, timeout 28s, max_tokens 800), Groq `qwen/qwen3-32b` (Call 1 fallback 1, timeout 20s), Groq `llama-3.3-70b-versatile` (Call 1 fallback 2 + Call 4), SambaNova DeepSeek-V3-0324 (Call 2–3 bias+thesis, circuit breaker) |
 | Cache/DB | Upstash Redis REST API |
 | RSS sumber berita | FinancialJuice (`https://www.financialjuice.com/feed.ashx?xy=rss`) — satu-satunya sumber (Nitter dihapus 2026-05-05) |
 | Kalender ekonomi | ForexFactory XML (`nfs.faireconomy.media`) |
@@ -114,21 +114,28 @@ Update Groq prompts di Redis tanpa redeploy. Keys: `prompt_digest`, `prompt_bias
 Cron-triggered web push + Telegram. Auth: `x-cron-secret` header. Setup di cron-job.org: URL `/api/admin?action=push`.
 
 ### `GET /api/market-digest`
-Main AI endpoint. Multi-provider: Cerebras (Call 1), SambaNova (Call 2–3), Groq (Call 4 + fallback). Flow:
-1. Load `prompt_digest` dari Redis (fallback ke hardcoded `DIGEST_INSTR_DEFAULT`)
+Main AI endpoint. Multi-provider chain dengan circuit breaker. Flow:
+1. Load `prompt_digest` dari Redis (fallback ke hardcoded `DIGEST_SYSTEM_DEFAULT`)
 2. Fetch RSS via internal `/api/feeds?type=rss`
 3. Fetch ForexFactory kalender (this week + next week)
 4. Load `digest_history` + `real_yields` + **`xau_spot`** dari Redis paralel
 5. **`fetchXauSpot()`** — Yahoo Finance `GC=F` → fallback Binance PAXGUSDT. Cache Redis `xau_spot` TTL 5 menit. Inject ke prompt sebagai jangkar harga `$xxx.xx (+y%)`.
-6. **Cerebras Call 1:** Market briefing (Bahasa Indonesia). XAUUSD paragraf menggunakan pendekatan **benang merah**: buka dengan harga live, rajut headline + real yield + geopolitik secara natural tanpa rantai kausal kaku.
+6. **Call 1 — Market Briefing (Bahasa Indonesia):**
+   - Primary: OpenRouter `openai/gpt-oss-120b:free` (circuit breaker `ai:openrouter`, timeout 28s, max_tokens 800)
+   - Fallback 1: Groq `qwen/qwen3-32b` (timeout 20s, max_tokens 1800, /no_think prefix)
+   - Fallback 2: Groq `llama-3.3-70b-versatile` (timeout 14s, max_tokens 2000) — selalu dicoba jika qwen3 gagal atau return kosong
+   - Last resort: template fallback (kumpulan headline)
+   - `method` field di response: `openrouter` / `groq-qwen3` / `groq` / `fallback` / `fallback_quota`
 7. Save ke `digest_history` (Redis, LPUSH/LTRIM max 7)
-8. **SambaNova Call 2:** CB Bias Assessment — JSON per currency
+8. **SambaNova Call 2:** CB Bias Assessment — JSON per currency (circuit breaker `ai:sambanova`)
 9. Merge + save ke Redis `cb_bias`
-10. **SambaNova Call 3:** Structured thesis JSON
+10. **SambaNova Call 3:** Structured thesis JSON → fallback Groq llama jika sambanova OPEN
 11. **Groq Call 4:** Thesis Invalidation Monitor — scan open journal entries vs headlines, push notif jika ada kontradiksi
 12. **`autoUpdateFundamentals`** — parse 100 headline terbaru → HSET `fundamental:{currency}`, deteksi CB rate decision → `cb_decisions`
 13. **`autoUpdateFundamentalsFromCalendar`** — FF calendar events dengan `actual` non-null langsung update `fundamental:{currency}` tanpa parsing teks (source: `ff_calendar`)
-13. Return: `{article, method, news_count, cal_count, bias_updated, generated_at, thesis}`
+14. Return: `{article, method, news_count, cal_count, bias_updated, generated_at, thesis}`
+
+**Circuit breakers:** `ai:openrouter`, `ai:cerebras`, `ai:sambanova` — reset via `POST /api/admin?action=circuit-reset`. Status via `GET /api/admin?action=circuit-status`.
 
 **Redis keys baru:** `xau_spot` (TTL 300s) — harga XAU/USD live dari Yahoo GC=F atau Binance PAXG.
 
