@@ -12,7 +12,7 @@ const FF_NEXT_WEEK = 'https://nfs.faireconomy.media/ff_calendar_nextweek.xml';
 
 // AI providers
 const OPENROUTER_URL     = 'https://openrouter.ai/api/v1/chat/completions';
-const OPENROUTER_MODEL   = 'deepseek/deepseek-v3:free';   // Call 1 primary: DeepSeek V3 685B MoE — best free instruction following
+const OPENROUTER_MODEL   = 'deepseek/deepseek-v4-flash:free'; // Call 1 primary: DeepSeek V4 Flash 284B MoE — V3 sudah tidak tersedia di OpenRouter
 const OPENROUTER_HEADERS = { 'HTTP-Referer': 'https://financial-feed-app.vercel.app', 'X-Title': 'Daun Merah' };
 const SAMBANOVA_URL   = 'https://api.sambanova.ai/v1/chat/completions';
 const SAMBANOVA_MODEL = 'DeepSeek-V3-0324';               // Call 2 & 3: structured JSON
