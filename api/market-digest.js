@@ -423,7 +423,7 @@ ${xauHistoryBlock}`;
     if (!article && GROQ_KEY) {
       try {
         console.log('Call 1: falling back to Groq qwen3-32b');
-        const raw = await aiCall(GROQ_URL, GROQ_KEY, GROQ_MODEL_PROSE, call1Messages, 1800, 0.25, 20000, {}, { enable_thinking: false });
+        const raw = await aiCall(GROQ_URL, GROQ_KEY, GROQ_MODEL_PROSE, call1Messages, 1800, 0.25, 20000);
         if (raw.trim()) { article = raw.trim(); method = 'groq-qwen3'; }
         console.log('Call 1: Groq qwen3 OK, length', article?.length);
       } catch(e) {
