@@ -12,8 +12,8 @@ const FF_NEXT_WEEK = 'https://nfs.faireconomy.media/ff_calendar_nextweek.xml';
 
 // AI providers
 const OPENROUTER_URL     = 'https://openrouter.ai/api/v1/chat/completions';
-const OPENROUTER_MODEL   = 'deepseek/deepseek-v4-flash:free'; // Call 1 primary: DeepSeek V4 Flash — 284B MoE (13B aktif), multilingual kuat, 1M ctx
-const OPENROUTER_MODEL_2 = 'openai/gpt-oss-120b:free'; // Call 1 secondary: GPT-OSS 120B fallback jika DeepSeek gagal
+const OPENROUTER_MODEL   = 'openai/gpt-oss-120b:free';        // Call 1 primary: terbukti stabil
+const OPENROUTER_MODEL_2 = 'deepseek/deepseek-v4-flash:free'; // Call 1 secondary: DeepSeek V4 Flash — dicoba jika primary kosong, 429 tidak penalti circuit
 const OPENROUTER_HEADERS = { 'HTTP-Referer': 'https://financial-feed-app.vercel.app', 'X-Title': 'Daun Merah' };
 const SAMBANOVA_URL   = 'https://api.sambanova.ai/v1/chat/completions';
 const SAMBANOVA_MODEL = 'DeepSeek-V3-0324';               // Call 2 & 3: structured JSON
@@ -418,17 +418,17 @@ ${xauHistoryBlock}`;
         console.warn('Call 1 OpenRouter DeepSeek failed:', e.status || e.message);
         await cb.onFailure('ai:openrouter', AI_CB_THRESHOLD);
       }
-      // 1b. gpt-oss-120b secondary (jika DeepSeek gagal/kosong, circuit masih bisa dicoba)
-      if (!article && OPENROUTER_KEY && await cb.canCall('ai:openrouter')) {
+      // 1b. DeepSeek V4 Flash secondary — 429 upstream tidak penalti circuit (provider issue, bukan OpenRouter)
+      if (!article) {
         try {
           console.log('Call 1: trying OpenRouter secondary', OPENROUTER_MODEL_2);
-          const raw2 = await aiCall(OPENROUTER_URL, OPENROUTER_KEY, OPENROUTER_MODEL_2, call1Messages, 800, 0.25, 28000, OPENROUTER_HEADERS);
-          if (raw2.trim()) { article = raw2.trim(); method = 'openrouter-gptoss'; }
-          console.log('Call 1: OpenRouter gpt-oss OK, length', article?.length);
-          await cb.onSuccess('ai:openrouter');
+          const raw2 = await aiCall(OPENROUTER_URL, OPENROUTER_KEY, OPENROUTER_MODEL_2, call1Messages, 800, 0.25, 25000, OPENROUTER_HEADERS);
+          if (raw2.trim()) { article = raw2.trim(); method = 'openrouter-deepseek'; }
+          console.log('Call 1: OpenRouter DeepSeek secondary OK, length', article?.length);
         } catch(e) {
-          console.warn('Call 1 OpenRouter gpt-oss failed:', e.status || e.message);
-          await cb.onFailure('ai:openrouter', AI_CB_THRESHOLD);
+          // 429 = upstream rate limit — bukan indikasi OpenRouter down, skip penalti
+          if (e.status !== 429) await cb.onFailure('ai:openrouter', AI_CB_THRESHOLD);
+          console.warn('Call 1 OpenRouter DeepSeek secondary failed:', e.status || e.message);
         }
       }
     } else if (OPENROUTER_KEY) {
