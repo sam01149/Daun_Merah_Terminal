@@ -403,11 +403,11 @@ ${xauHistoryBlock}`;
       { role: 'user', content: digestUserMsg },
     ];
 
-    // Primary: OpenRouter DeepSeek V3 (circuit breaker)
+    // Primary: OpenRouter (circuit breaker) — free tier, best-effort
     if (OPENROUTER_KEY && await cb.canCall('ai:openrouter')) {
       try {
-        console.log('Call 1: trying OpenRouter deepseek-v3');
-        const raw = await aiCall(OPENROUTER_URL, OPENROUTER_KEY, OPENROUTER_MODEL, call1Messages, 2000, 0.25, 15000, OPENROUTER_HEADERS);
+        console.log('Call 1: trying OpenRouter', OPENROUTER_MODEL);
+        const raw = await aiCall(OPENROUTER_URL, OPENROUTER_KEY, OPENROUTER_MODEL, call1Messages, 800, 0.25, 28000, OPENROUTER_HEADERS);
         if (raw.trim()) { article = raw.trim(); method = 'openrouter'; }
         console.log('Call 1: OpenRouter OK, length', article?.length);
         await cb.onSuccess('ai:openrouter');
@@ -419,7 +419,7 @@ ${xauHistoryBlock}`;
       console.log('Call 1: OpenRouter circuit OPEN — skipping to Groq');
     }
 
-    // Fallback: Groq qwen3-32b → llama-3.3-70b jika qwen3 quota habis
+    // Fallback: Groq qwen3-32b → llama-3.3-70b (ANY failure, not just quota)
     if (!article && GROQ_KEY) {
       try {
         console.log('Call 1: falling back to Groq qwen3-32b');
@@ -428,14 +428,12 @@ ${xauHistoryBlock}`;
         console.log('Call 1: Groq qwen3 OK, length', article?.length);
       } catch(e) {
         console.warn('Call 1 Groq qwen3 failed:', e.status || e.message);
-        if (e.status === 429 || e.status === 503) {
-          try {
-            console.log('Call 1: qwen3 quota — falling back to Groq llama-3.3-70b');
-            const raw2 = await aiCall(GROQ_URL, GROQ_KEY, GROQ_MODEL, call1Messages, 2000, 0.25, 14000);
-            if (raw2.trim()) { article = raw2.trim(); method = 'groq'; }
-          } catch(e2) {
-            console.warn('Call 1 Groq llama fallback failed:', e2.status || e2.message);
-          }
+        try {
+          console.log('Call 1: qwen3 failed — falling back to Groq llama-3.3-70b');
+          const raw2 = await aiCall(GROQ_URL, GROQ_KEY, GROQ_MODEL, call1Messages, 2000, 0.25, 14000);
+          if (raw2.trim()) { article = raw2.trim(); method = 'groq'; }
+        } catch(e2) {
+          console.warn('Call 1 Groq llama fallback failed:', e2.status || e2.message);
         }
         if (!article) method = e.status === 429 ? 'fallback_quota' : 'fallback';
       }
