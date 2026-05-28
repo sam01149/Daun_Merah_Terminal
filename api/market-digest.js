@@ -12,7 +12,8 @@ const FF_NEXT_WEEK = 'https://nfs.faireconomy.media/ff_calendar_nextweek.xml';
 
 // AI providers
 const OPENROUTER_URL     = 'https://openrouter.ai/api/v1/chat/completions';
-const OPENROUTER_MODEL   = 'openai/gpt-oss-120b:free'; // Call 1 primary: GPT-OSS 120B via Cerebras — paling cepat di free tier OpenRouter (~19s/400t)
+const OPENROUTER_MODEL   = 'deepseek/deepseek-v4-flash:free'; // Call 1 primary: DeepSeek V4 Flash — 284B MoE (13B aktif), multilingual kuat, 1M ctx
+const OPENROUTER_MODEL_2 = 'openai/gpt-oss-120b:free'; // Call 1 secondary: GPT-OSS 120B fallback jika DeepSeek gagal
 const OPENROUTER_HEADERS = { 'HTTP-Referer': 'https://financial-feed-app.vercel.app', 'X-Title': 'Daun Merah' };
 const SAMBANOVA_URL   = 'https://api.sambanova.ai/v1/chat/completions';
 const SAMBANOVA_MODEL = 'DeepSeek-V3-0324';               // Call 2 & 3: structured JSON
@@ -372,6 +373,7 @@ REMINDER FINAL: SEBELUM MERESPONS, pastikan tidak ada kata "dapat mempengaruhi",
 
     const digestSystemMsg = promptDigestInstr || DIGEST_SYSTEM_DEFAULT;
     const digestUserMsg = `/no_think
+PENTING: TULIS SELURUH OUTPUT DALAM BAHASA INDONESIA. JANGAN GUNAKAN BAHASA INGGRIS SAMA SEKALI.
 WAKTU: ${dayStr}, ${dateStr}, ${timeStr}${weekendNote}
 
 === HARGA XAU/USD LIVE (jangkar harga — gunakan sebagai titik awal narasi) ===
@@ -403,17 +405,31 @@ ${xauHistoryBlock}`;
       { role: 'user', content: digestUserMsg },
     ];
 
-    // Primary: OpenRouter (circuit breaker) — free tier, best-effort
+    // Primary: OpenRouter DeepSeek V4 Flash → gpt-oss-120b secondary (circuit breaker)
     if (OPENROUTER_KEY && await cb.canCall('ai:openrouter')) {
+      // 1a. DeepSeek V4 Flash
       try {
         console.log('Call 1: trying OpenRouter', OPENROUTER_MODEL);
         const raw = await aiCall(OPENROUTER_URL, OPENROUTER_KEY, OPENROUTER_MODEL, call1Messages, 800, 0.25, 28000, OPENROUTER_HEADERS);
-        if (raw.trim()) { article = raw.trim(); method = 'openrouter'; }
-        console.log('Call 1: OpenRouter OK, length', article?.length);
+        if (raw.trim()) { article = raw.trim(); method = 'openrouter-deepseek'; }
+        console.log('Call 1: OpenRouter DeepSeek OK, length', article?.length);
         await cb.onSuccess('ai:openrouter');
       } catch(e) {
-        console.warn('Call 1 OpenRouter failed:', e.status || e.message);
+        console.warn('Call 1 OpenRouter DeepSeek failed:', e.status || e.message);
         await cb.onFailure('ai:openrouter', AI_CB_THRESHOLD);
+      }
+      // 1b. gpt-oss-120b secondary (jika DeepSeek gagal/kosong, circuit masih bisa dicoba)
+      if (!article && OPENROUTER_KEY && await cb.canCall('ai:openrouter')) {
+        try {
+          console.log('Call 1: trying OpenRouter secondary', OPENROUTER_MODEL_2);
+          const raw2 = await aiCall(OPENROUTER_URL, OPENROUTER_KEY, OPENROUTER_MODEL_2, call1Messages, 800, 0.25, 28000, OPENROUTER_HEADERS);
+          if (raw2.trim()) { article = raw2.trim(); method = 'openrouter-gptoss'; }
+          console.log('Call 1: OpenRouter gpt-oss OK, length', article?.length);
+          await cb.onSuccess('ai:openrouter');
+        } catch(e) {
+          console.warn('Call 1 OpenRouter gpt-oss failed:', e.status || e.message);
+          await cb.onFailure('ai:openrouter', AI_CB_THRESHOLD);
+        }
       }
     } else if (OPENROUTER_KEY) {
       console.log('Call 1: OpenRouter circuit OPEN — skipping to Groq');
