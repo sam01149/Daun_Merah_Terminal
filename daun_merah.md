@@ -461,6 +461,63 @@ generateFundamentalAnalysis() // POST /api/admin?action=fundamental_analysis
 
 ---
 
+## AI Provider Research (2026-05-28)
+
+### Konteks
+Model Cerebras `qwen-3-235b-a22b-instruct-2507` deprecated 27 Mei 2026. Perlu pengganti dengan kualitas setara untuk Call 1 (prose Indonesia).
+
+### Istilah Penting
+- **Parameter (xB)** = jumlah "neuron/bobot" dalam neural network. Lebih besar = lebih pintar, lebih bisa ikuti instruksi kompleks. Ini bukan jumlah kata yang bisa diolah.
+- **Context window** = jumlah token yang bisa diproses sekaligus (e.g. 128K token). Beda hal dengan parameter.
+- Qwen3-**32**B vs Qwen3-**235**B: 32B jauh lebih kecil → instruction following lebih lemah → sering melanggar aturan prompt (forbidden phrases muncul).
+
+### Evaluasi Provider Free Tier (diuji 2026-05-28)
+
+| Provider | Model | Status | Masalah |
+|---|---|---|---|
+| OpenRouter | `moonshotai/kimi-k2.6:free` | Rate limited (429) | Terlalu populer, upstream throttle |
+| OpenRouter | `deepseek/deepseek-v4-flash:free` | Provider error | Backend broken |
+| OpenRouter | `nvidia/nemotron-3-super-120b-a12b:free` | Terlalu lambat | ~30s untuk 600 token |
+| OpenRouter | `openai/gpt-oss-120b:free` | Intermittent OK | ~19s/400t, kadang timeout 28s |
+| OpenRouter | `qwen/qwen3-235b-a22b:free` | Not found (404) | Tidak tersedia di free tier |
+| Groq | `qwen/qwen3-32b` | Gagal (sebab tidak diketahui tanpa log) | Kemungkinan rate limit per-model atau timeout thinking tokens |
+| Groq | `llama-3.3-70b-versatile` | Selalu OK, cepat | Kualitas buruk — tidak patuh forbidden phrases |
+
+### State Pipeline Saat Ini
+```
+Call 1: OpenRouter gpt-oss-120b:free (28s timeout, 800 token)
+      → Groq qwen3-32b (20s timeout, 1800 token) — masih sering gagal
+      → Groq llama-3.3-70b (14s timeout, 2000 token) — selalu berhasil, kualitas rendah
+      → Template fallback (tidak ada AI)
+```
+`method` field di response: `openrouter` / `groq-qwen3` / `groq` / `fallback`
+
+### Opsi Upgrade Kualitas
+
+**Opsi 1 — OpenRouter paid (~$0.18/bulan)**
+Hapus suffix `:free` dari model name. DeepSeek V3 atau Kimi K2.6 tanpa rate limit.
+Kualitas: **setara atau lebih bagus dari Qwen3-235B lama.**
+```js
+const OPENROUTER_MODEL = 'moonshotai/kimi-k2.6';    // atau
+const OPENROUTER_MODEL = 'deepseek/deepseek-v3';
+```
+
+**Opsi 2 — GitHub Models (GPT-4o, gratis)**
+- Endpoint: `https://models.inference.ai.azure.com` (OpenAI-compatible)
+- Auth: GitHub Personal Access Token → simpan sebagai `GITHUB_TOKEN` di Vercel
+- Limit: 50–150 req/day → cukup untuk 6 digest/hari
+- Kualitas: **GPT-4o, lebih bagus dari Qwen3-235B**, instruction following terbaik
+- Tidak ada masalah training data
+
+### Ranking Kualitas untuk Use Case Ini
+1. GPT-4o (GitHub Models, gratis) — terbaik
+2. DeepSeek V3 / Kimi K2.6 (OpenRouter paid) — setara Qwen3-235B
+3. Qwen3-235B (Cerebras, deprecated) — baseline hilang
+4. `openai/gpt-oss-120b:free` (OpenRouter) — di bawah baseline, intermittent
+5. `llama-3.3-70b` (Groq) — bekerja tapi sering langgar aturan prompt
+
+---
+
 ## Known Issues (P1-P3, belum difix)
 
 ### P1 — Risiko akurasi/keamanan modal
