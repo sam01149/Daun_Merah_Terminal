@@ -12,7 +12,7 @@ const FF_NEXT_WEEK = 'https://nfs.faireconomy.media/ff_calendar_nextweek.xml';
 
 // AI providers
 const CEREBRAS_URL    = 'https://api.cerebras.ai/v1/chat/completions';
-const CEREBRAS_MODEL  = 'qwen-3-32b'; // Call 1: briefing prose (Qwen3-32B — qwen-3-235b-a22b-instruct-2507 deprecated 27 May 2026)
+const CEREBRAS_MODEL  = 'qwen-3-235b-a22b-thinking-2507'; // Call 1: briefing prose — thinking variant masih aktif; output di-strip dari <think> blocks
 const SAMBANOVA_URL   = 'https://api.sambanova.ai/v1/chat/completions';
 const SAMBANOVA_MODEL = 'DeepSeek-V3-0324';               // Call 2 & 3: structured JSON
 const GROQ_URL        = 'https://api.groq.com/openai/v1/chat/completions';
@@ -122,6 +122,13 @@ async function fetchXauTA() {
   }
 }
 
+// Strip <think>...</think> blocks from Qwen3 thinking models — content after </think> is the actual response
+function stripThinking(text) {
+  const lastClose = text.lastIndexOf('</think>');
+  if (lastClose !== -1) return text.slice(lastClose + 8).trim();
+  return text.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+}
+
 // Shared low-level fetch for any OpenAI-compatible provider
 async function aiCall(url, apiKey, model, messages, maxTokens, temperature, timeoutMs) {
   const res = await fetch(url, {
@@ -137,7 +144,8 @@ async function aiCall(url, apiKey, model, messages, maxTokens, temperature, time
     throw e;
   }
   const data = await res.json();
-  return data?.choices?.[0]?.message?.content?.trim() || '';
+  const content = data?.choices?.[0]?.message?.content || '';
+  return stripThinking(content).trim();
 }
 
 
@@ -397,7 +405,7 @@ ${xauHistoryBlock}`;
     if (CEREBRAS_KEY && await cb.canCall('ai:cerebras')) {
       try {
         console.log('Call 1: trying Cerebras');
-        const raw = await aiCall(CEREBRAS_URL, CEREBRAS_KEY, CEREBRAS_MODEL, call1Messages, 2000, 0.25, 8000);
+        const raw = await aiCall(CEREBRAS_URL, CEREBRAS_KEY, CEREBRAS_MODEL, call1Messages, 3000, 0.25, 10000);
         if (raw.trim()) { article = raw.trim(); method = 'cerebras'; }
         console.log('Call 1: Cerebras OK, length', article?.length);
         await cb.onSuccess('ai:cerebras');
