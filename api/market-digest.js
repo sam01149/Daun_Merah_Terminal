@@ -12,7 +12,7 @@ const FF_NEXT_WEEK = 'https://nfs.faireconomy.media/ff_calendar_nextweek.xml';
 
 // AI providers
 const CEREBRAS_URL    = 'https://api.cerebras.ai/v1/chat/completions';
-const CEREBRAS_MODEL  = 'qwen-3-235b-a22b-thinking-2507'; // Call 1: briefing prose — thinking variant masih aktif; output di-strip dari <think> blocks
+const CEREBRAS_MODEL  = 'gpt-oss-120b'; // Call 1: briefing prose — satu-satunya Production model di free tier Cerebras
 const SAMBANOVA_URL   = 'https://api.sambanova.ai/v1/chat/completions';
 const SAMBANOVA_MODEL = 'DeepSeek-V3-0324';               // Call 2 & 3: structured JSON
 const GROQ_URL        = 'https://api.groq.com/openai/v1/chat/completions';
