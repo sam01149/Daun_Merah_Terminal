@@ -21,7 +21,7 @@ Daun Merah adalah forex news PWA (Progressive Web App) untuk trader forex Indone
 |-------|-----------|
 | Frontend | Vanilla JS + HTML/CSS, single file `index.html` (~4200+ baris) |
 | Backend | Vercel Serverless Functions (Node.js, CommonJS `module.exports`) |
-| AI | **Multi-provider:** OpenRouter `openai/gpt-oss-120b:free` (Call 1 primary, tested stable), OpenRouter `deepseek/deepseek-v4-flash:free` (Call 1 secondary, 429 tidak penalti circuit), Groq `qwen/qwen3-32b` (Call 1 fallback 1), Groq `llama-3.3-70b-versatile` (Call 1 fallback 2 + Call 4), SambaNova DeepSeek-V3-0324 (Call 2–3 bias+thesis, circuit breaker) |
+| AI | **Multi-provider:** OpenRouter `openai/gpt-oss-120b:free` (Call 1 primary), Groq `qwen/qwen3-32b` (Call 1 fallback 1), Groq `llama-3.3-70b-versatile` (Call 1 fallback 2 + Call 4), SambaNova DeepSeek-V3-0324 (Call 2–3 bias+thesis, circuit breaker) |
 | Cache/DB | Upstash Redis REST API |
 | RSS sumber berita | FinancialJuice (`https://www.financialjuice.com/feed.ashx?xy=rss`) — satu-satunya sumber (Nitter dihapus 2026-05-05) |
 | Kalender ekonomi | ForexFactory XML (`nfs.faireconomy.media`) |
@@ -122,12 +122,12 @@ Main AI endpoint. Multi-provider chain dengan circuit breaker. Flow:
 5. **`fetchXauSpot()`** — Yahoo Finance `GC=F` → fallback Binance PAXGUSDT. Cache Redis `xau_spot` TTL 5 menit. Inject ke prompt sebagai jangkar harga `$xxx.xx (+y%)`.
 6. **Call 1 — Market Briefing (Bahasa Indonesia):**
    - Primary: OpenRouter `openai/gpt-oss-120b:free` (circuit breaker `ai:openrouter`, timeout 28s) — terbukti stabil, output Bahasa Indonesia confirmed via live test
-   - Secondary: OpenRouter `deepseek/deepseek-v4-flash:free` (timeout 25s, no circuit penalty untuk 429 — upstream rate limit bukan indikasi provider down)
    - Fallback 1: Groq `qwen/qwen3-32b` (timeout 20s, max_tokens 1800)
    - Fallback 2: Groq `llama-3.3-70b-versatile` (timeout 14s, max_tokens 2000)
    - Last resort: template fallback (kumpulan headline)
-   - `method` field: `openrouter` / `openrouter-deepseek` / `groq-qwen3` / `groq` / `fallback`
+   - `method` field: `openrouter` / `groq-qwen3` / `groq` / `fallback`
    - Instruksi `PENTING: TULIS SELURUH OUTPUT DALAM BAHASA INDONESIA` ditambahkan ke user message — fix bahasa Inggris yang muncul saat model diabaikan system prompt
+   - DeepSeek V4 Flash free dites tapi tidak dipakai — upstream Crucible konsisten 429, tidak reliable
 7. Save ke `digest_history` (Redis, LPUSH/LTRIM max 7)
 8. **SambaNova Call 2:** CB Bias Assessment — JSON per currency (circuit breaker `ai:sambanova`)
 9. Merge + save ke Redis `cb_bias`
