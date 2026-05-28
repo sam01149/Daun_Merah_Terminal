@@ -16,7 +16,8 @@ const CEREBRAS_MODEL  = 'gpt-oss-120b'; // Call 1: briefing prose — satu-satun
 const SAMBANOVA_URL   = 'https://api.sambanova.ai/v1/chat/completions';
 const SAMBANOVA_MODEL = 'DeepSeek-V3-0324';               // Call 2 & 3: structured JSON
 const GROQ_URL        = 'https://api.groq.com/openai/v1/chat/completions';
-const GROQ_MODEL      = 'llama-3.3-70b-versatile';        // Call 4 + fallback all calls
+const GROQ_MODEL      = 'llama-3.3-70b-versatile';        // Call 2, 3, 4: JSON + thesis
+const GROQ_MODEL_PROSE = 'qwen/qwen3-32b';                // Call 1 fallback: Qwen3 quality untuk Indonesian prose
 
 const MAJOR_CURRENCIES = new Set(['USD','EUR','GBP','JPY','CAD','AUD','NZD','CHF']);
 const GOLD_KEYWORDS = [
@@ -417,16 +418,26 @@ ${xauHistoryBlock}`;
       console.log('Call 1: Cerebras circuit OPEN — skipping to Groq');
     }
 
-    // Fallback: Groq llama-3.3-70b (proven reliable, last resort before template)
+    // Fallback: Groq qwen3-32b → llama-3.3-70b jika qwen3 quota habis
     if (!article && GROQ_KEY) {
       try {
-        console.log('Call 1: falling back to Groq llama-3.3-70b');
-        const raw = await aiCall(GROQ_URL, GROQ_KEY, GROQ_MODEL, call1Messages, 2000, 0.25, 14000);
-        if (raw.trim()) { article = raw.trim(); method = 'groq'; }
-        console.log('Call 1: Groq fallback OK, length', article?.length);
+        console.log('Call 1: falling back to Groq qwen3-32b');
+        const raw = await aiCall(GROQ_URL, GROQ_KEY, GROQ_MODEL_PROSE, call1Messages, 2000, 0.25, 14000);
+        if (raw.trim()) { article = raw.trim(); method = 'groq-qwen3'; }
+        console.log('Call 1: Groq qwen3 OK, length', article?.length);
       } catch(e) {
-        console.warn('Call 1 Groq fallback failed:', e.status || e.message);
-        method = e.status === 429 ? 'fallback_quota' : 'fallback';
+        console.warn('Call 1 Groq qwen3 failed:', e.status || e.message);
+        // Fallback-of-fallback: llama-3.3-70b jika qwen3 quota habis (1000 req/day limit)
+        if (e.status === 429 || e.status === 503) {
+          try {
+            console.log('Call 1: qwen3 quota — falling back to Groq llama-3.3-70b');
+            const raw2 = await aiCall(GROQ_URL, GROQ_KEY, GROQ_MODEL, call1Messages, 2000, 0.25, 14000);
+            if (raw2.trim()) { article = raw2.trim(); method = 'groq'; }
+          } catch(e2) {
+            console.warn('Call 1 Groq llama fallback failed:', e2.status || e2.message);
+          }
+        }
+        if (!article) method = e.status === 429 ? 'fallback_quota' : 'fallback';
       }
     }
   } else {
