@@ -30,7 +30,9 @@ module.exports = async function handler(req, res) {
   if (action === 'fundamental_refresh') return fundamentalRefreshHandler(req, res);
   if (action === 'fundamental_analysis') return fundamentalAnalysisHandler(req, res);
   if (action === 'journal_import')      return journalImportHandler(req, res);
-  return res.status(400).json({ error: 'Missing ?action= — use health, redis-keys, admin-prompts, push, fundamental_get, fundamental_seed, fundamental_refresh, fundamental_analysis, or journal_import' });
+  if (action === 'circuit-reset')       return circuitResetHandler(req, res);
+  if (action === 'circuit-status')      return circuitStatusHandler(req, res);
+  return res.status(400).json({ error: 'Missing ?action= — use health, redis-keys, admin-prompts, push, fundamental_get, fundamental_seed, fundamental_refresh, fundamental_analysis, journal_import, circuit-reset, or circuit-status' });
 };
 
 // ── Shared Redis helper ────────────────────────────────────────────────────────
@@ -909,4 +911,46 @@ async function journalImportHandler(req, res) {
   }
 
   return res.status(200).json({ ok: true, imported });
+}
+
+// ── Circuit breaker status + reset ───────────────────────────────────────────
+
+const KNOWN_CIRCUITS = ['ai:cerebras', 'ai:sambanova', 'fred', 'stooq', 'ff', 'fj', 'cftc', 'redis'];
+
+async function circuitStatusHandler(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  const secret = req.headers['x-admin-secret'];
+  if (!secret || secret !== process.env.CRON_SECRET) return res.status(401).json({ error: 'Unauthorized' });
+
+  const results = {};
+  for (const src of KNOWN_CIRCUITS) {
+    try {
+      const raw = await redisCmd('GET', `circuit:${src}`);
+      results[src] = raw ? JSON.parse(raw) : { state: 'closed', failures: 0 };
+    } catch(e) {
+      results[src] = { error: e.message };
+    }
+  }
+  return res.status(200).json({ circuits: results });
+}
+
+async function circuitResetHandler(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  if (req.method === 'OPTIONS') return res.status(204).end();
+  const secret = req.headers['x-admin-secret'];
+  if (!secret || secret !== process.env.CRON_SECRET) return res.status(401).json({ error: 'Unauthorized' });
+
+  const source = req.query.source;
+  const targets = source ? [source] : KNOWN_CIRCUITS;
+  const reset = [], skipped = [];
+
+  for (const src of targets) {
+    try {
+      await redisCmd('DEL', `circuit:${src}`);
+      reset.push(src);
+    } catch(e) {
+      skipped.push({ src, error: e.message });
+    }
+  }
+  return res.status(200).json({ ok: true, reset, skipped });
 }
