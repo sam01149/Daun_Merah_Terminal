@@ -11,8 +11,9 @@ const FF_THIS_WEEK = 'https://nfs.faireconomy.media/ff_calendar_thisweek.xml';
 const FF_NEXT_WEEK = 'https://nfs.faireconomy.media/ff_calendar_nextweek.xml';
 
 // AI providers
-const CEREBRAS_URL    = 'https://api.cerebras.ai/v1/chat/completions';
-const CEREBRAS_MODEL  = 'gpt-oss-120b'; // Call 1: briefing prose — satu-satunya Production model di free tier Cerebras
+const OPENROUTER_URL     = 'https://openrouter.ai/api/v1/chat/completions';
+const OPENROUTER_MODEL   = 'deepseek/deepseek-v3:free';   // Call 1 primary: DeepSeek V3 685B MoE — best free instruction following
+const OPENROUTER_HEADERS = { 'HTTP-Referer': 'https://financial-feed-app.vercel.app', 'X-Title': 'Daun Merah' };
 const SAMBANOVA_URL   = 'https://api.sambanova.ai/v1/chat/completions';
 const SAMBANOVA_MODEL = 'DeepSeek-V3-0324';               // Call 2 & 3: structured JSON
 const GROQ_URL        = 'https://api.groq.com/openai/v1/chat/completions';
@@ -131,10 +132,10 @@ function stripThinking(text) {
 }
 
 // Shared low-level fetch for any OpenAI-compatible provider
-async function aiCall(url, apiKey, model, messages, maxTokens, temperature, timeoutMs) {
+async function aiCall(url, apiKey, model, messages, maxTokens, temperature, timeoutMs, extraHeaders = {}) {
   const res = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}`, ...extraHeaders },
     body: JSON.stringify({ model, messages, max_tokens: maxTokens, temperature }),
     signal: AbortSignal.timeout(timeoutMs),
   });
@@ -171,9 +172,9 @@ module.exports = async function handler(req, res) {
   res.setHeader('Surrogate-Control', 'no-store');
   res.setHeader('x-vercel-cache', 'BYPASS');
 
-  const CEREBRAS_KEY  = process.env.CEREBRAS_API_KEY;
-  const SAMBANOVA_KEY = process.env.SAMBANOVA_API_KEY;
-  const GROQ_KEY      = process.env.GROQ_API_KEY;
+  const OPENROUTER_KEY = process.env.OPENROUTER_API_KEY;
+  const SAMBANOVA_KEY  = process.env.SAMBANOVA_API_KEY;
+  const GROQ_KEY       = process.env.GROQ_API_KEY;
 
   // 1. RSS — current feed + 36h Redis history in parallel
   let rssItems = [];
@@ -402,20 +403,20 @@ ${xauHistoryBlock}`;
       { role: 'user', content: digestUserMsg },
     ];
 
-    // Primary: Cerebras (circuit breaker — skip if recently failing)
-    if (CEREBRAS_KEY && await cb.canCall('ai:cerebras')) {
+    // Primary: OpenRouter DeepSeek V3 (circuit breaker)
+    if (OPENROUTER_KEY && await cb.canCall('ai:openrouter')) {
       try {
-        console.log('Call 1: trying Cerebras');
-        const raw = await aiCall(CEREBRAS_URL, CEREBRAS_KEY, CEREBRAS_MODEL, call1Messages, 3000, 0.25, 10000);
-        if (raw.trim()) { article = raw.trim(); method = 'cerebras'; }
-        console.log('Call 1: Cerebras OK, length', article?.length);
-        await cb.onSuccess('ai:cerebras');
+        console.log('Call 1: trying OpenRouter deepseek-v3');
+        const raw = await aiCall(OPENROUTER_URL, OPENROUTER_KEY, OPENROUTER_MODEL, call1Messages, 2000, 0.25, 15000, OPENROUTER_HEADERS);
+        if (raw.trim()) { article = raw.trim(); method = 'openrouter'; }
+        console.log('Call 1: OpenRouter OK, length', article?.length);
+        await cb.onSuccess('ai:openrouter');
       } catch(e) {
-        console.warn('Call 1 Cerebras failed:', e.status || e.message);
-        await cb.onFailure('ai:cerebras', AI_CB_THRESHOLD);
+        console.warn('Call 1 OpenRouter failed:', e.status || e.message);
+        await cb.onFailure('ai:openrouter', AI_CB_THRESHOLD);
       }
-    } else if (CEREBRAS_KEY) {
-      console.log('Call 1: Cerebras circuit OPEN — skipping to Groq');
+    } else if (OPENROUTER_KEY) {
+      console.log('Call 1: OpenRouter circuit OPEN — skipping to Groq');
     }
 
     // Fallback: Groq qwen3-32b → llama-3.3-70b jika qwen3 quota habis
@@ -427,7 +428,6 @@ ${xauHistoryBlock}`;
         console.log('Call 1: Groq qwen3 OK, length', article?.length);
       } catch(e) {
         console.warn('Call 1 Groq qwen3 failed:', e.status || e.message);
-        // Fallback-of-fallback: llama-3.3-70b jika qwen3 quota habis (1000 req/day limit)
         if (e.status === 429 || e.status === 503) {
           try {
             console.log('Call 1: qwen3 quota — falling back to Groq llama-3.3-70b');
