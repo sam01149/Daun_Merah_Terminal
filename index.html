@@ -6056,8 +6056,20 @@ function ckNavSetFocus(idx) {
 }
 function ckNavClearFocus() {
   ckFocusIdx = -1;
-  document.querySelectorAll('.ck-item.ck-focused').forEach(el => el.classList.remove('ck-focused'));
+  document.querySelectorAll('.ck-item.ck-focused, .ck-sub.ck-focused').forEach(el => el.classList.remove('ck-focused'));
 }
+
+// Set focus via mouse click tanpa scroll (item sudah visible)
+document.addEventListener('click', function(e) {
+  const item = e.target.closest('#checklistPanel .ck-item, #checklistPanel .ck-sub');
+  if (!item) return;
+  const items = ckGetNavItems();
+  const idx = items.indexOf(item);
+  if (idx >= 0) {
+    ckFocusIdx = idx;
+    items.forEach((el, i) => el.classList.toggle('ck-focused', i === idx));
+  }
+});
 function ckNavHandleKey(e) {
   const k = e.key;
   if (k === 'ArrowDown') {
