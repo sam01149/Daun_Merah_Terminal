@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-06-01 (session 34)
+> **Last updated:** 2026-06-01 (session 34 — MT5 Bridge)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Downloads\Financial_Feed_App`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -48,6 +48,7 @@ Daun Merah adalah forex news PWA (Progressive Web App) untuk trader forex Indone
 ```
 Financial_Feed_App/
 ├── index.html              # Seluruh UI + JS frontend (~3500+ baris)
+├── mt5_bridge.py           # Local Python bridge → MT5 via MetaTrader5 library (jalankan di PC)
 ├── manifest.json           # PWA manifest — icon: icon.svg
 ├── sw.js                   # Service Worker — push notif, icon.svg
 ├── icon.svg                # App icon — dual-leaf loop, viewBox="0 20 680 680"

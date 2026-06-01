@@ -1103,6 +1103,13 @@ body {
   border-radius: 4px; transition: background .2s, border-color .2s; margin-bottom: 6px;
 }
 .ck-jurnal-btn:hover { background: rgba(244,114,182,0.18); border-color: #f472b6; }
+.ck-mt5-btn {
+  width: 100%; padding: 9px; background: rgba(34,197,94,0.12); border: 1px solid rgba(34,197,94,0.4);
+  color: var(--green); font-family: 'DM Mono', monospace; font-size: 9px;
+  letter-spacing: 1.5px; text-transform: uppercase; cursor: pointer;
+  border-radius: 4px; transition: background .2s, border-color .2s; margin-bottom: 6px;
+}
+.ck-mt5-btn:hover { background: rgba(34,197,94,0.22); border-color: var(--green); }
 .ck-pb-info-wrap { position: relative; display: inline-flex; }
 .ck-pb-info-btn {
   background: transparent; border: 1px solid var(--border); color: var(--muted);
@@ -2130,6 +2137,7 @@ body {
       <div class="ck-sess" id="ckSess">—</div>
     </div>
     <button class="ck-jurnal-btn" id="ckJurnalBtn" onclick="ckPrefillJurnal()" style="display:none">→ Buat Jurnal dari Checklist</button>
+    <button class="ck-mt5-btn" id="ckMt5Btn" onclick="ckShowMt5Modal()" style="display:none">⚡ Entry MT5</button>
     <button class="ck-reset" onclick="ckResetAll()">↺ RESET CHECKLIST</button>
   </div>
 </div>
@@ -2138,6 +2146,49 @@ body {
 <div class="toast" id="toast">
   <div class="toast-title" id="toastTitle"></div>
   <div class="toast-body" id="toastBody"></div>
+</div>
+
+<!-- MT5 ENTRY MODAL -->
+<div id="mt5Modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9999;align-items:center;justify-content:center">
+  <div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:22px 20px;width:min(340px,92vw);max-height:90vh;overflow-y:auto">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+      <div style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--green)">⚡ Entry MT5</div>
+      <button onclick="ckCloseMt5Modal()" style="background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer;line-height:1">×</button>
+    </div>
+    <div style="font-size:11px;color:var(--muted);margin-bottom:14px">
+      Pair: <span id="mt5ModalPair" style="color:var(--text);font-weight:700;font-family:'DM Mono',monospace"></span>
+      &nbsp;·&nbsp; Market Order
+    </div>
+    <div style="display:grid;gap:10px">
+      <div>
+        <div style="font-size:9px;color:var(--muted);letter-spacing:.8px;text-transform:uppercase;margin-bottom:5px">Direction</div>
+        <select id="mt5ModalDir" style="width:100%;background:var(--bg);color:var(--text);border:1px solid var(--border);padding:8px 10px;border-radius:6px;font-family:'DM Mono',monospace;font-size:12px;box-sizing:border-box">
+          <option value="long">LONG (Buy)</option>
+          <option value="short">SHORT (Sell)</option>
+        </select>
+      </div>
+      <div>
+        <div style="font-size:9px;color:var(--muted);letter-spacing:.8px;text-transform:uppercase;margin-bottom:5px">Lot Size</div>
+        <input id="mt5ModalLots" type="number" step="0.01" min="0.01" value="0.01" style="width:100%;background:var(--bg);color:var(--text);border:1px solid var(--border);padding:8px 10px;border-radius:6px;font-family:'DM Mono',monospace;font-size:12px;box-sizing:border-box">
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <div>
+          <div style="font-size:9px;color:var(--muted);letter-spacing:.8px;text-transform:uppercase;margin-bottom:5px">Stop Loss</div>
+          <input id="mt5ModalSL" type="number" step="0.00001" placeholder="0 = tanpa SL" style="width:100%;background:var(--bg);color:var(--text);border:1px solid var(--border);padding:8px 10px;border-radius:6px;font-family:'DM Mono',monospace;font-size:11px;box-sizing:border-box">
+        </div>
+        <div>
+          <div style="font-size:9px;color:var(--muted);letter-spacing:.8px;text-transform:uppercase;margin-bottom:5px">Take Profit</div>
+          <input id="mt5ModalTP" type="number" step="0.00001" placeholder="0 = tanpa TP" style="width:100%;background:var(--bg);color:var(--text);border:1px solid var(--border);padding:8px 10px;border-radius:6px;font-family:'DM Mono',monospace;font-size:11px;box-sizing:border-box">
+        </div>
+      </div>
+    </div>
+    <div id="mt5ModalStatus" style="margin-top:10px;font-size:10px;color:var(--muted);min-height:16px"></div>
+    <div style="margin-top:8px;padding:8px 10px;background:rgba(192,57,43,.07);border:1px solid rgba(192,57,43,.2);border-radius:6px;font-size:9px;color:var(--muted);line-height:1.5">
+      ⚠ Order market langsung dieksekusi ke akun MT5. Pastikan <code style="font-size:9px;color:var(--text)">mt5_bridge.py</code> sudah berjalan di PC kamu.
+    </div>
+    <button id="mt5ModalConfirmBtn" onclick="ckMt5OrderConfirm()" style="width:100%;margin-top:12px;padding:12px;background:var(--green);color:#000;border:none;border-radius:8px;font-weight:700;font-size:11px;letter-spacing:.8px;text-transform:uppercase;cursor:pointer">Konfirmasi Entry</button>
+    <button onclick="ckCloseMt5Modal()" style="width:100%;margin-top:7px;padding:10px;background:transparent;color:var(--muted);border:1px solid var(--border);border-radius:8px;font-size:10px;cursor:pointer">Batal</button>
+  </div>
 </div>
 
 <script>
@@ -4297,6 +4348,13 @@ function ckBuildUI() {
   mJBtn.textContent = '→ Buat Jurnal dari Checklist';
   mJBtn.onclick = ckPrefillJurnal;
   container.appendChild(mJBtn);
+  const mMt5Btn = document.createElement('button');
+  mMt5Btn.className = 'ck-mobile-jurnal-btn';
+  mMt5Btn.id = 'ckMobileMt5Btn';
+  mMt5Btn.style.cssText = 'background:rgba(34,197,94,0.12);border-color:rgba(34,197,94,0.4);color:var(--green);display:none';
+  mMt5Btn.textContent = '⚡ Entry MT5';
+  mMt5Btn.onclick = ckShowMt5Modal;
+  container.appendChild(mMt5Btn);
 
   for (const sec of CK_SECTIONS) {
     const div = document.createElement('div');
@@ -4410,11 +4468,15 @@ function ckRender() {
   if (mp) mp.style.width = pct + '%';
   if (mc) mc.textContent = `${totalChecked}/${total}`;
 
-  const jBtn = document.getElementById('ckJurnalBtn');
-  const mjBtn = document.getElementById('ckMobileJurnalBtn');
+  const jBtn   = document.getElementById('ckJurnalBtn');
+  const mjBtn  = document.getElementById('ckMobileJurnalBtn');
+  const mt5Btn = document.getElementById('ckMt5Btn');
+  const mMt5Btn = document.getElementById('ckMobileMt5Btn');
   const showJurnal = pct >= 50;
-  if (jBtn) jBtn.style.display = showJurnal ? 'block' : 'none';
-  if (mjBtn) mjBtn.style.display = showJurnal ? 'block' : 'none';
+  if (jBtn)    jBtn.style.display    = showJurnal ? 'block' : 'none';
+  if (mjBtn)   mjBtn.style.display   = showJurnal ? 'block' : 'none';
+  if (mt5Btn)  mt5Btn.style.display  = showJurnal ? 'block' : 'none';
+  if (mMt5Btn) mMt5Btn.style.display = showJurnal ? 'block' : 'none';
 }
 
 function ckResetAll() {
@@ -4514,6 +4576,157 @@ function ckPrefillJurnal() {
     }
     jnSnapshotInfo();
   }, 150);
+}
+
+// ── MT5 BRIDGE INTEGRATION ─────────────────────────────────────────────────
+const MT5_BRIDGE = 'http://localhost:5000';
+
+function ckShowMt5Modal() {
+  const { pct } = ckGetVerdict();
+  if (pct < 50) return;
+  const pair = document.getElementById('ckPairSelector').value;
+  if (!pair) { showToast('Pilih Pair', 'Pilih pair terlebih dahulu di checklist', 3000); return; }
+
+  // Infer direction dari CB bias (sama dengan ckPrefillJurnal)
+  let direction = 'long';
+  if (cbData) {
+    const base3 = pair.slice(0,3).toUpperCase();
+    const qte3  = pair.slice(3,6).toUpperCase();
+    const BLVL  = { 'very hawkish':4,'hawkish':3,'neutral':2,'dovish':1,'very dovish':0 };
+    const bObj  = cbData.find(c => c.currency === base3);
+    const qObj  = cbData.find(c => c.currency === qte3);
+    const bLvl  = BLVL[bObj?.bias?.toLowerCase()] ?? 2;
+    const qLvl  = BLVL[qObj?.bias?.toLowerCase()] ?? 2;
+    if (qLvl > bLvl) direction = 'short';
+  }
+
+  // Pre-fill dari sizing jika tersedia
+  const sz = window._lastSizing;
+  const matchSz = sz && sz.pair === pair;
+  document.getElementById('mt5ModalPair').textContent  = pair;
+  document.getElementById('mt5ModalDir').value         = direction;
+  document.getElementById('mt5ModalLots').value        = matchSz && sz.lots ? sz.lots : 0.01;
+  document.getElementById('mt5ModalSL').value          = matchSz && sz.slPrice ? sz.slPrice.toFixed(5) : '';
+  document.getElementById('mt5ModalTP').value          = matchSz && sz.tpPrice ? sz.tpPrice.toFixed(5) : '';
+  document.getElementById('mt5ModalStatus').textContent = '';
+
+  // Cek bridge online
+  fetch(MT5_BRIDGE + '/health', { signal: AbortSignal.timeout(3000) })
+    .then(r => r.json())
+    .then(d => {
+      const el = document.getElementById('mt5ModalStatus');
+      if (d.status === 'ok') el.innerHTML = `<span style="color:var(--green)">✓ MT5 terhubung</span> · Login ${d.login} · Balance ${d.currency} ${d.balance.toLocaleString()}`;
+      else el.innerHTML = `<span style="color:var(--accent)">✗ ${d.error}</span>`;
+    })
+    .catch(() => {
+      document.getElementById('mt5ModalStatus').innerHTML = '<span style="color:var(--accent)">✗ Bridge offline — jalankan mt5_bridge.py</span>';
+    });
+
+  document.getElementById('mt5Modal').style.display = 'flex';
+}
+
+function ckCloseMt5Modal() {
+  document.getElementById('mt5Modal').style.display = 'none';
+}
+
+async function ckMt5OrderConfirm() {
+  const pair      = document.getElementById('mt5ModalPair').textContent.trim();
+  const direction = document.getElementById('mt5ModalDir').value;
+  const lots      = parseFloat(document.getElementById('mt5ModalLots').value) || 0.01;
+  const sl        = parseFloat(document.getElementById('mt5ModalSL').value) || 0;
+  const tp        = parseFloat(document.getElementById('mt5ModalTP').value) || 0;
+
+  const btn = document.getElementById('mt5ModalConfirmBtn');
+  btn.textContent = 'Mengirim order...';
+  btn.disabled = true;
+
+  try {
+    const res = await fetch(MT5_BRIDGE + '/order', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ symbol: pair, direction, lots, sl, tp }),
+      signal: AbortSignal.timeout(15000),
+    });
+    const fill = await res.json();
+    if (!res.ok) throw new Error(fill.error || 'Order gagal');
+
+    ckCloseMt5Modal();
+    await ckMt5AutoJournal(pair, direction, fill, lots, sl, tp);
+    showToast('Order Masuk ✓', `${pair} ${direction.toUpperCase()} @ ${fill.fill_price} · Ticket #${fill.ticket}`, 6000);
+
+  } catch(e) {
+    const msg = (e.message.includes('fetch') || e.message.includes('Failed'))
+      ? 'Bridge offline — jalankan mt5_bridge.py'
+      : e.message;
+    document.getElementById('mt5ModalStatus').innerHTML = `<span style="color:var(--accent)">✗ ${escHtml(msg)}</span>`;
+  } finally {
+    btn.textContent = 'Konfirmasi Entry';
+    btn.disabled = false;
+  }
+}
+
+async function ckMt5AutoJournal(pair, direction, fill, lots, sl, tp) {
+  const { pct, verdict } = ckGetVerdict();
+  const pb     = PLAYBOOKS[ckActivePlaybook];
+  const pbName = pb?.name || ckActivePlaybook;
+
+  // Bangun thesis dari checklist (sama seperti ckPrefillJurnal)
+  const lines = [
+    `[${pbName} | ${pct}% — ${verdict}]`,
+    `Pair: ${pair} | Entry via Daun Merah MT5 Bridge`,
+    `Ticket: #${fill.ticket}`,
+  ];
+  CK_SECTIONS.forEach(sec => {
+    const checked = sec.items.filter(it => ckState[it.id] === true);
+    const missing = sec.items.filter(it => !ckState[it.id]);
+    if (!checked.length && !missing.length) return;
+    lines.push(`\n— ${sec.title}:`);
+    checked.forEach(it => lines.push(`  ✅ ${it.label}`));
+    missing.forEach(it => lines.push(`  ⬜ ${it.label}`));
+  });
+
+  // Snapshot CB bias
+  const [base, quote] = pair.includes('/') ? pair.split('/') : [pair.slice(0,3), pair.slice(3,6)];
+  const cbSnap = {};
+  if (cbData) cbData.forEach(c => { cbSnap[c.currency] = { bias: c.bias, confidence: c.confidence }; });
+
+  // Snapshot COT
+  const cotSnap = {};
+  if (cotData && cotData.positions) {
+    [base, quote].forEach(cur => {
+      if (cotData.positions[cur]) {
+        const p = cotData.positions[cur];
+        cotSnap[cur] = { lev_net: p.lev_net || p.net || null };
+      }
+    });
+  }
+
+  const rrPlanned = fill.fill_price && sl && tp
+    ? Math.abs((tp - fill.fill_price) / (fill.fill_price - sl))
+    : null;
+
+  const body = {
+    pair,
+    direction,
+    thesis_text:      lines.join('\n'),
+    entry_price:      fill.fill_price,
+    stop_price:       sl || null,
+    target_price:     tp || null,
+    size_lots:        lots,
+    rr_planned:       rrPlanned ? Math.round(rrPlanned * 100) / 100 : null,
+    time_horizon:     'intraday',
+    regime_at_entry:  regimeData ? regimeData.regime : null,
+    cb_bias_snapshot: cbSnap,
+    cot_snapshot:     cotSnap,
+  };
+
+  const deviceId = szGetDeviceId();
+  await fetch(`/api/journal?device_id=${encodeURIComponent(deviceId)}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(8000),
+  }).catch(() => {});
 }
 
 function ptInitDeviceIdDisplay() {
