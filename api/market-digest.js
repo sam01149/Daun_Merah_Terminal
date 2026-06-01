@@ -536,25 +536,58 @@ ${xauHistoryBlock}`;
       });
       const biasHeadlines = relevantHeadlines.slice(0, 50).map((i,idx) => (idx+1) + '. ' + i.title).join('\n');
       const biasCurrencies = relevantCurrencies.join(', ');
+
+      // Fetch latest fundamental data per currency from Redis to anchor bias assessment
+      const fundDataForPrompt = {};
+      try {
+        await Promise.all(relevantCurrencies.map(async cur => {
+          const fields = await redisCmd('HGETALL', `fundamental:${cur}`);
+          if (Array.isArray(fields) && fields.length > 0) {
+            const obj = {};
+            for (let i = 0; i < fields.length; i += 2) {
+              try { obj[fields[i]] = JSON.parse(fields[i + 1]); } catch(_) {}
+            }
+            fundDataForPrompt[cur] = obj;
+          }
+        }));
+      } catch(e) { console.warn('Fundamental fetch for Call 2 failed:', e.message); }
+
+      const fundLines = Object.entries(fundDataForPrompt).map(([cur, data]) => {
+        const items = Object.entries(data)
+          .filter(([, v]) => v?.actual)
+          .map(([k, v]) => `${k}: ${v.actual}${v.previous ? ` (prev ${v.previous})` : ''} [${v.date || '—'}]`);
+        return items.length ? `${cur}: ${items.slice(0, 8).join(', ')}` : null;
+      }).filter(Boolean);
+
+      const fundSection = fundLines.length > 0
+        ? [
+            '',
+            '=== LATEST MACRO FUNDAMENTALS (from headline releases — use as objective anchor) ===',
+            fundLines.join('\n'),
+            '(If fundamentals contradict headline sentiment, weight fundamentals more heavily for confidence.)',
+          ].join('\n')
+        : '';
+
       const biasPrompt = [
-        'You are a central bank policy analyst. Based ONLY on the following recent financial news headlines, assess the current monetary policy stance for each central bank mentioned.',
+        'You are a central bank policy analyst. Based on the following recent financial news headlines AND the latest macro fundamental data, assess the current monetary policy stance for each central bank mentioned.',
         '',
         'Headlines:',
         biasHeadlines,
+        fundSection,
         '',
         'For each of these currencies that have relevant headlines: ' + biasCurrencies,
         '',
         'Return ONLY a valid JSON object. No explanation, no markdown, no code block. Just the raw JSON.',
         'Use ONLY these exact bias values: "Hawkish", "Cautious Hawkish", "Neutral", "Data Dependent", "On Hold", "Cautious Dovish", "Dovish", "Split"',
         'For confidence, use ONLY: "High", "Medium", "Low"',
-        '  High = multiple clear, direct signals from officials or data',
+        '  High = multiple clear, direct signals from officials or data releases',
         '  Medium = some signals but mixed or indirect',
-        '  Low = minimal or ambiguous evidence',
+        '  Low = minimal or ambiguous evidence — prefer omitting the currency over Low confidence',
         '',
         'Example format:',
         '{"USD":{"bias":"Cautious Hawkish","confidence":"High"},"EUR":{"bias":"Dovish","confidence":"Medium"}}',
         '',
-        'Only include currencies where you have enough evidence from the headlines. If insufficient evidence for a currency, omit it.',
+        'Only include currencies where you have enough evidence. If insufficient evidence for a currency, OMIT it entirely — do not guess.',
       ].join('\n');
 
       const call2Messages = [{ role: 'user', content: biasPrompt }];
@@ -594,6 +627,7 @@ ${xauHistoryBlock}`;
           console.log('Call 2 bias parsed:', JSON.stringify(parsed));
 
           const VALID_BIASES = ['Hawkish','Cautious Hawkish','Neutral','Data Dependent','On Hold','Cautious Dovish','Dovish','Split'];
+          const BIAS_ORDER  = ['Hawkish','Cautious Hawkish','Neutral','Data Dependent','On Hold','Cautious Dovish','Dovish'];
           const VALID_CONFIDENCES = ['High','Medium','Low'];
           const VALID_CURRENCIES = new Set(['USD','EUR','GBP','JPY','CAD','AUD','NZD','CHF']);
           const now = new Date().toISOString();
@@ -601,7 +635,7 @@ ${xauHistoryBlock}`;
           // Distributed lock to prevent race condition across concurrent functions
           const lockAcquired = await redisCmd('SET', 'cb_bias_lock', '1', 'NX', 'EX', '10');
           if (lockAcquired) {
-            
+
           let existing = {};
           try {
             const raw = await redisCmd('GET', 'cb_bias');
@@ -614,20 +648,37 @@ ${xauHistoryBlock}`;
             const confidence = (typeof entry === 'object' && entry !== null) ? entry.confidence : null;
             const biasOk = VALID_BIASES.includes(bias);
             const confidenceOk = VALID_CONFIDENCES.includes(confidence);
-            if (curOk && biasOk) {
-              const kws = CB_KEYWORDS[cur] || [];
-              const sourceHeadlines = recentItems
-                .filter(i => kws.some(kw => i.title.toLowerCase().includes(kw)))
-                .slice(0, 5)
-                .map(i => i.title);
-              existing[cur] = {
-                bias,
-                confidence: confidenceOk ? confidence : 'Low',
-                updated_at: now,
-                source_headlines: sourceHeadlines,
-              };
-              biasUpdated.push(cur);
+            if (!curOk || !biasOk) continue;
+
+            // A: Confidence gate — Low confidence → keep existing, prevents quiet-day flips
+            if (!confidenceOk || confidence === 'Low') {
+              console.log(`Call 2: skip ${cur} — confidence Low, retaining existing bias`);
+              continue;
             }
+
+            // B: Swing anchor — if new bias jumps >2 levels from existing without High confidence, skip
+            const prevBias = existing[cur]?.bias;
+            if (prevBias && confidence !== 'High') {
+              const prevIdx = BIAS_ORDER.indexOf(prevBias);
+              const newIdx  = BIAS_ORDER.indexOf(bias);
+              if (prevIdx !== -1 && newIdx !== -1 && Math.abs(newIdx - prevIdx) > 2) {
+                console.log(`Call 2: skip ${cur} — swing ${prevBias}→${bias} (${Math.abs(newIdx-prevIdx)} levels) requires High confidence`);
+                continue;
+              }
+            }
+
+            const kws = CB_KEYWORDS[cur] || [];
+            const sourceHeadlines = recentItems
+              .filter(i => kws.some(kw => i.title.toLowerCase().includes(kw)))
+              .slice(0, 5)
+              .map(i => i.title);
+            existing[cur] = {
+              bias,
+              confidence,
+              updated_at: now,
+              source_headlines: sourceHeadlines,
+            };
+            biasUpdated.push(cur);
           }
 
           if (biasUpdated.length > 0) {
