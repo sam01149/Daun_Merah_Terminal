@@ -2233,7 +2233,8 @@ function tickCooldown() {
 
 async function loadCachedRingkasan() {
   try {
-    const res = await fetch('/api/market-digest?mode=cached', { signal: AbortSignal.timeout(8000) });
+    const deviceId = szGetDeviceId();
+    const res = await fetch('/api/market-digest?mode=cached&device_id=' + encodeURIComponent(deviceId), { signal: AbortSignal.timeout(8000) });
     if (!res.ok) return;
     const data = await res.json();
     if (data.article) {
@@ -2241,6 +2242,9 @@ async function loadCachedRingkasan() {
       renderRingkasan();
       // tick cooldown after render (button might have been re-created)
       if (Date.now() < ringkasanCooldownEnd) tickCooldown();
+      if (data.thesis_alerts && data.thesis_alerts.length > 0) {
+        showToast('Thesis Alert', `${data.thesis_alerts.length} kontradiksi terdeteksi pada trade terbuka`, 5000);
+      }
     }
   } catch(e) { /* silent fail — user can still press Generate */ }
 }
@@ -2555,6 +2559,9 @@ async function generateRingkasan() {
     startCooldown();
     renderRingkasan();
     if (data.bias_updated && data.bias_updated.length > 0) fetchCBStatus();
+    if (data.thesis_alerts && data.thesis_alerts.length > 0) {
+      showToast('Thesis Alert', `${data.thesis_alerts.length} kontradiksi terdeteksi pada trade terbuka`, 5000);
+    }
   } catch(e) {
     showToast('Gagal', 'Ringkasan tidak merespons: ' + e.message, 4000);
     btn.classList.remove('loading');
@@ -2588,7 +2595,7 @@ function renderRingkasan() {
   inner.innerHTML = `
     <div class="ringkasan-meta">
       <div class="ringkasan-meta-left">${tsStr} · ${d.news_count} berita${d.gold_count ? ' · ' + d.gold_count + ' XAU' : ''} · ${d.cal_count} kalender${d.from_cache ? ' · cache' : ''}</div>
-      <span class="ringkasan-method ${d.method}">${{cerebras:'⚡ Cerebras',groq:'⚡ Groq',gemini:'✨ Gemini'}[d.method] || '⚙️ Auto'}</span>
+      <span class="ringkasan-method ${d.method}">${{'cerebras':'⚡ Cerebras','groq':'⚡ Groq','gemini':'✨ Gemini','deepseek-v3.2':'🧠 SambaNova V3.2','deepseek-v3.1':'🧠 SambaNova V3.1','gpt-oss-120b':'🤖 OpenRouter','qwen3-32b':'⚡ Groq Qwen3','fallback':'⚠ Fallback','fallback_quota':'⚠ Quota'}[d.method] || d.method || '⚙️ Auto'}</span>
     </div>
 
     <div class="ringkasan-stats">

@@ -12,11 +12,12 @@ const FF_NEXT_WEEK = 'https://nfs.faireconomy.media/ff_calendar_nextweek.xml';
 
 // AI providers
 const SAMBANOVA_URL       = 'https://api.sambanova.ai/v1/chat/completions';
-const SAMBANOVA_MODEL     = 'DeepSeek-V3.1';              // Call 2 & 3: structured JSON (akun 1) — 128K ctx, MoE reasoning
+const SAMBANOVA_MODEL     = 'DeepSeek-V3.2';              // Call 2 & 3: structured JSON (akun 1) — upgrade dari V3.1, kualitas lebih baik
 const SAMBANOVA_URL_CALL1 = 'https://api.sambanova.ai/v1/chat/completions';
 const SAMBANOVA_MODEL_CALL1 = 'DeepSeek-V3.2';            // Call 1: prose (akun 2) — preview, tapi kualitas superior untuk Indonesian
 const GROQ_URL        = 'https://api.groq.com/openai/v1/chat/completions';
 const GROQ_MODEL      = 'llama-3.3-70b-versatile';        // Call 2, 3, 4: JSON + thesis
+const GROQ_MODEL_PROSE = 'qwen3-32b';                     // Call 1 fallback 3: prose (lebih panjang, cocok untuk briefing)
 const OPENROUTER_URL     = 'https://openrouter.ai/api/v1/chat/completions';
 const OPENROUTER_MODEL   = 'openai/gpt-oss-120b:free'; // Call 1 fallback 2: proven stabil, output Bahasa Indonesia
 const OPENROUTER_HEADERS = { 'HTTP-Referer': 'https://financial-feed-app.vercel.app', 'X-Title': 'Daun Merah' };
@@ -160,7 +161,15 @@ module.exports = async function handler(req, res) {
   if (req.query?.mode === 'cached') {
     try {
       const raw = await redisCmd('GET', 'latest_article');
-      if (raw) return res.status(200).json({ ...JSON.parse(raw), from_cache: true });
+      const cachedDeviceId = req.query?.device_id;
+      let cachedAlerts = null;
+      if (cachedDeviceId) {
+        try {
+          const alertsRaw = await redisCmd('GET', `thesis_alerts:${cachedDeviceId}`);
+          if (alertsRaw) cachedAlerts = JSON.parse(alertsRaw);
+        } catch(e) { /* skip — non-critical */ }
+      }
+      if (raw) return res.status(200).json({ ...JSON.parse(raw), from_cache: true, thesis_alerts: cachedAlerts });
     } catch(e) { console.warn('cached mode Redis read failed:', e.message); }
     return res.status(200).json({ from_cache: true, article: null });
   }
@@ -793,6 +802,11 @@ ${xauHistoryBlock}`;
         if (Array.isArray(parsed.alerts)) {
           thesisAlerts = parsed.alerts;
           console.log('Call 4: found', thesisAlerts.length, 'alert(s)');
+          if (thesisAlerts.length > 0) {
+            redisCmd('SET', `thesis_alerts:${deviceId}`, JSON.stringify(thesisAlerts), 'EX', 1800).catch(() => {});
+          } else {
+            redisCmd('DEL', `thesis_alerts:${deviceId}`).catch(() => {});
+          }
         }
       } else {
         console.log('Call 4: no open entries with thesis_text, skipping');
