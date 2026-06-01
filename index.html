@@ -4667,11 +4667,11 @@ function ckPrefillJurnal() {
   if (pair && cbData) {
     const base3 = pair.slice(0,3).toUpperCase();
     const qte3  = pair.slice(3,6).toUpperCase();
-    const BLVL  = { 'very hawkish':4,'hawkish':3,'neutral':2,'dovish':1,'very dovish':0 };
+    const BLVL  = { 'hawkish':6,'cautious hawkish':5,'neutral':4,'data dependent':4,'on hold':4,'split':4,'cautious dovish':3,'dovish':2 };
     const bObj  = cbData.find(c => c.currency === base3);
     const qObj  = cbData.find(c => c.currency === qte3);
-    const bLvl  = BLVL[bObj?.bias?.toLowerCase()] ?? 2;
-    const qLvl  = BLVL[qObj?.bias?.toLowerCase()] ?? 2;
+    const bLvl  = BLVL[bObj?.bias?.toLowerCase()] ?? 4;
+    const qLvl  = BLVL[qObj?.bias?.toLowerCase()] ?? 4;
     if (qLvl > bLvl) direction = 'short';
   }
 
@@ -4730,11 +4730,11 @@ function ckShowMt5Modal() {
   if (cbData) {
     const base3 = pair.slice(0,3).toUpperCase();
     const qte3  = pair.slice(3,6).toUpperCase();
-    const BLVL  = { 'very hawkish':4,'hawkish':3,'neutral':2,'dovish':1,'very dovish':0 };
+    const BLVL  = { 'hawkish':6,'cautious hawkish':5,'neutral':4,'data dependent':4,'on hold':4,'split':4,'cautious dovish':3,'dovish':2 };
     const bObj  = cbData.find(c => c.currency === base3);
     const qObj  = cbData.find(c => c.currency === qte3);
-    const bLvl  = BLVL[bObj?.bias?.toLowerCase()] ?? 2;
-    const qLvl  = BLVL[qObj?.bias?.toLowerCase()] ?? 2;
+    const bLvl  = BLVL[bObj?.bias?.toLowerCase()] ?? 4;
+    const qLvl  = BLVL[qObj?.bias?.toLowerCase()] ?? 4;
     if (qLvl > bLvl) direction = 'short';
   }
 
