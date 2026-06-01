@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-06-01 (session 34 — MT5 Bridge)
+> **Last updated:** 2026-06-01 (session 34 — MT5 Bridge + CB Bias Audit)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Downloads\Financial_Feed_App`
 > **Production URL:** https://financial-feed-app.vercel.app

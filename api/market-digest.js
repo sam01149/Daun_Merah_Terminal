@@ -615,7 +615,17 @@ ${xauHistoryBlock}`;
             const biasOk = VALID_BIASES.includes(bias);
             const confidenceOk = VALID_CONFIDENCES.includes(confidence);
             if (curOk && biasOk) {
-              existing[cur] = { bias, confidence: confidenceOk ? confidence : 'Low', updated_at: now };
+              const kws = CB_KEYWORDS[cur] || [];
+              const sourceHeadlines = recentItems
+                .filter(i => kws.some(kw => i.title.toLowerCase().includes(kw)))
+                .slice(0, 5)
+                .map(i => i.title);
+              existing[cur] = {
+                bias,
+                confidence: confidenceOk ? confidence : 'Low',
+                updated_at: now,
+                source_headlines: sourceHeadlines,
+              };
               biasUpdated.push(cur);
             }
           }

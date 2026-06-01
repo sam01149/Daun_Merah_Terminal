@@ -912,6 +912,44 @@ body {
 .cb-card    { display: none; }
 .cb-updated { display: none; }
 
+/* CB Override & Source Headlines */
+.cb-detail-row td { padding: 0 !important; }
+.cb-detail-inner {
+  padding: 8px 10px; background: rgba(255,255,255,.03);
+  border-top: 1px solid rgba(255,255,255,.05);
+}
+.cb-hl-title { font-size: 8px; color: var(--muted); letter-spacing: .6px; text-transform: uppercase; margin-bottom: 5px; }
+.cb-hl-item  { font-size: 9px; color: rgba(255,255,255,.6); line-height: 1.6; padding-left: 8px; }
+.cb-hl-item::before { content: '•'; margin-right: 5px; color: var(--muted); }
+.cb-override-row { display: flex; align-items: center; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+.cb-override-sel {
+  flex: 1; min-width: 120px; background: var(--bg); color: var(--text);
+  border: 1px solid var(--border); padding: 4px 6px; border-radius: 4px;
+  font-family: 'DM Mono', monospace; font-size: 9px;
+}
+.cb-override-save {
+  padding: 4px 8px; background: var(--green); color: #000; border: none;
+  border-radius: 4px; font-size: 9px; font-weight: 700; cursor: pointer; white-space: nowrap;
+}
+.cb-override-reset {
+  padding: 4px 8px; background: transparent; color: var(--muted);
+  border: 1px solid var(--border); border-radius: 4px; font-size: 9px; cursor: pointer; white-space: nowrap;
+}
+.cb-manual-badge {
+  display: inline-block; font-size: 7px; padding: 1px 4px;
+  background: rgba(234,179,8,.15); color: #eab308;
+  border-radius: 3px; margin-left: 4px; vertical-align: middle;
+}
+.cb-manual-warn {
+  display: block; font-size: 7px; color: var(--yellow);
+  margin-top: 2px; line-height: 1.4;
+}
+.cb-info-btn {
+  background: none; border: none; color: var(--muted); cursor: pointer;
+  font-size: 9px; padding: 0 3px; vertical-align: middle; line-height: 1;
+}
+.cb-info-btn:hover { color: var(--text); }
+
 .cal-refresh-btn {
   display: flex; align-items: center; gap: 5px;
   padding: 5px 12px; border-radius: 5px;
@@ -2931,12 +2969,30 @@ const CUR_COLORS_CB = {
   NZD:'#34d399', CHF:'#ff4757',
 };
 
+function cbGetOverrides() {
+  try { return JSON.parse(localStorage.getItem('cb_bias_manual_overrides') || '{}'); }
+  catch(_) { return {}; }
+}
+function cbSetOverride(cur, bias) {
+  const obj = cbGetOverrides();
+  if (bias) obj[cur] = bias; else delete obj[cur];
+  localStorage.setItem('cb_bias_manual_overrides', JSON.stringify(obj));
+}
+function cbMergeOverrides(banks) {
+  const overrides = cbGetOverrides();
+  return banks.map(cb => {
+    const manual = overrides[cb.currency];
+    if (manual) return { ...cb, ai_bias: cb.bias, bias: manual, manual: true };
+    return { ...cb, manual: false };
+  });
+}
+
 async function fetchCBStatus() {
   try {
     const res = await fetch('/api/cb-status', { signal: AbortSignal.timeout(8000) });
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
-    cbData = data.banks;
+    cbData = cbMergeOverrides(data.banks);
     cbFetchedAt = Date.now();
     renderCBTracker();
     const _cbSel = document.getElementById('ckPairSelector');
@@ -3005,13 +3061,30 @@ function renderCBTracker() {
       ? '<span style="font-size:7px;color:' + (meetingStale ? 'var(--accent)' : 'var(--muted)') + '">' + (meetingStale ? '⚠ ' : '') + cb.last_meeting + '</span>'
       : '';
 
+    const manualBadge = cb.manual
+      ? '<span class="cb-manual-badge">✎ Manual</span>'
+      : '';
+    const manualWarn = cb.manual && cb.ai_bias && cb.ai_bias !== cb.bias
+      ? '<span class="cb-manual-warn">⚠ Berbeda dari AI: ' + escHtml(cb.ai_bias) + '</span>'
+      : (cb.manual ? '<span class="cb-manual-warn">Anda mengedit manual</span>' : '');
+
+    const hlCount = (cb.source_headlines || []).length;
+    const infoBtn = '<button class="cb-info-btn" onclick="cbToggleDetail(\'' + cb.currency + '\')" title="' + hlCount + ' headline dasar AI">ⓘ</button>';
+
     return '<tr>'
       + '<td class="cb-td-cur" style="color:' + col + '">'
       + '<span style="position:absolute;left:0;top:50%;transform:translateY(-50%);width:2px;height:14px;border-radius:1px;background:' + col + '"></span>'
       + cb.currency + '</td>'
       + '<td class="cb-td-rate">' + cb.rate.toFixed(2) + '%' + liveDot + realHtml + pathHtml + '</td>'
       + '<td class="cb-td-dec"><span class="cb-decision ' + decisionClass + '">' + decisionText + '</span><br>' + meetingHtml + '</td>'
-      + '<td class="cb-td-bias"><span class="cb-bias ' + biasClass + '">' + biasLabel + confDot + '</span></td>'
+      + '<td class="cb-td-bias">'
+      + '<span class="cb-bias ' + biasClass + '">' + biasLabel + confDot + '</span>'
+      + manualBadge + infoBtn
+      + manualWarn
+      + '</td>'
+      + '</tr>'
+      + '<tr class="cb-detail-row" id="cbdetail-' + cb.currency + '" style="display:none">'
+      + '<td colspan="4"><div class="cb-detail-inner" id="cbdetail-inner-' + cb.currency + '"></div></td>'
       + '</tr>';
   }).join('');
 
@@ -3021,6 +3094,71 @@ function renderCBTracker() {
   if (latestUpdate) {
     document.getElementById('cbUpdatedAt').textContent = fmtCBTime(latestUpdate);
   }
+}
+
+const BIAS_OPTIONS = ['Hawkish','Cautious Hawkish','Neutral','Data Dependent','On Hold','Cautious Dovish','Dovish','Split'];
+
+function cbToggleDetail(cur) {
+  const row   = document.getElementById('cbdetail-' + cur);
+  const inner = document.getElementById('cbdetail-inner-' + cur);
+  if (!row) return;
+  const isOpen = row.style.display !== 'none';
+  // Close all detail rows first
+  document.querySelectorAll('.cb-detail-row').forEach(r => r.style.display = 'none');
+  if (isOpen) return;
+
+  const cb = cbData && cbData.find(c => c.currency === cur);
+  if (!cb) { row.style.display = ''; return; }
+
+  const headlines = cb.source_headlines || [];
+  const hlHtml = headlines.length
+    ? headlines.map(h => '<div class="cb-hl-item">' + escHtml(h) + '</div>').join('')
+    : '<div class="cb-hl-item" style="font-style:italic;color:var(--muted)">Belum ada data — generate ringkasan dulu</div>';
+
+  const curBias = cb.manual ? cb.ai_bias : cb.bias;
+  const opts = BIAS_OPTIONS.map(b =>
+    '<option value="' + b + '"' + (b === curBias ? ' selected' : '') + '>' + b + '</option>'
+  ).join('');
+
+  inner.innerHTML = ''
+    + '<div class="cb-hl-title">Dasar AI · ' + (headlines.length || 0) + ' headline:</div>'
+    + hlHtml
+    + '<div class="cb-override-row">'
+    + '<select class="cb-override-sel" id="cboverride-sel-' + cur + '">' + opts + '</select>'
+    + '<button class="cb-override-save" onclick="cbSaveManualBias(\'' + cur + '\')">Simpan Override</button>'
+    + (cb.manual ? '<button class="cb-override-reset" onclick="cbResetManualBias(\'' + cur + '\')">↺ Reset ke AI</button>' : '')
+    + '</div>';
+
+  row.style.display = '';
+}
+
+function cbSaveManualBias(cur) {
+  const sel = document.getElementById('cboverride-sel-' + cur);
+  if (!sel) return;
+  const bias = sel.value;
+  cbSetOverride(cur, bias);
+  // Update cbData in-place + re-render
+  if (cbData) {
+    cbData = cbData.map(cb => {
+      if (cb.currency !== cur) return cb;
+      return { ...cb, ai_bias: cb.manual ? cb.ai_bias : cb.bias, bias, manual: true };
+    });
+  }
+  renderCBTracker();
+  showToast('Override Disimpan', cur + ' → ' + bias + ' (manual)', 3000);
+}
+
+function cbResetManualBias(cur) {
+  cbSetOverride(cur, null);
+  if (cbData) {
+    cbData = cbData.map(cb => {
+      if (cb.currency !== cur) return cb;
+      const aiBias = cb.ai_bias || cb.bias;
+      return { ...cb, bias: aiBias, ai_bias: undefined, manual: false };
+    });
+  }
+  renderCBTracker();
+  showToast('Override Dihapus', cur + ' kembali ke kesimpulan AI', 3000);
 }
 
 function fmtCBTime(iso) {

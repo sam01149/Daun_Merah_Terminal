@@ -262,9 +262,10 @@ module.exports = async function handler(req, res) {
       last_bps:      rateChanged ? diff : (dec?.last_bps ?? fb.last_bps),
       rate_source:   live ? rateSource : 'fallback',
       rate_stale:    rateChanged,
-      bias:          biasData[cur]?.bias       || null,
-      confidence:    biasData[cur]?.confidence || null,
-      bias_updated:  biasData[cur]?.updated_at || null,
+      bias:              biasData[cur]?.bias              || null,
+      confidence:        biasData[cur]?.confidence        || null,
+      bias_updated:      biasData[cur]?.updated_at        || null,
+      source_headlines:  biasData[cur]?.source_headlines  || [],
     };
   });
 
