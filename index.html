@@ -1938,11 +1938,14 @@ body {
       </button>
       <!-- AI analysis panel -->
       <div class="jn-ai-panel" id="jnAiPanel"></div>
-      <div style="display:flex;gap:6px;margin-bottom:12px">
+      <div style="display:flex;gap:6px;margin-bottom:12px;align-items:center;flex-wrap:wrap">
         <button class="jn-btn-sec" style="font-size:9px" onclick="jnSetFilter('all')" id="jnFAll">SEMUA</button>
         <button class="jn-btn-sec" style="font-size:9px" onclick="jnSetFilter('open')" id="jnFOpen">OPEN</button>
         <button class="jn-btn-sec" style="font-size:9px" onclick="jnSetFilter('closed')" id="jnFClosed">CLOSED</button>
         <button class="jn-btn-sec" style="font-size:9px" onclick="jnSetFilter('archived')" id="jnFArchived">ARSIP</button>
+        <button class="jn-btn-sec" style="font-size:9px;margin-left:auto;border-color:var(--green);color:var(--green)" onclick="jnExportCSV()" title="Export semua trade ke file .csv">
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="vertical-align:middle;margin-right:3px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>EXPORT CSV
+        </button>
       </div>
       <div id="jnList"><div style="color:var(--muted);font-family:'DM Mono',monospace;font-size:11px;text-align:center;padding:24px">Memuat jurnal...</div></div>
     </div>
@@ -6387,6 +6390,74 @@ function jnRenderEntries() {
       <div style="margin-top:8px;display:flex;gap:4px">${closeBtn}${archBtn}</div>
     </div>`;
   }).join('');
+}
+
+function jnExportCSV() {
+  if (!jnAllEntries || jnAllEntries.length === 0) {
+    showToast('Tidak ada data', 'Muat jurnal terlebih dahulu sebelum export.');
+    return;
+  }
+
+  function csvCell(val) {
+    if (val == null) return '';
+    const s = String(val);
+    if (s.includes(',') || s.includes('"') || s.includes('\n') || s.includes('\r')) {
+      return '"' + s.replace(/"/g, '""') + '"';
+    }
+    return s;
+  }
+
+  function fmtDate(iso) {
+    if (!iso) return '';
+    const d = new Date(iso);
+    return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+  }
+
+  const headers = [
+    'No','Tanggal Buka','Pair','Arah','Status',
+    'Entry','SL','TP','Lots','RR Plan','R Aktual',
+    'Exit Price','Tanggal Tutup','Alasan Keluar',
+    'Horizon','Regime','Thesis','Catatan Post-Trade'
+  ];
+
+  const sorted = [...jnAllEntries].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+
+  const rows = sorted.map((e, i) => [
+    i + 1,
+    fmtDate(e.created_at),
+    e.pair,
+    e.direction,
+    e.status,
+    e.entry_price  != null ? e.entry_price  : '',
+    e.stop_price   != null ? e.stop_price   : '',
+    e.target_price != null ? e.target_price : '',
+    e.size_lots    != null ? e.size_lots    : '',
+    e.rr_planned   != null ? e.rr_planned   : '',
+    e.r_actual     != null ? e.r_actual     : '',
+    e.exit_price   != null ? e.exit_price   : '',
+    fmtDate(e.closed_at),
+    e.exit_reason  || '',
+    e.time_horizon || '',
+    e.regime_at_entry ? e.regime_at_entry.replace(/_/g, ' ') : '',
+    e.thesis_text  || '',
+    e.attribution_notes || '',
+  ].map(csvCell).join(','));
+
+  const today   = new Date();
+  const dateStr = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
+  const csv     = '﻿' + headers.map(csvCell).join(',') + '\r\n' + rows.join('\r\n');
+
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href     = url;
+  a.download = `jurnal_daun_merah_${dateStr}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+
+  showToast('Export berhasil', `${sorted.length} trade diexport ke jurnal_daun_merah_${dateStr}.csv`);
 }
 
 window._jnClosingEntry = null;

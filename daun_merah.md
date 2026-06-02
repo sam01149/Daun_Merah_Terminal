@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-06-02 (session 38 — Critical Bug Fixes: Vercel Timeout, Swipe Nav, Pair Slicing, SW Memory Leak)
+> **Last updated:** 2026-06-02 (session 39 — Export CSV Jurnal)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Downloads\Financial_Feed_App`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -98,6 +98,16 @@ Financial_Feed_App/
 - Setiap event tampil sebagai chip: currency color dot + nama event + time WIB + countdown ("2j 30m")
 - Strip disembunyikan (`display:none`) jika tidak ada event relevan
 - Di-update saat `initTeknikal()` dan setiap `onTekPairChange()`
+
+## Changelog Session 39 (2026-06-02)
+
+### Export CSV — Tab JURNAL
+- Tambah tombol **EXPORT CSV** di baris filter (kanan, warna hijau) pada `jnListView`
+- `jnExportCSV()`: export semua `jnAllEntries` (semua status) ke file `.csv`, diurutkan ascending by `created_at`
+- Kolom: No, Tanggal Buka, Pair, Arah, Status, Entry, SL, TP, Lots, RR Plan, R Aktual, Exit Price, Tanggal Tutup, Alasan Keluar, Horizon, Regime, Thesis, Catatan Post-Trade
+- UTF-8 BOM di awal file agar Excel Windows buka langsung tanpa encoding issue
+- Nama file otomatis: `jurnal_daun_merah_YYYY-MM-DD.csv`
+- Proper CSV escaping: wrap in quotes jika ada koma/newline/quote, double-quote untuk escape
 
 ## Changelog Session 38 (2026-06-02)
 

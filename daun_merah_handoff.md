@@ -92,7 +92,7 @@ Ini bukan bug aktif hari ini — tapi akan meledak jika dibiarkan. Prioritas ber
 
 ---
 
-### TB-1 — Journal N+1 Query ⚠️ MELEDAK saat >80 trade
+### TB-1 — Journal N+1 Query ⚠️ MELEDAK saat >80 trade *(CSV export sudah ada — 2026-06-02)*
 **Lokasi:** `api/journal.js` baris 158–160 (GET list) dan 222–225 (GET analyze)
 **Masalah:** `ZRANGE` ambil semua ID, lalu loop individual `GET journal:{device_id}:{id}` per entry. 100 trade = 101 Redis calls sequentially.
 **Estimasi ledak:** ~80 trade × 80ms = 6.4s. Vercel akan timeout (10–60s tergantung plan), jurnal tidak bisa dibuka.
