@@ -6239,28 +6239,17 @@ function szPrefillJurnal() {
 }
 
 function szSaveHistory(entry) {
-async function szSaveHistory(entry) {
   const deviceId = szGetDeviceId();
   const withTs = { ...entry, timestamp: new Date().toISOString() };
 
-  // Optimistic: prepend to local cache and render immediately
+  // Optimistic: prepend ke cache lokal, render langsung tanpa tunggu network
   if (szHistoryCache !== null) {
     szHistoryCache.unshift(withTs);
     if (szHistoryCache.length > 20) szHistoryCache.length = 20;
     szRenderHistory(szHistoryCache);
-  try {
-    await fetch('/api/sizing-history?device_id=' + encodeURIComponent(deviceId), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(entry),
-      signal: AbortSignal.timeout(5000),
-    });
-    szLoadHistory();
-  } catch(e) {
-    console.warn('sizing save failed:', e.message);
   }
 
-  // Fire-and-forget — no await, no reload needed
+  // Fire-and-forget — tidak await, tidak reload setelah save
   fetch('/api/sizing-history?device_id=' + encodeURIComponent(deviceId), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -6821,8 +6810,6 @@ async function jnRunAnalysis(force = false) {
 }
 
 function szRenderHistory(entries) {
-async function szLoadHistory() {
-  const deviceId = szGetDeviceId();
   const histEl = document.getElementById('szHistory');
   if (!histEl) return;
   if (!entries || entries.length === 0) { histEl.innerHTML = ''; return; }
@@ -6847,19 +6834,6 @@ async function szLoadHistory() {
     const { entries } = await res.json();
     szHistoryCache = entries || [];
     szRenderHistory(szHistoryCache);
-    if (!entries || entries.length === 0) {
-      histEl.innerHTML = '';
-      return;
-    }
-    histEl.innerHTML = `<div style="font-size:10px;color:var(--muted);margin-bottom:8px;font-family:'DM Mono',monospace;letter-spacing:.05em">RIWAYAT (${entries.length})</div>` +
-      entries.map(e => {
-        const d = new Date(e.timestamp);
-        const fmt = `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
-        return `<div class="sz-hist-item">
-          <div class="sz-hist-main">${e.pair} · ${e.lotSize} lots · ${e.riskPct}% risk</div>
-          <div>Equity $${(e.equity||0).toLocaleString()} · Stop ${e.stopPips}p · At risk $${(e.dollarRisk||0).toFixed(2)} · ${fmt}</div>
-        </div>`;
-      }).join('');
   } catch(e) {
     console.warn('sizing history load failed:', e.message);
   }
