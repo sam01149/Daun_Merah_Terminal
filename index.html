@@ -1729,6 +1729,7 @@ body {
 
 <!-- PRIMARY NAV -->
 <div class="nav-views" id="navViews">
+  <button class="nvtab" data-view="dashboard" id="dashboardTab">DASHBOARD</button>
   <button class="nvtab active" data-view="feed" id="feedNavTab">NEWS</button>
   <button class="nvtab" data-view="riset" id="risetTab">CB WATCH</button>
   <button class="nvtab" data-view="ringkasan" id="ringkasanTab">RINGKASAN</button>
@@ -1740,7 +1741,6 @@ body {
   <button class="nvtab" data-view="jurnal" id="jurnalTab">JURNAL</button>
   <button class="nvtab" data-view="petunjuk" id="petunjukTab">PETUNJUK</button>
   <button class="nvtab" data-view="teknikal" id="teknikalTab">TEK</button>
-  <button class="nvtab" data-view="dashboard" id="dashboardTab">DASHBOARD</button>
   <button class="nvtab-more" id="navMoreBtn" onclick="openDrawer()">
     <svg width="13" height="11" viewBox="0 0 13 11" fill="none"><rect y="0" width="13" height="1.5" rx=".75" fill="currentColor"/><rect y="4.75" width="13" height="1.5" rx=".75" fill="currentColor"/><rect y="9.5" width="13" height="1.5" rx=".75" fill="currentColor"/></svg>
   </button>
@@ -7097,7 +7097,7 @@ document.addEventListener('click', function(e) {
 
 // ── SWIPE NAVIGATION ─────────────────────────────────────────
 (function() {
-  const VIEWS = ['feed','riset','ringkasan','cal','cot','fundamental','checklist','sizing','jurnal','petunjuk','teknikal','dashboard'];
+  const VIEWS = ['dashboard','feed','riset','ringkasan','cal','cot','fundamental','checklist','sizing','jurnal','petunjuk','teknikal'];
   const PANEL_ID = { feed:'feedScroll', riset:'risetPanel', ringkasan:'ringkasanPanel', cal:'calPanel', cot:'cotPanel', fundamental:'fundamentalPanel', checklist:'checklistPanel', sizing:'sizingPanel', jurnal:'jurnalPanel', petunjuk:'petunjukPanel', teknikal:'teknikalPanel', dashboard:'dashboardPanel' };
   const MIN_X = 60;
   let sx = 0, sy = 0;
