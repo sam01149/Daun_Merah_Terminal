@@ -1548,10 +1548,10 @@ body {
 /* ── COMMAND CENTER DASHBOARD ── */
 .nvtab[data-view="dashboard"]        { color: #818cf8; display: none; }
 .nvtab[data-view="dashboard"].active { color: #818cf8; border-bottom-color: #818cf8; }
+#dashboardPanel { display: none; }
 @media (min-width: 1024px) {
   .nvtab[data-view="dashboard"] { display: block; }
   #dashboardPanel {
-    display: none;
     grid-template-columns: 280px 1fr 260px;
     grid-template-rows: 1fr auto;
     height: calc(100vh - 48px);

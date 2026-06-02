@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-06-02 (session 40 — Sizing: form persist + history optimistic + CSS polish)
+> **Last updated:** 2026-06-02 (session 41 — Bug fix: dashboardPanel tampil di mobile)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Downloads\Financial_Feed_App`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -98,6 +98,16 @@ Financial_Feed_App/
 - Setiap event tampil sebagai chip: currency color dot + nama event + time WIB + countdown ("2j 30m")
 - Strip disembunyikan (`display:none`) jika tidak ada event relevan
 - Di-update saat `initTeknikal()` dan setiap `onTekPairChange()`
+
+## Changelog Session 41 (2026-06-02)
+
+### Bug Fix — Dashboard Panel Tampil di Mobile
+
+**Root cause:** `#dashboardPanel { display: none }` ditulis di dalam `@media (min-width: 1024px)`. Artinya di mobile (< 1024px) panel tidak punya aturan display apapun — browser render sebagai block element di bawah feed. `hideAllPanels()` hanya remove class `.visible` yang tidak berpengaruh di mobile.
+
+**Fix:** Pindahkan `#dashboardPanel { display: none }` ke luar media query (scope global). Hanya rule `#dashboardPanel.visible { display: grid }` yang tetap di dalam media query. Panel sekarang selalu tersembunyi di mobile.
+
+---
 
 ## Changelog Session 40 (2026-06-02)
 
