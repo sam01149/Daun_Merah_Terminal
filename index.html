@@ -7128,8 +7128,35 @@ document.addEventListener('click', function(e) {
 let dashRefreshInterval = null;
 let dashLastRefresh     = 0;
 
-function initDashboard() {
+async function initDashboard() {
+  // Render dulu dengan data yang sudah ada (mungkin sudah ada sebagian)
   refreshDashboard();
+
+  // Auto-fetch semua data yang belum dimuat atau sudah stale
+  const now = Date.now();
+  const fetches = [];
+
+  if (allItems.length === 0)
+    fetches.push(fetchFeed().catch(() => {}));
+
+  if (!cbData || (now - cbFetchedAt) > 5 * 60 * 1000)
+    fetches.push(fetchCBStatus().catch(() => {}));
+
+  if (!fundData || (now - fundFetchedAt) > 30 * 60 * 1000)
+    fetches.push(fetchFundamental().catch(() => {}));
+
+  if (!calData || (now - calFetchedAt) > 60 * 60 * 1000)
+    fetches.push(fetchCalendar().catch(() => {}));
+
+  if (!ringkasanCache)
+    fetches.push(loadCachedRingkasan().catch(() => {}));
+
+  if (fetches.length > 0) {
+    await Promise.allSettled(fetches);
+    // Re-render setelah semua data masuk (hanya jika masih di dashboard)
+    if (activeView === 'dashboard') refreshDashboard();
+  }
+
   if (dashRefreshInterval) clearInterval(dashRefreshInterval);
   dashRefreshInterval = setInterval(() => {
     if (activeView === 'dashboard') refreshDashboard();
