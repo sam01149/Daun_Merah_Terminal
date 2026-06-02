@@ -7206,7 +7206,10 @@ function renderDashDigest() {
   }
   const article = ringkasanCache.article || '';
   const preview = article.length > 500 ? article.slice(0, 497) + '...' : article;
-  digestEl.innerHTML = `<div class="dash-digest-section"><div class="dash-digest-text">${escHtml(preview)}</div></div>`;
+  const lihatSemua = article.length > 500
+    ? `<button class="cal-scenario-ck-btn" style="margin:6px 0 4px" onclick="switchView('ringkasan')">→ Lihat semua</button>`
+    : '';
+  digestEl.innerHTML = `<div class="dash-digest-section"><div class="dash-digest-text">${escHtml(preview)}</div>${lihatSemua}</div>`;
 
   if (thesisEl) {
     const alerts = ringkasanCache.thesis_alerts;
