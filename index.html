@@ -572,6 +572,45 @@ body {
   display: flex; align-items: center;
 }
 
+/* ── COT TREND PANEL ── */
+.cot-row-wrap { display: contents; }
+.cot-tren-btn {
+  display: inline-flex; align-items: center; gap: 3px;
+  font-size: 8px; font-family: 'DM Mono', monospace; letter-spacing: .5px;
+  padding: 2px 6px; border-radius: 3px; cursor: pointer; border: none;
+  background: rgba(255,255,255,.07); color: var(--muted);
+  transition: background .15s, color .15s; margin-left: 4px;
+}
+.cot-tren-btn:hover { background: rgba(255,255,255,.13); color: var(--text); }
+.cot-tren-btn.open  { background: rgba(0,200,150,.12); color: #00c896; }
+.cot-tren-panel {
+  display: none; border-radius: 6px; margin: 6px 0 10px;
+  padding: 10px; background: rgba(255,255,255,.03);
+  border: 1px solid rgba(255,255,255,.06);
+}
+.cot-tren-panel.visible { display: block; }
+.cot-tren-legend {
+  display: flex; gap: 12px; margin-bottom: 6px;
+}
+.cot-tren-legend-item {
+  display: flex; align-items: center; gap: 4px;
+  font-size: 8px; color: var(--muted); font-family: 'DM Mono', monospace;
+}
+.cot-tren-legend-dot {
+  width: 8px; height: 2px; border-radius: 1px;
+}
+.cot-tren-loading {
+  font-size: 10px; color: var(--muted); font-family: 'DM Mono', monospace;
+  text-align: center; padding: 20px 0;
+}
+.cot-tren-tooltip {
+  position: fixed; pointer-events: none; z-index: 999;
+  background: rgba(20,20,28,.95); border: 1px solid rgba(255,255,255,.1);
+  border-radius: 5px; padding: 5px 9px; font-size: 9px;
+  font-family: 'DM Mono', monospace; color: var(--text-mid);
+  white-space: nowrap; display: none;
+}
+
 /* ── FUNDAMENTAL TAB ──*/
 .fund-panel { padding: 10px 12px 24px; }
 .fund-header {
@@ -856,6 +895,84 @@ body {
 }
 
 .cal-empty { text-align: center; padding: 40px 20px; color: var(--muted); font-size: 11px; line-height: 1.7; }
+
+/* ── MACRO SCENARIO PLANNER ── */
+.cal-scenario-panel {
+  display: none; border-radius: 7px; margin: 6px 0 10px;
+  background: rgba(255,255,255,.03); border: 1px solid rgba(255,255,255,.08);
+  overflow: hidden;
+}
+.cal-scenario-panel.visible { display: block; }
+.cal-scenario-header {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 9px 12px 8px; border-bottom: 1px solid rgba(255,255,255,.06);
+}
+.cal-scenario-title {
+  font-size: 10px; font-family: 'Syne', sans-serif; font-weight: 700;
+  letter-spacing: .5px; text-transform: uppercase; color: var(--text-mid);
+}
+.cal-scenario-close {
+  background: none; border: none; color: var(--muted); cursor: pointer;
+  font-size: 14px; line-height: 1; padding: 0 2px;
+}
+.cal-scenario-close:hover { color: var(--text); }
+.cal-scenario-btns {
+  display: flex; gap: 8px; padding: 10px 12px;
+}
+.cal-scenario-btn {
+  flex: 1; padding: 8px 0; border-radius: 5px; border: 1px solid rgba(255,255,255,.1);
+  font-size: 10px; font-family: 'Syne', sans-serif; font-weight: 700;
+  letter-spacing: .5px; cursor: pointer; transition: background .15s;
+  background: rgba(255,255,255,.05); color: var(--text-mid);
+}
+.cal-scenario-btn.beat { border-color: rgba(0,200,150,.3); }
+.cal-scenario-btn.beat:hover, .cal-scenario-btn.beat.active {
+  background: rgba(0,200,150,.15); color: #00c896;
+}
+.cal-scenario-btn.miss { border-color: rgba(255,71,87,.3); }
+.cal-scenario-btn.miss:hover, .cal-scenario-btn.miss.active {
+  background: rgba(255,71,87,.15); color: #ff4757;
+}
+.cal-scenario-results { padding: 0 12px 12px; }
+.cal-scenario-subheading {
+  font-size: 8px; color: var(--muted); letter-spacing: .8px; text-transform: uppercase;
+  font-family: 'DM Mono', monospace; padding: 8px 0 6px;
+  border-top: 1px solid rgba(255,255,255,.05); margin-top: 6px;
+}
+.cal-scenario-pair {
+  display: flex; align-items: flex-start; gap: 8px;
+  padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,.04);
+}
+.cal-scenario-pair:last-child { border-bottom: none; }
+.cal-scenario-rank {
+  font-size: 10px; font-family: 'Syne', sans-serif; font-weight: 700;
+  color: var(--muted); min-width: 18px; padding-top: 1px;
+}
+.cal-scenario-pair-body { flex: 1; }
+.cal-scenario-pair-name {
+  font-size: 12px; font-family: 'Syne', sans-serif; font-weight: 700;
+  margin-bottom: 2px;
+}
+.cal-scenario-pair-dir { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; }
+.cal-scenario-pair-dir.long  { color: #00c896; }
+.cal-scenario-pair-dir.short { color: #ff4757; }
+.cal-scenario-pair-reason { font-size: 9px; color: var(--muted); font-family: 'DM Mono', monospace; margin-top: 2px; }
+.cal-scenario-warn {
+  margin-top: 8px; padding: 8px 10px; border-radius: 5px;
+  background: rgba(255,200,0,.07); border: 1px solid rgba(255,200,0,.15);
+  font-size: 9px; color: var(--muted); font-family: 'DM Mono', monospace; line-height: 1.5;
+}
+.cal-scenario-ck-btn {
+  display: inline-block; margin-top: 6px; padding: 4px 10px;
+  border-radius: 4px; background: rgba(255,255,255,.07); border: none;
+  font-size: 9px; font-family: 'DM Mono', monospace; color: var(--text-mid);
+  cursor: pointer; transition: background .15s;
+}
+.cal-scenario-ck-btn:hover { background: rgba(255,255,255,.13); color: var(--text); }
+.cal-scenario-nodata {
+  font-size: 10px; color: var(--muted); font-family: 'DM Mono', monospace;
+  padding: 10px 0; text-align: center;
+}
 
 /* ── CENTRAL BANK TRACKER ── */
 .cb-section {
@@ -1401,6 +1518,69 @@ body {
 }
 .tek-news-title { font: 11px 'DM Mono',monospace; color: var(--text); line-height: 1.45; }
 
+/* ── COMMAND CENTER DASHBOARD ── */
+.nvtab[data-view="dashboard"]        { color: #818cf8; display: none; }
+.nvtab[data-view="dashboard"].active { color: #818cf8; border-bottom-color: #818cf8; }
+@media (min-width: 1024px) {
+  .nvtab[data-view="dashboard"] { display: block; }
+  #dashboardPanel {
+    display: none;
+    grid-template-columns: 280px 1fr 260px;
+    grid-template-rows: 1fr auto;
+    height: calc(100vh - 48px);
+    gap: 0;
+    overflow: hidden;
+  }
+  #dashboardPanel.visible {
+    display: grid;
+  }
+  #dashNewsCol  { grid-column: 1; grid-row: 1; overflow-y: auto; border-right: 1px solid var(--border); }
+  #dashMainCol  { grid-column: 2; grid-row: 1; overflow-y: auto; border-right: 1px solid var(--border); }
+  #dashSideCol  { grid-column: 3; grid-row: 1; overflow-y: auto; }
+  #dashEventBar { grid-column: 1 / -1; grid-row: 2; border-top: 1px solid var(--border); flex-shrink: 0; padding: 8px 12px; min-height: 44px; display: flex; align-items: center; gap: 8px; overflow-x: auto; }
+}
+.dash-col-title {
+  font-size: 8px; letter-spacing: 1px; text-transform: uppercase; color: var(--muted);
+  font-family: 'DM Mono', monospace; padding: 10px 12px 6px;
+  border-bottom: 1px solid var(--border); position: sticky; top: 0;
+  background: var(--bg); z-index: 1;
+}
+.dash-news-item {
+  display: flex; align-items: flex-start; gap: 6px;
+  padding: 6px 10px; border-bottom: 1px solid rgba(255,255,255,.03);
+  cursor: default;
+}
+.dash-news-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--accent); flex-shrink: 0; margin-top: 4px; }
+.dash-news-text { font-size: 10px; color: var(--text-mid); line-height: 1.5; }
+.dash-news-time { font-size: 8px; color: var(--muted); font-family: 'DM Mono', monospace; white-space: nowrap; margin-left: auto; flex-shrink: 0; padding-left: 4px; }
+.dash-digest-section { padding: 10px 12px 8px; border-bottom: 1px solid var(--border); }
+.dash-digest-label { font-size: 8px; color: var(--muted); font-family: 'DM Mono', monospace; letter-spacing: .8px; text-transform: uppercase; margin-bottom: 5px; }
+.dash-digest-text { font-size: 10px; color: var(--text-mid); line-height: 1.6; }
+.dash-bias-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 5px 12px; border-bottom: 1px solid rgba(255,255,255,.03);
+}
+.dash-bias-cur { font-family: 'Syne', sans-serif; font-weight: 700; font-size: 11px; }
+.dash-bias-pill {
+  font-size: 8px; font-family: 'DM Mono', monospace; padding: 2px 7px; border-radius: 10px;
+  letter-spacing: .3px;
+}
+.dash-fund-strip { display: flex; gap: 4px; flex-wrap: wrap; padding: 6px 12px 8px; }
+.dash-fund-chip {
+  font-size: 8px; font-family: 'DM Mono', monospace; padding: 2px 6px;
+  border-radius: 4px; background: rgba(255,255,255,.06); color: var(--text-mid);
+}
+.dash-event-chip {
+  display: flex; align-items: center; gap: 4px; flex-shrink: 0;
+  background: rgba(255,71,87,.08); border: 1px solid rgba(255,71,87,.2);
+  border-radius: 5px; padding: 4px 8px; white-space: nowrap;
+}
+.dash-event-chip-dot { width: 5px; height: 5px; border-radius: 50%; background: #ff4757; }
+.dash-event-chip-text { font-size: 9px; font-family: 'DM Mono', monospace; color: var(--text-mid); }
+.dash-event-chip-time { font-size: 8px; color: var(--muted); }
+.dash-no-data { font-size: 10px; color: var(--muted); text-align: center; padding: 20px 12px; font-family: 'DM Mono', monospace; }
+.dash-refresh-badge { font-size: 8px; color: var(--muted); font-family: 'DM Mono', monospace; margin-left: auto; white-space: nowrap; }
+
 /* ── DRAWER / OVERFLOW NAV ── */
 /* Sembunyikan tab sekunder dari top nav + bottom nav */
 #navViews .nvtab[data-view="cot"],
@@ -1556,6 +1736,7 @@ body {
   <button class="nvtab" data-view="jurnal" id="jurnalTab">JURNAL</button>
   <button class="nvtab" data-view="petunjuk" id="petunjukTab">PETUNJUK</button>
   <button class="nvtab" data-view="teknikal" id="teknikalTab">TEK</button>
+  <button class="nvtab" data-view="dashboard" id="dashboardTab">DASHBOARD</button>
   <button class="nvtab-more" id="navMoreBtn" onclick="openDrawer()">
     <svg width="13" height="11" viewBox="0 0 13 11" fill="none"><rect y="0" width="13" height="1.5" rx=".75" fill="currentColor"/><rect y="4.75" width="13" height="1.5" rx=".75" fill="currentColor"/><rect y="9.5" width="13" height="1.5" rx=".75" fill="currentColor"/></svg>
   </button>
@@ -2079,6 +2260,30 @@ body {
   </div>
 </div>
 
+<!-- DASHBOARD PANEL -->
+<div id="dashboardPanel">
+  <div id="dashNewsCol">
+    <div class="dash-col-title">LIVE NEWS <span id="dashAutoRefreshBadge" class="dash-refresh-badge"></span></div>
+    <div id="dashNewsList"><div class="dash-no-data">Buka tab NEWS dulu untuk memuat data.</div></div>
+  </div>
+  <div id="dashMainCol">
+    <div class="dash-col-title">AI DIGEST</div>
+    <div id="dashDigestSection"><div class="dash-no-data">Buka tab RINGKASAN dulu untuk memuat briefing.</div></div>
+    <div class="dash-col-title" style="margin-top:6px">THESIS AKTIF</div>
+    <div id="dashThesisSection"><div class="dash-no-data">—</div></div>
+  </div>
+  <div id="dashSideCol">
+    <div class="dash-col-title">CB BIAS</div>
+    <div id="dashBiasList"><div class="dash-no-data">Buka tab RINGKASAN dulu.</div></div>
+    <div class="dash-col-title" style="margin-top:4px">FUNDAMENTAL RANKING</div>
+    <div id="dashFundStrip"><div class="dash-no-data">Buka tab FUNDAMENTAL dulu.</div></div>
+  </div>
+  <div id="dashEventBar">
+    <span style="font-size:8px;color:var(--muted);font-family:'DM Mono',monospace;white-space:nowrap">EVENT BERIKUTNYA:</span>
+    <div id="dashEventChips" style="display:flex;gap:6px;flex-wrap:nowrap;overflow-x:auto"><span style="font-size:9px;color:var(--muted);font-family:'DM Mono',monospace">—</span></div>
+  </div>
+</div>
+
 <!-- COT PANEL -->
 <div class="feed-scroll" id="cotPanel" style="display:none">
   <div class="cot-panel-inner">
@@ -2202,6 +2407,7 @@ body {
   <div class="toast-title" id="toastTitle"></div>
   <div class="toast-body" id="toastBody"></div>
 </div>
+<div id="cotTrenTooltip" class="cot-tren-tooltip"></div>
 
 <!-- MT5 ENTRY MODAL -->
 <div id="mt5Modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9999;align-items:center;justify-content:center">
@@ -2855,6 +3061,8 @@ function setFeedUI(show) {
 function hideAllPanels() {
   ['feedScroll','risetPanel','ringkasanPanel','calPanel','cotPanel','fundamentalPanel','checklistPanel','sizingPanel','jurnalPanel','petunjukPanel','teknikalPanel']
     .forEach(id => { document.getElementById(id).style.display = 'none'; });
+  const db = document.getElementById('dashboardPanel');
+  if (db) db.classList.remove('visible');
 }
 
 document.querySelectorAll('#navViews .nvtab').forEach(btn => {
@@ -2931,6 +3139,11 @@ document.querySelectorAll('#navViews .nvtab').forEach(btn => {
       activeView = 'teknikal';
       document.getElementById('teknikalPanel').style.display = 'flex';
       initTeknikal();
+    } else if (view === 'dashboard') {
+      setFeedUI(false);
+      activeView = 'dashboard';
+      document.getElementById('dashboardPanel').classList.add('visible');
+      initDashboard();
     }
     updateDrawerBtn();
   });
@@ -3645,6 +3858,8 @@ async function fetchCOT() {
 }
 
 function renderCOT() {
+  // Reset trend state — DOM will be rebuilt so open panels are gone
+  Object.keys(cotTrendOpen).forEach(k => delete cotTrendOpen[k]);
   const grid = document.getElementById('cotGrid');
   const badge = document.getElementById('cotReportBadge');
   const staleBadge = document.getElementById('cotStaleBadge');
@@ -3693,48 +3908,194 @@ function renderCOT() {
     </svg>`;
   }
 
-  function makeRows(netKey, changeKey, longKey, shortKey) {
+  function makeRow(cur, netKey, changeKey, longKey, shortKey, withTren) {
     const resolveNet = (d, k) => d[k] !== undefined ? d[k] : (k === 'lev_net' ? d.net : null);
     const resolveChg = (d, k) => d[k] !== undefined ? d[k] : (k === 'lev_change_net' ? d.change_net : null);
     const fmtAbs = n => { if (!n && n !== 0) return '—'; const a = Math.abs(n); return a >= 1000 ? (a / 1000).toFixed(1) + 'K' : String(a); };
-
-    return ORDER.filter(c => cotData.positions[c]).map(cur => {
-      const d        = cotData.positions[cur];
-      const color    = CUR_COLORS_COT[cur] || '#fff';
-      const net      = resolveNet(d, netKey);
-      const chg      = resolveChg(d, changeKey);
-      const longVal  = d[longKey] || 0;
-      const shortVal = d[shortKey] || 0;
-      const total    = longVal + shortVal;
-      const longPct  = total > 0 ? Math.round(longVal / total * 100) : 50;
-      const isLong   = net === null ? true : net >= 0;
-      const chgClass = chg === null ? '' : chg > 0 ? 'up' : chg < 0 ? 'down' : '';
-      const chgIcon  = chg === null ? '' : chg > 0 ? '▲' : chg < 0 ? '▼' : '→';
-      return `<div class="cot-row">
-        <span class="cot-cur" style="color:${color}">${cur}</span>
-        <div class="cot-pie" data-tip="Long ${longPct}% · Short ${100 - longPct}%">${makePie(longPct)}</div>
-        <div class="cot-ls-vals">
-          <span class="cot-long-lbl">L +${fmtAbs(longVal)}</span>
-          <span class="cot-short-lbl">S -${fmtAbs(shortVal)}</span>
-        </div>
-        <div class="cot-net-wrap">
-          <span class="cot-net ${isLong ? 'long' : 'short'}">${fmtK(net)}</span>
-          ${chg !== null ? `<span class="cot-change ${chgClass}">${chgIcon} ${fmtK(chg)}</span>` : ''}
-        </div>
-      </div>`;
-    }).join('');
+    const d        = cotData.positions[cur];
+    const color    = CUR_COLORS_COT[cur] || '#fff';
+    const net      = resolveNet(d, netKey);
+    const chg      = resolveChg(d, changeKey);
+    const longVal  = d[longKey] || 0;
+    const shortVal = d[shortKey] || 0;
+    const total    = longVal + shortVal;
+    const longPct  = total > 0 ? Math.round(longVal / total * 100) : 50;
+    const isLong   = net === null ? true : net >= 0;
+    const chgClass = chg === null ? '' : chg > 0 ? 'up' : chg < 0 ? 'down' : '';
+    const chgIcon  = chg === null ? '' : chg > 0 ? '▲' : chg < 0 ? '▼' : '→';
+    const trenBtn  = withTren
+      ? `<button class="cot-tren-btn" id="cotTrenBtn-${cur}" onclick="cotToggleTrend('${cur}')">TREN</button>`
+      : '';
+    return `<div class="cot-row">
+      <span class="cot-cur" style="color:${color}">${cur}</span>
+      <div class="cot-pie" data-tip="Long ${longPct}% · Short ${100 - longPct}%">${makePie(longPct)}</div>
+      <div class="cot-ls-vals">
+        <span class="cot-long-lbl">L +${fmtAbs(longVal)}</span>
+        <span class="cot-short-lbl">S -${fmtAbs(shortVal)}</span>
+      </div>
+      <div class="cot-net-wrap">
+        <span class="cot-net ${isLong ? 'long' : 'short'}">${fmtK(net)}</span>
+        ${chg !== null ? `<span class="cot-change ${chgClass}">${chgIcon} ${fmtK(chg)}</span>` : ''}
+        ${trenBtn}
+      </div>
+    </div>`;
   }
+
+  const currencies = ORDER.filter(c => cotData.positions[c]);
+
+  const levRows = currencies.map(cur =>
+    makeRow(cur, 'lev_net', 'lev_change_net', 'lev_long', 'lev_short', true)
+    + `<div class="cot-tren-panel" id="cotTrenPanel-${cur}"><div class="cot-tren-loading">Memuat data tren...</div></div>`
+  ).join('');
+
+  const amRows = currencies.map(cur =>
+    makeRow(cur, 'am_net', 'am_change_net', 'am_long', 'am_short', false)
+  ).join('');
 
   grid.innerHTML = `
     <div class="cot-group-label">Leveraged Funds <span style="color:var(--muted);font-size:8px;margin-left:4px">Hedge Fund · Spekulan aktif</span></div>
-    ${makeRows('lev_net', 'lev_change_net', 'lev_long', 'lev_short')}
+    ${levRows}
     <div class="cot-group-label" style="margin-top:14px">Asset Manager <span style="color:var(--muted);font-size:8px;margin-left:4px">Institusi · Posisi jangka panjang</span></div>
-    ${makeRows('am_net', 'am_change_net', 'am_long', 'am_short')}
+    ${amRows}
   `;
 }
 
+// ── COT TREND PANEL ──────────────────────────────────────
+const cotHistoryCache = {};          // { [currency]: { data, fetchedAt } }
+const cotTrendOpen    = {};          // { [currency]: boolean }
+
+async function cotFetchHistory() {
+  const cacheKey = '__all';
+  const now = Date.now();
+  if (cotHistoryCache[cacheKey] && now - cotHistoryCache[cacheKey].fetchedAt < 30 * 60 * 1000) {
+    return cotHistoryCache[cacheKey].data;
+  }
+  try {
+    const res = await fetch('/api/feeds?type=cot_history&n=12', { signal: AbortSignal.timeout(10000) });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const json = await res.json();
+    cotHistoryCache[cacheKey] = { data: json, fetchedAt: now };
+    return json;
+  } catch(e) {
+    console.warn('COT history fetch failed:', e.message);
+    return null;
+  }
+}
+
+async function cotToggleTrend(cur) {
+  const panel = document.getElementById('cotTrenPanel-' + cur);
+  const btn   = document.getElementById('cotTrenBtn-' + cur);
+  if (!panel) return;
+
+  cotTrendOpen[cur] = !cotTrendOpen[cur];
+  if (!cotTrendOpen[cur]) {
+    panel.classList.remove('visible');
+    if (btn) btn.classList.remove('open');
+    return;
+  }
+
+  panel.classList.add('visible');
+  if (btn) btn.classList.add('open');
+  panel.innerHTML = '<div class="cot-tren-loading">Memuat tren...</div>';
+
+  const json = await cotFetchHistory();
+  if (!json || !json.history || json.history.length === 0) {
+    panel.innerHTML = '<div class="cot-tren-loading">Data tren belum tersedia (min. 2 minggu data diperlukan).</div>';
+    return;
+  }
+  cotRenderTrendPanel(cur, json.history, panel);
+}
+
+function cotRenderTrendPanel(cur, history, panel) {
+  // Extract AM and Lev net for this currency across all weekly snapshots
+  const points = history.map(h => ({
+    label: h.report_date ? h.report_date.replace(/,\s*\d{4}$/, '') : '',
+    am:    h.positions?.[cur]?.am_net  ?? null,
+    lev:   h.positions?.[cur]?.lev_net ?? null,
+  })).filter(p => p.am !== null || p.lev !== null);
+
+  if (points.length < 2) {
+    panel.innerHTML = '<div class="cot-tren-loading">Belum cukup data untuk chart (min. 2 titik).</div>';
+    return;
+  }
+
+  const W = 400, H = 120, PL = 44, PR = 8, PT = 10, PB = 24;
+  const innerW = W - PL - PR, innerH = H - PT - PB;
+  const allVals = points.flatMap(p => [p.am, p.lev]).filter(v => v !== null);
+  let minV = Math.min(...allVals), maxV = Math.max(...allVals);
+  const pad = Math.max(Math.abs(maxV - minV) * 0.1, 500);
+  minV -= pad; maxV += pad;
+  const range = maxV - minV || 1;
+
+  const xPos = i => PL + (i / (points.length - 1)) * innerW;
+  const yPos = v => PT + innerH - ((v - minV) / range) * innerH;
+  const zero = yPos(0);
+
+  function makePath(key, color) {
+    const pts = points.map((p, i) => p[key] !== null ? `${xPos(i).toFixed(1)},${yPos(p[key]).toFixed(1)}` : null).filter(Boolean);
+    if (pts.length < 2) return '';
+    return `<polyline points="${pts.join(' ')}" fill="none" stroke="${color}" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/>
+    ${pts.map((pt, i) => `<circle cx="${pt.split(',')[0]}" cy="${pt.split(',')[1]}" r="2.5" fill="${color}" opacity=".85" data-idx="${i}" data-key="${key}"/>`).join('')}`;
+  }
+
+  // x-axis labels (show first, last, and mid)
+  const labelIdxs = [0, Math.floor(points.length / 2), points.length - 1].filter((v,i,a)=>a.indexOf(v)===i);
+  const xLabels = labelIdxs.map(i =>
+    `<text x="${xPos(i).toFixed(1)}" y="${H - 4}" text-anchor="middle" font-size="8" fill="#666" font-family="DM Mono,monospace">${points[i].label}</text>`
+  ).join('');
+
+  // y-axis labels (0, min/max approx)
+  const fmtYLbl = v => Math.abs(v) >= 1000 ? (v/1000).toFixed(0)+'K' : String(Math.round(v));
+  const yLabels = [minV + range*0.1, 0, maxV - range*0.1].map(v =>
+    `<text x="${PL - 4}" y="${yPos(v).toFixed(1)}" text-anchor="end" dominant-baseline="middle" font-size="7" fill="#555" font-family="DM Mono,monospace">${fmtYLbl(v)}</text>`
+  ).join('');
+
+  // Zero line
+  const zeroLine = zero >= PT && zero <= PT + innerH
+    ? `<line x1="${PL}" y1="${zero.toFixed(1)}" x2="${PL + innerW}" y2="${zero.toFixed(1)}" stroke="#444" stroke-width="1" stroke-dasharray="4,3"/>`
+    : '';
+
+  // Invisible hover hitboxes per data point
+  const hitboxes = points.map((p, i) => {
+    const amV  = p.am  !== null ? p.am  : '';
+    const levV = p.lev !== null ? p.lev : '';
+    const tipText = `${p.label} · AM: ${amV !== '' ? (amV>=0?'+':'')+(amV/1000).toFixed(1)+'K' : '—'} · Lev: ${levV !== '' ? (levV>=0?'+':'')+(levV/1000).toFixed(1)+'K' : '—'}`;
+    return `<rect x="${(xPos(i)-8).toFixed(1)}" y="${PT}" width="16" height="${innerH}" fill="transparent"
+      onmouseenter="cotTrenShowTip(event,'${tipText}')" onmouseleave="cotTrenHideTip()"/>`;
+  }).join('');
+
+  panel.innerHTML = `
+    <div class="cot-tren-legend">
+      <div class="cot-tren-legend-item"><div class="cot-tren-legend-dot" style="background:#00c896"></div>Asset Mgr</div>
+      <div class="cot-tren-legend-item"><div class="cot-tren-legend-dot" style="background:#f472b6"></div>Leveraged</div>
+    </div>
+    <svg viewBox="0 0 ${W} ${H}" width="100%" height="120" style="display:block;overflow:visible">
+      ${zeroLine}
+      ${yLabels}
+      ${xLabels}
+      ${makePath('am',  '#00c896')}
+      ${makePath('lev', '#f472b6')}
+      ${hitboxes}
+    </svg>`;
+}
+
+function cotTrenShowTip(e, text) {
+  const tip = document.getElementById('cotTrenTooltip');
+  if (!tip) return;
+  tip.textContent = text;
+  tip.style.display = 'block';
+  tip.style.left = (e.clientX + 12) + 'px';
+  tip.style.top  = (e.clientY - 28) + 'px';
+}
+
+function cotTrenHideTip() {
+  const tip = document.getElementById('cotTrenTooltip');
+  if (tip) tip.style.display = 'none';
+}
+
 // Calendar filter state
-let calFilter = 'all'; // 'all' | 'high' | 'medium'
+let calFilter       = 'all'; // 'all' | 'high' | 'medium'
+let calScenarioOpen = null;  // evId of currently open scenario panel
 
 function setCalFilter(f) {
   calFilter = f;
@@ -3761,6 +4122,7 @@ const CUR_COLORS = {
 };
 
 function renderCalendar() {
+  calScenarioOpen = null; // reset scenario state on re-render
   const inner = document.getElementById('calPanelInner');
   if (!calData || calData.length === 0) {
     inner.innerHTML = `<div class="cal-empty">Tidak ada event kalender untuk ditampilkan.</div>`;
@@ -3806,6 +4168,7 @@ function renderCalendar() {
       const impactClass = ev.impact === 'High' ? 'high' : 'medium';
       const hasData = ev.forecast || ev.previous || ev.actual;
       const actualClass = compareActualForecast(ev.actual, ev.forecast);
+      const evId = (ev.date + '_' + ev.currency + '_' + ev.event).replace(/\W/g, '_');
 
       const dataRow = hasData ? `
         <div class="cal-data-row">
@@ -3823,6 +4186,24 @@ function renderCalendar() {
           </div>
         </div>` : '';
 
+      const simulasiBtn = ev.impact === 'High'
+        ? `<button class="cal-tren-btn" style="font-size:8px;padding:2px 7px;border-radius:3px;background:rgba(255,255,255,.07);border:none;color:var(--muted);cursor:pointer;font-family:'DM Mono',monospace;margin-left:4px" id="calScenBtn-${evId}" onclick="calOpenScenario('${evId}','${ev.currency}','${escHtml(ev.event)}','${ev.forecast||''}','${ev.previous||''}')">SIMULASI</button>`
+        : '';
+
+      const scenarioPanel = ev.impact === 'High'
+        ? `<div class="cal-scenario-panel" id="calScenPanel-${evId}">
+            <div class="cal-scenario-header">
+              <div class="cal-scenario-title">SIMULASI: ${escHtml(ev.event)} (${ev.currency})</div>
+              <button class="cal-scenario-close" onclick="calCloseScenario('${evId}')">×</button>
+            </div>
+            <div class="cal-scenario-btns">
+              <button class="cal-scenario-btn beat" id="calScenBeat-${evId}" onclick="calRunScenario('${evId}','${ev.currency}','beat','${escHtml(ev.event)}')">▲ BEAT</button>
+              <button class="cal-scenario-btn miss" id="calScenMiss-${evId}" onclick="calRunScenario('${evId}','${ev.currency}','miss','${escHtml(ev.event)}')">▼ MISS</button>
+            </div>
+            <div class="cal-scenario-results" id="calScenResults-${evId}"></div>
+          </div>`
+        : '';
+
       return `
         <div class="cal-event cal-cur-${ev.currency} impact-${impactClass}">
           <div class="cal-event-main">
@@ -3836,12 +4217,15 @@ function renderCalendar() {
                 <div class="cal-badges">
                   <span class="cal-cur-tag" style="color:${CUR_COLORS[ev.currency]||'#888'};background:${CUR_COLORS[ev.currency]||'#888'}22">${ev.currency}</span>
                   <span class="cal-impact-badge ${impactClass}">${ev.impact === 'High' ? '● HIGH' : '● MED'}</span>
+                  ${simulasiBtn}
                 </div>
               </div>
             </div>
           </div>
           ${dataRow}
-        </div>`;
+        </div>
+        ${scenarioPanel}`
+      ;
     }).join('');
 
     return `<div class="cal-date-group">
@@ -3854,6 +4238,210 @@ function renderCalendar() {
   }).join('');
 
   inner.innerHTML = legend + eventsHtml;
+}
+
+// ── MACRO SCENARIO PLANNER ────────────────────────────────
+
+const SCENARIO_PAIR_MAP = {
+  EUR: { pair:'EUR/USD', isBase:true  },
+  GBP: { pair:'GBP/USD', isBase:true  },
+  JPY: { pair:'USD/JPY', isBase:false },
+  AUD: { pair:'AUD/USD', isBase:true  },
+  NZD: { pair:'NZD/USD', isBase:true  },
+  CAD: { pair:'USD/CAD', isBase:false },
+  CHF: { pair:'USD/CHF', isBase:false },
+  USD: null, // USD handled specially
+};
+
+const USD_COUNTERPARTS = [
+  { cur:'JPY', pair:'USD/JPY', usdBase:true  },
+  { cur:'CHF', pair:'USD/CHF', usdBase:true  },
+  { cur:'CAD', pair:'USD/CAD', usdBase:true  },
+  { cur:'EUR', pair:'EUR/USD', usdBase:false },
+  { cur:'GBP', pair:'GBP/USD', usdBase:false },
+  { cur:'AUD', pair:'AUD/USD', usdBase:false },
+  { cur:'NZD', pair:'NZD/USD', usdBase:false },
+];
+
+function calOpenScenario(evId, currency, eventName, forecast, previous) {
+  if (calScenarioOpen && calScenarioOpen !== evId) {
+    const prevPanel = document.getElementById('calScenPanel-' + calScenarioOpen);
+    if (prevPanel) prevPanel.classList.remove('visible');
+    const prevBtn = document.getElementById('calScenBtn-' + calScenarioOpen);
+    if (prevBtn) { prevBtn.style.background='rgba(255,255,255,.07)'; prevBtn.style.color='var(--muted)'; }
+  }
+  calScenarioOpen = evId;
+  const panel = document.getElementById('calScenPanel-' + evId);
+  const btn   = document.getElementById('calScenBtn-' + evId);
+  if (!panel) return;
+  const isOpen = panel.classList.contains('visible');
+  if (isOpen) {
+    panel.classList.remove('visible');
+    calScenarioOpen = null;
+    if (btn) { btn.style.background='rgba(255,255,255,.07)'; btn.style.color='var(--muted)'; }
+  } else {
+    panel.classList.add('visible');
+    if (btn) { btn.style.background='rgba(96,165,250,.15)'; btn.style.color='#60a5fa'; }
+    // reset results and button states
+    document.getElementById('calScenResults-' + evId).innerHTML = '';
+    const beatBtn = document.getElementById('calScenBeat-' + evId);
+    const missBtn = document.getElementById('calScenMiss-' + evId);
+    if (beatBtn) beatBtn.classList.remove('active');
+    if (missBtn) missBtn.classList.remove('active');
+  }
+}
+
+function calCloseScenario(evId) {
+  const panel = document.getElementById('calScenPanel-' + evId);
+  if (panel) panel.classList.remove('visible');
+  const btn = document.getElementById('calScenBtn-' + evId);
+  if (btn) { btn.style.background='rgba(255,255,255,.07)'; btn.style.color='var(--muted)'; }
+  if (calScenarioOpen === evId) calScenarioOpen = null;
+}
+
+function calRunScenario(evId, currency, direction, eventName) {
+  const beatBtn = document.getElementById('calScenBeat-' + evId);
+  const missBtn = document.getElementById('calScenMiss-' + evId);
+  if (beatBtn) beatBtn.classList.toggle('active', direction === 'beat');
+  if (missBtn) missBtn.classList.toggle('active', direction === 'miss');
+
+  const resultsEl = document.getElementById('calScenResults-' + evId);
+  if (!resultsEl) return;
+
+  if (!cbData || cbData.length === 0) {
+    resultsEl.innerHTML = `<div class="cal-scenario-nodata">Data CB belum dimuat — buka tab RINGKASAN dulu untuk memuat bias.</div>`;
+    return;
+  }
+
+  const pairs = scenarioRankCurrencies(currency, direction);
+  if (!pairs || pairs.length === 0) {
+    resultsEl.innerHTML = `<div class="cal-scenario-nodata">Tidak ada rekomendasi pair tersedia.</div>`;
+    return;
+  }
+
+  resultsEl.innerHTML = scenarioRenderResults(pairs, currency, direction, eventName);
+}
+
+function scenarioRankCurrencies(eventCur, direction) {
+  // direction 'beat' = eventCur menguat, 'miss' = eventCur melemah
+  const getCBScore = cur => {
+    const cb = cbData && cbData.find(c => c.currency === cur);
+    if (!cb) return 2; // default neutral
+    return CB_BIAS_LEVEL[cb.bias?.toLowerCase()] ?? 2;
+  };
+  const getCBBias = cur => {
+    const cb = cbData && cbData.find(c => c.currency === cur);
+    return cb ? (cb.bias || 'Neutral') : 'Neutral';
+  };
+  const getCBRate = cur => {
+    const cb = cbData && cbData.find(c => c.currency === cur);
+    return cb ? (cb.rate_display || cb.rate || null) : null;
+  };
+
+  const eventCurScore = getCBScore(eventCur);
+  const results = [];
+
+  if (eventCur === 'USD') {
+    for (const cp of USD_COUNTERPARTS) {
+      const counterScore = getCBScore(cp.cur);
+      const counterBias  = getCBBias(cp.cur);
+      const rate         = getCBRate(cp.cur);
+      // beat = USD kuat: untuk pairs di mana USD=base (USDJPY, USDCHF, USDCAD) → LONG
+      //                  untuk pairs di mana USD=quote (EURUSD, GBPUSD, etc.) → SHORT
+      // miss = USD lemah: invert
+      let pairDir;
+      if (direction === 'beat') {
+        pairDir = cp.usdBase ? 'long' : 'short';
+      } else {
+        pairDir = cp.usdBase ? 'short' : 'long';
+      }
+      const score = direction === 'beat'
+        ? (eventCurScore - counterScore) // prefer pairing with most-dovish counterpart
+        : (counterScore - eventCurScore); // prefer pairing with most-hawkish counterpart
+      const rateStr = rate ? ` · Rate ${rate}` : '';
+      results.push({
+        pair: cp.pair,
+        dir:  pairDir,
+        reason: `${cp.cur}: ${counterBias}${rateStr}`,
+        score,
+      });
+    }
+  } else {
+    // Non-USD event: pair against USD + find best cross with most-opposing currency
+    const pairMap = SCENARIO_PAIR_MAP[eventCur];
+    if (pairMap) {
+      const usdScore = getCBScore('USD');
+      const usdBias  = getCBBias('USD');
+      const usdRate  = getCBRate('USD');
+      let pairDir;
+      if (direction === 'beat') {
+        pairDir = pairMap.isBase ? 'long' : 'short';
+      } else {
+        pairDir = pairMap.isBase ? 'short' : 'long';
+      }
+      const score = direction === 'beat'
+        ? (eventCurScore - usdScore)
+        : (usdScore - eventCurScore);
+      const rateStr = usdRate ? ` · USD Rate ${usdRate}` : '';
+      results.push({ pair: pairMap.pair, dir: pairDir, reason: `USD: ${usdBias}${rateStr}`, score });
+    }
+    // Also check crosses with other currencies
+    const otherCurs = ['USD','EUR','GBP','JPY','AUD','NZD','CAD','CHF'].filter(c => c !== eventCur);
+    for (const cp of otherCurs) {
+      const cpScore = getCBScore(cp);
+      const cpBias  = getCBBias(cp);
+      const cpRate  = getCBRate(cp);
+      const score = direction === 'beat' ? (eventCurScore - cpScore) : (cpScore - eventCurScore);
+      // Find pair name from cross
+      let pairName = null, isBase = false;
+      if (cp === 'USD') {
+        pairName = SCENARIO_PAIR_MAP[eventCur]?.pair;
+        isBase   = SCENARIO_PAIR_MAP[eventCur]?.isBase;
+      } else {
+        // look for known cross pairs (if both non-USD, use eventCur as base vs cp)
+        pairName = eventCur + '/' + cp;
+        isBase = true;
+      }
+      if (!pairName) continue;
+      let pairDir;
+      if (direction === 'beat') pairDir = isBase ? 'long' : 'short';
+      else                      pairDir = isBase ? 'short' : 'long';
+      const rateStr = cpRate ? ` · Rate ${cpRate}` : '';
+      if (!results.find(r => r.pair === pairName)) {
+        results.push({ pair: pairName, dir: pairDir, reason: `${cp}: ${cpBias}${rateStr}`, score });
+      }
+    }
+  }
+
+  // Sort by score descending — highest divergence first
+  results.sort((a, b) => b.score - a.score);
+  return results.slice(0, 3);
+}
+
+function scenarioRenderResults(pairs, eventCur, direction, eventName) {
+  const dirLabel = direction === 'beat'
+    ? `<span style="color:#00c896">▲ BEAT → ${eventCur} menguat</span>`
+    : `<span style="color:#ff4757">▼ MISS → ${eventCur} melemah</span>`;
+
+  const pairsHtml = pairs.map((p, i) => `
+    <div class="cal-scenario-pair">
+      <div class="cal-scenario-rank">#${i+1}</div>
+      <div class="cal-scenario-pair-body">
+        <div class="cal-scenario-pair-name">${p.dir === 'long' ? 'LONG' : 'SHORT'} <span style="color:var(--text)">${p.pair}</span></div>
+        <div class="cal-scenario-pair-dir ${p.dir}">${p.dir.toUpperCase()}</div>
+        <div class="cal-scenario-pair-reason">${p.reason}</div>
+      </div>
+    </div>`).join('');
+
+  const firstPair = pairs[0]?.pair?.replace('/','');
+
+  return `
+    <div class="cal-scenario-subheading">SIMULASI: ${eventName} ${dirLabel}</div>
+    ${pairsHtml}
+    <div class="cal-scenario-warn">
+      ⚠ Ini rekomendasi awal — tetap validasi via CHECKLIST sebelum entry.
+      <br><button class="cal-scenario-ck-btn" onclick="switchView('checklist')${firstPair ? ";setTimeout(()=>{const s=document.getElementById('ckPairSelector');if(s){for(let o of s.options){if(o.value.includes('${firstPair}')){s.value=o.value;ckOnPairChange();break;}}}},200)" : ''}">→ Buka CHECKLIST</button>
+    </div>`;
 }
 
 function startCountdownTimer() {
@@ -6503,8 +7091,8 @@ document.addEventListener('click', function(e) {
 
 // ── SWIPE NAVIGATION ─────────────────────────────────────────
 (function() {
-  const VIEWS = ['feed','riset','ringkasan','cal','cot','fundamental','checklist','sizing','jurnal','petunjuk','teknikal'];
-  const PANEL_ID = { feed:'feedScroll', riset:'risetPanel', ringkasan:'ringkasanPanel', cal:'calPanel', cot:'cotPanel', fundamental:'fundamentalPanel', checklist:'checklistPanel', sizing:'sizingPanel', jurnal:'jurnalPanel', petunjuk:'petunjukPanel', teknikal:'teknikalPanel' };
+  const VIEWS = ['feed','riset','ringkasan','cal','cot','fundamental','checklist','sizing','jurnal','petunjuk','teknikal','dashboard'];
+  const PANEL_ID = { feed:'feedScroll', riset:'risetPanel', ringkasan:'ringkasanPanel', cal:'calPanel', cot:'cotPanel', fundamental:'fundamentalPanel', checklist:'checklistPanel', sizing:'sizingPanel', jurnal:'jurnalPanel', petunjuk:'petunjukPanel', teknikal:'teknikalPanel', dashboard:'dashboardPanel' };
   const MIN_X = 60;
   let sx = 0, sy = 0;
   document.addEventListener('touchstart', function(e) {
@@ -6523,7 +7111,7 @@ document.addEventListener('click', function(e) {
     const next = goNext ? idx + 1 : idx - 1;
     if (next < 0 || next >= VIEWS.length) return;
     const btn = document.querySelector('#navViews .nvtab[data-view="' + VIEWS[next] + '"]');
-    if (!btn) return;
+    if (!btn || getComputedStyle(btn).display === 'none') return;
     btn.click();
     // slide-in animation on incoming panel
     const el = document.getElementById(PANEL_ID[VIEWS[next]]);
@@ -6535,6 +7123,165 @@ document.addEventListener('click', function(e) {
     el.addEventListener('animationend', () => el.classList.remove(cls), { once: true });
   }, { passive: true });
 })();
+
+// ── COMMAND CENTER DASHBOARD ──────────────────────────────
+let dashRefreshInterval = null;
+let dashLastRefresh     = 0;
+
+function initDashboard() {
+  refreshDashboard();
+  if (dashRefreshInterval) clearInterval(dashRefreshInterval);
+  dashRefreshInterval = setInterval(() => {
+    if (activeView === 'dashboard') refreshDashboard();
+    else { clearInterval(dashRefreshInterval); dashRefreshInterval = null; }
+  }, 60000);
+}
+
+function refreshDashboard() {
+  dashLastRefresh = Date.now();
+  renderDashNews();
+  renderDashDigest();
+  renderDashBias();
+  renderDashEvents();
+  const badge = document.getElementById('dashAutoRefreshBadge');
+  if (badge) badge.textContent = 'auto-refresh 60s';
+}
+
+function renderDashNews() {
+  const el = document.getElementById('dashNewsList');
+  if (!el) return;
+  if (!allItems || allItems.length === 0) {
+    el.innerHTML = '<div class="dash-no-data">Buka tab NEWS untuk memuat berita.</div>';
+    return;
+  }
+  const items = allItems.slice(0, 20);
+  el.innerHTML = items.map(it => {
+    const ageMs  = it.pubDate ? Date.now() - new Date(it.pubDate).getTime() : null;
+    const ageStr = ageMs !== null && !isNaN(ageMs)
+      ? (ageMs < 3600000 ? Math.round(ageMs/60000) + 'm' : Math.round(ageMs/3600000) + 'h')
+      : '';
+    return `<div class="dash-news-item">
+      <div class="dash-news-dot"></div>
+      <div class="dash-news-text">${escHtml(it.title || '')}</div>
+      <div class="dash-news-time">${ageStr}</div>
+    </div>`;
+  }).join('');
+}
+
+function renderDashDigest() {
+  const digestEl = document.getElementById('dashDigestSection');
+  const thesisEl = document.getElementById('dashThesisSection');
+  if (!digestEl) return;
+  if (!ringkasanCache || !ringkasanCache.article) {
+    digestEl.innerHTML = '<div class="dash-no-data">Buka tab RINGKASAN dan generate briefing.</div>';
+    if (thesisEl) thesisEl.innerHTML = '<div class="dash-no-data">—</div>';
+    return;
+  }
+  const article = ringkasanCache.article || '';
+  const preview = article.length > 500 ? article.slice(0, 497) + '...' : article;
+  digestEl.innerHTML = `<div class="dash-digest-section"><div class="dash-digest-text">${escHtml(preview)}</div></div>`;
+
+  if (thesisEl) {
+    const alerts = ringkasanCache.thesis_alerts;
+    if (alerts && alerts.length > 0) {
+      thesisEl.innerHTML = `<div class="dash-digest-section">${alerts.map(a =>
+        `<div style="font-size:9px;color:var(--yellow);font-family:'DM Mono',monospace;padding:2px 0">⚠ ${escHtml(a.pair||'')} — ${escHtml(a.message||'')}</div>`
+      ).join('')}</div>`;
+    } else {
+      thesisEl.innerHTML = '<div class="dash-no-data">Tidak ada thesis alert aktif.</div>';
+    }
+  }
+}
+
+function renderDashBias() {
+  const biasEl = document.getElementById('dashBiasList');
+  const fundEl = document.getElementById('dashFundStrip');
+  if (!biasEl) return;
+
+  if (!cbData || cbData.length === 0) {
+    biasEl.innerHTML = '<div class="dash-no-data">Buka tab RINGKASAN untuk memuat bias CB.</div>';
+    if (fundEl) fundEl.innerHTML = '<div class="dash-no-data">—</div>';
+    return;
+  }
+
+  const BIAS_COLORS = {
+    'very hawkish':'#00c896','hawkish':'#34d399','neutral':'#94a3b8','dovish':'#f59e0b','very dovish':'#f472b6'
+  };
+  const CUR_COLORS_DB = { USD:'#38bdf8', EUR:'#c0392b', GBP:'#a78bfa', JPY:'#ffd32a', CAD:'#ff6b35', AUD:'#00c896', NZD:'#34d399', CHF:'#ff4757' };
+  const ORDER = ['USD','EUR','GBP','JPY','CAD','AUD','NZD','CHF'];
+  const sorted = ORDER.map(c => cbData.find(d => d.currency === c)).filter(Boolean);
+
+  biasEl.innerHTML = sorted.map(cb => {
+    const bias   = (cb.bias || 'neutral').toLowerCase();
+    const color  = BIAS_COLORS[bias] || '#94a3b8';
+    const curClr = CUR_COLORS_DB[cb.currency] || '#fff';
+    return `<div class="dash-bias-row">
+      <span class="dash-bias-cur" style="color:${curClr}">${cb.currency}</span>
+      <span class="dash-bias-pill" style="background:${color}22;color:${color}">${cb.bias || '—'}</span>
+    </div>`;
+  }).join('');
+
+  if (fundEl) {
+    if (!fundData) {
+      fundEl.innerHTML = '<div class="dash-no-data">Buka tab FUNDAMENTAL.</div>';
+    } else {
+      const RATE_KEYS_D = { USD:'Fed Rate', EUR:'ECB Rate', GBP:'BOE Rate', JPY:'BOJ Rate', CAD:'BOC Rate', AUD:'RBA Rate', NZD:'RBNZ Rate', CHF:'SNB Rate' };
+      const scores = ORDER.map(c => {
+        const d = fundData[c] || {};
+        const rk = RATE_KEYS_D[c];
+        let bull = 0, bear = 0, n = 0;
+        Object.entries(d).forEach(([k, v]) => {
+          if (k === rk) return;
+          const s = typeof scoreInd === 'function' ? scoreInd(k, v.actual, v.previous) : null;
+          if (s !== null) { n++; if (s > 0) bull++; else bear++; }
+        });
+        return { c, s: n > 0 ? Math.round(bull / n * 100) - 50 : null };
+      }).filter(x => x.s !== null).sort((a, b) => b.s - a.s);
+      fundEl.innerHTML = `<div class="dash-fund-strip">${scores.map((x, i) =>
+        `<span class="dash-fund-chip">${i+1}. ${x.c} ${x.s > 0 ? '+' : ''}${x.s}%</span>`
+      ).join('')}</div>`;
+    }
+  }
+}
+
+function renderDashEvents() {
+  const el = document.getElementById('dashEventChips');
+  if (!el) return;
+  if (!calData || calData.length === 0) {
+    el.innerHTML = '<span style="font-size:9px;color:var(--muted);font-family:\'DM Mono\',monospace">Buka tab CAL untuk memuat event.</span>';
+    return;
+  }
+  const now  = Date.now();
+  const soon = calData.filter(ev => {
+    if (ev.impact !== 'High' || !ev.time_wib || ev.time_wib === 'Tentative') return false;
+    const timeStr = ev.time_wib.replace(' WIB', '');
+    const [h, m]  = timeStr.split(':').map(Number);
+    const wibNow  = new Date(now + 7*3600000);
+    const evMs    = new Date(`${ev.date}T${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:00+07:00`).getTime();
+    const diff    = evMs - now;
+    return diff > 0 && diff < 24 * 3600000;
+  });
+
+  if (soon.length === 0) {
+    el.innerHTML = '<span style="font-size:9px;color:var(--muted);font-family:\'DM Mono\',monospace">Tidak ada High-impact event dalam 24 jam.</span>';
+    return;
+  }
+
+  el.innerHTML = soon.map(ev => {
+    const timeStr = ev.time_wib.replace(' WIB', '');
+    const [h, m]  = timeStr.split(':').map(Number);
+    const evMs    = new Date(`${ev.date}T${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:00+07:00`).getTime();
+    const diffMs  = evMs - now;
+    const hours   = Math.floor(diffMs / 3600000);
+    const mins    = Math.floor((diffMs % 3600000) / 60000);
+    const eta     = hours > 0 ? `${hours}j ${mins}m` : `${mins}m`;
+    return `<div class="dash-event-chip">
+      <div class="dash-event-chip-dot"></div>
+      <span class="dash-event-chip-text">${ev.currency} ${escHtml(ev.event.slice(0, 20))}</span>
+      <span class="dash-event-chip-time">${ev.time_wib.replace(' WIB','')} · ${eta}</span>
+    </div>`;
+  }).join('');
+}
 
 // ── KEYBOARD SHORTCUTS ─────────────────────────────────────
 
@@ -6650,7 +7397,8 @@ document.addEventListener('keydown', function(e) {
     const map = {
       n:'feed', b:'riset', r:'ringkasan', k:'cal',
       c:'cot',  f:'fundamental', l:'checklist',
-      s:'sizing', j:'jurnal', p:'petunjuk', t:'teknikal'
+      s:'sizing', j:'jurnal', p:'petunjuk', t:'teknikal',
+      d:'dashboard'
     };
     if (map[key]) { e.preventDefault(); ckNavClearFocus(); switchView(map[key]); }
     return;
@@ -6751,6 +7499,7 @@ document.addEventListener('keydown', function(e) {
       <div class="kb-row"><div class="kb-keys"><span class="kb-key">G</span><span class="kb-key">J</span></div><span class="kb-desc">Jurnal</span></div>
       <div class="kb-row"><div class="kb-keys"><span class="kb-key">G</span><span class="kb-key">P</span></div><span class="kb-desc">Petunjuk</span></div>
       <div class="kb-row"><div class="kb-keys"><span class="kb-key">G</span><span class="kb-key">T</span></div><span class="kb-desc">Teknikal</span></div>
+      <div class="kb-row"><div class="kb-keys"><span class="kb-key">G</span><span class="kb-key">D</span></div><span class="kb-desc">Dashboard</span></div>
     </div>
     <div class="kb-sec">
       <div class="kb-sec-title">Di tab News</div>

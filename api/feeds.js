@@ -7,10 +7,11 @@ const { autoUpdateFundamentals } = require('./_fundamental_parser');
 
 module.exports = async function handler(req, res) {
   const type = req.query.type;
-  if (type === 'rss')      return rssHandler(req, res);
-  if (type === 'cot')      return cotHandler(req, res);
-  if (type === 'research') return researchHandler(req, res);
-  return res.status(400).json({ error: 'Missing ?type= — use rss, cot, or research' });
+  if (type === 'rss')         return rssHandler(req, res);
+  if (type === 'cot')         return cotHandler(req, res);
+  if (type === 'cot_history') return cotHistoryHandler(req, res);
+  if (type === 'research')    return researchHandler(req, res);
+  return res.status(400).json({ error: 'Missing ?type= — use rss, cot, cot_history, or research' });
 };
 
 // ── Shared Redis helper ────────────────────────────────────────────────────────
@@ -306,6 +307,62 @@ async function storeCOTHistory(positions, reportDate) {
   // Keep 90-day rolling window
   const cutoff = ts - 90 * 24 * 60 * 60 * 1000;
   await redisCmd('ZREMRANGEBYSCORE', 'cot_history', '-inf', cutoff);
+}
+
+// ── COT History handler ───────────────────────────────────────────────────────
+// GET /api/feeds?type=cot_history&n=12
+// Returns last N weekly COT snapshots from Redis sorted set `cot_history`
+
+const COT_HISTORY_CACHE_KEY = 'cot_history_cache';
+const COT_HISTORY_CACHE_TTL = 3600; // 1h — data is weekly, no need to refresh often
+
+async function cotHistoryHandler(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Cache-Control', 'no-cache');
+
+  const n = Math.min(parseInt(req.query.n || '12', 10), 52);
+
+  try {
+    const cached = await redisCmd('GET', COT_HISTORY_CACHE_KEY);
+    if (cached) {
+      const obj = JSON.parse(cached);
+      if (Date.now() - obj.fetched_at < COT_HISTORY_CACHE_TTL * 1000) {
+        const sliced = obj.history.slice(-n);
+        return res.status(200).json({ history: sliced, count: sliced.length, source: 'cache' });
+      }
+    }
+  } catch(e) {
+    console.warn('cot_history cache GET failed:', e.message);
+  }
+
+  try {
+    const raw = await redisCmd('ZRANGE', 'cot_history', '0', '-1', 'WITHSCORES');
+    if (!raw || raw.length === 0) {
+      return res.status(200).json({ history: [], count: 0, message: 'Belum ada data history COT' });
+    }
+
+    // raw = [json1, score1, json2, score2, ...]
+    const pairs = [];
+    for (let i = 0; i < raw.length; i += 2) {
+      try {
+        const entry = JSON.parse(raw[i]);
+        const ts    = parseFloat(raw[i + 1]);
+        pairs.push({ ...entry, ts });
+      } catch(e2) { /* skip malformed */ }
+    }
+
+    // Sort descending by score (timestamp), slice n, then reverse to ascending for chart
+    pairs.sort((a, b) => b.ts - a.ts);
+    const sliced = pairs.slice(0, n).reverse();
+
+    const payload = { history: sliced, fetched_at: Date.now() };
+    redisCmd('SET', COT_HISTORY_CACHE_KEY, JSON.stringify(payload), 'EX', COT_HISTORY_CACHE_TTL).catch(() => {});
+
+    return res.status(200).json({ history: sliced, count: sliced.length });
+  } catch(e) {
+    console.error('cot_history fetch failed:', e.message);
+    return res.status(502).json({ error: 'cot_history fetch failed: ' + e.message });
+  }
 }
 
 // ── CB Research handler ───────────────────────────────────────────────────────

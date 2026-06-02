@@ -1,18 +1,18 @@
 # Daun Merah — Rencana Pengembangan Aktif
 
-> **Dibuat:** 2026-06-02 (session 36)
-> **Status:** Menunggu konfirmasi eksekusi
+> **Dibuat:** 2026-06-02 (session 36) · **Diperbarui:** 2026-06-02 (session 37)
+> **Status:** Fitur 1–3 selesai. Hanya Fitur 4 (Code Splitting) yang tersisa.
 
 ---
 
 ## Sesi Berikutnya — Urutan Eksekusi
 
-| # | Fitur | Effort | Payoff | Backend? |
-|---|-------|--------|--------|----------|
-| 1 | COT Historical Trend Chart | Sedang | Sangat Tinggi | Ya (branch baru di feeds.js) |
-| 2 | Macro Scenario Planner | Rendah-Sedang | Tinggi | Tidak (pure frontend) |
-| 3 | Command Center Dashboard | Tinggi | Tinggi | Tidak (pure CSS+HTML) |
-| 4 | Code Splitting | Tinggi | Maintainability | Tidak (refactor saja) |
+| # | Fitur | Status | Backend? |
+|---|-------|--------|----------|
+| 1 | COT Historical Trend Chart | ✅ Selesai (session 37) | Ya |
+| 2 | Macro Scenario Planner | ✅ Selesai (session 37) | Tidak |
+| 3 | Command Center Dashboard | ✅ Selesai (session 37) | Tidak |
+| 4 | Code Splitting | ⏳ Ditunda (sesi tersendiri) | Tidak |
 
 ---
 
