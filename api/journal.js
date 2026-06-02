@@ -40,6 +40,9 @@ async function redisCmd(...args) {
 }
 
 async function readBody(req) {
+  if (req.body !== undefined) {
+    return typeof req.body === 'object' ? JSON.stringify(req.body) : req.body;
+  }
   let body = '';
   await new Promise(r => { req.on('data', c => body += c); req.on('end', r); });
   return body;

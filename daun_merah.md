@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-06-02 (session 36 — Equity Curve di Jurnal + Event Strip di Tab TEK)
+> **Last updated:** 2026-06-02 (session 38 — Critical Bug Fixes: Vercel Timeout, Swipe Nav, Pair Slicing, SW Memory Leak)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Downloads\Financial_Feed_App`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -98,6 +98,15 @@ Financial_Feed_App/
 - Setiap event tampil sebagai chip: currency color dot + nama event + time WIB + countdown ("2j 30m")
 - Strip disembunyikan (`display:none`) jika tidak ada event relevan
 - Di-update saat `initTeknikal()` dan setiap `onTekPairChange()`
+
+## Changelog Session 38 (2026-06-02)
+
+### Critical Bug Fixes
+
+- **Vercel Body Timeout** (`api/journal.js`): `readBody()` sekarang cek `req.body` terlebih dahulu sebelum listen ke stream. Vercel auto-parses request body sehingga stream `req.on('data')` tidak pernah fire — penyebab 504 Gateway Timeout pada POST request jurnal.
+- **Swipe Navigation** (`index.html`): Ganti `getComputedStyle` check + hard `return` dengan while-loop yang skip tab `dashboard` secara eksplisit pada viewport < 1024px. User mobile tidak lagi tersangkut saat swipe dari/ke tab manapun.
+- **Pair Slicing EUR/USD** (`index.html`, 2 lokasi): Fix `pair.slice(3,6)` → `pair.includes('/') ? pair.split('/')` di `ckPrefillJurnal()` dan `openMT5Modal()`. `EUR/USD` sebelumnya menghasilkan `/US` sehingga CB bias tidak ter-apply. Line 5444 sudah benar sejak awal.
+- **Service Worker Memory Leak** (`sw.js`): `loadSeenGuids()` sekarang merge (tidak overwrite) Set in-memory. `saveSeenGuids()` trim `seenGuids` di memori ke 200 entri, selaras dengan cache storage — mencegah Set bertumbuh tak terbatas antar wake cycle.
 
 ## Changelog Session 37 (2026-06-02)
 

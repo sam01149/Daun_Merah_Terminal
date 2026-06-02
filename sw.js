@@ -18,7 +18,7 @@ async function loadSeenGuids() {
     const res = await cache.match(SEEN_GUIDS_URL);
     if (res) {
       const arr = await res.json();
-      if (Array.isArray(arr)) seenGuids = new Set(arr);
+      if (Array.isArray(arr)) arr.forEach(id => seenGuids.add(id));
     }
   } catch(e) {}
 }
@@ -26,8 +26,9 @@ async function loadSeenGuids() {
 async function saveSeenGuids() {
   try {
     const cache = await caches.open(STATE_CACHE);
-    // Simpan max 200 GUID terbaru
+    // Simpan max 200 GUID terbaru, trim memory juga
     const arr = [...seenGuids].slice(-200);
+    seenGuids = new Set(arr);
     await cache.put(SEEN_GUIDS_URL, new Response(JSON.stringify(arr), {
       headers: { 'Content-Type': 'application/json' }
     }));

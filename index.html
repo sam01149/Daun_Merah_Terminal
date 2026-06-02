@@ -5282,8 +5282,7 @@ function ckPrefillJurnal() {
   // Infer direction from CB bias (cbData is an array [{currency, bias, ...}])
   let direction = 'long';
   if (pair && cbData) {
-    const base3 = pair.slice(0,3).toUpperCase();
-    const qte3  = pair.slice(3,6).toUpperCase();
+    const [base3, qte3] = pair.includes('/') ? pair.split('/').map(s => s.toUpperCase()) : [pair.slice(0,3).toUpperCase(), pair.slice(3,6).toUpperCase()];
     const BLVL  = { 'hawkish':6,'cautious hawkish':5,'neutral':4,'data dependent':4,'on hold':4,'split':4,'cautious dovish':3,'dovish':2 };
     const bObj  = cbData.find(c => c.currency === base3);
     const qObj  = cbData.find(c => c.currency === qte3);
@@ -5345,8 +5344,7 @@ function ckShowMt5Modal() {
   // Infer direction dari CB bias (sama dengan ckPrefillJurnal)
   let direction = 'long';
   if (cbData) {
-    const base3 = pair.slice(0,3).toUpperCase();
-    const qte3  = pair.slice(3,6).toUpperCase();
+    const [base3, qte3] = pair.includes('/') ? pair.split('/').map(s => s.toUpperCase()) : [pair.slice(0,3).toUpperCase(), pair.slice(3,6).toUpperCase()];
     const BLVL  = { 'hawkish':6,'cautious hawkish':5,'neutral':4,'data dependent':4,'on hold':4,'split':4,'cautious dovish':3,'dovish':2 };
     const bObj  = cbData.find(c => c.currency === base3);
     const qObj  = cbData.find(c => c.currency === qte3);
@@ -7122,10 +7120,17 @@ document.addEventListener('click', function(e) {
     if (idx === -1) return;
     // swipe left = next tab, swipe right = prev tab
     const goNext = dx < 0;
-    const next = goNext ? idx + 1 : idx - 1;
+    let next = goNext ? idx + 1 : idx - 1;
+    while (next >= 0 && next < VIEWS.length) {
+      if (VIEWS[next] === 'dashboard' && window.innerWidth < 1024) {
+        next = goNext ? next + 1 : next - 1;
+        continue;
+      }
+      break;
+    }
     if (next < 0 || next >= VIEWS.length) return;
     const btn = document.querySelector('#navViews .nvtab[data-view="' + VIEWS[next] + '"]');
-    if (!btn || getComputedStyle(btn).display === 'none') return;
+    if (!btn) return;
     btn.click();
     // slide-in animation on incoming panel
     const el = document.getElementById(PANEL_ID[VIEWS[next]]);
