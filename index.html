@@ -4653,7 +4653,15 @@ window.addEventListener('load', () => {
     document.getElementById('autoToggle').checked = true;
     startAutoRefresh();
   }
-  setTimeout(fetchFeed, 400);
+
+  // Halaman awal: dashboard di desktop, news di mobile
+  const dashBtn = document.getElementById('dashboardTab');
+  if (dashBtn && getComputedStyle(dashBtn).display !== 'none') {
+    dashBtn.click();
+  } else {
+    setTimeout(fetchFeed, 400);
+  }
+
   setTimeout(fetchRegime, 800);
   setTimeout(fetchRealYields, 1200);
   setInterval(fetchRegime, 15 * 60 * 1000);
