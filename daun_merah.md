@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-06-01 (session 35 — CB Bias: Fundamental Anchor + Confidence Gate)
+> **Last updated:** 2026-06-02 (session 36 — Equity Curve di Jurnal + Event Strip di Tab TEK)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Downloads\Financial_Feed_App`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -78,6 +78,26 @@ Financial_Feed_App/
 > **Penting:** `api/feeds.js` menggantikan `api/rss.js` dan `api/cot.js` yang sudah dihapus.
 > `api/admin.js` menggantikan `api/health.js`, `api/redis-keys.js`, `api/admin-prompts.js`, dan `api/push.js`.
 > Konsolidasi ini dilakukan untuk tetap di bawah limit 12 serverless functions Vercel Hobby.
+
+---
+
+## Changelog Session 36 (2026-06-02)
+
+### Equity Curve — Tab JURNAL
+- Tambah tab **KURVA** di sub-nav Journal (sebelah "+ BARU")
+- `jnRenderCurve()`: render SVG equity curve dari closed trades yang punya `r_actual`
+- Kurva cumulative R-multiple, fill hijau di atas nol, merah di bawah nol
+- Stats row: Total R, Win Rate, Avg Win R, Avg Loss R + Max Drawdown
+- Zero dependency — pure SVG, load instan
+- Auto-render saat tab KURVA dibuka; auto-refresh setelah `jnLoadEntries()` selesai
+
+### Event Strip — Tab TEK
+- Tambah horizontal scroll strip `#tekEventStrip` antara TradingView chart dan MTF bar
+- `renderTekEventStrip()`: filter `calData` hanya High-impact, dalam 48 jam ke depan, untuk currencies yang relevan dengan pair aktif
+- Mapping `PAIR_CURS` (e.g. EURUSD → EUR+USD) untuk filter otomatis per pair
+- Setiap event tampil sebagai chip: currency color dot + nama event + time WIB + countdown ("2j 30m")
+- Strip disembunyikan (`display:none`) jika tidak ada event relevan
+- Di-update saat `initTeknikal()` dan setiap `onTekPairChange()`
 
 ---
 
