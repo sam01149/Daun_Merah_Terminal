@@ -1582,12 +1582,16 @@ body {
 .dash-refresh-badge { font-size: 8px; color: var(--muted); font-family: 'DM Mono', monospace; margin-left: auto; white-space: nowrap; }
 
 /* ── DRAWER / OVERFLOW NAV ── */
-/* Sembunyikan tab sekunder dari top nav + bottom nav */
+/* Tab yang masuk ke "Menu Lainnya" — disembunyikan dari top nav & bottom nav */
+#navViews .nvtab[data-view="riset"],
+#navViews .nvtab[data-view="cal"],
 #navViews .nvtab[data-view="cot"],
 #navViews .nvtab[data-view="fundamental"],
 #navViews .nvtab[data-view="sizing"],
 #navViews .nvtab[data-view="jurnal"],
 #navViews .nvtab[data-view="petunjuk"] { display: none; }
+#botNav .bot-nav-btn[data-view="riset"],
+#botNav .bot-nav-btn[data-view="cal"],
 #botNav .bot-nav-btn[data-view="cot"],
 #botNav .bot-nav-btn[data-view="fundamental"],
 #botNav .bot-nav-btn[data-view="sizing"],
@@ -7029,11 +7033,13 @@ function initTeknikal() {
 
 // ── DRAWER ────────────────────────────────────────────────
 const DRAWER_ITEMS = [
-  { view:'sizing',      label:'Sizing',      desc:'Kalkulator lot size & risk',      col:'#60a5fa' },
-  { view:'jurnal',      label:'Jurnal',      desc:'Trade journal & review',           col:'#f472b6' },
-  { view:'fundamental', label:'Fundamental', desc:'Data fundamental 8 mata uang',    col:'#a78bfa' },
-  { view:'cot',         label:'COT',         desc:'COT positioning data mingguan',   col:'#a78bfa' },
-  { view:'petunjuk',    label:'Petunjuk',    desc:'SOP panduan trading end-to-end',  col:'#60a5fa' },
+  { view:'cal',         label:'Kalender',    desc:'Economic calendar & event countdown', col:'#00c896' },
+  { view:'riset',       label:'CB Watch',    desc:'CB speeches & research terbaru',      col:'#34d399' },
+  { view:'cot',         label:'COT',         desc:'COT positioning data mingguan',       col:'#a78bfa' },
+  { view:'fundamental', label:'Fundamental', desc:'Data fundamental 8 mata uang',        col:'#a78bfa' },
+  { view:'sizing',      label:'Sizing',      desc:'Kalkulator lot size & risk',          col:'#60a5fa' },
+  { view:'jurnal',      label:'Jurnal',      desc:'Trade journal & review',              col:'#f472b6' },
+  { view:'petunjuk',    label:'Petunjuk',    desc:'SOP panduan trading end-to-end',      col:'#60a5fa' },
 ];
 
 function openDrawer() {
