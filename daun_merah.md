@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-06-02 (session 39 — Export CSV Jurnal)
+> **Last updated:** 2026-06-02 (session 40 — Sizing: form persist + history optimistic + CSS polish)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Downloads\Financial_Feed_App`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -98,6 +98,20 @@ Financial_Feed_App/
 - Setiap event tampil sebagai chip: currency color dot + nama event + time WIB + countdown ("2j 30m")
 - Strip disembunyikan (`display:none`) jika tidak ada event relevan
 - Di-update saat `initTeknikal()` dan setiap `onTekPairChange()`
+
+## Changelog Session 40 (2026-06-02)
+
+### Sizing Calculator — Form Persist + History Optimistic Update
+- `szPersistForm()` / `szRestoreForm()`: simpan semua field form ke `localStorage` (`daun_merah_sz_form`) saat HITUNG atau saat direction/mode berubah. Auto-restore saat tab SIZING pertama dibuka (termasuk setelah refresh/reopen PWA). Guard `_szRestoring` flag agar restore tidak trigger save ganda.
+- Fields yang disimpan: equity, risk%, pair, RR, stop (pips), entry (pips mode), entryPrice & slPrice (price mode), direction, mode
+- `szSaveHistory()` refactor ke fire-and-forget: tidak lagi `await`, tidak lagi trigger `szLoadHistory()`. History update via optimistic local cache (`szHistoryCache`) — muncul instan tanpa network roundtrip.
+- `szRenderHistory()` dipisah dari `szLoadHistory()` agar bisa di-call dari cache maupun dari network.
+- `initSizing()`: render history dari cache (instant) + load fresh di background setiap tab dibuka.
+
+### CSS Polish
+- **`100dvh`**: `body { height: 100dvh }` (fallback `100%`). Mencegah layout terpotong address bar mobile browser (Safari iOS, Chrome Android).
+- **Scrollbar desktop**: `@media (min-width:1024px)` tampilkan scrollbar tipis 5px untuk `.feed-scroll`. Warna `--border` / `--muted` on hover. User mouse tahu konten bisa di-scroll. Mobile tetap hidden.
+- **Pulse animation loading**: `.loading-pulse` pakai existing `@keyframes textPulse`. Diterapkan di: CB research, kalender ekonomi, jurnal list, COT, fundamental, COT tren chart.
 
 ## Changelog Session 39 (2026-06-02)
 

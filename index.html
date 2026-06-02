@@ -33,7 +33,8 @@
   --pink: #f472b6;
 }
 * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
-html, body { height:100%; overflow:hidden; }
+html { height: 100%; }
+body { height: 100%; height: 100dvh; overflow: hidden; }
 body {
   background: var(--bg);
   color: var(--text);
@@ -113,6 +114,7 @@ body {
   cursor: pointer; white-space: nowrap; transition: all .15s; text-transform: uppercase;
 }
 .nvtab:hover { color: var(--text-mid); }
+.nvtab:hover { color: var(--text); background: rgba(255,255,255,0.03); }
 .nvtab[data-view="feed"].active      { color: var(--text);   border-bottom-color: var(--accent); }
 .nvtab[data-view="ringkasan"]        { color: var(--accent); }
 .nvtab[data-view="ringkasan"].active { color: var(--accent); border-bottom-color: var(--accent); }
@@ -292,6 +294,15 @@ body {
   -webkit-overflow-scrolling:touch;
 }
 .feed-scroll::-webkit-scrollbar { display:none; }
+@media (min-width:1024px) {
+  .feed-scroll::-webkit-scrollbar { display:block; width:5px; }
+  .feed-scroll::-webkit-scrollbar-track { background:transparent; }
+  .feed-scroll::-webkit-scrollbar-thumb { background:var(--border); border-radius:3px; }
+  .feed-scroll::-webkit-scrollbar-thumb:hover { background:var(--muted); }
+  .feed-scroll { scrollbar-width:thin; scrollbar-color:var(--border) transparent; }
+}
+
+.loading-pulse { animation: textPulse 1.6s ease-in-out infinite; }
 
 .feed-item {
   background:var(--surface); border:1px solid var(--border);
@@ -360,8 +371,14 @@ body {
 .swipe-in-left  { animation: swipeInLeft  220ms cubic-bezier(.25,.46,.45,.94) both; }
 
 .state-box { text-align:center; padding:60px 20px; color:var(--muted); }
+.state-box.loading p { animation: textPulse 1.5s infinite ease-in-out; }
 .state-box .icon { font-size:36px; margin-bottom:14px; }
 .state-box p { font-size:12px; line-height:1.7; }
+
+@keyframes textPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
 
 .toast {
   position:fixed; top:70px; left:12px; right:12px;
@@ -602,6 +619,7 @@ body {
 .cot-tren-loading {
   font-size: 10px; color: var(--muted); font-family: 'DM Mono', monospace;
   text-align: center; padding: 20px 0;
+  animation: textPulse 1.5s infinite ease-in-out;
 }
 .cot-tren-tooltip {
   position: fixed; pointer-events: none; z-index: 999;
@@ -1126,6 +1144,15 @@ body {
   .cot-net { font-size: 13px; min-width: 64px; }
   .cot-change { font-size: 10px; min-width: 52px; }
   .cal-legend { padding: 10px 24px 6px; }
+  
+  /* Scrollbar elegan khusus Desktop */
+  .feed-scroll::-webkit-scrollbar, #dashNewsCol::-webkit-scrollbar, #dashMainCol::-webkit-scrollbar, #dashSideCol::-webkit-scrollbar { display: block; width: 6px; height: 6px; }
+  .feed-scroll::-webkit-scrollbar-track, #dashNewsCol::-webkit-scrollbar-track, #dashMainCol::-webkit-scrollbar-track, #dashSideCol::-webkit-scrollbar-track { background: transparent; }
+  .feed-scroll::-webkit-scrollbar-thumb, #dashNewsCol::-webkit-scrollbar-thumb, #dashMainCol::-webkit-scrollbar-thumb, #dashSideCol::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  .feed-scroll::-webkit-scrollbar-thumb:hover, #dashNewsCol::-webkit-scrollbar-thumb:hover, #dashMainCol::-webkit-scrollbar-thumb:hover, #dashSideCol::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+  
+  /* Matikan scrollbar horizontal di top nav agar tetap bersih */
+  .nav-views::-webkit-scrollbar, .nav-filters::-webkit-scrollbar { display: none !important; }
 }
 
 @media (max-width: 480px) {
@@ -1799,7 +1826,7 @@ body {
   <div id="risetList" class="riset-list">
     <div class="state-box">
       <div class="icon" style="font-size:24px">📄</div>
-      <p style="font-size:12px">Memuat CB research...</p>
+      <p style="font-size:12px" class="loading-pulse">Memuat CB research...</p>
     </div>
   </div>
 </div>
@@ -1872,7 +1899,7 @@ body {
     </div>
   </div>
   <div class="cal-panel-inner" id="calPanelInner">
-    <div class="cal-empty">Memuat kalender ekonomi...</div>
+    <div class="cal-empty loading-pulse">Memuat kalender ekonomi...</div>
   </div>
 </div>
 
@@ -1939,6 +1966,7 @@ body {
       <!-- AI analysis panel -->
       <div class="jn-ai-panel" id="jnAiPanel"></div>
       <div style="display:flex;gap:6px;margin-bottom:12px;align-items:center;flex-wrap:wrap">
+      <div style="display:flex;gap:6px;margin-bottom:12px">
         <button class="jn-btn-sec" style="font-size:9px" onclick="jnSetFilter('all')" id="jnFAll">SEMUA</button>
         <button class="jn-btn-sec" style="font-size:9px" onclick="jnSetFilter('open')" id="jnFOpen">OPEN</button>
         <button class="jn-btn-sec" style="font-size:9px" onclick="jnSetFilter('closed')" id="jnFClosed">CLOSED</button>
@@ -1947,7 +1975,7 @@ body {
           <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="vertical-align:middle;margin-right:3px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>EXPORT CSV
         </button>
       </div>
-      <div id="jnList"><div style="color:var(--muted);font-family:'DM Mono',monospace;font-size:11px;text-align:center;padding:24px">Memuat jurnal...</div></div>
+      <div id="jnList"><div class="loading-pulse" style="color:var(--muted);font-family:'DM Mono',monospace;font-size:11px;text-align:center;padding:24px">Memuat jurnal...</div></div>
     </div>
     <!-- New entry form -->
     <div id="jnNewView" style="display:none">
@@ -2015,6 +2043,14 @@ body {
     </div>
     <!-- Curve view -->
     <div id="jnCurveView" style="display:none">
+      <div style="display:flex;justify-content:flex-end;margin-bottom:8px">
+        <select id="jnCurveRegimeFilter" onchange="jnRenderCurve()" class="jn-btn-sec" style="padding:4px 8px;font-size:9px">
+          <option value="all">Semua Regime</option>
+          <option value="risk_on">Risk-On</option>
+          <option value="neutral">Neutral</option>
+          <option value="risk_off">Risk-Off</option>
+        </select>
+      </div>
       <div class="jn-curve-wrap" id="jnCurveContent"></div>
     </div>
   </div>
@@ -2307,7 +2343,7 @@ body {
       </div>
     </div>
     <div id="cotGrid">
-      <div class="cot-empty">Memuat data COT...</div>
+      <div class="cot-empty loading-pulse">Memuat data COT...</div>
     </div>
   </div>
 </div>
@@ -2336,7 +2372,7 @@ body {
       <div class="fund-rank-grid" id="fundRankGrid"></div>
     </div>
     <div class="fund-grid" id="fundGrid">
-      <div style="grid-column:1/-1;text-align:center;padding:20px;color:var(--muted);font-size:11px">Memuat data fundamental...</div>
+      <div class="loading-pulse" style="grid-column:1/-1;text-align:center;padding:20px;color:var(--muted);font-size:11px">Memuat data fundamental...</div>
     </div>
     <div class="fund-analysis-wrap">
       <button class="fund-analysis-btn" id="fundAnalysisBtn" onclick="generateFundamentalAnalysis()">
@@ -3176,7 +3212,7 @@ function updateCalLastUpdated() {
 async function fetchCalendar() {
   const inner = document.getElementById('calPanelInner');
   const btn = document.getElementById('calRefreshBtn');
-  inner.innerHTML = `<div class="cal-empty">Memuat kalender ekonomi...</div>`;
+  inner.innerHTML = `<div class="cal-empty loading-pulse">Memuat kalender ekonomi...</div>`;
   if (btn) btn.classList.add('spinning');
   try {
     const res = await fetch('/api/calendar', { signal: AbortSignal.timeout(15000) });
@@ -3952,7 +3988,7 @@ function renderCOT() {
 
   const levRows = currencies.map(cur =>
     makeRow(cur, 'lev_net', 'lev_change_net', 'lev_long', 'lev_short', true)
-    + `<div class="cot-tren-panel" id="cotTrenPanel-${cur}"><div class="cot-tren-loading">Memuat data tren...</div></div>`
+    + `<div class="cot-tren-panel" id="cotTrenPanel-${cur}"><div class="cot-tren-loading loading-pulse">Memuat data tren...</div></div>`
   ).join('');
 
   const amRows = currencies.map(cur =>
@@ -4003,7 +4039,7 @@ async function cotToggleTrend(cur) {
 
   panel.classList.add('visible');
   if (btn) btn.classList.add('open');
-  panel.innerHTML = '<div class="cot-tren-loading">Memuat tren...</div>';
+  panel.innerHTML = '<div class="cot-tren-loading loading-pulse">Memuat tren...</div>';
 
   const json = await cotFetchHistory();
   if (!json || !json.history || json.history.length === 0) {
@@ -5747,6 +5783,10 @@ function _ckAutoMeanRev() {
 
 function ckOnPairChange() {
   const pair = document.getElementById('ckPairSelector').value;
+  // Reset state untuk pair baru agar manual ticks dari pair sebelumnya tidak bocor
+  ckState = {};
+  ckSave();
+  ckBuildUI(); // Rebuild UI untuk membersihkan semua badge visual
   ckAutoTickRegimeCheck(pair);
 }
 
@@ -5872,6 +5912,7 @@ function calcPipValueUSD(pair, entryPrice, rates) {
 let szInitialized = false;
 let szMode = 'pips'; // 'pips' | 'price'
 let szDir  = 'long'; // 'long' | 'short'
+let szHistoryCache = null; // local cache — optimistic update tanpa reload
 const SZ_DEVICE_KEY = 'daun_merah_device_id';
 
 function szGetDeviceId() {
@@ -5881,6 +5922,50 @@ function szGetDeviceId() {
     localStorage.setItem(SZ_DEVICE_KEY, id);
   }
   return id;
+}
+
+const SZ_FORM_KEY = 'daun_merah_sz_form';
+let _szRestoring = false;
+
+function szPersistForm() {
+  if (_szRestoring) return;
+  try {
+    localStorage.setItem(SZ_FORM_KEY, JSON.stringify({
+      equity:     document.getElementById('szEquity').value,
+      risk:       document.getElementById('szRisk').value,
+      pair:       document.getElementById('szPair').value,
+      rr:         document.getElementById('szRR').value,
+      stop:       document.getElementById('szStop').value,
+      entry:      document.getElementById('szEntry').value,
+      entryPrice: document.getElementById('szEntryPrice').value,
+      slPrice:    document.getElementById('szSLPrice').value,
+      dir:        szDir,
+      mode:       szMode,
+    }));
+  } catch(e) {}
+}
+
+function szRestoreForm() {
+  try {
+    const raw = localStorage.getItem(SZ_FORM_KEY);
+    if (!raw) return;
+    const s = JSON.parse(raw);
+    _szRestoring = true;
+    if (s.equity)     document.getElementById('szEquity').value     = s.equity;
+    if (s.risk)       document.getElementById('szRisk').value       = s.risk;
+    if (s.rr)         document.getElementById('szRR').value         = s.rr;
+    if (s.stop)       document.getElementById('szStop').value       = s.stop;
+    if (s.entry)      document.getElementById('szEntry').value      = s.entry;
+    if (s.entryPrice) document.getElementById('szEntryPrice').value = s.entryPrice;
+    if (s.slPrice)    document.getElementById('szSLPrice').value    = s.slPrice;
+    if (s.pair) {
+      const sel = document.getElementById('szPair');
+      if (sel) sel.value = s.pair;
+    }
+    if (s.dir)  szSetDir(s.dir);
+    if (s.mode) szSetMode(s.mode);
+    _szRestoring = false;
+  } catch(e) { _szRestoring = false; }
 }
 
 function szSetDir(dir) {
@@ -5894,6 +5979,7 @@ function szSetDir(dir) {
   };
   applyActive(longBtn,  dir === 'long',  'var(--green)');
   applyActive(shortBtn, dir === 'short', 'var(--accent)');
+  szPersistForm();
 }
 
 function szSetMode(mode) {
@@ -5913,6 +5999,7 @@ function szSetMode(mode) {
   pipsRow.style.display  = mode === 'pips'  ? 'block' : 'none';
   priceRow.style.display = mode === 'price' ? 'block' : 'none';
   entryRow.style.display = mode === 'pips'  ? 'block' : 'none';
+  szPersistForm();
 }
 
 function szAutoComputePips() {
@@ -5967,10 +6054,12 @@ function initSizing() {
       sel.appendChild(opt);
     });
     szInitialized = true;
+    szRestoreForm();
     szUpdatePipInfo();
-    szLoadHistory();
     fetchSizingRates();
   }
+  if (szHistoryCache !== null) szRenderHistory(szHistoryCache);
+  szLoadHistory();
 }
 
 function calcSizing() {
@@ -6124,7 +6213,7 @@ function calcSizing() {
   // Store last sizing for journal bridge
   window._lastSizing = { pair, direction: szDir, lots, entry: entry || null, slPrice: slPrice || null, tpPrice: tpPrice || null, stopPips, riskPct, dollarRisk };
 
-  // Save to history
+  szPersistForm();
   szSaveHistory({ pair, riskPct, lotSize: lots, equity, stopPips, dollarRisk });
 }
 
@@ -6149,8 +6238,16 @@ function szPrefillJurnal() {
   showToast('Sizing ditransfer', `${s.pair} ${s.direction.toUpperCase()} ${s.lots} lots → jurnal`);
 }
 
+function szSaveHistory(entry) {
 async function szSaveHistory(entry) {
   const deviceId = szGetDeviceId();
+  const withTs = { ...entry, timestamp: new Date().toISOString() };
+
+  // Optimistic: prepend to local cache and render immediately
+  if (szHistoryCache !== null) {
+    szHistoryCache.unshift(withTs);
+    if (szHistoryCache.length > 20) szHistoryCache.length = 20;
+    szRenderHistory(szHistoryCache);
   try {
     await fetch('/api/sizing-history?device_id=' + encodeURIComponent(deviceId), {
       method: 'POST',
@@ -6162,6 +6259,14 @@ async function szSaveHistory(entry) {
   } catch(e) {
     console.warn('sizing save failed:', e.message);
   }
+
+  // Fire-and-forget — no await, no reload needed
+  fetch('/api/sizing-history?device_id=' + encodeURIComponent(deviceId), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(entry),
+    signal: AbortSignal.timeout(8000),
+  }).catch(e => console.warn('sizing save failed:', e.message));
 }
 
 // ── TRADE JOURNAL ─────────────────────────────────────────
@@ -6464,10 +6569,12 @@ window._jnClosingEntry = null;
 
 function jnRenderCurve() {
   const el = document.getElementById('jnCurveContent');
+  const regimeFilter = document.getElementById('jnCurveRegimeFilter')?.value || 'all';
   if (!el) return;
 
   const closed = jnAllEntries
     .filter(e => e.status === 'closed' && e.r_actual != null)
+    .filter(e => e.status === 'closed' && e.r_actual != null && (regimeFilter === 'all' || e.regime_at_entry === regimeFilter))
     .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
 
   if (closed.length === 0) {
@@ -6713,16 +6820,33 @@ async function jnRunAnalysis(force = false) {
   }
 }
 
+function szRenderHistory(entries) {
 async function szLoadHistory() {
   const deviceId = szGetDeviceId();
   const histEl = document.getElementById('szHistory');
   if (!histEl) return;
+  if (!entries || entries.length === 0) { histEl.innerHTML = ''; return; }
+  histEl.innerHTML = `<div style="font-size:10px;color:var(--muted);margin-bottom:8px;font-family:'DM Mono',monospace;letter-spacing:.05em">RIWAYAT (${entries.length})</div>` +
+    entries.map(e => {
+      const d = new Date(e.timestamp);
+      const fmt = `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+      return `<div class="sz-hist-item">
+        <div class="sz-hist-main">${e.pair} · ${e.lotSize} lots · ${e.riskPct}% risk</div>
+        <div>Equity $${(e.equity||0).toLocaleString()} · Stop ${e.stopPips}p · At risk $${(e.dollarRisk||0).toFixed(2)} · ${fmt}</div>
+      </div>`;
+    }).join('');
+}
+
+async function szLoadHistory() {
+  const deviceId = szGetDeviceId();
   try {
     const res = await fetch('/api/sizing-history?device_id=' + encodeURIComponent(deviceId), {
       signal: AbortSignal.timeout(5000),
     });
     if (!res.ok) return;
     const { entries } = await res.json();
+    szHistoryCache = entries || [];
+    szRenderHistory(szHistoryCache);
     if (!entries || entries.length === 0) {
       histEl.innerHTML = '';
       return;
