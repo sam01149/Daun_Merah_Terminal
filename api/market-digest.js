@@ -275,21 +275,25 @@ module.exports = async function handler(req, res) {
       : '\n[KONTEKS HISTORIS 12-36 JAM LALU] (tidak ada)',
   ].join('');
 
-  // 3b. Load digest history + xau history + real yields + XAU spot + XAU TA in parallel
-  let digestHistory = [], xauHistory = [], realYieldsData = null, xauSpot = null, xauTa = null;
+  // 3b. Load digest history + xau history + real yields + XAU spot + XAU TA + liquidity + yield curve in parallel
+  let digestHistory = [], xauHistory = [], realYieldsData = null, xauSpot = null, xauTa = null, liqData = null, ycData = null;
   try {
-    const [rawHist, rawXauHist, rawRY, spotResult, taResult] = await Promise.all([
+    const [rawHist, rawXauHist, rawRY, spotResult, taResult, rawLiq, rawYc] = await Promise.all([
       redisCmd('LRANGE', 'digest_history', 0, 6),
       redisCmd('LRANGE', 'xau_history', 0, 3),
       redisCmd('GET', 'real_yields'),
       fetchXauSpot(),
       fetchXauTA(),
+      redisCmd('GET', 'liquidity_usd'),
+      redisCmd('GET', 'yield_curve'),
     ]);
     if (Array.isArray(rawHist)) digestHistory = rawHist.map(e => { try { return JSON.parse(e); } catch(_) { return null; } }).filter(Boolean);
     if (Array.isArray(rawXauHist)) xauHistory = rawXauHist.map(e => { try { return JSON.parse(e); } catch(_) { return null; } }).filter(Boolean);
     if (rawRY) realYieldsData = JSON.parse(rawRY);
     xauSpot = spotResult;
     xauTa   = taResult;
+    if (rawLiq) { try { liqData = JSON.parse(rawLiq); } catch(_) {} }
+    if (rawYc)  { try { ycData  = JSON.parse(rawYc);  } catch(_) {} }
     console.log('XAU spot:', xauSpot ? `$${xauSpot.price} (${xauSpot.source})` : 'unavailable');
     console.log('XAU TA:', xauTa ? `RSI=${xauTa.rsi_14} SMA50=${xauTa.price_vs_sma50}` : 'unavailable (cache cold)');
   } catch(e) {}
@@ -306,6 +310,16 @@ module.exports = async function handler(req, res) {
     const ry = realYieldsData.currencies.USD;
     const trendNote = ry.real > 2.0 ? 'ELEVATED — tekanan struktural bearish pada XAU' : ry.real > 1.0 ? 'moderat' : 'rendah/negatif — relatif supportif XAU';
     realYieldBlock = `USD 10Y Nominal: ${ry.nominal}% | TIPS Breakeven: ${ry.inflation_exp}% | Real Yield: ${ry.real}% (${trendNote}) | per ${ry.as_of}`;
+  }
+  if (liqData?.tga_balance_bn != null) {
+    const ch = liqData.tga_change_bn ?? 0;
+    const tgaDir = ch > 5 ? `NAIK +$${ch}B (drain likuiditas)` : ch < -5 ? `TURUN $${ch}B (injeksi likuiditas)` : 'stabil';
+    realYieldBlock += `\nLIKUIDITAS USD: TGA $${liqData.tga_balance_bn}B [${tgaDir}] | Fed Balance Sheet $${liqData.fed_assets_bn ?? '?'}B`;
+  }
+  if (ycData?.USD?.spread_2y10y != null) {
+    const spread = ycData.USD.spread_2y10y;
+    const curveShape = spread < 0 ? 'INVERTED (recessionary signal)' : spread < 0.3 ? 'flat' : 'normal/steep';
+    realYieldBlock += `\nYIELD CURVE USD: 2Y ${ycData.USD['2y'] ?? '?'}% | 10Y ${ycData.USD['10y'] ?? '?'}% | Spread 2Y10Y ${spread}% [${curveShape}]`;
   }
 
   // Build XAU spot block
@@ -582,7 +596,7 @@ ${xauHistoryBlock}`;
     if (SAMBANOVA_KEY_CALL1 && await cb.canCall('ai:sambanova')) {
       try {
         console.log('Call 1: trying SambaNova DeepSeek-V3.2 (akun 2 prose)');
-        const raw = await aiCall(SAMBANOVA_URL_CALL1, SAMBANOVA_KEY_CALL1, SAMBANOVA_MODEL_CALL1, call1Messages, 800, 0.25, 28000);
+        const raw = await aiCall(SAMBANOVA_URL_CALL1, SAMBANOVA_KEY_CALL1, SAMBANOVA_MODEL_CALL1, call1Messages, 800, 0.25, 12000);
         if (raw.trim()) { article = raw.trim(); method = 'deepseek-v3.2'; }
         console.log('Call 1: SambaNova V3.2 OK, length', article?.length);
         await cb.onSuccess('ai:sambanova');
@@ -598,7 +612,7 @@ ${xauHistoryBlock}`;
     if (!article && OPENROUTER_KEY) {
       try {
         console.log('Call 1: fallback 2 to OpenRouter gpt-oss-120b:free');
-        const raw = await aiCall(OPENROUTER_URL, OPENROUTER_KEY, OPENROUTER_MODEL, call1Messages, 800, 0.25, 28000, OPENROUTER_HEADERS);
+        const raw = await aiCall(OPENROUTER_URL, OPENROUTER_KEY, OPENROUTER_MODEL, call1Messages, 800, 0.25, 15000, OPENROUTER_HEADERS);
         if (raw.trim()) { article = raw.trim(); method = 'gpt-oss-120b'; }
         console.log('Call 1: OpenRouter OK, length', article?.length);
       } catch(e) {
