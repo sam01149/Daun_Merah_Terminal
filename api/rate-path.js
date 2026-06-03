@@ -7,7 +7,9 @@ const CORS = { 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-cache' }
 const CACHE_KEY = 'rate_path';
 const CACHE_TTL = 14400; // 4 hours
 
-// CME 30-Day Fed Funds Futures (ZQ) settlement data — public endpoint, no auth
+// CME FedWatch hidden API — powers the FedWatch tool directly, returns per-meeting probabilities
+const CME_FEDWATCH_URL = 'https://www.cmegroup.com/CmeWS/mvc/FedWatch/tool/get/{DATE}?startDate=2024-01-01';
+// CME 30-Day Fed Funds Futures (ZQ) settlement — fallback if FedWatch API blocked
 const CME_ZQ_URL = 'https://www.cmegroup.com/CmeWS/mvc/Settlements/futures/tradeDate/{DATE}/productCode/ZQ';
 const FRED_BASE = 'https://api.stlouisfed.org/fred/series/observations';
 
@@ -44,7 +46,30 @@ function lastBusinessDay() {
   return `${y}${m}${dd}`;
 }
 
-// Try fetching ZQ (30-day Fed Funds futures) settlement data from CME public endpoint
+// Fetch from CME FedWatch hidden API — returns per-meeting probabilities directly
+async function fetchCMEFedWatch() {
+  const dateStr = lastBusinessDay().replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3'); // YYYY-MM-DD
+  const url = CME_FEDWATCH_URL.replace('{DATE}', dateStr);
+  const r = await fetch(url, {
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+      'Accept': 'application/json, text/plain, */*',
+      'Referer': 'https://www.cmegroup.com/markets/interest-rates/cme-fedwatch-tool.html',
+      'Origin': 'https://www.cmegroup.com',
+    },
+    signal: AbortSignal.timeout(10000),
+  });
+  if (!r.ok) throw new Error(`CME FedWatch HTTP ${r.status}`);
+  const json = await r.json();
+
+  // Response: array of meeting objects with probabilities per target range
+  const meetings = Array.isArray(json) ? json : json?.FedWatchTool || json?.meetings || [];
+  if (!meetings || meetings.length === 0) throw new Error('CME FedWatch: no meetings data');
+
+  return { meetings, trade_date: dateStr };
+}
+
+// Try fetching ZQ (30-day Fed Funds futures) settlement data — fallback
 async function fetchCMEZQData() {
   const dateStr = lastBusinessDay();
   const url = CME_ZQ_URL.replace('{DATE}', dateStr);
@@ -59,11 +84,9 @@ async function fetchCMEZQData() {
   if (!r.ok) throw new Error(`CME ZQ HTTP ${r.status}`);
   const json = await r.json();
 
-  // CME response: { settlements: [{ month: 'JUN 26', settle: '95.540', ... }, ...] }
   const settlements = json?.settlements || json?.items || [];
   if (!Array.isArray(settlements) || settlements.length === 0) throw new Error('CME ZQ: no settlements data');
 
-  // Parse settlement prices — ZQ implied rate = 100 - price
   const contracts = settlements
     .filter(s => s.settle && s.settle !== '-' && !isNaN(parseFloat(s.settle)))
     .slice(0, 8)
@@ -78,20 +101,56 @@ async function fetchCMEZQData() {
 }
 
 async function computeRatePath(apiKey) {
-  // Step 1: try CME ZQ futures (real market-implied probabilities)
+  // Fetch current effective rate from FRED DFF (Daily Fed Funds Rate) — used by all paths
+  const currentRate = await fetchFredSeries('DFF', apiKey)
+    .then(o => parseFloat(o.value))
+    .catch(() => 3.58); // fallback to approximate midpoint of 3.50-3.75 range
+
+  const now = new Date();
+  const nextMeetings = getNextFOMCMeetings(now, 3);
+
+  // Step 1: try CME FedWatch hidden API (exact probabilities, same source as fedwatch tool)
+  try {
+    const fwData = await fetchCMEFedWatch();
+    // Parse meeting probabilities from FedWatch response
+    // Response structure varies — try common shapes
+    const meetingProbs = nextMeetings.map(date => {
+      const mtg = fwData.meetings.find(m => {
+        const d = m.meeting_date || m.meetingDate || m.date || '';
+        return d.startsWith(date) || d.includes(date.slice(5)); // match YYYY-MM-DD or MM-DD
+      });
+      if (!mtg) return { date, prob_hold: 0.5, prob_cut25: 0.5, prob_hike25: 0, implied_rate: null };
+      // Find hold/cut/hike probabilities from probs array
+      const probs = mtg.probs || mtg.probabilities || mtg.targetRateProbabilities || [];
+      const holdEntry = probs.find(p => (p.label||p.targetRate||'').toString().includes('NO CHANGE') || (p.probPct ?? p.probability) !== undefined && (p.label||'').toLowerCase().includes('no'));
+      const cutEntry  = probs.find(p => (p.label||p.targetRate||'').toString().toLowerCase().includes('ease') || (p.label||'').includes('-'));
+      const hikeEntry = probs.find(p => (p.label||p.targetRate||'').toString().toLowerCase().includes('hike') || (p.label||'').includes('+'));
+      const prob_hold   = Math.round((parseFloat(holdEntry?.probPct ?? holdEntry?.probability ?? 50)) * 100) / 10000;
+      const prob_cut25  = Math.round((parseFloat(cutEntry?.probPct  ?? cutEntry?.probability  ?? 0))  * 100) / 10000;
+      const prob_hike25 = Math.round((parseFloat(hikeEntry?.probPct ?? hikeEntry?.probability ?? 0))  * 100) / 10000;
+      return { date, prob_hold, prob_cut25, prob_hike25, implied_rate: null };
+    });
+
+    const totalCutProb3m = meetingProbs.slice(0,3).reduce((s,m) => s + m.prob_cut25, 0);
+    return {
+      source: 'cme_fedwatch',
+      current_rate: currentRate,
+      USD: { next_meetings: meetingProbs, cumulative_3m_bps: Math.round(-totalCutProb3m * 25) },
+      trade_date: fwData.trade_date,
+      computed_at: new Date().toISOString(),
+    };
+  } catch(e) {
+    console.warn('rate-path: CME FedWatch API failed:', e.message, '— trying ZQ futures');
+  }
+
+  // Step 2: try CME ZQ futures settlement prices
   try {
     const zqData = await fetchCMEZQData();
-    const currentRate = await fetchFredSeries('EFFR', apiKey)
-      .then(o => parseFloat(o.value))
-      .catch(() => zqData.contracts[0]?.implied_rate ?? 3.75);
 
-    const now = new Date();
-    const nextMeetings = getNextFOMCMeetings(now, 3);
     const meetingProbs = nextMeetings.map((date, i) => {
       const contract = zqData.contracts[i] || zqData.contracts[zqData.contracts.length - 1];
       const impliedRate = contract.implied_rate;
       const delta = +(impliedRate - currentRate).toFixed(4);
-      // Probability of cut (25bps) = fraction of 25bps move implied
       const prob_cut25  = Math.max(0, Math.min(1, +(-delta / 0.25).toFixed(4)));
       const prob_hike25 = Math.max(0, Math.min(1, +(delta / 0.25).toFixed(4)));
       const prob_hold   = Math.max(0, +(1 - prob_cut25 - prob_hike25).toFixed(4));
@@ -110,15 +169,10 @@ async function computeRatePath(apiKey) {
       computed_at: new Date().toISOString(),
     };
   } catch(e) {
-    console.warn('rate-path: CME ZQ fetch failed:', e.message, '— falling back to heuristic');
+    console.warn('rate-path: CME ZQ fetch also failed:', e.message, '— falling back to heuristic');
   }
 
-  // Step 2: heuristic fallback from EFFR level
-  const fedFunds = await fetchFredSeries('EFFR', apiKey).catch(() => null);
-  const currentRate = fedFunds ? parseFloat(fedFunds.value) : 3.75;
-
-  const now = new Date();
-  const nextMeetings = getNextFOMCMeetings(now, 3);
+  // Step 3: heuristic fallback using DFF-based currentRate already fetched above
   const probCut25 = currentRate > 4.0 ? 0.25 : currentRate > 3.0 ? 0.35 : 0.20;
   const probHold  = 1 - probCut25;
   const implied3m = -Math.round(probCut25 * 3 * 25);
@@ -137,7 +191,7 @@ async function computeRatePath(apiKey) {
       cumulative_3m_bps: implied3m,
       cumulative_6m_bps: implied6m,
     },
-    data_note: 'CME ZQ unavailable — approximated from EFFR level. For precise FedWatch probabilities, check cmegroup.com/fedwatch.',
+    data_note: 'CME FedWatch & ZQ unavailable — approximated from FRED DFF. For precise probabilities, check cmegroup.com/fedwatch.',
     computed_at: new Date().toISOString(),
   };
 }

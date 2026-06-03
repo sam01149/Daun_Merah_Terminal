@@ -328,6 +328,7 @@ body {
 .cat-macro::before { background:var(--accent); }
 .cat-econ-data::before { background:#c084fc; }
 .cat-geopolitical::before { background:#fb923c; }
+.cat-option-expiry::before { background:#fbbf24; box-shadow:2px 0 8px rgba(251,191,36,.3); }
 
 .item-meta { display:flex; align-items:center; gap:7px; margin-bottom:6px; flex-wrap:wrap; }
 .item-time { font-size:10px; color:var(--accent); letter-spacing:.3px; }
@@ -347,6 +348,24 @@ body {
 .tag-macro         { background:rgba(192,57,43,.1); color:var(--accent); }
 .tag-econ-data     { background:rgba(192,132,252,.12); color:#c084fc; }
 .tag-geopolitical  { background:rgba(251,146,60,.12); color:#fb923c; }
+.tag-option-expiry { background:rgba(251,191,36,.12); color:#fbbf24; }
+
+.magnets-panel {
+  background:rgba(251,191,36,.05); border:1px solid rgba(251,191,36,.2);
+  border-radius:10px; padding:10px 14px; margin-bottom:10px;
+}
+.magnets-panel-title {
+  font-size:9px; letter-spacing:0.1em; color:#fbbf24; text-transform:uppercase;
+  margin-bottom:8px; opacity:0.8;
+}
+.magnet-row {
+  display:flex; align-items:center; gap:8px; padding:3px 0;
+  border-bottom:1px solid rgba(251,191,36,.1); font-size:11px;
+}
+.magnet-row:last-child { border-bottom:none; }
+.magnet-pair { color:var(--text-mid); min-width:60px; font-size:10px; }
+.magnet-strike { color:var(--text); font-weight:600; flex:1; }
+.magnet-size { color:#fbbf24; font-size:10px; }
 
 .item-title {
   font-family:'Syne',sans-serif; font-size:13px; font-weight:400;
@@ -1783,6 +1802,7 @@ body {
   <button class="ftab" data-cat="econ-data">Econ Data</button>
   <button class="ftab" data-cat="energy">Energy</button>
   <button class="ftab" data-cat="geopolitical">Geopolitical</button>
+  <button class="ftab" data-cat="option-expiry">Options</button>
 </div>
 
 <!-- TOOLBAR -->
@@ -2524,6 +2544,7 @@ const CATS = {
   'macro':    ['fed ','fomc','powell','goolsbee','waller','kashkari','warsh','federal reserve','rate cut','rate hike','interest rate','ecb','boe','rba','boj','pboc','rbnz','boc ','central bank','monetary policy','lagarde','bailey','ueda','imf','world bank','g7','g20','gdp','recession'],
   'econ-data':['actual','forecast','previous','cpi','nfp','unemployment','retail sales','trade balance','consumer confidence','business confidence','industrial production','housing','payroll','nab business','westpac','consumer sentiment','capacity utilization','wholesale price'],
   'geopolitical':['iran','iranian','tehran','nuclear','ceasefire','hezbollah','israel','lebanon','russia','ukraine','china','chinese','xi jinping','beijing','taiwan','north korea','sanction','tariff','trade war','trump','white house','nato','military','war','conflict','diplomat','vance'],
+  'option-expiry':['option expir','fx option','ny cut','vanilla option','option barrier','bln expiry','mln expiry'],
 };
 
 function detectCat(title) {
@@ -2740,7 +2761,21 @@ function parseRSS(xml) {
     const pubDate = get('pubDate');
     const link  = b.match(/<link>(.*?)<\/link>/)?.[1] || '';
     const desc  = get('description');
-    if (guid && title) items.push({ title, guid, pubDate, link, desc, source: 'fj' });
+
+    // Option expiry detection — parse pair/strike/size from headline
+    let optionExpiries = null;
+    const tUp = title.toUpperCase();
+    const isOptExp = ['OPTION EXPIR','FX OPTION','NY CUT','VANILLA OPTION','OPTION BARRIER'].some(k => tUp.includes(k));
+    if (isOptExp) {
+      optionExpiries = [];
+      const expRe = /([A-Z]{3}\/[A-Z]{3})\s+([\d.]+)\s*\((\d+(?:\.\d+)?\s*(?:BLN|MLN|B|M))\)/gi;
+      let em;
+      while ((em = expRe.exec(title)) !== null) {
+        optionExpiries.push({ pair: em[1], strike: em[2], size: em[3].trim().toUpperCase() });
+      }
+    }
+
+    if (guid && title) items.push({ title, guid, pubDate, link, desc, source: 'fj', optionExpiries });
   }
   return items;
 }
@@ -2810,21 +2845,51 @@ function sanitizeDesc(html) {
   return c.replace(/\s+/g,' ').trim();
 }
 
+function renderOptionMagnets() {
+  const today = new Date().toDateString();
+  const seen = new Set();
+  const magnets = [];
+  for (const item of allItems) {
+    if (!item.optionExpiries || item.optionExpiries.length === 0) continue;
+    if (new Date(item.pubDate).toDateString() !== today) continue;
+    for (const e of item.optionExpiries) {
+      const k = `${e.pair}|${e.strike}`;
+      if (!seen.has(k)) { seen.add(k); magnets.push(e); }
+    }
+  }
+  if (magnets.length === 0) return '';
+  return `<div class="magnets-panel">
+    <div class="magnets-panel-title">⚡ FX Option Magnets Today (10am NY)</div>
+    ${magnets.map(m => `
+      <div class="magnet-row">
+        <span class="magnet-pair">${m.pair}</span>
+        <span class="magnet-strike">${m.strike}</span>
+        <span class="magnet-size">${m.size}</span>
+      </div>`).join('')}
+  </div>`;
+}
+
 function renderFeed(markNew = false) {
   const scroll = document.getElementById('feedScroll');
   const newGuids = markNew ? new Set(allItems.slice(0,10).map(i=>i.guid)) : new Set();
   let items = activeFilter === 'all' ? allItems : allItems.filter(i => detectCat(i.title) === activeFilter);
+  const magnetsHtml = (activeFilter === 'all' || activeFilter === 'option-expiry') ? renderOptionMagnets() : '';
   if (items.length === 0) {
-    scroll.innerHTML = `<div class="state-box"><div class="icon">🔍</div><p>Tidak ada berita untuk kategori ini</p></div>`;
+    scroll.innerHTML = magnetsHtml + `<div class="state-box"><div class="icon">🔍</div><p>Tidak ada berita untuk kategori ini</p></div>`;
     return;
   }
-  scroll.innerHTML = items.map((item, idx) => {
+  scroll.innerHTML = magnetsHtml + items.map((item, idx) => {
     const cat = detectCat(item.title);
     const isNew = markNew && newGuids.has(item.guid) && idx < 5;
     const rawDesc = sanitizeDesc(item.desc);
     const descHtml = rawDesc.length > 10 ? `<div class="item-desc">${rawDesc}</div>` : '';
     const newBadge = isNew ? `<span class="new-badge">NEW</span>` : '';
     const safeLink = (item.link || '').replace(/'/g, "\\'");
+    const optExpHtml = (cat === 'option-expiry' && item.optionExpiries && item.optionExpiries.length > 0)
+      ? `<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:4px">${item.optionExpiries.map(e =>
+          `<span style="background:rgba(251,191,36,.1);border:1px solid rgba(251,191,36,.25);border-radius:4px;padding:1px 6px;font-size:10px;color:#fbbf24">${e.pair} <b>${e.strike}</b> ${e.size}</span>`
+        ).join('')}</div>`
+      : '';
     return `
       <div class="feed-item cat-${cat}" onclick="openLink('${safeLink}')" style="animation-delay:${Math.min(idx,15)*0.025}s">
         <div class="item-meta">
@@ -2834,6 +2899,7 @@ function renderFeed(markNew = false) {
         </div>
         <div class="item-title">${item.title}</div>
         ${descHtml}
+        ${optExpHtml}
       </div>`;
   }).join('');
 }
@@ -7769,7 +7835,7 @@ document.addEventListener('keydown', function(e) {
   // 1–7 sub-filter (hanya di News)
   if (activeView === 'feed' && key >= '1' && key <= '7') {
     e.preventDefault();
-    const cats = ['all','market-moving','forex','macro','econ-data','energy','geopolitical'];
+    const cats = ['all','market-moving','forex','macro','econ-data','energy','geopolitical','option-expiry'];
     const ftab = document.querySelector(`.ftab[data-cat="${cats[parseInt(key) - 1]}"]`);
     if (ftab) ftab.click();
     return;
