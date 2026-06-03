@@ -1,403 +1,135 @@
-# Daun Merah — Rencana Pengembangan Aktif
+# Daun Merah — Implementation Plan
 
-> **Dibuat:** 2026-06-02 (session 36) · **Diperbarui:** 2026-06-02 (session 37)
-> **Status:** Fitur 1–3 selesai. Hanya Fitur 4 (Code Splitting) yang tersisa.
-
----
-
-## Sesi Berikutnya — Urutan Eksekusi
-
-| # | Fitur | Status | Backend? |
-|---|-------|--------|----------|
-| 1 | COT Historical Trend Chart | ✅ Selesai (session 37) | Ya |
-| 2 | Macro Scenario Planner | ✅ Selesai (session 37) | Tidak |
-| 3 | Command Center Dashboard | ✅ Selesai (session 37) | Tidak |
-| 4 | Code Splitting | ⏳ Ditunda (sesi tersendiri) | Tidak |
+> **Dibuat:** 2026-06-03
+> **Status:** Backlog aktif — dikerjakan secara bertahap
 
 ---
 
-## Fitur 1 — COT Historical Trend Chart
+## Prioritas 1 — Data Accuracy (HIGH VALUE, Gratis)
 
-### Tujuan
-Tampilkan perubahan tren net-posisi COT (Asset Manager vs Leveraged Funds) per currency dalam 12 minggu terakhir. Data sudah terkumpul di Redis `cot_history` (rolling 90 hari) sejak session 20 (2026-05-10) — hanya butuh endpoint + visualisasi.
+### 1.1 Cleveland Fed Inflation Nowcast
+**Problem:** `api/real-yields.js` — inflation expectations 7 currency non-USD hardcoded manual.
+EUR sudah stale >100 hari (as_of 2026-01-15), CHF >180 hari (as_of 2025-12-12).
 
-### Backend — `api/feeds.js`
+**Solusi:** Fetch Cleveland Fed Inflation Nowcast — update otomatis bulanan, tanpa API key.
+- Endpoint target: `https://www.clevelandfed.org` (scrape/CSV)
+- Ganti object `INFLATION_EXPECTATIONS` dari hardcoded → live fetch
+- Cache Redis `cleveland_inflation` TTL 24h
+- Fallback ke nilai hardcoded lama jika fetch gagal
 
-Tambah branch baru `?type=cot_history` di handler yang sudah ada (tidak tambah function baru).
-
-```js
-// GET /api/feeds?type=cot_history&n=12
-// Baca n entri terakhir dari sorted set cot_history
-```
-
-**Logic:**
-1. `ZRANGE cot_history 0 -1 WITHSCORES` → ambil semua entri (score = timestamp)
-2. Slice ke 12 terbaru (descending by score)
-3. Parse setiap entry JSON: `{ positions, report_date, stored_at }`
-4. Return array terurut ascending (terlama → terbaru):
-
-```json
-{
-  "history": [
-    {
-      "report_date": "2026-03-18",
-      "ts": 1742281200000,
-      "positions": {
-        "USD": { "am_net": 45210, "lev_net": -12300, "am_change_net": 1200, "lev_change_net": -800 },
-        "EUR": { ... },
-        ...
-      }
-    },
-    ...
-  ],
-  "count": 12
-}
-```
-
-**Redis command:**
-```js
-const raw = await redisCmd('ZRANGE', 'cot_history', '0', '-1', 'WITHSCORES');
-// raw = ['json1', 'score1', 'json2', 'score2', ...]
-// Parse pairs, sort descending by score, slice N, sort ascending untuk chart
-```
-
-**Cache:** Redis `cot_history_cache` TTL 3600s — data COT weekly, tidak perlu refresh sering.
-
-**Constraint:** tidak ada function baru, numpang `feeds.js`. Tetap 12 function limit.
+**File:** `api/real-yields.js`
+**Effort:** Rendah | **Impact:** Tinggi — real yield semua currency lebih akurat
 
 ---
 
-### Frontend — Tab COT
+### 1.2 GDPNow Atlanta Fed
+**Problem:** Tidak ada nowcast GDP real-time. AI hanya opini dari headline tanpa angka.
 
-**Tambahan UI:**
-- Per currency card di COT tab: tambah tombol kecil `[TREN]` di pojok kanan atas card
-- Klik `[TREN]` → buka panel inline di bawah card (toggle, bukan modal)
-- Panel berisi SVG line chart: 2 garis (AM net = warna teal, Lev net = warna pink)
+**Solusi:** Atlanta Fed GDPNow — estimasi GDP quarter berjalan, update setiap 1-2 hari kerja.
+- Endpoint: `https://www.atlantafed.org` (scrape/CSV file publik)
+- Simpan ke `fundamental:USD` Redis hash sebagai field `GDP Nowcast`
+- Tampil di tab FUNDAMENTAL, card USD
 
-**Fungsi baru:**
-```js
-async function cotFetchHistory(currency)   // GET /api/feeds?type=cot_history
-function cotRenderTrendPanel(currency, historyData)  // render SVG
-function cotToggleTrend(currency)          // show/hide panel per currency
-```
-
-**SVG Chart (zero dependency, seperti equity curve):**
-- Width: 100%, Height: 120px (viewBox 400×120)
-- X-axis: minggu (report_date, label bulan/tanggal)
-- Y-axis: net position (ribuan kontrak)
-- Garis AM net: `#00c896` (teal) — uang besar / institutional
-- Garis Lev net: `#f472b6` (pink) — hedge fund / spekulan
-- Legend: dot + label "Asset Mgr" dan "Leveraged"
-- Zero line putus-putus
-- Tooltip saat hover: `report_date · AM: +45.2K · Lev: -12.3K`
-
-**Client-side cache:** `cotHistoryCache[currency]` + timestamp, TTL 30 menit (data weekly, tidak berubah).
-
-**State:** `cotTrendOpen = {}` (objek currency → boolean) untuk toggle.
+**File:** `api/admin.js` (fundamental_refresh) + `index.html` (display)
+**Effort:** Rendah | **Impact:** Tinggi — leading indicator USD fundamental
 
 ---
 
-### UI Sketch Tab COT (setelah perubahan)
+### 1.3 TGA + Fed Balance Sheet via FRED
+**Problem:** Tidak ada indikator likuiditas USD sistemik. TGA drain/refill = driver besar cross-asset.
 
-```
-┌─────────────────────────────────────────────────────┐
-│  COT Positioning    [Report: May 13]  [⚠ Stale]    │
-├─────────────────────────────────────────────────────┤
-│  USD  ████████████░░░░  AM: +45.2K ↑1.2K           │
-│        ░░░░████████████  Lev: -12.3K ↓0.8K  [TREN] │
-│  ────────────────────────────────────────────────── │
-│  ▼ TREN USD (klik [TREN] untuk toggle)             │
-│  ┌──────────────────────────────────────────────┐  │
-│  │  AM Net ——  Lev Net ——                       │  │
-│  │  +50K ┤  ╭──╮                               │  │
-│  │       │ ╭╯  ╰──╮    ╭──╮                   │  │
-│  │    0  ┤─────────────────────────────────    │  │
-│  │  -20K │           ╰──╯    ╰──  (Lev)       │  │
-│  │       Mar    Apr    May                     │  │
-│  └──────────────────────────────────────────────┘  │
-│  EUR  ....                              [TREN]      │
-└─────────────────────────────────────────────────────┘
-```
+**Solusi:** Pakai `FRED_API_KEY` yang sudah ada. Tambah 2 series:
+- `WTREGEN` — Treasury General Account balance (weekly)
+- `WALCL` — Fed Total Assets / balance sheet (weekly)
+
+Tampil di FUNDAMENTAL card USD sebagai `TGA Balance` dan `Fed Assets`.
+TGA naik = serap likuiditas (bearish risk). TGA turun = inject likuiditas (bullish risk).
+
+**File:** `api/real-yields.js` atau `api/admin.js`
+**Effort:** Rendah | **Impact:** Medium-Tinggi — context macro USD lebih lengkap
 
 ---
 
-## Fitur 2 — Macro Scenario Planner
+## Prioritas 2 — Fix Data yang Broken (HIGH VALUE)
 
-### Tujuan
-Saat trader klik event High-impact di tab CAL, muncul panel "Simulasi Rilis" dengan tombol BEAT/MISS. PWA otomatis rekomendasikan pair optimal berdasarkan CB bias dan fundamental terkini.
+### 2.1 CME FedWatch — Rate Path Market-Implied
+**Problem:** `api/rate-path.js` — CME endpoint tidak berfungsi. Saat ini pakai heuristic SOFR.
+UI sudah jujur label "Estimasi" tapi data tidak akurat.
 
-### Pure Frontend — Tidak ada perubahan backend
+**Solusi:** Investigasi endpoint CME yang benar:
+- Candidate 1: `https://www.cmegroup.com/markets/interest-rates/cme-fedwatch-tool.html` (scrape)
+- Candidate 2: Futures settlement prices via CME FTP
+- Candidate 3: Lihat implementasi OpenBB sebagai referensi
 
-Gunakan data yang sudah ada di memori:
-- `calData` — event list (currency, event name, date, time_wib)
-- `cbData` — CB bias per currency (bias, confidence)
-- `fundData` — fundamental score per currency
+**File:** `api/rate-path.js` — replace heuristic logic
+**Effort:** Medium (butuh investigasi endpoint dulu) | **Impact:** Tinggi — rate path jadi market-implied benar
 
-**Logic Inti:**
+---
 
-```js
-function scenarioGetPairs(eventCurrency, direction) {
-  // direction: 'beat' (event currency menguat) atau 'miss' (event currency melemah)
-  // 1. Tentukan apakah event currency menjadi BASE atau QUOTE
-  // 2. Jika BEAT: event currency = kuat → cari 3 currency paling lemah (dovish + fund score rendah)
-  // 3. Jika MISS: event currency = lemah → cari 3 currency paling kuat (hawkish + fund score tinggi)
-  // 4. Return array pair recommendation: [{pair, direction, reason}]
-}
+## Prioritas 3 — Known Issues Existing (P1-P2)
+
+### 3.1 CB Rates Update Manual (P1)
+**Problem:** `api/cb-status.js` — `CB_DATA` terakhir diverifikasi 2026-05-05.
+Beberapa CB kemungkinan sudah ada meeting baru.
+
+**Action:** Cek kalender meeting CB dan update `CB_DATA` + `CB_FALLBACK`.
+**File:** `api/cb-status.js`
+
+---
+
+### 3.2 Real Yields Inflation Stale (P1)
+**Problem:** EUR (as_of 2026-01-15), CAD (2026-01-29), CHF (2025-12-12) — semua >90 hari.
+
+**Action:** Akan resolved otomatis oleh item 1.1 (Cleveland Fed Nowcast).
+Sebelum 1.1 selesai: update manual dari sumber resmi masing-masing CB.
+**File:** `api/real-yields.js`
+
+---
+
+### 3.3 Groq Call Isolation (P2)
+**Problem:** Call 1/2/3 sequential. Jika Call 1 timeout, Call 2 dan 3 skip seluruhnya.
+
+**Solusi:** Independent try/catch per-call. Call 2 dan 3 tetap jalan meski Call 1 gagal.
+**File:** `api/market-digest.js`
+
+---
+
+## Prioritas 4 — UX & Completeness
+
+### 4.1 Checklist State Per-Pair
+**Problem:** `ckState` shared semua pair. Manual items carry over saat ganti pair.
+**Solusi:** Key localStorage per pair, e.g. `daunmerah_v2_EURUSD`.
+
+### 4.2 Journal N+1 Query
+**Problem:** ZRANGE + GET per-id = 51 Redis roundtrips untuk 50 entries.
+**Solusi:** Ganti ke MGET batch.
+**File:** `api/journal.js`
+
+### 4.3 VIX Term Structure
+**Problem:** Hanya VIX spot. Tidak bisa lihat backwardation/contango untuk sentiment.
+**Solusi:** Tambah VIX1M, VIX3M dari Yahoo (`^VIX1M`, `^VIX3M`).
+Tampil di tab COT atau FUNDAMENTAL.
+
+---
+
+## Urutan Pengerjaan yang Disarankan
+
 ```
-
-**CB Bias Score** (sudah ada sebagai `CB_BIAS_LEVEL`):
-```js
-const CB_BIAS_LEVEL = { 'very hawkish':4, 'hawkish':3, 'neutral':2, 'dovish':1, 'very dovish':0 };
-```
-
-**Pair recommendation logic (BEAT example untuk USD NFP):**
-1. `eventCurrency = 'USD'`, `biasScore(USD)` dari `cbData`
-2. Cari 3 currency lain dengan `biasScore` paling rendah (paling dovish)
-3. Jika USD adalah base currency dalam pair standar (USDXXX): recommend LONG
-4. Jika USD adalah quote currency (XXXUSD): recommend SHORT
-5. Tambah konteks: CB rate USD vs counterpart, fundamental score
-
-**Currency → pair mapping** (pair standar Daun Merah):
-```js
-const USD_PAIRS = {
-  EUR: { pair:'EURUSD', usd:'quote' },  // USD kuat = EURUSD turun = SHORT
-  GBP: { pair:'GBPUSD', usd:'quote' },
-  JPY: { pair:'USDJPY', usd:'base' },   // USD kuat = USDJPY naik = LONG
-  AUD: { pair:'AUDUSD', usd:'quote' },
-  NZD: { pair:'NZDUSD', usd:'quote' },
-  CAD: { pair:'USDCAD', usd:'base' },
-  CHF: { pair:'USDCHF', usd:'base' },
-};
-// Untuk non-USD event (EUR, GBP dll): pair melawan currency paling berlawanan
+[1] 1.3  TGA + Fed Balance Sheet  →  paling cepat, FRED sudah ada
+[2] 1.1  Cleveland Fed Nowcast    →  fix EUR/CHF stale >90 hari
+[3] 1.2  GDPNow Atlanta Fed       →  tambah card USD
+[4] 2.1  CME FedWatch investigasi →  research endpoint dulu
+[5] 3.1  CB Rates update manual   →  cek kalender meeting
+[6] 3.3  Call isolation           →  robustness
+[7] 4.x  UX polish                →  kapan sempat
 ```
 
 ---
 
-### UI — Panel Simulasi di Tab CAL
+## Constraint Tidak Berubah
 
-**Trigger:** klik event card High-impact → panel muncul inline di bawah event card (bukan modal/popup).
-
-**Layout panel:**
-
-```
-┌─────────────────────────────────────────────────────┐
-│  SIMULASI RILIS: NFP (USD)  ×                       │
-│  Ekspektasi: 185K  ·  Previous: 177K                │
-├─────────────────────────────────────────────────────┤
-│        [▲ BEAT]          [▼ MISS]                  │
-├─────────────────────────────────────────────────────┤
-│  (klik salah satu untuk melihat rekomendasi)        │
-└─────────────────────────────────────────────────────┘
-
-── Setelah klik BEAT ─────────────────────────────────
-
-┌─────────────────────────────────────────────────────┐
-│  SIMULASI: NFP BEAT → USD menguat                   │
-├─────────────────────────────────────────────────────┤
-│  #1  LONG USD/JPY                                   │
-│      JPY: Very Dovish (BOJ 0.75%) · Fund: lemah     │
-│      CB Divergence: USD Hawkish vs JPY Very Dovish  │
-│                                                     │
-│  #2  LONG USD/CHF                                   │
-│      CHF: Dovish (SNB 0.00%) · Fund: mixed          │
-│                                                     │
-│  #3  SHORT EUR/USD                                  │
-│      EUR: Neutral · CB rate: 2.15% (ECB hold)      │
-├─────────────────────────────────────────────────────┤
-│  ⚠ Ini rekomendasi awal — tetap validasi via       │
-│  CHECKLIST sebelum entry.                           │
-│          [→ Buka CHECKLIST]                         │
-└─────────────────────────────────────────────────────┘
-```
-
-**Fungsi baru:**
-```js
-function calOpenScenario(evIdx)          // buka panel simulasi untuk event ke-evIdx
-function calCloseScenario()              // tutup panel
-function calRunScenario(direction)       // hitung + render rekomendasi
-function scenarioRankCurrencies(eventCur, direction)  // core ranking logic
-function scenarioRenderResults(pairs)    // render hasil
-```
-
-**State:**
-```js
-let calScenarioOpen = null;  // index event yang sedang dibuka panel-nya
-```
-
-**Constraint:**
-- Jika `cbData` belum tersedia: tampilkan "Data CB belum dimuat — buka tab RINGKASAN dulu"
-- Pair recommendation hanya dari 8 pair yang sudah ada di aplikasi
-- Tombol "→ Buka CHECKLIST" switch ke tab checklist + set pair selector ke pair #1
-
----
-
-## Fitur 3 — Command Center Dashboard (Desktop)
-
-### Tujuan
-Layout 4-panel untuk layar lebar (≥1024px) — trader bisa lihat News, AI Digest, Currency Strength, dan Event terdekat dalam satu tampilan tanpa pindah tab.
-
-### Implementasi — Pure CSS + HTML
-
-**Pendekatan:**
-- Tambah tab baru `DASHBOARD` di nav (hanya muncul di `@media (min-width: 1024px)`)
-- Panel dashboard mereuse data yang sudah ada (tidak ada fetch tambahan) — cukup re-render ke div baru
-- Semua data sudah di-fetch saat panel aktif masing-masing; dashboard hanya sebagai "view" alternatif
-
-**CSS Grid Layout:**
-
-```
-┌────────────────────────────────────────────────────────────────────┐
-│  [NEWS] [RINGKASAN] [CAL] [COT] [FUND] [CHECKLIST] ... [DASHBOARD] │  ← top nav
-├──────────────────┬─────────────────────────┬───────────────────────┤
-│                  │                         │                       │
-│  LIVE NEWS FEED  │   AI DIGEST             │  CB BIAS MATRIX       │
-│  (live scroll)   │   (briefing terbaru)    │  (8 currency pills)   │
-│                  │                         │                       │
-│  compact list:   │   Artikel briefing      │  USD ● Hawkish        │
-│  · [●] headline  │   paling baru           │  EUR ● Neutral        │
-│  · [●] headline  │                         │  JPY ● Very Dovish    │
-│  · [●] headline  │   ─────────────────     │  GBP ● Neutral        │
-│  · ...           │   THESIS AKTIF          │  AUD ● Hawkish        │
-│                  │   (pair + direction)     │  ...                  │
-│  [AUTO: ON]      │                         │                       │
-│                  │   AI updated: 14 menit  │  Fund: [RANKING STRIP]│
-├──────────────────┴─────────────────────────┴───────────────────────┤
-│  EVENT TERDEKAT (next 24h, High-impact only)                       │
-│  [● USD NFP · 21:30 WIB · 3j 15m]  [● EUR CPI · 15:30 · 8j 40m]  │
-└────────────────────────────────────────────────────────────────────┘
-```
-
-**Grid CSS:**
-```css
-@media (min-width: 1024px) {
-  #dashboardPanel {
-    display: grid;
-    grid-template-columns: 280px 1fr 260px;
-    grid-template-rows: 1fr auto;
-    height: calc(100vh - 48px);  /* minus nav height */
-    gap: 0;
-    overflow: hidden;
-  }
-  #dashNewsCol   { grid-column: 1; grid-row: 1; overflow-y: auto; border-right: 1px solid var(--border); }
-  #dashMainCol   { grid-column: 2; grid-row: 1; overflow-y: auto; border-right: 1px solid var(--border); }
-  #dashSideCol   { grid-column: 3; grid-row: 1; overflow-y: auto; }
-  #dashEventBar  { grid-column: 1 / -1; grid-row: 2; border-top: 1px solid var(--border); flex-shrink: 0; }
-}
-```
-
-**Data rendering — reuse existing functions:**
-
-| Panel | Data source | Render function |
-|-------|------------|-----------------|
-| News col | `allItems` (sudah ada) | Render 20 headline terbaru dalam format compact |
-| AI Digest | `lastDigest` (string article) | Trim ke 500 char, tampilkan full jika di-expand |
-| CB Bias | `cbData` (sudah ada) | Loop 8 currency → pill warna + bias label |
-| Fund Ranking | `fundData` (sudah ada) | Strip ranking horizontal (seperti di tab FUNDAMENTAL) |
-| Event bar | `calData` (sudah ada) | Filter High-impact 24h, chips seperti tekEventStrip |
-
-**Fungsi baru:**
-```js
-function initDashboard()        // setup, fetch jika ada data yang belum ter-load
-function renderDashNews()       // render compact news list
-function renderDashDigest()     // render AI briefing terbaru + thesis
-function renderDashBias()       // render CB bias pills + fund ranking
-function renderDashEvents()     // render event bar (reuse logic tekEventStrip)
-function refreshDashboard()     // re-render semua panel (dipanggil setiap 60s)
-```
-
-**Auto-refresh:** `setInterval(refreshDashboard, 60000)` hanya saat tab DASHBOARD aktif — `clearInterval` saat pindah tab.
-
-**Nav:** Tab DASHBOARD hanya muncul di CSS `@media (min-width: 1024px)` — hidden di mobile. Keyboard shortcut: `G D`.
-
-**Constraint:**
-- Tidak fetch data baru — semua reuse `allItems`, `cbData`, `fundData`, `calData`, `lastDigest` yang sudah ada di memori
-- Jika data belum ter-load: tampilkan "Buka tab [X] dulu untuk memuat data, atau tunggu auto-refresh"
-- Mobile: tab DASHBOARD tidak muncul sama sekali (CSS `display:none` di ≤1023px)
-
----
-
-## Fitur 4 — Code Splitting (Sesi Terpisah)
-
-> **Catatan:** Dikerjakan setelah Fitur 1-3 selesai dan stable. Ini adalah refactor murni, tidak ada perubahan behavior.
-
-### Tujuan
-Pecah `index.html` (6600+ baris) menjadi file-file terpisah tanpa build tool, tanpa mengubah arsitektur global variable yang sudah ada.
-
-### Target Struktur File
-
-```
-Financial_Feed_App/
-├── index.html          ← HTML skeleton + <link> + <script> tags (~600 baris)
-├── styles.css          ← Semua CSS (~1400 baris)
-├── app-core.js         ← State global, constants, util, tab routing, SW init (~500 baris)
-├── app-feeds.js        ← News feed, calendar, COT, CB Watch (~600 baris)
-├── app-ai.js           ← Market digest, AI briefing, thesis, CB bias (~400 baris)
-├── app-jurnal.js       ← Journal CRUD, equity curve, sizing bridge (~600 baris)
-├── app-teknikal.js     ← TradingView chart, TA panel, event strip, MTF (~400 baris)
-├── app-checklist.js    ← Checklist, scoring, auto-tick, playbook (~800 baris)
-├── app-dashboard.js    ← Dashboard panel (setelah Fitur 3 selesai)
-└── api/                ← Tidak berubah
-```
-
-### Urutan Eksekusi Split
-
-**Step 1 — CSS (paling aman, tidak ada dependency):**
-- Extract semua CSS dari `<style>` ke `styles.css`
-- Ganti dengan `<link rel="stylesheet" href="styles.css">`
-- Test: semua tab harus identik secara visual
-
-**Step 2 — JS Core (global state dan utils):**
-- Extract: semua `let/const` global di atas, `setFeedUI`, `hideAllPanels`, `showToast`, `szGetDeviceId`, tab routing event listener, SW init
-- Simpan ke `app-core.js`
-- `index.html` load dengan `<script src="app-core.js">` paling atas
-
-**Step 3 — JS per fitur (berurutan, cek dependency):**
-- Extract `app-feeds.js` → `fetchFeed`, `renderFeed`, `fetchCalendar`, `renderCalendar`, `fetchCOT`, `renderCOT`
-- Extract `app-ai.js` → `generateRingkasan`, `renderArticle`, `fetchCBStatus`
-- Extract `app-checklist.js` → semua `ck*` functions, `PLAYBOOKS`, `PB_REGIME_CHECK`
-- Extract `app-jurnal.js` → semua `jn*` functions, `szPrefillJurnal`, sizing functions
-- Extract `app-teknikal.js` → semua `tek*` functions, `createTVChart`, `renderTekEventStrip`
-
-**Risiko & Mitigasi:**
-- **Urutan script load:** `app-core.js` wajib paling atas (defines globals yang dipakai file lain)
-- **Circular dependency:** tidak ada di arsitektur saat ini (semua terpusat di globals), tapi perlu dicek manual
-- **DOMContentLoaded:** pastikan semua event listener tetap wrap dalam event ini (sudah benar di kode sekarang)
-- **Testing:** setelah setiap step, buka semua 10+ tab dan test fungsi kritis (fetch, render, tab switch, push notif)
-
-### Constraint Split
-- Tidak mengubah nama function atau variable (breaking change)
-- Tidak mengubah ke ES modules (`type="module"`) — tetap global scope via `<script src>`
-- Tidak mengubah arsitektur routing atau state management
-- Tidak ada tree-shaking atau minification (Vercel serve as-is)
-
----
-
-## Catatan Implementasi
-
-### Constraints Absolut (tidak boleh dilanggar)
-1. Max 12 Vercel serverless functions (prefix `_` tidak dihitung)
-2. No new npm dependencies
-3. No build tool (webpack/vite/rollup)
-4. Mobile-first — test 380px viewport setiap perubahan UI
-5. Setiap Redis key baru harus punya TTL eksplisit
-6. Tidak ada silent failure — setiap `catch` harus log context
-
-### Data yang Sudah Ada di Memori (tersedia tanpa fetch tambahan)
-| Variable | Isi | Di-fetch saat |
-|----------|-----|---------------|
-| `allItems` | Array 100 news headline | Tab NEWS dibuka / auto-refresh |
-| `calData` | Array event kalender 5 hari | Tab CAL / setiap 30 menit |
-| `cotData` | COT snapshot mingguan | Tab COT dibuka |
-| `cbData` | CB bias 8 currency | Tab RINGKASAN / setiap 5 menit |
-| `fundData` | Fundamental data 8 currency | Tab FUNDAMENTAL dibuka |
-| `regimeData` | Risk regime (Risk-On/Off/Neutral) | Tab RINGKASAN / setiap 30 menit |
-| `jnAllEntries` | Trade journal entries | Tab JURNAL dibuka |
-
-### Fitur yang Ditunda
-- ~~MT5 Advanced Bridge (Partial Close, SL to BE)~~ — kompleks, ditunda ke sesi masa depan
-- ~~Text-to-Speech Audio Briefing~~ — ditunda (UX premium tapi bukan bottleneck)
-- ~~Bug fixes sw.js + mt5_bridge.py~~ — ditunda ke sesi tersendiri
-
----
-
-*File ini akan diupdate setelah setiap fitur diimplementasikan. Fitur yang sudah selesai dipindahkan ke `daun_merah.md` → section Changelog.*
+- Vercel Hobby: TEPAT 12 serverless functions (prefix `_` tidak dihitung)
+- No new npm dependencies
+- Frontend tetap single `index.html`
+- Setiap external call wajib Redis cache + explicit TTL
+- Fallback ke nilai lama jika fetch gagal (no silent failures)
