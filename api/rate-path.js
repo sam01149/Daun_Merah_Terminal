@@ -213,21 +213,23 @@ module.exports = async function handler(req, res) {
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
 
   const FRED_KEY = process.env.FRED_API_KEY;
+  const forceRefresh = req.query.force === '1';
 
-  // Try Redis cache first
-  try {
-    const cached = await redisCmd('GET', CACHE_KEY);
-    if (cached) {
-      const d = JSON.parse(cached);
-      // Check if cache is fresh enough
-      const age = Date.now() - new Date(d.computed_at).getTime();
-      if (age < CACHE_TTL * 1000) {
-        res.setHeader('X-Cache', 'HIT');
-        return res.status(200).json({ ...d, stale: false });
+  // Try Redis cache first (skip if ?force=1)
+  if (!forceRefresh) {
+    try {
+      const cached = await redisCmd('GET', CACHE_KEY);
+      if (cached) {
+        const d = JSON.parse(cached);
+        const age = Date.now() - new Date(d.computed_at).getTime();
+        if (age < CACHE_TTL * 1000) {
+          res.setHeader('X-Cache', 'HIT');
+          return res.status(200).json({ ...d, stale: false });
+        }
       }
+    } catch(e) {
+      console.warn('rate-path cache read failed:', e.message);
     }
-  } catch(e) {
-    console.warn('rate-path cache read failed:', e.message);
   }
 
   // Compute fresh data

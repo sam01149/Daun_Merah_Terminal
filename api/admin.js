@@ -945,14 +945,19 @@ async function gdpnowHandler(req, res) {
   const apiKey = process.env.FRED_API_KEY;
   if (!apiKey) return res.status(500).json({ error: 'FRED_API_KEY not configured' });
 
-  try {
+  const fetchGdpNow = async () => {
     const url = `https://api.stlouisfed.org/fred/series/observations?series_id=GDPNOW&api_key=${apiKey}&limit=5&sort_order=desc&file_type=json`;
-    const r = await fetch(url, {
-      headers: { 'User-Agent': 'DaunMerah/1.0' },
-      signal: AbortSignal.timeout(10000),
-    });
+    let r = await fetch(url, { headers: { 'User-Agent': 'DaunMerah/1.0' }, signal: AbortSignal.timeout(10000) });
+    if (r.status === 429) {
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      r = await fetch(url, { headers: { 'User-Agent': 'DaunMerah/1.0' }, signal: AbortSignal.timeout(10000) });
+    }
     if (!r.ok) throw new Error(`FRED HTTP ${r.status}`);
-    const json = await r.json();
+    return r.json();
+  };
+
+  try {
+    const json = await fetchGdpNow();
     const obs = (json.observations || []).filter(o => o.value !== '.');
     if (obs.length === 0) throw new Error('No GDPNOW observations');
 
@@ -971,7 +976,7 @@ async function gdpnowHandler(req, res) {
     return res.status(200).json({ ok: true, value, date, source: 'FRED GDPNOW' });
   } catch(e) {
     console.warn('gdpnow failed:', e.message);
-    return res.status(500).json({ error: e.message });
+    return res.status(500).json({ error: e.message, hint: e.message.includes('429') ? 'FRED rate limit — tunggu 1 menit lalu coba lagi' : undefined });
   }
 }
 
