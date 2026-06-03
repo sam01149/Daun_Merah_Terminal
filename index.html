@@ -484,6 +484,7 @@ body {
 .thesis-label { font-size:9px; color:var(--muted); font-family:'DM Mono',monospace; letter-spacing:.05em; margin-top:8px; }
 .thesis-val   { font-size:11px; color:var(--text-mid); font-family:'DM Mono',monospace; margin-top:2px; }
 .thesis-use-btn { margin-top:10px; background:none; border:1px solid var(--pink); color:var(--pink); padding:6px 12px; font-family:'DM Mono',monospace; font-size:10px; border-radius:3px; cursor:pointer; letter-spacing:.05em; }
+.thesis-card.xau::before { background: var(--yellow); }
 
 .ringkasan-stats {
   display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap;
@@ -2311,7 +2312,7 @@ body {
   <div id="dashMainCol">
     <div class="dash-col-title">AI DIGEST</div>
     <div id="dashDigestSection"><div class="dash-no-data">Buka tab RINGKASAN dulu untuk memuat briefing.</div></div>
-    <div class="dash-col-title" style="margin-top:6px">THESIS AKTIF</div>
+    <div class="dash-col-title" style="margin-top:6px">AI THESIS</div>
     <div id="dashThesisSection"><div class="dash-no-data">—</div></div>
   </div>
   <div id="dashSideCol">
@@ -7399,14 +7400,60 @@ function renderDashDigest() {
   digestEl.innerHTML = `<div class="dash-digest-section"><div class="dash-digest-text">${escHtml(preview)}</div>${lihatSemua}</div>`;
 
   if (thesisEl) {
+    let html = '';
+    const t = ringkasanCache.thesis;
+
+    // FX thesis card
+    if (t && t.pair_recommendation) {
+      const dirClass = t.direction === 'long' ? 'long' : t.direction === 'short' ? 'short' : '';
+      const dirLabel = t.direction === 'no_trade' ? 'NO TRADE' : (t.direction || '').toUpperCase();
+      const stars = '★'.repeat(t.confidence_1_to_5 || 0) + '☆'.repeat(5 - (t.confidence_1_to_5 || 0));
+      html += `<div class="thesis-card" style="margin-bottom:10px">
+        <div style="font-size:9px;color:var(--pink);font-family:'DM Mono',monospace;letter-spacing:.1em;margin-bottom:6px">AI THESIS · FX</div>
+        <div style="display:flex;align-items:center;flex-wrap:wrap;gap:4px;margin-bottom:6px">
+          <span class="thesis-pair">${escHtml(t.pair_recommendation)}</span>
+          ${t.direction !== 'no_trade' ? `<span class="thesis-dir ${dirClass}">${dirLabel}</span>` : `<span class="thesis-dir" style="background:var(--border);color:var(--muted)">${dirLabel}</span>`}
+          <span class="thesis-conf">${stars}</span>
+        </div>
+        ${t.invalidation_condition ? `<div class="thesis-label">INVALIDASI</div><div class="thesis-val">${escHtml(t.invalidation_condition)}</div>` : ''}
+        ${t.catalyst_dependency ? `<div class="thesis-label">KATALIS</div><div class="thesis-val">${escHtml(t.catalyst_dependency)}</div>` : ''}
+        ${t.time_horizon_days ? `<div class="thesis-label">HORIZON</div><div class="thesis-val">${t.time_horizon_days} hari</div>` : ''}
+      </div>`;
+    }
+
+    // XAU thesis card
+    if (t && t.xau_bias && t.xau_bias !== 'insufficient_data') {
+      const xauColorMap = { bullish: 'var(--green)', bearish: 'var(--accent)', conflicting: 'var(--yellow)', neutral: 'var(--muted)' };
+      const xauColor = xauColorMap[t.xau_bias] || 'var(--muted)';
+      const xauStars = t.xau_confidence ? '★'.repeat(t.xau_confidence) + '☆'.repeat(5 - t.xau_confidence) : '';
+      const driverLabel = (t.xau_dominant_driver || '').replace(/_/g, ' ').toUpperCase();
+      html += `<div class="thesis-card xau" style="margin-bottom:10px">
+        <div style="font-size:9px;color:var(--yellow);font-family:'DM Mono',monospace;letter-spacing:.1em;margin-bottom:6px">AI THESIS · XAU/USD</div>
+        <div style="display:flex;align-items:center;flex-wrap:wrap;gap:4px;margin-bottom:6px">
+          <span class="thesis-pair" style="font-size:15px">XAU/USD</span>
+          <span class="thesis-dir" style="background:${xauColor}22;color:${xauColor}">${(t.xau_bias || '').toUpperCase()}</span>
+          ${xauStars ? `<span class="thesis-conf">${xauStars}</span>` : ''}
+        </div>
+        ${driverLabel && t.xau_dominant_driver !== 'insufficient_data' ? `<div class="thesis-label">DRIVER</div><div class="thesis-val">${driverLabel}</div>` : ''}
+        ${t.xau_driver_evidence ? `<div class="thesis-label">BUKTI</div><div class="thesis-val">${escHtml(t.xau_driver_evidence)}</div>` : ''}
+        ${t.xau_key_trigger ? `<div class="thesis-label">TRIGGER</div><div class="thesis-val">${escHtml(t.xau_key_trigger)}</div>` : ''}
+      </div>`;
+    }
+
+    // Thesis alerts (contradictions for open journal positions)
     const alerts = ringkasanCache.thesis_alerts;
     if (alerts && alerts.length > 0) {
-      thesisEl.innerHTML = `<div class="dash-digest-section">${alerts.map(a =>
-        `<div style="font-size:9px;color:var(--yellow);font-family:'DM Mono',monospace;padding:2px 0;line-height:1.5">⚠ <strong>${escHtml(a.pair||'')} ${escHtml((a.direction||'').toUpperCase())}</strong> — ${escHtml(a.headline||'')}${a.reason ? `<br><span style="color:var(--muted)">${escHtml(a.reason)}</span>` : ''}</div>`
-      ).join('')}</div>`;
-    } else {
-      thesisEl.innerHTML = '<div class="dash-no-data">Tidak ada thesis alert aktif.</div>';
+      html += `<div class="thesis-alert-card">
+        <div class="thesis-alert-header">⚠ ${alerts.length} kontradiksi posisi terbuka</div>
+        ${alerts.map(a => `<div class="thesis-alert-item">
+          <div class="thesis-alert-pair">${escHtml(a.pair||'')} ${escHtml((a.direction||'').toUpperCase())}</div>
+          <div class="thesis-alert-headline">"${escHtml(a.headline||'')}"</div>
+          <div class="thesis-alert-reason">${escHtml(a.reason||'')}</div>
+        </div>`).join('')}
+      </div>`;
     }
+
+    thesisEl.innerHTML = html || '<div class="dash-no-data">Generate Ringkasan untuk melihat AI thesis.</div>';
   }
 }
 

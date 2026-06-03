@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-06-03 (session 42 — Backlog: OpenBB data source upgrades dicatat)
+> **Last updated:** 2026-06-03 (session 43 — Dashboard AI Thesis: tengah dashboard sekarang tampilkan AI FX thesis + XAU thesis dari ringkasanCache)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Downloads\Financial_Feed_App`
 > **Production URL:** https://financial-feed-app.vercel.app
