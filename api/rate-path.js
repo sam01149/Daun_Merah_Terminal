@@ -46,10 +46,12 @@ function lastBusinessDay() {
   return `${y}${m}${dd}`;
 }
 
-// Fetch from CME FedWatch hidden API — returns per-meeting probabilities directly
+// Fetch from CME FedWatch hidden API — takes NEXT FOMC MEETING DATE as parameter
 async function fetchCMEFedWatch() {
-  const dateStr = lastBusinessDay().replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3'); // YYYY-MM-DD
-  const url = CME_FEDWATCH_URL.replace('{DATE}', dateStr);
+  const now = new Date();
+  const nextMeeting = getNextFOMCMeetings(now, 1)[0]; // e.g. "2026-06-18"
+  if (!nextMeeting) throw new Error('No upcoming FOMC meeting found');
+  const url = CME_FEDWATCH_URL.replace('{DATE}', nextMeeting);
   const r = await fetch(url, {
     headers: {
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
@@ -172,8 +174,16 @@ async function computeRatePath(apiKey) {
     console.warn('rate-path: CME ZQ fetch also failed:', e.message, '— falling back to heuristic');
   }
 
-  // Step 3: heuristic fallback using DFF-based currentRate already fetched above
-  const probCut25 = currentRate > 4.0 ? 0.25 : currentRate > 3.0 ? 0.35 : 0.20;
+  // Step 3: heuristic fallback — distance from neutral rate (~3.0%) drives probability
+  // Fed neutral rate estimate: 3.0%. Further above = more likely to cut.
+  const neutral = 3.0;
+  const d = currentRate - neutral;
+  // probCut25 per meeting (conservative — market usually prices lower than this when on hold)
+  const probCut25 = d > 1.5 ? 0.40   // >4.5% — aggressive cutting cycle
+                  : d > 0.75 ? 0.25  // 3.75-4.5% — above neutral, cuts likely
+                  : d > 0.25 ? 0.12  // 3.25-3.75% — near neutral/pause (current range)
+                  : d > -0.25 ? 0.08 // near neutral — on hold
+                  : 0.05;            // below neutral — unlikely to cut
   const probHold  = 1 - probCut25;
   const implied3m = -Math.round(probCut25 * 3 * 25);
   const implied6m = -Math.round(probCut25 * 6 * 25);
