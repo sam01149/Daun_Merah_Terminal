@@ -115,38 +115,73 @@ async function fetchCMEZQData() {
   return { contracts, trade_date: dateStr };
 }
 
-// Fetch ZQ futures prices from Yahoo Finance — already accessible from Vercel (used in correlations.js)
-// Returns { prices: { "2026-06-18": 96.38, ... }, tickerMap: { "2026-06-18": "ZQM26=F", ... } }
+// Fetch ZQ futures from Yahoo Finance — tries both 2-digit and 1-digit year formats per contract
+// (e.g., ZQM26=F AND ZQM6=F) since Yahoo's convention for CBOT products is inconsistent
 async function fetchYahooZQFutures(meetings) {
-  const tickerMap = {};
-  for (const date of meetings) {
-    const t = fomcDateToZQTicker(date);
-    if (t) tickerMap[date] = t;
-  }
-  if (Object.keys(tickerMap).length === 0) throw new Error('No valid ZQ tickers');
+  const prices = {}, resolvedTickerMap = {};
 
-  const prices = {};
-  await Promise.allSettled(
-    Object.entries(tickerMap).map(async ([date, ticker]) => {
-      const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=5d`;
-      const r = await fetch(url, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-          'Accept': 'application/json',
-        },
-        signal: AbortSignal.timeout(8000),
-      });
-      if (!r.ok) throw new Error(`Yahoo ${ticker} HTTP ${r.status}`);
-      const d = await r.json();
-      const price = d?.chart?.result?.[0]?.meta?.regularMarketPrice;
-      if (!price || isNaN(price)) throw new Error(`Yahoo ${ticker}: no price`);
-      prices[date] = +parseFloat(price).toFixed(4);
-    })
-  );
+  await Promise.allSettled(meetings.map(async date => {
+    const [year, month] = date.split('-');
+    const code = ZQ_MONTH_CODES[month];
+    if (!code) return;
+    // Try 2-digit year first (ZQM26=F), then 1-digit year (ZQM6=F)
+    const candidates = [`ZQ${code}${year.slice(2)}=F`, `ZQ${code}${year.slice(3)}=F`];
+    for (const ticker of candidates) {
+      try {
+        const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=5d`;
+        const r = await fetch(url, {
+          headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36', 'Accept': 'application/json' },
+          signal: AbortSignal.timeout(6000),
+        });
+        if (!r.ok) { console.warn(`Yahoo ZQ ${ticker}: HTTP ${r.status}`); continue; }
+        const d = await r.json();
+        const price = d?.chart?.result?.[0]?.meta?.regularMarketPrice;
+        if (!price || isNaN(price)) { console.warn(`Yahoo ZQ ${ticker}: no regularMarketPrice in response`); continue; }
+        prices[date] = +parseFloat(price).toFixed(4);
+        resolvedTickerMap[date] = ticker;
+        return; // found valid price for this meeting, stop trying other formats
+      } catch(e) {
+        console.warn(`Yahoo ZQ ${ticker}:`, e.message);
+      }
+    }
+  }));
 
-  const resolved = Object.keys(prices).length;
-  if (resolved === 0) throw new Error('Yahoo ZQ: all tickers failed to return prices');
-  return { prices, tickerMap };
+  if (Object.keys(prices).length === 0) throw new Error('Yahoo ZQ: all tickers (both formats) failed');
+  return { prices, tickerMap: resolvedTickerMap };
+}
+
+// FRED T-bill term structure — guaranteed accessible (FRED key already used for DFF)
+// DGS1MO (4-week T-bill) ≈ market-implied rate for next 30 days → covers 1st meeting
+// DGS3MO (3-month T-bill) ≈ market-implied rate for next 90 days → covers 2nd/3rd meeting
+// Less precise than ZQ futures (affected by T-bill supply/demand) but real market data
+async function fetchFredTbillPath(meetings, currentRate, apiKey) {
+  const [obs1m, obs3m] = await Promise.all([
+    fetchFredSeries('DGS1MO', apiKey).catch(() => null),
+    fetchFredSeries('DGS3MO', apiKey).catch(() => null),
+  ]);
+  const r1m = obs1m ? parseFloat(obs1m.value) : null;
+  const r3m = obs3m ? parseFloat(obs3m.value) : null;
+  if (r1m == null && r3m == null) throw new Error('FRED T-bill: DGS1MO and DGS3MO both unavailable');
+
+  const meetingProbs = meetings.map((date, i) => {
+    const impliedRate = i === 0 ? (r1m ?? r3m) : (r3m ?? r1m);
+    const delta = +(impliedRate - currentRate).toFixed(4);
+    const prob_cut25  = Math.max(0, Math.min(1, +(-delta / 0.25).toFixed(4)));
+    const prob_hike25 = Math.max(0, Math.min(1, +(delta / 0.25).toFixed(4)));
+    const prob_hold   = Math.max(0, +(1 - prob_cut25 - prob_hike25).toFixed(4));
+    return { date, prob_hold, prob_cut25, prob_hike25, implied_rate: impliedRate };
+  });
+
+  const cum3m = r3m != null ? Math.round((r3m - currentRate) * 100) : null;
+  return {
+    source: 'fred_tbill_term',
+    current_rate: currentRate,
+    USD: { next_meetings: meetingProbs, cumulative_3m_bps: cum3m },
+    tbill_1m: r1m,
+    tbill_3m: r3m,
+    data_note: 'T-bill term structure proxy — real market data, ±5bps accuracy vs ZQ futures.',
+    computed_at: new Date().toISOString(),
+  };
 }
 
 async function computeRatePath(apiKey) {
@@ -253,7 +288,15 @@ async function computeRatePath(apiKey) {
       computed_at: new Date().toISOString(),
     };
   } catch(e) {
-    console.warn('rate-path: Yahoo ZQ also failed:', e.message, '— falling back to heuristic');
+    console.warn('rate-path: Yahoo ZQ also failed:', e.message, '— trying FRED T-bill term structure');
+  }
+
+  // Step 2.7: FRED T-bill term structure — DGS1MO + DGS3MO as market-implied rate proxy
+  // Guaranteed accessible (same FRED key as DFF fetch). Less accurate than ZQ but better than heuristic.
+  try {
+    return await fetchFredTbillPath(nextMeetings, currentRate, apiKey);
+  } catch(e) {
+    console.warn('rate-path: FRED T-bill fallback failed:', e.message, '— falling back to heuristic');
   }
 
   // Step 3: heuristic fallback — distance from neutral rate (~3.0%) drives probability
