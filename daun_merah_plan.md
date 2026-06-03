@@ -94,18 +94,92 @@ Sebelum 1.1 selesai: update manual dari sumber resmi masing-masing CB.
 
 ---
 
-## Prioritas 4 — UX & Completeness
+## Prioritas 4 — New Edge Features (Hasil Riset 2026-06-03)
 
-### 4.1 Checklist State Per-Pair
+### 4.1 ATR/VaR Warning di Sizing Calculator
+**Problem:** Sizing calculator tidak tahu apakah SL yang diset trader masuk akal vs volatilitas harian pair tersebut. Trader bisa kena stop bukan karena thesis salah, tapi karena SL berada di dalam zona noise ATR.
+
+**Solusi:** Tambah ATR-based warning di output sizing:
+- Fetch 20-day OHLC dari Yahoo Finance endpoint yang sudah ada
+- Hitung ATR 14d client-side
+- Bandingkan ATR vs SL distance (dalam pips)
+- Jika SL < ATR → warning merah: "SL lebih kecil dari noise harian normal (ATR: X pips)"
+- Bonus: tampil 1-day 95% VaR = 1.645 × daily_σ × position_value
+
+**File:** `index.html` (sizing calculator section) + extend Yahoo Finance call
+**Effort:** Rendah (client-side math, no new API) | **Impact:** Tinggi — mencegah oversized lot atau SL terlalu ketat
+**Status:** Ready to implement kapan saja
+
+---
+
+### 4.2 FX Risk Reversals (25-delta)
+**Problem:** CB Bias dan sentiment saat ini hanya dari AI + headline. Tidak ada data dari pasar derivatif yang mencerminkan arah hedging institusi.
+
+**Konteks:** 25-delta risk reversal = selisih harga call vs put pada strike sejauh 25-delta dari harga. Positif = market lebih takut pair naik (beli call). Negatif = market lebih takut pair turun (beli put). Satu angka ini sudah cukup untuk trader directional tanpa perlu memahami Greeks.
+
+**Solusi:** Masih dalam investigasi sumber data:
+- Candidate 1: CME FX Options settlement data (futures sebagai proksi OTC)
+- Candidate 2: DTCC public trade data (volume aggregate, latency tinggi)
+- Candidate 3: Cari provider gratis yang expose 1W/1M risk reversal per major pair
+
+**File:** TBD — kemungkinan `api/correlations.js` atau endpoint baru
+**Effort:** Medium (bottleneck di sumber data, bukan implementasi) | **Impact:** Tinggi — directional bias dari uang yang sudah dipasang, bukan opini
+**Status:** Tunggu — butuh investigasi sumber data dulu
+
+### 4.3 Yield Curve Lintas Negara (FRED / ECB / BOE)
+**Problem:** Rate differential antar currency saat ini hanya dari CB Rate point-in-time. Tidak ada gambaran shape yield curve (flat/inverted/steep) yang mencerminkan ekspektasi pasar ke depan.
+
+**Konteks:** Trader macro berdagang di atas selisih suku bunga. Yield curve yang inverted (2y > 10y) sinyal pasar ekspektasi perlambatan — berbeda implikasinya vs yield curve steep. Tanpa ini, analisis rate differential hanya setengah gambaran.
+
+**Solusi:** Pakai `FRED_API_KEY` yang sudah ada untuk pull:
+- USD: `DGS2`, `DGS10`, `DGS30` (2y, 10y, 30y Treasury yield)
+- Tambah spread 2y10y sebagai indikator inversi
+- ECB/BOE: tersedia via endpoint publik masing-masing
+
+Tampil di FUNDAMENTAL sebagai mini yield curve strip per currency.
+
+**File:** `api/real-yields.js` atau `api/admin.js`
+**Effort:** Rendah-Medium | **Impact:** Tinggi — konteks rate differential lebih lengkap
+**Status:** Ekstensi natural dari 1.3 (TGA/FRED) — kerjakan bersamaan
+
+---
+
+### 4.4 Portfolio VaR (Gabungan Semua Posisi Terbuka)
+**Problem:** VaR di item 4.1 hanya per-trade saat sizing. Tidak ada gambaran total risiko semua posisi terbuka di jurnal secara bersamaan — padahal dua posisi yang berkorelasi tinggi bisa double exposure tersembunyi.
+
+**Solusi:** Di tab JURNAL, tambah ringkasan portfolio:
+- Ambil semua open entries
+- Hitung combined VaR dengan mempertimbangkan korelasi antar pair
+- Flag jika dua pair memiliki korelasi > 0.7 dan arah sama (correlated risk)
+
+**File:** `index.html` (jurnal section)
+**Effort:** Medium | **Impact:** Medium — berguna saat punya >2 posisi terbuka
+**Status:** Kerjakan setelah 4.1 selesai dan terbukti berguna
+
+---
+
+## ❌ Fitur yang Dipertimbangkan tapi Ditolak
+
+### ✗ Econometrics & Kointegrasi
+**Alasan ditolak:** Alat untuk quant/pairs trader. Daun Merah dibangun untuk macro discretionary — gaya trading ini tidak butuh uji Granger causality sebelum entry. Akan jadi fitur yang tidak pernah dipakai. Juga compute-heavy, tidak cocok untuk serverless.
+
+### ✗ Social Sentiment (Twitter/Reddit/WSB)
+**Alasan ditolak:** Twitter API mahal sejak 2023. Reddit/WSB sentiment relevan untuk equities, bukan FX. Di forex, institutional flow jauh lebih dominan dari retail social sentiment. Crypto Fear & Greed yang sudah ada sudah cukup mewakili retail sentiment. Sinyal-to-noise ratio rendah untuk gaya macro.
+
+---
+
+## Prioritas 5 — UX & Completeness
+
+### 5.1 Checklist State Per-Pair
 **Problem:** `ckState` shared semua pair. Manual items carry over saat ganti pair.
 **Solusi:** Key localStorage per pair, e.g. `daunmerah_v2_EURUSD`.
 
-### 4.2 Journal N+1 Query
+### 5.2 Journal N+1 Query
 **Problem:** ZRANGE + GET per-id = 51 Redis roundtrips untuk 50 entries.
 **Solusi:** Ganti ke MGET batch.
 **File:** `api/journal.js`
 
-### 4.3 VIX Term Structure
+### 5.3 VIX Term Structure
 **Problem:** Hanya VIX spot. Tidak bisa lihat backwardation/contango untuk sentiment.
 **Solusi:** Tambah VIX1M, VIX3M dari Yahoo (`^VIX1M`, `^VIX3M`).
 Tampil di tab COT atau FUNDAMENTAL.
@@ -119,9 +193,13 @@ Tampil di tab COT atau FUNDAMENTAL.
 [2] 1.1  Cleveland Fed Nowcast    →  fix EUR/CHF stale >90 hari
 [3] 1.2  GDPNow Atlanta Fed       →  tambah card USD
 [4] 2.1  CME FedWatch investigasi →  research endpoint dulu
-[5] 3.1  CB Rates update manual   →  cek kalender meeting
-[6] 3.3  Call isolation           →  robustness
-[7] 4.x  UX polish                →  kapan sempat
+[5] 4.3  Yield Curve (FRED)       →  ekstensi natural dari [1], kerjakan bersamaan
+[6] 3.1  CB Rates update manual   →  cek kalender meeting
+[7] 3.3  Call isolation           →  robustness
+[8] 4.1  ATR/VaR di sizing        →  quick win, bisa kapan saja
+[9] 4.2  FX Risk Reversals        →  tunggu sumber data
+[10] 4.4 Portfolio VaR            →  setelah 4.1 terbukti berguna
+[11] 5.x UX polish                →  kapan sempat
 ```
 
 ---
