@@ -1,6 +1,7 @@
 // api/rate-path.js
 // Market-implied rate path from Fed Funds futures.
-// Fallback chain: CME FedWatch → CME ZQ settlement → Yahoo Finance ZQ futures → heuristic.
+// Fallback chain: CME FedWatch → CME ZQ settlement → FRED T-bill term structure → heuristic.
+// Note: Yahoo Finance ZQ (HTTP 404 confirmed) and CME direct (IP blocked) both eliminated.
 // Redis cache: rate_path, TTL 4 hours (14400s).
 
 const CORS = { 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-cache' };
@@ -12,19 +13,6 @@ const CME_FEDWATCH_URL = 'https://www.cmegroup.com/CmeWS/mvc/FedWatch/tool/get/{
 // CME 30-Day Fed Funds Futures (ZQ) settlement — fallback if FedWatch API blocked
 const CME_ZQ_URL = 'https://www.cmegroup.com/CmeWS/mvc/Settlements/futures/tradeDate/{DATE}/productCode/ZQ';
 const FRED_BASE = 'https://api.stlouisfed.org/fred/series/observations';
-
-// ZQ futures month codes (standard CME/Yahoo Finance convention)
-const ZQ_MONTH_CODES = {
-  '01':'F','02':'G','03':'H','04':'J','05':'K','06':'M',
-  '07':'N','08':'Q','09':'U','10':'V','11':'X','12':'Z',
-};
-
-function fomcDateToZQTicker(fomcDate) {
-  // "2026-06-18" → "ZQM26=F"
-  const [year, month] = fomcDate.split('-');
-  const code = ZQ_MONTH_CODES[month];
-  return code ? `ZQ${code}${year.slice(2)}=F` : null;
-}
 
 async function redisCmd(...args) {
   const REDIS_URL   = process.env.UPSTASH_REDIS_REST_URL;
@@ -115,80 +103,25 @@ async function fetchCMEZQData() {
   return { contracts, trade_date: dateStr };
 }
 
-// Fetch ZQ futures from Yahoo Finance — tries both 2-digit and 1-digit year formats per contract
-// (e.g., ZQM26=F AND ZQM6=F) since Yahoo's convention for CBOT products is inconsistent
-async function fetchYahooZQFutures(meetings) {
-  const prices = {}, resolvedTickerMap = {};
-
-  await Promise.allSettled(meetings.map(async date => {
-    const [year, month] = date.split('-');
-    const code = ZQ_MONTH_CODES[month];
-    if (!code) return;
-    // Try 2-digit year first (ZQM26=F), then 1-digit year (ZQM6=F)
-    const candidates = [`ZQ${code}${year.slice(2)}=F`, `ZQ${code}${year.slice(3)}=F`];
-    for (const ticker of candidates) {
-      try {
-        const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=5d`;
-        const r = await fetch(url, {
-          headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36', 'Accept': 'application/json' },
-          signal: AbortSignal.timeout(6000),
-        });
-        if (!r.ok) { console.warn(`Yahoo ZQ ${ticker}: HTTP ${r.status}`); continue; }
-        const d = await r.json();
-        const price = d?.chart?.result?.[0]?.meta?.regularMarketPrice;
-        if (!price || isNaN(price)) { console.warn(`Yahoo ZQ ${ticker}: no regularMarketPrice in response`); continue; }
-        prices[date] = +parseFloat(price).toFixed(4);
-        resolvedTickerMap[date] = ticker;
-        return; // found valid price for this meeting, stop trying other formats
-      } catch(e) {
-        console.warn(`Yahoo ZQ ${ticker}:`, e.message);
-      }
-    }
-  }));
-
-  if (Object.keys(prices).length === 0) throw new Error('Yahoo ZQ: all tickers (both formats) failed');
-  return { prices, tickerMap: resolvedTickerMap };
-}
-
-// FRED T-bill term structure — guaranteed accessible (FRED key already used for DFF)
-// DGS1MO (4-week T-bill) ≈ market-implied rate for next 30 days → covers 1st meeting
-// DGS3MO (3-month T-bill) ≈ market-implied rate for next 90 days → covers 2nd/3rd meeting
-// Less precise than ZQ futures (affected by T-bill supply/demand) but real market data
-async function fetchFredTbillPath(meetings, currentRate, apiKey) {
-  const [obs1m, obs3m] = await Promise.all([
-    fetchFredSeries('DGS1MO', apiKey).catch(() => null),
-    fetchFredSeries('DGS3MO', apiKey).catch(() => null),
-  ]);
-  const r1m = obs1m ? parseFloat(obs1m.value) : null;
-  const r3m = obs3m ? parseFloat(obs3m.value) : null;
-  if (r1m == null && r3m == null) throw new Error('FRED T-bill: DGS1MO and DGS3MO both unavailable');
-
-  const meetingProbs = meetings.map((date, i) => {
-    const impliedRate = i === 0 ? (r1m ?? r3m) : (r3m ?? r1m);
-    const delta = +(impliedRate - currentRate).toFixed(4);
-    const prob_cut25  = Math.max(0, Math.min(1, +(-delta / 0.25).toFixed(4)));
-    const prob_hike25 = Math.max(0, Math.min(1, +(delta / 0.25).toFixed(4)));
-    const prob_hold   = Math.max(0, +(1 - prob_cut25 - prob_hike25).toFixed(4));
-    return { date, prob_hold, prob_cut25, prob_hike25, implied_rate: impliedRate };
-  });
-
-  const cum3m = r3m != null ? Math.round((r3m - currentRate) * 100) : null;
-  return {
-    source: 'fred_tbill_term',
-    current_rate: currentRate,
-    USD: { next_meetings: meetingProbs, cumulative_3m_bps: cum3m },
-    tbill_1m: r1m,
-    tbill_3m: r3m,
-    data_note: 'T-bill term structure proxy — real market data, ±5bps accuracy vs ZQ futures.',
-    computed_at: new Date().toISOString(),
-  };
-}
 
 async function computeRatePath(apiKey) {
-  // Fetch current effective rate from FRED DFF (Daily Fed Funds Rate) — used by all paths
-  const currentRate = await fetchFredSeries('DFF', apiKey)
-    .then(o => parseFloat(o.value))
-    .catch(() => 3.58); // fallback to approximate midpoint of 3.50-3.75 range
+  // Fetch all FRED series in one parallel batch — avoids sequential rate limiting
+  // DGS1MO/DGS3MO: constant-maturity T-bill yields (daily, H.15 release ~4:15 PM ET — may be '.' before that)
+  // DTB4WK/DTB3: weekly auction rates (published Mondays) — more reliable backup when DGS is missing
+  const [dffObs, dgs1mObs, dgs3mObs, dtb4wkObs, dtb3Obs] = await Promise.all([
+    fetchFredSeries('DFF',    apiKey).catch(() => null),
+    fetchFredSeries('DGS1MO', apiKey).catch(() => null),
+    fetchFredSeries('DGS3MO', apiKey).catch(() => null),
+    fetchFredSeries('DTB4WK', apiKey).catch(() => null),
+    fetchFredSeries('DTB3',   apiKey).catch(() => null),
+  ]);
+
+  const currentRate = dffObs ? parseFloat(dffObs.value) : 3.625;
+  // T-bill: prefer constant-maturity (DGS, daily), fall back to auction rate (DTB, weekly)
+  const tbill1m = (dgs1mObs ? parseFloat(dgs1mObs.value) : null)
+               ?? (dtb4wkObs ? parseFloat(dtb4wkObs.value) : null);
+  const tbill3m = (dgs3mObs ? parseFloat(dgs3mObs.value) : null)
+               ?? (dtb3Obs ? parseFloat(dtb3Obs.value) : null);
 
   const now = new Date();
   const nextMeetings = getNextFOMCMeetings(now, 3);
@@ -253,51 +186,33 @@ async function computeRatePath(apiKey) {
       computed_at: new Date().toISOString(),
     };
   } catch(e) {
-    console.warn('rate-path: CME ZQ fetch also failed:', e.message, '— trying Yahoo Finance ZQ');
+    console.warn('rate-path: CME ZQ fetch also failed:', e.message, '— trying FRED T-bill');
   }
 
-  // Step 2.5: Yahoo Finance ZQ futures (ZQM26=F etc.) — same math, different data source
-  // Yahoo Finance already accessible from Vercel (confirmed via correlations.js ATR fetches)
-  try {
-    const { prices, tickerMap } = await fetchYahooZQFutures(nextMeetings);
-
-    const meetingProbs = nextMeetings.map(date => {
-      const price = prices[date];
-      if (price == null) return { date, prob_hold: 0.85, prob_cut25: 0.15, prob_hike25: 0, implied_rate: null };
-      const impliedRate = +(100 - price).toFixed(4);
+  // Step 2.5: FRED T-bill term structure (pre-fetched above, zero extra network calls)
+  // 1st meeting → 1M T-bill; 2nd/3rd → 3M T-bill. Math: prob_cut = (currentRate - tbill) / 0.25
+  if (tbill1m != null || tbill3m != null) {
+    const meetingProbs = nextMeetings.map((date, i) => {
+      const impliedRate = i === 0 ? (tbill1m ?? tbill3m) : (tbill3m ?? tbill1m);
       const delta = +(impliedRate - currentRate).toFixed(4);
       const prob_cut25  = Math.max(0, Math.min(1, +(-delta / 0.25).toFixed(4)));
       const prob_hike25 = Math.max(0, Math.min(1, +(delta / 0.25).toFixed(4)));
       const prob_hold   = Math.max(0, +(1 - prob_cut25 - prob_hike25).toFixed(4));
       return { date, prob_hold, prob_cut25, prob_hike25, implied_rate: impliedRate };
     });
-
-    const contracts = nextMeetings
-      .filter(d => prices[d] != null)
-      .map(d => ({ date: d, ticker: tickerMap[d], price: prices[d], implied_rate: +(100 - prices[d]).toFixed(4) }));
-
-    const cum3m = contracts.length >= 1
-      ? Math.round((contracts[Math.min(2, contracts.length - 1)].implied_rate - currentRate) * 100)
-      : 0;
-
+    const cum3m = tbill3m != null ? Math.round((tbill3m - currentRate) * 100) : null;
+    console.log(`rate-path: FRED T-bill OK — 1M:${tbill1m} 3M:${tbill3m} currentRate:${currentRate}`);
     return {
-      source: 'yahoo_zq_futures',
+      source: 'fred_tbill_term',
       current_rate: currentRate,
       USD: { next_meetings: meetingProbs, cumulative_3m_bps: cum3m },
-      zq_contracts: contracts,
+      tbill_1m: tbill1m,
+      tbill_3m: tbill3m,
+      data_note: 'T-bill term structure proxy — real market data, ±5bps vs ZQ futures.',
       computed_at: new Date().toISOString(),
     };
-  } catch(e) {
-    console.warn('rate-path: Yahoo ZQ also failed:', e.message, '— trying FRED T-bill term structure');
   }
-
-  // Step 2.7: FRED T-bill term structure — DGS1MO + DGS3MO as market-implied rate proxy
-  // Guaranteed accessible (same FRED key as DFF fetch). Less accurate than ZQ but better than heuristic.
-  try {
-    return await fetchFredTbillPath(nextMeetings, currentRate, apiKey);
-  } catch(e) {
-    console.warn('rate-path: FRED T-bill fallback failed:', e.message, '— falling back to heuristic');
-  }
+  console.warn('rate-path: FRED T-bill unavailable (DGS1MO/DTB4WK/DGS3MO/DTB3 all null) — falling back to heuristic');
 
   // Step 3: heuristic fallback — distance from neutral rate (~3.0%) drives probability
   // Fed neutral rate estimate: 3.0%. Further above = more likely to cut.
