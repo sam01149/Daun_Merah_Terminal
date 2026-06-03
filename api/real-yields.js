@@ -2,6 +2,7 @@
 // Real (inflation-adjusted) yield per major currency.
 // USD: FRED DGS10 (nominal 10Y) − FRED T10YIE (TIPS breakeven) = real yield.
 // Others: FRED long-term bond yield − survey-based inflation expectation (hardcoded, refresh quarterly).
+// Also includes: TGA + Fed Balance Sheet liquidity indicators, USD+EUR yield curve.
 // Cached in Redis under 'real_yields' for 6 hours.
 
 const CACHE_KEY = 'real_yields'
@@ -39,65 +40,160 @@ const FRED_NOMINAL_SERIES = {
   CHF: 'IRLTLT01CHM156N', // Switzerland 10Y
 }
 
+const OECD_TO_CURRENCY = {
+  'AUS': 'AUD', 'CAN': 'CAD', 'CHE': 'CHF',
+  'GBR': 'GBP', 'JPN': 'JPY', 'NZL': 'NZD', 'FRA': 'EUR',
+}
+
 module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Cache-Control', 'no-cache')
 
   if (req.method === 'OPTIONS') return res.status(204).end()
 
-  // Serve Redis cache if fresh
+  // Read all caches in parallel
+  let mainCached = null, liquidityCached = null, yieldCurveCached = null, oecdCached = null
   try {
-    const cached = await redisCmd('GET', CACHE_KEY)
-    if (cached) {
-      const parsed = JSON.parse(cached)
-      const ageMs = Date.now() - new Date(parsed.computed_at).getTime()
-      if (ageMs < CACHE_TTL * 1000) return res.status(200).json(parsed)
+    ;[mainCached, liquidityCached, yieldCurveCached, oecdCached] = await Promise.all([
+      redisCmd('GET', CACHE_KEY),
+      redisCmd('GET', 'liquidity_usd'),
+      redisCmd('GET', 'yield_curve'),
+      redisCmd('GET', 'oecd_inflation'),
+    ])
+  } catch(e) { console.warn('real-yields: cache batch read failed:', e.message) }
+
+  // Parse supplementary caches
+  let liquidityData = null, yieldCurveData = null, oecdRates = null
+  try {
+    if (liquidityCached) {
+      const l = JSON.parse(liquidityCached)
+      if (Date.now() - new Date(l.computed_at).getTime() < 3600 * 1000) liquidityData = l
     }
-  } catch(e) {
-    console.warn('real-yields: Redis GET failed:', e.message)
+    if (yieldCurveCached) {
+      const y = JSON.parse(yieldCurveCached)
+      if (Date.now() - new Date(y.computed_at).getTime() < 3600 * 1000) yieldCurveData = y
+    }
+    if (oecdCached) {
+      const o = JSON.parse(oecdCached)
+      if (Date.now() - new Date(o.computed_at).getTime() < 86400 * 1000) oecdRates = o.rates
+    }
+  } catch(e) {}
+
+  // Serve main cache if fresh, refreshing supplementary in the background if stale
+  if (mainCached) {
+    try {
+      const parsed = JSON.parse(mainCached)
+      const ageMs = Date.now() - new Date(parsed.computed_at).getTime()
+      if (ageMs < CACHE_TTL * 1000) {
+        const toRefresh = []
+        if (!liquidityData) toRefresh.push(
+          fetchLiquidityIndicators()
+            .then(l => { liquidityData = l; redisCmd('SET', 'liquidity_usd', JSON.stringify(l), 'EX', 3600).catch(() => {}) })
+            .catch(() => {})
+        )
+        if (!yieldCurveData) toRefresh.push(
+          fetchYieldCurve()
+            .then(y => { yieldCurveData = y; redisCmd('SET', 'yield_curve', JSON.stringify(y), 'EX', 3600).catch(() => {}) })
+            .catch(() => {})
+        )
+        await Promise.all(toRefresh)
+        return res.status(200).json({ ...parsed, liquidity: liquidityData, yield_curve: yieldCurveData })
+      }
+    } catch(e) {
+      console.warn('real-yields: Redis GET failed:', e.message)
+    }
+  }
+
+  // ── Fetch everything fresh ──────────────────────────────────────────────────
+
+  // Step 1: OECD inflation (use cached rates if fresh, else fetch)
+  if (!oecdRates) {
+    try {
+      oecdRates = await fetchOECDInflation()
+      if (oecdRates) {
+        const cachePayload = { rates: oecdRates, computed_at: new Date().toISOString() }
+        redisCmd('SET', 'oecd_inflation', JSON.stringify(cachePayload), 'EX', 86400).catch(() => {})
+      }
+    } catch(e) {
+      console.warn('real-yields: OECD fetch failed:', e.message)
+    }
+  }
+
+  // Build merged inflation expectations: hardcoded + OECD overrides
+  const inflationExp = {}
+  for (const [cur, inf] of Object.entries(INFLATION_EXPECTATIONS)) {
+    inflationExp[cur] = { ...inf }
+  }
+  if (oecdRates) {
+    for (const [cur, val] of Object.entries(oecdRates)) {
+      if (inflationExp[cur]) {
+        inflationExp[cur] = { value: val, source: 'OECD Economic Outlook', as_of: new Date().toISOString().slice(0, 10) }
+      }
+    }
+  }
+
+  // Step 2: Fetch all yields + liquidity + yield curve in parallel
+  const otherCurrencies = ['EUR', 'GBP', 'JPY', 'CAD', 'AUD', 'NZD', 'CHF']
+
+  const [
+    usdNomResult,
+    usdBEResult,
+    liquidityResult,
+    yieldCurveResult,
+    ...otherNomResults
+  ] = await Promise.allSettled([
+    fetchFred('DGS10'),
+    fetchFred('T10YIE'),
+    fetchLiquidityIndicators(),
+    fetchYieldCurve(),
+    ...otherCurrencies.map(cur =>
+      fetchFred(FRED_NOMINAL_SERIES[cur])
+        .then(d => ({ cur, data: d }))
+        .catch(e => { console.warn(`real-yields: ${cur} nominal fetch failed:`, e.message); return { cur, data: null } })
+    ),
+  ])
+
+  // Process supplementary results
+  if (liquidityResult.status === 'fulfilled') {
+    liquidityData = liquidityResult.value
+    redisCmd('SET', 'liquidity_usd', JSON.stringify(liquidityData), 'EX', 3600).catch(() => {})
+  }
+  if (yieldCurveResult.status === 'fulfilled') {
+    yieldCurveData = yieldCurveResult.value
+    redisCmd('SET', 'yield_curve', JSON.stringify(yieldCurveData), 'EX', 3600).catch(() => {})
   }
 
   const results = {}
 
   // USD: both nominal + breakeven from FRED (daily, TIPS-derived — most accurate)
   try {
-    const [nomRes, beRes] = await Promise.all([
-      fetchFred('DGS10'),
-      fetchFred('T10YIE'),
-    ])
-    const nominal = nomRes.latest
-    const inflation_exp = beRes.latest
+    if (usdNomResult.status !== 'fulfilled') throw new Error(usdNomResult.reason?.message)
+    if (usdBEResult.status !== 'fulfilled') throw new Error(usdBEResult.reason?.message)
+    const nominal = usdNomResult.value.latest
+    const inflation_exp = usdBEResult.value.latest
     const real = +(nominal - inflation_exp).toFixed(2)
     results.USD = {
       nominal, inflation_exp, real,
       source_nominal: 'FRED DGS10',
       source_inflation: 'FRED T10YIE (TIPS breakeven)',
-      as_of: nomRes.date,
+      as_of: usdNomResult.value.date,
       stale: false,
     }
   } catch(e) {
     console.warn('real-yields: USD fetch failed:', e.message)
   }
 
-  // Other currencies: FRED monthly nominal + hardcoded inflation expectation
-  const otherCurrencies = ['EUR', 'GBP', 'JPY', 'CAD', 'AUD', 'NZD', 'CHF']
-  const nomFetches = otherCurrencies.map(cur =>
-    fetchFred(FRED_NOMINAL_SERIES[cur])
-      .then(d => ({ cur, data: d }))
-      .catch(e => { console.warn(`real-yields: ${cur} nominal fetch failed:`, e.message); return { cur, data: null } })
-  )
-
-  const nomResults = await Promise.all(nomFetches)
-
-  for (const { cur, data } of nomResults) {
-    const inf = INFLATION_EXPECTATIONS[cur]
+  // Other currencies: FRED monthly nominal + inflation expectation (hardcoded or OECD)
+  for (const nomResult of otherNomResults) {
+    if (nomResult.status !== 'fulfilled') continue
+    const { cur, data } = nomResult.value
+    const inf = inflationExp[cur]
     if (!inf) continue
 
     const staleDays = (Date.now() - new Date(inf.as_of).getTime()) / 86400000
     const stale = staleDays > 90
 
     if (!data) {
-      // Couldn't get nominal yield — return only inflation expectation metadata
       results[cur] = {
         nominal: null, inflation_exp: inf.value, real: null,
         source_nominal: FRED_NOMINAL_SERIES[cur],
@@ -123,10 +219,10 @@ module.exports = async function handler(req, res) {
   }
 
   if (Object.keys(results).length === 0) {
-    // All failed — return stale cache
+    // All failed — return stale cache with supplementary
     try {
       const stale = await redisCmd('GET', CACHE_KEY)
-      if (stale) return res.status(200).json({ ...JSON.parse(stale), stale: true })
+      if (stale) return res.status(200).json({ ...JSON.parse(stale), stale: true, liquidity: liquidityData, yield_curve: yieldCurveData })
     } catch(e) {}
     return res.status(502).json({ error: 'All real yield sources unavailable' })
   }
@@ -136,8 +232,127 @@ module.exports = async function handler(req, res) {
   redisCmd('SET', CACHE_KEY, JSON.stringify(payload), 'EX', CACHE_TTL)
     .catch(e => console.warn('real-yields: Redis SET failed:', e.message))
 
-  return res.status(200).json(payload)
+  return res.status(200).json({ ...payload, liquidity: liquidityData, yield_curve: yieldCurveData })
 }
+
+// ── OECD Inflation Expectations ──────────────────────────────────────────────
+
+async function fetchOECDInflation() {
+  const url = 'https://stats.oecd.org/SDMX-JSON/data/EO/AUS+CAN+CHE+GBR+JPN+NZL+FRA.CPI.A/all?startTime=2025&endTime=2026&dimensionAtObservation=allDimensions'
+  const r = await fetch(url, { signal: AbortSignal.timeout(15000) })
+  if (!r.ok) throw new Error(`OECD HTTP ${r.status}`)
+  const json = await r.json()
+
+  // SDMX-JSON: values keyed by observation dimension keys
+  const structure = json.structure
+  const dimensions = structure?.dimensions?.observation || []
+  const countryDim = dimensions.find(d => d.id === 'LOCATION')
+  if (!countryDim) throw new Error('OECD: LOCATION dimension not found')
+
+  const dataset = json.dataSets?.[0]
+  if (!dataset?.observations) throw new Error('OECD: no observations')
+
+  const rates = {}
+  for (const [key, obs] of Object.entries(dataset.observations)) {
+    const parts = key.split(':')
+    const locIdx = parseInt(parts[0], 10)
+    const locCode = countryDim.values?.[locIdx]?.id
+    if (!locCode) continue
+    const cur = OECD_TO_CURRENCY[locCode]
+    if (!cur) continue
+    const val = obs[0]
+    if (val == null || isNaN(val)) continue
+    // Keep the latest value per currency (last key wins since observations are ordered)
+    rates[cur] = +parseFloat(val).toFixed(2)
+  }
+
+  if (Object.keys(rates).length === 0) throw new Error('OECD: no parseable values')
+  return rates
+}
+
+// ── TGA + Fed Balance Sheet Liquidity Indicators ─────────────────────────────
+
+async function fetchLiquidityIndicators() {
+  const [fedAssetsResult, tgaResult] = await Promise.allSettled([
+    fetchFred('WALCL'),
+    fetch('https://api.fiscaldata.treasury.gov/services/api/v1/accounting/dts/dts_table_1?filter=account_type:eq:Federal%20Reserve%20Account&sort=-record_date&page[size]=5', {
+      signal: AbortSignal.timeout(10000),
+    }),
+  ])
+
+  const result = { computed_at: new Date().toISOString() }
+
+  if (fedAssetsResult.status === 'fulfilled') {
+    result.fed_assets_bn = Math.round(fedAssetsResult.value.latest / 1000)
+    result.fed_assets_date = fedAssetsResult.value.date
+  }
+
+  if (tgaResult.status === 'fulfilled' && tgaResult.value.ok) {
+    const json = await tgaResult.value.json()
+    const latest = json?.data?.[0]
+    if (latest?.close_today_bal) {
+      result.tga_balance_bn = Math.round(parseFloat(latest.close_today_bal) / 1000)
+      result.tga_date = latest.record_date
+    }
+    // Compare with day before for direction
+    const prev = json?.data?.[1]
+    if (prev?.close_today_bal && result.tga_balance_bn != null) {
+      const prevBn = Math.round(parseFloat(prev.close_today_bal) / 1000)
+      result.tga_change_bn = result.tga_balance_bn - prevBn
+    }
+  }
+
+  return result
+}
+
+// ── Yield Curve (USD from FRED, EUR from ECB SDW) ────────────────────────────
+
+async function fetchYieldCurve() {
+  const result = { computed_at: new Date().toISOString() }
+
+  // USD: 4 FRED series in parallel (DGS10 already fetched above, but re-fetch here independently)
+  const [dgs2, dgs5, dgs10, dgs30] = await Promise.allSettled([
+    fetchFred('DGS2'), fetchFred('DGS5'), fetchFred('DGS10'), fetchFred('DGS30'),
+  ])
+
+  const usd = {}
+  if (dgs2.status  === 'fulfilled') usd['2y']  = dgs2.value.latest
+  if (dgs5.status  === 'fulfilled') usd['5y']  = dgs5.value.latest
+  if (dgs10.status === 'fulfilled') usd['10y'] = dgs10.value.latest
+  if (dgs30.status === 'fulfilled') usd['30y'] = dgs30.value.latest
+  if (usd['2y'] != null && usd['10y'] != null)
+    usd['spread_2y10y'] = +(usd['10y'] - usd['2y']).toFixed(3)
+  if (Object.keys(usd).length > 0) result.USD = usd
+
+  // EUR: ECB Statistical Data Warehouse (2Y + 10Y)
+  try {
+    const [eur2yRes, eur10yRes] = await Promise.allSettled([
+      fetch('https://data-api.ecb.europa.eu/service/data/YC/B.U2.EUR.4F.G_N_A.SV_C_YM.SR_2Y?format=jsondata&lastNObservations=1', { signal: AbortSignal.timeout(8000) }),
+      fetch('https://data-api.ecb.europa.eu/service/data/YC/B.U2.EUR.4F.G_N_A.SV_C_YM.SR_10Y?format=jsondata&lastNObservations=1', { signal: AbortSignal.timeout(8000) }),
+    ])
+
+    const parseEcb = async (res) => {
+      if (res.status !== 'fulfilled' || !res.value.ok) return null
+      const j = await res.value.json()
+      const series = j?.dataSets?.[0]?.series?.['0:0:0:0:0:0:0']?.observations
+      if (!series) return null
+      const keys = Object.keys(series).sort((a, b) => +b - +a)
+      return series[keys[0]]?.[0] ?? null
+    }
+
+    const [e2y, e10y] = await Promise.all([parseEcb(eur2yRes), parseEcb(eur10yRes)])
+    const eur = {}
+    if (e2y  != null) eur['2y']  = +parseFloat(e2y).toFixed(3)
+    if (e10y != null) eur['10y'] = +parseFloat(e10y).toFixed(3)
+    if (eur['2y'] != null && eur['10y'] != null)
+      eur['spread_2y10y'] = +(eur['10y'] - eur['2y']).toFixed(3)
+    if (Object.keys(eur).length > 0) result.EUR = eur
+  } catch(e) { console.warn('fetchYieldCurve EUR failed:', e.message) }
+
+  return result
+}
+
+// ── Shared helpers ────────────────────────────────────────────────────────────
 
 async function fetchFred(seriesId) {
   const apiKey = process.env.FRED_API_KEY

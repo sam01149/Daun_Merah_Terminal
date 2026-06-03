@@ -339,6 +339,169 @@ module.exports = async function handler(req, res) {
     console.warn('prompt_digest Redis load failed:', e.message);
   }
 
+  // Pre-fire Call 2 (CB bias) and Call 4 (thesis monitor) concurrently with Call 1.
+  // Both only need recentItems (already available) — no dependency on Call 1's article.
+  const deviceId = req.query?.device_id;
+
+  const _biasPromise = recentItems.length > 0 ? (async () => {
+    const _biasUpdated = [];
+    const CB_KW = {
+      USD: ['fed ','fomc','powell','goolsbee','waller','kashkari','warsh','federal reserve','us inflation','us gdp','us jobs','nfp','us cpi'],
+      EUR: ['ecb','lagarde','lane','schnabel','euro zone','eurozone','euro area','eu inflation','eu gdp'],
+      GBP: ['boe','bank of england','bailey','pill','gbp','sterling','uk inflation','uk gdp','uk jobs','claimant'],
+      JPY: ['boj','bank of japan','ueda','japan inflation','japan gdp','yen','japanese'],
+      CAD: ['boc','bank of canada','macklem','canada inflation','canada gdp','canadian'],
+      AUD: ['rba','reserve bank of australia','bullock','australia inflation','australia gdp','aussie'],
+      NZD: ['rbnz','reserve bank of new zealand','orr','new zealand inflation','new zealand gdp','kiwi'],
+      CHF: ['snb','swiss national bank','schlegel','switzerland','swiss franc','franc'],
+    };
+    const relevantCurrencies = [];
+    const headlinesLower = recentItems.map(i => i.title.toLowerCase());
+    for (const [cur, kws] of Object.entries(CB_KW)) {
+      if (kws.some(kw => headlinesLower.some(h => h.includes(kw)))) relevantCurrencies.push(cur);
+    }
+    console.log('relevantCurrencies (async):', JSON.stringify(relevantCurrencies));
+    if (relevantCurrencies.length > 0) {
+      const relevantHeadlines = recentItems.filter(i => {
+        const lower = i.title.toLowerCase();
+        return relevantCurrencies.some(cur => CB_KW[cur].some(kw => lower.includes(kw)));
+      });
+      const biasHeadlines = relevantHeadlines.slice(0, 50).map((i,idx) => (idx+1) + '. ' + i.title).join('\n');
+      const biasCurrencies = relevantCurrencies.join(', ');
+      const fundDataForPrompt = {};
+      try {
+        await Promise.all(relevantCurrencies.map(async cur => {
+          const fields = await redisCmd('HGETALL', `fundamental:${cur}`);
+          if (Array.isArray(fields) && fields.length > 0) {
+            const obj = {};
+            for (let i = 0; i < fields.length; i += 2) { try { obj[fields[i]] = JSON.parse(fields[i + 1]); } catch(_) {} }
+            fundDataForPrompt[cur] = obj;
+          }
+        }));
+      } catch(e) { console.warn('Fundamental fetch for Call 2 failed:', e.message); }
+      const fundLines = Object.entries(fundDataForPrompt).map(([cur, data]) => {
+        const items = Object.entries(data).filter(([, v]) => v?.actual).map(([k, v]) => `${k}: ${v.actual}${v.previous ? ` (prev ${v.previous})` : ''} [${v.date || '—'}]`);
+        return items.length ? `${cur}: ${items.slice(0, 8).join(', ')}` : null;
+      }).filter(Boolean);
+      const fundSection = fundLines.length > 0 ? [
+        '', '=== LATEST MACRO FUNDAMENTALS (from headline releases — use as objective anchor) ===',
+        fundLines.join('\n'), '(If fundamentals contradict headline sentiment, weight fundamentals more heavily for confidence.)',
+      ].join('\n') : '';
+      const biasPrompt = [
+        'You are a central bank policy analyst. Based on the following recent financial news headlines AND the latest macro fundamental data, assess the current monetary policy stance for each central bank mentioned.',
+        '', 'Headlines:', biasHeadlines, fundSection, '',
+        'For each of these currencies that have relevant headlines: ' + biasCurrencies, '',
+        'Return ONLY a valid JSON object. No explanation, no markdown, no code block. Just the raw JSON.',
+        'Use ONLY these exact bias values: "Hawkish", "Cautious Hawkish", "Neutral", "Data Dependent", "On Hold", "Cautious Dovish", "Dovish", "Split"',
+        'For confidence, use ONLY: "High", "Medium", "Low"',
+        '  High = multiple clear, direct signals from officials or data releases',
+        '  Medium = some signals but mixed or indirect',
+        '  Low = minimal or ambiguous evidence — prefer omitting the currency over Low confidence', '',
+        'Example format:', '{"USD":{"bias":"Cautious Hawkish","confidence":"High"},"EUR":{"bias":"Dovish","confidence":"Medium"}}', '',
+        'Only include currencies where you have enough evidence. If insufficient evidence for a currency, OMIT it entirely — do not guess.',
+      ].join('\n');
+      const call2Messages = [{ role: 'user', content: biasPrompt }];
+      let biasRaw = null;
+      if (SAMBANOVA_KEY && await cb.canCall('ai:sambanova')) {
+        try {
+          console.log('Call 2: trying SambaNova');
+          biasRaw = await aiCall(SAMBANOVA_URL, SAMBANOVA_KEY, SAMBANOVA_MODEL, call2Messages, 400, 0.1, 8000);
+          console.log('Call 2: SambaNova OK');
+          await cb.onSuccess('ai:sambanova');
+        } catch(e) { console.warn('Call 2 SambaNova failed:', e.status || e.message); await cb.onFailure('ai:sambanova', AI_CB_THRESHOLD); }
+      } else if (SAMBANOVA_KEY) { console.log('Call 2: SambaNova circuit OPEN — skipping to Groq'); }
+      if (!biasRaw && GROQ_KEY) {
+        try {
+          console.log('Call 2: falling back to Groq');
+          biasRaw = await aiCall(GROQ_URL, GROQ_KEY, GROQ_MODEL, call2Messages, 400, 0.1, 12000);
+          console.log('Call 2: Groq fallback OK');
+        } catch(e) { console.warn('Call 2 Groq fallback failed:', e.status || e.message); }
+      }
+      if (biasRaw) {
+        try {
+          const clean = biasRaw.replace(/```json|```/g, '').trim();
+          console.log('Call 2 bias raw:', biasRaw.substring(0, 300));
+          const parsed = JSON.parse(clean);
+          console.log('Call 2 bias parsed:', JSON.stringify(parsed));
+          const VALID_BIASES = ['Hawkish','Cautious Hawkish','Neutral','Data Dependent','On Hold','Cautious Dovish','Dovish','Split'];
+          const BIAS_ORDER  = ['Hawkish','Cautious Hawkish','Neutral','Data Dependent','On Hold','Cautious Dovish','Dovish'];
+          const VALID_CONFIDENCES = ['High','Medium','Low'];
+          const VALID_CURRENCIES = new Set(['USD','EUR','GBP','JPY','CAD','AUD','NZD','CHF']);
+          const now2 = new Date().toISOString();
+          const lockAcquired = await redisCmd('SET', 'cb_bias_lock', '1', 'NX', 'EX', '10');
+          if (lockAcquired) {
+            let existing = {};
+            try { const rawBias = await redisCmd('GET', 'cb_bias'); if (rawBias) existing = JSON.parse(rawBias); } catch(e) {}
+            for (const [cur, entry] of Object.entries(parsed)) {
+              const curOk = VALID_CURRENCIES.has(cur);
+              const bias = (typeof entry === 'object' && entry !== null) ? entry.bias : entry;
+              const confidence = (typeof entry === 'object' && entry !== null) ? entry.confidence : null;
+              const biasOk = VALID_BIASES.includes(bias);
+              const confidenceOk = VALID_CONFIDENCES.includes(confidence);
+              if (!curOk || !biasOk) continue;
+              if (!confidenceOk || confidence === 'Low') { console.log(`Call 2: skip ${cur} — confidence Low`); continue; }
+              const prevBias = existing[cur]?.bias;
+              if (prevBias && confidence !== 'High') {
+                const prevIdx = BIAS_ORDER.indexOf(prevBias); const newIdx = BIAS_ORDER.indexOf(bias);
+                if (prevIdx !== -1 && newIdx !== -1 && Math.abs(newIdx - prevIdx) > 2) { console.log(`Call 2: skip ${cur} — swing ${prevBias}→${bias}`); continue; }
+              }
+              const kws = CB_KW[cur] || [];
+              const sourceHeadlines = recentItems.filter(i => kws.some(kw => i.title.toLowerCase().includes(kw))).slice(0, 5).map(i => i.title);
+              existing[cur] = { bias, confidence, updated_at: now2, source_headlines: sourceHeadlines };
+              _biasUpdated.push(cur);
+            }
+            if (_biasUpdated.length > 0) {
+              const saveResult = await redisCmd('SET', 'cb_bias', JSON.stringify(existing));
+              console.log('CB bias Redis SET result:', saveResult);
+            }
+            await redisCmd('DEL', 'cb_bias_lock').catch(()=>{});
+          }
+        } catch(e) { console.warn('Call 2 bias parse/save failed:', e.message); }
+      }
+    }
+    return _biasUpdated;
+  })() : Promise.resolve([]);
+
+  const _call4Promise = (GROQ_KEY && deviceId) ? (async () => {
+    try {
+      const ids4 = await redisCmd('ZRANGE', `journal_index:${deviceId}`, 0, -1, 'REV') || [];
+      const openEntries = [];
+      for (const id of ids4.slice(0, 10)) {
+        try {
+          const raw = await redisCmd('GET', `journal:${deviceId}:${id}`);
+          if (!raw) continue;
+          const entry = JSON.parse(raw);
+          if (entry.status === 'open' && entry.thesis_text?.trim()) openEntries.push(entry);
+          if (openEntries.length >= 5) break;
+        } catch(e) {}
+      }
+      if (openEntries.length === 0) { console.log('Call 4: no open entries, skipping'); return null; }
+      console.log('Call 4: checking', openEntries.length, 'open entries against headlines');
+      const thesesBlock = openEntries.map((e, i) => `${i+1}. [ID:${e.id}] ${e.pair} ${(e.direction||'').toUpperCase()}: ${e.thesis_text}`).join('\n');
+      const headlines30 = recentItems.slice(0, 30).map((h, i) => `${i+1}. ${h.title}`).join('\n');
+      const monitorPrompt = [
+        'You are a forex trade thesis monitor.', '',
+        'Open trade theses:', thesesBlock, '', 'Recent headlines (newest first):', headlines30, '',
+        'Check if ANY headline directly contradicts or significantly undermines the stated reason for ANY open thesis.',
+        'Only flag genuine contradictions — news that directly opposes the trade direction rationale, not tangentially related news.',
+        'Ignore price-level headlines; focus on fundamental basis changes (macro data, CB policy shifts, geopolitical reversals).', '',
+        'Return ONLY valid JSON, no markdown, no explanation:',
+        '{"alerts":[{"entry_id":"...","pair":"...","direction":"...","headline":"exact headline text","reason":"one sentence why this contradicts the thesis"}]}',
+        'If no genuine contradictions found: {"alerts":[]}',
+      ].join('\n');
+      const raw4 = await aiCall(GROQ_URL, GROQ_KEY, GROQ_MODEL, [{ role: 'user', content: monitorPrompt }], 400, 0.1, 8000);
+      const parsed4 = JSON.parse(raw4.replace(/```json|```/g, '').trim());
+      if (!Array.isArray(parsed4.alerts)) return null;
+      console.log('Call 4: found', parsed4.alerts.length, 'alert(s)');
+      if (parsed4.alerts.length > 0) {
+        redisCmd('SET', `thesis_alerts:${deviceId}`, JSON.stringify(parsed4.alerts), 'EX', 1800).catch(() => {});
+      } else {
+        redisCmd('DEL', `thesis_alerts:${deviceId}`).catch(() => {});
+      }
+      return parsed4.alerts;
+    } catch(e) { console.warn('Call 4 Thesis Monitor failed:', e.message); return null; }
+  })() : Promise.resolve(null);
+
   // ── 4. Call 1: Market Briefing — Cerebras → Groq fallback ────────────────────
   let article = null, method = 'fallback';
   if (recentItems.length > 0) {
@@ -506,193 +669,8 @@ ${xauHistoryBlock}`;
     } catch(e) { console.warn('Digest history save failed:', e.message); }
   }
 
-  // ── 6. Call 2: CB Bias — SambaNova → Groq fallback ───────────────────────────
-  let biasUpdated = [];
-  if (recentItems.length > 0) {
-    const CB_KEYWORDS = {
-      USD: ['fed ','fomc','powell','goolsbee','waller','kashkari','warsh','federal reserve','us inflation','us gdp','us jobs','nfp','us cpi'],
-      EUR: ['ecb','lagarde','lane','schnabel','euro zone','eurozone','euro area','eu inflation','eu gdp'],
-      GBP: ['boe','bank of england','bailey','pill','gbp','sterling','uk inflation','uk gdp','uk jobs','claimant'],
-      JPY: ['boj','bank of japan','ueda','japan inflation','japan gdp','yen','japanese'],
-      CAD: ['boc','bank of canada','macklem','canada inflation','canada gdp','canadian'],
-      AUD: ['rba','reserve bank of australia','bullock','australia inflation','australia gdp','aussie'],
-      NZD: ['rbnz','reserve bank of new zealand','orr','new zealand inflation','new zealand gdp','kiwi'],
-      CHF: ['snb','swiss national bank','schlegel','switzerland','swiss franc','franc'],
-    };
-
-    const relevantCurrencies = [];
-    const headlinesLower = recentItems.map(i => i.title.toLowerCase());
-    for (const [cur, kws] of Object.entries(CB_KEYWORDS)) {
-      if (kws.some(kw => headlinesLower.some(h => h.includes(kw)))) {
-        relevantCurrencies.push(cur);
-      }
-    }
-
-    console.log('relevantCurrencies:', JSON.stringify(relevantCurrencies));
-    if (relevantCurrencies.length > 0) {
-      const relevantHeadlines = recentItems.filter(i => {
-        const lower = i.title.toLowerCase();
-        return relevantCurrencies.some(cur => CB_KEYWORDS[cur].some(kw => lower.includes(kw)));
-      });
-      const biasHeadlines = relevantHeadlines.slice(0, 50).map((i,idx) => (idx+1) + '. ' + i.title).join('\n');
-      const biasCurrencies = relevantCurrencies.join(', ');
-
-      // Fetch latest fundamental data per currency from Redis to anchor bias assessment
-      const fundDataForPrompt = {};
-      try {
-        await Promise.all(relevantCurrencies.map(async cur => {
-          const fields = await redisCmd('HGETALL', `fundamental:${cur}`);
-          if (Array.isArray(fields) && fields.length > 0) {
-            const obj = {};
-            for (let i = 0; i < fields.length; i += 2) {
-              try { obj[fields[i]] = JSON.parse(fields[i + 1]); } catch(_) {}
-            }
-            fundDataForPrompt[cur] = obj;
-          }
-        }));
-      } catch(e) { console.warn('Fundamental fetch for Call 2 failed:', e.message); }
-
-      const fundLines = Object.entries(fundDataForPrompt).map(([cur, data]) => {
-        const items = Object.entries(data)
-          .filter(([, v]) => v?.actual)
-          .map(([k, v]) => `${k}: ${v.actual}${v.previous ? ` (prev ${v.previous})` : ''} [${v.date || '—'}]`);
-        return items.length ? `${cur}: ${items.slice(0, 8).join(', ')}` : null;
-      }).filter(Boolean);
-
-      const fundSection = fundLines.length > 0
-        ? [
-            '',
-            '=== LATEST MACRO FUNDAMENTALS (from headline releases — use as objective anchor) ===',
-            fundLines.join('\n'),
-            '(If fundamentals contradict headline sentiment, weight fundamentals more heavily for confidence.)',
-          ].join('\n')
-        : '';
-
-      const biasPrompt = [
-        'You are a central bank policy analyst. Based on the following recent financial news headlines AND the latest macro fundamental data, assess the current monetary policy stance for each central bank mentioned.',
-        '',
-        'Headlines:',
-        biasHeadlines,
-        fundSection,
-        '',
-        'For each of these currencies that have relevant headlines: ' + biasCurrencies,
-        '',
-        'Return ONLY a valid JSON object. No explanation, no markdown, no code block. Just the raw JSON.',
-        'Use ONLY these exact bias values: "Hawkish", "Cautious Hawkish", "Neutral", "Data Dependent", "On Hold", "Cautious Dovish", "Dovish", "Split"',
-        'For confidence, use ONLY: "High", "Medium", "Low"',
-        '  High = multiple clear, direct signals from officials or data releases',
-        '  Medium = some signals but mixed or indirect',
-        '  Low = minimal or ambiguous evidence — prefer omitting the currency over Low confidence',
-        '',
-        'Example format:',
-        '{"USD":{"bias":"Cautious Hawkish","confidence":"High"},"EUR":{"bias":"Dovish","confidence":"Medium"}}',
-        '',
-        'Only include currencies where you have enough evidence. If insufficient evidence for a currency, OMIT it entirely — do not guess.',
-      ].join('\n');
-
-      const call2Messages = [{ role: 'user', content: biasPrompt }];
-      let biasRaw = null;
-
-      // Primary: SambaNova (circuit breaker)
-      if (SAMBANOVA_KEY && await cb.canCall('ai:sambanova')) {
-        try {
-          console.log('Call 2: trying SambaNova');
-          biasRaw = await aiCall(SAMBANOVA_URL, SAMBANOVA_KEY, SAMBANOVA_MODEL, call2Messages, 400, 0.1, 8000);
-          console.log('Call 2: SambaNova OK');
-          await cb.onSuccess('ai:sambanova');
-        } catch(e) {
-          console.warn('Call 2 SambaNova failed:', e.status || e.message);
-          await cb.onFailure('ai:sambanova', AI_CB_THRESHOLD);
-        }
-      } else if (SAMBANOVA_KEY) {
-        console.log('Call 2: SambaNova circuit OPEN — skipping to Groq');
-      }
-
-      // Fallback: Groq (no circuit breaker — always attempt)
-      if (!biasRaw && GROQ_KEY) {
-        try {
-          console.log('Call 2: falling back to Groq');
-          biasRaw = await aiCall(GROQ_URL, GROQ_KEY, GROQ_MODEL, call2Messages, 400, 0.1, 12000);
-          console.log('Call 2: Groq fallback OK');
-        } catch(e) {
-          console.warn('Call 2 Groq fallback failed:', e.status || e.message);
-        }
-      }
-
-      if (biasRaw) {
-        try {
-          const clean = biasRaw.replace(/```json|```/g, '').trim();
-          console.log('Call 2 bias raw:', biasRaw.substring(0, 300));
-          const parsed = JSON.parse(clean);
-          console.log('Call 2 bias parsed:', JSON.stringify(parsed));
-
-          const VALID_BIASES = ['Hawkish','Cautious Hawkish','Neutral','Data Dependent','On Hold','Cautious Dovish','Dovish','Split'];
-          const BIAS_ORDER  = ['Hawkish','Cautious Hawkish','Neutral','Data Dependent','On Hold','Cautious Dovish','Dovish'];
-          const VALID_CONFIDENCES = ['High','Medium','Low'];
-          const VALID_CURRENCIES = new Set(['USD','EUR','GBP','JPY','CAD','AUD','NZD','CHF']);
-          const now = new Date().toISOString();
-
-          // Distributed lock to prevent race condition across concurrent functions
-          const lockAcquired = await redisCmd('SET', 'cb_bias_lock', '1', 'NX', 'EX', '10');
-          if (lockAcquired) {
-
-          let existing = {};
-          try {
-            const raw = await redisCmd('GET', 'cb_bias');
-            if (raw) existing = JSON.parse(raw);
-          } catch(e) {}
-
-          for (const [cur, entry] of Object.entries(parsed)) {
-            const curOk = VALID_CURRENCIES.has(cur);
-            const bias = (typeof entry === 'object' && entry !== null) ? entry.bias : entry;
-            const confidence = (typeof entry === 'object' && entry !== null) ? entry.confidence : null;
-            const biasOk = VALID_BIASES.includes(bias);
-            const confidenceOk = VALID_CONFIDENCES.includes(confidence);
-            if (!curOk || !biasOk) continue;
-
-            // A: Confidence gate — Low confidence → keep existing, prevents quiet-day flips
-            if (!confidenceOk || confidence === 'Low') {
-              console.log(`Call 2: skip ${cur} — confidence Low, retaining existing bias`);
-              continue;
-            }
-
-            // B: Swing anchor — if new bias jumps >2 levels from existing without High confidence, skip
-            const prevBias = existing[cur]?.bias;
-            if (prevBias && confidence !== 'High') {
-              const prevIdx = BIAS_ORDER.indexOf(prevBias);
-              const newIdx  = BIAS_ORDER.indexOf(bias);
-              if (prevIdx !== -1 && newIdx !== -1 && Math.abs(newIdx - prevIdx) > 2) {
-                console.log(`Call 2: skip ${cur} — swing ${prevBias}→${bias} (${Math.abs(newIdx-prevIdx)} levels) requires High confidence`);
-                continue;
-              }
-            }
-
-            const kws = CB_KEYWORDS[cur] || [];
-            const sourceHeadlines = recentItems
-              .filter(i => kws.some(kw => i.title.toLowerCase().includes(kw)))
-              .slice(0, 5)
-              .map(i => i.title);
-            existing[cur] = {
-              bias,
-              confidence,
-              updated_at: now,
-              source_headlines: sourceHeadlines,
-            };
-            biasUpdated.push(cur);
-          }
-
-          if (biasUpdated.length > 0) {
-            const saveResult = await redisCmd('SET', 'cb_bias', JSON.stringify(existing));
-            console.log('CB bias Redis SET result:', saveResult);
-          }
-            await redisCmd('DEL', 'cb_bias_lock').catch(()=>{});
-          }
-        } catch(e) {
-          console.warn('Call 2 bias parse/save failed:', e.message);
-        }
-      }
-    }
-  }
+  // ── 6. Await Call 2 (ran concurrently with Call 1) ───────────────────────────
+  const biasUpdated = await _biasPromise;
 
   // ── 7. Call 3: Structured Trade Thesis — SambaNova → Groq fallback ───────────
   let thesis = null;
@@ -812,70 +790,9 @@ ${xauHistoryBlock}`;
     }
   }
 
-  // ── 8. Call 4: Thesis Invalidation Monitor — Groq only ───────────────────────
-  let thesisAlerts = null;
-  const deviceId = req.query?.device_id;
-  if (GROQ_KEY && deviceId && method !== 'fallback' && method !== 'fallback_quota') {
-    try {
-      // Load open journal entries for this device (newest first, cap at 10 to read)
-      const ids = await redisCmd('ZRANGE', `journal_index:${deviceId}`, 0, -1, 'REV') || [];
-      const openEntries = [];
-      for (const id of ids.slice(0, 10)) {
-        try {
-          const raw = await redisCmd('GET', `journal:${deviceId}:${id}`);
-          if (!raw) continue;
-          const entry = JSON.parse(raw);
-          if (entry.status === 'open' && entry.thesis_text?.trim()) {
-            openEntries.push(entry);
-          }
-          if (openEntries.length >= 5) break;
-        } catch(e) { /* skip bad entry */ }
-      }
-
-      if (openEntries.length > 0) {
-        console.log('Call 4: checking', openEntries.length, 'open entries against headlines');
-        const thesesBlock = openEntries
-          .map((e, i) => `${i+1}. [ID:${e.id}] ${e.pair} ${(e.direction||'').toUpperCase()}: ${e.thesis_text}`)
-          .join('\n');
-        const headlines30 = recentItems.slice(0, 30).map((h, i) => `${i+1}. ${h.title}`).join('\n');
-
-        const monitorPrompt = [
-          'You are a forex trade thesis monitor.',
-          '',
-          'Open trade theses:',
-          thesesBlock,
-          '',
-          'Recent headlines (newest first):',
-          headlines30,
-          '',
-          'Check if ANY headline directly contradicts or significantly undermines the stated reason for ANY open thesis.',
-          'Only flag genuine contradictions — news that directly opposes the trade direction rationale, not tangentially related news.',
-          'Ignore price-level headlines; focus on fundamental basis changes (macro data, CB policy shifts, geopolitical reversals).',
-          '',
-          'Return ONLY valid JSON, no markdown, no explanation:',
-          '{"alerts":[{"entry_id":"...","pair":"...","direction":"...","headline":"exact headline text","reason":"one sentence why this contradicts the thesis"}]}',
-          'If no genuine contradictions found: {"alerts":[]}',
-        ].join('\n');
-
-        const raw = await aiCall(GROQ_URL, GROQ_KEY, GROQ_MODEL, [{ role: 'user', content: monitorPrompt }], 400, 0.1, 8000);
-        const clean = raw.replace(/```json|```/g, '').trim();
-        const parsed = JSON.parse(clean);
-        if (Array.isArray(parsed.alerts)) {
-          thesisAlerts = parsed.alerts;
-          console.log('Call 4: found', thesisAlerts.length, 'alert(s)');
-          if (thesisAlerts.length > 0) {
-            redisCmd('SET', `thesis_alerts:${deviceId}`, JSON.stringify(thesisAlerts), 'EX', 1800).catch(() => {});
-          } else {
-            redisCmd('DEL', `thesis_alerts:${deviceId}`).catch(() => {});
-          }
-        }
-      } else {
-        console.log('Call 4: no open entries with thesis_text, skipping');
-      }
-    } catch(e) {
-      console.warn('Call 4 Thesis Monitor failed:', e.message);
-    }
-  }
+  // ── 8. Await Call 4 (ran concurrently with Call 1) ───────────────────────────
+  const _rawAlerts = await _call4Promise;
+  const thesisAlerts = (method !== 'fallback' && method !== 'fallback_quota') ? _rawAlerts : null;
 
   // ── Auto-update fundamental data + CB decisions from headlines ───────────────
   try {

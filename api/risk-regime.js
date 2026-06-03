@@ -46,10 +46,12 @@ module.exports = async function handler(req, res) {
     cb.canCall('fred'),
   ])
 
-  const [vixResult, moveResult, hyResult] = await Promise.allSettled([
+  const [vixResult, moveResult, hyResult, vix1mResult, vix3mResult] = await Promise.allSettled([
     fetchYahooVix(),
     stooqAllowed ? fetchMove()                      : Promise.reject(new Error('circuit:stooq OPEN')),
     fredAllowed  ? fetchFredSeries('BAMLH0A0HYM2') : Promise.reject(new Error('circuit:fred OPEN')),
+    fetchYahooVixTerm('^VIX1M'),
+    fetchYahooVixTerm('^VIX3M'),
   ])
 
   // VIX: use Yahoo result; fall back to FRED if Yahoo failed
@@ -87,6 +89,9 @@ module.exports = async function handler(req, res) {
     return res.status(502).json({ error: 'All data sources unavailable' })
   }
 
+  const vix1mData = vix1mResult.status === 'fulfilled' ? vix1mResult.value : null
+  const vix3mData = vix3mResult.status === 'fulfilled' ? vix3mResult.value : null
+
   const vix      = vixData  ? vixData.latest  : null
   const move     = moveData ? moveData.latest  : null
   const hySpread = hyData   ? hyData.latest    : null
@@ -108,11 +113,24 @@ module.exports = async function handler(req, res) {
   const eodDate  = [moveData?.date, hyData?.date].filter(Boolean).sort().pop() || null
   const vixDate  = vixData?.date || null
 
+  // VIX term structure: contango vs backwardation
+  let vixTermStructure = null
+  if (vix != null && (vix1mData || vix3mData)) {
+    const vix1m = vix1mData?.latest ?? null
+    const vix3m = vix3mData?.latest ?? null
+    let structure = null
+    if (vix1m != null) {
+      structure = vix > vix1m ? 'backwardation' : 'contango'
+    }
+    vixTermStructure = { vix_spot: vix, vix_1m: vix1m, vix_3m: vix3m, structure }
+  }
+
   const payload = {
     regime,
     vix,
     vix_change_2d: vixChange,
     vix_source: vixData?.source || null, // 'yahoo' = near real-time | 'fred' = EOD fallback
+    vix_term_structure: vixTermStructure,
     move,
     move_change_2d: moveChange,
     hy_spread: hySpread,
@@ -171,6 +189,21 @@ async function fetchYahooVix() {
     ? new Date(marketTime * 1000).toISOString().slice(0, 10)
     : new Date().toISOString().slice(0, 10)
   return { latest: +price.toFixed(2), prev: prev ? +prev.toFixed(2) : null, date, source: 'yahoo' }
+}
+
+// Yahoo Finance VIX term structure — ^VIX1M (30-day) and ^VIX3M (3-month)
+async function fetchYahooVixTerm(symbol) {
+  const encoded = encodeURIComponent(symbol)
+  const r = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encoded}?range=1d&interval=5m`, {
+    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+    signal: AbortSignal.timeout(8000),
+  })
+  if (!r.ok) throw new Error(`Yahoo ${symbol} HTTP ${r.status}`)
+  const json = await r.json()
+  const meta  = json?.chart?.result?.[0]?.meta
+  const price = meta?.regularMarketPrice
+  if (!price || price <= 0) throw new Error(`Yahoo ${symbol}: no valid price`)
+  return { latest: +price.toFixed(2), symbol }
 }
 
 async function fetchFredSeries(seriesId) {

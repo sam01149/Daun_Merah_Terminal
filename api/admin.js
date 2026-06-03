@@ -32,7 +32,8 @@ module.exports = async function handler(req, res) {
   if (action === 'journal_import')      return journalImportHandler(req, res);
   if (action === 'circuit-reset')       return circuitResetHandler(req, res);
   if (action === 'circuit-status')      return circuitStatusHandler(req, res);
-  return res.status(400).json({ error: 'Missing ?action= — use health, redis-keys, admin-prompts, push, fundamental_get, fundamental_seed, fundamental_refresh, fundamental_analysis, journal_import, circuit-reset, or circuit-status' });
+  if (action === 'gdpnow')             return gdpnowHandler(req, res);
+  return res.status(400).json({ error: 'Missing ?action= — use health, redis-keys, admin-prompts, push, fundamental_get, fundamental_seed, fundamental_refresh, fundamental_analysis, journal_import, circuit-reset, circuit-status, or gdpnow' });
 };
 
 // ── Shared Redis helper ────────────────────────────────────────────────────────
@@ -932,6 +933,46 @@ async function circuitStatusHandler(req, res) {
     }
   }
   return res.status(200).json({ circuits: results });
+}
+
+// ── GDPNow handler (Atlanta Fed nowcast via FRED GDPNOW series) ───────────────
+
+async function gdpnowHandler(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Cache-Control', 'no-cache');
+  if (req.method === 'OPTIONS') return res.status(204).end();
+
+  const apiKey = process.env.FRED_API_KEY;
+  if (!apiKey) return res.status(500).json({ error: 'FRED_API_KEY not configured' });
+
+  try {
+    const url = `https://api.stlouisfed.org/fred/series/observations?series_id=GDPNOW&api_key=${apiKey}&limit=5&sort_order=desc&file_type=json`;
+    const r = await fetch(url, {
+      headers: { 'User-Agent': 'DaunMerah/1.0' },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!r.ok) throw new Error(`FRED HTTP ${r.status}`);
+    const json = await r.json();
+    const obs = (json.observations || []).filter(o => o.value !== '.');
+    if (obs.length === 0) throw new Error('No GDPNOW observations');
+
+    const latest = obs[0];
+    const value = parseFloat(latest.value);
+    const date = latest.date;
+    const prev = obs.length > 1 ? parseFloat(obs[1].value) : null;
+
+    await redisCmd('HSET', 'fundamental:USD', 'GDP Nowcast', JSON.stringify({
+      actual: `${value.toFixed(1)}%`,
+      previous: prev != null ? `${prev.toFixed(1)}%` : null,
+      date,
+      source: 'Atlanta Fed GDPNow (FRED)',
+    }));
+
+    return res.status(200).json({ ok: true, value, date, source: 'FRED GDPNOW' });
+  } catch(e) {
+    console.warn('gdpnow failed:', e.message);
+    return res.status(500).json({ error: e.message });
+  }
 }
 
 async function circuitResetHandler(req, res) {

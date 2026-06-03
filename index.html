@@ -2609,7 +2609,9 @@ let cotData      = null;
 let cotFetchedAt = 0;
 
 // Real Yields state
-let realYieldsData  = null;
+let realYieldsData      = null;
+let realYieldsLiquidity = null;
+let realYieldsYieldCurve = null;
 let realYieldsFetAt = 0;
 
 // Regime state (for checklist auto-tick)
@@ -3638,9 +3640,12 @@ async function fetchRealYields() {
     const res = await fetch('/api/real-yields', { signal: AbortSignal.timeout(15000) });
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
-    realYieldsData  = data.currencies;
+    realYieldsData       = data.currencies;
+    realYieldsLiquidity  = data.liquidity  || null;
+    realYieldsYieldCurve = data.yield_curve || null;
     realYieldsFetAt = Date.now();
     renderCBTracker();
+    renderFundamental();
     const _rySel = document.getElementById('ckPairSelector');
     if (_rySel && _rySel.value) ckAutoTickRegimeCheck(_rySel.value);
   } catch(e) {
@@ -3839,6 +3844,49 @@ function renderFundamental() {
         <span class="fund-score-conf ${confTier}">${confLabel}</span>
       </div>` : '';
 
+    // Yield curve section for USD and EUR
+    let yieldCurveHtml = '';
+    if ((cur === 'USD' || cur === 'EUR') && realYieldsYieldCurve?.[cur]) {
+      const yc = realYieldsYieldCurve[cur];
+      const spread = yc.spread_2y10y;
+      const spreadColor = spread == null ? 'var(--muted)' : spread < 0 ? 'var(--red)' : spread < 0.2 ? 'var(--yellow)' : 'var(--green)';
+      const spreadLabel = spread == null ? '' : spread < 0 ? ' INVERTED' : spread < 0.2 ? ' FLAT' : ' STEEP';
+      const yParts = [];
+      if (yc['2y']  != null) yParts.push(`2Y: ${yc['2y'].toFixed(2)}%`);
+      if (yc['5y']  != null) yParts.push(`5Y: ${yc['5y'].toFixed(2)}%`);
+      if (yc['10y'] != null) yParts.push(`10Y: ${yc['10y'].toFixed(2)}%`);
+      if (yc['30y'] != null) yParts.push(`30Y: ${yc['30y'].toFixed(2)}%`);
+      if (yParts.length > 0) {
+        yieldCurveHtml = `<div style="margin-top:8px;padding-top:6px;border-top:1px solid var(--border);font-size:10px;color:var(--muted);font-family:'DM Mono',monospace">
+          <div style="color:var(--text);font-weight:600;margin-bottom:2px">YIELD CURVE</div>
+          <div>${yParts.join(' · ')}</div>
+          ${spread != null ? `<div>2Y10Y: <span style="color:${spreadColor}">${spread >= 0 ? '+' : ''}${spread.toFixed(3)}%${spreadLabel}</span></div>` : ''}
+        </div>`;
+      }
+    }
+
+    // Liquidity indicators for USD only
+    let liquidityHtml = '';
+    if (cur === 'USD' && realYieldsLiquidity) {
+      const liq = realYieldsLiquidity;
+      const parts = [];
+      if (liq.fed_assets_bn != null) {
+        const fedColor = 'var(--muted)';
+        parts.push(`Fed Assets: $${liq.fed_assets_bn.toLocaleString()}B`);
+      }
+      if (liq.tga_balance_bn != null) {
+        const tgaDir = liq.tga_change_bn != null ? (liq.tga_change_bn > 0 ? ' ▲ serap' : ' ▼ inject') : '';
+        const tgaColor = liq.tga_change_bn != null ? (liq.tga_change_bn > 0 ? 'var(--red)' : 'var(--green)') : 'var(--muted)';
+        parts.push(`TGA: <span style="color:${tgaColor}">$${liq.tga_balance_bn.toLocaleString()}B${tgaDir}</span>`);
+      }
+      if (parts.length > 0) {
+        liquidityHtml = `<div style="margin-top:6px;padding-top:6px;border-top:1px solid var(--border);font-size:10px;color:var(--muted);font-family:'DM Mono',monospace">
+          <div style="color:var(--text);font-weight:600;margin-bottom:2px">LIQUIDITY USD</div>
+          <div>${parts.join(' · ')}</div>
+        </div>`;
+      }
+    }
+
     return `<div class="fund-card" style="border-left:3px solid ${col}">
       <div class="fund-card-header">
         <span class="fund-cur" style="color:${col}">${cur}</span>
@@ -3848,6 +3896,7 @@ function renderFundamental() {
       <table class="fund-table">
         ${rows || '<tr><td colspan="3" class="fund-td-ind" style="padding:4px 0">No data</td></tr>'}
       </table>
+      ${yieldCurveHtml}${liquidityHtml}
     </div>`;
   }).join('');
 }
@@ -4658,6 +4707,18 @@ function renderRegimeBanner(data) {
     rows.push(`<div class="${cls}">HY OAS (spread kredit) ${data.hy_spread.toFixed(2)}%${chg} — ${status}</div>`)
   }
 
+  // VIX term structure
+  if (data.vix_term_structure) {
+    const ts = data.vix_term_structure;
+    if (ts.vix_1m != null) {
+      const isBackward = ts.structure === 'backwardation';
+      const tsColor = isBackward ? 'var(--accent)' : 'var(--green)';
+      const tsLabel = isBackward ? 'Backwardation (Panik Akut)' : 'Contango (Fear Terdistribusi)';
+      const vix3mStr = ts.vix_3m != null ? ` · VIX3M ${ts.vix_3m.toFixed(1)}` : '';
+      rows.push(`<div class="regime-trigger" style="border-left:2px solid ${tsColor}">VIX Term Structure: VIX1M ${ts.vix_1m.toFixed(1)}${vix3mStr} — <span style="color:${tsColor}">${tsLabel}</span></div>`);
+    }
+  }
+
   // Trigger summary
   rows.push(`<div style="margin-top:4px;opacity:.55">${triggerCount}/${availCount} Risk-Off trigger aktif · Risk-On = semua benign (VIX<15, MOVE<90, HY tidak melebar)</div>`)
 
@@ -5074,9 +5135,22 @@ let CK_QUICK    = PLAYBOOKS[ckActivePlaybook].quick;
 let CK_GATES    = PLAYBOOKS[ckActivePlaybook].gates;
 
 let ckState = {}, ckInitialized = false, ckClockInterval = null;
+let ckCurrentPair = ''; // tracks current pair for per-pair localStorage key
 
-function ckLoad() { try { const s = localStorage.getItem('daunmerah_v2'); if (s) ckState = JSON.parse(s); } catch(e) {} }
-function ckSave() { try { localStorage.setItem('daunmerah_v2', JSON.stringify(ckState)); } catch(e) {} }
+function _ckPairKey(pair) {
+  const p = (pair || ckCurrentPair || '').replace('/', '');
+  return p ? `daunmerah_v2_state_${p}` : 'daunmerah_v2';
+}
+function ckLoad(pair) {
+  try {
+    const key = _ckPairKey(pair);
+    const s = localStorage.getItem(key);
+    ckState = s ? JSON.parse(s) : {};
+  } catch(e) { ckState = {}; }
+}
+function ckSave() {
+  try { localStorage.setItem(_ckPairKey(), JSON.stringify(ckState)); } catch(e) {}
+}
 
 function ckToggleItem(id) { ckState[id] = !ckState[id]; ckSave(); ckRender(); }
 
@@ -5783,10 +5857,13 @@ function _ckAutoMeanRev() {
 
 function ckOnPairChange() {
   const pair = document.getElementById('ckPairSelector').value;
-  // Reset state untuk pair baru agar manual ticks dari pair sebelumnya tidak bocor
-  ckState = {};
+  // Save state for old pair before switching
   ckSave();
-  ckBuildUI(); // Rebuild UI untuk membersihkan semua badge visual
+  // Load state for new pair
+  ckCurrentPair = pair;
+  ckLoad(pair);
+  ckBuildUI();
+  ckRender();
   ckAutoTickRegimeCheck(pair);
 }
 
@@ -5802,10 +5879,9 @@ function ckSwitchPlaybook(id) {
   const btn = document.getElementById('ckPbInfoBtn');
   if (box) box.classList.remove('open');
   if (btn) btn.classList.remove('open');
-  // Reset state for new playbook
+  // Reset state for new playbook (clears current pair's state)
   ckState = {};
   ckSave();
-  // Rebuild UI
   ckBuildUI();
   ckRender();
   // Re-init pair selector if needed
@@ -5830,7 +5906,7 @@ async function ckFetchDataIfNeeded() {
   if (!calData        || (now - calFetchedAt)      > S30M)
     fetches.push(fetch('/api/calendar').then(r=>r.json()).then(d=>{ if(Array.isArray(d.events)){calData=d.events;calFetchedAt=now;} }).catch(()=>{}));
   if (!realYieldsData || (now - realYieldsFetAt)   > S6H)
-    fetches.push(fetch('/api/real-yields').then(r=>r.json()).then(d=>{ realYieldsData=d.currencies; realYieldsFetAt=now; }).catch(()=>{}));
+    fetches.push(fetch('/api/real-yields').then(r=>r.json()).then(d=>{ realYieldsData=d.currencies; realYieldsLiquidity=d.liquidity||null; realYieldsYieldCurve=d.yield_curve||null; realYieldsFetAt=now; }).catch(()=>{}));
   if (!cotData        || (now - cotFetchedAt)      > S6H)
     fetches.push(fetch('/api/feeds?type=cot').then(r=>r.json()).then(d=>{ cotData=d; cotFetchedAt=now; }).catch(()=>{}));
   if (fetches.length === 0) return;
@@ -5841,7 +5917,10 @@ async function ckFetchDataIfNeeded() {
 
 function initChecklist() {
   if (!ckInitialized) {
-    ckLoad();
+    // Set current pair from selector before loading pair-specific state
+    const _initSel = document.getElementById('ckPairSelector');
+    if (_initSel && _initSel.value) ckCurrentPair = _initSel.value;
+    ckLoad(ckCurrentPair);
     // Sync playbook selector with active playbook
     const pbSel = document.getElementById('ckPlaybookSelector');
     if (pbSel) pbSel.value = ckActivePlaybook;
@@ -5875,6 +5954,7 @@ const SZ_PAIRS = [
 ];
 
 let szLiveRates = null;
+let szAtrData = null; // { atr_pips, daily_sigma, pip_size, pair } — loaded async on pair change
 
 function calcPipValueUSD(pair, entryPrice, rates) {
   // XAU/USD: 1 lot = 100 oz, pip = $0.01 → pip value = $1/lot
@@ -6025,6 +6105,12 @@ function szUpdatePipInfo() {
   } else {
     infoEl.textContent = '1 pip = 0.0001 · pip value ≈ $10/lot (majors)';
   }
+  // Fetch ATR async — clear stale data from previous pair
+  szAtrData = null;
+  fetch(`/api/correlations?action=atr&pair=${encodeURIComponent(pair)}`)
+    .then(r => r.ok ? r.json() : null)
+    .then(d => { if (d && d.atr_pips) szAtrData = d; })
+    .catch(() => {});
 }
 
 async function fetchSizingRates() {
@@ -6145,6 +6231,10 @@ function calcSizing() {
 
   const warnings = [];
   if (stopPips < 5) warnings.push('Stop terlalu sempit — slippage bisa hit prematurely');
+  // ATR warning: SL smaller than average daily range = noise risk
+  if (szAtrData && szAtrData.atr_pips && stopPips < szAtrData.atr_pips) {
+    warnings.push(`SL (${stopPips} pip) lebih kecil dari ATR 14d (${szAtrData.atr_pips} pip) — risiko kena stop oleh noise harian`);
+  }
 
   // R-multiple table — rows: -2R to +3R
   const rDollar = dollarRisk;
@@ -6207,6 +6297,14 @@ function calcSizing() {
       ${slStr}${tpStr}
       ${warnings.map(w => `<div style="color:var(--yellow);font-size:10px;margin-top:6px">⚠ ${w}</div>`).join('')}
       <table class="sz-r-table"><thead><tr style="color:var(--muted);font-size:9px">${thCols}</tr></thead><tbody>${rTableRows}</tbody></table>
+      ${szAtrData && szAtrData.atr_pips ? (() => {
+        const atrPips = szAtrData.atr_pips;
+        const varUsd = szAtrData.daily_sigma
+          ? (1.645 * szAtrData.daily_sigma * (dollarRisk / stopPips) * atrPips).toFixed(2)
+          : null;
+        const atrColor = stopPips < atrPips ? 'var(--yellow)' : 'var(--green)';
+        return `<div style="margin-top:10px;padding-top:8px;border-top:1px solid var(--border);font-family:'DM Mono',monospace;font-size:10px;color:var(--muted)">ATR 14d: <span style="color:${atrColor}">${atrPips} pip</span>${varUsd ? ` · 1d VaR 95%: <span style="color:var(--text)">$${varUsd}</span>` : ''}</div>`;
+      })() : ''}
       <button onclick="szPrefillJurnal()" style="margin-top:10px;width:100%;padding:9px;background:transparent;border:1px solid var(--pink);color:var(--pink);font-family:'DM Mono',monospace;font-size:11px;border-radius:3px;cursor:pointer;letter-spacing:.05em">→ BUAT TRADE DI JURNAL</button>
     </div>`;
 

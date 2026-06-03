@@ -21,8 +21,8 @@ const CB_FALLBACK = {
   GBP: { bank:'Bank of England',             short:'BOE',  rate:3.75, last_meeting:'2026-04-30', last_decision:'hold', last_bps:0  },
   JPY: { bank:'Bank of Japan',               short:'BOJ',  rate:0.75, last_meeting:'2026-04-28', last_decision:'hold', last_bps:0  },
   CAD: { bank:'Bank of Canada',              short:'BOC',  rate:2.25, last_meeting:'2026-04-29', last_decision:'hold', last_bps:0  },
-  AUD: { bank:'Reserve Bank of Australia',   short:'RBA',  rate:4.35, last_meeting:'2026-05-06', last_decision:'hike', last_bps:25 },
-  NZD: { bank:'Reserve Bank of New Zealand', short:'RBNZ', rate:2.25, last_meeting:'2026-04-09', last_decision:'hold', last_bps:0  },
+  AUD: { bank:'Reserve Bank of Australia',   short:'RBA',  rate:4.35, last_meeting:'2026-05-05', last_decision:'hike', last_bps:25 },
+  NZD: { bank:'Reserve Bank of New Zealand', short:'RBNZ', rate:2.25, last_meeting:'2026-05-27', last_decision:'hold', last_bps:0  },
   CHF: { bank:'Swiss National Bank',         short:'SNB',  rate:0.00, last_meeting:'2026-03-19', last_decision:'hold', last_bps:0  },
 };
 

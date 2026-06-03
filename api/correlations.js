@@ -273,6 +273,102 @@ module.exports = async function handler(req, res) {
     }
   }
 
+  // --- ATR + 1-day VaR for sizing calculator ---
+  if (req.query.action === 'atr') {
+    const pairInput = req.query.pair || 'EUR/USD';
+
+    const YAHOO_SYMBOL_MAP = {
+      'EUR/USD': 'EURUSD=X', 'GBP/USD': 'GBPUSD=X', 'AUD/USD': 'AUDUSD=X',
+      'NZD/USD': 'NZDUSD=X', 'USD/CAD': 'USDCAD=X', 'USD/CHF': 'USDCHF=X',
+      'USD/JPY': 'USDJPY=X', 'EUR/JPY': 'EURJPY=X', 'GBP/JPY': 'GBPJPY=X',
+      'AUD/JPY': 'AUDJPY=X', 'NZD/JPY': 'NZDJPY=X', 'CAD/JPY': 'CADJPY=X',
+      'CHF/JPY': 'CHFJPY=X', 'EUR/GBP': 'EURGBP=X', 'EUR/CAD': 'EURCAD=X',
+      'EUR/AUD': 'EURAUD=X', 'EUR/NZD': 'EURNZD=X', 'EUR/CHF': 'EURCHF=X',
+      'GBP/CAD': 'GBPCAD=X', 'GBP/AUD': 'GBPAUD=X', 'GBP/NZD': 'GBPNZD=X',
+      'GBP/CHF': 'GBPCHF=X', 'AUD/CAD': 'AUDCAD=X', 'AUD/NZD': 'AUDNZD=X',
+      'AUD/CHF': 'AUDCHF=X', 'NZD/CAD': 'NZDCAD=X', 'NZD/CHF': 'NZDCHF=X',
+      'CAD/CHF': 'CADCHF=X', 'XAU/USD': 'GC=F',
+    };
+    const PIP_SIZE_MAP = {
+      'USD/JPY': 0.01, 'EUR/JPY': 0.01, 'GBP/JPY': 0.01, 'AUD/JPY': 0.01,
+      'NZD/JPY': 0.01, 'CAD/JPY': 0.01, 'CHF/JPY': 0.01, 'XAU/USD': 0.1,
+    };
+    const pipSize = PIP_SIZE_MAP[pairInput] || 0.0001;
+    const symbol = YAHOO_SYMBOL_MAP[pairInput];
+    if (!symbol) return res.status(400).json({ error: 'Unknown pair' });
+
+    const cacheKey = `atr:${symbol}`;
+    const cacheTTL = 14400;
+
+    try {
+      const cached = await redisCmd('GET', cacheKey);
+      if (cached) {
+        const d = JSON.parse(cached);
+        if (Date.now() - new Date(d.computed_at).getTime() < cacheTTL * 1000)
+          return res.status(200).json({ ...d, from_cache: true });
+      }
+
+      const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=1mo`;
+      const r = await fetch(url, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+        signal: AbortSignal.timeout(10000),
+      });
+      if (!r.ok) throw new Error(`Yahoo HTTP ${r.status}`);
+      const json = await r.json();
+      const result = json?.chart?.result?.[0];
+      if (!result) throw new Error('No result');
+
+      const q = result.indicators?.quote?.[0] || {};
+      const highs  = q.high  || [];
+      const lows   = q.low   || [];
+      const closes = q.close || [];
+
+      const candles = [];
+      for (let i = 0; i < closes.length; i++) {
+        if (closes[i] == null || highs[i] == null || lows[i] == null) continue;
+        candles.push({ high: highs[i], low: lows[i], close: closes[i] });
+      }
+      if (candles.length < 15) throw new Error('Insufficient data');
+
+      const trValues = [];
+      for (let i = 1; i < candles.length; i++) {
+        const { high, low } = candles[i];
+        const prevClose = candles[i - 1].close;
+        const tr = Math.max(high - low, Math.abs(high - prevClose), Math.abs(low - prevClose));
+        trValues.push(tr);
+      }
+      const atr14 = trValues.slice(-14).reduce((a, b) => a + b, 0) / Math.min(14, trValues.length);
+      const atrPips = Math.round(atr14 / pipSize);
+
+      const returns = [];
+      for (let i = 1; i < candles.length; i++) {
+        returns.push(Math.log(candles[i].close / candles[i - 1].close));
+      }
+      const recentReturns = returns.slice(-20);
+      const meanR = recentReturns.reduce((a, b) => a + b, 0) / recentReturns.length;
+      const variance = recentReturns.reduce((acc, r) => acc + (r - meanR) ** 2, 0) / recentReturns.length;
+      const dailySigma = Math.sqrt(variance);
+
+      const payload = {
+        pair: pairInput, symbol,
+        atr_14d: +atr14.toFixed(6),
+        atr_pips: atrPips,
+        daily_sigma: +dailySigma.toFixed(6),
+        pip_size: pipSize,
+        computed_at: new Date().toISOString(),
+      };
+      await redisCmd('SET', cacheKey, JSON.stringify(payload), 'EX', cacheTTL);
+      return res.status(200).json({ ...payload, from_cache: false });
+
+    } catch(e) {
+      try {
+        const stale = await redisCmd('GET', cacheKey);
+        if (stale) return res.status(200).json({ ...JSON.parse(stale), from_cache: true, stale: true });
+      } catch(_) {}
+      return res.status(500).json({ error: e.message });
+    }
+  }
+
   if (await rateLimit(req, res, { limit: 5, windowSecs: 60, endpoint: 'correlations' })) return;
 
   // --- SIZING RATES: live FX rates for accurate cross-pair pip value calculation ---

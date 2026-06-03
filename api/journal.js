@@ -152,14 +152,16 @@ module.exports = async function handler(req, res) {
       } catch(e) { console.warn('journal analyze: Redis GET failed:', e.message); }
     }
 
-    // Load all closed entries
+    // Load all closed entries via MGET batch
     let entries = [];
     try {
       const ids = await redisCmd('ZRANGE', indexKey, 0, -1, 'REV') || [];
-      for (const id of ids) {
-        const raw = await redisCmd('GET', `journal:${deviceId}:${id}`);
-        if (!raw) continue;
-        try { const e = JSON.parse(raw); if (e.status === 'closed') entries.push(e); } catch(_) {}
+      if (ids.length > 0) {
+        const keys = ids.map(id => `journal:${deviceId}:${id}`);
+        const rawEntries = await redisCmd('MGET', ...keys);
+        entries = (Array.isArray(rawEntries) ? rawEntries : [])
+          .map(raw => { try { return raw ? JSON.parse(raw) : null; } catch(_) { return null; } })
+          .filter(e => e && e.status === 'closed');
       }
     } catch(e) {
       console.error('journal analyze: Redis fetch failed:', e.message);
@@ -218,20 +220,22 @@ module.exports = async function handler(req, res) {
   if (req.method === 'GET') {
     const statusFilter = req.query.status || 'all'; // all | open | closed | archived
     try {
-      // Get all IDs from index sorted by score (created_at ms) newest first
       const ids = await redisCmd('ZRANGE', indexKey, 0, -1, 'REV') || [];
-      const entries = [];
-      for (const id of ids) {
-        const raw = await redisCmd('GET', `journal:${deviceId}:${id}`);
-        if (!raw) continue;
-        try {
-          const entry = JSON.parse(raw);
-          if (statusFilter !== 'all' && entry.status !== statusFilter) continue;
-          entries.push(entry);
-        } catch(e) {
-          console.warn('journal GET parse error for id', id, ':', e.message);
-        }
-      }
+      if (ids.length === 0) return res.status(200).json({ entries: [] });
+
+      // Batch-fetch all entries in a single MGET call instead of N sequential GETs
+      const keys = ids.map(id => `journal:${deviceId}:${id}`);
+      const rawEntries = await redisCmd('MGET', ...keys);
+      const entries = (Array.isArray(rawEntries) ? rawEntries : [])
+        .map((raw, i) => {
+          if (!raw) return null;
+          try { return JSON.parse(raw); } catch(e) {
+            console.warn('journal GET parse error for id', ids[i], ':', e.message);
+            return null;
+          }
+        })
+        .filter(e => e && (statusFilter === 'all' || e.status === statusFilter));
+
       return res.status(200).json({ entries });
     } catch(e) {
       console.error('journal GET failed:', e.message);
