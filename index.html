@@ -7402,7 +7402,7 @@ function renderDashDigest() {
     const alerts = ringkasanCache.thesis_alerts;
     if (alerts && alerts.length > 0) {
       thesisEl.innerHTML = `<div class="dash-digest-section">${alerts.map(a =>
-        `<div style="font-size:9px;color:var(--yellow);font-family:'DM Mono',monospace;padding:2px 0">⚠ ${escHtml(a.pair||'')} — ${escHtml(a.message||'')}</div>`
+        `<div style="font-size:9px;color:var(--yellow);font-family:'DM Mono',monospace;padding:2px 0;line-height:1.5">⚠ <strong>${escHtml(a.pair||'')} ${escHtml((a.direction||'').toUpperCase())}</strong> — ${escHtml(a.headline||'')}${a.reason ? `<br><span style="color:var(--muted)">${escHtml(a.reason)}</span>` : ''}</div>`
       ).join('')}</div>`;
     } else {
       thesisEl.innerHTML = '<div class="dash-no-data">Tidak ada thesis alert aktif.</div>';
