@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-06-02 (session 41 — Bug fix: dashboardPanel tampil di mobile)
+> **Last updated:** 2026-06-03 (session 42 — Backlog: OpenBB data source upgrades dicatat)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Downloads\Financial_Feed_App`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -816,3 +816,47 @@ Groq:        https://api.groq.com/openai/v1
 Nvidia NIM:  https://integrate.api.nvidia.com/v1
 Mistral:     https://api.mistral.ai/v1
 ```
+
+---
+
+## Backlog — Data Source Upgrades (dari OpenBB Research, 2026-06-03)
+
+Data yang ditemukan dari riset OpenBB Terminal open source — semua high-value, gratis, tanpa API key baru kecuali disebutkan.
+
+### 1. Cleveland Fed Inflation Nowcast (HIGH VALUE)
+- **Problem saat ini:** `api/real-yields.js` — inflation expectations 7 currency non-USD di-hardcode manual, refresh per kuartal. EUR sudah >100 hari stale (as_of 2026-01-15).
+- **Solusi:** Fetch Cleveland Fed Nowcast API — update otomatis bulanan, tanpa API key.
+- **Endpoint:** `https://www.clevelandfed.org/en/our-research/indicators-and-data/inflation-expectations.aspx` (scrape) atau data file CSV yang mereka publish
+- **Impact:** Real yield lebih akurat → CB bias + checklist lebih reliable
+- **File target:** `api/real-yields.js` — ganti hardcoded `INFLATION_EXPECTATIONS` object
+
+### 2. GDPNow Atlanta Fed (HIGH VALUE)
+- **Problem saat ini:** Tidak ada nowcast GDP real-time. AI hanya bisa opini dari headline.
+- **Solusi:** Atlanta Fed GDPNow — estimasi GDP quarter berjalan, update setiap 1-2 hari kerja setelah rilis data ekonomi. Gratis tanpa auth.
+- **Endpoint:** `https://www.atlantafed.org/cgi-bin/public/research/inflationproject/realtime_analysis/gdpnow/gdpnow.aspx` (HTML scrape) atau `https://www.atlantafed.org/-/media/documents/research/inflationproject/realtime_analysis/gdpnow/GDPNow_current.xlsx`
+- **Impact:** Indikator leading USD fundamental — naik/turun GDPNow bisa gerakkan USD bias
+- **Display:** Tambah ke panel FUNDAMENTAL tab, card USD, field `GDP Nowcast`
+- **File target:** `api/admin.js` (fundamental_refresh) atau baru di `api/real-yields.js`
+
+### 3. CME FedWatch Fix — Rate Path Market-Implied (HIGH VALUE)
+- **Problem saat ini:** `api/rate-path.js` — CME endpoint tidak berfungsi, pakai heuristic SOFR. UI sudah jujur label "Estimasi (bukan probabilitas pasar)" tapi data tidak akurat.
+- **Solusi:** OpenBB mengakses CME Fed Funds Futures via endpoint yang berbeda — perlu investigasi endpoint yang benar.
+- **Candidate endpoints:**
+  - `https://www.cmegroup.com/markets/interest-rates/cme-fedwatch-tool.html` (scrape)
+  - `https://www.cmegroup.com/CmeWS/mvc/ProductCalendar/V2/productCalendar.do?productId=305` (futures calendar)
+  - `https://www.cmegroup.com/ftp/pub/settle/cbt_grains.csv` (pattern — ganti ke rates)
+- **Impact:** Rate path menjadi market-implied yang benar — upgrade besar untuk CB bias dan thesis
+- **File target:** `api/rate-path.js` — replace heuristic logic
+
+### 4. TGA + Fed Balance Sheet dari FRED (MEDIUM-HIGH VALUE)
+- **Problem saat ini:** Tidak ada indikator likuiditas USD sistemik. AI hanya infer dari headline Fed.
+- **Solusi:** FRED sudah kita akses (ada `FRED_API_KEY`). Tambah 2 series:
+  - `WTREGEN` — Treasury General Account (TGA) balance, weekly
+  - `WALCL` — Fed Total Assets (balance sheet size), weekly
+- **Impact:** TGA drain = inject likuiditas ke pasar = bullish risk assets. TGA refill = serap likuiditas = bearish. Penting untuk USD dan cross-asset.
+- **Display:** Panel FUNDAMENTAL tab, card USD, field `TGA Balance` + `Fed Assets`
+- **File target:** `api/real-yields.js` atau `api/admin.js` (fundamental_refresh)
+
+---
+
+> **Catatan:** Item 1 dan 2 bisa diimplementasi bersamaan karena keduanya menyentuh data fundamental USD. Item 3 butuh investigasi endpoint lebih dulu sebelum implementasi.
