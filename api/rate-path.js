@@ -1,6 +1,6 @@
 // api/rate-path.js
-// Market-implied rate path from Fed Funds futures via CME FedWatch HTML scrape.
-// Falls back to FRED FEDFUNDS history + forward guidance heuristic if CME is blocked.
+// Market-implied rate path from Fed Funds futures.
+// Fallback chain: CME FedWatch → CME ZQ settlement → Yahoo Finance ZQ futures → heuristic.
 // Redis cache: rate_path, TTL 4 hours (14400s).
 
 const CORS = { 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-cache' };
@@ -12,6 +12,19 @@ const CME_FEDWATCH_URL = 'https://www.cmegroup.com/CmeWS/mvc/FedWatch/tool/get/{
 // CME 30-Day Fed Funds Futures (ZQ) settlement — fallback if FedWatch API blocked
 const CME_ZQ_URL = 'https://www.cmegroup.com/CmeWS/mvc/Settlements/futures/tradeDate/{DATE}/productCode/ZQ';
 const FRED_BASE = 'https://api.stlouisfed.org/fred/series/observations';
+
+// ZQ futures month codes (standard CME/Yahoo Finance convention)
+const ZQ_MONTH_CODES = {
+  '01':'F','02':'G','03':'H','04':'J','05':'K','06':'M',
+  '07':'N','08':'Q','09':'U','10':'V','11':'X','12':'Z',
+};
+
+function fomcDateToZQTicker(fomcDate) {
+  // "2026-06-18" → "ZQM26=F"
+  const [year, month] = fomcDate.split('-');
+  const code = ZQ_MONTH_CODES[month];
+  return code ? `ZQ${code}${year.slice(2)}=F` : null;
+}
 
 async function redisCmd(...args) {
   const REDIS_URL   = process.env.UPSTASH_REDIS_REST_URL;
@@ -68,7 +81,7 @@ async function fetchCMEFedWatch() {
   const meetings = Array.isArray(json) ? json : json?.FedWatchTool || json?.meetings || [];
   if (!meetings || meetings.length === 0) throw new Error('CME FedWatch: no meetings data');
 
-  return { meetings, trade_date: dateStr };
+  return { meetings, trade_date: new Date().toISOString().slice(0, 10) };
 }
 
 // Try fetching ZQ (30-day Fed Funds futures) settlement data — fallback
@@ -100,6 +113,40 @@ async function fetchCMEZQData() {
 
   if (contracts.length < 2) throw new Error('CME ZQ: insufficient contracts');
   return { contracts, trade_date: dateStr };
+}
+
+// Fetch ZQ futures prices from Yahoo Finance — already accessible from Vercel (used in correlations.js)
+// Returns { prices: { "2026-06-18": 96.38, ... }, tickerMap: { "2026-06-18": "ZQM26=F", ... } }
+async function fetchYahooZQFutures(meetings) {
+  const tickerMap = {};
+  for (const date of meetings) {
+    const t = fomcDateToZQTicker(date);
+    if (t) tickerMap[date] = t;
+  }
+  if (Object.keys(tickerMap).length === 0) throw new Error('No valid ZQ tickers');
+
+  const prices = {};
+  await Promise.allSettled(
+    Object.entries(tickerMap).map(async ([date, ticker]) => {
+      const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=5d`;
+      const r = await fetch(url, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+          'Accept': 'application/json',
+        },
+        signal: AbortSignal.timeout(8000),
+      });
+      if (!r.ok) throw new Error(`Yahoo ${ticker} HTTP ${r.status}`);
+      const d = await r.json();
+      const price = d?.chart?.result?.[0]?.meta?.regularMarketPrice;
+      if (!price || isNaN(price)) throw new Error(`Yahoo ${ticker}: no price`);
+      prices[date] = +parseFloat(price).toFixed(4);
+    })
+  );
+
+  const resolved = Object.keys(prices).length;
+  if (resolved === 0) throw new Error('Yahoo ZQ: all tickers failed to return prices');
+  return { prices, tickerMap };
 }
 
 async function computeRatePath(apiKey) {
@@ -171,7 +218,42 @@ async function computeRatePath(apiKey) {
       computed_at: new Date().toISOString(),
     };
   } catch(e) {
-    console.warn('rate-path: CME ZQ fetch also failed:', e.message, '— falling back to heuristic');
+    console.warn('rate-path: CME ZQ fetch also failed:', e.message, '— trying Yahoo Finance ZQ');
+  }
+
+  // Step 2.5: Yahoo Finance ZQ futures (ZQM26=F etc.) — same math, different data source
+  // Yahoo Finance already accessible from Vercel (confirmed via correlations.js ATR fetches)
+  try {
+    const { prices, tickerMap } = await fetchYahooZQFutures(nextMeetings);
+
+    const meetingProbs = nextMeetings.map(date => {
+      const price = prices[date];
+      if (price == null) return { date, prob_hold: 0.85, prob_cut25: 0.15, prob_hike25: 0, implied_rate: null };
+      const impliedRate = +(100 - price).toFixed(4);
+      const delta = +(impliedRate - currentRate).toFixed(4);
+      const prob_cut25  = Math.max(0, Math.min(1, +(-delta / 0.25).toFixed(4)));
+      const prob_hike25 = Math.max(0, Math.min(1, +(delta / 0.25).toFixed(4)));
+      const prob_hold   = Math.max(0, +(1 - prob_cut25 - prob_hike25).toFixed(4));
+      return { date, prob_hold, prob_cut25, prob_hike25, implied_rate: impliedRate };
+    });
+
+    const contracts = nextMeetings
+      .filter(d => prices[d] != null)
+      .map(d => ({ date: d, ticker: tickerMap[d], price: prices[d], implied_rate: +(100 - prices[d]).toFixed(4) }));
+
+    const cum3m = contracts.length >= 1
+      ? Math.round((contracts[Math.min(2, contracts.length - 1)].implied_rate - currentRate) * 100)
+      : 0;
+
+    return {
+      source: 'yahoo_zq_futures',
+      current_rate: currentRate,
+      USD: { next_meetings: meetingProbs, cumulative_3m_bps: cum3m },
+      zq_contracts: contracts,
+      computed_at: new Date().toISOString(),
+    };
+  } catch(e) {
+    console.warn('rate-path: Yahoo ZQ also failed:', e.message, '— falling back to heuristic');
   }
 
   // Step 3: heuristic fallback — distance from neutral rate (~3.0%) drives probability

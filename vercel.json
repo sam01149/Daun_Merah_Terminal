@@ -8,5 +8,11 @@
         { "key": "X-Content-Type-Options", "value": "nosniff" }
       ]
     }
+  ],
+  "crons": [
+    {
+      "path": "/api/admin?action=gdpnow",
+      "schedule": "0 14 * * 1-5"
+    }
   ]
 }
