@@ -116,7 +116,7 @@ async function computeRatePath(apiKey) {
     fetchFredSeries('DTB3',   apiKey).catch(() => null),
   ]);
 
-  const currentRate = dffObs ? parseFloat(dffObs.value) : 3.625;
+  const currentRate = dffObs ? parseFloat(dffObs.value) : 3.58;
   // T-bill: prefer constant-maturity (DGS, daily), fall back to auction rate (DTB, weekly)
   const tbill1m = (dgs1mObs ? parseFloat(dgs1mObs.value) : null)
                ?? (dtb4wkObs ? parseFloat(dtb4wkObs.value) : null);

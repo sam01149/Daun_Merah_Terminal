@@ -96,7 +96,7 @@ module.exports = async function handler(req, res) {
             .then(y => { yieldCurveData = y; redisCmd('SET', 'yield_curve', JSON.stringify(y), 'EX', 3600).catch(() => {}) })
             .catch(() => {})
         )
-        Promise.allSettled(toRefresh).catch(() => {}) // fire-and-forget: don't block response
+        await Promise.allSettled(toRefresh)
         return res.status(200).json({ ...parsed, liquidity: liquidityData, yield_curve: yieldCurveData })
       }
     } catch(e) {

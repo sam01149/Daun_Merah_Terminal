@@ -596,7 +596,7 @@ ${xauHistoryBlock}`;
     if (SAMBANOVA_KEY_CALL1 && await cb.canCall('ai:sambanova')) {
       try {
         console.log('Call 1: trying SambaNova DeepSeek-V3.2 (akun 2 prose)');
-        const raw = await aiCall(SAMBANOVA_URL_CALL1, SAMBANOVA_KEY_CALL1, SAMBANOVA_MODEL_CALL1, call1Messages, 800, 0.25, 12000);
+        const raw = await aiCall(SAMBANOVA_URL_CALL1, SAMBANOVA_KEY_CALL1, SAMBANOVA_MODEL_CALL1, call1Messages, 800, 0.25, 28000);
         if (raw.trim()) { article = raw.trim(); method = 'deepseek-v3.2'; }
         console.log('Call 1: SambaNova V3.2 OK, length', article?.length);
         await cb.onSuccess('ai:sambanova');
