@@ -1,8 +1,8 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-06-03 (session 44 — Implementasi daun_merah_plan.md: data accuracy upgrades, performance optimizations, new features)
+> **Last updated:** 2026-06-04 (session 45 — Bug fixes: rate-path, GDP Nowcast, fundamental parser, inflation expectations)
 > **Branch:** main — semua perubahan deployed ke production
-> **Working directory:** `c:\Users\sam\Downloads\Financial_Feed_App`
+> **Working directory:** `c:\Users\sam\Documents\kerja\Financial_Feed_App`
 > **Production URL:** https://financial-feed-app.vercel.app
 
 ---
@@ -78,6 +78,36 @@ Financial_Feed_App/
 > **Penting:** `api/feeds.js` menggantikan `api/rss.js` dan `api/cot.js` yang sudah dihapus.
 > `api/admin.js` menggantikan `api/health.js`, `api/redis-keys.js`, `api/admin-prompts.js`, dan `api/push.js`.
 > Konsolidasi ini dilakukan untuk tetap di bawah limit 12 serverless functions Vercel Hobby.
+
+---
+
+## Changelog Session 45 (2026-06-04)
+
+### Bug Fixes
+
+**1. Rate Path — Fix keyless FRED + T-bill logic + heuristic (`api/rate-path.js`)**
+- Ganti `fetchFredSeries` (butuh `FRED_API_KEY`) → `fetchFredCsv` (keyless, pattern sama dengan `cb-status.js` scrapeUSD). Root cause "selalu fallback ke heuristic": FRED API key missing/rate-limit → semua T-bill null → heuristic.
+- T-bill term premium fix: T-bill yield biasanya ~20bps DI ATAS EFFR di regime hold (term premium). Logic lama: `prob_cut = (FF - tbill) / 0.25` → T-bill di atas FF → prob_hike=100% (salah). Logic baru: `spread = FF - tbill + 0.20` → jika T-bill 4.30% dan FF 3.75%: spread = -0.35 → prob_cut = 1% ✓.
+- Heuristic threshold lebih akurat: d≥0.5 (FF 3.5-4.0%) → 7% (sebelumnya 12%). Untuk FF=3.75%: 7% vs CME FedWatch aktual ~1.6% (lebih mendekati realita, bukan 7.5× lebih tinggi seperti sebelumnya).
+- `computeRatePath()` tidak lagi butuh `apiKey` parameter.
+
+**2. GDP Nowcast — Keyless fetch + auto-trigger via fundamental_refresh (`api/admin.js`)**
+- `gdpnowHandler`: ganti dari FRED API (butuh key) ke `fetchGdpNowData()` helper yang primary-nya FRED CSV keyless, fallback ke API. Data kini pasti tersimpan ke Redis saat cron jalan.
+- `fundamentalRefreshHandler`: di akhir handler, auto-refresh GDP Nowcast jika data >6 jam stale. Artinya klik tombol "REFRESH" di tab FUNDAMENTAL sekarang juga update GDP Nowcast di card USD.
+- Data disimpan di `fundamental:USD` → `GDP Nowcast` → auto-render di tabel karena `renderFundamental()` sudah render semua key.
+
+**3. Fundamental Parser — Reject % untuk quantity indicators + Core PCE YoY disambiguation (`api/_fundamental_parser.js`)**
+- Tambah `QUANTITY_INDICATORS` set: NFP, Jobless Claims, Employment Change, Claimant Count, Building Approvals, Housing Starts, Durable Goods Orders. Jika value-nya berakhir `%`, parse di-reject. Fix: `NFP: 0.0%` tidak lagi bisa overwrite seed `NFP: 178K`.
+- Disambiguasi Core PCE: jika headline mengandung `y/y|yoy|annual|year-on-year` → key disimpan sebagai `Core PCE YoY` (bukan `Core PCE`). Mencegah nilai `4.4%` YoY overwrite seed MoM `0.3%`. Idem untuk `Core CPI MoM` → `Core CPI YoY`.
+
+**4. Inflation Expectations Update (`api/real-yields.js`)**
+- EUR: 2.1% → 2.0% (ECB SPF Q2 2026, as_of 2026-04-10)
+- CAD: 2.3% → 2.2% (BoC MPR Apr 2026, as_of 2026-04-16)
+- AUD: as_of updated → RBA SoMP May 2026 (2026-05-06), value 3.2% (unchanged, RBA hiking)
+- NZD: 2.2% → 2.1% (RBNZ MPS May 2026, as_of 2026-05-27)
+- CHF: as_of updated → SNB Mar 2026 (2026-03-19), value 0.4% (unchanged)
+- JPY: as_of updated → BoJ Tankan Q1 2026 (2026-03-28, Tankan published late March)
+- GBP: unchanged (BoE IAS Q2 2026 results not published yet as of June 4)
 
 ---
 
@@ -731,6 +761,7 @@ File: `api/cb-status.js`, object `CB_DATA`
 | SNB | 0.00% | 2026-03-19 | hold |
 
 > **Last verified:** 2026-05-05. Semua rate dikonfirmasi via official APIs (FRED, ECB API, BoC Valet) + web search.
+> **Note 2026-06-04:** ECB meeting ~Jun 5, BOE ~Jun 19, SNB ~Jun 19. Live scraper `cb-status.js` akan otomatis update rate jika berubah. Fallback metadata (`last_meeting`, `last_decision`) perlu update manual setelah meeting.
 
 ---
 
@@ -748,6 +779,7 @@ File: `api/rate-path.js`
 File: `api/real-yields.js`, object `INFLATION_EXPECTATIONS`
 
 Source: ECB SPF, BoE IAS, BoJ Tankan — cek `as_of` field, update jika > 90 hari.
+Updated session 45: EUR→ECB SPF Q2 (Apr 2026), CAD→BoC MPR Apr, AUD→RBA SoMP May, NZD→RBNZ MPS May, CHF→SNB Mar, JPY→Tankan Q1 Mar 28. GBP tetap Feb (IAS Q2 belum publish).
 
 ---
 

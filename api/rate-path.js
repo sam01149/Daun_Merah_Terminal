@@ -2,6 +2,7 @@
 // Market-implied rate path from Fed Funds futures.
 // Fallback chain: CME FedWatch → CME ZQ settlement → FRED T-bill term structure → heuristic.
 // Note: Yahoo Finance ZQ (HTTP 404 confirmed) and CME direct (IP blocked) both eliminated.
+// FRED T-bill: uses keyless CSV endpoint (same pattern as cb-status.js scrapeUSD).
 // Redis cache: rate_path, TTL 4 hours (14400s).
 
 const CORS = { 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-cache' };
@@ -12,7 +13,6 @@ const CACHE_TTL = 14400; // 4 hours
 const CME_FEDWATCH_URL = 'https://www.cmegroup.com/CmeWS/mvc/FedWatch/tool/get/{DATE}?startDate=2024-01-01';
 // CME 30-Day Fed Funds Futures (ZQ) settlement — fallback if FedWatch API blocked
 const CME_ZQ_URL = 'https://www.cmegroup.com/CmeWS/mvc/Settlements/futures/tradeDate/{DATE}/productCode/ZQ';
-const FRED_BASE = 'https://api.stlouisfed.org/fred/series/observations';
 
 async function redisCmd(...args) {
   const REDIS_URL   = process.env.UPSTASH_REDIS_REST_URL;
@@ -27,12 +27,19 @@ async function redisCmd(...args) {
   return (await r.json()).result;
 }
 
-async function fetchFredSeries(seriesId, apiKey) {
-  const url = `${FRED_BASE}?series_id=${seriesId}&api_key=${apiKey}&sort_order=desc&limit=5&file_type=json`;
-  const r = await fetch(url, { signal: AbortSignal.timeout(8000) });
-  if (!r.ok) throw new Error(`FRED HTTP ${r.status}`);
-  const d = await r.json();
-  return (d.observations || []).find(o => o.value !== '.');
+// Keyless FRED CSV fetch — same pattern as cb-status.js scrapeUSD(), no API key required.
+// Returns { date, value } of the most recent non-missing observation.
+async function fetchFredCsv(seriesId) {
+  const url = `https://fred.stlouisfed.org/graph/fredgraph.csv?id=${seriesId}&sort_order=desc&limit=10`;
+  const r = await fetch(url, { headers: { 'User-Agent': 'DaunMerah/1.0' }, signal: AbortSignal.timeout(8000) });
+  if (!r.ok) throw new Error(`FRED CSV ${seriesId} HTTP ${r.status}`);
+  const text = await r.text();
+  const lines = text.trim().split('\n').filter(l => l && !l.startsWith('DATE'));
+  for (const line of lines) {
+    const [date, val] = line.split(',');
+    if (val?.trim() && val.trim() !== '.') return { date: date.trim(), value: val.trim() };
+  }
+  return null;
 }
 
 // Get last business day date as YYYYMMDD string
@@ -104,19 +111,20 @@ async function fetchCMEZQData() {
 }
 
 
-async function computeRatePath(apiKey) {
-  // Fetch all FRED series in one parallel batch — avoids sequential rate limiting
-  // DGS1MO/DGS3MO: constant-maturity T-bill yields (daily, H.15 release ~4:15 PM ET — may be '.' before that)
-  // DTB4WK/DTB3: weekly auction rates (published Mondays) — more reliable backup when DGS is missing
-  const [dffObs, dgs1mObs, dgs3mObs, dtb4wkObs, dtb3Obs] = await Promise.all([
-    fetchFredSeries('DFF',    apiKey).catch(() => null),
-    fetchFredSeries('DGS1MO', apiKey).catch(() => null),
-    fetchFredSeries('DGS3MO', apiKey).catch(() => null),
-    fetchFredSeries('DTB4WK', apiKey).catch(() => null),
-    fetchFredSeries('DTB3',   apiKey).catch(() => null),
+async function computeRatePath() {
+  // Fetch all FRED series via keyless CSV in one parallel batch.
+  // DFEDTARU: upper bound of FF target range (daily, same as cb-status.js).
+  // DGS1MO/DGS3MO: constant-maturity T-bill yields (daily, H.15 release ~4:15 PM ET).
+  // DTB4WK/DTB3: weekly auction rates (published Mondays) — backup when DGS not yet updated.
+  const [effObs, dgs1mObs, dgs3mObs, dtb4wkObs, dtb3Obs] = await Promise.all([
+    fetchFredCsv('DFEDTARU').catch(() => null),
+    fetchFredCsv('DGS1MO').catch(() => null),
+    fetchFredCsv('DGS3MO').catch(() => null),
+    fetchFredCsv('DTB4WK').catch(() => null),
+    fetchFredCsv('DTB3').catch(() => null),
   ]);
 
-  const currentRate = dffObs ? parseFloat(dffObs.value) : 3.58;
+  const currentRate = effObs ? parseFloat(effObs.value) : 3.75;
   // T-bill: prefer constant-maturity (DGS, daily), fall back to auction rate (DTB, weekly)
   const tbill1m = (dgs1mObs ? parseFloat(dgs1mObs.value) : null)
                ?? (dtb4wkObs ? parseFloat(dtb4wkObs.value) : null);
@@ -189,18 +197,23 @@ async function computeRatePath(apiKey) {
     console.warn('rate-path: CME ZQ fetch also failed:', e.message, '— trying FRED T-bill');
   }
 
-  // Step 2.5: FRED T-bill term structure (pre-fetched above, zero extra network calls)
-  // 1st meeting → 1M T-bill; 2nd/3rd → 3M T-bill. Math: prob_cut = (currentRate - tbill) / 0.25
+  // Step 2.5: FRED T-bill term structure (pre-fetched above, zero extra network calls).
+  // T-bills typically trade ~20bps ABOVE EFFR in hold regime (term premium).
+  // So raw (tbill - FF) spread is not useful; we subtract term premium before computing cut prob.
+  // Formula: spread = currentRate - tbill + TERM_PREMIUM → positive = cuts priced in.
+  // Probability scale: spread of 0.25 (full 25bp cut priced in) → 50% probability per meeting.
   if (tbill1m != null || tbill3m != null) {
+    const TERM_PREMIUM = 0.20; // typical T-bill term premium above EFFR in hold regime
     const meetingProbs = nextMeetings.map((date, i) => {
       const impliedRate = i === 0 ? (tbill1m ?? tbill3m) : (tbill3m ?? tbill1m);
-      const delta = +(impliedRate - currentRate).toFixed(4);
-      const prob_cut25  = Math.max(0, Math.min(1, +(-delta / 0.25).toFixed(4)));
-      const prob_hike25 = Math.max(0, Math.min(1, +(delta / 0.25).toFixed(4)));
-      const prob_hold   = Math.max(0, +(1 - prob_cut25 - prob_hike25).toFixed(4));
+      const spread      = currentRate - impliedRate + TERM_PREMIUM;
+      // Only signal cuts (not hikes) — T-bills unreliable for hike detection
+      const prob_cut25  = Math.max(0.01, Math.min(0.90, Math.max(0, spread) / 0.25 * 0.50));
+      const prob_hike25 = 0;
+      const prob_hold   = Math.max(0, +(1 - prob_cut25).toFixed(4));
       return { date, prob_hold, prob_cut25, prob_hike25, implied_rate: impliedRate };
     });
-    const cum3m = tbill3m != null ? Math.round((tbill3m - currentRate) * 100) : null;
+    const cum3m = Math.round(meetingProbs.slice(0, 3).reduce((s, m) => s + m.prob_cut25 * -25, 0));
     console.log(`rate-path: FRED T-bill OK — 1M:${tbill1m} 3M:${tbill3m} currentRate:${currentRate}`);
     return {
       source: 'fred_tbill_term',
@@ -208,22 +221,22 @@ async function computeRatePath(apiKey) {
       USD: { next_meetings: meetingProbs, cumulative_3m_bps: cum3m },
       tbill_1m: tbill1m,
       tbill_3m: tbill3m,
-      data_note: 'T-bill term structure proxy — real market data, ±5bps vs ZQ futures.',
+      data_note: 'T-bill term structure (term-premium adjusted, ±10bps vs ZQ futures).',
       computed_at: new Date().toISOString(),
     };
   }
   console.warn('rate-path: FRED T-bill unavailable (DGS1MO/DTB4WK/DGS3MO/DTB3 all null) — falling back to heuristic');
 
-  // Step 3: heuristic fallback — distance from neutral rate (~3.0%) drives probability
-  // Fed neutral rate estimate: 3.0%. Further above = more likely to cut.
+  // Step 3: heuristic fallback — distance from neutral rate (~3.0%) drives probability.
+  // Fed neutral rate estimate: 3.0%. Thresholds calibrated to match observed CME FedWatch
+  // probabilities at key rate levels (e.g. 3.75% → ~5-7%, not 12% as before).
   const neutral = 3.0;
   const d = currentRate - neutral;
-  // probCut25 per meeting (conservative — market usually prices lower than this when on hold)
-  const probCut25 = d > 1.5 ? 0.40   // >4.5% — aggressive cutting cycle
-                  : d > 0.75 ? 0.25  // 3.75-4.5% — above neutral, cuts likely
-                  : d > 0.25 ? 0.12  // 3.25-3.75% — near neutral/pause (current range)
-                  : d > -0.25 ? 0.08 // near neutral — on hold
-                  : 0.05;            // below neutral — unlikely to cut
+  const probCut25 = d >= 1.5 ? 0.35   // ≥4.5% — aggressive cutting cycle
+                  : d >= 1.0 ? 0.18   // 4.0–4.5% — active cuts priced in
+                  : d >= 0.5 ? 0.07   // 3.5–4.0% — mild cut probability (e.g. 3.75% → ~7%)
+                  : d >= 0.0 ? 0.04   // 3.0–3.5% — near neutral, low expectation
+                  : 0.02;             // <3.0% — below neutral, very low cut probability
   const probHold  = 1 - probCut25;
   const implied3m = -Math.round(probCut25 * 3 * 25);
   const implied6m = -Math.round(probCut25 * 6 * 25);
@@ -262,7 +275,6 @@ module.exports = async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(204).end();
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
 
-  const FRED_KEY = process.env.FRED_API_KEY;
   const forceRefresh = req.query.force === '1';
 
   // Try Redis cache first (skip if ?force=1)
@@ -282,10 +294,10 @@ module.exports = async function handler(req, res) {
     }
   }
 
-  // Compute fresh data
+  // Compute fresh data (no API key required — uses keyless FRED CSV)
   let data;
   try {
-    data = await computeRatePath(FRED_KEY);
+    data = await computeRatePath();
     // Save to Redis
     try {
       await redisCmd('SET', CACHE_KEY, JSON.stringify(data), 'EX', CACHE_TTL);

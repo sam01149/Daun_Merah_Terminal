@@ -124,6 +124,13 @@ const CB_RATE_MAP = [
   { kw: ['swiss national bank','snb rate','snb policy'],                     cur: 'CHF' },
 ];
 
+// Indicators whose values must be counts (K/M suffix), never percentages.
+// A headline yielding e.g. NFP=0.0% is a parse error — reject it.
+const QUANTITY_INDICATORS = new Set([
+  'NFP', 'Jobless Claims', 'Employment Change', 'Claimant Count',
+  'Building Approvals', 'Housing Starts', 'Durable Goods Orders',
+]);
+
 function parseFundamentalFromHeadline(title) {
   const t = title.toLowerCase();
 
@@ -136,6 +143,16 @@ function parseFundamentalFromHeadline(title) {
   let indicatorKey = null;
   for (const { kw, key } of FUND_INDICATOR_MAP) {
     if (kw.some(k => t.includes(k))) { indicatorKey = key; break; }
+  }
+
+  // Disambiguate Core PCE: YoY vs MoM — store separately so YoY headlines don't overwrite MoM seed.
+  if (indicatorKey === 'Core PCE') {
+    if (/y\/y|yoy|annual|year.on.year/i.test(t)) indicatorKey = 'Core PCE YoY';
+    // MoM or ambiguous → keep 'Core PCE' (matches the seed key)
+  }
+  // Same for Core CPI
+  if (indicatorKey === 'Core CPI MoM') {
+    if (/y\/y|yoy|annual|year.on.year/i.test(t)) indicatorKey = 'Core CPI YoY';
   }
 
   if (!indicatorKey) {
@@ -166,6 +183,9 @@ function parseFundamentalFromHeadline(title) {
     if (m) value = m[1] + (m[2] || '');
   }
   if (!value) return null;
+
+  // Reject % values for count-based indicators (e.g. NFP=0.0% is a parse error).
+  if (QUANTITY_INDICATORS.has(indicatorKey) && value.endsWith('%')) return null;
 
   let previous = null;
   const fjPrev = title.match(/[Pp]revious\s+([+-]?\d+\.?\d*)\s*(K|M|B|%|bps|pts?|points?)?/);

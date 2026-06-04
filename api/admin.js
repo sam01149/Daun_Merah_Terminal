@@ -629,7 +629,31 @@ async function fundamentalRefreshHandler(req, res) {
     if (headlines.length === 0) return res.status(200).json({ updated: {}, headlines: 0 });
 
     const updated = await autoUpdateFundamentals(headlines, redisCmd);
-    return res.status(200).json({ updated, headlines: headlines.length });
+
+    // Also refresh GDP Nowcast if data is stale (>6h) — piggyback on refresh call
+    let gdpUpdated = false;
+    try {
+      const gdpRaw = await redisCmd('HGET', 'fundamental:USD', 'GDP Nowcast');
+      const gdpEntry  = gdpRaw ? JSON.parse(gdpRaw) : null;
+      // Use the stored date field to judge staleness; fall back to "always refresh" if absent
+      const gdpDate   = gdpEntry?.date ? new Date(gdpEntry.date).getTime() : 0;
+      const ageMs     = Date.now() - gdpDate;
+      if (ageMs > 6 * 3600 * 1000) {
+        const vals  = await fetchGdpNowData();
+        const value = parseFloat(vals[0].value);
+        const prev  = vals.length > 1 ? parseFloat(vals[1].value) : null;
+        await redisCmd('HSET', 'fundamental:USD', 'GDP Nowcast', JSON.stringify({
+          actual:   `${value.toFixed(1)}%`,
+          previous: prev != null ? `${prev.toFixed(1)}%` : null,
+          period:   vals[0].date,
+          date:     vals[0].date,
+          source:   'Atlanta Fed GDPNow',
+        }));
+        gdpUpdated = true;
+      }
+    } catch(e) { console.warn('gdpnow in fundamental_refresh failed:', e.message); }
+
+    return res.status(200).json({ updated, headlines: headlines.length, gdp_nowcast_refreshed: gdpUpdated });
   } catch(e) {
     return res.status(500).json({ error: e.message });
   }
@@ -935,48 +959,60 @@ async function circuitStatusHandler(req, res) {
   return res.status(200).json({ circuits: results });
 }
 
-// ── GDPNow handler (Atlanta Fed nowcast via FRED GDPNOW series) ───────────────
+// ── GDPNow helper + handler (Atlanta Fed nowcast) ────────────────────────────
+// Uses keyless FRED CSV endpoint (same pattern as cb-status.js scrapeUSD).
+// Falls back to FRED API with key if CSV fails.
+
+async function fetchGdpNowData() {
+  // Primary: keyless FRED CSV (no API key required)
+  try {
+    const csvUrl = 'https://fred.stlouisfed.org/graph/fredgraph.csv?id=GDPNOW&sort_order=desc&limit=5';
+    const r = await fetch(csvUrl, { headers: { 'User-Agent': 'DaunMerah/1.0' }, signal: AbortSignal.timeout(10000) });
+    if (r.ok) {
+      const text = await r.text();
+      const lines = text.trim().split('\n').filter(l => l && !l.startsWith('DATE'));
+      const vals = lines
+        .map(l => { const p = l.split(','); return { date: p[0]?.trim(), value: p[1]?.trim() }; })
+        .filter(v => v.value && v.value !== '.');
+      if (vals.length > 0) return vals; // [{ date, value }, ...]
+    }
+  } catch(e) { console.warn('gdpnow CSV failed:', e.message); }
+
+  // Fallback: FRED API with key
+  const apiKey = process.env.FRED_API_KEY;
+  if (!apiKey) throw new Error('FRED CSV unavailable and FRED_API_KEY not set');
+  const url = `https://api.stlouisfed.org/fred/series/observations?series_id=GDPNOW&api_key=${apiKey}&limit=5&sort_order=desc&file_type=json`;
+  const r = await fetch(url, { headers: { 'User-Agent': 'DaunMerah/1.0' }, signal: AbortSignal.timeout(10000) });
+  if (!r.ok) throw new Error(`FRED API HTTP ${r.status}`);
+  const json = await r.json();
+  const obs = (json.observations || []).filter(o => o.value !== '.');
+  if (obs.length === 0) throw new Error('No GDPNOW observations');
+  return obs.map(o => ({ date: o.date, value: o.value }));
+}
 
 async function gdpnowHandler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Cache-Control', 'no-cache');
   if (req.method === 'OPTIONS') return res.status(204).end();
 
-  const apiKey = process.env.FRED_API_KEY;
-  if (!apiKey) return res.status(500).json({ error: 'FRED_API_KEY not configured' });
-
-  const fetchGdpNow = async () => {
-    const url = `https://api.stlouisfed.org/fred/series/observations?series_id=GDPNOW&api_key=${apiKey}&limit=5&sort_order=desc&file_type=json`;
-    let r = await fetch(url, { headers: { 'User-Agent': 'DaunMerah/1.0' }, signal: AbortSignal.timeout(10000) });
-    if (r.status === 429) {
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      r = await fetch(url, { headers: { 'User-Agent': 'DaunMerah/1.0' }, signal: AbortSignal.timeout(10000) });
-    }
-    if (!r.ok) throw new Error(`FRED HTTP ${r.status}`);
-    return r.json();
-  };
-
   try {
-    const json = await fetchGdpNow();
-    const obs = (json.observations || []).filter(o => o.value !== '.');
-    if (obs.length === 0) throw new Error('No GDPNOW observations');
-
-    const latest = obs[0];
-    const value = parseFloat(latest.value);
-    const date = latest.date;
-    const prev = obs.length > 1 ? parseFloat(obs[1].value) : null;
+    const vals = await fetchGdpNowData();
+    const latest = vals[0];
+    const value  = parseFloat(latest.value);
+    const prev   = vals.length > 1 ? parseFloat(vals[1].value) : null;
 
     await redisCmd('HSET', 'fundamental:USD', 'GDP Nowcast', JSON.stringify({
-      actual: `${value.toFixed(1)}%`,
+      actual:   `${value.toFixed(1)}%`,
       previous: prev != null ? `${prev.toFixed(1)}%` : null,
-      date,
-      source: 'Atlanta Fed GDPNow (FRED)',
+      period:   latest.date,
+      date:     latest.date,
+      source:   'Atlanta Fed GDPNow',
     }));
 
-    return res.status(200).json({ ok: true, value, date, source: 'FRED GDPNOW' });
+    return res.status(200).json({ ok: true, value, date: latest.date, source: 'FRED GDPNOW' });
   } catch(e) {
     console.warn('gdpnow failed:', e.message);
-    return res.status(500).json({ error: e.message, hint: e.message.includes('429') ? 'FRED rate limit — tunggu 1 menit lalu coba lagi' : undefined });
+    return res.status(500).json({ error: e.message });
   }
 }
 

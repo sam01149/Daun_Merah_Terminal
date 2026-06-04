@@ -13,20 +13,20 @@ const FRED_BASE = 'https://api.stlouisfed.org/fred/series/observations'
 // Hardcoded inflation expectations with mandatory source + refresh date.
 // Update each quarter. If as_of > 90 days old, UI shows stale indicator.
 const INFLATION_EXPECTATIONS = {
-  // Source: ECB Survey of Professional Forecasters Q1 2026 — refresh Jul 2026
-  EUR: { value: 2.1,  source: 'ECB SPF Q1 2026',    as_of: '2026-01-15' },
-  // Source: BoE Inflation Attitudes Survey Feb 2026 — refresh May 2026
+  // Source: ECB Survey of Professional Forecasters Q2 2026 — refresh Oct 2026
+  EUR: { value: 2.0,  source: 'ECB SPF Q2 2026',    as_of: '2026-04-10' },
+  // Source: BoE Inflation Attitudes Survey Feb 2026 — Q2 results published ~Aug 2026
   GBP: { value: 3.2,  source: 'BoE IAS Feb 2026',   as_of: '2026-02-12' },
-  // Source: BoJ Tankan Short-term Economic Survey Mar 2026 — refresh Jun 2026
-  JPY: { value: 2.6,  source: 'BoJ Tankan Mar 2026', as_of: '2026-03-01' },
-  // Source: Bank of Canada MPR Jan 2026 — refresh Apr 2026
-  CAD: { value: 2.3,  source: 'BoC MPR Jan 2026',   as_of: '2026-01-29' },
-  // Source: RBA Statement on Monetary Policy Feb 2026 — refresh May 2026
-  AUD: { value: 3.2,  source: 'RBA SoMP Feb 2026',  as_of: '2026-02-18' },
-  // Source: RBNZ Monetary Policy Statement Feb 2026 — refresh May 2026
-  NZD: { value: 2.2,  source: 'RBNZ MPS Feb 2026',  as_of: '2026-02-19' },
-  // Source: SNB Inflation Forecast Dec 2025 — refresh Mar 2026
-  CHF: { value: 0.4,  source: 'SNB Dec 2025',       as_of: '2025-12-12' },
+  // Source: BoJ Tankan Q1 2026 — refresh Jul 2026 (Q2 Tankan published late Jun)
+  JPY: { value: 2.6,  source: 'BoJ Tankan Q1 2026', as_of: '2026-03-28' },
+  // Source: Bank of Canada MPR Apr 2026 — refresh Jul 2026
+  CAD: { value: 2.2,  source: 'BoC MPR Apr 2026',   as_of: '2026-04-16' },
+  // Source: RBA Statement on Monetary Policy May 2026 — refresh Aug 2026
+  AUD: { value: 3.2,  source: 'RBA SoMP May 2026',  as_of: '2026-05-06' },
+  // Source: RBNZ Monetary Policy Statement May 2026 — refresh Aug 2026
+  NZD: { value: 2.1,  source: 'RBNZ MPS May 2026',  as_of: '2026-05-27' },
+  // Source: SNB Inflation Forecast Mar 2026 (held at 0.00%) — refresh Jun 2026 meeting
+  CHF: { value: 0.4,  source: 'SNB Mar 2026',       as_of: '2026-03-19' },
 }
 
 // FRED series IDs for 10Y government bond nominal yields (monthly for non-USD)
