@@ -369,6 +369,108 @@ module.exports = async function handler(req, res) {
     }
   }
 
+  // --- FX RISK REVERSALS (25-delta implied vol skew) ---
+  // Positive RR → call premium > put premium → market biased upside (institution hedge short).
+  // Negative RR → put premium > call premium → market fears downside.
+  // Sources (tried in order): CME CVOL Skew → Barchart OnDemand → unavailable message.
+  if (req.query.action === 'risk-reversal') {
+    const RR_CACHE_KEY = 'rr_cache';
+    const RR_CACHE_TTL = 3600;
+
+    try {
+      const cached = await redisCmd('GET', RR_CACHE_KEY);
+      if (cached) {
+        const d = JSON.parse(cached);
+        if (Date.now() - new Date(d.computed_at).getTime() < RR_CACHE_TTL * 1000)
+          return res.status(200).json({ ...d, from_cache: true });
+      }
+    } catch(_) {}
+
+    const CME_CVOL_PAIRS = {
+      'EUR/USD': 'EUSK', 'GBP/USD': 'GBSK', 'USD/JPY': 'JPSK',
+      'AUD/USD': 'ADSK', 'USD/CAD': 'CDSK',
+    };
+    const CME_HDR = {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+      'Accept': 'application/json, text/plain, */*',
+      'Referer': 'https://www.cmegroup.com/markets/interest-rates/cme-cvol.html',
+    };
+
+    let pairs = {}, source = null;
+
+    // Attempt 1: CME CVOL Skew (no auth, may be blocked from Vercel IPs)
+    try {
+      const settled = await Promise.allSettled(
+        Object.entries(CME_CVOL_PAIRS).map(async ([pair, code]) => {
+          const url = `https://www.cmegroup.com/CmeWS/mvc/Volatility/historical?productCode=${code}&chartType=CVOL`;
+          const r = await fetch(url, { headers: CME_HDR, signal: AbortSignal.timeout(7000) });
+          if (!r.ok) throw new Error(`CME CVOL ${code} HTTP ${r.status}`);
+          const json = await r.json();
+          const rows = json?.data || json?.chartData || (Array.isArray(json) ? json : []);
+          const latest = rows[rows.length - 1];
+          const skew = parseFloat(latest?.SkewDiff ?? latest?.skewDiff ?? latest?.skew ?? latest?.value ?? 'x');
+          if (isNaN(skew)) throw new Error(`CME CVOL ${code}: no parseable skew`);
+          return { pair, rr_value: +skew.toFixed(3), source: 'CME CVOL Skew' };
+        })
+      );
+      const ok = settled.filter(r => r.status === 'fulfilled').map(r => r.value);
+      if (ok.length >= 3) {
+        ok.forEach(d => { pairs[d.pair] = { rr_value: d.rr_value, source: d.source }; });
+        source = 'cme_cvol';
+      } else {
+        throw new Error(`Only ${ok.length}/5 CME CVOL pairs returned data`);
+      }
+    } catch(e) {
+      console.warn('risk-reversal: CME CVOL failed:', e.message);
+    }
+
+    // Attempt 2: Barchart OnDemand (requires BARCHART_API_KEY env var — free signup)
+    if (!source && process.env.BARCHART_API_KEY) {
+      const BARCHART_MAP = {
+        'EUR/USD': '6E', 'GBP/USD': '6B', 'USD/JPY': '6J',
+        'AUD/USD': '6A', 'USD/CAD': '6C', 'NZD/USD': '6N', 'USD/CHF': '6S',
+      };
+      try {
+        const settled = await Promise.allSettled(
+          Object.entries(BARCHART_MAP).map(async ([pair, root]) => {
+            const url = `https://ondemand.websol.barchart.com/getFuturesOptionsEOD.json?apikey=${process.env.BARCHART_API_KEY}&root=${root}&fields=impliedVolatility,delta,type&orderDir=asc&limit=200`;
+            const r = await fetch(url, { signal: AbortSignal.timeout(10000) });
+            if (!r.ok) throw new Error(`Barchart ${root} HTTP ${r.status}`);
+            const json = await r.json();
+            const opts = json?.results || [];
+            const calls = opts.filter(o => o.type === 'Call' && Math.abs((+o.delta || 0) - 0.25) <= 0.06)
+              .sort((a, b) => Math.abs(+a.delta - 0.25) - Math.abs(+b.delta - 0.25));
+            const puts  = opts.filter(o => o.type === 'Put'  && Math.abs((+o.delta || 0) + 0.25) <= 0.06)
+              .sort((a, b) => Math.abs(+a.delta + 0.25) - Math.abs(+b.delta + 0.25));
+            if (!calls.length || !puts.length) throw new Error(`Barchart ${root}: no 25d options`);
+            const call_iv = +parseFloat(calls[0].impliedVolatility).toFixed(3);
+            const put_iv  = +parseFloat(puts[0].impliedVolatility).toFixed(3);
+            if (isNaN(call_iv) || isNaN(put_iv)) throw new Error(`Barchart ${root}: NaN IV`);
+            return { pair, rr_value: +(call_iv - put_iv).toFixed(3), call_iv, put_iv, source: 'Barchart OnDemand' };
+          })
+        );
+        const ok = settled.filter(r => r.status === 'fulfilled').map(r => r.value);
+        if (ok.length >= 3) {
+          ok.forEach(d => { pairs[d.pair] = { rr_value: d.rr_value, call_iv: d.call_iv, put_iv: d.put_iv, source: d.source }; });
+          source = 'barchart';
+        }
+      } catch(e) {
+        console.warn('risk-reversal: Barchart failed:', e.message);
+      }
+    }
+
+    if (!source) {
+      const hint = process.env.BARCHART_API_KEY
+        ? 'CME CVOL blocked from Vercel IPs; Barchart returned insufficient data.'
+        : 'CME CVOL blocked from Vercel IPs. Add BARCHART_API_KEY env var (free at barchart.com/ondemand) to enable Barchart fallback.';
+      return res.status(200).json({ available: false, reason: hint, computed_at: new Date().toISOString() });
+    }
+
+    const payload = { available: true, pairs, source, computed_at: new Date().toISOString() };
+    redisCmd('SET', RR_CACHE_KEY, JSON.stringify(payload), 'EX', RR_CACHE_TTL).catch(() => {});
+    return res.status(200).json({ ...payload, from_cache: false });
+  }
+
   if (await rateLimit(req, res, { limit: 5, windowSecs: 60, endpoint: 'correlations' })) return;
 
   // --- SIZING RATES: live FX rates for accurate cross-pair pip value calculation ---

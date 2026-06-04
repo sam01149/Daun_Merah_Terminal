@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-06-04 (session 45 — Bug fixes: rate-path, GDP Nowcast, fundamental parser, inflation expectations)
+> **Last updated:** 2026-06-04 (session 46 — Portfolio VaR, Cleveland Fed Nowcast, CME FedWatch fix, FX Risk Reversals)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Financial_Feed_App`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -78,6 +78,42 @@ Financial_Feed_App/
 > **Penting:** `api/feeds.js` menggantikan `api/rss.js` dan `api/cot.js` yang sudah dihapus.
 > `api/admin.js` menggantikan `api/health.js`, `api/redis-keys.js`, `api/admin-prompts.js`, dan `api/push.js`.
 > Konsolidasi ini dilakukan untuk tetap di bawah limit 12 serverless functions Vercel Hobby.
+
+---
+
+## Changelog Session 46 (2026-06-04)
+
+### Fitur Baru dari Backlog
+
+**1. Portfolio VaR — Tab JURNAL (`index.html`)**
+- Card `#jnVarCard` muncul di atas filter buttons di `jnListView` saat ada posisi open.
+- `jnRenderVaR()`: async function yang fetch ATR per pair secara paralel, hitung VaR 1D 95% per posisi, lalu hitung Portfolio VaR via variance-covariance method (korelasi dari `corrData`).
+- **Notional USD benar per pair type**: XAU/USD (`lots × 100 oz × price`), quote=USD (`lots × 100K × rate`), base=USD (`lots × 100K`), cross (`lots × 100K × base/USD rate dari szLiveRates`).
+- **ATR cached** di `sessionStorage` 4 jam agar tidak re-fetch tiap kali filter berubah.
+- Warning kuning jika 2 pair berkorelasi ≥0.70 dan arah sama (risiko amplified). Warning hijau jika hedge (arah berlawanan, risiko tereduksi).
+- Diversification % = `(1 - portfolioVar1d / undiversifiedVar) × 100` — membandingkan VaR dengan korelasi vs tanpa korelasi.
+- Note "buka tab KORELASI" muncul jika `corrData` belum dimuat.
+
+**2. Cleveland Fed Inflation Nowcast — `api/real-yields.js`**
+- Tambah fetch `EXPINF10YR` (FRED series — Cleveland Fed 10-year inflation expectation model, monthly) paralel dengan DGS10 dan T10YIE.
+- USD inflation_exp sekarang: primary = TIPS T10YIE (market-implied, daily); fallback = Cleveland Fed EXPINF10YR jika TIPS gagal.
+- `source_inflation` field mencantumkan keduanya: `"FRED T10YIE (TIPS breakeven) · Cleveland Fed 10yr: X%"`.
+- Response USD menambah field `cleveland_fed_exp` (nullable).
+
+**3. CME FedWatch Fix — `api/rate-path.js`**
+- Split `CME_FEDWATCH_URL` jadi V1 (dengan `?startDate=`) dan V2 (tanpa param) — keduanya dicoba dalam loop.
+- Shared `CME_HEADERS` object dengan full browser fingerprint (User-Agent, Sec-Fetch-*, Accept-Language).
+- Tambah `fetchCMEQuoteZQ()`: coba endpoint quote publik CME untuk produk 305 (ZQ front-month). Muncul sebagai step 2b antara ZQ settlement dan T-bill.
+- Source label baru `cme_zq_quote` di response jika berhasil.
+- Fallback chain: CME FedWatch V1 → V2 → ZQ Settlement → ZQ Quote → FRED T-bill → Heuristic.
+
+**4. FX Risk Reversals — `api/correlations.js` + `index.html`**
+- `action=risk-reversal`: endpoint baru di correlations.js (tidak butuh rate limiter terpisah).
+- **Attempt 1 — CME CVOL Skew**: fetch `https://www.cmegroup.com/CmeWS/mvc/Volatility/historical?productCode=EUSK` (dan GBSK, JPSK, ADSK, CDSK) tanpa auth. Jika ≥3 pair berhasil → pakai CME CVOL.
+- **Attempt 2 — Barchart OnDemand**: jika `BARCHART_API_KEY` env var tersedia, fetch getFuturesOptionsEOD untuk 6E/6B/6J/6A/6C/6N/6S, cari 25-delta calls dan puts (tolerance ±0.06), hitung `RR = call_IV - put_IV`.
+- **Jika keduanya gagal**: return `{ available: false, reason: '...' }` dengan instruksi menambah `BARCHART_API_KEY`.
+- Redis cache `rr_cache` TTL 3600s.
+- **Frontend**: section `#fundRRSection` di tab FUNDAMENTAL, muncul secara dinamis saat data tersedia. Per pair: angka RR + label (Call Bias ↑ / Put Bias ↓ / Neutral). Sumber ditampilkan di header. Dipanggil fire-and-forget dari `fetchFundamental()`.
 
 ---
 
@@ -849,44 +885,20 @@ Mistral:     https://api.mistral.ai/v1
 
 ---
 
-## Backlog — Data Source Upgrades (dari OpenBB Research, 2026-06-03)
+## Backlog — Data Source Upgrades
 
-Data yang ditemukan dari riset OpenBB Terminal open source — semua high-value, gratis, tanpa API key baru kecuali disebutkan.
+### ✅ Selesai (Session 44–46)
+- **GDPNow Atlanta Fed** — `api/admin.js` `?action=gdpnow` + auto-refresh dari `fundamental_refresh`. ✓
+- **TGA + Fed Balance Sheet** — `api/real-yields.js` via FRED WALCL + FiscalData API. ✓
+- **Cleveland Fed Inflation Nowcast** — FRED `EXPINF10YR` sebagai fallback TIPS di `real-yields.js`. ✓
+- **CME FedWatch Fix** — V1/V2 URL + CME Quote API ZQ (step 2b) di `rate-path.js`. T-bill fallback tetap berjalan. ✓
+- **Portfolio VaR** — `jnRenderVaR()` di tab JURNAL, variance-covariance, ATR-based. ✓
+- **FX Risk Reversals** — `action=risk-reversal` di correlations.js. CME CVOL → Barchart (jika `BARCHART_API_KEY` tersedia). UI di FUNDAMENTAL tab. ✓
 
-### 1. Cleveland Fed Inflation Nowcast (HIGH VALUE)
-- **Problem saat ini:** `api/real-yields.js` — inflation expectations 7 currency non-USD di-hardcode manual, refresh per kuartal. EUR sudah >100 hari stale (as_of 2026-01-15).
-- **Solusi:** Fetch Cleveland Fed Nowcast API — update otomatis bulanan, tanpa API key.
-- **Endpoint:** `https://www.clevelandfed.org/en/our-research/indicators-and-data/inflation-expectations.aspx` (scrape) atau data file CSV yang mereka publish
-- **Impact:** Real yield lebih akurat → CB bias + checklist lebih reliable
-- **File target:** `api/real-yields.js` — ganti hardcoded `INFLATION_EXPECTATIONS` object
-
-### 2. GDPNow Atlanta Fed (HIGH VALUE)
-- **Problem saat ini:** Tidak ada nowcast GDP real-time. AI hanya bisa opini dari headline.
-- **Solusi:** Atlanta Fed GDPNow — estimasi GDP quarter berjalan, update setiap 1-2 hari kerja setelah rilis data ekonomi. Gratis tanpa auth.
-- **Endpoint:** `https://www.atlantafed.org/cgi-bin/public/research/inflationproject/realtime_analysis/gdpnow/gdpnow.aspx` (HTML scrape) atau `https://www.atlantafed.org/-/media/documents/research/inflationproject/realtime_analysis/gdpnow/GDPNow_current.xlsx`
-- **Impact:** Indikator leading USD fundamental — naik/turun GDPNow bisa gerakkan USD bias
-- **Display:** Tambah ke panel FUNDAMENTAL tab, card USD, field `GDP Nowcast`
-- **File target:** `api/admin.js` (fundamental_refresh) atau baru di `api/real-yields.js`
-
-### 3. CME FedWatch Fix — Rate Path Market-Implied (HIGH VALUE)
-- **Problem saat ini:** `api/rate-path.js` — CME endpoint tidak berfungsi, pakai heuristic SOFR. UI sudah jujur label "Estimasi (bukan probabilitas pasar)" tapi data tidak akurat.
-- **Solusi:** OpenBB mengakses CME Fed Funds Futures via endpoint yang berbeda — perlu investigasi endpoint yang benar.
-- **Candidate endpoints:**
-  - `https://www.cmegroup.com/markets/interest-rates/cme-fedwatch-tool.html` (scrape)
-  - `https://www.cmegroup.com/CmeWS/mvc/ProductCalendar/V2/productCalendar.do?productId=305` (futures calendar)
-  - `https://www.cmegroup.com/ftp/pub/settle/cbt_grains.csv` (pattern — ganti ke rates)
-- **Impact:** Rate path menjadi market-implied yang benar — upgrade besar untuk CB bias dan thesis
-- **File target:** `api/rate-path.js` — replace heuristic logic
-
-### 4. TGA + Fed Balance Sheet dari FRED (MEDIUM-HIGH VALUE)
-- **Problem saat ini:** Tidak ada indikator likuiditas USD sistemik. AI hanya infer dari headline Fed.
-- **Solusi:** FRED sudah kita akses (ada `FRED_API_KEY`). Tambah 2 series:
-  - `WTREGEN` — Treasury General Account (TGA) balance, weekly
-  - `WALCL` — Fed Total Assets (balance sheet size), weekly
-- **Impact:** TGA drain = inject likuiditas ke pasar = bullish risk assets. TGA refill = serap likuiditas = bearish. Penting untuk USD dan cross-asset.
-- **Display:** Panel FUNDAMENTAL tab, card USD, field `TGA Balance` + `Fed Assets`
-- **File target:** `api/real-yields.js` atau `api/admin.js` (fundamental_refresh)
+### Masih Pending
+- **CME FedWatch market-implied yang benar** — CME memblokir Vercel IPs untuk semua endpoint. Rate path saat ini menggunakan FRED T-bill term structure (step 2.5) yang reasonable tapi bukan market-implied ZQ futures. Untuk data aktual, perlu tambah `BARCHART_API_KEY` (bisa akses ZQ melalui Barchart OnDemand) atau proxy eksternal.
+- **FX Risk Reversals via Barchart** — Memerlukan `BARCHART_API_KEY` (gratis, signup di barchart.com/ondemand, tidak butuh kartu kredit). Tanpa key, section hanya muncul jika CME CVOL tidak diblokir dari Vercel IPs.
 
 ---
 
-> **Catatan:** Item 1 dan 2 bisa diimplementasi bersamaan karena keduanya menyentuh data fundamental USD. Item 3 butuh investigasi endpoint lebih dulu sebelum implementasi.
+> **Action item:** Daftar Barchart OnDemand (gratis) → tambah `BARCHART_API_KEY` ke Vercel env vars → Rate Reversals + CME ZQ futures langsung aktif.

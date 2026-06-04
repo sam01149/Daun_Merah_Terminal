@@ -132,18 +132,22 @@ module.exports = async function handler(req, res) {
     }
   }
 
-  // Step 2: Fetch all yields + liquidity + yield curve in parallel
+  // Step 2: Fetch all yields + liquidity + yield curve + Cleveland Fed in parallel
+  // EXPINF10YR = Cleveland Fed 10-year inflation expectation (model-based, monthly, via FRED)
+  // Used as fallback when TIPS breakeven (T10YIE) is unavailable; also cross-validates TIPS.
   const otherCurrencies = ['EUR', 'GBP', 'JPY', 'CAD', 'AUD', 'NZD', 'CHF']
 
   const [
     usdNomResult,
     usdBEResult,
+    usdClevFedResult,
     liquidityResult,
     yieldCurveResult,
     ...otherNomResults
   ] = await Promise.allSettled([
     fetchFred('DGS10'),
     fetchFred('T10YIE'),
+    fetchFred('EXPINF10YR'),
     fetchLiquidityIndicators(),
     fetchYieldCurve(),
     ...otherCurrencies.map(cur =>
@@ -165,17 +169,25 @@ module.exports = async function handler(req, res) {
 
   const results = {}
 
-  // USD: both nominal + breakeven from FRED (daily, TIPS-derived — most accurate)
+  // USD: nominal from FRED DGS10.
+  // Inflation expectation: primary = TIPS T10YIE (market-implied, daily);
+  // fallback = Cleveland Fed EXPINF10YR (model-based, monthly, published via FRED).
   try {
     if (usdNomResult.status !== 'fulfilled') throw new Error(usdNomResult.reason?.message)
-    if (usdBEResult.status !== 'fulfilled') throw new Error(usdBEResult.reason?.message)
     const nominal = usdNomResult.value.latest
-    const inflation_exp = usdBEResult.value.latest
+    const tipsBE    = usdBEResult.status    === 'fulfilled' ? usdBEResult.value.latest    : null
+    const clevFedBE = usdClevFedResult.status === 'fulfilled' ? usdClevFedResult.value.latest : null
+    const inflation_exp = tipsBE ?? clevFedBE
+    if (inflation_exp == null) throw new Error('USD: no inflation expectation (TIPS + Cleveland Fed both unavailable)')
     const real = +(nominal - inflation_exp).toFixed(2)
+    const source_inflation = tipsBE != null
+      ? `FRED T10YIE (TIPS breakeven)${clevFedBE != null ? ` · Cleveland Fed 10yr: ${clevFedBE}%` : ''}`
+      : `Cleveland Fed EXPINF10YR (TIPS unavailable)`
     results.USD = {
       nominal, inflation_exp, real,
       source_nominal: 'FRED DGS10',
-      source_inflation: 'FRED T10YIE (TIPS breakeven)',
+      source_inflation,
+      cleveland_fed_exp: clevFedBE,
       as_of: usdNomResult.value.date,
       stale: false,
     }

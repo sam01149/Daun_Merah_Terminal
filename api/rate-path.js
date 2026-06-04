@@ -9,10 +9,13 @@ const CORS = { 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-cache' }
 const CACHE_KEY = 'rate_path';
 const CACHE_TTL = 14400; // 4 hours
 
-// CME FedWatch hidden API — powers the FedWatch tool directly, returns per-meeting probabilities
-const CME_FEDWATCH_URL = 'https://www.cmegroup.com/CmeWS/mvc/FedWatch/tool/get/{DATE}?startDate=2024-01-01';
+// CME FedWatch hidden API — two URL patterns tried in order (no ?startDate param in v2)
+const CME_FEDWATCH_URL_V1 = 'https://www.cmegroup.com/CmeWS/mvc/FedWatch/tool/get/{DATE}?startDate=2024-01-01';
+const CME_FEDWATCH_URL_V2 = 'https://www.cmegroup.com/CmeWS/mvc/FedWatch/tool/get/{DATE}';
 // CME 30-Day Fed Funds Futures (ZQ) settlement — fallback if FedWatch API blocked
 const CME_ZQ_URL = 'https://www.cmegroup.com/CmeWS/mvc/Settlements/futures/tradeDate/{DATE}/productCode/ZQ';
+// CME public products quote API — lighter endpoint, less likely to be rate-limited
+const CME_QUOTE_URL = 'https://www.cmegroup.com/CmeWS/mvc/Quotes/delayed/305/G/cbot';
 
 async function redisCmd(...args) {
   const REDIS_URL   = process.env.UPSTASH_REDIS_REST_URL;
@@ -54,29 +57,49 @@ function lastBusinessDay() {
   return `${y}${m}${dd}`;
 }
 
-// Fetch from CME FedWatch hidden API — takes NEXT FOMC MEETING DATE as parameter
+const CME_HEADERS = {
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
+  'Accept': 'application/json, text/plain, */*',
+  'Accept-Language': 'en-US,en;q=0.9',
+  'Referer': 'https://www.cmegroup.com/markets/interest-rates/cme-fedwatch-tool.html',
+  'Origin': 'https://www.cmegroup.com',
+  'Sec-Fetch-Dest': 'empty',
+  'Sec-Fetch-Mode': 'cors',
+  'Sec-Fetch-Site': 'same-origin',
+};
+
+// Fetch from CME FedWatch hidden API — tries V1 then V2 URL pattern
 async function fetchCMEFedWatch() {
   const now = new Date();
   const nextMeeting = getNextFOMCMeetings(now, 1)[0]; // e.g. "2026-06-18"
   if (!nextMeeting) throw new Error('No upcoming FOMC meeting found');
-  const url = CME_FEDWATCH_URL.replace('{DATE}', nextMeeting);
-  const r = await fetch(url, {
-    headers: {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-      'Accept': 'application/json, text/plain, */*',
-      'Referer': 'https://www.cmegroup.com/markets/interest-rates/cme-fedwatch-tool.html',
-      'Origin': 'https://www.cmegroup.com',
-    },
-    signal: AbortSignal.timeout(10000),
-  });
-  if (!r.ok) throw new Error(`CME FedWatch HTTP ${r.status}`);
+
+  let lastErr;
+  for (const urlTemplate of [CME_FEDWATCH_URL_V1, CME_FEDWATCH_URL_V2]) {
+    try {
+      const url = urlTemplate.replace('{DATE}', nextMeeting);
+      const r = await fetch(url, { headers: CME_HEADERS, signal: AbortSignal.timeout(8000) });
+      if (!r.ok) throw new Error(`CME FedWatch HTTP ${r.status}`);
+      const json = await r.json();
+      const meetings = Array.isArray(json) ? json : json?.FedWatchTool || json?.meetings || [];
+      if (!meetings || meetings.length === 0) throw new Error('CME FedWatch: no meetings data');
+      return { meetings, trade_date: new Date().toISOString().slice(0, 10) };
+    } catch(e) { lastErr = e; }
+  }
+  throw lastErr;
+}
+
+// Try CME public quote API for ZQ front-month — lighter endpoint with less IP-blocking
+async function fetchCMEQuoteZQ() {
+  const r = await fetch(CME_QUOTE_URL, { headers: CME_HEADERS, signal: AbortSignal.timeout(8000) });
+  if (!r.ok) throw new Error(`CME Quote HTTP ${r.status}`);
   const json = await r.json();
-
-  // Response: array of meeting objects with probabilities per target range
-  const meetings = Array.isArray(json) ? json : json?.FedWatchTool || json?.meetings || [];
-  if (!meetings || meetings.length === 0) throw new Error('CME FedWatch: no meetings data');
-
-  return { meetings, trade_date: new Date().toISOString().slice(0, 10) };
+  const quotes = json?.quotes || json?.data || [];
+  if (!Array.isArray(quotes) || quotes.length === 0) throw new Error('CME Quote: no data');
+  // ZQ: price = 100 - implied Fed Funds rate (e.g. 95.680 → 4.320%)
+  const price = parseFloat(quotes[0]?.last || quotes[0]?.settle || quotes[0]?.close || '');
+  if (isNaN(price) || price <= 0 || price > 100) throw new Error('CME Quote: invalid price ' + price);
+  return { price, implied_rate: +(100 - price).toFixed(4) };
 }
 
 // Try fetching ZQ (30-day Fed Funds futures) settlement data — fallback
@@ -170,6 +193,7 @@ async function computeRatePath() {
 
   // Step 2: try CME ZQ futures settlement prices
   try {
+    // 2a: full ZQ settlement strip (multiple contracts)
     const zqData = await fetchCMEZQData();
 
     const meetingProbs = nextMeetings.map((date, i) => {
@@ -194,7 +218,29 @@ async function computeRatePath() {
       computed_at: new Date().toISOString(),
     };
   } catch(e) {
-    console.warn('rate-path: CME ZQ fetch also failed:', e.message, '— trying FRED T-bill');
+    console.warn('rate-path: CME ZQ settlement failed:', e.message, '— trying CME quote API');
+  }
+
+  // Step 2b: CME public quote API for ZQ front-month — lighter endpoint
+  try {
+    const quoteData = await fetchCMEQuoteZQ();
+    const impliedRate = quoteData.implied_rate;
+    const delta = +(impliedRate - currentRate).toFixed(4);
+    const prob_cut25  = Math.max(0, Math.min(1, +(-delta / 0.25).toFixed(4)));
+    const prob_hike25 = Math.max(0, Math.min(1, +(delta / 0.25).toFixed(4)));
+    const prob_hold   = Math.max(0, +(1 - prob_cut25 - prob_hike25).toFixed(4));
+    const meetingProbs = nextMeetings.map(date => ({
+      date, prob_hold, prob_cut25, prob_hike25, implied_rate: impliedRate,
+    }));
+    return {
+      source: 'cme_zq_quote',
+      current_rate: currentRate,
+      USD: { next_meetings: meetingProbs, cumulative_3m_bps: Math.round(delta * 100) },
+      trade_date: new Date().toISOString().slice(0, 10),
+      computed_at: new Date().toISOString(),
+    };
+  } catch(e) {
+    console.warn('rate-path: CME quote API failed:', e.message, '— trying FRED T-bill');
   }
 
   // Step 2.5: FRED T-bill term structure (pre-fetched above, zero extra network calls).

@@ -1986,6 +1986,8 @@ body {
       </button>
       <!-- AI analysis panel -->
       <div class="jn-ai-panel" id="jnAiPanel"></div>
+      <!-- Portfolio VaR card — rendered by jnRenderVaR() after entries load -->
+      <div id="jnVarCard"></div>
       <div style="display:flex;gap:6px;margin-bottom:12px;align-items:center;flex-wrap:wrap">
         <button class="jn-btn-sec" style="font-size:9px" onclick="jnSetFilter('all')" id="jnFAll">SEMUA</button>
         <button class="jn-btn-sec" style="font-size:9px" onclick="jnSetFilter('open')" id="jnFOpen">OPEN</button>
@@ -2382,6 +2384,11 @@ body {
           </svg>
         </button>
       </div>
+    </div>
+    <!-- Risk Reversal (25-delta implied vol skew) -->
+    <div id="fundRRSection" style="display:none;margin-bottom:12px;padding:10px 12px;background:var(--surface);border:1px solid var(--border);border-radius:4px;font-family:'DM Mono',monospace">
+      <div style="font-size:9px;color:var(--muted);letter-spacing:.1em;margin-bottom:8px">OPSI FX — RISK REVERSAL 25-DELTA <span id="fundRRSource" style="color:var(--border);margin-left:4px"></span></div>
+      <div id="fundRRGrid" style="display:flex;flex-wrap:wrap;gap:8px 16px"></div>
     </div>
     <!-- Strength Ranking Overview -->
     <div class="fund-rank-section" id="fundRankSection" style="display:none">
@@ -3826,11 +3833,62 @@ async function fetchFundamental(refresh = false) {
     const el = document.getElementById('fundLastUpdated');
     if (el) el.textContent = 'baru saja';
     renderFundamental();
+    fetchRiskReversal(); // fire-and-forget: load RR independently
   } catch(e) {
     if (grid) grid.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:20px;color:var(--muted);font-size:11px">Gagal memuat: ${escHtml(e.message)}</div>`;
   } finally {
     if (btn) btn.classList.remove('spinning');
   }
+}
+
+let rrData = null;
+
+async function fetchRiskReversal() {
+  try {
+    const r = await fetch('/api/correlations?action=risk-reversal', { signal: AbortSignal.timeout(12000) });
+    if (!r.ok) return;
+    const d = await r.json();
+    rrData = d;
+    renderRiskReversal();
+  } catch(e) { console.warn('fetchRiskReversal failed:', e.message); }
+}
+
+function renderRiskReversal() {
+  const section = document.getElementById('fundRRSection');
+  const grid    = document.getElementById('fundRRGrid');
+  const srcEl   = document.getElementById('fundRRSource');
+  if (!section || !grid) return;
+
+  if (!rrData || !rrData.available || !rrData.pairs) {
+    section.style.display = 'none';
+    return;
+  }
+
+  const SRC_LABEL = { cme_cvol: 'CME CVOL', barchart: 'Barchart 25d', cme_zq_quote: 'CME' };
+  if (srcEl) srcEl.textContent = SRC_LABEL[rrData.source] || rrData.source || '';
+
+  const items = Object.entries(rrData.pairs).map(([pair, d]) => {
+    const val  = d.rr_value;
+    const abs  = Math.abs(val);
+    const color = abs < 0.2 ? 'var(--muted)'
+                : val > 0   ? 'var(--green)'
+                :              'var(--accent)';
+    const label = abs < 0.2 ? 'Neutral'
+                : val > 0   ? 'Call Bias ↑'
+                :              'Put Bias ↓';
+    const tip = d.call_iv != null
+      ? `title="Call IV: ${d.call_iv}  Put IV: ${d.put_iv}"`
+      : '';
+    return `<div ${tip} style="min-width:100px">
+      <div style="font-size:9px;color:var(--muted)">${pair}</div>
+      <div style="font-size:13px;font-weight:600;color:${color}">${val > 0 ? '+' : ''}${val.toFixed(2)}</div>
+      <div style="font-size:8px;color:${color}">${label}</div>
+    </div>`;
+  });
+
+  if (items.length === 0) { section.style.display = 'none'; return; }
+  grid.innerHTML = items.join('');
+  section.style.display = 'block';
 }
 
 function renderFundamental() {
@@ -6560,6 +6618,7 @@ async function jnLoadEntries() {
     const { entries } = await res.json();
     jnAllEntries = entries || [];
     jnRenderEntries();
+    jnRenderVaR();
     if (document.getElementById('jnCurveView')?.style.display !== 'none') jnRenderCurve();
   } catch(e) {
     console.warn('jnLoad failed:', e.message);
@@ -6648,6 +6707,152 @@ function jnRenderEntries() {
       <div style="margin-top:8px;display:flex;gap:4px">${closeBtn}${archBtn}</div>
     </div>`;
   }).join('');
+}
+
+async function jnRenderVaR() {
+  const card = document.getElementById('jnVarCard');
+  if (!card) return;
+
+  const openEntries = jnAllEntries.filter(e =>
+    e.status === 'open' && e.entry_price != null && e.stop_price != null && e.size_lots != null
+  );
+  if (openEntries.length === 0) { card.innerHTML = ''; return; }
+
+  card.innerHTML = `<div style="background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:10px 12px;margin-bottom:12px;font-family:'DM Mono',monospace">
+    <div style="font-size:9px;color:var(--muted);letter-spacing:.1em;margin-bottom:4px">PORTFOLIO RISK</div>
+    <div class="loading-pulse" style="font-size:10px;color:var(--muted)">Menghitung...</div></div>`;
+
+  const PIP_SIZE = (pair) => pair.includes('JPY') ? 0.01 : pair === 'XAU/USD' ? 0.1 : 0.0001;
+
+  const varItems = [];
+  await Promise.allSettled(openEntries.map(async (entry) => {
+    try {
+      const pipSize   = PIP_SIZE(entry.pair);
+      const stopPips  = Math.abs(entry.entry_price - entry.stop_price) / pipSize;
+      if (stopPips <= 0) return;
+      const pipValue  = calcPipValueUSD(entry.pair, entry.entry_price, szLiveRates);
+      if (!pipValue) return;
+      const dollarRisk = Math.round(stopPips * pipValue * entry.size_lots);
+
+      // ATR: check session cache first
+      let dailySigma = null;
+      try {
+        const cached = sessionStorage.getItem('jnAtr_' + entry.pair);
+        if (cached) { const c = JSON.parse(cached); if (Date.now() - c.ts < 14400000) dailySigma = c.sigma; }
+      } catch(_) {}
+      if (dailySigma == null) {
+        const r = await fetch('/api/correlations?action=atr&pair=' + encodeURIComponent(entry.pair), { signal: AbortSignal.timeout(8000) });
+        if (r.ok) {
+          const d = await r.json();
+          dailySigma = d.daily_sigma;
+          try { sessionStorage.setItem('jnAtr_' + entry.pair, JSON.stringify({ sigma: dailySigma, ts: Date.now() })); } catch(_) {}
+        }
+      }
+
+      // VaR 95% 1-day = notional_USD × daily_sigma × 1.645
+      // Notional must be in USD — depends on pair structure:
+      //   XAU/USD : lots × 100 oz × price_USD
+      //   EUR/USD : lots × 100,000 EUR × price_USD (quote = USD)
+      //   USD/JPY : lots × 100,000 USD (base = USD — price is JPY per USD, not in USD)
+      //   EUR/JPY cross: lots × 100,000 EUR × EUR/USD rate (need live rates)
+      let var1d = null;
+      if (dailySigma != null) {
+        let notionalUSD;
+        const [ep_base, ep_quote] = entry.pair === 'XAU/USD' ? ['XAU', 'USD'] : entry.pair.split('/');
+        if (entry.pair === 'XAU/USD') {
+          notionalUSD = entry.size_lots * 100 * (entry.entry_price || 2000);
+        } else if (ep_quote === 'USD') {
+          notionalUSD = entry.size_lots * 100000 * (entry.entry_price || 1);
+        } else if (ep_base === 'USD') {
+          notionalUSD = entry.size_lots * 100000; // base IS USD — notional is exactly 100K USD
+        } else {
+          // Cross pair — get base/USD rate from szLiveRates
+          const baseUsdRate = szLiveRates
+            ? (szLiveRates[`${ep_base}USD`] || (szLiveRates[`USD${ep_base}`] ? 1 / szLiveRates[`USD${ep_base}`] : null))
+            : null;
+          notionalUSD = entry.size_lots * 100000 * (baseUsdRate || entry.entry_price || 1);
+        }
+        var1d = Math.round(1.645 * dailySigma * notionalUSD);
+      }
+      varItems.push({ pair: entry.pair, direction: entry.direction, dollarRisk, var1d });
+    } catch(e) { console.warn('jnRenderVaR ATR:', entry.pair, e.message); }
+  }));
+
+  if (varItems.length === 0) { card.innerHTML = ''; return; }
+
+  // Correlation helpers — uses global corrData loaded by the KORELASI tab
+  const pairCode = (pair) => {
+    if (pair === 'XAU/USD') return 'Gold';
+    const [b, q] = pair.split('/');
+    return q === 'USD' ? b : (b === 'USD' ? q : b);
+  };
+  const getCorr = (pA, pB) => {
+    const a = pairCode(pA), b = pairCode(pB);
+    return corrData?.matrix_20d?.[`${a}|${b}`] ?? corrData?.matrix_20d?.[`${b}|${a}`] ?? 0;
+  };
+
+  // Portfolio VaR via variance-covariance method
+  const vi = varItems.filter(v => v.var1d != null);
+  let portfolioVar1d = null;
+  if (vi.length === 1) {
+    portfolioVar1d = vi[0].var1d;
+  } else if (vi.length > 1) {
+    let sum = 0;
+    for (let i = 0; i < vi.length; i++) {
+      sum += vi[i].var1d ** 2;
+      for (let j = i + 1; j < vi.length; j++) {
+        const rho     = getCorr(vi[i].pair, vi[j].pair);
+        const dirSign = vi[i].direction === vi[j].direction ? 1 : -1;
+        sum += 2 * rho * dirSign * vi[i].var1d * vi[j].var1d;
+      }
+    }
+    portfolioVar1d = Math.round(Math.sqrt(Math.max(0, sum)));
+  }
+
+  const totalRisk = varItems.reduce((s, v) => s + v.dollarRisk, 0);
+  const undiversifiedVar = vi.reduce((s, v) => s + v.var1d, 0); // sum of individual VaRs (no cross terms)
+
+  // High-correlation warnings (≥0.7)
+  const warnLines = [];
+  for (let i = 0; i < varItems.length; i++) {
+    for (let j = i + 1; j < varItems.length; j++) {
+      const rho = getCorr(varItems[i].pair, varItems[j].pair);
+      if (Math.abs(rho) < 0.7) continue;
+      const sameDir   = varItems[i].direction === varItems[j].direction;
+      const amplified = (rho > 0 && sameDir) || (rho < 0 && !sameDir);
+      warnLines.push(`<div style="font-size:9px;color:${amplified?'var(--yellow)':'var(--muted)'};margin-top:2px">
+        ${amplified?'⚠':'↕'} ${varItems[i].pair} + ${varItems[j].pair} korelasi ${rho.toFixed(2)} — risiko ${amplified?'lebih besar':'tereduksi'}</div>`);
+    }
+  }
+
+  const posStr = varItems.map(v =>
+    `<span style="color:${v.direction==='long'?'var(--green)':'var(--accent)'}">${v.pair} $${v.dollarRisk}</span>`
+  ).join(' <span style="color:var(--border)">·</span> ');
+
+  const diverPct = (portfolioVar1d != null && undiversifiedVar > 0 && vi.length > 1)
+    ? (portfolioVar1d < undiversifiedVar
+        ? `<div><div style="font-size:8px;color:var(--muted)">DIVERSIFIKASI</div><div style="font-size:12px;color:var(--muted)">↓ ${Math.round((1-portfolioVar1d/undiversifiedVar)*100)}%</div></div>`
+        : `<div><div style="font-size:8px;color:var(--muted)">DIVERSIFIKASI</div><div style="font-size:12px;color:var(--accent)">↑ konsentrasi</div></div>`)
+    : '';
+
+  const noCorrNote = !corrData
+    ? `<div style="font-size:9px;color:var(--muted);margin-top:4px">* buka tab KORELASI untuk hitung korelasi antar pair</div>`
+    : '';
+
+  card.innerHTML = `
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:10px 12px;margin-bottom:12px;font-family:'DM Mono',monospace">
+      <div style="font-size:9px;color:var(--muted);letter-spacing:.1em;margin-bottom:6px">PORTFOLIO RISK — ${varItems.length} POSISI OPEN</div>
+      <div style="font-size:10px;margin-bottom:8px;line-height:1.8">${posStr}</div>
+      <div style="display:flex;gap:20px;align-items:flex-end;margin-bottom:4px">
+        <div>
+          <div style="font-size:8px;color:var(--muted)">TOTAL RISK</div>
+          <div style="font-size:16px;color:var(--accent);font-weight:600">$${totalRisk}</div>
+        </div>
+        ${portfolioVar1d!=null?`<div><div style="font-size:8px;color:var(--muted)">VaR 1D 95%</div><div style="font-size:16px;color:var(--yellow);font-weight:600">$${portfolioVar1d}</div></div>`:''}
+        ${diverPct}
+      </div>
+      ${warnLines.join('')}${noCorrNote}
+    </div>`;
 }
 
 function jnExportCSV() {
