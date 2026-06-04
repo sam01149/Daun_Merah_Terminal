@@ -630,6 +630,42 @@ async function fundamentalRefreshHandler(req, res) {
 
     const updated = await autoUpdateFundamentals(headlines, redisCmd);
 
+    // Self-heal: reset quantity indicators that were incorrectly written as % values (legacy bad data)
+    // and move mistaken Core PCE YoY values back to the correct key.
+    try {
+      const QUANTITY_SEED_KEYS = ['NFP', 'Jobless Claims', 'Employment Change', 'Claimant Count', 'Building Approvals', 'Housing Starts', 'Durable Goods Orders'];
+      const hashes = await redisCmd('HMGET', 'fundamental:USD', ...QUANTITY_SEED_KEYS, 'Core PCE');
+      const fixArgs = ['HSET', 'fundamental:USD'];
+      const SEED_USD = FUND_SEED.USD || {};
+      let needFix = false;
+      for (let i = 0; i < QUANTITY_SEED_KEYS.length; i++) {
+        const raw = hashes?.[i];
+        if (!raw) continue;
+        try {
+          const entry = JSON.parse(raw);
+          if (entry.actual && String(entry.actual).endsWith('%')) {
+            const seed = SEED_USD[QUANTITY_SEED_KEYS[i]];
+            if (seed) { fixArgs.push(QUANTITY_SEED_KEYS[i], JSON.stringify(seed)); needFix = true; }
+          }
+        } catch(_) {}
+      }
+      // Core PCE: if value >2% it's YoY — move to 'Core PCE YoY', reset 'Core PCE' to MoM seed
+      const pcRaw = hashes?.[QUANTITY_SEED_KEYS.length];
+      if (pcRaw) {
+        try {
+          const pcEntry = JSON.parse(pcRaw);
+          const pcVal = parseFloat(pcEntry.actual);
+          if (!isNaN(pcVal) && pcVal > 2.0) {
+            fixArgs.push('Core PCE YoY', pcRaw);       // save as YoY
+            const pcSeed = SEED_USD['Core PCE'];
+            if (pcSeed) fixArgs.push('Core PCE', JSON.stringify(pcSeed)); // restore MoM seed
+            needFix = true;
+          }
+        } catch(_) {}
+      }
+      if (needFix && fixArgs.length > 2) await redisCmd(...fixArgs);
+    } catch(e) { console.warn('sanitize quantity indicators failed:', e.message); }
+
     // Also refresh GDP Nowcast if data is stale (>6h) — piggyback on refresh call
     let gdpUpdated = false;
     try {
