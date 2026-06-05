@@ -285,11 +285,13 @@ async function fetchOECDInflation() {
 // ── TGA + Fed Balance Sheet Liquidity Indicators ─────────────────────────────
 
 async function fetchLiquidityIndicators() {
+  // Treasury FiscalData API moved from /v1/accounting/dts/dts_table_1 to /fiscal_service/v1/.
+  // "TGA Closing Balance" row stores the actual closing balance in open_today_bal (Treasury naming quirk).
+  const TGA_URL = 'https://api.fiscaldata.treasury.gov/services/api/fiscal_service/v1/accounting/dts/operating_cash_balance?filter=account_type:eq:Treasury%20General%20Account%20(TGA)%20Closing%20Balance&sort=-record_date&page%5Bsize%5D=3'
+
   const [fedAssetsResult, tgaResult] = await Promise.allSettled([
     fetchFred('WALCL'),
-    fetch('https://api.fiscaldata.treasury.gov/services/api/v1/accounting/dts/dts_table_1?filter=account_type:eq:Federal%20Reserve%20Account&sort=-record_date&page[size]=5', {
-      signal: AbortSignal.timeout(10000),
-    }),
+    fetch(TGA_URL, { signal: AbortSignal.timeout(10000) }),
   ])
 
   const result = { computed_at: new Date().toISOString() }
@@ -302,15 +304,18 @@ async function fetchLiquidityIndicators() {
   if (tgaResult.status === 'fulfilled' && tgaResult.value.ok) {
     const json = await tgaResult.value.json()
     const latest = json?.data?.[0]
-    if (latest?.close_today_bal) {
-      result.tga_balance_bn = Math.round(parseFloat(latest.close_today_bal) / 1000)
+    // TGA closing balance is stored in open_today_bal (close_today_bal is always null in this row)
+    const latestBal = latest?.open_today_bal && latest.open_today_bal !== 'null'
+      ? parseFloat(latest.open_today_bal) : null
+    if (latestBal != null && !isNaN(latestBal)) {
+      result.tga_balance_bn = Math.round(latestBal / 1000)
       result.tga_date = latest.record_date
     }
-    // Compare with day before for direction
     const prev = json?.data?.[1]
-    if (prev?.close_today_bal && result.tga_balance_bn != null) {
-      const prevBn = Math.round(parseFloat(prev.close_today_bal) / 1000)
-      result.tga_change_bn = result.tga_balance_bn - prevBn
+    const prevBal = prev?.open_today_bal && prev.open_today_bal !== 'null'
+      ? parseFloat(prev.open_today_bal) : null
+    if (prevBal != null && result.tga_balance_bn != null) {
+      result.tga_change_bn = result.tga_balance_bn - Math.round(prevBal / 1000)
     }
   }
 
