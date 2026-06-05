@@ -896,9 +896,9 @@ Mistral:     https://api.mistral.ai/v1
 - **FX Risk Reversals** — `action=risk-reversal` di correlations.js. CME CVOL → Barchart (jika `BARCHART_API_KEY` tersedia). UI di FUNDAMENTAL tab. ✓
 
 ### Masih Pending
-- **CME FedWatch market-implied yang benar** — CME memblokir Vercel IPs untuk semua endpoint. Rate path saat ini menggunakan FRED T-bill term structure (step 2.5) yang reasonable tapi bukan market-implied ZQ futures. Untuk data aktual, perlu tambah `BARCHART_API_KEY` (bisa akses ZQ melalui Barchart OnDemand) atau proxy eksternal.
-- **FX Risk Reversals via Barchart** — Memerlukan `BARCHART_API_KEY` (gratis, signup di barchart.com/ondemand, tidak butuh kartu kredit). Tanpa key, section hanya muncul jika CME CVOL tidak diblokir dari Vercel IPs.
+- **CME FedWatch market-implied yang benar** — CME memblokir Vercel IPs untuk semua endpoint. Rate path saat ini menggunakan FRED T-bill term structure (step 2.5) yang reasonable tapi bukan market-implied ZQ futures. Untuk data aktual perlu proxy eksternal atau provider lain dengan free tier yang jelas.
+- **FX Risk Reversals via Barchart** — ~~gratis~~ **Barchart OnDemand adalah produk enterprise berbayar** (signup via form sales contact, bukan self-serve free). Tanpa `BARCHART_API_KEY`, section Risk Reversals di tab FUNDAMENTAL akan selalu `available: false` karena CME CVOL endpoint juga diblokir dari Vercel IPs. Path Barchart sudah ada di kode (`api/correlations.js`) — tinggal aktifkan jika key tersedia suatu saat. Alternatif yang perlu dieksplorasi: OANDA API (ada free dev tier) atau sumber implied vol lain dengan self-serve free tier.
 
 ---
 
-> **Action item:** Daftar Barchart OnDemand (gratis) → tambah `BARCHART_API_KEY` ke Vercel env vars → Rate Reversals + CME ZQ futures langsung aktif.
+> **Status 2026-06-05:** Kedua fitur berjalan dengan graceful fallback — rate path pakai FRED T-bill, risk reversals section tidak muncul. Tidak ada action item mendesak sampai ada alternatif free tier yang dikonfirmasi.
