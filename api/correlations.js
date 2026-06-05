@@ -569,7 +569,7 @@ module.exports = async function handler(req, res) {
 
     try {
       const r = await fetch(
-        `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(allSyms)}`,
+        `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${allSyms}`,
         { headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }, signal: AbortSignal.timeout(8000) }
       );
       if (!r.ok) throw new Error(`Yahoo HTTP ${r.status}`);

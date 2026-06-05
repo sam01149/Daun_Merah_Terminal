@@ -3839,10 +3839,14 @@ let snapData = null;
 async function fetchDailySnapshot() {
   try {
     const r = await fetch('/api/correlations?action=daily-snapshot', { signal: AbortSignal.timeout(10000) });
-    if (!r.ok) return;
+    if (!r.ok) throw new Error('HTTP ' + r.status);
     snapData = await r.json();
     renderDailySnapshot();
-  } catch(e) { console.warn('fetchDailySnapshot failed:', e.message); }
+  } catch(e) {
+    console.warn('fetchDailySnapshot failed:', e.message);
+    const el = document.getElementById('dashDailySnap');
+    if (el && el.textContent.includes('Memuat')) el.innerHTML = '<div class="dash-no-data" style="padding:8px 12px">—</div>';
+  }
 }
 
 function renderDailySnapshot() {
