@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-06-05 (session 49 — OECD removal, TGA WDTGAL fix, FUND_SEED update, unverified audit)
+> **Last updated:** 2026-06-05 (session 50 — Risk Reversal bug fix: `/5` → `/6`, cmeRawSample → cmeFailedReasons)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Financial_Feed_App`
 > **Production URL:** https://financial-feed-app.vercel.app

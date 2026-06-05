@@ -403,7 +403,7 @@ module.exports = async function handler(req, res) {
       'Referer': 'https://www.cmegroup.com/markets/fx/g10/euro-fx.html',
     };
 
-    let pairs = {}, source = null;
+    let pairs = {}, source = null, cmeFailedReasons = [];
     const scraperKey = process.env.SCRAPER_API_KEY;
 
     // Attempt 1: CME CVOL /services endpoint — via ScraperAPI proxy if key set, else direct
@@ -429,12 +429,13 @@ module.exports = async function handler(req, res) {
       );
       const ok = settled.filter(r => r.status === 'fulfilled').map(r => r.value);
       const failed = settled.filter(r => r.status === 'rejected').map(r => r.reason?.message);
+      cmeFailedReasons = failed;
       if (failed.length) console.warn('risk-reversal: CME CVOL partial failures:', failed);
       if (ok.length >= 3) {
         ok.forEach(d => { pairs[d.pair] = { rr_value: d.rr_value, source: d.source }; });
         source = 'cme_cvol';
       } else {
-        throw new Error(`Only ${ok.length}/5 CME CVOL pairs returned data`);
+        throw new Error(`Only ${ok.length}/6 CME CVOL pairs returned data`);
       }
     } catch(e) {
       console.warn('risk-reversal: CME CVOL failed:', e.message);
@@ -476,8 +477,8 @@ module.exports = async function handler(req, res) {
     }
 
     if (!source) {
-      const statusCode = cmeRawSample?.status;
-      const hint = statusCode === 404
+      const cme404 = cmeFailedReasons.some(m => m?.includes('HTTP 404'));
+      const hint = cme404
         ? 'CME CVOL endpoint returned 404 — URL has been removed/moved by CME. Needs new endpoint URL.'
         : scraperKey
           ? 'ScraperAPI active but CME CVOL returned no parseable data.'
