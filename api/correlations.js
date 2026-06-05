@@ -374,7 +374,7 @@ module.exports = async function handler(req, res) {
   // Negative RR → put premium > call premium → market fears downside.
   // Sources (tried in order): CME CVOL Skew → Barchart OnDemand → unavailable message.
   if (req.query.action === 'risk-reversal') {
-    const RR_CACHE_KEY = 'rr_cache';
+    const RR_CACHE_KEY = 'rr_cache_v2'; // v2: new /services/cvol endpoint + 6 pairs incl XAU
     const RR_CACHE_TTL = 3600;
 
     try {
@@ -387,10 +387,15 @@ module.exports = async function handler(req, res) {
     } catch(_) {}
 
     // New endpoint: /services/cvol (replaces deprecated /CmeWS/mvc/Volatility/historical)
-    // Symbol pattern: *VL (Volatility Live) — confirmed EUVL for EUR/USD
+    // Symbols confirmed via direct browser test 2026-06-05.
+    // NZD/USD + USD/CHF: CME returns ok but no skew field (options too illiquid — not available).
     const CME_CVOL_PAIRS = {
-      'EUR/USD': 'EUVL', 'GBP/USD': 'GBVL', 'USD/JPY': 'JPVL',
-      'AUD/USD': 'ADVL', 'USD/CAD': 'CDVL',
+      'EUR/USD': 'EUVL',
+      'GBP/USD': 'GBVL',
+      'USD/JPY': 'JPVL',
+      'AUD/USD': 'ADVL',
+      'USD/CAD': 'CAVL',  // fix: CDVL has no skew data
+      'XAU/USD': 'GCVL',  // Gold CVOL
     };
     const CME_HDR = {
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
