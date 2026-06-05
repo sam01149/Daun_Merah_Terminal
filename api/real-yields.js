@@ -40,11 +40,6 @@ const FRED_NOMINAL_SERIES = {
   CHF: 'IRLTLT01CHM156N', // Switzerland 10Y
 }
 
-const OECD_TO_CURRENCY = {
-  'AUS': 'AUD', 'CAN': 'CAD', 'CHE': 'CHF',
-  'GBR': 'GBP', 'JPN': 'JPY', 'NZL': 'NZD', 'FRA': 'EUR',
-}
-
 module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Cache-Control', 'no-cache')
@@ -52,18 +47,17 @@ module.exports = async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(204).end()
 
   // Read all caches in parallel
-  let mainCached = null, liquidityCached = null, yieldCurveCached = null, oecdCached = null
+  let mainCached = null, liquidityCached = null, yieldCurveCached = null
   try {
-    ;[mainCached, liquidityCached, yieldCurveCached, oecdCached] = await Promise.all([
+    ;[mainCached, liquidityCached, yieldCurveCached] = await Promise.all([
       redisCmd('GET', CACHE_KEY),
       redisCmd('GET', 'liquidity_usd'),
       redisCmd('GET', 'yield_curve'),
-      redisCmd('GET', 'oecd_inflation'),
     ])
   } catch(e) { console.warn('real-yields: cache batch read failed:', e.message) }
 
   // Parse supplementary caches
-  let liquidityData = null, yieldCurveData = null, oecdRates = null
+  let liquidityData = null, yieldCurveData = null
   try {
     if (liquidityCached) {
       const l = JSON.parse(liquidityCached)
@@ -72,10 +66,6 @@ module.exports = async function handler(req, res) {
     if (yieldCurveCached) {
       const y = JSON.parse(yieldCurveCached)
       if (Date.now() - new Date(y.computed_at).getTime() < 3600 * 1000) yieldCurveData = y
-    }
-    if (oecdCached) {
-      const o = JSON.parse(oecdCached)
-      if (Date.now() - new Date(o.computed_at).getTime() < 86400 * 1000) oecdRates = o.rates
     }
   } catch(e) {}
 
@@ -106,33 +96,15 @@ module.exports = async function handler(req, res) {
 
   // ── Fetch everything fresh ──────────────────────────────────────────────────
 
-  // Step 1: OECD inflation (use cached rates if fresh, else fetch)
-  if (!oecdRates) {
-    try {
-      oecdRates = await fetchOECDInflation()
-      if (oecdRates) {
-        const cachePayload = { rates: oecdRates, computed_at: new Date().toISOString() }
-        redisCmd('SET', 'oecd_inflation', JSON.stringify(cachePayload), 'EX', 86400).catch(() => {})
-      }
-    } catch(e) {
-      console.warn('real-yields: OECD fetch failed:', e.message)
-    }
-  }
-
-  // Build merged inflation expectations: hardcoded + OECD overrides
+  // Inflation expectations: hardcoded quarterly values, update manually each quarter.
+  // OECD stats.oecd.org (deprecated 2025) and sdmx.oecd.org (Cloudflare-blocked from Vercel)
+  // are both inaccessible — hardcoded data is the only reliable path.
   const inflationExp = {}
   for (const [cur, inf] of Object.entries(INFLATION_EXPECTATIONS)) {
     inflationExp[cur] = { ...inf }
   }
-  if (oecdRates) {
-    for (const [cur, val] of Object.entries(oecdRates)) {
-      if (inflationExp[cur]) {
-        inflationExp[cur] = { value: val, source: 'OECD Economic Outlook', as_of: new Date().toISOString().slice(0, 10) }
-      }
-    }
-  }
 
-  // Step 2: Fetch all yields + liquidity + yield curve + Cleveland Fed in parallel
+  // Fetch all yields + liquidity + yield curve + Cleveland Fed in parallel
   // EXPINF10YR = Cleveland Fed 10-year inflation expectation (model-based, monthly, via FRED)
   // Used as fallback when TIPS breakeven (T10YIE) is unavailable; also cross-validates TIPS.
   const otherCurrencies = ['EUR', 'GBP', 'JPY', 'CAD', 'AUD', 'NZD', 'CHF']
@@ -247,51 +219,14 @@ module.exports = async function handler(req, res) {
   return res.status(200).json({ ...payload, liquidity: liquidityData, yield_curve: yieldCurveData })
 }
 
-// ── OECD Inflation Expectations ──────────────────────────────────────────────
-
-async function fetchOECDInflation() {
-  const url = 'https://stats.oecd.org/SDMX-JSON/data/EO/AUS+CAN+CHE+GBR+JPN+NZL+FRA.CPI.A/all?startTime=2025&endTime=2026&dimensionAtObservation=allDimensions'
-  const r = await fetch(url, { signal: AbortSignal.timeout(15000) })
-  if (!r.ok) throw new Error(`OECD HTTP ${r.status}`)
-  const json = await r.json()
-
-  // SDMX-JSON: values keyed by observation dimension keys
-  const structure = json.structure
-  const dimensions = structure?.dimensions?.observation || []
-  const countryDim = dimensions.find(d => d.id === 'LOCATION')
-  if (!countryDim) throw new Error('OECD: LOCATION dimension not found')
-
-  const dataset = json.dataSets?.[0]
-  if (!dataset?.observations) throw new Error('OECD: no observations')
-
-  const rates = {}
-  for (const [key, obs] of Object.entries(dataset.observations)) {
-    const parts = key.split(':')
-    const locIdx = parseInt(parts[0], 10)
-    const locCode = countryDim.values?.[locIdx]?.id
-    if (!locCode) continue
-    const cur = OECD_TO_CURRENCY[locCode]
-    if (!cur) continue
-    const val = obs[0]
-    if (val == null || isNaN(val)) continue
-    // Keep the latest value per currency (last key wins since observations are ordered)
-    rates[cur] = +parseFloat(val).toFixed(2)
-  }
-
-  if (Object.keys(rates).length === 0) throw new Error('OECD: no parseable values')
-  return rates
-}
-
 // ── TGA + Fed Balance Sheet Liquidity Indicators ─────────────────────────────
+// WDTGAL = US Treasury General Account (Fed H.4.1, Wednesday levels) via FRED.
+// fiscaldata.treasury.gov is blocked from Vercel datacenter IPs — FRED is the reliable path.
 
 async function fetchLiquidityIndicators() {
-  // Treasury FiscalData API moved from /v1/accounting/dts/dts_table_1 to /fiscal_service/v1/.
-  // "TGA Closing Balance" row stores the actual closing balance in open_today_bal (Treasury naming quirk).
-  const TGA_URL = 'https://api.fiscaldata.treasury.gov/services/api/fiscal_service/v1/accounting/dts/operating_cash_balance?filter=account_type:eq:Treasury%20General%20Account%20(TGA)%20Closing%20Balance&sort=-record_date&page%5Bsize%5D=3'
-
   const [fedAssetsResult, tgaResult] = await Promise.allSettled([
     fetchFred('WALCL'),
-    fetch(TGA_URL, { signal: AbortSignal.timeout(10000) }),
+    fetchFredMulti('WDTGAL', 2),
   ])
 
   const result = { computed_at: new Date().toISOString() }
@@ -301,21 +236,14 @@ async function fetchLiquidityIndicators() {
     result.fed_assets_date = fedAssetsResult.value.date
   }
 
-  if (tgaResult.status === 'fulfilled' && tgaResult.value.ok) {
-    const json = await tgaResult.value.json()
-    const latest = json?.data?.[0]
-    // TGA closing balance is stored in open_today_bal (close_today_bal is always null in this row)
-    const latestBal = latest?.open_today_bal && latest.open_today_bal !== 'null'
-      ? parseFloat(latest.open_today_bal) : null
-    if (latestBal != null && !isNaN(latestBal)) {
-      result.tga_balance_bn = Math.round(latestBal / 1000)
-      result.tga_date = latest.record_date
-    }
-    const prev = json?.data?.[1]
-    const prevBal = prev?.open_today_bal && prev.open_today_bal !== 'null'
-      ? parseFloat(prev.open_today_bal) : null
-    if (prevBal != null && result.tga_balance_bn != null) {
-      result.tga_change_bn = result.tga_balance_bn - Math.round(prevBal / 1000)
+  if (tgaResult.status === 'fulfilled') {
+    const obs = tgaResult.value
+    if (obs.length > 0) {
+      result.tga_balance_bn = Math.round(obs[0].value / 1000)
+      result.tga_date = obs[0].date
+      if (obs.length > 1) {
+        result.tga_change_bn = result.tga_balance_bn - Math.round(obs[1].value / 1000)
+      }
     }
   }
 
@@ -387,6 +315,25 @@ async function fetchFred(seriesId) {
   if (obs.length === 0) throw new Error(`FRED ${seriesId}: no valid observations`)
 
   return { latest: parseFloat(obs[0].value), date: obs[0].date }
+}
+
+// Fetch N most recent observations for a FRED series (used for change calculations).
+async function fetchFredMulti(seriesId, limit = 2) {
+  const apiKey = process.env.FRED_API_KEY
+  if (!apiKey) throw new Error('FRED_API_KEY not set')
+
+  const url = `${FRED_BASE}?series_id=${seriesId}&api_key=${apiKey}&limit=${limit}&sort_order=desc&file_type=json`
+  const r = await fetch(url, {
+    headers: { 'User-Agent': 'DaunMerah/1.0' },
+    signal: AbortSignal.timeout(10000),
+  })
+  if (!r.ok) throw new Error(`FRED ${seriesId} HTTP ${r.status}`)
+
+  const json = await r.json()
+  const obs = (json.observations || []).filter(o => o.value !== '.')
+  if (obs.length === 0) throw new Error(`FRED ${seriesId}: no valid observations`)
+
+  return obs.map(o => ({ value: parseFloat(o.value), date: o.date }))
 }
 
 async function redisCmd(...args) {

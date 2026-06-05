@@ -736,7 +736,7 @@ const FUND_SEED = {
   },
   JPY: {
     'CPI YoY':              { actual:'1.5%',    period:'Mar 2026',    date:'—', source:'seed' },
-    'GDP QoQ':              { actual:'0.3%',    period:'Q4 2025',     date:'—', source:'seed' },
+    'GDP QoQ':              { actual:'0.5%',    period:'Q1 2026',     date:'—', source:'seed' },
     'BOJ Rate':             { actual:'0.75%',   period:'Apr 2026',    date:'—', source:'seed' },
     'Tankan Mfg Index':     { actual:'17',      period:'Q1 2026',     date:'—', source:'seed' },
     'Unemployment Rate':    { actual:'2.7%',    period:'Mar 2026',    date:'—', source:'seed' },
@@ -757,7 +757,7 @@ const FUND_SEED = {
   AUD: {
     'Employment Change': { actual:'17.9K',      period:'Mar 2026',    date:'—', source:'seed' },
     'CPI QoQ':           { actual:'0.6%',       period:'Q1 2026',     date:'—', source:'seed' },
-    'GDP QoQ':           { actual:'0.8%',       period:'Q4 2025',     date:'—', source:'seed' },
+    'GDP QoQ':           { actual:'0.3%',       period:'Q1 2026',     date:'—', source:'seed' },
     'RBA Rate':          { actual:'4.35%',      period:'May 2026',    date:'—', source:'seed' },
     'Unemployment Rate': { actual:'4.5%',       period:'Apr 2026',    date:'—', source:'seed' },
     'Retail Sales MoM':  { actual:'0.2%',       period:'Mar 2026',    date:'—', source:'seed' },

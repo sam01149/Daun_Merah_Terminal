@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-06-05 (session 48 — VIX fix, TGA API fix, CB WATCH→ARTIKEL, RSS research)
+> **Last updated:** 2026-06-05 (session 49 — OECD removal, TGA WDTGAL fix, FUND_SEED update, unverified audit)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Financial_Feed_App`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -78,6 +78,47 @@ Financial_Feed_App/
 > **Penting:** `api/feeds.js` menggantikan `api/rss.js` dan `api/cot.js` yang sudah dihapus.
 > `api/admin.js` menggantikan `api/health.js`, `api/redis-keys.js`, `api/admin-prompts.js`, dan `api/push.js`.
 > Konsolidasi ini dilakukan untuk tetap di bawah limit 12 serverless functions Vercel Hobby.
+
+---
+
+## Changelog Session 49 (2026-06-05)
+
+### Unverified Audit + Maintenance Debt + OECD/TGA Fixes
+
+**1. OECD Inflation Dead Code Removed — `api/real-yields.js`**
+- Verified: `stats.oecd.org/SDMX-JSON` → 404 (deprecated), `sdmx.oecd.org` → 403 (Cloudflare block dari Vercel IPs)
+- `fetchOECDInflation()` selalu silent fail, selalu fallback ke hardcoded
+- Dihapus: `fetchOECDInflation()`, `OECD_TO_CURRENCY` constant, `oecdCached` Redis read, Step 1 OECD block
+- Simplified: `inflationExp` langsung spread dari `INFLATION_EXPECTATIONS` tanpa OECD merge
+- Orphaned Redis key `oecd_inflation` expire natural dalam 24h
+
+**2. TGA via FRED WDTGAL — `api/real-yields.js`**
+- Root cause: `fiscaldata.treasury.gov` blocked dari Vercel datacenter IPs (confirmed) → `tga_balance_bn` selalu null
+- Fix: Ganti ke FRED series `WDTGAL` (US Treasury General Account, Fed H.4.1 weekly Wednesday levels)
+- Tambah helper `fetchFredMulti(seriesId, limit)` untuk fetch N observasi (needed untuk `tga_change_bn`)
+- `fetchLiquidityIndicators()`: sekarang `fetchFred('WALCL')` + `fetchFredMulti('WDTGAL', 2)` (keduanya via FRED API, tidak diblokir Vercel)
+- Trade-off: WDTGAL weekly (Rabu), less granular dari daily Treasury API, tapi reliable. `tga_change_bn` = perbandingan 2 Rabu berturut-turut.
+
+**3. FUND_SEED Update — `api/admin.js`**
+- AUD GDP QoQ: 0.8% Q4 2025 → **0.3% Q1 2026** (ABS published June 3, 2026; QoQ below expected 0.5%)
+- JPY GDP QoQ: 0.3% Q4 2025 → **0.5% Q1 2026** (Cabinet Office 1st preliminary May 19, 2026; annualized +2.1%)
+- NZD GDP: tetap Q4 2025 (Q1 2026 publish June 18)
+
+**4. GBP Inflation Expectation — Confirmed No Update Needed**
+- BoE IAS Q2 2026 belum publish (konfirmasi via research). GBP 3.2% (Feb 2026) masih current.
+- Next refresh: BoE IAS Q2 hasil biasanya ~Aug 2026.
+
+**5. AI Liquidity + Yield Curve Prompt — Verified Working**
+- Yield curve USD+EUR confirmed masuk ke `realYieldBlock` di prompt market-digest
+- TGA sebelumnya null karena Vercel IP blocked → sudah fixed via WDTGAL
+- Cold-start caveat: `liquidity_usd` dan `yield_curve` TTL 1h. Jika user buka tab FUNDAMENTAL sebelum generate digest, data selalu tersedia.
+
+**6. crawl4ai Assessment**
+- Python-based library, Docker mode punya REST API (callable dari Node.js)
+- Berguna untuk bypass Cloudflare/anti-bot (ING Think, option expiry pages)
+- **Tidak applicable untuk Vercel serverless** — butuh server terpisah
+- Cloud API "coming soon" tapi belum tersedia
+- Relevant di masa depan jika ada VPS scraping proxy
 
 ---
 
