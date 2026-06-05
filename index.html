@@ -1572,6 +1572,12 @@ body {
   border-bottom: 1px solid var(--border); position: sticky; top: 0;
   background: var(--bg); z-index: 1;
 }
+.snap-section-label { font-size:7px; letter-spacing:.08em; color:var(--muted); padding:5px 12px 2px; text-transform:uppercase; font-family:'DM Mono',monospace; }
+.snap-row { display:flex; align-items:center; gap:6px; padding:2px 12px; font-family:'DM Mono',monospace; }
+.snap-cur { font-size:9px; color:var(--muted); min-width:46px; }
+.snap-val { font-size:10px; font-weight:600; flex:1; text-align:right; }
+.snap-dir { font-size:9px; min-width:10px; text-align:right; }
+.snap-divider { border:none; border-top:1px solid rgba(255,255,255,.04); margin:4px 12px; }
 .dash-news-item {
   display: flex; align-items: flex-start; gap: 6px;
   padding: 6px 10px; border-bottom: 1px solid rgba(255,255,255,.03);
@@ -2321,6 +2327,8 @@ body {
     <div id="dashBiasList"><div class="dash-no-data">Buka tab RINGKASAN dulu.</div></div>
     <div class="dash-col-title" style="margin-top:4px">FUNDAMENTAL RANKING</div>
     <div id="dashFundStrip"><div class="dash-no-data">Buka tab FUNDAMENTAL dulu.</div></div>
+    <div class="dash-col-title" style="margin-top:4px">DAILY PULSE <span id="dashSnapAge" style="color:var(--border);margin-left:4px;text-transform:none;letter-spacing:0;font-size:8px"></span></div>
+    <div id="dashDailySnap"><div class="dash-no-data" style="padding:8px 12px">Memuat...</div></div>
   </div>
   <div id="dashEventBar">
     <span style="font-size:8px;color:var(--muted);font-family:'DM Mono',monospace;white-space:nowrap">EVENT BERIKUTNYA:</span>
@@ -3825,6 +3833,72 @@ function renderRiskReversal() {
   section.style.display = 'block';
 }
 
+// ── DAILY PULSE ──────────────────────────────────────────────────────────────
+let snapData = null;
+
+async function fetchDailySnapshot() {
+  try {
+    const r = await fetch('/api/correlations?action=daily-snapshot', { signal: AbortSignal.timeout(10000) });
+    if (!r.ok) return;
+    snapData = await r.json();
+    renderDailySnapshot();
+  } catch(e) { console.warn('fetchDailySnapshot failed:', e.message); }
+}
+
+function renderDailySnapshot() {
+  const el = document.getElementById('dashDailySnap');
+  if (!el || !snapData) return;
+
+  const ageEl = document.getElementById('dashSnapAge');
+  if (ageEl && snapData.fetched_at) {
+    const mins = Math.floor((Date.now() - new Date(snapData.fetched_at).getTime()) / 60000);
+    ageEl.textContent = mins < 1 ? 'baru saja' : `${mins}m lalu`;
+  }
+
+  const { fx = {}, yields = {} } = snapData;
+
+  // FX rows sorted strongest → weakest vs USD
+  const fxRows = Object.entries(fx)
+    .sort((a, b) => b[1].pct - a[1].pct)
+    .map(([cur, d]) => {
+      const pct   = d.pct;
+      const color = Math.abs(pct) < 0.05 ? 'var(--muted)' : pct > 0 ? 'var(--green)' : 'var(--accent)';
+      const arrow = Math.abs(pct) < 0.05 ? '→' : pct > 0 ? '↑' : '↓';
+      const sign  = pct > 0 ? '+' : '';
+      return `<div class="snap-row">
+        <span class="snap-cur">${cur}</span>
+        <span class="snap-val" style="color:${color}">${sign}${pct.toFixed(2)}%</span>
+        <span class="snap-dir" style="color:${color}">${arrow}</span>
+      </div>`;
+    }).join('');
+
+  // Yield rows: rising yield = that CCY more attractive (orange); falling = green
+  const yieldRows = ['US','DE','JP','GB'].filter(k => yields[k]).map(key => {
+    const d     = yields[key];
+    const bps   = d.change_bps;
+    const color = Math.abs(bps) <= 1 ? 'var(--muted)' : bps > 0 ? 'var(--orange)' : 'var(--green)';
+    const arrow = Math.abs(bps) <= 1 ? '→' : bps > 0 ? '↑' : '↓';
+    const sign  = bps > 0 ? '+' : '';
+    return `<div class="snap-row">
+      <span class="snap-cur">${key} 10Y</span>
+      <span class="snap-val" style="color:var(--text)">${d.level.toFixed(2)}%</span>
+      <span class="snap-dir" style="color:${color};font-size:8px">${sign}${bps}bp ${arrow}</span>
+    </div>`;
+  }).join('');
+
+  const noYield = Object.keys(yields).length === 0
+    ? '<div class="snap-row" style="color:var(--muted);font-size:9px;padding:4px 12px">Data yield tidak tersedia</div>'
+    : '';
+
+  el.innerHTML = `
+    <div class="snap-section-label">FX vs USD</div>
+    ${fxRows || '<div class="snap-row" style="color:var(--muted);font-size:9px">—</div>'}
+    <hr class="snap-divider">
+    <div class="snap-section-label">Yield 10Y</div>
+    ${yieldRows}${noYield}
+  `;
+}
+
 function renderFundamental() {
   const grid = document.getElementById('fundGrid');
   if (!grid || !fundData) return;
@@ -4822,7 +4896,9 @@ window.addEventListener('load', () => {
 
   setTimeout(fetchRegime, 800);
   setTimeout(fetchRealYields, 1200);
+  setTimeout(fetchDailySnapshot, 1600);
   setInterval(fetchRegime, 15 * 60 * 1000);
+  setInterval(fetchDailySnapshot, 5 * 60 * 1000);
   setInterval(updateCalLastUpdated, 60 * 1000);
 });
 

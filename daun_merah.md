@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-06-05 (session 50 — Risk Reversal fix, CB bias keyword word-boundary matching)
+> **Last updated:** 2026-06-05 (session 50 — Risk Reversal fix, CB bias word-boundary, DAILY PULSE panel)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Financial_Feed_App`
 > **Production URL:** https://financial-feed-app.vercel.app

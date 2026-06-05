@@ -532,6 +532,82 @@ module.exports = async function handler(req, res) {
     }
   }
 
+  // --- DAILY PULSE: FX % change today + 10Y yield moves ---
+  if (req.query.action === 'daily-snapshot') {
+    const SNAP_KEY = 'daily_snapshot';
+    const SNAP_TTL = 300; // 5 minutes
+
+    try {
+      const cached = await redisCmd('GET', SNAP_KEY);
+      if (cached) {
+        const d = JSON.parse(cached);
+        if (Date.now() - new Date(d.fetched_at).getTime() < SNAP_TTL * 1000)
+          return res.status(200).json({ ...d, from_cache: true });
+      }
+    } catch(_) {}
+
+    // invert:true → pair is USD/xxx so positive change means xxx is WEAKER — negate for currency strength
+    const FX_MAP = {
+      EUR: { sym: 'EURUSD=X', invert: false },
+      GBP: { sym: 'GBPUSD=X', invert: false },
+      AUD: { sym: 'AUDUSD=X', invert: false },
+      NZD: { sym: 'NZDUSD=X', invert: false },
+      JPY: { sym: 'USDJPY=X', invert: true  },
+      CAD: { sym: 'USDCAD=X', invert: true  },
+      CHF: { sym: 'USDCHF=X', invert: true  },
+    };
+    const YIELD_MAP = {
+      US: '^TNX',
+      DE: '^GDBR10',
+      JP: '^JN10Y',
+      GB: '^TMBMKGB-10Y',
+    };
+    const allSyms = [
+      ...Object.values(FX_MAP).map(v => v.sym),
+      ...Object.values(YIELD_MAP),
+    ].join(',');
+
+    try {
+      const r = await fetch(
+        `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(allSyms)}`,
+        { headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }, signal: AbortSignal.timeout(8000) }
+      );
+      if (!r.ok) throw new Error(`Yahoo HTTP ${r.status}`);
+      const json = await r.json();
+      const quotes = {};
+      (json.quoteResponse?.result || []).forEach(q => { quotes[q.symbol] = q; });
+
+      const fx = {};
+      for (const [cur, { sym, invert }] of Object.entries(FX_MAP)) {
+        const q = quotes[sym];
+        if (!q || q.regularMarketChangePercent == null) continue;
+        const raw = +q.regularMarketChangePercent.toFixed(3);
+        fx[cur] = { pct: invert ? -raw : raw };
+      }
+
+      const yields = {};
+      for (const [key, sym] of Object.entries(YIELD_MAP)) {
+        const q = quotes[sym];
+        if (!q || q.regularMarketPrice == null) continue;
+        yields[key] = {
+          level:      +q.regularMarketPrice.toFixed(3),
+          change_bps: Math.round((q.regularMarketChange || 0) * 100),
+        };
+      }
+
+      if (Object.keys(fx).length === 0) throw new Error('Yahoo returned no FX data');
+      const payload = { fx, yields, fetched_at: new Date().toISOString() };
+      redisCmd('SET', SNAP_KEY, JSON.stringify(payload), 'EX', SNAP_TTL).catch(() => {});
+      return res.status(200).json({ ...payload, from_cache: false });
+    } catch(e) {
+      try {
+        const stale = await redisCmd('GET', SNAP_KEY);
+        if (stale) return res.status(200).json({ ...JSON.parse(stale), stale: true });
+      } catch(_) {}
+      return res.status(500).json({ error: e.message });
+    }
+  }
+
   // Try Redis cache first
   try {
     const cached = await redisCmd('GET', CACHE_KEY);
