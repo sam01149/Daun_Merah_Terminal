@@ -398,6 +398,7 @@ module.exports = async function handler(req, res) {
 
     let pairs = {}, source = null;
     const scraperKey = process.env.SCRAPER_API_KEY;
+    let cmeRawSample = null; // capture first CME response for debug
 
     // Attempt 1: CME CVOL Skew — via ScraperAPI proxy if key set, else direct (likely blocked)
     try {
@@ -411,14 +412,17 @@ module.exports = async function handler(req, res) {
           const r = await fetch(fetchUrl, { headers: fetchHeaders, signal: AbortSignal.timeout(15000) });
           if (!r.ok) throw new Error(`CME CVOL ${code} HTTP ${r.status}`);
           const json = await r.json();
+          if (!cmeRawSample) cmeRawSample = json; // capture for debug
           const rows = json?.data || json?.chartData || (Array.isArray(json) ? json : []);
           const latest = rows[rows.length - 1];
           const skew = parseFloat(latest?.SkewDiff ?? latest?.skewDiff ?? latest?.skew ?? latest?.value ?? 'x');
-          if (isNaN(skew)) throw new Error(`CME CVOL ${code}: no parseable skew`);
+          if (isNaN(skew)) throw new Error(`CME CVOL ${code}: no parseable skew (keys: ${latest ? Object.keys(latest).join(',') : 'no rows'})`);
           return { pair, rr_value: +skew.toFixed(3), source: 'CME CVOL Skew' };
         })
       );
       const ok = settled.filter(r => r.status === 'fulfilled').map(r => r.value);
+      const failed = settled.filter(r => r.status === 'rejected').map(r => r.reason?.message);
+      if (failed.length) console.warn('risk-reversal: CME CVOL partial failures:', failed);
       if (ok.length >= 3) {
         ok.forEach(d => { pairs[d.pair] = { rr_value: d.rr_value, source: d.source }; });
         source = 'cme_cvol';
@@ -468,7 +472,11 @@ module.exports = async function handler(req, res) {
       const hint = scraperKey
         ? 'ScraperAPI active but CME CVOL returned insufficient data (< 3 pairs). CME may have changed response format.'
         : 'CME CVOL blocked from Vercel IPs. Add SCRAPER_API_KEY env var to enable proxy bypass.';
-      return res.status(200).json({ available: false, reason: hint, computed_at: new Date().toISOString() });
+      // Include raw sample (truncated) to diagnose CME response format changes
+      const debugInfo = cmeRawSample
+        ? { top_keys: Object.keys(cmeRawSample), sample: JSON.stringify(cmeRawSample).slice(0, 600) }
+        : null;
+      return res.status(200).json({ available: false, reason: hint, debug: debugInfo, computed_at: new Date().toISOString() });
     }
 
     const payload = { available: true, pairs, source, computed_at: new Date().toISOString() };

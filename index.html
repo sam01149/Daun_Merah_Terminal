@@ -2670,7 +2670,7 @@ if ('serviceWorker' in navigator) {
   }).catch(e => console.warn('[SW] failed', e));
 
   navigator.serviceWorker.addEventListener('message', e => {
-    if (e.data.type === 'NEW_ITEMS') handleNewItems(e.data.items);
+    if (e.data.type === 'NEW_ITEMS') fetchFeed();
   });
 }
 

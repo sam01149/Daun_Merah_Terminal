@@ -12,13 +12,16 @@ module.exports = async function handler(req, res) {
     ]);
 
     let allEvents = [];
+    let anyFetchSucceeded = false;
     for (const result of [resThis, resNext]) {
       if (result.status === 'fulfilled' && result.value.ok) {
+        anyFetchSucceeded = true;
         const xml = await result.value.text();
         if (xml.includes('<event>')) allEvents = allEvents.concat(parseFFXML(xml));
       }
     }
-    if (allEvents.length === 0) throw new Error('No events parsed');
+    // Only throw 500 if both fetches completely failed — empty event list is valid (weekend/no high-impact)
+    if (!anyFetchSucceeded) throw new Error('Both ForexFactory XML fetches failed');
 
     const nowWib = new Date(Date.now() + 7 * 3600000);
     const dateRange = new Set();
