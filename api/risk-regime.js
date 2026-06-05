@@ -121,6 +121,8 @@ module.exports = async function handler(req, res) {
     let structure = null
     if (vix1m != null) {
       structure = vix > vix1m ? 'backwardation' : 'contango'
+    } else if (vix3m != null) {
+      structure = vix > vix3m ? 'backwardation' : 'contango'
     }
     vixTermStructure = { vix_spot: vix, vix_1m: vix1m, vix_3m: vix3m, structure }
   }
