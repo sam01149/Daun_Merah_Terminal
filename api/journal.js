@@ -184,12 +184,21 @@ module.exports = async function handler(req, res) {
     const tradeSummaries = entries.map((e, i) => {
       const result = e.r_actual != null ? (e.r_actual >= 0 ? `WIN +${e.r_actual}R` : `LOSS ${e.r_actual}R`) : 'RESULT UNKNOWN';
       const cotInfo = e.cot_snapshot ? Object.entries(e.cot_snapshot).map(([c, v]) => `${c} COT net=${v.lev_net}`).join(', ') : 'no COT';
+      const entryDate = e.created_at ? e.created_at.slice(0, 10) : 'N/A';
+      const pairCurrencies = e.pair ? [e.pair.slice(0, 3), e.pair.slice(3, 6)] : [];
+      const cbInfo = e.cb_bias_snapshot
+        ? pairCurrencies.map(c => { const b = e.cb_bias_snapshot[c]; return b ? `${c}=${b.bias}` : null; }).filter(Boolean).join(', ') || 'no CB data'
+        : 'no CB data';
+      const drivers = Array.isArray(e.driver_references) && e.driver_references.length > 0
+        ? e.driver_references.join(', ') : null;
       return [
-        `Trade ${i + 1}: ${e.pair} ${(e.direction || '').toUpperCase()} | ${result}`,
-        `  RR planned: ${e.rr_planned || 'N/A'} | Horizon: ${e.time_horizon || 'N/A'}`,
-        `  Regime: ${e.regime_at_entry || 'N/A'} | ${cotInfo}`,
-        `  Thesis: ${(e.thesis_text || '').slice(0, 200)}`,
-        e.attribution_notes ? `  Post-trade note: ${e.attribution_notes.slice(0, 150)}` : '',
+        `Trade ${i + 1}: ${e.pair} ${(e.direction || '').toUpperCase()} | ${result} | ${entryDate}`,
+        `  RR planned: ${e.rr_planned || 'N/A'} | Horizon: ${e.time_horizon || 'N/A'} | Regime: ${e.regime_at_entry || 'N/A'}`,
+        `  CB bias at entry: ${cbInfo}`,
+        `  ${cotInfo}`,
+        drivers ? `  Drivers: ${drivers}` : '',
+        `  Thesis: ${(e.thesis_text || '').slice(0, 250)}`,
+        e.attribution_notes ? `  Post-trade note: ${e.attribution_notes.slice(0, 200)}` : '',
         `  Exit reason: ${e.exit_reason || 'N/A'}`,
       ].filter(Boolean).join('\n');
     }).join('\n\n');
@@ -197,9 +206,9 @@ module.exports = async function handler(req, res) {
     let analysis = '';
     try {
       analysis = await aiCall([
-        { role: 'system', content: 'Kamu adalah coach trading forex profesional yang menganalisis jurnal trading seorang trader retail. Berikan analisis jujur, spesifik, dan actionable dalam bahasa Indonesia. Format: heading dengan **bold**, poin-poin ringkas. Jangan bertele-tele. Fokus pada pola nyata dari data.' },
-        { role: 'user', content: `Analisis ${entries.length} trade closed berikut:\n\nStatistik: Win rate ${winRate}% | Total R ${typeof totalR === 'number' ? totalR.toFixed(2) : totalR} | Avg R/trade ${avgR}\n\n${tradeSummaries}\n\nAnalisis:\n1. **Pola Kemenangan & Kekalahan** — apa yang membedakan trade menang vs kalah?\n2. **Kualitas Thesis** — apakah thesis terbukti relevan dengan hasil?\n3. **Kelemahan Utama** — 2-3 kelemahan paling jelas\n4. **Kekuatan yang Bisa Dipertahankan**\n5. **Rekomendasi Konkret** — 2-3 hal spesifik untuk diperbaiki\n\nMaksimal 500 kata.` },
-      ], 1000);
+        { role: 'system', content: 'Kamu adalah coach trading forex profesional yang menganalisis jurnal trading seorang trader discretionary macro. Trader ini menggunakan framework berbasis: CB bias per currency (hawkish/dovish), regime pasar (risk_on/off/neutral), COT positioning, dan thesis fundamental makro. Berikan analisis jujur, spesifik, dan actionable dalam Bahasa Indonesia. Format: heading dengan **bold**, poin-poin ringkas. Fokus pada pola nyata dari data — jangan generik, jangan teori umum trading.' },
+        { role: 'user', content: `Analisis ${entries.length} trade closed berikut:\n\nStatistik: Win rate ${winRate}% | Total R ${typeof totalR === 'number' ? totalR.toFixed(2) : totalR} | Avg R/trade ${avgR}\n\n${tradeSummaries}\n\nAnalisis:\n1. **Pola Hasil** — identifikasi pola win/loss berdasarkan regime, pair, atau horizon. Apakah ada kondisi spesifik di mana trader ini lebih sering menang atau kalah?\n2. **Keselarasan Framework** — untuk setiap trade, apakah CB bias kedua currency dan regime mendukung arah trade saat entry? Sebutkan trade mana yang masuk meski konteks tidak selaras, dan apakah hasilnya konsisten dengan itu.\n3. **Kualitas Thesis & Driver** — seberapa spesifik dan dapat difalsifikasi thesis yang dicantumkan? Apakah driver yang disebutkan terbukti relevan dengan hasil?\n4. **Kelemahan Utama** — 2-3 kelemahan paling jelas yang terpola dari data, bukan dari teori\n5. **Rekomendasi Konkret** — 3 hal spesifik yang bisa langsung diubah dalam proses entry berikutnya\n\nMaksimal 600 kata.` },
+      ], 1200);
     } catch(e) {
       console.error('journal analyze: AI call failed:', e.message);
       return res.status(502).json({ error: 'AI tidak tersedia: ' + e.message });

@@ -878,6 +878,8 @@ Pertimbangkan:
 - Arah kebijakan moneter (tingkat suku bunga — makin tinggi = makin hawkish)
 - PMI: >50 = ekspansi, <50 = kontraksi
 - Untuk JPY: CPI rendah = deflasi = lemah secara fundamental; untuk CHF: CPI rendah biasa karena franc kuat secara struktural
+- Untuk AUD: bergantung pada commodity prices (terutama minerals); untuk NZD: ekspor dairy sensitive terhadap demand Asia
+- Untuk CAD: correlate kuat dengan harga minyak (Oil mencerminkan ekonomi Canada), tidak fluktuasi independent
 
 Format jawaban WAJIB (Bahasa Indonesia, singkat dan actionable):
 
@@ -892,8 +894,11 @@ TERKUAT: [currency]
 TERLEMAH: [currency]
 [2 kalimat ringkasan kenapa paling lemah]
 
-DIVERGENSI TERBESAR: [currency A] vs [currency B]
-[1 kalimat kenapa pasangan ini memiliki divergensi fundamental paling besar — bukan rekomendasi entry]`;
+DIVERGENSI TERBESAR:
+1. [currency A] vs [currency B] — [1 kalimat kenapa divergensi ini paling besar]
+2. [currency C] vs [currency D] — [1 kalimat]
+3. [currency E] vs [currency F] — [1 kalimat]
+(Ini untuk identify pair dengan setup fundamental paling kuat — bukan rekomendasi entry)`;
 
   try {
     const r = await fetch(GROQ_URL_FUND, {
