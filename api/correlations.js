@@ -546,7 +546,24 @@ module.exports = async function handler(req, res) {
       }
     } catch(_) {}
 
-    // invert:true → pair is USD/xxx so positive change means xxx is WEAKER — negate for currency strength
+    // Use v8/finance/chart (same endpoint as main correlations — confirmed working from Vercel).
+    // v7/finance/quote can be blocked for certain calls; v8/chart is more reliable.
+    const fetchDailyChart = async (symbol) => {
+      const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=5d`;
+      const r = await fetch(url, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36', 'Accept': 'application/json' },
+        signal: AbortSignal.timeout(8000),
+      });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const json = await r.json();
+      const result = json?.chart?.result?.[0];
+      if (!result) throw new Error('no chart result');
+      const closes = (result.indicators?.quote?.[0]?.close || []).filter(c => c != null && c > 0);
+      if (closes.length < 2) throw new Error(`only ${closes.length} closes`);
+      return { price: closes[closes.length - 1], prev: closes[closes.length - 2] };
+    };
+
+    // invert:true → USD/xxx pair: higher price = xxx weaker, so negate pct for currency strength
     const FX_MAP = {
       EUR: { sym: 'EURUSD=X', invert: false },
       GBP: { sym: 'GBPUSD=X', invert: false },
@@ -556,57 +573,46 @@ module.exports = async function handler(req, res) {
       CAD: { sym: 'USDCAD=X', invert: true  },
       CHF: { sym: 'USDCHF=X', invert: true  },
     };
-    // Yield symbols split from FX — mixed batches can cause Yahoo to reject the whole request.
-    // ^TNX confirmed working (used in INSTRUMENTS). Others verified via Yahoo Finance search.
+    // ^TNX confirmed in INSTRUMENTS. Others: ^GDBR10 (DE), ^JN10Y (JP), ^TMBMKGB-10Y (GB).
+    // Yields quoted in % so (price - prev) * 100 = change in bps.
     const YIELD_MAP = {
       US: '^TNX',
       DE: '^GDBR10',
       JP: '^JN10Y',
       GB: '^TMBMKGB-10Y',
     };
-    const YH_HDR = { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' };
-    const fxSyms    = Object.values(FX_MAP).map(v => v.sym).join(',');
-    const yieldSyms = Object.values(YIELD_MAP).join(',');
 
     try {
-      // Two separate calls: FX and yields. Promise.allSettled so one failing doesn't block the other.
-      const [fxResult, yieldResult] = await Promise.allSettled([
-        fetch(`https://query1.finance.yahoo.com/v7/finance/quote?symbols=${fxSyms}`,    { headers: YH_HDR, signal: AbortSignal.timeout(8000) }),
-        fetch(`https://query1.finance.yahoo.com/v7/finance/quote?symbols=${yieldSyms}`, { headers: YH_HDR, signal: AbortSignal.timeout(8000) }),
-      ]);
+      const allEntries = [
+        ...Object.entries(FX_MAP).map(([cur, { sym, invert }]) => ({ type: 'fx',    key: cur, sym, invert })),
+        ...Object.entries(YIELD_MAP).map(([key, sym])           => ({ type: 'yield', key,     sym         })),
+      ];
 
-      const parseQuotes = async (settled) => {
-        if (settled.status !== 'fulfilled') { console.warn('daily-snapshot: fetch rejected:', settled.reason?.message); return {}; }
-        const r = settled.value;
-        if (!r.ok) { console.warn('daily-snapshot: HTTP', r.status, await r.text().catch(()=>'')); return {}; }
-        const json = await r.json();
-        const map = {};
-        (json.quoteResponse?.result || []).forEach(q => { map[q.symbol] = q; });
-        return map;
-      };
+      const results = await Promise.allSettled(
+        allEntries.map(async (entry) => ({ ...entry, data: await fetchDailyChart(entry.sym) }))
+      );
 
-      const [fxQuotes, yieldQuotes] = await Promise.all([parseQuotes(fxResult), parseQuotes(yieldResult)]);
-      console.log('daily-snapshot: fxQuotes keys:', Object.keys(fxQuotes), '| yieldQuotes keys:', Object.keys(yieldQuotes));
+      const fx = {}, yields = {};
+      results.forEach((r, i) => {
+        const entry = allEntries[i];
+        if (r.status !== 'fulfilled') {
+          console.warn(`daily-snapshot: ${entry.sym} failed: ${r.reason?.message}`);
+          return;
+        }
+        const { price, prev } = r.value.data;
+        if (entry.type === 'fx') {
+          const raw = +((price - prev) / prev * 100).toFixed(3);
+          fx[entry.key] = { pct: entry.invert ? -raw : raw };
+        } else {
+          // yield quoted in % — difference in pp * 100 = bps
+          yields[entry.key] = {
+            level:      +price.toFixed(3),
+            change_bps: Math.round((price - prev) * 100),
+          };
+        }
+      });
 
-      const fx = {};
-      for (const [cur, { sym, invert }] of Object.entries(FX_MAP)) {
-        const q = fxQuotes[sym];
-        if (!q || q.regularMarketChangePercent == null) continue;
-        const raw = +q.regularMarketChangePercent.toFixed(3);
-        fx[cur] = { pct: invert ? -raw : raw };
-      }
-
-      const yields = {};
-      for (const [key, sym] of Object.entries(YIELD_MAP)) {
-        const q = yieldQuotes[sym];
-        if (!q || q.regularMarketPrice == null) continue;
-        yields[key] = {
-          level:      +q.regularMarketPrice.toFixed(3),
-          change_bps: Math.round((q.regularMarketChange || 0) * 100),
-        };
-      }
-
-      if (Object.keys(fx).length === 0) throw new Error('Yahoo returned no FX data');
+      if (Object.keys(fx).length === 0) throw new Error('all FX fetches failed');
       const payload = { fx, yields, fetched_at: new Date().toISOString() };
       redisCmd('SET', SNAP_KEY, JSON.stringify(payload), 'EX', SNAP_TTL).catch(() => {});
       return res.status(200).json({ ...payload, from_cache: false });
