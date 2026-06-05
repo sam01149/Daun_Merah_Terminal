@@ -471,14 +471,13 @@ module.exports = async function handler(req, res) {
     }
 
     if (!source) {
-      const hint = scraperKey
-        ? 'ScraperAPI active but CME CVOL returned insufficient data (< 3 pairs). CME may have changed response format.'
-        : 'CME CVOL blocked from Vercel IPs. Add SCRAPER_API_KEY env var to enable proxy bypass.';
-      // Include raw sample (truncated) to diagnose CME response format changes
-      const debugInfo = cmeRawSample
-        ? { top_keys: Object.keys(cmeRawSample), sample: JSON.stringify(cmeRawSample).slice(0, 600) }
-        : null;
-      return res.status(200).json({ available: false, reason: hint, debug: debugInfo, computed_at: new Date().toISOString() });
+      const statusCode = cmeRawSample?.status;
+      const hint = statusCode === 404
+        ? 'CME CVOL endpoint returned 404 — URL has been removed/moved by CME. Needs new endpoint URL.'
+        : scraperKey
+          ? 'ScraperAPI active but CME CVOL returned no parseable data.'
+          : 'CME CVOL blocked from Vercel IPs. Add SCRAPER_API_KEY env var to enable proxy bypass.';
+      return res.status(200).json({ available: false, reason: hint, computed_at: new Date().toISOString() });
     }
 
     const payload = { available: true, pairs, source, computed_at: new Date().toISOString() };

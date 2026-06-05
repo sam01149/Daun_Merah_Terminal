@@ -895,15 +895,19 @@ Mistral:     https://api.mistral.ai/v1
 - **Portfolio VaR** — `jnRenderVaR()` di tab JURNAL, variance-covariance, ATR-based. ✓
 - **FX Risk Reversals** — `action=risk-reversal` di correlations.js. CME CVOL → Barchart (jika `BARCHART_API_KEY` tersedia). UI di FUNDAMENTAL tab. ✓
 
-### ✅ Diselesaikan Session 47 (2026-06-05) — ScraperAPI Proxy Bypass
+### ⚠️ Partially Resolved Session 47 (2026-06-05) — ScraperAPI Proxy + CME CVOL 404
 
 **Root cause:** CME Group memblokir IP data center Vercel (AWS/GCP) via Akamai/Cloudflare WAF. ScraperAPI menggunakan residential IPs yang tidak diblokir.
 
 **Implementasi:**
 - `api/rate-path.js` — tambah helper `cmeFetch(targetUrl, directHeaders, timeoutMs)`: jika `SCRAPER_API_KEY` tersedia, route semua CME fetch (FedWatch V1/V2, ZQ settlement, ZQ quote) melalui `api.scraperapi.com?api_key=...&url=...`. Timeout dinaikkan 8-10s → 15s untuk kompensasi latency proxy.
-- `api/correlations.js` — CME CVOL fetch (Attempt 1 risk-reversal) juga lewat ScraperAPI jika key tersedia. Fallback message diperbarui (hapus referensi Barchart gratis yang tidak akurat).
-- **Env var baru:** `SCRAPER_API_KEY` — sudah ditambah ke Vercel (2026-06-05). Free tier: 5,000 credits, ~1 credit/request. Kebutuhan aktual: ~120-180 req/bulan (jauh di bawah quota).
+- `api/correlations.js` — CME CVOL fetch juga lewat ScraperAPI jika key tersedia.
+- **Env var baru:** `SCRAPER_API_KEY` — sudah ditambah ke Vercel (2026-06-05). Free tier: 5,000 credits, ~1 credit/request.
+
+**Status per endpoint (2026-06-05):**
+- ✅ CME FedWatch (`rate-path.js`) — ScraperAPI aktif, proxy berjalan (perlu verifikasi `source` field di `/api/rate-path`)
+- ❌ CME CVOL Risk Reversals — endpoint `CmeWS/mvc/Volatility/historical` return **HTTP 404** (URL dihapus/dipindahkan CME). ScraperAPI berfungsi tapi target URL mati. **Perlu URL baru** dari CME CVOL page → DevTools Network tab.
 
 ---
 
-> **Status 2026-06-05:** ScraperAPI proxy aktif. CME FedWatch dan FX Risk Reversals seharusnya sekarang berfungsi dari Vercel. Verifikasi via tab FUNDAMENTAL (Risk Reversals muncul) dan tab RINGKASAN (source rate path berubah dari `fred_tbill` ke `cme_fedwatch` atau `cme_zq_futures`).
+> **Action item:** Buka `cmegroup.com/markets/fx/g10/euro-fx.html` → DevTools Network (Fetch/XHR) → scroll ke section CVOL → tangkap request URL baru → update `CME_CVOL_PAIRS` URL template di `api/correlations.js`.
