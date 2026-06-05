@@ -360,7 +360,7 @@ module.exports = async function handler(req, res) {
   const _biasPromise = recentItems.length > 0 ? (async () => {
     const _biasUpdated = [];
     const CB_KW = {
-      USD: ['fed ','fomc','powell','goolsbee','waller','kashkari','warsh','federal reserve','us inflation','us gdp','us jobs','nfp','us cpi'],
+      USD: ['fed','fomc','powell','goolsbee','waller','kashkari','warsh','federal reserve','us inflation','us gdp','us jobs','nfp','us cpi'],
       EUR: ['ecb','lagarde','lane','schnabel','euro zone','eurozone','euro area','eu inflation','eu gdp'],
       GBP: ['boe','bank of england','bailey','pill','gbp','sterling','uk inflation','uk gdp','uk jobs','claimant'],
       JPY: ['boj','bank of japan','ueda','japan inflation','japan gdp','yen','japanese'],
@@ -369,16 +369,22 @@ module.exports = async function handler(req, res) {
       NZD: ['rbnz','reserve bank of new zealand','orr','new zealand inflation','new zealand gdp','kiwi'],
       CHF: ['snb','swiss national bank','schlegel','switzerland','swiss franc','franc'],
     };
+    // Word-boundary match: single words use \b..\b so 'orr' won't match 'worrying',
+    // 'boc' won't match 'pboc', 'lane' won't match 'plane', etc.
+    // Phrases (containing space) keep simple includes since boundaries don't apply.
+    const kwTest = (title, kw) => kw.includes(' ')
+      ? title.includes(kw)
+      : new RegExp('\\b' + kw + '\\b').test(title);
     const relevantCurrencies = [];
     const headlinesLower = recentItems.map(i => i.title.toLowerCase());
     for (const [cur, kws] of Object.entries(CB_KW)) {
-      if (kws.some(kw => headlinesLower.some(h => h.includes(kw)))) relevantCurrencies.push(cur);
+      if (kws.some(kw => headlinesLower.some(h => kwTest(h, kw)))) relevantCurrencies.push(cur);
     }
     console.log('relevantCurrencies (async):', JSON.stringify(relevantCurrencies));
     if (relevantCurrencies.length > 0) {
       const relevantHeadlines = recentItems.filter(i => {
         const lower = i.title.toLowerCase();
-        return relevantCurrencies.some(cur => CB_KW[cur].some(kw => lower.includes(kw)));
+        return relevantCurrencies.some(cur => CB_KW[cur].some(kw => kwTest(lower, kw)));
       });
       const biasHeadlines = relevantHeadlines.slice(0, 50).map((i,idx) => (idx+1) + '. ' + i.title).join('\n');
       const biasCurrencies = relevantCurrencies.join(', ');
@@ -460,7 +466,7 @@ module.exports = async function handler(req, res) {
                 if (prevIdx !== -1 && newIdx !== -1 && Math.abs(newIdx - prevIdx) > 2) { console.log(`Call 2: skip ${cur} — swing ${prevBias}→${bias}`); continue; }
               }
               const kws = CB_KW[cur] || [];
-              const sourceHeadlines = recentItems.filter(i => kws.some(kw => i.title.toLowerCase().includes(kw))).slice(0, 5).map(i => i.title);
+              const sourceHeadlines = recentItems.filter(i => kws.some(kw => kwTest(i.title.toLowerCase(), kw))).slice(0, 5).map(i => i.title);
               existing[cur] = { bias, confidence, updated_at: now2, source_headlines: sourceHeadlines };
               _biasUpdated.push(cur);
             }
