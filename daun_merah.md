@@ -895,7 +895,7 @@ Mistral:     https://api.mistral.ai/v1
 - **Portfolio VaR** — `jnRenderVaR()` di tab JURNAL, variance-covariance, ATR-based. ✓
 - **FX Risk Reversals** — `action=risk-reversal` di correlations.js. CME CVOL → Barchart (jika `BARCHART_API_KEY` tersedia). UI di FUNDAMENTAL tab. ✓
 
-### ⚠️ Partially Resolved Session 47 (2026-06-05) — ScraperAPI Proxy + CME CVOL 404
+### ✅ Selesai Session 47 (2026-06-05) — ScraperAPI Proxy + CME CVOL endpoint baru
 
 **Root cause:** CME Group memblokir IP data center Vercel (AWS/GCP) via Akamai/Cloudflare WAF. ScraperAPI menggunakan residential IPs yang tidak diblokir.
 
@@ -905,9 +905,11 @@ Mistral:     https://api.mistral.ai/v1
 - **Env var baru:** `SCRAPER_API_KEY` — sudah ditambah ke Vercel (2026-06-05). Free tier: 5,000 credits, ~1 credit/request.
 
 **Status per endpoint (2026-06-05):**
-- ✅ CME FedWatch (`rate-path.js`) — ScraperAPI aktif, proxy berjalan (perlu verifikasi `source` field di `/api/rate-path`)
-- ❌ CME CVOL Risk Reversals — endpoint `CmeWS/mvc/Volatility/historical` return **HTTP 404** (URL dihapus/dipindahkan CME). ScraperAPI berfungsi tapi target URL mati. **Perlu URL baru** dari CME CVOL page → DevTools Network tab.
+- ✅ CME FedWatch (`rate-path.js`) — ScraperAPI proxy aktif untuk semua CME calls
+- ✅ CME CVOL Risk Reversals — endpoint baru `/services/cvol?symbol=*VL` ditemukan & dikonfirmasi. 3/5 pair berjalan: EUR/USD (-0.402), GBP/USD (-0.728), AUD/USD (-0.819). Symbol `JPVL`/`CDVL` mungkin salah — USD/JPY dan USD/CAD belum return data. Section Risk Reversals tampil di tab FUNDAMENTAL.
+
+**Catatan symbol CME CVOL (diverifikasi):** `EUVL` ✓, `GBVL` ✓, `ADVL` ✓ — `JPVL`/`CDVL` belum dikonfirmasi.
 
 ---
 
-> **Action item:** Buka `cmegroup.com/markets/fx/g10/euro-fx.html` → DevTools Network (Fetch/XHR) → scroll ke section CVOL → tangkap request URL baru → update `CME_CVOL_PAIRS` URL template di `api/correlations.js`.
+> **Action item (opsional):** Cek symbol CME CVOL untuk JPY dan CAD di `cmegroup.com/markets/fx` → Network tab → temukan symbol `*VL` yang benar → update `CME_CVOL_PAIRS` di `api/correlations.js`.
