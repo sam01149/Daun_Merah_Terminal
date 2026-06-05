@@ -386,40 +386,40 @@ module.exports = async function handler(req, res) {
       }
     } catch(_) {}
 
+    // New endpoint: /services/cvol (replaces deprecated /CmeWS/mvc/Volatility/historical)
+    // Symbol pattern: *VL (Volatility Live) — confirmed EUVL for EUR/USD
     const CME_CVOL_PAIRS = {
-      'EUR/USD': 'EUSK', 'GBP/USD': 'GBSK', 'USD/JPY': 'JPSK',
-      'AUD/USD': 'ADSK', 'USD/CAD': 'CDSK',
+      'EUR/USD': 'EUVL', 'GBP/USD': 'GBVL', 'USD/JPY': 'JPVL',
+      'AUD/USD': 'ADVL', 'USD/CAD': 'CDVL',
     };
     const CME_HDR = {
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
       'Accept': 'application/json, text/plain, */*',
-      'Referer': 'https://www.cmegroup.com/markets/interest-rates/cme-cvol.html',
+      'Referer': 'https://www.cmegroup.com/markets/fx/g10/euro-fx.html',
     };
 
     let pairs = {}, source = null;
     const scraperKey = process.env.SCRAPER_API_KEY;
-    let cmeRawSample = null; // capture first CME response for debug
 
-    // Attempt 1: CME CVOL Skew — via ScraperAPI proxy if key set, else direct (likely blocked)
+    // Attempt 1: CME CVOL /services endpoint — via ScraperAPI proxy if key set, else direct
+    // Response: array [{ skew: "-0.4020", atmInd, cvolPrice, ... }]
     try {
       const settled = await Promise.allSettled(
         Object.entries(CME_CVOL_PAIRS).map(async ([pair, code]) => {
-          const targetUrl = `https://www.cmegroup.com/CmeWS/mvc/Volatility/historical?productCode=${code}&chartType=CVOL`;
+          const targetUrl = `https://www.cmegroup.com/services/cvol?symbol=${code}&isProtected&_t=${Date.now()}`;
           const fetchUrl = scraperKey
             ? `https://api.scraperapi.com?api_key=${scraperKey}&url=${encodeURIComponent(targetUrl)}`
             : targetUrl;
           const fetchHeaders = scraperKey ? { 'Accept': 'application/json' } : CME_HDR;
           const r = await fetch(fetchUrl, { headers: fetchHeaders, signal: AbortSignal.timeout(15000) });
-          const rawText = await r.text();
-          if (!cmeRawSample) cmeRawSample = { status: r.status, preview: rawText.slice(0, 600) };
           if (!r.ok) throw new Error(`CME CVOL ${code} HTTP ${r.status}`);
-          let json;
-          try { json = JSON.parse(rawText); } catch(_) { throw new Error(`CME CVOL ${code}: non-JSON response`); }
-          const rows = json?.data || json?.chartData || (Array.isArray(json) ? json : []);
-          const latest = rows[rows.length - 1];
-          const skew = parseFloat(latest?.SkewDiff ?? latest?.skewDiff ?? latest?.skew ?? latest?.value ?? 'x');
-          if (isNaN(skew)) throw new Error(`CME CVOL ${code}: no parseable skew (keys: ${latest ? Object.keys(latest).join(',') : 'no rows'})`);
-          return { pair, rr_value: +skew.toFixed(3), source: 'CME CVOL Skew' };
+          const json = await r.json();
+          // Response is array or single object — normalize to single entry
+          const entry = Array.isArray(json) ? json[0] : json;
+          if (!entry) throw new Error(`CME CVOL ${code}: empty response`);
+          const skew = parseFloat(entry.skew ?? entry.SkewDiff ?? entry.skewDiff ?? entry.value ?? 'x');
+          if (isNaN(skew)) throw new Error(`CME CVOL ${code}: no parseable skew (keys: ${Object.keys(entry).join(',')})`);
+          return { pair, rr_value: +skew.toFixed(3), source: 'CME CVOL' };
         })
       );
       const ok = settled.filter(r => r.status === 'fulfilled').map(r => r.value);
