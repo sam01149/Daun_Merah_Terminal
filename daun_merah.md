@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-06-05 (session 48 — VIX term structure fix, audit progress.md)
+> **Last updated:** 2026-06-05 (session 48 — VIX fix, TGA API fix, CB WATCH→ARTIKEL, RSS research)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Financial_Feed_App`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -83,19 +83,43 @@ Financial_Feed_App/
 
 ## Changelog Session 48 (2026-06-05)
 
-### VIX Term Structure Fix + Progress Audit
+### VIX Fix + TGA API Fix + Rename + RSS Research
 
 **1. VIX Term Structure — `api/risk-regime.js`**
 - Root cause: `^VIX1M` tidak tersedia di Yahoo Finance → selalu null → `structure` field tidak pernah dihitung.
 - Fix: tambah fallback `else if (vix3m != null)` — hitung `structure` dari `vix_spot` vs `vix_3m` jika `vix_1m` null.
 - Dikonfirmasi live: `{ vix_spot: 15.4, vix_1m: null, vix_3m: 19.23, structure: "contango" }`.
-- Label Contango/Backwardation sekarang selalu muncul di UI selama `^VIX3M` tersedia.
 
-**2. Audit `daun_merah_progress.md`**
-- Item 12 (FX Risk Reversals) + Item 13 (Portfolio VaR) dikira ⚫ belum ada, ternyata ✅ sudah diimplementasi sejak session 46–47.
-- Item 6 (VIX Term Structure) diupdate → FIXED.
-- Item 8 (Option Magnets) dikonfirmasi dead code — FinancialJuice tidak pernah publish format ini.
-- Test live: item 4 (OECD Inflation), 5 (TGA), 6 (VIX), 7 (Liquidity/Yield Curve), 8 (Option Expiry) via WebFetch ke production.
+**2. TGA Balance — `api/real-yields.js`**
+- Root cause: Treasury FiscalData API pindah endpoint. URL lama `/v1/accounting/dts/dts_table_1` return 404 dari semua sumber.
+- URL baru ditemukan via JS bundle `fiscaldata.treasury.gov`: `/services/api/fiscal_service/v1/accounting/dts/operating_cash_balance`
+- Filter baru: `account_type:eq:Treasury General Account (TGA) Closing Balance`
+- Field: `open_today_bal` — bukan `close_today_bal` yang selalu string `"null"` (Treasury naming quirk).
+- Data confirmed lokal: Jun 3 = $845B, Jun 2 = $866B, change -$21B (drain).
+
+**3. Rename CB WATCH → ARTIKEL — `index.html`**
+- Top nav button, DRAWER_ITEMS label + desc, keyboard shortcut help (`G B`) — 3 titik diganti.
+- Alasan: tab ini akan menampung artikel macro lebih luas (bukan hanya CB speeches), termasuk rencana tambah Marc to Market + ING Think.
+- `data-view="riset"` dan semua JS logic tidak berubah — hanya label UI.
+
+**4. Option Magnets — dipertahankan**
+- Sebelumnya dikira dead code karena FinancialJuice tidak publish format expiry.
+- Keputusan: **kode tetap ada** — regex parser + panel + CSS + filter button semua dipertahankan.
+- Alasan: investing.com (kandidat backup source) publish headline option expiry yang bisa match regex secara otomatis.
+
+**5. Audit `daun_merah_progress.md`**
+- Item 12 (FX Risk Reversals) + Item 13 (Portfolio VaR): dikira ⚫ belum ada → ✅ sudah ada sejak session 46–47.
+- Item 5 (TGA), Item 6 (VIX): diupdate → FIXED.
+- Item 8 (Option Magnets): diupdate → dipertahankan (source lain mungkin punya data ini).
+- Test live semua item 4–8 via WebFetch + curl ke production.
+
+**6. Research RSS Backup Sources (Item 14)**
+- **Investing.com**: `investing.com/rss/news_1.rss` — gratis, real-time, tapi noise tinggi (1 event = 3–5 artikel).
+- **Reuters**: berbayar, skip.
+- **Marc to Market** (`feeds.feedburner.com/MarcToMarket`): gratis, bersih, 6x/minggu — cocok masuk tab ARTIKEL bukan breaking news.
+- **ING Think**: tidak ada RSS resmi, perlu scrape.
+- **Econostream**: berbayar wire service, skip.
+- Kesimpulan: tidak ada sumber gratis yang ideal sebagai real-time fallback. Marc to Market + ING Think lebih cocok sebagai sumber riset di tab ARTIKEL.
 
 ---
 
