@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-06-05 (session 50 — Risk Reversal fix, CB bias word-boundary, DAILY PULSE panel)
+> **Last updated:** 2026-06-05 (session 51 — Dashboard news panel: Thematic Clustering)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Financial_Feed_App`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -78,6 +78,28 @@ Financial_Feed_App/
 > **Penting:** `api/feeds.js` menggantikan `api/rss.js` dan `api/cot.js` yang sudah dihapus.
 > `api/admin.js` menggantikan `api/health.js`, `api/redis-keys.js`, `api/admin-prompts.js`, dan `api/push.js`.
 > Konsolidasi ini dilakukan untuk tetap di bawah limit 12 serverless functions Vercel Hobby.
+
+---
+
+## Changelog Session 51 (2026-06-05)
+
+### Dashboard News Panel — Thematic Clustering
+
+**Masalah:** Panel berita kiri di Dashboard menampilkan list kronologis mentah (20 headline berurutan) yang memaksa otak membaca setiap item satu per satu, termasuk berita tidak relevan dengan thesis aktif trader.
+
+**Solusi:** Ubah paradigma dari *timeline* ke *status board* berbasis kategori.
+
+**Perubahan `index.html`:**
+- `renderDashNews()` diubah total: item dikelompokkan per kategori menggunakan `detectCat()` yang sudah ada
+- 11 kategori ditampilkan dalam urutan prioritas: MKT MOVING → FOREX → MACRO → ECON DATA → BONDS → ENERGY → COMMODITIES → EQUITIES → GEOPOLIT. → INDEXES → CRYPTO
+- Setiap kluster menampilkan: colored dot + label + count badge + timestamp item terbaru + chevron
+- Klik header kluster untuk expand/collapse (state persists antar auto-refresh via `dashClusterState`)
+- MKT MOVING auto-expand jika ada isi; semua kategori lain collapsed by default
+- Kategori kosong tidak ditampilkan sama sekali
+- Individual item tetap pakai format `.dash-news-item` yang sama, dot warna disesuaikan per kategori
+- CSS baru: `.dash-cluster`, `.dash-cluster-header`, `.dash-cluster-dot`, `.dash-cluster-label`, `.dash-cluster-count`, `.dash-cluster-age`, `.dash-cluster-chevron`
+- `toggleDashCluster(cat)` fungsi baru untuk handle expand/collapse
+- `dashClusterState` state variable baru
 
 ---
 

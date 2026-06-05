@@ -1613,6 +1613,20 @@ body {
 .dash-event-chip-time { font-size: 8px; color: var(--muted); }
 .dash-no-data { font-size: 10px; color: var(--muted); text-align: center; padding: 20px 12px; font-family: 'DM Mono', monospace; }
 .dash-refresh-badge { font-size: 8px; color: var(--muted); font-family: 'DM Mono', monospace; margin-left: auto; white-space: nowrap; }
+.dash-cluster { border-bottom: 1px solid rgba(255,255,255,.04); }
+.dash-cluster-header {
+  display: flex; align-items: center; gap: 6px;
+  padding: 7px 10px; cursor: pointer; user-select: none;
+  transition: background .15s;
+}
+.dash-cluster-header:hover { background: rgba(255,255,255,.04); }
+.dash-cluster-dot { width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0; }
+.dash-cluster-label { font-size: 8px; font-family: 'DM Mono', monospace; letter-spacing: .8px; text-transform: uppercase; flex: 1; font-weight: 600; }
+.dash-cluster-count { font-size: 8px; font-family: 'DM Mono', monospace; color: var(--muted); background: rgba(255,255,255,.06); padding: 1px 5px; border-radius: 3px; }
+.dash-cluster-age { font-size: 8px; font-family: 'DM Mono', monospace; color: var(--muted); min-width: 20px; text-align: right; }
+.dash-cluster-chevron { font-size: 7px; color: var(--muted); transition: transform .2s; flex-shrink: 0; line-height: 1; }
+.dash-cluster-chevron.open { transform: rotate(90deg); }
+.dash-cluster-items { overflow: hidden; }
 
 /* ── DRAWER / OVERFLOW NAV ── */
 /* Tab yang masuk ke "Menu Lainnya" — disembunyikan dari top nav & bottom nav */
@@ -2558,6 +2572,7 @@ let cdVal        = 60;
 let notifEnabled = false;
 let deferredInstall = null;
 let activeView   = 'feed';
+let dashClusterState = {};
 
 // Calendar state
 let calData          = null;
@@ -7745,6 +7760,14 @@ function refreshDashboard() {
   if (badge) badge.textContent = 'auto-refresh 60s';
 }
 
+function toggleDashCluster(cat) {
+  dashClusterState[cat] = !dashClusterState[cat];
+  const itemsEl = document.getElementById('cluster-items-' + cat);
+  const chevron = document.querySelector('#cluster-' + cat + ' .dash-cluster-chevron');
+  if (itemsEl) itemsEl.style.display = dashClusterState[cat] ? 'block' : 'none';
+  if (chevron) chevron.classList.toggle('open', !!dashClusterState[cat]);
+}
+
 function renderDashNews() {
   const el = document.getElementById('dashNewsList');
   if (!el) return;
@@ -7752,18 +7775,62 @@ function renderDashNews() {
     el.innerHTML = '<div class="dash-no-data">Buka tab NEWS untuk memuat berita.</div>';
     return;
   }
-  const items = allItems.slice(0, 20);
-  el.innerHTML = items.map(it => {
-    const ageMs  = it.pubDate ? Date.now() - new Date(it.pubDate).getTime() : null;
-    const ageStr = ageMs !== null && !isNaN(ageMs)
-      ? (ageMs < 3600000 ? Math.round(ageMs/60000) + 'm' : Math.round(ageMs/3600000) + 'h')
-      : '';
-    return `<div class="dash-news-item">
-      <div class="dash-news-dot"></div>
-      <div class="dash-news-text">${escHtml(it.title || '')}</div>
-      <div class="dash-news-time">${ageStr}</div>
+
+  const CAT_META = {
+    'market-moving': { label: 'MKT MOVING', color: '#ff4757' },
+    'forex':         { label: 'FOREX',       color: '#4ade80' },
+    'macro':         { label: 'MACRO',       color: '#f87171' },
+    'econ-data':     { label: 'ECON DATA',   color: '#c084fc' },
+    'bonds':         { label: 'BONDS',       color: '#60a5fa' },
+    'energy':        { label: 'ENERGY',      color: '#f97316' },
+    'commodities':   { label: 'COMMODITIES', color: '#f59e0b' },
+    'equities':      { label: 'EQUITIES',    color: '#a78bfa' },
+    'geopolitical':  { label: 'GEOPOLIT.',   color: '#fb923c' },
+    'indexes':       { label: 'INDEXES',     color: '#34d399' },
+    'crypto':        { label: 'CRYPTO',      color: '#ec4899' },
+  };
+  const CAT_ORDER = ['market-moving','forex','macro','econ-data','bonds','energy','commodities','equities','geopolitical','indexes','crypto'];
+
+  const groups = {};
+  for (const it of allItems) {
+    const cat = detectCat(it.title);
+    if (!groups[cat]) groups[cat] = [];
+    groups[cat].push(it);
+  }
+
+  function fmtAge(pubDate) {
+    const ms = pubDate ? Date.now() - new Date(pubDate).getTime() : null;
+    if (ms === null || isNaN(ms)) return '';
+    return ms < 3600000 ? Math.round(ms/60000) + 'm' : Math.round(ms/3600000) + 'h';
+  }
+
+  let html = '';
+  for (const cat of CAT_ORDER) {
+    const catItems = groups[cat];
+    if (!catItems || catItems.length === 0) continue;
+    const meta = CAT_META[cat] || { label: cat.toUpperCase(), color: 'var(--muted)' };
+    const autoExpand = cat === 'market-moving';
+    const isExpanded = dashClusterState[cat] !== undefined ? dashClusterState[cat] : autoExpand;
+
+    html += `<div class="dash-cluster" id="cluster-${cat}">
+      <div class="dash-cluster-header" onclick="toggleDashCluster('${cat}')">
+        <div class="dash-cluster-dot" style="background:${meta.color}"></div>
+        <div class="dash-cluster-label" style="color:${meta.color}">${meta.label}</div>
+        <div class="dash-cluster-count">${catItems.length}</div>
+        <div class="dash-cluster-age">${fmtAge(catItems[0].pubDate)}</div>
+        <div class="dash-cluster-chevron${isExpanded ? ' open' : ''}">&#9658;</div>
+      </div>
+      <div class="dash-cluster-items" id="cluster-items-${cat}" style="display:${isExpanded ? 'block' : 'none'}">
+        ${catItems.slice(0, 15).map(it => `<div class="dash-news-item">
+          <div class="dash-news-dot" style="background:${meta.color}"></div>
+          <div class="dash-news-text">${escHtml(it.title || '')}</div>
+          <div class="dash-news-time">${fmtAge(it.pubDate)}</div>
+        </div>`).join('')}
+      </div>
     </div>`;
-  }).join('');
+  }
+
+  el.innerHTML = html || '<div class="dash-no-data">Tidak ada berita tersedia.</div>';
 }
 
 function renderDashDigest() {
