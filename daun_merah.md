@@ -906,10 +906,8 @@ Mistral:     https://api.mistral.ai/v1
 
 **Status per endpoint (2026-06-05):**
 - ✅ CME FedWatch (`rate-path.js`) — ScraperAPI proxy aktif untuk semua CME calls
-- ✅ CME CVOL Risk Reversals — endpoint baru `/services/cvol?symbol=*VL` ditemukan & dikonfirmasi. 3/5 pair berjalan: EUR/USD (-0.402), GBP/USD (-0.728), AUD/USD (-0.819). Symbol `JPVL`/`CDVL` mungkin salah — USD/JPY dan USD/CAD belum return data. Section Risk Reversals tampil di tab FUNDAMENTAL.
+- ✅ CME CVOL Risk Reversals — **6 pair live**: EUR/USD (EUVL), GBP/USD (GBVL), USD/JPY (JPVL), AUD/USD (ADVL), USD/CAD (CAVL), XAU/USD (GCVL). NZD/USD + USD/CHF tidak tersedia di CME CVOL (options terlalu illiquid). Section muncul di tab FUNDAMENTAL. Cache key `rr_cache_v2`, TTL 3600s.
 
-**Catatan symbol CME CVOL (diverifikasi):** `EUVL` ✓, `GBVL` ✓, `ADVL` ✓ — `JPVL`/`CDVL` belum dikonfirmasi.
+**Symbol CME CVOL (semua dikonfirmasi 2026-06-05):** `EUVL`, `GBVL`, `JPVL`, `ADVL`, `CAVL`, `GCVL`
 
 ---
-
-> **Action item (opsional):** Cek symbol CME CVOL untuk JPY dan CAD di `cmegroup.com/markets/fx` → Network tab → temukan symbol `*VL` yang benar → update `CME_CVOL_PAIRS` di `api/correlations.js`.
