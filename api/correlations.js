@@ -410,9 +410,11 @@ module.exports = async function handler(req, res) {
             : targetUrl;
           const fetchHeaders = scraperKey ? { 'Accept': 'application/json' } : CME_HDR;
           const r = await fetch(fetchUrl, { headers: fetchHeaders, signal: AbortSignal.timeout(15000) });
+          const rawText = await r.text();
+          if (!cmeRawSample) cmeRawSample = { status: r.status, preview: rawText.slice(0, 600) };
           if (!r.ok) throw new Error(`CME CVOL ${code} HTTP ${r.status}`);
-          const json = await r.json();
-          if (!cmeRawSample) cmeRawSample = json; // capture for debug
+          let json;
+          try { json = JSON.parse(rawText); } catch(_) { throw new Error(`CME CVOL ${code}: non-JSON response`); }
           const rows = json?.data || json?.chartData || (Array.isArray(json) ? json : []);
           const latest = rows[rows.length - 1];
           const skew = parseFloat(latest?.SkewDiff ?? latest?.skewDiff ?? latest?.skew ?? latest?.value ?? 'x');
