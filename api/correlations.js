@@ -397,13 +397,18 @@ module.exports = async function handler(req, res) {
     };
 
     let pairs = {}, source = null;
+    const scraperKey = process.env.SCRAPER_API_KEY;
 
-    // Attempt 1: CME CVOL Skew (no auth, may be blocked from Vercel IPs)
+    // Attempt 1: CME CVOL Skew — via ScraperAPI proxy if key set, else direct (likely blocked)
     try {
       const settled = await Promise.allSettled(
         Object.entries(CME_CVOL_PAIRS).map(async ([pair, code]) => {
-          const url = `https://www.cmegroup.com/CmeWS/mvc/Volatility/historical?productCode=${code}&chartType=CVOL`;
-          const r = await fetch(url, { headers: CME_HDR, signal: AbortSignal.timeout(7000) });
+          const targetUrl = `https://www.cmegroup.com/CmeWS/mvc/Volatility/historical?productCode=${code}&chartType=CVOL`;
+          const fetchUrl = scraperKey
+            ? `https://api.scraperapi.com?api_key=${scraperKey}&url=${encodeURIComponent(targetUrl)}`
+            : targetUrl;
+          const fetchHeaders = scraperKey ? { 'Accept': 'application/json' } : CME_HDR;
+          const r = await fetch(fetchUrl, { headers: fetchHeaders, signal: AbortSignal.timeout(15000) });
           if (!r.ok) throw new Error(`CME CVOL ${code} HTTP ${r.status}`);
           const json = await r.json();
           const rows = json?.data || json?.chartData || (Array.isArray(json) ? json : []);
@@ -460,9 +465,9 @@ module.exports = async function handler(req, res) {
     }
 
     if (!source) {
-      const hint = process.env.BARCHART_API_KEY
-        ? 'CME CVOL blocked from Vercel IPs; Barchart returned insufficient data.'
-        : 'CME CVOL blocked from Vercel IPs. Add BARCHART_API_KEY env var (free at barchart.com/ondemand) to enable Barchart fallback.';
+      const hint = scraperKey
+        ? 'ScraperAPI active but CME CVOL returned insufficient data (< 3 pairs). CME may have changed response format.'
+        : 'CME CVOL blocked from Vercel IPs. Add SCRAPER_API_KEY env var to enable proxy bypass.';
       return res.status(200).json({ available: false, reason: hint, computed_at: new Date().toISOString() });
     }
 

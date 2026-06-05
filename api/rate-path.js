@@ -68,6 +68,20 @@ const CME_HEADERS = {
   'Sec-Fetch-Site': 'same-origin',
 };
 
+// Route CME fetch through ScraperAPI proxy if SCRAPER_API_KEY is set,
+// otherwise attempt direct (will be blocked by CME firewall on Vercel IPs).
+// ScraperAPI uses residential IPs that CME's Akamai WAF does not block.
+function cmeFetch(targetUrl, directHeaders, timeoutMs = 15000) {
+  const key = process.env.SCRAPER_API_KEY;
+  if (key) {
+    return fetch(
+      `https://api.scraperapi.com?api_key=${key}&url=${encodeURIComponent(targetUrl)}`,
+      { headers: { 'Accept': 'application/json' }, signal: AbortSignal.timeout(timeoutMs) }
+    );
+  }
+  return fetch(targetUrl, { headers: directHeaders, signal: AbortSignal.timeout(Math.min(timeoutMs, 10000)) });
+}
+
 // Fetch from CME FedWatch hidden API — tries V1 then V2 URL pattern
 async function fetchCMEFedWatch() {
   const now = new Date();
@@ -78,7 +92,7 @@ async function fetchCMEFedWatch() {
   for (const urlTemplate of [CME_FEDWATCH_URL_V1, CME_FEDWATCH_URL_V2]) {
     try {
       const url = urlTemplate.replace('{DATE}', nextMeeting);
-      const r = await fetch(url, { headers: CME_HEADERS, signal: AbortSignal.timeout(8000) });
+      const r = await cmeFetch(url, CME_HEADERS, 15000);
       if (!r.ok) throw new Error(`CME FedWatch HTTP ${r.status}`);
       const json = await r.json();
       const meetings = Array.isArray(json) ? json : json?.FedWatchTool || json?.meetings || [];
@@ -91,7 +105,7 @@ async function fetchCMEFedWatch() {
 
 // Try CME public quote API for ZQ front-month — lighter endpoint with less IP-blocking
 async function fetchCMEQuoteZQ() {
-  const r = await fetch(CME_QUOTE_URL, { headers: CME_HEADERS, signal: AbortSignal.timeout(8000) });
+  const r = await cmeFetch(CME_QUOTE_URL, CME_HEADERS, 15000);
   if (!r.ok) throw new Error(`CME Quote HTTP ${r.status}`);
   const json = await r.json();
   const quotes = json?.quotes || json?.data || [];
@@ -105,15 +119,12 @@ async function fetchCMEQuoteZQ() {
 // Try fetching ZQ (30-day Fed Funds futures) settlement data — fallback
 async function fetchCMEZQData() {
   const dateStr = lastBusinessDay();
-  const url = CME_ZQ_URL.replace('{DATE}', dateStr);
-  const r = await fetch(url, {
-    headers: {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-      'Accept': 'application/json',
-      'Referer': 'https://www.cmegroup.com/markets/interest-rates/stirs/30-day-federal-fund.settlements.html',
-    },
-    signal: AbortSignal.timeout(10000),
-  });
+  const targetUrl = CME_ZQ_URL.replace('{DATE}', dateStr);
+  const r = await cmeFetch(targetUrl, {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+    'Accept': 'application/json',
+    'Referer': 'https://www.cmegroup.com/markets/interest-rates/stirs/30-day-federal-fund.settlements.html',
+  }, 15000);
   if (!r.ok) throw new Error(`CME ZQ HTTP ${r.status}`);
   const json = await r.json();
 

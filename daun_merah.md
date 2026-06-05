@@ -895,10 +895,15 @@ Mistral:     https://api.mistral.ai/v1
 - **Portfolio VaR** — `jnRenderVaR()` di tab JURNAL, variance-covariance, ATR-based. ✓
 - **FX Risk Reversals** — `action=risk-reversal` di correlations.js. CME CVOL → Barchart (jika `BARCHART_API_KEY` tersedia). UI di FUNDAMENTAL tab. ✓
 
-### Masih Pending
-- **CME FedWatch market-implied yang benar** — CME memblokir Vercel IPs untuk semua endpoint. Rate path saat ini menggunakan FRED T-bill term structure (step 2.5) yang reasonable tapi bukan market-implied ZQ futures. Untuk data aktual perlu proxy eksternal atau provider lain dengan free tier yang jelas.
-- **FX Risk Reversals via Barchart** — ~~gratis~~ **Barchart OnDemand adalah produk enterprise berbayar** (signup via form sales contact, bukan self-serve free). Tanpa `BARCHART_API_KEY`, section Risk Reversals di tab FUNDAMENTAL akan selalu `available: false` karena CME CVOL endpoint juga diblokir dari Vercel IPs. Path Barchart sudah ada di kode (`api/correlations.js`) — tinggal aktifkan jika key tersedia suatu saat. Alternatif yang perlu dieksplorasi: OANDA API (ada free dev tier) atau sumber implied vol lain dengan self-serve free tier.
+### ✅ Diselesaikan Session 47 (2026-06-05) — ScraperAPI Proxy Bypass
+
+**Root cause:** CME Group memblokir IP data center Vercel (AWS/GCP) via Akamai/Cloudflare WAF. ScraperAPI menggunakan residential IPs yang tidak diblokir.
+
+**Implementasi:**
+- `api/rate-path.js` — tambah helper `cmeFetch(targetUrl, directHeaders, timeoutMs)`: jika `SCRAPER_API_KEY` tersedia, route semua CME fetch (FedWatch V1/V2, ZQ settlement, ZQ quote) melalui `api.scraperapi.com?api_key=...&url=...`. Timeout dinaikkan 8-10s → 15s untuk kompensasi latency proxy.
+- `api/correlations.js` — CME CVOL fetch (Attempt 1 risk-reversal) juga lewat ScraperAPI jika key tersedia. Fallback message diperbarui (hapus referensi Barchart gratis yang tidak akurat).
+- **Env var baru:** `SCRAPER_API_KEY` — sudah ditambah ke Vercel (2026-06-05). Free tier: 5,000 credits, ~1 credit/request. Kebutuhan aktual: ~120-180 req/bulan (jauh di bawah quota).
 
 ---
 
-> **Status 2026-06-05:** Kedua fitur berjalan dengan graceful fallback — rate path pakai FRED T-bill, risk reversals section tidak muncul. Tidak ada action item mendesak sampai ada alternatif free tier yang dikonfirmasi.
+> **Status 2026-06-05:** ScraperAPI proxy aktif. CME FedWatch dan FX Risk Reversals seharusnya sekarang berfungsi dari Vercel. Verifikasi via tab FUNDAMENTAL (Risk Reversals muncul) dan tab RINGKASAN (source rate path berubah dari `fred_tbill` ke `cme_fedwatch` atau `cme_zq_futures`).
