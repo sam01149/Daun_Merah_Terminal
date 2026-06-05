@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-06-04 (session 46 — Portfolio VaR, Cleveland Fed Nowcast, CME FedWatch fix, FX Risk Reversals)
+> **Last updated:** 2026-06-05 (session 47 — ScraperAPI proxy, CME CVOL endpoint baru, Risk Reversals 6 pair live, bug fixes)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Financial_Feed_App`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -78,6 +78,40 @@ Financial_Feed_App/
 > **Penting:** `api/feeds.js` menggantikan `api/rss.js` dan `api/cot.js` yang sudah dihapus.
 > `api/admin.js` menggantikan `api/health.js`, `api/redis-keys.js`, `api/admin-prompts.js`, dan `api/push.js`.
 > Konsolidasi ini dilakukan untuk tetap di bawah limit 12 serverless functions Vercel Hobby.
+
+---
+
+## Changelog Session 47 (2026-06-05)
+
+### ScraperAPI Proxy + CME CVOL Fix + Bug Fixes
+
+**1. ScraperAPI Proxy — `api/rate-path.js` + `api/correlations.js`**
+- Root cause: CME Group memblokir IP data center Vercel (AWS/GCP) via Akamai WAF.
+- Solusi: ScraperAPI residential IP proxy — tidak diblokir CME.
+- `api/rate-path.js`: tambah `cmeFetch(targetUrl, directHeaders, timeoutMs)` — jika `SCRAPER_API_KEY` ada, semua CME fetch (FedWatch V1/V2, ZQ settlement, ZQ quote) di-route via `api.scraperapi.com`. Timeout naik 8-10s → 15s.
+- **Env var baru:** `SCRAPER_API_KEY` di Vercel. Free tier: 5,000 credits/bulan, kebutuhan aktual ~120-180 req/bulan.
+
+**2. CME CVOL Risk Reversals — Endpoint Baru + 6 Pair**
+- Endpoint lama `CmeWS/mvc/Volatility/historical` return 404 (dihapus CME).
+- Endpoint baru: `https://www.cmegroup.com/services/cvol?symbol={CODE}&isProtected&_t={timestamp}`
+- Response format: array `[{ skew: "-0.402", atmInd, cvolPrice, ... }]` — field `skew` langsung di root.
+- **Symbol mapping baru (semua dikonfirmasi via browser test):**
+  - EUR/USD → `EUVL`, GBP/USD → `GBVL`, USD/JPY → `JPVL`
+  - AUD/USD → `ADVL`, USD/CAD → `CAVL` (bukan CDVL), XAU/USD → `GCVL`
+  - NZD/USD + USD/CHF: tidak tersedia di CME CVOL (options terlalu illiquid)
+- **6 pair live:** EUR/USD (-0.402), GBP/USD (-0.728), USD/JPY (+1.598), AUD/USD (-0.819), USD/CAD (-0.166), XAU/USD (-0.021)
+- Cache key: `rr_cache_v2`, TTL 3600s.
+- Barchart OnDemand: dikonfirmasi **enterprise berbayar** (bukan free) — path tetap ada di kode tapi tidak digunakan.
+
+**3. Bug Fixes**
+- `index.html` line 2673: `handleNewItems is not defined` — SW masih kirim `NEW_ITEMS` tapi fungsi sudah dihapus. Fix: ganti `handleNewItems(e.data.items)` → `fetchFeed()`.
+- `api/calendar.js`: return HTTP 500 saat FF XML tidak ada event di range tanggal (weekend). Fix: hanya throw 500 jika kedua fetch benar-benar gagal (`anyFetchSucceeded` flag). Event kosong (weekend/no high-impact) return 200 empty array.
+
+**4. Penjelasan Manfaat Risk Reversal untuk Trader**
+- RR = fear indicator dari options market (bukan performance indicator).
+- Negatif = institusi beli put lebih mahal (fear downside). Positif = call bias (expect kenaikan).
+- Kegunaan: konfirmasi CB bias, deteksi contrarian setup (RR ekstrem = semua positioned satu arah), sizing confidence (trade with/against institutional hedging).
+- Contoh: AUD/USD -0.819 → institusi agresif hedge downside AUD; USD/JPY +1.598 → carry trade masih diminati.
 
 ---
 
