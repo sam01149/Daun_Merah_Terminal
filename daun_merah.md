@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-06-05 (session 47 — ScraperAPI proxy, CME CVOL endpoint baru, Risk Reversals 6 pair live, bug fixes)
+> **Last updated:** 2026-06-05 (session 48 — VIX term structure fix, audit progress.md)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Financial_Feed_App`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -78,6 +78,24 @@ Financial_Feed_App/
 > **Penting:** `api/feeds.js` menggantikan `api/rss.js` dan `api/cot.js` yang sudah dihapus.
 > `api/admin.js` menggantikan `api/health.js`, `api/redis-keys.js`, `api/admin-prompts.js`, dan `api/push.js`.
 > Konsolidasi ini dilakukan untuk tetap di bawah limit 12 serverless functions Vercel Hobby.
+
+---
+
+## Changelog Session 48 (2026-06-05)
+
+### VIX Term Structure Fix + Progress Audit
+
+**1. VIX Term Structure — `api/risk-regime.js`**
+- Root cause: `^VIX1M` tidak tersedia di Yahoo Finance → selalu null → `structure` field tidak pernah dihitung.
+- Fix: tambah fallback `else if (vix3m != null)` — hitung `structure` dari `vix_spot` vs `vix_3m` jika `vix_1m` null.
+- Dikonfirmasi live: `{ vix_spot: 15.4, vix_1m: null, vix_3m: 19.23, structure: "contango" }`.
+- Label Contango/Backwardation sekarang selalu muncul di UI selama `^VIX3M` tersedia.
+
+**2. Audit `daun_merah_progress.md`**
+- Item 12 (FX Risk Reversals) + Item 13 (Portfolio VaR) dikira ⚫ belum ada, ternyata ✅ sudah diimplementasi sejak session 46–47.
+- Item 6 (VIX Term Structure) diupdate → FIXED.
+- Item 8 (Option Magnets) dikonfirmasi dead code — FinancialJuice tidak pernah publish format ini.
+- Test live: item 4 (OECD Inflation), 5 (TGA), 6 (VIX), 7 (Liquidity/Yield Curve), 8 (Option Expiry) via WebFetch ke production.
 
 ---
 
