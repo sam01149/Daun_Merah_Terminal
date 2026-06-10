@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-06-05 (session 52 — AI Prompt Quality: Journal & Fundamental Analysis)
+> **Last updated:** 2026-06-10 (session 53 — Fix AI summarization: maxDuration Vercel, provider_log, CSS badges, timeout)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Financial_Feed_App`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -33,7 +33,8 @@ Daun Merah adalah forex news PWA (Progressive Web App) untuk trader forex Indone
 **Env vars yang dibutuhkan (di Vercel):**
 - `GROQ_API_KEY`
 - `OPENROUTER_API_KEY`
-- `SAMBANOVA_API_KEY`
+- `SAMBANOVA_API_KEY` — Call 2 & 3 (CB bias + thesis, akun 1)
+- `SAMBANOVA_API_KEY_CALL1` — Call 1 prose (akun 2, opsional; jika tidak ada, langsung pakai OpenRouter)
 - `UPSTASH_REDIS_REST_URL`
 - `UPSTASH_REDIS_REST_TOKEN`
 - `FRED_API_KEY`
@@ -78,6 +79,38 @@ Financial_Feed_App/
 > **Penting:** `api/feeds.js` menggantikan `api/rss.js` dan `api/cot.js` yang sudah dihapus.
 > `api/admin.js` menggantikan `api/health.js`, `api/redis-keys.js`, `api/admin-prompts.js`, dan `api/push.js`.
 > Konsolidasi ini dilakukan untuk tetap di bawah limit 12 serverless functions Vercel Hobby.
+
+---
+
+## Changelog Session 53 (2026-06-10)
+
+### Fix: AI Summarization — Vercel Timeout, Provider Diagnostics, CSS Badges
+
+**Masalah root cause:** Vercel Hobby plan default function timeout adalah 10-15s, sedangkan SambaNova Call 1 sendiri membutuhkan timeout 28s (normal response time 13-20s). Ketika SambaNova timeout + OpenRouter timeout (15s), total waktu bisa melampaui limit Vercel → 504 sebelum Groq sempat menjadi fallback.
+
+**Perubahan `vercel.json`:**
+- Tambah blok `"functions"` dengan `maxDuration` explicit per endpoint:
+  - `market-digest.js`: 60s
+  - `journal.js`: 45s
+  - `admin.js`: 60s
+  - `correlations.js`: 30s
+  - `real-yields.js`: 30s
+  - `risk-regime.js`: 20s
+  - `feeds.js`: 20s
+
+**Perubahan `api/market-digest.js`:**
+- Tambah `providerLog` array yang melacak setiap provider attempt: nama, status (ok/error/empty), elapsed time, char count
+- Sertakan `provider_log` di response payload — tampil di frontend saat method=fallback
+- Setiap fallback provider sekarang log: `sambanova:ok(1200ms,3400c)` atau `sambanova:HTTP429(100ms)` atau `sambanova:no_key`
+
+**Perubahan `index.html`:**
+- Frontend timeout: 45s → 55s (sesuai maxDuration 60s Vercel)
+- CSS tambahan untuk method badges yang sebelumnya tidak styled: `deepseek-v3.2` (biru), `deepseek-v3.1` (biru), `gpt-oss-120b` (hijau), `qwen3-32b` (kuning, sama dengan groq)
+- Tambah `fallback_quota` ke CSS fallback
+- Tampilkan provider log (monospace, muted) di bawah meta bar ketika method=fallback, sehingga user bisa melihat provider mana yang gagal
+
+**Env var:**
+- Dokumentasikan `SAMBANOVA_API_KEY_CALL1` (akun 2, opsional) di daun_merah.md
 
 ---
 

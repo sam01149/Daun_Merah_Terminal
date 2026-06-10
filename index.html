@@ -405,10 +405,20 @@ body {
 .ringkasan-method {
   font-size: 9px; padding: 2px 8px; border-radius: 3px; letter-spacing: .5px;
 }
-.ringkasan-method.groq     { background: rgba(245,166,35,.1); color: #f5a623; }
-.ringkasan-method.cerebras { background: rgba(100,220,160,.1); color: #64dca0; }
-.ringkasan-method.gemini   { background: rgba(255,211,42,.1); color: var(--yellow); }
-.ringkasan-method.fallback { background: rgba(255,255,255,.06); color: var(--muted); }
+.ringkasan-method.groq,
+.ringkasan-method.qwen3-32b   { background: rgba(245,166,35,.1); color: #f5a623; }
+.ringkasan-method.cerebras    { background: rgba(100,220,160,.1); color: #64dca0; }
+.ringkasan-method.gemini      { background: rgba(255,211,42,.1); color: var(--yellow); }
+.ringkasan-method.fallback,
+.ringkasan-method.fallback_quota { background: rgba(255,255,255,.06); color: var(--muted); }
+.ringkasan-method.deepseek-v3\.2,
+.ringkasan-method.deepseek-v3\.1 { background: rgba(79,172,254,.12); color: #4facfe; }
+.ringkasan-method.gpt-oss-120b   { background: rgba(16,163,127,.12); color: #10a37f; }
+.ringkasan-provider-log {
+  font-size: 10px; color: var(--muted); font-family: 'DM Mono', monospace;
+  background: rgba(255,255,255,.03); border-radius: 6px; padding: 8px 12px;
+  margin-bottom: 12px; line-height: 1.6;
+}
 
 .thesis-alert-card {
   background: rgba(192,57,43,.08); border: 1px solid rgba(192,57,43,.35);
@@ -2938,7 +2948,7 @@ async function generateRingkasan() {
   try {
     const deviceId = szGetDeviceId();
     const res = await fetch('/api/market-digest?device_id=' + encodeURIComponent(deviceId), {
-      signal: AbortSignal.timeout(45000),
+      signal: AbortSignal.timeout(55000),
     });
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
@@ -2999,6 +3009,10 @@ function renderRingkasan() {
     ${d.thesis && d.thesis.confidence_1_to_5 >= 3 ? renderThesisCard(d.thesis) : ''}
 
     ${d.thesis_alerts && d.thesis_alerts.length > 0 ? renderThesisAlerts(d.thesis_alerts) : ''}
+
+    ${(d.method === 'fallback' || d.method === 'fallback_quota') && d.provider_log && d.provider_log.length > 0
+      ? `<div class="ringkasan-provider-log">⚠ AI tidak tersedia. Provider log: ${d.provider_log.map(s => escHtml(s)).join(' → ')}</div>`
+      : ''}
 
     ${renderArticleSections(d.article)}
 

@@ -524,6 +524,7 @@ module.exports = async function handler(req, res) {
 
   // ── 4. Call 1: Market Briefing — Cerebras → Groq fallback ────────────────────
   let article = null, method = 'fallback';
+  const providerLog = [];
   if (recentItems.length > 0) {
     const DIGEST_SYSTEM_DEFAULT = `Kamu analis macro FX senior. Tulis briefing pre-session Bahasa Indonesia untuk trader Indonesia yang sudah fasih: DXY, real yield, carry, risk-on/off, basis point — jangan jelaskan istilah ini.
 
@@ -600,42 +601,79 @@ ${xauHistoryBlock}`;
 
     // Primary: SambaNova DeepSeek-V3.2 (akun 2, Call 1 prose only) — circuit breaker
     if (SAMBANOVA_KEY_CALL1 && await cb.canCall('ai:sambanova')) {
+      const t1s = Date.now();
       try {
         console.log('Call 1: trying SambaNova DeepSeek-V3.2 (akun 2 prose)');
         const raw = await aiCall(SAMBANOVA_URL_CALL1, SAMBANOVA_KEY_CALL1, SAMBANOVA_MODEL_CALL1, call1Messages, 800, 0.25, 28000);
-        if (raw.trim()) { article = raw.trim(); method = 'deepseek-v3.2'; }
+        const elapsed = Date.now() - t1s;
+        if (raw.trim()) {
+          article = raw.trim(); method = 'deepseek-v3.2';
+          providerLog.push(`sambanova:ok(${elapsed}ms,${article.length}c)`);
+        } else {
+          providerLog.push(`sambanova:empty(${elapsed}ms)`);
+        }
         console.log('Call 1: SambaNova V3.2 OK, length', article?.length);
         await cb.onSuccess('ai:sambanova');
       } catch(e) {
+        const elapsed = Date.now() - t1s;
+        const errMsg = e.status ? `HTTP${e.status}` : (e.message || 'err').slice(0, 40);
+        providerLog.push(`sambanova:${errMsg}(${elapsed}ms)`);
         console.warn('Call 1 SambaNova V3.2 failed:', e.status || e.message);
         await cb.onFailure('ai:sambanova', AI_CB_THRESHOLD);
       }
     } else if (SAMBANOVA_KEY_CALL1) {
+      providerLog.push('sambanova:circuit_open');
       console.log('Call 1: SambaNova circuit OPEN — skipping to OpenRouter');
+    } else {
+      providerLog.push('sambanova:no_key');
     }
 
     // Fallback 2: OpenRouter gpt-oss-120b (if SambaNova failed/empty)
     if (!article && OPENROUTER_KEY) {
+      const t2s = Date.now();
       try {
         console.log('Call 1: fallback 2 to OpenRouter gpt-oss-120b:free');
         const raw = await aiCall(OPENROUTER_URL, OPENROUTER_KEY, OPENROUTER_MODEL, call1Messages, 800, 0.25, 15000, OPENROUTER_HEADERS);
-        if (raw.trim()) { article = raw.trim(); method = 'gpt-oss-120b'; }
+        const elapsed = Date.now() - t2s;
+        if (raw.trim()) {
+          article = raw.trim(); method = 'gpt-oss-120b';
+          providerLog.push(`openrouter:ok(${elapsed}ms,${article.length}c)`);
+        } else {
+          providerLog.push(`openrouter:empty(${elapsed}ms)`);
+        }
         console.log('Call 1: OpenRouter OK, length', article?.length);
       } catch(e) {
+        const elapsed = Date.now() - t2s;
+        const errMsg = e.status ? `HTTP${e.status}` : (e.message || 'err').slice(0, 40);
+        providerLog.push(`openrouter:${errMsg}(${elapsed}ms)`);
         console.warn('Call 1 OpenRouter fallback failed:', e.status || e.message);
       }
+    } else if (!article) {
+      providerLog.push('openrouter:no_key');
     }
 
     // Fallback 3: Groq qwen3-32b (if OpenRouter failed/empty)
     if (!article && GROQ_KEY) {
+      const t3s = Date.now();
       try {
         console.log('Call 1: fallback 3 to Groq qwen3-32b');
         const raw = await aiCall(GROQ_URL, GROQ_KEY, GROQ_MODEL_PROSE, call1Messages, 1800, 0.25, 20000);
-        if (raw.trim()) { article = raw.trim(); method = 'qwen3-32b'; }
+        const elapsed = Date.now() - t3s;
+        if (raw.trim()) {
+          article = raw.trim(); method = 'qwen3-32b';
+          providerLog.push(`groq_qwen3:ok(${elapsed}ms,${article.length}c)`);
+        } else {
+          providerLog.push(`groq_qwen3:empty(${elapsed}ms)`);
+        }
         console.log('Call 1: Groq qwen3 OK, length', article?.length);
       } catch(e) {
+        const elapsed = Date.now() - t3s;
+        const errMsg = e.status ? `HTTP${e.status}` : (e.message || 'err').slice(0, 40);
+        providerLog.push(`groq_qwen3:${errMsg}(${elapsed}ms)`);
         console.warn('Call 1 Groq qwen3 fallback failed:', e.status || e.message);
       }
+    } else if (!article) {
+      providerLog.push('groq_qwen3:no_key');
     }
 
     if (!article) method = 'fallback';
@@ -828,6 +866,7 @@ ${xauHistoryBlock}`;
     gold_count:     goldItems.length,
     cal_count:      calEvents.length,
     bias_updated:   biasUpdated,
+    provider_log:   providerLog,
     generated_at:   new Date().toISOString(),
   };
 

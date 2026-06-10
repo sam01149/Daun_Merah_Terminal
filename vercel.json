@@ -9,6 +9,15 @@
       ]
     }
   ],
+  "functions": {
+    "api/market-digest.js": { "maxDuration": 60 },
+    "api/journal.js":       { "maxDuration": 45 },
+    "api/admin.js":         { "maxDuration": 60 },
+    "api/correlations.js":  { "maxDuration": 30 },
+    "api/real-yields.js":   { "maxDuration": 30 },
+    "api/risk-regime.js":   { "maxDuration": 20 },
+    "api/feeds.js":         { "maxDuration": 20 }
+  },
   "crons": [
     {
       "path": "/api/admin?action=gdpnow",
