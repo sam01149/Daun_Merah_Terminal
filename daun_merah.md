@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-06-11 (session 54 — Regime: tambah tier ELEVATED, Yahoo MOVE live, fix stale MOVE data)
+> **Last updated:** 2026-06-11 (session 54 — Regime ELEVATED + Yahoo MOVE; Fundamental drill-down overlay)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Financial_Feed_App`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -83,6 +83,25 @@ Financial_Feed_App/
 ---
 
 ## Changelog Session 54 (2026-06-11)
+
+### Feat: Fundamental Drill-Down Overlay (tap currency → detail view)
+
+**Masalah:** Panel fundamental menampilkan 8 mata uang sekaligus dengan font 8-9px, sulit dibaca. Tidak ada cara untuk fokus ke satu mata uang.
+
+**Solusi:** Full-screen overlay yang muncul saat user tap currency card atau ranking cell.
+
+**Perubahan `index.html`:**
+- CSS baru: `.fd-overlay`, `.fd-hdr`, `.fd-hdr-close`, `.fd-hdr-nav`, `.fd-hdr-center`, `.fd-cur-tabs`, `.fd-cur-tab`, `.fd-score-strip`, `.fd-body`, `.fd-section-hdr`, `.fd-row`, `.fd-row-name`, `.fd-row-right`, `.fd-row-val`, `.fd-row-prev`, `.fd-row-period`, `.fd-extra-block`, `.fd-extra-title`, `.fd-extra-row`
+- HTML: `#fdOverlay` — full-screen overlay dengan header (← back, nama mata uang besar, ‹ › nav), score strip, currency tabs, scrollable body
+- JS: `openFundDetail(cur)`, `closeFundDetail()`, `navFundDetail(dir)`, `_renderFundDetail()` — render detail untuk satu currency
+- `FUND_SECTIONS_MAP` + `FUND_SECTION_ORDER` — grouping indikator ke seksi: Inflasi, Pertumbuhan, Ketenagakerjaan, Aktivitas, Sentimen, Permintaan, Eksternal, Lainnya
+- `fdScores` global — scores array dari `renderFundamental()` disimpan untuk overlay
+- Tap fund-card → `openFundDetail(cur)` (cursor:pointer, ↗ hint di pojok kanan header)
+- Tap frnk-cell (ranking strip) → `openFundDetail(cur)`
+- Escape key menutup overlay (prioritas pertama sebelum kbOverlay)
+- Detail view: CB rate di top (font 26px), tiap indikator font 18px (vs 9px sebelumnya), prev value ditampilkan, color-coded bull/bear, yield curve + likuiditas dalam card terpisah
+
+---
 
 ### Fix: Regime selalu NEUTRAL — tambah tier ELEVATED + Yahoo MOVE live
 

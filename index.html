@@ -750,6 +750,114 @@ body {
   .fund-td-per { display: table-cell; font-size: 7px; color: var(--muted); opacity: .6; text-align: right; padding-left: 6px; white-space: nowrap; width: 52px; }
 }
 
+/* ── FUND DETAIL OVERLAY ── */
+.fd-overlay {
+  display: none; position: fixed; inset: 0; z-index: 500;
+  flex-direction: column; background: var(--bg);
+}
+.fd-overlay.open { display: flex; }
+.fd-hdr {
+  display: flex; align-items: center; gap: 6px;
+  padding: 12px 14px 10px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0; min-height: 56px;
+}
+.fd-hdr-close {
+  background: none; border: none; color: var(--muted);
+  cursor: pointer; padding: 4px 8px; line-height: 1;
+  font-size: 20px; transition: color .12s; flex-shrink: 0;
+}
+.fd-hdr-close:hover { color: var(--text); }
+.fd-hdr-nav {
+  background: none; border: 1px solid var(--border); color: var(--muted);
+  cursor: pointer; padding: 4px 10px; border-radius: 4px; font-size: 16px;
+  line-height: 1; transition: all .12s; flex-shrink: 0;
+}
+.fd-hdr-nav:hover { color: var(--text); border-color: var(--text-mid); }
+.fd-hdr-center {
+  flex: 1; display: flex; flex-direction: column;
+  align-items: center; gap: 2px;
+}
+.fd-hdr-cur { font: 800 30px 'Syne',sans-serif; line-height: 1; }
+.fd-hdr-rate { font: 12px 'DM Mono',monospace; color: var(--muted); }
+.fd-score-strip {
+  display: flex; align-items: center; gap: 8px;
+  padding: 9px 16px; border-bottom: 1px solid var(--border); flex-shrink: 0;
+}
+.fd-score-bar-bg { flex: 1; height: 3px; background: rgba(255,255,255,.07); border-radius: 2px; overflow: hidden; }
+.fd-score-bar-fill { height: 100%; border-radius: 2px; transition: width .5s; }
+.fd-score-label { font: 700 13px 'DM Mono',monospace; white-space: nowrap; }
+.fd-score-conf {
+  font: 10px 'DM Mono',monospace; padding: 2px 6px; border-radius: 3px;
+  white-space: nowrap; letter-spacing: .2px;
+}
+.fd-score-conf.high { background: rgba(0,200,150,.12); color: var(--green); }
+.fd-score-conf.med  { background: rgba(255,211,42,.10); color: var(--yellow); }
+.fd-score-conf.low  { background: rgba(255,255,255,.06); color: var(--muted); }
+.fd-cur-tabs {
+  display: flex; gap: 5px; padding: 9px 16px;
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto; flex-shrink: 0;
+  -webkit-overflow-scrolling: touch; scrollbar-width: none;
+}
+.fd-cur-tabs::-webkit-scrollbar { display: none; }
+.fd-cur-tab {
+  padding: 5px 12px; border-radius: 4px; flex-shrink: 0;
+  font: 700 10px 'Syne',sans-serif; letter-spacing: .06em;
+  border: 1px solid var(--border); background: transparent;
+  color: var(--muted); cursor: pointer; transition: all .12s;
+}
+.fd-cur-tab.active { background: var(--surface); color: var(--text); border-color: var(--text-mid); }
+.fd-body {
+  flex: 1; overflow-y: auto; padding: 0 16px 40px;
+  -webkit-overflow-scrolling: touch;
+}
+.fd-section-hdr {
+  font: 9px 'DM Mono',monospace; color: var(--muted);
+  letter-spacing: .12em; text-transform: uppercase;
+  padding: 18px 0 7px; border-bottom: 1px solid rgba(255,255,255,.05);
+}
+.fd-row {
+  display: flex; justify-content: space-between; align-items: flex-start;
+  padding: 11px 0; border-bottom: 1px solid rgba(255,255,255,.04);
+}
+.fd-row:last-child { border-bottom: none; }
+.fd-row-name {
+  font: 13px 'DM Mono',monospace; color: var(--muted);
+  flex: 1; padding-right: 14px; padding-top: 3px; line-height: 1.4;
+}
+.fd-row-right { text-align: right; flex-shrink: 0; }
+.fd-row-val {
+  font: 700 18px 'DM Mono',monospace; white-space: nowrap;
+  display: flex; align-items: center; gap: 4px; justify-content: flex-end;
+}
+.fd-row-val .fd-val-arrow { font-size: 15px; }
+.fd-row-prev {
+  font: 11px 'DM Mono',monospace; color: var(--muted);
+  margin-top: 3px; opacity: .65;
+}
+.fd-row-period {
+  font: 9px 'DM Mono',monospace; color: var(--muted);
+  margin-top: 1px; opacity: .4;
+}
+.fd-extra-block {
+  margin: 14px 0; padding: 14px;
+  background: var(--surface); border-radius: 8px;
+  border: 1px solid var(--border);
+}
+.fd-extra-title {
+  font: 700 9px 'DM Mono',monospace; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--text-mid); margin-bottom: 10px;
+}
+.fd-extra-row {
+  display: flex; justify-content: space-between; align-items: baseline;
+  padding: 7px 0; border-bottom: 1px solid rgba(255,255,255,.04);
+  font-family: 'DM Mono',monospace;
+}
+.fd-extra-row:last-child { border-bottom: none; }
+.fd-extra-row-label { font-size: 12px; color: var(--muted); }
+.fd-extra-row-val { font-size: 16px; font-weight: 700; text-align: right; }
+
 /* ── CALENDAR TAB ──*/
 
 /* CAL TOOLBAR */
@@ -3966,6 +4074,8 @@ function renderFundamental() {
     return { cur, data, rateKey, rateVal, score, scoreLabel, scoreColor, confTier, confLabel, scoredCt, col };
   });
 
+  fdScores = scores; // expose to detail overlay
+
   // Render strength ranking strip
   const rankSection = document.getElementById('fundRankSection');
   const rankGrid    = document.getElementById('fundRankGrid');
@@ -3974,7 +4084,7 @@ function renderFundamental() {
     rankGrid.innerHTML = sorted.map((s, i) => {
       const badgeCls = s.score === null ? 'nd' : s.score >= 60 ? 'bull' : s.score < 40 ? 'bear' : 'neut';
       const fill     = s.score !== null ? s.score : 0;
-      return `<div class="frnk-cell" style="border-left:2px solid ${s.col}">
+      return `<div class="frnk-cell" style="border-left:2px solid ${s.col};cursor:pointer" onclick="openFundDetail('${s.cur}')" title="${s.cur} — lihat detail">
         <div class="frnk-top">
           <span class="frnk-rank">#${i + 1}</span>
           <span class="frnk-cur" style="color:${s.col}">${s.cur}</span>
@@ -4054,10 +4164,13 @@ function renderFundamental() {
       }
     }
 
-    return `<div class="fund-card" style="border-left:3px solid ${col}">
+    return `<div class="fund-card" style="border-left:3px solid ${col};cursor:pointer" onclick="openFundDetail('${cur}')" title="${cur} — tap untuk detail">
       <div class="fund-card-header">
         <span class="fund-cur" style="color:${col}">${cur}</span>
-        ${rateVal ? `<span class="fund-rate">${escHtml(rateVal)}</span>` : ''}
+        <div style="display:flex;align-items:center;gap:6px">
+          ${rateVal ? `<span class="fund-rate">${escHtml(rateVal)}</span>` : ''}
+          <span style="font-size:8px;color:var(--muted);opacity:.45">&#8599;</span>
+        </div>
       </div>
       ${scoreHtml}
       <table class="fund-table">
@@ -4066,6 +4179,173 @@ function renderFundamental() {
       ${yieldCurveHtml}${liquidityHtml}
     </div>`;
   }).join('');
+}
+
+// ── FUND DETAIL OVERLAY ──────────────────────────────────────────────────────
+
+let fdOpenCur = null;
+let fdScores  = null; // saved from renderFundamental() for overlay use
+
+const FUND_SECTIONS_MAP = {
+  'CPI YoY':'Inflasi','CPI MoM':'Inflasi','Core CPI MoM':'Inflasi',
+  'Core PCE':'Inflasi','PPI MoM':'Inflasi','CPI Flash YoY':'Inflasi',
+  'German CPI YoY':'Inflasi','CPI QoQ':'Inflasi',
+  'GDP QoQ':'Pertumbuhan','GDP QoQ Flash':'Pertumbuhan','GDP MoM':'Pertumbuhan',
+  'NFP':'Ketenagakerjaan','Employment Change':'Ketenagakerjaan',
+  'Unemployment Rate':'Ketenagakerjaan','Jobless Claims':'Ketenagakerjaan',
+  'Claimant Count':'Ketenagakerjaan','Participation Rate':'Ketenagakerjaan','Wage Growth':'Ketenagakerjaan',
+  'ISM Services':'Aktivitas','ISM Manufacturing':'Aktivitas',
+  'Manufacturing PMI':'Aktivitas','Services PMI':'Aktivitas','Composite PMI':'Aktivitas',
+  'Industrial Production':'Aktivitas','Ivey PMI':'Aktivitas','Tankan Mfg Index':'Aktivitas',
+  'IFO Business':'Sentimen','ZEW Sentiment':'Sentimen','KOF Barometer':'Sentimen',
+  'Consumer Confidence':'Sentimen','Business Confidence':'Sentimen','NAB Business Conf':'Sentimen',
+  'Retail Sales MoM':'Permintaan','Retail Sales YoY':'Permintaan',
+  'Building Approvals':'Permintaan','Housing Starts':'Permintaan','Durable Goods Orders':'Permintaan',
+  'Trade Balance':'Eksternal','Current Account':'Eksternal',
+};
+const FUND_SECTION_ORDER = ['Inflasi','Pertumbuhan','Ketenagakerjaan','Aktivitas','Sentimen','Permintaan','Eksternal'];
+
+function openFundDetail(cur) {
+  if (!fdScores) return;
+  fdOpenCur = cur;
+  _renderFundDetail();
+  document.getElementById('fdOverlay').classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeFundDetail() {
+  document.getElementById('fdOverlay').classList.remove('open');
+  document.body.style.overflow = '';
+  fdOpenCur = null;
+}
+
+function navFundDetail(dir) {
+  if (!fdOpenCur || !fdScores) return;
+  const idx  = fdScores.findIndex(s => s.cur === fdOpenCur);
+  const next = fdScores[(idx + dir + fdScores.length) % fdScores.length];
+  fdOpenCur  = next.cur;
+  _renderFundDetail();
+  document.getElementById('fdBody').scrollTop = 0;
+}
+
+function _renderFundDetail() {
+  const s = fdScores && fdScores.find(x => x.cur === fdOpenCur);
+  if (!s) return;
+
+  // Header
+  const hdrCur  = document.getElementById('fdHdrCur');
+  const hdrRate = document.getElementById('fdHdrRate');
+  hdrCur.textContent = s.cur;
+  hdrCur.style.color = s.col;
+  hdrRate.textContent = s.rateKey && s.rateVal ? `${s.rateKey}: ${s.rateVal}` : '';
+
+  // Score strip
+  const strip = document.getElementById('fdScoreStrip');
+  if (s.score !== null) {
+    strip.style.display = 'flex';
+    strip.innerHTML = `
+      <div class="fd-score-bar-bg"><div class="fd-score-bar-fill" style="width:${s.score}%;background:${s.scoreColor}"></div></div>
+      <span class="fd-score-label" style="color:${s.scoreColor}">${s.scoreLabel} ${s.score}%</span>
+      ${s.confTier ? `<span class="fd-score-conf ${s.confTier}">${s.confLabel}</span>` : ''}
+      <span style="font:10px 'DM Mono',monospace;color:var(--muted);opacity:.5">${s.scoredCt} indikator</span>`;
+  } else {
+    strip.style.display = 'none';
+  }
+
+  // Currency tabs
+  document.getElementById('fdCurTabs').innerHTML = fdScores.map(x =>
+    `<button class="fd-cur-tab${x.cur === s.cur ? ' active' : ''}"
+      style="${x.cur === s.cur ? `border-color:${x.col};color:${x.col}` : ''}"
+      onclick="fdOpenCur='${x.cur}';_renderFundDetail();document.getElementById('fdBody').scrollTop=0">${x.cur}</button>`
+  ).join('');
+
+  // Build body HTML
+  const data    = s.data;
+  const rateKey = s.rateKey;
+  const entries = Object.entries(data).filter(([k]) => k !== rateKey);
+
+  // Bucket indicators into sections
+  const buckets = {};
+  FUND_SECTION_ORDER.forEach(sec => { buckets[sec] = []; });
+  buckets['Lainnya'] = [];
+  entries.forEach(([k, v]) => {
+    const sec = FUND_SECTIONS_MAP[k] || 'Lainnya';
+    if (!buckets[sec]) buckets[sec] = [];
+    buckets[sec].push([k, v]);
+  });
+
+  let html = '';
+
+  // CB Rate block at top
+  if (rateKey && data[rateKey]) {
+    const rv = data[rateKey];
+    html += `<div class="fd-extra-block" style="border-left:3px solid ${s.col};margin-top:16px">
+      <div class="fd-extra-title" style="color:${s.col}">${escHtml(rateKey)}</div>
+      <div class="fd-extra-row">
+        <span class="fd-extra-row-label">Saat ini</span>
+        <span class="fd-extra-row-val" style="color:${s.col};font-size:26px">${escHtml(rv.actual || '—')}</span>
+      </div>
+      ${rv.previous ? `<div class="fd-extra-row"><span class="fd-extra-row-label">Sebelumnya</span><span class="fd-extra-row-val">${escHtml(rv.previous)}</span></div>` : ''}
+      ${rv.period && rv.period !== '—' ? `<div class="fd-extra-row"><span class="fd-extra-row-label">Periode</span><span class="fd-extra-row-val" style="font-size:12px;color:var(--muted)">${escHtml(rv.period)}</span></div>` : ''}
+    </div>`;
+  }
+
+  // Indicator sections
+  [...FUND_SECTION_ORDER, 'Lainnya'].forEach(sec => {
+    const rows = buckets[sec];
+    if (!rows || rows.length === 0) return;
+    html += `<div class="fd-section-hdr">${sec}</div>`;
+    rows.forEach(([k, v]) => {
+      const sig    = scoreInd(k, v.actual, v.previous);
+      const sigCol = sig === 1 ? 'var(--green)' : sig === -1 ? 'var(--red)' : 'var(--text)';
+      const arrow  = sig === 1 ? '↑' : sig === -1 ? '↓' : '';
+      const period = v.period && v.period !== '—' ? v.period : '';
+      html += `<div class="fd-row">
+        <div class="fd-row-name">${escHtml(k)}</div>
+        <div class="fd-row-right">
+          <div class="fd-row-val" style="color:${sigCol}">${escHtml(v.actual || '—')}${arrow ? `<span class="fd-val-arrow">${arrow}</span>` : ''}</div>
+          ${v.previous ? `<div class="fd-row-prev">prev: ${escHtml(v.previous)}</div>` : ''}
+          ${period ? `<div class="fd-row-period">${escHtml(period)}</div>` : ''}
+        </div>
+      </div>`;
+    });
+  });
+
+  // Yield Curve block (USD/EUR)
+  if ((s.cur === 'USD' || s.cur === 'EUR') && realYieldsYieldCurve?.[s.cur]) {
+    const yc = realYieldsYieldCurve[s.cur];
+    const spread = yc.spread_2y10y;
+    const spreadColor = spread == null ? 'var(--muted)' : spread < 0 ? 'var(--red)' : spread < 0.2 ? 'var(--yellow)' : 'var(--green)';
+    const spreadLabel = spread == null ? '' : spread < 0 ? ' INVERTED' : spread < 0.2 ? ' FLAT' : ' STEEP';
+    const yields = [['2Y', yc['2y']], ['5Y', yc['5y']], ['10Y', yc['10y']], ['30Y', yc['30y']]].filter(([, v]) => v != null);
+    if (yields.length) {
+      html += `<div class="fd-extra-block">
+        <div class="fd-extra-title">Yield Curve</div>
+        ${yields.map(([label, val]) => `<div class="fd-extra-row"><span class="fd-extra-row-label">${label}</span><span class="fd-extra-row-val">${val.toFixed(2)}%</span></div>`).join('')}
+        ${spread != null ? `<div class="fd-extra-row"><span class="fd-extra-row-label">2Y10Y Spread</span><span class="fd-extra-row-val" style="color:${spreadColor}">${spread >= 0 ? '+' : ''}${spread.toFixed(3)}%${spreadLabel}</span></div>` : ''}
+      </div>`;
+    }
+  }
+
+  // Liquidity block (USD)
+  if (s.cur === 'USD' && realYieldsLiquidity) {
+    const liq = realYieldsLiquidity;
+    const parts = [];
+    if (liq.fed_assets_bn != null) parts.push(['Fed Assets', `$${liq.fed_assets_bn.toLocaleString()}B`, 'var(--muted)']);
+    if (liq.tga_balance_bn != null) {
+      const tgaDir = liq.tga_change_bn != null ? (liq.tga_change_bn > 0 ? ' ▲ serap' : ' ▼ inject') : '';
+      const tgaCol = liq.tga_change_bn != null ? (liq.tga_change_bn > 0 ? 'var(--red)' : 'var(--green)') : 'var(--muted)';
+      parts.push(['TGA Balance', `$${liq.tga_balance_bn.toLocaleString()}B${tgaDir}`, tgaCol]);
+    }
+    if (parts.length) {
+      html += `<div class="fd-extra-block">
+        <div class="fd-extra-title">Likuiditas USD</div>
+        ${parts.map(([label, val, col]) => `<div class="fd-extra-row"><span class="fd-extra-row-label">${label}</span><span class="fd-extra-row-val" style="color:${col}">${val}</span></div>`).join('')}
+      </div>`;
+    }
+  }
+
+  document.getElementById('fdBody').innerHTML = html;
 }
 
 async function generateFundamentalAnalysis() {
@@ -8123,6 +8403,7 @@ function kbShowGMode() {
 document.addEventListener('keydown', function(e) {
   // Esc selalu aktif
   if (e.key === 'Escape') {
+    if (document.getElementById('fdOverlay').classList.contains('open')) { closeFundDetail(); return; }
     if (document.getElementById('kbOverlay').classList.contains('open')) { closeKbHelp(); return; }
     if (activeView === 'checklist') { ckNavClearFocus(); return; }
     return;
@@ -8220,6 +8501,22 @@ document.addEventListener('keydown', function(e) {
     <span>Tek</span>
   </button>
 </nav>
+
+<!-- FUND DETAIL OVERLAY -->
+<div class="fd-overlay" id="fdOverlay">
+  <div class="fd-hdr">
+    <button class="fd-hdr-close" onclick="closeFundDetail()" title="Kembali">&#8592;</button>
+    <div class="fd-hdr-center">
+      <span class="fd-hdr-cur" id="fdHdrCur">—</span>
+      <span class="fd-hdr-rate" id="fdHdrRate"></span>
+    </div>
+    <button class="fd-hdr-nav" onclick="navFundDetail(-1)" title="Sebelumnya">&#8249;</button>
+    <button class="fd-hdr-nav" onclick="navFundDetail(1)" title="Berikutnya">&#8250;</button>
+  </div>
+  <div class="fd-score-strip" id="fdScoreStrip"></div>
+  <div class="fd-cur-tabs" id="fdCurTabs"></div>
+  <div class="fd-body" id="fdBody"></div>
+</div>
 
 <!-- DRAWER -->
 <div class="drawer-overlay" id="drawerOverlay" onclick="closeDrawer()"></div>
