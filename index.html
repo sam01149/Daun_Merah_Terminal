@@ -753,9 +753,15 @@ body {
 /* ── FUND DETAIL OVERLAY ── */
 .fd-overlay {
   display: none; position: fixed; inset: 0; z-index: 500;
-  flex-direction: column; background: var(--bg);
+  background: var(--bg); justify-content: center;
 }
 .fd-overlay.open { display: flex; }
+.fd-inner {
+  width: 100%; max-width: 600px;
+  display: flex; flex-direction: column;
+  height: 100%; overflow: hidden;
+  border-left: 1px solid var(--border); border-right: 1px solid var(--border);
+}
 .fd-hdr {
   display: flex; align-items: center; gap: 6px;
   padding: 12px 14px 10px;
@@ -8504,18 +8510,20 @@ document.addEventListener('keydown', function(e) {
 
 <!-- FUND DETAIL OVERLAY -->
 <div class="fd-overlay" id="fdOverlay">
-  <div class="fd-hdr">
-    <button class="fd-hdr-close" onclick="closeFundDetail()" title="Kembali">&#8592;</button>
-    <div class="fd-hdr-center">
-      <span class="fd-hdr-cur" id="fdHdrCur">—</span>
-      <span class="fd-hdr-rate" id="fdHdrRate"></span>
+  <div class="fd-inner">
+    <div class="fd-hdr">
+      <button class="fd-hdr-close" onclick="closeFundDetail()" title="Kembali">&#8592;</button>
+      <div class="fd-hdr-center">
+        <span class="fd-hdr-cur" id="fdHdrCur">—</span>
+        <span class="fd-hdr-rate" id="fdHdrRate"></span>
+      </div>
+      <button class="fd-hdr-nav" onclick="navFundDetail(-1)" title="Sebelumnya">&#8249;</button>
+      <button class="fd-hdr-nav" onclick="navFundDetail(1)" title="Berikutnya">&#8250;</button>
     </div>
-    <button class="fd-hdr-nav" onclick="navFundDetail(-1)" title="Sebelumnya">&#8249;</button>
-    <button class="fd-hdr-nav" onclick="navFundDetail(1)" title="Berikutnya">&#8250;</button>
+    <div class="fd-score-strip" id="fdScoreStrip"></div>
+    <div class="fd-cur-tabs" id="fdCurTabs"></div>
+    <div class="fd-body" id="fdBody"></div>
   </div>
-  <div class="fd-score-strip" id="fdScoreStrip"></div>
-  <div class="fd-cur-tabs" id="fdCurTabs"></div>
-  <div class="fd-body" id="fdBody"></div>
 </div>
 
 <!-- DRAWER -->
