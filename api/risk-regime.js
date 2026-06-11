@@ -12,6 +12,12 @@ const CACHE_TTL = 5 * 60 // 5 minutes — VIX now from Yahoo (15-min delay), wor
 const FRED_BASE = 'https://api.stlouisfed.org/fred/series/observations'
 const STOOQ_MOVE = 'https://stooq.com/q/d/l/?s=%5emove&i=d&l=5'
 
+// Regime tiers (ascending severity):
+//   risk_on  — VIX<15, MOVE<90, HY not widening (ALL benign)
+//   neutral  — no stress, but not all-clear
+//   elevated — VIX 20-25, MOVE 100-130, or rapid VIX spike (+3 in 2d)
+//   risk_off — VIX>25, MOVE>130, or HY widening >15bps in 2d
+
 const USER_AGENTS = [
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124 Safari/537.36',
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 Safari/605.1.15',
@@ -48,7 +54,7 @@ module.exports = async function handler(req, res) {
 
   const [vixResult, moveResult, hyResult, vix1mResult, vix3mResult] = await Promise.allSettled([
     fetchYahooVix(),
-    stooqAllowed ? fetchMove()                      : Promise.reject(new Error('circuit:stooq OPEN')),
+    fetchMove(stooqAllowed),  // always tries Yahoo first; Stooq fallback gated by circuit
     fredAllowed  ? fetchFredSeries('BAMLH0A0HYM2') : Promise.reject(new Error('circuit:fred OPEN')),
     fetchYahooVixTerm('^VIX1M'),
     fetchYahooVixTerm('^VIX3M'),
@@ -70,9 +76,11 @@ module.exports = async function handler(req, res) {
   const moveData = moveResult.status === 'fulfilled' ? moveResult.value : null
   const hyData   = hyResult.status   === 'fulfilled' ? hyResult.value   : null
 
+  // Only credit Stooq circuit based on actual Stooq calls (not Yahoo successes)
   if (stooqAllowed) {
-    if (moveData) cb.onSuccess('stooq').catch(() => {});
-    else          cb.onFailure('stooq').catch(() => {});
+    if (moveData?.source === 'stooq') cb.onSuccess('stooq').catch(() => {});
+    else if (!moveData)               cb.onFailure('stooq').catch(() => {});
+    // moveData.source === 'yahoo' → Stooq circuit unchanged (Yahoo worked, Stooq unknown)
   }
   if (fredAllowed && hyData) cb.onSuccess('fred').catch(() => {})
 
@@ -101,12 +109,15 @@ module.exports = async function handler(req, res) {
   const hyChange   = hyData   && hyData.prev   != null ? +(hyData.latest   - hyData.prev).toFixed(4)   : null
 
   const components = {
-    vix_trigger:  vix  != null ? vix  > 25          : null,
-    move_trigger: move != null ? move > 130          : null,
-    hy_trigger:   hyChange != null ? hyChange > 0.15 : null,
+    vix_trigger:    vix      != null ? vix      > 25   : null,
+    move_trigger:   move     != null ? move     > 130  : null,
+    hy_trigger:     hyChange != null ? hyChange > 0.15 : null,
+    vix_elevated:   vix      != null ? (vix > 20 && vix <= 25)    : null,
+    move_elevated:  move     != null ? (move > 100 && move <= 130) : null,
+    vix_spike:      vixChange != null ? vixChange > 3  : null,
   }
 
-  const regime = classifyRegime(vix, move, hyChange, hySpread)
+  const regime = classifyRegime(vix, move, hyChange, vixChange)
 
   // eod_date: most recent date from EOD sources (MOVE + HY) — shown in UI as "Data [tanggal]"
   // vix_date: separate, used only when vix_source = 'fred' (also EOD)
@@ -131,9 +142,10 @@ module.exports = async function handler(req, res) {
     regime,
     vix,
     vix_change_2d: vixChange,
-    vix_source: vixData?.source || null, // 'yahoo' = near real-time | 'fred' = EOD fallback
+    vix_source: vixData?.source || null,   // 'yahoo' = near real-time | 'fred' = EOD fallback
     vix_term_structure: vixTermStructure,
     move,
+    move_source: moveData?.source || null, // 'yahoo' = near real-time | 'stooq' = EOD fallback
     move_change_2d: moveChange,
     hy_spread: hySpread,
     hy_change_2d: hyChange,
@@ -152,23 +164,23 @@ module.exports = async function handler(req, res) {
 
 // ── Classifier ────────────────────────────────────────────────────────────────
 
-function classifyRegime(vix, move, hyChange) {
-  const triggers = {
-    riskOff: [],
-    riskOn:  [],
-  }
+function classifyRegime(vix, move, hyChange, vixChange) {
+  // Tier 1 — Risk-Off: any severe stress indicator
+  if (vix      != null && vix      > 25)   return 'risk_off'
+  if (move     != null && move     > 130)  return 'risk_off'
+  if (hyChange != null && hyChange > 0.15) return 'risk_off'
 
-  if (vix  != null && vix  > 25)          triggers.riskOff.push('vix')
-  if (move != null && move > 130)          triggers.riskOff.push('move')
-  if (hyChange != null && hyChange > 0.15) triggers.riskOff.push('hy_widening')
+  // Tier 2 — Elevated: above-average stress, below crisis
+  if (vix       != null && vix       > 20) return 'elevated'
+  if (move      != null && move      > 100) return 'elevated'
+  if (vixChange != null && vixChange > 3)  return 'elevated'  // rapid spike
 
-  // Risk-On requires ALL three available metrics to be benign
-  const vixOk  = vix  == null || vix  < 15
-  const moveOk = move == null || move < 90
+  // Tier 3 — Risk-On: ALL available indicators benign
+  const vixOk  = vix      == null || vix  < 15
+  const moveOk = move     == null || move < 90
   const hyOk   = hyChange == null || hyChange <= 0
+  if (vixOk && moveOk && hyOk) return 'risk_on'
 
-  if (triggers.riskOff.length > 0)        return 'risk_off'
-  if (vixOk && moveOk && hyOk)            return 'risk_on'
   return 'neutral'
 }
 
@@ -231,7 +243,27 @@ async function fetchFredSeries(seriesId) {
   }
 }
 
-async function fetchMove() {
+// Yahoo Finance ^MOVE — near real-time (15-min delay), primary MOVE source
+async function fetchYahooMove() {
+  const r = await fetch('https://query1.finance.yahoo.com/v8/finance/chart/%5EMOVE?range=1d&interval=5m', {
+    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+    signal: AbortSignal.timeout(8000),
+  })
+  if (!r.ok) throw new Error(`Yahoo MOVE HTTP ${r.status}`)
+  const json = await r.json()
+  const meta  = json?.chart?.result?.[0]?.meta
+  const price = meta?.regularMarketPrice
+  const prev  = meta?.previousClose || meta?.chartPreviousClose
+  if (!price || price <= 0) throw new Error('Yahoo MOVE: no valid price')
+  const marketTime = meta?.regularMarketTime
+  const date = marketTime
+    ? new Date(marketTime * 1000).toISOString().slice(0, 10)
+    : new Date().toISOString().slice(0, 10)
+  return { latest: +price.toFixed(1), prev: prev ? +prev.toFixed(1) : null, date, source: 'yahoo' }
+}
+
+// Stooq ^MOVE — EOD fallback (sometimes blocked by anti-scraping)
+async function fetchStooqMove() {
   const ua = USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)]
   const r = await fetch(STOOQ_MOVE, {
     headers: { 'User-Agent': ua },
@@ -243,7 +275,6 @@ async function fetchMove() {
   const lines = csv.trim().split('\n').filter(l => l && !l.startsWith('Date'))
   if (lines.length === 0) throw new Error('Stooq MOVE: empty CSV')
 
-  // CSV columns: Date,Open,High,Low,Close,Volume — use Close
   const parse = line => {
     const cols = line.split(',')
     return { date: cols[0], close: parseFloat(cols[4]) }
@@ -252,12 +283,24 @@ async function fetchMove() {
   const rows = lines.map(parse).filter(r => !isNaN(r.close))
   if (rows.length === 0) throw new Error('Stooq MOVE: no parseable rows')
 
-  // Stooq returns newest-first
+  // Stooq returns newest-first; use rows[2] for ~2-day-ago prev
   return {
     latest: rows[0].close,
     prev:   rows.length > 2 ? rows[2].close : null,
     date:   rows[0].date,
+    source: 'stooq',
   }
+}
+
+async function fetchMove(stooqAllowed = true) {
+  // Yahoo Finance primary (near real-time, more reliable than Stooq scraping)
+  try {
+    return await fetchYahooMove()
+  } catch (e) {
+    console.warn('risk-regime: Yahoo MOVE failed, trying Stooq fallback:', e.message)
+  }
+  if (!stooqAllowed) throw new Error('circuit:stooq OPEN — Stooq fallback blocked')
+  return fetchStooqMove()
 }
 
 // ── Redis helper (matches cot.js pattern) ────────────────────────────────────

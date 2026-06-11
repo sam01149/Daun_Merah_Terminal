@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-06-10 (session 53 — Fix AI summarization: maxDuration Vercel, provider_log, CSS badges, timeout)
+> **Last updated:** 2026-06-11 (session 54 — Regime: tambah tier ELEVATED, Yahoo MOVE live, fix stale MOVE data)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Financial_Feed_App`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -79,6 +79,40 @@ Financial_Feed_App/
 > **Penting:** `api/feeds.js` menggantikan `api/rss.js` dan `api/cot.js` yang sudah dihapus.
 > `api/admin.js` menggantikan `api/health.js`, `api/redis-keys.js`, `api/admin-prompts.js`, dan `api/push.js`.
 > Konsolidasi ini dilakukan untuk tetap di bawah limit 12 serverless functions Vercel Hobby.
+
+---
+
+## Changelog Session 54 (2026-06-11)
+
+### Fix: Regime selalu NEUTRAL — tambah tier ELEVATED + Yahoo MOVE live
+
+**Root cause dua masalah:**
+1. **MOVE data null** — Stooq (satu-satunya source) diblokir anti-scraping, circuit breaker terbuka → `move = null` → "0/2 trigger" (hanya VIX + HY dihitung). Banner tidak pernah bisa Risk-Off dari MOVE.
+2. **VIX 20.6 di zona neutral** — threshold lama: risk_off > 25, risk_on < 15. VIX 15-25 selalu NEUTRAL meski sudah elevated secara historis.
+
+**Perubahan `api/risk-regime.js`:**
+- Tambah `fetchYahooMove()` — Yahoo Finance `^MOVE` (live, 15m delay), lebih reliable dari Stooq scraping
+- Rename Stooq fetcher ke `fetchStooqMove()`, tetap sebagai fallback
+- `fetchMove(stooqAllowed)` — selalu coba Yahoo dulu; Stooq hanya jika Yahoo gagal DAN circuit tidak OPEN
+- Stooq circuit breaker hanya dicredit/didebited berdasarkan actual Stooq calls (bukan Yahoo sukses)
+- Tambah regime tier **ELEVATED**: VIX > 20, MOVE > 100, atau VIX spike +3 dalam 2 hari
+- Hierarchy regime: `risk_off` > `elevated` > `risk_on` (all benign) > `neutral`
+- Tambah `move_source` ke payload response (`'yahoo'` atau `'stooq'`)
+- Tambah `vix_elevated`, `move_elevated`, `vix_spike` ke `components`
+
+**Perubahan `index.html`:**
+- CSS: `.regime-banner.elevated { background: #251e08; color: #f59e0b; }` (amber/kuning)
+- LABELS: tambah `elevated: 'ELEVATED'`; CLASSES: `elevated: 'elevated'`
+- IMPLICATIONS: `elevated: 'Volatilitas naik · Selektif & kurangi size · Pantau VIX & MOVE ketat'`
+- Detail panel VIX row: tampilkan threshold per level (> 20 ELEVATED, > 25 RISK-OFF, < 15 Risk-On, 15-20 netral)
+- Detail panel MOVE row: tampilkan threshold per level (> 100, > 130, < 90)
+- MOVE null case: tampilkan `"data tidak tersedia"` (sebelumnya baris hilang tanpa keterangan)
+- VIX spike row: tampilkan jika `vix_spike = true`
+- Data label: `"VIX & MOVE live · HY Data X"` jika MOVE dari Yahoo; `"VIX live · MOVE/HY Data X"` jika Stooq
+- Journal regime filter dropdown: tambah option `elevated`
+- Fix bug `_ckAutoMeanRev()`: perbandingan `=== 'Neutral'` (kapital) → `=== 'neutral'` — auto-tick tidak pernah jalan sebelumnya
+- `_ckAutoMeanRev()` sekarang juga trigger untuk `'elevated'` (regime ranging/choppy)
+- `ckAutoTick('rc1')`: pakai label readable (RISK-ON/ELEVATED/NEUTRAL/RISK-OFF) bukan raw value
 
 ---
 

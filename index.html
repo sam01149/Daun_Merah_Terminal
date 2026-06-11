@@ -1355,6 +1355,7 @@ body {
 }
 .regime-banner.risk-on  { background: #0f2a14; color: #4caf50; }
 .regime-banner.neutral  { background: #141413; color: var(--muted); }
+.regime-banner.elevated { background: #251e08; color: #f59e0b; }
 .regime-banner.risk-off { background: #2a0f0f; color: #e53935; }
 .regime-banner.unavail  { background: #141413; color: var(--muted); }
 .regime-row { display: flex; align-items: center; gap: 6px; flex-wrap: nowrap; overflow: hidden; }
@@ -2079,6 +2080,7 @@ body {
           <option value="all">Semua Regime</option>
           <option value="risk_on">Risk-On</option>
           <option value="neutral">Neutral</option>
+          <option value="elevated">Elevated</option>
           <option value="risk_off">Risk-Off</option>
         </select>
       </div>
@@ -4806,11 +4808,12 @@ function renderRegimeBanner(data) {
   regimeData      = data;
   regimeFetchedAt = Date.now();
 
-  const LABELS = { risk_on: 'RISK-ON', neutral: 'NEUTRAL', risk_off: 'RISK-OFF' }
-  const CLASSES = { risk_on: 'risk-on', neutral: 'neutral', risk_off: 'risk-off' }
+  const LABELS = { risk_on: 'RISK-ON', neutral: 'NEUTRAL', elevated: 'ELEVATED', risk_off: 'RISK-OFF' }
+  const CLASSES = { risk_on: 'risk-on', neutral: 'neutral', elevated: 'elevated', risk_off: 'risk-off' }
   const IMPLICATIONS = {
     risk_on:  'Appetite risiko tinggi · Favor AUD, NZD, CAD · Kurangi JPY/CHF long',
     neutral:  'Sinyal campuran · Ikuti CB bias & data · Selektif dalam pair',
+    elevated: 'Volatilitas naik · Selektif & kurangi size · Pantau VIX & MOVE ketat',
     risk_off: 'Penghindaran risiko · Favor JPY, CHF, USD · Hindari AUD/NZD/CAD',
   }
 
@@ -4822,13 +4825,16 @@ function renderRegimeBanner(data) {
   if (data.move     != null) parts.push(`MOVE ${Math.round(data.move)}${chgArrow(data.move_change_2d)}`)
   if (data.hy_spread != null) parts.push(`HY ${data.hy_spread.toFixed(2)}%${chgArrow(data.hy_change_2d)}`)
 
-  const eodLabel = data.data_date
-    ? 'Data ' + new Date(data.data_date).toLocaleDateString('id-ID', { day:'numeric', month:'short' })
+  const hyEodLabel = data.data_date
+    ? 'HY Data ' + new Date(data.data_date).toLocaleDateString('id-ID', { day:'numeric', month:'short' })
     : null
   const vixLive  = data.vix_source === 'yahoo'
-  const dataLabel = vixLive
-    ? (eodLabel ? `VIX live · MOVE/HY ${eodLabel}` : 'VIX live')
-    : (eodLabel || 'Data —')
+  const moveLive = data.move_source === 'yahoo'
+  const dataLabel = vixLive && moveLive
+    ? (hyEodLabel ? `VIX & MOVE live · ${hyEodLabel}` : 'VIX & MOVE live')
+    : vixLive
+      ? (hyEodLabel ? `VIX live · MOVE/HY ${hyEodLabel}` : 'VIX live')
+      : (hyEodLabel || 'Data —')
 
   banner.className = `regime-banner ${CLASSES[data.regime] || 'neutral'}`
   label.textContent = `REGIME: ${LABELS[data.regime] || data.regime.toUpperCase()}`
@@ -4838,8 +4844,9 @@ function renderRegimeBanner(data) {
 
   // Breakdown detail (shown on tap)
   const comp = data.components || {}
-  const triggerCount = [comp.vix_trigger, comp.move_trigger, comp.hy_trigger].filter(Boolean).length
-  const availCount   = [comp.vix_trigger, comp.move_trigger, comp.hy_trigger].filter(v => v != null).length
+  const triggerCount   = [comp.vix_trigger, comp.move_trigger, comp.hy_trigger].filter(Boolean).length
+  const availCount     = [comp.vix_trigger, comp.move_trigger, comp.hy_trigger].filter(v => v != null).length
+  const elevatedActive = comp.vix_elevated || comp.move_elevated || comp.vix_spike
 
   const rows = []
 
@@ -4849,27 +4856,45 @@ function renderRegimeBanner(data) {
 
   // VIX row
   if (data.vix != null) {
-    const cls    = comp.vix_trigger ? 'regime-trigger active' : 'regime-trigger'
+    const isRiskOff  = comp.vix_trigger
+    const isElevated = comp.vix_elevated
+    const cls    = isRiskOff ? 'regime-trigger active' : (isElevated ? 'regime-trigger active' : 'regime-trigger')
     const chg    = fmtChg(data.vix_change_2d)
-    const status = comp.vix_trigger ? '> 25 → TRIGGER' : '≤ 25 → aman'
+    const status = isRiskOff  ? '> 25 → RISK-OFF'
+                 : isElevated ? '> 20 → ELEVATED'
+                 : data.vix < 15 ? '< 15 → Risk-On'
+                 : '15–20 → netral'
     const src    = data.vix_source === 'yahoo' ? ' · live (15m delay)' : ' · EOD'
     rows.push(`<div class="${cls}">VIX (vol. saham) ${data.vix.toFixed(1)}${chg} — ${status}${src}</div>`)
   }
 
   // MOVE row
   if (data.move != null) {
-    const cls    = comp.move_trigger ? 'regime-trigger active' : 'regime-trigger'
+    const isRiskOff  = comp.move_trigger
+    const isElevated = comp.move_elevated
+    const cls    = isRiskOff ? 'regime-trigger active' : (isElevated ? 'regime-trigger active' : 'regime-trigger')
     const chg    = fmtChg(data.move_change_2d, 1)
-    const status = comp.move_trigger ? '> 130 → TRIGGER' : '≤ 130 → aman'
-    rows.push(`<div class="${cls}">MOVE (vol. obligasi) ${Math.round(data.move)}${chg} — ${status}</div>`)
+    const status = isRiskOff  ? '> 130 → RISK-OFF'
+                 : isElevated ? '> 100 → ELEVATED'
+                 : data.move < 90 ? '< 90 → Risk-On'
+                 : '90–100 → netral'
+    const moveSrc = data.move_source === 'yahoo' ? ' · live (15m delay)' : ' · EOD'
+    rows.push(`<div class="${cls}">MOVE (vol. obligasi) ${Math.round(data.move)}${chg} — ${status}${moveSrc}</div>`)
+  } else {
+    rows.push(`<div class="regime-trigger" style="opacity:.4">MOVE (vol. obligasi) — data tidak tersedia</div>`)
   }
 
   // HY OAS row
   if (data.hy_spread != null) {
     const cls    = comp.hy_trigger ? 'regime-trigger active' : 'regime-trigger'
     const chg    = fmtChg(data.hy_change_2d)
-    const status = comp.hy_trigger ? 'melebar > +0.15% → TRIGGER' : '→ stabil'
+    const status = comp.hy_trigger ? 'melebar > +0.15% → RISK-OFF' : '→ stabil'
     rows.push(`<div class="${cls}">HY OAS (spread kredit) ${data.hy_spread.toFixed(2)}%${chg} — ${status}</div>`)
+  }
+
+  // VIX spike row (elevated trigger)
+  if (comp.vix_spike) {
+    rows.push(`<div class="regime-trigger active">VIX naik cepat +${data.vix_change_2d?.toFixed(1)} dalam 2 hari → ELEVATED</div>`)
   }
 
   // VIX term structure
@@ -4885,10 +4910,12 @@ function renderRegimeBanner(data) {
   }
 
   // Trigger summary
-  rows.push(`<div style="margin-top:4px;opacity:.55">${triggerCount}/${availCount} Risk-Off trigger aktif · Risk-On = semua benign (VIX<15, MOVE<90, HY tidak melebar)</div>`)
+  const elevNote = elevatedActive ? ' · Elevated aktif' : ''
+  rows.push(`<div style="margin-top:4px;opacity:.55">${triggerCount}/${availCount} Risk-Off trigger aktif${elevNote} · Risk-On = semua benign (VIX<15, MOVE<90, HY tidak melebar)</div>`)
 
   // Data note
-  rows.push(`<div style="opacity:.35;margin-top:2px">Data EOD · diperbarui setelah market close AS · cache 30 menit</div>`)
+  const moveSrcNote = data.move_source === 'yahoo' ? 'VIX & MOVE live (15m delay) · HY EOD' : 'VIX live (15m delay) · MOVE/HY EOD'
+  rows.push(`<div style="opacity:.35;margin-top:2px">${moveSrcNote} · cache 5 menit</div>`)
 
   detail.innerHTML = rows.join('')
 }
@@ -5871,7 +5898,7 @@ function ckAutoTickRegimeCheck(pair) {
 
   // ── SHARED REGIME CHECK (rc1–rc5) ── present in all playbooks
   if (regimeData && (now - regimeFetchedAt) < 30 * 60 * 1000)
-    ckAutoTick('rc1', `Regime: ${regimeData.regime}`);
+    ckAutoTick('rc1', `Regime: ${{risk_on:'RISK-ON',elevated:'ELEVATED',neutral:'NEUTRAL',risk_off:'RISK-OFF'}[regimeData.regime] || regimeData.regime}`);
 
   if (cbData) {
     const b = cbData.find(c => c.currency === base);
@@ -6017,8 +6044,8 @@ function _ckAutoEvent(base, quote) {
 
 function _ckAutoMeanRev() {
   if (regimeData && (Date.now() - regimeFetchedAt) < 30 * 60 * 1000) {
-    if (regimeData.regime === 'Neutral')
-      ckAutoTick('mr_ra4', `Regime: ${regimeData.regime} — ideal untuk range trade`);
+    if (regimeData.regime === 'neutral' || regimeData.regime === 'elevated')
+      ckAutoTick('mr_ra4', `Regime: ${regimeData.regime} — cenderung range/choppy`);
   }
 }
 
