@@ -819,9 +819,13 @@ body {
   -webkit-overflow-scrolling: touch;
 }
 .fd-section-hdr {
-  font: 9px 'DM Mono',monospace; color: var(--muted);
+  font: 700 9px 'DM Mono',monospace;
   letter-spacing: .12em; text-transform: uppercase;
   padding: 18px 0 7px; border-bottom: 1px solid rgba(255,255,255,.05);
+  display: flex; align-items: center; gap: 6px;
+}
+.fd-section-dot {
+  width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0;
 }
 .fd-row {
   display: flex; justify-content: space-between; align-items: flex-start;
@@ -4210,6 +4214,16 @@ const FUND_SECTIONS_MAP = {
   'Trade Balance':'Eksternal','Current Account':'Eksternal',
 };
 const FUND_SECTION_ORDER = ['Inflasi','Pertumbuhan','Ketenagakerjaan','Aktivitas','Sentimen','Permintaan','Eksternal'];
+const FUND_SECTION_COLORS = {
+  'Inflasi':        '#e67e22',
+  'Pertumbuhan':    '#27ae60',
+  'Ketenagakerjaan':'#3b9fe8',
+  'Aktivitas':      '#a78bfa',
+  'Sentimen':       '#f1c40f',
+  'Permintaan':     '#1abc9c',
+  'Eksternal':      '#7f8c8d',
+  'Lainnya':        '#6b6860',
+};
 
 function openFundDetail(cur) {
   if (!fdScores) return;
@@ -4300,7 +4314,8 @@ function _renderFundDetail() {
   [...FUND_SECTION_ORDER, 'Lainnya'].forEach(sec => {
     const rows = buckets[sec];
     if (!rows || rows.length === 0) return;
-    html += `<div class="fd-section-hdr">${sec}</div>`;
+    const sCol = FUND_SECTION_COLORS[sec] || '#6b6860';
+    html += `<div class="fd-section-hdr"><span class="fd-section-dot" style="background:${sCol}"></span><span style="color:${sCol}">${sec}</span></div>`;
     rows.forEach(([k, v]) => {
       const sig    = scoreInd(k, v.actual, v.previous);
       const sigCol = sig === 1 ? 'var(--green)' : sig === -1 ? 'var(--red)' : 'var(--text)';
