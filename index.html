@@ -3231,10 +3231,73 @@ const analisaDataCache = {};
 const analisaAiCache   = {};
 let analisaActive = { symbol: null, label: null };
 
+const LS_ANALISA_DATA = 'analisa_data_cache_v1';
+const LS_ANALISA_AI   = 'analisa_ai_cache_v1';
+const LS_ANALISA_LAST = 'analisa_last_symbol_v1';
+const LS_ANALISA_COOLDOWN = 'analisa_ai_cooldown_end';
+
+let analisaAiCooldownEnd = parseInt(localStorage.getItem(LS_ANALISA_COOLDOWN) || '0');
+let analisaAiCooldownInterval = null;
+
+function _startAnalisaCooldown() {
+  analisaAiCooldownEnd = Date.now() + 90000;
+  try { localStorage.setItem(LS_ANALISA_COOLDOWN, analisaAiCooldownEnd); } catch(e) {}
+  _tickAnalisaCooldown();
+}
+function _tickAnalisaCooldown() {
+  clearInterval(analisaAiCooldownInterval);
+  analisaAiCooldownInterval = setInterval(() => {
+    const remaining = Math.ceil((analisaAiCooldownEnd - Date.now()) / 1000);
+    const btn = document.getElementById('analisaAiBtn');
+    if (!btn) { clearInterval(analisaAiCooldownInterval); return; }
+    if (remaining > 0) {
+      btn.disabled = true;
+      btn.querySelector('span').textContent = `Tunggu ${remaining}d`;
+    } else {
+      clearInterval(analisaAiCooldownInterval);
+      btn.disabled = false;
+      btn.querySelector('span').textContent = 'Analisa AI';
+    }
+  }, 1000);
+}
+
+function _analisaSaveData(symbol) {
+  try {
+    const existing = JSON.parse(localStorage.getItem(LS_ANALISA_DATA) || '{}');
+    existing[symbol] = analisaDataCache[symbol];
+    localStorage.setItem(LS_ANALISA_DATA, JSON.stringify(existing));
+  } catch(e) {}
+}
+function _analisaSaveAi(symbol) {
+  try {
+    const existing = JSON.parse(localStorage.getItem(LS_ANALISA_AI) || '{}');
+    existing[symbol] = analisaAiCache[symbol];
+    localStorage.setItem(LS_ANALISA_AI, JSON.stringify(existing));
+  } catch(e) {}
+}
+function _analisaRestoreFromStorage() {
+  try {
+    const data = JSON.parse(localStorage.getItem(LS_ANALISA_DATA) || '{}');
+    const ai   = JSON.parse(localStorage.getItem(LS_ANALISA_AI)   || '{}');
+    const now  = Date.now();
+    // Restore data cache — discard if older than 2h (ohlcv TTL)
+    for (const [sym, d] of Object.entries(data)) {
+      if (d && d.loaded_at && (now - new Date(d.loaded_at).getTime()) < 2 * 3600 * 1000)
+        analisaDataCache[sym] = d;
+    }
+    // Restore AI cache — discard if older than 25h
+    for (const [sym, a] of Object.entries(ai)) {
+      if (a && a.saved_at && (now - a.saved_at) < 25 * 3600 * 1000)
+        analisaAiCache[sym] = a;
+    }
+  } catch(e) {}
+}
+
 async function loadAnalisa(symbol, label, chipEl) {
   document.querySelectorAll('.analisa-chip').forEach(c => c.classList.remove('active','loading'));
   if (chipEl) chipEl.classList.add('active','loading');
   analisaActive = { symbol, label };
+  try { localStorage.setItem(LS_ANALISA_LAST, symbol); } catch(e) {}
 
   const emptyEl   = document.getElementById('analisaEmpty');
   const contentEl = document.getElementById('analisaContent');
@@ -3258,6 +3321,7 @@ async function loadAnalisa(symbol, label, chipEl) {
     const res = await fetch(`/api/admin?action=ohlcv_read&symbol=${encodeURIComponent(symbol)}&label=${encodeURIComponent(label)}`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     analisaDataCache[symbol] = await res.json();
+    _analisaSaveData(symbol);
     if (analisaActive.symbol === symbol) renderAnalisa();
   } catch(e) {
     if (analisaActive.symbol === symbol)
@@ -3405,6 +3469,7 @@ function renderAnalisa() {
 async function analyzeOhlcvAi() {
   const { symbol, label } = analisaActive;
   if (!symbol) return;
+  if (Date.now() < analisaAiCooldownEnd) return;
   const btn = document.getElementById('analisaAiBtn');
   btn.classList.add('loading');
   btn.querySelector('span').textContent = 'Meminta AI...';
@@ -3428,7 +3493,8 @@ async function analyzeOhlcvAi() {
     const data = await res.json();
     if (data.commentary) {
       const hasMakro = !!ringkasanContext;
-      analisaAiCache[reqSymbol] = { commentary: data.commentary, model: data.model, hasMakro };
+      analisaAiCache[reqSymbol] = { commentary: data.commentary, model: data.model, hasMakro, saved_at: Date.now() };
+      _analisaSaveAi(reqSymbol);
       if (analisaActive.symbol === reqSymbol) {
         const srcTag = hasMakro ? ' · <span style="color:#a78bfa">teknikal + makro</span>' : ' · teknikal';
         resultEl.innerHTML = `<div class="analisa-ai-result"><div class="analisa-ai-label">🧠 AI${data.model ? ' · ' + data.model : ''}${srcTag}</div>${escHtml(data.commentary).split('\n').map(l => `<p style="margin:0 0 6px">${l}</p>`).join('')}</div>`;
@@ -3447,7 +3513,7 @@ async function analyzeOhlcvAi() {
     }
   } finally {
     btn.classList.remove('loading');
-    btn.querySelector('span').textContent = 'Analisa AI';
+    _startAnalisaCooldown();
   }
 }
 
@@ -3602,6 +3668,20 @@ document.querySelectorAll('#navViews .nvtab').forEach(btn => {
       setFeedUI(false);
       activeView = 'analisa';
       document.getElementById('analisaPanel').style.display = 'block';
+      if (Date.now() < analisaAiCooldownEnd) _tickAnalisaCooldown();
+      // Restore last viewed pair from localStorage
+      const lastSym = localStorage.getItem(LS_ANALISA_LAST);
+      if (lastSym && analisaDataCache[lastSym] && !analisaActive.symbol) {
+        const chip = document.querySelector(`.analisa-chip[onclick*="${lastSym}"]`);
+        const lastLabel = analisaDataCache[lastSym].label || lastSym;
+        analisaActive = { symbol: lastSym, label: lastLabel };
+        document.querySelectorAll('.analisa-chip').forEach(c => c.classList.remove('active'));
+        if (chip) chip.classList.add('active');
+        document.getElementById('analisaEmpty').style.display   = 'none';
+        document.getElementById('analisaContent').style.display = 'block';
+        renderAnalisa();
+        if (analisaAiCache[lastSym]) _restoreAiResult(lastSym);
+      }
     } else if (view === 'cal') {
       setFeedUI(false);
       activeView = 'cal';
@@ -5540,6 +5620,8 @@ function fetchRegime() {
 }
 
 // ── INIT ─────────────────────────────────────────────────
+_analisaRestoreFromStorage();
+
 window.addEventListener('load', () => {
   if (Notification.permission === 'granted') {
     notifEnabled = true;
