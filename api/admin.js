@@ -1158,6 +1158,13 @@ async function ohlcvSyncHandler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   if (req.method === 'OPTIONS') return res.status(204).end();
 
+  // Auth: GitHub Actions sends x-cron-secret; Vercel internal cron sends x-vercel-cron
+  const isVercelCron = req.headers['x-vercel-cron'] === '1';
+  const cronSecret   = req.headers['x-cron-secret'];
+  if (!isVercelCron && (!cronSecret || cronSecret !== process.env.CRON_SECRET)) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
   // Determine pairs: fixed set + dynamic pair from latest thesis recommendation
   const pairsToSync = [...OHLCV_FIXED_PAIRS];
   try {
@@ -1188,8 +1195,8 @@ async function ohlcvSyncHandler(req, res) {
 
       // Store 3 TFs in parallel: 1H last 72 (3D), 4H last 60 (10D), 1D last 30 (1mo)
       await Promise.all([
-        redisCmd('SET', `ohlcv:${symbol}:1h`, JSON.stringify(candles1h.slice(-72)),  'EX', '90000'), // 25h TTL
-        redisCmd('SET', `ohlcv:${symbol}:4h`, JSON.stringify(candles4h.slice(-60)),  'EX', '90000'), // 25h TTL
+        redisCmd('SET', `ohlcv:${symbol}:1h`, JSON.stringify(candles1h.slice(-72)),  'EX', '7200'),  // 2h TTL
+        redisCmd('SET', `ohlcv:${symbol}:4h`, JSON.stringify(candles4h.slice(-60)),  'EX', '7200'),  // 2h TTL
         redisCmd('SET', `ohlcv:${symbol}:1d`, JSON.stringify(candles1d.slice(-30)),  'EX', '90000'), // 25h TTL
       ]);
 
