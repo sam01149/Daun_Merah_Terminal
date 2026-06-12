@@ -34,7 +34,9 @@ module.exports = async function handler(req, res) {
   if (action === 'circuit-status')      return circuitStatusHandler(req, res);
   if (action === 'gdpnow')             return gdpnowHandler(req, res);
   if (action === 'ohlcv_sync')         return ohlcvSyncHandler(req, res);
-  return res.status(400).json({ error: 'Missing ?action= — use health, redis-keys, admin-prompts, push, fundamental_get, fundamental_seed, fundamental_refresh, fundamental_analysis, journal_import, circuit-reset, circuit-status, gdpnow, or ohlcv_sync' });
+  if (action === 'ohlcv_read')         return ohlcvReadHandler(req, res);
+  if (action === 'ohlcv_analyze')      return ohlcvAnalyzeHandler(req, res);
+  return res.status(400).json({ error: 'Missing ?action= — use health, redis-keys, admin-prompts, push, fundamental_get, fundamental_seed, fundamental_refresh, fundamental_analysis, journal_import, circuit-reset, circuit-status, gdpnow, ohlcv_sync, ohlcv_read, or ohlcv_analyze' });
 };
 
 // ── Shared Redis helper ────────────────────────────────────────────────────────
@@ -1214,6 +1216,168 @@ async function ohlcvSyncHandler(req, res) {
 
   console.log(`ohlcv_sync complete: ${synced.length}/${pairsToSync.length} synced (1H+4H+1D per pair)`);
   return res.status(200).json({ ok: true, synced, failed, synced_at: new Date().toISOString() });
+}
+
+// ── OHLCV Read — structured metrics for Analisa tab ──────────────────────────
+
+async function loadOhlcvData(symbol, label) {
+  const isXau = symbol === 'GC=F';
+  const isJpy = symbol.includes('JPY');
+  const dec   = isXau ? 2 : isJpy ? 3 : 5;
+
+  const [raw1h, raw4h, raw1d] = await Promise.all([
+    redisCmd('GET', `ohlcv:${symbol}:1h`),
+    redisCmd('GET', `ohlcv:${symbol}:4h`),
+    redisCmd('GET', `ohlcv:${symbol}:1d`),
+  ]);
+
+  const c1h = raw1h ? JSON.parse(raw1h) : null;
+  const c4h = raw4h ? JSON.parse(raw4h) : null;
+  const c1d = raw1d ? JSON.parse(raw1d) : null;
+  const out  = { symbol, label, dec, is_xau: isXau, loaded_at: new Date().toISOString() };
+  const tp   = (a, b) => (b - a) / a * 100;
+
+  // Daily
+  if (c1d && c1d.length >= 5) {
+    const hi = Math.max(...c1d.map(c => c.h)), lo = Math.min(...c1d.map(c => c.l));
+    const curr = c1d[c1d.length - 1].c, chg = +tp(c1d[0].o, curr).toFixed(2);
+    const half = Math.floor(c1d.length / 2);
+    const avgO = c1d.slice(0, half).reduce((s,c) => s+c.c, 0) / half;
+    const avgN = c1d.slice(half).reduce((s,c) => s+c.c, 0) / (c1d.length - half);
+    const t = tp(avgO, avgN);
+    const trend = t > 0.3 ? 'Uptrend' : t < -0.3 ? 'Downtrend' : 'Sideways';
+    const topR  = [...c1d].sort((a,b) => b.h - a.h).slice(0,2).map(c => +c.h.toFixed(dec));
+    const botS  = [...c1d].sort((a,b) => a.l - b.l).slice(0,2).map(c => +c.l.toFixed(dec));
+    let vol = null;
+    if (isXau) {
+      const vArr = c1d.map(c => c.v).filter(v => v > 0);
+      if (vArr.length > 3) {
+        const vAvg = Math.round(vArr.reduce((s,v) => s+v, 0) / vArr.length);
+        const vLast = c1d[c1d.length - 1].v;
+        vol = { avg: vAvg, last: vLast, status: vLast > vAvg * 1.5 ? 'HIGH' : vLast < vAvg * 0.7 ? 'low' : 'Normal' };
+      }
+    }
+    out.d1 = { available: true, high: +hi.toFixed(dec), low: +lo.toFixed(dec), current: +curr.toFixed(dec), change_pct: chg, trend, resistance: topR, support: botS, vol };
+  } else { out.d1 = { available: false }; }
+
+  // 4H
+  if (c4h && c4h.length >= 6) {
+    const hi = Math.max(...c4h.map(c => c.h)), lo = Math.min(...c4h.map(c => c.l));
+    const curr = c4h[c4h.length - 1].c, chg = +tp(c4h[0].o, curr).toFixed(2);
+    const n = Math.max(1, c4h.length - 10);
+    const avgO = c4h.slice(0, n).reduce((s,c) => s+c.c, 0) / n;
+    const avgN = c4h.slice(-10).reduce((s,c) => s+c.c, 0) / 10;
+    const t = tp(avgO, avgN);
+    const trend = t > 0.15 ? 'Uptrend' : t < -0.15 ? 'Downtrend' : 'Sideways';
+    const sH = [...c4h].sort((a,b) => b.h - a.h)[0];
+    const sL = [...c4h].sort((a,b) => a.l - b.l)[0];
+    out.h4 = { available: true, high: +hi.toFixed(dec), low: +lo.toFixed(dec), current: +curr.toFixed(dec), change_pct: chg, trend, swing_high: { price: +sH.h.toFixed(dec), t: sH.t }, swing_low: { price: +sL.l.toFixed(dec), t: sL.t } };
+  } else { out.h4 = { available: false }; }
+
+  // 1H
+  if (c1h && c1h.length >= 6) {
+    const c72 = c1h.slice(-72), c24 = c1h.slice(-24);
+    const hi = Math.max(...c72.map(c => c.h)), lo = Math.min(...c72.map(c => c.l));
+    const curr = c72[c72.length - 1].c, chg = +tp(c72[0].o, curr).toFixed(2);
+    const older = c72.slice(0, Math.max(1, c72.length - 24));
+    const avgO = older.reduce((s,c) => s+c.c, 0) / older.length;
+    const avgN = c24.reduce((s,c) => s+c.c, 0) / c24.length;
+    const t = tp(avgO, avgN);
+    const trend = t > 0.08 ? 'Uptrend' : t < -0.08 ? 'Downtrend' : 'Sideways';
+    let volAvg = 0;
+    if (isXau) {
+      const vArr = c72.map(c => c.v).filter(v => v > 0);
+      volAvg = vArr.length ? Math.round(vArr.reduce((s,v) => s+v, 0) / vArr.length) : 0;
+    }
+    out.h1 = { available: true, high: +hi.toFixed(dec), low: +lo.toFixed(dec), current: +curr.toFixed(dec), change_pct: chg, trend, candles24: c24, vol_avg: volAvg };
+  } else { out.h1 = { available: false }; }
+
+  return out;
+}
+
+function buildOhlcvText(data) {
+  const { label, dec, is_xau, d1, h4, h1 } = data;
+  const f = n => n.toFixed(dec);
+  const fmtWib = ts => {
+    const d = new Date((ts + 7 * 3600) * 1000);
+    return `${String(d.getUTCMonth()+1).padStart(2,'0')}/${String(d.getUTCDate()).padStart(2,'0')} ${String(d.getUTCHours()).padStart(2,'0')}WIB`;
+  };
+  const lines = [`${label} MULTI-TIMEFRAME`];
+  if (d1.available) {
+    lines.push(`[Daily 30D] Range: ${f(d1.low)}–${f(d1.high)} | Trend: ${d1.trend} | 30D: ${d1.change_pct >= 0 ? '+' : ''}${d1.change_pct}%`);
+    lines.push(`  Resistance: ${d1.resistance.map(f).join(', ')} | Support: ${d1.support.map(f).join(', ')}`);
+    if (is_xau && d1.vol) lines.push(`  Volume avg: ${(d1.vol.avg/1000).toFixed(0)}K | Today: ${(d1.vol.last/1000).toFixed(0)}K [${d1.vol.status}]`);
+  }
+  if (h4.available) {
+    lines.push(`[4H 10D] Range: ${f(h4.low)}–${f(h4.high)} | Trend: ${h4.trend} | 10D: ${h4.change_pct >= 0 ? '+' : ''}${h4.change_pct}%`);
+    lines.push(`  Swing High: ${f(h4.swing_high.price)} (${fmtWib(h4.swing_high.t)}) | Swing Low: ${f(h4.swing_low.price)} (${fmtWib(h4.swing_low.t)})`);
+  }
+  if (h1.available) {
+    lines.push(`[1H 3D] Range: ${f(h1.low)}–${f(h1.high)} | Now: ${f(h1.current)} | 3D: ${h1.change_pct >= 0 ? '+' : ''}${h1.change_pct}% | Trend: ${h1.trend}`);
+  }
+  return lines.join('\n');
+}
+
+async function ohlcvReadHandler(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Cache-Control', 'no-cache');
+  if (req.method === 'OPTIONS') return res.status(204).end();
+  const { symbol, label } = req.query;
+  if (!symbol) return res.status(400).json({ error: 'symbol required' });
+  try {
+    return res.status(200).json(await loadOhlcvData(symbol, label || symbol));
+  } catch(e) {
+    return res.status(500).json({ error: e.message });
+  }
+}
+
+async function ohlcvAnalyzeHandler(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Cache-Control', 'no-cache');
+  if (req.method === 'OPTIONS') return res.status(204).end();
+  const { symbol, label } = req.query;
+  if (!symbol) return res.status(400).json({ error: 'symbol required' });
+
+  try {
+    const data = await loadOhlcvData(symbol, label || symbol);
+    if (!data.h1.available) return res.status(200).json({ commentary: null, error: 'OHLCV belum tersedia — tunggu GitHub Actions sync pertama.' });
+
+    const textBlock = buildOhlcvText(data);
+    const messages  = [
+      { role: 'system', content: 'Kamu analis teknikal FX dan komoditas senior. Jawab dalam Bahasa Indonesia, 3-4 kalimat, tanpa bullet, tanpa heading. Sebut angka konkret dari data. Padat dan actionable.' },
+      { role: 'user',   content: `Analisa teknikal multi-timeframe untuk ${data.label}:\n\n${textBlock}\n\nIdentifikasi: (1) Arah trend dominan dari Daily, (2) Level resistance/support kritis dari 4H, (3) Konteks entry saat ini dari 1H — momentum mendukung entry langsung atau tunggu pullback ke level tertentu?` },
+    ];
+
+    const SAMBANOVA_KEY = process.env.SAMBANOVA_API_KEY;
+    const GROQ_KEY      = process.env.GROQ_API_KEY;
+    let commentary = null, model = null;
+
+    if (SAMBANOVA_KEY) {
+      try {
+        const r = await fetch('https://api.sambanova.ai/v1/chat/completions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SAMBANOVA_KEY}` },
+          body: JSON.stringify({ model: 'DeepSeek-V3.2', messages, max_tokens: 300, temperature: 0.3 }),
+          signal: AbortSignal.timeout(20000),
+        });
+        if (r.ok) { const j = await r.json(); commentary = j.choices?.[0]?.message?.content?.trim() || null; model = 'deepseek-v3.2'; }
+      } catch(e) { console.warn('ohlcv_analyze SambaNova failed:', e.message); }
+    }
+
+    if (!commentary && GROQ_KEY) {
+      const r = await fetch(GROQ_URL_FUND, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${GROQ_KEY}` },
+        body: JSON.stringify({ model: GROQ_MODEL_FUND, messages, max_tokens: 300, temperature: 0.3 }),
+        signal: AbortSignal.timeout(15000),
+      });
+      if (r.ok) { const j = await r.json(); commentary = j.choices?.[0]?.message?.content?.trim() || null; model = 'llama-3.3'; }
+    }
+
+    return res.status(200).json({ commentary, model, loaded_at: new Date().toISOString() });
+  } catch(e) {
+    return res.status(500).json({ error: e.message });
+  }
 }
 
 async function circuitResetHandler(req, res) {

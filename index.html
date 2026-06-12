@@ -525,6 +525,48 @@ body {
   margin-top: 6px; padding-bottom: 4px;
 }
 
+/* ── ANALISA PANEL ── */
+.analisa-inner { padding: 16px; max-width: 680px; margin: 0 auto; }
+.analisa-pairs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 16px; }
+.analisa-chip {
+  padding: 5px 12px; border-radius: 20px; border: 1px solid var(--border);
+  background: var(--surface); color: var(--text); font-size: 11px;
+  font-family: 'DM Mono', monospace; cursor: pointer; transition: all .15s;
+}
+.analisa-chip:hover { border-color: var(--accent); color: var(--accent); }
+.analisa-chip.active { background: var(--accent); border-color: var(--accent); color: #0a0f1a; font-weight: 600; }
+.analisa-chip.loading { opacity: .6; pointer-events: none; }
+.analisa-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.analisa-pair-label { font-size: 15px; font-weight: 600; font-family: 'DM Mono', monospace; }
+.analisa-ts-label { font-size: 10px; color: var(--muted); }
+.analisa-tf-card {
+  background: var(--surface); border-radius: 8px; padding: 12px 14px;
+  margin-bottom: 8px; border-left: 3px solid var(--border);
+}
+.analisa-tf-card.d1 { border-left-color: #4facfe; }
+.analisa-tf-card.h4 { border-left-color: #f5a623; }
+.analisa-tf-card.h1 { border-left-color: var(--accent); }
+.analisa-tf-label { font-size: 9px; font-weight: 700; letter-spacing: .08em; color: var(--muted); text-transform: uppercase; margin-bottom: 8px; }
+.analisa-tf-main { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-bottom: 8px; }
+.analisa-stat { display: flex; flex-direction: column; }
+.analisa-stat-label { font-size: 9px; color: var(--muted); }
+.analisa-stat-val { font-size: 13px; font-family: 'DM Mono', monospace; }
+.analisa-stat-val.up   { color: var(--green); }
+.analisa-stat-val.down { color: var(--red); }
+.analisa-levels { font-size: 10px; color: var(--muted); font-family: 'DM Mono', monospace; display: flex; gap: 16px; flex-wrap: wrap; }
+.analisa-levels .res { color: #e57373; }
+.analisa-levels .sup { color: #66bb6a; }
+.analisa-candle-table { width: 100%; border-collapse: collapse; font-family: 'DM Mono', monospace; font-size: 10px; margin-top: 8px; }
+.analisa-candle-table th { color: var(--muted); font-weight: 400; text-align: left; padding: 2px 5px; border-bottom: 1px solid var(--border); }
+.analisa-candle-table td { padding: 2px 5px; }
+.analisa-candle-table tr.bull td:nth-child(4) { color: var(--green); }
+.analisa-candle-table tr.bear td:nth-child(4) { color: var(--red); }
+.analisa-ai-result {
+  background: var(--surface); border-radius: 8px; padding: 12px 14px;
+  margin-top: 8px; font-size: 13px; line-height: 1.75; border-left: 3px solid var(--accent);
+}
+.analisa-ai-label { font-size: 9px; font-weight: 700; letter-spacing: .08em; color: var(--accent); text-transform: uppercase; margin-bottom: 6px; }
+
 /* ── COT POSITIONING ──*/
 
 /* ── COT POSITIONING ── */
@@ -1909,6 +1951,7 @@ body {
   <button class="nvtab active" data-view="feed" id="feedNavTab">NEWS</button>
   <button class="nvtab" data-view="riset" id="risetTab">ARTIKEL</button>
   <button class="nvtab" data-view="ringkasan" id="ringkasanTab">RINGKASAN</button>
+  <button class="nvtab" data-view="analisa" id="analisaTab">ANALISA</button>
   <button class="nvtab" data-view="cal" id="calTab">CAL<span id="calTabBadge" class="nvtab-badge" style="display:none">!</span></button>
   <button class="nvtab" data-view="cot" id="cotTab">COT</button>
   <button class="nvtab" data-view="fundamental" id="fundamentalTab">FUNDAMENTAL</button>
@@ -2001,6 +2044,37 @@ body {
     </div>
     <div style="margin-top:8px">
       <button id="corrBtn" class="jn-btn-sec" onclick="fetchCorrelations()" style="width:100%;font-size:10px">↻ Muat Korelasi Cross-Asset</button>
+    </div>
+  </div>
+</div>
+
+<!-- ANALISA PANEL -->
+<div class="feed-scroll" id="analisaPanel" style="display:none">
+  <div class="analisa-inner">
+    <div class="analisa-pairs">
+      <button class="analisa-chip" onclick="loadAnalisa('GC=F','XAU/USD',this)">XAU/USD</button>
+      <button class="analisa-chip" onclick="loadAnalisa('EURUSD=X','EUR/USD',this)">EUR/USD</button>
+      <button class="analisa-chip" onclick="loadAnalisa('GBPUSD=X','GBP/USD',this)">GBP/USD</button>
+      <button class="analisa-chip" onclick="loadAnalisa('USDJPY=X','USD/JPY',this)">USD/JPY</button>
+      <button class="analisa-chip" onclick="loadAnalisa('AUDUSD=X','AUD/USD',this)">AUD/USD</button>
+      <button class="analisa-chip" onclick="loadAnalisa('USDCAD=X','USD/CAD',this)">USD/CAD</button>
+      <button class="analisa-chip" onclick="loadAnalisa('USDCHF=X','USD/CHF',this)">USD/CHF</button>
+      <button class="analisa-chip" onclick="loadAnalisa('NZDUSD=X','NZD/USD',this)">NZD/USD</button>
+    </div>
+    <div class="state-box" id="analisaEmpty">
+      <div class="icon">📊</div>
+      <p>Pilih pair di atas untuk melihat<br>analisa teknikal multi-timeframe.</p>
+    </div>
+    <div id="analisaContent" style="display:none">
+      <div class="analisa-header" id="analisaHeader"></div>
+      <div id="analisaD1Card"></div>
+      <div id="analisaH4Card"></div>
+      <div id="analisaH1Card"></div>
+      <button class="ringkasan-gen-btn" id="analisaAiBtn" onclick="analyzeOhlcvAi()" style="margin-top:4px">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2a10 10 0 1 0 10 10"/><path d="M12 8v4l3 3"/></svg>
+        <span>Analisa AI</span>
+      </button>
+      <div id="analisaAiResult" style="display:none"></div>
     </div>
   </div>
 </div>
@@ -3151,6 +3225,163 @@ function escHtml(s) {
   return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
+// ── ANALISA ──────────────────────────────────────────────
+let analisaCache = { symbol: null, label: null, data: null };
+
+async function loadAnalisa(symbol, label, chipEl) {
+  document.querySelectorAll('.analisa-chip').forEach(c => c.classList.remove('active','loading'));
+  if (chipEl) chipEl.classList.add('active','loading');
+  analisaCache = { symbol, label, data: null };
+
+  const emptyEl   = document.getElementById('analisaEmpty');
+  const contentEl = document.getElementById('analisaContent');
+  emptyEl.style.display   = 'none';
+  contentEl.style.display = 'block';
+  document.getElementById('analisaHeader').innerHTML = `<span class="analisa-pair-label">${label}</span><span class="analisa-ts-label">Memuat...</span>`;
+  document.getElementById('analisaD1Card').innerHTML = '<div style="color:var(--muted);font-size:11px;padding:12px 0">Memuat data...</div>';
+  ['analisaH4Card','analisaH1Card'].forEach(id => document.getElementById(id).innerHTML = '');
+  document.getElementById('analisaAiResult').style.display = 'none';
+
+  try {
+    const res = await fetch(`/api/admin?action=ohlcv_read&symbol=${encodeURIComponent(symbol)}&label=${encodeURIComponent(label)}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    analisaCache.data = await res.json();
+    renderAnalisa();
+  } catch(e) {
+    document.getElementById('analisaD1Card').innerHTML = `<div style="color:var(--red);font-size:11px;padding:12px 0">Gagal memuat: ${escHtml(e.message)}</div>`;
+  } finally {
+    if (chipEl) chipEl.classList.remove('loading');
+  }
+}
+
+function renderAnalisa() {
+  const d = analisaCache.data;
+  if (!d) return;
+  const fmt = n => typeof n === 'number' ? n.toFixed(d.dec) : String(n);
+  const pct = n => `${n >= 0 ? '+' : ''}${n}%`;
+  const trendIcon = t => t === 'Uptrend' ? '↑' : t === 'Downtrend' ? '↓' : '→';
+  const trendCls  = t => t === 'Uptrend' ? 'up' : t === 'Downtrend' ? 'down' : '';
+  const fmtWib = ts => {
+    const dt = new Date((ts + 7 * 3600) * 1000);
+    return `${String(dt.getUTCMonth()+1).padStart(2,'0')}/${String(dt.getUTCDate()).padStart(2,'0')} ${String(dt.getUTCHours()).padStart(2,'0')}WIB`;
+  };
+
+  const ts  = new Date(d.loaded_at);
+  const wib = new Date(ts.getTime() + 7 * 3600000);
+  const tsStr = `${String(wib.getUTCHours()).padStart(2,'0')}:${String(wib.getUTCMinutes()).padStart(2,'0')} WIB`;
+
+  document.getElementById('analisaHeader').innerHTML = `
+    <span class="analisa-pair-label">${escHtml(d.label)}</span>
+    <span class="analisa-ts-label">${tsStr} · <a href="#" onclick="loadAnalisa('${d.symbol}','${d.label}',document.querySelector('.analisa-chip.active'));return false" style="color:var(--accent);text-decoration:none">↻ refresh</a></span>`;
+
+  // Daily card
+  const d1 = d.d1;
+  if (d1.available) {
+    let volHtml = '';
+    if (d.is_xau && d1.vol) {
+      const vc = d1.vol.status === 'HIGH' ? 'up' : d1.vol.status === 'low' ? 'down' : '';
+      volHtml = `<div class="analisa-stat"><div class="analisa-stat-label">VOL TODAY</div><div class="analisa-stat-val ${vc}">${(d1.vol.last/1000).toFixed(0)}K <small>[${d1.vol.status}]</small></div></div>`;
+    }
+    document.getElementById('analisaD1Card').innerHTML = `
+      <div class="analisa-tf-card d1">
+        <div class="analisa-tf-label">MAKRO — Daily 30D</div>
+        <div class="analisa-tf-main">
+          <div class="analisa-stat"><div class="analisa-stat-label">TREND</div><div class="analisa-stat-val ${trendCls(d1.trend)}">${trendIcon(d1.trend)} ${d1.trend}</div></div>
+          <div class="analisa-stat"><div class="analisa-stat-label">NOW</div><div class="analisa-stat-val">${fmt(d1.current)}</div></div>
+          <div class="analisa-stat"><div class="analisa-stat-label">RANGE 30D</div><div class="analisa-stat-val">${fmt(d1.low)} – ${fmt(d1.high)}</div></div>
+          <div class="analisa-stat"><div class="analisa-stat-label">30D</div><div class="analisa-stat-val ${d1.change_pct >= 0 ? 'up' : 'down'}">${pct(d1.change_pct)}</div></div>
+          ${volHtml}
+        </div>
+        <div class="analisa-levels">
+          <span>Resistance: <span class="res">${d1.resistance.map(fmt).join(' · ')}</span></span>
+          <span>Support: <span class="sup">${d1.support.map(fmt).join(' · ')}</span></span>
+        </div>
+      </div>`;
+  } else {
+    document.getElementById('analisaD1Card').innerHTML = `<div class="analisa-tf-card d1"><div class="analisa-tf-label">MAKRO — Daily 30D</div><div style="color:var(--muted);font-size:11px">Data belum tersedia — tunggu sync.</div></div>`;
+  }
+
+  // 4H card
+  const h4 = d.h4;
+  if (h4.available) {
+    document.getElementById('analisaH4Card').innerHTML = `
+      <div class="analisa-tf-card h4">
+        <div class="analisa-tf-label">SWING — 4H 10D</div>
+        <div class="analisa-tf-main">
+          <div class="analisa-stat"><div class="analisa-stat-label">TREND</div><div class="analisa-stat-val ${trendCls(h4.trend)}">${trendIcon(h4.trend)} ${h4.trend}</div></div>
+          <div class="analisa-stat"><div class="analisa-stat-label">NOW</div><div class="analisa-stat-val">${fmt(h4.current)}</div></div>
+          <div class="analisa-stat"><div class="analisa-stat-label">RANGE 10D</div><div class="analisa-stat-val">${fmt(h4.low)} – ${fmt(h4.high)}</div></div>
+          <div class="analisa-stat"><div class="analisa-stat-label">10D</div><div class="analisa-stat-val ${h4.change_pct >= 0 ? 'up' : 'down'}">${pct(h4.change_pct)}</div></div>
+        </div>
+        <div class="analisa-levels">
+          <span>Swing High: <span class="res">${fmt(h4.swing_high.price)}</span> · ${fmtWib(h4.swing_high.t)}</span>
+          <span>Swing Low: <span class="sup">${fmt(h4.swing_low.price)}</span> · ${fmtWib(h4.swing_low.t)}</span>
+        </div>
+      </div>`;
+  } else {
+    document.getElementById('analisaH4Card').innerHTML = `<div class="analisa-tf-card h4"><div class="analisa-tf-label">SWING — 4H 10D</div><div style="color:var(--muted);font-size:11px">Data belum tersedia.</div></div>`;
+  }
+
+  // 1H card + candle table
+  const h1 = d.h1;
+  if (h1.available) {
+    const volHeader = d.is_xau ? '<th>Vol</th>' : '';
+    const rows = h1.candles24.slice().reverse().map(c => {
+      const bull = c.c >= c.o;
+      const wib2 = new Date((c.t + 7 * 3600) * 1000);
+      const ts2  = `${String(wib2.getUTCMonth()+1).padStart(2,'0')}/${String(wib2.getUTCDate()).padStart(2,'0')} ${String(wib2.getUTCHours()).padStart(2,'0')}WIB`;
+      let volTd  = '';
+      if (d.is_xau) {
+        const vLabel = c.v > h1.vol_avg * 1.5 ? ' ▲' : c.v < h1.vol_avg * 0.7 ? ' ▼' : '';
+        volTd = c.v > 0 ? `<td>${(c.v/1000).toFixed(1)}K${vLabel}</td>` : '<td>—</td>';
+      }
+      return `<tr class="${bull?'bull':'bear'}"><td>${ts2}</td><td>${fmt(c.h)}</td><td>${fmt(c.l)}</td><td>${fmt(c.c)}</td>${volTd}</tr>`;
+    }).join('');
+    document.getElementById('analisaH1Card').innerHTML = `
+      <div class="analisa-tf-card h1">
+        <div class="analisa-tf-label">ENTRY — 1H 3D</div>
+        <div class="analisa-tf-main">
+          <div class="analisa-stat"><div class="analisa-stat-label">TREND</div><div class="analisa-stat-val ${trendCls(h1.trend)}">${trendIcon(h1.trend)} ${h1.trend}</div></div>
+          <div class="analisa-stat"><div class="analisa-stat-label">NOW</div><div class="analisa-stat-val">${fmt(h1.current)}</div></div>
+          <div class="analisa-stat"><div class="analisa-stat-label">RANGE 3D</div><div class="analisa-stat-val">${fmt(h1.low)} – ${fmt(h1.high)}</div></div>
+          <div class="analisa-stat"><div class="analisa-stat-label">3D</div><div class="analisa-stat-val ${h1.change_pct >= 0 ? 'up' : 'down'}">${pct(h1.change_pct)}</div></div>
+        </div>
+        <table class="analisa-candle-table">
+          <thead><tr><th>Waktu</th><th>High</th><th>Low</th><th>Close</th>${volHeader}</tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>`;
+  } else {
+    document.getElementById('analisaH1Card').innerHTML = `<div class="analisa-tf-card h1"><div class="analisa-tf-label">ENTRY — 1H 3D</div><div style="color:var(--muted);font-size:11px">Data belum tersedia.</div></div>`;
+  }
+}
+
+async function analyzeOhlcvAi() {
+  const { symbol, label } = analisaCache;
+  if (!symbol) return;
+  const btn = document.getElementById('analisaAiBtn');
+  btn.classList.add('loading');
+  btn.querySelector('span').textContent = 'Meminta AI...';
+  const resultEl = document.getElementById('analisaAiResult');
+  resultEl.style.display = 'none';
+  try {
+    const res  = await fetch(`/api/admin?action=ohlcv_analyze&symbol=${encodeURIComponent(symbol)}&label=${encodeURIComponent(label)}`);
+    const data = await res.json();
+    if (data.commentary) {
+      resultEl.innerHTML = `<div class="analisa-ai-result"><div class="analisa-ai-label">🧠 AI Commentary${data.model ? ' · ' + data.model : ''}</div>${escHtml(data.commentary).split('\n').map(l => `<p style="margin:0 0 6px">${l}</p>`).join('')}</div>`;
+    } else {
+      resultEl.innerHTML = `<div class="analisa-ai-result" style="color:var(--muted)">AI tidak tersedia — ${escHtml(data.error || 'coba beberapa saat lagi')}.</div>`;
+    }
+    resultEl.style.display = 'block';
+  } catch(e) {
+    resultEl.innerHTML = `<div class="analisa-ai-result" style="color:var(--red)">Error: ${escHtml(e.message)}</div>`;
+    resultEl.style.display = 'block';
+  } finally {
+    btn.classList.remove('loading');
+    btn.querySelector('span').textContent = 'Analisa AI';
+  }
+}
+
 function highlightInline(html) {
   // Standalone currency codes — skip if adjacent to / (part of pair like EUR/USD)
   html = html.replace(/\b(USD|EUR|GBP|JPY|CAD|AUD|NZD|CHF|CNY|DXY|XAU)\b/g, (m, _, offset, str) => {
@@ -3268,7 +3499,7 @@ function setFeedUI(show) {
 }
 
 function hideAllPanels() {
-  ['feedScroll','risetPanel','ringkasanPanel','calPanel','cotPanel','fundamentalPanel','checklistPanel','sizingPanel','jurnalPanel','petunjukPanel','teknikalPanel']
+  ['feedScroll','risetPanel','ringkasanPanel','analisaPanel','calPanel','cotPanel','fundamentalPanel','checklistPanel','sizingPanel','jurnalPanel','petunjukPanel','teknikalPanel']
     .forEach(id => { document.getElementById(id).style.display = 'none'; });
   const db = document.getElementById('dashboardPanel');
   if (db) db.classList.remove('visible');
@@ -3298,6 +3529,10 @@ document.querySelectorAll('#navViews .nvtab').forEach(btn => {
       document.getElementById('ringkasanPanel').style.display = 'block';
       if (!ringkasanCache) loadCachedRingkasan(); else renderRingkasan();
       if (Date.now() < ringkasanCooldownEnd) tickCooldown();
+    } else if (view === 'analisa') {
+      setFeedUI(false);
+      activeView = 'analisa';
+      document.getElementById('analisaPanel').style.display = 'block';
     } else if (view === 'cal') {
       setFeedUI(false);
       activeView = 'cal';
@@ -8012,8 +8247,8 @@ document.addEventListener('click', function(e) {
 
 // ── SWIPE NAVIGATION ─────────────────────────────────────────
 (function() {
-  const VIEWS = ['dashboard','feed','riset','ringkasan','cal','cot','fundamental','checklist','sizing','jurnal','petunjuk','teknikal'];
-  const PANEL_ID = { feed:'feedScroll', riset:'risetPanel', ringkasan:'ringkasanPanel', cal:'calPanel', cot:'cotPanel', fundamental:'fundamentalPanel', checklist:'checklistPanel', sizing:'sizingPanel', jurnal:'jurnalPanel', petunjuk:'petunjukPanel', teknikal:'teknikalPanel', dashboard:'dashboardPanel' };
+  const VIEWS = ['dashboard','feed','riset','ringkasan','analisa','cal','cot','fundamental','checklist','sizing','jurnal','petunjuk','teknikal'];
+  const PANEL_ID = { feed:'feedScroll', riset:'risetPanel', ringkasan:'ringkasanPanel', analisa:'analisaPanel', cal:'calPanel', cot:'cotPanel', fundamental:'fundamentalPanel', checklist:'checklistPanel', sizing:'sizingPanel', jurnal:'jurnalPanel', petunjuk:'petunjukPanel', teknikal:'teknikalPanel', dashboard:'dashboardPanel' };
   const MIN_X = 60;
   let sx = 0, sy = 0;
   document.addEventListener('touchstart', function(e) {
