@@ -1344,8 +1344,8 @@ async function ohlcvAnalyzeHandler(req, res) {
 
     const textBlock = buildOhlcvText(data);
     const messages  = [
-      { role: 'system', content: 'Kamu analis teknikal FX dan komoditas senior. Jawab dalam Bahasa Indonesia, 3-4 kalimat, tanpa bullet, tanpa heading. Sebut angka konkret dari data. Padat dan actionable.' },
-      { role: 'user',   content: `Analisa teknikal multi-timeframe untuk ${data.label}:\n\n${textBlock}\n\nIdentifikasi: (1) Arah trend dominan dari Daily, (2) Level resistance/support kritis dari 4H, (3) Konteks entry saat ini dari 1H — momentum mendukung entry langsung atau tunggu pullback ke level tertentu?` },
+      { role: 'system', content: 'Kamu analis teknikal FX dan komoditas senior. Jawab dalam Bahasa Indonesia, 4-5 kalimat, tanpa bullet, tanpa heading. Sebut angka konkret dari data. Padat dan actionable.' },
+      { role: 'user',   content: `Analisa teknikal multi-timeframe untuk ${data.label}:\n\n${textBlock}\n\nIdentifikasi: (1) Arah trend dominan dari Daily, (2) Level resistance/support kritis dari 4H — sebut angka spesifik dari Swing High/Low, (3) Konteks entry dari 1H — momentum mendukung entry langsung atau tunggu pullback ke level tertentu, (4) Level invalidasi — berdasarkan Swing Low 4H atau Support Daily, di level mana thesis ini gugur${data.is_xau ? ', (5) Konfirmasi volume XAU — apakah volume mendukung atau meragukan pergerakan harga saat ini (HIGH = konfirmasi kuat, low = lemah/tidak terkonfirmasi)' : ''}.` },
     ];
 
     const SAMBANOVA_KEY = process.env.SAMBANOVA_API_KEY;
