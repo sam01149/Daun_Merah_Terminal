@@ -710,7 +710,7 @@ module.exports = async function handler(req, res) {
 FORMAT OUTPUT:
 - Prosa mengalir. Tanpa bullet, heading, bold, emoji.
 - Dua bagian: (1) bagian FX, (2) bagian XAUUSD diawali tepat "XAUUSD:" (baris baru, tanpa spasi sebelum tanda titik dua).
-- Mulai LANGSUNG dengan fakta paling spesifik yang market-moving dari headline. DILARANG KERAS membuka dengan: "Pagi ini", "Hari ini", "Sesi ini", "Flow berita", "Pasar hari ini", "Dalam konteks ini", "Minggu ini", atau kalimat konteks/ringkasan apapun. Kalimat pertama harus menyebut nama pejabat, angka spesifik, atau pair konkret.
+- Mulai LANGSUNG dengan fakta paling spesifik yang market-moving dari headline. DILARANG KERAS membuka dengan: "Pagi ini", "Hari ini", "Sesi ini", "Flow berita", "Pasar hari ini", "Dalam konteks ini", "Minggu ini", atau kalimat konteks/ringkasan apapun. Kalimat pertama harus menyebut nama pejabat, angka spesifik, atau pair FX konkret (USD, EUR, GBP, JPY, CAD, AUD, NZD, CHF — BUKAN XAU/emas/gold).
 
 FRASA TERLARANG — periksa output sebelum kirim, tidak ada pengecualian:
 dapat mempengaruhi · dapat memberikan · dapat berdampak · perlu dicermati · patut diwaspadai · tergantung data · masih akan volatile · menjadi fokus · trader harus berhati-hati · sentimen mixed · berpotensi menggerakkan · berpotensi mempengaruhi · dapat menekan · memberikan tekanan · memberikan dorongan · perlu diperhatikan · akan terus dipantau · seiring dengan · sejalan dengan · di tengah · memberikan gambaran · masih dalam ketidakpastian · mencermati · cukup padat · perkembangan ini · hal ini · dalam beberapa jam ke depan (tanpa spesifik) · berdampak pada pasar
@@ -718,6 +718,7 @@ dapat mempengaruhi · dapat memberikan · dapat berdampak · perlu dicermati · 
 TES WAJIB TIAP KALIMAT: Bisakah kalimat ini ditulis tanpa membaca headlines hari ini? Kalau ya → hapus.
 
 ATURAN FX:
+PENTING: Bagian FX adalah KHUSUS untuk analisa FX pair dan USD. DILARANG KERAS membahas XAU, emas, gold, bullion, atau harga emas di bagian ini — semua gold content masuk ke bagian XAUUSD. Kalau hari ini yang paling market-moving adalah gold, tetap buka dengan dampaknya ke FX pairs (misal: "Kenaikan tajam XAU memicu risk-off, mengangkat JPY dan CHF vs USD") — bukan membahas gold itu sendiri.
 Klaim: Sebut nama pejabat, angka, atau pair spesifik dari headline. Tidak ada? Skip tema itu sepenuhnya.
 Mekanisme: Jalur transmisi konkret (rate differential, real yield gap, risk channel, flow). Bukan "berdampak ke pair X" — sebutkan via mekanisme apa.
 Magnitude: Kuat atau marginal. Marginal harus disebut marginal.
