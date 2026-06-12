@@ -1225,16 +1225,36 @@ async function loadOhlcvData(symbol, label) {
   const isJpy = symbol.includes('JPY');
   const dec   = isXau ? 2 : isJpy ? 3 : 5;
 
-  const [raw1h, raw4h, raw1d] = await Promise.all([
+  const [raw1h, raw4h, raw1d, rawAtr] = await Promise.all([
     redisCmd('GET', `ohlcv:${symbol}:1h`),
     redisCmd('GET', `ohlcv:${symbol}:4h`),
     redisCmd('GET', `ohlcv:${symbol}:1d`),
+    redisCmd('GET', `atr:${symbol}`),
   ]);
 
   const c1h = raw1h ? JSON.parse(raw1h) : null;
   const c4h = raw4h ? JSON.parse(raw4h) : null;
   const c1d = raw1d ? JSON.parse(raw1d) : null;
+  const atr = rawAtr ? JSON.parse(rawAtr) : null;
   const out  = { symbol, label, dec, is_xau: isXau, loaded_at: new Date().toISOString() };
+
+  // Indicators (RSI/SMA from correlations ATR cache — may be null if TEK tab never loaded)
+  if (atr && atr.rsi_14 != null) {
+    const rsi = atr.rsi_14;
+    const rsiLabel = rsi >= 70 ? 'Overbought' : rsi <= 30 ? 'Oversold' : rsi >= 55 ? 'Bullish' : rsi <= 45 ? 'Bearish' : 'Neutral';
+    out.indicators = {
+      available:      true,
+      rsi_14:         rsi,
+      rsi_label:      rsiLabel,
+      sma_50:         atr.sma_50   != null ? +atr.sma_50.toFixed(dec)  : null,
+      sma_200:        atr.sma_200  != null ? +atr.sma_200.toFixed(dec) : null,
+      vs_sma50:       atr.price_vs_sma50  || null,
+      vs_sma200:      atr.price_vs_sma200 || null,
+      computed_at:    atr.computed_at || null,
+    };
+  } else {
+    out.indicators = { available: false };
+  }
   const tp   = (a, b) => (b - a) / a * 100;
 
   // Daily
@@ -1315,6 +1335,14 @@ function buildOhlcvText(data) {
   if (h1.available) {
     lines.push(`[1H 3D] Range: ${f(h1.low)}–${f(h1.high)} | Now: ${f(h1.current)} | 3D: ${h1.change_pct >= 0 ? '+' : ''}${h1.change_pct}% | Trend: ${h1.trend}`);
   }
+  if (data.indicators?.available) {
+    const ind = data.indicators;
+    const smaLine = [
+      ind.sma_50  != null ? `SMA 50: ${f(ind.sma_50)} (price ${ind.vs_sma50})` : null,
+      ind.sma_200 != null ? `SMA 200: ${f(ind.sma_200)} (price ${ind.vs_sma200})` : null,
+    ].filter(Boolean).join(' | ');
+    lines.push(`[INDIKATOR Daily] RSI 14: ${ind.rsi_14} (${ind.rsi_label}) | ${smaLine}`);
+  }
   return lines.join('\n');
 }
 
@@ -1345,7 +1373,7 @@ async function ohlcvAnalyzeHandler(req, res) {
     const textBlock = buildOhlcvText(data);
     const messages  = [
       { role: 'system', content: 'Kamu analis teknikal FX dan komoditas senior. Jawab dalam Bahasa Indonesia, 4-5 kalimat, tanpa bullet, tanpa heading. Sebut angka konkret dari data. Padat dan actionable.' },
-      { role: 'user',   content: `Analisa teknikal multi-timeframe untuk ${data.label}:\n\n${textBlock}\n\nIdentifikasi: (1) Arah trend dominan dari Daily, (2) Level resistance/support kritis dari 4H — sebut angka spesifik dari Swing High/Low, (3) Konteks entry dari 1H — momentum mendukung entry langsung atau tunggu pullback ke level tertentu, (4) Level invalidasi — berdasarkan Swing Low 4H atau Support Daily, di level mana thesis ini gugur${data.is_xau ? ', (5) Konfirmasi volume XAU — apakah volume mendukung atau meragukan pergerakan harga saat ini (HIGH = konfirmasi kuat, low = lemah/tidak terkonfirmasi)' : ''}.` },
+      { role: 'user',   content: `Analisa teknikal multi-timeframe untuk ${data.label}:\n\n${textBlock}\n\nIdentifikasi: (1) Arah trend dominan dari Daily, (2) Level resistance/support kritis dari 4H — sebut angka spesifik dari Swing High/Low, (3) Konteks entry dari 1H — momentum mendukung entry langsung atau tunggu pullback ke level tertentu, (4) Level invalidasi — berdasarkan Swing Low 4H atau Support Daily, di level mana thesis ini gugur${data.is_xau ? ', (5) Konfirmasi volume XAU — apakah volume mendukung atau meragukan pergerakan harga saat ini (HIGH = konfirmasi kuat, low = lemah/tidak terkonfirmasi)' : ''}${data.indicators?.available ? `, (${data.is_xau ? 6 : 5}) Gunakan RSI 14 dan posisi harga vs SMA 50/200 (dari data INDIKATOR) untuk konfirmasi momentum — RSI overbought/oversold sebagai sinyal reversal risk, SMA 50/200 sebagai dynamic support/resistance jangka menengah-panjang` : ''}.` },
     ];
 
     const SAMBANOVA_KEY = process.env.SAMBANOVA_API_KEY;

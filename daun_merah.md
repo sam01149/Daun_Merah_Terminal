@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-06-12 (session 56 — OHLCV upgrade: Daily 30D + 4H 10D + volume GC=F; multi-TF AI context)
+> **Last updated:** 2026-06-12 (session 57 — Analisa tab: indikator RSI/SMA card; cache per-pair; AI commentary persist saat switch pair)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Financial_Feed_App`
 > **Production URL:** https://financial-feed-app.vercel.app

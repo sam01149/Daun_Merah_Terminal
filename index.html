@@ -2070,6 +2070,7 @@ body {
       <div id="analisaD1Card"></div>
       <div id="analisaH4Card"></div>
       <div id="analisaH1Card"></div>
+      <div id="analisaIndCard"></div>
       <button class="ringkasan-gen-btn" id="analisaAiBtn" onclick="analyzeOhlcvAi()" style="margin-top:4px">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2a10 10 0 1 0 10 10"/><path d="M12 8v4l3 3"/></svg>
         <span>Analisa AI</span>
@@ -3226,36 +3227,56 @@ function escHtml(s) {
 }
 
 // ── ANALISA ──────────────────────────────────────────────
-let analisaCache = { symbol: null, label: null, data: null };
+const analisaDataCache = {};
+const analisaAiCache   = {};
+let analisaActive = { symbol: null, label: null };
 
 async function loadAnalisa(symbol, label, chipEl) {
   document.querySelectorAll('.analisa-chip').forEach(c => c.classList.remove('active','loading'));
   if (chipEl) chipEl.classList.add('active','loading');
-  analisaCache = { symbol, label, data: null };
+  analisaActive = { symbol, label };
 
   const emptyEl   = document.getElementById('analisaEmpty');
   const contentEl = document.getElementById('analisaContent');
+  const resultEl  = document.getElementById('analisaAiResult');
   emptyEl.style.display   = 'none';
   contentEl.style.display = 'block';
-  document.getElementById('analisaHeader').innerHTML = `<span class="analisa-pair-label">${label}</span><span class="analisa-ts-label">Memuat...</span>`;
-  document.getElementById('analisaD1Card').innerHTML = '<div style="color:var(--muted);font-size:11px;padding:12px 0">Memuat data...</div>';
-  ['analisaH4Card','analisaH1Card'].forEach(id => document.getElementById(id).innerHTML = '');
-  document.getElementById('analisaAiResult').style.display = 'none';
+
+  // Render from cache instantly if available
+  if (analisaDataCache[symbol]) {
+    renderAnalisa();
+    if (analisaAiCache[symbol]) _restoreAiResult(symbol);
+    else resultEl.style.display = 'none';
+  } else {
+    document.getElementById('analisaHeader').innerHTML = `<span class="analisa-pair-label">${label}</span><span class="analisa-ts-label">Memuat...</span>`;
+    document.getElementById('analisaD1Card').innerHTML = '<div style="color:var(--muted);font-size:11px;padding:12px 0">Memuat data...</div>';
+    ['analisaH4Card','analisaH1Card','analisaIndCard'].forEach(id => document.getElementById(id).innerHTML = '');
+    resultEl.style.display = 'none';
+  }
 
   try {
     const res = await fetch(`/api/admin?action=ohlcv_read&symbol=${encodeURIComponent(symbol)}&label=${encodeURIComponent(label)}`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    analisaCache.data = await res.json();
-    renderAnalisa();
+    analisaDataCache[symbol] = await res.json();
+    if (analisaActive.symbol === symbol) renderAnalisa();
   } catch(e) {
-    document.getElementById('analisaD1Card').innerHTML = `<div style="color:var(--red);font-size:11px;padding:12px 0">Gagal memuat: ${escHtml(e.message)}</div>`;
+    if (analisaActive.symbol === symbol)
+      document.getElementById('analisaD1Card').innerHTML = `<div style="color:var(--red);font-size:11px;padding:12px 0">Gagal memuat: ${escHtml(e.message)}</div>`;
   } finally {
     if (chipEl) chipEl.classList.remove('loading');
   }
 }
 
+function _restoreAiResult(symbol) {
+  const cached = analisaAiCache[symbol];
+  if (!cached) return;
+  const resultEl = document.getElementById('analisaAiResult');
+  resultEl.innerHTML = `<div class="analisa-ai-result"><div class="analisa-ai-label">🧠 AI Commentary${cached.model ? ' · ' + cached.model : ''} <span style="color:var(--muted);font-size:10px">(cached)</span></div>${escHtml(cached.commentary).split('\n').map(l => `<p style="margin:0 0 6px">${l}</p>`).join('')}</div>`;
+  resultEl.style.display = 'block';
+}
+
 function renderAnalisa() {
-  const d = analisaCache.data;
+  const d = analisaDataCache[analisaActive.symbol];
   if (!d) return;
   const fmt = n => typeof n === 'number' ? n.toFixed(d.dec) : String(n);
   const pct = n => `${n >= 0 ? '+' : ''}${n}%`;
@@ -3354,28 +3375,61 @@ function renderAnalisa() {
   } else {
     document.getElementById('analisaH1Card').innerHTML = `<div class="analisa-tf-card h1"><div class="analisa-tf-label">ENTRY — 1H 3D</div><div style="color:var(--muted);font-size:11px">Data belum tersedia.</div></div>`;
   }
+
+  // Indicator card
+  const indEl = document.getElementById('analisaIndCard');
+  if (d.indicators?.available) {
+    const ind = d.indicators;
+    const rsiNum  = +ind.rsi_14;
+    const rsiCls  = rsiNum >= 70 ? 'down' : rsiNum <= 30 ? 'up' : rsiNum >= 55 ? 'up' : rsiNum <= 45 ? 'down' : '';
+    const sma50Html = ind.sma_50 != null
+      ? `<div class="analisa-stat"><div class="analisa-stat-label">SMA 50</div><div class="analisa-stat-val">${fmt(ind.sma_50)} <small style="color:var(--muted)">${ind.vs_sma50||''}</small></div></div>`
+      : '';
+    const sma200Html = ind.sma_200 != null
+      ? `<div class="analisa-stat"><div class="analisa-stat-label">SMA 200</div><div class="analisa-stat-val">${fmt(ind.sma_200)} <small style="color:var(--muted)">${ind.vs_sma200||''}</small></div></div>`
+      : '';
+    indEl.innerHTML = `
+      <div class="analisa-tf-card" style="border-left-color:#a78bfa">
+        <div class="analisa-tf-label">INDIKATOR — RSI / SMA</div>
+        <div class="analisa-tf-main">
+          <div class="analisa-stat"><div class="analisa-stat-label">RSI 14</div><div class="analisa-stat-val ${rsiCls}">${rsiNum} <small>${ind.rsi_label||''}</small></div></div>
+          ${sma50Html}${sma200Html}
+        </div>
+      </div>`;
+  } else {
+    indEl.innerHTML = '';
+  }
 }
 
 async function analyzeOhlcvAi() {
-  const { symbol, label } = analisaCache;
+  const { symbol, label } = analisaActive;
   if (!symbol) return;
   const btn = document.getElementById('analisaAiBtn');
   btn.classList.add('loading');
   btn.querySelector('span').textContent = 'Meminta AI...';
   const resultEl = document.getElementById('analisaAiResult');
   resultEl.style.display = 'none';
+  const reqSymbol = symbol;
   try {
     const res  = await fetch(`/api/admin?action=ohlcv_analyze&symbol=${encodeURIComponent(symbol)}&label=${encodeURIComponent(label)}`);
     const data = await res.json();
     if (data.commentary) {
-      resultEl.innerHTML = `<div class="analisa-ai-result"><div class="analisa-ai-label">🧠 AI Commentary${data.model ? ' · ' + data.model : ''}</div>${escHtml(data.commentary).split('\n').map(l => `<p style="margin:0 0 6px">${l}</p>`).join('')}</div>`;
+      analisaAiCache[reqSymbol] = { commentary: data.commentary, model: data.model };
+      if (analisaActive.symbol === reqSymbol) {
+        resultEl.innerHTML = `<div class="analisa-ai-result"><div class="analisa-ai-label">🧠 AI Commentary${data.model ? ' · ' + data.model : ''}</div>${escHtml(data.commentary).split('\n').map(l => `<p style="margin:0 0 6px">${l}</p>`).join('')}</div>`;
+        resultEl.style.display = 'block';
+      }
     } else {
-      resultEl.innerHTML = `<div class="analisa-ai-result" style="color:var(--muted)">AI tidak tersedia — ${escHtml(data.error || 'coba beberapa saat lagi')}.</div>`;
+      if (analisaActive.symbol === reqSymbol) {
+        resultEl.innerHTML = `<div class="analisa-ai-result" style="color:var(--muted)">AI tidak tersedia — ${escHtml(data.error || 'coba beberapa saat lagi')}.</div>`;
+        resultEl.style.display = 'block';
+      }
     }
-    resultEl.style.display = 'block';
   } catch(e) {
-    resultEl.innerHTML = `<div class="analisa-ai-result" style="color:var(--red)">Error: ${escHtml(e.message)}</div>`;
-    resultEl.style.display = 'block';
+    if (analisaActive.symbol === reqSymbol) {
+      resultEl.innerHTML = `<div class="analisa-ai-result" style="color:var(--red)">Error: ${escHtml(e.message)}</div>`;
+      resultEl.style.display = 'block';
+    }
   } finally {
     btn.classList.remove('loading');
     btn.querySelector('span').textContent = 'Analisa AI';
