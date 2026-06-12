@@ -25,7 +25,7 @@
     },
     {
       "path": "/api/admin?action=ohlcv_sync",
-      "schedule": "0 * * * *"
+      "schedule": "0 0 * * *"
     }
   ]
 }

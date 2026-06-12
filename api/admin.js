@@ -1188,8 +1188,8 @@ async function ohlcvSyncHandler(req, res) {
 
       // Store 3 TFs in parallel: 1H last 72 (3D), 4H last 60 (10D), 1D last 30 (1mo)
       await Promise.all([
-        redisCmd('SET', `ohlcv:${symbol}:1h`, JSON.stringify(candles1h.slice(-72)),  'EX', '28800'), // 8h TTL
-        redisCmd('SET', `ohlcv:${symbol}:4h`, JSON.stringify(candles4h.slice(-60)),  'EX', '28800'), // 8h TTL
+        redisCmd('SET', `ohlcv:${symbol}:1h`, JSON.stringify(candles1h.slice(-72)),  'EX', '90000'), // 25h TTL
+        redisCmd('SET', `ohlcv:${symbol}:4h`, JSON.stringify(candles4h.slice(-60)),  'EX', '90000'), // 25h TTL
         redisCmd('SET', `ohlcv:${symbol}:1d`, JSON.stringify(candles1d.slice(-30)),  'EX', '90000'), // 25h TTL
       ]);
 
