@@ -33,7 +33,8 @@ module.exports = async function handler(req, res) {
   if (action === 'circuit-reset')       return circuitResetHandler(req, res);
   if (action === 'circuit-status')      return circuitStatusHandler(req, res);
   if (action === 'gdpnow')             return gdpnowHandler(req, res);
-  return res.status(400).json({ error: 'Missing ?action= — use health, redis-keys, admin-prompts, push, fundamental_get, fundamental_seed, fundamental_refresh, fundamental_analysis, journal_import, circuit-reset, circuit-status, or gdpnow' });
+  if (action === 'ohlcv_sync')         return ohlcvSyncHandler(req, res);
+  return res.status(400).json({ error: 'Missing ?action= — use health, redis-keys, admin-prompts, push, fundamental_get, fundamental_seed, fundamental_refresh, fundamental_analysis, journal_import, circuit-reset, circuit-status, gdpnow, or ohlcv_sync' });
 };
 
 // ── Shared Redis helper ────────────────────────────────────────────────────────
@@ -1055,6 +1056,100 @@ async function gdpnowHandler(req, res) {
     console.warn('gdpnow failed:', e.message);
     return res.status(500).json({ error: e.message });
   }
+}
+
+// ── OHLCV Sync — called by Vercel cron every hour ────────────────────────────
+// Fetches 1H candles for fixed pairs + dynamic pair from latest_thesis.
+// Stores as JSON array in Redis (key: ohlcv:{symbol}:1h, TTL 8h, max 120 candles).
+// Self-healing: if Yahoo fails for one pair, others still sync. TTL ensures stale data
+// expires automatically if the cron stops running.
+
+const OHLCV_FIXED_PAIRS = [
+  { symbol: 'GC=F',     label: 'XAU/USD' },
+  { symbol: 'EURUSD=X', label: 'EUR/USD' },
+  { symbol: 'GBPUSD=X', label: 'GBP/USD' },
+  { symbol: 'USDJPY=X', label: 'USD/JPY' },
+  { symbol: 'AUDUSD=X', label: 'AUD/USD' },
+  { symbol: 'USDCAD=X', label: 'USD/CAD' },
+  { symbol: 'USDCHF=X', label: 'USD/CHF' },
+  { symbol: 'NZDUSD=X', label: 'NZD/USD' },
+];
+
+const OHLCV_PAIR_SYMBOL_MAP = {
+  'EUR/USD': 'EURUSD=X', 'GBP/USD': 'GBPUSD=X', 'USD/JPY': 'USDJPY=X',
+  'AUD/USD': 'AUDUSD=X', 'USD/CAD': 'USDCAD=X', 'USD/CHF': 'USDCHF=X',
+  'NZD/USD': 'NZDUSD=X', 'EUR/JPY': 'EURJPY=X', 'GBP/JPY': 'GBPJPY=X',
+  'EUR/GBP': 'EURGBP=X', 'AUD/JPY': 'AUDJPY=X', 'EUR/AUD': 'EURAUD=X',
+  'GBP/AUD': 'GBPAUD=X', 'GBP/CAD': 'GBPCAD=X', 'XAU/USD': 'GC=F',
+};
+
+async function fetchYahooOhlcv1h(symbol) {
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1h&range=5d`;
+  const r = await fetch(url, {
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+      'Accept': 'application/json',
+    },
+    signal: AbortSignal.timeout(12000),
+  });
+  if (!r.ok) throw new Error(`Yahoo ${symbol} HTTP ${r.status}`);
+  const json = await r.json();
+  const result = json?.chart?.result?.[0];
+  if (!result) throw new Error(`No chart result for ${symbol}`);
+  const timestamps = result.timestamp || [];
+  const q = result.indicators?.quote?.[0] || {};
+  const candles = [];
+  for (let i = 0; i < timestamps.length; i++) {
+    const o = q.open?.[i], h = q.high?.[i], l = q.low?.[i], c = q.close?.[i];
+    if (o == null || h == null || l == null || c == null) continue;
+    if (isNaN(o) || isNaN(h) || isNaN(l) || isNaN(c)) continue;
+    candles.push({ t: timestamps[i], o: +o.toFixed(6), h: +h.toFixed(6), l: +l.toFixed(6), c: +c.toFixed(6) });
+  }
+  return candles;
+}
+
+async function ohlcvSyncHandler(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  if (req.method === 'OPTIONS') return res.status(204).end();
+
+  // Determine pairs: fixed set + dynamic pair from latest thesis recommendation
+  const pairsToSync = [...OHLCV_FIXED_PAIRS];
+  try {
+    const rawThesis = await redisCmd('GET', 'latest_thesis');
+    if (rawThesis) {
+      const thesis = JSON.parse(rawThesis);
+      const rec = thesis?.pair_recommendation;
+      if (rec && OHLCV_PAIR_SYMBOL_MAP[rec]) {
+        const dynSymbol = OHLCV_PAIR_SYMBOL_MAP[rec];
+        if (!pairsToSync.some(p => p.symbol === dynSymbol)) {
+          pairsToSync.push({ symbol: dynSymbol, label: rec });
+        }
+      }
+    }
+  } catch(e) {
+    console.warn('ohlcv_sync: latest_thesis read failed:', e.message);
+  }
+
+  // Fetch all pairs in parallel — individual failures don't block others
+  const results = await Promise.allSettled(
+    pairsToSync.map(async ({ symbol, label }) => {
+      const candles = await fetchYahooOhlcv1h(symbol);
+      if (candles.length === 0) throw new Error(`${symbol}: empty candles`);
+      const trimmed = candles.slice(-120); // max 5 days worth
+      await redisCmd('SET', `ohlcv:${symbol}:1h`, JSON.stringify(trimmed), 'EX', '28800'); // 8h TTL
+      console.log(`ohlcv_sync: ${label} (${symbol}) — ${trimmed.length} candles stored`);
+      return { symbol, label, count: trimmed.length };
+    })
+  );
+
+  const synced = results
+    .filter(r => r.status === 'fulfilled').map(r => r.value);
+  const failed = results
+    .filter(r => r.status === 'rejected')
+    .map((r, i) => ({ symbol: pairsToSync[results.indexOf(r)]?.symbol || pairsToSync[i]?.symbol, error: r.reason?.message }));
+
+  console.log(`ohlcv_sync complete: ${synced.length}/${pairsToSync.length} synced`);
+  return res.status(200).json({ ok: true, synced, failed, synced_at: new Date().toISOString() });
 }
 
 async function circuitResetHandler(req, res) {

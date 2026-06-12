@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-06-11 (session 54 — Regime ELEVATED + Yahoo MOVE; Fundamental drill-down overlay)
+> **Last updated:** 2026-06-12 (session 55 — Self-healing OHLCV system; SambaNova-first for all calls; qwen3-32b fix)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Financial_Feed_App`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -79,6 +79,53 @@ Financial_Feed_App/
 > **Penting:** `api/feeds.js` menggantikan `api/rss.js` dan `api/cot.js` yang sudah dihapus.
 > `api/admin.js` menggantikan `api/health.js`, `api/redis-keys.js`, `api/admin-prompts.js`, dan `api/push.js`.
 > Konsolidasi ini dilakukan untuk tetap di bawah limit 12 serverless functions Vercel Hobby.
+
+---
+
+## Changelog Session 55 (2026-06-12)
+
+### Self-Healing OHLCV System — AI Price Context untuk Entry
+
+**Masalah:** AI briefing hanya mengetahui harga spot saat ini + RSI/SMA, tidak bisa menyebut level konkret ("resistance 3380 yang diuji 2x", "ranging sejak Jun-10"). Tidak ada koneksi teknikal-fundamental untuk entry analysis.
+
+**Solusi:** Sistem OHLCV 1H yang berjalan otomatis setiap jam, menyimpan data ke Redis, dan AI membacanya saat generate briefing.
+
+**Perubahan `api/admin.js`:**
+- Tambah `ohlcvSyncHandler` — action baru `?action=ohlcv_sync`
+- `OHLCV_FIXED_PAIRS`: 8 pair fixed (XAU, 7 FX majors) selalu di-track
+- `OHLCV_PAIR_SYMBOL_MAP`: mapping pair label → Yahoo symbol (14 pair + cross)
+- `fetchYahooOhlcv1h(symbol)`: fetch `interval=1h&range=5d` dari Yahoo Finance
+- Storage: Redis key `ohlcv:{symbol}:1h`, JSON array max 120 candles, TTL 8 jam
+- Dynamic pair: baca `latest_thesis.pair_recommendation` → tambah ke sync list jika cross pair (misal EUR/JPY)
+- Self-healing: TTL 8h = kalau cron stop, data expire otomatis. Kalau Yahoo gagal 1 pair, pair lain tetap sync.
+- Tidak butuh file baru (sudah 12 functions di Vercel Hobby limit)
+
+**Perubahan `vercel.json`:**
+- Tambah cron `0 * * * *` untuk `/api/admin?action=ohlcv_sync` — jalan tiap jam
+
+**Perubahan `api/market-digest.js`:**
+- Tambah konstanta `OHLCV_SYMBOL_MAP` — 14 pair label → Yahoo symbol
+- Tambah fungsi `fetchOhlcvContext(symbol, label)`:
+  - Baca Redis `ohlcv:{symbol}:1h`
+  - Compute: range 3D, trend direction (uptrend/downtrend/sideways), current price, 3D % change
+  - Output compact: 1 baris summary + 24H candles mentah (H/L/C per jam, WIB)
+  - Decimal precision otomatis per instrument (XAU=2, JPY=3, FX=5)
+- Tambah `rawPrevThesis` ke parallel fetch block → determine FX pair berdasarkan previous thesis
+- Load OHLCV untuk XAU + FX pair setelah parallel fetch (2 Redis reads paralel)
+- Inject ke **Call 1** user message: blok `PRICE ACTION XAU/USD 1H` + `PRICE ACTION {pair} 1H`
+- Inject ke **Call 3** thesis prompt: 1-line summary range + trend untuk precision entry/invalidation
+- **Fix bug:** `GROQ_MODEL_PROSE = 'qwen/qwen3-32b'` (sebelumnya `'qwen3-32b'` tanpa prefix → model not found)
+- **Call 4 SambaNova-first:** `_call4Promise` sekarang coba SambaNova DeepSeek-V3.2 (akun 1) dulu, fallback ke Groq. Condition diubah dari `(GROQ_KEY && deviceId)` → `((SAMBANOVA_KEY || GROQ_KEY) && deviceId)`
+
+**Redis keys baru:**
+- `ohlcv:GC=F:1h` — XAU/USD 1H candles, max 120 entries, TTL 8h
+- `ohlcv:EURUSD=X:1h`, `ohlcv:GBPUSD=X:1h`, etc. — semua 8 fixed pair + dynamic cross pair
+
+**AI provider strategy (updated):**
+- Call 1 (prose briefing): SambaNova primary → OpenRouter → Groq qwen/qwen3-32b → Groq llama
+- Call 2 (CB bias): SambaNova primary → Groq
+- Call 3 (structured thesis): SambaNova primary → Groq
+- Call 4 (thesis monitor): **SambaNova primary** (baru) → Groq ← semua call sekarang preferensi SambaNova DeepSeek-V3.2
 
 ---
 

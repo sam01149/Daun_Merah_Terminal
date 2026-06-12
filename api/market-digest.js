@@ -17,12 +17,21 @@ const SAMBANOVA_URL_CALL1 = 'https://api.sambanova.ai/v1/chat/completions';
 const SAMBANOVA_MODEL_CALL1 = 'DeepSeek-V3.2';            // Call 1: prose (akun 2) — preview, tapi kualitas superior untuk Indonesian
 const GROQ_URL        = 'https://api.groq.com/openai/v1/chat/completions';
 const GROQ_MODEL      = 'llama-3.3-70b-versatile';        // Call 2, 3, 4: JSON + thesis
-const GROQ_MODEL_PROSE = 'qwen3-32b';                     // Call 1 fallback 3: prose (lebih panjang, cocok untuk briefing)
+const GROQ_MODEL_PROSE = 'qwen/qwen3-32b';                 // Call 1 fallback 3: prose (lebih panjang, cocok untuk briefing)
 const OPENROUTER_URL     = 'https://openrouter.ai/api/v1/chat/completions';
 const OPENROUTER_MODEL   = 'openai/gpt-oss-120b:free'; // Call 1 fallback 2: proven stabil, output Bahasa Indonesia
 const OPENROUTER_HEADERS = { 'HTTP-Referer': 'https://financial-feed-app.vercel.app', 'X-Title': 'Daun Merah' };
 
 const MAJOR_CURRENCIES = new Set(['USD','EUR','GBP','JPY','CAD','AUD','NZD','CHF']);
+
+// Map pair label → Yahoo symbol for OHLCV context lookup
+const OHLCV_SYMBOL_MAP = {
+  'EUR/USD': 'EURUSD=X', 'GBP/USD': 'GBPUSD=X', 'USD/JPY': 'USDJPY=X',
+  'AUD/USD': 'AUDUSD=X', 'USD/CAD': 'USDCAD=X', 'USD/CHF': 'USDCHF=X',
+  'NZD/USD': 'NZDUSD=X', 'EUR/JPY': 'EURJPY=X', 'GBP/JPY': 'GBPJPY=X',
+  'EUR/GBP': 'EURGBP=X', 'AUD/JPY': 'AUDJPY=X', 'EUR/AUD': 'EURAUD=X',
+  'GBP/AUD': 'GBPAUD=X', 'GBP/CAD': 'GBPCAD=X', 'XAU/USD': 'GC=F',
+};
 const GOLD_KEYWORDS = [
   // Direct gold references
   'gold','xau','bullion','spot gold','precious metal','gold price','gold demand','gold rally','gold drop',
@@ -153,6 +162,56 @@ async function aiCall(url, apiKey, model, messages, maxTokens, temperature, time
 }
 
 
+// Read 1H OHLCV from Redis (written by ohlcv_sync cron) and format for AI context.
+// Returns compact pre-processed block: 3D summary + raw 24H candles for entry context.
+async function fetchOhlcvContext(symbol, label) {
+  try {
+    const raw = await redisCmd('GET', `ohlcv:${symbol}:1h`);
+    if (!raw) return null;
+    const candles = JSON.parse(raw);
+    if (!candles || candles.length < 6) return null;
+
+    const isJpy = symbol.includes('JPY');
+    const isXau = symbol === 'GC=F';
+    const dec   = isXau ? 2 : isJpy ? 3 : 5;
+    const fmt   = n => n.toFixed(dec);
+
+    const c72  = candles.slice(-72); // last ~3 trading days
+    const c24  = candles.slice(-24); // last 24H for raw display
+
+    const high3d    = Math.max(...c72.map(c => c.h));
+    const low3d     = Math.min(...c72.map(c => c.l));
+    const current   = c72[c72.length - 1].c;
+    const open3d    = c72[0].o;
+    const change3d  = +((current - open3d) / open3d * 100).toFixed(2);
+
+    // Trend: compare older-half avg close vs latest-24H avg close
+    const olderSlice = c72.slice(0, Math.max(1, c72.length - 24));
+    const avgOld     = olderSlice.reduce((s, c) => s + c.c, 0) / olderSlice.length;
+    const avgNew     = c24.reduce((s, c) => s + c.c, 0) / c24.length;
+    const trendPct   = (avgNew - avgOld) / avgOld * 100;
+    const trend      = trendPct > 0.08 ? 'Uptrend' : trendPct < -0.08 ? 'Downtrend' : 'Sideways';
+
+    // 24H candles compact — entry context for AI
+    const candleLines = c24.map(c => {
+      const wib = new Date((c.t + 7 * 3600) * 1000);
+      const mo  = String(wib.getUTCMonth() + 1).padStart(2, '0');
+      const dy  = String(wib.getUTCDate()).padStart(2, '0');
+      const hr  = String(wib.getUTCHours()).padStart(2, '0');
+      return `${mo}/${dy} ${hr}WIB H:${fmt(c.h)} L:${fmt(c.l)} C:${fmt(c.c)}`;
+    }).join('\n');
+
+    return [
+      `${label} — Range 3D: ${fmt(low3d)} – ${fmt(high3d)} | Now: ${fmt(current)} | 3D: ${change3d > 0 ? '+' : ''}${change3d}% | Trend: ${trend}`,
+      `[24H candles — entry/exit context:]`,
+      candleLines,
+    ].join('\n');
+  } catch(e) {
+    console.warn(`fetchOhlcvContext ${symbol}:`, e.message);
+    return null;
+  }
+}
+
 module.exports = async function handler(req, res) {
   console.log('market-digest v3 START', new Date().toISOString());
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -278,7 +337,7 @@ module.exports = async function handler(req, res) {
   // 3b. Load digest history + xau history + real yields + XAU spot + XAU TA + liquidity + yield curve in parallel
   let digestHistory = [], xauHistory = [], realYieldsData = null, xauSpot = null, xauTa = null, liqData = null, ycData = null;
   try {
-    const [rawHist, rawXauHist, rawRY, spotResult, taResult, rawLiq, rawYc] = await Promise.all([
+    const [rawHist, rawXauHist, rawRY, spotResult, taResult, rawLiq, rawYc, rawPrevThesis] = await Promise.all([
       redisCmd('LRANGE', 'digest_history', 0, 6),
       redisCmd('LRANGE', 'xau_history', 0, 3),
       redisCmd('GET', 'real_yields'),
@@ -286,6 +345,7 @@ module.exports = async function handler(req, res) {
       fetchXauTA(),
       redisCmd('GET', 'liquidity_usd'),
       redisCmd('GET', 'yield_curve'),
+      redisCmd('GET', 'latest_thesis'),
     ]);
     if (Array.isArray(rawHist)) digestHistory = rawHist.map(e => { try { return JSON.parse(e); } catch(_) { return null; } }).filter(Boolean);
     if (Array.isArray(rawXauHist)) xauHistory = rawXauHist.map(e => { try { return JSON.parse(e); } catch(_) { return null; } }).filter(Boolean);
@@ -303,6 +363,29 @@ module.exports = async function handler(req, res) {
   const xauHistoryBlock = xauHistory.length > 0
     ? xauHistory.map(h => `[${h.wib}] ${h.xau_summary}`).join('\n')
     : '(Belum ada riwayat XAU — ini sesi pertama)';
+
+  // Load OHLCV context: XAU always + FX pair from previous thesis recommendation
+  let fxOhlcvSymbol = 'EURUSD=X', fxOhlcvLabel = 'EUR/USD';
+  try {
+    if (rawPrevThesis) {
+      const prevT = JSON.parse(rawPrevThesis);
+      const rec = prevT?.pair_recommendation;
+      if (rec && OHLCV_SYMBOL_MAP[rec] && OHLCV_SYMBOL_MAP[rec] !== 'GC=F') {
+        fxOhlcvSymbol = OHLCV_SYMBOL_MAP[rec];
+        fxOhlcvLabel  = rec;
+      }
+    }
+  } catch(e) {}
+  let xauOhlcvBlock = null, fxOhlcvBlock = null;
+  try {
+    [xauOhlcvBlock, fxOhlcvBlock] = await Promise.all([
+      fetchOhlcvContext('GC=F', 'XAU/USD'),
+      fetchOhlcvContext(fxOhlcvSymbol, fxOhlcvLabel),
+    ]);
+    console.log('OHLCV context:', xauOhlcvBlock ? 'XAU ok' : 'XAU miss', fxOhlcvBlock ? `${fxOhlcvLabel} ok` : `${fxOhlcvLabel} miss`);
+  } catch(e) {
+    console.warn('OHLCV context load failed:', e.message);
+  }
 
   // Build real yield block for Call 1 context
   let realYieldBlock = '(Data real yield tidak tersedia — inferensi dari headline saja)';
@@ -482,7 +565,7 @@ module.exports = async function handler(req, res) {
     return _biasUpdated;
   })() : Promise.resolve([]);
 
-  const _call4Promise = (GROQ_KEY && deviceId) ? (async () => {
+  const _call4Promise = ((SAMBANOVA_KEY || GROQ_KEY) && deviceId) ? (async () => {
     try {
       const ids4 = await redisCmd('ZRANGE', `journal_index:${deviceId}`, 0, -1, 'REV') || [];
       const openEntries = [];
@@ -509,7 +592,29 @@ module.exports = async function handler(req, res) {
         '{"alerts":[{"entry_id":"...","pair":"...","direction":"...","headline":"exact headline text","reason":"one sentence why this contradicts the thesis"}]}',
         'If no genuine contradictions found: {"alerts":[]}',
       ].join('\n');
-      const raw4 = await aiCall(GROQ_URL, GROQ_KEY, GROQ_MODEL, [{ role: 'user', content: monitorPrompt }], 400, 0.1, 8000);
+      const call4Messages = [{ role: 'user', content: monitorPrompt }];
+      let raw4 = null;
+      // Primary: SambaNova DeepSeek-V3.2 (akun 1) — same model used for Call 2 & 3
+      if (SAMBANOVA_KEY && await cb.canCall('ai:sambanova')) {
+        try {
+          console.log('Call 4: trying SambaNova');
+          raw4 = await aiCall(SAMBANOVA_URL, SAMBANOVA_KEY, SAMBANOVA_MODEL, call4Messages, 400, 0.1, 8000);
+          console.log('Call 4: SambaNova OK');
+          await cb.onSuccess('ai:sambanova');
+        } catch(e) {
+          console.warn('Call 4 SambaNova failed:', e.status || e.message);
+          await cb.onFailure('ai:sambanova', AI_CB_THRESHOLD);
+        }
+      }
+      // Fallback: Groq llama-3.3-70b
+      if (!raw4 && GROQ_KEY) {
+        try {
+          console.log('Call 4: falling back to Groq');
+          raw4 = await aiCall(GROQ_URL, GROQ_KEY, GROQ_MODEL, call4Messages, 400, 0.1, 8000);
+          console.log('Call 4: Groq fallback OK');
+        } catch(e) { console.warn('Call 4 Groq fallback failed:', e.status || e.message); }
+      }
+      if (!raw4) return null;
       const parsed4 = JSON.parse(raw4.replace(/```json|```/g, '').trim());
       if (!Array.isArray(parsed4.alerts)) return null;
       console.log('Call 4: found', parsed4.alerts.length, 'alert(s)');
@@ -575,6 +680,12 @@ ${xauSpotBlock}
 
 === TEKNIKAL XAU/USD DAILY (dari Yahoo GC=F — sebutkan singkat dalam 1 kalimat sebagai konteks, bukan analisa teknikal terpisah) ===
 ${xauTaBlock}
+
+=== PRICE ACTION XAU/USD 1H (3 hari trading — gunakan untuk identifikasi level entry, resistance, support) ===
+${xauOhlcvBlock || '(Cache OHLCV belum tersedia — ohlcv_sync cron belum berjalan. Abaikan bagian ini.)'}
+
+=== PRICE ACTION ${fxOhlcvLabel} 1H (3 hari trading — context teknikal untuk pair FX rekomendasi) ===
+${fxOhlcvBlock || '(Cache OHLCV belum tersedia untuk pair ini.)'}
 
 === DATA REAL YIELD USD (LIVE — gunakan ini, jangan inferensi dari headline) ===
 ${realYieldBlock}
@@ -751,6 +862,9 @@ ${xauHistoryBlock}`;
       `Upcoming high-impact calendar events (next 3 days, WIB): ${calBlock}`,
       '',
       `Gold-relevant headlines: ${goldHeadlinesForThesis}`,
+      '',
+      xauOhlcvBlock ? `XAU/USD 1H price context (use for entry/invalidation level precision):\n${xauOhlcvBlock.split('\n')[0]}` : '',
+      fxOhlcvBlock  ? `${fxOhlcvLabel} 1H price context (use for pair entry/invalidation levels):\n${fxOhlcvBlock.split('\n')[0]}`  : '',
       '',
       'Return ONLY valid JSON with this exact schema (no markdown, no explanation):',
       '{',
