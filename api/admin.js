@@ -1363,7 +1363,10 @@ async function ohlcvAnalyzeHandler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Cache-Control', 'no-cache');
   if (req.method === 'OPTIONS') return res.status(204).end();
-  const { symbol, label } = req.query;
+
+  const symbol = req.query.symbol || req.body?.symbol;
+  const label  = req.query.label  || req.body?.label;
+  const ringkasanContext = req.body?.ringkasanContext || null;
   if (!symbol) return res.status(400).json({ error: 'symbol required' });
 
   try {
@@ -1371,9 +1374,32 @@ async function ohlcvAnalyzeHandler(req, res) {
     if (!data.h1.available) return res.status(200).json({ commentary: null, error: 'OHLCV belum tersedia — tunggu GitHub Actions sync pertama.' });
 
     const textBlock = buildOhlcvText(data);
+
+    let n = 4;
+    const instruksi = [
+      '(1) Arah trend dominan dari Daily',
+      '(2) Level resistance/support kritis dari 4H — sebut angka spesifik dari Swing High/Low',
+      '(3) Konteks entry dari 1H — momentum mendukung entry langsung atau tunggu pullback ke level tertentu',
+      '(4) Level invalidasi — berdasarkan Swing Low 4H atau Support Daily, di level mana thesis ini gugur',
+    ];
+    if (data.is_xau) {
+      n++;
+      instruksi.push(`(${n}) Konfirmasi volume XAU — apakah volume mendukung atau meragukan pergerakan harga saat ini`);
+    }
+    if (data.indicators?.available) {
+      n++;
+      instruksi.push(`(${n}) Gunakan RSI 14 dan posisi harga vs SMA 50/200 untuk konfirmasi momentum`);
+    }
+    n++;
+    instruksi.push(`(${n}) Bias keseluruhan — satu kalimat integrasikan teknikal${ringkasanContext ? ' + konteks makro' : ''}: Bullish/Bearish/Neutral dengan alasan utamanya`);
+
+    const makroBlock = ringkasanContext
+      ? `KONTEKS MAKRO (Ringkasan pasar):\n${ringkasanContext}\n\nDATA TEKNIKAL:\n${textBlock}`
+      : textBlock;
+
     const messages  = [
-      { role: 'system', content: 'Kamu analis teknikal FX dan komoditas senior. Jawab dalam Bahasa Indonesia, 4-5 kalimat, tanpa bullet, tanpa heading. Sebut angka konkret dari data. Padat dan actionable.' },
-      { role: 'user',   content: `Analisa teknikal multi-timeframe untuk ${data.label}:\n\n${textBlock}\n\nIdentifikasi: (1) Arah trend dominan dari Daily, (2) Level resistance/support kritis dari 4H — sebut angka spesifik dari Swing High/Low, (3) Konteks entry dari 1H — momentum mendukung entry langsung atau tunggu pullback ke level tertentu, (4) Level invalidasi — berdasarkan Swing Low 4H atau Support Daily, di level mana thesis ini gugur${data.is_xau ? ', (5) Konfirmasi volume XAU — apakah volume mendukung atau meragukan pergerakan harga saat ini (HIGH = konfirmasi kuat, low = lemah/tidak terkonfirmasi)' : ''}${data.indicators?.available ? `, (${data.is_xau ? 6 : 5}) Gunakan RSI 14 dan posisi harga vs SMA 50/200 (dari data INDIKATOR) untuk konfirmasi momentum — RSI overbought/oversold sebagai sinyal reversal risk, SMA 50/200 sebagai dynamic support/resistance jangka menengah-panjang` : ''}.` },
+      { role: 'system', content: 'Kamu analis senior yang mengintegrasikan analisa teknikal multi-timeframe dengan konteks fundamental makro. Jawab dalam Bahasa Indonesia, 4-5 kalimat padat, tanpa bullet, tanpa heading. Sebut angka konkret dari data.' },
+      { role: 'user',   content: `Analisa untuk ${data.label}:\n\n${makroBlock}\n\nIdentifikasi: ${instruksi.join(', ')}.` },
     ];
 
     const SAMBANOVA_KEY = process.env.SAMBANOVA_API_KEY;

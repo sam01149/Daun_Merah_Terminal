@@ -3271,7 +3271,8 @@ function _restoreAiResult(symbol) {
   const cached = analisaAiCache[symbol];
   if (!cached) return;
   const resultEl = document.getElementById('analisaAiResult');
-  resultEl.innerHTML = `<div class="analisa-ai-result"><div class="analisa-ai-label">🧠 AI Commentary${cached.model ? ' · ' + cached.model : ''} <span style="color:var(--muted);font-size:10px">(cached)</span></div>${escHtml(cached.commentary).split('\n').map(l => `<p style="margin:0 0 6px">${l}</p>`).join('')}</div>`;
+  const srcTag = cached.hasMakro ? ' · <span style="color:#a78bfa">teknikal + makro</span>' : ' · teknikal';
+  resultEl.innerHTML = `<div class="analisa-ai-result"><div class="analisa-ai-label">🧠 AI${cached.model ? ' · ' + cached.model : ''}${srcTag} <span style="color:var(--muted);font-size:10px">(cached)</span></div>${escHtml(cached.commentary).split('\n').map(l => `<p style="margin:0 0 6px">${l}</p>`).join('')}</div>`;
   resultEl.style.display = 'block';
 }
 
@@ -3410,13 +3411,27 @@ async function analyzeOhlcvAi() {
   const resultEl = document.getElementById('analisaAiResult');
   resultEl.style.display = 'none';
   const reqSymbol = symbol;
+
+  // Extract macro context from Ringkasan cache (first 3 paragraphs, max 600 chars)
+  let ringkasanContext = null;
+  if (ringkasanCache?.article) {
+    const paras = ringkasanCache.article.split(/\n\n+/).slice(0, 3).join('\n\n');
+    ringkasanContext = paras.length > 600 ? paras.slice(0, 597) + '...' : paras;
+  }
+
   try {
-    const res  = await fetch(`/api/admin?action=ohlcv_analyze&symbol=${encodeURIComponent(symbol)}&label=${encodeURIComponent(label)}`);
+    const res  = await fetch(`/api/admin?action=ohlcv_analyze`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ symbol, label, ringkasanContext }),
+    });
     const data = await res.json();
     if (data.commentary) {
-      analisaAiCache[reqSymbol] = { commentary: data.commentary, model: data.model };
+      const hasMakro = !!ringkasanContext;
+      analisaAiCache[reqSymbol] = { commentary: data.commentary, model: data.model, hasMakro };
       if (analisaActive.symbol === reqSymbol) {
-        resultEl.innerHTML = `<div class="analisa-ai-result"><div class="analisa-ai-label">🧠 AI Commentary${data.model ? ' · ' + data.model : ''}</div>${escHtml(data.commentary).split('\n').map(l => `<p style="margin:0 0 6px">${l}</p>`).join('')}</div>`;
+        const srcTag = hasMakro ? ' · <span style="color:#a78bfa">teknikal + makro</span>' : ' · teknikal';
+        resultEl.innerHTML = `<div class="analisa-ai-result"><div class="analisa-ai-label">🧠 AI${data.model ? ' · ' + data.model : ''}${srcTag}</div>${escHtml(data.commentary).split('\n').map(l => `<p style="margin:0 0 6px">${l}</p>`).join('')}</div>`;
         resultEl.style.display = 'block';
       }
     } else {
