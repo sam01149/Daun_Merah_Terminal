@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-06-12 (session 55 — Self-healing OHLCV system; SambaNova-first for all calls; qwen3-32b fix)
+> **Last updated:** 2026-06-12 (session 56 — OHLCV upgrade: Daily 30D + 4H 10D + volume GC=F; multi-TF AI context)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Financial_Feed_App`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -79,6 +79,42 @@ Financial_Feed_App/
 > **Penting:** `api/feeds.js` menggantikan `api/rss.js` dan `api/cot.js` yang sudah dihapus.
 > `api/admin.js` menggantikan `api/health.js`, `api/redis-keys.js`, `api/admin-prompts.js`, dan `api/push.js`.
 > Konsolidasi ini dilakukan untuk tetap di bawah limit 12 serverless functions Vercel Hobby.
+
+---
+
+## Changelog Session 56 (2026-06-12)
+
+### OHLCV Upgrade — Multi-Timeframe: Daily 30D + 4H 10D + Volume GC=F
+
+**Konteks:** Sebelumnya OHLCV hanya 1H 5D. Untuk analisa AI yang lebih dalam, perlu: Daily untuk struktur makro (trend 1 bulan), 4H untuk swing context, dan volume real dari GC=F (CME futures) sebagai konfirmasi conviction.
+
+**Perubahan `api/admin.js`:**
+- `fetchYahooOhlcv1h`: range `5d` → `10d` (diperlukan untuk resample 4H), tambah parsing volume (`v: Math.round(vol || 0)`)
+- Fungsi baru `fetchYahooOhlcvDaily(symbol)`: fetch `interval=1d&range=1mo` dari Yahoo — semua pair, include volume
+- Fungsi baru `resampleTo4h(candles1h)`: resample candles 1H → 4H dengan bucketing per 4×3600s; aggregate OHLC + sum volume
+- `ohlcvSyncHandler` update: per pair, sekarang fetch 1H + daily lalu store 3 Redis keys:
+  - `ohlcv:{symbol}:1h` — last 72 candles (3 trading days), TTL 8h
+  - `ohlcv:{symbol}:4h` — last 60 candles (10 days), TTL 8h
+  - `ohlcv:{symbol}:1d` — last 30 candles (1 month), TTL 25h
+- Volume ada di semua TF candle object (field `v`), tapi hanya ditampilkan ke AI untuk GC=F
+
+**Perubahan `api/market-digest.js`:**
+- `fetchOhlcvContext(symbol, label)` full rewrite — sekarang baca 3 TF dari Redis paralel:
+  - **[MAKRO — Daily 30D]**: range, trend, % 30D, top-2 resistance + bottom-2 support, volume avg/today + label HIGH/Normal/low (XAU only)
+  - **[SWING — 4H 10D]**: range, trend, % 10D, swing high + swing low dengan tanggal WIB
+  - **[ENTRY — 1H 3D]**: range, now, % 3D, trend; 24H candles per-jam dengan volume + label untuk XAU
+  - Output format: `=== {label} MULTI-TIMEFRAME ===` diikuti 3 blok terstruktur
+- Prompt header Call 1: diupdate ke `PRICE ACTION XAU/USD (Daily/4H/1H — ...)`
+- Call 3 thesis injection: diubah dari `.split('\n')[0]` → `.split('\n').slice(1, 8).join('\n')` — memberikan summary Daily+4H+1H (bukan hanya header baris pertama)
+
+**Volume philosophy:**
+- FX OTC (EURUSD=X, dll): volume Yahoo adalah proxy dealer, tidak punya makna. Tetap disimpan di Redis tapi tidak ditampilkan ke AI
+- GC=F (CME futures): volume real. Dipakai untuk label candle `V:8.2K [HIGH]` / `V:5.1K [low]`, plus daily vol context
+
+**Redis keys baru per pair:**
+- `ohlcv:{symbol}:4h` — 4H candles TTL 8h
+- `ohlcv:{symbol}:1d` — Daily candles TTL 25h
+- Total keys: 9 pairs × 3 TF = 27 Redis keys (sebelumnya 9 keys 1H saja)
 
 ---
 

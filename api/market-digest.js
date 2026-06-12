@@ -166,46 +166,120 @@ async function aiCall(url, apiKey, model, messages, maxTokens, temperature, time
 // Returns compact pre-processed block: 3D summary + raw 24H candles for entry context.
 async function fetchOhlcvContext(symbol, label) {
   try {
-    const raw = await redisCmd('GET', `ohlcv:${symbol}:1h`);
-    if (!raw) return null;
-    const candles = JSON.parse(raw);
-    if (!candles || candles.length < 6) return null;
-
-    const isJpy = symbol.includes('JPY');
     const isXau = symbol === 'GC=F';
+    const isJpy = symbol.includes('JPY');
     const dec   = isXau ? 2 : isJpy ? 3 : 5;
     const fmt   = n => n.toFixed(dec);
 
-    const c72  = candles.slice(-72); // last ~3 trading days
-    const c24  = candles.slice(-24); // last 24H for raw display
+    const fmtWib = ts => {
+      const d = new Date((ts + 7 * 3600) * 1000);
+      return `${String(d.getUTCMonth()+1).padStart(2,'0')}/${String(d.getUTCDate()).padStart(2,'0')} ${String(d.getUTCHours()).padStart(2,'0')}WIB`;
+    };
 
-    const high3d    = Math.max(...c72.map(c => c.h));
-    const low3d     = Math.min(...c72.map(c => c.l));
-    const current   = c72[c72.length - 1].c;
-    const open3d    = c72[0].o;
-    const change3d  = +((current - open3d) / open3d * 100).toFixed(2);
+    // Read all 3 timeframes in parallel
+    const [raw1h, raw4h, raw1d] = await Promise.all([
+      redisCmd('GET', `ohlcv:${symbol}:1h`),
+      redisCmd('GET', `ohlcv:${symbol}:4h`),
+      redisCmd('GET', `ohlcv:${symbol}:1d`),
+    ]);
 
-    // Trend: compare older-half avg close vs latest-24H avg close
-    const olderSlice = c72.slice(0, Math.max(1, c72.length - 24));
-    const avgOld     = olderSlice.reduce((s, c) => s + c.c, 0) / olderSlice.length;
-    const avgNew     = c24.reduce((s, c) => s + c.c, 0) / c24.length;
-    const trendPct   = (avgNew - avgOld) / avgOld * 100;
-    const trend      = trendPct > 0.08 ? 'Uptrend' : trendPct < -0.08 ? 'Downtrend' : 'Sideways';
+    const c1h = raw1h ? JSON.parse(raw1h) : null;
+    const c4h = raw4h ? JSON.parse(raw4h) : null;
+    const c1d = raw1d ? JSON.parse(raw1d) : null;
 
-    // 24H candles compact — entry context for AI
-    const candleLines = c24.map(c => {
-      const wib = new Date((c.t + 7 * 3600) * 1000);
-      const mo  = String(wib.getUTCMonth() + 1).padStart(2, '0');
-      const dy  = String(wib.getUTCDate()).padStart(2, '0');
-      const hr  = String(wib.getUTCHours()).padStart(2, '0');
-      return `${mo}/${dy} ${hr}WIB H:${fmt(c.h)} L:${fmt(c.l)} C:${fmt(c.c)}`;
-    }).join('\n');
+    if (!c1h || c1h.length < 6) return null;
 
-    return [
-      `${label} — Range 3D: ${fmt(low3d)} – ${fmt(high3d)} | Now: ${fmt(current)} | 3D: ${change3d > 0 ? '+' : ''}${change3d}% | Trend: ${trend}`,
-      `[24H candles — entry/exit context:]`,
-      candleLines,
-    ].join('\n');
+    const lines = [`=== ${label} MULTI-TIMEFRAME ===`];
+
+    // ── Daily block — macro structure ─────────────────────────
+    if (c1d && c1d.length >= 5) {
+      const high1d = Math.max(...c1d.map(c => c.h));
+      const low1d  = Math.min(...c1d.map(c => c.l));
+      const curr1d = c1d[c1d.length - 1].c;
+      const open1d = c1d[0].o;
+      const chg1d  = +((curr1d - open1d) / open1d * 100).toFixed(2);
+
+      const half   = Math.floor(c1d.length / 2);
+      const avgOld = c1d.slice(0, half).reduce((s,c) => s+c.c, 0) / half;
+      const avgNew = c1d.slice(half).reduce((s,c) => s+c.c, 0) / (c1d.length - half);
+      const tPct   = (avgNew - avgOld) / avgOld * 100;
+      const trend1d = tPct > 0.3 ? 'Uptrend' : tPct < -0.3 ? 'Downtrend' : 'Sideways';
+
+      const topR = [...c1d].sort((a,b) => b.h - a.h).slice(0, 2).map(c => fmt(c.h));
+      const botS = [...c1d].sort((a,b) => a.l - b.l).slice(0, 2).map(c => fmt(c.l));
+
+      lines.push(`[MAKRO — Daily 30D] Range: ${fmt(low1d)}–${fmt(high1d)} | Now: ${fmt(curr1d)} | 30D: ${chg1d >= 0 ? '+' : ''}${chg1d}% | Trend: ${trend1d}`);
+      lines.push(`  Resistance: ${topR.join(', ')} | Support: ${botS.join(', ')}`);
+
+      if (isXau) {
+        const vArr = c1d.map(c => c.v).filter(v => v > 0);
+        if (vArr.length > 3) {
+          const vAvg  = Math.round(vArr.reduce((s,v) => s+v, 0) / vArr.length);
+          const vLast = c1d[c1d.length - 1].v;
+          const vStat = vLast > vAvg * 1.5 ? 'HIGH' : vLast < vAvg * 0.7 ? 'low' : 'Normal';
+          lines.push(`  Volume avg: ${(vAvg/1000).toFixed(0)}K | Today: ${(vLast/1000).toFixed(0)}K [${vStat}]`);
+        }
+      }
+    }
+
+    // ── 4H block — swing structure ────────────────────────────
+    if (c4h && c4h.length >= 6) {
+      const high4h = Math.max(...c4h.map(c => c.h));
+      const low4h  = Math.min(...c4h.map(c => c.l));
+      const curr4h = c4h[c4h.length - 1].c;
+      const open4h = c4h[0].o;
+      const chg4h  = +((curr4h - open4h) / open4h * 100).toFixed(2);
+
+      const recent10 = c4h.slice(-10);
+      const avgOld4  = c4h.slice(0, c4h.length - 10).reduce((s,c) => s+c.c, 0) / Math.max(1, c4h.length - 10);
+      const avgNew4  = recent10.reduce((s,c) => s+c.c, 0) / recent10.length;
+      const tPct4    = (avgNew4 - avgOld4) / avgOld4 * 100;
+      const trend4h  = tPct4 > 0.15 ? 'Uptrend' : tPct4 < -0.15 ? 'Downtrend' : 'Sideways';
+
+      const sHigh = [...c4h].sort((a,b) => b.h - a.h)[0];
+      const sLow  = [...c4h].sort((a,b) => a.l - b.l)[0];
+
+      lines.push(`[SWING — 4H 10D] Range: ${fmt(low4h)}–${fmt(high4h)} | Trend: ${trend4h} | 10D: ${chg4h >= 0 ? '+' : ''}${chg4h}%`);
+      lines.push(`  Swing High: ${fmt(sHigh.h)} (${fmtWib(sHigh.t)}) | Swing Low: ${fmt(sLow.l)} (${fmtWib(sLow.t)})`);
+    }
+
+    // ── 1H block — entry context ──────────────────────────────
+    const c72 = c1h.slice(-72);
+    const c24 = c1h.slice(-24);
+
+    const high1h = Math.max(...c72.map(c => c.h));
+    const low1h  = Math.min(...c72.map(c => c.l));
+    const curr1h = c72[c72.length - 1].c;
+    const open1h = c72[0].o;
+    const chg1h  = +((curr1h - open1h) / open1h * 100).toFixed(2);
+
+    const older1h = c72.slice(0, Math.max(1, c72.length - 24));
+    const avgO1h  = older1h.reduce((s,c) => s+c.c, 0) / older1h.length;
+    const avgN1h  = c24.reduce((s,c) => s+c.c, 0) / c24.length;
+    const tPct1h  = (avgN1h - avgO1h) / avgO1h * 100;
+    const trend1h = tPct1h > 0.08 ? 'Uptrend' : tPct1h < -0.08 ? 'Downtrend' : 'Sideways';
+
+    lines.push(`[ENTRY — 1H 3D] Range: ${fmt(low1h)}–${fmt(high1h)} | Now: ${fmt(curr1h)} | 3D: ${chg1h >= 0 ? '+' : ''}${chg1h}% | Trend: ${trend1h}`);
+
+    // Pre-compute vol avg (XAU only) for per-candle labelling
+    let vAvg1h = 0;
+    if (isXau) {
+      const vArr = c72.map(c => c.v).filter(v => v > 0);
+      vAvg1h = vArr.length > 0 ? Math.round(vArr.reduce((s,v) => s+v, 0) / vArr.length) : 0;
+    }
+
+    lines.push(`[24H candles — entry context:]`);
+    c24.forEach(c => {
+      const base = `${fmtWib(c.t)} H:${fmt(c.h)} L:${fmt(c.l)} C:${fmt(c.c)}`;
+      if (isXau && c.v > 0 && vAvg1h > 0) {
+        const vStat = c.v > vAvg1h * 1.5 ? ' [HIGH]' : c.v < vAvg1h * 0.7 ? ' [low]' : '';
+        lines.push(`${base} V:${(c.v/1000).toFixed(1)}K${vStat}`);
+      } else {
+        lines.push(base);
+      }
+    });
+
+    return lines.join('\n');
   } catch(e) {
     console.warn(`fetchOhlcvContext ${symbol}:`, e.message);
     return null;
@@ -681,10 +755,10 @@ ${xauSpotBlock}
 === TEKNIKAL XAU/USD DAILY (dari Yahoo GC=F — sebutkan singkat dalam 1 kalimat sebagai konteks, bukan analisa teknikal terpisah) ===
 ${xauTaBlock}
 
-=== PRICE ACTION XAU/USD 1H (3 hari trading — gunakan untuk identifikasi level entry, resistance, support) ===
+=== PRICE ACTION XAU/USD (Daily/4H/1H — identifikasi trend makro, swing, dan level entry/invalidation) ===
 ${xauOhlcvBlock || '(Cache OHLCV belum tersedia — ohlcv_sync cron belum berjalan. Abaikan bagian ini.)'}
 
-=== PRICE ACTION ${fxOhlcvLabel} 1H (3 hari trading — context teknikal untuk pair FX rekomendasi) ===
+=== PRICE ACTION ${fxOhlcvLabel} (Daily/4H/1H — context teknikal multi-timeframe untuk pair FX rekomendasi) ===
 ${fxOhlcvBlock || '(Cache OHLCV belum tersedia untuk pair ini.)'}
 
 === DATA REAL YIELD USD (LIVE — gunakan ini, jangan inferensi dari headline) ===
@@ -863,8 +937,8 @@ ${xauHistoryBlock}`;
       '',
       `Gold-relevant headlines: ${goldHeadlinesForThesis}`,
       '',
-      xauOhlcvBlock ? `XAU/USD 1H price context (use for entry/invalidation level precision):\n${xauOhlcvBlock.split('\n')[0]}` : '',
-      fxOhlcvBlock  ? `${fxOhlcvLabel} 1H price context (use for pair entry/invalidation levels):\n${fxOhlcvBlock.split('\n')[0]}`  : '',
+      xauOhlcvBlock ? `XAU/USD multi-TF price context (use for precise entry, target, invalidation):\n${xauOhlcvBlock.split('\n').slice(1, 8).join('\n')}` : '',
+      fxOhlcvBlock  ? `${fxOhlcvLabel} multi-TF price context:\n${fxOhlcvBlock.split('\n').slice(1, 8).join('\n')}`  : '',
       '',
       'Return ONLY valid JSON with this exact schema (no markdown, no explanation):',
       '{',

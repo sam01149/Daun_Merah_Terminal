@@ -1084,7 +1084,8 @@ const OHLCV_PAIR_SYMBOL_MAP = {
 };
 
 async function fetchYahooOhlcv1h(symbol) {
-  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1h&range=5d`;
+  // range=10d — extended for 4H resampling over 10 days; we store only last 72 of the 1H result
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1h&range=10d`;
   const r = await fetch(url, {
     headers: {
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
@@ -1101,11 +1102,56 @@ async function fetchYahooOhlcv1h(symbol) {
   const candles = [];
   for (let i = 0; i < timestamps.length; i++) {
     const o = q.open?.[i], h = q.high?.[i], l = q.low?.[i], c = q.close?.[i];
+    const vol = q.volume?.[i];
     if (o == null || h == null || l == null || c == null) continue;
     if (isNaN(o) || isNaN(h) || isNaN(l) || isNaN(c)) continue;
-    candles.push({ t: timestamps[i], o: +o.toFixed(6), h: +h.toFixed(6), l: +l.toFixed(6), c: +c.toFixed(6) });
+    candles.push({ t: timestamps[i], o: +o.toFixed(6), h: +h.toFixed(6), l: +l.toFixed(6), c: +c.toFixed(6), v: Math.round(vol || 0) });
   }
   return candles;
+}
+
+async function fetchYahooOhlcvDaily(symbol) {
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=1mo`;
+  const r = await fetch(url, {
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+      'Accept': 'application/json',
+    },
+    signal: AbortSignal.timeout(12000),
+  });
+  if (!r.ok) throw new Error(`Yahoo ${symbol} daily HTTP ${r.status}`);
+  const json = await r.json();
+  const result = json?.chart?.result?.[0];
+  if (!result) throw new Error(`No daily chart result for ${symbol}`);
+  const timestamps = result.timestamp || [];
+  const q = result.indicators?.quote?.[0] || {};
+  const candles = [];
+  for (let i = 0; i < timestamps.length; i++) {
+    const o = q.open?.[i], h = q.high?.[i], l = q.low?.[i], c = q.close?.[i];
+    const vol = q.volume?.[i];
+    if (o == null || h == null || l == null || c == null) continue;
+    if (isNaN(o) || isNaN(h) || isNaN(l) || isNaN(c)) continue;
+    candles.push({ t: timestamps[i], o: +o.toFixed(6), h: +h.toFixed(6), l: +l.toFixed(6), c: +c.toFixed(6), v: Math.round(vol || 0) });
+  }
+  return candles;
+}
+
+function resampleTo4h(candles1h) {
+  const bucket = 4 * 3600;
+  const map = new Map();
+  for (const c of candles1h) {
+    const key = Math.floor(c.t / bucket) * bucket;
+    if (!map.has(key)) {
+      map.set(key, { t: key, o: c.o, h: c.h, l: c.l, c: c.c, v: c.v || 0 });
+    } else {
+      const b = map.get(key);
+      b.h = Math.max(b.h, c.h);
+      b.l = Math.min(b.l, c.l);
+      b.c = c.c;
+      b.v += (c.v || 0);
+    }
+  }
+  return [...map.values()].sort((a, b) => a.t - b.t);
 }
 
 async function ohlcvSyncHandler(req, res) {
@@ -1133,12 +1179,23 @@ async function ohlcvSyncHandler(req, res) {
   // Fetch all pairs in parallel — individual failures don't block others
   const results = await Promise.allSettled(
     pairsToSync.map(async ({ symbol, label }) => {
-      const candles = await fetchYahooOhlcv1h(symbol);
-      if (candles.length === 0) throw new Error(`${symbol}: empty candles`);
-      const trimmed = candles.slice(-120); // max 5 days worth
-      await redisCmd('SET', `ohlcv:${symbol}:1h`, JSON.stringify(trimmed), 'EX', '28800'); // 8h TTL
-      console.log(`ohlcv_sync: ${label} (${symbol}) — ${trimmed.length} candles stored`);
-      return { symbol, label, count: trimmed.length };
+      // 1H with range=10d (needed for 4H resampling over full 10 days)
+      const candles1h = await fetchYahooOhlcv1h(symbol);
+      if (candles1h.length === 0) throw new Error(`${symbol}: empty candles`);
+
+      const candles4h = resampleTo4h(candles1h);
+      const candles1d = await fetchYahooOhlcvDaily(symbol);
+
+      // Store 3 TFs in parallel: 1H last 72 (3D), 4H last 60 (10D), 1D last 30 (1mo)
+      await Promise.all([
+        redisCmd('SET', `ohlcv:${symbol}:1h`, JSON.stringify(candles1h.slice(-72)),  'EX', '28800'), // 8h TTL
+        redisCmd('SET', `ohlcv:${symbol}:4h`, JSON.stringify(candles4h.slice(-60)),  'EX', '28800'), // 8h TTL
+        redisCmd('SET', `ohlcv:${symbol}:1d`, JSON.stringify(candles1d.slice(-30)),  'EX', '90000'), // 25h TTL
+      ]);
+
+      const n1h = Math.min(72, candles1h.length), n4h = Math.min(60, candles4h.length), n1d = Math.min(30, candles1d.length);
+      console.log(`ohlcv_sync: ${label} — 1H:${n1h} 4H:${n4h} 1D:${n1d}`);
+      return { symbol, label, count1h: n1h, count4h: n4h, count1d: n1d };
     })
   );
 
@@ -1146,9 +1203,9 @@ async function ohlcvSyncHandler(req, res) {
     .filter(r => r.status === 'fulfilled').map(r => r.value);
   const failed = results
     .filter(r => r.status === 'rejected')
-    .map((r, i) => ({ symbol: pairsToSync[results.indexOf(r)]?.symbol || pairsToSync[i]?.symbol, error: r.reason?.message }));
+    .map((r, i) => ({ symbol: pairsToSync[i]?.symbol, error: r.reason?.message }));
 
-  console.log(`ohlcv_sync complete: ${synced.length}/${pairsToSync.length} synced`);
+  console.log(`ohlcv_sync complete: ${synced.length}/${pairsToSync.length} synced (1H+4H+1D per pair)`);
   return res.status(200).json({ ok: true, synced, failed, synced_at: new Date().toISOString() });
 }
 
