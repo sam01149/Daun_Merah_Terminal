@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-06-14 (session 59 — fix: ringkasanContext untuk XAU/USD sekarang ekstrak blok XAUUSD: bukan 3 paragraf pertama yang berisi konteks FX)
+> **Last updated:** 2026-06-14 (session 59–60 — fix: XAU ringkasanContext ekstrak XAUUSD: block; fix typo cooldown '71d'→'71s'; OHLCV analyze fallback ke client cache saat Redis expired; TTL 1H/4H naik ke 25h)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Financial_Feed_App`
 > **Production URL:** https://financial-feed-app.vercel.app
