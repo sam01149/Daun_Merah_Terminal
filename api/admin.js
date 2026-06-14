@@ -1197,8 +1197,8 @@ async function ohlcvSyncHandler(req, res) {
 
       // Store 3 TFs in parallel: 1H last 120 (5D), 4H last 60 (10D), 1D last 30 (1mo)
       await Promise.all([
-        redisCmd('SET', `ohlcv:${symbol}:1h`, JSON.stringify(candles1h.slice(-120)), 'EX', '7200'),  // 2h TTL
-        redisCmd('SET', `ohlcv:${symbol}:4h`, JSON.stringify(candles4h.slice(-60)),  'EX', '7200'),  // 2h TTL
+        redisCmd('SET', `ohlcv:${symbol}:1h`, JSON.stringify(candles1h.slice(-120)), 'EX', '90000'), // 25h TTL
+        redisCmd('SET', `ohlcv:${symbol}:4h`, JSON.stringify(candles4h.slice(-60)),  'EX', '90000'), // 25h TTL
         redisCmd('SET', `ohlcv:${symbol}:1d`, JSON.stringify(candles1d.slice(-30)),  'EX', '90000'), // 25h TTL
       ]);
 
@@ -1367,10 +1367,15 @@ async function ohlcvAnalyzeHandler(req, res) {
   const symbol = req.query.symbol || req.body?.symbol;
   const label  = req.query.label  || req.body?.label;
   const ringkasanContext = req.body?.ringkasanContext || null;
+  const clientOhlcv      = req.body?.ohlcvData       || null;
   if (!symbol) return res.status(400).json({ error: 'symbol required' });
 
   try {
-    const data = await loadOhlcvData(symbol, label || symbol);
+    let data = await loadOhlcvData(symbol, label || symbol);
+    // Fallback: if Redis expired, use the client's cached data (same data shown in table)
+    if (!data.h1.available && clientOhlcv?.h1?.available) {
+      data = clientOhlcv;
+    }
     if (!data.h1.available) return res.status(200).json({ commentary: null, error: 'OHLCV belum tersedia — tunggu GitHub Actions sync pertama.' });
 
     const textBlock = buildOhlcvText(data);

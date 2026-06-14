@@ -3252,7 +3252,7 @@ function _tickAnalisaCooldown() {
     if (!btn) { clearInterval(analisaAiCooldownInterval); return; }
     if (remaining > 0) {
       btn.disabled = true;
-      btn.querySelector('span').textContent = `Tunggu ${remaining}d`;
+      btn.querySelector('span').textContent = `Tunggu ${remaining}s`;
     } else {
       clearInterval(analisaAiCooldownInterval);
       btn.disabled = false;
@@ -3495,11 +3495,14 @@ async function analyzeOhlcvAi() {
     ringkasanContext = excerpt.length > 700 ? excerpt.slice(0, 697) + '...' : excerpt;
   }
 
+  // Send cached ohlcv data as fallback so backend can analyze even if Redis expired
+  const ohlcvData = analisaDataCache[symbol] || null;
+
   try {
     const res  = await fetch(`/api/admin?action=ohlcv_analyze`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ symbol, label, ringkasanContext }),
+      body: JSON.stringify({ symbol, label, ringkasanContext, ohlcvData }),
     });
     const data = await res.json();
     if (data.commentary) {
