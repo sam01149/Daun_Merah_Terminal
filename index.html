@@ -3477,11 +3477,22 @@ async function analyzeOhlcvAi() {
   resultEl.style.display = 'none';
   const reqSymbol = symbol;
 
-  // Extract macro context from Ringkasan cache (first 3 paragraphs, max 600 chars)
+  // Extract macro context from Ringkasan cache
+  // XAU/USD: extract the XAUUSD: block specifically (it appears after FX section)
+  // Other pairs: use first 3 paragraphs (FX section)
   let ringkasanContext = null;
   if (ringkasanCache?.article) {
-    const paras = ringkasanCache.article.split(/\n\n+/).slice(0, 3).join('\n\n');
-    ringkasanContext = paras.length > 600 ? paras.slice(0, 597) + '...' : paras;
+    const art = ringkasanCache.article;
+    let excerpt;
+    if (symbol === 'GC=F') {
+      const xauIdx = art.search(/\bXAUUSD:/);
+      excerpt = xauIdx !== -1 ? art.slice(xauIdx) : art.split(/\n\n+/).slice(0, 3).join('\n\n');
+    } else {
+      const xauIdx = art.search(/\bXAUUSD:/);
+      const fxPart = xauIdx !== -1 ? art.slice(0, xauIdx) : art;
+      excerpt = fxPart.split(/\n\n+/).slice(0, 3).join('\n\n');
+    }
+    ringkasanContext = excerpt.length > 700 ? excerpt.slice(0, 697) + '...' : excerpt;
   }
 
   try {

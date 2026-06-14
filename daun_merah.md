@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-06-14 (session 58 — fix: OHLCV 1H simpan 120 candle = 5 hari, bukan 72 = 3 hari; label UI update ke "5D")
+> **Last updated:** 2026-06-14 (session 59 — fix: ringkasanContext untuk XAU/USD sekarang ekstrak blok XAUUSD: bukan 3 paragraf pertama yang berisi konteks FX)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Financial_Feed_App`
 > **Production URL:** https://financial-feed-app.vercel.app
