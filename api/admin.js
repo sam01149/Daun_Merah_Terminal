@@ -36,7 +36,8 @@ module.exports = async function handler(req, res) {
   if (action === 'ohlcv_sync')         return ohlcvSyncHandler(req, res);
   if (action === 'ohlcv_read')         return ohlcvReadHandler(req, res);
   if (action === 'ohlcv_analyze')      return ohlcvAnalyzeHandler(req, res);
-  return res.status(400).json({ error: 'Missing ?action= — use health, redis-keys, admin-prompts, push, fundamental_get, fundamental_seed, fundamental_refresh, fundamental_analysis, journal_import, circuit-reset, circuit-status, gdpnow, ohlcv_sync, ohlcv_read, or ohlcv_analyze' });
+  if (action === 'ohlcv_dashboard')    return ohlcvDashboardHandler(req, res);
+  return res.status(400).json({ error: 'Missing ?action= — use health, redis-keys, admin-prompts, push, fundamental_get, fundamental_seed, fundamental_refresh, fundamental_analysis, journal_import, circuit-reset, circuit-status, gdpnow, ohlcv_sync, ohlcv_read, ohlcv_analyze, or ohlcv_dashboard' });
 };
 
 // ── Shared Redis helper ────────────────────────────────────────────────────────
@@ -1434,6 +1435,42 @@ async function ohlcvAnalyzeHandler(req, res) {
     }
 
     return res.status(200).json({ commentary, model, loaded_at: new Date().toISOString() });
+  } catch(e) {
+    return res.status(500).json({ error: e.message });
+  }
+}
+
+async function ohlcvDashboardHandler(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Cache-Control', 'no-cache');
+  if (req.method === 'OPTIONS') return res.status(204).end();
+  try {
+    const pairs = await Promise.all(
+      OHLCV_FIXED_PAIRS.map(async ({ symbol, label }) => {
+        try {
+          const raw = await redisCmd('GET', `ohlcv:${symbol}:1h`);
+          if (!raw) return { symbol, label, available: false };
+          const c = JSON.parse(raw);
+          if (!Array.isArray(c) || c.length < 6) return { symbol, label, available: false };
+          const isXau = symbol === 'GC=F';
+          const isJpy = symbol.includes('JPY');
+          const dec   = isXau ? 2 : isJpy ? 3 : 5;
+          const c120  = c.slice(-120);
+          const c24   = c.slice(-24);
+          const curr  = +c120[c120.length - 1].c.toFixed(dec);
+          const chg   = +((c120[c120.length - 1].c - c120[0].o) / c120[0].o * 100).toFixed(2);
+          const older = c120.slice(0, Math.max(1, c120.length - 24));
+          const avgO  = older.reduce((s, x) => s + x.c, 0) / older.length;
+          const avgN  = c24.reduce((s, x) => s + x.c, 0) / c24.length;
+          const t     = (avgN - avgO) / avgO * 100;
+          const trend = t > 0.08 ? 'Uptrend' : t < -0.08 ? 'Downtrend' : 'Sideways';
+          return { symbol, label, available: true, trend, current: curr, change_pct: chg, dec };
+        } catch(e) {
+          return { symbol, label, available: false };
+        }
+      })
+    );
+    return res.status(200).json({ pairs, fetched_at: new Date().toISOString() });
   } catch(e) {
     return res.status(500).json({ error: e.message });
   }

@@ -1724,7 +1724,7 @@ body {
   .nvtab[data-view="dashboard"] { display: block; }
   #dashboardPanel {
     grid-template-columns: 280px 1fr 260px;
-    grid-template-rows: 1fr auto;
+    grid-template-rows: 1fr auto auto;
     height: calc(100vh - 48px);
     gap: 0;
     overflow: hidden;
@@ -1732,11 +1732,26 @@ body {
   #dashboardPanel.visible {
     display: grid;
   }
-  #dashNewsCol  { grid-column: 1; grid-row: 1; overflow-y: auto; border-right: 1px solid var(--border); }
-  #dashMainCol  { grid-column: 2; grid-row: 1; overflow-y: auto; border-right: 1px solid var(--border); }
-  #dashSideCol  { grid-column: 3; grid-row: 1; overflow-y: auto; }
-  #dashEventBar { grid-column: 1 / -1; grid-row: 2; border-top: 1px solid var(--border); flex-shrink: 0; padding: 8px 12px; min-height: 44px; display: flex; align-items: center; gap: 8px; overflow-x: auto; }
+  #dashNewsCol      { grid-column: 1; grid-row: 1; overflow-y: auto; border-right: 1px solid var(--border); }
+  #dashMainCol      { grid-column: 2; grid-row: 1; overflow-y: auto; border-right: 1px solid var(--border); }
+  #dashSideCol      { grid-column: 3; grid-row: 1; overflow-y: auto; }
+  #dashAnalisaStrip { grid-column: 1 / -1; grid-row: 2; border-top: 1px solid var(--border); flex-shrink: 0; min-height: 56px; display: flex; align-items: center; padding: 0 12px; gap: 0; overflow-x: auto; scrollbar-width: none; }
+  #dashAnalisaStrip::-webkit-scrollbar { display: none; }
+  #dashEventBar     { grid-column: 1 / -1; grid-row: 3; border-top: 1px solid var(--border); flex-shrink: 0; padding: 8px 12px; min-height: 44px; display: flex; align-items: center; gap: 8px; overflow-x: auto; }
 }
+.das-section-label { font-size: 8px; letter-spacing: 1px; text-transform: uppercase; color: var(--muted); font-family: 'DM Mono', monospace; white-space: nowrap; margin-right: 10px; flex-shrink: 0; }
+.das-chip { display: flex; flex-direction: column; gap: 2px; padding: 5px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); cursor: pointer; white-space: nowrap; margin-right: 6px; transition: border-color .15s; min-width: 88px; }
+.das-chip:hover { border-color: var(--accent); }
+.das-chip.unavail { opacity: .3; pointer-events: none; }
+.das-pair  { font-size: 8px; font-family: 'DM Mono', monospace; color: var(--muted); }
+.das-price { font-size: 11px; font-family: 'DM Mono', monospace; color: var(--text); font-weight: 600; }
+.das-meta  { display: flex; gap: 5px; align-items: center; }
+.das-trend { font-size: 9px; }
+.das-trend.up { color: var(--teal); }
+.das-trend.down { color: var(--red); }
+.das-chg { font-size: 9px; font-family: 'DM Mono', monospace; }
+.das-chg.up { color: var(--teal); }
+.das-chg.down { color: var(--red); }
 .dash-col-title {
   font-size: 8px; letter-spacing: 1px; text-transform: uppercase; color: var(--muted);
   font-family: 'DM Mono', monospace; padding: 10px 12px 6px;
@@ -2548,6 +2563,10 @@ body {
     <div id="dashFundStrip"><div class="dash-no-data">Buka tab FUNDAMENTAL dulu.</div></div>
     <div class="dash-col-title" style="margin-top:4px">DAILY PULSE <span id="dashSnapAge" style="color:var(--border);margin-left:4px;text-transform:none;letter-spacing:0;font-size:8px"></span></div>
     <div id="dashDailySnap"><div class="dash-no-data" style="padding:8px 12px">Memuat...</div></div>
+  </div>
+  <div id="dashAnalisaStrip">
+    <span class="das-section-label">TEKNIKAL:</span>
+    <div id="dashAnalisaRow" style="display:flex;gap:0;flex-wrap:nowrap"><span style="font-size:9px;color:var(--muted);font-family:'DM Mono',monospace">Memuat...</span></div>
   </div>
   <div id="dashEventBar">
     <span style="font-size:8px;color:var(--muted);font-family:'DM Mono',monospace;white-space:nowrap">EVENT BERIKUTNYA:</span>
@@ -8453,8 +8472,45 @@ document.addEventListener('click', function(e) {
 })();
 
 // ── COMMAND CENTER DASHBOARD ──────────────────────────────
-let dashRefreshInterval = null;
-let dashLastRefresh     = 0;
+let dashRefreshInterval  = null;
+let dashLastRefresh      = 0;
+let dashAnalisaData      = null;
+let dashAnalisaFetchedAt = 0;
+
+async function fetchDashAnalisa() {
+  if (Date.now() - dashAnalisaFetchedAt < 5 * 60 * 1000) { renderDashAnalisa(); return; }
+  try {
+    const res = await fetch('/api/admin?action=ohlcv_dashboard', { signal: AbortSignal.timeout(8000) });
+    if (!res.ok) return;
+    dashAnalisaData = await res.json();
+    dashAnalisaFetchedAt = Date.now();
+    renderDashAnalisa();
+  } catch(e) {}
+}
+
+function renderDashAnalisa() {
+  const row = document.getElementById('dashAnalisaRow');
+  if (!row || !dashAnalisaData?.pairs) return;
+  row.innerHTML = dashAnalisaData.pairs.map(p => {
+    if (!p.available) {
+      return `<div class="das-chip unavail"><div class="das-pair">${escHtml(p.label)}</div><div class="das-price">—</div><div class="das-meta"><span class="das-trend">— —</span></div></div>`;
+    }
+    const ti = p.trend === 'Uptrend' ? '↑' : p.trend === 'Downtrend' ? '↓' : '→';
+    const tc = p.trend === 'Uptrend' ? 'up' : p.trend === 'Downtrend' ? 'down' : '';
+    const cc = p.change_pct >= 0 ? 'up' : 'down';
+    const chg = `${p.change_pct >= 0 ? '+' : ''}${p.change_pct}%`;
+    return `<div class="das-chip" onclick="openAnalisaFromDash('${p.symbol}','${escHtml(p.label)}')" title="Buka Analisa ${escHtml(p.label)}">
+      <div class="das-pair">${escHtml(p.label)}</div>
+      <div class="das-price">${p.current}</div>
+      <div class="das-meta"><span class="das-trend ${tc}">${ti} ${p.trend}</span><span class="das-chg ${cc}">${chg}</span></div>
+    </div>`;
+  }).join('');
+}
+
+function openAnalisaFromDash(symbol, label) {
+  switchView('analisa');
+  setTimeout(() => loadAnalisa(symbol, label, document.querySelector(`.analisa-chip[onclick*="'${symbol}'"]`)), 60);
+}
 
 async function initDashboard() {
   // Render dulu dengan data yang sudah ada (mungkin sudah ada sebagian)
@@ -8479,6 +8535,8 @@ async function initDashboard() {
   if (!ringkasanCache)
     fetches.push(loadCachedRingkasan().catch(() => {}));
 
+  fetches.push(fetchDashAnalisa().catch(() => {}));
+
   if (fetches.length > 0) {
     await Promise.allSettled(fetches);
     // Re-render setelah semua data masuk (hanya jika masih di dashboard)
@@ -8498,6 +8556,7 @@ function refreshDashboard() {
   renderDashDigest();
   renderDashBias();
   renderDashEvents();
+  renderDashAnalisa();
   const badge = document.getElementById('dashAutoRefreshBadge');
   if (badge) badge.textContent = 'auto-refresh 60s';
 }
