@@ -1743,7 +1743,7 @@ body {
 .das-section-label { font-size: 8px; letter-spacing: 1px; text-transform: uppercase; color: var(--muted); font-family: 'DM Mono', monospace; white-space: nowrap; margin-right: 10px; flex-shrink: 0; }
 .das-chip { display: flex; flex-direction: column; gap: 2px; padding: 5px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); cursor: pointer; white-space: nowrap; margin-right: 6px; transition: border-color .15s; min-width: 88px; }
 .das-chip:hover { border-color: var(--accent); }
-.das-chip.unavail { opacity: .3; pointer-events: none; }
+.das-chip.unavail { opacity: .35; cursor: pointer; }
 .das-pair  { font-size: 8px; font-family: 'DM Mono', monospace; color: var(--muted); }
 .das-price { font-size: 11px; font-family: 'DM Mono', monospace; color: var(--text); font-weight: 600; }
 .das-meta  { display: flex; gap: 5px; align-items: center; }
@@ -8489,23 +8489,61 @@ async function fetchDashAnalisa() {
   } catch(e) {}
 }
 
+const DASH_ANALISA_PAIRS = [
+  { symbol: 'GC=F',     label: 'XAU/USD' },
+  { symbol: 'EURUSD=X', label: 'EUR/USD' },
+  { symbol: 'GBPUSD=X', label: 'GBP/USD' },
+  { symbol: 'USDJPY=X', label: 'USD/JPY' },
+  { symbol: 'AUDUSD=X', label: 'AUD/USD' },
+  { symbol: 'USDCAD=X', label: 'USD/CAD' },
+  { symbol: 'USDCHF=X', label: 'USD/CHF' },
+  { symbol: 'NZDUSD=X', label: 'NZD/USD' },
+];
+
+function _dasChipHtml(p) {
+  const ti = p.trend === 'Uptrend' ? '↑' : p.trend === 'Downtrend' ? '↓' : '→';
+  const tc = p.trend === 'Uptrend' ? 'up' : p.trend === 'Downtrend' ? 'down' : '';
+  const cc = p.change_pct >= 0 ? 'up' : 'down';
+  const chg = `${p.change_pct >= 0 ? '+' : ''}${p.change_pct}%`;
+  return `<div class="das-chip" onclick="openAnalisaFromDash('${p.symbol}','${escHtml(p.label)}')" title="Buka Analisa ${escHtml(p.label)}">
+    <div class="das-pair">${escHtml(p.label)}</div>
+    <div class="das-price">${typeof p.current === 'number' ? p.current.toFixed(p.dec) : p.current}</div>
+    <div class="das-meta"><span class="das-trend ${tc}">${ti} ${p.trend}</span><span class="das-chg ${cc}">${chg}</span></div>
+  </div>`;
+}
+
 function renderDashAnalisa() {
   const row = document.getElementById('dashAnalisaRow');
-  if (!row || !dashAnalisaData?.pairs) return;
-  row.innerHTML = dashAnalisaData.pairs.map(p => {
-    if (!p.available) {
-      return `<div class="das-chip unavail"><div class="das-pair">${escHtml(p.label)}</div><div class="das-price">—</div><div class="das-meta"><span class="das-trend">— —</span></div></div>`;
+  if (!row) return;
+
+  // Merge: Redis data primary, analisaDataCache fallback for unavailable pairs
+  const apiPairs = dashAnalisaData?.pairs || [];
+  const html = DASH_ANALISA_PAIRS.map(({ symbol, label }) => {
+    const api = apiPairs.find(p => p.symbol === symbol);
+    if (api?.available) return _dasChipHtml(api);
+
+    // Fallback to analisaDataCache (data already loaded from ANALISA tab)
+    const cached = analisaDataCache[symbol];
+    if (cached?.h1?.available) {
+      return _dasChipHtml({
+        symbol, label,
+        available:   true,
+        trend:       cached.h1.trend,
+        current:     cached.h1.current,
+        change_pct:  cached.h1.change_pct,
+        dec:         cached.dec,
+      });
     }
-    const ti = p.trend === 'Uptrend' ? '↑' : p.trend === 'Downtrend' ? '↓' : '→';
-    const tc = p.trend === 'Uptrend' ? 'up' : p.trend === 'Downtrend' ? 'down' : '';
-    const cc = p.change_pct >= 0 ? 'up' : 'down';
-    const chg = `${p.change_pct >= 0 ? '+' : ''}${p.change_pct}%`;
-    return `<div class="das-chip" onclick="openAnalisaFromDash('${p.symbol}','${escHtml(p.label)}')" title="Buka Analisa ${escHtml(p.label)}">
-      <div class="das-pair">${escHtml(p.label)}</div>
-      <div class="das-price">${p.current}</div>
-      <div class="das-meta"><span class="das-trend ${tc}">${ti} ${p.trend}</span><span class="das-chg ${cc}">${chg}</span></div>
+
+    // Truly unavailable
+    return `<div class="das-chip unavail" onclick="openAnalisaFromDash('${symbol}','${escHtml(label)}')" title="Buka Analisa ${escHtml(label)}">
+      <div class="das-pair">${escHtml(label)}</div>
+      <div class="das-price">—</div>
+      <div class="das-meta"><span class="das-trend">—</span></div>
     </div>`;
   }).join('');
+
+  row.innerHTML = html || '<span style="font-size:9px;color:var(--muted);font-family:\'DM Mono\',monospace">Kunjungi tab ANALISA untuk memuat data pair</span>';
 }
 
 function openAnalisaFromDash(symbol, label) {
