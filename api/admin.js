@@ -1086,7 +1086,7 @@ const OHLCV_PAIR_SYMBOL_MAP = {
 };
 
 async function fetchYahooOhlcv1h(symbol) {
-  // range=10d — extended for 4H resampling over 10 days; we store only last 72 of the 1H result
+  // range=10d — extended for 4H resampling over 10 days; we store only last 120 of the 1H result
   const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1h&range=10d`;
   const r = await fetch(url, {
     headers: {
@@ -1195,14 +1195,14 @@ async function ohlcvSyncHandler(req, res) {
       const candles4h = resampleTo4h(candles1h);
       const candles1d = await fetchYahooOhlcvDaily(symbol);
 
-      // Store 3 TFs in parallel: 1H last 72 (3D), 4H last 60 (10D), 1D last 30 (1mo)
+      // Store 3 TFs in parallel: 1H last 120 (5D), 4H last 60 (10D), 1D last 30 (1mo)
       await Promise.all([
-        redisCmd('SET', `ohlcv:${symbol}:1h`, JSON.stringify(candles1h.slice(-72)),  'EX', '7200'),  // 2h TTL
+        redisCmd('SET', `ohlcv:${symbol}:1h`, JSON.stringify(candles1h.slice(-120)), 'EX', '7200'),  // 2h TTL
         redisCmd('SET', `ohlcv:${symbol}:4h`, JSON.stringify(candles4h.slice(-60)),  'EX', '7200'),  // 2h TTL
         redisCmd('SET', `ohlcv:${symbol}:1d`, JSON.stringify(candles1d.slice(-30)),  'EX', '90000'), // 25h TTL
       ]);
 
-      const n1h = Math.min(72, candles1h.length), n4h = Math.min(60, candles4h.length), n1d = Math.min(30, candles1d.length);
+      const n1h = Math.min(120, candles1h.length), n4h = Math.min(60, candles4h.length), n1d = Math.min(30, candles1d.length);
       console.log(`ohlcv_sync: ${label} — 1H:${n1h} 4H:${n4h} 1D:${n1d}`);
       return { symbol, label, count1h: n1h, count4h: n4h, count1d: n1d };
     })
@@ -1296,17 +1296,17 @@ async function loadOhlcvData(symbol, label) {
 
   // 1H
   if (c1h && c1h.length >= 6) {
-    const c72 = c1h.slice(-72), c24 = c1h.slice(-24);
-    const hi = Math.max(...c72.map(c => c.h)), lo = Math.min(...c72.map(c => c.l));
-    const curr = c72[c72.length - 1].c, chg = +tp(c72[0].o, curr).toFixed(2);
-    const older = c72.slice(0, Math.max(1, c72.length - 24));
+    const c120 = c1h.slice(-120), c24 = c1h.slice(-24);
+    const hi = Math.max(...c120.map(c => c.h)), lo = Math.min(...c120.map(c => c.l));
+    const curr = c120[c120.length - 1].c, chg = +tp(c120[0].o, curr).toFixed(2);
+    const older = c120.slice(0, Math.max(1, c120.length - 24));
     const avgO = older.reduce((s,c) => s+c.c, 0) / older.length;
     const avgN = c24.reduce((s,c) => s+c.c, 0) / c24.length;
     const t = tp(avgO, avgN);
     const trend = t > 0.08 ? 'Uptrend' : t < -0.08 ? 'Downtrend' : 'Sideways';
     let volAvg = 0;
     if (isXau) {
-      const vArr = c72.map(c => c.v).filter(v => v > 0);
+      const vArr = c120.map(c => c.v).filter(v => v > 0);
       volAvg = vArr.length ? Math.round(vArr.reduce((s,v) => s+v, 0) / vArr.length) : 0;
     }
     out.h1 = { available: true, high: +hi.toFixed(dec), low: +lo.toFixed(dec), current: +curr.toFixed(dec), change_pct: chg, trend, candles24: c24, vol_avg: volAvg };
@@ -1333,7 +1333,7 @@ function buildOhlcvText(data) {
     lines.push(`  Swing High: ${f(h4.swing_high.price)} (${fmtWib(h4.swing_high.t)}) | Swing Low: ${f(h4.swing_low.price)} (${fmtWib(h4.swing_low.t)})`);
   }
   if (h1.available) {
-    lines.push(`[1H 3D] Range: ${f(h1.low)}–${f(h1.high)} | Now: ${f(h1.current)} | 3D: ${h1.change_pct >= 0 ? '+' : ''}${h1.change_pct}% | Trend: ${h1.trend}`);
+    lines.push(`[1H 5D] Range: ${f(h1.low)}–${f(h1.high)} | Now: ${f(h1.current)} | 5D: ${h1.change_pct >= 0 ? '+' : ''}${h1.change_pct}% | Trend: ${h1.trend}`);
   }
   if (data.indicators?.available) {
     const ind = data.indicators;
