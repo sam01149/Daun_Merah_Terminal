@@ -313,6 +313,34 @@ Financial_Feed_App/
 
 ---
 
+## Changelog Session 62 (2026-06-15)
+
+### Analisa Feature Upgrade — MACD, ATR, Structured AI Output, Auto-refresh
+
+**Tiga peningkatan sekaligus di tab ANALISA:**
+
+**1. Indikator baru: MACD H4 + ATR 14H**
+- `api/admin.js` — `_macdFull(closes)`: hitung MACD (EMA 12/26/9) dari H4 candles (butuh 35+ bar). Output: `macd`, `signal`, `histogram`, `status` (Bullish/Bearish/Recovering/Weakening)
+- `_atr14h1(candles)`: hitung ATR-14 dari H1 candles. Output: `atr_h1` (price), `atr_pips` (null untuk XAU)
+- `loadOhlcvData()` kini return `out.macd` dan `out.atr`
+- `buildOhlcvText()` sertakan MACD dan ATR di blok teks yang dikirim ke AI
+- Frontend: indicator card sekarang label "INDIKATOR — RSI / SMA / MACD / ATR" dengan tiga seksi terpisah (RSI/SMA dari ATR cache, MACD H4 dari candles, ATR 14H dari candles)
+
+**2. Structured AI Output**
+- Prompt AI diubah dari "4-5 kalimat bebas" → JSON dengan field: `bias`, `entry_zone`, `sl`, `tp`, `trigger`, `commentary`
+- Backend parse JSON dari response, normalize bias ke bullish/bearish/neutral; fallback ke plain text jika parse gagal
+- `ohlcvAnalyzeHandler` return `{ commentary, structured, model, loaded_at }`
+- Frontend: `_renderStructuredAi()` — render bias chip berwarna (green/red/orange), trigger inline, baris ENTRY/SL/TP dalam monospace, commentary di bawah
+- Cache format diperluas: `{ commentary, structured, model, hasMakro, saved_at }` — backward compat: old cache tanpa `structured` render sebagai plain text
+
+**3. Auto-refresh 15 menit**
+- `startAnalisaAutoRefresh()` / `stopAnalisaAutoRefresh()` menggunakan `setInterval` 15 menit
+- `loadAnalisa()` selalu restart timer (reset countdown saat user manual refresh)
+- Tab switch listener: stop timer saat meninggalkan tab ANALISA
+- Header timestamp menampilkan label "auto 15m" di samping tombol ↻ refresh
+
+---
+
 ## Changelog Session 48 (2026-06-05)
 
 ### VIX Fix + TGA API Fix + Rename + RSS Research

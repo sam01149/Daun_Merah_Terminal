@@ -3249,6 +3249,20 @@ function escHtml(s) {
 // ── ANALISA ──────────────────────────────────────────────
 const analisaDataCache = {};
 const analisaAiCache   = {};
+let analisaAutoRefreshTimer   = null;
+const ANALISA_REFRESH_INTERVAL = 15 * 60 * 1000;
+
+function startAnalisaAutoRefresh() {
+  clearInterval(analisaAutoRefreshTimer);
+  analisaAutoRefreshTimer = setInterval(() => {
+    if (activeView !== 'analisa' || !analisaActive.symbol) return;
+    loadAnalisa(analisaActive.symbol, analisaActive.label, document.querySelector('.analisa-chip.active'));
+  }, ANALISA_REFRESH_INTERVAL);
+}
+function stopAnalisaAutoRefresh() {
+  clearInterval(analisaAutoRefreshTimer);
+  analisaAutoRefreshTimer = null;
+}
 let analisaActive = { symbol: null, label: null };
 
 const LS_ANALISA_DATA = 'analisa_data_cache_v1';
@@ -3317,6 +3331,7 @@ async function loadAnalisa(symbol, label, chipEl) {
   document.querySelectorAll('.analisa-chip').forEach(c => c.classList.remove('active','loading'));
   if (chipEl) chipEl.classList.add('active','loading');
   analisaActive = { symbol, label };
+  startAnalisaAutoRefresh();
   try { localStorage.setItem(LS_ANALISA_LAST, symbol); } catch(e) {}
 
   const emptyEl   = document.getElementById('analisaEmpty');
@@ -3351,12 +3366,40 @@ async function loadAnalisa(symbol, label, chipEl) {
   }
 }
 
+function _renderStructuredAi(structured, commentary, model, hasMakro, isCached) {
+  const srcTag     = hasMakro ? ' · <span style="color:#a78bfa">teknikal + makro</span>' : ' · teknikal';
+  const cachedBadge = isCached ? ' <span style="color:var(--muted);font-size:10px">(cached)</span>' : '';
+  const modelStr   = model ? ` · ${model}` : '';
+  let html = `<div class="analisa-ai-result"><div class="analisa-ai-label">🧠 AI${modelStr}${srcTag}${cachedBadge}</div>`;
+
+  if (structured) {
+    const bias      = (structured.bias || 'neutral').toLowerCase();
+    const biasColor = bias === 'bullish' ? 'var(--green)' : bias === 'bearish' ? 'var(--red)' : '#f5a623';
+    const biasLabel = bias === 'bullish' ? '▲ BULLISH' : bias === 'bearish' ? '▼ BEARISH' : '→ NEUTRAL';
+    html += `<div style="display:flex;align-items:flex-start;gap:10px;margin:8px 0 10px;flex-wrap:wrap">
+      <span style="background:${biasColor};color:#0a0f1a;font-size:10px;font-weight:700;padding:3px 10px;border-radius:3px;font-family:'DM Mono',monospace;letter-spacing:.06em;flex-shrink:0">${biasLabel}</span>
+      ${structured.trigger ? `<span style="font-size:11px;color:var(--fg);flex:1;min-width:160px;line-height:1.5">${escHtml(structured.trigger)}</span>` : ''}
+    </div>`;
+    if (structured.entry_zone || structured.sl || structured.tp) {
+      html += `<div style="display:flex;gap:16px;margin-bottom:10px;font-family:'DM Mono',monospace;font-size:11px;flex-wrap:wrap">
+        ${structured.entry_zone ? `<span><span style="color:var(--muted)">ENTRY </span>${escHtml(structured.entry_zone)}</span>` : ''}
+        ${structured.sl ? `<span><span style="color:var(--red)">SL </span>${escHtml(structured.sl)}</span>` : ''}
+        ${structured.tp ? `<span><span style="color:var(--green)">TP </span>${escHtml(structured.tp)}</span>` : ''}
+      </div>`;
+    }
+  }
+
+  const text = (structured?.commentary || commentary || '').trim();
+  if (text) html += text.split('\n').filter(l => l.trim()).map(l => `<p style="margin:0 0 6px;font-size:12px">${escHtml(l)}</p>`).join('');
+  html += '</div>';
+  return html;
+}
+
 function _restoreAiResult(symbol) {
   const cached = analisaAiCache[symbol];
   if (!cached) return;
   const resultEl = document.getElementById('analisaAiResult');
-  const srcTag = cached.hasMakro ? ' · <span style="color:#a78bfa">teknikal + makro</span>' : ' · teknikal';
-  resultEl.innerHTML = `<div class="analisa-ai-result"><div class="analisa-ai-label">🧠 AI${cached.model ? ' · ' + cached.model : ''}${srcTag} <span style="color:var(--muted);font-size:10px">(cached)</span></div>${escHtml(cached.commentary).split('\n').map(l => `<p style="margin:0 0 6px">${l}</p>`).join('')}</div>`;
+  resultEl.innerHTML = _renderStructuredAi(cached.structured || null, cached.commentary, cached.model, !!cached.hasMakro, true);
   resultEl.style.display = 'block';
 }
 
@@ -3378,7 +3421,7 @@ function renderAnalisa() {
 
   document.getElementById('analisaHeader').innerHTML = `
     <span class="analisa-pair-label">${escHtml(d.label)}</span>
-    <span class="analisa-ts-label">${tsStr} · <a href="#" onclick="loadAnalisa('${d.symbol}','${d.label}',document.querySelector('.analisa-chip.active'));return false" style="color:var(--accent);text-decoration:none">↻ refresh</a></span>`;
+    <span class="analisa-ts-label">${tsStr} · <a href="#" onclick="loadAnalisa('${d.symbol}','${d.label}',document.querySelector('.analisa-chip.active'));return false" style="color:var(--accent);text-decoration:none">↻ refresh</a> · <span style="color:var(--muted)">auto 15m</span></span>`;
 
   // Daily card
   const d1 = d.d1;
@@ -3461,26 +3504,46 @@ function renderAnalisa() {
     document.getElementById('analisaH1Card').innerHTML = `<div class="analisa-tf-card h1"><div class="analisa-tf-label">ENTRY — 1H 3D</div><div style="color:var(--muted);font-size:11px">Data belum tersedia.</div></div>`;
   }
 
-  // Indicator card
+  // Indicator card — RSI/SMA (Daily cache) + MACD H4 + ATR H1
   const indEl = document.getElementById('analisaIndCard');
+  let indSections = '';
+
   if (d.indicators?.available) {
     const ind = d.indicators;
-    const rsiNum  = +ind.rsi_14;
-    const rsiCls  = rsiNum >= 70 ? 'down' : rsiNum <= 30 ? 'up' : rsiNum >= 55 ? 'up' : rsiNum <= 45 ? 'down' : '';
-    const sma50Html = ind.sma_50 != null
-      ? `<div class="analisa-stat"><div class="analisa-stat-label">SMA 50</div><div class="analisa-stat-val">${fmt(ind.sma_50)} <small style="color:var(--muted)">${ind.vs_sma50||''}</small></div></div>`
-      : '';
-    const sma200Html = ind.sma_200 != null
-      ? `<div class="analisa-stat"><div class="analisa-stat-label">SMA 200</div><div class="analisa-stat-val">${fmt(ind.sma_200)} <small style="color:var(--muted)">${ind.vs_sma200||''}</small></div></div>`
-      : '';
-    indEl.innerHTML = `
-      <div class="analisa-tf-card" style="border-left-color:#a78bfa">
-        <div class="analisa-tf-label">INDIKATOR — RSI / SMA</div>
-        <div class="analisa-tf-main">
-          <div class="analisa-stat"><div class="analisa-stat-label">RSI 14</div><div class="analisa-stat-val ${rsiCls}">${rsiNum} <small>${ind.rsi_label||''}</small></div></div>
-          ${sma50Html}${sma200Html}
-        </div>
-      </div>`;
+    const rsiNum = +ind.rsi_14;
+    const rsiCls = rsiNum >= 70 ? 'down' : rsiNum <= 30 ? 'up' : rsiNum >= 55 ? 'up' : rsiNum <= 45 ? 'down' : '';
+    const sma50Html  = ind.sma_50  != null ? `<div class="analisa-stat"><div class="analisa-stat-label">SMA 50</div><div class="analisa-stat-val">${fmt(ind.sma_50)} <small style="color:var(--muted)">${ind.vs_sma50||''}</small></div></div>` : '';
+    const sma200Html = ind.sma_200 != null ? `<div class="analisa-stat"><div class="analisa-stat-label">SMA 200</div><div class="analisa-stat-val">${fmt(ind.sma_200)} <small style="color:var(--muted)">${ind.vs_sma200||''}</small></div></div>` : '';
+    indSections += `<div class="analisa-tf-main">
+      <div class="analisa-stat"><div class="analisa-stat-label">RSI 14</div><div class="analisa-stat-val ${rsiCls}">${rsiNum} <small>${ind.rsi_label||''}</small></div></div>
+      ${sma50Html}${sma200Html}
+    </div>`;
+  }
+
+  if (d.macd?.available) {
+    const m = d.macd;
+    const mCls  = m.histogram > 0 ? 'up' : 'down';
+    const hSign = m.histogram >= 0 ? '+' : '';
+    indSections += `<div class="analisa-tf-main" style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border)">
+      <div class="analisa-stat"><div class="analisa-stat-label">MACD H4</div><div class="analisa-stat-val ${mCls}">${m.status}</div></div>
+      <div class="analisa-stat"><div class="analisa-stat-label">LINE / SIG</div><div class="analisa-stat-val" style="font-size:11px">${m.macd} / ${m.signal}</div></div>
+      <div class="analisa-stat"><div class="analisa-stat-label">HIST</div><div class="analisa-stat-val ${mCls}">${hSign}${m.histogram}</div></div>
+    </div>`;
+  }
+
+  if (d.atr?.available) {
+    const a = d.atr;
+    const pipsStr = a.atr_pips ? ` · ${a.atr_pips} pip` : '';
+    indSections += `<div class="analisa-tf-main" style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border)">
+      <div class="analisa-stat"><div class="analisa-stat-label">ATR 14H</div><div class="analisa-stat-val">${a.atr_h1}${pipsStr}</div></div>
+    </div>`;
+  }
+
+  if (indSections) {
+    indEl.innerHTML = `<div class="analisa-tf-card" style="border-left-color:#a78bfa">
+      <div class="analisa-tf-label">INDIKATOR — RSI / SMA / MACD / ATR</div>
+      ${indSections}
+    </div>`;
   } else {
     indEl.innerHTML = '';
   }
@@ -3525,13 +3588,12 @@ async function analyzeOhlcvAi() {
       body: JSON.stringify({ symbol, label, ringkasanContext, ohlcvData }),
     });
     const data = await res.json();
-    if (data.commentary) {
+    if (data.commentary || data.structured) {
       const hasMakro = !!ringkasanContext;
-      analisaAiCache[reqSymbol] = { commentary: data.commentary, model: data.model, hasMakro, saved_at: Date.now() };
+      analisaAiCache[reqSymbol] = { commentary: data.commentary, structured: data.structured || null, model: data.model, hasMakro, saved_at: Date.now() };
       _analisaSaveAi(reqSymbol);
       if (analisaActive.symbol === reqSymbol) {
-        const srcTag = hasMakro ? ' · <span style="color:#a78bfa">teknikal + makro</span>' : ' · teknikal';
-        resultEl.innerHTML = `<div class="analisa-ai-result"><div class="analisa-ai-label">🧠 AI${data.model ? ' · ' + data.model : ''}${srcTag}</div>${escHtml(data.commentary).split('\n').map(l => `<p style="margin:0 0 6px">${l}</p>`).join('')}</div>`;
+        resultEl.innerHTML = _renderStructuredAi(data.structured || null, data.commentary, data.model, hasMakro, false);
         resultEl.style.display = 'block';
       }
     } else {
@@ -3681,6 +3743,7 @@ document.querySelectorAll('#navViews .nvtab').forEach(btn => {
     document.querySelectorAll('#botNav .bot-nav-btn').forEach(b => b.classList.toggle('active', b.dataset.view === btn.dataset.view));
     hideAllPanels();
     if (btn.dataset.view !== 'cal') stopCountdownTimer();
+    if (btn.dataset.view !== 'analisa') stopAnalisaAutoRefresh();
     const view = btn.dataset.view;
     if (view === 'feed') {
       setFeedUI(true);

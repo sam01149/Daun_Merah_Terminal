@@ -1219,6 +1219,36 @@ async function ohlcvSyncHandler(req, res) {
   return res.status(200).json({ ok: true, synced, failed, synced_at: new Date().toISOString() });
 }
 
+// ── OHLCV helpers ─────────────────────────────────────────────────────────────
+
+function _macdFull(closes) {
+  if (!closes || closes.length < 35) return null;
+  const k12 = 2/13, k26 = 2/27, k9 = 2/10;
+  const ema12 = new Array(closes.length);
+  ema12[11] = closes.slice(0, 12).reduce((a, b) => a + b, 0) / 12;
+  for (let i = 12; i < closes.length; i++) ema12[i] = closes[i] * k12 + ema12[i-1] * (1-k12);
+  const ema26 = new Array(closes.length);
+  ema26[25] = closes.slice(0, 26).reduce((a, b) => a + b, 0) / 26;
+  for (let i = 26; i < closes.length; i++) ema26[i] = closes[i] * k26 + ema26[i-1] * (1-k26);
+  const macdLine = [];
+  for (let i = 25; i < closes.length; i++) macdLine.push(ema12[i] - ema26[i]);
+  if (macdLine.length < 9) return null;
+  let sig = macdLine.slice(0, 9).reduce((a, b) => a + b, 0) / 9;
+  for (let i = 9; i < macdLine.length; i++) sig = macdLine[i] * k9 + sig * (1-k9);
+  const last = macdLine[macdLine.length - 1];
+  return { macd: last, signal: sig, histogram: last - sig };
+}
+
+function _atr14h1(candles) {
+  if (!candles || candles.length < 15) return null;
+  const trs = [];
+  for (let i = 1; i < candles.length; i++) {
+    const { h, l } = candles[i], pc = candles[i-1].c;
+    trs.push(Math.max(h - l, Math.abs(h - pc), Math.abs(l - pc)));
+  }
+  return trs.slice(-14).reduce((a, b) => a + b, 0) / Math.min(14, trs.length);
+}
+
 // ── OHLCV Read — structured metrics for Analisa tab ──────────────────────────
 
 async function loadOhlcvData(symbol, label) {
@@ -1313,6 +1343,37 @@ async function loadOhlcvData(symbol, label) {
     out.h1 = { available: true, high: +hi.toFixed(dec), low: +lo.toFixed(dec), current: +curr.toFixed(dec), change_pct: chg, trend, candles24: c24, vol_avg: volAvg };
   } else { out.h1 = { available: false }; }
 
+  // MACD from H4 candles (EMA 12/26/9) — needs 35+ bars
+  if (c4h && c4h.length >= 35) {
+    const m = _macdFull(c4h.map(c => c.c));
+    if (m) {
+      const histUp = m.histogram > 0, macdUp = m.macd > 0;
+      const status = histUp && macdUp ? 'Bullish' : !histUp && !macdUp ? 'Bearish' : histUp ? 'Recovering' : 'Weakening';
+      out.macd = {
+        available: true,
+        macd:      +m.macd.toFixed(dec + 2),
+        signal:    +m.signal.toFixed(dec + 2),
+        histogram: +m.histogram.toFixed(dec + 2),
+        status,
+      };
+    }
+  }
+  if (!out.macd) out.macd = { available: false };
+
+  // ATR-14 from H1 candles (14-hour rolling volatility)
+  if (c1h && c1h.length >= 15) {
+    const atrVal = _atr14h1(c1h);
+    if (atrVal != null) {
+      const pipSize = isJpy ? 0.01 : isXau ? null : 0.0001;
+      out.atr = {
+        available: true,
+        atr_h1:   +atrVal.toFixed(dec),
+        atr_pips: pipSize ? Math.round(atrVal / pipSize) : null,
+      };
+    }
+  }
+  if (!out.atr) out.atr = { available: false };
+
   return out;
 }
 
@@ -1343,6 +1404,16 @@ function buildOhlcvText(data) {
       ind.sma_200 != null ? `SMA 200: ${f(ind.sma_200)} (price ${ind.vs_sma200})` : null,
     ].filter(Boolean).join(' | ');
     lines.push(`[INDIKATOR Daily] RSI 14: ${ind.rsi_14} (${ind.rsi_label}) | ${smaLine}`);
+  }
+  if (data.macd?.available) {
+    const m = data.macd;
+    const sign = m.histogram >= 0 ? '+' : '';
+    lines.push(`[MACD H4 12,26,9] Line: ${m.macd} | Signal: ${m.signal} | Hist: ${sign}${m.histogram} [${m.status}]`);
+  }
+  if (data.atr?.available) {
+    const a = data.atr;
+    const pipsStr = a.atr_pips ? ` (${a.atr_pips} pip)` : '';
+    lines.push(`[ATR-14 H1] Volatilitas: ${a.atr_h1}${pipsStr} — gunakan untuk SL minimum dan sizing`);
   }
   return lines.join('\n');
 }
@@ -1381,60 +1452,67 @@ async function ohlcvAnalyzeHandler(req, res) {
 
     const textBlock = buildOhlcvText(data);
 
-    let n = 4;
-    const instruksi = [
-      '(1) Arah trend dominan dari Daily',
-      '(2) Level resistance/support kritis dari 4H — sebut angka spesifik dari Swing High/Low',
-      '(3) Konteks entry dari 1H — momentum mendukung entry langsung atau tunggu pullback ke level tertentu',
-      '(4) Level invalidasi — berdasarkan Swing Low 4H atau Support Daily, di level mana thesis ini gugur',
-    ];
-    if (data.is_xau) {
-      n++;
-      instruksi.push(`(${n}) Konfirmasi volume XAU — apakah volume mendukung atau meragukan pergerakan harga saat ini`);
-    }
-    if (data.indicators?.available) {
-      n++;
-      instruksi.push(`(${n}) Gunakan RSI 14 dan posisi harga vs SMA 50/200 untuk konfirmasi momentum`);
-    }
-    n++;
-    instruksi.push(`(${n}) Bias keseluruhan — satu kalimat integrasikan teknikal${ringkasanContext ? ' + konteks makro' : ''}: Bullish/Bearish/Neutral dengan alasan utamanya`);
-
     const makroBlock = ringkasanContext
-      ? `KONTEKS MAKRO (Ringkasan pasar):\n${ringkasanContext}\n\nDATA TEKNIKAL:\n${textBlock}`
+      ? `KONTEKS MAKRO:\n${ringkasanContext}\n\nDATA TEKNIKAL:\n${textBlock}`
       : textBlock;
 
-    const messages  = [
-      { role: 'system', content: 'Kamu analis senior yang mengintegrasikan analisa teknikal multi-timeframe dengan konteks fundamental makro. Jawab dalam Bahasa Indonesia, 4-5 kalimat padat, tanpa bullet, tanpa heading. Sebut angka konkret dari data.' },
-      { role: 'user',   content: `Analisa untuk ${data.label}:\n\n${makroBlock}\n\nIdentifikasi: ${instruksi.join(', ')}.` },
+    const extraCtx = [
+      data.is_xau            ? 'volume XAU' : null,
+      data.indicators?.available ? 'RSI/SMA Daily' : null,
+      data.macd?.available   ? 'MACD H4' : null,
+      data.atr?.available    ? 'ATR H1' : null,
+      ringkasanContext       ? 'konteks makro' : null,
+    ].filter(Boolean).join(' + ');
+
+    const userMsg = `Analisa ${data.label}:\n\n${makroBlock}\n\nIsi field JSON berikut:\n- bias: trend dominan Daily (bullish/bearish/neutral)\n- entry_zone: level atau range harga ideal untuk entry (angka konkret)\n- sl: level stop loss konkret berdasarkan Swing Low/High 4H atau Support/Resistance Daily\n- tp: level take profit konkret berdasarkan Swing High/Low 4H atau Resistance/Support Daily\n- trigger: kondisi spesifik teknikal yang HARUS terpenuhi sebelum entry — satu kalimat, misal: "Tunggu candle H1 close di atas X" atau "Entry saat RSI keluar dari oversold"\n- commentary: 3 kalimat integrasikan Daily trend + H4 swing + H1 momentum${extraCtx ? ' + ' + extraCtx : ''}. Sebut angka konkret.`;
+
+    const messages = [
+      { role: 'system', content: 'Kamu analis senior teknikal dan makro. Jawab HANYA dengan objek JSON valid (tanpa markdown fence, tanpa teks tambahan apapun di luar JSON). Bahasa Indonesia. Format: {"bias":"...","entry_zone":"...","sl":"...","tp":"...","trigger":"...","commentary":"..."}' },
+      { role: 'user',   content: userMsg },
     ];
 
     const SAMBANOVA_KEY = process.env.SAMBANOVA_API_KEY;
     const GROQ_KEY      = process.env.GROQ_API_KEY;
-    let commentary = null, model = null;
+    let rawText = null, model = null;
 
     if (SAMBANOVA_KEY) {
       try {
         const r = await fetch('https://api.sambanova.ai/v1/chat/completions', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SAMBANOVA_KEY}` },
-          body: JSON.stringify({ model: 'DeepSeek-V3.2', messages, max_tokens: 300, temperature: 0.3 }),
+          body: JSON.stringify({ model: 'DeepSeek-V3.2', messages, max_tokens: 500, temperature: 0.3 }),
           signal: AbortSignal.timeout(20000),
         });
-        if (r.ok) { const j = await r.json(); commentary = j.choices?.[0]?.message?.content?.trim() || null; model = 'deepseek-v3.2'; }
+        if (r.ok) { const j = await r.json(); rawText = j.choices?.[0]?.message?.content?.trim() || null; model = 'deepseek-v3.2'; }
       } catch(e) { console.warn('ohlcv_analyze SambaNova failed:', e.message); }
     }
 
-    if (!commentary && GROQ_KEY) {
+    if (!rawText && GROQ_KEY) {
       const r = await fetch(GROQ_URL_FUND, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${GROQ_KEY}` },
-        body: JSON.stringify({ model: GROQ_MODEL_FUND, messages, max_tokens: 300, temperature: 0.3 }),
+        body: JSON.stringify({ model: GROQ_MODEL_FUND, messages, max_tokens: 500, temperature: 0.3 }),
         signal: AbortSignal.timeout(15000),
       });
-      if (r.ok) { const j = await r.json(); commentary = j.choices?.[0]?.message?.content?.trim() || null; model = 'llama-3.3'; }
+      if (r.ok) { const j = await r.json(); rawText = j.choices?.[0]?.message?.content?.trim() || null; model = 'llama-3.3'; }
     }
 
-    return res.status(200).json({ commentary, model, loaded_at: new Date().toISOString() });
+    let structured = null, commentary = rawText;
+    if (rawText) {
+      try {
+        const cleaned = rawText.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
+        const parsed  = JSON.parse(cleaned);
+        // Normalize bias
+        const biasRaw = (parsed.bias || '').toLowerCase().replace(/[^a-z]/g, '');
+        parsed.bias   = ['bullish', 'bearish', 'neutral'].includes(biasRaw) ? biasRaw : 'neutral';
+        structured    = parsed;
+        commentary    = parsed.commentary || rawText;
+      } catch(e) {
+        // Keep rawText as commentary, structured stays null
+      }
+    }
+
+    return res.status(200).json({ commentary, structured, model, loaded_at: new Date().toISOString() });
   } catch(e) {
     return res.status(500).json({ error: e.message });
   }
