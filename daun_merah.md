@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-06-16 (session 63 — fix: swing detection H4 ganti ke 5-bar pivot algorithm (_findSwings), cache AI analisa 25h→8h, shortcut G+A untuk tab Analisa, SOP petunjuk diupdate dengan langkah ANALISA di Fase 2)
+> **Last updated:** 2026-06-16 (session 64 — feat: Polymarket Gamma API integration (admin.js ?action=polymarket + UI di RINGKASAN tab), perluas TEK_PAIR_KEYWORDS semua pair (+tariff/carry/dairy/gold/geopolit), riset kalender: ForexFactory tetap terbaik untuk stack ini; OpenBB Python-only tidak applicable; tidak ada alternatif gratis REST yang lebih baik)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Financial_Feed_App`
 > **Production URL:** https://financial-feed-app.vercel.app
