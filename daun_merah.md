@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-06-14 (session 61 — feat: trend strip teknikal di dashboard; backend ohlcv_dashboard action batch-read 8 pair; klik chip navigate ke Analisa tab)
+> **Last updated:** 2026-06-16 (session 62 — feat: perluas commentary analisa teknikal jadi 4-5 paragraf naratif; max_tokens 500→1500; timeout SambaNova 20s→30s, Groq 15s→25s)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Financial_Feed_App`
 > **Production URL:** https://financial-feed-app.vercel.app
