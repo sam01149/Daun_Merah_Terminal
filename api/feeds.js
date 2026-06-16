@@ -1,8 +1,9 @@
 // api/feeds.js — consolidated feeds endpoint
-// GET /api/feeds?type=rss      → FinancialJuice RSS XML (50s cache)
-// GET /api/feeds?type=cot      → CFTC COT JSON (6h cache)
-// GET /api/feeds?type=research → CB speeches/publications + macro research JSON (6h cache)
-// GET /api/feeds?type=options  → Forexlive FX option expiries JSON (4h cache)
+// GET /api/feeds?type=rss            → FinancialJuice RSS XML (50s cache)
+// GET /api/feeds?type=cot            → CFTC COT JSON (6h cache)
+// GET /api/feeds?type=research       → CB speeches/publications + macro research JSON (6h cache)
+// GET /api/feeds?type=options        → Forexlive FX option expiries JSON (4h cache)
+// GET /api/feeds?type=aftek&pair=EUR/USD → ActionForex per-pair technical outlook (4h cache)
 
 const { autoUpdateFundamentals } = require('./_fundamental_parser');
 
@@ -13,7 +14,8 @@ module.exports = async function handler(req, res) {
   if (type === 'cot_history') return cotHistoryHandler(req, res);
   if (type === 'research')    return researchHandler(req, res);
   if (type === 'options')     return optionsHandler(req, res);
-  return res.status(400).json({ error: 'Missing ?type= — use rss, cot, cot_history, research, or options' });
+  if (type === 'aftek')       return aftekHandler(req, res);
+  return res.status(400).json({ error: 'Missing ?type= — use rss, cot, cot_history, research, options, or aftek' });
 };
 
 // ── Shared Redis helper ────────────────────────────────────────────────────────
@@ -643,5 +645,68 @@ function parseExpiryEntries(text, pair, results, sourceLink) {
     if (level && size) {
       results.push({ pair, level, size, link: sourceLink });
     }
+  }
+}
+
+// ── ActionForex per-pair technical outlook handler ─────────────────────────────
+// GET /api/feeds?type=aftek&pair=EURUSD
+// Returns last 5 technical analysis articles for the requested pair
+
+const AFTEK_FEEDS = {
+  EURUSD: 'https://www.actionforex.com/category/technical-outlook/eurusd-outlook/feed/',
+  GBPUSD: 'https://www.actionforex.com/category/technical-outlook/gbpusd-outlook/feed/',
+  USDJPY: 'https://www.actionforex.com/category/technical-outlook/usdjpy-outlook/feed/',
+  USDCAD: 'https://www.actionforex.com/category/technical-outlook/usdcad-outlook/feed/',
+  USDCHF: 'https://www.actionforex.com/category/technical-outlook/usdchf-outlook/feed/',
+  AUDUSD: 'https://www.actionforex.com/category/technical-outlook/audusd-outlook/feed/',
+  // NZDUSD and XAUUSD not available on ActionForex
+};
+const AFTEK_CACHE_TTL = 4 * 60 * 60; // 4h in seconds
+
+async function aftekHandler(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Cache-Control', 'no-cache');
+
+  const pair = (req.query.pair || '').toUpperCase().replace('/', '');
+  const feedUrl = AFTEK_FEEDS[pair];
+
+  if (!feedUrl) {
+    // Pair not covered by ActionForex — return empty gracefully
+    return res.json({ items: [], pair, covered: false });
+  }
+
+  const cacheKey = `aftek_cache:${pair}`;
+
+  try {
+    const cached = await redisCmd('GET', cacheKey);
+    if (cached) {
+      const obj = JSON.parse(cached);
+      if (Date.now() - new Date(obj.fetched_at).getTime() < AFTEK_CACHE_TTL * 1000) {
+        return res.json(obj);
+      }
+    }
+  } catch(e) {}
+
+  try {
+    const ua = RESEARCH_UAS[Math.floor(Math.random() * RESEARCH_UAS.length)];
+    const r = await fetch(feedUrl, {
+      headers: { 'User-Agent': ua, 'Accept': 'application/rss+xml,*/*' },
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const xml = await r.text();
+    const items = parseCBRSSItems(xml, 'AF').slice(0, 5);
+
+    const payload = { items, pair, covered: true, fetched_at: new Date().toISOString() };
+    redisCmd('SET', cacheKey, JSON.stringify(payload), 'EX', AFTEK_CACHE_TTL).catch(() => {});
+    return res.json(payload);
+  } catch(e) {
+    console.warn(`aftek fetch failed [${pair}]:`, e.message);
+    // Try stale
+    try {
+      const stale = await redisCmd('GET', cacheKey);
+      if (stale) return res.json({ ...JSON.parse(stale), stale: true });
+    } catch(e2) {}
+    return res.json({ items: [], pair, covered: true, error: e.message });
   }
 }

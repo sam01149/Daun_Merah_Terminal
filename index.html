@@ -8386,19 +8386,27 @@ const TEK_CAT_COLOR = {
   'bonds':'#60a5fa','equities':'#4caf50','crypto':'#f472b6','indexes':'#94a3b8',
 };
 
+let tekAFCache = {}; // keyed by pair — { items, fetchedAt, covered }
+const AFTEK_CLIENT_TTL = 4 * 60 * 60 * 1000;
+
+async function fetchAFTek() {
+  const cached = tekAFCache[tekPair];
+  if (cached && Date.now() - cached.fetchedAt < AFTEK_CLIENT_TTL) return;
+  try {
+    const r = await fetch(`/api/feeds?type=aftek&pair=${tekPair}`, { signal: AbortSignal.timeout(8000) });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const data = await r.json();
+    tekAFCache[tekPair] = { items: data.items || [], covered: data.covered !== false, fetchedAt: Date.now() };
+  } catch(e) {
+    console.warn('fetchAFTek failed:', e.message);
+    if (!tekAFCache[tekPair]) tekAFCache[tekPair] = { items: [], covered: true, fetchedAt: Date.now() };
+  }
+  renderTekNews();
+}
+
 function renderTekNews() {
   const sec = document.getElementById('tekNewsSection');
   if (!sec) return;
-  if (!allItems || allItems.length === 0) {
-    sec.innerHTML = '<div class="tek-news-hdr"><span class="tek-news-hdr-title">Berita Terkait</span></div>'
-      + '<div class="tek-news-empty">Fetch news terlebih dahulu di tab NEWS.</div>';
-    return;
-  }
-  const kws = TEK_PAIR_KEYWORDS[tekPair] || [];
-  const matches = allItems.filter(item => {
-    const t = item.title.toLowerCase();
-    return kws.some(k => t.includes(k));
-  }).slice(0, 12);
 
   const pairLabel = tekPair.slice(0, 3) + '/' + tekPair.slice(3);
   let html = '<div class="tek-news-hdr">'
@@ -8406,23 +8414,50 @@ function renderTekNews() {
     + '<span class="tek-news-hdr-pair">' + pairLabel + '</span>'
     + '</div>';
 
-  if (matches.length === 0) {
-    html += '<div class="tek-news-empty">Tidak ada berita relevan saat ini.</div>';
-  } else {
-    html += matches.map(item => {
-      const cat = detectCat(item.title);
-      const col = TEK_CAT_COLOR[cat] || '#888';
-      const bg = col + '22';
+  // ActionForex technical outlook — pinned at top
+  const af = tekAFCache[tekPair];
+  if (af && af.items && af.items.length > 0) {
+    html += af.items.map(item => {
       const safeLink = (item.link || '').replace(/'/g, "\\'");
       return '<div class="tek-news-item" onclick="openLink(\'' + safeLink + '\')">'
         + '<div class="tek-news-meta">'
         + '<span class="tek-news-time">' + fmtTime(item.pubDate) + '</span>'
-        + '<span class="tek-news-cat" style="background:' + bg + ';color:' + col + '">' + cat.replace('-',' ') + '</span>'
+        + '<span class="tek-news-cat" style="background:rgba(56,189,248,.15);color:#38bdf8">AF · tek</span>'
         + '</div>'
         + '<div class="tek-news-title">' + escHtml(item.title) + '</div>'
         + '</div>';
     }).join('');
   }
+
+  // FinancialJuice news filtered by pair keywords
+  if (allItems && allItems.length > 0) {
+    const kws = TEK_PAIR_KEYWORDS[tekPair] || [];
+    const matches = allItems.filter(item => {
+      const t = item.title.toLowerCase();
+      return kws.some(k => t.includes(k));
+    }).slice(0, 10);
+
+    if (matches.length === 0 && (!af || !af.items.length)) {
+      html += '<div class="tek-news-empty">Tidak ada berita relevan saat ini.</div>';
+    } else {
+      html += matches.map(item => {
+        const cat = detectCat(item.title);
+        const col = TEK_CAT_COLOR[cat] || '#888';
+        const bg = col + '22';
+        const safeLink = (item.link || '').replace(/'/g, "\\'");
+        return '<div class="tek-news-item" onclick="openLink(\'' + safeLink + '\')">'
+          + '<div class="tek-news-meta">'
+          + '<span class="tek-news-time">' + fmtTime(item.pubDate) + '</span>'
+          + '<span class="tek-news-cat" style="background:' + bg + ';color:' + col + '">' + cat.replace('-',' ') + '</span>'
+          + '</div>'
+          + '<div class="tek-news-title">' + escHtml(item.title) + '</div>'
+          + '</div>';
+      }).join('');
+    }
+  } else if (!af || !af.items.length) {
+    html += '<div class="tek-news-empty">Fetch news terlebih dahulu di tab NEWS.</div>';
+  }
+
   sec.innerHTML = html;
 }
 
@@ -8565,6 +8600,7 @@ function onTekPairChange() {
   createTVChart();
   fetchTaData();
   renderTekOptions();
+  fetchAFTek();
 }
 
 function onTekTFChange() {
@@ -8812,6 +8848,7 @@ function initTeknikal() {
   createTVChart();
   fetchTaData();
   fetchTekOptions();
+  fetchAFTek();
 }
 
 // ── DRAWER ────────────────────────────────────────────────
