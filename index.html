@@ -3319,7 +3319,7 @@ function renderRingkasan() {
     <div class="ringkasan-stats">
       <div class="rstat">
         <div class="rstat-val">${d.news_count}</div>
-        <div class="rstat-label">Berita (6j)</div>
+        <div class="rstat-label">Berita (36j)</div>
       </div>
       <div class="rstat">
         <div class="rstat-val">${d.cal_count}</div>
@@ -3328,6 +3328,8 @@ function renderRingkasan() {
     </div>
 
     ${d.thesis && d.thesis.confidence_1_to_5 >= 3 ? renderThesisCard(d.thesis) : ''}
+
+    ${d.thesis && d.thesis.xau_bias && d.thesis.xau_dominant_driver !== 'insufficient_data' ? renderXauThesisCard(d.thesis) : ''}
 
     ${d.thesis_alerts && d.thesis_alerts.length > 0 ? renderThesisAlerts(d.thesis_alerts) : ''}
 
@@ -3783,6 +3785,24 @@ function renderThesisCard(t) {
     ${t.catalyst_dependency ? `<div class="thesis-label">KATALIS</div><div class="thesis-val">${escHtml(t.catalyst_dependency)}</div>` : ''}
     ${t.time_horizon_days ? `<div class="thesis-label">HORIZON</div><div class="thesis-val">${t.time_horizon_days} hari</div>` : ''}
     ${t.direction !== 'no_trade' ? `<button class="thesis-use-btn" onclick="jnPrefillFromThesis()">Gunakan untuk mulai jurnal →</button>` : ''}
+  </div>`;
+}
+
+function renderXauThesisCard(t) {
+  const xauColorMap = { bullish: 'var(--green)', bearish: 'var(--accent)', conflicting: 'var(--yellow)', neutral: 'var(--muted)' };
+  const xauColor = xauColorMap[t.xau_bias] || 'var(--muted)';
+  const xauStars = t.xau_confidence ? '★'.repeat(t.xau_confidence) + '☆'.repeat(5 - t.xau_confidence) : '';
+  const driverLabel = (t.xau_dominant_driver || '').replace(/_/g, ' ').toUpperCase();
+  return `<div class="thesis-card xau">
+    <div style="font-size:9px;color:var(--yellow);font-family:'DM Mono',monospace;letter-spacing:.1em;margin-bottom:8px">AI THESIS · XAU/USD</div>
+    <div style="display:flex;align-items:center;flex-wrap:wrap;gap:4px;margin-bottom:6px">
+      <span class="thesis-pair" style="font-size:15px">XAU/USD</span>
+      <span class="thesis-dir" style="background:${xauColor}22;color:${xauColor}">${(t.xau_bias || '').toUpperCase()}</span>
+      ${xauStars ? `<span class="thesis-conf">${xauStars}</span>` : ''}
+    </div>
+    ${driverLabel ? `<div class="thesis-label">DRIVER</div><div class="thesis-val">${driverLabel}</div>` : ''}
+    ${t.xau_driver_evidence ? `<div class="thesis-label">BUKTI</div><div class="thesis-val">${escHtml(t.xau_driver_evidence)}</div>` : ''}
+    ${t.xau_key_trigger ? `<div class="thesis-label">TRIGGER</div><div class="thesis-val">${escHtml(t.xau_key_trigger)}</div>` : ''}
   </div>`;
 }
 

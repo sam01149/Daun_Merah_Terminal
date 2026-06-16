@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-06-16 (session 67 — fix: option expiries prose parser fallback, Investinglive format change)
+> **Last updated:** 2026-06-16 (session 68 — fix: rawPrevThesis scope bug + label Berita (36j) + XAU thesis card di tab Ringkasan)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Financial_Feed_App`
 > **Production URL:** https://financial-feed-app.vercel.app

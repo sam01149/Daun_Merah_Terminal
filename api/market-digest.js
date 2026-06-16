@@ -409,9 +409,9 @@ module.exports = async function handler(req, res) {
   ].join('');
 
   // 3b. Load digest history + xau history + real yields + XAU spot + XAU TA + liquidity + yield curve in parallel
-  let digestHistory = [], xauHistory = [], realYieldsData = null, xauSpot = null, xauTa = null, liqData = null, ycData = null;
+  let digestHistory = [], xauHistory = [], realYieldsData = null, xauSpot = null, xauTa = null, liqData = null, ycData = null, rawPrevThesis = null;
   try {
-    const [rawHist, rawXauHist, rawRY, spotResult, taResult, rawLiq, rawYc, rawPrevThesis] = await Promise.all([
+    const [rawHist, rawXauHist, rawRY, spotResult, taResult, rawLiq, rawYc, _rawPrevThesis] = await Promise.all([
       redisCmd('LRANGE', 'digest_history', 0, 6),
       redisCmd('LRANGE', 'xau_history', 0, 3),
       redisCmd('GET', 'real_yields'),
@@ -421,6 +421,7 @@ module.exports = async function handler(req, res) {
       redisCmd('GET', 'yield_curve'),
       redisCmd('GET', 'latest_thesis'),
     ]);
+    rawPrevThesis = _rawPrevThesis;
     if (Array.isArray(rawHist)) digestHistory = rawHist.map(e => { try { return JSON.parse(e); } catch(_) { return null; } }).filter(Boolean);
     if (Array.isArray(rawXauHist)) xauHistory = rawXauHist.map(e => { try { return JSON.parse(e); } catch(_) { return null; } }).filter(Boolean);
     if (rawRY) realYieldsData = JSON.parse(rawRY);
