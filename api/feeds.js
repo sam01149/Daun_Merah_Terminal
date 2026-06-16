@@ -478,19 +478,33 @@ async function fetchCBFeed(source) {
 
 function parseCBRSSItems(xml, sourceKey) {
   const items = [];
-  const re = /<item>([\s\S]*?)<\/item>/g;
+
+  // Support both RSS 2.0 (<item>) and Atom 1.0 (<entry>) — e.g. FeedBurner returns Atom
+  const blockRe = /<(?:item|entry)>([\s\S]*?)<\/(?:item|entry)>/g;
   let m;
-  while ((m = re.exec(xml)) !== null) {
+  while ((m = blockRe.exec(xml)) !== null) {
     const b = m[1];
     const get = tag => {
       const r1 = new RegExp(`<${tag}[^>]*><!\\[CDATA\\[([\\s\\S]*?)\\]\\]><\\/${tag}>`).exec(b);
       const r2 = new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`).exec(b);
       return (r1 || r2)?.[1]?.trim() || '';
     };
-    const title   = get('title');
-    const pubDate = get('pubDate');
-    const link    = b.match(/<link>\s*(https?:\/\/[^\s<]+)\s*<\/link>/)?.[1] || get('link');
-    if (title && pubDate) items.push({ title, pubDate, link: link || '', source: sourceKey });
+    const title = get('title');
+
+    // pubDate (RSS 2.0) → dc:date (Dublin Core, e.g. ING Think) → published/updated (Atom)
+    const pubDate = get('pubDate')
+      || b.match(/<dc:date[^>]*>([^<]+)<\/dc:date>/i)?.[1]?.trim()
+      || get('published')
+      || get('updated')
+      || '';
+
+    // RSS 2.0: <link>url</link> | Atom: <link href="url" .../> | fallback get('link')
+    const link = b.match(/<link>\s*(https?:\/\/[^\s<]+)\s*<\/link>/)?.[1]
+      || b.match(/<link[^>]+href=["']([^"']+)["']/i)?.[1]
+      || get('link')
+      || '';
+
+    if (title && pubDate) items.push({ title, pubDate, link, source: sourceKey });
   }
   return items.slice(0, 20);
 }
@@ -535,10 +549,8 @@ async function optionsHandler(req, res) {
     }
   } catch(e) {}
 
-  // Fetch Forexlive option expiries page
-  // They publish a daily post titled "FX option expiries for [date] NY cut"
-  // We search the Forexlive RSS for the most recent expiry post
-  const FL_RSS_URL = 'https://api.rss2json.com/v1/api.json?rss_url=https%3A%2F%2Fwww.forexlive.com%2Ffeed%2Ftechnicalanalysis';
+  // Forexlive moved to investinglive.com — dedicated forexorders feed
+  const FL_RSS_URL = 'https://api.rss2json.com/v1/api.json?rss_url=https%3A%2F%2Finvestinglive.com%2Ffeed%2Fforexorders%2F';
 
   let rawText = '';
   let postDate = '';
@@ -553,17 +565,15 @@ async function optionsHandler(req, res) {
     const json = await r.json();
     if (json.status !== 'ok' || !json.items?.length) throw new Error('rss2json returned no items');
 
-    // Find the most recent post that is an option expiry post
-    const expiryPost = json.items.find(it =>
-      /option.expir/i.test(it.title) && /NY.cut|new york.cut/i.test(it.title)
-    );
+    // Dedicated forexorders feed — take the most recent option expiry post
+    const expiryPost = json.items.find(it => /option.expir/i.test(it.title));
     if (!expiryPost) throw new Error('No option expiry post found in feed');
 
     rawText  = expiryPost.content || expiryPost.description || '';
     postDate = expiryPost.pubDate || '';
     postLink = expiryPost.link || '';
   } catch(e) {
-    console.warn('Forexlive options fetch failed:', e.message);
+    console.warn('InvestingLive options fetch failed:', e.message);
     // Return stale if available
     try {
       const stale = await redisCmd('GET', OPTIONS_CACHE_KEY);
