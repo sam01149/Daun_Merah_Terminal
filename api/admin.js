@@ -1605,16 +1605,30 @@ async function circuitResetHandler(req, res) {
 // Gamma API: public, no auth, no API key. Rate limit: 300 req/10s.
 // outcomePrices[i] = implied probability (0–1) for outcomes[i]
 
-const POLY_MACRO_KEYWORDS = [
-  'fed','rate cut','rate hike','fomc','federal reserve','interest rate',
-  'cpi','inflation','nfp','jobs report','unemployment','gdp',
-  'recession','default','debt ceiling','tariff','trade war',
-  'dollar index','treasury','yield curve',
+// Category-weighted scoring — pure forex signal, no sports/crypto/entertainment
+const POLY_SIGNAL_CATS = [
+  { name: 'CB Policy',    w: 3, terms: ['fed cut','fed raise','rate cut','rate hike','rate decision','fomc','federal reserve','ecb rate','boe rate','boj rate','rba rate','rbnz rate','boc rate','snb rate','interest rate','monetary policy','powell','lagarde','bailey','ueda','waller','jefferson','basis point','central bank'] },
+  { name: 'Macro Data',   w: 2, terms: ['cpi','inflation','nfp','jobs report','unemployment','gdp','recession','stagflation','soft landing','hard landing','pce','payroll','core cpi','consumer price','producer price','retail sales'] },
+  { name: 'USD/Yields',   w: 2, terms: ['dollar index','dxy','treasury','yield curve','10-year','2-year','debt ceiling','us default','dollar fall','dollar rise','dollar strength'] },
+  { name: 'Trade/Tariff', w: 2, terms: ['tariff','trade war','trade deal','trade agreement','import tax','export ban','trade deficit','trade surplus'] },
+  { name: 'Geopolitical', w: 1, terms: ['ukraine','ceasefire','taiwan','iran','sanctions','nato','military conflict','missile','war end'] },
+  { name: 'Commodity',    w: 1, terms: ['oil price','crude oil','opec','gold price','wti','brent','barrel','gold above','oil above'] },
+  { name: 'Political',    w: 1, terms: ['trump','government shutdown','congress','senate','fiscal','debt limit'] },
 ];
 
 function _polyScore(question) {
   const q = question.toLowerCase();
-  return POLY_MACRO_KEYWORDS.reduce((s, k) => s + (q.includes(k) ? 1 : 0), 0);
+  let score = 0, topCat = null, topW = 0;
+  for (const cat of POLY_SIGNAL_CATS) {
+    for (const t of cat.terms) {
+      if (q.includes(t)) {
+        score += cat.w;
+        if (cat.w > topW) { topW = cat.w; topCat = cat.name; }
+        break; // each category counts once
+      }
+    }
+  }
+  return { score, category: topCat };
 }
 
 async function polymarketHandler(req, res) {
@@ -1622,8 +1636,8 @@ async function polymarketHandler(req, res) {
   res.setHeader('Cache-Control', 'no-cache');
   if (req.method === 'OPTIONS') return res.status(204).end();
 
-  const CACHE_KEY = 'polymarket_macro';
-  const CACHE_TTL = 3600; // 1 hour
+  const CACHE_KEY = 'polymarket_signal_v2'; // v2: weighted categories, 25 results
+  const CACHE_TTL = 1800; // 30 min — prediction markets shift fast
 
   // Serve from cache if fresh
   try {
@@ -1635,28 +1649,30 @@ async function polymarketHandler(req, res) {
   } catch(e) {}
 
   try {
-    // Fetch top active markets by volume — filter for macro relevance
+    // Fetch top 200 active markets by volume — wide net, then score filter for signal
     const r = await fetch(
-      'https://gamma-api.polymarket.com/markets?active=true&order=volume24hr&ascending=false&limit=50',
-      { headers: { 'Accept': 'application/json' }, signal: AbortSignal.timeout(10000) }
+      'https://gamma-api.polymarket.com/markets?active=true&order=volume24hr&ascending=false&limit=200',
+      { headers: { 'Accept': 'application/json' }, signal: AbortSignal.timeout(12000) }
     );
     if (!r.ok) throw new Error(`Gamma API ${r.status}`);
     const markets = await r.json();
 
-    // Score & filter: keep only markets with ≥1 macro keyword match
-    const macro = markets
-      .filter(m => _polyScore(m.question || '') >= 1 && m.outcomePrices && m.outcomes)
-      .sort((a, b) => _polyScore(b.question) - _polyScore(a.question) || (b.volume24hr || 0) - (a.volume24hr || 0))
-      .slice(0, 12)
-      .map(m => {
+    // Score & filter: keep only markets scoring ≥2 (signal-only, no noise)
+    const scored = markets
+      .filter(m => m.outcomePrices && m.outcomes)
+      .map(m => ({ m, ...(_polyScore(m.question || '')) }))
+      .filter(x => x.score >= 2)
+      .sort((a, b) => b.score - a.score || (b.m.volume24hr || 0) - (a.m.volume24hr || 0));
+
+    const macro = scored.slice(0, 25).map(({ m, category }) => {
         const prices   = Array.isArray(m.outcomePrices) ? m.outcomePrices : JSON.parse(m.outcomePrices || '[]');
         const outcomes = Array.isArray(m.outcomes)      ? m.outcomes      : JSON.parse(m.outcomes      || '[]');
-        // Find "Yes" index (binary markets) or just pair all outcomes
         const yesIdx = outcomes.findIndex(o => o.toLowerCase() === 'yes');
         const prob   = yesIdx >= 0 ? Math.round(parseFloat(prices[yesIdx] || 0) * 100) : null;
         return {
           question:  m.question,
           slug:      m.slug,
+          category:  category || 'Macro',
           outcomes,
           prices:    prices.map(p => Math.round(parseFloat(p) * 100)),
           yes_prob:  prob,
