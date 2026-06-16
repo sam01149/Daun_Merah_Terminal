@@ -8823,13 +8823,14 @@ function renderTekOptions() {
     return;
   }
 
-  let html = '<table class="tek-opts-table"><thead><tr><th>Level</th><th>Size</th></tr></thead><tbody>';
+  const hasSizes = filtered.some(e => e.size && e.size.trim());
+  let html = `<table class="tek-opts-table"><thead><tr><th>Level</th>${hasSizes ? '<th>Size</th>' : ''}</tr></thead><tbody>`;
   for (const e of filtered) {
-    html += `<tr><td class="tek-opts-level">${escHtml(e.level)}</td><td class="tek-opts-size">${escHtml(e.size)}</td></tr>`;
+    html += `<tr><td class="tek-opts-level">${escHtml(e.level)}</td>${hasSizes ? `<td class="tek-opts-size">${escHtml(e.size)}</td>` : ''}</tr>`;
   }
   html += '</tbody></table>';
   if (filtered[0]?.link) {
-    html += `<div style="text-align:right;margin-top:4px"><a href="${escHtml(filtered[0].link)}" target="_blank" rel="noopener noreferrer" class="tek-opts-link">sumber: Forexlive ↗</a></div>`;
+    html += `<div style="text-align:right;margin-top:4px"><a href="${escHtml(filtered[0].link)}" target="_blank" rel="noopener noreferrer" class="tek-opts-link">sumber: Investinglive ↗</a></div>`;
   }
   body.innerHTML = html;
 }

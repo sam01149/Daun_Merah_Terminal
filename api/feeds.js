@@ -537,19 +537,22 @@ async function optionsHandler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Cache-Control', 'no-cache');
 
-  const pairFilter = (req.query.pair || '').toUpperCase().replace('/', '') || null;
+  const pairFilter   = (req.query.pair || '').toUpperCase().replace('/', '') || null;
+  const forceRefresh = req.query.force === '1';
 
-  // Try cache first
-  try {
-    const cached = await redisCmd('GET', OPTIONS_CACHE_KEY);
-    if (cached) {
-      const obj = JSON.parse(cached);
-      if (Date.now() - new Date(obj.fetched_at).getTime() < OPTIONS_CACHE_TTL_MS) {
-        const out = pairFilter ? filterByPair(obj.expiries, pairFilter) : obj.expiries;
-        return res.json({ expiries: out, fetched_at: obj.fetched_at, date: obj.date, source: 'cache' });
+  // Try cache first (skip on force=1)
+  if (!forceRefresh) {
+    try {
+      const cached = await redisCmd('GET', OPTIONS_CACHE_KEY);
+      if (cached) {
+        const obj = JSON.parse(cached);
+        if (Date.now() - new Date(obj.fetched_at).getTime() < OPTIONS_CACHE_TTL_MS) {
+          const out = pairFilter ? filterByPair(obj.expiries, pairFilter) : obj.expiries;
+          return res.json({ expiries: out, fetched_at: obj.fetched_at, date: obj.date, source: 'cache' });
+        }
       }
-    }
-  } catch(e) {}
+    } catch(e) {}
+  }
 
   // Forexlive moved to investinglive.com — dedicated forexorders feed
   const FL_RSS_URL = 'https://api.rss2json.com/v1/api.json?rss_url=https%3A%2F%2Finvestinglive.com%2Ffeed%2Fforexorders%2F';
@@ -602,7 +605,6 @@ function filterByPair(expiries, pair) {
 }
 
 function parseOptionExpiries(html, sourceLink) {
-  // Strip HTML tags to get plain text
   const text = html
     .replace(/<br\s*\/?>/gi, '\n')
     .replace(/<\/?(p|div|li|ul|ol)[^>]*>/gi, '\n')
@@ -613,27 +615,32 @@ function parseOptionExpiries(html, sourceLink) {
     .replace(/&gt;/g, '>')
     .replace(/&#\d+;/g, ' ');
 
+  // Try structured table parser first (old format: pair header + level/size rows)
+  const structured = parseStructuredExpiries(text, sourceLink);
+  if (structured.length > 0) return structured;
+
+  // Fallback: prose parser — Investinglive switched to narrative format (levels in text, no sizes)
+  return parseProseExpiries(text, sourceLink);
+}
+
+function parseStructuredExpiries(text, sourceLink) {
   const lines   = text.split('\n').map(l => l.trim()).filter(Boolean);
   const results = [];
   let currentPair = null;
 
   for (const line of lines) {
-    // Detect pair header line — e.g. "EUR/USD" or "USD/JPY" possibly followed by colon/dash
     const pairMatch = line.match(/^([A-Z]{3}\/[A-Z]{3}|[A-Z]{6})\s*[:\-–]?\s*$/i)
                    || line.match(/^([A-Z]{3}[\/\s][A-Z]{3})\s*$/i);
     if (pairMatch) {
       currentPair = pairMatch[1].toUpperCase().replace(/\s/g, '/');
-      // Normalize to standard slash format
       if (currentPair.length === 6) currentPair = currentPair.slice(0,3) + '/' + currentPair.slice(3);
       continue;
     }
 
-    // Also detect pair inline: "EUR/USD: 1.0800 (€2.0bln)"
     const inlineMatch = line.match(/^([A-Z]{3}[\/\s][A-Z]{3})\s*[:\-–]\s*(.+)/i);
     if (inlineMatch) {
       currentPair = inlineMatch[1].toUpperCase().replace(/\s/g, '/');
       if (currentPair.length === 6) currentPair = currentPair.slice(0,3) + '/' + currentPair.slice(3);
-      // Parse the rest of the line as expiry entries
       parseExpiryEntries(inlineMatch[2], currentPair, results, sourceLink);
       continue;
     }
@@ -647,17 +654,58 @@ function parseOptionExpiries(html, sourceLink) {
 }
 
 function parseExpiryEntries(text, pair, results, sourceLink) {
-  // Match patterns like: "1.0800 (€2.0bln)", "1.0850 ($1.5bln)", "149.00 (¥300bln)"
-  // Also: "1.0800-10 (2bln)", "1.0800 2.0b"
   const entryRe = /([\d]{1,4}\.[\d]{1,5}(?:\s*-\s*[\d]{1,5})?)\s*[\(\[]?([€$¥£]?[\d.]+\s*(?:b(?:ln)?|m(?:ln)?|billion|million)?)\s*[\)\]]?/gi;
   let m;
   while ((m = entryRe.exec(text)) !== null) {
-    const level  = m[1].replace(/\s/g, '');
-    const size   = m[2].trim();
-    if (level && size) {
-      results.push({ pair, level, size, link: sourceLink });
+    const level = m[1].replace(/\s/g, '');
+    const size  = m[2].trim();
+    if (level && size) results.push({ pair, level, size, link: sourceLink });
+  }
+}
+
+// Prose parser: Investinglive now writes narrative format — extract pair + levels from sentences.
+// Example: "EUR/USD at the 1.1540 and 1.1600 levels"
+// Size not available in this format; size is returned as empty string.
+function parseProseExpiries(text, sourceLink) {
+  const results = [];
+  const seen    = new Set();
+  const lines   = text.split('\n').map(l => l.trim()).filter(l => l.length > 5);
+
+  const PAIR_ALIAS = [
+    ['EUR/USD', /eur\/?usd/i],
+    ['GBP/USD', /gbp\/?usd/i],
+    ['USD/JPY', /usd\/?jpy/i],
+    ['USD/CAD', /usd\/?cad/i],
+    ['AUD/USD', /aud\/?usd/i],
+    ['NZD/USD', /nzd\/?usd/i],
+    ['USD/CHF', /usd\/?chf/i],
+    ['EUR/GBP', /eur\/?gbp/i],
+    ['EUR/JPY', /eur\/?jpy/i],
+    ['GBP/JPY', /gbp\/?jpy/i],
+    ['XAU/USD', /(?:xau\/?usd|gold)/i],
+  ];
+
+  for (const line of lines) {
+    let pair = null;
+    for (const [p, re] of PAIR_ALIAS) {
+      if (re.test(line)) { pair = p; break; }
+    }
+    if (!pair) continue;
+
+    const levelRe = /\b(\d{1,4}\.\d{2,5})\b/g;
+    let m;
+    while ((m = levelRe.exec(line)) !== null) {
+      const level = m[1];
+      const val   = parseFloat(level);
+      if (isNaN(val) || val < 0.3 || val > 5000) continue;
+      const key = pair + ':' + level;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      results.push({ pair, level, size: '', link: sourceLink });
     }
   }
+
+  return results;
 }
 
 // ── ActionForex per-pair technical outlook handler ─────────────────────────────
