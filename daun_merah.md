@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-06-16 (session 66 — feat: retail sentiment (ForexBenchmark) di COT tab + ActionForex per-pair technical outlook di TEK Berita Terkait + fix investinglive URL + fix Atom/dc:date parser)
+> **Last updated:** 2026-06-16 (session 67 — fix: option expiries prose parser fallback, Investinglive format change)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Financial_Feed_App`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -83,6 +83,37 @@ Financial_Feed_App/
 > **Penting:** `api/feeds.js` menggantikan `api/rss.js` dan `api/cot.js` yang sudah dihapus.
 > `api/admin.js` menggantikan `api/health.js`, `api/redis-keys.js`, `api/admin-prompts.js`, dan `api/push.js`.
 > Konsolidasi ini dilakukan untuk tetap di bawah limit 12 serverless functions Vercel Hobby.
+
+---
+
+## Changelog Session 67 (2026-06-16)
+
+### Fix: Option Expiries — Prose Parser Fallback (Investinglive Format Change)
+
+**Root cause:** Investinglive (`/feed/forexorders/`) sebelumnya mempublikasikan expiry data dalam format tabel terstruktur:
+```
+EUR/USD
+1.0800 (€2.0bln)
+1.0850 ($1.5bln)
+```
+Format ini sudah **berubah ke prosa naratif** — levels disebutkan dalam kalimat tanpa notional size:
+```
+"EUR/USD at the 1.1540 and 1.1600 levels"
+```
+
+**Perubahan `api/feeds.js`:**
+- `parseOptionExpiries()` diubah menjadi dual-mode:
+  - Primary: `parseStructuredExpiries()` — parser lama (pair header + level/size rows)
+  - Fallback: `parseProseExpiries()` — parser baru: split per baris → deteksi pair via regex alias → extract semua angka decimal dalam baris yang sama → validasi range 0.3–5000
+  - Field `size` dikembalikan sebagai string kosong `''` pada prose entries (tidak ada data notional)
+- Tambah `?force=1` pada `optionsHandler` untuk bypass Redis cache (berguna setelah format change)
+
+**Perubahan `index.html`:**
+- `renderTekOptions()`: kolom Size disembunyikan jika semua filtered entries tidak punya size (`hasSizes` flag)
+- Fix label sumber: `"sumber: Forexlive ↗"` → `"sumber: Investinglive ↗"`
+
+**Verifikasi production:**
+- Setelah deploy: `/api/feeds?type=options&force=1` mengembalikan EUR/USD 1.1540 + 1.1600 ✅
 
 ---
 
