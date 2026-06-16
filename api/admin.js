@@ -1464,7 +1464,7 @@ async function ohlcvAnalyzeHandler(req, res) {
       ringkasanContext       ? 'konteks makro' : null,
     ].filter(Boolean).join(' + ');
 
-    const userMsg = `Analisa ${data.label}:\n\n${makroBlock}\n\nIsi field JSON berikut:\n- bias: trend dominan Daily (bullish/bearish/neutral)\n- entry_zone: level atau range harga ideal untuk entry (angka konkret)\n- sl: level stop loss konkret berdasarkan Swing Low/High 4H atau Support/Resistance Daily\n- tp: level take profit konkret berdasarkan Swing High/Low 4H atau Resistance/Support Daily\n- trigger: kondisi spesifik teknikal yang HARUS terpenuhi sebelum entry — satu kalimat, misal: "Tunggu candle H1 close di atas X" atau "Entry saat RSI keluar dari oversold"\n- commentary: 3 kalimat integrasikan Daily trend + H4 swing + H1 momentum${extraCtx ? ' + ' + extraCtx : ''}. Sebut angka konkret.`;
+    const userMsg = `Analisa ${data.label}:\n\n${makroBlock}\n\nIsi field JSON berikut:\n- bias: trend dominan Daily (bullish/bearish/neutral)\n- entry_zone: level atau range harga ideal untuk entry (angka konkret)\n- sl: level stop loss konkret berdasarkan Swing Low/High 4H atau Support/Resistance Daily\n- tp: level take profit konkret berdasarkan Swing High/Low 4H atau Resistance/Support Daily\n- trigger: kondisi spesifik teknikal yang HARUS terpenuhi sebelum entry — satu kalimat, misal: "Tunggu candle H1 close di atas X" atau "Entry saat RSI keluar dari oversold"\n- commentary: analisa naratif mendalam 4-5 paragraf, pisah tiap paragraf dengan \\n. Paragraf 1 — bias Daily: jelaskan arah trend dengan alasan konkret (perubahan %, level close vs open, posisi relatif terhadap swing terakhir). Paragraf 2 — struktur H4: posisi harga saat ini terhadap swing high/low H4, apakah dalam fase akumulasi/distribusi/breakout, MACD H4 konfirmasi atau divergensi. Paragraf 3 — momentum H1: kondisi momentum terkini, konfluensi atau perbedaan arah dengan H4${extraCtx?.includes('ATR') ? ', volatilitas berdasarkan ATR' : ''}. Paragraf 4 — integrasi ${extraCtx ? '(' + extraCtx + ')' : 'timeframe'}: simpulkan kekuatan setup, risiko utama, dan kondisi pasar yang memvalidasi atau membatalkan skenario ini. Setiap paragraf wajib sebut minimal 2 angka konkret (harga, %, atau nilai indikator). Hindari kalimat generik.`;
 
     const messages = [
       { role: 'system', content: 'Kamu analis senior teknikal dan makro. Jawab HANYA dengan objek JSON valid (tanpa markdown fence, tanpa teks tambahan apapun di luar JSON). Bahasa Indonesia. Format: {"bias":"...","entry_zone":"...","sl":"...","tp":"...","trigger":"...","commentary":"..."}' },
@@ -1480,8 +1480,8 @@ async function ohlcvAnalyzeHandler(req, res) {
         const r = await fetch('https://api.sambanova.ai/v1/chat/completions', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SAMBANOVA_KEY}` },
-          body: JSON.stringify({ model: 'DeepSeek-V3.2', messages, max_tokens: 500, temperature: 0.3 }),
-          signal: AbortSignal.timeout(20000),
+          body: JSON.stringify({ model: 'DeepSeek-V3.2', messages, max_tokens: 1500, temperature: 0.3 }),
+          signal: AbortSignal.timeout(30000),
         });
         if (r.ok) { const j = await r.json(); rawText = j.choices?.[0]?.message?.content?.trim() || null; model = 'deepseek-v3.2'; }
       } catch(e) { console.warn('ohlcv_analyze SambaNova failed:', e.message); }
@@ -1491,8 +1491,8 @@ async function ohlcvAnalyzeHandler(req, res) {
       const r = await fetch(GROQ_URL_FUND, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${GROQ_KEY}` },
-        body: JSON.stringify({ model: GROQ_MODEL_FUND, messages, max_tokens: 500, temperature: 0.3 }),
-        signal: AbortSignal.timeout(15000),
+        body: JSON.stringify({ model: GROQ_MODEL_FUND, messages, max_tokens: 1500, temperature: 0.3 }),
+        signal: AbortSignal.timeout(25000),
       });
       if (r.ok) { const j = await r.json(); rawText = j.choices?.[0]?.message?.content?.trim() || null; model = 'llama-3.3'; }
     }
