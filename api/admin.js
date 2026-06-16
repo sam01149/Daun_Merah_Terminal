@@ -1251,6 +1251,26 @@ function _atr14h1(candles) {
 
 // ── OHLCV Read — structured metrics for Analisa tab ──────────────────────────
 
+// 5-bar pivot detection: candle i is a swing high if its high is strictly higher
+// than the `lookback` candles on each side. Returns the most recent swing found.
+function _findSwings(candles, lookback = 2) {
+  if (!candles || candles.length < (lookback * 2 + 1)) return { last_swing_high: null, last_swing_low: null };
+  const highs = [], lows = [];
+  for (let i = lookback; i < candles.length - lookback; i++) {
+    let isHigh = true, isLow = true;
+    for (let j = 1; j <= lookback; j++) {
+      if (candles[i].h < candles[i - j].h || candles[i].h <= candles[i + j].h) isHigh = false;
+      if (candles[i].l > candles[i - j].l || candles[i].l >= candles[i + j].l) isLow  = false;
+    }
+    if (isHigh) highs.push({ price: candles[i].h, t: candles[i].t });
+    if (isLow)  lows.push({ price: candles[i].l,  t: candles[i].t });
+  }
+  return {
+    last_swing_high: highs.length > 0 ? highs[highs.length - 1] : null,
+    last_swing_low:  lows.length  > 0 ? lows[lows.length  - 1] : null,
+  };
+}
+
 async function loadOhlcvData(symbol, label) {
   const isXau = symbol === 'GC=F';
   const isJpy = symbol.includes('JPY');
@@ -1320,9 +1340,12 @@ async function loadOhlcvData(symbol, label) {
     const avgN = c4h.slice(-10).reduce((s,c) => s+c.c, 0) / 10;
     const t = tp(avgO, avgN);
     const trend = t > 0.15 ? 'Uptrend' : t < -0.15 ? 'Downtrend' : 'Sideways';
-    const sH = [...c4h].sort((a,b) => b.h - a.h)[0];
-    const sL = [...c4h].sort((a,b) => a.l - b.l)[0];
-    out.h4 = { available: true, high: +hi.toFixed(dec), low: +lo.toFixed(dec), current: +curr.toFixed(dec), change_pct: chg, trend, swing_high: { price: +sH.h.toFixed(dec), t: sH.t }, swing_low: { price: +sL.l.toFixed(dec), t: sL.t } };
+    const swings = _findSwings(c4h, 2);
+    out.h4 = {
+      available: true, high: +hi.toFixed(dec), low: +lo.toFixed(dec), current: +curr.toFixed(dec), change_pct: chg, trend,
+      swing_high: swings.last_swing_high ? { price: +swings.last_swing_high.price.toFixed(dec), t: swings.last_swing_high.t } : null,
+      swing_low:  swings.last_swing_low  ? { price: +swings.last_swing_low.price.toFixed(dec),  t: swings.last_swing_low.t  } : null,
+    };
   } else { out.h4 = { available: false }; }
 
   // 1H
@@ -1392,7 +1415,9 @@ function buildOhlcvText(data) {
   }
   if (h4.available) {
     lines.push(`[4H 10D] Range: ${f(h4.low)}–${f(h4.high)} | Trend: ${h4.trend} | 10D: ${h4.change_pct >= 0 ? '+' : ''}${h4.change_pct}%`);
-    lines.push(`  Swing High: ${f(h4.swing_high.price)} (${fmtWib(h4.swing_high.t)}) | Swing Low: ${f(h4.swing_low.price)} (${fmtWib(h4.swing_low.t)})`);
+    const shTxt = h4.swing_high ? `${f(h4.swing_high.price)} (${fmtWib(h4.swing_high.t)})` : 'N/A';
+    const slTxt = h4.swing_low  ? `${f(h4.swing_low.price)}  (${fmtWib(h4.swing_low.t)})` : 'N/A';
+    lines.push(`  Struktur Swing H4 → High: ${shTxt} | Low: ${slTxt}`);
   }
   if (h1.available) {
     lines.push(`[1H 5D] Range: ${f(h1.low)}–${f(h1.high)} | Now: ${f(h1.current)} | 5D: ${h1.change_pct >= 0 ? '+' : ''}${h1.change_pct}% | Trend: ${h1.trend}`);

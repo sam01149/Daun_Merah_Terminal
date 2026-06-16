@@ -2334,6 +2334,11 @@ body {
       </div>
       <div class="pt-flow-arrow" style="padding-left:36px">↓</div>
       <div class="pt-flow-item">
+        <div class="pt-flow-tag" style="background:rgba(167,139,250,0.12);color:#a78bfa">ANALISA</div>
+        <div class="pt-flow-desc">Konfirmasi level teknikal (SL/TP/trigger) dari multi-timeframe AI — Daily, H4, H1</div>
+      </div>
+      <div class="pt-flow-arrow" style="padding-left:36px">↓</div>
+      <div class="pt-flow-item">
         <div class="pt-flow-tag" style="background:rgba(230,126,34,0.12);color:#f39c12">CHECKLIST</div>
         <div class="pt-flow-desc">Semua kondisi hijau? Jika tidak — tidak ada entry</div>
       </div>
@@ -2404,11 +2409,16 @@ body {
       </div>
       <div class="pt-row">
         <div class="pt-step-num">2.3</div>
+        <div class="pt-step-action"><strong>Buka tab ANALISA — konfirmasi teknikal</strong>Pilih pair yang ingin ditrade → tap "AI Analisa". Baca output 4 paragraf: bias Daily, struktur swing H4, momentum H1, dan integrasi keseluruhan. Catat level <strong>entry_zone, SL, TP, dan trigger</strong> sebelum lanjut ke Checklist. <em>Shortcut: G → A</em></div>
+        <div class="pt-step-why">Analisa memadukan OHLCV multi-timeframe + indikator (MACD H4, ATR H1, RSI Daily) + konteks makro dari Ringkasan. Level SL/TP didasarkan pada swing struktural H4 yang terdeteksi secara algoritma — bukan perkiraan. Cache berlaku 8 jam; generate ulang jika harga sudah bergerak jauh.</div>
+      </div>
+      <div class="pt-row">
+        <div class="pt-step-num">2.4</div>
         <div class="pt-step-action"><strong>Setup ditemukan? Jalankan CHECKLIST</strong>Buka CHECKLIST, pilih playbook yang sesuai konteks — <strong>SMC/ICT</strong> (struktur & order block), <strong>Macro Momentum</strong> (CB divergence), <strong>Event-Driven</strong> (FOMC/CPI/NFP), atau <strong>Mean Reversion</strong> (range). Pilih pair, centang setiap kondisi secara jujur.</div>
         <div class="pt-step-why">Checklist menghilangkan bias konfirmasi. Banyak loss terjadi karena trader skip validasi saat emosi tinggi. Checklist adalah rem.</div>
       </div>
       <div class="pt-row">
-        <div class="pt-step-num">2.4</div>
+        <div class="pt-step-num">2.5</div>
         <div class="pt-step-action"><strong>CHECKLIST pass → hitung SIZING</strong>Input: total equity akun, jarak stop loss (pips), persentase risk yang mau kamu ambil (rekomendasi: 1–2%). Output: lot size yang tepat.</div>
         <div class="pt-step-why">Sizing yang salah adalah penyebab utama account blow. 1 trade dengan lot 5x terlalu besar bisa menghapus 20 trade profit sebelumnya.</div>
       </div>
@@ -3319,9 +3329,9 @@ function _analisaRestoreFromStorage() {
       if (d && d.loaded_at && (now - new Date(d.loaded_at).getTime()) < 2 * 3600 * 1000)
         analisaDataCache[sym] = d;
     }
-    // Restore AI cache — discard if older than 25h
+    // Restore AI cache — discard if older than 8h (intraday analysis goes stale)
     for (const [sym, a] of Object.entries(ai)) {
-      if (a && a.saved_at && (now - a.saved_at) < 25 * 3600 * 1000)
+      if (a && a.saved_at && (now - a.saved_at) < 8 * 3600 * 1000)
         analisaAiCache[sym] = a;
     }
   } catch(e) {}
@@ -9013,7 +9023,7 @@ document.addEventListener('keydown', function(e) {
     clearTimeout(kbGTimer);
     document.getElementById('kbGMode')?.classList.remove('show');
     const map = {
-      n:'feed', b:'riset', r:'ringkasan', k:'cal',
+      n:'feed', b:'riset', r:'ringkasan', a:'analisa', k:'cal',
       c:'cot',  f:'fundamental', l:'checklist',
       s:'sizing', j:'jurnal', p:'petunjuk', t:'teknikal',
       d:'dashboard'
@@ -9131,6 +9141,7 @@ document.addEventListener('keydown', function(e) {
       <div class="kb-row"><div class="kb-keys"><span class="kb-key">G</span><span class="kb-key">N</span></div><span class="kb-desc">News</span></div>
       <div class="kb-row"><div class="kb-keys"><span class="kb-key">G</span><span class="kb-key">B</span></div><span class="kb-desc">Artikel</span></div>
       <div class="kb-row"><div class="kb-keys"><span class="kb-key">G</span><span class="kb-key">R</span></div><span class="kb-desc">Ringkasan</span></div>
+      <div class="kb-row"><div class="kb-keys"><span class="kb-key">G</span><span class="kb-key">A</span></div><span class="kb-desc">Analisa</span></div>
       <div class="kb-row"><div class="kb-keys"><span class="kb-key">G</span><span class="kb-key">K</span></div><span class="kb-desc">Kalender</span></div>
       <div class="kb-row"><div class="kb-keys"><span class="kb-key">G</span><span class="kb-key">C</span></div><span class="kb-desc">COT</span></div>
       <div class="kb-row"><div class="kb-keys"><span class="kb-key">G</span><span class="kb-key">F</span></div><span class="kb-desc">Fundamental</span></div>
