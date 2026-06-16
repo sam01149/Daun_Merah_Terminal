@@ -2,8 +2,9 @@
 // GET /api/feeds?type=rss            → FinancialJuice RSS XML (50s cache)
 // GET /api/feeds?type=cot            → CFTC COT JSON (6h cache)
 // GET /api/feeds?type=research       → CB speeches/publications + macro research JSON (6h cache)
-// GET /api/feeds?type=options        → Forexlive FX option expiries JSON (4h cache)
+// GET /api/feeds?type=options        → Investinglive FX option expiries JSON (4h cache)
 // GET /api/feeds?type=aftek&pair=EUR/USD → ActionForex per-pair technical outlook (4h cache)
+// GET /api/feeds?type=retail         → ForexBenchmark retail positioning JSON (2h cache)
 
 const { autoUpdateFundamentals } = require('./_fundamental_parser');
 
@@ -15,7 +16,8 @@ module.exports = async function handler(req, res) {
   if (type === 'research')    return researchHandler(req, res);
   if (type === 'options')     return optionsHandler(req, res);
   if (type === 'aftek')       return aftekHandler(req, res);
-  return res.status(400).json({ error: 'Missing ?type= — use rss, cot, cot_history, research, options, or aftek' });
+  if (type === 'retail')      return retailHandler(req, res);
+  return res.status(400).json({ error: 'Missing ?type= — use rss, cot, cot_history, research, options, aftek, or retail' });
 };
 
 // ── Shared Redis helper ────────────────────────────────────────────────────────
@@ -719,4 +721,121 @@ async function aftekHandler(req, res) {
     } catch(e2) {}
     return res.json({ items: [], pair, covered: true, error: e.message });
   }
+}
+
+// ── Retail Sentiment handler (ForexBenchmark) ─────────────────────────────────
+// GET /api/feeds?type=retail
+// Scrapes forexbenchmark.com/quant/retail_positions/ — no login required
+// Returns { positions: { EURUSD: { long_pct, short_pct, signal }, ... }, fetched_at }
+
+const RETAIL_URL       = 'https://forexbenchmark.com/quant/retail_positions/';
+const RETAIL_CACHE_KEY = 'retail_sentiment_cache';
+const RETAIL_CACHE_TTL = 2 * 60 * 60; // 2h in seconds
+
+// Pairs we care about — must match COT pairs for overlay comparison
+const RETAIL_PAIRS = ['EURUSD','GBPUSD','USDJPY','USDCAD','AUDUSD','NZDUSD','USDCHF','XAUUSD'];
+
+async function retailHandler(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Cache-Control', 'no-cache');
+
+  const forceRefresh = req.query.force === '1';
+
+  if (!forceRefresh) {
+    try {
+      const cached = await redisCmd('GET', RETAIL_CACHE_KEY);
+      if (cached) {
+        const obj = JSON.parse(cached);
+        if (Date.now() - new Date(obj.fetched_at).getTime() < RETAIL_CACHE_TTL * 1000) {
+          return res.json(obj);
+        }
+      }
+    } catch(e) {}
+  }
+
+  let html = '';
+  try {
+    const r = await fetch(RETAIL_URL, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.5',
+        'Referer': 'https://forexbenchmark.com/',
+      },
+      signal: AbortSignal.timeout(12000),
+    });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    html = await r.text();
+  } catch(e) {
+    console.warn('ForexBenchmark fetch failed:', e.message);
+    try {
+      const stale = await redisCmd('GET', RETAIL_CACHE_KEY);
+      if (stale) return res.json({ ...JSON.parse(stale), stale: true });
+    } catch(e2) {}
+    return res.status(502).json({ error: 'ForexBenchmark unavailable: ' + e.message });
+  }
+
+  const positions = parseRetailPositions(html);
+
+  if (Object.keys(positions).length === 0) {
+    try {
+      const stale = await redisCmd('GET', RETAIL_CACHE_KEY);
+      if (stale) return res.json({ ...JSON.parse(stale), stale: true, parse_warning: 'Fresh parse returned 0 pairs' });
+    } catch(e2) {}
+    return res.status(502).json({ error: 'Retail sentiment parse failed — page structure may have changed' });
+  }
+
+  const payload = { positions, fetched_at: new Date().toISOString() };
+  redisCmd('SET', RETAIL_CACHE_KEY, JSON.stringify(payload), 'EX', RETAIL_CACHE_TTL).catch(() => {});
+  return res.json(payload);
+}
+
+function parseRetailPositions(html) {
+  const positions = {};
+
+  // Strip scripts/styles first
+  const clean = html
+    .replace(/<script[\s\S]*?<\/script>/gi, '')
+    .replace(/<style[\s\S]*?<\/style>/gi, '');
+
+  // Strategy: find table rows containing a known pair name + a percentage number.
+  // ForexBenchmark uses a table where each row has: pair | % long | volume long | volume short
+  // We scan every <tr> block and look for a pair name + percentage.
+  const trRe = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
+  let m;
+  while ((m = trRe.exec(clean)) !== null) {
+    const row = m[1];
+    // Extract all text content from cells
+    const text = row.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().toUpperCase();
+
+    // Try to find a pair name we recognise in this row
+    let foundPair = null;
+    for (const pair of RETAIL_PAIRS) {
+      // Match exact pair or slash-separated form (EUR/USD or EURUSD)
+      const slashed = pair.slice(0, 3) + '/' + pair.slice(3);
+      if (text.includes(pair) || text.includes(slashed)) {
+        foundPair = pair;
+        break;
+      }
+    }
+    if (!foundPair) continue;
+
+    // Find the first percentage number in the row (e.g. "19.6" or "80.4")
+    const pctMatch = text.match(/\b(\d{1,3}(?:\.\d)?)\s*%?\b/);
+    if (!pctMatch) continue;
+
+    const longPct = parseFloat(pctMatch[1]);
+    if (isNaN(longPct) || longPct < 0 || longPct > 100) continue;
+
+    const shortPct = parseFloat((100 - longPct).toFixed(1));
+
+    // Contrarian signal: extreme retail long → institutional short bias; extreme retail short → long bias
+    let signal = 'NEUTRAL';
+    if (longPct >= 65)      signal = 'CONTRARIAN_SHORT'; // retail crowded long → lean short
+    else if (longPct <= 35) signal = 'CONTRARIAN_LONG';  // retail crowded short → lean long
+
+    positions[foundPair] = { long_pct: longPct, short_pct: shortPct, signal };
+  }
+
+  return positions;
 }

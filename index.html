@@ -700,6 +700,52 @@ body {
   white-space: nowrap; display: none;
 }
 
+/* ── RETAIL SENTIMENT (COT tab) ── */
+.cot-retail-section {
+  margin-top: 20px; padding: 14px 12px 10px;
+  border-top: 1px solid var(--border);
+}
+.cot-retail-hdr {
+  display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;
+}
+.cot-retail-src {
+  font-size: 8px; color: var(--muted); font-family: 'DM Mono', monospace;
+  margin-left: 8px; letter-spacing: .04em;
+}
+.cot-retail-refresh {
+  background: none; border: 1px solid var(--border); color: var(--muted);
+  font-size: 11px; padding: 2px 7px; border-radius: 3px; cursor: pointer;
+  font-family: 'DM Mono', monospace; transition: color .15s, border-color .15s;
+}
+.cot-retail-refresh:hover { color: var(--text); border-color: var(--text-mid); }
+.cot-retail-desc {
+  font-size: 9px; color: var(--muted); font-family: 'DM Mono', monospace;
+  line-height: 1.5; margin-bottom: 10px;
+}
+.cot-retail-meta {
+  font-size: 8px; color: var(--muted); font-family: 'DM Mono', monospace;
+  margin-top: 8px; text-align: right;
+}
+.retail-row {
+  display: grid; grid-template-columns: 44px 1fr 54px 90px;
+  align-items: center; gap: 0 8px; padding: 6px 0;
+  border-bottom: 1px solid rgba(255,255,255,.04);
+}
+.retail-row:last-child { border-bottom: none; }
+.retail-pair { font: 700 11px 'DM Mono',monospace; }
+.retail-bar-wrap { height: 6px; border-radius: 3px; background: rgba(255,255,255,.06); overflow: hidden; }
+.retail-bar-long { height: 100%; border-radius: 3px; background: var(--green); }
+.retail-pct { font: 10px 'DM Mono',monospace; text-align: right; }
+.retail-pct .long  { color: var(--green); }
+.retail-pct .short { color: var(--red); }
+.retail-signal {
+  font: 700 8px 'DM Mono',monospace; padding: 2px 6px; border-radius: 3px;
+  text-align: center; letter-spacing: .04em; white-space: nowrap;
+}
+.retail-signal.long  { background: rgba(74,222,128,.12); color: #4ade80; }
+.retail-signal.short { background: rgba(248,113,113,.12); color: #f87171; }
+.retail-signal.neut  { background: rgba(148,163,184,.08); color: var(--muted); }
+
 /* ── FUNDAMENTAL TAB ──*/
 .fund-panel { padding: 10px 12px 24px; }
 .fund-header {
@@ -2637,6 +2683,18 @@ body {
     <div id="cotGrid">
       <div class="cot-empty loading-pulse">Memuat data COT...</div>
     </div>
+    <div class="cot-retail-section">
+      <div class="cot-retail-hdr">
+        <div>
+          <span class="cot-group-label" style="margin:0;padding:0;border:none">RETAIL SENTIMENT</span>
+          <span class="cot-retail-src">ForexBenchmark</span>
+        </div>
+        <button class="cot-retail-refresh" onclick="fetchRetailSentiment(true)" title="Refresh">↻</button>
+      </div>
+      <div class="cot-retail-desc">Contrarian indicator — retail ≥65% satu arah = sinyal berlawanan. Paling kuat saat konfirmasi dengan COT Leveraged Funds.</div>
+      <div id="retailGrid"><div class="cot-empty loading-pulse" style="padding:10px 0">Memuat...</div></div>
+      <div class="cot-retail-meta" id="retailMeta"></div>
+    </div>
   </div>
 </div>
 
@@ -3845,6 +3903,7 @@ document.querySelectorAll('#navViews .nvtab').forEach(btn => {
       const now = Date.now();
       if (!cotData || (now - cotFetchedAt) > 30 * 60 * 1000) fetchCOT();
       else renderCOT();
+      fetchRetailSentiment();
     } else if (view === 'fundamental') {
       setFeedUI(false);
       activeView = 'fundamental';
@@ -5039,6 +5098,93 @@ async function generateFundamentalAnalysis() {
 }
 
 // ── COT POSITIONING ──────────────────────────────────────
+// ── Retail Sentiment (ForexBenchmark) ────────────────────────────────────────
+
+let retailData = null;
+let retailFetchedAt = 0;
+const RETAIL_CLIENT_TTL = 2 * 60 * 60 * 1000;
+
+// Pair → display color (matches COT colors)
+const RETAIL_PAIR_COLORS = {
+  EURUSD:'#c0392b', GBPUSD:'#a78bfa', USDJPY:'#ffd32a',
+  USDCAD:'#ff6b35', AUDUSD:'#00c896', NZDUSD:'#34d399',
+  USDCHF:'#ff4757', XAUUSD:'#fbbf24',
+};
+const RETAIL_PAIR_ORDER = ['EURUSD','GBPUSD','USDJPY','USDCAD','AUDUSD','NZDUSD','USDCHF','XAUUSD'];
+
+async function fetchRetailSentiment(force) {
+  if (!force && retailData && Date.now() - retailFetchedAt < RETAIL_CLIENT_TTL) {
+    renderRetailSentiment();
+    return;
+  }
+  const grid = document.getElementById('retailGrid');
+  const meta = document.getElementById('retailMeta');
+  if (grid) grid.innerHTML = '<div class="cot-empty loading-pulse" style="padding:10px 0">Memuat retail sentiment...</div>';
+  try {
+    const url = force ? '/api/feeds?type=retail&force=1' : '/api/feeds?type=retail';
+    const r = await fetch(url, { signal: AbortSignal.timeout(15000) });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const data = await r.json();
+    if (data.error) throw new Error(data.error);
+    retailData = data;
+    retailFetchedAt = Date.now();
+  } catch(e) {
+    console.warn('fetchRetailSentiment failed:', e.message);
+    if (grid) grid.innerHTML = `<div class="cot-empty" style="color:var(--accent)">Tidak tersedia: ${escHtml(e.message)}</div>`;
+    if (meta) meta.textContent = 'error';
+    return;
+  }
+  renderRetailSentiment();
+}
+
+function renderRetailSentiment() {
+  const grid = document.getElementById('retailGrid');
+  const meta = document.getElementById('retailMeta');
+  if (!grid || !retailData) return;
+
+  const { positions, fetched_at, stale } = retailData;
+  if (!positions || Object.keys(positions).length === 0) {
+    grid.innerHTML = '<div class="cot-empty">Data retail tidak tersedia.</div>';
+    return;
+  }
+
+  const fmtTime = ts => {
+    if (!ts) return '';
+    const d = new Date(ts);
+    return isNaN(d) ? '' : d.toLocaleTimeString('id-ID', { hour:'2-digit', minute:'2-digit' }) + ' WIB';
+  };
+
+  const rows = RETAIL_PAIR_ORDER.map(pair => {
+    const d = positions[pair];
+    if (!d) return '';
+    const color = RETAIL_PAIR_COLORS[pair] || '#888';
+    const label = pair.slice(0,3) + '/' + pair.slice(3);
+    const { long_pct, short_pct, signal } = d;
+
+    const sigClass = signal === 'CONTRARIAN_LONG' ? 'long' : signal === 'CONTRARIAN_SHORT' ? 'short' : 'neut';
+    const sigLabel = signal === 'CONTRARIAN_LONG' ? '↑ LEAN LONG'
+                   : signal === 'CONTRARIAN_SHORT' ? '↓ LEAN SHORT'
+                   : '— NEUTRAL';
+
+    return `<div class="retail-row">
+      <span class="retail-pair" style="color:${color}">${label}</span>
+      <div class="retail-bar-wrap">
+        <div class="retail-bar-long" style="width:${long_pct}%"></div>
+      </div>
+      <div class="retail-pct">
+        <span class="long">${long_pct}%</span><span style="color:var(--muted)"> / </span><span class="short">${short_pct}%</span>
+      </div>
+      <span class="retail-signal ${sigClass}">${sigLabel}</span>
+    </div>`;
+  }).join('');
+
+  grid.innerHTML = rows || '<div class="cot-empty">Tidak ada data untuk pair yang dipilih.</div>';
+  if (meta) {
+    const t = fmtTime(fetched_at);
+    meta.textContent = (stale ? '⚠ cache lama · ' : '') + 'diperbarui ' + t + ' · sumber: ForexBenchmark';
+  }
+}
+
 async function fetchCOT() {
   try {
     const res = await fetch('/api/feeds?type=cot', { signal: AbortSignal.timeout(25000) });

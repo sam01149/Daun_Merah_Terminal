@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-06-16 (session 66 — feat: tambah sumber riset (Marc to Market, ING Think, RBA, BoC, BoJ) ke tab ARTIKEL + endpoint option expiries dari Forexlive (difilter per-pair) di tab TEK)
+> **Last updated:** 2026-06-16 (session 66 — feat: retail sentiment (ForexBenchmark) di COT tab + ActionForex per-pair technical outlook di TEK Berita Terkait + fix investinglive URL + fix Atom/dc:date parser)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Financial_Feed_App`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -25,7 +25,9 @@ Daun Merah adalah forex news PWA (Progressive Web App) untuk trader forex Indone
 | Cache/DB | Upstash Redis REST API |
 | RSS sumber berita (NEWS) | FinancialJuice (`https://www.financialjuice.com/feed.ashx?xy=rss`) — satu-satunya sumber untuk AI digest & tab NEWS |
 | Sumber tab ARTIKEL | FED, FOMC, FEDN, ECB, ECBB, BIS, **RBA, BoC, BoJ** (CB primary), **Marc to Market (MTM), ING Think (ING)** (macro research) |
-| Option expiries (tab TEK) | Forexlive Technical Analysis feed via rss2json — difilter per-pair, 4h cache |
+| Option expiries (tab TEK) | Investinglive `/feed/forexorders/` via rss2json — difilter per-pair, 4h cache |
+| ActionForex (tab TEK Berita) | Per-pair technical outlook feed, 6 pair major (tidak ada NZD/XAU), 4h cache |
+| Retail Sentiment (tab COT) | ForexBenchmark scrape — contrarian indicator, 2h cache, signal di ≥65% satu arah |
 | Kalender ekonomi | ForexFactory XML (`nfs.faireconomy.media`) |
 | COT data | CFTC website scraping (`cftc.gov`) |
 | Font | Syne (heading), DM Mono (body) |
