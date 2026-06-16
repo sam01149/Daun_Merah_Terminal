@@ -386,8 +386,10 @@ const CB_RESEARCH_SOURCES = [
   // BoJ via rss2json (BoJ blocks non-browser UAs on Vercel)
   { key: 'BOJ',  url: 'https://api.rss2json.com/v1/api.json?rss_url=https%3A%2F%2Fwww.boj.or.jp%2Fen%2Frss%2Fmediarss.xml' },
   // ── Macro Research / Institutional Analysis ───────────────────────────────
-  { key: 'MTM',  url: 'https://api.rss2json.com/v1/api.json?rss_url=https%3A%2F%2Fmarctomarket.com%2Ffeed' },
-  { key: 'ING',  url: 'https://api.rss2json.com/v1/api.json?rss_url=https%3A%2F%2Fthink.ing.com%2Ffeed%2F' },
+  // Marc to Market uses FeedBurner (Blogger backend) — direct fetch works fine
+  { key: 'MTM',  url: 'https://feeds.feedburner.com/marctomarket/ujfs' },
+  // ING Think has native RSS at /rss/ — direct accessible from Vercel IPs
+  { key: 'ING',  url: 'https://think.ing.com/rss/' },
 ];
 const RESEARCH_CACHE_KEY    = 'research_cache';
 const RESEARCH_CACHE_TTL_MS = 6 * 60 * 60 * 1000;

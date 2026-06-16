@@ -8575,25 +8575,29 @@ function onTekTFChange() {
 
 // ── Option Expiries (TEK tab) ─────────────────────────────────────────────────
 
-let tekOptionsCache = null; // { data, fetchedAt }
-const TEK_OPTIONS_TTL = 4 * 60 * 60 * 1000; // 4h client cache
+let tekOptionsCache = null;  // { data, fetchedAt } on success
+let tekOptionsFetchError = null; // error string if last fetch failed
+const TEK_OPTIONS_TTL = 4 * 60 * 60 * 1000;
 
 async function fetchTekOptions() {
-  // Use client cache if fresh enough
   if (tekOptionsCache && Date.now() - tekOptionsCache.fetchedAt < TEK_OPTIONS_TTL) {
     renderTekOptions();
     return;
   }
+  const body = document.getElementById('tekOptsBody');
+  if (body) body.innerHTML = '<div class="tek-opts-empty">Memuat data expiry...</div>';
+
   try {
-    const r = await fetch('/api/feeds?type=options', { signal: AbortSignal.timeout(10000) });
+    const r = await fetch('/api/feeds?type=options', { signal: AbortSignal.timeout(12000) });
     if (!r.ok) throw new Error('HTTP ' + r.status);
     const data = await r.json();
     tekOptionsCache = { data, fetchedAt: Date.now() };
-    renderTekOptions();
+    tekOptionsFetchError = null;
   } catch(e) {
     console.warn('fetchTekOptions failed:', e.message);
-    renderTekOptions();
+    tekOptionsFetchError = e.message;
   }
+  renderTekOptions();
 }
 
 function renderTekOptions() {
@@ -8602,7 +8606,11 @@ function renderTekOptions() {
   if (!body) return;
 
   if (!tekOptionsCache) {
-    body.innerHTML = '<div class="tek-opts-empty">Memuat...</div>';
+    const msg = tekOptionsFetchError
+      ? `Tidak tersedia (${escHtml(tekOptionsFetchError)})`
+      : 'Tidak ada data option expiry hari ini.';
+    body.innerHTML = `<div class="tek-opts-empty">${msg}</div>`;
+    if (meta) meta.textContent = tekOptionsFetchError ? 'error' : '';
     return;
   }
 
@@ -8613,7 +8621,6 @@ function renderTekOptions() {
     return;
   }
 
-  // Filter expiries for current pair (normalized to EUR/USD format)
   const pairLabel = tekPair.slice(0, 3) + '/' + tekPair.slice(3);
   const all = data.expiries || [];
   const filtered = all.filter(e => {
@@ -8621,7 +8628,6 @@ function renderTekOptions() {
     return ep === tekPair;
   });
 
-  // Update meta (date of post)
   if (meta) {
     const d = data.date ? new Date(data.date) : null;
     const dStr = d && !isNaN(d) ? d.toLocaleDateString('id-ID', { day:'numeric', month:'short', year:'numeric' }) : '';
@@ -8629,24 +8635,18 @@ function renderTekOptions() {
   }
 
   if (filtered.length === 0) {
-    const hasAny = all.length > 0;
-    body.innerHTML = hasAny
+    body.innerHTML = all.length > 0
       ? `<div class="tek-opts-empty">Tidak ada expiry untuk ${escHtml(pairLabel)} hari ini.</div>`
       : '<div class="tek-opts-empty">Tidak ada data option expiry hari ini.</div>';
     return;
   }
 
-  let html = '<table class="tek-opts-table"><thead><tr>'
-    + '<th>Level</th><th>Size</th>'
-    + '</tr></thead><tbody>';
+  let html = '<table class="tek-opts-table"><thead><tr><th>Level</th><th>Size</th></tr></thead><tbody>';
   for (const e of filtered) {
-    html += `<tr>
-      <td class="tek-opts-level">${escHtml(e.level)}</td>
-      <td class="tek-opts-size">${escHtml(e.size)}</td>
-    </tr>`;
+    html += `<tr><td class="tek-opts-level">${escHtml(e.level)}</td><td class="tek-opts-size">${escHtml(e.size)}</td></tr>`;
   }
   html += '</tbody></table>';
-  if (data.date && filtered[0]?.link) {
+  if (filtered[0]?.link) {
     html += `<div style="text-align:right;margin-top:4px"><a href="${escHtml(filtered[0].link)}" target="_blank" rel="noopener noreferrer" class="tek-opts-link">sumber: Forexlive ↗</a></div>`;
   }
   body.innerHTML = html;
