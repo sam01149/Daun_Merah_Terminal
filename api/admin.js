@@ -1636,7 +1636,7 @@ async function polymarketHandler(req, res) {
   res.setHeader('Cache-Control', 'no-cache');
   if (req.method === 'OPTIONS') return res.status(204).end();
 
-  const CACHE_KEY = 'polymarket_signal_v2'; // v2: weighted categories, 25 results
+  const CACHE_KEY = 'polymarket_signal_v3'; // v3: score≥1, 50 results with categories
   const CACHE_TTL = 1800; // 30 min — prediction markets shift fast
 
   // Serve from cache if fresh
@@ -1657,14 +1657,14 @@ async function polymarketHandler(req, res) {
     if (!r.ok) throw new Error(`Gamma API ${r.status}`);
     const markets = await r.json();
 
-    // Score & filter: keep only markets scoring ≥2 (signal-only, no noise)
+    // Score & filter: keep all categorized markets (score ≥1 = matched at least one category)
     const scored = markets
       .filter(m => m.outcomePrices && m.outcomes)
       .map(m => ({ m, ...(_polyScore(m.question || '')) }))
-      .filter(x => x.score >= 2)
+      .filter(x => x.score >= 1)
       .sort((a, b) => b.score - a.score || (b.m.volume24hr || 0) - (a.m.volume24hr || 0));
 
-    const macro = scored.slice(0, 25).map(({ m, category }) => {
+    const macro = scored.slice(0, 50).map(({ m, category }) => {
         const prices   = Array.isArray(m.outcomePrices) ? m.outcomePrices : JSON.parse(m.outcomePrices || '[]');
         const outcomes = Array.isArray(m.outcomes)      ? m.outcomes      : JSON.parse(m.outcomes      || '[]');
         const yesIdx = outcomes.findIndex(o => o.toLowerCase() === 'yes');
