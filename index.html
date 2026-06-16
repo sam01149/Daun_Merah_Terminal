@@ -2062,6 +2062,15 @@ body {
       <button id="corrBtn" class="jn-btn-sec" onclick="fetchCorrelations()" style="width:100%;font-size:10px">↻ Muat Korelasi Cross-Asset</button>
     </div>
   </div>
+  <div class="ringkasan-inner" style="padding-top:0" id="polymarketWrap">
+    <div class="corr-section" id="polymarketPanel">
+      <div class="corr-title">POLYMARKET — PROBABILITAS PASAR</div>
+      <div style="font-size:10px;color:var(--muted);font-family:'DM Mono',monospace">Probabilitas event makro dari prediction market (uang nyata).</div>
+    </div>
+    <div style="margin-top:8px">
+      <button id="polyBtn" class="jn-btn-sec" onclick="fetchPolymarket()" style="width:100%;font-size:10px">↻ Muat Polymarket Macro</button>
+    </div>
+  </div>
 </div>
 
 <!-- ANALISA PANEL -->
@@ -4122,6 +4131,80 @@ async function fetchCorrelations() {
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = '↻ Muat Korelasi Cross-Asset'; }
   }
+}
+
+// ── Polymarket ───────────────────────────────────────────────────────────────
+
+async function fetchPolymarket() {
+  const panel = document.getElementById('polymarketPanel');
+  const btn   = document.getElementById('polyBtn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Memuat…'; }
+  if (panel) panel.innerHTML = '<div class="corr-title">POLYMARKET — PROBABILITAS PASAR</div>'
+    + '<div style="font-size:10px;color:var(--muted);font-family:\'DM Mono\',monospace">Mengambil data…</div>';
+  try {
+    const res = await fetch('/api/admin?action=polymarket', { signal: AbortSignal.timeout(15000) });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    renderPolymarket(data);
+  } catch(e) {
+    console.warn('Polymarket fetch failed:', e.message);
+    if (panel) panel.innerHTML = '<div class="corr-title">POLYMARKET — PROBABILITAS PASAR</div>'
+      + `<div style="font-size:10px;color:#e05c5c;font-family:'DM Mono',monospace">Gagal memuat: ${e.message}</div>`;
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '↻ Muat Polymarket Macro'; }
+  }
+}
+
+function renderPolymarket(data) {
+  const panel = document.getElementById('polymarketPanel');
+  if (!panel) return;
+  const markets = data.markets || [];
+  const age     = data.fetched_at ? new Date(data.fetched_at) : null;
+  const ageStr  = age ? age.toLocaleTimeString('id-ID', { hour:'2-digit', minute:'2-digit' }) : '';
+  const staleTag = data.stale ? ' <span style="color:#f59e0b">(stale)</span>' : '';
+  const cacheTag = data.cached ? ' <span style="color:var(--muted)">(cached)</span>' : '';
+
+  let html = `<div class="corr-title">POLYMARKET — PROBABILITAS PASAR${staleTag}${cacheTag}</div>`;
+  if (ageStr) html += `<div style="font-size:9px;color:var(--muted);font-family:'DM Mono',monospace;margin-bottom:8px">Data: ${ageStr} WIB · Sumber: Polymarket Gamma API · Cache 1j</div>`;
+  html += `<div style="font-size:9px;color:var(--muted);font-family:'DM Mono',monospace;margin-bottom:10px">Probabilitas dari prediction market berbasis uang nyata — bukan opini.</div>`;
+
+  if (!markets.length) {
+    html += '<div style="font-size:10px;color:var(--muted)">Tidak ada market macro aktif saat ini.</div>';
+    panel.innerHTML = html;
+    return;
+  }
+
+  html += markets.map(m => {
+    const endDate = m.end_date ? new Date(m.end_date).toLocaleDateString('id-ID', { day:'2-digit', month:'short', year:'numeric' }) : '';
+    const vol     = m.volume24h >= 1000 ? `$${(m.volume24h/1000).toFixed(0)}K` : `$${m.volume24h}`;
+
+    // Color coding for Yes probability
+    let probHtml = '';
+    if (m.yes_prob !== null) {
+      const p = m.yes_prob;
+      const col = p >= 70 ? '#4caf50' : p <= 30 ? '#e05c5c' : '#f59e0b';
+      probHtml = `<span style="color:${col};font-weight:700;font-size:13px;font-family:'DM Mono',monospace">${p}%</span>
+        <span style="font-size:9px;color:var(--muted)">YA</span>`;
+    } else {
+      // Multi-outcome: show all
+      probHtml = m.outcomes.map((o, i) => {
+        const p = m.prices[i] || 0;
+        const col = p >= 70 ? '#4caf50' : p <= 30 ? '#e05c5c' : '#888';
+        return `<span style="color:${col};font-size:11px;font-family:'DM Mono',monospace">${p}%</span>`
+          + `<span style="font-size:8px;color:var(--muted);margin-right:6px"> ${escHtml(o)}</span>`;
+      }).join('');
+    }
+
+    return `<div style="display:flex;align-items:flex-start;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:10px;color:var(--text);line-height:1.4;margin-bottom:3px">${escHtml(m.question)}</div>
+        <div style="font-size:9px;color:var(--muted)">${endDate ? 'Tutup: ' + endDate + ' · ' : ''}Vol 24j: ${vol}</div>
+      </div>
+      <div style="text-align:right;white-space:nowrap;flex-shrink:0">${probHtml}</div>
+    </div>`;
+  }).join('');
+
+  panel.innerHTML = html;
 }
 
 // ── CB Research ──────────────────────────────────────────────────────────────
@@ -8074,17 +8157,48 @@ async function szLoadHistory() {
 
 // ── TEKNIKAL ─────────────────────────────────────────────
 const TEK_PAIR_KEYWORDS = {
-  XAUUSD: ['gold','xau','bullion','precious','safe haven','silver','fed','fomc','rate','powell','inflation','real yield',
-            'iran','war','sanction','trump','tariff','china','russia','ukraine','missile','ceasefire','nato','geopolit','haven','risk off'],
-  EURUSD: ['euro','eur/','ecb','lagarde','eurozone','europe','germany','german','france','french','italy','italian',
-            'fed','fomc','dollar','dxy','powell','rate cut','rate hike'],
-  GBPUSD: ['gbp','pound','sterling','boe','bailey','uk ','britain','england','scotland','brexit',
-            'fed','fomc','dollar','dxy','powell'],
-  USDJPY: ['jpy','yen','boj','ueda','japan','japanese','fed','fomc','dollar','powell','yield','treasury','bond'],
-  AUDUSD: ['aud','australia','aussie','rba','iron ore','china','chinese','commodity','copper','fed','fomc','dollar','powell'],
-  NZDUSD: ['nzd','new zealand','rbnz','kiwi','fed','fomc','dollar','powell'],
-  USDCAD: ['cad','canada','canadian','boc','oil','crude','wti','brent','opec','barrel','fed','fomc','dollar','powell'],
-  USDCHF: ['chf','swiss','switzerland','snb','franc','fed','fomc','dollar','powell','safe haven','haven'],
+  XAUUSD: ['gold','xau','bullion','precious','safe haven','silver',
+            'fed','fomc','rate','powell','inflation','real yield','cpi','pce',
+            'iran','war','sanction','trump','tariff','china','russia','ukraine',
+            'missile','ceasefire','nato','geopolit','haven','risk off',
+            'brics','dxy','dollar index','treasury yield','debt ceiling',
+            'central bank gold','etf gold','de-dollarization','middle east','israel','conflict'],
+  EURUSD: ['euro','eur/','ecb','lagarde','eurozone','europe','germany','german',
+            'france','french','italy','italian','eu tariff','eu trade',
+            'fed','fomc','dollar','dxy','powell','rate cut','rate hike',
+            'ukraine','russia','energy europe','gas price','tariff',
+            'pmi europe','eu cpi','eu gdp','eu inflation','draghi'],
+  GBPUSD: ['gbp','pound','sterling','boe','bailey','uk ','britain','england',
+            'scotland','budget','gilts','gilt','reeves','chancellor',
+            'fed','fomc','dollar','dxy','powell','tariff',
+            'uk cpi','uk inflation','uk gdp','uk employment','uk jobs',
+            'uk housing','uk retail','uk pmi','labour','keir'],
+  USDJPY: ['jpy','yen','boj','ueda','japan','japanese',
+            'fed','fomc','dollar','powell','yield','treasury','bond',
+            'carry trade','carry unwind','yield curve control','ycc',
+            '10-year','us yield','tariff japan','trade japan',
+            'north korea','nikkei','risk off','china','geopolit'],
+  AUDUSD: ['aud','australia','aussie','rba','iron ore','china','chinese',
+            'commodity','copper','fed','fomc','dollar','powell',
+            'gold','mining','resource','nikkei','asia',
+            'rba rate','employment australia','jobs australia',
+            'trade australia','cpi australia','gdp australia',
+            'tariff china','taiwan','nfp'],
+  NZDUSD: ['nzd','new zealand','rbnz','kiwi',
+            'fed','fomc','dollar','powell',
+            'dairy','milk','fonterra','china','trade nz',
+            'cpi nz','inflation nz','employment nz','jobs nz',
+            'gdp nz','rbnz rate','commodity','asia','tariff'],
+  USDCAD: ['cad','canada','canadian','boc','oil','crude','wti','brent',
+            'opec','barrel','fed','fomc','dollar','powell',
+            'employment canada','jobs canada','trade canada',
+            'tariff canada','housing canada','pipeline','nat gas',
+            'trump canada','cpi canada'],
+  USDCHF: ['chf','swiss','switzerland','snb','franc',
+            'fed','fomc','dollar','powell','safe haven','haven',
+            'geopolit','war','conflict','ukraine','middle east',
+            'gold','eur/chf','inflation swiss','snb',
+            'refuge','risk off'],
 };
 const TEK_CAT_COLOR = {
   'market-moving':'#e74c3c','forex':'#38bdf8','macro':'#a78bfa','econ-data':'#27ae60',

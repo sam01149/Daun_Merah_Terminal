@@ -37,7 +37,8 @@ module.exports = async function handler(req, res) {
   if (action === 'ohlcv_read')         return ohlcvReadHandler(req, res);
   if (action === 'ohlcv_analyze')      return ohlcvAnalyzeHandler(req, res);
   if (action === 'ohlcv_dashboard')    return ohlcvDashboardHandler(req, res);
-  return res.status(400).json({ error: 'Missing ?action= — use health, redis-keys, admin-prompts, push, fundamental_get, fundamental_seed, fundamental_refresh, fundamental_analysis, journal_import, circuit-reset, circuit-status, gdpnow, ohlcv_sync, ohlcv_read, ohlcv_analyze, or ohlcv_dashboard' });
+  if (action === 'polymarket')         return polymarketHandler(req, res);
+  return res.status(400).json({ error: 'Missing ?action= — use health, redis-keys, admin-prompts, push, fundamental_get, fundamental_seed, fundamental_refresh, fundamental_analysis, journal_import, circuit-reset, circuit-status, gdpnow, ohlcv_sync, ohlcv_read, ohlcv_analyze, ohlcv_dashboard, or polymarket' });
 };
 
 // ── Shared Redis helper ────────────────────────────────────────────────────────
@@ -1598,4 +1599,81 @@ async function circuitResetHandler(req, res) {
     }
   }
   return res.status(200).json({ ok: true, reset, skipped });
+}
+
+// ── Polymarket — prediction market probabilities untuk macro events ───────────
+// Gamma API: public, no auth, no API key. Rate limit: 300 req/10s.
+// outcomePrices[i] = implied probability (0–1) for outcomes[i]
+
+const POLY_MACRO_KEYWORDS = [
+  'fed','rate cut','rate hike','fomc','federal reserve','interest rate',
+  'cpi','inflation','nfp','jobs report','unemployment','gdp',
+  'recession','default','debt ceiling','tariff','trade war',
+  'dollar index','treasury','yield curve',
+];
+
+function _polyScore(question) {
+  const q = question.toLowerCase();
+  return POLY_MACRO_KEYWORDS.reduce((s, k) => s + (q.includes(k) ? 1 : 0), 0);
+}
+
+async function polymarketHandler(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Cache-Control', 'no-cache');
+  if (req.method === 'OPTIONS') return res.status(204).end();
+
+  const CACHE_KEY = 'polymarket_macro';
+  const CACHE_TTL = 3600; // 1 hour
+
+  // Serve from cache if fresh
+  try {
+    const cached = await redisCmd('GET', CACHE_KEY);
+    if (cached) {
+      const parsed = JSON.parse(cached);
+      return res.status(200).json({ ...parsed, cached: true });
+    }
+  } catch(e) {}
+
+  try {
+    // Fetch top active markets by volume — filter for macro relevance
+    const r = await fetch(
+      'https://gamma-api.polymarket.com/markets?active=true&order=volume24hr&ascending=false&limit=50',
+      { headers: { 'Accept': 'application/json' }, signal: AbortSignal.timeout(10000) }
+    );
+    if (!r.ok) throw new Error(`Gamma API ${r.status}`);
+    const markets = await r.json();
+
+    // Score & filter: keep only markets with ≥1 macro keyword match
+    const macro = markets
+      .filter(m => _polyScore(m.question || '') >= 1 && m.outcomePrices && m.outcomes)
+      .sort((a, b) => _polyScore(b.question) - _polyScore(a.question) || (b.volume24hr || 0) - (a.volume24hr || 0))
+      .slice(0, 12)
+      .map(m => {
+        const prices   = Array.isArray(m.outcomePrices) ? m.outcomePrices : JSON.parse(m.outcomePrices || '[]');
+        const outcomes = Array.isArray(m.outcomes)      ? m.outcomes      : JSON.parse(m.outcomes      || '[]');
+        // Find "Yes" index (binary markets) or just pair all outcomes
+        const yesIdx = outcomes.findIndex(o => o.toLowerCase() === 'yes');
+        const prob   = yesIdx >= 0 ? Math.round(parseFloat(prices[yesIdx] || 0) * 100) : null;
+        return {
+          question:  m.question,
+          slug:      m.slug,
+          outcomes,
+          prices:    prices.map(p => Math.round(parseFloat(p) * 100)),
+          yes_prob:  prob,
+          volume24h: Math.round(m.volume24hr || 0),
+          end_date:  m.endDate,
+        };
+      });
+
+    const payload = { markets: macro, fetched_at: new Date().toISOString(), cached: false };
+    await redisCmd('SETEX', CACHE_KEY, CACHE_TTL, JSON.stringify(payload)).catch(() => {});
+    return res.status(200).json(payload);
+  } catch(e) {
+    // Fallback: stale cache
+    try {
+      const stale = await redisCmd('GET', CACHE_KEY);
+      if (stale) return res.status(200).json({ ...JSON.parse(stale), cached: true, stale: true });
+    } catch(_) {}
+    return res.status(200).json({ markets: [], error: e.message, fetched_at: new Date().toISOString() });
+  }
 }
