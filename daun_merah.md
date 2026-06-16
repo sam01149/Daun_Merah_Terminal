@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-06-16 (session 62 — feat: perluas commentary analisa teknikal jadi 4-5 paragraf naratif; max_tokens 500→1500; timeout SambaNova 20s→30s, Groq 15s→25s)
+> **Last updated:** 2026-06-16 (session 63 — fix: swing detection H4 ganti ke 5-bar pivot algorithm (_findSwings), cache AI analisa 25h→8h, shortcut G+A untuk tab Analisa, SOP petunjuk diupdate dengan langkah ANALISA di Fase 2)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Financial_Feed_App`
 > **Production URL:** https://financial-feed-app.vercel.app
