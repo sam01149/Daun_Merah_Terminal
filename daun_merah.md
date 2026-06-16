@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-06-16 (session 64 — feat: Polymarket Gamma API integration (admin.js ?action=polymarket + UI di RINGKASAN tab), perluas TEK_PAIR_KEYWORDS semua pair (+tariff/carry/dairy/gold/geopolit), riset kalender: ForexFactory tetap terbaik untuk stack ini; OpenBB Python-only tidak applicable; tidak ada alternatif gratis REST yang lebih baik)
+> **Last updated:** 2026-06-16 (session 65 — fix: CAL tab actual values auto-update — tambah `fetchCalendarSilent()` + `_calAutoRefreshTimer` setiap 90s saat user di tab CAL, actual values kini muncul otomatis tanpa manual refresh)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Financial_Feed_App`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -79,6 +79,31 @@ Financial_Feed_App/
 > **Penting:** `api/feeds.js` menggantikan `api/rss.js` dan `api/cot.js` yang sudah dihapus.
 > `api/admin.js` menggantikan `api/health.js`, `api/redis-keys.js`, `api/admin-prompts.js`, dan `api/push.js`.
 > Konsolidasi ini dilakukan untuk tetap di bawah limit 12 serverless functions Vercel Hobby.
+
+---
+
+## Changelog Session 65 (2026-06-16)
+
+### Fix: CAL Tab — Actual Values Auto-Update
+
+**Problem:** Kolom ACTUAL di tab CAL menampilkan "—" meskipun ForexFactory sudah merilis nilai actual. Data hanya di-refresh saat user buka tab CAL (dengan threshold 1 jam), sehingga user harus manual refresh setiap kali ingin melihat actual terbaru.
+
+**Root cause:**
+- `startCountdownTimer()` menjalankan `renderCountdown()` setiap 30 detik — hanya update tampilan countdown, tidak re-fetch data
+- `calFetchedAt` threshold 1 jam: data tidak di-fetch ulang sampai user tutup + buka tab CAL setelah 1 jam
+- Background init refresh (S30M = 30 menit) update `calData` di memori tapi tidak re-render tab CAL
+
+**Fix (`index.html`):**
+1. Tambah variabel `let _calAutoRefreshTimer = null;` di calendar state section
+2. `startCountdownTimer()`: tambah `setInterval(fetchCalendarSilent, 90000)` → `_calAutoRefreshTimer`
+3. `stopCountdownTimer()`: clear `_calAutoRefreshTimer` saat user pindah tab
+4. Tambah fungsi `fetchCalendarSilent()`:
+   - Guard: `if (activeView !== 'cal') return` — tidak jalan jika user sudah pindah tab
+   - Fetch `/api/calendar?_t=${buster}` dengan cache buster per 90s
+   - Silent fail (no loading spinner, no error UI)
+   - Update `calData`, `calFetchedAt`, panggil `renderCalendar()` + `renderCountdown()` + `updateCalLastUpdated()`
+
+**Efek:** Actual values muncul otomatis dalam ≤90 detik setelah ForexFactory merilis data — tanpa manual refresh, tanpa loading spinner. Label "baru saja" di header kalender ikut update.
 
 ---
 
