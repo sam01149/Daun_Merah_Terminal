@@ -3060,6 +3060,8 @@ async function fetchFeed() {
     .slice(0, 100);
   seenGuids = new Set(allItems.map(i => i.guid));
   sendToSW({ type:'INIT_GUIDS', guids:[...seenGuids] });
+  // Enrich calendar actuals from fresh headlines (runs silently)
+  if (activeView === 'cal' && calData) { enrichCalActuals(); }
 
   const now = new Date();
   document.getElementById('lastUpdate').textContent =
@@ -3806,7 +3808,7 @@ document.querySelectorAll('#navViews .nvtab').forEach(btn => {
       document.getElementById('calPanel').style.display = 'block';
       const now = Date.now();
       if (!calData || (now - calFetchedAt) > 60 * 60 * 1000) fetchCalendar();
-      else { renderCalendar(); startCountdownTimer(); }
+      else { enrichCalActuals(); renderCalendar(); startCountdownTimer(); }
       if (!cbData || (now - cbFetchedAt) > 5 * 60 * 1000) fetchCBStatus();
       else renderCBTracker();
       if (!realYieldsData || (now - realYieldsFetAt) > 6 * 60 * 60 * 1000) fetchRealYields();
@@ -3890,6 +3892,7 @@ async function fetchCalendar() {
     calData      = data.events;
     calFetchedAt = Date.now();
     updateCalLastUpdated();
+    enrichCalActuals();
     renderCalendar();
     startCountdownTimer();
     const _calSel = document.getElementById('ckPairSelector');
@@ -5638,10 +5641,98 @@ async function fetchCalendarSilent() {
     if (!Array.isArray(data.events)) return;
     calData      = data.events;
     calFetchedAt = Date.now();
+    enrichCalActuals();
     renderCalendar();
     renderCountdown();
     updateCalLastUpdated();
   } catch(e) { /* silent */ }
+}
+
+// ── Calendar actual enrichment from FinancialJuice headlines ─────────────────
+
+const _CAL_CUR_KEYS = {
+  JPY: ['boj','bank of japan','japan'],
+  AUD: ['rba','reserve bank of australia','australia'],
+  USD: ['fed','fomc','federal reserve','us ','u.s.','nfp','non-farm','payroll','american'],
+  EUR: ['ecb','european central bank','eurozone','euro zone','euro area'],
+  GBP: ['boe','bank of england','uk ','britain','sterling'],
+  CHF: ['snb','swiss national bank','switzerland','swiss'],
+  NZD: ['rbnz','reserve bank of new zealand','new zealand'],
+  CAD: ['boc','bank of canada','canada','canadian'],
+};
+
+function _calMatchesCur(hl, currency) {
+  return (_CAL_CUR_KEYS[currency] || [currency.toLowerCase()]).some(k => hl.includes(k));
+}
+
+function _calExtractActual(title) {
+  // "at X.XX%" or "to X.XX%" — most reliable for rate decisions
+  let m = title.match(/\b(?:at|to)\s+([+-]?\d+\.?\d*%(?:\s*[-–]\s*\d+\.?\d*%)?)/i);
+  if (m) return m[1].replace(/\s/g, '');
+
+  // "unchanged/holds at X%"
+  m = title.match(/(?:unchanged|holds?|steady)\s+(?:at\s+)?([+-]?\d+\.?\d*%)/i);
+  if (m) return m[1];
+
+  // Employment: "272K" or "+272K"
+  if (/job|payroll|employ|nfp|non-farm/i.test(title)) {
+    m = title.match(/([+-]?\d+(?:\.\d+)?[kK])\b/);
+    if (m) return m[1].replace('k','K').replace(/^([^+-])/, '+$1');
+  }
+
+  // Single unambiguous percentage
+  const pcts = title.match(/[+-]?\d+\.?\d*%/g);
+  if (pcts && pcts.length === 1) return pcts[0];
+
+  return null;
+}
+
+function enrichCalActuals() {
+  if (!calData || !allItems || allItems.length === 0) return;
+  const nowMs       = Date.now();
+  const BEFORE_MS   = 5  * 60 * 1000;   // headline up to 5 min before event (flash release)
+  const AFTER_MS    = 3  * 3600 * 1000; // headline up to 3h after event
+
+  let changed = false;
+
+  calData.forEach(ev => {
+    if (ev.actual) return;
+    if (!ev.time_wib || ev.time_wib === 'Tentative') return;
+
+    // Parse event time → UTC epoch
+    const ts = ev.time_wib.replace(' WIB', '').split(':');
+    const h  = parseInt(ts[0], 10), mn = parseInt(ts[1], 10);
+    if (isNaN(h) || isNaN(mn)) return;
+    const [y, mo, d] = ev.date.split('-').map(Number);
+    const evMs = Date.UTC(y, mo - 1, d, h - 7, mn);
+
+    // Only past events within AFTER_MS window
+    if (evMs > nowMs || (nowMs - evMs) > AFTER_MS) return;
+
+    // Significant words from event title for headline matching
+    const evWords = ev.event.toLowerCase()
+      .replace(/[^a-z\s]/g, ' ').split(/\s+/)
+      .filter(w => w.length > 3 && !['rate','data','with','from','that','this','bank','press','conference','statement','decision'].includes(w));
+
+    for (const item of allItems) {
+      const itemMs = item.pubDate ? new Date(item.pubDate).getTime() : 0;
+      if (!itemMs) continue;
+      if (itemMs < evMs - BEFORE_MS || itemMs > evMs + AFTER_MS) continue;
+
+      const hl = (item.title || '').toLowerCase();
+      if (!_calMatchesCur(hl, ev.currency)) continue;
+      if (evWords.length > 0 && !evWords.some(w => hl.includes(w))) continue;
+
+      const val = _calExtractActual(item.title || '');
+      if (val) {
+        ev.actual = val;
+        changed = true;
+        break;
+      }
+    }
+  });
+
+  if (changed) renderCalendar();
 }
 
 function renderCountdown() {
