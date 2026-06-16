@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-06-16 (session 65 — fix: CAL tab actual values auto-update — tambah `fetchCalendarSilent()` + `_calAutoRefreshTimer` setiap 90s saat user di tab CAL, actual values kini muncul otomatis tanpa manual refresh)
+> **Last updated:** 2026-06-16 (session 66 — feat: tambah sumber riset (Marc to Market, ING Think, RBA, BoC, BoJ) ke tab ARTIKEL + endpoint option expiries dari Forexlive (difilter per-pair) di tab TEK)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Financial_Feed_App`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -23,7 +23,9 @@ Daun Merah adalah forex news PWA (Progressive Web App) untuk trader forex Indone
 | Backend | Vercel Serverless Functions (Node.js, CommonJS `module.exports`) |
 | AI | **Multi-provider dual-account strategy:** Call 1 prose: SambaNova `DeepSeek-V3.2` (akun 2, primary), OpenRouter `gpt-oss-120b:free` (fallback 2), Groq `qwen3-32b` (fallback 3); Call 2–3 bias+thesis: SambaNova `DeepSeek-V3.2` (akun 1, upgrade dari V3.1); Call 4–6: Groq `llama-3.3-70b-versatile` |
 | Cache/DB | Upstash Redis REST API |
-| RSS sumber berita | FinancialJuice (`https://www.financialjuice.com/feed.ashx?xy=rss`) — satu-satunya sumber (Nitter dihapus 2026-05-05) |
+| RSS sumber berita (NEWS) | FinancialJuice (`https://www.financialjuice.com/feed.ashx?xy=rss`) — satu-satunya sumber untuk AI digest & tab NEWS |
+| Sumber tab ARTIKEL | FED, FOMC, FEDN, ECB, ECBB, BIS, **RBA, BoC, BoJ** (CB primary), **Marc to Market (MTM), ING Think (ING)** (macro research) |
+| Option expiries (tab TEK) | Forexlive Technical Analysis feed via rss2json — difilter per-pair, 4h cache |
 | Kalender ekonomi | ForexFactory XML (`nfs.faireconomy.media`) |
 | COT data | CFTC website scraping (`cftc.gov`) |
 | Font | Syne (heading), DM Mono (body) |
@@ -79,6 +81,31 @@ Financial_Feed_App/
 > **Penting:** `api/feeds.js` menggantikan `api/rss.js` dan `api/cot.js` yang sudah dihapus.
 > `api/admin.js` menggantikan `api/health.js`, `api/redis-keys.js`, `api/admin-prompts.js`, dan `api/push.js`.
 > Konsolidasi ini dilakukan untuk tetap di bawah limit 12 serverless functions Vercel Hobby.
+
+---
+
+## Changelog Session 66 (2026-06-16)
+
+### Feat: Ekspansi Sumber Riset + Option Expiries di TEK Tab
+
+**Konteks:** Penambahan sumber-sumber supplemental berdasarkan analisis Gemini. FinancialJuice tetap sebagai satu-satunya sumber untuk AI digest dan tab NEWS — tidak berubah.
+
+**Perubahan `api/feeds.js`:**
+- `CB_RESEARCH_SOURCES` diperluas: tambah **RBA** (via rss2json), **BoC** (direct feed), **BoJ** (via rss2json)
+- Tambah dua sumber macro research: **MTM** (Marc to Market) dan **ING** (ING Think) via rss2json
+- Endpoint baru: `GET /api/feeds?type=options` — scrape Forexlive Technical Analysis RSS, cari post "FX option expiries … NY cut", parse data level + size per pair, cache 4h di Redis
+- Parser `parseOptionExpiries()`: strip HTML → split per baris → detect pair header + inline pair → extract entries dengan regex level/size pattern
+- `filterByPair()`: filter per tekPair dengan alias map (termasuk `XAUUSD: ['xau/usd','gold']`)
+
+**Perubahan `index.html`:**
+- CSS: tambah badge styles `.riset-badge.RBA`, `.BOC`, `.BOJ`, `.MTM`, `.ING` + CSS section `.tek-opts-*` untuk option expiries
+- HTML (TEK panel): tambah div `#tekOptsSection` dengan header + `#tekOptsBody` — disisipkan antara `#tekNewsSection` dan `#corrPanelWrap`
+- JS: `fetchTekOptions()` + `renderTekOptions()` — fetch cache 4h, filter berdasarkan `tekPair` aktif, render tabel level/size
+- `onTekPairChange()` dan `initTeknikal()`: keduanya memanggil `renderTekOptions()` / `fetchTekOptions()` agar data selalu tersync dengan pair yang dipilih
+
+**Desain keputusan:**
+- XAU/USD akan sering kosong (Forexlive jarang publish XAU expiries) → tampilkan "Tidak ada expiry" bukan error
+- AI digest tetap eksklusif dari `news_history` yang diisi hanya dari FinancialJuice
 
 ---
 

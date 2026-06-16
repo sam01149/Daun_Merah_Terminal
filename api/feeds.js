@@ -1,7 +1,8 @@
 // api/feeds.js — consolidated feeds endpoint
 // GET /api/feeds?type=rss      → FinancialJuice RSS XML (50s cache)
 // GET /api/feeds?type=cot      → CFTC COT JSON (6h cache)
-// GET /api/feeds?type=research → CB speeches/publications JSON (6h cache)
+// GET /api/feeds?type=research → CB speeches/publications + macro research JSON (6h cache)
+// GET /api/feeds?type=options  → Forexlive FX option expiries JSON (4h cache)
 
 const { autoUpdateFundamentals } = require('./_fundamental_parser');
 
@@ -11,7 +12,8 @@ module.exports = async function handler(req, res) {
   if (type === 'cot')         return cotHandler(req, res);
   if (type === 'cot_history') return cotHistoryHandler(req, res);
   if (type === 'research')    return researchHandler(req, res);
-  return res.status(400).json({ error: 'Missing ?type= — use rss, cot, cot_history, or research' });
+  if (type === 'options')     return optionsHandler(req, res);
+  return res.status(400).json({ error: 'Missing ?type= — use rss, cot, cot_history, research, or options' });
 };
 
 // ── Shared Redis helper ────────────────────────────────────────────────────────
@@ -370,12 +372,22 @@ async function cotHistoryHandler(req, res) {
 // Direct sources — verified accessible from Vercel serverless IPs
 // rss2json proxy — bypass WAF blocking on Vercel IPs (BIS blocks Vercel but allows rss2json)
 const CB_RESEARCH_SOURCES = [
-  { key: 'FED',  url: 'https://www.federalreserve.gov/feeds/speeches.xml' },        // Fed governor speeches
-  { key: 'FOMC', url: 'https://www.federalreserve.gov/feeds/press_monetary.xml' },  // FOMC rate decisions
-  { key: 'FEDN', url: 'https://www.federalreserve.gov/feeds/feds_notes.xml' },       // FEDS Notes — analytical pieces
-  { key: 'ECB',  url: 'https://www.ecb.europa.eu/rss/press.html' },                 // ECB press releases
-  { key: 'ECBB', url: 'https://www.ecb.europa.eu/rss/blog.html' },                  // ECB research blog
+  // ── Central Bank Primary Sources ──────────────────────────────────────────
+  { key: 'FED',  url: 'https://www.federalreserve.gov/feeds/speeches.xml' },
+  { key: 'FOMC', url: 'https://www.federalreserve.gov/feeds/press_monetary.xml' },
+  { key: 'FEDN', url: 'https://www.federalreserve.gov/feeds/feds_notes.xml' },
+  { key: 'ECB',  url: 'https://www.ecb.europa.eu/rss/press.html' },
+  { key: 'ECBB', url: 'https://www.ecb.europa.eu/rss/blog.html' },
   { key: 'BIS',  url: 'https://api.rss2json.com/v1/api.json?rss_url=https%3A%2F%2Fwww.bis.org%2Fdoclist%2Fcbspeeches.rss' },
+  // RBA via rss2json (direct Vercel IP often gets 403 from RBA)
+  { key: 'RBA',  url: 'https://api.rss2json.com/v1/api.json?rss_url=https%3A%2F%2Fwww.rba.gov.au%2Frss%2Frss-cb-speeches.xml' },
+  // BoC direct feed — accessible from Vercel IPs
+  { key: 'BOC',  url: 'https://www.bankofcanada.ca/feed/speeches/' },
+  // BoJ via rss2json (BoJ blocks non-browser UAs on Vercel)
+  { key: 'BOJ',  url: 'https://api.rss2json.com/v1/api.json?rss_url=https%3A%2F%2Fwww.boj.or.jp%2Fen%2Frss%2Fmediarss.xml' },
+  // ── Macro Research / Institutional Analysis ───────────────────────────────
+  { key: 'MTM',  url: 'https://api.rss2json.com/v1/api.json?rss_url=https%3A%2F%2Fmarctomarket.com%2Ffeed' },
+  { key: 'ING',  url: 'https://api.rss2json.com/v1/api.json?rss_url=https%3A%2F%2Fthink.ing.com%2Ffeed%2F' },
 ];
 const RESEARCH_CACHE_KEY    = 'research_cache';
 const RESEARCH_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
@@ -477,4 +489,157 @@ function parseCBRSSItems(xml, sourceKey) {
     if (title && pubDate) items.push({ title, pubDate, link: link || '', source: sourceKey });
   }
   return items.slice(0, 20);
+}
+
+// ── FX Option Expiries handler (Forexlive) ────────────────────────────────────
+// GET /api/feeds?type=options[&pair=EURUSD]
+// Scrapes Forexlive daily FX option expiries page and parses per-pair data
+
+const OPTIONS_CACHE_KEY    = 'fx_options_cache';
+const OPTIONS_CACHE_TTL_MS = 4 * 60 * 60 * 1000; // 4h — data published once daily
+
+// Known forex pair aliases for matching Forexlive text
+const PAIR_ALIASES = {
+  'EURUSD': ['eur/usd', 'eurusd', 'eur usd'],
+  'GBPUSD': ['gbp/usd', 'gbpusd', 'gbp usd'],
+  'USDJPY': ['usd/jpy', 'usdjpy', 'usd jpy'],
+  'USDCAD': ['usd/cad', 'usdcad', 'usd cad'],
+  'AUDUSD': ['aud/usd', 'audusd', 'aud usd'],
+  'NZDUSD': ['nzd/usd', 'nzdusd', 'nzd usd'],
+  'USDCHF': ['usd/chf', 'usdchf', 'usd chf'],
+  'EURGBP': ['eur/gbp', 'eurgbp', 'eur gbp'],
+  'EURJPY': ['eur/jpy', 'eurjpy', 'eur jpy'],
+  'GBPJPY': ['gbp/jpy', 'gbpjpy', 'gbp jpy'],
+  'XAUUSD': ['xau/usd', 'xauusd', 'gold', 'xau usd'],
+};
+
+async function optionsHandler(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Cache-Control', 'no-cache');
+
+  const pairFilter = (req.query.pair || '').toUpperCase().replace('/', '') || null;
+
+  // Try cache first
+  try {
+    const cached = await redisCmd('GET', OPTIONS_CACHE_KEY);
+    if (cached) {
+      const obj = JSON.parse(cached);
+      if (Date.now() - new Date(obj.fetched_at).getTime() < OPTIONS_CACHE_TTL_MS) {
+        const out = pairFilter ? filterByPair(obj.expiries, pairFilter) : obj.expiries;
+        return res.json({ expiries: out, fetched_at: obj.fetched_at, date: obj.date, source: 'cache' });
+      }
+    }
+  } catch(e) {}
+
+  // Fetch Forexlive option expiries page
+  // They publish a daily post titled "FX option expiries for [date] NY cut"
+  // We search the Forexlive RSS for the most recent expiry post
+  const FL_RSS_URL = 'https://api.rss2json.com/v1/api.json?rss_url=https%3A%2F%2Fwww.forexlive.com%2Ffeed%2Ftechnicalanalysis';
+
+  let rawText = '';
+  let postDate = '';
+  let postLink = '';
+
+  try {
+    const r = await fetch(FL_RSS_URL, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!r.ok) throw new Error('rss2json HTTP ' + r.status);
+    const json = await r.json();
+    if (json.status !== 'ok' || !json.items?.length) throw new Error('rss2json returned no items');
+
+    // Find the most recent post that is an option expiry post
+    const expiryPost = json.items.find(it =>
+      /option.expir/i.test(it.title) && /NY.cut|new york.cut/i.test(it.title)
+    );
+    if (!expiryPost) throw new Error('No option expiry post found in feed');
+
+    rawText  = expiryPost.content || expiryPost.description || '';
+    postDate = expiryPost.pubDate || '';
+    postLink = expiryPost.link || '';
+  } catch(e) {
+    console.warn('Forexlive options fetch failed:', e.message);
+    // Return stale if available
+    try {
+      const stale = await redisCmd('GET', OPTIONS_CACHE_KEY);
+      if (stale) {
+        const obj = JSON.parse(stale);
+        const out = pairFilter ? filterByPair(obj.expiries, pairFilter) : obj.expiries;
+        return res.json({ expiries: out, fetched_at: obj.fetched_at, date: obj.date, stale: true });
+      }
+    } catch(e2) {}
+    return res.status(502).json({ error: 'Forexlive option expiries unavailable: ' + e.message });
+  }
+
+  const expiries = parseOptionExpiries(rawText, postLink);
+  const payload  = { expiries, fetched_at: new Date().toISOString(), date: postDate };
+  redisCmd('SET', OPTIONS_CACHE_KEY, JSON.stringify(payload), 'EX', 14400).catch(() => {});
+
+  const out = pairFilter ? filterByPair(expiries, pairFilter) : expiries;
+  return res.json({ expiries: out, fetched_at: payload.fetched_at, date: postDate });
+}
+
+function filterByPair(expiries, pair) {
+  const aliases = PAIR_ALIASES[pair] || [pair.toLowerCase().replace(/(.{3})(.{3})/, '$1/$2')];
+  return expiries.filter(e => aliases.some(a => e.pair.toLowerCase() === a));
+}
+
+function parseOptionExpiries(html, sourceLink) {
+  // Strip HTML tags to get plain text
+  const text = html
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/?(p|div|li|ul|ol)[^>]*>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&#\d+;/g, ' ');
+
+  const lines   = text.split('\n').map(l => l.trim()).filter(Boolean);
+  const results = [];
+  let currentPair = null;
+
+  for (const line of lines) {
+    // Detect pair header line — e.g. "EUR/USD" or "USD/JPY" possibly followed by colon/dash
+    const pairMatch = line.match(/^([A-Z]{3}\/[A-Z]{3}|[A-Z]{6})\s*[:\-–]?\s*$/i)
+                   || line.match(/^([A-Z]{3}[\/\s][A-Z]{3})\s*$/i);
+    if (pairMatch) {
+      currentPair = pairMatch[1].toUpperCase().replace(/\s/g, '/');
+      // Normalize to standard slash format
+      if (currentPair.length === 6) currentPair = currentPair.slice(0,3) + '/' + currentPair.slice(3);
+      continue;
+    }
+
+    // Also detect pair inline: "EUR/USD: 1.0800 (€2.0bln)"
+    const inlineMatch = line.match(/^([A-Z]{3}[\/\s][A-Z]{3})\s*[:\-–]\s*(.+)/i);
+    if (inlineMatch) {
+      currentPair = inlineMatch[1].toUpperCase().replace(/\s/g, '/');
+      if (currentPair.length === 6) currentPair = currentPair.slice(0,3) + '/' + currentPair.slice(3);
+      // Parse the rest of the line as expiry entries
+      parseExpiryEntries(inlineMatch[2], currentPair, results, sourceLink);
+      continue;
+    }
+
+    if (currentPair) {
+      parseExpiryEntries(line, currentPair, results, sourceLink);
+    }
+  }
+
+  return results;
+}
+
+function parseExpiryEntries(text, pair, results, sourceLink) {
+  // Match patterns like: "1.0800 (€2.0bln)", "1.0850 ($1.5bln)", "149.00 (¥300bln)"
+  // Also: "1.0800-10 (2bln)", "1.0800 2.0b"
+  const entryRe = /([\d]{1,4}\.[\d]{1,5}(?:\s*-\s*[\d]{1,5})?)\s*[\(\[]?([€$¥£]?[\d.]+\s*(?:b(?:ln)?|m(?:ln)?|billion|million)?)\s*[\)\]]?/gi;
+  let m;
+  while ((m = entryRe.exec(text)) !== null) {
+    const level  = m[1].replace(/\s/g, '');
+    const size   = m[2].trim();
+    if (level && size) {
+      results.push({ pair, level, size, link: sourceLink });
+    }
+  }
 }

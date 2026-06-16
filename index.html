@@ -157,6 +157,24 @@ body {
 .riset-badge.ECBB { background:rgba(230,126,34,.18); color:var(--yellow); }
 .riset-badge.BIS  { background:rgba(167,139,250,.18); color:var(--purple); }
 .riset-badge.FEDN { background:rgba(52,211,153,.18);  color:#34d399; }
+.riset-badge.RBA  { background:rgba(251,191,36,.18);  color:#fbbf24; }
+.riset-badge.BOC  { background:rgba(248,113,113,.18); color:#f87171; }
+.riset-badge.BOJ  { background:rgba(56,189,248,.18);  color:#38bdf8; }
+.riset-badge.MTM  { background:rgba(52,211,153,.12);  color:#34d399; }
+.riset-badge.ING  { background:rgba(251,146,60,.18);  color:#fb923c; }
+/* ── Option Expiries (TEK tab) ── */
+.tek-opts-section { margin-top:10px; padding-top:10px; border-top:1px solid var(--border); }
+.tek-opts-hdr { display:flex; align-items:center; justify-content:space-between; margin-bottom:6px; }
+.tek-opts-title { font:700 9px 'Syne',sans-serif; color:var(--muted); letter-spacing:.1em; text-transform:uppercase; }
+.tek-opts-meta  { font:9px 'DM Mono',monospace; color:var(--muted); }
+.tek-opts-empty { font:10px 'DM Mono',monospace; color:var(--muted); padding:6px 0; }
+.tek-opts-table { width:100%; border-collapse:collapse; font-family:'DM Mono',monospace; font-size:11px; }
+.tek-opts-table th { color:var(--muted); font-weight:400; font-size:8px; text-align:left; padding:2px 4px; border-bottom:1px solid var(--border); letter-spacing:.06em; text-transform:uppercase; }
+.tek-opts-table td { padding:5px 4px; border-bottom:1px solid rgba(255,255,255,.03); vertical-align:middle; }
+.tek-opts-level { font-weight:700; color:#38bdf8; }
+.tek-opts-size  { color:var(--yellow); }
+.tek-opts-link  { font-size:9px; color:var(--muted); text-decoration:none; }
+.tek-opts-link:hover { color:#38bdf8; }
 .riset-title { font-size:11px; font-family:'DM Mono',monospace; color:var(--text); text-decoration:none; line-height:1.4; display:block; }
 .riset-title:hover { color:#34d399; }
 .riset-date { font-size:9px; color:var(--muted); font-family:'DM Mono',monospace; margin-top:3px; }
@@ -2552,6 +2570,13 @@ body {
       <textarea id="tekNote" placeholder="Key levels, setup yang dipantau, atau catatan sesi..." oninput="saveTekNote()"></textarea>
     </div>
     <div id="tekNewsSection" style="margin-top:6px"></div>
+    <div class="tek-opts-section" id="tekOptsSection">
+      <div class="tek-opts-hdr">
+        <span class="tek-opts-title">OPTION EXPIRIES · NY CUT</span>
+        <span class="tek-opts-meta" id="tekOptsMeta"></span>
+      </div>
+      <div id="tekOptsBody"><div class="tek-opts-empty">Memuat data expiry...</div></div>
+    </div>
     <div id="corrPanelWrap" style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border)">
       <div class="corr-section" id="corrPanel">
         <div class="corr-title">CROSS-ASSET CORRELATIONS</div>
@@ -8539,12 +8564,92 @@ function onTekPairChange() {
   renderTekEventStrip();
   createTVChart();
   fetchTaData();
+  renderTekOptions();
 }
 
 function onTekTFChange() {
   tekTF = document.getElementById('tekTFSelect').value;
   createTVChart();
   fetchTaData();
+}
+
+// ── Option Expiries (TEK tab) ─────────────────────────────────────────────────
+
+let tekOptionsCache = null; // { data, fetchedAt }
+const TEK_OPTIONS_TTL = 4 * 60 * 60 * 1000; // 4h client cache
+
+async function fetchTekOptions() {
+  // Use client cache if fresh enough
+  if (tekOptionsCache && Date.now() - tekOptionsCache.fetchedAt < TEK_OPTIONS_TTL) {
+    renderTekOptions();
+    return;
+  }
+  try {
+    const r = await fetch('/api/feeds?type=options', { signal: AbortSignal.timeout(10000) });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const data = await r.json();
+    tekOptionsCache = { data, fetchedAt: Date.now() };
+    renderTekOptions();
+  } catch(e) {
+    console.warn('fetchTekOptions failed:', e.message);
+    renderTekOptions();
+  }
+}
+
+function renderTekOptions() {
+  const body = document.getElementById('tekOptsBody');
+  const meta = document.getElementById('tekOptsMeta');
+  if (!body) return;
+
+  if (!tekOptionsCache) {
+    body.innerHTML = '<div class="tek-opts-empty">Memuat...</div>';
+    return;
+  }
+
+  const { data } = tekOptionsCache;
+  if (data.error) {
+    body.innerHTML = `<div class="tek-opts-empty" style="color:var(--accent)">${escHtml(data.error)}</div>`;
+    if (meta) meta.textContent = 'error';
+    return;
+  }
+
+  // Filter expiries for current pair (normalized to EUR/USD format)
+  const pairLabel = tekPair.slice(0, 3) + '/' + tekPair.slice(3);
+  const all = data.expiries || [];
+  const filtered = all.filter(e => {
+    const ep = (e.pair || '').toUpperCase().replace('/', '');
+    return ep === tekPair;
+  });
+
+  // Update meta (date of post)
+  if (meta) {
+    const d = data.date ? new Date(data.date) : null;
+    const dStr = d && !isNaN(d) ? d.toLocaleDateString('id-ID', { day:'numeric', month:'short', year:'numeric' }) : '';
+    meta.textContent = dStr + (data.stale ? ' · stale' : '');
+  }
+
+  if (filtered.length === 0) {
+    const hasAny = all.length > 0;
+    body.innerHTML = hasAny
+      ? `<div class="tek-opts-empty">Tidak ada expiry untuk ${escHtml(pairLabel)} hari ini.</div>`
+      : '<div class="tek-opts-empty">Tidak ada data option expiry hari ini.</div>';
+    return;
+  }
+
+  let html = '<table class="tek-opts-table"><thead><tr>'
+    + '<th>Level</th><th>Size</th>'
+    + '</tr></thead><tbody>';
+  for (const e of filtered) {
+    html += `<tr>
+      <td class="tek-opts-level">${escHtml(e.level)}</td>
+      <td class="tek-opts-size">${escHtml(e.size)}</td>
+    </tr>`;
+  }
+  html += '</tbody></table>';
+  if (data.date && filtered[0]?.link) {
+    html += `<div style="text-align:right;margin-top:4px"><a href="${escHtml(filtered[0].link)}" target="_blank" rel="noopener noreferrer" class="tek-opts-link">sumber: Forexlive ↗</a></div>`;
+  }
+  body.innerHTML = html;
 }
 
 // ── TA Panel ─────────────────────────────────────────────────────────────────
@@ -8706,6 +8811,7 @@ function initTeknikal() {
   renderTekEventStrip();
   createTVChart();
   fetchTaData();
+  fetchTekOptions();
 }
 
 // ── DRAWER ────────────────────────────────────────────────
