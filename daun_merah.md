@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-06-16 (session 68 — fix: rawPrevThesis scope bug + label Berita (36j) + XAU thesis card di tab Ringkasan)
+> **Last updated:** 2026-06-17 (session 69 — polish PWA: SW notif focus-or-open, offline/online awareness, null-guards, lang=id, meta description)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Financial_Feed_App`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -83,6 +83,32 @@ Financial_Feed_App/
 > **Penting:** `api/feeds.js` menggantikan `api/rss.js` dan `api/cot.js` yang sudah dihapus.
 > `api/admin.js` menggantikan `api/health.js`, `api/redis-keys.js`, `api/admin-prompts.js`, dan `api/push.js`.
 > Konsolidasi ini dilakukan untuk tetap di bawah limit 12 serverless functions Vercel Hobby.
+
+---
+
+## Changelog Session 69 (2026-06-17)
+
+### Polish: PWA Robustness — Notif Focus, Offline Awareness, Guards
+
+**Konteks:** Pass penyempurnaan mandiri (tanpa instruksi spesifik) — fokus ke robustness PWA & UX yang aman, bukan refactor besar. Refactor konsolidasi 12→5 serverless function (`daun_merah.plan`) sengaja **tidak** dijalankan di sesi ini karena mengubah routing production dan butuh sesi terfokus + konfirmasi tersendiri.
+
+**Perubahan `sw.js`:**
+- `notificationclick` — **fix bug spawn instance baru.** Sebelumnya selalu `clients.openWindow(url)`, sehingga tiap kali notif diklik membuka instance/tab app baru. Sekarang:
+  - Link eksternal (artikel http(s) ke host lain) → tetap buka tab baru
+  - Link internal / `'/'` (buka app) → **fokus window app yang sudah terbuka**; hanya `openWindow` jika belum ada window
+  - Deteksi via `isExternal = /^https?:\/\//i.test(url) && !url.includes(self.location.host)`
+- `message` handler — tambah guard `if (!e.data) return;` (cegah throw saat menerima pesan tanpa `data`)
+
+**Perubahan `index.html`:**
+- **Connectivity awareness (baru):** listener `offline` → status pill jadi `OFFLINE`; `online` → `RECONNECTING` + `fetchFeed()` (refresh feed & status begitu jaringan kembali) + toast "Kembali online". Plus cek awal `if (!navigator.onLine) setStatus('error','OFFLINE')` saat load. Sebelumnya app hanya sadar `visibilitychange`/bfcache, buta terhadap putus/sambung jaringan.
+- SW message listener (page side) — guard `e.data && e.data.type === 'NEW_ITEMS'`
+- `<html lang="en">` → `lang="id"` (konten app full bahasa Indonesia — benar untuk screen reader/a11y)
+- Tambah `<meta name="description">` (sebelumnya tidak ada) untuk metadata PWA/share
+
+**Verifikasi:**
+- `node --check sw.js` ✅ dan ekstraksi main inline script `index.html` (6785 baris) → `node --check` ✅
+- Elemen `#dot`/`#statusText` (baris 1998–1999) berada sebelum `<script>` (2854) → aman dipanggil saat init
+- `setStatus` adalah function declaration (hoisted) → tersedia di blok connectivity
 
 ---
 

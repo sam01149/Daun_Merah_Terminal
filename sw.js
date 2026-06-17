@@ -40,6 +40,7 @@ self.addEventListener('periodicsync', e => {
 });
 
 self.addEventListener('message', e => {
+  if (!e.data) return;
   if (e.data.type === 'INIT_GUIDS') {
     seenGuids = new Set(e.data.guids);
     saveSeenGuids();
@@ -183,6 +184,17 @@ self.addEventListener('push', e => {
 
 self.addEventListener('notificationclick', e => {
   e.notification.close();
-  const url = e.notification.data?.url || '/';
-  e.waitUntil(clients.openWindow(url));
+  const targetUrl = e.notification.data?.url || '/';
+  // External article link (http(s) ke host lain) → buka tab baru.
+  // Link internal / buka-app ('/') → fokus window app yang sudah terbuka
+  // supaya tidak spawn instance baru tiap kali notif diklik.
+  const isExternal = /^https?:\/\//i.test(targetUrl) && !targetUrl.includes(self.location.host);
+  e.waitUntil((async () => {
+    if (isExternal) return clients.openWindow(targetUrl);
+    const wins = await clients.matchAll({ type: 'window', includeUncontrolled: true });
+    for (const w of wins) {
+      if ('focus' in w) return w.focus();
+    }
+    return clients.openWindow(targetUrl);
+  })());
 });

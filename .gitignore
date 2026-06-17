@@ -5,3 +5,9 @@ daun_merah_progress.md
 daun_merah_handoff.md
 README.md
 alur.txt
+
+.vercel
+
+# Claude Code local config — berisi API key/secret di allow-list, JANGAN commit
+.claude/
+daun_merah.plan

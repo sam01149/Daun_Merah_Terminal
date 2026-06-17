@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="id">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
@@ -8,6 +8,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Daun Merah">
 <title>Daun Merah</title>
+<meta name="description" content="Daun Merah — forex news & macro briefing PWA untuk trader Indonesia. Berita real-time, AI digest, kalender ekonomi, COT, korelasi cross-asset.">
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon.svg">
@@ -3000,7 +3001,7 @@ if ('serviceWorker' in navigator) {
   }).catch(e => console.warn('[SW] failed', e));
 
   navigator.serviceWorker.addEventListener('message', e => {
-    if (e.data.type === 'NEW_ITEMS') fetchFeed();
+    if (e.data && e.data.type === 'NEW_ITEMS') fetchFeed();
   });
 }
 
@@ -6216,6 +6217,19 @@ document.addEventListener('visibilitychange', () => {
     }
   }
 });
+
+// ── CONNECTIVITY ─────────────────────────────────────────
+// Feedback langsung saat koneksi putus/kembali (penting untuk PWA mobile)
+window.addEventListener('offline', () => {
+  setStatus('error', 'OFFLINE');
+});
+window.addEventListener('online', () => {
+  setStatus('loading', 'RECONNECTING');
+  fetchFeed(); // refresh feed + status pill begitu jaringan kembali
+  showToast('🟢 Kembali online', 'Memuat ulang data terbaru…', 2500);
+});
+// Tampilkan status offline saat awal load jika memang sedang offline
+if (!navigator.onLine) setStatus('error', 'OFFLINE');
 
 // Restore state after bfcache restore (browser back/forward navigation)
 window.addEventListener('pageshow', (e) => {
