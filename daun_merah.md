@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-06-18 (session 70 — BTC: data collection (7 sumber) + feature engineering + model comparison (5 algoritma vs baseline). Hasil jujur: tidak ada edge direksional kuat, ROC-AUC terbaik 0.569)
+> **Last updated:** 2026-06-18 (session 70 — BTC: data collection + feature engineering + model comparison + walk-forward CV + regresi. Hasil jujur final: tidak ada edge yang robust setelah divalidasi CV — hasil "terbaik" sebelumnya ternyata fluke)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Financial_Feed_App`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -83,11 +83,15 @@ Financial_Feed_App/
 │   ├── features_4h.csv       # Feature matrix siap-training, granularitas 4h (~19.3k baris, 31 kolom)
 │   └── features_1d.csv       # Feature matrix siap-training, granularitas 1d (~3.2k baris, 31 kolom)
 ├── ml/                      # Modeling BTC (Python, .venv lokal — pandas/scikit-learn/torch)
-│   ├── train_models.py      # Latih 5 algoritma + 2 baseline, chronological split, evaluasi
+│   ├── train_models.py      # Klasifikasi: 5 algoritma + 2 baseline, chronological split
+│   ├── cross_validation.py  # Walk-forward CV (4 fold) — validasi robustness hasil train_models.py
+│   ├── train_regression.py  # Regresi: prediksi besaran return (target_ret_6/18)
 │   ├── requirements.txt     # pandas, scikit-learn, torch (CPU)
 │   └── results/
-│       ├── REPORT.md            # Laporan perbandingan lengkap + kesimpulan jujur
-│       └── model_comparison.json # Raw metrics semua config/model
+│       ├── REPORT.md                  # Laporan lengkap 3 eksperimen + kesimpulan jujur final
+│       ├── model_comparison.json      # Raw metrics klasifikasi single-split
+│       ├── cross_validation.json      # Raw metrics walk-forward CV
+│       └── regression_comparison.json # Raw metrics regresi
 └── api/                    # TEPAT 12 serverless functions (Vercel Hobby limit)
     ├── _circuit_breaker.js # Self-healing: Redis-backed circuit breaker (CLOSED→OPEN→HALF_OPEN)
     ├── _push_keywords.js   # Keyword lists untuk detectPushCat() — edit di sini untuk update kategori
@@ -160,23 +164,26 @@ Financial_Feed_App/
 
 Workflow GitHub Actions (`btc-backfill.yml` dan `btc-sync.yml`) sudah di-update untuk regenerate feature matrix otomatis setiap kali data baru masuk.
 
-### Model Comparison (Fase 3 — selesai, hasil: tidak ada edge kuat)
+### Model Comparison (Fase 3 — selesai, hasil: tidak ada edge yang robust)
 
-**`ml/train_models.py`** (Python, `.venv` lokal — pandas, scikit-learn, torch/CPU) melatih 5 algoritma + 2 baseline naif, di 4 kombinasi timeframe×horizon (4h/1-hari, 4h/3-hari, 1d/6-hari, 1d/18-hari), dievaluasi dengan **chronological split 80/20** (test set = 20% terakhir histori, tidak di-shuffle — wajib untuk time series, hindari lookahead).
+**`ml/train_models.py`** (Python, `.venv` lokal — pandas, scikit-learn, torch/CPU) melatih 5 algoritma + 2 baseline naif (Logistic Regression, Random Forest, Gradient Boosting, MLP, **LSTM**), di 4 kombinasi timeframe×horizon, evaluasi awal pakai chronological split 80/20. **Fitur dipakai:** 22 kolom (teknikal + COT + fear&greed + hashrate) — `stablecoin_total_cap`/`btc_dominance_pct` di-exclude karena coverage historis rendah.
 
-**Algoritma:** Logistic Regression, Random Forest, Gradient Boosting (sklearn `HistGradientBoostingClassifier`), MLP (neural net), **LSTM** (PyTorch, deep learning sequence model, window 24 candle).
-**Fitur dipakai:** 22 kolom dari feature matrix (teknikal + COT + fear&greed + hashrate) — `stablecoin_total_cap` dan `btc_dominance_pct` di-exclude dari model utama karena coverage historis rendah (sesuai catatan fase 2).
+**Bug ditemukan & diperbaiki sebelum hasil final:** CFTC COT punya **publish-lag ~3 hari** (data "as of" Selasa, dirilis Jumat berikutnya) yang belum diperhitungkan di forward-fill `scripts/feature-engineering.js` — sempat ada lookahead bias kecil (candle bisa "lihat" data COT 3 hari sebelum benar-benar publik). Fixed dengan `COT_PUBLISH_LAG_MS`; semua model dilatih ulang dengan data yang sudah benar.
 
-**Hasil jujur (lengkap di `ml/results/REPORT.md`):**
-- **Tidak ada model yang punya edge direksional kuat.** ROC-AUC tertinggi di seluruh 4 config × 5 algoritma cuma **0.569** (Random Forest, 1d/18-hari) — untuk konteks, 0.50 = lempar koin, 0.57 ada di batas bawah "ada sinyal tapi sangat lemah".
-- **Random Forest paling konsisten** — terbaik/dekat-terbaik di 3 dari 4 config. Hasil terbaiknya: akurasi 55.6% vs baseline majority-class 49.3% (selisih +5.9 poin, terbesar dari semua config).
-- Di config lain (terutama 4h), selisih akurasi model vs baseline cuma 1-2 poin — nyaris tidak ada beda dari baseline naif.
-- **LSTM tidak mengungguli model lebih sederhana** — temuan umum di financial ML: pada data sekecil & sebising ini, model sequence tidak menambah sinyal di atas yang sudah didapat dari fitur teknikal/momentum biasa.
-- Recall tinggi (0.75-0.94) di beberapa model (MLP, LSTM, Logistic Regression) **bukan tanda model bagus** — itu artefak dari class imbalance ~52% "naik" yang dorong model over-predict kelas mayoritas di threshold 0.5. ROC-AUC (lebih tahan terhadap ini) tetap mendekati 0.50 di semua model itu.
+**`ml/cross_validation.py`** — walk-forward CV (4 fold ekspanding kronologis) untuk cek apakah hasil single-split di atas itu robust atau kebetulan. **Hasilnya penting:** config yang sebelumnya tampak terbaik (Random Forest, 1d/18-hari, single-split AUC 0.548) ternyata rata-rata AUC across-fold cuma **0.481 — di bawah 0.50, lebih buruk dari lempar koin.** Itu cuma kebetulan bagus di satu jendela test tertentu, bukan edge yang nyata. Satu-satunya hasil yang terlihat agak konsisten: **Random Forest di 4h/1-hari, AUC 0.532 ± 0.010** (mean tipis di atas random, tapi variansnya kecil antar-fold) — itu hasil paling kredibel di seluruh proyek ini, dan tetap sangat lemah.
 
-**Kesimpulan:** sesuai ekspektasi yang sudah dikalibrasi sejak awal (52-58%, bukan 70-80%) — dan hasil aktualnya ada di ujung bawah rentang itu. Model terbaik (Random Forest, 1d/18-hari) cuma layak jadi *lean* probabilistik lemah untuk narasi thesis ("sedikit condong naik, confidence rendah"), **bukan sinyal trading mandiri**. Tidak dipoles supaya kelihatan lebih baik dari kenyataannya.
+**`ml/train_regression.py`** — eksperimen prediksi besaran return (`target_ret_6/18`, bukan cuma arah). **Hasil lebih buruk lagi:** hampir semua model (Linear Regression, Gradient Boosting, MLP, LSTM) punya **R² negatif** — lebih buruk daripada cuma menebak return 0%. Random Forest R²=0.0015, secara statistik sama dengan nol. Prediksi besaran return jauh lebih sulit daripada arah.
 
-**Opsi lanjutan (belum dikerjakan):** walk-forward cross-validation (banyak split, bukan cuma satu) untuk pastikan hasil Random Forest bukan kebetulan; feature pruning/importance analysis; atau ubah target dari "arah harga" (mendekati random walk) ke "deteksi rezim volatilitas tinggi" yang mungkin lebih learnable.
+**Kesimpulan final (lengkap di `ml/results/REPORT.md`):**
+1. Tidak ada edge direksional yang robust — satu-satunya hasil yang lolos CV (Random Forest 4h/1-hari, AUC 0.532) terlalu lemah untuk dijadikan sinyal apapun.
+2. Hasil "terbaik" yang dilaporkan sebelum CV (55.6%/AUC 0.569 → 0.548 setelah fix bug) **tidak robust** — ini koreksi penting dari kesimpulan sesi sebelumnya.
+3. Regresi besaran return tidak bekerja sama sekali.
+4. **LSTM (deep learning) tidak pernah menang** di tiga eksperimen manapun — kadang malah jauh lebih buruk (R² regresi sangat negatif).
+5. Lima algoritma yang sangat berbeda semua konvergen ke ~0.50 AUC — ini bukti bottleneck-nya **data/fitur, bukan pilihan algoritma**.
+
+**Rekomendasi:** jangan dipakai sebagai sinyal trading atau bahkan input thesis-narrative yang percaya diri. Kalau tetap mau ada "lean" BTC di digest, posisikan sebagai narasi indikator teknikal/COT biasa (seperti sistem thesis XAU/forex yang sudah ada) — bukan probabilitas hasil model, karena model ini tidak terbukti menambah nilai di atas baca indikator langsung.
+
+**Opsi lanjutan (belum dikerjakan):** feature pruning/importance analysis; reframe target dari "arah harga" (mendekati random walk) ke "deteksi rezim volatilitas tinggi" (lebih learnable secara teori); atau perbanyak fold CV (10+) untuk interval kepercayaan lebih ketat di hasil Random Forest 4h/1-hari yang borderline kredibel itu.
 
 ---
 
