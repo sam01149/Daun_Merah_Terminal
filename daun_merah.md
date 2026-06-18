@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-06-18 (session 70 — BTC: data collection + feature engineering + model comparison + walk-forward CV + regresi. Hasil jujur final: tidak ada edge yang robust setelah divalidasi CV — hasil "terbaik" sebelumnya ternyata fluke)
+> **Last updated:** 2026-06-19 (session 70 — BTC: data collection + feature engineering + model comparison + walk-forward CV + regresi + preprocessing pandas transparan. Hasil jujur final: tidak ada edge yang robust setelah divalidasi CV — hasil "terbaik" sebelumnya ternyata fluke)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Financial_Feed_App`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -80,9 +80,12 @@ Financial_Feed_App/
 │   ├── hashrate.csv          # ~6.4k baris harian, sejak 2009 (mempool.space, tanpa batasan)
 │   ├── stablecoin_supply.csv # 365 baris harian (USDT+USDC market cap) — CoinGecko free tier batasi histori max 365 hari
 │   ├── btc_dominance.csv     # 1 baris/hari mulai sekarang — tidak ada histori gratis (CoinGecko Pro-only), akumulasi ke depan
-│   ├── features_4h.csv       # Feature matrix siap-training, granularitas 4h (~19.3k baris, 31 kolom)
-│   └── features_1d.csv       # Feature matrix siap-training, granularitas 1d (~3.2k baris, 31 kolom)
+│   ├── features_4h.csv       # Feature matrix siap-training (Node), granularitas 4h (~19.3k baris, 31 kolom, + indikator teknikal)
+│   ├── features_1d.csv       # Feature matrix siap-training (Node), granularitas 1d (~3.2k baris, 31 kolom, + indikator teknikal)
+│   ├── clean_4h.csv          # Versi pandas (ml/preprocess.py) — kolom raw terpilih per sumber, tanpa indikator, 21 kolom
+│   └── clean_1d.csv          # idem, granularitas 1d — divalidasi cocok 1:1 dengan features_1d.csv di kolom yang sama
 ├── ml/                      # Modeling BTC (Python, .venv lokal — pandas/scikit-learn/torch)
+│   ├── preprocess.py        # Cleaning + integrasi transparan: pilih kolom per CSV mentah, merge_asof, -> clean_4h/1d.csv
 │   ├── train_models.py      # Klasifikasi: 5 algoritma + 2 baseline, chronological split
 │   ├── cross_validation.py  # Walk-forward CV (4 fold) — validasi robustness hasil train_models.py
 │   ├── train_regression.py  # Regresi: prediksi besaran return (target_ret_6/18)
@@ -184,6 +187,16 @@ Workflow GitHub Actions (`btc-backfill.yml` dan `btc-sync.yml`) sudah di-update 
 **Rekomendasi:** jangan dipakai sebagai sinyal trading atau bahkan input thesis-narrative yang percaya diri. Kalau tetap mau ada "lean" BTC di digest, posisikan sebagai narasi indikator teknikal/COT biasa (seperti sistem thesis XAU/forex yang sudah ada) — bukan probabilitas hasil model, karena model ini tidak terbukti menambah nilai di atas baca indikator langsung.
 
 **Opsi lanjutan (belum dikerjakan):** feature pruning/importance analysis; reframe target dari "arah harga" (mendekati random walk) ke "deteksi rezim volatilitas tinggi" (lebih learnable secara teori); atau perbanyak fold CV (10+) untuk interval kepercayaan lebih ketat di hasil Random Forest 4h/1-hari yang borderline kredibel itu.
+
+### Preprocessing Transparan di Pandas (tambahan)
+
+**`ml/preprocess.py`** — versi pandas dari tahap cleaning+integrasi data, dipisah dari komputasi indikator teknikal (yang tetap di `scripts/feature-engineering.js`, Node). Tujuannya supaya proses seleksi kolom & pembersihan terlihat eksplisit langkah demi langkah, bukan tersembunyi.
+
+- **Seleksi kolom per sumber** (didokumentasikan inline di kode): COT cuma ambil `open_interest` + 2 kubu utama (`noncomm_long/short`, `comm_long/short`) — buang `noncomm_spread` dan `nonreportable_*` (kurang informatif/lebih noisy); Fear&Greed cuma ambil `value` numerik, buang `classification` (cuma label kategori dari value yang sama); stablecoin cuma ambil total gabungan, buang breakdown USDT/USDC.
+- **Cleaning**: dedupe timestamp, buang baris dengan harga ≤0/volume negatif (OHLCV), posisi negatif (COT), nilai di luar 0-100 (Fear&Greed, dominance), hashrate ≤0 — ditemukan 6 baris hashrate `0.0` di 4-9 Januari 2009 (beberapa hari setelah genesis block), dibuang (tidak berdampak karena OHLCV baru mulai 2017).
+- **Merge**: `pandas.merge_asof(..., direction="backward")` — join point-in-time yang sama persis semantiknya dengan forward-fill di Node, tapi deklaratif/lebih mudah diaudit. Termasuk fix COT publish-lag yang sama.
+- **Output**: `data/btc/clean_4h.csv`, `clean_1d.csv` (21 kolom, tanpa indikator teknikal).
+- **Validasi cross-check**: dibandingkan manual dengan `features_1d.csv` (hasil Node) di tanggal 2021-11-10 — `close`, `open_interest`, `fear_greed`, `hashrate` semua identik, dan tanggal mulai COT (2018-04-13, sudah dengan koreksi lag) juga sama. Dua pipeline independen menghasilkan angka yang konsisten.
 
 ---
 
