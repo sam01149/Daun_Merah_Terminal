@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-06-18 (session 70 — BTC data collection pipeline: OHLCV + CME COT + Fear&Greed, auto-sync hourly via GitHub Actions)
+> **Last updated:** 2026-06-18 (session 70 — BTC data collection (7 sumber) + feature engineering: feature matrix gabungan 4h/1d dengan indikator teknikal + konteks eksternal, auto-rebuild via GitHub Actions)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Financial_Feed_App`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -61,14 +61,16 @@ Financial_Feed_App/
 ├── icon.svg                # App icon — dual-leaf loop, viewBox="0 20 680 680"
 ├── vercel.json             # Security headers config
 ├── package.json            # name: "daun-merah", deps: web-push
-├── scripts/                # BTC data collection (Node, dijalankan via GitHub Actions)
-│   ├── btc-backfill.js     # One-off: full historical backfill semua sumber BTC
-│   ├── btc-sync.js         # Incremental: append data baru saja, idempotent, jalan hourly
+├── scripts/                  # BTC data collection + feature engineering (Node, via GitHub Actions)
+│   ├── btc-backfill.js       # One-off: full historical backfill semua sumber BTC
+│   ├── btc-sync.js           # Incremental: append data baru saja, idempotent, jalan hourly
+│   ├── feature-engineering.js # Gabung 7 dataset jadi feature matrix per timeframe (4h, 1d)
 │   └── lib/
-│       ├── btc-data.js       # CSV read/write/append helpers, fetchJson + fetchJsonPatient (429 backoff)
+│       ├── btc-data.js       # CSV read/write/append/read helpers, fetchJson + fetchJsonPatient (429 backoff)
 │       ├── btc-sources.js    # OHLCV (data-api.binance.vision) + Fear&Greed (alternative.me)
 │       ├── cot-bitcoin.js    # CME Bitcoin futures COT (cftc.gov) — download via curl (lihat catatan)
-│       └── extra-sources.js  # BTC dominance, stablecoin supply (CoinGecko), hashrate (mempool.space)
+│       ├── extra-sources.js  # BTC dominance, stablecoin supply (CoinGecko), hashrate (mempool.space)
+│       └── indicators.js     # SMA/EMA/RSI/MACD/ATR/Bollinger %B/z-score — implementasi sendiri, tanpa dep
 ├── data/btc/                # Dataset historis BTC (CSV), auto-update via GitHub Actions
 │   ├── ohlcv_1h.csv          # ~77k baris, sejak 2017-08-17
 │   ├── ohlcv_4h.csv          # ~19k baris, sejak 2017-08-17
@@ -77,7 +79,9 @@ Financial_Feed_App/
 │   ├── fear_greed.csv        # ~3k baris harian, sejak 2018-02
 │   ├── hashrate.csv          # ~6.4k baris harian, sejak 2009 (mempool.space, tanpa batasan)
 │   ├── stablecoin_supply.csv # 365 baris harian (USDT+USDC market cap) — CoinGecko free tier batasi histori max 365 hari
-│   └── btc_dominance.csv     # 1 baris/hari mulai sekarang — tidak ada histori gratis (CoinGecko Pro-only), akumulasi ke depan
+│   ├── btc_dominance.csv     # 1 baris/hari mulai sekarang — tidak ada histori gratis (CoinGecko Pro-only), akumulasi ke depan
+│   ├── features_4h.csv       # Feature matrix siap-training, granularitas 4h (~19.3k baris, 31 kolom)
+│   └── features_1d.csv       # Feature matrix siap-training, granularitas 1d (~3.2k baris, 31 kolom)
 └── api/                    # TEPAT 12 serverless functions (Vercel Hobby limit)
     ├── _circuit_breaker.js # Self-healing: Redis-backed circuit breaker (CLOSED→OPEN→HALF_OPEN)
     ├── _push_keywords.js   # Keyword lists untuk detectPushCat() — edit di sini untuk update kategori
@@ -133,7 +137,24 @@ Financial_Feed_App/
 
 **Verifikasi data:** 0 duplikat di semua dataset; gap minor di OHLCV 1h/4h (28 dan 8 gap, max 34 jam, tersebar 2017-2023, konsisten dengan downtime exchange di awal era Binance) — OHLCV 1d, hashrate, dan stablecoin_supply tanpa gap berarti.
 
-**Selanjutnya:** fase data analysis/feature engineering, lalu modeling (gradient boosting di atas fitur teknikal + COT + sentiment) — wajib evaluasi akurasi di test data sebelum dianggap selesai (bukan dipoles supaya kelihatan bagus kalau hasilnya jelek).
+### Feature Engineering (Fase 2 — selesai)
+
+**`scripts/feature-engineering.js`** menggabungkan ke-7 dataset jadi satu feature matrix per timeframe (`data/btc/features_4h.csv`, `features_1d.csv`), masing-masing 31 kolom:
+
+- **Indikator teknikal** (dari OHLCV, dihitung sendiri di `scripts/lib/indicators.js`, tanpa dependency npm): `ret_1/6/18`, `log_ret_1`, `volatility_z20`, `rsi_14`, `macd`/`macd_signal`/`macd_hist`, `atr_14`, `bb_pctb` (Bollinger %B), `price_to_sma20`, `sma20_gt_sma50`, `ema12_gt_ema26`, `volume_z20`, `volume_change_pct`
+- **Konteks eksternal** (forward-filled ke timestamp candle, **timestamp-gated — tidak ada lookahead bias**, nilai cuma muncul setelah benar-benar tersedia): `cot_open_interest`, `cot_net_noncomm`, `cot_noncomm_long_pct`, `cot_net_change_1w`, `fear_greed`, `hashrate`, `stablecoin_total_cap`, `btc_dominance_pct`
+- **Target** (forward-looking, untuk fase modeling): `target_ret_6/18` (return n-periode ke depan), `target_dir_6/18` (1=naik, 0=turun)
+
+**Sanity-check terhadap event historis yang dikenal** (bukan cuma cek row count):
+- RSI turun ke 15-25 saat Black Thursday (12-13 Maret 2020, crash BTC $8000→$4800) — oversold ekstrem, sesuai ekspektasi
+- RSI ~67-68 + `bb_pctb` > 1 (breakout upper band) tepat di ATH 8 November 2021 ($67.525) — overbought, sesuai ekspektasi
+- 1 nilai `Infinity` ditemukan di `volume_change_pct` (candle volume=0 era awal Binance 2017) — diperbaiki, semua non-finite ditulis kosong bukan `Infinity`/`NaN`
+
+**Coverage per kolom** (file 1d, 3.228 baris): indikator teknikal ~99% (NaN cuma di periode awal sebelum cukup histori), COT 92.7% (sebelum April 2018 belum ada), fear&greed 94.8% (sebelum Feb 2018), hashrate 100%, stablecoin 11.3% (limitasi 365 hari), btc_dominance 0% di file 1d saat ini (snapshot pertama diambil 15:53 UTC, setelah candle harian tutup jam 00:00 — akan mulai terisi mulai besok).
+
+Workflow GitHub Actions (`btc-backfill.yml` dan `btc-sync.yml`) sudah di-update untuk regenerate feature matrix otomatis setiap kali data baru masuk.
+
+**Selanjutnya:** fase modeling (gradient boosting di atas feature matrix ini) — wajib evaluasi akurasi di test data (chronological split, bukan random shuffle, karena ini time series) sebelum dianggap selesai. Catatan untuk diri sendiri di fase modeling: `stablecoin_total_cap` dan `btc_dominance_pct` punya coverage rendah di histori penuh — kalau dipakai sebagai fitur, pertimbangkan training window yang lebih pendek (1-2 tahun terakhir) atau exclude dari model utama dan jadikan fitur sekunder/eksperimen terpisah.
 
 ---
 
