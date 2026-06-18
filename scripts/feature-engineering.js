@@ -57,14 +57,23 @@ function buildFeatures(ohlcvKey, outFile) {
   const volumeChangePct = pctChange(volume, 1);
 
   // --- External series, forward-filled onto each candle's timestamp ---
-  const cotFf    = forwardFill(ts, cot);
+  // CFTC publishes COT on Fridays, but the report's "as of" date (our stored timestamp) is the
+  // preceding Tuesday — a ~3-day reporting lag. Forward-filling on the raw timestamp would let a
+  // candle "see" Tuesday's positioning data before it was actually public (lookahead bias). Shift
+  // by the publish lag for forward-fill purposes only, before joining — that's also why the COT
+  // index lookup below keys off the *shifted* timestamp (cotForFf), not the original.
+  const COT_PUBLISH_LAG_MS = 3 * 86400e3;
+  const cotForFf = cot.map(r => ({ ...r, timestamp: r.timestamp + COT_PUBLISH_LAG_MS }));
+
+  const cotFf    = forwardFill(ts, cotForFf);
   const fngFf    = forwardFill(ts, fng);
   const hashFf   = forwardFill(ts, hash);
   const stableFf = forwardFill(ts, stable);
   const domFf    = forwardFill(ts, dom);
 
   // COT week-over-week net positioning change needs the *previous* COT row, not just the ffilled one.
-  const cotIndexByTs = new Map(cot.map((r, idx) => [r.timestamp, idx]));
+  // Indexed by the shifted timestamp since that's what cotFf rows carry (see above).
+  const cotIndexByTs = new Map(cotForFf.map((r, idx) => [r.timestamp, idx]));
 
   const rows = ts.map((t, i) => {
     const c = cotFf[i];

@@ -1,0 +1,198 @@
+[
+  {
+    "timeframe": "4h",
+    "target": "target_ret_6",
+    "n_train": 14300,
+    "n_test": 3576,
+    "test_period": [
+      "2024-10-29T20:00:00.000Z",
+      "2026-06-17T16:00:00.000Z"
+    ],
+    "train_return_std": 0.034129,
+    "test_return_std": 0.023411,
+    "models": {
+      "baseline_predict_zero": {
+        "mae": 0.016817,
+        "rmse": 0.023408,
+        "r2": -0.0
+      },
+      "baseline_predict_train_mean": {
+        "mae": 0.016839,
+        "rmse": 0.023451,
+        "r2": -0.0037
+      },
+      "linear_regression": {
+        "mae": 0.017198,
+        "rmse": 0.023561,
+        "r2": -0.0131
+      },
+      "random_forest": {
+        "mae": 0.01685,
+        "rmse": 0.023391,
+        "r2": 0.0015
+      },
+      "gradient_boosting": {
+        "mae": 0.021107,
+        "rmse": 0.027918,
+        "r2": -0.4224
+      },
+      "mlp_neural_net": {
+        "mae": 0.030752,
+        "rmse": 0.039607,
+        "r2": -1.863
+      },
+      "lstm": {
+        "mae": 0.026381,
+        "rmse": 0.034986,
+        "r2": -1.2338
+      }
+    }
+  },
+  {
+    "timeframe": "4h",
+    "target": "target_ret_18",
+    "n_train": 14291,
+    "n_test": 3573,
+    "test_period": [
+      "2024-10-28T08:00:00.000Z",
+      "2026-06-15T16:00:00.000Z"
+    ],
+    "train_return_std": 0.058384,
+    "test_return_std": 0.039223,
+    "models": {
+      "baseline_predict_zero": {
+        "mae": 0.029517,
+        "rmse": 0.039219,
+        "r2": -0.0001
+      },
+      "baseline_predict_train_mean": {
+        "mae": 0.029586,
+        "rmse": 0.039427,
+        "r2": -0.0107
+      },
+      "linear_regression": {
+        "mae": 0.031762,
+        "rmse": 0.041221,
+        "r2": -0.1048
+      },
+      "random_forest": {
+        "mae": 0.029561,
+        "rmse": 0.039411,
+        "r2": -0.0099
+      },
+      "gradient_boosting": {
+        "mae": 0.038635,
+        "rmse": 0.050546,
+        "r2": -0.6611
+      },
+      "mlp_neural_net": {
+        "mae": 0.051758,
+        "rmse": 0.065033,
+        "r2": -1.7498
+      },
+      "lstm": {
+        "mae": 0.067298,
+        "rmse": 0.085468,
+        "r2": -3.7495
+      }
+    }
+  },
+  {
+    "timeframe": "1d",
+    "target": "target_ret_6",
+    "n_train": 2380,
+    "n_test": 596,
+    "test_period": [
+      "2024-10-25T00:00:00.000Z",
+      "2026-06-12T00:00:00.000Z"
+    ],
+    "train_return_std": 0.084474,
+    "test_return_std": 0.055047,
+    "models": {
+      "baseline_predict_zero": {
+        "mae": 0.040938,
+        "rmse": 0.055007,
+        "r2": -0.0002
+      },
+      "baseline_predict_train_mean": {
+        "mae": 0.041558,
+        "rmse": 0.055569,
+        "r2": -0.0207
+      },
+      "linear_regression": {
+        "mae": 0.047976,
+        "rmse": 0.06159,
+        "r2": -0.2539
+      },
+      "random_forest": {
+        "mae": 0.041927,
+        "rmse": 0.057095,
+        "r2": -0.0776
+      },
+      "gradient_boosting": {
+        "mae": 0.053315,
+        "rmse": 0.069655,
+        "r2": -0.6039
+      },
+      "mlp_neural_net": {
+        "mae": 0.091151,
+        "rmse": 0.115846,
+        "r2": -3.4363
+      },
+      "lstm": {
+        "mae": 0.078087,
+        "rmse": 0.099315,
+        "r2": -2.2606
+      }
+    }
+  },
+  {
+    "timeframe": "1d",
+    "target": "target_ret_18",
+    "n_train": 2371,
+    "n_test": 593,
+    "test_period": [
+      "2024-10-16T00:00:00.000Z",
+      "2026-05-31T00:00:00.000Z"
+    ],
+    "train_return_std": 0.157533,
+    "test_return_std": 0.1027,
+    "models": {
+      "baseline_predict_zero": {
+        "mae": 0.075862,
+        "rmse": 0.102659,
+        "r2": -0.0009
+      },
+      "baseline_predict_train_mean": {
+        "mae": 0.079472,
+        "rmse": 0.105404,
+        "r2": -0.0551
+      },
+      "linear_regression": {
+        "mae": 0.096006,
+        "rmse": 0.121203,
+        "r2": -0.3952
+      },
+      "random_forest": {
+        "mae": 0.081027,
+        "rmse": 0.109466,
+        "r2": -0.138
+      },
+      "gradient_boosting": {
+        "mae": 0.098428,
+        "rmse": 0.136817,
+        "r2": -0.7778
+      },
+      "mlp_neural_net": {
+        "mae": 0.154836,
+        "rmse": 0.189421,
+        "r2": -2.4076
+      },
+      "lstm": {
+        "mae": 0.169108,
+        "rmse": 0.208895,
+        "r2": -3.1443
+      }
+    }
+  }
+]

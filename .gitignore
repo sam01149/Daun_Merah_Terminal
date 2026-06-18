@@ -11,3 +11,4 @@ alur.txt
 # Claude Code local config — berisi API key/secret di allow-list, JANGAN commit
 .claude/
 daun_merah.plan
+__pycache__/

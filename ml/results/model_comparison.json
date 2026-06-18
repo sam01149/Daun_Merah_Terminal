@@ -2,150 +2,150 @@
   {
     "timeframe": "4h",
     "target": "target_dir_6",
-    "n_rows_total": 17894,
-    "n_train": 14315,
-    "n_test": 3579,
+    "n_rows_total": 17876,
+    "n_train": 14300,
+    "n_test": 3576,
     "train_period": [
-      "2018-04-17T00:00:00.000Z",
-      "2024-10-29T04:00:00.000Z"
+      "2018-04-20T00:00:00.000Z",
+      "2024-10-29T16:00:00.000Z"
     ],
     "test_period": [
-      "2024-10-29T08:00:00.000Z",
+      "2024-10-29T20:00:00.000Z",
       "2026-06-17T16:00:00.000Z"
     ],
-    "train_class_balance_up": 0.5193,
-    "test_class_balance_up": 0.5113,
+    "train_class_balance_up": 0.519,
+    "test_class_balance_up": 0.5115,
     "models": {
       "baseline_majority_class": {
-        "accuracy": 0.5113,
-        "precision": 0.5113,
+        "accuracy": 0.5115,
+        "precision": 0.5115,
         "recall": 1.0,
-        "f1": 0.6767
+        "f1": 0.6768
       },
       "baseline_momentum_persistence": {
-        "accuracy": 0.4932,
-        "precision": 0.5044,
-        "recall": 0.4978,
+        "accuracy": 0.4933,
+        "precision": 0.5047,
+        "recall": 0.4975,
         "f1": 0.5011
       },
       "logistic_regression": {
-        "accuracy": 0.5228,
-        "precision": 0.5385,
-        "recall": 0.4661,
-        "f1": 0.4997,
-        "roc_auc": 0.53
+        "accuracy": 0.5157,
+        "precision": 0.5205,
+        "recall": 0.6747,
+        "f1": 0.5876,
+        "roc_auc": 0.5249
       },
       "random_forest": {
-        "accuracy": 0.5256,
-        "precision": 0.5266,
-        "recall": 0.7137,
-        "f1": 0.606,
-        "roc_auc": 0.5311
+        "accuracy": 0.533,
+        "precision": 0.5311,
+        "recall": 0.743,
+        "f1": 0.6194,
+        "roc_auc": 0.5308
       },
       "gradient_boosting": {
-        "accuracy": 0.5169,
-        "precision": 0.5285,
-        "recall": 0.512,
-        "f1": 0.5201,
-        "roc_auc": 0.5159
+        "accuracy": 0.521,
+        "precision": 0.5251,
+        "recall": 0.6627,
+        "f1": 0.5859,
+        "roc_auc": 0.519
       },
       "mlp_neural_net": {
-        "accuracy": 0.5032,
-        "precision": 0.5091,
-        "recall": 0.7978,
-        "f1": 0.6215,
-        "roc_auc": 0.5092
+        "accuracy": 0.5095,
+        "precision": 0.5116,
+        "recall": 0.9049,
+        "f1": 0.6536,
+        "roc_auc": 0.4891
       },
       "lstm": {
-        "accuracy": 0.4957,
-        "precision": 0.5046,
-        "recall": 0.7464,
-        "f1": 0.6022,
-        "roc_auc": 0.5049
+        "accuracy": 0.5229,
+        "precision": 0.521,
+        "recall": 0.8349,
+        "f1": 0.6416,
+        "roc_auc": 0.5007
       }
     }
   },
   {
     "timeframe": "4h",
     "target": "target_dir_18",
-    "n_rows_total": 17882,
-    "n_train": 14305,
-    "n_test": 3577,
+    "n_rows_total": 17864,
+    "n_train": 14291,
+    "n_test": 3573,
     "train_period": [
-      "2018-04-17T00:00:00.000Z",
-      "2024-10-27T12:00:00.000Z"
+      "2018-04-20T00:00:00.000Z",
+      "2024-10-28T04:00:00.000Z"
     ],
     "test_period": [
-      "2024-10-27T16:00:00.000Z",
+      "2024-10-28T08:00:00.000Z",
       "2026-06-15T16:00:00.000Z"
     ],
-    "train_class_balance_up": 0.5276,
-    "test_class_balance_up": 0.5175,
+    "train_class_balance_up": 0.5271,
+    "test_class_balance_up": 0.5169,
     "models": {
       "baseline_majority_class": {
-        "accuracy": 0.5175,
-        "precision": 0.5175,
+        "accuracy": 0.5169,
+        "precision": 0.5169,
         "recall": 1.0,
-        "f1": 0.682
+        "f1": 0.6815
       },
       "baseline_momentum_persistence": {
-        "accuracy": 0.4937,
-        "precision": 0.511,
-        "recall": 0.4997,
-        "f1": 0.5053
+        "accuracy": 0.4934,
+        "precision": 0.5102,
+        "recall": 0.4992,
+        "f1": 0.5047
       },
       "logistic_regression": {
-        "accuracy": 0.5233,
-        "precision": 0.5244,
-        "recall": 0.8471,
-        "f1": 0.6478,
-        "roc_auc": 0.5004
-      },
-      "random_forest": {
-        "accuracy": 0.5326,
-        "precision": 0.536,
-        "recall": 0.7196,
-        "f1": 0.6144,
-        "roc_auc": 0.5464
-      },
-      "gradient_boosting": {
-        "accuracy": 0.5253,
-        "precision": 0.5287,
-        "recall": 0.7607,
-        "f1": 0.6238,
-        "roc_auc": 0.5419
-      },
-      "mlp_neural_net": {
-        "accuracy": 0.5013,
-        "precision": 0.5117,
-        "recall": 0.7942,
-        "f1": 0.6224,
+        "accuracy": 0.5217,
+        "precision": 0.5228,
+        "recall": 0.8581,
+        "f1": 0.6497,
         "roc_auc": 0.4921
       },
+      "random_forest": {
+        "accuracy": 0.5267,
+        "precision": 0.5267,
+        "recall": 0.8322,
+        "f1": 0.6451,
+        "roc_auc": 0.5239
+      },
+      "gradient_boosting": {
+        "accuracy": 0.5332,
+        "precision": 0.5285,
+        "recall": 0.8988,
+        "f1": 0.6656,
+        "roc_auc": 0.5417
+      },
+      "mlp_neural_net": {
+        "accuracy": 0.5066,
+        "precision": 0.5133,
+        "recall": 0.8782,
+        "f1": 0.6479,
+        "roc_auc": 0.4997
+      },
       "lstm": {
-        "accuracy": 0.5141,
-        "precision": 0.518,
-        "recall": 0.8795,
-        "f1": 0.652,
-        "roc_auc": 0.4939
+        "accuracy": 0.534,
+        "precision": 0.5304,
+        "recall": 0.8587,
+        "f1": 0.6558,
+        "roc_auc": 0.5294
       }
     }
   },
   {
     "timeframe": "1d",
     "target": "target_dir_6",
-    "n_rows_total": 2979,
-    "n_train": 2383,
+    "n_rows_total": 2976,
+    "n_train": 2380,
     "n_test": 596,
     "train_period": [
-      "2018-04-17T00:00:00.000Z",
+      "2018-04-20T00:00:00.000Z",
       "2024-10-24T00:00:00.000Z"
     ],
     "test_period": [
       "2024-10-25T00:00:00.000Z",
       "2026-06-12T00:00:00.000Z"
     ],
-    "train_class_balance_up": 0.535,
+    "train_class_balance_up": 0.5345,
     "test_class_balance_up": 0.5067,
     "models": {
       "baseline_majority_class": {
@@ -161,105 +161,105 @@
         "f1": 0.4757
       },
       "logistic_regression": {
-        "accuracy": 0.5101,
-        "precision": 0.5094,
-        "recall": 0.894,
-        "f1": 0.649,
-        "roc_auc": 0.4672
+        "accuracy": 0.5185,
+        "precision": 0.514,
+        "recall": 0.9106,
+        "f1": 0.6571,
+        "roc_auc": 0.4694
       },
       "random_forest": {
-        "accuracy": 0.4799,
-        "precision": 0.4894,
-        "recall": 0.6126,
-        "f1": 0.5441,
-        "roc_auc": 0.5022
+        "accuracy": 0.5034,
+        "precision": 0.5071,
+        "recall": 0.7053,
+        "f1": 0.59,
+        "roc_auc": 0.5114
       },
       "gradient_boosting": {
-        "accuracy": 0.5084,
-        "precision": 0.5154,
-        "recall": 0.5,
-        "f1": 0.5076,
-        "roc_auc": 0.503
+        "accuracy": 0.5185,
+        "precision": 0.5198,
+        "recall": 0.6523,
+        "f1": 0.5786,
+        "roc_auc": 0.4857
       },
       "mlp_neural_net": {
-        "accuracy": 0.5067,
-        "precision": 0.5079,
-        "recall": 0.851,
-        "f1": 0.6361,
-        "roc_auc": 0.4747
+        "accuracy": 0.5101,
+        "precision": 0.5137,
+        "recall": 0.6192,
+        "f1": 0.5616,
+        "roc_auc": 0.495
       },
       "lstm": {
-        "accuracy": 0.4883,
-        "precision": 0.4958,
-        "recall": 0.5927,
-        "f1": 0.54,
-        "roc_auc": 0.5014
+        "accuracy": 0.495,
+        "precision": 0.5012,
+        "recall": 0.6821,
+        "f1": 0.5778,
+        "roc_auc": 0.4919
       }
     }
   },
   {
     "timeframe": "1d",
     "target": "target_dir_18",
-    "n_rows_total": 2967,
-    "n_train": 2373,
-    "n_test": 594,
+    "n_rows_total": 2964,
+    "n_train": 2371,
+    "n_test": 593,
     "train_period": [
-      "2018-04-17T00:00:00.000Z",
-      "2024-10-14T00:00:00.000Z"
+      "2018-04-20T00:00:00.000Z",
+      "2024-10-15T00:00:00.000Z"
     ],
     "test_period": [
-      "2024-10-15T00:00:00.000Z",
+      "2024-10-16T00:00:00.000Z",
       "2026-05-31T00:00:00.000Z"
     ],
-    "train_class_balance_up": 0.5411,
-    "test_class_balance_up": 0.4933,
+    "train_class_balance_up": 0.5407,
+    "test_class_balance_up": 0.4924,
     "models": {
       "baseline_majority_class": {
-        "accuracy": 0.4933,
-        "precision": 0.4933,
+        "accuracy": 0.4924,
+        "precision": 0.4924,
         "recall": 1.0,
-        "f1": 0.6607
+        "f1": 0.6599
       },
       "baseline_momentum_persistence": {
-        "accuracy": 0.4815,
-        "precision": 0.4749,
-        "recall": 0.4846,
-        "f1": 0.4797
+        "accuracy": 0.4806,
+        "precision": 0.4732,
+        "recall": 0.4829,
+        "f1": 0.478
       },
       "logistic_regression": {
-        "accuracy": 0.5286,
-        "precision": 0.5121,
-        "recall": 0.9386,
-        "f1": 0.6627,
-        "roc_auc": 0.4931
+        "accuracy": 0.5379,
+        "precision": 0.5171,
+        "recall": 0.9315,
+        "f1": 0.665,
+        "roc_auc": 0.4761
       },
       "random_forest": {
-        "accuracy": 0.5556,
-        "precision": 0.546,
-        "recall": 0.587,
-        "f1": 0.5658,
-        "roc_auc": 0.5685
+        "accuracy": 0.5464,
+        "precision": 0.537,
+        "recall": 0.5719,
+        "f1": 0.5539,
+        "roc_auc": 0.5475
       },
       "gradient_boosting": {
-        "accuracy": 0.4882,
-        "precision": 0.4794,
-        "recall": 0.4369,
-        "f1": 0.4571,
-        "roc_auc": 0.4976
+        "accuracy": 0.5093,
+        "precision": 0.5017,
+        "recall": 0.5137,
+        "f1": 0.5076,
+        "roc_auc": 0.5154
       },
       "mlp_neural_net": {
-        "accuracy": 0.5168,
-        "precision": 0.5069,
-        "recall": 0.7509,
-        "f1": 0.6052,
-        "roc_auc": 0.5094
+        "accuracy": 0.5194,
+        "precision": 0.5082,
+        "recall": 0.7432,
+        "f1": 0.6036,
+        "roc_auc": 0.5011
       },
       "lstm": {
-        "accuracy": 0.4815,
-        "precision": 0.4821,
-        "recall": 0.6894,
-        "f1": 0.5674,
-        "roc_auc": 0.4802
+        "accuracy": 0.5228,
+        "precision": 0.5095,
+        "recall": 0.8288,
+        "f1": 0.631,
+        "roc_auc": 0.5053
       }
     }
   }
