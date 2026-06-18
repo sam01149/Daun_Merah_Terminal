@@ -7,21 +7,19 @@ const path = require('path');
 const DATA_DIR = path.join(__dirname, '..', '..', 'data', 'btc');
 
 const FILES = {
-  ohlcv_1h:       'ohlcv_1h.csv',
-  ohlcv_4h:       'ohlcv_4h.csv',
-  ohlcv_1d:       'ohlcv_1d.csv',
-  funding_rate:   'funding_rate.csv',
-  open_interest:  'open_interest.csv',
-  fear_greed:     'fear_greed.csv',
+  ohlcv_1h:    'ohlcv_1h.csv',
+  ohlcv_4h:    'ohlcv_4h.csv',
+  ohlcv_1d:    'ohlcv_1d.csv',
+  cot_bitcoin: 'cot_bitcoin.csv',
+  fear_greed:  'fear_greed.csv',
 };
 
 const HEADERS = {
-  ohlcv_1h:      ['timestamp', 'date_iso', 'open', 'high', 'low', 'close', 'volume'],
-  ohlcv_4h:      ['timestamp', 'date_iso', 'open', 'high', 'low', 'close', 'volume'],
-  ohlcv_1d:      ['timestamp', 'date_iso', 'open', 'high', 'low', 'close', 'volume'],
-  funding_rate:  ['timestamp', 'date_iso', 'funding_rate'],
-  open_interest: ['timestamp', 'date_iso', 'open_interest', 'open_interest_value'],
-  fear_greed:    ['timestamp', 'date_iso', 'value', 'classification'],
+  ohlcv_1h:    ['timestamp', 'date_iso', 'open', 'high', 'low', 'close', 'volume'],
+  ohlcv_4h:    ['timestamp', 'date_iso', 'open', 'high', 'low', 'close', 'volume'],
+  ohlcv_1d:    ['timestamp', 'date_iso', 'open', 'high', 'low', 'close', 'volume'],
+  cot_bitcoin: ['timestamp', 'date_iso', 'open_interest', 'noncomm_long', 'noncomm_short', 'noncomm_spread', 'comm_long', 'comm_short', 'nonreportable_long', 'nonreportable_short'],
+  fear_greed:  ['timestamp', 'date_iso', 'value', 'classification'],
 };
 
 function filePath(key) {

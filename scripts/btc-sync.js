@@ -4,10 +4,10 @@
 'use strict';
 
 const { appendCsv, lastTimestamp, rowCount } = require('./lib/btc-data');
-const { fetchOhlcv, fetchFundingRate, fetchOpenInterest, fetchFearGreed } = require('./lib/btc-sources');
+const { fetchOhlcv, fetchFearGreed } = require('./lib/btc-sources');
+const { fetchCotBitcoinYear } = require('./lib/cot-bitcoin');
 
-const OHLCV_START   = Date.parse('2017-08-17T00:00:00Z');
-const FUNDING_START = Date.parse('2019-09-08T00:00:00Z');
+const OHLCV_START = Date.parse('2017-08-17T00:00:00Z');
 
 async function syncOhlcv(interval) {
   const key = `ohlcv_${interval}`;
@@ -18,21 +18,16 @@ async function syncOhlcv(interval) {
   console.log(`${key}: +${rows.length} rows (total ${rowCount(key)})`);
 }
 
-async function syncFundingRate() {
-  const last = lastTimestamp('funding_rate');
-  const start = last !== null ? last + 1 : FUNDING_START;
-  const rows = await fetchFundingRate(start);
-  appendCsv('funding_rate', rows);
-  console.log(`funding_rate: +${rows.length} rows (total ${rowCount('funding_rate')})`);
-}
-
-async function syncOpenInterest() {
-  // Binance only exposes ~30d of history for this endpoint; dedupe against the last stored timestamp.
-  const last = lastTimestamp('open_interest');
-  const batch = await fetchOpenInterest('1h', 500);
-  const fresh = last !== null ? batch.filter(r => r[0] > last) : batch;
-  appendCsv('open_interest', fresh);
-  console.log(`open_interest: +${fresh.length} rows (total ${rowCount('open_interest')})`);
+async function syncCotBitcoin() {
+  // CFTC publishes weekly (Fridays); the annual zip is cumulative for the current year, so
+  // re-download it and dedupe against the last stored timestamp. Also check the prior year in
+  // case the as-of date just rolled over (year boundary).
+  const last = lastTimestamp('cot_bitcoin');
+  const year = new Date().getUTCFullYear();
+  const batch = [...(await fetchCotBitcoinYear(year - 1)), ...(await fetchCotBitcoinYear(year))];
+  const fresh = (last !== null ? batch.filter(r => r[0] > last) : batch).sort((a, b) => a[0] - b[0]);
+  appendCsv('cot_bitcoin', fresh);
+  console.log(`cot_bitcoin: +${fresh.length} rows (total ${rowCount('cot_bitcoin')})`);
 }
 
 async function syncFearGreed() {
@@ -49,8 +44,7 @@ async function main() {
   await syncOhlcv('1h');
   await syncOhlcv('4h');
   await syncOhlcv('1d');
-  await syncFundingRate();
-  await syncOpenInterest();
+  await syncCotBitcoin();
   await syncFearGreed();
   console.log('Sync complete.');
 }

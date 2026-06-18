@@ -3,10 +3,10 @@
 'use strict';
 
 const { writeCsv, rowCount } = require('./lib/btc-data');
-const { fetchOhlcv, fetchFundingRate, fetchOpenInterest, fetchFearGreed } = require('./lib/btc-sources');
+const { fetchOhlcv, fetchFearGreed } = require('./lib/btc-sources');
+const { fetchCotBitcoinAll } = require('./lib/cot-bitcoin');
 
-const OHLCV_START   = Date.parse('2017-08-17T00:00:00Z'); // BTCUSDT spot listing on Binance
-const FUNDING_START = Date.parse('2019-09-08T00:00:00Z'); // BTCUSDT perpetual futures launch
+const OHLCV_START = Date.parse('2017-08-17T00:00:00Z'); // BTCUSDT spot listing on Binance
 
 async function main() {
   console.log('BTC backfill starting...');
@@ -17,20 +17,16 @@ async function main() {
     console.log(`ohlcv_${interval}: ${rows.length} candles`);
   }
 
-  const funding = await fetchFundingRate(FUNDING_START);
-  writeCsv('funding_rate', funding);
-  console.log(`funding_rate: ${funding.length} rows`);
-
-  const oi = await fetchOpenInterest('1h', 500);
-  writeCsv('open_interest', oi);
-  console.log(`open_interest: ${oi.length} rows (Binance only retains ~30d history for this endpoint)`);
+  const cot = await fetchCotBitcoinAll(2018);
+  writeCsv('cot_bitcoin', cot);
+  console.log(`cot_bitcoin: ${cot.length} weekly rows (CME Bitcoin futures, since 2018)`);
 
   const fng = await fetchFearGreed(0);
   writeCsv('fear_greed', fng);
   console.log(`fear_greed: ${fng.length} rows`);
 
   console.log('Backfill complete:');
-  for (const key of ['ohlcv_1h', 'ohlcv_4h', 'ohlcv_1d', 'funding_rate', 'open_interest', 'fear_greed']) {
+  for (const key of ['ohlcv_1h', 'ohlcv_4h', 'ohlcv_1d', 'cot_bitcoin', 'fear_greed']) {
     console.log(`  ${key}: ${rowCount(key)} rows`);
   }
 }
