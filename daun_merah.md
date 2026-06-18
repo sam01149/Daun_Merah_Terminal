@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-06-17 (session 69 — polish PWA: SW notif focus-or-open, offline/online awareness, null-guards, lang=id, meta description)
+> **Last updated:** 2026-06-18 (session 70 — BTC data collection pipeline: OHLCV + CME COT + Fear&Greed, auto-sync hourly via GitHub Actions)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Financial_Feed_App`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -61,6 +61,19 @@ Financial_Feed_App/
 ├── icon.svg                # App icon — dual-leaf loop, viewBox="0 20 680 680"
 ├── vercel.json             # Security headers config
 ├── package.json            # name: "daun-merah", deps: web-push
+├── scripts/                # BTC data collection (Node, dijalankan via GitHub Actions)
+│   ├── btc-backfill.js     # One-off: full historical backfill semua sumber BTC
+│   ├── btc-sync.js         # Incremental: append data baru saja, idempotent, jalan hourly
+│   └── lib/
+│       ├── btc-data.js     # CSV read/write/append helpers, fetchJson wrapper
+│       ├── btc-sources.js  # OHLCV (data-api.binance.vision) + Fear&Greed (alternative.me)
+│       └── cot-bitcoin.js  # CME Bitcoin futures COT (cftc.gov) — download via curl (lihat catatan)
+├── data/btc/                # Dataset historis BTC (CSV), auto-update via GitHub Actions
+│   ├── ohlcv_1h.csv         # ~77k baris, sejak 2017-08-17
+│   ├── ohlcv_4h.csv         # ~19k baris, sejak 2017-08-17
+│   ├── ohlcv_1d.csv         # ~3.2k baris, sejak 2017-08-17
+│   ├── cot_bitcoin.csv      # ~430 baris mingguan, sejak 2018-04 (open interest + positioning CME)
+│   └── fear_greed.csv       # ~3k baris harian, sejak 2018-02
 └── api/                    # TEPAT 12 serverless functions (Vercel Hobby limit)
     ├── _circuit_breaker.js # Self-healing: Redis-backed circuit breaker (CLOSED→OPEN→HALF_OPEN)
     ├── _push_keywords.js   # Keyword lists untuk detectPushCat() — edit di sini untuk update kategori
@@ -83,6 +96,35 @@ Financial_Feed_App/
 > **Penting:** `api/feeds.js` menggantikan `api/rss.js` dan `api/cot.js` yang sudah dihapus.
 > `api/admin.js` menggantikan `api/health.js`, `api/redis-keys.js`, `api/admin-prompts.js`, dan `api/push.js`.
 > Konsolidasi ini dilakukan untuk tetap di bawah limit 12 serverless functions Vercel Hobby.
+
+---
+
+## Changelog Session 70 (2026-06-18)
+
+### Data Collection: BTC Dataset untuk Model Prediksi (Fase 1 — selesai)
+
+**Konteks:** Eksplorasi membangun model prediksi bias arah BTC sebagai pendukung narasi thesis (bukan sinyal trading mandiri — ekspektasi akurasi directional realistis 52-58%, bukan 70-80%). Fase ini fokus murni ke data collection; modeling belum dimulai.
+
+**Sumber data final (4 dataset, semua gratis):**
+- **OHLCV spot BTC/USDT** (1h/4h/1d) — `data-api.binance.vision`, sejak 2017-08-17
+- **COT Bitcoin (CME futures)** — `cftc.gov`, open interest + positioning non-commercial/commercial, mingguan sejak 2018-04
+- **Fear & Greed Index** — `alternative.me`, harian sejak 2018-02
+- **Funding rate (perpetual)** — di-drop, tidak ada sumber gratis yang tidak ter-geoblock
+- **Orderbook live** — di-skip, tidak relevan untuk horizon intraday-swing & tidak cocok arsitektur serverless
+
+**Masalah signifikan yang ditemukan & diperbaiki:**
+1. `api.binance.com` (spot) dan `fapi.binance.com` (futures) **return HTTP 451 dari GitHub Actions runner** — Binance membatasi akses derivatif dari IP US karena alasan regulasi (CFTC restricted location), bukan bug. Spot dipindah ke `data-api.binance.vision` (mirror resmi Binance, tidak ter-geoblock). Futures (funding rate + open interest) tidak ada workaround resmi → open interest diganti sumber **CFTC COT CME Bitcoin** (kode kontrak `133741`), funding rate didrop permanen.
+2. `cftc.gov` (untuk download zip historis COT) **403 di `fetch()` Node** (Cloudflare bot management, fingerprint TLS) tapi lolos via `curl` — download di `scripts/lib/cot-bitcoin.js` pakai `execFileSync('curl', ...)` bukan `fetch()`.
+3. Jam sistem lokal awalnya disangka salah (cert Binance "expired") — ternyata jam benar, masalahnya DNS ISP lokal redirect `api.binance.com` ke `aduankonten.id` (blokir Kominfo), beda dari masalah geoblock GitHub Actions di atas.
+
+**File baru:**
+- `scripts/btc-backfill.js`, `scripts/btc-sync.js`, `scripts/lib/{btc-data,btc-sources,cot-bitcoin}.js`
+- `.github/workflows/btc-backfill.yml` (workflow_dispatch, one-off) + `.github/workflows/btc-sync.yml` (cron hourly, auto-commit)
+- `data/btc/*.csv` — terisi penuh: OHLCV 1h (77.332 baris), 4h (19.349), 1d (3.228), COT (427), Fear&Greed (3.056)
+
+**Verifikasi data:** 0 duplikat di semua dataset; gap minor di OHLCV 1h/4h (28 dan 8 gap, max 34 jam, tersebar 2017-2023, konsisten dengan downtime exchange di awal era Binance) — OHLCV 1d sempurna tanpa gap.
+
+**Selanjutnya:** fase data analysis/feature engineering, lalu modeling (gradient boosting di atas fitur teknikal + COT + sentiment) — wajib evaluasi akurasi di test data sebelum dianggap selesai (bukan dipoles supaya kelihatan bagus kalau hasilnya jelek).
 
 ---
 
