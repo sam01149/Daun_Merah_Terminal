@@ -74,6 +74,26 @@ function rowCount(key) {
   return Math.max(0, lines.length - 1);
 }
 
+// Reads a CSV into an array of objects keyed by HEADERS[key], with numeric columns coerced to
+// Number (everything except date_iso / classification, which stay strings). Sorted by timestamp.
+function readCsv(key) {
+  const fp = filePath(key);
+  if (!fs.existsSync(fp)) return [];
+  const headers = HEADERS[key];
+  const lines = fs.readFileSync(fp, 'utf8').trim().split('\n').slice(1);
+  const rows = lines.filter(Boolean).map(line => {
+    const cells = line.split(',');
+    const obj = {};
+    headers.forEach((h, i) => {
+      const v = cells[i];
+      obj[h] = (h === 'date_iso' || h === 'classification') ? v : Number(v);
+    });
+    return obj;
+  });
+  rows.sort((a, b) => a.timestamp - b.timestamp);
+  return rows;
+}
+
 function sleep(ms) {
   return new Promise(res => setTimeout(res, ms));
 }
@@ -104,4 +124,4 @@ async function fetchJsonPatient(url, attempt = 1) {
   return r.json();
 }
 
-module.exports = { DATA_DIR, FILES, HEADERS, filePath, ensureDataDir, lastTimestamp, writeCsv, appendCsv, rowCount, fetchJson, fetchJsonPatient, sleep };
+module.exports = { DATA_DIR, FILES, HEADERS, filePath, ensureDataDir, lastTimestamp, writeCsv, appendCsv, rowCount, readCsv, fetchJson, fetchJsonPatient, sleep };

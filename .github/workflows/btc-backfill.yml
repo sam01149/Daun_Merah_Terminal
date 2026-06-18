@@ -20,6 +20,9 @@ jobs:
       - name: Run backfill
         run: node scripts/btc-backfill.js
 
+      - name: Build feature matrix
+        run: node scripts/feature-engineering.js
+
       - name: Commit data
         run: |
           git config user.name "github-actions[bot]"
