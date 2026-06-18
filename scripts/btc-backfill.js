@@ -5,6 +5,7 @@
 const { writeCsv, rowCount } = require('./lib/btc-data');
 const { fetchOhlcv, fetchFearGreed } = require('./lib/btc-sources');
 const { fetchCotBitcoinAll } = require('./lib/cot-bitcoin');
+const { fetchBtcDominanceNow, fetchStablecoinSupply, fetchHashrate } = require('./lib/extra-sources');
 
 const OHLCV_START = Date.parse('2017-08-17T00:00:00Z'); // BTCUSDT spot listing on Binance
 
@@ -25,8 +26,20 @@ async function main() {
   writeCsv('fear_greed', fng);
   console.log(`fear_greed: ${fng.length} rows`);
 
+  const stable = await fetchStablecoinSupply(365);
+  writeCsv('stablecoin_supply', stable);
+  console.log(`stablecoin_supply: ${stable.length} rows (CoinGecko free tier caps history at 365 days)`);
+
+  const hashrate = await fetchHashrate('all');
+  writeCsv('hashrate', hashrate);
+  console.log(`hashrate: ${hashrate.length} rows`);
+
+  const dominance = await fetchBtcDominanceNow();
+  writeCsv('btc_dominance', [dominance]);
+  console.log('btc_dominance: 1 row (no free historical source — accumulates going forward only)');
+
   console.log('Backfill complete:');
-  for (const key of ['ohlcv_1h', 'ohlcv_4h', 'ohlcv_1d', 'cot_bitcoin', 'fear_greed']) {
+  for (const key of ['ohlcv_1h', 'ohlcv_4h', 'ohlcv_1d', 'cot_bitcoin', 'fear_greed', 'stablecoin_supply', 'hashrate', 'btc_dominance']) {
     console.log(`  ${key}: ${rowCount(key)} rows`);
   }
 }

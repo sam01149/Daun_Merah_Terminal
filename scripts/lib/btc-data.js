@@ -7,19 +7,25 @@ const path = require('path');
 const DATA_DIR = path.join(__dirname, '..', '..', 'data', 'btc');
 
 const FILES = {
-  ohlcv_1h:    'ohlcv_1h.csv',
-  ohlcv_4h:    'ohlcv_4h.csv',
-  ohlcv_1d:    'ohlcv_1d.csv',
-  cot_bitcoin: 'cot_bitcoin.csv',
-  fear_greed:  'fear_greed.csv',
+  ohlcv_1h:          'ohlcv_1h.csv',
+  ohlcv_4h:          'ohlcv_4h.csv',
+  ohlcv_1d:          'ohlcv_1d.csv',
+  cot_bitcoin:       'cot_bitcoin.csv',
+  fear_greed:        'fear_greed.csv',
+  btc_dominance:     'btc_dominance.csv',
+  stablecoin_supply: 'stablecoin_supply.csv',
+  hashrate:          'hashrate.csv',
 };
 
 const HEADERS = {
-  ohlcv_1h:    ['timestamp', 'date_iso', 'open', 'high', 'low', 'close', 'volume'],
-  ohlcv_4h:    ['timestamp', 'date_iso', 'open', 'high', 'low', 'close', 'volume'],
-  ohlcv_1d:    ['timestamp', 'date_iso', 'open', 'high', 'low', 'close', 'volume'],
-  cot_bitcoin: ['timestamp', 'date_iso', 'open_interest', 'noncomm_long', 'noncomm_short', 'noncomm_spread', 'comm_long', 'comm_short', 'nonreportable_long', 'nonreportable_short'],
-  fear_greed:  ['timestamp', 'date_iso', 'value', 'classification'],
+  ohlcv_1h:          ['timestamp', 'date_iso', 'open', 'high', 'low', 'close', 'volume'],
+  ohlcv_4h:          ['timestamp', 'date_iso', 'open', 'high', 'low', 'close', 'volume'],
+  ohlcv_1d:          ['timestamp', 'date_iso', 'open', 'high', 'low', 'close', 'volume'],
+  cot_bitcoin:       ['timestamp', 'date_iso', 'open_interest', 'noncomm_long', 'noncomm_short', 'noncomm_spread', 'comm_long', 'comm_short', 'nonreportable_long', 'nonreportable_short'],
+  fear_greed:        ['timestamp', 'date_iso', 'value', 'classification'],
+  btc_dominance:     ['timestamp', 'date_iso', 'btc_dominance_pct'],
+  stablecoin_supply: ['timestamp', 'date_iso', 'usdt_market_cap', 'usdc_market_cap', 'total_stablecoin_cap'],
+  hashrate:          ['timestamp', 'date_iso', 'avg_hashrate'],
 };
 
 function filePath(key) {
@@ -68,11 +74,15 @@ function rowCount(key) {
   return Math.max(0, lines.length - 1);
 }
 
+function sleep(ms) {
+  return new Promise(res => setTimeout(res, ms));
+}
+
 async function fetchJson(url, attempt = 1) {
   const r = await fetch(url);
   if (!r.ok) {
     if (r.status === 429 && attempt <= 3) {
-      await new Promise(res => setTimeout(res, 1000 * attempt));
+      await sleep(1000 * attempt);
       return fetchJson(url, attempt + 1);
     }
     throw new Error(`${url} -> HTTP ${r.status}`);
@@ -80,4 +90,18 @@ async function fetchJson(url, attempt = 1) {
   return r.json();
 }
 
-module.exports = { DATA_DIR, FILES, HEADERS, filePath, ensureDataDir, lastTimestamp, writeCsv, appendCsv, rowCount, fetchJson };
+// CoinGecko's free tier rate-limits aggressively (~429 after a handful of calls in quick
+// succession) and the window is longer than a couple seconds — back off harder than fetchJson.
+async function fetchJsonPatient(url, attempt = 1) {
+  const r = await fetch(url);
+  if (!r.ok) {
+    if (r.status === 429 && attempt <= 5) {
+      await sleep(10000 * attempt);
+      return fetchJsonPatient(url, attempt + 1);
+    }
+    throw new Error(`${url} -> HTTP ${r.status}`);
+  }
+  return r.json();
+}
+
+module.exports = { DATA_DIR, FILES, HEADERS, filePath, ensureDataDir, lastTimestamp, writeCsv, appendCsv, rowCount, fetchJson, fetchJsonPatient, sleep };
