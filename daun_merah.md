@@ -65,15 +65,19 @@ Financial_Feed_App/
 │   ├── btc-backfill.js     # One-off: full historical backfill semua sumber BTC
 │   ├── btc-sync.js         # Incremental: append data baru saja, idempotent, jalan hourly
 │   └── lib/
-│       ├── btc-data.js     # CSV read/write/append helpers, fetchJson wrapper
-│       ├── btc-sources.js  # OHLCV (data-api.binance.vision) + Fear&Greed (alternative.me)
-│       └── cot-bitcoin.js  # CME Bitcoin futures COT (cftc.gov) — download via curl (lihat catatan)
+│       ├── btc-data.js       # CSV read/write/append helpers, fetchJson + fetchJsonPatient (429 backoff)
+│       ├── btc-sources.js    # OHLCV (data-api.binance.vision) + Fear&Greed (alternative.me)
+│       ├── cot-bitcoin.js    # CME Bitcoin futures COT (cftc.gov) — download via curl (lihat catatan)
+│       └── extra-sources.js  # BTC dominance, stablecoin supply (CoinGecko), hashrate (mempool.space)
 ├── data/btc/                # Dataset historis BTC (CSV), auto-update via GitHub Actions
-│   ├── ohlcv_1h.csv         # ~77k baris, sejak 2017-08-17
-│   ├── ohlcv_4h.csv         # ~19k baris, sejak 2017-08-17
-│   ├── ohlcv_1d.csv         # ~3.2k baris, sejak 2017-08-17
-│   ├── cot_bitcoin.csv      # ~430 baris mingguan, sejak 2018-04 (open interest + positioning CME)
-│   └── fear_greed.csv       # ~3k baris harian, sejak 2018-02
+│   ├── ohlcv_1h.csv          # ~77k baris, sejak 2017-08-17
+│   ├── ohlcv_4h.csv          # ~19k baris, sejak 2017-08-17
+│   ├── ohlcv_1d.csv          # ~3.2k baris, sejak 2017-08-17
+│   ├── cot_bitcoin.csv       # ~430 baris mingguan, sejak 2018-04 (open interest + positioning CME)
+│   ├── fear_greed.csv        # ~3k baris harian, sejak 2018-02
+│   ├── hashrate.csv          # ~6.4k baris harian, sejak 2009 (mempool.space, tanpa batasan)
+│   ├── stablecoin_supply.csv # 365 baris harian (USDT+USDC market cap) — CoinGecko free tier batasi histori max 365 hari
+│   └── btc_dominance.csv     # 1 baris/hari mulai sekarang — tidak ada histori gratis (CoinGecko Pro-only), akumulasi ke depan
 └── api/                    # TEPAT 12 serverless functions (Vercel Hobby limit)
     ├── _circuit_breaker.js # Self-healing: Redis-backed circuit breaker (CLOSED→OPEN→HALF_OPEN)
     ├── _push_keywords.js   # Keyword lists untuk detectPushCat() — edit di sini untuk update kategori
@@ -105,10 +109,13 @@ Financial_Feed_App/
 
 **Konteks:** Eksplorasi membangun model prediksi bias arah BTC sebagai pendukung narasi thesis (bukan sinyal trading mandiri — ekspektasi akurasi directional realistis 52-58%, bukan 70-80%). Fase ini fokus murni ke data collection; modeling belum dimulai.
 
-**Sumber data final (4 dataset, semua gratis):**
+**Sumber data final (7 dataset, semua gratis):**
 - **OHLCV spot BTC/USDT** (1h/4h/1d) — `data-api.binance.vision`, sejak 2017-08-17
 - **COT Bitcoin (CME futures)** — `cftc.gov`, open interest + positioning non-commercial/commercial, mingguan sejak 2018-04
 - **Fear & Greed Index** — `alternative.me`, harian sejak 2018-02
+- **Hash rate** — `mempool.space`, harian sejak 2009, tanpa batasan histori
+- **Stablecoin supply** (USDT+USDC market cap) — CoinGecko, harian, **dibatasi 365 hari ke belakang** (kebijakan free tier CoinGecko, bukan pilihan kita)
+- **BTC dominance** — CoinGecko `/global`, snapshot harian — **tidak ada histori gratis** (Pro-only), akumulasi mulai sekarang ke depan saja
 - **Funding rate (perpetual)** — di-drop, tidak ada sumber gratis yang tidak ter-geoblock
 - **Orderbook live** — di-skip, tidak relevan untuk horizon intraday-swing & tidak cocok arsitektur serverless
 
@@ -116,13 +123,15 @@ Financial_Feed_App/
 1. `api.binance.com` (spot) dan `fapi.binance.com` (futures) **return HTTP 451 dari GitHub Actions runner** — Binance membatasi akses derivatif dari IP US karena alasan regulasi (CFTC restricted location), bukan bug. Spot dipindah ke `data-api.binance.vision` (mirror resmi Binance, tidak ter-geoblock). Futures (funding rate + open interest) tidak ada workaround resmi → open interest diganti sumber **CFTC COT CME Bitcoin** (kode kontrak `133741`), funding rate didrop permanen.
 2. `cftc.gov` (untuk download zip historis COT) **403 di `fetch()` Node** (Cloudflare bot management, fingerprint TLS) tapi lolos via `curl` — download di `scripts/lib/cot-bitcoin.js` pakai `execFileSync('curl', ...)` bukan `fetch()`.
 3. Jam sistem lokal awalnya disangka salah (cert Binance "expired") — ternyata jam benar, masalahnya DNS ISP lokal redirect `api.binance.com` ke `aduankonten.id` (blokir Kominfo), beda dari masalah geoblock GitHub Actions di atas.
+4. CoinGecko free tier menolak query historis lebih dari 365 hari ke belakang (HTTP 401, `error_code: 10012`) — `stablecoin_supply` jadi terbatas 1 tahun, bukan full history sejak USDT/USDC listing.
+5. CoinGecko free tier rate-limit ketat (429 setelah beberapa request berturutan) — ditambahkan `fetchJsonPatient()` di `btc-data.js` dengan backoff lebih sabar (10s × attempt, max 5x) khusus untuk panggilan CoinGecko.
 
 **File baru:**
-- `scripts/btc-backfill.js`, `scripts/btc-sync.js`, `scripts/lib/{btc-data,btc-sources,cot-bitcoin}.js`
+- `scripts/btc-backfill.js`, `scripts/btc-sync.js`, `scripts/lib/{btc-data,btc-sources,cot-bitcoin,extra-sources}.js`
 - `.github/workflows/btc-backfill.yml` (workflow_dispatch, one-off) + `.github/workflows/btc-sync.yml` (cron hourly, auto-commit)
-- `data/btc/*.csv` — terisi penuh: OHLCV 1h (77.332 baris), 4h (19.349), 1d (3.228), COT (427), Fear&Greed (3.056)
+- `data/btc/*.csv` — terisi penuh: OHLCV 1h (77.332 baris), 4h (19.349), 1d (3.228), COT (427), Fear&Greed (3.056), hashrate (6.376), stablecoin_supply (365), btc_dominance (1, bertambah harian)
 
-**Verifikasi data:** 0 duplikat di semua dataset; gap minor di OHLCV 1h/4h (28 dan 8 gap, max 34 jam, tersebar 2017-2023, konsisten dengan downtime exchange di awal era Binance) — OHLCV 1d sempurna tanpa gap.
+**Verifikasi data:** 0 duplikat di semua dataset; gap minor di OHLCV 1h/4h (28 dan 8 gap, max 34 jam, tersebar 2017-2023, konsisten dengan downtime exchange di awal era Binance) — OHLCV 1d, hashrate, dan stablecoin_supply tanpa gap berarti.
 
 **Selanjutnya:** fase data analysis/feature engineering, lalu modeling (gradient boosting di atas fitur teknikal + COT + sentiment) — wajib evaluasi akurasi di test data sebelum dianggap selesai (bukan dipoles supaya kelihatan bagus kalau hasilnya jelek).
 
