@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-06-19 (session 71 — BTC: selesaikan integrasi DVOL yang sempat berhenti di tengah jalan, uji ketat via walk-forward CV + permutation test. Hasil jujur: DVOL TIDAK menambah AUC secara nyata — selisih jauh lebih kecil dari noise antar-fold. Volatility-regime AUC 0.633±0.0036 tetap hasil terbaik proyek ini, kemungkinan jadi plafon untuk pendekatan saat ini)
+> **Last updated:** 2026-06-19 (session 72 — BTC: EDA khusus target volatility-regime (belum pernah dicek sebelumnya), uji GARCH(1,1) + fear_greed extremity, mitigasi multikolinearitas pada fitur. Hasil jujur: GARCH & sentiment extremity TIDAK menambah AUC — GARCH ternyata 0.956 berkorelasi dengan fitur yang sudah ada (redundan, bukan info baru). AUC volatility-regime tetap ~0.63 setelah fitur dipangkas dari 25→19 (tidak ada cost). Bersama hasil DVOL session 71, ini menjawab tuntas permintaan user untuk push ke AUC 70% — secara struktural fitur rolling-window yang ada sudah menyerap hampir semua info yang bisa direcover dari histori harga BTC sendiri)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Financial_Feed_App`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -117,6 +117,29 @@ Financial_Feed_App/
 > **Penting:** `api/feeds.js` menggantikan `api/rss.js` dan `api/cot.js` yang sudah dihapus.
 > `api/admin.js` menggantikan `api/health.js`, `api/redis-keys.js`, `api/admin-prompts.js`, dan `api/push.js`.
 > Konsolidasi ini dilakukan untuk tetap di bawah limit 12 serverless functions Vercel Hobby.
+
+---
+
+## Changelog Session 72 (2026-06-19)
+
+### BTC: EDA Target Volatility-Regime, GARCH/Sentiment, Mitigasi Multikolinearitas
+
+**Konteks:** User minta dorong AUC volatility-regime ke 70% (dari baseline 0.633), dan minta cek ulang EDA/data-prep dulu sebelum nambah sumber data eksternal lagi — siapa tahu ada insight lebih murah daripada VIX/data baru.
+
+**1. EDA baru, khusus target volatility-regime (`ml/eda_volregime.py`)** — EDA lama (`eda.py`) ternyata ditulis untuk target arah harga (era sebelum vol-regime jadi andalan), belum pernah diprofilkan untuk target ini. Temuan:
+- Fitur non-vol (momentum/sentimen/COT) kontribusinya nyata: vol-only (3 fitur) AUC 0.58 (4h)/0.65 (1d) vs full set (25 fitur) 0.63/0.67.
+- `fear_greed` masuk top-5 feature importance RF di kedua timeframe.
+- ACF `realized_vol_6` sendiri decay pelan (lag1=0.91, lag6=0.43, lag20=0.35, lag60=0.21 di 4h) — ada memori volatilitas lebih panjang dari window 6/20 yang dipakai sekarang.
+- Garman-Klass/Rogers-Satchell estimator cuma beda tipis dari Parkinson yang sudah dipakai — tidak worth diganti.
+- Distribusi target per tahun fluktuasi besar (0.16-0.38) — sumber utama std antar-fold yang tinggi di CV 1d.
+
+**2. GARCH(1,1) + fear_greed extremity — diuji ketat, hasil: TIDAK membantu (`ml/vol_regime_garch.py`)** — Dua ide termotivasi temuan EDA di atas: GARCH(1,1) conditional volatility (model eksplisit untuk persistence, dimotivasi temuan ACF) dan `|fear_greed-50|` (capture sentimen ekstrem di kedua arah, dimotivasi feature importance). Diuji walk-forward CV dengan disiplin no-lookahead (parameter GARCH di-fit dari training fold saja, lalu di-filter dengan parameter beku ke seluruh series). Hasil RF 4h: baseline 0.6329±0.0034, +fear_greed_extreme 0.6322±0.0105, +GARCH 0.6333±0.0031, +both 0.6337±0.0079 — semua delta dalam rentang noise. **Akar masalah ditemukan:** GARCH conditional vol berkorelasi **0.956** dengan `realized_vol_20` yang sudah jadi fitur — bukan informasi baru, cuma menurunkan ulang info yang sudah ada di rolling window.
+
+**3. Mitigasi multikolinearitas pada fitur** — Dicek khusus untuk feature set vol-regime (16-21 pasang |corr|>0.7). Ditemukan 3 fitur vol-level yang dipakai saling redundan (realized_vol_6 ↔ parkinson_vol_mean_6 = 0.88, ↔ realized_vol_20 = 0.75-0.88) — efektif cuma ~1.5 sinyal independen, bukan 3 — ini penjelasan tambahan kenapa GARCH (mirip salah satunya) tidak nambah. Diimplementasikan: pangkas `ret_1`, `macd_signal`, `ema12_gt_ema26`, `cot_noncomm_long_pct`, `bb_pctb` dari `FEATURE_COLS` (`ml/train_models.py`) dan `realized_vol_6` dari `extra_cols` (`ml/volatility_regime.py`) — 25→19 fitur. Diverifikasi via walk-forward CV sebelum commit: tidak ada AUC cost (baseline baru 0.6302±0.0062 vs lama 0.633±0.0036, sama secara statistik), malah sedikit lebih stabil untuk Logistic Regression. Semua file hasil yang ter-commit (`model_comparison.json`, `cross_validation.json`, `regression_comparison.json`) diregenerate ulang dengan fitur yang sudah dipangkas supaya konsisten dengan kode — kesimpulan direction/regresi tidak berubah (tetap ~0.50-0.53 AUC, tetap R² negatif).
+
+**Kesimpulan untuk pertanyaan "bisa ke 70%?":** Sudah dijawab tuntas secara empiris (gabungan session 71 DVOL + session 72 ini). Tiga kandidat untuk push AUC di atas 0.63 — DVOL (data baru), GARCH (model lebih canggih), sentiment extremity (transformasi fitur) — semuanya dites dengan rigor walk-forward CV + permutation test, dan semuanya gagal. Ada penjelasan struktural kenapa: fitur rolling-window yang sudah ada sudah menyerap hampir semua informasi yang bisa direcover secara linear dari histori harga BTC sendiri. Untuk melewati 0.63 perlu sumber data yang genuinely baru (bukan derivasi dari OHLCV yang sudah ada) atau target/horizon yang fundamental berbeda — belum ada kandidat konkret saat ini.
+
+**File diupdate:** `ml/train_models.py`, `ml/volatility_regime.py`, `ml/STATUS.md`, `ml/results/REPORT.md`, `ml/results/model_comparison.json`, `ml/results/cross_validation.json`, `ml/results/regression_comparison.json`, `daun_merah_plan.md`. **File baru:** `ml/eda_volregime.py`, `ml/vol_regime_garch.py`.
 
 ---
 

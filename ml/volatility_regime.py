@@ -58,7 +58,11 @@ def build_dataset(timeframe, use_dvol=False):
     df["target_vol_regime"] = (forward_vol > rolling_threshold).astype(float)
     df.loc[forward_vol.isna() | rolling_threshold.isna(), "target_vol_regime"] = np.nan
 
-    extra_cols = ["realized_vol_6", "realized_vol_20", "parkinson_vol_mean_6"]
+    # realized_vol_6 excluded — corr 0.75-0.88 with realized_vol_20/parkinson_vol_mean_6 (the
+    # two it's most redundant with), and parkinson_vol_mean_6 alone carries far higher RF feature
+    # importance (eda_volregime.py: 0.18-0.13 vs realized_vol_6's 0.07-0.05) — same multi-
+    # collinearity mitigation as FEATURE_COLS in train_models.py.
+    extra_cols = ["realized_vol_20", "parkinson_vol_mean_6"]
     if use_dvol:
         extra_cols += ["dvol_close", "dvol_change_1"]
     cols = FEATURE_COLS + extra_cols

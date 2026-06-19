@@ -35,12 +35,23 @@ RESULTS_DIR.mkdir(exist_ok=True)
 # Excluded: timestamp/date/close (raw price level — non-stationary, would just encode "what year
 # is it") and stablecoin_total_cap / btc_dominance_pct (coverage too low across full history per
 # the feature-engineering phase notes — would force dropping most of the dataset).
+#
+# Also excluded (multicollinearity mitigation, ml/feature_diagnostics.py + ml/eda_volregime.py):
+# ret_1 (corr 1.00 with log_ret_1 — literal duplicate), macd_signal (corr 0.96 with macd, and
+# macd_hist already captures their differential), ema12_gt_ema26 (corr 0.70-0.72 with rsi_14,
+# and the weakest-importance feature in every importance ranking run so far, ~0.0005-0.001),
+# cot_noncomm_long_pct (corr 0.84 with cot_net_pct, which is the deliberately self-normalizing
+# version — see cot_net_pct's own comment in feature-engineering.js), bb_pctb (corr 0.71-0.88
+# with rsi_14/price_to_sma20/ret_6/ret_18 — the whole "is price extended" cluster — and the
+# lowest-importance member of that cluster). Verified via walk-forward CV before removing: no
+# AUC cost on the volatility-regime target (deltas within fold-to-fold noise, sometimes a small
+# improvement, particularly for Logistic Regression's coefficient stability).
 FEATURE_COLS = [
-    "ret_1", "ret_6", "ret_18", "log_ret_1", "volatility_z20", "rsi_14",
-    "macd", "macd_signal", "macd_hist", "atr_14", "bb_pctb",
-    "price_to_sma20", "sma20_gt_sma50", "ema12_gt_ema26",
+    "ret_6", "ret_18", "log_ret_1", "volatility_z20", "rsi_14",
+    "macd", "macd_hist", "atr_14",
+    "price_to_sma20", "sma20_gt_sma50",
     "volume_z20", "volume_change_pct",
-    "cot_open_interest_z", "cot_net_pct", "cot_noncomm_long_pct", "cot_net_change_1w",
+    "cot_open_interest_z", "cot_net_pct", "cot_net_change_1w",
     "fear_greed", "hashrate",
 ]
 

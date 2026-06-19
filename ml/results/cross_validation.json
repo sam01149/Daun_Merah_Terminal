@@ -3,281 +3,281 @@
     "folds": [
       {
         "fold": 1,
-        "train_end_date": "2020-09-12T12:00:00.000Z",
+        "train_end_date": "2020-09-12T16:00:00.000Z",
         "test_period": [
-          "2020-09-12T16:00:00.000Z",
-          "2022-02-20T12:00:00.000Z"
+          "2020-09-12T20:00:00.000Z",
+          "2022-02-20T20:00:00.000Z"
         ],
         "models": {
           "baseline_majority_class": {
-            "accuracy": 0.5396,
-            "precision": 0.5396,
+            "accuracy": 0.5394,
+            "precision": 0.5394,
             "recall": 1.0,
-            "f1": 0.701
+            "f1": 0.7008
           },
           "baseline_momentum_persistence": {
-            "accuracy": 0.4804,
+            "accuracy": 0.4805,
             "precision": 0.5192,
             "recall": 0.5003,
             "f1": 0.5096
           },
           "logistic_regression": {
-            "accuracy": 0.5124,
-            "precision": 0.6285,
-            "recall": 0.2355,
-            "f1": 0.3426,
-            "roc_auc": 0.554
+            "accuracy": 0.5106,
+            "precision": 0.633,
+            "recall": 0.2208,
+            "f1": 0.3274,
+            "roc_auc": 0.5549
           },
           "random_forest": {
-            "accuracy": 0.5349,
-            "precision": 0.5609,
-            "recall": 0.6353,
-            "f1": 0.5958,
-            "roc_auc": 0.54
+            "accuracy": 0.5369,
+            "precision": 0.5618,
+            "recall": 0.643,
+            "f1": 0.5997,
+            "roc_auc": 0.5435
           },
           "gradient_boosting": {
-            "accuracy": 0.5295,
-            "precision": 0.578,
-            "recall": 0.4745,
-            "f1": 0.5211,
-            "roc_auc": 0.5441
+            "accuracy": 0.5233,
+            "precision": 0.5719,
+            "recall": 0.4621,
+            "f1": 0.5112,
+            "roc_auc": 0.5403
           },
           "mlp_neural_net": {
-            "accuracy": 0.4971,
-            "precision": 0.625,
-            "recall": 0.1703,
-            "f1": 0.2677,
-            "roc_auc": 0.555
+            "accuracy": 0.4995,
+            "precision": 0.5382,
+            "recall": 0.5085,
+            "f1": 0.5229,
+            "roc_auc": 0.5132
           },
           "lstm": {
-            "accuracy": 0.4984,
-            "precision": 0.5324,
-            "recall": 0.5796,
-            "f1": 0.555,
-            "roc_auc": 0.5135
+            "accuracy": 0.5119,
+            "precision": 0.5572,
+            "recall": 0.4633,
+            "f1": 0.5059,
+            "roc_auc": 0.5104
           }
         }
       },
       {
         "fold": 2,
-        "train_end_date": "2022-02-20T12:00:00.000Z",
+        "train_end_date": "2022-02-20T20:00:00.000Z",
         "test_period": [
-          "2022-02-20T16:00:00.000Z",
-          "2023-07-31T12:00:00.000Z"
+          "2022-02-21T00:00:00.000Z",
+          "2023-08-01T00:00:00.000Z"
         ],
         "models": {
           "baseline_majority_class": {
-            "accuracy": 0.4883,
-            "precision": 0.4883,
+            "accuracy": 0.4891,
+            "precision": 0.4891,
             "recall": 1.0,
-            "f1": 0.6562
+            "f1": 0.6569
           },
           "baseline_momentum_persistence": {
-            "accuracy": 0.487,
-            "precision": 0.4758,
-            "recall": 0.4971,
-            "f1": 0.4862
+            "accuracy": 0.4869,
+            "precision": 0.4764,
+            "recall": 0.4968,
+            "f1": 0.4864
           },
           "logistic_regression": {
-            "accuracy": 0.5044,
-            "precision": 0.4912,
-            "recall": 0.4179,
-            "f1": 0.4516,
-            "roc_auc": 0.515
+            "accuracy": 0.5093,
+            "precision": 0.4982,
+            "recall": 0.4365,
+            "f1": 0.4653,
+            "roc_auc": 0.5231
           },
           "random_forest": {
-            "accuracy": 0.5431,
-            "precision": 0.5574,
-            "recall": 0.3121,
-            "f1": 0.4002,
-            "roc_auc": 0.5481
+            "accuracy": 0.5334,
+            "precision": 0.5585,
+            "recall": 0.2196,
+            "f1": 0.3152,
+            "roc_auc": 0.5391
           },
           "gradient_boosting": {
-            "accuracy": 0.5336,
-            "precision": 0.53,
-            "recall": 0.3952,
-            "f1": 0.4528,
-            "roc_auc": 0.532
+            "accuracy": 0.5157,
+            "precision": 0.5072,
+            "recall": 0.3433,
+            "f1": 0.4094,
+            "roc_auc": 0.526
           },
           "mlp_neural_net": {
-            "accuracy": 0.5215,
-            "precision": 0.5234,
-            "recall": 0.2245,
-            "f1": 0.3143,
-            "roc_auc": 0.5176
+            "accuracy": 0.5027,
+            "precision": 0.4583,
+            "recall": 0.0926,
+            "f1": 0.1541,
+            "roc_auc": 0.5003
           },
           "lstm": {
-            "accuracy": 0.5,
-            "precision": 0.4488,
-            "recall": 0.1051,
-            "f1": 0.1703,
-            "roc_auc": 0.4846
+            "accuracy": 0.49,
+            "precision": 0.4132,
+            "recall": 0.1017,
+            "f1": 0.1632,
+            "roc_auc": 0.5073
           }
         }
       },
       {
         "fold": 3,
-        "train_end_date": "2023-07-31T12:00:00.000Z",
+        "train_end_date": "2023-08-01T00:00:00.000Z",
         "test_period": [
-          "2023-07-31T16:00:00.000Z",
-          "2025-01-07T12:00:00.000Z"
+          "2023-08-01T04:00:00.000Z",
+          "2025-01-08T04:00:00.000Z"
         ],
         "models": {
           "baseline_majority_class": {
-            "accuracy": 0.5364,
-            "precision": 0.5364,
+            "accuracy": 0.5353,
+            "precision": 0.5353,
             "recall": 1.0,
-            "f1": 0.6983
+            "f1": 0.6973
           },
           "baseline_momentum_persistence": {
-            "accuracy": 0.4769,
-            "precision": 0.5128,
-            "recall": 0.4962,
-            "f1": 0.5044
+            "accuracy": 0.4774,
+            "precision": 0.5122,
+            "recall": 0.4964,
+            "f1": 0.5042
           },
           "logistic_regression": {
-            "accuracy": 0.474,
-            "precision": 0.5552,
-            "recall": 0.0981,
-            "f1": 0.1667,
-            "roc_auc": 0.5153
+            "accuracy": 0.4837,
+            "precision": 0.5909,
+            "recall": 0.1154,
+            "f1": 0.1931,
+            "roc_auc": 0.5055
           },
           "random_forest": {
-            "accuracy": 0.5038,
-            "precision": 0.5553,
-            "recall": 0.3768,
-            "f1": 0.449,
-            "roc_auc": 0.5227
+            "accuracy": 0.5046,
+            "precision": 0.5584,
+            "recall": 0.3562,
+            "f1": 0.435,
+            "roc_auc": 0.5183
           },
           "gradient_boosting": {
-            "accuracy": 0.5029,
-            "precision": 0.5507,
-            "recall": 0.3981,
-            "f1": 0.4621,
-            "roc_auc": 0.5155
+            "accuracy": 0.5055,
+            "precision": 0.5541,
+            "recall": 0.3911,
+            "f1": 0.4586,
+            "roc_auc": 0.5176
           },
           "mlp_neural_net": {
-            "accuracy": 0.4838,
-            "precision": 0.5618,
-            "recall": 0.1719,
-            "f1": 0.2632,
-            "roc_auc": 0.5124
+            "accuracy": 0.4859,
+            "precision": 0.5404,
+            "recall": 0.2651,
+            "f1": 0.3557,
+            "roc_auc": 0.4994
           },
           "lstm": {
-            "accuracy": 0.4968,
-            "precision": 0.5492,
-            "recall": 0.3461,
-            "f1": 0.4246,
-            "roc_auc": 0.4963
+            "accuracy": 0.4517,
+            "precision": 0.4582,
+            "recall": 0.1331,
+            "f1": 0.2063,
+            "roc_auc": 0.4834
           }
         }
       },
       {
         "fold": 4,
-        "train_end_date": "2025-01-07T12:00:00.000Z",
+        "train_end_date": "2025-01-08T04:00:00.000Z",
         "test_period": [
-          "2025-01-07T16:00:00.000Z",
-          "2026-06-17T16:00:00.000Z"
+          "2025-01-08T08:00:00.000Z",
+          "2026-06-18T12:00:00.000Z"
         ],
         "models": {
           "baseline_majority_class": {
-            "accuracy": 0.5046,
-            "precision": 0.5046,
+            "accuracy": 0.5047,
+            "precision": 0.5047,
             "recall": 1.0,
-            "f1": 0.6707
+            "f1": 0.6709
           },
           "baseline_momentum_persistence": {
-            "accuracy": 0.4945,
-            "precision": 0.4991,
-            "recall": 0.4947,
-            "f1": 0.4968
+            "accuracy": 0.494,
+            "precision": 0.4987,
+            "recall": 0.4944,
+            "f1": 0.4965
           },
           "logistic_regression": {
-            "accuracy": 0.5008,
-            "precision": 0.5039,
-            "recall": 0.6955,
-            "f1": 0.5844,
-            "roc_auc": 0.5286
+            "accuracy": 0.5032,
+            "precision": 0.5053,
+            "recall": 0.7453,
+            "f1": 0.6023,
+            "roc_auc": 0.5192
           },
           "random_forest": {
-            "accuracy": 0.504,
-            "precision": 0.5067,
-            "recall": 0.6365,
-            "f1": 0.5643,
-            "roc_auc": 0.5019
+            "accuracy": 0.4975,
+            "precision": 0.5017,
+            "recall": 0.6474,
+            "f1": 0.5653,
+            "roc_auc": 0.4969
           },
           "gradient_boosting": {
-            "accuracy": 0.5059,
-            "precision": 0.5069,
-            "recall": 0.7583,
-            "f1": 0.6076,
-            "roc_auc": 0.4965
+            "accuracy": 0.494,
+            "precision": 0.4992,
+            "recall": 0.771,
+            "f1": 0.606,
+            "roc_auc": 0.4895
           },
           "mlp_neural_net": {
-            "accuracy": 0.5122,
-            "precision": 0.5122,
-            "recall": 0.6968,
-            "f1": 0.5904,
-            "roc_auc": 0.4947
+            "accuracy": 0.5161,
+            "precision": 0.5124,
+            "recall": 0.8588,
+            "f1": 0.6418,
+            "roc_auc": 0.5211
           },
           "lstm": {
-            "accuracy": 0.4916,
-            "precision": 0.497,
-            "recall": 0.6183,
-            "f1": 0.551,
-            "roc_auc": 0.5005
+            "accuracy": 0.5019,
+            "precision": 0.5037,
+            "recall": 0.8921,
+            "f1": 0.6439,
+            "roc_auc": 0.5117
           }
         }
       }
     ],
     "summary": {
-      "random_forest": {
-        "mean_accuracy": 0.5214,
-        "std_accuracy": 0.0178,
-        "mean_auc": 0.5282,
-        "std_auc": 0.0177,
-        "n_folds": 4
-      },
-      "lstm": {
-        "mean_accuracy": 0.4967,
-        "std_accuracy": 0.0032,
-        "mean_auc": 0.4987,
-        "std_auc": 0.0103,
+      "gradient_boosting": {
+        "mean_accuracy": 0.5096,
+        "std_accuracy": 0.011,
+        "mean_auc": 0.5183,
+        "std_auc": 0.0185,
         "n_folds": 4
       },
       "baseline_majority_class": {
-        "mean_accuracy": 0.5172,
-        "std_accuracy": 0.0216,
+        "mean_accuracy": 0.5171,
+        "std_accuracy": 0.021,
+        "mean_auc": null,
+        "std_auc": null,
+        "n_folds": 4
+      },
+      "lstm": {
+        "mean_accuracy": 0.4889,
+        "std_accuracy": 0.0228,
+        "mean_auc": 0.5032,
+        "std_auc": 0.0115,
+        "n_folds": 4
+      },
+      "logistic_regression": {
+        "mean_accuracy": 0.5017,
+        "std_accuracy": 0.0108,
+        "mean_auc": 0.5257,
+        "std_auc": 0.0181,
+        "n_folds": 4
+      },
+      "random_forest": {
+        "mean_accuracy": 0.5181,
+        "std_accuracy": 0.0173,
+        "mean_auc": 0.5244,
+        "std_auc": 0.0185,
+        "n_folds": 4
+      },
+      "baseline_momentum_persistence": {
+        "mean_accuracy": 0.4847,
+        "std_accuracy": 0.0064,
         "mean_auc": null,
         "std_auc": null,
         "n_folds": 4
       },
       "mlp_neural_net": {
-        "mean_accuracy": 0.5036,
-        "std_accuracy": 0.0144,
-        "mean_auc": 0.5199,
-        "std_auc": 0.022,
-        "n_folds": 4
-      },
-      "gradient_boosting": {
-        "mean_accuracy": 0.518,
-        "std_accuracy": 0.0137,
-        "mean_auc": 0.522,
-        "std_auc": 0.0179,
-        "n_folds": 4
-      },
-      "baseline_momentum_persistence": {
-        "mean_accuracy": 0.4847,
-        "std_accuracy": 0.0067,
-        "mean_auc": null,
-        "std_auc": null,
-        "n_folds": 4
-      },
-      "logistic_regression": {
-        "mean_accuracy": 0.4979,
-        "std_accuracy": 0.0144,
-        "mean_auc": 0.5282,
-        "std_auc": 0.0159,
+        "mean_accuracy": 0.501,
+        "std_accuracy": 0.0107,
+        "mean_auc": 0.5085,
+        "std_auc": 0.0091,
         "n_folds": 4
       }
     }
@@ -286,281 +286,281 @@
     "folds": [
       {
         "fold": 1,
-        "train_end_date": "2020-09-12T00:00:00.000Z",
+        "train_end_date": "2020-09-12T04:00:00.000Z",
         "test_period": [
-          "2020-09-12T04:00:00.000Z",
-          "2022-02-19T12:00:00.000Z"
+          "2020-09-12T08:00:00.000Z",
+          "2022-02-19T20:00:00.000Z"
         ],
         "models": {
           "baseline_majority_class": {
-            "accuracy": 0.5598,
-            "precision": 0.5598,
+            "accuracy": 0.5593,
+            "precision": 0.5593,
             "recall": 1.0,
-            "f1": 0.7178
+            "f1": 0.7174
           },
           "baseline_momentum_persistence": {
-            "accuracy": 0.4964,
-            "precision": 0.5539,
-            "recall": 0.515,
-            "f1": 0.5338
+            "accuracy": 0.4959,
+            "precision": 0.553,
+            "recall": 0.5147,
+            "f1": 0.5332
           },
           "logistic_regression": {
-            "accuracy": 0.4792,
-            "precision": 0.722,
-            "recall": 0.1133,
-            "f1": 0.1959,
-            "roc_auc": 0.5303
+            "accuracy": 0.4629,
+            "precision": 0.7397,
+            "recall": 0.0612,
+            "f1": 0.1131,
+            "roc_auc": 0.5365
           },
           "random_forest": {
-            "accuracy": 0.5534,
-            "precision": 0.5731,
-            "recall": 0.7932,
-            "f1": 0.6654,
-            "roc_auc": 0.4902
+            "accuracy": 0.5663,
+            "precision": 0.5745,
+            "recall": 0.8651,
+            "f1": 0.6905,
+            "roc_auc": 0.503
           },
           "gradient_boosting": {
-            "accuracy": 0.5033,
-            "precision": 0.56,
-            "recall": 0.5263,
-            "f1": 0.5426,
-            "roc_auc": 0.4933
+            "accuracy": 0.5415,
+            "precision": 0.5675,
+            "recall": 0.7574,
+            "f1": 0.6489,
+            "roc_auc": 0.5047
           },
           "mlp_neural_net": {
-            "accuracy": 0.4859,
-            "precision": 0.5428,
-            "recall": 0.5178,
-            "f1": 0.53,
-            "roc_auc": 0.4526
+            "accuracy": 0.538,
+            "precision": 0.5518,
+            "recall": 0.9263,
+            "f1": 0.6916,
+            "roc_auc": 0.4119
           },
           "lstm": {
-            "accuracy": 0.483,
-            "precision": 0.5375,
-            "recall": 0.5484,
-            "f1": 0.5429,
-            "roc_auc": 0.4866
+            "accuracy": 0.5152,
+            "precision": 0.5535,
+            "recall": 0.6888,
+            "f1": 0.6138,
+            "roc_auc": 0.478
           }
         }
       },
       {
         "fold": 2,
-        "train_end_date": "2022-02-19T12:00:00.000Z",
+        "train_end_date": "2022-02-19T20:00:00.000Z",
         "test_period": [
-          "2022-02-19T16:00:00.000Z",
-          "2023-07-30T00:00:00.000Z"
+          "2022-02-20T00:00:00.000Z",
+          "2023-07-30T12:00:00.000Z"
         ],
         "models": {
           "baseline_majority_class": {
-            "accuracy": 0.4843,
-            "precision": 0.4843,
+            "accuracy": 0.4848,
+            "precision": 0.4848,
             "recall": 1.0,
-            "f1": 0.6526
+            "f1": 0.653
           },
           "baseline_momentum_persistence": {
-            "accuracy": 0.5002,
-            "precision": 0.4848,
-            "recall": 0.5102,
-            "f1": 0.4971
+            "accuracy": 0.5003,
+            "precision": 0.4854,
+            "recall": 0.5101,
+            "f1": 0.4974
           },
           "logistic_regression": {
-            "accuracy": 0.4979,
-            "precision": 0.4839,
-            "recall": 0.5514,
-            "f1": 0.5155,
-            "roc_auc": 0.5041
+            "accuracy": 0.4718,
+            "precision": 0.4592,
+            "recall": 0.5036,
+            "f1": 0.4803,
+            "roc_auc": 0.488
           },
           "random_forest": {
-            "accuracy": 0.5239,
-            "precision": 0.5106,
-            "recall": 0.4119,
-            "f1": 0.456,
-            "roc_auc": 0.5361
+            "accuracy": 0.5076,
+            "precision": 0.4795,
+            "recall": 0.1838,
+            "f1": 0.2657,
+            "roc_auc": 0.5291
           },
           "gradient_boosting": {
-            "accuracy": 0.5056,
-            "precision": 0.4875,
-            "recall": 0.408,
-            "f1": 0.4442,
-            "roc_auc": 0.5154
+            "accuracy": 0.5336,
+            "precision": 0.5172,
+            "recall": 0.5716,
+            "f1": 0.543,
+            "roc_auc": 0.534
           },
           "mlp_neural_net": {
-            "accuracy": 0.4964,
-            "precision": 0.4299,
-            "recall": 0.1225,
-            "f1": 0.1906,
-            "roc_auc": 0.5013
+            "accuracy": 0.4984,
+            "precision": 0.4077,
+            "recall": 0.0765,
+            "f1": 0.1289,
+            "roc_auc": 0.4909
           },
           "lstm": {
-            "accuracy": 0.5002,
-            "precision": 0.4657,
-            "recall": 0.2181,
-            "f1": 0.2971,
-            "roc_auc": 0.5072
+            "accuracy": 0.5063,
+            "precision": 0.466,
+            "recall": 0.1256,
+            "f1": 0.1978,
+            "roc_auc": 0.4982
           }
         }
       },
       {
         "fold": 3,
-        "train_end_date": "2023-07-30T00:00:00.000Z",
+        "train_end_date": "2023-07-30T12:00:00.000Z",
         "test_period": [
-          "2023-07-30T04:00:00.000Z",
-          "2025-01-05T12:00:00.000Z"
+          "2023-07-30T16:00:00.000Z",
+          "2025-01-06T04:00:00.000Z"
         ],
         "models": {
           "baseline_majority_class": {
-            "accuracy": 0.562,
-            "precision": 0.562,
+            "accuracy": 0.5612,
+            "precision": 0.5612,
             "recall": 1.0,
-            "f1": 0.7196
+            "f1": 0.7189
           },
           "baseline_momentum_persistence": {
-            "accuracy": 0.4998,
-            "precision": 0.5596,
+            "accuracy": 0.4994,
+            "precision": 0.5583,
             "recall": 0.5169,
-            "f1": 0.5374
+            "f1": 0.5368
           },
           "logistic_regression": {
-            "accuracy": 0.4786,
-            "precision": 0.6385,
-            "recall": 0.1665,
-            "f1": 0.2641,
-            "roc_auc": 0.504
+            "accuracy": 0.4547,
+            "precision": 0.5822,
+            "recall": 0.1,
+            "f1": 0.1707,
+            "roc_auc": 0.4999
           },
           "random_forest": {
-            "accuracy": 0.4656,
-            "precision": 0.551,
-            "recall": 0.2652,
-            "f1": 0.3581,
-            "roc_auc": 0.5066
+            "accuracy": 0.4588,
+            "precision": 0.5362,
+            "recall": 0.2638,
+            "f1": 0.3537,
+            "roc_auc": 0.5129
           },
           "gradient_boosting": {
-            "accuracy": 0.4675,
-            "precision": 0.5335,
-            "recall": 0.4176,
-            "f1": 0.4685,
-            "roc_auc": 0.4852
+            "accuracy": 0.4911,
+            "precision": 0.5696,
+            "recall": 0.3814,
+            "f1": 0.4569,
+            "roc_auc": 0.5092
           },
           "mlp_neural_net": {
-            "accuracy": 0.4577,
-            "precision": 0.5455,
-            "recall": 0.2099,
-            "f1": 0.3032,
-            "roc_auc": 0.5066
+            "accuracy": 0.4902,
+            "precision": 0.5618,
+            "recall": 0.4158,
+            "f1": 0.4779,
+            "roc_auc": 0.5007
           },
           "lstm": {
-            "accuracy": 0.5046,
-            "precision": 0.5618,
-            "recall": 0.5384,
-            "f1": 0.5499,
-            "roc_auc": 0.5022
+            "accuracy": 0.4927,
+            "precision": 0.5827,
+            "recall": 0.3384,
+            "f1": 0.4282,
+            "roc_auc": 0.5391
           }
         }
       },
       {
         "fold": 4,
-        "train_end_date": "2025-01-05T12:00:00.000Z",
+        "train_end_date": "2025-01-06T04:00:00.000Z",
         "test_period": [
-          "2025-01-05T16:00:00.000Z",
-          "2026-06-15T16:00:00.000Z"
+          "2025-01-06T08:00:00.000Z",
+          "2026-06-16T12:00:00.000Z"
         ],
         "models": {
           "baseline_majority_class": {
-            "accuracy": 0.5043,
-            "precision": 0.5043,
+            "accuracy": 0.5041,
+            "precision": 0.5041,
             "recall": 1.0,
-            "f1": 0.6705
+            "f1": 0.6703
           },
           "baseline_momentum_persistence": {
-            "accuracy": 0.4935,
-            "precision": 0.4978,
+            "accuracy": 0.4943,
+            "precision": 0.4984,
             "recall": 0.4943,
-            "f1": 0.4961
+            "f1": 0.4964
           },
           "logistic_regression": {
-            "accuracy": 0.4989,
-            "precision": 0.5019,
-            "recall": 0.8254,
-            "f1": 0.6242,
-            "roc_auc": 0.5109
+            "accuracy": 0.5092,
+            "precision": 0.507,
+            "recall": 0.9573,
+            "f1": 0.6629,
+            "roc_auc": 0.4817
           },
           "random_forest": {
-            "accuracy": 0.4815,
-            "precision": 0.4886,
-            "recall": 0.6062,
-            "f1": 0.5411,
-            "roc_auc": 0.4634
+            "accuracy": 0.4813,
+            "precision": 0.4882,
+            "recall": 0.5961,
+            "f1": 0.5368,
+            "roc_auc": 0.4615
           },
           "gradient_boosting": {
-            "accuracy": 0.4929,
-            "precision": 0.4984,
-            "recall": 0.8863,
-            "f1": 0.638,
-            "roc_auc": 0.4627
+            "accuracy": 0.4921,
+            "precision": 0.4977,
+            "recall": 0.816,
+            "f1": 0.6183,
+            "roc_auc": 0.4743
           },
           "mlp_neural_net": {
-            "accuracy": 0.5043,
-            "precision": 0.5048,
-            "recall": 0.8844,
-            "f1": 0.6428,
-            "roc_auc": 0.4899
+            "accuracy": 0.5228,
+            "precision": 0.517,
+            "recall": 0.8109,
+            "f1": 0.6315,
+            "roc_auc": 0.5014
           },
           "lstm": {
-            "accuracy": 0.5021,
-            "precision": 0.5035,
-            "recall": 0.9152,
-            "f1": 0.6496,
-            "roc_auc": 0.4956
+            "accuracy": 0.5032,
+            "precision": 0.5038,
+            "recall": 0.9585,
+            "f1": 0.6605,
+            "roc_auc": 0.4674
           }
         }
       }
     ],
     "summary": {
-      "random_forest": {
-        "mean_accuracy": 0.5061,
-        "std_accuracy": 0.0346,
-        "mean_auc": 0.4991,
-        "std_auc": 0.0264,
-        "n_folds": 4
-      },
-      "lstm": {
-        "mean_accuracy": 0.4975,
-        "std_accuracy": 0.0085,
-        "mean_auc": 0.4979,
-        "std_auc": 0.0077,
+      "gradient_boosting": {
+        "mean_accuracy": 0.5146,
+        "std_accuracy": 0.0231,
+        "mean_auc": 0.5055,
+        "std_auc": 0.0212,
         "n_folds": 4
       },
       "baseline_majority_class": {
-        "mean_accuracy": 0.5276,
-        "std_accuracy": 0.0341,
+        "mean_accuracy": 0.5273,
+        "std_accuracy": 0.0336,
+        "mean_auc": null,
+        "std_auc": null,
+        "n_folds": 4
+      },
+      "lstm": {
+        "mean_accuracy": 0.5044,
+        "std_accuracy": 0.008,
+        "mean_auc": 0.4957,
+        "std_auc": 0.0274,
+        "n_folds": 4
+      },
+      "logistic_regression": {
+        "mean_accuracy": 0.4747,
+        "std_accuracy": 0.0208,
+        "mean_auc": 0.5015,
+        "std_auc": 0.0212,
+        "n_folds": 4
+      },
+      "random_forest": {
+        "mean_accuracy": 0.5035,
+        "std_accuracy": 0.0402,
+        "mean_auc": 0.5016,
+        "std_auc": 0.025,
+        "n_folds": 4
+      },
+      "baseline_momentum_persistence": {
+        "mean_accuracy": 0.4975,
+        "std_accuracy": 0.0025,
         "mean_auc": null,
         "std_auc": null,
         "n_folds": 4
       },
       "mlp_neural_net": {
-        "mean_accuracy": 0.4861,
-        "std_accuracy": 0.0176,
-        "mean_auc": 0.4876,
-        "std_auc": 0.0211,
-        "n_folds": 4
-      },
-      "gradient_boosting": {
-        "mean_accuracy": 0.4923,
-        "std_accuracy": 0.0151,
-        "mean_auc": 0.4891,
-        "std_auc": 0.0189,
-        "n_folds": 4
-      },
-      "baseline_momentum_persistence": {
-        "mean_accuracy": 0.4975,
-        "std_accuracy": 0.0027,
-        "mean_auc": null,
-        "std_auc": null,
-        "n_folds": 4
-      },
-      "logistic_regression": {
-        "mean_accuracy": 0.4887,
-        "std_accuracy": 0.0098,
-        "mean_auc": 0.5123,
-        "std_auc": 0.0107,
+        "mean_accuracy": 0.5123,
+        "std_accuracy": 0.0191,
+        "mean_auc": 0.4762,
+        "std_auc": 0.0374,
         "n_folds": 4
       }
     }
@@ -588,39 +588,39 @@
             "f1": 0.5448
           },
           "logistic_regression": {
-            "accuracy": 0.4381,
-            "precision": 0.5354,
-            "recall": 0.1755,
-            "f1": 0.2643,
-            "roc_auc": 0.487
+            "accuracy": 0.4267,
+            "precision": 0.5052,
+            "recall": 0.1623,
+            "f1": 0.2456,
+            "roc_auc": 0.4857
           },
           "random_forest": {
-            "accuracy": 0.4838,
-            "precision": 0.5665,
-            "recall": 0.4371,
-            "f1": 0.4935,
-            "roc_auc": 0.492
+            "accuracy": 0.4952,
+            "precision": 0.5801,
+            "recall": 0.4437,
+            "f1": 0.5028,
+            "roc_auc": 0.5179
           },
           "gradient_boosting": {
-            "accuracy": 0.499,
-            "precision": 0.614,
-            "recall": 0.3477,
-            "f1": 0.444,
-            "roc_auc": 0.5087
+            "accuracy": 0.4895,
+            "precision": 0.6118,
+            "recall": 0.3079,
+            "f1": 0.4097,
+            "roc_auc": 0.5325
           },
           "mlp_neural_net": {
-            "accuracy": 0.4781,
-            "precision": 0.5673,
-            "recall": 0.3907,
-            "f1": 0.4627,
-            "roc_auc": 0.5054
+            "accuracy": 0.4019,
+            "precision": 0.4681,
+            "recall": 0.2914,
+            "f1": 0.3592,
+            "roc_auc": 0.435
           },
           "lstm": {
-            "accuracy": 0.4095,
-            "precision": 0.4792,
-            "recall": 0.3046,
-            "f1": 0.3725,
-            "roc_auc": 0.4256
+            "accuracy": 0.4152,
+            "precision": 0.4818,
+            "recall": 0.2185,
+            "f1": 0.3007,
+            "roc_auc": 0.4249
           }
         }
       },
@@ -645,39 +645,39 @@
             "f1": 0.4479
           },
           "logistic_regression": {
-            "accuracy": 0.4743,
-            "precision": 0.4667,
-            "recall": 0.346,
-            "f1": 0.3974,
-            "roc_auc": 0.4688
+            "accuracy": 0.48,
+            "precision": 0.4769,
+            "recall": 0.3916,
+            "f1": 0.4301,
+            "roc_auc": 0.4696
           },
           "random_forest": {
-            "accuracy": 0.5524,
-            "precision": 0.5814,
-            "recall": 0.3802,
-            "f1": 0.4598,
-            "roc_auc": 0.5248
+            "accuracy": 0.5086,
+            "precision": 0.52,
+            "recall": 0.2471,
+            "f1": 0.3351,
+            "roc_auc": 0.5213
           },
           "gradient_boosting": {
-            "accuracy": 0.5124,
-            "precision": 0.5229,
-            "recall": 0.3042,
-            "f1": 0.3846,
-            "roc_auc": 0.544
+            "accuracy": 0.4914,
+            "precision": 0.4808,
+            "recall": 0.1901,
+            "f1": 0.2725,
+            "roc_auc": 0.515
           },
           "mlp_neural_net": {
-            "accuracy": 0.48,
-            "precision": 0.4691,
-            "recall": 0.289,
-            "f1": 0.3576,
-            "roc_auc": 0.4705
+            "accuracy": 0.4838,
+            "precision": 0.4231,
+            "recall": 0.0837,
+            "f1": 0.1397,
+            "roc_auc": 0.4854
           },
           "lstm": {
-            "accuracy": 0.5181,
-            "precision": 0.6042,
-            "recall": 0.1103,
-            "f1": 0.1865,
-            "roc_auc": 0.5048
+            "accuracy": 0.5067,
+            "precision": 0.5357,
+            "recall": 0.1141,
+            "f1": 0.1881,
+            "roc_auc": 0.5252
           }
         }
       },
@@ -702,39 +702,39 @@
             "f1": 0.5329
           },
           "logistic_regression": {
-            "accuracy": 0.5181,
-            "precision": 0.6389,
-            "recall": 0.3795,
-            "f1": 0.4762,
-            "roc_auc": 0.6008
+            "accuracy": 0.5371,
+            "precision": 0.6316,
+            "recall": 0.4752,
+            "f1": 0.5424,
+            "roc_auc": 0.5628
           },
           "random_forest": {
-            "accuracy": 0.5352,
-            "precision": 0.6561,
-            "recall": 0.4092,
-            "f1": 0.5041,
-            "roc_auc": 0.5385
+            "accuracy": 0.5238,
+            "precision": 0.6497,
+            "recall": 0.3795,
+            "f1": 0.4792,
+            "roc_auc": 0.5366
           },
           "gradient_boosting": {
-            "accuracy": 0.5029,
-            "precision": 0.5991,
-            "recall": 0.4191,
-            "f1": 0.4932,
-            "roc_auc": 0.5334
+            "accuracy": 0.4971,
+            "precision": 0.597,
+            "recall": 0.396,
+            "f1": 0.4762,
+            "roc_auc": 0.5246
           },
           "mlp_neural_net": {
-            "accuracy": 0.5276,
-            "precision": 0.619,
-            "recall": 0.4719,
-            "f1": 0.5356,
-            "roc_auc": 0.5402
+            "accuracy": 0.4457,
+            "precision": 0.7308,
+            "recall": 0.0627,
+            "f1": 0.1155,
+            "roc_auc": 0.5404
           },
           "lstm": {
-            "accuracy": 0.5238,
-            "precision": 0.6606,
+            "accuracy": 0.501,
+            "precision": 0.6158,
             "recall": 0.3597,
-            "f1": 0.4658,
-            "roc_auc": 0.5603
+            "f1": 0.4542,
+            "roc_auc": 0.5821
           }
         }
       },
@@ -743,107 +743,107 @@
         "train_end_date": "2025-01-02T00:00:00.000Z",
         "test_period": [
           "2025-01-03T00:00:00.000Z",
-          "2026-06-12T00:00:00.000Z"
+          "2026-06-13T00:00:00.000Z"
         ],
         "models": {
           "baseline_majority_class": {
-            "accuracy": 0.4867,
-            "precision": 0.4867,
+            "accuracy": 0.4858,
+            "precision": 0.4858,
             "recall": 1.0,
-            "f1": 0.6547
+            "f1": 0.6539
           },
           "baseline_momentum_persistence": {
-            "accuracy": 0.4829,
-            "precision": 0.4688,
+            "accuracy": 0.482,
+            "precision": 0.4669,
             "recall": 0.4688,
-            "f1": 0.4688
+            "f1": 0.4678
           },
           "logistic_regression": {
-            "accuracy": 0.4981,
-            "precision": 0.4917,
-            "recall": 0.9219,
-            "f1": 0.6413,
-            "roc_auc": 0.4965
+            "accuracy": 0.4877,
+            "precision": 0.4863,
+            "recall": 0.9727,
+            "f1": 0.6484,
+            "roc_auc": 0.4794
           },
           "random_forest": {
-            "accuracy": 0.4734,
-            "precision": 0.4761,
-            "recall": 0.8164,
-            "f1": 0.6014,
-            "roc_auc": 0.4984
+            "accuracy": 0.4687,
+            "precision": 0.4707,
+            "recall": 0.7539,
+            "f1": 0.5796,
+            "roc_auc": 0.4923
           },
           "gradient_boosting": {
-            "accuracy": 0.4753,
-            "precision": 0.474,
-            "recall": 0.7109,
-            "f1": 0.5687,
-            "roc_auc": 0.5099
+            "accuracy": 0.4915,
+            "precision": 0.4854,
+            "recall": 0.7812,
+            "f1": 0.5988,
+            "roc_auc": 0.5012
           },
           "mlp_neural_net": {
-            "accuracy": 0.4829,
-            "precision": 0.468,
-            "recall": 0.457,
-            "f1": 0.4625,
-            "roc_auc": 0.4839
+            "accuracy": 0.4877,
+            "precision": 0.4863,
+            "recall": 0.9688,
+            "f1": 0.6475,
+            "roc_auc": 0.4915
           },
           "lstm": {
-            "accuracy": 0.4962,
-            "precision": 0.4909,
-            "recall": 0.9531,
-            "f1": 0.6481,
-            "roc_auc": 0.4593
+            "accuracy": 0.5085,
+            "precision": 0.497,
+            "recall": 0.9727,
+            "f1": 0.6579,
+            "roc_auc": 0.5268
           }
         }
       }
     ],
     "summary": {
-      "random_forest": {
-        "mean_accuracy": 0.5112,
-        "std_accuracy": 0.0334,
-        "mean_auc": 0.5134,
-        "std_auc": 0.019,
-        "n_folds": 4
-      },
-      "lstm": {
-        "mean_accuracy": 0.4869,
-        "std_accuracy": 0.0459,
-        "mean_auc": 0.4875,
-        "std_auc": 0.0506,
+      "gradient_boosting": {
+        "mean_accuracy": 0.4924,
+        "std_accuracy": 0.0028,
+        "mean_auc": 0.5183,
+        "std_auc": 0.0117,
         "n_folds": 4
       },
       "baseline_majority_class": {
-        "mean_accuracy": 0.535,
-        "std_accuracy": 0.0415,
+        "mean_accuracy": 0.5348,
+        "std_accuracy": 0.0417,
         "mean_auc": null,
         "std_auc": null,
         "n_folds": 4
       },
-      "mlp_neural_net": {
-        "mean_accuracy": 0.4921,
-        "std_accuracy": 0.0205,
-        "mean_auc": 0.5,
-        "std_auc": 0.0263,
+      "lstm": {
+        "mean_accuracy": 0.4829,
+        "std_accuracy": 0.0392,
+        "mean_auc": 0.5148,
+        "std_auc": 0.0567,
         "n_folds": 4
       },
-      "gradient_boosting": {
-        "mean_accuracy": 0.4974,
-        "std_accuracy": 0.0137,
-        "mean_auc": 0.524,
-        "std_auc": 0.0152,
+      "logistic_regression": {
+        "mean_accuracy": 0.4829,
+        "std_accuracy": 0.0391,
+        "mean_auc": 0.4994,
+        "std_auc": 0.0371,
+        "n_folds": 4
+      },
+      "random_forest": {
+        "mean_accuracy": 0.4991,
+        "std_accuracy": 0.0202,
+        "mean_auc": 0.517,
+        "std_auc": 0.0159,
         "n_folds": 4
       },
       "baseline_momentum_persistence": {
-        "mean_accuracy": 0.4826,
+        "mean_accuracy": 0.4824,
         "std_accuracy": 0.0116,
         "mean_auc": null,
         "std_auc": null,
         "n_folds": 4
       },
-      "logistic_regression": {
-        "mean_accuracy": 0.4821,
-        "std_accuracy": 0.0298,
-        "mean_auc": 0.5133,
-        "std_auc": 0.0515,
+      "mlp_neural_net": {
+        "mean_accuracy": 0.4548,
+        "std_accuracy": 0.0347,
+        "mean_auc": 0.4881,
+        "std_auc": 0.0373,
         "n_folds": 4
       }
     }
@@ -852,281 +852,281 @@
     "folds": [
       {
         "fold": 1,
-        "train_end_date": "2020-09-07T00:00:00.000Z",
+        "train_end_date": "2020-09-08T00:00:00.000Z",
         "test_period": [
-          "2020-09-08T00:00:00.000Z",
-          "2022-02-11T00:00:00.000Z"
+          "2020-09-09T00:00:00.000Z",
+          "2022-02-13T00:00:00.000Z"
         ],
         "models": {
           "baseline_majority_class": {
-            "accuracy": 0.5651,
-            "precision": 0.5651,
+            "accuracy": 0.566,
+            "precision": 0.566,
             "recall": 1.0,
-            "f1": 0.7222
+            "f1": 0.7228
           },
           "baseline_momentum_persistence": {
-            "accuracy": 0.4923,
+            "accuracy": 0.4914,
             "precision": 0.554,
-            "recall": 0.522,
-            "f1": 0.5375
+            "recall": 0.5203,
+            "f1": 0.5366
           },
           "logistic_regression": {
-            "accuracy": 0.4195,
-            "precision": 0.4375,
-            "recall": 0.0949,
-            "f1": 0.156,
-            "roc_auc": 0.4985
+            "accuracy": 0.3996,
+            "precision": 0.4043,
+            "recall": 0.1284,
+            "f1": 0.1949,
+            "roc_auc": 0.4721
           },
           "random_forest": {
-            "accuracy": 0.4425,
-            "precision": 0.5069,
-            "recall": 0.4949,
-            "f1": 0.5009,
-            "roc_auc": 0.4243
+            "accuracy": 0.478,
+            "precision": 0.537,
+            "recall": 0.5642,
+            "f1": 0.5502,
+            "roc_auc": 0.4463
           },
           "gradient_boosting": {
-            "accuracy": 0.3966,
-            "precision": 0.4558,
-            "recall": 0.3492,
-            "f1": 0.3954,
-            "roc_auc": 0.4254
+            "accuracy": 0.4455,
+            "precision": 0.514,
+            "recall": 0.3716,
+            "f1": 0.4314,
+            "roc_auc": 0.4575
           },
           "mlp_neural_net": {
-            "accuracy": 0.4176,
-            "precision": 0.4751,
-            "recall": 0.2915,
-            "f1": 0.3613,
-            "roc_auc": 0.4455
+            "accuracy": 0.4359,
+            "precision": 0.5029,
+            "recall": 0.2905,
+            "f1": 0.3683,
+            "roc_auc": 0.4705
           },
           "lstm": {
-            "accuracy": 0.41,
-            "precision": 0.4526,
-            "recall": 0.2102,
-            "f1": 0.287,
-            "roc_auc": 0.3541
+            "accuracy": 0.4379,
+            "precision": 0.5053,
+            "recall": 0.3243,
+            "f1": 0.3951,
+            "roc_auc": 0.3335
           }
         }
       },
       {
         "fold": 2,
-        "train_end_date": "2022-02-11T00:00:00.000Z",
+        "train_end_date": "2022-02-13T00:00:00.000Z",
         "test_period": [
-          "2022-02-12T00:00:00.000Z",
-          "2023-07-18T00:00:00.000Z"
+          "2022-02-14T00:00:00.000Z",
+          "2023-07-21T00:00:00.000Z"
         ],
         "models": {
           "baseline_majority_class": {
-            "accuracy": 0.4693,
-            "precision": 0.4693,
+            "accuracy": 0.4646,
+            "precision": 0.4646,
             "recall": 1.0,
-            "f1": 0.6389
+            "f1": 0.6345
           },
           "baseline_momentum_persistence": {
-            "accuracy": 0.4559,
-            "precision": 0.4198,
-            "recall": 0.4163,
+            "accuracy": 0.457,
+            "precision": 0.4163,
+            "recall": 0.4198,
             "f1": 0.418
           },
           "logistic_regression": {
-            "accuracy": 0.4674,
-            "precision": 0.4332,
-            "recall": 0.4367,
-            "f1": 0.435,
-            "roc_auc": 0.4582
+            "accuracy": 0.4417,
+            "precision": 0.4197,
+            "recall": 0.5267,
+            "f1": 0.4672,
+            "roc_auc": 0.4519
           },
           "random_forest": {
-            "accuracy": 0.5498,
-            "precision": 1.0,
-            "recall": 0.0408,
-            "f1": 0.0784,
-            "roc_auc": 0.4979
+            "accuracy": 0.5564,
+            "precision": 0.8667,
+            "recall": 0.0535,
+            "f1": 0.1008,
+            "roc_auc": 0.5134
           },
           "gradient_boosting": {
-            "accuracy": 0.546,
-            "precision": 0.55,
-            "recall": 0.1796,
-            "f1": 0.2708,
-            "roc_auc": 0.5496
+            "accuracy": 0.5296,
+            "precision": 0.4889,
+            "recall": 0.2716,
+            "f1": 0.3492,
+            "roc_auc": 0.5526
           },
           "mlp_neural_net": {
-            "accuracy": 0.5057,
-            "precision": 0.4575,
-            "recall": 0.2857,
-            "f1": 0.3518,
-            "roc_auc": 0.4877
+            "accuracy": 0.5373,
+            "precision": 1.0,
+            "recall": 0.0041,
+            "f1": 0.0082,
+            "roc_auc": 0.4878
           },
           "lstm": {
-            "accuracy": 0.4943,
-            "precision": 0.4371,
-            "recall": 0.2694,
-            "f1": 0.3333,
-            "roc_auc": 0.5839
+            "accuracy": 0.5105,
+            "precision": 0.473,
+            "recall": 0.4691,
+            "f1": 0.4711,
+            "roc_auc": 0.5246
           }
         }
       },
       {
         "fold": 3,
-        "train_end_date": "2023-07-18T00:00:00.000Z",
+        "train_end_date": "2023-07-21T00:00:00.000Z",
         "test_period": [
-          "2023-07-19T00:00:00.000Z",
-          "2024-12-21T00:00:00.000Z"
+          "2023-07-22T00:00:00.000Z",
+          "2024-12-25T00:00:00.000Z"
         ],
         "models": {
           "baseline_majority_class": {
-            "accuracy": 0.6245,
-            "precision": 0.6245,
+            "accuracy": 0.6233,
+            "precision": 0.6233,
             "recall": 1.0,
-            "f1": 0.7689
+            "f1": 0.768
           },
           "baseline_momentum_persistence": {
-            "accuracy": 0.5057,
+            "accuracy": 0.5067,
             "precision": 0.6241,
             "recall": 0.5245,
             "f1": 0.57
           },
           "logistic_regression": {
-            "accuracy": 0.3678,
-            "precision": 0.4231,
-            "recall": 0.0337,
-            "f1": 0.0625,
-            "roc_auc": 0.6401
+            "accuracy": 0.392,
+            "precision": 0.7222,
+            "recall": 0.0399,
+            "f1": 0.0756,
+            "roc_auc": 0.6634
           },
           "random_forest": {
-            "accuracy": 0.3697,
-            "precision": 0.4717,
-            "recall": 0.0767,
-            "f1": 0.1319,
-            "roc_auc": 0.5141
+            "accuracy": 0.3977,
+            "precision": 0.6222,
+            "recall": 0.0859,
+            "f1": 0.1509,
+            "roc_auc": 0.521
           },
           "gradient_boosting": {
-            "accuracy": 0.3908,
-            "precision": 0.6053,
-            "recall": 0.0706,
-            "f1": 0.1264,
-            "roc_auc": 0.4809
+            "accuracy": 0.392,
+            "precision": 0.6538,
+            "recall": 0.0521,
+            "f1": 0.0966,
+            "roc_auc": 0.4654
           },
           "mlp_neural_net": {
-            "accuracy": 0.4847,
-            "precision": 0.705,
-            "recall": 0.3006,
-            "f1": 0.4215,
-            "roc_auc": 0.5579
+            "accuracy": 0.369,
+            "precision": 0.4167,
+            "recall": 0.0307,
+            "f1": 0.0571,
+            "roc_auc": 0.6123
           },
           "lstm": {
-            "accuracy": 0.3448,
-            "precision": 0.3333,
-            "recall": 0.0491,
-            "f1": 0.0856,
-            "roc_auc": 0.4688
+            "accuracy": 0.3595,
+            "precision": 0.2632,
+            "recall": 0.0153,
+            "f1": 0.029,
+            "roc_auc": 0.6277
           }
         }
       },
       {
         "fold": 4,
-        "train_end_date": "2024-12-21T00:00:00.000Z",
+        "train_end_date": "2024-12-25T00:00:00.000Z",
         "test_period": [
-          "2024-12-22T00:00:00.000Z",
-          "2026-05-31T00:00:00.000Z"
+          "2024-12-26T00:00:00.000Z",
+          "2026-06-01T00:00:00.000Z"
         ],
         "models": {
           "baseline_majority_class": {
-            "accuracy": 0.4639,
-            "precision": 0.4639,
+            "accuracy": 0.4665,
+            "precision": 0.4665,
             "recall": 1.0,
-            "f1": 0.6338
+            "f1": 0.6362
           },
           "baseline_momentum_persistence": {
-            "accuracy": 0.4791,
-            "precision": 0.4423,
+            "accuracy": 0.4799,
+            "precision": 0.4457,
             "recall": 0.4713,
-            "f1": 0.4563
+            "f1": 0.4582
           },
           "logistic_regression": {
-            "accuracy": 0.5152,
-            "precision": 0.4879,
-            "recall": 0.9098,
-            "f1": 0.6352,
-            "roc_auc": 0.5065
+            "accuracy": 0.5105,
+            "precision": 0.487,
+            "recall": 0.918,
+            "f1": 0.6364,
+            "roc_auc": 0.5293
           },
           "random_forest": {
-            "accuracy": 0.5152,
-            "precision": 0.4853,
-            "recall": 0.7418,
-            "f1": 0.5867,
-            "roc_auc": 0.5247
+            "accuracy": 0.4895,
+            "precision": 0.4669,
+            "recall": 0.6639,
+            "f1": 0.5482,
+            "roc_auc": 0.5429
           },
           "gradient_boosting": {
-            "accuracy": 0.5019,
-            "precision": 0.4755,
-            "recall": 0.7172,
-            "f1": 0.5719,
-            "roc_auc": 0.526
+            "accuracy": 0.4723,
+            "precision": 0.4538,
+            "recall": 0.6434,
+            "f1": 0.5322,
+            "roc_auc": 0.5264
           },
           "mlp_neural_net": {
-            "accuracy": 0.4905,
-            "precision": 0.4746,
-            "recall": 0.918,
-            "f1": 0.6257,
-            "roc_auc": 0.522
+            "accuracy": 0.4857,
+            "precision": 0.4724,
+            "recall": 0.877,
+            "f1": 0.6141,
+            "roc_auc": 0.4988
           },
           "lstm": {
-            "accuracy": 0.4981,
-            "precision": 0.4764,
-            "recall": 0.8279,
-            "f1": 0.6048,
-            "roc_auc": 0.5178
+            "accuracy": 0.4704,
+            "precision": 0.4641,
+            "recall": 0.873,
+            "f1": 0.606,
+            "roc_auc": 0.5078
           }
         }
       }
     ],
     "summary": {
-      "random_forest": {
-        "mean_accuracy": 0.4693,
-        "std_accuracy": 0.0693,
-        "mean_auc": 0.4903,
-        "std_auc": 0.0393,
-        "n_folds": 4
-      },
-      "lstm": {
-        "mean_accuracy": 0.4368,
-        "std_accuracy": 0.0637,
-        "mean_auc": 0.4812,
-        "std_auc": 0.084,
+      "gradient_boosting": {
+        "mean_accuracy": 0.4598,
+        "std_accuracy": 0.0496,
+        "mean_auc": 0.5005,
+        "std_auc": 0.0402,
         "n_folds": 4
       },
       "baseline_majority_class": {
-        "mean_accuracy": 0.5307,
-        "std_accuracy": 0.0675,
+        "mean_accuracy": 0.5301,
+        "std_accuracy": 0.0677,
+        "mean_auc": null,
+        "std_auc": null,
+        "n_folds": 4
+      },
+      "lstm": {
+        "mean_accuracy": 0.4446,
+        "std_accuracy": 0.0554,
+        "mean_auc": 0.4984,
+        "std_auc": 0.1057,
+        "n_folds": 4
+      },
+      "logistic_regression": {
+        "mean_accuracy": 0.4359,
+        "std_accuracy": 0.047,
+        "mean_auc": 0.5292,
+        "std_auc": 0.0825,
+        "n_folds": 4
+      },
+      "random_forest": {
+        "mean_accuracy": 0.4804,
+        "std_accuracy": 0.0564,
+        "mean_auc": 0.5059,
+        "std_auc": 0.0361,
+        "n_folds": 4
+      },
+      "baseline_momentum_persistence": {
+        "mean_accuracy": 0.4838,
+        "std_accuracy": 0.0181,
         "mean_auc": null,
         "std_auc": null,
         "n_folds": 4
       },
       "mlp_neural_net": {
-        "mean_accuracy": 0.4746,
-        "std_accuracy": 0.0338,
-        "mean_auc": 0.5033,
-        "std_auc": 0.0416,
-        "n_folds": 4
-      },
-      "gradient_boosting": {
-        "mean_accuracy": 0.4588,
-        "std_accuracy": 0.067,
-        "mean_auc": 0.4955,
-        "std_auc": 0.0474,
-        "n_folds": 4
-      },
-      "baseline_momentum_persistence": {
-        "mean_accuracy": 0.4833,
-        "std_accuracy": 0.0184,
-        "mean_auc": null,
-        "std_auc": null,
-        "n_folds": 4
-      },
-      "logistic_regression": {
-        "mean_accuracy": 0.4425,
-        "std_accuracy": 0.0548,
-        "mean_auc": 0.5258,
-        "std_auc": 0.0685,
+        "mean_accuracy": 0.457,
+        "std_accuracy": 0.0622,
+        "mean_auc": 0.5173,
+        "std_auc": 0.0557,
         "n_folds": 4
       }
     }

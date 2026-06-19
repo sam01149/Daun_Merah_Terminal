@@ -267,12 +267,83 @@ new-data candidate tried so far, adds nothing measurable once evaluated honestly
 for other targets later) but should **not** be used to claim an improved volatility-regime model.
 This closes the open question from `ml/STATUS.md` — answered empirically, not just qualitatively.
 
+## 11. Vol-regime-specific EDA, GARCH/sentiment features, multicollinearity mitigation
+
+User asked to push toward 0.70 AUC and, separately, to re-check EDA/data-prep for anything missed
+before reaching for more external data. Worth noting: every EDA/diagnostics script before this
+(`eda.py`, `feature_diagnostics.py`) was written for the price-direction target, before
+volatility-regime became the project's lead result — it had never been profiled on its own.
+`ml/eda_volregime.py` does that for the first time. Findings:
+
+- **Non-vol features carry real, separate signal.** Vol-only features (3 cols) get AUC 0.58 (4h) /
+  0.65 (1d); the full feature set gets 0.63 / 0.67. So momentum/sentiment/COT features are not
+  dead weight for this target — contrary to the natural assumption that volatility-regime should
+  be predictable from vol-history alone.
+- **`fear_greed` ranks in the top-5 most important features on both timeframes** (RF importance).
+  Motivated testing an extremity transform (`|fear_greed - 50|`) — extreme sentiment in *either*
+  direction, not just one sign, plausibly precedes vol expansion.
+- **`realized_vol_6`'s own autocorrelation decays slowly** (lag1=0.91, lag6=0.43, lag20=0.35,
+  lag60=0.21 on 4h) — more "vol memory" than the fixed 6/20-period windows already in use fully
+  capture. Motivated testing GARCH(1,1) conditional volatility, which estimates persistence
+  directly instead of using an arbitrary fixed window.
+- Alternative OHLC volatility estimators (Garman-Klass, Rogers-Satchell) correlate with the target
+  almost identically to the Parkinson estimator already in use (~0.25-0.28 vs ~0.25-0.27) — not
+  worth switching.
+- A lookback-window sweep (3/6/12/20/50/100/200 periods) found window=12 marginally beats the
+  6/20 windows in use (corr ~0.21 vs ~0.20-0.21) — too small a margin to act on.
+
+**Tested both motivated ideas (`ml/vol_regime_garch.py`) with the same walk-forward-CV rigor as
+every other experiment.** Neither improved Random Forest (the project's most reliable algorithm):
+
+| Feature added | 4h RF CV AUC | 1d RF CV AUC |
+|---|---|---|
+| baseline | 0.6329 ± 0.0034 | 0.5971 ± 0.0505 |
+| +fear_greed_extreme | 0.6322 ± 0.0105 | 0.5977 ± 0.0538 |
+| +GARCH(1,1) conditional vol | 0.6333 ± 0.0031 | 0.5939 ± 0.0462 |
+| +both | 0.6337 ± 0.0079 | 0.5940 ± 0.0569 |
+
+All deltas are within fold-to-fold noise. **Root cause found for GARCH specifically:** its
+conditional volatility correlates 0.956 with `realized_vol_20`, already a feature — it is
+re-deriving information the model already has, not adding new information, despite the ACF
+evidence of long memory. The existing rolling-window features already capture nearly all of the
+*linear* memory signal; only a fundamentally different information source (not a smarter way to
+summarize the same OHLCV history) would add something new — consistent with #10's DVOL result.
+
+**Multicollinearity, checked specifically for this feature set (16-21 pairs at |corr|>0.7,
+similar magnitude to the direction-task's known 13-18 pairs) — and, unlike that earlier
+diagnostic, the redundant vol-level features turned out to be partially self-redundant too**
+(`realized_vol_6` correlates 0.75-0.88 with `realized_vol_20`/`parkinson_vol_mean_6` — effectively
+~1.5 independent vol-level signals, not 3, which is the other reason GARCH added nothing). Pruned
+the clearly-dominated half of each pair (kept the higher-importance member): removed `ret_1`,
+`macd_signal`, `ema12_gt_ema26`, `cot_noncomm_long_pct`, `bb_pctb` from `FEATURE_COLS`, and
+`realized_vol_6` from the volatility-regime `extra_cols` — 25→19 features. Verified via walk-
+forward CV before committing the change: no AUC cost (all deltas within noise, see table below),
+slightly *more* stable for Logistic Regression. Re-ran all dependent experiments (direction
+single-split, direction CV, regression, volatility-regime) to keep committed result files
+consistent with the new feature set — direction/regression conclusions unchanged (still ~0.50-0.53
+AUC, still negative R²).
+
+| Config | Full feature set (25) | Pruned (19) |
+|---|---|---|
+| 4h RF, walk-forward CV | 0.6329 ± 0.0034 | 0.6302 ± 0.0062 |
+| 4h LR, walk-forward CV | 0.6270 ± 0.0106 | 0.6302 ± 0.0194 |
+| 1d RF, walk-forward CV | 0.5971 ± 0.0505 | 0.6110 ± 0.0715 |
+| 1d LR, walk-forward CV | 0.5448 ± 0.0331 | 0.5592 ± 0.0551 |
+
+The new official baseline (4h, RF, walk-forward CV, pruned features) is **0.6302 ± 0.0062** —
+statistically indistinguishable from the old 0.633 ± 0.0036; this was a cleanup for
+interpretability/stability, not a performance change.
+
 ## Updated bottom line
 
 Price-direction prediction: confirmed dead end (Part 1 stands). **Volatility-regime prediction is
 real, strong by this project's standards, and now in the production feature pipeline** — Random
-Forest on 4h candles, AUC 0.63 ± 0.004 across walk-forward folds, p≈0 vs a permutation null. This
-remains the project's best result; DVOL was the most promising untried lead for pushing it higher
-and, evaluated rigorously, did not work (#10). No further new-data candidate is currently
-identified — future work would need either a fundamentally different target/horizon, or accepting
-0.63 as the ceiling for this approach.
+Forest on 4h candles, AUC ~0.63 across walk-forward folds, p≈0 vs a permutation null, stable
+whether or not the multicollinear features are pruned (#11). DVOL (#10), GARCH, and sentiment-
+extremity (#11) were all candidates for pushing past 0.63 toward the user's 0.70 target; none
+worked once evaluated with the project's standard rigor — and #11 found a structural reason why:
+the existing rolling-window features already capture nearly all the *linearly recoverable*
+information in BTC's own price history. Breaking past 0.63 would need either a fundamentally
+different information source (genuinely new, not a recombination of OHLCV — DVOL was the
+strongest candidate and didn't work either) or a fundamentally different target/horizon. 0.63
+should currently be treated as the practical ceiling for this approach.
