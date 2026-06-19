@@ -6,8 +6,10 @@ const { writeCsv, rowCount } = require('./lib/btc-data');
 const { fetchOhlcv, fetchFearGreed } = require('./lib/btc-sources');
 const { fetchCotBitcoinAll } = require('./lib/cot-bitcoin');
 const { fetchBtcDominanceNow, fetchStablecoinSupply, fetchHashrate } = require('./lib/extra-sources');
+const { fetchDvolHistory } = require('./lib/dvol-source');
 
 const OHLCV_START = Date.parse('2017-08-17T00:00:00Z'); // BTCUSDT spot listing on Binance
+const DVOL_START  = Date.parse('2021-03-24T00:00:00Z'); // Deribit DVOL launch for BTC
 
 async function main() {
   console.log('BTC backfill starting...');
@@ -38,8 +40,12 @@ async function main() {
   writeCsv('btc_dominance', [dominance]);
   console.log('btc_dominance: 1 row (no free historical source — accumulates going forward only)');
 
+  const dvol = await fetchDvolHistory(DVOL_START);
+  writeCsv('dvol', dvol);
+  console.log(`dvol: ${dvol.length} hourly rows (Deribit BTC implied volatility index, since 2021-03)`);
+
   console.log('Backfill complete:');
-  for (const key of ['ohlcv_1h', 'ohlcv_4h', 'ohlcv_1d', 'cot_bitcoin', 'fear_greed', 'stablecoin_supply', 'hashrate', 'btc_dominance']) {
+  for (const key of ['ohlcv_1h', 'ohlcv_4h', 'ohlcv_1d', 'cot_bitcoin', 'fear_greed', 'stablecoin_supply', 'hashrate', 'btc_dominance', 'dvol']) {
     console.log(`  ${key}: ${rowCount(key)} rows`);
   }
 }

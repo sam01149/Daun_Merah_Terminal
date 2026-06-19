@@ -7,8 +7,10 @@ const { appendCsv, lastTimestamp, rowCount } = require('./lib/btc-data');
 const { fetchOhlcv, fetchFearGreed } = require('./lib/btc-sources');
 const { fetchCotBitcoinYear } = require('./lib/cot-bitcoin');
 const { fetchBtcDominanceNow, fetchStablecoinSupply, fetchHashrate } = require('./lib/extra-sources');
+const { fetchDvolHistory } = require('./lib/dvol-source');
 
 const OHLCV_START = Date.parse('2017-08-17T00:00:00Z');
+const DVOL_START  = Date.parse('2021-03-24T00:00:00Z');
 const DAY_MS = 86400e3;
 
 async function syncOhlcv(interval) {
@@ -72,6 +74,14 @@ async function syncBtcDominance() {
   console.log(`btc_dominance: +1 row (total ${rowCount('btc_dominance')})`);
 }
 
+async function syncDvol() {
+  const last = lastTimestamp('dvol');
+  const start = last !== null ? last + 1 : DVOL_START;
+  const rows = await fetchDvolHistory(start);
+  appendCsv('dvol', rows);
+  console.log(`dvol: +${rows.length} rows (total ${rowCount('dvol')})`);
+}
+
 async function main() {
   console.log('BTC sync starting...');
   await syncOhlcv('1h');
@@ -82,6 +92,7 @@ async function main() {
   await syncStablecoinSupply();
   await syncHashrate();
   await syncBtcDominance();
+  await syncDvol();
   console.log('Sync complete.');
 }
 
