@@ -40,7 +40,7 @@ FEATURE_COLS = [
     "macd", "macd_signal", "macd_hist", "atr_14", "bb_pctb",
     "price_to_sma20", "sma20_gt_sma50", "ema12_gt_ema26",
     "volume_z20", "volume_change_pct",
-    "cot_open_interest", "cot_net_noncomm", "cot_noncomm_long_pct", "cot_net_change_1w",
+    "cot_open_interest_z", "cot_net_pct", "cot_noncomm_long_pct", "cot_net_change_1w",
     "fear_greed", "hashrate",
 ]
 

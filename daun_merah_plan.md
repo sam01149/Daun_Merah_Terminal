@@ -165,6 +165,76 @@ Open: 3 posisi · Combined VaR 1d: $450
 
 ---
 
+## 5. BTC Predictive Model (ML Research) — Handoff Konteks Penuh
+
+> **Ditulis:** 2026-06-19, untuk lanjut di sesi/AI lain. Ini bukan fitur UI Daun Merah — ini riset terpisah (folder `ml/` dan `scripts/btc-*`, `data/btc/`) untuk eksplorasi apakah ada model prediktif BTC yang bisa dipakai. Baca seluruh section ini sebelum mulai kerja, supaya tidak mengulang yang sudah dicoba.
+
+### 🎯 Target proyek (diklarifikasi user 2026-06-19)
+
+**Bangun model BTC yang berkualitas dengan ROC-AUC setinggi mungkin, baseline target: 70%.**
+
+Konteks penting: sejauh ini target **arah harga** (naik/turun) sudah terbukti dead-end (AUC ~0.53, tidak robust di CV). Target **volatility-regime** (apakah volatilitas ke depan tinggi/rendah) jauh lebih menjanjikan — AUC 0.633 ± 0.0035, robust dan signifikan secara statistik (permutation test p≈0). **Ini kemungkinan jalur paling realistis untuk mencapai target 70%** — lihat rencana DVOL di bawah sebagai langkah konkret berikutnya untuk mendekati target itu. Evaluasi WAJIB pakai walk-forward CV + permutation test, bukan single train/test split (sudah 2x kejadian single-split kelihatan bagus tapi ternyata fluke saat divalidasi CV).
+
+### Ringkasan arsitektur
+
+```
+data/btc/*.csv          ← data mentah (8 sumber gratis) + features_4h.csv/features_1d.csv (hasil olahan)
+scripts/btc-*.js        ← Node: koleksi data (backfill + sync hourly via GitHub Actions)
+scripts/feature-engineering.js  ← Node: hitung indikator teknikal + gabung semua sumber + buat target
+ml/*.py                 ← Python (.venv lokal: pandas, scikit-learn, torch): modeling, EDA, eksperimen
+ml/results/REPORT.md    ← laporan naratif lengkap (Part 1 = arah harga, Part 2 = diagnostik + volatility-regime)
+ml/STATUS.md            ← snapshot status teknis sebelumnya (mungkin sudah agak stale, REPORT.md lebih lengkap)
+```
+
+### Sumber data (semua gratis, 8 total)
+
+| Sumber | Isi | Histori | Catatan |
+|---|---|---|---|
+| `data-api.binance.vision` | OHLCV 1h/4h/1d | sejak 2017-08 | `api.binance.com` asli di-geoblock (HTTP 451) dari GitHub Actions (US) — pakai mirror ini |
+| `cftc.gov` | COT CME Bitcoin futures (mingguan) | sejak 2018-04 | Publish lag 3 hari (as-of Selasa, rilis Jumat) — **sudah di-fix**. Cloudflare block `fetch()` Node tapi tidak `curl` — script pakai `curl` |
+| `alternative.me` | Fear & Greed Index (harian) | sejak 2018-02 | — |
+| `mempool.space` | Hashrate (harian) | sejak 2009 | tanpa batasan |
+| CoinGecko | Stablecoin supply (USDT+USDC), BTC dominance | stablecoin: 365 hari (limit free-tier); dominance: tidak ada histori, akumulasi mulai sekarang | — |
+| `deribit.com` | **DVOL** (implied volatility index BTC, hourly) | sejak 2021-03-24 | **Sudah selesai diintegrasikan ke fitur dan dites — tidak terbukti menambah AUC** (lihat poin 10 di bawah). Deribit & Binance **di-blokir ISP Indonesia** (DNS redirect ke `aduankonten.id`) — tidak bisa diakses dari mesin lokal, **harus** dari GitHub Actions |
+
+Funding rate (perpetual futures) dan orderbook live **sengaja di-skip** — funding rate tidak ada sumber gratis yang tidak ter-geoblock; orderbook tidak relevan untuk horizon intraday-swing dan tidak cocok arsitektur serverless.
+
+### Apa yang sudah dicoba dan hasilnya (urut kronologis)
+
+1. **Prediksi arah harga** (`target_dir_6`/`target_dir_18`, biner naik/turun) — 5 algoritma (Logistic Regression, Random Forest, Gradient Boosting, MLP, LSTM) + 2 baseline naif, evaluasi single-split DAN walk-forward CV (4 fold ekspanding) DAN permutation test. **Hasil: tidak ada edge yang robust.** Hasil terbaik yang lolos CV cuma AUC 0.528±0.018 (Random Forest, 4h/1-hari). Satu hasil yang awalnya kelihatan bagus di single-split (55.6%/AUC 0.569) **ternyata fluke** — rata-rata CV-nya 0.481 (di bawah random).
+2. **Regresi return** (prediksi besaran, bukan arah) — lebih buruk lagi, hampir semua model R² negatif.
+3. **Bug ditemukan & diperbaiki:** COT publish-lag (lookahead bias 3 hari), dan normalisasi COT (`cot_open_interest`/`cot_net_noncomm` mentah trending naik seiring tahun karena pasar futures makin matang → diganti `cot_open_interest_z` rolling z-score dan `cot_net_pct` rasio self-normalizing).
+4. **Feature diagnostics:** multikolinearitas nyata (13-18 pasang fitur korelasi >0.7, termasuk `ret_1`≈`log_ret_1` duplikat), TAPI memangkas fitur **tidak** memperbaiki hasil di CV — bottleneck-nya data/sinyal, bukan strategi fitur.
+5. **COT contrarian positioning:** `cot_net_pct` di resolusi mingguan native (427 laporan, bukan versi duplikasi harian) berkorelasi -0.16 sampai -0.18 dengan forward return 1-2 bulan (crowded long → return lemah). Bertahan di 3/4 fold CV, **gagal khusus saat bull run kuat 2023-2024**. Real tapi lemah (R²~3%).
+6. **EDA: volatility clustering dikonfirmasi kuat.** ACF `|return|` tetap 0.15-0.26 di SEMUA lag sampai 40 (vs ~0 untuk raw return) — ini yang memotivasi eksperimen volatility-regime di bawah.
+7. **🏆 Volatility-regime classification — hasil terbaik proyek ini.** Target: apakah realized volatility 6 periode ke depan ada di top 30% dari rolling 500-periode terakhir (threshold adaptif, bukan fixed, karena level volatilitas BTC berubah dari tahun ke tahun). Fitur tambahan: Parkinson volatility (estimator high-low range), realized vol level 6/20-periode. **Random Forest, 4h: walk-forward CV AUC 0.633 ± 0.0035** (sangat stabil antar-fold), permutation test p≈0 (signifikan, bukan noise). Logistic Regression dekat kedua (0.627±0.010). **LSTM paling lemah di SEMUA 4 eksperimen** (arah, CV arah, regresi, volatility-regime) — deep learning tidak pernah menang di proyek ini, jangan coba lagi tanpa alasan baru.
+8. **Sudah diintegrasikan ke pipeline resmi** (`scripts/feature-engineering.js`): kolom `target_vol_regime_6`, `realized_vol_6`, `realized_vol_20`, `parkinson_vol_mean_6`. Diverifikasi reproduce hasil Python persis (0.6333±0.0035, jumlah baris identik).
+9. **Saran AI eksternal (Gemini) dievaluasi, tidak ditelan mentah:** saran volatility-regime tervalidasi kuat (poin 7), tapi saran Monte Carlo GBM untuk TP/SL probability **ditolak** (asumsi volatilitas konstan kontradiksi dengan temuan clustering; asumsi shock Gaussian kontradiksi fat-tail return yang ditemukan EDA, kurtosis 8.6-23). Saran "volume bars" juga ditolak (rasionalnya soal pasar sepi weekend tidak relevan untuk BTC yang trading 24/7).
+10. **✅ DVOL (implied volatility) — selesai diintegrasikan dan dites, hasil: TIDAK terbukti menambah AUC.** Motivasi: user tanya apakah AUC bisa didorong ke 70-80%; DVOL (ekspektasi volatilitas dari pasar opsi) adalah kandidat data baru paling kuat karena beda jenis informasi dari realized vol yang sudah dipakai. `dvol_close`/`dvol_change_1` ditambahkan ke `scripts/feature-engineering.js`, lalu diuji di `ml/volatility_regime.py` dengan rigor yang sama (walk-forward CV + permutation test), **dibandingkan apple-to-apple** (baseline vs +DVOL di baris yang identik, supaya tidak rancu dengan histori DVOL yang lebih pendek 2021+ vs sumber lain 2017+). Hasil 4h: baseline-di-era-DVOL 0.6125±0.0502 (n=11.473) vs +DVOL 0.6185±0.0463 — selisih +0.006, jauh lebih kecil dari std antar-fold (0.046-0.05) → **noise, bukan sinyal**. Hasil 1d serupa (selisih +0.0003). Temuan menarik lain: membatasi ke era DVOL saja (tanpa DVOL feature) sudah menurunkan AUC dari 0.633 (full history) ke 0.6125 — window 2021+ (mencakup bear market terburuk BTC) lebih sulit/noisy, bukan soal DVOL absen. Detail lengkap: `ml/results/REPORT.md` poin 10. **Kolom DVOL tetap dipertahankan di pipeline** (tidak merugikan, mungkin berguna untuk target lain) tapi tidak dipakai untuk klaim peningkatan model. Menjawab pertanyaan terbuka soal AUC 70-80% secara empiris: **0.633 kemungkinan adalah plafon** untuk pendekatan/fitur saat ini — perlu target/horizon yang fundamental berbeda untuk melangkah lebih jauh, belum teridentifikasi.
+
+### Ide yang SUDAH DITOLAK (jangan diusulkan ulang tanpa alasan baru)
+
+- Monte Carlo GBM (constant volatility) untuk TP/SL — kontradiksi temuan vol clustering & fat-tail return.
+- Volume bars — rasional "pasar sepi weekend" tidak relevan untuk BTC 24/7.
+- ARIMA murni di return — ACF/PACF empiris ~0 di semua lag, tidak ada struktur untuk di-fit.
+- HMM regime detection — bukan ditolak, tapi di-deprioritaskan (kompleksitas tambahan di atas hasil yang belum matang).
+- DVOL sebagai fitur volatility-regime — diuji ketat, tidak terbukti membantu (poin 10 di atas). Bisa dipertimbangkan lagi untuk *target* lain (misal prediksi DVOL sendiri, atau spread implied-vs-realized vol), bukan untuk target ini tanpa alasan baru.
+
+### Angka-angka kunci (supaya tidak perlu dihitung ulang)
+
+| Hasil | Nilai |
+|---|---|
+| Direction prediction terbaik (CV) | AUC 0.528 ± 0.018 |
+| Volatility-regime terbaik (CV, full history, tanpa DVOL) | **AUC 0.633 ± 0.0036** |
+| Permutation null untuk hasil itu | mean 0.500, std 0.006, p≈0 |
+| Volatility-regime, era-DVOL saja, tanpa fitur DVOL (4h) | 0.6125 ± 0.0502 (n=11.473) |
+| Volatility-regime, era-DVOL saja, +fitur DVOL (4h) | 0.6185 ± 0.0463 — bukan peningkatan nyata |
+| COT contrarian correlation (native weekly) | -0.16 sampai -0.18 |
+
+**Status keseluruhan riset BTC:** semua jalur yang teridentifikasi sejauh ini sudah dites (arah harga, regresi, volatility-regime, DVOL). Volatility-regime (AUC 0.633) tetap hasil terbaik dan satu-satunya yang lolos validasi ketat. Belum ada kandidat data/ide baru untuk dicoba — perlu input baru (data source lain atau target lain) untuk melanjutkan riset ini.
+
+---
+
 ## Referensi API Endpoints Terbukti Bekerja
 
 | Data | URL | Auth |

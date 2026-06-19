@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-06-19 (session 70 — BTC: data collection + feature engineering + model comparison + walk-forward CV + regresi + preprocessing pandas transparan. Hasil jujur final: tidak ada edge yang robust setelah divalidasi CV — hasil "terbaik" sebelumnya ternyata fluke)
+> **Last updated:** 2026-06-19 (session 71 — BTC: selesaikan integrasi DVOL yang sempat berhenti di tengah jalan, uji ketat via walk-forward CV + permutation test. Hasil jujur: DVOL TIDAK menambah AUC secara nyata — selisih jauh lebih kecil dari noise antar-fold. Volatility-regime AUC 0.633±0.0036 tetap hasil terbaik proyek ini, kemungkinan jadi plafon untuk pendekatan saat ini)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Financial_Feed_App`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -117,6 +117,28 @@ Financial_Feed_App/
 > **Penting:** `api/feeds.js` menggantikan `api/rss.js` dan `api/cot.js` yang sudah dihapus.
 > `api/admin.js` menggantikan `api/health.js`, `api/redis-keys.js`, `api/admin-prompts.js`, dan `api/push.js`.
 > Konsolidasi ini dilakukan untuk tetap di bawah limit 12 serverless functions Vercel Hobby.
+
+---
+
+## Changelog Session 71 (2026-06-19)
+
+### BTC: Selesaikan Integrasi DVOL + Uji Ketat — Hasil: Tidak Membantu
+
+**Konteks:** Lanjutan riset BTC dari session 70. Sebelumnya, integrasi fitur DVOL (Deribit implied volatility) berhenti di tengah jalan — data sudah di-backfill dan di-push, tapi `scripts/feature-engineering.js` belum menggunakannya di output kolom. Tujuannya menjawab pertanyaan terbuka: apakah AUC volatility-regime (baseline 0.633±0.0035) bisa didorong lebih tinggi (target 70-80%) dengan menambah DVOL sebagai fitur baru.
+
+**Yang dikerjakan:**
+1. **`scripts/feature-engineering.js`** — selesaikan kode yang sudah disiapkan (`dvolFf`, `dvolIndexByTs` sudah dihitung tapi belum dipakai): tambah `dvolIdx` lookup dan dua kolom baru ke output row: `dvol_close`, `dvol_change_1`. Regenerate `data/btc/features_4h.csv` (19.353 baris, 37 kolom) dan `features_1d.csv` (3.229 baris, 37 kolom). Coverage DVOL ~59% (terbatas sejak 2021-03-24, lebih pendek dari sumber lain 2017-18).
+2. **`ml/volatility_regime.py`** — tambah opsi `use_dvol` ke `build_dataset()`, lalu jalankan perbandingan **apple-to-apple**: baseline vs +DVOL di baris yang identik (subset era-DVOL), bukan baseline-full-history vs +DVOL-history-lebih-pendek (yang akan merancukan efek DVOL dengan efek window waktu yang berbeda). Dievaluasi dengan rigor yang sama seperti eksperimen volatility-regime sebelumnya: single-split, walk-forward CV (4 fold), permutation test, 5 algoritma (Logistic Regression, Random Forest, Gradient Boosting, MLP, LSTM).
+
+**Hasil (lengkap di `ml/results/REPORT.md` poin 10):**
+- 4h: baseline di era-DVOL (n=11.473) AUC 0.6125±0.0502 vs +DVOL AUC 0.6185±0.0463 — selisih +0.006, jauh lebih kecil dari std antar-fold (0.046-0.05) → **tidak signifikan, noise bukan sinyal**.
+- 1d: selisih +0.0003 — juga tidak signifikan, dan jauh lebih noisy (std 0.12-0.13) karena dataset jauh lebih kecil.
+- **Temuan penting lain:** membatasi data ke era-DVOL saja (2021+, tanpa fitur DVOL sekalipun) sudah menurunkan AUC dari 0.633 (full history 2017-2024) ke 0.6125 — window 2021+ mencakup bear market BTC paling parah, lebih sulit diprediksi terlepas dari DVOL.
+- **Kesimpulan:** DVOL, walau secara konsep adalah kandidat data baru paling kuat (implied volatility dari pasar opsi, beda jenis informasi dari realized vol historis yang sudah dipakai), **tidak terbukti menambah edge** setelah dievaluasi jujur. Kolom `dvol_close`/`dvol_change_1` tetap dipertahankan di pipeline (tidak merugikan), tapi tidak dipakai untuk klaim peningkatan model.
+
+**Implikasi untuk arah riset:** AUC 0.633±0.0036 (Random Forest, 4h, volatility-regime, full history) kemungkinan adalah plafon untuk pendekatan dan fitur yang sudah dicoba. Semua jalur yang teridentifikasi (arah harga, regresi, volatility-regime, DVOL) sudah dites tuntas. Untuk melangkah lebih jauh (target 70-80%) perlu target/horizon yang fundamental berbeda atau sumber data baru — belum ada kandidat konkret saat ini.
+
+**File diupdate:** `scripts/feature-engineering.js`, `ml/volatility_regime.py`, `ml/results/REPORT.md`, `ml/STATUS.md`, `daun_merah_plan.md`.
 
 ---
 

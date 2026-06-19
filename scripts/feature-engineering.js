@@ -5,9 +5,13 @@
 'use strict';
 
 const { readCsv, DATA_DIR } = require('./lib/btc-data');
-const { sma, ema, rsi, macd, atr, bollingerPctB, zscore, pctChange } = require('./lib/indicators');
+const { sma, ema, rsi, macd, atr, bollingerPctB, zscore, pctChange, stdev, rollingQuantile } = require('./lib/indicators');
 const fs = require('fs');
 const path = require('path');
+
+const VOL_REGIME_HORIZON = 6;            // same horizon as target_dir_6, for direct comparison
+const VOL_REGIME_QUANTILE_WINDOW = 500;  // trailing window for the adaptive threshold
+const VOL_REGIME_QUANTILE = 0.70;        // "high vol" = top 30% of recent forward-vol readings
 
 // Forward-fills `sourceRows` (sorted, each with .timestamp) onto `targetTimestamps` (sorted).
 // Returns an array same length as targetTimestamps, each either the matching source row or null
@@ -29,6 +33,7 @@ function buildFeatures(ohlcvKey, outFile) {
   const hash     = readCsv('hashrate');
   const stable   = readCsv('stablecoin_supply');
   const dom      = readCsv('btc_dominance');
+  const dvol     = readCsv('dvol');
 
   const ts     = candles.map(c => c.timestamp);
   const open   = candles.map(c => c.open);
@@ -56,6 +61,26 @@ function buildFeatures(ohlcvKey, outFile) {
   const volumeZ        = zscore(volume, 20);
   const volumeChangePct = pctChange(volume, 1);
 
+  // --- Realized volatility (the actual LEVEL of vol, unlike volatility_z20 above which is a
+  // z-scored return — "how unusual is today's return", not "how volatile is the market right
+  // now"). Validated experimentally (ml/volatility_regime.py) to predict forward volatility
+  // regime far better than any direction-prediction feature found so far (CV AUC ~0.63 vs ~0.53).
+  const logRet1Filled = logRet1.map(v => v === null ? 0 : v);
+  const realizedVol6  = stdev(logRet1Filled, 6);
+  const realizedVol20 = stdev(logRet1Filled, 20);
+  const parkinsonVol  = high.map((h, i) => Math.sqrt((1 / (4 * Math.log(2))) * (Math.log(h / low[i]) ** 2)));
+  const parkinsonVolMean6 = sma(parkinsonVol, 6);
+
+  // Forward-looking realized vol over the next VOL_REGIME_HORIZON periods, compared against an
+  // adaptive trailing quantile (BTC's baseline vol level in 2018 isn't comparable to 2024's, so
+  // a fixed cutoff would drift out of relevance — same reasoning as the COT normalization fix).
+  const trailingStd6ForForward = stdev(logRet1Filled, VOL_REGIME_HORIZON);
+  const forwardVol = trailingStd6ForForward.map((_, i) =>
+    (i + VOL_REGIME_HORIZON < trailingStd6ForForward.length) ? trailingStd6ForForward[i + VOL_REGIME_HORIZON] : null);
+  const volRegimeThreshold = rollingQuantile(forwardVol, VOL_REGIME_QUANTILE_WINDOW, VOL_REGIME_QUANTILE, 100);
+  const targetVolRegime6 = forwardVol.map((v, i) =>
+    (v === null || volRegimeThreshold[i] === null) ? null : (v > volRegimeThreshold[i] ? 1 : 0));
+
   // --- External series, forward-filled onto each candle's timestamp ---
   // CFTC publishes COT on Fridays, but the report's "as of" date (our stored timestamp) is the
   // preceding Tuesday — a ~3-day reporting lag. Forward-filling on the raw timestamp would let a
@@ -65,11 +90,29 @@ function buildFeatures(ohlcvKey, outFile) {
   const COT_PUBLISH_LAG_MS = 3 * 86400e3;
   const cotForFf = cot.map(r => ({ ...r, timestamp: r.timestamp + COT_PUBLISH_LAG_MS }));
 
+  // Raw open_interest and net positioning (long - short) trend upward over the years simply
+  // because the CME Bitcoin futures market has grown — feeding that raw, non-stationary level
+  // into a model risks it learning "what year is it" rather than real positioning signal (the
+  // same problem we already avoid by excluding raw close price). Transform both to stationary
+  // measures computed on COT's native weekly cadence, before forward-filling:
+  //   - cot_open_interest_z: rolling z-score vs the trailing ~1y (52 reports) of open interest
+  //   - cot_net_pct: net positioning as a % of that week's open interest (self-normalizing —
+  //     doesn't need a rolling window since it's already relative to current market size)
+  const cotOiZ     = zscore(cot.map(r => r.open_interest), 52);
+  const cotNetPctArr = cot.map(r => (r.noncomm_long - r.noncomm_short) / r.open_interest);
+
   const cotFf    = forwardFill(ts, cotForFf);
   const fngFf    = forwardFill(ts, fng);
   const hashFf   = forwardFill(ts, hash);
   const stableFf = forwardFill(ts, stable);
   const domFf    = forwardFill(ts, dom);
+  const dvolFf   = forwardFill(ts, dvol);
+
+  // DVOL is Deribit's BTC implied-volatility index — the market's own forward-looking volatility
+  // expectation, a different kind of information than the realized-vol features above (which
+  // only look backward). dvolChange1 uses the *native* hourly DVOL series (not the candle-level
+  // forward-fill) so consecutive candles within the same DVOL reading don't show a spurious 0.
+  const dvolIndexByTs = new Map(dvol.map((r, idx) => [r.timestamp, idx]));
 
   // COT week-over-week net positioning change needs the *previous* COT row, not just the ffilled one.
   // Indexed by the shifted timestamp since that's what cotFf rows carry (see above).
@@ -77,15 +120,17 @@ function buildFeatures(ohlcvKey, outFile) {
 
   const rows = ts.map((t, i) => {
     const c = cotFf[i];
+    const cotIdx = c ? cotIndexByTs.get(c.timestamp) : undefined;
+    // Change in the already-normalized net_pct, not raw contract counts — same stationarity
+    // reasoning as above applies to the week-over-week delta.
     let cotNetChange1w = null;
-    if (c) {
-      const idx = cotIndexByTs.get(c.timestamp);
-      if (idx > 0) {
-        const prevNet = cot[idx - 1].noncomm_long - cot[idx - 1].noncomm_short;
-        const curNet = c.noncomm_long - c.noncomm_short;
-        cotNetChange1w = curNet - prevNet;
-      }
+    if (cotIdx > 0) {
+      cotNetChange1w = cotNetPctArr[cotIdx] - cotNetPctArr[cotIdx - 1];
     }
+
+    const dvolIdx = dvolFf[i] ? dvolIndexByTs.get(dvolFf[i].timestamp) : undefined;
+    let dvolChange1 = null;
+    if (dvolIdx > 0) dvolChange1 = dvol[dvolIdx].close - dvol[dvolIdx - 1].close;
 
     return {
       timestamp: t,
@@ -107,9 +152,12 @@ function buildFeatures(ohlcvKey, outFile) {
       ema12_gt_ema26: (ema12[i] !== null && ema26[i] !== null) ? (ema12[i] > ema26[i] ? 1 : 0) : null,
       volume_z20: volumeZ[i],
       volume_change_pct: volumeChangePct[i],
+      realized_vol_6: realizedVol6[i],
+      realized_vol_20: realizedVol20[i],
+      parkinson_vol_mean_6: parkinsonVolMean6[i],
 
-      cot_open_interest: c ? c.open_interest : null,
-      cot_net_noncomm: c ? c.noncomm_long - c.noncomm_short : null,
+      cot_open_interest_z: cotIdx !== undefined ? cotOiZ[cotIdx] : null,
+      cot_net_pct: cotIdx !== undefined ? cotNetPctArr[cotIdx] : null,
       cot_noncomm_long_pct: c ? c.noncomm_long / c.open_interest : null,
       cot_net_change_1w: cotNetChange1w,
 
@@ -121,11 +169,18 @@ function buildFeatures(ohlcvKey, outFile) {
 
       btc_dominance_pct: domFf[i] ? domFf[i].btc_dominance_pct : null,
 
+      dvol_close: dvolFf[i] ? dvolFf[i].close : null,
+      dvol_change_1: dvolChange1,
+
       // Forward-looking targets — null near the end of the series where future data doesn't exist yet.
       target_ret_6: (i + 6 < close.length) ? close[i + 6] / close[i] - 1 : null,
       target_ret_18: (i + 18 < close.length) ? close[i + 18] / close[i] - 1 : null,
       target_dir_6: (i + 6 < close.length) ? (close[i + 6] > close[i] ? 1 : 0) : null,
       target_dir_18: (i + 18 < close.length) ? (close[i + 18] > close[i] ? 1 : 0) : null,
+      // Validated far more predictable than price direction (ml/volatility_regime.py, walk-
+      // forward CV AUC ~0.63 vs ~0.53 for direction) — 1 = forward realized vol in the top 30%
+      // of its trailing 500-period range, 0 = otherwise.
+      target_vol_regime_6: targetVolRegime6[i],
     };
   });
 

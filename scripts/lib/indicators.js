@@ -142,4 +142,20 @@ function pctChange(values, n) {
   return values.map((v, i) => (i < n) ? null : (v / values[i - n] - 1));
 }
 
-module.exports = { sma, stdev, ema, rsi, macd, atr, bollingerPctB, zscore, pctChange };
+// Rolling quantile (0-1) over a trailing window — sorts each window, so O(n * window * log(window)).
+// Fine at the window sizes used here (a few hundred), not meant for huge windows.
+// minPeriods lets the window start producing values before it's completely full (defaults to
+// requiring the full period, like the other rolling functions here).
+function rollingQuantile(values, period, q, minPeriods = period) {
+  const out = new Array(values.length).fill(null);
+  for (let i = minPeriods - 1; i < values.length; i++) {
+    const start = Math.max(0, i - period + 1);
+    const window = values.slice(start, i + 1).filter(v => v !== null && Number.isFinite(v)).sort((a, b) => a - b);
+    if (window.length === 0) continue;
+    const idx = Math.min(window.length - 1, Math.floor(q * (window.length - 1)));
+    out[i] = window[idx];
+  }
+  return out;
+}
+
+module.exports = { sma, stdev, ema, rsi, macd, atr, bollingerPctB, zscore, pctChange, rollingQuantile };
