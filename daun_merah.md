@@ -140,6 +140,10 @@ Financial_Feed_App/
 
 **File diupdate:** `scripts/feature-engineering.js`, `ml/volatility_regime.py`, `ml/results/REPORT.md`, `ml/STATUS.md`, `daun_merah_plan.md`.
 
+### Bersihkan Backlog Stale — `daun_merah_plan.md`
+
+Audit mandiri: section 4.2 (FX Risk Reversals) dan 4.4 (Portfolio VaR) di `daun_merah_plan.md` masih berstatus "TUNGGU keputusan" / "SIAP DIKERJAKAN" — padahal keduanya **sudah live di production sejak session 46-47** (dikonfirmasi via curl ke endpoint production + cek kode `index.html`/`api/correlations.js`). Dokumen backlog belum pernah diupdate sejak 2026-06-03. Diringkas jadi catatan "selesai, live di production" supaya tidak rancu di sesi berikutnya. Backlog aktif sekarang cuma menyisakan BTC ML research (section 5), yang juga sudah mentok — semua jalur teridentifikasi sudah dites (lihat di atas).
+
 ---
 
 ## Changelog Session 70 (2026-06-18)
