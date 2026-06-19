@@ -15,6 +15,7 @@ const FILES = {
   btc_dominance:     'btc_dominance.csv',
   stablecoin_supply: 'stablecoin_supply.csv',
   hashrate:          'hashrate.csv',
+  dvol:              'dvol.csv',
 };
 
 const HEADERS = {
@@ -26,6 +27,7 @@ const HEADERS = {
   btc_dominance:     ['timestamp', 'date_iso', 'btc_dominance_pct'],
   stablecoin_supply: ['timestamp', 'date_iso', 'usdt_market_cap', 'usdc_market_cap', 'total_stablecoin_cap'],
   hashrate:          ['timestamp', 'date_iso', 'avg_hashrate'],
+  dvol:              ['timestamp', 'date_iso', 'open', 'high', 'low', 'close'],
 };
 
 function filePath(key) {

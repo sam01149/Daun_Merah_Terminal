@@ -1,18 +1,36 @@
-// One-off connectivity test for Deribit's public API (DVOL implied volatility index).
-// Local dev network has this blocked (ISP-level DNS redirect, same pattern as Binance) — this
-// script exists to verify whether GitHub Actions runners can reach it instead.
+// One-off connectivity + pagination test for the full fetchDvolHistory() helper, before trusting
+// it in the real backfill. Local dev network has Deribit ISP-blocked — this only works from
+// GitHub Actions runners.
 // Usage: node scripts/test-deribit.js
 'use strict';
 
+const { fetchDvolHistory } = require('./lib/dvol-source');
+
 async function main() {
-  const url = 'https://www.deribit.com/api/v2/public/get_volatility_index_data'
-    + '?currency=BTC&start_timestamp=1700000000000&end_timestamp=1700086400000&resolution=3600';
-  console.log(`Fetching: ${url}`);
-  const r = await fetch(url);
-  console.log(`HTTP status: ${r.status}`);
-  const text = await r.text();
-  console.log(`Response (first 1000 chars):\n${text.slice(0, 1000)}`);
-  if (!r.ok) process.exit(1);
+  // ~95 days, spanning 3 chunk boundaries (CHUNK_MS = 30 days) to exercise pagination + dedupe.
+  const start = Date.parse('2023-01-01T00:00:00Z');
+  const end = Date.parse('2023-04-05T00:00:00Z');
+  console.log(`Fetching DVOL from ${new Date(start).toISOString()} to ${new Date(end).toISOString()}...`);
+
+  const rows = await fetchDvolHistory(start, end);
+  console.log(`Got ${rows.length} rows`);
+  console.log('First 3:', JSON.stringify(rows.slice(0, 3)));
+  console.log('Last 3:', JSON.stringify(rows.slice(-3)));
+
+  // Sanity checks: hourly cadence, no duplicate timestamps, no out-of-range values.
+  const timestamps = rows.map(r => r[0]);
+  const uniqueCount = new Set(timestamps).size;
+  console.log(`Unique timestamps: ${uniqueCount} / ${rows.length}`);
+  const sorted = timestamps.every((t, i) => i === 0 || t > timestamps[i - 1]);
+  console.log(`Strictly increasing: ${sorted}`);
+  const expectedHours = Math.round((end - start) / 3600e3);
+  console.log(`Expected ~${expectedHours} hourly candles, got ${rows.length}`);
+
+  if (uniqueCount !== rows.length || !sorted) {
+    console.error('FAILED sanity checks');
+    process.exit(1);
+  }
+  console.log('PASSED');
 }
 
 main().catch(err => {
