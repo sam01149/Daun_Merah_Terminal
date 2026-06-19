@@ -334,16 +334,35 @@ The new official baseline (4h, RF, walk-forward CV, pruned features) is **0.6302
 statistically indistinguishable from the old 0.633 ± 0.0036; this was a cleanup for
 interpretability/stability, not a performance change.
 
+## 12. VIX (cross-asset macro risk) as a feature — tested, no significant improvement
+
+The last remaining "genuinely new information" candidate (not a re-derivation of OHLCV already
+collected): CBOE VIX, a daily macro risk-off proxy, free from Yahoo Finance since 1990 — no
+DVOL-style short-history problem, so no apples-to-apples confound needed here. Forward-filled
+onto the candle grid the same way other daily external sources already are (`vix_close` = most
+recent known VIX close as of that candle, `vix_change_1` = day-over-day change). Raw correlation
+with the target was actually the strongest of any cross-asset feature tried: +0.072 (4h) / +0.100
+(1d) — plausible, since macro risk-off periods do somewhat coincide with BTC vol spikes.
+
+Random Forest, 4h, walk-forward CV: 0.6270 ± 0.0076 (no VIX) → 0.6286 ± 0.0028 (+VIX), delta
++0.0015. To check whether even this small delta is real, ran a permutation test **on the delta
+itself** (not just on the AUC) — shuffle the target 30 times, recompute the no-VIX→+VIX delta each
+time, and see where the real delta falls in that null distribution: **null mean -0.0003, std
+0.0027, p=0.300.** Not significant — the real delta is well inside the range produced by chance
+alone. VIX joins DVOL, GARCH, and fear_greed-extremity on the list of reasonable, well-motivated
+ideas that do not move the needle once tested with this project's standard rigor.
+
 ## Updated bottom line
 
 Price-direction prediction: confirmed dead end (Part 1 stands). **Volatility-regime prediction is
 real, strong by this project's standards, and now in the production feature pipeline** — Random
 Forest on 4h candles, AUC ~0.63 across walk-forward folds, p≈0 vs a permutation null, stable
-whether or not the multicollinear features are pruned (#11). DVOL (#10), GARCH, and sentiment-
-extremity (#11) were all candidates for pushing past 0.63 toward the user's 0.70 target; none
-worked once evaluated with the project's standard rigor — and #11 found a structural reason why:
-the existing rolling-window features already capture nearly all the *linearly recoverable*
-information in BTC's own price history. Breaking past 0.63 would need either a fundamentally
-different information source (genuinely new, not a recombination of OHLCV — DVOL was the
-strongest candidate and didn't work either) or a fundamentally different target/horizon. 0.63
+whether or not the multicollinear features are pruned (#11). DVOL (#10), GARCH, sentiment-
+extremity (#11), and VIX (#12) were all candidates for pushing past 0.63 toward the user's 0.70
+target; none worked once evaluated with the project's standard rigor — and #11 found a structural
+reason why: the existing rolling-window features already capture nearly all the *linearly
+recoverable* information in BTC's own price history. Breaking past 0.63 would need either a
+fundamentally different information source (genuinely new, not a recombination of OHLCV or a
+correlated cross-asset proxy — both DVOL and VIX were tried and neither worked) or a fundamentally
+different target/horizon. 0.63
 should currently be treated as the practical ceiling for this approach.
