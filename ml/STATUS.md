@@ -24,6 +24,15 @@ narrative writeup.
   before committing — no AUC cost, slightly more stable for Logistic Regression. All dependent
   result files (`model_comparison.json`, `cross_validation.json`, `regression_comparison.json`)
   were regenerated with the pruned feature set to stay consistent with the code.
+- Regressing the *continuous* `forward_vol` value (instead of classifying it against a threshold)
+  was also tested (`ml/vol_regression.py`) — **fails, and is markedly less stable than
+  classification of the same underlying signal.** Random Forest is the only model with a (barely)
+  positive mean R² (4h: +0.030±0.049; 1d: -0.195±0.202, clearly negative). Linear Regression and
+  Gradient Boosting are negative and unstable across folds; MLP diverges outright (R² in the
+  thousands negative). Why: `forward_vol` is a std computed from only 6 returns — a noisy target
+  by construction — and classification only needs the *rank* relative to a threshold to survive
+  that noise, while regression needs the exact value. **The deployable artifact from this whole
+  research line is the binary classifier, not a magnitude forecast.**
 
 ## What's pushed to GitHub (origin/main) right now
 
@@ -73,3 +82,7 @@ collected, and not a weakly-correlated cross-asset proxy either) — none identi
 - VIX (CBOE volatility index, daily, forward-filled) as a cross-asset feature — tested rigorously,
   delta not significant under direct permutation test (p=0.300). Raw correlation with the target
   was non-trivial (+0.07 to +0.10) but didn't survive into a real CV improvement.
+- Regression on volatility magnitude (instead of classification) — tested rigorously, fails and is
+  less stable than classification (target is a noisy 6-sample std estimate). Don't re-propose as
+  a way to get a continuous output unless the underlying target's sampling noise is addressed
+  first (e.g. a longer or differently-estimated realized-vol target).

@@ -352,6 +352,43 @@ time, and see where the real delta falls in that null distribution: **null mean 
 alone. VIX joins DVOL, GARCH, and fear_greed-extremity on the list of reasonable, well-motivated
 ideas that do not move the needle once tested with this project's standard rigor.
 
+## 13. Regression on volatility *magnitude* — tested, fails (unlike the binary classification)
+
+A fair question: section 8's result classifies whether forward volatility crosses a threshold
+(top 30% or not) — what about regressing the actual continuous value (`forward_vol`) instead?
+More useful in practice if it worked (continuous position-sizing signal, not just a binary flag),
+and distinct from the project's earlier regression work (`train_regression.py` regresses *return*
+magnitude — a different target — and already failed with negative R² everywhere).
+
+`ml/vol_regression.py` tests it with the same walk-forward CV rigor, against two baselines
+(predict the training-set mean; predict persistence — "next vol = current `realized_vol_20`").
+**Result: regression on volatility magnitude does not work, and is markedly less stable than the
+binary classification version of the same underlying problem:**
+
+| Model | 4h mean R² (CV) | 1d mean R² (CV) |
+|---|---|---|
+| baseline (persistence) | -0.045 ± 0.102 | -0.120 ± 0.169 |
+| Linear Regression | -1.072 ± 1.984 | -3.375 ± 5.885 |
+| Random Forest | **+0.030 ± 0.049** | -0.195 ± 0.202 |
+| Gradient Boosting | -0.261 ± 0.237 | -1.367 ± 0.387 |
+| MLP | -2737 ± 4731 (diverged) | -334 ± 525 (diverged) |
+
+Random Forest is the only model with a (barely) positive mean R² and is essentially flat/noise on
+4h, clearly negative on 1d. Every other model is unstable across folds, sometimes catastrophically
+(MLP diverges outright; Linear Regression single-split R²=0.11-0.13 *looked* fine but the CV mean
+is deeply negative — the same single-split illusion this project has already been burned by twice
+before, now confirmed a third time). The single-split numbers in isolation would have been
+actively misleading here.
+
+**Why regression fails where classification (roughly) works on the same underlying signal:**
+`forward_vol` is a sample standard deviation computed from only `HORIZON`=6 returns — a tiny
+sample, so the target itself carries large estimation noise (the relative standard error of a
+6-sample std estimate is on the order of 30%) on top of whatever the model gets wrong. Getting the
+exact magnitude right is a much harder bar than getting which side of an adaptive threshold it
+falls on — classification only needs the *rank* to be roughly correct, which survives target noise
+far better than nailing the value does. This is consistent with the project's very first regression
+finding (return magnitude failed the same way, for a related reason: noisy targets).
+
 ## Updated bottom line
 
 Price-direction prediction: confirmed dead end (Part 1 stands). **Volatility-regime prediction is
@@ -364,5 +401,10 @@ reason why: the existing rolling-window features already capture nearly all the 
 recoverable* information in BTC's own price history. Breaking past 0.63 would need either a
 fundamentally different information source (genuinely new, not a recombination of OHLCV or a
 correlated cross-asset proxy — both DVOL and VIX were tried and neither worked) or a fundamentally
-different target/horizon. 0.63
-should currently be treated as the practical ceiling for this approach.
+different target/horizon. 0.63 should currently be treated as the practical ceiling for this
+approach. Regressing the continuous volatility value instead of classifying it (#13) is not a
+viable alternative either — it's strictly worse and less stable, because the target itself is too
+noisy (a 6-sample std estimate) for exact-magnitude prediction to survive that noise the way a
+binary threshold does. **The deployable output of this entire research line is the binary
+classifier (`target_vol_regime_6`, already in the production pipeline) — not a magnitude
+forecast.**

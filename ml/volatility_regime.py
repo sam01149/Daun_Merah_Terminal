@@ -57,6 +57,10 @@ def build_dataset(timeframe, use_dvol=False):
     rolling_threshold = forward_vol.rolling(ROLL_QUANTILE_WINDOW, min_periods=100).quantile(QUANTILE_THRESHOLD)
     df["target_vol_regime"] = (forward_vol > rolling_threshold).astype(float)
     df.loc[forward_vol.isna() | rolling_threshold.isna(), "target_vol_regime"] = np.nan
+    # Exposed for ml/vol_regression.py — the continuous value behind target_vol_regime's binary
+    # threshold, never directly regressed on before (train_regression.py regresses *return*
+    # magnitude, a different target entirely).
+    df["forward_vol"] = forward_vol
 
     # realized_vol_6 excluded — corr 0.75-0.88 with realized_vol_20/parkinson_vol_mean_6 (the
     # two it's most redundant with), and parkinson_vol_mean_6 alone carries far higher RF feature
