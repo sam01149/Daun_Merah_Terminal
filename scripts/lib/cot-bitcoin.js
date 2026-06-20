@@ -81,4 +81,4 @@ async function fetchCotBitcoinAll(startYear = 2018) {
   return all;
 }
 
-module.exports = { CONTRACT_CODE, fetchCotBitcoinYear, fetchCotBitcoinAll };
+module.exports = { fetchCotBitcoinYear, fetchCotBitcoinAll };

@@ -46,4 +46,4 @@ async function fetchFearGreed(limit = 0) {
     .sort((a, b) => a[0] - b[0]);
 }
 
-module.exports = { SYMBOL, fetchOhlcv, fetchFearGreed };
+module.exports = { fetchOhlcv, fetchFearGreed };

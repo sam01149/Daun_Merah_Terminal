@@ -6,6 +6,9 @@ daun_merah_handoff.md
 README.md
 alur.txt
 
+# Berisi secret asli — jangan pernah commit
+environtment.txt
+
 .vercel
 
 # Claude Code local config — berisi API key/secret di allow-list, JANGAN commit
