@@ -1084,7 +1084,7 @@ ${xauHistoryBlock}`;
       'Set direction to "no_trade" and confidence to 1-2 if conviction is low.',
       'Only recommend a pair if CB bias divergence between the two currencies is at least 2 levels apart (e.g. Hawkish vs Dovish).',
       'Use the calendar events to inform invalidation_condition — if a high-impact event for one of the pair currencies is scheduled within time_horizon_days, name it as the primary invalidation trigger.',
-      'dominant_regime must match the risk regime data above when available (vix/move elevated or risk_off classification → "risk_off"; all benign → "risk_on") — do not override ground-truth data with headline sentiment.',
+      'dominant_regime must directly copy the "Regime" classification from the risk regime data above when available, using this exact mapping: risk_off or elevated → "risk_off"; risk_on → "risk_on"; neutral → "neutral". Do not reinterpret or override this with headline sentiment — if the data says neutral, output "neutral" even if headlines feel risk-on or risk-off. Only fall back to inferring from headlines if risk regime data is unavailable.',
       'If rate path data shows bps already priced in for USD, weigh this into confidence — a pair recommendation that fights an already-priced rate path needs stronger non-rate justification.',
       'If options skew for the recommended pair contradicts the recommended direction (e.g. recommending long but skew is put-skewed), lower confidence by at least 1 point and mention the conflict in catalyst_dependency.',
       '',
