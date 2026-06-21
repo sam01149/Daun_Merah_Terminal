@@ -322,11 +322,12 @@ module.exports = async function handler(req, res) {
   const SAMBANOVA_KEY_CALL1 = process.env.SAMBANOVA_API_KEY_CALL1;
   const GROQ_KEY       = process.env.GROQ_API_KEY;
 
+  const host  = req.headers.host || 'financial-feed-app.vercel.app';
+  const proto = host.includes('localhost') ? 'http' : 'https';
+
   // 1. RSS — current feed + 36h Redis history in parallel
   let rssItems = [];
   try {
-    const host = req.headers.host || 'financial-feed-app.vercel.app';
-    const proto = host.includes('localhost') ? 'http' : 'https';
     const cutoff36h = Date.now() - 36 * 60 * 60 * 1000;
     const histTimeout = new Promise(resolve => setTimeout(() => resolve(null), 3000));
     const [rssRes, histRaw] = await Promise.allSettled([
@@ -410,6 +411,21 @@ module.exports = async function handler(req, res) {
       : '\n[KONTEKS HISTORIS 12-36 JAM LALU] (tidak ada)',
   ].join('');
 
+  // Self-healing cache read: if the Redis key is cold (no cron populates these — they're
+  // normally warmed by frontend tab visits), fetch the source endpoint directly so the
+  // digest still gets fresh data, and the endpoint's own SET refreshes the cache for next time.
+  async function fetchOrWarm(key, path, timeoutMs = 15000) {
+    try {
+      const cached = await redisCmd('GET', key);
+      if (cached) return cached;
+    } catch(e) {}
+    try {
+      const r = await fetch(`${proto}://${host}${path}`, { signal: AbortSignal.timeout(timeoutMs) });
+      if (r.ok) return JSON.stringify(await r.json());
+    } catch(e) { console.warn(`fetchOrWarm ${key} failed:`, e.message); }
+    return null;
+  }
+
   // 3b. Load digest history + xau history + real yields + XAU spot + XAU TA + liquidity + yield curve
   //     + risk regime (VIX/MOVE/HY) + rate path (Fed Funds futures) + cross-asset correlations + FX skew, in parallel
   let digestHistory = [], xauHistory = [], realYieldsData = null, xauSpot = null, xauTa = null, liqData = null, ycData = null, rawPrevThesis = null;
@@ -424,10 +440,10 @@ module.exports = async function handler(req, res) {
       redisCmd('GET', 'liquidity_usd'),
       redisCmd('GET', 'yield_curve'),
       redisCmd('GET', 'latest_thesis'),
-      redisCmd('GET', 'risk_regime'),
-      redisCmd('GET', 'rate_path'),
-      redisCmd('GET', 'correlations_v2'),
-      redisCmd('GET', 'rr_cache_v2'),
+      fetchOrWarm('risk_regime', '/api/risk-regime'),
+      fetchOrWarm('rate_path', '/api/rate-path'),
+      fetchOrWarm('correlations_v2', '/api/correlations'),
+      fetchOrWarm('rr_cache_v2', '/api/correlations?action=risk-reversal'),
     ]);
     rawPrevThesis = _rawPrevThesis;
     if (Array.isArray(rawHist)) digestHistory = rawHist.map(e => { try { return JSON.parse(e); } catch(_) { return null; } }).filter(Boolean);
