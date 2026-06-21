@@ -120,20 +120,22 @@ async function fetchXauSpot() {
   return null;
 }
 
-// Read XAU/USD daily TA from Redis cache (written by /api/correlations?action=ta)
-async function fetchXauTA() {
+// Read daily TA (RSI/SMA) from Redis cache (written by /api/correlations?action=ta).
+// Generic — works for XAU (GC=F) and any FX pair Yahoo symbol.
+async function fetchTaCache(symbol) {
   try {
-    const cached = await redisCmd('GET', 'ta:GC=F:1d');
+    const cached = await redisCmd('GET', `ta:${symbol}:1d`);
     if (!cached) return null;
     const d = JSON.parse(cached);
     // Allow up to 2h stale — daily TA doesn't change fast
     if (Date.now() - new Date(d.computed_at).getTime() > 2 * 3600 * 1000) return null;
     return d;
   } catch(e) {
-    console.warn('fetchXauTA failed:', e.message);
+    console.warn(`fetchTaCache ${symbol} failed:`, e.message);
     return null;
   }
 }
+async function fetchXauTA() { return fetchTaCache('GC=F'); }
 
 // Strip <think>...</think> blocks from Qwen3 thinking models — content after </think> is the actual response
 function stripThinking(text) {
@@ -408,10 +410,12 @@ module.exports = async function handler(req, res) {
       : '\n[KONTEKS HISTORIS 12-36 JAM LALU] (tidak ada)',
   ].join('');
 
-  // 3b. Load digest history + xau history + real yields + XAU spot + XAU TA + liquidity + yield curve in parallel
+  // 3b. Load digest history + xau history + real yields + XAU spot + XAU TA + liquidity + yield curve
+  //     + risk regime (VIX/MOVE/HY) + rate path (Fed Funds futures) + cross-asset correlations + FX skew, in parallel
   let digestHistory = [], xauHistory = [], realYieldsData = null, xauSpot = null, xauTa = null, liqData = null, ycData = null, rawPrevThesis = null;
+  let riskRegimeData = null, ratePathData = null, correlationsData = null, riskReversalData = null;
   try {
-    const [rawHist, rawXauHist, rawRY, spotResult, taResult, rawLiq, rawYc, _rawPrevThesis] = await Promise.all([
+    const [rawHist, rawXauHist, rawRY, spotResult, taResult, rawLiq, rawYc, _rawPrevThesis, rawRisk, rawRate, rawCorr, rawRR] = await Promise.all([
       redisCmd('LRANGE', 'digest_history', 0, 6),
       redisCmd('LRANGE', 'xau_history', 0, 3),
       redisCmd('GET', 'real_yields'),
@@ -420,6 +424,10 @@ module.exports = async function handler(req, res) {
       redisCmd('GET', 'liquidity_usd'),
       redisCmd('GET', 'yield_curve'),
       redisCmd('GET', 'latest_thesis'),
+      redisCmd('GET', 'risk_regime'),
+      redisCmd('GET', 'rate_path'),
+      redisCmd('GET', 'correlations_v2'),
+      redisCmd('GET', 'rr_cache_v2'),
     ]);
     rawPrevThesis = _rawPrevThesis;
     if (Array.isArray(rawHist)) digestHistory = rawHist.map(e => { try { return JSON.parse(e); } catch(_) { return null; } }).filter(Boolean);
@@ -427,10 +435,15 @@ module.exports = async function handler(req, res) {
     if (rawRY) realYieldsData = JSON.parse(rawRY);
     xauSpot = spotResult;
     xauTa   = taResult;
-    if (rawLiq) { try { liqData = JSON.parse(rawLiq); } catch(_) {} }
-    if (rawYc)  { try { ycData  = JSON.parse(rawYc);  } catch(_) {} }
+    if (rawLiq)  { try { liqData          = JSON.parse(rawLiq);  } catch(_) {} }
+    if (rawYc)   { try { ycData           = JSON.parse(rawYc);   } catch(_) {} }
+    if (rawRisk) { try { riskRegimeData   = JSON.parse(rawRisk); } catch(_) {} }
+    if (rawRate) { try { ratePathData     = JSON.parse(rawRate); } catch(_) {} }
+    if (rawCorr) { try { correlationsData = JSON.parse(rawCorr); } catch(_) {} }
+    if (rawRR)   { try { riskReversalData = JSON.parse(rawRR);   } catch(_) {} }
     console.log('XAU spot:', xauSpot ? `$${xauSpot.price} (${xauSpot.source})` : 'unavailable');
     console.log('XAU TA:', xauTa ? `RSI=${xauTa.rsi_14} SMA50=${xauTa.price_vs_sma50}` : 'unavailable (cache cold)');
+    console.log('Risk regime:', riskRegimeData ? riskRegimeData.regime : 'unavailable (cache cold)');
   } catch(e) {}
   const historyBlock = digestHistory.length > 0
     ? digestHistory.map(h => `[${h.wib}] ${h.summary}`).join('\n')
@@ -451,11 +464,12 @@ module.exports = async function handler(req, res) {
       }
     }
   } catch(e) {}
-  let xauOhlcvBlock = null, fxOhlcvBlock = null;
+  let xauOhlcvBlock = null, fxOhlcvBlock = null, fxTa = null;
   try {
-    [xauOhlcvBlock, fxOhlcvBlock] = await Promise.all([
+    [xauOhlcvBlock, fxOhlcvBlock, fxTa] = await Promise.all([
       fetchOhlcvContext('GC=F', 'XAU/USD'),
       fetchOhlcvContext(fxOhlcvSymbol, fxOhlcvLabel),
+      fetchTaCache(fxOhlcvSymbol),
     ]);
     console.log('OHLCV context:', xauOhlcvBlock ? 'XAU ok' : 'XAU miss', fxOhlcvBlock ? `${fxOhlcvLabel} ok` : `${fxOhlcvLabel} miss`);
   } catch(e) {
@@ -501,6 +515,74 @@ module.exports = async function handler(req, res) {
     if (xauTa.sma_200 != null && xauTa.price_vs_sma200)
       parts.push(`SMA 200: ${xauTa.sma_200.toLocaleString('en-US', {maximumFractionDigits:2})} — harga ${xauTa.price_vs_sma200 === 'above' ? 'di atas' : 'di bawah'}`);
     xauTaBlock = parts.length > 0 ? parts.join(' | ') : '(Data TA terbatas)';
+  }
+
+  // Build FX pair daily TA block (RSI/SMA) — same cache mechanism as XAU, keyed by recommended pair's symbol
+  let fxTaBlock = '(Cache TA belum tersedia untuk pair ini — kunjungi tab TEK untuk mengisi cache)';
+  if (fxTa) {
+    const parts = [];
+    if (fxTa.rsi_14 != null) {
+      const rsiLabel = fxTa.rsi_14 > 70 ? 'Overbought' : fxTa.rsi_14 < 30 ? 'Oversold' : 'Netral';
+      parts.push(`RSI 14: ${fxTa.rsi_14.toFixed(1)} (${rsiLabel})`);
+    }
+    if (fxTa.sma_50 != null && fxTa.price_vs_sma50)
+      parts.push(`SMA 50 — harga ${fxTa.price_vs_sma50 === 'above' ? 'di atas' : 'di bawah'}`);
+    if (fxTa.sma_200 != null && fxTa.price_vs_sma200)
+      parts.push(`SMA 200 — harga ${fxTa.price_vs_sma200 === 'above' ? 'di atas' : 'di bawah'}`);
+    fxTaBlock = parts.length > 0 ? parts.join(' | ') : '(Data TA terbatas)';
+  }
+
+  // Build risk regime block (VIX/MOVE/HY) — ground-truth for risk-on/off claims instead of inferring from headlines
+  let riskRegimeBlock = '(Data risk regime tidak tersedia — inferensi risk-on/off dari headline saja)';
+  if (riskRegimeData) {
+    const r = riskRegimeData;
+    const parts = [`Regime: ${(r.regime || 'unknown').toUpperCase()}`];
+    if (r.vix != null) parts.push(`VIX ${r.vix}${r.vix_change_2d != null ? ` (${r.vix_change_2d >= 0 ? '+' : ''}${r.vix_change_2d} 2d)` : ''}`);
+    if (r.move != null) parts.push(`MOVE ${r.move}${r.move_change_2d != null ? ` (${r.move_change_2d >= 0 ? '+' : ''}${r.move_change_2d} 2d)` : ''}`);
+    if (r.hy_spread != null) parts.push(`HY OAS ${r.hy_spread}%${r.hy_change_2d != null ? ` (${r.hy_change_2d >= 0 ? '+' : ''}${r.hy_change_2d} 2d)` : ''}`);
+    if (r.vix_term_structure?.structure) parts.push(`VIX term structure: ${r.vix_term_structure.structure}`);
+    riskRegimeBlock = parts.join(' | ');
+  }
+
+  // Build rate path block (market-implied Fed Funds path) — ground-truth for "rate differential" mechanism claims
+  let ratePathBlock = '(Data rate path tidak tersedia — inferensi rate differential dari headline saja)';
+  if (ratePathData?.USD?.cumulative_3m_bps != null) {
+    const rp = ratePathData.USD;
+    const dir3m = rp.cumulative_3m_bps < 0 ? `${Math.abs(rp.cumulative_3m_bps)}bps CUT priced (3m)` : rp.cumulative_3m_bps > 0 ? `${rp.cumulative_3m_bps}bps HIKE priced (3m)` : 'tidak ada perubahan diharga (3m)';
+    const parts = [`USD: ${dir3m}`];
+    if (rp.cumulative_6m_bps != null) {
+      const dir6m = rp.cumulative_6m_bps < 0 ? `${Math.abs(rp.cumulative_6m_bps)}bps CUT (6m)` : rp.cumulative_6m_bps > 0 ? `${rp.cumulative_6m_bps}bps HIKE (6m)` : 'flat (6m)';
+      parts.push(dir6m);
+    }
+    ratePathBlock = parts.join(' | ');
+  }
+
+  // Build cross-asset correlation block — anomalies (regime breaks) + gold's key correlations
+  let correlationBlock = '(Data korelasi cross-asset tidak tersedia)';
+  if (correlationsData) {
+    const lines = [];
+    if (Array.isArray(correlationsData.anomalies) && correlationsData.anomalies.length > 0) {
+      lines.push('Anomali korelasi 20D vs 60D (deviasi >0.4 dari norma — sinyal regime berubah): ' +
+        correlationsData.anomalies.slice(0, 5).map(a => `${a.label} (20D:${a.r20} vs 60D:${a.r60}, Δ${a.delta})`).join('; '));
+    }
+    if (correlationsData.gold_correlations && Object.keys(correlationsData.gold_correlations).length > 0) {
+      lines.push('Korelasi Gold 20D vs aset lain: ' +
+        Object.entries(correlationsData.gold_correlations).map(([k, v]) => `${k}:${v.r20 ?? '?'}`).join(', '));
+    }
+    correlationBlock = lines.length > 0 ? lines.join('\n') : '(Tidak ada anomali signifikan — korelasi sesuai norma historis)';
+  }
+
+  // Build FX/XAU options positioning block (25-delta risk reversal skew) — institutional positioning signal
+  let riskReversalBlock = '(Data risk reversal/skew opsi tidak tersedia)';
+  if (riskReversalData?.available && riskReversalData.pairs) {
+    const entries = Object.entries(riskReversalData.pairs);
+    if (entries.length > 0) {
+      riskReversalBlock = entries.map(([pair, d]) => {
+        const skew = d.rr_value;
+        const lean = skew > 0.05 ? 'call-skewed (bullish bias)' : skew < -0.05 ? 'put-skewed (bearish bias)' : 'netral';
+        return `${pair}: ${skew} (${lean})`;
+      }).join(' | ');
+    }
   }
 
   // 3c. Load externalized prompts from Redis — fall back to hardcoded if missing
@@ -720,13 +802,25 @@ TES WAJIB TIAP KALIMAT: Bisakah kalimat ini ditulis tanpa membaca headlines hari
 
 ATURAN FX:
 PENTING: Bagian FX adalah KHUSUS untuk analisa FX pair dan USD. DILARANG KERAS membahas XAU, emas, gold, bullion, atau harga emas di bagian ini — semua gold content masuk ke bagian XAUUSD. Kalau hari ini yang paling market-moving adalah gold, tetap buka dengan dampaknya ke FX pairs (misal: "Kenaikan tajam XAU memicu risk-off, mengangkat JPY dan CHF vs USD") — bukan membahas gold itu sendiri.
+
+PENDEKATAN BENANG MERAH FX — ikuti urutan ini, JANGAN tulis tema-tema sebagai paragraf lepas yang ditumpuk:
+1. JANGKAR TEMA: Tentukan SATU tema paling market-moving hari ini (CB tertentu, data rilis, atau divergence currency tertentu). Ini titik awal narasi.
+2. RAJUT TEMA: Tema lain HARUS dikaitkan ke tema utama lewat driver bersama yang eksplisit — paling sering USD (DXY arah, real yield, rate path Fed) atau risk sentiment global. Pakai konektor sebab-akibat ("ini berbarengan dengan...", "di sisi lain, ... juga bergerak karena driver yang sama/berlawanan") — JANGAN mulai kalimat baru dengan currency lain tanpa menjelaskan kaitannya ke tema sebelumnya.
+3. Kalau tema-tema benar-benar tidak berkaitan (misal CB Asia vs data AS, tidak ada irisan driver) — boleh dipisah, tapi maksimal 2 tema independen per output. Tema ketiga ke bawah yang tidak terkait → skip, sebut hanya jika punya magnitude kuat.
+4. Continuity DIJALIN ke tema yang relevan, bukan ditulis sebagai kalimat penutup terpisah yang tidak terhubung dengan paragraf sebelumnya (misal: "...berlanjut dari pola sesi sebelumnya" disisipkan langsung setelah klaim terkait, bukan kalimat baru berdiri sendiri).
+5. Penutup FX menyimpulkan dari benang merah yang sudah dibangun, bukan currency baru yang belum disebut di paragraf sebelumnya.
+
+DETAIL PER TEMA (terapkan ke tema yang lolos seleksi di atas):
 Klaim: Sebut nama pejabat, angka, atau pair spesifik dari headline. Tidak ada? Skip tema itu sepenuhnya.
 Mekanisme: Jalur transmisi konkret (rate differential, real yield gap, risk channel, flow). Bukan "berdampak ke pair X" — sebutkan via mekanisme apa.
 Magnitude: Kuat atau marginal. Marginal harus disebut marginal.
+Teknikal: Jika blok PRICE ACTION pair tersedia, sisipkan konteks trend (uptrend/downtrend/sideways), level support/resistance terdekat, atau swing high/low dalam satu kalimat natural — terutama untuk pair yang paling relevan dengan tema fundamental yang dibahas. Jika blok TEKNIKAL pair tersedia juga (RSI/SMA), sisipkan singkat sebagai penguat (misal: "RSI 28 oversold, konsisten dengan tekanan jual yang sudah berlebihan"). Bukan paragraf analisa teknikal terpisah, cukup penguat konteks.
+Rate Differential: Kalau tema menyangkut ekspektasi kebijakan Fed/CB lain, gunakan data RATE PATH (bps cut/hike yang sudah di-price market) sebagai angka konkret — bukan "diperkirakan akan menurunkan suku bunga", tapi "market sudah price-in X bps cut dalam 3 bulan". Kalau data tidak tersedia, boleh infer dari headline tapi jangan klaim angka pasti.
+Risk Sentiment: Kalau tema melibatkan risk-on/risk-off (safe haven flow, JPY/CHF strength, dst), rujuk data RISK REGIME (VIX/MOVE/HY) sebagai bukti konkret, bukan asumsi dari judul berita saja. VIX/MOVE naik tajam = konfirmasi risk-off nyata, bukan cuma persepsi. VIX/MOVE rendah dan stabil = risk-off di headline kemungkinan overstated, sebut ini sebagai konflik kalau relevan.
+Positioning: Jika blok SKEW OPSI FX tersedia untuk pair yang dibahas, sisipkan singkat sebagai konfirmasi atau kontradiksi terhadap arah fundamental (misal: "skew EUR/USD masih put-skewed, menunjukkan positioning belum mengikuti pelemahan dolar ini" — sinyal potensi reversal/catch-up).
 Konflik: Dua signal berlawanan dalam satu tema? Sebut keduanya, putuskan mana lebih berat, jelaskan kenapa.
 Kalender: Hanya event dengan asymmetri beat/miss jelas. Untuk setiap event yang dianalisis, gunakan format prosa ini persis: "[EVENT] ([CURRENCY]) [TIME WIB] — jika beat: [pair] [naik/turun] karena [mekanisme konkret]; jika miss: [pair] [naik/turun] karena [mekanisme konkret]." Event tanpa edge antisipatif → skip sepenuhnya, jangan disebutkan.
 Pejabat CB: Hanya analisa jika menyentuh rate path, balance sheet, atau inflation framework. Non-policy → sebut sekali "tidak ada sinyal kebijakan dari [nama]" lalu lanjut.
-Continuity: Apa yang BERUBAH vs TETAP dari sesi sebelumnya. Tidak ada perubahan material? Nyatakan — itu informasi valid.
 Penutup FX: Satu kalimat menyebut currency paling terkonfirmasi kuat dan paling terkonfirmasi lemah (HANYA pilih dari 8 majors: USD, EUR, GBP, JPY, CAD, AUD, NZD, CHF) — dengan alasan spesifik dari headline, bukan "pasar volatile".
 
 ATURAN XAUUSD (paragraf baru, mulai tepat "XAUUSD:"):
@@ -740,7 +834,10 @@ PENDEKATAN BENANG MERAH — ikuti urutan ini:
 2. RAJUT FAKTA: Hubungkan harga → headline → real yield → geopolitik secara natural, seperti analis yang bercerita. Tidak perlu rantai kausal formal. Cukup: "kenaikan ini didukung oleh X, meski dibatasi oleh Y." Fakta yang saling memperkuat → gabungkan. Fakta yang berlawanan → sebut keduanya, putuskan mana lebih berat dalam satu kalimat. Jika blok TEKNIKAL XAU tersedia, sisipkan RSI dan posisi vs SMA dalam satu kalimat natural sebagai konteks teknikal pendukung (misal: "secara teknikal harga masih di atas SMA 50 dengan RSI 45 di zona netral") — bukan paragraf terpisah.
 3. REAL YIELD sebagai pembatas: Jika real yield > 2%, emas mahal secara struktural — wajib disebut sebagai rem, bukan diabaikan. Tapi jika harga tetap naik meski yield tinggi, artinya tekanan bullish cukup kuat untuk offset — nyatakan ini secara eksplisit.
 4. TIDAK ADA RANTAI KAUSAL WAJIB: Untuk geopolitik minyak (Iran, Hormuz, OPEC) — tidak perlu trace oil→inflasi→Fed→yield secara kaku. Cukup: apakah ada bukti di headline bahwa ini mempengaruhi XAU? Jika ya, sebut. Jika tidak, skip.
-5. Driver sama dengan sesi sebelumnya → nyatakan eksplisit, itu informasi valid.
+5. RISK REGIME sebagai konfirmasi safe-haven: Jika blok RISK REGIME tersedia, gunakan VIX/MOVE sebagai bukti konkret bahwa demand safe-haven nyata (bukan cuma narasi geopolitik tanpa data). Regime "risk_off" + harga naik = haven demand terkonfirmasi data. Regime "risk_on" tapi harga tetap naik = driver bukan safe-haven, harus dijelaskan via mekanisme lain (real yield turun, CB buying, dst).
+6. KORELASI sebagai cek silang: Jika blok KORELASI tersedia dan ada anomali (misal Gold-DXY yang biasanya negatif kuat tapi sekarang melemah), sebut ini sebagai sinyal regime berubah — satu kalimat saja, jangan jelaskan matematika korelasinya.
+7. POSITIONING: Jika blok SKEW OPSI XAU tersedia, sisipkan sebagai konfirmasi/kontradiksi arah (call-skewed = positioning sudah bullish, jadi rally lanjutan butuh trigger baru; put-skewed saat harga naik = skeptisisme market, potensi short squeeze).
+8. Driver sama dengan sesi sebelumnya → nyatakan eksplisit, itu informasi valid.
 
 TRIGGER TERDEKAT 24 JAM: Pilih event dari kalender dengan PRIORITAS TERTINGGI: (1) FOMC/Fed — Minutes, pidato Powell, rate decision; (2) US data — CPI, NFP, GDP; (3) event major currency lain. Format wajib: "[EVENT] [TIME WIB] — jika [outcome]: tekanan [bullish/bearish] XAU karena [mekanisme]; jika [outcome berlawanan]: tekanan [bullish/bearish] XAU karena [mekanisme]." Harus ada DUA skenario. Jika tidak ada event kalender relevan untuk XAU dalam 24 jam, tulis "Tidak ada trigger kalender untuk XAU dalam 24 jam ke depan."
 
@@ -763,8 +860,23 @@ ${xauOhlcvBlock || '(Cache OHLCV belum tersedia — ohlcv_sync cron belum berjal
 === PRICE ACTION ${fxOhlcvLabel} (Daily/4H/1H — context teknikal multi-timeframe untuk pair FX rekomendasi) ===
 ${fxOhlcvBlock || '(Cache OHLCV belum tersedia untuk pair ini.)'}
 
+=== TEKNIKAL ${fxOhlcvLabel} DAILY (RSI/SMA — sebutkan singkat sebagai penguat konteks) ===
+${fxTaBlock}
+
 === DATA REAL YIELD USD (LIVE — gunakan ini, jangan inferensi dari headline) ===
 ${realYieldBlock}
+
+=== RISK REGIME GLOBAL (VIX/MOVE/HY — ground-truth untuk klaim risk-on/risk-off, jangan asumsi dari judul berita saja) ===
+${riskRegimeBlock}
+
+=== RATE PATH USD (market-implied dari Fed Funds futures — angka konkret untuk mekanisme rate differential) ===
+${ratePathBlock}
+
+=== KORELASI CROSS-ASSET (anomali = sinyal regime berubah, gunakan sebagai cek silang) ===
+${correlationBlock}
+
+=== SKEW OPSI FX/XAU 25-delta (positioning institusional — confirm/contradict arah fundamental) ===
+${riskReversalBlock}
 
 === HEADLINE BERITA TERKINI (${headlinesForBriefing.length} dari ${recentItems.length} berita, 36 jam terakhir) ===
 ${headlinesBlock}
@@ -942,6 +1054,13 @@ ${xauHistoryBlock}`;
       xauOhlcvBlock ? `XAU/USD multi-TF price context (use for precise entry, target, invalidation):\n${xauOhlcvBlock.split('\n').slice(1, 8).join('\n')}` : '',
       fxOhlcvBlock  ? `${fxOhlcvLabel} multi-TF price context:\n${fxOhlcvBlock.split('\n').slice(1, 8).join('\n')}`  : '',
       '',
+      `Risk regime (VIX/MOVE/HY, ground-truth — use this to set dominant_regime, do not infer purely from headlines): ${riskRegimeBlock}`,
+      `Rate path (market-implied Fed Funds, bps priced): ${ratePathBlock}`,
+      `Cross-asset correlation anomalies (regime-break signal): ${correlationBlock}`,
+      `FX/XAU options skew (25-delta risk reversal, institutional positioning): ${riskReversalBlock}`,
+      xauTa ? `XAU daily TA: ${xauTaBlock}` : '',
+      fxTa  ? `${fxOhlcvLabel} daily TA: ${fxTaBlock}` : '',
+      '',
       'Return ONLY valid JSON with this exact schema (no markdown, no explanation):',
       '{',
       '  "dominant_regime": "risk_on" | "risk_off" | "neutral",',
@@ -965,6 +1084,9 @@ ${xauHistoryBlock}`;
       'Set direction to "no_trade" and confidence to 1-2 if conviction is low.',
       'Only recommend a pair if CB bias divergence between the two currencies is at least 2 levels apart (e.g. Hawkish vs Dovish).',
       'Use the calendar events to inform invalidation_condition — if a high-impact event for one of the pair currencies is scheduled within time_horizon_days, name it as the primary invalidation trigger.',
+      'dominant_regime must directly copy the "Regime" classification from the risk regime data above when available, using this exact mapping: risk_off or elevated → "risk_off"; risk_on → "risk_on"; neutral → "neutral". Do not reinterpret or override this with headline sentiment — if the data says neutral, output "neutral" even if headlines feel risk-on or risk-off. Only fall back to inferring from headlines if risk regime data is unavailable.',
+      'If rate path data shows bps already priced in for USD, weigh this into confidence — a pair recommendation that fights an already-priced rate path needs stronger non-rate justification.',
+      'If options skew for the recommended pair contradicts the recommended direction (e.g. recommending long but skew is put-skewed), lower confidence by at least 1 point and mention the conflict in catalyst_dependency.',
       '',
       'XAU rules:',
       'xau_bias must be based on fundamental pressure from headlines, NOT price prediction.',
@@ -972,6 +1094,8 @@ ${xauHistoryBlock}`;
       'If gold headlines are sparse (fewer than 3 substantive), set xau_dominant_driver to "insufficient_data" and xau_confidence to 1.',
       'xau_key_trigger must include WIB time if available from calendar, otherwise note "time TBD".',
       'xau_confidence: 1-5 where 5 = multiple converging headlines with clear direction.',
+      'If xau_dominant_driver is "safe_haven", it must be corroborated by the risk regime data (VIX/MOVE elevated or risk_off) — if risk regime is benign/risk_on, do not select "safe_haven" as dominant_driver unless headlines show a very fresh, unpriced shock.',
+      'If gold correlation anomalies show a breakdown vs DXY or real yield (the usual negative correlation weakening), factor this into xau_confidence — a correlation breakdown signals the dominant driver may be shifting.',
     ].join('\n');
 
     const call3Messages = [{ role: 'user', content: thesisPrompt }];
