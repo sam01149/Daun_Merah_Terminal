@@ -8739,15 +8739,44 @@ function szRenderHistory(entries) {
   const histEl = document.getElementById('szHistory');
   if (!histEl) return;
   if (!entries || entries.length === 0) { histEl.innerHTML = ''; return; }
-  histEl.innerHTML = `<div style="font-size:10px;color:var(--muted);margin-bottom:8px;font-family:'DM Mono',monospace;letter-spacing:.05em">RIWAYAT (${entries.length})</div>` +
+  histEl.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <span style="font-size:10px;color:var(--muted);font-family:'DM Mono',monospace;letter-spacing:.05em">RIWAYAT (${entries.length})</span>
+      <button onclick="szClearAllHistory()" style="background:none;border:none;color:var(--muted);font-size:9px;cursor:pointer;font-family:'DM Mono',monospace;text-decoration:underline">Hapus semua</button>
+    </div>` +
     entries.map(e => {
       const d = new Date(e.timestamp);
       const fmt = `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
-      return `<div class="sz-hist-item">
+      return `<div class="sz-hist-item" style="position:relative;padding-right:26px">
+        <button onclick="szDeleteHistoryItem(${e.timestamp})" title="Hapus" style="position:absolute;top:6px;right:6px;background:none;border:none;color:var(--muted);font-size:13px;cursor:pointer;line-height:1;padding:2px 4px">×</button>
         <div class="sz-hist-main">${e.pair} · ${e.lotSize} lots · ${e.riskPct}% risk</div>
         <div>Equity $${(e.equity||0).toLocaleString()} · Stop ${e.stopPips}p · At risk $${(e.dollarRisk||0).toFixed(2)} · ${fmt}</div>
       </div>`;
     }).join('');
+}
+
+async function szDeleteHistoryItem(timestamp) {
+  const deviceId = szGetDeviceId();
+  // Optimistic removal — local cache + re-render first, network call fire-and-forget
+  if (szHistoryCache) {
+    szHistoryCache = szHistoryCache.filter(e => e.timestamp !== timestamp);
+    szRenderHistory(szHistoryCache);
+  }
+  try {
+    await fetch(`/api/sizing-history?device_id=${encodeURIComponent(deviceId)}&timestamp=${timestamp}`, {
+      method: 'DELETE', signal: AbortSignal.timeout(6000),
+    });
+  } catch(e) { console.warn('szDeleteHistoryItem failed:', e.message); }
+}
+
+async function szClearAllHistory() {
+  const deviceId = szGetDeviceId();
+  szHistoryCache = [];
+  szRenderHistory(szHistoryCache);
+  try {
+    await fetch(`/api/sizing-history?device_id=${encodeURIComponent(deviceId)}&all=1`, {
+      method: 'DELETE', signal: AbortSignal.timeout(6000),
+    });
+  } catch(e) { console.warn('szClearAllHistory failed:', e.message); }
 }
 
 async function szLoadHistory() {

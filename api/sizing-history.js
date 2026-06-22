@@ -57,5 +57,23 @@ module.exports = async function handler(req, res) {
     }
   }
 
+  // DELETE ?timestamp=... removes one entry (matched by score, set at POST time).
+  // DELETE ?all=1 clears the whole history for this device.
+  if (req.method === 'DELETE') {
+    try {
+      if (req.query.all === '1') {
+        await redisCmd('DEL', key);
+        return res.status(200).json({ ok: true, cleared: true });
+      }
+      const ts = req.query.timestamp;
+      if (!ts) return res.status(400).json({ error: 'timestamp or all=1 required' });
+      await redisCmd('ZREMRANGEBYSCORE', key, ts, ts);
+      return res.status(200).json({ ok: true });
+    } catch(e) {
+      console.error('sizing-history DELETE failed:', e.message);
+      return res.status(500).json({ error: 'Storage error' });
+    }
+  }
+
   return res.status(405).json({ error: 'Method not allowed' });
 };
