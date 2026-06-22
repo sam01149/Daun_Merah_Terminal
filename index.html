@@ -184,7 +184,7 @@ body {
 .tek-grav-bin { flex:1; background:rgba(255,255,255,.03); border-radius:1px; min-height:2px; transition:height .2s; }
 .tek-grav-axis { display:flex; justify-content:space-between; font:8px 'DM Mono',monospace; color:var(--muted); margin-top:3px; }
 .tek-grav-now { position:absolute; top:0; bottom:-3px; width:1px; background:#38bdf8; }
-.tek-grav-now::after { content:'NOW'; position:absolute; top:-11px; left:50%; transform:translateX(-50%); font:7px 'DM Mono',monospace; color:#38bdf8; white-space:nowrap; }
+.tek-grav-now-label { position:absolute; top:-20px; left:50%; transform:translateX(-50%); font:7px 'DM Mono',monospace; color:#38bdf8; white-space:nowrap; text-align:center; line-height:1.4; }
 .tek-grav-peaks { font:9px 'DM Mono',monospace; color:var(--muted); margin-top:5px; }
 .tek-grav-peaks b { color:var(--yellow); }
 .tek-grav-info {
@@ -9025,7 +9025,9 @@ function renderOptionGravityHeatmap(filtered) {
   }).join('');
 
   const nowMarker = currentPrice != null && currentPrice >= lo && currentPrice <= hi
-    ? `<div class="tek-grav-now" style="left:${((currentPrice - lo) / (hi - lo) * 100).toFixed(2)}%"></div>`
+    ? `<div class="tek-grav-now" style="left:${((currentPrice - lo) / (hi - lo) * 100).toFixed(2)}%">
+         <span class="tek-grav-now-label">NOW<br>${currentPrice.toFixed(4)}</span>
+       </div>`
     : '';
 
   // Top 3 gravity peaks (re-derive from original points clustered loosely by rounding
