@@ -1490,7 +1490,9 @@ async function ohlcvAnalyzeHandler(req, res) {
       ringkasanContext       ? 'konteks makro' : null,
     ].filter(Boolean).join(' + ');
 
-    const userMsg = `Analisa ${data.label}:\n\n${makroBlock}\n\nIsi field JSON berikut:\n- bias: trend dominan Daily (bullish/bearish/neutral)\n- entry_zone: level atau range harga ideal untuk entry (angka konkret)\n- sl: level stop loss konkret berdasarkan Swing Low/High 4H atau Support/Resistance Daily\n- tp: level take profit konkret berdasarkan Swing High/Low 4H atau Resistance/Support Daily\n- trigger: kondisi spesifik teknikal yang HARUS terpenuhi sebelum entry — satu kalimat, misal: "Tunggu candle H1 close di atas X" atau "Entry saat RSI keluar dari oversold"\n- commentary: analisa naratif mendalam 4-5 paragraf, pisah tiap paragraf dengan \\n. Paragraf 1 — bias Daily: jelaskan arah trend dengan alasan konkret (perubahan %, level close vs open, posisi relatif terhadap swing terakhir). Paragraf 2 — struktur H4: posisi harga saat ini terhadap swing high/low H4, apakah dalam fase akumulasi/distribusi/breakout, MACD H4 konfirmasi atau divergensi. Paragraf 3 — momentum H1: kondisi momentum terkini, konfluensi atau perbedaan arah dengan H4${extraCtx?.includes('ATR') ? ', volatilitas berdasarkan ATR' : ''}. Paragraf 4 — integrasi ${extraCtx ? '(' + extraCtx + ')' : 'timeframe'}: simpulkan kekuatan setup, risiko utama, dan kondisi pasar yang memvalidasi atau membatalkan skenario ini. Setiap paragraf wajib sebut minimal 2 angka konkret (harga, %, atau nilai indikator). Hindari kalimat generik.`;
+    const nowPrice = data.h1?.current;
+
+    const userMsg = `Analisa ${data.label}:\n\n${makroBlock}\n\nIsi field JSON berikut:\n- bias: trend dominan Daily (bullish/bearish/neutral)\n- entry_zone: level atau range harga ideal untuk entry (angka konkret). WAJIB konsisten dengan harga "Now" di atas — kalau bias bearish, entry_zone harus >= Now (jual di rally/resistance) ATAU di bawah Now kalau memang breakdown confirmation, TAPI jangan keduanya sekaligus dalam satu trigger yang saling kontradiksi. Kalau Now sudah melewati level breakdown/breakout yang relevan, jangan minta retracement ke arah berlawanan — definisikan entry di sekitar Now atau area immediate berikutnya.\n- sl: level stop loss konkret berdasarkan Swing Low/High 4H atau Support/Resistance Daily. Untuk bearish, sl harus di atas entry_zone. Untuk bullish, sl harus di bawah entry_zone.\n- tp: level take profit konkret berdasarkan Swing High/Low 4H atau Resistance/Support Daily. Untuk bearish, tp harus di bawah entry_zone. Untuk bullish, tp harus di atas entry_zone.\n- trigger: SATU kondisi teknikal spesifik yang HARUS terpenuhi sebelum entry — jangan sebut dua kondisi alternatif yang saling kontradiksi relatif ke Now, misal: "Tunggu candle H1 close di atas X" atau "Entry saat RSI keluar dari oversold"\n- commentary: analisa naratif mendalam 4-5 paragraf, pisah tiap paragraf dengan \\n. Paragraf 1 — bias Daily: jelaskan arah trend dengan alasan konkret (perubahan %, level close vs open, posisi relatif terhadap swing terakhir). Paragraf 2 — struktur H4: posisi harga saat ini terhadap swing high/low H4, apakah dalam fase akumulasi/distribusi/breakout, MACD H4 konfirmasi atau divergensi. Paragraf 3 — momentum H1: kondisi momentum terkini, konfluensi atau perbedaan arah dengan H4${extraCtx?.includes('ATR') ? ', volatilitas berdasarkan ATR' : ''}. Paragraf 4 — integrasi ${extraCtx ? '(' + extraCtx + ')' : 'timeframe'}: simpulkan kekuatan setup, risiko utama, dan kondisi pasar yang memvalidasi atau membatalkan skenario ini. Setiap paragraf wajib sebut minimal 2 angka konkret (harga, %, atau nilai indikator). Hindari kalimat generik.`;
 
     const messages = [
       { role: 'system', content: 'Kamu analis senior teknikal dan makro. Jawab HANYA dengan objek JSON valid (tanpa markdown fence, tanpa teks tambahan apapun di luar JSON). Bahasa Indonesia. Format: {"bias":"...","entry_zone":"...","sl":"...","tp":"...","trigger":"...","commentary":"..."}' },
@@ -1533,6 +1535,29 @@ async function ohlcvAnalyzeHandler(req, res) {
         parsed.bias   = ['bullish', 'bearish', 'neutral'].includes(biasRaw) ? biasRaw : 'neutral';
         structured    = parsed;
         commentary    = parsed.commentary || rawText;
+
+        // Sanity-check entry_zone/sl/tp direction vs current price — drop the
+        // levels (keep bias/trigger/commentary) if the model produced a setup
+        // that contradicts the live price it was given.
+        if (structured.entry_zone && structured.sl && structured.tp && typeof nowPrice === 'number') {
+          const nums = s => (String(s).match(/[\d.]+/g) || []).map(Number).filter(n => !isNaN(n));
+          const entryNums = nums(structured.entry_zone);
+          const slNum = nums(structured.sl)[0];
+          const tpNum = nums(structured.tp)[0];
+          if (entryNums.length && slNum != null && tpNum != null) {
+            const entryLow = Math.min(...entryNums), entryHigh = Math.max(...entryNums);
+            let valid = true;
+            if (structured.bias === 'bearish') {
+              valid = slNum > entryHigh && entryLow > tpNum && nowPrice < slNum && nowPrice > tpNum;
+            } else if (structured.bias === 'bullish') {
+              valid = slNum < entryLow && entryHigh < tpNum && nowPrice > slNum && nowPrice < tpNum;
+            }
+            if (!valid) {
+              console.warn('ohlcv_analyze: entry/sl/tp inconsistent with Now price — dropping levels', { bias: structured.bias, entry_zone: structured.entry_zone, sl: structured.sl, tp: structured.tp, nowPrice });
+              structured.entry_zone = structured.sl = structured.tp = null;
+            }
+          }
+        }
       } catch(e) {
         // Keep rawText as commentary, structured stays null
       }

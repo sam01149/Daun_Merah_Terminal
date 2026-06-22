@@ -120,6 +120,30 @@ Financial_Feed_App/
 
 ---
 
+## Changelog Session 75 (2026-06-22)
+
+### BTC: Triple-Barrier Labeling — Diuji, Hasil: Signifikan Tapi Lebih Lemah Dari Champion
+
+**Konteks:** Konsultasi eksternal (Gemini, diberi konteks lengkap `daun_merah.md` sesi 71-72 + `volatility_regime.py`) mengkritik bahwa target arah/vol-regime di proyek ini pakai label fixed-horizon (`.shift(-HORIZON)`) yang buta terhadap *path* harga — harga bisa menyentuh level lalu berbalik dalam horizon yang sama, dan tetap dianggap satu label. Diusulkan reformulasi via **Triple-Barrier Method** (Lopez de Prado): TP/SL berbasis ATR + time barrier, bukan delay tetap.
+
+**Implementasi (`ml/triple_barrier.py`, baru):** Label long-only — untuk tiap bar, TP = close + 2×ATR, SL = close − 1×ATR, horizon 6 bar (sama dengan `target_dir_6`/`target_vol_regime_6` untuk komparasi adil). Label 1 jika TP tersentuh duluan, 0 jika SL duluan; tie dalam bar yang sama dianggap 0 (tidak bisa dipastikan urutannya dari OHLC). Dua varian time-barrier: "strict" (timeout dibuang) dan "loose" (timeout = 0). Walk-forward CV (LR/RF/GB) + permutation test, sama persis rigor eksperimen lain di proyek ini.
+
+**Hasil:**
+| Timeframe | Varian | AUC terbaik (Logistic Regression) | p-value |
+|---|---|---|---|
+| 4h | loose | 0.582 ± 0.024 | 0.000 |
+| 4h | strict | 0.566 ± 0.023 | 0.000 |
+| 1d | loose | 0.607 ± 0.075 | 0.000 |
+| 1d | strict | 0.597 ± 0.067 | 0.000 |
+
+Sinyalnya nyata (lolos permutation test di semua varian), tapi **lebih lemah dan jauh kurang stabil** dibanding champion proyek (`target_vol_regime_6`: AUC 0.633 ± 0.0035). Std di triple-barrier 0.02-0.075 vs 0.0035 — terutama buruk di 1d (cuma 2635 baris setelah dropna, ~527/fold). Catatan menarik: Logistic Regression menang di sini, bukan tree model — pola terbalik dari semua eksperimen lain di proyek ini (sinyal lebih linear-separable tapi tipis). Distribusi label: TP duluan ~18-20%, SL duluan ~46%, timeout ~34-36%.
+
+**Kesimpulan:** kritik metodologis Gemini soal path-blindness itu valid, tapi memperbaikinya via triple-barrier tidak menghasilkan model lebih baik — cuma target reformulation dengan edge lebih kecil dan lebih tidak stabil. Konsisten dengan kesimpulan sesi 72: ceiling-nya ada di data (informasi yang bisa diekstrak dari OHLCV+konteks BTC sendiri), bukan di cara pelabelan atau pilihan algoritma. **Jangan disarankan ulang tanpa data/horizon yang genuinely baru.**
+
+**File baru:** `ml/triple_barrier.py` (belum di-push — masih tahap eksperimen lokal per instruksi user).
+
+---
+
 ## Changelog Session 72 (2026-06-19)
 
 ### BTC: EDA Target Volatility-Regime, GARCH/Sentiment, Mitigasi Multikolinearitas

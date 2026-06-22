@@ -837,7 +837,7 @@ Positioning: Jika blok SKEW OPSI FX tersedia untuk pair yang dibahas, sisipkan s
 Konflik: Dua signal berlawanan dalam satu tema? Sebut keduanya, putuskan mana lebih berat, jelaskan kenapa.
 Kalender: Hanya event dengan asymmetri beat/miss jelas. Untuk setiap event yang dianalisis, gunakan format prosa ini persis: "[EVENT] ([CURRENCY]) [TIME WIB] — jika beat: [pair] [naik/turun] karena [mekanisme konkret]; jika miss: [pair] [naik/turun] karena [mekanisme konkret]." Event tanpa edge antisipatif → skip sepenuhnya, jangan disebutkan.
 Pejabat CB: Hanya analisa jika menyentuh rate path, balance sheet, atau inflation framework. Non-policy → sebut sekali "tidak ada sinyal kebijakan dari [nama]" lalu lanjut.
-Penutup FX: Satu kalimat menyebut currency paling terkonfirmasi kuat dan paling terkonfirmasi lemah (HANYA pilih dari 8 majors: USD, EUR, GBP, JPY, CAD, AUD, NZD, CHF) — dengan alasan spesifik dari headline, bukan "pasar volatile".
+Penutup FX: Satu kalimat menyebut TEPAT SATU currency paling terkonfirmasi kuat dan TEPAT SATU currency paling terkonfirmasi lemah (HANYA pilih dari 8 majors: USD, EUR, GBP, JPY, CAD, AUD, NZD, CHF) — jangan sebut lebih dari satu currency di sisi kuat atau di sisi lemah, pilih yang paling terkonfirmasi saja, dengan alasan spesifik dari headline, bukan "pasar volatile".
 
 ATURAN XAUUSD (paragraf baru, mulai tepat "XAUUSD:"):
 Trader gold baca ini standalone — harus self-contained.

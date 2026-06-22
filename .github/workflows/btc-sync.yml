@@ -1,8 +1,9 @@
 name: BTC Data Sync
 
 on:
-  schedule:
-    - cron: '5 * * * *'
+  # Schedule dimatikan 2026-06-22 — riset BTC ML diasingkan ke project_delay/ (gitignored),
+  # data/btc/ di root sudah tidak ada. workflow_dispatch tetap ada untuk reaktivasi manual
+  # kalau riset BTC dilanjutkan lagi nanti.
   workflow_dispatch:
 
 jobs:

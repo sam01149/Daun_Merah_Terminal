@@ -15,3 +15,6 @@ environtment.txt
 .claude/
 daun_merah.plan
 __pycache__/
+
+# Riset/model BTC ML dipindah keluar dari kode app aktif, diasingkan dari git tracking
+project_delay/
