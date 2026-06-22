@@ -1718,6 +1718,29 @@ body {
 }
 .tek-pair-select { flex: 1; font-size: 14px; font-weight: 700; color: #38bdf8; }
 .tek-tf-select { font-size: 11px; }
+.tek-pair-combo { position: relative; flex: 1; }
+.tek-pair-trigger {
+  width: 100%; box-sizing: border-box; display: flex; align-items: center; justify-content: space-between;
+  background: var(--surface); color: #38bdf8; border: 1px solid var(--border); border-radius: 6px;
+  padding: 6px 10px; font: 700 14px 'DM Mono',monospace; cursor: pointer;
+}
+.tek-pair-trigger svg { flex-shrink: 0; color: var(--muted); transition: transform .15s; }
+.tek-pair-combo.open .tek-pair-trigger svg { transform: rotate(180deg); }
+.tek-pair-dropdown {
+  display: none; position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 50;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.45); overflow: hidden;
+}
+.tek-pair-combo.open .tek-pair-dropdown { display: block; }
+.tek-pair-search {
+  width: 100%; box-sizing: border-box; background: var(--bg); color: var(--text); border: none;
+  border-bottom: 1px solid var(--border); padding: 9px 10px; font: 12px 'DM Mono',monospace; outline: none;
+}
+.tek-pair-list { max-height: 260px; overflow-y: auto; }
+.tek-pair-opt { padding: 9px 12px; font: 12px 'DM Mono',monospace; color: var(--text); cursor: pointer; }
+.tek-pair-opt:hover { background: rgba(56,189,248,.12); }
+.tek-pair-opt.active { color: #38bdf8; font-weight: 700; }
+.tek-pair-empty { padding: 10px 12px; font: 11px 'DM Mono',monospace; color: var(--muted); }
 .tek-chart-wrap { width: 100%; height: clamp(420px, 62vh, 780px); background: #0d0f14; overflow: hidden; flex-shrink: 0; }
 #tekChartContainer { width: 100%; height: 100%; }
 .tek-chart-offline {
@@ -2579,16 +2602,16 @@ body {
 <!-- TEKNIKAL PANEL -->
 <div class="feed-scroll" id="teknikalPanel" style="display:none;flex-direction:column;padding:0">
   <div class="tek-header">
-    <select class="tek-pair-select" id="tekPairSelect" onchange="onTekPairChange()">
-      <option value="EURUSD">EUR/USD</option>
-      <option value="GBPUSD">GBP/USD</option>
-      <option value="USDJPY">USD/JPY</option>
-      <option value="AUDUSD">AUD/USD</option>
-      <option value="NZDUSD">NZD/USD</option>
-      <option value="USDCAD">USD/CAD</option>
-      <option value="USDCHF">USD/CHF</option>
-      <option value="XAUUSD">XAU/USD</option>
-    </select>
+    <div class="tek-pair-combo" id="tekPairCombo">
+      <button type="button" class="tek-pair-trigger" id="tekPairTrigger" onclick="toggleTekPairDropdown(event)">
+        <span id="tekPairTriggerLabel">EUR/USD</span>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+      </button>
+      <div class="tek-pair-dropdown" id="tekPairDropdown">
+        <input type="text" class="tek-pair-search" id="tekPairSearch" placeholder="Cari pair... (mis. EUR, JPY)" oninput="renderTekPairOptions()" onclick="event.stopPropagation()" onkeydown="onTekPairSearchKey(event)">
+        <div class="tek-pair-list" id="tekPairList"></div>
+      </div>
+    </div>
     <select class="tek-tf-select" id="tekTFSelect" onchange="onTekTFChange()">
       <option value="D">D1</option>
       <option value="240" selected>H4</option>
@@ -8516,50 +8539,52 @@ async function szLoadHistory() {
 }
 
 // ── TEKNIKAL ─────────────────────────────────────────────
-const TEK_PAIR_KEYWORDS = {
-  XAUUSD: ['gold','xau','bullion','precious','safe haven','silver',
-            'fed','fomc','rate','powell','inflation','real yield','cpi','pce',
-            'iran','war','sanction','trump','tariff','china','russia','ukraine',
-            'missile','ceasefire','nato','geopolit','haven','risk off',
-            'brics','dxy','dollar index','treasury yield','debt ceiling',
-            'central bank gold','etf gold','de-dollarization','middle east','israel','conflict'],
-  EURUSD: ['euro','eur/','ecb','lagarde','eurozone','europe','germany','german',
-            'france','french','italy','italian','eu tariff','eu trade',
-            'fed','fomc','dollar','dxy','powell','rate cut','rate hike',
-            'ukraine','russia','energy europe','gas price','tariff',
-            'pmi europe','eu cpi','eu gdp','eu inflation','draghi'],
-  GBPUSD: ['gbp','pound','sterling','boe','bailey','uk ','britain','england',
-            'scotland','budget','gilts','gilt','reeves','chancellor',
-            'fed','fomc','dollar','dxy','powell','tariff',
-            'uk cpi','uk inflation','uk gdp','uk employment','uk jobs',
-            'uk housing','uk retail','uk pmi','labour','keir'],
-  USDJPY: ['jpy','yen','boj','ueda','japan','japanese',
-            'fed','fomc','dollar','powell','yield','treasury','bond',
-            'carry trade','carry unwind','yield curve control','ycc',
-            '10-year','us yield','tariff japan','trade japan',
-            'north korea','nikkei','risk off','china','geopolit'],
-  AUDUSD: ['aud','australia','aussie','rba','iron ore','china','chinese',
-            'commodity','copper','fed','fomc','dollar','powell',
-            'gold','mining','resource','nikkei','asia',
-            'rba rate','employment australia','jobs australia',
-            'trade australia','cpi australia','gdp australia',
-            'tariff china','taiwan','nfp'],
-  NZDUSD: ['nzd','new zealand','rbnz','kiwi',
-            'fed','fomc','dollar','powell',
-            'dairy','milk','fonterra','china','trade nz',
-            'cpi nz','inflation nz','employment nz','jobs nz',
-            'gdp nz','rbnz rate','commodity','asia','tariff'],
-  USDCAD: ['cad','canada','canadian','boc','oil','crude','wti','brent',
-            'opec','barrel','fed','fomc','dollar','powell',
-            'employment canada','jobs canada','trade canada',
-            'tariff canada','housing canada','pipeline','nat gas',
-            'trump canada','cpi canada'],
-  USDCHF: ['chf','swiss','switzerland','snb','franc',
-            'fed','fomc','dollar','powell','safe haven','haven',
-            'geopolit','war','conflict','ukraine','middle east',
-            'gold','eur/chf','inflation swiss','snb',
-            'refuge','risk off'],
+// All FX crosses across the 8 majors + gold, generated programmatically
+// instead of hand-listing 28 combinations.
+const TEK_CURRENCIES = ['EUR','GBP','AUD','NZD','USD','CAD','CHF','JPY'];
+const TEK_FX_PAIRS = [];
+for (let i = 0; i < TEK_CURRENCIES.length; i++) {
+  for (let j = i + 1; j < TEK_CURRENCIES.length; j++) {
+    TEK_FX_PAIRS.push(TEK_CURRENCIES[i] + TEK_CURRENCIES[j]);
+  }
+}
+const TEK_ALL_PAIRS = [
+  'XAUUSD','EURUSD','GBPUSD','USDJPY','AUDUSD','NZDUSD','USDCAD','USDCHF',
+  ...TEK_FX_PAIRS.filter(p => !['EURUSD','GBPUSD','USDJPY','AUDUSD','NZDUSD','USDCAD','USDCHF'].includes(p)).sort(),
+];
+
+// Keyword lists, kept per-currency so each cross pair = union of both legs
+// (china/geopolit/etc are intentionally shared across every pair as a
+// general risk-sentiment driver, not noise specific to one pair).
+const TEK_SHARED_KEYWORDS = ['china','chinese','geopolit','tariff','war','conflict','ukraine','russia','trade','safe haven','haven','risk off'];
+const TEK_CUR_KEYWORDS = {
+  XAU: ['gold','xau','bullion','precious','silver','iran','sanction','missile','ceasefire','nato',
+         'brics','dollar index','central bank gold','etf gold','de-dollarization','middle east','israel'],
+  USD: ['fed','fomc','dollar','dxy','powell','rate cut','rate hike','treasury yield','nfp',
+         'debt ceiling','us cpi','us gdp','us inflation','trump'],
+  EUR: ['euro','eur/','ecb','lagarde','eurozone','europe','germany','german','france','french',
+         'italy','italian','eu tariff','eu trade','pmi europe','eu cpi','eu gdp','eu inflation','draghi'],
+  GBP: ['gbp','pound','sterling','boe','bailey','uk ','britain','england','scotland','budget',
+         'gilts','gilt','reeves','chancellor','uk cpi','uk inflation','uk gdp','uk employment',
+         'uk jobs','uk housing','uk retail','uk pmi','labour','keir'],
+  JPY: ['jpy','yen','boj','ueda','japan','japanese','carry trade','carry unwind',
+         'yield curve control','ycc','nikkei','10-year','us yield','north korea'],
+  AUD: ['aud','australia','aussie','rba','iron ore','commodity','copper','mining','resource',
+         'rba rate','employment australia','jobs australia','trade australia','cpi australia',
+         'gdp australia','taiwan'],
+  NZD: ['nzd','new zealand','rbnz','kiwi','dairy','milk','fonterra','cpi nz','inflation nz',
+         'employment nz','jobs nz','gdp nz','rbnz rate'],
+  CAD: ['cad','canada','canadian','boc','oil','crude','wti','brent','opec','barrel',
+         'employment canada','jobs canada','trade canada','housing canada','pipeline','nat gas','cpi canada'],
+  CHF: ['chf','swiss','switzerland','snb','franc','eur/chf','inflation swiss','refuge'],
 };
+const TEK_PAIR_KEYWORDS = {};
+TEK_ALL_PAIRS.forEach(p => {
+  const legs = p === 'XAUUSD' ? ['XAU','USD'] : [p.slice(0,3), p.slice(3)];
+  const set = new Set(TEK_SHARED_KEYWORDS);
+  legs.forEach(c => (TEK_CUR_KEYWORDS[c] || []).forEach(k => set.add(k)));
+  TEK_PAIR_KEYWORDS[p] = [...set];
+});
 const TEK_CAT_COLOR = {
   'market-moving':'#e74c3c','forex':'#38bdf8','macro':'#a78bfa','econ-data':'#27ae60',
   'energy':'#e67e22','geopolitical':'#fb923c','commodities':'#f59e0b',
@@ -8641,11 +8666,10 @@ function renderTekNews() {
   sec.innerHTML = html;
 }
 
-const TEK_TV_SYM = {
-  EURUSD:'FX:EURUSD', GBPUSD:'FX:GBPUSD', USDJPY:'FX:USDJPY',
-  AUDUSD:'FX:AUDUSD', NZDUSD:'FX:NZDUSD', USDCAD:'FX:USDCAD',
-  USDCHF:'FX:USDCHF', XAUUSD:'FOREXCOM:XAUUSD',
-};
+const TEK_TV_SYM = {};
+TEK_ALL_PAIRS.forEach(p => { TEK_TV_SYM[p] = p === 'XAUUSD' ? 'FOREXCOM:XAUUSD' : ('FX:' + p); });
+
+function tekPairLabel(p) { return p.slice(0, 3) + '/' + p.slice(3); }
 
 let tekPair = 'EURUSD';
 let tekTF = '240';
@@ -8770,8 +8794,56 @@ function createTVChart() {
   });
 }
 
-function onTekPairChange() {
-  tekPair = document.getElementById('tekPairSelect').value;
+function toggleTekPairDropdown(e) {
+  if (e) e.stopPropagation();
+  const combo = document.getElementById('tekPairCombo');
+  const opening = !combo.classList.contains('open');
+  combo.classList.toggle('open', opening);
+  if (opening) {
+    const search = document.getElementById('tekPairSearch');
+    search.value = '';
+    renderTekPairOptions();
+    setTimeout(() => search.focus(), 0);
+  }
+}
+
+function closeTekPairDropdown() {
+  document.getElementById('tekPairCombo')?.classList.remove('open');
+}
+
+document.addEventListener('click', (e) => {
+  const combo = document.getElementById('tekPairCombo');
+  if (combo && combo.classList.contains('open') && !combo.contains(e.target)) combo.classList.remove('open');
+});
+
+function renderTekPairOptions() {
+  const list = document.getElementById('tekPairList');
+  const searchEl = document.getElementById('tekPairSearch');
+  if (!list || !searchEl) return;
+  const q = searchEl.value.trim().toUpperCase().replace('/', '');
+  const matches = TEK_ALL_PAIRS.filter(p => !q || p.includes(q) || tekPairLabel(p).toUpperCase().includes(q));
+  if (matches.length === 0) {
+    list.innerHTML = '<div class="tek-pair-empty">Pair tidak ditemukan.</div>';
+    return;
+  }
+  list.innerHTML = matches.map(p =>
+    `<div class="tek-pair-opt${p === tekPair ? ' active' : ''}" onclick="selectTekPair('${p}')">${tekPairLabel(p)}</div>`
+  ).join('');
+}
+
+function onTekPairSearchKey(e) {
+  if (e.key === 'Escape') { closeTekPairDropdown(); return; }
+  if (e.key !== 'Enter') return;
+  const q = e.target.value.trim().toUpperCase().replace('/', '');
+  const first = TEK_ALL_PAIRS.find(p => !q || p.includes(q) || tekPairLabel(p).toUpperCase().includes(q));
+  if (first) selectTekPair(first);
+}
+
+function selectTekPair(p) {
+  tekPair = p;
+  const label = document.getElementById('tekPairTriggerLabel');
+  if (label) label.textContent = tekPairLabel(p);
+  closeTekPairDropdown();
   const note = document.getElementById('tekNote');
   if (note) note.value = tekNotes[tekPair] || '';
   loadMtfForPair();
@@ -8872,11 +8944,8 @@ function renderTekOptions() {
 // ── TA Panel ─────────────────────────────────────────────────────────────────
 
 // Maps tekPair values → Yahoo Finance symbols used by /api/correlations?action=ta
-const TEK_YAHOO_SYM = {
-  EURUSD:'EURUSD=X', GBPUSD:'GBPUSD=X', USDJPY:'USDJPY=X',
-  AUDUSD:'AUDUSD=X', NZDUSD:'NZDUSD=X', USDCAD:'USDCAD=X',
-  USDCHF:'USDCHF=X', XAUUSD:'GC=F',
-};
+const TEK_YAHOO_SYM = {};
+TEK_ALL_PAIRS.forEach(p => { TEK_YAHOO_SYM[p] = p === 'XAUUSD' ? 'GC=F' : (p + '=X'); });
 
 // TradingView interval codes → Yahoo Finance interval param
 const TEK_TV_TO_API_TF = { 'D':'1d', '240':'4h', '60':'1h', '15':'15m' };
@@ -8974,11 +9043,8 @@ function fmtVol(v) {
   return String(v);
 }
 
-const PAIR_CURS = {
-  EURUSD:['EUR','USD'], GBPUSD:['GBP','USD'], USDJPY:['USD','JPY'],
-  AUDUSD:['AUD','USD'], NZDUSD:['NZD','USD'], USDCAD:['USD','CAD'],
-  USDCHF:['USD','CHF'], XAUUSD:['USD'],
-};
+const PAIR_CURS = {};
+TEK_ALL_PAIRS.forEach(p => { PAIR_CURS[p] = p === 'XAUUSD' ? ['USD'] : [p.slice(0,3), p.slice(3)]; });
 
 function renderTekEventStrip() {
   const el = document.getElementById('tekEventStrip');
@@ -9017,8 +9083,8 @@ function renderTekEventStrip() {
 
 function initTeknikal() {
   if (!tekInited) { loadTekNotes(); tekInited = true; }
-  const sel = document.getElementById('tekPairSelect');
-  if (sel) sel.value = tekPair;
+  const label = document.getElementById('tekPairTriggerLabel');
+  if (label) label.textContent = tekPairLabel(tekPair);
   const tf = document.getElementById('tekTFSelect');
   if (tf) tf.value = tekTF;
   const note = document.getElementById('tekNote');
@@ -9034,6 +9100,7 @@ function initTeknikal() {
 
 // ── DRAWER ────────────────────────────────────────────────
 const DRAWER_ITEMS = [
+  { view:'analisa',     label:'Analisa AI',  desc:'AI thesis & analisa per pair',        col:'#e67e22' },
   { view:'cal',         label:'Kalender',    desc:'Economic calendar & event countdown', col:'#00c896' },
   { view:'riset',       label:'Artikel',     desc:'Riset & artikel macro terbaru',       col:'#34d399' },
   { view:'cot',         label:'COT',         desc:'COT positioning data mingguan',       col:'#a78bfa' },
