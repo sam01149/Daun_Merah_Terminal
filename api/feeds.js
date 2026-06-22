@@ -478,6 +478,22 @@ async function fetchCBFeed(source) {
   }
 }
 
+// Atom feeds (e.g. Blogger/FeedBurner like MTM) emit multiple <link> tags —
+// rel="edit"/"self" point at the raw feed entry, only rel="alternate" is the
+// readable article page. Picking the first <link> blindly grabs the wrong one.
+function pickAtomLink(b) {
+  const tags = b.match(/<link\b[^>]*\/?>/gi) || [];
+  let anyHref = null;
+  for (const tag of tags) {
+    const href = tag.match(/href=["']([^"']+)["']/i)?.[1];
+    if (!href) continue;
+    if (!anyHref) anyHref = href;
+    const rel = tag.match(/rel=["']([^"']+)["']/i)?.[1];
+    if (rel === 'alternate') return href;
+  }
+  return anyHref;
+}
+
 function parseCBRSSItems(xml, sourceKey) {
   const items = [];
 
@@ -500,9 +516,9 @@ function parseCBRSSItems(xml, sourceKey) {
       || get('updated')
       || '';
 
-    // RSS 2.0: <link>url</link> | Atom: <link href="url" .../> | fallback get('link')
+    // RSS 2.0: <link>url</link> | Atom: <link rel="alternate" href="url" .../> | fallback get('link')
     const link = b.match(/<link>\s*(https?:\/\/[^\s<]+)\s*<\/link>/)?.[1]
-      || b.match(/<link[^>]+href=["']([^"']+)["']/i)?.[1]
+      || pickAtomLink(b)
       || get('link')
       || '';
 
