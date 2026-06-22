@@ -82,6 +82,16 @@ body {
 .notif-btn.enabled { border-color:var(--accent); color:var(--accent); }
 .notif-btn:active { transform:scale(.9); }
 
+.popout-btn {
+  width:32px; height:32px; border-radius:50%;
+  border:1px solid var(--border); background:transparent;
+  display:flex; align-items:center; justify-content:center;
+  cursor:pointer; transition:all .2s; color:var(--muted);
+  font-size:14px;
+}
+.popout-btn:hover { border-color:var(--accent); color:var(--accent); }
+.popout-btn:active { transform:scale(.9); }
+
 /* STATS */
 .stats-bar {
   flex-shrink: 0;
@@ -2049,6 +2059,7 @@ body {
       <span id="statusText">IDLE</span>
     </div>
     <button class="notif-btn" id="notifBtn" onclick="requestNotif()" title="Enable notifications">🔔</button>
+    <button class="popout-btn" id="popoutBtn" onclick="popoutView()" title="Buka tab ini di window baru">⧉</button>
   </div>
 </div>
 
@@ -4049,7 +4060,34 @@ document.querySelectorAll('#navViews .nvtab').forEach(btn => {
       initDashboard();
     }
     updateDrawerBtn();
+    try { history.replaceState(null, '', '#' + view); } catch(e) {}
   });
+});
+
+// ── MULTI-WINDOW SUPPORT ─────────────────────────────────
+// Setiap window/tab browser punya activeView sendiri (variabel in-memory, tidak
+// disimpan ke localStorage), jadi membuka beberapa window dari app yang sama
+// sudah otomatis independen satu sama lain. Hash di URL dipakai supaya
+// reload/popout window tetap landing di view yang sama.
+function popoutView() {
+  const view = activeView || 'feed';
+  const url = location.origin + location.pathname + '#' + view;
+  const w = window.open(url, 'dm_' + view, 'width=480,height=860,resizable=yes,scrollbars=yes');
+  if (w) w.focus();
+}
+
+(function restoreViewFromHash() {
+  const view = (location.hash || '').replace('#', '');
+  if (!view || view === 'feed') return;
+  const btn = document.querySelector(`#navViews .nvtab[data-view="${view}"]`);
+  if (btn) btn.click();
+})();
+
+window.addEventListener('hashchange', () => {
+  const view = (location.hash || '').replace('#', '');
+  if (!view || view === activeView) return;
+  const btn = document.querySelector(`#navViews .nvtab[data-view="${view}"]`);
+  if (btn) btn.click();
 });
 
 document.querySelectorAll('#navFilters .ftab').forEach(btn => {
@@ -6267,12 +6305,18 @@ window.addEventListener('load', () => {
     startAutoRefresh();
   }
 
-  // Halaman awal: dashboard di desktop, news di mobile
-  const dashBtn = document.getElementById('dashboardTab');
-  if (dashBtn && getComputedStyle(dashBtn).display !== 'none') {
-    dashBtn.click();
+  // Halaman awal: dashboard di desktop, news di mobile — kecuali window ini
+  // dibuka dengan hash spesifik (multi-window popout), maka hormati hash itu.
+  const hashView = (location.hash || '').replace('#', '');
+  if (hashView && hashView !== 'feed' && hashView !== 'dashboard') {
+    // sudah di-restore oleh restoreViewFromHash(); jangan timpa.
   } else {
-    setTimeout(fetchFeed, 400);
+    const dashBtn = document.getElementById('dashboardTab');
+    if (dashBtn && getComputedStyle(dashBtn).display !== 'none') {
+      dashBtn.click();
+    } else {
+      setTimeout(fetchFeed, 400);
+    }
   }
 
   setTimeout(fetchRegime, 800);
