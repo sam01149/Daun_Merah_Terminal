@@ -7967,7 +7967,7 @@ function calcSizing() {
         const atrColor = stopPips < atrPips ? 'var(--yellow)' : 'var(--green)';
         return `<div style="margin-top:10px;padding-top:8px;border-top:1px solid var(--border);font-family:'DM Mono',monospace;font-size:10px;color:var(--muted)">ATR 14d: <span style="color:${atrColor}">${atrPips} pip</span>${varUsd ? ` · 1d VaR 95%: <span style="color:var(--text)">$${varUsd}</span>` : ''}</div>`;
       })() : ''}
-      <button onclick="szPrefillJurnal()" style="margin-top:10px;width:100%;padding:9px;background:transparent;border:1px solid var(--pink);color:var(--pink);font-family:'DM Mono',monospace;font-size:11px;border-radius:3px;cursor:pointer;letter-spacing:.05em">→ BUAT TRADE DI JURNAL</button>
+      <button onclick="szGoToChecklist()" style="margin-top:10px;width:100%;padding:9px;background:transparent;border:1px solid var(--pink);color:var(--pink);font-family:'DM Mono',monospace;font-size:11px;border-radius:3px;cursor:pointer;letter-spacing:.05em">→ LANJUT KE CHECKLIST</button>
     </div>`;
 
   // Store last sizing for journal bridge
@@ -7977,25 +7977,26 @@ function calcSizing() {
   szSaveHistory({ pair, riskPct, lotSize: lots, equity, stopPips, dollarRisk });
 }
 
-function szPrefillJurnal() {
+// Routes Sizing → Checklist (not straight to Jurnal). Going direct to Jurnal used
+// to skip the checklist gate entirely (no score check, no CB bias/COT snapshot,
+// no override-friction on red items) — the same risk-discipline pipeline every
+// other entry path in this app goes through. Checklist's own MT5/Jurnal buttons
+// already read window._lastSizing (see ckShowMt5Modal) and auto-fill lots/SL/TP
+// from it, AS LONG AS the pair selected in Checklist matches — so the one thing
+// this needs to do beyond switchView is sync that pair selector automatically.
+function szGoToChecklist() {
   const s = window._lastSizing;
   if (!s) return;
-  // Switch to jurnal tab
-  document.getElementById('jurnalTab').click();
-  jnShowView('new');
-  // Set pair
-  const pairSel = document.getElementById('jnPair');
-  if (pairSel) { pairSel.value = s.pair; }
-  // Set direction
-  const dirSel = document.getElementById('jnDir');
-  if (dirSel) dirSel.value = s.direction;
-  // Set prices
-  if (s.entry)   { const el = document.getElementById('jnEntry');  if (el) el.value = s.entry; }
-  if (s.slPrice) { const el = document.getElementById('jnStop');   if (el) el.value = s.slPrice.toFixed(5); }
-  if (s.tpPrice) { const el = document.getElementById('jnTarget'); if (el) el.value = s.tpPrice.toFixed(5); }
-  if (s.lots)    { const el = document.getElementById('jnLots');   if (el) el.value = s.lots; }
-  jnSnapshotInfo();
-  showToast('Sizing ditransfer', `${s.pair} ${s.direction.toUpperCase()} ${s.lots} lots → jurnal`);
+  switchView('checklist');
+  setTimeout(() => {
+    const sel = document.getElementById('ckPairSelector');
+    if (sel) {
+      for (const opt of sel.options) {
+        if (opt.value === s.pair) { sel.value = s.pair; ckOnPairChange(); break; }
+      }
+    }
+    showToast('Sizing siap dipakai', `${s.pair} ${s.direction.toUpperCase()} ${s.lots} lots — lengkapi checklist sebelum entry.`);
+  }, 200);
 }
 
 function szSaveHistory(entry) {
