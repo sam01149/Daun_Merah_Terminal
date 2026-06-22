@@ -9185,6 +9185,11 @@ function renderTaPanel(d) {
 
   loadEl.style.display = 'none';
   gridEl.style.display = 'grid';
+
+  // TA (current_price) and option expiries fetch in parallel and finish in
+  // unpredictable order. If options already rendered first, current_price
+  // wasn't available yet for the gravity heatmap — re-render now that it is.
+  if (tekOptionsCache) renderTekOptions();
 }
 
 function fmtVol(v) {
