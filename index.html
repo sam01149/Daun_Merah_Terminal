@@ -1528,7 +1528,7 @@ body {
 .ck-pb-fill.ready { background: #7dba84; }
 .ck-sp { display: flex; flex-direction: column; gap: 4px; }
 .ck-sp-row { display: flex; align-items: center; gap: 5px; }
-.ck-sp-name { font-size: 8px; color: var(--muted); width: 52px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ck-sp-name { font-size: 8px; color: var(--muted); width: 78px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: default; }
 .ck-sp-bg { flex: 1; height: 2px; background: var(--border); }
 .ck-sp-bar { height: 100%; background: var(--green-dim); transition: width .3s; }
 .ck-sp-bar.full { background: var(--green); }
@@ -4076,12 +4076,12 @@ function popoutView() {
   if (w) w.focus();
 }
 
-(function restoreViewFromHash() {
+function restoreViewFromHash() {
   const view = (location.hash || '').replace('#', '');
   if (!view || view === 'feed') return;
   const btn = document.querySelector(`#navViews .nvtab[data-view="${view}"]`);
   if (btn) btn.click();
-})();
+}
 
 window.addEventListener('hashchange', () => {
   const view = (location.hash || '').replace('#', '');
@@ -6307,9 +6307,12 @@ window.addEventListener('load', () => {
 
   // Halaman awal: dashboard di desktop, news di mobile — kecuali window ini
   // dibuka dengan hash spesifik (multi-window popout), maka hormati hash itu.
+  // Restore baru dipanggil di sini (bukan saat script di-parse) karena view
+  // seperti checklist/teknikal butuh const yang dideklarasikan lebih bawah
+  // di script ini (SZ_PAIRS, CK_SECTIONS, dll) — sudah pasti siap saat 'load'.
   const hashView = (location.hash || '').replace('#', '');
   if (hashView && hashView !== 'feed' && hashView !== 'dashboard') {
-    // sudah di-restore oleh restoreViewFromHash(); jangan timpa.
+    restoreViewFromHash();
   } else {
     const dashBtn = document.getElementById('dashboardTab');
     if (dashBtn && getComputedStyle(dashBtn).display !== 'none') {
@@ -6923,7 +6926,7 @@ function ckBuildUI() {
     </div>`).join('');
   document.getElementById('ckSecProg').innerHTML = CK_SECTIONS.map(s =>
     `<div class="ck-sp-row">
-      <span class="ck-sp-name">${s.title}</span>
+      <span class="ck-sp-name" title="${s.title}">${s.title}</span>
       <div class="ck-sp-bg"><div class="ck-sp-bar" id="ckspb_${s.id}" style="width:0%"></div></div>
       <span class="ck-sp-ct" id="ckspc_${s.id}">0/0</span>
     </div>`).join('');
