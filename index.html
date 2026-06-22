@@ -8578,12 +8578,16 @@ const TEK_CUR_KEYWORDS = {
          'employment canada','jobs canada','trade canada','housing canada','pipeline','nat gas','cpi canada'],
   CHF: ['chf','swiss','switzerland','snb','franc','eur/chf','inflation swiss','refuge'],
 };
-const TEK_PAIR_KEYWORDS = {};
+// Specific (currency-leg) keywords kept separate from shared/generic ones so
+// pair-specific headlines can be ranked above generic geopolitical noise —
+// otherwise every pair's list ends up dominated by the same China/Russia/Iran
+// headlines since those match TEK_SHARED_KEYWORDS regardless of pair.
+const TEK_PAIR_KEYWORDS = {};       // specific keywords only (both legs)
 TEK_ALL_PAIRS.forEach(p => {
   const legs = p === 'XAUUSD' ? ['XAU','USD'] : [p.slice(0,3), p.slice(3)];
-  const set = new Set(TEK_SHARED_KEYWORDS);
-  legs.forEach(c => (TEK_CUR_KEYWORDS[c] || []).forEach(k => set.add(k)));
-  TEK_PAIR_KEYWORDS[p] = [...set];
+  const specific = new Set();
+  legs.forEach(c => (TEK_CUR_KEYWORDS[c] || []).forEach(k => specific.add(k)));
+  TEK_PAIR_KEYWORDS[p] = [...specific];
 });
 const TEK_CAT_COLOR = {
   'market-moving':'#e74c3c','forex':'#38bdf8','macro':'#a78bfa','econ-data':'#27ae60',
@@ -8634,13 +8638,19 @@ function renderTekNews() {
     }).join('');
   }
 
-  // FinancialJuice news filtered by pair keywords
+  // FinancialJuice news filtered by pair keywords — currency-specific matches
+  // ranked first, generic shared/geopolitical ones only fill remaining slots.
   if (allItems && allItems.length > 0) {
-    const kws = TEK_PAIR_KEYWORDS[tekPair] || [];
-    const matches = allItems.filter(item => {
+    const specificKws = TEK_PAIR_KEYWORDS[tekPair] || [];
+    const sharedKws = TEK_SHARED_KEYWORDS;
+    const specific = [];
+    const shared = [];
+    for (const item of allItems) {
       const t = item.title.toLowerCase();
-      return kws.some(k => t.includes(k));
-    }).slice(0, 10);
+      if (specificKws.some(k => t.includes(k))) specific.push(item);
+      else if (sharedKws.some(k => t.includes(k))) shared.push(item);
+    }
+    const matches = specific.concat(shared).slice(0, 10);
 
     if (matches.length === 0 && (!af || !af.items.length)) {
       html += '<div class="tek-news-empty">Tidak ada berita relevan saat ini.</div>';
