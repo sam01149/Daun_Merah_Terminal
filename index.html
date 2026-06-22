@@ -2909,6 +2909,20 @@ body {
   </div>
 </div>
 
+<div id="ckOverrideModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9999;align-items:center;justify-content:center">
+  <div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:22px 20px;width:min(360px,92vw);max-height:90vh;overflow-y:auto">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+      <div style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--yellow)">⚠ Override Sinyal Otomatis</div>
+      <button onclick="ckCancelOverride()" style="background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer;line-height:1">×</button>
+    </div>
+    <div id="ckOverrideMsg" style="font-size:11px;color:var(--muted);line-height:1.5;margin-bottom:12px;padding:8px 10px;background:rgba(192,57,43,.08);border:1px solid rgba(192,57,43,.2);border-radius:6px"></div>
+    <div style="font-size:9px;color:var(--muted);letter-spacing:.8px;text-transform:uppercase;margin-bottom:5px">Kenapa tetap lanjut? (wajib diisi)</div>
+    <textarea id="ckOverrideReasonInput" oninput="ckOverrideInputCheck()" placeholder="Mis: data baru keluar setelah sinyal ini dihitung, sudah saya cek manual..." style="width:100%;min-height:64px;background:var(--bg);color:var(--text);border:1px solid var(--border);padding:8px 10px;border-radius:6px;font-family:'DM Mono',monospace;font-size:11px;box-sizing:border-box;resize:vertical"></textarea>
+    <button id="ckOverrideConfirmBtn" disabled onclick="ckConfirmOverride()" style="width:100%;margin-top:12px;padding:12px;background:var(--yellow);color:#000;border:none;border-radius:8px;font-weight:700;font-size:11px;letter-spacing:.8px;text-transform:uppercase;cursor:pointer">Centang Tetap (dengan alasan)</button>
+    <button onclick="ckCancelOverride()" style="width:100%;margin-top:7px;padding:10px;background:transparent;color:var(--muted);border:1px solid var(--border);border-radius:8px;font-size:10px;cursor:pointer">Batal</button>
+  </div>
+</div>
+
 <script>
 const FETCH_URL = '/api/feeds?type=rss';
 
@@ -6650,9 +6664,24 @@ let CK_GATES    = PLAYBOOKS[ckActivePlaybook].gates;
 let ckState = {}, ckInitialized = false, ckClockInterval = null;
 let ckCurrentPair = ''; // tracks current pair for per-pair localStorage key
 
+// Auto-tick "teeth": which auto items are currently flagged red by the system
+// (ckAutoBlocked), why (ckAutoBlockHints), and — if the user overrode a red
+// item anyway — the justification they typed (ckOverrideReasons). All three
+// are in-memory + per-pair persisted; ckAutoBlocked/Hints are also recomputed
+// fresh every time ckAutoTickRegimeCheck reruns, so they always reflect the
+// system's CURRENT read of reality, not a stale snapshot.
+let ckAutoBlocked = {};
+let ckAutoBlockHints = {};
+let ckOverrideReasons = {};
+let ckOverridePendingId = null;
+
 function _ckPairKey(pair) {
   const p = (pair || ckCurrentPair || '').replace('/', '');
   return p ? `daunmerah_v2_state_${p}` : 'daunmerah_v2';
+}
+function _ckOverrideKey(pair) {
+  const p = (pair || ckCurrentPair || '').replace('/', '');
+  return p ? `daunmerah_v2_overrides_${p}` : 'daunmerah_v2_overrides';
 }
 function ckLoad(pair) {
   try {
@@ -6660,12 +6689,84 @@ function ckLoad(pair) {
     const s = localStorage.getItem(key);
     ckState = s ? JSON.parse(s) : {};
   } catch(e) { ckState = {}; }
+  try {
+    const s2 = localStorage.getItem(_ckOverrideKey(pair));
+    ckOverrideReasons = s2 ? JSON.parse(s2) : {};
+  } catch(e) { ckOverrideReasons = {}; }
 }
 function ckSave() {
   try { localStorage.setItem(_ckPairKey(), JSON.stringify(ckState)); } catch(e) {}
 }
+function ckSaveOverrides() {
+  try { localStorage.setItem(_ckOverrideKey(), JSON.stringify(ckOverrideReasons)); } catch(e) {}
+}
 
-function ckToggleItem(id) { ckState[id] = !ckState[id]; ckSave(); ckRender(); }
+function ckToggleItem(id) {
+  const turningOn = !ckState[id];
+  // Checking a box the system has flagged red requires a one-sentence reason first —
+  // friction against FOMO, not a hard lock (user can still proceed, just has to
+  // consciously acknowledge they're going against the auto-signal).
+  if (turningOn && ckAutoBlocked[id]) { ckRequestOverride(id); return; }
+  ckState[id] = !ckState[id];
+  if (!ckState[id] && ckOverrideReasons[id]) { delete ckOverrideReasons[id]; ckSaveOverrides(); }
+  ckSave(); ckRender();
+}
+
+function ckRequestOverride(id) {
+  ckOverridePendingId = id;
+  const hint = ckAutoBlockHints[id] || '';
+  const msgEl = document.getElementById('ckOverrideMsg');
+  if (msgEl) msgEl.textContent = hint ? `Sinyal otomatis: ${hint}` : 'Item ini ditandai otomatis sebagai belum terpenuhi.';
+  const ta = document.getElementById('ckOverrideReasonInput');
+  if (ta) { ta.value = ckOverrideReasons[id] || ''; }
+  ckOverrideInputCheck();
+  const modal = document.getElementById('ckOverrideModal');
+  if (modal) modal.style.display = 'flex';
+  setTimeout(() => ta && ta.focus(), 50);
+}
+
+function ckOverrideInputCheck() {
+  const ta  = document.getElementById('ckOverrideReasonInput');
+  const btn = document.getElementById('ckOverrideConfirmBtn');
+  if (!btn) return;
+  btn.disabled = !(ta && ta.value.trim().length >= 5);
+  btn.style.opacity = btn.disabled ? '.4' : '1';
+  btn.style.cursor  = btn.disabled ? 'default' : 'pointer';
+}
+
+function ckCancelOverride() {
+  ckOverridePendingId = null;
+  const modal = document.getElementById('ckOverrideModal');
+  if (modal) modal.style.display = 'none';
+}
+
+function ckConfirmOverride() {
+  const id = ckOverridePendingId;
+  if (!id) return;
+  const ta = document.getElementById('ckOverrideReasonInput');
+  const reason = ta ? ta.value.trim() : '';
+  if (reason.length < 5) return; // guarded by disabled button; defensive check anyway
+
+  ckState[id] = true;
+  ckOverrideReasons[id] = reason;
+  ckSaveOverrides();
+
+  // Update the badge in place to "⚠ overridden" (yellow) so it's visually distinct
+  // from a clean system "✓ auto" and from the original red "⚠ blocked".
+  const box = document.getElementById('ckbox_' + id);
+  if (box) {
+    const item = box.closest('.ck-item');
+    const badge = item?.querySelector('.auto-badge');
+    if (badge) {
+      badge.style.cssText = 'font-size:8px;color:var(--yellow);margin-left:6px;opacity:.85';
+      badge.textContent = '⚠ overridden';
+      badge.title = `Override: ${reason}`;
+    }
+  }
+
+  ckSave(); ckRender();
+  ckCancelOverride();
+}
 
 function ckToggleSection(id) {
   const body = document.getElementById('ckb_' + id);
@@ -6925,7 +7026,10 @@ function ckPrefillJurnal() {
     const missing = sec.items.filter(it => !ckState[it.id]);
     if (!checked.length && !missing.length) return;
     lines.push(`\n— ${sec.title}:`);
-    checked.forEach(it => lines.push(`  ✅ ${it.label}`));
+    checked.forEach(it => {
+      const overrideNote = ckOverrideReasons[it.id] ? ` (⚠ override: "${ckOverrideReasons[it.id]}")` : '';
+      lines.push(`  ✅ ${it.label}${overrideNote}`);
+    });
     missing.forEach(it => lines.push(`  ⬜ ${it.label}`));
   });
 
@@ -7060,7 +7164,10 @@ async function ckMt5AutoJournal(pair, direction, fill, lots, sl, tp) {
     const missing = sec.items.filter(it => !ckState[it.id]);
     if (!checked.length && !missing.length) return;
     lines.push(`\n— ${sec.title}:`);
-    checked.forEach(it => lines.push(`  ✅ ${it.label}`));
+    checked.forEach(it => {
+      const overrideNote = ckOverrideReasons[it.id] ? ` (⚠ override: "${ckOverrideReasons[it.id]}")` : '';
+      lines.push(`  ✅ ${it.label}${overrideNote}`);
+    });
     missing.forEach(it => lines.push(`  ⬜ ${it.label}`));
   });
 
@@ -7160,6 +7267,11 @@ function ckUpdateClock() {
 
 function ckAutoTick(id, hint) {
   ckState[id] = true;
+  ckAutoBlocked[id] = false;
+  delete ckAutoBlockHints[id];
+  // The system now agrees the condition is fine — an earlier user override (if any)
+  // is moot, drop it so the Jurnal thesis doesn't carry a stale "override" note.
+  if (ckOverrideReasons[id]) { delete ckOverrideReasons[id]; ckSaveOverrides(); }
   const box = document.getElementById('ckbox_' + id);
   if (box) {
     const item = box.closest('.ck-item');
@@ -7168,10 +7280,12 @@ function ckAutoTick(id, hint) {
       if (!badge) {
         badge = document.createElement('span');
         badge.className = 'auto-badge';
-        badge.style.cssText = 'font-size:8px;color:var(--green);margin-left:6px;opacity:.7';
-        badge.textContent = '✓ auto';
         item.appendChild(badge);
       }
+      // Always reset color/text — previously this only ran for newly-created badges,
+      // so an item that flipped from blocked(red) to auto(green) kept showing red.
+      badge.style.cssText = 'font-size:8px;color:var(--green);margin-left:6px;opacity:.7';
+      badge.textContent = '✓ auto';
       badge.title = hint;
     }
   }
@@ -7180,6 +7294,8 @@ function ckAutoTick(id, hint) {
 
 function ckAutoBlock(id, hint) {
   ckState[id] = false;
+  ckAutoBlocked[id] = true;
+  ckAutoBlockHints[id] = hint;
   const box = document.getElementById('ckbox_' + id);
   if (box) {
     const item = box.closest('.ck-item');
