@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-06-22 (session 79 — Audit ketahanan informasi (dipicu kritik Gemini, diverifikasi ulang ke kode sebelum eksekusi — beberapa klaim Gemini ternyata sudah basi/berlebihan, lihat Changelog Session 79). 4 perbaikan: (1) `api/calendar.js` sekarang serve stale-cache dari Redis kalau ForexFactory fetch gagal total (sebelumnya hard 500, satu-satunya endpoint tanpa fallback apapun), + badge "⚠ Data lama" di UI kalender. (2) TA cache (`ta:{symbol}:1d`) sekarang dipanaskan via cron baru `.github/workflows/ta-warm.yml` (hourly, 8 pair utama) — sebelumnya cuma terisi kalau user buka tab TEK duluan. (3) `market-digest.js` Call 2 (CB bias): swing besar dengan confidence non-High sekarang tidak lagi di-skip diam-diam — bias lama dipertahankan tapi confidence di-downgrade ke Low + `divergence_warning` disimpan & ditampilkan di CB tracker UI. (4) Pair FX untuk OHLCV context di digest sekarang dipilih dari currency dominan di headline hari ini (pakai `CB_KW`/`relevantCurrencies` yang sudah ada), bukan dari `pair_recommendation` thesis kemarin yang bisa basi kalau ada rotasi fokus pasar. Semua diverifikasi: syntax check, replika logic test (pair-selection 5 skenario PASS, divergence-flag 4 skenario PASS), dan live test di `vercel dev` lokal dengan Redis production — termasuk nemu & fix bug nyata: SET Redis fire-and-forget di calendar.js tidak sempat selesai sebelum function Vercel mati, jadi diubah ke `await`.)
+> **Last updated:** 2026-06-22 (session 80 — Fallback sumber NEWS: `api/feeds.js` `rssHandler` sekarang coba **Investinglive** (`https://investinglive.com/feed/news/`) kalau FinancialJuice gagal fetch total, sebelum jatuh ke stale cache. Dipicu pertanyaan user "cek bagian news, apakah bisa di scrap" — diuji dulu beberapa kandidat: Investinglive & Investing.com (`investing.com/rss/news_1.rss`) sukses di-scrape (RSS standar, struktur kompatibel langsung dengan parser yang ada), DailyFX/FXStreet gagal fetch total, Reuters feed publik sudah 404. Pilih Investinglive karena domain sudah dipercaya di codebase (dipakai utk option expiries) dan kedalaman/genre konten paling mirip FJ. Response cache (`rss_cache`) sekarang menyimpan field `source` (`financialjuice`/`investinglive_fallback`), response header baru `X-News-Source`. Frontend: status pill NEWS tab nampilkan "LIVE (fallback)" + dot kuning (`.dot.warn`, CSS baru) kalau lagi pakai fallback. Sambil di sini, nemu & fix bug yang sama dengan session 79 (SET Redis fire-and-forget tanpa `await` di `rssHandler`) — sekarang di-`await` juga. Diverifikasi via `vercel dev` + Redis production: path normal (financialjuice, 100 item) dan path fallback (FinancialJuice di-mock gagal via monkey-patch `fetch`, Investinglive berhasil, 25 item, cache tersimpan dengan `source` benar, parser frontend mem-parse semua 25 item dengan field lengkap).)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Financial_Feed_App`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -117,6 +117,33 @@ Financial_Feed_App/
 > **Penting:** `api/feeds.js` menggantikan `api/rss.js` dan `api/cot.js` yang sudah dihapus.
 > `api/admin.js` menggantikan `api/health.js`, `api/redis-keys.js`, `api/admin-prompts.js`, dan `api/push.js`.
 > Konsolidasi ini dilakukan untuk tetap di bawah limit 12 serverless functions Vercel Hobby.
+
+---
+
+## Changelog Session 80 (2026-06-22)
+
+### NEWS Fallback Source — Investinglive Kalau FinancialJuice Down
+
+**Konteks:** Lanjutan session 79 — item "tidak dieksekusi" (fallback RSS) sempat ditunda karena belum ada sinyal urgensi. User minta dicek ulang: "cek bagian news, apakah bisa di scrap." Bukan asumsi — langsung uji fetch ke beberapa kandidat dari jaringan nyata sebelum menjawab.
+
+**Hasil riset kandidat:**
+| Sumber | Hasil |
+|---|---|
+| Investinglive `/feed/news/` | ✅ HTTP 200, RSS standar WordPress, 25 item, genre macro/forex sama persis dengan FJ (politik UK, Iran/Hormuz, China rare earth) |
+| Investing.com `/rss/news_1.rss` | ✅ HTTP 200, kategori "Forex News" khusus |
+| DailyFX | ❌ fetch gagal total |
+| FXStreet | ❌ fetch gagal total |
+| Reuters (feed publik) | ❌ 404, sudah tidak aktif |
+
+Investinglive dipilih: domain sudah dipercaya (dipakai untuk option expiries di `optionsHandler`), dan struktur XML-nya (`<rss><item><title><guid><pubDate><link><description>`, CDATA-wrapped) **kompatibel langsung** tanpa transformasi dengan parser yang sudah ada (`parseRSSItems` di server, `parseRSS` di frontend) — tidak perlu endpoint normalisasi baru.
+
+**Implementasi (`api/feeds.js` `rssHandler`):** Tambah `RSS_FALLBACK_URL`. Kalau fetch FinancialJuice gagal (network error / HTTP non-200 / response bukan RSS), coba fetch Investinglive sebelum jatuh ke stale Redis cache. Cache payload (`rss_cache`) sekarang menyimpan field `source` (`'financialjuice'` atau `'investinglive_fallback'`) untuk observability. Response header baru `X-News-Source` (selain `X-Cache-Source` yang sudah ada, sekarang juga punya value `FALLBACK`).
+
+**Bug ikut ditemukan & diperbaiki (pola sama dengan session 79):** `redisCmd('SET', RSS_CACHE_KEY, ...).catch(()=>{})` di `rssHandler` adalah fire-and-forget tanpa `await` sebelum response dikirim — berisiko function Vercel mati sebelum SET selesai (TTL cache cuma 50-60s jadi dampaknya kemungkinan setiap fetch nyaris selalu miss cache dan hit upstream langsung, memperberat beban ke FinancialJuice). Diubah jadi `await` dengan try/catch.
+
+**Frontend (`index.html`):** `fetchRSS()` sekarang membaca header `X-News-Source` dan simpan ke `lastNewsSource`. `fetchFeed()`: kalau `lastNewsSource === 'investinglive_fallback'`, status pill NEWS tab tampil "LIVE (fallback)" dengan dot kuning berkedip (`.dot.warn`, CSS baru — reuse pola blink dari `.dot.live` tapi warna `var(--yellow)`) supaya user sadar sedang baca sumber non-primer, bukan diam-diam ganti sumber tanpa indikasi.
+
+**Testing:** `node --check` semua file + extract inline `<script>`. Live test via `vercel dev` + Redis production: (1) path normal — `financialjuice`, 100 item, header `X-News-Source: financialjuice`; (2) path fallback — `global.fetch` di-monkey-patch supaya request ke `financialjuice.com` reject, request ke Investinglive tetap asli → hasil 25 item, `X-Cache-Source: FALLBACK`, cache Redis tersimpan dengan `source: investinglive_fallback` (diverifikasi langsung via Upstash REST GET, bukan cuma percaya response). Direplay juga logic `parseRSS()` frontend persis terhadap XML Investinglive asli — 25/25 item lolos punya guid+title+pubDate+link lengkap.
 
 ---
 

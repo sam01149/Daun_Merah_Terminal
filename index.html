@@ -69,6 +69,7 @@ body {
 .dot.live { background:var(--green); box-shadow:0 0 6px var(--green); animation:blink 2s infinite; }
 .dot.loading { background:var(--yellow); }
 .dot.error { background:var(--red); }
+.dot.warn { background:var(--yellow); box-shadow:0 0 6px var(--yellow); animation:blink 2s infinite; }
 @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
 
 .notif-btn {
@@ -3101,12 +3102,20 @@ function sendToSW(msg) {
 }
 
 // ── FETCH RSS ────────────────────────────────────────────
+let lastNewsSource = 'financialjuice';
+
 async function fetchRSS() {
   try {
     const c = new AbortController();
     setTimeout(() => c.abort(), 12000);
     const r = await fetch(FETCH_URL, { signal: c.signal });
-    if (r.ok) { const t = await r.text(); if (t.includes('<rss')) return t; }
+    if (r.ok) {
+      const t = await r.text();
+      if (t.includes('<rss')) {
+        lastNewsSource = r.headers.get('X-News-Source') || 'financialjuice';
+        return t;
+      }
+    }
   } catch(e) {}
   return null;
 }
@@ -3178,7 +3187,11 @@ async function fetchFeed() {
   const now = new Date();
   document.getElementById('lastUpdate').textContent =
     `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')} WIB`;
-  setStatus('live','LIVE');
+  if (lastNewsSource === 'investinglive_fallback') {
+    setStatus('warn', 'LIVE (fallback)');
+  } else {
+    setStatus('live','LIVE');
+  }
   updateStats();
   renderFeed(!isFirstLoad && newItems.length > 0);
 

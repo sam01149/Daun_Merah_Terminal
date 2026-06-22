@@ -43,6 +43,10 @@ async function redisCmd(...args) {
 const RSS_CACHE_TTL_MS = 50 * 1000;
 const RSS_CACHE_KEY    = 'rss_cache';
 const RSS_URL          = 'https://www.financialjuice.com/feed.ashx?xy=rss';
+// Fallback when FinancialJuice is down/blocked — standard WordPress RSS, same
+// macro/forex news genre, guid/title/pubDate/link/description shape already
+// compatible with parseRSSItems() / frontend parseRSS().
+const RSS_FALLBACK_URL = 'https://investinglive.com/feed/news/';
 const RSS_USER_AGENTS  = [
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
   'Feedly/1.0 (+http://www.feedly.com/fetcher.html; like FeedFetcher-Google)',
@@ -69,7 +73,7 @@ async function rssHandler(req, res) {
   }
 
   const ua = RSS_USER_AGENTS[Math.floor(Math.random() * RSS_USER_AGENTS.length)];
-  let xml = null, fetchError = null;
+  let xml = null, fetchError = null, sourceUsed = 'financialjuice';
 
   try {
     const r = await fetch(RSS_URL, {
@@ -79,6 +83,23 @@ async function rssHandler(req, res) {
     if (r.ok) { const t = await r.text(); if (t.includes('<rss')) xml = t; else fetchError = 'NOT_RSS'; }
     else fetchError = 'HTTP_' + r.status;
   } catch(e) { fetchError = e.message; }
+
+  // Primary source down/blocked — try fallback source before resorting to stale cache
+  if (!xml) {
+    console.warn('FinancialJuice RSS failed:', fetchError, '— trying fallback (Investinglive)');
+    try {
+      const r2 = await fetch(RSS_FALLBACK_URL, {
+        headers: { 'User-Agent': ua, 'Accept': 'application/rss+xml,*/*' },
+        signal: AbortSignal.timeout(12000),
+      });
+      if (r2.ok) {
+        const t2 = await r2.text();
+        if (t2.includes('<rss') && t2.includes('<item>')) { xml = t2; sourceUsed = 'investinglive_fallback'; }
+      }
+    } catch(e2) {
+      console.warn('Fallback RSS (Investinglive) also failed:', e2.message);
+    }
+  }
 
   if (!xml) {
     try {
@@ -90,16 +111,19 @@ async function rssHandler(req, res) {
       }
     } catch(e2) {}
     res.setHeader('Content-Type', 'application/json');
-    return res.status(502).json({ error: 'Upstream fetch failed', detail: fetchError });
+    return res.status(502).json({ error: 'Upstream fetch failed (primary + fallback)', detail: fetchError });
   }
 
-  const payload = JSON.stringify({ xml, fetchedAt: now });
-  redisCmd('SET', RSS_CACHE_KEY, payload, 'EX', 60).catch(() => {});
+  const payload = JSON.stringify({ xml, fetchedAt: now, source: sourceUsed });
+  try { await redisCmd('SET', RSS_CACHE_KEY, payload, 'EX', 60); } catch(e3) {
+    console.warn('RSS Redis SET failed:', e3.message);
+  }
 
   // Fire-and-forget: persist items to 36h rolling history for market-digest
   storeNewsHistory(xml, now).catch(() => {});
 
-  res.setHeader('X-Cache-Source', 'UPSTREAM');
+  res.setHeader('X-Cache-Source', sourceUsed === 'financialjuice' ? 'UPSTREAM' : 'FALLBACK');
+  res.setHeader('X-News-Source', sourceUsed);
   return res.status(200).send(xml);
 }
 
