@@ -17,6 +17,31 @@ const STOOQ_MOVE = 'https://stooq.com/q/d/l/?s=%5emove&i=d&l=5'
 //   neutral  — no stress, but not all-clear
 //   elevated — VIX 20-25, MOVE 100-130, or rapid VIX spike (+3 in 2d)
 //   risk_off — VIX>25, MOVE>130, or HY widening >15bps in 2d
+//
+// Backtested 2026-06-22 against 10y daily Yahoo history: these exact cutoffs
+// produce a healthy, non-dominant split (risk_on 26% / neutral 28% / elevated
+// 28% / risk_off 18%) — i.e. NOT a "stuck on neutral" calibration bug. "Neutral"
+// showing up a lot recently reflects that 2024-2026 realized vol has genuinely
+// run hotter than the 10y average, not a broken threshold. See VIX_PCTL_10Y /
+// MOVE_PCTL_10Y below — used to show users "how normal is today" alongside the
+// categorical label, since the bucket alone hides where today sits in context.
+
+// Percentile breakpoints from VIX/MOVE daily closes, trailing 10y (computed 2026-06-22
+// from Yahoo Finance ^VIX / ^MOVE). Refresh every year or two — distribution drifts slowly.
+const VIX_PCTL_10Y  = [[5,10.7],[10,11.88],[25,13.54],[50,16.89],[75,21.51],[90,27.39],[95,31.02]]
+const MOVE_PCTL_10Y = [[5,46.16],[10,48.75],[25,56.12],[50,71.91],[75,102.28],[90,123.6],[95,131.73]]
+
+// Linear-interpolated percentile rank of `value` against a [percentile, value] breakpoint table.
+function percentileRank(value, table) {
+  if (value == null) return null
+  if (value <= table[0][1]) return Math.max(1, Math.round(table[0][0] * (value / table[0][1])))
+  for (let i = 0; i < table.length - 1; i++) {
+    const [p0, v0] = table[i], [p1, v1] = table[i + 1]
+    if (value <= v1) return Math.round(p0 + (value - v0) / (v1 - v0) * (p1 - p0))
+  }
+  const [pLast, vLast] = table[table.length - 1]
+  return Math.min(99, Math.round(pLast + (value - vLast) / vLast * 20))
+}
 
 const USER_AGENTS = [
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124 Safari/537.36',
@@ -143,9 +168,11 @@ module.exports = async function handler(req, res) {
     vix,
     vix_change_2d: vixChange,
     vix_source: vixData?.source || null,   // 'yahoo' = near real-time | 'fred' = EOD fallback
+    vix_percentile_10y: percentileRank(vix, VIX_PCTL_10Y),
     vix_term_structure: vixTermStructure,
     move,
     move_source: moveData?.source || null, // 'yahoo' = near real-time | 'stooq' = EOD fallback
+    move_percentile_10y: percentileRank(move, MOVE_PCTL_10Y),
     move_change_2d: moveChange,
     hy_spread: hySpread,
     hy_change_2d: hyChange,

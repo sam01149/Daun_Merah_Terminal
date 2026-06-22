@@ -6137,7 +6137,8 @@ function renderRegimeBanner(data) {
                  : data.vix < 15 ? '< 15 → Risk-On'
                  : '15–20 → netral'
     const src    = data.vix_source === 'yahoo' ? ' · live (15m delay)' : ' · EOD'
-    rows.push(`<div class="${cls}">VIX (vol. saham) ${data.vix.toFixed(1)}${chg} — ${status}${src}</div>`)
+    const pctl   = data.vix_percentile_10y != null ? ` · P${data.vix_percentile_10y}/10th` : ''
+    rows.push(`<div class="${cls}">VIX (vol. saham) ${data.vix.toFixed(1)}${chg} — ${status}${src}${pctl}</div>`)
   }
 
   // MOVE row
@@ -6151,7 +6152,8 @@ function renderRegimeBanner(data) {
                  : data.move < 90 ? '< 90 → Risk-On'
                  : '90–100 → netral'
     const moveSrc = data.move_source === 'yahoo' ? ' · live (15m delay)' : ' · EOD'
-    rows.push(`<div class="${cls}">MOVE (vol. obligasi) ${Math.round(data.move)}${chg} — ${status}${moveSrc}</div>`)
+    const movePctl = data.move_percentile_10y != null ? ` · P${data.move_percentile_10y}/10th` : ''
+    rows.push(`<div class="${cls}">MOVE (vol. obligasi) ${Math.round(data.move)}${chg} — ${status}${moveSrc}${movePctl}</div>`)
   } else {
     rows.push(`<div class="regime-trigger" style="opacity:.4">MOVE (vol. obligasi) — data tidak tersedia</div>`)
   }
@@ -6184,6 +6186,7 @@ function renderRegimeBanner(data) {
   // Trigger summary
   const elevNote = elevatedActive ? ' · Elevated aktif' : ''
   rows.push(`<div style="margin-top:4px;opacity:.55">${triggerCount}/${availCount} Risk-Off trigger aktif${elevNote} · Risk-On = semua benign (VIX<15, MOVE<90, HY tidak melebar)</div>`)
+  rows.push(`<div style="opacity:.4">P[n]/10th = persentil 10 tahun terakhir — P52 artinya lebih tinggi dari 52% hari dalam dekade ini. "Neutral" sering berarti benar-benar median, bukan fitur error.</div>`)
 
   // Data note
   const moveSrcNote = data.move_source === 'yahoo' ? 'VIX & MOVE live (15m delay) · HY EOD' : 'VIX live (15m delay) · MOVE/HY EOD'
