@@ -2299,6 +2299,7 @@ body {
       <button onclick="calcSizing()">HITUNG</button>
     </div>
     <div id="szBlockWarning" style="display:none;padding:12px;border-radius:4px;font-size:11px;margin-top:12px;font-family:'DM Mono',monospace;line-height:1.5"></div>
+    <div id="szEventRiskWarning" style="display:none;padding:12px;border-radius:4px;font-size:11px;margin-top:12px;font-family:'DM Mono',monospace;line-height:1.5;color:var(--accent);border:1px solid var(--accent);background:rgba(192,57,43,.08)"></div>
     <div id="szResult" style="display:none"></div>
     <div id="szHistory" style="margin-top:24px"></div>
   </div>
@@ -7777,11 +7778,42 @@ function initSizing() {
   szLoadHistory();
 }
 
+// Event-risk check for Sizing Calculator — reuses the same calData global +
+// _ckEvTimestamp() the Checklist tab already uses for its rc4 auto-block, just
+// with a wider 24h lookahead (sizing is a pre-trade decision made earlier than
+// the entry trigger itself, so it should warn sooner than Checklist's 6h gate).
+// ATR-based sizing only looks at trailing volatility — it's blind to scheduled
+// catalysts that can blow past a backward-looking stop distance (NFP/FOMC spread
+// widening, etc.), so this doesn't replace ATR, it adds the missing "calendar eye".
+function _szCheckEventRisk(pair) {
+  if (!calData || !pair || !pair.includes('/')) return [];
+  const [base, quote] = pair.split('/');
+  const now = Date.now();
+  const h24 = 24 * 3600 * 1000;
+  return calData.filter(ev => {
+    if (ev.impact !== 'High') return false;
+    const t = _ckEvTimestamp(ev);
+    return t && t > now && t < now + h24 && (ev.currency === base || ev.currency === quote);
+  });
+}
+
 function calcSizing() {
   const equity  = parseFloat(document.getElementById('szEquity').value) || 0;
   const riskPct = parseFloat(document.getElementById('szRisk').value) || 0;
   const pair    = document.getElementById('szPair').value;
   const rrTarget = parseFloat(document.getElementById('szRR').value) || 2;
+
+  const eventRiskEl = document.getElementById('szEventRiskWarning');
+  const dangerousEvents = _szCheckEventRisk(pair);
+  if (eventRiskEl) {
+    if (dangerousEvents.length > 0) {
+      const evList = dangerousEvents.map(e => `${e.currency} ${e.event} (${e.time_wib})`).join(', ');
+      eventRiskEl.style.display = 'block';
+      eventRiskEl.innerHTML = `⛔ <b>High Event Risk &lt;24 jam:</b> ${evList}<br>ATR cuma lihat volatilitas 14 hari ke belakang — nggak tahu soal rilis ini. Spread bisa melebar & harga bisa lompat jauh dari jarak SL yang dihitung. Pertimbangkan lot lebih kecil (lihat saran diskon di hasil) atau tunggu sampai event lewat.`;
+    } else {
+      eventRiskEl.style.display = 'none';
+    }
+  }
 
   // Resolve entry price and stop pips based on mode
   let stopPips, entry, slPrice;
@@ -7923,6 +7955,7 @@ function calcSizing() {
       <div class="sz-main">${lots.toFixed(2)} lots <span style="font-size:14px;color:var(--muted)">${szDir.toUpperCase()}</span></div>
       <div class="sz-sub">${miniLots.toFixed(2)} mini · ${microLots.toFixed(2)} micro</div>
       <div class="sz-sub" style="margin-top:6px">At risk: <span style="color:var(--accent)">$${dollarRisk.toFixed(2)}</span> · Pip value: $${pipVal.toFixed(2)}/lot</div>
+      ${dangerousEvents.length > 0 ? `<div style="margin-top:6px;padding:8px 10px;background:rgba(192,57,43,.1);border:1px solid var(--accent);border-radius:4px"><div style="color:var(--accent);font-weight:700;font-size:10px">⛔ Saran diskon 50% (event risk &lt;24 jam)</div><div style="font-size:13px;margin-top:2px">${(Math.floor(lots * 50) / 100).toFixed(2)} lots</div></div>` : ''}
       ${slStr}${tpStr}
       ${warnings.map(w => `<div style="color:var(--yellow);font-size:10px;margin-top:6px">⚠ ${w}</div>`).join('')}
       <table class="sz-r-table"><thead><tr style="color:var(--muted);font-size:9px">${thCols}</tr></thead><tbody>${rTableRows}</tbody></table>
@@ -8176,6 +8209,23 @@ function jnRenderEntries() {
       ? `<div style="font-size:10px;color:var(--text-mid);margin-top:4px;font-family:'DM Mono',monospace">${priceParts.join(' · ')}</div>`
       : '';
 
+    // Excursion (MFE/MAE) — "execution reality check": shows whether price moved
+    // favorably before the trade closed, so a loss can be read as panic-exit vs
+    // thesis-was-wrong. Only shown when computeMfeMae() actually had OHLCV
+    // coverage for the trade's duration — silently omitted otherwise (most older
+    // trades fall outside the rolling cache window; that's the expected default,
+    // not worth flagging on every single card).
+    const exc = e.excursion;
+    const excRow = (exc && exc.quality !== 'unavailable')
+      ? `<div style="font-size:10px;margin-top:3px;font-family:'DM Mono',monospace">
+           <span style="color:var(--green)">MFE +${exc.mfe_dist}</span>
+           <span style="color:var(--muted)"> (${jnFmtPrice(e.pair, exc.mfe_price)})</span>
+           <span style="color:var(--muted)"> · </span>
+           <span style="color:var(--accent)">MAE -${Math.abs(exc.mae_dist)}</span>
+           <span style="color:var(--muted)"> (${jnFmtPrice(e.pair, exc.mae_price)}) · data ${exc.quality}</span>
+         </div>`
+      : '';
+
     // Thesis with expand
     let thesisHtml = '';
     if (e.thesis_text) {
@@ -8207,6 +8257,7 @@ function jnRenderEntries() {
         ${e.regime_at_entry ? ` · Regime: ${e.regime_at_entry.replace('_',' ').toUpperCase()}` : ''}
       </div>
       ${priceRow}
+      ${excRow}
       ${thesisHtml}
       ${e.status === 'closed' && e.attribution_notes ? `<div style="font-size:10px;color:var(--muted);margin-top:4px;font-family:'DM Mono',monospace;font-style:italic">${e.attribution_notes.slice(0, 150)}${e.attribution_notes.length > 150 ? '…' : ''}</div>` : ''}
       <div style="margin-top:8px;display:flex;gap:4px">${closeBtn}${archBtn}</div>

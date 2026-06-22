@@ -52,6 +52,71 @@ function uid() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 }
 
+// ── MFE/MAE (max favorable/adverse excursion) ─────────────────────────────
+// Computed once, at the moment a trade is closed, from OHLCV candles already
+// synced by the ohlcv_sync cron (api/admin.js). This is a rolling cache (~5d
+// at 1H, ~10d at 4H, ~30d at 1D) — NOT a permanent price-path store — so it
+// only works if [entry_time, close_time] still falls inside that window.
+// Older/longer-held trades, or pairs the cron never synced, get an explicit
+// "unavailable" quality flag instead of a fabricated/partial number.
+const PAIR_SYMBOL_MAP = {
+  EURUSD: 'EURUSD=X', GBPUSD: 'GBPUSD=X', USDJPY: 'USDJPY=X',
+  AUDUSD: 'AUDUSD=X', USDCAD: 'USDCAD=X', USDCHF: 'USDCHF=X',
+  NZDUSD: 'NZDUSD=X', EURJPY: 'EURJPY=X', GBPJPY: 'GBPJPY=X',
+  EURGBP: 'EURGBP=X', AUDJPY: 'AUDJPY=X', EURAUD: 'EURAUD=X',
+  GBPAUD: 'GBPAUD=X', GBPCAD: 'GBPCAD=X', XAUUSD: 'GC=F',
+};
+
+function computeExcursion(direction, entryPrice, candles) {
+  let best = entryPrice, worst = entryPrice;
+  for (const c of candles) {
+    if (direction === 'long') {
+      if (c.h > best)  best  = c.h;
+      if (c.l < worst) worst = c.l;
+    } else {
+      if (c.l < best)  best  = c.l;
+      if (c.h > worst) worst = c.h;
+    }
+  }
+  return {
+    mfe_price: +best.toFixed(6),
+    mae_price: +worst.toFixed(6),
+    mfe_dist:  +(direction === 'long' ? best  - entryPrice : entryPrice - best ).toFixed(6),
+    mae_dist:  +(direction === 'long' ? entryPrice - worst : worst - entryPrice).toFixed(6),
+  };
+}
+
+async function computeMfeMae(entry) {
+  if (entry.entry_price == null || !entry.created_at || !entry.direction) {
+    return { quality: 'unavailable', reason: 'missing_fields' };
+  }
+  const pairKey = (entry.pair || '').toUpperCase().replace('/', '');
+  const symbol  = PAIR_SYMBOL_MAP[pairKey];
+  if (!symbol) return { quality: 'unavailable', reason: 'pair_not_synced' };
+
+  const entryTs = new Date(entry.created_at).getTime() / 1000;
+  const exitTs  = Date.now() / 1000;
+  const tiers   = [
+    { key: `ohlcv:${symbol}:1h`, label: '1h' },
+    { key: `ohlcv:${symbol}:4h`, label: '4h' },
+    { key: `ohlcv:${symbol}:1d`, label: '1d' },
+  ];
+
+  for (const tier of tiers) {
+    try {
+      const raw = await redisCmd('GET', tier.key);
+      if (!raw) continue;
+      const candles = JSON.parse(raw);
+      if (!Array.isArray(candles) || candles.length === 0) continue;
+      if (candles[0].t > entryTs) continue; // window doesn't reach back to entry — try a coarser tier
+      const windowed = candles.filter(c => c.t >= entryTs && c.t <= exitTs);
+      if (windowed.length === 0) continue;
+      return { ...computeExcursion(entry.direction, entry.entry_price, windowed), quality: tier.label };
+    } catch(e) { continue; }
+  }
+  return { quality: 'unavailable', reason: 'data_window_exceeded' };
+}
+
 module.exports = async function handler(req, res) {
   Object.entries(CORS).forEach(([k, v]) => res.setHeader(k, v));
   if (req.method === 'OPTIONS') return res.status(204).end();
@@ -92,6 +157,7 @@ module.exports = async function handler(req, res) {
       r_actual:          null,
       attribution_notes: null,
       closed_at:         null,
+      excursion:         null, // filled on close — see computeMfeMae()
     };
 
     try {
@@ -130,6 +196,13 @@ module.exports = async function handler(req, res) {
       // Auto-set closed_at when status becomes closed/archived
       if (data.status === 'closed' || data.status === 'archived') {
         entry.closed_at = entry.closed_at || new Date().toISOString();
+      }
+
+      // Compute MFE/MAE once, right when the trade actually closes — this is the
+      // only moment the OHLCV rolling cache is guaranteed to still cover entry_time.
+      if ((entry.status === 'closed' || entry.status === 'archived') && !entry.excursion) {
+        try { entry.excursion = await computeMfeMae(entry); }
+        catch(e) { entry.excursion = { quality: 'unavailable', reason: e.message }; }
       }
 
       await redisCmd('SET', entryKey, JSON.stringify(entry));
@@ -191,6 +264,14 @@ module.exports = async function handler(req, res) {
         : 'no CB data';
       const drivers = Array.isArray(e.driver_references) && e.driver_references.length > 0
         ? e.driver_references.join(', ') : null;
+      // MFE/MAE — "execution reality check": lets the AI tell apart a thesis that
+      // was simply wrong vs one that was right but exited early on panic/noise.
+      // Only included when the OHLCV rolling cache actually covered the trade's
+      // full duration (see computeMfeMae in this file) — never a guessed number.
+      const exc = e.excursion;
+      const excInfo = exc && exc.quality !== 'unavailable'
+        ? `  Excursion (data ${exc.quality}): MFE +${exc.mfe_dist} (harga terbaik ${exc.mfe_price}) | MAE -${Math.abs(exc.mae_dist)} (harga terburuk ${exc.mae_price})`
+        : '  Excursion: data tidak cukup (di luar jangkauan cache OHLCV)';
       return [
         `Trade ${i + 1}: ${e.pair} ${(e.direction || '').toUpperCase()} | ${result} | ${entryDate}`,
         `  RR planned: ${e.rr_planned || 'N/A'} | Horizon: ${e.time_horizon || 'N/A'} | Regime: ${e.regime_at_entry || 'N/A'}`,
@@ -200,6 +281,7 @@ module.exports = async function handler(req, res) {
         `  Thesis: ${(e.thesis_text || '').slice(0, 250)}`,
         e.attribution_notes ? `  Post-trade note: ${e.attribution_notes.slice(0, 200)}` : '',
         `  Exit reason: ${e.exit_reason || 'N/A'}`,
+        excInfo,
       ].filter(Boolean).join('\n');
     }).join('\n\n');
 
@@ -207,8 +289,8 @@ module.exports = async function handler(req, res) {
     try {
       analysis = await aiCall([
         { role: 'system', content: 'Kamu adalah coach trading forex profesional yang menganalisis jurnal trading seorang trader discretionary macro. Trader ini menggunakan framework berbasis: CB bias per currency (hawkish/dovish), regime pasar (risk_on/off/neutral), COT positioning, dan thesis fundamental makro. Berikan analisis jujur, spesifik, dan actionable dalam Bahasa Indonesia. Format: heading dengan **bold**, poin-poin ringkas. Fokus pada pola nyata dari data — jangan generik, jangan teori umum trading.' },
-        { role: 'user', content: `Analisis ${entries.length} trade closed berikut:\n\nStatistik: Win rate ${winRate}% | Total R ${typeof totalR === 'number' ? totalR.toFixed(2) : totalR} | Avg R/trade ${avgR}\n\n${tradeSummaries}\n\nAnalisis:\n1. **Pola Hasil** — identifikasi pola win/loss berdasarkan regime, pair, atau horizon. Apakah ada kondisi spesifik di mana trader ini lebih sering menang atau kalah?\n2. **Keselarasan Framework** — untuk setiap trade, apakah CB bias kedua currency dan regime mendukung arah trade saat entry? Sebutkan trade mana yang masuk meski konteks tidak selaras, dan apakah hasilnya konsisten dengan itu.\n3. **Kualitas Thesis & Driver** — seberapa spesifik dan dapat difalsifikasi thesis yang dicantumkan? Apakah driver yang disebutkan terbukti relevan dengan hasil?\n4. **Kelemahan Utama** — 2-3 kelemahan paling jelas yang terpola dari data, bukan dari teori\n5. **Rekomendasi Konkret** — 3 hal spesifik yang bisa langsung diubah dalam proses entry berikutnya\n\nMaksimal 600 kata.` },
-      ], 1200);
+        { role: 'user', content: `Analisis ${entries.length} trade closed berikut:\n\nStatistik: Win rate ${winRate}% | Total R ${typeof totalR === 'number' ? totalR.toFixed(2) : totalR} | Avg R/trade ${avgR}\n\n${tradeSummaries}\n\nAnalisis:\n1. **Pola Hasil** — identifikasi pola win/loss berdasarkan regime, pair, atau horizon. Apakah ada kondisi spesifik di mana trader ini lebih sering menang atau kalah?\n2. **Keselarasan Framework** — untuk setiap trade, apakah CB bias kedua currency dan regime mendukung arah trade saat entry? Sebutkan trade mana yang masuk meski konteks tidak selaras, dan apakah hasilnya konsisten dengan itu.\n3. **Kualitas Thesis & Driver** — seberapa spesifik dan dapat difalsifikasi thesis yang dicantumkan? Apakah driver yang disebutkan terbukti relevan dengan hasil?\n4. **Realitas Eksekusi (MFE/MAE)** — kalau data excursion tersedia, bedakan trade yang LOSS karena thesis salah (MFE kecil, harga nggak pernah ke arah yang diharapkan) vs trade yang LOSS karena panic-exit/noise (MFE besar/menguntungkan tapi tetap exit rugi — artinya thesis sempat benar tapi eksekusinya yang gagal). Sebutkan trade spesifik mana yang masuk kategori panic-exit kalau ada.\n5. **Kelemahan Utama** — 2-3 kelemahan paling jelas yang terpola dari data, bukan dari teori\n6. **Rekomendasi Konkret** — 3 hal spesifik yang bisa langsung diubah dalam proses entry/eksekusi berikutnya\n\nMaksimal 650 kata.` },
+      ], 1400);
     } catch(e) {
       console.error('journal analyze: AI call failed:', e.message);
       return res.status(502).json({ error: 'AI tidak tersedia: ' + e.message });
