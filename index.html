@@ -8964,10 +8964,7 @@ function renderOptionGravityHeatmap(filtered) {
     const w = parseOptionSizeWeight(e.size) / nums.length;
     for (const n of nums) points.push({ level: parseFloat(n), w });
   }
-  if (points.length < 2) return '';
-
-  let lo = Math.min(...points.map(p => p.level));
-  let hi = Math.max(...points.map(p => p.level));
+  if (points.length === 0) return '';
 
   // Pull in current price (best-effort, from whatever TF's TA cache is loaded) so
   // the heatmap shows where price sits relative to expiry gravity, and the range
@@ -8975,6 +8972,14 @@ function renderOptionGravityHeatmap(filtered) {
   const sym = TEK_YAHOO_SYM[tekPair];
   const taKey = sym ? `${sym}:${TEK_TV_TO_API_TF[tekTF] || '1d'}` : null;
   const currentPrice = taKey ? tekTaCache[taKey]?.data?.current_price : null;
+
+  // Need at least 2 reference points on the strip — either 2+ expiry levels, or
+  // a single level plotted against current price. With neither, there's nothing
+  // to show position against (a lone number with no reference is just noise).
+  if (points.length < 2 && currentPrice == null) return '';
+
+  let lo = Math.min(...points.map(p => p.level));
+  let hi = Math.max(...points.map(p => p.level));
   if (currentPrice != null) { lo = Math.min(lo, currentPrice); hi = Math.max(hi, currentPrice); }
 
   const pad = Math.max((hi - lo) * 0.08, (hi - lo) === 0 ? lo * 0.001 : 0);
