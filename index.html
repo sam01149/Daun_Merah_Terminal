@@ -2665,7 +2665,7 @@ body {
   </div>
   <div class="tek-mtf-section">
     <div class="tek-note-wrap">
-      <div class="tek-note-label">Catatan analisa</div>
+      <div class="tek-note-label">Catatan analisa <button class="tek-note-auto-btn" id="tekNoteAutoBtn" onclick="autoFillTekNote()" title="Isi/ganti catatan dengan ringkasan otomatis dari data Makro/Swing/Entry">↻ Auto</button></div>
       <textarea id="tekNote" placeholder="Key levels, setup yang dipantau, atau catatan sesi..." oninput="saveTekNote()"></textarea>
     </div>
     <div id="tekNewsSection" style="margin-top:6px"></div>
@@ -8807,6 +8807,56 @@ function saveTekNote() {
   const v = document.getElementById('tekNote');
   if (!v) return;
   tekNotes[tekPair] = v.value;
+  localStorage.setItem('tek_notes', JSON.stringify(tekNotes));
+}
+
+// Compose a short technical summary from the same MAKRO(D1)/SWING(H4)/ENTRY(H1)
+// data shown in the ANALISA tab — only used when the user explicitly clicks the
+// "↻ Auto" button next to Catatan Analisa. Never runs on its own (pair switch,
+// tab open, etc.) — the note stays fully manual unless the user asks for this.
+function composeTekAutoNote(d) {
+  if (!d) return null;
+  const fmt = n => typeof n === 'number' ? n.toFixed(d.dec) : String(n);
+  const lines = [];
+  if (d.d1?.available) {
+    lines.push(`[D1] ${d.d1.trend} · now ${fmt(d.d1.current)} · resist ${d.d1.resistance.map(fmt).join('/')} · support ${d.d1.support.map(fmt).join('/')}`);
+  }
+  if (d.h4?.available) {
+    lines.push(`[H4] swing high ${fmt(d.h4.swing_high.price)} · swing low ${fmt(d.h4.swing_low.price)}`);
+  }
+  if (d.h1?.available) {
+    lines.push(`[H1] ${d.h1.trend} · range ${fmt(d.h1.low)}–${fmt(d.h1.high)}`);
+  }
+  return lines.length > 0 ? lines.join('\n') : null;
+}
+
+async function autoFillTekNote() {
+  const noteEl = document.getElementById('tekNote');
+  const btn    = document.getElementById('tekNoteAutoBtn');
+  if (!noteEl) return;
+
+  const pairAtCall = tekPair;
+  const sym = TEK_YAHOO_SYM[pairAtCall];
+  if (!sym) return;
+
+  let d = analisaDataCache[sym];
+  if (!d) {
+    if (btn) { btn.disabled = true; btn.textContent = '…'; }
+    try {
+      const res = await fetch(`/api/admin?action=ohlcv_read&symbol=${encodeURIComponent(sym)}&label=${encodeURIComponent(tekPairLabel(pairAtCall))}`, { signal: AbortSignal.timeout(12000) });
+      if (res.ok) { d = await res.json(); analisaDataCache[sym] = d; }
+    } catch(e) { /* silent — user can retry by clicking the button again */ }
+    if (btn) { btn.disabled = false; btn.textContent = '↻ Auto'; }
+  }
+  if (tekPair !== pairAtCall) return; // pair switched while fetch was in flight
+
+  const text = composeTekAutoNote(d);
+  if (!text) {
+    showToast('Data belum tersedia', `MTF ${tekPairLabel(pairAtCall)} belum ke-sync — coba pair major (XAU/EUR/GBP/JPY/AUD/CAD/CHF/NZD) atau buka tab Analisa AI dulu.`, 4000);
+    return;
+  }
+  noteEl.value = text;
+  tekNotes[pairAtCall] = text;
   localStorage.setItem('tek_notes', JSON.stringify(tekNotes));
 }
 
