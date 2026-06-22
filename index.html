@@ -177,6 +177,16 @@ body {
 .tek-opts-size  { color:var(--yellow); }
 .tek-opts-link  { font-size:9px; color:var(--muted); text-decoration:none; }
 .tek-opts-link:hover { color:#38bdf8; }
+
+/* Option Gravity Heatmap — horizontal bin strip, intensity = level clustering */
+.tek-grav-wrap { margin-bottom:10px; }
+.tek-grav-strip { display:flex; align-items:flex-end; height:34px; gap:1px; position:relative; }
+.tek-grav-bin { flex:1; background:rgba(255,255,255,.03); border-radius:1px; min-height:2px; transition:height .2s; }
+.tek-grav-axis { display:flex; justify-content:space-between; font:8px 'DM Mono',monospace; color:var(--muted); margin-top:3px; }
+.tek-grav-now { position:absolute; top:0; bottom:-3px; width:1px; background:#38bdf8; }
+.tek-grav-now::after { content:'NOW'; position:absolute; top:-11px; left:50%; transform:translateX(-50%); font:7px 'DM Mono',monospace; color:#38bdf8; white-space:nowrap; }
+.tek-grav-peaks { font:9px 'DM Mono',monospace; color:var(--muted); margin-top:5px; }
+.tek-grav-peaks b { color:var(--yellow); }
 .riset-title { font-size:11px; font-family:'DM Mono',monospace; color:var(--text); text-decoration:none; line-height:1.4; display:block; }
 .riset-title:hover { color:#34d399; }
 .riset-date { font-size:9px; color:var(--muted); font-family:'DM Mono',monospace; margin-top:3px; }
@@ -8928,6 +8938,100 @@ async function fetchTekOptions() {
   renderTekOptions();
 }
 
+// Parse size strings like "1.2b", "€500m", "1.5bln" into a relative weight.
+// Unit-normalized to "millions" so billions sort meaningfully heavier than millions.
+// Empty/unparseable size → weight 1 (count-based fallback — common since Investinglive's
+// prose format usually omits size; every mentioned level still counts equally).
+function parseOptionSizeWeight(sizeStr) {
+  if (!sizeStr || !sizeStr.trim()) return 1;
+  const s = sizeStr.toLowerCase().replace(/[€$¥£,]/g, '');
+  const m = s.match(/([\d.]+)\s*(b(?:ln)?|billion|m(?:ln)?|million)?/);
+  if (!m || !m[1]) return 1;
+  const num = parseFloat(m[1]);
+  if (isNaN(num) || num <= 0) return 1;
+  const isBillion = /^b/.test(m[2] || '');
+  return isBillion ? num * 1000 : num;
+}
+
+// Renders a horizontal "gravity" heatmap: bins the price range into segments and
+// accumulates expiry weight per bin, so clusters of nearby levels visually stand out
+// as hot zones instead of a flat list of numbers. No chart library — plain CSS bars.
+function renderOptionGravityHeatmap(filtered) {
+  const points = [];
+  for (const e of filtered) {
+    const nums = (e.level || '').match(/\d{1,4}\.\d{2,5}/g);
+    if (!nums || nums.length === 0) continue;
+    const w = parseOptionSizeWeight(e.size) / nums.length;
+    for (const n of nums) points.push({ level: parseFloat(n), w });
+  }
+  if (points.length < 2) return '';
+
+  let lo = Math.min(...points.map(p => p.level));
+  let hi = Math.max(...points.map(p => p.level));
+
+  // Pull in current price (best-effort, from whatever TF's TA cache is loaded) so
+  // the heatmap shows where price sits relative to expiry gravity, and the range
+  // always includes it even if expiries cluster far from spot.
+  const sym = TEK_YAHOO_SYM[tekPair];
+  const taKey = sym ? `${sym}:${TEK_TV_TO_API_TF[tekTF] || '1d'}` : null;
+  const currentPrice = taKey ? tekTaCache[taKey]?.data?.current_price : null;
+  if (currentPrice != null) { lo = Math.min(lo, currentPrice); hi = Math.max(hi, currentPrice); }
+
+  const pad = Math.max((hi - lo) * 0.08, (hi - lo) === 0 ? lo * 0.001 : 0);
+  lo -= pad; hi += pad;
+  if (hi <= lo) return '';
+
+  const BINS = 36;
+  const binW = (hi - lo) / BINS;
+  const bins = new Array(BINS).fill(0);
+  for (const p of points) {
+    const idx = Math.min(BINS - 1, Math.max(0, Math.floor((p.level - lo) / binW)));
+    bins[idx] += p.w;
+    // Light smoothing — spread a quarter of the weight to neighbors so adjacent
+    // clusters visually blend instead of looking like isolated single-bin spikes.
+    if (idx > 0) bins[idx - 1] += p.w * 0.25;
+    if (idx < BINS - 1) bins[idx + 1] += p.w * 0.25;
+  }
+
+  const maxBin = Math.max(...bins, 0.0001);
+  const stripBins = bins.map((v, i) => {
+    const intensity = v / maxBin;
+    const heightPct = Math.max(6, Math.round(intensity * 100));
+    const bg = intensity > 0.05
+      ? `rgba(230,126,34,${(0.15 + intensity * 0.7).toFixed(2)})`
+      : 'rgba(255,255,255,.03)';
+    return `<div class="tek-grav-bin" style="height:${heightPct}%;background:${bg}" title="${(lo + (i + 0.5) * binW).toFixed(4)}"></div>`;
+  }).join('');
+
+  const nowMarker = currentPrice != null && currentPrice >= lo && currentPrice <= hi
+    ? `<div class="tek-grav-now" style="left:${((currentPrice - lo) / (hi - lo) * 100).toFixed(2)}%"></div>`
+    : '';
+
+  // Top 3 gravity peaks (re-derive from original points clustered loosely by rounding
+  // to the same bin resolution) — gives a quick textual readout alongside the visual.
+  const peakMap = new Map();
+  for (const p of points) {
+    const idx = Math.min(BINS - 1, Math.max(0, Math.floor((p.level - lo) / binW)));
+    const key = idx;
+    const entry = peakMap.get(key) || { sumLevel: 0, sumW: 0 };
+    entry.sumLevel += p.level * p.w;
+    entry.sumW += p.w;
+    peakMap.set(key, entry);
+  }
+  const peaks = [...peakMap.values()]
+    .map(e => ({ level: e.sumLevel / e.sumW, w: e.sumW }))
+    .sort((a, b) => b.w - a.w)
+    .slice(0, 3)
+    .map(p => `<b>${p.level.toFixed(4)}</b>`)
+    .join(' · ');
+
+  return `<div class="tek-grav-wrap">
+    <div class="tek-grav-strip">${stripBins}${nowMarker}</div>
+    <div class="tek-grav-axis"><span>${lo.toFixed(4)}</span><span>${hi.toFixed(4)}</span></div>
+    ${peaks ? `<div class="tek-grav-peaks">Gravitasi terkuat: ${peaks}</div>` : ''}
+  </div>`;
+}
+
 function renderTekOptions() {
   const body = document.getElementById('tekOptsBody');
   const meta = document.getElementById('tekOptsMeta');
@@ -8970,7 +9074,8 @@ function renderTekOptions() {
   }
 
   const hasSizes = filtered.some(e => e.size && e.size.trim());
-  let html = `<table class="tek-opts-table"><thead><tr><th>Level</th>${hasSizes ? '<th>Size</th>' : ''}</tr></thead><tbody>`;
+  let html = renderOptionGravityHeatmap(filtered);
+  html += `<table class="tek-opts-table"><thead><tr><th>Level</th>${hasSizes ? '<th>Size</th>' : ''}</tr></thead><tbody>`;
   for (const e of filtered) {
     html += `<tr><td class="tek-opts-level">${escHtml(e.level)}</td>${hasSizes ? `<td class="tek-opts-size">${escHtml(e.size)}</td>` : ''}</tr>`;
   }

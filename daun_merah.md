@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-06-22 (session 81 — Investigasi "Risk Regime kok selalu Neutral?": user curiga fitur rusak/threshold kelewat ketat. **Hasil investigasi mengubah kesimpulan sendiri di tengah jalan** — awalnya saya sempat bilang threshold VIX<15 kelewat strict (berdasarkan sampel 2 tahun: VIX<15 cuma 14% hari), tapi setelah backtest threshold lama vs beberapa kandidat baru terhadap **histori 10 tahun penuh** (bukan cuma 2 tahun terakhir yang kebetulan strukturnya volatile), ternyata threshold yang ada SEKARANG (VIX 15/20/25, MOVE 90/100/130) sudah menghasilkan distribusi regime yang sehat & tidak didominasi satu bucket: risk_on 26.3% / neutral 28% / elevated 28.2% / risk_off 17.5%. Bukan bug kalibrasi — "selalu neutral" yang dirasakan user adalah gabungan dari (a) 2024-2026 realized vol memang struktural lebih tinggi dari rata-rata 10 tahun, dan (b) hari VIX=17.47 saat itu memang persis di persentil-53 (median historis), jadi label "neutral" itu sendiri sudah benar. Mencoba beberapa kandidat threshold percentile-based (p25/p75/p90 dll) — semua kandidat baru justru memperburuk distribusi (neutral malah naik ke 47%) atau tidak mengubah hasil klasifikasi hari itu sama sekali. **Keputusan: TIDAK mengubah threshold** (data membuktikan sudah baik), tapi tambah konteks persentil supaya user nggak cuma lihat label kategorikal kosong. `api/risk-regime.js`: tambah `VIX_PCTL_10Y`/`MOVE_PCTL_10Y` (breakpoint persentil dari Yahoo 10y daily, dihitung 2026-06-22) + fungsi `percentileRank()` interpolasi linear, field baru di payload: `vix_percentile_10y`, `move_percentile_10y`. `index.html`: baris detail VIX/MOVE di banner regime sekarang menampilkan "· P53/10th" dst, plus catatan kecil menjelaskan artinya supaya user paham "neutral" bisa jadi memang representasi median yang akurat, bukan indikasi fitur error.)
+> **Last updated:** 2026-06-22 (session 82 — Option Gravity Heatmap di tab TEK: data option expiries (Investinglive) sekarang divisualisasikan sebagai heatmap horizontal CSS-only (36 bin, no chart library) di atas tabel level yang sudah ada, menunjukkan di mana "gravitasi" harga berpusat hari ini + marker "NOW" untuk posisi harga saat ini. Bagian dari diskusi proposal UI/UX yang lebih besar (heatmap option + macro quadrant) — macro quadrant ditahan dulu (dianggap berisiko jadi "noise": sumbu inflasi belum punya data tren riil, dan bisa membuat sinyal regime yang nuance-nya ambigu kelihatan lebih definitif dari yang sebenarnya — lihat temuan session 81), heatmap option dieksekusi karena murah & datanya nyata.)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Financial_Feed_App`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -117,6 +117,24 @@ Financial_Feed_App/
 > **Penting:** `api/feeds.js` menggantikan `api/rss.js` dan `api/cot.js` yang sudah dihapus.
 > `api/admin.js` menggantikan `api/health.js`, `api/redis-keys.js`, `api/admin-prompts.js`, dan `api/push.js`.
 > Konsolidasi ini dilakukan untuk tetap di bawah limit 12 serverless functions Vercel Hobby.
+
+---
+
+## Changelog Session 82 (2026-06-22)
+
+### Option Gravity Heatmap — Tab TEK
+
+**Konteks:** Lanjutan diskusi proposal UI/UX (heatmap option expiry + macro quadrant risk/inflasi). Sebelum eksekusi, dievaluasi kritis dulu: macro quadrant ditahan (lihat alasan di catatan header atas), heatmap option dieksekusi karena murah secara teknis dan datanya nyata.
+
+**Constraint teknis yang ditemukan:** data `size` dari option expiry (`api/feeds.js` `optionsHandler`) sering kosong sejak Investinglive pindah ke format prosa (lihat session sebelumnya soal `parseProseExpiries`) — jadi "gravitasi" nggak bisa selalu dihitung dari notional asli. Solusi: fallback ke count-based weight (tiap level yang disebut = weight 1) kalau size kosong/tidak terparse, size asli dipakai kalau ada (dinormalisasi ke skala "juta": "1.2bln" → 1200, "500mln" → 500).
+
+**Implementasi (`index.html`):**
+- `parseOptionSizeWeight(sizeStr)` — parse string size ("1.2bln", "€500m", dll) jadi angka weight; fallback 1 kalau kosong/gagal parse.
+- `renderOptionGravityHeatmap(filtered)` — bukan clustering eksplisit, tapi histogram-binning: range harga (termasuk level min/max + current price kalau tersedia dari `tekTaCache`) dibagi 36 bin, tiap level expiry menambah weight ke bin terdekat + sedikit smoothing ke bin tetangga (25% spillover) supaya level berdekatan terlihat menyatu jadi satu hot-zone, bukan paku terpisah-pisah. Render sebagai strip flexbox CSS murni (tinggi bar + opacity warna oranye proporsional terhadap intensitas) — tidak ada library chart yang ditambahkan. Current price ditandai garis vertikal "NOW". Bawahnya ditampilkan teks 3 level "gravitasi terkuat" sebagai ringkasan cepat.
+- Graceful degradation: kalau cuma 0-1 level numerik valid (kasus nyata — hari testing cuma ada 1 expiry GBP/USD), fungsi return string kosong dan tabel level yang sudah ada tetap tampil normal tanpa heatmap, tidak ada elemen kosong/error yang nongol.
+- CSS baru: `.tek-grav-*` (wrap/strip/bin/axis/now-marker/peaks), reuse warna `--yellow`/`--muted`/font `DM Mono` yang sudah ada di tema.
+
+**Testing:** 6 skenario logic test terisolasi (cluster realistis, size berformat, single-point skip, array kosong, format range "1.1540-1.1600", tanpa current price) — semua sesuai ekspektasi. Live wiring test ke `api/feeds?type=options` production (data real hari ini: cuma 1 expiry GBP/USD 1.3200) — konfirmasi graceful skip jalan benar, tidak ada heatmap kosong yang dipaksa render. Render HTML preview manual dengan data multi-level mock — visual hot-zone muncul tepat di level dengan size terbesar, marker NOW di posisi proporsional yang benar. **Catatan jujur:** tidak ada verifikasi screenshot browser asli (Playwright tidak terinstall di environment ini) — verifikasi sebatas logic test + HTML/CSS preview manual, bukan visual end-to-end di browser sungguhan.
 
 ---
 
