@@ -187,6 +187,11 @@ body {
 .tek-grav-now::after { content:'NOW'; position:absolute; top:-11px; left:50%; transform:translateX(-50%); font:7px 'DM Mono',monospace; color:#38bdf8; white-space:nowrap; }
 .tek-grav-peaks { font:9px 'DM Mono',monospace; color:var(--muted); margin-top:5px; }
 .tek-grav-peaks b { color:var(--yellow); }
+.tek-grav-info {
+  font:10px 'DM Mono',monospace; color:var(--muted); line-height:1.5;
+  background:rgba(255,255,255,.03); border-left:2px solid var(--yellow);
+  padding:6px 8px; margin-bottom:8px; border-radius:2px;
+}
 .riset-title { font-size:11px; font-family:'DM Mono',monospace; color:var(--text); text-decoration:none; line-height:1.4; display:block; }
 .riset-title:hover { color:#34d399; }
 .riset-date { font-size:9px; color:var(--muted); font-family:'DM Mono',monospace; margin-top:3px; }
@@ -2658,8 +2663,14 @@ body {
     <div id="tekNewsSection" style="margin-top:6px"></div>
     <div class="tek-opts-section" id="tekOptsSection">
       <div class="tek-opts-hdr">
-        <span class="tek-opts-title">OPTION EXPIRIES · NY CUT</span>
+        <span><span class="tek-opts-title">OPTION EXPIRIES · NY CUT</span><button class="cb-info-btn" onclick="toggleGravInfo()" title="Apa ini?">ⓘ</button></span>
         <span class="tek-opts-meta" id="tekOptsMeta"></span>
+      </div>
+      <div id="tekGravInfo" class="tek-grav-info" style="display:none">
+        Bar oranye di bawah nunjukin di level berapa banyak order "option" besar bakal jatuh tempo hari ini.
+        Makin terang/tinggi bar-nya, makin banyak order ngumpul di level itu — biasanya harga cenderung "ketarik"
+        ke arah level rame ini sebelum jatuh tempo. Garis biru "NOW" itu posisi harga sekarang, jadi kamu bisa
+        lihat seberapa jauh harga dari level yang lagi jadi rebutan.
       </div>
       <div id="tekOptsBody"><div class="tek-opts-empty">Memuat data expiry...</div></div>
     </div>
@@ -8916,6 +8927,11 @@ function onTekTFChange() {
 let tekOptionsCache = null;  // { data, fetchedAt } on success
 let tekOptionsFetchError = null; // error string if last fetch failed
 const TEK_OPTIONS_TTL = 4 * 60 * 60 * 1000;
+
+function toggleGravInfo() {
+  const el = document.getElementById('tekGravInfo');
+  if (el) el.style.display = el.style.display === 'none' ? '' : 'none';
+}
 
 async function fetchTekOptions() {
   if (tekOptionsCache && Date.now() - tekOptionsCache.fetchedAt < TEK_OPTIONS_TTL) {
