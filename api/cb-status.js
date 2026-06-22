@@ -266,6 +266,7 @@ module.exports = async function handler(req, res) {
       confidence:        biasData[cur]?.confidence        || null,
       bias_updated:      biasData[cur]?.updated_at        || null,
       source_headlines:  biasData[cur]?.source_headlines  || [],
+      divergence_warning: biasData[cur]?.divergence_warning || null,
     };
   });
 

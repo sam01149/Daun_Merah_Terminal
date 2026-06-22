@@ -215,7 +215,8 @@ module.exports = async function handler(req, res) {
 
   // --- ENDPOINT TEKNIKAL ANALISIS (TA) ---
   if (req.query.action === 'ta') {
-    if (await rateLimit(req, res, { limit: 5, windowSecs: 60, endpoint: 'correlations' })) return;
+    const isCronWarm = req.headers['x-cron-secret'] && req.headers['x-cron-secret'] === process.env.CRON_SECRET;
+    if (!isCronWarm && await rateLimit(req, res, { limit: 5, windowSecs: 60, endpoint: 'correlations' })) return;
 
     const symbol   = req.query.symbol   || 'GC=F';
     const interval = req.query.interval || '1d';

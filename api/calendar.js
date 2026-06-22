@@ -2,6 +2,21 @@
 const FF_THIS_WEEK = 'https://nfs.faireconomy.media/ff_calendar_thisweek.xml';
 const FF_NEXT_WEEK = 'https://nfs.faireconomy.media/ff_calendar_nextweek.xml';
 const MAJOR_CURRENCIES = new Set(['USD','EUR','GBP','JPY','CAD','AUD','NZD','CHF']);
+const CACHE_KEY = 'calendar_v1';
+const CACHE_TTL = 6 * 3600; // stale-serve window: 6h
+
+async function redisCmd(...args) {
+  const REDIS_URL   = process.env.UPSTASH_REDIS_REST_URL;
+  const REDIS_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
+  if (!REDIS_URL || !REDIS_TOKEN) return null;
+  const r = await fetch(REDIS_URL, {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${REDIS_TOKEN}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(args),
+    signal: AbortSignal.timeout(5000),
+  });
+  return (await r.json()).result;
+}
 
 module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -20,7 +35,7 @@ module.exports = async function handler(req, res) {
         if (xml.includes('<event>')) allEvents = allEvents.concat(parseFFXML(xml));
       }
     }
-    // Only throw 500 if both fetches completely failed — empty event list is valid (weekend/no high-impact)
+    // Only fall back if both fetches completely failed — empty event list is valid (weekend/no high-impact)
     if (!anyFetchSucceeded) throw new Error('Both ForexFactory XML fetches failed');
 
     const nowWib = new Date(Date.now() + 7 * 3600000);
@@ -42,10 +57,20 @@ module.exports = async function handler(req, res) {
         return ka.localeCompare(kb);
       });
 
+    const payload = { events: deduped, count: deduped.length, fetched_at: new Date().toISOString() };
+    try { await redisCmd('SET', CACHE_KEY, JSON.stringify(payload), 'EX', CACHE_TTL); } catch(_) {}
     res.setHeader('Cache-Control', 'max-age=300');
-    return res.status(200).json({ events: deduped, count: deduped.length, fetched_at: new Date().toISOString() });
+    return res.status(200).json({ ...payload, stale: false });
   } catch(e) {
     console.error('Calendar error:', e.message);
+    // ForexFactory/Cloudflare block or outage — serve last known-good calendar rather than nothing
+    try {
+      const cached = await redisCmd('GET', CACHE_KEY);
+      if (cached) {
+        res.setHeader('Cache-Control', 'no-cache');
+        return res.status(200).json({ ...JSON.parse(cached), stale: true, stale_reason: e.message });
+      }
+    } catch(_) {}
     return res.status(500).json({ error: e.message });
   }
 };

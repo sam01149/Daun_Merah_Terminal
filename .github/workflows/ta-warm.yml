@@ -1,0 +1,29 @@
+name: TA Cache Warm
+
+on:
+  schedule:
+    - cron: '0 * * * *'
+  workflow_dispatch:
+
+jobs:
+  warm:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Warm TA cache for all tracked pairs
+        run: |
+          SYMBOLS=("GC=F" "EURUSD=X" "GBPUSD=X" "USDJPY=X" "AUDUSD=X" "USDCAD=X" "USDCHF=X" "NZDUSD=X")
+          FAILED=0
+          for SYMBOL in "${SYMBOLS[@]}"; do
+            STATUS=$(curl -s -o /tmp/resp.json -w "%{http_code}" \
+              -H "x-cron-secret: ${{ secrets.CRON_SECRET }}" \
+              "https://financial-feed-app.vercel.app/api/correlations?action=ta&symbol=$SYMBOL&interval=1d")
+            echo "=== $SYMBOL -> HTTP $STATUS ==="
+            cat /tmp/resp.json
+            if [ "$STATUS" -ne 200 ]; then
+              FAILED=1
+            fi
+          done
+          if [ "$FAILED" -eq 1 ]; then
+            echo "One or more TA warm requests failed"
+            exit 1
+          fi

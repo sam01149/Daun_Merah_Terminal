@@ -32,6 +32,31 @@ const OHLCV_SYMBOL_MAP = {
   'EUR/GBP': 'EURGBP=X', 'AUD/JPY': 'AUDJPY=X', 'EUR/AUD': 'EURAUD=X',
   'GBP/AUD': 'GBPAUD=X', 'GBP/CAD': 'GBPCAD=X', 'XAU/USD': 'GC=F',
 };
+
+// Map non-USD major currency → its standard OHLCV pair label (for "today's dominant headline currency" lookup)
+const CUR_TO_OHLCV_PAIR = {
+  EUR: 'EUR/USD', GBP: 'GBP/USD', JPY: 'USD/JPY',
+  CAD: 'USD/CAD', AUD: 'AUD/USD', NZD: 'NZD/USD', CHF: 'USD/CHF',
+};
+
+// Central-bank keyword map — used both to pick today's dominant FX pair for OHLCV context
+// and to scope Call 2 (CB bias) headline analysis.
+const CB_KW = {
+  USD: ['fed','fomc','powell','goolsbee','waller','kashkari','warsh','federal reserve','us inflation','us gdp','us jobs','nfp','us cpi'],
+  EUR: ['ecb','lagarde','lane','schnabel','euro zone','eurozone','euro area','eu inflation','eu gdp'],
+  GBP: ['boe','bank of england','bailey','pill','gbp','sterling','uk inflation','uk gdp','uk jobs','claimant'],
+  JPY: ['boj','bank of japan','ueda','japan inflation','japan gdp','yen','japanese'],
+  CAD: ['boc','bank of canada','macklem','canada inflation','canada gdp','canadian'],
+  AUD: ['rba','reserve bank of australia','bullock','australia inflation','australia gdp','aussie'],
+  NZD: ['rbnz','reserve bank of new zealand','orr','new zealand inflation','new zealand gdp','kiwi'],
+  CHF: ['snb','swiss national bank','schlegel','switzerland','swiss franc','franc'],
+};
+// Word-boundary match: single words use \b..\b so 'orr' won't match 'worrying',
+// 'boc' won't match 'pboc', 'lane' won't match 'plane', etc.
+// Phrases (containing space) keep simple includes since boundaries don't apply.
+const kwTest = (title, kw) => kw.includes(' ')
+  ? title.includes(kw)
+  : new RegExp('\\b' + kw + '\\b').test(title);
 const GOLD_KEYWORDS = [
   // Direct gold references
   'gold','xau','bullion','spot gold','precious metal','gold price','gold demand','gold rally','gold drop',
@@ -468,18 +493,33 @@ module.exports = async function handler(req, res) {
     ? xauHistory.map(h => `[${h.wib}] ${h.xau_summary}`).join('\n')
     : '(Belum ada riwayat XAU — ini sesi pertama)';
 
-  // Load OHLCV context: XAU always + FX pair from previous thesis recommendation
+  // Load OHLCV context: XAU always + FX pair picked from TODAY'S dominant headline currency
+  // (falls back to previous thesis recommendation, then EUR/USD, if no major-currency headline today).
   let fxOhlcvSymbol = 'EURUSD=X', fxOhlcvLabel = 'EUR/USD';
   try {
-    if (rawPrevThesis) {
+    const headlinesLowerForPair = recentItems.map(i => i.title.toLowerCase());
+    const curCounts = {};
+    for (const cur of Object.keys(CUR_TO_OHLCV_PAIR)) {
+      const count = headlinesLowerForPair.filter(h => CB_KW[cur].some(kw => kwTest(h, kw))).length;
+      if (count > 0) curCounts[cur] = count;
+    }
+    const topCur = Object.entries(curCounts).sort((a, b) => b[1] - a[1])[0]?.[0];
+    if (topCur) {
+      fxOhlcvSymbol = OHLCV_SYMBOL_MAP[CUR_TO_OHLCV_PAIR[topCur]];
+      fxOhlcvLabel  = CUR_TO_OHLCV_PAIR[topCur];
+      console.log(`OHLCV pair: dominant headline currency = ${topCur} (${curCounts[topCur]} mentions) → ${fxOhlcvLabel}`);
+    } else if (rawPrevThesis) {
       const prevT = JSON.parse(rawPrevThesis);
       const rec = prevT?.pair_recommendation;
       if (rec && OHLCV_SYMBOL_MAP[rec] && OHLCV_SYMBOL_MAP[rec] !== 'GC=F') {
         fxOhlcvSymbol = OHLCV_SYMBOL_MAP[rec];
         fxOhlcvLabel  = rec;
+        console.log(`OHLCV pair: no dominant headline currency today, falling back to prev thesis pair → ${fxOhlcvLabel}`);
       }
     }
-  } catch(e) {}
+  } catch(e) {
+    console.warn('OHLCV pair selection failed, using default EUR/USD:', e.message);
+  }
   let xauOhlcvBlock = null, fxOhlcvBlock = null, fxTa = null;
   try {
     [xauOhlcvBlock, fxOhlcvBlock, fxTa] = await Promise.all([
@@ -615,22 +655,7 @@ module.exports = async function handler(req, res) {
 
   const _biasPromise = recentItems.length > 0 ? (async () => {
     const _biasUpdated = [];
-    const CB_KW = {
-      USD: ['fed','fomc','powell','goolsbee','waller','kashkari','warsh','federal reserve','us inflation','us gdp','us jobs','nfp','us cpi'],
-      EUR: ['ecb','lagarde','lane','schnabel','euro zone','eurozone','euro area','eu inflation','eu gdp'],
-      GBP: ['boe','bank of england','bailey','pill','gbp','sterling','uk inflation','uk gdp','uk jobs','claimant'],
-      JPY: ['boj','bank of japan','ueda','japan inflation','japan gdp','yen','japanese'],
-      CAD: ['boc','bank of canada','macklem','canada inflation','canada gdp','canadian'],
-      AUD: ['rba','reserve bank of australia','bullock','australia inflation','australia gdp','aussie'],
-      NZD: ['rbnz','reserve bank of new zealand','orr','new zealand inflation','new zealand gdp','kiwi'],
-      CHF: ['snb','swiss national bank','schlegel','switzerland','swiss franc','franc'],
-    };
-    // Word-boundary match: single words use \b..\b so 'orr' won't match 'worrying',
-    // 'boc' won't match 'pboc', 'lane' won't match 'plane', etc.
-    // Phrases (containing space) keep simple includes since boundaries don't apply.
-    const kwTest = (title, kw) => kw.includes(' ')
-      ? title.includes(kw)
-      : new RegExp('\\b' + kw + '\\b').test(title);
+    // CB_KW / kwTest are defined at module level — shared with the OHLCV dominant-pair lookup above.
     const relevantCurrencies = [];
     const headlinesLower = recentItems.map(i => i.title.toLowerCase());
     for (const [cur, kws] of Object.entries(CB_KW)) {
@@ -716,13 +741,26 @@ module.exports = async function handler(req, res) {
               const confidenceOk = VALID_CONFIDENCES.includes(confidence);
               if (!curOk || !biasOk) continue;
               if (!confidenceOk || confidence === 'Low') { console.log(`Call 2: skip ${cur} — confidence Low`); continue; }
-              const prevBias = existing[cur]?.bias;
-              if (prevBias && confidence !== 'High') {
-                const prevIdx = BIAS_ORDER.indexOf(prevBias); const newIdx = BIAS_ORDER.indexOf(bias);
-                if (prevIdx !== -1 && newIdx !== -1 && Math.abs(newIdx - prevIdx) > 2) { console.log(`Call 2: skip ${cur} — swing ${prevBias}→${bias}`); continue; }
-              }
+              const prevEntry = existing[cur];
+              const prevBias  = prevEntry?.bias;
               const kws = CB_KW[cur] || [];
               const sourceHeadlines = recentItems.filter(i => kws.some(kw => kwTest(i.title.toLowerCase(), kw))).slice(0, 5).map(i => i.title);
+              if (prevBias && confidence !== 'High') {
+                const prevIdx = BIAS_ORDER.indexOf(prevBias); const newIdx = BIAS_ORDER.indexOf(bias);
+                if (prevIdx !== -1 && newIdx !== -1 && Math.abs(newIdx - prevIdx) > 2) {
+                  // Large swing but not High-confidence: keep the established bias rather than
+                  // flip on ambiguous evidence, but surface a divergence warning instead of
+                  // silently discarding the signal — downgrade displayed confidence to Low.
+                  console.log(`Call 2: divergence ${cur} — ${prevBias}→${bias} (confidence ${confidence}), keeping prev bias + flagging`);
+                  existing[cur] = {
+                    ...prevEntry,
+                    confidence: 'Low',
+                    divergence_warning: { suggested_bias: bias, suggested_confidence: confidence, detected_at: now2, source_headlines: sourceHeadlines },
+                  };
+                  _biasUpdated.push(cur);
+                  continue;
+                }
+              }
               existing[cur] = { bias, confidence, updated_at: now2, source_headlines: sourceHeadlines };
               _biasUpdated.push(cur);
             }

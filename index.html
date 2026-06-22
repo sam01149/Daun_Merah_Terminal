@@ -2220,6 +2220,7 @@ body {
     </div>
     <div style="display:flex;align-items:center;gap:8px">
       <span class="cal-count-badge" id="calCountBadge">—</span>
+      <span class="cot-stale-badge" id="calStaleBadge" style="display:none">⚠ Data lama</span>
       <span id="calLastUpdated" style="font-size:9px;color:var(--muted);font-family:'DM Mono',monospace"></span>
       <button class="cal-refresh-btn" id="calRefreshBtn" onclick="fetchCalendar()" title="Auto-refresh setiap 60 menit">
         <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
@@ -4023,6 +4024,8 @@ async function fetchCalendar() {
     if (!Array.isArray(data.events)) throw new Error('Invalid response');
     calData      = data.events;
     calFetchedAt = Date.now();
+    const calStaleBadge = document.getElementById('calStaleBadge');
+    if (calStaleBadge) calStaleBadge.style.display = data.stale ? 'inline' : 'none';
     updateCalLastUpdated();
     enrichCalActuals();
     renderCalendar();
@@ -4147,6 +4150,10 @@ function renderCBTracker() {
     const hlCount = (cb.source_headlines || []).length;
     const infoBtn = '<button class="cb-info-btn" onclick="cbToggleDetail(\'' + cb.currency + '\')" title="' + hlCount + ' headline dasar AI">ⓘ</button>';
 
+    const divergenceHtml = cb.divergence_warning
+      ? '<span class="cb-manual-warn" style="color:var(--yellow)" title="AI mendeteksi sinyal ke ' + escHtml(cb.divergence_warning.suggested_bias) + ' (confidence ' + escHtml(cb.divergence_warning.suggested_confidence) + ') tapi bias lama dipertahankan karena belum High confidence">⚠ Divergence: bias mungkin bergeser ke ' + escHtml(cb.divergence_warning.suggested_bias) + '</span>'
+      : '';
+
     return '<tr>'
       + '<td class="cb-td-cur" style="color:' + col + '">'
       + '<span style="position:absolute;left:0;top:50%;transform:translateY(-50%);width:2px;height:14px;border-radius:1px;background:' + col + '"></span>'
@@ -4157,6 +4164,7 @@ function renderCBTracker() {
       + '<span class="cb-bias ' + biasClass + '">' + biasLabel + confDot + '</span>'
       + manualBadge + infoBtn
       + manualWarn
+      + divergenceHtml
       + '</td>'
       + '</tr>'
       + '<tr class="cb-detail-row" id="cbdetail-' + cb.currency + '" style="display:none">'
@@ -5860,6 +5868,8 @@ async function fetchCalendarSilent() {
     if (!Array.isArray(data.events)) return;
     calData      = data.events;
     calFetchedAt = Date.now();
+    const calStaleBadge = document.getElementById('calStaleBadge');
+    if (calStaleBadge) calStaleBadge.style.display = data.stale ? 'inline' : 'none';
     enrichCalActuals();
     renderCalendar();
     renderCountdown();
