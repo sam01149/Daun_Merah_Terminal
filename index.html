@@ -2656,6 +2656,7 @@ body {
     <div class="tek-mtf-cell"><span class="tek-mtf-lbl">H4</span><select class="tek-mtf-sel" id="mtfSelH4" onchange="onMtfChange()"><option value="">—</option><option value="bull">Bull</option><option value="bear">Bear</option><option value="neut">Neut</option></select></div>
     <div class="tek-mtf-cell"><span class="tek-mtf-lbl">H1</span><select class="tek-mtf-sel" id="mtfSelH1" onchange="onMtfChange()"><option value="">—</option><option value="bull">Bull</option><option value="bear">Bear</option><option value="neut">Neut</option></select></div>
     <div class="tek-mtf-cell"><span class="tek-mtf-lbl">M15</span><select class="tek-mtf-sel" id="mtfSelM15" onchange="onMtfChange()"><option value="">—</option><option value="bull">Bull</option><option value="bear">Bear</option><option value="neut">Neut</option></select></div>
+    <button class="tek-note-auto-btn" id="tekMtfAutoBtn" onclick="autoFillMtfSelectors(true)" title="Isi D1/H4/H1 otomatis dari trend Makro/Swing/Entry (M15 tetap manual)">↻ Auto</button>
     <div class="tek-mtf-align" id="mtfAlignBadge"></div>
   </div>
   <div id="tekTaPanel" class="tek-ta-panel">
@@ -2664,7 +2665,7 @@ body {
   </div>
   <div class="tek-mtf-section">
     <div class="tek-note-wrap">
-      <div class="tek-note-label">Catatan analisa <button class="tek-note-auto-btn" id="tekNoteAutoBtn" onclick="autoFillTekNote(true)" title="Isi ulang otomatis dari data Makro/Swing/Entry">↻ Auto</button></div>
+      <div class="tek-note-label">Catatan analisa</div>
       <textarea id="tekNote" placeholder="Key levels, setup yang dipantau, atau catatan sesi..." oninput="saveTekNote()"></textarea>
     </div>
     <div id="tekNewsSection" style="margin-top:6px"></div>
@@ -8809,35 +8810,23 @@ function saveTekNote() {
   localStorage.setItem('tek_notes', JSON.stringify(tekNotes));
 }
 
-// Compose a short technical summary from the same MAKRO(D1)/SWING(H4)/ENTRY(H1)
-// data shown in the ANALISA tab — used to auto-fill "Catatan analisa" so the
-// user doesn't have to manually retype trend/levels that are already computed.
-function composeTekAutoNote(d) {
-  if (!d) return null;
-  const fmt = n => typeof n === 'number' ? n.toFixed(d.dec) : String(n);
-  const lines = [];
-  if (d.d1?.available) {
-    lines.push(`[D1] ${d.d1.trend} · now ${fmt(d.d1.current)} · resist ${d.d1.resistance.map(fmt).join('/')} · support ${d.d1.support.map(fmt).join('/')}`);
-  }
-  if (d.h4?.available) {
-    lines.push(`[H4] swing high ${fmt(d.h4.swing_high.price)} · swing low ${fmt(d.h4.swing_low.price)}`);
-  }
-  if (d.h1?.available) {
-    lines.push(`[H1] ${d.h1.trend} · range ${fmt(d.h1.low)}–${fmt(d.h1.high)}`);
-  }
-  return lines.length > 0 ? lines.join('\n') : null;
+// Maps the auto-computed trend label (from D1/H4/H1 Makro/Swing/Entry data,
+// same source as tab ANALISA) to the bull/bear/neut value used by the MTF
+// alignment selectors — so D1/H4/H1 don't have to be picked by hand every time.
+function mapTrendToMtf(trend) {
+  if (trend === 'Uptrend')   return 'bull';
+  if (trend === 'Downtrend') return 'bear';
+  if (trend === 'Sideways')  return 'neut';
+  return '';
 }
 
-// Auto-fill "Catatan analisa" from Makro/Swing/Entry data (same source as tab ANALISA).
-// force=false (default, called on pair switch): only fills if note is still empty —
-// never silently overwrites something the user typed manually.
-// force=true (the "↻ Auto" button): always regenerates, overwriting current content.
-async function autoFillTekNote(force = false) {
-  const noteEl = document.getElementById('tekNote');
-  const btn    = document.getElementById('tekNoteAutoBtn');
-  if (!noteEl) return;
-  if (!force && tekNotes[tekPair] && tekNotes[tekPair].trim()) return;
-
+// Auto-fill the D1/H4/H1 MTF selectors from Makro/Swing/Entry trend data.
+// M15 has no equivalent auto-computed trend anywhere in the app — left manual on purpose.
+// force=false (default, called on pair switch): only fills selectors that are still
+// empty ("—") — never overrides a bull/bear/neut the user picked by hand.
+// force=true (the "↻ Auto" button): regenerates D1/H4/H1, overwriting current picks.
+async function autoFillMtfSelectors(force = false) {
+  const btn = document.getElementById('tekMtfAutoBtn');
   const pairAtCall = tekPair;
   const sym = TEK_YAHOO_SYM[pairAtCall];
   if (!sym) return;
@@ -8853,16 +8842,31 @@ async function autoFillTekNote(force = false) {
   }
   if (tekPair !== pairAtCall) return; // pair switched while fetch was in flight
 
-  const text = composeTekAutoNote(d);
-  if (!text) {
+  const autoVals = {
+    D1: d?.d1?.available ? mapTrendToMtf(d.d1.trend) : '',
+    H4: d?.h4?.available ? mapTrendToMtf(d.h4.trend) : '',
+    H1: d?.h1?.available ? mapTrendToMtf(d.h1.trend) : '',
+  };
+
+  if (!autoVals.D1 && !autoVals.H4 && !autoVals.H1) {
     // Cross pairs outside the 8 major OHLCV-synced pairs often have no cached
     // MTF data yet — say so explicitly instead of the button silently doing nothing.
     if (force) showToast('Data belum tersedia', `MTF ${tekPairLabel(pairAtCall)} belum ke-sync — coba pair major (XAU/EUR/GBP/JPY/AUD/CAD/CHF/NZD) atau buka tab Analisa AI dulu.`, 4000);
     return;
   }
-  noteEl.value = text;
-  tekNotes[pairAtCall] = text;
-  localStorage.setItem('tek_notes', JSON.stringify(tekNotes));
+
+  if (!tekMtf[tekPair]) tekMtf[tekPair] = {};
+  let changed = false;
+  for (const key of ['D1', 'H4', 'H1']) {
+    if (!autoVals[key]) continue;
+    if (!force && tekMtf[tekPair][key]) continue; // don't override a manual pick
+    tekMtf[tekPair][key] = autoVals[key];
+    changed = true;
+  }
+  if (!changed) return;
+
+  localStorage.setItem('tek_mtf_v2', JSON.stringify(tekMtf));
+  loadMtfForPair(); // re-applies values + colors to the <select> elements and re-renders the align badge
 }
 
 function loadTVScript(cb) {
@@ -8977,7 +8981,7 @@ function selectTekPair(p) {
   fetchTaData();
   renderTekOptions();
   fetchAFTek();
-  autoFillTekNote();
+  autoFillMtfSelectors();
 }
 
 function onTekTFChange() {
@@ -9333,7 +9337,7 @@ function initTeknikal() {
   fetchTaData();
   fetchTekOptions();
   fetchAFTek();
-  autoFillTekNote();
+  autoFillMtfSelectors();
 }
 
 // ── DRAWER ────────────────────────────────────────────────
