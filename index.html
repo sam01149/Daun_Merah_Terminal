@@ -1787,6 +1787,13 @@ body {
 }
 .tek-note-wrap { padding: 4px 0 8px; }
 .tek-note-label { font: 9px 'DM Mono',monospace; color: var(--muted); margin-bottom: 5px; letter-spacing: .08em; text-transform: uppercase; }
+.tek-note-auto-btn {
+  background:none; border:1px solid var(--border); color:var(--muted); cursor:pointer;
+  font:8px 'DM Mono',monospace; padding:2px 6px; border-radius:3px; letter-spacing:0; text-transform:none;
+  margin-left:6px; vertical-align:middle;
+}
+.tek-note-auto-btn:hover { color:#38bdf8; border-color:#38bdf8; }
+.tek-note-auto-btn:disabled { opacity:.4; cursor:default; }
 .tek-note-wrap textarea {
   width: 100%; min-height: 80px; background: var(--surface); color: var(--text);
   border: 1px solid var(--border); border-radius: 6px; padding: 9px 11px;
@@ -2657,7 +2664,7 @@ body {
   </div>
   <div class="tek-mtf-section">
     <div class="tek-note-wrap">
-      <div class="tek-note-label">Catatan analisa</div>
+      <div class="tek-note-label">Catatan analisa <button class="tek-note-auto-btn" id="tekNoteAutoBtn" onclick="autoFillTekNote(true)" title="Isi ulang otomatis dari data Makro/Swing/Entry">↻ Auto</button></div>
       <textarea id="tekNote" placeholder="Key levels, setup yang dipantau, atau catatan sesi..." oninput="saveTekNote()"></textarea>
     </div>
     <div id="tekNewsSection" style="margin-top:6px"></div>
@@ -8802,6 +8809,62 @@ function saveTekNote() {
   localStorage.setItem('tek_notes', JSON.stringify(tekNotes));
 }
 
+// Compose a short technical summary from the same MAKRO(D1)/SWING(H4)/ENTRY(H1)
+// data shown in the ANALISA tab — used to auto-fill "Catatan analisa" so the
+// user doesn't have to manually retype trend/levels that are already computed.
+function composeTekAutoNote(d) {
+  if (!d) return null;
+  const fmt = n => typeof n === 'number' ? n.toFixed(d.dec) : String(n);
+  const lines = [];
+  if (d.d1?.available) {
+    lines.push(`[D1] ${d.d1.trend} · now ${fmt(d.d1.current)} · resist ${d.d1.resistance.map(fmt).join('/')} · support ${d.d1.support.map(fmt).join('/')}`);
+  }
+  if (d.h4?.available) {
+    lines.push(`[H4] swing high ${fmt(d.h4.swing_high.price)} · swing low ${fmt(d.h4.swing_low.price)}`);
+  }
+  if (d.h1?.available) {
+    lines.push(`[H1] ${d.h1.trend} · range ${fmt(d.h1.low)}–${fmt(d.h1.high)}`);
+  }
+  return lines.length > 0 ? lines.join('\n') : null;
+}
+
+// Auto-fill "Catatan analisa" from Makro/Swing/Entry data (same source as tab ANALISA).
+// force=false (default, called on pair switch): only fills if note is still empty —
+// never silently overwrites something the user typed manually.
+// force=true (the "↻ Auto" button): always regenerates, overwriting current content.
+async function autoFillTekNote(force = false) {
+  const noteEl = document.getElementById('tekNote');
+  const btn    = document.getElementById('tekNoteAutoBtn');
+  if (!noteEl) return;
+  if (!force && tekNotes[tekPair] && tekNotes[tekPair].trim()) return;
+
+  const pairAtCall = tekPair;
+  const sym = TEK_YAHOO_SYM[pairAtCall];
+  if (!sym) return;
+
+  let d = analisaDataCache[sym];
+  if (!d) {
+    if (btn) { btn.disabled = true; btn.textContent = '…'; }
+    try {
+      const res = await fetch(`/api/admin?action=ohlcv_read&symbol=${encodeURIComponent(sym)}&label=${encodeURIComponent(tekPairLabel(pairAtCall))}`, { signal: AbortSignal.timeout(12000) });
+      if (res.ok) { d = await res.json(); analisaDataCache[sym] = d; }
+    } catch(e) { /* silent — user can retry via the Auto button */ }
+    if (btn) { btn.disabled = false; btn.textContent = '↻ Auto'; }
+  }
+  if (tekPair !== pairAtCall) return; // pair switched while fetch was in flight
+
+  const text = composeTekAutoNote(d);
+  if (!text) {
+    // Cross pairs outside the 8 major OHLCV-synced pairs often have no cached
+    // MTF data yet — say so explicitly instead of the button silently doing nothing.
+    if (force) showToast('Data belum tersedia', `MTF ${tekPairLabel(pairAtCall)} belum ke-sync — coba pair major (XAU/EUR/GBP/JPY/AUD/CAD/CHF/NZD) atau buka tab Analisa AI dulu.`, 4000);
+    return;
+  }
+  noteEl.value = text;
+  tekNotes[pairAtCall] = text;
+  localStorage.setItem('tek_notes', JSON.stringify(tekNotes));
+}
+
 function loadTVScript(cb) {
   if (tvScriptLoaded && typeof TradingView !== 'undefined') { cb(); return; }
   if (document.getElementById('tvScript')) {
@@ -8914,6 +8977,7 @@ function selectTekPair(p) {
   fetchTaData();
   renderTekOptions();
   fetchAFTek();
+  autoFillTekNote();
 }
 
 function onTekTFChange() {
@@ -9269,6 +9333,7 @@ function initTeknikal() {
   fetchTaData();
   fetchTekOptions();
   fetchAFTek();
+  autoFillTekNote();
 }
 
 // ── DRAWER ────────────────────────────────────────────────
