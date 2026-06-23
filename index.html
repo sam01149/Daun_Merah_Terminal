@@ -2941,6 +2941,22 @@ body {
   </div>
 </div>
 
+<div id="ckSpeedAckModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9999;align-items:center;justify-content:center">
+  <div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:22px 20px;width:min(380px,92vw);max-height:90vh;overflow-y:auto">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+      <div style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--accent)">⚠ Kecepatan Tidak Wajar</div>
+      <button onclick="ckCancelSpeedAck()" style="background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer;line-height:1">×</button>
+    </div>
+    <div id="ckSpeedAckMsg" style="font-size:11px;color:var(--text);line-height:1.5;margin-bottom:12px;padding:8px 10px;background:rgba(192,57,43,.08);border:1px solid rgba(192,57,43,.2);border-radius:6px"></div>
+    <div style="font-size:9px;color:var(--muted);letter-spacing:.8px;text-transform:uppercase;margin-bottom:5px">Jelaskan kondisi apa yang barusan kamu cek (kalimat nyata)</div>
+    <textarea id="ckSpeedAckInput" oninput="ckSpeedAckInputCheck()" placeholder="Mis: saya sudah cek BOS, area entry, dan RR sebelumnya — sekarang cuma konfirmasi ulang sebelum entry..." style="width:100%;min-height:64px;background:var(--bg);color:var(--text);border:1px solid var(--border);padding:8px 10px;border-radius:6px;font-family:'DM Mono',monospace;font-size:11px;box-sizing:border-box;resize:vertical"></textarea>
+    <div id="ckSpeedAckHint" style="font-size:9px;color:var(--accent);min-height:14px;margin-top:4px"></div>
+    <div style="margin-top:8px;font-size:9px;color:var(--muted);line-height:1.5">Catatan: ini bukan mencegah kamu lanjut — cuma memaksa berhenti sebentar dan dicatat permanen di jurnal, apa pun yang kamu tulis.</div>
+    <button id="ckSpeedAckConfirmBtn" disabled onclick="ckConfirmSpeedAck()" style="width:100%;margin-top:10px;padding:12px;background:var(--accent);color:#fff;border:none;border-radius:8px;font-weight:700;font-size:11px;letter-spacing:.8px;text-transform:uppercase;cursor:pointer">Lanjutkan</button>
+    <button onclick="ckCancelSpeedAck()" style="width:100%;margin-top:7px;padding:10px;background:transparent;color:var(--muted);border:1px solid var(--border);border-radius:8px;font-size:10px;cursor:pointer">Batal, cek ulang</button>
+  </div>
+</div>
+
 <script>
 const FETCH_URL = '/api/feeds?type=rss';
 
@@ -6769,6 +6785,88 @@ function ckUpdateResetCooldownUI() {
   el.textContent = `Tunggu ${Math.ceil(remaining / 1000)}s sebelum centang ulang`;
 }
 
+// ── BLIND MASS-CHECK SPEED FLAG ─────────────────────────────────────────────
+// No technical gate can verify someone actually read each item instead of
+// just clicking through — that's a self-honesty problem, not a software bug.
+// What software CAN do: flag when the checked count is implausible for the
+// elapsed time, force a typed acknowledgment before entry, and put it on
+// permanent record in the journal either way.
+function _ckFirstCheckKey(pair) {
+  const p = (pair || ckCurrentPair || '').replace('/', '');
+  return p ? `daunmerah_v2_firstcheck_${p}` : 'daunmerah_v2_firstcheck';
+}
+function ckChecklistSpeedInfo() {
+  let checkedCount = 0, totalParent = 0;
+  CK_SECTIONS.forEach(sec => sec.items.forEach(it => { totalParent++; if (ckState[it.id]) checkedCount++; }));
+  let elapsedSec = null;
+  try {
+    const first = parseInt(localStorage.getItem(_ckFirstCheckKey()) || '0', 10);
+    if (first) elapsedSec = (Date.now() - first) / 1000;
+  } catch(e) {}
+  // Flag only when clearly implausible: at least half the checklist checked,
+  // and done faster than ~0.6s/item on average — a generous floor for genuine
+  // skim-reading, well below what mass-clicking can't help but blow past.
+  const suspicious = elapsedSec !== null && checkedCount >= totalParent * 0.5 && elapsedSec < checkedCount * 0.6;
+  return { checkedCount, totalParent, elapsedSec, suspicious };
+}
+
+let ckSpeedAckPendingCallback = null;
+// Last acknowledgment text + the speed-info it was given for — read once by
+// ckPrefillJurnal()/ckMt5AutoJournal() to record on the journal entry, then
+// cleared so it doesn't leak into a later, genuinely-paced run.
+let ckLastSpeedAck = null;
+
+// Gate-keeper for the two entry paths (Jurnal prefill, MT5 modal): runs the
+// real action immediately if pacing looks genuine, otherwise interrupts with
+// a typed-acknowledgment modal first.
+function ckProceedIfNotSuspicious(action) {
+  const info = ckChecklistSpeedInfo();
+  if (!info.suspicious) { action(); return; }
+  ckSpeedAckPendingCallback = action;
+  const msgEl = document.getElementById('ckSpeedAckMsg');
+  if (msgEl) msgEl.textContent = `${info.checkedCount}/${info.totalParent} item ter-centang dalam ${info.elapsedSec.toFixed(1)} detik — itu jauh lebih cepat dari membaca tiap kondisi satu-satu.`;
+  const ta = document.getElementById('ckSpeedAckInput');
+  if (ta) ta.value = '';
+  ckSpeedAckInputCheck();
+  const modal = document.getElementById('ckSpeedAckModal');
+  if (modal) modal.style.display = 'flex';
+  setTimeout(() => ta && ta.focus(), 50);
+}
+function ckSpeedAckInputCheck() {
+  const ta   = document.getElementById('ckSpeedAckInput');
+  const btn  = document.getElementById('ckSpeedAckConfirmBtn');
+  const hint = document.getElementById('ckSpeedAckHint');
+  if (!btn) return;
+  const issue = ckOverrideReasonIssue(ta && ta.value); // same "real sentence" bar as override reasons
+  btn.disabled = !!issue;
+  btn.style.opacity = btn.disabled ? '.4' : '1';
+  btn.style.cursor  = btn.disabled ? 'default' : 'pointer';
+  if (hint) hint.textContent = issue || '';
+}
+function ckCancelSpeedAck() {
+  ckSpeedAckPendingCallback = null;
+  const modal = document.getElementById('ckSpeedAckModal');
+  if (modal) modal.style.display = 'none';
+}
+function ckConfirmSpeedAck() {
+  const ta = document.getElementById('ckSpeedAckInput');
+  const reason = ta ? ta.value.trim() : '';
+  if (ckOverrideReasonIssue(reason)) return; // guarded by disabled button; defensive check anyway
+  ckLastSpeedAck = { ...ckChecklistSpeedInfo(), reason, at: Date.now() };
+  const action = ckSpeedAckPendingCallback;
+  ckCancelSpeedAck();
+  if (action) action();
+}
+// One-shot read: the flag belongs to the entry it was acknowledged for, not
+// to whatever the user does next — consuming it clears it so a later, slower
+// run doesn't carry a stale "asal centang" note.
+function ckConsumeSpeedAckNote() {
+  if (!ckLastSpeedAck || Date.now() - ckLastSpeedAck.at > 5 * 60 * 1000) { ckLastSpeedAck = null; return null; }
+  const a = ckLastSpeedAck;
+  ckLastSpeedAck = null;
+  return `\n⚠ FLAG KECEPATAN: ${a.checkedCount}/${a.totalParent} item dicentang dalam ${a.elapsedSec.toFixed(1)}s. Alasan lanjut: "${a.reason}"`;
+}
+
 function ckToggleItem(id) {
   const lockRemaining = ckResetLockRemaining();
   if (lockRemaining > 0) {
@@ -6780,8 +6878,14 @@ function ckToggleItem(id) {
   // friction against FOMO, not a hard lock (user can still proceed, just has to
   // consciously acknowledge they're going against the auto-signal).
   if (turningOn && ckAutoBlocked[id]) { ckRequestOverride(id); return; }
+  const hadAnyChecked = Object.values(ckState).some(v => v === true);
   ckState[id] = !ckState[id];
   if (!ckState[id] && ckOverrideReasons[id]) { delete ckOverrideReasons[id]; ckSaveOverrides(); }
+  // Mark when this checklist run actually started — first checkbox of a clean
+  // run — so we can later tell genuine review from a mass blind-click.
+  if (turningOn && !hadAnyChecked) {
+    try { localStorage.setItem(_ckFirstCheckKey(), String(Date.now())); } catch(e) {}
+  }
   ckSave(); ckRender();
 }
 
@@ -7068,7 +7172,10 @@ function ckResetAll() {
   if (!confirm(`Reset semua checklist? Setelah reset, item tidak bisa dicentang ulang selama ${CK_RESET_COOLDOWN_MS / 1000} detik.`)) return;
   ckState = {};
   ckSave();
-  try { localStorage.setItem(_ckResetLockKey(), String(Date.now() + CK_RESET_COOLDOWN_MS)); } catch(e) {}
+  try {
+    localStorage.setItem(_ckResetLockKey(), String(Date.now() + CK_RESET_COOLDOWN_MS));
+    localStorage.removeItem(_ckFirstCheckKey());
+  } catch(e) {}
   ckRender();
   ckUpdateResetCooldownUI();
 }
@@ -7108,8 +7215,13 @@ function ckTogglePbInfo() {
 }
 
 function ckPrefillJurnal() {
-  const { pct, verdict } = ckGetVerdict();
+  const { pct, verdict, gatesOk, incompleteGates } = ckGetVerdict();
   if (pct < 50) return;
+  if (!gatesOk) { showToast('Gate Belum Lengkap', `Section wajib belum 100%: ${incompleteGates.map(s => s.title).join(', ')}.`, 5000); return; }
+  ckProceedIfNotSuspicious(() => ckPrefillJurnalAction(pct, verdict));
+}
+
+function ckPrefillJurnalAction(pct, verdict) {
   const pair   = document.getElementById('ckPairSelector').value;
   const pb     = PLAYBOOKS[ckActivePlaybook];
   const pbName = pb?.name || ckActivePlaybook;
@@ -7133,6 +7245,8 @@ function ckPrefillJurnal() {
   // Build thesis from checklist state
   const lines = [`[${pbName} | ${pct}% — ${verdict}]`];
   if (pair) lines.push(`Pair: ${pair}`);
+  const speedNote = ckConsumeSpeedAckNote();
+  if (speedNote) lines.push(speedNote);
   if (aiThesis) {
     lines.push(`\n— AI Thesis (${aiThesis.confidence_1_to_5}/5):`);
     if (aiThesis.catalyst_dependency) lines.push(`  Katalis: ${aiThesis.catalyst_dependency}`);
@@ -7188,7 +7302,10 @@ function ckShowMt5Modal() {
   if (!gatesOk) { showToast('Gate Belum Lengkap', `Section wajib belum 100%: ${incompleteGates.map(s => s.title).join(', ')}.`, 5000); return; }
   const pair = document.getElementById('ckPairSelector').value;
   if (!pair) { showToast('Pilih Pair', 'Pilih pair terlebih dahulu di checklist', 3000); return; }
+  ckProceedIfNotSuspicious(() => ckShowMt5ModalAction(pair));
+}
 
+function ckShowMt5ModalAction(pair) {
   // Infer direction dari CB bias (sama dengan ckPrefillJurnal)
   let direction = 'long';
   if (cbData) {
@@ -7301,6 +7418,8 @@ async function ckMt5AutoJournal(pair, direction, fill, lots, sl, tp) {
     `Pair: ${pair} | Entry via Daun Merah MT5 Bridge`,
     `Ticket: #${fill.ticket}`,
   ];
+  const speedNote = ckConsumeSpeedAckNote();
+  if (speedNote) lines.push(speedNote);
   CK_SECTIONS.forEach(sec => {
     const checked = sec.items.filter(it => ckState[it.id] === true);
     const missing = sec.items.filter(it => !ckState[it.id]);
@@ -7666,6 +7785,7 @@ function ckSwitchPlaybook(id) {
   // Reset state for new playbook (clears current pair's state)
   ckState = {};
   ckSave();
+  try { localStorage.removeItem(_ckFirstCheckKey()); } catch(e) {}
   ckBuildUI();
   ckRender();
   // Re-init pair selector if needed

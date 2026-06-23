@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-06-23 (session 96 — lihat "Changelog Session 96" di bawah untuk detail terbaru)
+> **Last updated:** 2026-06-23 (session 97 — lihat "Changelog Session 97" di bawah untuk detail terbaru)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Financial_Feed_App`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -118,6 +118,24 @@ Financial_Feed_App/
 > **Penting:** `api/feeds.js` menggantikan `api/rss.js` dan `api/cot.js` yang sudah dihapus.
 > `api/admin.js` menggantikan `api/health.js`, `api/redis-keys.js`, `api/admin-prompts.js`, dan `api/push.js`.
 > Konsolidasi ini dilakukan untuk tetap di bawah limit 12 serverless functions Vercel Hobby.
+
+---
+
+## Changelog Session 97 (2026-06-23)
+
+### Speed-flag untuk blind mass-check checklist — bukan mencegah, tapi memaksa berhenti + tercatat permanen
+
+**Konteks:** Pertanyaan user setelah Session 96: "gimana kalau aku tiba-tiba centang semua biar bisa entry?" Beda kategori dari 4 celah sebelumnya — itu bug (sistem punya jalan pintas tak disengaja), ini bukan bug: tidak ada cara teknis memverifikasi user benar-benar membaca tiap kondisi vs asal klik. Sama dengan argumen demo-vs-riil di awal sesi diskusi disiplin trading — software tidak bisa membuktikan kejujuran, tapi bisa menaikkan biaya dan membuat ketahuan.
+
+**Implementasi:** `ckToggleItem()` sekarang catat timestamp checklist pertama kali ada item dicentang dari kondisi kosong (`daunmerah_v2_firstcheck_{PAIR}` di localStorage, per-pair, dibersihkan saat reset/ganti playbook). Fungsi baru `ckChecklistSpeedInfo()` hitung rasio item-tercentang vs waktu-berlalu; ditandai "suspicious" kalau ≥50% item checklist sudah tercentang TAPI rata-rata kurang dari ~0,6 detik/item — ambang batas lega untuk skim-reading genuine, jauh di bawah yang bisa dicapai mass-click instan.
+
+Kalau `ckPrefillJurnal()` atau `ckShowMt5Modal()` dipanggil saat flag ini aktif, keduanya dialihkan lewat `ckProceedIfNotSuspicious()` ke modal baru (`ckSpeedAckModal`) yang memaksa user mengetik kalimat nyata (pakai validator yang sama dengan override reason — `ckOverrideReasonIssue()`, minimal 15 karakter/3 kata/bukan kata pengisi) menjelaskan kondisi apa yang barusan dicek, sebelum bisa lanjut. Bukan hard block — user tetap bisa lanjut kalau memang mau — tapi alasan itu (`ckLastSpeedAck`) otomatis ditempel permanen ke teks thesis jurnal (`⚠ FLAG KECEPATAN: N/M item dicentang dalam X detik...`) lewat `ckConsumeSpeedAckNote()`, baik untuk jalur Jurnal manual maupun auto-journal dari MT5 Bridge. Catatan one-shot — dikonsumsi begitu terpakai, supaya tidak nempel ke entry lain yang temponya genuine.
+
+**Bonus kecil:** ketemu saat refactor — `ckPrefillJurnal()` sebelumnya cuma cek `pct < 50`, tidak ikut cek `gatesOk` dari fix Session 96 (MT5 modal sudah benar, Jurnal kelewat). Disamakan sekarang.
+
+**Testing:** Playwright — 6 skenario: (1) mass-check instan terdeteksi suspicious (44/44 item dalam 0.003s), (2) `ckPrefillJurnal()` dialihkan ke modal speed-ack bukan langsung navigasi, (3) alasan "ok" tetap menjaga tombol disabled, (4) alasan kalimat nyata mengaktifkan tombol → konfirmasi → navigasi ke Jurnal jalan + teks thesis berisi flag note + `ckLastSpeedAck` ke-clear, (5) checklist yang sama dicentang selama 5 menit (pacing genuine) TIDAK ditandai suspicious, (6) checklist genuine lolos langsung ke Jurnal tanpa modal sama sekali. Jalur MT5 diuji terpisah: modal speed-ack tampil duluan, baru setelah konfirmasi modal Entry MT5 terbuka.
+
+**Catatan:** ini eksplisit bukan solusi penuh — kalau user benar-benar niat berbohong, dia bisa mengetik kalimat yang valid secara format tapi isinya tetap bohong ("saya sudah cek semua dengan teliti" tanpa benar-benar cek). Tidak ada perbaikan lanjutan yang realistis untuk ini di level software; batasannya didokumentasikan terbuka ke user saat fitur ini diusulkan, bukan diklaim sebagai pencegahan mutlak.
 
 ---
 
