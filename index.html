@@ -3881,7 +3881,7 @@ function renderThesisCard(t) {
     ${t.invalidation_condition ? `<div class="thesis-label">INVALIDASI</div><div class="thesis-val">${escHtml(t.invalidation_condition)}</div>` : ''}
     ${t.catalyst_dependency ? `<div class="thesis-label">KATALIS</div><div class="thesis-val">${escHtml(t.catalyst_dependency)}</div>` : ''}
     ${t.time_horizon_days ? `<div class="thesis-label">HORIZON</div><div class="thesis-val">${t.time_horizon_days} hari</div>` : ''}
-    ${t.direction !== 'no_trade' ? `<button class="thesis-use-btn" onclick="thesisGoToChecklist()">Mulai ke Checklist →</button>` : ''}
+    ${t.direction !== 'no_trade' ? `<button class="thesis-use-btn" onclick="thesisGoToSizing()">Mulai ke Sizing Calc →</button>` : ''}
   </div>`;
 }
 
@@ -3916,18 +3916,19 @@ function renderThesisAlerts(alerts) {
   </div>`;
 }
 
-function thesisGoToChecklist() {
+function thesisGoToSizing() {
   const t = _lastThesis;
   if (!t || !t.pair_recommendation) return;
-  switchView('checklist');
+  switchView('sizing');
   setTimeout(() => {
-    const sel = document.getElementById('ckPairSelector');
+    const sel = document.getElementById('szPair');
     if (sel) {
       for (const opt of sel.options) {
-        if (opt.value === t.pair_recommendation) { sel.value = t.pair_recommendation; ckOnPairChange(); break; }
+        if (opt.value === t.pair_recommendation) { sel.value = t.pair_recommendation; szUpdatePipInfo(); break; }
       }
     }
-    showToast('Thesis AI siap dipakai', `${t.pair_recommendation} ${(t.direction||'').toUpperCase()} — item relevan sudah auto-check, lengkapi sisanya sebelum entry.`);
+    if (t.direction === 'long' || t.direction === 'short') szSetDir(t.direction);
+    showToast('Thesis AI siap dipakai', `${t.pair_recommendation} ${(t.direction||'').toUpperCase()} — isi stop/entry, lanjut ke Checklist sebelum entry.`);
   }, 200);
 }
 
