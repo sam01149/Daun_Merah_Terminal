@@ -73,6 +73,44 @@ async function rssHandler(req, res) {
     console.warn('RSS Redis GET failed:', e.message);
   }
 
+  // Cache expired — avoid a "thundering herd": if several browser windows/users
+  // poll right as the 50s cache lapses, only the request holding this lock
+  // actually hits FinancialJuice. Everyone else waits briefly for its result
+  // instead of firing concurrent upstream requests, which can look like a
+  // scrape burst to FinancialJuice's own anti-bot defenses and get blocked.
+  const lockKey = 'rss_fetch_lock';
+  const gotLock = await redisCmd('SET', lockKey, '1', 'NX', 'EX', 25);
+
+  if (!gotLock) {
+    for (let i = 0; i < 4; i++) {
+      await new Promise(r => setTimeout(r, 350));
+      try {
+        const fresh = await redisCmd('GET', RSS_CACHE_KEY);
+        if (fresh) {
+          const obj = JSON.parse(fresh);
+          if (Date.now() - obj.fetchedAt < RSS_CACHE_TTL_MS) {
+            res.setHeader('X-Cache-Source', 'REDIS_WAIT');
+            res.setHeader('X-News-Source', obj.source || 'financialjuice');
+            return res.status(200).send(obj.xml);
+          }
+        }
+      } catch(e) {}
+    }
+    // Lock holder still hasn't published fresh data — serve whatever's cached
+    // (even if stale) rather than also double-fetching upstream.
+    try {
+      const stale = await redisCmd('GET', RSS_CACHE_KEY);
+      if (stale) {
+        const obj = JSON.parse(stale);
+        res.setHeader('X-Cache-Source', 'STALE_WAIT');
+        res.setHeader('X-News-Source', obj.source || 'financialjuice');
+        return res.status(200).send(obj.xml);
+      }
+    } catch(e) {}
+    // Nothing cached at all (cold start race) — fall through and fetch
+    // ourselves as last resort, lock or not.
+  }
+
   const ua = RSS_USER_AGENTS[Math.floor(Math.random() * RSS_USER_AGENTS.length)];
   let xml = null, fetchError = null, sourceUsed = 'financialjuice';
 
@@ -103,6 +141,7 @@ async function rssHandler(req, res) {
   }
 
   if (!xml) {
+    if (gotLock) redisCmd('DEL', lockKey).catch(() => {}); // release early so next cycle isn't stuck waiting out the TTL
     try {
       const stale = await redisCmd('GET', RSS_CACHE_KEY);
       if (stale) {
@@ -115,6 +154,8 @@ async function rssHandler(req, res) {
     res.setHeader('Content-Type', 'application/json');
     return res.status(502).json({ error: 'Upstream fetch failed (primary + fallback)', detail: fetchError });
   }
+
+  if (gotLock) redisCmd('DEL', lockKey).catch(() => {}); // release as soon as fresh data is about to be cached
 
   const payload = JSON.stringify({ xml, fetchedAt: now, source: sourceUsed });
   try { await redisCmd('SET', RSS_CACHE_KEY, payload, 'EX', 60); } catch(e3) {
