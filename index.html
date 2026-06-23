@@ -8313,6 +8313,7 @@ function szSaveHistory(entry) {
 let jnInitialized = false;
 let jnCurrentFilter = 'all';
 let jnAllEntries = [];
+let jnLivePrices = {}; // { pair: { price, ts } } — current price for open positions, no P&L derived from it
 
 function initJurnal() {
   if (!jnInitialized) {
@@ -8436,6 +8437,48 @@ async function jnSave() {
   }
 }
 
+function jnPairToYahooSymbol(pair) {
+  if (pair === 'XAU/USD') return 'GC=F';
+  return pair.replace('/', '') + '=X';
+}
+
+// Fetches current price for every pair with an open position. Deliberately
+// stops at the raw price — no $ or R-multiple is derived from it anywhere,
+// per user request: floating P&L next to a position that already has SL/TP
+// set just adds psychological noise without changing what the trader should
+// do. Cached 60s client-side (sessionStorage) so re-render/tab-switch doesn't
+// re-hit the rate-limited /api/correlations?action=ta endpoint every time.
+async function jnFetchLivePrices() {
+  const openPairs = [...new Set(jnAllEntries.filter(e => e.status === 'open').map(e => e.pair))];
+  if (openPairs.length === 0) return;
+
+  const now = Date.now();
+  const stale = openPairs.filter(p => !jnLivePrices[p] || now - jnLivePrices[p].ts > 60000);
+  if (stale.length === 0) { jnRenderEntries(); return; }
+
+  await Promise.allSettled(stale.map(async (pair) => {
+    try {
+      const cacheKey = 'jnPrice_' + pair;
+      const cached = sessionStorage.getItem(cacheKey);
+      if (cached) {
+        const c = JSON.parse(cached);
+        if (now - c.ts < 60000) { jnLivePrices[pair] = c; return; }
+      }
+      const symbol = jnPairToYahooSymbol(pair);
+      const r = await fetch('/api/correlations?action=ta&symbol=' + encodeURIComponent(symbol) + '&interval=5m', {
+        signal: AbortSignal.timeout(8000),
+      });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const d = await r.json();
+      if (d.current_price == null) return;
+      const entry = { price: d.current_price, ts: now };
+      jnLivePrices[pair] = entry;
+      try { sessionStorage.setItem(cacheKey, JSON.stringify(entry)); } catch(_) {}
+    } catch(e) { console.warn('jnFetchLivePrices:', pair, e.message); }
+  }));
+  jnRenderEntries();
+}
+
 async function jnLoadEntries() {
   const deviceId = szGetDeviceId();
   const listEl = document.getElementById('jnList');
@@ -8448,6 +8491,7 @@ async function jnLoadEntries() {
     jnAllEntries = entries || [];
     jnRenderEntries();
     jnRenderVaR();
+    jnFetchLivePrices();
     if (document.getElementById('jnCurveView')?.style.display !== 'none') jnRenderCurve();
   } catch(e) {
     console.warn('jnLoad failed:', e.message);
@@ -8500,6 +8544,14 @@ function jnRenderEntries() {
       ? `<div style="font-size:10px;color:var(--text-mid);margin-top:4px;font-family:'DM Mono',monospace">${priceParts.join(' · ')}</div>`
       : '';
 
+    // Current price — open positions only. Intentionally just the raw number,
+    // same neutral color as everything else in this row: no $ / R-multiple,
+    // no green/red. See jnFetchLivePrices() for why.
+    const live = e.status === 'open' ? jnLivePrices[e.pair] : null;
+    const liveRow = live
+      ? `<div style="font-size:10px;color:var(--text-mid);margin-top:2px;font-family:'DM Mono',monospace">Harga sekarang: ${jnFmtPrice(e.pair, live.price)}</div>`
+      : '';
+
     // Excursion (MFE/MAE) — "execution reality check": shows whether price moved
     // favorably before the trade closed, so a loss can be read as panic-exit vs
     // thesis-was-wrong. Only shown when computeMfeMae() actually had OHLCV
@@ -8548,6 +8600,7 @@ function jnRenderEntries() {
         ${e.regime_at_entry ? ` · Regime: ${e.regime_at_entry.replace('_',' ').toUpperCase()}` : ''}
       </div>
       ${priceRow}
+      ${liveRow}
       ${excRow}
       ${thesisHtml}
       ${e.status === 'closed' && e.attribution_notes ? `<div style="font-size:10px;color:var(--muted);margin-top:4px;font-family:'DM Mono',monospace;font-style:italic">${e.attribution_notes.slice(0, 150)}${e.attribution_notes.length > 150 ? '…' : ''}</div>` : ''}
