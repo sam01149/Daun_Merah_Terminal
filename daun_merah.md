@@ -1167,6 +1167,20 @@ Format ini sudah **berubah ke prosa naratif** — levels disebutkan dalam kalima
 - **Scrollbar desktop**: `@media (min-width:1024px)` tampilkan scrollbar tipis 5px untuk `.feed-scroll`. Warna `--border` / `--muted` on hover. User mouse tahu konten bisa di-scroll. Mobile tetap hidden.
 - **Pulse animation loading**: `.loading-pulse` pakai existing `@keyframes textPulse`. Diterapkan di: CB research, kalender ekonomi, jurnal list, COT, fundamental, COT tren chart.
 
+## Changelog Session 40 (2026-06-23)
+
+### Fix: Fundamental tab — CB Rate row tidak pernah auto-update (stale seed)
+
+**Bug ditemukan:** Audit data tab FUNDAMENTAL menemukan `ECB Rate` masih tertulis 2.15% padahal ECB sudah hike ke 2.40% (meeting 2026-06-17, terdeteksi oleh `cb-status.js`). Root cause: field `"{Bank} Rate"` di hash `fundamental:{currency}` ditulis sekali saat `fundamental_seed` (`source:"seed"`, tanpa tanggal) dan tidak pernah ikut pipeline auto-refresh (`autoUpdateFundamentals`/`fundamental_refresh`) — beda mekanisme dari indikator headline lain. Semua 8 CB rate kebetulan masih cocok kecuali ECB, yang baru kena karena rate decision terbaru.
+
+**Fix:**
+- Extract logic scrape+cache CB rate dari `api/cb-status.js` ke modul baru `api/_cb_rates.js` (prefix `_` → tidak dihitung ke limit 12 serverless function). Export `getLiveCbRates()` — scrape 8 official source (FRED, ECB Data Portal, BoE/BoJ/RBA/RBNZ/SNB webpage, BoC Valet) dengan 6h Redis cache (`cb_rates_live_v2`), sama persis dengan yang sudah dipakai `cb-status.js`.
+- `api/cb-status.js` jadi thin wrapper: panggil `getLiveCbRates()` + merge `cb_bias`.
+- `api/admin.js` `fundamentalGetHandler`: setelah baca hash `fundamental:{cur}`, overlay key `"{Bank} Rate"` dengan hasil `getLiveCbRates()` (`actual`, `period`/`date` = `last_meeting`, `source` = `rate_source`: `live_fresh`/`live_cached`/`fallback`). Jadi setiap kali tab FUNDAMENTAL fetch data, rate bank sentral selalu live (maks ~6 jam basi dari cache), bukan beku dari seed.
+- Tidak perlu cron baru atau write-through ke Redis — overlay terjadi di read-time, reuse cache 6h yang sudah ada.
+
+**Verifikasi:** Test lokal `getLiveCbRates()` → EUR balik `2.4%` (`live_fresh`), konsisten dengan endpoint `/api/cb-status` production. Simulasi overlay ke struktur `fundamental_get` menghasilkan `"ECB Rate":{"actual":"2.4%","source":"live_fresh",...}` — sesuai ekspektasi.
+
 ## Changelog Session 39 (2026-06-02)
 
 ### Export CSV — Tab JURNAL
@@ -1717,11 +1731,13 @@ Call 1: SambaNova DeepSeek-V3.2 akun 2 (primary)
 
 ---
 
-## CB Rates (Update Manual Setelah Meeting)
+## CB Rates (Fallback Hardcoded — Live Scrape Mengoverride Otomatis)
 
-File: `api/cb-status.js`, object `CB_DATA`
+File: `api/_cb_rates.js`, object `CB_FALLBACK` (di-`require` oleh `api/cb-status.js` dan `api/admin.js` `fundamentalGetHandler` — lihat Session 40).
 
-| CB | Rate | Last Meeting | Decision |
+`rate` di tabel ini cuma fallback kalau scrape live gagal — angka aktual yang ditampilkan ke user (tab CB Bias *dan* tab FUNDAMENTAL) selalu dari `getLiveCbRates()`, scrape 8 official source dengan Redis cache 6h. `last_meeting`/`last_decision`/`last_bps` tetap perlu update manual karena scraper cuma ambil angka rate, bukan metadata meeting.
+
+| CB | Rate (fallback) | Last Meeting | Decision |
 |----|------|-------------|----------|
 | Fed | 3.75% | 2026-04-29 | hold |
 | ECB | 2.15% | 2026-04-30 | hold |
@@ -1733,7 +1749,7 @@ File: `api/cb-status.js`, object `CB_DATA`
 | SNB | 0.00% | 2026-03-19 | hold |
 
 > **Last verified:** 2026-05-05. Semua rate dikonfirmasi via official APIs (FRED, ECB API, BoC Valet) + web search.
-> **Note 2026-06-04:** ECB meeting ~Jun 5, BOE ~Jun 19, SNB ~Jun 19. Live scraper `cb-status.js` akan otomatis update rate jika berubah. Fallback metadata (`last_meeting`, `last_decision`) perlu update manual setelah meeting.
+> **2026-06-23:** ECB fallback (2.15%) sudah ketinggalan — live scrape sudah balik 2.40% (hike 2026-06-17) dan ini yang ditampilkan ke user. Fallback constant di atas dibiarkan beda sengaja sebagai bukti `rate_stale` flag bekerja; update manual fallback ini kapan pun sempat, tidak urgent karena user-facing value sudah benar via live scrape.
 
 ---
 

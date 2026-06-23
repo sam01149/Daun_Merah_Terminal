@@ -14,6 +14,7 @@ const crypto   = require('crypto');
 const webpush  = require('web-push');
 const PUSH_KW  = require('./_push_keywords');
 const { autoUpdateFundamentals } = require('./_fundamental_parser');
+const { getLiveCbRates } = require('./_cb_rates');
 
 function subKey(endpoint) {
   return crypto.createHash('sha256').update(endpoint).digest('hex');
@@ -791,17 +792,37 @@ async function fundamentalGetHandler(req, res) {
   res.setHeader('Cache-Control', 'no-cache');
   if (req.method === 'OPTIONS') return res.status(204).end();
   try {
-    const pairs = await Promise.all(FUND_CURRENCIES.map(async cur => {
-      const raw = await redisCmd('HGETALL', `fundamental:${cur}`);
-      const data = {};
-      if (Array.isArray(raw)) {
-        for (let i = 0; i < raw.length; i += 2) {
-          try { data[raw[i]] = JSON.parse(raw[i + 1]); } catch(_) { data[raw[i]] = { actual: raw[i + 1] }; }
+    const [pairs, liveCbRates] = await Promise.all([
+      Promise.all(FUND_CURRENCIES.map(async cur => {
+        const raw = await redisCmd('HGETALL', `fundamental:${cur}`);
+        const data = {};
+        if (Array.isArray(raw)) {
+          for (let i = 0; i < raw.length; i += 2) {
+            try { data[raw[i]] = JSON.parse(raw[i + 1]); } catch(_) { data[raw[i]] = { actual: raw[i + 1] }; }
+          }
         }
-      }
-      return [cur, data];
-    }));
-    return res.status(200).json({ ok: true, data: Object.fromEntries(pairs), fetched_at: new Date().toISOString() });
+        return [cur, data];
+      })),
+      getLiveCbRates().catch(e => { console.warn('getLiveCbRates failed:', e.message); return []; }),
+    ]);
+
+    // Overlay live-scraped CB rate onto "{Bank} Rate" row — this is the field that
+    // previously stayed frozen on its seed value (e.g. ECB Rate missed a hike).
+    // _cb_rates.js already merges 6h-cached scrape + cb_decisions, so this is
+    // always at most ~6h stale instead of "since whenever it was last seeded".
+    const dataByCur = Object.fromEntries(pairs);
+    for (const cb of liveCbRates) {
+      const bucket = dataByCur[cb.currency];
+      if (!bucket) continue;
+      bucket[`${cb.short} Rate`] = {
+        actual: `${cb.rate}%`,
+        period: cb.last_meeting,
+        date: cb.last_meeting,
+        source: cb.rate_source,
+      };
+    }
+
+    return res.status(200).json({ ok: true, data: dataByCur, fetched_at: new Date().toISOString() });
   } catch(e) {
     return res.status(500).json({ error: e.message });
   }
