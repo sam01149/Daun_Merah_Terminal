@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-06-23 (session 95 — lihat "Changelog Session 95" di bawah untuk detail terbaru)
+> **Last updated:** 2026-06-23 (session 96 — lihat "Changelog Session 96" di bawah untuk detail terbaru)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Financial_Feed_App`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -118,6 +118,26 @@ Financial_Feed_App/
 > **Penting:** `api/feeds.js` menggantikan `api/rss.js` dan `api/cot.js` yang sudah dihapus.
 > `api/admin.js` menggantikan `api/health.js`, `api/redis-keys.js`, `api/admin-prompts.js`, dan `api/push.js`.
 > Konsolidasi ini dilakukan untuk tetap di bawah limit 12 serverless functions Vercel Hobby.
+
+---
+
+## Changelog Session 96 (2026-06-23)
+
+### Tutup 4 celah checklist sisa dari audit disiplin (Session 95) — gate wajib 100%, cooldown reset, konfirmasi ganti playbook, validasi alasan override
+
+**Konteks:** Lanjutan audit checklist Session 95. User minta semua celah yang teridentifikasi dikerjakan, bukan cuma satu (lot/SL/TP yang sudah dibereskan di Session 95).
+
+**1. Gate section (VALIDITAS DRIVER, RISK MANAGEMENT, dst — beda per playbook) sekarang wajib 100% checked, bukan cuma 2x-weighted di skor agregat.** Sebelumnya user bisa skip seluruh gate dan tetap lolos 50% threshold dengan mencentang section lain yang lebih remeh — celah paling berbahaya karena gate justru yang paling sering dikorbankan saat emosi (FOMO/revenge). `ckGetVerdict()` sekarang hitung `gatesOk` (semua section di `CK_GATES` harus 100% item parent-nya checked, lewat fungsi baru `ckGateComplete()` — bukan reuse `ckIsComplete()` yang juga mensyaratkan sub-item, supaya konsisten dengan skor agregat yang dari awal cuma menghitung parent item, sub cuma guidance). Verdict dipaksa "NO TRADE" kalau gate belum lengkap walau pct sudah tinggi, dengan pesan eksplisit gate mana yang kurang. Tombol Jurnal/MT5 dan `ckShowMt5Modal()` ikut pakai `gatesOk`, dengan toast jelas (bukan diam) kalau diblokir karena gate.
+
+**2. Cooldown 60 detik setelah Reset Checklist — menutup pola "reset lalu instan centang ulang yang sama" buat melepas verdict NO TRADE tanpa konsekuensi.** Lock disimpan di localStorage per-pair (`daunmerah_v2_resetlock_{PAIR}`, bukan cuma in-memory) supaya refresh halaman tidak jadi jalan pintas. `ckToggleItem()` sekarang cek lock duluan — kalau masih dalam cooldown, klik checkbox diblokir + toast "Tunggu Xs ... bukan reset-lalu-paksa-lolos". Countdown live ditumpangkan ke interval jam 1 detik yang sudah ada (`ckUpdateClock()` → `ckUpdateResetCooldownUI()`), tampil sebagai teks merah di bawah tombol Reset.
+
+**3. Ganti playbook di tengah sesi (ada progress checklist tercentang) sekarang minta konfirmasi eksplisit sebelum reset state, bukan langsung wipe diam-diam.** Sebelumnya ganti playbook = celah belakang: skor rendah di SMC/ICT → pindah ke Macro Momentum → checklist kosong baru → lolos lebih mudah. `ckSwitchPlaybook()` sekarang cek `Object.values(ckState).some(v => v === true)` — kalau ada item tercentang, `confirm()` dulu ("Checklist pair ini yang sudah dicentang akan di-reset ke kosong"); kalau user batal, dropdown selector dikembalikan ke playbook aktif (tidak ada state ganda/visual mismatch).
+
+**4. Alasan override sinyal auto-block (`rc4` dst) sekarang harus kalimat nyata, bukan cuma ≥5 karakter.** Validasi lama meloloskan "test", "ok ok", "udah" — kosmetik doang. Fungsi baru `ckOverrideReasonIssue()`: minimal 15 karakter, minimal 3 kata, blocklist kata pengisi umum (test/ok/aman/skip/gas/terserah/dst — case+symbol-insensitive), tolak alasan dengan diversity karakter rendah (<6 unique char — nangkep filler kayak "aaaaaaaaaaaaaaa" / "asdasdasdasdasd" yang lolos count tapi bukan kalimat). Ditambah hint teks live di bawah textarea (`#ckOverrideHint`) yang menjelaskan kenapa tombol masih disabled — sebelumnya tombol cuma mati tanpa penjelasan apa pun.
+
+**Testing:** Playwright headless, 4 skenario terpisah per celah (lihat detail di Session 95 untuk setup server statis). Ketemu 1 bug nyata saat testing: percobaan pertama pakai `ckIsComplete()` (yang ikut mensyaratkan sub-item) untuk cek gate — hasilnya gate SELALU "incomplete" walau semua parent item dicentang, karena sub-item (mis. `g5a`-`g5d` di bawah `g5`) tidak ikut tercentang dalam skenario normal (sub murni guidance, tidak pernah dimaksudkan wajib). Diperbaiki dengan fungsi terpisah `ckGateComplete()` yang cuma cek parent item, konsisten dengan semantik skor. Setelah fix: re-test konfirmasi `gatesOk` jadi `true` begitu semua parent item gate checked (skor 100%, verdict ENTRY). 3 celah lain (cooldown, playbook-switch confirm, override validation) lolos dari percobaan pertama — verified lewat manipulasi `localStorage`/`ckState` langsung + dialog handler Playwright (`page.on('dialog')`) untuk simulasi accept/dismiss `confirm()`, plus screenshot visual untuk banner cooldown dan hint override.
+
+**Catatan:** keempat fix ini menutup celah yang ditemukan, tapi tidak menyentuh hal di luar lingkup (mis. localStorage/console tampering — itu butuh user aktif buka DevTools saat trading, bukan pola emosi spontan yang jadi concern utama diskusi ini).
 
 ---
 

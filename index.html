@@ -2868,6 +2868,7 @@ body {
     <button class="ck-jurnal-btn" id="ckJurnalBtn" onclick="ckPrefillJurnal()" style="display:none">→ Buat Jurnal dari Checklist</button>
     <button class="ck-mt5-btn" id="ckMt5Btn" onclick="ckShowMt5Modal()" style="display:none">⚡ Entry MT5</button>
     <button class="ck-reset" onclick="ckResetAll()">↺ RESET CHECKLIST</button>
+    <div id="ckResetCooldown" style="display:none;font-size:9px;color:var(--accent);text-align:center;margin-top:4px">Tunggu --s sebelum centang ulang</div>
   </div>
 </div>
 
@@ -2932,9 +2933,10 @@ body {
       <button onclick="ckCancelOverride()" style="background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer;line-height:1">×</button>
     </div>
     <div id="ckOverrideMsg" style="font-size:11px;color:var(--muted);line-height:1.5;margin-bottom:12px;padding:8px 10px;background:rgba(192,57,43,.08);border:1px solid rgba(192,57,43,.2);border-radius:6px"></div>
-    <div style="font-size:9px;color:var(--muted);letter-spacing:.8px;text-transform:uppercase;margin-bottom:5px">Kenapa tetap lanjut? (wajib diisi)</div>
+    <div style="font-size:9px;color:var(--muted);letter-spacing:.8px;text-transform:uppercase;margin-bottom:5px">Kenapa tetap lanjut? (kalimat nyata, bukan "ok"/"aman")</div>
     <textarea id="ckOverrideReasonInput" oninput="ckOverrideInputCheck()" placeholder="Mis: data baru keluar setelah sinyal ini dihitung, sudah saya cek manual..." style="width:100%;min-height:64px;background:var(--bg);color:var(--text);border:1px solid var(--border);padding:8px 10px;border-radius:6px;font-family:'DM Mono',monospace;font-size:11px;box-sizing:border-box;resize:vertical"></textarea>
-    <button id="ckOverrideConfirmBtn" disabled onclick="ckConfirmOverride()" style="width:100%;margin-top:12px;padding:12px;background:var(--yellow);color:#000;border:none;border-radius:8px;font-weight:700;font-size:11px;letter-spacing:.8px;text-transform:uppercase;cursor:pointer">Centang Tetap (dengan alasan)</button>
+    <div id="ckOverrideHint" style="font-size:9px;color:var(--accent);min-height:14px;margin-top:4px"></div>
+    <button id="ckOverrideConfirmBtn" disabled onclick="ckConfirmOverride()" style="width:100%;margin-top:8px;padding:12px;background:var(--yellow);color:#000;border:none;border-radius:8px;font-weight:700;font-size:11px;letter-spacing:.8px;text-transform:uppercase;cursor:pointer">Centang Tetap (dengan alasan)</button>
     <button onclick="ckCancelOverride()" style="width:100%;margin-top:7px;padding:10px;background:transparent;color:var(--muted);border:1px solid var(--border);border-radius:8px;font-size:10px;cursor:pointer">Batal</button>
   </div>
 </div>
@@ -6743,7 +6745,36 @@ function ckSaveOverrides() {
   try { localStorage.setItem(_ckOverrideKey(), JSON.stringify(ckOverrideReasons)); } catch(e) {}
 }
 
+// ── RESET COOLDOWN ──────────────────────────────────────────────────────────
+// Resetting the checklist and instantly re-checking the same items launders a
+// NO TRADE verdict with zero friction. A cooldown after reset closes that —
+// persisted in localStorage (not just in-memory) so a page refresh can't skip it.
+const CK_RESET_COOLDOWN_MS = 60000;
+function _ckResetLockKey(pair) {
+  const p = (pair || ckCurrentPair || '').replace('/', '');
+  return p ? `daunmerah_v2_resetlock_${p}` : 'daunmerah_v2_resetlock';
+}
+function ckResetLockRemaining() {
+  try {
+    const until = parseInt(localStorage.getItem(_ckResetLockKey()) || '0', 10);
+    return Math.max(0, until - Date.now());
+  } catch(e) { return 0; }
+}
+function ckUpdateResetCooldownUI() {
+  const el = document.getElementById('ckResetCooldown');
+  if (!el) return;
+  const remaining = ckResetLockRemaining();
+  if (remaining <= 0) { el.style.display = 'none'; return; }
+  el.style.display = 'block';
+  el.textContent = `Tunggu ${Math.ceil(remaining / 1000)}s sebelum centang ulang`;
+}
+
 function ckToggleItem(id) {
+  const lockRemaining = ckResetLockRemaining();
+  if (lockRemaining > 0) {
+    showToast('Baru Direset', `Tunggu ${Math.ceil(lockRemaining / 1000)} detik sebelum mencentang ulang — bukan reset-lalu-paksa-lolos.`, 2500);
+    return;
+  }
   const turningOn = !ckState[id];
   // Checking a box the system has flagged red requires a one-sentence reason first —
   // friction against FOMO, not a hard lock (user can still proceed, just has to
@@ -6767,13 +6798,33 @@ function ckRequestOverride(id) {
   setTimeout(() => ta && ta.focus(), 50);
 }
 
+// Generic filler that technically clears a character-count minimum but carries
+// no real justification — "ok", "aman", "skip" etc. A 5-char minimum let any of
+// these through; this closes that without requiring the reason to be "true"
+// (unverifiable client-side), just substantive enough to not be a reflex click.
+const CK_OVERRIDE_BLOCKLIST = ['test','testing','tes','coba','ok','oke','okay','ya','yes','iya','aman','sudah aman','udah aman','skip','lanjut','lanjutkan','lanjutkan saja','gas','fine','asal','terserah','whatever','bodo amat','gpp','gapapa','santai','santai saja'];
+function ckOverrideReasonIssue(raw) {
+  const reason = (raw || '').trim();
+  if (reason.length < 15) return 'Minimal 15 karakter — satu kalimat nyata.';
+  const words = reason.split(/\s+/).filter(Boolean);
+  if (words.length < 3) return 'Tulis dalam bentuk kalimat, minimal 3 kata.';
+  const normalized = reason.toLowerCase().replace(/[^a-z0-9\s]/g, '').trim();
+  if (CK_OVERRIDE_BLOCKLIST.includes(normalized)) return 'Itu bukan alasan, cuma kata pengisi — jelaskan kenapa beneran.';
+  const uniqueChars = new Set(reason.toLowerCase().replace(/\s/g, '')).size;
+  if (uniqueChars < 6) return 'Alasan ini kelihatan bukan kalimat sungguhan.';
+  return null;
+}
+
 function ckOverrideInputCheck() {
-  const ta  = document.getElementById('ckOverrideReasonInput');
-  const btn = document.getElementById('ckOverrideConfirmBtn');
+  const ta   = document.getElementById('ckOverrideReasonInput');
+  const btn  = document.getElementById('ckOverrideConfirmBtn');
+  const hint = document.getElementById('ckOverrideHint');
   if (!btn) return;
-  btn.disabled = !(ta && ta.value.trim().length >= 5);
+  const issue = ckOverrideReasonIssue(ta && ta.value);
+  btn.disabled = !!issue;
   btn.style.opacity = btn.disabled ? '.4' : '1';
   btn.style.cursor  = btn.disabled ? 'default' : 'pointer';
+  if (hint) hint.textContent = issue || '';
 }
 
 function ckCancelOverride() {
@@ -6787,7 +6838,7 @@ function ckConfirmOverride() {
   if (!id) return;
   const ta = document.getElementById('ckOverrideReasonInput');
   const reason = ta ? ta.value.trim() : '';
-  if (reason.length < 5) return; // guarded by disabled button; defensive check anyway
+  if (ckOverrideReasonIssue(reason)) return; // guarded by disabled button; defensive check anyway
 
   ckState[id] = true;
   ckOverrideReasons[id] = reason;
@@ -6830,6 +6881,10 @@ function ckGetScore(sec) {
   return { checked: ids.filter(id => ckState[id]).length, total: ids.length };
 }
 function ckIsComplete(sec) { const { checked, total } = ckGetScore(sec); return checked === total; }
+// Gate enforcement only counts parent items, same as ckGetVerdict's scoring —
+// subs are guidance-only everywhere else in the app, so requiring them here too
+// would make every gate look permanently incomplete the moment it has sub-items.
+function ckGateComplete(sec) { return sec.items.every(it => ckState[it.id]); }
 
 function ckGetVerdict() {
   let ws = 0, tw = 0;
@@ -6843,13 +6898,19 @@ function ckGetVerdict() {
   });
   const pct = tw === 0 ? 0 : Math.round(ws / tw * 100);
   const anyChecked = ws > 0;
+  // Gate sections (Validitas Driver, Risk Management, dst) are non-negotiable —
+  // being 2x-weighted in the aggregate score isn't enough, since a user could
+  // skip them entirely and still clear 50% on the back of easier sections.
+  const incompleteGates = CK_SECTIONS.filter(sec => CK_GATES.includes(sec.id) && !ckGateComplete(sec));
+  const gatesOk = incompleteGates.length === 0;
   let verdict, cls, sub;
-  if (!anyChecked)  { verdict = '—';             cls = 'pending'; sub = 'Lengkapi checklist'; }
-  else if (pct < 50){ verdict = 'NO TRADE';       cls = 'fail';    sub = `${pct}% — syarat belum cukup`; }
-  else if (pct < 75){ verdict = 'PERTIMBANGKAN';  cls = 'warn';    sub = `${pct}% — ada celah, review ulang`; }
-  else if (pct < 90){ verdict = 'SIAP TRADE';     cls = 'ready';   sub = `${pct}% — kondisi terpenuhi`; }
-  else              { verdict = 'ENTRY';           cls = 'pass';    sub = `${pct}% — semua kondisi kuat`; }
-  return { pct, verdict, cls, sub, ws, tw };
+  if (!anyChecked)      { verdict = '—';            cls = 'pending'; sub = 'Lengkapi checklist'; }
+  else if (pct < 50)    { verdict = 'NO TRADE';     cls = 'fail';    sub = `${pct}% — syarat belum cukup`; }
+  else if (!gatesOk)    { verdict = 'NO TRADE';     cls = 'fail';    sub = `Gate belum lengkap: ${incompleteGates.map(s => s.title).join(', ')}`; }
+  else if (pct < 75)    { verdict = 'PERTIMBANGKAN'; cls = 'warn';   sub = `${pct}% — ada celah, review ulang`; }
+  else if (pct < 90)    { verdict = 'SIAP TRADE';   cls = 'ready';   sub = `${pct}% — kondisi terpenuhi`; }
+  else                  { verdict = 'ENTRY';        cls = 'pass';    sub = `${pct}% — semua kondisi kuat`; }
+  return { pct, verdict, cls, sub, ws, tw, gatesOk, incompleteGates };
 }
 
 function ckBuildUI() {
@@ -6961,7 +7022,7 @@ function ckRender() {
     if (dot) dot.classList.toggle('on', !!done);
     if (lbl) lbl.classList.toggle('on', !!done);
   });
-  const { pct, verdict, cls, sub } = ckGetVerdict();
+  const { pct, verdict, cls, sub, gatesOk } = ckGetVerdict();
   // Count all items (incl subs) for display counter
   let totalChecked = 0, total = 0;
   CK_SECTIONS.forEach(sec => {
@@ -6996,7 +7057,7 @@ function ckRender() {
   const mjBtn  = document.getElementById('ckMobileJurnalBtn');
   const mt5Btn = document.getElementById('ckMt5Btn');
   const mMt5Btn = document.getElementById('ckMobileMt5Btn');
-  const showJurnal = pct >= 50;
+  const showJurnal = pct >= 50 && gatesOk;
   if (jBtn)    jBtn.style.display    = showJurnal ? 'block' : 'none';
   if (mjBtn)   mjBtn.style.display   = showJurnal ? 'block' : 'none';
   if (mt5Btn)  mt5Btn.style.display  = showJurnal ? 'block' : 'none';
@@ -7004,7 +7065,12 @@ function ckRender() {
 }
 
 function ckResetAll() {
-  if (confirm('Reset semua checklist?')) { ckState = {}; ckSave(); ckRender(); }
+  if (!confirm(`Reset semua checklist? Setelah reset, item tidak bisa dicentang ulang selama ${CK_RESET_COOLDOWN_MS / 1000} detik.`)) return;
+  ckState = {};
+  ckSave();
+  try { localStorage.setItem(_ckResetLockKey(), String(Date.now() + CK_RESET_COOLDOWN_MS)); } catch(e) {}
+  ckRender();
+  ckUpdateResetCooldownUI();
 }
 
 const PB_INFO = {
@@ -7117,8 +7183,9 @@ function ckPrefillJurnal() {
 const MT5_BRIDGE = 'http://localhost:5000';
 
 function ckShowMt5Modal() {
-  const { pct } = ckGetVerdict();
+  const { pct, gatesOk, incompleteGates } = ckGetVerdict();
   if (pct < 50) { showToast('Checklist belum cukup', `Skor checklist masih ${pct}% — minimal 50% sebelum entry MT5 dibuka.`, 4000); return; }
+  if (!gatesOk) { showToast('Gate Belum Lengkap', `Section wajib belum 100%: ${incompleteGates.map(s => s.title).join(', ')}.`, 5000); return; }
   const pair = document.getElementById('ckPairSelector').value;
   if (!pair) { showToast('Pilih Pair', 'Pilih pair terlebih dahulu di checklist', 3000); return; }
 
@@ -7338,6 +7405,7 @@ function ckUpdateClock() {
   else if (h >= 16 && h < 21) { ss.textContent = 'New York Session';             ss.className = 'ck-sess ck-sess-ny'; }
   else if (h >= 0  && h < 9)  { ss.textContent = 'Tokyo Session — hindari entry';ss.className = 'ck-sess ck-sess-other'; }
   else                         { ss.textContent = 'Market closed / low volume';  ss.className = 'ck-sess ck-sess-other'; }
+  ckUpdateResetCooldownUI();
 }
 
 function ckAutoTick(id, hint) {
@@ -7573,6 +7641,18 @@ function ckOnPairChange() {
 
 function ckSwitchPlaybook(id) {
   if (!PLAYBOOKS[id] || id === ckActivePlaybook) return;
+  // Switching playbook wipes the current pair's checklist state — without a
+  // confirmation, that doubles as an undocumented "fresh checklist" bypass for
+  // a playbook that's scoring low (NO TRADE on A, switch to B, start clean).
+  const hasProgress = Object.values(ckState).some(v => v === true);
+  if (hasProgress) {
+    const ok = confirm(`Ganti ke playbook "${PLAYBOOKS[id].name}"? Checklist pair ini yang sudah dicentang akan di-reset ke kosong.`);
+    if (!ok) {
+      const pbSel = document.getElementById('ckPlaybookSelector');
+      if (pbSel) pbSel.value = ckActivePlaybook;
+      return;
+    }
+  }
   ckActivePlaybook = id;
   localStorage.setItem(CK_PB_KEY, id);
   CK_SECTIONS = PLAYBOOKS[id].sections;
