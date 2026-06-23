@@ -1,45 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-06-22 (session 89 — Multi-window support: user minta app bisa dipakai fleksibel kalau dibuka jadi 4 window terpisah di layar laptop (window manager OS, bukan split-view internal). Ditemukan 2 hal lewat audit kode: (1) `activeView` sudah variabel in-memory per-window (bukan localStorage), jadi tiap window browser yang dibuka ke app ini SUDAH otomatis independen navigasinya satu sama lain — tidak perlu di-refactor; (2) yang BENERAN belum ada: cara mendaratkan sebuah window langsung ke view tertentu (tiap window baru selalu mulai dari DASHBOARD/NEWS, user harus klik tab manual tiap kali), dan cara cepat "lempar" view yang sedang aktif ke window baru. Implementasi: hash routing (`switchView`/klik tab nav sekarang `history.replaceState(null,'',  '#'+view)`), restore-on-load (`restoreViewFromHash()` IIFE + `hashchange` listener baca `location.hash` lalu `.click()` tab yang sesuai), dan tombol pop-out baru (⧉, id `popoutBtn`, di header sebelah ikon lonceng) yang `window.open()` ke `location.href` + `#activeView` dengan window name `dm_<view>` (re-klik popout utk view yg sama fokus ke window yang sudah ada, bukan numpuk duplikat). **Bug ditemukan & diperbaiki saat verifikasi**: handler `window.addEventListener('load', ...)` yang lama selalu force-klik tab DASHBOARD di desktop width, override hash routing yang baru — di-guard supaya skip default-landing itu kalau `location.hash` sudah berisi view spesifik. Diverifikasi pakai Playwright headless (chromium, viewport desktop & 480px/quarter-screen-laptop): klik tab → hash berubah (`#sizing`/`#jurnal`/`#checklist`), reload langsung ke `#jurnal` → landing tepat di Jurnal (sebelum fix: salah landing ke Dashboard), klik pop-out → window baru ke URL yang benar, dan screenshot di 480px untuk Sizing/Checklist/Jurnal — tidak ada overflow horizontal, bottom-nav muncul, top-nav tersembunyi (breakpoint mobile lama sudah pas dipakai ulang untuk kasus quarter-window).
-
-session 90 — Audit lanjutan tab CHECKLIST khusus untuk skenario multi-window (user nanya "ada yang kepanjangan placeholdernya ga"). Ketemu 2 hal nyata via Playwright + baca kode langsung (bukan cuma screenshot sekilas):
-
-1. **Bug fungsional** — fitur hash-restore dari session 89 (`restoreViewFromHash()`) dipanggil sebagai IIFE saat script masih di-parse, SEBELUM `const SZ_PAIRS`/`PLAYBOOKS`/`CK_SECTIONS` (dideklarasikan ratusan baris di bawah dalam script yang sama) selesai diinisialisasi. Akibatnya: buka window baru langsung ke `#checklist` (atau tab lain yang depend ke const-const itu) → `ReferenceError` (temporal dead zone) di tengah `initChecklist()`, pair selector gagal terisi. Lolos dari verifikasi session 89 karena waktu itu cuma dites pakai `#jurnal` (kebetulan gak kena TDZ). **Fix:** panggilan restore dipindah ke dalam `window.addEventListener('load', ...)` yang sudah ada (jalan setelah seluruh script selesai dieksekusi, jadi semua const sudah pasti siap) — bukan lagi IIFE di tempat lama.
-2. **Bug visual pre-existing** (bukan sebab multi-window, tapi kebuka jelas pas ngecek lebar sempit) — widget "Progress" di sidebar Checklist (`.ck-sp-name`) punya `width: 52px` hardcoded buat nama tiap section, jadi 8 dari 10 judul section ("VALIDITAS DRIVER", "FUNDAMENTAL BIAS", "PRE-MARKET DECISION", dst) kepotong jadi cuma ~7 karakter + "…" — **ini terjadi di SEMUA lebar window termasuk desktop 1920px penuh**, gak ada hubungan sama multi-window, cuma baru ketahuan pas ditest. Fix: lebar dinaikkan ke 78px (2 judul paling panjang — "PRE-MARKET DECISION"/"STRUKTUR TEKNIKAL" — masih kepotong dikit, sisanya sekarang utuh) + tambah native `title` attribute biar ada tooltip hover nampilin judul lengkap kalau masih kepotong.
-
-**Hal lain yang DICEK tapi TIDAK bermasalah:** section header utama ("VALIDITAS DRIVER" dkk di body checklist, bukan sidebar) wrap 2 baris secara wajar di lebar ~800px tanpa kepotong/rusak; verdict besar "SIAP TRADE" wrap jadi 2 baris di sidebar 232px tapi tetap utuh terbaca; MT5 modal & override modal terverifikasi rapi di 480px (quarter-window). Sidebar Checklist (Quick Check + Waktu/clock + tombol Reset) memang sengaja disembunyikan total di lebar <768px (breakpoint mobile lama) — diganti versi ringkas (verdict + progress bar + tombol Jurnal/MT5 doang) di mobile bar; ini desain lama yang masih konsisten dipakai, bukan regresi dari multi-window, cuma dicatat di sini sebagai konteks kalau user pop-out Checklist ke window sempit (<768px) dan nyari tombol Reset/Quick Check nggak ketemu — naikkan lebar window dulu kalau perlu fitur itu.
-
-**Testing:** Playwright headless, lebar 480/700/800/900/1100/1920px, pair EUR/USD, ~80% item dicentang biar semua widget (verdict ENTRY-state, tombol Jurnal/MT5, Progress list penuh) ke-render — sebelum fix: error TDZ + sidebar truncation 8/10; sesudah fix: hash-restore checklist sukses (pair selector terisi, tidak ada console error), sidebar truncation tinggal 2/10 (yang memang nggak mungkin fit di 232px tanpa redesain total), no horizontal overflow di semua lebar yang dites.
-
-session 88 — Tombol hapus di Riwayat Sizing Calculator: dipicu user nanya "history sizing calc ga perlu di hapus kah" pas lagi coba-coba hitung sizing (dikonfirmasi dulu ke user: coba-coba di Sizing 100% aman, nggak nyentuh skor Checklist/Jurnal/AI Coach — cuma numpuk di riwayat read-only yang sebelumnya nggak bisa dihapus manual, walau backend sudah auto-cap 10 entry terakhir). `api/sizing-history.js`: tambah `DELETE` — `?timestamp=X` hapus satu entry (`ZREMRANGEBYSCORE` pakai timestamp sebagai score, sesuai cara `ZADD` nyimpennya), `?all=1` hapus semua (`DEL` key). `index.html`: tombol "×" kecil per-item (`szDeleteHistoryItem`) + "Hapus semua" di header riwayat (`szClearAllHistory`) — optimistic update (hapus dari local cache + re-render duluan, network call fire-and-forget, konsisten sama pola `szSaveHistory` yang sudah ada). Diuji live ke Redis production pakai device_id sintetis: POST 2 entry → DELETE 1 by timestamp (sisa 1 entry yang benar) → DELETE all (kosong) — semua sesuai ekspektasi.
-
-session 87 — Satukan jalur entry: Sizing Calculator → Checklist → Jurnal/MT5 (dulu ada 2 jalur paralel beda ketat). User bingung liat tombol Sizing langsung "→ BUAT TRADE DI JURNAL" sementara Checklist juga punya jalur sendiri ke MT5/Jurnal — ternyata itu memang inkonsistensi nyata: `szPrefillJurnal()` lama loncat LANGSUNG ke form Jurnal, melewati gate skor Checklist, snapshot CB bias/COT, DAN friksi override yang baru dibangun session 85 — sama sekali nggak lewat pagar yang sudah dibangun di jalur lain. Diganti jadi `szGoToChecklist()`: pindah ke tab Checklist + auto-set `ckPairSelector` ke pair yang sama dengan hasil sizing (penting — `ckShowMt5Modal()` cuma auto-fill lot/SL/TP dari `window._lastSizing` KALAU pair-nya match persis; tanpa auto-sync ini, user tetap harus pilih pair manual ulang di Checklist, balik bingung lagi). Sekarang cuma ada SATU jalur resmi: Sizing → Checklist (gate + snapshot + override-friction) → Jurnal/MT5, lot/SL/TP nempel otomatis sepanjang jalur tanpa input ulang.
-
-session 86 — MFE/MAE di Jurnal + Event Risk di Sizing Calculator. Dipicu kritik gaya-Gemini soal `api/journal.js` (AI Coach "buta eksekusi" — nggak tahu harga sempat bergerak favorable sebelum exit, cuma evaluasi thesis vs hasil akhir) dan `calcSizing()` (ATR cuma lihat volatilitas 14 hari ke belakang, buta terhadap event kalender besok seperti NFP/FOMC yang bisa bikin lot besar over-leveraged). User pilih 2 dari 4 saran (skip pagination AI Coach & hard-multiplier sizing yang dinilai kebablasan).
-
-**MFE/MAE (`api/journal.js`):** Dihitung SEKALI, persis saat trade ditutup (PATCH ke status closed/archived) — bukan retroaktif saat analyze, karena cache OHLCV cuma rolling window (~5 hari di 1H, ~10 hari di 4H, ~30 hari di 1D, di-refresh terus oleh cron `ohlcv_sync`), jadi cuma saat-trade-ditutup itu satu-satunya momen data dijamin masih nutup `entry_time`. Fungsi `computeMfeMae()` coba 3 tier granularitas (1h→4h→1d), pakai yang pertama nutup penuh durasi trade; kalau ketiganya gagal (trade kelamaan held atau pair nggak ke-sync) → field `quality: 'unavailable'` eksplisit, BUKAN angka ngarang. Hasil masuk ke prompt AI (instruksi baru "Realitas Eksekusi" — AI diminta bedain LOSS karena thesis salah (MFE kecil) vs LOSS karena panic-exit (MFE besar tapi tetap exit rugi)) dan ditampilkan di card list Jurnal (cuma kalau data tersedia — disembunyikan kalau unavailable, biar nggak nge-spam "data tidak cukup" di tiap card trade lama). Diverifikasi live ke Redis production: entry 2 jam lalu kena window-gap karena cron OHLCV sedang lag ~3-4 jam (temuan sampingan, dicatat tapi nggak difix di sesi ini), entry 8 hari lalu berhasil fallback ke tier 1h (gap weekend bikin 120 candle 1H nutup >10 hari kalender), entry 40 hari lalu & pair non-sync benar2 ke-flag unavailable.
-
-**Event Risk (`calcSizing()` di `index.html`):** Reuse `calData` (variabel global yang sudah ada) + `_ckEvTimestamp()` (helper yang sebelumnya cuma dipakai Checklist) — bukan endpoint/fetch baru. Window 24 jam (lebih lebar dari Checklist yang 6 jam, karena sizing adalah keputusan pre-trade yang diambil lebih awal dari trigger entry). Kalau ada event High-impact untuk currency base/quote pair dalam 24 jam: banner merah `#szEventRiskWarning` + saran "Lot diskon 50%" ditampilkan **di samping** hasil normal — TIDAK auto-apply/force, user tetap pilih sendiri (konsisten sama filosofi "warn don't dictate" yang sudah dipakai di seluruh app ini, ditolak ide Gemini soal hard-multiplier otomatis). Diverifikasi live ke kalender production: 10 event High-impact real hari itu (CAD CPI, AUD jobs, USD PCE) semua di luar 24 jam dari "now" jadi nggak trigger — dikonfirmasi BENAR (bukan bug) dengan event sintetis yang disisipkan manual ke response asli.)
-
-session 85 — Smart Checklist: friksi wajib-alasan saat override item auto-blocked di Checklist, lihat detail di bawah.
-
-session 82 — Option Gravity Heatmap di tab TEK: data option expiries (Investinglive) sekarang divisualisasikan sebagai heatmap horizontal CSS-only (36 bin, no chart library) di atas tabel level yang sudah ada, menunjukkan di mana "gravitasi" harga berpusat hari ini + marker "NOW" untuk posisi harga saat ini. Bagian dari diskusi proposal UI/UX yang lebih besar (heatmap option + macro quadrant) — macro quadrant ditahan dulu (dianggap berisiko jadi "noise": sumbu inflasi belum punya data tren riil, dan bisa membuat sinyal regime yang nuance-nya ambigu kelihatan lebih definitif dari yang sebenarnya — lihat temuan session 81), heatmap option dieksekusi karena murah & datanya nyata. **Fix susulan sama hari**: gate minimal-2-titik bikin heatmap selalu kosong di hari sepi (cuma 1 expiry, kasus nyata 22 Jun — user lihat di production langsung tanya "heatmapnya mana?"). Diralat: render juga kalau 1 level + current price tersedia (2 titik referensi: level vs harga sekarang), cuma skip total kalau 0 titik atau 1 titik tanpa current price sama sekali.
-
-session 83 — Auto-fill dropdown MTF (D1/H4/H1) di tab TEK dari trend Makro/Swing/Entry, **bukan** Catatan Analisa: percobaan pertama (salah paham) auto-fill ke textarea "Catatan analisa" — user koreksi langsung: "kalau catatan analisa itu aku aja yang buat catatannya", yang dimaksud justru dropdown alignment "D1 −, H4 −, H1 −, M15 −" yang sebelumnya manual full (pilih Bull/Bear/Neut sendiri per timeframe). Revert: hapus tombol/wiring auto-fill dari Catatan Analisa, textarea itu kembali 100% manual seperti semula. Implementasi yang benar: `mapTrendToMtf()` + `autoFillMtfSelectors()` — D1/H4/H1 diisi otomatis dari `d.d1.trend`/`d.h4.trend`/`d.h1.trend` (sumber data sama dengan tab ANALISA, `/api/admin?action=ohlcv_read`, reuse `analisaDataCache`), map Uptrend→bull/Downtrend→bear/Sideways→neut. M15 sengaja dibiarkan manual — tidak ada trend H15 terkomputasi di mana pun di app ini, daripada fabrikasi sinyal kualitas rendah. Non-destructive: cuma isi selector yang masih kosong (`—`), tombol "↻ Auto" di baris dropdown buat force-regenerate D1/H4/H1 kapan saja. Keterbatasan sama dengan sebelumnya: cross pair non-major kadang belum punya data MTF tersedia (limitasi `ohlcv_sync` lama) — ditangani toast pesan jelas.
-
-session 84 — User minta balik tombol auto-fill di Catatan Analisa juga ("kamu boleh tambahin juga auto di catatan analisa") — tapi kali ini cuma manual-trigger via tombol "↻ Auto" yang diklik eksplisit, TIDAK auto-jalan sendiri di pair switch/tab init (beda dari percobaan session 83 yang langsung di-reject). `composeTekAutoNote()` + `autoFillTekNote()` ditambah balik, isinya identik dengan versi yang sempat direvert — bedanya cuma di wiring: tidak dipanggil dari `selectTekPair()`/`initTeknikal()`, hanya dari `onclick` tombol. Klik tombol akan mengganti isi catatan yang ada (bukan cuma kalau kosong) karena klik eksplisit = consent untuk replace.
-
-session 85 — "Smart Checklist" — friksi wajib alasan saat override item auto-blocked (bukan hard-lock): dipicu kritik gaya-Gemini tentang fitur Checklist (`ckPrefillJurnal` dinilai brilian sebagai jembatan pre-trade→jurnal, tapi rawan *self-deception* kalau checklist 100% manual). Sebelum implementasi, riset kode dulu via subagent (2x) — temuan penting: auto-tick **sudah ada** (`ckAutoTickRegimeCheck`, item `rc1`-`rc5` + beberapa item per-playbook) tapi cuma kosmetik, badge hijau/merah doang — user bisa klik & flip item auto-blocked kapan saja tanpa friksi sama sekali, jadi auto-tick yang ada sekarang nggak ngefek apa-apa ke kebiasaan FOMO. Opini saya ke user: ide Gemini "user tidak bisa mengubahnya" (hard-lock total) kebablasan untuk app discretionary trading (data auto bisa lag/ambigu — sudah kebukti berulang kali sepanjang proyek ini), tapi versi "wajib ketik 1 kalimat alasan kalau override" itu level yang pas. User: "boleh buat saja".
-
-**Implementasi:** state baru `ckAutoBlocked{}`/`ckAutoBlockHints{}` (in-memory, direkomputasi setiap `ckAutoTickRegimeCheck` jalan) + `ckOverrideReasons{}` (persisted per-pair, key `daunmerah_v2_overrides_<PAIR>`, sejalan dengan `ckState` yang sudah per-pair). `ckToggleItem(id)`: kalau user mau centang item yang sedang `ckAutoBlocked`, nggak langsung toggle — buka modal `#ckOverrideModal` (`ckRequestOverride`) yang nampilin alasan kenapa item itu di-block sistem (`ckAutoBlockHints[id]`) + textarea wajib diisi ≥5 karakter sebelum tombol konfirmasi aktif (`ckOverrideInputCheck`). Konfirmasi (`ckConfirmOverride`) baru men-set `ckState[id]=true` + simpan alasan, badge berubah jadi kuning "⚠ overridden" (beda dari hijau "✓ auto" dan merah "⚠ blocked"). Item non-blocked tetap toggle bebas tanpa friksi apapun — friksi cuma kena ke override sinyal merah, bukan ke checklist manual biasa.
-
-**Self-cleanup logic:** uncheck item yang sudah di-override → hapus alasan tersimpan (state nggak nyangkut). Kalau sistem sendiri kemudian bilang item itu OK (`ckAutoTick` jalan lagi, kondisi sudah resolve) → alasan override lama otomatis dihapus juga, supaya teks jurnal nggak bawa catatan "override" yang sudah nggak relevan.
-
-**`ckPrefillJurnal`/MT5-entry thesis text** (2 tempat, sama-sama dipatch): item yang dicentang via override sekarang muncul dengan anotasi `✅ [label] (⚠ override: "[alasan user]")` — supaya rekam jejak journal beneran mencatat KALAU dan KENAPA user melawan sinyal otomatis, bukan cuma checkbox polos.
-
-**Bug lama ikut diperbaiki sambil di sini:** `ckAutoTick` sebelumnya hanya reset warna/teks badge kalau badge BARU dibuat (`if (!badge)`) — item yang pernah merah lalu sistem bilang OK lagi akan TETAP nampak merah secara visual walau `ckState` sudah `true`. Sekarang badge selalu di-reset warna/teks tiap kali `ckAutoTick`/`ckAutoBlock` jalan, nggak peduli badge baru atau lama.
-
-**Testing:** `node --check` semua inline `<script>`, 6 skenario logic test terisolasi (toggle item blocked → minta override; konfirmasi dengan alasan valid → overridden; alasan terlalu pendek → ditolak; item manual normal → toggle bebas; uncheck item overridden → alasan terhapus; sistem auto-resolve → alasan stale ikut terhapus) — semua PASS. Live sanity check via `vercel dev` (index.html load 200, tidak ada syntax error). **Catatan jujur:** tidak ada verifikasi visual klik-modal di browser sungguhan (Playwright belum terinstall) — sebatas logic test + structural HTML review terhadap pattern modal yang sudah teruji (`mt5Modal`).)
+> **Last updated:** 2026-06-23 (session 92 — lihat "Changelog Session 92" di bawah untuk detail terbaru)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Financial_Feed_App`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -160,7 +121,7 @@ Financial_Feed_App/
 
 ---
 
-## Changelog Session 84 (2026-06-23)
+## Changelog Session 92 (2026-06-23)
 
 ### Bug fix — Portfolio Risk widget (Jurnal) hitung dollar-risk XAU/USD 10x lebih kecil dari Sizing Calculator
 
@@ -182,7 +143,7 @@ Financial_Feed_App/
 
 ---
 
-## Changelog Session 83 (2026-06-23)
+## Changelog Session 91 (2026-06-23)
 
 ### Bug fix — status "LIVE (fallback)" tidak pernah muncul karena Redis cache-hit path lupa propagate `X-News-Source`
 
@@ -193,6 +154,107 @@ Financial_Feed_App/
 **Fix:** tambah `res.setHeader('X-News-Source', obj.source || 'financialjuice')` di kedua jalur baca cache (REDIS hit dan STALE).
 
 **Verifikasi:** `node --check api/feeds.js` lolos. Tidak ada jalur baca `RSS_CACHE_KEY` lain yang terlewat (grep konfirmasi cuma 2 baca + 1 tulis). Belum diverifikasi live end-to-end karena butuh momen FinancialJuice benar-benar down untuk memicu fallback secara natural — perbaikan ini struktural (memastikan header source selalu konsisten antara fresh-fetch dan cache-hit), bukan logic baru yang berisiko regresi.
+
+---
+
+## Changelog Session 90 (2026-06-22)
+
+### Audit tab CHECKLIST untuk skenario multi-window
+
+**Konteks:** Lanjutan session 89 (multi-window). User nanya "ada yang kepanjangan placeholdernya ga". Ketemu 2 hal nyata via Playwright + baca kode langsung (bukan cuma screenshot sekilas):
+
+1. **Bug fungsional** — fitur hash-restore dari session 89 (`restoreViewFromHash()`) dipanggil sebagai IIFE saat script masih di-parse, SEBELUM `const SZ_PAIRS`/`PLAYBOOKS`/`CK_SECTIONS` (dideklarasikan ratusan baris di bawah dalam script yang sama) selesai diinisialisasi. Akibatnya: buka window baru langsung ke `#checklist` (atau tab lain yang depend ke const-const itu) → `ReferenceError` (temporal dead zone) di tengah `initChecklist()`, pair selector gagal terisi. Lolos dari verifikasi session 89 karena waktu itu cuma dites pakai `#jurnal` (kebetulan gak kena TDZ). **Fix:** panggilan restore dipindah ke dalam `window.addEventListener('load', ...)` yang sudah ada (jalan setelah seluruh script selesai dieksekusi, jadi semua const sudah pasti siap) — bukan lagi IIFE di tempat lama.
+2. **Bug visual pre-existing** (bukan sebab multi-window, tapi kebuka jelas pas ngecek lebar sempit) — widget "Progress" di sidebar Checklist (`.ck-sp-name`) punya `width: 52px` hardcoded buat nama tiap section, jadi 8 dari 10 judul section ("VALIDITAS DRIVER", "FUNDAMENTAL BIAS", "PRE-MARKET DECISION", dst) kepotong jadi cuma ~7 karakter + "…" — **ini terjadi di SEMUA lebar window termasuk desktop 1920px penuh**, gak ada hubungan sama multi-window, cuma baru ketahuan pas ditest. Fix: lebar dinaikkan ke 78px (2 judul paling panjang — "PRE-MARKET DECISION"/"STRUKTUR TEKNIKAL" — masih kepotong dikit, sisanya sekarang utuh) + tambah native `title` attribute biar ada tooltip hover nampilin judul lengkap kalau masih kepotong.
+
+**Hal lain yang DICEK tapi TIDAK bermasalah:** section header utama ("VALIDITAS DRIVER" dkk di body checklist, bukan sidebar) wrap 2 baris secara wajar di lebar ~800px tanpa kepotong/rusak; verdict besar "SIAP TRADE" wrap jadi 2 baris di sidebar 232px tapi tetap utuh terbaca; MT5 modal & override modal terverifikasi rapi di 480px (quarter-window). Sidebar Checklist (Quick Check + Waktu/clock + tombol Reset) memang sengaja disembunyikan total di lebar <768px (breakpoint mobile lama) — diganti versi ringkas (verdict + progress bar + tombol Jurnal/MT5 doang) di mobile bar; ini desain lama yang masih konsisten dipakai, bukan regresi dari multi-window, cuma dicatat di sini sebagai konteks kalau user pop-out Checklist ke window sempit (<768px) dan nyari tombol Reset/Quick Check nggak ketemu — naikkan lebar window dulu kalau perlu fitur itu.
+
+**Testing:** Playwright headless, lebar 480/700/800/900/1100/1920px, pair EUR/USD, ~80% item dicentang biar semua widget (verdict ENTRY-state, tombol Jurnal/MT5, Progress list penuh) ke-render — sebelum fix: error TDZ + sidebar truncation 8/10; sesudah fix: hash-restore checklist sukses (pair selector terisi, tidak ada console error), sidebar truncation tinggal 2/10 (yang memang nggak mungkin fit di 232px tanpa redesain total), no horizontal overflow di semua lebar yang dites.
+
+---
+
+## Changelog Session 89 (2026-06-22)
+
+### Multi-window support — hash routing + tombol pop-out
+
+**Konteks:** User minta app bisa dipakai fleksibel kalau dibuka jadi 4 window terpisah di layar laptop (window manager OS, bukan split-view internal). Ditemukan 2 hal lewat audit kode: (1) `activeView` sudah variabel in-memory per-window (bukan localStorage), jadi tiap window browser yang dibuka ke app ini SUDAH otomatis independen navigasinya satu sama lain — tidak perlu di-refactor; (2) yang BENERAN belum ada: cara mendaratkan sebuah window langsung ke view tertentu (tiap window baru selalu mulai dari DASHBOARD/NEWS, user harus klik tab manual tiap kali), dan cara cepat "lempar" view yang sedang aktif ke window baru.
+
+**Implementasi:** hash routing (`switchView`/klik tab nav sekarang `history.replaceState(null,'', '#'+view)`), restore-on-load (`restoreViewFromHash()` IIFE + `hashchange` listener baca `location.hash` lalu `.click()` tab yang sesuai), dan tombol pop-out baru (⧉, id `popoutBtn`, di header sebelah ikon lonceng) yang `window.open()` ke `location.href` + `#activeView` dengan window name `dm_<view>` (re-klik popout utk view yg sama fokus ke window yang sudah ada, bukan numpuk duplikat).
+
+**Bug ditemukan & diperbaiki saat verifikasi:** handler `window.addEventListener('load', ...)` yang lama selalu force-klik tab DASHBOARD di desktop width, override hash routing yang baru — di-guard supaya skip default-landing itu kalau `location.hash` sudah berisi view spesifik.
+
+**Testing:** Playwright headless (chromium, viewport desktop & 480px/quarter-screen-laptop): klik tab → hash berubah (`#sizing`/`#jurnal`/`#checklist`), reload langsung ke `#jurnal` → landing tepat di Jurnal (sebelum fix: salah landing ke Dashboard), klik pop-out → window baru ke URL yang benar, dan screenshot di 480px untuk Sizing/Checklist/Jurnal — tidak ada overflow horizontal, bottom-nav muncul, top-nav tersembunyi (breakpoint mobile lama sudah pas dipakai ulang untuk kasus quarter-window).
+
+---
+
+## Changelog Session 88 (2026-06-22)
+
+### Tombol hapus di Riwayat Sizing Calculator
+
+**Konteks:** Dipicu user nanya "history sizing calc ga perlu di hapus kah" pas lagi coba-coba hitung sizing (dikonfirmasi dulu ke user: coba-coba di Sizing 100% aman, nggak nyentuh skor Checklist/Jurnal/AI Coach — cuma numpuk di riwayat read-only yang sebelumnya nggak bisa dihapus manual, walau backend sudah auto-cap 10 entry terakhir).
+
+**Implementasi:** `api/sizing-history.js`: tambah `DELETE` — `?timestamp=X` hapus satu entry (`ZREMRANGEBYSCORE` pakai timestamp sebagai score, sesuai cara `ZADD` nyimpennya), `?all=1` hapus semua (`DEL` key). `index.html`: tombol "×" kecil per-item (`szDeleteHistoryItem`) + "Hapus semua" di header riwayat (`szClearAllHistory`) — optimistic update (hapus dari local cache + re-render duluan, network call fire-and-forget, konsisten sama pola `szSaveHistory` yang sudah ada).
+
+**Testing:** diuji live ke Redis production pakai device_id sintetis: POST 2 entry → DELETE 1 by timestamp (sisa 1 entry yang benar) → DELETE all (kosong) — semua sesuai ekspektasi.
+
+---
+
+## Changelog Session 87 (2026-06-22)
+
+### Satukan jalur entry: Sizing Calculator → Checklist → Jurnal/MT5
+
+**Konteks:** Dulu ada 2 jalur paralel beda ketat. User bingung liat tombol Sizing langsung "→ BUAT TRADE DI JURNAL" sementara Checklist juga punya jalur sendiri ke MT5/Jurnal — ternyata itu memang inkonsistensi nyata: `szPrefillJurnal()` lama loncat LANGSUNG ke form Jurnal, melewati gate skor Checklist, snapshot CB bias/COT, DAN friksi override yang baru dibangun session 85 — sama sekali nggak lewat pagar yang sudah dibangun di jalur lain.
+
+**Fix:** diganti jadi `szGoToChecklist()`: pindah ke tab Checklist + auto-set `ckPairSelector` ke pair yang sama dengan hasil sizing (penting — `ckShowMt5Modal()` cuma auto-fill lot/SL/TP dari `window._lastSizing` KALAU pair-nya match persis; tanpa auto-sync ini, user tetap harus pilih pair manual ulang di Checklist, balik bingung lagi). Sekarang cuma ada SATU jalur resmi: Sizing → Checklist (gate + snapshot + override-friction) → Jurnal/MT5, lot/SL/TP nempel otomatis sepanjang jalur tanpa input ulang.
+
+---
+
+## Changelog Session 86 (2026-06-22)
+
+### MFE/MAE di Jurnal + Event Risk di Sizing Calculator
+
+**Konteks:** Dipicu kritik gaya-Gemini soal `api/journal.js` (AI Coach "buta eksekusi" — nggak tahu harga sempat bergerak favorable sebelum exit, cuma evaluasi thesis vs hasil akhir) dan `calcSizing()` (ATR cuma lihat volatilitas 14 hari ke belakang, buta terhadap event kalender besok seperti NFP/FOMC yang bisa bikin lot besar over-leveraged). User pilih 2 dari 4 saran (skip pagination AI Coach & hard-multiplier sizing yang dinilai kebablasan).
+
+**MFE/MAE (`api/journal.js`):** Dihitung SEKALI, persis saat trade ditutup (PATCH ke status closed/archived) — bukan retroaktif saat analyze, karena cache OHLCV cuma rolling window (~5 hari di 1H, ~10 hari di 4H, ~30 hari di 1D, di-refresh terus oleh cron `ohlcv_sync`), jadi cuma saat-trade-ditutup itu satu-satunya momen data dijamin masih nutup `entry_time`. Fungsi `computeMfeMae()` coba 3 tier granularitas (1h→4h→1d), pakai yang pertama nutup penuh durasi trade; kalau ketiganya gagal (trade kelamaan held atau pair nggak ke-sync) → field `quality: 'unavailable'` eksplisit, BUKAN angka ngarang. Hasil masuk ke prompt AI (instruksi baru "Realitas Eksekusi" — AI diminta bedain LOSS karena thesis salah (MFE kecil) vs LOSS karena panic-exit (MFE besar tapi tetap exit rugi)) dan ditampilkan di card list Jurnal (cuma kalau data tersedia — disembunyikan kalau unavailable, biar nggak nge-spam "data tidak cukup" di tiap card trade lama). Diverifikasi live ke Redis production: entry 2 jam lalu kena window-gap karena cron OHLCV sedang lag ~3-4 jam (temuan sampingan, dicatat tapi nggak difix di sesi ini), entry 8 hari lalu berhasil fallback ke tier 1h (gap weekend bikin 120 candle 1H nutup >10 hari kalender), entry 40 hari lalu & pair non-sync benar2 ke-flag unavailable.
+
+**Event Risk (`calcSizing()` di `index.html`):** Reuse `calData` (variabel global yang sudah ada) + `_ckEvTimestamp()` (helper yang sebelumnya cuma dipakai Checklist) — bukan endpoint/fetch baru. Window 24 jam (lebih lebar dari Checklist yang 6 jam, karena sizing adalah keputusan pre-trade yang diambil lebih awal dari trigger entry). Kalau ada event High-impact untuk currency base/quote pair dalam 24 jam: banner merah `#szEventRiskWarning` + saran "Lot diskon 50%" ditampilkan **di samping** hasil normal — TIDAK auto-apply/force, user tetap pilih sendiri (konsisten sama filosofi "warn don't dictate" yang sudah dipakai di seluruh app ini, ditolak ide Gemini soal hard-multiplier otomatis). Diverifikasi live ke kalender production: 10 event High-impact real hari itu (CAD CPI, AUD jobs, USD PCE) semua di luar 24 jam dari "now" jadi nggak trigger — dikonfirmasi BENAR (bukan bug) dengan event sintetis yang disisipkan manual ke response asli.
+
+---
+
+## Changelog Session 85 (2026-06-22)
+
+### Smart Checklist — friksi wajib-alasan saat override item auto-blocked
+
+**Konteks:** Dipicu kritik gaya-Gemini tentang fitur Checklist (`ckPrefillJurnal` dinilai brilian sebagai jembatan pre-trade→jurnal, tapi rawan *self-deception* kalau checklist 100% manual). Sebelum implementasi, riset kode dulu via subagent (2x) — temuan penting: auto-tick **sudah ada** (`ckAutoTickRegimeCheck`, item `rc1`-`rc5` + beberapa item per-playbook) tapi cuma kosmetik, badge hijau/merah doang — user bisa klik & flip item auto-blocked kapan saja tanpa friksi sama sekali, jadi auto-tick yang ada sekarang nggak ngefek apa-apa ke kebiasaan FOMO. Opini saya ke user: ide Gemini "user tidak bisa mengubahnya" (hard-lock total) kebablasan untuk app discretionary trading (data auto bisa lag/ambigu — sudah kebukti berulang kali sepanjang proyek ini), tapi versi "wajib ketik 1 kalimat alasan kalau override" itu level yang pas. User: "boleh buat saja".
+
+**Implementasi:** state baru `ckAutoBlocked{}`/`ckAutoBlockHints{}` (in-memory, direkomputasi setiap `ckAutoTickRegimeCheck` jalan) + `ckOverrideReasons{}` (persisted per-pair, key `daunmerah_v2_overrides_<PAIR>`, sejalan dengan `ckState` yang sudah per-pair). `ckToggleItem(id)`: kalau user mau centang item yang sedang `ckAutoBlocked`, nggak langsung toggle — buka modal `#ckOverrideModal` (`ckRequestOverride`) yang nampilin alasan kenapa item itu di-block sistem (`ckAutoBlockHints[id]`) + textarea wajib diisi ≥5 karakter sebelum tombol konfirmasi aktif (`ckOverrideInputCheck`). Konfirmasi (`ckConfirmOverride`) baru men-set `ckState[id]=true` + simpan alasan, badge berubah jadi kuning "⚠ overridden" (beda dari hijau "✓ auto" dan merah "⚠ blocked"). Item non-blocked tetap toggle bebas tanpa friksi apapun — friksi cuma kena ke override sinyal merah, bukan ke checklist manual biasa.
+
+**Self-cleanup logic:** uncheck item yang sudah di-override → hapus alasan tersimpan (state nggak nyangkut). Kalau sistem sendiri kemudian bilang item itu OK (`ckAutoTick` jalan lagi, kondisi sudah resolve) → alasan override lama otomatis dihapus juga, supaya teks jurnal nggak bawa catatan "override" yang sudah nggak relevan.
+
+**`ckPrefillJurnal`/MT5-entry thesis text** (2 tempat, sama-sama dipatch): item yang dicentang via override sekarang muncul dengan anotasi `✅ [label] (⚠ override: "[alasan user]")` — supaya rekam jejak journal beneran mencatat KALAU dan KENAPA user melawan sinyal otomatis, bukan cuma checkbox polos.
+
+**Bug lama ikut diperbaiki sambil di sini:** `ckAutoTick` sebelumnya hanya reset warna/teks badge kalau badge BARU dibuat (`if (!badge)`) — item yang pernah merah lalu sistem bilang OK lagi akan TETAP nampak merah secara visual walau `ckState` sudah `true`. Sekarang badge selalu di-reset warna/teks tiap kali `ckAutoTick`/`ckAutoBlock` jalan, nggak peduli badge baru atau lama.
+
+**Testing:** `node --check` semua inline `<script>`, 6 skenario logic test terisolasi (toggle item blocked → minta override; konfirmasi dengan alasan valid → overridden; alasan terlalu pendek → ditolak; item manual normal → toggle bebas; uncheck item overridden → alasan terhapus; sistem auto-resolve → alasan stale ikut terhapus) — semua PASS. Live sanity check via `vercel dev` (index.html load 200, tidak ada syntax error). **Catatan jujur:** tidak ada verifikasi visual klik-modal di browser sungguhan (Playwright belum terinstall) — sebatas logic test + structural HTML review terhadap pattern modal yang sudah teruji (`mt5Modal`).
+
+---
+
+## Changelog Session 84 (2026-06-22)
+
+### Auto-fill Catatan Analisa (manual trigger via tombol)
+
+**Konteks:** User minta balik tombol auto-fill di Catatan Analisa juga ("kamu boleh tambahin juga auto di catatan analisa") — tapi kali ini cuma manual-trigger via tombol "↻ Auto" yang diklik eksplisit, TIDAK auto-jalan sendiri di pair switch/tab init (beda dari percobaan session 83 yang langsung di-reject).
+
+**Implementasi:** `composeTekAutoNote()` + `autoFillTekNote()` ditambah balik, isinya identik dengan versi yang sempat direvert — bedanya cuma di wiring: tidak dipanggil dari `selectTekPair()`/`initTeknikal()`, hanya dari `onclick` tombol. Klik tombol akan mengganti isi catatan yang ada (bukan cuma kalau kosong) karena klik eksplisit = consent untuk replace.
+
+---
+
+## Changelog Session 83 (2026-06-22)
+
+### Auto-fill dropdown MTF (D1/H4/H1) di tab TEK dari trend Makro/Swing/Entry
+
+**Konteks:** Percobaan pertama (salah paham) auto-fill ke textarea "Catatan analisa" — user koreksi langsung: "kalau catatan analisa itu aku aja yang buat catatannya", yang dimaksud justru dropdown alignment "D1 −, H4 −, H1 −, M15 −" yang sebelumnya manual full (pilih Bull/Bear/Neut sendiri per timeframe). Revert: hapus tombol/wiring auto-fill dari Catatan Analisa, textarea itu kembali 100% manual seperti semula.
+
+**Implementasi:** `mapTrendToMtf()` + `autoFillMtfSelectors()` — D1/H4/H1 diisi otomatis dari `d.d1.trend`/`d.h4.trend`/`d.h1.trend` (sumber data sama dengan tab ANALISA, `/api/admin?action=ohlcv_read`, reuse `analisaDataCache`), map Uptrend→bull/Downtrend→bear/Sideways→neut. M15 sengaja dibiarkan manual — tidak ada trend H15 terkomputasi di mana pun di app ini, daripada fabrikasi sinyal kualitas rendah. Non-destructive: cuma isi selector yang masih kosong (`—`), tombol "↻ Auto" di baris dropdown buat force-regenerate D1/H4/H1 kapan saja. Keterbatasan sama dengan sebelumnya: cross pair non-major kadang belum punya data MTF tersedia (limitasi `ohlcv_sync` lama) — ditangani toast pesan jelas.
 
 ---
 
@@ -549,6 +611,34 @@ Format ini sudah **berubah ke prosa naratif** — levels disebutkan dalam kalima
 
 ---
 
+## Changelog Session 62 (2026-06-15)
+
+### Analisa Feature Upgrade — MACD, ATR, Structured AI Output, Auto-refresh
+
+**Tiga peningkatan sekaligus di tab ANALISA:**
+
+**1. Indikator baru: MACD H4 + ATR 14H**
+- `api/admin.js` — `_macdFull(closes)`: hitung MACD (EMA 12/26/9) dari H4 candles (butuh 35+ bar). Output: `macd`, `signal`, `histogram`, `status` (Bullish/Bearish/Recovering/Weakening)
+- `_atr14h1(candles)`: hitung ATR-14 dari H1 candles. Output: `atr_h1` (price), `atr_pips` (null untuk XAU)
+- `loadOhlcvData()` kini return `out.macd` dan `out.atr`
+- `buildOhlcvText()` sertakan MACD dan ATR di blok teks yang dikirim ke AI
+- Frontend: indicator card sekarang label "INDIKATOR — RSI / SMA / MACD / ATR" dengan tiga seksi terpisah (RSI/SMA dari ATR cache, MACD H4 dari candles, ATR 14H dari candles)
+
+**2. Structured AI Output**
+- Prompt AI diubah dari "4-5 kalimat bebas" → JSON dengan field: `bias`, `entry_zone`, `sl`, `tp`, `trigger`, `commentary`
+- Backend parse JSON dari response, normalize bias ke bullish/bearish/neutral; fallback ke plain text jika parse gagal
+- `ohlcvAnalyzeHandler` return `{ commentary, structured, model, loaded_at }`
+- Frontend: `_renderStructuredAi()` — render bias chip berwarna (green/red/orange), trigger inline, baris ENTRY/SL/TP dalam monospace, commentary di bawah
+- Cache format diperluas: `{ commentary, structured, model, hasMakro, saved_at }` — backward compat: old cache tanpa `structured` render sebagai plain text
+
+**3. Auto-refresh 15 menit**
+- `startAnalisaAutoRefresh()` / `stopAnalisaAutoRefresh()` menggunakan `setInterval` 15 menit
+- `loadAnalisa()` selalu restart timer (reset countdown saat user manual refresh)
+- Tab switch listener: stop timer saat meninggalkan tab ANALISA
+- Header timestamp menampilkan label "auto 15m" di samping tombol ↻ refresh
+
+---
+
 ## Changelog Session 56 (2026-06-12)
 
 ### OHLCV Upgrade — Multi-Timeframe: Daily 30D + 4H 10D + Volume GC=F
@@ -780,34 +870,6 @@ Format ini sudah **berubah ke prosa naratif** — levels disebutkan dalam kalima
 
 ---
 
-## Changelog Session 62 (2026-06-15)
-
-### Analisa Feature Upgrade — MACD, ATR, Structured AI Output, Auto-refresh
-
-**Tiga peningkatan sekaligus di tab ANALISA:**
-
-**1. Indikator baru: MACD H4 + ATR 14H**
-- `api/admin.js` — `_macdFull(closes)`: hitung MACD (EMA 12/26/9) dari H4 candles (butuh 35+ bar). Output: `macd`, `signal`, `histogram`, `status` (Bullish/Bearish/Recovering/Weakening)
-- `_atr14h1(candles)`: hitung ATR-14 dari H1 candles. Output: `atr_h1` (price), `atr_pips` (null untuk XAU)
-- `loadOhlcvData()` kini return `out.macd` dan `out.atr`
-- `buildOhlcvText()` sertakan MACD dan ATR di blok teks yang dikirim ke AI
-- Frontend: indicator card sekarang label "INDIKATOR — RSI / SMA / MACD / ATR" dengan tiga seksi terpisah (RSI/SMA dari ATR cache, MACD H4 dari candles, ATR 14H dari candles)
-
-**2. Structured AI Output**
-- Prompt AI diubah dari "4-5 kalimat bebas" → JSON dengan field: `bias`, `entry_zone`, `sl`, `tp`, `trigger`, `commentary`
-- Backend parse JSON dari response, normalize bias ke bullish/bearish/neutral; fallback ke plain text jika parse gagal
-- `ohlcvAnalyzeHandler` return `{ commentary, structured, model, loaded_at }`
-- Frontend: `_renderStructuredAi()` — render bias chip berwarna (green/red/orange), trigger inline, baris ENTRY/SL/TP dalam monospace, commentary di bawah
-- Cache format diperluas: `{ commentary, structured, model, hasMakro, saved_at }` — backward compat: old cache tanpa `structured` render sebagai plain text
-
-**3. Auto-refresh 15 menit**
-- `startAnalisaAutoRefresh()` / `stopAnalisaAutoRefresh()` menggunakan `setInterval` 15 menit
-- `loadAnalisa()` selalu restart timer (reset countdown saat user manual refresh)
-- Tab switch listener: stop timer saat meninggalkan tab ANALISA
-- Header timestamp menampilkan label "auto 15m" di samping tombol ↻ refresh
-
----
-
 ## Changelog Session 48 (2026-06-05)
 
 ### VIX Fix + TGA API Fix + Rename + RSS Research
@@ -980,24 +1042,6 @@ Format ini sudah **berubah ke prosa naratif** — levels disebutkan dalam kalima
 
 ---
 
-## Changelog Session 36 (2026-06-02)
-
-### Equity Curve — Tab JURNAL
-- Tambah tab **KURVA** di sub-nav Journal (sebelah "+ BARU")
-- `jnRenderCurve()`: render SVG equity curve dari closed trades yang punya `r_actual`
-- Kurva cumulative R-multiple, fill hijau di atas nol, merah di bawah nol
-- Stats row: Total R, Win Rate, Avg Win R, Avg Loss R + Max Drawdown
-- Zero dependency — pure SVG, load instan
-- Auto-render saat tab KURVA dibuka; auto-refresh setelah `jnLoadEntries()` selesai
-
-### Event Strip — Tab TEK
-- Tambah horizontal scroll strip `#tekEventStrip` antara TradingView chart dan MTF bar
-- `renderTekEventStrip()`: filter `calData` hanya High-impact, dalam 48 jam ke depan, untuk currencies yang relevan dengan pair aktif
-- Mapping `PAIR_CURS` (e.g. EURUSD → EUR+USD) untuk filter otomatis per pair
-- Setiap event tampil sebagai chip: currency color dot + nama event + time WIB + countdown ("2j 30m")
-- Strip disembunyikan (`display:none`) jika tidak ada event relevan
-- Di-update saat `initTeknikal()` dan setiap `onTekPairChange()`
-
 ## Changelog Session 41 (2026-06-02)
 
 ### Bug Fix — Dashboard Panel Tampil di Mobile
@@ -1063,6 +1107,26 @@ Format ini sudah **berubah ke prosa naratif** — levels disebutkan dalam kalima
 - Semua data reuse dari memory global (`allItems`, `ringkasanCache`, `cbData`, `fundData`, `calData`) — tidak ada fetch tambahan.
 - Auto-refresh `setInterval` 60s hanya saat tab aktif; otomatis stop saat pindah tab.
 - Keyboard shortcut: `G D`. Swipe mobile: skip dashboard (hidden tab check via `getComputedStyle`).
+
+---
+
+## Changelog Session 36 (2026-06-02)
+
+### Equity Curve — Tab JURNAL
+- Tambah tab **KURVA** di sub-nav Journal (sebelah "+ BARU")
+- `jnRenderCurve()`: render SVG equity curve dari closed trades yang punya `r_actual`
+- Kurva cumulative R-multiple, fill hijau di atas nol, merah di bawah nol
+- Stats row: Total R, Win Rate, Avg Win R, Avg Loss R + Max Drawdown
+- Zero dependency — pure SVG, load instan
+- Auto-render saat tab KURVA dibuka; auto-refresh setelah `jnLoadEntries()` selesai
+
+### Event Strip — Tab TEK
+- Tambah horizontal scroll strip `#tekEventStrip` antara TradingView chart dan MTF bar
+- `renderTekEventStrip()`: filter `calData` hanya High-impact, dalam 48 jam ke depan, untuk currencies yang relevan dengan pair aktif
+- Mapping `PAIR_CURS` (e.g. EURUSD → EUR+USD) untuk filter otomatis per pair
+- Setiap event tampil sebagai chip: currency color dot + nama event + time WIB + countdown ("2j 30m")
+- Strip disembunyikan (`display:none`) jika tidak ada event relevan
+- Di-update saat `initTeknikal()` dan setiap `onTekPairChange()`
 
 ---
 
@@ -1690,27 +1754,6 @@ Mistral:     https://api.mistral.ai/v1
 
 ## Backlog — Data Source Upgrades
 
-### ✅ Selesai (Session 44–46)
-- **GDPNow Atlanta Fed** — `api/admin.js` `?action=gdpnow` + auto-refresh dari `fundamental_refresh`. ✓
-- **TGA + Fed Balance Sheet** — `api/real-yields.js` via FRED WALCL + FiscalData API. ✓
-- **Cleveland Fed Inflation Nowcast** — FRED `EXPINF10YR` sebagai fallback TIPS di `real-yields.js`. ✓
-- **CME FedWatch Fix** — V1/V2 URL + CME Quote API ZQ (step 2b) di `rate-path.js`. T-bill fallback tetap berjalan. ✓
-- **Portfolio VaR** — `jnRenderVaR()` di tab JURNAL, variance-covariance, ATR-based. ✓
-- **FX Risk Reversals** — `action=risk-reversal` di correlations.js. CME CVOL → Barchart (jika `BARCHART_API_KEY` tersedia). UI di FUNDAMENTAL tab. ✓
-
-### ✅ Selesai Session 47 (2026-06-05) — ScraperAPI Proxy + CME CVOL endpoint baru
-
-**Root cause:** CME Group memblokir IP data center Vercel (AWS/GCP) via Akamai/Cloudflare WAF. ScraperAPI menggunakan residential IPs yang tidak diblokir.
-
-**Implementasi:**
-- `api/rate-path.js` — tambah helper `cmeFetch(targetUrl, directHeaders, timeoutMs)`: jika `SCRAPER_API_KEY` tersedia, route semua CME fetch (FedWatch V1/V2, ZQ settlement, ZQ quote) melalui `api.scraperapi.com?api_key=...&url=...`. Timeout dinaikkan 8-10s → 15s untuk kompensasi latency proxy.
-- `api/correlations.js` — CME CVOL fetch juga lewat ScraperAPI jika key tersedia.
-- **Env var baru:** `SCRAPER_API_KEY` — sudah ditambah ke Vercel (2026-06-05). Free tier: 5,000 credits, ~1 credit/request.
-
-**Status per endpoint (2026-06-05):**
-- ✅ CME FedWatch (`rate-path.js`) — ScraperAPI proxy aktif untuk semua CME calls
-- ✅ CME CVOL Risk Reversals — **6 pair live**: EUR/USD (EUVL), GBP/USD (GBVL), USD/JPY (JPVL), AUD/USD (ADVL), USD/CAD (CAVL), XAU/USD (GCVL). NZD/USD + USD/CHF tidak tersedia di CME CVOL (options terlalu illiquid). Section muncul di tab FUNDAMENTAL. Cache key `rr_cache_v2`, TTL 3600s.
-
-**Symbol CME CVOL (semua dikonfirmasi 2026-06-05):** `EUVL`, `GBVL`, `JPVL`, `ADVL`, `CAVL`, `GCVL`
+✅ Semua item di backlog asli ini sudah selesai — detail lengkap (root cause, implementasi, symbol mapping CME CVOL, status per endpoint) ada di entry changelog masing-masing: **Session 44-46** (GDPNow, TGA/Fed Balance Sheet, Cleveland Fed Inflation Nowcast, CME FedWatch fix, Portfolio VaR, FX Risk Reversals) dan **Session 47** (ScraperAPI Proxy + CME CVOL endpoint baru, 6 pair live).
 
 ---
