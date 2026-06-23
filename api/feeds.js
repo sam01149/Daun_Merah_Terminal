@@ -65,6 +65,7 @@ async function rssHandler(req, res) {
       const obj = JSON.parse(cached);
       if (now - obj.fetchedAt < RSS_CACHE_TTL_MS) {
         res.setHeader('X-Cache-Source', 'REDIS');
+        res.setHeader('X-News-Source', obj.source || 'financialjuice');
         return res.status(200).send(obj.xml);
       }
     }
@@ -107,6 +108,7 @@ async function rssHandler(req, res) {
       if (stale) {
         const obj = JSON.parse(stale);
         res.setHeader('X-Cache-Source', 'STALE');
+        res.setHeader('X-News-Source', obj.source || 'financialjuice');
         return res.status(200).send(obj.xml);
       }
     } catch(e2) {}

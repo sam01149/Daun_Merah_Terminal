@@ -159,6 +159,20 @@ Financial_Feed_App/
 
 ---
 
+## Changelog Session 83 (2026-06-23)
+
+### Bug fix — status "LIVE (fallback)" tidak pernah muncul karena Redis cache-hit path lupa propagate `X-News-Source`
+
+**Konteks:** User curiga sebuah artikel di tab NEWS ("...Asia-Pacific FX news wrap...") sebenarnya berasal dari fallback Investinglive (link mengarah ke investinglive.com, dan headline itu tidak ada di website financialjuice.com), padahal status pill di UI menunjukkan "LIVE" biasa, bukan "LIVE (fallback)". Awalnya diasumsikan itu cuma konten sister-site yang disindikasi FinancialJuice — tapi ditelusuri lebih dalam ke kode karena user tetap yakin.
+
+**Root cause ditemukan di `api/feeds.js` `rssHandler`:** payload yang disimpan ke Redis (`rss_cache`) menyimpan field `source` (`'financialjuice'` atau `'investinglive_fallback'`), tapi dua jalur baca cache — cache-hit normal (baris ~63-69) dan stale-cache saat fetch gagal total (baris ~107-112) — keduanya **tidak pernah** men-set header `X-News-Source` dari `obj.source`, hanya men-set `X-Cache-Source`. Frontend (`index.html` `fetchRSS()`) default ke `lastNewsSource = 'financialjuice'` kalau header itu kosong, jadi setiap kali respons disajikan dari Redis cache (yang sebagian besar waktu, karena TTL 60s) — info fallback hilang dan status pill salah tampil "LIVE" walau isi feed sebenarnya dari investinglive.
+
+**Fix:** tambah `res.setHeader('X-News-Source', obj.source || 'financialjuice')` di kedua jalur baca cache (REDIS hit dan STALE).
+
+**Verifikasi:** `node --check api/feeds.js` lolos. Tidak ada jalur baca `RSS_CACHE_KEY` lain yang terlewat (grep konfirmasi cuma 2 baca + 1 tulis). Belum diverifikasi live end-to-end karena butuh momen FinancialJuice benar-benar down untuk memicu fallback secara natural — perbaikan ini struktural (memastikan header source selalu konsisten antara fresh-fetch dan cache-hit), bukan logic baru yang berisiko regresi.
+
+---
+
 ## Changelog Session 82 (2026-06-22)
 
 ### Option Gravity Heatmap — Tab TEK
