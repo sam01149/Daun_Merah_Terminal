@@ -5,6 +5,7 @@
 // Redis cache: correlations, TTL 24 hours (86400s).
 
 const rateLimit = require('./_ratelimit');
+const { withSingleFlight } = require('./_fetch_lock');
 const CORS = { 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-cache' };
 const CACHE_KEY = 'correlations_v2';
 const CACHE_TTL = 86400;
@@ -174,6 +175,7 @@ module.exports = async function handler(req, res) {
     const cacheKey = `ohlcv:${symbol}:${tf}`;
     const cacheTTL = tf === '1d' ? 1800 : 300;
 
+    let sf;
     try {
       const cached = await redisCmd('GET', cacheKey);
       if (cached) {
@@ -181,6 +183,13 @@ module.exports = async function handler(req, res) {
         if (Date.now() - new Date(d.fetched_at).getTime() < cacheTTL * 1000)
           return res.status(200).json({ ...d, from_cache: true });
       }
+
+      sf = await withSingleFlight(redisCmd, {
+        lockKey: `lock:ohlcv:${symbol}:${tf}`,
+        cacheKey,
+        isFresh: (raw) => { try { return Date.now() - new Date(JSON.parse(raw).fetched_at).getTime() < cacheTTL * 1000; } catch(e) { return false; } },
+      });
+      if (!sf.gotLock && sf.fresh) return res.status(200).json({ ...JSON.parse(sf.fresh), from_cache: true });
 
       const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=${fetchInterval}&range=${range}`;
       const r = await fetch(url, {
@@ -207,8 +216,10 @@ module.exports = async function handler(req, res) {
 
       const payload = { symbol, tf, candles, fetched_at: new Date().toISOString() };
       await redisCmd('SET', cacheKey, JSON.stringify(payload), 'EX', cacheTTL);
+      if (sf?.gotLock) sf.release();
       return res.status(200).json({ ...payload, from_cache: false });
     } catch(e) {
+      if (sf?.gotLock) sf.release();
       return res.status(500).json({ error: e.message });
     }
   }
@@ -231,6 +242,7 @@ module.exports = async function handler(req, res) {
     const cacheKey = `ta:${symbol}:${interval}`;
     const cacheTTL = interval === '1d' ? 1800 : 600; // 30min daily, 10min intraday
 
+    let sf;
     try {
       // Serve Redis cache if fresh
       const cached = await redisCmd('GET', cacheKey);
@@ -240,6 +252,13 @@ module.exports = async function handler(req, res) {
           return res.status(200).json({ ...d, from_cache: true });
         }
       }
+
+      sf = await withSingleFlight(redisCmd, {
+        lockKey: `lock:ta:${symbol}:${interval}`,
+        cacheKey,
+        isFresh: (raw) => { try { return Date.now() - new Date(JSON.parse(raw).computed_at).getTime() < cacheTTL * 1000; } catch(e) { return false; } },
+      });
+      if (!sf.gotLock && sf.fresh) return res.status(200).json({ ...JSON.parse(sf.fresh), from_cache: true });
 
       const prices  = await fetchYahoo(symbol, interval, range);
       const current = prices[prices.length - 1];
@@ -268,8 +287,10 @@ module.exports = async function handler(req, res) {
       };
 
       await redisCmd('SET', cacheKey, JSON.stringify(payload), 'EX', cacheTTL);
+      if (sf?.gotLock) sf.release();
       return res.status(200).json({ ...payload, from_cache: false });
     } catch(e) {
+      if (sf?.gotLock) sf.release();
       return res.status(500).json({ error: e.message });
     }
   }
@@ -301,6 +322,7 @@ module.exports = async function handler(req, res) {
     const cacheKey = `atr:${symbol}`;
     const cacheTTL = 14400;
 
+    let sf;
     try {
       const cached = await redisCmd('GET', cacheKey);
       if (cached) {
@@ -308,6 +330,13 @@ module.exports = async function handler(req, res) {
         if (Date.now() - new Date(d.computed_at).getTime() < cacheTTL * 1000)
           return res.status(200).json({ ...d, from_cache: true });
       }
+
+      sf = await withSingleFlight(redisCmd, {
+        lockKey: `lock:atr:${symbol}`,
+        cacheKey,
+        isFresh: (raw) => { try { return Date.now() - new Date(JSON.parse(raw).computed_at).getTime() < cacheTTL * 1000; } catch(e) { return false; } },
+      });
+      if (!sf.gotLock && sf.fresh) return res.status(200).json({ ...JSON.parse(sf.fresh), from_cache: true });
 
       const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=1mo`;
       const r = await fetch(url, {
@@ -359,9 +388,11 @@ module.exports = async function handler(req, res) {
         computed_at: new Date().toISOString(),
       };
       await redisCmd('SET', cacheKey, JSON.stringify(payload), 'EX', cacheTTL);
+      if (sf?.gotLock) sf.release();
       return res.status(200).json({ ...payload, from_cache: false });
 
     } catch(e) {
+      if (sf?.gotLock) sf.release();
       try {
         const stale = await redisCmd('GET', cacheKey);
         if (stale) return res.status(200).json({ ...JSON.parse(stale), from_cache: true, stale: true });
@@ -386,6 +417,13 @@ module.exports = async function handler(req, res) {
           return res.status(200).json({ ...d, from_cache: true });
       }
     } catch(_) {}
+
+    const rrSf = await withSingleFlight(redisCmd, {
+      lockKey: 'lock:risk-reversal',
+      cacheKey: RR_CACHE_KEY,
+      isFresh: (raw) => { try { return Date.now() - new Date(JSON.parse(raw).computed_at).getTime() < RR_CACHE_TTL * 1000; } catch(e) { return false; } },
+    });
+    if (!rrSf.gotLock && rrSf.fresh) return res.status(200).json({ ...JSON.parse(rrSf.fresh), from_cache: true });
 
     // New endpoint: /services/cvol (replaces deprecated /CmeWS/mvc/Volatility/historical)
     // Symbols confirmed via direct browser test 2026-06-05.
@@ -478,6 +516,7 @@ module.exports = async function handler(req, res) {
     }
 
     if (!source) {
+      if (rrSf.gotLock) rrSf.release();
       const cme404 = cmeFailedReasons.some(m => m?.includes('HTTP 404'));
       const hint = cme404
         ? 'CME CVOL endpoint returned 404 — URL has been removed/moved by CME. Needs new endpoint URL.'
@@ -489,6 +528,7 @@ module.exports = async function handler(req, res) {
 
     const payload = { available: true, pairs, source, computed_at: new Date().toISOString() };
     redisCmd('SET', RR_CACHE_KEY, JSON.stringify(payload), 'EX', RR_CACHE_TTL).catch(() => {});
+    if (rrSf.gotLock) rrSf.release();
     return res.status(200).json({ ...payload, from_cache: false });
   }
 
@@ -507,6 +547,13 @@ module.exports = async function handler(req, res) {
       }
     } catch(e) {}
 
+    const ratesSf = await withSingleFlight(redisCmd, {
+      lockKey: 'lock:sizing_rates',
+      cacheKey: RATES_KEY,
+      isFresh: (raw) => { try { return Date.now() - new Date(JSON.parse(raw).fetched_at).getTime() < RATES_TTL * 1000; } catch(e) { return false; } },
+    });
+    if (!ratesSf.gotLock && ratesSf.fresh) return res.status(200).json({ rates: JSON.parse(ratesSf.fresh).rates, from_cache: true });
+
     try {
       const symbols = 'EURUSD=X,GBPUSD=X,AUDUSD=X,NZDUSD=X,USDJPY=X,USDCAD=X,USDCHF=X';
       const r = await fetch(
@@ -522,8 +569,10 @@ module.exports = async function handler(req, res) {
       if (Object.keys(rates).length === 0) throw new Error('Yahoo returned no rates');
       const payload = { rates, fetched_at: new Date().toISOString() };
       await redisCmd('SET', RATES_KEY, JSON.stringify(payload), 'EX', RATES_TTL);
+      if (ratesSf.gotLock) ratesSf.release();
       return res.status(200).json({ rates, from_cache: false });
     } catch(e) {
+      if (ratesSf.gotLock) ratesSf.release();
       // Serve stale cache rather than hard error
       try {
         const stale = await redisCmd('GET', RATES_KEY);
@@ -546,6 +595,13 @@ module.exports = async function handler(req, res) {
           return res.status(200).json({ ...d, from_cache: true });
       }
     } catch(_) {}
+
+    const snapSf = await withSingleFlight(redisCmd, {
+      lockKey: 'lock:daily_snapshot',
+      cacheKey: SNAP_KEY,
+      isFresh: (raw) => { try { return Date.now() - new Date(JSON.parse(raw).fetched_at).getTime() < SNAP_TTL * 1000; } catch(e) { return false; } },
+    });
+    if (!snapSf.gotLock && snapSf.fresh) return res.status(200).json({ ...JSON.parse(snapSf.fresh), from_cache: true });
 
     // Use v8/finance/chart (same endpoint as main correlations — confirmed working from Vercel).
     // v7/finance/quote can be blocked for certain calls; v8/chart is more reliable.
@@ -616,8 +672,10 @@ module.exports = async function handler(req, res) {
       if (Object.keys(fx).length === 0) throw new Error('all FX fetches failed');
       const payload = { fx, yields, fetched_at: new Date().toISOString() };
       redisCmd('SET', SNAP_KEY, JSON.stringify(payload), 'EX', SNAP_TTL).catch(() => {});
+      if (snapSf.gotLock) snapSf.release();
       return res.status(200).json({ ...payload, from_cache: false });
     } catch(e) {
+      if (snapSf.gotLock) snapSf.release();
       try {
         const stale = await redisCmd('GET', SNAP_KEY);
         if (stale) return res.status(200).json({ ...JSON.parse(stale), stale: true });
@@ -639,6 +697,16 @@ module.exports = async function handler(req, res) {
     }
   } catch(e) {
     console.warn('correlations cache read failed:', e.message);
+  }
+
+  const mainSf = await withSingleFlight(redisCmd, {
+    lockKey: 'lock:correlations',
+    cacheKey: CACHE_KEY,
+    isFresh: (raw) => { try { return Date.now() - new Date(JSON.parse(raw).computed_at).getTime() < CACHE_TTL * 1000; } catch(e) { return false; } },
+  });
+  if (!mainSf.gotLock && mainSf.fresh) {
+    res.setHeader('X-Cache', 'HIT');
+    return res.status(200).json({ ...JSON.parse(mainSf.fresh), stale: false });
   }
 
   // Fetch all instruments in parallel from Yahoo Finance
@@ -664,6 +732,7 @@ module.exports = async function handler(req, res) {
   console.log(`correlations: got data for ${Object.keys(series).length}/${names.length} instruments:`, Object.keys(series).join(', '));
 
   if (Object.keys(series).length < 3) {
+    if (mainSf.gotLock) mainSf.release();
     try {
       const cached = await redisCmd('GET', CACHE_KEY);
       if (cached) return res.status(200).json({ ...JSON.parse(cached), stale: true });
@@ -732,6 +801,7 @@ module.exports = async function handler(req, res) {
   } catch(e) {
     console.warn('correlations cache write failed:', e.message);
   }
+  if (mainSf.gotLock) mainSf.release();
 
   res.setHeader('X-Cache', 'MISS');
   return res.status(200).json({ ...data, stale: false });

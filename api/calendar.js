@@ -3,7 +3,11 @@ const FF_THIS_WEEK = 'https://nfs.faireconomy.media/ff_calendar_thisweek.xml';
 const FF_NEXT_WEEK = 'https://nfs.faireconomy.media/ff_calendar_nextweek.xml';
 const MAJOR_CURRENCIES = new Set(['USD','EUR','GBP','JPY','CAD','AUD','NZD','CHF']);
 const CACHE_KEY = 'calendar_v1';
-const CACHE_TTL = 6 * 3600; // stale-serve window: 6h
+const CACHE_TTL = 6 * 3600; // Redis key TTL — long survival window for stale-serve fallback
+const FRESH_TTL = 60;       // normal serve window — frontend polls every 90s; this previously
+                             // had NO freshness gate at all (every single request re-fetched
+                             // ForexFactory unconditionally, worst offender for stampede risk)
+const { withSingleFlight } = require('./_fetch_lock');
 
 async function redisCmd(...args) {
   const REDIS_URL   = process.env.UPSTASH_REDIS_REST_URL;
@@ -20,6 +24,35 @@ async function redisCmd(...args) {
 
 module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
+
+  // Serve Redis cache if still fresh — every open tab polls this every 90s,
+  // so without this gate every poll re-hits ForexFactory regardless of age.
+  try {
+    const cached = await redisCmd('GET', CACHE_KEY);
+    if (cached) {
+      const obj = JSON.parse(cached);
+      if (Date.now() - new Date(obj.fetched_at).getTime() < FRESH_TTL * 1000) {
+        res.setHeader('Cache-Control', 'max-age=60');
+        return res.status(200).json({ ...obj, stale: false });
+      }
+    }
+  } catch(_) {}
+
+  // Cache stale/missing — single-flight lock so concurrent tabs/users hitting
+  // this at the same moment don't all fan out to ForexFactory simultaneously.
+  const sf = await withSingleFlight(redisCmd, {
+    lockKey: 'lock:calendar',
+    cacheKey: CACHE_KEY,
+    isFresh: (raw) => {
+      try { return Date.now() - new Date(JSON.parse(raw).fetched_at).getTime() < FRESH_TTL * 1000; }
+      catch(e) { return false; }
+    },
+  });
+  if (!sf.gotLock && sf.fresh) {
+    res.setHeader('Cache-Control', 'max-age=60');
+    return res.status(200).json({ ...JSON.parse(sf.fresh), stale: false });
+  }
+
   try {
     const [resThis, resNext] = await Promise.allSettled([
       fetch(FF_THIS_WEEK, { headers: { 'User-Agent': 'Mozilla/5.0 (compatible; FJFeed/1.0)' }, signal: AbortSignal.timeout(12000) }),
@@ -59,9 +92,11 @@ module.exports = async function handler(req, res) {
 
     const payload = { events: deduped, count: deduped.length, fetched_at: new Date().toISOString() };
     try { await redisCmd('SET', CACHE_KEY, JSON.stringify(payload), 'EX', CACHE_TTL); } catch(_) {}
+    if (sf.gotLock) sf.release();
     res.setHeader('Cache-Control', 'max-age=300');
     return res.status(200).json({ ...payload, stale: false });
   } catch(e) {
+    if (sf.gotLock) sf.release();
     console.error('Calendar error:', e.message);
     // ForexFactory/Cloudflare block or outage — serve last known-good calendar rather than nothing
     try {

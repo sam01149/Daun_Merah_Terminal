@@ -2,6 +2,7 @@
 const rateLimit    = require('./_ratelimit');
 const cb           = require('./_circuit_breaker');
 const { autoUpdateFundamentals } = require('./_fundamental_parser');
+const { withSingleFlight } = require('./_fetch_lock');
 
 // AI provider failure threshold before circuit opens (fewer than external sources
 // because AI errors are faster to detect and providers recover quickly)
@@ -100,6 +101,13 @@ async function fetchXauSpot() {
     }
   } catch(e) {}
 
+  const sf = await withSingleFlight(redisCmd, {
+    lockKey: 'lock:xau_spot',
+    cacheKey: 'xau_spot',
+    isFresh: (raw) => { try { return Date.now() - new Date(JSON.parse(raw).fetched_at).getTime() < 5 * 60 * 1000; } catch(e) { return false; } },
+  });
+  if (!sf.gotLock && sf.fresh) return JSON.parse(sf.fresh);
+
   // Primary: Yahoo Finance GC=F (COMEX gold front-month futures)
   try {
     const r = await fetch('https://query1.finance.yahoo.com/v8/finance/chart/GC=F?range=1d&interval=5m', {
@@ -117,6 +125,7 @@ async function fetchXauSpot() {
         const asOf = `${String(wib.getUTCHours()).padStart(2,'0')}:${String(wib.getUTCMinutes()).padStart(2,'0')} WIB`;
         const result = { price, prev_close: prev || null, change_pct: changePct, source: 'Yahoo GC=F', fetched_at: new Date().toISOString(), as_of: asOf };
         await redisCmd('SET', 'xau_spot', JSON.stringify(result), 'EX', 300);
+        if (sf.gotLock) sf.release();
         return result;
       }
     }
@@ -137,11 +146,13 @@ async function fetchXauSpot() {
         const asOf = `${String(wib.getUTCHours()).padStart(2,'0')}:${String(wib.getUTCMinutes()).padStart(2,'0')} WIB`;
         const result = { price, prev_close: prev || null, change_pct: +changePct.toFixed(2), source: 'Binance PAXG', fetched_at: new Date().toISOString(), as_of: asOf };
         await redisCmd('SET', 'xau_spot', JSON.stringify(result), 'EX', 300);
+        if (sf.gotLock) sf.release();
         return result;
       }
     }
   } catch(e) { console.warn('fetchXauSpot Binance failed:', e.message); }
 
+  if (sf.gotLock) sf.release();
   return null;
 }
 

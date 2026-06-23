@@ -14,6 +14,8 @@ const CB_FALLBACK = {
   CHF: { bank:'Swiss National Bank',         short:'SNB',  rate:0.00, last_meeting:'2026-03-19', last_decision:'hold', last_bps:0  },
 };
 
+const { withSingleFlight } = require('./_fetch_lock');
+
 const RATES_CACHE_KEY = 'cb_rates_live_v2';
 const RATES_TTL_MS    = 6 * 60 * 60 * 1000; // 6 hours
 
@@ -176,13 +178,29 @@ async function getLiveCbRates() {
   } catch(e) { console.warn('cb_rates cache load failed:', e.message); }
 
   if (Object.keys(liveRates).length === 0) {
-    liveRates = await scrapeAllRates();
-    if (Object.keys(liveRates).length > 0) {
-      rateSource = 'live_fresh';
-      redisCmd('SET', RATES_CACHE_KEY,
-        JSON.stringify({ rates: liveRates, fetchedAt: now }),
-        'EX', 7 * 3600
-      ).catch(() => {});
+    // Cache expired — single-flight lock. Without it, concurrent calls from
+    // cb-status.js (CB Bias tab) and admin.js (fundamental_get) missing cache
+    // at the same instant would each independently scrape all 8 official
+    // central-bank sites (FRED, ECB, BoE, BoJ, BoC, RBA, RBNZ, SNB) — some of
+    // those (BoE, RBA, SNB) are sensitive to bot-like traffic.
+    const sf = await withSingleFlight(redisCmd, {
+      lockKey: 'lock:cb_rates_live',
+      cacheKey: RATES_CACHE_KEY,
+      isFresh: (raw) => { try { return now - JSON.parse(raw).fetchedAt < RATES_TTL_MS; } catch(e) { return false; } },
+    });
+    if (!sf.gotLock && sf.fresh) {
+      liveRates  = JSON.parse(sf.fresh).rates;
+      rateSource = 'live_cached';
+    } else {
+      liveRates = await scrapeAllRates();
+      if (Object.keys(liveRates).length > 0) {
+        rateSource = 'live_fresh';
+        redisCmd('SET', RATES_CACHE_KEY,
+          JSON.stringify({ rates: liveRates, fetchedAt: now }),
+          'EX', 7 * 3600
+        ).catch(() => {});
+      }
+      if (sf.gotLock) sf.release();
     }
   }
 

@@ -5,6 +5,8 @@
 // Also includes: TGA + Fed Balance Sheet liquidity indicators, USD+EUR yield curve.
 // Cached in Redis under 'real_yields' for 6 hours.
 
+const { withSingleFlight } = require('./_fetch_lock')
+
 const CACHE_KEY = 'real_yields'
 const CACHE_TTL = 6 * 60 * 60 // 6 hours in seconds
 
@@ -92,6 +94,19 @@ module.exports = async function handler(req, res) {
     } catch(e) {
       console.warn('real-yields: Redis GET failed:', e.message)
     }
+  }
+
+  // Cache expired — single-flight lock. The fresh path below fans out to 16+
+  // FRED/ECB calls; without this, concurrent requests at the same TTL-expiry
+  // instant would each independently do that whole fan-out.
+  const mainSf = await withSingleFlight(redisCmd, {
+    lockKey: 'lock:real_yields',
+    cacheKey: CACHE_KEY,
+    isFresh: (raw) => { try { return Date.now() - new Date(JSON.parse(raw).computed_at).getTime() < CACHE_TTL * 1000 } catch(e) { return false } },
+  })
+  if (!mainSf.gotLock && mainSf.fresh) {
+    const parsed = JSON.parse(mainSf.fresh)
+    return res.status(200).json({ ...parsed, liquidity: liquidityData, yield_curve: yieldCurveData })
   }
 
   // ── Fetch everything fresh ──────────────────────────────────────────────────
@@ -203,6 +218,7 @@ module.exports = async function handler(req, res) {
   }
 
   if (Object.keys(results).length === 0) {
+    if (mainSf.gotLock) mainSf.release()
     // All failed — return stale cache with supplementary
     try {
       const stale = await redisCmd('GET', CACHE_KEY)
@@ -215,6 +231,7 @@ module.exports = async function handler(req, res) {
 
   redisCmd('SET', CACHE_KEY, JSON.stringify(payload), 'EX', CACHE_TTL)
     .catch(e => console.warn('real-yields: Redis SET failed:', e.message))
+  if (mainSf.gotLock) mainSf.release()
 
   return res.status(200).json({ ...payload, liquidity: liquidityData, yield_curve: yieldCurveData })
 }

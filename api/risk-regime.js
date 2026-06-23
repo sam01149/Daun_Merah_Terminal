@@ -4,6 +4,7 @@
 // Cached in Redis under 'risk_regime' for 30 minutes (data is EOD, refreshing more often is wasteful)
 
 const cb = require('./_circuit_breaker');
+const { withSingleFlight } = require('./_fetch_lock');
 
 const CACHE_KEY = 'risk_regime'
 const CACHE_TTL = 5 * 60 // 5 minutes — VIX now from Yahoo (15-min delay), worth refreshing often
@@ -69,6 +70,20 @@ module.exports = async function handler(req, res) {
     console.warn('risk-regime: Redis GET failed:', e.message)
   }
 
+  // Cache expired — single-flight lock so multiple tabs polling every 15min
+  // (or all loading at once) don't all fan out to Yahoo/FRED/Stooq simultaneously.
+  const sf = await withSingleFlight(redisCmd, {
+    lockKey: 'lock:risk_regime',
+    cacheKey: CACHE_KEY,
+    isFresh: (raw) => {
+      try { return Date.now() - new Date(JSON.parse(raw).computed_at).getTime() < CACHE_TTL * 1000 }
+      catch(e) { return false }
+    },
+  })
+  if (!sf.gotLock && sf.fresh) {
+    return res.status(200).json(JSON.parse(sf.fresh))
+  }
+
   // Fetch all sources in parallel; partial failures are tolerable.
   // VIX: Yahoo Finance primary (near real-time, 15-min delay) → FRED fallback (EOD).
   // MOVE + HY: EOD only — no free real-time alternative exists.
@@ -115,6 +130,7 @@ module.exports = async function handler(req, res) {
 
   // All three sources failed — return stale cache rather than empty error
   if (!vixData && !moveData && !hyData) {
+    if (sf.gotLock) sf.release()
     try {
       const stale = await redisCmd('GET', CACHE_KEY)
       if (stale) return res.status(200).json({ ...JSON.parse(stale), stale: true })
@@ -185,6 +201,7 @@ module.exports = async function handler(req, res) {
   redisCmd('SET', CACHE_KEY, JSON.stringify(payload), 'EX', CACHE_TTL).catch(e => {
     console.warn('risk-regime: Redis SET failed:', e.message)
   })
+  if (sf.gotLock) sf.release()
 
   return res.status(200).json(payload)
 }
