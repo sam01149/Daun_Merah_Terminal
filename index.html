@@ -1420,7 +1420,7 @@ body {
 @media (max-width: 480px) {
   .stats-bar .stat { padding: 7px 10px; }
   .stat-val { font-size: 15px; }
-  .nvtab { padding: 10px 11px; font-size: 9px; }
+  .nvtab { padding: 10px 11px; font-size: 11px; }
   .ftab  { padding: 6px 9px;  font-size: 8px; }
   .cot-row { grid-template-columns: 34px 1fr auto auto; gap: 6px; }
   .cot-net { min-width: 48px; font-size: 10px; }
@@ -2185,7 +2185,7 @@ body {
       <div style="font-size:10px;color:var(--muted);font-family:'DM Mono',monospace">Probabilitas event makro dari prediction market (uang nyata).</div>
     </div>
     <div style="margin-top:8px">
-      <button id="polyBtn" class="jn-btn-sec" onclick="fetchPolymarket()" style="width:100%;font-size:10px">↻ Muat Polymarket Macro</button>
+      <button id="polyBtn" class="jn-btn-sec" onclick="fetchPolymarket()" style="width:100%;font-size:10px">↻ Refresh Polymarket Macro</button>
     </div>
   </div>
 </div>
@@ -2512,7 +2512,7 @@ body {
       </div>
       <div class="pt-row">
         <div class="pt-step-num">1.5</div>
-        <div class="pt-step-action"><strong>Opsional: Cek Korelasi Cross-Asset (RINGKASAN tab)</strong>Scroll ke bawah di tab RINGKASAN → tap "Muat Korelasi". Lihat tabel XAU/USD dan bagian Anomali. Cache 24 jam — cukup sekali per hari.</div>
+        <div class="pt-step-action"><strong>Opsional: Cek Korelasi Cross-Asset (tab TEKNIKAL)</strong>Buka tab TEKNIKAL → scroll ke bawah, korelasi termuat otomatis. Lihat tabel XAU/USD dan bagian Anomali. Cache server 24 jam.</div>
         <div class="pt-step-why">Korelasi 20d vs 60d memperlihatkan apakah hubungan yang biasanya stabil mulai breakdown — misal Gold tidak bergerak bersama DXY seperti biasa (bearish real yield sedang disconnect). Ini bukan sinyal entry, tapi konteks konfirmasi.</div>
       </div>
     </div>
@@ -2697,10 +2697,10 @@ body {
     <div id="corrPanelWrap" style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border)">
       <div class="corr-section" id="corrPanel">
         <div class="corr-title">CROSS-ASSET CORRELATIONS</div>
-        <div style="font-size:10px;color:var(--muted);font-family:'DM Mono',monospace">Klik tombol Korelasi untuk memuat data.</div>
+        <div style="font-size:10px;color:var(--muted);font-family:'DM Mono',monospace">Memuat data korelasi otomatis...</div>
       </div>
       <div style="margin-top:8px">
-        <button id="corrBtn" class="jn-btn-sec" onclick="fetchCorrelations()" style="width:100%;font-size:10px">↻ Muat Korelasi Cross-Asset</button>
+        <button id="corrBtn" class="jn-btn-sec" onclick="fetchCorrelations()" style="width:100%;font-size:10px">↻ Refresh Korelasi Cross-Asset</button>
       </div>
     </div>
   </div>
@@ -3881,7 +3881,7 @@ function renderThesisCard(t) {
     ${t.invalidation_condition ? `<div class="thesis-label">INVALIDASI</div><div class="thesis-val">${escHtml(t.invalidation_condition)}</div>` : ''}
     ${t.catalyst_dependency ? `<div class="thesis-label">KATALIS</div><div class="thesis-val">${escHtml(t.catalyst_dependency)}</div>` : ''}
     ${t.time_horizon_days ? `<div class="thesis-label">HORIZON</div><div class="thesis-val">${t.time_horizon_days} hari</div>` : ''}
-    ${t.direction !== 'no_trade' ? `<button class="thesis-use-btn" onclick="jnPrefillFromThesis()">Gunakan untuk mulai jurnal →</button>` : ''}
+    ${t.direction !== 'no_trade' ? `<button class="thesis-use-btn" onclick="thesisGoToChecklist()">Mulai ke Checklist →</button>` : ''}
   </div>`;
 }
 
@@ -3916,34 +3916,19 @@ function renderThesisAlerts(alerts) {
   </div>`;
 }
 
-function jnPrefillFromThesis() {
+function thesisGoToChecklist() {
   const t = _lastThesis;
-  if (!t) return;
-  // Switch to journal tab
-  document.querySelectorAll('#navViews .nvtab').forEach(b => b.classList.remove('active'));
-  const jTab = document.querySelector('.nvtab[data-view="jurnal"]');
-  if (jTab) jTab.classList.add('active');
-  hideAllPanels();
-  document.getElementById('jurnalPanel').style.display = 'block';
-  initJurnal();
-  jnShowView('new');
-  // Prefill
-  const pairSel = document.getElementById('jnPair');
-  if (pairSel && t.pair_recommendation) {
-    for (const opt of pairSel.options) {
-      if (opt.value === t.pair_recommendation) { pairSel.value = t.pair_recommendation; break; }
+  if (!t || !t.pair_recommendation) return;
+  switchView('checklist');
+  setTimeout(() => {
+    const sel = document.getElementById('ckPairSelector');
+    if (sel) {
+      for (const opt of sel.options) {
+        if (opt.value === t.pair_recommendation) { sel.value = t.pair_recommendation; ckOnPairChange(); break; }
+      }
     }
-  }
-  const dirSel = document.getElementById('jnDir');
-  if (dirSel && t.direction) dirSel.value = t.direction;
-  const thesisTA = document.getElementById('jnThesis');
-  if (thesisTA) {
-    const parts = [];
-    if (t.catalyst_dependency) parts.push(`Katalis: ${t.catalyst_dependency}`);
-    if (t.invalidation_condition) parts.push(`Invalidasi jika: ${t.invalidation_condition}`);
-    thesisTA.value = parts.join('\n');
-  }
-  jnSnapshotInfo();
+    showToast('Thesis AI siap dipakai', `${t.pair_recommendation} ${(t.direction||'').toUpperCase()} — item relevan sudah auto-check, lengkapi sisanya sebelum entry.`);
+  }, 200);
 }
 
 // ── VIEW SWITCHING ────────────────────────────────────────
@@ -3984,6 +3969,8 @@ document.querySelectorAll('#navViews .nvtab').forEach(btn => {
       document.getElementById('ringkasanPanel').style.display = 'block';
       if (!ringkasanCache) loadCachedRingkasan(); else renderRingkasan();
       if (Date.now() < ringkasanCooldownEnd) tickCooldown();
+      // Auto-load polymarket (cache server 30 menit)
+      if (!polyLastData || (Date.now() - polyFetchedAt) > 30 * 60 * 1000) fetchPolymarket();
     } else if (view === 'analisa') {
       setFeedUI(false);
       activeView = 'analisa';
@@ -4376,6 +4363,7 @@ async function fetchCorrelations() {
 // ── Polymarket ───────────────────────────────────────────────────────────────
 
 let polyLastData     = null;
+let polyFetchedAt    = 0;
 let polyActiveFilter = 'all';
 
 function setPolyFilter(cat) {
@@ -4394,6 +4382,7 @@ async function fetchPolymarket() {
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
     polyLastData = data;
+    polyFetchedAt = Date.now();
     polyActiveFilter = 'all';
     renderPolymarket(data);
   } catch(e) {
@@ -7066,9 +7055,18 @@ function ckPrefillJurnal() {
     if (qLvl > bLvl) direction = 'short';
   }
 
+  // AI thesis (RINGKASAN tab) overrides inferred direction kalau pair cocok — lebih informed dari sekadar diff CB bias
+  const aiThesis = (_lastThesis && _lastThesis.pair_recommendation === pair) ? _lastThesis : null;
+  if (aiThesis && aiThesis.direction && aiThesis.direction !== 'no_trade') direction = aiThesis.direction;
+
   // Build thesis from checklist state
   const lines = [`[${pbName} | ${pct}% — ${verdict}]`];
   if (pair) lines.push(`Pair: ${pair}`);
+  if (aiThesis) {
+    lines.push(`\n— AI Thesis (${aiThesis.confidence_1_to_5}/5):`);
+    if (aiThesis.catalyst_dependency) lines.push(`  Katalis: ${aiThesis.catalyst_dependency}`);
+    if (aiThesis.invalidation_condition) lines.push(`  Invalidasi jika: ${aiThesis.invalidation_condition}`);
+  }
   CK_SECTIONS.forEach(sec => {
     const checked = sec.items.filter(it => ckState[it.id] === true);
     const missing = sec.items.filter(it => !ckState[it.id]);
@@ -7129,6 +7127,10 @@ function ckShowMt5Modal() {
     const bLvl  = BLVL[bObj?.bias?.toLowerCase()] ?? 4;
     const qLvl  = BLVL[qObj?.bias?.toLowerCase()] ?? 4;
     if (qLvl > bLvl) direction = 'short';
+  }
+  // AI thesis (RINGKASAN tab) overrides inferred direction kalau pair cocok
+  if (_lastThesis && _lastThesis.pair_recommendation === pair && _lastThesis.direction && _lastThesis.direction !== 'no_trade') {
+    direction = _lastThesis.direction;
   }
 
   // Pre-fill dari sizing jika tersedia
@@ -8440,7 +8442,7 @@ async function jnRenderVaR() {
     : '';
 
   const noCorrNote = (!corrData && varItems.length > 1)
-    ? `<div style="font-size:9px;color:var(--muted);margin-top:4px">* buka tab KORELASI untuk hitung korelasi antar pair</div>`
+    ? `<div style="font-size:9px;color:var(--muted);margin-top:4px">* buka tab TEKNIKAL untuk memuat data korelasi antar pair (otomatis)</div>`
     : '';
 
   card.innerHTML = `
@@ -9632,6 +9634,8 @@ function initTeknikal() {
   fetchTekOptions();
   fetchAFTek();
   autoFillMtfSelectors();
+  // Auto-load korelasi cross-asset (cache server 24h, jadi sekali per sesi cukup)
+  if (!corrData || (Date.now() - corrFetAt) > 24 * 60 * 60 * 1000) fetchCorrelations();
 }
 
 // ── DRAWER ────────────────────────────────────────────────

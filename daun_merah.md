@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-06-23 (session 92 — lihat "Changelog Session 92" di bawah untuk detail terbaru)
+> **Last updated:** 2026-06-23 (session 93 — lihat "Changelog Session 93" di bawah untuk detail terbaru)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Financial_Feed_App`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -118,6 +118,22 @@ Financial_Feed_App/
 > **Penting:** `api/feeds.js` menggantikan `api/rss.js` dan `api/cot.js` yang sudah dihapus.
 > `api/admin.js` menggantikan `api/health.js`, `api/redis-keys.js`, `api/admin-prompts.js`, dan `api/push.js`.
 > Konsolidasi ini dilakukan untuk tetap di bawah limit 12 serverless functions Vercel Hobby.
+
+---
+
+## Changelog Session 93 (2026-06-23)
+
+### Auto-load Polymarket + Korelasi, thesis AI bahasa Indonesia, satukan jalur Thesis → Checklist
+
+**1. Bug bahasa: AI Thesis field bebas (`invalidation_condition`, `catalyst_dependency`, `xau_driver_evidence`, `xau_key_trigger`) keluar Bahasa Inggris.** Root cause: Call 1 (briefing prosa) di `api/market-digest.js` punya instruksi eksplisit "Tulis Bahasa Indonesia" (`DIGEST_SYSTEM_DEFAULT`), tapi Call 2-3 (thesis JSON) sama sekali tidak punya instruksi bahasa — AI default ke Inggris walau UI label-nya sudah Indonesia ("INVALIDASI", "BUKTI", dst). Fix: tambah anotasi bahasa di skema JSON tiap field + 1 baris rule eksplisit "All free-text string fields ... must be written in Bahasa Indonesia". Catatan: hasil lama yang sudah di-cache di Redis (`latest_article`) tetap Inggris sampai user generate ulang.
+
+**2. Auto-load Polymarket (tab RINGKASAN) + Korelasi Cross-Asset (tab TEKNIKAL) — sebelumnya wajib klik manual.** Kedua panel ini adalah satu-satunya yang masih manual-trigger di seluruh app (semua data tab lain — CAL, COT, FUNDAMENTAL, dll — sudah pakai pola staleness-check auto-fetch saat tab dibuka). Disamakan ke pola yang sama: `if (!data || (now - fetchedAt) > TTL) fetchX()` dipanggil di view-switch handler ('ringkasan') dan `initTeknikal()`. TTL klien disamakan dengan cache server: Polymarket 30 menit (`polymarket_signal_v3`), Korelasi 24 jam (`correlations_v2`) — jadi auto-fetch cuma benar-benar hit upstream kalau cache server juga sudah expired, bukan tiap kali pindah tab. Tombol manual tetap ada (diganti label "↻ Refresh ..." dari "↻ Muat ...") untuk override kapan saja. Teks placeholder statis dan instruksi di tab PETUNJUK yang menyebut "klik tombol Korelasi" / "tab RINGKASAN" (salah — Korelasi sebenarnya di tab TEKNIKAL, bug dokumentasi lama) diperbaiki sekaligus. Note "buka tab KORELASI" di widget Portfolio Risk (Jurnal) juga dikoreksi — tab itu tidak pernah ada, Korelasi adalah sub-section TEKNIKAL.
+
+**Trade-off auto-load (didiskusikan ke user):** menambah 1 request per pembukaan tab RINGKASAN/TEKNIKAL kalau cache server expired (bukan tiap kali — Redis cache 24h/30m yang sudah ada menyerap mayoritas trafik). Risiko utamanya bukan biaya, tapi waktu render tab sedikit lebih lama saat cache benar-benar miss (network round-trip ekstra di background, non-blocking — UI lain tetap responsif). Dianggap worth it karena selama ini data ini sering kelewat dipakai (user harus ingat klik manual), padahal sama pentingnya dengan data tab lain yang sudah auto.
+
+**3. Satukan jalur Thesis AI → Checklist (pola yang sama dengan Session 87 untuk Sizing Calculator).** Tombol "Gunakan untuk mulai jurnal →" di card Thesis FX (tab RINGKASAN) sebelumnya loncat LANGSUNG ke form Jurnal, melewati gate skor Checklist — inkonsistensi yang sama persis dengan yang diperbaiki di Sizing Calculator session 87. Diganti: tombol jadi "Mulai ke Checklist →", fungsi `jnPrefillFromThesis()` diganti `thesisGoToChecklist()` (mirror `szGoToChecklist()`) — pindah ke tab Checklist + auto-set `ckPairSelector` ke `pair_recommendation` + trigger `ckOnPairChange()`. Auto-tick item relevan **tidak perlu logic baru** — sistem auto-tick yang sudah ada (`ckAutoTickRegimeCheck`, sejak lama, baca live data CB bias/COT/calendar/real yield per pair) otomatis jalan begitu pair di-set, sama seperti saat user pilih pair manual. Tambahan: `ckPrefillJurnal()` dan `ckShowMt5Modal()` sekarang override direction inferred dari CB bias dengan direction AI thesis (`_lastThesis.direction`) kalau pair cocok — thesis AI lebih informed (mempertimbangkan rate path, risk reversal, regime) daripada sekadar selisih level CB bias. Katalis/invalidasi dari thesis AI juga ikut nempel ke teks jurnal final (`ckPrefillJurnal`) supaya konteks AI tidak hilang walau sudah lewat gate Checklist.
+
+**Testing:** extract + `new Function()` semua inline `<script>` setelah tiap perubahan — lolos tanpa syntax error. Verifikasi manual TTL cache server vs client (`correlations.js` CACHE_TTL=86400, `admin.js` polymarket CACHE_TTL=1800) untuk pastikan guard client selaras, tidak over-fetch.
 
 ---
 
