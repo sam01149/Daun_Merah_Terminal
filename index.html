@@ -8326,7 +8326,7 @@ async function jnRenderVaR() {
     <div style="font-size:9px;color:var(--muted);letter-spacing:.1em;margin-bottom:4px">PORTFOLIO RISK</div>
     <div class="loading-pulse" style="font-size:10px;color:var(--muted)">Menghitung...</div></div>`;
 
-  const PIP_SIZE = (pair) => pair.includes('JPY') ? 0.01 : pair === 'XAU/USD' ? 0.1 : 0.0001;
+  const PIP_SIZE = (pair) => pair.includes('JPY') ? 0.01 : pair === 'XAU/USD' ? 0.01 : 0.0001;
 
   const varItems = [];
   await Promise.allSettled(openEntries.map(async (entry) => {

@@ -160,6 +160,20 @@ Financial_Feed_App/
 
 ---
 
+## Changelog Session 84 (2026-06-23)
+
+### Bug fix — Portfolio Risk widget (Jurnal) hitung dollar-risk XAU/USD 10x lebih kecil dari Sizing Calculator
+
+**Konteks:** User menyadari ketidakcocokan: Sizing Calculator bilang "At risk $66.80" (XAU/USD, 0.02 lots, stop 3000p), tapi widget "Portfolio Risk" di tab Jurnal cuma menampilkan "$7" untuk posisi yang sama.
+
+**Root cause:** pip size XAU/USD didefinisikan di 3 tempat secara konsisten sebagai `0.01` (lihat `calcPipValueUSD()` baris ~7638, `szAutoComputePips()` baris ~7768, `szUpdatePipInfo()` baris ~7867 — 1 pip = $0.01 pergerakan harga, pip value = $1/lot/100oz). Tapi fungsi `PIP_SIZE()` di renderer Portfolio Risk (dalam `jnRenderVaR`, dipakai untuk hitung `stopPips` dari selisih entry/stop price) keliru pakai `0.1` untuk XAU/USD — 10x lebih besar. Karena `stopPips = priceDiff / pipSize`, pembagi yang 10x kebesaran membuat `stopPips` (dan akibatnya `dollarRisk = stopPips × pipValue × lots`) terhitung 10x lebih kecil dari realita.
+
+**Fix:** ubah `PIP_SIZE` XAU/USD dari `0.1` → `0.01` agar konsisten dengan 3 tempat lain.
+
+**Verifikasi:** `node -e` simulasi manual dengan angka kasus user (stop 3000p, 0.02 lots, pip value $1/lot) → hasil `$60.00` setelah fix, sangat dekat dengan target `$66.80` Sizing Calculator (selisih kecil murni dari pembulatan `lots` ke 2 desimal, bukan bug); sebelum fix hasilnya `$6` (cocok dengan `$7` yang dilaporkan user, beda dikit karena rounding stop price). Extract+`new Function()` semua inline `<script>` di `index.html` → tidak ada syntax error. Grep ulang memastikan tidak ada sisa pip-size `0.1` lain untuk XAU/USD di file.
+
+---
+
 ## Changelog Session 83 (2026-06-23)
 
 ### Bug fix — status "LIVE (fallback)" tidak pernah muncul karena Redis cache-hit path lupa propagate `X-News-Source`
