@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-06-23 (session 97 — lihat "Changelog Session 97" di bawah untuk detail terbaru)
+> **Last updated:** 2026-06-23 (session 98 — lihat "Changelog Session 98" di bawah untuk detail terbaru)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Financial_Feed_App`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -118,6 +118,20 @@ Financial_Feed_App/
 > **Penting:** `api/feeds.js` menggantikan `api/rss.js` dan `api/cot.js` yang sudah dihapus.
 > `api/admin.js` menggantikan `api/health.js`, `api/redis-keys.js`, `api/admin-prompts.js`, dan `api/push.js`.
 > Konsolidasi ini dilakukan untuk tetap di bawah limit 12 serverless functions Vercel Hobby.
+
+---
+
+## Changelog Session 98 (2026-06-23)
+
+### Bug fix — hasil Sizing Calculator (lots/SL/TP) hilang setelah refresh, padahal sudah dipakai di Checklist/MT5
+
+**Konteks:** User lapor: hitung Sizing Calculator, lanjut ke Checklist, refresh halaman dengan pair yang sama — Lot/SL/TP yang sudah dikunci di modal Entry MT5 (Session 95) hilang total, harus ulang dari Sizing Calculator.
+
+**Root cause:** `window._lastSizing` — objek yang jadi jembatan satu-satunya antara Sizing Calculator dan Checklist/MT5 (`ckShowMt5Modal()` baca dari sini) — cuma variabel in-memory, tidak pernah ditulis ke localStorage. Form INPUT-nya (equity, risk, entry, SL via `szPersistForm()`/`szRestoreForm()`) sudah lama persisten, tapi hasil KALKULASI-nya tidak — asimetri yang bikin form kelihatan "selamat" setelah refresh sementara nilai yang sebenarnya dipakai sistem (lots/SL/TP) hilang diam-diam.
+
+**Fix:** `window._lastSizing` sekarang dipersist ke localStorage (`daun_merah_sz_lastsizing`) tiap kali `calcSizing()` menghasilkan nilai baru (`szPersistLastSizing()`), dan direstore lewat IIFE di top-level script saat halaman dimuat — jadi tersedia segera, tidak menunggu user buka tab Sizing dulu (penting karena skenario user: refresh lalu LANGSUNG balik ke Checklist, tanpa mampir ke Sizing tab). Sekalian diperbaiki gap kedua yang ditemukan saat investigasi: kalau user toh balik ke tab Sizing setelah refresh, panel hasil yang terlihat tetap kosong walau `_lastSizing` sudah benar di balik layar (inkonsistensi tampilan vs data). `initSizing()` sekarang panggil ulang `calcSizing()` otomatis kalau ada `_lastSizing` yang pair-nya cocok dengan form yang baru direstore — sumber tunggal data dijaga konsisten, tidak ada dua objek (form vs hasil) yang bisa drift.
+
+**Testing:** Playwright dengan `browser.newContext()` (localStorage persist antar `page.reload()`, beda dari context baru tiap test sebelumnya). 3 skenario: (1) `_lastSizing` di-set manual lalu reload — terbukti pulih dari localStorage; (2) langsung ke Checklist setelah reload TANPA mampir Sizing tab — modal Entry MT5 langsung terisi lots/SL/TP terkunci, sama seperti sebelum refresh; (3) kalkulasi sungguhan lewat form UI (pilih pair, isi equity/risk/RR/entry/SL, klik Calculate) lalu reload lalu buka tab Sizing — panel hasil muncul kembali otomatis, bukan kosong.
 
 ---
 

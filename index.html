@@ -7911,6 +7911,17 @@ function szGetDeviceId() {
 const SZ_FORM_KEY = 'daun_merah_sz_form';
 let _szRestoring = false;
 
+// window._lastSizing is the bridge Checklist/MT5 read lots+SL+TP from — it was
+// in-memory only, so a refresh wiped it even though the form inputs that
+// produced it were restored from localStorage right below. Persist + restore
+// it the same way so "calculate sizing → go to checklist → refresh" doesn't
+// force a redo.
+const SZ_LASTSIZING_KEY = 'daun_merah_sz_lastsizing';
+try { window._lastSizing = JSON.parse(localStorage.getItem(SZ_LASTSIZING_KEY) || 'null'); } catch(e) { window._lastSizing = null; }
+function szPersistLastSizing() {
+  try { localStorage.setItem(SZ_LASTSIZING_KEY, JSON.stringify(window._lastSizing)); } catch(e) {}
+}
+
 function szPersistForm() {
   if (_szRestoring) return;
   try {
@@ -8047,6 +8058,10 @@ function initSizing() {
     szRestoreForm();
     szUpdatePipInfo();
     fetchSizingRates();
+    // Restore the visible result panel too, not just the in-memory bridge object —
+    // otherwise reopening Sizing Calculator after a refresh shows a blank panel
+    // even though Checklist/MT5 already silently have the lots/SL/TP from it.
+    if (window._lastSizing && sel.value === window._lastSizing.pair) calcSizing();
   }
   if (szHistoryCache !== null) szRenderHistory(szHistoryCache);
   szLoadHistory();
@@ -8246,6 +8261,7 @@ function calcSizing() {
 
   // Store last sizing for journal bridge
   window._lastSizing = { pair, direction: szDir, lots, entry: entry || null, slPrice: slPrice || null, tpPrice: tpPrice || null, stopPips, riskPct, dollarRisk };
+  szPersistLastSizing();
 
   szPersistForm();
   szSaveHistory({ pair, riskPct, lotSize: lots, equity, stopPips, dollarRisk });
