@@ -537,7 +537,7 @@ body {
 .thesis-conf { color:var(--yellow); font-size:13px; margin-left:8px; }
 .thesis-label { font-size:9px; color:var(--muted); font-family:'DM Mono',monospace; letter-spacing:.05em; margin-top:8px; }
 .thesis-val   { font-size:11px; color:var(--text-mid); font-family:'DM Mono',monospace; margin-top:2px; }
-.thesis-use-btn { margin-top:10px; background:none; border:1px solid var(--pink); color:var(--pink); padding:6px 12px; font-family:'DM Mono',monospace; font-size:10px; border-radius:3px; cursor:pointer; letter-spacing:.05em; }
+.thesis-use-btn { margin-top:10px; background:none; border:1px solid var(--accent); color:var(--accent); padding:6px 12px; font-family:'DM Mono',monospace; font-size:10px; border-radius:3px; cursor:pointer; letter-spacing:.05em; }
 .thesis-card.xau::before { background: var(--yellow); }
 
 .ringkasan-stats {
@@ -3881,7 +3881,7 @@ function renderThesisCard(t) {
     ${t.invalidation_condition ? `<div class="thesis-label">INVALIDASI</div><div class="thesis-val">${escHtml(t.invalidation_condition)}</div>` : ''}
     ${t.catalyst_dependency ? `<div class="thesis-label">KATALIS</div><div class="thesis-val">${escHtml(t.catalyst_dependency)}</div>` : ''}
     ${t.time_horizon_days ? `<div class="thesis-label">HORIZON</div><div class="thesis-val">${t.time_horizon_days} hari</div>` : ''}
-    ${t.direction !== 'no_trade' ? `<button class="thesis-use-btn" onclick="thesisGoToSizing()">Mulai ke Sizing Calc →</button>` : ''}
+    ${t.direction !== 'no_trade' ? `<button class="thesis-use-btn" onclick="thesisGoToSizing('${t.pair_recommendation}', '${t.direction}')">Mulai ke Sizing Calc →</button>` : ''}
   </div>`;
 }
 
@@ -3900,6 +3900,7 @@ function renderXauThesisCard(t) {
     ${driverLabel ? `<div class="thesis-label">DRIVER</div><div class="thesis-val">${driverLabel}</div>` : ''}
     ${t.xau_driver_evidence ? `<div class="thesis-label">BUKTI</div><div class="thesis-val">${escHtml(t.xau_driver_evidence)}</div>` : ''}
     ${t.xau_key_trigger ? `<div class="thesis-label">TRIGGER</div><div class="thesis-val">${escHtml(t.xau_key_trigger)}</div>` : ''}
+    ${(t.xau_bias === 'bullish' || t.xau_bias === 'bearish') ? `<button class="thesis-use-btn" onclick="thesisGoToSizing('XAU/USD', '${t.xau_bias === 'bullish' ? 'long' : 'short'}')">Mulai ke Sizing Calc →</button>` : ''}
   </div>`;
 }
 
@@ -3916,19 +3917,18 @@ function renderThesisAlerts(alerts) {
   </div>`;
 }
 
-function thesisGoToSizing() {
-  const t = _lastThesis;
-  if (!t || !t.pair_recommendation) return;
+function thesisGoToSizing(pair, direction) {
+  if (!pair) return;
   switchView('sizing');
   setTimeout(() => {
     const sel = document.getElementById('szPair');
     if (sel) {
       for (const opt of sel.options) {
-        if (opt.value === t.pair_recommendation) { sel.value = t.pair_recommendation; szUpdatePipInfo(); break; }
+        if (opt.value === pair) { sel.value = pair; szUpdatePipInfo(); break; }
       }
     }
-    if (t.direction === 'long' || t.direction === 'short') szSetDir(t.direction);
-    showToast('Thesis AI siap dipakai', `${t.pair_recommendation} ${(t.direction||'').toUpperCase()} — isi stop/entry, lanjut ke Checklist sebelum entry.`);
+    if (direction === 'long' || direction === 'short') szSetDir(direction);
+    showToast('Thesis AI siap dipakai', `${pair} ${(direction||'').toUpperCase()} — isi stop/entry, lanjut ke Checklist sebelum entry.`);
   }, 200);
 }
 

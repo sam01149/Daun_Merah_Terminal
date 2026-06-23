@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-06-23 (session 93 — lihat "Changelog Session 93" di bawah untuk detail terbaru)
+> **Last updated:** 2026-06-23 (session 94 — lihat "Changelog Session 94" di bawah untuk detail terbaru)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Financial_Feed_App`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -118,6 +118,16 @@ Financial_Feed_App/
 > **Penting:** `api/feeds.js` menggantikan `api/rss.js` dan `api/cot.js` yang sudah dihapus.
 > `api/admin.js` menggantikan `api/health.js`, `api/redis-keys.js`, `api/admin-prompts.js`, dan `api/push.js`.
 > Konsolidasi ini dilakukan untuk tetap di bawah limit 12 serverless functions Vercel Hobby.
+
+---
+
+## Changelog Session 94 (2026-06-23)
+
+### Tombol "Mulai ke Sizing Calc" di card Thesis XAU/USD + warna disamakan ke tab Sizing
+
+**Konteks:** Card Thesis XAU/USD (tab RINGKASAN) sebelumnya tidak punya tombol aksi sama sekali (beda dari card Thesis FX yang sudah punya `thesisGoToSizing()` dari session 93). User minta disamakan + warna tombol jangan pink (warna lama yang dipakai sebelum disadari salah) — diganti ke warna yang benar-benar dipakai tab SIZING di nav (`var(--accent)`, merah-maroon brand "Daun Merah" — dikonfirmasi dari CSS `.nvtab[data-view="sizing"] { color: var(--accent); }`, bukan biru yang dipakai drawer icon).
+
+**Implementasi:** `thesisGoToSizing()` di-refactor jadi generik — terima parameter `(pair, direction)` langsung dari pemanggil, bukan baca `_lastThesis` di dalam fungsi (supaya bisa dipakai baik dari card FX maupun XAU yang field-nya beda bentuk: `t.direction` long/short vs `t.xau_bias` bullish/bearish/neutral/conflicting). Tombol baru di `renderXauThesisCard()` cuma muncul kalau `xau_bias` itu `bullish` atau `bearish` (mapped ke long/short) — disembunyikan total kalau `neutral`/`conflicting`, konsisten dengan card FX yang juga sembunyi tombol saat `direction === 'no_trade'`. CSS `.thesis-use-btn` diubah dari `var(--pink)` → `var(--accent)`, berlaku otomatis untuk kedua tombol (FX dan XAU) karena reuse class yang sama.
 
 ---
 
