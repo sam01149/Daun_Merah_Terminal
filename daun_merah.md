@@ -62,6 +62,7 @@ Daun Merah adalah forex news PWA (Progressive Web App) untuk trader forex Indone
 | Backend | Vercel Serverless Functions (Node.js, CommonJS `module.exports`) |
 | AI | **Multi-provider dual-account strategy:** Call 1 prose: SambaNova `DeepSeek-V3.2` (akun 2, primary), OpenRouter `gpt-oss-120b:free` (fallback 2), Groq `qwen3-32b` (fallback 3); Call 2–3 bias+thesis: SambaNova `DeepSeek-V3.2` (akun 1, upgrade dari V3.1); Call 4–6: Groq `llama-3.3-70b-versatile` |
 | Cache/DB | Upstash Redis REST API |
+| Git remote (GitHub) | `https://github.com/sam01149/Daun_Merah_Terminal.git` — **repo dipindah dari `sam01149/Financial_Feed_App` (2026-06-23)**. Push masih jalan ke URL lama via GitHub redirect, tapi `origin` lokal sudah di-update ke URL baru biar nggak bergantung redirect terus-menerus. |
 | RSS sumber berita (NEWS) | FinancialJuice (`https://www.financialjuice.com/feed.ashx?xy=rss`) — satu-satunya sumber untuk AI digest & tab NEWS |
 | Sumber tab ARTIKEL | FED, FOMC, FEDN, ECB, ECBB, BIS, **RBA, BoC, BoJ** (CB primary), **Marc to Market (MTM), ING Think (ING)** (macro research) |
 | Option expiries (tab TEK) | Investinglive `/feed/forexorders/` via rss2json — difilter per-pair, 4h cache |
