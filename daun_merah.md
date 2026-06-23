@@ -170,6 +170,14 @@ Financial_Feed_App/
 
 **Fix:** ubah `PIP_SIZE` XAU/USD dari `0.1` → `0.01` agar konsisten dengan 3 tempat lain.
 
+### Bug fix tambahan — note "buka tab KORELASI" muncul walau cuma 1 posisi open
+
+**Konteks:** User nanya kenapa widget Portfolio Risk minta buka tab KORELASI padahal cuma ada 1 posisi (XAU/USD) — korelasi antar pair logikanya cuma relevan kalau ada 2+ posisi.
+
+**Root cause:** `noCorrNote` di `jnRenderVaR` (baris ~8442) ditampilkan berdasarkan `!corrData` doang, tanpa cek jumlah posisi. Padahal `portfolioVar1d` cuma memanggil `getCorr()`/`corrData` kalau `vi.length > 1` (baris ~8401-8414) — dengan 1 posisi, `portfolioVar1d = vi[0].var1d` langsung, korelasi sama sekali tidak dipakai.
+
+**Fix:** tambah kondisi `varItems.length > 1` ke `noCorrNote` supaya note itu cuma muncul kalau korelasi benar-benar relevan untuk kalkulasi yang sedang ditampilkan.
+
 **Verifikasi:** `node -e` simulasi manual dengan angka kasus user (stop 3000p, 0.02 lots, pip value $1/lot) → hasil `$60.00` setelah fix, sangat dekat dengan target `$66.80` Sizing Calculator (selisih kecil murni dari pembulatan `lots` ke 2 desimal, bukan bug); sebelum fix hasilnya `$6` (cocok dengan `$7` yang dilaporkan user, beda dikit karena rounding stop price). Extract+`new Function()` semua inline `<script>` di `index.html` → tidak ada syntax error. Grep ulang memastikan tidak ada sisa pip-size `0.1` lain untuk XAU/USD di file.
 
 ---

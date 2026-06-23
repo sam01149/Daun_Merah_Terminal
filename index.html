@@ -8439,7 +8439,7 @@ async function jnRenderVaR() {
         : `<div><div style="font-size:8px;color:var(--muted)">DIVERSIFIKASI</div><div style="font-size:12px;color:var(--accent)">↑ konsentrasi</div></div>`)
     : '';
 
-  const noCorrNote = !corrData
+  const noCorrNote = (!corrData && varItems.length > 1)
     ? `<div style="font-size:9px;color:var(--muted);margin-top:4px">* buka tab KORELASI untuk hitung korelasi antar pair</div>`
     : '';
 
