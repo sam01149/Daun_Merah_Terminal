@@ -555,18 +555,31 @@ module.exports = async function handler(req, res) {
     if (!ratesSf.gotLock && ratesSf.fresh) return res.status(200).json({ rates: JSON.parse(ratesSf.fresh).rates, from_cache: true });
 
     try {
-      const symbols = 'EURUSD=X,GBPUSD=X,AUDUSD=X,NZDUSD=X,USDJPY=X,USDCAD=X,USDCHF=X';
-      const r = await fetch(
-        `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${symbols}`,
-        { headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }, signal: AbortSignal.timeout(8000) }
-      );
-      if (!r.ok) throw new Error(`Yahoo HTTP ${r.status}`);
-      const d = await r.json();
+      // v7/finance/quote (batched, single request) increasingly returns 401
+      // without a session crumb/cookie Yahoo now requires for that endpoint.
+      // v8/finance/chart doesn't need one and is already used successfully
+      // elsewhere in this file (ohlcv/ta/atr/daily-snapshot) — costs one
+      // request per symbol instead of one batched call, but works.
+      const symbols = ['EURUSD=X', 'GBPUSD=X', 'AUDUSD=X', 'NZDUSD=X', 'USDJPY=X', 'USDCAD=X', 'USDCHF=X'];
+      const fetchOne = async (sym) => {
+        const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?range=1d&interval=5m`;
+        const r = await fetch(url, {
+          headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36', 'Accept': 'application/json' },
+          signal: AbortSignal.timeout(8000),
+        });
+        if (!r.ok) throw new Error(`Yahoo HTTP ${r.status} for ${sym}`);
+        const json = await r.json();
+        const price = json?.chart?.result?.[0]?.meta?.regularMarketPrice;
+        if (!price) throw new Error(`no price for ${sym}`);
+        return { sym, price };
+      };
+      const settled = await Promise.allSettled(symbols.map(fetchOne));
       const rates = {};
-      (d.quoteResponse?.result || []).forEach(q => {
-        if (q.regularMarketPrice) rates[q.symbol.replace('=X', '')] = q.regularMarketPrice;
+      settled.forEach(s => {
+        if (s.status === 'fulfilled') rates[s.value.sym.replace('=X', '')] = s.value.price;
+        else console.warn('sizing rates:', s.reason?.message);
       });
-      if (Object.keys(rates).length === 0) throw new Error('Yahoo returned no rates');
+      if (Object.keys(rates).length === 0) throw new Error('Yahoo v8 chart returned no rates');
       const payload = { rates, fetched_at: new Date().toISOString() };
       await redisCmd('SET', RATES_KEY, JSON.stringify(payload), 'EX', RATES_TTL);
       if (ratesSf.gotLock) ratesSf.release();
