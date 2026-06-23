@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-06-23 (session 94 — lihat "Changelog Session 94" di bawah untuk detail terbaru)
+> **Last updated:** 2026-06-23 (session 95 — lihat "Changelog Session 95" di bawah untuk detail terbaru)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Financial_Feed_App`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -118,6 +118,29 @@ Financial_Feed_App/
 > **Penting:** `api/feeds.js` menggantikan `api/rss.js` dan `api/cot.js` yang sudah dihapus.
 > `api/admin.js` menggantikan `api/health.js`, `api/redis-keys.js`, `api/admin-prompts.js`, dan `api/push.js`.
 > Konsolidasi ini dilakukan untuk tetap di bawah limit 12 serverless functions Vercel Hobby.
+
+---
+
+## Changelog Session 95 (2026-06-23)
+
+### Lock Lot/SL/TP di modal Entry MT5 ke hasil Sizing Calculator — tutup celah entry emosional
+
+**Konteks:** Diskusi disiplin trading dengan user — checklist di-audit untuk cari celah dimana entry bisa lolos berdasarkan emosi walau user berniat jujur ke diri sendiri (sistem harus tegas, bukan cuma andalkan niat baik). User sendiri menyadari titik paling rawan: field Lot/Stop Loss/Take Profit di modal "Entry MT5" sebelumnya bisa diedit manual di menit terakhir — sama bahayanya dengan langsung input manual di MT5, karena angka eksekusi bisa berubah dari rencana objektif (hasil Sizing Calculator) jadi tebakan saat itu.
+
+**Implementasi (`index.html`):**
+- Modal `mt5Modal`: field Lot Size/Stop Loss/Take Profit sekarang `readonly` + label 🔒 "dari Sizing Calculator". Ditambah div `mt5ModalNoSizing` (tersembunyi default) yang muncul kalau `window._lastSizing` belum ada / tidak cocok pair, dengan CTA "Buka Sizing Calculator →".
+- `ckShowMt5Modal()`: `matchSz` sekarang mensyaratkan `lots`, `slPrice`, DAN `tpPrice` ada (bukan fallback ke `0.01`/kosong seperti sebelumnya). Kalau tidak match → field/section dan tombol "Konfirmasi Entry" disembunyikan, hanya warning + CTA yang tampil. Kalau match → field terisi read-only persis dari hasil Sizing Calculator.
+- `ckGoToSizingFromModal()` (baru): tutup modal MT5, pindah ke tab Sizing, auto-set `szPair` ke pair yang sama, toast pengingat "isi entry/stop lalu balik ke checklist".
+- `ckMt5OrderConfirm()`: guard tambahan — kalau `lots` tetap 0 (longgar terlewat lewat console/edge case), tolak submit dengan toast, bukan diam-diam kirim order.
+- Fix kecil terkait (ditemukan saat audit, bukan permintaan langsung tapi searah): `ckShowMt5Modal()` sebelumnya `return` diam-diam kalau skor checklist <50% (user klik tombol, tidak ada respons apa pun). Ditambah toast `"Checklist belum cukup — Skor masih X%"` supaya gate-nya terasa tegas, bukan tombol yang kelihatan mati.
+
+**Testing:** Playwright headless terhadap `index.html` yang disajikan statis (server backend tidak dijalankan, expected 404 di API calls — tidak relevan ke logic yang diuji). 3 skenario diverifikasi lewat manipulasi state langsung (`window._lastSizing`, `ckState`) lalu screenshot:
+1. Checklist 100%, tanpa data sizing → modal terbuka tapi cuma tampilkan warning + tombol redirect, field & tombol konfirmasi tersembunyi.
+2. Checklist 100%, sizing diisi (`lots:0.25, sl:1.23000, tp:1.24500`) → field lot/SL/TP terkunci read-only, nilainya persis sama dengan sizing, tombol konfirmasi muncul.
+3. Checklist skor 0% → modal tidak terbuka sama sekali (toast tampil, sudah dicek lewat behavior, tidak discreenshot ulang).
+Tombol redirect diverifikasi membuka tab Sizing dengan pair ter-prefill otomatis.
+
+**Catatan:** celah lain dari audit checklist (gate section tidak wajib 100%, reset tanpa cooldown, ganti playbook = reset state, override reason tanpa validasi isi) belum disentuh — user pilih fokus ke satu celah ini dulu (lot/SL/TP) karena itu yang paling kena ke pola emosinya secara langsung. Sisanya didokumentasikan ke user sebagai opsi lanjutan, menunggu keputusan mana yang mau dikerjakan berikutnya.
 
 ---
 

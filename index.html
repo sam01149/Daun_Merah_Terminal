@@ -2889,7 +2889,11 @@ body {
       Pair: <span id="mt5ModalPair" style="color:var(--text);font-weight:700;font-family:'DM Mono',monospace"></span>
       &nbsp;·&nbsp; Market Order
     </div>
-    <div style="display:grid;gap:10px">
+    <div id="mt5ModalNoSizing" style="display:none;padding:12px 10px;background:rgba(192,57,43,.08);border:1px solid rgba(192,57,43,.25);border-radius:8px;font-size:10px;color:var(--text);line-height:1.6;margin-bottom:12px">
+      ⚠ Belum ada hasil Sizing Calculator untuk pair ini. Lot/SL/TP tidak boleh diisi manual di sini — hitung dulu di Sizing Calculator agar angkanya objektif, bukan tebakan saat itu.
+      <button onclick="ckGoToSizingFromModal()" style="width:100%;margin-top:10px;padding:9px;background:var(--green);color:#000;border:none;border-radius:6px;font-weight:700;font-size:10px;letter-spacing:.6px;text-transform:uppercase;cursor:pointer">Buka Sizing Calculator →</button>
+    </div>
+    <div id="mt5ModalFields" style="display:grid;gap:10px">
       <div>
         <div style="font-size:9px;color:var(--muted);letter-spacing:.8px;text-transform:uppercase;margin-bottom:5px">Direction</div>
         <select id="mt5ModalDir" style="width:100%;background:var(--bg);color:var(--text);border:1px solid var(--border);padding:8px 10px;border-radius:6px;font-family:'DM Mono',monospace;font-size:12px;box-sizing:border-box">
@@ -2898,17 +2902,17 @@ body {
         </select>
       </div>
       <div>
-        <div style="font-size:9px;color:var(--muted);letter-spacing:.8px;text-transform:uppercase;margin-bottom:5px">Lot Size</div>
-        <input id="mt5ModalLots" type="number" step="0.01" min="0.01" value="0.01" style="width:100%;background:var(--bg);color:var(--text);border:1px solid var(--border);padding:8px 10px;border-radius:6px;font-family:'DM Mono',monospace;font-size:12px;box-sizing:border-box">
+        <div style="font-size:9px;color:var(--muted);letter-spacing:.8px;text-transform:uppercase;margin-bottom:5px">Lot Size <span style="color:var(--green)">🔒 dari Sizing Calculator</span></div>
+        <input id="mt5ModalLots" type="number" step="0.01" min="0.01" value="0.01" readonly style="width:100%;background:var(--bg);color:var(--text);border:1px solid var(--border);padding:8px 10px;border-radius:6px;font-family:'DM Mono',monospace;font-size:12px;box-sizing:border-box;opacity:.75;cursor:not-allowed">
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
         <div>
-          <div style="font-size:9px;color:var(--muted);letter-spacing:.8px;text-transform:uppercase;margin-bottom:5px">Stop Loss</div>
-          <input id="mt5ModalSL" type="number" step="0.00001" placeholder="0 = tanpa SL" style="width:100%;background:var(--bg);color:var(--text);border:1px solid var(--border);padding:8px 10px;border-radius:6px;font-family:'DM Mono',monospace;font-size:11px;box-sizing:border-box">
+          <div style="font-size:9px;color:var(--muted);letter-spacing:.8px;text-transform:uppercase;margin-bottom:5px">Stop Loss 🔒</div>
+          <input id="mt5ModalSL" type="number" step="0.00001" placeholder="0 = tanpa SL" readonly style="width:100%;background:var(--bg);color:var(--text);border:1px solid var(--border);padding:8px 10px;border-radius:6px;font-family:'DM Mono',monospace;font-size:11px;box-sizing:border-box;opacity:.75;cursor:not-allowed">
         </div>
         <div>
-          <div style="font-size:9px;color:var(--muted);letter-spacing:.8px;text-transform:uppercase;margin-bottom:5px">Take Profit</div>
-          <input id="mt5ModalTP" type="number" step="0.00001" placeholder="0 = tanpa TP" style="width:100%;background:var(--bg);color:var(--text);border:1px solid var(--border);padding:8px 10px;border-radius:6px;font-family:'DM Mono',monospace;font-size:11px;box-sizing:border-box">
+          <div style="font-size:9px;color:var(--muted);letter-spacing:.8px;text-transform:uppercase;margin-bottom:5px">Take Profit 🔒</div>
+          <input id="mt5ModalTP" type="number" step="0.00001" placeholder="0 = tanpa TP" readonly style="width:100%;background:var(--bg);color:var(--text);border:1px solid var(--border);padding:8px 10px;border-radius:6px;font-family:'DM Mono',monospace;font-size:11px;box-sizing:border-box;opacity:.75;cursor:not-allowed">
         </div>
       </div>
     </div>
@@ -7114,7 +7118,7 @@ const MT5_BRIDGE = 'http://localhost:5000';
 
 function ckShowMt5Modal() {
   const { pct } = ckGetVerdict();
-  if (pct < 50) return;
+  if (pct < 50) { showToast('Checklist belum cukup', `Skor checklist masih ${pct}% — minimal 50% sebelum entry MT5 dibuka.`, 4000); return; }
   const pair = document.getElementById('ckPairSelector').value;
   if (!pair) { showToast('Pilih Pair', 'Pilih pair terlebih dahulu di checklist', 3000); return; }
 
@@ -7134,14 +7138,18 @@ function ckShowMt5Modal() {
     direction = _lastThesis.direction;
   }
 
-  // Pre-fill dari sizing jika tersedia
+  // Lot/SL/TP dikunci ke hasil Sizing Calculator — tidak boleh diisi manual di modal ini,
+  // supaya angka eksekusi tetap objektif walau lagi terburu-buru/emosi.
   const sz = window._lastSizing;
-  const matchSz = sz && sz.pair === pair;
+  const matchSz = sz && sz.pair === pair && sz.lots && sz.slPrice && sz.tpPrice;
   document.getElementById('mt5ModalPair').textContent  = pair;
   document.getElementById('mt5ModalDir').value         = direction;
-  document.getElementById('mt5ModalLots').value        = matchSz && sz.lots ? sz.lots : 0.01;
-  document.getElementById('mt5ModalSL').value          = matchSz && sz.slPrice ? sz.slPrice.toFixed(5) : '';
-  document.getElementById('mt5ModalTP').value          = matchSz && sz.tpPrice ? sz.tpPrice.toFixed(5) : '';
+  document.getElementById('mt5ModalNoSizing').style.display = matchSz ? 'none' : 'block';
+  document.getElementById('mt5ModalFields').style.display   = matchSz ? 'grid' : 'none';
+  document.getElementById('mt5ModalConfirmBtn').style.display = matchSz ? 'block' : 'none';
+  document.getElementById('mt5ModalLots').value        = matchSz ? sz.lots : '';
+  document.getElementById('mt5ModalSL').value          = matchSz ? sz.slPrice.toFixed(5) : '';
+  document.getElementById('mt5ModalTP').value          = matchSz ? sz.tpPrice.toFixed(5) : '';
   document.getElementById('mt5ModalStatus').textContent = '';
 
   // Cek bridge online
@@ -7163,12 +7171,28 @@ function ckCloseMt5Modal() {
   document.getElementById('mt5Modal').style.display = 'none';
 }
 
+function ckGoToSizingFromModal() {
+  const pair = document.getElementById('mt5ModalPair').textContent.trim();
+  ckCloseMt5Modal();
+  switchView('sizing');
+  setTimeout(() => {
+    const sel = document.getElementById('szPair');
+    if (sel) {
+      for (const opt of sel.options) {
+        if (opt.value === pair) { sel.value = pair; szUpdatePipInfo(); break; }
+      }
+    }
+    showToast('Hitung Sizing Dulu', `Isi entry/stop untuk ${pair}, lalu balik ke checklist untuk entry.`, 4000);
+  }, 200);
+}
+
 async function ckMt5OrderConfirm() {
   const pair      = document.getElementById('mt5ModalPair').textContent.trim();
   const direction = document.getElementById('mt5ModalDir').value;
-  const lots      = parseFloat(document.getElementById('mt5ModalLots').value) || 0.01;
+  const lots      = parseFloat(document.getElementById('mt5ModalLots').value) || 0;
   const sl        = parseFloat(document.getElementById('mt5ModalSL').value) || 0;
   const tp        = parseFloat(document.getElementById('mt5ModalTP').value) || 0;
+  if (!lots) { showToast('Sizing Belum Ada', 'Lot belum terkunci dari Sizing Calculator — buka kalkulator dulu.', 4000); return; }
 
   const btn = document.getElementById('mt5ModalConfirmBtn');
   btn.textContent = 'Mengirim order...';
