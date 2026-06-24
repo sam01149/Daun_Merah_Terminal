@@ -1163,16 +1163,19 @@ body {
 .cal-data-val.no-data       { color: var(--muted); font-size: 9px; }
 
 .cal-ff-link {
-  display: flex; align-items: center; justify-content: center; gap: 6px;
-  margin: 6px 12px 10px;
-  padding: 7px 10px;
-  background: var(--yellow); color: #1a1a1a;
-  font-family: 'DM Mono', monospace; font-size: 10px; font-weight: 700;
-  letter-spacing: .03em; text-decoration: none; text-align: center;
-  border-radius: 4px; transition: background .15s, transform .1s;
+  display: flex; align-items: center; justify-content: center; gap: 5px;
+  width: fit-content;
+  margin: 4px auto 10px;
+  padding: 5px 12px;
+  background: rgba(255,255,255,.04);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--muted);
+  font-family: 'DM Mono', monospace; font-size: 9px; font-weight: 600;
+  letter-spacing: .03em; text-decoration: none; text-align: center; white-space: nowrap;
+  transition: background .15s, color .15s, border-color .15s;
 }
-.cal-ff-link:hover  { background: #f39c4d; }
-.cal-ff-link:active { transform: scale(.98); }
+.cal-ff-link:hover { background: rgba(56,189,248,.08); border-color: rgba(56,189,248,.4); color: #38bdf8; }
 
 /* CURRENCY LEGEND */
 .cal-legend {
@@ -5626,14 +5629,22 @@ function setCalFilter(f) {
   renderCalendar();
 }
 
-function compareActualForecast(actual, forecast) {
+// Indicators where a LOWER actual is the "good" outcome, so the usual
+// "higher wins" rule has to flip. Deliberately does NOT include trade/budget
+// balance-type indicators — those already work correctly under the normal
+// rule because a smaller deficit is reported as a LESS NEGATIVE (i.e. higher)
+// number, not a literal magnitude.
+const CAL_INVERSE_INDICATOR_RE = /unemploy|claims|job cuts|inventories|bankrupt|delinquenc|default/i;
+
+function compareActualForecast(actual, forecast, eventTitle) {
   if (!actual || !forecast) return '';
   const a = parseFloat(actual.replace(/[^0-9.\-]/g,''));
   const f = parseFloat(forecast.replace(/[^0-9.\-]/g,''));
   if (isNaN(a) || isNaN(f)) return '';
-  if (a > f) return 'actual-beat';
-  if (a < f) return 'actual-miss';
-  return 'actual-inline';
+  if (a === f) return 'actual-inline';
+  const isInverse = CAL_INVERSE_INDICATOR_RE.test(eventTitle || '');
+  const beat = isInverse ? a < f : a > f;
+  return beat ? 'actual-beat' : 'actual-miss';
 }
 
 const CUR_COLORS = {
@@ -5688,7 +5699,7 @@ function renderCalendar() {
     const rows = events.map(ev => {
       const impactClass = ev.impact === 'High' ? 'high' : 'medium';
       const hasData = ev.forecast || ev.previous || ev.actual;
-      const actualClass = compareActualForecast(ev.actual, ev.forecast);
+      const actualClass = compareActualForecast(ev.actual, ev.forecast, ev.event);
       const evId = (ev.date + '_' + ev.currency + '_' + ev.event).replace(/\W/g, '_');
 
       const dataRow = hasData ? `
@@ -5744,7 +5755,7 @@ function renderCalendar() {
             </div>
           </div>
           ${dataRow}
-          ${ev.url ? `<a class="cal-ff-link" href="${escHtml(ev.url)}" target="_blank" rel="noopener noreferrer">Lihat selengkapnya di ForexFactory ↗</a>` : ''}
+          ${ev.url ? `<a class="cal-ff-link" href="${escHtml(ev.url)}" target="_blank" rel="noopener noreferrer">Lihat selengkapnya ↗</a>` : ''}
         </div>
         ${scenarioPanel}`
       ;
@@ -6025,6 +6036,48 @@ function _calParseStructuredActual(title) {
   return { name: m[1].trim(), actual: m[2].trim(), forecast: m[3].trim(), previous: m[4].trim() };
 }
 
+// Country-name tokens that show up in FinancialJuice headlines ("Australian
+// CPI y/y...") but never in ForexFactory's calendar event titles ("CPI y/y")
+// — stripped before comparing so they don't count as a mismatch.
+const _CAL_COUNTRY_WORDS = new Set([
+  'us','u','s','american','usa','eurozone','euro','european','europe',
+  'british','britain','uk','japanese','japan','canadian','canada',
+  'australian','australia','swiss','switzerland','new','zealand',
+]);
+const _CAL_STOPWORDS = new Set([
+  'rate','data','with','from','that','this','bank','press','conference',
+  'statement','decision','the','of','and','for',
+]);
+
+// Normalizes a title into a comparable word set. Critically, "m/m"/"y/y"/"q/q"
+// are converted to mm/yy/qq BEFORE punctuation is stripped — previously they
+// were discarded entirely, which let "CPI m/m", "CPI y/y", and "Trimmed Mean
+// CPI m/m" (three different indicators releasing in the same window) all
+// match the same headline and silently inherit the same wrong actual value.
+function _calWordSet(title) {
+  const norm = (title || '').toLowerCase()
+    .replace(/\bm\/m\b/g, ' mm ')
+    .replace(/\by\/y\b/g, ' yy ')
+    .replace(/\bq\/q\b/g, ' qq ')
+    .replace(/[^a-z\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const words = norm.split(' ').filter(w =>
+    w.length >= 2 && !_CAL_STOPWORDS.has(w) && !_CAL_COUNTRY_WORDS.has(w));
+  return new Set(words);
+}
+
+// Exact set equality (not "contains some") — a calendar event only adopts a
+// headline's actual value if the indicator names line up word-for-word once
+// country names/stopwords are stripped. This deliberately sacrifices recall
+// (some legitimate matches with different wording won't be caught) in favor
+// of never assigning one indicator's number to a different indicator.
+function _calWordSetsMatch(setA, setB) {
+  if (setA.size === 0 || setB.size === 0 || setA.size !== setB.size) return false;
+  for (const w of setA) if (!setB.has(w)) return false;
+  return true;
+}
+
 function _calExtractActual(title) {
   // "at X.XX%" or "to X.XX%" — most reliable for rate decisions
   let m = title.match(/\b(?:at|to)\s+([+-]?\d+\.?\d*%(?:\s*[-–]\s*\d+\.?\d*%)?)/i);
@@ -6069,10 +6122,7 @@ function enrichCalActuals() {
     // Only past events within AFTER_MS window
     if (evMs > nowMs || (nowMs - evMs) > AFTER_MS) return;
 
-    // Significant words from event title for headline matching
-    const evWords = ev.event.toLowerCase()
-      .replace(/[^a-z\s]/g, ' ').split(/\s+/)
-      .filter(w => w.length > 3 && !['rate','data','with','from','that','this','bank','press','conference','statement','decision'].includes(w));
+    const evWordSet = _calWordSet(ev.event);
 
     for (const item of allItems) {
       const itemMs = item.pubDate ? new Date(item.pubDate).getTime() : 0;
@@ -6082,15 +6132,29 @@ function enrichCalActuals() {
       const titleRaw = item.title || '';
       const hl = titleRaw.toLowerCase();
       if (!_calMatchesCur(hl, ev.currency)) continue;
-      if (evWords.length > 0 && !evWords.some(w => hl.includes(w))) continue;
 
       // Prefer FinancialJuice's labeled "Actual X (Forecast Y, Previous Z)"
-      // value when present — only fall back to the loose text-scan guess for
-      // headlines without that structure (e.g. prose-style rate statements).
+      // headlines — match the indicator name word-for-word (e.g. "Revised
+      // UoM Consumer Sentiment" only matches a calendar event that also says
+      // "Revised...", never the plain "UoM Consumer Sentiment" or "Revised
+      // UoM Inflation Expectations" entries releasing in the same window).
       const structured = _calParseStructuredActual(titleRaw);
-      const val = (structured && structured.actual && structured.actual !== '-')
-        ? structured.actual
-        : _calExtractActual(titleRaw);
+      if (structured) {
+        if (!_calWordSetsMatch(evWordSet, _calWordSet(structured.name))) continue;
+        if (structured.actual && structured.actual !== '-') {
+          ev.actual = structured.actual;
+          changed = true;
+          break;
+        }
+        continue;
+      }
+
+      // Non-structured prose headline (e.g. "BOE holds rate at 4.25%") — no
+      // labeled indicator name to compare exactly, so fall back to the
+      // looser "at least one significant word in common" heuristic.
+      const evWords = [...evWordSet];
+      if (evWords.length > 0 && !evWords.some(w => hl.includes(w))) continue;
+      const val = _calExtractActual(titleRaw);
       if (val) {
         ev.actual = val;
         changed = true;
