@@ -2645,7 +2645,7 @@ body {
   <div class="tek-header">
     <div class="tek-pair-combo" id="tekPairCombo">
       <button type="button" class="tek-pair-trigger" id="tekPairTrigger" onclick="toggleTekPairDropdown(event)">
-        <span id="tekPairTriggerLabel">EUR/USD</span>
+        <span id="tekPairTriggerLabel">XAU/USD</span>
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
       </button>
       <div class="tek-pair-dropdown" id="tekPairDropdown">
@@ -9281,7 +9281,7 @@ TEK_ALL_PAIRS.forEach(p => { TEK_TV_SYM[p] = p === 'XAUUSD' ? 'FOREXCOM:XAUUSD' 
 
 function tekPairLabel(p) { return p.slice(0, 3) + '/' + p.slice(3); }
 
-let tekPair = 'EURUSD';
+let tekPair = 'XAUUSD';
 let tekTF = '240';
 let tekNotes = {};
 let tvScriptLoaded = false;
