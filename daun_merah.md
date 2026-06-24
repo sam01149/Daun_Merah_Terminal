@@ -121,6 +121,25 @@ Financial_Feed_App/
 
 ---
 
+## Changelog Session 99 (2026-06-24)
+
+### Feat: Option Expiries — Tambah sumber kedua (FinancialJuice), merge dengan Investinglive
+
+**Konteks:** User kasih tahu FX option expiry ternyata juga diposting FinancialJuice (bukan cuma Investinglive yang sudah dipakai sejak Session 66/67), berupa headline harian "[Day] FX Options Expiries" di feed berita FinancialJuice yang sama dengan yang dipakai untuk RSS ticker (`RSS_URL`), formatnya `<li><strong>PAIR:</strong> level (size), level (size)</li>` per pair.
+
+**Implementasi (`api/feeds.js`):**
+- `optionsHandler` sekarang fetch Investinglive (`fetchInvestingLiveOptions`) dan FinancialJuice (`fetchFinancialJuiceOptions`) paralel via `Promise.allSettled` — kalau satu sumber down/diblokir, yang lain tetap jalan (tidak hard-fail, konsisten dengan pola degradasi sumber lain di file ini).
+- `fetchFinancialJuiceOptions` cari item RSS dengan title match `/options?\s*expir/i` (longgar untuk nangkep "Option Expiries" singular dan "Options Expiries" plural FinancialJuice), ambil `<description>`, decode HTML entities, lalu reuse `parseOptionExpiries` yang sudah ada.
+- Regex size di `parseExpiryEntries` diperluas: sebelumnya cuma terima prefix simbol mata uang (`€$¥£`), sekarang juga terima kode 2-4 huruf (`EU`, `AUD`, `GBP`, `NZD`, `MXN`...) — format yang dipakai FinancialJuice (`EU2.51b`, `AUD688.9m`) beda dari Investinglive yang pakai simbol.
+- Hasil dari kedua sumber digabung lalu di-dedupe (`dedupeExpiries`) per `pair+level` — kalau dua sumber sama-sama lapor level yang sama, jadi satu entry dengan `sources: [...]` (menandakan dikonfirmasi 2 sumber) dan size diisi dari sumber mana pun yang punya data.
+- Response sekarang punya field `sources` di top-level: `[{name, link, date}, ...]` — satu per sumber yang berhasil fetch.
+
+**Frontend (`index.html`):** Tabel Option Expiries di TEK tab dapat kolom "Sumber" (muncul cuma kalau ada entry yang dikonfirmasi >1 sumber — abbreviation IL/FJ dengan tooltip nama lengkap), dan footer link sumber sekarang nampilin link ke kedua sumber yang berhasil fetch (bukan cuma Investinglive seperti sebelumnya).
+
+**Testing:** Diverifikasi end-to-end pakai data live FinancialJuice RSS (capture asli "Wednesday FX Options Expiries" dengan 9 pasangan: EUR/USD, USD/JPY, AUD/USD, USD/CNY, GBP/USD, USD/BRL, NZD/USD, EUR/GBP, USD/MXN — total 23 level) — semua level+size terparse benar termasuk format `EU2.51b`/`AUD688.9m` yang sebelumnya tidak match. Dites juga skenario merge (2 sumber lapor level sama → 1 entry dengan 2 sources), filter per-pair, dan graceful degradation (1 sumber down → tetap return 200 dengan sumber yang hidup).
+
+---
+
 ## Changelog Session 98 (2026-06-23)
 
 ### Bug fix — hasil Sizing Calculator (lots/SL/TP) hilang setelah refresh, padahal sudah dipakai di Checklist/MT5

@@ -185,6 +185,7 @@ body {
 .tek-opts-table td { padding:5px 4px; border-bottom:1px solid rgba(255,255,255,.03); vertical-align:middle; }
 .tek-opts-level { font-weight:700; color:#38bdf8; }
 .tek-opts-size  { color:var(--yellow); }
+.tek-opts-src   { color:var(--green); font-size:9px; letter-spacing:.04em; cursor:help; }
 .tek-opts-link  { font-size:9px; color:var(--muted); text-decoration:none; }
 .tek-opts-link:hover { color:#38bdf8; }
 
@@ -9754,15 +9755,20 @@ function renderTekOptions() {
     return;
   }
 
-  const hasSizes = filtered.some(e => e.size && e.size.trim());
+  const hasSizes  = filtered.some(e => e.size && e.size.trim());
+  const SRC_ABBR  = { 'Investinglive': 'IL', 'FinancialJuice': 'FJ' };
+  const hasMulti  = filtered.some(e => (e.sources || []).length > 1);
   let html = renderOptionGravityHeatmap(filtered);
-  html += `<table class="tek-opts-table"><thead><tr><th>Level</th>${hasSizes ? '<th>Size</th>' : ''}</tr></thead><tbody>`;
+  html += `<table class="tek-opts-table"><thead><tr><th>Level</th>${hasSizes ? '<th>Size</th>' : ''}${hasMulti ? '<th>Sumber</th>' : ''}</tr></thead><tbody>`;
   for (const e of filtered) {
-    html += `<tr><td class="tek-opts-level">${escHtml(e.level)}</td>${hasSizes ? `<td class="tek-opts-size">${escHtml(e.size)}</td>` : ''}</tr>`;
+    const srcLabel = (e.sources || []).map(s => SRC_ABBR[s] || s).join('+');
+    html += `<tr><td class="tek-opts-level">${escHtml(e.level)}</td>${hasSizes ? `<td class="tek-opts-size">${escHtml(e.size || '')}</td>` : ''}${hasMulti ? `<td class="tek-opts-src" title="${escHtml((e.sources || []).join(' + '))}">${escHtml(srcLabel)}</td>` : ''}</tr>`;
   }
   html += '</tbody></table>';
-  if (filtered[0]?.link) {
-    html += `<div style="text-align:right;margin-top:4px"><a href="${escHtml(filtered[0].link)}" target="_blank" rel="noopener noreferrer" class="tek-opts-link">sumber: Investinglive ↗</a></div>`;
+  const srcLinks = (data.sources || []).filter(s => s.link);
+  if (srcLinks.length > 0) {
+    const linksHtml = srcLinks.map(s => `<a href="${escHtml(s.link)}" target="_blank" rel="noopener noreferrer" class="tek-opts-link">${escHtml(s.name)} ↗</a>`).join(' · ');
+    html += `<div style="text-align:right;margin-top:4px">sumber: ${linksHtml}</div>`;
   }
   body.innerHTML = html;
 }

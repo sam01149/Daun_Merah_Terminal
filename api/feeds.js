@@ -2,7 +2,7 @@
 // GET /api/feeds?type=rss            → FinancialJuice RSS XML (50s cache)
 // GET /api/feeds?type=cot            → CFTC COT JSON (6h cache)
 // GET /api/feeds?type=research       → CB speeches/publications + macro research JSON (6h cache)
-// GET /api/feeds?type=options        → Investinglive FX option expiries JSON (4h cache)
+// GET /api/feeds?type=options        → FX option expiries JSON, merged from Investinglive + FinancialJuice (4h cache)
 // GET /api/feeds?type=aftek&pair=EUR/USD → ActionForex per-pair technical outlook (4h cache)
 // GET /api/feeds?type=retail         → ForexBenchmark retail positioning JSON (2h cache)
 
@@ -594,9 +594,10 @@ function parseCBRSSItems(xml, sourceKey) {
   return items.slice(0, 20);
 }
 
-// ── FX Option Expiries handler (Forexlive) ────────────────────────────────────
+// ── FX Option Expiries handler (Investinglive + FinancialJuice) ───────────────
 // GET /api/feeds?type=options[&pair=EURUSD]
-// Scrapes Forexlive daily FX option expiries page and parses per-pair data
+// Merges two independent daily FX option-expiry sources: Investinglive's
+// forexorders RSS feed and FinancialJuice's "[Day] FX Options Expiries" headline.
 
 const OPTIONS_CACHE_KEY    = 'fx_options_cache';
 const OPTIONS_CACHE_TTL_MS = 4 * 60 * 60 * 1000; // 4h — data published once daily
@@ -631,55 +632,140 @@ async function optionsHandler(req, res) {
         const obj = JSON.parse(cached);
         if (Date.now() - new Date(obj.fetched_at).getTime() < OPTIONS_CACHE_TTL_MS) {
           const out = pairFilter ? filterByPair(obj.expiries, pairFilter) : obj.expiries;
-          return res.json({ expiries: out, fetched_at: obj.fetched_at, date: obj.date, source: 'cache' });
+          return res.json({ expiries: out, fetched_at: obj.fetched_at, date: obj.date, sources: obj.sources, source: 'cache' });
         }
       }
     } catch(e) {}
   }
 
-  // Forexlive moved to investinglive.com — dedicated forexorders feed
-  const FL_RSS_URL = 'https://api.rss2json.com/v1/api.json?rss_url=https%3A%2F%2Finvestinglive.com%2Ffeed%2Fforexorders%2F';
+  // Two independent sources, fetched in parallel — neither depends on the other,
+  // and if one is down/blocked the other still gives usable data instead of a
+  // hard failure (this is why we don't bail early on the first rejection).
+  const [ilResult, fjResult] = await Promise.allSettled([
+    fetchInvestingLiveOptions(),
+    fetchFinancialJuiceOptions(),
+  ]);
 
-  let rawText = '';
-  let postDate = '';
-  let postLink = '';
+  let expiries = [];
+  const sources = [];
+  let latestDate = '';
 
-  try {
-    const r = await fetch(FL_RSS_URL, {
-      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
-      signal: AbortSignal.timeout(10000),
-    });
-    if (!r.ok) throw new Error('rss2json HTTP ' + r.status);
-    const json = await r.json();
-    if (json.status !== 'ok' || !json.items?.length) throw new Error('rss2json returned no items');
+  if (ilResult.status === 'fulfilled') {
+    expiries = expiries.concat(ilResult.value.expiries);
+    sources.push({ name: 'Investinglive', link: ilResult.value.link, date: ilResult.value.date });
+    if (ilResult.value.date) latestDate = ilResult.value.date;
+  } else {
+    console.warn('InvestingLive options fetch failed:', ilResult.reason?.message);
+  }
 
-    // Dedicated forexorders feed — take the most recent option expiry post
-    const expiryPost = json.items.find(it => /option.expir/i.test(it.title));
-    if (!expiryPost) throw new Error('No option expiry post found in feed');
+  if (fjResult.status === 'fulfilled') {
+    expiries = expiries.concat(fjResult.value.expiries);
+    sources.push({ name: 'FinancialJuice', link: fjResult.value.link, date: fjResult.value.date });
+    if (fjResult.value.date && !latestDate) latestDate = fjResult.value.date;
+  } else {
+    console.warn('FinancialJuice options fetch failed:', fjResult.reason?.message);
+  }
 
-    rawText  = expiryPost.content || expiryPost.description || '';
-    postDate = expiryPost.pubDate || '';
-    postLink = expiryPost.link || '';
-  } catch(e) {
-    console.warn('InvestingLive options fetch failed:', e.message);
-    // Return stale if available
+  if (sources.length === 0) {
+    // Both sources down — fall back to stale cache rather than a hard error
     try {
       const stale = await redisCmd('GET', OPTIONS_CACHE_KEY);
       if (stale) {
         const obj = JSON.parse(stale);
         const out = pairFilter ? filterByPair(obj.expiries, pairFilter) : obj.expiries;
-        return res.json({ expiries: out, fetched_at: obj.fetched_at, date: obj.date, stale: true });
+        return res.json({ expiries: out, fetched_at: obj.fetched_at, date: obj.date, sources: obj.sources, stale: true });
       }
     } catch(e2) {}
-    return res.status(502).json({ error: 'Forexlive option expiries unavailable: ' + e.message });
+    return res.status(502).json({ error: 'Option expiries unavailable: both Investinglive and FinancialJuice failed' });
   }
 
-  const expiries = parseOptionExpiries(rawText, postLink);
-  const payload  = { expiries, fetched_at: new Date().toISOString(), date: postDate };
+  expiries = dedupeExpiries(expiries);
+
+  const payload = { expiries, fetched_at: new Date().toISOString(), date: latestDate, sources };
   redisCmd('SET', OPTIONS_CACHE_KEY, JSON.stringify(payload), 'EX', 14400).catch(() => {});
 
   const out = pairFilter ? filterByPair(expiries, pairFilter) : expiries;
-  return res.json({ expiries: out, fetched_at: payload.fetched_at, date: postDate });
+  return res.json({ expiries: out, fetched_at: payload.fetched_at, date: latestDate, sources });
+}
+
+// Forexlive moved to investinglive.com — dedicated forexorders feed
+async function fetchInvestingLiveOptions() {
+  const FL_RSS_URL = 'https://api.rss2json.com/v1/api.json?rss_url=https%3A%2F%2Finvestinglive.com%2Ffeed%2Fforexorders%2F';
+
+  const r = await fetch(FL_RSS_URL, {
+    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+    signal: AbortSignal.timeout(10000),
+  });
+  if (!r.ok) throw new Error('rss2json HTTP ' + r.status);
+  const json = await r.json();
+  if (json.status !== 'ok' || !json.items?.length) throw new Error('rss2json returned no items');
+
+  const expiryPost = json.items.find(it => /options?\s*expir/i.test(it.title));
+  if (!expiryPost) throw new Error('No option expiry post found in feed');
+
+  const rawText  = expiryPost.content || expiryPost.description || '';
+  const postDate = expiryPost.pubDate || '';
+  const postLink = expiryPost.link || '';
+
+  const expiries = parseOptionExpiries(rawText, postLink).map(e => ({ ...e, source: 'Investinglive' }));
+  if (expiries.length === 0) throw new Error('No expiries parsed from Investinglive post');
+  return { expiries, date: postDate, link: postLink };
+}
+
+// FinancialJuice posts a daily "[Day] FX Options Expiries" headline straight into
+// its main news feed (same RSS_URL used by the news ticker) — structured as
+// "<li><strong>PAIR:</strong> level (size), level (size)</li>" per pair.
+async function fetchFinancialJuiceOptions() {
+  const ua = RSS_USER_AGENTS[Math.floor(Math.random() * RSS_USER_AGENTS.length)];
+  const r = await fetch(RSS_URL, {
+    headers: { 'User-Agent': ua, 'Accept': 'application/rss+xml,*/*', 'Referer': 'https://www.financialjuice.com/', 'Cache-Control': 'no-cache' },
+    signal: AbortSignal.timeout(12000),
+  });
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  const xml = await r.text();
+  if (!xml.includes('<rss')) throw new Error('NOT_RSS');
+
+  const items = xml.match(/<item>([\s\S]*?)<\/item>/g) || [];
+  let expiryItem = null;
+  for (const it of items) {
+    const titleMatch = /<title[^>]*>([\s\S]*?)<\/title>/.exec(it);
+    const title = (titleMatch?.[1] || '').replace(/<!\[CDATA\[|\]\]>/g, '').trim();
+    if (/options?\s*expir/i.test(title)) { expiryItem = it; break; }
+  }
+  if (!expiryItem) throw new Error('No option expiry post found in feed');
+
+  const descMatch = /<description[^>]*>([\s\S]*?)<\/description>/.exec(expiryItem);
+  let rawText = (descMatch?.[1] || '').replace(/<!\[CDATA\[|\]\]>/g, '');
+  rawText = rawText
+    .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+  if (!rawText.trim()) throw new Error('Empty description in FinancialJuice post');
+
+  const linkMatch = /<link[^>]*>([\s\S]*?)<\/link>/.exec(expiryItem);
+  const dateMatch = /<pubDate[^>]*>([\s\S]*?)<\/pubDate>/.exec(expiryItem);
+  const postLink = (linkMatch?.[1] || '').trim();
+  const postDate = (dateMatch?.[1] || '').trim();
+
+  const expiries = parseOptionExpiries(rawText, postLink).map(e => ({ ...e, source: 'FinancialJuice' }));
+  if (expiries.length === 0) throw new Error('No expiries parsed from FinancialJuice post');
+  return { expiries, date: postDate, link: postLink };
+}
+
+// Two sources can report the same pair/level — merge those into one entry
+// (so the table doesn't show visual duplicates) while keeping track of which
+// source(s) confirmed it and preferring whichever side has a size figure.
+function dedupeExpiries(expiries) {
+  const byKey = new Map();
+  for (const e of expiries) {
+    const key = e.pair + '|' + e.level;
+    const existing = byKey.get(key);
+    if (!existing) {
+      byKey.set(key, { pair: e.pair, level: e.level, size: e.size, link: e.link, sources: [e.source] });
+      continue;
+    }
+    if (!existing.sources.includes(e.source)) existing.sources.push(e.source);
+    if (!existing.size && e.size) existing.size = e.size;
+  }
+  return [...byKey.values()];
 }
 
 function filterByPair(expiries, pair) {
@@ -737,7 +823,9 @@ function parseStructuredExpiries(text, sourceLink) {
 }
 
 function parseExpiryEntries(text, pair, results, sourceLink) {
-  const entryRe = /([\d]{1,4}\.[\d]{1,5}(?:\s*-\s*[\d]{1,5})?)\s*[\(\[]?([€$¥£]?[\d.]+\s*(?:b(?:ln)?|m(?:ln)?|billion|million)?)\s*[\)\]]?/gi;
+  // Size prefix is either a currency symbol ($/€/¥/£) or a 2-4 letter currency
+  // code (EU, AUD, GBP, NZD, MXN...) — FinancialJuice uses the latter (e.g. "EU2.51b").
+  const entryRe = /([\d]{1,4}\.[\d]{1,5}(?:\s*-\s*[\d]{1,5})?)\s*[\(\[]?((?:[€$¥£]|[A-Z]{2,4})?[\d.]+\s*(?:b(?:ln)?|m(?:ln)?|billion|million)?)\s*[\)\]]?/gi;
   let m;
   while ((m = entryRe.exec(text)) !== null) {
     const level = m[1].replace(/\s/g, '');
