@@ -6150,10 +6150,14 @@ function enrichCalActuals() {
       }
 
       // Non-structured prose headline (e.g. "BOE holds rate at 4.25%") — no
-      // labeled indicator name to compare exactly, so fall back to the
-      // looser "at least one significant word in common" heuristic.
+      // labeled indicator name to compare exactly. Still require EVERY
+      // significant word of the event (not just one) to appear in the
+      // headline — "some" previously let one prose headline mentioning
+      // "CPI" satisfy CPI m/m, CPI y/y, AND Trimmed Mean CPI m/m all at once,
+      // because all three share the word "cpi". Requiring all words means a
+      // headline must literally carry the m/m or y/y qualifier to match.
       const evWords = [...evWordSet];
-      if (evWords.length > 0 && !evWords.some(w => hl.includes(w))) continue;
+      if (evWords.length > 0 && !evWords.every(w => hl.includes(w))) continue;
       const val = _calExtractActual(titleRaw);
       if (val) {
         ev.actual = val;
