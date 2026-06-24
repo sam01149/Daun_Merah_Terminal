@@ -121,6 +121,20 @@ Financial_Feed_App/
 
 ---
 
+## Changelog Session 100 (2026-06-24)
+
+### Fix: Option Expiries FinancialJuice — sumber kedua sering kosong karena live ticker window terlalu sempit
+
+**Konteks:** Setelah Session 99 nambahin FinancialJuice sebagai sumber kedua, user lapor pasangan mata uang dari FinancialJuice belum muncul. Root cause: `RSS_URL` FinancialJuice itu live ticker semua-asset-class (~100 headline terakhir lintas forex/equity/commodity/geopolitik), bukan feed khusus forex. Post "Options Expiries" cuma sekali sehari, dan dengan volume berita FinancialJuice yang tinggi, item-nya rotasi keluar dari window itu dalam hitungan jam — jadi `fetchFinancialJuiceOptions` hampir selalu gagal nemu post-nya kecuali serverless function kebetulan fetch persis di jam postingan baru naik.
+
+**Fix (`api/feeds.js`):**
+- `fetchFinancialJuiceOptions` sekarang 2 tahap: (1) coba live ticker dulu (cepat, kena kalau baru saja diposting), (2) kalau gagal/item tidak ketemu, fallback ke Redis sorted set `news_history` (window 36 jam, sudah otomatis terisi tiap kali ada yang akses `type=rss` lewat `storeNewsHistory`) — cari item dengan title cocok pattern expiry, ambil yang `pubDate` paling baru.
+- `parseRSSItems` (yang ngisi `news_history`) sekarang simpan field `description` juga, tapi *cuma* untuk item yang title-nya cocok pattern option-expiry — item berita biasa tetap tanpa description supaya ukuran history di Redis nggak boros buat data yang nggak kepake.
+
+**Testing:** Disimulasikan skenario "live ticker sudah rotasi keluar" (live fetch return XML tanpa item expiry sama sekali) + history Redis berisi item expiry lama — hasil tetap berhasil ke-extract dari history, dengan `sources: ["FinancialJuice"]` dan level/size yang benar. Regression check: live-fetch path (skenario normal, item masih ada di ticker) tetap jalan seperti semula.
+
+---
+
 ## Changelog Session 99 (2026-06-24)
 
 ### Feat: Option Expiries — Tambah sumber kedua (FinancialJuice), merge dengan Investinglive

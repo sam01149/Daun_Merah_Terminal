@@ -198,7 +198,15 @@ function parseRSSItems(xml) {
     const title = get('title').replace(/^FinancialJuice:\s*/i,'').trim();
     const guid = get('guid'), pubDate = get('pubDate');
     const link = b.match(/<link>(.*?)<\/link>/)?.[1] || '';
-    if (guid && title) items.push({ title, guid, pubDate, link });
+    if (guid && title) {
+      const item = { title, guid, pubDate, link };
+      // Keep description only for option-expiry headlines — that's the one
+      // case downstream (fetchFinancialJuiceOptions' history fallback) needs
+      // the body, not just the title; storing it for every item would bloat
+      // the 36h Redis history for no benefit.
+      if (/options?\s*expir/i.test(title)) item.description = get('description');
+      items.push(item);
+    }
   }
   return items;
 }
@@ -716,15 +724,47 @@ async function fetchInvestingLiveOptions() {
 // its main news feed (same RSS_URL used by the news ticker) — structured as
 // "<li><strong>PAIR:</strong> level (size), level (size)</li>" per pair.
 async function fetchFinancialJuiceOptions() {
-  const ua = RSS_USER_AGENTS[Math.floor(Math.random() * RSS_USER_AGENTS.length)];
-  const r = await fetch(RSS_URL, {
-    headers: { 'User-Agent': ua, 'Accept': 'application/rss+xml,*/*', 'Referer': 'https://www.financialjuice.com/', 'Cache-Control': 'no-cache' },
-    signal: AbortSignal.timeout(12000),
-  });
-  if (!r.ok) throw new Error('HTTP ' + r.status);
-  const xml = await r.text();
-  if (!xml.includes('<rss')) throw new Error('NOT_RSS');
+  // 1) Try the live ticker first — cheap, and catches the post within roughly
+  //    the first hour after FinancialJuice publishes it.
+  try {
+    const ua = RSS_USER_AGENTS[Math.floor(Math.random() * RSS_USER_AGENTS.length)];
+    const r = await fetch(RSS_URL, {
+      headers: { 'User-Agent': ua, 'Accept': 'application/rss+xml,*/*', 'Referer': 'https://www.financialjuice.com/', 'Cache-Control': 'no-cache' },
+      signal: AbortSignal.timeout(12000),
+    });
+    if (r.ok) {
+      const xml = await r.text();
+      if (xml.includes('<rss')) {
+        const live = extractFJExpiryFromXml(xml);
+        if (live) return live;
+      }
+    }
+  } catch(e) { /* fall through to history */ }
 
+  // 2) FinancialJuice's main feed is a fast, all-asset-classes ticker — at
+  //    dozens of headlines/hour, a once-daily expiry post commonly rotates
+  //    out of that narrow window within a few hours. Fall back to the 36h
+  //    `news_history` Redis archive, which is already being populated on
+  //    every visitor's RSS poll via storeNewsHistory().
+  const cutoff = Date.now() - 36 * 60 * 60 * 1000;
+  const raw = await redisCmd('ZRANGEBYSCORE', 'news_history', cutoff, '+inf');
+  if (Array.isArray(raw)) {
+    const candidates = raw
+      .map(s => { try { return JSON.parse(s); } catch(e2) { return null; } })
+      .filter(it => it && it.description && /options?\s*expir/i.test(it.title))
+      .sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate));
+    if (candidates.length > 0) {
+      const it = candidates[0];
+      const rawText = it.description.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+      const expiries = parseOptionExpiries(rawText, it.link).map(e => ({ ...e, source: 'FinancialJuice' }));
+      if (expiries.length > 0) return { expiries, date: it.pubDate, link: it.link };
+    }
+  }
+
+  throw new Error('No option expiry post found in feed or history');
+}
+
+function extractFJExpiryFromXml(xml) {
   const items = xml.match(/<item>([\s\S]*?)<\/item>/g) || [];
   let expiryItem = null;
   for (const it of items) {
@@ -732,13 +772,12 @@ async function fetchFinancialJuiceOptions() {
     const title = (titleMatch?.[1] || '').replace(/<!\[CDATA\[|\]\]>/g, '').trim();
     if (/options?\s*expir/i.test(title)) { expiryItem = it; break; }
   }
-  if (!expiryItem) throw new Error('No option expiry post found in feed');
+  if (!expiryItem) return null;
 
   const descMatch = /<description[^>]*>([\s\S]*?)<\/description>/.exec(expiryItem);
   let rawText = (descMatch?.[1] || '').replace(/<!\[CDATA\[|\]\]>/g, '');
-  rawText = rawText
-    .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
-  if (!rawText.trim()) throw new Error('Empty description in FinancialJuice post');
+  rawText = rawText.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+  if (!rawText.trim()) return null;
 
   const linkMatch = /<link[^>]*>([\s\S]*?)<\/link>/.exec(expiryItem);
   const dateMatch = /<pubDate[^>]*>([\s\S]*?)<\/pubDate>/.exec(expiryItem);
@@ -746,7 +785,7 @@ async function fetchFinancialJuiceOptions() {
   const postDate = (dateMatch?.[1] || '').trim();
 
   const expiries = parseOptionExpiries(rawText, postLink).map(e => ({ ...e, source: 'FinancialJuice' }));
-  if (expiries.length === 0) throw new Error('No expiries parsed from FinancialJuice post');
+  if (expiries.length === 0) return null;
   return { expiries, date: postDate, link: postLink };
 }
 
