@@ -52,6 +52,21 @@ function uid() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 }
 
+// journal_open_idx / journal_devices: a cross-device index so the GitHub
+// Actions TP/SL sweep (api/admin.js journal_autoclose) can find every open
+// position without needing to know every device_id up front. Per-device
+// journal_index:{device_id} alone isn't enough for that — there's no
+// existing registry of which device_ids exist.
+async function setOpenIndex(deviceId, id, isOpen) {
+  const ref = `${deviceId}:${id}`;
+  if (isOpen) {
+    await redisCmd('SADD', 'journal_open_idx', ref).catch(() => {});
+    await redisCmd('SADD', 'journal_devices', deviceId).catch(() => {});
+  } else {
+    await redisCmd('SREM', 'journal_open_idx', ref).catch(() => {});
+  }
+}
+
 // ── MFE/MAE (max favorable/adverse excursion) ─────────────────────────────
 // Computed once, at the moment a trade is closed, from OHLCV candles already
 // synced by the ohlcv_sync cron (api/admin.js). This is a rolling cache (~5d
@@ -164,6 +179,7 @@ module.exports = async function handler(req, res) {
       const entryKey = `journal:${deviceId}:${id}`;
       await redisCmd('SET', entryKey, JSON.stringify(entry));
       await redisCmd('ZADD', indexKey, now, id);
+      setOpenIndex(deviceId, id, true).catch(() => {});
       return res.status(200).json({ ok: true, id });
     } catch(e) {
       console.error('journal POST failed:', e.message);
@@ -206,6 +222,9 @@ module.exports = async function handler(req, res) {
       }
 
       await redisCmd('SET', entryKey, JSON.stringify(entry));
+      if (entry.status === 'closed' || entry.status === 'archived') {
+        setOpenIndex(deviceId, id, false).catch(() => {});
+      }
       return res.status(200).json({ ok: true });
     } catch(e) {
       console.error('journal PATCH failed:', e.message);
@@ -347,6 +366,7 @@ module.exports = async function handler(req, res) {
       entry.status = 'archived';
       entry.closed_at = entry.closed_at || new Date().toISOString();
       await redisCmd('SET', entryKey, JSON.stringify(entry));
+      setOpenIndex(deviceId, id, false).catch(() => {});
       return res.status(200).json({ ok: true });
     } catch(e) {
       console.error('journal DELETE failed:', e.message);

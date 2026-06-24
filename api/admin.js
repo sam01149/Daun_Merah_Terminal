@@ -31,6 +31,7 @@ module.exports = async function handler(req, res) {
   if (action === 'fundamental_refresh') return fundamentalRefreshHandler(req, res);
   if (action === 'fundamental_analysis') return fundamentalAnalysisHandler(req, res);
   if (action === 'journal_import')      return journalImportHandler(req, res);
+  if (action === 'journal_autoclose')   return journalAutoCloseHandler(req, res);
   if (action === 'circuit-reset')       return circuitResetHandler(req, res);
   if (action === 'circuit-status')      return circuitStatusHandler(req, res);
   if (action === 'gdpnow')             return gdpnowHandler(req, res);
@@ -39,7 +40,7 @@ module.exports = async function handler(req, res) {
   if (action === 'ohlcv_analyze')      return ohlcvAnalyzeHandler(req, res);
   if (action === 'ohlcv_dashboard')    return ohlcvDashboardHandler(req, res);
   if (action === 'polymarket')         return polymarketHandler(req, res);
-  return res.status(400).json({ error: 'Missing ?action= — use health, redis-keys, admin-prompts, push, fundamental_get, fundamental_seed, fundamental_refresh, fundamental_analysis, journal_import, circuit-reset, circuit-status, gdpnow, ohlcv_sync, ohlcv_read, ohlcv_analyze, ohlcv_dashboard, or polymarket' });
+  return res.status(400).json({ error: 'Missing ?action= — use health, redis-keys, admin-prompts, push, fundamental_get, fundamental_seed, fundamental_refresh, fundamental_analysis, journal_import, journal_autoclose, circuit-reset, circuit-status, gdpnow, ohlcv_sync, ohlcv_read, ohlcv_analyze, ohlcv_dashboard, or polymarket' });
 };
 
 // ── Shared Redis helper ────────────────────────────────────────────────────────
@@ -1003,6 +1004,206 @@ async function journalImportHandler(req, res) {
   }
 
   return res.status(200).json({ ok: true, imported });
+}
+
+// ── Journal Auto-Close: TP/SL sweep (GitHub Actions cron, every few min) ────
+// Closes open journal positions across ALL devices once the live price has
+// reached TP or SL — server-side equivalent of jnCheckAutoClose() in
+// index.html, except this one runs on a schedule regardless of whether
+// anyone has the Jurnal tab (or the app at all) open. Exit price is the
+// TP/SL level itself (not the live tick), matching a real stop/limit fill.
+// Actually closing a trade reuses the existing PATCH /api/journal handler
+// (internal fetch) instead of writing Redis directly, so MFE/MAE excursion
+// computation stays in one place (api/journal.js) rather than duplicated.
+const JOURNAL_PAIR_SYMBOL = {
+  EURUSD: 'EURUSD=X', GBPUSD: 'GBPUSD=X', USDJPY: 'USDJPY=X', AUDUSD: 'AUDUSD=X',
+  USDCAD: 'USDCAD=X', USDCHF: 'USDCHF=X', NZDUSD: 'NZDUSD=X', EURJPY: 'EURJPY=X',
+  GBPJPY: 'GBPJPY=X', EURGBP: 'EURGBP=X', AUDJPY: 'AUDJPY=X', EURAUD: 'EURAUD=X',
+  GBPAUD: 'GBPAUD=X', GBPCAD: 'GBPCAD=X', XAUUSD: 'GC=F',
+};
+
+async function fetchYahooPrice(symbol) {
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=1d&interval=5m`;
+  const r = await fetch(url, {
+    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+    signal: AbortSignal.timeout(8000),
+  });
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  const json = await r.json();
+  const price = json?.chart?.result?.[0]?.meta?.regularMarketPrice;
+  if (price == null) throw new Error('No price in response');
+  return price;
+}
+
+async function journalAutoCloseHandler(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  const secret = req.headers['x-admin-secret'] || req.headers['x-cron-secret'];
+  if (secret !== process.env.CRON_SECRET) return res.status(403).json({ error: 'Forbidden' });
+
+  // Distributed lock — same pattern as pushHandler, in case two cron runs overlap
+  const lockAcquired = await redisCmd('SET', 'journal_autoclose_lock', String(Date.now()), 'NX', 'EX', '110');
+  if (!lockAcquired) return res.status(200).json({ status: 'Locked — concurrent run skipped' });
+
+  try {
+    let openRefs = await redisCmd('SMEMBERS', 'journal_open_idx') || [];
+
+    // Self-healing bootstrap: first run ever (or if the index somehow drifts
+    // empty) rebuilds it from the device registry — no manual backfill step
+    // needed for trades that were already open before this feature shipped.
+    if (openRefs.length === 0) {
+      const devices = await redisCmd('SMEMBERS', 'journal_devices') || [];
+      for (const deviceId of devices) {
+        const ids = await redisCmd('ZRANGE', `journal_index:${deviceId}`, 0, -1) || [];
+        if (ids.length === 0) continue;
+        const keys = ids.map(id => `journal:${deviceId}:${id}`);
+        const raws = await redisCmd('MGET', ...keys) || [];
+        for (let i = 0; i < raws.length; i++) {
+          if (!raws[i]) continue;
+          try {
+            const e = JSON.parse(raws[i]);
+            if (e.status === 'open') {
+              const ref = `${deviceId}:${ids[i]}`;
+              openRefs.push(ref);
+              await redisCmd('SADD', 'journal_open_idx', ref);
+            }
+          } catch(_) {}
+        }
+      }
+    }
+
+    if (openRefs.length === 0) return res.status(200).json({ status: 'ok', checked: 0, closed: 0 });
+
+    const entryMeta = openRefs.map(ref => {
+      const idx = ref.lastIndexOf(':');
+      return { ref, deviceId: ref.slice(0, idx), id: ref.slice(idx + 1) };
+    });
+    const keys = entryMeta.map(m => `journal:${m.deviceId}:${m.id}`);
+    const raws = await redisCmd('MGET', ...keys) || [];
+
+    const openEntries = [];
+    for (let i = 0; i < raws.length; i++) {
+      if (!raws[i]) { await redisCmd('SREM', 'journal_open_idx', entryMeta[i].ref).catch(() => {}); continue; }
+      try {
+        const e = JSON.parse(raws[i]);
+        if (e.status !== 'open') { await redisCmd('SREM', 'journal_open_idx', entryMeta[i].ref).catch(() => {}); continue; }
+        openEntries.push(e);
+      } catch(_) {}
+    }
+
+    if (openEntries.length === 0) return res.status(200).json({ status: 'ok', checked: 0, closed: 0 });
+
+    // Fetch each distinct pair's current price once, not per-entry
+    const pairs = [...new Set(openEntries.map(e => (e.pair || '').toUpperCase().replace('/', '')))];
+    const prices = {};
+    await Promise.allSettled(pairs.map(async (pairKey) => {
+      const symbol = JOURNAL_PAIR_SYMBOL[pairKey];
+      if (!symbol) return;
+      try { prices[pairKey] = await fetchYahooPrice(symbol); }
+      catch(e) { console.warn('journal_autoclose price fetch failed:', pairKey, e.message); }
+    }));
+
+    const host  = req.headers.host || 'financial-feed-app.vercel.app';
+    const proto = host.includes('localhost') ? 'http' : 'https';
+    const notifications = [];
+
+    for (const e of openEntries) {
+      const pairKey = (e.pair || '').toUpperCase().replace('/', '');
+      const price = prices[pairKey];
+      if (price == null || e.entry_price == null) continue;
+      if (e.stop_price == null && e.target_price == null) continue;
+
+      const isLong = e.direction === 'long';
+      const hitTp  = e.target_price != null && (isLong ? price >= e.target_price : price <= e.target_price);
+      const hitSl  = e.stop_price   != null && (isLong ? price <= e.stop_price   : price >= e.stop_price);
+      if (!hitTp && !hitSl) continue;
+
+      const reason    = hitSl ? 'sl_hit' : 'tp_hit';
+      const exitPrice = hitSl ? e.stop_price : e.target_price;
+      const rActual   = e.stop_price != null
+        ? Math.round((isLong ? 1 : -1) * (exitPrice - e.entry_price) / Math.abs(e.entry_price - e.stop_price) * 100) / 100
+        : null;
+
+      try {
+        const patchRes = await fetch(`${proto}://${host}/api/journal?device_id=${encodeURIComponent(e.device_id)}&id=${encodeURIComponent(e.id)}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            status: 'closed',
+            exit_price: exitPrice,
+            r_actual: rActual,
+            exit_reason: reason,
+            attribution_notes: `Auto-closed (server) — harga sekarang menyentuh ${reason === 'tp_hit' ? 'TP' : 'SL'} (${price})`,
+          }),
+          signal: AbortSignal.timeout(10000),
+        });
+        if (!patchRes.ok) { console.warn('journal_autoclose: PATCH failed for', e.id, patchRes.status); continue; }
+        await redisCmd('SREM', 'journal_open_idx', `${e.device_id}:${e.id}`);
+        notifications.push({
+          title: `${reason === 'tp_hit' ? '🎯 TP' : '🛑 SL'} tercapai — ${e.pair} ditutup otomatis`,
+          body:  `${(e.direction || '').toUpperCase()} @ ${exitPrice}${rActual != null ? ` (${rActual >= 0 ? '+' : ''}${rActual}R)` : ''}`,
+        });
+      } catch(err) {
+        console.warn('journal_autoclose: close failed for', e.id, err.message);
+      }
+    }
+
+    if (notifications.length > 0) {
+      await sendJournalCloseNotifications(notifications).catch(e => console.warn('journal_autoclose notify failed:', e.message));
+    }
+
+    return res.status(200).json({ status: 'ok', checked: openEntries.length, closed: notifications.length });
+  } finally {
+    await redisCmd('DEL', 'journal_autoclose_lock').catch(() => {});
+  }
+}
+
+// Reuses the same push_subs broadcast + Telegram fallback as pushHandler,
+// so auto-close alerts arrive through whichever channel is already set up.
+async function sendJournalCloseNotifications(notifications) {
+  const VAPID_PUBLIC  = process.env.VAPID_PUBLIC_KEY;
+  const VAPID_PRIVATE = process.env.VAPID_PRIVATE_KEY;
+  const VAPID_SUBJECT = process.env.VAPID_SUBJECT || 'mailto:admin@daun-merah.app';
+  const TG_TOKEN      = process.env.TELEGRAM_BOT_TOKEN;
+  const TG_CHAT_ID    = process.env.TELEGRAM_CHAT_ID;
+
+  if (TG_TOKEN && TG_CHAT_ID) {
+    const lines = notifications.map(n => `${n.title}\n${n.body}`);
+    try {
+      await fetch(`https://api.telegram.org/bot${TG_TOKEN}/sendMessage`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chat_id: TG_CHAT_ID, text: lines.join('\n\n'), disable_web_page_preview: true }),
+        signal: AbortSignal.timeout(10000),
+      });
+    } catch(e) { console.warn('journal_autoclose Telegram failed:', e.message); }
+  }
+
+  if (!VAPID_PUBLIC || !VAPID_PRIVATE) return;
+  webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC, VAPID_PRIVATE);
+
+  let subs = [];
+  try {
+    const raw = await redisCmd('HGETALL', 'push_subs');
+    if (raw && Array.isArray(raw)) {
+      for (let i = 0; i < raw.length; i += 2) {
+        try { subs.push(JSON.parse(raw[i + 1])); } catch(e) {}
+      }
+    }
+  } catch(e) {}
+  if (subs.length === 0) return;
+
+  const n = notifications[0];
+  const payload = JSON.stringify({
+    title: notifications.length === 1 ? n.title : `📋 Daun Merah — ${notifications.length} posisi ditutup otomatis`,
+    body:  notifications.length === 1 ? n.body : notifications.map(x => `• ${x.title}: ${x.body}`).join('\n'),
+    url: '/',
+    icon: '/icon.svg',
+  });
+  const staleKeys = [];
+  await Promise.allSettled(subs.map(async sub => {
+    try { await webpush.sendNotification(sub, payload); }
+    catch(e) { if (e.statusCode === 410 || e.statusCode === 404) staleKeys.push(subKey(sub.endpoint)); }
+  }));
+  if (staleKeys.length > 0) await redisCmd('HDEL', 'push_subs', ...staleKeys);
 }
 
 // ── Circuit breaker status + reset ───────────────────────────────────────────

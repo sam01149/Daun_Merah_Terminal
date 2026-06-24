@@ -1069,6 +1069,14 @@ body {
   line-height: 1.4; letter-spacing: .3px;
 }
 
+.cal-disclaimer {
+  font-size: 9px; line-height: 1.5; color: var(--muted);
+  font-family: 'DM Mono', monospace; letter-spacing: .01em;
+  padding: 6px 12px; margin: 0 0 2px;
+  border-bottom: 1px solid var(--border);
+}
+.cal-disclaimer b { color: var(--text-mid); font-weight: 600; }
+
 .cal-panel-inner { padding: 2px 12px 16px; }
 .cal-date-group { margin-bottom: 14px; }
 .cal-date-label {
@@ -1412,6 +1420,7 @@ body {
   .ringkasan-text { font-size: 14px; line-height: 1.8; }
   .cb-section { padding: 10px 24px 8px; }
   .cal-toolbar { padding: 9px 24px 7px; }
+  .cal-disclaimer { padding: 6px 24px; }
   .cal-panel-inner { padding: 4px 24px 24px; }
   .cal-event-main { padding: 10px 16px 9px 18px; }
   .cal-event-name { font-size: 13px; }
@@ -2281,6 +2290,7 @@ body {
       </button>
     </div>
   </div>
+  <div class="cal-disclaimer">⚠ Kolom <b>Actual</b> diisi otomatis dari headline berita dan bisa meleset/kosong — pakai tombol "Lihat selengkapnya" di tiap event untuk verifikasi langsung ke ForexFactory.</div>
   <div class="cal-panel-inner" id="calPanelInner">
     <div class="cal-empty loading-pulse">Memuat kalender ekonomi...</div>
   </div>
@@ -6044,26 +6054,48 @@ const _CAL_COUNTRY_WORDS = new Set([
   'british','britain','uk','japanese','japan','canadian','canada',
   'australian','australia','swiss','switzerland','new','zealand',
 ]);
+
+// Statistical-caveat qualifiers FinancialJuice sometimes appends (NSA, SA,
+// SAAR...) that ForexFactory's own titles never carry and that never get a
+// separate calendar row of their own — benign, so stripped like stopwords
+// rather than treated as a real distinguishing modifier.
+const _CAL_BENIGN_QUALIFIERS = new Set([
+  'nsa','sa','saar','adjusted','unadjusted','seasonally','annualized','annualised',
+]);
+
 const _CAL_STOPWORDS = new Set([
   'rate','data','with','from','that','this','bank','press','conference',
   'statement','decision','the','of','and','for',
+  ..._CAL_BENIGN_QUALIFIERS,
 ]);
 
+// Built from ForexFactory's own naming (CPI m/m, CPI y/y, Foreign Direct
+// Investment ytd/y) cross-checked against how FinancialJuice phrases the
+// same releases (e.g. "Australian CPI YoY NSA") — same concept, different
+// spelling, so both sides need to collapse to one canonical token.
+const _CAL_SYNONYMS = {
+  yoy: 'yy', mom: 'mm', qoq: 'qq', ytdy: 'ytdy',
+  preliminary: 'prelim', advanced: 'advance',
+};
+
 // Normalizes a title into a comparable word set. Critically, "m/m"/"y/y"/"q/q"
-// are converted to mm/yy/qq BEFORE punctuation is stripped — previously they
-// were discarded entirely, which let "CPI m/m", "CPI y/y", and "Trimmed Mean
-// CPI m/m" (three different indicators releasing in the same window) all
-// match the same headline and silently inherit the same wrong actual value.
+// (and FinancialJuice's contiguous "YoY"/"MoM"/"QoQ" spelling) are converted
+// to mm/yy/qq BEFORE punctuation is stripped — previously they were discarded
+// entirely, which let "CPI m/m", "CPI y/y", and "Trimmed Mean CPI m/m" (three
+// different indicators releasing in the same window) all match the same
+// headline and silently inherit the same wrong actual value.
 function _calWordSet(title) {
   const norm = (title || '').toLowerCase()
     .replace(/\bm\/m\b/g, ' mm ')
     .replace(/\by\/y\b/g, ' yy ')
     .replace(/\bq\/q\b/g, ' qq ')
+    .replace(/\bytd\/y\b/g, ' ytdy ')
     .replace(/[^a-z\s]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
-  const words = norm.split(' ').filter(w =>
-    w.length >= 2 && !_CAL_STOPWORDS.has(w) && !_CAL_COUNTRY_WORDS.has(w));
+  const words = norm.split(' ')
+    .map(w => _CAL_SYNONYMS[w] || w)
+    .filter(w => w.length >= 2 && !_CAL_STOPWORDS.has(w) && !_CAL_COUNTRY_WORDS.has(w));
   return new Set(words);
 }
 
@@ -6075,6 +6107,29 @@ function _calWordSet(title) {
 function _calWordSetsMatch(setA, setB) {
   if (setA.size === 0 || setB.size === 0 || setA.size !== setB.size) return false;
   for (const w of setA) if (!setB.has(w)) return false;
+  return true;
+}
+
+// Words that distinguish sub-variants of the same broad indicator (e.g. CPI
+// vs Trimmed Mean CPI vs Core CPI). Prose headlines carry filler words an
+// event title won't (and that's fine, e.g. "eases", "slows") — but if the
+// headline carries one of THESE qualifier words and the event title doesn't,
+// it's describing a more specific reading than this event, not the same one.
+const _CAL_MODIFIER_WORDS = new Set([
+  'trimmed','mean','core','final','flash','preliminary','prelim','revised',
+  'headline','common','weighted','median','advance','underlying',
+]);
+
+// Looser than exact set-equality (prose has filler words an event title
+// won't), but still requires every event word present AND blocks any
+// modifier word present in the headline but absent from the event name —
+// that's what stops "Trimmed Mean CPI m/m" from satisfying plain "CPI m/m".
+function _calFallbackMatches(evWordSet, hlWordSet) {
+  if (evWordSet.size === 0) return false;
+  for (const w of evWordSet) if (!hlWordSet.has(w)) return false;
+  for (const w of hlWordSet) {
+    if (_CAL_MODIFIER_WORDS.has(w) && !evWordSet.has(w)) return false;
+  }
   return true;
 }
 
@@ -6150,14 +6205,13 @@ function enrichCalActuals() {
       }
 
       // Non-structured prose headline (e.g. "BOE holds rate at 4.25%") — no
-      // labeled indicator name to compare exactly. Still require EVERY
-      // significant word of the event (not just one) to appear in the
-      // headline — "some" previously let one prose headline mentioning
-      // "CPI" satisfy CPI m/m, CPI y/y, AND Trimmed Mean CPI m/m all at once,
-      // because all three share the word "cpi". Requiring all words means a
-      // headline must literally carry the m/m or y/y qualifier to match.
-      const evWords = [...evWordSet];
-      if (evWords.length > 0 && !evWords.every(w => hl.includes(w))) continue;
+      // labeled indicator name to compare exactly. Tokenize properly via
+      // _calWordSet instead of raw substring checks on `hl` — a raw
+      // `hl.includes('mm')` check is unsafe because "Trimmed" itself
+      // contains the substring "mm", so a "Trimmed Mean CPI m/m" headline
+      // was satisfying the plain "CPI m/m" event's word list too.
+      const hlWordSet = _calWordSet(titleRaw);
+      if (!_calFallbackMatches(evWordSet, hlWordSet)) continue;
       const val = _calExtractActual(titleRaw);
       if (val) {
         ev.actual = val;
@@ -8575,6 +8629,64 @@ async function jnFetchLivePrices() {
       try { sessionStorage.setItem(cacheKey, JSON.stringify(entry)); } catch(_) {}
     } catch(e) { console.warn('jnFetchLivePrices:', pair, e.message); }
   }));
+  jnRenderEntries();
+  jnCheckAutoClose();
+}
+
+// Auto-closes an open position once the live price has reached its TP or
+// SL. Exit price is the TP/SL level itself (not the live tick) — same as a
+// real stop/limit order fill, so r_actual lands exactly on the planned RR
+// instead of whatever the price happened to be at the moment we polled.
+// Only runs while the Jurnal tab is open and live prices are being
+// refreshed (same cadence as jnFetchLivePrices, ~60s) — not a 24/7
+// background watcher, since this app has no server-side price polling.
+async function jnCheckAutoClose() {
+  const candidates = jnAllEntries.filter(e =>
+    e.status === 'open' && e.entry_price != null &&
+    (e.stop_price != null || e.target_price != null) &&
+    jnLivePrices[e.pair]);
+
+  for (const e of candidates) {
+    const price  = jnLivePrices[e.pair].price;
+    const isLong = e.direction === 'long';
+    const hitTp  = e.target_price != null && (isLong ? price >= e.target_price : price <= e.target_price);
+    const hitSl  = e.stop_price   != null && (isLong ? price <= e.stop_price   : price >= e.stop_price);
+    if (!hitTp && !hitSl) continue;
+
+    // If a gap/spike crosses both levels in the same poll, SL takes
+    // priority — that's the outcome that actually needs flagging, not a
+    // silently-recorded win.
+    const reason    = hitSl ? 'sl_hit' : 'tp_hit';
+    const exitPrice = hitSl ? e.stop_price : e.target_price;
+    const rActual   = e.stop_price != null
+      ? Math.round((isLong ? 1 : -1) * (exitPrice - e.entry_price) / Math.abs(e.entry_price - e.stop_price) * 100) / 100
+      : null;
+
+    try {
+      const deviceId = szGetDeviceId();
+      const res = await fetch(`/api/journal?device_id=${encodeURIComponent(deviceId)}&id=${encodeURIComponent(e.id)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          status: 'closed',
+          exit_price: exitPrice,
+          r_actual: rActual,
+          exit_reason: reason,
+          attribution_notes: `Auto-closed — harga sekarang menyentuh ${reason === 'tp_hit' ? 'TP' : 'SL'} (${jnFmtPrice(e.pair, price)})`,
+        }),
+        signal: AbortSignal.timeout(8000),
+      });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      e.status = 'closed'; e.exit_price = exitPrice; e.r_actual = rActual; e.exit_reason = reason;
+      showToast(
+        `${reason === 'tp_hit' ? 'TP' : 'SL'} tercapai — ditutup otomatis`,
+        `${e.pair} ${isLong ? 'LONG' : 'SHORT'} @ ${jnFmtPrice(e.pair, exitPrice)}${rActual != null ? ` (${rActual >= 0 ? '+' : ''}${rActual}R)` : ''}`,
+        6000
+      );
+    } catch(err) {
+      console.warn('jnCheckAutoClose failed for', e.id, err.message);
+    }
+  }
   jnRenderEntries();
 }
 

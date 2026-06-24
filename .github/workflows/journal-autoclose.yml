@@ -1,0 +1,21 @@
+name: Journal TP/SL Auto-Close
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+jobs:
+  autoclose:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger journal auto-close sweep
+        run: |
+          STATUS=$(curl -s -o /tmp/resp.json -w "%{http_code}" \
+            -H "x-cron-secret: ${{ secrets.CRON_SECRET }}" \
+            "https://financial-feed-app.vercel.app/api/admin?action=journal_autoclose")
+          cat /tmp/resp.json
+          if [ "$STATUS" -ne 200 ]; then
+            echo "Auto-close sweep failed with HTTP $STATUS"
+            exit 1
+          fi
