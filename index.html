@@ -8630,64 +8630,6 @@ async function jnFetchLivePrices() {
     } catch(e) { console.warn('jnFetchLivePrices:', pair, e.message); }
   }));
   jnRenderEntries();
-  jnCheckAutoClose();
-}
-
-// Auto-closes an open position once the live price has reached its TP or
-// SL. Exit price is the TP/SL level itself (not the live tick) — same as a
-// real stop/limit order fill, so r_actual lands exactly on the planned RR
-// instead of whatever the price happened to be at the moment we polled.
-// Only runs while the Jurnal tab is open and live prices are being
-// refreshed (same cadence as jnFetchLivePrices, ~60s) — not a 24/7
-// background watcher, since this app has no server-side price polling.
-async function jnCheckAutoClose() {
-  const candidates = jnAllEntries.filter(e =>
-    e.status === 'open' && e.entry_price != null &&
-    (e.stop_price != null || e.target_price != null) &&
-    jnLivePrices[e.pair]);
-
-  for (const e of candidates) {
-    const price  = jnLivePrices[e.pair].price;
-    const isLong = e.direction === 'long';
-    const hitTp  = e.target_price != null && (isLong ? price >= e.target_price : price <= e.target_price);
-    const hitSl  = e.stop_price   != null && (isLong ? price <= e.stop_price   : price >= e.stop_price);
-    if (!hitTp && !hitSl) continue;
-
-    // If a gap/spike crosses both levels in the same poll, SL takes
-    // priority — that's the outcome that actually needs flagging, not a
-    // silently-recorded win.
-    const reason    = hitSl ? 'sl_hit' : 'tp_hit';
-    const exitPrice = hitSl ? e.stop_price : e.target_price;
-    const rActual   = e.stop_price != null
-      ? Math.round((isLong ? 1 : -1) * (exitPrice - e.entry_price) / Math.abs(e.entry_price - e.stop_price) * 100) / 100
-      : null;
-
-    try {
-      const deviceId = szGetDeviceId();
-      const res = await fetch(`/api/journal?device_id=${encodeURIComponent(deviceId)}&id=${encodeURIComponent(e.id)}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          status: 'closed',
-          exit_price: exitPrice,
-          r_actual: rActual,
-          exit_reason: reason,
-          attribution_notes: `Auto-closed — harga sekarang menyentuh ${reason === 'tp_hit' ? 'TP' : 'SL'} (${jnFmtPrice(e.pair, price)})`,
-        }),
-        signal: AbortSignal.timeout(8000),
-      });
-      if (!res.ok) throw new Error('HTTP ' + res.status);
-      e.status = 'closed'; e.exit_price = exitPrice; e.r_actual = rActual; e.exit_reason = reason;
-      showToast(
-        `${reason === 'tp_hit' ? 'TP' : 'SL'} tercapai — ditutup otomatis`,
-        `${e.pair} ${isLong ? 'LONG' : 'SHORT'} @ ${jnFmtPrice(e.pair, exitPrice)}${rActual != null ? ` (${rActual >= 0 ? '+' : ''}${rActual}R)` : ''}`,
-        6000
-      );
-    } catch(err) {
-      console.warn('jnCheckAutoClose failed for', e.id, err.message);
-    }
-  }
-  jnRenderEntries();
 }
 
 async function jnLoadEntries() {
