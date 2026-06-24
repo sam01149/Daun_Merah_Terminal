@@ -133,6 +133,7 @@ function parseFFXML(xml) {
     const forecast = get('forecast');
     const previous = get('previous');
     const actual   = get('actual');
+    const url      = get('url');
     if (!title || !country) continue;
     const dp = date.match(/(\d{2})-(\d{2})-(\d{4})/);
     if (!dp) continue;
@@ -146,6 +147,7 @@ function parseFFXML(xml) {
       forecast: forecast || null,
       previous: previous || null,
       actual:   actual   || null,
+      url:      url      || null,
     });
   }
   return events;

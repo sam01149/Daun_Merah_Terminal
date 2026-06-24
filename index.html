@@ -1162,6 +1162,18 @@ body {
 .cal-data-val.actual-inline { color: var(--yellow); }
 .cal-data-val.no-data       { color: var(--muted); font-size: 9px; }
 
+.cal-ff-link {
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  margin: 6px 12px 10px;
+  padding: 7px 10px;
+  background: var(--yellow); color: #1a1a1a;
+  font-family: 'DM Mono', monospace; font-size: 10px; font-weight: 700;
+  letter-spacing: .03em; text-decoration: none; text-align: center;
+  border-radius: 4px; transition: background .15s, transform .1s;
+}
+.cal-ff-link:hover  { background: #f39c4d; }
+.cal-ff-link:active { transform: scale(.98); }
+
 /* CURRENCY LEGEND */
 .cal-legend {
   display: flex; flex-wrap: wrap; gap: 5px;
@@ -5732,6 +5744,7 @@ function renderCalendar() {
             </div>
           </div>
           ${dataRow}
+          ${ev.url ? `<a class="cal-ff-link" href="${escHtml(ev.url)}" target="_blank" rel="noopener noreferrer">Lihat selengkapnya di ForexFactory ↗</a>` : ''}
         </div>
         ${scenarioPanel}`
       ;
@@ -6002,6 +6015,16 @@ function _calMatchesCur(hl, currency) {
   return (_CAL_CUR_KEYS[currency] || [currency.toLowerCase()]).some(k => hl.includes(k));
 }
 
+// FinancialJuice posts most official data releases as a machine-generated
+// headline in a rigid format: "<Indicator Name> Actual <val> (Forecast <val|->, Previous <val>)".
+// This is far more reliable than scanning freeform text for a number, since
+// the value is explicitly labeled "Actual" by the source instead of guessed.
+function _calParseStructuredActual(title) {
+  const m = title.match(/^(.*?)\s+Actual\s+([+-]?[\d.,]+\s*[%a-zA-Z]*)\s*\(Forecast\s*([^,)]*),?\s*Previous\s*([^)]*)\)\s*$/i);
+  if (!m) return null;
+  return { name: m[1].trim(), actual: m[2].trim(), forecast: m[3].trim(), previous: m[4].trim() };
+}
+
 function _calExtractActual(title) {
   // "at X.XX%" or "to X.XX%" — most reliable for rate decisions
   let m = title.match(/\b(?:at|to)\s+([+-]?\d+\.?\d*%(?:\s*[-–]\s*\d+\.?\d*%)?)/i);
@@ -6056,11 +6079,18 @@ function enrichCalActuals() {
       if (!itemMs) continue;
       if (itemMs < evMs - BEFORE_MS || itemMs > evMs + AFTER_MS) continue;
 
-      const hl = (item.title || '').toLowerCase();
+      const titleRaw = item.title || '';
+      const hl = titleRaw.toLowerCase();
       if (!_calMatchesCur(hl, ev.currency)) continue;
       if (evWords.length > 0 && !evWords.some(w => hl.includes(w))) continue;
 
-      const val = _calExtractActual(item.title || '');
+      // Prefer FinancialJuice's labeled "Actual X (Forecast Y, Previous Z)"
+      // value when present — only fall back to the loose text-scan guess for
+      // headlines without that structure (e.g. prose-style rate statements).
+      const structured = _calParseStructuredActual(titleRaw);
+      const val = (structured && structured.actual && structured.actual !== '-')
+        ? structured.actual
+        : _calExtractActual(titleRaw);
       if (val) {
         ev.actual = val;
         changed = true;
