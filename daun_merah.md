@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-06-25 (session 111 — lihat "Changelog Session 111" di bawah untuk detail terbaru)
+> **Last updated:** 2026-06-25 (session 112 — lihat "Changelog Session 112" di bawah untuk detail terbaru)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Financial_Feed_App`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -118,6 +118,18 @@ Financial_Feed_App/
 > **Penting:** `api/feeds.js` menggantikan `api/rss.js` dan `api/cot.js` yang sudah dihapus.
 > `api/admin.js` menggantikan `api/health.js`, `api/redis-keys.js`, `api/admin-prompts.js`, dan `api/push.js`.
 > Konsolidasi ini dilakukan untuk tetap di bawah limit 12 serverless functions Vercel Hobby.
+
+---
+
+## Changelog Session 112 (2026-06-25)
+
+### Perkuat instruksi "tepat satu currency lemah/kuat" di kalimat penutup FX
+
+**Konteks:** Test live Session 111 sukses untuk tag, tapi user perhatikan kalimat penutup menyebut DUA currency lemah ("EUR dan JPY") padahal instruksi "Penutup FX" sudah eksplisit minta TEPAT SATU. Beda dari kasus tag Konfirmasi (Session 111) yang bisa dijamin 100% lewat kode (murni soal posisi/struktural), kasus ini butuh penilaian (currency mana yang buktinya paling kuat) — nggak aman diperbaiki via regex tanpa risiko merusak grammar kalimat.
+
+**Fix (`api/market-digest.js`):** Duplikasi instruksi "tepat satu currency" di REMINDER FINAL (titik perhatian tertinggi prompt, dibaca AI persis sebelum generate) — teknik yang sama yang berhasil untuk Konfirmasi tag di Session 111. Sifatnya best-effort (penguatan instruksi), BUKAN jaminan 100% seperti safety net kode untuk tag.
+
+**Testing:** Validasi `node -e "require(...)"` — lolos. Test live perlu diulang untuk lihat apakah penguatan ini efektif; kalau masih sering gagal, perlu dipikirkan pendekatan lain (misal validasi+regenerate kalimat penutup lewat AI call kedua yang lebih kecil, kalau severity-nya dianggap cukup penting untuk biaya tambahan itu).
 
 ---
 

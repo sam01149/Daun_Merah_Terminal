@@ -943,7 +943,8 @@ PENDEKATAN BENANG MERAH — ikuti urutan ini:
 
 TRIGGER TERDEKAT 24 JAM: Pilih event dari kalender dengan PRIORITAS TERTINGGI: (1) FOMC/Fed — Minutes, pidato Powell, rate decision; (2) US data — CPI, NFP, GDP; (3) event major currency lain. Format wajib: "[EVENT] [TIME WIB] — jika [outcome]: tekanan [bullish/bearish] XAU karena [mekanisme]; jika [outcome berlawanan]: tekanan [bullish/bearish] XAU karena [mekanisme]." Harus ada DUA skenario. Jika tidak ada event kalender relevan untuk XAU dalam 24 jam, tulis "Tidak ada trigger kalender untuk XAU dalam 24 jam ke depan."
 
-REMINDER FINAL: SEBELUM MERESPONS, pastikan tidak ada kata "dapat mempengaruhi", "berpotensi", "mungkin", atau "dalam beberapa jam ke depan". Jika ada, ubah menjadi kalimat pernyataan tegas.`;
+REMINDER FINAL: SEBELUM MERESPONS, pastikan tidak ada kata "dapat mempengaruhi", "berpotensi", "mungkin", atau "dalam beberapa jam ke depan". Jika ada, ubah menjadi kalimat pernyataan tegas.
+CEK SEKALI LAGI kalimat penutup FX: kalau draft-mu menyebut lebih dari satu currency di sisi kuat ATAU lebih dari satu di sisi lemah (misal "EUR dan JPY berada di posisi terlemah") — pilih HANYA SATU yang buktinya paling kuat dari headline, buang yang lain dari kalimat itu sebelum kirim jawaban final.`;
 
     const digestSystemMsg = promptDigestInstr || DIGEST_SYSTEM_DEFAULT;
     const digestUserMsg = `/no_think
