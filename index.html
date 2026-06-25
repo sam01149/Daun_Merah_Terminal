@@ -1822,6 +1822,14 @@ body {
   padding: 2px 9px; border-radius: 4px; border: 1px solid transparent;
   transition: all .15s;
 }
+.tek-yield-strip {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 4px 10px;
+  padding: 6px 14px; border-bottom: 1px solid var(--border);
+  font-family: 'DM Mono',monospace; flex-shrink: 0;
+}
+.tek-yield-lbl { font-size: 9px; color: var(--muted); letter-spacing: .04em; }
+.tek-yield-val { font-size: 11px; font-weight: 700; color: var(--text); }
+.tek-yield-hint { font-size: 9px; color: var(--muted); margin-left: 4px; }
 .tek-note-wrap { padding: 4px 0 8px; }
 .tek-note-label { font: 9px 'DM Mono',monospace; color: var(--muted); margin-bottom: 5px; letter-spacing: .08em; text-transform: uppercase; }
 .tek-note-auto-btn {
@@ -2700,6 +2708,7 @@ body {
     <button class="tek-note-auto-btn" id="tekMtfAutoBtn" onclick="autoFillMtfSelectors(true)" title="Isi D1/H4/H1 otomatis dari trend Makro/Swing/Entry (M15 tetap manual)">↻ Auto</button>
     <div class="tek-mtf-align" id="mtfAlignBadge"></div>
   </div>
+  <div class="tek-yield-strip" id="tekYieldStrip" style="display:none"></div>
   <div id="tekTaPanel" class="tek-ta-panel">
     <div class="tek-ta-loading" id="tekTaLoading">Memuat indikator...</div>
     <div class="tek-ta-grid" id="tekTaGrid" style="display:none"></div>
@@ -4700,6 +4709,7 @@ async function fetchRealYields() {
     realYieldsFetAt = Date.now();
     renderCBTracker();
     renderFundamental();
+    renderTekYield();
     const _rySel = document.getElementById('ckPairSelector');
     if (_rySel && _rySel.value) ckAutoTickRegimeCheck(_rySel.value);
   } catch(e) {
@@ -9752,6 +9762,7 @@ function selectTekPair(p) {
   renderTekOptions();
   fetchAFTek();
   autoFillMtfSelectors();
+  renderTekYield();
 }
 
 function onTekTFChange() {
@@ -10115,6 +10126,26 @@ function initTeknikal() {
   autoFillMtfSelectors();
   // Auto-load korelasi cross-asset (cache server 24h, jadi sekali per sesi cukup)
   if (!corrData || (Date.now() - corrFetAt) > 24 * 60 * 60 * 1000) fetchCorrelations();
+  if (!realYieldsData || (Date.now() - realYieldsFetAt) > 6 * 60 * 60 * 1000) fetchRealYields();
+  else renderTekYield();
+}
+
+// US10Y nominal + real yield — driver utama Gold (inverse correlation), konteks makro untuk pair USD lain.
+// Cuma pakai USD karena itu satu-satunya yang konsisten ada di semua 8 pair TEK.
+function renderTekYield() {
+  const el = document.getElementById('tekYieldStrip');
+  if (!el) return;
+  const usd = realYieldsData && realYieldsData.USD;
+  if (!usd || usd.nominal == null) { el.style.display = 'none'; return; }
+  const isXau = tekPair === 'XAUUSD';
+  let html = `<span class="tek-yield-lbl">US10Y</span><span class="tek-yield-val">${usd.nominal.toFixed(2)}%</span>`;
+  if (usd.real != null) {
+    const realCol = isXau ? (usd.real > 0 ? '#e74c3c' : '#27ae60') : 'var(--text)';
+    html += `<span class="tek-yield-lbl">Real</span><span class="tek-yield-val" style="color:${realCol}">${usd.real.toFixed(2)}%</span>`;
+    if (isXau) html += `<span class="tek-yield-hint">${usd.real > 0 ? '↑ tekanan ke Gold' : '↓ suportif Gold'}</span>`;
+  }
+  el.innerHTML = html;
+  el.style.display = 'flex';
 }
 
 // ── DRAWER ────────────────────────────────────────────────

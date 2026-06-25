@@ -996,6 +996,14 @@ Format ini sudah **berubah ke prosa naratif** — levels disebutkan dalam kalima
 - Root cause: global swipe nav handler gak cek status drawer — swipe di atas drawer yang sedang terbuka tetap dianggap swipe ganti tab, jadi konten di belakang drawer berubah sementara drawer-nya sendiri masih nampil di atas (state nyasar)
 - Fix: tambah guard di awal `touchend` handler — kalau `#drawerPanel.open`, swipe arah manapun cuma `closeDrawer()`, gak lanjut ke logic ganti tab
 
+**7. Fitur baru: US10Y yield strip di tab TEKNIKAL**
+- Data udah ada di `api/real-yields.js` (`realYieldsData.USD.{nominal,real}`), tinggal ditarik ke UI — gak ada API call baru
+- Pakai USD aja (bukan differential per-pair) karena itu satu-satunya yield yang konsisten ada di semua 8 pair TEK (XAUUSD + 7 FX major)
+- Strip baru `#tekYieldStrip` di bawah `.tek-mtf-bar`: nampilin US10Y nominal + real yield (TIPS-implied)
+- Khusus XAUUSD: real yield dikasih warna (merah kalau positif = tekanan ke Gold, hijau kalau negatif = suportif) + hint teks — karena ini driver fundamental klasik gold (inverse correlation ke real yield)
+- Pair FX lain cuma nampilin angka netral (US10Y jadi konteks makro umum, gak ada hint directional spesifik karena bukan currency differential)
+- Render dipanggil di 3 titik: `initTeknikal()` (pakai cache kalau masih fresh ≤6 jam, else `fetchRealYields()`), `selectTekPair()` (ganti pair), dan di akhir `fetchRealYields()` (data baru datang)
+
 ---
 
 ## Changelog Session 49 (2026-06-05)
