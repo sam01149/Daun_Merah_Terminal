@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-06-25 (session 108 — lihat "Changelog Session 108" di bawah untuk detail terbaru)
+> **Last updated:** 2026-06-25 (session 109 — lihat "Changelog Session 109" di bawah untuk detail terbaru)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Financial_Feed_App`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -118,6 +118,20 @@ Financial_Feed_App/
 > **Penting:** `api/feeds.js` menggantikan `api/rss.js` dan `api/cot.js` yang sudah dihapus.
 > `api/admin.js` menggantikan `api/health.js`, `api/redis-keys.js`, `api/admin-prompts.js`, dan `api/push.js`.
 > Konsolidasi ini dilakukan untuk tetap di bawah limit 12 serverless functions Vercel Hobby.
+
+---
+
+## Changelog Session 109 (2026-06-25)
+
+### Bug fix — briefing AI salah tense, event yang sudah rilis disebut "besok"
+
+**Konteks:** User lapor output briefing bagian AUD/CAD nyebut "Data tenaga kerja Australia besok pagi" sebagai katalis potensial — padahal event itu (AUD Employment Change) sudah rilis PAGI HARI YANG SAMA (08:30 WIB), beberapa jam sebelum briefing di-generate malam itu. Konfirmasi via `/api/calendar` live: event tanggal `2026-06-25 08:30 WIB`, sementara briefing di-generate setelah `19:30 WIB` — jelas sudah lewat, bukan "besok".
+
+**Root cause (`api/market-digest.js`):** Blok KALENDER EKONOMI yang dikirim ke AI cuma berisi `date | time | currency | event` mentah, tanpa informasi relatif terhadap waktu generate. AI harus menghitung sendiri "ini sudah lewat atau belum" dari dua string tanggal/jam — LLM nggak reliable untuk aritmatika tanggal seperti ini, dan kasus di atas membuktikan itu salah hitung.
+
+**Fix:** Tambah `_calEventStatusTag()` yang menghitung selisih jam ke event (pakai logika WIB→UTC yang sama dengan yang sudah dipakai di `enrichCalActuals()` pada `index.html`), menghasilkan tag `[SUDAH RILIS X jam/menit lalu]` atau `[AKAN RILIS dalam X jam/menit]` yang ditempel ke tiap baris event di `calBlock`. Instruksi "Kalender:" di prompt diupdate: AI WAJIB pakai tag ini apa adanya untuk menentukan tense, dilarang menghitung sendiri dari tanggal mentah.
+
+**Testing:** Unit test lokal `_calEventStatusTag()` (simulasi "now" = 19:30 WIB 25 Jun) — event 08:30 WIB hari yang sama → `[SUDAH RILIS 11 jam lalu]` (benar), event besok 08:30 WIB → `[AKAN RILIS dalam 13 jam]` (benar), event nanti malam 21:00 WIB → `[AKAN RILIS dalam 2 jam]` (benar). Test generate live 3x via curl ke `/api/market-digest` setelah deploy: percobaan 1-2 sempat fallback ke template generik karena SambaNova+OpenRouter timeout berbarengan (transient, lalu Groq fallback-3 kena HTTP 413 — dicatat sebagai temuan operasional terpisah, bukan regresi dari fix ini, karena percobaan ke-3 langsung sukses via SambaNova tanpa ubah apa pun); percobaan ke-3 sukses, AI comply dengan tag topik dari Session 108 sekaligus konten tetap padat.
 
 ---
 
