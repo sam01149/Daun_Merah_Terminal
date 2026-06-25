@@ -9516,8 +9516,12 @@ function renderTekNews() {
 
 const TEK_TV_SYM = {};
 TEK_ALL_PAIRS.forEach(p => { TEK_TV_SYM[p] = p === 'XAUUSD' ? 'FOREXCOM:XAUUSD' : ('FX:' + p); });
-TEK_TV_SYM.US10Y = 'TVC:US10Y';
-TEK_TV_SYM.US02Y = 'TVC:US02Y';
+// TVC:US10Y/US02Y kena paywall di widget gratis ("hanya tersedia di TradingView").
+// FRED:DGS10/DGS2 sama-sama data resmi (US Treasury via FRED, sama sumber dengan
+// api/real-yields.js) dan gak dikunci — trade-off: FRED cuma update harian, jadi
+// candle di timeframe intraday (H4/H1/M15) gak akan se-granular pair FX biasa.
+TEK_TV_SYM.US10Y = 'FRED:DGS10';
+TEK_TV_SYM.US02Y = 'FRED:DGS2';
 
 const TEK_YIELD_LABELS = { US10Y: 'US 10Y Yield', US02Y: 'US 2Y Yield' };
 function tekPairLabel(p) { return TEK_YIELD_LABELS[p] || (p.slice(0, 3) + '/' + p.slice(3)); }

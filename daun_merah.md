@@ -1024,6 +1024,7 @@ Format ini sudah **berubah ke prosa naratif** — levels disebutkan dalam kalima
 - `TEK_YAHOO_SYM.US10Y = '^TNX'` (buat panel TA RSI/SMA) — US02Y gak ada index Yahoo yang bersih, jadi `fetchTaData()` skip otomatis (graceful, gak crash)
 - `TEK_PAIR_KEYWORDS.US10Y/US02Y` di-set manual ke keyword USD (Fed/FOMC/yield) biar filter Berita Terkait tetap relevan
 - Strip badge US10Y dari poin 7 di-skip otomatis (`renderTekYield()`) kalau lagi di-chart sendiri — gak ada badge duplikat
+- **Update:** `TVC:US10Y`/`TVC:US02Y` ternyata kena paywall di widget gratis ("Simbol tersebut hanya tersedia di TradingView"). Diganti ke `FRED:DGS10`/`FRED:DGS2` (data US Treasury via FRED, sumber sama dengan `api/real-yields.js`, gak dikunci). Trade-off: FRED update harian doang, jadi timeframe intraday (H4/H1/M15) gak akan se-granular pair FX biasa — tapi chart-nya jalan tanpa paywall.
 
 ---
 
