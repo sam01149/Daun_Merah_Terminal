@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-06-25 (session 103 — lihat "Changelog Session 103" di bawah untuk detail terbaru)
+> **Last updated:** 2026-06-25 (session 104 — lihat "Changelog Session 104" di bawah untuk detail terbaru)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Financial_Feed_App`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -118,6 +118,29 @@ Financial_Feed_App/
 > **Penting:** `api/feeds.js` menggantikan `api/rss.js` dan `api/cot.js` yang sudah dihapus.
 > `api/admin.js` menggantikan `api/health.js`, `api/redis-keys.js`, `api/admin-prompts.js`, dan `api/push.js`.
 > Konsolidasi ini dilakukan untuk tetap di bawah limit 12 serverless functions Vercel Hobby.
+
+---
+
+## Changelog Session 104 (2026-06-25)
+
+### Redesign tab RINGKASAN — gaya "laporan profesional" flat & minimal
+
+**Konteks:** User minta tampilan tab RINGKASAN diubah agar berasa seperti laporan profesional, bukan dashboard kasual. Dikasih 3 opsi mock-up (flat-minimal / serif-body / batal) — user pilih flat & minimal.
+
+**Implementasi (`index.html`):**
+- `.ringkasan-card` & `.thesis-card`: hilangkan rounded-box background + colored left accent bar (`::before`), ganti jadi flat `border-top` divider antar section (selaras antar section, bukan kotak-kotak terpisah).
+- `.ringkasan-method`: hilangkan pill berwarna + emoji per-provider (⚡🧠✨🤖), jadi teks abu kecil biasa — cuma status `fallback`/`fallback_quota` yang tetap dapat warna (kuning) karena itu informasi kualitas data, bukan dekorasi.
+- `.thesis-dir`: hilangkan background pill berwarna, jadi teks polos berwarna (hijau/merah) saja.
+- `.thesis-conf`: bintang ★★★★☆ diganti teks "Confidence: Tinggi/Sedang/Rendah" (`confidenceLabel()`) — lebih sesuai nada laporan dibanding rating ala app konsumen.
+- Tambah heading section flat: "LAPORAN PASAR" (judul laporan), "Thesis · FX" / "Thesis · XAU/USD" (label section thesis, class `thesis-section-label`), "Market Briefing" (sebelumnya tanpa label di bagian FX artikel, sekarang ada biar konsisten dengan label "XAUUSD" di sampingnya).
+- Hapus `.ringkasan-stats` (kotak chip jumlah berita/event) — datanya sudah ada di `.ringkasan-meta-left` (`tsStr · N berita · M kalender`), jadi sebelumnya nampilin angka yang sama dua kali.
+- Dashboard: blok thesis FX/XAU yang sebelumnya duplikat inline HTML (beda dari tab RINGKASAN) sekarang reuse `renderThesisCard()`/`renderXauThesisCard()` langsung — otomatis ikut style baru, dan dapat bonus tombol "Mulai ke Sizing Calc →" yang sebelumnya cuma ada di tab RINGKASAN.
+
+### Rename tombol "Generate Ringkasan" → "Ringkas Berita"
+
+Permintaan user: hilangkan istilah "Generate", ganti "Ringkas Berita" (state awal), "Ringkas Ulang" (sudah ada ringkasan), "Meringkas..." (loading state). Diterapkan konsisten di semua tempat tombol ini muncul: tab RINGKASAN, Dashboard, dan teks panduan/onboarding (Petunjuk) yang merujuk ke tombol ini.
+
+**Testing:** Validasi sintaks tiap blok `<script>` (`node -e "new Function(...)"`) — lolos. Verifikasi manual tidak ada CSS/class yang jadi orphan setelah penghapusan (`rstat`, `::before` pada card/thesis-card, `ringkasan-card-xau::before`) — semua referensi sudah dibersihkan dari render function maupun stylesheet.
 
 ---
 
