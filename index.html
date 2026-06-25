@@ -515,6 +515,11 @@ body {
   border-radius: 0 5px 5px 0;
   margin-left: -2px;
 }
+.r-tag {
+  font-size: 9px; font-family: 'DM Mono', monospace; letter-spacing: .1em;
+  color: var(--muted); text-transform: uppercase; margin: 14px 0 4px;
+}
+.ringkasan-text .r-tag:first-child { margin-top: 0; }
 .hl-num  { color: var(--yellow); }
 .hl-cur  { color: var(--accent); font-weight: 600; }
 .hl-bull { color: var(--green);  font-family: 'DM Mono', monospace; font-size: 11px; }
@@ -3947,14 +3952,31 @@ function highlightInline(html) {
   return html;
 }
 
+function _articleRenderPara(t) {
+  t = t.trim();
+  if (!t) return '';
+  const escaped = escHtml(t).replace(/\n/g, '<br>');
+  const highlighted = highlightInline(escaped);
+  // Calendar paragraph: has "jika beat/miss/hawkish/dovish" + WIB time — render with left border
+  const isCal = /jika\s+(?:beat|miss|hawkish|dovish)/i.test(t) && /\bWIB\b/.test(t);
+  return `<p class="r-para${isCal ? ' r-cal' : ''}">${highlighted}</p>`;
+}
+
+// AI digest bisa menyisipkan tag "{{TAG: NAMA}}" di awal kalimat tiap kali fokus
+// bergeser ke currency/sub-topik baru (lihat prompt Call 1 di market-digest.js) —
+// dipecah jadi heading kecil + paragraf baru di sini. Kalau AI nggak nyisipin tag
+// sama sekali (model lama/non-compliant), fallback ke render paragraf biasa tanpa
+// efek apa pun — jadi backward-compatible, nggak ada cara ini bisa merusak output.
 function articleToHtml(text) {
-  return text.trim().split(/\n\n+/).map(para => {
-    const t = para.trim();
-    const escaped = escHtml(t).replace(/\n/g, '<br>');
-    const highlighted = highlightInline(escaped);
-    // Calendar paragraph: has "jika beat/miss/hawkish/dovish" + WIB time — render with left border
-    const isCal = /jika\s+(?:beat|miss|hawkish|dovish)/i.test(t) && /\bWIB\b/.test(t);
-    return `<p class="r-para${isCal ? ' r-cal' : ''}">${highlighted}</p>`;
+  return text.trim().split(/\n\n+/).map(block => {
+    const parts = block.split(/\{\{TAG:\s*([^}]+)\}\}\s*/);
+    if (parts.length === 1) return _articleRenderPara(parts[0]);
+    let html = parts[0].trim() ? _articleRenderPara(parts[0]) : '';
+    for (let i = 1; i < parts.length; i += 2) {
+      html += `<div class="r-tag">${escHtml(parts[i].trim())}</div>`;
+      html += _articleRenderPara(parts[i + 1] || '');
+    }
+    return html;
   }).join('');
 }
 

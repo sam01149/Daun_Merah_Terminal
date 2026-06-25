@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-06-25 (session 107 — lihat "Changelog Session 107" di bawah untuk detail terbaru)
+> **Last updated:** 2026-06-25 (session 108 — lihat "Changelog Session 108" di bawah untuk detail terbaru)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Financial_Feed_App`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -118,6 +118,22 @@ Financial_Feed_App/
 > **Penting:** `api/feeds.js` menggantikan `api/rss.js` dan `api/cot.js` yang sudah dihapus.
 > `api/admin.js` menggantikan `api/health.js`, `api/redis-keys.js`, `api/admin-prompts.js`, dan `api/push.js`.
 > Konsolidasi ini dilakukan untuk tetap di bawah limit 12 serverless functions Vercel Hobby.
+
+---
+
+## Changelog Session 108 (2026-06-25) — EKSPERIMEN, belum dikonfirmasi user
+
+### Tag topik inline di prompt Call 1 — biar paragraf padat lebih mudah dipindai
+
+**Konteks:** User merasa narasi briefing (terutama bagian FX) noise — bukan soal kualitas/kedalaman isi (tetap diakui sangat informatif), tapi karena ~6-7 tema (PCE/Fed, GDP+claims, ECB/EUR, risk sentiment, komoditas, USD/JPY, kesimpulan) dijejer satu paragraf prosa panjang tanpa jeda visual. User kepikiran bikin sub-bab, tapi khawatir ubah prompt bikin output AI "kurang" (lebih ringkas/dangkal) — minta dicek dulu sebelum dipakai.
+
+**Kenapa BUKAN restrukturisasi penuh jadi section:** Prompt Call 1 yang sudah ada punya instruksi "PENDEKATAN BENANG MERAH FX" yang sengaja MELARANG tema ditulis sebagai paragraf lepas yang ditumpuk — tema lain WAJIB dikaitkan ke tema utama lewat konektor sebab-akibat eksplisit. Minta AI menulis section berdiri sendiri akan langsung bentrok sama instruksi ini dan berisiko menurunkan kualitas benang-merah narasi yang sudah di-tuning panjang (87 baris prompt).
+
+**Pendekatan yang dipakai — tag tambahan, bukan pengganti:** Tambah instruksi "LABEL TOPIK" di prompt (`api/market-digest.js`, FX poin 6 dan XAU poin 9) — AI tetap menulis narasi yang sama (konektor causal tetap wajib), tapi setiap kali fokus bergeser ke currency/sub-topik baru, sisipkan tag `{{TAG: NAMA}}` persis sebelum kalimatnya. Frontend (`articleToHtml()` di `index.html`) mendeteksi tag ini dan mengubahnya jadi heading kecil + jeda paragraf baru — kalau AI nggak comply (model lama/nggak ikut instruksi), fallback otomatis ke render paragraf biasa seperti sebelumnya (backward-compatible, nggak ada cara ini merusak output existing).
+
+**PERINGATAN PENTING — belum tervalidasi sepenuhnya:** `digestSystemMsg = promptDigestInstr || DIGEST_SYSTEM_DEFAULT` (`market-digest.js` baris ~922) — kalau ada custom prompt tersimpan di Redis key `prompt_digest` (lewat endpoint `admin-prompts`), prompt itu yang DIPAKAI, bukan `DIGEST_SYSTEM_DEFAULT` yang baru diedit di sesi ini. Saya tidak punya `CRON_SECRET`/`x-admin-secret` untuk cek apakah Redis key itu terisi di production — kalau iya, perubahan prompt sesi ini TIDAK akan ada efeknya sampai key Redis itu juga diupdate (lewat `POST /api/admin?action=admin-prompts&key=prompt_digest`) atau dihapus supaya fallback ke default yang baru.
+
+**Testing:** Validasi sintaks `index.html` + `market-digest.js` — lolos. Test logika parsing `articleToHtml()` secara lokal (Node, 2 skenario: AI pakai tag vs tidak) — keduanya render benar. **Belum ada test generate live** (butuh tes manual lewat tombol "Ringkas Ulang" di app oleh user, sekaligus untuk cek: (1) apakah Redis prompt override di atas memblokir perubahan ini, (2) apakah AI benar-benar comply nyisipin tag, (3) apakah kedalaman/density konten tetap sama seperti sebelumnya — sesuai concern awal user).
 
 ---
 
