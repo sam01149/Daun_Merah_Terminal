@@ -9376,9 +9376,16 @@ for (let i = 0; i < TEK_CURRENCIES.length; i++) {
     TEK_FX_PAIRS.push(TEK_CURRENCIES[i] + TEK_CURRENCIES[j]);
   }
 }
+// Yield instrument "pairs" — bukan currency pair, jadi gak ikut skema slice(0,3)/slice(3)
+// base/quote biasa. Ditangani khusus di tekPairLabel() + override manual di TEK_TV_SYM/TEK_YAHOO_SYM
+// di bawah, supaya bisa dipilih & dichart candle-nya sendiri buat technical reading (trendline/SR)
+// langsung di yield-nya, bukan cuma angka strip di tab TEKNIKAL.
+const TEK_YIELD_INSTRUMENTS = ['US10Y', 'US02Y'];
+
 const TEK_ALL_PAIRS = [
   'XAUUSD','EURUSD','GBPUSD','USDJPY','AUDUSD','NZDUSD','USDCAD','USDCHF',
   ...TEK_FX_PAIRS.filter(p => !['EURUSD','GBPUSD','USDJPY','AUDUSD','NZDUSD','USDCAD','USDCHF'].includes(p)).sort(),
+  ...TEK_YIELD_INSTRUMENTS,
 ];
 
 // Keyword lists, kept per-currency so each cross pair = union of both legs
@@ -9412,11 +9419,14 @@ const TEK_CUR_KEYWORDS = {
 // headlines since those match TEK_SHARED_KEYWORDS regardless of pair.
 const TEK_PAIR_KEYWORDS = {};       // specific keywords only (both legs)
 TEK_ALL_PAIRS.forEach(p => {
+  if (TEK_YIELD_INSTRUMENTS.includes(p)) return; // di-isi manual di bawah, bukan currency pair
   const legs = p === 'XAUUSD' ? ['XAU','USD'] : [p.slice(0,3), p.slice(3)];
   const specific = new Set();
   legs.forEach(c => (TEK_CUR_KEYWORDS[c] || []).forEach(k => specific.add(k)));
   TEK_PAIR_KEYWORDS[p] = [...specific];
 });
+TEK_PAIR_KEYWORDS.US10Y = TEK_CUR_KEYWORDS.USD;
+TEK_PAIR_KEYWORDS.US02Y = TEK_CUR_KEYWORDS.USD;
 const TEK_CAT_COLOR = {
   'market-moving':'#e74c3c','forex':'#38bdf8','macro':'#a78bfa','econ-data':'#27ae60',
   'energy':'#e67e22','geopolitical':'#fb923c','commodities':'#f59e0b',
@@ -9445,7 +9455,7 @@ function renderTekNews() {
   const sec = document.getElementById('tekNewsSection');
   if (!sec) return;
 
-  const pairLabel = tekPair.slice(0, 3) + '/' + tekPair.slice(3);
+  const pairLabel = tekPairLabel(tekPair);
   let html = '<div class="tek-news-hdr">'
     + '<span class="tek-news-hdr-title">Berita Terkait</span>'
     + '<span class="tek-news-hdr-pair">' + pairLabel + '</span>'
@@ -9506,8 +9516,11 @@ function renderTekNews() {
 
 const TEK_TV_SYM = {};
 TEK_ALL_PAIRS.forEach(p => { TEK_TV_SYM[p] = p === 'XAUUSD' ? 'FOREXCOM:XAUUSD' : ('FX:' + p); });
+TEK_TV_SYM.US10Y = 'TVC:US10Y';
+TEK_TV_SYM.US02Y = 'TVC:US02Y';
 
-function tekPairLabel(p) { return p.slice(0, 3) + '/' + p.slice(3); }
+const TEK_YIELD_LABELS = { US10Y: 'US 10Y Yield', US02Y: 'US 2Y Yield' };
+function tekPairLabel(p) { return TEK_YIELD_LABELS[p] || (p.slice(0, 3) + '/' + p.slice(3)); }
 
 let tekPair = 'XAUUSD';
 let tekTF = '240';
@@ -9964,7 +9977,7 @@ function renderTekOptions() {
     return;
   }
 
-  const pairLabel = tekPair.slice(0, 3) + '/' + tekPair.slice(3);
+  const pairLabel = tekPairLabel(tekPair);
   const all = data.expiries || [];
   const filtered = all.filter(e => {
     const ep = (e.pair || '').toUpperCase().replace('/', '');
@@ -10007,6 +10020,8 @@ function renderTekOptions() {
 // Maps tekPair values → Yahoo Finance symbols used by /api/correlations?action=ta
 const TEK_YAHOO_SYM = {};
 TEK_ALL_PAIRS.forEach(p => { TEK_YAHOO_SYM[p] = p === 'XAUUSD' ? 'GC=F' : (p + '=X'); });
+TEK_YAHOO_SYM.US10Y = '^TNX'; // CBOE 10Y T-Note yield index — value already in % (e.g. 45.0 = 4.50%, lihat note di renderTaPanel/scaling kalau perlu)
+delete TEK_YAHOO_SYM.US02Y; // Gak ada index Yahoo yang bersih buat 2Y — fetchTaData() skip otomatis kalau symbol gak ketemu
 
 // TradingView interval codes → Yahoo Finance interval param
 const TEK_TV_TO_API_TF = { 'D':'1d', '240':'4h', '60':'1h', '15':'15m' };
@@ -10174,6 +10189,7 @@ function initTeknikal() {
 function renderTekYield() {
   const el = document.getElementById('tekYieldStrip');
   if (!el) return;
+  if (TEK_YIELD_INSTRUMENTS.includes(tekPair)) { el.style.display = 'none'; return; } // udah jadi chart utamanya sendiri, gak perlu badge duplikat
   const usd = realYieldsData && realYieldsData.USD;
   if (!usd || usd.nominal == null) { el.style.display = 'none'; return; }
   const isXau = tekPair === 'XAUUSD';

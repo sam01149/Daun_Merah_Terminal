@@ -1017,6 +1017,14 @@ Format ini sudah **berubah ke prosa naratif** — levels disebutkan dalam kalima
 - Badge "✅ selaras COT" / "⚠ kontra COT" ditambah di kartu list JURNAL biar kelihatan retroaktif juga
 - Catatan desain: TIDAK ditambah breakdown win-rate numerik per kategori (bias/regime/COT) — sample trade trader pribadi biasanya kekecilan buat statistik valid, AI analysis yang udah ada (poin 2 prompt) lebih aman buat sample kecil drpd widget angka yang bisa overfit/noise
 
+**10. Fitur baru: US10Y & US2Y sebagai chart candle sendiri di tab TEKNIKAL**
+- Awalnya US10Y cuma badge angka (poin 7), tapi user mau technical reading langsung di yield-nya (trendline/SR) — bukan cuma satu angka
+- `TEK_YIELD_INSTRUMENTS = ['US10Y','US02Y']` ditambah ke `TEK_ALL_PAIRS` (jadi muncul di dropdown pair, searchable by "10Y"/"2Y"/"yield"), dengan override manual di `TEK_TV_SYM` (`TVC:US10Y`/`TVC:US02Y` — data asli TradingView) karena auto-derive symbol dari nama pair gak cocok buat instrumen non-currency-pair ini
+- `tekPairLabel()` dan 2 tempat lain yang masih hardcode `slice(0,3)+'/'+slice(3)` (renderTekNews, renderTekOptions) dirapihin pakai `tekPairLabel()` biar gak pecah format buat pair 5-karakter ini
+- `TEK_YAHOO_SYM.US10Y = '^TNX'` (buat panel TA RSI/SMA) — US02Y gak ada index Yahoo yang bersih, jadi `fetchTaData()` skip otomatis (graceful, gak crash)
+- `TEK_PAIR_KEYWORDS.US10Y/US02Y` di-set manual ke keyword USD (Fed/FOMC/yield) biar filter Berita Terkait tetap relevan
+- Strip badge US10Y dari poin 7 di-skip otomatis (`renderTekYield()`) kalau lagi di-chart sendiri — gak ada badge duplikat
+
 ---
 
 ## Changelog Session 49 (2026-06-05)
