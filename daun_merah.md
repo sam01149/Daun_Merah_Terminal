@@ -130,7 +130,7 @@ Financial_Feed_App/
 **Implementasi (`index.html`):**
 - Extract helper `splitArticleParts(article)` dari logika split `"XAUUSD:"` yang sebelumnya cuma ada di `renderArticleSections` (tab RINGKASAN) — sekarang dipakai juga di `renderDashDigest()` biar tidak duplikat logika.
 - `renderDashDigest()` sekarang preview cuma satu sisi (`dashDigestSide`, persisted ke localStorage `dash_digest_side`, default `'xau'`), dengan tombol panah ‹ › (`toggleDashDigestSide()`) buat switch antar XAU/FX. Toggle cuma muncul kalau artikel benar-benar punya dua bagian (`hasBoth`); kalau cuma satu bagian, tampil langsung tanpa toggle.
-- "Lihat semua" sekarang threshold-nya dihitung dari panjang bagian yang sedang ditampilkan saja (bukan panjang artikel gabungan), supaya tombol itu konsisten dengan apa yang baru saja dibaca.
+- Susulan: ditampilkan **full** (tidak dipotong 500 char) karena cuma satu sisi yang tampil sekaligus — ruang yang dipakai sama dengan preview lama yang motong dua sisi. "Lihat semua" sekarang maksudnya "lihat sisi yang satunya juga" (label diubah jadi "→ Lihat semua (FX + XAU)"), muncul cuma kalau artikel punya dua bagian — bukan lagi soal truncation.
 
 **Testing:** Validasi sintaks tiap blok `<script>` di `index.html` (`node -e "new Function(...)"`) — lolos. Verifikasi manual alur 3 skenario: artikel ada XAU+FX (toggle muncul, default XAU), artikel cuma FX/legacy tanpa marker XAUUSD (toggle disembunyikan, fallback ke FX), dan belum ada ringkasan sama sekali (tetap tampil tombol Generate seperti sebelumnya, tidak kena logic split).
 

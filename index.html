@@ -10656,17 +10656,17 @@ function renderDashDigest() {
     if (thesisEl) thesisEl.innerHTML = '<div class="dash-no-data">—</div>';
     return;
   }
-  // Dashboard cuma nampilin SATU sisi (XAU atau FX) biar cepat dibaca — full
-  // dua-duanya tetap ada di tab RINGKASAN. Default XAU (sesuai kebiasaan trading
-  // user), toggle lewat panah disimpan ke localStorage biar persist antar visit.
+  // Dashboard cuma nampilin SATU sisi (XAU atau FX) biar cepat dibaca, dan
+  // ditampilkan FULL (tidak dipotong 500 char) — karena cuma satu sisi yang
+  // ditampilkan sekaligus, ruang yang dipakai sama dengan preview lama yang
+  // motong dua sisi. Default XAU (sesuai kebiasaan trading user), toggle
+  // lewat panah disimpan ke localStorage biar persist antar visit.
   const { fx, xau } = splitArticleParts(ringkasanCache.article || '');
   const hasBoth = !!(fx && xau);
   const side = hasBoth ? dashDigestSide : (xau ? 'xau' : 'fx');
-  const partText = side === 'xau' ? xau : fx;
-  const preview = partText.length > 500 ? partText.slice(0, 497) + '...' : partText;
-  const fullLen = side === 'xau' ? xau.length : fx.length;
-  const lihatSemua = fullLen > 500
-    ? `<button class="cal-scenario-ck-btn" style="margin:6px 0 4px" onclick="switchView('ringkasan')">→ Lihat semua</button>`
+  const preview = side === 'xau' ? xau : fx;
+  const lihatSemua = hasBoth
+    ? `<button class="cal-scenario-ck-btn" style="margin:6px 0 4px" onclick="switchView('ringkasan')">→ Lihat semua (FX + XAU)</button>`
     : '';
   const refreshBtn = ringkasanCache.stale
     ? `<button class="cal-scenario-ck-btn" id="dashGenBtn" onclick="dashGenerateRingkasan()" style="margin:6px 6px 4px 0">↻ Refresh (data lama)</button>`
