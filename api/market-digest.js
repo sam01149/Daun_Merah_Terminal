@@ -1099,6 +1099,34 @@ ${xauHistoryBlock}`;
     }
   }
 
+  // ── 5a. Safety net: kalimat penutup FX selalu ditag {{TAG: Konfirmasi}} ──────
+  // AI nggak selalu comply instruksi "WAJIB tag kalimat penutup" (terbukti di test
+  // live — kadang nempel tanpa tag di paragraf currency sebelumnya). Daripada cuma
+  // gantungin ke prompt compliance, pastikan juga di kode: kalimat penutup FX itu
+  // by design SELALU ada (instruksi "Penutup FX" di atas wajib menghasilkan satu
+  // kalimat kuat/lemah currency) dan SELALU jadi kalimat terakhir sebelum marker
+  // "XAUUSD:" — jadi aman ditandai di sini kalau AI lupa nge-tag sendiri.
+  function _ensureConfirmasiTag(text) {
+    if (!text) return text;
+    const xauIdx = text.indexOf('XAUUSD:');
+    const fxPart = xauIdx === -1 ? text : text.slice(0, xauIdx);
+    if (fxPart.includes('{{TAG:')) {
+      if (fxPart.includes('{{TAG: Konfirmasi}}')) return text; // AI sudah comply
+      // AI sudah pakai tag untuk topik lain tapi lupa di penutup — tetap cari batas
+      // kalimat terakhir di bawah, jangan skip cuma karena ada tag lain.
+    }
+    // Batas kalimat: titik diikuti spasi+huruf besar — pola ini sengaja menghindari
+    // angka desimal ("2.32%") karena tidak diikuti spasi+huruf besar.
+    const sentenceBoundary = /\.\s+(?=[A-Z])/g;
+    let lastIdx = -1, m;
+    while ((m = sentenceBoundary.exec(fxPart)) !== null) lastIdx = m.index + m[0].length;
+    if (lastIdx === -1) return text; // cuma 1 kalimat atau pola nggak ketemu, jangan dipaksa
+    return text.slice(0, lastIdx) + '{{TAG: Konfirmasi}} ' + text.slice(lastIdx);
+  }
+  if (article && method !== 'fallback' && method !== 'fallback_quota') {
+    article = _ensureConfirmasiTag(article);
+  }
+
   // ── 5b. Save digest + xau history (parallel) ──
   if (article && method !== 'fallback' && method !== 'fallback_quota') {
     try {

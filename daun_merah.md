@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-06-25 (session 110 — lihat "Changelog Session 110" di bawah untuk detail terbaru)
+> **Last updated:** 2026-06-25 (session 111 — lihat "Changelog Session 111" di bawah untuk detail terbaru)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Financial_Feed_App`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -118,6 +118,18 @@ Financial_Feed_App/
 > **Penting:** `api/feeds.js` menggantikan `api/rss.js` dan `api/cot.js` yang sudah dihapus.
 > `api/admin.js` menggantikan `api/health.js`, `api/redis-keys.js`, `api/admin-prompts.js`, dan `api/push.js`.
 > Konsolidasi ini dilakukan untuk tetap di bawah limit 12 serverless functions Vercel Hobby.
+
+---
+
+## Changelog Session 111 (2026-06-25)
+
+### Safety net kode untuk tag {{TAG: Konfirmasi}} — bukan cuma andalkan prompt compliance
+
+**Konteks:** Test live Session 110 (instruksi "WAJIB tag kalimat penutup") langsung gagal di percobaan pertama — AI tetap nempelkan kalimat penutup ("Penutup sesi ini mengonfirmasi USD sebagai yang terkuat...") tanpa tag ke paragraf {{TAG: AUD/CAD}} sebelumnya. Instruksi prompt yang sudah cukup panjang (>1000 kata) rupanya nggak cukup buat jamin compliance 100% pada satu item spesifik.
+
+**Fix (`api/market-digest.js`):** Tambah `_ensureConfirmasiTag()`, dijalankan di kode setelah Call 1 selesai (sebelum disimpan ke cache) — bukan gantung ke AI patuh instruksi. Logikanya manfaatkan fakta struktural yang SUDAH dijamin oleh prompt yang sudah ada ("Penutup FX" wajib menghasilkan satu kalimat kuat/lemah currency sebagai kalimat TERAKHIR sebelum marker "XAUUSD:") — cari batas kalimat terakhir di bagian FX (regex titik+spasi+huruf besar, sengaja menghindari angka desimal seperti "2.32%"), sisipkan tag persis di situ kalau belum ada. Kalau AI ternyata sudah comply duluan, fungsi ini no-op (deteksi `{{TAG: Konfirmasi}}` sudah ada → return apa adanya).
+
+**Testing:** Unit test lokal dengan teks sample yang reproduksi persis kasus gagal dari test live sebelumnya — tag berhasil disisipkan tepat sebelum "Penutup sesi ini...". Test generate live perlu diulang setelah deploy untuk konfirmasi end-to-end.
 
 ---
 
