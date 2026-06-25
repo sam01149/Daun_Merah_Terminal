@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-06-25 (session 105 — lihat "Changelog Session 105" di bawah untuk detail terbaru)
+> **Last updated:** 2026-06-25 (session 107 — lihat "Changelog Session 107" di bawah untuk detail terbaru)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Financial_Feed_App`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -118,6 +118,16 @@ Financial_Feed_App/
 > **Penting:** `api/feeds.js` menggantikan `api/rss.js` dan `api/cot.js` yang sudah dihapus.
 > `api/admin.js` menggantikan `api/health.js`, `api/redis-keys.js`, `api/admin-prompts.js`, dan `api/push.js`.
 > Konsolidasi ini dilakukan untuk tetap di bawah limit 12 serverless functions Vercel Hobby.
+
+---
+
+## Changelog Session 107 (2026-06-25)
+
+### Revert total redesign RINGKASAN (Session 104 + 106) — balik ke tampilan awal
+
+**Konteks:** Setelah dicoba flat redesign (Session 104) lalu hybrid warna-di-direction-badge (Session 106), user masih ragu dan akhirnya minta balik total ke tampilan sebelum redesign — card warna-warni, emoji provider badge, bintang confidence, semuanya. Tombol "Ringkas Berita"/"Ringkas Ulang"/"Meringkas..." (Session 104, request terpisah) **tidak** direvert karena itu bukan bagian dari keraguan soal visual.
+
+**Implementasi:** `git revert` dua commit (`b06f3aa` hybrid color fix, lalu `208fc70` redesign asli) — bukan `git reset`, supaya history tetap utuh dan perubahan lain di antara dua commit itu (bug fix ANALISA, Session 105) tidak ikut hilang. Detail teknis redesign yang di-revert ada di entry Session 104 di bawah (dipertahankan sebagai catatan historis, meski sudah tidak aktif).
 
 ---
 

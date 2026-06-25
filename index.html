@@ -444,23 +444,25 @@ body {
 .ringkasan-inner {
   padding: 14px 12px 20px;
 }
-.ringkasan-report-title {
-  font-family: 'Syne', sans-serif; font-size: 13px; font-weight: 700;
-  letter-spacing: .1em; color: var(--text); margin-bottom: 6px;
-}
 .ringkasan-meta {
   display: flex; align-items: center; justify-content: space-between;
-  margin-bottom: 14px; padding-bottom: 12px; border-bottom: 1px solid var(--border);
-  flex-wrap: wrap; gap: 6px;
+  margin-bottom: 14px; flex-wrap: wrap; gap: 6px;
 }
 .ringkasan-meta-left {
   font-size: 10px; color: var(--muted);
 }
 .ringkasan-method {
-  font-size: 9px; letter-spacing: .5px; font-family: 'DM Mono', monospace; color: var(--muted);
+  font-size: 9px; padding: 2px 8px; border-radius: 3px; letter-spacing: .5px;
 }
+.ringkasan-method.groq,
+.ringkasan-method.qwen3-32b   { background: rgba(245,166,35,.1); color: #f5a623; }
+.ringkasan-method.cerebras    { background: rgba(100,220,160,.1); color: #64dca0; }
+.ringkasan-method.gemini      { background: rgba(255,211,42,.1); color: var(--yellow); }
 .ringkasan-method.fallback,
-.ringkasan-method.fallback_quota { color: var(--yellow); }
+.ringkasan-method.fallback_quota { background: rgba(255,255,255,.06); color: var(--muted); }
+.ringkasan-method.deepseek-v3\.2,
+.ringkasan-method.deepseek-v3\.1 { background: rgba(79,172,254,.12); color: #4facfe; }
+.ringkasan-method.gpt-oss-120b   { background: rgba(16,163,127,.12); color: #10a37f; }
 .ringkasan-provider-log {
   font-size: 10px; color: var(--muted); font-family: 'DM Mono', monospace;
   background: rgba(255,255,255,.03); border-radius: 6px; padding: 8px 12px;
@@ -490,9 +492,14 @@ body {
 }
 
 .ringkasan-card {
-  padding: 16px 0; border-top: 1px solid var(--border);
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 10px; padding: 16px 18px; margin-bottom: 14px;
+  position: relative; overflow: hidden;
 }
-.ringkasan-card:first-child { border-top: none; padding-top: 0; }
+.ringkasan-card::before {
+  content: ''; position: absolute; left: 0; top: 0; bottom: 0;
+  width: 3px; background: var(--accent);
+}
 .ringkasan-text {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   font-size: 13px; font-weight: 400; line-height: 1.75; color: var(--text);
@@ -512,27 +519,44 @@ body {
 .hl-cur  { color: var(--accent); font-weight: 600; }
 .hl-bull { color: var(--green);  font-family: 'DM Mono', monospace; font-size: 11px; }
 .hl-bear { color: var(--pink);   font-family: 'DM Mono', monospace; font-size: 11px; }
+.ringkasan-card-xau::before { background: #c9a227; }
 .ringkasan-xau-label {
   font-size: 9px; font-family: 'DM Mono', monospace; letter-spacing: .12em;
-  color: var(--muted); margin-bottom: 10px; font-weight: 600; text-transform: uppercase;
+  color: #c9a227; margin-bottom: 10px; font-weight: 600;
 }
 
 .thesis-card {
-  padding: 16px 0; border-top: 1px solid var(--border);
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 10px; padding: 14px 16px; margin-bottom: 14px;
+  position: relative; overflow: hidden;
 }
-.thesis-card:first-child { border-top: none; padding-top: 0; }
-.thesis-section-label {
-  font-size: 9px; font-family: 'DM Mono', monospace; letter-spacing: .12em;
-  color: var(--muted); margin-bottom: 10px; font-weight: 600; text-transform: uppercase;
+.thesis-card::before {
+  content: ''; position: absolute; left: 0; top: 0; bottom: 0;
+  width: 3px; background: var(--pink);
 }
 .thesis-pair { font-family:'DM Mono',monospace; font-size:18px; font-weight:700; color:var(--text); }
-.thesis-dir  { font-size:10px; margin-left:8px; font-family:'DM Mono',monospace; letter-spacing:.05em; font-weight:700; }
-.thesis-dir.long  { color:var(--green); }
-.thesis-dir.short { color:var(--accent); }
-.thesis-conf { color:var(--muted); font-size:10px; margin-left:8px; font-family:'DM Mono',monospace; letter-spacing:.05em; }
+.thesis-dir  { font-size:10px; padding:3px 8px; border-radius:3px; margin-left:8px; font-family:'DM Mono',monospace; letter-spacing:.05em; }
+.thesis-dir.long  { background:#1a5e38; color:var(--green); }
+.thesis-dir.short { background:#7a1f17; color:var(--accent); }
+.thesis-conf { color:var(--yellow); font-size:13px; margin-left:8px; }
 .thesis-label { font-size:9px; color:var(--muted); font-family:'DM Mono',monospace; letter-spacing:.05em; margin-top:8px; }
 .thesis-val   { font-size:11px; color:var(--text-mid); font-family:'DM Mono',monospace; margin-top:2px; }
 .thesis-use-btn { margin-top:10px; background:none; border:1px solid var(--accent); color:var(--accent); padding:6px 12px; font-family:'DM Mono',monospace; font-size:10px; border-radius:3px; cursor:pointer; letter-spacing:.05em; }
+.thesis-card.xau::before { background: var(--yellow); }
+
+.ringkasan-stats {
+  display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap;
+}
+.rstat {
+  flex: 1; min-width: 80px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 8px; padding: 8px 12px; text-align: center;
+}
+.rstat-val {
+  font-family: 'Syne', sans-serif; font-size: 18px; font-weight: 700;
+  color: var(--accent);
+}
+.rstat-label { font-size: 9px; color: var(--muted); letter-spacing: .4px; margin-top: 2px; }
 
 .ringkasan-gen-btn {
   width: 100%; padding: 13px; border-radius: 8px;
@@ -2193,7 +2217,7 @@ body {
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
         <circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/>
       </svg>
-      <span>Ringkas Berita</span>
+      <span>Generate Ringkasan</span>
     </button>
   </div>
   <div class="ringkasan-inner" style="padding-top:0" id="polymarketWrap">
@@ -2259,7 +2283,7 @@ body {
     </div>
     <div id="cbGrid">
       <div style="text-align:center;padding:12px;color:var(--muted);font-size:11px;font-family:'DM Mono',monospace">
-        Bias diperbarui otomatis saat Ringkas Berita
+        Bias diperbarui otomatis saat Generate Ringkasan
       </div>
     </div>
   </div>
@@ -2515,7 +2539,7 @@ body {
       </div>
       <div class="pt-row">
         <div class="pt-step-num">1.2</div>
-        <div class="pt-step-action"><strong>Ringkas Berita</strong>Buka tab RINGKASAN → tap "Ringkas Berita". Baca hasil AI dari atas ke bawah: driver pasar, pairs yang bergerak, bias sesi, dan paragraf XAUUSD di bagian bawah.</div>
+        <div class="pt-step-action"><strong>Generate Ringkasan</strong>Buka tab RINGKASAN → tap "Generate". Baca hasil AI dari atas ke bawah: driver pasar, pairs yang bergerak, bias sesi, dan paragraf XAUUSD di bagian bawah.</div>
         <div class="pt-step-why">Ringkasan mengagregasi 80+ headline terakhir + event kalender. Lebih cepat dari baca satu-satu. Hasilnya hanya valid ~4 jam — generate ulang setelah itu.</div>
       </div>
       <div class="pt-row">
@@ -2611,7 +2635,7 @@ body {
       </div>
       <div class="pt-rule">
         <div class="pt-rule-icon">✅</div>
-        <div class="pt-rule-text"><strong>Ringkas Berita tiap pagi</strong>Jangan trade tanpa konteks hari ini. Ringkasan butuh &lt;30 detik untuk dibaca dan bisa mencegah entry yang salah arah.</div>
+        <div class="pt-rule-text"><strong>Generate Ringkasan tiap pagi</strong>Jangan trade tanpa konteks hari ini. Ringkasan butuh &lt;30 detik untuk dibaca dan bisa mencegah entry yang salah arah.</div>
       </div>
       <div class="pt-rule">
         <div class="pt-rule-icon">✅</div>
@@ -3066,7 +3090,7 @@ function tickCooldown() {
     } else {
       clearInterval(ringkasanCooldownInterval);
       btn.classList.remove('loading');
-      btn.querySelector('span').textContent = ringkasanCache ? 'Ringkas Ulang' : 'Ringkas Berita';
+      btn.querySelector('span').textContent = ringkasanCache ? 'Generate Ulang' : 'Generate Ringkasan';
     }
   }, 1000);
 }
@@ -3443,7 +3467,7 @@ document.getElementById('toast').addEventListener('click', () => {
 async function generateRingkasan() {
   const btn = document.getElementById('ringkasanBtn');
   btn.classList.add('loading');
-  btn.querySelector('span').textContent = 'Meringkas...';
+  btn.querySelector('span').textContent = 'Generating...';
 
   try {
     const deviceId = szGetDeviceId();
@@ -3462,7 +3486,7 @@ async function generateRingkasan() {
   } catch(e) {
     showToast('Gagal', 'Ringkasan tidak merespons: ' + e.message, 4000);
     btn.classList.remove('loading');
-    btn.querySelector('span').textContent = ringkasanCache ? 'Ringkas Ulang' : 'Ringkas Berita';
+    btn.querySelector('span').textContent = ringkasanCache ? 'Generate Ulang' : 'Generate Ringkasan';
   }
 }
 
@@ -3480,7 +3504,7 @@ function renderRingkasan() {
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
           <circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/>
         </svg>
-        <span>Ringkas Berita</span>
+        <span>Generate Ringkasan</span>
       </button>`;
     return;
   }
@@ -3490,10 +3514,20 @@ function renderRingkasan() {
   const tsStr = `${String(wib.getUTCHours()).padStart(2,'0')}:${String(wib.getUTCMinutes()).padStart(2,'0')} WIB`;
 
   inner.innerHTML = `
-    <div class="ringkasan-report-title">LAPORAN PASAR</div>
     <div class="ringkasan-meta">
       <div class="ringkasan-meta-left">${tsStr} · ${d.news_count} berita${d.gold_count ? ' · ' + d.gold_count + ' XAU' : ''} · ${d.cal_count} kalender${d.from_cache ? ' · cache' : ''}</div>
-      <span class="ringkasan-method ${d.method}">${{'fallback':'⚠ Fallback','fallback_quota':'⚠ Quota'}[d.method] || d.method || 'auto'}</span>
+      <span class="ringkasan-method ${d.method}">${{'cerebras':'⚡ Cerebras','groq':'⚡ Groq','gemini':'✨ Gemini','deepseek-v3.2':'🧠 SambaNova V3.2','deepseek-v3.1':'🧠 SambaNova V3.1','gpt-oss-120b':'🤖 OpenRouter','qwen3-32b':'⚡ Groq Qwen3','fallback':'⚠ Fallback','fallback_quota':'⚠ Quota'}[d.method] || d.method || '⚙️ Auto'}</span>
+    </div>
+
+    <div class="ringkasan-stats">
+      <div class="rstat">
+        <div class="rstat-val">${d.news_count}</div>
+        <div class="rstat-label">Berita (36j)</div>
+      </div>
+      <div class="rstat">
+        <div class="rstat-val">${d.cal_count}</div>
+        <div class="rstat-label">Event Kalender</div>
+      </div>
     </div>
 
     ${d.thesis && d.thesis.confidence_1_to_5 >= 3 ? renderThesisCard(d.thesis) : ''}
@@ -3513,7 +3547,7 @@ function renderRingkasan() {
         <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>
         <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
       </svg>
-      <span>Ringkas Ulang</span>
+      <span>Generate Ulang</span>
     </button>
     <div class="ringkasan-ts">Data: ${d.news_count} headline + ${d.cal_count} event high-impact</div>
   `;
@@ -3941,11 +3975,10 @@ function renderArticleSections(article) {
   if (!article) return '';
   const { fx: fxPart, xau: xauPart } = splitArticleParts(article);
   if (!xauPart) {
-    return `<div class="ringkasan-card"><div class="ringkasan-xau-label">Market Briefing</div><div class="ringkasan-text">${articleToHtml(fxPart)}</div></div>`;
+    return `<div class="ringkasan-card"><div class="ringkasan-text">${articleToHtml(fxPart)}</div></div>`;
   }
   return `
     <div class="ringkasan-card">
-      <div class="ringkasan-xau-label">Market Briefing</div>
       <div class="ringkasan-text">${articleToHtml(fxPart)}</div>
     </div>
     <div class="ringkasan-card ringkasan-card-xau">
@@ -3958,24 +3991,18 @@ let _lastThesis = (() => {
   try { return JSON.parse(localStorage.getItem('daun_merah_thesis') || 'null'); } catch(_) { return null; }
 })();
 
-// "Confidence" diungkapkan sebagai teks (Rendah/Sedang/Tinggi) bukan bintang —
-// konsisten dengan gaya laporan flat, bukan rating ala app konsumen.
-function confidenceLabel(n) {
-  if (!n) return '';
-  return n <= 2 ? 'Rendah' : n === 3 ? 'Sedang' : 'Tinggi';
-}
-
 function renderThesisCard(t) {
   _lastThesis = t;
   try { localStorage.setItem('daun_merah_thesis', JSON.stringify(t)); } catch(_) {}
+  const stars = '★'.repeat(t.confidence_1_to_5) + '☆'.repeat(5 - t.confidence_1_to_5);
   const dirClass = t.direction === 'long' ? 'long' : 'short';
   const dirLabel = t.direction === 'no_trade' ? 'NO TRADE' : t.direction.toUpperCase();
   return `<div class="thesis-card">
-    <div class="thesis-section-label">Thesis · FX</div>
+    <div style="font-size:9px;color:var(--pink);font-family:'DM Mono',monospace;letter-spacing:.1em;margin-bottom:8px">AI THESIS</div>
     <div style="display:flex;align-items:center">
       <span class="thesis-pair">${t.pair_recommendation || '—'}</span>
-      ${t.direction !== 'no_trade' ? `<span class="thesis-dir ${dirClass}">${dirLabel}</span>` : `<span class="thesis-dir" style="color:var(--muted)">${dirLabel}</span>`}
-      ${t.confidence_1_to_5 ? `<span class="thesis-conf">Confidence: ${confidenceLabel(t.confidence_1_to_5)}</span>` : ''}
+      ${t.direction !== 'no_trade' ? `<span class="thesis-dir ${dirClass}">${dirLabel}</span>` : `<span class="thesis-dir" style="background:var(--border);color:var(--muted)">${dirLabel}</span>`}
+      <span class="thesis-conf">${stars}</span>
     </div>
     ${t.invalidation_condition ? `<div class="thesis-label">INVALIDASI</div><div class="thesis-val">${escHtml(t.invalidation_condition)}</div>` : ''}
     ${t.catalyst_dependency ? `<div class="thesis-label">KATALIS</div><div class="thesis-val">${escHtml(t.catalyst_dependency)}</div>` : ''}
@@ -3987,13 +4014,14 @@ function renderThesisCard(t) {
 function renderXauThesisCard(t) {
   const xauColorMap = { bullish: 'var(--green)', bearish: 'var(--accent)', conflicting: 'var(--yellow)', neutral: 'var(--muted)' };
   const xauColor = xauColorMap[t.xau_bias] || 'var(--muted)';
+  const xauStars = t.xau_confidence ? '★'.repeat(t.xau_confidence) + '☆'.repeat(5 - t.xau_confidence) : '';
   const driverLabel = (t.xau_dominant_driver || '').replace(/_/g, ' ').toUpperCase();
   return `<div class="thesis-card xau">
-    <div class="thesis-section-label">Thesis · XAU/USD</div>
+    <div style="font-size:9px;color:var(--yellow);font-family:'DM Mono',monospace;letter-spacing:.1em;margin-bottom:8px">AI THESIS · XAU/USD</div>
     <div style="display:flex;align-items:center;flex-wrap:wrap;gap:4px;margin-bottom:6px">
       <span class="thesis-pair" style="font-size:15px">XAU/USD</span>
-      <span class="thesis-dir" style="color:${xauColor}">${(t.xau_bias || '').toUpperCase()}</span>
-      ${t.xau_confidence ? `<span class="thesis-conf">Confidence: ${confidenceLabel(t.xau_confidence)}</span>` : ''}
+      <span class="thesis-dir" style="background:${xauColor}22;color:${xauColor}">${(t.xau_bias || '').toUpperCase()}</span>
+      ${xauStars ? `<span class="thesis-conf">${xauStars}</span>` : ''}
     </div>
     ${driverLabel ? `<div class="thesis-label">DRIVER</div><div class="thesis-val">${driverLabel}</div>` : ''}
     ${t.xau_driver_evidence ? `<div class="thesis-label">BUKTI</div><div class="thesis-val">${escHtml(t.xau_driver_evidence)}</div>` : ''}
@@ -10537,7 +10565,7 @@ function fmtWibSession(isoTs) {
 
 async function dashGenerateRingkasan() {
   const btn = document.getElementById('dashGenBtn');
-  if (btn) { btn.disabled = true; btn.textContent = 'Meringkas...'; }
+  if (btn) { btn.disabled = true; btn.textContent = 'Generating...'; }
   await generateRingkasan().catch(() => {});
   if (activeView === 'dashboard') refreshDashboard();
 }
@@ -10636,7 +10664,7 @@ function renderDashDigest() {
   if (!digestEl) return;
   if (!ringkasanCache || !ringkasanCache.article) {
     digestEl.innerHTML = `<div class="dash-no-data">Belum ada briefing.</div>
-      <button class="cal-scenario-ck-btn" id="dashGenBtn" onclick="dashGenerateRingkasan()" style="margin-top:6px">Ringkas Berita</button>`;
+      <button class="cal-scenario-ck-btn" id="dashGenBtn" onclick="dashGenerateRingkasan()" style="margin-top:6px">Generate Ringkasan</button>`;
     if (thesisEl) thesisEl.innerHTML = '<div class="dash-no-data">—</div>';
     return;
   }
@@ -10670,11 +10698,42 @@ function renderDashDigest() {
     let html = '';
     const t = ringkasanCache.thesis;
 
-    // FX + XAU thesis card — reuse the same renderer as tab RINGKASAN (renderThesisCard
-    // / renderXauThesisCard) instead of a duplicated inline copy, so style changes there
-    // (e.g. flat-report redesign) apply to Dashboard automatically without drift.
-    if (t && t.pair_recommendation) html += renderThesisCard(t);
-    if (t && t.xau_bias && t.xau_bias !== 'insufficient_data') html += renderXauThesisCard(t);
+    // FX thesis card
+    if (t && t.pair_recommendation) {
+      const dirClass = t.direction === 'long' ? 'long' : t.direction === 'short' ? 'short' : '';
+      const dirLabel = t.direction === 'no_trade' ? 'NO TRADE' : (t.direction || '').toUpperCase();
+      const stars = '★'.repeat(t.confidence_1_to_5 || 0) + '☆'.repeat(5 - (t.confidence_1_to_5 || 0));
+      html += `<div class="thesis-card" style="margin-bottom:10px">
+        <div style="font-size:9px;color:var(--pink);font-family:'DM Mono',monospace;letter-spacing:.1em;margin-bottom:6px">AI THESIS · FX</div>
+        <div style="display:flex;align-items:center;flex-wrap:wrap;gap:4px;margin-bottom:6px">
+          <span class="thesis-pair">${escHtml(t.pair_recommendation)}</span>
+          ${t.direction !== 'no_trade' ? `<span class="thesis-dir ${dirClass}">${dirLabel}</span>` : `<span class="thesis-dir" style="background:var(--border);color:var(--muted)">${dirLabel}</span>`}
+          <span class="thesis-conf">${stars}</span>
+        </div>
+        ${t.invalidation_condition ? `<div class="thesis-label">INVALIDASI</div><div class="thesis-val">${escHtml(t.invalidation_condition)}</div>` : ''}
+        ${t.catalyst_dependency ? `<div class="thesis-label">KATALIS</div><div class="thesis-val">${escHtml(t.catalyst_dependency)}</div>` : ''}
+        ${t.time_horizon_days ? `<div class="thesis-label">HORIZON</div><div class="thesis-val">${t.time_horizon_days} hari</div>` : ''}
+      </div>`;
+    }
+
+    // XAU thesis card
+    if (t && t.xau_bias && t.xau_bias !== 'insufficient_data') {
+      const xauColorMap = { bullish: 'var(--green)', bearish: 'var(--accent)', conflicting: 'var(--yellow)', neutral: 'var(--muted)' };
+      const xauColor = xauColorMap[t.xau_bias] || 'var(--muted)';
+      const xauStars = t.xau_confidence ? '★'.repeat(t.xau_confidence) + '☆'.repeat(5 - t.xau_confidence) : '';
+      const driverLabel = (t.xau_dominant_driver || '').replace(/_/g, ' ').toUpperCase();
+      html += `<div class="thesis-card xau" style="margin-bottom:10px">
+        <div style="font-size:9px;color:var(--yellow);font-family:'DM Mono',monospace;letter-spacing:.1em;margin-bottom:6px">AI THESIS · XAU/USD</div>
+        <div style="display:flex;align-items:center;flex-wrap:wrap;gap:4px;margin-bottom:6px">
+          <span class="thesis-pair" style="font-size:15px">XAU/USD</span>
+          <span class="thesis-dir" style="background:${xauColor}22;color:${xauColor}">${(t.xau_bias || '').toUpperCase()}</span>
+          ${xauStars ? `<span class="thesis-conf">${xauStars}</span>` : ''}
+        </div>
+        ${driverLabel && t.xau_dominant_driver !== 'insufficient_data' ? `<div class="thesis-label">DRIVER</div><div class="thesis-val">${driverLabel}</div>` : ''}
+        ${t.xau_driver_evidence ? `<div class="thesis-label">BUKTI</div><div class="thesis-val">${escHtml(t.xau_driver_evidence)}</div>` : ''}
+        ${t.xau_key_trigger ? `<div class="thesis-label">TRIGGER</div><div class="thesis-val">${escHtml(t.xau_key_trigger)}</div>` : ''}
+      </div>`;
+    }
 
     // Thesis alerts (contradictions for open journal positions)
     const alerts = ringkasanCache.thesis_alerts;
@@ -10689,7 +10748,7 @@ function renderDashDigest() {
       </div>`;
     }
 
-    thesisEl.innerHTML = html || '<div class="dash-no-data">Ringkas Berita untuk melihat AI thesis.</div>';
+    thesisEl.innerHTML = html || '<div class="dash-no-data">Generate Ringkasan untuk melihat AI thesis.</div>';
   }
 }
 
