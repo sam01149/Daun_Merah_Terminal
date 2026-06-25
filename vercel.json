@@ -22,6 +22,18 @@
     {
       "path": "/api/admin?action=gdpnow",
       "schedule": "0 14 * * 1-5"
+    },
+    {
+      "path": "/api/market-digest",
+      "schedule": "0 0 * * *"
+    },
+    {
+      "path": "/api/market-digest",
+      "schedule": "0 7 * * *"
+    },
+    {
+      "path": "/api/market-digest",
+      "schedule": "30 12 * * *"
     }
   ]
 }

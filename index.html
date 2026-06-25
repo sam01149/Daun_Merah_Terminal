@@ -176,6 +176,7 @@ body {
 .riset-badge.BOJ  { background:rgba(56,189,248,.18);  color:#38bdf8; }
 .riset-badge.MTM  { background:rgba(52,211,153,.12);  color:#34d399; }
 .riset-badge.ING  { background:rgba(251,146,60,.18);  color:#fb923c; }
+.riset-badge.FJElite { background:rgba(56,189,248,.18); color:#38bdf8; }
 /* ── Option Expiries (TEK tab) ── */
 .tek-opts-section { margin-top:10px; padding-top:10px; border-top:1px solid var(--border); }
 .tek-opts-hdr { display:flex; align-items:center; justify-content:space-between; margin-bottom:6px; }
@@ -2751,7 +2752,7 @@ body {
     <div id="dashNewsList"><div class="dash-no-data">Buka tab NEWS dulu untuk memuat data.</div></div>
   </div>
   <div id="dashMainCol">
-    <div class="dash-col-title">AI DIGEST</div>
+    <div class="dash-col-title">RINGKASAN PASAR</div>
     <div id="dashDigestSection"><div class="dash-no-data">Buka tab RINGKASAN dulu untuk memuat briefing.</div></div>
     <div class="dash-col-title" style="margin-top:6px">AI THESIS</div>
     <div id="dashThesisSection"><div class="dash-no-data">—</div></div>
@@ -3035,6 +3036,7 @@ function detectCat(title) {
 }
 
 let allItems     = [];
+let fjResearchItems = []; // long-form FinancialJuice "FJElite" research notes, rerouted out of NEWS into ARTIKEL
 let seenGuids    = new Set();
 let activeFilter = 'all';
 let isFetching   = false;
@@ -3257,6 +3259,16 @@ function parseRSS(xml) {
   return items;
 }
 
+// FinancialJuice sometimes posts full analyst notes (tagged "FJElite") with the
+// entire article body packed into <title> instead of a short headline. Detect
+// those so they can be rerouted to the ARTIKEL tab instead of flooding NEWS.
+// FX Options Expiries headlines are also long (embed a strike-level list) but
+// are structured data, not narrative research — excluded here on purpose.
+function isLongFormFJ(title) {
+  if (/options?\s*expir/i.test(title)) return false;
+  return title.length > 280;
+}
+
 async function fetchFeed() {
   if (isFetching) return;
   isFetching = true;
@@ -3279,9 +3291,18 @@ async function fetchFeed() {
     return;
   }
 
-  const merged = parseRSS(xml).sort((a, b) =>
+  const parsed = parseRSS(xml);
+  const merged = parsed.filter(i => !isLongFormFJ(i.title)).sort((a, b) =>
     new Date(b.pubDate) - new Date(a.pubDate)
   );
+
+  // Reroute long-form FJElite research notes into the ARTIKEL tab instead of NEWS
+  const fjByGuid = new Map(fjResearchItems.map(i => [i.guid, i]));
+  for (const item of parsed) if (isLongFormFJ(item.title)) fjByGuid.set(item.guid, item);
+  fjResearchItems = [...fjByGuid.values()]
+    .sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate))
+    .slice(0, 30);
+  renderResearch();
 
   // Detect new items for toast (before updating seenGuids)
   const isFirstLoad = seenGuids.size === 0;
@@ -3357,6 +3378,27 @@ function renderFeed(markNew = false) {
 }
 
 function openLink(url) { if(url) window.open(url,'_blank'); }
+
+// Cegah klik tidak sengaja saat scroll list berita di HP: kalau jari bergeser
+// >10px antara touchstart-touchend, anggap itu gestur scroll dan batalkan klik.
+let _touchStartX = 0, _touchStartY = 0, _touchMoved = false;
+document.addEventListener('touchstart', e => {
+  const t = e.touches[0];
+  if (!t) return;
+  _touchStartX = t.clientX; _touchStartY = t.clientY; _touchMoved = false;
+}, { passive: true });
+document.addEventListener('touchmove', e => {
+  const t = e.touches[0];
+  if (!t) return;
+  if (Math.abs(t.clientX - _touchStartX) > 10 || Math.abs(t.clientY - _touchStartY) > 10) _touchMoved = true;
+}, { passive: true });
+document.addEventListener('click', e => {
+  if (_touchMoved) {
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    _touchMoved = false;
+  }
+}, true);
 
 function fmtTime(ds) {
   const d = new Date(ds);
@@ -4565,9 +4607,12 @@ function renderResearch() {
   const list = document.getElementById('risetList');
   const meta = document.getElementById('risetMeta');
   const fg   = document.getElementById('risetFilterGroup');
-  if (!list || !researchCache) return;
-  const { items, fetched_at, stale } = researchCache;
-  if (!items || items.length === 0) {
+  if (!list) return;
+  const instItems = (researchCache && researchCache.items) || [];
+  const fjItems = fjResearchItems.map(i => ({ source: 'FJElite', title: i.title, link: i.link, pubDate: i.pubDate, fullText: i.title }));
+  const items = [...instItems, ...fjItems].sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate));
+  const stale = researchCache && researchCache.stale;
+  if (items.length === 0) {
     list.innerHTML = '<div class="state-box"><p style="font-size:11px;color:var(--muted)">Tidak ada data.</p></div>';
     return;
   }
@@ -4586,7 +4631,14 @@ function renderResearch() {
 
   list.innerHTML = filtered.length === 0
     ? '<div class="state-box"><p style="font-size:11px;color:var(--muted)">Tidak ada artikel untuk sumber ini.</p></div>'
-    : filtered.map(it => `
+    : filtered.map(it => it.fullText ? `
+      <div class="riset-item">
+        <div class="riset-item-top">
+          <span class="riset-badge ${escHtml(it.source)}">${escHtml(it.source)}</span>
+          <div class="riset-title" style="white-space:pre-wrap">${escHtml(it.fullText)}</div>
+        </div>
+        <div class="riset-date">${fmtDate(it.pubDate)} · <a href="${escHtml(it.link)}" target="_blank" rel="noopener noreferrer" style="color:var(--muted)">via FinancialJuice ↗</a></div>
+      </div>` : `
       <div class="riset-item">
         <div class="riset-item-top">
           <span class="riset-badge ${escHtml(it.source)}">${escHtml(it.source)}</span>
@@ -6102,7 +6154,7 @@ const _CAL_BENIGN_QUALIFIERS = new Set([
 
 const _CAL_STOPWORDS = new Set([
   'rate','data','with','from','that','this','bank','press','conference',
-  'statement','decision','the','of','and','for',
+  'statement','decision','the','of','and','for','initial',
   ..._CAL_BENIGN_QUALIFIERS,
 ]);
 
@@ -6110,9 +6162,13 @@ const _CAL_STOPWORDS = new Set([
 // Investment ytd/y) cross-checked against how FinancialJuice phrases the
 // same releases (e.g. "Australian CPI YoY NSA") — same concept, different
 // spelling, so both sides need to collapse to one canonical token.
+// "jobless" → "unemployment" handles FinancialJuice's "Initial Jobless Claims"
+// vs ForexFactory's plain "Unemployment Claims" — same weekly release, every
+// Thursday, that was silently never matching before ("initial" stripped above
+// as filler, "jobless" collapsed here so both sides land on the same token).
 const _CAL_SYNONYMS = {
   yoy: 'yy', mom: 'mm', qoq: 'qq', ytdy: 'ytdy',
-  preliminary: 'prelim', advanced: 'advance',
+  preliminary: 'prelim', advanced: 'advance', jobless: 'unemployment',
 };
 
 // Normalizes a title into a comparable word set. Critically, "m/m"/"y/y"/"q/q"
@@ -10465,6 +10521,22 @@ async function initDashboard() {
   }, 60000);
 }
 
+// Sesi cuma label informatif berdasarkan jam WIB saat generate — bukan deteksi
+// jam buka pasar yang presisi, cukup buat ngasih konteks "ini dari sesi mana".
+function fmtWibSession(isoTs) {
+  const wib = new Date(new Date(isoTs).getTime() + 7 * 3600000);
+  const h = wib.getUTCHours(), m = wib.getUTCMinutes();
+  const session = h >= 17 ? 'New York' : h >= 11 ? 'London' : 'Asia';
+  return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')} WIB (sesi ${session})`;
+}
+
+async function dashGenerateRingkasan() {
+  const btn = document.getElementById('dashGenBtn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Generating...'; }
+  await generateRingkasan().catch(() => {});
+  if (activeView === 'dashboard') refreshDashboard();
+}
+
 function refreshDashboard() {
   dashLastRefresh = Date.now();
   renderDashNews();
@@ -10549,12 +10621,17 @@ function renderDashNews() {
   el.innerHTML = html || '<div class="dash-no-data">Tidak ada berita tersedia.</div>';
 }
 
+// Tombol generate ditaruh langsung di card ini (bukan cuma teks "buka tab lain
+// dulu") supaya Dashboard tetap berdiri sendiri — tapi generate TIDAK dipicu
+// otomatis (lihat dashGenerateRingkasan), murni manual tap, biar AI call tidak
+// jalan diam-diam kalau Dashboard dibuka berkali-kali (mis. tiap sesi/jam).
 function renderDashDigest() {
   const digestEl = document.getElementById('dashDigestSection');
   const thesisEl = document.getElementById('dashThesisSection');
   if (!digestEl) return;
   if (!ringkasanCache || !ringkasanCache.article) {
-    digestEl.innerHTML = '<div class="dash-no-data">Buka tab RINGKASAN dan generate briefing.</div>';
+    digestEl.innerHTML = `<div class="dash-no-data">Belum ada briefing.</div>
+      <button class="cal-scenario-ck-btn" id="dashGenBtn" onclick="dashGenerateRingkasan()" style="margin-top:6px">Generate Ringkasan</button>`;
     if (thesisEl) thesisEl.innerHTML = '<div class="dash-no-data">—</div>';
     return;
   }
@@ -10563,7 +10640,13 @@ function renderDashDigest() {
   const lihatSemua = article.length > 500
     ? `<button class="cal-scenario-ck-btn" style="margin:6px 0 4px" onclick="switchView('ringkasan')">→ Lihat semua</button>`
     : '';
-  digestEl.innerHTML = `<div class="dash-digest-section"><div class="dash-digest-text">${escHtml(preview)}</div>${lihatSemua}</div>`;
+  const refreshBtn = ringkasanCache.stale
+    ? `<button class="cal-scenario-ck-btn" id="dashGenBtn" onclick="dashGenerateRingkasan()" style="margin:6px 6px 4px 0">↻ Refresh (data lama)</button>`
+    : '';
+  const lastGenCaption = ringkasanCache.generated_at
+    ? `<div style="font-size:9px;color:var(--muted);font-family:'DM Mono',monospace;margin-top:6px">Terakhir diringkas ${fmtWibSession(ringkasanCache.generated_at)}</div>`
+    : '';
+  digestEl.innerHTML = `<div class="dash-digest-section"><div class="dash-digest-text">${escHtml(preview)}</div>${refreshBtn}${lihatSemua}${lastGenCaption}</div>`;
 
   if (thesisEl) {
     let html = '';

@@ -345,8 +345,19 @@ module.exports = async function handler(req, res) {
     return res.status(200).json({ from_cache: true, article: null });
   }
 
+  // Auth for scheduled session-open runs (Vercel cron sends x-vercel-cron; GitHub
+  // Actions/cron-job.org fallback sends x-cron-secret) — these bypass the per-IP
+  // rate limit below since they're 3 authenticated calls/day, not user traffic.
+  // No device_id on these calls, which is intentional: Call 4 (thesis monitor,
+  // gated on `&& deviceId` further down) is per-user journal data and is skipped,
+  // while the shared briefing/bias/thesis still generate and populate the cache
+  // every user's dashboard reads via mode=cached.
+  const isVercelCron = req.headers['x-vercel-cron'] === '1';
+  const cronSecret    = req.headers['x-cron-secret'];
+  const isCronCall    = isVercelCron || (cronSecret && cronSecret === process.env.CRON_SECRET);
+
   // Multi-provider AI calls — rate limit to 4 req/min per IP
-  if (await rateLimit(req, res, { limit: 4, windowSecs: 60, endpoint: 'market-digest' })) return;
+  if (!isCronCall && await rateLimit(req, res, { limit: 4, windowSecs: 60, endpoint: 'market-digest' })) return;
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
   res.setHeader('Pragma', 'no-cache');
   res.setHeader('Expires', '0');

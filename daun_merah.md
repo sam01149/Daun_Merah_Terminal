@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-06-25 (session 100 — lihat "Changelog Session 100" di bawah untuk detail terbaru)
+> **Last updated:** 2026-06-25 (session 101 — lihat "Changelog Session 101" di bawah untuk detail terbaru)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Financial_Feed_App`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -118,6 +118,28 @@ Financial_Feed_App/
 > **Penting:** `api/feeds.js` menggantikan `api/rss.js` dan `api/cot.js` yang sudah dihapus.
 > `api/admin.js` menggantikan `api/health.js`, `api/redis-keys.js`, `api/admin-prompts.js`, dan `api/push.js`.
 > Konsolidasi ini dilakukan untuk tetap di bawah limit 12 serverless functions Vercel Hobby.
+
+---
+
+## Changelog Session 101 (2026-06-25)
+
+### Fix kalender: "Initial Jobless Claims" tidak pernah match "Unemployment Claims"
+
+**Konteks:** User paste contoh headline FinancialJuice hari itu (PCE, Durable Goods, Jobless Claims, dll) dan minta kalender "disesuaikan lagi". Dicek silang dengan data live `/api/calendar` — ketemu satu mismatch nyata: headline FinancialJuice "Initial Jobless Claims Actual X (Forecast Y, Previous Z)" tidak pernah cocok dengan event ForexFactory yang namanya "Unemployment Claims", walau itu rilis mingguan yang sama. `_calWordSetsMatch` di `index.html` butuh kecocokan word-set persis, dan "initial jobless claims" vs "unemployment claims" tidak ada kata yang sama sama sekali — jadi `actual` selalu kosong tiap Kamis untuk event ini.
+
+**Fix (`index.html`):** Tambah `initial` ke `_CAL_STOPWORDS` (filler, tidak membedakan indikator) dan mapping `jobless → unemployment` di `_CAL_SYNONYMS`, supaya kedua sisi collapse ke token yang sama. "Continued Jobless Claims" (rilis berbeda) tetap aman tidak ke-match karena kata "continued" bikin ukuran word-set beda.
+
+### Dashboard — generate ringkasan manual + jadwal otomatis per sesi pasar
+
+**Konteks:** Evaluasi mandiri atas keluhan user "dashboard kurang menarik" — ternyata card AI DIGEST/AI THESIS di Dashboard sering kosong karena ringkasan cuma bisa di-generate manual dari tab RINGKASAN (tidak ada cron). Sempat dicoba auto-generate tiap kali Dashboard dibuka, tapi user khawatir soal biaya token kalau dibuka tiap jam/sesi — direvisi ke pendekatan jadwal fix.
+
+**Implementasi:**
+- `index.html`: card ringkasan di Dashboard (di-rename label-nya jadi "RINGKASAN PASAR") sekarang punya tombol generate sendiri (`dashGenerateRingkasan()`) + tombol "↻ Refresh" kalau data sudah stale — murni manual tap, tidak ada auto-trigger dari aktivitas buka app.
+- Ditambah caption "Terakhir diringkas HH:MM WIB (sesi Asia/London/New York)" di bawah preview (`fmtWibSession()`), label sesi cuma informatif berdasarkan jam WIB, bukan deteksi presisi.
+- `api/market-digest.js`: handler sekarang terima request cron terautentikasi (header `x-vercel-cron: 1` dari Vercel, atau `x-cron-secret` cocok `CRON_SECRET` — pola yang sama dipakai `ohlcvSyncHandler` di `api/admin.js`), yang melewati rate-limit per-IP (4 req/menit) karena ini cuma 3 panggilan terautentikasi/hari, bukan trafik user. Tidak ada `device_id` di panggilan cron — sudah diverifikasi aman karena Call 4 (thesis monitor per-journal user) sudah punya gate `&& deviceId` dari awal, jadi otomatis skip; Call 1-3 (briefing, CB bias, thesis) tetap jalan dan update cache (`latest_article`) yang dibaca semua user lewat `mode=cached`.
+- `vercel.json`: tambah 3 cron entry ke `/api/market-digest` — `0 0 * * *` (07:00 WIB, sesi Asia), `0 7 * * *` (14:00 WIB, sesi London), `30 12 * * *` (19:30 WIB, sesi New York).
+
+**Testing:** Validasi sintaks (`node -e "new Function(...)"` untuk tiap blok `<script>` di `index.html`, `require()` untuk `market-digest.js`, `JSON.parse` untuk `vercel.json`) — semua lolos. Verifikasi manual logika gating Call 4 di kode (baris `(SAMBANOVA_KEY || GROQ_KEY) && deviceId`) untuk memastikan panggilan cron tanpa `device_id` tidak crash dan tidak menulis ke key Redis `thesis_alerts:undefined`. Belum bisa di-test end-to-end jam cron yang sesungguhnya karena itu baru jalan setelah deploy ke Vercel.
 
 ---
 
