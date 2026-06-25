@@ -146,6 +146,8 @@ body {
 .nvtab[data-view="teknikal"].active    { color: #38bdf8; border-bottom-color: #38bdf8; }
 .nvtab[data-view="riset"]             { color: #34d399; }
 .nvtab[data-view="riset"].active      { color: #34d399; border-bottom-color: #34d399; }
+.nvtab[data-view="analisa"]           { color: #fb923c; }
+.nvtab[data-view="analisa"].active    { color: #fb923c; border-bottom-color: #fb923c; }
 
 /* RISET PANEL */
 /* risetPanel overrides feed-scroll: flex column, toolbar fixed, list scrolls */
@@ -1980,6 +1982,7 @@ body {
 #botNav .bot-nav-btn[data-view="fundamental"],
 #botNav .bot-nav-btn[data-view="sizing"],
 #botNav .bot-nav-btn[data-view="jurnal"],
+#botNav .bot-nav-btn[data-view="checklist"],
 #botNav .bot-nav-btn[data-view="petunjuk"] { display: none; }
 
 .nvtab-more {
@@ -10092,10 +10095,10 @@ function initTeknikal() {
 
 // ── DRAWER ────────────────────────────────────────────────
 const DRAWER_ITEMS = [
-  { view:'analisa',     label:'Analisa AI',  desc:'AI thesis & analisa per pair',        col:'#e67e22' },
   { view:'cal',         label:'Kalender',    desc:'Economic calendar & event countdown', col:'#00c896' },
   { view:'riset',       label:'Artikel',     desc:'Riset & artikel macro terbaru',       col:'#34d399' },
   { view:'cot',         label:'COT',         desc:'COT positioning data mingguan',       col:'#a78bfa' },
+  { view:'checklist',   label:'Checklist',   desc:'Checklist sebelum entry trade',       col:'#facc15' },
   { view:'fundamental', label:'Fundamental', desc:'Data fundamental 8 mata uang',        col:'#a78bfa' },
   { view:'sizing',      label:'Sizing',      desc:'Kalkulator lot size & risk',          col:'#60a5fa' },
   { view:'jurnal',      label:'Jurnal',      desc:'Trade journal & review',              col:'#f472b6' },
@@ -10724,9 +10727,9 @@ document.addEventListener('keydown', function(e) {
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
     <span>Fundm</span>
   </button>
-  <button class="bot-nav-btn" data-view="checklist">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
-    <span>Check</span>
+  <button class="bot-nav-btn" data-view="analisa">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M18.7 8l-5.1 5.1-3-3-4.6 4.6"/></svg>
+    <span>Analisa</span>
   </button>
   <button class="bot-nav-btn" data-view="sizing">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="2" width="16" height="20" rx="2"/><line x1="8" y1="10" x2="16" y2="10"/><line x1="8" y1="14" x2="16" y2="14"/><line x1="8" y1="18" x2="12" y2="18"/></svg>

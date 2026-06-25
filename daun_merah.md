@@ -963,6 +963,22 @@ Format ini sudah **berubah ke prosa naratif** — levels disebutkan dalam kalima
 
 ---
 
+## Changelog Session 50 (2026-06-25)
+
+### Nav Polish — Analisa Border-Bottom + Mobile Bottom Nav Swap
+
+**1. Tab ANALISA tidak ada border-bottom saat active — `index.html`**
+- Root cause: semua `.nvtab[data-view="X"].active` punya rule `border-bottom-color`, kecuali `analisa` — jadi border tetap transparent walau tab aktif
+- Fix: tambah `.nvtab[data-view="analisa"]` (warna `#fb923c`) + `.nvtab[data-view="analisa"].active { border-bottom-color: #fb923c; }`
+
+**2. Mobile bottom nav: Checklist diganti Analisa**
+- `#botNav`: button `data-view="checklist"` (icon checklist) diganti `data-view="analisa"` (icon chart) — label "Analisa"
+- Checklist dipindah ke drawer "Lainnya": ditambahkan ke `DRAWER_ITEMS` + CSS hide `#botNav .bot-nav-btn[data-view="checklist"]`
+- `analisa` dihapus dari `DRAWER_ITEMS` karena sekarang akses langsung dari bottom nav (gak perlu duplikat)
+- Desktop top nav (`#navViews`) tidak berubah — checklist tetap tampil langsung di sana, hanya mobile bottom nav yang disesuaikan
+
+---
+
 ## Changelog Session 49 (2026-06-05)
 
 ### Unverified Audit + Maintenance Debt + OECD/TGA Fixes
