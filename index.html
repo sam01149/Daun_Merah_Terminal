@@ -9425,8 +9425,18 @@ TEK_ALL_PAIRS.forEach(p => {
   legs.forEach(c => (TEK_CUR_KEYWORDS[c] || []).forEach(k => specific.add(k)));
   TEK_PAIR_KEYWORDS[p] = [...specific];
 });
-TEK_PAIR_KEYWORDS.US10Y = TEK_CUR_KEYWORDS.USD;
-TEK_PAIR_KEYWORDS.US02Y = TEK_CUR_KEYWORDS.USD;
+// Bukan dipake daftar USD penuh (yang masih ikut 'dollar','dxy','trump','nfp' — kebanyakan
+// gak relevan buat technical reading di chart yield). Dipersempit ke driver yang langsung
+// gerakin yield itu sendiri: kebijakan Fed/suku bunga, lelang/data treasury, dan rilis makro
+// yang langsung pengaruh ke ekspektasi rate.
+const TEK_YIELD_KEYWORDS = [
+  'fed','fomc','powell','rate cut','rate hike','rate decision','dot plot',
+  'treasury yield','treasury auction','10-year','10 year','2-year','2 year',
+  'bond yield','yield curve','tips','real yield','quantitative tightening','quantitative easing',
+  'us cpi','us gdp','us inflation','nfp','non-farm','payroll','jobless claims','pce',
+];
+TEK_PAIR_KEYWORDS.US10Y = TEK_YIELD_KEYWORDS;
+TEK_PAIR_KEYWORDS.US02Y = TEK_YIELD_KEYWORDS;
 const TEK_CAT_COLOR = {
   'market-moving':'#e74c3c','forex':'#38bdf8','macro':'#a78bfa','econ-data':'#27ae60',
   'energy':'#e67e22','geopolitical':'#fb923c','commodities':'#f59e0b',

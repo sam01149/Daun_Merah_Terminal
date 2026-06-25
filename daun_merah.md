@@ -1025,6 +1025,7 @@ Format ini sudah **berubah ke prosa naratif** — levels disebutkan dalam kalima
 - `TEK_PAIR_KEYWORDS.US10Y/US02Y` di-set manual ke keyword USD (Fed/FOMC/yield) biar filter Berita Terkait tetap relevan
 - Strip badge US10Y dari poin 7 di-skip otomatis (`renderTekYield()`) kalau lagi di-chart sendiri — gak ada badge duplikat
 - **Update:** `TVC:US10Y`/`TVC:US02Y` ternyata kena paywall di widget gratis ("Simbol tersebut hanya tersedia di TradingView"). Diganti ke `FRED:DGS10`/`FRED:DGS2` (data US Treasury via FRED, sumber sama dengan `api/real-yields.js`, gak dikunci). Trade-off: FRED update harian doang, jadi timeframe intraday (H4/H1/M15) gak akan se-granular pair FX biasa — tapi chart-nya jalan tanpa paywall.
+- **Update lagi:** Berita Terkait buat US10Y/US02Y awalnya pakai `TEK_CUR_KEYWORDS.USD` penuh (ikut 'dollar','dxy','trump','nfp' — kebanyakan gak relevan buat baca chart yield). Dipersempit jadi `TEK_YIELD_KEYWORDS` khusus: Fed/FOMC/rate decision, treasury auction/yield curve/TIPS/real yield, dan rilis makro yang langsung pengaruh ekspektasi rate (CPI/GDP/NFP/PCE/jobless claims) — driver yang beneran gerakin yield itu sendiri, bukan USD secara umum.
 
 ---
 
