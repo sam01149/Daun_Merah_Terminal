@@ -2217,7 +2217,7 @@ body {
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
         <circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/>
       </svg>
-      <span>Generate Ringkasan</span>
+      <span>Ringkas Berita</span>
     </button>
   </div>
   <div class="ringkasan-inner" style="padding-top:0" id="polymarketWrap">
@@ -2283,7 +2283,7 @@ body {
     </div>
     <div id="cbGrid">
       <div style="text-align:center;padding:12px;color:var(--muted);font-size:11px;font-family:'DM Mono',monospace">
-        Bias diperbarui otomatis saat Generate Ringkasan
+        Bias diperbarui otomatis saat Ringkas Berita
       </div>
     </div>
   </div>
@@ -2539,7 +2539,7 @@ body {
       </div>
       <div class="pt-row">
         <div class="pt-step-num">1.2</div>
-        <div class="pt-step-action"><strong>Generate Ringkasan</strong>Buka tab RINGKASAN → tap "Generate". Baca hasil AI dari atas ke bawah: driver pasar, pairs yang bergerak, bias sesi, dan paragraf XAUUSD di bagian bawah.</div>
+        <div class="pt-step-action"><strong>Ringkas Berita</strong>Buka tab RINGKASAN → tap "Ringkas Berita". Baca hasil AI dari atas ke bawah: driver pasar, pairs yang bergerak, bias sesi, dan paragraf XAUUSD di bagian bawah.</div>
         <div class="pt-step-why">Ringkasan mengagregasi 80+ headline terakhir + event kalender. Lebih cepat dari baca satu-satu. Hasilnya hanya valid ~4 jam — generate ulang setelah itu.</div>
       </div>
       <div class="pt-row">
@@ -2635,7 +2635,7 @@ body {
       </div>
       <div class="pt-rule">
         <div class="pt-rule-icon">✅</div>
-        <div class="pt-rule-text"><strong>Generate Ringkasan tiap pagi</strong>Jangan trade tanpa konteks hari ini. Ringkasan butuh &lt;30 detik untuk dibaca dan bisa mencegah entry yang salah arah.</div>
+        <div class="pt-rule-text"><strong>Ringkas Berita tiap pagi</strong>Jangan trade tanpa konteks hari ini. Ringkasan butuh &lt;30 detik untuk dibaca dan bisa mencegah entry yang salah arah.</div>
       </div>
       <div class="pt-rule">
         <div class="pt-rule-icon">✅</div>
@@ -3090,7 +3090,7 @@ function tickCooldown() {
     } else {
       clearInterval(ringkasanCooldownInterval);
       btn.classList.remove('loading');
-      btn.querySelector('span').textContent = ringkasanCache ? 'Generate Ulang' : 'Generate Ringkasan';
+      btn.querySelector('span').textContent = ringkasanCache ? 'Ringkas Ulang' : 'Ringkas Berita';
     }
   }, 1000);
 }
@@ -3467,7 +3467,7 @@ document.getElementById('toast').addEventListener('click', () => {
 async function generateRingkasan() {
   const btn = document.getElementById('ringkasanBtn');
   btn.classList.add('loading');
-  btn.querySelector('span').textContent = 'Generating...';
+  btn.querySelector('span').textContent = 'Meringkas...';
 
   try {
     const deviceId = szGetDeviceId();
@@ -3486,7 +3486,7 @@ async function generateRingkasan() {
   } catch(e) {
     showToast('Gagal', 'Ringkasan tidak merespons: ' + e.message, 4000);
     btn.classList.remove('loading');
-    btn.querySelector('span').textContent = ringkasanCache ? 'Generate Ulang' : 'Generate Ringkasan';
+    btn.querySelector('span').textContent = ringkasanCache ? 'Ringkas Ulang' : 'Ringkas Berita';
   }
 }
 
@@ -3504,7 +3504,7 @@ function renderRingkasan() {
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
           <circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/>
         </svg>
-        <span>Generate Ringkasan</span>
+        <span>Ringkas Berita</span>
       </button>`;
     return;
   }
@@ -3547,7 +3547,7 @@ function renderRingkasan() {
         <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>
         <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
       </svg>
-      <span>Generate Ulang</span>
+      <span>Ringkas Ulang</span>
     </button>
     <div class="ringkasan-ts">Data: ${d.news_count} headline + ${d.cal_count} event high-impact</div>
   `;
@@ -10565,7 +10565,7 @@ function fmtWibSession(isoTs) {
 
 async function dashGenerateRingkasan() {
   const btn = document.getElementById('dashGenBtn');
-  if (btn) { btn.disabled = true; btn.textContent = 'Generating...'; }
+  if (btn) { btn.disabled = true; btn.textContent = 'Meringkas...'; }
   await generateRingkasan().catch(() => {});
   if (activeView === 'dashboard') refreshDashboard();
 }
@@ -10664,7 +10664,7 @@ function renderDashDigest() {
   if (!digestEl) return;
   if (!ringkasanCache || !ringkasanCache.article) {
     digestEl.innerHTML = `<div class="dash-no-data">Belum ada briefing.</div>
-      <button class="cal-scenario-ck-btn" id="dashGenBtn" onclick="dashGenerateRingkasan()" style="margin-top:6px">Generate Ringkasan</button>`;
+      <button class="cal-scenario-ck-btn" id="dashGenBtn" onclick="dashGenerateRingkasan()" style="margin-top:6px">Ringkas Berita</button>`;
     if (thesisEl) thesisEl.innerHTML = '<div class="dash-no-data">—</div>';
     return;
   }
@@ -10748,7 +10748,7 @@ function renderDashDigest() {
       </div>`;
     }
 
-    thesisEl.innerHTML = html || '<div class="dash-no-data">Generate Ringkasan untuk melihat AI thesis.</div>';
+    thesisEl.innerHTML = html || '<div class="dash-no-data">Ringkas Berita untuk melihat AI thesis.</div>';
   }
 }
 
