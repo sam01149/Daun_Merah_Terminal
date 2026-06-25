@@ -977,6 +977,15 @@ Format ini sudah **berubah ke prosa naratif** — levels disebutkan dalam kalima
 - `analisa` dihapus dari `DRAWER_ITEMS` karena sekarang akses langsung dari bottom nav (gak perlu duplikat)
 - Desktop top nav (`#navViews`) tidak berubah — checklist tetap tampil langsung di sana, hanya mobile bottom nav yang disesuaikan
 
+**3. Tab MTF bias (D1/H4/H1/M15 dropdown) di tab TEKNIKAL bikin window melebar ke kanan di mobile**
+- Root cause: `.tek-mtf-bar` (4 dropdown bias + tombol Auto + badge kesimpulan BULLISH/BEARISH/MIXED) pakai `display:flex` tanpa wrap — total lebar konten lebih besar dari viewport mobile, jadi overflow horizontal alih-alih wrap ke baris baru
+- Fix: tambah `flex-wrap: wrap` pada `.tek-mtf-bar` (+ gap jadi `8px 10px` untuk jarak antar baris)
+
+**4. Swipe gesture horizontal nyasar ke tab "Lainnya" — `index.html` (SWIPE NAVIGATION)**
+- Root cause: array `VIEWS` di swipe handler masih include semua tab drawer-only (riset/cal/cot/fundamental/checklist/sizing/jurnal/petunjuk) di antara tab primer — jadi swipe dari ANALISA ke kanan nyasar ke `cal` (Kalender) bukan ke TEKNIKAL
+- Fix: `VIEWS` dipersempit jadi cuma tab primer: `['dashboard','feed','ringkasan','analisa','teknikal']` — urutan sama dengan bottom nav mobile
+- Tambahan: swipe ke kiri setelah tab terakhir (TEKNIKAL) sekarang langsung `openDrawer()` — konsisten dengan posisi "Lainnya" di paling kanan bottom nav
+
 ---
 
 ## Changelog Session 49 (2026-06-05)

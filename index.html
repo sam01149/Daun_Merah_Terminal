@@ -1807,7 +1807,7 @@ body {
 }
 .tek-mtf-section { padding: 14px 14px 10px; }
 .tek-mtf-bar {
-  display: flex; align-items: center; gap: 10px; padding: 7px 14px;
+  display: flex; align-items: center; flex-wrap: wrap; gap: 8px 10px; padding: 7px 14px;
   background: var(--surface); border-bottom: 1px solid var(--border); flex-shrink: 0;
 }
 .tek-mtf-cell { display: flex; align-items: center; gap: 5px; }
@@ -10160,7 +10160,9 @@ document.addEventListener('click', function(e) {
 
 // ── SWIPE NAVIGATION ─────────────────────────────────────────
 (function() {
-  const VIEWS = ['dashboard','feed','riset','ringkasan','analisa','cal','cot','fundamental','checklist','sizing','jurnal','petunjuk','teknikal'];
+  // Hanya tab primer (yang tampil langsung di nav) yang masuk urutan swipe.
+  // Tab "Lainnya" (riset/cal/cot/fundamental/checklist/sizing/jurnal/petunjuk) diakses via drawer, bukan swipe.
+  const VIEWS = ['dashboard','feed','ringkasan','analisa','teknikal'];
   const PANEL_ID = { feed:'feedScroll', riset:'risetPanel', ringkasan:'ringkasanPanel', analisa:'analisaPanel', cal:'calPanel', cot:'cotPanel', fundamental:'fundamentalPanel', checklist:'checklistPanel', sizing:'sizingPanel', jurnal:'jurnalPanel', petunjuk:'petunjukPanel', teknikal:'teknikalPanel', dashboard:'dashboardPanel' };
   const MIN_X = 60;
   let sx = 0, sy = 0;
@@ -10185,7 +10187,12 @@ document.addEventListener('click', function(e) {
       }
       break;
     }
-    if (next < 0 || next >= VIEWS.length) return;
+    if (next < 0) return;
+    if (next >= VIEWS.length) {
+      // Lewat tab terakhir (Teknikal) — buka drawer "Lainnya", konsisten dengan posisinya di kanan bottom nav.
+      if (goNext) openDrawer();
+      return;
+    }
     const btn = document.querySelector('#navViews .nvtab[data-view="' + VIEWS[next] + '"]');
     if (!btn) return;
     btn.click();
