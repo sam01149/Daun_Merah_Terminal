@@ -10199,6 +10199,12 @@ document.addEventListener('click', function(e) {
     const dy = e.changedTouches[0].clientY - sy;
     if (Math.abs(dx) < MIN_X || Math.abs(dy) > Math.abs(dx)) return;
     if (e.target.closest('#navViews, #navFilters, #botNav, input, select, textarea')) return;
+    const drawerPanel = document.getElementById('drawerPanel');
+    if (drawerPanel && drawerPanel.classList.contains('open')) {
+      // Drawer "Lainnya" lagi terbuka — swipe arah manapun nutup drawer dulu, jangan tembus ganti tab di belakangnya.
+      closeDrawer();
+      return;
+    }
     const idx = VIEWS.indexOf(activeView);
     if (idx === -1) return;
     // swipe left = next tab, swipe right = prev tab

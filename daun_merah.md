@@ -992,6 +992,10 @@ Format ini sudah **berubah ke prosa naratif** — levels disebutkan dalam kalima
 - `navFundDetail()` sekalian ditambah animasi slide-in (`swipe-in-right`/`swipe-in-left`, reuse keyframes yang sudah ada) biar transisi kerasa
 - Tidak konflik dengan global swipe nav antar-tab karena `activeView` tetap `'fundamental'` saat overlay terbuka — dan `'fundamental'` sudah gak ada di array `VIEWS` swipe nav (poin 4), jadi handler global auto-skip
 
+**6. Swipe saat drawer "Lainnya" terbuka tembus ganti tab di belakangnya**
+- Root cause: global swipe nav handler gak cek status drawer — swipe di atas drawer yang sedang terbuka tetap dianggap swipe ganti tab, jadi konten di belakang drawer berubah sementara drawer-nya sendiri masih nampil di atas (state nyasar)
+- Fix: tambah guard di awal `touchend` handler — kalau `#drawerPanel.open`, swipe arah manapun cuma `closeDrawer()`, gak lanjut ke logic ganti tab
+
 ---
 
 ## Changelog Session 49 (2026-06-05)
