@@ -1004,6 +1004,19 @@ Format ini sudah **berubah ke prosa naratif** — levels disebutkan dalam kalima
 - Pair FX lain cuma nampilin angka netral (US10Y jadi konteks makro umum, gak ada hint directional spesifik karena bukan currency differential)
 - Render dipanggil di 3 titik: `initTeknikal()` (pakai cache kalau masih fresh ≤6 jam, else `fetchRealYields()`), `selectTekPair()` (ganti pair), dan di akhir `fetchRealYields()` (data baru datang)
 
+**8. Bug: kalender — event yang ketinggalan dicek dalam 3 jam jadi blank actual permanen**
+- Root cause: `enrichCalActuals()` punya gate `(nowMs - evMs) > AFTER_MS) return` yang ngecek "udah berapa lama dari SEKARANG", bukan dari waktu rilis event — begitu lewat 3 jam wall-clock, event itu di-skip dari backfill SELAMANYA, walau actual-nya udah ada di feed FinancialJuice (dikonfirmasi langsung: AUD Employment Change & Unemployment Rate hari ini, headline actual muncul <1 menit setelah rilis, tapi event masih blank 4 jam kemudian karena user belum buka tab CAL dalam window itu)
+- Window kecocokan per-headline (`BEFORE_MS`/`AFTER_MS` relatif ke `evMs`) udah benar dan tetap dipertahankan — yang dihapus cuma gate redundan yang gak ada hubungannya sama validitas match
+- Fix: gate dipersempit jadi cuma skip event yang **belum rilis** (`evMs > nowMs`) — `allItems` cap 100 item biasanya nutup >5 jam riwayat headline, jadi backfill telat tetap kena tangkep di kunjungan berikutnya
+
+**9. Fitur baru: COT week-over-week alignment flag (vs arah trade)**
+- Helper baru `cotAlignmentNote(base, quote, dir)` — bandingin `lev_change_net` (perubahan posisi leveraged funds minggu-ke-minggu, data udah ada di `api/feeds.js`) base vs quote, threshold 5000 kontrak biar shift kecil/noise gak di-flag
+- Live preview: `jnSnapshotInfo()` (form entry manual JURNAL) sekarang nampilin baris "✅ Selaras smart money" / "⚠ Kontra smart money" sebelum trade disimpan — `onchange="jnSnapshotInfo()"` ditambah ke `#jnPair` dan `#jnDir` biar update live
+- Disimpan permanen: field `cot_alignment` (boolean) ditambah ke `cot_snapshot` (sekarang nyimpen `lev_change_net` juga, sebelumnya cuma `lev_net` statis) — dipanggil dari `jnSave()` (manual) dan `ckMt5AutoJournal()` (MT5 bridge auto-journal)
+- `api/journal.js`: field `cot_alignment` ditambah ke whitelist POST entry; per-trade summary di endpoint `?action=analyze` sekarang nyebutin "selaras smart money" / "KONTRA smart money" + delta COT, dan instruksi prompt AI poin 2 (Keselarasan Framework) diperluas buat ikut nilai positioning institusional, bukan cuma CB bias + regime
+- Badge "✅ selaras COT" / "⚠ kontra COT" ditambah di kartu list JURNAL biar kelihatan retroaktif juga
+- Catatan desain: TIDAK ditambah breakdown win-rate numerik per kategori (bias/regime/COT) — sample trade trader pribadi biasanya kekecilan buat statistik valid, AI analysis yang udah ada (poin 2 prompt) lebih aman buat sample kecil drpd widget angka yang bisa overfit/noise
+
 ---
 
 ## Changelog Session 49 (2026-06-05)

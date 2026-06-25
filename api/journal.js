@@ -144,6 +144,7 @@ module.exports = async function handler(req, res) {
       driver_references: data.driver_references || [],
       cb_bias_snapshot:  data.cb_bias_snapshot  || null,
       cot_snapshot:      data.cot_snapshot      || null,
+      cot_alignment:     data.cot_alignment     != null ? !!data.cot_alignment : null,
       entry_price:       data.entry_price       != null ? parseFloat(data.entry_price) : null,
       stop_price:        data.stop_price        != null ? parseFloat(data.stop_price)  : null,
       target_price:      data.target_price      != null ? parseFloat(data.target_price): null,
@@ -256,7 +257,8 @@ module.exports = async function handler(req, res) {
 
     const tradeSummaries = entries.map((e, i) => {
       const result = e.r_actual != null ? (e.r_actual >= 0 ? `WIN +${e.r_actual}R` : `LOSS ${e.r_actual}R`) : 'RESULT UNKNOWN';
-      const cotInfo = e.cot_snapshot ? Object.entries(e.cot_snapshot).map(([c, v]) => `${c} COT net=${v.lev_net}`).join(', ') : 'no COT';
+      const cotInfo = e.cot_snapshot ? Object.entries(e.cot_snapshot).map(([c, v]) => `${c} COT net=${v.lev_net}${v.lev_change_net != null ? ` (Δ${v.lev_change_net >= 0 ? '+' : ''}${v.lev_change_net})` : ''}`).join(', ') : 'no COT';
+      const alignInfo = e.cot_alignment === true ? 'selaras smart money' : e.cot_alignment === false ? 'KONTRA smart money' : null;
       const entryDate = e.created_at ? e.created_at.slice(0, 10) : 'N/A';
       const pairCurrencies = e.pair ? [e.pair.slice(0, 3), e.pair.slice(3, 6)] : [];
       const cbInfo = e.cb_bias_snapshot
@@ -276,7 +278,7 @@ module.exports = async function handler(req, res) {
         `Trade ${i + 1}: ${e.pair} ${(e.direction || '').toUpperCase()} | ${result} | ${entryDate}`,
         `  RR planned: ${e.rr_planned || 'N/A'} | Horizon: ${e.time_horizon || 'N/A'} | Regime: ${e.regime_at_entry || 'N/A'}`,
         `  CB bias at entry: ${cbInfo}`,
-        `  ${cotInfo}`,
+        `  ${cotInfo}${alignInfo ? ` — ${alignInfo}` : ''}`,
         drivers ? `  Drivers: ${drivers}` : '',
         `  Thesis: ${(e.thesis_text || '').slice(0, 250)}`,
         e.attribution_notes ? `  Post-trade note: ${e.attribution_notes.slice(0, 200)}` : '',
@@ -289,7 +291,7 @@ module.exports = async function handler(req, res) {
     try {
       analysis = await aiCall([
         { role: 'system', content: 'Kamu adalah coach trading forex profesional yang menganalisis jurnal trading seorang trader discretionary macro. Trader ini menggunakan framework berbasis: CB bias per currency (hawkish/dovish), regime pasar (risk_on/off/neutral), COT positioning, dan thesis fundamental makro. Berikan analisis jujur, spesifik, dan actionable dalam Bahasa Indonesia. Format: heading dengan **bold**, poin-poin ringkas. Fokus pada pola nyata dari data — jangan generik, jangan teori umum trading.' },
-        { role: 'user', content: `Analisis ${entries.length} trade closed berikut:\n\nStatistik: Win rate ${winRate}% | Total R ${typeof totalR === 'number' ? totalR.toFixed(2) : totalR} | Avg R/trade ${avgR}\n\n${tradeSummaries}\n\nAnalisis:\n1. **Pola Hasil** — identifikasi pola win/loss berdasarkan regime, pair, atau horizon. Apakah ada kondisi spesifik di mana trader ini lebih sering menang atau kalah?\n2. **Keselarasan Framework** — untuk setiap trade, apakah CB bias kedua currency dan regime mendukung arah trade saat entry? Sebutkan trade mana yang masuk meski konteks tidak selaras, dan apakah hasilnya konsisten dengan itu.\n3. **Kualitas Thesis & Driver** — seberapa spesifik dan dapat difalsifikasi thesis yang dicantumkan? Apakah driver yang disebutkan terbukti relevan dengan hasil?\n4. **Realitas Eksekusi (MFE/MAE)** — kalau data excursion tersedia, bedakan trade yang LOSS karena thesis salah (MFE kecil, harga nggak pernah ke arah yang diharapkan) vs trade yang LOSS karena panic-exit/noise (MFE besar/menguntungkan tapi tetap exit rugi — artinya thesis sempat benar tapi eksekusinya yang gagal). Sebutkan trade spesifik mana yang masuk kategori panic-exit kalau ada.\n5. **Kelemahan Utama** — 2-3 kelemahan paling jelas yang terpola dari data, bukan dari teori\n6. **Rekomendasi Konkret** — 3 hal spesifik yang bisa langsung diubah dalam proses entry/eksekusi berikutnya\n\nMaksimal 650 kata.` },
+        { role: 'user', content: `Analisis ${entries.length} trade closed berikut:\n\nStatistik: Win rate ${winRate}% | Total R ${typeof totalR === 'number' ? totalR.toFixed(2) : totalR} | Avg R/trade ${avgR}\n\n${tradeSummaries}\n\nAnalisis:\n1. **Pola Hasil** — identifikasi pola win/loss berdasarkan regime, pair, atau horizon. Apakah ada kondisi spesifik di mana trader ini lebih sering menang atau kalah?\n2. **Keselarasan Framework** — untuk setiap trade, apakah CB bias kedua currency, regime, dan positioning institusional (COT) mendukung arah trade saat entry? Sebutkan trade mana yang masuk meski konteks tidak selaras (termasuk yang ditandai "KONTRA smart money"), dan apakah hasilnya konsisten dengan itu.\n3. **Kualitas Thesis & Driver** — seberapa spesifik dan dapat difalsifikasi thesis yang dicantumkan? Apakah driver yang disebutkan terbukti relevan dengan hasil?\n4. **Realitas Eksekusi (MFE/MAE)** — kalau data excursion tersedia, bedakan trade yang LOSS karena thesis salah (MFE kecil, harga nggak pernah ke arah yang diharapkan) vs trade yang LOSS karena panic-exit/noise (MFE besar/menguntungkan tapi tetap exit rugi — artinya thesis sempat benar tapi eksekusinya yang gagal). Sebutkan trade spesifik mana yang masuk kategori panic-exit kalau ada.\n5. **Kelemahan Utama** — 2-3 kelemahan paling jelas yang terpola dari data, bukan dari teori\n6. **Rekomendasi Konkret** — 3 hal spesifik yang bisa langsung diubah dalam proses entry/eksekusi berikutnya\n\nMaksimal 650 kata.` },
       ], 1400);
     } catch(e) {
       console.error('journal analyze: AI call failed:', e.message);

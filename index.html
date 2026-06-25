@@ -2388,10 +2388,10 @@ body {
       <div class="jn-form" id="jnForm">
         <div class="jn-form-row">
           <label>Pair
-            <select id="jnPair"></select>
+            <select id="jnPair" onchange="jnSnapshotInfo()"></select>
           </label>
           <label>Direction
-            <select id="jnDir">
+            <select id="jnDir" onchange="jnSnapshotInfo()">
               <option value="long">LONG</option>
               <option value="short">SHORT</option>
             </select>
@@ -6211,8 +6211,11 @@ function enrichCalActuals() {
     const [y, mo, d] = ev.date.split('-').map(Number);
     const evMs = Date.UTC(y, mo - 1, d, h - 7, mn);
 
-    // Only past events within AFTER_MS window
-    if (evMs > nowMs || (nowMs - evMs) > AFTER_MS) return;
+    // Cuma skip event yang belum rilis. JANGAN gate berdasarkan "udah berapa lama dari sekarang" —
+    // itu bikin event yang ketinggalan dicek pas window 3 jam lewat jadi permanen blank, walau
+    // headline actual-nya masih ada di allItems (cap 100 item, biasanya nutup >5 jam). Window
+    // kecocokan headline tetap dijaga di bawah (BEFORE_MS/AFTER_MS relatif ke evMs, bukan ke nowMs).
+    if (evMs > nowMs) return;
 
     const evWordSet = _calWordSet(ev.event);
 
@@ -7633,10 +7636,12 @@ async function ckMt5AutoJournal(pair, direction, fill, lots, sl, tp) {
     [base, quote].forEach(cur => {
       if (cotData.positions[cur]) {
         const p = cotData.positions[cur];
-        cotSnap[cur] = { lev_net: p.lev_net || p.net || null };
+        cotSnap[cur] = { lev_net: p.lev_net || p.net || null, lev_change_net: p.lev_change_net ?? p.change_net ?? null };
       }
     });
   }
+  const cotAlign = cotAlignmentNote(base, quote, direction);
+  if (cotAlign) lines.push(`\n${cotAlign.text}`);
 
   const rrPlanned = fill.fill_price && sl && tp
     ? Math.abs((tp - fill.fill_price) / (fill.fill_price - sl))
@@ -7655,6 +7660,7 @@ async function ckMt5AutoJournal(pair, direction, fill, lots, sl, tp) {
     regime_at_entry:  regimeData ? regimeData.regime : null,
     cb_bias_snapshot: cbSnap,
     cot_snapshot:     cotSnap,
+    cot_alignment:    cotAlign ? cotAlign.aligned : null,
   };
 
   const deviceId = szGetDeviceId();
@@ -7769,6 +7775,32 @@ function ckAutoBlock(id, hint) {
 const CB_BIAS_LEVEL = {
   'very hawkish':4, 'hawkish':3, 'neutral':2, 'dovish':1, 'very dovish':0
 };
+
+// Bandingin arah perubahan posisi leveraged funds minggu-ke-minggu (lev_change_net) vs arah trade.
+// Threshold 5000 kontrak — di bawah itu dianggap noise, gak usah dikasih flag (biar gak nakut-nakutin
+// trader buat shift kecil yang gak signifikan).
+function cotAlignmentNote(base, quote, dir) {
+  if (!cotData || !cotData.positions || !dir) return null;
+  const bPos = cotData.positions[base], qPos = cotData.positions[quote];
+  const resolveChg = p => p ? (p.lev_change_net !== undefined ? p.lev_change_net : (p.change_net ?? null)) : null;
+  const bChg = resolveChg(bPos), qChg = resolveChg(qPos);
+  if (bChg == null && qChg == null) return null;
+  const netShift = (bChg || 0) - (qChg || 0);
+  const THRESH = 5000;
+  if (Math.abs(netShift) < THRESH) return null;
+  const aligned = dir === 'long' ? netShift > 0 : netShift < 0;
+  const fmtChg = n => n == null ? null : (n >= 0 ? '+' : '') + (Math.abs(n) >= 1000 ? (n / 1000).toFixed(1) + 'K' : n);
+  const parts = [];
+  if (bChg != null) parts.push(`${base} ${fmtChg(bChg)}`);
+  if (qChg != null) parts.push(`${quote} ${fmtChg(qChg)}`);
+  const flowTxt = parts.join(' · ');
+  return {
+    aligned,
+    text: aligned
+      ? `✅ Selaras smart money: lev funds ${flowTxt} kontrak minggu ini — searah ${dir.toUpperCase()}`
+      : `⚠ Kontra smart money: lev funds ${flowTxt} kontrak minggu ini — institusional gerak lawan arah ${dir.toUpperCase()}`,
+  };
+}
 
 function _ckEvTimestamp(ev) {
   if (!ev.date || !ev.time_wib || ev.time_wib === 'Tentative') return null;
@@ -8551,14 +8583,18 @@ function jnSnapshotInfo() {
   const parts = [];
   if (regimeData) parts.push(`Regime: ${regimeData.regime.replace('_',' ').toUpperCase()}`);
   const pair = document.getElementById('jnPair') && document.getElementById('jnPair').value;
+  const dir  = document.getElementById('jnDir')  && document.getElementById('jnDir').value;
+  let cotAlign = null;
   if (pair && cbData) {
     const [base, quote] = pair.split('/');
     const b = cbData.find(c => c.currency === base);
     const q = cbData.find(c => c.currency === quote);
     if (b && b.bias) parts.push(`${base}: ${b.bias}`);
     if (q && q.bias) parts.push(`${quote}: ${q.bias}`);
+    cotAlign = cotAlignmentNote(base, quote, dir);
   }
-  el.textContent = parts.length ? 'Snapshot akan disimpan: ' + parts.join(' · ') : 'Snapshot regime & CB bias akan disimpan otomatis saat entry.';
+  el.innerHTML = (parts.length ? 'Snapshot akan disimpan: ' + escHtml(parts.join(' · ')) : 'Snapshot regime & CB bias akan disimpan otomatis saat entry.')
+    + (cotAlign ? `<br><span style="color:${cotAlign.aligned ? 'var(--green)' : 'var(--yellow)'}">${escHtml(cotAlign.text)}</span>` : '');
 }
 
 async function jnSave() {
@@ -8586,10 +8622,11 @@ async function jnSave() {
     [base, quote].forEach(cur => {
       if (cotData.positions[cur]) {
         const p = cotData.positions[cur];
-        cotSnap[cur] = { lev_net: p.lev_net || p.net || null };
+        cotSnap[cur] = { lev_net: p.lev_net || p.net || null, lev_change_net: p.lev_change_net ?? p.change_net ?? null };
       }
     });
   }
+  const cotAlign = cotAlignmentNote(base, quote, dir);
 
   const rrPlanned = entry && stop && target
     ? Math.abs((target - entry) / (entry - stop))
@@ -8600,6 +8637,7 @@ async function jnSave() {
     regime_at_entry: regimeData ? regimeData.regime : null,
     cb_bias_snapshot: cbSnap,
     cot_snapshot: cotSnap,
+    cot_alignment: cotAlign ? cotAlign.aligned : null,
     entry_price: entry, stop_price: stop, target_price: target,
     size_lots: lots, rr_planned: rrPlanned ? Math.round(rrPlanned * 100) / 100 : null,
     time_horizon: horizon,
@@ -8788,6 +8826,7 @@ function jnRenderEntries() {
       <div class="jn-meta">
         ${fmt}${rrStr}${rActStr}
         ${e.regime_at_entry ? ` · Regime: ${e.regime_at_entry.replace('_',' ').toUpperCase()}` : ''}
+        ${e.cot_alignment === true ? ` · <span style="color:var(--green)">✅ selaras COT</span>` : e.cot_alignment === false ? ` · <span style="color:var(--yellow)">⚠ kontra COT</span>` : ''}
       </div>
       ${priceRow}
       ${liveRow}
