@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-06-25 (session 109 — lihat "Changelog Session 109" di bawah untuk detail terbaru)
+> **Last updated:** 2026-06-25 (session 110 — lihat "Changelog Session 110" di bawah untuk detail terbaru)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Financial_Feed_App`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -118,6 +118,21 @@ Financial_Feed_App/
 > **Penting:** `api/feeds.js` menggantikan `api/rss.js` dan `api/cot.js` yang sudah dihapus.
 > `api/admin.js` menggantikan `api/health.js`, `api/redis-keys.js`, `api/admin-prompts.js`, dan `api/push.js`.
 > Konsolidasi ini dilakukan untuk tetap di bawah limit 12 serverless functions Vercel Hobby.
+
+---
+
+## Changelog Session 110 (2026-06-25)
+
+### Perketat instruksi tag topik — currency yang dibahas substantif tidak boleh numpang di tag lain
+
+**Konteks:** User cek output Session 108/109 lebih detail: tag `{{TAG: AUD/CAD}}` ternyata isinya bukan cuma AUD/CAD — di dalamnya ikut nyangkut pembahasan JPY/CHF (safe-haven flow) dan kalimat penutup kesimpulan kekuatan mata uang, semua numpang tanpa tag sendiri di bawah tag AUD/CAD. Diskusi sempat ke arah bikin section "Lainnya" buat nampung sisa-sisa begini, tapi disepakati itu berisiko jadi bucket sampah generik (masalah yang sama cuma ganti nama) — lebih baik instruksinya diperketat supaya AI nggak ngumpulin currency yang tidak berhubungan ke satu tag begitu saja.
+
+**Fix (`api/market-digest.js`):**
+- FX poin 6: tegaskan bahwa contoh tag (EUR, AUD/CAD, USD/JPY) di prompt itu CONTOH FORMAT, bukan daftar lengkap — currency apa pun (JPY, CHF, GBP, NZD, dst) yang dibahas dengan klaim/mekanisme sendiri WAJIB dapat tag sendiri, dilarang numpang di tag currency lain.
+- Kalimat penutup (kesimpulan kekuatan mata uang) yang sebelumnya justru DIKECUALIKAN dari tagging — sekarang dibalik jadi WAJIB diberi tag `{{TAG: Konfirmasi}}`, supaya selalu jadi blok visual tersendiri, bukan menyatu ke paragraf tema sebelumnya.
+- XAU poin 9: penguatan serupa — Korelasi/Geopolitik/Positioning di prompt cuma contoh, sub-angle lain (Risk Regime, Rate Differential, ETF Flow, CB Buying, dst) yang punya klaim sendiri wajib tag sendiri juga.
+
+**Testing:** Validasi `node -e "require('./api/market-digest.js')"` — lolos. Test generate live perlu diulang setelah deploy untuk verifikasi AI benar-benar memisah JPY/CHF dan kalimat penutup jadi tag tersendiri (bukan numpang lagi di AUD/CAD).
 
 ---
 
