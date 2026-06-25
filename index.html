@@ -9820,6 +9820,7 @@ function selectTekPair(p) {
   closeTekPairDropdown();
   const note = document.getElementById('tekNote');
   if (note) note.value = tekNotes[tekPair] || '';
+  syncTekYieldTimeframe();
   loadMtfForPair();
   renderTekNews();
   renderTekEventStrip();
@@ -9835,6 +9836,15 @@ function onTekTFChange() {
   tekTF = document.getElementById('tekTFSelect').value;
   createTVChart();
   fetchTaData();
+}
+
+function syncTekYieldTimeframe() {
+  const tf = document.getElementById('tekTFSelect');
+  if (!TEK_YIELD_INSTRUMENTS.includes(tekPair)) return false;
+  if (tekTF === 'D' && tf && tf.value === 'D') return false;
+  tekTF = 'D';
+  if (tf) tf.value = 'D';
+  return true;
 }
 
 // ── Option Expiries (TEK tab) ─────────────────────────────────────────────────
@@ -10181,6 +10191,7 @@ function initTeknikal() {
   const label = document.getElementById('tekPairTriggerLabel');
   if (label) label.textContent = tekPairLabel(tekPair);
   const tf = document.getElementById('tekTFSelect');
+  syncTekYieldTimeframe();
   if (tf) tf.value = tekTF;
   const note = document.getElementById('tekNote');
   if (note) note.value = tekNotes[tekPair] || '';

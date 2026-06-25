@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-06-23 (session 98 — lihat "Changelog Session 98" di bawah untuk detail terbaru)
+> **Last updated:** 2026-06-25 (session 100 — lihat "Changelog Session 100" di bawah untuk detail terbaru)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Financial_Feed_App`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -121,7 +121,7 @@ Financial_Feed_App/
 
 ---
 
-## Changelog Session 100 (2026-06-24)
+## Changelog Session 99 (2026-06-24)
 
 ### Fix: Option Expiries FinancialJuice — sumber kedua sering kosong karena live ticker window terlalu sempit
 
@@ -151,6 +151,18 @@ Financial_Feed_App/
 **Frontend (`index.html`):** Tabel Option Expiries di TEK tab dapat kolom "Sumber" (muncul cuma kalau ada entry yang dikonfirmasi >1 sumber — abbreviation IL/FJ dengan tooltip nama lengkap), dan footer link sumber sekarang nampilin link ke kedua sumber yang berhasil fetch (bukan cuma Investinglive seperti sebelumnya).
 
 **Testing:** Diverifikasi end-to-end pakai data live FinancialJuice RSS (capture asli "Wednesday FX Options Expiries" dengan 9 pasangan: EUR/USD, USD/JPY, AUD/USD, USD/CNY, GBP/USD, USD/BRL, NZD/USD, EUR/GBP, USD/MXN — total 23 level) — semua level+size terparse benar termasuk format `EU2.51b`/`AUD688.9m` yang sebelumnya tidak match. Dites juga skenario merge (2 sumber lapor level sama → 1 entry dengan 2 sources), filter per-pair, dan graceful degradation (1 sumber down → tetap return 200 dengan sumber yang hidup).
+
+---
+
+## Changelog Session 100 (2026-06-25)
+
+### UX tweak — yield instruments di tab TEKNIKAL otomatis pindah ke timeframe 1D
+
+**Konteks:** US10Y dan US02Y sekarang bisa dibuka sebagai chart teknikal sendiri di tab TEKNIKAL, tapi kalau user pindah ke pair yield dari pair lain, timeframe sebelumnya bisa ikut kebawa dan bikin chart yang kurang relevan.
+
+**Fix:** Saat `selectTekPair()` atau `initTeknikal()` mendeteksi pair yield (`US10Y` / `US02Y`), state timeframe sekarang dipaksa ke `D` dan dropdown ikut disinkronkan. Efeknya, begitu user masuk ke tampilan teknikal yield, chart langsung dibuka di daily tanpa perlu klik timeframe manual.
+
+**Testing:** Verifikasi wiring langsung di `index.html` memastikan helper sync dipanggil dari dua jalur utama: saat pair diganti dan saat tab TEKNIKAL diinisialisasi.
 
 ---
 
