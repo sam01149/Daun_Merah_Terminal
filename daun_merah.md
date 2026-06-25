@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-06-25 (session 112 — lihat "Changelog Session 112" di bawah untuk detail terbaru)
+> **Last updated:** 2026-06-25 (session 113 — lihat "Changelog Session 113" di bawah untuk detail terbaru)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Financial_Feed_App`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -118,6 +118,18 @@ Financial_Feed_App/
 > **Penting:** `api/feeds.js` menggantikan `api/rss.js` dan `api/cot.js` yang sudah dihapus.
 > `api/admin.js` menggantikan `api/health.js`, `api/redis-keys.js`, `api/admin-prompts.js`, dan `api/push.js`.
 > Konsolidasi ini dilakukan untuk tetap di bawah limit 12 serverless functions Vercel Hobby.
+
+---
+
+## Changelog Session 113 (2026-06-25)
+
+### Izinkan kalimat penutup FX bilang "sinyal campuran" secara eksplisit
+
+**Konteks:** Test live Session 112 (instruksi "tepat satu currency" diperkuat 2x) hasilnya malah jadi kalimat ambigu: "Dolar AS melemah terhadap EUR dan komoditas tetapi bertahan terhadap JPY... JPY tetap menjadi mata uang terlemah" — nggak pernah eksplisit bilang USD itu kuat atau lemah overall. Disadari root cause-nya bukan AI gagal paham, tapi instruksi "WAJIB pilih satu pemenang" yang berlawanan sama kondisi pasar yang genuinely campuran hari itu (USD kuat vs satu currency, lemah vs currency lain) — maksa pilih satu pemenang palsu di hari campuran berisiko kurang akurat, bukan lebih jelas.
+
+**Fix (`api/market-digest.js`):** "Penutup FX" sekarang punya dua jalur valid: (1) kalau ada satu pemenang/pecundang yang jelas tanpa kontradiksi — tetap sebut TEPAT SATU di tiap sisi seperti sebelumnya; (2) kalau buktinya genuinely campuran — boleh eksplisit bilang "sinyal campuran" dengan alasan singkat (kuat vs siapa, lemah vs siapa), bukan dipaksa pilih satu pemenang yang nggak akurat. REMINDER FINAL diupdate konsisten — sekarang minta kalimat ambigu ("EUR dan JPY" ditumpuk tanpa penjelasan) diperbaiki jadi salah satu dari dua jalur itu, bukan otomatis dipotong jadi satu currency saja.
+
+**Testing:** Validasi `node -e "require(...)"` — lolos. Test live ditunda (provider AI sempat di-throttle dari testing sebelumnya) — user akan generate manual lewat tombol "Ringkas Ulang" dan kasih feedback langsung.
 
 ---
 
