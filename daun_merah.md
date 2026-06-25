@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-06-25 (session 104 — lihat "Changelog Session 104" di bawah untuk detail terbaru)
+> **Last updated:** 2026-06-25 (session 105 — lihat "Changelog Session 105" di bawah untuk detail terbaru)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Financial_Feed_App`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -118,6 +118,22 @@ Financial_Feed_App/
 > **Penting:** `api/feeds.js` menggantikan `api/rss.js` dan `api/cot.js` yang sudah dihapus.
 > `api/admin.js` menggantikan `api/health.js`, `api/redis-keys.js`, `api/admin-prompts.js`, dan `api/push.js`.
 > Konsolidasi ini dilakukan untuk tetap di bawah limit 12 serverless functions Vercel Hobby.
+
+---
+
+## Changelog Session 105 (2026-06-25)
+
+### Bug fix — analisa AI hilang setelah reload, baru muncul lagi setelah pindah pair lalu balik
+
+**Konteks:** User lapor: reload app, masuk tab ANALISA ke pair yang AI analysis-nya sudah pernah di-generate sebelumnya (XAU/USD) — analisanya kosong. Pindah ke pair lain lalu balik lagi ke XAU/USD, analisanya tiba-tiba muncul. Perilaku flaky yang nggak disukai user.
+
+**Root cause #1 (`loadAnalisa()`, `index.html`):** Cache data OHLCV mentah (`analisaDataCache`, TTL 2 jam) dan cache hasil AI (`analisaAiCache`, TTL 8 jam) punya umur beda. Restore AI cache (`_restoreAiResult`) cuma dicek di cabang "render instan dari cache" (kalau `analisaDataCache[symbol]` masih ada) — di cabang "data cache kosong/basi → fetch fresh dulu", setelah fetch selesai cuma `renderAnalisa()` dipanggil, **tidak ada** cek ulang `analisaAiCache[symbol]`. Jadi begitu data cache 2 jam itu basi (padahal AI cache 8 jam masih valid), hasil AI yang sebenarnya masih sah jadi nggak pernah ditampilkan — sampai pair itu di-load ulang DAN data cache-nya sudah terisi (baru lewat cabang instant-render yang benar).
+
+**Root cause #2 (`switchView('analisa')`):** Logika "restore pair terakhir saat tab dibuka" cuma jalan kalau `analisaDataCache[lastSym]` masih ada (gate kondisi) — beda dari logika di `loadAnalisa()` yang selalu fetch ulang kalau cache kosong/basi. Kalau cache OHLCV mentah sudah basi pas reload, seluruh blok restore ini di-skip total: tidak ada pair yang ke-select, tidak ada loading state, tidak ada apa-apa — tab kelihatan kosong sampai user klik manual.
+
+**Fix:** (1) Tambah pengecekan `analisaAiCache[symbol]` setelah fetch fresh selesai di `loadAnalisa()`, sama seperti yang sudah ada di cabang instant-render. (2) Ganti logika restore di `switchView('analisa')` supaya selalu panggil `loadAnalisa(lastSym, lastLabel, chip)` (path yang sama dengan klik manual) — bukan duplikat logika render-from-cache-only yang gampang silently no-op. Label pair diambil dari `chip.textContent` (selalu ada di DOM), bukan dari `analisaDataCache[lastSym].label` (bisa undefined kalau cache kosong).
+
+**Testing:** Validasi sintaks tiap blok `<script>` (`node -e "new Function(...)"`) — lolos. Verifikasi manual logic trace 2 skenario: (1) data cache basi + AI cache masih valid → sekarang AI result ikut tampil setelah fetch fresh, bukan cuma chart; (2) restore last-pair saat data cache kosong total → sekarang tetap masuk ke `loadAnalisa()` (tampil loading state lalu data fresh), bukan diam tanpa indikasi apa pun.
 
 ---
 

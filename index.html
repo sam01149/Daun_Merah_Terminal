@@ -3634,7 +3634,16 @@ async function loadAnalisa(symbol, label, chipEl) {
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     analisaDataCache[symbol] = await res.json();
     _analisaSaveData(symbol);
-    if (analisaActive.symbol === symbol) renderAnalisa();
+    if (analisaActive.symbol === symbol) {
+      renderAnalisa();
+      // Data cache (2h TTL) bisa lebih cepat basi daripada AI cache (8h TTL) — kalau
+      // analisaDataCache kosong/stale saat fungsi ini dipanggil, cabang "instant
+      // render" di atas (baris ~3621) ke-skip, dan AI result yang sebenarnya masih
+      // valid jadi nggak pernah direstore. Cek lagi di sini setelah fetch fresh
+      // selesai supaya analisa AI yang sudah di-generate sebelumnya tidak hilang
+      // sampai user pindah pair lalu balik lagi (baru ke-pickup cabang cache).
+      if (analisaAiCache[symbol]) _restoreAiResult(symbol);
+    }
   } catch(e) {
     if (analisaActive.symbol === symbol)
       document.getElementById('analisaD1Card').innerHTML = `<div style="color:var(--red);font-size:11px;padding:12px 0">Gagal memuat: ${escHtml(e.message)}</div>`;
@@ -4066,18 +4075,19 @@ document.querySelectorAll('#navViews .nvtab').forEach(btn => {
       activeView = 'analisa';
       document.getElementById('analisaPanel').style.display = 'block';
       if (Date.now() < analisaAiCooldownEnd) _tickAnalisaCooldown();
-      // Restore last viewed pair from localStorage
+      // Restore last viewed pair from localStorage — always go through loadAnalisa()
+      // (same path as a manual chip click) instead of a bespoke render-from-cache-only
+      // copy. The old code only restored when analisaDataCache[lastSym] happened to
+      // still be within its 2h TTL; if it had expired since the last visit, the whole
+      // branch silently did nothing — tab opened with no pair selected, no loading
+      // state, nothing — looking "kosong" until the user clicked away and back (which
+      // went through loadAnalisa() and worked). loadAnalisa() already handles both
+      // "cache still fresh" and "cache stale/missing, fetch + show loading" cleanly.
       const lastSym = localStorage.getItem(LS_ANALISA_LAST);
-      if (lastSym && analisaDataCache[lastSym] && !analisaActive.symbol) {
+      if (lastSym && !analisaActive.symbol) {
         const chip = document.querySelector(`.analisa-chip[onclick*="${lastSym}"]`);
-        const lastLabel = analisaDataCache[lastSym].label || lastSym;
-        analisaActive = { symbol: lastSym, label: lastLabel };
-        document.querySelectorAll('.analisa-chip').forEach(c => c.classList.remove('active'));
-        if (chip) chip.classList.add('active');
-        document.getElementById('analisaEmpty').style.display   = 'none';
-        document.getElementById('analisaContent').style.display = 'block';
-        renderAnalisa();
-        if (analisaAiCache[lastSym]) _restoreAiResult(lastSym);
+        const lastLabel = chip ? chip.textContent.trim() : (analisaDataCache[lastSym]?.label || lastSym);
+        loadAnalisa(lastSym, lastLabel, chip);
       }
     } else if (view === 'cal') {
       setFeedUI(false);
