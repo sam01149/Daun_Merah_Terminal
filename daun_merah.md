@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-06-25 (session 113 — lihat "Changelog Session 113" di bawah untuk detail terbaru)
+> **Last updated:** 2026-06-26 (session 114 — lihat "Changelog Session 114" di bawah untuk detail terbaru)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Financial_Feed_App`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -118,6 +118,22 @@ Financial_Feed_App/
 > **Penting:** `api/feeds.js` menggantikan `api/rss.js` dan `api/cot.js` yang sudah dihapus.
 > `api/admin.js` menggantikan `api/health.js`, `api/redis-keys.js`, `api/admin-prompts.js`, dan `api/push.js`.
 > Konsolidasi ini dilakukan untuk tetap di bawah limit 12 serverless functions Vercel Hobby.
+
+---
+
+## Changelog Session 114 (2026-06-26)
+
+### Ganti model Groq Call 1 fallback-3 — qwen3-32b (preview) → llama-3.3-70b-versatile (production)
+
+**Konteks:** User minta cek apakah ada model lebih bagus di OpenRouter/Groq untuk gantikan yang sering gagal (Groq HTTP 413, OpenRouter timeout 15s). Diverifikasi langsung ke sumber resmi (bukan training data) — `console.groq.com/docs/models` dan `https://openrouter.ai/api/v1/models` (endpoint live, 339 model total, 22 gratis).
+
+**Temuan:** `qwen/qwen3-32b` (model Groq fallback-3 sebelumnya) statusnya **"Preview Models (Evaluation Only)"** di dokumentasi resmi Groq — bukan production tier, kemungkinan besar sumber HTTP 413 yang berulang. `llama-3.3-70b-versatile` (sudah dipakai di codebase ini untuk Call 2/4, terbukti reliable) statusnya **Production**, context window sama (131,072 token), dan didokumentasikan resmi cocok untuk "Complex tasks, long-form content" — upgrade yang well-justified, bukan tebakan.
+
+**Fix (`api/market-digest.js`):** `GROQ_MODEL_PROSE` diganti dari `qwen/qwen3-32b` ke `llama-3.3-70b-versatile`.
+
+**Soal OpenRouter (`openai/gpt-oss-120b:free`) — TIDAK diganti, dengan alasan:** Verifikasi list lengkap free model OpenRouter (qwen3-next-80b, llama-3.3-70b-instruct, hermes-3-405b, gemma-4, dst) tidak memberi bukti kuat salah satu di antaranya bakal lebih cepat — model gratis besar (405B) cenderung LEBIH lambat di free-tier queue, bukan lebih cepat, jadi ganti tanpa data latency nyata berisiko memperburuk bukan memperbaiki. Timeout 15 detik yang sering ke-hit kemungkinan besar gejala queue/load infrastruktur OpenRouter free-tier, bukan model yang salah. Juga ditemukan: total timeout worst-case kalau SambaNova(28s)+OpenRouter(15s)+Groq(20s) semua gagal berurutan = 63 detik, sementara `vercel.json` cuma kasih `maxDuration: 60` untuk `api/market-digest.js` — risiko laten yang sudah ada SEBELUM sesi ini (bukan disebabkan perubahan hari ini), dicatat di sini sebagai temuan terpisah, belum diperbaiki karena di luar scope permintaan user (perlu keputusan: kecilkan timeout SambaNova, atau naikkan maxDuration kalau plan Vercel mengizinkan).
+
+**Testing:** Validasi `node -e "require(...)"` — lolos. Test live generate diperlukan untuk konfirmasi Groq fallback-3 sekarang sukses kalau ter-trigger (perlu skenario SambaNova+OpenRouter gagal berbarengan untuk reach Groq, sulit dipaksa terjadi secara terkendali).
 
 ---
 

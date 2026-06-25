@@ -18,7 +18,13 @@ const SAMBANOVA_URL_CALL1 = 'https://api.sambanova.ai/v1/chat/completions';
 const SAMBANOVA_MODEL_CALL1 = 'DeepSeek-V3.2';            // Call 1: prose (akun 2) — preview, tapi kualitas superior untuk Indonesian
 const GROQ_URL        = 'https://api.groq.com/openai/v1/chat/completions';
 const GROQ_MODEL      = 'llama-3.3-70b-versatile';        // Call 2, 3, 4: JSON + thesis
-const GROQ_MODEL_PROSE = 'qwen/qwen3-32b';                 // Call 1 fallback 3: prose (lebih panjang, cocok untuk briefing)
+const GROQ_MODEL_PROSE = 'llama-3.3-70b-versatile';        // Call 1 fallback 3: prose. Diganti dari qwen/qwen3-32b (2026-06)
+                                                            // — terkonfirmasi via console.groq.com/docs/models statusnya
+                                                            // "Preview/Evaluation" (bukan production), kemungkinan besar
+                                                            // sumber HTTP 413 saat jadi fallback terakhir. llama-3.3-70b-versatile
+                                                            // production-tier, context sama 131K, sudah proven reliable di
+                                                            // codebase ini buat Call 2/4, dan didokumentasikan resmi cocok
+                                                            // untuk "long-form content".
 const OPENROUTER_URL     = 'https://openrouter.ai/api/v1/chat/completions';
 const OPENROUTER_MODEL   = 'openai/gpt-oss-120b:free'; // Call 1 fallback 2: proven stabil, output Bahasa Indonesia
 const OPENROUTER_HEADERS = { 'HTTP-Referer': 'https://financial-feed-app.vercel.app', 'X-Title': 'Daun Merah' };
