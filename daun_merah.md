@@ -160,7 +160,7 @@ Financial_Feed_App/
 
 **Konteks:** US10Y dan US02Y sekarang bisa dibuka sebagai chart teknikal sendiri di tab TEKNIKAL, tapi kalau user pindah ke pair yield dari pair lain, timeframe sebelumnya bisa ikut kebawa dan bikin chart yang kurang relevan.
 
-**Fix:** Saat `selectTekPair()` atau `initTeknikal()` mendeteksi pair yield (`US10Y` / `US02Y`), state timeframe sekarang dipaksa ke `D` dan dropdown ikut disinkronkan. Efeknya, begitu user masuk ke tampilan teknikal yield, chart langsung dibuka di daily tanpa perlu klik timeframe manual.
+**Fix:** Saat `selectTekPair()` atau `initTeknikal()` mendeteksi pair yield (`US10Y` / `US02Y`), state timeframe sekarang dipaksa ke `D` dan dropdown ikut disinkronkan. Saat balik ke forex atau XAU/USD, state otomatis balik ke `240` supaya tampilan teknikal kembali ke H4, yang jadi default paling masuk akal untuk pair tersebut.
 
 **Testing:** Verifikasi wiring langsung di `index.html` memastikan helper sync dipanggil dari dua jalur utama: saat pair diganti dan saat tab TEKNIKAL diinisialisasi.
 
