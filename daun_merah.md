@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-06-25 (session 106 — lihat "Changelog Session 106" di bawah untuk detail terbaru)
+> **Last updated:** 2026-06-25 (session 105 — lihat "Changelog Session 105" di bawah untuk detail terbaru)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Financial_Feed_App`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -118,18 +118,6 @@ Financial_Feed_App/
 > **Penting:** `api/feeds.js` menggantikan `api/rss.js` dan `api/cot.js` yang sudah dihapus.
 > `api/admin.js` menggantikan `api/health.js`, `api/redis-keys.js`, `api/admin-prompts.js`, dan `api/push.js`.
 > Konsolidasi ini dilakukan untuk tetap di bawah limit 12 serverless functions Vercel Hobby.
-
----
-
-## Changelog Session 106 (2026-06-25)
-
-### Redesign RINGKASAN — hybrid: flat tetap, warna kembali di badge LONG/SHORT
-
-**Konteks:** Setelah redesign flat (Session 104) dicoba beberapa hari, user bilang lebih nyaman versi sebelumnya. Sempat mau di-revert total (`git revert 208fc70`), tapi dibatalkan (`git revert --abort`) setelah diskusi: untuk kemanjaan mata badan teks/divider flat tetap menang (nggak berubah dari redesign), tapi untuk kepentingan informasi, warna di badge LONG/SHORT/bullish/bearish itu fungsional (sinyal arah cepat lewat peripheral vision), bukan dekorasi — jadi cuma elemen itu yang dikembalikan berwarna, sisanya tetap flat.
-
-**Fix (`index.html`):** `.thesis-dir` dapat lagi pill background berwarna (`#1a5e38`/`#7a1f17` seperti versi sebelum redesign) khusus untuk class `.long`/`.short`, dan badge bias XAU (`bullish`/`bearish`/dst, inline style di `renderXauThesisCard`) dapat lagi background `${xauColor}22`. Provider badge, confidence text, dan card/divider tetap flat — cuma direction signal yang dikecualikan dari flat redesign.
-
-**Testing:** Validasi sintaks tiap blok `<script>` — lolos.
 
 ---
 

@@ -526,13 +526,9 @@ body {
   color: var(--muted); margin-bottom: 10px; font-weight: 600; text-transform: uppercase;
 }
 .thesis-pair { font-family:'DM Mono',monospace; font-size:18px; font-weight:700; color:var(--text); }
-/* Direction badge sengaja dikecualikan dari flat redesign — warnanya bukan
-   dekorasi, itu sinyal arah trade yang harus kebaca cepat lewat peripheral
-   vision (LONG/SHORT/bullish/bearish), beda dari provider badge atau stats
-   yang memang cuma informasi pasif. Pill berwarna dipertahankan di sini saja. */
-.thesis-dir  { font-size:10px; margin-left:8px; font-family:'DM Mono',monospace; letter-spacing:.05em; font-weight:700; padding:3px 8px; border-radius:3px; }
-.thesis-dir.long  { background:#1a5e38; color:var(--green); }
-.thesis-dir.short { background:#7a1f17; color:var(--accent); }
+.thesis-dir  { font-size:10px; margin-left:8px; font-family:'DM Mono',monospace; letter-spacing:.05em; font-weight:700; }
+.thesis-dir.long  { color:var(--green); }
+.thesis-dir.short { color:var(--accent); }
 .thesis-conf { color:var(--muted); font-size:10px; margin-left:8px; font-family:'DM Mono',monospace; letter-spacing:.05em; }
 .thesis-label { font-size:9px; color:var(--muted); font-family:'DM Mono',monospace; letter-spacing:.05em; margin-top:8px; }
 .thesis-val   { font-size:11px; color:var(--text-mid); font-family:'DM Mono',monospace; margin-top:2px; }
@@ -3978,7 +3974,7 @@ function renderThesisCard(t) {
     <div class="thesis-section-label">Thesis · FX</div>
     <div style="display:flex;align-items:center">
       <span class="thesis-pair">${t.pair_recommendation || '—'}</span>
-      ${t.direction !== 'no_trade' ? `<span class="thesis-dir ${dirClass}">${dirLabel}</span>` : `<span class="thesis-dir" style="background:var(--border);color:var(--muted)">${dirLabel}</span>`}
+      ${t.direction !== 'no_trade' ? `<span class="thesis-dir ${dirClass}">${dirLabel}</span>` : `<span class="thesis-dir" style="color:var(--muted)">${dirLabel}</span>`}
       ${t.confidence_1_to_5 ? `<span class="thesis-conf">Confidence: ${confidenceLabel(t.confidence_1_to_5)}</span>` : ''}
     </div>
     ${t.invalidation_condition ? `<div class="thesis-label">INVALIDASI</div><div class="thesis-val">${escHtml(t.invalidation_condition)}</div>` : ''}
@@ -3996,7 +3992,7 @@ function renderXauThesisCard(t) {
     <div class="thesis-section-label">Thesis · XAU/USD</div>
     <div style="display:flex;align-items:center;flex-wrap:wrap;gap:4px;margin-bottom:6px">
       <span class="thesis-pair" style="font-size:15px">XAU/USD</span>
-      <span class="thesis-dir" style="background:${xauColor}22;color:${xauColor}">${(t.xau_bias || '').toUpperCase()}</span>
+      <span class="thesis-dir" style="color:${xauColor}">${(t.xau_bias || '').toUpperCase()}</span>
       ${t.xau_confidence ? `<span class="thesis-conf">Confidence: ${confidenceLabel(t.xau_confidence)}</span>` : ''}
     </div>
     ${driverLabel ? `<div class="thesis-label">DRIVER</div><div class="thesis-val">${driverLabel}</div>` : ''}
