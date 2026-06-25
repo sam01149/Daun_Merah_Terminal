@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-06-25 (session 102 — lihat "Changelog Session 102" di bawah untuk detail terbaru)
+> **Last updated:** 2026-06-25 (session 103 — lihat "Changelog Session 103" di bawah untuk detail terbaru)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Financial_Feed_App`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -118,6 +118,22 @@ Financial_Feed_App/
 > **Penting:** `api/feeds.js` menggantikan `api/rss.js` dan `api/cot.js` yang sudah dihapus.
 > `api/admin.js` menggantikan `api/health.js`, `api/redis-keys.js`, `api/admin-prompts.js`, dan `api/push.js`.
 > Konsolidasi ini dilakukan untuk tetap di bawah limit 12 serverless functions Vercel Hobby.
+
+---
+
+## Changelog Session 103 (2026-06-25)
+
+### Dashboard — readability fix teks ringkasan (font 10px → 13px, paragraf, warna)
+
+**Konteks:** Setelah Session 102 bikin preview ringkasan jadi full-text (bukan dipotong), user lapor font-nya kekecilan (10px) dan capek dibaca — minta disamakan dengan kenyamanan baca di tab RINGKASAN.
+
+**Root cause tambahan yang ketemu saat investigasi:** bukan cuma soal ukuran font — `dash-digest-text` sebelumnya di-render dengan `escHtml(preview)` langsung (satu blok teks tanpa pemecahan paragraf), beda dari tab RINGKASAN yang pakai `articleToHtml()` (pecah jadi `<p class="r-para">` per paragraf dengan margin 1.2em). Hasilnya dinding teks panjang tanpa nafas, jauh lebih melelahkan dibaca dibanding ukuran font kecilnya sendiri.
+
+**Fix (`index.html`):**
+- `.dash-digest-text`: font-size 10px → 13px, line-height 1.6 → 1.75, color `var(--text-mid)` (abu redup) → `var(--text)` (#e8e4d9, krem hangat) — identik dengan `.ringkasan-text` di tab RINGKASAN.
+- `renderDashDigest()` sekarang pakai `articleToHtml(preview)` (bukan `escHtml`) supaya paragraf ter-pecah dengan benar, termasuk highlight paragraf kalender (`r-cal`) kalau ada.
+
+**Testing:** Validasi sintaks tiap blok `<script>` (`node -e "new Function(...)"`) — lolos.
 
 ---
 

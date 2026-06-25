@@ -1938,7 +1938,9 @@ body {
 .dash-digest-arrow { background: var(--surface); border: 1px solid var(--border); color: var(--muted); border-radius: 4px; width: 18px; height: 18px; line-height: 1; cursor: pointer; font-size: 11px; padding: 0; }
 .dash-digest-arrow:hover { border-color: var(--accent); color: var(--text); }
 .dash-digest-label { font-size: 8px; color: var(--muted); font-family: 'DM Mono', monospace; letter-spacing: .8px; text-transform: uppercase; margin-bottom: 5px; }
-.dash-digest-text { font-size: 10px; color: var(--text-mid); line-height: 1.6; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+.dash-digest-text { font-size: 13px; color: var(--text); line-height: 1.75; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+.dash-digest-text .r-para { margin: 0 0 1.2em; padding: 0; }
+.dash-digest-text .r-para:last-child { margin-bottom: 0; }
 .dash-bias-row {
   display: flex; align-items: center; justify-content: space-between;
   padding: 5px 12px; border-bottom: 1px solid rgba(255,255,255,.03);
@@ -10680,7 +10682,7 @@ function renderDashDigest() {
       <span style="font-size:9px;color:var(--muted);font-family:'DM Mono',monospace;letter-spacing:.08em">${side === 'xau' ? 'XAUUSD' : 'FX'}</span>
       <button class="dash-digest-arrow" onclick="toggleDashDigestSide()" title="Ganti tampilan">›</button>
     </div>` : '';
-  digestEl.innerHTML = `<div class="dash-digest-section">${sideToggle}<div class="dash-digest-text">${escHtml(preview)}</div>${refreshBtn}${lihatSemua}${lastGenCaption}</div>`;
+  digestEl.innerHTML = `<div class="dash-digest-section">${sideToggle}<div class="dash-digest-text">${articleToHtml(preview)}</div>${refreshBtn}${lihatSemua}${lastGenCaption}</div>`;
 
   if (thesisEl) {
     let html = '';
