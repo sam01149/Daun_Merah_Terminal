@@ -1935,6 +1935,8 @@ body {
 .dash-news-text { font-size: 10px; color: var(--text-mid); line-height: 1.5; }
 .dash-news-time { font-size: 8px; color: var(--muted); font-family: 'DM Mono', monospace; white-space: nowrap; margin-left: auto; flex-shrink: 0; padding-left: 4px; }
 .dash-digest-section { padding: 10px 12px 8px; border-bottom: 1px solid var(--border); }
+.dash-digest-arrow { background: var(--surface); border: 1px solid var(--border); color: var(--muted); border-radius: 4px; width: 18px; height: 18px; line-height: 1; cursor: pointer; font-size: 11px; padding: 0; }
+.dash-digest-arrow:hover { border-color: var(--accent); color: var(--text); }
 .dash-digest-label { font-size: 8px; color: var(--muted); font-family: 'DM Mono', monospace; letter-spacing: .8px; text-transform: uppercase; margin-bottom: 5px; }
 .dash-digest-text { font-size: 10px; color: var(--text-mid); line-height: 1.6; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
 .dash-bias-row {
@@ -3945,14 +3947,25 @@ function articleToHtml(text) {
   }).join('');
 }
 
+// Ringkasan article-nya satu blok teks dengan marker "XAUUSD:" yang membagi
+// bagian FX (pair-pair selain gold) dari bagian gold — dipakai baik buat tab
+// RINGKASAN penuh (tampil dua-duanya) maupun preview Dashboard (tampil satu).
+function splitArticleParts(article) {
+  if (!article) return { fx: '', xau: '' };
+  const xauIdx = article.indexOf('XAUUSD:');
+  if (xauIdx === -1) return { fx: article.trim(), xau: '' };
+  return {
+    fx:  article.slice(0, xauIdx).trim(),
+    xau: article.slice(xauIdx + 'XAUUSD:'.length).trim(),
+  };
+}
+
 function renderArticleSections(article) {
   if (!article) return '';
-  const xauIdx = article.indexOf('XAUUSD:');
-  if (xauIdx === -1) {
-    return `<div class="ringkasan-card"><div class="ringkasan-text">${articleToHtml(article)}</div></div>`;
+  const { fx: fxPart, xau: xauPart } = splitArticleParts(article);
+  if (!xauPart) {
+    return `<div class="ringkasan-card"><div class="ringkasan-text">${articleToHtml(fxPart)}</div></div>`;
   }
-  const fxPart  = article.slice(0, xauIdx).trim();
-  const xauPart = article.slice(xauIdx + 'XAUUSD:'.length).trim();
   return `
     <div class="ringkasan-card">
       <div class="ringkasan-text">${articleToHtml(fxPart)}</div>
@@ -10521,6 +10534,14 @@ async function initDashboard() {
   }, 60000);
 }
 
+let dashDigestSide = localStorage.getItem('dash_digest_side') === 'fx' ? 'fx' : 'xau';
+
+function toggleDashDigestSide() {
+  dashDigestSide = dashDigestSide === 'xau' ? 'fx' : 'xau';
+  localStorage.setItem('dash_digest_side', dashDigestSide);
+  renderDashDigest();
+}
+
 // Sesi cuma label informatif berdasarkan jam WIB saat generate — bukan deteksi
 // jam buka pasar yang presisi, cukup buat ngasih konteks "ini dari sesi mana".
 function fmtWibSession(isoTs) {
@@ -10635,9 +10656,16 @@ function renderDashDigest() {
     if (thesisEl) thesisEl.innerHTML = '<div class="dash-no-data">—</div>';
     return;
   }
-  const article = ringkasanCache.article || '';
-  const preview = article.length > 500 ? article.slice(0, 497) + '...' : article;
-  const lihatSemua = article.length > 500
+  // Dashboard cuma nampilin SATU sisi (XAU atau FX) biar cepat dibaca — full
+  // dua-duanya tetap ada di tab RINGKASAN. Default XAU (sesuai kebiasaan trading
+  // user), toggle lewat panah disimpan ke localStorage biar persist antar visit.
+  const { fx, xau } = splitArticleParts(ringkasanCache.article || '');
+  const hasBoth = !!(fx && xau);
+  const side = hasBoth ? dashDigestSide : (xau ? 'xau' : 'fx');
+  const partText = side === 'xau' ? xau : fx;
+  const preview = partText.length > 500 ? partText.slice(0, 497) + '...' : partText;
+  const fullLen = side === 'xau' ? xau.length : fx.length;
+  const lihatSemua = fullLen > 500
     ? `<button class="cal-scenario-ck-btn" style="margin:6px 0 4px" onclick="switchView('ringkasan')">→ Lihat semua</button>`
     : '';
   const refreshBtn = ringkasanCache.stale
@@ -10646,7 +10674,13 @@ function renderDashDigest() {
   const lastGenCaption = ringkasanCache.generated_at
     ? `<div style="font-size:9px;color:var(--muted);font-family:'DM Mono',monospace;margin-top:6px">Terakhir diringkas ${fmtWibSession(ringkasanCache.generated_at)}</div>`
     : '';
-  digestEl.innerHTML = `<div class="dash-digest-section"><div class="dash-digest-text">${escHtml(preview)}</div>${refreshBtn}${lihatSemua}${lastGenCaption}</div>`;
+  const sideToggle = hasBoth ? `
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+      <button class="dash-digest-arrow" onclick="toggleDashDigestSide()" title="Ganti tampilan">‹</button>
+      <span style="font-size:9px;color:var(--muted);font-family:'DM Mono',monospace;letter-spacing:.08em">${side === 'xau' ? 'XAUUSD' : 'FX'}</span>
+      <button class="dash-digest-arrow" onclick="toggleDashDigestSide()" title="Ganti tampilan">›</button>
+    </div>` : '';
+  digestEl.innerHTML = `<div class="dash-digest-section">${sideToggle}<div class="dash-digest-text">${escHtml(preview)}</div>${refreshBtn}${lihatSemua}${lastGenCaption}</div>`;
 
   if (thesisEl) {
     let html = '';

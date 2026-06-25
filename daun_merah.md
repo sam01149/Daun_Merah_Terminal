@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-06-25 (session 101 — lihat "Changelog Session 101" di bawah untuk detail terbaru)
+> **Last updated:** 2026-06-25 (session 102 — lihat "Changelog Session 102" di bawah untuk detail terbaru)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Financial_Feed_App`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -118,6 +118,21 @@ Financial_Feed_App/
 > **Penting:** `api/feeds.js` menggantikan `api/rss.js` dan `api/cot.js` yang sudah dihapus.
 > `api/admin.js` menggantikan `api/health.js`, `api/redis-keys.js`, `api/admin-prompts.js`, dan `api/push.js`.
 > Konsolidasi ini dilakukan untuk tetap di bawah limit 12 serverless functions Vercel Hobby.
+
+---
+
+## Changelog Session 102 (2026-06-25)
+
+### Dashboard — preview ringkasan satu sisi (XAU default) dengan toggle panah
+
+**Konteks:** User minta card RINGKASAN PASAR di Dashboard cuma nampilin satu bagian (FX atau XAU) bukan dua-duanya, biar cepat dibaca. Diskusi: user trading gold jadi mau XAU sebagai default, tapi sempat ragu apakah itu objektif mengingat aplikasi ini macro-context-heavy. Konklusi: paragraf XAU di output ringkasan sudah merangkum driver makro yang relevan (real yield, Core PCE, Fed bias, risk regime) di dalam paragrafnya sendiri, jadi tidak kehilangan konteks signifikan dengan menyembunyikan bagian FX — defaultkan XAU, kasih toggle panah buat lihat FX kalau perlu.
+
+**Implementasi (`index.html`):**
+- Extract helper `splitArticleParts(article)` dari logika split `"XAUUSD:"` yang sebelumnya cuma ada di `renderArticleSections` (tab RINGKASAN) — sekarang dipakai juga di `renderDashDigest()` biar tidak duplikat logika.
+- `renderDashDigest()` sekarang preview cuma satu sisi (`dashDigestSide`, persisted ke localStorage `dash_digest_side`, default `'xau'`), dengan tombol panah ‹ › (`toggleDashDigestSide()`) buat switch antar XAU/FX. Toggle cuma muncul kalau artikel benar-benar punya dua bagian (`hasBoth`); kalau cuma satu bagian, tampil langsung tanpa toggle.
+- "Lihat semua" sekarang threshold-nya dihitung dari panjang bagian yang sedang ditampilkan saja (bukan panjang artikel gabungan), supaya tombol itu konsisten dengan apa yang baru saja dibaca.
+
+**Testing:** Validasi sintaks tiap blok `<script>` di `index.html` (`node -e "new Function(...)"`) — lolos. Verifikasi manual alur 3 skenario: artikel ada XAU+FX (toggle muncul, default XAU), artikel cuma FX/legacy tanpa marker XAUUSD (toggle disembunyikan, fallback ke FX), dan belum ada ringkasan sama sekali (tetap tampil tombol Generate seperti sebelumnya, tidak kena logic split).
 
 ---
 
