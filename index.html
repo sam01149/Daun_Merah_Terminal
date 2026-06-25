@@ -5135,8 +5135,32 @@ function navFundDetail(dir) {
   const next = fdScores[(idx + dir + fdScores.length) % fdScores.length];
   fdOpenCur  = next.cur;
   _renderFundDetail();
-  document.getElementById('fdBody').scrollTop = 0;
+  const body = document.getElementById('fdBody');
+  body.scrollTop = 0;
+  const cls = dir > 0 ? 'swipe-in-right' : 'swipe-in-left';
+  body.classList.remove('swipe-in-right', 'swipe-in-left');
+  void body.offsetWidth;
+  body.classList.add(cls);
+  body.addEventListener('animationend', () => body.classList.remove(cls), { once: true });
 }
+
+// Swipe horizontal di dalam fd-body untuk pindah mata uang (sebelumnya cuma bisa lewat tombol ‹ › atau tab)
+(function() {
+  const MIN_X = 50;
+  let sx = 0, sy = 0;
+  const body = document.getElementById('fdBody');
+  if (!body) return;
+  body.addEventListener('touchstart', function(e) {
+    sx = e.changedTouches[0].clientX;
+    sy = e.changedTouches[0].clientY;
+  }, { passive: true });
+  body.addEventListener('touchend', function(e) {
+    const dx = e.changedTouches[0].clientX - sx;
+    const dy = e.changedTouches[0].clientY - sy;
+    if (Math.abs(dx) < MIN_X || Math.abs(dy) > Math.abs(dx)) return;
+    navFundDetail(dx < 0 ? 1 : -1);
+  }, { passive: true });
+})();
 
 function _renderFundDetail() {
   const s = fdScores && fdScores.find(x => x.cur === fdOpenCur);

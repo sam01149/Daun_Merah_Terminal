@@ -986,6 +986,12 @@ Format ini sudah **berubah ke prosa naratif** — levels disebutkan dalam kalima
 - Fix: `VIEWS` dipersempit jadi cuma tab primer: `['dashboard','feed','ringkasan','analisa','teknikal']` — urutan sama dengan bottom nav mobile
 - Tambahan: swipe ke kiri setelah tab terakhir (TEKNIKAL) sekarang langsung `openDrawer()` — konsisten dengan posisi "Lainnya" di paling kanan bottom nav
 
+**5. FUNDAMENTAL detail overlay — swipe untuk ganti mata uang**
+- Sebelumnya pindah currency di overlay detail (`fdOverlay`) cuma bisa lewat tombol ‹ › atau tap chip currency di `fdCurTabs`
+- Tambah swipe horizontal di `#fdBody`: swipe kiri/kanan panggil `navFundDetail(1/-1)`, dengan deteksi dominan horizontal (sama pola dengan global swipe nav) supaya gak ganggu scroll vertikal daftar indikator
+- `navFundDetail()` sekalian ditambah animasi slide-in (`swipe-in-right`/`swipe-in-left`, reuse keyframes yang sudah ada) biar transisi kerasa
+- Tidak konflik dengan global swipe nav antar-tab karena `activeView` tetap `'fundamental'` saat overlay terbuka — dan `'fundamental'` sudah gak ada di array `VIEWS` swipe nav (poin 4), jadi handler global auto-skip
+
 ---
 
 ## Changelog Session 49 (2026-06-05)
