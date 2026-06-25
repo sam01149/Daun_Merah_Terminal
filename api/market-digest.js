@@ -441,7 +441,27 @@ module.exports = async function handler(req, res) {
   const weekendNote = isMonEarly ? '\nCATATAN KONTEKS: Ini Senin pagi — bagian "12-36 jam lalu" mencakup weekend, volume berita tipis, tidak market-moving.' : '';
   const headlinesForBriefing = recentItems.slice(0, 80);
   const headlinesBlock = headlinesForBriefing.length > 0 ? headlinesForBriefing.map((i,idx)=>`${idx+1}. ${i.title}`).join('\n') : '(Tidak ada headline)';
-  const calBlock = calEvents.length > 0 ? calEvents.map(e=>`- ${e.date} | ${e.time_wib} | ${e.currency} | ${e.event}`).join('\n') : '(Tidak ada event high-impact)';
+  // Beri tag status SUDAH RILIS / AKAN RILIS yang dihitung di kode (bukan diserahkan
+  // ke LLM untuk hitung sendiri dari "date | time" mentah) — LLM nggak reliable buat
+  // aritmatika tanggal/jam relatif, dan ini ketahuan bikin kesalahan nyata: event hari
+  // ini jam 08:30 WIB yang sudah lewat (generate jam 19:30+) malah disebut "besok pagi"
+  // di output, padahal datanya sudah rilis beberapa jam sebelumnya.
+  function _calEventStatusTag(e) {
+    if (!e.time_wib || e.time_wib === 'Tentative') return '';
+    const [hStr, mStr] = e.time_wib.replace(' WIB', '').split(':');
+    const h = parseInt(hStr, 10), m = parseInt(mStr, 10);
+    if (isNaN(h) || isNaN(m)) return '';
+    const [y, mo, d] = e.date.split('-').map(Number);
+    const evMs = Date.UTC(y, mo - 1, d, h - 7, m); // WIB = UTC+7
+    const diffH = (evMs - Date.now()) / 3600000;
+    if (diffH < 0) {
+      const ago = Math.abs(diffH) < 1 ? `${Math.round(Math.abs(diffH) * 60)} menit` : `${Math.round(Math.abs(diffH))} jam`;
+      return ` [SUDAH RILIS ${ago} lalu — JANGAN sebut "besok"/"akan datang", actual mungkin belum masuk]`;
+    }
+    const until = diffH < 1 ? `${Math.round(diffH * 60)} menit` : `${Math.round(diffH)} jam`;
+    return ` [AKAN RILIS dalam ${until}]`;
+  }
+  const calBlock = calEvents.length > 0 ? calEvents.map(e=>`- ${e.date} | ${e.time_wib} | ${e.currency} | ${e.event}${_calEventStatusTag(e)}`).join('\n') : '(Tidak ada event high-impact)';
 
   // Gold-specific headline filter — split recent vs historical so AI weights correctly
   const cutoff12h = Date.now() - 12 * 60 * 60 * 1000;
@@ -896,7 +916,7 @@ Rate Differential: Kalau tema menyangkut ekspektasi kebijakan Fed/CB lain, gunak
 Risk Sentiment: Kalau tema melibatkan risk-on/risk-off (safe haven flow, JPY/CHF strength, dst), rujuk data RISK REGIME (VIX/MOVE/HY) sebagai bukti konkret, bukan asumsi dari judul berita saja. VIX/MOVE naik tajam = konfirmasi risk-off nyata, bukan cuma persepsi. VIX/MOVE rendah dan stabil = risk-off di headline kemungkinan overstated, sebut ini sebagai konflik kalau relevan.
 Positioning: Jika blok SKEW OPSI FX tersedia untuk pair yang dibahas, sisipkan singkat sebagai konfirmasi atau kontradiksi terhadap arah fundamental (misal: "skew EUR/USD masih put-skewed, menunjukkan positioning belum mengikuti pelemahan dolar ini" — sinyal potensi reversal/catch-up).
 Konflik: Dua signal berlawanan dalam satu tema? Sebut keduanya, putuskan mana lebih berat, jelaskan kenapa.
-Kalender: Hanya event dengan asymmetri beat/miss jelas. Untuk setiap event yang dianalisis, gunakan format prosa ini persis: "[EVENT] ([CURRENCY]) [TIME WIB] — jika beat: [pair] [naik/turun] karena [mekanisme konkret]; jika miss: [pair] [naik/turun] karena [mekanisme konkret]." Event tanpa edge antisipatif → skip sepenuhnya, jangan disebutkan.
+Kalender: Hanya event dengan asymmetri beat/miss jelas. Untuk setiap event yang dianalisis, gunakan format prosa ini persis: "[EVENT] ([CURRENCY]) [TIME WIB] — jika beat: [pair] [naik/turun] karena [mekanisme konkret]; jika miss: [pair] [naik/turun] karena [mekanisme konkret]." Event tanpa edge antisipatif → skip sepenuhnya, jangan disebutkan. WAJIB: tiap event kalender sudah punya tag "[SUDAH RILIS X lalu]" atau "[AKAN RILIS dalam X]" di blok KALENDER EKONOMI — PAKAI TAG ITU APA ADANYA untuk menentukan tense ("tadi pagi", "nanti", "besok"), JANGAN hitung sendiri dari tanggal/jam mentah (rawan salah). Event yang ber-tag "SUDAH RILIS" tidak boleh disebut "akan datang"/"besok" — kalau actual-nya belum diketahui dari headline, sebut sebagai "hasil belum tercermin di headline" bukan menebak arah.
 Pejabat CB: Hanya analisa jika menyentuh rate path, balance sheet, atau inflation framework. Non-policy → sebut sekali "tidak ada sinyal kebijakan dari [nama]" lalu lanjut.
 Penutup FX: Satu kalimat menyebut TEPAT SATU currency paling terkonfirmasi kuat dan TEPAT SATU currency paling terkonfirmasi lemah (HANYA pilih dari 8 majors: USD, EUR, GBP, JPY, CAD, AUD, NZD, CHF) — jangan sebut lebih dari satu currency di sisi kuat atau di sisi lemah, pilih yang paling terkonfirmasi saja, dengan alasan spesifik dari headline, bukan "pasar volatile".
 
