@@ -3,6 +3,8 @@ const rateLimit    = require('./_ratelimit');
 const cb           = require('./_circuit_breaker');
 const { autoUpdateFundamentals } = require('./_fundamental_parser');
 const { withSingleFlight } = require('./_fetch_lock');
+const { getLiveCbRates } = require('./_cb_rates');
+const { configureVapid, sendWebPush } = require('./_webpush');
 
 // AI provider failure threshold before circuit opens (fewer than external sources
 // because AI errors are faster to detect and providers recover quickly)
@@ -445,7 +447,23 @@ module.exports = async function handler(req, res) {
   const dayStr  = DAYS_ID[wibNow.getUTCDay()];
   const isMonEarly = wibNow.getUTCDay() === 1 && wibNow.getUTCHours() < 15;
   const weekendNote = isMonEarly ? '\nCATATAN KONTEKS: Ini Senin pagi — bagian "12-36 jam lalu" mencakup weekend, volume berita tipis, tidak market-moving.' : '';
-  const headlinesForBriefing = recentItems.slice(0, 80);
+  // QUAL-12: pre-rank headlines by the same per-currency mention signal already used below to
+  // pick the dominant OHLCV pair (~line 556) — float headlines tied to today's dominant currency
+  // theme to the top so the model focuses there, instead of feeding 80 headlines in raw chronological
+  // order with no relevance signal. Sort is stable, so recency order is preserved within equal scores.
+  const _headlinesLowerForRank = recentItems.map(i => i.title.toLowerCase());
+  const curMentionCounts = {};
+  for (const cur of Object.keys(CB_KW)) {
+    const count = _headlinesLowerForRank.filter(h => CB_KW[cur].some(kw => kwTest(h, kw))).length;
+    if (count > 0) curMentionCounts[cur] = count;
+  }
+  const _headlineRelevance = title => {
+    const lower = title.toLowerCase();
+    return Object.entries(curMentionCounts).reduce((sum, [cur, count]) => (
+      CB_KW[cur].some(kw => kwTest(lower, kw)) ? sum + count : sum
+    ), 0);
+  };
+  const headlinesForBriefing = [...recentItems].sort((a, b) => _headlineRelevance(b.title) - _headlineRelevance(a.title)).slice(0, 80);
   const headlinesBlock = headlinesForBriefing.length > 0 ? headlinesForBriefing.map((i,idx)=>`${idx+1}. ${i.title}`).join('\n') : '(Tidak ada headline)';
   // Beri tag status SUDAH RILIS / AKAN RILIS yang dihitung di kode (bukan diserahkan
   // ke LLM untuk hitung sendiri dari "date | time" mentah) — LLM nggak reliable buat
@@ -746,6 +764,26 @@ module.exports = async function handler(req, res) {
       });
       const biasHeadlines = relevantHeadlines.slice(0, 50).map((i,idx) => (idx+1) + '. ' + i.title).join('\n');
       const biasCurrencies = relevantCurrencies.join(', ');
+      // A1.1: read prior stance (read-only — the write path below still re-reads under lock
+      // right before saving) + live policy rates, so the model judges a SHIFT, not an absolute stance.
+      let prevBiasMap = {};
+      try { const prevBiasRaw = await redisCmd('GET', 'cb_bias'); if (prevBiasRaw) prevBiasMap = JSON.parse(prevBiasRaw); } catch(e) {}
+      let cbRatesMap = {};
+      try {
+        const cbRatesArr = await getLiveCbRates();
+        cbRatesMap = Object.fromEntries(cbRatesArr.map(r => [r.currency, r.rate]));
+      } catch(e) { console.warn('Call 2: getLiveCbRates failed:', e.message); }
+      const priorStanceLines = relevantCurrencies.map(cur => {
+        const prev = prevBiasMap[cur];
+        const stanceStr = prev ? `stance sebelumnya = "${prev.bias}" (confidence ${prev.confidence}, ${prev.updated_at ? prev.updated_at.slice(0, 10) : '-'})` : 'stance sebelumnya = belum ada';
+        const rate = cbRatesMap[cur];
+        const rateStr = rate != null ? `policy rate sekarang = ${rate}%` : 'rate = n/a';
+        return `${cur}: ${stanceStr}; ${rateStr}`;
+      }).join('\n');
+      const priorStanceSection = priorStanceLines ? [
+        '', '=== PRIOR STANCE & POLICY RATE (gunakan sebagai titik acuan — nilai PERGESERAN, bukan stance absolut dari nol) ===',
+        priorStanceLines,
+      ].join('\n') : '';
       const fundDataForPrompt = {};
       try {
         await Promise.all(relevantCurrencies.map(async cur => {
@@ -763,14 +801,21 @@ module.exports = async function handler(req, res) {
       }).filter(Boolean);
       const fundSection = fundLines.length > 0 ? [
         '', '=== LATEST MACRO FUNDAMENTALS (from headline releases — use as objective anchor) ===',
-        fundLines.join('\n'), '(If fundamentals contradict headline sentiment, weight fundamentals more heavily for confidence.)',
+        fundLines.join('\n'),
+        '(If fundamentals contradict headline sentiment: fundamentals may change the DIRECTION of the bias, not just lower confidence — actual data is more objective than headline tone.)',
       ].join('\n') : '';
       const biasPrompt = [
         'You are a central bank policy analyst. Based on the following recent financial news headlines AND the latest macro fundamental data, assess the current monetary policy stance for each central bank mentioned.',
-        '', 'Headlines:', biasHeadlines, fundSection, '',
+        priorStanceSection,
+        '- Hawkish/dovish is RELATIVE to the prior stance and market expectations. If a headline only CONFIRMS the prior stance, keep the prior bias and do NOT raise confidence. Only shift the bias when there is a clear NEW signal (rate change, guidance change, data surprise).',
+        '', 'Headlines (sorted NEWEST first — #1 is most recent; weight recent signals higher, do not average in stale commentary already overtaken by newer data):', biasHeadlines, fundSection, '',
         'For each of these currencies that have relevant headlines: ' + biasCurrencies, '',
+        '- Ignore headlines that ONLY report currency price action (e.g. "Yen falls to 161"). Judge stance ONLY from: CB official communication, rate decisions/signals, inflation/employment releases, or meeting minutes.',
         'Return ONLY a valid JSON object. No explanation, no markdown, no code block. Just the raw JSON.',
         'Use ONLY these exact bias values: "Hawkish", "Cautious Hawkish", "Neutral", "Data Dependent", "On Hold", "Cautious Dovish", "Dovish", "Split"',
+        '  "Data Dependent" = CB explicitly defers direction, waiting on data (NOT hawkish/dovish — conditional neutral).',
+        '  "On Hold" = rate held with no clear signal on the next move.',
+        '  "Split" = MPC/governing council is divided (significant dissent vote).',
         'For confidence, use ONLY: "High", "Medium", "Low"',
         '  High = multiple clear, direct signals from officials or data releases',
         '  Medium = some signals but mixed or indirect',
@@ -802,9 +847,17 @@ module.exports = async function handler(req, res) {
           const parsed = JSON.parse(clean);
           console.log('Call 2 bias parsed:', JSON.stringify(parsed));
           const VALID_BIASES = ['Hawkish','Cautious Hawkish','Neutral','Data Dependent','On Hold','Cautious Dovish','Dovish','Split'];
-          const BIAS_ORDER  = ['Hawkish','Cautious Hawkish','Neutral','Data Dependent','On Hold','Cautious Dovish','Dovish'];
+          // A1.5: hawk-dove magnitude is measured ONLY on this axis. "Data Dependent"/"On Hold"/"Split"
+          // are orthogonal labels (not a degree of dovishness) — they map to 'Neutral' for magnitude
+          // purposes so a Hawkish→On Hold transition isn't mistaken for a 4-level swing.
+          const HAWK_DOVE_AXIS = ['Hawkish','Cautious Hawkish','Neutral','Cautious Dovish','Dovish'];
+          const ORTHOGONAL_LABELS = new Set(['Data Dependent','On Hold','Split']);
           const VALID_CONFIDENCES = ['High','Medium','Low'];
           const VALID_CURRENCIES = new Set(['USD','EUR','GBP','JPY','CAD','AUD','NZD','CHF']);
+          // A1.6: AI may reply with different casing/whitespace — normalize before validating
+          // instead of dropping an otherwise-valid signal on an exact-case mismatch.
+          const BIAS_CANON = new Map(VALID_BIASES.map(b => [b.toLowerCase(), b]));
+          const CONFIDENCE_CANON = new Map(VALID_CONFIDENCES.map(c => [c.toLowerCase(), c]));
           const now2 = new Date().toISOString();
           const lockAcquired = await redisCmd('SET', 'cb_bias_lock', '1', 'NX', 'EX', '10');
           if (lockAcquired) {
@@ -812,18 +865,22 @@ module.exports = async function handler(req, res) {
             try { const rawBias = await redisCmd('GET', 'cb_bias'); if (rawBias) existing = JSON.parse(rawBias); } catch(e) {}
             for (const [cur, entry] of Object.entries(parsed)) {
               const curOk = VALID_CURRENCIES.has(cur);
-              const bias = (typeof entry === 'object' && entry !== null) ? entry.bias : entry;
-              const confidence = (typeof entry === 'object' && entry !== null) ? entry.confidence : null;
-              const biasOk = VALID_BIASES.includes(bias);
-              const confidenceOk = VALID_CONFIDENCES.includes(confidence);
-              if (!curOk || !biasOk) continue;
-              if (!confidenceOk || confidence === 'Low') { console.log(`Call 2: skip ${cur} — confidence Low`); continue; }
+              const entryBias = (typeof entry === 'object' && entry !== null) ? entry.bias : entry;
+              const confidenceRaw = (typeof entry === 'object' && entry !== null) ? entry.confidence : null;
+              const bias = BIAS_CANON.get(String(entryBias).trim().toLowerCase());
+              const confidence = CONFIDENCE_CANON.get(String(confidenceRaw).trim().toLowerCase());
+              if (!curOk || !bias) continue;
+              if (!confidence || confidence === 'Low') { console.log(`Call 2: skip ${cur} — confidence Low`); continue; }
               const prevEntry = existing[cur];
               const prevBias  = prevEntry?.bias;
               const kws = CB_KW[cur] || [];
               const sourceHeadlines = recentItems.filter(i => kws.some(kw => kwTest(i.title.toLowerCase(), kw))).slice(0, 5).map(i => i.title);
-              if (prevBias && confidence !== 'High') {
-                const prevIdx = BIAS_ORDER.indexOf(prevBias); const newIdx = BIAS_ORDER.indexOf(bias);
+              // Magnitude check only applies when BOTH biases sit on the hawk-dove axis — a transition
+              // to/from an orthogonal label (Data Dependent/On Hold/Split) never trips false divergence.
+              const prevOnAxis = prevBias && !ORTHOGONAL_LABELS.has(prevBias) && HAWK_DOVE_AXIS.includes(prevBias);
+              const newOnAxis  = !ORTHOGONAL_LABELS.has(bias) && HAWK_DOVE_AXIS.includes(bias);
+              if (prevBias && confidence !== 'High' && prevOnAxis && newOnAxis) {
+                const prevIdx = HAWK_DOVE_AXIS.indexOf(prevBias); const newIdx = HAWK_DOVE_AXIS.indexOf(bias);
                 if (prevIdx !== -1 && newIdx !== -1 && Math.abs(newIdx - prevIdx) > 2) {
                   // Large swing but not High-confidence: keep the established bias rather than
                   // flip on ambiguous evidence, but surface a divergence warning instead of
@@ -939,7 +996,7 @@ ANTI-HALLUCINATION: Jangan gabungkan dua headline berbeda menjadi satu klaim bar
 PENDEKATAN BENANG MERAH FX — ikuti urutan ini, JANGAN tulis tema-tema sebagai paragraf lepas yang ditumpuk:
 1. JANGKAR TEMA: Tentukan SATU tema paling market-moving hari ini (CB tertentu, data rilis, atau divergence currency tertentu). Ini titik awal narasi.
 2. RAJUT TEMA: Tema lain HARUS dikaitkan ke tema utama lewat driver bersama yang eksplisit — paling sering USD (DXY arah, real yield, rate path Fed) atau risk sentiment global. Pakai konektor sebab-akibat ("ini berbarengan dengan...", "di sisi lain, ... juga bergerak karena driver yang sama/berlawanan") — JANGAN mulai kalimat baru dengan currency lain tanpa menjelaskan kaitannya ke tema sebelumnya.
-3. Kalau tema-tema benar-benar tidak berkaitan (misal CB Asia vs data AS, tidak ada irisan driver) — boleh dipisah, tapi maksimal 2 tema independen per output. Tema ketiga ke bawah yang tidak terkait → skip, sebut hanya jika punya magnitude kuat.
+3. Kalau tema-tema benar-benar tidak berkaitan (misal CB Asia vs data AS, tidak ada irisan driver) — boleh dipisah, tapi maksimal 2 tema independen per output. Tema ketiga ke bawah yang tidak terkait → skip, sebut hanya jika punya magnitude kuat. Tema dengan kaitan kausal lemah/tidak langsung (mis. ekuitas regional sebagai proksi sentimen currency) — SKIP, kecuali magnitude-nya jelas kuat dan disebut dengan mekanisme konkret. Jangan masukkan tema hanya untuk menambah panjang.
 4. Continuity DIJALIN ke tema yang relevan, bukan ditulis sebagai kalimat penutup terpisah yang tidak terhubung dengan paragraf sebelumnya (misal: "...berlanjut dari pola sesi sebelumnya" disisipkan langsung setelah klaim terkait, bukan kalimat baru berdiri sendiri).
 5. Penutup FX menyimpulkan dari benang merah yang sudah dibangun, bukan currency baru yang belum disebut di paragraf sebelumnya.
 6. LABEL TOPIK (navigasi visual untuk pembaca — BUKAN pengganti konektor di poin 2, keduanya WAJIB ada bersamaan): setiap kali fokus bergeser ke currency/tema baru, sisipkan tag PERSIS sebelum kalimat itu dengan format {{TAG: NAMA}}.
@@ -955,7 +1012,7 @@ Magnitude: Kuat atau marginal. Marginal harus disebut marginal.
 Teknikal: Jika blok PRICE ACTION pair tersedia, sisipkan konteks trend (uptrend/downtrend/sideways), level support/resistance terdekat, atau swing high/low dalam satu kalimat natural — terutama untuk pair yang paling relevan dengan tema fundamental yang dibahas. Jika blok TEKNIKAL pair tersedia juga (RSI/SMA), sisipkan singkat sebagai penguat (misal: "RSI 28 oversold, konsisten dengan tekanan jual yang sudah berlebihan"). Bukan paragraf analisa teknikal terpisah, cukup penguat konteks.
 Rate Differential: Kalau tema menyangkut ekspektasi kebijakan Fed/CB lain, gunakan data RATE PATH (bps cut/hike yang sudah di-price market) sebagai angka konkret — bukan "diperkirakan akan menurunkan suku bunga", tapi "market sudah price-in X bps cut dalam 3 bulan". Kalau data tidak tersedia, boleh infer dari headline tapi jangan klaim angka pasti.
 Risk Sentiment: Kalau tema melibatkan risk-on/risk-off (safe haven flow, JPY/CHF strength, dst), rujuk data RISK REGIME (VIX/MOVE/HY) sebagai bukti konkret, bukan asumsi dari judul berita saja. VIX/MOVE naik tajam = konfirmasi risk-off nyata, bukan cuma persepsi. VIX/MOVE rendah dan stabil = risk-off di headline kemungkinan overstated, sebut ini sebagai konflik kalau relevan.
-Positioning: Jika blok SKEW OPSI FX tersedia untuk pair yang dibahas, sisipkan singkat sebagai konfirmasi atau kontradiksi terhadap arah fundamental (misal: "skew EUR/USD masih put-skewed, menunjukkan positioning belum mengikuti pelemahan dolar ini" — sinyal potensi reversal/catch-up).
+Positioning: Jika blok SKEW OPSI FX tersedia untuk pair yang dibahas, sisipkan singkat sebagai konfirmasi atau kontradiksi terhadap arah fundamental (misal: "skew EUR/USD masih put-skewed, menunjukkan positioning belum mengikuti pelemahan dolar ini" — sinyal potensi reversal/catch-up). Positioning/skew adalah KONFIRMASI atau KONTRADIKSI, BUKAN jangkar arah. Jangan buka analisa pair dengan positioning. Kalau fundamental (data rilis) atau level teknikal (resistance/support kuat) berlawanan dengan positioning, sebut ketegangan itu eksplisit dan timbang mana lebih berat — jangan diam-diam ikut positioning.
 Konflik: Dua signal berlawanan dalam satu tema? Sebut keduanya, putuskan mana lebih berat, jelaskan kenapa.
 Kalender: Hanya event dengan asymmetri beat/miss jelas. Untuk setiap event yang dianalisis, gunakan format prosa ini persis: "[EVENT] ([CURRENCY]) [TIME WIB] — jika beat: [pair] [naik/turun] karena [mekanisme konkret]; jika miss: [pair] [naik/turun] karena [mekanisme konkret]." Event tanpa edge antisipatif → skip sepenuhnya, jangan disebutkan. WAJIB: tiap event kalender sudah punya tag "[SUDAH RILIS X lalu]" atau "[AKAN RILIS dalam X]" di blok KALENDER EKONOMI — PAKAI TAG ITU APA ADANYA untuk menentukan tense ("tadi pagi", "nanti", "besok"), JANGAN hitung sendiri dari tanggal/jam mentah (rawan salah). Event yang ber-tag "SUDAH RILIS" tidak boleh disebut "akan datang"/"besok" — kalau actual-nya belum diketahui dari headline, sebut sebagai "hasil belum tercermin di headline" bukan menebak arah.
 Pejabat CB: Hanya analisa jika menyentuh rate path, balance sheet, atau inflation framework. Non-policy → sebut sekali "tidak ada sinyal kebijakan dari [nama]" lalu lanjut.
@@ -970,11 +1027,11 @@ ANTI-HALLUCINATION: Jangan gabungkan dua headline berbeda menjadi satu klaim bar
 PENDEKATAN BENANG MERAH — ikuti urutan ini:
 1. JANGKAR HARGA: Jika blok HARGA XAU/USD LIVE tersedia, buka dengan harga dan pergerakan hari ini (naik/turun berapa persen). Ini titik awal narasi — semua fakta berikutnya menjelaskan MENGAPA harga ada di sini.
 2. RAJUT FAKTA: Hubungkan harga → headline → real yield → geopolitik secara natural, seperti analis yang bercerita. Tidak perlu rantai kausal formal. Cukup: "kenaikan ini didukung oleh X, meski dibatasi oleh Y." Fakta yang saling memperkuat → gabungkan. Fakta yang berlawanan → sebut keduanya, putuskan mana lebih berat dalam satu kalimat. Jika blok TEKNIKAL XAU tersedia, sisipkan RSI dan posisi vs SMA dalam satu kalimat natural sebagai konteks teknikal pendukung (misal: "secara teknikal harga masih di atas SMA 50 dengan RSI 45 di zona netral") — bukan paragraf terpisah.
-3. REAL YIELD sebagai pembatas: Jika real yield > 2%, emas mahal secara struktural — wajib disebut sebagai rem, bukan diabaikan. Tapi jika harga tetap naik meski yield tinggi, artinya tekanan bullish cukup kuat untuk offset — nyatakan ini secara eksplisit.
+3. REAL YIELD sebagai pembatas: Jika real yield > 2%, emas mahal secara struktural — wajib disebut sebagai rem, bukan diabaikan. Tapi jika harga tetap naik meski yield tinggi, artinya tekanan bullish cukup kuat untuk offset — nyatakan ini secara eksplisit. Kalau harga emas naik/bertahan tinggi PADAHAL real yield juga tinggi (hubungan invers normal melemah), sebut eksplisit sebagai sinyal regime: driver emas sedang BUKAN real yield (kemungkinan CB buying / debasement / safe-haven struktural). Jangan cuma sebut "dibatasi yield" lalu lanjut.
 4. TIDAK ADA RANTAI KAUSAL WAJIB: Untuk geopolitik minyak (Iran, Hormuz, OPEC) — tidak perlu trace oil→inflasi→Fed→yield secara kaku. Cukup: apakah ada bukti di headline bahwa ini mempengaruhi XAU? Jika ya, sebut. Jika tidak, skip.
 5. RISK REGIME sebagai konfirmasi safe-haven: Jika blok RISK REGIME tersedia, gunakan VIX/MOVE sebagai bukti konkret bahwa demand safe-haven nyata (bukan cuma narasi geopolitik tanpa data). Regime "risk_off" + harga naik = haven demand terkonfirmasi data. Regime "risk_on" tapi harga tetap naik = driver bukan safe-haven, harus dijelaskan via mekanisme lain (real yield turun, CB buying, dst).
 6. KORELASI sebagai cek silang: Jika blok KORELASI tersedia dan ada anomali (misal Gold-DXY yang biasanya negatif kuat tapi sekarang melemah), sebut ini sebagai sinyal regime berubah — satu kalimat saja, jangan jelaskan matematika korelasinya.
-7. POSITIONING: Jika blok SKEW OPSI XAU tersedia, sisipkan sebagai konfirmasi/kontradiksi arah (call-skewed = positioning sudah bullish, jadi rally lanjutan butuh trigger baru; put-skewed saat harga naik = skeptisisme market, potensi short squeeze).
+7. POSITIONING: Jika blok SKEW OPSI XAU tersedia, sisipkan sebagai konfirmasi/kontradiksi arah (call-skewed = positioning sudah bullish, jadi rally lanjutan butuh trigger baru; put-skewed saat harga naik = skeptisisme market, potensi short squeeze). Kalau menyebut positioning crowded sebagai risiko reversal, WAJIB sertakan mekanismenya dalam kalimat yang sama (mis. "long sudah ramai, jadi kalau support X jebol, likuidasi posisi itu sendiri jadi bahan bakar penurunan") — jangan tinggalkan sebagai lompatan logika.
 8. Driver sama dengan sesi sebelumnya → nyatakan eksplisit, itu informasi valid.
 9. LABEL TOPIK (navigasi visual, BUKAN pengganti rangkaian fakta di poin 2 — keduanya WAJIB ada bersamaan): setiap kali masuk ke sub-angle baru di luar JANGKAR HARGA awal, sisipkan tag PERSIS sebelum kalimat itu dengan format {{TAG: NAMA}}. Korelasi, Geopolitik, Positioning di sini cuma CONTOH FORMAT, BUKAN daftar lengkap — sub-angle lain (Risk Regime, Rate Differential, ETF Flow, CB Buying, dst, apa pun yang punya klaim/mekanisme sendiri) WAJIB dapat tag sendiri juga dengan nama yang sesuai, jangan dibiarkan menyatu tanpa tag di bawah sub-angle sebelumnya hanya karena tidak ada di contoh. Jangan beri tag pada kalimat jangkar harga (pembuka). Tag ini beda dari format trigger kalender "[EVENT] [TIME WIB]" di bawah — jangan tertukar formatnya.
 
@@ -1359,6 +1416,8 @@ ${xauHistoryBlock}`;
   if (article && method !== 'fallback' && method !== 'fallback_quota') {
     const toCache = { ...payload, thesis_alerts: null };
     redisCmd('SET', 'latest_article', JSON.stringify(toCache), 'EX', 21600).catch(() => {});
+    // A2.2: notify subscribers once per successful digest — fire-and-forget, never block the response.
+    notifyDigestReady(article).catch(e => console.warn('Digest-ready push failed:', e.message));
   }
 
   return res.status(200).json(payload);
@@ -1375,6 +1434,37 @@ async function redisCmd(...args) {
     signal: AbortSignal.timeout(5000),
   });
   return (await res.json()).result;
+}
+
+// A2.2 — sesi label matches the 3 vercel.json cron times (UTC 00:00 / 07:00 / 12:30).
+function sesiLabel() {
+  const h = new Date().getUTCHours();
+  if (h < 4)  return 'sesi Asia';
+  if (h < 10) return 'sesi Eropa';
+  return 'sesi NY';
+}
+
+// A2.2 — sends exactly one "Ringkasan siap" push per successful digest. Fire-and-forget:
+// failures here must never affect the digest response itself.
+async function notifyDigestReady(articleText) {
+  if (!configureVapid()) return;
+  let subs = [];
+  try {
+    const raw = await redisCmd('HGETALL', 'push_subs');
+    if (Array.isArray(raw)) {
+      for (let i = 0; i < raw.length; i += 2) {
+        try { subs.push(JSON.parse(raw[i + 1])); } catch(e) {}
+      }
+    }
+  } catch(e) {}
+  if (subs.length === 0) return;
+
+  const firstSentence = (articleText.split(/\n/).find(l => l.trim()) || articleText).trim();
+  const body = firstSentence.length > 120 ? firstSentence.slice(0, 117) + '...' : firstSentence;
+  const payload = { title: `📰 Ringkasan ${sesiLabel()} siap`, body, url: '/#ringkasan', icon: '/icon.svg' };
+
+  const staleKeys = await sendWebPush(subs, payload);
+  if (staleKeys.length > 0) await redisCmd('HDEL', 'push_subs', ...staleKeys).catch(() => {});
 }
 
 function toDateStr(d) { return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}-${String(d.getUTCDate()).padStart(2,'0')}`; }

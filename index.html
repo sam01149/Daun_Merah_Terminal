@@ -2104,7 +2104,7 @@ body {
       <div class="dot" id="dot"></div>
       <span id="statusText">IDLE</span>
     </div>
-    <button class="notif-btn" id="notifBtn" onclick="requestNotif()" title="Enable notifications">🔔</button>
+    <button class="notif-btn" id="notifBtn" onclick="toggleNotif()" title="Enable/disable notifications">🔔</button>
     <button class="popout-btn" id="shareBtn" onclick="shareCurrentView()" title="Bagikan tab ini">⤴</button>
     <button class="popout-btn" id="popoutBtn" onclick="popoutView()" title="Buka tab ini di window baru">⧉</button>
   </div>
@@ -3216,6 +3216,35 @@ function urlBase64ToUint8Array(base64String) {
   return Uint8Array.from([...rawData].map(c => c.charCodeAt(0)));
 }
 
+// A2.5: tombol 🔔 jadi toggle — klik saat aktif mematikan notif bersih (unsubscribe +
+// hapus dari push_subs), bukan cuma minta izin ulang.
+async function toggleNotif() {
+  const isActive = Notification.permission === 'granted' && notifEnabled;
+  if (isActive) return disableNotif();
+  return requestNotif();
+}
+
+async function disableNotif() {
+  try {
+    if ('serviceWorker' in navigator && 'PushManager' in window) {
+      const reg = await navigator.serviceWorker.ready;
+      const sub = await reg.pushManager.getSubscription();
+      if (sub) {
+        await fetch('/api/subscribe', {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ endpoint: sub.endpoint }),
+        }).catch(() => {});
+        await sub.unsubscribe();
+      }
+    }
+  } catch(e) { console.warn('disableNotif failed:', e.message); }
+  notifEnabled = false;
+  document.getElementById('notifBtn').classList.remove('enabled');
+  localStorage.removeItem('pushSubscribed');
+  showToast('Notif Dimatikan', 'Push notification dihentikan.', 3000);
+}
+
 async function requestNotif() {
   if (!('Notification' in window)) { showToast('Tidak Didukung', 'Browser ini tidak support notifikasi'); return; }
   const perm = await Notification.requestPermission();
@@ -3788,9 +3817,19 @@ function renderAnalisa() {
   const wib = new Date(ts.getTime() + 7 * 3600000);
   const tsStr = `${String(wib.getUTCHours()).padStart(2,'0')}:${String(wib.getUTCMinutes()).padStart(2,'0')} WIB`;
 
+  // 4.0b: loaded_at is when THIS request ran on the server, not when the candle data was
+  // last synced — show actual candle age instead so a stalled ohlcv_sync cron is visible.
+  let staleHtml = '';
+  if (d.last_candle_t) {
+    const ageMin = Math.round((Date.now() / 1000 - d.last_candle_t) / 60);
+    const ageStr = ageMin < 60 ? `${ageMin} menit lalu` : `${(ageMin / 60).toFixed(1)} jam lalu`;
+    const isStale = ageMin > 150; // candle 1H seharusnya segar dalam ~2.5 jam
+    staleHtml = ` · <span class="${isStale ? 'down' : ''}" title="Candle 1H terakhir">candle: ${ageStr}${isStale ? ' ⚠' : ''}</span>`;
+  }
+
   document.getElementById('analisaHeader').innerHTML = `
     <span class="analisa-pair-label">${escHtml(d.label)}</span>
-    <span class="analisa-ts-label">${tsStr} · <a href="#" onclick="loadAnalisa('${d.symbol}','${d.label}',document.querySelector('.analisa-chip.active'));return false" style="color:var(--accent);text-decoration:none">↻ refresh</a> · <span style="color:var(--muted)">auto 15m</span></span>`;
+    <span class="analisa-ts-label">${tsStr} · <a href="#" onclick="loadAnalisa('${d.symbol}','${d.label}',document.querySelector('.analisa-chip.active'));return false" style="color:var(--accent);text-decoration:none">↻ refresh</a> · <span style="color:var(--muted)">auto 15m</span>${staleHtml}</span>`;
 
   // Daily card
   const d1 = d.d1;

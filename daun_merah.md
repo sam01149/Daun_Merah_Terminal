@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-06-26 (session 114 — lihat "Changelog Session 114" di bawah untuk detail terbaru)
+> **Last updated:** 2026-06-29 (session 115 — lihat "Changelog Session 115" di bawah untuk detail terbaru)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Financial_Feed_App`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -112,12 +112,54 @@ Financial_Feed_App/
     ├── real-yields.js      # Real yield differential
     ├── risk-regime.js      # VIX/MOVE/HY regime classifier
     ├── sizing-history.js   # Position sizing history per device
-    └── subscribe.js        # Push subscription management
+    ├── subscribe.js        # Push subscription management
+    └── _webpush.js         # Shared web-push sender (VAPID config + sendNotification) — dipakai admin.js & market-digest.js
 ```
 
 > **Penting:** `api/feeds.js` menggantikan `api/rss.js` dan `api/cot.js` yang sudah dihapus.
 > `api/admin.js` menggantikan `api/health.js`, `api/redis-keys.js`, `api/admin-prompts.js`, dan `api/push.js`.
 > Konsolidasi ini dilakukan untuk tetap di bawah limit 12 serverless functions Vercel Hobby.
+
+---
+
+## Changelog Session 115 (2026-06-29)
+
+### Eksekusi `daun_merah_plan.md` — Call 2 CB bias, sistem notifikasi, refinement Ringkasan, sisa audit
+
+**Konteks:** Mengerjakan seluruh `daun_merah_plan.md` (tugas baru Session 49 review + sisa item audit lama). Tiga blok besar: A1 (Call 2 CB bias hawkish/dovish), A2 (overhaul notifikasi), A3 (refinement narasi Ringkasan), plus B1/B2 (sisa audit Ringkasan & Analisa).
+
+**A1 — Call 2 CB bias (`api/market-digest.js`):**
+- **A1.1 (prompt, draft):** `biasPrompt` sekarang disuntik blok `PRIOR STANCE & POLICY RATE` per currency (stance lama dari Redis `cb_bias` + rate live dari `_cb_rates.js`) SEBELUM daftar headline — model dipaksa menilai PERGESERAN stance, bukan sentimen mentah headline dari nol.
+- **A1.2 (prompt, draft):** instruksi recency — headline diberi tahu eksplisit "terurut TERBARU di atas", bobotkan sinyal baru lebih tinggi.
+- **A1.3 (prompt, draft):** instruksi abaikan headline price-action murni ("Yen jatuh ke 161") — nilai stance hanya dari komunikasi resmi/data/rilis.
+- **A1.4 (prompt, draft):** definisi singkat untuk label non-axis (Data Dependent/On Hold/Split) ditambahkan ke prompt.
+- **A1.5 (kode):** `BIAS_ORDER` 7-label diganti `HAWK_DOVE_AXIS` (5 label murni hawk-dove) + `ORTHOGONAL_LABELS` (Data Dependent/On Hold/Split) — transisi ke/dari label ortogonal tidak lagi salah-trigger guard divergence sebagai swing besar.
+- **A1.6 (kode):** normalisasi casing bias/confidence sebelum validasi (`BIAS_CANON`/`CONFIDENCE_CANON`) — balasan model dengan casing berbeda ("cautious hawkish") tidak lagi di-drop diam-diam.
+- **A1.7 (prompt, draft):** instruksi fundamental diperjelas — fundamental boleh mengubah ARAH bias, bukan cuma confidence.
+
+**A2 — Sistem Notifikasi (`sw.js`, `api/admin.js`, `api/market-digest.js`, `index.html`, `api/_webpush.js` baru):**
+- **A2.1:** `push` handler di `sw.js` sekarang cek visibilitas tab sebelum `showNotification` — app terbuka & visible → kirim update senyap via `postMessage`, bukan OS-notif (konsisten dengan guard yang sudah ada di jalur periodicSync).
+- **A2.2:** notif "Ringkasan siap" baru — sekali per digest sukses, `market-digest.js` kirim push `📰 Ringkasan {sesi} siap` ke semua `push_subs` (fire-and-forget, tidak pernah block response digest). Diekstrak helper `sendWebPush()`/`configureVapid()` ke `api/_webpush.js`, dipakai bersama oleh `admin.js` (refactor, hilangkan duplikasi) dan `market-digest.js` (baru).
+- **A2.3 Fase 1:** `pushHandler` (`admin.js`) sekarang filter kategori sebelum push device — hanya `market-moving`/`macro`/`forex`/`energy` yang lolos (econ-data rutin & geopolitical umum tetap di feed in-app + Telegram, cuma tidak push device).
+- **A2.4:** quiet hours WIB 23:00–06:00 — non-market-moving push ditahan di jam tidur (Telegram tetap jalan).
+- **A2.5:** tombol 🔔 jadi toggle on/off sungguhan — klik saat aktif sekarang `unsubscribe()` + `DELETE /api/subscribe` + hapus class `enabled` (sebelumnya cuma bisa nyala, tidak ada cara mati dari dalam app).
+- **A2.6:** path icon SW disamakan ke `/icon.svg` (sebelumnya campur `./icon.svg`); handler dead `SHOW_DIGEST_NOTIF` di `sw.js` dihapus (jalur server A2.2 menggantikannya).
+
+**A3 — Refinement narasi Ringkasan (`api/market-digest.js`, prompt — DRAFT, menunggu review user):**
+- Positioning ditegaskan sebagai konfirmasi/kontradiksi, bukan jangkar arah analisa pair.
+- Anomali emas-naik-saat-real-yield-tinggi sekarang wajib dipanggil eksplisit sebagai sinyal regime (driver bukan real yield).
+- Mekanisme "positioning crowded → bahan bakar downside" wajib disertakan dalam kalimat yang sama, bukan lompatan logika.
+- Tema dengan kaitan kausal lemah (proksi tidak langsung) di-skip kecuali magnitude jelas kuat.
+
+**B1 — QUAL-12 (`api/market-digest.js`, kode):** 80 headline briefing sekarang di-pra-rank pakai sinyal mention-count per currency yang sudah dihitung (dipakai juga untuk pilih pair OHLCV dominan) — headline terkait tema currency dominan naik ke atas, urutan recency dipertahankan untuk skor yang sama (stable sort).
+
+**B2 — Analisa (`api/admin.js`, `index.html`):**
+- **QUAL-14 (kode):** `ohlcv_analyze` sekarang minta model balas DUA bagian terpisah dengan delimiter `===COMMENTARY===` — JSON terstruktur (bias/entry/sl/tp/trigger) di bagian 1, commentary prosa 4-5 paragraf sebagai teks BIASA di bagian 2 (bukan lagi string di dalam JSON). Menghilangkan akar masalah: prosa panjang dalam JSON gampang gagal `JSON.parse` (kutip/newline tak ter-escape) yang sebelumnya bikin `structured` null dan bias/entry/sl/tp hilang total.
+- **4.0b (kode + UI):** `loadOhlcvData` sekarang return `last_candle_t` (timestamp candle 1H terakhir, bukan waktu baca server). Header tab Analisa menampilkan umur candle asli ("candle: X jam lalu ⚠" kalau >150 menit) — staleness cron yang macet sekarang terlihat, sebelumnya `loaded_at` selalu tampak segar.
+
+**Testability (sesuai aturan plan):** Semua perubahan kode (A1.5, A1.6, A2.1, A2.2, A2.3, A2.4, A2.5, A2.6, B1, B2) lolos `node -c` syntax check + smoke-check JS inline `index.html`. Logika notif toggle & suppress-saat-visible perlu verifikasi manual di device nyata (DevTools Application → Push, tab visible vs hidden) — belum bisa diuji penuh di sandbox. Semua perubahan teks prompt (A1.1-A1.4, A1.7, A3.1-A3.4) ditandai **draft — menunggu review user** sesuai aturan plan (prompt menyimpan preferensi gaya tulisan user), output AI sebenarnya butuh trigger `GET /api/market-digest` (non-cached) + deploy untuk verifikasi.
+
+**Tidak dikerjakan (ditandai opsional di plan, sengaja dilewati):** A2.3 Fase 2 (preferensi kategori per-user), B2 4.0c (lebih banyak titik swing), QUAL-8 (circuit breaker `ohlcv_analyze`), QUAL-17 (refactor prompt jadi array baris), B3 COR-G (BTC/gold-silver/gold-copper ratio), QUAL-2/QUAL-3 (ditandai "jangan ubah tanpa keluhan nyata"/low-prio).
 
 ---
 

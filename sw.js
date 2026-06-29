@@ -63,16 +63,6 @@ self.addEventListener('message', e => {
     seenGuids.add(e.data.guid);
     saveSeenGuids();
   }
-  if (e.data.type === 'SHOW_DIGEST_NOTIF') {
-    self.registration.showNotification(e.data.title, {
-      body: e.data.body,
-      tag: 'digest-' + e.data.session,
-      icon: './icon.svg',
-      badge: './icon.svg',
-      vibrate: [200, 100, 200],
-      data: { url: '/' },
-    });
-  }
 });
 
 async function fetchRSS() {
@@ -154,8 +144,8 @@ async function checkForNewItems() {
     const catLabel = cat.replace(/-/g, ' ').toUpperCase();
     await self.registration.showNotification(`[${catLabel}] Daun Merah`, {
       body: item.title,
-      icon: './icon.svg',
-      badge: './icon.svg',
+      icon: '/icon.svg',
+      badge: '/icon.svg',
       tag: item.guid,
       data: { url: item.link || '/' },
       vibrate: [100, 50, 100],
@@ -178,8 +168,16 @@ self.addEventListener('push', e => {
   if (!e.data) return;
   let data = {};
   try { data = e.data.json(); } catch(err) { data = { title: 'Daun Merah', body: e.data.text() }; }
-  e.waitUntil(
-    self.registration.showNotification(data.title || 'Daun Merah', {
+  e.waitUntil((async () => {
+    const cl = await clients.matchAll({ type: 'window', includeUncontrolled: true });
+    const visible = cl.some(c => c.visibilityState === 'visible');
+    if (visible) {
+      // App sedang dibuka & tab visible — jangan munculkan OS-notif untuk berita
+      // yang sudah ada di layar, cukup kirim update senyap ke halaman.
+      cl.forEach(c => c.postMessage({ type: 'NEW_ITEMS_PUSH', data }));
+      return;
+    }
+    await self.registration.showNotification(data.title || 'Daun Merah', {
       body: data.body || '',
       icon: '/icon.svg',
       badge: '/icon.svg',
@@ -187,8 +185,8 @@ self.addEventListener('push', e => {
       data: { url: data.url || '/' },
       vibrate: [100, 50, 100],
       requireInteraction: false,
-    })
-  );
+    });
+  })());
 });
 
 self.addEventListener('notificationclick', e => {
