@@ -340,16 +340,20 @@ body {
 .refresh-btn:active { background:var(--accent); color:var(--bg); }
 .refresh-btn.spinning svg { animation:spin .7s linear infinite; }
 
+.voice-control-group {
+  display:flex; align-items:stretch; border:1px solid var(--border);
+  border-radius:5px; overflow:hidden; transition:border-color .2s;
+}
+.voice-control-group:has(.voice-btn.enabled) { border-color:var(--accent); }
 .voice-btn {
   display:flex; align-items:center; gap:4px;
-  padding:6px 10px; border-radius:5px;
-  border:1px solid var(--border); background:transparent;
+  padding:6px 10px; border:none; background:transparent;
   color:var(--muted); font-family:'DM Mono',monospace; font-size:10px;
   cursor:pointer; transition:all .2s;
 }
-.voice-btn.enabled { border-color:var(--accent); color:var(--accent); }
+.voice-btn.enabled { color:var(--accent); }
 .voice-btn:active { transform:scale(.95); }
-.voice-settings-toggle { padding:6px 8px; font-size:11px; }
+.voice-settings-toggle { padding:6px 8px; font-size:11px; border-left:1px solid var(--border); }
 .voice-settings-panel {
   display:flex; flex-wrap:wrap; gap:4px; padding:8px 12px;
   border-top:1px solid var(--border); background:rgba(255,255,255,.02);
@@ -2222,19 +2226,21 @@ body {
       <span class="tslider"></span>
     </label>
     <span class="countdown" id="cdText"></span>
-    <button class="voice-btn" id="voiceBtn" onclick="toggleVoice()" title="Bacakan headline penting via suara">
-      <svg id="voiceIcon" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
-        <line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/>
-      </svg>
-      SUARA
-    </button>
-    <button class="voice-btn voice-settings-toggle" id="voiceSettingsBtn" onclick="toggleVoiceSettingsPanel()" title="Pilih kategori yang dibacakan">
-      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-        <circle cx="12" cy="12" r="3"/>
-        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
-      </svg>
-    </button>
+    <div class="voice-control-group" id="voiceControlGroup">
+      <button class="voice-btn" id="voiceBtn" onclick="toggleVoice()" title="Bacakan headline penting via suara">
+        <svg id="voiceIcon" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+          <line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/>
+        </svg>
+        SUARA
+      </button>
+      <button class="voice-btn voice-settings-toggle" id="voiceSettingsBtn" onclick="toggleVoiceSettingsPanel()" title="Pilih kategori yang dibacakan">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <circle cx="12" cy="12" r="3"/>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+        </svg>
+      </button>
+    </div>
     <button class="refresh-btn" id="refreshBtn" onclick="fetchFeed()">
       <svg id="rIcon" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
         <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>
