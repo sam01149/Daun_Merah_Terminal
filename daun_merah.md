@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-06-29 (session 116 — lihat "Changelog Session 116" di bawah untuk detail terbaru)
+> **Last updated:** 2026-06-29 (session 117 — lihat "Changelog Session 117" di bawah untuk detail terbaru)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Financial_Feed_App`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -119,6 +119,37 @@ Financial_Feed_App/
 > **Penting:** `api/feeds.js` menggantikan `api/rss.js` dan `api/cot.js` yang sudah dihapus.
 > `api/admin.js` menggantikan `api/health.js`, `api/redis-keys.js`, `api/admin-prompts.js`, dan `api/push.js`.
 > Konsolidasi ini dilakukan untuk tetap di bawah limit 12 serverless functions Vercel Hobby.
+
+---
+
+## Changelog Session 117 (2026-06-29)
+
+### Fix bug HTML mentah di artikel FJElite, fitur voice readout headline, konsolidasi menu header, hapus fitur share
+
+**Konteks:** Lanjutan session 116. User screenshot artikel FJElite di tab ARTIKEL menampilkan tag HTML mentah (`<div>`, `<br />`, `<ul><li>`) sebagai teks — ditemukan bug nyata di `sanitizeDesc()`. Diskusi lanjut soal fitur Voice widget FinancialJuice (cuma TTS, bukan data eksklusif) berujung ke permintaan bikin fitur serupa sendiri dengan kontrol lebih baik (kategori custom, batching anti-noise). Sekaligus user minta hapus fitur share (dianggap tidak penting) dan rapikan header (kebanyakan ikon lepas).
+
+**Fix bug HTML mentah (`index.html`):**
+- Root cause: `sanitizeDesc()` strip HTML tag SEBELUM decode entity. Description FinancialJuice datang dalam bentuk entity-escaped (`&lt;div&gt;` bukan `<div>`), jadi step strip-tag tidak nemu apa-apa untuk dihapus; entity baru di-decode SETELAHNYA, menciptakan tag asli sebagai teks. Diperbaiki: urutan dibalik (decode dulu, baru strip tag+script/style).
+- Ini juga menutup risiko keamanan nyata: description ber-entity-escape yang berisi `<script>` sebelumnya bisa lolos jadi teks literal lalu disisipkan via `innerHTML` di NEWS feed tanpa di-escape ulang — dengan urutan baru, script/style block ikut terstrip setelah decode, sebelum sempat masuk DOM.
+- `sanitizeDescMultiline()` baru — khusus body artikel FJElite panjang, menjaga jeda paragraf (`<div>`/`<p>`/`<br>` → newline) dan bullet list (`<li>` → `• `) instead of diratakan jadi satu baris seperti `sanitizeDesc()` biasa (yang tetap dipakai apa adanya untuk preview singkat di NEWS).
+- Diverifikasi via simulasi Node: paragraf terpisah benar, bullet list terformat `•`, dan entity-escaped `<script>` terbukti terstrip bersih (tidak nongol sebagai teks maupun tereksekusi).
+
+**Fitur Voice Readout — TTS headline penting (`index.html`):**
+- Tombol 🔊/🔇 di toolbar NEWS (ikon SVG, bukan emoji — ikut warna tema via `stroke="currentColor"`) — toggle manual, default mati, reset ke mati tiap reload (keputusan user: bukan fitur diam-diam selalu jalan).
+- Tombol ⚙ di sebelahnya buka panel kategori (11 kategori, chip toggle) — preferensi kategori dipersist ke `localStorage` (beda dari toggle utama yang session-only).
+- Default kategori: **market-moving + econ-data saja** (disamakan persis dengan `PUSH_CATS` di `api/admin.js` — keputusan eksplisit user untuk konsistensi minim-noise dengan push device yang sudah ada).
+- Anti-noise batching: kalau 1 headline baru lolos filter → dibacakan penuh (`lang=en-US`, sesuai bahasa asli headline). Kalau >1 muncul bersamaan dalam satu siklus polling → cuma diucapkan ringkasan jumlah ("N berita penting baru", `lang=id-ID`), tidak dibaca satu-satu — mencegah rilis data beruntun numpuk jadi antrian suara berisik (sesuai keputusan user di pertanyaan klarifikasi).
+- `speechSynthesis.speak()` dengan utterance kosong dipanggil saat toggle diaktifkan (di dalam user-gesture click) untuk "unlock" TTS di browser yang membatasi speak() pertama harus dari interaksi user — supaya panggilan otomatis berikutnya dari `fetchFeed()` (bukan user gesture) tidak diam-diam gagal.
+
+**Konsolidasi menu header (`index.html`):**
+- 3 tombol icon lepas di header (🔔 notif, ⤴ share, ⧉ popout) → digabung jadi 1 tombol kebab menu (⋮) yang buka dropdown kecil berisi 2 item: Notifikasi, Buka di Window Baru.
+- Logic toggle notif yang sudah ada (`toggleNotif()`, status `.enabled`, dst) tidak diubah sama sekali — elemen `#notifBtn`/`#popoutBtn` cuma dipindah ke dalam dropdown dengan class baru, semua `classList`/id reference lama tetap valid.
+- Click-outside-to-close + auto-close saat klik salah satu item.
+
+**Hapus fitur share (`index.html`):**
+- Tombol `⤴` (`shareBtn`), fungsi `shareCurrentView()`, dan const `SHARE_VIEW_LABELS` dihapus total atas permintaan user ("ga penting"). Tidak ada sisa referensi (diverifikasi via grep).
+
+**Testability:** Semua perubahan lolos `node -c`/inline-script syntax check via `new Function()`. Fix `sanitizeDesc`/`sanitizeDescMultiline` diuji simulasi Node terhadap 3 skenario (paragraf, list, XSS entity-escaped script) — semua sesuai ekspektasi. Voice readout & header menu dropdown belum dites manual di browser nyata (interaksi klik, TTS audio actual, click-outside behavior) — perlu verifikasi visual setelah deploy.
 
 ---
 

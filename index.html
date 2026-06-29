@@ -72,25 +72,29 @@ body {
 .dot.warn { background:var(--yellow); box-shadow:0 0 6px var(--yellow); animation:blink 2s infinite; }
 @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
 
-.notif-btn {
+.header-menu-wrap { position:relative; }
+.header-menu-trigger {
   width:32px; height:32px; border-radius:50%;
   border:1px solid var(--border); background:transparent;
   display:flex; align-items:center; justify-content:center;
   cursor:pointer; transition:all .2s; color:var(--muted);
-  font-size:15px;
 }
-.notif-btn.enabled { border-color:var(--accent); color:var(--accent); }
-.notif-btn:active { transform:scale(.9); }
-
-.popout-btn {
-  width:32px; height:32px; border-radius:50%;
-  border:1px solid var(--border); background:transparent;
-  display:flex; align-items:center; justify-content:center;
-  cursor:pointer; transition:all .2s; color:var(--muted);
-  font-size:14px;
+.header-menu-trigger:hover, .header-menu-trigger.open { border-color:var(--accent); color:var(--accent); }
+.header-menu-trigger:active { transform:scale(.9); }
+.header-menu-dropdown {
+  position:absolute; top:calc(100% + 8px); right:0; min-width:190px;
+  background:var(--card); border:1px solid var(--border); border-radius:8px;
+  box-shadow:0 8px 24px rgba(0,0,0,.45); z-index:500; overflow:hidden;
 }
-.popout-btn:hover { border-color:var(--accent); color:var(--accent); }
-.popout-btn:active { transform:scale(.9); }
+.header-menu-item {
+  display:flex; align-items:center; gap:8px; width:100%;
+  padding:10px 12px; border:none; background:transparent;
+  color:var(--text); font-family:'DM Mono',monospace; font-size:11px;
+  cursor:pointer; transition:background .15s; text-align:left;
+}
+.header-menu-item:hover { background:rgba(255,255,255,.06); }
+.header-menu-item.enabled { color:var(--accent); }
+.header-menu-item + .header-menu-item { border-top:1px solid var(--border); }
 
 /* STATS */
 .stats-bar {
@@ -335,6 +339,28 @@ body {
 }
 .refresh-btn:active { background:var(--accent); color:var(--bg); }
 .refresh-btn.spinning svg { animation:spin .7s linear infinite; }
+
+.voice-btn {
+  display:flex; align-items:center; gap:4px;
+  padding:6px 10px; border-radius:5px;
+  border:1px solid var(--border); background:transparent;
+  color:var(--muted); font-family:'DM Mono',monospace; font-size:10px;
+  cursor:pointer; transition:all .2s;
+}
+.voice-btn.enabled { border-color:var(--accent); color:var(--accent); }
+.voice-btn:active { transform:scale(.95); }
+.voice-settings-toggle { padding:6px 8px; font-size:11px; }
+.voice-settings-panel {
+  display:flex; flex-wrap:wrap; gap:4px; padding:8px 12px;
+  border-top:1px solid var(--border); background:rgba(255,255,255,.02);
+}
+.voice-cat-chip {
+  padding:3px 8px; border-radius:20px; border:1px solid var(--border);
+  background:transparent; color:var(--muted);
+  font-family:'DM Mono',monospace; font-size:8px; letter-spacing:.3px;
+  cursor:pointer; transition:all .15s; text-transform:uppercase;
+}
+.voice-cat-chip.active { border-color:var(--accent); color:var(--accent); background:rgba(192,57,43,.08); }
 @keyframes spin { to{transform:rotate(360deg)} }
 
 /* FEED */
@@ -2113,9 +2139,21 @@ body {
       <div class="dot" id="dot"></div>
       <span id="statusText">IDLE</span>
     </div>
-    <button class="notif-btn" id="notifBtn" onclick="toggleNotif()" title="Enable/disable notifications">🔔</button>
-    <button class="popout-btn" id="shareBtn" onclick="shareCurrentView()" title="Bagikan tab ini">⤴</button>
-    <button class="popout-btn" id="popoutBtn" onclick="popoutView()" title="Buka tab ini di window baru">⧉</button>
+    <div class="header-menu-wrap" id="headerMenuWrap">
+      <button class="header-menu-trigger" id="headerMenuBtn" onclick="toggleHeaderMenu()" title="Menu">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="12" cy="19" r="1.8"/></svg>
+      </button>
+      <div class="header-menu-dropdown" id="headerMenuDropdown" style="display:none">
+        <button class="header-menu-item" id="notifBtn" onclick="toggleNotif();closeHeaderMenu();">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+          <span>Notifikasi</span>
+        </button>
+        <button class="header-menu-item" id="popoutBtn" onclick="popoutView();closeHeaderMenu();">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="13" height="13" rx="2"/><path d="M16 8h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2v-2"/></svg>
+          <span>Buka di Window Baru</span>
+        </button>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -2184,6 +2222,19 @@ body {
       <span class="tslider"></span>
     </label>
     <span class="countdown" id="cdText"></span>
+    <button class="voice-btn" id="voiceBtn" onclick="toggleVoice()" title="Bacakan headline penting via suara">
+      <svg id="voiceIcon" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+        <line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/>
+      </svg>
+      SUARA
+    </button>
+    <button class="voice-btn voice-settings-toggle" id="voiceSettingsBtn" onclick="toggleVoiceSettingsPanel()" title="Pilih kategori yang dibacakan">
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+        <circle cx="12" cy="12" r="3"/>
+        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+      </svg>
+    </button>
     <button class="refresh-btn" id="refreshBtn" onclick="fetchFeed()">
       <svg id="rIcon" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
         <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>
@@ -2193,6 +2244,7 @@ body {
     </button>
   </div>
 </div>
+<div class="voice-settings-panel" id="voiceSettingsPanel" style="display:none"></div>
 
 <!-- FEED -->
 <div class="feed-scroll" id="feedScroll">
@@ -3084,6 +3136,89 @@ let autoInterval = null;
 let cdInterval   = null;
 let cdVal        = 60;
 let notifEnabled = false;
+
+// ── VOICE READOUT (TTS untuk headline penting) ──────────────────────────
+// Session-only toggle (default mati, harus diaktifkan manual tiap sesi —
+// keputusan user: bukan fitur yang selalu jalan diam-diam). Kategori yang
+// dibacakan dipersist ke localStorage karena itu preferensi, bukan state sesi.
+// Default disamakan dengan filter push notif device (lihat PUSH_CATS di
+// api/admin.js) — market-moving + econ-data, paling minim noise.
+const VOICE_CAT_OPTIONS = [
+  { id:'market-moving', label:'Market Moving' },
+  { id:'econ-data',     label:'Econ Data' },
+  { id:'macro',         label:'Macro' },
+  { id:'forex',         label:'Forex' },
+  { id:'energy',        label:'Energy' },
+  { id:'geopolitical',  label:'Geopolitical' },
+  { id:'equities',      label:'Equities' },
+  { id:'commodities',   label:'Commodities' },
+  { id:'bonds',         label:'Bonds' },
+  { id:'crypto',        label:'Crypto' },
+  { id:'indexes',       label:'Indexes' },
+];
+let voiceEnabled = false;
+let voiceCats = (() => {
+  try {
+    const saved = JSON.parse(localStorage.getItem('voiceCats') || 'null');
+    if (Array.isArray(saved) && saved.length) return new Set(saved);
+  } catch(e) {}
+  return new Set(['market-moving', 'econ-data']);
+})();
+
+function toggleVoice() {
+  voiceEnabled = !voiceEnabled;
+  const btn = document.getElementById('voiceBtn');
+  if (btn) {
+    btn.classList.toggle('enabled', voiceEnabled);
+    btn.textContent = voiceEnabled ? '🔊 SUARA' : '🔇 SUARA';
+  }
+  // Beberapa browser cuma mengizinkan speechSynthesis dipanggil pertama kali
+  // dari dalam user gesture (klik ini) — "unlock" dengan utterance kosong
+  // supaya panggilan speak() berikutnya dari fetchFeed() (bukan user gesture) tidak diam-diam gagal.
+  if (voiceEnabled && typeof speechSynthesis !== 'undefined') {
+    try { speechSynthesis.speak(new SpeechSynthesisUtterance('')); } catch(e) {}
+  }
+}
+
+function toggleVoiceSettingsPanel() {
+  const panel = document.getElementById('voiceSettingsPanel');
+  if (!panel) return;
+  if (panel.style.display === 'none') { renderVoiceSettingsPanel(); panel.style.display = 'flex'; }
+  else panel.style.display = 'none';
+}
+
+function renderVoiceSettingsPanel() {
+  const panel = document.getElementById('voiceSettingsPanel');
+  if (!panel) return;
+  panel.innerHTML = VOICE_CAT_OPTIONS.map(c => `
+    <button class="voice-cat-chip${voiceCats.has(c.id) ? ' active' : ''}" onclick="toggleVoiceCat('${c.id}')">${escHtml(c.label)}</button>
+  `).join('');
+}
+
+function toggleVoiceCat(catId) {
+  if (voiceCats.has(catId)) voiceCats.delete(catId); else voiceCats.add(catId);
+  try { localStorage.setItem('voiceCats', JSON.stringify([...voiceCats])); } catch(e) {}
+  renderVoiceSettingsPanel();
+}
+
+// Dipanggil dari fetchFeed() tiap siklus polling. Sengaja sempit: cuma
+// kategori di voiceCats, dan kalau beberapa headline lolos filter dalam
+// satu siklus yang sama, cukup ucapkan jumlahnya saja (bukan baca satu-satu)
+// — supaya rilis data beruntun tidak numpuk jadi antrian suara yang berisik.
+function speakNewsUpdate(newItems) {
+  if (!voiceEnabled || typeof speechSynthesis === 'undefined') return;
+  const qualifying = newItems.filter(i => voiceCats.has(detectCat(i.title)));
+  if (qualifying.length === 0) return;
+  let utt;
+  if (qualifying.length === 1) {
+    utt = new SpeechSynthesisUtterance(qualifying[0].title);
+    utt.lang = 'en-US';
+  } else {
+    utt = new SpeechSynthesisUtterance(`${qualifying.length} berita penting baru`);
+    utt.lang = 'id-ID';
+  }
+  speechSynthesis.speak(utt);
+}
 let deferredInstall = null;
 let activeView   = 'feed';
 let dashClusterState = {};
@@ -3231,6 +3366,29 @@ function urlBase64ToUint8Array(base64String) {
   return Uint8Array.from([...rawData].map(c => c.charCodeAt(0)));
 }
 
+// Header overflow menu (notif + popout digabung satu dropdown supaya header
+// tidak penuh ikon lepas) — klik trigger toggle, klik di luar dropdown menutup.
+function toggleHeaderMenu() {
+  const dd  = document.getElementById('headerMenuDropdown');
+  const btn = document.getElementById('headerMenuBtn');
+  if (!dd) return;
+  const willOpen = dd.style.display === 'none';
+  dd.style.display = willOpen ? 'block' : 'none';
+  if (btn) btn.classList.toggle('open', willOpen);
+}
+function closeHeaderMenu() {
+  const dd  = document.getElementById('headerMenuDropdown');
+  const btn = document.getElementById('headerMenuBtn');
+  if (dd) dd.style.display = 'none';
+  if (btn) btn.classList.remove('open');
+}
+document.addEventListener('click', (e) => {
+  const wrap = document.getElementById('headerMenuWrap');
+  const dd   = document.getElementById('headerMenuDropdown');
+  if (!wrap || !dd || dd.style.display === 'none') return;
+  if (!wrap.contains(e.target)) closeHeaderMenu();
+});
+
 // A2.5: tombol 🔔 jadi toggle — klik saat aktif mematikan notif bersih (unsubscribe +
 // hapus dari push_subs), bukan cuma minta izin ulang.
 async function toggleNotif() {
@@ -3354,6 +3512,23 @@ function cleanFJEliteTitle(title) {
   return title.replace(/\s*-\s*FJElite\s*$/i, '').trim();
 }
 
+// Like sanitizeDesc but for long-form FJElite notes: preserves paragraph breaks
+// and bullet lists instead of collapsing everything to one line, so multi-
+// paragraph analyst notes (and Crédit Agricole-style <ul><li> position lists)
+// stay readable in the ARTIKEL tab's pre-wrap display.
+function sanitizeDescMultiline(html) {
+  if (!html) return '';
+  let c = html.replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&nbsp;/g,' ').replace(/&#39;/g,"'").replace(/&quot;/g,'"');
+  c = c.replace(/<script[\s\S]*?<\/script>/gi,'').replace(/<style[\s\S]*?<\/style>/gi,'');
+  c = c.replace(/<br\s*\/?>/gi, '\n');
+  c = c.replace(/<\/(div|p|li)>/gi, '\n');
+  c = c.replace(/<li[^>]*>/gi, '• ');
+  c = c.replace(/<[^>]+>/g, '');
+  c = c.replace(/[ \t]+/g, ' ');
+  c = c.split('\n').map(l => l.trim()).join('\n');
+  return c.replace(/\n{3,}/g, '\n\n').trim();
+}
+
 let lastFetchAt = 0;
 async function fetchFeed() {
   if (isFetching) return;
@@ -3426,6 +3601,7 @@ async function fetchFeed() {
   } else if (!isFirstLoad && newItems.length > 1) {
     showToast(`📰 ${newItems.length} berita baru`, newItems.map(i=>i.title).slice(0,2).join(' / '), 4000);
   }
+  if (!isFirstLoad) speakNewsUpdate(newItems);
 
   isFetching = false;
 }
@@ -3433,9 +3609,15 @@ async function fetchFeed() {
 // ── RENDER ───────────────────────────────────────────────
 function sanitizeDesc(html) {
   if (!html) return '';
-  let c = html.replace(/<script[\s\S]*?<\/script>/gi,'').replace(/<style[\s\S]*?<\/style>/gi,'');
+  // FinancialJuice's <description> arrives HTML-entity-escaped (literal "&lt;div&gt;"),
+  // not raw markup — entities must be decoded BEFORE stripping tags, otherwise the
+  // escaped tags survive the strip step untouched and decode into literal "<div>"
+  // text afterward (visible as raw markup in the UI). Decoding first also means any
+  // entity-escaped <script>/<style> is correctly caught by the strip below instead of
+  // surviving as plain text that later gets inserted via innerHTML.
+  let c = html.replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&nbsp;/g,' ').replace(/&#39;/g,"'").replace(/&quot;/g,'"');
+  c = c.replace(/<script[\s\S]*?<\/script>/gi,'').replace(/<style[\s\S]*?<\/style>/gi,'');
   c = c.replace(/<[^>]+>/g,' ');
-  c = c.replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&nbsp;/g,' ').replace(/&#39;/g,"'").replace(/&quot;/g,'"');
   return c.replace(/\s+/g,' ').trim();
 }
 
@@ -4338,40 +4520,6 @@ function popoutView() {
   if (w) w.focus();
 }
 
-// Label tab untuk judul share — supaya penerima tahu ini link ke tab apa
-// sebelum klik, bukan cuma URL bare yang mendarat di view default.
-const SHARE_VIEW_LABELS = {
-  feed: 'News', riset: 'Artikel', ringkasan: 'Ringkasan', analisa: 'Analisa',
-  cal: 'Kalender Ekonomi', cot: 'COT', fundamental: 'Fundamental',
-  checklist: 'Checklist', sizing: 'Sizing Calculator', jurnal: 'Jurnal',
-  petunjuk: 'Petunjuk', teknikal: 'Teknikal', dashboard: 'Dashboard',
-};
-
-async function shareCurrentView() {
-  const view  = activeView || 'feed';
-  const label = SHARE_VIEW_LABELS[view] || 'Daun Merah';
-  const url   = location.origin + location.pathname + '#' + view;
-  const btn   = document.getElementById('shareBtn');
-
-  if (navigator.share) {
-    try {
-      await navigator.share({ title: `Daun Merah — ${label}`, url });
-    } catch(e) { /* user cancelled share sheet — bukan error */ }
-    return;
-  }
-  try {
-    await navigator.clipboard.writeText(url);
-    if (btn) {
-      const prevText = btn.textContent;
-      btn.textContent = '✓';
-      setTimeout(() => { btn.textContent = prevText; }, 1500);
-    }
-    showToast('Link disalin', `Tab ${label} — paste untuk bagikan`, 2500);
-  } catch(e) {
-    showToast('Gagal menyalin link', url, 3500);
-  }
-}
-
 function restoreViewFromHash() {
   const view = (location.hash || '').replace('#', '');
   if (!view || view === 'feed') return;
@@ -4853,7 +5001,7 @@ function renderResearch() {
   const instItems = (researchCache && researchCache.items) || [];
   const fjItems = fjResearchItems.map(i => {
     const heading = cleanFJEliteTitle(i.title);
-    const body = sanitizeDesc(i.desc);
+    const body = sanitizeDescMultiline(i.desc);
     return { source: 'FJElite', title: heading, link: i.link, pubDate: i.pubDate, fullText: body ? `${heading}\n\n${body}` : heading };
   });
   const items = [...instItems, ...fjItems].sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate));
