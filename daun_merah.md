@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-06-29 (session 117 — lihat "Changelog Session 117" di bawah untuk detail terbaru)
+> **Last updated:** 2026-06-29 (session 118 — lihat "Changelog Session 118" di bawah untuk detail terbaru)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Financial_Feed_App`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -119,6 +119,26 @@ Financial_Feed_App/
 > **Penting:** `api/feeds.js` menggantikan `api/rss.js` dan `api/cot.js` yang sudah dihapus.
 > `api/admin.js` menggantikan `api/health.js`, `api/redis-keys.js`, `api/admin-prompts.js`, dan `api/push.js`.
 > Konsolidasi ini dilakukan untuk tetap di bawah limit 12 serverless functions Vercel Hobby.
+
+---
+
+## Changelog Session 118 (2026-06-29)
+
+### Gabung tombol SUARA+settings jadi segmented pill, top chrome collapse otomatis saat scroll
+
+**Konteks:** Lanjutan session 117. User screenshot toolbar NEWS (SUARA + ⚙ tampil sebagai 2 kotak terpisah, berdesakan dengan AUTO/FETCH) minta dirapikan. Lalu diskusi soal navbar yang "ikut bergeser" saat scroll — diperkuat dengan screenshot 3 window desktop yang menunjukkan header+regime-banner+stats-bar+nav-views menumpuk 4 lapis sebelum konten, bikin app kerasa sempit terutama di window kecil/HP.
+
+**Konsolidasi tombol SUARA+⚙ (`index.html`):**
+- Dibungkus jadi satu `.voice-control-group` (border tunggal, garis pemisah tipis di dalam) menggantikan 2 tombol dengan border masing-masing — bobot visual setara 1 tombol FETCH, bukan 2 kotak lepas.
+
+**Top Chrome collapse-on-scroll (`index.html`):**
+- Header + Regime Banner + Stats Bar + Nav-Views (tab switcher desktop: NEWS/RINGKASAN/ANALISA/dst) dibungkus `#topChrome` — collapse otomatis (`max-height` + opacity transition) saat scroll ke bawah di panel manapun yang aktif, muncul lagi saat scroll ke atas.
+- App ini bukan satu halaman yang di-scroll (`body{overflow:hidden}`, tiap tab punya scroll container `.feed-scroll` sendiri-sendiri: `#feedScroll`, `#calPanelInner`, `#teknikalPanel`, dst) — listener dipasang SEKALI secara global di `document` dengan `{capture:true, passive:true}`, menangkap scroll event dari descendant manapun tanpa perlu didaftarkan per-panel (scroll event tidak bubble tapi tetap lolos capture phase).
+- Threshold 6px (anti-jiggle dari inersia scroll) + baru collapse setelah `scrollTop > 40` (tidak langsung collapse di awal scroll sedikit).
+- Nav-Filters (kategori) dan Toolbar per-view (AUTO/SUARA/FETCH, atau symbol/timeframe bar di TEK) **sengaja tidak** diikutkan ke grup collapse — isinya kontrol aktif yang sering dipencet sambil baca/lihat chart, beda dari header/regime/stats yang sifatnya info pasif.
+- Berlaku universal termasuk tab TEK (chart) — dikonfirmasi `#teknikalPanel` juga pakai class `.feed-scroll` (`overflow-y:auto`), jadi ke-detect listener yang sama.
+
+**Testability:** Lolos `node -c`/inline-script syntax check. Animasi collapse, threshold scroll, dan perilaku di tab TEK belum dites manual di browser nyata (hanya verifikasi struktural: CSS `max-height` transition + scroll listener attach point + konfirmasi `.feed-scroll` di semua panel target) — perlu cek visual setelah deploy.
 
 ---
 
