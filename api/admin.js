@@ -505,10 +505,11 @@ async function pushHandler(req, res) {
   await sendPushTelegram(newItems, TG_TOKEN, TG_CHAT_ID);
 
   // A2.3 Fase 1: kurangi kebisingan device push — hanya kategori bernilai tinggi.
-  // 'market-moving' selalu lolos (override semua filter); item receh (econ-data rutin,
-  // geopolitical umum, news) tetap masuk feed in-app & Telegram, cuma tak nge-push device.
+  // 'market-moving' selalu lolos (override semua filter). Diperketat sesuai feedback user
+  // (2026-06-29): macro & geopolitical mendominasi feed FinancialJuice dan jadi noise, jadi
+  // di-drop dari push device — tetap masuk feed in-app & Telegram, cuma tak nge-push device.
   // A2.4 quiet hours: di luar market-moving, tahan push selama jam tidur WIB (23:00–06:00).
-  const PUSH_CATS = new Set(['market-moving', 'macro', 'forex', 'energy']);
+  const PUSH_CATS = new Set(['market-moving', 'econ-data']);
   const wibHour = new Date(Date.now() + 7 * 3600000).getUTCHours();
   const isQuietHours = wibHour >= 23 || wibHour < 6;
   const pushItems = newItems.filter(i => {
