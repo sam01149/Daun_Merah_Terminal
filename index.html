@@ -44,6 +44,17 @@ body {
   flex-direction: column;
 }
 
+/* TOP CHROME (header + regime banner + stats bar + nav-views) — collapses on
+   scroll-down inside the active panel, slides back on scroll-up. Fixed
+   max-height (bigger than the tallest real variant) instead of "auto" so the
+   max-height transition actually animates instead of jumping instantly. */
+#topChrome {
+  flex-shrink: 0; overflow: hidden;
+  max-height: 420px;
+  transition: max-height .28s ease, opacity .2s ease;
+}
+#topChrome.chrome-collapsed { max-height: 0; opacity: 0; }
+
 /* HEADER */
 .header {
   flex-shrink: 0;
@@ -2136,6 +2147,7 @@ body {
 </head>
 <body>
 
+<div id="topChrome">
 <div class="header">
   <div class="logo">Daun<span> Merah</span></div>
   <div class="header-right">
@@ -2204,6 +2216,7 @@ body {
     <svg width="13" height="11" viewBox="0 0 13 11" fill="none"><rect y="0" width="13" height="1.5" rx=".75" fill="currentColor"/><rect y="4.75" width="13" height="1.5" rx=".75" fill="currentColor"/><rect y="9.5" width="13" height="1.5" rx=".75" fill="currentColor"/></svg>
   </button>
 </div>
+</div><!-- /topChrome -->
 
 <!-- CATEGORY FILTERS -->
 <div class="nav-filters" id="navFilters">
@@ -3681,6 +3694,39 @@ function renderFeed(markNew = false) {
 }
 
 function openLink(url) { if(url) window.open(url,'_blank'); }
+
+// Header+regime+stats+nav-views ("topChrome") collapse saat scroll ke bawah di
+// panel mana pun yang aktif, muncul lagi saat scroll ke atas — biar lega.
+// App ini bukan satu halaman yang di-scroll (body { overflow:hidden }, tiap
+// view punya scroll container sendiri seperti #feedScroll/#calPanelInner),
+// jadi listener-nya dipasang di capture phase pada document: scroll event
+// tidak bubble tapi tetap lolos capture phase dari descendant mana pun,
+// sehingga satu listener ini menangkap semua panel tanpa perlu daftar per-view.
+(function() {
+  const chrome = document.getElementById('topChrome');
+  if (!chrome) return;
+  const lastScrollTop = new WeakMap();
+  let ticking = false;
+  let pendingDelta = 0, pendingScrollTop = 0;
+
+  document.addEventListener('scroll', e => {
+    const el = e.target;
+    if (!el || typeof el.scrollTop !== 'number') return;
+    const prev = lastScrollTop.has(el) ? lastScrollTop.get(el) : el.scrollTop;
+    const delta = el.scrollTop - prev;
+    lastScrollTop.set(el, el.scrollTop);
+    if (Math.abs(delta) < 6) return; // threshold — abaikan jiggle/inersia kecil
+    pendingDelta = delta;
+    pendingScrollTop = el.scrollTop;
+    if (ticking) return;
+    ticking = true;
+    requestAnimationFrame(() => {
+      if (pendingDelta > 0 && pendingScrollTop > 40) chrome.classList.add('chrome-collapsed');
+      else if (pendingDelta < 0) chrome.classList.remove('chrome-collapsed');
+      ticking = false;
+    });
+  }, { capture: true, passive: true });
+})();
 
 // Cegah klik tidak sengaja saat scroll list berita di HP: kalau jari bergeser
 // >10px antara touchstart-touchend, anggap itu gestur scroll dan batalkan klik.
