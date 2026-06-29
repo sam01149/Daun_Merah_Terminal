@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-06-29 (session 118 — lihat "Changelog Session 118" di bawah untuk detail terbaru)
+> **Last updated:** 2026-06-29 (session 119 — lihat "Changelog Session 119" di bawah untuk detail terbaru)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Financial_Feed_App`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -119,6 +119,27 @@ Financial_Feed_App/
 > **Penting:** `api/feeds.js` menggantikan `api/rss.js` dan `api/cot.js` yang sudah dihapus.
 > `api/admin.js` menggantikan `api/health.js`, `api/redis-keys.js`, `api/admin-prompts.js`, dan `api/push.js`.
 > Konsolidasi ini dilakukan untuk tetap di bawah limit 12 serverless functions Vercel Hobby.
+
+---
+
+## Changelog Session 119 (2026-06-29)
+
+### Filter usulan "design psychologist": Split View 3-window otomatis + dots bobot bukti CB divergence
+
+**Konteks:** User minta saya berperan sebagai "design psychologist" untuk audit UX. Dari 4 usulan besar (Synth View pinning, adaptive theme, checklist empatik, AI interaktif), saya filter berdasar kriteria "tetap profesional/high-value, bukan consumer-app gimmick" — Synth View pinning ditolak user sendiri (tidak cocok untuk bagian informatif), diganti konsep lebih simpel: tombol auto-arrange 3 window. Adaptive "Calm" theme & forced-pause checklist saya rekomendasikan skip (dark-pattern/melemahkan identitas terminal serius), user setuju. AI drill-down diskip user karena belum perlu sekarang. Disepakati: Split View + dots bobot bukti checklist.
+
+**Split View — 3 window otomatis (`index.html`):**
+- Item baru di header kebab menu: "Split View (3 Window)" — sekali klik buka `TEK`, `NEWS`, `RINGKASAN` (urutan default kiri→kanan, array `SPLIT_VIEW_LAYOUT`) sebagai 3 window terpisah, posisi & lebar dihitung otomatis dari `screen.availWidth`/`availHeight` dibagi rata — menggantikan popout manual satu-satu + drag-resize sendiri.
+- Reuse mekanisme `popoutView()`/`restoreViewFromHash()` yang sudah ada (window baru dibuka dengan hash `#view`, auto-landing ke tab yang benar) — tidak ada infrastruktur baru, cuma orkestrasi 3x `window.open` dengan koordinat berbeda.
+- Guard `innerWidth < 1024` → toast "Khusus Desktop" alih-alih maksa buka 3 window kecil di HP yang tidak ada gunanya.
+
+**Checklist — dots bobot bukti CB divergence (`index.html`):**
+- Playbook **Macro Momentum**, section CB DIVERGENCE, item `mm_cb2` ("Perbedaan bias minimal 2 level") sekarang dapat indikator visual ●●○ di samping label — terisi 1-3 sesuai jarak bias aktual kedua currency pair di `HAWK_DOVE_AXIS` (5 level murni: Dovish→Hawkish, label ortogonal Data Dependent/On Hold/Split sengaja dikecualikan karena tidak comparable).
+- Dihitung dari `cbData` yang sama dipakai auto-tick `rc2` yang sudah ada (reuse, tidak ada fetch baru) — dipanggil dari `ckAutoTickRegimeCheck()` setiap kali pair di Checklist berubah.
+- **Sengaja tidak auto-centang** — beda dari `ckAutoTick`/`ckAutoBlock` yang mengubah `ckState`, fungsi baru `ckShowEvidenceDots()` cuma nempelin elemen visual terpisah (`.ck-evidence-dots`), item tetap manual dicentang user. Alasan: 3 kondisi lain di section yang sama (narrative belum berubah, real yield mendukung, dst) tetap butuh judgment, jadi dots ini cuma "bukti pendukung" bukan keputusan pass/fail.
+- Tooltip di dots menunjukkan nilai mentah (`"USD: Hawkish · JPY: Cautious Dovish — jarak 3 level"`) — user bisa audit sendiri kenapa dots-nya segitu, bukan percaya buta ke indikator visual.
+
+**Testability:** Lolos `node -c`/inline-script syntax check. Logika mapping jarak axis→level dots diverifikasi simulasi Node terhadap 4 skenario (Hawkish/Dovish, Hawkish/Neutral, Cautious×2, Neutral/Neutral) — semua sesuai ekspektasi. `openSplitView()` (positioning window, guard mobile) dan render dots di DOM nyata belum dites manual di browser — perlu verifikasi visual setelah deploy, khususnya apakah popup blocker browser mengizinkan 3x `window.open` berurutan dari satu klik.
 
 ---
 
