@@ -1579,6 +1579,9 @@ body {
 .ck-box.checked::after { content: '✓'; color: var(--green); font-size: 9px; font-weight: 700; }
 .ck-lbl { font-size: 11px; color: var(--text-mid); line-height: 1.35; transition: color .15s; }
 .ck-item:has(.ck-box.checked) .ck-lbl { color: var(--text); }
+.ck-evidence-dots { display:inline-flex; gap:3px; margin-left:7px; cursor:help; vertical-align:middle; }
+.ck-dot { width:5px; height:5px; border-radius:50%; background:var(--border); display:inline-block; }
+.ck-dot.filled { background:var(--accent); }
 .ck-subs { padding-left: 23px; }
 .ck-sub { display: flex; align-items: center; gap: 7px; padding: 3px 0; cursor: pointer; }
 .ck-sbox {
@@ -2167,6 +2170,10 @@ body {
         <button class="header-menu-item" id="popoutBtn" onclick="popoutView();closeHeaderMenu();">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="13" height="13" rx="2"/><path d="M16 8h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2v-2"/></svg>
           <span>Buka di Window Baru</span>
+        </button>
+        <button class="header-menu-item" id="splitViewBtn" onclick="openSplitView();closeHeaderMenu();" title="Buka TEK, NEWS, RINGKASAN otomatis bersebelahan">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="6" height="16" rx="1"/><rect x="9" y="4" width="6" height="16" rx="1"/><rect x="16" y="4" width="6" height="16" rx="1"/></svg>
+          <span>Split View (3 Window)</span>
         </button>
       </div>
     </div>
@@ -4570,6 +4577,26 @@ function popoutView() {
   const url = location.origin + location.pathname + '#' + view;
   const w = window.open(url, 'dm_' + view, 'width=480,height=860,resizable=yes,scrollbars=yes');
   if (w) w.focus();
+}
+
+// Susunan default kiri→kanan untuk Split View. Tiap window pakai hash yang
+// sama dengan popoutView() (#view) jadi langsung kebaca restoreViewFromHash().
+const SPLIT_VIEW_LAYOUT = ['teknikal', 'feed', 'ringkasan'];
+
+function openSplitView() {
+  if (window.innerWidth < 1024) {
+    showToast('Khusus Desktop', 'Split View butuh lebar layar untuk berguna — buka dari laptop/PC.', 3500);
+    return;
+  }
+  const cols = SPLIT_VIEW_LAYOUT.length;
+  const sw = window.screen.availWidth;
+  const sh = window.screen.availHeight;
+  const w = Math.floor(sw / cols);
+  SPLIT_VIEW_LAYOUT.forEach((view, i) => {
+    const url = location.origin + location.pathname + '#' + view;
+    const win = window.open(url, 'dm_split_' + view, `width=${w},height=${sh},left=${i * w},top=0,resizable=yes,scrollbars=yes`);
+    if (win) win.focus();
+  });
 }
 
 function restoreViewFromHash() {
@@ -8315,6 +8342,30 @@ function _ckEvTimestamp(ev) {
     + (parseInt(wibMatch[1]) * 60 + parseInt(wibMatch[2]) - 420) * 60000;
 }
 
+// Urutan murni hawk-dove (label sama persis dengan BIAS_CLASS) — label
+// ortogonal (Data Dependent/On Hold/Split) sengaja tidak ikut karena tidak
+// bisa dibandingkan jaraknya di axis ini.
+const HAWK_DOVE_AXIS = ['Dovish', 'Cautious Dovish', 'Neutral', 'Cautious Hawkish', 'Hawkish'];
+
+// "Bobot bukti" — dots visual di samping label item checklist, terpisah dari
+// auto-badge (✓ auto/⚠ blocked) milik ckAutoTick/ckAutoBlock. Tidak mengubah
+// ckState (item tetap manual dicentang user) — cuma kasih nuansa kekuatan
+// data di baliknya, bukan keputusan ya/tidak.
+function ckShowEvidenceDots(id, level, tooltip) {
+  const box = document.getElementById('ckbox_' + id);
+  if (!box) return;
+  const item = box.closest('.ck-item');
+  if (!item) return;
+  let dots = item.querySelector('.ck-evidence-dots');
+  if (!dots) {
+    dots = document.createElement('span');
+    dots.className = 'ck-evidence-dots';
+    item.appendChild(dots);
+  }
+  dots.innerHTML = [1, 2, 3].map(i => `<span class="ck-dot${i <= level ? ' filled' : ''}"></span>`).join('');
+  dots.title = tooltip;
+}
+
 function ckAutoTickRegimeCheck(pair) {
   if (!pair) return;
   const [base, quote] = pair.split('/');
@@ -8327,8 +8378,24 @@ function ckAutoTickRegimeCheck(pair) {
   if (cbData) {
     const b = cbData.find(c => c.currency === base);
     const q = cbData.find(c => c.currency === quote);
-    if (b && b.bias && q && q.bias)
+    if (b && b.bias && q && q.bias) {
       ckAutoTick('rc2', `${base}: ${b.bias} | ${quote}: ${q.bias}`);
+
+      // Macro Momentum playbook, item "Perbedaan bias minimal 2 level" (mm_cb2):
+      // tunjukkan kekuatan divergensi sebagai dots, BUKAN auto-check — kondisi
+      // lain di section ini (narrative belum berubah, real yield mendukung)
+      // tetap butuh judgment manual, jadi ini cuma bukti pendukung visual.
+      const bIdx = HAWK_DOVE_AXIS.indexOf(b.bias);
+      const qIdx = HAWK_DOVE_AXIS.indexOf(q.bias);
+      if (bIdx !== -1 && qIdx !== -1) {
+        const dist = Math.abs(bIdx - qIdx);
+        const level = dist >= 4 ? 3 : dist >= 2 ? 2 : dist >= 1 ? 1 : 0;
+        if (level > 0) {
+          ckShowEvidenceDots('mm_cb2', level,
+            `${base}: ${b.bias} · ${quote}: ${q.bias} — jarak ${dist} level di axis hawk-dove`);
+        }
+      }
+    }
   }
 
   if (cotData && cotData.positions) {
