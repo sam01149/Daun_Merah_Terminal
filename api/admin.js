@@ -291,8 +291,6 @@ const KEY_REGISTRY = [
   { key: 'latest_thesis',      owner: 'api/market-digest.js',  ttl_expected: 21600,  note: 'Structured trade thesis JSON from Groq Call 3' },
   { key: 'correlations',       owner: 'api/correlations.js',   ttl_expected: 86400,  note: '20d+60d cross-asset correlation matrix' },
   { key: 'prompt_digest',      owner: 'api/admin.js',          ttl_expected: null,   note: 'Groq prompt for market briefing (fallback: hardcoded)' },
-  { key: 'prompt_bias',        owner: 'api/admin.js',          ttl_expected: null,   note: 'Groq prompt for CB bias assessment' },
-  { key: 'prompt_thesis',      owner: 'api/admin.js',          ttl_expected: null,   note: 'Groq prompt for structured thesis JSON' },
   { key: 'health_last_ok',     owner: 'api/admin.js',          ttl_expected: null,   note: 'HSET: source → last OK timestamp for alerting' },
   { key: 'push_subs',          owner: 'api/admin.js',          ttl_expected: null,   note: 'HSET push subscriptions endpoint → JSON' },
   { key: 'seen_guids_set',     owner: 'api/admin.js',          ttl_expected: 86400,  note: 'Redis SET of seen RSS GUIDs for push dedup (SADD/SMEMBERS, atomic)' },
@@ -388,7 +386,7 @@ async function redisKeysHandler(req, res) {
 
 // ── Admin prompts handler (was api/admin-prompts.js) ──────────────────────────
 
-const ALLOWED_PROMPT_KEYS = new Set(['prompt_digest', 'prompt_bias', 'prompt_thesis']);
+const ALLOWED_PROMPT_KEYS = new Set(['prompt_digest']);
 
 async function adminPromptsHandler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -1238,6 +1236,20 @@ async function ohlcvSyncHandler(req, res) {
     .map((r, i) => ({ symbol: pairsToSync[i]?.symbol, error: r.reason?.message }));
 
   console.log(`ohlcv_sync complete: ${synced.length}/${pairsToSync.length} synced (1H+4H+1D per pair)`);
+
+  // Warm `ta:<symbol>:1d` (RSI/SMA) for synced pairs so Analisa indicators are
+  // always available, not just after the TEK tab happens to be opened.
+  const host  = req.headers.host || 'financial-feed-app.vercel.app';
+  const proto = host.includes('localhost') ? 'http' : 'https';
+  await Promise.allSettled(
+    pairsToSync.map(({ symbol }) =>
+      fetch(`${proto}://${host}/api/correlations?action=ta&symbol=${encodeURIComponent(symbol)}&interval=1d`, {
+        headers: { 'x-cron-secret': process.env.CRON_SECRET || '' },
+        signal: AbortSignal.timeout(15000),
+      }).catch(e => console.warn(`ohlcv_sync: ta warm failed for ${symbol}:`, e.message))
+    )
+  );
+
   return res.status(200).json({ ok: true, synced, failed, synced_at: new Date().toISOString() });
 }
 
@@ -1298,32 +1310,32 @@ async function loadOhlcvData(symbol, label) {
   const isJpy = symbol.includes('JPY');
   const dec   = isXau ? 2 : isJpy ? 3 : 5;
 
-  const [raw1h, raw4h, raw1d, rawAtr] = await Promise.all([
+  const [raw1h, raw4h, raw1d, rawTa] = await Promise.all([
     redisCmd('GET', `ohlcv:${symbol}:1h`),
     redisCmd('GET', `ohlcv:${symbol}:4h`),
     redisCmd('GET', `ohlcv:${symbol}:1d`),
-    redisCmd('GET', `atr:${symbol}`),
+    redisCmd('GET', `ta:${symbol}:1d`),
   ]);
 
   const c1h = raw1h ? JSON.parse(raw1h) : null;
   const c4h = raw4h ? JSON.parse(raw4h) : null;
   const c1d = raw1d ? JSON.parse(raw1d) : null;
-  const atr = rawAtr ? JSON.parse(rawAtr) : null;
+  const ta  = rawTa ? JSON.parse(rawTa) : null;
   const out  = { symbol, label, dec, is_xau: isXau, loaded_at: new Date().toISOString() };
 
-  // Indicators (RSI/SMA from correlations ATR cache — may be null if TEK tab never loaded)
-  if (atr && atr.rsi_14 != null) {
-    const rsi = atr.rsi_14;
+  // Indicators (RSI/SMA from correlations TA cache — may be null if TEK tab never loaded)
+  if (ta && ta.rsi_14 != null) {
+    const rsi = ta.rsi_14;
     const rsiLabel = rsi >= 70 ? 'Overbought' : rsi <= 30 ? 'Oversold' : rsi >= 55 ? 'Bullish' : rsi <= 45 ? 'Bearish' : 'Neutral';
     out.indicators = {
       available:      true,
       rsi_14:         rsi,
       rsi_label:      rsiLabel,
-      sma_50:         atr.sma_50   != null ? +atr.sma_50.toFixed(dec)  : null,
-      sma_200:        atr.sma_200  != null ? +atr.sma_200.toFixed(dec) : null,
-      vs_sma50:       atr.price_vs_sma50  || null,
-      vs_sma200:      atr.price_vs_sma200 || null,
-      computed_at:    atr.computed_at || null,
+      sma_50:         ta.sma_50   != null ? +ta.sma_50.toFixed(dec)  : null,
+      sma_200:        ta.sma_200  != null ? +ta.sma_200.toFixed(dec) : null,
+      vs_sma50:       ta.price_vs_sma50  || null,
+      vs_sma200:      ta.price_vs_sma200 || null,
+      computed_at:    ta.computed_at || null,
     };
   } else {
     out.indicators = { available: false };
@@ -1513,10 +1525,10 @@ async function ohlcvAnalyzeHandler(req, res) {
 
     const nowPrice = data.h1?.current;
 
-    const userMsg = `Analisa ${data.label}:\n\n${makroBlock}\n\nIsi field JSON berikut:\n- bias: trend dominan Daily (bullish/bearish/neutral)\n- entry_zone: level atau range harga ideal untuk entry (angka konkret). WAJIB konsisten dengan harga "Now" di atas — kalau bias bearish, entry_zone harus >= Now (jual di rally/resistance) ATAU di bawah Now kalau memang breakdown confirmation, TAPI jangan keduanya sekaligus dalam satu trigger yang saling kontradiksi. Kalau Now sudah melewati level breakdown/breakout yang relevan, jangan minta retracement ke arah berlawanan — definisikan entry di sekitar Now atau area immediate berikutnya.\n- sl: level stop loss konkret berdasarkan Swing Low/High 4H atau Support/Resistance Daily. Untuk bearish, sl harus di atas entry_zone. Untuk bullish, sl harus di bawah entry_zone.\n- tp: level take profit konkret berdasarkan Swing High/Low 4H atau Resistance/Support Daily. Untuk bearish, tp harus di bawah entry_zone. Untuk bullish, tp harus di atas entry_zone.\n- trigger: SATU kondisi teknikal spesifik yang HARUS terpenuhi sebelum entry — jangan sebut dua kondisi alternatif yang saling kontradiksi relatif ke Now, misal: "Tunggu candle H1 close di atas X" atau "Entry saat RSI keluar dari oversold"\n- commentary: analisa naratif mendalam 4-5 paragraf, pisah tiap paragraf dengan \\n. Paragraf 1 — bias Daily: jelaskan arah trend dengan alasan konkret (perubahan %, level close vs open, posisi relatif terhadap swing terakhir). Paragraf 2 — struktur H4: posisi harga saat ini terhadap swing high/low H4, apakah dalam fase akumulasi/distribusi/breakout, MACD H4 konfirmasi atau divergensi. Paragraf 3 — momentum H1: kondisi momentum terkini, konfluensi atau perbedaan arah dengan H4${extraCtx?.includes('ATR') ? ', volatilitas berdasarkan ATR' : ''}. Paragraf 4 — integrasi ${extraCtx ? '(' + extraCtx + ')' : 'timeframe'}: simpulkan kekuatan setup, risiko utama, dan kondisi pasar yang memvalidasi atau membatalkan skenario ini. Setiap paragraf wajib sebut minimal 2 angka konkret (harga, %, atau nilai indikator). Hindari kalimat generik.`;
+    const userMsg = `Analisa ${data.label}:\n\n${makroBlock}\n\nIsi field JSON berikut:\n- bias: trend dominan Daily — bullish/bearish/neutral/mixed. Pakai "mixed" kalau timeframe saling kontradiksi (misal Daily naik tapi H4/H1 distribusi) atau makro vs teknikal berlawanan jelas — jangan paksa ke "neutral" kalau sebenarnya konflik, bukan tanpa-trend.\n- entry_zone: level atau range harga ideal untuk entry (angka konkret). WAJIB konsisten dengan harga "Now" di atas — kalau bias bearish, entry_zone harus >= Now (jual di rally/resistance) ATAU di bawah Now kalau memang breakdown confirmation, TAPI jangan keduanya sekaligus dalam satu trigger yang saling kontradiksi. Kalau Now sudah melewati level breakdown/breakout yang relevan, jangan minta retracement ke arah berlawanan — definisikan entry di sekitar Now atau area immediate berikutnya. WAJIB level ini diturunkan dari angka yang benar-benar ada di DATA TEKNIKAL (swing/S-R/SMA) — jangan mengarang angka yang tidak ada di data.\n- sl: level stop loss konkret berdasarkan Swing Low/High 4H atau Support/Resistance Daily yang ADA di data — jangan mengarang. Untuk bearish, sl harus di atas entry_zone. Untuk bullish, sl harus di bawah entry_zone.\n- tp: level take profit konkret berdasarkan Swing High/Low 4H atau Resistance/Support Daily yang ADA di data — jangan mengarang. Untuk bearish, tp harus di bawah entry_zone. Untuk bullish, tp harus di atas entry_zone. WAJIB risk/reward (jarak entry→tp dibanding entry→sl) minimal 1:1 — kalau struktur data tidak memungkinkan RR ≥1, sebutkan itu di trigger/commentary alih-alih memaksakan level palsu.\n- trigger: SATU kondisi teknikal spesifik yang HARUS terpenuhi sebelum entry — jangan sebut dua kondisi alternatif yang saling kontradiksi relatif ke Now, misal: "Tunggu candle H1 close di atas X" atau "Entry saat RSI keluar dari oversold"\n- invalidation_condition: kondisi spesifik yang membatalkan skenario ini sepenuhnya (beda dari sl — ini soal struktur/tesis, misal "kalau Daily close balik di bawah SMA50 maka bias bullish batal")\n- time_horizon_days: estimasi jumlah hari realistis skenario ini main out (angka, misal 3, 5, 10) berdasarkan jarak entry-tp dibanding rata-rata gerak harian (ATR/sigma) yang ada di data\n- commentary: analisa naratif mendalam 4-5 paragraf, pisah tiap paragraf dengan \\n. Paragraf 1 — bias Daily: jelaskan arah trend dengan alasan konkret (perubahan %, level close vs open, posisi relatif terhadap swing terakhir). Paragraf 2 — struktur H4: posisi harga saat ini terhadap swing high/low H4, apakah dalam fase akumulasi/distribusi/breakout, MACD H4 konfirmasi atau divergensi. Paragraf 3 — momentum H1: kondisi momentum terkini, konfluensi atau perbedaan arah dengan H4${extraCtx?.includes('ATR') ? ', volatilitas berdasarkan ATR' : ''}. Paragraf 4 — integrasi ${extraCtx ? '(' + extraCtx + ')' : 'timeframe'}: simpulkan kekuatan setup, risiko utama, dan kondisi pasar yang memvalidasi atau membatalkan skenario ini${ringkasanContext ? ' — kalau KONTEKS MAKRO berlawanan jelas dengan struktur teknikal (misal makro risk-off tapi teknikal breakout bullish), sebut konflik itu eksplisit dan turunkan keyakinan setup, jangan diam-diam diabaikan' : ''}. Setiap paragraf wajib sebut minimal 2 angka konkret (harga, %, atau nilai indikator). DILARANG kalimat generik tanpa angka (misal "harga bergerak sideways", "momentum masih lemah", "perlu konfirmasi lebih lanjut" tanpa data pendukung) — setiap klaim harus berpijak pada angka yang ada di DATA TEKNIKAL.`;
 
     const messages = [
-      { role: 'system', content: 'Kamu analis senior teknikal dan makro. Jawab HANYA dengan objek JSON valid (tanpa markdown fence, tanpa teks tambahan apapun di luar JSON). Bahasa Indonesia. Format: {"bias":"...","entry_zone":"...","sl":"...","tp":"...","trigger":"...","commentary":"..."}' },
+      { role: 'system', content: 'Kamu analis senior teknikal dan makro. Jawab HANYA dengan objek JSON valid (tanpa markdown fence, tanpa teks tambahan apapun di luar JSON). Bahasa Indonesia. Format: {"bias":"...","entry_zone":"...","sl":"...","tp":"...","trigger":"...","invalidation_condition":"...","time_horizon_days":0,"commentary":"..."}' },
       { role: 'user',   content: userMsg },
     ];
 
@@ -1551,15 +1563,21 @@ async function ohlcvAnalyzeHandler(req, res) {
       try {
         const cleaned = rawText.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
         const parsed  = JSON.parse(cleaned);
-        // Normalize bias
+        // Normalize bias (incl. "mixed/conflicting" per QUAL-7 — don't force into neutral)
         const biasRaw = (parsed.bias || '').toLowerCase().replace(/[^a-z]/g, '');
-        parsed.bias   = ['bullish', 'bearish', 'neutral'].includes(biasRaw) ? biasRaw : 'neutral';
+        const mixedAliases = ['mixed', 'conflicting', 'campuran', 'konflik'];
+        parsed.bias = ['bullish', 'bearish', 'neutral'].includes(biasRaw) ? biasRaw
+          : mixedAliases.includes(biasRaw) ? 'mixed' : 'neutral';
         structured    = parsed;
         commentary    = parsed.commentary || rawText;
+        if (structured.time_horizon_days != null) {
+          const h = Number(structured.time_horizon_days);
+          structured.time_horizon_days = isNaN(h) ? null : h;
+        }
 
-        // Sanity-check entry_zone/sl/tp direction vs current price — drop the
-        // levels (keep bias/trigger/commentary) if the model produced a setup
-        // that contradicts the live price it was given.
+        // Sanity-check entry_zone/sl/tp direction vs current price AND risk/reward —
+        // drop the levels (keep bias/trigger/commentary) if the model produced a setup
+        // that contradicts the live price it was given, or has RR < 1.
         if (structured.entry_zone && structured.sl && structured.tp && typeof nowPrice === 'number') {
           const nums = s => (String(s).match(/[\d.]+/g) || []).map(Number).filter(n => !isNaN(n));
           const entryNums = nums(structured.entry_zone);
@@ -1573,9 +1591,19 @@ async function ohlcvAnalyzeHandler(req, res) {
             } else if (structured.bias === 'bullish') {
               valid = slNum < entryLow && entryHigh < tpNum && nowPrice > slNum && nowPrice < tpNum;
             }
+            // RR check (only meaningful once direction itself is valid)
+            if (valid) {
+              const entryMid = (entryLow + entryHigh) / 2;
+              const risk = Math.abs(entryMid - slNum), reward = Math.abs(tpNum - entryMid);
+              if (risk > 0) {
+                structured.risk_reward = Math.round((reward / risk) * 100) / 100;
+                if (reward / risk < 1) valid = false;
+              }
+            }
             if (!valid) {
-              console.warn('ohlcv_analyze: entry/sl/tp inconsistent with Now price — dropping levels', { bias: structured.bias, entry_zone: structured.entry_zone, sl: structured.sl, tp: structured.tp, nowPrice });
+              console.warn('ohlcv_analyze: entry/sl/tp inconsistent or RR<1 — dropping levels', { bias: structured.bias, entry_zone: structured.entry_zone, sl: structured.sl, tp: structured.tp, nowPrice, rr: structured.risk_reward });
               structured.entry_zone = structured.sl = structured.tp = null;
+              structured.risk_reward = null;
             }
           }
         }

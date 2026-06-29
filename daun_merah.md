@@ -1323,6 +1323,55 @@ Format ini sudah **berubah ke prosa naratif** — levels disebutkan dalam kalima
 
 ---
 
+## Changelog Session 48 (2026-06-29)
+
+### Eksekusi `daun_merah_plan.md` — Audit Prompt & Korelasi
+
+Hasil audit (sebelumnya sudah disimpan di `daun_merah_plan.md`, status "analisis selesai belum dieksekusi") dikerjakan tuntas sesi ini, kecuali item yang plan-nya sendiri menandai sebagai keputusan/review user atau deferred.
+
+**1. Bug News fetch ganda — `index.html`**
+- Root cause: `startAutoRefresh()` mengirim `CHECK_NOW` ke service worker dengan `seenGuids` kosong saat load → SW selalu false-positive "semua item baru" → trigger `fetchFeed()` kedua lewat `NEW_ITEMS`, bertumpuk dengan fetch jalur load/visibilitychange.
+- Fix: hapus `sendToSW({type:'CHECK_NOW'})` dari `startAutoRefresh()` (SW kini background-only, baseline disinkronkan via `INIT_GUIDS` setelah tiap `fetchFeed()` sukses — mekanisme ini sudah ada). Tambah debounce `lastFetchAt` (skip kalau `fetchFeed()` dipanggil <3s setelah fetch sebelumnya) sebagai jaring tambahan untuk pemicu berurutan dari sumber berbeda.
+- AC plan terpenuhi: 1 load = 1 fetch RSS dari halaman.
+
+**2. BUG-1 — Korelasi Gold cuma kirim r20 ke prompt — `api/market-digest.js`**
+- Render `correlationBlock` sekarang kirim `r20 + r60 + delta` per aset di `gold_correlations`, bukan cuma `r20`. Instruksi XAU #6 ("biasanya kuat → sekarang melemah") sekarang punya data untuk dieksekusi tanpa harus masuk top-5 anomali.
+
+**3. BUG-2 — RSI/SMA Daily di fitur Analisa mati total — `api/admin.js`**
+- Root cause: `loadOhlcvData` baca indikator dari key salah (`atr:${symbol}` — cuma berisi ATR/sigma, tidak ada RSI/SMA). RSI/SMA sebenarnya di `ta:${symbol}:1d`.
+- Fix: ganti key baca jadi `ta:${symbol}:1d` (field name sudah cocok, drop-in). Plus: cron `ohlcv_sync` (`ohlcvSyncHandler`) sekarang juga warm `ta:` cache untuk semua pair yang disync (fire-and-forget call ke `/api/correlations?action=ta`) supaya RSI/SMA selalu tersedia, tidak menunggu tab TEK dibuka manual per-symbol.
+
+**4. COR-B/C/E/F — Grounding korelasi (FX matrix, 8 majors, anomali relevance-aware) — `api/correlations.js` + `api/market-digest.js`**
+- `INSTRUMENTS` di `correlations.js` ditambah `CAD` (USDCAD=X, inverted), `NZD` (NZDUSD=X), `CHF` (USDCHF=X, inverted) — lengkap 8 majors di matriks korelasi.
+- Blok KORELASI di prompt Ringkasan sekarang juga surface pasangan FX spesifik (DXY-EUR, DXY-GBP, DXY-AUD, DXY-JPY, AUD-SPX, JPY-US10Y) dari `matrix_20d`/`matrix_60d` yang sebelumnya dihitung tapi dibuang.
+- Anomali korelasi diprioritaskan kalau menyangkut Gold/DXY (relevance-aware, kurangi noise pasangan tak relevan macam Copper-Silver), plus hint arah ("melemah/menguat" vs "berbalik arah/sign-flip").
+
+**5. RISK-2 — Dead config `prompt_bias`/`prompt_thesis` — `api/admin.js`**
+- Konfirmasi: kedua key tidak pernah dibaca Call 2/3 (hardcoded) dan tidak ada di Redis. Dibuang dari `ALLOWED_PROMPT_KEYS` dan dari tabel referensi Redis keys — tidak ada lagi config yang bisa diedit admin tapi tidak berefek.
+
+**6. Kualitas fitur Analisa (QUAL-4/5/6/7/15/16) — `api/admin.js` + `index.html`**
+- Prompt `ohlcv_analyze`: tambah field `invalidation_condition` + `time_horizon_days`, syarat risk/reward ≥1 (divalidasi di kode, level di-drop kalau RR<1), opsi bias `mixed` (selain bullish/bearish/neutral) untuk timeframe/makro yang genuinely konflik, larangan eksplisit "jangan mengarang level di luar DATA TEKNIKAL", guard konfluensi makro-vs-teknikal, dan bar anti-generik dinaikkan setara Ringkasan.
+- UI kartu Analisa: render RR, invalidation, time horizon, dan badge bias "MIXED".
+- `ringkasanContext` yang dikirim ke Analisa kini di-strip dari marker `{{TAG:...}}` sebelum jadi konteks makro.
+
+**7. Prompt-quality Ringkasan (QUAL-1/9/10/13, draft — lihat catatan review di bawah) — `api/market-digest.js`**
+- `max_tokens` Call 1 disamakan ke 1300 di tiga provider (sebelumnya timpang 800/800/1800) + target panjang lunak (FX 4-7 kalimat, XAU 4-6 kalimat) ditambahkan ke system prompt.
+- Token `/no_think` (sisa era Qwen3, tidak dikenali provider saat ini) dihapus dari `digestUserMsg`.
+- Guard anti-halusinasi (jangan gabung 2 headline jadi klaim baru) yang sebelumnya cuma ada di ATURAN XAUUSD, diduplikasi ke ATURAN FX.
+- Aturan baru: kalau headline jelas lebih segar dari timestamp blok data cache (real yield/risk regime/rate path) dan bertentangan, sebut konflik eksplisit dan beri bobot ke yang lebih segar.
+- **⚠ Belum dieksekusi (di luar scope wajib-review, lihat di bawah):** QUAL-2 (FRASA TERLARANG, sengaja tidak diubah — trade-off, bukan bug), QUAL-3 (selaraskan penutup Call 1 vs Call 3, opsional), QUAL-11 (rampingkan duplikasi aturan penutup FX), QUAL-12 (pra-rank headline by relevansi), QUAL-14/17 (refactor commentary-keluar-dari-JSON, pecah template literal — maintainability, bukan korektivitas).
+
+**Item yang sengaja TIDAK dikerjakan (sesuai instruksi eksplisit di `daun_merah_plan.md`):**
+- **Bagian 9** (insiden versi-lama PWA, P0-INFRA anti-versi-basi, share deep-link) — ditandai DEFERRED atas permintaan user di plan.
+- **COR-D** (real yield proxy TIP ETF) — plan menandai ini keputusan user, bukan tugas coding.
+- **Item P3 opsional** (COR-G BTC/gold-silver/gold-copper ratio) — tidak diminta, di luar prioritas.
+
+**Catatan testability (sesuai plan bagian B):** semua perubahan korelasi & prompt **code-complete, lint/syntax-check lolos (`node -c`), tapi belum diverifikasi output live** — butuh trigger `GET /api/market-digest` (non-cached) + Redis + API key di environment deploy untuk konfirmasi output asli. Fix double-fetch News bisa diverifikasi browser (DevTools Network + `console.count`).
+
+**Catatan review (sesuai plan bagian C):** perubahan teks prompt di poin 6 dan 7 di atas adalah **draft** — wajib direview user sebelum dianggap final, karena prompt menyimpan preferensi gaya tulisan user.
+
+---
+
 ## Changelog Session 47 (2026-06-05)
 
 ### ScraperAPI Proxy + CME CVOL Fix + Bug Fixes

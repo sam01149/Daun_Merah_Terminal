@@ -661,17 +661,46 @@ module.exports = async function handler(req, res) {
     ratePathBlock = parts.join(' | ');
   }
 
-  // Build cross-asset correlation block — anomalies (regime breaks) + gold's key correlations
+  // Build cross-asset correlation block — anomalies (regime breaks) + gold's key correlations + FX grounding
   let correlationBlock = '(Data korelasi cross-asset tidak tersedia)';
   if (correlationsData) {
     const lines = [];
+    // Anomali: prioritaskan pasangan yang relevan ke Gold/DXY (relevance-aware), baru sisanya by |delta|
     if (Array.isArray(correlationsData.anomalies) && correlationsData.anomalies.length > 0) {
-      lines.push('Anomali korelasi 20D vs 60D (deviasi >0.4 dari norma — sinyal regime berubah): ' +
-        correlationsData.anomalies.slice(0, 5).map(a => `${a.label} (20D:${a.r20} vs 60D:${a.r60}, Δ${a.delta})`).join('; '));
+      const isRelevant = (a) => /Gold|DXY/.test(a.label);
+      const ranked = [...correlationsData.anomalies].sort((a, b) => {
+        const ra = isRelevant(a) ? 1 : 0, rb = isRelevant(b) ? 1 : 0;
+        if (ra !== rb) return rb - ra;
+        return Math.abs(b.delta) - Math.abs(a.delta);
+      });
+      const dirHint = (a) => {
+        const sameSign = (a.r20 >= 0) === (a.r60 >= 0);
+        return sameSign ? 'melemah/menguat (arah sama)' : 'berbalik arah (sign-flip)';
+      };
+      lines.push('Anomali korelasi 20D vs 60D (deviasi >0.4 dari norma — sinyal regime berubah, prioritas Gold/DXY): ' +
+        ranked.slice(0, 5).map(a => `${a.label} (20D:${a.r20} vs 60D:${a.r60}, Δ${a.delta}, ${dirHint(a)})`).join('; '));
     }
     if (correlationsData.gold_correlations && Object.keys(correlationsData.gold_correlations).length > 0) {
-      lines.push('Korelasi Gold 20D vs aset lain: ' +
-        Object.entries(correlationsData.gold_correlations).map(([k, v]) => `${k}:${v.r20 ?? '?'}`).join(', '));
+      lines.push('Korelasi Gold (20D vs norma 60D): ' +
+        Object.entries(correlationsData.gold_correlations).map(([k, v]) =>
+          `${k}:${v.r20 ?? '?'} (norma60D:${v.r60 ?? '?'}, Δ${v.delta ?? '?'})`).join(', '));
+    }
+    // Grounding korelasi FX — pasangan yang sering dipakai narasi benang merah FX
+    if (correlationsData.matrix_20d && correlationsData.matrix_60d) {
+      const getPair = (a, b) => {
+        const k1 = `${a}|${b}`, k2 = `${b}|${a}`;
+        const r20 = correlationsData.matrix_20d[k1] ?? correlationsData.matrix_20d[k2];
+        const r60 = correlationsData.matrix_60d[k1] ?? correlationsData.matrix_60d[k2];
+        return (r20 == null || r60 == null) ? null : { r20, r60 };
+      };
+      const FX_PAIRS = [['DXY','EUR'], ['DXY','GBP'], ['DXY','AUD'], ['DXY','JPY'], ['AUD','SPX'], ['JPY','US10Y']];
+      const fxLines = FX_PAIRS.map(([a, b]) => {
+        const d = getPair(a, b);
+        return d ? `${a}-${b}:${d.r20} (60D:${d.r60})` : null;
+      }).filter(Boolean);
+      if (fxLines.length > 0) {
+        lines.push('Korelasi FX (20D vs norma 60D): ' + fxLines.join(', '));
+      }
     }
     correlationBlock = lines.length > 0 ? lines.join('\n') : '(Tidak ada anomali signifikan — korelasi sesuai norma historis)';
   }
@@ -896,6 +925,7 @@ FORMAT OUTPUT:
 - Prosa mengalir. Tanpa bullet, heading, bold, emoji.
 - Dua bagian: (1) bagian FX, (2) bagian XAUUSD diawali tepat "XAUUSD:" (baris baru, tanpa spasi sebelum tanda titik dua).
 - Mulai LANGSUNG dengan fakta paling spesifik yang market-moving dari headline. DILARANG KERAS membuka dengan: "Pagi ini", "Hari ini", "Sesi ini", "Flow berita", "Pasar hari ini", "Dalam konteks ini", "Minggu ini", atau kalimat konteks/ringkasan apapun. Kalimat pertama harus menyebut nama pejabat, angka spesifik, atau pair FX konkret (USD, EUR, GBP, JPY, CAD, AUD, NZD, CHF — BUKAN XAU/emas/gold).
+- Target panjang: bagian FX 4-7 kalimat, bagian XAUUSD 4-6 kalimat (kecuali sinyal tipis, lihat ATURAN XAUUSD). Ini batas lunak untuk menjaga fokus — jangan memotong fakta penting demi memenuhi angka ini, tapi jangan juga menumpuk tema lepas hanya untuk memenuhi panjang.
 
 FRASA TERLARANG — periksa output sebelum kirim, tidak ada pengecualian:
 dapat mempengaruhi · dapat memberikan · dapat berdampak · perlu dicermati · patut diwaspadai · tergantung data · masih akan volatile · menjadi fokus · trader harus berhati-hati · sentimen mixed · berpotensi menggerakkan · berpotensi mempengaruhi · dapat menekan · memberikan tekanan · memberikan dorongan · perlu diperhatikan · akan terus dipantau · seiring dengan · sejalan dengan · di tengah · memberikan gambaran · masih dalam ketidakpastian · mencermati · cukup padat · perkembangan ini · hal ini · dalam beberapa jam ke depan (tanpa spesifik) · berdampak pada pasar
@@ -904,6 +934,7 @@ TES WAJIB TIAP KALIMAT: Bisakah kalimat ini ditulis tanpa membaca headlines hari
 
 ATURAN FX:
 PENTING: Bagian FX adalah KHUSUS untuk analisa FX pair dan USD. DILARANG KERAS membahas XAU, emas, gold, bullion, atau harga emas di bagian ini — semua gold content masuk ke bagian XAUUSD. Kalau hari ini yang paling market-moving adalah gold, tetap buka dengan dampaknya ke FX pairs (misal: "Kenaikan tajam XAU memicu risk-off, mengangkat JPY dan CHF vs USD") — bukan membahas gold itu sendiri.
+ANTI-HALLUCINATION: Jangan gabungkan dua headline berbeda menjadi satu klaim baru yang tidak ada di headline aslinya. Jika headline A menyebut X dan headline B menyebut Y, jangan tulis "X berkoordinasi dengan Y" kecuali kalimat itu memang ada di salah satu headline.
 
 PENDEKATAN BENANG MERAH FX — ikuti urutan ini, JANGAN tulis tema-tema sebagai paragraf lepas yang ditumpuk:
 1. JANGKAR TEMA: Tentukan SATU tema paling market-moving hari ini (CB tertentu, data rilis, atau divergence currency tertentu). Ini titik awal narasi.
@@ -953,8 +984,7 @@ REMINDER FINAL: SEBELUM MERESPONS, pastikan tidak ada kata "dapat mempengaruhi",
 CEK SEKALI LAGI kalimat penutup FX: kalau draft-mu menyebut lebih dari satu currency di sisi kuat ATAU lebih dari satu di sisi lemah TANPA menjelaskan bahwa itu sinyal campuran (cuma ditumpuk pakai "dan", misal "EUR dan JPY berada di posisi terlemah") — itu salah, perbaiki jadi salah satu dari dua: (1) pilih HANYA SATU yang buktinya paling kuat dari headline, buang yang lain; atau (2) kalau memang campuran, tulis ulang jadi kalimat "sinyal campuran" yang eksplisit menjelaskan kuat-vs-siapa dan lemah-vs-siapa, jangan biarkan ambigu.`;
 
     const digestSystemMsg = promptDigestInstr || DIGEST_SYSTEM_DEFAULT;
-    const digestUserMsg = `/no_think
-PENTING: TULIS SELURUH OUTPUT DALAM BAHASA INDONESIA. JANGAN GUNAKAN BAHASA INGGRIS SAMA SEKALI.
+    const digestUserMsg = `PENTING: TULIS SELURUH OUTPUT DALAM BAHASA INDONESIA. JANGAN GUNAKAN BAHASA INGGRIS SAMA SEKALI.
 WAKTU: ${dayStr}, ${dateStr}, ${timeStr}${weekendNote}
 
 === HARGA XAU/USD LIVE (jangkar harga — gunakan sebagai titik awal narasi) ===
@@ -980,6 +1010,8 @@ ${riskRegimeBlock}
 
 === RATE PATH USD (market-implied dari Fed Funds futures — angka konkret untuk mekanisme rate differential) ===
 ${ratePathBlock}
+
+CATATAN STALENESS: Blok REAL YIELD/RISK REGIME/RATE PATH di atas di-cache (TTL menit-jam), bisa sedikit basi. Kalau ada headline yang JELAS lebih baru dan bertentangan dengan angka di blok itu (misal yield spike besar baru saja, VIX melonjak tajam yang belum tercermin di RISK REGIME) — sebut konflik itu eksplisit dan beri bobot lebih ke sinyal yang lebih segar, jangan diam-diam pilih salah satu tanpa penjelasan.
 
 === KORELASI CROSS-ASSET (anomali = sinyal regime berubah, gunakan sebagai cek silang) ===
 ${correlationBlock}
@@ -1012,7 +1044,7 @@ ${xauHistoryBlock}`;
       const t1s = Date.now();
       try {
         console.log('Call 1: trying SambaNova DeepSeek-V3.2 (akun 2 prose)');
-        const raw = await aiCall(SAMBANOVA_URL_CALL1, SAMBANOVA_KEY_CALL1, SAMBANOVA_MODEL_CALL1, call1Messages, 800, 0.25, 28000);
+        const raw = await aiCall(SAMBANOVA_URL_CALL1, SAMBANOVA_KEY_CALL1, SAMBANOVA_MODEL_CALL1, call1Messages, 1300, 0.25, 28000);
         const elapsed = Date.now() - t1s;
         if (raw.trim()) {
           article = raw.trim(); method = 'deepseek-v3.2';
@@ -1041,7 +1073,7 @@ ${xauHistoryBlock}`;
       const t2s = Date.now();
       try {
         console.log('Call 1: fallback 2 to OpenRouter gpt-oss-120b:free');
-        const raw = await aiCall(OPENROUTER_URL, OPENROUTER_KEY, OPENROUTER_MODEL, call1Messages, 800, 0.25, 15000, OPENROUTER_HEADERS);
+        const raw = await aiCall(OPENROUTER_URL, OPENROUTER_KEY, OPENROUTER_MODEL, call1Messages, 1300, 0.25, 15000, OPENROUTER_HEADERS);
         const elapsed = Date.now() - t2s;
         if (raw.trim()) {
           article = raw.trim(); method = 'gpt-oss-120b';
@@ -1065,7 +1097,7 @@ ${xauHistoryBlock}`;
       const t3s = Date.now();
       try {
         console.log('Call 1: fallback 3 to Groq qwen3-32b');
-        const raw = await aiCall(GROQ_URL, GROQ_KEY, GROQ_MODEL_PROSE, call1Messages, 1800, 0.25, 20000);
+        const raw = await aiCall(GROQ_URL, GROQ_KEY, GROQ_MODEL_PROSE, call1Messages, 1300, 0.25, 20000);
         const elapsed = Date.now() - t3s;
         if (raw.trim()) {
           article = raw.trim(); method = 'qwen3-32b';

@@ -3278,8 +3278,13 @@ function isLongFormFJ(title) {
   return title.length > 280;
 }
 
+let lastFetchAt = 0;
 async function fetchFeed() {
   if (isFetching) return;
+  // Debounce: pemicu berurutan dari sumber berbeda (load + SW NEW_ITEMS + visibilitychange,
+  // dst) sering tiba sebelum isFetching ke-reset, jadi guard di atas tidak cukup.
+  if (Date.now() - lastFetchAt < 3000) return;
+  lastFetchAt = Date.now();
   isFetching = true;
   const btn = document.getElementById('refreshBtn');
   btn.classList.add('spinning');
@@ -3440,7 +3445,9 @@ function startAutoRefresh() {
   clearInterval(autoInterval); clearInterval(cdInterval);
   autoInterval = setInterval(() => { fetchFeed(); cdVal=60; }, 60000);
   cdInterval   = setInterval(() => { cdVal--; cd.textContent=cdVal+'s'; if(cdVal<=0)cdVal=60; }, 1000);
-  sendToSW({ type:'CHECK_NOW', guids: [...seenGuids] });
+  // CHECK_NOW sengaja dihapus: SW background-only, baseline-nya disinkronkan
+  // lewat INIT_GUIDS setiap fetchFeed() sukses (lihat akhir fetchFeed()).
+  // Mengirim CHECK_NOW di sini dulu menyebabkan double-fetch (lihat daun_merah_plan.md §8).
 }
 
 function stopAutoRefresh() {
@@ -3699,8 +3706,8 @@ function _renderStructuredAi(structured, commentary, model, hasMakro, isCached) 
 
   if (structured) {
     const bias      = (structured.bias || 'neutral').toLowerCase();
-    const biasColor = bias === 'bullish' ? 'var(--green)' : bias === 'bearish' ? 'var(--red)' : '#f5a623';
-    const biasLabel = bias === 'bullish' ? '▲ BULLISH' : bias === 'bearish' ? '▼ BEARISH' : '→ NEUTRAL';
+    const biasColor = bias === 'bullish' ? 'var(--green)' : bias === 'bearish' ? 'var(--red)' : bias === 'mixed' ? '#f5a623' : 'var(--muted)';
+    const biasLabel = bias === 'bullish' ? '▲ BULLISH' : bias === 'bearish' ? '▼ BEARISH' : bias === 'mixed' ? '⟷ MIXED' : '→ NEUTRAL';
     html += `<div style="display:flex;align-items:flex-start;gap:10px;margin:8px 0 10px;flex-wrap:wrap">
       <span style="background:${biasColor};color:#0a0f1a;font-size:10px;font-weight:700;padding:3px 10px;border-radius:3px;font-family:'DM Mono',monospace;letter-spacing:.06em;flex-shrink:0">${biasLabel}</span>
       ${structured.trigger ? `<span style="font-size:11px;color:var(--fg);flex:1;min-width:160px;line-height:1.5">${escHtml(structured.trigger)}</span>` : ''}
@@ -3710,6 +3717,13 @@ function _renderStructuredAi(structured, commentary, model, hasMakro, isCached) 
         ${structured.entry_zone ? `<span><span style="color:var(--muted)">ENTRY </span>${escHtml(structured.entry_zone)}</span>` : ''}
         ${structured.sl ? `<span><span style="color:var(--red)">SL </span>${escHtml(structured.sl)}</span>` : ''}
         ${structured.tp ? `<span><span style="color:var(--green)">TP </span>${escHtml(structured.tp)}</span>` : ''}
+        ${structured.risk_reward ? `<span><span style="color:var(--muted)">RR </span>1:${escHtml(String(structured.risk_reward))}</span>` : ''}
+      </div>`;
+    }
+    if (structured.invalidation_condition || structured.time_horizon_days) {
+      html += `<div style="margin-bottom:10px;font-size:11px;color:var(--muted);line-height:1.5">
+        ${structured.invalidation_condition ? `<div><span style="color:var(--fg)">INVALIDASI </span>${escHtml(structured.invalidation_condition)}</div>` : ''}
+        ${structured.time_horizon_days ? `<div><span style="color:var(--fg)">HORIZON </span>~${escHtml(String(structured.time_horizon_days))} hari</div>` : ''}
       </div>`;
     }
   }
@@ -3890,7 +3904,7 @@ async function analyzeOhlcvAi() {
   // Other pairs: use first 3 paragraphs (FX section)
   let ringkasanContext = null;
   if (ringkasanCache?.article) {
-    const art = ringkasanCache.article;
+    const art = ringkasanCache.article.replace(/\{\{TAG:[^}]*\}\}/g, '').trim();
     let excerpt;
     if (symbol === 'GC=F') {
       const xauIdx = art.search(/\bXAUUSD:/);

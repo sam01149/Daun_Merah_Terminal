@@ -21,6 +21,9 @@ const INSTRUMENTS = {
   GBP:    'GBPUSD=X',
   JPY:    'USDJPY=X',   // inverted post-fetch → JPY stronger = higher
   AUD:    'AUDUSD=X',
+  CAD:    'USDCAD=X',   // inverted post-fetch → CAD stronger = higher
+  NZD:    'NZDUSD=X',
+  CHF:    'USDCHF=X',   // inverted post-fetch → CHF stronger = higher
   // Precious metals
   Gold:   'GC=F',
   Silver: 'SI=F',
@@ -36,7 +39,7 @@ const INSTRUMENTS = {
 };
 
 // Instruments whose raw price must be inverted (1/close) so direction is consistent
-const INVERT = new Set(['JPY']);
+const INVERT = new Set(['JPY', 'CAD', 'CHF']);
 
 // Gold's key cross-asset relationships — always shown even without anomaly
 const GOLD_CORR_ASSETS = ['DXY', 'Silver', 'Copper', 'WTI', 'US10Y', 'SPX', 'VIX', 'JPY', 'AUD', 'EUR'];
