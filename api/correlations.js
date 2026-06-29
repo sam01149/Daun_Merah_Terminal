@@ -36,13 +36,17 @@ const INSTRUMENTS = {
   VIX:    '^VIX',
   // Rates
   US10Y:  '^TNX',
+  // Real yield proxy — TIP (iShares TIPS Bond ETF) price moves inversely with
+  // the real yield priced into TIPS, i.e. positively with Gold's actual #1 driver
+  // (real yield), unlike US10Y which is nominal and can diverge from it. (COR-D)
+  RealYield: 'TIP',
 };
 
 // Instruments whose raw price must be inverted (1/close) so direction is consistent
 const INVERT = new Set(['JPY', 'CAD', 'CHF']);
 
 // Gold's key cross-asset relationships — always shown even without anomaly
-const GOLD_CORR_ASSETS = ['DXY', 'Silver', 'Copper', 'WTI', 'US10Y', 'SPX', 'VIX', 'JPY', 'AUD', 'EUR'];
+const GOLD_CORR_ASSETS = ['DXY', 'Silver', 'Copper', 'WTI', 'US10Y', 'RealYield', 'SPX', 'VIX', 'JPY', 'AUD', 'EUR'];
 
 async function redisCmd(...args) {
   const REDIS_URL   = process.env.UPSTASH_REDIS_REST_URL;

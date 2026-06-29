@@ -1323,6 +1323,31 @@ Format ini sudah **berubah ke prosa naratif** — levels disebutkan dalam kalima
 
 ---
 
+## Changelog Session 48b (2026-06-29)
+
+### Eksekusi item deferred — Bagian 9 (anti-versi-basi PWA + Share deep-link) & COR-D (real yield proxy)
+
+Lanjutan Session 48 — dua item yang sebelumnya deferred/butuh keputusan user sekarang dikerjakan atas permintaan eksplisit.
+
+**1. Anti-versi-basi PWA — `index.html` + `sw.js` + `vercel.json`**
+- **Root cause ditemukan saat implementasi:** `sw.js` memanggil `self.skipWaiting()` (saat install) + `clients.claim()` (saat activate) tanpa menunggu — artinya SW baru langsung mengambil kendali tab yang sudah terbuka, TAPI halaman tetap menjalankan JS versi lama yang sudah di-load di memory sampai user reload manual. Ini kemungkinan besar mekanisme persis di balik insiden "teman user nyangkut di versi lama, hapus cache pun tidak menolong" (Bagian 9 lama).
+- Fix: tambah listener `controllerchange` di `index.html` yang auto-reload halaman sekali begitu SW baru mengambil kendali (pola standar PWA, dengan guard `swRefreshing` agar tidak reload-loop).
+- Stempel versi: `const APP_VERSION = '2026.06.29'` ditambah, ditampilkan di footer panel PETUNJUK (`#ptAppVersion`) sebagai referensi diagnostik kalau user lapor "kok beda dari biasanya".
+- `vercel.json`: tambah header `Cache-Control: no-cache, must-revalidate` untuk `/`, `/index.html`, `/sw.js` — defense-in-depth supaya browser/CDN tidak menahan versi lama di edge cache.
+- `sw.js` `activate`: tambah `caches.keys()` cleanup — hapus semua cache storage selain `CACHE_NAME`/`STATE_CACHE` aktif (note: `CACHE_NAME` sendiri saat ini dead, tidak dipakai cache apa pun, tapi cleanup tetap berguna untuk proteksi ke depan kalau nama berubah).
+
+**2. Tombol Share dengan deep-link — `index.html`**
+- Tombol baru `⤴` di header (sebelah tombol popout), `shareCurrentView()`: pakai `navigator.share()` di mobile (Web Share API, sertakan judul tab + URL `#<view>`), fallback copy-to-clipboard + toast di desktop/browser tanpa Web Share API.
+- AC plan terpenuhi: share dari tab Kalender sekarang membawa penerima ke Kalender (bukan default News/Dashboard), karena hash `#cal` sudah didukung `restoreViewFromHash`.
+
+**3. COR-D — Real yield (TIP ETF proxy) ke matriks korelasi — `api/correlations.js`**
+- `INSTRUMENTS.RealYield = 'TIP'` (iShares TIPS Bond ETF). Rasionalnya: harga TIP bergerak searah dengan suku bunga riil yang di-price ke TIPS (harga bond naik = yield riil turun) — sehingga TIP berkorelasi positif dengan driver sebenarnya emas, beda dari `US10Y` (`^TNX`, nominal) yang bisa divergen dari real yield saat ekspektasi inflasi berubah cepat.
+- Ditambahkan ke `GOLD_CORR_ASSETS` supaya selalu tampil di blok `gold_correlations` (bukan cuma kalau masuk top-10 anomali) — sejajar dengan `US10Y`, bukan menggantikannya, supaya kedua sinyal (nominal vs riil) bisa dibandingkan.
+
+**Catatan testability:** semua perubahan lolos `node -c`/parse-check. Fix `controllerchange` butuh deploy + 2 kali kunjungan (versi lama lalu versi baru) untuk verifikasi nyata — tidak bisa diuji penuh di sandbox. Tombol Share bisa diuji langsung di browser begitu deploy (mobile: share sheet; desktop: clipboard + toast).
+
+---
+
 ## Changelog Session 48 (2026-06-29)
 
 ### Eksekusi `daun_merah_plan.md` — Audit Prompt & Korelasi

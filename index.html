@@ -2105,6 +2105,7 @@ body {
       <span id="statusText">IDLE</span>
     </div>
     <button class="notif-btn" id="notifBtn" onclick="requestNotif()" title="Enable notifications">🔔</button>
+    <button class="popout-btn" id="shareBtn" onclick="shareCurrentView()" title="Bagikan tab ini">⤴</button>
     <button class="popout-btn" id="popoutBtn" onclick="popoutView()" title="Buka tab ini di window baru">⧉</button>
   </div>
 </div>
@@ -2683,6 +2684,10 @@ body {
     Aplikasi ini adalah decision-support tool, bukan signal provider. Semua keputusan entry/exit tetap ada di tangan kamu. Gunakan Daun Merah untuk memastikan kamu tidak masuk dengan informasi yang kurang, bukan sebagai alasan untuk overtrade.
   </div>
 
+  <div style="text-align:center;font-size:9px;color:var(--muted);letter-spacing:.05em;padding:14px 0 4px;font-family:'DM Mono',monospace">
+    Daun Merah <span id="ptAppVersion"></span> — kalau versi ini terasa beda dari biasanya, refresh paksa (Ctrl+Shift+R) atau buka di Incognito untuk cek versi terbaru.
+  </div>
+
 </div>
 </div>
 
@@ -3006,6 +3011,9 @@ body {
 </div>
 
 <script>
+// Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
+// gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
+const APP_VERSION = '2026.06.29';
 const FETCH_URL = '/api/feeds?type=rss';
 
 const CATS = {
@@ -3145,6 +3153,17 @@ let researchCache   = null;
 
 // ── SERVICE WORKER ───────────────────────────────────────
 if ('serviceWorker' in navigator) {
+  // sw.js memanggil self.skipWaiting() + clients.claim() tanpa nunggu — artinya
+  // SW baru langsung mengambil kendali tab yang sudah terbuka SAAT MASIH menjalankan
+  // JS halaman versi lama di memory. Tanpa reload di sini, user diam-diam "nyangkut"
+  // di kode lama walau SW-nya sudah ter-update (root cause insiden versi-lama PWA).
+  let swRefreshing = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (swRefreshing) return;
+    swRefreshing = true;
+    window.location.reload();
+  });
+
   navigator.serviceWorker.register('./sw.js').then(reg => {
     if ('periodicSync' in reg) {
       navigator.permissions.query({ name:'periodic-background-sync' }).then(status => {
@@ -4225,6 +4244,40 @@ function popoutView() {
   const url = location.origin + location.pathname + '#' + view;
   const w = window.open(url, 'dm_' + view, 'width=480,height=860,resizable=yes,scrollbars=yes');
   if (w) w.focus();
+}
+
+// Label tab untuk judul share — supaya penerima tahu ini link ke tab apa
+// sebelum klik, bukan cuma URL bare yang mendarat di view default.
+const SHARE_VIEW_LABELS = {
+  feed: 'News', riset: 'Artikel', ringkasan: 'Ringkasan', analisa: 'Analisa',
+  cal: 'Kalender Ekonomi', cot: 'COT', fundamental: 'Fundamental',
+  checklist: 'Checklist', sizing: 'Sizing Calculator', jurnal: 'Jurnal',
+  petunjuk: 'Petunjuk', teknikal: 'Teknikal', dashboard: 'Dashboard',
+};
+
+async function shareCurrentView() {
+  const view  = activeView || 'feed';
+  const label = SHARE_VIEW_LABELS[view] || 'Daun Merah';
+  const url   = location.origin + location.pathname + '#' + view;
+  const btn   = document.getElementById('shareBtn');
+
+  if (navigator.share) {
+    try {
+      await navigator.share({ title: `Daun Merah — ${label}`, url });
+    } catch(e) { /* user cancelled share sheet — bukan error */ }
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(url);
+    if (btn) {
+      const prevText = btn.textContent;
+      btn.textContent = '✓';
+      setTimeout(() => { btn.textContent = prevText; }, 1500);
+    }
+    showToast('Link disalin', `Tab ${label} — paste untuk bagikan`, 2500);
+  } catch(e) {
+    showToast('Gagal menyalin link', url, 3500);
+  }
 }
 
 function restoreViewFromHash() {
@@ -7792,6 +7845,8 @@ async function ckMt5AutoJournal(pair, direction, fill, lots, sl, tp) {
 function ptInitDeviceIdDisplay() {
   const el = document.getElementById('ptDeviceIdDisplay');
   if (el) el.textContent = szGetDeviceId();
+  const verEl = document.getElementById('ptAppVersion');
+  if (verEl) verEl.textContent = 'v' + APP_VERSION;
 }
 
 function ptCopyDeviceId() {

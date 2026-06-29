@@ -8,7 +8,16 @@ let seenGuids = new Set();
 self.addEventListener('install', e => { self.skipWaiting(); });
 
 self.addEventListener('activate', e => {
-  e.waitUntil(clients.claim().then(() => loadSeenGuids()));
+  e.waitUntil(
+    Promise.all([
+      // Bersihkan cache storage dari versi-versi lama (CACHE_NAME sendiri saat ini
+      // dead — tidak dipakai untuk cache apa pun — tapi nama bisa berubah ke depan).
+      caches.keys().then(keys =>
+        Promise.all(keys.filter(k => k !== CACHE_NAME && k !== STATE_CACHE).map(k => caches.delete(k)))
+      ),
+      clients.claim().then(() => loadSeenGuids()),
+    ])
+  );
 });
 
 // Persist seenGuids ke Cache Storage agar tidak hilang saat SW di-restart
