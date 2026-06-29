@@ -405,6 +405,15 @@ body {
   border-top:1px solid var(--border); padding-top:8px;
 }
 
+.feed-chart-img { width:100%; border-radius:6px; display:block; background:#0d0d0d; }
+.feed-chart-toggle {
+  margin-top:8px; padding:3px 9px; border-radius:20px; border:1px solid var(--border);
+  background:transparent; color:var(--muted); font-family:'DM Mono',monospace;
+  font-size:9px; letter-spacing:.3px; cursor:pointer; transition:all .15s;
+}
+.feed-chart-toggle:hover { border-color:var(--accent); color:var(--accent); }
+.feed-chart-wrap { margin-top:8px; }
+
 .new-badge {
   font-size:8px; padding:2px 5px; border-radius:3px;
   background:var(--red); color:#fff; letter-spacing:.3px;
@@ -2298,6 +2307,9 @@ body {
       <button class="cal-filter-btn active-all" id="calFilterAll" onclick="setCalFilter('all')">Semua</button>
       <button class="cal-filter-btn" id="calFilterHigh" onclick="setCalFilter('high')">🔴 High</button>
       <button class="cal-filter-btn" id="calFilterMed" onclick="setCalFilter('medium')">🟡 Medium</button>
+      <span style="width:1px;height:14px;background:rgba(255,255,255,.1);margin:0 2px"></span>
+      <button class="cal-filter-btn active-all" id="calWeekThis" onclick="setCalWeekView('this')">Minggu Ini</button>
+      <button class="cal-filter-btn" id="calWeekNext" onclick="setCalWeekView('next')">Minggu Depan ›</button>
     </div>
     <div style="display:flex;align-items:center;gap:8px">
       <span class="cal-count-badge" id="calCountBadge">—</span>
@@ -2312,7 +2324,7 @@ body {
       </button>
     </div>
   </div>
-  <div class="cal-disclaimer">⚠ Kolom <b>Actual</b> diisi otomatis dari headline berita dan bisa meleset/kosong — pakai tombol "Lihat selengkapnya" di tiap event untuk verifikasi langsung ke ForexFactory.</div>
+  <div class="cal-disclaimer">⚠ Kolom <b>Actual</b> umumnya dari data resmi TradingView. Saat sumber fallback (ForexFactory) aktif, nilai diisi otomatis dari headline berita dan bisa meleset/kosong — cek tautan sumber di tiap event untuk verifikasi.</div>
   <div class="cal-panel-inner" id="calPanelInner">
     <div class="cal-empty loading-pulse">Memuat kalender ekonomi...</div>
   </div>
@@ -3079,6 +3091,9 @@ let dashClusterState = {};
 // Calendar state
 let calData              = null;
 let calFetchedAt         = 0;
+let calDataNext          = null; // lazy-loaded "minggu depan" events, separate from calData
+let calNextFetchedAt     = 0;
+let calWeekView          = 'this'; // 'this' | 'next' — which week renderCalendar() shows
 let _countdownTimer      = null;
 let _calAutoRefreshTimer = null;
 let _calPrevSoonestEvMs  = null; // tracks which event we were counting down, to detect fire
@@ -3327,14 +3342,16 @@ function parseRSS(xml) {
   return items;
 }
 
-// FinancialJuice sometimes posts full analyst notes (tagged "FJElite") with the
-// entire article body packed into <title> instead of a short headline. Detect
-// those so they can be rerouted to the ARTIKEL tab instead of flooding NEWS.
-// FX Options Expiries headlines are also long (embed a strike-level list) but
-// are structured data, not narrative research — excluded here on purpose.
-function isLongFormFJ(title) {
-  if (/options?\s*expir/i.test(title)) return false;
-  return title.length > 280;
+// FinancialJuice posts full analyst notes tagged with a " - FJElite" suffix on
+// the (short) <title>, with the actual note body in <description>. Detect via
+// the tag — NOT title length, FJ no longer packs long text into <title> at all
+// (every title in the feed is a normal short headline; the body always lives
+// in <description>, even for non-Elite items where it's typically empty).
+function isFJElite(title) {
+  return /FJElite\s*$/i.test(title.trim());
+}
+function cleanFJEliteTitle(title) {
+  return title.replace(/\s*-\s*FJElite\s*$/i, '').trim();
 }
 
 let lastFetchAt = 0;
@@ -3365,13 +3382,13 @@ async function fetchFeed() {
   }
 
   const parsed = parseRSS(xml);
-  const merged = parsed.filter(i => !isLongFormFJ(i.title)).sort((a, b) =>
+  const merged = parsed.filter(i => !isFJElite(i.title)).sort((a, b) =>
     new Date(b.pubDate) - new Date(a.pubDate)
   );
 
-  // Reroute long-form FJElite research notes into the ARTIKEL tab instead of NEWS
+  // Reroute FJElite research notes into the ARTIKEL tab instead of NEWS
   const fjByGuid = new Map(fjResearchItems.map(i => [i.guid, i]));
-  for (const item of parsed) if (isLongFormFJ(item.title)) fjByGuid.set(item.guid, item);
+  for (const item of parsed) if (isFJElite(item.title)) fjByGuid.set(item.guid, item);
   fjResearchItems = [...fjByGuid.values()]
     .sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate))
     .slice(0, 30);
@@ -3422,6 +3439,23 @@ function sanitizeDesc(html) {
   return c.replace(/\s+/g,' ').trim();
 }
 
+// FinancialJuice renders chart-type posts (currency strength, correlation, etc.)
+// as a static PNG at /images/{guid}.png instead of putting anything in
+// <description> — confirmed by inspecting one such post directly. Shown inline
+// so users don't have to leave the app; onerror just drops the <img> silently
+// if a given headline turns out not to follow this pattern (no broken-image noise).
+function isChartHeadline(title) {
+  return /\bchart\b/i.test(title);
+}
+
+function toggleChartImg(btn, id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const showing = el.style.display !== 'none';
+  el.style.display = showing ? 'none' : 'block';
+  btn.textContent = showing ? 'Lihat Chart ▾' : 'Sembunyikan Chart ▴';
+}
+
 function renderFeed(markNew = false) {
   const scroll = document.getElementById('feedScroll');
   const newGuids = markNew ? new Set(allItems.slice(0,10).map(i=>i.guid)) : new Set();
@@ -3435,6 +3469,13 @@ function renderFeed(markNew = false) {
     const isNew = markNew && newGuids.has(item.guid) && idx < 5;
     const rawDesc = sanitizeDesc(item.desc);
     const descHtml = rawDesc.length > 10 ? `<div class="item-desc">${rawDesc}</div>` : '';
+    const chartId = `chartImg-${item.guid}`;
+    const chartHtml = isChartHeadline(item.title) && /^\d+$/.test(item.guid)
+      ? `<button class="feed-chart-toggle" onclick="event.stopPropagation();toggleChartImg(this,'${chartId}')">📊 Lihat Chart ▾</button>
+         <div class="feed-chart-wrap" id="${chartId}" style="display:none">
+           <img class="feed-chart-img" src="https://www.financialjuice.com/images/${item.guid}.png" loading="lazy" alt="" onerror="this.closest('.feed-chart-wrap').style.display='none'">
+         </div>`
+      : '';
     const newBadge = isNew ? `<span class="new-badge">NEW</span>` : '';
     const safeLink = (item.link || '').replace(/'/g, "\\'");
     return `
@@ -3445,6 +3486,7 @@ function renderFeed(markNew = false) {
           ${newBadge}
         </div>
         <div class="item-title">${item.title}</div>
+        ${chartHtml}
         ${descHtml}
       </div>`;
   }).join('');
@@ -4389,6 +4431,42 @@ async function fetchCalendar() {
   }
 }
 
+async function fetchCalendarNext() {
+  const inner = document.getElementById('calPanelInner');
+  const btn = document.getElementById('calRefreshBtn');
+  inner.innerHTML = `<div class="cal-empty loading-pulse">Memuat kalender minggu depan...</div>`;
+  if (btn) btn.classList.add('spinning');
+  try {
+    const res = await fetch('/api/calendar?week=next', { signal: AbortSignal.timeout(15000) });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    if (!Array.isArray(data.events)) throw new Error('Invalid response');
+    calDataNext      = data.events;
+    calNextFetchedAt = Date.now();
+    const calStaleBadge = document.getElementById('calStaleBadge');
+    if (calStaleBadge) calStaleBadge.style.display = data.stale ? 'inline' : 'none';
+    renderCalendar();
+  } catch(e) {
+    inner.innerHTML = `<div class="cal-empty">Gagal memuat kalender minggu depan.<br><small style="color:#6b6860">${e.message}</small><br><br>
+      <button class="ringkasan-gen-btn" style="margin:0 auto;width:auto;padding:8px 20px" onclick="fetchCalendarNext()">Coba Lagi</button></div>`;
+  } finally {
+    if (btn) btn.classList.remove('spinning');
+  }
+}
+
+function setCalWeekView(view) {
+  if (calWeekView === view) return;
+  calWeekView = view;
+  document.getElementById('calWeekThis').className = 'cal-filter-btn' + (view==='this' ? ' active-all' : '');
+  document.getElementById('calWeekNext').className  = 'cal-filter-btn' + (view==='next' ? ' active-all' : '');
+  document.getElementById('calCountdownWrap').style.display = view === 'next' ? 'none' : '';
+  if (view === 'next' && (!calDataNext || (Date.now() - calNextFetchedAt) > 60 * 60 * 1000)) {
+    fetchCalendarNext();
+  } else {
+    renderCalendar();
+  }
+}
+
 // ── CB TRACKER ───────────────────────────────────────────
 
 const CUR_COLORS_CB = {
@@ -4773,7 +4851,11 @@ function renderResearch() {
   const fg   = document.getElementById('risetFilterGroup');
   if (!list) return;
   const instItems = (researchCache && researchCache.items) || [];
-  const fjItems = fjResearchItems.map(i => ({ source: 'FJElite', title: i.title, link: i.link, pubDate: i.pubDate, fullText: i.title }));
+  const fjItems = fjResearchItems.map(i => {
+    const heading = cleanFJEliteTitle(i.title);
+    const body = sanitizeDesc(i.desc);
+    return { source: 'FJElite', title: heading, link: i.link, pubDate: i.pubDate, fullText: body ? `${heading}\n\n${body}` : heading };
+  });
   const items = [...instItems, ...fjItems].sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate));
   const stale = researchCache && researchCache.stale;
   if (items.length === 0) {
@@ -5919,15 +6001,16 @@ const CUR_COLORS = {
 function renderCalendar() {
   calScenarioOpen = null; // reset scenario state on re-render
   const inner = document.getElementById('calPanelInner');
-  if (!calData || calData.length === 0) {
+  const sourceData = calWeekView === 'next' ? calDataNext : calData;
+  if (!sourceData || sourceData.length === 0) {
     inner.innerHTML = `<div class="cal-empty">Tidak ada event kalender untuk ditampilkan.</div>`;
     document.getElementById('calCountBadge').textContent = '0 event';
     return;
   }
 
   // Apply filter
-  const filtered = calFilter === 'all' ? calData
-    : calData.filter(e => e.impact.toLowerCase() === calFilter);
+  const filtered = calFilter === 'all' ? sourceData
+    : sourceData.filter(e => e.impact.toLowerCase() === calFilter);
 
   document.getElementById('calCountBadge').textContent = `${filtered.length} event`;
 

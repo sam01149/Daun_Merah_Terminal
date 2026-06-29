@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-06-29 (session 115 — lihat "Changelog Session 115" di bawah untuk detail terbaru)
+> **Last updated:** 2026-06-29 (session 116 — lihat "Changelog Session 116" di bawah untuk detail terbaru)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Financial_Feed_App`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -29,7 +29,7 @@ Daun Merah adalah forex news PWA (Progressive Web App) untuk trader forex Indone
 | Option expiries (tab TEK) | Investinglive `/feed/forexorders/` via rss2json — difilter per-pair, 4h cache |
 | ActionForex (tab TEK Berita) | Per-pair technical outlook feed, 6 pair major (tidak ada NZD/XAU), 4h cache |
 | Retail Sentiment (tab COT) | ForexBenchmark scrape — contrarian indicator, 2h cache, signal di ≥65% satu arah |
-| Kalender ekonomi | ForexFactory XML (`nfs.faireconomy.media`) |
+| Kalender ekonomi | TradingView `economic-calendar.tradingview.com` (primer, ada `actual` asli) + ForexFactory XML (`nfs.faireconomy.media`, fallback) |
 | COT data | CFTC website scraping (`cftc.gov`) |
 | Font | Syne (heading), DM Mono (body) |
 | Icon | `icon.svg` — dual-leaf loop design (bear merah + bull teal) |
@@ -119,6 +119,36 @@ Financial_Feed_App/
 > **Penting:** `api/feeds.js` menggantikan `api/rss.js` dan `api/cot.js` yang sudah dihapus.
 > `api/admin.js` menggantikan `api/health.js`, `api/redis-keys.js`, `api/admin-prompts.js`, dan `api/push.js`.
 > Konsolidasi ini dilakukan untuk tetap di bawah limit 12 serverless functions Vercel Hobby.
+
+---
+
+## Changelog Session 116 (2026-06-29)
+
+### Kalender ekonomi pindah ke TradingView (actual asli) + minggu depan, fix FJElite, chart inline FinancialJuice
+
+**Konteks:** Diskusi dimulai dari pertanyaan "bisa scrape kalender tradinghub.id/fxstreet/myfxbook?" — semua dicek dan ternyata cuma proxy ForexFactory (tradinghub.id) atau diblokir Cloudflare (fxstreet, myfxbook). Investigasi berlanjut menemukan endpoint publik TradingView yang ternyata punya `actual` asli, lalu meluas ke dua bug/permintaan terpisah yang ditemukan saat eksplorasi: artikel FJElite hilang dari tab ARTIKEL, dan permintaan tampilkan chart FinancialJuice inline.
+
+**Kalender (`api/calendar.js`, `index.html`):**
+- Sumber utama diganti ke `economic-calendar.tradingview.com/events` (endpoint publik tak berdokumen, butuh header `Origin`/`Referer` saja, tanpa Cloudflare) — beda dari ForexFactory XML, field `actual` di TradingView benar-benar terisi begitu event rilis.
+- ForexFactory XML jadi fallback otomatis kalau TradingView gagal (`fetchTradingViewEvents` throw → `fetchForexFactoryEvents`).
+- Filter impact (High/Medium) + major currencies dipertahankan persis seperti sebelumnya.
+- Format nilai TradingView (`forecast`/`previous`/`actual`) pakai `scale` (M/B/K) + `unit`: simbol mata uang (£/$/€/¥) diprefix, persen/skala lain disuffix.
+- Field `source` (`tradingview`/`forexfactory`) ditambahkan ke response untuk observability.
+- Param `?week=next` baru — kalender minggu depan (ISO Mon-Sun), cache key Redis terpisah (`calendar_next_v1`) dari minggu ini, supaya tidak saling timpa.
+- UI: tombol toggle "Minggu Ini / Minggu Depan ›" di toolbar kalender, lazy-fetch saat pertama diklik. Countdown timer disembunyikan saat melihat minggu depan (tetap berbasis minggu ini, tidak relevan untuk view lain).
+- Disclaimer kolom Actual diperbarui — sebelumnya bilang "selalu dari headline berita" (sudah usang), sekarang akurat: dari TradingView, fallback headline-guess (`enrichCalActuals`, tidak diubah, sudah aman karena hanya mengisi kalau `actual` masih kosong) cuma aktif kalau ForexFactory yang jalan.
+
+**Fix artikel FJElite hilang dari tab ARTIKEL (`index.html`):**
+- Root cause: heuristik deteksi lama `title.length > 280` (asumsi FinancialJuice menjejalkan isi artikel penuh ke `<title>`) sudah tidak berlaku — FinancialJuice ganti format jadi title singkat bersuffix `" - FJElite"`, isi lengkap dipindah ke `<description>`. Heuristik lama tidak pernah cocok lagi → `fjResearchItems` selalu kosong.
+- `isLongFormFJ()` → `isFJElite()`, deteksi via suffix `"- FJElite"` bukan panjang karakter. `cleanFJEliteTitle()` baru untuk strip suffix jadi heading bersih. `renderResearch()` sekarang ambil isi dari `desc` (description, di-`sanitizeDesc`) bukan dari title.
+- Diverifikasi terhadap sample RSS live: 3 artikel (MUFG: The GBP/USD, Crédit Agricole Weekly FX Positions) langsung terdeteksi & terekstrak benar dengan fix ini.
+
+**Chart FinancialJuice inline di NEWS (`index.html`):**
+- Investigasi headline "Currency Strength Chart" (link dikirim user) menemukan: FinancialJuice render chart sebagai PNG statis di `https://www.financialjuice.com/images/{guid}.png` (guid = ID numerik dari RSS), CORS terbuka (`access-control-allow-origin: *`) — bisa di-`<img>` langsung dari browser tanpa proxy server.
+- `isChartHeadline()` (regex `/\bchart\b/i` di title) + render tombol toggle `📊 Lihat Chart ▾` di tiap item feed yang cocok — gambar collapsed by default (tidak otomatis tampil, biar feed tetap ringkas), expand/collapse di klik, teks tombol berubah jadi "Sembunyikan Chart ▴" saat terbuka. `onerror` pada `<img>` auto-hide kalau pola ID ternyata tidak berlaku untuk suatu headline (graceful, tidak ada broken-image noise).
+- Kasus serupa untuk headline "policy probabilities" (tabel) — **belum ditemukan contoh live**, ditunda sampai user kirim link contoh nyata untuk dicek strukturnya (kemungkinan beda mekanisme, bukan image).
+
+**Testability:** Semua perubahan kode lolos `node -c`/inline-script syntax check. `calendar.js` diuji lokal end-to-end (jalankan handler langsung di Node) — dikonfirmasi `source: tradingview` dan `actual` terisi nyata untuk event yang sudah rilis, serta range tanggal "this week"/"next week" benar. Fix FJElite diuji simulasi parser lengkap terhadap sample RSS live FinancialJuice, berhasil ekstrak 3 artikel dengan body benar. Chart image URL diverifikasi langsung via `curl` (PNG 1136×589, CORS terbuka). Belum dites di browser nyata (Vercel preview/production) — perlu deploy untuk verifikasi visual akhir.
 
 ---
 
