@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-06-30 (session 130 — lihat "Changelog Session 130" di bawah untuk detail terbaru)
+> **Last updated:** 2026-06-30 (session 131 — lihat "Changelog Session 131" di bawah untuk detail terbaru)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -150,6 +150,31 @@ File: `api/feeds.js` → `CB_RESEARCH_SOURCES` (diaudit sesi 120)
 | RBNZ, SNB | ❌ | 403 semua jalur |
 
 Parser `parseCBRSSItems`: regex `<(?:item|entry)\b[^>]*>` — support RSS 2.0, Atom, dan RDF/RSS 1.0.
+
+---
+
+## Changelog Session 131 (2026-06-30)
+
+### Analisa near real-time — candle fetch on-demand dari Yahoo (tidak lagi nunggu cron)
+
+**Masalah:** Header tab Analisa menampilkan `candle: 2.2 jam lalu`. Penyebabnya: tab Analisa (`/api/admin?action=ohlcv_read`) baca candle dari snapshot Redis (`ohlcv:<symbol>:1h/4h/1d`) yang **hanya** diisi cron `ohlcv_sync`. Setelah cron Vercel dihapus (session 130, Hobby plan max 1x/hari), snapshot bisa basi berjam-jam. User minta data mendekati/real-time.
+
+**Solusi: fetch fresh saat dibaca (on-demand), bukan nunggu cron.**
+
+**`api/admin.js`:**
+- Fungsi baru `refreshOhlcvFromYahoo(symbol)`: tarik 1H (`range=10d`) + 1D (`range=1mo`) langsung dari Yahoo saat user buka/refresh pair, resample 4H, tulis ke key `ohlcv:<symbol>:*` yang sama (TTL 25h) — snapshot tetap hangat untuk `ohlcv_analyze`/`ohlcv_dashboard`.
+  - **Throttle per-symbol** via Redis `ohlcv_fresh:<symbol>` (TTL 90s): refresh beruntun / banyak klien tidak menghajar Yahoo; baca dalam window 90s pakai snapshot yang baru ditulis.
+  - **Per-timeframe `allSettled`**: kalau fetch 1D gagal sesaat, fetch 1H yang sukses tetap ditulis (tidak dibuang).
+  - **Failure throttle 30s**: kalau Yahoo down total, set throttle pendek supaya tiap read tidak bayar timeout penuh ~12s; langsung fallback ke snapshot.
+- `loadOhlcvData()`: panggil `refreshOhlcvFromYahoo(symbol)` di awal (try/catch — kalau Yahoo down, lanjut pakai snapshot; badge umur candle tetap menandai kalau basi).
+
+**`index.html`:**
+- `ANALISA_REFRESH_INTERVAL` 15m → **5m** (auto-refresh lebih sering).
+- Label header `auto 15m` → `auto 5m`.
+
+**Hasil (diuji live ke Yahoo):** EUR/USD & USD/JPY candle umur **0 menit** (real-time), XAU/USD ~10 menit. Sebelumnya 2.2 jam. Badge `candle: X menit lalu` sekarang mencerminkan candle 1H berjalan, bukan jejak cron terakhir. `maxDuration: 60` di `vercel.json` cukup untuk dua fetch Yahoo paralel (timeout 12s each).
+
+**Catatan:** independen dari cron — kalaupun `ohlcv_sync` (GitHub Actions / cron-job.org INFRA-1) telat, tab Analisa tetap fresh karena di-refresh saat dibuka.
 
 ---
 

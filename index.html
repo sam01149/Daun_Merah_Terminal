@@ -4109,7 +4109,7 @@ function escHtml(s) {
 const analisaDataCache = {};
 const analisaAiCache   = {};
 let analisaAutoRefreshTimer   = null;
-const ANALISA_REFRESH_INTERVAL = 15 * 60 * 1000;
+const ANALISA_REFRESH_INTERVAL = 5 * 60 * 1000;
 
 function startAnalisaAutoRefresh() {
   clearInterval(analisaAutoRefreshTimer);
@@ -4306,7 +4306,7 @@ function renderAnalisa() {
 
   document.getElementById('analisaHeader').innerHTML = `
     <span class="analisa-pair-label">${escHtml(d.label)}</span>
-    <span class="analisa-ts-label">${tsStr} · <a href="#" onclick="loadAnalisa('${d.symbol}','${d.label}',document.querySelector('.analisa-chip.active'));return false" style="color:var(--accent);text-decoration:none">↻ refresh</a> · <span style="color:var(--muted)">auto 15m</span>${staleHtml}</span>`;
+    <span class="analisa-ts-label">${tsStr} · <a href="#" onclick="loadAnalisa('${d.symbol}','${d.label}',document.querySelector('.analisa-chip.active'));return false" style="color:var(--accent);text-decoration:none">↻ refresh</a> · <span style="color:var(--muted)">auto 5m</span>${staleHtml}</span>`;
 
   // Daily card
   const d1 = d.d1;

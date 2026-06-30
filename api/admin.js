@@ -1393,10 +1393,61 @@ function _findSwings(candles, lookback = 2) {
   };
 }
 
+// On-demand fresh OHLCV pull for the Analisa tab. ohlcv_sync (cron) only runs ~1x/day on
+// the Vercel Hobby plan, so the Redis snapshot it writes can be hours stale. This runs when
+// a user opens/refreshes a pair so candles are near real-time. Throttled per-symbol via Redis
+// (ohlcv_fresh:<symbol>) so rapid refreshes / multiple clients don't hammer Yahoo. Writes the
+// same ohlcv:<symbol>:* keys the sync cron uses, keeping the snapshot warm for
+// ohlcv_analyze / ohlcv_dashboard too. Per-timeframe allSettled so a transient daily failure
+// doesn't throw away a good 1H fetch. Returns true if anything was refreshed.
+const OHLCV_FRESH_THROTTLE = 90; // seconds — within this window, reads reuse the just-written snapshot
+
+async function refreshOhlcvFromYahoo(symbol) {
+  // Skip if this symbol was refreshed within the throttle window (another read/client did it).
+  try {
+    if (await redisCmd('GET', `ohlcv_fresh:${symbol}`)) return false;
+  } catch (e) { /* throttle check best-effort — fall through to fetch */ }
+
+  const [r1h, r1d] = await Promise.allSettled([
+    fetchYahooOhlcv1h(symbol),
+    fetchYahooOhlcvDaily(symbol),
+  ]);
+
+  const writes = [];
+  if (r1h.status === 'fulfilled' && r1h.value?.length) {
+    const candles1h = r1h.value;
+    const candles4h = resampleTo4h(candles1h);
+    writes.push(redisCmd('SET', `ohlcv:${symbol}:1h`, JSON.stringify(candles1h.slice(-120)), 'EX', '90000'));
+    writes.push(redisCmd('SET', `ohlcv:${symbol}:4h`, JSON.stringify(candles4h.slice(-60)),  'EX', '90000'));
+  }
+  if (r1d.status === 'fulfilled' && r1d.value?.length) {
+    writes.push(redisCmd('SET', `ohlcv:${symbol}:1d`, JSON.stringify(r1d.value.slice(-30)), 'EX', '90000'));
+  }
+  if (writes.length === 0) {
+    // Arm a short throttle so a Yahoo outage doesn't make every read pay the full fetch timeout —
+    // reads within 30s skip the retry and serve the last snapshot immediately.
+    try { await redisCmd('SET', `ohlcv_fresh:${symbol}`, '0', 'EX', '30'); } catch (e) {}
+    throw new Error(`${symbol}: Yahoo fetch failed (1h: ${r1h.reason?.message || 'ok'}, 1d: ${r1d.reason?.message || 'ok'})`);
+  }
+  // Only arm the throttle once we've actually written fresh candles.
+  writes.push(redisCmd('SET', `ohlcv_fresh:${symbol}`, '1', 'EX', String(OHLCV_FRESH_THROTTLE)));
+  await Promise.all(writes);
+  return true;
+}
+
 async function loadOhlcvData(symbol, label) {
   const isXau = symbol === 'GC=F';
   const isJpy = symbol.includes('JPY');
   const dec   = isXau ? 2 : isJpy ? 3 : 5;
+
+  // Pull fresh candles from Yahoo on read (throttled) so the Analisa tab is near real-time
+  // instead of bound to the ~daily sync cron. If Yahoo is down we fall through to the last
+  // snapshot — the candle-age badge in the UI will flag the staleness.
+  try {
+    await refreshOhlcvFromYahoo(symbol);
+  } catch (e) {
+    console.warn(`ohlcv_read: fresh fetch failed for ${symbol}, using snapshot:`, e.message);
+  }
 
   const [raw1h, raw4h, raw1d, rawTa] = await Promise.all([
     redisCmd('GET', `ohlcv:${symbol}:1h`),
