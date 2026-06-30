@@ -3666,21 +3666,21 @@ function sanitizeDesc(html) {
   return c.replace(/\s+/g,' ').trim();
 }
 
-// FinancialJuice renders chart-type posts (currency strength, correlation, etc.)
-// as a static PNG at /images/{guid}.png instead of putting anything in
-// <description> — confirmed by inspecting one such post directly. Shown inline
-// so users don't have to leave the app; onerror just drops the <img> silently
-// if a given headline turns out not to follow this pattern (no broken-image noise).
-function isChartHeadline(title) {
-  return /\bchart\b/i.test(title);
+// FinancialJuice renders chart/table/probability posts as a static PNG at
+// /images/{guid}.png — confirmed via direct URL inspection (CORS open, no proxy needed).
+// Returns 'chart' | 'table' | null; null means no inline image toggle shown.
+function fjImageType(title) {
+  if (/\bchart\b/i.test(title)) return 'chart';
+  if (/\b(probabilit|matrix|heatmap)\b/i.test(title)) return 'table';
+  return null;
 }
 
-function toggleChartImg(btn, id) {
+function toggleFJImg(btn, id) {
   const el = document.getElementById(id);
   if (!el) return;
   const showing = el.style.display !== 'none';
   el.style.display = showing ? 'none' : 'block';
-  btn.textContent = showing ? 'Lihat Chart ▾' : 'Sembunyikan Chart ▴';
+  btn.textContent = showing ? btn.dataset.labelShow : btn.dataset.labelHide;
 }
 
 function renderFeed(markNew = false) {
@@ -3696,10 +3696,16 @@ function renderFeed(markNew = false) {
     const isNew = markNew && newGuids.has(item.guid) && idx < 5;
     const rawDesc = sanitizeDesc(item.desc);
     const descHtml = rawDesc.length > 10 ? `<div class="item-desc">${rawDesc}</div>` : '';
-    const chartId = `chartImg-${item.guid}`;
-    const chartHtml = isChartHeadline(item.title) && /^\d+$/.test(item.guid)
-      ? `<button class="feed-chart-toggle" onclick="event.stopPropagation();toggleChartImg(this,'${chartId}')">📊 Lihat Chart ▾</button>
-         <div class="feed-chart-wrap" id="${chartId}" style="display:none">
+    const fjImgId = `fjImg-${item.guid}`;
+    const fjType = /^\d+$/.test(item.guid) ? fjImageType(item.title) : null;
+    const fjLabels = fjType === 'chart'
+      ? ['📊 Lihat Chart ▾', 'Sembunyikan Chart ▴']
+      : fjType === 'table'
+      ? ['📋 Lihat Gambar ▾', 'Sembunyikan Gambar ▴']
+      : null;
+    const chartHtml = fjLabels
+      ? `<button class="feed-chart-toggle" data-label-show="${fjLabels[0]}" data-label-hide="${fjLabels[1]}" onclick="event.stopPropagation();toggleFJImg(this,'${fjImgId}')">${fjLabels[0]}</button>
+         <div class="feed-chart-wrap" id="${fjImgId}" style="display:none">
            <img class="feed-chart-img" src="https://www.financialjuice.com/images/${item.guid}.png" loading="lazy" alt="" onerror="this.closest('.feed-chart-wrap').style.display='none'">
          </div>`
       : '';

@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-06-30 (session 120 — lihat "Changelog Session 120" di bawah untuk detail terbaru)
+> **Last updated:** 2026-06-30 (session 121 — lihat "Changelog Session 121" di bawah untuk detail terbaru)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -150,6 +150,21 @@ File: `api/feeds.js` → `CB_RESEARCH_SOURCES` (diaudit sesi 120)
 | RBNZ, SNB | ❌ | 403 semua jalur |
 
 Parser `parseCBRSSItems`: regex `<(?:item|entry)\b[^>]*>` — support RSS 2.0, Atom, dan RDF/RSS 1.0.
+
+---
+
+## Changelog Session 121 (2026-06-30)
+
+### Extend deteksi gambar inline NEWS — chart + tabel/probabilitas/matrix
+
+**Konteks:** Session 116 menambahkan toggle gambar inline untuk headline chart FinancialJuice (mekanisme: FJ render konten visual sebagai PNG statis di `/images/{guid}.png`, CORS terbuka). Waktu itu, kasus serupa untuk headline "policy probabilities" (tabel) ditunda karena belum ada contoh live. User sekarang kirim dua sample URL konfirmasi: `financialjuice.com/News/9657761/SNB-Interest-Rate-Probabilities.aspx` dan `financialjuice.com/News/9657748/90-Day-Correlation-Matrix.aspx` — keduanya dikonfirmasi via fetch: gambar tersedia di `/images/{id}.png` dengan CORS terbuka, pola identik dengan chart. Tabel dalam bentuk gambar statis, bukan HTML tabel.
+
+**Perubahan (`index.html`):**
+- `isChartHeadline(title)` → `fjImageType(title)` — return `'chart'` | `'table'` | `null` alih-alih boolean. Regex chart tetap `/\bchart\b/i`; regex tabel baru `/\b(probabilit|matrix|heatmap)\b/i` (menangkap "probabilities", "probability", "matrix", "heatmap" sekaligus).
+- `toggleChartImg(btn, id)` → `toggleFJImg(btn, id)` — pakai `btn.dataset.labelShow`/`btn.dataset.labelHide` (data-attribute di button) alih-alih hardcode string "Lihat Chart" — satu fungsi cukup untuk semua tipe tanpa if-else.
+- `renderFeed`: label dan emoji dibedakan per tipe — chart: `📊 Lihat Chart ▾`/`Sembunyikan Chart ▴`, tabel: `📋 Lihat Gambar ▾`/`Sembunyikan Gambar ▴`. Variabel `chartId`/`chartHtml` di-rename `fjImgId`/`chartHtml` (chartHtml dipertahankan karena terkait template string yang sama).
+
+**Testability:** Lolos `node -c`. Regex diverifikasi terhadap dua URL sample live (kedua gambar berhasil diakses di `/images/{id}.png`). Belum dites visual di browser — perlu deploy untuk konfirmasi toggle expand/collapse dan label yang benar muncul di headline probability/matrix vs chart.
 
 ---
 
