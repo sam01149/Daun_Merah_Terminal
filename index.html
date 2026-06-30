@@ -589,6 +589,10 @@ body {
 .hl-bull { color: var(--green);  font-family: 'DM Mono', monospace; font-size: 11px; }
 .hl-bear { color: var(--pink);   font-family: 'DM Mono', monospace; font-size: 11px; }
 .ringkasan-card-xau::before { background: #c9a227; }
+.ringkasan-fx-label {
+  font-size: 9px; font-family: 'DM Mono', monospace; letter-spacing: .12em;
+  color: var(--accent); margin-bottom: 10px; font-weight: 600;
+}
 .ringkasan-xau-label {
   font-size: 9px; font-family: 'DM Mono', monospace; letter-spacing: .12em;
   color: #c9a227; margin-bottom: 10px; font-weight: 600;
@@ -4553,10 +4557,11 @@ function renderArticleSections(article) {
   if (!article) return '';
   const { fx: fxPart, xau: xauPart } = splitArticleParts(article);
   if (!xauPart) {
-    return `<div class="ringkasan-card"><div class="ringkasan-text">${articleToHtml(fxPart)}</div></div>`;
+    return `<div class="ringkasan-card"><div class="ringkasan-fx-label">ANALISIS BERITA · HEADLINE MOMENTUM</div><div class="ringkasan-text">${articleToHtml(fxPart)}</div></div>`;
   }
   return `
     <div class="ringkasan-card">
+      <div class="ringkasan-fx-label">ANALISIS BERITA · HEADLINE MOMENTUM</div>
       <div class="ringkasan-text">${articleToHtml(fxPart)}</div>
     </div>
     <div class="ringkasan-card ringkasan-card-xau">
@@ -4576,7 +4581,7 @@ function renderThesisCard(t) {
   const dirClass = t.direction === 'long' ? 'long' : 'short';
   const dirLabel = t.direction === 'no_trade' ? 'NO TRADE' : t.direction.toUpperCase();
   return `<div class="thesis-card">
-    <div style="font-size:9px;color:var(--pink);font-family:'DM Mono',monospace;letter-spacing:.1em;margin-bottom:8px">AI THESIS</div>
+    <div style="font-size:9px;color:var(--pink);font-family:'DM Mono',monospace;letter-spacing:.1em;margin-bottom:8px">AI THESIS · CB BIAS + TA</div>
     <div style="display:flex;align-items:center">
       <span class="thesis-pair">${t.pair_recommendation || '—'}</span>
       ${t.direction !== 'no_trade' ? `<span class="thesis-dir ${dirClass}">${dirLabel}</span>` : `<span class="thesis-dir" style="background:var(--border);color:var(--muted)">${dirLabel}</span>`}
@@ -11565,7 +11570,7 @@ function renderDashDigest() {
       const dirLabel = t.direction === 'no_trade' ? 'NO TRADE' : (t.direction || '').toUpperCase();
       const stars = '★'.repeat(t.confidence_1_to_5 || 0) + '☆'.repeat(5 - (t.confidence_1_to_5 || 0));
       html += `<div class="thesis-card" style="margin-bottom:10px">
-        <div style="font-size:9px;color:var(--pink);font-family:'DM Mono',monospace;letter-spacing:.1em;margin-bottom:6px">AI THESIS · FX</div>
+        <div style="font-size:9px;color:var(--pink);font-family:'DM Mono',monospace;letter-spacing:.1em;margin-bottom:6px">AI THESIS · FX · CB BIAS + TA</div>
         <div style="display:flex;align-items:center;flex-wrap:wrap;gap:4px;margin-bottom:6px">
           <span class="thesis-pair">${escHtml(t.pair_recommendation)}</span>
           ${t.direction !== 'no_trade' ? `<span class="thesis-dir ${dirClass}">${dirLabel}</span>` : `<span class="thesis-dir" style="background:var(--border);color:var(--muted)">${dirLabel}</span>`}
