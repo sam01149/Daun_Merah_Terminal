@@ -3801,12 +3801,11 @@ function openLink(url) { if(url) window.open(url,'_blank'); }
     ticking = true;
     requestAnimationFrame(() => {
       if (pendingDelta > 0 && pendingScrollTop > 40) {
-        // Hanya collapse jika konten masih bisa di-scroll setelah chrome hilang.
-        // Jika chrome collapse membuat panel lebih tinggi dari konten, scrollTop
-        // akan di-clamp ke 0 oleh browser → loop reveal/collapse.
+        // Hanya collapse di laptop (≥1024px). Di HP header selalu tetap terlihat.
+        const isLaptop = window.innerWidth >= 1024;
         const chromeH = chrome.getBoundingClientRect().height;
         const canScrollAfter = pendingEl && (pendingEl.scrollHeight > pendingEl.clientHeight + chromeH);
-        if (canScrollAfter) {
+        if (isLaptop && canScrollAfter) {
           chrome.classList.add('chrome-collapsed');
           ignoreUntil = Date.now() + 520;
         }
