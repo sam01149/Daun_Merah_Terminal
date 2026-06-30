@@ -3788,15 +3788,10 @@ function openLink(url) { if(url) window.open(url,'_blank'); }
     const delta = el.scrollTop - prev;
     lastScrollTop.set(el, el.scrollTop); // selalu update, termasuk saat di dalam window
 
-    // scrollTop === 0: selalu pastikan header muncul.
-    // Dalam window transisi: jadwalkan reveal deferred (mencegah browser-clamping loop).
-    // Di luar window: reveal langsung.
+    // scrollTop === 0: selalu tampilkan header langsung, tanpa menunggu ignoreUntil.
+    // Saat user benar-benar di posisi paling atas, chrome harus selalu terlihat.
     if (el.scrollTop === 0 && chrome.classList.contains('chrome-collapsed')) {
       upAccum.set(el, 0);
-      if (Date.now() < ignoreUntil) {
-        schedulePendingReveal(el);
-        return;
-      }
       cancelPendingReveal();
       if (!ticking) {
         ticking = true;
@@ -3836,7 +3831,7 @@ function openLink(url) { if(url) window.open(url,'_blank'); }
           chrome.classList.add('chrome-collapsed');
           ignoreUntil = Date.now() + 520;
         }
-      } else if (pendingDelta < 0 && pendingAccum >= 60) {
+      } else if (pendingDelta < 0 && pendingAccum >= 120) {
         chrome.classList.remove('chrome-collapsed');
         ignoreUntil = Date.now() + 640;
       }
@@ -4715,11 +4710,23 @@ function openSplitView() {
   const sw = window.screen.availWidth;
   const sh = window.screen.availHeight;
   const w = Math.floor(sw / cols);
+  const wins = [];
   SPLIT_VIEW_LAYOUT.forEach((view, i) => {
     const url = location.origin + location.pathname + '#' + view;
-    const win = window.open(url, 'dm_split_' + view, `width=${w},height=${sh},left=${i * w},top=0,resizable=yes,scrollbars=yes`);
-    if (win) win.focus();
+    const x = i * w;
+    const win = window.open(url, 'dm_split_' + view, `width=${w},height=${sh},left=${x},top=0,resizable=yes,scrollbars=yes`);
+    if (win) {
+      try { win.moveTo(x, 0); win.resizeTo(w, sh); } catch(e) {}
+      wins.push({ win, x });
+    }
   });
+  // Re-apply setelah delay singkat — browser kadang abaikan posisi window yang sudah ada
+  setTimeout(() => {
+    wins.forEach(({ win, x }) => {
+      try { win.moveTo(x, 0); win.resizeTo(w, sh); } catch(e) {}
+    });
+    if (wins.length) wins[wins.length - 1].win.focus();
+  }, 400);
 }
 
 function restoreViewFromHash() {
