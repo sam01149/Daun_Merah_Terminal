@@ -153,6 +153,27 @@ Parser `parseCBRSSItems`: regex `<(?:item|entry)\b[^>]*>` — support RSS 2.0, A
 
 ---
 
+## Changelog Session 128 (2026-06-30)
+
+### OHLCV sync resilience: Vercel cron backup + Binance PAXG fallback
+
+**Root cause temuan:** Yahoo Finance GC=F data sebenarnya fresh (delay ~10 menit). Penyebab "2.8 jam lalu ⚠" adalah GitHub Actions ohlcv-sync **gagal untuk 2–3 run berturut-turut** (09:00, 10:00 UTC), bukan Yahoo yang lambat.
+
+**Fix 1 — Vercel cron backup (`vercel.json`)**
+- Tambah entry `ohlcv_sync` di cron Vercel: `"30 * * * *"` (tiap jam di menit :30)
+- Sekarang sync terjadi DUA kali per jam: GitHub Actions at :00 dan Vercel cron at :30
+- Kalau GH Actions gagal, Vercel cron cover di menit :30 berikutnya — gap maksimal jadi ~30 menit bukan ~60 menit
+
+**Fix 2 — Binance PAXG fallback (`api/admin.js`)**
+- `fetchYahooOhlcv1h('GC=F')` sekarang di-wrap dalam try-catch
+- Jika Yahoo error (HTTP non-200, no chart result, 0 valid candle) → fallback otomatis ke Binance PAXGUSDT 1H klines
+- Binance public endpoint, no auth, real-time (update tiap trade)
+- PAXG = 1 troy oz gold stored di Brink's vault, harga tracks XAU spot dalam ~0.1%
+- Fallback fetch 250 candles (≈10 hari) agar 4H resampling tetap punya coverage penuh
+- FX pairs lain tidak terpengaruh — fallback hanya aktif untuk `symbol === 'GC=F'`
+
+---
+
 ## Changelog Session 127 (2026-06-30)
 
 ### [QUAL-3] Label frame di thesis card dan prose section (`index.html`)

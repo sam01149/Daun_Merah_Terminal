@@ -52,6 +52,10 @@
     {
       "path": "/api/market-digest",
       "schedule": "30 12 * * *"
+    },
+    {
+      "path": "/api/admin?action=ohlcv_sync",
+      "schedule": "30 * * * *"
     }
   ]
 }
