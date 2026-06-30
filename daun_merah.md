@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-06-30 (session 127 — lihat "Changelog Session 127" di bawah untuk detail terbaru)
+> **Last updated:** 2026-06-30 (session 129 — lihat "Changelog Session 129" di bawah untuk detail terbaru)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -150,6 +150,21 @@ File: `api/feeds.js` → `CB_RESEARCH_SOURCES` (diaudit sesi 120)
 | RBNZ, SNB | ❌ | 403 semua jalur |
 
 Parser `parseCBRSSItems`: regex `<(?:item|entry)\b[^>]*>` — support RSS 2.0, Atom, dan RDF/RSS 1.0.
+
+---
+
+## Changelog Session 129 (2026-06-30)
+
+### Hapus klik ke link eksternal dari headline berita (NEWS + TEK)
+
+**Masalah:** Klik pada headline berita di tab NEWS dan bagian "Berita Relevan" di tab TEK membuka link FinancialJuice yang tidak punya konten bermakna — hanya menampilkan headline ulang tanpa artikel/detail.
+
+**Perubahan (`index.html`):**
+- `renderFeed()`: hapus `onclick="openLink(...)"` dari setiap `<div class="feed-item">` — item tidak lagi bisa diklik ke eksternal
+- TEK news (ActionForex + FinancialJuice per-pair): hapus `onclick="openLink(...)"` dari `<div class="tek-news-item">`
+- CSS `.feed-item`: `cursor:pointer` → `cursor:default`, hapus `transform:scale(.98)` saat active
+- CSS `.tek-news-item`: `cursor:pointer` → `cursor:default`, hapus pseudo-class hover yang ubah warna judul
+- Cleanup: hapus variabel `safeLink` yang tidak lagi dipakai di semua 3 template string
 
 ---
 

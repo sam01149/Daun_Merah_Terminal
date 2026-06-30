@@ -404,10 +404,10 @@ body {
 .feed-item {
   background:var(--surface); border:1px solid var(--border);
   border-radius:10px; padding:12px 14px; margin-bottom:8px;
-  cursor:pointer; transition:all .15s; position:relative;
+  cursor:default; transition:all .15s; position:relative;
   overflow:hidden; animation:fadeUp .25s ease-out both;
 }
-.feed-item:active { transform:scale(.98); }
+.feed-item:active { transform:none; }
 @keyframes fadeUp { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:translateY(0)} }
 
 .feed-item::before {
@@ -1943,10 +1943,9 @@ body {
 .tek-news-hdr-pair { font: 700 9px 'DM Mono',monospace; color: #38bdf8; }
 .tek-news-empty { font: 10px 'DM Mono',monospace; color: var(--muted); padding: 10px 0 4px; }
 .tek-news-item {
-  padding: 8px 0 7px; border-bottom: 1px solid rgba(34,34,32,.5); cursor: pointer;
+  padding: 8px 0 7px; border-bottom: 1px solid rgba(34,34,32,.5); cursor: default;
 }
 .tek-news-item:last-child { border-bottom: none; }
-.tek-news-item:hover .tek-news-title { color: #38bdf8; }
 .tek-news-meta { display: flex; align-items: center; gap: 6px; margin-bottom: 3px; }
 .tek-news-time { font: 9px 'DM Mono',monospace; color: var(--muted); }
 .tek-news-cat {
@@ -3801,9 +3800,8 @@ function renderFeed(markNew = false) {
          </div>`
       : '';
     const newBadge = isNew ? `<span class="new-badge">NEW</span>` : '';
-    const safeLink = (item.link || '').replace(/'/g, "\\'");
     return `
-      <div class="feed-item cat-${cat}" onclick="openLink('${safeLink}')" style="animation-delay:${Math.min(idx,15)*0.025}s">
+      <div class="feed-item cat-${cat}" style="animation-delay:${Math.min(idx,15)*0.025}s">
         <div class="item-meta">
           <span class="item-time">${fmtTime(item.pubDate)}</span>
           <span class="item-tag tag-${cat}">${cat.replace('-',' ')}</span>
@@ -10402,8 +10400,7 @@ function renderTekNews() {
   const af = tekAFCache[tekPair];
   if (af && af.items && af.items.length > 0) {
     html += af.items.map(item => {
-      const safeLink = (item.link || '').replace(/'/g, "\\'");
-      return '<div class="tek-news-item" onclick="openLink(\'' + safeLink + '\')">'
+      return '<div class="tek-news-item">'
         + '<div class="tek-news-meta">'
         + '<span class="tek-news-time">' + fmtTime(item.pubDate) + '</span>'
         + '<span class="tek-news-cat" style="background:rgba(56,189,248,.15);color:#38bdf8">AF · tek</span>'
@@ -10434,7 +10431,6 @@ function renderTekNews() {
         const cat = detectCat(item.title);
         const col = TEK_CAT_COLOR[cat] || '#888';
         const bg = col + '22';
-        const safeLink = (item.link || '').replace(/'/g, "\\'");
         const fjImgId = 'fjImg-tek-' + item.guid;
         const fjType = /^\d+$/.test(item.guid) ? fjImageType(item.title) : null;
         const fjLabels = fjType === 'chart'
@@ -10448,7 +10444,7 @@ function renderTekNews() {
             + '<img class="feed-chart-img" src="https://www.financialjuice.com/images/' + item.guid + '.png" loading="lazy" alt="" onerror="this.closest(\'.feed-chart-wrap\').style.display=\'none\'">'
             + '</div>'
           : '';
-        return '<div class="tek-news-item" onclick="openLink(\'' + safeLink + '\')">'
+        return '<div class="tek-news-item">'
           + '<div class="tek-news-meta">'
           + '<span class="tek-news-time">' + fmtTime(item.pubDate) + '</span>'
           + '<span class="tek-news-cat" style="background:' + bg + ';color:' + col + '">' + cat.replace('-',' ') + '</span>'
