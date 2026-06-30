@@ -173,6 +173,13 @@ Parser `parseCBRSSItems`: regex `<(?:item|entry)\b[^>]*>` — support RSS 2.0, A
    - Tidak ada di `FUND_SCORE_RULES` dan `IND_DIR`
    - **Fix:** Tambah ke `FUND_SCORE_RULES` (GDP Nowcast threshold 2.0, Core PCE/CPI YoY threshold 2.0, dir 1 semua) dan `IND_DIR` (value 1 semua)
 
+4. **Bug parser — 4 keyword FUND_PREFIX_MAP hilang → rilis penting tidak ter-assign ke currency** (`api/_fundamental_parser.js`):
+   - Headline "US Durable Goods Orders" — tidak ada `'us durable'` → ditolak, tidak masuk USD
+   - Headline "UK Average Earnings Index" — `'uk earnings'` BUKAN substring dari "uk average earnings" → tidak match GBP (note: "uk" + " average" + " earnings" ≠ "uk earnings"). `'uk wage'` juga tidak match.
+   - Headline "Japan Current Account" — tidak ada `'japan current account'` → tidak masuk JPY
+   - Headline "Eurozone Current Account" — tidak ada `'eurozone current account'` → tidak masuk EUR
+   - **Fix:** Tambah keyword yang hilang ke masing-masing currency di `FUND_PREFIX_MAP`
+
 ---
 
 ## Changelog Session 121 (2026-06-30)
