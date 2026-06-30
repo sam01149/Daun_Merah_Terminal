@@ -3790,7 +3790,6 @@ function openLink(url) { if(url) window.open(url,'_blank'); }
     // scrollTop === 0: selalu tampilkan header langsung, tanpa menunggu ignoreUntil.
     // Saat user benar-benar di posisi paling atas, chrome harus selalu terlihat.
     if (el.scrollTop === 0 && chrome.classList.contains('chrome-collapsed')) {
-      upAccum.set(el, 0);
       cancelPendingReveal();
       if (!ticking) {
         ticking = true;
