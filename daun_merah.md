@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-06-30 (session 125 — lihat "Changelog Session 125" di bawah untuk detail terbaru)
+> **Last updated:** 2026-06-30 (session 126 — lihat "Changelog Session 126" di bawah untuk detail terbaru)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -150,6 +150,36 @@ File: `api/feeds.js` → `CB_RESEARCH_SOURCES` (diaudit sesi 120)
 | RBNZ, SNB | ❌ | 403 semua jalur |
 
 Parser `parseCBRSSItems`: regex `<(?:item|entry)\b[^>]*>` — support RSS 2.0, Atom, dan RDF/RSS 1.0.
+
+---
+
+## Changelog Session 126 (2026-06-30)
+
+### Sisa Backlog Opsional (D) — 5 tugas selesai
+
+**[A2.3 Fase 2] Push notification kategori per-user (`api/subscribe.js`, `api/admin.js`, `index.html`)**
+- `subscribe.js`: terima body field `categories[]`; simpan bersama subscription JSON di Redis. Default: `['market-moving', 'econ-data']` jika tidak dikirim (kompatibel mundur dengan subscriber lama).
+- `admin.js` (pushHandler): ubah dari single `sendWebPush(allSubs, payload)` ke per-item loop dengan filter per-subscriber. `market-moving` selalu kirim ke semua; kategori lain diperiksa vs `sub.categories`. Stale key deduplikasi sebelum `HDEL`.
+- `index.html`: tambah modal "Pilih Kategori Push" (6 kategori, `market-moving` locked-checked). Muncul saat aktivasi pertama dan bisa dibuka ulang via tombol "Kategori Push" di header dropdown (tersembunyi saat notif mati). Preferensi disimpan ke `localStorage`.
+
+**[B2 4.0c] Top-2 swing points 4H (`api/admin.js`)**
+- `_findSwings()`: return `swing_highs[]` dan `swing_lows[]` (2 terbaru masing-masing) + `last_swing_high/low` backwards compat.
+- `loadOhlcvData` h4 block: tambah `swing_highs` dan `swing_lows` array.
+- `buildOhlcvText`: tampilkan kedua swing per sisi sebagai "lama→baru" — AI punya lebih banyak anchor level untuk SL/TP.
+
+**[B3 COR-G] BTC + gold ratio synthetics di korelasi (`api/correlations.js`)**
+- `INSTRUMENTS`: tambah `BTC: 'BTC-USD'` (Yahoo Finance).
+- `GOLD_CORR_ASSETS`: tambah `'BTC'`, `'GoldSilverRatio'`, `'GoldCopperRatio'`.
+- Setelah fetch raw data: hitung `GoldSilverRatio` (Gold.close / Silver.close) dan `GoldCopperRatio` (Gold.close / Copper.close) sebagai derived series — dimasukkan ke matriks korelasi dan `goldCorr`.
+- `CACHE_KEY`: `correlations_v2 → correlations_v3` (shape berubah). Reference di market-digest.js juga diupdate.
+
+**[QUAL-11] Sederhanakan penutup Call 1 + validasi pembuka di kode (`api/market-digest.js`)**
+- Gabungkan `REMINDER FINAL` + `CEK SEKALI LAGI` (3× pengecekan) jadi 1 `CEK AKHIR SEBELUM KIRIM` yang ringkas — hemat ~200 token prompt.
+- Tambah code-level opening validation: setelah Call 1 sukses, cek apakah kalimat pertama dimulai dengan opener terlarang (`FORBIDDEN_OPENERS`). Jika ya: `console.warn` + masuk `providerLog` sebagai `bad_opener:...`.
+
+**[QUAL-17] Refactor `userMsg` ohlcv_analyze ke array (`api/admin.js`)**
+- Pecah 1 template literal raksasa (~800 karakter per baris) jadi `[...].join('\n')` seperti pola `biasPrompt`/`thesisPrompt`.
+- Logika tidak berubah, isi prompt identik — murni maintainability.
 
 ---
 

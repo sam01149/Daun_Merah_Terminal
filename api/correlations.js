@@ -7,7 +7,7 @@
 const rateLimit = require('./_ratelimit');
 const { withSingleFlight } = require('./_fetch_lock');
 const CORS = { 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-cache' };
-const CACHE_KEY = 'correlations_v2';
+const CACHE_KEY = 'correlations_v3';
 const CACHE_TTL = 86400;
 
 // Yahoo Finance symbols.
@@ -40,13 +40,16 @@ const INSTRUMENTS = {
   // the real yield priced into TIPS, i.e. positively with Gold's actual #1 driver
   // (real yield), unlike US10Y which is nominal and can diverge from it. (COR-D)
   RealYield: 'TIP',
+  // Crypto — debasement/macro-liquidity proxy (COR-G)
+  BTC:    'BTC-USD',
 };
 
 // Instruments whose raw price must be inverted (1/close) so direction is consistent
 const INVERT = new Set(['JPY', 'CAD', 'CHF']);
 
 // Gold's key cross-asset relationships — always shown even without anomaly
-const GOLD_CORR_ASSETS = ['DXY', 'Silver', 'Copper', 'WTI', 'US10Y', 'RealYield', 'SPX', 'VIX', 'JPY', 'AUD', 'EUR'];
+// BTC (debasement co-movement), GoldSilverRatio (stretch gauge), GoldCopperRatio (safe-haven vs growth) added per COR-G
+const GOLD_CORR_ASSETS = ['DXY', 'Silver', 'Copper', 'WTI', 'US10Y', 'RealYield', 'SPX', 'VIX', 'JPY', 'AUD', 'EUR', 'BTC', 'GoldSilverRatio', 'GoldCopperRatio'];
 
 async function redisCmd(...args) {
   const REDIS_URL   = process.env.UPSTASH_REDIS_REST_URL;
@@ -749,6 +752,26 @@ module.exports = async function handler(req, res) {
     if (prices.length >= 10) series[name] = prices;
   });
 
+  // COR-G: Compute synthetic ratio series from aligned Gold/Silver/Copper closes
+  // GoldSilverRatio (debasement stretch gauge — high = gold expensive vs silver, possible reversion)
+  if (series['Gold'] && series['Silver']) {
+    const silverMap = {};
+    series['Silver'].forEach(p => { silverMap[p.date] = p.close; });
+    const ratioGS = series['Gold']
+      .filter(p => silverMap[p.date] != null && silverMap[p.date] > 0)
+      .map(p => ({ date: p.date, close: p.close / silverMap[p.date] }));
+    if (ratioGS.length >= 10) series['GoldSilverRatio'] = ratioGS;
+  }
+  // GoldCopperRatio (safe-haven vs growth gauge — rising = haven demand overwhelming growth signal)
+  if (series['Gold'] && series['Copper']) {
+    const copperMap = {};
+    series['Copper'].forEach(p => { copperMap[p.date] = p.close; });
+    const ratioGC = series['Gold']
+      .filter(p => copperMap[p.date] != null && copperMap[p.date] > 0)
+      .map(p => ({ date: p.date, close: p.close / copperMap[p.date] }));
+    if (ratioGC.length >= 10) series['GoldCopperRatio'] = ratioGC;
+  }
+
   console.log(`correlations: got data for ${Object.keys(series).length}/${names.length} instruments:`, Object.keys(series).join(', '));
 
   if (Object.keys(series).length < 3) {
@@ -761,7 +784,9 @@ module.exports = async function handler(req, res) {
   }
 
   // Compute 20-day and 60-day correlations for all instrument pairs
-  const pairNames = names.filter(n => series[n]);
+  // Include synthetic series (GoldSilverRatio, GoldCopperRatio) which are not in INSTRUMENTS
+  const syntheticNames = Object.keys(series).filter(n => !names.includes(n));
+  const pairNames = [...names.filter(n => series[n]), ...syntheticNames];
   const matrix20 = {}, matrix60 = {};
   const anomalies = [];
 

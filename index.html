@@ -2186,6 +2186,10 @@ body {
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
           <span>Notifikasi</span>
         </button>
+        <button class="header-menu-item" id="notifCatBtn" onclick="pushUpdateCategories();" style="display:none">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93l-1.41 1.41M4.93 4.93l1.41 1.41M12 2v2M12 20v2M20 12h2M2 12h2M17.66 17.66l-1.41-1.41M6.34 17.66l1.41-1.41"/></svg>
+          <span>Kategori Push</span>
+        </button>
         <button class="header-menu-item" id="popoutBtn" onclick="popoutView();closeHeaderMenu();">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="13" height="13" rx="2"/><path d="M16 8h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2v-2"/></svg>
           <span>Buka di Window Baru</span>
@@ -3114,6 +3118,20 @@ body {
   </div>
 </div>
 
+<!-- PUSH CATEGORY MODAL (A2.3 Fase 2) -->
+<div id="pushCatModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9999;align-items:center;justify-content:center">
+  <div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:22px 20px;width:min(340px,92vw);max-height:90vh;overflow-y:auto">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <div style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--accent)">🔔 Pilih Kategori Push</div>
+      <button onclick="closePushCatModal()" style="background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer;line-height:1">×</button>
+    </div>
+    <div style="font-size:10px;color:var(--muted);line-height:1.5;margin-bottom:14px">Pilih kategori berita yang ingin dikirim ke HP kamu. Market Moving selalu dikirim.</div>
+    <div id="pushCatList" style="display:flex;flex-direction:column;gap:8px;margin-bottom:16px"></div>
+    <button id="pushCatConfirmBtn" onclick="confirmPushCat()" style="width:100%;padding:12px;background:var(--accent);color:#fff;border:none;border-radius:8px;font-weight:700;font-size:11px;letter-spacing:.8px;text-transform:uppercase;cursor:pointer">Aktifkan Notifikasi</button>
+    <button onclick="closePushCatModal()" style="width:100%;margin-top:7px;padding:10px;background:transparent;color:var(--muted);border:1px solid var(--border);border-radius:8px;font-size:10px;cursor:pointer">Batal</button>
+  </div>
+</div>
+
 <div id="ckSpeedAckModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9999;align-items:center;justify-content:center">
   <div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:22px 20px;width:min(380px,92vw);max-height:90vh;overflow-y:auto">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
@@ -3459,8 +3477,90 @@ async function disableNotif() {
   } catch(e) { console.warn('disableNotif failed:', e.message); }
   notifEnabled = false;
   document.getElementById('notifBtn').classList.remove('enabled');
+  document.getElementById('notifCatBtn').style.display = 'none';
   localStorage.removeItem('pushSubscribed');
   showToast('Notif Dimatikan', 'Push notification dihentikan.', 3000);
+}
+
+// A2.3 Fase 2: Push category preferences stored in localStorage
+const PUSH_CAT_OPTIONS = [
+  { id: 'market-moving', label: 'Market Moving 🔴', desc: 'Berita besar yang langsung gerakkan pasar', locked: true },
+  { id: 'econ-data',     label: 'Data Ekonomi 📋',  desc: 'CPI, NFP, GDP, PMI — rilis resmi' },
+  { id: 'macro',         label: 'Bank Sentral 🏦',   desc: 'Keputusan rate, guidance CB, hawkish/dovish' },
+  { id: 'forex',         label: 'FX & Emas 💱',      desc: 'Pair FX, gold (XAU), silver' },
+  { id: 'energy',        label: 'Energi ⚡',         desc: 'Minyak (WTI/Brent), OPEC, gas' },
+  { id: 'geopolitical',  label: 'Geopolitik 🌐',     desc: 'Konflik, sanksi, perdagangan, tarif' },
+];
+function getPushCats() {
+  try {
+    const s = localStorage.getItem('pushCats');
+    if (s) return JSON.parse(s);
+  } catch(e) {}
+  return ['market-moving', 'econ-data'];
+}
+function savePushCats(cats) {
+  localStorage.setItem('pushCats', JSON.stringify(cats));
+}
+
+let _pushCatModalCb = null;
+function openPushCatModal(cb, mode = 'subscribe') {
+  _pushCatModalCb = cb;
+  document.getElementById('pushCatConfirmBtn').textContent = mode === 'settings' ? 'Simpan Preferensi' : 'Aktifkan Notifikasi';
+  const saved = getPushCats();
+  const list = document.getElementById('pushCatList');
+  list.innerHTML = PUSH_CAT_OPTIONS.map(opt => {
+    const checked = opt.locked || saved.includes(opt.id);
+    const disabled = opt.locked ? 'disabled' : '';
+    return `<label style="display:flex;align-items:flex-start;gap:10px;cursor:${opt.locked?'default':'pointer'}">
+      <input type="checkbox" id="pcat_${opt.id}" value="${opt.id}" ${checked?'checked':''} ${disabled}
+        style="margin-top:2px;accent-color:var(--accent);flex-shrink:0">
+      <span><span style="font-size:11px;color:var(--text);font-weight:600">${opt.label}</span><br>
+        <span style="font-size:9px;color:var(--muted)">${opt.desc}</span></span>
+    </label>`;
+  }).join('');
+  const m = document.getElementById('pushCatModal');
+  m.style.display = 'flex';
+}
+function closePushCatModal() {
+  document.getElementById('pushCatModal').style.display = 'none';
+  _pushCatModalCb = null;
+}
+function confirmPushCat() {
+  const cats = PUSH_CAT_OPTIONS
+    .filter(opt => opt.locked || document.getElementById(`pcat_${opt.id}`)?.checked)
+    .map(opt => opt.id);
+  savePushCats(cats);
+  document.getElementById('pushCatModal').style.display = 'none';
+  if (_pushCatModalCb) _pushCatModalCb(cats);
+  _pushCatModalCb = null;
+}
+
+async function _doSubscribe(categories) {
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    let sub = await reg.pushManager.getSubscription();
+    if (sub) await sub.unsubscribe();
+    sub = await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+    });
+    const res = await fetch('/api/subscribe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ subscription: sub.toJSON(), categories }),
+    });
+    if (res.ok) {
+      showToast('Push Notif Aktif ✓', 'Notif akan datang meski app ditutup & layar mati.', 4000);
+      localStorage.setItem('pushSubscribed', '1');
+    } else {
+      throw new Error('Server tolak subscription: HTTP ' + res.status);
+    }
+  } catch(e) {
+    console.warn('Web Push failed:', e.message);
+    localStorage.removeItem('pushSubscribed');
+    showToast('Notifikasi Terbatas ⚠', 'Notif hanya aktif saat app terbuka. Push background gagal: ' + e.message, 7000);
+  }
 }
 
 async function requestNotif() {
@@ -3470,34 +3570,21 @@ async function requestNotif() {
   notifEnabled = true;
   document.getElementById('notifBtn').classList.add('enabled');
   localStorage.removeItem('pushSubscribed');
-  if ('serviceWorker' in navigator && 'PushManager' in window) {
-    try {
-      const reg = await navigator.serviceWorker.ready;
-      // Paksa daftar ulang agar subscription segar
-      let sub = await reg.pushManager.getSubscription();
-      if (sub) await sub.unsubscribe();
-      sub = await reg.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
-      });
-      const res = await fetch('/api/subscribe', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ subscription: sub.toJSON() }),
-      });
-      if (res.ok) {
-        showToast('Push Notif Aktif ✓', 'Notif akan datang meski app ditutup & layar mati.', 4000);
-        localStorage.setItem('pushSubscribed', '1');
-      } else {
-        throw new Error('Server tolak subscription: HTTP ' + res.status);
-      }
-    } catch(e) {
-      console.warn('Web Push failed:', e.message);
-      localStorage.removeItem('pushSubscribed');
-      showToast('Notifikasi Terbatas ⚠', 'Notif hanya aktif saat app terbuka. Push background gagal: ' + e.message, 7000);
-    }
-  }
-  sendToSW({ type: 'INIT_GUIDS', guids: [...seenGuids] });
+  // A2.3 Fase 2: show category selection before subscribing
+  openPushCatModal(async (cats) => {
+    await _doSubscribe(cats);
+    document.getElementById('notifCatBtn').style.display = '';
+    sendToSW({ type: 'INIT_GUIDS', guids: [...seenGuids] });
+  });
+}
+
+// Re-subscribe with updated category preferences (for when notif is already active)
+async function pushUpdateCategories() {
+  closeHeaderMenu();
+  openPushCatModal(async (cats) => {
+    await _doSubscribe(cats);
+    showToast('Preferensi Disimpan ✓', `${cats.length} kategori aktif.`, 3000);
+  }, 'settings');
 }
 
 function sendToSW(msg) {
@@ -7156,6 +7243,7 @@ window.addEventListener('load', () => {
   if (Notification.permission === 'granted') {
     notifEnabled = true;
     document.getElementById('notifBtn').classList.add('enabled');
+    document.getElementById('notifCatBtn').style.display = '';
   }
   // Restore AUTO toggle state from localStorage (survives tab reload)
   if (localStorage.getItem('autoRefreshOn') === '1') {

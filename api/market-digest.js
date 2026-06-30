@@ -552,7 +552,7 @@ module.exports = async function handler(req, res) {
       redisCmd('GET', 'latest_thesis'),
       fetchOrWarm('risk_regime', '/api/risk-regime'),
       fetchOrWarm('rate_path', '/api/rate-path'),
-      fetchOrWarm('correlations_v2', '/api/correlations'),
+      fetchOrWarm('correlations_v3', '/api/correlations'),
       fetchOrWarm('rr_cache_v2', '/api/correlations?action=risk-reversal'),
     ]);
     rawPrevThesis = _rawPrevThesis;
@@ -1056,8 +1056,7 @@ PENDEKATAN BENANG MERAH — ikuti urutan ini:
 
 TRIGGER TERDEKAT 24 JAM: Pilih event dari kalender dengan PRIORITAS TERTINGGI: (1) FOMC/Fed — Minutes, pidato Powell, rate decision; (2) US data — CPI, NFP, GDP; (3) event major currency lain. Format wajib: "[EVENT] [TIME WIB] — jika [outcome]: tekanan [bullish/bearish] XAU karena [mekanisme]; jika [outcome berlawanan]: tekanan [bullish/bearish] XAU karena [mekanisme]." Harus ada DUA skenario. Jika tidak ada event kalender relevan untuk XAU dalam 24 jam, tulis "Tidak ada trigger kalender untuk XAU dalam 24 jam ke depan."
 
-REMINDER FINAL: SEBELUM MERESPONS, pastikan tidak ada kata "dapat mempengaruhi", "berpotensi", "mungkin", atau "dalam beberapa jam ke depan". Jika ada, ubah menjadi kalimat pernyataan tegas.
-CEK SEKALI LAGI kalimat penutup FX: kalau draft-mu menyebut lebih dari satu currency di sisi kuat ATAU lebih dari satu di sisi lemah TANPA menjelaskan bahwa itu sinyal campuran (cuma ditumpuk pakai "dan", misal "EUR dan JPY berada di posisi terlemah") — itu salah, perbaiki jadi salah satu dari dua: (1) pilih HANYA SATU yang buktinya paling kuat dari headline, buang yang lain; atau (2) kalau memang campuran, tulis ulang jadi kalimat "sinyal campuran" yang eksplisit menjelaskan kuat-vs-siapa dan lemah-vs-siapa, jangan biarkan ambigu.`;
+CEK AKHIR SEBELUM KIRIM: (1) Ganti semua "dapat mempengaruhi/berpotensi/mungkin/dalam beberapa jam ke depan" dengan pernyataan tegas berbasis data. (2) Penutup FX: tepat satu currency kuat + tepat satu lemah — ATAU nyatakan eksplisit "sinyal campuran" dengan menjelaskan kuat-vs-siapa dan lemah-vs-siapa. Baris "dan X juga" tanpa penjelasan campuran = salah.`;
 
     function isValidDigestPrompt(p) {
       if (typeof p !== 'string') return false;
@@ -1249,6 +1248,12 @@ ${xauHistoryBlock}`;
     if (lastIdx === -1) return text; // cuma 1 kalimat atau pola nggak ketemu, jangan dipaksa
     return text.slice(0, lastIdx) + '{{TAG: Konfirmasi}} ' + text.slice(lastIdx);
   }
+  // QUAL-11: Opening sentence validation — the prompt forbids these openers but code
+  // didn't enforce it; now we log a warning so quality issues surface in server logs.
+  const FORBIDDEN_OPENERS = [
+    'pagi ini', 'hari ini', 'sesi ini', 'flow berita', 'pasar hari ini',
+    'dalam konteks ini', 'minggu ini', 'dalam sesi', 'berita utama',
+  ];
   let phraseHits = [];
   if (article && method !== 'fallback' && method !== 'fallback_quota') {
     article = _ensureConfirmasiTag(article);
@@ -1258,6 +1263,13 @@ ${xauHistoryBlock}`;
     if (phraseHits.length > 0) {
       console.warn('Call 1 forbidden phrases leaked:', phraseHits.join(', '));
       providerLog.push(`forbidden:${phraseHits.length}`);
+    }
+    // QUAL-11: Check if article opens with a forbidden opener
+    const firstSentence = article.slice(0, 80).toLowerCase();
+    const badOpener = FORBIDDEN_OPENERS.find(o => firstSentence.startsWith(o));
+    if (badOpener) {
+      console.warn(`Call 1 forbidden opener: "${badOpener}" — prompt compliance failure`);
+      providerLog.push(`bad_opener:${badOpener}`);
     }
   }
 

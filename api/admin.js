@@ -531,17 +531,33 @@ async function pushHandler(req, res) {
     }
   } catch(e) {}
 
+  let totalStaleKeys = [];
   if (subs.length > 0 && pushItems.length > 0) {
     const EMOJI = { 'market-moving': '🔴', 'forex': '💱', 'energy': '⚡', 'macro': '🏦', 'geopolitical': '🌐', 'econ-data': '📋', 'news': '📰' };
-    const cat = detectPushCat(pushItems[0].title);
-    const payload = {
-      title: pushItems.length === 1 ? `${EMOJI[cat] || '📰'} Daun Merah` : `📰 Daun Merah — ${pushItems.length} berita baru`,
-      body:  pushItems.length === 1 ? pushItems[0].title : pushItems.slice(0, 2).map(i => `• ${i.title}`).join('\n'),
-      url:   pushItems[0]?.link || '/',
-      icon:  '/icon.svg',
-    };
-    const staleKeys = await sendWebPush(subs, payload);
-    if (staleKeys.length > 0) await redisCmd('HDEL', 'push_subs', ...staleKeys);
+    // A2.3 Fase 2: per-item send with per-subscriber category filtering.
+    // market-moving always reaches everyone; other categories respect each subscriber's preferences.
+    for (const item of pushItems) {
+      const cat = detectPushCat(item.title);
+      const targetSubs = subs.filter(sub => {
+        if (cat === 'market-moving') return true;
+        const userCats = sub.categories;
+        if (!userCats || !Array.isArray(userCats)) return PUSH_CATS.has(cat); // legacy fallback
+        return userCats.includes(cat);
+      });
+      if (targetSubs.length === 0) continue;
+      const payload = {
+        title: `${EMOJI[cat] || '📰'} Daun Merah`,
+        body:  item.title,
+        url:   item.link || '/',
+        icon:  '/icon.svg',
+      };
+      const stale = await sendWebPush(targetSubs, payload);
+      totalStaleKeys.push(...stale);
+    }
+    if (totalStaleKeys.length > 0) {
+      const unique = [...new Set(totalStaleKeys)];
+      await redisCmd('HDEL', 'push_subs', ...unique);
+    }
   }
 
   return res.status(200).json({ status: 'OK', new_items: newItems.length, pushed_items: pushItems.length, subscribers: subs.length });
@@ -1322,9 +1338,9 @@ function _atr14h1(candles) {
 // ── OHLCV Read — structured metrics for Analisa tab ──────────────────────────
 
 // 5-bar pivot detection: candle i is a swing high if its high is strictly higher
-// than the `lookback` candles on each side. Returns the most recent swing found.
+// than the `lookback` candles on each side. Returns the 2 most recent swings of each type.
 function _findSwings(candles, lookback = 2) {
-  if (!candles || candles.length < (lookback * 2 + 1)) return { last_swing_high: null, last_swing_low: null };
+  if (!candles || candles.length < (lookback * 2 + 1)) return { swing_highs: [], swing_lows: [], last_swing_high: null, last_swing_low: null };
   const highs = [], lows = [];
   for (let i = lookback; i < candles.length - lookback; i++) {
     let isHigh = true, isLow = true;
@@ -1335,9 +1351,14 @@ function _findSwings(candles, lookback = 2) {
     if (isHigh) highs.push({ price: candles[i].h, t: candles[i].t });
     if (isLow)  lows.push({ price: candles[i].l,  t: candles[i].t });
   }
+  // Keep the 2 most recent of each (already sorted oldest→newest, so slice(-2))
+  const swingHighs = highs.slice(-2);
+  const swingLows  = lows.slice(-2);
   return {
-    last_swing_high: highs.length > 0 ? highs[highs.length - 1] : null,
-    last_swing_low:  lows.length  > 0 ? lows[lows.length  - 1] : null,
+    swing_highs:     swingHighs,
+    swing_lows:      swingLows,
+    last_swing_high: swingHighs.length > 0 ? swingHighs[swingHighs.length - 1] : null,
+    last_swing_low:  swingLows.length  > 0 ? swingLows[swingLows.length   - 1] : null,
   };
 }
 
@@ -1413,8 +1434,12 @@ async function loadOhlcvData(symbol, label) {
     const swings = _findSwings(c4h, 2);
     out.h4 = {
       available: true, high: +hi.toFixed(dec), low: +lo.toFixed(dec), current: +curr.toFixed(dec), change_pct: chg, trend,
+      // Legacy single-swing fields (backwards compat with UI table)
       swing_high: swings.last_swing_high ? { price: +swings.last_swing_high.price.toFixed(dec), t: swings.last_swing_high.t } : null,
       swing_low:  swings.last_swing_low  ? { price: +swings.last_swing_low.price.toFixed(dec),  t: swings.last_swing_low.t  } : null,
+      // Extended: top-2 swing highs & lows for AI entry/SL/TP precision (B2 4.0c)
+      swing_highs: swings.swing_highs.map(s => ({ price: +s.price.toFixed(dec), t: s.t })),
+      swing_lows:  swings.swing_lows.map(s  => ({ price: +s.price.toFixed(dec), t: s.t  })),
     };
   } else { out.h4 = { available: false }; }
 
@@ -1490,9 +1515,13 @@ function buildOhlcvText(data) {
   }
   if (h4.available) {
     lines.push(`[4H 10D] Range: ${f(h4.low)}–${f(h4.high)} | Trend: ${h4.trend} | 10D: ${h4.change_pct >= 0 ? '+' : ''}${h4.change_pct}%`);
-    const shTxt = h4.swing_high ? `${f(h4.swing_high.price)} (${fmtWib(h4.swing_high.t)})` : 'N/A';
-    const slTxt = h4.swing_low  ? `${f(h4.swing_low.price)}  (${fmtWib(h4.swing_low.t)})` : 'N/A';
-    lines.push(`  Struktur Swing H4 → High: ${shTxt} | Low: ${slTxt}`);
+    // Show up to 2 swing highs and 2 swing lows for better AI entry/SL/TP precision (B2 4.0c)
+    const shArr = (h4.swing_highs && h4.swing_highs.length > 0) ? h4.swing_highs : (h4.swing_high ? [h4.swing_high] : []);
+    const slArr = (h4.swing_lows  && h4.swing_lows.length  > 0) ? h4.swing_lows  : (h4.swing_low  ? [h4.swing_low]  : []);
+    const shTxt = shArr.length > 0 ? shArr.map(s => `${f(s.price)} (${fmtWib(s.t)})`).join(' → ') : 'N/A';
+    const slTxt = slArr.length > 0 ? slArr.map(s => `${f(s.price)} (${fmtWib(s.t)})`).join(' → ') : 'N/A';
+    lines.push(`  Swing Highs H4 (lama→baru): ${shTxt}`);
+    lines.push(`  Swing Lows  H4 (lama→baru): ${slTxt}`);
   }
   if (h1.available) {
     lines.push(`[1H 5D] Range: ${f(h1.low)}–${f(h1.high)} | Now: ${f(h1.current)} | 5D: ${h1.change_pct >= 0 ? '+' : ''}${h1.change_pct}% | Trend: ${h1.trend}`);
@@ -1566,7 +1595,32 @@ async function ohlcvAnalyzeHandler(req, res) {
 
     const nowPrice = data.h1?.current;
 
-    const userMsg = `Analisa ${data.label}:\n\n${makroBlock}\n\nIsi field JSON berikut:\n- bias: trend dominan Daily — bullish/bearish/neutral/mixed. Pakai "mixed" kalau timeframe saling kontradiksi (misal Daily naik tapi H4/H1 distribusi) atau makro vs teknikal berlawanan jelas — jangan paksa ke "neutral" kalau sebenarnya konflik, bukan tanpa-trend.\n- entry_zone: level atau range harga ideal untuk entry (angka konkret). WAJIB konsisten dengan harga "Now" di atas — kalau bias bearish, entry_zone harus >= Now (jual di rally/resistance) ATAU di bawah Now kalau memang breakdown confirmation, TAPI jangan keduanya sekaligus dalam satu trigger yang saling kontradiksi. Kalau Now sudah melewati level breakdown/breakout yang relevan, jangan minta retracement ke arah berlawanan — definisikan entry di sekitar Now atau area immediate berikutnya. WAJIB level ini diturunkan dari angka yang benar-benar ada di DATA TEKNIKAL (swing/S-R/SMA) — jangan mengarang angka yang tidak ada di data.\n- sl: level stop loss konkret berdasarkan Swing Low/High 4H atau Support/Resistance Daily yang ADA di data — jangan mengarang. Untuk bearish, sl harus di atas entry_zone. Untuk bullish, sl harus di bawah entry_zone.\n- tp: level take profit konkret berdasarkan Swing High/Low 4H atau Resistance/Support Daily yang ADA di data — jangan mengarang. Untuk bearish, tp harus di bawah entry_zone. Untuk bullish, tp harus di atas entry_zone. WAJIB risk/reward (jarak entry→tp dibanding entry→sl) minimal 1:1 — kalau struktur data tidak memungkinkan RR ≥1, sebutkan itu di trigger/commentary alih-alih memaksakan level palsu.\n- trigger: SATU kondisi teknikal spesifik yang HARUS terpenuhi sebelum entry — jangan sebut dua kondisi alternatif yang saling kontradiksi relatif ke Now, misal: "Tunggu candle H1 close di atas X" atau "Entry saat RSI keluar dari oversold"\n- invalidation_condition: kondisi spesifik yang membatalkan skenario ini sepenuhnya (beda dari sl — ini soal struktur/tesis, misal "kalau Daily close balik di bawah SMA50 maka bias bullish batal")\n- time_horizon_days: estimasi jumlah hari realistis skenario ini main out (angka, misal 3, 5, 10) berdasarkan jarak entry-tp dibanding rata-rata gerak harian (ATR/sigma) yang ada di data\n\nSetelah objek JSON, di baris baru tulis PERSIS "===COMMENTARY===" lalu tulis commentary sebagai teks biasa (BUKAN di dalam JSON): analisa naratif mendalam 4-5 paragraf, pisah tiap paragraf dengan baris baru. Paragraf 1 — bias Daily: jelaskan arah trend dengan alasan konkret (perubahan %, level close vs open, posisi relatif terhadap swing terakhir). Paragraf 2 — struktur H4: posisi harga saat ini terhadap swing high/low H4, apakah dalam fase akumulasi/distribusi/breakout, MACD H4 konfirmasi atau divergensi. Paragraf 3 — momentum H1: kondisi momentum terkini, konfluensi atau perbedaan arah dengan H4${extraCtx?.includes('ATR') ? ', volatilitas berdasarkan ATR' : ''}. Paragraf 4 — integrasi ${extraCtx ? '(' + extraCtx + ')' : 'timeframe'}: simpulkan kekuatan setup, risiko utama, dan kondisi pasar yang memvalidasi atau membatalkan skenario ini${ringkasanContext ? ' — kalau KONTEKS MAKRO berlawanan jelas dengan struktur teknikal (misal makro risk-off tapi teknikal breakout bullish), sebut konflik itu eksplisit dan turunkan keyakinan setup, jangan diam-diam diabaikan' : ''}. Setiap paragraf wajib sebut minimal 2 angka konkret (harga, %, atau nilai indikator). DILARANG kalimat generik tanpa angka (misal "harga bergerak sideways", "momentum masih lemah", "perlu konfirmasi lebih lanjut" tanpa data pendukung) — setiap klaim harus berpijak pada angka yang ada di DATA TEKNIKAL.`;
+    const p4Macro = ringkasanContext
+      ? ' — kalau KONTEKS MAKRO berlawanan jelas dengan struktur teknikal (misal makro risk-off tapi teknikal breakout bullish), sebut konflik itu eksplisit dan turunkan keyakinan setup, jangan diam-diam diabaikan'
+      : '';
+    const p3Atr = extraCtx?.includes('ATR') ? ', volatilitas berdasarkan ATR' : '';
+    const p4Label = extraCtx ? `(${extraCtx})` : 'timeframe';
+    const userMsg = [
+      `Analisa ${data.label}:`,
+      '',
+      makroBlock,
+      '',
+      'Isi field JSON berikut:',
+      '- bias: trend dominan Daily — bullish/bearish/neutral/mixed. Pakai "mixed" kalau timeframe saling kontradiksi (misal Daily naik tapi H4/H1 distribusi) atau makro vs teknikal berlawanan jelas — jangan paksa ke "neutral" kalau sebenarnya konflik, bukan tanpa-trend.',
+      '- entry_zone: level atau range harga ideal untuk entry (angka konkret). WAJIB konsisten dengan harga "Now" di atas — kalau bias bearish, entry_zone harus >= Now (jual di rally/resistance) ATAU di bawah Now kalau memang breakdown confirmation, TAPI jangan keduanya sekaligus dalam satu trigger yang saling kontradiksi. Kalau Now sudah melewati level breakdown/breakout yang relevan, jangan minta retracement ke arah berlawanan — definisikan entry di sekitar Now atau area immediate berikutnya. WAJIB level ini diturunkan dari angka yang benar-benar ada di DATA TEKNIKAL (swing/S-R/SMA) — jangan mengarang angka yang tidak ada di data.',
+      '- sl: level stop loss konkret berdasarkan Swing Low/High 4H atau Support/Resistance Daily yang ADA di data — jangan mengarang. Untuk bearish, sl harus di atas entry_zone. Untuk bullish, sl harus di bawah entry_zone.',
+      '- tp: level take profit konkret berdasarkan Swing High/Low 4H atau Resistance/Support Daily yang ADA di data — jangan mengarang. Untuk bearish, tp harus di bawah entry_zone. Untuk bullish, tp harus di atas entry_zone. WAJIB risk/reward (jarak entry→tp dibanding entry→sl) minimal 1:1 — kalau struktur data tidak memungkinkan RR ≥1, sebutkan itu di trigger/commentary alih-alih memaksakan level palsu.',
+      '- trigger: SATU kondisi teknikal spesifik yang HARUS terpenuhi sebelum entry — jangan sebut dua kondisi alternatif yang saling kontradiksi relatif ke Now, misal: "Tunggu candle H1 close di atas X" atau "Entry saat RSI keluar dari oversold"',
+      '- invalidation_condition: kondisi spesifik yang membatalkan skenario ini sepenuhnya (beda dari sl — ini soal struktur/tesis, misal "kalau Daily close balik di bawah SMA50 maka bias bullish batal")',
+      '- time_horizon_days: estimasi jumlah hari realistis skenario ini main out (angka, misal 3, 5, 10) berdasarkan jarak entry-tp dibanding rata-rata gerak harian (ATR/sigma) yang ada di data',
+      '',
+      'Setelah objek JSON, di baris baru tulis PERSIS "===COMMENTARY===" lalu tulis commentary sebagai teks biasa (BUKAN di dalam JSON): analisa naratif mendalam 4-5 paragraf, pisah tiap paragraf dengan baris baru.',
+      `Paragraf 1 — bias Daily: jelaskan arah trend dengan alasan konkret (perubahan %, level close vs open, posisi relatif terhadap swing terakhir).`,
+      `Paragraf 2 — struktur H4: posisi harga saat ini terhadap swing high/low H4, apakah dalam fase akumulasi/distribusi/breakout, MACD H4 konfirmasi atau divergensi.`,
+      `Paragraf 3 — momentum H1: kondisi momentum terkini, konfluensi atau perbedaan arah dengan H4${p3Atr}.`,
+      `Paragraf 4 — integrasi ${p4Label}: simpulkan kekuatan setup, risiko utama, dan kondisi pasar yang memvalidasi atau membatalkan skenario ini${p4Macro}.`,
+      'Setiap paragraf wajib sebut minimal 2 angka konkret (harga, %, atau nilai indikator). DILARANG kalimat generik tanpa angka (misal "harga bergerak sideways", "momentum masih lemah", "perlu konfirmasi lebih lanjut" tanpa data pendukung) — setiap klaim harus berpijak pada angka yang ada di DATA TEKNIKAL.',
+    ].join('\n');
 
     // QUAL-14: commentary dikeluarkan dari JSON (lihat delimiter "===COMMENTARY===" di userMsg)
     // — prosa panjang 4-5 paragraf sebagai string JSON rawan gagal JSON.parse (kutip/newline

@@ -34,9 +34,17 @@ module.exports = async function handler(req, res) {
       return res.status(200).json({ ok: true });
     }
     if (req.method === 'POST') {
-      const { subscription } = body;
+      const { subscription, categories } = body;
       if (!subscription?.endpoint) return res.status(400).json({ error: 'Invalid subscription' });
-      await redisCmd('HSET', 'push_subs', subKey(subscription.endpoint), JSON.stringify(subscription));
+      // A2.3 Fase 2: store per-user category preferences alongside the subscription
+      // Default: market-moving + econ-data (same as Fase 1 global PUSH_CATS)
+      const subData = {
+        ...subscription,
+        categories: Array.isArray(categories) && categories.length > 0
+          ? categories
+          : ['market-moving', 'econ-data'],
+      };
+      await redisCmd('HSET', 'push_subs', subKey(subscription.endpoint), JSON.stringify(subData));
       return res.status(201).json({ ok: true });
     }
     return res.status(405).json({ error: 'Method not allowed' });
