@@ -52,6 +52,6 @@
     {
       "path": "/api/market-digest",
       "schedule": "30 12 * * *"
-    },
+    }
   ]
 }
