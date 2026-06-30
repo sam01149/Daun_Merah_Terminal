@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-06-30 (session 126 — lihat "Changelog Session 126" di bawah untuk detail terbaru)
+> **Last updated:** 2026-06-30 (session 127 — lihat "Changelog Session 127" di bawah untuk detail terbaru)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -150,6 +150,21 @@ File: `api/feeds.js` → `CB_RESEARCH_SOURCES` (diaudit sesi 120)
 | RBNZ, SNB | ❌ | 403 semua jalur |
 
 Parser `parseCBRSSItems`: regex `<(?:item|entry)\b[^>]*>` — support RSS 2.0, Atom, dan RDF/RSS 1.0.
+
+---
+
+## Changelog Session 127 (2026-06-30)
+
+### [QUAL-3] Label frame di thesis card dan prose section (`index.html`)
+
+Pendekatan: bukan menyamakan output Call 1 dan Call 3, tapi memberi label konteks di UI agar user tahu keduanya menjawab frame berbeda.
+
+- `renderThesisCard`: label header `AI THESIS` → `AI THESIS · CB BIAS + TA`
+- `renderArticleSections`: tambah `<div class="ringkasan-fx-label">ANALISIS BERITA · HEADLINE MOMENTUM</div>` di atas prose FX (kedua path: dengan dan tanpa XAU section)
+- Dashboard thesis card (baris ~11568): `AI THESIS · FX` → `AI THESIS · FX · CB BIAS + TA`
+- CSS: tambah `.ringkasan-fx-label` (warna `var(--accent)` merah, style konsisten dengan `.ringkasan-xau-label`)
+
+**Rationale:** Call 1 menilai dari momentum headline, Call 3 dari CB bias + TA — keduanya bisa valid sekaligus. Inkonsistensi bukan bug, tapi perbedaan frame. Label ini membuat perbedaan frame visible tanpa memaksakan salah satu mengalah.
 
 ---
 
