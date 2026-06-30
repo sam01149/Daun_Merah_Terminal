@@ -23,3 +23,5 @@ node_modules/
 
 #bridge
 start_bridge.bat
+start_bridge_min.vbs
+mt5_bridge.py
