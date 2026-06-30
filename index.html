@@ -1946,6 +1946,8 @@ body {
   padding: 8px 0 7px; border-bottom: 1px solid rgba(34,34,32,.5); cursor: default;
 }
 .tek-news-item:last-child { border-bottom: none; }
+.tek-news-item-link { cursor: pointer; }
+.tek-news-item-link:hover .tek-news-title { color: #38bdf8; }
 .tek-news-meta { display: flex; align-items: center; gap: 6px; margin-bottom: 3px; }
 .tek-news-time { font: 9px 'DM Mono',monospace; color: var(--muted); }
 .tek-news-cat {
@@ -10401,8 +10403,9 @@ function renderTekNews() {
   if (af && af.items && af.items.length > 0) {
     html += af.items.map(item => {
       const safeLink = (item.link || '').replace(/'/g, "\\'");
-      const clickAttr = safeLink ? ' onclick="openLink(\'' + safeLink + '\')" style="cursor:pointer"' : '';
-      return '<div class="tek-news-item"' + clickAttr + '>'
+      const linkClass = safeLink ? ' tek-news-item-link' : '';
+      const clickAttr = safeLink ? ' onclick="openLink(\'' + safeLink + '\')"' : '';
+      return '<div class="tek-news-item' + linkClass + '"' + clickAttr + '>'
         + '<div class="tek-news-meta">'
         + '<span class="tek-news-time">' + fmtTime(item.pubDate) + '</span>'
         + '<span class="tek-news-cat" style="background:rgba(56,189,248,.15);color:#38bdf8">AF · tek</span>'

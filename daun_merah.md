@@ -155,16 +155,25 @@ Parser `parseCBRSSItems`: regex `<(?:item|entry)\b[^>]*>` — support RSS 2.0, A
 
 ## Changelog Session 129 (2026-06-30)
 
-### Hapus klik ke link eksternal dari headline berita (NEWS + TEK)
+### Hapus klik ke link eksternal dari headline berita (NEWS + TEK FJ), biarkan ActionForex tetap bisa diklik
 
-**Masalah:** Klik pada headline berita di tab NEWS dan bagian "Berita Relevan" di tab TEK membuka link FinancialJuice yang tidak punya konten bermakna — hanya menampilkan headline ulang tanpa artikel/detail.
+**Masalah:** Klik pada headline berita di tab NEWS dan bagian "Berita Relevan" di tab TEK membuka link FinancialJuice yang tidak punya konten bermakna — hanya menampilkan headline ulang tanpa artikel/detail. ActionForex (AF) punya artikel lengkap, jadi linknya berguna.
 
 **Perubahan (`index.html`):**
-- `renderFeed()`: hapus `onclick="openLink(...)"` dari setiap `<div class="feed-item">` — item tidak lagi bisa diklik ke eksternal
-- TEK news (ActionForex + FinancialJuice per-pair): hapus `onclick="openLink(...)"` dari `<div class="tek-news-item">`
+- `renderFeed()`: hapus `onclick` dari setiap `<div class="feed-item">` — NEWS feed tidak bisa diklik ke eksternal
+- TEK FJ news (FinancialJuice per-pair): hapus `onclick` — tidak bisa diklik
+- TEK AF news (ActionForex): **tetap bisa diklik** — pakai CSS class `.tek-news-item-link` (bukan inline style), hover judul berubah biru sebagai feedback visual
 - CSS `.feed-item`: `cursor:pointer` → `cursor:default`, hapus `transform:scale(.98)` saat active
-- CSS `.tek-news-item`: `cursor:pointer` → `cursor:default`, hapus pseudo-class hover yang ubah warna judul
-- Cleanup: hapus variabel `safeLink` yang tidak lagi dipakai di semua 3 template string
+- CSS `.tek-news-item`: `cursor:default` sebagai default
+- CSS tambah `.tek-news-item-link { cursor:pointer }` + hover warna judul — hanya berlaku untuk AF items
+- Cleanup: hapus variabel `safeLink` yang tidak terpakai di feed dan FJ tek
+
+**State akhir:**
+| Area | Bisa diklik? |
+|------|-------------|
+| Tab NEWS — semua headline | ❌ tidak |
+| TEK — FinancialJuice per-pair | ❌ tidak |
+| TEK — ActionForex (AF · tek) | ✅ ya, buka artikel di tab baru |
 
 ---
 
