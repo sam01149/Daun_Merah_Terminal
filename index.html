@@ -3738,9 +3738,8 @@ function openLink(url) { if(url) window.open(url,'_blank'); }
   const chrome = document.getElementById('topChrome');
   if (!chrome) return;
   const lastScrollTop = new WeakMap();
-  const upAccum = new WeakMap();
   let ticking = false;
-  let pendingDelta = 0, pendingScrollTop = 0, pendingAccum = 0, pendingEl = null;
+  let pendingDelta = 0, pendingScrollTop = 0, pendingEl = null;
 
   // Setelah collapse/reveal, chrome mengubah tinggi panel via CSS transition.
   // Perubahan tinggi panel menyebabkan browser clamp scrollTop scroll container
@@ -3809,15 +3808,10 @@ function openLink(url) { if(url) window.open(url,'_blank'); }
 
     if (Math.abs(delta) < 6) return; // abaikan jiggle/inersia kecil
 
-    if (delta > 0) {
-      upAccum.set(el, 0);
-      cancelPendingReveal(); // user scroll ke bawah — batalkan pending reveal
-    } else {
-      upAccum.set(el, (upAccum.get(el) || 0) + Math.abs(delta));
-    }
+    if (delta <= 0) return; // scroll ke atas tapi belum di top — header tetap sembunyi
+    cancelPendingReveal();
     pendingDelta = delta;
     pendingScrollTop = el.scrollTop;
-    pendingAccum = upAccum.get(el) || 0;
     pendingEl = el;
     if (ticking) return;
     ticking = true;
@@ -3831,9 +3825,6 @@ function openLink(url) { if(url) window.open(url,'_blank'); }
           chrome.classList.add('chrome-collapsed');
           ignoreUntil = Date.now() + 520;
         }
-      } else if (pendingDelta < 0 && pendingAccum >= 120) {
-        chrome.classList.remove('chrome-collapsed');
-        ignoreUntil = Date.now() + 640;
       }
       ticking = false;
     });
