@@ -3740,7 +3740,7 @@ function openLink(url) { if(url) window.open(url,'_blank'); }
   const lastScrollTop = new WeakMap();
   const upAccum = new WeakMap();
   let ticking = false;
-  let pendingDelta = 0, pendingScrollTop = 0, pendingAccum = 0;
+  let pendingDelta = 0, pendingScrollTop = 0, pendingAccum = 0, pendingEl = null;
 
   // Setelah collapse/reveal, chrome mengubah tinggi panel via CSS transition.
   // Perubahan tinggi panel menyebabkan browser clamp scrollTop scroll container
@@ -3767,8 +3767,14 @@ function openLink(url) { if(url) window.open(url,'_blank'); }
     const delta = el.scrollTop - prev;
     lastScrollTop.set(el, el.scrollTop); // selalu update, termasuk saat di dalam window
 
-    // scrollTop === 0: selalu reveal, bypass ignore window
-    // (user scrub ke atas ke posisi paling atas harus selalu restore header)
+    // Dalam window CSS transition: abaikan, layout sedang berubah.
+    // Ini harus dicek SEBELUM scrollTop===0 agar browser clamping saat
+    // chrome collapse tidak memicu reveal langsung (bug: scroll ke atas sendiri).
+    if (Date.now() < ignoreUntil) return;
+
+    if (Math.abs(delta) < 6) return; // abaikan jiggle/inersia kecil
+
+    // scrollTop === 0: selalu reveal (di luar window transisi)
     if (el.scrollTop === 0 && chrome.classList.contains('chrome-collapsed')) {
       upAccum.set(el, 0);
       if (!ticking) {
@@ -3782,11 +3788,6 @@ function openLink(url) { if(url) window.open(url,'_blank'); }
       return;
     }
 
-    // Dalam window CSS transition: abaikan, layout sedang berubah
-    if (Date.now() < ignoreUntil) return;
-
-    if (Math.abs(delta) < 6) return; // abaikan jiggle/inersia kecil
-
     if (delta > 0) {
       upAccum.set(el, 0);
     } else {
@@ -3795,12 +3796,20 @@ function openLink(url) { if(url) window.open(url,'_blank'); }
     pendingDelta = delta;
     pendingScrollTop = el.scrollTop;
     pendingAccum = upAccum.get(el) || 0;
+    pendingEl = el;
     if (ticking) return;
     ticking = true;
     requestAnimationFrame(() => {
       if (pendingDelta > 0 && pendingScrollTop > 40) {
-        chrome.classList.add('chrome-collapsed');
-        ignoreUntil = Date.now() + 520;
+        // Hanya collapse jika konten masih bisa di-scroll setelah chrome hilang.
+        // Jika chrome collapse membuat panel lebih tinggi dari konten, scrollTop
+        // akan di-clamp ke 0 oleh browser → loop reveal/collapse.
+        const chromeH = chrome.getBoundingClientRect().height;
+        const canScrollAfter = pendingEl && (pendingEl.scrollHeight > pendingEl.clientHeight + chromeH);
+        if (canScrollAfter) {
+          chrome.classList.add('chrome-collapsed');
+          ignoreUntil = Date.now() + 520;
+        }
       } else if (pendingDelta < 0 && pendingAccum >= 60) {
         chrome.classList.remove('chrome-collapsed');
         ignoreUntil = Date.now() + 640;

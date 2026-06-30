@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-06-30 (session 122 — lihat "Changelog Session 122" di bawah untuk detail terbaru)
+> **Last updated:** 2026-06-30 (session 123 — lihat "Changelog Session 123" di bawah untuk detail terbaru)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -150,6 +150,18 @@ File: `api/feeds.js` → `CB_RESEARCH_SOURCES` (diaudit sesi 120)
 | RBNZ, SNB | ❌ | 403 semua jalur |
 
 Parser `parseCBRSSItems`: regex `<(?:item|entry)\b[^>]*>` — support RSS 2.0, Atom, dan RDF/RSS 1.0.
+
+---
+
+## Changelog Session 123 (2026-06-30)
+
+### Fix: Scroll balik ke atas sendiri di panel Fundamental (laptop)
+
+**Root cause:** Chrome collapse listener memiliki bypass `scrollTop === 0` yang diprioritaskan di atas `ignoreUntil` window. Ketika header collapse menyebabkan panel fundamental tumbuh lebih besar dari kontennya, browser men-clamp `scrollTop` ke 0, yang langsung men-trigger reveal header. Reveal memperkecil panel → konten overflow lagi → user bisa scroll → header collapse lagi → loop.
+
+**Fix dua lapis (`index.html`, scroll listener):**
+1. `ignoreUntil` dicek **sebelum** `scrollTop === 0` — browser clamping dalam window transisi tidak memicu reveal.
+2. Collapse hanya terjadi jika `scrollHeight > clientHeight + chromeH` (konten masih bisa di-scroll setelah chrome hilang). Jika tidak, header tidak disembunyikan sama sekali.
 
 ---
 
