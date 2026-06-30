@@ -20,3 +20,6 @@ __pycache__/
 project_delay/
 .env*
 node_modules/
+
+#bridge
+start_bridge.bat
