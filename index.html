@@ -10400,7 +10400,9 @@ function renderTekNews() {
   const af = tekAFCache[tekPair];
   if (af && af.items && af.items.length > 0) {
     html += af.items.map(item => {
-      return '<div class="tek-news-item">'
+      const safeLink = (item.link || '').replace(/'/g, "\\'");
+      const clickAttr = safeLink ? ' onclick="openLink(\'' + safeLink + '\')" style="cursor:pointer"' : '';
+      return '<div class="tek-news-item"' + clickAttr + '>'
         + '<div class="tek-news-meta">'
         + '<span class="tek-news-time">' + fmtTime(item.pubDate) + '</span>'
         + '<span class="tek-news-cat" style="background:rgba(56,189,248,.15);color:#38bdf8">AF · tek</span>'
