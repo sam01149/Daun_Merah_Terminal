@@ -1960,7 +1960,8 @@ body {
   #dashboardPanel {
     grid-template-columns: 280px 1fr 260px;
     grid-template-rows: 1fr auto auto;
-    height: calc(100vh - 48px);
+    flex: 1;
+    min-height: 0;
     gap: 0;
     overflow: hidden;
   }
@@ -3741,6 +3742,17 @@ function openLink(url) { if(url) window.open(url,'_blank'); }
     const prev = lastScrollTop.has(el) ? lastScrollTop.get(el) : el.scrollTop;
     const delta = el.scrollTop - prev;
     lastScrollTop.set(el, el.scrollTop);
+
+    // Sudah di paling atas: selalu reveal header tanpa tunggu akumulasi
+    if (el.scrollTop === 0 && chrome.classList.contains('chrome-collapsed')) {
+      upAccum.set(el, 0);
+      if (!ticking) {
+        ticking = true;
+        requestAnimationFrame(() => { chrome.classList.remove('chrome-collapsed'); ticking = false; });
+      }
+      return;
+    }
+
     if (Math.abs(delta) < 6) return; // abaikan jiggle/inersia kecil
 
     // reset akumulasi saat arah berubah ke bawah, tambah saat naik
@@ -3758,7 +3770,6 @@ function openLink(url) { if(url) window.open(url,'_blank'); }
       if (pendingDelta > 0 && pendingScrollTop > 40) {
         chrome.classList.add('chrome-collapsed');
       } else if (pendingDelta < 0 && pendingAccum >= 60) {
-        // butuh 60px scroll-naik sebelum header muncul — tidak tiba-tiba
         chrome.classList.remove('chrome-collapsed');
       }
       ticking = false;
