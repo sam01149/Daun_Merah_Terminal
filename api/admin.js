@@ -1575,7 +1575,13 @@ async function ohlcvAnalyzeHandler(req, res) {
         const delimIdx = rawText.indexOf(DELIM);
         const jsonPart = delimIdx !== -1 ? rawText.slice(0, delimIdx) : rawText;
         const commentaryPart = delimIdx !== -1 ? rawText.slice(delimIdx + DELIM.length).trim() : null;
-        const cleaned = jsonPart.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
+        // Ekstrak objek JSON dengan cari { pertama dan } terakhir — robust terhadap
+        // leading newline/whitespace sebelum code fence yang bikin regex ^``` gagal match.
+        const jsonStart = jsonPart.indexOf('{');
+        const jsonEnd   = jsonPart.lastIndexOf('}');
+        const cleaned   = jsonStart !== -1 && jsonEnd !== -1
+          ? jsonPart.slice(jsonStart, jsonEnd + 1)
+          : jsonPart.replace(/```(?:json)?/gi, '').trim();
         const parsed  = JSON.parse(cleaned);
         // Normalize bias (incl. "mixed/conflicting" per QUAL-7 — don't force into neutral)
         const biasRaw = (parsed.bias || '').toLowerCase().replace(/[^a-z]/g, '');
