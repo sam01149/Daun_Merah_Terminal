@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-06-30 (session 124 — lihat "Changelog Session 124" di bawah untuk detail terbaru)
+> **Last updated:** 2026-06-30 (session 125 — lihat "Changelog Session 125" di bawah untuk detail terbaru)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -150,6 +150,51 @@ File: `api/feeds.js` → `CB_RESEARCH_SOURCES` (diaudit sesi 120)
 | RBNZ, SNB | ❌ | 403 semua jalur |
 
 Parser `parseCBRSSItems`: regex `<(?:item|entry)\b[^>]*>` — support RSS 2.0, Atom, dan RDF/RSS 1.0.
+
+---
+
+## Changelog Session 125 (2026-06-30)
+
+### Audit Ketahanan & Kualitas AI (Blok C dari daun_merah_plan.md) — 8 tugas selesai
+
+**C1 — Pisahkan circuit breaker per-akun SambaNova (`api/market-digest.js`)**
+- Tambah konstanta `CB_SAMBA_C1 = 'ai:sambanova:c1'` (Call 1 prosa, akun 2) dan `CB_SAMBA_MAIN = 'ai:sambanova:main'` (Call 2/3/4, akun 1).
+- Ganti semua `'ai:sambanova'` literal → konstanta yang tepat. Grep hasilnya 0 literal tersisa.
+- Efek: kegagalan Call 2/3/4 tidak lagi menjatuhkan Call 1 akun 2 yang sehat.
+- `admin.js`: `KNOWN_CIRCUITS` diupdate ke `'ai:sambanova:c1'` dan `'ai:sambanova:main'`.
+
+**C2 — Budget waktu dinamis + pangkas timeout (`api/market-digest.js`)**
+- `handlerStart = Date.now()` ditambah di awal handler.
+- Timeout Call 1 SambaNova `28s → 22s`, Groq prose `20s → 15s`. Worst-case Call 1 = 22+15+15 = 52s (di bawah 60s).
+- Guard `CALL3_BUDGET_MS = 50000` ditambah sebelum Call 3: kalau elapsed > 50s, Call 3 di-skip (UI tetap sajikan `latest_thesis` lama dari Redis).
+
+**C3 — Naikkan headroom max_tokens JSON + deteksi truncation (`api/market-digest.js`)**
+- Call 2 & 4: `400 → 700` token. Call 3: `500 → 800` token (ruang untuk token reasoning DeepSeek).
+- `aiCall`: tambah log `finish_reason === 'length'` sebelum return — tidak ubah return shape.
+
+**C4 — Fallback `fundamental_analysis` + breaker `ohlcv_analyze` (`api/admin.js`)**
+- `require('./_circuit_breaker')` ditambah ke admin.js.
+- `fundamentalAnalysisHandler`: Groq-first → SambaNova akun 1 fallback; return 500 hanya kalau keduanya gagal.
+- `ohlcvAnalyzeHandler`: wrap call SambaNova dengan `cb.canCall('ai:sambanova:main')` + onSuccess/onFailure.
+
+**C5 — Headline mentah sebagai jangkar fakta Call 3 (`api/market-digest.js`) — DRAFT**
+- `rawHeadlinesForThesis` (15 headline pertama dari `headlinesForBriefing`) ditambah ke `thesisPrompt`.
+- Instruksi: "If the prose briefing contradicts these raw headlines, prioritise the raw headlines."
+- **Tandai DRAFT — menunggu review user** (aturan C: prompt menyimpan preferensi gaya tulisan).
+
+**C7 — Validasi override `prompt_digest` (`api/market-digest.js`)**
+- Tambah `isValidDigestPrompt(p)`: min 1000 char + ada marker `'XAUUSD'` dan `'ATURAN FX'`.
+- Override invalid → diabaikan, pakai `DIGEST_SYSTEM_DEFAULT`, ada log warning.
+
+**C8 — Penegakan frasa terlarang via kode (`api/market-digest.js`)**
+- Tambah `FORBIDDEN_PHRASES` array di level modul (sinkron dengan daftar di prompt).
+- Setelah Call 1 sukses, cek `article.toLowerCase()` terhadap array.
+- Hits di-log + masuk `providerLog` sebagai `forbidden:N`. Tak ada auto-edit teks (Tahap 1 = observability saja).
+- `quality_flags: { forbidden_phrases: [...] }` ditambah ke payload response (UI abaikan — hanya untuk diagnostik).
+
+**C6 — Hint halus model cadangan di UI (`index.html`)**
+- Badge `.ringkasan-method` mendapat `title` attribute "model cadangan — gaya naratif mungkin kurang tajam" saat `method` adalah `gpt-oss-120b`, `groq`, atau `qwen3-32b`.
+- Tambah span kecil "(model cadangan)" dalam warna `--muted` di sebelah badge.
 
 ---
 

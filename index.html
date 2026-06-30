@@ -3973,7 +3973,7 @@ function renderRingkasan() {
   inner.innerHTML = `
     <div class="ringkasan-meta">
       <div class="ringkasan-meta-left">${tsStr} · ${d.news_count} berita${d.gold_count ? ' · ' + d.gold_count + ' XAU' : ''} · ${d.cal_count} kalender${d.from_cache ? ' · cache' : ''}</div>
-      <span class="ringkasan-method ${d.method}">${{'cerebras':'⚡ Cerebras','groq':'⚡ Groq','gemini':'✨ Gemini','deepseek-v3.2':'🧠 SambaNova V3.2','deepseek-v3.1':'🧠 SambaNova V3.1','gpt-oss-120b':'🤖 OpenRouter','qwen3-32b':'⚡ Groq Qwen3','fallback':'⚠ Fallback','fallback_quota':'⚠ Quota'}[d.method] || d.method || '⚙️ Auto'}</span>
+      <span class="ringkasan-method ${d.method}" title="${['gpt-oss-120b','groq','qwen3-32b'].includes(d.method) ? 'model cadangan — gaya naratif mungkin kurang tajam' : ''}">${{'cerebras':'⚡ Cerebras','groq':'⚡ Groq','gemini':'✨ Gemini','deepseek-v3.2':'🧠 SambaNova V3.2','deepseek-v3.1':'🧠 SambaNova V3.1','gpt-oss-120b':'🤖 OpenRouter','qwen3-32b':'⚡ Groq Qwen3','fallback':'⚠ Fallback','fallback_quota':'⚠ Quota'}[d.method] || d.method || '⚙️ Auto'}</span>${['gpt-oss-120b','groq','qwen3-32b'].includes(d.method) ? ' <span class="ringkasan-method-note" style="font-size:0.72rem;color:var(--muted)">model cadangan</span>' : ''}
     </div>
 
     <div class="ringkasan-stats">

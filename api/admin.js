@@ -14,6 +14,7 @@ const PUSH_KW  = require('./_push_keywords');
 const { autoUpdateFundamentals } = require('./_fundamental_parser');
 const { getLiveCbRates } = require('./_cb_rates');
 const { configureVapid, sendWebPush } = require('./_webpush');
+const cb = require('./_circuit_breaker');
 
 module.exports = async function handler(req, res) {
   const action = req.query.action;
@@ -924,22 +925,57 @@ DIVERGENSI TERBESAR:
 3. [currency E] vs [currency F] — [1 kalimat]
 (Ini untuk identify pair dengan setup fundamental paling kuat — bukan rekomendasi entry)`;
 
+  const fundMessages = [{ role: 'user', content: prompt }];
+  let analysis = null;
+
+  // Primary: Groq (hemat akun 1 SambaNova di jalur sehat)
   try {
     const r = await fetch(GROQ_URL_FUND, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${GROQ_KEY}` },
-      body: JSON.stringify({ model: GROQ_MODEL_FUND, messages: [{ role: 'user', content: prompt }], max_tokens: 700, temperature: 0.3 }),
+      body: JSON.stringify({ model: GROQ_MODEL_FUND, messages: fundMessages, max_tokens: 700, temperature: 0.3 }),
       signal: AbortSignal.timeout(25000),
     });
     if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e?.error?.message || `HTTP ${r.status}`); }
     const data = await r.json();
-    const analysis = data?.choices?.[0]?.message?.content?.trim() || '';
-    if (!analysis) throw new Error('Empty response');
+    const txt = data?.choices?.[0]?.message?.content?.trim() || '';
+    if (!txt) throw new Error('Empty response');
+    analysis = txt;
+    console.log('fundamental_analysis: Groq OK');
+  } catch(e) {
+    console.warn('fundamental_analysis Groq failed:', e.message);
+  }
+
+  // Fallback: SambaNova akun 1
+  if (!analysis) {
+    const SAMBANOVA_KEY = process.env.SAMBANOVA_API_KEY;
+    if (SAMBANOVA_KEY) {
+      try {
+        const r = await fetch('https://api.sambanova.ai/v1/chat/completions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SAMBANOVA_KEY}` },
+          body: JSON.stringify({ model: 'DeepSeek-V3.2', messages: fundMessages, max_tokens: 700, temperature: 0.3 }),
+          signal: AbortSignal.timeout(25000),
+        });
+        if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e?.error?.message || `HTTP ${r.status}`); }
+        const data = await r.json();
+        const txt = data?.choices?.[0]?.message?.content?.trim() || '';
+        if (!txt) throw new Error('Empty response');
+        analysis = txt;
+        console.log('fundamental_analysis: SambaNova fallback OK');
+      } catch(e) {
+        console.warn('fundamental_analysis SambaNova fallback failed:', e.message);
+      }
+    }
+  }
+
+  if (!analysis) return res.status(500).json({ error: 'All providers failed for fundamental_analysis' });
+
+  try {
     const result = { analysis, generated_at: new Date().toISOString(), from_cache: false };
     await redisCmd('SET', 'fundamental_analysis', JSON.stringify(result), 'EX', '21600');
     return res.status(200).json(result);
   } catch(e) {
-    console.warn('fundamental_analysis Groq failed:', e.message);
     return res.status(500).json({ error: e.message });
   }
 }
@@ -1005,7 +1041,7 @@ async function journalImportHandler(req, res) {
 
 // ── Circuit breaker status + reset ───────────────────────────────────────────
 
-const KNOWN_CIRCUITS = ['ai:openrouter', 'ai:cerebras', 'ai:sambanova', 'fred', 'stooq', 'ff', 'fj', 'cftc', 'redis'];
+const KNOWN_CIRCUITS = ['ai:openrouter', 'ai:cerebras', 'ai:sambanova:c1', 'ai:sambanova:main', 'fred', 'stooq', 'ff', 'fj', 'cftc', 'redis'];
 
 async function circuitStatusHandler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -1544,7 +1580,7 @@ async function ohlcvAnalyzeHandler(req, res) {
     const GROQ_KEY      = process.env.GROQ_API_KEY;
     let rawText = null, model = null;
 
-    if (SAMBANOVA_KEY) {
+    if (SAMBANOVA_KEY && await cb.canCall('ai:sambanova:main')) {
       try {
         const r = await fetch('https://api.sambanova.ai/v1/chat/completions', {
           method: 'POST',
@@ -1552,9 +1588,13 @@ async function ohlcvAnalyzeHandler(req, res) {
           body: JSON.stringify({ model: 'DeepSeek-V3.2', messages, max_tokens: 1500, temperature: 0.3 }),
           signal: AbortSignal.timeout(30000),
         });
-        if (r.ok) { const j = await r.json(); rawText = j.choices?.[0]?.message?.content?.trim() || null; model = 'deepseek-v3.2'; }
-      } catch(e) { console.warn('ohlcv_analyze SambaNova failed:', e.message); }
-    }
+        if (r.ok) {
+          const j = await r.json(); rawText = j.choices?.[0]?.message?.content?.trim() || null; model = 'deepseek-v3.2';
+          if (rawText) await cb.onSuccess('ai:sambanova:main');
+          else throw new Error('Empty response');
+        } else { throw new Error(`HTTP ${r.status}`); }
+      } catch(e) { console.warn('ohlcv_analyze SambaNova failed:', e.message); await cb.onFailure('ai:sambanova:main'); }
+    } else if (SAMBANOVA_KEY) { console.log('ohlcv_analyze: SambaNova circuit OPEN — skipping to Groq'); }
 
     if (!rawText && GROQ_KEY) {
       const r = await fetch(GROQ_URL_FUND, {

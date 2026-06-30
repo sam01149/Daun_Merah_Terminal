@@ -9,6 +9,17 @@ const { configureVapid, sendWebPush } = require('./_webpush');
 // AI provider failure threshold before circuit opens (fewer than external sources
 // because AI errors are faster to detect and providers recover quickly)
 const AI_CB_THRESHOLD = 2;
+
+// Frasa terlarang dari DIGEST_SYSTEM_DEFAULT — satu sumber kebenaran untuk prompt DAN cek kode (C8)
+const FORBIDDEN_PHRASES = [
+  'dapat mempengaruhi','dapat memberikan','dapat berdampak','perlu dicermati','patut diwaspadai',
+  'tergantung data','masih akan volatile','menjadi fokus','berpotensi menggerakkan',
+  'berpotensi mempengaruhi','dapat menekan','memberikan tekanan','memberikan dorongan',
+  'perlu diperhatikan','akan terus dipantau','seiring dengan','sejalan dengan','di tengah',
+  'memberikan gambaran','masih dalam ketidakpastian','mencermati','perkembangan ini',
+  'berdampak pada pasar',
+];
+
 const RSS_URL      = 'https://www.financialjuice.com/feed.ashx?xy=rss';
 const FF_THIS_WEEK = 'https://nfs.faireconomy.media/ff_calendar_thisweek.xml';
 const FF_NEXT_WEEK = 'https://nfs.faireconomy.media/ff_calendar_nextweek.xml';
@@ -18,6 +29,9 @@ const SAMBANOVA_URL       = 'https://api.sambanova.ai/v1/chat/completions';
 const SAMBANOVA_MODEL     = 'DeepSeek-V3.2';              // Call 2 & 3: structured JSON (akun 1) — upgrade dari V3.1, kualitas lebih baik
 const SAMBANOVA_URL_CALL1 = 'https://api.sambanova.ai/v1/chat/completions';
 const SAMBANOVA_MODEL_CALL1 = 'DeepSeek-V3.2';            // Call 1: prose (akun 2) — preview, tapi kualitas superior untuk Indonesian
+// Circuit breaker source names — pisahkan per-akun agar kegagalan akun 1 tak menjatuhkan akun 2
+const CB_SAMBA_C1   = 'ai:sambanova:c1';   // Call 1 prosa, akun 2 (SAMBANOVA_KEY_CALL1)
+const CB_SAMBA_MAIN = 'ai:sambanova:main'; // Call 2/3/4 JSON, akun 1 (SAMBANOVA_KEY)
 const GROQ_URL        = 'https://api.groq.com/openai/v1/chat/completions';
 const GROQ_MODEL      = 'llama-3.3-70b-versatile';        // Call 2, 3, 4: JSON + thesis
 const GROQ_MODEL_PROSE = 'llama-3.3-70b-versatile';        // Call 1 fallback 3: prose. Diganti dari qwen/qwen3-32b (2026-06)
@@ -203,7 +217,11 @@ async function aiCall(url, apiKey, model, messages, maxTokens, temperature, time
     throw e;
   }
   const data = await res.json();
-  const content = data?.choices?.[0]?.message?.content || '';
+  const choice = data?.choices?.[0];
+  if (choice?.finish_reason === 'length') {
+    console.warn(`aiCall truncated (finish_reason=length, model=${model}, max_tokens=${maxTokens})`);
+  }
+  const content = choice?.message?.content || '';
   return stripThinking(content).trim();
 }
 
@@ -334,6 +352,7 @@ async function fetchOhlcvContext(symbol, label) {
 
 module.exports = async function handler(req, res) {
   console.log('market-digest v3 START', new Date().toISOString());
+  const handlerStart = Date.now();
   res.setHeader('Access-Control-Allow-Origin', '*');
 
   // Cached mode — serve last saved digest from Redis, no AI calls
@@ -825,18 +844,18 @@ module.exports = async function handler(req, res) {
       ].join('\n');
       const call2Messages = [{ role: 'user', content: biasPrompt }];
       let biasRaw = null;
-      if (SAMBANOVA_KEY && await cb.canCall('ai:sambanova')) {
+      if (SAMBANOVA_KEY && await cb.canCall(CB_SAMBA_MAIN)) {
         try {
           console.log('Call 2: trying SambaNova');
-          biasRaw = await aiCall(SAMBANOVA_URL, SAMBANOVA_KEY, SAMBANOVA_MODEL, call2Messages, 400, 0.1, 8000);
+          biasRaw = await aiCall(SAMBANOVA_URL, SAMBANOVA_KEY, SAMBANOVA_MODEL, call2Messages, 700, 0.1, 8000);
           console.log('Call 2: SambaNova OK');
-          await cb.onSuccess('ai:sambanova');
-        } catch(e) { console.warn('Call 2 SambaNova failed:', e.status || e.message); await cb.onFailure('ai:sambanova', AI_CB_THRESHOLD); }
+          await cb.onSuccess(CB_SAMBA_MAIN);
+        } catch(e) { console.warn('Call 2 SambaNova failed:', e.status || e.message); await cb.onFailure(CB_SAMBA_MAIN, AI_CB_THRESHOLD); }
       } else if (SAMBANOVA_KEY) { console.log('Call 2: SambaNova circuit OPEN — skipping to Groq'); }
       if (!biasRaw && GROQ_KEY) {
         try {
           console.log('Call 2: falling back to Groq');
-          biasRaw = await aiCall(GROQ_URL, GROQ_KEY, GROQ_MODEL, call2Messages, 400, 0.1, 12000);
+          biasRaw = await aiCall(GROQ_URL, GROQ_KEY, GROQ_MODEL, call2Messages, 700, 0.1, 12000);
           console.log('Call 2: Groq fallback OK');
         } catch(e) { console.warn('Call 2 Groq fallback failed:', e.status || e.message); }
       }
@@ -940,22 +959,22 @@ module.exports = async function handler(req, res) {
       const call4Messages = [{ role: 'user', content: monitorPrompt }];
       let raw4 = null;
       // Primary: SambaNova DeepSeek-V3.2 (akun 1) — same model used for Call 2 & 3
-      if (SAMBANOVA_KEY && await cb.canCall('ai:sambanova')) {
+      if (SAMBANOVA_KEY && await cb.canCall(CB_SAMBA_MAIN)) {
         try {
           console.log('Call 4: trying SambaNova');
-          raw4 = await aiCall(SAMBANOVA_URL, SAMBANOVA_KEY, SAMBANOVA_MODEL, call4Messages, 400, 0.1, 8000);
+          raw4 = await aiCall(SAMBANOVA_URL, SAMBANOVA_KEY, SAMBANOVA_MODEL, call4Messages, 700, 0.1, 8000);
           console.log('Call 4: SambaNova OK');
-          await cb.onSuccess('ai:sambanova');
+          await cb.onSuccess(CB_SAMBA_MAIN);
         } catch(e) {
           console.warn('Call 4 SambaNova failed:', e.status || e.message);
-          await cb.onFailure('ai:sambanova', AI_CB_THRESHOLD);
+          await cb.onFailure(CB_SAMBA_MAIN, AI_CB_THRESHOLD);
         }
       }
       // Fallback: Groq llama-3.3-70b
       if (!raw4 && GROQ_KEY) {
         try {
           console.log('Call 4: falling back to Groq');
-          raw4 = await aiCall(GROQ_URL, GROQ_KEY, GROQ_MODEL, call4Messages, 400, 0.1, 8000);
+          raw4 = await aiCall(GROQ_URL, GROQ_KEY, GROQ_MODEL, call4Messages, 700, 0.1, 8000);
           console.log('Call 4: Groq fallback OK');
         } catch(e) { console.warn('Call 4 Groq fallback failed:', e.status || e.message); }
       }
@@ -1040,7 +1059,18 @@ TRIGGER TERDEKAT 24 JAM: Pilih event dari kalender dengan PRIORITAS TERTINGGI: (
 REMINDER FINAL: SEBELUM MERESPONS, pastikan tidak ada kata "dapat mempengaruhi", "berpotensi", "mungkin", atau "dalam beberapa jam ke depan". Jika ada, ubah menjadi kalimat pernyataan tegas.
 CEK SEKALI LAGI kalimat penutup FX: kalau draft-mu menyebut lebih dari satu currency di sisi kuat ATAU lebih dari satu di sisi lemah TANPA menjelaskan bahwa itu sinyal campuran (cuma ditumpuk pakai "dan", misal "EUR dan JPY berada di posisi terlemah") — itu salah, perbaiki jadi salah satu dari dua: (1) pilih HANYA SATU yang buktinya paling kuat dari headline, buang yang lain; atau (2) kalau memang campuran, tulis ulang jadi kalimat "sinyal campuran" yang eksplisit menjelaskan kuat-vs-siapa dan lemah-vs-siapa, jangan biarkan ambigu.`;
 
-    const digestSystemMsg = promptDigestInstr || DIGEST_SYSTEM_DEFAULT;
+    function isValidDigestPrompt(p) {
+      if (typeof p !== 'string') return false;
+      const t = p.trim();
+      if (t.length < 1000) return false;
+      if (!t.includes('XAUUSD')) return false;
+      if (!t.includes('ATURAN FX')) return false;
+      return true;
+    }
+    if (promptDigestInstr && !isValidDigestPrompt(promptDigestInstr)) {
+      console.warn('prompt_digest override invalid (too short / missing markers) — using DIGEST_SYSTEM_DEFAULT');
+    }
+    const digestSystemMsg = isValidDigestPrompt(promptDigestInstr) ? promptDigestInstr : DIGEST_SYSTEM_DEFAULT;
     const digestUserMsg = `PENTING: TULIS SELURUH OUTPUT DALAM BAHASA INDONESIA. JANGAN GUNAKAN BAHASA INGGRIS SAMA SEKALI.
 WAKTU: ${dayStr}, ${dateStr}, ${timeStr}${weekendNote}
 
@@ -1097,11 +1127,11 @@ ${xauHistoryBlock}`;
     ];
 
     // Primary: SambaNova DeepSeek-V3.2 (akun 2, Call 1 prose only) — circuit breaker
-    if (SAMBANOVA_KEY_CALL1 && await cb.canCall('ai:sambanova')) {
+    if (SAMBANOVA_KEY_CALL1 && await cb.canCall(CB_SAMBA_C1)) {
       const t1s = Date.now();
       try {
         console.log('Call 1: trying SambaNova DeepSeek-V3.2 (akun 2 prose)');
-        const raw = await aiCall(SAMBANOVA_URL_CALL1, SAMBANOVA_KEY_CALL1, SAMBANOVA_MODEL_CALL1, call1Messages, 1300, 0.25, 28000);
+        const raw = await aiCall(SAMBANOVA_URL_CALL1, SAMBANOVA_KEY_CALL1, SAMBANOVA_MODEL_CALL1, call1Messages, 1300, 0.25, 22000);
         const elapsed = Date.now() - t1s;
         if (raw.trim()) {
           article = raw.trim(); method = 'deepseek-v3.2';
@@ -1110,13 +1140,13 @@ ${xauHistoryBlock}`;
           providerLog.push(`sambanova:empty(${elapsed}ms)`);
         }
         console.log('Call 1: SambaNova V3.2 OK, length', article?.length);
-        await cb.onSuccess('ai:sambanova');
+        await cb.onSuccess(CB_SAMBA_C1);
       } catch(e) {
         const elapsed = Date.now() - t1s;
         const errMsg = e.status ? `HTTP${e.status}` : (e.message || 'err').slice(0, 40);
         providerLog.push(`sambanova:${errMsg}(${elapsed}ms)`);
         console.warn('Call 1 SambaNova V3.2 failed:', e.status || e.message);
-        await cb.onFailure('ai:sambanova', AI_CB_THRESHOLD);
+        await cb.onFailure(CB_SAMBA_C1, AI_CB_THRESHOLD);
       }
     } else if (SAMBANOVA_KEY_CALL1) {
       providerLog.push('sambanova:circuit_open');
@@ -1154,7 +1184,7 @@ ${xauHistoryBlock}`;
       const t3s = Date.now();
       try {
         console.log('Call 1: fallback 3 to Groq qwen3-32b');
-        const raw = await aiCall(GROQ_URL, GROQ_KEY, GROQ_MODEL_PROSE, call1Messages, 1300, 0.25, 20000);
+        const raw = await aiCall(GROQ_URL, GROQ_KEY, GROQ_MODEL_PROSE, call1Messages, 1300, 0.25, 15000);
         const elapsed = Date.now() - t3s;
         if (raw.trim()) {
           article = raw.trim(); method = 'qwen3-32b';
@@ -1219,8 +1249,16 @@ ${xauHistoryBlock}`;
     if (lastIdx === -1) return text; // cuma 1 kalimat atau pola nggak ketemu, jangan dipaksa
     return text.slice(0, lastIdx) + '{{TAG: Konfirmasi}} ' + text.slice(lastIdx);
   }
+  let phraseHits = [];
   if (article && method !== 'fallback' && method !== 'fallback_quota') {
     article = _ensureConfirmasiTag(article);
+    // C8: Deteksi frasa terlarang yang lolos dari instruksi prompt (observability — tidak auto-edit)
+    const lowerArt = article.toLowerCase();
+    phraseHits = FORBIDDEN_PHRASES.filter(p => lowerArt.includes(p));
+    if (phraseHits.length > 0) {
+      console.warn('Call 1 forbidden phrases leaked:', phraseHits.join(', '));
+      providerLog.push(`forbidden:${phraseHits.length}`);
+    }
   }
 
   // ── 5b. Save digest + xau history (parallel) ──
@@ -1257,7 +1295,12 @@ ${xauHistoryBlock}`;
 
   // ── 7. Call 3: Structured Trade Thesis — SambaNova → Groq fallback ───────────
   let thesis = null;
-  if (recentItems.length > 0 && article) {
+  const elapsedBeforeCall3 = Date.now() - handlerStart;
+  const CALL3_BUDGET_MS = 50000; // sisakan ~10s headroom dari maxDuration 60s
+  if (elapsedBeforeCall3 > CALL3_BUDGET_MS) {
+    console.warn(`Call 3 skipped — time budget exhausted (${elapsedBeforeCall3}ms elapsed)`);
+    // thesis tetap null → UI sajikan latest_thesis lama dari Redis (tak fatal)
+  } else if (recentItems.length > 0 && article) {
     const cbSummary = biasUpdated.length > 0
       ? `CB biases just updated for: ${biasUpdated.join(', ')}`
       : 'CB biases unchanged this cycle';
@@ -1265,11 +1308,16 @@ ${xauHistoryBlock}`;
     const xauSection = xauSectionMatch !== -1 ? article.slice(xauSectionMatch, xauSectionMatch + 700) : '';
     const briefingForThesis = article.slice(0, 900) + (xauSection && xauSectionMatch > 900 ? '\n\n' + xauSection : '');
     const goldHeadlinesForThesis = goldItems.slice(0, 15).map((i, idx) => `${idx + 1}. ${i.title}`).join('\n') || '(none)';
+    const rawHeadlinesForThesis = headlinesForBriefing.slice(0, 15).map((h, i) => `${i + 1}. ${h.title}`).join('\n');
 
     const thesisPrompt = [
       'You are a macro FX and gold strategist. Based on the market context below, output a structured JSON with both an FX trade thesis and an XAU/USD fundamental thesis.',
       '',
       `Market briefing (current session): ${briefingForThesis}`,
+      '',
+      `Top headlines (raw, newest first — use as the factual anchor):\n${rawHeadlinesForThesis}`,
+      '',
+      'If the prose briefing above appears to contradict these raw headlines, prioritise the raw headlines — the briefing is a derived summary and may compress or distort.',
       '',
       cbSummary,
       '',
@@ -1354,14 +1402,14 @@ ${xauHistoryBlock}`;
     for (const provider of call3Providers) {
       if (thesis) break;
       // Check circuit breaker for SambaNova; Groq fallback is always allowed
-      const circuitSource = provider.label.startsWith('SambaNova') ? 'ai:sambanova' : null;
+      const circuitSource = provider.label.startsWith('SambaNova') ? CB_SAMBA_MAIN : null;
       if (circuitSource && !await cb.canCall(circuitSource)) {
         console.log('Call 3:', provider.label, 'circuit OPEN — skipping');
         continue;
       }
       try {
         console.log('Call 3: trying', provider.label);
-        const raw = await aiCall(provider.url, provider.key, provider.model, call3Messages, 500, 0.1, provider.timeout);
+        const raw = await aiCall(provider.url, provider.key, provider.model, call3Messages, 800, 0.1, provider.timeout);
         const clean = raw.replace(/```json|```/g, '').trim();
         const parsed = JSON.parse(clean);
         if (validateThesis(parsed)) {
@@ -1409,6 +1457,7 @@ ${xauHistoryBlock}`;
     cal_count:      calEvents.length,
     bias_updated:   biasUpdated,
     provider_log:   providerLog,
+    quality_flags:  phraseHits.length > 0 ? { forbidden_phrases: phraseHits } : undefined,
     generated_at:   new Date().toISOString(),
   };
 
