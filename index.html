@@ -3671,7 +3671,7 @@ function sanitizeDesc(html) {
 // Returns 'chart' | 'table' | null; null means no inline image toggle shown.
 function fjImageType(title) {
   if (/\bchart\b/i.test(title)) return 'chart';
-  if (/\b(probabilit|matrix|heatmap)\b/i.test(title)) return 'table';
+  if (/\b(probabilities?|matrix|heatmap|volatility)\b/i.test(title)) return 'table';
   return null;
 }
 
@@ -3741,6 +3741,10 @@ function openLink(url) { if(url) window.open(url,'_blank'); }
   const upAccum = new WeakMap(); // akumulasi scroll-naik per elemen, reset saat turun
   let ticking = false;
   let pendingDelta = 0, pendingScrollTop = 0, pendingAccum = 0;
+  // Timestamp saat terakhir collapse — untuk abaikan spurious scrollTop=0 event
+  // yang muncul saat CSS transition mengubah tinggi kolom dashboard dan browser
+  // clamp scrollTop ke 0 karena konten tiba-tiba muat semua (bukan user scroll ke atas).
+  let collapseAt = 0;
 
   document.addEventListener('scroll', e => {
     const el = e.target;
@@ -3749,8 +3753,10 @@ function openLink(url) { if(url) window.open(url,'_blank'); }
     const delta = el.scrollTop - prev;
     lastScrollTop.set(el, el.scrollTop);
 
-    // Sudah di paling atas: selalu reveal header tanpa tunggu akumulasi
-    if (el.scrollTop === 0 && chrome.classList.contains('chrome-collapsed')) {
+    // Sudah di paling atas: selalu reveal header tanpa tunggu akumulasi.
+    // Cooldown 500ms setelah collapse: abaikan scrollTop=0 yang muncul karena
+    // layout-shift CSS transition (bukan scroll manual user ke atas).
+    if (el.scrollTop === 0 && chrome.classList.contains('chrome-collapsed') && Date.now() - collapseAt > 500) {
       upAccum.set(el, 0);
       if (!ticking) {
         ticking = true;
@@ -3775,6 +3781,7 @@ function openLink(url) { if(url) window.open(url,'_blank'); }
     requestAnimationFrame(() => {
       if (pendingDelta > 0 && pendingScrollTop > 40) {
         chrome.classList.add('chrome-collapsed');
+        collapseAt = Date.now();
       } else if (pendingDelta < 0 && pendingAccum >= 60) {
         chrome.classList.remove('chrome-collapsed');
       }
@@ -11119,11 +11126,17 @@ async function dashGenerateRingkasan() {
 
 function refreshDashboard() {
   dashLastRefresh = Date.now();
+  // Simpan scroll position kolom sebelum re-render innerHTML, restore setelahnya.
+  // Tanpa ini, jika konten baru lebih pendek dari scrollTop saat ini, browser
+  // clamp scrollTop ke 0 dan user kehilangan posisi scroll saat auto-refresh 60s.
+  const DASH_COLS = ['dashNewsCol', 'dashMainCol', 'dashSideCol'];
+  const savedScroll = DASH_COLS.map(id => { const el = document.getElementById(id); return el ? el.scrollTop : 0; });
   renderDashNews();
   renderDashDigest();
   renderDashBias();
   renderDashEvents();
   renderDashAnalisa();
+  DASH_COLS.forEach((id, i) => { const el = document.getElementById(id); if (el && savedScroll[i]) el.scrollTop = savedScroll[i]; });
   const badge = document.getElementById('dashAutoRefreshBadge');
   if (badge) badge.textContent = 'auto-refresh 60s';
 }
