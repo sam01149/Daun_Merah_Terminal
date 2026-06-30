@@ -53,13 +53,13 @@ body {
   max-height: 420px; opacity: 1;
   /* reveal: ease-IN untuk max-height (slow di visible zone 0→160px, fast di invisible 160→420px)
      ease-out untuk opacity (langsung mulai fade, natural) */
-  transition: max-height .38s ease-in, opacity .30s ease-out;
+  transition: max-height .60s ease-in, opacity .48s ease-out;
 }
 #topChrome.chrome-collapsed {
   max-height: 0; opacity: 0;
   /* collapse: ease-OUT untuk max-height (fast di invisible 420→160px, slow di visible 160→0px)
      ease-out untuk opacity (mulai fade langsung, tidak snap tiba-tiba di akhir) */
-  transition: max-height .30s ease-out, opacity .22s ease-out;
+  transition: max-height .48s ease-out, opacity .36s ease-out;
 }
 
 /* HEADER */
