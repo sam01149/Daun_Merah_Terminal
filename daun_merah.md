@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-06-30 (session 121 — lihat "Changelog Session 121" di bawah untuk detail terbaru)
+> **Last updated:** 2026-06-30 (session 122 — lihat "Changelog Session 122" di bawah untuk detail terbaru)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -150,6 +150,28 @@ File: `api/feeds.js` → `CB_RESEARCH_SOURCES` (diaudit sesi 120)
 | RBNZ, SNB | ❌ | 403 semua jalur |
 
 Parser `parseCBRSSItems`: regex `<(?:item|entry)\b[^>]*>` — support RSS 2.0, Atom, dan RDF/RSS 1.0.
+
+---
+
+## Changelog Session 122 (2026-06-30)
+
+### Audit fitur Fundamental — 3 bug fix
+
+**Temuan audit mendalam:**
+
+1. **Bug CRITICAL — NZD Employment Change tidak pernah diupdate dari headline** (`api/_fundamental_parser.js`):
+   - `QUANTITY_INDICATORS` men-reject nilai `%` untuk key `'Employment Change'`
+   - NZD melaporkan Employment Change sebagai QoQ % (e.g. "NZ Employment Change QoQ 0.2%") — berbeda dengan USD/GBP/AUD/CAD yang menggunakan count (K)
+   - Akibatnya semua headline "New Zealand Employment Change" dibuang silent oleh parser setelah nilai diekstrak sebagai "%"
+   - **Fix:** Hapus `'Employment Change'` dari `QUANTITY_INDICATORS`. Key NFP tetap di-reject jika %, karena NFP secara definitif selalu dalam ribuan. NZD sekarang bisa diupdate dari headline.
+
+2. **Bug display — GDP Nowcast, Core PCE YoY, Core CPI YoY jatuh ke seksi "Lainnya"** (`index.html`):
+   - Ketiga indikator bisa diparse/ditulis ke Redis (GDP Nowcast dari Atlanta Fed, Core PCE YoY dan Core CPI YoY dari headline disambiguation), tapi tidak ada di `FUND_SECTIONS_MAP`
+   - **Fix:** Tambah `'GDP Nowcast':'Pertumbuhan'`, `'Core PCE YoY':'Inflasi'`, `'Core CPI YoY':'Inflasi'` ke `FUND_SECTIONS_MAP`
+
+3. **Bug scoring — GDP Nowcast, Core PCE YoY, Core CPI YoY tidak berkontribusi ke skor currency** (`index.html`):
+   - Tidak ada di `FUND_SCORE_RULES` dan `IND_DIR`
+   - **Fix:** Tambah ke `FUND_SCORE_RULES` (GDP Nowcast threshold 2.0, Core PCE/CPI YoY threshold 2.0, dir 1 semua) dan `IND_DIR` (value 1 semua)
 
 ---
 

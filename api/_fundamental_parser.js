@@ -126,8 +126,10 @@ const CB_RATE_MAP = [
 
 // Indicators whose values must be counts (K/M suffix), never percentages.
 // A headline yielding e.g. NFP=0.0% is a parse error — reject it.
+// NOTE: 'Employment Change' intentionally excluded — NZD reports this as QoQ %
+// (e.g. "0.2%"), so rejecting % would silently discard all NZD updates.
 const QUANTITY_INDICATORS = new Set([
-  'NFP', 'Jobless Claims', 'Employment Change', 'Claimant Count',
+  'NFP', 'Jobless Claims', 'Claimant Count',
   'Building Approvals', 'Housing Starts', 'Durable Goods Orders',
 ]);
 
