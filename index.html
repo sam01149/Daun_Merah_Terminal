@@ -50,10 +50,15 @@ body {
    max-height transition actually animates instead of jumping instantly. */
 #topChrome {
   flex-shrink: 0; overflow: hidden;
-  max-height: 420px;
-  transition: max-height .28s ease, opacity .2s ease;
+  max-height: 420px; opacity: 1;
+  /* reveal: ease-out-expo — muncul cepat lalu melambat halus */
+  transition: max-height .42s cubic-bezier(0.16, 1, 0.3, 1), opacity .35s ease-out;
 }
-#topChrome.chrome-collapsed { max-height: 0; opacity: 0; }
+#topChrome.chrome-collapsed {
+  max-height: 0; opacity: 0;
+  /* collapse: ease-in — cepat pergi, tidak menarik perhatian */
+  transition: max-height .22s ease-in, opacity .18s ease-in;
+}
 
 /* HEADER */
 .header {
@@ -3713,8 +3718,9 @@ function openLink(url) { if(url) window.open(url,'_blank'); }
   const chrome = document.getElementById('topChrome');
   if (!chrome) return;
   const lastScrollTop = new WeakMap();
+  const upAccum = new WeakMap(); // akumulasi scroll-naik per elemen, reset saat turun
   let ticking = false;
-  let pendingDelta = 0, pendingScrollTop = 0;
+  let pendingDelta = 0, pendingScrollTop = 0, pendingAccum = 0;
 
   document.addEventListener('scroll', e => {
     const el = e.target;
@@ -3722,14 +3728,26 @@ function openLink(url) { if(url) window.open(url,'_blank'); }
     const prev = lastScrollTop.has(el) ? lastScrollTop.get(el) : el.scrollTop;
     const delta = el.scrollTop - prev;
     lastScrollTop.set(el, el.scrollTop);
-    if (Math.abs(delta) < 6) return; // threshold — abaikan jiggle/inersia kecil
+    if (Math.abs(delta) < 6) return; // abaikan jiggle/inersia kecil
+
+    // reset akumulasi saat arah berubah ke bawah, tambah saat naik
+    if (delta > 0) {
+      upAccum.set(el, 0);
+    } else {
+      upAccum.set(el, (upAccum.get(el) || 0) + Math.abs(delta));
+    }
     pendingDelta = delta;
     pendingScrollTop = el.scrollTop;
+    pendingAccum = upAccum.get(el) || 0;
     if (ticking) return;
     ticking = true;
     requestAnimationFrame(() => {
-      if (pendingDelta > 0 && pendingScrollTop > 40) chrome.classList.add('chrome-collapsed');
-      else if (pendingDelta < 0) chrome.classList.remove('chrome-collapsed');
+      if (pendingDelta > 0 && pendingScrollTop > 40) {
+        chrome.classList.add('chrome-collapsed');
+      } else if (pendingDelta < 0 && pendingAccum >= 60) {
+        // butuh 60px scroll-naik sebelum header muncul — tidak tiba-tiba
+        chrome.classList.remove('chrome-collapsed');
+      }
       ticking = false;
     });
   }, { capture: true, passive: true });

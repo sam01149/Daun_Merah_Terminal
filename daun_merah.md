@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-06-29 (session 119 — lihat "Changelog Session 119" di bawah untuk detail terbaru)
+> **Last updated:** 2026-06-30 (session 120 — lihat "Changelog Session 120" di bawah untuk detail terbaru)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Financial_Feed_App`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -119,6 +119,26 @@ Financial_Feed_App/
 > **Penting:** `api/feeds.js` menggantikan `api/rss.js` dan `api/cot.js` yang sudah dihapus.
 > `api/admin.js` menggantikan `api/health.js`, `api/redis-keys.js`, `api/admin-prompts.js`, dan `api/push.js`.
 > Konsolidasi ini dilakukan untuk tetap di bawah limit 12 serverless functions Vercel Hobby.
+
+---
+
+## Changelog Session 120 (2026-06-30)
+
+### Header reveal lebih smooth — ease-out-expo + scroll accumulator
+
+**Konteks:** User feedback bahwa header yang naik kembali setelah scroll terasa "tiba-tiba" dan "forceful" dari sisi UX pengguna.
+
+**Root cause:** Dua masalah terpisah:
+1. `max-height` transition dari `0 → 420px` tidak proporsional — browser interpolasi rentang penuh (0–420px) tapi konten asli jauh lebih pendek (~130px), sehingga kurva easing tidak selaras dengan visual nyata. Hasilnya: header "melesat" masuk di awal animasi lalu tiba-tiba berhenti.
+2. Threshold reveal terlalu sensitif — scroll naik 7px (barely above 6px minimum threshold) sudah trigger header muncul, terasa tidak disengaja.
+
+**Perbaikan (`index.html`):**
+
+- **CSS — pisah easing collapse vs reveal:**
+  - *Reveal* (class dilepas): `max-height .42s cubic-bezier(0.16, 1, 0.3, 1), opacity .35s ease-out` — ease-out-expo: muncul cepat di awal lalu melambat halus mendekati posisi akhir. Lebih panjang (420ms) supaya ada waktu untuk "landing" yang lembut.
+  - *Collapse* (class ditambah): `max-height .22s ease-in, opacity .18s ease-in` — cepat pergi, tidak menarik perhatian. Sebelumnya sama-sama `.28s ease` untuk keduanya.
+
+- **JS — scroll accumulator 60px sebelum reveal:** WeakMap `upAccum` per scroll-container mencatat akumulasi pixel scroll-naik. Reset saat arah berbalik ke bawah. Header hanya muncul setelah akumulasi ≥ 60px — mencegah trigger dari jiggle/inersia ringan. Sebelumnya: setiap delta negatif langsung trigger reveal.
 
 ---
 
