@@ -3699,9 +3699,9 @@ function renderFeed(markNew = false) {
     const fjImgId = `fjImg-${item.guid}`;
     const fjType = /^\d+$/.test(item.guid) ? fjImageType(item.title) : null;
     const fjLabels = fjType === 'chart'
-      ? ['📊 Lihat Chart ▾', 'Sembunyikan Chart ▴']
+      ? ['Lihat Chart ▾', 'Sembunyikan Chart ▴']
       : fjType === 'table'
-      ? ['📋 Lihat Gambar ▾', 'Sembunyikan Gambar ▴']
+      ? ['Lihat Gambar ▾', 'Sembunyikan Gambar ▴']
       : null;
     const chartHtml = fjLabels
       ? `<button class="feed-chart-toggle" data-label-show="${fjLabels[0]}" data-label-hide="${fjLabels[1]}" onclick="event.stopPropagation();toggleFJImg(this,'${fjImgId}')">${fjLabels[0]}</button>
