@@ -124,6 +124,23 @@ Financial_Feed_App/
 
 ## Changelog Session 120 (2026-06-30)
 
+### Audit UX psikologi — 6 fix animasi + RBA Minutes feed ditambahkan
+
+**UX Psikologi — 6 perbaikan animasi (`index.html`):**
+
+- **Toast entrance** `ease` → `ease-out`: animasi masuk terasa lebih responsif (langsung cepat, bukan lambat di awal).
+- **Toast exit**: sebelumnya `display:'none'` instan (hilang tiba-tiba), sekarang punya animasi `slideUp .2s ease-in` sebelum disembunyikan. Fungsi `_toastHide()` ditambahkan; `showToast()` force display-cycle `none → block` + `void offsetWidth` agar `slideDown` selalu restart saat toast baru masuk di atas toast yang sedang jalan.
+- **3 Modal (MT5, Override, Speed)** sebelumnya muncul instan tanpa animasi. Sekarang inner box tiap modal punya `animation: modalIn .28s cubic-bezier(0.16,1,0.3,1)` — scale 95%→100% + translateY 14px→0. Karena parent modal pakai `display:none → display:flex`, animasi restart otomatis setiap modal dibuka.
+- **Drawer panel** — easing sebelumnya identik untuk buka dan tutup (`.22s ease`). Sekarang asimetris: buka `.28s cubic-bezier(0.16,1,0.3,1)` (ease-out-expo, datang responsif lalu landing halus), tutup `.18s ease-in` (cepat pergi). Overlay backdrop juga: buka `ease-out .25s`, tutup `ease-in .18s`.
+- **Feed items** `ease` → `ease-out`: sebelumnya item baru muncul dengan rasa "lambat bangun" (slow-start). Sekarang langsung terasa hadir.
+- **Status dot live vs warn**: sebelumnya keduanya `blink 2s infinite` — tidak ada beda urgensi visual. Sekarang `live` (hijau) = `1.4s ease-in-out` (steady heartbeat), `warn` (kuning) = `0.9s ease-in-out` (lebih cepat, mencerminkan urgency).
+
+**RBA feeds diperluas (`api/feeds.js`):**
+
+- Sebelumnya hanya `rss-cb-speeches.xml` (pidato saja). Minutes dan Monetary Policy Statements ada di feed terpisah yang tidak difetch.
+- Ditambahkan `RBAM` (`rss-cb-minutes.xml`) dan `RBAS` (`rss-cb-statements.xml`) via rss2json (karena RBA memblokir Vercel IP secara langsung).
+- "Minutes of the June 2026 Monetary Policy Board Meeting" (30 Jun 2026) yang terlihat di website RBA tapi tidak muncul di Daun Merah sekarang akan terambil dari feed ini.
+
 ### Header reveal lebih smooth — ease-out-expo + scroll accumulator
 
 **Konteks:** User feedback bahwa header yang naik kembali setelah scroll terasa "tiba-tiba" dan "forceful" dari sisi UX pengguna.

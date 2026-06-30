@@ -82,10 +82,10 @@ body {
   font-size: 9px; letter-spacing: 0.8px; color: var(--muted);
 }
 .dot { width:6px; height:6px; border-radius:50%; background:var(--muted); transition:all .3s; }
-.dot.live { background:var(--green); box-shadow:0 0 6px var(--green); animation:blink 2s infinite; }
+.dot.live { background:var(--green); box-shadow:0 0 6px var(--green); animation:blink 1.4s ease-in-out infinite; }
 .dot.loading { background:var(--yellow); }
 .dot.error { background:var(--red); }
-.dot.warn { background:var(--yellow); box-shadow:0 0 6px var(--yellow); animation:blink 2s infinite; }
+.dot.warn { background:var(--yellow); box-shadow:0 0 6px var(--yellow); animation:blink 0.9s ease-in-out infinite; }
 @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
 
 .header-menu-wrap { position:relative; }
@@ -403,7 +403,7 @@ body {
   background:var(--surface); border:1px solid var(--border);
   border-radius:10px; padding:12px 14px; margin-bottom:8px;
   cursor:pointer; transition:all .15s; position:relative;
-  overflow:hidden; animation:fadeUp .25s ease both;
+  overflow:hidden; animation:fadeUp .25s ease-out both;
 }
 .feed-item:active { transform:scale(.98); }
 @keyframes fadeUp { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:translateY(0)} }
@@ -487,9 +487,15 @@ body {
   position:fixed; top:70px; left:12px; right:12px;
   background:var(--surface); border:1px solid var(--accent);
   border-radius:10px; padding:12px 14px; z-index:999;
-  display:none; animation:slideDown .3s ease;
+  display:none; animation:slideDown .28s ease-out;
 }
+.toast.hiding { animation:slideUp .2s ease-in both; pointer-events:none; }
 @keyframes slideDown { from{opacity:0;transform:translateY(-10px)} to{opacity:1;transform:translateY(0)} }
+@keyframes slideUp   { from{opacity:1;transform:translateY(0)} to{opacity:0;transform:translateY(-10px)} }
+@keyframes modalIn   { from{opacity:0;transform:scale(.95) translateY(14px)} to{opacity:1;transform:scale(1) translateY(0)} }
+#mt5Modal > div, #ckOverrideModal > div, #ckSpeedAckModal > div {
+  animation: modalIn .28s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
 .toast-title { font-family:'Syne',sans-serif; font-size:12px; color:var(--accent); margin-bottom:4px; }
 .toast-body { font-size:11px; color:var(--muted); line-height:1.4; }
 
@@ -2073,16 +2079,19 @@ body {
 
 .drawer-overlay {
   position: fixed; inset: 0; background: rgba(0,0,0,.55); z-index: 300;
-  opacity: 0; pointer-events: none; transition: opacity .2s;
+  opacity: 0; pointer-events: none; transition: opacity .18s ease-in;
 }
-.drawer-overlay.open { opacity: 1; pointer-events: all; }
+.drawer-overlay.open { opacity: 1; pointer-events: all; transition: opacity .25s ease-out; }
 .drawer-panel {
   position: fixed; top: 0; right: 0; height: 100%; width: 260px;
   background: #111110; border-left: 1px solid var(--border);
-  z-index: 301; transform: translateX(100%); transition: transform .22s ease;
+  z-index: 301; transform: translateX(100%);
+  /* closing: ease-in — cepat pergi */
+  transition: transform .18s ease-in;
   display: flex; flex-direction: column;
 }
-.drawer-panel.open { transform: translateX(0); }
+/* opening: ease-out-expo — datang responsif lalu landing halus */
+.drawer-panel.open { transform: translateX(0); transition: transform .28s cubic-bezier(0.16, 1, 0.3, 1); }
 .drawer-hdr {
   display: flex; align-items: center; justify-content: space-between;
   padding: 14px 16px 12px; border-bottom: 1px solid var(--border); flex-shrink: 0;
@@ -3823,17 +3832,25 @@ function toggleAuto() {
 
 // ── TOAST ────────────────────────────────────────────────
 let toastTimer = null;
+function _toastHide() {
+  const t = document.getElementById('toast');
+  t.classList.add('hiding');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { t.style.display='none'; t.classList.remove('hiding'); }, 200);
+}
 function showToast(title, body, ms=3000) {
   const t = document.getElementById('toast');
+  clearTimeout(toastTimer);
+  t.classList.remove('hiding');
+  // force display-cycle agar animasi slideDown selalu restart
+  t.style.display = 'none';
+  void t.offsetWidth;
   document.getElementById('toastTitle').textContent = title;
   document.getElementById('toastBody').textContent  = body;
   t.style.display = 'block';
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => t.style.display='none', ms);
+  toastTimer = setTimeout(_toastHide, ms);
 }
-document.getElementById('toast').addEventListener('click', () => {
-  document.getElementById('toast').style.display='none';
-});
+document.getElementById('toast').addEventListener('click', _toastHide);
 
 // ── RINGKASAN ────────────────────────────────────────────
 async function generateRingkasan() {

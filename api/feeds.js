@@ -459,7 +459,10 @@ const CB_RESEARCH_SOURCES = [
   { key: 'ECBB', url: 'https://www.ecb.europa.eu/rss/blog.html' },
   { key: 'BIS',  url: 'https://api.rss2json.com/v1/api.json?rss_url=https%3A%2F%2Fwww.bis.org%2Fdoclist%2Fcbspeeches.rss' },
   // RBA via rss2json (direct Vercel IP often gets 403 from RBA)
+  // Tiga feed terpisah: Speeches, Minutes (Board Meeting Minutes), dan Monetary Policy Statements
   { key: 'RBA',  url: 'https://api.rss2json.com/v1/api.json?rss_url=https%3A%2F%2Fwww.rba.gov.au%2Frss%2Frss-cb-speeches.xml' },
+  { key: 'RBAM', url: 'https://api.rss2json.com/v1/api.json?rss_url=https%3A%2F%2Fwww.rba.gov.au%2Frss%2Frss-cb-minutes.xml' },
+  { key: 'RBAS', url: 'https://api.rss2json.com/v1/api.json?rss_url=https%3A%2F%2Fwww.rba.gov.au%2Frss%2Frss-cb-statements.xml' },
   // BoC direct feed — accessible from Vercel IPs
   { key: 'BOC',  url: 'https://www.bankofcanada.ca/feed/speeches/' },
   // BoJ via rss2json (BoJ blocks non-browser UAs on Vercel)
