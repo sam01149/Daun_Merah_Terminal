@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-06-30 (session 129 — lihat "Changelog Session 129" di bawah untuk detail terbaru)
+> **Last updated:** 2026-06-30 (session 130 — lihat "Changelog Session 130" di bawah untuk detail terbaru)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -153,6 +153,16 @@ Parser `parseCBRSSItems`: regex `<(?:item|entry)\b[^>]*>` — support RSS 2.0, A
 
 ---
 
+## Changelog Session 130 (2026-06-30)
+
+### Fix: Hapus cron ohlcv_sync dari vercel.json — deployment macet sejak session 128
+
+**Root cause:** Session 128 menambahkan cron `"30 * * * *"` (setiap jam) ke `vercel.json`. Vercel Hobby plan hanya mengizinkan cron yang berjalan maksimal 1x per hari — cron hourly menyebabkan deployment **ditolak** untuk semua commit setelah `d4cca9f`. Production stuck selama 2+ jam.
+
+**Fix:** Hapus entry `ohlcv_sync` dari array `crons` di `vercel.json`. OHLCV sync kembali hanya dijalankan via GitHub Actions (tiap jam di :00).
+
+---
+
 ## Changelog Session 129 (2026-06-30)
 
 ### Hapus klik ke link eksternal dari headline berita (NEWS + TEK FJ), biarkan ActionForex tetap bisa diklik
@@ -183,10 +193,9 @@ Parser `parseCBRSSItems`: regex `<(?:item|entry)\b[^>]*>` — support RSS 2.0, A
 
 **Root cause temuan:** Yahoo Finance GC=F data sebenarnya fresh (delay ~10 menit). Penyebab "2.8 jam lalu ⚠" adalah GitHub Actions ohlcv-sync **gagal untuk 2–3 run berturut-turut** (09:00, 10:00 UTC), bukan Yahoo yang lambat.
 
-**Fix 1 — Vercel cron backup (`vercel.json`)**
-- Tambah entry `ohlcv_sync` di cron Vercel: `"30 * * * *"` (tiap jam di menit :30)
-- Sekarang sync terjadi DUA kali per jam: GitHub Actions at :00 dan Vercel cron at :30
-- Kalau GH Actions gagal, Vercel cron cover di menit :30 berikutnya — gap maksimal jadi ~30 menit bukan ~60 menit
+**Fix 1 — Vercel cron backup (dibatalkan)**
+- ~~Tambah entry `ohlcv_sync` di cron Vercel: `"30 * * * *"`~~ — dihapus di session 130 karena Hobby plan hanya boleh cron 1x/hari; cron hourly menyebabkan deployment gagal total
+- OHLCV sync kembali hanya via GitHub Actions at :00
 
 **Fix 2 — Binance PAXG fallback (`api/admin.js`)**
 - `fetchYahooOhlcv1h('GC=F')` sekarang di-wrap dalam try-catch
