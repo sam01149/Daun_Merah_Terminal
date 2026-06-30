@@ -2,7 +2,7 @@
 
 > **Last updated:** 2026-06-30 (session 120 — lihat "Changelog Session 120" di bawah untuk detail terbaru)
 > **Branch:** main — semua perubahan deployed ke production
-> **Working directory:** `c:\Users\sam\Documents\kerja\Financial_Feed_App`
+> **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 
 ---
@@ -25,7 +25,7 @@ Daun Merah adalah forex news PWA (Progressive Web App) untuk trader forex Indone
 | Cache/DB | Upstash Redis REST API |
 | Git remote (GitHub) | `https://github.com/sam01149/Daun_Merah_Terminal.git` — **repo dipindah dari `sam01149/Financial_Feed_App` (2026-06-23)**. Push masih jalan ke URL lama via GitHub redirect, tapi `origin` lokal sudah di-update ke URL baru biar nggak bergantung redirect terus-menerus. |
 | RSS sumber berita (NEWS) | FinancialJuice (`https://www.financialjuice.com/feed.ashx?xy=rss`) — satu-satunya sumber untuk AI digest & tab NEWS |
-| Sumber tab ARTIKEL | FED, FOMC, FEDN, ECB, ECBB, BIS, **RBA, BoC, BoJ** (CB primary), **Marc to Market (MTM), ING Think (ING)** (macro research) |
+| Sumber tab ARTIKEL | FED, FOMC, FEDN, ECB, ECBB, BIS, **RBA, BOC, BOE** (CB primary), **Marc to Market (MTM), ING Think (ING)** (macro research). BOJ dihapus sesi 120 (RSS URL sudah tidak ada). |
 | Option expiries (tab TEK) | Investinglive `/feed/forexorders/` via rss2json — difilter per-pair, 4h cache |
 | ActionForex (tab TEK Berita) | Per-pair technical outlook feed, 6 pair major (tidak ada NZD/XAU), 4h cache |
 | Retail Sentiment (tab COT) | ForexBenchmark scrape — contrarian indicator, 2h cache, signal di ≥65% satu arah |
@@ -122,6 +122,37 @@ Financial_Feed_App/
 
 ---
 
+## Konvensi & Referensi Teknis
+
+### Konvensi Animasi & UX
+
+Prinsip psikologi untuk animasi baru — jangan gunakan `ease` polos:
+
+- **Reveal (datang)**: `ease-out` atau `cubic-bezier(0.16, 1, 0.3, 1)` — cepat awal, lambat landing. Durasi ~350–450ms.
+- **Dismiss (pergi)**: `ease-in` — mulai pelan, keluar cepat. Durasi ~180–220ms.
+- **Drawer/panel buka-tutup**: easing asimetris — buka pakai ease-out (di `.open` class), tutup pakai ease-in (di base class).
+- **Modal**: entrance animation `scale(0.95) translateY(14px) → scale(1) translateY(0)` pada inner box; restart otomatis tiap `display:none → display:flex`.
+
+### Status CB Research Feeds
+
+File: `api/feeds.js` → `CB_RESEARCH_SOURCES` (diaudit sesi 120)
+
+| Key | Status | Catatan |
+|-----|--------|---------|
+| FED, FOMC, FEDN | ✅ | Direct, stabil |
+| ECB, ECBB | ✅ | Direct, stabil |
+| BIS | ✅ | Direct (RSS 1.0/RDF) — jangan pakai rss2json |
+| BOC | ✅ | Direct ke `/feed/` — bukan `/feed/speeches/` (URL mati) |
+| BOE, BOEP | ✅ | Direct, ditambahkan sesi 120 |
+| MTM, ING | ✅ | Direct, stabil |
+| RBA, RBAM, RBAS | ⚠️ | Via rss2json — RBA blokir Vercel IP; rss2json kadang 500 |
+| BOJ | ❌ | Dihapus — RSS hilang setelah redesign 2024 |
+| RBNZ, SNB | ❌ | 403 semua jalur |
+
+Parser `parseCBRSSItems`: regex `<(?:item|entry)\b[^>]*>` — support RSS 2.0, Atom, dan RDF/RSS 1.0.
+
+---
+
 ## Changelog Session 120 (2026-06-30)
 
 ### Audit UX psikologi — 6 fix animasi + RBA Minutes feed ditambahkan
@@ -146,6 +177,17 @@ Financial_Feed_App/
   - **BOE (Bank of England)**: belum ter-cover padahal bisa diakses langsung dari Vercel → ditambahkan `BOE` (speeches) dan `BOEP` (publications). Penting untuk GBP pairs.
   - **RBA**: Blocked di semua proxy yang ditest (direct 403, rss2json 500, allorigins 500) → entri dipertahankan, kalau rss2json pulih akan otomatis jalan.
   - **RBNZ, SNB**: 403 dari semua jalur → tidak bisa di-cover saat ini.
+
+### Fix horizontal overflow di panel scroll
+
+**Root cause:** `.feed-scroll` hanya punya `overflow-y:auto` tanpa `overflow-x:hidden`. Konten anak yang melebar (terutama elemen dengan `white-space:pre-wrap` tanpa `word-break`) menyebabkan panel ikut melebar horizontal saat di-scroll ke bawah — terlihat jelas di Split View desktop.
+
+**Fix:**
+- `overflow-x:hidden` ditambahkan ke `.feed-scroll` (fix di level container)
+- `word-break:break-word; overflow-wrap:break-word` ditambahkan ke `.jn-ai-body` dan `.fund-analysis-text` (keduanya pakai `white-space:pre-wrap` — sumber utama overflow)
+- `overflow-wrap:break-word` ditambahkan ke `.ringkasan-text` dan `.thesis-val`
+
+---
 
 ### Header reveal lebih smooth — ease-out-expo + scroll accumulator
 
