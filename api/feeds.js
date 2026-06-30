@@ -457,16 +457,20 @@ const CB_RESEARCH_SOURCES = [
   { key: 'FEDN', url: 'https://www.federalreserve.gov/feeds/feds_notes.xml' },
   { key: 'ECB',  url: 'https://www.ecb.europa.eu/rss/press.html' },
   { key: 'ECBB', url: 'https://www.ecb.europa.eu/rss/blog.html' },
-  { key: 'BIS',  url: 'https://api.rss2json.com/v1/api.json?rss_url=https%3A%2F%2Fwww.bis.org%2Fdoclist%2Fcbspeeches.rss' },
-  // RBA via rss2json (direct Vercel IP often gets 403 from RBA)
-  // Tiga feed terpisah: Speeches, Minutes (Board Meeting Minutes), dan Monetary Policy Statements
+  // BIS direct — RSS 1.0/RDF format, accessible from Vercel (rss2json proxy tidak perlu dan tidak reliable)
+  { key: 'BIS',  url: 'https://www.bis.org/doclist/cbspeeches.rss' },
+  // RBA via rss2json — RBA memblokir Vercel IP langsung (403); rss2json juga tidak reliable (500)
+  // tetap dipertahankan karena kalau rss2json pulih, langsung jalan lagi otomatis
   { key: 'RBA',  url: 'https://api.rss2json.com/v1/api.json?rss_url=https%3A%2F%2Fwww.rba.gov.au%2Frss%2Frss-cb-speeches.xml' },
   { key: 'RBAM', url: 'https://api.rss2json.com/v1/api.json?rss_url=https%3A%2F%2Fwww.rba.gov.au%2Frss%2Frss-cb-minutes.xml' },
   { key: 'RBAS', url: 'https://api.rss2json.com/v1/api.json?rss_url=https%3A%2F%2Fwww.rba.gov.au%2Frss%2Frss-cb-statements.xml' },
-  // BoC direct feed — accessible from Vercel IPs
-  { key: 'BOC',  url: 'https://www.bankofcanada.ca/feed/speeches/' },
-  // BoJ via rss2json (BoJ blocks non-browser UAs on Vercel)
-  { key: 'BOJ',  url: 'https://api.rss2json.com/v1/api.json?rss_url=https%3A%2F%2Fwww.boj.or.jp%2Fen%2Frss%2Fmediarss.xml' },
+  // BoC — /feed/speeches/ sekarang return HTML; /feed/ adalah general feed yang valid
+  { key: 'BOC',  url: 'https://www.bankofcanada.ca/feed/' },
+  // BoJ — RSS feeds dihapus total setelah redesign website 2024, semua URL 404/timeout
+  // { key: 'BOJ', url: '...' }, // removed — no working RSS endpoint found
+  // BOE (Bank of England) — accessible langsung dari Vercel, penting untuk GBP
+  { key: 'BOE',  url: 'https://www.bankofengland.co.uk/rss/speeches' },
+  { key: 'BOEP', url: 'https://www.bankofengland.co.uk/rss/publications' },
   // ── Macro Research / Institutional Analysis ───────────────────────────────
   // Marc to Market uses FeedBurner (Blogger backend) — direct fetch works fine
   { key: 'MTM',  url: 'https://feeds.feedburner.com/marctomarket/ujfs' },
@@ -575,8 +579,8 @@ function pickAtomLink(b) {
 function parseCBRSSItems(xml, sourceKey) {
   const items = [];
 
-  // Support both RSS 2.0 (<item>) and Atom 1.0 (<entry>) — e.g. FeedBurner returns Atom
-  const blockRe = /<(?:item|entry)>([\s\S]*?)<\/(?:item|entry)>/g;
+  // Support RSS 2.0 (<item>), Atom 1.0 (<entry>), and RDF/RSS 1.0 (<item rdf:about="...">)
+  const blockRe = /<(?:item|entry)\b[^>]*>([\s\S]*?)<\/(?:item|entry)>/g;
   let m;
   while ((m = blockRe.exec(xml)) !== null) {
     const b = m[1];

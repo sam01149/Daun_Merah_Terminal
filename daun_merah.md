@@ -135,11 +135,17 @@ Financial_Feed_App/
 - **Feed items** `ease` → `ease-out`: sebelumnya item baru muncul dengan rasa "lambat bangun" (slow-start). Sekarang langsung terasa hadir.
 - **Status dot live vs warn**: sebelumnya keduanya `blink 2s infinite` — tidak ada beda urgensi visual. Sekarang `live` (hijau) = `1.4s ease-in-out` (steady heartbeat), `warn` (kuning) = `0.9s ease-in-out` (lebih cepat, mencerminkan urgency).
 
-**RBA feeds diperluas (`api/feeds.js`):**
+**RBA feeds diperluas + audit semua link (`api/feeds.js`):**
 
-- Sebelumnya hanya `rss-cb-speeches.xml` (pidato saja). Minutes dan Monetary Policy Statements ada di feed terpisah yang tidak difetch.
-- Ditambahkan `RBAM` (`rss-cb-minutes.xml`) dan `RBAS` (`rss-cb-statements.xml`) via rss2json (karena RBA memblokir Vercel IP secara langsung).
-- "Minutes of the June 2026 Monetary Policy Board Meeting" (30 Jun 2026) yang terlihat di website RBA tapi tidak muncul di Daun Merah sekarang akan terambil dari feed ini.
+- Sebelumnya hanya `rss-cb-speeches.xml`. Ditambahkan `RBAM` (minutes) dan `RBAS` (statements) via rss2json.
+- Hasil audit menyeluruh semua CB_RESEARCH_SOURCES (tested via PowerShell):
+  - FED, FOMC, FEDN, ECB, ECBB, MTM, ING → ✅ semua OK
+  - **BIS**: rss2json tidak perlu, direct fetch works → diubah ke direct. Parser `parseCBRSSItems` regex diupdate dari `<item>` ke `<item\b[^>]*>` untuk support RDF/RSS 1.0 format yang BIS gunakan.
+  - **BOC**: `feed/speeches/` URL sekarang return HTML (URL berubah) → difix ke `feed/` (general feed, valid RSS).
+  - **BOJ**: RSS feeds dihapus total setelah redesign 2024, semua URL 404/timeout → di-remove dari sources.
+  - **BOE (Bank of England)**: belum ter-cover padahal bisa diakses langsung dari Vercel → ditambahkan `BOE` (speeches) dan `BOEP` (publications). Penting untuk GBP pairs.
+  - **RBA**: Blocked di semua proxy yang ditest (direct 403, rss2json 500, allorigins 500) → entri dipertahankan, kalau rss2json pulih akan otomatis jalan.
+  - **RBNZ, SNB**: 403 dari semua jalur → tidak bisa di-cover saat ini.
 
 ### Header reveal lebih smooth — ease-out-expo + scroll accumulator
 
