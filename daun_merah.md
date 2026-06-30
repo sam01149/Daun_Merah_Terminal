@@ -178,6 +178,33 @@ Parser `parseCBRSSItems`: regex `<(?:item|entry)\b[^>]*>` — support RSS 2.0, A
   - **RBA**: Blocked di semua proxy yang ditest (direct 403, rss2json 500, allorigins 500) → entri dipertahankan, kalau rss2json pulih akan otomatis jalan.
   - **RBNZ, SNB**: 403 dari semua jalur → tidak bisa di-cover saat ini.
 
+### Fix layout shift saat header collapse/reveal — swap easing max-height
+
+**Konteks:** User melaporkan komponen di bawah header "tiba-tiba naik/turun sangat cepat" saat header hilang/muncul. Analisa sebelumnya salah fokus ke easing header itu sendiri, padahal masalah utama adalah **layout shift dari flex children** akibat height header berubah.
+
+**Root cause:** `#topChrome` ada di dalam `body { display: flex; flex-direction: column }`. Saat max-height collapse/reveal, seluruh flex children di bawahnya (navFilters, toolbar, content area) ikut bergeser. Dengan max-height 420px tapi tinggi konten aktual ~160px:
+- **260px pertama** (420→160) tidak terlihat — animasi "buang waktu" di zona invisible
+- **160px terakhir** (160→0) baru terlihat — tapi bagian paling cepat dari kurva ease-in → visible duration hanya ~44ms (bukan 220ms)
+- Efeknya: konten di bawah bergeser hampir seketika (44ms), bukan smooth
+
+Hal yang sama terjadi untuk reveal (0→420 dengan ease-out-expo sangat cepat di awal) → visible zone 0→160px selesai dalam ~30ms → content "lompat turun".
+
+**Fix: swap easing untuk max-height** (berlawanan dengan intuisi umum, karena ada invisible zone):
+
+| Arah | Easing max-height | Kenapa |
+|------|------------------|--------|
+| Collapse (420→0) | `ease-out` | Fast di invisible zone (420→160), SLOW di visible zone (160→0) → content glides up |
+| Reveal (0→420) | `ease-in` | SLOW di visible zone (0→160), fast di invisible zone (160→420) → content glides down |
+
+Durasi visible naik dari ~44ms → **~183ms** (collapse) dan ~30ms → **~236ms** (reveal). Content shift terasa seperti smooth slide, bukan lompatan.
+
+**Perubahan CSS (`index.html`):**
+- Reveal: `max-height .38s ease-in, opacity .30s ease-out` (ganti dari `.42s cubic-bezier(0.16,1,0.3,1)`)
+- Collapse: `max-height .30s ease-out, opacity .22s ease-out` (ganti dari `.22s ease-in, opacity .18s ease-in`)
+- Opacity juga diubah ke `ease-out` untuk keduanya — mulai fade langsung tanpa "sudden snap" di akhir
+
+---
+
 ### Fix horizontal overflow di panel scroll
 
 **Root cause:** `.feed-scroll` hanya punya `overflow-y:auto` tanpa `overflow-x:hidden`. Konten anak yang melebar (terutama elemen dengan `white-space:pre-wrap` tanpa `word-break`) menyebabkan panel ikut melebar horizontal saat di-scroll ke bawah — terlihat jelas di Split View desktop.

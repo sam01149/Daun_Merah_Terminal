@@ -51,13 +51,15 @@ body {
 #topChrome {
   flex-shrink: 0; overflow: hidden;
   max-height: 420px; opacity: 1;
-  /* reveal: ease-out-expo — muncul cepat lalu melambat halus */
-  transition: max-height .42s cubic-bezier(0.16, 1, 0.3, 1), opacity .35s ease-out;
+  /* reveal: ease-IN untuk max-height (slow di visible zone 0→160px, fast di invisible 160→420px)
+     ease-out untuk opacity (langsung mulai fade, natural) */
+  transition: max-height .38s ease-in, opacity .30s ease-out;
 }
 #topChrome.chrome-collapsed {
   max-height: 0; opacity: 0;
-  /* collapse: ease-in — cepat pergi, tidak menarik perhatian */
-  transition: max-height .22s ease-in, opacity .18s ease-in;
+  /* collapse: ease-OUT untuk max-height (fast di invisible 420→160px, slow di visible 160→0px)
+     ease-out untuk opacity (mulai fade langsung, tidak snap tiba-tiba di akhir) */
+  transition: max-height .30s ease-out, opacity .22s ease-out;
 }
 
 /* HEADER */
