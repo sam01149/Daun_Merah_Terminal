@@ -3741,22 +3741,26 @@ function openLink(url) { if(url) window.open(url,'_blank'); }
   const upAccum = new WeakMap(); // akumulasi scroll-naik per elemen, reset saat turun
   let ticking = false;
   let pendingDelta = 0, pendingScrollTop = 0, pendingAccum = 0;
-  // Timestamp saat terakhir collapse — untuk abaikan spurious scrollTop=0 event
-  // yang muncul saat CSS transition mengubah tinggi kolom dashboard dan browser
-  // clamp scrollTop ke 0 karena konten tiba-tiba muat semua (bukan user scroll ke atas).
-  let collapseAt = 0;
+
+  // Dashboard columns di-skip sepenuhnya dari logika collapse/reveal.
+  // Alasan: saat chrome collapse, column height berubah via CSS transition →
+  // browser bisa clamp scrollTop ke 0 (konten tiba-tiba muat di kolom lebih tinggi)
+  // → scroll event spurious dengan delta negatif besar → accumulator >= 60 →
+  // remove('chrome-collapsed') → column menyusut → loop tak berujung.
+  // Dashboard tidak perlu collapse chrome (layout sudah compact, 3 kolom grid).
+  const DASHBOARD_COLS = new Set(['dashNewsCol', 'dashMainCol', 'dashSideCol']);
 
   document.addEventListener('scroll', e => {
     const el = e.target;
     if (!el || typeof el.scrollTop !== 'number') return;
+    if (DASHBOARD_COLS.has(el.id)) return;
+
     const prev = lastScrollTop.has(el) ? lastScrollTop.get(el) : el.scrollTop;
     const delta = el.scrollTop - prev;
     lastScrollTop.set(el, el.scrollTop);
 
-    // Sudah di paling atas: selalu reveal header tanpa tunggu akumulasi.
-    // Cooldown 500ms setelah collapse: abaikan scrollTop=0 yang muncul karena
-    // layout-shift CSS transition (bukan scroll manual user ke atas).
-    if (el.scrollTop === 0 && chrome.classList.contains('chrome-collapsed') && Date.now() - collapseAt > 500) {
+    // Sudah di paling atas: selalu reveal header tanpa tunggu akumulasi
+    if (el.scrollTop === 0 && chrome.classList.contains('chrome-collapsed')) {
       upAccum.set(el, 0);
       if (!ticking) {
         ticking = true;
@@ -3781,7 +3785,6 @@ function openLink(url) { if(url) window.open(url,'_blank'); }
     requestAnimationFrame(() => {
       if (pendingDelta > 0 && pendingScrollTop > 40) {
         chrome.classList.add('chrome-collapsed');
-        collapseAt = Date.now();
       } else if (pendingDelta < 0 && pendingAccum >= 60) {
         chrome.classList.remove('chrome-collapsed');
       }
@@ -4622,6 +4625,10 @@ document.querySelectorAll('#navViews .nvtab').forEach(btn => {
     } else if (view === 'dashboard') {
       setFeedUI(false);
       activeView = 'dashboard';
+      // Reveal chrome saat masuk dashboard: kolom dashboard tidak bisa trigger
+      // reveal (di-skip dari scroll listener), jadi pastikan header selalu terlihat.
+      const _tc = document.getElementById('topChrome');
+      if (_tc) _tc.classList.remove('chrome-collapsed');
       document.getElementById('dashboardPanel').classList.add('visible');
       initDashboard();
     }
