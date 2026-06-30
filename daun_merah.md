@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-06-30 (session 123 — lihat "Changelog Session 123" di bawah untuk detail terbaru)
+> **Last updated:** 2026-06-30 (session 124 — lihat "Changelog Session 124" di bawah untuk detail terbaru)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -150,6 +150,52 @@ File: `api/feeds.js` → `CB_RESEARCH_SOURCES` (diaudit sesi 120)
 | RBNZ, SNB | ❌ | 403 semua jalur |
 
 Parser `parseCBRSSItems`: regex `<(?:item|entry)\b[^>]*>` — support RSS 2.0, Atom, dan RDF/RSS 1.0.
+
+---
+
+## Changelog Session 124 (2026-06-30)
+
+### 4 UX + Feature Improvements
+
+**1. Fix header scroll — always visible di scrollTop===0**
+
+**Root cause:** Scroll listener memiliki `ignoreUntil` window (520ms setelah collapse, 640ms setelah reveal) yang memblokir semua event scroll termasuk `scrollTop===0`. Jika user scroll ke atas dengan cepat dalam window transisi, header tetap collapsed — flickering dan inconsistent.
+
+**Fix (`index.html`, scroll listener):**
+- Tambah `pendingTopReveal` (setTimeout) + helper `schedulePendingReveal(el)` / `cancelPendingReveal()`.
+- Jika `scrollTop===0` dalam `ignoreUntil` window: jadwalkan deferred reveal yang muncul tepat setelah window berakhir + 60ms buffer.
+- Jika `scrollTop===0` di luar window: reveal langsung (behavior sebelumnya).
+- Jika user scroll ke bawah (`delta > 0`): `cancelPendingReveal()` — tidak perlu reveal kalau user lagi turun.
+- Browser-clamping loop tidak terjadi karena: (a) saat timer fire kita cek ulang `scrollTop===0` + `chrome-collapsed`, (b) setelah reveal, `ignoreUntil=640ms` menghalau re-trigger dari browser clamp.
+
+**2. Stats bar (Total/Mkt Moving/Forex/Macro/Energy/Geopolit) hanya tampil di NEWS**
+
+- `setFeedUI(show)` diperluas: selain toolbar dan navFilters, sekarang juga toggle `#statsBar` (`display: flex/none`).
+- Di semua view selain NEWS, stats bar disembunyikan → header lebih ringkas, hanya regime banner + nav tabs yang terlihat.
+
+**3. Berita Terkait (tab TEK) — tambah image toggle seperti di NEWS**
+
+- `renderTekNews()` sekarang menambahkan logic yang sama dengan `renderFeed()` untuk item FinancialJuice (GUID numerik):
+  - Panggil `fjImageType(item.title)` untuk deteksi chart/tabel.
+  - Render `<button class="feed-chart-toggle">` + `<div class="feed-chart-wrap"><img>` jika terdeteksi.
+  - Gunakan ID unik `fjImg-tek-{guid}` untuk menghindari konflik dengan NEWS panel.
+  - Reuse `toggleFJImg()` yang sama.
+
+**4. TEK_CUR_KEYWORDS & TEK_SHARED_KEYWORDS — expanded + sorted by relevance**
+
+- Semua 9 currency lists (`XAU`, `USD`, `EUR`, `GBP`, `JPY`, `AUD`, `NZD`, `CAD`, `CHF`) diperluas secara signifikan.
+- Keyword disusun dari paling relevan/high-signal (primary driver) ke konteks sekunder.
+- `XAU`: tambah real yield, etf flow, have demand keywords.
+- `USD`: tambah fed-related terms (fomc minutes, dot plot, federal funds), pce/labor data.
+- `EUR`: tambah ecb meeting terms, bund yield, individual country data (france, italy).
+- `GBP`: tambah boe minutes, gilt yield, political keywords (keir starmer, labour).
+- `JPY`: tambah boj intervention, jgb, carry trade detail.
+- `AUD`: tambah china linkage (massive driver), specific commodity/mining data.
+- `NZD`: tambah rbnz rate path, nz housing, fonterra detail.
+- `CAD`: tambah oil inventory/eia, nat gas, us-canada trade relationship.
+- `CHF`: tambah snb intervention, safe haven framing, eu/swiss linkage.
+- `TEK_SHARED_KEYWORDS`: diurut risk sentiment → geopolitik → geografi → macro global.
+- Result cap ditingkatkan dari 10 → 15 item di `renderTekNews()`.
 
 ---
 

@@ -3753,6 +3753,27 @@ function openLink(url) { if(url) window.open(url,'_blank'); }
   // begitu window berakhir (tidak ada lompatan besar dari posisi basi).
   let ignoreUntil = 0;
 
+  // Saat scrollTop===0 dalam window transisi, kita tidak bisa langsung reveal
+  // (untuk mencegah loop browser-clamping). Tapi kita jadwalkan reveal deferred
+  // supaya header tetap muncul begitu window transisi berakhir.
+  let pendingTopReveal = null;
+
+  function schedulePendingReveal(el) {
+    if (pendingTopReveal) return; // sudah ada pending
+    const delay = Math.max(0, ignoreUntil - Date.now()) + 60;
+    pendingTopReveal = setTimeout(() => {
+      pendingTopReveal = null;
+      if (el.scrollTop === 0 && chrome.classList.contains('chrome-collapsed')) {
+        chrome.classList.remove('chrome-collapsed');
+        ignoreUntil = Date.now() + 640;
+      }
+    }, delay);
+  }
+
+  function cancelPendingReveal() {
+    if (pendingTopReveal) { clearTimeout(pendingTopReveal); pendingTopReveal = null; }
+  }
+
   // Dashboard columns selalu di-skip: kolom-kolom ini tidak membutuhkan
   // chrome collapse (layout grid sudah compact) dan tidak bisa trigger reveal
   // karena auto-reveal dilakukan saat masuk view dashboard.
@@ -3767,16 +3788,16 @@ function openLink(url) { if(url) window.open(url,'_blank'); }
     const delta = el.scrollTop - prev;
     lastScrollTop.set(el, el.scrollTop); // selalu update, termasuk saat di dalam window
 
-    // Dalam window CSS transition: abaikan, layout sedang berubah.
-    // Ini harus dicek SEBELUM scrollTop===0 agar browser clamping saat
-    // chrome collapse tidak memicu reveal langsung (bug: scroll ke atas sendiri).
-    if (Date.now() < ignoreUntil) return;
-
-    if (Math.abs(delta) < 6) return; // abaikan jiggle/inersia kecil
-
-    // scrollTop === 0: selalu reveal (di luar window transisi)
+    // scrollTop === 0: selalu pastikan header muncul.
+    // Dalam window transisi: jadwalkan reveal deferred (mencegah browser-clamping loop).
+    // Di luar window: reveal langsung.
     if (el.scrollTop === 0 && chrome.classList.contains('chrome-collapsed')) {
       upAccum.set(el, 0);
+      if (Date.now() < ignoreUntil) {
+        schedulePendingReveal(el);
+        return;
+      }
+      cancelPendingReveal();
       if (!ticking) {
         ticking = true;
         requestAnimationFrame(() => {
@@ -3788,8 +3809,14 @@ function openLink(url) { if(url) window.open(url,'_blank'); }
       return;
     }
 
+    // Dalam window CSS transition: abaikan (scrollTop !== 0 path).
+    if (Date.now() < ignoreUntil) return;
+
+    if (Math.abs(delta) < 6) return; // abaikan jiggle/inersia kecil
+
     if (delta > 0) {
       upAccum.set(el, 0);
+      cancelPendingReveal(); // user scroll ke bawah — batalkan pending reveal
     } else {
       upAccum.set(el, (upAccum.get(el) || 0) + Math.abs(delta));
     }
@@ -4541,6 +4568,7 @@ function thesisGoToSizing(pair, direction) {
 function setFeedUI(show) {
   document.getElementById('toolbar').style.display    = show ? 'flex' : 'none';
   document.getElementById('navFilters').style.display = show ? 'flex' : 'none';
+  document.getElementById('statsBar').style.display   = show ? 'flex' : 'none';
 }
 
 function hideAllPanels() {
@@ -10061,27 +10089,166 @@ const TEK_ALL_PAIRS = [
 // Keyword lists, kept per-currency so each cross pair = union of both legs
 // (china/geopolit/etc are intentionally shared across every pair as a
 // general risk-sentiment driver, not noise specific to one pair).
-const TEK_SHARED_KEYWORDS = ['china','chinese','geopolit','tariff','war','conflict','ukraine','russia','trade','safe haven','haven','risk off'];
+// Sorted: most price-moving / high-signal keywords first per currency.
+const TEK_SHARED_KEYWORDS = [
+  // Macro risk sentiment — paling sering gerakin semua pair
+  'risk off','risk on','safe haven','haven',
+  // Geopolitik — driver volatilitas global
+  'war','conflict','sanction','tariff','trade war','ceasefire',
+  // Pemain besar
+  'china','chinese','russia','ukraine','nato',
+  // Makro global
+  'trade','recession','slowdown','global growth',
+];
 const TEK_CUR_KEYWORDS = {
-  XAU: ['gold','xau','bullion','precious','silver','iran','sanction','missile','ceasefire','nato',
-         'brics','dollar index','central bank gold','etf gold','de-dollarization','middle east','israel'],
-  USD: ['fed','fomc','dollar','dxy','powell','rate cut','rate hike','treasury yield','nfp',
-         'debt ceiling','us cpi','us gdp','us inflation','trump'],
-  EUR: ['euro','eur/','ecb','lagarde','eurozone','europe','germany','german','france','french',
-         'italy','italian','eu tariff','eu trade','pmi europe','eu cpi','eu gdp','eu inflation','draghi'],
-  GBP: ['gbp','pound','sterling','boe','bailey','uk ','britain','england','scotland','budget',
-         'gilts','gilt','reeves','chancellor','uk cpi','uk inflation','uk gdp','uk employment',
-         'uk jobs','uk housing','uk retail','uk pmi','labour','keir'],
-  JPY: ['jpy','yen','boj','ueda','japan','japanese','carry trade','carry unwind',
-         'yield curve control','ycc','nikkei','10-year','us yield','north korea'],
-  AUD: ['aud','australia','aussie','rba','iron ore','commodity','copper','mining','resource',
-         'rba rate','employment australia','jobs australia','trade australia','cpi australia',
-         'gdp australia','taiwan'],
-  NZD: ['nzd','new zealand','rbnz','kiwi','dairy','milk','fonterra','cpi nz','inflation nz',
-         'employment nz','jobs nz','gdp nz','rbnz rate'],
-  CAD: ['cad','canada','canadian','boc','oil','crude','wti','brent','opec','barrel',
-         'employment canada','jobs canada','trade canada','housing canada','pipeline','nat gas','cpi canada'],
-  CHF: ['chf','swiss','switzerland','snb','franc','eur/chf','inflation swiss','refuge'],
+  XAU: [
+    // Core identifiers
+    'gold','xau','bullion','xauusd','gld',
+    // Key drivers (sorted by signal strength)
+    'real yield','fed rate','us real yield','tips','inflation expectation',
+    'dollar index','dxy strength','dollar weakness',
+    // Central bank / institutional
+    'central bank gold','etf gold','gold etf','gold demand','gold reserve',
+    'de-dollarization','brics','gold futures','gold spot',
+    // Geopolitical safe-haven
+    'middle east','iran','israel','nuclear','missile','ceasefire nato',
+    // Precious metals complex
+    'precious','bullion','silver','platinum','palladium',
+    // Sentiment
+    'flight to safety','risk aversion','haven demand','fear',
+  ],
+  USD: [
+    // Fed / monetary policy — paling krusial buat USD
+    'fed','fomc','powell','federal reserve','fed chair','fed meeting','fomc minutes',
+    'rate cut','rate hike','interest rate','federal funds','dot plot','rate decision',
+    // Key data
+    'nfp','non-farm payroll','payroll','jobless claims','pce','core pce',
+    'us cpi','us inflation','us gdp','us retail','us jobs','us payroll',
+    'us trade balance','us durable','labor market','us wage',
+    // Dollar instruments
+    'dollar','dxy','us dollar','dollar index','dollar strength','dollar weakness',
+    // Fiscal / political
+    'treasury yield','treasury auction','us debt','debt ceiling','us fiscal',
+    'trump','tariff','us economy','us growth',
+  ],
+  EUR: [
+    // ECB — primary mover
+    'ecb','lagarde','ecb rate','ecb meeting','ecb minutes','ecb policy',
+    'european central bank','rate euro','euro rate',
+    // Core identifiers
+    'euro','eur/','eurozone','euro area','euro zone',
+    // Key data
+    'eu cpi','eu gdp','eu inflation','eu pmi','eu growth','eu trade',
+    'german cpi','german gdp','german ifo','german pmi','german factory',
+    'eurozone cpi','eurozone gdp','eurozone pmi','eurozone inflation',
+    'france cpi','france gdp','italy cpi','italy gdp',
+    // Regional / political
+    'europe','germany','german','france','french','italy','italian',
+    'eu fiscal','eu deficit','eu stimulus','eu bond','bund yield',
+    'eu trade','pmi europe','eu energy','eu recovery','draghi',
+    'eu tariff','eu election','eu growth',
+  ],
+  GBP: [
+    // BOE — primary mover
+    'boe','bailey','bank of england','boe rate','mpc','mpc rate',
+    'boe minutes','uk rate','uk monetary',
+    // Core identifiers
+    'gbp','pound','sterling','cable','fiber',
+    // Key data
+    'uk cpi','uk inflation','uk gdp','uk employment','uk jobs','uk payroll',
+    'uk retail','uk pmi','uk trade','uk wage','uk earnings','uk average earnings',
+    'claimant count','uk industrial','uk housing',
+    // Political / fiscal
+    'britain','england','uk ','scotland','budget','chancellor',
+    'gilts','gilt yield','uk gilt','reeves','keir starmer','labour',
+    'uk fiscal','uk debt','uk growth','uk recession','uk energy',
+    'northern ireland','devolution',
+  ],
+  JPY: [
+    // BOJ — primary mover (very sensitive)
+    'boj','ueda','bank of japan','boj rate','boj policy','boj minutes',
+    'japan rate','boj intervention','yen intervention',
+    // Carry trade — critical for JPY
+    'carry trade','carry unwind','yen carry','carry reversal',
+    // Yield curve
+    'yield curve control','ycc','japan yield','jgb','japanese bond',
+    '10-year yield','us yield','yield spread',
+    // Core identifiers
+    'jpy','yen','japanese yen',
+    // Key data
+    'japan cpi','japan gdp','japan pmi','japan inflation','japan jobs',
+    'tankan','tokyo cpi','japan retail','japan trade','japan industrial',
+    // Markets
+    'nikkei','topix','japan stock',
+    // Geopolitical
+    'north korea','japan military','japan election',
+  ],
+  AUD: [
+    // RBA — primary mover
+    'rba','rba rate','reserve bank australia','rba cash rate','rba minutes',
+    'australia rate','rba hike','rba cut','rba hold',
+    // Core identifiers
+    'aud','australia','aussie','aussie dollar',
+    // Commodity exposure
+    'iron ore','copper','mining','resources','commodity','commodity prices',
+    'coal','lithium','lng australia',
+    // Key data
+    'cpi australia','inflation australia','employment australia','jobs australia',
+    'gdp australia','trade australia','retail australia','pmi australia',
+    'nab business','westpac consumer','business australia',
+    'building approvals australia','housing australia',
+    // China linkage (massive trade partner)
+    'china demand','china growth','china stimulus','china pmi',
+    // Geopolitical
+    'taiwan','south sea','australia china','australia trade',
+  ],
+  NZD: [
+    // RBNZ — primary mover
+    'rbnz','reserve bank new zealand','rbnz rate','rbnz ocr','rbnz minutes',
+    'new zealand rate','nzd rate','rbnz hike','rbnz cut',
+    // Core identifiers
+    'nzd','new zealand','kiwi','kiwi dollar',
+    // Key data
+    'cpi nz','nz cpi','inflation nz','nz inflation',
+    'employment nz','nz jobs','gdp nz','nz gdp',
+    'nz trade','nz retail','nz pmi','nz business','nz consumer',
+    'fonterra','dairy','milk price','nz dairy',
+    // Macro
+    'rbnz rate path','nz housing','nz property',
+  ],
+  CAD: [
+    // BOC — primary mover
+    'boc','boc rate','bank of canada','boc overnight','boc minutes',
+    'canada rate','boc hike','boc cut','boc hold',
+    // Oil — CAD is oil currency
+    'oil','crude','wti','brent','opec','opec+','barrel','oil price',
+    'oil supply','oil demand','oil inventory','eia inventory',
+    'nat gas','natural gas','pipeline','lng canada',
+    // Core identifiers
+    'cad','canada','canadian','loonie',
+    // Key data
+    'cpi canada','canada inflation','employment canada','jobs canada',
+    'gdp canada','canada gdp','ivey pmi','canada trade','canada retail',
+    'canada housing','canada building',
+    // Trade / political
+    'us canada trade','canada tariff','canada us','nafta','usmca',
+  ],
+  CHF: [
+    // SNB — primary mover
+    'snb','swiss national bank','snb rate','snb policy','snb minutes',
+    'snb intervention','snb sight deposit','switzerland rate','snb jordan',
+    // Safe haven flows — CHF is SAFE HAVEN
+    'safe haven','haven demand','flight to safety','risk off chf',
+    'chf strength','eur/chf floor',
+    // Core identifiers
+    'chf','swiss','switzerland','swiss franc','swissy',
+    // Key data
+    'swiss cpi','swiss inflation','swiss gdp','swiss pmi','swiss trade',
+    'swiss unemployment','kof barometer','kof economic',
+    'switzerland cpi','switzerland gdp',
+    // EU linkage
+    'eur/chf','euro swiss','eu swiss','swiss eu',
+  ],
 };
 // Specific (currency-leg) keywords kept separate from shared/generic ones so
 // pair-specific headlines can be ranked above generic geopolitical noise —
@@ -10168,7 +10335,7 @@ function renderTekNews() {
       if (specificKws.some(k => t.includes(k))) specific.push(item);
       else if (sharedKws.some(k => t.includes(k))) shared.push(item);
     }
-    const matches = specific.concat(shared).slice(0, 10);
+    const matches = specific.concat(shared).slice(0, 15);
 
     if (matches.length === 0 && (!af || !af.items.length)) {
       html += '<div class="tek-news-empty">Tidak ada berita relevan saat ini.</div>';
@@ -10178,12 +10345,26 @@ function renderTekNews() {
         const col = TEK_CAT_COLOR[cat] || '#888';
         const bg = col + '22';
         const safeLink = (item.link || '').replace(/'/g, "\\'");
+        const fjImgId = 'fjImg-tek-' + item.guid;
+        const fjType = /^\d+$/.test(item.guid) ? fjImageType(item.title) : null;
+        const fjLabels = fjType === 'chart'
+          ? ['Lihat Chart ▾', 'Sembunyikan Chart ▴']
+          : fjType === 'table'
+          ? ['Lihat Gambar ▾', 'Sembunyikan Gambar ▴']
+          : null;
+        const chartHtml = fjLabels
+          ? '<button class="feed-chart-toggle" data-label-show="' + fjLabels[0] + '" data-label-hide="' + fjLabels[1] + '" onclick="event.stopPropagation();toggleFJImg(this,\'' + fjImgId + '\')">' + fjLabels[0] + '</button>'
+            + '<div class="feed-chart-wrap" id="' + fjImgId + '" style="display:none">'
+            + '<img class="feed-chart-img" src="https://www.financialjuice.com/images/' + item.guid + '.png" loading="lazy" alt="" onerror="this.closest(\'.feed-chart-wrap\').style.display=\'none\'">'
+            + '</div>'
+          : '';
         return '<div class="tek-news-item" onclick="openLink(\'' + safeLink + '\')">'
           + '<div class="tek-news-meta">'
           + '<span class="tek-news-time">' + fmtTime(item.pubDate) + '</span>'
           + '<span class="tek-news-cat" style="background:' + bg + ';color:' + col + '">' + cat.replace('-',' ') + '</span>'
           + '</div>'
           + '<div class="tek-news-title">' + escHtml(item.title) + '</div>'
+          + chartHtml
           + '</div>';
       }).join('');
     }
