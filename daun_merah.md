@@ -204,6 +204,24 @@ Karena swipe SELALU menggerakkan jari jauh lebih dari 10px (butuh 8px buat direc
 
 `git diff` untuk fix ini hanya menyentuh satu blok kecil di `index.html` (guard `_touchMoved`/`isTrusted`, ~baris 3985-3996).
 
+### Fix: Tombol "Lihat Gambar ▾" di News tidak menampilkan apa-apa (kelihatan gak berfungsi)
+
+**Dilaporkan user:** paste contoh nyata headline `"Fed's Chair Warsh: volatility is down, yields are down"` bertag `market-moving`, muncul tombol "Lihat Gambar ▾" tapi diklik tidak menampilkan gambar apa pun.
+
+**Root cause:** `fjImageType(title)` (`index.html` ~baris 3812) menebak apakah sebuah post FinancialJuice punya gambar chart/tabel murni dari kata kunci di judul — regex lama `\b(probabilities?|matrix|heatmap|volatility)\b`. Kata **"volatility"** terlalu umum: sering muncul di judul quote/komentar biasa ("volatility is down", "market volatility rises") yang BUKAN post gambar. Diverifikasi langsung ke RSS feed live: headline yang dilaporkan user (`guid 9660453`) memang cocok regex → tombol "Lihat Gambar" muncul → tapi `financialjuice.com/images/9660453.png` return **HTTP 404** (memang tidak ada gambarnya) → `onerror` lama diam-diam nyembunyiin seluruh wrap (`style.display='none'`) tanpa pesan apa pun, jadi kelihatan seperti tombol tidak berfungsi.
+
+Ditemukan juga false-positive serupa dari kata **"chart"** (idiom "We'll chart a new course...", `guid 9660356` → juga 404) — tidak diperbaiki (masih dipertahankan sebagai keyword) karena tidak ada bukti false-positive rate-nya cukup tinggi untuk sepadan dengan resiko kehilangan true-positive (real chart post biasanya memang judulnya literally "X Chart"), tapi sekarang aman berkat fix kedua di bawah.
+
+**Fix (`index.html`):**
+1. Hapus `volatility` dari regex `fjImageType()` — kasus false-positive yang dilaporkan user, terbukti generik.
+2. `onerror` pada `<img class="feed-chart-img">` (2 lokasi: `renderFeed()` tab NEWS ~baris 3849, render berita TEK ~baris 10655) diganti dari "diam-diam hilang" jadi tampilkan pesan **"Gambar tidak tersedia"** (`.feed-chart-error`, class baru) — supaya kalau heuristik salah tebak lagi di masa depan (mis. kasus "chart a new course" di atas), user dapat feedback jelas, bukan kelihatan seperti tombol rusak.
+
+**Verifikasi:**
+- `curl` langsung ke `financialjuice.com/images/9660453.png` dan `.../9660356.png` → HTTP 404 keduanya (konfirmasi tidak ada gambar); `.../9660330.png` (headline "UniCredit's matrix of possible EUR-USD reaction...") → HTTP 200 (konfirmasi keyword `matrix` masih valid, tidak dihapus).
+- Test `fjImageType()` langsung (Node, 5 skenario) — headline volatility di atas sekarang `null` (tombol tidak muncul sama sekali, bukan cuma "gambar gagal"); "matrix"/"probabilities"/"chart" tetap terdeteksi benar.
+- Simulasi `jsdom` untuk `onerror` handler baru — `<img>` yang gagal load benar digantikan teks "Gambar tidak tersedia" dengan class `feed-chart-error`, tanpa error (verifikasi `closest()` di-capture sebelum DOM diubah, tidak ada masalah node ke-detach).
+- Full-script parse `index.html` tetap tanpa syntax error.
+
 ---
 
 ## Changelog Session 135 (2026-07-01)

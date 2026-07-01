@@ -461,6 +461,10 @@ body {
 }
 .feed-chart-toggle:hover { border-color:var(--accent); color:var(--accent); }
 .feed-chart-wrap { margin-top:8px; }
+.feed-chart-error {
+  padding:8px 10px; font-size:11px; color:var(--muted); text-align:center;
+  background:rgba(255,255,255,.03); border-radius:6px;
+}
 
 .new-badge {
   font-size:8px; padding:2px 5px; border-radius:3px;
@@ -3811,7 +3815,11 @@ function sanitizeDesc(html) {
 // Returns 'chart' | 'table' | null; null means no inline image toggle shown.
 function fjImageType(title) {
   if (/\bchart\b/i.test(title)) return 'chart';
-  if (/\b(probabilities?|matrix|heatmap|volatility)\b/i.test(title)) return 'table';
+  // 'volatility' sengaja tidak dipakai di sini — kata umum yang sering muncul di quote/
+  // komentar biasa ("volatility is down"), bukan penanda post gambar/tabel FinancialJuice.
+  // Contoh nyata yang salah ke-tag: guid 9660453 "Fed's Chair Warsh: volatility is down,
+  // yields are down" — tidak ada gambar (financialjuice.com/images/9660453.png = 404).
+  if (/\b(probabilities?|matrix|heatmap)\b/i.test(title)) return 'table';
   return null;
 }
 
@@ -3846,7 +3854,7 @@ function renderFeed(markNew = false) {
     const chartHtml = fjLabels
       ? `<button class="feed-chart-toggle" data-label-show="${fjLabels[0]}" data-label-hide="${fjLabels[1]}" onclick="event.stopPropagation();toggleFJImg(this,'${fjImgId}')">${fjLabels[0]}</button>
          <div class="feed-chart-wrap" id="${fjImgId}" style="display:none">
-           <img class="feed-chart-img" src="https://www.financialjuice.com/images/${item.guid}.png" loading="lazy" alt="" onerror="this.closest('.feed-chart-wrap').style.display='none'">
+           <img class="feed-chart-img" src="https://www.financialjuice.com/images/${item.guid}.png" loading="lazy" alt="" onerror="const w=this.closest('.feed-chart-wrap');w.className='feed-chart-wrap feed-chart-error';w.textContent='Gambar tidak tersedia';">
          </div>`
       : '';
     const newBadge = isNew ? `<span class="new-badge">NEW</span>` : '';
@@ -10652,7 +10660,7 @@ function renderTekNews() {
         const chartHtml = fjLabels
           ? '<button class="feed-chart-toggle" data-label-show="' + fjLabels[0] + '" data-label-hide="' + fjLabels[1] + '" onclick="event.stopPropagation();toggleFJImg(this,\'' + fjImgId + '\')">' + fjLabels[0] + '</button>'
             + '<div class="feed-chart-wrap" id="' + fjImgId + '" style="display:none">'
-            + '<img class="feed-chart-img" src="https://www.financialjuice.com/images/' + item.guid + '.png" loading="lazy" alt="" onerror="this.closest(\'.feed-chart-wrap\').style.display=\'none\'">'
+            + '<img class="feed-chart-img" src="https://www.financialjuice.com/images/' + item.guid + '.png" loading="lazy" alt="" onerror="const w=this.closest(\'.feed-chart-wrap\');w.className=\'feed-chart-wrap feed-chart-error\';w.textContent=\'Gambar tidak tersedia\';">'
             + '</div>'
           : '';
         return '<div class="tek-news-item">'
