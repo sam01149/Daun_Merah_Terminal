@@ -69,6 +69,24 @@ const COUNTRY_STRIP = {
   CHF: ['switzerland ','swiss '],
 };
 
+// Fallback currency detection — dipakai HANYA kalau FUND_PREFIX_MAP (di atas) gagal
+// match DAN judul berformat rilis kalender (lihat isCalendarFormat di
+// parseFundamentalFromHeadline). FUND_PREFIX_MAP butuh frasa nama-negara+indikator
+// nempel langsung ("eurozone cpi"), jadi gagal kalau ada kata sisipan seperti "Core"
+// atau "Flash" di antaranya ("Eurozone Core CPI YoY", "Eurozone Flash CPI y/y").
+// Nama negara di-cek sendiri (word-boundary, bukan .includes menyeluruh) — aman
+// dipakai lebih longgar karena sudah dijaga gate isCalendarFormat di pemanggil.
+const FUND_COUNTRY_ONLY = [
+  { re: /\b(united states|u\.s\.|us)\b/,                                  cur: 'USD' },
+  { re: /\b(eurozone|euro area|euro zone|germany|german|france|french|italy|italian)\b/, cur: 'EUR' },
+  { re: /\b(united kingdom|u\.k\.|uk|britain|british)\b/,                 cur: 'GBP' },
+  { re: /\b(japan|japanese)\b/,                                           cur: 'JPY' },
+  { re: /\b(canada|canadian)\b/,                                          cur: 'CAD' },
+  { re: /\b(australia|australian)\b/,                                     cur: 'AUD' },
+  { re: /\b(new zealand|nz)\b/,                                           cur: 'NZD' },
+  { re: /\b(switzerland|swiss)\b/,                                        cur: 'CHF' },
+];
+
 const FUND_INDICATOR_MAP = [
   { kw: ['non-farm payroll','nonfarm payroll','non farm payroll',' nfp ','nfp:'], key: 'NFP' },
   { kw: ['jobless claim','initial claim','unemployment claim'],                   key: 'Jobless Claims' },
@@ -140,6 +158,15 @@ function parseFundamentalFromHeadline(title) {
   for (const { kw, cur } of FUND_PREFIX_MAP) {
     if (kw.some(k => t.includes(k))) { currency = cur; break; }
   }
+  // Rilis kalender ("... Actual X Forecast Y Previous Z") adalah sinyal kuat —
+  // kalau format ini match tapi FUND_PREFIX_MAP tidak (karena kata sisipan seperti
+  // "Core"/"Flash" antara nama negara & indikator), coba fallback nama-negara saja.
+  const isCalendarFormat = !currency && /\bactual\b/i.test(t) && (/\bforecast\b/i.test(t) || /\bprevious\b/i.test(t));
+  if (isCalendarFormat) {
+    for (const { re, cur } of FUND_COUNTRY_ONLY) {
+      if (re.test(t)) { currency = cur; break; }
+    }
+  }
   if (!currency) return null;
 
   let indicatorKey = null;
@@ -155,6 +182,17 @@ function parseFundamentalFromHeadline(title) {
   // Same for Core CPI
   if (indicatorKey === 'Core CPI MoM') {
     if (/y\/y|yoy|annual|year.on.year/i.test(t)) indicatorKey = 'Core CPI YoY';
+  }
+  // Flash/preliminary qualifier — kata "flash" bisa muncul di posisi mana pun di judul
+  // ("Flash CPI", "CPI Flash", "CPI YoY Flash" — feed FinancialJuice paling sering
+  // pakai bentuk terakhir, indikator dulu baru "Flash" di akhir). Kata sisipan ini
+  // membuat keyword adjacency 'flash cpi'/'cpi flash' di FUND_INDICATOR_MAP di atas
+  // gagal match, jadi redirect di sini berdasarkan base key yang sudah ketemu —
+  // supaya nempel ke key seed yang sama ('CPI Flash YoY'/'GDP QoQ Flash'), bukan
+  // bikin row terpisah yang isinya sama tapi nama key beda.
+  if (/\bflash\b/i.test(t)) {
+    if (indicatorKey === 'CPI YoY') indicatorKey = 'CPI Flash YoY';
+    else if (indicatorKey === 'GDP QoQ') indicatorKey = 'GDP QoQ Flash';
   }
 
   if (!indicatorKey) {

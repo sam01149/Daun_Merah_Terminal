@@ -187,6 +187,20 @@ Bug kelas ini identik dengan yang sudah pernah difix 2026-05-06 di sistem push n
 
 `git diff` hanya menyentuh `api/market-digest.js` (fungsi `detectCat`) dan `index.html` (objek `CATS` + fungsi `detectCat`) — tidak ada file lain yang berubah. `node -c` pass, tidak ada syntax error.
 
+### Fix lanjutan: `parseFundamentalFromHeadline` gagal parse headline dengan kata sisipan ("Core", "Flash")
+
+**Ditemukan user langsung setelah deploy fix di atas** — user paste contoh nyata dari News: `"Eurozone Core CPI YoY Flash Actual 2.4% (Forecast 2.5%, Previous 2.6%)"` sudah benar ke-tag `econ data` di News, tapi kartu EUR di tab FUNDAMENTAL tetap nunjuk `CPI Flash YoY 3.0% (Apr 2026)` — stale.
+
+**Root cause 1 (currency gagal terdeteksi):** `FUND_PREFIX_MAP` (`api/_fundamental_parser.js`) butuh frasa nama-negara+indikator NEMPEL LANGSUNG (`'eurozone cpi'`), sehingga gagal kalau ada kata sisipan seperti **"Core"** di antaranya (`"Eurozone Core CPI"` tidak match `'eurozone cpi'`) — `parseFundamentalFromHeadline` langsung `return null` di baris cek currency, headline dibuang total, tidak pernah nyampe ke Redis.
+
+**Root cause 2 (indicator key salah, headline yang user paste kemudian):** `"Eurozone CPI YoY Flash Actual 2.8% (Forecast 3%, Previous 3.2%)"` — pola FinancialJuice nyata ("indikator dulu, 'Flash' di akhir") tidak match keyword `'flash cpi'`/`'cpi flash'` (assumsi adjacency 2 kata) di `FUND_INDICATOR_MAP`, jatuh ke keyword generik `'cpi yoy'` duluan → key jadi `'CPI YoY'` (baru, kosong) bukan `'CPI Flash YoY'` (key yang sudah ada datanya) — hasilnya row DUPLIKAT bukan update ke row yang sama.
+
+**Fix (`api/_fundamental_parser.js`):**
+- Tambah `FUND_COUNTRY_ONLY` (baris ~72) — deteksi nama negara SENDIRI (regex word-boundary, bukan `.includes`) sebagai fallback, HANYA aktif kalau `FUND_PREFIX_MAP` gagal match DAN judul memenuhi `isCalendarFormat` (`actual` + `forecast`/`previous`) — gate ini menjaga supaya fallback yang lebih longgar tidak menimbulkan false positive di headline non-rilis yang cuma menyebut nama negara.
+- Tambah redirect "Flash" setelah resolusi `indicatorKey` (mirror pola disambiguasi Core PCE/Core CPI yang sudah ada): kalau judul mengandung kata `flash` di mana pun DAN `indicatorKey` sudah `'CPI YoY'`/`'GDP QoQ'`, redirect ke `'CPI Flash YoY'`/`'GDP QoQ Flash'` — supaya headline flash apa pun urutan katanya tetap nempel ke key seed yang sama.
+
+**Verifikasi:** 12 headline (termasuk 3 contoh nyata dari user) dites langsung lewat `parseFundamentalFromHeadline()` — semua currency & key sesuai ekspektasi, termasuk 2 negative test (`"Germany warns of recession risk..."`, `"Belarus president meets Putin..."`) tetap `null` (tidak ada false positive dari fallback nama-negara yang lebih longgar). Satu kasus di luar scope (`"US GDP Advance q/q"` → tetap `'GDP QoQ'` bukan `'GDP QoQ Flash'`) adalah inkonsistensi minor pre-existing di `FUND_INDICATOR_MAP` (keyword bare `'gdp'` posisinya sebelum `'gdp advance'` di list) — TIDAK disentuh, di luar laporan user, catat sebagai temuan terpisah kalau nanti relevan.
+
 ---
 
 ## Changelog Session 132 (2026-07-01)
