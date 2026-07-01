@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-06-30 (session 131 — lihat "Changelog Session 131" di bawah untuk detail terbaru)
+> **Last updated:** 2026-07-01 (session 132 — lihat "Changelog Session 132" di bawah untuk detail terbaru)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -150,6 +150,32 @@ File: `api/feeds.js` → `CB_RESEARCH_SOURCES` (diaudit sesi 120)
 | RBNZ, SNB | ❌ | 403 semua jalur |
 
 Parser `parseCBRSSItems`: regex `<(?:item|entry)\b[^>]*>` — support RSS 2.0, Atom, dan RDF/RSS 1.0.
+
+---
+
+## Changelog Session 132 (2026-07-01)
+
+### UX: Swipe horizontal mobile — empati psikologis + real-time panel tracking
+
+**Masalah:** Swipe lama hanya deteksi di `touchend` dengan threshold fixed 60px. Tidak ada feedback real-time — panel tidak bergerak saat jari geser, tidak ada indikator arah, tidak ada spring-back.
+
+**Solusi: Swipe psikologis berbasis physics + empati gesture:**
+
+**CSS (`index.html`):**
+- Swipe-in animations diperhalus: travel 40px → 70px, curve `ease-out-expo` (`cubic-bezier(.22,1,.36,1)`) — masuk lebih natural, landing lebih smooth, 220ms → 280ms.
+- Tambah `#swipeHint`: indikator nama tab tujuan (`FEED`, `ANALISA`, dst) + panah `›`/`‹` yang muncul di tepi layar saat drag. Opacity naik proporsional terhadap jarak drag.
+
+**JS (`index.html`) — ganti total blok swipe lama:**
+1. **Direction lock 8px**: touchmove pertama >8px horizontal/vertical → lock ke satu arah. Kalau vertical terpilih, swipe diabaikan dan scroll vertikal berjalan normal.
+2. **Real-time panel tracking**: selama drag horizontal, panel aktif `transform: translateX(dx)` tanpa transisi — panel ikut jari langsung.
+3. **Rubber band di tepi**: kalau tidak ada tab di arah drag (posisi pertama/terakhir), travel dikurangi ke 12% (`dx * 0.12`) — terasa ada hambatan tapi tidak mentok keras.
+4. **isHScroll guard**: swipe diabaikan kalau dimulai di elemen yang punya `overflow-x:auto/scroll` aktif (nav tabs, event strip, fundamental tabs, dll).
+5. **Commit logic**: `touchend` → cek `|dx| > 28% layar` ATAU `velocity > 0.42 px/ms` → commit. Keduanya bisa trigger: drag panjang lambat ✓, flick pendek cepat ✓.
+6. **Commit animation**: panel lama slide out + fade (180ms), 95ms kemudian `btn.click()` → panel baru slide in dari sisi berlawanan (280ms swipe-in animation).
+7. **Spring-back abort**: kalau threshold tidak terpenuhi, panel kembali dengan `cubic-bezier(.34,1.56,.64,1)` — ada overshoot kecil yang terasa "terpental" alami.
+8. **Haptic feedback**: `navigator.vibrate(8)` saat switch berhasil (Android).
+9. **touchcancel**: kalau gesture diinterrupt sistem (call masuk, notif), spring-back bersih.
+10. **Drawer case**: swipe kiri dari tab terakhir (Teknikal) → buka drawer "Lainnya" dengan animasi yang sama.
 
 ---
 

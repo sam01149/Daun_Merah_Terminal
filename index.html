@@ -470,10 +470,26 @@ body {
 @keyframes pulse-badge { 0%,100%{opacity:1} 50%{opacity:.4} }
 
 
-@keyframes swipeInRight { from { transform:translateX(40px); opacity:0; } to { transform:translateX(0); opacity:1; } }
-@keyframes swipeInLeft  { from { transform:translateX(-40px); opacity:0; } to { transform:translateX(0); opacity:1; } }
-.swipe-in-right { animation: swipeInRight 220ms cubic-bezier(.25,.46,.45,.94) both; }
-.swipe-in-left  { animation: swipeInLeft  220ms cubic-bezier(.25,.46,.45,.94) both; }
+@keyframes swipeInRight { from { transform:translateX(70px); opacity:0; } to { transform:translateX(0); opacity:1; } }
+@keyframes swipeInLeft  { from { transform:translateX(-70px); opacity:0; } to { transform:translateX(0); opacity:1; } }
+.swipe-in-right { animation: swipeInRight 280ms cubic-bezier(.22,1,.36,1) both; }
+.swipe-in-left  { animation: swipeInLeft  280ms cubic-bezier(.22,1,.36,1) both; }
+
+/* Swipe hint — arah + nama tab tujuan, muncul saat drag horizontal */
+#swipeHint {
+  position: fixed; top: 50%; transform: translateY(-50%);
+  pointer-events: none; z-index: 500;
+  display: none; flex-direction: column; align-items: center; gap: 4px;
+  opacity: 0; transition: opacity .12s ease;
+}
+#swipeHintArrow {
+  font-size: 24px; color: var(--text-mid); line-height: 1;
+  text-shadow: 0 0 12px rgba(255,255,255,.15);
+}
+#swipeHintLabel {
+  font-size: 8px; color: var(--muted); font-family: 'DM Mono',monospace;
+  letter-spacing: .12em; text-transform: uppercase;
+}
 
 .state-box { text-align:center; padding:60px 20px; color:var(--muted); }
 .state-box.loading p { animation: textPulse 1.5s infinite ease-in-out; }
@@ -11235,58 +11251,186 @@ document.addEventListener('click', function(e) {
   document.querySelectorAll('#botNav .bot-nav-btn').forEach(b => b.classList.toggle('active', b.dataset.view === view));
 });
 
-// ── SWIPE NAVIGATION ─────────────────────────────────────────
+// ── SWIPE NAVIGATION (empati psikologis) ─────────────────────────────────
+// Panel mengikuti jari real-time → direction lock → velocity+distance commit
+// → rubber band di tepi → spring-back gagal → haptic sukses
 (function() {
-  // Hanya tab primer (yang tampil langsung di nav) yang masuk urutan swipe.
-  // Tab "Lainnya" (riset/cal/cot/fundamental/checklist/sizing/jurnal/petunjuk) diakses via drawer, bukan swipe.
   const VIEWS = ['dashboard','feed','ringkasan','analisa','teknikal'];
-  const PANEL_ID = { feed:'feedScroll', riset:'risetPanel', ringkasan:'ringkasanPanel', analisa:'analisaPanel', cal:'calPanel', cot:'cotPanel', fundamental:'fundamentalPanel', checklist:'checklistPanel', sizing:'sizingPanel', jurnal:'jurnalPanel', petunjuk:'petunjukPanel', teknikal:'teknikalPanel', dashboard:'dashboardPanel' };
-  const MIN_X = 60;
-  let sx = 0, sy = 0;
-  document.addEventListener('touchstart', function(e) {
-    sx = e.changedTouches[0].clientX;
-    sy = e.changedTouches[0].clientY;
-  }, { passive: true });
-  document.addEventListener('touchend', function(e) {
-    const dx = e.changedTouches[0].clientX - sx;
-    const dy = e.changedTouches[0].clientY - sy;
-    if (Math.abs(dx) < MIN_X || Math.abs(dy) > Math.abs(dx)) return;
-    if (e.target.closest('#navViews, #navFilters, #botNav, input, select, textarea')) return;
-    const drawerPanel = document.getElementById('drawerPanel');
-    if (drawerPanel && drawerPanel.classList.contains('open')) {
-      // Drawer "Lainnya" lagi terbuka — swipe arah manapun nutup drawer dulu, jangan tembus ganti tab di belakangnya.
-      closeDrawer();
-      return;
-    }
+  const PANEL_ID = {
+    feed:'feedScroll', riset:'risetPanel', ringkasan:'ringkasanPanel',
+    analisa:'analisaPanel', cal:'calPanel', cot:'cotPanel',
+    fundamental:'fundamentalPanel', checklist:'checklistPanel',
+    sizing:'sizingPanel', jurnal:'jurnalPanel', petunjuk:'petunjukPanel',
+    teknikal:'teknikalPanel', dashboard:'dashboardPanel'
+  };
+
+  let _sw = null;
+
+  function getPanel(v) { const id = PANEL_ID[v]; return id ? document.getElementById(id) : null; }
+
+  function adjView(dir) {
     const idx = VIEWS.indexOf(activeView);
-    if (idx === -1) return;
-    // swipe left = next tab, swipe right = prev tab
-    const goNext = dx < 0;
-    let next = goNext ? idx + 1 : idx - 1;
-    while (next >= 0 && next < VIEWS.length) {
-      if (VIEWS[next] === 'dashboard' && window.innerWidth < 1024) {
-        next = goNext ? next + 1 : next - 1;
-        continue;
-      }
+    if (idx === -1) return null;
+    let n = dir === 'next' ? idx + 1 : idx - 1;
+    while (n >= 0 && n < VIEWS.length) {
+      if (VIEWS[n] === 'dashboard' && window.innerWidth < 1024) { n = dir === 'next' ? n + 1 : n - 1; continue; }
       break;
     }
-    if (next < 0) return;
-    if (next >= VIEWS.length) {
-      // Lewat tab terakhir (Teknikal) — buka drawer "Lainnya", konsisten dengan posisinya di kanan bottom nav.
-      if (goNext) openDrawer();
+    if (n < 0) return null;
+    if (n >= VIEWS.length) return dir === 'next' ? '__drawer__' : null;
+    return VIEWS[n];
+  }
+
+  // Cek apakah elemen punya scroll horizontal aktif (jangan intercept)
+  function isHScroll(el) {
+    while (el && el !== document.body) {
+      const ov = window.getComputedStyle(el).overflowX;
+      if ((ov === 'auto' || ov === 'scroll') && el.scrollWidth > el.clientWidth + 2) return true;
+      el = el.parentElement;
+    }
+    return false;
+  }
+
+  const LABEL = {
+    feed:'FEED', ringkasan:'RINGKASAN', analisa:'ANALISA',
+    teknikal:'TEKNIKAL', dashboard:'DASHBOARD', __drawer__:'LAINNYA'
+  };
+
+  function hintShow(dir, v) {
+    const el = document.getElementById('swipeHint');
+    const arrow = document.getElementById('swipeHintArrow');
+    const label = document.getElementById('swipeHintLabel');
+    if (!el || !arrow || !label) return;
+    arrow.textContent = dir === 'next' ? '›' : '‹';
+    label.textContent = LABEL[v] || v.toUpperCase();
+    // next = swipe kiri → muncul di kanan; prev = swipe kanan → muncul di kiri
+    el.style.right = dir === 'next' ? '14px' : '';
+    el.style.left  = dir === 'next' ? '' : '14px';
+    el.style.display = 'flex';
+    requestAnimationFrame(() => { el.style.opacity = '0'; });
+  }
+
+  function hintUpdate(prog) {
+    const el = document.getElementById('swipeHint');
+    if (el) el.style.opacity = Math.min(0.85, prog * 4).toFixed(2);
+  }
+
+  function hintHide() {
+    const el = document.getElementById('swipeHint');
+    if (!el) return;
+    el.style.opacity = '0';
+    setTimeout(() => { if (el.style.opacity === '0') el.style.display = 'none'; }, 160);
+  }
+
+  function doCommit(goNext, curPanel, tv) {
+    const W = window.innerWidth;
+    // Slide curPanel keluar dengan fade — sebelum btn.click() → hideAllPanels()
+    if (curPanel) {
+      curPanel.style.transition = 'transform .18s cubic-bezier(.4,0,1,1), opacity .16s ease';
+      curPanel.style.transform  = `translateX(${goNext ? -W : W}px)`;
+      curPanel.style.opacity    = '0';
+    }
+    if (navigator.vibrate) navigator.vibrate(8);
+    setTimeout(() => {
+      if (tv === '__drawer__') {
+        if (curPanel) { curPanel.style.transform = ''; curPanel.style.transition = ''; curPanel.style.opacity = ''; }
+        openDrawer();
+        return;
+      }
+      const btn = document.querySelector(`#navViews .nvtab[data-view="${tv}"]`);
+      if (!btn) return;
+      btn.click(); // → hideAllPanels() → curPanel gets display:none (transition cut, but already faded)
+      if (curPanel) { curPanel.style.transform = ''; curPanel.style.transition = ''; curPanel.style.opacity = ''; }
+      const el = getPanel(tv);
+      if (!el) return;
+      const cls = goNext ? 'swipe-in-right' : 'swipe-in-left';
+      el.classList.remove('swipe-in-right', 'swipe-in-left');
+      void el.offsetWidth;
+      el.classList.add(cls);
+      el.addEventListener('animationend', () => el.classList.remove(cls), { once: true });
+    }, 95);
+  }
+
+  function doAbort(curPanel) {
+    if (!curPanel) return;
+    // Spring-back dengan overshoot kecil (cubic-bezier > 1) = terasa "terpental"
+    curPanel.style.transition = 'transform .4s cubic-bezier(.34,1.56,.64,1)';
+    curPanel.style.transform  = 'translateX(0)';
+    curPanel.addEventListener('transitionend', () => {
+      curPanel.style.transform = '';
+      curPanel.style.transition = '';
+    }, { once: true });
+  }
+
+  document.addEventListener('touchstart', function(e) {
+    _sw = null;
+    if (e.touches.length !== 1) return;
+    // Drawer terbuka → jangan intercept (drawer punya gesture sendiri)
+    const dp = document.getElementById('drawerPanel');
+    if (dp && dp.classList.contains('open')) return;
+    if (e.target.closest('#navViews, #navFilters, #botNav, input, select, textarea')) return;
+    if (isHScroll(e.target)) return;
+    const t = e.touches[0];
+    _sw = { sx: t.clientX, sy: t.clientY, dx: 0, dy: 0, locked: null, t0: Date.now(), cur: getPanel(activeView), nv: null, pv: null };
+  }, { passive: true });
+
+  document.addEventListener('touchmove', function(e) {
+    if (!_sw) return;
+    if (e.touches.length !== 1) { doAbort(_sw.cur); _sw = null; return; }
+    const t = e.touches[0];
+    _sw.dx = t.clientX - _sw.sx;
+    _sw.dy = t.clientY - _sw.sy;
+
+    // Direction lock threshold 8px
+    if (!_sw.locked) {
+      const adx = Math.abs(_sw.dx), ady = Math.abs(_sw.dy);
+      if (adx > 8 || ady > 8) {
+        _sw.locked = adx >= ady ? 'h' : 'v';
+        if (_sw.locked === 'h') {
+          _sw.nv = adjView('next');
+          _sw.pv = adjView('prev');
+          const dir = _sw.dx < 0 ? 'next' : 'prev';
+          const hv  = dir === 'next' ? _sw.nv : _sw.pv;
+          if (hv) hintShow(dir, hv);
+        }
+      }
       return;
     }
-    const btn = document.querySelector('#navViews .nvtab[data-view="' + VIEWS[next] + '"]');
-    if (!btn) return;
-    btn.click();
-    // slide-in animation on incoming panel
-    const el = document.getElementById(PANEL_ID[VIEWS[next]]);
-    if (!el) return;
-    const cls = goNext ? 'swipe-in-right' : 'swipe-in-left';
-    el.classList.remove('swipe-in-right', 'swipe-in-left');
-    void el.offsetWidth; // force reflow so animation restarts
-    el.classList.add(cls);
-    el.addEventListener('animationend', () => el.classList.remove(cls), { once: true });
+    if (_sw.locked !== 'h') return;
+
+    e.preventDefault(); // lock vertikal scroll saat swipe horizontal
+
+    const dx    = _sw.dx;
+    const goNext = dx < 0;
+    const hasTarget = goNext ? !!_sw.nv : !!_sw.pv;
+    // Rubber band: jika tidak ada tab di arah ini, tahan kuat (12% travel)
+    const eff   = hasTarget ? dx : dx * 0.12;
+
+    if (_sw.cur) {
+      _sw.cur.style.transition = 'none';
+      _sw.cur.style.transform  = `translateX(${eff}px)`;
+    }
+    hintUpdate(Math.abs(eff) / window.innerWidth);
+  }, { passive: false });
+
+  document.addEventListener('touchend', function(e) {
+    if (!_sw || _sw.locked !== 'h') { _sw = null; return; }
+    const dx  = _sw.dx;
+    const W   = window.innerWidth;
+    const vel = Math.abs(dx) / Math.max(1, Date.now() - _sw.t0); // px/ms
+    const goNext = dx < 0;
+    const tv  = goNext ? _sw.nv : _sw.pv;
+    const ok  = !!tv && (Math.abs(dx) > W * 0.28 || vel > 0.42);
+
+    hintHide();
+    if (ok) doCommit(goNext, _sw.cur, tv);
+    else    doAbort(_sw.cur);
+    _sw = null;
+  }, { passive: true });
+
+  // Jika touch dibatalkan sistem (call, notif) → spring-back bersih
+  document.addEventListener('touchcancel', function() {
+    if (_sw) { doAbort(_sw.cur); _sw = null; }
   }, { passive: true });
 })();
 
@@ -11923,6 +12067,12 @@ document.addEventListener('keydown', function(e) {
     <button class="drawer-close" onclick="closeDrawer()">&#x2715;</button>
   </div>
   <div class="drawer-nav" id="drawerNav"></div>
+</div>
+
+<!-- SWIPE HINT — nama tab tujuan, muncul real-time saat drag horizontal -->
+<div id="swipeHint">
+  <div id="swipeHintArrow">›</div>
+  <div id="swipeHintLabel"></div>
 </div>
 
 <!-- G-MODE INDICATOR -->
