@@ -246,6 +246,22 @@ Parser `parseCBRSSItems`: regex `<(?:item|entry)\b[^>]*>` — support RSS 2.0, A
 - Kontras chip aktif dicek di background `risk-on` (hijau tua) & `risk-off` (merah tua) via screenshot — semua warna (yellow/blue/text-mid) tetap legible, tidak perlu adjustment.
 - Mobile viewport (390px) → chip non-aktif tersembunyi, `REGIME: —` dan `regimeMeta` tidak ter-clip.
 
+### UI: Retail Sentiment mini-strip di kolom kanan DASHBOARD
+
+**Masalah:** Kolom kanan dashboard (`#dashSideCol`: CB BIAS, FUNDAMENTAL RANKING, DAILY PULSE) `overflow-y:auto` dengan tinggi mengikuti grid row penuh — kalau konten lebih pendek dari kolom kiri/tengah, sisanya kosong (dead space di sudut kanan bawah). User pilih **Retail Sentiment** (dari 4 opsi kandidat) untuk mengisinya — reuse data yang sudah di-fetch untuk tab COT, tanpa API baru.
+
+**Implementasi:**
+- **`renderDashRetail()`** (`index.html`) — versi ringkas dari `renderRetailSentiment()` (tab COT). Reuse `retailData`, `RETAIL_PAIR_ORDER`, `RETAIL_PAIR_COLORS` yang sudah ada. Render ke `#dashRetailStrip` (div baru di `#dashSideCol`, setelah DAILY PULSE).
+- **Sort by extremity** — beda dari tab COT (urutan pair tetap), mini-strip di-sort descending berdasarkan `|long_pct − 50|` supaya sinyal paling ekstrem/kontrarian muncul duluan — lebih glanceable untuk dashboard.
+- Tiap baris: pair + mini progress bar (`long_pct` width) + panah arah sinyal kontrarian (↑ LEAN LONG / ↓ LEAN SHORT / — NEUTRAL, warna hijau/merah/abu), dengan `title` tooltip berisi detail persentase lengkap.
+- **`fetchRetailSentiment()`** dipanggil juga di `window.addEventListener('load', …)` (sebelumnya cuma dipanggil saat switch ke tab COT) supaya dashboard dapat data tanpa perlu buka tab COT dulu. `renderRetailSentiment()` (tab COT) sekarang juga memanggil `renderDashRetail()` di akhir — satu fetch, dua tempat render, tidak ada request duplikat.
+- **Error handling:** kalau fetch retail gagal, cabang `catch` sekarang juga fallback `#dashRetailStrip` ke `—` (sebelumnya cuma `#retailGrid`/`#retailMeta` di tab COT yang di-update — ditemukan & diperbaiki saat evaluasi mandiri, karena tanpa ini strip dashboard bisa nyangkut di "Memuat..." selamanya kalau ForexBenchmark down).
+
+**Verifikasi (Playwright headless, mock `/api/feeds?type=retail`):**
+- Data sukses (8 pair, macam-macam signal) → urutan render sesuai extremity (`|long_pct-50|` descending), warna & arah panah cocok dengan signal (`CONTRARIAN_LONG`→↑ hijau, `CONTRARIAN_SHORT`→↓ merah, `NEUTRAL`→— abu), lebar bar proporsional ke `long_pct`, tidak ada console error.
+- Simulasi upstream gagal (HTTP 500) → `#dashRetailStrip` fallback ke `—`, tidak nyangkut di "Memuat...".
+- Konfirmasi `renderDashBias()`/`refreshDashboard()` (siklus 60 dtk) tidak menimpa `#dashRetailStrip` — sama seperti DAILY PULSE, strip retail punya siklus fetch sendiri (TTL 2 jam) independen dari auto-refresh dashboard.
+
 ---
 
 ## Changelog Session 131 (2026-06-30)
