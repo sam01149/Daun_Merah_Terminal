@@ -186,6 +186,24 @@ Parser `parseCBRSSItems`: regex `<(?:item|entry)\b[^>]*>` — support RSS 2.0, A
 
 `git diff` menyentuh `api/_fundamental_parser.js` dan `index.html` saja.
 
+### Fix CRITICAL: Swipe antar tab utama (FEED/RINGKASAN/ANALISA/TEKNIKAL) di HP tidak berfungsi sama sekali
+
+**Dilaporkan user:** "swipe ke samping, aku tadi coba gabisa" — panel keliatan geser + haptic bunyi, tapi tab tidak pernah pindah.
+
+**Root cause:** Interaksi tak terduga antara dua fitur independen yang sama-sama sudah ada sebelum session ini:
+1. `doCommit()` (swipe nav, `index.html` ~baris 11509) menyelesaikan swipe sukses dengan `btn.click()` terprogram ke tombol `#navViews .nvtab` yang sesuai (dipanggil di dalam `setTimeout` 95ms, supaya sinkron dengan animasi fade-out panel lama).
+2. Guard lama yang dibuat untuk kasus lain sama sekali ("Cegah klik tidak sengaja saat scroll list berita di HP", `index.html` ~baris 3985) — `document.addEventListener('click', e => { if (_touchMoved) { e.preventDefault(); e.stopImmediatePropagation(); ... } }, true)` — cancel SEMUA klik (capture phase, `stopImmediatePropagation`) selama flag global `_touchMoved` masih `true` sejak gestur touch terakhir bergerak >10px.
+
+Karena swipe SELALU menggerakkan jari jauh lebih dari 10px (butuh 8px buat direction-lock, dan commit butuh 28% lebar layar), `_touchMoved` sudah pasti `true` selama gestur swipe berlangsung. Browser mobile (iOS Safari & Android Chrome) tidak pernah memicu native `click` sesudah gestur drag sejauh itu, jadi `_touchMoved` TIDAK PERNAH direset balik ke `false` sebelum `doCommit()`'s `btn.click()` terprogram jalan 95ms kemudian. Akibatnya: `btn.click()` dispatch event click asli, ke-intercept duluan oleh guard di atas (capture phase, jalan sebelum listener asli tombol yang bubble-phase), `stopImmediatePropagation()` membunuh event itu total — `activeView` tidak pernah berubah, `hideAllPanels()`/render panel baru tidak pernah terpanggil. Panel lama cuma balik ke posisi normal (transform di-reset di baris berikutnya di `doCommit`), keliatan seperti swipe di-abort padahal sebenarnya berhasil "commit" tapi hasilnya dibatalkan diam-diam oleh kode yang sama sekali tidak berhubungan.
+
+**Kenapa lolos dari review kode statis sebelumnya:** dua listener ini ada di bagian file yang jauh terpisah (baris ~3985 vs ~11509-11535), tidak saling mereferensi langsung — bug-nya baru kelihatan kalau menelusuri urutan eksekusi event lintas fitur, bukan dari membaca satu fungsi saja.
+
+**Fix (`index.html` ~baris 3985):** tambah syarat `e.isTrusted` ke guard lama — `if (_touchMoved && e.isTrusted) { ... }`. Klik asli dari browser (misal synthetic click setelah scroll list berita, `isTrusted: true`) tetap ke-cancel seperti semula (tidak ada perubahan perilaku untuk kasus asli yang dilindungi guard ini). Klik yang di-trigger lewat JS (`element.click()` — SELALU `isTrusted: false`, termasuk punya swipe nav) sekarang lolos tanpa terjegal, apa pun status `_touchMoved`.
+
+**Verifikasi:** Simulasi `jsdom` — guard lama (tanpa fix) vs guard baru (dengan fix), keduanya diuji dengan skenario identik (`_touchMoved = true`, lalu panggil `btn.click()` persis seperti `doCommit()`): guard lama → handler klik tombol nav TIDAK terpanggil (bug ter-reproduksi persis laporan user); guard baru → handler klik tombol nav terpanggil normal (fix terverifikasi). `node -e` full-script parse index.html tetap tidak ada syntax error.
+
+`git diff` untuk fix ini hanya menyentuh satu blok kecil di `index.html` (guard `_touchMoved`/`isTrusted`, ~baris 3985-3996).
+
 ---
 
 ## Changelog Session 135 (2026-07-01)

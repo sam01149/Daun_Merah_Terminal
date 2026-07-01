@@ -3983,7 +3983,13 @@ document.addEventListener('touchmove', e => {
   if (Math.abs(t.clientX - _touchStartX) > 10 || Math.abs(t.clientY - _touchStartY) > 10) _touchMoved = true;
 }, { passive: true });
 document.addEventListener('click', e => {
-  if (_touchMoved) {
+  // isTrusted: hanya cancel klik ASLI dari browser (mis. synthetic click setelah
+  // scroll list berita) — bukan click() yang di-trigger lewat JS sendiri (mis.
+  // btn.click() di doCommit() swipe nav), yang isTrusted-nya selalu false.
+  // Tanpa guard ini, swipe commit yang sukses tetap ke-cancel diam-diam karena
+  // _touchMoved masih true dari gestur swipe itu sendiri — panel keliatan geser
+  // + haptic bunyi, tapi tab tidak pernah ganti.
+  if (_touchMoved && e.isTrusted) {
     e.preventDefault();
     e.stopImmediatePropagation();
     _touchMoved = false;
