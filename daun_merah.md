@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-07-01 (session 133 — lihat "Changelog Session 133" di bawah untuk detail terbaru)
+> **Last updated:** 2026-07-01 (session 134 — lihat "Changelog Session 134" di bawah untuk detail terbaru)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -223,6 +223,28 @@ Parser `parseCBRSSItems`: regex `<(?:item|entry)\b[^>]*>` — support RSS 2.0, A
 **Bug 2 — Berita Terkait XAU/USD: "SNB/RBNZ/RBA/BOC/BOE/ECB Interest Rate Probabilities" muncul (tidak relevan):**
 - Penyebab: keyword `'interest rate'` di `TEK_CUR_KEYWORDS['USD']` terlalu lebar — menangkap semua headline yang mengandung "interest rate", termasuk milik CB pair lain. Hanya Fed yang relevan ke XAU/USD.
 - Fix: tambah `TEK_PAIR_NEGATIVE['XAUUSD']` berisi compound terms: `'snb interest'`, `'rbnz rate'`, `'ecb policy'`, `'interest rate probabilities'` (format generik chart), dll. Diterapkan di `renderTekNews()` — headline yang cocok di-skip meskipun ada keyword match. Berita Fed (`'fed interest'`, `'fomc'`, dll.) tidak cocok dengan negative list → tetap tampil.
+
+---
+
+## Changelog Session 134 (2026-07-01)
+
+### UI: Session Strip di REGIME bar (handoff Section G, `daun_merah_plan.md`)
+
+**Masalah:** Sisi kanan REGIME bar kosong ~60% — cuma `REGIME: NEUTRAL · VIX · MOVE · HY` nempel di kiri. User memilih indikator sesi FX (dari 4 opsi kandidat) untuk mengisi ruang itu — glanceable, low-noise, non-duplikat dengan boundary sesi yang sudah ada di tab CHECKLIST.
+
+**Implementasi:**
+- **`getFxSession(now)`** (`index.html`, sebelum `ckUpdateClock`) — single source of truth untuk boundary sesi UTC: TOKYO 00–08, LONDON 08–13, OVERLAP 13–16, NY 16–21, CLOSED 21–24. Return `{ list, cur, next, msToNext }`.
+- **`renderRegimeSessions()`** — render chip progression (`TOKYO › LONDON › OVERLAP › NY › CLOSED`) dengan sesi aktif di-highlight bold + warna, plus countdown `→ <next> in Xj Ym`. Dipasang sebagai ticker independen (`setInterval` 30 detik) di `window.addEventListener('load', …)` supaya jalan terlepas dari tab yang sedang aktif (beda dari `ckClockInterval` yang cuma jalan saat tab CHECKLIST kebuka).
+- **HTML:** tambah `<span class="regime-sessions" id="regimeSessions">` setelah `#regimeMeta` di `.regime-row`.
+- **CSS:** `.regime-sess-chip` warna reuse existing (`--yellow` London/Overlap, `#60a5fa` NY, `--muted`→`--text-mid` saat aktif untuk Tokyo/Closed). `margin-left:auto` + `flex-shrink:0` supaya rata kanan tanpa nge-clip `regime-main`/`regime-meta`. Mobile (`≤820px`): sembunyikan chip non-aktif + separator, sisakan sesi aktif + countdown saja.
+- **Refactor `ckUpdateClock()`** — hardcode if/else boundary diganti baca dari `getFxSession()` supaya header & checklist tidak pernah beda (`ckLabel`/`ckCls` per sesi).
+
+**Verifikasi (Playwright headless, fake `Date` per jam batas):**
+- 10 titik boundary (07/08, 12/13, 15/16, 20/21, 23/00 UTC) → chip aktif & label checklist match ekspektasi persis, termasuk wrap CLOSED→TOKYO tengah malam.
+- `msToNext` tidak pernah negatif / nyangkut di "0m" — dicek matematis di Node terpisah untuk semua 10 boundary + 2 titik rollover presisi (`20:59:59.9`, `23:59:59.9`).
+- Output `ckUpdateClock()` hasil refactor **identik** dengan versi hardcode lama (dicek 5 sesi lewat tab CHECKLIST) — pembuktian single-source-of-truth tidak mengubah perilaku existing.
+- Kontras chip aktif dicek di background `risk-on` (hijau tua) & `risk-off` (merah tua) via screenshot — semua warna (yellow/blue/text-mid) tetap legible, tidak perlu adjustment.
+- Mobile viewport (390px) → chip non-aktif tersembunyi, `REGIME: —` dan `regimeMeta` tidak ter-clip.
 
 ---
 
