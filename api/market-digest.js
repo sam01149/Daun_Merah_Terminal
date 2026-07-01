@@ -87,7 +87,7 @@ const GOLD_KEYWORDS = [
   'real yield','tips yield','breakeven','inflation expect','10y yield','10-year yield','treasury yield','us yield','yield curve',
   'dxy','dollar index',
   // Fed / FOMC — USD fundamentals that directly drive XAU via rate/real yield channel
-  'powell','fomc','federal reserve','fed rate','fed minutes','fed pivot','rate cut','rate hike',
+  'powell','warsh','fomc','federal reserve','fed rate','fed minutes','fed pivot','rate cut','rate hike',
   'us cpi','us inflation','nonfarm','nfp','us gdp','us jobs','us unemployment',
   // ETF / flow
   'gld','gold etf','etf flow','bullion etf','central bank buy','central bank gold','gold reserve',
@@ -1574,7 +1574,7 @@ function detectCat(title) {
     'bonds':['bond','yield','treasury','gilt','bund','10-year','2-year','30-year','bps','fixed income'],
     'crypto':['bitcoin','btc','ethereum','eth','crypto','blockchain','binance','stablecoin'],
     'indexes':['pmi','purchasing manager','composite index','manufacturing index'],
-    'macro':['fed ','fomc','powell','federal reserve','rate cut','rate hike','ecb','boe','boj','pboc','central bank','gdp','recession','imf'],
+    'macro':['fed ','fomc','powell','warsh','federal reserve','rate cut','rate hike','ecb','boe','boj','pboc','central bank','gdp','recession','imf'],
     'econ-data':['actual','forecast','previous','cpi','nfp','unemployment','retail sales','trade balance','payroll'],
     'geopolitical':['iran','iranian','nuclear','ceasefire','israel','russia','ukraine','china','chinese','taiwan','sanction','tariff','trump','nato','military'],
   };

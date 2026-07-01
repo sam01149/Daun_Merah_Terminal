@@ -65,7 +65,7 @@ module.exports = {
   // 🏦 Bank sentral & kebijakan moneter
   MACRO: [
     // Fed / AS
-    'fed ', 'fomc', 'powell', 'federal reserve', 'fed minutes', 'beige book',
+    'fed ', 'fomc', 'powell', 'warsh', 'federal reserve', 'fed minutes', 'beige book',
     'fed funds', 'fed pivot', 'fed hold', 'fed pause', 'dot plot',
     // ECB / Eropa
     'ecb', 'lagarde', 'european central bank', 'ecb minutes',
