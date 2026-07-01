@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-07-01 (session 132 — lihat "Changelog Session 132" di bawah untuk detail terbaru)
+> **Last updated:** 2026-07-01 (session 133 — lihat "Changelog Session 133" di bawah untuk detail terbaru)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -176,6 +176,43 @@ Parser `parseCBRSSItems`: regex `<(?:item|entry)\b[^>]*>` — support RSS 2.0, A
 8. **Haptic feedback**: `navigator.vibrate(8)` saat switch berhasil (Android).
 9. **touchcancel**: kalau gesture diinterrupt sistem (call masuk, notif), spring-back bersih.
 10. **Drawer case**: swipe kiri dari tab terakhir (Teknikal) → buka drawer "Lainnya" dengan animasi yang sama.
+
+### Fix: Swipe freeze di view sekunder + filter berita non-Fed di XAU/USD (session 132)
+
+---
+
+## Changelog Session 133 (2026-07-01)
+
+### Filter Berita Terkait — Extended ke Semua Kombinasi Pair
+
+**Masalah yang diperbaiki:**
+
+**1. Filter negatif hanya ada untuk XAUUSD, semua pair lain tidak punya:**
+- Sebelumnya `TEK_PAIR_NEGATIVE` hanya punya entry XAUUSD. 27 pair FX lain (termasuk EURUSD, GBPUSD, USDJPY, semua crosses) tidak difilter sama sekali.
+- Akibat: "BOJ Rate Decision" muncul di berita terkait EURUSD, "RBA Rate Hike" di GBPUSD, "SNB Rate Cut" di USDJPY — semuanya false positive dari keyword `'rate decision'`/`'rate hike'` di `TEK_CUR_KEYWORDS['USD']` yang terlalu lebar.
+
+**2. Bug XAUUSD: `'interest rate probabilities'` catch-all memblokir "USD Interest Rate Probabilities":**
+- Daftar negatif XAUUSD menggunakan `'interest rate probabilities'` sebagai catch-all.
+- Ini memblokir "USD Interest Rate Probabilities" / "Fed Interest Rate Probabilities" yang sangat relevan untuk gold (gold bergerak terbalik dengan Fed rate expectations).
+- False negative: berita penting tentang Fed rate expectations tidak muncul di XAU/USD berita terkait.
+
+**Fix: Generate `TEK_PAIR_NEGATIVE` secara programatik untuk SEMUA pair:**
+- Tambah `_CB_RATE_BLOCK` — mapping per-CB berisi blocking terms dalam 2 format: CB-prefix (`'ecb rate'`, `'boe policy'`) + currency-prefix (`'eur interest rate'`, `'gbp interest rate'`).
+  - CB-prefix menangkap: "ECB Rate Decision", "BOE Policy Statement"
+  - Currency-prefix menangkap: "EUR Interest Rate Probabilities", "GBP Rate Decision" (format FinancialJuice charts)
+- Tambah `_CUR_CB` — mapping currency leg → CB key. USD dan XAU tidak ada mapping (kita tidak pernah blokir berita Fed).
+- Loop `TEK_ALL_PAIRS` untuk generate negative filter per-pair: setiap pair memblokir semua CB yang bukan salah satu dari kedua legnya.
+  - EURUSD: blocks BOE/BOJ/RBA/RBNZ/BOC/SNB rate news (allow ECB + Fed)
+  - GBPUSD: blocks ECB/BOJ/RBA/RBNZ/BOC/SNB (allow BOE + Fed)
+  - USDJPY: blocks ECB/BOE/RBA/RBNZ/BOC/SNB (allow BOJ + Fed)
+  - AUDUSD: blocks ECB/BOE/BOJ/RBNZ/BOC/SNB (allow RBA + Fed)
+  - NZDUSD: blocks ECB/BOE/BOJ/RBA/BOC/SNB (allow RBNZ + Fed)
+  - USDCAD: blocks ECB/BOE/BOJ/RBA/RBNZ/SNB (allow BOC + Fed)
+  - USDCHF: blocks ECB/BOE/BOJ/RBA/RBNZ/BOC (allow SNB + Fed)
+  - XAUUSD: blocks semua 7 CB (XAU + USD tidak ada CB entry) — lebih presisi dari sebelumnya
+  - Cross pairs (EURJPY, EURGBP, GBPJPY, dll.): blocks semua CB kecuali dua leg pair
+  - Yield instruments (US10Y, US02Y): tidak diberi filter negatif — berita rate global tetap relevan
+- Menggantikan `'interest rate probabilities'` catch-all yang lama dengan currency-prefix terms per-CB → "USD/Fed Interest Rate Probabilities" sekarang bisa lolos filter untuk XAU/USD ✓
 
 ### Fix: Swipe freeze di view sekunder + filter berita non-Fed di XAU/USD
 

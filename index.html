@@ -10381,24 +10381,57 @@ const TEK_YIELD_KEYWORDS = [
 TEK_PAIR_KEYWORDS.US10Y = TEK_YIELD_KEYWORDS;
 TEK_PAIR_KEYWORDS.US02Y = TEK_YIELD_KEYWORDS;
 
-// Keyword negatif per-pair: headline yang mengandung term ini di-skip meskipun
-// cocok dengan specificKws. Tujuan: saring false-positive dari keyword yang terlalu lebar.
-// Contoh: 'interest rate' di USD keywords nangkap "SNB Interest Rate Probabilities"
-// padahal keputusan rate SNB/RBNZ/RBA/BOC/BOE/ECB tidak relevan ke XAU/USD.
-const TEK_PAIR_NEGATIVE = {
-  XAUUSD: [
-    'snb interest','snb rate','snb policy',
-    'rbnz interest','rbnz rate','rbnz ocr','rbnz policy',
-    'rba interest','rba rate','rba cash','rba policy',
-    'boc interest','boc rate','boc overnight','boc policy',
-    'boe interest','boe rate','mpc rate','boe policy',
-    'ecb interest','ecb rate','ecb policy',
-    'boj interest','boj rate','boj policy',
-    'bank of england interest','bank of canada interest','bank of japan interest',
-    'european central bank interest','reserve bank interest',
-    'interest rate probabilities',  // generik "X Interest Rate Probabilities" chart
-  ],
+// Per-CB rate-decision blocking terms — covers both CB-name prefix ("ecb rate")
+// and currency prefix ("eur interest rate") so FinancialJuice headlines in both
+// formats ("ECB Rate Decision" and "EUR Interest Rate Probabilities") are caught.
+// USD and XAU have no entry: Fed/USD rate terms in USD keywords are intentionally
+// broad (we want them to surface Fed news for all USD pairs). We never block Fed.
+const _CB_RATE_BLOCK = {
+  ECB:  ['ecb rate','ecb interest','ecb policy','ecb decision',
+         'eur interest rate','euro interest rate','eurozone interest rate'],
+  BOE:  ['boe rate','boe interest','boe policy','mpc rate','mpc decision',
+         'bank of england rate','bank of england interest',
+         'gbp interest rate','uk interest rate','uk rate decision','sterling interest rate'],
+  BOJ:  ['boj rate','boj interest','boj policy','boj decision',
+         'bank of japan rate','bank of japan interest',
+         'jpy interest rate','japan interest rate','japan rate decision'],
+  RBA:  ['rba rate','rba interest','rba cash','rba policy','rba decision',
+         'reserve bank australia rate','reserve bank of australia interest',
+         'aud interest rate','australia interest rate','australia rate decision'],
+  RBNZ: ['rbnz rate','rbnz interest','rbnz ocr','rbnz policy','rbnz decision',
+         'reserve bank new zealand rate','reserve bank of new zealand interest',
+         'nzd interest rate','new zealand interest rate','new zealand rate decision'],
+  BOC:  ['boc rate','boc interest','boc overnight','boc policy','boc decision',
+         'bank of canada rate','bank of canada interest',
+         'cad interest rate','canada interest rate','canada rate decision'],
+  SNB:  ['snb rate','snb interest','snb policy','snb decision',
+         'swiss national bank rate','swiss national bank interest',
+         'chf interest rate','switzerland interest rate','swiss interest rate'],
 };
+// Maps each currency leg → CB key in _CB_RATE_BLOCK.
+// USD and XAU have no mapping — we never block Fed or gold-specific rate headlines.
+const _CUR_CB = { EUR:'ECB', GBP:'BOE', JPY:'BOJ', AUD:'RBA', NZD:'RBNZ', CAD:'BOC', CHF:'SNB' };
+
+// Auto-generate negative filter for every pair in TEK_ALL_PAIRS:
+// each pair blocks rate-decision headlines from CBs that are NOT one of its two legs.
+// Example: EURUSD allows ECB + Fed → blocks BOJ/RBA/RBNZ/BOC/BOE/SNB rate news.
+//          XAUUSD allows neither (XAU+USD have no CB entry) → blocks all 7 CBs.
+//          EURJPY allows ECB + BOJ → blocks BOE/RBA/RBNZ/BOC/SNB rate news.
+// Fixes: (1) broadens the previous XAUUSD-only filter to ALL pair combinations;
+// (2) replaces the blunt 'interest rate probabilities' catch-all (which incorrectly
+// blocked "USD/Fed Interest Rate Probabilities" for XAUUSD) with currency-prefixed
+// terms ("eur interest rate", "jpy interest rate", etc.) that are precise.
+const TEK_PAIR_NEGATIVE = {};
+TEK_ALL_PAIRS.forEach(p => {
+  if (TEK_YIELD_INSTRUMENTS.includes(p)) return; // yield instruments: no neg filter needed
+  const legs = p === 'XAUUSD' ? ['XAU','USD'] : [p.slice(0,3), p.slice(3)];
+  const allowedCBs = new Set(legs.map(l => _CUR_CB[l]).filter(Boolean));
+  const neg = [];
+  for (const [cb, terms] of Object.entries(_CB_RATE_BLOCK)) {
+    if (!allowedCBs.has(cb)) neg.push(...terms);
+  }
+  if (neg.length) TEK_PAIR_NEGATIVE[p] = neg;
+});
 
 const TEK_CAT_COLOR = {
   'market-moving':'#e74c3c','forex':'#38bdf8','macro':'#a78bfa','econ-data':'#27ae60',
