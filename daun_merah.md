@@ -177,6 +177,16 @@ Parser `parseCBRSSItems`: regex `<(?:item|entry)\b[^>]*>` — support RSS 2.0, A
 9. **touchcancel**: kalau gesture diinterrupt sistem (call masuk, notif), spring-back bersih.
 10. **Drawer case**: swipe kiri dari tab terakhir (Teknikal) → buka drawer "Lainnya" dengan animasi yang sama.
 
+### Fix: Swipe freeze di view sekunder + filter berita non-Fed di XAU/USD
+
+**Bug 1 — Swipe di view sekunder (Kalender, COT, Riset, dll.) panel bergerak tapi tidak bisa pindah:**
+- Penyebab: view sekunder (`cal`, `cot`, `riset`, dll.) tidak ada di array `VIEWS` primer `['dashboard','feed','ringkasan','analisa','teknikal']`. `adjView()` return `null` untuk `nv` dan `pv`. Panel tetap bergerak karena rubber-band (12%) tapi `doAbort` selalu terpanggil → view tidak pernah ganti.
+- Fix: saat direction lock 'h' tapi `nv` dan `pv` keduanya `null` → set `locked = 'v'`. Panel tidak bergerak sama sekali, scroll vertikal berjalan normal. Rubber band di sisi tepi view PRIMER tetap berjalan (nv atau pv bisa null secara individual — cuma keduanya sekaligus yang di-abort).
+
+**Bug 2 — Berita Terkait XAU/USD: "SNB/RBNZ/RBA/BOC/BOE/ECB Interest Rate Probabilities" muncul (tidak relevan):**
+- Penyebab: keyword `'interest rate'` di `TEK_CUR_KEYWORDS['USD']` terlalu lebar — menangkap semua headline yang mengandung "interest rate", termasuk milik CB pair lain. Hanya Fed yang relevan ke XAU/USD.
+- Fix: tambah `TEK_PAIR_NEGATIVE['XAUUSD']` berisi compound terms: `'snb interest'`, `'rbnz rate'`, `'ecb policy'`, `'interest rate probabilities'` (format generik chart), dll. Diterapkan di `renderTekNews()` — headline yang cocok di-skip meskipun ada keyword match. Berita Fed (`'fed interest'`, `'fomc'`, dll.) tidak cocok dengan negative list → tetap tampil.
+
 ---
 
 ## Changelog Session 131 (2026-06-30)
