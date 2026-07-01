@@ -6,9 +6,12 @@
 const FUND_PREFIX_MAP = [
   { kw: [
       'non-farm payroll','nonfarm payroll','non farm payroll',' nfp ','nfp:',
-      'jobless claim','initial claim','unemployment claim',
+      'jobless claim','initial claim','unemployment claim','continuing claim',
       'ism manufacturing','ism non-manuf','ism pmi','ism services',
       'core pce','personal consumption expend',
+      'jolts','job openings','adp employment','adp nonfarm','adp jobs','adp report',
+      'chicago pmi','existing home sales','new home sales','capacity utilization',
+      'personal income','personal spending','consumer spending','michigan sentiment','michigan consumer',
       'us cpi','us gdp','us ppi','us retail','us trade','us employ','us unemploy',
       'us job','us inflation','us consumer','us producer','us housing','us wage','us durable',
       'u.s. cpi','u.s. gdp','u.s. employ','u.s. unemploy',
@@ -21,7 +24,7 @@ const FUND_PREFIX_MAP = [
       'euro zone cpi','euro zone gdp','euro zone unemploy',
       'euro area cpi','euro area gdp','euro area unemploy','euro area pmi','euro area current account',
       'ez cpi','ez gdp','ez pmi',
-      'zew','ifo business','ifo climate',
+      'zew','ifo business','ifo climate','gfk',
       'french cpi','french gdp','french unemploy','france cpi','france gdp',
       'italian cpi','italian gdp','italy cpi','italy gdp',
     ], cur: 'EUR' },
@@ -89,18 +92,29 @@ const FUND_COUNTRY_ONLY = [
 
 const FUND_INDICATOR_MAP = [
   { kw: ['non-farm payroll','nonfarm payroll','non farm payroll',' nfp ','nfp:'], key: 'NFP' },
+  { kw: ['continuing claim'],                                                     key: 'Continuing Claims' },
   { kw: ['jobless claim','initial claim','unemployment claim'],                   key: 'Jobless Claims' },
   { kw: ['ism manufacturing','ism pmi manufactur'],                               key: 'ISM Manufacturing' },
   { kw: ['ism services','ism non-manuf','ism non manuf'],                         key: 'ISM Services' },
   { kw: ['core pce','personal consumption expend'],                               key: 'Core PCE' },
-  { kw: ['core cpi','core consumer price'],                                       key: 'Core CPI MoM' },
+  { kw: ['core cpi','core consumer price','core inflation'],                      key: 'Core CPI MoM' },
   { kw: ['tankan'],                                                               key: 'Tankan Mfg Index' },
   { kw: ['ivey pmi','ivey purchasing'],                                           key: 'Ivey PMI' },
   { kw: ['nab business','nab confidence','nab survey'],                           key: 'NAB Business Conf' },
   { kw: ['zew'],                                                                  key: 'ZEW Sentiment' },
   { kw: ['ifo business','ifo climate'],                                           key: 'IFO Business' },
+  { kw: ['gfk'],                                                                  key: 'GfK Consumer Climate' },
   { kw: ['claimant count'],                                                       key: 'Claimant Count' },
   { kw: ['kof economic','kof barometer'],                                         key: 'KOF Barometer' },
+  { kw: ['jolts','job openings'],                                                 key: 'JOLTS Job Openings' },
+  { kw: ['adp employment','adp nonfarm','adp jobs','adp report'],                 key: 'ADP Employment' },
+  { kw: ['chicago pmi'],                                                          key: 'Chicago PMI' },
+  { kw: ['existing home sales'],                                                  key: 'Existing Home Sales' },
+  { kw: ['new home sales'],                                                       key: 'New Home Sales' },
+  { kw: ['personal income'],                                                      key: 'Personal Income' },
+  { kw: ['personal spending','consumer spending'],                                key: 'Personal Spending' },
+  { kw: ['capacity utilization'],                                                 key: 'Capacity Utilization' },
+  { kw: ['factory orders'],                                                       key: 'Factory Orders' },
   { kw: ['manufacturing pmi'],                                                    key: 'Manufacturing PMI' },
   { kw: ['services pmi','service pmi','non-manufacturing pmi'],                   key: 'Services PMI' },
   { kw: ['composite pmi'],                                                        key: 'Composite PMI' },
@@ -123,12 +137,14 @@ const FUND_INDICATOR_MAP = [
   { kw: ['gdp m/m','gdp mom','gdp monthly'],                                     key: 'GDP MoM' },
   { kw: ['gdp'],                                                                  key: 'GDP QoQ' },
   { kw: ['retail sales yoy','retail sales y/y','retail sales annual'],           key: 'Retail Sales YoY' },
-  { kw: ['building approval','construction approval','building permit'],          key: 'Building Approvals' },
-  { kw: ['consumer confidence','consumer sentiment','consumer morale'],           key: 'Consumer Confidence' },
+  { kw: ['building approval','construction approval'],                            key: 'Building Approvals' },
+  { kw: ['building permit'],                                                      key: 'Building Permits' },
+  { kw: ['consumer confidence','consumer sentiment','consumer morale','michigan sentiment'], key: 'Consumer Confidence' },
   { kw: ['business confidence','business sentiment','business climate'],          key: 'Business Confidence' },
   { kw: ['housing start','home start'],                                           key: 'Housing Starts' },
   { kw: ['durable goods'],                                                        key: 'Durable Goods Orders' },
   { kw: ['flash gdp','gdp advance'],                                              key: 'GDP QoQ Flash' },
+  { kw: ['inflation rate','inflation data'],                                      key: 'CPI YoY' },
 ];
 
 const CB_RATE_MAP = [
@@ -146,9 +162,13 @@ const CB_RATE_MAP = [
 // A headline yielding e.g. NFP=0.0% is a parse error — reject it.
 // NOTE: 'Employment Change' intentionally excluded — NZD reports this as QoQ %
 // (e.g. "0.2%"), so rejecting % would silently discard all NZD updates.
+// NOTE: 'Building Approvals' (AU) intentionally excluded — reported as MoM %
+// (matches its FUND_SCORE_RULES dir/threshold), unlike 'Building Permits' (US),
+// which is an absolute count (e.g. "1.45M").
 const QUANTITY_INDICATORS = new Set([
-  'NFP', 'Jobless Claims', 'Claimant Count',
-  'Building Approvals', 'Housing Starts', 'Durable Goods Orders',
+  'NFP', 'Jobless Claims', 'Claimant Count', 'Continuing Claims',
+  'Building Permits', 'Housing Starts', 'Durable Goods Orders',
+  'JOLTS Job Openings', 'ADP Employment', 'Existing Home Sales', 'New Home Sales',
 ]);
 
 function parseFundamentalFromHeadline(title) {

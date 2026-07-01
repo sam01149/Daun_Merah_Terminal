@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-07-01 (session 135 — lihat "Changelog Session 135" di bawah untuk detail terbaru)
+> **Last updated:** 2026-07-01 (session 136 — lihat "Changelog Session 136" di bawah untuk detail terbaru)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -150,6 +150,41 @@ File: `api/feeds.js` → `CB_RESEARCH_SOURCES` (diaudit sesi 120)
 | RBNZ, SNB | ❌ | 403 semua jalur |
 
 Parser `parseCBRSSItems`: regex `<(?:item|entry)\b[^>]*>` — support RSS 2.0, Atom, dan RDF/RSS 1.0.
+
+---
+
+## Changelog Session 136 (2026-07-01)
+
+### Feat: Wire up econ-data indikator yang belum masuk ke tab FUNDAMENTAL (semua pair) + card sectioning & "Selengkapnya"
+
+**Konteks:** User minta cek — di News/`econ-data` (`api/_push_keywords.js` `ECON_DATA`) ada keyword rilis data ekonomi yang ternyata TIDAK pernah ke-parse ke tab FUNDAMENTAL (`api/_fundamental_parser.js`), padahal secara konsep harusnya ikut dilacak per currency.
+
+**Gap yang ditemukan (audit `ECON_DATA` vs `FUND_PREFIX_MAP`/`FUND_INDICATOR_MAP`):**
+- **USD** — indikator yang muncul di News sebagai `econ-data` tapi tidak pernah nyampe ke card USD: JOLTS Job Openings, ADP Employment, Continuing Claims (beda dari Initial/Jobless Claims), Chicago PMI, Michigan Consumer Sentiment, Existing/New Home Sales, Personal Income/Personal Spending, Capacity Utilization, Factory Orders. Semua ini adalah indikator EKSKLUSIF Amerika yang di headline FinancialJuice biasanya TIDAK pernah disebut "US"/"United States" (persis pola NFP/ISM/Core PCE yang sudah lebih dulu ada) — jadi butuh bare keyword di `FUND_PREFIX_MAP`, bukan cuma di `FUND_INDICATOR_MAP`.
+- **EUR** — GfK Consumer Climate (Jerman) ada di `ECON_DATA` (`'gfk'`) tapi tidak pernah dipetakan sama sekali.
+- **Semua pair** — headline generik "Inflation Rate"/"Inflation Data" (dipakai UK/Eurozone selain istilah "CPI") dan "Core Inflation" (sinonim Core CPI) tidak match keyword manapun di `FUND_INDICATOR_MAP`, jatuh ke fallback title-case bebas → berpotensi bikin row terpisah yang isinya sama tapi nama key beda (kelas bug yang sama seperti "CPI Core/Flash" di Session 135).
+
+**Fix (`api/_fundamental_parser.js`):**
+- `FUND_PREFIX_MAP` USD: tambah bare keyword `jolts`, `job openings`, `adp employment`/`adp nonfarm`/`adp jobs`/`adp report`, `chicago pmi`, `existing home sales`, `new home sales`, `capacity utilization`, `personal income`, `personal spending`, `consumer spending`, `michigan sentiment`, `michigan consumer`, `continuing claim`.
+- `FUND_PREFIX_MAP` EUR: tambah `gfk`.
+- `FUND_INDICATOR_MAP`: tambah key baru `Continuing Claims`, `JOLTS Job Openings`, `ADP Employment`, `Chicago PMI`, `Existing Home Sales`, `New Home Sales`, `Personal Income`, `Personal Spending`, `Capacity Utilization`, `Factory Orders`, `GfK Consumer Climate`, `Building Permits` (dipisah dari `Building Approvals` — lihat bug di bawah); alias `core inflation` → `Core CPI MoM`, `inflation rate`/`inflation data` → `CPI YoY`, `michigan sentiment` → `Consumer Confidence`. Semua entry ini **currency-agnostic** (key generik dicocokkan terpisah dari deteksi currency), jadi otomatis berlaku untuk SEMUA 8 pair lewat mekanisme `FUND_COUNTRY_ONLY` fallback yang sudah ada sejak Session 135 — bukan cuma USD (contoh: "German Factory Orders Actual..." → EUR + `Factory Orders`, "Australia Building Approvals..." tetap → AUD + `Building Approvals`).
+- **Bug pre-existing ditemukan saat testing:** `Building Approvals` (AU) ada di `QUANTITY_INDICATORS` (reject value `%`), padahal AU Building Approvals SELALU dilaporkan sebagai `%` MoM (konsisten dengan `FUND_SCORE_RULES` yang sudah lama nge-set `dir:1, threshold:0` — asumsi angka bertanda, bukan count). Akibatnya headline real Australia Building Approvals tidak pernah bisa update Redis sejak awal fitur ini ada. Dihapus dari `QUANTITY_INDICATORS` (kelas bug yang sama seperti fix `Employment Change` NZD di Session sebelumnya — lihat baris 551-554 di atas).
+
+**UI (`index.html`) — card jadi kepanjangan setelah indikator nambah banyak, jadi ditambah sectioning + show-more:**
+- `FUND_SECTIONS_MAP`: tambah semua key baru ke section yang sesuai (Ketenagakerjaan/Aktivitas/Sentimen/Permintaan) — dipakai bareng oleh overlay detail (`openFundDetail`) yang sudah ada dari fitur drill-down sebelumnya.
+- `IND_DIR` + `FUND_SCORE_RULES`: tambah arah bull/bear dan threshold fallback untuk semua key baru.
+- `renderFundamental()`: card compact sekarang di-cap `CARD_ROW_LIMIT = 8` baris, diurutkan pakai prioritas section yang SAMA dengan overlay (Inflasi → Pertumbuhan → Ketenagakerjaan → Aktivitas → Sentimen → Permintaan → Eksternal) supaya indikator paling relevan tampil duluan sebelum terpotong. Kalau ada sisa, muncul link `.fund-more-link` "Selengkapnya (+N) →" di bawah tabel — tidak perlu handler baru, tap di mana pun di card (termasuk link ini, lewat event bubbling) sudah otomatis buka `openFundDetail(cur)` yang menampilkan SEMUA indikator ter-section rapi (fitur ini sudah ada dari drill-down overlay, cuma belum pernah dipakai sebagai "lihat semua" dari card compact).
+
+**Scope yang SENGAJA tidak disentuh:**
+- Tidak menambah angka `FUND_SEED` untuk indikator baru — nilainya akan populate otomatis dari headline real lewat `fundamental_refresh`/digest pipeline yang sudah jalan, tanpa perlu seed manual. Menghindari menampilkan angka ekonomi yang tidak bisa diverifikasi sebagai data "aktual" di tool trading real.
+- Caixin PMI (China) tetap tidak dipetakan — tidak ada pair CNY yang ditradingkan di app ini, di luar 8 currency yang didukung tab FUNDAMENTAL.
+
+**Verifikasi:**
+- 22 test case lewat `parseFundamentalFromHeadline()` langsung (Node) — semua pass, termasuk regression check headline lama (Core/Flash CPI Session 135, NFP, NZD Employment Change) supaya tidak ada perilaku existing yang berubah.
+- Harness `jsdom`: ekstrak kode asli `renderFundamental`/`openFundDetail`/`_renderFundDetail` dari `index.html`, render dengan mock data USD 21 indikator — card ke-cap 8 baris + `"Selengkapnya (+13) →"` muncul benar; card CHF (2 indikator) tidak ke-truncate; overlay detail nunjuk SEMUA 21 baris ter-bagi ke section Inflasi/Pertumbuhan/Ketenagakerjaan/Aktivitas/Permintaan, nol yang jatuh ke bucket "Lainnya" (unmapped).
+- `node --check` pass untuk `api/_fundamental_parser.js` dan `api/admin.js`; seluruh `<script>` di `index.html` di-parse ulang via `new Function()` — tidak ada syntax error.
+
+`git diff` menyentuh `api/_fundamental_parser.js` dan `index.html` saja.
 
 ---
 

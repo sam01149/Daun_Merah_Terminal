@@ -933,6 +933,11 @@ body {
 .fund-arrow { margin-left: 2px; font-size: 8px; }
 .fund-prev  { margin-left: 3px; font-size: 7px; color: var(--muted); opacity: .65; }
 .fund-td-per { display: none; }
+.fund-more-link {
+  margin-top: 4px; padding-top: 4px; border-top: 1px dashed rgba(255,255,255,.08);
+  font-size: 8px; font-family: 'DM Mono', monospace; letter-spacing: .3px;
+  color: var(--accent); text-align: right; opacity: .85;
+}
 .fund-score-row { display: flex; align-items: center; gap: 5px; margin-bottom: 5px; }
 .fund-score-bar  { flex: 1; height: 2px; background: rgba(255,255,255,.07); border-radius: 1px; overflow: hidden; }
 .fund-score-fill { height: 100%; border-radius: 1px; transition: width .4s; }
@@ -5531,12 +5536,19 @@ const FUND_SCORE_RULES = {
   'Participation Rate':{ dir: 1, threshold: 60    },
   'Wage Growth':      { dir: 1,  threshold: 3.0   },
   'Building Approvals':{ dir: 1, threshold: 0     },
+  'Building Permits':  { dir: 1, threshold: 0     },
   'Consumer Confidence':{ dir: 1,threshold: 100   },
   'Business Confidence':{ dir: 1,threshold: 0     },
   'Housing Starts':   { dir: 1,  threshold: 0     },
   'Durable Goods Orders':{ dir: 1,threshold: 0    },
   'CPI QoQ':          { dir: 1,  threshold: 0.5   },
   'GDP MoM':          { dir: 1,  threshold: 0     },
+  'Chicago PMI':      { dir: 1,  threshold: 50    },
+  'Capacity Utilization':{ dir: 1,threshold: 78   },
+  'Factory Orders':   { dir: 1,  threshold: 0     },
+  'Personal Income':  { dir: 1,  threshold: 0     },
+  'Personal Spending':{ dir: 1,  threshold: 0     },
+  'GfK Consumer Climate':{ dir: 1,threshold: 0    },
 };
 
 // Direction map for all known indicators
@@ -5546,12 +5558,14 @@ const IND_DIR = {
   'CPI YoY':1,'CPI MoM':1,'CPI QoQ':1,'Core CPI MoM':1,'Core CPI YoY':1,'Core PCE':1,'Core PCE YoY':1,
   'CPI Flash YoY':1,'German CPI YoY':1,'PPI MoM':1,
   'GDP QoQ':1,'GDP QoQ Flash':1,'GDP MoM':1,'GDP Nowcast':1,
-  'ISM Services':1,'ISM Manufacturing':1,'Manufacturing PMI':1,'Services PMI':1,'Composite PMI':1,
-  'IFO Business':1,'ZEW Sentiment':1,'KOF Barometer':1,
+  'ISM Services':1,'ISM Manufacturing':1,'Manufacturing PMI':1,'Services PMI':1,'Composite PMI':1,'Chicago PMI':1,
+  'IFO Business':1,'ZEW Sentiment':1,'KOF Barometer':1,'GfK Consumer Climate':1,
   'Retail Sales MoM':1,'Retail Sales YoY':1,'Participation Rate':1,
-  'Wage Growth':1,'Building Approvals':1,'Consumer Confidence':1,
+  'Wage Growth':1,'Building Approvals':1,'Building Permits':1,'Consumer Confidence':1,
   'Business Confidence':1,'Housing Starts':1,'Durable Goods Orders':1,
-  'Unemployment Rate':-1,'Jobless Claims':-1,'Claimant Count':-1,
+  'Unemployment Rate':-1,'Jobless Claims':-1,'Claimant Count':-1,'Continuing Claims':-1,
+  'JOLTS Job Openings':1,'ADP Employment':1,'Existing Home Sales':1,'New Home Sales':1,
+  'Personal Income':1,'Personal Spending':1,'Capacity Utilization':1,'Factory Orders':1,
 };
 
 // Keyword-based direction guess for dynamic indicators
@@ -5791,9 +5805,20 @@ function renderFundamental() {
   }
 
   // Render currency cards
+  const CARD_ROW_LIMIT = 8; // di atas ini, sisanya disembunyikan di balik "Selengkapnya" (buka detail overlay ter-section)
+  const sectionRank = Object.fromEntries(FUND_SECTION_ORDER.map((s, i) => [s, i]));
   grid.innerHTML = scores.map(({ cur, data, rateKey, rateVal, score, scoreLabel, scoreColor, confTier, confLabel, scoredCt, col }) => {
-    const rows = Object.entries(data)
-      .filter(([k]) => k !== rateKey)
+    const allEntries = Object.entries(data).filter(([k]) => k !== rateKey);
+    // Urutkan berdasarkan section (Inflasi > Pertumbuhan > Ketenagakerjaan > ...) — sama seperti detail overlay —
+    // supaya indikator paling relevan tampil duluan sebelum baris dipotong.
+    const sortedEntries = [...allEntries].sort((a, b) => {
+      const ra = sectionRank[FUND_SECTIONS_MAP[a[0]]] ?? FUND_SECTION_ORDER.length;
+      const rb = sectionRank[FUND_SECTIONS_MAP[b[0]]] ?? FUND_SECTION_ORDER.length;
+      return ra - rb;
+    });
+    const visibleEntries = sortedEntries.slice(0, CARD_ROW_LIMIT);
+    const hiddenCount    = sortedEntries.length - visibleEntries.length;
+    const rows = visibleEntries
       .map(([k, v]) => {
         const period  = v.period && v.period !== '—' ? v.period : '';
         const sig     = scoreInd(k, v.actual, v.previous);
@@ -5806,6 +5831,7 @@ function renderFundamental() {
           <td class="fund-td-per">${escHtml(period)}</td>
         </tr>`;
       }).join('');
+    const moreHtml = hiddenCount > 0 ? `<div class="fund-more-link">Selengkapnya (+${hiddenCount}) →</div>` : '';
 
     const scoreHtml = score !== null ? `
       <div class="fund-score-row">
@@ -5869,6 +5895,7 @@ function renderFundamental() {
       <table class="fund-table">
         ${rows || '<tr><td colspan="3" class="fund-td-ind" style="padding:4px 0">No data</td></tr>'}
       </table>
+      ${moreHtml}
       ${yieldCurveHtml}${liquidityHtml}
     </div>`;
   }).join('');
@@ -5885,15 +5912,18 @@ const FUND_SECTIONS_MAP = {
   'German CPI YoY':'Inflasi','CPI QoQ':'Inflasi',
   'GDP QoQ':'Pertumbuhan','GDP QoQ Flash':'Pertumbuhan','GDP MoM':'Pertumbuhan','GDP Nowcast':'Pertumbuhan',
   'NFP':'Ketenagakerjaan','Employment Change':'Ketenagakerjaan',
-  'Unemployment Rate':'Ketenagakerjaan','Jobless Claims':'Ketenagakerjaan',
+  'Unemployment Rate':'Ketenagakerjaan','Jobless Claims':'Ketenagakerjaan','Continuing Claims':'Ketenagakerjaan',
   'Claimant Count':'Ketenagakerjaan','Participation Rate':'Ketenagakerjaan','Wage Growth':'Ketenagakerjaan',
+  'JOLTS Job Openings':'Ketenagakerjaan','ADP Employment':'Ketenagakerjaan',
   'ISM Services':'Aktivitas','ISM Manufacturing':'Aktivitas',
-  'Manufacturing PMI':'Aktivitas','Services PMI':'Aktivitas','Composite PMI':'Aktivitas',
+  'Manufacturing PMI':'Aktivitas','Services PMI':'Aktivitas','Composite PMI':'Aktivitas','Chicago PMI':'Aktivitas',
   'Industrial Production':'Aktivitas','Ivey PMI':'Aktivitas','Tankan Mfg Index':'Aktivitas',
-  'IFO Business':'Sentimen','ZEW Sentiment':'Sentimen','KOF Barometer':'Sentimen',
+  'Capacity Utilization':'Aktivitas','Factory Orders':'Aktivitas',
+  'IFO Business':'Sentimen','ZEW Sentiment':'Sentimen','KOF Barometer':'Sentimen','GfK Consumer Climate':'Sentimen',
   'Consumer Confidence':'Sentimen','Business Confidence':'Sentimen','NAB Business Conf':'Sentimen',
   'Retail Sales MoM':'Permintaan','Retail Sales YoY':'Permintaan',
-  'Building Approvals':'Permintaan','Housing Starts':'Permintaan','Durable Goods Orders':'Permintaan',
+  'Building Approvals':'Permintaan','Building Permits':'Permintaan','Housing Starts':'Permintaan','Durable Goods Orders':'Permintaan',
+  'Existing Home Sales':'Permintaan','New Home Sales':'Permintaan','Personal Income':'Permintaan','Personal Spending':'Permintaan',
   'Trade Balance':'Eksternal','Current Account':'Eksternal',
 };
 const FUND_SECTION_ORDER = ['Inflasi','Pertumbuhan','Ketenagakerjaan','Aktivitas','Sentimen','Permintaan','Eksternal'];
