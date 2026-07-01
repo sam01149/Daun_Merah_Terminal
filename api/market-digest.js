@@ -1565,17 +1565,21 @@ function convertToWIB(timeStr) {
 
 function detectCat(title) {
   const t=title.toLowerCase();
+  // Rilis data kalender (format FinancialJuice: "... Actual X Forecast Y Previous Z")
+  // selalu econ-data, dicek duluan supaya tidak "direbut" kategori generik lain
+  // (market-moving, indexes, macro, bonds — lihat daun_merah.md session 135).
+  if (/\bactual\b/.test(t) && (/\bforecast\b/.test(t) || /\bprevious\b/.test(t))) return 'econ-data';
   const CATS = {
-    'market-moving':['market moving','breaking','flash','urgent','alert','war','blockade'],
+    'market-moving':['market moving','breaking','urgent','war','blockade'],
     'forex':['eur/','gbp/','usd/','aud/','nzd/','cad/','chf/','jpy/','/usd','/eur','/gbp','/jpy','/cad','/chf','/aud','/nzd','fx options','dollar index','dxy','cable','loonie','aussie','kiwi','fiber'],
     'equities':['s&p','nasdaq','dow','ftse','dax','nikkei','hang seng','stock','equity','shares','earnings','nyse','spx'],
     'commodities':['gold','silver','copper','wheat','corn','xau','xag','commodity','zinc','nickel'],
     'energy':['oil','crude','brent','wti','opec','gasoline','diesel','natural gas','barrel','hormuz','iea','tanker','lng'],
-    'bonds':['bond','yield','treasury','gilt','bund','10-year','2-year','30-year','bps','fixed income'],
+    'bonds':['bond','yield','treasury','gilt','bund','10-year','2-year','30-year','fixed income'],
     'crypto':['bitcoin','btc','ethereum','eth','crypto','blockchain','binance','stablecoin'],
-    'indexes':['pmi','purchasing manager','composite index','manufacturing index'],
-    'macro':['fed ','fomc','powell','warsh','federal reserve','rate cut','rate hike','ecb','boe','boj','pboc','central bank','gdp','recession','imf'],
-    'econ-data':['actual','forecast','previous','cpi','nfp','unemployment','retail sales','trade balance','payroll'],
+    'indexes':['composite index'],
+    'macro':['fed ','fomc','powell','warsh','federal reserve','rate cut','rate hike','ecb','boe','boj','pboc','central bank','recession','imf'],
+    'econ-data':['actual','forecast','previous','cpi','nfp','gdp','pmi','ism ','ism manufacturing','ism services','manufacturing pmi','services pmi','composite pmi','flash pmi','flash cpi','flash gdp','unemployment','retail sales','trade balance','payroll','ppi','durable goods','housing starts','building permits','caixin','ifo','zew'],
     'geopolitical':['iran','iranian','nuclear','ceasefire','israel','russia','ukraine','china','chinese','taiwan','sanction','tariff','trump','nato','military'],
   };
   for (const [cat,kws] of Object.entries(CATS)) { if(kws.some(k=>t.includes(k)))return cat; }

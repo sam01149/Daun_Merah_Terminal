@@ -4,7 +4,9 @@
 >
 > **Status (2026-07-01, Session 134):** Section G (Session Strip di REGIME bar) dan penambahan Retail Sentiment mini-strip di dashboard **sudah selesai dikerjakan** — lihat "Changelog Session 134" di `daun_merah.md` untuk detailnya. Bagian yang sudah selesai dihapus dari dokumen ini. Sisanya (F, E) tetap **sisa backlog opsional** — bukan prioritas, diabaikan kecuali diminta user.
 >
-> **Mulai Session 134:** Setiap perintah baru wajib melalui plan-first workflow (lihat `CLAUDE.md`) — plan detail ditulis di dokumen ini dulu sebelum eksekusi, dikonfirmasi ke user, baru dikerjakan.
+> **Status (2026-07-01, Session 135):** Fix kategorisasi berita `econ-data` vs `market-moving`/`indexes`/`macro`/`bonds` **sudah selesai dikerjakan & terverifikasi** — lihat "Changelog Session 135" di `daun_merah.md` untuk detailnya.
+>
+> **Update workflow (`CLAUDE.md`):** Plan-first di dokumen ini sekarang HANYA dipakai kalau user eksplisit minta "buatkan plan" atau perintahnya ditujukan untuk AI lain (bukan eksekusi langsung). Untuk perintah eksekusi langsung, kerjakan → evaluasi mandiri → uji → update `daun_merah.md` → push, tanpa gate plan terpisah.
 
 ---
 

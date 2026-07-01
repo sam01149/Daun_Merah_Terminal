@@ -3202,7 +3202,7 @@ const APP_VERSION = '2026.06.29';
 const FETCH_URL = '/api/feeds?type=rss';
 
 const CATS = {
-  'market-moving': ['market moving','breaking','flash','urgent','alert','war','blockade'],
+  'market-moving': ['market moving','breaking','urgent','war','blockade'],
   'forex': [
     'eur/usd','gbp/usd','usd/jpy','aud/usd','usd/cad','nzd/usd','usd/chf','usd/cnh','usd/cny',
     'eur/gbp','eur/jpy','eur/chf','eur/cad','eur/aud','eur/nzd',
@@ -3221,16 +3221,17 @@ const CATS = {
   'equities': ['s&p','nasdaq','dow jones','ftse','dax','nikkei','hang seng','stock','equity','shares','earnings','ipo','nyse','spx','nvda','apple','tesla','meta ','alphabet','microsoft','amazon','samsung','tsmc'],
   'commodities': ['gold','silver','copper','wheat','corn','soybean','coffee','cocoa','cotton','lumber','palladium','platinum','xau','xag','commodity','zinc','nickel','iron ore','steel','alumin'],
   'energy':   ['oil','crude','brent','wti','opec','gasoline','diesel','natural gas','barrel','petroleum','hormuz','strait','iea','tanker','refiner','pipeline','lng','energy price','fuel'],
-  'bonds':    ['bond','yield','treasury','gilt','bund','t-note','10-year','2-year','30-year','basis point','bps','fixed income','debt','sovereign','auction'],
+  'bonds':    ['bond','yield','treasury','gilt','bund','t-note','10-year','2-year','30-year','fixed income','debt','sovereign','auction'],
   'crypto':   ['bitcoin','btc','ethereum','eth','crypto','blockchain','coinbase','binance','stablecoin','defi','nft','altcoin','ripple','xrp','solana'],
-  'indexes':  ['pmi','purchasing manager','composite index','manufacturing index','services index','business activity'],
-  'macro':    ['fed ','fomc','powell','goolsbee','waller','kashkari','warsh','federal reserve','rate cut','rate hike','interest rate','ecb','boe','rba','boj','pboc','rbnz','boc ','central bank','monetary policy','lagarde','bailey','ueda','imf','world bank','g7','g20','gdp','recession'],
-  'econ-data':['actual','forecast','previous','cpi','nfp','unemployment','retail sales','trade balance','consumer confidence','business confidence','industrial production','housing','payroll','nab business','westpac','consumer sentiment','capacity utilization','wholesale price'],
+  'indexes':  ['composite index'],
+  'macro':    ['fed ','fomc','powell','goolsbee','waller','kashkari','warsh','federal reserve','rate cut','rate hike','interest rate','ecb','boe','rba','boj','pboc','rbnz','boc ','central bank','monetary policy','lagarde','bailey','ueda','imf','world bank','g7','g20','recession'],
+  'econ-data':['actual','forecast','previous','cpi','nfp','gdp','pmi','ism ','ism manufacturing','ism services','manufacturing pmi','services pmi','composite pmi','flash pmi','flash cpi','flash gdp','unemployment','retail sales','trade balance','consumer confidence','business confidence','industrial production','housing','payroll','nab business','westpac','consumer sentiment','capacity utilization','wholesale price','ppi','durable goods','housing starts','building permits','caixin','ifo','zew','gfk'],
   'geopolitical':['iran','iranian','tehran','nuclear','ceasefire','hezbollah','israel','lebanon','russia','ukraine','china','chinese','xi jinping','beijing','taiwan','north korea','sanction','tariff','trade war','trump','white house','nato','military','war','conflict','diplomat','vance'],
 };
 
 function detectCat(title) {
   const t = title.toLowerCase();
+  if (/\bactual\b/.test(t) && (/\bforecast\b/.test(t) || /\bprevious\b/.test(t))) return 'econ-data';
   for (const [cat, kws] of Object.entries(CATS)) {
     if (kws.some(k => t.includes(k))) return cat;
   }

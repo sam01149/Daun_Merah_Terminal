@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-07-01 (session 134 — lihat "Changelog Session 134" di bawah untuk detail terbaru)
+> **Last updated:** 2026-07-01 (session 135 — lihat "Changelog Session 135" di bawah untuk detail terbaru)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -150,6 +150,42 @@ File: `api/feeds.js` → `CB_RESEARCH_SOURCES` (diaudit sesi 120)
 | RBNZ, SNB | ❌ | 403 semua jalur |
 
 Parser `parseCBRSSItems`: regex `<(?:item|entry)\b[^>]*>` — support RSS 2.0, Atom, dan RDF/RSS 1.0.
+
+---
+
+## Changelog Session 135 (2026-07-01)
+
+### Fix: Rilis data ekonomi salah kategori — `market-moving`/`indexes`/`macro`/`bonds` "merebut" headline yang seharusnya `econ-data`
+
+**Masalah (dilaporkan user):** Di News, headline rilis data ekonomi (CPI/NFP/GDP/PMI dari feed FinancialJuice, format kalender `"... Actual X Forecast Y Previous Z"`) sering ke-tag kategori `market-moving`, bukan `econ-data`.
+
+**Root cause:** `detectCat(title)` — ada dua salinan independen, `api/market-digest.js` (narasi AI briefing per kategori) dan `index.html` (tab filter News, dashboard grouping, voice readout) — mengecek kategori berurutan via `Object.entries(CATS)` dan berhenti di match pertama. `econ-data` diletakkan di urutan ke-10 dari 11, sehingga kategori yang dicek lebih dulu dan punya keyword generik "merebut" headline rilis data:
+- `market-moving` (urutan 1) punya `'flash'`/`'alert'` — tapi "Flash CPI"/"Flash PMI"/"Flash GDP" adalah terminologi standar rilis data preliminer, bukan breaking news darurat.
+- `indexes` (urutan 8) punya `'pmi'`/`'purchasing manager'`/`'manufacturing index'` (+ `'services index'`/`'business activity'` di `index.html`) — semua rilis PMI ke-tag `indexes`.
+- `macro` (urutan 9) punya bare `'gdp'` — rilis GDP resmi ke-tag `macro`.
+- `bonds` (urutan 6, ditemukan saat audit menyeluruh) punya `'bps'`/`'basis point'` — headline keputusan rate bank sentral (mis. "Fed cuts rates by 25bps") ke-tag `bonds`, bukan `macro`.
+
+Bug kelas ini identik dengan yang sudah pernah difix 2026-05-06 di sistem push notification (`api/_push_keywords.js` — lihat entry Session sebelumnya soal `'record high/low'`/`'jordan'`/`'trade deficit/surplus'`), tapi belum pernah diterapkan ke `detectCat()` di News feed karena kedua sistem kategorisasi berkembang independen.
+
+**Klarifikasi arsitektur penting:** Pipeline yang menulis fundamental per pair ke Redis (`autoUpdateFundamentals`/`parseFundamentalFromHeadline` di `api/_fundamental_parser.js`, dipanggil dari `market-digest.js` & `admin.js` `fundamental_refresh`) **sudah independen dari `detectCat`/kategori sejak refactor 2026-05-21** — kedua caller mengirim semua headline mentah tanpa filter kategori, parser punya keyword matching sendiri (`FUND_PREFIX_MAP`/`FUND_INDICATOR_MAP`). Jadi fix kategori ini murni memperbaiki tampilan/narasi kategori di News — bukan pipeline fundamental (yang sudah benar). Kalau ke depan ditemukan pair fundamental yang tidak update, root cause-nya ada di keyword coverage `_fundamental_parser.js`, kasus terpisah.
+
+**Fix (`api/market-digest.js` fungsi `detectCat` baris ~1566; `index.html` objek `CATS` + fungsi `detectCat` baris ~3204):**
+- Tambah early-check regex di awal `detectCat`: headline yang match `/\bactual\b/` DAN (`/\bforecast\b/` ATAU `/\bprevious\b/`) langsung `return 'econ-data'`, sebelum loop `CATS` — jaring pengaman utama, menjamin SEMUA rilis format kalender FinancialJuice selalu econ-data terlepas dari keyword lain apa pun yang ikut muncul di judul.
+- Hapus `'flash'`, `'alert'` dari `market-moving`; hapus `'bps'`/`'basis point'` dari `bonds`; hapus `'pmi'`/`'purchasing manager'`/`'manufacturing index'`/`'services index'`/`'business activity'` dari `indexes` (sisa `'composite index'` saja); hapus bare `'gdp'` dari `macro`.
+- Perluas & SAMAKAN keyword `econ-data` di kedua file — tambah `'gdp'`, `'pmi'`, `'ism '`, `'ism manufacturing'`, `'ism services'`, `'manufacturing pmi'`, `'services pmi'`, `'composite pmi'`, `'flash pmi'`, `'flash cpi'`, `'flash gdp'`, `'ppi'`, `'durable goods'`, `'housing starts'`, `'building permits'`, `'caixin'`, `'ifo'`, `'zew'` — align dengan `FUND_INDICATOR_MAP` (`_fundamental_parser.js`) dan `ECON_DATA` (`_push_keywords.js`).
+- `api/admin.js`/`api/_push_keywords.js` (`detectPushCat`) **tidak disentuh** — sistem itu sudah benar (fix 2026-05-06), di luar scope.
+
+**Verifikasi:** Diekstrak & dijalankan langsung fungsi `detectCat` dari kedua file (Node) terhadap 8 headline representatif — semua match ekspektasi identik di kedua salinan:
+- `"US Non-Farm Payrolls Actual 254K Forecast 140K Previous 130K"` → `econ-data` ✓
+- `"Eurozone Flash CPI y/y Actual 3.0% Forecast 2.9% Previous 2.8%"` → `econ-data` ✓ (kasus utama yang dilaporkan — sebelumnya `market-moving`)
+- `"BREAKING: US NFP Actual 254K vs 140K Forecast"` → `econ-data` ✓ (early-check menang meski ada kata "breaking")
+- `"US ISM Manufacturing PMI Actual 54.5 Forecast 53.0 Previous 52.8"` → `econ-data` ✓ (sebelumnya `indexes`)
+- `"US GDP q/q Actual 2.1% Forecast 1.8% Previous 1.5%"` → `econ-data` ✓ (sebelumnya `macro`)
+- `"Fed cuts rates by 25bps to 3.75%, as expected"` → `macro` ✓ (sebelumnya `bonds`)
+- `"Israel strikes Iranian nuclear facility, oil surges"` → tidak berubah jadi `econ-data` (tetap `energy`, tidak ada regresi kategori darurat)
+- `"Market moving: Fed announces emergency rate decision"` → tetap `market-moving` ✓ (keyword yang disisakan masih berfungsi)
+
+`git diff` hanya menyentuh `api/market-digest.js` (fungsi `detectCat`) dan `index.html` (objek `CATS` + fungsi `detectCat`) — tidak ada file lain yang berubah. `node -c` pass, tidak ada syntax error.
 
 ---
 
