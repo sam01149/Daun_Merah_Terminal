@@ -10380,6 +10380,26 @@ const TEK_YIELD_KEYWORDS = [
 ];
 TEK_PAIR_KEYWORDS.US10Y = TEK_YIELD_KEYWORDS;
 TEK_PAIR_KEYWORDS.US02Y = TEK_YIELD_KEYWORDS;
+
+// Keyword negatif per-pair: headline yang mengandung term ini di-skip meskipun
+// cocok dengan specificKws. Tujuan: saring false-positive dari keyword yang terlalu lebar.
+// Contoh: 'interest rate' di USD keywords nangkap "SNB Interest Rate Probabilities"
+// padahal keputusan rate SNB/RBNZ/RBA/BOC/BOE/ECB tidak relevan ke XAU/USD.
+const TEK_PAIR_NEGATIVE = {
+  XAUUSD: [
+    'snb interest','snb rate','snb policy',
+    'rbnz interest','rbnz rate','rbnz ocr','rbnz policy',
+    'rba interest','rba rate','rba cash','rba policy',
+    'boc interest','boc rate','boc overnight','boc policy',
+    'boe interest','boe rate','mpc rate','boe policy',
+    'ecb interest','ecb rate','ecb policy',
+    'boj interest','boj rate','boj policy',
+    'bank of england interest','bank of canada interest','bank of japan interest',
+    'european central bank interest','reserve bank interest',
+    'interest rate probabilities',  // generik "X Interest Rate Probabilities" chart
+  ],
+};
+
 const TEK_CAT_COLOR = {
   'market-moving':'#e74c3c','forex':'#38bdf8','macro':'#a78bfa','econ-data':'#27ae60',
   'energy':'#e67e22','geopolitical':'#fb923c','commodities':'#f59e0b',
@@ -10436,10 +10456,12 @@ function renderTekNews() {
   if (allItems && allItems.length > 0) {
     const specificKws = TEK_PAIR_KEYWORDS[tekPair] || [];
     const sharedKws = TEK_SHARED_KEYWORDS;
+    const negKws = TEK_PAIR_NEGATIVE[tekPair] || [];
     const specific = [];
     const shared = [];
     for (const item of allItems) {
       const t = item.title.toLowerCase();
+      if (negKws.length && negKws.some(k => t.includes(k))) continue; // false-positive
       if (specificKws.some(k => t.includes(k))) specific.push(item);
       else if (sharedKws.some(k => t.includes(k))) shared.push(item);
     }
@@ -11389,9 +11411,14 @@ document.addEventListener('click', function(e) {
         if (_sw.locked === 'h') {
           _sw.nv = adjView('next');
           _sw.pv = adjView('prev');
-          const dir = _sw.dx < 0 ? 'next' : 'prev';
-          const hv  = dir === 'next' ? _sw.nv : _sw.pv;
-          if (hv) hintShow(dir, hv);
+          // View aktif bukan bagian dari VIEWS primer (mis. Kalender, COT) →
+          // tidak ada target swipe, perlakukan sebagai scroll vertikal
+          if (!_sw.nv && !_sw.pv) { _sw.locked = 'v'; }
+          else {
+            const dir = _sw.dx < 0 ? 'next' : 'prev';
+            const hv  = dir === 'next' ? _sw.nv : _sw.pv;
+            if (hv) hintShow(dir, hv);
+          }
         }
       }
       return;
