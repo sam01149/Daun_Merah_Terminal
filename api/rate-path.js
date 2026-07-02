@@ -6,6 +6,7 @@
 // Redis cache: rate_path, TTL 4 hours (14400s).
 
 const CORS = { 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-cache' };
+const rateLimit = require('./_ratelimit');
 const CACHE_KEY = 'rate_path';
 const CACHE_TTL = 14400; // 4 hours
 
@@ -331,6 +332,8 @@ module.exports = async function handler(req, res) {
   Object.entries(CORS).forEach(([k, v]) => res.setHeader(k, v));
   if (req.method === 'OPTIONS') return res.status(204).end();
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
+
+  if (await rateLimit(req, res, { limit: 15, windowSecs: 60, endpoint: 'rate-path' })) return;
 
   const forceRefresh = req.query.force === '1';
 

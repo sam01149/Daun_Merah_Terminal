@@ -2,7 +2,8 @@
 <html lang="id">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<!-- Zoom dibiarkan aktif (WCAG 1.4.4); double-tap zoom dimatikan via touch-action:manipulation di CSS -->
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#0a0a08">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -34,6 +35,9 @@
   --pink: #f472b6;
 }
 * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+/* manipulation = pan + pinch-zoom tetap jalan, double-tap zoom mati — pengganti
+   user-scalable=no yang lama (pinch-zoom kini dibiarkan aktif demi aksesibilitas) */
+button, a, input, select, textarea, label { touch-action: manipulation; }
 html { height: 100%; }
 body { height: 100%; height: 100dvh; overflow: hidden; }
 body {
@@ -520,6 +524,50 @@ body {
 }
 .toast-title { font-family:'Syne',sans-serif; font-size:12px; color:var(--accent); margin-bottom:4px; }
 .toast-body { font-size:11px; color:var(--muted); line-height:1.4; }
+
+/* ── DISCLAIMER OUTPUT AI ── */
+.ai-disclaimer {
+  margin-top:12px; padding:8px 10px;
+  border:1px solid var(--border); border-radius:6px;
+  font-size:9px; line-height:1.6; color:var(--muted);
+  font-family:'DM Mono',monospace;
+}
+
+/* ── ONBOARDING FIRST-RUN ── */
+.onboard-overlay {
+  position:fixed; inset:0; z-index:1200;
+  background:rgba(0,0,0,0.72); backdrop-filter:blur(3px);
+  display:none; align-items:center; justify-content:center; padding:20px;
+}
+.onboard-overlay.open { display:flex; }
+.onboard-card {
+  max-width:420px; width:100%; max-height:85vh; overflow-y:auto;
+  background:var(--surface); border:1px solid var(--border); border-radius:12px;
+  padding:22px 20px; animation:modalIn .28s cubic-bezier(0.16,1,0.3,1) both;
+}
+.onboard-title { font-family:'Syne',sans-serif; font-size:17px; font-weight:800; color:var(--text); margin-bottom:6px; }
+.onboard-sub   { font-size:11px; color:var(--muted); line-height:1.6; margin-bottom:14px; }
+.onboard-step  { display:flex; gap:10px; align-items:flex-start; margin-bottom:10px; }
+.onboard-step-num {
+  flex:0 0 auto; width:20px; height:20px; border-radius:50%;
+  background:rgba(192,57,43,0.15); color:var(--accent);
+  font-family:'DM Mono',monospace; font-size:10px; display:flex; align-items:center; justify-content:center;
+}
+.onboard-step-txt { font-size:11px; color:var(--text-mid); line-height:1.6; }
+.onboard-step-txt strong { color:var(--text); }
+.onboard-legal { font-size:9px; color:var(--muted); line-height:1.6; margin:14px 0; padding-top:10px; border-top:1px solid var(--border); }
+.onboard-actions { display:flex; gap:8px; }
+.onboard-btn {
+  flex:1; padding:10px 12px; border-radius:6px; cursor:pointer;
+  font-family:'DM Mono',monospace; font-size:10px; letter-spacing:.05em;
+}
+.onboard-btn-primary { background:var(--accent); border:1px solid var(--accent); color:#fff; }
+.onboard-btn-sec     { background:transparent; border:1px solid var(--border); color:var(--muted); }
+
+/* ── FOCUS VISIBLE (keyboard nav) ── */
+button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, [tabindex]:focus-visible {
+  outline:2px solid var(--accent); outline-offset:2px;
+}
 
 /* ── RINGKASAN PANEL ──*/
 
@@ -2296,7 +2344,7 @@ body {
   <button class="nvtab" data-view="jurnal" id="jurnalTab">JURNAL</button>
   <button class="nvtab" data-view="petunjuk" id="petunjukTab">PETUNJUK</button>
   <button class="nvtab" data-view="teknikal" id="teknikalTab">TEK</button>
-  <button class="nvtab-more" id="navMoreBtn" onclick="openDrawer()">
+  <button class="nvtab-more" id="navMoreBtn" onclick="openDrawer()" aria-label="Menu tab lainnya">
     <svg width="13" height="11" viewBox="0 0 13 11" fill="none"><rect y="0" width="13" height="1.5" rx=".75" fill="currentColor"/><rect y="4.75" width="13" height="1.5" rx=".75" fill="currentColor"/><rect y="9.5" width="13" height="1.5" rx=".75" fill="currentColor"/></svg>
   </button>
 </div>
@@ -2331,7 +2379,7 @@ body {
         </svg>
         SUARA
       </button>
-      <button class="voice-btn voice-settings-toggle" id="voiceSettingsBtn" onclick="toggleVoiceSettingsPanel()" title="Pilih kategori yang dibacakan">
+      <button class="voice-btn voice-settings-toggle" id="voiceSettingsBtn" onclick="toggleVoiceSettingsPanel()" title="Pilih kategori yang dibacakan" aria-label="Pengaturan kategori suara">
         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
           <circle cx="12" cy="12" r="3"/>
           <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
@@ -2398,6 +2446,7 @@ body {
     <div style="margin-top:8px">
       <button id="polyBtn" class="jn-btn-sec" onclick="fetchPolymarket()" style="width:100%;font-size:10px">↻ Refresh Polymarket Macro</button>
     </div>
+    <div class="ai-disclaimer">⚠ Ringkasan dihasilkan AI dari headline &amp; data pihak ketiga — bisa keliru, bukan nasihat keuangan. Detail di tab PETUNJUK › Disclaimer.</div>
   </div>
 </div>
 
@@ -2429,6 +2478,7 @@ body {
         <span>Analisa AI</span>
       </button>
       <div id="analisaAiResult" style="display:none"></div>
+      <div class="ai-disclaimer">⚠ Level &amp; bias di atas dihasilkan AI dan bisa keliru — bukan nasihat keuangan. Verifikasi ke chart sebelum dipakai.</div>
     </div>
   </div>
 </div>
@@ -2858,6 +2908,19 @@ body {
     </div>
   </div>
 
+  <!-- DISCLAIMER & RISIKO -->
+  <div class="pt-section" id="ptDisclaimer">
+    <div class="pt-section-hdr" style="color:#e57373">
+      <span>⚠</span> Disclaimer &amp; Risiko
+    </div>
+    <div style="padding:14px;font-size:10px;line-height:1.75;color:var(--text-mid)">
+      <p style="margin:0 0 10px"><strong style="color:var(--text)">Bukan nasihat keuangan.</strong> Semua konten di aplikasi ini — termasuk ringkasan AI, analisa teknikal AI, bias bank sentral, ranking fundamental, dan thesis — bersifat informasional dan edukasional. Tidak ada satupun yang merupakan rekomendasi, ajakan, atau nasihat investasi/trading. Keputusan entry, exit, dan sizing sepenuhnya tanggung jawab kamu.</p>
+      <p style="margin:0 0 10px"><strong style="color:var(--text)">Output AI bisa keliru.</strong> Ringkasan dan analisa dihasilkan model bahasa (LLM) yang bisa salah membaca konteks, salah angka, atau percaya diri pada kesimpulan yang keliru (hallucination). Selalu verifikasi level harga, jadwal event, dan angka rilis ke sumber resmi sebelum dipakai sebagai dasar keputusan.</p>
+      <p style="margin:0 0 10px"><strong style="color:var(--text)">Data pihak ketiga.</strong> Berita, kalender, COT, positioning retail, dan harga berasal dari sumber eksternal gratis yang bisa tertunda, tidak lengkap, atau berubah format sewaktu-waktu. Kolom "Actual" kalender saat fallback aktif diisi otomatis dari headline dan bisa meleset.</p>
+      <p style="margin:0"><strong style="color:var(--text)">Risiko trading.</strong> Trading forex, emas, dan instrumen ber-leverage memiliki risiko kerugian tinggi dan tidak cocok untuk semua orang. Jangan pernah mempertaruhkan dana yang tidak siap kamu hilangkan. Aplikasi ini bukan produk yang terdaftar/diawasi OJK atau Bappebti.</p>
+    </div>
+  </div>
+
   <div class="pt-note">
     Aplikasi ini adalah decision-support tool, bukan signal provider. Semua keputusan entry/exit tetap ada di tangan kamu. Gunakan Daun Merah untuk memastikan kamu tidak masuk dengan informasi yang kurang, bukan sebagai alasan untuk overtrade.
   </div>
@@ -3106,9 +3169,34 @@ body {
 </div>
 
 <!-- TOAST -->
-<div class="toast" id="toast">
+<div class="toast" id="toast" role="status" aria-live="polite">
   <div class="toast-title" id="toastTitle"></div>
   <div class="toast-body" id="toastBody"></div>
+</div>
+
+<!-- ONBOARDING FIRST-RUN -->
+<div class="onboard-overlay" id="onboardOverlay" role="dialog" aria-modal="true" aria-labelledby="onboardTitle">
+  <div class="onboard-card">
+    <div class="onboard-title" id="onboardTitle">Selamat datang di Daun Merah 🍁</div>
+    <div class="onboard-sub">Decision-support untuk trader forex macro discretionary. Tiga langkah untuk mulai:</div>
+    <div class="onboard-step">
+      <div class="onboard-step-num">1</div>
+      <div class="onboard-step-txt"><strong>CAL</strong> — cek jadwal event high-impact hari ini (jam sudah WIB). Tandai jam rilis sebagai no-trade zone.</div>
+    </div>
+    <div class="onboard-step">
+      <div class="onboard-step-num">2</div>
+      <div class="onboard-step-txt"><strong>RINGKASAN</strong> — tap "Ringkas Berita" untuk briefing AI: driver pasar, bias sesi, dan risiko XAU/USD.</div>
+    </div>
+    <div class="onboard-step">
+      <div class="onboard-step-num">3</div>
+      <div class="onboard-step-txt"><strong>NEWS</strong> — setelah punya konteks, monitor headline real-time. Aktifkan AUTO + notifikasi push.</div>
+    </div>
+    <div class="onboard-legal">⚠ Semua konten (termasuk output AI) bersifat informasional — bukan nasihat keuangan, dan bisa keliru. Trading ber-leverage berisiko tinggi. Detail di tab PETUNJUK › Disclaimer &amp; Risiko.</div>
+    <div class="onboard-actions">
+      <button class="onboard-btn onboard-btn-sec" onclick="onboardDismiss(true)">Buka Panduan</button>
+      <button class="onboard-btn onboard-btn-primary" id="onboardStartBtn" onclick="onboardDismiss(false)">Mulai</button>
+    </div>
+  </div>
 </div>
 <div id="cotTrenTooltip" class="cot-tren-tooltip"></div>
 
@@ -4719,8 +4807,9 @@ function hideAllPanels() {
 
 document.querySelectorAll('#navViews .nvtab').forEach(btn => {
   btn.addEventListener('click', () => {
-    document.querySelectorAll('#navViews .nvtab').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('#navViews .nvtab').forEach(b => { b.classList.remove('active'); b.setAttribute('aria-selected', 'false'); });
     btn.classList.add('active');
+    btn.setAttribute('aria-selected', 'true');
     document.querySelectorAll('#botNav .bot-nav-btn').forEach(b => b.classList.toggle('active', b.dataset.view === btn.dataset.view));
     hideAllPanels();
     if (btn.dataset.view !== 'cal') stopCountdownTimer();
@@ -12062,6 +12151,49 @@ function switchView(viewName) {
   const btn = document.querySelector(`#navViews .nvtab[data-view="${viewName}"]`);
   if (btn) btn.click();
 }
+
+// ── Onboarding first-run ──────────────────────────────────────────────────
+// Muncul sekali untuk user baru; user lama (sudah punya jejak localStorage
+// dari fitur lain) langsung ditandai selesai supaya tidak terganggu.
+const ONBOARD_KEY = 'dm_onboard_v1';
+
+function onboardDismiss(openGuide) {
+  try { localStorage.setItem(ONBOARD_KEY, '1'); } catch(e) {}
+  document.getElementById('onboardOverlay').classList.remove('open');
+  if (openGuide) switchView('petunjuk');
+}
+
+(function initOnboard() {
+  let seen = null;
+  try {
+    seen = localStorage.getItem(ONBOARD_KEY);
+    if (!seen) {
+      const legacyKeys = ['daun_merah_device_id', 'daun_merah_thesis', 'daun_merah_sz_form', 'ringkasan_cooldown_end'];
+      if (legacyKeys.some(k => localStorage.getItem(k) != null)) {
+        localStorage.setItem(ONBOARD_KEY, '1');
+        seen = '1';
+      }
+    }
+  } catch(e) { return; } // localStorage diblokir → jangan tampilkan berulang
+  if (seen) return;
+  const ov = document.getElementById('onboardOverlay');
+  if (!ov) return;
+  ov.classList.add('open');
+  setTimeout(() => document.getElementById('onboardStartBtn')?.focus(), 80);
+  ov.addEventListener('keydown', e => { if (e.key === 'Escape') onboardDismiss(false); });
+})();
+
+// ── A11y: semantik tab untuk nav utama ────────────────────────────────────
+(function initNavA11y() {
+  const nav = document.getElementById('navViews');
+  if (!nav) return;
+  nav.setAttribute('role', 'tablist');
+  nav.setAttribute('aria-label', 'Navigasi utama');
+  nav.querySelectorAll('.nvtab').forEach(b => {
+    b.setAttribute('role', 'tab');
+    b.setAttribute('aria-selected', b.classList.contains('active') ? 'true' : 'false');
+  });
+})();
 
 function openKbHelp()   { document.getElementById('kbOverlay').classList.add('open'); }
 function closeKbHelp()  { document.getElementById('kbOverlay').classList.remove('open'); }

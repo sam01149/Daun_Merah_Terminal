@@ -5,6 +5,7 @@ const { autoUpdateFundamentals } = require('./_fundamental_parser');
 const { withSingleFlight } = require('./_fetch_lock');
 const { getLiveCbRates } = require('./_cb_rates');
 const { configureVapid, sendWebPush } = require('./_webpush');
+const { allowAiCall, providerFromUrl } = require('./_ai_guard');
 
 // AI provider failure threshold before circuit opens (fewer than external sources
 // because AI errors are faster to detect and providers recover quickly)
@@ -204,6 +205,13 @@ function stripThinking(text) {
 
 // Shared low-level fetch for any OpenAI-compatible provider
 async function aiCall(url, apiKey, model, messages, maxTokens, temperature, timeoutMs, extraHeaders = {}, extraBody = {}) {
+  // Guard kuota harian per provider — kalau habis, lempar error agar caller
+  // jatuh ke provider berikutnya lewat jalur fallback yang sudah ada.
+  if (!await allowAiCall(providerFromUrl(url))) {
+    const e = new Error('AI_BUDGET_EXCEEDED');
+    e.status = 429;
+    throw e;
+  }
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}`, ...extraHeaders },

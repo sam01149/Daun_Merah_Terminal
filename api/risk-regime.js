@@ -5,6 +5,7 @@
 
 const cb = require('./_circuit_breaker');
 const { withSingleFlight } = require('./_fetch_lock');
+const rateLimit = require('./_ratelimit');
 
 const CACHE_KEY = 'risk_regime'
 const CACHE_TTL = 5 * 60 // 5 minutes — VIX now from Yahoo (15-min delay), worth refreshing often
@@ -55,6 +56,8 @@ module.exports = async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-cache')
 
   if (req.method === 'OPTIONS') return res.status(204).end()
+
+  if (await rateLimit(req, res, { limit: 15, windowSecs: 60, endpoint: 'risk-regime' })) return
 
   // Serve Redis cache if fresh
   try {

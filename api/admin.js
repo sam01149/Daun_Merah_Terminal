@@ -15,9 +15,33 @@ const { autoUpdateFundamentals } = require('./_fundamental_parser');
 const { getLiveCbRates } = require('./_cb_rates');
 const { configureVapid, sendWebPush } = require('./_webpush');
 const cb = require('./_circuit_breaker');
+const rateLimit = require('./_ratelimit');
+const { allowAiCall } = require('./_ai_guard');
+
+// Actions callable from the frontend without a secret → rate-limited per IP.
+// AI-triggering actions get a tighter budget than cache reads.
+const PUBLIC_ACTION_LIMITS = {
+  fundamental_get:      30,
+  fundamental_refresh:  10,
+  fundamental_analysis:  5,
+  ohlcv_read:           30,
+  ohlcv_analyze:         5,
+  ohlcv_dashboard:      30,
+  polymarket:           30,
+  gdpnow:               10,
+};
 
 module.exports = async function handler(req, res) {
   const action = req.query.action;
+
+  // Cron traffic (Vercel cron header atau secret valid) tidak pernah kena 429
+  const isCron = req.headers['x-vercel-cron'] === '1' ||
+    (process.env.CRON_SECRET && (
+      req.headers['x-cron-secret']  === process.env.CRON_SECRET ||
+      req.headers['x-admin-secret'] === process.env.CRON_SECRET));
+  if (!isCron && PUBLIC_ACTION_LIMITS[action]) {
+    if (await rateLimit(req, res, { limit: PUBLIC_ACTION_LIMITS[action], windowSecs: 60, endpoint: `admin_${action}` })) return;
+  }
   if (action === 'health')        return healthHandler(req, res);
   if (action === 'redis-keys')    return redisKeysHandler(req, res);
   if (action === 'admin-prompts') return adminPromptsHandler(req, res);
@@ -169,7 +193,7 @@ async function healthHandler(req, res) {
   if (req.method === 'OPTIONS') return res.status(204).end();
 
   const CRON_SECRET = process.env.CRON_SECRET;
-  if (CRON_SECRET && req.headers['x-admin-secret'] !== CRON_SECRET) {
+  if (!CRON_SECRET || req.headers['x-admin-secret'] !== CRON_SECRET) {
     return res.status(401).json({ error: 'Unauthorized — set x-admin-secret header' });
   }
 
@@ -266,11 +290,20 @@ async function healthHandler(req, res) {
   const overall  = statuses.every(s => s === 'OK' || s === 'UNCONFIGURED') ? 'OK'
     : statuses.some(s => s === 'OK') ? 'DEGRADED' : 'DOWN';
 
+  // Pemakaian budget AI hari ini (observability untuk guard _ai_guard.js)
+  let aiBudget = null;
+  try {
+    const { getUsage } = require('./_ai_guard');
+    const usages = await Promise.all(['groq', 'sambanova', 'openrouter'].map(getUsage));
+    aiBudget = Object.fromEntries(usages.map(u => [u.provider, { used: u.used, limit: u.limit }]));
+  } catch(e) { /* diagnostik opsional — jangan gagalkan health check */ }
+
   return res.status(200).json({
     overall,
     checked_at: now,
     duration_ms: Date.now() - startTime,
     sources: report,
+    ...(aiBudget ? { ai_budget: aiBudget } : {}),
   });
 }
 
@@ -318,7 +351,7 @@ async function redisKeysHandler(req, res) {
   if (req.method === 'OPTIONS') return res.status(204).end();
 
   const CRON_SECRET = process.env.CRON_SECRET;
-  if (CRON_SECRET && req.headers['x-admin-secret'] !== CRON_SECRET) {
+  if (!CRON_SECRET || req.headers['x-admin-secret'] !== CRON_SECRET) {
     return res.status(401).json({ error: 'Unauthorized — set x-admin-secret header' });
   }
 
@@ -390,7 +423,7 @@ async function adminPromptsHandler(req, res) {
   if (req.method === 'OPTIONS') return res.status(204).end();
 
   const CRON_SECRET = process.env.CRON_SECRET;
-  if (CRON_SECRET && req.headers['x-admin-secret'] !== CRON_SECRET) {
+  if (!CRON_SECRET || req.headers['x-admin-secret'] !== CRON_SECRET) {
     return res.status(401).json({ error: 'Unauthorized — set x-admin-secret header' });
   }
 
@@ -442,7 +475,7 @@ async function pushHandler(req, res) {
   const TG_TOKEN      = process.env.TELEGRAM_BOT_TOKEN;
   const TG_CHAT_ID    = process.env.TELEGRAM_CHAT_ID;
 
-  if (CRON_SECRET && req.headers['x-cron-secret'] !== CRON_SECRET) {
+  if (!CRON_SECRET || req.headers['x-cron-secret'] !== CRON_SECRET) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
@@ -847,7 +880,7 @@ async function fundamentalSeedHandler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   if (req.method === 'OPTIONS') return res.status(204).end();
   const CRON_SECRET = process.env.CRON_SECRET;
-  if (CRON_SECRET && req.headers['x-admin-secret'] !== CRON_SECRET) {
+  if (!CRON_SECRET || req.headers['x-admin-secret'] !== CRON_SECRET) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
   if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
@@ -946,6 +979,7 @@ DIVERGENSI TERBESAR:
 
   // Primary: Groq (hemat akun 1 SambaNova di jalur sehat)
   try {
+    if (!await allowAiCall('groq')) throw new Error('AI daily budget exceeded');
     const r = await fetch(GROQ_URL_FUND, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${GROQ_KEY}` },
@@ -967,6 +1001,7 @@ DIVERGENSI TERBESAR:
     const SAMBANOVA_KEY = process.env.SAMBANOVA_API_KEY;
     if (SAMBANOVA_KEY) {
       try {
+        if (!await allowAiCall('sambanova')) throw new Error('AI daily budget exceeded');
         const r = await fetch('https://api.sambanova.ai/v1/chat/completions', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SAMBANOVA_KEY}` },
@@ -1004,7 +1039,7 @@ DIVERGENSI TERBESAR:
 async function journalImportHandler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
   const secret = req.headers['x-admin-secret'] || req.headers['x-cron-secret'];
-  if (secret !== process.env.CRON_SECRET) return res.status(403).json({ error: 'Forbidden' });
+  if (!process.env.CRON_SECRET || !secret || secret !== process.env.CRON_SECRET) return res.status(403).json({ error: 'Forbidden' });
 
   let body = '';
   await new Promise(r => { req.on('data', c => body += c); req.on('end', r); });
@@ -1057,7 +1092,7 @@ async function journalImportHandler(req, res) {
 
 // ── Circuit breaker status + reset ───────────────────────────────────────────
 
-const KNOWN_CIRCUITS = ['ai:openrouter', 'ai:cerebras', 'ai:sambanova:c1', 'ai:sambanova:main', 'fred', 'stooq', 'ff', 'fj', 'cftc', 'redis'];
+const KNOWN_CIRCUITS = ['ai:openrouter', 'ai:cerebras', 'ai:sambanova:c1', 'ai:sambanova:main', 'fred', 'stooq', 'ff', 'fj', 'cftc', 'redis', 'forexbenchmark', 'actionforex'];
 
 async function circuitStatusHandler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -1718,6 +1753,7 @@ async function ohlcvAnalyzeHandler(req, res) {
 
     if (SAMBANOVA_KEY && await cb.canCall('ai:sambanova:main')) {
       try {
+        if (!await allowAiCall('sambanova')) throw new Error('AI daily budget exceeded');
         const r = await fetch('https://api.sambanova.ai/v1/chat/completions', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SAMBANOVA_KEY}` },
@@ -1732,7 +1768,7 @@ async function ohlcvAnalyzeHandler(req, res) {
       } catch(e) { console.warn('ohlcv_analyze SambaNova failed:', e.message); await cb.onFailure('ai:sambanova:main'); }
     } else if (SAMBANOVA_KEY) { console.log('ohlcv_analyze: SambaNova circuit OPEN — skipping to Groq'); }
 
-    if (!rawText && GROQ_KEY) {
+    if (!rawText && GROQ_KEY && await allowAiCall('groq')) {
       const r = await fetch(GROQ_URL_FUND, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${GROQ_KEY}` },

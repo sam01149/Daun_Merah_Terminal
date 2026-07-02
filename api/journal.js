@@ -5,6 +5,19 @@
 
 const CORS = { 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-cache' };
 
+const rateLimit = require('./_ratelimit');
+const { allowAiCall } = require('./_ai_guard');
+
+// device_id dipakai langsung sebagai bagian key Redis — batasi charset & panjang
+const DEVICE_ID_RE   = /^[A-Za-z0-9_-]{1,64}$/;
+const MAX_BODY_BYTES = 32 * 1024; // entry punya thesis_text + snapshot CB/COT
+const VALID_DIRECTIONS = new Set(['long', 'short', '']);
+const VALID_STATUS     = new Set(['open', 'closed', 'archived']);
+
+function clampStr(v, max) {
+  return typeof v === 'string' ? v.slice(0, max) : '';
+}
+
 const GROQ_URL   = 'https://api.groq.com/openai/v1/chat/completions';
 const GROQ_MODEL = 'llama-3.3-70b-versatile';
 const ANALYSIS_CACHE_TTL = 60 * 60; // 1 hour
@@ -12,6 +25,7 @@ const ANALYSIS_CACHE_TTL = 60 * 60; // 1 hour
 async function aiCall(messages, maxTokens = 1000) {
   const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey) throw new Error('GROQ_API_KEY not set');
+  if (!await allowAiCall('groq')) throw new Error('AI daily budget exceeded');
   const r = await fetch(GROQ_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
@@ -122,26 +136,38 @@ module.exports = async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(204).end();
 
   const deviceId = req.query.device_id;
-  if (!deviceId) return res.status(400).json({ error: 'device_id required' });
+  if (!deviceId || !DEVICE_ID_RE.test(deviceId)) return res.status(400).json({ error: 'device_id required' });
+
+  if (await rateLimit(req, res, { limit: 30, windowSecs: 60, endpoint: 'journal' })) return;
 
   const indexKey = `journal_index:${deviceId}`;
 
   // ── POST — create entry ───────────────────────────────
   if (req.method === 'POST') {
+    const rawBody = await readBody(req);
+    if (Buffer.byteLength(rawBody || '', 'utf8') > MAX_BODY_BYTES) {
+      return res.status(413).json({ error: 'Body too large' });
+    }
     let data;
-    try { data = JSON.parse(await readBody(req)); }
+    try { data = JSON.parse(rawBody); }
     catch(e) { return res.status(400).json({ error: 'Invalid JSON' }); }
+    if (!data || typeof data !== 'object' || Array.isArray(data)) {
+      return res.status(400).json({ error: 'Invalid entry' });
+    }
+    if (data.direction != null && !VALID_DIRECTIONS.has(data.direction)) {
+      return res.status(400).json({ error: 'direction must be long/short' });
+    }
 
     const id = uid();
     const now = Date.now();
     const entry = {
       id, device_id: deviceId, created_at: new Date(now).toISOString(),
       // open fields
-      pair:              data.pair             || '',
+      pair:              clampStr(data.pair, 16),
       direction:         data.direction        || '',
       regime_at_entry:   data.regime_at_entry  || null,
-      thesis_text:       data.thesis_text      || '',
-      driver_references: data.driver_references || [],
+      thesis_text:       clampStr(data.thesis_text, 8000),
+      driver_references: Array.isArray(data.driver_references) ? data.driver_references.slice(0, 20) : [],
       cb_bias_snapshot:  data.cb_bias_snapshot  || null,
       cot_snapshot:      data.cot_snapshot      || null,
       cot_alignment:     data.cot_alignment     != null ? !!data.cot_alignment : null,
@@ -177,9 +203,19 @@ module.exports = async function handler(req, res) {
     const id = req.query.id;
     if (!id) return res.status(400).json({ error: 'id required' });
 
+    const rawBody = await readBody(req);
+    if (Buffer.byteLength(rawBody || '', 'utf8') > MAX_BODY_BYTES) {
+      return res.status(413).json({ error: 'Body too large' });
+    }
     let data;
-    try { data = JSON.parse(await readBody(req)); }
+    try { data = JSON.parse(rawBody); }
     catch(e) { return res.status(400).json({ error: 'Invalid JSON' }); }
+    if (!data || typeof data !== 'object' || Array.isArray(data)) {
+      return res.status(400).json({ error: 'Invalid body' });
+    }
+    if (data.status && !VALID_STATUS.has(data.status)) {
+      return res.status(400).json({ error: 'status must be open/closed/archived' });
+    }
 
     try {
       const entryKey = `journal:${deviceId}:${id}`;
@@ -189,9 +225,9 @@ module.exports = async function handler(req, res) {
 
       // Allow partial update of any close fields
       if (data.exit_price    != null) entry.exit_price    = parseFloat(data.exit_price);
-      if (data.exit_reason               ) entry.exit_reason    = data.exit_reason;
+      if (data.exit_reason               ) entry.exit_reason    = clampStr(data.exit_reason, 200);
       if (data.r_actual      != null) entry.r_actual      = parseFloat(data.r_actual);
-      if (data.attribution_notes         ) entry.attribution_notes = data.attribution_notes;
+      if (data.attribution_notes         ) entry.attribution_notes = clampStr(data.attribution_notes, 8000);
       if (data.status                    ) entry.status          = data.status;
 
       // Auto-set closed_at when status becomes closed/archived

@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-07-01 (session 136 — lihat "Changelog Session 136" di bawah untuk detail terbaru)
+> **Last updated:** 2026-07-02 (session 137 — audit & hardening 22 layer: security, error handling, data quality, AI budget guard, test suite, disclaimer, a11y, onboarding)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -96,7 +96,11 @@ Financial_Feed_App/
 │       ├── model_comparison.json      # Raw metrics klasifikasi single-split
 │       ├── cross_validation.json      # Raw metrics walk-forward CV
 │       └── regression_comparison.json # Raw metrics regresi
+├── test/                   # Unit test (node:test) — `npm test`, tanpa network/Redis
+│   ├── fundamental_parser.test.js # parseFundamentalFromHeadline + parseCBDecision
+│   └── guards.test.js             # _ai_guard, _ratelimit, _circuit_breaker (fail-open)
 └── api/                    # TEPAT 12 serverless functions (Vercel Hobby limit)
+    ├── _ai_guard.js        # Guard kuota harian per provider AI (Redis counter) — sesi 137
     ├── _circuit_breaker.js # Self-healing: Redis-backed circuit breaker (CLOSED→OPEN→HALF_OPEN)
     ├── _push_keywords.js   # Keyword lists untuk detectPushCat() — edit di sini untuk update kategori
     ├── _ratelimit.js       # Shared rate limiter helper — prefix _ = bukan route publik
@@ -150,6 +154,73 @@ File: `api/feeds.js` → `CB_RESEARCH_SOURCES` (diaudit sesi 120)
 | RBNZ, SNB | ❌ | 403 semua jalur |
 
 Parser `parseCBRSSItems`: regex `<(?:item|entry)\b[^>]*>` — support RSS 2.0, Atom, dan RDF/RSS 1.0.
+
+---
+
+## Changelog Session 137 (2026-07-02) — Audit & Hardening 22 Layer
+
+Audit menyeluruh terhadap 22 layer aplikasi (frontend → onboarding) berdasarkan daftar layer terdokumentasi, lalu perbaikan langsung untuk semua gap yang actionable. Hasil audit: beberapa klaim daftar layer sudah usang (rate limiter, circuit breaker, RSS fallback chain ternyata SUDAH ada), tapi ditemukan gap nyata di auth, validasi input, kuota AI, testing, legal, dan a11y — semua diperbaiki di sesi ini.
+
+### L10 Security — auth fail-open ditutup, rate limit menyeluruh, validasi input
+
+- **`api/admin.js` — 6 gate auth fail-open diperbaiki.** Pola lama `if (CRON_SECRET && header !== CRON_SECRET)` berarti: kalau env `CRON_SECRET` tidak diset, SEMUA orang bisa akses health/redis-keys/admin-prompts/push/fundamental_seed/journal_import. Sekarang fail-closed: `if (!CRON_SECRET || header !== CRON_SECRET)` → tanpa env, endpoint menolak semua request.
+- **Rate limit per-IP sekarang di 12/12 endpoint** (sebelumnya hanya `correlations` + `market-digest`): `feeds` (30/m per type), `calendar` (20/m), `cb-status` (20/m), `journal` (30/m), `sizing-history` (30/m), `subscribe` (10/m), `real-yields`/`risk-regime`/`rate-path` (15/m), aksi publik `admin` via `PUBLIC_ACTION_LIMITS` (aksi AI `fundamental_analysis`/`ohlcv_analyze` 5/m; cache read 30/m; `gdpnow`/`fundamental_refresh` 10/m). Cron traffic (header `x-vercel-cron` atau secret valid) selalu exempt.
+- **Validasi input endpoint tulis:**
+  - `subscribe.js`: `validSubscription()` — endpoint wajib https + max 1024 char, keys `p256dh`/`auth` wajib ada dengan cap panjang; field di-rebuild eksplisit (bukan spread `...subscription` — mencegah payload sampah membengkakkan hash `push_subs`); categories difilter whitelist `VALID_CATEGORIES` (sinkron dengan `detectPushCat()` admin.js).
+  - `sizing-history.js` + `journal.js`: `device_id` wajib match `^[A-Za-z0-9_-]{1,64}$` (dipakai langsung sebagai Redis key), body cap (2KB sizing / 32KB journal), `direction` enum long/short, `status` enum open/closed/archived, string panjang di-clamp (`thesis_text` 8000, `pair` 16, dst).
+
+### L11 Error Handling — circuit breaker untuk sumber scraping di feeds.js
+
+- `feeds.js` sebelumnya satu-satunya konsumen scraping TANPA circuit breaker — sumber down = tiap cache-miss bayar timeout 12–20s. Sekarang 4 sumber utama pakai `_circuit_breaker.js` yang sama dengan AI/health: `fj` (FinancialJuice RSS — saat OPEN langsung ke fallback Investinglive), `cftc` (COT), `forexbenchmark` (retail), `actionforex` (aftek). Failure `CIRCUIT_OPEN` tidak dihitung sebagai failure baru (tidak double-penalize).
+- `KNOWN_CIRCUITS` di admin.js ditambah `forexbenchmark` + `actionforex` → muncul di `circuit-status`.
+
+### L12 Data Quality — validasi skema kalender TradingView
+
+- `calendar.js` `fetchTradingViewEvents()`: filter event tanpa `title` atau `date` invalid sebelum masuk cache/UI (sebelumnya bisa render baris "undefined"). Validasi lain sudah ada dari sesi lalu: COT 8-currency parse check, retail 0-100% bounds + 0-pair warning, RSS `<rss` check, `QUANTITY_INDICATORS` reject `%`.
+
+### L13 Cost Management — guard kuota harian AI (`api/_ai_guard.js` BARU)
+
+- Helper baru `allowAiCall(provider)`: counter Redis `ai_budget:{provider}:{YYYY-MM-DD}` (INCR + TTL 48h), limit harian default groq 500 / sambanova 200 / openrouter 150 / cerebras 200, override via env `AI_DAILY_LIMIT_{PROVIDER}`. Fail-open kalau Redis down.
+- Wired ke SEMUA call site AI: `market-digest.js` `aiCall()` (choke point Call 1–6; budget habis → throw 429 → jatuh ke provider berikutnya via jalur fallback existing), `journal.js` `aiCall()`, `admin.js` `fundamental_analysis` (Groq + SambaNova) dan `ohlcv_analyze` (SambaNova + Groq).
+- Observability: response `admin?action=health` sekarang menyertakan `ai_budget: { groq: {used, limit}, ... }`.
+- Mencegah: loop bug / abuse endpoint publik menghabiskan kuota free-tier SEMUA provider serentak (sebelumnya tidak ada guard runtime sama sekali — riset rate limit hanya manual).
+
+### L14 Testing — test suite pertama (`test/`, `npm test`)
+
+- `test/fundamental_parser.test.js` (17 test): format FJ standar, NFP % rejection, Core PCE YoY/MoM disambiguation, calendar-format fallback (kata sisipan Core/Flash), CB decision cut/hike/hold + bps sign.
+- `test/guards.test.js` (7 test): `providerFromUrl`, fail-open `_ai_guard`/`_ratelimit`/`_circuit_breaker` tanpa Redis env, whitelist IP internal.
+- `package.json`: script `"test": "node --test"`. Semua 24 test pass, tanpa network/Redis.
+- **Bug asli ditemukan test:** `parseCBDecision` regex `\bcut\b`/`\bhold\b`/`\bhike\b` tidak match bentuk present-tense **"Fed cuts" / "BoJ holds" / "SNB hikes"** — bentuk headline paling umum — jadi mayoritas keputusan CB real tidak pernah terdeteksi. Juga `\bincreas\b` dead pattern (tidak pernah match karena `\b` sebelum huruf). Fix: `\bcuts?\b`, `\bholds?\b`, `\bhikes?\b`, `\bincreas` (prefix). Regression test ditambah.
+
+### L15 Editorial + L17 Legal — disclaimer
+
+- Seksi **"Disclaimer & Risiko"** lengkap di tab PETUNJUK (`#ptDisclaimer`): bukan nasihat keuangan, output AI bisa hallucinate, data pihak ketiga bisa delay/salah, risiko leverage, bukan produk terdaftar OJK/Bappebti.
+- Disclaimer singkat `.ai-disclaimer` persis di bawah output AI: panel RINGKASAN + panel ANALISA (level SL/TP AI).
+- Disclaimer juga tampil di modal onboarding first-run (lihat L22).
+
+### L16 Accessibility
+
+- Viewport: `maximum-scale=1.0, user-scalable=no` DIHAPUS (WCAG 1.4.4 — pinch zoom sekarang aktif). Kompensasi: `touch-action: manipulation` di elemen interaktif → double-tap zoom tetap mati, jadi UX tap cepat tidak berubah.
+- Nav utama: `role=tablist`/`role=tab` + `aria-selected` (di-sync di click handler), `aria-label` untuk tombol icon-only (`navMoreBtn`, `voiceSettingsBtn`).
+- Toast: `role=status aria-live=polite` — headline baru dibacakan screen reader.
+- `:focus-visible` outline global (2px accent) untuk keyboard nav — sebelumnya nol indikator fokus.
+
+### L22 Onboarding — first-run overlay
+
+- `#onboardOverlay` (role=dialog, aria-modal): muncul SEKALI untuk user baru (flag `dm_onboard_v1` di localStorage). Isi: 3 langkah mulai (CAL → RINGKASAN → NEWS, konsisten dengan seksi "Mulai dari Sini" PETUNJUK) + disclaimer singkat + tombol "Buka Panduan" (switchView ke PETUNJUK) / "Mulai".
+- User lama tidak diganggu: kalau localStorage sudah punya jejak pemakaian (`daun_merah_device_id`/`daun_merah_thesis`/`daun_merah_sz_form`/`ringkasan_cooldown_end`), flag langsung diset tanpa menampilkan modal. Escape = dismiss; fokus otomatis ke tombol utama.
+
+### L18–L21 — keputusan terdokumentasi (tidak butuh kode)
+
+- **L18 Versioning/Rollback:** deploy = push ke `main` (Vercel auto). Rollback tercepat: Vercel Dashboard → Deployments → promote deployment sebelumnya (instan, tanpa git). Alternatif: `git revert <sha> && git push`. Staging tersedia gratis via Vercel Preview: push branch non-main → preview URL unik (belum dipakai sebagai kebiasaan; env vars sama dengan production, hati-hati cron/Redis shared).
+- **L19 Dependency:** `npm audit` = 0 vulnerabilities (satu-satunya dep runtime: `web-push`; lockfile committed). Kebijakan: jalankan `npm audit` tiap nambah dependency; jangan menambah dep untuk hal yang bisa ditulis <100 baris.
+- **L20 i18n:** single-language Bahasa Indonesia BY DESIGN — target user trader Indonesia; teks tersebar inline di HTML/prompt AI. Menambah bahasa = rewrite besar, tidak ada rencana. Keputusan final, bukan gap.
+- **L21 State Management frontend:** pola resmi = module-scope `let` per fitur (mis. `ringkasanCache`, `calData`, `seenGuids`) + localStorage untuk persist antar sesi dengan prefix `daun_merah_*` (device_id, thesis, sz_form, rates) + key legacy tanpa prefix (`ringkasan_cooldown_end`, `dm_onboard_v1`). Tidak ada framework/store terpusat — by design untuk single-file vanilla JS; konvensi: state baru wajib module-scope + render function sendiri, jangan global window kecuali dipanggil dari onclick inline.
+
+### Audit L1–L9 — koreksi dokumentasi vs realita
+
+- Daftar "22 layer" yang jadi acuan audit ternyata usang di beberapa poin: `_ratelimit.js`, `_circuit_breaker.js`, `_retry.js`, `_fetch_lock.js` sudah lama ada (L10/L11 tidak sepenuhnya kosong); RSS backup chain (Investinglive fallback) sudah diimplementasi; frontend sudah 12.332 baris (bukan ~4200); 12/12 slot function Vercel Hobby SUDAH PENUH — endpoint baru = harus konsolidasi ke endpoint existing (pola `?action=`/`?type=`).
+- **Yang masih jadi gap sadar (belum dikerjakan, by choice):** logging terpusat/alerting eksternal masih terbatas (Telegram health alert saja); tidak ada E2E test UI; secret rotation manual; CORS `*` di semua endpoint (data publik + journal keyed device_id random — risiko rendah, diterima).
 
 ---
 

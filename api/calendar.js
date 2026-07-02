@@ -10,6 +10,7 @@ const FRESH_TTL = 60;       // normal serve window — frontend polls every 90s;
                              // had NO freshness gate at all (every single request re-fetched
                              // ForexFactory unconditionally, worst offender for stampede risk)
 const { withSingleFlight } = require('./_fetch_lock');
+const rateLimit = require('./_ratelimit');
 
 async function redisCmd(...args) {
   const REDIS_URL   = process.env.UPSTASH_REDIS_REST_URL;
@@ -26,6 +27,8 @@ async function redisCmd(...args) {
 
 module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
+
+  if (await rateLimit(req, res, { limit: 20, windowSecs: 60, endpoint: 'calendar' })) return;
 
   const isNextWeek = req.query && req.query.week === 'next';
   const CACHE_KEY = isNextWeek ? 'calendar_next_v1' : 'calendar_v1';
@@ -155,7 +158,10 @@ async function fetchTradingViewEvents(rangeStartWib, rangeEndWib) {
   const json = await res.json();
   if (!json || !Array.isArray(json.result)) throw new Error('TradingView calendar: malformed response');
 
-  return json.result.map(e => {
+  return json.result.filter(e => {
+    // Skema minimal per event — item tanpa judul/tanggal valid bikin baris "undefined" di UI
+    return e && typeof e.title === 'string' && e.title && !isNaN(new Date(e.date).getTime());
+  }).map(e => {
     const utc = new Date(e.date);
     const wib = new Date(utc.getTime() + 7 * 3600000);
     return {

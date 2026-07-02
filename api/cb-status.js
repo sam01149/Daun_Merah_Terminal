@@ -14,6 +14,7 @@
 //   CHF → Swiss National Bank website
 
 const { getLiveCbRates } = require('./_cb_rates');
+const rateLimit = require('./_ratelimit');
 
 async function redisCmd(...args) {
   const REDIS_URL   = process.env.UPSTASH_REDIS_REST_URL;
@@ -33,6 +34,8 @@ async function redisCmd(...args) {
 module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Cache-Control', 'no-cache');
+
+  if (await rateLimit(req, res, { limit: 20, windowSecs: 60, endpoint: 'cb-status' })) return;
 
   let biasData = {};
   try {

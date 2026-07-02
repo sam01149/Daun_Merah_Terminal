@@ -2,6 +2,12 @@
 // Saves/retrieves last 10 position sizing calculations per device.
 // Redis: sorted set 'sizing_history:{device_id}', score = timestamp, member = JSON string.
 
+const rateLimit = require('./_ratelimit');
+
+// device_id dipakai langsung sebagai bagian key Redis — batasi charset & panjang
+const DEVICE_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
+const MAX_ENTRY_BYTES = 2048;
+
 async function redisCmd(...args) {
   const REDIS_URL   = process.env.UPSTASH_REDIS_REST_URL;
   const REDIS_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
@@ -21,16 +27,24 @@ module.exports = async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(204).end();
 
   const deviceId = req.query.device_id;
-  if (!deviceId) return res.status(400).json({ error: 'device_id required' });
+  if (!deviceId || !DEVICE_ID_RE.test(deviceId)) return res.status(400).json({ error: 'device_id required' });
+
+  if (await rateLimit(req, res, { limit: 30, windowSecs: 60, endpoint: 'sizing-history' })) return;
 
   const key = `sizing_history:${deviceId}`;
 
   if (req.method === 'POST') {
     let body = '';
     await new Promise(r => { req.on('data', c => body += c); req.on('end', r); });
+    if (Buffer.byteLength(body, 'utf8') > MAX_ENTRY_BYTES) {
+      return res.status(413).json({ error: 'Entry too large' });
+    }
     let entry;
     try { entry = JSON.parse(body); } catch(e) {
       return res.status(400).json({ error: 'Invalid JSON' });
+    }
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+      return res.status(400).json({ error: 'Invalid entry' });
     }
     entry.timestamp = Date.now();
     try {

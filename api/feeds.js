@@ -7,9 +7,12 @@
 // GET /api/feeds?type=retail         → ForexBenchmark retail positioning JSON (2h cache)
 
 const { autoUpdateFundamentals } = require('./_fundamental_parser');
+const rateLimit = require('./_ratelimit');
+const cbk = require('./_circuit_breaker');
 
 module.exports = async function handler(req, res) {
   const type = req.query.type;
+  if (await rateLimit(req, res, { limit: 30, windowSecs: 60, endpoint: `feeds_${type || 'none'}` })) return;
   if (type === 'rss')         return rssHandler(req, res);
   if (type === 'cot')         return cotHandler(req, res);
   if (type === 'cot_history') return cotHistoryHandler(req, res);
@@ -114,14 +117,22 @@ async function rssHandler(req, res) {
   const ua = RSS_USER_AGENTS[Math.floor(Math.random() * RSS_USER_AGENTS.length)];
   let xml = null, fetchError = null, sourceUsed = 'financialjuice';
 
-  try {
-    const r = await fetch(RSS_URL, {
-      headers: { 'User-Agent': ua, 'Accept': 'application/rss+xml,*/*', 'Referer': 'https://www.financialjuice.com/', 'Cache-Control': 'no-cache' },
-      signal: AbortSignal.timeout(12000),
-    });
-    if (r.ok) { const t = await r.text(); if (t.includes('<rss')) xml = t; else fetchError = 'NOT_RSS'; }
-    else fetchError = 'HTTP_' + r.status;
-  } catch(e) { fetchError = e.message; }
+  // Circuit breaker 'fj' (shared dengan health dashboard): kalau FinancialJuice
+  // sedang OPEN, jangan bayar timeout 12s — langsung coba fallback.
+  if (await cbk.canCall('fj')) {
+    try {
+      const r = await fetch(RSS_URL, {
+        headers: { 'User-Agent': ua, 'Accept': 'application/rss+xml,*/*', 'Referer': 'https://www.financialjuice.com/', 'Cache-Control': 'no-cache' },
+        signal: AbortSignal.timeout(12000),
+      });
+      if (r.ok) { const t = await r.text(); if (t.includes('<rss')) xml = t; else fetchError = 'NOT_RSS'; }
+      else fetchError = 'HTTP_' + r.status;
+    } catch(e) { fetchError = e.message; }
+    if (xml) cbk.onSuccess('fj').catch(() => {});
+    else     cbk.onFailure('fj').catch(() => {});
+  } else {
+    fetchError = 'CIRCUIT_OPEN';
+  }
 
   // Primary source down/blocked — try fallback source before resorting to stale cache
   if (!xml) {
@@ -243,6 +254,7 @@ async function cotHandler(req, res) {
 
   let preText = '';
   try {
+    if (!await cbk.canCall('cftc')) throw new Error('CIRCUIT_OPEN');
     const r = await fetch(CFTC_URL, {
       headers: { 'User-Agent': 'Mozilla/5.0 (compatible; FJFeed/1.0)' },
       signal: AbortSignal.timeout(20000),
@@ -257,7 +269,9 @@ async function cotHandler(req, res) {
       .replace(/&amp;/g, '&')
       .replace(/&lt;/g, '<')
       .replace(/&gt;/g, '>');
+    cbk.onSuccess('cftc').catch(() => {});
   } catch(e) {
+    if (e.message !== 'CIRCUIT_OPEN') cbk.onFailure('cftc').catch(() => {});
     console.error('CFTC fetch failed:', e.message);
     try {
       const stale = await redisCmd('GET', 'cot_cache_v2');
@@ -965,6 +979,7 @@ async function aftekHandler(req, res) {
   } catch(e) {}
 
   try {
+    if (!await cbk.canCall('actionforex')) throw new Error('CIRCUIT_OPEN');
     const ua = RESEARCH_UAS[Math.floor(Math.random() * RESEARCH_UAS.length)];
     const r = await fetch(feedUrl, {
       headers: { 'User-Agent': ua, 'Accept': 'application/rss+xml,*/*' },
@@ -973,11 +988,13 @@ async function aftekHandler(req, res) {
     if (!r.ok) throw new Error('HTTP ' + r.status);
     const xml = await r.text();
     const items = parseCBRSSItems(xml, 'AF').slice(0, 5);
+    cbk.onSuccess('actionforex').catch(() => {});
 
     const payload = { items, pair, covered: true, fetched_at: new Date().toISOString() };
     redisCmd('SET', cacheKey, JSON.stringify(payload), 'EX', AFTEK_CACHE_TTL).catch(() => {});
     return res.json(payload);
   } catch(e) {
+    if (e.message !== 'CIRCUIT_OPEN') cbk.onFailure('actionforex').catch(() => {});
     console.warn(`aftek fetch failed [${pair}]:`, e.message);
     // Try stale
     try {
@@ -1020,6 +1037,7 @@ async function retailHandler(req, res) {
 
   let html = '';
   try {
+    if (!await cbk.canCall('forexbenchmark')) throw new Error('CIRCUIT_OPEN');
     const r = await fetch(RETAIL_URL, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
@@ -1031,7 +1049,9 @@ async function retailHandler(req, res) {
     });
     if (!r.ok) throw new Error('HTTP ' + r.status);
     html = await r.text();
+    cbk.onSuccess('forexbenchmark').catch(() => {});
   } catch(e) {
+    if (e.message !== 'CIRCUIT_OPEN') cbk.onFailure('forexbenchmark').catch(() => {});
     console.warn('ForexBenchmark fetch failed:', e.message);
     try {
       const stale = await redisCmd('GET', RETAIL_CACHE_KEY);

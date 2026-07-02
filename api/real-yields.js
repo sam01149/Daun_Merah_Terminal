@@ -6,6 +6,7 @@
 // Cached in Redis under 'real_yields' for 6 hours.
 
 const { withSingleFlight } = require('./_fetch_lock')
+const rateLimit = require('./_ratelimit')
 
 const CACHE_KEY = 'real_yields'
 const CACHE_TTL = 6 * 60 * 60 // 6 hours in seconds
@@ -47,6 +48,8 @@ module.exports = async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-cache')
 
   if (req.method === 'OPTIONS') return res.status(204).end()
+
+  if (await rateLimit(req, res, { limit: 15, windowSecs: 60, endpoint: 'real-yields' })) return
 
   // Read all caches in parallel
   let mainCached = null, liquidityCached = null, yieldCurveCached = null

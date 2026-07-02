@@ -264,9 +264,11 @@ function parseCBDecision(title) {
   }
   if (!currency) return null;
 
-  const isCut  = /\bcut\b|\blower\b|\breduced?\b/i.test(t);
-  const isHike = /\bhike\b|\braise[sd]?\b|\bincreas\b|\btighten/i.test(t);
-  const isHold = /\bhold\b|\bunchanged\b|\bleave[sd]?\b|\bkeep[s]?\b|\bmaintain/i.test(t);
+  // Terima bentuk present-tense headline ("Fed cuts", "BoJ holds", "SNB hikes") —
+  // tanpa s? opsional, semua headline bentuk orang-ketiga lolos tak terdeteksi.
+  const isCut  = /\bcuts?\b|\blowers?\b|\breduce[sd]?\b/i.test(t);
+  const isHike = /\bhikes?\b|\braise[sd]?\b|\bincreas|\btighten/i.test(t);
+  const isHold = /\bholds?\b|\bunchanged\b|\bleave[sd]?\b|\bkeeps?\b|\bmaintain/i.test(t);
   if (!isCut && !isHike && !isHold) return null;
   const decision = isCut ? 'cut' : isHike ? 'hike' : 'hold';
 

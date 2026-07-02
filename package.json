@@ -1,6 +1,9 @@
 {
   "name": "daun-merah",
   "version": "1.0.0",
+  "scripts": {
+    "test": "node --test"
+  },
   "dependencies": {
     "web-push": "^3.6.7"
   }
