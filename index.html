@@ -8781,6 +8781,9 @@ async function ckMt5AutoJournal(pair, direction, fill, lots, sl, tp) {
   const { pct, verdict } = ckGetVerdict();
   const pb     = PLAYBOOKS[ckActivePlaybook];
   const pbName = pb?.name || ckActivePlaybook;
+  const sizing = window._lastSizing && window._lastSizing.pair === pair ? window._lastSizing : null;
+  const plannedEntry = sizing && sizing.entry != null ? sizing.entry : null;
+  const orderKind = fill.order_kind || (plannedEntry != null ? 'limit' : 'market');
 
   // Bangun thesis dari checklist (sama seperti ckPrefillJurnal)
   const lines = [
@@ -8836,8 +8839,9 @@ async function ckMt5AutoJournal(pair, direction, fill, lots, sl, tp) {
   const body = {
     pair,
     direction,
+    order_kind:     orderKind,
     thesis_text:      lines.join('\n'),
-    entry_price:      fill.fill_price,
+    entry_price:      plannedEntry != null ? plannedEntry : fill.fill_price,
     stop_price:       sl || null,
     target_price:     tp || null,
     size_lots:        lots,
