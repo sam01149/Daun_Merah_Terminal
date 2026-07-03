@@ -8670,6 +8670,8 @@ function ckPrefillJurnalAction(pct, verdict) {
 
 // ── MT5 BRIDGE INTEGRATION ─────────────────────────────────────────────────
 const MT5_BRIDGE = 'http://localhost:5000';
+// Bump bareng BRIDGE_VERSION di mt5_bridge.py setiap kali logika /order berubah.
+const MT5_BRIDGE_MIN_PENDING_VERSION = 2;
 
 function ckShowMt5Modal() {
   const { pct, gatesOk, incompleteGates } = ckGetVerdict();
@@ -8715,16 +8717,35 @@ function ckShowMt5ModalAction(pair) {
   document.getElementById('mt5ModalTP').value          = matchSz ? sz.tpPrice.toFixed(5) : '';
   document.getElementById('mt5ModalStatus').textContent = '';
 
-  // Cek bridge online
+  // Cek bridge online + versi (lihat catatan MT5_BRIDGE_MIN_PENDING_VERSION di bawah)
   fetch(MT5_BRIDGE + '/health', { signal: AbortSignal.timeout(3000) })
     .then(r => r.json())
     .then(d => {
       const el = document.getElementById('mt5ModalStatus');
-      if (d.status === 'ok') el.innerHTML = `<span style="color:var(--green)">✓ MT5 terhubung</span> · Login ${d.login} · Balance ${d.currency} ${d.balance.toLocaleString()}`;
-      else el.innerHTML = `<span style="color:var(--accent)">✗ ${d.error}</span>`;
+      const confirmBtn = document.getElementById('mt5ModalConfirmBtn');
+      if (d.status === 'ok') {
+        // Bridge yang jalan di background (start_bridge_min.vbs) tidak hot-reload —
+        // kalau file mt5_bridge.py di-update sementara proses lama masih jalan,
+        // proses lama diam-diam tetap eksekusi market order walau modal ini minta
+        // pending order di harga Sizing Calc. version < MT5_BRIDGE_MIN_PENDING_VERSION
+        // (atau field version tidak ada sama sekali = bridge lama) berarti proses itu
+        // belum tahu soal entry_price — blokir Confirm daripada biarkan entry salah harga.
+        if (hasEntry && (!d.version || d.version < MT5_BRIDGE_MIN_PENDING_VERSION)) {
+          el.innerHTML = `<span style="color:var(--accent)">✗ Bridge versi lama (belum dukung pending order) — tutup jendela mt5_bridge.py yang sedang jalan lalu jalankan ulang start_bridge.bat</span>`;
+          if (confirmBtn) confirmBtn.disabled = true;
+        } else {
+          el.innerHTML = `<span style="color:var(--green)">✓ MT5 terhubung</span> · Login ${d.login} · Balance ${d.currency} ${d.balance.toLocaleString()}`;
+          if (confirmBtn) confirmBtn.disabled = false;
+        }
+      } else {
+        el.innerHTML = `<span style="color:var(--accent)">✗ ${d.error}</span>`;
+        if (confirmBtn) confirmBtn.disabled = true;
+      }
     })
     .catch(() => {
       document.getElementById('mt5ModalStatus').innerHTML = '<span style="color:var(--accent)">✗ Bridge offline — jalankan mt5_bridge.py</span>';
+      const confirmBtn = document.getElementById('mt5ModalConfirmBtn');
+      if (confirmBtn) confirmBtn.disabled = true;
     });
 
   document.getElementById('mt5Modal').style.display = 'flex';
@@ -10151,6 +10172,7 @@ function jnRenderEntries() {
     const archBtn = e.status === 'archived'
       ? `<button class="jn-btn-sec" style="font-size:9px;margin-left:4px;color:var(--green);border-color:var(--green)" onclick="jnUnarchive('${e.id}')">Pulihkan</button>`
       : `<button class="jn-btn-sec" style="font-size:9px;margin-left:4px" onclick="jnArchive('${e.id}')">Arsip</button>`;
+    const delBtn = `<button class="jn-btn-sec" style="font-size:9px;margin-left:4px;color:var(--accent);border-color:var(--accent)" onclick="jnDeleteForever('${e.id}')">Hapus</button>`;
 
     return `<div class="jn-card">
       <div class="jn-card-hdr">
@@ -10171,7 +10193,7 @@ function jnRenderEntries() {
       ${excRow}
       ${thesisHtml}
       ${e.status === 'closed' && e.attribution_notes ? `<div style="font-size:10px;color:var(--muted);margin-top:4px;font-family:'DM Mono',monospace;font-style:italic">${e.attribution_notes.slice(0, 150)}${e.attribution_notes.length > 150 ? '…' : ''}</div>` : ''}
-      <div style="margin-top:8px;display:flex;gap:4px">${closeBtn}${archBtn}</div>
+      <div style="margin-top:8px;display:flex;gap:4px">${closeBtn}${archBtn}${delBtn}</div>
     </div>`;
   }).join('');
 }
@@ -10575,6 +10597,23 @@ async function jnArchive(id) {
     jnLoadEntries();
   } catch(e) {
     console.warn('jnArchive failed:', e.message);
+  }
+}
+
+async function jnDeleteForever(id) {
+  if (!confirm('Hapus permanen entri ini? Tindakan ini tidak bisa dibatalkan (beda dengan Arsip).')) return;
+  const deviceId = szGetDeviceId();
+  try {
+    const res = await fetch(`/api/journal?device_id=${encodeURIComponent(deviceId)}&id=${encodeURIComponent(id)}&hard=1`, {
+      method: 'DELETE',
+      signal: AbortSignal.timeout(6000),
+    });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    showToast('Terhapus', 'Entri jurnal dihapus permanen.', 3000);
+    jnLoadEntries();
+  } catch(e) {
+    console.warn('jnDeleteForever failed:', e.message);
+    showToast('Gagal hapus', e.message, 3000);
   }
 }
 

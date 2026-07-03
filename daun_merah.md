@@ -1,11 +1,28 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-07-03 (session 140 — hardening reliability thesis_alerts (Call 4), fitur diaktifkan kembali)
+> **Last updated:** 2026-07-03 (session 141 — fix bug MT5 entry tereksekusi market price bukan pending price, tambah Hapus permanen jurnal)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 
 ---
+
+## Changelog Session 141 (2026-07-03) — Bug MT5 Entry Eksekusi di Harga Market, Bukan Harga Pending yang Di-set
+
+**Laporan user:** set XAU/USD buy limit di 4050 lewat Sizing Calculator (harga saat itu 4110), modal konfirmasi MT5 di Checklist sudah menampilkan entry/SL/TP yang benar (4050 dkk, sesuai Sizing Calc), tapi begitu tombol "Konfirmasi Entry" ditekan, order yang benar-benar masuk ke MT5 tereksekusi di harga pasar SEKARANG (4110), bukan di 4050. Terbukti dari 3 entri jurnal XAU/USD (03/07/2026, ticket #57387959126 dkk) dengan RR planned 0.01–0.05:1 — entry price-nya (4090, 4173.89, 4177.39) semuanya nempel ke harga pasar saat masing-masing test dilakukan, bukan level pending yang dimaksud.
+
+**Root cause:** `mt5_bridge.py` adalah script Python lokal yang jalan terus-menerus di background di PC user (lewat `start_bridge_min.vbs` saat startup) dan **sengaja di-gitignore** ("lokal only", commit `426fcc2`) — jadi setiap kali file ini diedit, perubahan itu tidak otomatis ke-deploy seperti frontend/backend Vercel. Dukungan pending order (`entry_price` → BUY/SELL LIMIT) baru ditambahkan ke file ini di session sebelumnya, tapi **proses Python yang sedang berjalan di PC user sudah aktif dari sebelum edit itu dilakukan** — Flask jalan dengan `debug=False` (tanpa auto-reload), jadi proses lama itu terus pakai logika LAMA: field `entry_price` yang dikirim dari modal diabaikan sepenuhnya, order selalu dieksekusi sebagai market order di `tick.ask`/`tick.bid` saat itu juga. Modal di browser sendiri sudah benar (entry field terkunci dari Sizing Calc, terkirim persis ke bridge) — masalahnya murni proses bridge lokal yang basi, bukan bug logika di kode.
+
+**Fix:**
+1. `mt5_bridge.py`: tambah `BRIDGE_VERSION = 2`, dikirim balik di response `/health` sebagai `version`.
+2. `index.html` (`ckShowMt5ModalAction`): saat modal MT5 dibuka dan order ini butuh pending order (`hasEntry`), cek `version` dari `/health` — kalau tidak ada atau `< MT5_BRIDGE_MIN_PENDING_VERSION` (bridge lama/basi), tombol "Konfirmasi Entry" **di-disable** dan status menampilkan pesan eksplisit: restart `mt5_bridge.py`. Ini mencegah kasus yang sama terulang secara diam-diam di masa depan (mis. setelah update logika bridge berikutnya tapi lupa restart proses).
+3. **Tindakan wajib dari user sekarang:** tutup jendela `mt5_bridge.py`/`python.exe` yang sedang berjalan (termasuk yang jalan minimized dari startup), lalu jalankan ulang `start_bridge.bat` supaya proses baru membaca `BRIDGE_VERSION = 2` dan logika pending order yang benar. Karena file ini gitignored, perubahan sudah langsung ada di disk lokal — tidak perlu git pull, cukup restart proses.
+
+**Tambahan — hard-delete jurnal:** sebelumnya `DELETE /api/journal` cuma soft-delete (`status: archived`, tetap ada selamanya di tab ARSIP). Ditambah dukungan `?hard=1` yang benar-benar menghapus key Redis + entri di index — dipakai untuk membuang 3 entri XAU/USD hasil bug di atas yang tidak pantas disimpan sebagai riwayat trade (bukan cuma diarsipkan). Tombol **"Hapus"** (merah, di sebelah Tutup/Arsip) ditambahkan di tiap kartu jurnal, dengan `confirm()` sebelum eksekusi karena permanen.
+
+**Verifikasi:** `node --check api/journal.js`, parse semua inline script `index.html`, `python -c "import ast; ast.parse(...)"` untuk `mt5_bridge.py`, dan `npm test` (25/25) — semua lolos.
+
+**Tindak lanjut user:** setelah deploy, buka JURNAL → klik "Hapus" pada 3 entri XAU/USD yang salah (ticket #57387959126, #57387888853, #57387788359) untuk membersihkannya secara permanen.
 
 ## Changelog Session 140 (2026-07-03) — Hardening Reliability Thesis Alert (Call 4)
 

@@ -376,7 +376,7 @@ module.exports = async function handler(req, res) {
     }
   }
 
-  // ── DELETE — soft delete (set status = archived) ──────
+  // ── DELETE — soft delete (set status = archived), or ?hard=1 for permanent removal ──
   if (req.method === 'DELETE') {
     const id = req.query.id;
     if (!id) return res.status(400).json({ error: 'id required' });
@@ -385,6 +385,15 @@ module.exports = async function handler(req, res) {
       const entryKey = `journal:${deviceId}:${id}`;
       const raw = await redisCmd('GET', entryKey);
       if (!raw) return res.status(404).json({ error: 'Entry not found' });
+
+      if (req.query.hard === '1') {
+        // Permanent removal — for erroneous entries (e.g. bad test data from a
+        // broken feature) that shouldn't be kept around even in Arsip.
+        await redisCmd('DEL', entryKey);
+        await redisCmd('ZREM', indexKey, id);
+        return res.status(200).json({ ok: true, deleted: true });
+      }
+
       const entry = JSON.parse(raw);
       entry.status = 'archived';
       entry.closed_at = entry.closed_at || new Date().toISOString();
