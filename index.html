@@ -3497,7 +3497,7 @@ async function loadCachedRingkasan() {
     if (!res.ok) return;
     const data = await res.json();
     if (data.article) {
-      ringkasanCache = data;
+      _applyRingkasanData(data);
       renderRingkasan();
       // tick cooldown after render (button might have been re-created)
       if (Date.now() < ringkasanCooldownEnd) tickCooldown();
@@ -4175,6 +4175,16 @@ function showToast(title, body, ms=3000) {
 document.getElementById('toast').addEventListener('click', _toastHide);
 
 // ── RINGKASAN ────────────────────────────────────────────
+// A2.4: thesis_alerts is a safety signal (contra-headline vs buy/sell limit) — a
+// transient Call 4 failure returns thesis_alerts:null ("check unavailable"), which
+// must NOT be read as "all clear" and silently erase a previously-detected real
+// alert. Only an explicit [] ("checked, nothing found") clears it.
+function _applyRingkasanData(data) {
+  const prevAlerts = Array.isArray(ringkasanCache?.thesis_alerts) ? ringkasanCache.thesis_alerts : null;
+  const freshAlerts = Array.isArray(data.thesis_alerts) ? data.thesis_alerts : null;
+  ringkasanCache = { ...data, thesis_alerts: freshAlerts !== null ? freshAlerts : prevAlerts };
+}
+
 async function generateRingkasan() {
   const btn = document.getElementById('ringkasanBtn');
   btn.classList.add('loading');
@@ -4187,7 +4197,7 @@ async function generateRingkasan() {
     });
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
-    ringkasanCache = data;
+    _applyRingkasanData(data);
     startCooldown();
     renderRingkasan();
     if (data.bias_updated && data.bias_updated.length > 0) fetchCBStatus();

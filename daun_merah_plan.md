@@ -6,6 +6,8 @@
 >
 > **Status (2026-07-01, Session 135):** Fix kategorisasi berita `econ-data` vs `market-moving`/`indexes`/`macro`/`bonds` **sudah selesai dikerjakan & terverifikasi** — lihat "Changelog Session 135" di `daun_merah.md` untuk detailnya.
 >
+> **Status (2026-07-03, Session 140):** Thesis alert (headline kontra buy/sell limit di JURNAL/CHECKLIST/SIZING) yang sempat **ditunda** karena reliability sudah di-hardening dan **diaktifkan kembali** — lihat "Changelog Session 140" di `daun_merah.md` untuk detailnya. Bagian scenario/progress-nya dihapus dari dokumen ini.
+>
 > **Update workflow (`CLAUDE.md`):** Plan-first di dokumen ini sekarang HANYA dipakai kalau user eksplisit minta "buatkan plan" atau perintahnya ditujukan untuk AI lain (bukan eksekusi langsung). Untuk perintah eksekusi langsung, kerjakan → evaluasi mandiri → uji → update `daun_merah.md` → push, tanpa gate plan terpisah.
 
 ---
@@ -24,16 +26,3 @@
 - **[QUAL-2]** FRASA TERLARANG mungkin terlalu agresif (konektor normal ikut dilarang) → prosa bisa kaku. **Pantau dulu via `quality_flags` dari C8, jangan ubah tanpa keluhan nyata.**
 - **[C5 DRAFT]** Bagian teks prompt di C5 (headline mentah ke thesisPrompt) masih berstatus **DRAFT, menunggu review user** sebelum dianggap final. Kode sudah di-push, tapi kualitas output perlu divalidasi live.
 - **[C8 Tahap 2 — OPSIONAL]** Kalau `phraseHits.length` sering melewati ambang via log produksi, pertimbangkan satu AI call kecil "tulis ulang kalimat ini tanpa frasa berikut". Tunggu bukti severity nyata dari `provider_log` dulu.
-
-
-
-perlu yang namanya jurnal untuk alert, buy/sell limit. kalau misalnya ada headline yang tidak selaras dengan buy/sell limit, ada pemberitahuan dari checklist atau jurnal atau sizing
-
-### Skenario kerja yang diinginkan
-
-- User sudah punya pair aktif dan arah setup di CHECKLIST atau SIZING, misalnya `EUR/USD buy limit` atau `XAU/USD sell limit`.
-- Ringkasan berita menemukan headline yang berlawanan dengan arah setup itu, lalu alert masuk ke `thesis_alerts`.
-- Saat user buka CHECKLIST, banner alert tampil di pair aktif supaya user sadar ada berita kontra sebelum centang lanjut.
-- Saat user buka SIZING, alert yang sama tampil di hasil lot/risk supaya user bisa menahan entry, kecilkan size, atau batal.
-- Saat user tekan `→ Buat Jurnal dari Checklist` atau entry MT5, blok alert ikut tercatat di jurnal sebagai catatan permanen.
-- Jika tidak ada headline kontra untuk pair itu, UI tetap bersih dan flow normal tidak terganggu.

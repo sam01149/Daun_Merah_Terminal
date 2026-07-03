@@ -1,11 +1,33 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-07-03 (session 139 — alert headline kontra buy/sell limit diwire ke JURNAL / CHECKLIST / SIZING)
+> **Last updated:** 2026-07-03 (session 140 — hardening reliability thesis_alerts (Call 4), fitur diaktifkan kembali)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 
 ---
+
+## Changelog Session 140 (2026-07-03) — Hardening Reliability Thesis Alert (Call 4)
+
+Session 139 mewire `thesis_alerts` ke JURNAL/CHECKLIST/SIZING, tapi user menahan fitur ini ("ditunda") karena eksekusi live-nya belum cukup andal. Audit kode menemukan 4 penyebab konkret dan semuanya sudah diperbaiki di `api/market-digest.js` dan `index.html`:
+
+1. **AI schema drift pada `direction`** — Call 4 (AI thesis monitor) diminta menuliskan ulang `pair`/`direction` sebagai teks bebas. Kalau model menulis "buy" alih-alih "long" (atau format pair beda), filter `getThesisAlertsForPair()` di frontend gagal match secara diam-diam dan alert yang valid jadi tidak pernah muncul. **Fix:** `pair`/`direction` sekarang diambil dari data jurnal server-side (ground truth via `entry_id`), bukan dari teks yang ditulis ulang AI — AI hanya perlu mengembalikan `entry_id` + `headline` + `reason`.
+2. **Headline bisa dihalusinasi** — tidak ada validasi bahwa `headline` yang dikutip AI benar-benar ada di feed berita. **Fix:** setiap alert sekarang divalidasi verbatim terhadap daftar 30 headline yang dikirim ke model; alert dengan headline yang tidak cocok persis (kemungkinan parafrase/halusinasi) di-drop dan di-log.
+3. **`entry_id` bisa mengacu ke thesis yang tidak ada** — ditambahkan validasi `entry_id` terhadap daftar open entries yang sebenarnya dikirim ke model; alert dengan `entry_id` tak dikenal di-drop.
+4. **Coupling salah dengan Call 1** — sebelumnya `thesis_alerts` di-null-kan setiap kali Call 1 (prosa briefing, AI call terpisah) gagal/fallback, walau Call 4 sendiri berhasil dan menemukan kontradiksi asli. Ini bikin alert yang valid hilang total setiap kali provider Call 1 down/quota habis. **Fix:** hasil Call 4 sekarang berdiri sendiri, tidak lagi digate oleh status Call 1.
+5. **Frontend menimpa alert lama saat regenerate gagal transient** — `ringkasanCache.thesis_alerts` di-overwrite penuh tiap `generateRingkasan()`/`loadCachedRingkasan()`, termasuk saat backend balas `thesis_alerts: null` (Call 4 gagal sesaat) — alert asli yang tadinya tampil jadi hilang tanpa jejak, kesannya "aman" padahal cuma gagal cek. **Fix:** helper `_applyRingkasanData()` cuma menimpa alert lama kalau backend eksplisit balas array (baik `[]` = "sudah dicek, bersih" maupun alert baru) — `null` ("gagal cek") mempertahankan alert lama.
+6. Tambahan: Call 4 di-skip kalau `recentItems.length === 0` (tidak ada berita sama sekali) — sebelumnya tetap manggil AI dengan konteks kosong, buang kuota tanpa hasil berguna.
+
+**Batasan by-design (bukan bug):** alert hanya muncul untuk pair+direction yang sudah punya entri jurnal `status:'open'` dengan `thesis_text` terisi (termasuk pending limit order yang sudah dijurnal via modal MT5) — bukan untuk pair yang benar-benar belum pernah disentuh sama sekali. Ini konsisten dengan skenario yang diminta: alert relevan saat user *revisit* CHECKLIST/SIZING untuk setup yang sudah dijurnal (mis. limit order masih resting), bukan pada pair kosong tanpa histori apapun.
+
+**Verifikasi:**
+- `node --check api/market-digest.js` — lolos.
+- Seluruh inline script `index.html` lolos parse (`new Function()` per blok `<script>`).
+- Logika validasi Call 4 (drift direction, headline halusinasi, entry_id tak dikenal, kasus valid) diuji manual via skrip Node standalone — 4/4 skenario berperilaku sesuai ekspektasi.
+- Logika merge frontend (`_applyRingkasanData`) diuji manual — alert asli bertahan saat backend balas `null`, dan ter-clear saat backend balas `[]`.
+- `npm test` — 25/25 pass, tidak ada regresi di test suite existing.
+
+**Status:** fitur ini sekarang dianggap cukup andal untuk dipakai sebagai alur utama — catatan "ditunda" di `daun_merah_plan.md` dihapus.
 
 ## Changelog Session 139 (2026-07-03) — Alert Headline Kontra Buy/Sell Limit
 

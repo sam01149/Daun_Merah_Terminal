@@ -942,7 +942,7 @@ module.exports = async function handler(req, res) {
     return _biasUpdated;
   })() : Promise.resolve([]);
 
-  const _call4Promise = ((SAMBANOVA_KEY || GROQ_KEY) && deviceId) ? (async () => {
+  const _call4Promise = ((SAMBANOVA_KEY || GROQ_KEY) && deviceId && recentItems.length > 0) ? (async () => {
     try {
       const ids4 = await redisCmd('ZRANGE', `journal_index:${deviceId}`, 0, -1, 'REV') || [];
       const openEntries = [];
@@ -958,15 +958,18 @@ module.exports = async function handler(req, res) {
       if (openEntries.length === 0) { console.log('Call 4: no open entries, skipping'); return null; }
       console.log('Call 4: checking', openEntries.length, 'open entries against headlines');
       const thesesBlock = openEntries.map((e, i) => `${i+1}. [ID:${e.id}] ${e.pair} ${(e.direction||'').toUpperCase()}: ${e.thesis_text}`).join('\n');
-      const headlines30 = recentItems.slice(0, 30).map((h, i) => `${i+1}. ${h.title}`).join('\n');
+      const headlineTitles = recentItems.slice(0, 30).map(h => h.title);
+      const headlines30 = headlineTitles.map((t, i) => `${i+1}. ${t}`).join('\n');
       const monitorPrompt = [
         'You are a forex trade thesis monitor.', '',
         'Open trade theses:', thesesBlock, '', 'Recent headlines (newest first):', headlines30, '',
         'Check if ANY headline directly contradicts or significantly undermines the stated reason for ANY open thesis.',
         'Only flag genuine contradictions — news that directly opposes the trade direction rationale, not tangentially related news.',
         'Ignore price-level headlines; focus on fundamental basis changes (macro data, CB policy shifts, geopolitical reversals).', '',
+        'The "headline" field MUST be copied verbatim, character-for-character, from the numbered list above — do not paraphrase or summarize it.',
+        'The "entry_id" field MUST be copied verbatim from the [ID:...] tag of the thesis it contradicts.', '',
         'Return ONLY valid JSON, no markdown, no explanation:',
-        '{"alerts":[{"entry_id":"...","pair":"...","direction":"...","headline":"exact headline text","reason":"one sentence why this contradicts the thesis"}]}',
+        '{"alerts":[{"entry_id":"...","headline":"exact headline text copied from the list above","reason":"one sentence why this contradicts the thesis"}]}',
         'If no genuine contradictions found: {"alerts":[]}',
       ].join('\n');
       const call4Messages = [{ role: 'user', content: monitorPrompt }];
@@ -994,13 +997,36 @@ module.exports = async function handler(req, res) {
       if (!raw4) return null;
       const parsed4 = JSON.parse(raw4.replace(/```json|```/g, '').trim());
       if (!Array.isArray(parsed4.alerts)) return null;
-      console.log('Call 4: found', parsed4.alerts.length, 'alert(s)');
-      if (parsed4.alerts.length > 0) {
-        redisCmd('SET', `thesis_alerts:${deviceId}`, JSON.stringify(parsed4.alerts), 'EX', 1800).catch(() => {});
+      // A2.4: don't trust AI-echoed pair/direction/headline blindly — an LLM restating
+      // structured fields drifts (e.g. "buy" instead of "long"), which silently breaks
+      // the pair+direction match downstream and makes the alert invisible everywhere.
+      // Cross-reference entry_id against server-known openEntries for pair/direction
+      // (ground truth), and require the headline to appear verbatim in the source list
+      // sent to the model — this rejects hallucinated "evidence" instead of showing a
+      // trader a citation that was never actually published.
+      const entryById = new Map(openEntries.map(e => [String(e.id), e]));
+      const headlineSet = new Set(headlineTitles.map(t => t.trim().toLowerCase()));
+      const validated = [];
+      for (const a of parsed4.alerts) {
+        if (!a || typeof a !== 'object') continue;
+        const entry = entryById.get(String(a.entry_id));
+        if (!entry) { console.warn('Call 4: dropped alert — unknown entry_id', a.entry_id); continue; }
+        const headline = typeof a.headline === 'string' ? a.headline.trim() : '';
+        if (!headline || !headlineSet.has(headline.toLowerCase())) {
+          console.warn('Call 4: dropped alert — headline not verbatim in source feed:', headline.slice(0, 80));
+          continue;
+        }
+        const reason = typeof a.reason === 'string' ? a.reason.trim() : '';
+        if (!reason) continue;
+        validated.push({ entry_id: entry.id, pair: entry.pair, direction: entry.direction, headline, reason });
+      }
+      console.log('Call 4: found', parsed4.alerts.length, 'raw alert(s),', validated.length, 'validated');
+      if (validated.length > 0) {
+        redisCmd('SET', `thesis_alerts:${deviceId}`, JSON.stringify(validated), 'EX', 1800).catch(() => {});
       } else {
         redisCmd('DEL', `thesis_alerts:${deviceId}`).catch(() => {});
       }
-      return parsed4.alerts;
+      return validated;
     } catch(e) { console.warn('Call 4 Thesis Monitor failed:', e.message); return null; }
   })() : Promise.resolve(null);
 
@@ -1465,8 +1491,11 @@ ${xauHistoryBlock}`;
   }
 
   // ── 8. Await Call 4 (ran concurrently with Call 1) ───────────────────────────
-  const _rawAlerts = await _call4Promise;
-  const thesisAlerts = (method !== 'fallback' && method !== 'fallback_quota') ? _rawAlerts : null;
+  // A2.4: Call 4 is an independent AI call from Call 1 (article prose) — its result
+  // must not be discarded just because Call 1 fell back to the no-AI summary. A
+  // Call 1 failure (quota, provider outage) previously wiped out real, already-
+  // validated thesis_alerts, silently hiding genuine contra-headline warnings.
+  const thesisAlerts = await _call4Promise;
 
   // ── Auto-update fundamental data + CB decisions from headlines ───────────────
   try {
