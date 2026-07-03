@@ -13,6 +13,7 @@ const DEVICE_ID_RE   = /^[A-Za-z0-9_-]{1,64}$/;
 const MAX_BODY_BYTES = 32 * 1024; // entry punya thesis_text + snapshot CB/COT
 const VALID_DIRECTIONS = new Set(['long', 'short', '']);
 const VALID_STATUS     = new Set(['open', 'closed', 'archived']);
+const VALID_FILL_STATE = new Set(['pending', 'filled', 'cancelled']);
 
 function clampStr(v, max) {
   return typeof v === 'string' ? v.slice(0, max) : '';
@@ -177,6 +178,10 @@ module.exports = async function handler(req, res) {
       size_lots:         data.size_lots         != null ? parseFloat(data.size_lots)   : null,
       rr_planned:        data.rr_planned        != null ? parseFloat(data.rr_planned)  : null,
       time_horizon:      data.time_horizon      || '',
+      // pending-order tracking — see jnReconcilePendingOrders() in index.html
+      order_kind:        clampStr(data.order_kind, 20) || null,
+      mt5_ticket:        data.mt5_ticket        != null ? parseInt(data.mt5_ticket, 10) || null : null,
+      fill_state:        data.fill_state === 'pending' ? 'pending' : 'filled',
       // closed fields (filled on PATCH)
       status:            'open',
       exit_price:        null,
@@ -216,6 +221,9 @@ module.exports = async function handler(req, res) {
     if (data.status && !VALID_STATUS.has(data.status)) {
       return res.status(400).json({ error: 'status must be open/closed/archived' });
     }
+    if (data.fill_state && !VALID_FILL_STATE.has(data.fill_state)) {
+      return res.status(400).json({ error: 'fill_state must be pending/filled/cancelled' });
+    }
 
     try {
       const entryKey = `journal:${deviceId}:${id}`;
@@ -229,6 +237,7 @@ module.exports = async function handler(req, res) {
       if (data.r_actual      != null) entry.r_actual      = parseFloat(data.r_actual);
       if (data.attribution_notes         ) entry.attribution_notes = clampStr(data.attribution_notes, 8000);
       if (data.status                    ) entry.status          = data.status;
+      if (data.fill_state                ) entry.fill_state      = data.fill_state;
 
       // Auto-set closed_at when status becomes closed/archived
       if (data.status === 'closed' || data.status === 'archived') {

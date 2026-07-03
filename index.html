@@ -282,6 +282,8 @@ body {
 .jn-status.open     { background:#1a3a5e; color:#60a5fa; }
 .jn-status.closed   { background:#1a3a1a; color:var(--green); }
 .jn-status.archived { background:var(--border); color:var(--muted); }
+.jn-status.pending  { background:#3a2f1a; color:var(--yellow); }
+.jn-status.cancelled{ background:#3a1a1a; color:var(--accent); }
 .jn-tabs { display:flex; gap:0; border-bottom:1px solid var(--border); margin-bottom:16px; }
 .jn-tab  { background:none; border:none; border-bottom:2px solid transparent; color:var(--muted); padding:8px 14px; font-family:'DM Mono',monospace; font-size:10px; cursor:pointer; letter-spacing:.05em; }
 .jn-tab.active { color:var(--pink); border-bottom-color:var(--pink); }
@@ -8835,6 +8837,7 @@ async function ckMt5AutoJournal(pair, direction, fill, lots, sl, tp) {
   const sizing = window._lastSizing && window._lastSizing.pair === pair ? window._lastSizing : null;
   const plannedEntry = sizing && sizing.entry != null ? sizing.entry : null;
   const orderKind = fill.order_kind || (plannedEntry != null ? 'limit' : 'market');
+  const fillState = orderKind === 'market' ? 'filled' : 'pending';
 
   // Bangun thesis dari checklist (sama seperti ckPrefillJurnal)
   const lines = [
@@ -8891,6 +8894,8 @@ async function ckMt5AutoJournal(pair, direction, fill, lots, sl, tp) {
     pair,
     direction,
     order_kind:     orderKind,
+    mt5_ticket:       fill.ticket || null,
+    fill_state:       fillState,
     thesis_text:      lines.join('\n'),
     entry_price:      plannedEntry != null ? plannedEntry : fill.fill_price,
     stop_price:       sl || null,
@@ -10071,6 +10076,62 @@ async function jnFetchLivePrices() {
   jnRenderEntries();
 }
 
+// Cross-checks pending limit/stop orders against MT5 directly. Without this, a
+// journal entry's fill_state never changes on its own — a pending order that
+// actually got filled (or cancelled/expired) in MT5 would show "PENDING"
+// forever until the user notices and fixes it manually. The bridge only
+// answers on localhost, so this silently no-ops when viewed from another
+// device or when the PC/bridge is offline — the badge just keeps its last
+// known state rather than guessing from a delayed price quote (see jn-status
+// design note: deliberately no "possibly filled" estimate, only confirmed
+// MT5 state).
+let jnLastReconcileTs = 0;
+async function jnReconcilePendingOrders() {
+  const pending = jnAllEntries.filter(e => e.status === 'open' && e.fill_state === 'pending' && e.mt5_ticket != null);
+  if (pending.length === 0) return;
+  const now = Date.now();
+  if (now - jnLastReconcileTs < 20000) return;
+  jnLastReconcileTs = now;
+
+  try {
+    const health = await fetch(MT5_BRIDGE + '/health', { signal: AbortSignal.timeout(2000) });
+    if (!health.ok) return;
+    const hd = await health.json();
+    if (hd.status !== 'ok') return;
+
+    const [posRes, ordRes] = await Promise.all([
+      fetch(MT5_BRIDGE + '/positions', { signal: AbortSignal.timeout(4000) }),
+      fetch(MT5_BRIDGE + '/orders',    { signal: AbortSignal.timeout(4000) }),
+    ]);
+    if (!posRes.ok || !ordRes.ok) return; // old bridge without /orders yet, or transient error — leave as-is
+    const posData = await posRes.json();
+    const ordData = await ordRes.json();
+    const filledTickets  = new Set((posData.positions || []).map(p => p.ticket));
+    const pendingTickets = new Set((ordData.orders    || []).map(o => o.ticket));
+
+    const deviceId = szGetDeviceId();
+    let changed = false;
+    await Promise.all(pending.map(async (e) => {
+      let newState = null;
+      if (filledTickets.has(e.mt5_ticket)) newState = 'filled';
+      else if (!pendingTickets.has(e.mt5_ticket)) newState = 'cancelled'; // gone from both = cancelled/expired in MT5
+      if (!newState) return; // still resting — no change
+
+      e.fill_state = newState;
+      changed = true;
+      try {
+        await fetch(`/api/journal?device_id=${encodeURIComponent(deviceId)}&id=${encodeURIComponent(e.id)}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ fill_state: newState }),
+          signal: AbortSignal.timeout(6000),
+        });
+      } catch(_) {}
+    }));
+    if (changed) jnRenderEntries();
+  } catch(e) { /* bridge unreachable — leave last known state, no guess */ }
+}
+
 async function jnLoadEntries() {
   const deviceId = szGetDeviceId();
   const listEl = document.getElementById('jnList');
@@ -10095,6 +10156,7 @@ async function jnLoadEntries() {
     jnRenderEntries();
     jnRenderVaR();
     jnFetchLivePrices();
+    jnReconcilePendingOrders();
     if (document.getElementById('jnCurveView')?.style.display !== 'none') jnRenderCurve();
   } catch(e) {
     console.warn('jnLoad failed:', e.message);
@@ -10136,6 +10198,16 @@ function jnRenderEntries() {
     const rrStr    = e.rr_planned ? ` · RR ${e.rr_planned}:1` : '';
     const rActStr  = e.r_actual != null ? ` · Actual ${e.r_actual >= 0 ? '+' : ''}${e.r_actual}R` : '';
     const lotsStr  = e.size_lots ? ` · ${e.size_lots} lots` : '';
+
+    // fill_state (pending/filled/cancelled) is only meaningful while status is
+    // still 'open' — a resting limit/stop order not yet triggered in MT5 shows
+    // its own badge instead of the generic "OPEN" (see jnReconcilePendingOrders).
+    // Entries without fill_state (pre-existing trades, or market orders) fall
+    // through to the plain status badge, unchanged from before this feature.
+    const statusClass = e.status === 'open' && (e.fill_state === 'pending' || e.fill_state === 'cancelled') ? e.fill_state : e.status;
+    const statusLabel = e.status === 'open' && e.fill_state === 'pending'   ? 'PENDING'
+                       : e.status === 'open' && e.fill_state === 'cancelled' ? 'DIBATALKAN'
+                       : e.status.toUpperCase();
 
     // Price row
     const priceParts = [];
@@ -10186,7 +10258,7 @@ function jnRenderEntries() {
       </div>`;
     }
 
-    const closeBtn = e.status === 'open'
+    const closeBtn = e.status === 'open' && e.fill_state !== 'pending' && e.fill_state !== 'cancelled'
       ? `<button class="jn-btn-sec" style="font-size:9px" onclick="jnStartClose('${e.id}')">Tutup</button>`
       : '';
     const archBtn = e.status === 'archived'
@@ -10203,7 +10275,7 @@ function jnRenderEntries() {
       <div class="jn-card-hdr">
         <span class="jn-pair">${e.pair}</span>
         <div style="display:flex;align-items:center;gap:6px">
-          <span class="jn-status ${e.status}">${e.status.toUpperCase()}</span>
+          <span class="jn-status ${statusClass}">${statusLabel}</span>
           <span class="jn-dir ${e.direction}">${e.direction.toUpperCase()}</span>
         </div>
       </div>
@@ -10228,7 +10300,10 @@ async function jnRenderVaR() {
   if (!card) return;
 
   const openEntries = jnAllEntries.filter(e =>
-    e.status === 'open' && e.entry_price != null && e.stop_price != null && e.size_lots != null
+    // Exclude pending (not yet triggered) and cancelled (never triggered) —
+    // neither has a live MT5 position, so neither is real risk right now.
+    // "POSISI OPEN" below should only count trades actually filled in MT5.
+    e.status === 'open' && e.fill_state !== 'pending' && e.fill_state !== 'cancelled' && e.entry_price != null && e.stop_price != null && e.size_lots != null
   );
   if (openEntries.length === 0) { card.innerHTML = ''; return; }
 
@@ -10404,7 +10479,11 @@ function jnExportCSV() {
     fmtDate(e.created_at),
     e.pair,
     e.direction,
-    e.status,
+    // Same derived label as the JURNAL card badge — a resting pending order
+    // shouldn't export as plain "open" any more than it should show that way on-screen.
+    e.status === 'open' && e.fill_state === 'pending'   ? 'pending'
+      : e.status === 'open' && e.fill_state === 'cancelled' ? 'cancelled'
+      : e.status,
     e.entry_price  != null ? e.entry_price  : '',
     e.stop_price   != null ? e.stop_price   : '',
     e.target_price != null ? e.target_price : '',

@@ -1,9 +1,40 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-07-03 (session 141 — fix bug MT5 entry tereksekusi market price bukan pending price, tambah Hapus permanen jurnal, migrasi cron ke GitHub Actions, ANALISA XAU/USD auto-generate per sesi)
+> **Last updated:** 2026-07-03 (session 142 — jurnal sekarang bedakan status PENDING/OPEN/DIBATALKAN untuk limit & stop order, direkonsiliasi otomatis ke MT5)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
+
+---
+
+## Changelog Session 142 (2026-07-03) — Status Jurnal PENDING vs OPEN untuk Pending Order
+
+**Masalah (ditemukan lewat pertanyaan user):** entri jurnal untuk pending order (buy/sell limit yang di-set dari Sizing Calculator, belum tersentuh harga) selalu tampil badge **"OPEN"** — identik dengan trade yang sudah benar-benar terisi. Investigasi lanjut menemukan dua gap sekaligus:
+1. Frontend sudah menghitung `order_kind` (`'limit'`/`'market'`) sejak lama dan mengirimnya ke `POST /api/journal`, tapi backend **tidak pernah menyimpannya** — dibuang begitu saja.
+2. Tidak ada mekanisme apapun (di `mt5_bridge.py`, `index.html`, atau `api/`) yang mendeteksi kapan sebuah pending order benar-benar ke-fill di MT5. `mt5_bridge.py` bersifat fire-and-forget: kirim order sekali, tidak pernah cek balik. Endpoint `/positions` di bridge sudah ada sejak lama ("untuk cross-check dengan jurnal" per komentarnya sendiri) tapi tidak pernah dipanggil dari frontend — dead code.
+
+**Keputusan desain (didiskusikan dengan user sebelum implementasi):** rekonsiliasi status HANYA boleh berdasar data MT5 yang terkonfirmasi (lewat bridge), bukan tebakan dari harga live yang delay. Sempat dipertimbangkan fallback "kemungkinan terisi" berbasis perbandingan harga saat bridge tidak bisa dijangkau (mis. akses dari HP), tapi ditolak karena berisiko flip-flop/salah dan mengikis kepercayaan pada badge — konsisten dengan prinsip yang sudah dipakai di baris "Harga sekarang" (`index.html`, komentar dekat `jnFetchLivePrices`): tidak overclaim presisi dari data yang bukan realtime. Kalau bridge tidak reachable, badge PENDING cukup tetap apa adanya (last known state), user bandingkan manual lewat baris Entry vs Harga sekarang yang sudah ada.
+
+**Implementasi:**
+- `mt5_bridge.py`: endpoint baru `GET /orders` (`mt5.orders_get()`) — daftar pending order yang masih resting. Dipakai bareng `/positions` yang sudah ada: ticket ada di `/positions` → sudah terisi; ada di `/orders` → masih pending; tidak ada di keduanya → dibatalkan/expired di MT5. Tidak bump `BRIDGE_VERSION` (endpoint baru murni, tidak mengubah logika `/order` yang sudah digate versi).
+- `api/journal.js`: entry sekarang menyimpan `order_kind`, `mt5_ticket` (dari `fill.ticket` saat order dikonfirmasi), dan `fill_state` (`pending`/`filled`/`cancelled`, default `filled` untuk market order). PATCH menerima update `fill_state` untuk rekonsiliasi.
+- `index.html`:
+  - `ckMt5AutoJournal()`: kirim `mt5_ticket` + `fill_state` awal (`pending` untuk limit/stop, `filled` untuk market) ke jurnal.
+  - `jnReconcilePendingOrders()` (baru): dipanggil tiap `jnLoadEntries()` (buka tab JURNAL). Cek `/health` bridge dulu (short timeout, silent no-op kalau offline/dari device lain) — kalau online, tarik `/positions` + `/orders`, cocokkan `mt5_ticket` tiap entri `pending`, PATCH status baru ke server. Di-throttle 20 detik biar tidak spam saat re-render cepat.
+  - Badge JURNAL: `status==='open'` sekarang tampil **PENDING** (kuning) atau **DIBATALKAN** (merah) sesuai `fill_state`, bukan cuma "OPEN" generik. Entri lama tanpa `fill_state` tetap tampil "OPEN" seperti sebelumnya (backward-compatible).
+  - Tombol "Tutup" disembunyikan untuk entri `pending`/`cancelled` — tidak ada posisi nyata untuk ditutup.
+  - Portfolio Risk (`jnRenderVaR`) dan export CSV ikut dikoreksi supaya tidak menghitung/melabeli pending & cancelled order sebagai risiko/status "open" yang sudah live.
+
+**Bug ditemukan & diperbaiki lewat testing mandiri:** simulasi manual (skrip Node standalone, sama pola dengan verifikasi Call 4 session 140) awalnya menunjukkan entri `cancelled` masih ikut terhitung di Portfolio Risk — filter `jnRenderVaR` cuma exclude `pending`, lupa `cancelled`. Diperbaiki, re-test lolos semua skenario (market/pending/cancelled/legacy/closed/archived × badge, tombol Tutup, VaR, rekonsiliasi ticket-matching).
+
+**Batasan by-design (bukan bug):**
+- Rekonsiliasi cuma jalan kalau browser & bridge di PC yang sama (`localhost:5000` tidak reachable dari device lain) — dari HP, badge PENDING tetap apa adanya sampai user buka lagi dari PC.
+- Entri `cancelled` tidak auto-archive — sengaja dibiarkan manual (tombol Arsip yang sudah ada) supaya tidak diam-diam mengubah data user tanpa persetujuan, konsisten dengan pola hard-delete jurnal session 141.
+- `mt5_ticket` dari pending order diasumsikan sama dengan ticket posisi hasil eksekusinya (perilaku standar MT5 untuk single-fill tanpa netting) — kalau broker/setup user pakai skema hedging/netting yang mengubah ticket, rekonsiliasi bisa gagal match dan entri tetap PENDING selamanya (aman — gagal diam-diam ke "tidak tahu", bukan salah tampil "OPEN"/"DIBATALKAN").
+
+**Tindakan wajib dari user:** `mt5_bridge.py` gitignored (lokal-only) — restart proses (tutup jendela lama, jalankan ulang `start_bridge.bat`) supaya endpoint `/orders` baru aktif dan rekonsiliasi bisa jalan.
+
+**Verifikasi:** `node --check api/journal.js`, parse inline script `index.html`, `python -c "import ast; ast.parse(...)"` untuk `mt5_bridge.py`, `npm test` (25/25) — semua lolos. Simulasi logika badge/tombol/VaR/rekonsiliasi via skrip Node standalone — semua skenario sesuai ekspektasi setelah perbaikan bug VaR di atas. Eksekusi live (limit order sungguhan sampai fill/cancel di MT5) belum diverifikasi dari sini — perlu ditest langsung oleh user dengan bridge & MT5 terminal aktif.
 
 ---
 
