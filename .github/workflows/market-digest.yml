@@ -26,3 +26,20 @@ jobs:
             echo "Digest generation failed with HTTP $STATUS"
             exit 1
           fi
+
+      # Runs after the digest step (not parallel) so it can pick up the freshly
+      # cached article for macro context (see the "XAUUSD:" excerpt fallback in
+      # ohlcvAnalyzeHandler, api/admin.js). if: always() so a digest hiccup doesn't
+      # also block this — it just falls back to technical-only context.
+      - name: Trigger XAU/USD ANALISA generation
+        if: always()
+        run: |
+          STATUS=$(curl -s -o /tmp/resp2.json -w "%{http_code}" \
+            -H "x-cron-secret: ${{ secrets.CRON_SECRET }}" \
+            --max-time 55 \
+            "https://financial-feed-app.vercel.app/api/admin?action=ohlcv_analyze&symbol=GC%3DF&label=XAU%2FUSD")
+          cat /tmp/resp2.json
+          if [ "$STATUS" -ne 200 ]; then
+            echo "XAU/USD analysis failed with HTTP $STATUS"
+            exit 1
+          fi

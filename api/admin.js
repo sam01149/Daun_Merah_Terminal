@@ -1701,9 +1701,39 @@ async function ohlcvAnalyzeHandler(req, res) {
 
   const symbol = req.query.symbol || req.body?.symbol;
   const label  = req.query.label  || req.body?.label;
-  const ringkasanContext = req.body?.ringkasanContext || null;
-  const clientOhlcv      = req.body?.ohlcvData       || null;
   if (!symbol) return res.status(400).json({ error: 'symbol required' });
+
+  // Read-only path: return whatever the last successful analysis for this symbol
+  // was (session cron or an earlier manual click) without spending an AI call —
+  // used by the frontend to auto-show XAU/USD analysis when the tab opens.
+  if (req.query.mode === 'cached') {
+    try {
+      const raw = await redisCmd('GET', `ohlcv_analysis:${symbol}`);
+      if (!raw) return res.status(200).json({ commentary: null, structured: null, cached: false });
+      return res.status(200).json({ ...JSON.parse(raw), cached: true });
+    } catch(e) {
+      return res.status(200).json({ commentary: null, structured: null, cached: false });
+    }
+  }
+
+  let ringkasanContext = req.body?.ringkasanContext || null;
+  const clientOhlcv    = req.body?.ohlcvData       || null;
+
+  // Cron-triggered calls have no browser to extract the "XAUUSD:" excerpt from the
+  // Ringkasan article the way analyzeOhlcvAi() does client-side (index.html) — mirror
+  // that extraction here so the auto-generated session analysis still gets macro
+  // framing instead of technical-only.
+  if (!ringkasanContext && symbol === 'GC=F') {
+    try {
+      const rawArticle = await redisCmd('GET', 'latest_article');
+      if (rawArticle) {
+        const art = (JSON.parse(rawArticle).article || '').replace(/\{\{TAG:[^}]*\}\}/g, '').trim();
+        const xauIdx = art.search(/\bXAUUSD:/);
+        const excerpt = xauIdx !== -1 ? art.slice(xauIdx) : art.split(/\n\n+/).slice(0, 3).join('\n\n');
+        if (excerpt) ringkasanContext = excerpt.length > 700 ? excerpt.slice(0, 697) + '...' : excerpt;
+      }
+    } catch(e) { /* opsional — analisa tetap jalan tanpa konteks makro */ }
+  }
 
   try {
     let data = await loadOhlcvData(symbol, label || symbol);
@@ -1880,7 +1910,11 @@ async function ohlcvAnalyzeHandler(req, res) {
       }
     }
 
-    return res.status(200).json({ commentary, structured, model, loaded_at: new Date().toISOString() });
+    const resultPayload = { commentary, structured, model, hasMakro: !!ringkasanContext, loaded_at: new Date().toISOString() };
+    if (commentary || structured) {
+      redisCmd('SET', `ohlcv_analysis:${symbol}`, JSON.stringify(resultPayload), 'EX', 21600).catch(() => {});
+    }
+    return res.status(200).json(resultPayload);
   } catch(e) {
     return res.status(500).json({ error: e.message });
   }

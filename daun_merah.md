@@ -1,11 +1,27 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-07-03 (session 141 — fix bug MT5 entry tereksekusi market price bukan pending price, tambah Hapus permanen jurnal)
+> **Last updated:** 2026-07-03 (session 141 — fix bug MT5 entry tereksekusi market price bukan pending price, tambah Hapus permanen jurnal, migrasi cron ke GitHub Actions, ANALISA XAU/USD auto-generate per sesi)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 
 ---
+
+### ANALISA XAU/USD: auto-generate per sesi (menyusul migrasi cron market-digest)
+
+**Masalah:** tab ANALISA (teknikal + AI entry/SL/TP per pair) sepenuhnya manual — user harus klik "🧠 AI" tiap kali, dan hasilnya cuma tersimpan di client (localStorage, 8h). User minta perilaku yang sama seperti Ringkasan (auto per sesi Asia/London/NY), tapi dibatasi khusus XAU/USD saja (bukan 8 pair sekaligus).
+
+**Implementasi:**
+- `api/admin.js` (`ohlcvAnalyzeHandler`):
+  - Hasil analisa yang berhasil sekarang di-cache ke Redis (`ohlcv_analysis:{symbol}`, TTL 6 jam) — sebelumnya cuma dikembalikan ke caller, tidak pernah disimpan server-side.
+  - Tambah `mode=cached` — baca-saja dari cache Redis tanpa panggil AI, dipakai frontend untuk auto-load tanpa boros budget AI.
+  - Kalau caller tidak kirim `ringkasanContext` (kasus panggilan cron — tidak ada browser buat ekstrak) DAN symbol-nya XAU (`GC=F`), backend sendiri baca `latest_article` dari Redis dan ekstrak bagian `XAUUSD:`-nya — meniru logika ekstraksi yang sebelumnya cuma ada di client (`analyzeOhlcvAi()`), supaya analisa otomatis tetap dapat konteks makro, bukan teknikal-only.
+- `.github/workflows/market-digest.yml`: tambah step kedua ("Trigger XAU/USD ANALISA generation") setelah step digest, `if: always()` supaya tetap jalan walau step digest gagal (fallback ke teknikal-only). Jadwal sama persis (3x/hari, sesi Asia/London/NY) — sengaja dirantai SETELAH digest supaya `latest_article` sudah fresh saat analisa XAU dijalankan.
+- `index.html`: `loadAnalisa()` — kalau pair yang dibuka XAU/USD (`GC=F`) dan belum ada cache AI di client, otomatis fetch `mode=cached` dan render langsung (`_autoLoadXauAnalysis`) — tidak perlu klik apapun. Pair lain tetap manual-only seperti sebelumnya. Tombol "Analisa AI" manual tetap berfungsi penuh untuk re-generate fresh kapan saja (termasuk untuk XAU).
+
+**Keputusan desain (dikonfirmasi user):** auto-*tampil* langsung begitu tab ANALISA→XAU/USD dibuka (bukan cuma pre-warm cache diam-diam yang masih perlu diklik manual).
+
+**Verifikasi:** `node --check api/admin.js`, parse inline script `index.html`, `python -c "import yaml; yaml.safe_load(...)"` untuk workflow YAML, `npm test` (25/25) — semua lolos. Eksekusi live belum diverifikasi (nunggu jadwal cron berikutnya atau trigger manual via `workflow_dispatch`).
 
 ## Changelog Session 141 (2026-07-03) — Bug MT5 Entry Eksekusi di Harga Market, Bukan Harga Pending yang Di-set
 
