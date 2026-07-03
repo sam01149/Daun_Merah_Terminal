@@ -3218,7 +3218,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
     </div>
     <div style="font-size:11px;color:var(--muted);margin-bottom:14px">
       Pair: <span id="mt5ModalPair" style="color:var(--text);font-weight:700;font-family:'DM Mono',monospace"></span>
-      &nbsp;·&nbsp; Market Order
+      &nbsp;·&nbsp; <span id="mt5ModalOrderKind">Market Order</span>
     </div>
     <div id="mt5ModalNoSizing" style="display:none;padding:12px 10px;background:rgba(192,57,43,.08);border:1px solid rgba(192,57,43,.25);border-radius:8px;font-size:10px;color:var(--text);line-height:1.6;margin-bottom:12px">
       ⚠ Belum ada hasil Sizing Calculator untuk pair ini. Lot/SL/TP tidak boleh diisi manual di sini — hitung dulu di Sizing Calculator agar angkanya objektif, bukan tebakan saat itu.
@@ -3231,6 +3231,10 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
           <option value="long">LONG (Buy)</option>
           <option value="short">SHORT (Sell)</option>
         </select>
+      </div>
+      <div>
+        <div style="font-size:9px;color:var(--muted);letter-spacing:.8px;text-transform:uppercase;margin-bottom:5px">Entry Price <span style="color:var(--pink)">🔒 dari Sizing Calculator</span></div>
+        <input id="mt5ModalEntry" type="number" step="0.00001" placeholder="0 = market order" readonly style="width:100%;background:var(--bg);color:var(--text);border:1px solid var(--border);padding:8px 10px;border-radius:6px;font-family:'DM Mono',monospace;font-size:11px;box-sizing:border-box;opacity:.75;cursor:not-allowed">
       </div>
       <div>
         <div style="font-size:9px;color:var(--muted);letter-spacing:.8px;text-transform:uppercase;margin-bottom:5px">Lot Size <span style="color:var(--green)">🔒 dari Sizing Calculator</span></div>
@@ -3249,7 +3253,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
     </div>
     <div id="mt5ModalStatus" style="margin-top:10px;font-size:10px;color:var(--muted);min-height:16px"></div>
     <div style="margin-top:8px;padding:8px 10px;background:rgba(192,57,43,.07);border:1px solid rgba(192,57,43,.2);border-radius:6px;font-size:9px;color:var(--muted);line-height:1.5">
-      ⚠ Order market langsung dieksekusi ke akun MT5. Pastikan <code style="font-size:9px;color:var(--text)">mt5_bridge.py</code> sudah berjalan di PC kamu.
+      ⚠ Kalau Entry Price diisi, sistem akan kirim pending order di harga itu. Kalau kosong, baru market order langsung dieksekusi ke akun MT5. Pastikan <code style="font-size:9px;color:var(--text)">mt5_bridge.py</code> sudah berjalan di PC kamu.
     </div>
     <button id="mt5ModalConfirmBtn" onclick="ckMt5OrderConfirm()" style="width:100%;margin-top:12px;padding:12px;background:var(--green);color:#000;border:none;border-radius:8px;font-weight:700;font-size:11px;letter-spacing:.8px;text-transform:uppercase;cursor:pointer">Konfirmasi Entry</button>
     <button onclick="ckCloseMt5Modal()" style="width:100%;margin-top:7px;padding:10px;background:transparent;color:var(--muted);border:1px solid var(--border);border-radius:8px;font-size:10px;cursor:pointer">Batal</button>
@@ -3498,7 +3502,7 @@ async function loadCachedRingkasan() {
       // tick cooldown after render (button might have been re-created)
       if (Date.now() < ringkasanCooldownEnd) tickCooldown();
       if (data.thesis_alerts && data.thesis_alerts.length > 0) {
-        showToast('Thesis Alert', `${data.thesis_alerts.length} kontradiksi terdeteksi pada trade terbuka`, 5000);
+        showToast('Thesis Alert', `${data.thesis_alerts.length} headline kontra buy/sell limit terdeteksi pada trade terbuka`, 5000);
       }
     }
   } catch(e) { /* silent fail — user can still press Generate */ }
@@ -4188,7 +4192,7 @@ async function generateRingkasan() {
     renderRingkasan();
     if (data.bias_updated && data.bias_updated.length > 0) fetchCBStatus();
     if (data.thesis_alerts && data.thesis_alerts.length > 0) {
-      showToast('Thesis Alert', `${data.thesis_alerts.length} kontradiksi terdeteksi pada trade terbuka`, 5000);
+      showToast('Thesis Alert', `${data.thesis_alerts.length} headline kontra buy/sell limit terdeteksi pada trade terbuka`, 5000);
     }
   } catch(e) {
     showToast('Gagal', 'Ringkasan tidak merespons: ' + e.message, 4000);
@@ -4780,8 +4784,34 @@ function renderThesisAlerts(alerts) {
       <div class="thesis-alert-reason">${escHtml(a.reason)}</div>
     </div>`).join('');
   return `<div class="thesis-alert-card">
-    <div class="thesis-alert-header">Thesis Alert · ${alerts.length} kontradiksi terdeteksi</div>
+    <div class="thesis-alert-header">Thesis Alert · ${alerts.length} headline kontra buy/sell limit</div>
     ${items}
+  </div>`;
+}
+
+function _thesisAlertPairKey(pair) {
+  return (pair || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+}
+
+function getThesisAlertsForPair(pair, direction = null) {
+  const alerts = Array.isArray(ringkasanCache?.thesis_alerts) ? ringkasanCache.thesis_alerts : [];
+  if (!pair) return alerts;
+  const targetPair = _thesisAlertPairKey(pair);
+  return alerts.filter(a => {
+    if (_thesisAlertPairKey(a.pair) !== targetPair) return false;
+    if (!direction) return true;
+    return (a.direction || '').toLowerCase() === direction.toLowerCase();
+  });
+}
+
+function renderThesisAlertNotice(alerts) {
+  if (!alerts || alerts.length === 0) return '';
+  const first = alerts[0] || {};
+  const extra = alerts.length > 1 ? ` · +${alerts.length - 1} lain` : '';
+  return `<div style="margin:10px 0 14px;padding:10px 12px;border:1px solid rgba(244,114,182,0.35);border-radius:4px;background:rgba(244,114,182,0.08);font-family:'DM Mono',monospace;font-size:10px;line-height:1.5">
+    <div style="color:#f472b6;font-weight:700">⚠ ${alerts.length} headline kontra buy/sell limit${extra}</div>
+    <div style="margin-top:4px;color:var(--text-mid)">"${escHtml(first.headline || '')}"</div>
+    <div style="margin-top:2px;color:var(--muted)">${escHtml(first.reason || '')}</div>
   </div>`;
 }
 
@@ -8359,6 +8389,11 @@ function ckBuildUI() {
   mMt5Btn.onclick = ckShowMt5Modal;
   container.appendChild(mMt5Btn);
 
+  const limitAlert = document.createElement('div');
+  limitAlert.id = 'ckLimitAlert';
+  limitAlert.style.display = 'none';
+  container.appendChild(limitAlert);
+
   for (const sec of CK_SECTIONS) {
     const div = document.createElement('div');
     div.className = 'ck-sec';
@@ -8471,6 +8506,14 @@ function ckRender() {
   if (mp) mp.style.width = pct + '%';
   if (mc) mc.textContent = `${totalChecked}/${total}`;
 
+  const pair = document.getElementById('ckPairSelector')?.value || '';
+  const pairAlerts = getThesisAlertsForPair(pair);
+  const limitAlert = document.getElementById('ckLimitAlert');
+  if (limitAlert) {
+    limitAlert.style.display = pairAlerts.length > 0 ? 'block' : 'none';
+    limitAlert.innerHTML = pairAlerts.length > 0 ? renderThesisAlertNotice(pairAlerts) : '';
+  }
+
   const jBtn   = document.getElementById('ckJurnalBtn');
   const mjBtn  = document.getElementById('ckMobileJurnalBtn');
   const mt5Btn = document.getElementById('ckMt5Btn');
@@ -8565,6 +8608,15 @@ function ckPrefillJurnalAction(pct, verdict) {
     if (aiThesis.catalyst_dependency) lines.push(`  Katalis: ${aiThesis.catalyst_dependency}`);
     if (aiThesis.invalidation_condition) lines.push(`  Invalidasi jika: ${aiThesis.invalidation_condition}`);
   }
+
+  const thesisAlerts = getThesisAlertsForPair(pair, direction);
+  if (thesisAlerts.length > 0) {
+    lines.push(`\n— ALERT BUY/SELL LIMIT:`);
+    thesisAlerts.slice(0, 3).forEach(a => {
+      lines.push(`  ⚠ ${a.headline}`);
+      if (a.reason) lines.push(`    ${a.reason}`);
+    });
+  }
   CK_SECTIONS.forEach(sec => {
     const checked = sec.items.filter(it => ckState[it.id] === true);
     const missing = sec.items.filter(it => !ckState[it.id]);
@@ -8638,11 +8690,16 @@ function ckShowMt5ModalAction(pair) {
   // supaya angka eksekusi tetap objektif walau lagi terburu-buru/emosi.
   const sz = window._lastSizing;
   const matchSz = sz && sz.pair === pair && sz.lots && sz.slPrice && sz.tpPrice;
+  const hasEntry = matchSz && sz.entry != null && sz.entry !== '';
   document.getElementById('mt5ModalPair').textContent  = pair;
   document.getElementById('mt5ModalDir').value         = direction;
   document.getElementById('mt5ModalNoSizing').style.display = matchSz ? 'none' : 'block';
   document.getElementById('mt5ModalFields').style.display   = matchSz ? 'grid' : 'none';
   document.getElementById('mt5ModalConfirmBtn').style.display = matchSz ? 'block' : 'none';
+  const kindEl = document.getElementById('mt5ModalOrderKind');
+  if (kindEl) kindEl.textContent = hasEntry ? 'Pending Order' : 'Market Order';
+  const entryEl = document.getElementById('mt5ModalEntry');
+  if (entryEl) entryEl.value = hasEntry ? Number(sz.entry).toFixed(5) : '';
   document.getElementById('mt5ModalLots').value        = matchSz ? sz.lots : '';
   document.getElementById('mt5ModalSL').value          = matchSz ? sz.slPrice.toFixed(5) : '';
   document.getElementById('mt5ModalTP').value          = matchSz ? sz.tpPrice.toFixed(5) : '';
@@ -8685,6 +8742,7 @@ function ckGoToSizingFromModal() {
 async function ckMt5OrderConfirm() {
   const pair      = document.getElementById('mt5ModalPair').textContent.trim();
   const direction = document.getElementById('mt5ModalDir').value;
+  const entry     = parseFloat(document.getElementById('mt5ModalEntry').value) || 0;
   const lots      = parseFloat(document.getElementById('mt5ModalLots').value) || 0;
   const sl        = parseFloat(document.getElementById('mt5ModalSL').value) || 0;
   const tp        = parseFloat(document.getElementById('mt5ModalTP').value) || 0;
@@ -8698,7 +8756,7 @@ async function ckMt5OrderConfirm() {
     const res = await fetch(MT5_BRIDGE + '/order', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ symbol: pair, direction, lots, sl, tp }),
+      body: JSON.stringify({ symbol: pair, direction, lots, sl, tp, entry_price: entry || null }),
       signal: AbortSignal.timeout(15000),
     });
     const fill = await res.json();
@@ -8732,6 +8790,15 @@ async function ckMt5AutoJournal(pair, direction, fill, lots, sl, tp) {
   ];
   const speedNote = ckConsumeSpeedAckNote();
   if (speedNote) lines.push(speedNote);
+
+  const thesisAlerts = getThesisAlertsForPair(pair, direction);
+  if (thesisAlerts.length > 0) {
+    lines.push(`\n— ALERT BUY/SELL LIMIT:`);
+    thesisAlerts.slice(0, 3).forEach(a => {
+      lines.push(`  ⚠ ${a.headline}`);
+      if (a.reason) lines.push(`    ${a.reason}`);
+    });
+  }
   CK_SECTIONS.forEach(sec => {
     const checked = sec.items.filter(it => ckState[it.id] === true);
     const missing = sec.items.filter(it => !ckState[it.id]);
@@ -9631,6 +9698,8 @@ function calcSizing() {
     warnings.push(`SL (${stopPips} pip) lebih kecil dari ATR 14d (${szAtrData.atr_pips} pip) — risiko kena stop oleh noise harian`);
   }
 
+  const thesisAlerts = getThesisAlertsForPair(pair, szDir);
+
   // R-multiple table — rows: -2R to +3R
   const rDollar = dollarRisk;
   const dirSign = szDir === 'long' ? 1 : -1;
@@ -9689,6 +9758,7 @@ function calcSizing() {
       <div class="sz-main">${lots.toFixed(2)} lots <span style="font-size:14px;color:var(--muted)">${szDir.toUpperCase()}</span></div>
       <div class="sz-sub">${miniLots.toFixed(2)} mini · ${microLots.toFixed(2)} micro</div>
       <div class="sz-sub" style="margin-top:6px">At risk: <span style="color:var(--accent)">$${dollarRisk.toFixed(2)}</span> · Pip value: $${pipVal.toFixed(2)}/lot</div>
+      ${thesisAlerts.length > 0 ? renderThesisAlertNotice(thesisAlerts) : ''}
       ${dangerousEvents.length > 0 ? `<div style="margin-top:6px;padding:8px 10px;background:rgba(192,57,43,.1);border:1px solid var(--accent);border-radius:4px"><div style="color:var(--accent);font-weight:700;font-size:10px">⛔ Saran diskon 50% (event risk &lt;24 jam)</div><div style="font-size:13px;margin-top:2px">${(Math.floor(lots * 50) / 100).toFixed(2)} lots</div></div>` : ''}
       ${slStr}${tpStr}
       ${warnings.map(w => `<div style="color:var(--yellow);font-size:10px;margin-top:6px">⚠ ${w}</div>`).join('')}
@@ -9956,6 +10026,17 @@ async function jnLoadEntries() {
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const { entries } = await res.json();
     jnAllEntries = entries || [];
+    if ((!ringkasanCache || !Array.isArray(ringkasanCache.thesis_alerts)) && deviceId) {
+      try {
+        const digestRes = await fetch('/api/market-digest?mode=cached&device_id=' + encodeURIComponent(deviceId), { signal: AbortSignal.timeout(8000) });
+        if (digestRes.ok) {
+          const digest = await digestRes.json();
+          if (digest && Array.isArray(digest.thesis_alerts)) {
+            ringkasanCache = { ...(ringkasanCache || {}), thesis_alerts: digest.thesis_alerts };
+          }
+        }
+      } catch(e) {}
+    }
     jnRenderEntries();
     jnRenderVaR();
     jnFetchLivePrices();
@@ -10019,6 +10100,9 @@ function jnRenderEntries() {
       ? `<div style="font-size:10px;color:var(--text-mid);margin-top:2px;font-family:'DM Mono',monospace">Harga sekarang: ${jnFmtPrice(e.pair, live.price)}</div>`
       : '';
 
+    const thesisAlerts = e.status === 'open' ? getThesisAlertsForPair(e.pair, e.direction) : [];
+    const alertRow = thesisAlerts.length ? renderThesisAlertNotice(thesisAlerts) : '';
+
     // Excursion (MFE/MAE) — "execution reality check": shows whether price moved
     // favorably before the trade closed, so a loss can be read as panic-exit vs
     // thesis-was-wrong. Only shown when computeMfeMae() actually had OHLCV
@@ -10069,6 +10153,7 @@ function jnRenderEntries() {
       </div>
       ${priceRow}
       ${liveRow}
+      ${alertRow}
       ${excRow}
       ${thesisHtml}
       ${e.status === 'closed' && e.attribution_notes ? `<div style="font-size:10px;color:var(--muted);margin-top:4px;font-family:'DM Mono',monospace;font-style:italic">${e.attribution_notes.slice(0, 150)}${e.attribution_notes.length > 150 ? '…' : ''}</div>` : ''}

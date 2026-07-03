@@ -1,11 +1,19 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-07-03 (session 138 — audit menyeluruh SEMUA fitur: fungsional, desain/psikologi trader, sistem; temuan bug + kandidat data belum terpakai, menunggu konfirmasi user)
+> **Last updated:** 2026-07-03 (session 139 — alert headline kontra buy/sell limit diwire ke JURNAL / CHECKLIST / SIZING)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 
 ---
+
+## Changelog Session 139 (2026-07-03) — Alert Headline Kontra Buy/Sell Limit
+
+- `thesis_alerts` dari `market-digest` sekarang juga tampil di JURNAL, CHECKLIST, dan SIZING saat pair yang dipilih punya headline kontra.
+- Prefill JURNAL dari CHECKLIST dan auto-journal MT5 ikut menyertakan blok alert buy/sell limit supaya alasan entry lebih eksplisit.
+- Entry price dari SIZING ikut dipropagasi ke modal MT5 dan disimpan ke jurnal, jadi eksekusi pending order dan catatan trade memakai harga yang sama.
+- Copy alert diubah dari kontradiksi umum menjadi bahasa yang langsung menyebut headline kontra buy/sell limit.
+- Verifikasi: seluruh inline script di `index.html` lolos parse setelah perubahan.
 
 ## Ringkasan Proyek
 
