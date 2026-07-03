@@ -8910,12 +8910,24 @@ async function ckMt5AutoJournal(pair, direction, fill, lots, sl, tp) {
   };
 
   const deviceId = szGetDeviceId();
-  await fetch(`/api/journal?device_id=${encodeURIComponent(deviceId)}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-    signal: AbortSignal.timeout(8000),
-  }).catch(() => {});
+  try {
+    const jRes = await fetch(`/api/journal?device_id=${encodeURIComponent(deviceId)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!jRes.ok) {
+      const err = await jRes.json().catch(() => ({}));
+      throw new Error(err.error || `HTTP ${jRes.status}`);
+    }
+  } catch(e) {
+    // Order MT5 sudah sukses (ticket ada) tapi pencatatan jurnal gagal — sebelumnya
+    // error ini dibuang diam-diam (.catch(()=>{})), jadi trade nyangkut di MT5 tanpa
+    // jejak di jurnal dan user tidak pernah tahu kenapa. Sekarang ditandai eksplisit.
+    console.error('ckMt5AutoJournal gagal simpan ke jurnal:', e.message);
+    showToast('⚠ Jurnal Gagal Tersimpan', `Order MT5 #${fill.ticket} sukses, tapi gagal dicatat ke jurnal: ${e.message}. Catat manual via "+ BARU" di tab JURNAL.`, 9000);
+  }
 }
 
 function ptInitDeviceIdDisplay() {

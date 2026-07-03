@@ -36,6 +36,10 @@
 
 **Verifikasi:** `node --check api/journal.js`, parse inline script `index.html`, `python -c "import ast; ast.parse(...)"` untuk `mt5_bridge.py`, `npm test` (25/25) — semua lolos. Simulasi logika badge/tombol/VaR/rekonsiliasi via skrip Node standalone — semua skenario sesuai ekspektasi setelah perbaikan bug VaR di atas. Eksekusi live (limit order sungguhan sampai fill/cancel di MT5) belum diverifikasi dari sini — perlu ditest langsung oleh user dengan bridge & MT5 terminal aktif.
 
+**Bug lanjutan ditemukan saat user coba live (bukan simulasi):** user konfirmasi entry buy limit XAU/USD 0.02 @4090 dari Checklist — order sukses masuk MT5 (ticket #57392307105, terbukti dari screenshot terminal, status "placed"), tapi **entri jurnalnya sama sekali tidak muncul** di JURNAL, bukan cuma badge yang salah. Root cause: `ckMt5AutoJournal()` ( `index.html`) mem-POST ke `/api/journal` dengan `.catch(() => {})` di ujungnya — pola pre-existing (bukan diperkenalkan session ini) yang membungkam SEMUA kegagalan (network, rate limit, error server) tanpa jejak apapun, sementara toast "Order Masuk ✓" tetap muncul unconditional setelahnya seolah semuanya beres. User tidak pernah tahu jurnalnya gagal tersimpan.
+
+**Fix:** POST jurnal sekarang dibungkus try/catch yang cek `res.ok` — kalau gagal, muncul toast merah eksplisit "⚠ Jurnal Gagal Tersimpan" dengan ticket MT5 dan pesan error, plus saran catat manual via "+ BARU". Order MT5 tetap dianggap sukses (toast "Order Masuk ✓" tidak terpengaruh) — hanya kegagalan pencatatan jurnal yang sekarang terlihat. Root cause spesifik kenapa POST-nya gagal untuk kasus ticket #57392307105 belum diketahui (tidak ada akses log Vercel dari sini) — toast baru ini akan menangkap pesan error asli di percobaan berikutnya.
+
 ---
 
 ### ANALISA XAU/USD: auto-generate per sesi (menyusul migrasi cron market-digest)
