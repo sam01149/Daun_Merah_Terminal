@@ -8817,7 +8817,9 @@ async function ckMt5OrderConfirm() {
 
     ckCloseMt5Modal();
     await ckMt5AutoJournal(pair, direction, fill, lots, sl, tp);
-    showToast('Order Masuk ✓', `${pair} ${direction.toUpperCase()} @ ${fill.fill_price} · Ticket #${fill.ticket}`, 6000);
+    // entry (locked field, Sizing Calc) for pending orders; fill.fill_price is 0
+    // for those since MT5 only returns a real execution price for market deals.
+    showToast('Order Masuk ✓', `${pair} ${direction.toUpperCase()} @ ${entry || fill.fill_price} · Ticket #${fill.ticket}`, 6000);
 
   } catch(e) {
     const msg = (e.message.includes('fetch') || e.message.includes('Failed'))
@@ -8838,6 +8840,10 @@ async function ckMt5AutoJournal(pair, direction, fill, lots, sl, tp) {
   const plannedEntry = sizing && sizing.entry != null ? sizing.entry : null;
   const orderKind = fill.order_kind || (plannedEntry != null ? 'limit' : 'market');
   const fillState = orderKind === 'market' ? 'filled' : 'pending';
+  // MT5's order_send() result.price is only a real fill price for TRADE_ACTION_DEAL —
+  // for a pending order (TRADE_ACTION_PENDING) it comes back 0 since nothing has
+  // executed yet. Use the locked Sizing-Calc entry whenever this was a pending order.
+  const effectiveEntry = plannedEntry != null ? plannedEntry : fill.fill_price;
 
   // Bangun thesis dari checklist (sama seperti ckPrefillJurnal)
   const lines = [
@@ -8886,8 +8892,8 @@ async function ckMt5AutoJournal(pair, direction, fill, lots, sl, tp) {
   const cotAlign = cotAlignmentNote(base, quote, direction);
   if (cotAlign) lines.push(`\n${cotAlign.text}`);
 
-  const rrPlanned = fill.fill_price && sl && tp
-    ? Math.abs((tp - fill.fill_price) / (fill.fill_price - sl))
+  const rrPlanned = effectiveEntry && sl && tp
+    ? Math.abs((tp - effectiveEntry) / (effectiveEntry - sl))
     : null;
 
   const body = {
@@ -8897,7 +8903,7 @@ async function ckMt5AutoJournal(pair, direction, fill, lots, sl, tp) {
     mt5_ticket:       fill.ticket || null,
     fill_state:       fillState,
     thesis_text:      lines.join('\n'),
-    entry_price:      plannedEntry != null ? plannedEntry : fill.fill_price,
+    entry_price:      effectiveEntry,
     stop_price:       sl || null,
     target_price:     tp || null,
     size_lots:        lots,
