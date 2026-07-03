@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-07-02 (session 137 — audit & hardening 22 layer: security, error handling, data quality, AI budget guard, test suite, disclaimer, a11y, onboarding)
+> **Last updated:** 2026-07-03 (session 138 — audit menyeluruh SEMUA fitur: fungsional, desain/psikologi trader, sistem; temuan bug + kandidat data belum terpakai, menunggu konfirmasi user)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -157,7 +157,44 @@ Parser `parseCBRSSItems`: regex `<(?:item|entry)\b[^>]*>` — support RSS 2.0, A
 
 ---
 
+## Changelog Session 138 (2026-07-03) — Audit Menyeluruh Semua Fitur (fungsional + desain psikologi + sistem)
+
+Audit read-through 100% kode (20 file `api/`, `index.html` 12.464 baris, `sw.js`, `mt5_bridge.py`, `vercel.json`, 5 GitHub workflows). TIDAK ada kode yang diubah di sesi ini — hasilnya daftar temuan terprioritas + kandidat data belum terpakai, menunggu konfirmasi user sebelum eksekusi.
+
+### Temuan bug (belum difix — prioritas turun ke bawah)
+
+1. **[HIGH] XAU/USD pip-unit mismatch Sizing vs ATR.** `api/correlations.js` `action=atr` pakai `PIP_SIZE_MAP['XAU/USD'] = 0.1`, sedangkan frontend sizing (`calcSizing`/`szAutoComputePips`) pakai `0.01`. Akibat: peringatan "SL < ATR (noise)" dan angka "1d VaR" di hasil sizing salah 10× KHUSUS gold — SL gold yang sebenarnya lebih sempit dari ATR tidak pernah diperingatkan. Fix: samakan pip size (pilih satu konvensi) atau bandingkan dalam harga absolut, bukan pip.
+2. **[HIGH] XSS gap satu-satunya yang tersisa: judul berita di tab NEWS.** `renderFeed()` menyisipkan `${item.title}` TANPA `escHtml` ke innerHTML (baris ~3956). Semua render lain (dashboard, TEK, riset, kalender) sudah escape. Title datang dari RSS pihak ketiga (FinancialJuice + fallback Investinglive) — markup di judul akan tereksekusi. Fix 1 baris.
+3. **[MED] `CB_BIAS_LEVEL` frontend tidak kenal label bias yang sebenarnya dipakai.** Map cuma punya `very hawkish/hawkish/neutral/dovish/very dovish`, padahal vocabulary AI = `Hawkish/Cautious Hawkish/Neutral/Data Dependent/On Hold/Cautious Dovish/Dovish/Split`. Akibat: `Cautious Hawkish`/`Cautious Dovish` jatuh ke default 2 (netral) di (a) auto-tick checklist `_ckAutoSMC` (f1/f2/f3 tidak pernah nyala untuk bias cautious), (b) `_ckAutoMacro` (mm_cb1/mm_cb2), (c) rc5 alignment, (d) simulasi kalender `scenarioRankCurrencies`. Sementara `ckPrefillJurnal`/`ckShowMt5ModalAction` pakai map `BLVL` 6-level yang benar — tiga skala berbeda untuk konsep yang sama. Fix: satu map kanonik dipakai semua call site.
+4. **[MED] `sw.js` `detectCat` = salinan ketiga yang basi.** Masih punya `'flash'`,`'alert'` di market-moving, `'pmi'` di indexes, bare `'gdp'` di macro — fix Session 135 tidak diterapkan ke sini. Label kategori notifikasi background (periodicsync path) salah untuk rilis data.
+5. **[MED] Simulasi kalender → tombol "Buka CHECKLIST" tidak pernah memilih pair.** `scenarioRenderResults` mencocokkan `o.value.includes('EURUSD')` padahal value option ber-slash (`EUR/USD`) — selalu false, pair selector diam-diam tidak terisi (kelas bug yang sama dengan insiden "Lihat Gambar"). Juga `scenarioRankCurrencies` bisa menghasilkan pair non-konvensi (mis. `GBP/EUR`, `NZD/EUR`) yang tidak ada di SZ_PAIRS.
+6. **[MED] `api/journal.js` analyze: quote currency hilang dari prompt AI.** `e.pair.slice(3, 6)` pada pair ber-slash menghasilkan `"/US"` — CB bias quote currency tidak pernah masuk ringkasan trade untuk AI coach. Fix: split by `/`.
+7. **[MED] Formula VaR di hasil Sizing mencurigakan (double-count).** `1.645 × daily_sigma × (dollarRisk/stopPips) × atr_pips` mengalikan sigma DAN ATR (dua ukuran volatilitas). Versi jurnal (`jnRenderVaR`: `1.645 × sigma × notional`) sudah benar — samakan.
+8. **[MED] Health auto-clear cache justru menghapus jaring pengaman stale-serve.** Saat source DOWN, `admin?action=health` DELETE cache key source itu (mis. `cot_cache_v2`) — padahal handler-nya memakai cache stale sebagai fallback saat upstream mati. Selama outage panjang user malah dapat 502, bukan data lama. Rekomendasi: clear hanya saat RECOVERY, bukan saat DOWN.
+9. **[LOW] `APP_VERSION` tidak pernah di-bump** — masih `2026.06.29` padahal sesi 135–137 mengubah fungsionalitas; stempel anti-versi-lama-PWA kehilangan fungsinya.
+10. **[LOW] `mt5_bridge.py` CORS terbuka untuk semua origin tanpa auth** — halaman web mana pun yang terbuka di browser PC yang sama bisa POST order ke `localhost:5000/order`. Rekomendasi: batasi origin ke domain app + shared token.
+11. **[LOW] Dashboard `BIAS_COLORS` keys tidak cocok dengan vocabulary bias** (punya `very hawkish/very dovish` yang tidak ada; `Cautious */On Hold/Data Dependent/Split` tidak ada) → mayoritas pill bias tampil abu-abu, glanceability hilang.
+12. **[LOW] Kosmetik/konsistensi:** `toggleVoice` menimpa ikon SVG via `textContent`; label tombol Polymarket & Korelasi berubah setelah fetch pertama ("Refresh…" → "Muat…"); `KEY_REGISTRY` redis-keys ketinggalan banyak key baru (news_history, cot_history, ohlcv:*, ta:*, ai_budget:*, fx_options_cache, dll); health probe belum meng-cover Yahoo Finance (dependensi terbesar: OHLCV/TA/VIX/MOVE/spot/rates); `market-digest?mode=cached` tanpa rate limit; retry `fetchFeed` tiap 8s tanpa batas saat source down; keyword `'snb jordan'` usang.
+13. **[VERIFY] `vercel.json` punya 4 cron (3× market-digest sub-harian)** — limit Vercel Hobby historisnya 2 cron/harian. Perlu dicek di dashboard Vercel apakah semua benar-benar jalan, atau sebagian sebenarnya dilayani cron-job.org.
+
+### Audit desain / psikologi trader — kesimpulan
+
+- **Kuat (dipertahankan):** friction anti-FOMO berlapis (override wajib alasan kalimat nyata + blocklist kata pengisi, speed-flag typed ack yang tercatat permanen di jurnal, reset cooldown 60s, lot/SL/TP MT5 dikunci ke Sizing Calc, blokir risk >5%), anti-noise (tanpa floating P&L di posisi open — by design, quiet hours push 23:00–06:00 WIB, default push minimal, XAU history gate ≥3 headline), kejujuran data (badge umur candle/stale, provider log saat fallback, persentil 10 tahun di regime, disclaimer di semua output AI), alur SOP CAL→RINGKASAN→NEWS untuk pemula + onboarding sekali.
+- **Celah psikologi:** auto-tick `rc3` ("COT aligned dengan bias") menyala hanya karena DATA ADA, bukan karena benar-benar selaras — memberi otoritas palsu di gate; verdict `ENTRY` (≥90%) terbaca sebagai perintah (pertimbangkan "SETUP KUAT"); tooltip-only warnings (divergence, evidence dots) tidak terakses di mobile.
+
+### Kandidat data SUDAH dikumpulkan tapi BELUM dipakai untuk insight (menunggu konfirmasi user)
+
+1. **Forecast/Previous kalender → prompt digest Call 1/3** — parseFFXML di market-digest.js membuang field forecast/previous padahal instruksi prompt menuntut skenario beat/miss; nol fetch baru.
+2. **Polymarket probabilities → prompt digest** — sudah difetch & tampil di UI, belum pernah masuk konteks AI; odds real-money Fed/CPI adalah anchor objektif pelengkap rate path.
+3. **COT trend mingguan (`cot_history`) + konfluensi retail sentiment** — UI menyuruh user meng-eyeball konfluensi COT×retail, tapi tidak pernah dihitung; bisa memperbaiki auto-tick rc3 sekalian (fix temuan #bug di atas).
+4. **Option expiry gravity levels → `ohlcv_analyze`** — level magnet NY cut sudah diparse untuk TEK, relevan untuk entry/TP AI tapi tidak dikirim.
+5. **Yield differential 10Y antar negara (US/DE/JP/GB sudah difetch di daily-snapshot)** — differential per pair (driver klasik FX) tidak pernah dihitung/ditampilkan.
+
+---
+
 ## Changelog Session 137 (2026-07-02) — Audit & Hardening 22 Layer
+
+
 
 Audit menyeluruh terhadap 22 layer aplikasi (frontend → onboarding) berdasarkan daftar layer terdokumentasi, lalu perbaikan langsung untuk semua gap yang actionable. Hasil audit: beberapa klaim daftar layer sudah usang (rate limiter, circuit breaker, RSS fallback chain ternyata SUDAH ada), tapi ditemukan gap nyata di auth, validasi input, kuota AI, testing, legal, dan a11y — semua diperbaiki di sesi ini.
 
