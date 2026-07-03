@@ -321,15 +321,20 @@ module.exports = async function handler(req, res) {
       'AUD/CHF': 'AUDCHF=X', 'NZD/CAD': 'NZDCAD=X', 'NZD/CHF': 'NZDCHF=X',
       'CAD/CHF': 'CADCHF=X', 'XAU/USD': 'GC=F',
     };
+    // XAU: 0.01 — HARUS sama dengan konvensi pip Sizing Calculator di index.html
+    // (calcSizing/szAutoComputePips pakai 0.01 untuk gold). Sebelumnya 0.1 → atr_pips
+    // gold 10× lebih kecil dari satuan pip yang diketik user di form sizing, sehingga
+    // warning "SL < ATR" dan VaR gold salah 10×.
     const PIP_SIZE_MAP = {
       'USD/JPY': 0.01, 'EUR/JPY': 0.01, 'GBP/JPY': 0.01, 'AUD/JPY': 0.01,
-      'NZD/JPY': 0.01, 'CAD/JPY': 0.01, 'CHF/JPY': 0.01, 'XAU/USD': 0.1,
+      'NZD/JPY': 0.01, 'CAD/JPY': 0.01, 'CHF/JPY': 0.01, 'XAU/USD': 0.01,
     };
     const pipSize = PIP_SIZE_MAP[pairInput] || 0.0001;
     const symbol = YAHOO_SYMBOL_MAP[pairInput];
     if (!symbol) return res.status(400).json({ error: 'Unknown pair' });
 
-    const cacheKey = `atr:${symbol}`;
+    // v2: bust cache lama yang masih menyimpan atr_pips XAU dengan pip 0.1
+    const cacheKey = `atr_v2:${symbol}`;
     const cacheTTL = 14400;
 
     let sf;

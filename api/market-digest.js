@@ -512,7 +512,12 @@ module.exports = async function handler(req, res) {
     const until = diffH < 1 ? `${Math.round(diffH * 60)} menit` : `${Math.round(diffH)} jam`;
     return ` [AKAN RILIS dalam ${until}]`;
   }
-  const calBlock = calEvents.length > 0 ? calEvents.map(e=>`- ${e.date} | ${e.time_wib} | ${e.currency} | ${e.event}${_calEventStatusTag(e)}`).join('\n') : '(Tidak ada event high-impact)';
+  // Sertakan konsensus (Forecast/Previous) di tiap baris — bahan konkret untuk
+  // instruksi "asymmetri beat/miss" di prompt, bukan sekadar nama event.
+  const _calFP = e => (e.forecast || e.previous)
+    ? ` [F: ${e.forecast || '—'} | P: ${e.previous || '—'}]`
+    : '';
+  const calBlock = calEvents.length > 0 ? calEvents.map(e=>`- ${e.date} | ${e.time_wib} | ${e.currency} | ${e.event}${_calFP(e)}${_calEventStatusTag(e)}`).join('\n') : '(Tidak ada event high-impact)';
 
   // Gold-specific headline filter — split recent vs historical so AI weights correctly
   const cutoff12h = Date.now() - 12 * 60 * 60 * 1000;
@@ -1120,6 +1125,7 @@ ${headlinesBlock}
 ${goldBlock}
 
 === EVENT KALENDER EKONOMI HIGH-IMPACT (3 hari ke depan) ===
+(Tag [F: x | P: y] = konsensus Forecast & angka Previous — gunakan untuk menilai asymmetri beat/miss secara konkret: seberapa jauh konsensus dari previous menentukan skenario mana yang lebih mengejutkan market.)
 ${calBlock}
 
 === RINGKASAN SESI SEBELUMNYA (FX) ===
@@ -1555,9 +1561,13 @@ function parseFFXML(xml) {
     const block = m[1];
     const get = tag => { const r=new RegExp(`<${tag}>([\\s\\S]*?)<\\/${tag}>`).exec(block); if(!r)return''; return r[1].replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g,'$1').trim(); };
     const title=get('title'), country=get('country').toUpperCase(), date=get('date'), time=get('time'), impact=get('impact');
+    // forecast/previous ADA di XML ForexFactory tapi dulu dibuang — padahal prompt
+    // Call 1/3 menuntut skenario beat/miss per event; tanpa angka konsensus, AI
+    // menebak asimetrinya sendiri. Sekarang ikut dibawa ke calBlock.
+    const forecast=get('forecast'), previous=get('previous');
     if (!title||!country) continue;
     const dp=date.match(/(\d{2})-(\d{2})-(\d{4})/); if(!dp) continue;
-    events.push({ date:`${dp[3]}-${dp[1]}-${dp[2]}`, time_wib:convertToWIB(time), currency:country, event:title, impact });
+    events.push({ date:`${dp[3]}-${dp[1]}-${dp[2]}`, time_wib:convertToWIB(time), currency:country, event:title, impact, forecast:forecast||null, previous:previous||null });
   }
   return events;
 }

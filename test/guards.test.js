@@ -67,3 +67,29 @@ test('circuit breaker onSuccess/onFailure tidak melempar tanpa Redis env', async
   await assert.doesNotReject(cb.onSuccess('test-source'));
   await assert.doesNotReject(cb.onFailure('test-source'));
 });
+
+// ── admin.js _pickExpiryLevels (option expiry → ohlcv_analyze, sesi 138) ─────
+
+const { _pickExpiryLevels } = require('../api/admin.js');
+
+test('_pickExpiryLevels: filter pair, buang non-numeric, urut terdekat ke harga, cap 6', () => {
+  const expiries = [
+    { pair: 'EUR/USD', level: '1.0850', size: 'EU1.2b' },
+    { pair: 'EUR/USD', level: '1.0900', size: '' },
+    { pair: 'EUR/USD', level: '1.0700', size: '500m' },
+    { pair: 'GBP/USD', level: '1.2700', size: '' },
+    { pair: 'EUR/USD', level: 'abc',    size: '' },
+  ];
+  const r = _pickExpiryLevels(expiries, 'EUR/USD', 1.0855);
+  assert.strictEqual(r.length, 3);
+  assert.strictEqual(r[0].level, '1.0850'); // terdekat ke 1.0855
+  assert.strictEqual(r[1].level, '1.0900');
+  assert.strictEqual(r[2].level, '1.0700');
+});
+
+test('_pickExpiryLevels: label tanpa slash match, null-safe, cap 6', () => {
+  assert.deepStrictEqual(_pickExpiryLevels(null, 'EUR/USD', 1), []);
+  assert.deepStrictEqual(_pickExpiryLevels([], null, 1), []);
+  const many = Array.from({ length: 10 }, (_, i) => ({ pair: 'EUR/USD', level: (1.05 + i * 0.01).toFixed(4), size: '' }));
+  assert.strictEqual(_pickExpiryLevels(many, 'EURUSD', 1.05).length, 6);
+});

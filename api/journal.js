@@ -296,7 +296,11 @@ module.exports = async function handler(req, res) {
       const cotInfo = e.cot_snapshot ? Object.entries(e.cot_snapshot).map(([c, v]) => `${c} COT net=${v.lev_net}${v.lev_change_net != null ? ` (Δ${v.lev_change_net >= 0 ? '+' : ''}${v.lev_change_net})` : ''}`).join(', ') : 'no COT';
       const alignInfo = e.cot_alignment === true ? 'selaras smart money' : e.cot_alignment === false ? 'KONTRA smart money' : null;
       const entryDate = e.created_at ? e.created_at.slice(0, 10) : 'N/A';
-      const pairCurrencies = e.pair ? [e.pair.slice(0, 3), e.pair.slice(3, 6)] : [];
+      // Pair tersimpan ber-slash ("EUR/USD") — slice(3,6) lama menghasilkan "/US",
+      // sehingga CB bias quote currency tidak pernah masuk prompt AI coach.
+      const pairCurrencies = e.pair
+        ? (e.pair.includes('/') ? e.pair.split('/') : [e.pair.slice(0, 3), e.pair.slice(3, 6)])
+        : [];
       const cbInfo = e.cb_bias_snapshot
         ? pairCurrencies.map(c => { const b = e.cb_bias_snapshot[c]; return b ? `${c}=${b.bias}` : null; }).filter(Boolean).join(', ') || 'no CB data'
         : 'no CB data';

@@ -917,6 +917,15 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .retail-signal.long  { background: rgba(74,222,128,.12); color: #4ade80; }
 .retail-signal.short { background: rgba(248,113,113,.12); color: #f87171; }
 .retail-signal.neut  { background: rgba(148,163,184,.08); color: var(--muted); }
+/* Konfluensi retail (kontrarian) × COT lev-funds flow — baris kedua di bawah sinyal */
+.retail-conf {
+  grid-column: 1 / -1; font: 9px 'DM Mono',monospace; padding: 1px 0 2px;
+  letter-spacing: .03em;
+}
+.retail-conf.ok { color: var(--green); }
+.retail-conf.no { color: var(--yellow); }
+/* Badge tren 4-minggu lev net di baris COT */
+.cot-4w { font: 8px 'DM Mono',monospace; margin-left: 4px; letter-spacing: .03em; }
 
 /* ── FUNDAMENTAL TAB ──*/
 .fund-panel { padding: 10px 12px 24px; }
@@ -3295,7 +3304,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 <script>
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.06.29';
+const APP_VERSION = '2026.07.03';
 const FETCH_URL = '/api/feeds?type=rss';
 
 const CATS = {
@@ -3953,7 +3962,7 @@ function renderFeed(markNew = false) {
           <span class="item-tag tag-${cat}">${cat.replace('-',' ')}</span>
           ${newBadge}
         </div>
-        <div class="item-title">${item.title}</div>
+        <div class="item-title">${escHtml(item.title)}</div>
         ${chartHtml}
         ${descHtml}
       </div>`;
@@ -4869,7 +4878,7 @@ document.querySelectorAll('#navViews .nvtab').forEach(btn => {
       document.getElementById('cotPanel').style.display = 'block';
       const now = Date.now();
       if (!cotData || (now - cotFetchedAt) > 30 * 60 * 1000) fetchCOT();
-      else renderCOT();
+      else { renderCOT(); cotRenderTrendBadges(); }
       fetchRetailSentiment();
     } else if (view === 'fundamental') {
       setFeedUI(false);
@@ -5502,6 +5511,93 @@ function corrColor(r) {
   return r > 0.3 ? 'corr-pos' : r < -0.3 ? 'corr-neg' : 'corr-neu';
 }
 
+// ── Korelasi per-pair (tab TEK) ──────────────────────────────────────────────
+// Matrix korelasi server (api/correlations.js) sudah lama punya seri per-currency
+// (EUR/GBP/JPY/AUD/NZD/CAD/CHF vs USD, JPY·CAD·CHF di-invert supaya menguat = naik)
+// + DXY/Gold/US10Y/RealYield/SPX/VIX/WTI/Copper/BTC — tapi UI cuma menampilkan
+// tabel khusus Gold. Ini membangun tabel yang sama untuk PAIR AKTIF di TEK:
+// tiap leg pair jadi kolom, aset makro jadi baris. USD diwakili DXY, XAU = Gold.
+const TEK_CORR_LEG = { USD:'DXY', XAU:'Gold', EUR:'EUR', GBP:'GBP', JPY:'JPY', AUD:'AUD', NZD:'NZD', CAD:'CAD', CHF:'CHF', US10Y:'US10Y' };
+const TEK_CORR_ASSETS = [
+  { key:'DXY',       label:'DXY (USD)',  hint:'Arah dolar' },
+  { key:'US10Y',     label:'US 10Y',     hint:'Yield nominal' },
+  { key:'RealYield', label:'Real Yield', hint:'Proxy TIP ETF' },
+  { key:'SPX',       label:'S&P 500',    hint:'Risk-on/off' },
+  { key:'VIX',       label:'VIX',        hint:'Fear premium' },
+  { key:'WTI',       label:'WTI',        hint:'Minyak' },
+  { key:'Copper',    label:'Copper',     hint:'Growth proxy' },
+  { key:'Gold',      label:'Gold',       hint:'Haven / debasement' },
+  { key:'BTC',       label:'BTC',        hint:'Liquidity proxy' },
+];
+
+function _tekCorrLegs(pair) {
+  if (TEK_YIELD_INSTRUMENTS.includes(pair)) {
+    return TEK_CORR_LEG[pair] ? [{ cur: pair, inst: TEK_CORR_LEG[pair] }] : [];
+  }
+  const curs = pair === 'XAUUSD' ? ['XAU', 'USD'] : [pair.slice(0, 3), pair.slice(3)];
+  return curs.map(c => ({ cur: c, inst: TEK_CORR_LEG[c] })).filter(l => l.inst);
+}
+
+function _buildPairCorrHtml(pair, data) {
+  if (!data || !data.matrix_20d || !data.matrix_60d) return '';
+  const inMatrix = inst => Array.isArray(data.instruments) ? data.instruments.includes(inst) : true;
+  const getR = (a, b) => {
+    const r20 = data.matrix_20d[`${a}|${b}`] ?? data.matrix_20d[`${b}|${a}`];
+    const r60 = data.matrix_60d[`${a}|${b}`] ?? data.matrix_60d[`${b}|${a}`];
+    return (r20 == null && r60 == null) ? null : { r20: r20 ?? null, r60: r60 ?? null };
+  };
+  const legs = _tekCorrLegs(pair).filter(l => inMatrix(l.inst));
+  if (legs.length === 0) return '';
+
+  // Penanda "tidak ada data" harus bisa dibedakan dari nilai valid yang kebetulan
+  // netral (corrColor juga mengembalikan corr-neu untuk |r|<0.3) — pakai marker '—'.
+  const EMPTY_CELL = '<span class="corr-neu">—</span>';
+  const fmtCell = d => {
+    if (!d || d.r20 == null) return EMPTY_CELL;
+    const delta = d.r60 != null ? d.r20 - d.r60 : null;
+    const dStr = delta != null && Math.abs(delta) > 0.3
+      ? ` <span style="color:var(--yellow);font-size:9px">Δ${delta >= 0 ? '+' : ''}${delta.toFixed(2)}</span>`
+      : '';
+    return `<span class="${corrColor(d.r20)}" style="font-weight:700">${d.r20.toFixed(2)}</span>${dStr}`;
+  };
+  const gridCols = `1fr ${legs.map(() => '92px').join(' ')}`;
+  const rowWrap = (nameHtml, cells, hint) => `<div style="display:grid;grid-template-columns:${gridCols};gap:0 8px;padding:5px 8px;border-bottom:1px solid var(--border)"${hint ? ` title="${escHtml(hint)}"` : ''}>
+      ${nameHtml}
+      ${cells.map(c => `<div style="text-align:right;font-size:11px;font-family:'DM Mono',monospace">${c}</div>`).join('')}
+    </div>`;
+
+  let rowsHtml = '';
+  // Korelasi antar-leg (mis. GBP × USD/DXY) — satu angka paling relevan untuk pair itu sendiri
+  if (legs.length === 2) {
+    const d = getR(legs[0].inst, legs[1].inst);
+    if (d) {
+      rowsHtml += rowWrap(
+        `<div><div style="font-size:10px;color:var(--text);font-family:'DM Mono',monospace">${legs[0].cur} × ${legs[1].cur}</div><div style="font-size:8px;color:var(--muted);margin-top:1px">korelasi antar leg</div></div>`,
+        [fmtCell(d), '<span class="corr-neu">·</span>'],
+        'Korelasi kekuatan kedua leg pair ini satu sama lain'
+      );
+    }
+  }
+  for (const asset of TEK_CORR_ASSETS) {
+    if (!inMatrix(asset.key)) continue;
+    if (legs.some(l => l.inst === asset.key)) continue; // jangan korelasikan aset dengan dirinya
+    const cells = legs.map(l => fmtCell(getR(l.inst, asset.key)));
+    if (cells.every(c => c === EMPTY_CELL)) continue; // semua leg tanpa data → skip baris
+    rowsHtml += rowWrap(
+      `<div><div style="font-size:10px;color:var(--text);font-family:'DM Mono',monospace">${escHtml(asset.label)}</div><div style="font-size:8px;color:var(--muted);margin-top:1px">${escHtml(asset.hint)}</div></div>`,
+      cells, asset.hint
+    );
+  }
+  if (!rowsHtml) return '';
+
+  let html = `<div style="font-size:9px;color:var(--muted);font-family:'DM Mono',monospace;letter-spacing:.08em;margin:8px 0 5px">KORELASI ${escHtml(tekPairLabel(pair).toUpperCase())} · 20 HARI</div>`;
+  html += `<div style="background:var(--surface);border:1px solid var(--border);border-radius:3px;overflow:hidden;margin-bottom:6px">`;
+  html += `<div style="display:grid;grid-template-columns:${gridCols};gap:0 8px;padding:5px 8px 4px;border-bottom:1px solid var(--border);font-size:8px;color:var(--muted);font-family:'DM Mono',monospace;letter-spacing:.06em"><span>ASET</span>${legs.map(l => `<span style="text-align:right">${l.cur}</span>`).join('')}</div>`;
+  html += rowsHtml + `</div>`;
+  html += `<div style="font-size:8px;color:var(--muted);font-family:'DM Mono',monospace;margin-bottom:10px;line-height:1.5">Nilai = korelasi KEKUATAN mata uang (seri X/USD; JPY·CAD·CHF sudah dibalik — menguat = naik), BUKAN arah pair. USD diwakili DXY. Δ kuning = hubungan menyimpang &gt;0.3 dari norma 60 hari.</div>`;
+  return html;
+}
+
 function renderCorrelations() {
   const el = document.getElementById('corrPanel');
   if (!el) return;
@@ -5513,8 +5609,15 @@ function renderCorrelations() {
   const tsStr = computed_at ? new Date(computed_at).toLocaleDateString('id-ID', { day:'numeric', month:'short' }) : '—';
   let html = `<div class="corr-title">CROSS-ASSET CORRELATIONS · ${tsStr}${stale ? ' · stale' : ''}</div>`;
 
-  // ── Gold correlation table (always shown) ────────────────────
-  if (gold_correlations && Object.keys(gold_correlations).length > 0) {
+  // ── Korelasi kontekstual pair aktif TEK ──────────────────────
+  // Non-XAU pair: tabel korelasi leg pair itu (fitur per-pair, request user 2026-07-03).
+  // XAUUSD tetap pakai tabel gold khusus di bawah (lebih lengkap: ratio GS/GC dsb).
+  if (tekPair !== 'XAUUSD') {
+    html += _buildPairCorrHtml(tekPair, corrData);
+  }
+
+  // ── Gold correlation table (hanya saat pair aktif = XAUUSD) ──
+  if (tekPair === 'XAUUSD' && gold_correlations && Object.keys(gold_correlations).length > 0) {
     html += `<div style="font-size:9px;color:var(--muted);font-family:'DM Mono',monospace;letter-spacing:.08em;margin:8px 0 5px">XAU/USD · KORELASI CROSS-ASSET</div>`;
     html += `<div style="background:var(--surface);border:1px solid var(--border);border-radius:3px;overflow:hidden;margin-bottom:10px">`;
     // header row
@@ -6310,6 +6413,21 @@ function renderRetailSentiment() {
                    : signal === 'CONTRARIAN_SHORT' ? '↓ LEAN SHORT'
                    : '— NEUTRAL';
 
+    // Konfluensi retail (kontrarian) × COT lev-funds flow — deskripsi section selama
+    // ini menyuruh user meng-eyeball sendiri ("paling kuat saat konfirmasi dengan
+    // COT"); sekarang dihitung otomatis pakai cotAlignmentNote yang sama dengan
+    // Jurnal/Checklist. Muncul hanya kalau sinyal retail non-netral & cotData ada.
+    let confHtml = '';
+    if (signal !== 'NEUTRAL' && cotData && cotData.positions) {
+      const dir = signal === 'CONTRARIAN_LONG' ? 'long' : 'short';
+      const align = cotAlignmentNote(pair.slice(0, 3), pair.slice(3), dir);
+      if (align) {
+        confHtml = align.aligned
+          ? `<div class="retail-conf ok" title="${escHtml(align.text)}">✓ KONFLUENSI: flow COT searah sinyal kontrarian</div>`
+          : `<div class="retail-conf no" title="${escHtml(align.text)}">✕ flow COT berlawanan — sinyal kontrarian lemah</div>`;
+      }
+    }
+
     return `<div class="retail-row">
       <span class="retail-pair" style="color:${color}">${label}</span>
       <div class="retail-bar-wrap">
@@ -6319,6 +6437,7 @@ function renderRetailSentiment() {
         <span class="long">${long_pct}%</span><span style="color:var(--muted)"> / </span><span class="short">${short_pct}%</span>
       </div>
       <span class="retail-signal ${sigClass}">${sigLabel}</span>
+      ${confHtml}
     </div>`;
   }).join('');
 
@@ -6377,6 +6496,8 @@ async function fetchCOT() {
     cotData      = data;
     cotFetchedAt = Date.now();
     renderCOT();
+    cotRenderTrendBadges();                    // badge tren 4W (async, fire-and-forget)
+    if (retailData) renderRetailSentiment();   // refresh badge konfluensi retail×COT
     const _cotSel = document.getElementById('ckPairSelector');
     if (_cotSel && _cotSel.value) ckAutoTickRegimeCheck(_cotSel.value);
   } catch(e) {
@@ -6465,6 +6586,7 @@ function renderCOT() {
       <div class="cot-net-wrap">
         <span class="cot-net ${isLong ? 'long' : 'short'}">${fmtK(net)}</span>
         ${chg !== null ? `<span class="cot-change ${chgClass}">${chgIcon} ${fmtK(chg)}</span>` : ''}
+        ${withTren ? `<span class="cot-4w" id="cot4w-${cur}"></span>` : ''}
         ${trenBtn}
       </div>
     </div>`;
@@ -6492,6 +6614,31 @@ function renderCOT() {
 // ── COT TREND PANEL ──────────────────────────────────────
 const cotHistoryCache = {};          // { [currency]: { data, fetchedAt } }
 const cotTrendOpen    = {};          // { [currency]: boolean }
+
+// Badge tren ~4 minggu di baris Leveraged Funds — diambil dari cot_history yang
+// sudah lama diakumulasi server tapi selama ini hanya dipakai chart TREN on-demand.
+// Sekarang arah akumulasi/distribusi multi-minggu langsung kebaca tanpa buka chart.
+async function cotRenderTrendBadges() {
+  const json = await cotFetchHistory();
+  if (!json || !json.history || json.history.length < 2) return;
+  const hist   = json.history; // ascending by timestamp (lihat cotHistoryHandler)
+  const latest = hist[hist.length - 1];
+  const back   = hist.length >= 5 ? hist[hist.length - 5] : hist[0];
+  const weeks  = hist.length >= 5 ? 4 : hist.length - 1;
+  ['USD','EUR','GBP','JPY','CAD','AUD','NZD','CHF'].forEach(cur => {
+    const el = document.getElementById('cot4w-' + cur);
+    if (!el) return;
+    const nowNet = latest.positions?.[cur]?.lev_net;
+    const oldNet = back.positions?.[cur]?.lev_net;
+    if (nowNet == null || oldNet == null) { el.textContent = ''; return; }
+    const diff = nowNet - oldNet;
+    if (Math.abs(diff) < 2000) { el.textContent = ''; return; } // < 2K kontrak = noise
+    const up = diff > 0;
+    el.textContent  = `${weeks}W ${up ? '▲' : '▼'}`;
+    el.style.color  = up ? 'var(--green)' : 'var(--accent)';
+    el.title = `Lev net ${cur} ${weeks} minggu: ${(oldNet/1000).toFixed(1)}K → ${(nowNet/1000).toFixed(1)}K (${diff >= 0 ? '+' : ''}${(diff/1000).toFixed(1)}K)`;
+  });
+}
 
 async function cotFetchHistory() {
   const cacheKey = '__all';
@@ -6865,8 +7012,8 @@ function scenarioRankCurrencies(eventCur, direction) {
   // direction 'beat' = eventCur menguat, 'miss' = eventCur melemah
   const getCBScore = cur => {
     const cb = cbData && cbData.find(c => c.currency === cur);
-    if (!cb) return 2; // default neutral
-    return CB_BIAS_LEVEL[cb.bias?.toLowerCase()] ?? 2;
+    if (!cb) return CB_BIAS_NEUTRAL_LVL;
+    return CB_BIAS_LEVEL[cb.bias?.toLowerCase()] ?? CB_BIAS_NEUTRAL_LVL;
   };
   const getCBBias = cur => {
     const cb = cbData && cbData.find(c => c.currency === cur);
@@ -6924,22 +7071,27 @@ function scenarioRankCurrencies(eventCur, direction) {
       const rateStr = usdRate ? ` · USD Rate ${usdRate}` : '';
       results.push({ pair: pairMap.pair, dir: pairDir, reason: `USD: ${usdBias}${rateStr}`, score });
     }
-    // Also check crosses with other currencies
+    // Also check crosses with other currencies — pakai HANYA pair yang benar-benar
+    // ada di SZ_PAIRS dengan orientasi pasar yang benar (mis. event GBP vs EUR →
+    // EUR/GBP, bukan "GBP/EUR" yang tidak eksis). Sebelumnya nama pair dikarang
+    // eventCur+'/'+cp, sehingga bisa merekomendasikan pair non-konvensi yang juga
+    // tidak pernah cocok dengan opsi selector Checklist/Sizing.
     const otherCurs = ['USD','EUR','GBP','JPY','AUD','NZD','CAD','CHF'].filter(c => c !== eventCur);
     for (const cp of otherCurs) {
       const cpScore = getCBScore(cp);
       const cpBias  = getCBBias(cp);
       const cpRate  = getCBRate(cp);
       const score = direction === 'beat' ? (eventCurScore - cpScore) : (cpScore - eventCurScore);
-      // Find pair name from cross
       let pairName = null, isBase = false;
       if (cp === 'USD') {
         pairName = SCENARIO_PAIR_MAP[eventCur]?.pair;
         isBase   = SCENARIO_PAIR_MAP[eventCur]?.isBase;
-      } else {
-        // look for known cross pairs (if both non-USD, use eventCur as base vs cp)
+      } else if (SZ_PAIRS.includes(eventCur + '/' + cp)) {
         pairName = eventCur + '/' + cp;
         isBase = true;
+      } else if (SZ_PAIRS.includes(cp + '/' + eventCur)) {
+        pairName = cp + '/' + eventCur;
+        isBase = false; // eventCur jadi quote — arah dibalik
       }
       if (!pairName) continue;
       let pairDir;
@@ -6972,6 +7124,8 @@ function scenarioRenderResults(pairs, eventCur, direction, eventName) {
       </div>
     </div>`).join('');
 
+  // Cocokkan tanpa slash di KEDUA sisi — opsi selector ber-slash ("EUR/USD"),
+  // jadi includes('EURUSD') lama tidak pernah match dan pair diam-diam tak terpilih.
   const firstPair = pairs[0]?.pair?.replace('/','');
 
   return `
@@ -6979,7 +7133,7 @@ function scenarioRenderResults(pairs, eventCur, direction, eventName) {
     ${pairsHtml}
     <div class="cal-scenario-warn">
       ⚠ Ini rekomendasi awal — tetap validasi via CHECKLIST sebelum entry.
-      <br><button class="cal-scenario-ck-btn" onclick="switchView('checklist')${firstPair ? ";setTimeout(()=>{const s=document.getElementById('ckPairSelector');if(s){for(let o of s.options){if(o.value.includes('${firstPair}')){s.value=o.value;ckOnPairChange();break;}}}},200)" : ''}">→ Buka CHECKLIST</button>
+      <br><button class="cal-scenario-ck-btn" onclick="switchView('checklist')${firstPair ? ";setTimeout(()=>{const s=document.getElementById('ckPairSelector');if(s){for(let o of s.options){if(o.value.replace('/','')==='${firstPair}'){s.value=o.value;ckOnPairChange();break;}}}},200)" : ''}">→ Buka CHECKLIST</button>
     </div>`;
 }
 
@@ -8390,11 +8544,10 @@ function ckPrefillJurnalAction(pct, verdict) {
   let direction = 'long';
   if (pair && cbData) {
     const [base3, qte3] = pair.includes('/') ? pair.split('/').map(s => s.toUpperCase()) : [pair.slice(0,3).toUpperCase(), pair.slice(3,6).toUpperCase()];
-    const BLVL  = { 'hawkish':6,'cautious hawkish':5,'neutral':4,'data dependent':4,'on hold':4,'split':4,'cautious dovish':3,'dovish':2 };
     const bObj  = cbData.find(c => c.currency === base3);
     const qObj  = cbData.find(c => c.currency === qte3);
-    const bLvl  = BLVL[bObj?.bias?.toLowerCase()] ?? 4;
-    const qLvl  = BLVL[qObj?.bias?.toLowerCase()] ?? 4;
+    const bLvl  = CB_BIAS_LEVEL[bObj?.bias?.toLowerCase()] ?? CB_BIAS_NEUTRAL_LVL;
+    const qLvl  = CB_BIAS_LEVEL[qObj?.bias?.toLowerCase()] ?? CB_BIAS_NEUTRAL_LVL;
     if (qLvl > bLvl) direction = 'short';
   }
 
@@ -8470,11 +8623,10 @@ function ckShowMt5ModalAction(pair) {
   let direction = 'long';
   if (cbData) {
     const [base3, qte3] = pair.includes('/') ? pair.split('/').map(s => s.toUpperCase()) : [pair.slice(0,3).toUpperCase(), pair.slice(3,6).toUpperCase()];
-    const BLVL  = { 'hawkish':6,'cautious hawkish':5,'neutral':4,'data dependent':4,'on hold':4,'split':4,'cautious dovish':3,'dovish':2 };
     const bObj  = cbData.find(c => c.currency === base3);
     const qObj  = cbData.find(c => c.currency === qte3);
-    const bLvl  = BLVL[bObj?.bias?.toLowerCase()] ?? 4;
-    const qLvl  = BLVL[qObj?.bias?.toLowerCase()] ?? 4;
+    const bLvl  = CB_BIAS_LEVEL[bObj?.bias?.toLowerCase()] ?? CB_BIAS_NEUTRAL_LVL;
+    const qLvl  = CB_BIAS_LEVEL[qObj?.bias?.toLowerCase()] ?? CB_BIAS_NEUTRAL_LVL;
     if (qLvl > bLvl) direction = 'short';
   }
   // AI thesis (RINGKASAN tab) overrides inferred direction kalau pair cocok
@@ -8768,9 +8920,19 @@ function ckAutoBlock(id, hint) {
   ckSave(); ckRender();
 }
 
+// Skala kanonik hawk-dove — SATU-SATUNYA map level bias di frontend. Key lowercase,
+// HARUS meng-cover seluruh vocabulary Call 2 (market-digest.js VALID_BIASES):
+// Hawkish / Cautious Hawkish / Neutral / Data Dependent / On Hold / Split /
+// Cautious Dovish / Dovish. Label ortogonal (DD/On Hold/Split) dipetakan ke level
+// netral (4). Sebelumnya map ini cuma kenal very hawkish/hawkish/neutral/dovish/
+// very dovish — label "Cautious *" (yang paling sering keluar dari AI) jatuh ke
+// default netral, bikin auto-tick checklist & simulasi kalender buta terhadapnya.
 const CB_BIAS_LEVEL = {
-  'very hawkish':4, 'hawkish':3, 'neutral':2, 'dovish':1, 'very dovish':0
+  'hawkish': 6, 'cautious hawkish': 5,
+  'neutral': 4, 'data dependent': 4, 'on hold': 4, 'split': 4,
+  'cautious dovish': 3, 'dovish': 2,
 };
+const CB_BIAS_NEUTRAL_LVL = 4; // default kalau bias tak dikenal/belum ada
 
 // Bandingin arah perubahan posisi leveraged funds minggu-ke-minggu (lev_change_net) vs arah trade.
 // Threshold 5000 kontrak — di bawah itu dianggap noise, gak usah dikasih flag (biar gak nakut-nakutin
@@ -8865,12 +9027,35 @@ function ckAutoTickRegimeCheck(pair) {
   if (cotData && cotData.positions) {
     const bPos = cotData.positions[base], qPos = cotData.positions[quote];
     if (bPos || qPos) {
-      const bNet = bPos ? (bPos.lev_net || bPos.net || 0) : null;
-      const qNet = qPos ? (qPos.lev_net || qPos.net || 0) : null;
-      const parts = [];
-      if (bNet != null) parts.push(`${base} Lev Net: ${bNet > 0 ? '+' : ''}${bNet}`);
-      if (qNet != null) parts.push(`${quote} Lev Net: ${qNet > 0 ? '+' : ''}${qNet}`);
-      ckAutoTick('rc3', parts.join(' | '));
+      // rc3 ("COT aligned dengan directional bias") dulu auto-tick hanya karena
+      // DATA ADA — otoritas palsu di gate. Sekarang benar-benar dinilai: arah bias
+      // diinfer dari selisih level CB (sama dengan ckPrefillJurnal), lalu diuji
+      // pakai cotAlignmentNote (flow lev-funds mingguan, threshold 5K kontrak).
+      // Selaras → auto-tick; kontra → auto-block (bisa override dengan alasan);
+      // tidak bisa dinilai (bias imbang / flow kecil) → tetap manual + info.
+      let inferredDir = null;
+      if (cbData) {
+        const bCb = cbData.find(c => c.currency === base);
+        const qCb = cbData.find(c => c.currency === quote);
+        if (bCb?.bias && qCb?.bias) {
+          const bL = CB_BIAS_LEVEL[bCb.bias.toLowerCase()] ?? CB_BIAS_NEUTRAL_LVL;
+          const qL = CB_BIAS_LEVEL[qCb.bias.toLowerCase()] ?? CB_BIAS_NEUTRAL_LVL;
+          if (bL !== qL) inferredDir = bL > qL ? 'long' : 'short';
+        }
+      }
+      const align = inferredDir ? cotAlignmentNote(base, quote, inferredDir) : null;
+      if (align && align.aligned) {
+        ckAutoTick('rc3', align.text);
+      } else if (align && !align.aligned) {
+        ckAutoBlock('rc3', align.text);
+      } else {
+        const bNet = bPos ? (bPos.lev_net || bPos.net || 0) : null;
+        const qNet = qPos ? (qPos.lev_net || qPos.net || 0) : null;
+        const parts = [];
+        if (bNet != null) parts.push(`${base} Lev Net: ${bNet > 0 ? '+' : ''}${bNet}`);
+        if (qNet != null) parts.push(`${quote} Lev Net: ${qNet > 0 ? '+' : ''}${qNet}`);
+        ckShowEvidenceDots('rc3', 1, `${parts.join(' | ')} — arah bias belum jelas / flow < 5K kontrak, nilai manual`);
+      }
     }
   }
 
@@ -8901,8 +9086,8 @@ function ckAutoTickRegimeCheck(pair) {
         const b = cbData.find(c => c.currency === base);
         const q = cbData.find(c => c.currency === quote);
         if (b && q && b.bias && q.bias) {
-          const bLvl = CB_BIAS_LEVEL[b.bias.toLowerCase()] ?? 2;
-          const qLvl = CB_BIAS_LEVEL[q.bias.toLowerCase()] ?? 2;
+          const bLvl = CB_BIAS_LEVEL[b.bias.toLowerCase()] ?? CB_BIAS_NEUTRAL_LVL;
+          const qLvl = CB_BIAS_LEVEL[q.bias.toLowerCase()] ?? CB_BIAS_NEUTRAL_LVL;
           const aligned = (bLvl > qLvl && diff > 0) || (bLvl < qLvl && diff < 0);
           if (aligned)
             ckAutoTick('rc5', `Spread ${sign}${diff.toFixed(2)}% selaras: ${base} ${b.bias} real yield lebih ${diff > 0 ? 'tinggi' : 'rendah'} dari ${quote} ${q.bias}`);
@@ -8928,9 +9113,10 @@ function _ckAutoSMC(base, quote) {
     const b = cbData.find(c => c.currency === base);
     const q = cbData.find(c => c.currency === quote);
     if (b && q && b.bias && q.bias) {
-      const bLvl = CB_BIAS_LEVEL[b.bias.toLowerCase()] ?? 2;
-      const qLvl = CB_BIAS_LEVEL[q.bias.toLowerCase()] ?? 2;
-      const bBull = bLvl >= 3, qBear = qLvl <= 1;
+      const bLvl = CB_BIAS_LEVEL[b.bias.toLowerCase()] ?? CB_BIAS_NEUTRAL_LVL;
+      const qLvl = CB_BIAS_LEVEL[q.bias.toLowerCase()] ?? CB_BIAS_NEUTRAL_LVL;
+      // Skala 6-level: bull = Cautious Hawkish ke atas (≥5), bear = Cautious Dovish ke bawah (≤3)
+      const bBull = bLvl >= 5, qBear = qLvl <= 3;
       if (bBull) ckAutoTick('f2', `${base} bias: ${b.bias}`);
       if (qBear) ckAutoTick('f3', `${quote} bias: ${q.bias}`);
       if (bBull && qBear) {
@@ -8951,10 +9137,11 @@ function _ckAutoMacro(base, quote) {
     const b = cbData.find(c => c.currency === base);
     const q = cbData.find(c => c.currency === quote);
     if (b && q && b.bias && q.bias) {
-      const bLvl = CB_BIAS_LEVEL[b.bias.toLowerCase()] ?? 2;
-      const qLvl = CB_BIAS_LEVEL[q.bias.toLowerCase()] ?? 2;
+      const bLvl = CB_BIAS_LEVEL[b.bias.toLowerCase()] ?? CB_BIAS_NEUTRAL_LVL;
+      const qLvl = CB_BIAS_LEVEL[q.bias.toLowerCase()] ?? CB_BIAS_NEUTRAL_LVL;
       const div  = Math.abs(bLvl - qLvl);
-      const oneHawk = (bLvl >= 3 && qLvl <= 2) || (qLvl >= 3 && bLvl <= 2);
+      // Satu sisi hawkish-ish (≥5 = Cautious Hawkish/Hawkish), sisi lain netral/dovish (≤4)
+      const oneHawk = (bLvl >= 5 && qLvl <= 4) || (qLvl >= 5 && bLvl <= 4);
       if (oneHawk) ckAutoTick('mm_cb1', `${base}: ${b.bias} vs ${quote}: ${q.bias}`);
       if (div >= 2) ckAutoTick('mm_cb2', `Divergence ${div} level (${base} ${b.bias} vs ${quote} ${q.bias})`);
     }
@@ -9508,11 +9695,27 @@ function calcSizing() {
       <table class="sz-r-table"><thead><tr style="color:var(--muted);font-size:9px">${thCols}</tr></thead><tbody>${rTableRows}</tbody></table>
       ${szAtrData && szAtrData.atr_pips ? (() => {
         const atrPips = szAtrData.atr_pips;
-        const varUsd = szAtrData.daily_sigma
-          ? (1.645 * szAtrData.daily_sigma * (dollarRisk / stopPips) * atrPips).toFixed(2)
-          : null;
+        // VaR 95% 1-hari posisi = 1.645 × σ_harian × notional USD — rumus yang sama
+        // dengan Portfolio Risk di Jurnal (jnRenderVaR). Rumus lama mengalikan σ DAN
+        // ATR sekaligus (dua ukuran volatilitas → double-count, angka tak bermakna).
+        // Notional butuh entry price — tanpa entry, VaR di-skip (ATR tetap tampil).
+        let varUsd = null;
+        if (szAtrData.daily_sigma && entry > 0 && lots > 0) {
+          let notionalUSD = null;
+          const [nb, nq] = pair === 'XAU/USD' ? ['XAU', 'USD'] : pair.split('/');
+          if (pair === 'XAU/USD')  notionalUSD = lots * 100 * entry;
+          else if (nq === 'USD')   notionalUSD = lots * 100000 * entry;
+          else if (nb === 'USD')   notionalUSD = lots * 100000;
+          else {
+            const baseUsd = szLiveRates
+              ? (szLiveRates[nb + 'USD'] || (szLiveRates['USD' + nb] ? 1 / szLiveRates['USD' + nb] : null))
+              : null;
+            notionalUSD = baseUsd ? lots * 100000 * baseUsd : null;
+          }
+          if (notionalUSD) varUsd = (1.645 * szAtrData.daily_sigma * notionalUSD).toFixed(2);
+        }
         const atrColor = stopPips < atrPips ? 'var(--yellow)' : 'var(--green)';
-        return `<div style="margin-top:10px;padding-top:8px;border-top:1px solid var(--border);font-family:'DM Mono',monospace;font-size:10px;color:var(--muted)">ATR 14d: <span style="color:${atrColor}">${atrPips} pip</span>${varUsd ? ` · 1d VaR 95%: <span style="color:var(--text)">$${varUsd}</span>` : ''}</div>`;
+        return `<div style="margin-top:10px;padding-top:8px;border-top:1px solid var(--border);font-family:'DM Mono',monospace;font-size:10px;color:var(--muted)">ATR 14d: <span style="color:${atrColor}">${atrPips} pip</span>${varUsd ? ` · 1d VaR 95% posisi ${lots.toFixed(2)} lot: <span style="color:var(--text)">$${varUsd}</span>` : ''}</div>`;
       })() : ''}
       <button onclick="szGoToChecklist()" style="margin-top:10px;width:100%;padding:9px;background:transparent;border:1px solid var(--pink);color:var(--pink);font-family:'DM Mono',monospace;font-size:11px;border-radius:3px;cursor:pointer;letter-spacing:.05em">→ LANJUT KE CHECKLIST</button>
     </div>`;
@@ -11075,6 +11278,7 @@ function selectTekPair(p) {
   fetchAFTek();
   autoFillMtfSelectors();
   renderTekYield();
+  if (corrData) renderCorrelations(); // tabel korelasi kontekstual ikut pair aktif
 }
 
 function onTekTFChange() {
@@ -11425,7 +11629,7 @@ function renderTekEventStrip() {
     const wib    = (ev.time_wib || '').replace(' WIB', '');
     return `<div class="tek-event-chip tek-event-hi">
       <span class="tek-event-dot" style="background:${col}"></span>
-      <span class="tek-event-name">${ev.event}</span>
+      <span class="tek-event-name">${escHtml(ev.event)}</span>
       <span class="tek-event-time">${wib} · ${cd}</span>
     </div>`;
   }).join('');

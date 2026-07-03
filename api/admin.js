@@ -257,19 +257,20 @@ async function healthHandler(req, res) {
       // Recovery detection: OK now but was down for > threshold
       if (lastOk && gapMs > HEALTH_RECOVER_THRESHOLD_MS) {
         toRecover.push({ key, label, downMins: Math.round(gapMs / 60000) });
+
+        // Clear cache SAAT RECOVERY (bukan saat DOWN) — supaya request berikutnya
+        // langsung fetch data segar pasca-outage. Dulu clear dilakukan saat DOWN,
+        // yang justru menghapus salinan stale yang dipakai handler sebagai fallback
+        // "serve stale" selama outage — user dapat 502 padahal ada data lama.
+        const cacheKeys = SOURCE_CACHE_KEYS[key] || [];
+        for (const ck of cacheKeys) {
+          redisCmd('DEL', ck).catch(() => {});
+          console.log(`health: cleared cache key "${ck}" — ${label} recovered, next request refetches fresh`);
+        }
       }
     } else {
       if (!lastOk || downMs > HEALTH_ALERT_THRESHOLD) {
         toAlert.push({ label, error, lastOk });
-      }
-
-      // Auto-recovery: clear this source's stale Redis cache keys.
-      // On next live request, the handler will attempt a fresh fetch
-      // rather than serving cached data from before the outage.
-      const cacheKeys = SOURCE_CACHE_KEYS[key] || [];
-      for (const ck of cacheKeys) {
-        redisCmd('DEL', ck).catch(() => {});
-        console.log(`health: auto-cleared cache key "${ck}" — ${label} is DOWN`);
       }
     }
   }
@@ -1677,6 +1678,22 @@ async function ohlcvReadHandler(req, res) {
   }
 }
 
+// Ambil max 6 level expiry milik pair ini, diurutkan dari yang paling dekat ke harga
+// sekarang (magnet paling relevan duluan). Pure function — dites di test/guards.test.js.
+function _pickExpiryLevels(expiries, pairLabel, nowPrice) {
+  if (!Array.isArray(expiries) || !pairLabel) return [];
+  const want = String(pairLabel).toUpperCase().replace('/', '');
+  const rows = [];
+  for (const e of expiries) {
+    if ((e.pair || '').toUpperCase().replace('/', '') !== want) continue;
+    const num = parseFloat(e.level);
+    if (isNaN(num)) continue;
+    rows.push({ level: e.level, num, size: (e.size || '').trim() });
+  }
+  if (typeof nowPrice === 'number') rows.sort((a, b) => Math.abs(a.num - nowPrice) - Math.abs(b.num - nowPrice));
+  return rows.slice(0, 6);
+}
+
 async function ohlcvAnalyzeHandler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Cache-Control', 'no-cache');
@@ -1697,20 +1714,39 @@ async function ohlcvAnalyzeHandler(req, res) {
     if (!data.h1.available) return res.status(200).json({ commentary: null, error: 'OHLCV belum tersedia — tunggu GitHub Actions sync pertama.' });
 
     const textBlock = buildOhlcvText(data);
+    const nowPrice = data.h1?.current;
+
+    // Option expiries NY cut hari ini (fx_options_cache, ditulis /api/feeds?type=options,
+    // TTL 4h) — level "magnet" intraday untuk pair ini, sebagai S/R tambahan konteks AI.
+    // Data ini sudah lama diparse untuk tab TEK tapi belum pernah dikirim ke AI Analisa.
+    let expiryBlock = '';
+    try {
+      const rawOpt = await redisCmd('GET', 'fx_options_cache');
+      if (rawOpt) {
+        const opt = JSON.parse(rawOpt);
+        const ageOk = opt.fetched_at && (Date.now() - new Date(opt.fetched_at).getTime()) < 24 * 3600 * 1000;
+        if (ageOk) {
+          const lvls = _pickExpiryLevels(opt.expiries, data.label, nowPrice);
+          if (lvls.length > 0) {
+            expiryBlock = '\n\nOPTION EXPIRIES NY CUT HARI INI (level "magnet" intraday — harga cenderung tertarik ke cluster ini menjelang 15:00 NY / ~02:00 WIB; perlakukan sebagai S/R tambahan berlaku HARI INI saja, bukan sinyal arah):\n'
+              + lvls.map(l => `- ${l.level}${l.size ? ` (${l.size})` : ''}`).join('\n');
+          }
+        }
+      }
+    } catch (e) { /* opsional — jangan gagalkan analisa kalau cache options kosong */ }
 
     const makroBlock = ringkasanContext
-      ? `KONTEKS MAKRO:\n${ringkasanContext}\n\nDATA TEKNIKAL:\n${textBlock}`
-      : textBlock;
+      ? `KONTEKS MAKRO:\n${ringkasanContext}\n\nDATA TEKNIKAL:\n${textBlock}${expiryBlock}`
+      : `${textBlock}${expiryBlock}`;
 
     const extraCtx = [
       data.is_xau            ? 'volume XAU' : null,
       data.indicators?.available ? 'RSI/SMA Daily' : null,
       data.macd?.available   ? 'MACD H4' : null,
       data.atr?.available    ? 'ATR H1' : null,
+      expiryBlock            ? 'option expiry' : null,
       ringkasanContext       ? 'konteks makro' : null,
     ].filter(Boolean).join(' + ');
-
-    const nowPrice = data.h1?.current;
 
     const p4Macro = ringkasanContext
       ? ' — kalau KONTEKS MAKRO berlawanan jelas dengan struktur teknikal (misal makro risk-off tapi teknikal breakout bullish), sebut konflik itu eksplisit dan turunkan keyakinan setup, jangan diam-diam diabaikan'
@@ -1999,3 +2035,7 @@ async function polymarketHandler(req, res) {
     return res.status(200).json({ markets: [], error: e.message, fetched_at: new Date().toISOString() });
   }
 }
+
+// Ekspor helper murni untuk unit test (module.exports = handler function; properti
+// tambahan tidak mengganggu Vercel yang hanya memanggil function-nya).
+module.exports._pickExpiryLevels = _pickExpiryLevels;
