@@ -24,6 +24,19 @@
 
 **Tindak lanjut user:** setelah deploy, buka JURNAL → klik "Arsip" dulu pada 3 entri XAU/USD yang salah (ticket #57387959126, #57387888853, #57387788359), lalu buka tab ARSIP dan klik "Hapus" untuk membersihkannya secara permanen.
 
+### Migrasi cron market-digest: Vercel cron → GitHub Actions
+
+User bertanya soal mekanisme "ringkasan otomatis per sesi Asia/London/NY". Investigasi menemukan `vercel.json` sebelumnya punya 3 cron sub-harian ke `/api/market-digest` (00:00, 07:00, 12:30 UTC = 07:00/14:00/19:30 WIB), tapi ini sudah lama ditandai `[VERIFY]` di audit sesi 138 (poin 13) — Vercel Hobby plan historisnya tidak menjamin cron sub-harian jalan konsisten, dan belum pernah dicek langsung apakah ketiganya benar-benar dieksekusi di produksi.
+
+**Keputusan:** ganti sepenuhnya ke GitHub Actions, pola yang sama dengan yang sudah dipakai untuk OHLCV sync/TA warm (`ohlcv-sync.yml`, `ta-warm.yml`) — GitHub Actions cron gratis, jauh lebih dapat diandalkan untuk multi-run/hari, dan sudah didukung tanpa perubahan kode (`api/market-digest.js:390-392` sudah menerima auth `x-cron-secret` selain `x-vercel-cron`).
+
+- `vercel.json`: 3 entri cron `market-digest` dihapus (cron `admin?action=gdpnow` tetap ada, tidak terpengaruh).
+- `.github/workflows/market-digest.yml` (baru): 3 jadwal identik (`0 0 * * *`, `0 7 * * *`, `30 12 * * *`), tiap run `curl` ke `/api/market-digest` dengan header `x-cron-secret` (secret `CRON_SECRET` yang sama dipakai workflow lain).
+- Tidak ada perubahan kode di `api/market-digest.js` — jalur auth cron eksternal sudah ada sejak awal.
+- Dipilih **ganti**, bukan **jalan berbarengan**, supaya tidak berisiko generate dobel (AI call 2x + push notif "Ringkasan siap" dobel per sesi) kalau ternyata Vercel cron-nya masih jalan juga.
+
+**Verifikasi:** `node -e "JSON.parse(...)"` untuk `vercel.json`, `python -c "import yaml; yaml.safe_load(...)"` untuk workflow YAML baru — keduanya valid. Eksekusi live workflow baru belum bisa diverifikasi dari sini (perlu tunggu jadwal berikutnya jalan atau trigger manual via `workflow_dispatch` di tab Actions GitHub).
+
 ## Changelog Session 140 (2026-07-03) — Hardening Reliability Thesis Alert (Call 4)
 
 Session 139 mewire `thesis_alerts` ke JURNAL/CHECKLIST/SIZING, tapi user menahan fitur ini ("ditunda") karena eksekusi live-nya belum cukup andal. Audit kode menemukan 4 penyebab konkret dan semuanya sudah diperbaiki di `api/market-digest.js` dan `index.html`:
@@ -233,7 +246,7 @@ File yang disentuh: `index.html`, `sw.js`, `api/admin.js`, `api/correlations.js`
 10. **[LOW] `mt5_bridge.py` CORS terbuka untuk semua origin tanpa auth** — halaman web mana pun yang terbuka di browser PC yang sama bisa POST order ke `localhost:5000/order`. Rekomendasi: batasi origin ke domain app + shared token.
 11. **[LOW] Dashboard `BIAS_COLORS` keys tidak cocok dengan vocabulary bias** (punya `very hawkish/very dovish` yang tidak ada; `Cautious */On Hold/Data Dependent/Split` tidak ada) → mayoritas pill bias tampil abu-abu, glanceability hilang.
 12. **[LOW] Kosmetik/konsistensi:** `toggleVoice` menimpa ikon SVG via `textContent`; label tombol Polymarket & Korelasi berubah setelah fetch pertama ("Refresh…" → "Muat…"); `KEY_REGISTRY` redis-keys ketinggalan banyak key baru (news_history, cot_history, ohlcv:*, ta:*, ai_budget:*, fx_options_cache, dll); health probe belum meng-cover Yahoo Finance (dependensi terbesar: OHLCV/TA/VIX/MOVE/spot/rates); `market-digest?mode=cached` tanpa rate limit; retry `fetchFeed` tiap 8s tanpa batas saat source down; keyword `'snb jordan'` usang.
-13. **[VERIFY] `vercel.json` punya 4 cron (3× market-digest sub-harian)** — limit Vercel Hobby historisnya 2 cron/harian. Perlu dicek di dashboard Vercel apakah semua benar-benar jalan, atau sebagian sebenarnya dilayani cron-job.org.
+13. ✅ FIXED (session 141) — **`vercel.json` punya 4 cron (3× market-digest sub-harian)** — limit Vercel Hobby historisnya 2 cron/harian, keandalan sub-harian tidak terjamin. Dipindah ke GitHub Actions (`.github/workflows/market-digest.yml`), pola sama dengan OHLCV sync — lihat Changelog Session 141.
 
 ### Audit desain / psikologi trader — kesimpulan
 
