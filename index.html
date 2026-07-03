@@ -10245,7 +10245,9 @@ function jnRenderEntries() {
       ? `<div style="font-size:10px;color:var(--text-mid);margin-top:2px;font-family:'DM Mono',monospace">Harga sekarang: ${jnFmtPrice(e.pair, live.price)}</div>`
       : '';
 
-    const thesisAlerts = e.status === 'open' ? getThesisAlertsForPair(e.pair, e.direction) : [];
+    // Cancelled pending orders have no live/resting stake left — nothing for a
+    // contra-headline alert to warn about, unlike a still-pending limit order.
+    const thesisAlerts = e.status === 'open' && e.fill_state !== 'cancelled' ? getThesisAlertsForPair(e.pair, e.direction) : [];
     const alertRow = thesisAlerts.length ? renderThesisAlertNotice(thesisAlerts) : '';
 
     // Excursion (MFE/MAE) — "execution reality check": shows whether price moved
