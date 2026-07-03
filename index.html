@@ -10172,7 +10172,12 @@ function jnRenderEntries() {
     const archBtn = e.status === 'archived'
       ? `<button class="jn-btn-sec" style="font-size:9px;margin-left:4px;color:var(--green);border-color:var(--green)" onclick="jnUnarchive('${e.id}')">Pulihkan</button>`
       : `<button class="jn-btn-sec" style="font-size:9px;margin-left:4px" onclick="jnArchive('${e.id}')">Arsip</button>`;
-    const delBtn = `<button class="jn-btn-sec" style="font-size:9px;margin-left:4px;color:var(--accent);border-color:var(--accent)" onclick="jnDeleteForever('${e.id}')">Hapus</button>`;
+    // Hapus permanen sengaja dibatasi ke entri yang sudah diarsip — arsip dulu
+    // adalah langkah konfirmasi implisit sebelum penghapusan yang tidak bisa
+    // dibatalkan, jadi trade OPEN/CLOSED tidak bisa kehapus dari satu klik salah.
+    const delBtn = e.status === 'archived'
+      ? `<button class="jn-btn-sec" style="font-size:9px;margin-left:4px;color:var(--accent);border-color:var(--accent)" onclick="jnDeleteForever('${e.id}')">Hapus</button>`
+      : '';
 
     return `<div class="jn-card">
       <div class="jn-card-hdr">

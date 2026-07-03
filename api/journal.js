@@ -388,7 +388,14 @@ module.exports = async function handler(req, res) {
 
       if (req.query.hard === '1') {
         // Permanent removal — for erroneous entries (e.g. bad test data from a
-        // broken feature) that shouldn't be kept around even in Arsip.
+        // broken feature) that shouldn't be kept around even in Arsip. Restricted
+        // to already-archived entries: enforced server-side too (not just hiding
+        // the button client-side) so an open/closed trade record can't be wiped by
+        // one bad request.
+        const existing = JSON.parse(raw);
+        if (existing.status !== 'archived') {
+          return res.status(400).json({ error: 'Arsipkan entri ini dulu sebelum hapus permanen' });
+        }
         await redisCmd('DEL', entryKey);
         await redisCmd('ZREM', indexKey, id);
         return res.status(200).json({ ok: true, deleted: true });
