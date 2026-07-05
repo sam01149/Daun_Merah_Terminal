@@ -11532,7 +11532,7 @@ async function autoFillTekNote() {
     return;
   }
   const manual = _tekNoteManualPart(noteEl.value);
-  const merged = manual.trim() ? `${text}\n${TEK_AUTO_SEP}\n${manual}` : text;
+  const merged = manual.trim() ? `${text}\n\n${TEK_AUTO_SEP}\n${manual}` : text;
   noteEl.value = merged;
   tekNotes[pairAtCall] = merged;
   localStorage.setItem('tek_notes', JSON.stringify(tekNotes));
