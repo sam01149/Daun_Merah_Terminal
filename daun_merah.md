@@ -1,9 +1,19 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-07-05 (session 143 — 5 perbaikan dari feedback user: Catatan Analisa non-destructive, Thesis AI terjadwal, redesign Kalender, indikator di chart TEK, shortcut laptop di Petunjuk)
+> **Last updated:** 2026-07-05 (session 143 lanjutan — tab Artikel: buang entri kalender BoC masa depan yang menutupi artikel hari ini)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
+
+---
+
+## Changelog Session 143 lanjutan (2026-07-05) — Tab Artikel: Entri Kalender Masa Depan Menutupi Artikel Hari Ini
+
+**Laporan user:** di tab Artikel (CB Watch/Riset), badge BOC dengan tanggal Oktober–Desember 2026 (Boxing Day, Christmas Day, Interest Rate Announcement, dll) tampil di atas artikel yang benar-benar baru (MTM/FJElite/ING tertanggal 3-4 Juli 2026).
+
+**Root cause:** `api/feeds.js` `researchHandler()` sort `items` by `pubDate` descending (`renderResearch()` di `index.html` juga sort ulang dengan cara sama). Sumber BOC pakai feed umum `https://www.bankofcanada.ca/feed/` (dikomentari di kode: "general feed yang valid" karena `/feed/speeches/` sudah return HTML) — feed ini ternyata mencampur publikasi asli dengan entri kalender (hari libur nasional, tanggal pengumuman suku bunga terjadwal), dan `<pubDate>` untuk entri kalender itu adalah tanggal EVENT-nya sendiri (mis. 28 Des 2026 untuk Boxing Day), bukan kapan entry itu dipublikasikan/diindeks. Sort descending otomatis menaruh tanggal masa depan di atas.
+
+**Fix (`api/feeds.js` `researchHandler`):** tambah filter sebelum sort — buang item dengan `pubDate` lebih dari 1 jam ke depan (toleransi kecil untuk timezone quirk antar-feed). Item yang benar-benar sudah dipublikasikan tidak mungkin bertanggal masa depan, jadi ini generik untuk semua 12 sumber CB research, tidak perlu maintain blocklist judul/holiday per-sumber (yang akan gampang basi kalau BoC ganti format kalendernya).
 
 ---
 
