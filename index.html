@@ -1487,6 +1487,33 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   cursor: pointer; transition: background .15s;
 }
 .cal-scenario-ck-btn:hover { background: rgba(255,255,255,.13); color: var(--text); }
+/* Konfluensi "dasar bertumpu" di hasil simulasi */
+.scen-conf { margin-top: 5px; }
+.scen-conf-row {
+  display: flex; gap: 6px; align-items: flex-start;
+  font-size: 9px; color: var(--muted); font-family: 'DM Mono', monospace;
+  line-height: 1.5; margin-top: 3px;
+}
+.scen-conf-row strong { color: var(--text-mid); font-weight: 600; }
+.scen-conf-ic { flex: 0 0 10px; text-align: center; font-weight: 700; }
+.scen-conf-row.ok  .scen-conf-ic { color: #00c896; }
+.scen-conf-row.bad .scen-conf-ic { color: #ff4757; }
+.scen-conf-row.neu .scen-conf-ic { color: var(--muted); }
+.scen-verdict {
+  display: inline-block; margin-left: 8px; padding: 1px 7px; border-radius: 3px;
+  font-size: 8px; letter-spacing: .06em; font-family: 'DM Mono', monospace;
+  font-weight: 700; vertical-align: 2px; white-space: nowrap;
+}
+.scen-verdict.kuat    { background: rgba(0,200,150,.12);  color: #00c896; border: 1px solid rgba(0,200,150,.3); }
+.scen-verdict.cukup   { background: rgba(96,165,250,.12); color: #60a5fa; border: 1px solid rgba(96,165,250,.3); }
+.scen-verdict.campur  { background: rgba(255,200,0,.1);   color: #e6b800; border: 1px solid rgba(255,200,0,.25); }
+.scen-verdict.konflik { background: rgba(255,71,87,.12);  color: #ff4757; border: 1px solid rgba(255,71,87,.3); }
+.scen-conf-caption {
+  font-size: 8px; color: var(--muted); font-family: 'DM Mono', monospace;
+  line-height: 1.5; margin: 2px 0 4px; opacity: .8;
+}
+.scen-pair-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 7px; }
+.scen-pair-actions .cal-scenario-ck-btn { margin-top: 0; }
 .cal-scenario-nodata {
   font-size: 10px; color: var(--muted); font-family: 'DM Mono', monospace;
   padding: 10px 0; text-align: center;
@@ -7317,7 +7344,8 @@ function calRunScenario(evId, currency, direction, eventName) {
   if (!resultsEl) return;
 
   if (!cbData || cbData.length === 0) {
-    resultsEl.innerHTML = `<div class="cal-scenario-nodata">Data CB belum dimuat — buka tab RINGKASAN dulu untuk memuat bias.</div>`;
+    resultsEl.innerHTML = `<div class="cal-scenario-nodata">Memuat data bias bank sentral…</div>`;
+    scenarioEnsureData(evId, currency, direction, eventName);
     return;
   }
 
@@ -7327,7 +7355,11 @@ function calRunScenario(evId, currency, direction, eventName) {
     return;
   }
 
-  resultsEl.innerHTML = scenarioRenderResults(pairs, currency, direction, eventName);
+  resultsEl.innerHTML = scenarioRenderResults(pairs, currency, direction, eventName, evId);
+  // Baris teknikal diisi async per pair (display-only, tidak mengubah ranking)
+  pairs.forEach(p => scenarioFillTA(evId, p.pair, p.dir));
+  // Sumber data konfluensi yang belum dimuat di-fetch di belakang, lalu re-render
+  scenarioEnsureData(evId, currency, direction, eventName);
 }
 
 function scenarioRankCurrencies(eventCur, direction) {
@@ -7337,23 +7369,12 @@ function scenarioRankCurrencies(eventCur, direction) {
     if (!cb) return CB_BIAS_NEUTRAL_LVL;
     return CB_BIAS_LEVEL[cb.bias?.toLowerCase()] ?? CB_BIAS_NEUTRAL_LVL;
   };
-  const getCBBias = cur => {
-    const cb = cbData && cbData.find(c => c.currency === cur);
-    return cb ? (cb.bias || 'Neutral') : 'Neutral';
-  };
-  const getCBRate = cur => {
-    const cb = cbData && cbData.find(c => c.currency === cur);
-    return cb ? (cb.rate_display || cb.rate || null) : null;
-  };
-
   const eventCurScore = getCBScore(eventCur);
   const results = [];
 
   if (eventCur === 'USD') {
     for (const cp of USD_COUNTERPARTS) {
       const counterScore = getCBScore(cp.cur);
-      const counterBias  = getCBBias(cp.cur);
-      const rate         = getCBRate(cp.cur);
       // beat = USD kuat: untuk pairs di mana USD=base (USDJPY, USDCHF, USDCAD) → LONG
       //                  untuk pairs di mana USD=quote (EURUSD, GBPUSD, etc.) → SHORT
       // miss = USD lemah: invert
@@ -7366,21 +7387,13 @@ function scenarioRankCurrencies(eventCur, direction) {
       const score = direction === 'beat'
         ? (eventCurScore - counterScore) // prefer pairing with most-dovish counterpart
         : (counterScore - eventCurScore); // prefer pairing with most-hawkish counterpart
-      const rateStr = rate ? ` · Rate ${rate}` : '';
-      results.push({
-        pair: cp.pair,
-        dir:  pairDir,
-        reason: `${cp.cur}: ${counterBias}${rateStr}`,
-        score,
-      });
+      results.push({ pair: cp.pair, dir: pairDir, score });
     }
   } else {
     // Non-USD event: pair against USD + find best cross with most-opposing currency
     const pairMap = SCENARIO_PAIR_MAP[eventCur];
     if (pairMap) {
       const usdScore = getCBScore('USD');
-      const usdBias  = getCBBias('USD');
-      const usdRate  = getCBRate('USD');
       let pairDir;
       if (direction === 'beat') {
         pairDir = pairMap.isBase ? 'long' : 'short';
@@ -7390,8 +7403,7 @@ function scenarioRankCurrencies(eventCur, direction) {
       const score = direction === 'beat'
         ? (eventCurScore - usdScore)
         : (usdScore - eventCurScore);
-      const rateStr = usdRate ? ` · USD Rate ${usdRate}` : '';
-      results.push({ pair: pairMap.pair, dir: pairDir, reason: `USD: ${usdBias}${rateStr}`, score });
+      results.push({ pair: pairMap.pair, dir: pairDir, score });
     }
     // Also check crosses with other currencies — pakai HANYA pair yang benar-benar
     // ada di SZ_PAIRS dengan orientasi pasar yang benar (mis. event GBP vs EUR →
@@ -7401,8 +7413,6 @@ function scenarioRankCurrencies(eventCur, direction) {
     const otherCurs = ['USD','EUR','GBP','JPY','AUD','NZD','CAD','CHF'].filter(c => c !== eventCur);
     for (const cp of otherCurs) {
       const cpScore = getCBScore(cp);
-      const cpBias  = getCBBias(cp);
-      const cpRate  = getCBRate(cp);
       const score = direction === 'beat' ? (eventCurScore - cpScore) : (cpScore - eventCurScore);
       let pairName = null, isBase = false;
       if (cp === 'USD') {
@@ -7419,44 +7429,307 @@ function scenarioRankCurrencies(eventCur, direction) {
       let pairDir;
       if (direction === 'beat') pairDir = isBase ? 'long' : 'short';
       else                      pairDir = isBase ? 'short' : 'long';
-      const rateStr = cpRate ? ` · Rate ${cpRate}` : '';
       if (!results.find(r => r.pair === pairName)) {
-        results.push({ pair: pairName, dir: pairDir, reason: `${cp}: ${cpBias}${rateStr}`, score });
+        results.push({ pair: pairName, dir: pairDir, score });
       }
     }
   }
 
-  // Sort by score descending — highest divergence first
+  // Konfluensi "dasar bertumpu": divergensi CB saja belum cukup buat milih pair —
+  // kejutan data cuma katalis satu sisi. Fundamental counter-currency, flow COT,
+  // retail kontrarian, dan korelasi antar-leg ikut menimbang ranking supaya pair
+  // yang naik ke atas memang punya sisi lain yang menopang arah trade.
+  for (const r of results) {
+    r.conf = scenarioConfluence(r.pair, r.dir, eventCur, direction);
+    r.score += r.conf.bonus;
+  }
+
+  // Sort by score descending — divergensi CB + bonus konfluensi tertinggi dulu
   results.sort((a, b) => b.score - a.score);
   return results.slice(0, 3);
 }
 
-function scenarioRenderResults(pairs, eventCur, direction, eventName) {
+function scenarioRenderResults(pairs, eventCur, direction, eventName, evId) {
   const dirLabel = direction === 'beat'
     ? `<span style="color:#00c896">▲ BEAT → ${eventCur} menguat</span>`
     : `<span style="color:#ff4757">▼ MISS → ${eventCur} melemah</span>`;
 
-  const pairsHtml = pairs.map((p, i) => `
+  const pairsHtml = pairs.map((p, i) => {
+    const key  = p.pair.replace('/', '');
+    const conf = p.conf || { rows: [], plus: 0, minus: 0 };
+    // Baris teknikal dirender sebagai placeholder — diisi async oleh scenarioFillTA
+    const taRow = `<div class="scen-conf-row neu" id="scenTa-${evId}-${key}"><span class="scen-conf-ic">…</span><span><strong>Teknikal:</strong> memuat tren harian…</span></div>`;
+    return `
     <div class="cal-scenario-pair">
       <div class="cal-scenario-rank">#${i+1}</div>
       <div class="cal-scenario-pair-body">
-        <div class="cal-scenario-pair-name">${p.dir === 'long' ? 'LONG' : 'SHORT'} <span style="color:var(--text)">${p.pair}</span></div>
+        <div class="cal-scenario-pair-name">${p.dir === 'long' ? 'LONG' : 'SHORT'} <span style="color:var(--text)">${p.pair}</span>${scenarioVerdictBadge(evId, key, conf.plus, conf.minus)}</div>
         <div class="cal-scenario-pair-dir ${p.dir}">${p.dir.toUpperCase()}</div>
-        <div class="cal-scenario-pair-reason">${p.reason}</div>
+        <div class="scen-conf">${conf.rows.join('')}${taRow}</div>
+        <div class="scen-pair-actions">
+          <button class="cal-scenario-ck-btn" onclick="scenarioGoToChecklist('${p.pair}')">✓ Validasi CHECKLIST</button>
+          <button class="cal-scenario-ck-btn" onclick="scenarioGoToSizing('${p.pair}','${p.dir}')">⚖ Hitung Lot · SIZING</button>
+        </div>
       </div>
-    </div>`).join('');
-
-  // Cocokkan tanpa slash di KEDUA sisi — opsi selector ber-slash ("EUR/USD"),
-  // jadi includes('EURUSD') lama tidak pernah match dan pair diam-diam tak terpilih.
-  const firstPair = pairs[0]?.pair?.replace('/','');
+    </div>`;
+  }).join('');
 
   return `
     <div class="cal-scenario-subheading">SIMULASI: ${eventName} ${dirLabel}</div>
+    <div class="scen-conf-caption">Dasar bertumpu — tiap pair diuji terhadap faktor independen: bias bank sentral · fundamental makro · flow COT · retail · korelasi antar-leg · teknikal. Makin banyak ✓, makin kuat alasan trade selain kejutan data itu sendiri.</div>
     ${pairsHtml}
     <div class="cal-scenario-warn">
-      ⚠ Ini rekomendasi awal — tetap validasi via CHECKLIST sebelum entry.
-      <br><button class="cal-scenario-ck-btn" onclick="switchView('checklist')${firstPair ? ";setTimeout(()=>{const s=document.getElementById('ckPairSelector');if(s){for(let o of s.options){if(o.value.replace('/','')==='${firstPair}'){s.value=o.value;ckOnPairChange();break;}}}},200)" : ''}">→ Buka CHECKLIST</button>
+      ⚠ Ini rekomendasi awal, bukan sinyal entry — validasi kondisi pasar via CHECKLIST, lalu hitung ukuran lot yang aman via SIZING sebelum eksekusi.
     </div>`;
+}
+
+// ── Konfluensi "dasar bertumpu" ──────────────────────────────────────────────
+// Kejutan data (beat/miss) hanya katalis satu sisi pair. Fungsi ini menguji sisi
+// lainnya: apakah counter-currency memang lemah/kuat (fundamental), apakah bias
+// kebijakan divergen (hawkish/dovish), apakah smart money (COT) & retail
+// kontrarian searah, dan apakah kedua leg pair memang bergerak berlawanan
+// (korelasi). verdict: 1 mendukung ✓, -1 konflik ✕, 0 netral −, null data belum ada.
+const SCEN_FUND_RATE_KEYS = { USD:'Fed Rate', EUR:'ECB Rate', GBP:'BOE Rate', JPY:'BOJ Rate', CAD:'BOC Rate', AUD:'RBA Rate', NZD:'RBNZ Rate', CHF:'SNB Rate' };
+
+function scenarioFundScore(cur) {
+  if (!fundData || !fundData[cur]) return null;
+  const rateKey = SCEN_FUND_RATE_KEYS[cur];
+  let bull = 0, scored = 0;
+  Object.entries(fundData[cur]).forEach(([k, v]) => {
+    if (k === rateKey) return;
+    const s = scoreInd(k, v.actual, v.previous);
+    if (s !== null) { scored++; if (s > 0) bull++; }
+  });
+  return scored > 0 ? Math.round(bull / scored * 100) : null;
+}
+
+function scenarioConfluence(pairName, pairDir, eventCur, direction) {
+  const [base, quote] = pairName.split('/');
+  const counter = base === eventCur ? quote : base;
+  const rows = [];
+  let plus = 0, minus = 0, bonus = 0;
+  const add = (verdict, label, text) => {
+    if (verdict === 1) plus++;
+    if (verdict === -1) minus++;
+    const cls = verdict === 1 ? 'ok' : verdict === -1 ? 'bad' : 'neu';
+    const ic  = verdict === 1 ? '✓' : verdict === -1 ? '✕' : verdict === null ? '…' : '−';
+    rows.push(`<div class="scen-conf-row ${cls}"><span class="scen-conf-ic">${ic}</span><span><strong>${label}</strong> ${text}</span></div>`);
+  };
+
+  // 1. Bias bank sentral — divergensi hawkish/dovish (sudah jadi skor dasar ranking,
+  //    jadi di sini display-only tanpa bonus tambahan)
+  const cbOf  = cur => cbData && cbData.find(c => c.currency === cur);
+  const cbLvl = cb => CB_BIAS_LEVEL[cb?.bias?.toLowerCase()] ?? CB_BIAS_NEUTRAL_LVL;
+  const cbE = cbOf(eventCur), cbC = cbOf(counter);
+  if (cbData && cbData.length > 0) {
+    const gap = direction === 'beat' ? cbLvl(cbE) - cbLvl(cbC) : cbLvl(cbC) - cbLvl(cbE);
+    const v = gap > 0 ? 1 : gap < 0 ? -1 : 0;
+    const fmtCb = (cur, cb) => `${cur} ${escHtml(cb?.bias || 'Neutral')}${cb?.rate_display || cb?.rate ? ' · ' + escHtml(String(cb.rate_display || cb.rate)) : ''}`;
+    add(v, 'Bias CB:', `${fmtCb(eventCur, cbE)} vs ${fmtCb(counter, cbC)} — ${
+      v === 1 ? 'divergensi kebijakan menopang arah trade'
+      : v === -1 ? 'arah kebijakan justru melawan skenario'
+      : 'tidak ada divergensi kebijakan'}`);
+  } else {
+    add(null, 'Bias CB:', 'data bank sentral belum dimuat');
+  }
+
+  // 2. Fundamental makro — skor indikator (Bull/Bear) kedua sisi pair
+  const eS = scenarioFundScore(eventCur), cS = scenarioFundScore(counter);
+  if (eS === null && cS === null) {
+    add(null, 'Makro:', 'data fundamental belum dimuat…');
+  } else {
+    const lbl  = s => s === null ? '—' : `${s}% ${s >= 60 ? 'Bull' : s < 40 ? 'Bear' : 'Neut'}`;
+    let v = 0, msg;
+    if (eS !== null && cS !== null) {
+      const gap = direction === 'beat' ? eS - cS : cS - eS;
+      v = gap >= 15 ? 1 : gap <= -15 ? -1 : 0;
+      bonus += Math.max(-2, Math.min(2, gap / 40));
+      msg = v === 1 ? `fundamental ${counter} ${direction === 'beat' ? 'lebih lemah' : 'lebih kuat'}, jadi dasar bertumpu arah trade`
+          : v === -1 ? 'fundamental melawan — kejutan data harus cukup besar untuk membalik tren makro'
+          : 'fundamental berimbang, belum jadi penopang';
+    } else if (cS !== null) {
+      // hanya counter yang punya data: beat → counter sebaiknya lemah, miss → kuat
+      v = (direction === 'beat' ? cS < 40 : cS >= 60) ? 1
+        : (direction === 'beat' ? cS >= 60 : cS < 40) ? -1 : 0;
+      bonus += v * 0.75;
+      msg = v === 1 ? `fundamental ${counter} ${direction === 'beat' ? 'lemah' : 'kuat'}, jadi dasar bertumpu arah trade`
+          : v === -1 ? `fundamental ${counter} melawan arah skenario`
+          : `fundamental ${counter} netral, belum jadi penopang`;
+    } else {
+      // hanya event currency yang punya data: beat → sebaiknya kuat, miss → lemah
+      v = (direction === 'beat' ? eS >= 60 : eS < 40) ? 1
+        : (direction === 'beat' ? eS < 40 : eS >= 60) ? -1 : 0;
+      bonus += v * 0.75;
+      msg = v === 1 ? `fundamental ${eventCur} ${direction === 'beat' ? 'kuat' : 'lemah'} menopang skenario — data ${counter} belum tersedia`
+          : v === -1 ? `fundamental ${eventCur} melawan arah skenario — data ${counter} belum tersedia`
+          : `fundamental ${eventCur} netral — data ${counter} belum tersedia`;
+    }
+    add(v, 'Makro:', `${eventCur} ${lbl(eS)} vs ${counter} ${lbl(cS)} — ${msg}`);
+  }
+
+  // 3. Flow COT — pergeseran posisi leveraged funds minggu-ke-minggu
+  if (cotData && cotData.positions) {
+    const align = cotAlignmentNote(base, quote, pairDir);
+    if (align) {
+      add(align.aligned ? 1 : -1, 'COT:', escHtml(align.text.replace(/^[✅⚠]\s*/, '')));
+      bonus += align.aligned ? 0.75 : -0.75;
+    } else {
+      add(0, 'COT:', 'pergeseran posisi lev funds minggu ini di bawah 5K kontrak — belum signifikan');
+    }
+  } else {
+    add(null, 'COT:', 'data COT belum dimuat…');
+  }
+
+  // 4. Retail sentiment — kontrarian (hanya untuk pair yang tercakup datanya)
+  const rp = retailData?.positions?.[pairName.replace('/', '')];
+  if (rp && rp.long_pct != null) {
+    const v = rp.signal === 'NEUTRAL' || !rp.signal ? 0
+      : ((rp.signal === 'CONTRARIAN_LONG') === (pairDir === 'long') ? 1 : -1);
+    add(v, 'Retail:', `${rp.long_pct}% long / ${rp.short_pct}% short — ${
+      v === 1 ? `mayoritas retail terjebak di sisi lawan → kontrarian mendukung ${pairDir.toUpperCase()}`
+      : v === -1 ? 'sinyal kontrarian retail justru melawan arah trade'
+      : 'posisi retail berimbang (netral)'}`);
+    if (v !== 0) bonus += v * 0.5;
+  }
+
+  // 5. Korelasi antar-leg — seberapa berlawanan kekuatan kedua mata uang bergerak
+  //    (seri strength: X/USD, JPY·CAD·CHF di-invert, USD diwakili DXY)
+  const instA = TEK_CORR_LEG[base], instB = TEK_CORR_LEG[quote];
+  const m20 = corrData?.matrix_20d;
+  const r = m20 && instA && instB ? (m20[`${instA}|${instB}`] ?? m20[`${instB}|${instA}`] ?? null) : null;
+  if (r !== null && r !== undefined) {
+    const v = r <= -0.4 ? 1 : r >= 0.4 ? -1 : 0;
+    add(v, 'Korelasi:', `kekuatan ${base} × ${quote} r=${r.toFixed(2)} (20d) — ${
+      v === 1 ? 'kedua leg bergerak berlawanan, pair responsif terhadap kejutan'
+      : v === -1 ? 'kedua leg cenderung bergerak searah — pergerakan pair bisa teredam'
+      : 'hubungan lemah — reaksi pair kurang konsisten'}`);
+    if (v !== 0) bonus += v * 0.5;
+  } else if (m20) {
+    add(0, 'Korelasi:', `data korelasi tidak tersedia untuk ${base}/${quote}`);
+  } else {
+    add(null, 'Korelasi:', 'data korelasi belum dimuat…');
+  }
+
+  return { rows, plus, minus, bonus };
+}
+
+function scenarioVerdictBadge(evId, key, plus, minus) {
+  let label, cls;
+  if (minus === 0 && plus >= 3) { label = 'DASAR KUAT';  cls = 'kuat'; }
+  else if (plus > minus)        { label = 'DASAR CUKUP'; cls = 'cukup'; }
+  else if (plus === minus)      { label = 'CAMPURAN';    cls = 'campur'; }
+  else                          { label = 'KONFLIK';     cls = 'konflik'; }
+  return `<span class="scen-verdict ${cls}" id="scenVerdict-${evId}-${key}" data-plus="${plus}" data-minus="${minus}" title="${plus} faktor mendukung · ${minus} faktor konflik">${label} ${plus}✓${minus ? ' ' + minus + '✕' : ''}</span>`;
+}
+
+// Dipanggil saat baris teknikal (async) selesai dihitung — verdict badge ikut
+// diperbarui tanpa mengubah ranking yang sudah dirender.
+function scenarioBumpVerdict(evId, key, v) {
+  const el = document.getElementById(`scenVerdict-${evId}-${key}`);
+  if (!el) return;
+  const plus  = (+el.dataset.plus  || 0) + (v === 1 ? 1 : 0);
+  const minus = (+el.dataset.minus || 0) + (v === -1 ? 1 : 0);
+  el.outerHTML = scenarioVerdictBadge(evId, key, plus, minus);
+}
+
+// Tren teknikal harian per pair — SMA50/SMA200 + RSI dari endpoint TA.
+// Cache 15 menit (memory + sessionStorage) supaya toggle BEAT/MISS berulang
+// tidak menghajar endpoint yang di-rate-limit 5 req/menit.
+const _scenTaCache = {};
+async function scenarioFillTA(evId, pairName, pairDir) {
+  const key = pairName.replace('/', '');
+  const el = document.getElementById(`scenTa-${evId}-${key}`);
+  if (!el) return;
+  const TTL = 15 * 60 * 1000;
+  try {
+    let entry = _scenTaCache[key];
+    if (!entry || Date.now() - entry.ts > TTL) {
+      try {
+        const ss = sessionStorage.getItem('scenTa_' + key);
+        if (ss) { const p = JSON.parse(ss); if (Date.now() - p.ts < TTL) entry = p; }
+      } catch(_) {}
+    }
+    if (!entry || Date.now() - entry.ts > TTL) {
+      const rres = await fetch('/api/correlations?action=ta&symbol=' + encodeURIComponent(jnPairToYahooSymbol(pairName)) + '&interval=1d', { signal: AbortSignal.timeout(12000) });
+      if (!rres.ok) throw new Error('HTTP ' + rres.status);
+      entry = { ts: Date.now(), data: await rres.json() };
+      _scenTaCache[key] = entry;
+      try { sessionStorage.setItem('scenTa_' + key, JSON.stringify(entry)); } catch(_) {}
+    }
+    const ta = entry.data;
+    const a50 = ta.price_vs_sma50, a200 = ta.price_vs_sma200;
+    const trend = a50 && a200
+      ? (a50 === 'above' && a200 === 'above' ? 'up' : a50 === 'below' && a200 === 'below' ? 'down' : 'mixed')
+      : (a50 ? (a50 === 'above' ? 'up' : 'down') : null);
+    let v = 0, txt;
+    if (trend === 'up' || trend === 'down') {
+      const searah = (trend === 'up') === (pairDir === 'long');
+      v = searah ? 1 : -1;
+      txt = `harga ${trend === 'up' ? 'di atas' : 'di bawah'} SMA50 & SMA200 (tren harian ${trend === 'up' ? 'naik' : 'turun'}) — ${searah ? 'searah trade' : 'melawan arah trade, butuh konfirmasi pembalikan'}`;
+    } else if (trend === 'mixed') {
+      txt = 'harga di antara SMA50/SMA200 — tren harian belum tegas';
+    } else {
+      txt = 'data tren tidak tersedia';
+    }
+    let rsiNote = '';
+    if (ta.rsi_14 != null) {
+      rsiNote = ` · RSI ${Math.round(ta.rsi_14)}`;
+      if (pairDir === 'long'  && ta.rsi_14 >= 70) { rsiNote += ' (overbought — rawan koreksi)'; if (v === 1) v = 0; }
+      if (pairDir === 'short' && ta.rsi_14 <= 30) { rsiNote += ' (oversold — rawan rebound)';   if (v === 1) v = 0; }
+    }
+    el.className = 'scen-conf-row ' + (v === 1 ? 'ok' : v === -1 ? 'bad' : 'neu');
+    el.innerHTML = `<span class="scen-conf-ic">${v === 1 ? '✓' : v === -1 ? '✕' : '−'}</span><span><strong>Teknikal:</strong> ${txt}${rsiNote}</span>`;
+    if (v !== 0) scenarioBumpVerdict(evId, key, v);
+  } catch(e) {
+    el.innerHTML = `<span class="scen-conf-ic">−</span><span><strong>Teknikal:</strong> tidak tersedia saat ini</span>`;
+  }
+}
+
+// Fetch sumber konfluensi yang belum dimuat, lalu re-render skenario yang masih
+// terbuka. Throttle 60 detik supaya sumber yang memang gagal tidak di-spam ulang
+// tiap kali user toggle BEAT/MISS.
+let _scenEnsureLastTs = 0;
+async function scenarioEnsureData(evId, currency, direction, eventName) {
+  const jobs = [];
+  if (!cbData || cbData.length === 0) jobs.push(fetchCBStatus().catch(() => {}));
+  if (!fundData)   jobs.push(fetchFundamental().catch(() => {}));
+  if (!cotData)    jobs.push(fetch('/api/feeds?type=cot', { signal: AbortSignal.timeout(25000) }).then(r => r.json()).then(d => { cotData = d; cotFetchedAt = Date.now(); }).catch(() => {}));
+  if (!retailData) jobs.push(fetchRetailSentiment().catch(() => {}));
+  if (!corrData)   jobs.push(fetchCorrelations().catch(() => {}));
+  if (jobs.length === 0) return;
+  if (Date.now() - _scenEnsureLastTs < 60000) return;
+  _scenEnsureLastTs = Date.now();
+  await Promise.allSettled(jobs);
+  // Re-render hanya kalau skenario yang sama masih terbuka dengan arah yang sama
+  if (calScenarioOpen !== evId) return;
+  const activeBtn = document.getElementById((direction === 'beat' ? 'calScenBeat-' : 'calScenMiss-') + evId);
+  if (activeBtn && activeBtn.classList.contains('active')) calRunScenario(evId, currency, direction, eventName);
+}
+
+function scenarioGoToChecklist(pair) {
+  switchView('checklist');
+  setTimeout(() => {
+    const s = document.getElementById('ckPairSelector');
+    if (s) {
+      for (const o of s.options) {
+        if (o.value.replace('/', '') === pair.replace('/', '')) { s.value = o.value; ckOnPairChange(); break; }
+      }
+    }
+  }, 200);
+}
+
+function scenarioGoToSizing(pair, dir) {
+  switchView('sizing');
+  setTimeout(() => {
+    const sel = document.getElementById('szPair');
+    if (sel) {
+      for (const opt of sel.options) {
+        if (opt.value === pair) { sel.value = pair; szUpdatePipInfo(); break; }
+      }
+    }
+    if (dir === 'long' || dir === 'short') szSetDir(dir);
+    showToast('Hitung Ukuran Lot', `${pair} ${(dir || '').toUpperCase()} — isi equity, risk %, dan jarak SL untuk dapat lot yang aman. Tetap validasi CHECKLIST sebelum entry.`, 4500);
+  }, 200);
 }
 
 function startCountdownTimer() {

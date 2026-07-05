@@ -1,9 +1,31 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-07-05 (session 143 lanjutan 2 — tab CAL: date-jump picker ke tanggal/pekan arbitrer, seperti ForexFactory)
+> **Last updated:** 2026-07-05 (session 143 lanjutan 3 — SIMULASI kalender: konfluensi "dasar bertumpu" multi-faktor per pair + tombol Hitung Lot · SIZING)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
+
+---
+
+## Changelog Session 143 lanjutan 3 (2026-07-05) — SIMULASI Kalender: Konfluensi "Dasar Bertumpu" + Tombol Hitung Lot
+
+**Request user:** (1) tombol "→ Buka CHECKLIST" di panel SIMULASI event kalender ingin juga bisa mengarah ke sizing calculator, tapi bingung wording-nya supaya user paham; (2) rekomendasi pair hasil simulasi harus punya "dasar bertumpu" — contoh: data USD beat bukan berarti langsung sell EUR/USD; perlu konfirmasi EUR memang lagi lemah (fundamental, hawkish/dovish, teknikal, korelasi) sebelum pair itu layak direkomendasikan.
+
+**Konfluensi multi-faktor per pair (`scenarioConfluence()` di `index.html`):** tiap pair rekomendasi kini diuji terhadap 6 faktor independen, tampil sebagai baris ✓ (mendukung) / ✕ (konflik) / − (netral) / … (data belum dimuat):
+1. **Bias CB** — divergensi hawkish/dovish kedua sisi pair (`CB_BIAS_LEVEL`, sudah jadi skor dasar ranking → display-only, tanpa bonus ganda).
+2. **Makro** — skor fundamental Bull/Bear kedua mata uang, dihitung dari `fundData` via helper standalone `scenarioFundScore()` (logika sama dengan tab FUNDAMENTAL, tapi tidak butuh tab itu dirender dulu). Support = gap skor ≥15 searah skenario; teks menyesuaikan kalau salah satu sisi belum punya data (tidak mengklaim "counter lemah" saat datanya kosong).
+3. **COT** — reuse `cotAlignmentNote()` (flow leveraged funds mingguan, threshold 5K kontrak) — helper yang sama dengan Checklist/Jurnal.
+4. **Retail** — sinyal kontrarian dari `retailData` (baris disembunyikan untuk pair di luar cakupan feed retail).
+5. **Korelasi antar-leg** — `corrData.matrix_20d` seri kekuatan mata uang (USD=DXY): r ≤ -0.4 = kedua leg bergerak berlawanan → pair responsif terhadap kejutan (✓); r ≥ +0.4 = leg searah → pergerakan pair teredam (✕, relevan untuk cross seperti EUR/GBP).
+6. **Teknikal** (async) — SMA50/SMA200 + RSI dari `/api/correlations?action=ta&interval=1d`, render placeholder "memuat…" lalu diisi `scenarioFillTA()`. Cache 15 menit (memory + sessionStorage) supaya toggle BEAT/MISS tidak menghajar rate limit 5 req/menit. RSI ekstrem (≥70 long / ≤30 short) menetralkan verdict searah + catatan overbought/oversold.
+
+**Ranking & verdict:** skor ranking bukan lagi murni divergensi CB — faktor sinkron (makro ±2, COT ±0.75, retail ±0.5, korelasi ±0.5) jadi bonus/penalti di `scenarioRankCurrencies()`, jadi pair dengan dasar bertumpu lebih kuat naik peringkat. Teknikal yang datang async sengaja display-only (tidak re-rank, biar baris tidak lompat-lompat). Badge verdict per pair: **DASAR KUAT** (≥3✓ tanpa ✕) / **DASAR CUKUP** / **CAMPURAN** / **KONFLIK** — badge ikut ter-update saat baris teknikal masuk (`scenarioBumpVerdict()` via data-attribute).
+
+**Auto-load data:** `scenarioEnsureData()` — sumber yang belum dimuat (cb-status, fundamental, COT, retail, korelasi) di-fetch di belakang saat simulasi dibuka, lalu panel re-render kalau skenario yang sama masih aktif (throttle 60 detik supaya sumber yang gagal tidak di-spam). Pesan lama "buka tab RINGKASAN dulu" diganti "Memuat data bias bank sentral…" yang resolve sendiri.
+
+**Tombol aksi per pair (bukan lagi satu tombol global):** tiap pair punya "✓ Validasi CHECKLIST" dan "⚖ Hitung Lot · SIZING" (`scenarioGoToChecklist()`/`scenarioGoToSizing()`). Wording "Hitung Lot" dipilih karena itu bahasa yang dipakai petunjuk app sendiri ("Output: lot size yang tepat"); "· SIZING" menautkan ke nama tab. Tombol SIZING sekaligus pre-select pair + arah (LONG/SHORT) di kalkulator (pola sama dengan `thesisGoToSizing()`) + toast panduan "isi equity, risk %, dan jarak SL… tetap validasi CHECKLIST sebelum entry".
+
+**Verifikasi:** 12 unit test Node (ekstraksi fungsi dari index.html + mock data: ranking beat/miss, verdict per kombinasi data lengkap/parsial/kosong, threshold badge, render HTML) + 23 test E2E Chrome headless via puppeteer-core dengan mock API (BEAT/MISS toggle, badge ter-update setelah TA async, cache TA antar-toggle, navigasi tombol SIZING pre-select pair+arah, CHECKLIST pre-select pair, event non-USD, tanpa JS error) — semuanya lulus. Screenshot desktop 1400px & mobile 390px dicek visual: tidak ada horizontal overflow.
 
 ---
 
