@@ -2584,6 +2584,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
       <div class="cal-filter-group">
         <button class="cal-filter-btn active-all" id="calWeekThis" onclick="setCalWeekView('this')">Minggu Ini</button>
         <button class="cal-filter-btn" id="calWeekNext" onclick="setCalWeekView('next')">Minggu Depan ›</button>
+        <button class="cal-filter-btn" id="calDateJumpToggle" onclick="toggleCalDateJump()" title="Lompat ke tanggal tertentu">📅</button>
+        <button class="cal-filter-btn active-all" id="calCustomChip" style="display:none" onclick="calClearCustomWeek()"></button>
       </div>
       <div style="display:flex;align-items:center;gap:8px">
         <span class="cot-stale-badge" id="calStaleBadge" style="display:none">⚠ Data lama</span>
@@ -2597,12 +2599,11 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
         </button>
       </div>
     </div>
-    <div class="cal-toolbar-row">
+    <div class="cal-toolbar-row" id="calDateJumpRow" style="display:none">
       <div class="cal-filter-group">
         <input type="date" id="calDateJump" class="cal-date-input">
-        <button class="cal-filter-btn" id="calDateJumpBtn" onclick="calGoToDatePicked()">📅 Lompat</button>
+        <button class="cal-filter-btn" id="calDateJumpBtn" onclick="calGoToDatePicked()">Lompat</button>
       </div>
-      <button class="cal-filter-btn active-all" id="calCustomChip" style="display:none" onclick="calClearCustomWeek()"></button>
     </div>
   </div>
   <div class="cal-day-strip" id="calDayStrip"></div>
@@ -5251,6 +5252,7 @@ function setCalWeekView(view) {
   calSelectedDate = null; // dates differ between weeks — don't carry a stale pick across
   calCustomWeekLabel = null; // leaving custom mode — clear its toolbar chip
   updateCalCustomChip();
+  setCalDateJumpOpen(false);
   document.getElementById('calWeekThis').className = 'cal-filter-btn' + (view==='this' ? ' active-all' : '');
   document.getElementById('calWeekNext').className  = 'cal-filter-btn' + (view==='next' ? ' active-all' : '');
   document.getElementById('calCountdownWrap').style.display = view === 'this' ? '' : 'none';
@@ -5285,6 +5287,7 @@ async function fetchCalendarForDate(dateStr) {
     calCustomWeekLabel = dateStr;
     calSelectedDate = dateStr; // pre-select the exact date the user asked for, not just its week
     updateCalCustomChip();
+    setCalDateJumpOpen(false); // collapse the picker row now that a date is applied — the chip shows what's active
     const calStaleBadge = document.getElementById('calStaleBadge');
     if (calStaleBadge) calStaleBadge.style.display = data.stale ? 'inline' : 'none';
     renderCalendar();
@@ -5303,6 +5306,21 @@ function calGoToDatePicked() {
 
 function calClearCustomWeek() {
   setCalWeekView('this');
+}
+
+// The date-input row is collapsed by default (see toolbar markup) — this
+// toggle button is the only always-visible trace of the date-jump feature,
+// keeping the toolbar to 2 rows instead of a 3rd row that's always showing.
+function setCalDateJumpOpen(open) {
+  const row = document.getElementById('calDateJumpRow');
+  const toggle = document.getElementById('calDateJumpToggle');
+  if (row) row.style.display = open ? '' : 'none';
+  if (toggle) toggle.className = 'cal-filter-btn' + (open ? ' active-all' : '');
+}
+
+function toggleCalDateJump() {
+  const row = document.getElementById('calDateJumpRow');
+  setCalDateJumpOpen(row.style.display === 'none');
 }
 
 // ── CB TRACKER ───────────────────────────────────────────
