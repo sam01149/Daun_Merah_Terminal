@@ -358,6 +358,116 @@ async function fetchOhlcvContext(symbol, label) {
   }
 }
 
+// Open (status:'open', non-empty thesis_text) journal entries for one device,
+// newest first, capped at 5 — shared by the live per-request Call 4 (single
+// device, from query ?device_id=) and the cron-scheduled multi-device sweep
+// below (fetchOpenThesisEntries is called once per known device).
+async function fetchOpenThesisEntries(deviceId) {
+  const ids = await redisCmd('ZRANGE', `journal_index:${deviceId}`, 0, -1, 'REV') || [];
+  const openEntries = [];
+  for (const id of ids.slice(0, 10)) {
+    try {
+      const raw = await redisCmd('GET', `journal:${deviceId}:${id}`);
+      if (!raw) continue;
+      const entry = JSON.parse(raw);
+      if (entry.status === 'open' && entry.thesis_text?.trim()) openEntries.push(entry);
+      if (openEntries.length >= 5) break;
+    } catch(e) {}
+  }
+  return openEntries;
+}
+
+// Call 4 — "does any recent headline contradict this trader's open thesis?".
+// Extracted so it can run for one device inline (live request) or looped over
+// every device with journal data (cron run — see thesis-monitor sweep below).
+async function checkThesisContradictions(openEntries, recentItems, SAMBANOVA_KEY, GROQ_KEY) {
+  const thesesBlock = openEntries.map((e, i) => `${i+1}. [ID:${e.id}] ${e.pair} ${(e.direction||'').toUpperCase()}: ${e.thesis_text}`).join('\n');
+  const headlineTitles = recentItems.slice(0, 30).map(h => h.title);
+  const headlines30 = headlineTitles.map((t, i) => `${i+1}. ${t}`).join('\n');
+  const monitorPrompt = [
+    'You are a forex trade thesis monitor.', '',
+    'Open trade theses:', thesesBlock, '', 'Recent headlines (newest first):', headlines30, '',
+    'Check if ANY headline directly contradicts or significantly undermines the stated reason for ANY open thesis.',
+    'Only flag genuine contradictions — news that directly opposes the trade direction rationale, not tangentially related news.',
+    'Ignore price-level headlines; focus on fundamental basis changes (macro data, CB policy shifts, geopolitical reversals).', '',
+    'The "headline" field MUST be copied verbatim, character-for-character, from the numbered list above — do not paraphrase or summarize it.',
+    'The "entry_id" field MUST be copied verbatim from the [ID:...] tag of the thesis it contradicts.', '',
+    'Return ONLY valid JSON, no markdown, no explanation:',
+    '{"alerts":[{"entry_id":"...","headline":"exact headline text copied from the list above","reason":"one sentence why this contradicts the thesis"}]}',
+    'If no genuine contradictions found: {"alerts":[]}',
+  ].join('\n');
+  const call4Messages = [{ role: 'user', content: monitorPrompt }];
+  let raw4 = null;
+  // Primary: SambaNova DeepSeek-V3.2 (akun 1) — same model used for Call 2 & 3
+  if (SAMBANOVA_KEY && await cb.canCall(CB_SAMBA_MAIN)) {
+    try {
+      console.log('Call 4: trying SambaNova');
+      raw4 = await aiCall(SAMBANOVA_URL, SAMBANOVA_KEY, SAMBANOVA_MODEL, call4Messages, 700, 0.1, 8000);
+      console.log('Call 4: SambaNova OK');
+      await cb.onSuccess(CB_SAMBA_MAIN);
+    } catch(e) {
+      console.warn('Call 4 SambaNova failed:', e.status || e.message);
+      await cb.onFailure(CB_SAMBA_MAIN, AI_CB_THRESHOLD);
+    }
+  }
+  // Fallback: Groq llama-3.3-70b
+  if (!raw4 && GROQ_KEY) {
+    try {
+      console.log('Call 4: falling back to Groq');
+      raw4 = await aiCall(GROQ_URL, GROQ_KEY, GROQ_MODEL, call4Messages, 700, 0.1, 8000);
+      console.log('Call 4: Groq fallback OK');
+    } catch(e) { console.warn('Call 4 Groq fallback failed:', e.status || e.message); }
+  }
+  if (!raw4) return null;
+  const parsed4 = JSON.parse(raw4.replace(/```json|```/g, '').trim());
+  if (!Array.isArray(parsed4.alerts)) return null;
+  // A2.4: don't trust AI-echoed pair/direction/headline blindly — an LLM restating
+  // structured fields drifts (e.g. "buy" instead of "long"), which silently breaks
+  // the pair+direction match downstream and makes the alert invisible everywhere.
+  // Cross-reference entry_id against server-known openEntries for pair/direction
+  // (ground truth), and require the headline to appear verbatim in the source list
+  // sent to the model — this rejects hallucinated "evidence" instead of showing a
+  // trader a citation that was never actually published.
+  const entryById = new Map(openEntries.map(e => [String(e.id), e]));
+  const headlineSet = new Set(headlineTitles.map(t => t.trim().toLowerCase()));
+  const validated = [];
+  for (const a of parsed4.alerts) {
+    if (!a || typeof a !== 'object') continue;
+    const entry = entryById.get(String(a.entry_id));
+    if (!entry) { console.warn('Call 4: dropped alert — unknown entry_id', a.entry_id); continue; }
+    const headline = typeof a.headline === 'string' ? a.headline.trim() : '';
+    if (!headline || !headlineSet.has(headline.toLowerCase())) {
+      console.warn('Call 4: dropped alert — headline not verbatim in source feed:', headline.slice(0, 80));
+      continue;
+    }
+    const reason = typeof a.reason === 'string' ? a.reason.trim() : '';
+    if (!reason) continue;
+    validated.push({ entry_id: entry.id, pair: entry.pair, direction: entry.direction, headline, reason });
+  }
+  console.log('Call 4: found', parsed4.alerts.length, 'raw alert(s),', validated.length, 'validated');
+  return validated;
+}
+
+// Maps push_subs (keyed by endpoint hash) down to device_id → subscription, so
+// the cron thesis sweep can push-notify a specific device about its own alert.
+// device_id is only present on subs registered after A2.6 (see subscribe.js) —
+// older subscriptions without it are simply skipped for this targeted push.
+async function loadPushSubsByDevice() {
+  const map = new Map();
+  try {
+    const raw = await redisCmd('HGETALL', 'push_subs');
+    if (Array.isArray(raw)) {
+      for (let i = 0; i < raw.length; i += 2) {
+        try {
+          const sub = JSON.parse(raw[i + 1]);
+          if (sub.device_id) map.set(sub.device_id, sub);
+        } catch(e) {}
+      }
+    }
+  } catch(e) { console.warn('loadPushSubsByDevice failed:', e.message); }
+  return map;
+}
+
 module.exports = async function handler(req, res) {
   console.log('market-digest v3 START', new Date().toISOString());
   const handlerStart = Date.now();
@@ -944,83 +1054,11 @@ module.exports = async function handler(req, res) {
 
   const _call4Promise = ((SAMBANOVA_KEY || GROQ_KEY) && deviceId && recentItems.length > 0) ? (async () => {
     try {
-      const ids4 = await redisCmd('ZRANGE', `journal_index:${deviceId}`, 0, -1, 'REV') || [];
-      const openEntries = [];
-      for (const id of ids4.slice(0, 10)) {
-        try {
-          const raw = await redisCmd('GET', `journal:${deviceId}:${id}`);
-          if (!raw) continue;
-          const entry = JSON.parse(raw);
-          if (entry.status === 'open' && entry.thesis_text?.trim()) openEntries.push(entry);
-          if (openEntries.length >= 5) break;
-        } catch(e) {}
-      }
+      const openEntries = await fetchOpenThesisEntries(deviceId);
       if (openEntries.length === 0) { console.log('Call 4: no open entries, skipping'); return null; }
       console.log('Call 4: checking', openEntries.length, 'open entries against headlines');
-      const thesesBlock = openEntries.map((e, i) => `${i+1}. [ID:${e.id}] ${e.pair} ${(e.direction||'').toUpperCase()}: ${e.thesis_text}`).join('\n');
-      const headlineTitles = recentItems.slice(0, 30).map(h => h.title);
-      const headlines30 = headlineTitles.map((t, i) => `${i+1}. ${t}`).join('\n');
-      const monitorPrompt = [
-        'You are a forex trade thesis monitor.', '',
-        'Open trade theses:', thesesBlock, '', 'Recent headlines (newest first):', headlines30, '',
-        'Check if ANY headline directly contradicts or significantly undermines the stated reason for ANY open thesis.',
-        'Only flag genuine contradictions — news that directly opposes the trade direction rationale, not tangentially related news.',
-        'Ignore price-level headlines; focus on fundamental basis changes (macro data, CB policy shifts, geopolitical reversals).', '',
-        'The "headline" field MUST be copied verbatim, character-for-character, from the numbered list above — do not paraphrase or summarize it.',
-        'The "entry_id" field MUST be copied verbatim from the [ID:...] tag of the thesis it contradicts.', '',
-        'Return ONLY valid JSON, no markdown, no explanation:',
-        '{"alerts":[{"entry_id":"...","headline":"exact headline text copied from the list above","reason":"one sentence why this contradicts the thesis"}]}',
-        'If no genuine contradictions found: {"alerts":[]}',
-      ].join('\n');
-      const call4Messages = [{ role: 'user', content: monitorPrompt }];
-      let raw4 = null;
-      // Primary: SambaNova DeepSeek-V3.2 (akun 1) — same model used for Call 2 & 3
-      if (SAMBANOVA_KEY && await cb.canCall(CB_SAMBA_MAIN)) {
-        try {
-          console.log('Call 4: trying SambaNova');
-          raw4 = await aiCall(SAMBANOVA_URL, SAMBANOVA_KEY, SAMBANOVA_MODEL, call4Messages, 700, 0.1, 8000);
-          console.log('Call 4: SambaNova OK');
-          await cb.onSuccess(CB_SAMBA_MAIN);
-        } catch(e) {
-          console.warn('Call 4 SambaNova failed:', e.status || e.message);
-          await cb.onFailure(CB_SAMBA_MAIN, AI_CB_THRESHOLD);
-        }
-      }
-      // Fallback: Groq llama-3.3-70b
-      if (!raw4 && GROQ_KEY) {
-        try {
-          console.log('Call 4: falling back to Groq');
-          raw4 = await aiCall(GROQ_URL, GROQ_KEY, GROQ_MODEL, call4Messages, 700, 0.1, 8000);
-          console.log('Call 4: Groq fallback OK');
-        } catch(e) { console.warn('Call 4 Groq fallback failed:', e.status || e.message); }
-      }
-      if (!raw4) return null;
-      const parsed4 = JSON.parse(raw4.replace(/```json|```/g, '').trim());
-      if (!Array.isArray(parsed4.alerts)) return null;
-      // A2.4: don't trust AI-echoed pair/direction/headline blindly — an LLM restating
-      // structured fields drifts (e.g. "buy" instead of "long"), which silently breaks
-      // the pair+direction match downstream and makes the alert invisible everywhere.
-      // Cross-reference entry_id against server-known openEntries for pair/direction
-      // (ground truth), and require the headline to appear verbatim in the source list
-      // sent to the model — this rejects hallucinated "evidence" instead of showing a
-      // trader a citation that was never actually published.
-      const entryById = new Map(openEntries.map(e => [String(e.id), e]));
-      const headlineSet = new Set(headlineTitles.map(t => t.trim().toLowerCase()));
-      const validated = [];
-      for (const a of parsed4.alerts) {
-        if (!a || typeof a !== 'object') continue;
-        const entry = entryById.get(String(a.entry_id));
-        if (!entry) { console.warn('Call 4: dropped alert — unknown entry_id', a.entry_id); continue; }
-        const headline = typeof a.headline === 'string' ? a.headline.trim() : '';
-        if (!headline || !headlineSet.has(headline.toLowerCase())) {
-          console.warn('Call 4: dropped alert — headline not verbatim in source feed:', headline.slice(0, 80));
-          continue;
-        }
-        const reason = typeof a.reason === 'string' ? a.reason.trim() : '';
-        if (!reason) continue;
-        validated.push({ entry_id: entry.id, pair: entry.pair, direction: entry.direction, headline, reason });
-      }
-      console.log('Call 4: found', parsed4.alerts.length, 'raw alert(s),', validated.length, 'validated');
+      const validated = await checkThesisContradictions(openEntries, recentItems, SAMBANOVA_KEY, GROQ_KEY);
+      if (validated === null) return null;
       if (validated.length > 0) {
         redisCmd('SET', `thesis_alerts:${deviceId}`, JSON.stringify(validated), 'EX', 1800).catch(() => {});
       } else {
@@ -1496,6 +1534,63 @@ ${xauHistoryBlock}`;
   // Call 1 failure (quota, provider outage) previously wiped out real, already-
   // validated thesis_alerts, silently hiding genuine contra-headline warnings.
   const thesisAlerts = await _call4Promise;
+
+  // ── Thesis Alert sweep for scheduled runs ────────────────────────────────────
+  // Call 4 above only checks the ONE device that made this request (deviceId from
+  // query) — on the 3x/day cron runs there's no device_id, so Call 4 is skipped
+  // entirely and thesis_alerts silently expires 30 min after the trader's last
+  // live "Ringkas Ulang" tap. That made Thesis Alert the only thing in the app
+  // that wasn't automatic/scheduled like the digest or the XAU/USD analysis.
+  // Fix: on cron runs, loop every device that has ever saved a journal entry
+  // (`journal_devices`, populated by journal.js on entry create), run the same
+  // contradiction check for each, cache the result long enough to survive until
+  // the next scheduled run, and push-notify the device if a NEW contradiction
+  // (not already alerted) is found.
+  // Devices run CONCURRENTLY (not a sequential loop) — market-digest.js has a 60s
+  // maxDuration (vercel.json), and each device's AI check can itself take up to
+  // ~16s (SambaNova + Groq fallback); sequentially that only tolerates 3-4
+  // devices before risking a timeout, while concurrently the whole sweep costs
+  // about as long as a single device's check regardless of device count.
+  if (isCronCall && (SAMBANOVA_KEY || GROQ_KEY) && recentItems.length > 0) {
+    const CRON_THESIS_TTL = 8 * 60 * 60; // 8h — spans the ~5-7h gap between the 3 daily runs
+    try {
+      const deviceIds = (await redisCmd('SMEMBERS', 'journal_devices') || []).slice(0, 10);
+      const subsByDevice = deviceIds.length > 0 ? await loadPushSubsByDevice() : null;
+      await Promise.allSettled(deviceIds.map(async devId => {
+        try {
+          const openEntries = await fetchOpenThesisEntries(devId);
+          if (openEntries.length === 0) return;
+          let prevAlerts = [];
+          try {
+            const prevRaw = await redisCmd('GET', `thesis_alerts:${devId}`);
+            if (prevRaw) prevAlerts = JSON.parse(prevRaw);
+          } catch(e) {}
+          const prevKeys = new Set((Array.isArray(prevAlerts) ? prevAlerts : []).map(a => `${a.entry_id}|${a.headline}`));
+          const validated = await checkThesisContradictions(openEntries, recentItems, SAMBANOVA_KEY, GROQ_KEY);
+          if (validated === null) return;
+          if (validated.length > 0) {
+            await redisCmd('SET', `thesis_alerts:${devId}`, JSON.stringify(validated), 'EX', CRON_THESIS_TTL);
+          } else {
+            await redisCmd('DEL', `thesis_alerts:${devId}`);
+          }
+          const freshAlerts = validated.filter(a => !prevKeys.has(`${a.entry_id}|${a.headline}`));
+          if (freshAlerts.length > 0) {
+            const sub = subsByDevice.get(devId);
+            if (sub && configureVapid()) {
+              const first = freshAlerts[0];
+              const payload = {
+                title: `⚠ Thesis Alert · ${first.pair} ${(first.direction || '').toUpperCase()}`,
+                body: freshAlerts.length > 1 ? `${freshAlerts.length} headline kontra thesis terbuka` : first.reason,
+                url: '/#ringkasan', icon: '/icon.svg',
+              };
+              const staleKeys = await sendWebPush([sub], payload);
+              if (staleKeys.length > 0) await redisCmd('HDEL', 'push_subs', ...staleKeys).catch(() => {});
+            }
+          }
+        } catch(e) { console.warn('Cron thesis sweep failed for device', devId, ':', e.message); }
+      }));
+    } catch(e) { console.warn('Cron thesis sweep failed:', e.message); }
+  }
 
   // ── Auto-update fundamental data + CB decisions from headlines ───────────────
   try {

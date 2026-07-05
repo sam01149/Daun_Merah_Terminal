@@ -1,9 +1,30 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-07-03 (session 142 — jurnal sekarang bedakan status PENDING/OPEN/DIBATALKAN untuk limit & stop order, direkonsiliasi otomatis ke MT5)
+> **Last updated:** 2026-07-05 (session 143 — 5 perbaikan dari feedback user: Catatan Analisa non-destructive, Thesis AI terjadwal, redesign Kalender, indikator di chart TEK, shortcut laptop di Petunjuk)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
+
+---
+
+## Changelog Session 143 (2026-07-05) — 5 Perbaikan Kecil dari Feedback User
+
+Lima laporan user, semua diverifikasi lewat kode langsung (bukan asumsi) sebelum di-fix, lalu diuji end-to-end dengan Playwright (browser asli, chart TradingView live) terhadap `index.html` yang di-serve statis.
+
+1. **Catatan Analisa "Auto" tidak lagi menghapus catatan manual** (`index.html`, tab TEK) — Root cause: `autoFillTekNote()` selalu `noteEl.value = text` (replace total). Fix: tambah marker `TEK_AUTO_SEP`; `autoFillTekNote()` sekarang extract bagian manual (teks setelah marker, atau seluruh teks lama kalau belum pernah pakai Auto) via `_tekNoteManualPart()`, lalu gabungkan `${autoText}\n${TEK_AUTO_SEP}\n${manualText}`. Klik Auto berulang kali hanya meng-update blok atas, tidak pernah menyentuh/menduplikasi bagian manual di bawah marker. Halaman refresh tidak pernah memicu `autoFillTekNote()` otomatis (hanya via klik tombol), jadi catatan manual otomatis aman juga lintas-refresh.
+
+2. **Thesis AI (invalidation monitor) sekarang otomatis + terjadwal seperti Ringkasan & Analisa XAU/USD** (`api/market-digest.js`, `api/journal.js`, `api/subscribe.js`, `index.html`) — Root cause: Call 4 (cek headline vs thesis open di jurnal) di-gate `&& deviceId`, dan cron GitHub Actions (3x/hari) memanggil endpoint TANPA device_id (by design, karena Call 4 dulunya per-user) — jadi Call 4 selalu skip di cron, dan `thesis_alerts:{device}` cuma terisi kalau user manual tap "Ringkas Ulang", dengan TTL 30 menit yang bikin alert cepat basi. Fix:
+   - `journal.js`: `SADD('journal_devices', deviceId)` setiap kali entry jurnal dibuat — registry device yang punya data jurnal.
+   - `market-digest.js`: extract logic Call 4 jadi `fetchOpenThesisEntries()` + `checkThesisContradictions()` (dipakai baik oleh path live single-device maupun path baru). Saat `isCronCall`, loop `SMEMBERS('journal_devices')` (cap 10) **konkuren** (`Promise.allSettled`, bukan sequential — market-digest.js `maxDuration:60`, tiap device bisa makan ~16s kalau SambaNova gagal+fallback Groq, jadi sequential akan gampang timeout di >3-4 device) — jalankan cek kontradiksi per device, simpan `thesis_alerts:{device}` dengan TTL 8 jam (menutup celah antar 3 run harian), dan push notification device tsb kalau ada alert BARU (bukan yang sudah pernah dikirim, dedupe by `entry_id|headline`).
+   - `subscribe.js` + `index.html` (`_doSubscribe`): subscription push sekarang menyertakan `device_id`, disimpan di `push_subs` hash — dipakai `loadPushSubsByDevice()` di market-digest.js untuk push targeted per device (bukan broadcast).
+
+3. **Redesign tab CAL** (`index.html`) — (a) Toolbar dipecah dari satu baris flex-wrap yang berantakan di layar sempit jadi 2 baris jelas (`cal-toolbar-row`): filter impact + count di baris 1, filter minggu + refresh di baris 2. (b) `.cal-date-label` diperbesar & dipertegas (8px muted → 11px bold, warna accent kalau hari ini). (c) **Day-strip picker baru** (`#calDayStrip`, `renderCalDayStrip()`) — baris tanggal horizontal-scroll di atas list event, satu chip per tanggal yang ada di dataset aktif (minggu ini/depan), dengan dot merah/kuning kalau ada event High/Medium hari itu. Klik chip → `calSelectDate()` → filter list ke tanggal itu saja (toggle, klik lagi atau tombol × untuk kembali ke semua tanggal).
+
+4. **Indikator teknikal sekarang tampil di chart TEK, bukan cuma di stat card** (`index.html`, `createTVChart()`) — Root cause: widget `TradingView.widget({...})` di tab TEK tidak pernah diberi parameter `studies`, jadi chart candlestick polos tanpa overlay apapun, padahal panel di bawahnya sudah menghitung & menampilkan RSI 14 / SMA 50 / SMA 200 sebagai teks. Fix: tambah `studies: [{id:'MASimple@tv-basicstudies', inputs:{length:50}}, {id:'MASimple@tv-basicstudies', inputs:{length:200}}, {id:'RSI@tv-basicstudies'}]` — diverifikasi visual via Playwright: MA 50/MA 200 tampil sebagai overlay garis di price pane, RSI sebagai sub-pane, nilai live cocok dengan yang ditampilkan TradingView sendiri di kiri-atas chart.
+
+5. **Section baru "Untuk Pengguna Laptop" di tab PETUNJUK** (`index.html`) — App sudah lama punya sistem keyboard shortcut lengkap (`G` + huruf untuk navigasi tab, dll) dengan overlay referensi (`kbOverlay`, buka via tombol `?`), tapi overlay itu tidak pernah ditemukan dari mana pun di UI (fungsi `openKbHelp()` tidak pernah dipanggil dari elemen manapun) dan tidak disebut sama sekali di guide PETUNJUK — praktis tak diketahui trader yang pertama kali pakai laptop. Fix: tambah section baru sebelum "Sinkronisasi Device" yang mereproduksi seluruh daftar shortcut secara tertulis + tombol "BUKA REFERENSI CEPAT (?)" yang memanggil `openKbHelp()`.
+
+**Verifikasi:** semua 4 perubahan frontend diuji pakai Playwright (Chromium asli, bukan cuma baca kode) terhadap `index.html` yang di-serve via static server lokal — termasuk chart TradingView live (perlu internet asli, bukan mock) yang mengonfirmasi MA 50/200 + RSI benar-benar ter-render. Perubahan backend (#2) tidak bisa diuji live (butuh Redis + AI API key produksi + cron GitHub Actions sungguhan) — diverifikasi via `node --check` (syntax) dan review manual logic, termasuk fix konkurensi untuk mencegah timeout Vercel.
 
 ---
 

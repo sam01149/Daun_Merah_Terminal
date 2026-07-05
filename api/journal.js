@@ -196,6 +196,11 @@ module.exports = async function handler(req, res) {
       const entryKey = `journal:${deviceId}:${id}`;
       await redisCmd('SET', entryKey, JSON.stringify(entry));
       await redisCmd('ZADD', indexKey, now, id);
+      // Registry of devices with journal data — lets the scheduled market-digest
+      // cron run the thesis invalidation monitor (Call 4) for every device with
+      // open trades, not just whichever device happens to be live in-app (see
+      // market-digest.js `journal_devices` usage).
+      await redisCmd('SADD', 'journal_devices', deviceId).catch(() => {});
       return res.status(200).json({ ok: true, id });
     } catch(e) {
       console.error('journal POST failed:', e.message);

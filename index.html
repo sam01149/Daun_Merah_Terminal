@@ -1166,10 +1166,15 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 
 /* ── CALENDAR TAB ──*/
 
-/* CAL TOOLBAR */
+/* CAL TOOLBAR — two clear rows (impact filter, then week + meta/refresh)
+   instead of one long wrapping line, so it stays readable on narrow screens. */
 .cal-toolbar {
+  display: flex; flex-direction: column; gap: 6px;
+  padding: 7px 12px 5px;
+}
+.cal-toolbar-row {
   display: flex; align-items: center; justify-content: space-between;
-  padding: 7px 12px 5px; gap: 6px; flex-wrap: wrap;
+  gap: 6px; flex-wrap: wrap;
 }
 .cal-filter-group { display: flex; gap: 4px; flex-wrap: wrap; }
 .cal-filter-btn {
@@ -1185,6 +1190,44 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   font-size: 8px; color: var(--muted); padding: 3px 0;
   letter-spacing: .3px;
 }
+
+/* DAY STRIP — horizontal date picker, scrolls on purpose (contained, doesn't
+   push the page itself wider) so specific dates are easy to jump to. */
+.cal-day-strip {
+  display: flex; gap: 6px; overflow-x: auto; overflow-y: hidden;
+  padding: 8px 12px; -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+}
+.cal-day-strip::-webkit-scrollbar { height: 4px; }
+.cal-day-strip::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+.cal-day-chip {
+  flex-shrink: 0; display: flex; flex-direction: column; align-items: center;
+  gap: 2px; min-width: 42px; padding: 6px 4px 5px;
+  border: 1px solid var(--border); border-radius: 8px;
+  background: var(--surface); cursor: pointer; transition: all .15s;
+}
+.cal-day-chip:hover { border-color: rgba(255,255,255,.15); }
+.cal-day-chip.today { border-color: var(--accent-dim); }
+.cal-day-chip.selected { border-color: var(--accent); background: rgba(192,57,43,.1); }
+.cal-day-chip-dow {
+  font-size: 7px; color: var(--muted); letter-spacing: .4px; text-transform: uppercase;
+}
+.cal-day-chip.selected .cal-day-chip-dow { color: var(--accent); }
+.cal-day-chip-num {
+  font-family: 'DM Mono', monospace; font-size: 14px; font-weight: 700; color: var(--text);
+  line-height: 1.1;
+}
+.cal-day-chip.selected .cal-day-chip-num { color: var(--accent); }
+.cal-day-chip-dots { display: flex; gap: 2px; height: 5px; align-items: center; }
+.cal-day-chip-dot { width: 4px; height: 4px; border-radius: 50%; }
+.cal-day-chip-dot.high   { background: #ff4757; }
+.cal-day-chip-dot.medium { background: var(--yellow); }
+.cal-day-strip-clear {
+  flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+  min-width: 30px; border: 1px solid var(--border); border-radius: 8px;
+  background: transparent; color: var(--muted); cursor: pointer; font-size: 13px;
+}
+.cal-day-strip-clear:hover { color: var(--text); border-color: rgba(255,255,255,.15); }
 
 /* COUNTDOWN TIMER */
 .cal-countdown-wrap {
@@ -1241,11 +1284,13 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .cal-panel-inner { padding: 2px 12px 16px; }
 .cal-date-group { margin-bottom: 14px; }
 .cal-date-label {
-  font-size: 8px; color: var(--muted); letter-spacing: 1px;
-  text-transform: uppercase; padding: 6px 0 8px;
+  font-size: 11px; color: var(--text-mid); letter-spacing: .3px;
+  padding: 7px 0 8px;
   border-bottom: 1px solid var(--border); margin-bottom: 7px;
   display: flex; align-items: center; justify-content: space-between;
 }
+.cal-date-label span:first-child { font-weight: 700; text-transform: uppercase; }
+.cal-date-label.is-today { color: var(--accent); }
 .cal-date-count { font-size: 8px; color: var(--muted); }
 
 /* EVENT CARD */
@@ -2519,27 +2564,33 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
     </div>
   </div>
   <div class="cal-toolbar">
-    <div class="cal-filter-group">
-      <button class="cal-filter-btn active-all" id="calFilterAll" onclick="setCalFilter('all')">Semua</button>
-      <button class="cal-filter-btn" id="calFilterHigh" onclick="setCalFilter('high')">🔴 High</button>
-      <button class="cal-filter-btn" id="calFilterMed" onclick="setCalFilter('medium')">🟡 Medium</button>
-      <span style="width:1px;height:14px;background:rgba(255,255,255,.1);margin:0 2px"></span>
-      <button class="cal-filter-btn active-all" id="calWeekThis" onclick="setCalWeekView('this')">Minggu Ini</button>
-      <button class="cal-filter-btn" id="calWeekNext" onclick="setCalWeekView('next')">Minggu Depan ›</button>
-    </div>
-    <div style="display:flex;align-items:center;gap:8px">
+    <div class="cal-toolbar-row">
+      <div class="cal-filter-group">
+        <button class="cal-filter-btn active-all" id="calFilterAll" onclick="setCalFilter('all')">Semua</button>
+        <button class="cal-filter-btn" id="calFilterHigh" onclick="setCalFilter('high')">🔴 High</button>
+        <button class="cal-filter-btn" id="calFilterMed" onclick="setCalFilter('medium')">🟡 Medium</button>
+      </div>
       <span class="cal-count-badge" id="calCountBadge">—</span>
-      <span class="cot-stale-badge" id="calStaleBadge" style="display:none">⚠ Data lama</span>
-      <span id="calLastUpdated" style="font-size:9px;color:var(--muted);font-family:'DM Mono',monospace"></span>
-      <button class="cal-refresh-btn" id="calRefreshBtn" onclick="fetchCalendar()" title="Auto-refresh setiap 60 menit">
-        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-          <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>
-          <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
-        </svg>
-        REFRESH
-      </button>
+    </div>
+    <div class="cal-toolbar-row">
+      <div class="cal-filter-group">
+        <button class="cal-filter-btn active-all" id="calWeekThis" onclick="setCalWeekView('this')">Minggu Ini</button>
+        <button class="cal-filter-btn" id="calWeekNext" onclick="setCalWeekView('next')">Minggu Depan ›</button>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <span class="cot-stale-badge" id="calStaleBadge" style="display:none">⚠ Data lama</span>
+        <span id="calLastUpdated" style="font-size:9px;color:var(--muted);font-family:'DM Mono',monospace"></span>
+        <button class="cal-refresh-btn" id="calRefreshBtn" onclick="fetchCalendar()" title="Auto-refresh setiap 60 menit">
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>
+            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+          </svg>
+          REFRESH
+        </button>
+      </div>
     </div>
   </div>
+  <div class="cal-day-strip" id="calDayStrip"></div>
   <div class="cal-disclaimer">⚠ Kolom <b>Actual</b> umumnya dari data resmi TradingView. Saat sumber fallback (ForexFactory) aktif, nilai diisi otomatis dari headline berita dan bisa meleset/kosong — cek tautan sumber di tiap event untuk verifikasi.</div>
   <div class="cal-panel-inner" id="calPanelInner">
     <div class="cal-empty loading-pulse">Memuat kalender ekonomi...</div>
@@ -2889,6 +2940,55 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
       <div class="pt-rule">
         <div class="pt-rule-icon">✅</div>
         <div class="pt-rule-text"><strong>Jurnal setiap trade, bukan hanya yang profit</strong>Trade loss yang terjurnal sama nilainya dengan trade profit — keduanya adalah data untuk improvement.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- UNTUK PENGGUNA LAPTOP -->
+  <div class="pt-section">
+    <div class="pt-section-hdr" style="color:#60a5fa">
+      <span>⌨</span> Untuk Pengguna Laptop
+    </div>
+    <div style="padding:14px">
+      <div style="font-size:10px;color:var(--text-mid);line-height:1.7;margin-bottom:14px">
+        Swipe antar tab (seperti di HP) tidak berlaku dengan mouse/trackpad. Di laptop, pakai <strong style="color:var(--text)">keyboard shortcut</strong> di bawah ini untuk pindah tab dan navigasi lebih cepat tanpa menyentuh mouse. Tekan <span class="kb-key">?</span> kapan saja untuk membuka/menutup kotak referensi cepat ini.
+      </div>
+      <button onclick="openKbHelp()" style="padding:8px 12px;background:rgba(96,165,250,0.12);border:1px solid #60a5fa;color:#60a5fa;font-family:'DM Mono',monospace;font-size:9px;letter-spacing:.05em;cursor:pointer;border-radius:4px;margin-bottom:14px">BUKA REFERENSI CEPAT (?)</button>
+
+      <div class="kb-sec">
+        <div class="kb-sec-title">Navigasi — tekan G lalu huruf</div>
+        <div class="kb-row"><div class="kb-keys"><span class="kb-key">G</span><span class="kb-key">N</span></div><span class="kb-desc">News</span></div>
+        <div class="kb-row"><div class="kb-keys"><span class="kb-key">G</span><span class="kb-key">B</span></div><span class="kb-desc">Artikel / CB Watch</span></div>
+        <div class="kb-row"><div class="kb-keys"><span class="kb-key">G</span><span class="kb-key">R</span></div><span class="kb-desc">Ringkasan</span></div>
+        <div class="kb-row"><div class="kb-keys"><span class="kb-key">G</span><span class="kb-key">A</span></div><span class="kb-desc">Analisa</span></div>
+        <div class="kb-row"><div class="kb-keys"><span class="kb-key">G</span><span class="kb-key">K</span></div><span class="kb-desc">Kalender</span></div>
+        <div class="kb-row"><div class="kb-keys"><span class="kb-key">G</span><span class="kb-key">C</span></div><span class="kb-desc">COT</span></div>
+        <div class="kb-row"><div class="kb-keys"><span class="kb-key">G</span><span class="kb-key">F</span></div><span class="kb-desc">Fundamental</span></div>
+        <div class="kb-row"><div class="kb-keys"><span class="kb-key">G</span><span class="kb-key">L</span></div><span class="kb-desc">Checklist</span></div>
+        <div class="kb-row"><div class="kb-keys"><span class="kb-key">G</span><span class="kb-key">S</span></div><span class="kb-desc">Sizing</span></div>
+        <div class="kb-row"><div class="kb-keys"><span class="kb-key">G</span><span class="kb-key">J</span></div><span class="kb-desc">Jurnal</span></div>
+        <div class="kb-row"><div class="kb-keys"><span class="kb-key">G</span><span class="kb-key">P</span></div><span class="kb-desc">Petunjuk</span></div>
+        <div class="kb-row"><div class="kb-keys"><span class="kb-key">G</span><span class="kb-key">T</span></div><span class="kb-desc">Teknikal</span></div>
+        <div class="kb-row"><div class="kb-keys"><span class="kb-key">G</span><span class="kb-key">D</span></div><span class="kb-desc">Dashboard</span></div>
+      </div>
+      <div class="kb-sec">
+        <div class="kb-sec-title">Di tab News</div>
+        <div class="kb-row"><div class="kb-keys"><span class="kb-key">1</span>–<span class="kb-key">7</span></div><span class="kb-desc">Ganti filter kategori (All → Geopolitical)</span></div>
+      </div>
+      <div class="kb-sec">
+        <div class="kb-sec-title">Di Checklist</div>
+        <div class="kb-row"><div class="kb-keys"><span class="kb-key">↑</span><span class="kb-key">↓</span></div><span class="kb-desc">Navigasi item</span></div>
+        <div class="kb-row"><div class="kb-keys"><span class="kb-key">Space</span></div><span class="kb-desc">Centang / uncentang</span></div>
+        <div class="kb-row"><div class="kb-keys"><span class="kb-key">Enter</span></div><span class="kb-desc">Centang / uncentang</span></div>
+        <div class="kb-row"><div class="kb-keys"><span class="kb-key">Esc</span></div><span class="kb-desc">Lepas fokus item</span></div>
+      </div>
+      <div class="kb-sec">
+        <div class="kb-sec-title">Global</div>
+        <div class="kb-row"><div class="kb-keys"><span class="kb-key">?</span></div><span class="kb-desc">Buka / tutup referensi cepat</span></div>
+        <div class="kb-row"><div class="kb-keys"><span class="kb-key">Esc</span></div><span class="kb-desc">Tutup panel / overlay</span></div>
+      </div>
+      <div style="font-size:9px;color:var(--muted);margin-top:12px;line-height:1.65">
+        ⚠ Shortcut hanya aktif saat fokus tidak sedang di kotak input/textarea (mis. saat sedang mengetik Catatan Analisa atau Thesis, huruf akan masuk ke kotak teks seperti biasa, bukan jadi shortcut).
       </div>
     </div>
   </div>
@@ -3708,7 +3808,7 @@ async function _doSubscribe(categories) {
     const res = await fetch('/api/subscribe', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ subscription: sub.toJSON(), categories }),
+      body: JSON.stringify({ subscription: sub.toJSON(), categories, device_id: szGetDeviceId() }),
     });
     if (res.ok) {
       showToast('Push Notif Aktif ✓', 'Notif akan datang meski app ditutup & layar mati.', 4000);
@@ -5118,6 +5218,7 @@ async function fetchCalendarNext() {
 function setCalWeekView(view) {
   if (calWeekView === view) return;
   calWeekView = view;
+  calSelectedDate = null; // dates differ between weeks — don't carry a stale pick across
   document.getElementById('calWeekThis').className = 'cal-filter-btn' + (view==='this' ? ' active-all' : '');
   document.getElementById('calWeekNext').className  = 'cal-filter-btn' + (view==='next' ? ' active-all' : '');
   document.getElementById('calCountdownWrap').style.display = view === 'next' ? 'none' : '';
@@ -6834,6 +6935,60 @@ function cotTrenHideTip() {
 // Calendar filter state
 let calFilter       = 'all'; // 'all' | 'high' | 'medium'
 let calScenarioOpen = null;  // evId of currently open scenario panel
+let calSelectedDate = null;  // 'YYYY-MM-DD' from the day strip, or null = show every date
+
+const CAL_DOW_ID = ['Min','Sen','Sel','Rab','Kam','Jum','Sab'];
+
+function calSelectDate(date) {
+  calSelectedDate = calSelectedDate === date ? null : date;
+  renderCalendar();
+}
+
+function calClearDateFilter() {
+  calSelectedDate = null;
+  renderCalendar();
+}
+
+// Horizontal date picker above the event list — one chip per day present in
+// the currently loaded dataset (this week / next week), with dots showing
+// whether that day has High/Medium impact events. Tapping a date filters the
+// list below to just that day so a specific date is easy to check at a glance
+// instead of scrolling the whole week.
+function renderCalDayStrip() {
+  const strip = document.getElementById('calDayStrip');
+  if (!strip) return;
+  const sourceData = calWeekView === 'next' ? calDataNext : calData;
+  if (!sourceData || sourceData.length === 0) { strip.innerHTML = ''; return; }
+
+  const wibNow = new Date(Date.now() + 7*3600000);
+  const todayStr = `${wibNow.getUTCFullYear()}-${String(wibNow.getUTCMonth()+1).padStart(2,'0')}-${String(wibNow.getUTCDate()).padStart(2,'0')}`;
+
+  const byDate = {};
+  sourceData.forEach(ev => {
+    if (!byDate[ev.date]) byDate[ev.date] = { high: false, medium: false };
+    if (ev.impact === 'High') byDate[ev.date].high = true;
+    else byDate[ev.date].medium = true;
+  });
+
+  const dates = Object.keys(byDate).sort();
+  const chips = dates.map(date => {
+    const dp = date.match(/(\d{4})-(\d{2})-(\d{2})/);
+    const d = dp ? new Date(Date.UTC(+dp[1], +dp[2]-1, +dp[3])) : null;
+    const dow = d ? CAL_DOW_ID[d.getUTCDay()] : '';
+    const num = dp ? +dp[3] : '';
+    const info = byDate[date];
+    const dots = `<div class="cal-day-chip-dots">${info.high ? '<span class="cal-day-chip-dot high"></span>' : ''}${info.medium ? '<span class="cal-day-chip-dot medium"></span>' : ''}</div>`;
+    const cls = ['cal-day-chip', date === todayStr ? 'today' : '', date === calSelectedDate ? 'selected' : ''].filter(Boolean).join(' ');
+    return `<div class="${cls}" onclick="calSelectDate('${date}')">
+      <span class="cal-day-chip-dow">${dow}</span>
+      <span class="cal-day-chip-num">${num}</span>
+      ${dots}
+    </div>`;
+  }).join('');
+
+  const clearBtn = calSelectedDate ? `<div class="cal-day-strip-clear" onclick="calClearDateFilter()" title="Tampilkan semua tanggal">✕</div>` : '';
+  strip.innerHTML = chips + clearBtn;
+}
 
 function setCalFilter(f) {
   calFilter = f;
@@ -6869,6 +7024,7 @@ const CUR_COLORS = {
 
 function renderCalendar() {
   calScenarioOpen = null; // reset scenario state on re-render
+  renderCalDayStrip();
   const inner = document.getElementById('calPanelInner');
   const sourceData = calWeekView === 'next' ? calDataNext : calData;
   if (!sourceData || sourceData.length === 0) {
@@ -6877,9 +7033,10 @@ function renderCalendar() {
     return;
   }
 
-  // Apply filter
-  const filtered = calFilter === 'all' ? sourceData
+  // Apply impact filter, then narrow to the picked date (if any) from the day strip
+  let filtered = calFilter === 'all' ? sourceData
     : sourceData.filter(e => e.impact.toLowerCase() === calFilter);
+  if (calSelectedDate) filtered = filtered.filter(e => e.date === calSelectedDate);
 
   document.getElementById('calCountBadge').textContent = `${filtered.length} event`;
 
@@ -6977,7 +7134,7 @@ function renderCalendar() {
     }).join('');
 
     return `<div class="cal-date-group">
-      <div class="cal-date-label">
+      <div class="cal-date-label${isToday ? ' is-today' : ''}">
         <span>${isToday ? '▶ TODAY — ' : ''}${label}</span>
         <span class="cal-date-count">${events.length} event</span>
       </div>
@@ -11336,6 +11493,19 @@ function composeTekAutoNote(d) {
   return lines.length > 0 ? lines.join('\n') : null;
 }
 
+// Marker separating the auto-generated block (above) from the trader's own
+// manual notes (below) inside the same textarea. Clicking "↻ Auto" again only
+// regenerates the block above this line — text below it is never touched, and
+// a page refresh never re-runs autoFillTekNote() at all, so manual notes are
+// safe either way (user report: Auto used to wipe the whole textarea).
+const TEK_AUTO_SEP = '───── catatan manual (baris di bawah ini tidak akan ditimpa) ─────';
+
+function _tekNoteManualPart(value) {
+  const idx = (value || '').indexOf(TEK_AUTO_SEP);
+  if (idx === -1) return value || '';
+  return value.slice(idx + TEK_AUTO_SEP.length).replace(/^\n+/, '');
+}
+
 async function autoFillTekNote() {
   const noteEl = document.getElementById('tekNote');
   const btn    = document.getElementById('tekNoteAutoBtn');
@@ -11361,8 +11531,10 @@ async function autoFillTekNote() {
     showToast('Data belum tersedia', `MTF ${tekPairLabel(pairAtCall)} belum ke-sync — coba pair major (XAU/EUR/GBP/JPY/AUD/CAD/CHF/NZD) atau buka tab Analisa AI dulu.`, 4000);
     return;
   }
-  noteEl.value = text;
-  tekNotes[pairAtCall] = text;
+  const manual = _tekNoteManualPart(noteEl.value);
+  const merged = manual.trim() ? `${text}\n${TEK_AUTO_SEP}\n${manual}` : text;
+  noteEl.value = merged;
+  tekNotes[pairAtCall] = merged;
   localStorage.setItem('tek_notes', JSON.stringify(tekNotes));
 }
 
@@ -11474,6 +11646,14 @@ function createTVChart() {
       allow_symbol_change: false,
       save_image: false,
       container_id: id,
+      // Plot the same indicators the "INDIKATOR" stat cards below the chart
+      // already compute (RSI 14, SMA 50, SMA 200) — previously the chart was
+      // plain candles with no visual tie to those numbers.
+      studies: [
+        { id: 'MASimple@tv-basicstudies', version: 60, inputs: { length: 50 } },
+        { id: 'MASimple@tv-basicstudies', version: 60, inputs: { length: 200 } },
+        { id: 'RSI@tv-basicstudies', version: 60 },
+      ],
     });
   });
 }
