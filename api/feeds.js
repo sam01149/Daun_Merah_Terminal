@@ -518,6 +518,20 @@ async function researchHandler(req, res) {
   for (const r of results) {
     if (r.status === 'fulfilled') items = items.concat(r.value);
   }
+  // Some CB feeds (notably BoC's general /feed/, which aggregates the whole
+  // site rather than just publications) mix genuine published research with
+  // forward-looking calendar entries — statutory holidays, scheduled rate
+  // announcement dates — whose <pubDate> is the future EVENT date, not a
+  // publish timestamp. Sorted newest-first, those future dates bury today's
+  // real articles under a holiday list. A genuinely published item can never
+  // be dated in the future, so drop anything beyond a small clock-skew
+  // allowance instead of maintaining a per-source holiday/title blocklist.
+  const FUTURE_SKEW_MS = 60 * 60 * 1000; // 1h tolerance for feed timezone quirks
+  const nowMs = Date.now();
+  items = items.filter(it => {
+    const t = new Date(it.pubDate).getTime();
+    return !isNaN(t) && t <= nowMs + FUTURE_SKEW_MS;
+  });
   items.sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate));
   items = items.slice(0, 50);
 
