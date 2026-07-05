@@ -1,9 +1,30 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-07-05 (session 143 lanjutan — tab Artikel: buang entri kalender BoC masa depan yang menutupi artikel hari ini)
+> **Last updated:** 2026-07-05 (session 143 lanjutan 2 — tab CAL: date-jump picker ke tanggal/pekan arbitrer, seperti ForexFactory)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
+
+---
+
+## Changelog Session 143 lanjutan 2 (2026-07-05) — Tab CAL: Date-Jump Picker
+
+**Laporan user:** minta kemampuan lompat ke tanggal tertentu di kalender (mis. 2 bulan ke depan), seperti date-range picker di ForexFactory (screenshot referensi: input tanggal + kalender 2 bulan berdampingan).
+
+**Temuan saat investigasi:** `api/calendar.js` ternyata sudah punya `fetchTradingViewEvents(rangeStartWib, rangeEndWib)` sebagai sumber PRIMARY (TradingView calendar endpoint, terima `from`/`to` arbitrer) — ForexFactory XML (`ff_calendar_thisweek.xml`/`nextweek.xml`) cuma FALLBACK kalau TradingView gagal, dan itu memang cuma punya this/next week. Jadi kemampuan date-arbitrer sebenarnya sudah ada di backend, cuma belum pernah diexpose ke `?date=` — endpoint cuma terima `?week=next` atau default this-week.
+
+**Fix backend (`api/calendar.js`):**
+- Terima `?date=YYYY-MM-DD` (validasi format + tanggal valid). Menghitung window Senin-Minggu (bukan rolling 5 hari seperti "this week" default) yang berisi tanggal tsb — extract helper `computeWeekMonday()`, `computeWeekRange()` dapat parameter ke-3 `isCustomWeek`.
+- Cache key terpisah per pekan: `calendar_custom_{mondayDate}` — supaya beberapa tanggal dalam pekan yang sama share cache, TTL sama (6 jam) dengan cache this/next week.
+- **PENTING:** untuk `?date=` custom, TIDAK fallback ke ForexFactory kalau TradingView gagal (beda dari this/next week) — FF cuma punya this/next week, kalau dipakai sebagai fallback untuk tanggal arbitrer akan diam-diam menampilkan event MINGGU YANG SALAH di bawah label tanggal yang diminta. Kalau TradingView gagal untuk custom date, request itu error (bukan silently wrong data).
+
+**Fix frontend (`index.html`):**
+- `calWeekView` sekarang punya value ke-3: `'custom'` (selain `'this'`/`'next'`), dengan state terpisah `calDataCustom`/`calCustomWeekLabel`. Helper `calActiveSourceData()` dipakai di `renderCalendar()` DAN `renderCalDayStrip()` supaya day-strip picker dari sesi sebelumnya otomatis ikut bekerja untuk pekan custom juga.
+- Row toolbar baru: `<input type="date">` native (zero maintenance, native calendar popup, mobile-friendly — tidak reimplement grid kalender FF dari nol) + tombol "📅 Lompat". `color-scheme:dark` di CSS supaya popup native-nya match tema gelap app.
+- Setelah lompat, tanggal yang diminta OTOMATIS ter-select di day-strip (`calSelectedDate = dateStr`) — jadi user langsung lihat event di tanggal itu, bukan cuma pekannya. Chip aktif "📅 Pekan {tanggal} ✕" muncul di toolbar, klik untuk kembali ke Minggu Ini (`calClearCustomWeek()` → `setCalWeekView('this')`).
+- Countdown timer (khusus "hari ini") disembunyikan saat viewing custom/next week, bukan cuma saat next week seperti sebelumnya (bug kecil yang ikut ditemukan & diperbaiki).
+
+**Verifikasi:** diuji via Playwright dengan `/api/calendar` di-mock — konfirmasi request memakai `?date=2026-08-17` yang benar, chip toolbar menampilkan "Pekan 17 Agu 2026", day-strip auto-select tanggal 17, list terfilter ke 1 event (CPI m/m) yang match, dan klik chip mengembalikan ke Minggu Ini (`calWeekView` kembali `'this'`, chip hilang). Logic penghitungan pekan Senin-Minggu diverifikasi terpisah cocok persis dengan tanggal di screenshot referensi (17 Agu 2026 = Senin, minggu Senin 17 - Minggu 23).
 
 ---
 

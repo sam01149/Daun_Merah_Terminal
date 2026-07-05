@@ -30,9 +30,27 @@ module.exports = async function handler(req, res) {
 
   if (await rateLimit(req, res, { limit: 20, windowSecs: 60, endpoint: 'calendar' })) return;
 
+  // Arbitrary date jump (e.g. "2 bulan ke depan", like ForexFactory's own date
+  // picker) — ?date=YYYY-MM-DD shows the Mon-Sun week containing that date.
+  // ForexFactory's XML feed only ever has this/next week, so a custom date
+  // can't fall back to it (that would silently show the WRONG week's events
+  // under a future date's label) — TradingView only, since it accepts an
+  // arbitrary from/to range.
+  const dateParam = req.query && typeof req.query.date === 'string' ? req.query.date : null;
+  const isCustomDate = !!dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam) && !isNaN(new Date(dateParam + 'T00:00:00Z').getTime());
+  if (dateParam && !isCustomDate) return res.status(400).json({ error: 'Invalid date — use YYYY-MM-DD' });
+
   const isNextWeek = req.query && req.query.week === 'next';
-  const CACHE_KEY = isNextWeek ? 'calendar_next_v1' : 'calendar_v1';
-  const LOCK_KEY  = isNextWeek ? 'lock:calendar:next' : 'lock:calendar';
+  const targetWib = isCustomDate ? new Date(new Date(dateParam + 'T00:00:00Z').getTime() + 7 * 3600000) : null;
+  let CACHE_KEY, LOCK_KEY;
+  if (isCustomDate) {
+    const mondayKey = toDateStr(computeWeekMonday(targetWib));
+    CACHE_KEY = `calendar_custom_${mondayKey}`;
+    LOCK_KEY  = `lock:calendar:custom:${mondayKey}`;
+  } else {
+    CACHE_KEY = isNextWeek ? 'calendar_next_v1' : 'calendar_v1';
+    LOCK_KEY  = isNextWeek ? 'lock:calendar:next' : 'lock:calendar';
+  }
 
   // Serve Redis cache if still fresh — every open tab polls this every 90s,
   // so without this gate every poll re-hits ForexFactory regardless of age.
@@ -64,16 +82,21 @@ module.exports = async function handler(req, res) {
 
   try {
     const nowWib = new Date(Date.now() + 7 * 3600000);
-    const { dateRange, rangeStartWib, rangeEndWib } = computeWeekRange(nowWib, isNextWeek);
+    const { dateRange, rangeStartWib, rangeEndWib } = isCustomDate
+      ? computeWeekRange(targetWib, false, true)
+      : computeWeekRange(nowWib, isNextWeek);
 
     // TradingView's public calendar feed is primary — unlike ForexFactory's XML,
     // it actually populates `actual` once an event releases. ForexFactory is the
-    // fallback when TradingView is unreachable (network blip, endpoint change).
+    // fallback when TradingView is unreachable (network blip, endpoint change),
+    // but it only ever covers this/next week — for a custom date, a "fallback"
+    // to FF would silently return the WRONG week's events, so let it fail instead.
     let allEvents, source;
     try {
       allEvents = await fetchTradingViewEvents(rangeStartWib, rangeEndWib);
       source = 'tradingview';
     } catch(tvErr) {
+      if (isCustomDate) throw tvErr;
       console.warn('TradingView calendar failed, falling back to ForexFactory:', tvErr.message);
       allEvents = await fetchForexFactoryEvents();
       source = 'forexfactory';
@@ -118,19 +141,30 @@ function toDateStr(d) {
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}-${String(d.getUTCDate()).padStart(2,'0')}`;
 }
 
+// Monday (00:00 WIB wall-clock) of the ISO week (Mon-Sun) containing `wib`.
+function computeWeekMonday(wib) {
+  const dow = wib.getUTCDay(); // 0=Sun..6=Sat
+  const mondayOffset = dow === 0 ? -6 : 1 - dow;
+  return new Date(wib.getTime() + mondayOffset * 86400000);
+}
+
 // Default "this week" view: rolling 5-day window starting today (unchanged
 // from the original ForexFactory-only behavior). "next week" means the next
 // ISO calendar week (Mon-Sun) after the current one, like FF's nextweek.xml.
-function computeWeekRange(nowWib, isNextWeek) {
+// isCustomWeek (date-jump feature, ?date=YYYY-MM-DD): full Mon-Sun week
+// containing `nowWib` itself, rather than the rolling window or next-week offset.
+function computeWeekRange(nowWib, isNextWeek, isCustomWeek) {
   const dateRange = new Set();
+  if (isCustomWeek) {
+    const monday = computeWeekMonday(nowWib);
+    for (let i = 0; i < 7; i++) dateRange.add(toDateStr(new Date(monday.getTime() + i * 86400000)));
+    return { dateRange, rangeStartWib: monday, rangeEndWib: new Date(monday.getTime() + 6 * 86400000) };
+  }
   if (!isNextWeek) {
     for (let i = 0; i <= 4; i++) dateRange.add(toDateStr(new Date(nowWib.getTime() + i * 86400000)));
     return { dateRange, rangeStartWib: nowWib, rangeEndWib: new Date(nowWib.getTime() + 4 * 86400000) };
   }
-  const dow = nowWib.getUTCDay(); // 0=Sun..6=Sat (WIB wall-clock, see nowWib construction)
-  const mondayOffset = dow === 0 ? -6 : 1 - dow;
-  const thisMonday = new Date(nowWib.getTime() + mondayOffset * 86400000);
-  const nextMonday = new Date(thisMonday.getTime() + 7 * 86400000);
+  const nextMonday = new Date(computeWeekMonday(nowWib).getTime() + 7 * 86400000);
   for (let i = 0; i < 7; i++) dateRange.add(toDateStr(new Date(nextMonday.getTime() + i * 86400000)));
   return { dateRange, rangeStartWib: nextMonday, rangeEndWib: new Date(nextMonday.getTime() + 6 * 86400000) };
 }

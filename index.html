@@ -1229,6 +1229,14 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 }
 .cal-day-strip-clear:hover { color: var(--text); border-color: rgba(255,255,255,.15); }
 
+/* DATE JUMP — "lompat ke tanggal", like ForexFactory's own date-range picker */
+.cal-date-input {
+  color-scheme: dark; /* app is dark-only — themes the native picker popup to match */
+  background: transparent; border: 1px solid var(--border); border-radius: 20px;
+  color: var(--text); font-family: 'DM Mono', monospace; font-size: 8px;
+  padding: 3px 8px; letter-spacing: .3px;
+}
+
 /* COUNTDOWN TIMER */
 .cal-countdown-wrap {
   margin: 8px 12px 2px;
@@ -2589,6 +2597,13 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
         </button>
       </div>
     </div>
+    <div class="cal-toolbar-row">
+      <div class="cal-filter-group">
+        <input type="date" id="calDateJump" class="cal-date-input">
+        <button class="cal-filter-btn" id="calDateJumpBtn" onclick="calGoToDatePicked()">📅 Lompat</button>
+      </div>
+      <button class="cal-filter-btn active-all" id="calCustomChip" style="display:none" onclick="calClearCustomWeek()"></button>
+    </div>
   </div>
   <div class="cal-day-strip" id="calDayStrip"></div>
   <div class="cal-disclaimer">⚠ Kolom <b>Actual</b> umumnya dari data resmi TradingView. Saat sumber fallback (ForexFactory) aktif, nilai diisi otomatis dari headline berita dan bisa meleset/kosong — cek tautan sumber di tiap event untuk verifikasi.</div>
@@ -3551,7 +3566,9 @@ let calData              = null;
 let calFetchedAt         = 0;
 let calDataNext          = null; // lazy-loaded "minggu depan" events, separate from calData
 let calNextFetchedAt     = 0;
-let calWeekView          = 'this'; // 'this' | 'next' — which week renderCalendar() shows
+let calDataCustom        = null; // week fetched via the "lompat ke tanggal" date-jump picker
+let calCustomWeekLabel   = null; // which date the custom week is anchored to, for the toolbar chip
+let calWeekView          = 'this'; // 'this' | 'next' | 'custom' — which week renderCalendar() shows
 let _countdownTimer      = null;
 let _calAutoRefreshTimer = null;
 let _calPrevSoonestEvMs  = null; // tracks which event we were counting down, to detect fire
@@ -5215,18 +5232,77 @@ async function fetchCalendarNext() {
   }
 }
 
+function updateCalCustomChip() {
+  const chip = document.getElementById('calCustomChip');
+  if (!chip) return;
+  if (calCustomWeekLabel) {
+    const dt = new Date(calCustomWeekLabel + 'T00:00:00Z');
+    const label = dt.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
+    chip.style.display = '';
+    chip.textContent = `📅 Pekan ${label} ✕`;
+  } else {
+    chip.style.display = 'none';
+  }
+}
+
 function setCalWeekView(view) {
   if (calWeekView === view) return;
   calWeekView = view;
   calSelectedDate = null; // dates differ between weeks — don't carry a stale pick across
+  calCustomWeekLabel = null; // leaving custom mode — clear its toolbar chip
+  updateCalCustomChip();
   document.getElementById('calWeekThis').className = 'cal-filter-btn' + (view==='this' ? ' active-all' : '');
   document.getElementById('calWeekNext').className  = 'cal-filter-btn' + (view==='next' ? ' active-all' : '');
-  document.getElementById('calCountdownWrap').style.display = view === 'next' ? 'none' : '';
+  document.getElementById('calCountdownWrap').style.display = view === 'this' ? '' : 'none';
   if (view === 'next' && (!calDataNext || (Date.now() - calNextFetchedAt) > 60 * 60 * 1000)) {
     fetchCalendarNext();
   } else {
     renderCalendar();
   }
+}
+
+// "Lompat ke tanggal" — jump to an arbitrary week (e.g. 2 months ahead), like
+// ForexFactory's own date-range picker. Unlike Minggu Ini/Depan (which read
+// ForexFactory's fixed this/next-week XML), this always goes through
+// TradingView on the backend since it accepts any date range — see api/calendar.js.
+async function fetchCalendarForDate(dateStr) {
+  if (!dateStr) return;
+  const inner = document.getElementById('calPanelInner');
+  const jumpBtn = document.getElementById('calDateJumpBtn');
+  calWeekView = 'custom';
+  calSelectedDate = null;
+  document.getElementById('calWeekThis').className = 'cal-filter-btn';
+  document.getElementById('calWeekNext').className  = 'cal-filter-btn';
+  document.getElementById('calCountdownWrap').style.display = 'none';
+  inner.innerHTML = `<div class="cal-empty loading-pulse">Memuat kalender minggu ${dateStr}...</div>`;
+  if (jumpBtn) { jumpBtn.disabled = true; jumpBtn.textContent = '...'; }
+  try {
+    const res = await fetch('/api/calendar?date=' + encodeURIComponent(dateStr), { signal: AbortSignal.timeout(15000) });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    if (!Array.isArray(data.events)) throw new Error('Invalid response');
+    calDataCustom = data.events;
+    calCustomWeekLabel = dateStr;
+    calSelectedDate = dateStr; // pre-select the exact date the user asked for, not just its week
+    updateCalCustomChip();
+    const calStaleBadge = document.getElementById('calStaleBadge');
+    if (calStaleBadge) calStaleBadge.style.display = data.stale ? 'inline' : 'none';
+    renderCalendar();
+  } catch(e) {
+    inner.innerHTML = `<div class="cal-empty">Gagal memuat kalender untuk tanggal ini.<br><small style="color:#6b6860">${e.message}</small><br><br>
+      <button class="ringkasan-gen-btn" style="margin:0 auto;width:auto;padding:8px 20px" onclick="fetchCalendarForDate('${dateStr}')">Coba Lagi</button></div>`;
+  } finally {
+    if (jumpBtn) { jumpBtn.disabled = false; jumpBtn.textContent = 'Lompat'; }
+  }
+}
+
+function calGoToDatePicked() {
+  const input = document.getElementById('calDateJump');
+  if (input && input.value) fetchCalendarForDate(input.value);
+}
+
+function calClearCustomWeek() {
+  setCalWeekView('this');
 }
 
 // ── CB TRACKER ───────────────────────────────────────────
@@ -6949,15 +7025,24 @@ function calClearDateFilter() {
   renderCalendar();
 }
 
+// Which week's dataset is currently active — 'this'/'next' come from
+// ForexFactory's fixed weekly XML, 'custom' from the date-jump picker (arbitrary
+// week via TradingView, see fetchCalendarForDate()).
+function calActiveSourceData() {
+  if (calWeekView === 'next') return calDataNext;
+  if (calWeekView === 'custom') return calDataCustom;
+  return calData;
+}
+
 // Horizontal date picker above the event list — one chip per day present in
-// the currently loaded dataset (this week / next week), with dots showing
-// whether that day has High/Medium impact events. Tapping a date filters the
-// list below to just that day so a specific date is easy to check at a glance
-// instead of scrolling the whole week.
+// the currently loaded dataset (this week / next week / custom), with dots
+// showing whether that day has High/Medium impact events. Tapping a date
+// filters the list below to just that day so a specific date is easy to check
+// at a glance instead of scrolling the whole week.
 function renderCalDayStrip() {
   const strip = document.getElementById('calDayStrip');
   if (!strip) return;
-  const sourceData = calWeekView === 'next' ? calDataNext : calData;
+  const sourceData = calActiveSourceData();
   if (!sourceData || sourceData.length === 0) { strip.innerHTML = ''; return; }
 
   const wibNow = new Date(Date.now() + 7*3600000);
@@ -7026,7 +7111,7 @@ function renderCalendar() {
   calScenarioOpen = null; // reset scenario state on re-render
   renderCalDayStrip();
   const inner = document.getElementById('calPanelInner');
-  const sourceData = calWeekView === 'next' ? calDataNext : calData;
+  const sourceData = calActiveSourceData();
   if (!sourceData || sourceData.length === 0) {
     inner.innerHTML = `<div class="cal-empty">Tidak ada event kalender untuk ditampilkan.</div>`;
     document.getElementById('calCountBadge').textContent = '0 event';
