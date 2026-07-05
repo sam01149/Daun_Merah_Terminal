@@ -468,6 +468,66 @@ async function loadPushSubsByDevice() {
   return map;
 }
 
+// Thesis Alert sweep for scheduled runs — Call 4 (single-device, inline in the
+// handler) only checks the ONE device that made a live request; on the 3x/day
+// cron runs there's no device_id, so Call 4 is skipped entirely and
+// thesis_alerts silently expires 30 min after the trader's last live "Ringkas
+// Ulang" tap. That made Thesis Alert the only thing in the app that wasn't
+// automatic/scheduled like the digest or the XAU/USD analysis.
+// Fix: on cron runs, loop every device that has ever saved a journal entry
+// (`journal_devices`, populated by journal.js on entry create), run the same
+// contradiction check for each, cache the result long enough to survive until
+// the next scheduled run, and push-notify the device if a NEW contradiction
+// (not already alerted) is found.
+//
+// Called fire-and-forget (not awaited) from the handler, same pattern as
+// notifyDigestReady() below — the GitHub Actions cron curls this endpoint with
+// `--max-time 55` (see market-digest.yml) and Vercel's own maxDuration is 60s;
+// awaiting a per-device AI sweep here would stack on top of Call 1-3's own
+// latency and could blow both budgets, timing out the ENTIRE digest response
+// (article/bias/thesis) just to finish a side-effect. Devices within the sweep
+// still run concurrently (Promise.allSettled, not a sequential loop) so a
+// slow/failing provider for one device doesn't multiply into the others.
+async function runCronThesisSweep(recentItems, SAMBANOVA_KEY, GROQ_KEY) {
+  const CRON_THESIS_TTL = 8 * 60 * 60; // 8h — spans the ~5-7h gap between the 3 daily runs
+  const deviceIds = (await redisCmd('SMEMBERS', 'journal_devices') || []).slice(0, 10);
+  if (deviceIds.length === 0) return;
+  const subsByDevice = await loadPushSubsByDevice();
+  await Promise.allSettled(deviceIds.map(async devId => {
+    try {
+      const openEntries = await fetchOpenThesisEntries(devId);
+      if (openEntries.length === 0) return;
+      let prevAlerts = [];
+      try {
+        const prevRaw = await redisCmd('GET', `thesis_alerts:${devId}`);
+        if (prevRaw) prevAlerts = JSON.parse(prevRaw);
+      } catch(e) {}
+      const prevKeys = new Set((Array.isArray(prevAlerts) ? prevAlerts : []).map(a => `${a.entry_id}|${a.headline}`));
+      const validated = await checkThesisContradictions(openEntries, recentItems, SAMBANOVA_KEY, GROQ_KEY);
+      if (validated === null) return;
+      if (validated.length > 0) {
+        await redisCmd('SET', `thesis_alerts:${devId}`, JSON.stringify(validated), 'EX', CRON_THESIS_TTL);
+      } else {
+        await redisCmd('DEL', `thesis_alerts:${devId}`);
+      }
+      const freshAlerts = validated.filter(a => !prevKeys.has(`${a.entry_id}|${a.headline}`));
+      if (freshAlerts.length > 0) {
+        const sub = subsByDevice.get(devId);
+        if (sub && configureVapid()) {
+          const first = freshAlerts[0];
+          const payload = {
+            title: `⚠ Thesis Alert · ${first.pair} ${(first.direction || '').toUpperCase()}`,
+            body: freshAlerts.length > 1 ? `${freshAlerts.length} headline kontra thesis terbuka` : first.reason,
+            url: '/#ringkasan', icon: '/icon.svg',
+          };
+          const staleKeys = await sendWebPush([sub], payload);
+          if (staleKeys.length > 0) await redisCmd('HDEL', 'push_subs', ...staleKeys).catch(() => {});
+        }
+      }
+    } catch(e) { console.warn('Cron thesis sweep failed for device', devId, ':', e.message); }
+  }));
+}
+
 module.exports = async function handler(req, res) {
   console.log('market-digest v3 START', new Date().toISOString());
   const handlerStart = Date.now();
@@ -1535,63 +1595,6 @@ ${xauHistoryBlock}`;
   // validated thesis_alerts, silently hiding genuine contra-headline warnings.
   const thesisAlerts = await _call4Promise;
 
-  // ── Thesis Alert sweep for scheduled runs ────────────────────────────────────
-  // Call 4 above only checks the ONE device that made this request (deviceId from
-  // query) — on the 3x/day cron runs there's no device_id, so Call 4 is skipped
-  // entirely and thesis_alerts silently expires 30 min after the trader's last
-  // live "Ringkas Ulang" tap. That made Thesis Alert the only thing in the app
-  // that wasn't automatic/scheduled like the digest or the XAU/USD analysis.
-  // Fix: on cron runs, loop every device that has ever saved a journal entry
-  // (`journal_devices`, populated by journal.js on entry create), run the same
-  // contradiction check for each, cache the result long enough to survive until
-  // the next scheduled run, and push-notify the device if a NEW contradiction
-  // (not already alerted) is found.
-  // Devices run CONCURRENTLY (not a sequential loop) — market-digest.js has a 60s
-  // maxDuration (vercel.json), and each device's AI check can itself take up to
-  // ~16s (SambaNova + Groq fallback); sequentially that only tolerates 3-4
-  // devices before risking a timeout, while concurrently the whole sweep costs
-  // about as long as a single device's check regardless of device count.
-  if (isCronCall && (SAMBANOVA_KEY || GROQ_KEY) && recentItems.length > 0) {
-    const CRON_THESIS_TTL = 8 * 60 * 60; // 8h — spans the ~5-7h gap between the 3 daily runs
-    try {
-      const deviceIds = (await redisCmd('SMEMBERS', 'journal_devices') || []).slice(0, 10);
-      const subsByDevice = deviceIds.length > 0 ? await loadPushSubsByDevice() : null;
-      await Promise.allSettled(deviceIds.map(async devId => {
-        try {
-          const openEntries = await fetchOpenThesisEntries(devId);
-          if (openEntries.length === 0) return;
-          let prevAlerts = [];
-          try {
-            const prevRaw = await redisCmd('GET', `thesis_alerts:${devId}`);
-            if (prevRaw) prevAlerts = JSON.parse(prevRaw);
-          } catch(e) {}
-          const prevKeys = new Set((Array.isArray(prevAlerts) ? prevAlerts : []).map(a => `${a.entry_id}|${a.headline}`));
-          const validated = await checkThesisContradictions(openEntries, recentItems, SAMBANOVA_KEY, GROQ_KEY);
-          if (validated === null) return;
-          if (validated.length > 0) {
-            await redisCmd('SET', `thesis_alerts:${devId}`, JSON.stringify(validated), 'EX', CRON_THESIS_TTL);
-          } else {
-            await redisCmd('DEL', `thesis_alerts:${devId}`);
-          }
-          const freshAlerts = validated.filter(a => !prevKeys.has(`${a.entry_id}|${a.headline}`));
-          if (freshAlerts.length > 0) {
-            const sub = subsByDevice.get(devId);
-            if (sub && configureVapid()) {
-              const first = freshAlerts[0];
-              const payload = {
-                title: `⚠ Thesis Alert · ${first.pair} ${(first.direction || '').toUpperCase()}`,
-                body: freshAlerts.length > 1 ? `${freshAlerts.length} headline kontra thesis terbuka` : first.reason,
-                url: '/#ringkasan', icon: '/icon.svg',
-              };
-              const staleKeys = await sendWebPush([sub], payload);
-              if (staleKeys.length > 0) await redisCmd('HDEL', 'push_subs', ...staleKeys).catch(() => {});
-            }
-          }
-        } catch(e) { console.warn('Cron thesis sweep failed for device', devId, ':', e.message); }
-      }));
-    } catch(e) { console.warn('Cron thesis sweep failed:', e.message); }
-  }
-
   // ── Auto-update fundamental data + CB decisions from headlines ───────────────
   try {
     await autoUpdateFundamentals(recentItems.slice(0, 100), redisCmd);
@@ -1617,6 +1620,13 @@ ${xauHistoryBlock}`;
     redisCmd('SET', 'latest_article', JSON.stringify(toCache), 'EX', 21600).catch(() => {});
     // A2.2: notify subscribers once per successful digest — fire-and-forget, never block the response.
     notifyDigestReady(article).catch(e => console.warn('Digest-ready push failed:', e.message));
+  }
+
+  // Fire-and-forget (see runCronThesisSweep's own comment for why) — doesn't
+  // depend on Call 1's article succeeding, only on there being headlines to
+  // check theses against.
+  if (isCronCall && (SAMBANOVA_KEY || GROQ_KEY) && recentItems.length > 0) {
+    runCronThesisSweep(recentItems, SAMBANOVA_KEY, GROQ_KEY).catch(e => console.warn('Cron thesis sweep failed:', e.message));
   }
 
   return res.status(200).json(payload);
