@@ -297,7 +297,7 @@ async function healthHandler(req, res) {
   let aiBudget = null;
   try {
     const { getUsage } = require('./_ai_guard');
-    const usages = await Promise.all(['groq', 'sambanova_main', 'sambanova_c1', 'openrouter'].map(getUsage));
+    const usages = await Promise.all(['groq', 'sambanova_main', 'sambanova_c1', 'ollama', 'openrouter'].map(getUsage));
     aiBudget = Object.fromEntries(usages.map(u => [u.provider, { used: u.used, limit: u.limit }]));
   } catch(e) { /* diagnostik opsional — jangan gagalkan health check */ }
 
@@ -754,6 +754,30 @@ async function fundamentalRefreshHandler(req, res) {
 const GROQ_URL_FUND   = 'https://api.groq.com/openai/v1/chat/completions';
 const GROQ_MODEL_FUND = 'llama-3.3-70b-versatile';
 
+// Ollama Cloud — fallback tambahan sebelum Groq khusus ohlcv_analyze (session 144
+// lanjutan 5): API-nya BUKAN format OpenAI (/api/chat, bukan /v1/chat/completions),
+// jadi tidak bisa dipakai langsung lewat pola fetch yang sama dengan provider lain —
+// lihat _callOllama() untuk parsing response-nya.
+const OLLAMA_URL   = 'https://ollama.com/api/chat';
+const OLLAMA_MODEL = 'deepseek-v3.2:cloud'; // model sama dengan SambaNova, jalur akses beda (redundansi)
+
+// Panggil Ollama Cloud, kembalikan teks jawaban (message.content) atau null kalau gagal/kosong.
+// Melempar error kalau HTTP non-OK atau response kosong, konsisten dengan pola provider lain
+// (caller yang tangkap & jatuh ke fallback berikutnya).
+async function _callOllama(apiKey, model, messages, maxTokens, temperature, timeoutMs) {
+  const r = await fetch(OLLAMA_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+    body: JSON.stringify({ model, messages, stream: false, options: { temperature, num_predict: maxTokens } }),
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  const j = await r.json();
+  const content = j?.message?.content?.trim() || null;
+  if (!content) throw new Error('Empty response');
+  return content;
+}
+
 const FUND_SEED = {
   USD: {
     'Fed Rate':          { actual:'3.75%',      period:'Apr 2026',    date:'—', source:'seed' },
@@ -1095,7 +1119,7 @@ async function journalImportHandler(req, res) {
 
 // ── Circuit breaker status + reset ───────────────────────────────────────────
 
-const KNOWN_CIRCUITS = ['ai:openrouter', 'ai:cerebras', 'ai:sambanova:c1', 'ai:sambanova:main', 'fred', 'stooq', 'ff', 'fj', 'cftc', 'redis', 'forexbenchmark', 'actionforex'];
+const KNOWN_CIRCUITS = ['ai:openrouter', 'ai:cerebras', 'ai:sambanova:c1', 'ai:sambanova:main', 'ai:ollama', 'fred', 'stooq', 'ff', 'fj', 'cftc', 'redis', 'forexbenchmark', 'actionforex'];
 
 async function circuitStatusHandler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -2234,6 +2258,7 @@ async function ohlcvAnalyzeHandler(req, res) {
     ];
 
     const SAMBANOVA_KEY = process.env.SAMBANOVA_API_KEY;
+    const OLLAMA_KEY    = process.env.OLLAMA_API_KEY;
     const GROQ_KEY      = process.env.GROQ_API_KEY;
     let rawText = null, model = null;
 
@@ -2254,12 +2279,30 @@ async function ohlcvAnalyzeHandler(req, res) {
       } catch(e) { console.warn('ohlcv_analyze SambaNova failed:', e.message); await cb.onFailure('ai:sambanova:main'); }
     } else if (SAMBANOVA_KEY) { console.log('ohlcv_analyze: SambaNova circuit OPEN — skipping to Groq'); }
 
+    // Fallback 2: Ollama Cloud (DeepSeek-V3.2 lewat jalur beda dari SambaNova) — biar
+    // kegagalan sesaat SambaNova tidak langsung jatuh ke Groq llama-3.3 yang kualitasnya
+    // lebih rendah. Timeout dipangkas (15s, bukan 30s seperti SambaNova) supaya total
+    // SambaNova+Ollama+Groq tetap di bawah 60s hard limit Vercel — trade-off: kalau
+    // Ollama Cloud butuh >15s buat prompt sebesar ini, dia akan sering timeout duluan
+    // sebelum sempat kepakai (belum ada data latency real, perlu dipantau/disetel ulang).
+    if (!rawText && OLLAMA_KEY && await cb.canCall('ai:ollama')) {
+      try {
+        if (!await allowAiCall('ollama')) throw new Error('AI daily budget exceeded');
+        rawText = await _callOllama(OLLAMA_KEY, OLLAMA_MODEL, messages, 1500, 0.3, 15000);
+        model = 'deepseek-v3.2';
+        await cb.onSuccess('ai:ollama');
+      } catch(e) { console.warn('ohlcv_analyze Ollama failed:', e.message); await cb.onFailure('ai:ollama'); }
+    } else if (OLLAMA_KEY) { console.log('ohlcv_analyze: Ollama circuit OPEN — skipping to Groq'); }
+
+    // Timeout dipangkas 25s → 10s: sekarang last-resort ke-3 (bukan ke-2), harus
+    // muat dalam sisa waktu setelah SambaNova (30s) + Ollama (15s) di bawah 60s
+    // hard limit Vercel. Groq/Llama cukup cepat (LPU) jadi 10s masih longgar.
     if (!rawText && GROQ_KEY && await allowAiCall('groq')) {
       const r = await fetch(GROQ_URL_FUND, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${GROQ_KEY}` },
         body: JSON.stringify({ model: GROQ_MODEL_FUND, messages, max_tokens: 1500, temperature: 0.3 }),
-        signal: AbortSignal.timeout(25000),
+        signal: AbortSignal.timeout(10000),
       });
       if (r.ok) { const j = await r.json(); rawText = j.choices?.[0]?.message?.content?.trim() || null; model = 'llama-3.3'; }
     }
@@ -2530,3 +2573,4 @@ module.exports.computeOhlcvMetrics = computeOhlcvMetrics;
 module.exports.resampleTo4h = resampleTo4h;
 module.exports._extractRingkasanExcerpt = _extractRingkasanExcerpt;
 module.exports._formatFundamentalBlock = _formatFundamentalBlock;
+module.exports._callOllama = _callOllama;

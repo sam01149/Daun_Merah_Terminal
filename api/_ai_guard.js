@@ -28,6 +28,7 @@ const DEFAULT_LIMITS = {
   sambanova_c1:    200,   // akun 2 — Call 1 prose (market-digest, Ringkasan)
   openrouter:      150,   // free tier: 50/day (model :free) — akun berbayar lebih tinggi
   cerebras:        200,
+  ollama:          150,   // Ollama Cloud free tier: GPU-time based (bukan RPM/token), belum ada data pasti — konservatif
 };
 
 function dailyLimit(provider) {
