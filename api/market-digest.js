@@ -203,11 +203,14 @@ function stripThinking(text) {
   return text.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
 }
 
-// Shared low-level fetch for any OpenAI-compatible provider
-async function aiCall(url, apiKey, model, messages, maxTokens, temperature, timeoutMs, extraHeaders = {}, extraBody = {}) {
+// Shared low-level fetch for any OpenAI-compatible provider.
+// providerOverride: SAMBANOVA_URL dan SAMBANOVA_URL_CALL1 (2 akun berbeda) identik
+// string-nya, jadi providerFromUrl(url) tidak bisa membedakan akun — call site WAJIB
+// kirim override eksplisit ('sambanova_main' / 'sambanova_c1') untuk SambaNova.
+async function aiCall(url, apiKey, model, messages, maxTokens, temperature, timeoutMs, extraHeaders = {}, extraBody = {}, providerOverride = null) {
   // Guard kuota harian per provider — kalau habis, lempar error agar caller
   // jatuh ke provider berikutnya lewat jalur fallback yang sudah ada.
-  if (!await allowAiCall(providerFromUrl(url))) {
+  if (!await allowAiCall(providerOverride || providerFromUrl(url))) {
     const e = new Error('AI_BUDGET_EXCEEDED');
     e.status = 429;
     throw e;
@@ -415,7 +418,7 @@ async function checkThesisContradictions(openEntries, recentItems, SAMBANOVA_KEY
   if (SAMBANOVA_KEY && await cb.canCall(CB_SAMBA_MAIN)) {
     try {
       console.log('Call 4: trying SambaNova');
-      raw4 = await aiCall(SAMBANOVA_URL, SAMBANOVA_KEY, SAMBANOVA_MODEL, call4Messages, 700, 0.1, 8000);
+      raw4 = await aiCall(SAMBANOVA_URL, SAMBANOVA_KEY, SAMBANOVA_MODEL, call4Messages, 700, 0.1, 8000, {}, {}, 'sambanova_main');
       console.log('Call 4: SambaNova OK');
       await cb.onSuccess(CB_SAMBA_MAIN);
     } catch(e) {
@@ -1050,7 +1053,7 @@ module.exports = async function handler(req, res) {
       if (SAMBANOVA_KEY && await cb.canCall(CB_SAMBA_MAIN)) {
         try {
           console.log('Call 2: trying SambaNova');
-          biasRaw = await aiCall(SAMBANOVA_URL, SAMBANOVA_KEY, SAMBANOVA_MODEL, call2Messages, 700, 0.1, 8000);
+          biasRaw = await aiCall(SAMBANOVA_URL, SAMBANOVA_KEY, SAMBANOVA_MODEL, call2Messages, 700, 0.1, 8000, {}, {}, 'sambanova_main');
           console.log('Call 2: SambaNova OK');
           await cb.onSuccess(CB_SAMBA_MAIN);
         } catch(e) { console.warn('Call 2 SambaNova failed:', e.status || e.message); await cb.onFailure(CB_SAMBA_MAIN, AI_CB_THRESHOLD); }
@@ -1288,7 +1291,7 @@ ${xauHistoryBlock}`;
       const t1s = Date.now();
       try {
         console.log('Call 1: trying SambaNova DeepSeek-V3.2 (akun 2 prose)');
-        const raw = await aiCall(SAMBANOVA_URL_CALL1, SAMBANOVA_KEY_CALL1, SAMBANOVA_MODEL_CALL1, call1Messages, 1300, 0.25, 22000);
+        const raw = await aiCall(SAMBANOVA_URL_CALL1, SAMBANOVA_KEY_CALL1, SAMBANOVA_MODEL_CALL1, call1Messages, 1300, 0.25, 22000, {}, {}, 'sambanova_c1');
         const elapsed = Date.now() - t1s;
         if (raw.trim()) {
           article = raw.trim(); method = 'deepseek-v3.2';
@@ -1566,8 +1569,8 @@ ${xauHistoryBlock}`;
 
     // Try SambaNova, then Groq fallback
     const call3Providers = [];
-    if (SAMBANOVA_KEY) call3Providers.push({ url: SAMBANOVA_URL, key: SAMBANOVA_KEY, model: SAMBANOVA_MODEL, label: 'SambaNova', timeout: 8000 });
-    if (GROQ_KEY)      call3Providers.push({ url: GROQ_URL,      key: GROQ_KEY,      model: GROQ_MODEL,      label: 'Groq fallback', timeout: 12000 });
+    if (SAMBANOVA_KEY) call3Providers.push({ url: SAMBANOVA_URL, key: SAMBANOVA_KEY, model: SAMBANOVA_MODEL, label: 'SambaNova', timeout: 8000, provider: 'sambanova_main' });
+    if (GROQ_KEY)      call3Providers.push({ url: GROQ_URL,      key: GROQ_KEY,      model: GROQ_MODEL,      label: 'Groq fallback', timeout: 12000, provider: 'groq' });
 
     for (const provider of call3Providers) {
       if (thesis) break;
@@ -1579,7 +1582,7 @@ ${xauHistoryBlock}`;
       }
       try {
         console.log('Call 3: trying', provider.label);
-        const raw = await aiCall(provider.url, provider.key, provider.model, call3Messages, 800, 0.1, provider.timeout);
+        const raw = await aiCall(provider.url, provider.key, provider.model, call3Messages, 800, 0.1, provider.timeout, {}, {}, provider.provider);
         const clean = raw.replace(/```json|```/g, '').trim();
         const parsed = JSON.parse(clean);
         if (validateThesis(parsed)) {

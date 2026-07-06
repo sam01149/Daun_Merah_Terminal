@@ -16,10 +16,18 @@
 // Limit harian per provider — di bawah kuota resmi free-tier supaya ada headroom
 // untuk retry/fallback. Override per provider via env AI_DAILY_LIMIT_{PROVIDER}.
 const DEFAULT_LIMITS = {
-  groq:       500,   // free tier: 1k–14.4k req/day per model
-  sambanova:  200,   // free tier: rate limit per menit, ~ratusan/hari wajar
-  openrouter: 150,   // free tier: 50/day (model :free) — akun berbayar lebih tinggi
-  cerebras:   200,
+  groq:            500,   // free tier: 1k–14.4k req/day per model
+  // SambaNova pakai 2 akun terpisah (kunci API beda, kuota real masing-masing
+  // sendiri) — counter kuota HARUS dipisah juga, senada dengan circuit breaker
+  // yang sudah dipisah sejak session 125 (ai:sambanova:main vs ai:sambanova:c1).
+  // Sebelum ini keduanya berbagi satu counter 'sambanova', jadi Call 1 (akun 2)
+  // yang sering di-klik ulang bisa menghabiskan kuota gabungan lebih dulu dan
+  // membuat ohlcv_analyze (akun 1) ikut ditolak "budget exceeded" padahal
+  // akun 1-nya sendiri belum tentu penuh.
+  sambanova_main:  200,   // akun 1 — Call 2/3/4 (market-digest) + fundamental_analysis + ohlcv_analyze (admin.js)
+  sambanova_c1:    200,   // akun 2 — Call 1 prose (market-digest, Ringkasan)
+  openrouter:      150,   // free tier: 50/day (model :free) — akun berbayar lebih tinggi
+  cerebras:        200,
 };
 
 function dailyLimit(provider) {

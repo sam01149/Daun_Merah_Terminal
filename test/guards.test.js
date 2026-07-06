@@ -9,7 +9,7 @@ const assert = require('node:assert');
 delete process.env.UPSTASH_REDIS_REST_URL;
 delete process.env.UPSTASH_REDIS_REST_TOKEN;
 
-const { allowAiCall, providerFromUrl } = require('../api/_ai_guard');
+const { allowAiCall, providerFromUrl, DEFAULT_LIMITS } = require('../api/_ai_guard');
 const rateLimit = require('../api/_ratelimit');
 const cb = require('../api/_circuit_breaker');
 
@@ -30,6 +30,24 @@ test('allowAiCall fail-open tanpa Redis env', async () => {
 
 test('allowAiCall provider tak dikenal → diizinkan (jangan blokir)', async () => {
   assert.strictEqual(await allowAiCall(null), true);
+});
+
+// Regression: 2 akun SambaNova (kunci API beda, kuota real terpisah) sempat berbagi
+// satu counter budget 'sambanova' — Call 1 (akun 2, Ringkasan) yang sering di-generate
+// ulang bisa menghabiskan kuota gabungan lebih dulu dan bikin ohlcv_analyze (akun 1,
+// Analisa) ikut diblokir "budget exceeded" walau akun 1-nya sendiri masih longgar,
+// lalu jatuh ke fallback Groq llama-3.3 (dianggap kualitasnya kurang oleh user).
+// Fix: pisah jadi 'sambanova_main' (akun 1) dan 'sambanova_c1' (akun 2), senada
+// dengan circuit breaker yang sudah dipisah sejak session 125.
+test('DEFAULT_LIMITS: 2 akun SambaNova punya counter budget terpisah', () => {
+  assert.strictEqual(DEFAULT_LIMITS.sambanova_main, 200);
+  assert.strictEqual(DEFAULT_LIMITS.sambanova_c1, 200);
+  assert.strictEqual(DEFAULT_LIMITS.sambanova, undefined, 'counter gabungan lama harus sudah tidak dipakai');
+});
+
+test('allowAiCall: sambanova_main dan sambanova_c1 masing-masing fail-open tanpa Redis', async () => {
+  assert.strictEqual(await allowAiCall('sambanova_main'), true);
+  assert.strictEqual(await allowAiCall('sambanova_c1'), true);
 });
 
 // ── _ratelimit ──────────────────────────────────────────────────────────────

@@ -1,13 +1,30 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-07-06 (session 144 lanjutan 3 — fix crash Analisa AI: escHtml gagal untuk nilai number dari JSON terstruktur)
+> **Last updated:** 2026-07-06 (session 144 lanjutan 4 — fix budget SambaNova tercampur 2 akun, penyebab Analisa AI jatuh ke Groq llama-3.3)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 
 ---
 
-## Changelog Session 144 lanjutan 3 (2026-07-06) — Fix Crash Analisa AI: escHtml Gagal untuk Nilai Number dari JSON Terstruktur
+## Changelog Session 144 lanjutan 4 (2026-07-06) — Fix Budget SambaNova Tercampur 2 Akun (Penyebab Analisa AI Jatuh ke Groq llama-3.3)
+
+**Request user:** komplain hasil Analisa AI pakai badge `llama-3.3` ("aku gamau sama ai jelek ini") lalu minta dicari tahu akar masalahnya ("kenapa gagal, cari tahu la") dan menegaskan primary harus tetap DeepSeek-V3.2 (SambaNova) — model paling berkualitas yang sudah dipakai.
+
+**Investigasi:** sempat dicek apakah ini efek sesi 144 sebelumnya (integrasi Ringkasan↔Analisa, gate APP_KEY) — bukan; diff sesi itu cuma menambah isi prompt `ohlcv_analyze`, tidak menyentuh logika pemilihan provider/fallback.
+
+**Root cause (ditemukan lewat pembacaan kode, bukan dugaan):** SambaNova dipakai dari **2 akun berbeda** — akun 2 untuk Call 1 (prosa Ringkasan) dan akun 1 untuk Call 2/3/4 (bias/thesis) + `fundamental_analysis` + `ohlcv_analyze` (Analisa). Circuit breaker sudah dipisah per akun sejak **Session 125** (`ai:sambanova:c1` vs `ai:sambanova:main`), tapi **guard kuota harian (`allowAiCall`, `api/_ai_guard.js`) tidak pernah ikut dipisah** — kedua akun berbagi satu counter Redis `ai_budget:sambanova:{hari}` (limit gabungan 200). `providerFromUrl(url)` juga tidak bisa membedakan akun karena `SAMBANOVA_URL` dan `SAMBANOVA_URL_CALL1` string-nya identik. Efeknya: makin sering Call 1 (Ringkasan, akun 2) jalan/di-generate-ulang, makin cepat kuota gabungan itu terpakai — begitu lewat limit, `ohlcv_analyze` (akun 1) ikut ditolak "AI daily budget exceeded" walau akun 1-nya sendiri belum tentu penuh, lalu jatuh ke fallback Groq `llama-3.3-70b-versatile`.
+
+**Fix:**
+- `api/_ai_guard.js`: `DEFAULT_LIMITS.sambanova` (200, gabungan) → `sambanova_main` (200, akun 1) + `sambanova_c1` (200, akun 2) — 2 counter independen, total headroom efektif dobel dan tidak saling starve.
+- `api/market-digest.js`: `aiCall(...)` dapat parameter baru `providerOverride` (karena URL tidak bisa dipakai membedakan akun) — semua 4 titik panggil SambaNova (Call 1 akun 2, Call 2/3/4 akun 1) sekarang eksplisit kirim `'sambanova_c1'` atau `'sambanova_main'`, tidak lagi mengandalkan inferensi dari URL.
+- `api/admin.js`: 2 titik `allowAiCall('sambanova')` (fundamental_analysis fallback, ohlcv_analyze) → `allowAiCall('sambanova_main')`; diagnostik `healthHandler` (`aiBudget`) sekarang laporkan `sambanova_main` + `sambanova_c1` terpisah, bukan `sambanova` gabungan.
+
+**Verifikasi:** 2 test baru di `test/guards.test.js` (DEFAULT_LIMITS punya 2 counter terpisah + counter lama sudah tidak ada, `allowAiCall` fail-open untuk kedua nama baru tanpa Redis). Full suite 72/72 lulus, `node --check` bersih untuk ketiga file yang diubah.
+
+**Catatan:** ini kemungkinan besar kontributor utama, tapi tidak bisa dikonfirmasi 100% tanpa akses log/Redis produksi (endpoint diagnostik `circuit-status`/`health` sekarang digate APP_KEY). Kalau badge `llama-3.3` masih muncul setelah fix ini di-deploy, kemungkinan berikutnya: circuit breaker `ai:sambanova:main` sedang OPEN (3 kegagalan beruntun akun 1 → pause 5 menit) — cek via `GET /api/admin?action=circuit-status` dengan header `x-app-key`.
+
+---
 
 **Request user:** melaporkan screenshot error `Error: (s || "").replace is not a function` yang muncul di hasil Analisa AI (XAU/USD) tepat setelah cooldown request AI selesai.
 

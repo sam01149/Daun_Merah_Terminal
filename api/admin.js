@@ -297,7 +297,7 @@ async function healthHandler(req, res) {
   let aiBudget = null;
   try {
     const { getUsage } = require('./_ai_guard');
-    const usages = await Promise.all(['groq', 'sambanova', 'openrouter'].map(getUsage));
+    const usages = await Promise.all(['groq', 'sambanova_main', 'sambanova_c1', 'openrouter'].map(getUsage));
     aiBudget = Object.fromEntries(usages.map(u => [u.provider, { used: u.used, limit: u.limit }]));
   } catch(e) { /* diagnostik opsional — jangan gagalkan health check */ }
 
@@ -1004,7 +1004,7 @@ DIVERGENSI TERBESAR:
     const SAMBANOVA_KEY = process.env.SAMBANOVA_API_KEY;
     if (SAMBANOVA_KEY) {
       try {
-        if (!await allowAiCall('sambanova')) throw new Error('AI daily budget exceeded');
+        if (!await allowAiCall('sambanova_main')) throw new Error('AI daily budget exceeded');
         const r = await fetch('https://api.sambanova.ai/v1/chat/completions', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SAMBANOVA_KEY}` },
@@ -2239,7 +2239,7 @@ async function ohlcvAnalyzeHandler(req, res) {
 
     if (SAMBANOVA_KEY && await cb.canCall('ai:sambanova:main')) {
       try {
-        if (!await allowAiCall('sambanova')) throw new Error('AI daily budget exceeded');
+        if (!await allowAiCall('sambanova_main')) throw new Error('AI daily budget exceeded');
         const r = await fetch('https://api.sambanova.ai/v1/chat/completions', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SAMBANOVA_KEY}` },
