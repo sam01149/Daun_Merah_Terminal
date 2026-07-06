@@ -1,9 +1,42 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-07-06 (session 145 — re-arsitektur distribusi model AI: Nemotron 3 Ultra di Ringkasan, Cerebras gpt-oss-120b di Jurnal/Fundamental)
+> **Last updated:** 2026-07-07 (session 145 lanjutan 4 — Nemotron 3 Ultra DIDEMOTE dari primary market-digest setelah 4/4 tes live gagal; SambaNova/DeepSeek-V3.2 kembali jadi primary)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
+
+---
+
+## Changelog Session 145 lanjutan 2-4 (2026-07-07) — Nemotron 3 Ultra: Coba Ollama Cloud, Coba Matikan Reasoning, Akhirnya Didemote
+
+**Konteks:** lanjutan langsung dari Session 145 (di bawah) — setelah 2 ronde tes live via OpenRouter menunjukkan 0/3 bersih (respons kosong + timeout, tapi TIDAK 403), user minta dicoba beberapa pendekatan lagi sebelum menyerah.
+
+**Lanjutan 2 — coba sumber Ollama Cloud:** User share `ollama.com/library/nemotron-3-ultra` — dicek, model tersedia di tag `nemotron-3-ultra:cloud`. Diimplementasikan sebagai sumber Nemotron BARU (bukan ganti OpenRouter, ditaruh di depannya) di `market-digest.js`: `callOllama()` baru (pola sama seperti `_callOllama()` di admin.js, API native `/api/chat` bukan OpenAI-compatible), model id **TANPA suffix `:cloud`** (pelajaran langsung dari bug GLM-5.2 session 144 lanjutan 5 — suffix itu konvensi lokal, bukan nama API cloud). Reuse `OLLAMA_API_KEY` yang sudah ada (akun sama dipakai `ohlcv_analyze`), circuit breaker baru `ai:ollama:nemotron`. Timeout tier lain di Call 1 dipangkas across-the-board (SambaNova 22s→15s, gpt-oss 15s→10s, Groq 15s→8s) supaya total worst-case tetap wajar walau nambah tier. **Sempat dicek juga: apakah model ini genuinely gratis di Ollama Cloud (bukan cuma "teknisnya bisa diakses tapi sebenarnya perlu subscription" seperti GLM-5.2/Kimi K2.6)?** Dikonfirmasi via web search: YA, ada di Free tier (bukan Pro $20/bulan atau Max $100/bulan), meski ditandai "High Usage" (makan kuota mingguan ~5 juta token lebih cepat dari model kecil) — beda struktural dari GLM-5.2/Kimi K2.6 yang memang butuh Pro/Max.
+
+**Hasil tes live Ollama Cloud:** timeout di batas 18 detik — beda gejala dari OpenRouter (yang tadinya kosong/timeout 25 detik), tapi tetap gagal.
+
+**Lanjutan 3 — hipotesis user: reasoning trace bikin lambat, coba matikan:** User curiga model mungkin punya "thinking mode"/"effort high" (seperti kasus GLM-5.2 dengan `think:'high'` session 144) yang bikin lambat. Riset konfirmasi: Nemotron 3 pakai directive **`/think` dan `/no_think`** di system prompt (konvensi NVIDIA, mirip steering token Qwen3) untuk kontrol reasoning — BUKAN parameter API terpisah. Diimplementasikan `withNoThink(messages)` — tambah `/no_think` ke system message (bikin baru kalau belum ada), diterapkan ke SEMUA call site Nemotron (Ollama + OpenRouter, Call1/2/3), TIDAK ke provider lain (SambaNova/Groq/gpt-oss tidak paham konvensi ini). Timeout diagnostik `?test_nemotron=1` juga diperpanjang jauh (Ollama 45s, OpenRouter fallback 12s — aman karena tier lain sudah di-skip semua di mode test, total 57s masih di bawah limit 60s Vercel) untuk memastikan apakah model "butuh waktu lebih" atau "tidak akan pernah selesai".
+
+**Hasil tes live dengan `/no_think`:** masih gagal — kali ini **respons kosong setelah 27.1 detik** (bukan timeout, request beneran selesai duluan sebelum batas 45s, tapi `message.content` kosong). Gejala ketiga yang berbeda lagi.
+
+**Kesimpulan setelah 4 percobaan live nyata (2 sumber × berbagai config, semua 0% sukses):**
+
+| # | Sumber | Config | Hasil |
+|---|---|---|---|
+| 1 | OpenRouter | timeout 25s | kosong (912ms) |
+| 2 | OpenRouter | timeout 25s | timeout (25007ms) |
+| 3 | Ollama Cloud | timeout 18s | timeout (18006ms) |
+| 4 | Ollama Cloud | timeout 45s, `/no_think` | kosong (27137ms) |
+
+Tiga gejala kegagalan berbeda (kosong-cepat, timeout, kosong-lambat) di 2 provider berbeda dengan config berbeda-beda — pola ini konsisten dengan **resource contention di sisi provider** (model 550B baru rilis ~sebulan, kemungkinan besar traffic gratis diprioritaskan paling rendah di kedua host), bukan bug di kode kita, dan bukan juga soal reasoning-mode. User setuju untuk stop iterasi dan demote.
+
+**Lanjutan 4 — demote Nemotron dari primary:** `market-digest.js` Call1/2/3 — Nemotron (Ollama Cloud + OpenRouter) sekarang **hanya dipanggil saat `?test_nemotron=1`**, tidak lagi di jalur produksi normal. **SambaNova/DeepSeek-V3.2 kembali jadi primary asli** (proven, reliable berbulan-bulan sebelum session 145). Timeout SambaNova/gpt-oss/Groq di Call 1 dikembalikan ke nilai asli (22s/15s/15s) karena trimming sebelumnya cuma perlu selama Nemotron ada di jalur produksi. **Kode Nemotron TIDAK dihapus** (consts, `callOllama`, `withNoThink`, circuit breaker tetap ada) — bisa dites ulang kapan pun via `?test_nemotron=1` kalau serving membaik di masa depan, tanpa perlu ditulis ulang dari nol.
+
+**Follow-up (belum dieksekusi, masih diskusi):** User tanya perbandingan `nvidia/nemotron-3-super-120b-a12b:free` (OpenRouter, 120B/12B active, model NVIDIA lain yang lebih kecil) vs DeepSeek-V3.2. Beda dari Nemotron 3 Ultra, Nemotron 3 Super punya **statistik produksi nyata** dari OpenRouter (bukan cuma spec kertas): p50 latency 1.82s, E2E latency rata-rata 11.2s, uptime 97.85% (rolling 3 hari) — terlihat genuinely berfungsi. Tapi **Structured Output Error Rate 17.76%** (~1 dari 6 request JSON gagal ter-parse) jadi red flag besar untuk Call2/Call3 yang butuh JSON ketat — dan DeepSeek-V3.2 sudah proven kuat justru di titik itu. Rekomendasi: JANGAN ganti DeepSeek-V3.2, tapi Nemotron 3 Super bisa jadi kandidat untuk dites live khusus Call 1 (prosa, tidak butuh JSON) kalau user mau — belum dieksekusi, menunggu keputusan user.
+
+**Pelajaran untuk sesi berikutnya:** "Katanya gratis" + benchmark bagus di kertas ≠ benar-benar bisa diandalkan di production — ini precedent KEDUA di project ini (setelah GLM-5.2/Kimi K2.6 session 144) di mana model besar yang baru rilis gagal saat dites live, meski kali ini bukan soal subscription-gate (403) tapi soal reliability/capacity. Pola yang mulai terlihat: model FLAGSHIP BESAR yang BARU RILIS di free tier manapun (OpenRouter, Ollama Cloud) berisiko tinggi tidak stabil untuk beberapa waktu setelah rilis — pertimbangkan model yang sudah "battle-tested" beberapa bulan, atau uji live secara eksplisit dulu (pola `?test_X=1`) sebelum jadi primary, jangan pernah anggap otomatis siap produksi hanya dari dokumentasi/marketing.
+
+**Status:** Deployed ke production (commit `0a6eeed`). Full test suite 106/106 lulus, `node --check` bersih. Smoke test manual pasca-demote: `method:"deepseek-v3.2"` dengan artikel nyata — jalur produksi kembali normal.
 
 ---
 
