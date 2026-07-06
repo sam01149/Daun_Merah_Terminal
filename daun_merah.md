@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-07-06 (session 144 lanjutan 5 — Ollama Cloud sebagai fallback tambahan ohlcv_analyze, sebelum jatuh ke Groq llama-3.3)
+> **Last updated:** 2026-07-06 (session 144 lanjutan 5 — GLM-5.2 (Ollama Cloud) jadi primary sementara ohlcv_analyze, eksperimen user)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -17,8 +17,8 @@
 
 **Implementasi (`api/admin.js`, `ohlcvAnalyzeHandler` saja — scope sengaja dibatasi ke fitur Analisa, bukan Ringkasan/`market-digest.js`):**
 - `_callOllama(apiKey, model, messages, maxTokens, temperature, timeoutMs, think=null)` baru: request/response native Ollama, `think` opsional (dikirim di top-level body kalau diisi). Throw `HTTP {status}` atau `Empty response` konsisten dengan pola provider lain (caller yang tangkap & lanjut ke fallback berikutnya). Diekspor untuk unit test.
-- Chain fallback jadi 3 tingkat: **SambaNova (30s, primary, tidak berubah) → Ollama Cloud (`glm-5.2:cloud`, `think:'high'`, 15s, baru) → Groq llama-3.3 (10s, dipangkas dari 25s)**. Circuit breaker baru `ai:ollama` (masuk `KNOWN_CIRCUITS`) + budget guard `allowAiCall('ollama')` (`DEFAULT_LIMITS.ollama = 150`, konservatif karena free tier Ollama Cloud berbasis GPU-time bukan RPM/token, belum ada data pasti).
-- **Trade-off timeout disadari & didokumentasikan di kode:** total SambaNova+Ollama+Groq = 55s, masih di bawah hard limit 60s Vercel, tapi timeout Ollama (15s) untuk model reasoning belum tentu cukup (latency real belum diketahui) — kemungkinan sering timeout duluan sampai terbukti muat atau perlu dikalibrasi ulang (kandidat berikutnya: `think:false` atau naikkan timeout dengan konsekuensi pangkas provider lain).
+- Chain fallback jadi 3 tingkat, urutan diubah lagi atas permintaan user ("coba glm dulu yang primary") supaya GLM-5.2 benar-benar kepakai di tiap request (bukan cuma tereksekusi kalau SambaNova kebetulan gagal — sulit dievaluasi kalau posisinya cuma fallback jarang ke-trigger): **Ollama Cloud GLM-5.2 (`think:'high'`, 30s, PRIMARY sementara) → SambaNova DeepSeek-V3.2 (15s, fallback, dipangkas dari 30s) → Groq llama-3.3 (10s, last resort, dipangkas dari 25s)**. Circuit breaker baru `ai:ollama` (masuk `KNOWN_CIRCUITS`) + budget guard `allowAiCall('ollama')` (`DEFAULT_LIMITS.ollama = 150`, konservatif karena free tier Ollama Cloud berbasis GPU-time bukan RPM/token, belum ada data pasti).
+- **Trade-off timeout disadari & didokumentasikan di kode:** total GLM-5.2+SambaNova+Groq = 55s, masih di bawah hard limit 60s Vercel (GLM-5.2 dapat porsi terbesar/30s karena posisinya sekarang primary dan belum ada data latency real untuk model reasoning ini — SambaNova yang historisnya terbukti cepat/~13-20s dipangkas ke 15s untuk kasih ruang).
 - **Fail-safe sampai `OLLAMA_API_KEY` diisi:** tanpa env var itu, `OLLAMA_KEY` falsy → seluruh blok Ollama di-skip, perilaku identik dengan sebelum perubahan ini (SambaNova → Groq langsung). Nol risiko sampai user isi env var + redeploy.
 - `model` yang dikembalikan ke frontend: `'glm-5.2'` kalau lewat Ollama (beda dari SambaNova yang `'deepseek-v3.2'` — modelnya memang beda, badge UI harus mencerminkan sumber sebenarnya).
 

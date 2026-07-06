@@ -2274,14 +2274,30 @@ async function ohlcvAnalyzeHandler(req, res) {
     const GROQ_KEY      = process.env.GROQ_API_KEY;
     let rawText = null, model = null;
 
-    if (SAMBANOVA_KEY && await cb.canCall('ai:sambanova:main')) {
+    // Primary sementara (eksperimen user): Ollama Cloud GLM-5.2, think:'high'. Timeout
+    // 30s — sama generous dengan yang dulu diberikan ke SambaNova — supaya data
+    // latency yang terkumpul representatif, bukan keburu dipotong pendek. Kalau
+    // eksperimen ini selesai/gagal, tinggal tukar balik urutan dengan SambaNova.
+    if (OLLAMA_KEY && await cb.canCall('ai:ollama')) {
+      try {
+        if (!await allowAiCall('ollama')) throw new Error('AI daily budget exceeded');
+        rawText = await _callOllama(OLLAMA_KEY, OLLAMA_MODEL, messages, 1500, 0.3, 30000, 'high');
+        model = 'glm-5.2';
+        await cb.onSuccess('ai:ollama');
+      } catch(e) { console.warn('ohlcv_analyze Ollama failed:', e.message); await cb.onFailure('ai:ollama'); }
+    } else if (OLLAMA_KEY) { console.log('ohlcv_analyze: Ollama circuit OPEN — skipping to SambaNova'); }
+
+    // Fallback 1: SambaNova DeepSeek-V3.2 — timeout dipangkas 30s → 15s (dulu primary,
+    // sekarang fallback) supaya total GLM-5.2(30s)+SambaNova(15s)+Groq(10s) tetap di
+    // bawah 60s hard limit Vercel. SambaNova historisnya cepat (~13-20s), 15s masih wajar.
+    if (!rawText && SAMBANOVA_KEY && await cb.canCall('ai:sambanova:main')) {
       try {
         if (!await allowAiCall('sambanova_main')) throw new Error('AI daily budget exceeded');
         const r = await fetch('https://api.sambanova.ai/v1/chat/completions', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SAMBANOVA_KEY}` },
           body: JSON.stringify({ model: 'DeepSeek-V3.2', messages, max_tokens: 1500, temperature: 0.3 }),
-          signal: AbortSignal.timeout(30000),
+          signal: AbortSignal.timeout(15000),
         });
         if (r.ok) {
           const j = await r.json(); rawText = j.choices?.[0]?.message?.content?.trim() || null; model = 'deepseek-v3.2';
@@ -2291,25 +2307,8 @@ async function ohlcvAnalyzeHandler(req, res) {
       } catch(e) { console.warn('ohlcv_analyze SambaNova failed:', e.message); await cb.onFailure('ai:sambanova:main'); }
     } else if (SAMBANOVA_KEY) { console.log('ohlcv_analyze: SambaNova circuit OPEN — skipping to Groq'); }
 
-    // Fallback 2: Ollama Cloud (GLM-5.2, eksperimen — bukan model yang sama dengan
-    // SambaNova) — biar kegagalan sesaat SambaNova tidak langsung jatuh ke Groq
-    // llama-3.3. Timeout dipangkas (15s, bukan 30s seperti SambaNova) supaya total
-    // SambaNova+Ollama+Groq tetap di bawah 60s hard limit Vercel — trade-off: GLM-5.2
-    // pakai reasoning (think:'high', lihat komentar OLLAMA_MODEL), belum ada data
-    // latency real untuk kombinasi model+effort ini, jadi mungkin sering timeout
-    // duluan sampai terbukti muat dalam 15s.
-    if (!rawText && OLLAMA_KEY && await cb.canCall('ai:ollama')) {
-      try {
-        if (!await allowAiCall('ollama')) throw new Error('AI daily budget exceeded');
-        rawText = await _callOllama(OLLAMA_KEY, OLLAMA_MODEL, messages, 1500, 0.3, 15000, 'high');
-        model = 'glm-5.2';
-        await cb.onSuccess('ai:ollama');
-      } catch(e) { console.warn('ohlcv_analyze Ollama failed:', e.message); await cb.onFailure('ai:ollama'); }
-    } else if (OLLAMA_KEY) { console.log('ohlcv_analyze: Ollama circuit OPEN — skipping to Groq'); }
-
-    // Timeout dipangkas 25s → 10s: sekarang last-resort ke-3 (bukan ke-2), harus
-    // muat dalam sisa waktu setelah SambaNova (30s) + Ollama (15s) di bawah 60s
-    // hard limit Vercel. Groq/Llama cukup cepat (LPU) jadi 10s masih longgar.
+    // Last resort: Groq llama-3.3 — timeout 10s, sisa waktu setelah GLM-5.2 (30s) +
+    // SambaNova (15s) di bawah 60s hard limit Vercel. Groq/Llama cukup cepat (LPU).
     if (!rawText && GROQ_KEY && await allowAiCall('groq')) {
       const r = await fetch(GROQ_URL_FUND, {
         method: 'POST',
