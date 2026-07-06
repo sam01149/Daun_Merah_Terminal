@@ -1253,7 +1253,10 @@ async function fetchBinancePaxg1h(limit = 250) {
 }
 
 async function fetchYahooOhlcvDaily(symbol) {
-  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=1mo`;
+  // range=6mo — daily disimpan 135 bar supaya AI Analisa/Ringkasan punya anchor
+  // 6 bulan (posisi dalam range, jarak dari puncak) + bahan cluster S/R;
+  // konsumen yang butuh window 30D (stat UI, blok "Daily 30D") slice(-30) sendiri.
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=6mo`;
   const r = await fetch(url, {
     headers: {
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
@@ -1335,14 +1338,14 @@ async function ohlcvSyncHandler(req, res) {
       const candles4h = resampleTo4h(candles1h);
       const candles1d = await fetchYahooOhlcvDaily(symbol);
 
-      // Store 3 TFs in parallel: 1H last 120 (5D), 4H last 60 (10D), 1D last 30 (1mo)
+      // Store 3 TFs in parallel: 1H last 120 (5D), 4H last 60 (10D), 1D last 135 (6mo)
       await Promise.all([
         redisCmd('SET', `ohlcv:${symbol}:1h`, JSON.stringify(candles1h.slice(-120)), 'EX', '90000'), // 25h TTL
         redisCmd('SET', `ohlcv:${symbol}:4h`, JSON.stringify(candles4h.slice(-60)),  'EX', '90000'), // 25h TTL
-        redisCmd('SET', `ohlcv:${symbol}:1d`, JSON.stringify(candles1d.slice(-30)),  'EX', '90000'), // 25h TTL
+        redisCmd('SET', `ohlcv:${symbol}:1d`, JSON.stringify(candles1d.slice(-135)), 'EX', '90000'), // 25h TTL
       ]);
 
-      const n1h = Math.min(120, candles1h.length), n4h = Math.min(60, candles4h.length), n1d = Math.min(30, candles1d.length);
+      const n1h = Math.min(120, candles1h.length), n4h = Math.min(60, candles4h.length), n1d = Math.min(135, candles1d.length);
       console.log(`ohlcv_sync: ${label} — 1H:${n1h} 4H:${n4h} 1D:${n1d}`);
       return { symbol, label, count1h: n1h, count4h: n4h, count1d: n1d };
     })
@@ -1405,8 +1408,8 @@ function _atr14h1(candles) {
 // ── OHLCV Read — structured metrics for Analisa tab ──────────────────────────
 
 // 5-bar pivot detection: candle i is a swing high if its high is strictly higher
-// than the `lookback` candles on each side. Returns the 2 most recent swings of each type.
-function _findSwings(candles, lookback = 2) {
+// than the `lookback` candles on each side. Returns the `keep` most recent swings of each type.
+function _findSwings(candles, lookback = 2, keep = 2) {
   if (!candles || candles.length < (lookback * 2 + 1)) return { swing_highs: [], swing_lows: [], last_swing_high: null, last_swing_low: null };
   const highs = [], lows = [];
   for (let i = lookback; i < candles.length - lookback; i++) {
@@ -1418,15 +1421,173 @@ function _findSwings(candles, lookback = 2) {
     if (isHigh) highs.push({ price: candles[i].h, t: candles[i].t });
     if (isLow)  lows.push({ price: candles[i].l,  t: candles[i].t });
   }
-  // Keep the 2 most recent of each (already sorted oldest→newest, so slice(-2))
-  const swingHighs = highs.slice(-2);
-  const swingLows  = lows.slice(-2);
+  // Keep the N most recent of each (already sorted oldest→newest, so slice(-keep))
+  const swingHighs = highs.slice(-keep);
+  const swingLows  = lows.slice(-keep);
   return {
     swing_highs:     swingHighs,
     swing_lows:      swingLows,
     last_swing_high: swingHighs.length > 0 ? swingHighs[swingHighs.length - 1] : null,
     last_swing_low:  swingLows.length  > 0 ? swingLows[swingLows.length   - 1] : null,
   };
+}
+
+// ── Struktur teknikal untuk AI Analisa (semua pure function — dites di test/ta_struct.test.js) ──
+
+// Klasifikasi market structure dari 2 swing high + 2 swing low terakhir H4:
+// HH+HL = bullish, LH+LL = bearish, selain itu mixed/range. BOS = close terakhir
+// menembus swing terakhir (sinyal struktur berubah, bukan sekadar range).
+function _classifyStructure(swingHighs, swingLows, lastClose, dec) {
+  if (!Array.isArray(swingHighs) || !Array.isArray(swingLows) || swingHighs.length < 2 || swingLows.length < 2 || typeof lastClose !== 'number') return null;
+  const f = n => n.toFixed(dec);
+  const [hOld, hNew] = swingHighs.slice(-2);
+  const [lOld, lNew] = swingLows.slice(-2);
+  let label;
+  if (hNew.price > hOld.price && lNew.price > lOld.price)      label = 'Bullish (HH + HL)';
+  else if (hNew.price < hOld.price && lNew.price < lOld.price) label = 'Bearish (LH + LL)';
+  else                                                         label = 'Mixed/Range (swing tidak searah)';
+  let bos = null;
+  if (lastClose > hNew.price)      bos = `close terakhir ${f(lastClose)} menembus DI ATAS swing high terakhir ${f(hNew.price)} (break of structure bullish)`;
+  else if (lastClose < lNew.price) bos = `close terakhir ${f(lastClose)} menembus DI BAWAH swing low terakhir ${f(lNew.price)} (break of structure bearish)`;
+  return {
+    label,
+    detail: `swing high ${f(hOld.price)} → ${f(hNew.price)}, swing low ${f(lOld.price)} → ${f(lNew.price)}`,
+    bos,
+  };
+}
+
+// Cluster level S/R dari pivot Daily (window penuh, ~6 bulan) + swing 4H.
+// Level berdekatan (≤ tolerance) digabung; kekuatan diukur dari jumlah candle Daily
+// yang high/low-nya menyentuh area itu. Return max 3 resistance + 3 support terkuat.
+function _clusterSrLevels(dailyCandles, swings4h, nowPrice, tolerance, dec) {
+  if (!Array.isArray(dailyCandles) || dailyCandles.length < 10 || typeof nowPrice !== 'number' || !(tolerance > 0)) return null;
+  const dSw = _findSwings(dailyCandles, 2, 100);
+  const candidates = [
+    ...dSw.swing_highs.map(s => s.price),
+    ...dSw.swing_lows.map(s => s.price),
+    ...(swings4h?.swing_highs || []).map(s => s.price),
+    ...(swings4h?.swing_lows  || []).map(s => s.price),
+  ].filter(p => typeof p === 'number' && !isNaN(p)).sort((a, b) => a - b);
+  if (candidates.length === 0) return null;
+  const clusters = [];
+  for (const p of candidates) {
+    const last = clusters[clusters.length - 1];
+    if (last && Math.abs(p - last.sum / last.n) <= tolerance) { last.sum += p; last.n++; }
+    else clusters.push({ sum: p, n: 1 });
+  }
+  const levels = clusters.map(cl => {
+    const center = cl.sum / cl.n;
+    let touches = 0;
+    for (const c of dailyCandles) {
+      if (Math.abs(c.h - center) <= tolerance || Math.abs(c.l - center) <= tolerance) touches++;
+    }
+    return { price: +center.toFixed(dec), touches };
+  });
+  const strongest = arr => {
+    const pick = [...arr]
+      .sort((a, b) => b.touches - a.touches || Math.abs(a.price - nowPrice) - Math.abs(b.price - nowPrice))
+      .slice(0, 3);
+    // Cluster TERDEKAT ke harga wajib ikut — top-3 by sentuhan bisa semuanya zona lama
+    // ratusan pip jauhnya (bagus untuk TP, tapi entry/SL butuh struktur immediate).
+    const nearest = [...arr].sort((a, b) => Math.abs(a.price - nowPrice) - Math.abs(b.price - nowPrice))[0];
+    if (nearest && !pick.includes(nearest)) pick[pick.length - 1] = nearest;
+    return pick;
+  };
+  const above = strongest(levels.filter(l => l.price >= nowPrice)).sort((a, b) => a.price - b.price);
+  const below = strongest(levels.filter(l => l.price <  nowPrice)).sort((a, b) => b.price - a.price);
+  if (above.length === 0 && below.length === 0) return null;
+  return { above, below };
+}
+
+// Fibonacci retracement dari leg dominan 4H (10 hari): ekstrem tertinggi & terendah
+// window, arah leg dari urutan waktunya (low duluan = leg naik).
+function _fibLevels(c4h, dec) {
+  if (!Array.isArray(c4h) || c4h.length < 10) return null;
+  let hiIdx = 0, loIdx = 0;
+  c4h.forEach((c, i) => {
+    if (c.h > c4h[hiIdx].h) hiIdx = i;
+    if (c.l < c4h[loIdx].l) loIdx = i;
+  });
+  const hi = c4h[hiIdx].h, lo = c4h[loIdx].l;
+  if (!(hi > lo)) return null;
+  const up = loIdx < hiIdx;
+  const range = hi - lo;
+  const lvl = r => +(up ? hi - range * r : lo + range * r).toFixed(dec);
+  return {
+    direction:  up ? 'naik' : 'turun',
+    swing_low:  +lo.toFixed(dec),
+    swing_high: +hi.toFixed(dec),
+    f382: lvl(0.382), f500: lvl(0.5), f618: lvl(0.618),
+  };
+}
+
+// Pivot point klasik dari candle daily terakhir yang sudah selesai.
+function _dailyPivots(prevDay, dec) {
+  if (!prevDay || [prevDay.h, prevDay.l, prevDay.c].some(v => typeof v !== 'number' || isNaN(v))) return null;
+  const { h, l, c } = prevDay;
+  const p = (h + l + c) / 3;
+  return {
+    p:  +p.toFixed(dec),
+    r1: +(2 * p - l).toFixed(dec), s1: +(2 * p - h).toFixed(dec),
+    r2: +(p + (h - l)).toFixed(dec), s2: +(p - (h - l)).toFixed(dec),
+  };
+}
+
+// High/low minggu lalu (minggu kalender Senin-start UTC) dari candle daily.
+function _prevWeekHighLow(dailyCandles, dec) {
+  if (!Array.isArray(dailyCandles) || dailyCandles.length < 6) return null;
+  const weekIdx = t => Math.floor((Math.floor(t / 86400) + 3) / 7); // epoch Kamis → +3 = minggu mulai Senin
+  const curWeek = weekIdx(dailyCandles[dailyCandles.length - 1].t);
+  const prev = dailyCandles.filter(c => weekIdx(c.t) === curWeek - 1);
+  if (prev.length === 0) return null;
+  return {
+    high: +Math.max(...prev.map(c => c.h)).toFixed(dec),
+    low:  +Math.min(...prev.map(c => c.l)).toFixed(dec),
+  };
+}
+
+// Deteksi pola candlestick klasik pada `count` candle terakhir: engulfing,
+// pin bar (hammer/shooting star), inside bar, doji. Deterministik dari OHLC —
+// AI tinggal memakai label, tidak menebak pola sendiri.
+function _detectCandlePatterns(candles, count, dec) {
+  if (!Array.isArray(candles) || candles.length < 2) return [];
+  const out = [];
+  const n = candles.length;
+  for (let k = Math.max(1, n - count); k < n; k++) {
+    const c = candles[k], p = candles[k - 1];
+    const body = Math.abs(c.c - c.o), range = c.h - c.l;
+    if (!(range > 0)) continue;
+    const upper = c.h - Math.max(c.c, c.o), lower = Math.min(c.c, c.o) - c.l;
+    const pBody = Math.abs(p.c - p.o);
+    const labels = [];
+    if (pBody > 0 && body > pBody && c.c > c.o && p.c < p.o && c.c >= Math.max(p.o, p.c) && c.o <= Math.min(p.o, p.c)) labels.push('Bullish Engulfing');
+    if (pBody > 0 && body > pBody && c.c < c.o && p.c > p.o && c.o >= Math.max(p.o, p.c) && c.c <= Math.min(p.o, p.c)) labels.push('Bearish Engulfing');
+    if (body > 0 && lower >= body * 2 && upper <= body * 0.8) labels.push('Pin Bar bawah (rejection ke atas)');
+    if (body > 0 && upper >= body * 2 && lower <= body * 0.8) labels.push('Pin Bar atas (rejection ke bawah)');
+    if (c.h < p.h && c.l > p.l) labels.push('Inside Bar');
+    if (body <= range * 0.1) labels.push('Doji');
+    const isLast = k === n - 1;
+    for (const label of labels) out.push({ t: c.t, label, close: +c.c.toFixed(dec), running: isLast });
+  }
+  return out;
+}
+
+// RSI-14 Wilder dari deret close. Return null kalau data kurang.
+function _rsi14(closes) {
+  if (!Array.isArray(closes) || closes.length < 15) return null;
+  let gain = 0, loss = 0;
+  for (let i = 1; i <= 14; i++) {
+    const d = closes[i] - closes[i - 1];
+    if (d >= 0) gain += d; else loss -= d;
+  }
+  gain /= 14; loss /= 14;
+  for (let i = 15; i < closes.length; i++) {
+    const d = closes[i] - closes[i - 1];
+    gain = (gain * 13 + Math.max(d, 0)) / 14;
+    loss = (loss * 13 + Math.max(-d, 0)) / 14;
+  }
+  if (loss === 0) return 100;
+  return 100 - 100 / (1 + gain / loss);
 }
 
 // On-demand fresh OHLCV pull for the Analisa tab. ohlcv_sync (cron) only runs ~1x/day on
@@ -1457,7 +1618,7 @@ async function refreshOhlcvFromYahoo(symbol) {
     writes.push(redisCmd('SET', `ohlcv:${symbol}:4h`, JSON.stringify(candles4h.slice(-60)),  'EX', '90000'));
   }
   if (r1d.status === 'fulfilled' && r1d.value?.length) {
-    writes.push(redisCmd('SET', `ohlcv:${symbol}:1d`, JSON.stringify(r1d.value.slice(-30)), 'EX', '90000'));
+    writes.push(redisCmd('SET', `ohlcv:${symbol}:1d`, JSON.stringify(r1d.value.slice(-135)), 'EX', '90000'));
   }
   if (writes.length === 0) {
     // Arm a short throttle so a Yahoo outage doesn't make every read pay the full fetch timeout —
@@ -1472,10 +1633,6 @@ async function refreshOhlcvFromYahoo(symbol) {
 }
 
 async function loadOhlcvData(symbol, label) {
-  const isXau = symbol === 'GC=F';
-  const isJpy = symbol.includes('JPY');
-  const dec   = isXau ? 2 : isJpy ? 3 : 5;
-
   // Pull fresh candles from Yahoo on read (throttled) so the Analisa tab is near real-time
   // instead of bound to the ~daily sync cron. If Yahoo is down we fall through to the last
   // snapshot — the candle-age badge in the UI will flag the staleness.
@@ -1492,11 +1649,23 @@ async function loadOhlcvData(symbol, label) {
     redisCmd('GET', `ta:${symbol}:1d`),
   ]);
 
-  const c1h = raw1h ? JSON.parse(raw1h) : null;
-  const c4h = raw4h ? JSON.parse(raw4h) : null;
-  const c1d = raw1d ? JSON.parse(raw1d) : null;
-  const ta  = rawTa ? JSON.parse(rawTa) : null;
-  const out  = { symbol, label, dec, is_xau: isXau, loaded_at: new Date().toISOString() };
+  return computeOhlcvMetrics({
+    symbol, label,
+    c1h:     raw1h ? JSON.parse(raw1h) : null,
+    c4h:     raw4h ? JSON.parse(raw4h) : null,
+    c1dFull: raw1d ? JSON.parse(raw1d) : null,
+    ta:      rawTa ? JSON.parse(rawTa) : null,
+  });
+}
+
+// Perakitan metrik murni dari candle mentah — dipisah dari I/O Redis/Yahoo supaya bisa
+// diuji end-to-end tanpa infra (test/ta_struct.test.js + scripts smoke test).
+function computeOhlcvMetrics({ symbol, label, c1h, c4h, c1dFull, ta }) {
+  const isXau = symbol === 'GC=F';
+  const isJpy = symbol.includes('JPY');
+  const dec   = isXau ? 2 : isJpy ? 3 : 5;
+  const c1d   = c1dFull ? c1dFull.slice(-30) : null;    // stat "Daily 30D" (UI + blok lama) tetap 30 bar
+  const out   = { symbol, label, dec, is_xau: isXau, loaded_at: new Date().toISOString() };
 
   // Indicators (RSI/SMA from correlations TA cache — may be null if TEK tab never loaded)
   if (ta && ta.rsi_14 != null) {
@@ -1549,15 +1718,17 @@ async function loadOhlcvData(symbol, label) {
     const avgN = c4h.slice(-10).reduce((s,c) => s+c.c, 0) / 10;
     const t = tp(avgO, avgN);
     const trend = t > 0.15 ? 'Uptrend' : t < -0.15 ? 'Downtrend' : 'Sideways';
-    const swings = _findSwings(c4h, 2);
+    const swings = _findSwings(c4h, 2, 4);
     out.h4 = {
       available: true, high: +hi.toFixed(dec), low: +lo.toFixed(dec), current: +curr.toFixed(dec), change_pct: chg, trend,
       // Legacy single-swing fields (backwards compat with UI table)
       swing_high: swings.last_swing_high ? { price: +swings.last_swing_high.price.toFixed(dec), t: swings.last_swing_high.t } : null,
       swing_low:  swings.last_swing_low  ? { price: +swings.last_swing_low.price.toFixed(dec),  t: swings.last_swing_low.t  } : null,
-      // Extended: top-2 swing highs & lows for AI entry/SL/TP precision (B2 4.0c)
+      // Extended: up-to-4 swing highs & lows for AI entry/SL/TP precision + struktur HH/HL
       swing_highs: swings.swing_highs.map(s => ({ price: +s.price.toFixed(dec), t: s.t })),
       swing_lows:  swings.swing_lows.map(s  => ({ price: +s.price.toFixed(dec), t: s.t  })),
+      // Raw 12 candle terakhir untuk pembacaan pola oleh AI (grounded, bukan menebak)
+      candles12: c4h.slice(-12),
     };
   } else { out.h4 = { available: false }; }
 
@@ -1615,6 +1786,75 @@ async function loadOhlcvData(symbol, label) {
   }
   if (!out.atr) out.atr = { available: false };
 
+  // ── Struktur tambahan untuk AI Analisa (semua guarded — data lama/klien tanpa
+  // field ini tetap jalan; buildOhlcvText juga guard per-blok) ─────────────────
+
+  // Konteks 6 bulan: posisi harga dalam range panjang — anchor yang selama ini
+  // hilang (AI cuma tahu 30 hari, tidak bisa bilang "di puncak 6 bulan").
+  const nowP = out.h1?.available ? out.h1.current : (out.d1?.available ? out.d1.current : null);
+  const atrD = c1dFull && c1dFull.length >= 15 ? _atr14h1(c1dFull) : null;
+  if (c1dFull && c1dFull.length >= 40 && typeof nowP === 'number') {
+    const hi6 = Math.max(...c1dFull.map(c => c.h));
+    const lo6 = Math.min(...c1dFull.map(c => c.l));
+    const chg6 = +((nowP - c1dFull[0].o) / c1dFull[0].o * 100).toFixed(2);
+    out.d1_ext = {
+      available: true,
+      high_6m: +hi6.toFixed(dec), low_6m: +lo6.toFixed(dec),
+      pos_pct: hi6 > lo6 ? Math.round((nowP - lo6) / (hi6 - lo6) * 100) : null,
+      chg_6m_pct: chg6,
+      dist_high_pct: +((nowP - hi6) / hi6 * 100).toFixed(2),
+      atr_d: atrD != null ? +atrD.toFixed(dec) : null,
+      bars: c1dFull.length,
+    };
+  } else { out.d1_ext = { available: false }; }
+
+  // Market structure H4 (HH/HL vs LH/LL + BOS)
+  const h4LastClose = (c4h && c4h.length) ? c4h[c4h.length - 1].c : null;
+  const struct = out.h4?.available ? _classifyStructure(out.h4.swing_highs, out.h4.swing_lows, h4LastClose, dec) : null;
+  out.structure = struct ? { available: true, ...struct } : { available: false };
+
+  // Cluster S/R (pivot Daily 6 bulan + swing H4, kekuatan = jumlah sentuhan Daily)
+  const tol = atrD != null ? atrD * 0.35 : (typeof nowP === 'number' ? nowP * 0.0015 : null);
+  const sr = (c1dFull && typeof nowP === 'number' && tol) ? _clusterSrLevels(c1dFull, out.h4?.available ? out.h4 : null, nowP, tol, dec) : null;
+  out.sr_levels = sr ? { available: true, ...sr } : { available: false };
+
+  // Fibonacci retracement leg dominan 4H
+  const fib = _fibLevels(c4h, dec);
+  out.fib = fib ? { available: true, ...fib } : { available: false };
+
+  // Pivot harian klasik + prev day/week H-L. Bar daily terakhir umumnya masih
+  // berjalan (hari ini) — bar "kemarin" yang sudah close ada di index len-2.
+  if (c1dFull && c1dFull.length >= 3) {
+    const prevDay = c1dFull[c1dFull.length - 2];
+    const piv = _dailyPivots(prevDay, dec);
+    out.ref_levels = {
+      available: true,
+      pivots: piv,
+      prev_day:  { high: +prevDay.h.toFixed(dec), low: +prevDay.l.toFixed(dec), close: +prevDay.c.toFixed(dec) },
+      prev_week: _prevWeekHighLow(c1dFull, dec),
+    };
+  } else { out.ref_levels = { available: false }; }
+
+  // Pola candlestick terdeteksi (H4 3 terakhir, Daily 2 terakhir)
+  const patH4 = c4h ? _detectCandlePatterns(c4h, 3, dec) : [];
+  const patD1 = c1dFull ? _detectCandlePatterns(c1dFull, 2, dec) : [];
+  out.patterns = (patH4.length || patD1.length) ? { available: true, h4: patH4, d1: patD1 } : { available: false };
+
+  // RSI-14 H4 (timing entry — pelengkap RSI Daily dari cache TA)
+  if (c4h && c4h.length >= 18) {
+    const closes = c4h.map(c => c.c);
+    const rsiNow  = _rsi14(closes);
+    const rsiPrev = _rsi14(closes.slice(0, -3));
+    if (rsiNow != null) {
+      out.rsi_h4 = {
+        available: true,
+        value: +rsiNow.toFixed(1),
+        direction: rsiPrev != null ? (rsiNow > rsiPrev + 1 ? 'naik' : rsiNow < rsiPrev - 1 ? 'turun' : 'datar') : null,
+      };
+    }
+  }
+  if (!out.rsi_h4) out.rsi_h4 = { available: false };
+
   return out;
 }
 
@@ -1661,6 +1901,61 @@ function buildOhlcvText(data) {
     const a = data.atr;
     const pipsStr = a.atr_pips ? ` (${a.atr_pips} pip)` : '';
     lines.push(`[ATR-14 H1] Volatilitas: ${a.atr_h1}${pipsStr} — gunakan untuk SL minimum dan sizing`);
+  }
+
+  // ── Blok struktur (semua guarded — cache klien lama tanpa field ini tetap jalan) ──
+  if (data.d1_ext?.available) {
+    const e = data.d1_ext;
+    const parts = [
+      `Range: ${f(e.low_6m)}–${f(e.high_6m)}`,
+      e.pos_pct != null ? `Posisi now: ${e.pos_pct}% dari range (0%=low, 100%=high)` : null,
+      `6M: ${e.chg_6m_pct >= 0 ? '+' : ''}${e.chg_6m_pct}%`,
+      `Jarak dari puncak 6M: ${e.dist_high_pct}%`,
+      e.atr_d != null ? `ATR-14 Daily: ${f(e.atr_d)}` : null,
+    ].filter(Boolean);
+    lines.push(`[KONTEKS 6 BULAN — Daily ${e.bars} bar] ${parts.join(' | ')}`);
+  }
+  if (data.structure?.available) {
+    lines.push(`[STRUKTUR H4] ${data.structure.label} — ${data.structure.detail}${data.structure.bos ? ` | BOS: ${data.structure.bos}` : ''}`);
+  }
+  if (data.sr_levels?.available) {
+    const fmtLvl = l => `${f(l.price)} (${l.touches}x sentuh)`;
+    lines.push(`[LEVEL S/R — cluster pivot Daily 6 bulan + swing H4, makin banyak sentuhan makin kuat]`);
+    if (data.sr_levels.above?.length) lines.push(`  Resistance (di atas Now): ${data.sr_levels.above.map(fmtLvl).join(', ')}`);
+    if (data.sr_levels.below?.length) lines.push(`  Support (di bawah Now): ${data.sr_levels.below.map(fmtLvl).join(', ')}`);
+  }
+  if (data.fib?.available) {
+    const fb = data.fib;
+    lines.push(`[FIBONACCI leg 4H ${fb.direction} ${f(fb.swing_low)}→${f(fb.swing_high)}] 38.2%: ${f(fb.f382)} | 50%: ${f(fb.f500)} | 61.8%: ${f(fb.f618)}`);
+  }
+  if (data.ref_levels?.available) {
+    const r = data.ref_levels;
+    if (r.pivots) lines.push(`[PIVOT HARIAN klasik dari daily kemarin] P: ${f(r.pivots.p)} | R1: ${f(r.pivots.r1)} | S1: ${f(r.pivots.s1)} | R2: ${f(r.pivots.r2)} | S2: ${f(r.pivots.s2)}`);
+    const refParts = [
+      r.prev_day  ? `Prev Day H/L/C: ${f(r.prev_day.high)}/${f(r.prev_day.low)}/${f(r.prev_day.close)}` : null,
+      r.prev_week ? `Prev Week H/L: ${f(r.prev_week.high)}/${f(r.prev_week.low)}` : null,
+    ].filter(Boolean);
+    if (refParts.length) lines.push(`[LEVEL REFERENSI] ${refParts.join(' | ')}`);
+  }
+  if (data.patterns?.available) {
+    const fmtPat = p => `${fmtWib(p.t)} ${p.label} (close ${f(p.close)})${p.running ? ' [candle berjalan, belum close]' : ''}`;
+    lines.push(`[POLA CANDLE terdeteksi dari OHLC]`);
+    if (data.patterns.h4?.length) lines.push(`  H4: ${data.patterns.h4.map(fmtPat).join('; ')}`);
+    if (data.patterns.d1?.length) lines.push(`  Daily: ${data.patterns.d1.map(fmtPat).join('; ')}`);
+    if (!data.patterns.h4?.length && !data.patterns.d1?.length) lines.push(`  (tidak ada pola signifikan di candle terakhir)`);
+  }
+  if (data.rsi_h4?.available) {
+    lines.push(`[RSI-14 H4] ${data.rsi_h4.value}${data.rsi_h4.direction ? ` (${data.rsi_h4.direction} vs 3 candle lalu)` : ''}`);
+  }
+  const fmtCandle = c => `${fmtWib(c.t)} O:${f(c.o)} H:${f(c.h)} L:${f(c.l)} C:${f(c.c)}`;
+  if (Array.isArray(h4?.candles12) && h4.candles12.length > 0) {
+    lines.push(`[${h4.candles12.length} candle H4 terakhir (lama→baru) — baca pola & momentum langsung dari sini:]`);
+    h4.candles12.forEach(c => lines.push(fmtCandle(c)));
+  }
+  if (Array.isArray(h1?.candles24) && h1.candles24.length > 0) {
+    const c12 = h1.candles24.slice(-12);
+    lines.push(`[${c12.length} candle 1H terakhir (lama→baru) — konteks entry intraday:]`);
+    c12.forEach(c => lines.push(fmtCandle(c)));
   }
   return lines.join('\n');
 }
@@ -1774,6 +2069,10 @@ async function ohlcvAnalyzeHandler(req, res) {
       data.indicators?.available ? 'RSI/SMA Daily' : null,
       data.macd?.available   ? 'MACD H4' : null,
       data.atr?.available    ? 'ATR H1' : null,
+      data.structure?.available  ? 'struktur H4' : null,
+      data.sr_levels?.available  ? 'cluster S/R' : null,
+      data.fib?.available        ? 'fibonacci' : null,
+      data.patterns?.available   ? 'pola candle' : null,
       expiryBlock            ? 'option expiry' : null,
       ringkasanContext       ? 'konteks makro' : null,
     ].filter(Boolean).join(' + ');
@@ -1789,19 +2088,20 @@ async function ohlcvAnalyzeHandler(req, res) {
       makroBlock,
       '',
       'Isi field JSON berikut:',
-      '- bias: trend dominan Daily — bullish/bearish/neutral/mixed. Pakai "mixed" kalau timeframe saling kontradiksi (misal Daily naik tapi H4/H1 distribusi) atau makro vs teknikal berlawanan jelas — jangan paksa ke "neutral" kalau sebenarnya konflik, bukan tanpa-trend.',
-      '- entry_zone: level atau range harga ideal untuk entry (angka konkret). WAJIB konsisten dengan harga "Now" di atas — kalau bias bearish, entry_zone harus >= Now (jual di rally/resistance) ATAU di bawah Now kalau memang breakdown confirmation, TAPI jangan keduanya sekaligus dalam satu trigger yang saling kontradiksi. Kalau Now sudah melewati level breakdown/breakout yang relevan, jangan minta retracement ke arah berlawanan — definisikan entry di sekitar Now atau area immediate berikutnya. WAJIB level ini diturunkan dari angka yang benar-benar ada di DATA TEKNIKAL (swing/S-R/SMA) — jangan mengarang angka yang tidak ada di data.',
-      '- sl: level stop loss konkret berdasarkan Swing Low/High 4H atau Support/Resistance Daily yang ADA di data — jangan mengarang. Untuk bearish, sl harus di atas entry_zone. Untuk bullish, sl harus di bawah entry_zone.',
-      '- tp: level take profit konkret berdasarkan Swing High/Low 4H atau Resistance/Support Daily yang ADA di data — jangan mengarang. Untuk bearish, tp harus di bawah entry_zone. Untuk bullish, tp harus di atas entry_zone. WAJIB risk/reward (jarak entry→tp dibanding entry→sl) minimal 1:1 — kalau struktur data tidak memungkinkan RR ≥1, sebutkan itu di trigger/commentary alih-alih memaksakan level palsu.',
-      '- trigger: SATU kondisi teknikal spesifik yang HARUS terpenuhi sebelum entry — jangan sebut dua kondisi alternatif yang saling kontradiksi relatif ke Now, misal: "Tunggu candle H1 close di atas X" atau "Entry saat RSI keluar dari oversold"',
-      '- invalidation_condition: kondisi spesifik yang membatalkan skenario ini sepenuhnya (beda dari sl — ini soal struktur/tesis, misal "kalau Daily close balik di bawah SMA50 maka bias bullish batal")',
+      '- bias: trend dominan — bullish/bearish/neutral/mixed. Dasarkan pada GABUNGAN trend Daily + [STRUKTUR H4] (HH+HL vs LH+LL) + BOS kalau ada — bukan cuma perubahan %. Pakai "mixed" kalau timeframe saling kontradiksi (misal Daily naik tapi struktur H4 LH+LL) atau makro vs teknikal berlawanan jelas — jangan paksa ke "neutral" kalau sebenarnya konflik, bukan tanpa-trend.',
+      '- entry_zone: level atau range harga ideal untuk entry (angka konkret). WAJIB berpijak pada level STRUKTUR yang benar-benar ada di DATA TEKNIKAL: cluster [LEVEL S/R], level [FIBONACCI], [PIVOT HARIAN], Prev Day/Week H-L, swing H4, SMA, atau option expiry — jangan mengarang angka yang tidak ada di data. PRIORITASKAN KONFLUENSI: area di mana 2+ struktur berbeda jatuh berdekatan (misal fib 61.8% bertepatan dengan cluster S/R yang banyak disentuh dan pivot S1) — itu entry dengan dasar terkuat. WAJIB konsisten dengan harga "Now": kalau bias bearish, entry_zone >= Now (jual di rally ke resistance) ATAU di bawah Now kalau memang breakdown confirmation, TAPI jangan keduanya sekaligus. Kalau Now sudah melewati level breakdown/breakout relevan, jangan minta retracement ke arah berlawanan — definisikan entry di struktur terdekat dari Now. KALAU TIDAK ADA setup dengan dasar struktur jelas searah bias (misal struktur Mixed dan harga di tengah range, jauh dari semua level kuat), set entry_zone, sl, tp, entry_basis ke null dan jelaskan di trigger kondisi apa yang ditunggu — JANGAN memaksakan setup.',
+      '- entry_basis: sebutkan struktur mana saja dari DATA TEKNIKAL yang jadi dasar entry_zone, dengan angkanya (contoh format: "fib 61.8% 1.1712 + cluster S/R 1.1709 (4x sentuh) + pivot S1 1.1705"). Minimal satu struktur bernama; makin banyak konfluensi makin baik. Kalau entry_zone null, field ini juga null.',
+      '- sl: level stop loss konkret DI LUAR struktur yang melindungi entry — di balik swing H4, cluster S/R, atau Prev Day H/L yang ADA di data, dengan buffer minimal ~0.5x ATR-14 H1 dari level itu (jangan tepat di level, rawan wick hunt). Untuk bearish, sl harus di atas entry_zone. Untuk bullish, sl harus di bawah entry_zone.',
+      '- tp: level take profit konkret = struktur berikutnya searah bias yang ADA di data (cluster S/R, swing, pivot, fib) — jangan mengarang. Untuk bearish, tp harus di bawah entry_zone. Untuk bullish, tp harus di atas entry_zone. WAJIB risk/reward (jarak entry→tp dibanding entry→sl) minimal 1:1 — kalau struktur data tidak memungkinkan RR ≥1, sebutkan itu di trigger/commentary alih-alih memaksakan level palsu.',
+      '- trigger: SATU kondisi price action spesifik yang HARUS terpenuhi sebelum entry — utamakan konfirmasi berbasis candle/pola di level konkret (misal "tunggu candle H4 close di bawah 1.1710" atau "tunggu rejection/pin bar H1 di area 3340") daripada indikator murni. Jangan sebut dua kondisi alternatif yang saling kontradiksi relatif ke Now. Manfaatkan [POLA CANDLE terdeteksi] kalau relevan.',
+      '- invalidation_condition: kondisi spesifik yang membatalkan skenario ini sepenuhnya (beda dari sl — ini soal struktur/tesis, misal "kalau Daily close balik di bawah SMA50 atau swing low H4 terakhir jebol, bias bullish batal")',
       '- time_horizon_days: estimasi jumlah hari realistis skenario ini main out (angka, misal 3, 5, 10) berdasarkan jarak entry-tp dibanding rata-rata gerak harian (ATR/sigma) yang ada di data',
       '',
       'Setelah objek JSON, di baris baru tulis PERSIS "===COMMENTARY===" lalu tulis commentary sebagai teks biasa (BUKAN di dalam JSON): analisa naratif mendalam 4-5 paragraf, pisah tiap paragraf dengan baris baru.',
-      `Paragraf 1 — bias Daily: jelaskan arah trend dengan alasan konkret (perubahan %, level close vs open, posisi relatif terhadap swing terakhir).`,
-      `Paragraf 2 — struktur H4: posisi harga saat ini terhadap swing high/low H4, apakah dalam fase akumulasi/distribusi/breakout, MACD H4 konfirmasi atau divergensi.`,
-      `Paragraf 3 — momentum H1: kondisi momentum terkini, konfluensi atau perbedaan arah dengan H4${p3Atr}.`,
-      `Paragraf 4 — integrasi ${p4Label}: simpulkan kekuatan setup, risiko utama, dan kondisi pasar yang memvalidasi atau membatalkan skenario ini${p4Macro}.`,
+      `Paragraf 1 — bias & posisi makro harga: arah trend Daily dengan alasan konkret (perubahan %, close vs open, posisi dalam range 6 bulan dari [KONTEKS 6 BULAN] — dekat puncak/lembah/tengah).`,
+      `Paragraf 2 — struktur H4: pakai [STRUKTUR H4] (HH+HL / LH+LL / mixed) dan posisi harga terhadap cluster [LEVEL S/R] terdekat; fase akumulasi/distribusi/breakout; MACD H4 konfirmasi atau divergensi.`,
+      `Paragraf 3 — momentum & pola: momentum H1 terkini, RSI H4 (arah naik/turun), pola candle yang terdeteksi dan artinya di posisi sekarang${p3Atr}, konfluensi atau perbedaan arah dengan H4.`,
+      `Paragraf 4 — integrasi ${p4Label}: simpulkan kekuatan setup (berapa struktur yang konfluens di entry_zone), risiko utama, dan kondisi pasar yang memvalidasi atau membatalkan skenario ini${p4Macro}.`,
       'Setiap paragraf wajib sebut minimal 2 angka konkret (harga, %, atau nilai indikator). DILARANG kalimat generik tanpa angka (misal "harga bergerak sideways", "momentum masih lemah", "perlu konfirmasi lebih lanjut" tanpa data pendukung) — setiap klaim harus berpijak pada angka yang ada di DATA TEKNIKAL.',
     ].join('\n');
 
@@ -1809,7 +2109,7 @@ async function ohlcvAnalyzeHandler(req, res) {
     // — prosa panjang 4-5 paragraf sebagai string JSON rawan gagal JSON.parse (kutip/newline
     // tak ter-escape), yang dulu bikin structured null dan bias/entry/sl/tp hilang total.
     const messages = [
-      { role: 'system', content: 'Kamu analis senior teknikal dan makro. WAJIB jawab dalam DUA bagian persis seperti diminta: (1) SATU objek JSON valid tanpa markdown fence berisi HANYA field {"bias":"...","entry_zone":"...","sl":"...","tp":"...","trigger":"...","invalidation_condition":"...","time_horizon_days":0} — JANGAN sertakan field commentary di JSON ini; (2) setelah JSON, baris berisi PERSIS "===COMMENTARY===", lalu teks commentary biasa (bukan JSON, bebas tanda kutip/baris baru). Bahasa Indonesia.' },
+      { role: 'system', content: 'Kamu analis senior teknikal dan makro. WAJIB jawab dalam DUA bagian persis seperti diminta: (1) SATU objek JSON valid tanpa markdown fence berisi HANYA field {"bias":"...","entry_zone":"...","entry_basis":"...","sl":"...","tp":"...","trigger":"...","invalidation_condition":"...","time_horizon_days":0} — JANGAN sertakan field commentary di JSON ini; (2) setelah JSON, baris berisi PERSIS "===COMMENTARY===", lalu teks commentary biasa (bukan JSON, bebas tanda kutip/baris baru). Bahasa Indonesia.' },
       { role: 'user',   content: userMsg },
     ];
 
@@ -1904,6 +2204,11 @@ async function ohlcvAnalyzeHandler(req, res) {
               structured.risk_reward = null;
             }
           }
+        }
+        // entry_basis hanya bermakna bersama entry_zone — ikut di-null kalau level
+        // di-drop sanity check / model memang tidak memberi setup; buang juga non-string.
+        if (typeof structured.entry_basis !== 'string' || !structured.entry_basis.trim() || !structured.entry_zone) {
+          structured.entry_basis = null;
         }
       } catch(e) {
         // Keep rawText as commentary, structured stays null
@@ -2073,3 +2378,14 @@ async function polymarketHandler(req, res) {
 // Ekspor helper murni untuk unit test (module.exports = handler function; properti
 // tambahan tidak mengganggu Vercel yang hanya memanggil function-nya).
 module.exports._pickExpiryLevels = _pickExpiryLevels;
+module.exports._findSwings = _findSwings;
+module.exports._classifyStructure = _classifyStructure;
+module.exports._clusterSrLevels = _clusterSrLevels;
+module.exports._fibLevels = _fibLevels;
+module.exports._dailyPivots = _dailyPivots;
+module.exports._prevWeekHighLow = _prevWeekHighLow;
+module.exports._detectCandlePatterns = _detectCandlePatterns;
+module.exports._rsi14 = _rsi14;
+module.exports.buildOhlcvText = buildOhlcvText;
+module.exports.computeOhlcvMetrics = computeOhlcvMetrics;
+module.exports.resampleTo4h = resampleTo4h;

@@ -1,9 +1,38 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-07-05 (session 143 lanjutan 3 — SIMULASI kalender: konfluensi "dasar bertumpu" multi-faktor per pair + tombol Hitung Lot · SIZING)
+> **Last updated:** 2026-07-06 (session 144 — evaluasi & upgrade konteks AI Ringkasan + Analisa: entry berbasis struktur harga)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
+
+---
+
+## Changelog Session 144 (2026-07-06) — Evaluasi & Upgrade Konteks AI: Saran Entry Analisa Berbasis Struktur Harga
+
+**Request user:** evaluasi pengetahuan & konteks AI fitur Ringkasan dan Analisa — apakah perlu diperpanjang; kritik terhadap saran entry AI Analisa: "terlalu tidak mendasar dan terlalu sempit, tidak memakai struktur data harga, pola, dll secara teknikal".
+
+**Hasil evaluasi (root cause dikonfirmasi dari kode, bukan asumsi):** kritik user benar, tapi mekanismenya bukan "AI-nya tidak bisa analisa teknikal" — prompt `ohlcv_analyze` sejak lama (benar) melarang AI mengarang angka di luar DATA TEKNIKAL, sementara data yang dikirim cuma berisi ~10 angka ringkasan: range 30D + top-2 high/low harian (sering 2 candle bertetangga dari spike yang sama = efektif 1 level), range/trend 4H + 2 swing, range 1H, RSI/SMA Daily, MACD, ATR. Tanpa candle mentah (blok Ringkasan dapat 24 candle 1H, Analisa justru tidak), tanpa market structure, tanpa level bersentuhan-banyak, tanpa fib/pivot/pola. Jadi entry-nya pasti sempit — AI "kelaparan" struktur, lalu menjangkar ke segelintir angka yang ada. Solusinya BUKAN melonggarkan larangan mengarang (itu guard halusinasi yang benar), tapi memperbanyak menu struktur ter-grounded yang boleh dipakai + memaksa AI menyebut dasar strukturnya. Konteks fundamental Ringkasan (headline 36 jam, kalender 3 hari, real yield/risk regime/rate path/korelasi/skew, history 7+4 sesi) TIDAK perlu diperpanjang — yang bolong justru memori harga: cuma 30 bar Daily, AI tidak bisa tahu harga sedang "di puncak 6 bulan" vs "di tengah range".
+
+**Perubahan data layer (`api/admin.js`):**
+- Fetch daily `range=1mo` → `range=6mo`, snapshot `ohlcv:{symbol}:1d` sekarang 135 bar (TTL tetap 25h; `ohlcv_sync` + `refreshOhlcvFromYahoo`). Konsumen window-30D (`d1` stat UI, blok "Daily 30D") `slice(-30)` sendiri supaya label tetap jujur. Bonus gratis: window MFE/MAE jurnal (`api/journal.js` baca key yang sama) ikut memanjang untuk trade lama.
+- Refactor: perakitan metrik dipisah dari I/O jadi `computeOhlcvMetrics({symbol,label,c1h,c4h,c1dFull,ta})` (pure) — `loadOhlcvData` tinggal fetch/parse lalu delegasi; bisa diuji end-to-end tanpa Redis.
+- Helper struktur baru (semua pure, di-export untuk test): `_classifyStructure` (HH+HL/LH+LL/Mixed dari 2 swing terakhir + deteksi BOS saat close menembus swing), `_clusterSrLevels` (cluster pivot Daily 6 bulan + swing H4, tolerance 0.35×ATR-Daily, kekuatan = jumlah candle Daily yang menyentuh; max 3 resistance + 3 support, **cluster terdekat ke harga dijamin ikut** — tanpa ini top-3 by sentuhan bisa semuanya zona lama ratusan pip jauhnya, bagus untuk TP tapi entry/SL butuh struktur immediate), `_fibLevels` (retracement 38.2/50/61.8 dari leg dominan 4H, arah dari urutan waktu ekstrem), `_dailyPivots` (pivot klasik dari daily kemarin yang sudah close, index len-2 karena bar terakhir masih berjalan), `_prevWeekHighLow` (minggu kalender Senin-start), `_detectCandlePatterns` (engulfing/pin bar/inside bar/doji dari OHLC — deterministik, AI tinggal pakai label; candle terakhir ditandai "berjalan, belum close"), `_rsi14` (Wilder, untuk RSI H4 + arah vs 3 candle lalu). `_findSwings` dapat param `keep` (H4 sekarang simpan 4 swing, field legacy `swing_high/low` tetap untuk UI).
+- `loadOhlcvData` field baru di payload (semua additive, cache klien lama tetap kompatibel): `d1_ext` (range 6M, posisi % dalam range, jarak dari puncak, ATR-Daily), `structure`, `sr_levels`, `fib`, `ref_levels` (pivot + prev day H/L/C + prev week H/L), `patterns`, `rsi_h4`, `h4.candles12` (12 candle H4 mentah).
+- `buildOhlcvText`: blok baru `[KONTEKS 6 BULAN]`, `[STRUKTUR H4]`, `[LEVEL S/R]`, `[FIBONACCI]`, `[PIVOT HARIAN]`, `[LEVEL REFERENSI]`, `[POLA CANDLE]`, `[RSI-14 H4]`, + 12 candle H4 dan 12 candle 1H mentah (Analisa akhirnya lihat candle langsung, bukan cuma ringkasan). Semua guarded per-blok — fallback `clientOhlcv` dari sessionStorage pra-deploy tidak crash. Total teks ~800 token (diukur, bukan estimasi).
+
+**Perubahan prompt `ohlcv_analyze` (`api/admin.js`):**
+- `bias` wajib mempertimbangkan struktur HH/HL vs LH/LL + BOS, bukan cuma perubahan %.
+- `entry_zone` wajib berpijak pada level struktur bernama (cluster S/R, fib, pivot, prev day/week, swing, SMA, expiry) dengan PRIORITAS KONFLUENSI 2+ struktur di area sama; field baru **`entry_basis`** memaksa AI menyebut struktur apa saja + angkanya yang jadi dasar entry (kontrak JSON di system message ikut diupdate). Server menormalisasi: `entry_basis` di-null kalau bukan string/kosong/entry_zone di-drop sanity check.
+- **Opsi no-setup eksplisit:** kalau struktur Mixed dan tidak ada level kuat searah bias, AI diinstruksikan set entry/sl/tp/entry_basis null + jelaskan di trigger apa yang ditunggu — jangan memaksakan setup (dulu selalu dipaksa keluar angka).
+- `sl` wajib di balik struktur dengan buffer ~0.5×ATR H1 (anti wick-hunt), `tp` = struktur berikutnya searah bias, `trigger` diprioritaskan konfirmasi price action/pola candle di level konkret. Struktur commentary 4 paragraf diarahkan ke: posisi range 6 bulan → struktur H4 + cluster S/R → momentum + pola candle + RSI H4 → integrasi konfluensi.
+
+**Ringkasan (`api/market-digest.js`):** `fetchOhlcvContext` slice daily ke 30 bar untuk blok lama (label "Daily 30D" tetap benar) + baris baru `[6 BULAN] Range | Posisi now % | Jarak dari puncak` (guard ≥40 bar untuk cache lama pra-deploy); prompt XAU JANGKAR HARGA diminta menyebut posisi range 6 bulan dalam frasa singkat di kalimat jangkar. Konteks headline/kalender/history TIDAK diubah (sudah pas untuk briefing pre-session, memperpanjang cuma nambah noise + token).
+
+**Hardening (`api/correlations.js`):** kolisi cache key laten diperbaiki — `action=ohlcv` (chart endpoint lama, tidak dipanggil frontend saat ini) memakai key `ohlcv:{symbol}:{tf}` yang SAMA dengan snapshot admin.js tapi shape beda (object `{candles:[{time,open,...}]}` vs array `[{t,o,...}]`) dan TTL beda (30 menit vs 25h) — satu call saja ke endpoint itu dengan `tf=1d` akan menimpa snapshot dan diam-diam mematikan Analisa/MFE-MAE/PRICE ACTION digest sampai sync berikutnya. Di-rename ke `ohlcv_chart:{symbol}:{tf}` (+ lock key).
+
+**Frontend (`index.html`):** `_renderStructuredAi` render baris **DASAR** (entry_basis, di-escape) di bawah ENTRY/SL/TP; payload lama tanpa field itu tidak menampilkan apa-apa (backward compatible).
+
+**Verifikasi:** 47 unit test Node lulus (21 baru di `test/ta_struct.test.js`: swing keep-N, klasifikasi struktur + BOS, cluster S/R + jaminan level terdekat, fib dua arah, pivot, prev-week, 4 pola candle + guard flat/kosong, RSI monotonic/campuran/kurang data, buildOhlcvText lengkap vs legacy) + smoke test pipeline penuh dengan data Yahoo RIIL (EUR/USD + XAU/USD: `fetch → resampleTo4h → computeOhlcvMetrics → buildOhlcvText`, sanity check S/R relatif harga, fib dalam range, urutan pivot S2<S1<P<R1<R2, RSI 0-100, semua blok ter-render — pola nyata terdeteksi: Pin Bar atas + Bearish Engulfing di XAU H4) + render frontend diuji via ekstraksi fungsi dari index.html (entry_basis tampil/absen/null/XSS-escape). Path AI live (SambaNova/Groq + Redis produksi) tidak bisa diuji lokal — konsisten dengan sesi-sesi sebelumnya, diverifikasi via `node --check` + unit/smoke test di atas.
 
 ---
 

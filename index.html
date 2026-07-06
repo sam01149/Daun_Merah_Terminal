@@ -4595,6 +4595,9 @@ function _renderStructuredAi(structured, commentary, model, hasMakro, isCached) 
         ${structured.tp ? `<span><span style="color:var(--green)">TP </span>${escHtml(structured.tp)}</span>` : ''}
         ${structured.risk_reward ? `<span><span style="color:var(--muted)">RR </span>1:${escHtml(String(structured.risk_reward))}</span>` : ''}
       </div>`;
+      if (structured.entry_basis) {
+        html += `<div style="margin:-4px 0 10px;font-size:10.5px;color:var(--muted);line-height:1.5"><span style="color:var(--fg)">DASAR </span>${escHtml(structured.entry_basis)}</div>`;
+      }
     }
     if (structured.invalidation_condition || structured.time_horizon_days) {
       html += `<div style="margin-bottom:10px;font-size:11px;color:var(--muted);line-height:1.5">

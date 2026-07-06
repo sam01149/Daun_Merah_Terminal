@@ -255,9 +255,10 @@ async function fetchOhlcvContext(symbol, label) {
       redisCmd('GET', `ohlcv:${symbol}:1d`),
     ]);
 
-    const c1h = raw1h ? JSON.parse(raw1h) : null;
-    const c4h = raw4h ? JSON.parse(raw4h) : null;
-    const c1d = raw1d ? JSON.parse(raw1d) : null;
+    const c1h     = raw1h ? JSON.parse(raw1h) : null;
+    const c4h     = raw4h ? JSON.parse(raw4h) : null;
+    const c1dFull = raw1d ? JSON.parse(raw1d) : null;    // s/d 135 bar (6 bulan) sejak ohlcv_sync range=6mo
+    const c1d     = c1dFull ? c1dFull.slice(-30) : null; // blok "Daily 30D" tetap 30 bar biar labelnya jujur
 
     if (!c1h || c1h.length < 6) return null;
 
@@ -282,6 +283,18 @@ async function fetchOhlcvContext(symbol, label) {
 
       lines.push(`[MAKRO — Daily 30D] Range: ${fmt(low1d)}–${fmt(high1d)} | Now: ${fmt(curr1d)} | 30D: ${chg1d >= 0 ? '+' : ''}${chg1d}% | Trend: ${trend1d}`);
       lines.push(`  Resistance: ${topR.join(', ')} | Support: ${botS.join(', ')}`);
+
+      // Anchor 6 bulan (guard >=40 bar: cache lama pre-6mo cuma 30 bar) — tanpa ini
+      // AI tidak bisa membedakan "di puncak 6 bulan" vs "di tengah range" saat framing makro.
+      if (c1dFull.length >= 40) {
+        const hi6 = Math.max(...c1dFull.map(c => c.h));
+        const lo6 = Math.min(...c1dFull.map(c => c.l));
+        if (hi6 > lo6) {
+          const pos6  = Math.round((curr1d - lo6) / (hi6 - lo6) * 100);
+          const dist6 = ((curr1d - hi6) / hi6 * 100).toFixed(2);
+          lines.push(`  [6 BULAN] Range: ${fmt(lo6)}–${fmt(hi6)} | Posisi now: ${pos6}% dari range (0%=low, 100%=high) | Jarak dari puncak 6M: ${dist6}%`);
+        }
+      }
 
       if (isXau) {
         const vArr = c1d.map(c => c.v).filter(v => v > 0);
@@ -1181,7 +1194,7 @@ Gunakan HANYA headline dari blok HEADLINE RELEVAN XAUUSD di bawah.
 ANTI-HALLUCINATION: Jangan gabungkan dua headline berbeda menjadi satu klaim baru yang tidak ada di headline aslinya. Jika headline A menyebut X dan headline B menyebut Y, jangan tulis "X berkoordinasi dengan Y" kecuali kalimat itu memang ada di salah satu headline.
 
 PENDEKATAN BENANG MERAH — ikuti urutan ini:
-1. JANGKAR HARGA: Jika blok HARGA XAU/USD LIVE tersedia, buka dengan harga dan pergerakan hari ini (naik/turun berapa persen). Ini titik awal narasi — semua fakta berikutnya menjelaskan MENGAPA harga ada di sini.
+1. JANGKAR HARGA: Jika blok HARGA XAU/USD LIVE tersedia, buka dengan harga dan pergerakan hari ini (naik/turun berapa persen). Jika blok PRICE ACTION menyertakan baris [6 BULAN], sebut posisi harga dalam range 6 bulan dalam frasa singkat di kalimat jangkar (misal "di puncak range 6 bulan" / "10% di bawah puncak 6 bulan") — ini anchor makro penting, bukan analisa teknikal terpisah. Ini titik awal narasi — semua fakta berikutnya menjelaskan MENGAPA harga ada di sini.
 2. RAJUT FAKTA: Hubungkan harga → headline → real yield → geopolitik secara natural, seperti analis yang bercerita. Tidak perlu rantai kausal formal. Cukup: "kenaikan ini didukung oleh X, meski dibatasi oleh Y." Fakta yang saling memperkuat → gabungkan. Fakta yang berlawanan → sebut keduanya, putuskan mana lebih berat dalam satu kalimat. Jika blok TEKNIKAL XAU tersedia, sisipkan RSI dan posisi vs SMA dalam satu kalimat natural sebagai konteks teknikal pendukung (misal: "secara teknikal harga masih di atas SMA 50 dengan RSI 45 di zona netral") — bukan paragraf terpisah.
 3. REAL YIELD sebagai pembatas: Jika real yield > 2%, emas mahal secara struktural — wajib disebut sebagai rem, bukan diabaikan. Tapi jika harga tetap naik meski yield tinggi, artinya tekanan bullish cukup kuat untuk offset — nyatakan ini secara eksplisit. Kalau harga emas naik/bertahan tinggi PADAHAL real yield juga tinggi (hubungan invers normal melemah), sebut eksplisit sebagai sinyal regime: driver emas sedang BUKAN real yield (kemungkinan CB buying / debasement / safe-haven struktural). Jangan cuma sebut "dibatasi yield" lalu lanjut.
 4. TIDAK ADA RANTAI KAUSAL WAJIB: Untuk geopolitik minyak (Iran, Hormuz, OPEC) — tidak perlu trace oil→inflasi→Fed→yield secara kaku. Cukup: apakah ada bukti di headline bahwa ini mempengaruhi XAU? Jika ya, sebut. Jika tidak, skip.

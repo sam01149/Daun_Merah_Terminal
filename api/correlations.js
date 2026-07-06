@@ -182,7 +182,11 @@ module.exports = async function handler(req, res) {
     const rangeMap = { '15m': '5d', '1h': '30d', '4h': '60d', '1d': '1y' };
     const range = rangeMap[tf] || '60d';
 
-    const cacheKey = `ohlcv:${symbol}:${tf}`;
+    // Key SENGAJA beda dari `ohlcv:{symbol}:{tf}` milik admin.js (ohlcv_sync/refresh):
+    // payload di sini object {symbol,tf,candles:[{time,open,...}],fetched_at} dengan TTL
+    // pendek, sedangkan admin menyimpan array [{t,o,h,l,c,v}] TTL 25h — kalau share key,
+    // satu call endpoint ini menimpa snapshot Analisa/Jurnal/Digest dengan shape yang salah.
+    const cacheKey = `ohlcv_chart:${symbol}:${tf}`;
     const cacheTTL = tf === '1d' ? 1800 : 300;
 
     let sf;
@@ -195,7 +199,7 @@ module.exports = async function handler(req, res) {
       }
 
       sf = await withSingleFlight(redisCmd, {
-        lockKey: `lock:ohlcv:${symbol}:${tf}`,
+        lockKey: `lock:ohlcv_chart:${symbol}:${tf}`,
         cacheKey,
         isFresh: (raw) => { try { return Date.now() - new Date(JSON.parse(raw).fetched_at).getTime() < cacheTTL * 1000; } catch(e) { return false; } },
       });
