@@ -1,9 +1,30 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-07-07 (session 145 lanjutan 4 — Nemotron 3 Ultra DIDEMOTE dari primary market-digest setelah 4/4 tes live gagal; SambaNova/DeepSeek-V3.2 kembali jadi primary)
+> **Last updated:** 2026-07-07 (session 145 lanjutan 5 — persiapan diagnostik Nemotron 3 Super, BELUM dites live, menunggu sesi berikutnya)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
+
+---
+
+## Changelog Session 145 lanjutan 5 (2026-07-07) — Persiapan Diagnostik Nemotron 3 Super (Belum Dites Live)
+
+**Konteks:** setelah Nemotron 3 Ultra didemote (lanjutan 4, di bawah), user share halaman OpenRouter untuk `nvidia/nemotron-3-super-120b-a12b:free` — model NVIDIA lain, jauh lebih ringan (120B total/12B active vs Ultra 550B/55B) — dan minta perbandingan dengan DeepSeek-V3.2 (primary sekarang).
+
+**Perbandingan (analisis, belum ada data live kita sendiri):**
+- Nemotron 3 Super py **statistik produksi nyata** dari OpenRouter (beda dari Ultra yang datanya nol berhasil): p50 latency 1.82s, E2E rata-rata 11.2s, uptime 97.85% (rolling 3 hari) — terlihat genuinely berfungsi.
+- GPQA Diamond 80.0%, Intelligence Index 25.4 (cuma lebih baik dari 46% model pembanding) — biasa saja, bukan model unggulan.
+- ⚠️ **Structured Output Error Rate 17.76%** — ~1 dari 6 request JSON gagal ter-parse. Red flag besar untuk Call2/Call3 (butuh JSON ketat) — DeepSeek-V3.2 sudah proven kuat justru di titik ini.
+- ⚠️ **Riset tambahan (bahasa):** daftar bahasa yang secara resmi didukung model ini (varian utama): English, French, German, Italian, Japanese, Spanish, Chinese. Varian Base menambah beberapa bahasa lagi (Arab, Ibrani, Hindi, Korea, dll) — **Bahasa Indonesia TIDAK ada di daftar manapun**. Ini belum tentu berarti outputnya buruk (banyak model tetap bisa berbahasa Indonesia meski tidak "resmi" didukung), tapi ini sinyal risiko tambahan yang perlu dipertimbangkan mengingat use case app ini 100% Bahasa Indonesia — DeepSeek-V3.2 & gpt-oss-120b sudah proven fasih Bahasa Indonesia di app ini, Nemotron 3 Super belum ada bukti sama sekali untuk ini.
+- Kesimpulan sementara: JANGAN ganti DeepSeek-V3.2 untuk Call2/Call3. Untuk Call1 (prosa), model ini MUNGKIN punya niche (uptime/latency real bagus), tapi 2 concern (JSON error rate — tidak relevan utk Call1 sih — dan dukungan Bahasa Indonesia yang tidak resmi) perlu dicek live dulu, bukan diasumsikan dari benchmark/dokumentasi (pelajaran dari saga Nemotron Ultra di atas).
+
+**Persiapan kode (BELUM dijalankan live, user minta ditunda ke sesi berikutnya):**
+- `market-digest.js`: tier baru Nemotron 3 Super, **Call 1 SAJA** (sengaja dibatasi dari Call2/3 karena Structured Output Error Rate). Const `NEMOTRON_SUPER_MODEL`, circuit `ai:openrouter:nemotron-super` (terpisah dari Ultra), reuse counter `openrouter` + `withNoThink()`.
+- Diagnostik terisolasi `?test_nemotron_super=1` (pola sama seperti `?test_nemotron=1`) — skip semua tier lain di Call1 (termasuk Nemotron Ultra). Call2/Call3 **tidak terpengaruh** flag ini, tetap jalan normal (SambaNova primary) karena Nemotron Super memang tidak diuji di sana.
+- `KNOWN_CIRCUITS` (admin.js): tambah `ai:openrouter:nemotron-super`.
+- Test baru untuk konstanta + request body. Full suite 109/109 lulus, `node --check` bersih.
+
+**Status:** Deployed ke production (commit `cf3c23e`) tapi **inert** — kode ini cuma aktif kalau dipanggil eksplisit via `?test_nemotron_super=1`, tidak mempengaruhi jalur produksi normal sama sekali. **Untuk sesi berikutnya:** jalankan `?test_nemotron_super=1` beberapa kali, perhatikan khususnya (a) apakah benar-benar bebas 403/empty/timeout seperti Ultra, (b) kualitas Bahasa Indonesia-nya (concern baru yang belum pernah relevan untuk model lain di app ini), baru putuskan apakah layak jadi tambahan/pengganti tier di Call1.
 
 ---
 
