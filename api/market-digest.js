@@ -1363,14 +1363,18 @@ ${xauHistoryBlock}`;
 
     // Primary: Nemotron 3 Ultra via OLLAMA CLOUD (session 145 lanjutan) — dicoba duluan
     // karena OpenRouter (tier di bawah) terbukti 0/3 bersih di 2 ronde tes live (respons
-    // kosong + timeout, TAPI TIDAK 403 subscription-gate). Timeout tier ini & semua tier
-    // di bawahnya dipangkas across-the-board supaya total worst-case Call 1 tetap masuk
-    // akal walau menambah 1 tier baru (lihat catatan budget di tiap tier).
+    // kosong + timeout, TAPI TIDAK 403 subscription-gate). Ollama sendiri juga sempat
+    // timeout di 18s pada tes pertama — belum jelas apakah itu "butuh waktu lebih" atau
+    // "tidak akan pernah selesai", jadi mode diagnostik (?test_nemotron=1) dikasih
+    // timeout jauh lebih panjang (45s, tier lain di request itu sudah di-skip semua
+    // jadi aman dari batas 60s Vercel) untuk memastikan; produksi tetap dipangkas (18s)
+    // supaya tidak menyeret total durasi Call 1 kalau ternyata memang tidak pernah selesai.
+    const ollamaNemotronTimeout1 = testNemotronOnly ? 45000 : 18000;
     if (OLLAMA_KEY && await cb.canCall(CB_OLLAMA_NEMOTRON)) {
       const t0s = Date.now();
       try {
-        console.log('Call 1: trying Nemotron 3 Ultra (Ollama Cloud)');
-        const raw = await callOllama(OLLAMA_KEY, OLLAMA_NEMOTRON_MODEL, call1Messages, 1300, 0.25, 18000, 'ollama');
+        console.log('Call 1: trying Nemotron 3 Ultra (Ollama Cloud), timeout', ollamaNemotronTimeout1);
+        const raw = await callOllama(OLLAMA_KEY, OLLAMA_NEMOTRON_MODEL, call1Messages, 1300, 0.25, ollamaNemotronTimeout1, 'ollama');
         const elapsed = Date.now() - t0s;
         article = raw.trim(); method = 'nemotron-3-ultra';
         providerLog.push(`ollama_nemotron:ok(${elapsed}ms,${article.length}c)`);
@@ -1392,12 +1396,15 @@ ${xauHistoryBlock}`;
 
     // Fallback (sumber Nemotron alternatif): OpenRouter — dipertahankan sebagai jaring
     // pengaman kalau Ollama Cloud gagal/gated, bukan dihapus (pola fail-safe additive
-    // project ini). Timeout dipangkas 25s->12s karena sekarang bukan upaya pertama lagi.
+    // project ini). Timeout dipangkas 25s->10s di produksi (bukan upaya pertama lagi);
+    // mode diagnostik dikasih lebih longgar (12s) — Ollama sudah pakai porsi terbesar
+    // budget 60s di mode ini jadi OpenRouter tidak bisa dikasih terlalu banyak juga.
+    const openrouterNemotronTimeout1 = testNemotronOnly ? 12000 : 10000;
     if (!article && OPENROUTER_KEY && await cb.canCall(CB_OPENROUTER_NEMOTRON)) {
       const t0s = Date.now();
       try {
         console.log('Call 1: trying Nemotron 3 Ultra (OpenRouter)');
-        const raw = await aiCall(OPENROUTER_URL, OPENROUTER_KEY, NEMOTRON_MODEL, call1Messages, 1300, 0.25, 10000, OPENROUTER_HEADERS, {}, 'openrouter');
+        const raw = await aiCall(OPENROUTER_URL, OPENROUTER_KEY, NEMOTRON_MODEL, call1Messages, 1300, 0.25, openrouterNemotronTimeout1, OPENROUTER_HEADERS, {}, 'openrouter');
         const elapsed = Date.now() - t0s;
         if (raw.trim()) {
           article = raw.trim(); method = 'nemotron-3-ultra';
