@@ -759,18 +759,19 @@ const GROQ_MODEL_FUND = 'llama-3.3-70b-versatile';
 // jadi tidak bisa dipakai langsung lewat pola fetch yang sama dengan provider lain —
 // lihat _callOllama() untuk parsing response-nya.
 //
-// Model dipilih GLM-5.2 (bukan DeepSeek-V3.2 yang sudah ada via SambaNova) — eksperimen
-// user, bukan redundansi model yang sama. GLM-5.2 punya mode "thinking" yang defaultnya
-// effort MAX (reasoning terdalam, paling lambat) kalau thinking dinyalakan — dites 'high'
-// dulu, tapi user minta dimatikan total (think:false) demi kecepatan. reasoning_effort
-// tidak berlaku lagi begitu thinking off — konsekuensi yang disadari, bukan kelalaian.
+// GLM-5.2 dicoba duluan (eksperimen user) tapi HTTP 403 "model requires a subscription" —
+// GLM-5.2 ternyata model berbayar (Pro/Max), tidak termasuk free tier Ollama Cloud.
+// Ganti ke gpt-oss:120b — model open-weight OpenAI yang SUDAH terbukti stabil untuk
+// output Bahasa Indonesia di app ini (dipakai via OpenRouter sebagai fallback Ringkasan
+// Call 1, lihat GROQ/OPENROUTER di market-digest.js) — pilihan yang lebih berdasar
+// daripada tebak model lain, dan kandidat kuat untuk tetap gratis (gpt-oss:20b dikonfirmasi
+// gratis di riset publik, 120b belum 100% pasti — ini yang sedang diuji).
 const OLLAMA_URL   = 'https://ollama.com/api/chat';
-// PENTING: TANPA suffix ':cloud' — itu cuma konvensi Ollama LOKAL (ollama run glm-5.2:cloud
+// PENTING: TANPA suffix ':cloud' — itu cuma konvensi Ollama LOKAL (ollama run <model>:cloud
 // di mesin sendiri, suffix ngasih tau daemon lokal "jalankan di cloud, bukan di sini").
 // Kita manggil https://ollama.com/api/chat langsung (server ke server, tanpa Ollama lokal),
-// jadi nama model API cloud-nya polos tanpa suffix. Salah pakai ':cloud' di sini bikin
-// "model not found" tiap request — root cause kenapa Ollama selalu gagal & jatuh ke SambaNova.
-const OLLAMA_MODEL = 'glm-5.2';
+// jadi nama model API cloud-nya polos tanpa suffix.
+const OLLAMA_MODEL = 'gpt-oss:120b';
 
 // Panggil Ollama Cloud, kembalikan teks jawaban (message.content) atau null kalau gagal/kosong.
 // Melempar error kalau HTTP non-OK atau response kosong, konsisten dengan pola provider lain
@@ -2282,17 +2283,16 @@ async function ohlcvAnalyzeHandler(req, res) {
     const GROQ_KEY      = process.env.GROQ_API_KEY;
     let rawText = null, model = null;
 
-    // Primary sementara (eksperimen user): Ollama Cloud GLM-5.2, think:false — deepthink
-    // dimatikan total demi kecepatan (bukan cuma 'high', permintaan eksplisit user).
-    // reasoning_effort tidak berlaku lagi begitu thinking off, itu konsekuensi yang
-    // disadari. Timeout 30s — sama generous dengan yang dulu diberikan ke SambaNova —
-    // supaya data latency yang terkumpul representatif. Kalau eksperimen ini
-    // selesai/gagal, tinggal tukar balik urutan dengan SambaNova.
+    // Primary sementara (eksperimen user): Ollama Cloud gpt-oss:120b, think:false. GLM-5.2
+    // (percobaan pertama) balik HTTP 403 "model requires a subscription" — bukan free tier.
+    // Timeout 30s — sama generous dengan yang dulu diberikan ke SambaNova — supaya data
+    // latency yang terkumpul representatif. Kalau eksperimen ini selesai/gagal, tinggal
+    // tukar balik urutan dengan SambaNova.
     if (OLLAMA_KEY && await cb.canCall('ai:ollama')) {
       try {
         if (!await allowAiCall('ollama')) throw new Error('AI daily budget exceeded');
         rawText = await _callOllama(OLLAMA_KEY, OLLAMA_MODEL, messages, 1500, 0.3, 30000, false);
-        model = 'glm-5.2';
+        model = 'gpt-oss-120b';
         await cb.onSuccess('ai:ollama');
       } catch(e) { console.warn('ohlcv_analyze Ollama failed:', e.message); await cb.onFailure('ai:ollama'); }
     } else if (OLLAMA_KEY) { console.log('ohlcv_analyze: Ollama circuit OPEN — skipping to SambaNova'); }

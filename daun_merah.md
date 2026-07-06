@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-07-06 (session 144 lanjutan 5 — GLM-5.2 (Ollama Cloud) jadi primary sementara ohlcv_analyze, eksperimen user)
+> **Last updated:** 2026-07-06 (session 144 lanjutan 5 — GLM-5.2 di Ollama Cloud ternyata berbayar (403), diganti gpt-oss:120b sebagai primary sementara ohlcv_analyze)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -31,9 +31,13 @@
 
 **Bug ditemukan setelah `OLLAMA_API_KEY` aktif + redeploy:** trigger live tetap balik ke `deepseek-v3.2` (SambaNova) berkali-kali, bukan `glm-5.2`. Root cause: `OLLAMA_MODEL = 'glm-5.2:cloud'` — suffix `:cloud` itu **konvensi Ollama LOKAL** (kasih tahu daemon `ollama run` di mesin sendiri "jalankan di cloud, bukan lokal"), **bukan** nama model yang valid kalau manggil `https://ollama.com/api/chat` langsung dari server (tanpa Ollama lokal di antaranya) — riset ulang konfirmasi contoh resmi Ollama pakai model polos tanpa suffix (`gpt-oss:120b`) untuk direct cloud API, `-cloud`/`:cloud` cuma untuk local client. Salah tag ini bikin "model not found" di setiap request. **Fix:** `OLLAMA_MODEL` → `'glm-5.2'` (tanpa suffix).
 
-**Efek samping bug ini:** 3 percobaan live berturut-turut gagal → circuit breaker `ai:ollama` kemungkinan OPEN (`FAILURE_THRESHOLD=3`, `_circuit_breaker.js`), auto-probe lagi (HALF_OPEN) setelah 5 menit tanpa perlu reset manual — jadi test berikutnya setelah fix ini di-deploy mungkin perlu jeda beberapa menit dulu kalau kena window OPEN itu.
+**Efek samping bug ini:** 3+ percobaan live berturut-turut gagal → circuit breaker `ai:ollama` berulang kali OPEN (`FAILURE_THRESHOLD=3`, `_circuit_breaker.js`, 5 menit tiap kali), bikin verifikasi lambat karena tiap window OPEN baru butuh nunggu 5 menit lagi sebelum probe berikutnya.
 
-**Belum bisa dites end-to-end** — nunggu redeploy dengan fix nama model ini. Kalau GLM-5.2 (think off) terbukti tidak cocok (kualitas Bahasa Indonesia kurang tanpa reasoning, atau tetap lambat), DeepSeek-V3.2 via Ollama Cloud (redundansi model yang sama dengan SambaNova) tetap jadi opsi cadangan — tinggal ganti `OLLAMA_MODEL` dan urutan fallback balik ke semula.
+**Root cause sebenarnya (setelah fix nama model tetap gagal):** dicek log Vercel langsung (user share screenshot Runtime Logs) — `ohlcv_analyze Ollama failed: HTTP 403`. Bukan salah nama model — riset lanjutan (GitHub issues `ollama/ollama` #15707/#15741/#16773) konfirmasi 403 ini artinya **"this model requires a subscription, upgrade for access"**: GLM-5.2 (756B, flagship) ternyata model **berbayar** (Pro $20/bln atau Max $100/bln), tidak termasuk Free tier Ollama Cloud sama sekali — bukan soal konfigurasi kode.
+
+**Ganti model ke `gpt-oss:120b`** (bukan DeepSeek-V3.2 yang sempat jadi opsi cadangan — DeepSeek-V4 kemungkinan sama-sama berbayar per riset tier, dan `gpt-oss:120b` py alasan lebih kuat): model open-weight OpenAI ini **sudah terbukti stabil untuk output Bahasa Indonesia di app ini** — dipakai via OpenRouter sebagai fallback Ringkasan Call 1 sejak lama ("proven stabil, output Bahasa Indonesia" per catatan project). `gpt-oss:20b` dikonfirmasi gratis di riset publik; `120b` belum 100% pasti gratis — ini yang sedang diuji live. `model` badge ke frontend jadi `'gpt-oss-120b'`.
+
+**Belum bisa dites end-to-end** — nunggu redeploy + circuit breaker `ai:ollama` clear dari window OPEN sebelumnya. Kalau `gpt-oss:120b` juga ternyata berbayar, `gpt-oss:20b` (dikonfirmasi gratis) atau `gemma4:31b` (disebut riset publik sebagai "strongest confirmed free model") jadi kandidat berikutnya — cukup ganti `OLLAMA_MODEL`, tidak perlu ubah struktur lain.
 
 ---
 
