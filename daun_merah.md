@@ -29,7 +29,11 @@
 
 **Verifikasi:** 6 test (`test/ollama.test.js`, fetch di-stub): body request native terkirim benar (model/messages/stream:false/options), `think` terkirim di top-level (bukan di `options`) kalau diisi, `think:false` eksplisit tetap terkirim (beda dari default `null` yang di-drop), HTTP non-OK → error berisi status, response kosong/tanpa field `message` → error `Empty response` tanpa throw TypeError. Full suite 78/78 lulus, `node --check` bersih.
 
-**Belum bisa dites end-to-end** — nunggu `OLLAMA_API_KEY` di-set di Vercel env vars oleh user lalu redeploy. Kalau GLM-5.2 (think off) terbukti tidak cocok (kualitas Bahasa Indonesia kurang tanpa reasoning, atau tetap lambat), DeepSeek-V3.2 via Ollama Cloud (redundansi model yang sama dengan SambaNova) tetap jadi opsi cadangan — tinggal ganti `OLLAMA_MODEL` dan urutan fallback balik ke semula.
+**Bug ditemukan setelah `OLLAMA_API_KEY` aktif + redeploy:** trigger live tetap balik ke `deepseek-v3.2` (SambaNova) berkali-kali, bukan `glm-5.2`. Root cause: `OLLAMA_MODEL = 'glm-5.2:cloud'` — suffix `:cloud` itu **konvensi Ollama LOKAL** (kasih tahu daemon `ollama run` di mesin sendiri "jalankan di cloud, bukan lokal"), **bukan** nama model yang valid kalau manggil `https://ollama.com/api/chat` langsung dari server (tanpa Ollama lokal di antaranya) — riset ulang konfirmasi contoh resmi Ollama pakai model polos tanpa suffix (`gpt-oss:120b`) untuk direct cloud API, `-cloud`/`:cloud` cuma untuk local client. Salah tag ini bikin "model not found" di setiap request. **Fix:** `OLLAMA_MODEL` → `'glm-5.2'` (tanpa suffix).
+
+**Efek samping bug ini:** 3 percobaan live berturut-turut gagal → circuit breaker `ai:ollama` kemungkinan OPEN (`FAILURE_THRESHOLD=3`, `_circuit_breaker.js`), auto-probe lagi (HALF_OPEN) setelah 5 menit tanpa perlu reset manual — jadi test berikutnya setelah fix ini di-deploy mungkin perlu jeda beberapa menit dulu kalau kena window OPEN itu.
+
+**Belum bisa dites end-to-end** — nunggu redeploy dengan fix nama model ini. Kalau GLM-5.2 (think off) terbukti tidak cocok (kualitas Bahasa Indonesia kurang tanpa reasoning, atau tetap lambat), DeepSeek-V3.2 via Ollama Cloud (redundansi model yang sama dengan SambaNova) tetap jadi opsi cadangan — tinggal ganti `OLLAMA_MODEL` dan urutan fallback balik ke semula.
 
 ---
 

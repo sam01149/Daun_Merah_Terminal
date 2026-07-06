@@ -25,12 +25,12 @@ test('_callOllama: sukses — kirim body native (model/messages/stream:false/opt
     capturedAuth = opts.headers.Authorization;
     return { ok: true, json: async () => ({ message: { role: 'assistant', content: '  hasil analisa  ' }, done: true }) };
   }, async () => {
-    const out = await _callOllama('sk-test', 'deepseek-v3.2:cloud', [{ role: 'user', content: 'halo' }], 1500, 0.3, 15000);
+    const out = await _callOllama('sk-test', 'deepseek-v3.2', [{ role: 'user', content: 'halo' }], 1500, 0.3, 15000);
     assert.strictEqual(out, 'hasil analisa', 'harus di-trim');
   });
   assert.strictEqual(capturedUrl, 'https://ollama.com/api/chat');
   assert.strictEqual(capturedAuth, 'Bearer sk-test');
-  assert.strictEqual(capturedBody.model, 'deepseek-v3.2:cloud');
+  assert.strictEqual(capturedBody.model, 'deepseek-v3.2');
   assert.strictEqual(capturedBody.stream, false);
   assert.strictEqual(capturedBody.options.temperature, 0.3);
   assert.strictEqual(capturedBody.options.num_predict, 1500);
@@ -43,7 +43,7 @@ test('_callOllama: parameter think dikirim di top-level body (bukan di dalam opt
     capturedBody = JSON.parse(opts.body);
     return { ok: true, json: async () => ({ message: { content: 'ok' } }) };
   }, async () => {
-    await _callOllama('sk-test', 'glm-5.2:cloud', [], 1500, 0.3, 15000, 'high');
+    await _callOllama('sk-test', 'glm-5.2', [], 1500, 0.3, 15000, 'high');
   });
   assert.strictEqual(capturedBody.think, 'high');
   assert.strictEqual(capturedBody.options.think, undefined, 'think bukan bagian dari options');
@@ -55,7 +55,7 @@ test('_callOllama: think:false (deepthink dimatikan) tetap terkirim, bukan ke-dr
     capturedBody = JSON.parse(opts.body);
     return { ok: true, json: async () => ({ message: { content: 'ok' } }) };
   }, async () => {
-    await _callOllama('sk-test', 'glm-5.2:cloud', [], 1500, 0.3, 30000, false);
+    await _callOllama('sk-test', 'glm-5.2', [], 1500, 0.3, 30000, false);
   });
   assert.strictEqual(capturedBody.think, false, 'false != null jadi harus tetap terkirim eksplisit');
 });
@@ -63,7 +63,7 @@ test('_callOllama: think:false (deepthink dimatikan) tetap terkirim, bukan ke-dr
 test('_callOllama: HTTP non-OK melempar error dengan status di pesan', async () => {
   await withFetch(async () => ({ ok: false, status: 429 }), async () => {
     await assert.rejects(
-      () => _callOllama('sk-test', 'deepseek-v3.2:cloud', [], 1500, 0.3, 15000),
+      () => _callOllama('sk-test', 'deepseek-v3.2', [], 1500, 0.3, 15000),
       /HTTP 429/
     );
   });
@@ -72,7 +72,7 @@ test('_callOllama: HTTP non-OK melempar error dengan status di pesan', async () 
 test('_callOllama: response tanpa message.content (kosong) melempar error', async () => {
   await withFetch(async () => ({ ok: true, json: async () => ({ message: { content: '' }, done: true }) }), async () => {
     await assert.rejects(
-      () => _callOllama('sk-test', 'deepseek-v3.2:cloud', [], 1500, 0.3, 15000),
+      () => _callOllama('sk-test', 'deepseek-v3.2', [], 1500, 0.3, 15000),
       /Empty response/
     );
   });
@@ -81,7 +81,7 @@ test('_callOllama: response tanpa message.content (kosong) melempar error', asyn
 test('_callOllama: response tanpa field message sama sekali tidak melempar TypeError (optional chaining)', async () => {
   await withFetch(async () => ({ ok: true, json: async () => ({}) }), async () => {
     await assert.rejects(
-      () => _callOllama('sk-test', 'deepseek-v3.2:cloud', [], 1500, 0.3, 15000),
+      () => _callOllama('sk-test', 'deepseek-v3.2', [], 1500, 0.3, 15000),
       /Empty response/
     );
   });

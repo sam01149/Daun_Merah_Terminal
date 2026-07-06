@@ -765,7 +765,12 @@ const GROQ_MODEL_FUND = 'llama-3.3-70b-versatile';
 // dulu, tapi user minta dimatikan total (think:false) demi kecepatan. reasoning_effort
 // tidak berlaku lagi begitu thinking off — konsekuensi yang disadari, bukan kelalaian.
 const OLLAMA_URL   = 'https://ollama.com/api/chat';
-const OLLAMA_MODEL = 'glm-5.2:cloud';
+// PENTING: TANPA suffix ':cloud' — itu cuma konvensi Ollama LOKAL (ollama run glm-5.2:cloud
+// di mesin sendiri, suffix ngasih tau daemon lokal "jalankan di cloud, bukan di sini").
+// Kita manggil https://ollama.com/api/chat langsung (server ke server, tanpa Ollama lokal),
+// jadi nama model API cloud-nya polos tanpa suffix. Salah pakai ':cloud' di sini bikin
+// "model not found" tiap request — root cause kenapa Ollama selalu gagal & jatuh ke SambaNova.
+const OLLAMA_MODEL = 'glm-5.2';
 
 // Panggil Ollama Cloud, kembalikan teks jawaban (message.content) atau null kalau gagal/kosong.
 // Melempar error kalau HTTP non-OK atau response kosong, konsisten dengan pola provider lain
