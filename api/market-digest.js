@@ -68,6 +68,18 @@ const OLLAMA_URL             = 'https://ollama.com/api/chat';
 const OLLAMA_NEMOTRON_MODEL  = 'nemotron-3-ultra';
 const CB_OLLAMA_NEMOTRON     = 'ai:ollama:nemotron';
 
+// Nemotron 3 SUPER (session 145 lanjutan 5) — kandidat berbeda dari Ultra di
+// atas: 120B total/12B active (jauh lebih ringan), via OpenRouter. Dipersiapkan untuk
+// dites live (belum dijalankan — nunggu konfirmasi user) KHUSUS Call 1 (prosa, bukan
+// Call 2/3 yang butuh JSON ketat): OpenRouter sendiri melaporkan statistik produksi
+// nyata yang jauh lebih sehat dari Ultra (p50 latency 1.82s, E2E rata-rata 11.2s,
+// uptime 97.85%), TAPI Structured Output Error Rate 17.76% — terlalu berisiko untuk
+// Call 2/3 (JSON), jadi sengaja dibatasi ke Call 1 saja. Reuse counter 'openrouter'
+// (account-wide, sama seperti Nemotron Ultra) dan withNoThink() (satu keluarga model,
+// kemungkinan konvensi /think /no_think yang sama berlaku).
+const NEMOTRON_SUPER_MODEL         = 'nvidia/nemotron-3-super-120b-a12b:free';
+const CB_OPENROUTER_NEMOTRON_SUPER = 'ai:openrouter:nemotron-super';
+
 const MAJOR_CURRENCIES = new Set(['USD','EUR','GBP','JPY','CAD','AUD','NZD','CHF']);
 
 // Map pair label → Yahoo symbol for OHLCV context lookup
@@ -667,6 +679,13 @@ module.exports = async function handler(req, res) {
   // bisa diverifikasi live sebelum jadi primary permanen (precedent: GLM-5.2/Kimi K2.6
   // "katanya gratis" ternyata 403 subscription-required saat dites nyata).
   const testNemotronOnly = req.query.test_nemotron === '1';
+
+  // Diagnostik terpisah (session 145 lanjutan 5) untuk kandidat BERBEDA: Nemotron 3
+  // SUPER (120B/12B active, lebih ringan dari Ultra) — cuma dites di Call 1 (prosa),
+  // TIDAK di Call 2/3 (JSON, lihat Structured Output Error Rate 17.76% yang jadi alasan
+  // pembatasan ini). Belum pernah dites live — disiapkan dulu, dijalankan setelah
+  // konfirmasi user.
+  const testNemotronSuperOnly = req.query.test_nemotron_super === '1';
 
   const host  = req.headers.host || 'financial-feed-app.vercel.app';
   const proto = host.includes('localhost') ? 'http' : 'https';
@@ -1390,7 +1409,37 @@ ${xauHistoryBlock}`;
     // nya membaik) tapi TIDAK dipanggil di jalur produksi normal lagi — SambaNova kembali
     // jadi primary asli (proven, terbukti reliable berbulan-bulan) supaya request nyata
     // tidak menanggung risiko latency 10-45s dari model yang 0% sukses di semua tes.
-    if (testNemotronOnly) {
+    // Nemotron 3 SUPER (session 145 lanjutan 5) — kandidat berbeda, belum pernah dites
+    // live. Dites TERISOLASI (skip semua tier lain termasuk Ultra) via ?test_nemotron_super=1.
+    if (testNemotronSuperOnly) {
+      const superTimeout1 = 20000; // real-world stats OpenRouter: p50 1.82s, E2E avg 11.2s — 20s generous
+      if (OPENROUTER_KEY && await cb.canCall(CB_OPENROUTER_NEMOTRON_SUPER)) {
+        const t0s = Date.now();
+        try {
+          console.log('Call 1: trying Nemotron 3 Super (OpenRouter)');
+          const raw = await aiCall(OPENROUTER_URL, OPENROUTER_KEY, NEMOTRON_SUPER_MODEL, withNoThink(call1Messages), 1300, 0.25, superTimeout1, OPENROUTER_HEADERS, {}, 'openrouter');
+          const elapsed = Date.now() - t0s;
+          if (raw.trim()) {
+            article = raw.trim(); method = 'nemotron-3-super';
+            providerLog.push(`nemotron_super:ok(${elapsed}ms,${article.length}c)`);
+          } else {
+            providerLog.push(`nemotron_super:empty(${elapsed}ms)`);
+          }
+          console.log('Call 1: Nemotron Super OK, length', article?.length);
+          await cb.onSuccess(CB_OPENROUTER_NEMOTRON_SUPER);
+        } catch(e) {
+          const elapsed = Date.now() - t0s;
+          const errMsg = e.status ? `HTTP${e.status}` : (e.message || 'err').slice(0, 40);
+          providerLog.push(`nemotron_super:${errMsg}(${elapsed}ms)`);
+          console.warn('Call 1 Nemotron Super failed:', e.status || e.message);
+          await cb.onFailure(CB_OPENROUTER_NEMOTRON_SUPER, AI_CB_THRESHOLD);
+        }
+      } else if (OPENROUTER_KEY) {
+        providerLog.push('nemotron_super:circuit_open');
+      } else {
+        providerLog.push('nemotron_super:no_key');
+      }
+    } else if (testNemotronOnly) {
       const ollamaNemotronTimeout1 = 45000;
       if (OLLAMA_KEY && await cb.canCall(CB_OLLAMA_NEMOTRON)) {
         const t0s = Date.now();
@@ -1443,13 +1492,14 @@ ${xauHistoryBlock}`;
         providerLog.push('openrouter_nemotron:no_key');
       }
     } else {
-      providerLog.push('ollama_nemotron:skipped_not_primary', 'openrouter_nemotron:skipped_not_primary');
+      providerLog.push('nemotron_super:skipped_not_primary', 'ollama_nemotron:skipped_not_primary', 'openrouter_nemotron:skipped_not_primary');
     }
 
     // Primary: SambaNova DeepSeek-V3.2 (akun 2, Call 1 prose only) — dikembalikan jadi
     // primary asli (session 145 lanjutan 4, lihat catatan Nemotron di atas). Tetap
-    // di-skip saat ?test_nemotron=1 supaya hasil diagnostik Nemotron tidak tersamar.
-    if (testNemotronOnly) {
+    // di-skip saat ?test_nemotron=1 / ?test_nemotron_super=1 supaya hasil diagnostik
+    // Nemotron tidak tersamar.
+    if (testNemotronOnly || testNemotronSuperOnly) {
       if (!article) providerLog.push('sambanova:skipped_test_nemotron');
     } else if (!article && SAMBANOVA_KEY_CALL1 && await cb.canCall(CB_SAMBA_C1)) {
       const t1s = Date.now();
@@ -1480,7 +1530,7 @@ ${xauHistoryBlock}`;
     }
 
     // Fallback 2: OpenRouter gpt-oss-120b (if Nemotron + SambaNova failed/empty)
-    if (testNemotronOnly) {
+    if (testNemotronOnly || testNemotronSuperOnly) {
       if (!article) providerLog.push('openrouter_gptoss:skipped_test_nemotron');
     } else if (!article && OPENROUTER_KEY) {
       const t2s = Date.now();
@@ -1506,7 +1556,7 @@ ${xauHistoryBlock}`;
     }
 
     // Fallback 3: Groq qwen3-32b (if OpenRouter failed/empty)
-    if (testNemotronOnly) {
+    if (testNemotronOnly || testNemotronSuperOnly) {
       if (!article) providerLog.push('groq_qwen3:skipped_test_nemotron');
     } else if (!article && GROQ_KEY) {
       const t3s = Date.now();
@@ -1739,6 +1789,9 @@ ${xauHistoryBlock}`;
     // lengkap di Call 1): 4/4 tes live gagal across 2 sumber, tidak dipanggil lagi di
     // jalur produksi. Hanya masuk array saat ?test_nemotron=1 (SambaNova/Groq lalu
     // menggantikannya sebagai primary/fallback asli di jalur produksi normal).
+    // Nemotron 3 Super (session 145 lanjutan 5) sengaja TIDAK masuk sini — dibatasi ke
+    // Call 1 saja (lihat catatan di Call 1). Saat ?test_nemotron_super=1, Call 3 berjalan
+    // NORMAL (SambaNova/Groq seperti biasa) karena yang sedang didiagnosis cuma Call 1.
     const call3Providers = [];
     if (testNemotronOnly) {
       if (OLLAMA_KEY)     call3Providers.push({ ollama: true, key: OLLAMA_KEY, model: OLLAMA_NEMOTRON_MODEL, label: 'Ollama Nemotron', timeout: 15000, provider: 'ollama', circuit: CB_OLLAMA_NEMOTRON, noThink: true });
@@ -1951,3 +2004,5 @@ module.exports.OLLAMA_URL = OLLAMA_URL;
 module.exports.OLLAMA_NEMOTRON_MODEL = OLLAMA_NEMOTRON_MODEL;
 module.exports.CB_OLLAMA_NEMOTRON = CB_OLLAMA_NEMOTRON;
 module.exports.withNoThink = withNoThink;
+module.exports.NEMOTRON_SUPER_MODEL = NEMOTRON_SUPER_MODEL;
+module.exports.CB_OPENROUTER_NEMOTRON_SUPER = CB_OPENROUTER_NEMOTRON_SUPER;

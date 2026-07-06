@@ -14,6 +14,7 @@ delete process.env.UPSTASH_REDIS_REST_TOKEN;
 const {
   aiCall, NEMOTRON_MODEL, CB_OPENROUTER_NEMOTRON, OPENROUTER_URL, OPENROUTER_HEADERS,
   callOllama, OLLAMA_URL, OLLAMA_NEMOTRON_MODEL, CB_OLLAMA_NEMOTRON, withNoThink,
+  NEMOTRON_SUPER_MODEL, CB_OPENROUTER_NEMOTRON_SUPER,
 } = require('../api/market-digest.js');
 
 test('NEMOTRON_MODEL: model id persis sesuai slug free-tier OpenRouter (bukan typo, bukan versi berbayar)', () => {
@@ -162,4 +163,31 @@ test('withNoThink: tidak memutasi array/objek messages asli (immutable)', () => 
   const out = withNoThink(original);
   assert.notStrictEqual(out, original);
   assert.strictEqual(original[0].content, 'Kamu analis.', 'original tidak berubah');
+});
+
+// ── Nemotron 3 SUPER (session 145 lanjutan 5) — kandidat baru, belum pernah dites live ──
+
+test('NEMOTRON_SUPER_MODEL: model id persis sesuai slug free-tier OpenRouter', () => {
+  assert.strictEqual(NEMOTRON_SUPER_MODEL, 'nvidia/nemotron-3-super-120b-a12b:free');
+});
+
+test('CB_OPENROUTER_NEMOTRON_SUPER: circuit terpisah dari CB_OPENROUTER_NEMOTRON (Ultra)', () => {
+  assert.strictEqual(CB_OPENROUTER_NEMOTRON_SUPER, 'ai:openrouter:nemotron-super');
+  assert.notStrictEqual(CB_OPENROUTER_NEMOTRON_SUPER, CB_OPENROUTER_NEMOTRON);
+});
+
+test('aiCall: request Nemotron Super via OpenRouter — model & providerOverride benar', async () => {
+  let capturedBody;
+  const orig = global.fetch;
+  global.fetch = async (url, opts) => {
+    capturedBody = JSON.parse(opts.body);
+    return { ok: true, json: async () => ({ choices: [{ message: { content: 'hasil super' } }] }) };
+  };
+  try {
+    const out = await aiCall(OPENROUTER_URL, 'sk-or', NEMOTRON_SUPER_MODEL, [{ role: 'user', content: 'hi' }], 1300, 0.25, 20000, OPENROUTER_HEADERS, {}, 'openrouter');
+    assert.strictEqual(out, 'hasil super');
+  } finally {
+    global.fetch = orig;
+  }
+  assert.strictEqual(capturedBody.model, NEMOTRON_SUPER_MODEL);
 });

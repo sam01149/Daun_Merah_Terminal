@@ -1187,7 +1187,7 @@ async function journalImportHandler(req, res) {
 
 // ── Circuit breaker status + reset ───────────────────────────────────────────
 
-const KNOWN_CIRCUITS = ['ai:openrouter', 'ai:openrouter:nemotron', 'ai:cerebras', 'ai:cerebras:gptoss', 'ai:sambanova:c1', 'ai:sambanova:main', 'ai:ollama', 'ai:ollama:nemotron', 'fred', 'stooq', 'ff', 'fj', 'cftc', 'redis', 'forexbenchmark', 'actionforex'];
+const KNOWN_CIRCUITS = ['ai:openrouter', 'ai:openrouter:nemotron', 'ai:openrouter:nemotron-super', 'ai:cerebras', 'ai:cerebras:gptoss', 'ai:sambanova:c1', 'ai:sambanova:main', 'ai:ollama', 'ai:ollama:nemotron', 'fred', 'stooq', 'ff', 'fj', 'cftc', 'redis', 'forexbenchmark', 'actionforex'];
 
 async function circuitStatusHandler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
