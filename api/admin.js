@@ -759,25 +759,21 @@ const GROQ_MODEL_FUND = 'llama-3.3-70b-versatile';
 // jadi tidak bisa dipakai langsung lewat pola fetch yang sama dengan provider lain —
 // lihat _callOllama() untuk parsing response-nya.
 //
-// GLM-5.2 dicoba duluan (eksperimen user) tapi HTTP 403 "model requires a subscription" —
-// GLM-5.2 ternyata model berbayar (Pro/Max), tidak termasuk free tier Ollama Cloud.
-// Ganti ke gpt-oss:120b — model open-weight OpenAI yang SUDAH terbukti stabil untuk
-// output Bahasa Indonesia di app ini (dipakai via OpenRouter sebagai fallback Ringkasan
-// Call 1, lihat GROQ/OPENROUTER di market-digest.js) — pilihan yang lebih berdasar
-// daripada tebak model lain, dan kandidat kuat untuk tetap gratis (gpt-oss:20b dikonfirmasi
-// gratis di riset publik, 120b belum 100% pasti — ini yang sedang diuji).
+// Kandidat besar dites langsung ke API live (bukan tebak dari blog), dua-duanya gagal
+// dengan pola yang sama (model flagship raksasa = butuh subscription Pro/Max, bukan
+// free tier): GLM-5.2 (756B) → HTTP 403 "model requires a subscription". Kimi K2.6
+// (1.04T, lebih besar lagi) → gagal juga saat dites via ?test_ollama=1 bypass. Final:
+// gpt-oss:120b — model open-weight OpenAI yang SUDAH terbukti stabil untuk output
+// Bahasa Indonesia di app ini (dipakai via OpenRouter sebagai fallback Ringkasan Call 1,
+// lihat GROQ/OPENROUTER di market-digest.js) dan kandidat kuat untuk tetap gratis
+// (gpt-oss:20b dikonfirmasi gratis di riset publik, 120b lebih mungkin free dibanding
+// model 700B+ yang sudah terbukti gagal).
 const OLLAMA_URL   = 'https://ollama.com/api/chat';
 // PENTING: TANPA suffix ':cloud' — itu cuma konvensi Ollama LOKAL (ollama run <model>:cloud
 // di mesin sendiri, suffix ngasih tau daemon lokal "jalankan di cloud, bukan di sini").
 // Kita manggil https://ollama.com/api/chat langsung (server ke server, tanpa Ollama lokal),
 // jadi nama model API cloud-nya polos tanpa suffix.
-//
-// SEDANG DIUJI: kimi-k2.6 (1.04T param, 256K context — lebih besar dari DeepSeek-V3.2
-// 671B/160K) atas permintaan user, cari model lebih kuat dari DeepSeek yang tetap gratis.
-// Kemungkinan besar SAMA seperti GLM-5.2 (403 subscription required) mengingat ukurannya
-// bahkan lebih besar — kalau terbukti gitu juga, turunkan ke gpt-oss:120b (baris komentar
-// di atas, sudah terbukti gratis & proven Bahasa Indonesia di app ini).
-const OLLAMA_MODEL = 'kimi-k2.6';
+const OLLAMA_MODEL = 'gpt-oss:120b';
 
 // Panggil Ollama Cloud, kembalikan teks jawaban (message.content) atau null kalau gagal/kosong.
 // Melempar error kalau HTTP non-OK atau response kosong, konsisten dengan pola provider lain
