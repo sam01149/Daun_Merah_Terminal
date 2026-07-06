@@ -49,6 +49,17 @@ test('_callOllama: parameter think dikirim di top-level body (bukan di dalam opt
   assert.strictEqual(capturedBody.options.think, undefined, 'think bukan bagian dari options');
 });
 
+test('_callOllama: think:false (deepthink dimatikan) tetap terkirim, bukan ke-drop seperti default null', async () => {
+  let capturedBody;
+  await withFetch(async (url, opts) => {
+    capturedBody = JSON.parse(opts.body);
+    return { ok: true, json: async () => ({ message: { content: 'ok' } }) };
+  }, async () => {
+    await _callOllama('sk-test', 'glm-5.2:cloud', [], 1500, 0.3, 30000, false);
+  });
+  assert.strictEqual(capturedBody.think, false, 'false != null jadi harus tetap terkirim eksplisit');
+});
+
 test('_callOllama: HTTP non-OK melempar error dengan status di pesan', async () => {
   await withFetch(async () => ({ ok: false, status: 429 }), async () => {
     await assert.rejects(

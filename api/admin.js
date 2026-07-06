@@ -761,22 +761,22 @@ const GROQ_MODEL_FUND = 'llama-3.3-70b-versatile';
 //
 // Model dipilih GLM-5.2 (bukan DeepSeek-V3.2 yang sudah ada via SambaNova) — eksperimen
 // user, bukan redundansi model yang sama. GLM-5.2 punya mode "thinking" yang defaultnya
-// effort MAX (reasoning terdalam, paling lambat) kalau thinking dinyalakan — kita kirim
-// think:'high' (bukan 'max') supaya tetap dapat reasoning tapi lebih cepat, penting
-// karena timeout kita cuma 15s (lihat budget waktu di ohlcvAnalyzeHandler). Belum ada
-// data latency real untuk kombinasi ini — kalau sering timeout, kandidat berikutnya
-// adalah think:false (nonaktifkan reasoning sama sekali) atau naikkan timeout dengan
-// konsekuensi pangkas provider lain.
+// effort MAX (reasoning terdalam, paling lambat) kalau thinking dinyalakan — dites 'high'
+// dulu, tapi user minta dimatikan total (think:false) demi kecepatan. reasoning_effort
+// tidak berlaku lagi begitu thinking off — konsekuensi yang disadari, bukan kelalaian.
 const OLLAMA_URL   = 'https://ollama.com/api/chat';
 const OLLAMA_MODEL = 'glm-5.2:cloud';
 
 // Panggil Ollama Cloud, kembalikan teks jawaban (message.content) atau null kalau gagal/kosong.
 // Melempar error kalau HTTP non-OK atau response kosong, konsisten dengan pola provider lain
-// (caller yang tangkap & jatuh ke fallback berikutnya). think: 'high'/'max'/'low'/false —
-// lihat komentar OLLAMA_MODEL di atas soal kenapa 'high', bukan default model ('max').
+// (caller yang tangkap & jatuh ke fallback berikutnya). think: 'high'/'max'/'low'/false/null
+// (null = tidak dikirim sama sekali, pakai default model). Log durasi + token usage
+// (total_duration/eval_count dari response Ollama) supaya kita punya data nyata untuk
+// kalibrasi timeout & mengukur pemakaian kuota GPU-time, bukan cuma tebak-tebak.
 async function _callOllama(apiKey, model, messages, maxTokens, temperature, timeoutMs, think = null) {
   const body = { model, messages, stream: false, options: { temperature, num_predict: maxTokens } };
   if (think != null) body.think = think;
+  const t0 = Date.now();
   const r = await fetch(OLLAMA_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
@@ -785,6 +785,9 @@ async function _callOllama(apiKey, model, messages, maxTokens, temperature, time
   });
   if (!r.ok) throw new Error(`HTTP ${r.status}`);
   const j = await r.json();
+  const wallMs = Date.now() - t0;
+  const serverMs = j?.total_duration != null ? Math.round(j.total_duration / 1e6) : null;
+  console.log(`_callOllama: model=${model} think=${think} wall=${wallMs}ms server=${serverMs}ms eval_count=${j?.eval_count ?? '?'} prompt_eval_count=${j?.prompt_eval_count ?? '?'}`);
   const content = j?.message?.content?.trim() || null;
   if (!content) throw new Error('Empty response');
   return content;
@@ -2274,14 +2277,16 @@ async function ohlcvAnalyzeHandler(req, res) {
     const GROQ_KEY      = process.env.GROQ_API_KEY;
     let rawText = null, model = null;
 
-    // Primary sementara (eksperimen user): Ollama Cloud GLM-5.2, think:'high'. Timeout
-    // 30s — sama generous dengan yang dulu diberikan ke SambaNova — supaya data
-    // latency yang terkumpul representatif, bukan keburu dipotong pendek. Kalau
-    // eksperimen ini selesai/gagal, tinggal tukar balik urutan dengan SambaNova.
+    // Primary sementara (eksperimen user): Ollama Cloud GLM-5.2, think:false — deepthink
+    // dimatikan total demi kecepatan (bukan cuma 'high', permintaan eksplisit user).
+    // reasoning_effort tidak berlaku lagi begitu thinking off, itu konsekuensi yang
+    // disadari. Timeout 30s — sama generous dengan yang dulu diberikan ke SambaNova —
+    // supaya data latency yang terkumpul representatif. Kalau eksperimen ini
+    // selesai/gagal, tinggal tukar balik urutan dengan SambaNova.
     if (OLLAMA_KEY && await cb.canCall('ai:ollama')) {
       try {
         if (!await allowAiCall('ollama')) throw new Error('AI daily budget exceeded');
-        rawText = await _callOllama(OLLAMA_KEY, OLLAMA_MODEL, messages, 1500, 0.3, 30000, 'high');
+        rawText = await _callOllama(OLLAMA_KEY, OLLAMA_MODEL, messages, 1500, 0.3, 30000, false);
         model = 'glm-5.2';
         await cb.onSuccess('ai:ollama');
       } catch(e) { console.warn('ohlcv_analyze Ollama failed:', e.message); await cb.onFailure('ai:ollama'); }
