@@ -225,6 +225,25 @@ function stripThinking(text) {
   return text.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
 }
 
+// Nemotron 3 (session 145 lanjutan 3) toggles its reasoning trace via a literal
+// "/think" / "/no_think" directive in the system prompt (NVIDIA's documented
+// convention, same family as Qwen3's steering tokens) — not a separate API field like
+// Ollama's `think` param used for GLM-5.2. Suspected root cause of the timeouts seen in
+// live tests (both OpenRouter 25s and Ollama Cloud 18s): the model may default to
+// generating a full reasoning trace before the real answer, which our use case (write a
+// briefing, not solve a puzzle) doesn't need. Force /no_think for Nemotron calls only —
+// other providers (SambaNova/Groq/gpt-oss) don't use this convention and must NOT get it
+// injected into their prompt.
+function withNoThink(messages) {
+  const sysIdx = messages.findIndex(m => m.role === 'system');
+  if (sysIdx !== -1) {
+    const copy = messages.map(m => ({ ...m }));
+    copy[sysIdx] = { ...copy[sysIdx], content: copy[sysIdx].content + '\n/no_think' };
+    return copy;
+  }
+  return [{ role: 'system', content: '/no_think' }, ...messages];
+}
+
 // Shared low-level fetch for any OpenAI-compatible provider.
 // providerOverride: SAMBANOVA_URL dan SAMBANOVA_URL_CALL1 (2 akun berbeda) identik
 // string-nya, jadi providerFromUrl(url) tidak bisa membedakan akun — call site WAJIB
@@ -1111,7 +1130,7 @@ module.exports = async function handler(req, res) {
       if (OLLAMA_KEY && await cb.canCall(CB_OLLAMA_NEMOTRON)) {
         try {
           console.log('Call 2: trying Nemotron 3 Ultra (Ollama Cloud)');
-          biasRaw = await callOllama(OLLAMA_KEY, OLLAMA_NEMOTRON_MODEL, call2Messages, 700, 0.1, 15000, 'ollama');
+          biasRaw = await callOllama(OLLAMA_KEY, OLLAMA_NEMOTRON_MODEL, withNoThink(call2Messages), 700, 0.1, 15000, 'ollama');
           console.log('Call 2: Ollama Nemotron OK');
           await cb.onSuccess(CB_OLLAMA_NEMOTRON);
         } catch(e) { console.warn('Call 2 Ollama Nemotron failed:', e.status || e.message); await cb.onFailure(CB_OLLAMA_NEMOTRON, AI_CB_THRESHOLD); }
@@ -1120,7 +1139,7 @@ module.exports = async function handler(req, res) {
       if (!biasRaw && OPENROUTER_KEY && await cb.canCall(CB_OPENROUTER_NEMOTRON)) {
         try {
           console.log('Call 2: trying Nemotron 3 Ultra (OpenRouter)');
-          biasRaw = await aiCall(OPENROUTER_URL, OPENROUTER_KEY, NEMOTRON_MODEL, call2Messages, 700, 0.1, 10000, OPENROUTER_HEADERS, {}, 'openrouter');
+          biasRaw = await aiCall(OPENROUTER_URL, OPENROUTER_KEY, NEMOTRON_MODEL, withNoThink(call2Messages), 700, 0.1, 10000, OPENROUTER_HEADERS, {}, 'openrouter');
           console.log('Call 2: OpenRouter Nemotron OK');
           await cb.onSuccess(CB_OPENROUTER_NEMOTRON);
         } catch(e) { console.warn('Call 2 OpenRouter Nemotron failed:', e.status || e.message); await cb.onFailure(CB_OPENROUTER_NEMOTRON, AI_CB_THRESHOLD); }
@@ -1374,7 +1393,7 @@ ${xauHistoryBlock}`;
       const t0s = Date.now();
       try {
         console.log('Call 1: trying Nemotron 3 Ultra (Ollama Cloud), timeout', ollamaNemotronTimeout1);
-        const raw = await callOllama(OLLAMA_KEY, OLLAMA_NEMOTRON_MODEL, call1Messages, 1300, 0.25, ollamaNemotronTimeout1, 'ollama');
+        const raw = await callOllama(OLLAMA_KEY, OLLAMA_NEMOTRON_MODEL, withNoThink(call1Messages), 1300, 0.25, ollamaNemotronTimeout1, 'ollama');
         const elapsed = Date.now() - t0s;
         article = raw.trim(); method = 'nemotron-3-ultra';
         providerLog.push(`ollama_nemotron:ok(${elapsed}ms,${article.length}c)`);
@@ -1404,7 +1423,7 @@ ${xauHistoryBlock}`;
       const t0s = Date.now();
       try {
         console.log('Call 1: trying Nemotron 3 Ultra (OpenRouter)');
-        const raw = await aiCall(OPENROUTER_URL, OPENROUTER_KEY, NEMOTRON_MODEL, call1Messages, 1300, 0.25, openrouterNemotronTimeout1, OPENROUTER_HEADERS, {}, 'openrouter');
+        const raw = await aiCall(OPENROUTER_URL, OPENROUTER_KEY, NEMOTRON_MODEL, withNoThink(call1Messages), 1300, 0.25, openrouterNemotronTimeout1, OPENROUTER_HEADERS, {}, 'openrouter');
         const elapsed = Date.now() - t0s;
         if (raw.trim()) {
           article = raw.trim(); method = 'nemotron-3-ultra';
@@ -1721,8 +1740,8 @@ ${xauHistoryBlock}`;
     // existing. ?test_nemotron=1: array cuma berisi 2 sumber Nemotron — tier lain skip
     // total (bukan cuma "coba kalau Nemotron gagal") supaya hasil tes bersih.
     const call3Providers = [];
-    if (OLLAMA_KEY)     call3Providers.push({ ollama: true, key: OLLAMA_KEY, model: OLLAMA_NEMOTRON_MODEL, label: 'Ollama Nemotron', timeout: 15000, provider: 'ollama', circuit: CB_OLLAMA_NEMOTRON });
-    if (OPENROUTER_KEY) call3Providers.push({ url: OPENROUTER_URL, key: OPENROUTER_KEY, model: NEMOTRON_MODEL, label: 'OpenRouter Nemotron', timeout: 10000, provider: 'openrouter', circuit: CB_OPENROUTER_NEMOTRON, headers: OPENROUTER_HEADERS });
+    if (OLLAMA_KEY)     call3Providers.push({ ollama: true, key: OLLAMA_KEY, model: OLLAMA_NEMOTRON_MODEL, label: 'Ollama Nemotron', timeout: 15000, provider: 'ollama', circuit: CB_OLLAMA_NEMOTRON, noThink: true });
+    if (OPENROUTER_KEY) call3Providers.push({ url: OPENROUTER_URL, key: OPENROUTER_KEY, model: NEMOTRON_MODEL, label: 'OpenRouter Nemotron', timeout: 10000, provider: 'openrouter', circuit: CB_OPENROUTER_NEMOTRON, headers: OPENROUTER_HEADERS, noThink: true });
     if (!testNemotronOnly) {
       if (SAMBANOVA_KEY) call3Providers.push({ url: SAMBANOVA_URL, key: SAMBANOVA_KEY, model: SAMBANOVA_MODEL, label: 'SambaNova', timeout: 8000, provider: 'sambanova_main', circuit: CB_SAMBA_MAIN });
       if (GROQ_KEY)      call3Providers.push({ url: GROQ_URL,      key: GROQ_KEY,      model: GROQ_MODEL,      label: 'Groq fallback', timeout: 12000, provider: 'groq', circuit: null });
@@ -1737,9 +1756,10 @@ ${xauHistoryBlock}`;
       }
       try {
         console.log('Call 3: trying', provider.label);
+        const messages3 = provider.noThink ? withNoThink(call3Messages) : call3Messages;
         const raw = provider.ollama
-          ? await callOllama(provider.key, provider.model, call3Messages, 800, 0.1, provider.timeout, provider.provider)
-          : await aiCall(provider.url, provider.key, provider.model, call3Messages, 800, 0.1, provider.timeout, provider.headers || {}, {}, provider.provider);
+          ? await callOllama(provider.key, provider.model, messages3, 800, 0.1, provider.timeout, provider.provider)
+          : await aiCall(provider.url, provider.key, provider.model, messages3, 800, 0.1, provider.timeout, provider.headers || {}, {}, provider.provider);
         const clean = raw.replace(/```json|```/g, '').trim();
         const parsed = JSON.parse(clean);
         if (validateThesis(parsed)) {
@@ -1929,3 +1949,4 @@ module.exports.callOllama = callOllama;
 module.exports.OLLAMA_URL = OLLAMA_URL;
 module.exports.OLLAMA_NEMOTRON_MODEL = OLLAMA_NEMOTRON_MODEL;
 module.exports.CB_OLLAMA_NEMOTRON = CB_OLLAMA_NEMOTRON;
+module.exports.withNoThink = withNoThink;

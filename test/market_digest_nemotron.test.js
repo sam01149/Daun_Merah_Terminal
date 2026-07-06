@@ -13,7 +13,7 @@ delete process.env.UPSTASH_REDIS_REST_TOKEN;
 
 const {
   aiCall, NEMOTRON_MODEL, CB_OPENROUTER_NEMOTRON, OPENROUTER_URL, OPENROUTER_HEADERS,
-  callOllama, OLLAMA_URL, OLLAMA_NEMOTRON_MODEL, CB_OLLAMA_NEMOTRON,
+  callOllama, OLLAMA_URL, OLLAMA_NEMOTRON_MODEL, CB_OLLAMA_NEMOTRON, withNoThink,
 } = require('../api/market-digest.js');
 
 test('NEMOTRON_MODEL: model id persis sesuai slug free-tier OpenRouter (bukan typo, bukan versi berbayar)', () => {
@@ -139,4 +139,27 @@ test('callOllama: strip <think> block dari respons (kalau model kirim reasoning 
   } finally {
     global.fetch = orig;
   }
+});
+
+// ── withNoThink (session 145 lanjutan 3) ────────────────────────────────────────────
+
+test('withNoThink: menambah /no_think ke system message yang sudah ada', () => {
+  const out = withNoThink([{ role: 'system', content: 'Kamu analis.' }, { role: 'user', content: 'hi' }]);
+  assert.strictEqual(out[0].content, 'Kamu analis.\n/no_think');
+  assert.strictEqual(out[1].content, 'hi', 'user message tidak berubah');
+});
+
+test('withNoThink: menambah system message baru berisi /no_think kalau belum ada system message', () => {
+  const out = withNoThink([{ role: 'user', content: 'hi' }]);
+  assert.strictEqual(out.length, 2);
+  assert.strictEqual(out[0].role, 'system');
+  assert.strictEqual(out[0].content, '/no_think');
+  assert.strictEqual(out[1].content, 'hi');
+});
+
+test('withNoThink: tidak memutasi array/objek messages asli (immutable)', () => {
+  const original = [{ role: 'system', content: 'Kamu analis.' }, { role: 'user', content: 'hi' }];
+  const out = withNoThink(original);
+  assert.notStrictEqual(out, original);
+  assert.strictEqual(original[0].content, 'Kamu analis.', 'original tidak berubah');
 });
