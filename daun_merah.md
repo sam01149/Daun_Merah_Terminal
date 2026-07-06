@@ -1,9 +1,38 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-07-06 (session 144 lanjutan 5 — final: SambaNova primary, Ollama Cloud gpt-oss:120b sebagai fallback, GLM-5.2/Kimi K2.6 terbukti butuh subscription)
+> **Last updated:** 2026-07-06 (session 145 — re-arsitektur distribusi model AI: Nemotron 3 Ultra di Ringkasan, Cerebras gpt-oss-120b di Jurnal/Fundamental)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
+
+---
+
+## Changelog Session 145 (2026-07-06) — Re-arsitektur Distribusi Model AI: Nemotron 3 Ultra (Ringkasan) + Cerebras gpt-oss-120b (Jurnal/Fundamental)
+
+**Request user:** eksekusi plan re-distribusi 4 fitur AI yang sudah ditulis di `daun_merah_plan.md` (ide asli: Nemotron 3 Ultra untuk `market-digest`, DeepSeek-V3.2 akun 1 untuk `ohlcv_analyze` — tidak berubah, gpt-oss:120b untuk journal/fundamental, DeepSeek-V3.2 akun 2 sebagai fallback bersama).
+
+**Verifikasi ulang sebelum eksekusi (user minta "AKU BUTUH VERIFIKASI DARI IDE YANG KUBUAT"):**
+- Dikonfirmasi via web search (openrouter.ai/docs + artikel pihak ketiga): limit gratis OpenRouter itu **account-wide, bukan per-model** — 50 request/hari kalau akun belum pernah top-up kredit $10+ seumur hidup, 1000/hari kalau sudah (persisten walau saldo habis lagi).
+- Temuan baru yang mengubah rencana awal: gpt-oss-120b ternyata JUGA di-host asli oleh **Cerebras Cloud** (`api.cerebras.ai/v1/chat/completions`, model id `gpt-oss-120b`, OpenAI-compatible, free tier genuinely persistent — 1 juta token/hari + 5 RPM/30K TPM, bukan trial sekali pakai) — pool **terpisah total** dari OpenRouter. User mengonfirmasi ini memang niat awal ("kan memang itu niatnya") — jadi gpt-oss:120b untuk `journal_analysis` + `fundamental_analysis` dipindah ke Cerebras (bukan OpenRouter seperti draft plan sebelumnya), supaya tidak berebut kuota harian dengan Nemotron 3 Ultra yang wajib lewat OpenRouter (satu-satunya provider yang punya model ini — NVIDIA NIM langsung juga tersedia tapi ditolak sebagai alternatif karena riset project ini sebelumnya mencatat kuota gratis NIM berbasis kredit sekali pakai non-renewing, bukan reset harian seperti OpenRouter/Cerebras).
+
+**Implementasi:**
+- `api/market-digest.js` Call1/Call2/Call3: tambah Nemotron 3 Ultra (`nvidia/nemotron-3-ultra-550b-a55b:free` via OpenRouter) sebagai tier **primary baru**, di depan SambaNova/OpenRouter-gpt-oss/Groq yang sudah ada (semua dipertahankan sebagai fallback berurutan, tidak ada yang dihapus). Circuit breaker baru `ai:openrouter:nemotron` (terpisah dari circuit generic `ai:openrouter` yang sudah ada di `KNOWN_CIRCUITS` tapi tak pernah benar-benar dipakai) karena sekarang dipanggil di setiap request sebagai primary, bukan fallback jarang. `providerOverride:'openrouter'` tetap reuse counter kuota yang sudah ada (bukan bikin counter baru per-model).
+- Diagnostik `?test_nemotron=1` (pola sama seperti `?test_ollama=1` session 144): skip SEMUA tier lain sama sekali (bukan cuma dicoba kalau Nemotron gagal) supaya hasil tes murni mencerminkan Nemotron sendiri.
+- `api/journal.js` (`aiCall()`, AI Coach) & `api/admin.js` (`fundamentalAnalysisHandler`): dulu masing-masing single-provider rapuh (journal.js: Groq-only, tanpa fallback/circuit breaker sama sekali; admin.js: Groq → SambaNova akun 1, tanpa circuit breaker) — sekarang sama-sama 3-tier: **Cerebras gpt-oss-120b (primary, baru) → SambaNova akun 2/`sambanova_c1` (fallback1, baru untuk journal.js / geser dari akun 1 di admin.js) → Groq (fallback2, tetap ada sebagai jaring pengaman terakhir)**. Circuit breaker baru `ai:cerebras:gptoss` ditambahkan ke keduanya.
+- `ohlcv_analyze` (Analisa Teknikal) **tidak disentuh** — sudah cocok dengan ide user sejak awal.
+- `api/_ai_guard.js`: `DEFAULT_LIMITS.openrouter` diturunkan 150→45 (buffer aman di bawah cap gratis asli 50/hari — status top-up akun OpenRouter belum dikonfirmasi user, jadi diasumsikan konservatif belum top-up; sekarang Nemotron satu-satunya fitur yang pakai pool ini). Counter `cerebras` (scaffolding lama yang tidak pernah benar-benar dipakai) diaktifkan.
+- `KNOWN_CIRCUITS` (admin.js) + `healthHandler` `getUsage` list: tambah circuit/counter baru supaya termonitor di `?action=circuit-status`/`?action=health` dan bisa direset via `?action=circuit-reset`.
+- `index.html`: badge method baru untuk `nemotron-3-ultra` (hijau NVIDIA, `#76b900`).
+
+**Test baru:** `test/journal_ai.test.js`, `test/admin_fundamental.test.js`, `test/market_digest_nemotron.test.js` (fallback chain tiap fitur, HTTP-level via fetch stub) + tambahan regression di `test/guards.test.js` (limit `openrouter` ≤45, counter `cerebras` aktif). Full suite **97/97 lulus**, `node --check` bersih untuk keempat file yang diubah.
+
+**Hasil tes live `?test_nemotron=1` di production (2 ronde, total 7 request, 3 di antaranya "fresh circuit"):**
+- **Tidak ada HTTP 403 subscription-required** — beda dari precedent GLM-5.2/Kimi K2.6 (Session 144 lanjutan 5) — Nemotron 3 Ultra via OpenRouter memang genuinely accessible di free tier, bukan model berbayar yang disamarkan gratis.
+- Tapi reliability lemah: 2× respons **kosong** dalam ~1 detik (HTTP 200 tapi content kosong — kemungkinan besar OpenRouter tidak ada replica gratis yang available saat itu, bukan bug kode), 1× **timeout penuh** di batas 25 detik. 0 dari 3 percobaan fresh berhasil dapat konten nyata dari Nemotron di Call 1.
+- Circuit breaker `ai:openrouter:nemotron` konsisten kembali OPEN tak lama setelah reset (5 menit) — mengindikasikan Call 2/Call 3 (berbagi circuit yang sama, tidak kelihatan langsung di `provider_log` yang hanya mencakup Call 1) kemungkinan juga gagal di window yang sama.
+- **Kriteria selesai plan ("3x sukses berturut-turut tanpa error") belum terpenuhi.** Dikonfirmasi ke user dengan data lengkap + 3 opsi (demote jadi fallback / tetap primary & terus pantau / naikkan timeout dulu sebelum putuskan). **User memilih: tetap primary, terus dipantau** — sadar menerima risiko bahwa circuit breaker akan sering OPEN (membatasi kerusakan ke jendela 5 menit tiap kali, bukan tak terbatas) dan Nemotron kemungkinan besar belum benar-benar melayani konten nyata sampai kapasitas free-tier OpenRouter untuk model ini membaik.
+
+**Status:** Deployed ke production (`main`, commit `0df43db`). Semua kriteria selesai LAINNYA di plan sudah terpenuhi (test, `node --check`, dokumentasi) — kecuali kriteria live-test Nemotron yang secara sadar diterima user sebagai risiko yang terus dipantau, bukan gate blocking. **Untuk sesi berikutnya:** pantau `?action=health` (`aiBudget`, field `openrouter`) dan `?action=circuit-status` (`ai:openrouter:nemotron`) dari waktu ke waktu — kalau makin sering CLOSED+sukses (bukan cuma `nemotron:empty`/timeout di `provider_log`), tandanya kapasitas OpenRouter untuk model ini sudah membaik dan Nemotron mulai benar-benar melayani konten. Kalau setelah beberapa hari masih 0% sukses, pertimbangkan opsi "demote ke fallback" yang sempat ditawarkan tapi ditolak user di sesi ini.
 
 ---
 

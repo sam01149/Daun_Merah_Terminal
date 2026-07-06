@@ -9,6 +9,8 @@
 > **Status (2026-07-03, Session 140):** Thesis alert (headline kontra buy/sell limit di JURNAL/CHECKLIST/SIZING) yang sempat **ditunda** karena reliability sudah di-hardening dan **diaktifkan kembali** — lihat "Changelog Session 140" di `daun_merah.md` untuk detailnya. Bagian scenario/progress-nya dihapus dari dokumen ini.
 >
 > **Update workflow (`CLAUDE.md`):** Plan-first di dokumen ini sekarang HANYA dipakai kalau user eksplisit minta "buatkan plan" atau perintahnya ditujukan untuk AI lain (bukan eksekusi langsung). Untuk perintah eksekusi langsung, kerjakan → evaluasi mandiri → uji → update `daun_merah.md` → push, tanpa gate plan terpisah.
+>
+> **Status (2026-07-07, Session 145):** Plan "Re-arsitektur Distribusi Model AI per Fitur (Nemotron 3 Ultra + realokasi existing)" **sudah dieksekusi & dideploy** (gpt-oss:120b untuk journal/fundamental disumber dari Cerebras, bukan OpenRouter, per keputusan user saat eksekusi) — lihat "Changelog Session 145" di `daun_merah.md` untuk detail lengkap termasuk hasil tes live Nemotron 3 Ultra (belum 100% reliable, user pilih tetap primary + terus dipantau) dan follow-up investigasi NVIDIA NIM direct sebagai kandidat sumber alternatif. Bagian plan-nya dihapus dari dokumen ini.
 
 ---
 
