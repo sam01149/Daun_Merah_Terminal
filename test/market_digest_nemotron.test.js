@@ -11,7 +11,10 @@ const assert = require('node:assert');
 delete process.env.UPSTASH_REDIS_REST_URL;
 delete process.env.UPSTASH_REDIS_REST_TOKEN;
 
-const { aiCall, NEMOTRON_MODEL, CB_OPENROUTER_NEMOTRON, OPENROUTER_URL, OPENROUTER_HEADERS } = require('../api/market-digest.js');
+const {
+  aiCall, NEMOTRON_MODEL, CB_OPENROUTER_NEMOTRON, OPENROUTER_URL, OPENROUTER_HEADERS,
+  callOllama, OLLAMA_URL, OLLAMA_NEMOTRON_MODEL, CB_OLLAMA_NEMOTRON,
+} = require('../api/market-digest.js');
 
 test('NEMOTRON_MODEL: model id persis sesuai slug free-tier OpenRouter (bukan typo, bukan versi berbayar)', () => {
   assert.strictEqual(NEMOTRON_MODEL, 'nvidia/nemotron-3-ultra-550b-a55b:free');
@@ -62,6 +65,77 @@ test('aiCall: HTTP non-OK melempar error dengan status', async () => {
       () => aiCall(OPENROUTER_URL, 'sk-or', NEMOTRON_MODEL, [{ role: 'user', content: 'hi' }], 1300, 0.25, 25000, OPENROUTER_HEADERS, {}, 'openrouter'),
       /payment required/
     );
+  } finally {
+    global.fetch = orig;
+  }
+});
+
+// ── Ollama Cloud sebagai sumber Nemotron alternatif (session 145 lanjutan) ──────────
+
+test('OLLAMA_NEMOTRON_MODEL: TANPA suffix :cloud (pelajaran dari bug GLM-5.2 session 144 lanjutan 5)', () => {
+  assert.strictEqual(OLLAMA_NEMOTRON_MODEL, 'nemotron-3-ultra');
+  assert.ok(!OLLAMA_NEMOTRON_MODEL.includes(':'), 'model id native Ollama API tidak boleh ada suffix :cloud');
+});
+
+test('CB_OLLAMA_NEMOTRON: circuit terpisah dari ai:ollama (dipakai ohlcv_analyze di admin.js)', () => {
+  assert.strictEqual(CB_OLLAMA_NEMOTRON, 'ai:ollama:nemotron');
+});
+
+test('callOllama: kirim body native Ollama (model/messages/stream:false/options), baca message.content', async () => {
+  let capturedUrl, capturedBody, capturedAuth;
+  const orig = global.fetch;
+  global.fetch = async (url, opts) => {
+    capturedUrl = url;
+    capturedBody = JSON.parse(opts.body);
+    capturedAuth = opts.headers.Authorization;
+    return { ok: true, json: async () => ({ message: { content: '  hasil ollama nemotron  ' }, done: true }) };
+  };
+  try {
+    const out = await callOllama('sk-ollama', OLLAMA_NEMOTRON_MODEL, [{ role: 'user', content: 'hi' }], 1300, 0.25, 18000, 'ollama');
+    assert.strictEqual(out, 'hasil ollama nemotron', 'harus di-trim');
+  } finally {
+    global.fetch = orig;
+  }
+  assert.strictEqual(capturedUrl, OLLAMA_URL);
+  assert.strictEqual(capturedAuth, 'Bearer sk-ollama');
+  assert.strictEqual(capturedBody.model, 'nemotron-3-ultra');
+  assert.strictEqual(capturedBody.stream, false);
+  assert.strictEqual(capturedBody.options.temperature, 0.25);
+  assert.strictEqual(capturedBody.options.num_predict, 1300);
+});
+
+test('callOllama: HTTP non-OK melempar error berisi status', async () => {
+  const orig = global.fetch;
+  global.fetch = async () => ({ ok: false, status: 403 });
+  try {
+    await assert.rejects(
+      () => callOllama('sk-ollama', OLLAMA_NEMOTRON_MODEL, [], 1300, 0.25, 18000, 'ollama'),
+      /HTTP 403/
+    );
+  } finally {
+    global.fetch = orig;
+  }
+});
+
+test('callOllama: response kosong (message.content kosong) melempar Empty response', async () => {
+  const orig = global.fetch;
+  global.fetch = async () => ({ ok: true, json: async () => ({ message: { content: '' } }) });
+  try {
+    await assert.rejects(
+      () => callOllama('sk-ollama', OLLAMA_NEMOTRON_MODEL, [], 1300, 0.25, 18000, 'ollama'),
+      /Empty response/
+    );
+  } finally {
+    global.fetch = orig;
+  }
+});
+
+test('callOllama: strip <think> block dari respons (kalau model kirim reasoning trace)', async () => {
+  const orig = global.fetch;
+  global.fetch = async () => ({ ok: true, json: async () => ({ message: { content: '<think>mikir</think>Hasil bersih.' } }) });
+  try {
+    const out = await callOllama('sk-ollama', OLLAMA_NEMOTRON_MODEL, [], 1300, 0.25, 18000, 'ollama');
+    assert.strictEqual(out, 'Hasil bersih.');
   } finally {
     global.fetch = orig;
   }

@@ -53,6 +53,21 @@ const OPENROUTER_HEADERS = { 'HTTP-Referer': 'https://financial-feed-app.vercel.
 const NEMOTRON_MODEL           = 'nvidia/nemotron-3-ultra-550b-a55b:free';
 const CB_OPENROUTER_NEMOTRON   = 'ai:openrouter:nemotron';
 
+// Ollama Cloud sebagai sumber Nemotron 3 Ultra alternatif (session 145 lanjutan) —
+// dicoba SEBELUM OpenRouter setelah 2 ronde tes live OpenRouter menunjukkan 0/3 bersih
+// (respons kosong + timeout, meski TIDAK 403). API-nya native Ollama (/api/chat, BUKAN
+// /v1/chat/completions), jadi butuh helper terpisah — lihat callOllama() di bawah,
+// pola sama seperti _callOllama() di admin.js (ohlcv_analyze, session 144 lanjutan 5).
+// Reuse counter budget 'ollama' yang sudah ada (satu akun Ollama Cloud dipakai bersama
+// dengan ohlcv_analyze di admin.js) — circuit breaker terpisah karena beda model/fitur.
+const OLLAMA_URL             = 'https://ollama.com/api/chat';
+// PENTING: TANPA suffix ':cloud' — itu konvensi Ollama LOKAL (ollama run <model>:cloud
+// di mesin sendiri), BUKAN nama model yang valid untuk direct server-to-server API call
+// (lihat root-cause bug GLM-5.2 di daun_merah.md Session 144 lanjutan 5 — pelajaran yang
+// sama berlaku di sini, bukan diasumsikan ulang).
+const OLLAMA_NEMOTRON_MODEL  = 'nemotron-3-ultra';
+const CB_OLLAMA_NEMOTRON     = 'ai:ollama:nemotron';
+
 const MAJOR_CURRENCIES = new Set(['USD','EUR','GBP','JPY','CAD','AUD','NZD','CHF']);
 
 // Map pair label → Yahoo symbol for OHLCV context lookup
@@ -240,6 +255,34 @@ async function aiCall(url, apiKey, model, messages, maxTokens, temperature, time
     console.warn(`aiCall truncated (finish_reason=length, model=${model}, max_tokens=${maxTokens})`);
   }
   const content = choice?.message?.content || '';
+  return stripThinking(content).trim();
+}
+
+// Ollama Cloud — API native (BUKAN OpenAI-compatible), dipakai khusus untuk Nemotron 3
+// Ultra (session 145 lanjutan). Pola & guard budget/error identik dengan _callOllama()
+// di admin.js (dua file duplikasi sengaja per konvensi project ini — lihat komentar
+// OPENROUTER_URL/MODEL di file lain untuk rasionalnya).
+async function callOllama(apiKey, model, messages, maxTokens, temperature, timeoutMs, providerOverride) {
+  if (!await allowAiCall(providerOverride)) {
+    const e = new Error('AI_BUDGET_EXCEEDED');
+    e.status = 429;
+    throw e;
+  }
+  const body = { model, messages, stream: false, options: { temperature, num_predict: maxTokens } };
+  const t0 = Date.now();
+  const r = await fetch(OLLAMA_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+  if (!r.ok) { const e = new Error(`HTTP ${r.status}`); e.status = r.status; throw e; }
+  const j = await r.json();
+  const wallMs = Date.now() - t0;
+  const serverMs = j?.total_duration != null ? Math.round(j.total_duration / 1e6) : null;
+  console.log(`callOllama: model=${model} wall=${wallMs}ms server=${serverMs}ms eval_count=${j?.eval_count ?? '?'} prompt_eval_count=${j?.prompt_eval_count ?? '?'}`);
+  const content = j?.message?.content?.trim() || null;
+  if (!content) throw new Error('Empty response');
   return stripThinking(content).trim();
 }
 
@@ -598,6 +641,7 @@ module.exports = async function handler(req, res) {
   const SAMBANOVA_KEY  = process.env.SAMBANOVA_API_KEY;
   const SAMBANOVA_KEY_CALL1 = process.env.SAMBANOVA_API_KEY_CALL1;
   const GROQ_KEY       = process.env.GROQ_API_KEY;
+  const OLLAMA_KEY     = process.env.OLLAMA_API_KEY;
 
   // Diagnostik sementara (session 145, pola sama seperti ?test_ollama=1 di admin.js
   // session 144): paksa Call 1/2/3 lewat Nemotron 3 Ultra saja, skip tier lain, supaya
@@ -1063,15 +1107,24 @@ module.exports = async function handler(req, res) {
       ].join('\n');
       const call2Messages = [{ role: 'user', content: biasPrompt }];
       let biasRaw = null;
-      // Primary: Nemotron 3 Ultra via OpenRouter (session 145) — same circuit as Call 1.
-      if (OPENROUTER_KEY && await cb.canCall(CB_OPENROUTER_NEMOTRON)) {
+      // Primary: Nemotron 3 Ultra via Ollama Cloud (session 145 lanjutan) — same circuit as Call 1.
+      if (OLLAMA_KEY && await cb.canCall(CB_OLLAMA_NEMOTRON)) {
+        try {
+          console.log('Call 2: trying Nemotron 3 Ultra (Ollama Cloud)');
+          biasRaw = await callOllama(OLLAMA_KEY, OLLAMA_NEMOTRON_MODEL, call2Messages, 700, 0.1, 15000, 'ollama');
+          console.log('Call 2: Ollama Nemotron OK');
+          await cb.onSuccess(CB_OLLAMA_NEMOTRON);
+        } catch(e) { console.warn('Call 2 Ollama Nemotron failed:', e.status || e.message); await cb.onFailure(CB_OLLAMA_NEMOTRON, AI_CB_THRESHOLD); }
+      } else if (OLLAMA_KEY) { console.log('Call 2: Ollama Nemotron circuit OPEN — skipping to OpenRouter Nemotron'); }
+      // Fallback (sumber Nemotron alternatif): OpenRouter, sama circuit dengan Call 1.
+      if (!biasRaw && OPENROUTER_KEY && await cb.canCall(CB_OPENROUTER_NEMOTRON)) {
         try {
           console.log('Call 2: trying Nemotron 3 Ultra (OpenRouter)');
-          biasRaw = await aiCall(OPENROUTER_URL, OPENROUTER_KEY, NEMOTRON_MODEL, call2Messages, 700, 0.1, 20000, OPENROUTER_HEADERS, {}, 'openrouter');
-          console.log('Call 2: Nemotron OK');
+          biasRaw = await aiCall(OPENROUTER_URL, OPENROUTER_KEY, NEMOTRON_MODEL, call2Messages, 700, 0.1, 10000, OPENROUTER_HEADERS, {}, 'openrouter');
+          console.log('Call 2: OpenRouter Nemotron OK');
           await cb.onSuccess(CB_OPENROUTER_NEMOTRON);
-        } catch(e) { console.warn('Call 2 Nemotron failed:', e.status || e.message); await cb.onFailure(CB_OPENROUTER_NEMOTRON, AI_CB_THRESHOLD); }
-      } else if (OPENROUTER_KEY) { console.log('Call 2: Nemotron circuit OPEN — skipping to SambaNova'); }
+        } catch(e) { console.warn('Call 2 OpenRouter Nemotron failed:', e.status || e.message); await cb.onFailure(CB_OPENROUTER_NEMOTRON, AI_CB_THRESHOLD); }
+      } else if (!biasRaw && OPENROUTER_KEY) { console.log('Call 2: OpenRouter Nemotron circuit OPEN — skipping to SambaNova'); }
       if (!biasRaw && !testNemotronOnly && SAMBANOVA_KEY && await cb.canCall(CB_SAMBA_MAIN)) {
         try {
           console.log('Call 2: trying SambaNova');
@@ -1308,36 +1361,64 @@ ${xauHistoryBlock}`;
       { role: 'user', content: digestUserMsg },
     ];
 
-    // Primary: Nemotron 3 Ultra via OpenRouter (session 145) — circuit breaker terpisah
-    // karena dipanggil tiap request (bukan fallback jarang). ?test_nemotron=1: skip
-    // SEMUA tier lain (bahkan kalau Nemotron gagal) supaya hasil tes benar-benar
-    // merefleksikan Nemotron sendiri, bukan tersamar oleh fallback yang sukses.
-    if (OPENROUTER_KEY && await cb.canCall(CB_OPENROUTER_NEMOTRON)) {
+    // Primary: Nemotron 3 Ultra via OLLAMA CLOUD (session 145 lanjutan) — dicoba duluan
+    // karena OpenRouter (tier di bawah) terbukti 0/3 bersih di 2 ronde tes live (respons
+    // kosong + timeout, TAPI TIDAK 403 subscription-gate). Timeout tier ini & semua tier
+    // di bawahnya dipangkas across-the-board supaya total worst-case Call 1 tetap masuk
+    // akal walau menambah 1 tier baru (lihat catatan budget di tiap tier).
+    if (OLLAMA_KEY && await cb.canCall(CB_OLLAMA_NEMOTRON)) {
+      const t0s = Date.now();
+      try {
+        console.log('Call 1: trying Nemotron 3 Ultra (Ollama Cloud)');
+        const raw = await callOllama(OLLAMA_KEY, OLLAMA_NEMOTRON_MODEL, call1Messages, 1300, 0.25, 18000, 'ollama');
+        const elapsed = Date.now() - t0s;
+        article = raw.trim(); method = 'nemotron-3-ultra';
+        providerLog.push(`ollama_nemotron:ok(${elapsed}ms,${article.length}c)`);
+        console.log('Call 1: Ollama Nemotron OK, length', article.length);
+        await cb.onSuccess(CB_OLLAMA_NEMOTRON);
+      } catch(e) {
+        const elapsed = Date.now() - t0s;
+        const errMsg = e.status ? `HTTP${e.status}` : (e.message || 'err').slice(0, 40);
+        providerLog.push(`ollama_nemotron:${errMsg}(${elapsed}ms)`);
+        console.warn('Call 1 Ollama Nemotron failed:', e.status || e.message);
+        await cb.onFailure(CB_OLLAMA_NEMOTRON, AI_CB_THRESHOLD);
+      }
+    } else if (OLLAMA_KEY) {
+      providerLog.push('ollama_nemotron:circuit_open');
+      console.log('Call 1: Ollama Nemotron circuit OPEN — skipping to OpenRouter Nemotron');
+    } else {
+      providerLog.push('ollama_nemotron:no_key');
+    }
+
+    // Fallback (sumber Nemotron alternatif): OpenRouter — dipertahankan sebagai jaring
+    // pengaman kalau Ollama Cloud gagal/gated, bukan dihapus (pola fail-safe additive
+    // project ini). Timeout dipangkas 25s->12s karena sekarang bukan upaya pertama lagi.
+    if (!article && OPENROUTER_KEY && await cb.canCall(CB_OPENROUTER_NEMOTRON)) {
       const t0s = Date.now();
       try {
         console.log('Call 1: trying Nemotron 3 Ultra (OpenRouter)');
-        const raw = await aiCall(OPENROUTER_URL, OPENROUTER_KEY, NEMOTRON_MODEL, call1Messages, 1300, 0.25, 25000, OPENROUTER_HEADERS, {}, 'openrouter');
+        const raw = await aiCall(OPENROUTER_URL, OPENROUTER_KEY, NEMOTRON_MODEL, call1Messages, 1300, 0.25, 10000, OPENROUTER_HEADERS, {}, 'openrouter');
         const elapsed = Date.now() - t0s;
         if (raw.trim()) {
           article = raw.trim(); method = 'nemotron-3-ultra';
-          providerLog.push(`nemotron:ok(${elapsed}ms,${article.length}c)`);
+          providerLog.push(`openrouter_nemotron:ok(${elapsed}ms,${article.length}c)`);
         } else {
-          providerLog.push(`nemotron:empty(${elapsed}ms)`);
+          providerLog.push(`openrouter_nemotron:empty(${elapsed}ms)`);
         }
-        console.log('Call 1: Nemotron OK, length', article?.length);
+        console.log('Call 1: OpenRouter Nemotron OK, length', article?.length);
         await cb.onSuccess(CB_OPENROUTER_NEMOTRON);
       } catch(e) {
         const elapsed = Date.now() - t0s;
         const errMsg = e.status ? `HTTP${e.status}` : (e.message || 'err').slice(0, 40);
-        providerLog.push(`nemotron:${errMsg}(${elapsed}ms)`);
-        console.warn('Call 1 Nemotron failed:', e.status || e.message);
+        providerLog.push(`openrouter_nemotron:${errMsg}(${elapsed}ms)`);
+        console.warn('Call 1 OpenRouter Nemotron failed:', e.status || e.message);
         await cb.onFailure(CB_OPENROUTER_NEMOTRON, AI_CB_THRESHOLD);
       }
-    } else if (OPENROUTER_KEY) {
-      providerLog.push('nemotron:circuit_open');
-      console.log('Call 1: Nemotron circuit OPEN — skipping to SambaNova');
-    } else {
-      providerLog.push('nemotron:no_key');
+    } else if (!article && OPENROUTER_KEY) {
+      providerLog.push('openrouter_nemotron:circuit_open');
+      console.log('Call 1: OpenRouter Nemotron circuit OPEN — skipping to SambaNova');
+    } else if (!article) {
+      providerLog.push('openrouter_nemotron:no_key');
     }
 
     // Primary (legacy)/Fallback 1: SambaNova DeepSeek-V3.2 (akun 2, Call 1 prose only)
@@ -1347,7 +1428,7 @@ ${xauHistoryBlock}`;
       const t1s = Date.now();
       try {
         console.log('Call 1: trying SambaNova DeepSeek-V3.2 (akun 2 prose)');
-        const raw = await aiCall(SAMBANOVA_URL_CALL1, SAMBANOVA_KEY_CALL1, SAMBANOVA_MODEL_CALL1, call1Messages, 1300, 0.25, 22000, {}, {}, 'sambanova_c1');
+        const raw = await aiCall(SAMBANOVA_URL_CALL1, SAMBANOVA_KEY_CALL1, SAMBANOVA_MODEL_CALL1, call1Messages, 1300, 0.25, 15000, {}, {}, 'sambanova_c1');
         const elapsed = Date.now() - t1s;
         if (raw.trim()) {
           article = raw.trim(); method = 'deepseek-v3.2';
@@ -1378,7 +1459,7 @@ ${xauHistoryBlock}`;
       const t2s = Date.now();
       try {
         console.log('Call 1: fallback 2 to OpenRouter gpt-oss-120b:free');
-        const raw = await aiCall(OPENROUTER_URL, OPENROUTER_KEY, OPENROUTER_MODEL, call1Messages, 1300, 0.25, 15000, OPENROUTER_HEADERS);
+        const raw = await aiCall(OPENROUTER_URL, OPENROUTER_KEY, OPENROUTER_MODEL, call1Messages, 1300, 0.25, 10000, OPENROUTER_HEADERS);
         const elapsed = Date.now() - t2s;
         if (raw.trim()) {
           article = raw.trim(); method = 'gpt-oss-120b';
@@ -1404,7 +1485,7 @@ ${xauHistoryBlock}`;
       const t3s = Date.now();
       try {
         console.log('Call 1: fallback 3 to Groq qwen3-32b');
-        const raw = await aiCall(GROQ_URL, GROQ_KEY, GROQ_MODEL_PROSE, call1Messages, 1300, 0.25, 15000);
+        const raw = await aiCall(GROQ_URL, GROQ_KEY, GROQ_MODEL_PROSE, call1Messages, 1300, 0.25, 8000);
         const elapsed = Date.now() - t3s;
         if (raw.trim()) {
           article = raw.trim(); method = 'qwen3-32b';
@@ -1627,12 +1708,14 @@ ${xauHistoryBlock}`;
       );
     }
 
-    // Try SambaNova, then Groq fallback
-    // session 145: Nemotron 3 Ultra (OpenRouter) primary, SambaNova/Groq tetap sebagai
-    // fallback existing. ?test_nemotron=1: array cuma berisi Nemotron — tier lain skip
+    // Try Nemotron (Ollama Cloud lalu OpenRouter), lalu SambaNova, lalu Groq fallback
+    // session 145 lanjutan: Ollama Cloud dicoba duluan untuk Nemotron 3 Ultra (OpenRouter
+    // terbukti 0/3 bersih di tes live sebelumnya). SambaNova/Groq tetap sebagai fallback
+    // existing. ?test_nemotron=1: array cuma berisi 2 sumber Nemotron — tier lain skip
     // total (bukan cuma "coba kalau Nemotron gagal") supaya hasil tes bersih.
     const call3Providers = [];
-    if (OPENROUTER_KEY) call3Providers.push({ url: OPENROUTER_URL, key: OPENROUTER_KEY, model: NEMOTRON_MODEL, label: 'Nemotron', timeout: 20000, provider: 'openrouter', circuit: CB_OPENROUTER_NEMOTRON, headers: OPENROUTER_HEADERS });
+    if (OLLAMA_KEY)     call3Providers.push({ ollama: true, key: OLLAMA_KEY, model: OLLAMA_NEMOTRON_MODEL, label: 'Ollama Nemotron', timeout: 15000, provider: 'ollama', circuit: CB_OLLAMA_NEMOTRON });
+    if (OPENROUTER_KEY) call3Providers.push({ url: OPENROUTER_URL, key: OPENROUTER_KEY, model: NEMOTRON_MODEL, label: 'OpenRouter Nemotron', timeout: 10000, provider: 'openrouter', circuit: CB_OPENROUTER_NEMOTRON, headers: OPENROUTER_HEADERS });
     if (!testNemotronOnly) {
       if (SAMBANOVA_KEY) call3Providers.push({ url: SAMBANOVA_URL, key: SAMBANOVA_KEY, model: SAMBANOVA_MODEL, label: 'SambaNova', timeout: 8000, provider: 'sambanova_main', circuit: CB_SAMBA_MAIN });
       if (GROQ_KEY)      call3Providers.push({ url: GROQ_URL,      key: GROQ_KEY,      model: GROQ_MODEL,      label: 'Groq fallback', timeout: 12000, provider: 'groq', circuit: null });
@@ -1647,7 +1730,9 @@ ${xauHistoryBlock}`;
       }
       try {
         console.log('Call 3: trying', provider.label);
-        const raw = await aiCall(provider.url, provider.key, provider.model, call3Messages, 800, 0.1, provider.timeout, provider.headers || {}, {}, provider.provider);
+        const raw = provider.ollama
+          ? await callOllama(provider.key, provider.model, call3Messages, 800, 0.1, provider.timeout, provider.provider)
+          : await aiCall(provider.url, provider.key, provider.model, call3Messages, 800, 0.1, provider.timeout, provider.headers || {}, {}, provider.provider);
         const clean = raw.replace(/```json|```/g, '').trim();
         const parsed = JSON.parse(clean);
         if (validateThesis(parsed)) {
@@ -1833,3 +1918,7 @@ module.exports.NEMOTRON_MODEL = NEMOTRON_MODEL;
 module.exports.CB_OPENROUTER_NEMOTRON = CB_OPENROUTER_NEMOTRON;
 module.exports.OPENROUTER_URL = OPENROUTER_URL;
 module.exports.OPENROUTER_HEADERS = OPENROUTER_HEADERS;
+module.exports.callOllama = callOllama;
+module.exports.OLLAMA_URL = OLLAMA_URL;
+module.exports.OLLAMA_NEMOTRON_MODEL = OLLAMA_NEMOTRON_MODEL;
+module.exports.CB_OLLAMA_NEMOTRON = CB_OLLAMA_NEMOTRON;
