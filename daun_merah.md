@@ -1,9 +1,30 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-07-06 (session 144 — evaluasi & upgrade konteks AI Ringkasan + Analisa: entry berbasis struktur harga)
+> **Last updated:** 2026-07-06 (session 144 lanjutan — integrasi Ringkasan↔Analisa: fundamental terstruktur + excerpt per-pair + umur konteks + makro_alignment)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
+
+---
+
+## Changelog Session 144 lanjutan (2026-07-06) — Integrasi Ringkasan (Fundamental/Konteks) ↔ Analisa (Teknikal)
+
+**Request user:** evaluasi integrasi antara fitur Ringkasan dan Analisa, lalu "kerjakan semuanya" (5 rekomendasi hasil evaluasi).
+
+**Temuan evaluasi:** integrasi ada tapi timpang — arah teknikal→Ringkasan sudah sehat (price action multi-TF + anchor 6M), tapi arah fundamental→Analisa cuma kutipan prosa 700 char yang (1) pair-blind untuk FX (selalu "3 paragraf pertama" apapun pair-nya), (2) turunan artikel, bukan data terstruktur yang sudah ada di Redis (cb_bias, COT, risk regime tidak pernah sampai ke Analisa), (3) tanpa penanda umur padahal digest cuma 3x/hari, (4) fallback server hanya GC=F, (5) konflik makro-vs-teknikal cuma di prosa, tidak terstruktur.
+
+**Implementasi (5 poin):**
+1. **Blok FUNDAMENTAL TERSTRUKTUR di prompt Analisa** (`_formatFundamentalBlock`, pure): server baca langsung `cb_bias` (bias CB + confidence + umur, dirawat Call 2 digest), `cot_cache_v2` (COT leveraged net + perubahan w/w kedua leg; USD = Dollar Index), `risk_regime` (VIX/MOVE) — bukan turunan prosa. XAU dapat catatan khusus "pakai bias Fed + risk regime sebagai proxy". Best-effort: cache kosong = blok dilewati.
+2. **Excerpt tertarget per pair** (`_extractRingkasanExcerpt` server + mirror `_extractRingkasanExcerptJs` client di index.html — ada unit test yang memastikan keduanya identik): bagian FX dipecah per marker `{{TAG: NAMA}}` yang memang sudah disisipkan AI digest → ambil jangkar (tema utama) + segmen yang tag-nya menyebut salah satu leg pair + blok Konfirmasi. Tag gabungan ("JPY/CHF") match per-leg. Artikel tanpa tag → fallback perilaku lama (3 paragraf). Cap 900 char (tertarget = minim noise; 700 tetap untuk XAU & fallback).
+3. **Umur konteks makro:** client kirim `ringkasanGeneratedAt` (dari `ringkasanCache.generated_at`); header prompt jadi "KONTEKS MAKRO (dari Ringkasan X jam lalu)" + peringatan eksplisit kalau >4 jam ("beri bobot lebih rendah kalau ada rilis besar setelahnya"). Umur juga tampil di label hasil UI: "teknikal + makro (3.2j lalu) + fundamental".
+4. **Field `makro_alignment` di kontrak JSON** (searah/konflik/netral + `makro_alignment_reason` satu kalimat) — padanan verdict "dasar bertumpu" SIMULASI. Normalisasi server: canon 3 nilai (+ alias EN), dipaksa null kalau blok makro & fundamental dua-duanya memang tidak dikirim (AI tidak boleh mengaku menilai dari data yang tidak ada). UI: chip outline ✓ MAKRO SEARAH (hijau) / ⚠ MAKRO KONFLIK (oranye) / – MAKRO NETRAL (muted) di samping badge bias + baris alasan (di-escape).
+5. **Fallback server `latest_article` untuk SEMUA pair** (dulu GC=F saja): user yang belum pernah buka tab Ringkasan tetap dapat konteks makro selama key-nya hidup; `hasMakro` di frontend sekarang dibaca dari response server (bukan `!!ringkasanContext` lokal) karena makro bisa disuplai server-side. Response baru: `hasFund`, `makro_generated_at`.
+
+**Hardening kecil:** `ringkasanContext` dari body request (input publik) di-cap server-side (non-string → null, >1200 char dipotong) supaya tidak bisa dipakai menggelembungkan prompt AI.
+
+**Kompatibilitas:** client lama→server baru (tanpa generatedAt → header polos), server lama→client baru (tanpa hasFund → badge fundamental tidak tampil), payload cached pra-deploy tanpa field baru → renderer aman (diverifikasi smoke test).
+
+**Verifikasi:** 56 unit test lulus (9 baru di `test/makro_ctx.test.js`: ekstraksi XAU/EUR/USD-JPY/no-tag/no-match/cap + mirror client-server identik + fund block lengkap/XAU/parsial/kosong) + smoke test render frontend via ekstraksi fungsi (badge umur makro, 3 nilai alignment, payload lama, XSS guard reason & entry_basis) + `node --check`. Path AI live tidak bisa diuji lokal (butuh Redis + API key produksi) — konsisten sesi sebelumnya.
 
 ---
 

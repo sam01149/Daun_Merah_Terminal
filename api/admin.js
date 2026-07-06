@@ -1989,6 +1989,86 @@ function _pickExpiryLevels(expiries, pairLabel, nowPrice) {
   return rows.slice(0, 6);
 }
 
+// Ekstrak konteks makro dari artikel Ringkasan untuk pair tertentu (pure — dites unit).
+// XAU: blok "XAUUSD:" (memang self-contained). Pair FX: bagian FX dipecah per marker
+// {{TAG: NAMA}} yang disisipkan AI digest — ambil jangkar (teks sebelum tag pertama,
+// tema utama hari itu) + segmen yang tag-nya menyebut salah satu leg pair + blok
+// Konfirmasi (penutup currency kuat/lemah). Dulu excerpt FX = "3 paragraf pertama"
+// apapun pair-nya — analisa NZD/USD bisa dapat konteks yang isinya melulu EUR/JPY.
+// Artikel tanpa tag (model lama non-compliant) → fallback perilaku lama.
+function _extractRingkasanExcerpt(article, label, isXau) {
+  if (!article || typeof article !== 'string') return null;
+  const cap = (s, n) => { s = s.trim(); return s.length > n ? s.slice(0, n - 3) + '...' : s; };
+  if (isXau) {
+    const clean = article.replace(/\{\{TAG:[^}]*\}\}/g, '').trim();
+    const xauIdx = clean.search(/\bXAUUSD:/);
+    const excerpt = xauIdx !== -1 ? clean.slice(xauIdx) : clean.split(/\n\n+/).slice(0, 3).join('\n\n');
+    return excerpt ? cap(excerpt, 700) : null;
+  }
+  const xauIdx = article.search(/\bXAUUSD:/);
+  const fxPart = (xauIdx !== -1 ? article.slice(0, xauIdx) : article).trim();
+  if (!fxPart) return null;
+  const parts = fxPart.split(/\{\{TAG:\s*([^}]+)\}\}\s*/);
+  if (parts.length === 1) {
+    return cap(fxPart.split(/\n\n+/).slice(0, 3).join('\n\n'), 700);
+  }
+  const legs = String(label || '').toUpperCase().split('/').map(s => s.trim()).filter(Boolean);
+  const picked = [];
+  if (parts[0].trim()) picked.push(parts[0].trim()); // jangkar tema utama — selalu ikut
+  for (let i = 1; i < parts.length; i += 2) {
+    const tag  = (parts[i] || '').toUpperCase();
+    const text = (parts[i + 1] || '').trim();
+    if (!text) continue;
+    if (tag.includes('KONFIRMASI') || legs.some(leg => tag.includes(leg))) picked.push(text);
+  }
+  if (picked.length === 0) {
+    return cap(fxPart.replace(/\{\{TAG:[^}]*\}\}/g, ' ').trim().split(/\n\n+/).slice(0, 3).join('\n\n'), 700);
+  }
+  // Cap 900 (bukan 700): excerpt tertarget sudah minim noise, sedikit lebih longgar
+  // supaya blok Konfirmasi di ekor tidak terpotong.
+  return cap(picked.join('\n\n'), 900);
+}
+
+// Format blok fundamental terstruktur per pair untuk prompt Analisa (pure — dites unit).
+// Sumber: cb_bias (dirawat Call 2 digest), cot_cache_v2 (CFTC; USD = Dollar Index),
+// risk_regime — data langsung dari cache server, BUKAN turunan prosa artikel, jadi
+// Analisa tetap dapat fundamental kedua leg meski artikel hari itu tidak membahasnya.
+function _formatFundamentalBlock({ label, isXau, cbBias, cot, risk, nowMs }) {
+  const legs = String(label || '').toUpperCase().split('/').map(s => s.trim()).filter(Boolean);
+  if (legs.length === 0) return '';
+  const ageH = iso => {
+    if (!iso) return null;
+    const ms = nowMs - new Date(iso).getTime();
+    return (isNaN(ms) || ms < 0) ? null : Math.round(ms / 3600000);
+  };
+  const lines = [];
+  for (const leg of legs) {
+    const parts = [];
+    const cb = cbBias?.[leg];
+    if (cb?.bias) {
+      const a = ageH(cb.updated_at);
+      parts.push(`bias CB ${cb.bias}${cb.confidence ? ` (confidence ${cb.confidence}${a != null ? `, update ${a}j lalu` : ''})` : ''}`);
+    }
+    const cp = cot?.positions?.[leg];
+    if (cp && typeof cp.lev_net === 'number') {
+      const k = n => `${n >= 0 ? '+' : ''}${(n / 1000).toFixed(1)}K`;
+      parts.push(`COT leveraged net ${k(cp.lev_net)}${typeof cp.lev_change_net === 'number' ? ` (${k(cp.lev_change_net)} w/w)` : ''}`);
+    }
+    if (parts.length > 0) lines.push(`${leg}: ${parts.join(' | ')}`);
+  }
+  if (risk?.regime) {
+    const parts = [`Regime: ${String(risk.regime).toUpperCase()}`];
+    if (risk.vix != null)  parts.push(`VIX ${risk.vix}${risk.vix_change_2d != null ? ` (${risk.vix_change_2d >= 0 ? '+' : ''}${risk.vix_change_2d} 2d)` : ''}`);
+    if (risk.move != null) parts.push(`MOVE ${risk.move}`);
+    lines.push(`RISK REGIME: ${parts.join(' | ')}`);
+  }
+  if (lines.length === 0) return '';
+  const note = isXau
+    ? 'catatan: XAU tidak punya bank sentral — pakai bias Fed (USD) + risk regime sebagai proxy arah dolar/haven'
+    : 'gunakan untuk menilai apakah setup teknikal searah atau melawan fundamental kedua leg';
+  return `FUNDAMENTAL TERSTRUKTUR (cache server, bukan dari artikel — ${note}):\n${lines.join('\n')}`;
+}
+
 async function ohlcvAnalyzeHandler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Cache-Control', 'no-cache');
@@ -2011,23 +2091,35 @@ async function ohlcvAnalyzeHandler(req, res) {
     }
   }
 
+  // Input klien di-cap defensif: excerpt resmi max 900 char (lihat _extractRingkasanExcerpt) —
+  // body adalah input publik, jangan biarkan string raksasa menggelembungkan prompt AI.
   let ringkasanContext = req.body?.ringkasanContext || null;
+  if (typeof ringkasanContext !== 'string' || !ringkasanContext.trim()) ringkasanContext = null;
+  else if (ringkasanContext.length > 1200) ringkasanContext = ringkasanContext.slice(0, 1197) + '...';
+  let ringkasanAt      = req.body?.ringkasanGeneratedAt || null;
   const clientOhlcv    = req.body?.ohlcvData       || null;
 
-  // Cron-triggered calls have no browser to extract the "XAUUSD:" excerpt from the
-  // Ringkasan article the way analyzeOhlcvAi() does client-side (index.html) — mirror
-  // that extraction here so the auto-generated session analysis still gets macro
-  // framing instead of technical-only.
-  if (!ringkasanContext && symbol === 'GC=F') {
+  // Fallback server-side untuk SEMUA pair (dulu GC=F saja): cron tidak punya browser,
+  // dan user yang belum pernah buka tab Ringkasan tetap dapat konteks makro selama
+  // latest_article masih hidup di Redis. Ekstraksi per-pair via _extractRingkasanExcerpt
+  // (logic yang sama dengan client di index.html).
+  if (!ringkasanContext) {
     try {
       const rawArticle = await redisCmd('GET', 'latest_article');
       if (rawArticle) {
-        const art = (JSON.parse(rawArticle).article || '').replace(/\{\{TAG:[^}]*\}\}/g, '').trim();
-        const xauIdx = art.search(/\bXAUUSD:/);
-        const excerpt = xauIdx !== -1 ? art.slice(xauIdx) : art.split(/\n\n+/).slice(0, 3).join('\n\n');
-        if (excerpt) ringkasanContext = excerpt.length > 700 ? excerpt.slice(0, 697) + '...' : excerpt;
+        const artObj = JSON.parse(rawArticle);
+        ringkasanContext = _extractRingkasanExcerpt(artObj.article || '', label || symbol, symbol === 'GC=F');
+        if (ringkasanContext) ringkasanAt = artObj.generated_at || null;
       }
     } catch(e) { /* opsional — analisa tetap jalan tanpa konteks makro */ }
+  }
+
+  // Umur ringkasan: digest jalan ~3x/hari, excerpt bisa berjam-jam basi — tanpa
+  // penanda umur AI menimbang narasi pre-rilis seolah kondisi sekarang.
+  let makroAgeH = null;
+  if (ringkasanContext && ringkasanAt) {
+    const ms = Date.now() - new Date(ringkasanAt).getTime();
+    if (!isNaN(ms) && ms >= 0) makroAgeH = Math.round(ms / 3600000 * 10) / 10;
   }
 
   try {
@@ -2060,9 +2152,32 @@ async function ohlcvAnalyzeHandler(req, res) {
       }
     } catch (e) { /* opsional — jangan gagalkan analisa kalau cache options kosong */ }
 
-    const makroBlock = ringkasanContext
-      ? `KONTEKS MAKRO:\n${ringkasanContext}\n\nDATA TEKNIKAL:\n${textBlock}${expiryBlock}`
-      : `${textBlock}${expiryBlock}`;
+    // Blok fundamental terstruktur per pair — langsung dari cache Redis (cb_bias, COT,
+    // risk regime), bukan turunan artikel. Best-effort: gagal baca = blok kosong.
+    let fundBlock = '';
+    try {
+      const [rawBias, rawCot, rawRisk] = await Promise.all([
+        redisCmd('GET', 'cb_bias'),
+        redisCmd('GET', 'cot_cache_v2'),
+        redisCmd('GET', 'risk_regime'),
+      ]);
+      fundBlock = _formatFundamentalBlock({
+        label: data.label, isXau: data.is_xau,
+        cbBias: rawBias ? JSON.parse(rawBias) : null,
+        cot:    rawCot  ? JSON.parse(rawCot)  : null,
+        risk:   rawRisk ? JSON.parse(rawRisk) : null,
+        nowMs:  Date.now(),
+      });
+    } catch (e) { /* opsional — jangan gagalkan analisa kalau cache fundamental kosong */ }
+
+    const makroHeader = makroAgeH != null
+      ? `KONTEKS MAKRO (dari Ringkasan ${makroAgeH} jam lalu${makroAgeH > 4 ? ' — SUDAH AGAK BASI: kalau ada rilis/berita besar setelah itu, beri bobot lebih rendah dan sebut ketidakpastiannya' : ''}):`
+      : 'KONTEKS MAKRO:';
+    const ctxParts = [];
+    if (ringkasanContext) ctxParts.push(`${makroHeader}\n${ringkasanContext}`);
+    if (fundBlock)        ctxParts.push(fundBlock);
+    ctxParts.push(`DATA TEKNIKAL:\n${textBlock}${expiryBlock}`);
+    const makroBlock = ctxParts.join('\n\n');
 
     const extraCtx = [
       data.is_xau            ? 'volume XAU' : null,
@@ -2075,10 +2190,11 @@ async function ohlcvAnalyzeHandler(req, res) {
       data.patterns?.available   ? 'pola candle' : null,
       expiryBlock            ? 'option expiry' : null,
       ringkasanContext       ? 'konteks makro' : null,
+      fundBlock              ? 'fundamental terstruktur' : null,
     ].filter(Boolean).join(' + ');
 
-    const p4Macro = ringkasanContext
-      ? ' — kalau KONTEKS MAKRO berlawanan jelas dengan struktur teknikal (misal makro risk-off tapi teknikal breakout bullish), sebut konflik itu eksplisit dan turunkan keyakinan setup, jangan diam-diam diabaikan'
+    const p4Macro = (ringkasanContext || fundBlock)
+      ? ' — kalau KONTEKS MAKRO / FUNDAMENTAL TERSTRUKTUR berlawanan jelas dengan struktur teknikal (misal makro risk-off tapi teknikal breakout bullish), sebut konflik itu eksplisit dan turunkan keyakinan setup, jangan diam-diam diabaikan; kesimpulanmu di sini harus konsisten dengan field makro_alignment'
       : '';
     const p3Atr = extraCtx?.includes('ATR') ? ', volatilitas berdasarkan ATR' : '';
     const p4Label = extraCtx ? `(${extraCtx})` : 'timeframe';
@@ -2096,6 +2212,8 @@ async function ohlcvAnalyzeHandler(req, res) {
       '- trigger: SATU kondisi price action spesifik yang HARUS terpenuhi sebelum entry — utamakan konfirmasi berbasis candle/pola di level konkret (misal "tunggu candle H4 close di bawah 1.1710" atau "tunggu rejection/pin bar H1 di area 3340") daripada indikator murni. Jangan sebut dua kondisi alternatif yang saling kontradiksi relatif ke Now. Manfaatkan [POLA CANDLE terdeteksi] kalau relevan.',
       '- invalidation_condition: kondisi spesifik yang membatalkan skenario ini sepenuhnya (beda dari sl — ini soal struktur/tesis, misal "kalau Daily close balik di bawah SMA50 atau swing low H4 terakhir jebol, bias bullish batal")',
       '- time_horizon_days: estimasi jumlah hari realistis skenario ini main out (angka, misal 3, 5, 10) berdasarkan jarak entry-tp dibanding rata-rata gerak harian (ATR/sigma) yang ada di data',
+      '- makro_alignment: "searah" kalau KONTEKS MAKRO / FUNDAMENTAL TERSTRUKTUR mendukung arah bias teknikalmu, "konflik" kalau berlawanan, "netral" kalau sinyal makro tidak jelas/campuran. Kalau blok makro dan fundamental dua-duanya tidak tersedia di atas, isi null.',
+      '- makro_alignment_reason: SATU kalimat pendek alasannya dengan menyebut data spesifik (misal "bias Fed Dovish + COT USD net short searah dengan bias bearish USD/JPY"). Null kalau makro_alignment null.',
       '',
       'Setelah objek JSON, di baris baru tulis PERSIS "===COMMENTARY===" lalu tulis commentary sebagai teks biasa (BUKAN di dalam JSON): analisa naratif mendalam 4-5 paragraf, pisah tiap paragraf dengan baris baru.',
       `Paragraf 1 — bias & posisi makro harga: arah trend Daily dengan alasan konkret (perubahan %, close vs open, posisi dalam range 6 bulan dari [KONTEKS 6 BULAN] — dekat puncak/lembah/tengah).`,
@@ -2109,7 +2227,7 @@ async function ohlcvAnalyzeHandler(req, res) {
     // — prosa panjang 4-5 paragraf sebagai string JSON rawan gagal JSON.parse (kutip/newline
     // tak ter-escape), yang dulu bikin structured null dan bias/entry/sl/tp hilang total.
     const messages = [
-      { role: 'system', content: 'Kamu analis senior teknikal dan makro. WAJIB jawab dalam DUA bagian persis seperti diminta: (1) SATU objek JSON valid tanpa markdown fence berisi HANYA field {"bias":"...","entry_zone":"...","entry_basis":"...","sl":"...","tp":"...","trigger":"...","invalidation_condition":"...","time_horizon_days":0} — JANGAN sertakan field commentary di JSON ini; (2) setelah JSON, baris berisi PERSIS "===COMMENTARY===", lalu teks commentary biasa (bukan JSON, bebas tanda kutip/baris baru). Bahasa Indonesia.' },
+      { role: 'system', content: 'Kamu analis senior teknikal dan makro. WAJIB jawab dalam DUA bagian persis seperti diminta: (1) SATU objek JSON valid tanpa markdown fence berisi HANYA field {"bias":"...","entry_zone":"...","entry_basis":"...","sl":"...","tp":"...","trigger":"...","invalidation_condition":"...","time_horizon_days":0,"makro_alignment":"...","makro_alignment_reason":"..."} — JANGAN sertakan field commentary di JSON ini; (2) setelah JSON, baris berisi PERSIS "===COMMENTARY===", lalu teks commentary biasa (bukan JSON, bebas tanda kutip/baris baru). Bahasa Indonesia.' },
       { role: 'user',   content: userMsg },
     ];
 
@@ -2210,12 +2328,31 @@ async function ohlcvAnalyzeHandler(req, res) {
         if (typeof structured.entry_basis !== 'string' || !structured.entry_basis.trim() || !structured.entry_zone) {
           structured.entry_basis = null;
         }
+        // Normalisasi makro_alignment: badge UI hanya kenal 3 nilai; paksa null kalau
+        // memang tidak ada sumber makro/fundamental di prompt (model tidak boleh mengaku
+        // menilai alignment dari data yang tidak dikirim).
+        const ALIGN_CANON = new Map([
+          ['searah', 'searah'], ['aligned', 'searah'],
+          ['konflik', 'konflik'], ['conflict', 'konflik'], ['conflicting', 'konflik'],
+          ['netral', 'netral'], ['neutral', 'netral'],
+        ]);
+        const alignRaw = String(structured.makro_alignment || '').toLowerCase().replace(/[^a-z]/g, '');
+        structured.makro_alignment = (ringkasanContext || fundBlock) ? (ALIGN_CANON.get(alignRaw) || null) : null;
+        structured.makro_alignment_reason = (structured.makro_alignment && typeof structured.makro_alignment_reason === 'string' && structured.makro_alignment_reason.trim())
+          ? structured.makro_alignment_reason.trim()
+          : null;
       } catch(e) {
         // Keep rawText as commentary, structured stays null
       }
     }
 
-    const resultPayload = { commentary, structured, model, hasMakro: !!ringkasanContext, loaded_at: new Date().toISOString() };
+    const resultPayload = {
+      commentary, structured, model,
+      hasMakro: !!ringkasanContext,
+      hasFund:  !!fundBlock,
+      makro_generated_at: (ringkasanContext && ringkasanAt) ? ringkasanAt : null,
+      loaded_at: new Date().toISOString(),
+    };
     if (commentary || structured) {
       redisCmd('SET', `ohlcv_analysis:${symbol}`, JSON.stringify(resultPayload), 'EX', 21600).catch(() => {});
     }
@@ -2389,3 +2526,5 @@ module.exports._rsi14 = _rsi14;
 module.exports.buildOhlcvText = buildOhlcvText;
 module.exports.computeOhlcvMetrics = computeOhlcvMetrics;
 module.exports.resampleTo4h = resampleTo4h;
+module.exports._extractRingkasanExcerpt = _extractRingkasanExcerpt;
+module.exports._formatFundamentalBlock = _formatFundamentalBlock;

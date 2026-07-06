@@ -4568,14 +4568,24 @@ async function _autoLoadXauAnalysis(symbol) {
     const data = await res.json();
     if (!data.cached || (!data.commentary && !data.structured)) return;
     if (analisaAiCache[symbol]) return; // user already ran a manual analyze while this was in flight
-    analisaAiCache[symbol] = { commentary: data.commentary, structured: data.structured || null, model: data.model, hasMakro: !!data.hasMakro, saved_at: Date.now() };
+    analisaAiCache[symbol] = { commentary: data.commentary, structured: data.structured || null, model: data.model, hasMakro: !!data.hasMakro, hasFund: !!data.hasFund, makroAt: data.makro_generated_at || null, saved_at: Date.now() };
     _analisaSaveAi(symbol);
     if (analisaActive.symbol === symbol) _restoreAiResult(symbol);
   } catch(e) { /* silent — tombol "Analisa AI" manual tetap tersedia */ }
 }
 
-function _renderStructuredAi(structured, commentary, model, hasMakro, isCached) {
-  const srcTag     = hasMakro ? ' · <span style="color:#a78bfa">teknikal + makro</span>' : ' · teknikal';
+function _renderStructuredAi(structured, commentary, model, hasMakro, isCached, hasFund, makroAt) {
+  // Label sumber: teknikal selalu; + makro (dengan umur ringkasan) kalau excerpt artikel
+  // terpakai; + fundamental kalau blok terstruktur (cb_bias/COT/risk regime) terpakai.
+  let makroLbl = 'makro';
+  if (makroAt) {
+    const ageH = (Date.now() - new Date(makroAt).getTime()) / 3600000;
+    if (!isNaN(ageH) && ageH >= 0) makroLbl = `makro (${ageH < 1 ? '<1' : Math.round(ageH * 10) / 10}j lalu)`;
+  }
+  const sources = ['teknikal'];
+  if (hasMakro) sources.push(makroLbl);
+  if (hasFund)  sources.push('fundamental');
+  const srcTag = sources.length > 1 ? ` · <span style="color:#a78bfa">${sources.join(' + ')}</span>` : ' · teknikal';
   const cachedBadge = isCached ? ' <span style="color:var(--muted);font-size:10px">(cached)</span>' : '';
   const modelStr   = model ? ` · ${model}` : '';
   let html = `<div class="analisa-ai-result"><div class="analisa-ai-label">🧠 AI${modelStr}${srcTag}${cachedBadge}</div>`;
@@ -4584,10 +4594,23 @@ function _renderStructuredAi(structured, commentary, model, hasMakro, isCached) 
     const bias      = (structured.bias || 'neutral').toLowerCase();
     const biasColor = bias === 'bullish' ? 'var(--green)' : bias === 'bearish' ? 'var(--red)' : bias === 'mixed' ? '#f5a623' : 'var(--muted)';
     const biasLabel = bias === 'bullish' ? '▲ BULLISH' : bias === 'bearish' ? '▼ BEARISH' : bias === 'mixed' ? '⟷ MIXED' : '→ NEUTRAL';
+    // Badge alignment makro-vs-teknikal (outline, beda dari badge bias yang solid) —
+    // padanan verdict "dasar bertumpu" di SIMULASI: searah/konflik/netral.
+    let alignChip = '';
+    if (structured.makro_alignment) {
+      const a = structured.makro_alignment;
+      const ac = a === 'searah' ? 'var(--green)' : a === 'konflik' ? '#f5a623' : 'var(--muted)';
+      const al = a === 'searah' ? '✓ MAKRO SEARAH' : a === 'konflik' ? '⚠ MAKRO KONFLIK' : '– MAKRO NETRAL';
+      alignChip = `<span title="${escHtml(structured.makro_alignment_reason || '')}" style="border:1px solid ${ac};color:${ac};font-size:10px;font-weight:700;padding:2px 9px;border-radius:3px;font-family:'DM Mono',monospace;letter-spacing:.06em;flex-shrink:0">${al}</span>`;
+    }
     html += `<div style="display:flex;align-items:flex-start;gap:10px;margin:8px 0 10px;flex-wrap:wrap">
       <span style="background:${biasColor};color:#0a0f1a;font-size:10px;font-weight:700;padding:3px 10px;border-radius:3px;font-family:'DM Mono',monospace;letter-spacing:.06em;flex-shrink:0">${biasLabel}</span>
+      ${alignChip}
       ${structured.trigger ? `<span style="font-size:11px;color:var(--fg);flex:1;min-width:160px;line-height:1.5">${escHtml(structured.trigger)}</span>` : ''}
     </div>`;
+    if (structured.makro_alignment_reason) {
+      html += `<div style="margin:-4px 0 10px;font-size:10.5px;color:var(--muted);line-height:1.5"><span style="color:var(--fg)">MAKRO </span>${escHtml(structured.makro_alignment_reason)}</div>`;
+    }
     if (structured.entry_zone || structured.sl || structured.tp) {
       html += `<div style="display:flex;gap:16px;margin-bottom:10px;font-family:'DM Mono',monospace;font-size:11px;flex-wrap:wrap">
         ${structured.entry_zone ? `<span><span style="color:var(--muted)">ENTRY </span>${escHtml(structured.entry_zone)}</span>` : ''}
@@ -4617,7 +4640,7 @@ function _restoreAiResult(symbol) {
   const cached = analisaAiCache[symbol];
   if (!cached) return;
   const resultEl = document.getElementById('analisaAiResult');
-  resultEl.innerHTML = _renderStructuredAi(cached.structured || null, cached.commentary, cached.model, !!cached.hasMakro, true);
+  resultEl.innerHTML = _renderStructuredAi(cached.structured || null, cached.commentary, cached.model, !!cached.hasMakro, true, !!cached.hasFund, cached.makroAt || null);
   resultEl.style.display = 'block';
 }
 
@@ -4777,6 +4800,39 @@ function renderAnalisa() {
   }
 }
 
+// Ekstrak konteks makro dari artikel Ringkasan untuk pair tertentu — mirror dari
+// _extractRingkasanExcerpt di api/admin.js (server pakai logic yang sama untuk
+// fallback cron/latest_article; kalau ubah di sini, ubah juga di sana).
+// XAU: blok "XAUUSD:". Pair FX: jangkar (sebelum tag pertama) + segmen {{TAG}} yang
+// menyebut salah satu leg pair + blok Konfirmasi — bukan lagi "3 paragraf pertama"
+// yang bisa sama sekali tidak menyinggung pair yang dianalisa.
+function _extractRingkasanExcerptJs(article, label, isXau) {
+  if (!article || typeof article !== 'string') return null;
+  const cap = (s, n) => { s = s.trim(); return s.length > n ? s.slice(0, n - 3) + '...' : s; };
+  if (isXau) {
+    const clean = article.replace(/\{\{TAG:[^}]*\}\}/g, '').trim();
+    const xauIdx = clean.search(/\bXAUUSD:/);
+    const excerpt = xauIdx !== -1 ? clean.slice(xauIdx) : clean.split(/\n\n+/).slice(0, 3).join('\n\n');
+    return excerpt ? cap(excerpt, 700) : null;
+  }
+  const xauIdx = article.search(/\bXAUUSD:/);
+  const fxPart = (xauIdx !== -1 ? article.slice(0, xauIdx) : article).trim();
+  if (!fxPart) return null;
+  const parts = fxPart.split(/\{\{TAG:\s*([^}]+)\}\}\s*/);
+  if (parts.length === 1) return cap(fxPart.split(/\n\n+/).slice(0, 3).join('\n\n'), 700);
+  const legs = String(label || '').toUpperCase().split('/').map(s => s.trim()).filter(Boolean);
+  const picked = [];
+  if (parts[0].trim()) picked.push(parts[0].trim()); // jangkar tema utama — selalu ikut
+  for (let i = 1; i < parts.length; i += 2) {
+    const tag  = (parts[i] || '').toUpperCase();
+    const text = (parts[i + 1] || '').trim();
+    if (!text) continue;
+    if (tag.includes('KONFIRMASI') || legs.some(leg => tag.includes(leg))) picked.push(text);
+  }
+  if (picked.length === 0) return cap(fxPart.replace(/\{\{TAG:[^}]*\}\}/g, ' ').trim().split(/\n\n+/).slice(0, 3).join('\n\n'), 700);
+  return cap(picked.join('\n\n'), 900);
+}
+
 async function analyzeOhlcvAi() {
   const { symbol, label } = analisaActive;
   if (!symbol) return;
@@ -4788,23 +4844,12 @@ async function analyzeOhlcvAi() {
   resultEl.style.display = 'none';
   const reqSymbol = symbol;
 
-  // Extract macro context from Ringkasan cache
-  // XAU/USD: extract the XAUUSD: block specifically (it appears after FX section)
-  // Other pairs: use first 3 paragraphs (FX section)
-  let ringkasanContext = null;
-  if (ringkasanCache?.article) {
-    const art = ringkasanCache.article.replace(/\{\{TAG:[^}]*\}\}/g, '').trim();
-    let excerpt;
-    if (symbol === 'GC=F') {
-      const xauIdx = art.search(/\bXAUUSD:/);
-      excerpt = xauIdx !== -1 ? art.slice(xauIdx) : art.split(/\n\n+/).slice(0, 3).join('\n\n');
-    } else {
-      const xauIdx = art.search(/\bXAUUSD:/);
-      const fxPart = xauIdx !== -1 ? art.slice(0, xauIdx) : art;
-      excerpt = fxPart.split(/\n\n+/).slice(0, 3).join('\n\n');
-    }
-    ringkasanContext = excerpt.length > 700 ? excerpt.slice(0, 697) + '...' : excerpt;
-  }
+  const ringkasanContext = ringkasanCache?.article
+    ? _extractRingkasanExcerptJs(ringkasanCache.article, label, symbol === 'GC=F')
+    : null;
+  // Umur ringkasan ikut dikirim — server menyisipkan "dibuat X jam lalu" ke prompt
+  // supaya AI tidak menimbang narasi basi seolah kondisi sekarang.
+  const ringkasanGeneratedAt = ringkasanContext ? (ringkasanCache?.generated_at || null) : null;
 
   // Send cached ohlcv data as fallback so backend can analyze even if Redis expired
   const ohlcvData = analisaDataCache[symbol] || null;
@@ -4813,15 +4858,20 @@ async function analyzeOhlcvAi() {
     const res  = await fetch(`/api/admin?action=ohlcv_analyze`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ symbol, label, ringkasanContext, ohlcvData }),
+      body: JSON.stringify({ symbol, label, ringkasanContext, ringkasanGeneratedAt, ohlcvData }),
     });
     const data = await res.json();
     if (data.commentary || data.structured) {
-      const hasMakro = !!ringkasanContext;
-      analisaAiCache[reqSymbol] = { commentary: data.commentary, structured: data.structured || null, model: data.model, hasMakro, saved_at: Date.now() };
+      // hasMakro dari response server (bukan !!ringkasanContext): server sekarang punya
+      // fallback latest_article untuk semua pair, jadi makro bisa terpakai walau client
+      // tidak mengirim apa-apa. Fallback ke !!ringkasanContext untuk server lama.
+      const hasMakro = data.hasMakro != null ? !!data.hasMakro : !!ringkasanContext;
+      const hasFund  = !!data.hasFund;
+      const makroAt  = data.makro_generated_at || (hasMakro ? ringkasanGeneratedAt : null);
+      analisaAiCache[reqSymbol] = { commentary: data.commentary, structured: data.structured || null, model: data.model, hasMakro, hasFund, makroAt, saved_at: Date.now() };
       _analisaSaveAi(reqSymbol);
       if (analisaActive.symbol === reqSymbol) {
-        resultEl.innerHTML = _renderStructuredAi(data.structured || null, data.commentary, data.model, hasMakro, false);
+        resultEl.innerHTML = _renderStructuredAi(data.structured || null, data.commentary, data.model, hasMakro, false, hasFund, makroAt);
         resultEl.style.display = 'block';
       }
     } else {
