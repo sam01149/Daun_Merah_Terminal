@@ -758,17 +758,29 @@ const GROQ_MODEL_FUND = 'llama-3.3-70b-versatile';
 // lanjutan 5): API-nya BUKAN format OpenAI (/api/chat, bukan /v1/chat/completions),
 // jadi tidak bisa dipakai langsung lewat pola fetch yang sama dengan provider lain —
 // lihat _callOllama() untuk parsing response-nya.
+//
+// Model dipilih GLM-5.2 (bukan DeepSeek-V3.2 yang sudah ada via SambaNova) — eksperimen
+// user, bukan redundansi model yang sama. GLM-5.2 punya mode "thinking" yang defaultnya
+// effort MAX (reasoning terdalam, paling lambat) kalau thinking dinyalakan — kita kirim
+// think:'high' (bukan 'max') supaya tetap dapat reasoning tapi lebih cepat, penting
+// karena timeout kita cuma 15s (lihat budget waktu di ohlcvAnalyzeHandler). Belum ada
+// data latency real untuk kombinasi ini — kalau sering timeout, kandidat berikutnya
+// adalah think:false (nonaktifkan reasoning sama sekali) atau naikkan timeout dengan
+// konsekuensi pangkas provider lain.
 const OLLAMA_URL   = 'https://ollama.com/api/chat';
-const OLLAMA_MODEL = 'deepseek-v3.2:cloud'; // model sama dengan SambaNova, jalur akses beda (redundansi)
+const OLLAMA_MODEL = 'glm-5.2:cloud';
 
 // Panggil Ollama Cloud, kembalikan teks jawaban (message.content) atau null kalau gagal/kosong.
 // Melempar error kalau HTTP non-OK atau response kosong, konsisten dengan pola provider lain
-// (caller yang tangkap & jatuh ke fallback berikutnya).
-async function _callOllama(apiKey, model, messages, maxTokens, temperature, timeoutMs) {
+// (caller yang tangkap & jatuh ke fallback berikutnya). think: 'high'/'max'/'low'/false —
+// lihat komentar OLLAMA_MODEL di atas soal kenapa 'high', bukan default model ('max').
+async function _callOllama(apiKey, model, messages, maxTokens, temperature, timeoutMs, think = null) {
+  const body = { model, messages, stream: false, options: { temperature, num_predict: maxTokens } };
+  if (think != null) body.think = think;
   const r = await fetch(OLLAMA_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-    body: JSON.stringify({ model, messages, stream: false, options: { temperature, num_predict: maxTokens } }),
+    body: JSON.stringify(body),
     signal: AbortSignal.timeout(timeoutMs),
   });
   if (!r.ok) throw new Error(`HTTP ${r.status}`);
@@ -2279,17 +2291,18 @@ async function ohlcvAnalyzeHandler(req, res) {
       } catch(e) { console.warn('ohlcv_analyze SambaNova failed:', e.message); await cb.onFailure('ai:sambanova:main'); }
     } else if (SAMBANOVA_KEY) { console.log('ohlcv_analyze: SambaNova circuit OPEN — skipping to Groq'); }
 
-    // Fallback 2: Ollama Cloud (DeepSeek-V3.2 lewat jalur beda dari SambaNova) — biar
-    // kegagalan sesaat SambaNova tidak langsung jatuh ke Groq llama-3.3 yang kualitasnya
-    // lebih rendah. Timeout dipangkas (15s, bukan 30s seperti SambaNova) supaya total
-    // SambaNova+Ollama+Groq tetap di bawah 60s hard limit Vercel — trade-off: kalau
-    // Ollama Cloud butuh >15s buat prompt sebesar ini, dia akan sering timeout duluan
-    // sebelum sempat kepakai (belum ada data latency real, perlu dipantau/disetel ulang).
+    // Fallback 2: Ollama Cloud (GLM-5.2, eksperimen — bukan model yang sama dengan
+    // SambaNova) — biar kegagalan sesaat SambaNova tidak langsung jatuh ke Groq
+    // llama-3.3. Timeout dipangkas (15s, bukan 30s seperti SambaNova) supaya total
+    // SambaNova+Ollama+Groq tetap di bawah 60s hard limit Vercel — trade-off: GLM-5.2
+    // pakai reasoning (think:'high', lihat komentar OLLAMA_MODEL), belum ada data
+    // latency real untuk kombinasi model+effort ini, jadi mungkin sering timeout
+    // duluan sampai terbukti muat dalam 15s.
     if (!rawText && OLLAMA_KEY && await cb.canCall('ai:ollama')) {
       try {
         if (!await allowAiCall('ollama')) throw new Error('AI daily budget exceeded');
-        rawText = await _callOllama(OLLAMA_KEY, OLLAMA_MODEL, messages, 1500, 0.3, 15000);
-        model = 'deepseek-v3.2';
+        rawText = await _callOllama(OLLAMA_KEY, OLLAMA_MODEL, messages, 1500, 0.3, 15000, 'high');
+        model = 'glm-5.2';
         await cb.onSuccess('ai:ollama');
       } catch(e) { console.warn('ohlcv_analyze Ollama failed:', e.message); await cb.onFailure('ai:ollama'); }
     } else if (OLLAMA_KEY) { console.log('ohlcv_analyze: Ollama circuit OPEN — skipping to Groq'); }

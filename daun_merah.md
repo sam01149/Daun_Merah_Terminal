@@ -7,26 +7,24 @@
 
 ---
 
-## Changelog Session 144 lanjutan 5 (2026-07-06) — Ollama Cloud sebagai Fallback Tambahan `ohlcv_analyze`
+## Changelog Session 144 lanjutan 5 (2026-07-06) — Ollama Cloud (GLM-5.2) sebagai Fallback Tambahan `ohlcv_analyze`
 
-**Request user:** riset apakah GLM-5.2 (`ollama.com/library/glm-5.2`) bisa dipakai di app, lalu diperluas ke DeepSeek-V3.2 versi Ollama Cloud (`deepseek-v3.2:cloud`) — user bikin akun + API key sendiri di ollama.com, minta kode integrasinya disiapkan.
+**Request user:** riset apakah GLM-5.2 (`ollama.com/library/glm-5.2`) bisa dipakai di app. Sempat direkomendasikan tidak dipakai (lihat alasan di bawah) dan diarahkan ke DeepSeek-V3.2 versi Ollama Cloud sebagai alternatif, tapi user tetap mau coba GLM-5.2 duluan ("glm dulu dong" / "kita coba aja dulu") dengan syarat eksplisit: `reasoning_effort`/`think` di-set **"high"**, bukan **"max"** (default model, mode reasoning terdalam & paling lambat).
 
-**Riset GLM-5.2 (Z.ai, 756B, 1M context, lisensi MIT):** **tidak dipakai** — dua alasan: (1) benchmark yang dipamerkan semuanya coding (Terminal-Bench, SWE-bench), tidak ada sinyal kemampuan Bahasa Indonesia/penulisan finansial; (2) fitur "effort levels High/Max" mengindikasikan model reasoning (mikir dulu pakai token tersembunyi) — berisiko terlalu lambat untuk budget waktu Vercel kita yang sudah mepet.
+**Riset GLM-5.2 (Z.ai, 756B, 1M context, lisensi MIT):** benchmark yang dipamerkan semuanya coding (Terminal-Bench, SWE-bench), tidak ada sinyal kemampuan Bahasa Indonesia/penulisan finansial secara eksplisit; dan modelnya reasoning-capable ("effort levels" High/Max) — riset lanjutan (web search) mengkonfirmasi ini parameter `reasoning_effort`/`think`, default **max** (reasoning terdalam, paling lambat) kalau thinking dinyalakan, `high` adalah opsi lebih cepat. User memilih tetap eksperimen dengan `think:'high'` meski ada risiko latency untuk kebutuhan Bahasa Indonesia/finansial yang belum terbukti — keputusan sadar user, bukan rekomendasi saya.
 
-**DeepSeek-V3.2 di Ollama Cloud:** model SAMA PERSIS dengan yang sudah dipakai lewat SambaNova (671B, ini bukan upgrade kualitas) — nilainya murni sebagai **jalur akses redundan**: kalau SambaNova (akun 1) gagal sesaat (lihat investigasi lanjutan 4), ada opsi lain yang kualitasnya setara sebelum menyerah ke Groq llama-3.3.
-
-**Kendala teknis:** API Ollama Cloud pakai format native (`POST https://ollama.com/api/chat`, body `{model,messages,stream:false,options:{temperature,num_predict}}`, response `message.content`) — **bukan** format OpenAI (`/v1/chat/completions`) yang dipakai semua provider lain, jadi tidak bisa reuse helper fetch yang ada.
+**Kendala teknis:** API Ollama Cloud pakai format native (`POST https://ollama.com/api/chat`, body `{model,messages,stream:false,think,options:{temperature,num_predict}}`, response `message.content`) — **bukan** format OpenAI (`/v1/chat/completions`) yang dipakai semua provider lain, jadi tidak bisa reuse helper fetch yang ada. `think` di top-level body (bukan di dalam `options`).
 
 **Implementasi (`api/admin.js`, `ohlcvAnalyzeHandler` saja — scope sengaja dibatasi ke fitur Analisa, bukan Ringkasan/`market-digest.js`):**
-- `_callOllama(apiKey, model, messages, maxTokens, temperature, timeoutMs)` baru: request/response native Ollama, throw `HTTP {status}` atau `Empty response` konsisten dengan pola provider lain (caller yang tangkap & lanjut ke fallback berikutnya). Diekspor untuk unit test.
-- Chain fallback jadi 3 tingkat: **SambaNova (30s, primary, tidak berubah) → Ollama Cloud (`deepseek-v3.2:cloud`, 15s, baru) → Groq llama-3.3 (10s, dipangkas dari 25s)**. Circuit breaker baru `ai:ollama` (masuk `KNOWN_CIRCUITS`) + budget guard `allowAiCall('ollama')` (`DEFAULT_LIMITS.ollama = 150`, konservatif karena free tier Ollama Cloud berbasis GPU-time bukan RPM/token, belum ada data pasti).
-- **Trade-off timeout disadari & didokumentasikan di kode:** total SambaNova+Ollama+Groq = 55s, masih di bawah hard limit 60s Vercel, tapi timeout Ollama (15s) belum tentu cukup untuk prompt sebesar ini (latency real belum diketahui) — kemungkinan sering timeout duluan sampai ada data nyata untuk dikalibrasi ulang.
+- `_callOllama(apiKey, model, messages, maxTokens, temperature, timeoutMs, think=null)` baru: request/response native Ollama, `think` opsional (dikirim di top-level body kalau diisi). Throw `HTTP {status}` atau `Empty response` konsisten dengan pola provider lain (caller yang tangkap & lanjut ke fallback berikutnya). Diekspor untuk unit test.
+- Chain fallback jadi 3 tingkat: **SambaNova (30s, primary, tidak berubah) → Ollama Cloud (`glm-5.2:cloud`, `think:'high'`, 15s, baru) → Groq llama-3.3 (10s, dipangkas dari 25s)**. Circuit breaker baru `ai:ollama` (masuk `KNOWN_CIRCUITS`) + budget guard `allowAiCall('ollama')` (`DEFAULT_LIMITS.ollama = 150`, konservatif karena free tier Ollama Cloud berbasis GPU-time bukan RPM/token, belum ada data pasti).
+- **Trade-off timeout disadari & didokumentasikan di kode:** total SambaNova+Ollama+Groq = 55s, masih di bawah hard limit 60s Vercel, tapi timeout Ollama (15s) untuk model reasoning belum tentu cukup (latency real belum diketahui) — kemungkinan sering timeout duluan sampai terbukti muat atau perlu dikalibrasi ulang (kandidat berikutnya: `think:false` atau naikkan timeout dengan konsekuensi pangkas provider lain).
 - **Fail-safe sampai `OLLAMA_API_KEY` diisi:** tanpa env var itu, `OLLAMA_KEY` falsy → seluruh blok Ollama di-skip, perilaku identik dengan sebelum perubahan ini (SambaNova → Groq langsung). Nol risiko sampai user isi env var + redeploy.
-- `model` yang dikembalikan ke frontend tetap string `'deepseek-v3.2'` baik dari SambaNova maupun Ollama (kualitas setara, badge UI tidak perlu bedakan sumbernya).
+- `model` yang dikembalikan ke frontend: `'glm-5.2'` kalau lewat Ollama (beda dari SambaNova yang `'deepseek-v3.2'` — modelnya memang beda, badge UI harus mencerminkan sumber sebenarnya).
 
-**Verifikasi:** 4 test baru (`test/ollama.test.js`, fetch di-stub): body request native terkirim benar (model/messages/stream:false/options), HTTP non-OK → error berisi status, response kosong/tanpa field `message` → error `Empty response` tanpa throw TypeError. Full suite 76/76 lulus, `node --check` bersih.
+**Verifikasi:** 5 test (`test/ollama.test.js`, fetch di-stub): body request native terkirim benar (model/messages/stream:false/options), `think` terkirim di top-level (bukan di `options`) kalau diisi & tidak terkirim kalau tidak, HTTP non-OK → error berisi status, response kosong/tanpa field `message` → error `Empty response` tanpa throw TypeError. Full suite 77/77 lulus, `node --check` bersih.
 
-**Belum bisa dites end-to-end** — nunggu `OLLAMA_API_KEY` di-set di Vercel env vars oleh user lalu redeploy.
+**Belum bisa dites end-to-end** — nunggu `OLLAMA_API_KEY` di-set di Vercel env vars oleh user lalu redeploy. Kalau GLM-5.2 + think:high terbukti tidak cocok (lambat/kualitas Bahasa Indonesia kurang), DeepSeek-V3.2 via Ollama Cloud (redundansi model yang sama dengan SambaNova, tanpa risiko reasoning) tetap jadi opsi cadangan — tinggal ganti `OLLAMA_MODEL` dan lepas parameter `think`.
 
 ---
 

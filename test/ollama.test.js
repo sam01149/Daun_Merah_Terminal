@@ -34,6 +34,19 @@ test('_callOllama: sukses — kirim body native (model/messages/stream:false/opt
   assert.strictEqual(capturedBody.stream, false);
   assert.strictEqual(capturedBody.options.temperature, 0.3);
   assert.strictEqual(capturedBody.options.num_predict, 1500);
+  assert.strictEqual(capturedBody.think, undefined, 'think tidak dikirim kalau parameter ke-7 tidak diisi');
+});
+
+test('_callOllama: parameter think dikirim di top-level body (bukan di dalam options) kalau diisi', async () => {
+  let capturedBody;
+  await withFetch(async (url, opts) => {
+    capturedBody = JSON.parse(opts.body);
+    return { ok: true, json: async () => ({ message: { content: 'ok' } }) };
+  }, async () => {
+    await _callOllama('sk-test', 'glm-5.2:cloud', [], 1500, 0.3, 15000, 'high');
+  });
+  assert.strictEqual(capturedBody.think, 'high');
+  assert.strictEqual(capturedBody.options.think, undefined, 'think bukan bagian dari options');
 });
 
 test('_callOllama: HTTP non-OK melempar error dengan status di pesan', async () => {
