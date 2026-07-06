@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-07-06 (session 144 lanjutan 5 — GLM-5.2 di Ollama Cloud ternyata berbayar (403), diganti gpt-oss:120b sebagai primary sementara ohlcv_analyze)
+> **Last updated:** 2026-07-06 (session 144 lanjutan 5 — SambaNova dibalik jadi primary lagi, Ollama Cloud (kimi-k2.6, sedang diuji) jadi fallback)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -35,7 +35,15 @@
 
 **Root cause sebenarnya (setelah fix nama model tetap gagal):** dicek log Vercel langsung (user share screenshot Runtime Logs) — `ohlcv_analyze Ollama failed: HTTP 403`. Bukan salah nama model — riset lanjutan (GitHub issues `ollama/ollama` #15707/#15741/#16773) konfirmasi 403 ini artinya **"this model requires a subscription, upgrade for access"**: GLM-5.2 (756B, flagship) ternyata model **berbayar** (Pro $20/bln atau Max $100/bln), tidak termasuk Free tier Ollama Cloud sama sekali — bukan soal konfigurasi kode.
 
-**Ganti model ke `gpt-oss:120b`** (bukan DeepSeek-V3.2 yang sempat jadi opsi cadangan — DeepSeek-V4 kemungkinan sama-sama berbayar per riset tier, dan `gpt-oss:120b` py alasan lebih kuat): model open-weight OpenAI ini **sudah terbukti stabil untuk output Bahasa Indonesia di app ini** — dipakai via OpenRouter sebagai fallback Ringkasan Call 1 sejak lama ("proven stabil, output Bahasa Indonesia" per catatan project). `gpt-oss:20b` dikonfirmasi gratis di riset publik; `120b` belum 100% pasti gratis — ini yang sedang diuji live. `model` badge ke frontend jadi `'gpt-oss-120b'`.
+**Ganti model ke `gpt-oss:120b`** (bukan DeepSeek-V3.2 yang sempat jadi opsi cadangan — DeepSeek-V4 kemungkinan sama-sama berbayar per riset tier, dan `gpt-oss:120b` py alasan lebih kuat): model open-weight OpenAI ini **sudah terbukti stabil untuk output Bahasa Indonesia di app ini** — dipakai via OpenRouter sebagai fallback Ringkasan Call 1 sejak lama ("proven stabil, output Bahasa Indonesia" per catatan project). `gpt-oss:20b` dikonfirmasi gratis di riset publik; `120b` belum 100% pasti gratis — ini yang sedang diuji live.
+
+**User tanya perbandingan kualitas gpt-oss:120b vs DeepSeek-V3.2:** DeepSeek-V3.2 (671B, arsitektur lebih baru/sparse attention) di kelas *frontier* lebih atas dari gpt-oss:120b (120B, didesain OpenAI untuk efisiensi bukan kekuatan mutlak) — dan DeepSeek-V3.2 sudah proven langsung di app ini (primary Analisa berbulan-bulan), sedangkan gpt-oss:120b baru proven untuk prosa Ringkasan, belum untuk output JSON terstruktur Analisa. **Kesimpulan: gpt-oss:120b BUKAN upgrade dari DeepSeek-V3.2** — jadi tidak masuk akal jadi primary yang mengalahkan model yang sudah terbukti lebih kuat.
+
+**Revert urutan:** SambaNova DeepSeek-V3.2 dikembalikan jadi **primary** (timeout kembali 30s), Ollama Cloud jadi **fallback 1** (15s, sebelum Groq llama-3.3 last-resort 10s) — total tetap 55s. `model` badge yang dikembalikan ke frontend sekarang dinamis (`OLLAMA_MODEL.replace(':', '-')`) bukan string hardcoded, supaya tidak perlu diubah manual tiap kali ganti kandidat model Ollama.
+
+**Riset lanjutan (permintaan opsional user): cari model Ollama Cloud lebih besar dari DeepSeek-V3.2 tapi tetap gratis.** Kandidat ditemukan: **Kimi K2.6** (Moonshot AI) — **1.04 triliun parameter** (MoE, 32B aktif), context **256K token** — lebih besar dari DeepSeek-V3.2 di kedua dimensi. Sumber soal tier gratis-nya kontradiktif (blog tidak otoritatif: ada yang bilang "kimi akan cepat kena limit" tersirat bisa dipakai gratis, ada yang mengelompokkan sebagai butuh Pro/Max) — mengingat polanya sama seperti GLM-5.2 (model flagship raksasa), kemungkinan besar **juga** 403 subscription-required. User pilih tetap dites live untuk kepastian (bukan tebak dari blog).
+
+**`OLLAMA_MODEL` sementara di-set ke `'kimi-k2.6'`** (tag tanpa `:cloud` suffix, konsisten dengan konvensi direct-API yang sudah dikonfirmasi) untuk pengujian ini. Kalau terbukti 403 (subscription required, sesuai dugaan), turunkan balik ke `gpt-oss:120b` yang sudah terbukti gratis & proven Bahasa Indonesia.
 
 **Belum bisa dites end-to-end** — nunggu redeploy + circuit breaker `ai:ollama` clear dari window OPEN sebelumnya. Kalau `gpt-oss:120b` juga ternyata berbayar, `gpt-oss:20b` (dikonfirmasi gratis) atau `gemma4:31b` (disebut riset publik sebagai "strongest confirmed free model") jadi kandidat berikutnya — cukup ganti `OLLAMA_MODEL`, tidak perlu ubah struktur lain.
 

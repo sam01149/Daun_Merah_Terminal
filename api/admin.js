@@ -771,7 +771,13 @@ const OLLAMA_URL   = 'https://ollama.com/api/chat';
 // di mesin sendiri, suffix ngasih tau daemon lokal "jalankan di cloud, bukan di sini").
 // Kita manggil https://ollama.com/api/chat langsung (server ke server, tanpa Ollama lokal),
 // jadi nama model API cloud-nya polos tanpa suffix.
-const OLLAMA_MODEL = 'gpt-oss:120b';
+//
+// SEDANG DIUJI: kimi-k2.6 (1.04T param, 256K context — lebih besar dari DeepSeek-V3.2
+// 671B/160K) atas permintaan user, cari model lebih kuat dari DeepSeek yang tetap gratis.
+// Kemungkinan besar SAMA seperti GLM-5.2 (403 subscription required) mengingat ukurannya
+// bahkan lebih besar — kalau terbukti gitu juga, turunkan ke gpt-oss:120b (baris komentar
+// di atas, sudah terbukti gratis & proven Bahasa Indonesia di app ini).
+const OLLAMA_MODEL = 'kimi-k2.6';
 
 // Panggil Ollama Cloud, kembalikan teks jawaban (message.content) atau null kalau gagal/kosong.
 // Melempar error kalau HTTP non-OK atau response kosong, konsisten dengan pola provider lain
@@ -2283,31 +2289,19 @@ async function ohlcvAnalyzeHandler(req, res) {
     const GROQ_KEY      = process.env.GROQ_API_KEY;
     let rawText = null, model = null;
 
-    // Primary sementara (eksperimen user): Ollama Cloud gpt-oss:120b, think:false. GLM-5.2
-    // (percobaan pertama) balik HTTP 403 "model requires a subscription" — bukan free tier.
-    // Timeout 30s — sama generous dengan yang dulu diberikan ke SambaNova — supaya data
-    // latency yang terkumpul representatif. Kalau eksperimen ini selesai/gagal, tinggal
-    // tukar balik urutan dengan SambaNova.
-    if (OLLAMA_KEY && await cb.canCall('ai:ollama')) {
-      try {
-        if (!await allowAiCall('ollama')) throw new Error('AI daily budget exceeded');
-        rawText = await _callOllama(OLLAMA_KEY, OLLAMA_MODEL, messages, 1500, 0.3, 30000, false);
-        model = 'gpt-oss-120b';
-        await cb.onSuccess('ai:ollama');
-      } catch(e) { console.warn('ohlcv_analyze Ollama failed:', e.message); await cb.onFailure('ai:ollama'); }
-    } else if (OLLAMA_KEY) { console.log('ohlcv_analyze: Ollama circuit OPEN — skipping to SambaNova'); }
-
-    // Fallback 1: SambaNova DeepSeek-V3.2 — timeout dipangkas 30s → 15s (dulu primary,
-    // sekarang fallback) supaya total GLM-5.2(30s)+SambaNova(15s)+Groq(10s) tetap di
-    // bawah 60s hard limit Vercel. SambaNova historisnya cepat (~13-20s), 15s masih wajar.
-    if (!rawText && SAMBANOVA_KEY && await cb.canCall('ai:sambanova:main')) {
+    // Primary: SambaNova DeepSeek-V3.2 (671B) — dikembalikan jadi primary (30s, timeout
+    // asli). Eksperimen GLM-5.2/gpt-oss:120b sebagai primary dihentikan: alasan awal coba
+    // model lain adalah cari yang LEBIH kuat dari DeepSeek-V3.2, tapi gpt-oss:120b (120B)
+    // kemungkinan malah di bawahnya secara kualitas — jadi tidak masuk akal jadi primary
+    // yang mengalahkan model yang sudah terbukti lebih kuat & sudah proven di app ini.
+    if (SAMBANOVA_KEY && await cb.canCall('ai:sambanova:main')) {
       try {
         if (!await allowAiCall('sambanova_main')) throw new Error('AI daily budget exceeded');
         const r = await fetch('https://api.sambanova.ai/v1/chat/completions', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SAMBANOVA_KEY}` },
           body: JSON.stringify({ model: 'DeepSeek-V3.2', messages, max_tokens: 1500, temperature: 0.3 }),
-          signal: AbortSignal.timeout(15000),
+          signal: AbortSignal.timeout(30000),
         });
         if (r.ok) {
           const j = await r.json(); rawText = j.choices?.[0]?.message?.content?.trim() || null; model = 'deepseek-v3.2';
@@ -2315,10 +2309,24 @@ async function ohlcvAnalyzeHandler(req, res) {
           else throw new Error('Empty response');
         } else { throw new Error(`HTTP ${r.status}`); }
       } catch(e) { console.warn('ohlcv_analyze SambaNova failed:', e.message); await cb.onFailure('ai:sambanova:main'); }
-    } else if (SAMBANOVA_KEY) { console.log('ohlcv_analyze: SambaNova circuit OPEN — skipping to Groq'); }
+    } else if (SAMBANOVA_KEY) { console.log('ohlcv_analyze: SambaNova circuit OPEN — skipping to Ollama'); }
 
-    // Last resort: Groq llama-3.3 — timeout 10s, sisa waktu setelah GLM-5.2 (30s) +
-    // SambaNova (15s) di bawah 60s hard limit Vercel. Groq/Llama cukup cepat (LPU).
+    // Fallback 1: Ollama Cloud (lihat OLLAMA_MODEL — sedang diuji kimi-k2.6, fallback ke
+    // gpt-oss:120b kalau 403) — dipakai kalau SambaNova sesaat gagal, sebelum jatuh ke Groq
+    // llama-3.3 yang kualitasnya lebih rendah lagi. Timeout dipangkas 30s → 15s (dulu
+    // primary, sekarang fallback) supaya total SambaNova(30s)+Ollama(15s)+Groq(10s) tetap
+    // di bawah 60s hard limit Vercel.
+    if (!rawText && OLLAMA_KEY && await cb.canCall('ai:ollama')) {
+      try {
+        if (!await allowAiCall('ollama')) throw new Error('AI daily budget exceeded');
+        rawText = await _callOllama(OLLAMA_KEY, OLLAMA_MODEL, messages, 1500, 0.3, 15000, false);
+        model = OLLAMA_MODEL.replace(':', '-');
+        await cb.onSuccess('ai:ollama');
+      } catch(e) { console.warn('ohlcv_analyze Ollama failed:', e.message); await cb.onFailure('ai:ollama'); }
+    } else if (OLLAMA_KEY) { console.log('ohlcv_analyze: Ollama circuit OPEN — skipping to Groq'); }
+
+    // Last resort: Groq llama-3.3 — timeout 10s, sisa waktu setelah SambaNova (30s) +
+    // Ollama (15s) di bawah 60s hard limit Vercel. Groq/Llama cukup cepat (LPU).
     if (!rawText && GROQ_KEY && await allowAiCall('groq')) {
       const r = await fetch(GROQ_URL_FUND, {
         method: 'POST',
