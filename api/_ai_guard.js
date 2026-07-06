@@ -24,9 +24,28 @@ const DEFAULT_LIMITS = {
   // yang sering di-klik ulang bisa menghabiskan kuota gabungan lebih dulu dan
   // membuat ohlcv_analyze (akun 1) ikut ditolak "budget exceeded" padahal
   // akun 1-nya sendiri belum tentu penuh.
-  sambanova_main:  200,   // akun 1 — Call 2/3/4 (market-digest) + fundamental_analysis + ohlcv_analyze (admin.js)
-  sambanova_c1:    200,   // akun 2 — Call 1 prose (market-digest, Ringkasan)
-  openrouter:      150,   // free tier: 50/day (model :free) — akun berbayar lebih tinggi
+  sambanova_main:  200,   // akun 1 — Call 2/3/4 (market-digest) + ohlcv_analyze (admin.js)
+  // akun 2 — Call 1 prose (market-digest) + fallback1 journal_analysis + fallback1
+  // fundamental_analysis (session 145, re-arsitektur Nemotron). 3 fitur berbagi counter
+  // ini SENGAJA (lihat daun_merah.md Session 145) — semuanya cuma fallback jarang
+  // terpanggil, bukan primary aktif, jadi risiko starvation (lihat Session 144 lanjutan 4)
+  // jauh lebih kecil daripada saat sambanova_main/sambanova_c1 dulu digabung.
+  sambanova_c1:    200,
+  // Free tier OpenRouter itu ACCOUNT-WIDE (bukan per-model): 50/hari kalau akun belum
+  // pernah top-up kredit $10+, atau 1000/hari kalau sudah (persisten walau saldo habis
+  // lagi) — dikonfirmasi dari openrouter.ai/docs, session 145. Nemotron 3 Ultra
+  // (market-digest Call1/2/3) SEKARANG jadi satu-satunya fitur yang pakai pool ini —
+  // gpt-oss:120b (journal/fundamental) dipindah ke Cerebras (pool token/hari terpisah)
+  // supaya tidak berebut kuota dengan Nemotron. 45 = buffer aman di bawah 50 asli untuk
+  // asumsi konservatif belum top-up; kalau sudah top-up $10+, override via env
+  // AI_DAILY_LIMIT_OPENROUTER (mis. 900) — jangan naikkan default ini tanpa konfirmasi status akun.
+  openrouter:      45,
+  // Cerebras Cloud — free tier genuinely persistent (bukan trial sekali pakai), cap asli
+  // 1 JUTA token/hari + 5 RPM/30K TPM (bukan request-count seperti provider lain). Dipakai
+  // mulai session 145 sebagai primary gpt-oss:120b untuk journal_analysis +
+  // fundamental_analysis (model id `gpt-oss-120b`, endpoint api.cerebras.ai/v1/chat/completions,
+  // OpenAI-compatible). 200 di sini konservatif dari sisi REQUEST count kita (bukan token,
+  // yang capnya jauh lebih longgar) — cukup untuk 2 fitur on-demand + cache 6h/1h.
   cerebras:        200,
   ollama:          150,   // Ollama Cloud free tier: GPU-time based (bukan RPM/token), belum ada data pasti — konservatif
 };

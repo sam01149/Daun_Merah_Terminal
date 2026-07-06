@@ -596,6 +596,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .ringkasan-method.deepseek-v3\.2,
 .ringkasan-method.deepseek-v3\.1 { background: rgba(79,172,254,.12); color: #4facfe; }
 .ringkasan-method.gpt-oss-120b   { background: rgba(16,163,127,.12); color: #10a37f; }
+.ringkasan-method.nemotron-3-ultra { background: rgba(118,185,0,.12); color: #76b900; }
 .ringkasan-provider-log {
   font-size: 10px; color: var(--muted); font-family: 'DM Mono', monospace;
   background: rgba(255,255,255,.03); border-radius: 6px; padding: 8px 12px;
@@ -4462,7 +4463,7 @@ function renderRingkasan() {
   inner.innerHTML = `
     <div class="ringkasan-meta">
       <div class="ringkasan-meta-left">${tsStr} · ${d.news_count} berita${d.gold_count ? ' · ' + d.gold_count + ' XAU' : ''} · ${d.cal_count} kalender${d.from_cache ? ' · cache' : ''}</div>
-      <span class="ringkasan-method ${d.method}" title="${['gpt-oss-120b','groq','qwen3-32b'].includes(d.method) ? 'model cadangan — gaya naratif mungkin kurang tajam' : ''}">${{'cerebras':'⚡ Cerebras','groq':'⚡ Groq','gemini':'✨ Gemini','deepseek-v3.2':'🧠 SambaNova V3.2','deepseek-v3.1':'🧠 SambaNova V3.1','gpt-oss-120b':'🤖 OpenRouter','qwen3-32b':'⚡ Groq Qwen3','fallback':'⚠ Fallback','fallback_quota':'⚠ Quota'}[d.method] || d.method || '⚙️ Auto'}</span>${['gpt-oss-120b','groq','qwen3-32b'].includes(d.method) ? ' <span class="ringkasan-method-note" style="font-size:0.72rem;color:var(--muted)">model cadangan</span>' : ''}
+      <span class="ringkasan-method ${d.method}" title="${['gpt-oss-120b','groq','qwen3-32b'].includes(d.method) ? 'model cadangan — gaya naratif mungkin kurang tajam' : ''}">${{'cerebras':'⚡ Cerebras','groq':'⚡ Groq','gemini':'✨ Gemini','deepseek-v3.2':'🧠 SambaNova V3.2','deepseek-v3.1':'🧠 SambaNova V3.1','nemotron-3-ultra':'🧠 Nemotron 3 Ultra','gpt-oss-120b':'🤖 OpenRouter','qwen3-32b':'⚡ Groq Qwen3','fallback':'⚠ Fallback','fallback_quota':'⚠ Quota'}[d.method] || d.method || '⚙️ Auto'}</span>${['gpt-oss-120b','groq','qwen3-32b'].includes(d.method) ? ' <span class="ringkasan-method-note" style="font-size:0.72rem;color:var(--muted)">model cadangan</span>' : ''}
     </div>
 
     <div class="ringkasan-stats">

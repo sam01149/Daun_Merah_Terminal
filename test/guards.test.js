@@ -50,6 +50,29 @@ test('allowAiCall: sambanova_main dan sambanova_c1 masing-masing fail-open tanpa
   assert.strictEqual(await allowAiCall('sambanova_c1'), true);
 });
 
+// Regression session 145 (re-arsitektur Nemotron): OpenRouter limit gratis itu
+// ACCOUNT-WIDE (bukan per-model) — 50/hari kalau belum top-up kredit $10+, 1000/hari
+// kalau sudah (dikonfirmasi openrouter.ai/docs). Nemotron 3 Ultra (market-digest.js)
+// sekarang satu-satunya fitur yang pakai pool ini (gpt-oss:120b journal/fundamental
+// dipindah ke Cerebras) — default 45 adalah buffer aman DI BAWAH 50 asli untuk asumsi
+// konservatif belum top-up. JANGAN naikkan default ini tanpa konfirmasi status akun
+// (lihat daun_merah.md Session 145) — kalau dinaikkan tanpa verifikasi, guard kita
+// jadi tidak merepresentasikan limit nyata OpenRouter (persis masalah yang mau dicegah).
+test('DEFAULT_LIMITS: openrouter konservatif (<=45) — jangan overestimate cap 50/hari asli', () => {
+  assert.ok(DEFAULT_LIMITS.openrouter <= 45, `openrouter limit (${DEFAULT_LIMITS.openrouter}) harus <=45, buffer aman di bawah cap gratis asli 50/hari`);
+});
+
+// Cerebras diaktifkan session 145 sebagai primary gpt-oss-120b untuk journal_analysis +
+// fundamental_analysis — pool token/hari terpisah total dari OpenRouter (Nemotron).
+test('DEFAULT_LIMITS: cerebras tetap ada (dipakai journal_analysis + fundamental_analysis sejak session 145)', () => {
+  assert.strictEqual(typeof DEFAULT_LIMITS.cerebras, 'number');
+  assert.ok(DEFAULT_LIMITS.cerebras > 0);
+});
+
+test('allowAiCall: cerebras fail-open tanpa Redis', async () => {
+  assert.strictEqual(await allowAiCall('cerebras'), true);
+});
+
 // ── _ratelimit ──────────────────────────────────────────────────────────────
 
 function fakeReqRes(ip) {

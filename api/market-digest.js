@@ -45,6 +45,13 @@ const GROQ_MODEL_PROSE = 'llama-3.3-70b-versatile';        // Call 1 fallback 3:
 const OPENROUTER_URL     = 'https://openrouter.ai/api/v1/chat/completions';
 const OPENROUTER_MODEL   = 'openai/gpt-oss-120b:free'; // Call 1 fallback 2: proven stabil, output Bahasa Indonesia
 const OPENROUTER_HEADERS = { 'HTTP-Referer': 'https://financial-feed-app.vercel.app', 'X-Title': 'Daun Merah' };
+// Nemotron 3 Ultra (session 145) — primary baru Call 1/2/3: 550B/55B-active MoE hybrid
+// Mamba-Transformer, context 1M, GPQA Diamond 86.7%. Circuit breaker terpisah dari
+// OpenRouter fallback 2 di atas karena sekarang dipanggil TIAP request sebagai primary
+// (bukan fallback jarang) — lihat CB_OPENROUTER_NEMOTRON. providerOverride tetap reuse
+// counter 'openrouter' yang sudah ada (account-wide, jangan pecah per-model — lihat _ai_guard.js).
+const NEMOTRON_MODEL           = 'nvidia/nemotron-3-ultra-550b-a55b:free';
+const CB_OPENROUTER_NEMOTRON   = 'ai:openrouter:nemotron';
 
 const MAJOR_CURRENCIES = new Set(['USD','EUR','GBP','JPY','CAD','AUD','NZD','CHF']);
 
@@ -592,6 +599,12 @@ module.exports = async function handler(req, res) {
   const SAMBANOVA_KEY_CALL1 = process.env.SAMBANOVA_API_KEY_CALL1;
   const GROQ_KEY       = process.env.GROQ_API_KEY;
 
+  // Diagnostik sementara (session 145, pola sama seperti ?test_ollama=1 di admin.js
+  // session 144): paksa Call 1/2/3 lewat Nemotron 3 Ultra saja, skip tier lain, supaya
+  // bisa diverifikasi live sebelum jadi primary permanen (precedent: GLM-5.2/Kimi K2.6
+  // "katanya gratis" ternyata 403 subscription-required saat dites nyata).
+  const testNemotronOnly = req.query.test_nemotron === '1';
+
   const host  = req.headers.host || 'financial-feed-app.vercel.app';
   const proto = host.includes('localhost') ? 'http' : 'https';
 
@@ -1050,15 +1063,24 @@ module.exports = async function handler(req, res) {
       ].join('\n');
       const call2Messages = [{ role: 'user', content: biasPrompt }];
       let biasRaw = null;
-      if (SAMBANOVA_KEY && await cb.canCall(CB_SAMBA_MAIN)) {
+      // Primary: Nemotron 3 Ultra via OpenRouter (session 145) — same circuit as Call 1.
+      if (OPENROUTER_KEY && await cb.canCall(CB_OPENROUTER_NEMOTRON)) {
+        try {
+          console.log('Call 2: trying Nemotron 3 Ultra (OpenRouter)');
+          biasRaw = await aiCall(OPENROUTER_URL, OPENROUTER_KEY, NEMOTRON_MODEL, call2Messages, 700, 0.1, 20000, OPENROUTER_HEADERS, {}, 'openrouter');
+          console.log('Call 2: Nemotron OK');
+          await cb.onSuccess(CB_OPENROUTER_NEMOTRON);
+        } catch(e) { console.warn('Call 2 Nemotron failed:', e.status || e.message); await cb.onFailure(CB_OPENROUTER_NEMOTRON, AI_CB_THRESHOLD); }
+      } else if (OPENROUTER_KEY) { console.log('Call 2: Nemotron circuit OPEN — skipping to SambaNova'); }
+      if (!biasRaw && !testNemotronOnly && SAMBANOVA_KEY && await cb.canCall(CB_SAMBA_MAIN)) {
         try {
           console.log('Call 2: trying SambaNova');
           biasRaw = await aiCall(SAMBANOVA_URL, SAMBANOVA_KEY, SAMBANOVA_MODEL, call2Messages, 700, 0.1, 8000, {}, {}, 'sambanova_main');
           console.log('Call 2: SambaNova OK');
           await cb.onSuccess(CB_SAMBA_MAIN);
         } catch(e) { console.warn('Call 2 SambaNova failed:', e.status || e.message); await cb.onFailure(CB_SAMBA_MAIN, AI_CB_THRESHOLD); }
-      } else if (SAMBANOVA_KEY) { console.log('Call 2: SambaNova circuit OPEN — skipping to Groq'); }
-      if (!biasRaw && GROQ_KEY) {
+      } else if (!biasRaw && SAMBANOVA_KEY && !testNemotronOnly) { console.log('Call 2: SambaNova circuit OPEN — skipping to Groq'); }
+      if (!biasRaw && !testNemotronOnly && GROQ_KEY) {
         try {
           console.log('Call 2: falling back to Groq');
           biasRaw = await aiCall(GROQ_URL, GROQ_KEY, GROQ_MODEL, call2Messages, 700, 0.1, 12000);
@@ -1286,8 +1308,42 @@ ${xauHistoryBlock}`;
       { role: 'user', content: digestUserMsg },
     ];
 
-    // Primary: SambaNova DeepSeek-V3.2 (akun 2, Call 1 prose only) — circuit breaker
-    if (SAMBANOVA_KEY_CALL1 && await cb.canCall(CB_SAMBA_C1)) {
+    // Primary: Nemotron 3 Ultra via OpenRouter (session 145) — circuit breaker terpisah
+    // karena dipanggil tiap request (bukan fallback jarang). ?test_nemotron=1: skip
+    // SEMUA tier lain (bahkan kalau Nemotron gagal) supaya hasil tes benar-benar
+    // merefleksikan Nemotron sendiri, bukan tersamar oleh fallback yang sukses.
+    if (OPENROUTER_KEY && await cb.canCall(CB_OPENROUTER_NEMOTRON)) {
+      const t0s = Date.now();
+      try {
+        console.log('Call 1: trying Nemotron 3 Ultra (OpenRouter)');
+        const raw = await aiCall(OPENROUTER_URL, OPENROUTER_KEY, NEMOTRON_MODEL, call1Messages, 1300, 0.25, 25000, OPENROUTER_HEADERS, {}, 'openrouter');
+        const elapsed = Date.now() - t0s;
+        if (raw.trim()) {
+          article = raw.trim(); method = 'nemotron-3-ultra';
+          providerLog.push(`nemotron:ok(${elapsed}ms,${article.length}c)`);
+        } else {
+          providerLog.push(`nemotron:empty(${elapsed}ms)`);
+        }
+        console.log('Call 1: Nemotron OK, length', article?.length);
+        await cb.onSuccess(CB_OPENROUTER_NEMOTRON);
+      } catch(e) {
+        const elapsed = Date.now() - t0s;
+        const errMsg = e.status ? `HTTP${e.status}` : (e.message || 'err').slice(0, 40);
+        providerLog.push(`nemotron:${errMsg}(${elapsed}ms)`);
+        console.warn('Call 1 Nemotron failed:', e.status || e.message);
+        await cb.onFailure(CB_OPENROUTER_NEMOTRON, AI_CB_THRESHOLD);
+      }
+    } else if (OPENROUTER_KEY) {
+      providerLog.push('nemotron:circuit_open');
+      console.log('Call 1: Nemotron circuit OPEN — skipping to SambaNova');
+    } else {
+      providerLog.push('nemotron:no_key');
+    }
+
+    // Primary (legacy)/Fallback 1: SambaNova DeepSeek-V3.2 (akun 2, Call 1 prose only)
+    if (testNemotronOnly) {
+      if (!article) providerLog.push('sambanova:skipped_test_nemotron');
+    } else if (!article && SAMBANOVA_KEY_CALL1 && await cb.canCall(CB_SAMBA_C1)) {
       const t1s = Date.now();
       try {
         console.log('Call 1: trying SambaNova DeepSeek-V3.2 (akun 2 prose)');
@@ -1308,15 +1364,17 @@ ${xauHistoryBlock}`;
         console.warn('Call 1 SambaNova V3.2 failed:', e.status || e.message);
         await cb.onFailure(CB_SAMBA_C1, AI_CB_THRESHOLD);
       }
-    } else if (SAMBANOVA_KEY_CALL1) {
+    } else if (!article && SAMBANOVA_KEY_CALL1) {
       providerLog.push('sambanova:circuit_open');
       console.log('Call 1: SambaNova circuit OPEN — skipping to OpenRouter');
-    } else {
+    } else if (!article) {
       providerLog.push('sambanova:no_key');
     }
 
-    // Fallback 2: OpenRouter gpt-oss-120b (if SambaNova failed/empty)
-    if (!article && OPENROUTER_KEY) {
+    // Fallback 2: OpenRouter gpt-oss-120b (if Nemotron + SambaNova failed/empty)
+    if (testNemotronOnly) {
+      if (!article) providerLog.push('openrouter_gptoss:skipped_test_nemotron');
+    } else if (!article && OPENROUTER_KEY) {
       const t2s = Date.now();
       try {
         console.log('Call 1: fallback 2 to OpenRouter gpt-oss-120b:free');
@@ -1340,7 +1398,9 @@ ${xauHistoryBlock}`;
     }
 
     // Fallback 3: Groq qwen3-32b (if OpenRouter failed/empty)
-    if (!article && GROQ_KEY) {
+    if (testNemotronOnly) {
+      if (!article) providerLog.push('groq_qwen3:skipped_test_nemotron');
+    } else if (!article && GROQ_KEY) {
       const t3s = Date.now();
       try {
         console.log('Call 1: fallback 3 to Groq qwen3-32b');
@@ -1568,21 +1628,26 @@ ${xauHistoryBlock}`;
     }
 
     // Try SambaNova, then Groq fallback
+    // session 145: Nemotron 3 Ultra (OpenRouter) primary, SambaNova/Groq tetap sebagai
+    // fallback existing. ?test_nemotron=1: array cuma berisi Nemotron — tier lain skip
+    // total (bukan cuma "coba kalau Nemotron gagal") supaya hasil tes bersih.
     const call3Providers = [];
-    if (SAMBANOVA_KEY) call3Providers.push({ url: SAMBANOVA_URL, key: SAMBANOVA_KEY, model: SAMBANOVA_MODEL, label: 'SambaNova', timeout: 8000, provider: 'sambanova_main' });
-    if (GROQ_KEY)      call3Providers.push({ url: GROQ_URL,      key: GROQ_KEY,      model: GROQ_MODEL,      label: 'Groq fallback', timeout: 12000, provider: 'groq' });
+    if (OPENROUTER_KEY) call3Providers.push({ url: OPENROUTER_URL, key: OPENROUTER_KEY, model: NEMOTRON_MODEL, label: 'Nemotron', timeout: 20000, provider: 'openrouter', circuit: CB_OPENROUTER_NEMOTRON, headers: OPENROUTER_HEADERS });
+    if (!testNemotronOnly) {
+      if (SAMBANOVA_KEY) call3Providers.push({ url: SAMBANOVA_URL, key: SAMBANOVA_KEY, model: SAMBANOVA_MODEL, label: 'SambaNova', timeout: 8000, provider: 'sambanova_main', circuit: CB_SAMBA_MAIN });
+      if (GROQ_KEY)      call3Providers.push({ url: GROQ_URL,      key: GROQ_KEY,      model: GROQ_MODEL,      label: 'Groq fallback', timeout: 12000, provider: 'groq', circuit: null });
+    }
 
     for (const provider of call3Providers) {
       if (thesis) break;
-      // Check circuit breaker for SambaNova; Groq fallback is always allowed
-      const circuitSource = provider.label.startsWith('SambaNova') ? CB_SAMBA_MAIN : null;
+      const circuitSource = provider.circuit;
       if (circuitSource && !await cb.canCall(circuitSource)) {
         console.log('Call 3:', provider.label, 'circuit OPEN — skipping');
         continue;
       }
       try {
         console.log('Call 3: trying', provider.label);
-        const raw = await aiCall(provider.url, provider.key, provider.model, call3Messages, 800, 0.1, provider.timeout, {}, {}, provider.provider);
+        const raw = await aiCall(provider.url, provider.key, provider.model, call3Messages, 800, 0.1, provider.timeout, provider.headers || {}, {}, provider.provider);
         const clean = raw.replace(/```json|```/g, '').trim();
         const parsed = JSON.parse(clean);
         if (validateThesis(parsed)) {
@@ -1760,3 +1825,11 @@ function detectCat(title) {
   for (const [cat,kws] of Object.entries(CATS)) { if(kws.some(k=>t.includes(k)))return cat; }
   return 'macro';
 }
+
+// Ekspor helper murni untuk unit test (module.exports = handler function; properti
+// tambahan tidak mengganggu Vercel yang cuma memanggilnya sebagai function biasa)
+module.exports.aiCall = aiCall;
+module.exports.NEMOTRON_MODEL = NEMOTRON_MODEL;
+module.exports.CB_OPENROUTER_NEMOTRON = CB_OPENROUTER_NEMOTRON;
+module.exports.OPENROUTER_URL = OPENROUTER_URL;
+module.exports.OPENROUTER_HEADERS = OPENROUTER_HEADERS;

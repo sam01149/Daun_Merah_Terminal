@@ -297,7 +297,7 @@ async function healthHandler(req, res) {
   let aiBudget = null;
   try {
     const { getUsage } = require('./_ai_guard');
-    const usages = await Promise.all(['groq', 'sambanova_main', 'sambanova_c1', 'ollama', 'openrouter'].map(getUsage));
+    const usages = await Promise.all(['groq', 'sambanova_main', 'sambanova_c1', 'ollama', 'openrouter', 'cerebras'].map(getUsage));
     aiBudget = Object.fromEntries(usages.map(u => [u.provider, { used: u.used, limit: u.limit }]));
   } catch(e) { /* diagnostik opsional — jangan gagalkan health check */ }
 
@@ -754,6 +754,16 @@ async function fundamentalRefreshHandler(req, res) {
 const GROQ_URL_FUND   = 'https://api.groq.com/openai/v1/chat/completions';
 const GROQ_MODEL_FUND = 'llama-3.3-70b-versatile';
 
+// Cerebras Cloud (session 145) — gpt-oss-120b primary untuk fundamental_analysis DAN
+// journal.js AI Coach (lihat journal.js). OpenAI-compatible, model asli OpenAI di-host
+// Cerebras (bukan via OpenRouter) — pool token/hari terpisah total dari OpenRouter
+// (dipakai Nemotron 3 Ultra di market-digest.js), jadi 2 fitur ini tidak berebut kuota
+// dengan digest. Perlu env CEREBRAS_API_KEY (akun gratis di cerebras.ai/openai).
+const CEREBRAS_URL   = 'https://api.cerebras.ai/v1/chat/completions';
+const CEREBRAS_MODEL = 'gpt-oss-120b';
+const CB_CEREBRAS_GPTOSS = 'ai:cerebras:gptoss';
+const CB_SAMBA_C1_ADMIN  = 'ai:sambanova:c1'; // sama seperti CB_SAMBA_C1 di market-digest.js — akun 2 dipakai bersama
+
 // Ollama Cloud — fallback tambahan sebelum Groq khusus ohlcv_analyze (session 144
 // lanjutan 5): API-nya BUKAN format OpenAI (/api/chat, bukan /v1/chat/completions),
 // jadi tidak bisa dipakai langsung lewat pola fetch yang sama dengan provider lain —
@@ -952,8 +962,12 @@ async function fundamentalAnalysisHandler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Cache-Control', 'no-cache');
   if (req.method === 'OPTIONS') return res.status(204).end();
-  const GROQ_KEY = process.env.GROQ_API_KEY;
-  if (!GROQ_KEY) return res.status(500).json({ error: 'GROQ_API_KEY not configured' });
+  const GROQ_KEY      = process.env.GROQ_API_KEY;
+  const CEREBRAS_KEY  = process.env.CEREBRAS_API_KEY;
+  const SAMBANOVA_KEY_CALL1 = process.env.SAMBANOVA_API_KEY_CALL1;
+  if (!CEREBRAS_KEY && !SAMBANOVA_KEY_CALL1 && !GROQ_KEY) {
+    return res.status(500).json({ error: 'No AI provider configured (CEREBRAS_API_KEY / SAMBANOVA_API_KEY_CALL1 / GROQ_API_KEY)' });
+  }
 
   // Return cached if fresh (6h)
   if (req.query.force !== 'true') {
@@ -1027,46 +1041,77 @@ DIVERGENSI TERBESAR:
   const fundMessages = [{ role: 'user', content: prompt }];
   let analysis = null;
 
-  // Primary: Groq (hemat akun 1 SambaNova di jalur sehat)
-  try {
-    if (!await allowAiCall('groq')) throw new Error('AI daily budget exceeded');
-    const r = await fetch(GROQ_URL_FUND, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${GROQ_KEY}` },
-      body: JSON.stringify({ model: GROQ_MODEL_FUND, messages: fundMessages, max_tokens: 700, temperature: 0.3 }),
-      signal: AbortSignal.timeout(25000),
-    });
-    if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e?.error?.message || `HTTP ${r.status}`); }
-    const data = await r.json();
-    const txt = data?.choices?.[0]?.message?.content?.trim() || '';
-    if (!txt) throw new Error('Empty response');
-    analysis = txt;
-    console.log('fundamental_analysis: Groq OK');
-  } catch(e) {
-    console.warn('fundamental_analysis Groq failed:', e.message);
+  // Primary: Cerebras gpt-oss-120b (session 145 — pool token/hari sendiri, terpisah
+  // dari OpenRouter yang dipakai Nemotron di market-digest.js)
+  if (CEREBRAS_KEY && await cb.canCall(CB_CEREBRAS_GPTOSS)) {
+    try {
+      if (!await allowAiCall('cerebras')) throw new Error('AI daily budget exceeded');
+      const r = await fetch(CEREBRAS_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${CEREBRAS_KEY}` },
+        body: JSON.stringify({ model: CEREBRAS_MODEL, messages: fundMessages, max_tokens: 700, temperature: 0.3 }),
+        signal: AbortSignal.timeout(15000),
+      });
+      if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e?.error?.message || `HTTP ${r.status}`); }
+      const data = await r.json();
+      const txt = data?.choices?.[0]?.message?.content?.trim() || '';
+      if (!txt) throw new Error('Empty response');
+      analysis = txt;
+      console.log('fundamental_analysis: Cerebras gpt-oss-120b OK');
+      await cb.onSuccess(CB_CEREBRAS_GPTOSS);
+    } catch(e) {
+      console.warn('fundamental_analysis Cerebras failed:', e.message);
+      await cb.onFailure(CB_CEREBRAS_GPTOSS);
+    }
+  } else if (CEREBRAS_KEY) {
+    console.log('fundamental_analysis: Cerebras circuit OPEN — skipping to SambaNova');
   }
 
-  // Fallback: SambaNova akun 1
-  if (!analysis) {
-    const SAMBANOVA_KEY = process.env.SAMBANOVA_API_KEY;
-    if (SAMBANOVA_KEY) {
-      try {
-        if (!await allowAiCall('sambanova_main')) throw new Error('AI daily budget exceeded');
-        const r = await fetch('https://api.sambanova.ai/v1/chat/completions', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SAMBANOVA_KEY}` },
-          body: JSON.stringify({ model: 'DeepSeek-V3.2', messages: fundMessages, max_tokens: 700, temperature: 0.3 }),
-          signal: AbortSignal.timeout(25000),
-        });
-        if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e?.error?.message || `HTTP ${r.status}`); }
-        const data = await r.json();
-        const txt = data?.choices?.[0]?.message?.content?.trim() || '';
-        if (!txt) throw new Error('Empty response');
-        analysis = txt;
-        console.log('fundamental_analysis: SambaNova fallback OK');
-      } catch(e) {
-        console.warn('fundamental_analysis SambaNova fallback failed:', e.message);
-      }
+  // Fallback 1: SambaNova akun 2 (session 145 — geser dari akun 1; akun 2 sekarang
+  // dipakai bersama sebagai fallback journal_analysis + fundamental_analysis + Call 1
+  // market-digest, lihat _ai_guard.js untuk rasionalnya)
+  if (!analysis && SAMBANOVA_KEY_CALL1 && await cb.canCall(CB_SAMBA_C1_ADMIN)) {
+    try {
+      if (!await allowAiCall('sambanova_c1')) throw new Error('AI daily budget exceeded');
+      const r = await fetch('https://api.sambanova.ai/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SAMBANOVA_KEY_CALL1}` },
+        body: JSON.stringify({ model: 'DeepSeek-V3.2', messages: fundMessages, max_tokens: 700, temperature: 0.3 }),
+        signal: AbortSignal.timeout(25000),
+      });
+      if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e?.error?.message || `HTTP ${r.status}`); }
+      const data = await r.json();
+      const txt = data?.choices?.[0]?.message?.content?.trim() || '';
+      if (!txt) throw new Error('Empty response');
+      analysis = txt;
+      console.log('fundamental_analysis: SambaNova akun2 fallback OK');
+      await cb.onSuccess(CB_SAMBA_C1_ADMIN);
+    } catch(e) {
+      console.warn('fundamental_analysis SambaNova akun2 fallback failed:', e.message);
+      await cb.onFailure(CB_SAMBA_C1_ADMIN);
+    }
+  } else if (!analysis && SAMBANOVA_KEY_CALL1) {
+    console.log('fundamental_analysis: SambaNova akun2 circuit OPEN — skipping to Groq');
+  }
+
+  // Fallback 2: Groq (last resort, tetap ada — lihat daun_merah_plan.md Session 145)
+  if (!analysis && GROQ_KEY) {
+    try {
+      if (!await allowAiCall('groq')) throw new Error('AI daily budget exceeded');
+      const r = await fetch(GROQ_URL_FUND, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${GROQ_KEY}` },
+        body: JSON.stringify({ model: GROQ_MODEL_FUND, messages: fundMessages, max_tokens: 700, temperature: 0.3 }),
+        signal: AbortSignal.timeout(25000),
+      });
+      if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e?.error?.message || `HTTP ${r.status}`); }
+      const data = await r.json();
+      const txt = data?.choices?.[0]?.message?.content?.trim() || '';
+      if (!txt) throw new Error('Empty response');
+      analysis = txt;
+      console.log('fundamental_analysis: Groq fallback OK');
+    } catch(e) {
+      console.warn('fundamental_analysis Groq fallback failed:', e.message);
     }
   }
 
@@ -1142,7 +1187,7 @@ async function journalImportHandler(req, res) {
 
 // ── Circuit breaker status + reset ───────────────────────────────────────────
 
-const KNOWN_CIRCUITS = ['ai:openrouter', 'ai:cerebras', 'ai:sambanova:c1', 'ai:sambanova:main', 'ai:ollama', 'fred', 'stooq', 'ff', 'fj', 'cftc', 'redis', 'forexbenchmark', 'actionforex'];
+const KNOWN_CIRCUITS = ['ai:openrouter', 'ai:openrouter:nemotron', 'ai:cerebras', 'ai:cerebras:gptoss', 'ai:sambanova:c1', 'ai:sambanova:main', 'ai:ollama', 'fred', 'stooq', 'ff', 'fj', 'cftc', 'redis', 'forexbenchmark', 'actionforex'];
 
 async function circuitStatusHandler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');

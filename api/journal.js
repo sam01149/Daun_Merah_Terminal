@@ -7,6 +7,7 @@ const CORS = { 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-cache' }
 
 const rateLimit = require('./_ratelimit');
 const { allowAiCall } = require('./_ai_guard');
+const cb = require('./_circuit_breaker');
 
 // device_id dipakai langsung sebagai bagian key Redis — batasi charset & panjang
 const DEVICE_ID_RE   = /^[A-Za-z0-9_-]{1,64}$/;
@@ -21,24 +22,74 @@ function clampStr(v, max) {
 
 const GROQ_URL   = 'https://api.groq.com/openai/v1/chat/completions';
 const GROQ_MODEL = 'llama-3.3-70b-versatile';
+// Cerebras gpt-oss-120b (session 145) — primary baru AI Coach, pool token/hari sendiri
+// (terpisah dari OpenRouter yang dipakai Nemotron 3 Ultra di market-digest.js).
+const CEREBRAS_URL      = 'https://api.cerebras.ai/v1/chat/completions';
+const CEREBRAS_MODEL    = 'gpt-oss-120b';
+const CB_CEREBRAS_GPTOSS = 'ai:cerebras:gptoss';
+// Sama seperti CB_SAMBA_C1 di market-digest.js — akun 2 SambaNova dipakai bersama
+// sebagai fallback1 journal_analysis + fundamental_analysis + primary Call 1 digest.
+const CB_SAMBA_C1 = 'ai:sambanova:c1';
 const ANALYSIS_CACHE_TTL = 60 * 60; // 1 hour
 
-async function aiCall(messages, maxTokens = 1000) {
-  const apiKey = process.env.GROQ_API_KEY;
-  if (!apiKey) throw new Error('GROQ_API_KEY not set');
-  if (!await allowAiCall('groq')) throw new Error('AI daily budget exceeded');
-  const r = await fetch(GROQ_URL, {
+async function callProvider(url, apiKey, model, messages, maxTokens, temperature, timeoutMs) {
+  const r = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-    body: JSON.stringify({ model: GROQ_MODEL, messages, max_tokens: maxTokens, temperature: 0.4 }),
-    signal: AbortSignal.timeout(30000),
+    body: JSON.stringify({ model, messages, max_tokens: maxTokens, temperature }),
+    signal: AbortSignal.timeout(timeoutMs),
   });
   if (!r.ok) {
     const err = await r.json().catch(() => ({}));
-    throw new Error(err?.error?.message || `HTTP ${r.status}`);
+    const e = new Error(err?.error?.message || `HTTP ${r.status}`);
+    e.status = r.status;
+    throw e;
   }
   const data = await r.json();
-  return data?.choices?.[0]?.message?.content?.trim() || '';
+  const txt = data?.choices?.[0]?.message?.content?.trim() || '';
+  if (!txt) throw new Error('Empty response');
+  return txt;
+}
+
+// session 145: dulu Groq-only tanpa fallback/circuit breaker sama sekali — sekarang
+// 3-tier (Cerebras gpt-oss-120b primary -> SambaNova akun2 fallback1 -> Groq fallback2,
+// tetap ada sebagai jaring pengaman terakhir tanpa circuit breaker, konsisten pola
+// project: last-resort selalu dicoba).
+async function aiCall(messages, maxTokens = 1000) {
+  const CEREBRAS_KEY        = process.env.CEREBRAS_API_KEY;
+  const SAMBANOVA_KEY_CALL1 = process.env.SAMBANOVA_API_KEY_CALL1;
+  const GROQ_KEY            = process.env.GROQ_API_KEY;
+
+  if (CEREBRAS_KEY && await cb.canCall(CB_CEREBRAS_GPTOSS)) {
+    try {
+      if (!await allowAiCall('cerebras')) throw new Error('AI daily budget exceeded');
+      const txt = await callProvider(CEREBRAS_URL, CEREBRAS_KEY, CEREBRAS_MODEL, messages, maxTokens, 0.4, 20000);
+      await cb.onSuccess(CB_CEREBRAS_GPTOSS);
+      return txt;
+    } catch(e) {
+      console.warn('journal aiCall: Cerebras failed:', e.message);
+      await cb.onFailure(CB_CEREBRAS_GPTOSS);
+    }
+  }
+
+  if (SAMBANOVA_KEY_CALL1 && await cb.canCall(CB_SAMBA_C1)) {
+    try {
+      if (!await allowAiCall('sambanova_c1')) throw new Error('AI daily budget exceeded');
+      const txt = await callProvider('https://api.sambanova.ai/v1/chat/completions', SAMBANOVA_KEY_CALL1, 'DeepSeek-V3.2', messages, maxTokens, 0.4, 30000);
+      await cb.onSuccess(CB_SAMBA_C1);
+      return txt;
+    } catch(e) {
+      console.warn('journal aiCall: SambaNova akun2 failed:', e.message);
+      await cb.onFailure(CB_SAMBA_C1);
+    }
+  }
+
+  if (GROQ_KEY) {
+    if (!await allowAiCall('groq')) throw new Error('AI daily budget exceeded');
+    return await callProvider(GROQ_URL, GROQ_KEY, GROQ_MODEL, messages, maxTokens, 0.4, 30000);
+  }
+
+  throw new Error('No AI provider configured (CEREBRAS_API_KEY / SAMBANOVA_API_KEY_CALL1 / GROQ_API_KEY)');
 }
 
 async function redisCmd(...args) {
@@ -430,3 +481,7 @@ module.exports = async function handler(req, res) {
 
   return res.status(405).json({ error: 'Method not allowed' });
 };
+
+// Ekspor helper murni untuk unit test (module.exports = handler function; properti
+// tambahan tidak mengganggu Vercel yang cuma memanggilnya sebagai function biasa)
+module.exports._aiCall = aiCall;
