@@ -45,6 +45,8 @@
 
 **`OLLAMA_MODEL` sementara di-set ke `'kimi-k2.6'`** (tag tanpa `:cloud` suffix, konsisten dengan konvensi direct-API yang sudah dikonfirmasi) untuk pengujian ini. Kalau terbukti 403 (subscription required, sesuai dugaan), turunkan balik ke `gpt-oss:120b` yang sudah terbukti gratis & proven Bahasa Indonesia.
 
+**Kendala baru:** karena SambaNova sudah kembali jadi primary (dan biasanya sukses), jalur Ollama tidak akan pernah tereksekusi lewat request normal — tidak bisa ditest organik. **Fix diagnostik:** tambah bypass `?test_ollama=1` (atau `body.test_ollama===true`) di `ohlcvAnalyzeHandler` — skip SambaNova untuk request itu SAJA, tidak mengubah urutan fallback produksi. Berguna juga untuk uji kandidat model Ollama berikutnya tanpa perlu re-order kode tiap kali.
+
 **Belum bisa dites end-to-end** — nunggu redeploy + circuit breaker `ai:ollama` clear dari window OPEN sebelumnya. Kalau `gpt-oss:120b` juga ternyata berbayar, `gpt-oss:20b` (dikonfirmasi gratis) atau `gemma4:31b` (disebut riset publik sebagai "strongest confirmed free model") jadi kandidat berikutnya — cukup ganti `OLLAMA_MODEL`, tidak perlu ubah struktur lain.
 
 ---

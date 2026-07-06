@@ -2289,12 +2289,18 @@ async function ohlcvAnalyzeHandler(req, res) {
     const GROQ_KEY      = process.env.GROQ_API_KEY;
     let rawText = null, model = null;
 
+    // Diagnostik sementara: ?test_ollama=1 (atau body.test_ollama) skip SambaNova buat
+    // request ini SAJA, supaya jalur Ollama bisa dites langsung tanpa nunggu SambaNova
+    // gagal (yang jarang terjadi karena SambaNova primary & biasanya sukses). Tidak
+    // mengubah urutan fallback produksi — hanya bypass satu kali per request eksplisit.
+    const testOllamaOnly = req.query.test_ollama === '1' || req.body?.test_ollama === true;
+
     // Primary: SambaNova DeepSeek-V3.2 (671B) — dikembalikan jadi primary (30s, timeout
     // asli). Eksperimen GLM-5.2/gpt-oss:120b sebagai primary dihentikan: alasan awal coba
     // model lain adalah cari yang LEBIH kuat dari DeepSeek-V3.2, tapi gpt-oss:120b (120B)
     // kemungkinan malah di bawahnya secara kualitas — jadi tidak masuk akal jadi primary
     // yang mengalahkan model yang sudah terbukti lebih kuat & sudah proven di app ini.
-    if (SAMBANOVA_KEY && await cb.canCall('ai:sambanova:main')) {
+    if (!testOllamaOnly && SAMBANOVA_KEY && await cb.canCall('ai:sambanova:main')) {
       try {
         if (!await allowAiCall('sambanova_main')) throw new Error('AI daily budget exceeded');
         const r = await fetch('https://api.sambanova.ai/v1/chat/completions', {
@@ -2309,7 +2315,8 @@ async function ohlcvAnalyzeHandler(req, res) {
           else throw new Error('Empty response');
         } else { throw new Error(`HTTP ${r.status}`); }
       } catch(e) { console.warn('ohlcv_analyze SambaNova failed:', e.message); await cb.onFailure('ai:sambanova:main'); }
-    } else if (SAMBANOVA_KEY) { console.log('ohlcv_analyze: SambaNova circuit OPEN — skipping to Ollama'); }
+    } else if (testOllamaOnly) { console.log('ohlcv_analyze: test_ollama=1 — bypassing SambaNova'); }
+    else if (SAMBANOVA_KEY) { console.log('ohlcv_analyze: SambaNova circuit OPEN — skipping to Ollama'); }
 
     // Fallback 1: Ollama Cloud (lihat OLLAMA_MODEL — sedang diuji kimi-k2.6, fallback ke
     // gpt-oss:120b kalau 403) — dipakai kalau SambaNova sesaat gagal, sebelum jatuh ke Groq
