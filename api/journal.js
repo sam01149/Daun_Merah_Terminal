@@ -132,7 +132,9 @@ async function computeMfeMae(entry) {
   return { quality: 'unavailable', reason: 'data_window_exceeded' };
 }
 
+const { requireAppKey } = require('./_app_key');
 module.exports = async function handler(req, res) {
+  if (requireAppKey(req, res)) return; // gate APP_KEY (cron/admin secret lolos) — lihat api/_app_key.js
   Object.entries(CORS).forEach(([k, v]) => res.setHeader(k, v));
   if (req.method === 'OPTIONS') return res.status(204).end();
 

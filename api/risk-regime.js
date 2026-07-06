@@ -51,7 +51,9 @@ const USER_AGENTS = [
   'Mozilla/5.0 (X11; Linux x86_64; rv:125.0) Gecko/20100101 Firefox/125.0',
 ]
 
+const { requireAppKey } = require('./_app_key');
 module.exports = async function handler(req, res) {
+  if (requireAppKey(req, res)) return; // gate APP_KEY (cron/admin secret lolos) — lihat api/_app_key.js
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Cache-Control', 'no-cache')
 

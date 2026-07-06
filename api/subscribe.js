@@ -36,7 +36,9 @@ async function redisCmd(...args) {
   return (await res.json()).result;
 }
 
+const { requireAppKey } = require('./_app_key');
 module.exports = async function handler(req, res) {
+  if (requireAppKey(req, res)) return; // gate APP_KEY (cron/admin secret lolos) — lihat api/_app_key.js
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   res.setHeader('Access-Control-Allow-Methods', 'POST, DELETE, OPTIONS');

@@ -541,7 +541,9 @@ async function runCronThesisSweep(recentItems, SAMBANOVA_KEY, GROQ_KEY) {
   }));
 }
 
+const { requireAppKey } = require('./_app_key');
 module.exports = async function handler(req, res) {
+  if (requireAppKey(req, res)) return; // gate APP_KEY (cron/admin secret lolos) — lihat api/_app_key.js
   console.log('market-digest v3 START', new Date().toISOString());
   const handlerStart = Date.now();
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -726,7 +728,12 @@ module.exports = async function handler(req, res) {
       if (cached) return cached;
     } catch(e) {}
     try {
-      const r = await fetch(`${proto}://${host}${path}`, { signal: AbortSignal.timeout(timeoutMs) });
+      // x-cron-secret: panggilan internal server-ke-server — wajib lolos gate APP_KEY
+      // (_app_key.js) saat endpoint tujuan ikut digate.
+      const r = await fetch(`${proto}://${host}${path}`, {
+        headers: { 'x-cron-secret': process.env.CRON_SECRET || '' },
+        signal: AbortSignal.timeout(timeoutMs),
+      });
       if (r.ok) return JSON.stringify(await r.json());
     } catch(e) { console.warn(`fetchOrWarm ${key} failed:`, e.message); }
     return null;

@@ -9,9 +9,14 @@
 const { autoUpdateFundamentals } = require('./_fundamental_parser');
 const rateLimit = require('./_ratelimit');
 const cbk = require('./_circuit_breaker');
+const { requireAppKey } = require('./_app_key');
 
 module.exports = async function handler(req, res) {
   const type = req.query.type;
+  // type=rss DIKECUALIKAN dari gate APP_KEY: service worker (sw.js) polling notifikasi
+  // via periodicsync di background — tidak punya akses localStorage/key. Endpoint ini
+  // cache-first (50s), tanpa AI, jadi residual abuse-nya murah. Type lain tetap digate.
+  if (type !== 'rss' && requireAppKey(req, res)) return;
   if (await rateLimit(req, res, { limit: 30, windowSecs: 60, endpoint: `feeds_${type || 'none'}` })) return;
   if (type === 'rss')         return rssHandler(req, res);
   if (type === 'cot')         return cotHandler(req, res);

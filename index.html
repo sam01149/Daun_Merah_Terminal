@@ -3036,6 +3036,22 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
     </div>
   </div>
 
+  <!-- KUNCI AKSES (APP_KEY) -->
+  <div class="pt-section">
+    <div class="pt-section-hdr" style="color:#f5a623">
+      <span>🔒</span> Kunci Akses (APP_KEY)
+    </div>
+    <div style="padding:14px">
+      <div style="font-size:10px;color:var(--text-mid);line-height:1.7;margin-bottom:14px">
+        Kalau link aplikasi ini bocor, orang asing bisa memicu fitur AI dan menghabiskan kuota harian. Untuk mencegahnya, set environment variable <strong style="color:var(--text)">APP_KEY</strong> di dashboard Vercel (Settings → Environment Variables) lalu redeploy — sejak itu semua endpoint menolak request tanpa kunci, dan aplikasi akan meminta kunci <strong style="color:var(--text)">sekali per device</strong> (tersimpan di device, tidak dikirim ke mana-mana selain server sendiri). Selama APP_KEY belum diset, aplikasi berjalan terbuka seperti biasa. Notifikasi background (cek berita service worker) dan cron GitHub Actions tetap jalan tanpa kunci.
+      </div>
+      <button onclick="ptOpenAppKey()" style="padding:8px 12px;background:rgba(245,166,35,0.10);border:1px solid #f5a623;color:#f5a623;font-family:'DM Mono',monospace;font-size:9px;letter-spacing:.05em;cursor:pointer;border-radius:4px">MASUKKAN / UBAH KUNCI AKSES</button>
+      <div style="font-size:9px;color:var(--muted);margin-top:10px;line-height:1.65">
+        ⚠ Ganti nilai APP_KEY di Vercel kapan saja untuk mencabut akses semua device sekaligus (semua device harus memasukkan kunci baru).
+      </div>
+    </div>
+  </div>
+
   <!-- SINKRONISASI DEVICE -->
   <div class="pt-section">
     <div class="pt-section-hdr" style="color:#a78bfa">
@@ -3608,6 +3624,68 @@ let fundFetchedAt = 0;
 // CB Tracker state
 let cbData        = null;
 let cbFetchedAt   = 0;
+
+// ── Kunci Akses (APP_KEY) — pasangan gate server di api/_app_key.js ──────────
+// Semua fetch ke /api/* otomatis membawa header x-app-key dari localStorage.
+// Server balas 401 {error:'app_key_required'} → tampilkan overlay input kunci.
+// Gate nonaktif selama env APP_KEY belum diset di Vercel (fail-open), jadi blok
+// ini no-op sampai kunci diaktifkan.
+const APP_KEY_LS = 'app_key';
+function _getAppKey() { try { return localStorage.getItem(APP_KEY_LS) || ''; } catch(e) { return ''; } }
+function _saveAppKey(val) {
+  try { val ? localStorage.setItem(APP_KEY_LS, val) : localStorage.removeItem(APP_KEY_LS); } catch(e) {}
+  location.reload(); // ulangi semua fetch awal dengan kunci baru
+}
+
+// Factory dipisah supaya bisa diuji di Node (test/app_key.test.js) dengan fetch palsu.
+function _wrapFetchWithAppKey(origFetch, getKey, onUnauthorized) {
+  return async function(input, init) {
+    if (typeof input !== 'string' || !input.startsWith('/api/')) return origFetch(input, init);
+    const opts = Object.assign({}, init);
+    const headers = new Headers((init && init.headers) || {});
+    const key = getKey();
+    if (key) headers.set('x-app-key', key);
+    opts.headers = headers;
+    const res = await origFetch(input, opts);
+    if (res && res.status === 401) {
+      try {
+        const j = await res.clone().json();
+        if (j && j.error === 'app_key_required') onUnauthorized();
+      } catch(e) { /* body bukan JSON — 401 dari gate lain, biarkan caller yang urus */ }
+    }
+    return res;
+  };
+}
+
+let _appKeyGateShown = false;
+function showAppKeyGate() {
+  if (_appKeyGateShown || document.getElementById('appKeyGate')) return;
+  _appKeyGateShown = true;
+  const wrap = document.createElement('div');
+  wrap.id = 'appKeyGate';
+  wrap.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(5,8,15,0.88);display:flex;align-items:center;justify-content:center;padding:20px';
+  wrap.innerHTML = `
+    <div style="max-width:340px;width:100%;background:var(--surface,#0d1420);border:1px solid var(--border,#1f2937);border-radius:8px;padding:20px">
+      <div style="font-family:'DM Mono',monospace;font-size:12px;color:var(--text,#e5e7eb);letter-spacing:.05em;margin-bottom:8px">🔒 KUNCI AKSES</div>
+      <div style="font-size:10px;color:var(--text-mid,#9ca3af);line-height:1.7;margin-bottom:14px">Aplikasi ini dikunci dengan <strong>APP_KEY</strong> supaya orang lain yang menemukan link tidak bisa menghabiskan kuota AI. Masukkan kunci akses (nilai env <code>APP_KEY</code> di Vercel). Kunci disimpan hanya di device ini.</div>
+      <input type="password" id="appKeyInput" placeholder="Kunci akses..." autocomplete="off" style="width:100%;box-sizing:border-box;background:var(--bg,#05080f);border:1px solid var(--border,#1f2937);color:var(--text,#e5e7eb);padding:9px 10px;font-family:'DM Mono',monospace;font-size:11px;border-radius:4px;outline:none;margin-bottom:10px">
+      <button onclick="_saveAppKey(document.getElementById('appKeyInput').value.trim())" style="width:100%;padding:9px 12px;background:rgba(192,57,43,0.15);border:1px solid var(--accent,#c0392b);color:var(--accent,#e74c3c);font-family:'DM Mono',monospace;font-size:10px;letter-spacing:.06em;cursor:pointer;border-radius:4px">SIMPAN &amp; MUAT ULANG</button>
+    </div>`;
+  document.body.appendChild(wrap);
+  const inp = document.getElementById('appKeyInput');
+  inp.addEventListener('keydown', e => { if (e.key === 'Enter') _saveAppKey(inp.value.trim()); });
+  setTimeout(() => inp.focus(), 50);
+}
+
+// Dipanggil dari tab PETUNJUK — buka ulang overlay walau sudah pernah tampil.
+function ptOpenAppKey() {
+  _appKeyGateShown = false;
+  const el = document.getElementById('appKeyGate');
+  if (el) el.remove();
+  showAppKeyGate();
+}
+
+window.fetch = _wrapFetchWithAppKey(window.fetch.bind(window), _getAppKey, showAppKeyGate);
 
 // Ringkasan state
 let ringkasanCache = null;

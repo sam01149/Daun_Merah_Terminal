@@ -17,6 +17,7 @@ const { configureVapid, sendWebPush } = require('./_webpush');
 const cb = require('./_circuit_breaker');
 const rateLimit = require('./_ratelimit');
 const { allowAiCall } = require('./_ai_guard');
+const { requireAppKey } = require('./_app_key');
 
 // Actions callable from the frontend without a secret → rate-limited per IP.
 // AI-triggering actions get a tighter budget than cache reads.
@@ -32,6 +33,7 @@ const PUBLIC_ACTION_LIMITS = {
 };
 
 module.exports = async function handler(req, res) {
+  if (requireAppKey(req, res)) return; // gate APP_KEY (cron/admin secret lolos) — lihat api/_app_key.js
   const action = req.query.action;
 
   // Cron traffic (Vercel cron header atau secret valid) tidak pernah kena 429

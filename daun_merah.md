@@ -1,9 +1,33 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-07-06 (session 144 lanjutan — integrasi Ringkasan↔Analisa: fundamental terstruktur + excerpt per-pair + umur konteks + makro_alignment)
+> **Last updated:** 2026-07-06 (session 144 lanjutan 2 — gate APP_KEY: kunci akses aplikasi supaya link bocor tidak bisa menghabiskan kuota AI)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
+
+---
+
+## Changelog Session 144 lanjutan 2 (2026-07-06) — Gate APP_KEY: Proteksi Kuota AI dari Link Bocor
+
+**Request user:** "saya ingin agar orang lain tidak bisa dengan enaknya menghabiskan limit AI kalau kebetulan dia mendapatkan link aplikasi saya" — implementasi opsi app-key dari evaluasi mitigasi sebelumnya.
+
+**Desain (keputusan penting):**
+- **Fail-open sampai dikonfigurasi:** gate hanya aktif kalau env `APP_KEY` diset di Vercel — deploy kode ini duluan 100% aman, tidak mengubah perilaku apapun sampai user set env + redeploy. (Konsisten dengan filosofi `_ai_guard`/`_ratelimit` yang juga fail-open saat Redis tidak ada.)
+- **Lapisan di depan proteksi yang sudah ada**, bukan pengganti: rate limit per-IP, budget AI harian (`_ai_guard`), dan circuit breaker tetap jalan seperti sebelumnya.
+- **Satu pengecualian sadar:** `GET /api/feeds?type=rss` TIDAK digate — service worker (`sw.js`) polling notifikasi via `periodicsync` di background tanpa akses localStorage/key; endpoint ini cache-first 50s, tanpa AI, residual abuse murah. Semua endpoint lain (termasuk semua jalur AI: market-digest, ohlcv_analyze, fundamental_analysis, journal analyze) digate.
+
+**Backend:**
+- `api/_app_key.js` baru: `requireAppKey(req,res)` — cocokkan header `x-app-key` vs env `APP_KEY` pakai `crypto.timingSafeEqual` (guard panjang beda); OPTIONS selalu lolos (preflight tidak bawa custom header); bypass cron/admin via `x-vercel-cron` / `x-cron-secret`/`x-admin-secret` === `CRON_SECRET` (pola auth yang sama dengan gate cron existing di admin.js) — GitHub Actions & cron-job.org tidak putus.
+- Gate dipasang di baris pertama handler **12 endpoint**: admin, calendar, cb-status, correlations, feeds (minus rss), journal, market-digest, rate-path, real-yields, risk-regime, sizing-history, subscribe.
+- `fetchOrWarm()` di market-digest.js (panggilan internal server→server ke risk-regime/rate-path/correlations) sekarang mengirim `x-cron-secret` — tanpa ini warm call bakal 401 saat gate aktif.
+
+**Frontend (`index.html`):**
+- `window.fetch` dibungkus `_wrapFetchWithAppKey` (factory murni, dites di Node): semua request string `/api/*` otomatis diberi header `x-app-key` dari localStorage; fetch non-API (MT5 bridge localhost, TradingView) tidak disentuh; header bawaan call site (Content-Type dsb.) dipertahankan. Response 401 `{error:'app_key_required'}` → `showAppKeyGate()` (overlay input kunci, guard tampil-sekali, Enter/tombol → simpan localStorage + reload); 401 dari gate lain (mis. admin secret) tidak memicu overlay.
+- Section PETUNJUK baru "🔒 Kunci Akses (APP_KEY)": penjelasan cara aktivasi + tombol MASUKKAN/UBAH KUNCI (`ptOpenAppKey()`) + catatan rotasi kunci (ganti env = cabut akses semua device).
+
+**Cara aktivasi (belum aktif sampai ini dilakukan):** Vercel dashboard → Settings → Environment Variables → tambah `APP_KEY` (nilai bebas, panjang) → redeploy. Setelah itu tiap device diminta kunci sekali. Rotasi: ganti nilai env kapan saja.
+
+**Verifikasi:** 66 unit test lulus (10 baru di `test/app_key.test.js`): fail-open tanpa env, kunci benar/salah/kosong, panjang beda tidak throw, OPTIONS lolos, 3 jalur bypass cron + secret salah tetap diblok, **integrasi in-process handler asli** (calendar & market-digest 401 sebelum kerja apapun; feeds type=cot diblok vs type=rss lolos dengan fetch upstream di-stub), wrapper client diekstrak dari index.html (header terpasang, non-API tidak disentuh, header bawaan dipertahankan, 401 selektif memicu overlay, body non-JSON tidak throw). Seluruh 22 file api/ lolos `node --check`; satu-satunya blok script inline index.html (478KB) lolos parse `new Function`.
 
 ---
 
