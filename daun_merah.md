@@ -1,9 +1,21 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-07-06 (session 144 lanjutan 2 — gate APP_KEY: kunci akses aplikasi supaya link bocor tidak bisa menghabiskan kuota AI)
+> **Last updated:** 2026-07-06 (session 144 lanjutan 3 — fix crash Analisa AI: escHtml gagal untuk nilai number dari JSON terstruktur)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
+
+---
+
+## Changelog Session 144 lanjutan 3 (2026-07-06) — Fix Crash Analisa AI: escHtml Gagal untuk Nilai Number dari JSON Terstruktur
+
+**Request user:** melaporkan screenshot error `Error: (s || "").replace is not a function` yang muncul di hasil Analisa AI (XAU/USD) tepat setelah cooldown request AI selesai.
+
+**Root cause:** `escHtml(s)` di `index.html` pakai pola `(s||'').replace(...)` — ini cuma aman kalau `s` falsy (`undefined`/`null`/`''`/`0`/`false`). Begitu `s` truthy tapi bukan string (number, boolean, array), `s||''` balikin `s` apa adanya (bukan string), jadi `.replace` di atasnya throw persis seperti pesan yang dilaporkan. Field `structured.sl` / `structured.tp` / `structured.entry_zone` dari JSON hasil AI (`ohlcv_analyze`) kadang dikembalikan sebagai number murni (mis. `sl: 4155.50`), bukan string — `_renderStructuredAi()` manggil `escHtml(structured.sl)` langsung tanpa `String(...)` dulu (beda dari `risk_reward`/`time_horizon_days` di fungsi yang sama, yang sudah dibungkus `String(...)` lebih dulu). Crash terjadi di dalam try-block `analyzeOhlcvAi()`, tertangkap `catch(e)`, dan `e.message` (pesan error JS mentah) itu sendiri yang ditampilkan ke user — makanya pesannya kebaca seperti pesan sistem, bukan Bahasa Indonesia biasa.
+
+**Fix:** `escHtml` sekarang `String(s ?? '').replace(...)` — `null`/`undefined` tetap jadi string kosong, tapi number/boolean/array dikonversi ke string dulu sebelum di-escape. Diperbaiki di satu titik sumber supaya otomatis aman untuk 90+ titik pemanggilan `escHtml(...)` di seluruh file tanpa perlu sentuh satu-satu.
+
+**Verifikasi:** `test/esc_html.test.js` baru (4 test): escHtml tidak throw untuk number/boolean/array, null/undefined/`''` tetap `''`, escape `&`/`<`/`>` masih benar untuk string normal, dan reproduksi end-to-end `_renderStructuredAi()` dengan `sl`/`tp`/`entry_zone` berupa number (persis skenario di screenshot). Full suite 70/70 lulus, semua `api/*.js` + inline script `index.html` lolos parse (`node --check` / `new Function`).
 
 ---
 
