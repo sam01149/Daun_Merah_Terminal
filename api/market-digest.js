@@ -1873,8 +1873,14 @@ ${xauHistoryBlock}`;
     generated_at:   new Date().toISOString(),
   };
 
-  // Persist full payload to Redis so cached mode works (exclude thesis_alerts — device-specific)
-  if (article && method !== 'fallback' && method !== 'fallback_quota') {
+  // Persist full payload to Redis so cached mode works (exclude thesis_alerts — device-specific).
+  // Diagnostic-only requests (?test_nemotron=1 / ?test_nemotron_super=1) must NEVER reach here —
+  // they're meant to be isolated from production state (see comments above at testNemotronOnly/
+  // testNemotronSuperOnly), but this check was missing, so a "successful" diagnostic response
+  // (HTTP 200 with raw reasoning-trace content instead of a real article) got cached into
+  // `latest_article` and served to every user via mode=cached, and would have also fired a
+  // push notification with that garbage content (found in production 2026-07-07).
+  if (article && method !== 'fallback' && method !== 'fallback_quota' && !testNemotronOnly && !testNemotronSuperOnly) {
     const toCache = { ...payload, thesis_alerts: null };
     redisCmd('SET', 'latest_article', JSON.stringify(toCache), 'EX', 21600).catch(() => {});
     // A2.2: notify subscribers once per successful digest — fire-and-forget, never block the response.
