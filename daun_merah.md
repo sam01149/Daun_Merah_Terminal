@@ -1,9 +1,26 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-07-07 (session 146 — riset Qwen 3.7 Max + Together AI/Fireworks AI/DeepInfra, kesimpulan: tidak relevan untuk Daun Merah, tidak ada perubahan kode)
+> **Last updated:** 2026-07-07 (session 146 lanjutan 2 — ditemukan indikasi akun SambaNova produksi kemungkinan bukan free tier, investigasi ditunda oleh user)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
+
+---
+
+## Changelog Session 146 lanjutan 2 (2026-07-07) — ⚠️ Temuan Belum Tuntas: Akun SambaNova Produksi Kemungkinan Bukan Free Tier
+
+**Konteks:** user tanya balik kenapa SambaNova dikategorikan "truly free" (Tier 1) sementara Fireworks AI "tidak free" (Tier 3) — pertanyaan valid karena klaim SambaNova itu berasal dari riset lama (Session sebelum ini, 2026-05-28) yang belum diverifikasi ulang di sesi ini, sementara klaim Fireworks baru saja di-riset fresh. Verifikasi ulang dokumentasi resmi SambaNova (`docs.sambanova.ai/docs/en/models/rate-limits`) menemukan struktur tier yang jauh lebih ketat dari catatan lama: **Free Tier resmi cuma 20 RPM / 20 RPD / 200K TPD** (bukan "10 RPM" tanpa batas harian seperti tercatat sebelumnya) — dan ada thread komunitas resmi SambaNova di mana staf sempat bilang "tidak ada rencana pertahankan free tier".
+
+**User share screenshot Billing dashboard SambaNova produksi (`cloud.sambanova.ai/plans/billing`):**
+- 3 invoice historis (Mei, Jun, Jul-Agu 2026) semuanya **Total due: $0.00** — tapi bukan karena tidak ada charge, melainkan charge riil (`Signup` line item, unit price $3.00 dan $4.50 per unit — pola harga per-juta-token khas tier berbayar) yang **di-offset oleh kredit signup** ("Signup consumed").
+- Ini pola berbeda dari "Free Tier" resmi di dokumentasi (yang seharusnya cuma dibatasi rate limit, tanpa mekanisme invoice/charge/kredit sama sekali) — indikasi kuat akun ini jalan di **Developer Tier (berbayar)** dengan kartu pembayaran kemungkinan sudah terpasang, cuma belum kena tagihan nyata karena kredit signup awal belum habis.
+- **Belum dikonfirmasi 100%** — perlu cek halaman "Commits and Credits" (sisa saldo kredit) dan "Manage Billing" (ada/tidaknya kartu terpasang) untuk memastikan.
+
+**Keputusan user:** "biarin saja dulu" / "nanti ku pikirkan caranya" — **investigasi & keputusan ditunda**, tidak ada perubahan kode maupun konfirmasi lebih lanjut di sesi ini.
+
+**Risiko kalau tidak ditindaklanjuti:** kalau akun ini benar Developer Tier berbayar, begitu kredit signup habis, `market-digest` (yang pakai SambaNova/DeepSeek-V3.2 sebagai primary, akun2 juga dipakai sebagai fallback fitur lain) akan **mulai kena biaya nyata otomatis** tanpa peringatan eksplisit selain invoice bulanan — bukan gagal/fallback ke provider lain, karena secara teknis request tetap berhasil (cuma jadi berbayar). Perlu dicek ulang di sesi mendatang kalau user sudah siap.
+
+**How to apply next session:** jangan asumsikan lagi provider manapun "truly free" hanya dari dokumentasi/riset lama tanpa re-verifikasi — pola sesi ini (Together AI berubah kebijakan sejak Juli 2025, SambaNova ternyata ambigu) menunjukkan status free-tier provider AI berubah-ubah dan gampang stale. Kalau user tanya soal biaya AI atau minta cek billing lagi, mulai dari sini: cek "Commits and Credits" + "Manage Billing" SambaNova dulu sebelum bahas provider lain.
 
 ---
 
