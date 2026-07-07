@@ -1,9 +1,23 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-07-07 (session 145 lanjutan 6 — Nemotron 3 Super DIDEMOTE setelah 0/6 tes live gagal di 2 konfigurasi reasoning berbeda)
+> **Last updated:** 2026-07-07 (session 145 lanjutan 7 — CRON_SECRET production dirotasi & diverifikasi fix, temuan sampingan dari sesi tes Nemotron Super)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
+
+---
+
+## Changelog Session 145 lanjutan 7 (2026-07-07) — Fix: CRON_SECRET Production Dirotasi & Diverifikasi
+
+**Konteks:** temuan sampingan dari sesi tes Nemotron 3 Super (lanjutan 6, di bawah) — `vercel env pull` menunjukkan `CRON_SECRET` production sebagai string kosong (`""`). Klarifikasi user: variabel ini di-set **Sensitive** di Vercel — begitu nilai Sensitive disimpan, Vercel tidak pernah menampilkannya lagi ke dashboard/API/CLI manapun (write-only by design), jadi tampilan kosong via `env pull` **bukan bukti nilainya benar-benar kosong**. Kesimpulan awal saya salah — butuh verifikasi fungsional, bukan baca-nilai.
+
+**Karena user sendiri juga lupa nilai aslinya** (dan GitHub Actions secret juga write-only, tidak bisa dibaca ulang dari sisi manapun), opsi yang realistis adalah **rotasi**: generate token baru, pasang nilai yang identik di kedua tempat (Vercel env `CRON_SECRET` + GitHub Actions repo secret `CRON_SECRET`) supaya sinkron kembali — bukan usaha memulihkan nilai lama.
+
+**Verifikasi (bukan asumsi):** `ohlcv-sync.yml` workflownya sendiri strict (`curl -w "%{http_code}"` lalu `exit 1` kalau bukan 200 — dicek dulu isi workflow-nya untuk mastiin centang hijau GitHub Actions memang representasi HTTP 200 asli, bukan false-positive dari exit code shell yang tidak mengecek response). Run hijau di 7:03 pagi ternyata terjadi **sebelum** rotasi sesi ini (tidak valid sebagai bukti pasangan baru) — user diminta trigger manual via tombol **"Run workflow"** (`workflow_dispatch`) setelah rotasi selesai dipasang di kedua sisi. Hasil manual run: **hijau (HTTP 200)** — pasangan `CRON_SECRET` baru dikonfirmasi cocok Vercel↔GitHub.
+
+**Dampak fix:** karena semua konsumer memakai `process.env.CRON_SECRET` yang sama persis (bukan variabel terpisah per fitur), satu verifikasi ini otomatis mengonfirmasi semuanya kembali normal: `ohlcvSyncHandler` (sync OHLCV/TA per jam), `runCronThesisSweep` (alert invalidasi thesis otomatis di tiap siklus digest terjadwal), serta endpoint admin yang sebelumnya diduga terkunci (`health`, `redis-keys`, `admin-prompts`, `push`, `fundamental_seed`, `journal_import`, `circuit-status`). Tidak ada perubahan kode di sesi ini — murni rotasi credential + verifikasi.
+
+**Catatan:** durasi sebenarnya masalah ini aktif (kalau memang genuinely rusak, bukan cuma Sensitive-mask) tidak diketahui pasti — tidak ada cara menelusuri riwayat nilai `CRON_SECRET` dari log manapun. Tidak berdampak ke pengujian Nemotron 3 Super (lanjutan 6) karena gate `_app_key.js` fail-open (APP_KEY belum diset), jadi endpoint `market-digest` generate tetap 200 sepanjang sesi itu.
 
 ---
 
