@@ -1,9 +1,23 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-07-07 (session 147 — FIX bug produksi: cache `latest_article` tercemar output mentah diagnostik Nemotron 3 Super, sudah diperbaiki & dibersihkan)
+> **Last updated:** 2026-07-07 (session 147 lanjutan — Nemotron 3 Super Ronde 3, `chat_template_kwargs` native param, TETAP timeout penuh — saga ditutup lebih konklusif)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
+
+---
+
+## Changelog Session 147 lanjutan (2026-07-07) — Nemotron 3 Super Ronde 3: `chat_template_kwargs` Native Param, TETAP Timeout Penuh
+
+**Konteks:** user berhipotesis kegagalan Nemotron 3 Super sebelumnya (Ronde 1-2) mungkin karena thinking-nya belum benar-benar mati, bukan soal resource contention — kalau `reasoning:{effort:'none'}` (parameter abstraksi OpenRouter) tidak diterjemahkan dengan benar untuk model hybrid Mamba-Transformer yang masih sangat baru ini, model bisa jadi tetap full-thinking diam-diam. Karena kode kita pakai `stream:false`, skenario itu **tidak terbedakan** dari resource contention murni — dua-duanya sama-sama kelihatan sebagai "timeout, nol konten". User usulkan parameter native model sendiri: `extra_body={"chat_template_kwargs":{"enable_thinking": False}}` — dikonfirmasi riset ini memang cara resmi NVIDIA (`build.nvidia.com`, dokumentasi Unsloth), bukan trik blog.
+
+**Perubahan (`api/market-digest.js`, tier diagnostik `?test_nemotron_super=1` saja):** satu variabel per eksperimen — `withNoThink()` dan `reasoning:{effort:'none'}` dilepas semua, diganti `chat_template_kwargs:{enable_thinking:false}` murni. `max_tokens` 1300→4096, timeout 20s→30s, supaya constraint kita sendiri tidak lagi jadi kandidat penyebab kalau gagal lagi. Test suite 109/109 tetap lulus (`node --check` bersih), deploy commit `07f2064`.
+
+**Hasil tes live:** `nemotron_super:The operation was aborted due to timeout(30006ms)` — **timeout PENUH lagi**, di batas waktu yang sudah dilonggarkan 50%, dengan parameter yang lebih "benar" dari yang pernah dicoba, dan token budget 3x lebih besar. `method:"fallback"` (semua fallback sengaja di-skip di tier diagnostik ini, by design, supaya hasil murni Nemotron Super saja yang kelihatan).
+
+**Kesimpulan (lebih konklusif dari sebelumnya):** sekarang ada **3 ronde, 3 mekanisme disable-thinking yang benar-benar berbeda** (directive teks `/no_think`, parameter abstraksi OpenRouter `reasoning.effort`, parameter native model `chat_template_kwargs`), dengan config token/timeout berbeda-beda tiap ronde — **semua gagal**. Karena percobaan paling "benar secara teknis" (native param, resmi NVIDIA) dengan ruang paling longgar yang pernah dikasih tetap timeout penuh, hipotesis "reasoning belum benar-benar mati" bisa dicoret. Kesimpulan yang tersisa dan paling konsisten dengan semua data: **resource contention di sisi OpenRouter untuk model 120B yang masih baru dan berat**, bukan sesuatu yang bisa diperbaiki dari konfigurasi/parameter di sisi aplikasi ini.
+
+**Status:** saga Nemotron 3 Super (dan Ultra) tetap **ditutup** — DeepSeek-V3.2/SambaNova tetap primary `market-digest` Call 1. Tidak ada rencana ronde 4 kecuali muncul sinyal baru (mis. kapasitas free-tier OpenRouter membaik, atau Nemotron dirilis ulang dengan endpoint berbeda).
 
 ---
 
