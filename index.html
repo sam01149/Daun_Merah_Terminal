@@ -4073,13 +4073,21 @@ async function fetchFeed() {
   }
 
   const parsed = parseRSS(xml);
-  const merged = parsed.filter(i => !isFJElite(i.title)).sort((a, b) =>
-    new Date(b.pubDate) - new Date(a.pubDate)
-  );
+  // FJElite suffix alone doesn't guarantee a real long-form note — some FJElite
+  // posts ("XXX CFTC Positions Week Ended ...") are pure chart images with a
+  // totally empty <description>, same as ordinary NEWS chart/table posts. Only
+  // route to ARTIKEL when there's actual body text; the image-only ones stay
+  // in NEWS (suffix stripped) so they get the normal chart-image toggle instead
+  // of showing up as a body-less "article".
+  const isFJEliteNote = i => isFJElite(i.title) && sanitizeDescMultiline(i.desc).length > 0;
+  const merged = parsed
+    .map(i => (isFJElite(i.title) && !isFJEliteNote(i)) ? { ...i, title: cleanFJEliteTitle(i.title) } : i)
+    .filter(i => !isFJEliteNote(i))
+    .sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate));
 
-  // Reroute FJElite research notes into the ARTIKEL tab instead of NEWS
+  // Reroute FJElite research notes (real body text) into the ARTIKEL tab instead of NEWS
   const fjByGuid = new Map(fjResearchItems.map(i => [i.guid, i]));
-  for (const item of parsed) if (isFJElite(item.title)) fjByGuid.set(item.guid, item);
+  for (const item of parsed) if (isFJEliteNote(item)) fjByGuid.set(item.guid, item);
   fjResearchItems = [...fjByGuid.values()]
     .sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate))
     .slice(0, 30);
@@ -4142,6 +4150,12 @@ function sanitizeDesc(html) {
 // Returns 'chart' | 'table' | null; null means no inline image toggle shown.
 function fjImageType(title) {
   if (/\bchart\b/i.test(title)) return 'chart';
+  // "XXX CFTC Positions Week Ended ..." (FJElite) — per-instrument COT chart
+  // image, <description> selalu kosong. Confirmed via direct URL inspection
+  // (guid 9666271 "USD CFTC Positions..." → images/9666271.png = 200 OK).
+  // Match "Week Ended" specifically — the non-FJElite summary post "CFTC
+  // Positions in the Week Ended ..." has no per-instrument image (404).
+  if (/\bCFTC Positions Week Ended\b/i.test(title)) return 'chart';
   // 'volatility' sengaja tidak dipakai di sini — kata umum yang sering muncul di quote/
   // komentar biasa ("volatility is down"), bukan penanda post gambar/tabel FinancialJuice.
   // Contoh nyata yang salah ke-tag: guid 9660453 "Fed's Chair Warsh: volatility is down,

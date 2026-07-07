@@ -1,9 +1,28 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-07-07 (session 148 — Fix: output Analisa Fundamental kepotong di tengah kalimat, `max_tokens` terlalu kecil)
+> **Last updated:** 2026-07-07 (session 149 — Fix: post gambar CFTC (FJElite) nyasar ke tab ARTIKEL tanpa gambar)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
+
+---
+
+## Changelog Session 149 (2026-07-07) — Fix: Post Gambar CFTC (FJElite) Nyasar ke Tab ARTIKEL Tanpa Gambar
+
+**Ditemukan user:** di tab ARTIKEL, muncul beberapa entry dari FinancialJuice yang isinya cuma menampilkan data CFTC positioning dalam bentuk gambar — bukan artikel/riset asli. Asumsi user: karena title-nya bertag "FJElite" maka otomatis masuk fitur artikel, padahal isinya cuma gambar dan gambarnya sendiri tidak ditampilkan (beda dari headline chart lain di tab NEWS yang punya tombol "Lihat Chart").
+
+**Root cause (dikonfirmasi lewat fetch RSS live, bukan dugaan):** tab ARTIKEL (`fjResearchItems`, `index.html`) me-reroute semua item RSS FinancialJuice yang title-nya diakhiri suffix "- FJElite" dengan asumsi semuanya adalah catatan analis panjang (body teks di `<description>`). Fetch langsung `financialjuice.com/feed.ashx?xy=rss` menemukan 15 item "XXX CFTC Positions Week Ended June 30th - FJElite" (per currency/instrument: USD, EUR, AUD, JPY, GBP, CHF, NZD, CAD, ZN, ZT, NQ, ES, Copper ×2, Gold) yang `<description>`-nya **benar-benar kosong** (`<description />`) — isi aslinya cuma gambar chart di `financialjuice.com/images/{guid}.png` (dikonfirmasi HTTP 200 ~60KB per guid). Karena suffix "- FJElite" tetap match, ke-15 nya ikut ter-reroute ke ARTIKEL sebagai "artikel" tanpa teks dan tanpa gambar — `renderResearch()` (tab ARTIKEL) memang tidak punya mekanisme render gambar sama sekali, beda dengan `renderFeed()` (tab NEWS) yang sudah punya toggle "Lihat Chart" + `<img>` untuk post gambar sejenis (`chart`/`matrix`/`heatmap`/`probabilities` di title).
+
+**Fix (`index.html`):**
+1. `fetchFeed()` — item FJElite sekarang hanya di-reroute ke ARTIKEL kalau body teksnya (setelah `sanitizeDescMultiline`) benar-benar berisi. Item FJElite dengan description kosong tetap di NEWS, dengan suffix "- FJElite" dibersihkan dari title (`cleanFJEliteTitle`).
+2. `fjImageType()` — ditambah pengenalan pola "CFTC Positions Week Ended" supaya item ini dapat tombol "Lihat Chart" yang sama seperti post gambar lain. Regex sengaja dibuat spesifik ke frasa "Week Ended" (bukan "CFTC Positions" saja) — ada 1 post ringkasan non-FJElite ("CFTC Positions in the Week Ended June 30th") dengan title mirip tapi **tidak** punya gambar (dikonfirmasi 404); regex longgar akan memberi post ini tombol chart palsu.
+
+**Verifikasi:**
+1. **Replay logika murni** (fungsi `isFJElite`/`isFJEliteNote`/`cleanFJEliteTitle`/`fjImageType` disalin persis dari `index.html`) terhadap snapshot RSS asli (100 item nyata dari FinancialJuice, termasuk 15 item CFTC) via Node — hasil: 0 item CFTC nyasar ke ARTIKEL, ke-15 nya tetap di NEWS dengan title bersih + `fjImageType` = `'chart'`; post ringkasan palsu-positif "CFTC Positions in the Week Ended" tetap `null` (tanpa tombol). Kontrol tambahan: item FJElite sintetis dengan body teks asli tetap benar ter-reroute ke ARTIKEL — jalur catatan analis asli tidak rusak.
+2. **End-to-end di browser sungguhan:** server lokal (Node http shim yang menjalankan `api/feeds.js` asli, endpoint `type=rss` disajikan dari fixture snapshot RSS nyata di atas) + headless Chrome (`puppeteer-core` + Chrome yang sudah terpasang). Load `index.html` asli → tutup welcome modal → tab ARTIKEL: 0 item FJElite/CFTC (cuma 50 item riset institusional asli ING/FED/ECB/BIS/dst, sesuai ekspektasi). Tab NEWS: 100 item termasuk ke-15 CFTC dengan tombol "Lihat Chart" ter-render dan title sudah bersih dari suffix. Klik tombol salah satu item ("USD CFTC Positions Week Ended") → wrap gambar berubah `display:block` dengan `src` yang benar (`financialjuice.com/images/9666271.png`, independen dikonfirmasi valid via curl). Nol console error sepanjang alur.
+3. `node --check` atas seluruh inline `<script>` di `index.html` bersih setelah perubahan (file ini murni HTML+vanilla JS tanpa build step/test suite otomatis untuk UI-nya).
+
+**Catatan:** feed live FinancialJuice ternyata cukup fluktuatif (jumlah item & isi berubah antar-fetch dalam hitungan menit, kadang batch CFTC hilang dari window feed) — makanya verifikasi end-to-end pakai snapshot RSS nyata yang di-fixture-kan, bukan bolak-balik fetch live, supaya hasil deterministik dan tidak membebani upstream FinancialJuice.
 
 ---
 
