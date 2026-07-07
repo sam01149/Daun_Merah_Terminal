@@ -1417,7 +1417,12 @@ ${xauHistoryBlock}`;
         const t0s = Date.now();
         try {
           console.log('Call 1: trying Nemotron 3 Super (OpenRouter)');
-          const raw = await aiCall(OPENROUTER_URL, OPENROUTER_KEY, NEMOTRON_SUPER_MODEL, withNoThink(call1Messages), 1300, 0.25, superTimeout1, OPENROUTER_HEADERS, {}, 'openrouter');
+          // Percobaan 1-3 (session 145 lanjutan 5/6): /no_think (directive teks manual) TIDAK
+          // dipatuhi model ini — 0/3 hasil (1 timeout, 2 reasoning trace mentah bahasa Inggris
+          // yang menghabiskan seluruh max_tokens). Sekarang coba parameter reasoning terstruktur
+          // resmi OpenRouter (diterjemahkan ke mekanisme asli tiap model, bukan sekadar teks di
+          // prompt) sebagai percobaan berikutnya sebelum didemote seperti Ultra.
+          const raw = await aiCall(OPENROUTER_URL, OPENROUTER_KEY, NEMOTRON_SUPER_MODEL, withNoThink(call1Messages), 1300, 0.25, superTimeout1, OPENROUTER_HEADERS, { reasoning: { effort: 'none' } }, 'openrouter');
           const elapsed = Date.now() - t0s;
           if (raw.trim()) {
             article = raw.trim(); method = 'nemotron-3-super';
