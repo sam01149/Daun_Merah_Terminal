@@ -3566,11 +3566,23 @@ Env:    GROQ_API_KEY, UPSTASH_REDIS_REST_URL, UPSTASH_REDIS_REST_TOKEN,
 
 | Provider | Status Free Tier | Masalah | Qwen3-235B? |
 |----------|-----------------|---------|-------------|
-| **Together AI** | Bukan truly free — $25 signup credit (habis) | Credit model, bukan persistent free. Qwen3-235B tersedia tapi berbayar (`Qwen/Qwen3-235B-A22B-fp8-tput`). | Ya (berbayar) |
-| **Fireworks AI** | 10 RPM gratis tanpa payment method | Qwen3-235B tersedia di Fireworks tapi tidak jelas apakah model besar masuk free quota. Primarily pay-per-token. | Ya (berbayar) |
+| **Together AI** | **Tidak ada sama sekali (per Session 146, 2026-07-07)** — $25 signup credit lama sudah diretired Juli 2025; docs resmi sekarang: no free trial, wajib prepay minimum $5. | Full pay-per-use dari awal, tidak ada jalur gratis apapun tanpa kartu. Qwen3-235B *dan* Qwen3.7-Max tersedia tapi berbayar penuh. | Ya (berbayar) |
+| **Fireworks AI** | **Cuma $1 signup credit sekali pakai** (bukan RPM gratis permanen) — 10 RPM cap berlaku selama kartu belum ditambahkan, tapi begitu $1 kredit habis wajib kartu untuk lanjut. | Bukan persistent free — $1 kredit habis dalam hitungan request untuk model besar. Qwen3.6 Plus & Qwen3.7 Max ada di sini tapi berbayar. | Ya (berbayar) |
+| **DeepInfra** | **Tidak ada** — wajib kartu/prepay dari signup pertama. `DeepStart` (1B token gratis) cuma untuk startup via aplikasi manual, bukan self-serve instant. | Pay-per-use termurah di pasaran (Qwen3.5-397B-A17B $0.54/$3.40 per 1M) tapi tetap bukan gratis. | Tidak dikonfirmasi (fokus Qwen3.5/3.6, bukan Max) |
+| **Anyscale** | **Tidak ada API self-serve sama sekali** — "Anyscale Endpoints" (dulu $0.10-$0.50/1M token, model lama daun_merah pernah cek ini) **dimatikan total 1 Agustus 2024**. Yang tersisa cuma "Anyscale Platform" — Ray compute enterprise, kontrak tahunan lewat sales, bukan API instant-signup. | Bukan LLM inference marketplace lagi sejak 2024 — dashboard yang kelihatan di akun `daunmerah` kemungkinan besar cuma trial/compute platform, bukan API key untuk model serverless. | Tidak relevan (bukan LLM API lagi) |
 | **Novita AI** | $0.50 trial credit (habis) | Credit model bukan persistent free. Cocok untuk image gen + LLM combo, bukan produksi. | Tidak dikonfirmasi |
 | **Hugging Face Inference API** | ~1,000 req/hari, ~50 req/jam | Cold start 30+ detik untuk model besar. 70B+ model sangat terbatas di free tier. Bukan untuk latency-sensitive produksi. | Tidak (70B+ restricted) |
 | **Cloudflare Workers AI** | 10,000 Neurons/hari | 70B model konsumsi banyak neurons → effective limit sangat rendah. 8B model cocok, 70B+ tidak viable free tier. | Tidak |
+
+**Kesimpulan Session 146 lanjutan:** dari 4 provider yang dicek user (Together AI, Fireworks AI, DeepInfra, Anyscale), **tidak satupun** yang punya tier gratis persisten setara Cerebras/OpenRouter/SambaNova/Groq/Gemini AI Studio (lihat Tier 1 di atas) — semuanya credit-trial (habis sekali pakai) atau wajib-kartu dari awal, dan Anyscale malah bukan self-serve API lagi sejak 2024. Tidak ada perubahan kode; rekomendasi Tier 1 tetap berlaku.
+
+**Provider Links (base URL OpenAI-compatible, untuk referensi kalau expand provider):**
+```
+Together AI:  https://api.together.xyz/v1        (docs: docs.together.ai)
+Fireworks AI: https://api.fireworks.ai/inference/v1  (docs: docs.fireworks.ai)
+DeepInfra:    https://api.deepinfra.com/v1/openai    (docs: deepinfra.com/docs)
+Anyscale:     — (self-serve API mati sejak 2024, sekarang enterprise-only via sales)
+```
 
 ### Ringkasan Rekomendasi untuk Daun Merah
 
