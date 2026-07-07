@@ -1,9 +1,25 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-07-07 (session 146 lanjutan 2 — ditemukan indikasi akun SambaNova produksi kemungkinan bukan free tier, investigasi ditunda oleh user)
+> **Last updated:** 2026-07-07 (session 147 — FIX bug produksi: cache `latest_article` tercemar output mentah diagnostik Nemotron 3 Super, sudah diperbaiki & dibersihkan)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
+
+---
+
+## Changelog Session 147 (2026-07-07) — FIX Bug Produksi: Cache `latest_article` Tercemar Output Mentah Nemotron 3 Super
+
+**Ditemukan user:** buka app pagi ini (09:28 WIB), badge model nampilkan `nemotron-3-super` dan isi artikel adalah chain-of-thought mentah bahasa Inggris ("We need to produce a pre-session briefing in Indonesian...") — bukan briefing Bahasa Indonesia yang seharusnya. Padahal per kesimpulan Session 145 lanjutan 6, Nemotron 3 Super seharusnya **inert** di produksi, cuma aktif lewat bypass diagnostik `?test_nemotron_super=1`.
+
+**Root cause (dikonfirmasi baca kode, bukan dugaan):** `api/market-digest.js` baris ~1877 nulis hasil generate ke Redis key `latest_article` (key yang sama dibaca SEMUA user via `mode=cached`) dengan kondisi `article && method !== 'fallback' && method !== 'fallback_quota'` — **tidak ada pengecualian untuk request diagnostik**. Waktu tes live Nemotron 3 Super kemarin (Session 145 lanjutan 6, Ronde 1) dapat respons "HTTP-successful" (`method:"nemotron-3-super"`) walau isinya cuma reasoning trace mentah yang kepotong di `max_tokens=1300` — kondisi cache-write itu tetap terpenuhi, jadi ikut ter-`SET ... EX 21600` (6 jam) ke `latest_article`, menimpa artikel bagus sebelumnya. Efek sampingnya lebih luas dari sekadar cache: baris yang sama juga memicu `notifyDigestReady()` (push notification ke semua subscriber) — kemungkinan sempat mengirim notifikasi berisi konten rusak juga.
+
+**Fix (`api/market-digest.js`):** kondisi cache-write + push notification sekarang tambah `&& !testNemotronOnly && !testNemotronSuperOnly` — kedua flag diagnostik itu (`?test_nemotron=1`, `?test_nemotron_super=1`) sekarang benar-benar terisolasi dari state produksi, sesuai desain awal yang dimaksud ("tidak pernah masuk jalur produksi normal") tapi belum pernah benar-benar dijamin di kode sampai sesi ini.
+
+**Verifikasi:** `node --check` bersih, full suite 109/109 lulus (tidak ada test yang meng-cover cache-write ini secara spesifik — konsisten dengan catatan lama di `test/market_digest_nemotron.test.js` bahwa handler penuh sengaja tidak dites end-to-end karena terlalu banyak dependency eksternal; fix ini scope-nya kecil/jelas jadi tidak dipaksakan bikin test-infra baru). Deploy via commit `be70ff5`.
+
+**Pembersihan cache yang sudah terlanjur rusak:** trigger 1x request biasa (GET polos ke `/api/market-digest`, tanpa parameter diagnostik apapun, tidak perlu secret — `APP_KEY` belum di-set jadi endpoint ini fail-open persis seperti akses user biasa) supaya jalur fallback normal (SambaNova/DeepSeek-V3.2) generate ulang dan menimpa cache. Hasil: `method:"deepseek-v3.2"`, artikel Bahasa Indonesia normal, HTTP 200 (17.3s). Diverifikasi ulang lewat `mode=cached` — `from_cache:true` dengan isi yang sama. Cache bersih, user yang reload app sekarang akan melihat versi yang benar.
+
+**Catatan:** durasi sebenarnya cache yang rusak ini aktif (dari kapan tes Ronde 1 kemarin sampai ditemukan+diperbaiki pagi ini) tidak diketahui pasti — TTL 6 jam berarti kalaupun tidak ditemukan user, akan otomatis expire dengan sendirinya. Tidak berdampak ke saga demote Nemotron 3 Super itu sendiri (keputusan demote tetap berlaku, ini murni bug caching yang independen dari kualitas model).
 
 ---
 
