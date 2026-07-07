@@ -1,9 +1,33 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-07-07 (session 145 lanjutan 5 — persiapan diagnostik Nemotron 3 Super, BELUM dites live, menunggu sesi berikutnya)
+> **Last updated:** 2026-07-07 (session 145 lanjutan 6 — Nemotron 3 Super DIDEMOTE setelah 0/6 tes live gagal di 2 konfigurasi reasoning berbeda)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
+
+---
+
+## Changelog Session 145 lanjutan 6 (2026-07-07) — Nemotron 3 Super: Tes Live, 0/6 Gagal di 2 Konfigurasi, Didemote
+
+**Konteks:** lanjutan langsung dari lanjutan 5 (di bawah) — kode diagnostik `?test_nemotron_super=1` sudah siap tapi belum pernah dites live. User minta dites sekarang.
+
+**Metode:** `vercel env pull` (izin eksplisit user, untuk ambil `CRON_SECRET` — dipakai bypass gate `x-cron-secret`) lalu `curl` langsung ke production (`https://financial-feed-app.vercel.app/api/market-digest?test_nemotron_super=1`). File `.env.production.local` dihapus lagi setelah tiap sesi tarik, tidak pernah masuk git (sudah di `.gitignore` via `.env*`).
+
+**Ronde 1 — konfigurasi asli (`/no_think` di system prompt, 3x percobaan):**
+1. Timeout penuh di batas 20 detik.
+2. HTTP 200 / `method:"nemotron-3-super"` (dianggap sukses oleh kode), tapi **isi `article` adalah chain-of-thought mentah berbahasa Inggris** ("We need to produce a briefing in Indonesian...") — model sama sekali tidak comply `/no_think`, malah menulis proses berpikirnya secara verbatim sebagai output, lalu terpotong di tengah kalimat karena kehabisan `max_tokens` (1300). `quality_flags.forbidden_phrases` sempat mendeteksi 22 frasa terlarang — tapi ini artefak (reasoning trace-nya mengutip ulang daftar frasa terlarang dari prompt, bukan pelanggaran nyata di artikel).
+3. Pola identik dengan #2 — reasoning trace bahasa Inggris lagi, terpotong lagi.
+
+**Ronde 2 — ganti mekanisme ke `reasoning:{effort:'none'}` (parameter API resmi OpenRouter untuk reasoning models, lebih terstruktur dari directive teks manual):**
+- `api/market-digest.js` baris ~1420: `aiCall(...)` sekarang kirim `extraBody: { reasoning: { effort: 'none' } }` di tier diagnostik Nemotron Super (`/no_think` di system prompt tetap dipertahankan juga, tidak saling mengganggu). Deploy via commit `559cc0e`.
+4. Timeout penuh 20 detik lagi.
+5. Timeout penuh 20 detik lagi → circuit breaker `ai:openrouter:nemotron-super` OPEN (ambang `AI_CB_THRESHOLD=2` tercapai).
+
+**Kesimpulan: 0/6 percobaan live menghasilkan artikel yang bisa dipakai**, dengan 2 mekanisme disable-reasoning yang sama sekali berbeda (directive teks vs parameter API terstruktur) sama-sama gagal — cuma beda gejala kegagalan (content leak vs timeout murni). Pola timeout persis di batas 20 detik pada Ronde 2 mengindikasikan ini kemungkinan besar **resource contention di sisi OpenRouter untuk model yang masih baru/besar**, pola yang sama persis dengan Nemotron 3 Ultra — bukan sesuatu yang bisa diperbaiki lewat prompt engineering atau parameter reasoning. Pertanyaan awal soal dukungan Bahasa Indonesia (Nemotron 3 Super resminya tidak listed support ID) **masih belum terjawab** — tidak ada satu pun percobaan yang sampai ke tahap menghasilkan jawaban final untuk dinilai.
+
+**Keputusan (dikonfirmasi user, 2 opsi ditawarkan: demote sekarang / tunggu circuit reset lalu coba 1-2x lagi):** **Demote — stop eksperimen ini.** Kode diagnostik dibiarkan seperti sebelumnya (sudah inert by design sejak awal — cuma aktif via `?test_nemotron_super=1`, tidak pernah masuk jalur produksi Call1 normal, jadi tidak perlu perubahan kode lebih lanjut). `NEMOTRON_SUPER_MODEL` const, circuit `ai:openrouter:nemotron-super`, dan diagnostik tetap ada kalau suatu saat mau dites ulang (mis. kapasitas free-tier OpenRouter membaik), tapi tidak dikejar lagi sekarang.
+
+**Temuan sampingan (di luar scope, ditandai belum diinvestigasi/diperbaiki):** saat `vercel env pull`, env `CRON_SECRET` di production **kosong** (`""`). Berpotensi bikin auth cron GitHub Actions (`market-digest.yml` dan workflow lain yang pakai secret sama) gagal 401 secara diam-diam — gate `_app_key.js` sendiri masih fail-open (karena `APP_KEY` juga belum diset) jadi request market-digest tetap lolos meski cron-secret kosong, tapi endpoint yang mewajibkan match eksplisit (`circuit-status`, dll) langsung 401 walau dengan secret yang "benar". Belum dikonfirmasi apakah ini regresi baru atau CRON_SECRET memang sengaja dikosongkan; belum disentuh sama sekali sesi ini — perlu keputusan/verifikasi user sebelum ada perubahan.
 
 ---
 
