@@ -1,9 +1,21 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-07-07 (session 147 lanjutan — Nemotron 3 Super Ronde 3, `chat_template_kwargs` native param, TETAP timeout penuh — saga ditutup lebih konklusif)
+> **Last updated:** 2026-07-07 (session 148 — Fix: output Analisa Fundamental kepotong di tengah kalimat, `max_tokens` terlalu kecil)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
+
+---
+
+## Changelog Session 148 (2026-07-07) — Fix: Output Analisa Fundamental Kepotong (`max_tokens` Terlalu Kecil)
+
+**Ditemukan user:** generate Analisis Fundamental (ranking 8 currency + terkuat/terlemah + divergensi), output kepotong persis di tengah kalimat pertama bagian "DIVERGENSI TERBESAR" — bukan error, responsnya HTTP 200 normal tapi teksnya tidak selesai.
+
+**Root cause:** `fundamentalAnalysisHandler` (`api/admin.js`, dipakai ketiga provider fallback-nya — Cerebras gpt-oss-120b, SambaNova DeepSeek-V3.2, Groq llama-3.3) pakai `max_tokens: 700`, padahal format jawaban yang diminta prompt (8 baris ranking + 2 paragraf terkuat/terlemah + 3 baris divergensi) secara konsisten butuh lebih dari itu — sample output yang dilaporkan user sendiri sudah hampir menghabiskan 700 token sebelum sempat menyelesaikan bagian divergensi. Fitur lain di file yang sama (`ohlcv_analyze`, JSON + commentary 4-5 paragraf) sudah pakai `max_tokens: 1500` untuk output yang setara kayanya dan terbukti stabil.
+
+**Fix:** naikkan `max_tokens` di ketiga panggilan provider (Cerebras/SambaNova/Groq) dari 700 → 1500, menyamakan dengan `ohlcv_analyze`. Ditambah log `console.warn` kalau `finish_reason === 'length'` di ketiganya, supaya truncation di masa depan ketahuan dari log server tanpa perlu user melapor manual lagi.
+
+**Verifikasi:** `node -c api/admin.js` bersih, full suite 109/109 tetap lulus (tidak ada test yang cover handler ini spesifik — konsisten dengan pola testing di file ini). Deploy commit [ISI SETELAH PUSH], lalu trigger `?action=fundamental_analysis&force=true` di production untuk konfirmasi output lengkap tidak kepotong lagi.
 
 ---
 

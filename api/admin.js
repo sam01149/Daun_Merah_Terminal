@@ -1049,13 +1049,14 @@ DIVERGENSI TERBESAR:
       const r = await fetch(CEREBRAS_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${CEREBRAS_KEY}` },
-        body: JSON.stringify({ model: CEREBRAS_MODEL, messages: fundMessages, max_tokens: 700, temperature: 0.3 }),
+        body: JSON.stringify({ model: CEREBRAS_MODEL, messages: fundMessages, max_tokens: 1500, temperature: 0.3 }),
         signal: AbortSignal.timeout(15000),
       });
       if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e?.error?.message || `HTTP ${r.status}`); }
       const data = await r.json();
       const txt = data?.choices?.[0]?.message?.content?.trim() || '';
       if (!txt) throw new Error('Empty response');
+      if (data?.choices?.[0]?.finish_reason === 'length') console.warn('fundamental_analysis: Cerebras output truncated (finish_reason=length) — pertimbangkan naikkan max_tokens');
       analysis = txt;
       console.log('fundamental_analysis: Cerebras gpt-oss-120b OK');
       await cb.onSuccess(CB_CEREBRAS_GPTOSS);
@@ -1076,13 +1077,14 @@ DIVERGENSI TERBESAR:
       const r = await fetch('https://api.sambanova.ai/v1/chat/completions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SAMBANOVA_KEY_CALL1}` },
-        body: JSON.stringify({ model: 'DeepSeek-V3.2', messages: fundMessages, max_tokens: 700, temperature: 0.3 }),
+        body: JSON.stringify({ model: 'DeepSeek-V3.2', messages: fundMessages, max_tokens: 1500, temperature: 0.3 }),
         signal: AbortSignal.timeout(25000),
       });
       if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e?.error?.message || `HTTP ${r.status}`); }
       const data = await r.json();
       const txt = data?.choices?.[0]?.message?.content?.trim() || '';
       if (!txt) throw new Error('Empty response');
+      if (data?.choices?.[0]?.finish_reason === 'length') console.warn('fundamental_analysis: SambaNova output truncated (finish_reason=length) — pertimbangkan naikkan max_tokens');
       analysis = txt;
       console.log('fundamental_analysis: SambaNova akun2 fallback OK');
       await cb.onSuccess(CB_SAMBA_C1_ADMIN);
@@ -1101,13 +1103,14 @@ DIVERGENSI TERBESAR:
       const r = await fetch(GROQ_URL_FUND, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${GROQ_KEY}` },
-        body: JSON.stringify({ model: GROQ_MODEL_FUND, messages: fundMessages, max_tokens: 700, temperature: 0.3 }),
+        body: JSON.stringify({ model: GROQ_MODEL_FUND, messages: fundMessages, max_tokens: 1500, temperature: 0.3 }),
         signal: AbortSignal.timeout(25000),
       });
       if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e?.error?.message || `HTTP ${r.status}`); }
       const data = await r.json();
       const txt = data?.choices?.[0]?.message?.content?.trim() || '';
       if (!txt) throw new Error('Empty response');
+      if (data?.choices?.[0]?.finish_reason === 'length') console.warn('fundamental_analysis: Groq output truncated (finish_reason=length) — pertimbangkan naikkan max_tokens');
       analysis = txt;
       console.log('fundamental_analysis: Groq fallback OK');
     } catch(e) {
