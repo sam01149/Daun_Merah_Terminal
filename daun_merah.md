@@ -1,9 +1,30 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-07-07 (session 145 lanjutan 7 — CRON_SECRET production dirotasi & diverifikasi fix, temuan sampingan dari sesi tes Nemotron Super)
+> **Last updated:** 2026-07-07 (session 146 — riset Qwen 3.7 Max + Together AI/Fireworks AI/DeepInfra, kesimpulan: tidak relevan untuk Daun Merah, tidak ada perubahan kode)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
+
+---
+
+## Changelog Session 146 (2026-07-07) — Riset: Qwen 3.7 Max + Together AI / Fireworks AI / DeepInfra
+
+**Konteks:** user minta riset 3 halaman model marketplace (`api.together.ai/models`, `app.fireworks.ai/models`, `deepinfra.com/dash/models`) plus model baru "Qwen 3.7 Max" — lanjutan eksplorasi provider AI setelah saga Nemotron (Session 145) demote DeepSeek-V3.2/SambaNova tetap primary. Ketiga URL dashboard yang di-share ternyata React app client-side-rendered, WebFetch cuma dapat shell/loading state (bukan bug — memang butuh JS eksekusi penuh), jadi info diambil via WebSearch + halaman model publik (non-dashboard) masing-masing provider.
+
+**Qwen 3.7 Max — spesifikasi:**
+- Rilis 19 Mei 2026 oleh Alibaba, flagship proprietary (BUKAN open-weight — beda dari Qwen3.5/3.6 series yang Apache 2.0, weights-nya tidak ada di Hugging Face).
+- Context 1M token, max output 65,536 token.
+- Harga: $1.25/1M token input, $3.75/1M token output, cached input $0.13/1M. **Tidak ada free tier di mana pun** (Alibaba Cloud Model Studio, Together AI, OpenRouter — semua berbayar).
+- Benchmark kuat: GPQA Diamond 92.4 (unggul Claude Opus 4.6 Max 91.3), SWE-Bench Verified 80.4%, Apex 44.5 (vs DeepSeek V4 Pro 38.3). Fokus agentic/coding/office automation, bukan dirancang untuk task briefing teks sederhana.
+
+**Ketersediaan di 3 provider yang diminta:**
+| Provider | Qwen 3.7 Max? | Catatan |
+|----------|--------------|---------|
+| **Together AI** | Ya | Model ID `Qwen/Qwen3.7-Max`, sama persis $1.25/$3.75 per 1M, tidak ada free credit disebutkan untuk model ini. |
+| **Fireworks AI** | Belum — cuma Qwen 3.7 **Plus** (varian lebih kecil) yang sudah live serverless; Max masih "coming soon", early-access by request. |
+| **DeepInfra** | Tidak ada | DeepInfra konsisten hanya serve model open-weight (Qwen3.5-397B-A17B, Qwen3.6-35B-A3B/27B, dll, Apache 2.0) — cocok karena Qwen3.7-Max memang bukan open-weight sehingga tidak bisa mereka host. |
+
+**Kesimpulan — tidak relevan untuk Daun Merah:** kebutuhan project untuk `market-digest` adalah model **truly-free** (persistent, bukan credit trial) dengan output berkualitas Bahasa Indonesia — lihat kriteria di riset [Session sebelumnya, "Research: Free AI Inference API Providers"](#research-free-ai-inference-api-providers-2026-05-28) di bawah. Qwen 3.7 Max berbayar penuh tanpa free tier di provider manapun, jadi tidak mengubah rekomendasi yang sudah ada: **DeepSeek-V3.2/SambaNova tetap primary**, tidak ada tindak lanjut kode. Kalau suatu saat mau eksplorasi Qwen generasi terbaru lagi, varian open-weight (`Qwen3.6-35B-A3B`/`Qwen3.6-27B`, Apache 2.0) di DeepInfra pay-per-use murah adalah kandidat yang lebih masuk akal dibanding Max — tapi tetap bukan truly-free, jadi bukan prioritas dibanding provider free-tier yang sudah didokumentasikan (Cerebras, OpenRouter, SambaNova).
 
 ---
 
