@@ -1049,7 +1049,7 @@ DIVERGENSI TERBESAR:
       const r = await fetch(CEREBRAS_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${CEREBRAS_KEY}` },
-        body: JSON.stringify({ model: CEREBRAS_MODEL, messages: fundMessages, max_tokens: 1500, temperature: 0.3 }),
+        body: JSON.stringify({ model: CEREBRAS_MODEL, messages: fundMessages, max_tokens: 1500, temperature: 0.3, reasoning_effort: 'low' }),
         signal: AbortSignal.timeout(15000),
       });
       if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e?.error?.message || `HTTP ${r.status}`); }
