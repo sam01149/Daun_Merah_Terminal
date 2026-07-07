@@ -1412,17 +1412,23 @@ ${xauHistoryBlock}`;
     // Nemotron 3 SUPER (session 145 lanjutan 5) — kandidat berbeda, belum pernah dites
     // live. Dites TERISOLASI (skip semua tier lain termasuk Ultra) via ?test_nemotron_super=1.
     if (testNemotronSuperOnly) {
-      const superTimeout1 = 20000; // real-world stats OpenRouter: p50 1.82s, E2E avg 11.2s — 20s generous
+      const superTimeout1 = 30000; // dinaikkan dari 20s (Ronde 3) — kasih ruang wall-clock penuh, stream:false berarti nol konten balik sampai model benar-benar selesai
       if (OPENROUTER_KEY && await cb.canCall(CB_OPENROUTER_NEMOTRON_SUPER)) {
         const t0s = Date.now();
         try {
           console.log('Call 1: trying Nemotron 3 Super (OpenRouter)');
-          // Percobaan 1-3 (session 145 lanjutan 5/6): /no_think (directive teks manual) TIDAK
-          // dipatuhi model ini — 0/3 hasil (1 timeout, 2 reasoning trace mentah bahasa Inggris
-          // yang menghabiskan seluruh max_tokens). Sekarang coba parameter reasoning terstruktur
-          // resmi OpenRouter (diterjemahkan ke mekanisme asli tiap model, bukan sekadar teks di
-          // prompt) sebagai percobaan berikutnya sebelum didemote seperti Ultra.
-          const raw = await aiCall(OPENROUTER_URL, OPENROUTER_KEY, NEMOTRON_SUPER_MODEL, withNoThink(call1Messages), 1300, 0.25, superTimeout1, OPENROUTER_HEADERS, { reasoning: { effort: 'none' } }, 'openrouter');
+          // Ronde 1 (/no_think directive teks): 0/3 (1 timeout, 2 reasoning trace mentah).
+          // Ronde 2 (reasoning:{effort:'none'}, param OpenRouter sendiri): 0/2, timeout PENUH
+          // di batas 20s kedua kali — tidak bisa dibedakan dari resource contention murni
+          // KARENA stream:false (kalau model masih mikir penuh, kita nol lihat sampai selesai).
+          // Ronde 3 (sekarang): pakai chat_template_kwargs:{enable_thinking:false} — parameter
+          // NATIVE model/vLLM sendiri (dikonfirmasi dari dokumentasi resmi NVIDIA/build.nvidia.com),
+          // BUKAN lapisan abstraksi reasoning milik OpenRouter yang mungkin belum benar
+          // diterjemahkan untuk model hybrid Mamba-Transformer yang masih sangat baru ini.
+          // Sengaja TIDAK dicampur dengan /no_think atau reasoning.effort lagi — satu variabel
+          // per eksperimen. max_tokens & timeout juga dilonggarkan supaya bukan constraint kita
+          // sendiri yang jadi penyebab kalau gagal lagi.
+          const raw = await aiCall(OPENROUTER_URL, OPENROUTER_KEY, NEMOTRON_SUPER_MODEL, call1Messages, 4096, 0.25, superTimeout1, OPENROUTER_HEADERS, { chat_template_kwargs: { enable_thinking: false } }, 'openrouter');
           const elapsed = Date.now() - t0s;
           if (raw.trim()) {
             article = raw.trim(); method = 'nemotron-3-super';
