@@ -2821,6 +2821,29 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
         <button class="jn-btn-sec" onclick="jnShowView('list')" style="margin-top:4px">Batal</button>
       </div>
     </div>
+    <!-- Edit catatan trade yang sudah closed/archived (inline) — cuma exit_reason +
+         attribution_notes, tidak menyentuh entry/exit price/R actual yang sudah final. -->
+    <div id="jnEditNoteView" style="display:none">
+      <div style="font-size:11px;color:var(--pink);font-family:'DM Mono',monospace;margin-bottom:12px;letter-spacing:.05em">EDIT CATATAN</div>
+      <div id="jnEditNoteRef" style="font-size:10px;color:var(--text-mid);font-family:'DM Mono',monospace;padding:8px;background:var(--surface);border:1px solid var(--border);border-radius:3px;margin-bottom:10px"></div>
+      <div class="jn-form">
+        <label>Alasan Exit
+          <select id="jnEditExitReason">
+            <option value="tp_hit">TP hit</option>
+            <option value="sl_hit">SL hit</option>
+            <option value="manual_close">Close manual</option>
+            <option value="time_exit">Time-based exit</option>
+            <option value="news_exit">Exit karena news</option>
+          </select>
+        </label>
+        <label>Catatan Attribution
+          <textarea id="jnEditAttrib" placeholder="Kenapa kamu exit di titik ini (bukan di TP/SL rencana)? Apa yang benar/salah dari thesis ini?"></textarea>
+        </label>
+        <input type="hidden" id="jnEditNoteId">
+        <button class="jn-btn" onclick="jnSaveEditNote()">SIMPAN</button>
+        <button class="jn-btn-sec" onclick="jnShowView('list')" style="margin-top:4px">Batal</button>
+      </div>
+    </div>
     <!-- Curve view -->
     <div id="jnCurveView" style="display:none">
       <div style="display:flex;justify-content:flex-end;margin-bottom:8px">
@@ -10799,14 +10822,14 @@ function initJurnal() {
 }
 
 function jnShowView(v) {
-  ['jnListView','jnNewView','jnCloseView','jnCurveView'].forEach(id => {
+  ['jnListView','jnNewView','jnCloseView','jnCurveView','jnEditNoteView'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.style.display = 'none';
   });
   document.getElementById('jnTabList').classList.toggle('active', v === 'list');
   document.getElementById('jnTabNew').classList.toggle('active', v === 'new');
   document.getElementById('jnTabCurve').classList.toggle('active', v === 'curve');
-  const target = { list:'jnListView', new:'jnNewView', close:'jnCloseView', curve:'jnCurveView' }[v];
+  const target = { list:'jnListView', new:'jnNewView', close:'jnCloseView', curve:'jnCurveView', editnote:'jnEditNoteView' }[v];
   if (target) document.getElementById(target).style.display = 'block';
   if (v === 'list') jnLoadEntries();
   if (v === 'curve') { if (jnAllEntries.length > 0) jnRenderCurve(); else jnLoadEntries(); }
@@ -11142,6 +11165,12 @@ function jnRenderEntries() {
     const archBtn = e.status === 'archived'
       ? `<button class="jn-btn-sec" style="font-size:9px;margin-left:4px;color:var(--green);border-color:var(--green)" onclick="jnUnarchive('${e.id}')">Pulihkan</button>`
       : `<button class="jn-btn-sec" style="font-size:9px;margin-left:4px" onclick="jnArchive('${e.id}')">Arsip</button>`;
+    // Trade yang sudah final (closed/archived) — catatan attribution/exit_reason masih
+    // bisa dikoreksi tanpa entry baru (lihat jnStartEditNote), karena AI Coach baca
+    // apa adanya field ini dan sering keliru diisi alasan entry, bukan alasan exit.
+    const editNoteBtn = (e.status === 'closed' || e.status === 'archived')
+      ? `<button class="jn-btn-sec" style="font-size:9px;margin-left:4px" onclick="jnStartEditNote('${e.id}')">Edit catatan</button>`
+      : '';
     // Hapus permanen sengaja dibatasi ke entri yang sudah diarsip — arsip dulu
     // adalah langkah konfirmasi implisit sebelum penghapusan yang tidak bisa
     // dibatalkan, jadi trade OPEN/CLOSED tidak bisa kehapus dari satu klik salah.
@@ -11168,7 +11197,7 @@ function jnRenderEntries() {
       ${excRow}
       ${thesisHtml}
       ${e.status === 'closed' && e.attribution_notes ? `<div style="font-size:10px;color:var(--muted);margin-top:4px;font-family:'DM Mono',monospace;font-style:italic">${e.attribution_notes.slice(0, 150)}${e.attribution_notes.length > 150 ? '…' : ''}</div>` : ''}
-      <div style="margin-top:8px;display:flex;gap:4px">${closeBtn}${archBtn}${delBtn}</div>
+      <div style="margin-top:8px;display:flex;gap:4px;flex-wrap:wrap">${closeBtn}${editNoteBtn}${archBtn}${delBtn}</div>
     </div>`;
   }).join('');
 }
@@ -11521,6 +11550,47 @@ function jnStartClose(id) {
   }
 
   jnShowView('close');
+}
+
+// Edit catatan (exit_reason + attribution_notes) untuk trade yang sudah closed/archived —
+// terpisah dari jnStartClose/jnCloseTrade supaya tidak berisiko menimpa entry/exit
+// price/R actual yang sudah final (PATCH cuma kirim 2 field ini).
+function jnStartEditNote(id) {
+  const e = jnAllEntries.find(x => x.id === id);
+  if (!e) return;
+  document.getElementById('jnEditNoteId').value = id;
+  document.getElementById('jnEditExitReason').value = e.exit_reason || 'manual_close';
+  document.getElementById('jnEditAttrib').value = e.attribution_notes || '';
+
+  const refEl = document.getElementById('jnEditNoteRef');
+  const parts = [`${e.pair} ${(e.direction || '').toUpperCase()}`];
+  if (e.exit_price) parts.push(`Exit ${jnFmtPrice(e.pair, e.exit_price)}`);
+  if (e.r_actual != null) parts.push(`${e.r_actual >= 0 ? '+' : ''}${e.r_actual}R`);
+  refEl.textContent = parts.join(' · ');
+
+  jnShowView('editnote');
+}
+
+async function jnSaveEditNote() {
+  const id       = document.getElementById('jnEditNoteId').value;
+  const deviceId = szGetDeviceId();
+  const reason   = document.getElementById('jnEditExitReason').value;
+  const attrib   = document.getElementById('jnEditAttrib').value.trim();
+
+  try {
+    const res = await fetch(`/api/journal?device_id=${encodeURIComponent(deviceId)}&id=${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ exit_reason: reason, attribution_notes: attrib || null }),
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    jnShowView('list');
+    showToast('Catatan disimpan', '', 2000);
+  } catch(e) {
+    console.warn('jnSaveEditNote failed:', e.message);
+    showToast('Gagal simpan catatan', e.message, 3000);
+  }
 }
 
 async function jnCloseTrade() {
