@@ -1,10 +1,30 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-07-10 (session 155 lanjutan — riset referensi akademis makro/forex)
+> **Last updated:** 2026-07-10 (session 155 lanjutan 2 — `ohlcv_analyze` fallback 1 jadi SambaNova akun 2, drop Ollama/Groq)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root).
+
+---
+
+## Changelog Session 155 lanjutan 2 (2026-07-10) — `ohlcv_analyze` (fitur Analisa): Fallback 1 Ollama/Groq → SambaNova Akun 2
+
+**Request user:** ganti fallback 1 `ohlcv_analyze` (panel "Analisa" per-pair) jadi DeepSeek-V3.2, lalu drop fallback 2 (Groq llama-3.3, user "gasuka").
+
+**Live test dulu sebelum eksekusi** (per instruksi user "coba test dulu ollama yang gpt-oss:120b itu"): 2x curl production `?test_ollama=1` (bypass primary) untuk EUR/USD dan GBP/USD — dua-duanya jatuh ke `"model":"llama-3.3"` (Groq), bukan Ollama. Cek `vercel logs` produksi mengonfirmasi akar masalah: `ohlcv_analyze Ollama failed: The operation was aborted due to timeout`, dan circuit breaker `ai:ollama` sampai OPEN (3 kegagalan beruntun, di-pause 5 menit). Ollama Cloud `gpt-oss:120b` terbukti timeout konsisten di 15 detik, bukan sekadar lambat sesekali.
+
+**Masalah budget waktu:** `api/admin.js` (`ohlcv_analyze`) punya `maxDuration: 60` (vercel.json). Kalau SambaNova akun 2 (30s) disisipkan SEBELUM Ollama (15s), total 30+30+15=75s — melewati limit 60s bahkan sebelum Ollama sempat dicoba di skenario terburuk.
+
+**Keputusan (dikonfirmasi user):** drop Ollama & Groq sepenuhnya dari rantai ini, jadi 2 tingkat: Primary SambaNova akun 1 DeepSeek-V3.2 (30s) → Fallback 1 SambaNova akun 2 DeepSeek-V3.2 via `SAMBANOVA_API_KEY_CALL1` (25s, circuit `ai:sambanova:c1` — sudah ada, dipakai bersama `fundamental_analysis`/`journal.js`). Total 55s, aman di bawah limit.
+
+**Perubahan kode (`api/admin.js`):**
+- Blok fallback Ollama (`OLLAMA_URL`, `OLLAMA_MODEL`, fungsi `_callOllama`) dan blok Groq last-resort di `ohlcvAnalyzeHandler` dihapus — sudah tidak dipakai fitur manapun lagi di file ini (beda dari Ollama di `market-digest.js` yang independen, untuk diagnostik Nemotron).
+- `ai:ollama` dihapus dari `KNOWN_CIRCUITS` (sudah tidak pernah disentuh); `ai:ollama:nemotron` tetap (masih dipakai `market-digest.js`).
+- Diagnostik `?test_ollama=1` diganti `?test_samba_c1=1` (bypass primary untuk test fallback akun 2 langsung), pola sama seperti sebelumnya.
+- `test/ollama.test.js` dihapus (menguji `_callOllama` yang sudah tidak ada) — 138/138 test lain tetap hijau.
+
+**Belum di-deploy saat entry ini ditulis** — commit + push berikutnya di sesi yang sama, lalu diverifikasi live sekali lagi pasca-deploy.
 
 ---
 
