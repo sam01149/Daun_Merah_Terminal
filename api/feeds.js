@@ -1102,33 +1102,39 @@ function parseRetailPositions(html) {
     .replace(/<script[\s\S]*?<\/script>/gi, '')
     .replace(/<style[\s\S]*?<\/style>/gi, '');
 
-  // Strategy: find table rows containing a known pair name + a percentage number.
-  // ForexBenchmark uses a table where each row has: pair | % long | volume long | volume short
-  // We scan every <tr> block and look for a pair name + percentage.
+  // ForexBenchmark's retail table columns (verified against live <thead>, 2026-07-10):
+  // Symbol | Currency difference | Percentage long | Percentage/max | Volume/max | Price distance/max | ...
+  // "Percentage long" is column index 2 (0-based) — NOT the first number in the row.
+  // A prior version grabbed the first digit run in the row's flattened text, which
+  // landed on "Currency difference" (col 1) instead — a different, unrelated metric
+  // that happens to also fall in the 0-100 range often enough to pass validation
+  // silently (e.g. AUDUSD showed 61.1 "long" when the real Percentage long was 5.2 —
+  // the opposite lean). Parse per-<td> by index instead of scanning row text.
   const trRe = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
   let m;
   while ((m = trRe.exec(clean)) !== null) {
     const row = m[1];
-    // Extract all text content from cells
-    const text = row.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().toUpperCase();
+    const cellRe = /<td[^>]*>([\s\S]*?)<\/td>/gi;
+    const cells = [];
+    let c;
+    while ((c = cellRe.exec(row)) !== null) {
+      cells.push(c[1].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim());
+    }
+    if (cells.length < 3) continue;
 
-    // Try to find a pair name we recognise in this row
+    const symbolText = cells[0].toUpperCase();
     let foundPair = null;
     for (const pair of RETAIL_PAIRS) {
       // Match exact pair or slash-separated form (EUR/USD or EURUSD)
       const slashed = pair.slice(0, 3) + '/' + pair.slice(3);
-      if (text.includes(pair) || text.includes(slashed)) {
+      if (symbolText.includes(pair) || symbolText.includes(slashed)) {
         foundPair = pair;
         break;
       }
     }
     if (!foundPair) continue;
 
-    // Find the first percentage number in the row (e.g. "19.6" or "80.4")
-    const pctMatch = text.match(/\b(\d{1,3}(?:\.\d)?)\s*%?\b/);
-    if (!pctMatch) continue;
-
-    const longPct = parseFloat(pctMatch[1]);
+    const longPct = parseFloat(cells[2]);
     if (isNaN(longPct) || longPct < 0 || longPct > 100) continue;
 
     const shortPct = parseFloat((100 - longPct).toFixed(1));
@@ -1143,3 +1149,7 @@ function parseRetailPositions(html) {
 
   return positions;
 }
+
+// Ekspor helper murni untuk unit test (module.exports = handler function; properti
+// tambahan tidak mengubah perilaku require() di tempat lain).
+module.exports.parseRetailPositions = parseRetailPositions;

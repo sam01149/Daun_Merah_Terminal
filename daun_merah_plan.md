@@ -20,13 +20,13 @@ berpikiran untuk melakukan efisiensi code, mulai membuat kode yang tidak relevan
 
 mulai kepikiran juga untuk membagi bagi fitur berdasarkan branch, dan membuat sebuah perlindungan agar orang tidak bisa melakukan copy pada aplikasi saya(karena html kan bisa di inspect trus ctrl+a dan buat aplikasinya sendiri)
 
-bug perbaikan: pada bagian hp di menu, dimana isi tampilan dari menu letaknya berada bersamaan dengan vix, jadi ketika isi dari menu seperti notifikasi diklik, maka sistem vix menampilkan daftar lengkapnya padahal yang diklik hanya notifikasi push(dan isi menu lainnya).
+**[FIXED — Session 152]** Bug menu HP tumpang tindih klik dengan VIX/REGIME: root cause `.header` punya `z-index:100` tanpa `position` (jadi tidak berlaku) + `backdrop-filter` bikin stacking context terisolasi → tap di item dropdown menu (Notifikasi/Kategori Push) di rentang tinggi tertentu malah kena `.regime-banner` di baliknya. Fix: tambah `position: relative;` di `.header` (index.html). Diverifikasi end-to-end via browser test otomatis (Puppeteer) — reproduce bug dulu (terbukti), lalu konfirmasi fix (semua koordinat dropdown resolve ke item yang benar, regime banner langsung tetap normal). Detail di "Changelog Session 152" `daun_merah.md`.
 
 aku berpikiran untuk membuat grafik dari cross asset correlation dan anomali korelasi dari semua kombinasi pair. ingin melihat apakah efisien atau maksa
 
 **[FIXED — Session 152]** Bug Thesis Alert: headline "Currency Strength Chart: Strongest: NZD, CHF, CAD, AUD, EUR, GBP, USD, JPY - Weakest" salah dibaca AI sebagai "USD salah satu mata uang terkuat" (padahal USD posisi ke-7/8, nyaris paling lemah) → jadi alasan palsu kontra thesis LONG XAU/USD, padahal posisi asli USD itu justru MENDUKUNG thesis. Fix: prompt Call 4 (`checkThesisContradictions()` di `api/market-digest.js`) diperkuat — instruksi eksplisit abaikan headline ranking "Currency Strength Chart" sebagai bukti kontradiksi. Detail di "Changelog Session 152" `daun_merah.md`. Verifikasi live behavior tertunda (perlu API key provider yang tidak tersedia lokal) — pantau output sesi berikutnya.
 
-cek keaslian retail position itu realtime atau engga
+**[FIXED — Session 152]** Cek keaslian & realtime retail position: dikonfirmasi sumber inti memang myfxbook (via wrapper forexbenchmark.com — tiap baris tabelnya link ke `myfxbook.com/community/outlook/{PAIR}`). Cadence 2 jam adalah desain resmi (bukan bug). Tapi ditemukan bug lebih serius saat investigasi: **parser `parseRetailPositions()` di `api/feeds.js` salah ambil kolom** — mengira kolom "Currency difference" sebagai "Percentage long" sejak fitur ini dibuat (session 134), menyebabkan sinyal kontrarian salah arah/salah trigger di Journal/Sizing/Scenario (contoh: AUDUSD tampil 61.1% long padahal sebenarnya 5.2%). Sudah di-fix + 4 test regresi baru (`test/feeds_retail.test.js`). Detail di "Changelog Session 152" `daun_merah.md`.
 
 aku sudah cek sertifikat ssl dari myfxbook dan mengatakan bahwa sertifikat masih kurang bisa
 

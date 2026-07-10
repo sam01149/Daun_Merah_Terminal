@@ -76,6 +76,10 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  position: relative; /* tanpa ini z-index di bawah tidak berlaku (butuh elemen positioned) —
+    akibatnya .header-menu-dropdown (di dalam .header) kalah tumpuk melawan .regime-banner
+    (sibling setelahnya di DOM, z-index:auto) saat keduanya overlap secara visual di layar
+    sempit, jadi tap di item menu (mis. "Kategori Push") malah kena regime banner di baliknya */
   z-index: 100;
 }
 .logo { font-family:'Syne',sans-serif; font-weight:800; font-size:20px; color:var(--accent); letter-spacing:-1px; }
