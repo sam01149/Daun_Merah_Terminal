@@ -275,6 +275,100 @@ function validateThesis(parsed) {
   );
 }
 
+// ── Regime cross-check (plan G5) — jaring pengaman KODE, bukan instruksi prompt ──
+// riskRegimeData.regime (4 tier mentah dari /api/risk-regime — ground truth VIX/MOVE/HY)
+// dipakai sebagai sumber keputusan, BUKAN dominant_regime hasil restate AI (3 tier).
+// Scope MVP: hanya tier paling ekstrem 'risk_off'; 'elevated' DITAHAN — pantau dulu
+// frekuensi trigger via log sebelum diperluas (pola [QUAL-2]).
+const REGIME_RISK_SENSITIVE = new Set(['AUD', 'NZD']);
+const REGIME_SAFE_HAVEN     = new Set(['USD', 'JPY', 'CHF']);
+
+// Pure function, dipanggil SETELAH validateThesis lolos & SEBELUM cache/return.
+// Fail-open: riskRegimeData null/regime bukan risk_off/pair tak valid → thesis utuh.
+// Saat trigger: cap confidence_1_to_5 maks 2 + field baru regime_note (bukan
+// mengubah invalidation_condition yang punya validasi konsistensi currency sendiri).
+function applyRegimeConfidenceGuard(thesis, riskRegimeData) {
+  if (!thesis || !riskRegimeData || riskRegimeData.regime !== 'risk_off') return thesis;
+  if (thesis.direction !== 'long' && thesis.direction !== 'short') return thesis;
+  const pair = thesisPairCurrencies(thesis.pair_recommendation);
+  if (!pair) return thesis;
+  const [base, quote] = pair;
+  const bought = thesis.direction === 'long' ? base : quote;
+  const sold   = thesis.direction === 'long' ? quote : base;
+  if (!(REGIME_RISK_SENSITIVE.has(bought) && REGIME_SAFE_HAVEN.has(sold))) return thesis;
+  return {
+    ...thesis,
+    confidence_1_to_5: Math.min(thesis.confidence_1_to_5, 2),
+    regime_note: `Regime pasar terukur (VIX dkk) sedang risk_off — posisi ini efektif long ${bought} (sensitif-risiko) vs ${sold} (safe haven), berlawanan dengan regime; confidence dibatasi maksimum 2.`,
+  };
+}
+
+// ── Sign effect — bobot severitas data rilis (plan G3, Call 4 saja) ──────────
+// Andersen/Bollerslev/Diebold/Vega 2003: berita "lemah" (bad news) historis
+// menggerakkan harga lebih besar daripada berita kuat setara. Klasifikasi dihitung
+// DI KODE dari actual vs forecast yang sudah rilis (bukan minta AI menilai sendiri).
+// "Miss = lemah" TIDAK seragam per indikator — pakai mapping eksplisit dengan
+// `invert` (pola sama dgn classifyIndicator di _labour_market.js):
+//   invert=false → actual DI BAWAH forecast = pelemahan ekonomi (NFP, retail sales).
+//   invert=true  → actual DI ATAS forecast = pelemahan (unemployment rate, claims).
+// CPI/PPI/inflasi SENGAJA tidak di-mapping: miss inflasi itu ambigu (dovish, bukan
+// "ekonomi lemah"). Indikator di luar mapping → netral, tanpa tag (fail-safe).
+const SIGN_EFFECT_INDICATORS = [
+  { key: 'nfp',           re: /non[- ]?farm (employment|payrolls?)|\bnfp\b/i,          invert: false },
+  { key: 'adp',           re: /\badp\b.*employment|employment.*\badp\b/i,              invert: false },
+  { key: 'retail_sales',  re: /retail sales/i,                                         invert: false },
+  { key: 'gdp',           re: /\bgdp\b/i,                                              invert: false },
+  { key: 'pmi_ism',       re: /\bpmi\b|\bism\b/i,                                      invert: false },
+  { key: 'industrial',    re: /industrial production/i,                                invert: false },
+  { key: 'consumer_conf', re: /consumer (confidence|sentiment)/i,                      invert: false },
+  { key: 'unemployment',  re: /unemployment rate/i,                                    invert: true  },
+  { key: 'claims',        re: /jobless claims|initial claims|continuing claims/i,      invert: true  },
+];
+
+const SEVERITY_TAG_WEAK = '[SEVERITAS: TINGGI — data lemah, dampak harga historis lebih besar (sign effect)]';
+
+// "147K"/"3.5%"/"-0.2"/"1,250K" → angka absolut (K/M/B dikalikan; % apa adanya). null kalau bukan angka.
+function parseEconNumber(s) {
+  if (typeof s !== 'string') return null;
+  const m = s.replace(/,/g, '').trim().match(/^(-?\d+(?:\.\d+)?)\s*([KMB%])?$/i);
+  if (!m) return null;
+  let v = parseFloat(m[1]);
+  const suf = (m[2] || '').toUpperCase();
+  if (suf === 'K') v *= 1e3;
+  else if (suf === 'M') v *= 1e6;
+  else if (suf === 'B') v *= 1e9;
+  return v;
+}
+
+// Pure function: { weak, magnitude, urgencyTag }. indicatorKey = teks bebas
+// (judul headline/nama event) yang dicocokkan ke mapping di atas.
+function classifyDataSurpriseSeverity(actual, forecast, indicatorKey) {
+  const neutral = { weak: false, magnitude: 0, urgencyTag: '' };
+  if (typeof actual !== 'number' || !isFinite(actual)) return neutral;
+  if (typeof forecast !== 'number' || !isFinite(forecast)) return neutral;
+  const cfg = SIGN_EFFECT_INDICATORS.find(c => c.re.test(String(indicatorKey || '')));
+  if (!cfg) return neutral; // di luar mapping → jangan menebak arah
+  const surprise = actual - forecast;
+  if (surprise === 0) return neutral;
+  const magnitude = +(Math.abs(surprise) / Math.max(Math.abs(forecast), 1e-9)).toFixed(4);
+  const weak = cfg.invert ? surprise > 0 : surprise < 0;
+  return { weak, magnitude, urgencyTag: weak ? SEVERITY_TAG_WEAK : '' };
+}
+
+// Ekstrak actual/forecast dari headline rilis format FinancialJuice
+// ("US Nonfarm Payrolls Actual 147K (Forecast 110K, Previous 139K)") lalu
+// klasifikasikan. Return tag string atau '' (headline non-rilis lolos tanpa tag).
+function severityTagForHeadline(title) {
+  const t = String(title || '');
+  const am = t.match(/actual:?\s*(-?[\d.,]+\s*[KMB%]?)/i);
+  const fm = t.match(/forecast:?\s*(-?[\d.,]+\s*[KMB%]?)/i);
+  if (!am || !fm) return '';
+  const actual   = parseEconNumber(am[1]);
+  const forecast = parseEconNumber(fm[1]);
+  if (actual == null || forecast == null) return '';
+  return classifyDataSurpriseSeverity(actual, forecast, t).urgencyTag;
+}
+
 // Strip <think>...</think> blocks from Qwen3 thinking models — content after </think> is the actual response
 function stripThinking(text) {
   const lastClose = text.lastIndexOf('</think>');
@@ -525,7 +619,13 @@ async function fetchOpenThesisEntries(deviceId) {
 async function checkThesisContradictions(openEntries, recentItems, SAMBANOVA_KEY, GROQ_KEY) {
   const thesesBlock = openEntries.map((e, i) => `${i+1}. [ID:${e.id}] ${e.pair} ${(e.direction||'').toUpperCase()}: ${e.thesis_text}`).join('\n');
   const headlineTitles = recentItems.slice(0, 30).map(h => h.title);
-  const headlines30 = headlineTitles.map((t, i) => `${i+1}. ${t}`).join('\n');
+  // Plan G3 (sign effect): tag severitas dihitung di kode dari actual vs forecast,
+  // ditempel sebagai baris anotasi TERPISAH di bawah headline — bukan digabung ke
+  // teks headline, supaya aturan copy-verbatim + validasi headlineSet tetap utuh.
+  const headlines30 = headlineTitles.map((t, i) => {
+    const tag = severityTagForHeadline(t);
+    return `${i+1}. ${t}` + (tag ? `\n   ${tag}` : '');
+  }).join('\n');
   const monitorPrompt = [
     'You are a forex trade thesis monitor.', '',
     'Open trade theses:', thesesBlock, '', 'Recent headlines (newest first):', headlines30, '',
@@ -533,6 +633,7 @@ async function checkThesisContradictions(openEntries, recentItems, SAMBANOVA_KEY
     'Only flag genuine contradictions — news that directly opposes the trade direction rationale, not tangentially related news.',
     'Ignore price-level headlines; focus on fundamental basis changes (macro data, CB policy shifts, geopolitical reversals).',
     'Ignore "Currency Strength Chart" / currency ranking headlines entirely — they are price-derived technical snapshots, not fundamental catalysts, and their "Strongest: A, B, C... - Weakest" ordering is easy to misread (do NOT use them as contradiction evidence even if a currency appears to sit in the strong or weak half).', '',
+    'Some headlines are followed by an indented [SEVERITAS: ...] annotation line — it is computed from the released actual-vs-forecast numbers, not part of the headline. Treat those headlines as HIGHER-urgency contradiction candidates (weak data historically moves price more). Never copy the annotation into the "headline" field.', '',
     'The "headline" field MUST be copied verbatim, character-for-character, from the numbered list above — do not paraphrase or summarize it.',
     'The "entry_id" field MUST be copied verbatim from the [ID:...] tag of the thesis it contradicts.', '',
     'Return ONLY valid JSON, no markdown, no explanation:',
@@ -1870,6 +1971,14 @@ ${xauHistoryBlock}`;
     }
 
     if (thesis) {
+      // Plan G5: guard regime dijalankan setelah validateThesis lolos, sebelum
+      // cache/return. Log setiap trigger — bahan evaluasi sebelum tier 'elevated'
+      // dipertimbangkan.
+      const guarded = applyRegimeConfidenceGuard(thesis, riskRegimeData);
+      if (guarded !== thesis) {
+        console.log(`Regime guard TRIGGERED: risk_off cap — ${thesis.pair_recommendation} ${thesis.direction} conf ${thesis.confidence_1_to_5}→${guarded.confidence_1_to_5}`);
+        thesis = guarded;
+      }
       try {
         await redisCmd('SET', 'latest_thesis', JSON.stringify(thesis), 'EX', 21600);
         console.log('Thesis saved to Redis');
@@ -2051,6 +2160,10 @@ module.exports.CB_OLLAMA_NEMOTRON = CB_OLLAMA_NEMOTRON;
 module.exports.withNoThink = withNoThink;
 module.exports.NEMOTRON_SUPER_MODEL = NEMOTRON_SUPER_MODEL;
 module.exports.validateThesis = validateThesis;
+module.exports.applyRegimeConfidenceGuard = applyRegimeConfidenceGuard;
+module.exports.classifyDataSurpriseSeverity = classifyDataSurpriseSeverity;
+module.exports.severityTagForHeadline = severityTagForHeadline;
+module.exports.parseEconNumber = parseEconNumber;
 module.exports.thesisPairCurrencies = thesisPairCurrencies;
 module.exports.thesisInvalidationCurrencyConsistent = thesisInvalidationCurrencyConsistent;
 module.exports.CB_OPENROUTER_NEMOTRON_SUPER = CB_OPENROUTER_NEMOTRON_SUPER;

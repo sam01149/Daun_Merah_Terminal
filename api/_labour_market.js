@@ -171,6 +171,10 @@ function buildAssessment(states) {
     flat: total - nStrength - nWeak,
     available: total,
     aligned,
+    // Convergence score (plan G1): rasio aligned/total yang selama ini dihitung
+    // untuk ambang label lalu dibuang — sekarang di-expose. Ordinal 0..1 (bukan
+    // persen di narasi), null saat data tidak cukup supaya UI menyembunyikannya.
+    convergence_score: (insufficient || total === 0) ? null : +(aligned / total).toFixed(2),
     direction,
     text: insufficient
       ? `hanya ${total} dari ${states.length} indikator tersedia`

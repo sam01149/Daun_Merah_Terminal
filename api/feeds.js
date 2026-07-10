@@ -5,6 +5,7 @@
 // GET /api/feeds?type=options        → FX option expiries JSON, merged from Investinglive + FinancialJuice (4h cache)
 // GET /api/feeds?type=aftek&pair=EUR/USD → ActionForex per-pair technical outlook (4h cache)
 // GET /api/feeds?type=retail         → ForexBenchmark retail positioning JSON (2h cache)
+// GET /api/feeds?type=retail_history → snapshot harian retail positioning (rolling 90 hari)
 
 const { autoUpdateFundamentals } = require('./_fundamental_parser');
 const rateLimit = require('./_ratelimit');
@@ -25,7 +26,8 @@ module.exports = async function handler(req, res) {
   if (type === 'options')     return optionsHandler(req, res);
   if (type === 'aftek')       return aftekHandler(req, res);
   if (type === 'retail')      return retailHandler(req, res);
-  return res.status(400).json({ error: 'Missing ?type= — use rss, cot, cot_history, research, options, aftek, or retail' });
+  if (type === 'retail_history') return retailHistoryHandler(req, res);
+  return res.status(400).json({ error: 'Missing ?type= — use rss, cot, cot_history, research, options, aftek, retail, or retail_history' });
 };
 
 // ── Shared Redis helper ────────────────────────────────────────────────────────
@@ -1031,7 +1033,10 @@ async function aftekHandler(req, res) {
 
 const RETAIL_URL       = 'https://forexbenchmark.com/quant/retail_positions/';
 const RETAIL_CACHE_KEY = 'retail_sentiment_cache';
-const RETAIL_CACHE_TTL = 2 * 60 * 60; // 2h in seconds
+// 15 menit — dijaga tetap segar oleh GitHub Action retail-sentiment-warm.yml
+// (cron */15) yang panggil ?force=1; TTL ini cuma jaring pengaman kalau
+// Action-nya sendiri telat/gagal, bukan penentu update utama.
+const RETAIL_CACHE_TTL = 15 * 60; // seconds
 
 // Pairs we care about — must match COT pairs for overlay comparison
 const RETAIL_PAIRS = ['EURUSD','GBPUSD','USDJPY','USDCAD','AUDUSD','NZDUSD','USDCHF','XAUUSD'];
@@ -1091,7 +1096,65 @@ async function retailHandler(req, res) {
 
   const payload = { positions, fetched_at: new Date().toISOString() };
   redisCmd('SET', RETAIL_CACHE_KEY, JSON.stringify(payload), 'EX', RETAIL_CACHE_TTL).catch(() => {});
+
+  // Fire-and-forget (plan G2): akumulasi snapshot harian utk histori — replikasi
+  // pola storeCOTHistory. Gagal silent, jangan gagalkan response utama.
+  storeRetailHistory(positions).catch(() => {});
+
   return res.json(payload);
+}
+
+// ── Retail Sentiment history (plan G2) ────────────────────────────────────────
+// Mirror storeCOTHistory/cotHistoryHandler. Beda dari COT: retail tidak punya
+// report date resmi mingguan → lock per-HARI UTC (datanya bisa berubah intraday,
+// satu snapshot pertama per hari cukup untuk tren; jangan lock mingguan).
+
+async function storeRetailHistory(positions, nowMs = Date.now()) {
+  if (!positions || Object.keys(positions).length === 0) return;
+  const dayKey = new Date(nowMs).toISOString().slice(0, 10).replace(/-/g, ''); // YYYYMMDD
+  const lock = await redisCmd('SET', `retail_hist_lock:${dayKey}`, '1', 'EX', 86400, 'NX');
+  if (!lock) return;
+
+  const entry = JSON.stringify({ positions, day: dayKey, stored_at: new Date(nowMs).toISOString() });
+  await redisCmd('ZADD', 'retail_history', 'NX', nowMs, entry);
+
+  // Rolling window 90 hari — sama seperti cot_history
+  const cutoff = nowMs - 90 * 24 * 60 * 60 * 1000;
+  await redisCmd('ZREMRANGEBYSCORE', 'retail_history', '-inf', cutoff);
+}
+
+// GET /api/feeds?type=retail_history&n=30
+async function retailHistoryHandler(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Cache-Control', 'no-cache');
+
+  const n = Math.min(parseInt(req.query.n || '30', 10) || 30, 90);
+
+  try {
+    const raw = await redisCmd('ZRANGE', 'retail_history', '0', '-1', 'WITHSCORES');
+    if (!raw || raw.length === 0) {
+      return res.status(200).json({ history: [], count: 0, message: 'Belum ada data history retail sentiment' });
+    }
+
+    // raw = [json1, score1, json2, score2, ...]
+    const pairs = [];
+    for (let i = 0; i < raw.length; i += 2) {
+      try {
+        const entry = JSON.parse(raw[i]);
+        const ts    = parseFloat(raw[i + 1]);
+        pairs.push({ ...entry, ts });
+      } catch(e2) { /* skip malformed */ }
+    }
+
+    // Descending by timestamp, ambil n terbaru, balik ke ascending utk chart
+    pairs.sort((a, b) => b.ts - a.ts);
+    const sliced = pairs.slice(0, n).reverse();
+
+    return res.status(200).json({ history: sliced, count: sliced.length });
+  } catch(e) {
+    console.error('retail_history fetch failed:', e.message);
+    return res.status(502).json({ error: 'retail_history fetch failed: ' + e.message });
+  }
 }
 
 function parseRetailPositions(html) {
@@ -1153,3 +1216,5 @@ function parseRetailPositions(html) {
 // Ekspor helper murni untuk unit test (module.exports = handler function; properti
 // tambahan tidak mengubah perilaku require() di tempat lain).
 module.exports.parseRetailPositions = parseRetailPositions;
+module.exports.storeRetailHistory = storeRetailHistory;
+module.exports.retailHistoryHandler = retailHistoryHandler;

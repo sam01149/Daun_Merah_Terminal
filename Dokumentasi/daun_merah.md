@@ -1,10 +1,30 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-07-10 (session 155 lanjutan 3 — fix journal analyze kepotong + placeholder Catatan Attribution)
+> **Last updated:** 2026-07-10 (session 155 lanjutan 4 — plan G1-G5 dieksekusi + retail sentiment auto-refresh 15 menit via GitHub Action)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root).
+
+---
+
+## Changelog Session 155 lanjutan 4 (2026-07-10) — Plan G1-G5 (Riset Akademis → Fitur) + Retail Sentiment Auto-Refresh
+
+**Konteks:** lanjutan `daun_merah_plan.md` seksi G (roadmap 6 fitur dari riset akademis, lihat entri "Perpustakaan Rujukan Riset Akademis" di atas). G1-G5 dikerjakan di sesi yang ke-`/clear` sebelum sempat commit/push — diverifikasi ulang di sesi ini (164/164 test hijau) sebelum di-push. G6 (FOMC Shock Detector, scope terbesar) sengaja belum dikerjakan.
+
+**G1 — Convergence Score (kartu Labour Market):** `buildAssessment()` di [api/_labour_market.js](../api/_labour_market.js) sekarang expose `agreement.convergence_score` (rasio `aligned/total`, ordinal 0-1, `null` saat `insufficient`) — sebelumnya rasio ini dihitung untuk ambang label lalu dibuang. UI (`_buildLabourMergedHtml` di `index.html`) menambah bar horizontal "Tingkat kesepakatan" di bawah label existing, disembunyikan total kalau `null` (bukan tampilkan "0,00" menyesatkan). Logic label STRONG/MODERATE/MIXED tidak berubah.
+
+**G2 — Logging Histori Retail Sentiment:** `retailHandler()` di [api/feeds.js](../api/feeds.js) sekarang menyimpan snapshot harian ke Redis (`storeRetailHistory()`, fire-and-forget, lock per-hari `retail_hist_lock:{YYYYMMDD}`, rolling window 90 hari) — mirror pola `storeCOTHistory()` yang sudah ada. Endpoint baru `GET /api/feeds?type=retail_history&n=` untuk baca histori. **Belum ada analisis/UI** dari histori ini (di luar scope G2) — data baru mulai terkumpul sejak deploy, evaluasi kill-gate menyusul setelah sampel cukup (bulanan).
+
+**G3 — Sign Effect (bobot severitas data rilis, Call 4 saja):** fungsi murni `classifyDataSurpriseSeverity(actual, forecast, indicatorKey)` di [api/market-digest.js](../api/market-digest.js) — data yang menunjukkan pelemahan ekonomi (NFP/retail sales miss, unemployment naik) dapat tag `[SEVERITAS: TINGGI]` yang ditempel ke headline SEBELUM masuk prompt `checkThesisContradictions()` (Call 4). CPI/inflasi sengaja tidak di-mapping (ambigu dovish, bukan "lemah"). Verifikasi live menunggu rilis data nyata pasca-deploy.
+
+**G4 — Horizon Disclaimer:** teks statis "Horizon: fundamental, relevan untuk pergerakan menengah-panjang — bukan sinyal entry presisi jangka pendek." ditambahkan di `renderThesisCard()` DAN duplikatnya `renderDashDigest()` (dua lokasi disinkronkan, riwayat proyek pernah bug karena cuma edit satu tempat).
+
+**G5 — Regime Cross-Check (downgrade confidence berbasis VIX ground-truth):** fungsi murni `applyRegimeConfidenceGuard(thesis, riskRegimeData)` di `api/market-digest.js`, dipanggil setelah `validateThesis()` lolos, sebelum cache/return. Kalau `riskRegimeData.regime === 'risk_off'` (4-tier ground truth dari `/api/risk-regime`, BUKAN `dominant_regime` 3-tier hasil restate AI) DAN thesis efektif long currency risk-sensitive (AUD/NZD) vs safe haven (USD/JPY/CHF) → `confidence_1_to_5` di-cap maksimum 2 + field baru `regime_note` (dirender di UI dengan warna kuning). Scope MVP cuma tier `risk_off` paling ekstrem — `elevated` ditahan, pantau dulu frekuensi trigger via log. Fail-open kalau `riskRegimeData` tidak tersedia. Trigger di-log eksplisit (`Regime guard TRIGGERED: ...`) untuk evaluasi sebelum diperluas.
+
+**Retail Sentiment — auto-refresh 15 menit (di luar plan G, permintaan user sesi ini):** user tanya apakah retail sentiment (`ForexBenchmark`, tab COT) selalu update — ternyata sebelumnya HANYA ter-refresh saat ada user buka app (cache 2 jam, dipicu `window load`/switch tab COT), jadi bisa basi berhari-hari kalau tidak ada trafik. **Fix:** cache TTL server (`RETAIL_CACHE_TTL`) dan client (`RETAIL_CLIENT_TTL`) diturunkan dari 2 jam → 15 menit, plus workflow baru [.github/workflows/retail-sentiment-warm.yml](../.github/workflows/retail-sentiment-warm.yml) (cron `*/15 * * * *`, pola sama seperti `ta-warm.yml`) yang force-refresh (`?type=retail&force=1`) via `x-cron-secret` terlepas ada trafik atau tidak. Diverifikasi live: `fetched_at` berubah 14:25→14:46 UTC antar dua `force=1` call sebelum fix di-deploy, konfirmasi scraping/parsing masih sehat.
+
+**Verifikasi:** `node --test "test/*.test.js"` — 164/164 hijau (termasuk test baru G1 `test/labour_market.test.js`, G2 `test/feeds_retail.test.js`, G3/G5 `test/market_digest_severity.test.js`). Plan file `daun_merah_plan.md` di-update — G1-G5 dihapus dari sana (SELESAI), G6 tetap.
 
 ---
 

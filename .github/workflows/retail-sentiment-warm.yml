@@ -1,0 +1,26 @@
+name: Retail Sentiment Warm
+
+# Sebelumnya retail sentiment cuma ter-refresh saat ada user buka app (cache 2 jam,
+# fetch dipicu di window load / tab COT) — kalau tidak ada trafik, data bisa basi
+# berhari-hari. Cron ini memaksa refresh tiap 15 menit terlepas ada trafik atau
+# tidak, selaras dengan RETAIL_CACHE_TTL (15 menit) di api/feeds.js.
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+jobs:
+  warm:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Force-refresh retail sentiment cache
+        run: |
+          STATUS=$(curl -s -o /tmp/resp.json -w "%{http_code}" \
+            -H "x-cron-secret: ${{ secrets.CRON_SECRET }}" \
+            --max-time 20 \
+            "https://financial-feed-app.vercel.app/api/feeds?type=retail&force=1")
+          cat /tmp/resp.json
+          if [ "$STATUS" -ne 200 ]; then
+            echo "Retail sentiment refresh failed with HTTP $STATUS"
+            exit 1
+          fi

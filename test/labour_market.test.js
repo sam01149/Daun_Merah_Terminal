@@ -221,6 +221,45 @@ test('indikator missing: denominator menyesuaikan; <4 tersedia → DATA TIDAK CU
   assert.equal(b.insufficient, true);
 });
 
+// ── convergence_score (plan G1): rasio aligned/total di-expose, null saat insufficient ──
+
+test('convergence_score: 6/8 searah → 0.75, label tidak berubah', () => {
+  const states = [
+    mkState('HIRING', 'strengthening'), mkState('HIRING', 'strengthening'),
+    mkState('HIRING', 'strengthening'), mkState('HIRING', 'strengthening'),
+    mkState('LAYOFFS', 'strengthening'), mkState('LAYOFFS', 'strengthening'),
+    mkState('LAYOFFS', 'flat'), mkState('WAGE', 'weakening'),
+  ];
+  const a = buildAssessment(states);
+  assert.equal(a.agreement.convergence_score, 0.75);
+  assert.equal(a.label, 'STRONG STRENGTHENING', 'logic label harus byte-identik dgn sebelum G1');
+});
+
+test('convergence_score: 6 strengthening + 2 weakening + 1 flat → 0.67', () => {
+  const states = [
+    mkState('HIRING', 'strengthening'), mkState('HIRING', 'strengthening'),
+    mkState('HIRING', 'strengthening'), mkState('HIRING', 'strengthening'),
+    mkState('HIRING', 'strengthening'), mkState('LAYOFFS', 'strengthening'),
+    mkState('LAYOFFS', 'weakening'), mkState('LAYOFFS', 'weakening'),
+    mkState('WAGE', 'flat'),
+  ];
+  const a = buildAssessment(states);
+  assert.equal(a.agreement.convergence_score, 0.67);
+});
+
+test('convergence_score: <4 tersedia (insufficient) → null, semua unavailable → null', () => {
+  const few = [
+    mkState('HIRING', 'strengthening'), mkState('HIRING', 'strengthening'), mkState('WAGE', 'flat'),
+    mkState('LAYOFFS', 'unavailable'), mkState('LAYOFFS', 'unavailable'),
+    mkState('LAYOFFS', 'unavailable'), mkState('HIRING', 'unavailable'), mkState('HIRING', 'unavailable'),
+  ];
+  assert.equal(buildAssessment(few).agreement.convergence_score, null);
+  const none = Array(8).fill(null).map(() => mkState('HIRING', 'unavailable'));
+  const b = buildAssessment(none);
+  assert.equal(b.agreement.convergence_score, null);
+  assert.equal(b.insufficient, true);
+});
+
 // ── Narasi: frasa teori + disclaimer priced-in, TANPA persen ─────────────────
 
 test('narasi memuat framing teori dan disclaimer priced-in', () => {
