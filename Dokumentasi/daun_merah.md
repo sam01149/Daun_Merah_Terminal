@@ -1,10 +1,22 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-07-10 (session 155 lanjutan 2 — `ohlcv_analyze` fallback 1 jadi SambaNova akun 2, drop Ollama/Groq)
+> **Last updated:** 2026-07-10 (session 155 lanjutan 3 — fix journal analyze kepotong + placeholder Catatan Attribution)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root).
+
+---
+
+## Changelog Session 155 lanjutan 3 (2026-07-10) — Fix Journal AI Coach Kepotong + Placeholder Catatan Attribution
+
+**Request user:** user tempel hasil AI Coach jurnal yang kepotong di tengah section 5 dari 6 ("Kelemahan Utama").
+
+**Root cause 1 — truncation:** `aiCall(messages, 1400)` di [api/journal.js](api/journal.js) — `max_tokens=1400` tidak cukup untuk output 6 section + instruksi "maksimal 650 kata", apalagi kalau model pakai tabel markdown (boros token) di salah satu section seperti yang terjadi. **Fix:** `max_tokens` 1400→2200, prompt sekarang eksplisit melarang tabel markdown dan menegaskan 650 kata itu total gabungan 6 section, plus logging `finish_reason=length` di `callProvider()` (pola sama seperti `aiCall()` di market-digest.js) supaya truncation ke depan kelihatan di log, bukan diam-diam kepotong.
+
+**Root cause 2 — user tanya "AI gabisa baca alasan exit?":** investigasi menunjukkan bukan bug baca data — `exit_reason` di prompt cuma kode generik dropdown (`tp_hit/sl_hit/manual_close/time_exit/news_exit`, [index.html:2808-2814](index.html#L2808-L2814)), tanpa teks bebas. Satu-satunya kolom teks bebas (`attribution_notes`/"Catatan Attribution") placeholder-nya cuma nanya "Apa yang benar/salah dari thesis ini?" — user (dikonfirmasi langsung) memakainya untuk nulis alasan ENTRY, bukan alasan EXIT, karena tidak ada indikasi field itu juga dimaksudkan untuk itu. AI Coach jadi cuma bisa menebak dari data MFE/MAE ("kemungkinan panic-exit") tanpa konteks nyata. **Fix:** placeholder diperjelas jadi "Kenapa kamu exit di titik ini (bukan di TP/SL rencana)? Apa yang benar/salah dari thesis ini?" — berlaku untuk trade baru; trade lama (termasuk contoh yang ditanyakan user) tidak bisa diperbaiki retroaktif karena datanya sudah tersimpan.
+
+**Verifikasi:** 138/138 test lokal hijau, deployed ke production. Cache lama `journal_analysis:{deviceId}` (TTL 1 jam) tetap menyajikan hasil kepotong sampai user klik tombol "Refresh" (force=1) di panel AI Coach.
 
 ---
 
