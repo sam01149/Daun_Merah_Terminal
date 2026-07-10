@@ -288,18 +288,17 @@ body {
 .corr-anomaly-more summary::before { content:'▸ '; }
 .corr-anomaly-more[open] summary::before { content:'▾ '; }
 
-/* US LABOUR MARKET (tab FUNDAMENTAL) */
-.fund-labour-hdr { display:flex; align-items:center; justify-content:space-between; gap:6px 10px; flex-wrap:wrap; margin-bottom:8px; }
-.fund-labour-title { font-size:9px; color:var(--muted); letter-spacing:.1em; }
-.fund-labour-badge { font-size:10px; font-weight:700; padding:2px 8px; border-radius:3px; border:1px solid; letter-spacing:.05em; white-space:nowrap; }
-.fund-labour-agree { font-size:9px; color:var(--muted); }
-.fund-labour-dim { display:flex; align-items:flex-start; gap:6px; padding:5px 0; border-top:1px solid var(--border); }
-.fund-labour-dim-label { font-size:8px; color:var(--muted); letter-spacing:.08em; min-width:54px; padding-top:4px; flex-shrink:0; }
-.fund-labour-chips { display:flex; flex-wrap:wrap; gap:4px; flex:1; min-width:0; }
-.fund-labour-chip { font-size:9px; padding:3px 7px; border-radius:3px; background:rgba(255,255,255,.03); border:1px solid var(--border); color:var(--text-mid); cursor:help; white-space:nowrap; }
+/* US LABOUR MARKET (blok di dalam detail USD — fd overlay) */
+.fund-labour-hdr { display:flex; align-items:center; gap:6px 10px; flex-wrap:wrap; margin-bottom:10px; font-family:'DM Mono',monospace; }
+.fund-labour-badge { font-size:12px; font-weight:700; padding:3px 10px; border-radius:4px; border:1px solid; letter-spacing:.05em; white-space:nowrap; }
+.fund-labour-agree { font-size:10px; color:var(--muted); }
+.fund-labour-dim { display:flex; align-items:flex-start; gap:8px; padding:7px 0; border-top:1px solid rgba(255,255,255,.04); font-family:'DM Mono',monospace; }
+.fund-labour-dim-label { font-size:9px; color:var(--muted); letter-spacing:.08em; min-width:58px; padding-top:5px; flex-shrink:0; }
+.fund-labour-chips { display:flex; flex-wrap:wrap; gap:5px; flex:1; min-width:0; }
+.fund-labour-chip { font-size:10px; padding:4px 8px; border-radius:4px; background:rgba(255,255,255,.03); border:1px solid var(--border); color:var(--text-mid); cursor:help; white-space:nowrap; }
 .fund-labour-chip .arr { font-weight:700; }
-.fund-labour-narr { font-size:10px; color:var(--text-mid); line-height:1.6; margin-top:8px; border-top:1px solid var(--border); padding-top:8px; }
-.fund-labour-foot { font-size:8px; color:var(--muted); margin-top:6px; line-height:1.5; }
+.fund-labour-narr { font-size:11px; color:var(--text-mid); line-height:1.65; margin-top:10px; border-top:1px solid rgba(255,255,255,.04); padding-top:10px; font-family:'DM Mono',monospace; }
+.fund-labour-foot { font-size:9px; color:var(--muted); margin-top:8px; line-height:1.5; font-family:'DM Mono',monospace; opacity:.75; }
 
 /* JURNAL */
 .jn-form { display:flex; flex-direction:column; gap:10px; }
@@ -3276,8 +3275,6 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
       <div style="font-size:9px;color:var(--muted);letter-spacing:.1em;margin-bottom:8px">RISK REVERSAL 25-DELTA <span id="fundRRSource" style="color:var(--border);margin-left:4px"></span></div>
       <div id="fundRRGrid" style="display:flex;flex-wrap:wrap;gap:8px 16px"></div>
     </div>
-    <!-- US Labour Market Assessment — rule-based FRED, konteks bukan sinyal (bukan prediksi/ML) -->
-    <div id="fundLabourSection" style="display:none;margin-bottom:12px;padding:10px 12px;background:var(--surface);border:1px solid var(--border);border-radius:4px;font-family:'DM Mono',monospace"></div>
     <!-- Strength Ranking Overview -->
     <div class="fund-rank-section" id="fundRankSection" style="display:none">
       <div class="fund-rank-label">
@@ -6364,18 +6361,15 @@ function renderRiskReversal() {
   section.style.display = 'block';
 }
 
-// ── US LABOUR MARKET ASSESSMENT (tab FUNDAMENTAL) ────────────────────────────
-// Rule-based dari 8 seri FRED via /api/real-yields?section=labour — KONTEKS
-// pasar tenaga kerja AS, bukan sinyal/prediksi (pasca kill-gate riset NFP).
-// Confidence ordinal "X dari Y indikator searah", tanpa persen.
+// ── US LABOUR MARKET ASSESSMENT (blok di dalam detail USD / fd overlay) ──────
+// Rule-based dari 9 seri FRED (termasuk NFP resmi PAYEMS) via
+// /api/real-yields?section=labour — KONTEKS pasar tenaga kerja AS, bukan
+// sinyal/prediksi (pasca kill-gate riset NFP). Ordinal "X dari Y", tanpa persen.
 let labourData      = null;
 let labourFetchedAt = 0;
 
 async function fetchLabourMarket(force = false) {
-  if (!force && labourData && (Date.now() - labourFetchedAt) < 6 * 60 * 60 * 1000) {
-    renderLabourMarket();
-    return;
-  }
+  if (!force && labourData && (Date.now() - labourFetchedAt) < 6 * 60 * 60 * 1000) return;
   try {
     const res = await fetch('/api/real-yields?section=labour', { signal: AbortSignal.timeout(15000) });
     if (!res.ok) throw new Error('HTTP ' + res.status);
@@ -6383,20 +6377,19 @@ async function fetchLabourMarket(force = false) {
     if (data.error) throw new Error(data.error);
     labourData      = data;
     labourFetchedAt = Date.now();
-    renderLabourMarket();
+    // Kalau detail USD sedang terbuka, render ulang supaya blok labour langsung muncul
+    if (fdOpenCur === 'USD') _renderFundDetail();
   } catch(e) {
-    // Gagal fetch → sembunyikan section (bukan error mengganggu); data lama tetap dipakai
+    // Gagal fetch → blok tidak dirender (bukan error mengganggu); data lama tetap dipakai
     console.warn('Labour market fetch failed:', e.message);
-    if (labourData) renderLabourMarket();
-    else { const el = document.getElementById('fundLabourSection'); if (el) el.style.display = 'none'; }
   }
 }
 
-function renderLabourMarket() {
-  const el = document.getElementById('fundLabourSection');
-  if (!el) return;
+// Blok "US Labour Market" utk fd-body detail USD — mengikuti bahasa visual
+// .fd-extra-block (Yield Curve/Likuiditas). Return '' saat data belum ada.
+function _buildLabourFdHtml() {
   const d = labourData;
-  if (!d || !d.agreement || !d.dimensions) { el.style.display = 'none'; return; }
+  if (!d || !d.agreement || !d.dimensions) return '';
 
   const dirColor = d.insufficient ? 'var(--muted)'
     : d.agreement.direction === 'strengthening' ? 'var(--green)'
@@ -6410,10 +6403,10 @@ function renderLabourMarket() {
   const asOf = d.as_of_latest
     ? new Date(d.as_of_latest).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })
     : '';
-  const staleTag = d.stale ? ' <span style="color:var(--yellow)">(cache lama)</span>' : '';
 
-  let html = `<div class="fund-labour-hdr">
-    <span class="fund-labour-title">US LABOUR MARKET${staleTag}</span>
+  let html = `<div class="fd-extra-block" style="border-left:3px solid ${dirColor}">`;
+  html += `<div class="fd-extra-title">US Labour Market${d.stale ? ' <span style="color:var(--yellow)">· cache lama</span>' : ''}</div>`;
+  html += `<div class="fund-labour-hdr">
     <span class="fund-labour-badge" style="color:${dirColor};border-color:${dirColor}">${escHtml(d.label || '')}</span>
     <span class="fund-labour-agree">${escHtml(d.agreement.text || '')}${asOf ? ' · data s/d ' + asOf : ''}</span>
   </div>`;
@@ -6433,10 +6426,9 @@ function renderLabourMarket() {
   }
 
   if (d.narrative) html += `<div class="fund-labour-narr">${escHtml(d.narrative)}</div>`;
-  html += `<div class="fund-labour-foot">Konteks, bukan sinyal — data sudah priced-in ke konsensus. Relevan: XAU/USD &amp; pair USD; hampir nol utk cross non-USD. Sumber: FRED, rule-based tanpa AI.</div>`;
-
-  el.innerHTML = html;
-  el.style.display = 'block';
+  html += `<div class="fund-labour-foot">Konteks, bukan sinyal — data sudah priced-in ke konsensus. Sumber: FRED, rule-based tanpa AI.</div>`;
+  html += `</div>`;
+  return html;
 }
 
 // ── DAILY PULSE ──────────────────────────────────────────────────────────────
@@ -6805,6 +6797,13 @@ function _renderFundDetail() {
       ${rv.previous ? `<div class="fd-extra-row"><span class="fd-extra-row-label">Sebelumnya</span><span class="fd-extra-row-val">${escHtml(rv.previous)}</span></div>` : ''}
       ${rv.period && rv.period !== '—' ? `<div class="fd-extra-row"><span class="fd-extra-row-label">Periode</span><span class="fd-extra-row-val" style="font-size:12px;color:var(--muted)">${escHtml(rv.period)}</span></div>` : ''}
     </div>`;
+  }
+
+  // US Labour Market assessment (hanya USD) — trigger fetch di sini (bukan cuma
+  // openFundDetail) supaya swipe/tab pindah ke USD juga memuat datanya
+  if (s.cur === 'USD') {
+    if (!labourData) fetchLabourMarket(); // TTL 6 jam di dalam; render ulang saat data tiba
+    html += _buildLabourFdHtml();
   }
 
   // Indicator sections

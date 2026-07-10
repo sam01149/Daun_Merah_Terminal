@@ -14,8 +14,8 @@ const CACHE_TTL = 6 * 60 * 60 // 6 hours in seconds
 
 // US Labour Market Assessment (?section=labour) — menumpang function ini karena
 // limit 12 serverless function Vercel Hobby sudah penuh. Logic di _labour_market.js.
-// _v2: bust cache payload pertama yang tersimpan dengan skala ADP salah (2026-07-10)
-const LABOUR_CACHE_KEY = 'labour_market_v2'
+// _v3: bust cache saat PAYEMS (NFP) ditambahkan sebagai indikator ke-9 (2026-07-10)
+const LABOUR_CACHE_KEY = 'labour_market_v3'
 const LABOUR_TTL = 6 * 60 * 60
 
 const FRED_BASE = 'https://api.stlouisfed.org/fred/series/observations'

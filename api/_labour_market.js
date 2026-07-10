@@ -25,6 +25,13 @@ const LABOUR_INDICATORS = [
   // (terverifikasi dari data live 2026-07-10: tanpa scale, display "+108333rb/bln")
   { id: 'ADPMNUSNERSA',  label: 'ADP Employment',  dim: 'HIRING',  invert: false, cadence: 'monthly', limit: 12, method: 'delta3m_vs_prior3m',   band: 25,  bandKind: 'abs', fmt: 'deltaK', scale: 0.001,
     theory: 'laju penambahan payroll swasta (rata-rata 3 bulan)' },
+  // NFP resmi BLS (PAYEMS = level total nonfarm, ribuan; Δ MoM terakhir = angka
+  // headline NFP). Ditambahkan atas permintaan user 2026-07-10 — menampilkan rilis
+  // historis, BUKAN prediksi (kill-gate hanya melarang prediksi pre-rilis).
+  // showLatest: chip menampilkan Δ rilis terakhir (headline), status tetap dari
+  // perbandingan rata-rata 3 bulan (satu rilis bisa bising/direvisi).
+  { id: 'PAYEMS',        label: 'Nonfarm Payrolls',dim: 'HIRING',  invert: false, cadence: 'monthly', limit: 12, method: 'delta3m_vs_prior3m',   band: 25,  bandKind: 'abs', fmt: 'deltaK', showLatest: true,
+    theory: 'angka NFP resmi BLS — headline pasar tenaga kerja' },
   { id: 'TEMPHELPS',     label: 'Temp Help',       dim: 'HIRING',  invert: false, cadence: 'monthly', limit: 12, method: 'mean3_vs_prior3',      band: 0.5, bandKind: 'pct', fmt: 'kJt',
     theory: 'temp hiring secara teori sering bergerak duluan' },
   { id: 'ICSA',          label: 'Initial Claims',  dim: 'LAYOFFS', invert: true,  cadence: 'weekly',  limit: 26, method: 'mean4w_vs_prior13w',   band: 3,   bandKind: 'pct', fmt: 'rawRb',
@@ -78,9 +85,10 @@ function classifyIndicator(cfg, obs, nowMs = Date.now()) {
     const deltas = []
     for (let i = 0; i < 6; i++) deltas.push(v[i] - v[i + 1])
     const recent = _mean(deltas.slice(0, 3)), prior = _mean(deltas.slice(3, 6))
-    diff = recent - prior // satuan ribuan (seri ADP dalam ribuan)
-    displayVal = recent
-    detail = `Rata-rata Δ 3 bln terakhir ${_fmtValue('deltaK', recent)} vs 3 bln sebelumnya ${_fmtValue('deltaK', prior)}`
+    diff = recent - prior // satuan ribuan (seri payroll dinormalisasi ke ribuan)
+    displayVal = cfg.showLatest ? deltas[0] : recent
+    detail = (cfg.showLatest ? `Rilis terakhir ${_fmtValue('deltaK', deltas[0])} · ` : '')
+      + `Rata-rata Δ 3 bln terakhir ${_fmtValue('deltaK', recent)} vs 3 bln sebelumnya ${_fmtValue('deltaK', prior)}`
   } else if (cfg.method === 'mean3_vs_prior3') {
     if (v.length < 6) return unavailable('observasi kurang (butuh ≥6)')
     const recent = _mean(v.slice(0, 3)), prior = _mean(v.slice(3, 6))

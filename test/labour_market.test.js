@@ -78,6 +78,17 @@ test('ADP: laju melambat drastis → weakening; selisih <25rb → flat', () => {
   assert.equal(classifyIndicator(cfgById('ADPMNUSNERSA'), obsMonthly(steady), NOW).status, 'flat');
 });
 
+// ── classifyIndicator: PAYEMS (NFP) — display rilis terakhir, status dari 3 bln ──
+
+test('PAYEMS: chip menampilkan Δ rilis terakhir (headline NFP), status dari rata-rata 3 bln', () => {
+  // Δ MoM: +147, +60, +60 (avg 89) vs +10, +10, +10 (avg 10) → diff 79 > 25 → strengthening
+  const levels = [160267, 160120, 160060, 160000, 159990, 159980, 159970];
+  const st = classifyIndicator(cfgById('PAYEMS'), obsMonthly(levels), NOW);
+  assert.equal(st.status, 'strengthening');
+  assert.equal(st.display, '+147rb/bln', 'display harus Δ rilis terakhir, bukan rata-rata 3 bln');
+  assert.match(st.detail, /Rilis terakhir \+147rb\/bln/);
+});
+
 // ── classifyIndicator: mean4w_vs_prior13w + arah dibalik (klaim) ─────────────
 
 test('ICSA: klaim naik >3% → weakening (arah dibalik)', () => {
@@ -267,11 +278,12 @@ test('fetchLabourSeries: observasi "." terfilter, seri gagal → null (unavailab
 
 // ── computeLabourAssessment end-to-end dengan payload sintetis lengkap ───────
 
-test('computeLabourAssessment: 8 seri sehat → payload lengkap 3 dimensi', () => {
+test('computeLabourAssessment: 9 seri sehat → payload lengkap 3 dimensi', () => {
   const obsById = {
     JTSJOL:        obsMonthly([7600, 7400, 7400, 7400, 7400, 7400, 7400]),
     JTSQUR:        obsMonthly([2.3, 2.1, 2.1, 2.1, 2.1, 2.1, 2.1]),
-    ADPMNUSNERSA:  obsMonthly([135400, 135340, 135280, 135220, 135210, 135200, 135190]),
+    ADPMNUSNERSA:  obsMonthly([135400000, 135340000, 135280000, 135220000, 135210000, 135200000, 135190000]).map(o => ({ ...o, value: o.value * 0.001 })),
+    PAYEMS:        obsMonthly([160267, 160120, 160060, 160000, 159990, 159980, 159970]),
     TEMPHELPS:     obsMonthly([2600, 2600, 2600, 2500, 2500, 2500, 2500]),
     ICSA:          obsWeekly([220000, 220000, 220000, 220000, ...Array(13).fill(230000)]),
     CCSA:          obsWeekly([1850000, 1850000, 1850000, 1850000, ...Array(13).fill(1900000)]),
@@ -279,9 +291,10 @@ test('computeLabourAssessment: 8 seri sehat → payload lengkap 3 dimensi', () =
     CES0500000003: obsMonthly([36.49, 36.33, 36.16, 36.00, 35.93, 35.86, 35.79]),
   };
   const obsList = LABOUR_INDICATORS.map(cfg => obsById[cfg.id]);
+  assert.equal(LABOUR_INDICATORS.length, 9, 'harus 9 indikator (termasuk PAYEMS)');
   const a = computeLabourAssessment(obsList, NOW);
-  assert.equal(a.label, 'STRONG STRENGTHENING'); // 8/8 searah
-  assert.equal(a.dimensions.HIRING.length, 4);
+  assert.equal(a.label, 'STRONG STRENGTHENING'); // 9/9 searah
+  assert.equal(a.dimensions.HIRING.length, 5);
   assert.equal(a.dimensions.LAYOFFS.length, 3);
   assert.equal(a.dimensions.WAGE.length, 1);
   assert.equal(a.as_of_latest, '2026-06-27');
