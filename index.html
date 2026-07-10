@@ -261,11 +261,45 @@ body {
 .corr-anomaly { background:var(--surface); border:1px solid var(--border); border-radius:3px; padding:8px 10px; margin-bottom:5px; font-family:'DM Mono',monospace; font-size:10px; }
 .corr-anomaly-hdr { display:flex; justify-content:space-between; align-items:center; }
 .corr-label   { color:var(--text-mid); }
-.corr-val     { font-size:11px; font-weight:700; }
 .corr-pos     { color:var(--green); }
 .corr-neg     { color:var(--accent); }
 .corr-neu     { color:var(--muted); }
 .corr-delta   { font-size:9px; color:var(--yellow); }
+
+/* COR-H: bar chart korelasi (anomali + gold) — diverging dari 0, bar = r20, tick = norma r60 */
+.corr-chart-track { position:relative; display:block; height:12px; background:rgba(255,255,255,.02); border-radius:2px; overflow:hidden; }
+.corr-chart-zero  { position:absolute; left:50%; top:0; bottom:0; width:1px; background:var(--border); }
+.corr-chart-bar   { position:absolute; top:2px; height:8px; background:var(--muted); }
+.corr-chart-bar.dirpos { border-radius:0 4px 4px 0; }
+.corr-chart-bar.dirneg { border-radius:4px 0 0 4px; }
+.corr-chart-bar.pos { background:var(--green); }
+.corr-chart-bar.neg { background:var(--accent); }
+.corr-chart-tick  { position:absolute; top:0; bottom:0; width:2px; background:var(--text); opacity:.6; box-shadow:0 0 0 1px var(--surface); }
+.corr-chart-key   { font-size:8px; color:var(--muted); font-family:'DM Mono',monospace; margin:2px 0 6px; display:flex; align-items:center; gap:4px; flex-wrap:wrap; }
+.corr-chart-key .k-bar  { display:inline-block; width:14px; height:6px; background:var(--muted); border-radius:0 3px 3px 0; }
+.corr-chart-key .k-tick { display:inline-block; width:2px; height:9px; background:var(--text); opacity:.6; margin:0 2px 0 8px; }
+.corr-chart-row   { display:grid; grid-template-columns:92px 1fr 74px; gap:0 8px; align-items:center; padding:5px 8px; border-bottom:1px solid var(--border); }
+.corr-chart-row-name  { font-size:10px; color:var(--text); font-family:'DM Mono',monospace; }
+.corr-chart-row-hint  { font-size:8px; color:var(--muted); margin-top:1px; }
+.corr-chart-row-vals  { text-align:right; font-size:10px; font-family:'DM Mono',monospace; color:var(--text); white-space:nowrap; }
+.corr-chart-row-vals .v60 { color:var(--muted); font-size:9px; }
+.corr-narrative   { font-size:10px; color:var(--text-mid); font-family:'DM Mono',monospace; line-height:1.6; background:var(--surface); border-left:2px solid var(--yellow); border-radius:2px; padding:6px 8px; margin-bottom:10px; }
+.corr-anomaly-more summary { font-size:9px; color:var(--muted); font-family:'DM Mono',monospace; cursor:pointer; padding:4px 0; list-style:none; }
+.corr-anomaly-more summary::before { content:'▸ '; }
+.corr-anomaly-more[open] summary::before { content:'▾ '; }
+
+/* US LABOUR MARKET (tab FUNDAMENTAL) */
+.fund-labour-hdr { display:flex; align-items:center; justify-content:space-between; gap:6px 10px; flex-wrap:wrap; margin-bottom:8px; }
+.fund-labour-title { font-size:9px; color:var(--muted); letter-spacing:.1em; }
+.fund-labour-badge { font-size:10px; font-weight:700; padding:2px 8px; border-radius:3px; border:1px solid; letter-spacing:.05em; white-space:nowrap; }
+.fund-labour-agree { font-size:9px; color:var(--muted); }
+.fund-labour-dim { display:flex; align-items:flex-start; gap:6px; padding:5px 0; border-top:1px solid var(--border); }
+.fund-labour-dim-label { font-size:8px; color:var(--muted); letter-spacing:.08em; min-width:54px; padding-top:4px; flex-shrink:0; }
+.fund-labour-chips { display:flex; flex-wrap:wrap; gap:4px; flex:1; min-width:0; }
+.fund-labour-chip { font-size:9px; padding:3px 7px; border-radius:3px; background:rgba(255,255,255,.03); border:1px solid var(--border); color:var(--text-mid); cursor:help; white-space:nowrap; }
+.fund-labour-chip .arr { font-weight:700; }
+.fund-labour-narr { font-size:10px; color:var(--text-mid); line-height:1.6; margin-top:8px; border-top:1px solid var(--border); padding-top:8px; }
+.fund-labour-foot { font-size:8px; color:var(--muted); margin-top:6px; line-height:1.5; }
 
 /* JURNAL */
 .jn-form { display:flex; flex-direction:column; gap:10px; }
@@ -794,15 +828,6 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   font-size: 10px; color: var(--muted); line-height: 1.5; margin-bottom: 12px;
   border-left: 2px solid var(--border); padding-left: 10px;
 }
-.cot-section {
-  padding: 0;
-}
-.cot-title {
-  display: flex; align-items: center; justify-content: space-between;
-  font-size: 9px; letter-spacing: 1px; color: var(--muted);
-  text-transform: uppercase; padding: 4px 0 10px;
-}
-.cot-subtitle { font-size: 8px; color: var(--muted); font-style: italic; margin-top: -6px; margin-bottom: 8px; }
 .cot-empty {
   font-size: 11px; color: var(--muted); text-align: center;
   padding: 12px 0 8px; font-style: italic;
@@ -840,7 +865,6 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 }
 
 /* ── COT TREND PANEL ── */
-.cot-row-wrap { display: contents; }
 .cot-tren-btn {
   display: inline-flex; align-items: center; gap: 3px;
   font-size: 8px; font-family: 'DM Mono', monospace; letter-spacing: .5px;
@@ -1479,7 +1503,6 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .cal-scenario-pair-dir { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; }
 .cal-scenario-pair-dir.long  { color: #00c896; }
 .cal-scenario-pair-dir.short { color: #ff4757; }
-.cal-scenario-pair-reason { font-size: 9px; color: var(--muted); font-family: 'DM Mono', monospace; margin-top: 2px; }
 .cal-scenario-warn {
   margin-top: 8px; padding: 8px 10px; border-radius: 5px;
   background: rgba(255,200,0,.07); border: 1px solid rgba(255,200,0,.15);
@@ -1584,11 +1607,6 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .cb-bias.dovish           { background: rgba(0,200,150,.12);   color: var(--green); }
 .cb-bias.split            { background: rgba(167,139,250,.12); color: var(--purple); }
 .cb-bias.unknown          { background: rgba(255,255,255,.04); color: var(--muted); font-style: italic; }
-
-/* Legacy card classes — kept for JS compat, hidden */
-.cb-grid    { display: none; }
-.cb-card    { display: none; }
-.cb-updated { display: none; }
 
 /* CB Override & Source Headlines */
 .cb-detail-row td { padding: 0 !important; }
@@ -2030,12 +2048,11 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 
 /* ── TEKNIKAL TAB ── */
 .tek-header { display: flex; gap: 10px; align-items: center; padding: 10px 14px 8px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
-.tek-pair-select, .tek-tf-select {
+.tek-tf-select {
   background: var(--surface); color: var(--text); border: 1px solid var(--border);
   border-radius: 6px; padding: 6px 10px; font: 11px 'DM Mono',monospace; cursor: pointer;
   appearance: none; -webkit-appearance: none; outline: none;
 }
-.tek-pair-select { flex: 1; font-size: 14px; font-weight: 700; color: #38bdf8; }
 .tek-tf-select { font-size: 11px; }
 .tek-pair-combo { position: relative; flex: 1; }
 .tek-pair-trigger {
@@ -2208,7 +2225,6 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .dash-digest-section { padding: 10px 12px 8px; border-bottom: 1px solid var(--border); }
 .dash-digest-arrow { background: var(--surface); border: 1px solid var(--border); color: var(--muted); border-radius: 4px; width: 18px; height: 18px; line-height: 1; cursor: pointer; font-size: 11px; padding: 0; }
 .dash-digest-arrow:hover { border-color: var(--accent); color: var(--text); }
-.dash-digest-label { font-size: 8px; color: var(--muted); font-family: 'DM Mono', monospace; letter-spacing: .8px; text-transform: uppercase; margin-bottom: 5px; }
 .dash-digest-text { font-size: 13px; color: var(--text); line-height: 1.75; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
 .dash-digest-text .r-para { margin: 0 0 1.2em; padding: 0; }
 .dash-digest-text .r-para:last-child { margin-bottom: 0; }
@@ -3260,6 +3276,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
       <div style="font-size:9px;color:var(--muted);letter-spacing:.1em;margin-bottom:8px">RISK REVERSAL 25-DELTA <span id="fundRRSource" style="color:var(--border);margin-left:4px"></span></div>
       <div id="fundRRGrid" style="display:flex;flex-wrap:wrap;gap:8px 16px"></div>
     </div>
+    <!-- US Labour Market Assessment — rule-based FRED, konteks bukan sinyal (bukan prediksi/ML) -->
+    <div id="fundLabourSection" style="display:none;margin-bottom:12px;padding:10px 12px;background:var(--surface);border:1px solid var(--border);border-radius:4px;font-family:'DM Mono',monospace"></div>
     <!-- Strength Ranking Overview -->
     <div class="fund-rank-section" id="fundRankSection" style="display:none">
       <div class="fund-rank-label">
@@ -4244,27 +4262,6 @@ function openLink(url) { if(url) window.open(url,'_blank'); }
   // begitu window berakhir (tidak ada lompatan besar dari posisi basi).
   let ignoreUntil = 0;
 
-  // Saat scrollTop===0 dalam window transisi, kita tidak bisa langsung reveal
-  // (untuk mencegah loop browser-clamping). Tapi kita jadwalkan reveal deferred
-  // supaya header tetap muncul begitu window transisi berakhir.
-  let pendingTopReveal = null;
-
-  function schedulePendingReveal(el) {
-    if (pendingTopReveal) return; // sudah ada pending
-    const delay = Math.max(0, ignoreUntil - Date.now()) + 60;
-    pendingTopReveal = setTimeout(() => {
-      pendingTopReveal = null;
-      if (el.scrollTop === 0 && chrome.classList.contains('chrome-collapsed')) {
-        chrome.classList.remove('chrome-collapsed');
-        ignoreUntil = Date.now() + 640;
-      }
-    }, delay);
-  }
-
-  function cancelPendingReveal() {
-    if (pendingTopReveal) { clearTimeout(pendingTopReveal); pendingTopReveal = null; }
-  }
-
   // Dashboard columns selalu di-skip: kolom-kolom ini tidak membutuhkan
   // chrome collapse (layout grid sudah compact) dan tidak bisa trigger reveal
   // karena auto-reveal dilakukan saat masuk view dashboard.
@@ -4282,7 +4279,6 @@ function openLink(url) { if(url) window.open(url,'_blank'); }
     // scrollTop === 0: selalu tampilkan header langsung, tanpa menunggu ignoreUntil.
     // Saat user benar-benar di posisi paling atas, chrome harus selalu terlihat.
     if (el.scrollTop === 0 && chrome.classList.contains('chrome-collapsed')) {
-      cancelPendingReveal();
       if (!ticking) {
         ticking = true;
         requestAnimationFrame(() => {
@@ -4300,7 +4296,6 @@ function openLink(url) { if(url) window.open(url,'_blank'); }
     if (Math.abs(delta) < 6) return; // abaikan jiggle/inersia kecil
 
     if (delta <= 0) return; // scroll ke atas tapi belum di top — header tetap sembunyi
-    cancelPendingReveal();
     pendingDelta = delta;
     pendingScrollTop = el.scrollTop;
     pendingEl = el;
@@ -5244,6 +5239,7 @@ document.querySelectorAll('#navViews .nvtab').forEach(btn => {
       const now = Date.now();
       if (!fundData || (now - fundFetchedAt) > 30 * 60 * 1000) fetchFundamental();
       else renderFundamental();
+      fetchLabourMarket(); // TTL client 6 jam di dalam fungsi — no-op kalau masih fresh
     } else if (view === 'checklist') {
       setFeedUI(false);
       activeView = 'checklist';
@@ -5945,6 +5941,49 @@ function corrColor(r) {
   return r > 0.3 ? 'corr-pos' : r < -0.3 ? 'corr-neg' : 'corr-neu';
 }
 
+// ── COR-H: visual chart korelasi ─────────────────────────────────────────────
+// Track diverging dari 0 (skala tetap −1..+1): bar = r20 (warna semantik
+// corrColor existing), tick terang = norma 60 hari. r null → bar/tick tidak
+// digambar (bukan NaN width).
+function _corrBarHtml(r20, r60) {
+  if (r20 == null && r60 == null) return '';
+  let inner = '<span class="corr-chart-zero"></span>';
+  if (r20 != null && isFinite(r20)) {
+    const r = Math.max(-1, Math.min(1, r20));
+    const w = Math.abs(r) / 2 * 100;
+    const cls = r > 0.3 ? 'pos' : r < -0.3 ? 'neg' : '';
+    inner += r >= 0
+      ? `<span class="corr-chart-bar dirpos ${cls}" style="left:50%;width:${w.toFixed(1)}%"></span>`
+      : `<span class="corr-chart-bar dirneg ${cls}" style="right:50%;width:${w.toFixed(1)}%"></span>`;
+  }
+  if (r60 != null && isFinite(r60)) {
+    const p = (Math.max(-1, Math.min(1, r60)) + 1) / 2 * 100;
+    inner += `<span class="corr-chart-tick" style="left:${p.toFixed(1)}%"></span>`;
+  }
+  return `<span class="corr-chart-track">${inner}</span>`;
+}
+
+const _CORR_CHART_KEY = `<div class="corr-chart-key"><span class="k-bar"></span> korelasi 20 hari<span class="k-tick"></span> norma 60 hari · skala −1&hairsp;…&hairsp;+1</div>`;
+
+// Narasi anomali — template deterministik (bukan LLM), anti-noise: kosong saat
+// tidak ada anomali (tidak ada section narasi sama sekali).
+function _buildAnomalyNarrative(anomalies) {
+  if (!Array.isArray(anomalies) || anomalies.length === 0) return '';
+  const a = anomalies[0];
+  const f = v => v != null ? (v >= 0 ? '+' : '') + v.toFixed(2) : '—';
+  let clause;
+  if (a.r20 != null && a.r60 != null && Math.sign(a.r20) !== Math.sign(a.r60) && Math.abs(a.r20) >= 0.15 && Math.abs(a.r60) >= 0.15) {
+    clause = 'arah hubungannya berbalik dari kebiasaan';
+  } else if (a.r20 != null && a.r60 != null && Math.abs(a.r20) < Math.abs(a.r60)) {
+    clause = 'hubungan yang biasanya erat sedang melemah';
+  } else {
+    clause = 'hubungannya menguat melebihi kebiasaan';
+  }
+  let txt = `${escHtml(a.label)} menyimpang paling jauh dari norma — ${clause} (20 hari: ${f(a.r20)}, norma 3 bulan: ${f(a.r60)}).`;
+  if (anomalies.length > 1) txt += ` +${anomalies.length - 1} hubungan lain juga menyimpang.`;
+  return txt;
+}
+
 // ── Korelasi per-pair (tab TEK) ──────────────────────────────────────────────
 // Matrix korelasi server (api/correlations.js) sudah lama punya seri per-currency
 // (EUR/GBP/JPY/AUD/NZD/CAD/CHF vs USD, JPY·CAD·CHF di-invert supaya menguat = naik)
@@ -6043,6 +6082,11 @@ function renderCorrelations() {
   const tsStr = computed_at ? new Date(computed_at).toLocaleDateString('id-ID', { day:'numeric', month:'short' }) : '—';
   let html = `<div class="corr-title">CROSS-ASSET CORRELATIONS · ${tsStr}${stale ? ' · stale' : ''}</div>`;
 
+  // COR-H: narasi storytelling di atas kedua chart — HANYA saat ada anomali
+  // (anti-noise: kosong = tidak ada elemen narasi sama sekali)
+  const _narr = _buildAnomalyNarrative(anomalies);
+  if (_narr) html += `<div class="corr-narrative">${_narr}</div>`;
+
   // ── Korelasi kontekstual pair aktif TEK ──────────────────────
   // Non-XAU pair: tabel korelasi leg pair itu (fitur per-pair, request user 2026-07-03).
   // XAUUSD tetap pakai tabel gold khusus di bawah (lebih lengkap: ratio GS/GC dsb).
@@ -6050,59 +6094,59 @@ function renderCorrelations() {
     html += _buildPairCorrHtml(tekPair, corrData);
   }
 
-  // ── Gold correlation table (hanya saat pair aktif = XAUUSD) ──
+  // ── Gold correlation bar chart (hanya saat pair aktif = XAUUSD) — COR-H ──
+  // Bar = r20 (panjang & warna), tick terang = norma r60; urutan goldOrder tetap.
   if (tekPair === 'XAUUSD' && gold_correlations && Object.keys(gold_correlations).length > 0) {
     html += `<div style="font-size:9px;color:var(--muted);font-family:'DM Mono',monospace;letter-spacing:.08em;margin:8px 0 5px">XAU/USD · KORELASI CROSS-ASSET</div>`;
-    html += `<div style="background:var(--surface);border:1px solid var(--border);border-radius:3px;overflow:hidden;margin-bottom:10px">`;
-    // header row
-    html += `<div style="display:grid;grid-template-columns:1fr 52px 52px 46px;gap:0;padding:5px 8px 4px;border-bottom:1px solid var(--border);font-size:8px;color:var(--muted);font-family:'DM Mono',monospace;letter-spacing:.06em">
-      <span>ASET</span><span style="text-align:right">20d</span><span style="text-align:right">60d</span><span style="text-align:right">Δ</span>
-    </div>`;
+    html += _CORR_CHART_KEY;
+    html += `<div style="background:var(--surface);border:1px solid var(--border);border-radius:3px;overflow:hidden;margin-bottom:6px">`;
     const goldOrder = ['DXY','US10Y','Silver','Copper','WTI','SPX','VIX','JPY','AUD','EUR'];
     for (const asset of goldOrder) {
       const g = gold_correlations[asset];
       if (!g) continue;
       const meta = GOLD_CORR_META[asset] || { label: asset, hint: '' };
-      const r20Cls = corrColor(g.r20);
-      const r60Cls = corrColor(g.r60);
-      const dSign  = g.delta !== null ? (g.delta >= 0 ? '+' : '') : '';
-      const deltaStr = g.delta !== null ? `${dSign}${g.delta.toFixed(2)}` : '—';
-      const deltaCls = g.delta !== null ? (Math.abs(g.delta) > 0.3 ? 'color:var(--yellow)' : 'color:var(--muted)') : 'color:var(--muted)';
-      html += `<div style="display:grid;grid-template-columns:1fr 52px 52px 46px;gap:0;padding:5px 8px;border-bottom:1px solid var(--border)" title="${meta.hint}">
-        <div>
-          <div style="font-size:10px;color:var(--text);font-family:'DM Mono',monospace">${meta.label}</div>
-          <div style="font-size:8px;color:var(--muted);margin-top:1px">${meta.hint}</div>
-        </div>
-        <div style="text-align:right;font-size:11px;font-weight:700;font-family:'DM Mono',monospace" class="${r20Cls}">${g.r20 != null ? g.r20.toFixed(2) : '—'}</div>
-        <div style="text-align:right;font-size:10px;font-family:'DM Mono',monospace" class="${r60Cls}">${g.r60 != null ? g.r60.toFixed(2) : '—'}</div>
-        <div style="text-align:right;font-size:9px;font-family:'DM Mono',monospace;${deltaCls}">${deltaStr}</div>
+      const deltaStr = g.delta !== null ? `Δ ${(g.delta >= 0 ? '+' : '')}${g.delta.toFixed(2)}` : '';
+      const deltaWarn = g.delta !== null && Math.abs(g.delta) > 0.3;
+      const track = _corrBarHtml(g.r20, g.r60) || '<span class="corr-neu" style="font-size:9px;text-align:center">—</span>';
+      html += `<div class="corr-chart-row" title="${meta.hint}${deltaStr ? ' · ' + deltaStr : ''}">
+        <div><div class="corr-chart-row-name">${meta.label}</div><div class="corr-chart-row-hint">${meta.hint}</div></div>
+        ${track}
+        <div class="corr-chart-row-vals">${g.r20 != null ? g.r20.toFixed(2) : '—'} <span class="v60">/ ${g.r60 != null ? g.r60.toFixed(2) : '—'}</span>${deltaWarn ? ' <span style="color:var(--yellow)">Δ</span>' : ''}</div>
       </div>`;
     }
     html += `</div>`;
-    html += `<div style="font-size:8px;color:var(--muted);font-family:'DM Mono',monospace;margin-bottom:10px;line-height:1.5">20d = korelasi 20 hari terakhir &nbsp;·&nbsp; 60d = norma 3 bulan &nbsp;·&nbsp; Δ = penyimpangan (±kuning = breakdown)</div>`;
+    html += `<div style="font-size:8px;color:var(--muted);font-family:'DM Mono',monospace;margin-bottom:10px;line-height:1.5">Angka = 20d / 60d &nbsp;·&nbsp; Δ kuning = penyimpangan &gt;0.3 dari norma (detail di tooltip)</div>`;
   }
 
-  // ── Anomalies section ────────────────────────────────────────
+  // ── Anomalies section — COR-H: kartu visual diverging bar ────
+  // Anti-noise WAJIB: saat kosong hanya teks ini, TIDAK ada elemen chart di DOM.
   html += `<div style="font-size:9px;color:var(--muted);font-family:'DM Mono',monospace;letter-spacing:.08em;margin-bottom:5px">ANOMALI KORELASI (Δ &gt; 0.4)</div>`;
   if (anomalies.length === 0) {
     html += `<div style="font-size:10px;color:var(--muted);font-family:'DM Mono',monospace;padding:6px">Tidak ada anomali korelasi signifikan saat ini.</div>`;
   } else {
-    html += anomalies.map(a => {
+    const renderAnomaly = a => {
       const r20Cls = corrColor(a.r20);
       const r60Cls = corrColor(a.r60);
       const dSign  = a.delta >= 0 ? '+' : '';
+      const track  = _corrBarHtml(a.r20, a.r60);
       return `<div class="corr-anomaly" title="Korelasi saat ini menyimpang dari norma 60 hari">
         <div class="corr-anomaly-hdr">
-          <span class="corr-label">${a.label}</span>
+          <span class="corr-label">${escHtml(a.label)}</span>
           <span class="corr-delta">Δ ${dSign}${a.delta}</span>
         </div>
+        ${track ? `<div style="margin-top:5px">${track}</div>` : ''}
         <div style="margin-top:3px;font-size:9px;color:var(--muted)">
           20d: <span class="${r20Cls}">${a.r20 != null ? a.r20.toFixed(2) : '—'}</span>
           &nbsp;·&nbsp;
           60d: <span class="${r60Cls}">${a.r60 != null ? a.r60.toFixed(2) : '—'}</span>
         </div>
       </div>`;
-    }).join('');
+    };
+    html += _CORR_CHART_KEY;
+    html += anomalies.slice(0, 5).map(renderAnomaly).join('');
+    if (anomalies.length > 5) {
+      html += `<details class="corr-anomaly-more"><summary>lihat semua (${anomalies.length})</summary>${anomalies.slice(5).map(renderAnomaly).join('')}</details>`;
+    }
   }
 
   el.innerHTML = html;
@@ -6262,6 +6306,7 @@ async function fetchFundamental(refresh = false) {
     if (el) el.textContent = 'baru saja';
     renderFundamental();
     fetchRiskReversal(); // fire-and-forget: load RR independently
+    fetchLabourMarket(refresh); // fire-and-forget: refresh=true memaksa bypass TTL client
   } catch(e) {
     if (grid) grid.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:20px;color:var(--muted);font-size:11px">Gagal memuat: ${escHtml(e.message)}</div>`;
   } finally {
@@ -6317,6 +6362,81 @@ function renderRiskReversal() {
   if (items.length === 0) { section.style.display = 'none'; return; }
   grid.innerHTML = items.join('');
   section.style.display = 'block';
+}
+
+// ── US LABOUR MARKET ASSESSMENT (tab FUNDAMENTAL) ────────────────────────────
+// Rule-based dari 8 seri FRED via /api/real-yields?section=labour — KONTEKS
+// pasar tenaga kerja AS, bukan sinyal/prediksi (pasca kill-gate riset NFP).
+// Confidence ordinal "X dari Y indikator searah", tanpa persen.
+let labourData      = null;
+let labourFetchedAt = 0;
+
+async function fetchLabourMarket(force = false) {
+  if (!force && labourData && (Date.now() - labourFetchedAt) < 6 * 60 * 60 * 1000) {
+    renderLabourMarket();
+    return;
+  }
+  try {
+    const res = await fetch('/api/real-yields?section=labour', { signal: AbortSignal.timeout(15000) });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    labourData      = data;
+    labourFetchedAt = Date.now();
+    renderLabourMarket();
+  } catch(e) {
+    // Gagal fetch → sembunyikan section (bukan error mengganggu); data lama tetap dipakai
+    console.warn('Labour market fetch failed:', e.message);
+    if (labourData) renderLabourMarket();
+    else { const el = document.getElementById('fundLabourSection'); if (el) el.style.display = 'none'; }
+  }
+}
+
+function renderLabourMarket() {
+  const el = document.getElementById('fundLabourSection');
+  if (!el) return;
+  const d = labourData;
+  if (!d || !d.agreement || !d.dimensions) { el.style.display = 'none'; return; }
+
+  const dirColor = d.insufficient ? 'var(--muted)'
+    : d.agreement.direction === 'strengthening' ? 'var(--green)'
+    : d.agreement.direction === 'weakening'     ? 'var(--accent)'
+    : 'var(--muted)';
+  // Panah = arah DATA MENTAH (raw); warna = interpretasi labour market (status).
+  // Penting utk indikator terbalik: klaim naik = panah ↑ tapi merah (melemah).
+  const ARR = { up: '↑', down: '↓', flat: '→' };
+  const COL = { strengthening: 'var(--green)', weakening: 'var(--accent)', flat: 'var(--muted)', unavailable: 'var(--border)' };
+
+  const asOf = d.as_of_latest
+    ? new Date(d.as_of_latest).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })
+    : '';
+  const staleTag = d.stale ? ' <span style="color:var(--yellow)">(cache lama)</span>' : '';
+
+  let html = `<div class="fund-labour-hdr">
+    <span class="fund-labour-title">US LABOUR MARKET${staleTag}</span>
+    <span class="fund-labour-badge" style="color:${dirColor};border-color:${dirColor}">${escHtml(d.label || '')}</span>
+    <span class="fund-labour-agree">${escHtml(d.agreement.text || '')}${asOf ? ' · data s/d ' + asOf : ''}</span>
+  </div>`;
+
+  for (const dim of ['HIRING', 'LAYOFFS', 'WAGE']) {
+    const states = d.dimensions[dim] || [];
+    if (!states.length) continue;
+    const chips = states.map(s => {
+      const col = COL[s.status] || 'var(--muted)';
+      const tip = [s.detail, s.as_of ? `per ${s.as_of}` : '', s.theory ? `Teori: ${s.theory}` : '', s.stale ? '⚠ data lebih lama dari kadens normal' : '']
+        .filter(Boolean).join(' — ');
+      const staleMark = s.stale ? ' <span style="color:var(--yellow)">⚠</span>' : '';
+      const val = s.status === 'unavailable' ? '' : ` ${escHtml(s.display || '')}`;
+      return `<span class="fund-labour-chip" title="${escHtml(tip)}">${escHtml(s.label)} <span class="arr" style="color:${col}">${ARR[s.raw] || '·'}</span>${val}${staleMark}</span>`;
+    }).join('');
+    html += `<div class="fund-labour-dim"><span class="fund-labour-dim-label">${dim}</span><div class="fund-labour-chips">${chips}</div></div>`;
+  }
+
+  if (d.narrative) html += `<div class="fund-labour-narr">${escHtml(d.narrative)}</div>`;
+  html += `<div class="fund-labour-foot">Konteks, bukan sinyal — data sudah priced-in ke konsensus. Relevan: XAU/USD &amp; pair USD; hampir nol utk cross non-USD. Sumber: FRED, rule-based tanpa AI.</div>`;
+
+  el.innerHTML = html;
+  el.style.display = 'block';
 }
 
 // ── DAILY PULSE ──────────────────────────────────────────────────────────────

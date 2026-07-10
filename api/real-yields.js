@@ -7,9 +7,15 @@
 
 const { withSingleFlight } = require('./_fetch_lock')
 const rateLimit = require('./_ratelimit')
+const { fetchLabourSeries, computeLabourAssessment } = require('./_labour_market')
 
 const CACHE_KEY = 'real_yields'
 const CACHE_TTL = 6 * 60 * 60 // 6 hours in seconds
+
+// US Labour Market Assessment (?section=labour) — menumpang function ini karena
+// limit 12 serverless function Vercel Hobby sudah penuh. Logic di _labour_market.js.
+const LABOUR_CACHE_KEY = 'labour_market'
+const LABOUR_TTL = 6 * 60 * 60
 
 const FRED_BASE = 'https://api.stlouisfed.org/fred/series/observations'
 
@@ -52,6 +58,8 @@ module.exports = async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(204).end()
 
   if (await rateLimit(req, res, { limit: 15, windowSecs: 60, endpoint: 'real-yields' })) return
+
+  if (req.query && req.query.section === 'labour') return handleLabourSection(req, res)
 
   // Read all caches in parallel
   let mainCached = null, liquidityCached = null, yieldCurveCached = null
@@ -239,6 +247,53 @@ module.exports = async function handler(req, res) {
   if (mainSf.gotLock) mainSf.release()
 
   return res.status(200).json({ ...payload, liquidity: liquidityData, yield_curve: yieldCurveData })
+}
+
+// ── US Labour Market Assessment (?section=labour) ────────────────────────────
+// Pola sama dengan main path: cache Redis 6 jam → single-flight lock → compute →
+// gagal semua → serve cache stale, atau 502 kalau tidak ada cache sama sekali.
+
+async function handleLabourSection(req, res) {
+  try {
+    const cached = await redisCmd('GET', LABOUR_CACHE_KEY)
+    if (cached) {
+      const d = JSON.parse(cached)
+      if (Date.now() - new Date(d.computed_at).getTime() < LABOUR_TTL * 1000) {
+        return res.status(200).json({ ...d, stale: false })
+      }
+    }
+  } catch(e) { console.warn('labour: cache read failed:', e.message) }
+
+  // Redis down tidak boleh menggagalkan response — fallback ke compute tanpa lock
+  let sf = { gotLock: false, fresh: null, release: () => {} }
+  try {
+    sf = await withSingleFlight(redisCmd, {
+      lockKey: 'lock:labour_market',
+      cacheKey: LABOUR_CACHE_KEY,
+      isFresh: (raw) => { try { return Date.now() - new Date(JSON.parse(raw).computed_at).getTime() < LABOUR_TTL * 1000 } catch(e) { return false } },
+    })
+  } catch(e) { console.warn('labour: single-flight failed:', e.message) }
+  if (!sf.gotLock && sf.fresh) return res.status(200).json({ ...JSON.parse(sf.fresh), stale: false })
+
+  try {
+    const obsList = await fetchLabourSeries(fetch)
+    const assessment = computeLabourAssessment(obsList)
+    if (assessment.agreement.available === 0) throw new Error('all labour series unavailable')
+
+    const payload = { ...assessment, computed_at: new Date().toISOString() }
+    redisCmd('SET', LABOUR_CACHE_KEY, JSON.stringify(payload), 'EX', LABOUR_TTL)
+      .catch(e => console.warn('labour: Redis SET failed:', e.message))
+    if (sf.gotLock) sf.release()
+    return res.status(200).json({ ...payload, stale: false })
+  } catch(e) {
+    console.warn('labour: compute failed:', e.message)
+    if (sf.gotLock) sf.release()
+    try {
+      const stale = await redisCmd('GET', LABOUR_CACHE_KEY)
+      if (stale) return res.status(200).json({ ...JSON.parse(stale), stale: true })
+    } catch(_) {}
+    return res.status(502).json({ error: 'Labour market data unavailable' })
+  }
 }
 
 // ── TGA + Fed Balance Sheet Liquidity Indicators ─────────────────────────────
