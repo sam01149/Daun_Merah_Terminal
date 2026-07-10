@@ -16,6 +16,28 @@
 >
 > **Status (2026-07-07, Session 151):** Section G revisi "Riset NFP — 3 Celah Lanjutan Pasca Kill-Gate" **sudah dieksekusi** — lihat "Changelog Session 151" di `daun_merah.md` + `NFP_PROYEK/results/REPORT.md` §8. Hasil: **Celah 1 (SPF skill-weighting) GAGAL 0/6 varian** (main spec p=0,778; hit-rate nominal 64% terbukti produk skew searah, bukan sinyal); **Celah 2 (Kalshi) TIDAK BISA DIUJI** dari jaringan user — seluruh domain kalshi.com diblokir Kominfo (DNS hijack `internetpositif.id`); `fetch_kalshi.py` siap-pakai, **action item user: jalankan `--probe` via VPN/jaringan lain**; **Celah 3 (live validation model dua-sisi) AKTIF** — spec beku v1, `predict_live.py` teruji end-to-end, prediksi pertama pada H-1 rilis NFP 2026-08-07, **action item user: daftarkan Task Scheduler** (perintah satu baris di `NFP_PROYEK/STATUS.md`; pembuatan otomatis ditolak permission classifier sesi). Kriteria gabungan tetap 0 lolos dari syarat ≥3 → STOP proyek utama tetap berlaku. Bagian plan-nya dihapus dari dokumen ini.
 
+berpikiran untuk melakukan efisiensi code, mulai membuat kode yang tidak relevan dan membuat kode alternatif yang lebih singkat tanpa menghilangkan kualitas dari code
+
+mulai kepikiran juga untuk membagi bagi fitur berdasarkan branch, dan membuat sebuah perlindungan agar orang tidak bisa melakukan copy pada aplikasi saya(karena html kan bisa di inspect trus ctrl+a dan buat aplikasinya sendiri)
+
+bug perbaikan: pada bagian hp di menu, dimana isi tampilan dari menu letaknya berada bersamaan dengan vix, jadi ketika isi dari menu seperti notifikasi diklik, maka sistem vix menampilkan daftar lengkapnya padahal yang diklik hanya notifikasi push(dan isi menu lainnya).
+
+aku berpikiran untuk membuat grafik dari cross asset correlation dan anomali korelasi dari semua kombinasi pair. ingin melihat apakah efisien atau maksa
+
+**[FIXED — Session 152]** Bug Thesis Alert: headline "Currency Strength Chart: Strongest: NZD, CHF, CAD, AUD, EUR, GBP, USD, JPY - Weakest" salah dibaca AI sebagai "USD salah satu mata uang terkuat" (padahal USD posisi ke-7/8, nyaris paling lemah) → jadi alasan palsu kontra thesis LONG XAU/USD, padahal posisi asli USD itu justru MENDUKUNG thesis. Fix: prompt Call 4 (`checkThesisContradictions()` di `api/market-digest.js`) diperkuat — instruksi eksplisit abaikan headline ranking "Currency Strength Chart" sebagai bukti kontradiksi. Detail di "Changelog Session 152" `daun_merah.md`. Verifikasi live behavior tertunda (perlu API key provider yang tidak tersedia lokal) — pantau output sesi berikutnya.
+
+cek keaslian retail position itu realtime atau engga
+
+aku sudah cek sertifikat ssl dari myfxbook dan mengatakan bahwa sertifikat masih kurang bisa
+
+Detail hasil cek (DNS myfxbook.com → 104.20.32.110, server header cloudflare):
+- Issuer: WE1 (Google Trust Services), chain WE1 → GTS Root R4 → GlobalSign Root CA
+- CN: myfxbook.com, SAN: myfxbook.com, *.myfxbook.com
+- Valid 29/Jun/2026 – 27/Sep/2026
+- Verdict tool: "TLS Certificate is correctly installed — Congratulations!"
+
+**Kesimpulan: tidak masalah.** "Not issued by DigiCert/GeoTrust/Thawte/RapidSSL" cuma disclaimer promosi tool checker (bukan warning keamanan) — situs di-proxy Cloudflare dengan sertifikat sah dari Google Trust Services, rantai CA valid & dipercaya luas, masa berlaku pendek adalah hal normal untuk cert auto-issued. Tidak ada indikasi situs palsu/MITM. Item ini selesai/tidak perlu tindak lanjut.
+
 # F. INFRASTRUKTUR
 
 - **[INFRA-1] cron-job.org sebagai backup OHLCV sync**

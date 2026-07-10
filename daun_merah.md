@@ -1,11 +1,23 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-07-07 (session 151 — Riset NFP lanjutan "3 celah pasca kill-gate": SPF skill GAGAL, Kalshi terblokir jaringan, live validation model dua-sisi AKTIF)
+> **Last updated:** 2026-07-10 (session 152 — Fix Thesis Alert Call 4: prompt salah baca "Currency Strength Chart" ranking headline sebagai bukti kontradiksi)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 
 ---
+
+## Changelog Session 152 (2026-07-10) — Fix Bug Thesis Alert: Salah Baca Ranking "Currency Strength Chart"
+
+**Konteks:** User menempel contoh output Thesis Alert yang janggal di `daun_merah_plan.md` lalu konfirmasi "ada bug disitu". Thesis Alert (Call 4, `checkThesisContradictions()` di [api/market-digest.js](api/market-digest.js#L480)) menandai posisi jurnal terbuka XAU/USD LONG sebagai kontra headline: `"Currency Strength Chart: Strongest: NZD, CHF, CAD, AUD, EUR, GBP, USD, JPY - Weakest"`, dengan alasan "USD is one of the strongest currencies, directly contradicting the LONG XAU/USD thesis which requires USD weakness".
+
+**Bug:** Headline itu adalah daftar terurut kuat→lemah. USD ada di posisi ke-7 dari 8 (cuma di atas JPY) — nyaris paling LEMAH, bukan salah satu yang terkuat. Model (SambaNova DeepSeek-V3.2 / fallback Groq) salah menghitung posisi dalam list bertingkat lalu membuat alert kontradiksi palsu — padahal posisi asli USD di situ justru MENDUKUNG thesis LONG XAU/USD (butuh USD lemah), bukan membantahnya. Headline ranking seperti ini juga seharusnya sudah kena aturan existing "ignore price-level headlines" (ini price-derived technical snapshot, bukan fundamental catalyst) tapi tidak konsisten dipatuhi.
+
+**Fix:** Perkuat prompt Call 4 di `checkThesisContradictions()` — tambah instruksi eksplisit: abaikan headline "Currency Strength Chart" / ranking mata uang sepenuhnya sebagai bukti kontradiksi, karena (a) itu price-derived bukan fundamental catalyst, dan (b) urutan "Strongest: A, B, C... - Weakest" gampang salah baca posisi oleh model.
+
+**Keterbatasan verifikasi:** Ini fix di level prompt untuk pemanggilan LLM eksternal (SambaNova/Groq) — API key provider tidak tersedia di environment lokal untuk test langsung end-to-end. Sudah divalidasi: `node --check` syntax OK, struktur JSON contract & validasi verbatim-headline (`entryById`, `headlineSet`) di Call 4 tidak berubah. Perilaku aktual model terhadap instruksi baru ini baru bisa dikonfirmasi dari output live berikutnya — pantau apakah headline "Currency Strength Chart" masih muncul jadi alasan Thesis Alert di sesi mendatang.
+
+**Bonus (bukan bug, verifikasi user):** User cek SSL certificate myfxbook.com (sumber retail sentiment) — hasil: sertifikat sah (Google Trust Services WE1 → GTS Root R4 → GlobalSign Root CA, di belakang Cloudflare), tool checker sendiri konfirmasi "correctly installed". "Not issued by DigiCert/GeoTrust/Thawte/RapidSSL" cuma disclaimer promosi tool, bukan red flag. Tidak ada indikasi situs palsu. Detail di `daun_merah_plan.md`.
 
 ## Changelog Session 151 (2026-07-07) — Riset NFP Lanjutan "3 Celah Pasca Kill-Gate": 1 Gagal, 1 Terblokir Jaringan, 1 Live Tracking Aktif
 
