@@ -1138,6 +1138,21 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   color: var(--muted); cursor: pointer; transition: all .12s;
 }
 .fd-cur-tab.active { background: var(--surface); color: var(--text); border-color: var(--text-mid); }
+/* Chip filter golongan indikator (SEMUA | Inflasi | ... ) — di bawah tab currency */
+.fd-sec-tabs {
+  display: flex; gap: 5px; padding: 8px 16px;
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto; flex-shrink: 0;
+  -webkit-overflow-scrolling: touch; scrollbar-width: none;
+}
+.fd-sec-tabs::-webkit-scrollbar { display: none; }
+.fd-sec-tab {
+  padding: 4px 10px; border-radius: 10px; flex-shrink: 0;
+  font: 9px 'DM Mono',monospace; letter-spacing: .05em;
+  border: 1px solid var(--border); background: transparent;
+  color: var(--muted); cursor: pointer; transition: all .12s;
+}
+.fd-sec-tab.active { background: var(--surface); color: var(--text); border-color: var(--text-mid); }
 .fd-body {
   flex: 1; overflow-y: auto; padding: 0 16px 40px;
   -webkit-overflow-scrolling: touch;
@@ -6385,11 +6400,24 @@ async function fetchLabourMarket(force = false) {
   }
 }
 
-// Blok "US Labour Market" utk fd-body detail USD — mengikuti bahasa visual
-// .fd-extra-block (Yield Curve/Likuiditas). Return '' saat data belum ada.
-function _buildLabourFdHtml() {
+// Peta indikator engine FRED → nama baris headline-parser di section Ketenagakerjaan.
+// Chip hanya dirender kalau baris padanannya TIDAK ada (hindari duplikasi tampilan —
+// keputusan user 2026-07-10: assessment dilebur ke section, bukan blok terpisah).
+const LABOUR_ROW_MAP = {
+  PAYEMS: 'NFP',
+  JTSJOL: 'JOLTS Job Openings',
+  ADPMNUSNERSA: 'ADP Employment',
+  ICSA: 'Jobless Claims',
+  CCSA: 'Continuing Claims',
+  CES0500000003: 'Wage Growth',
+};
+
+// Pelengkap section "Ketenagakerjaan" di detail USD: ringkasan agregat (badge +
+// agreement + narasi) di bawah header section, dan chip tren FRED hanya utk
+// indikator yang tidak punya baris headline. Return null saat data belum ada.
+function _buildLabourMergedHtml(rowKeys) {
   const d = labourData;
-  if (!d || !d.agreement || !d.dimensions) return '';
+  if (!d || !d.agreement || !d.dimensions) return null;
 
   const dirColor = d.insufficient ? 'var(--muted)'
     : d.agreement.direction === 'strengthening' ? 'var(--green)'
@@ -6398,37 +6426,35 @@ function _buildLabourFdHtml() {
   // Panah = arah DATA MENTAH (raw); warna = interpretasi labour market (status).
   // Penting utk indikator terbalik: klaim naik = panah ↑ tapi merah (melemah).
   const ARR = { up: '↑', down: '↓', flat: '→' };
-  const COL = { strengthening: 'var(--green)', weakening: 'var(--accent)', flat: 'var(--muted)', unavailable: 'var(--border)' };
+  const COL = { strengthening: 'var(--green)', weakening: 'var(--accent)', flat: 'var(--muted)' };
 
   const asOf = d.as_of_latest
     ? new Date(d.as_of_latest).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })
     : '';
 
-  let html = `<div class="fd-extra-block" style="border-left:3px solid ${dirColor}">`;
-  html += `<div class="fd-extra-title">US Labour Market${d.stale ? ' <span style="color:var(--yellow)">· cache lama</span>' : ''}</div>`;
-  html += `<div class="fund-labour-hdr">
+  const summary = `<div class="fund-labour-hdr">
     <span class="fund-labour-badge" style="color:${dirColor};border-color:${dirColor}">${escHtml(d.label || '')}</span>
-    <span class="fund-labour-agree">${escHtml(d.agreement.text || '')}${asOf ? ' · data s/d ' + asOf : ''}</span>
-  </div>`;
+    <span class="fund-labour-agree">${escHtml(d.agreement.text || '')}${asOf ? ' · data s/d ' + asOf : ''}${d.stale ? ' · <span style="color:var(--yellow)">cache lama</span>' : ''}</span>
+  </div>`
+  + (d.narrative ? `<div class="fund-labour-narr">${escHtml(d.narrative)}</div>` : '');
 
-  for (const dim of ['HIRING', 'LAYOFFS', 'WAGE']) {
-    const states = d.dimensions[dim] || [];
-    if (!states.length) continue;
-    const chips = states.map(s => {
+  const allStates = ['HIRING', 'LAYOFFS', 'WAGE'].flatMap(dim => d.dimensions[dim] || []);
+  const uncovered = allStates.filter(s =>
+    s.status !== 'unavailable' && !(LABOUR_ROW_MAP[s.id] && rowKeys.includes(LABOUR_ROW_MAP[s.id])));
+  let chips = '';
+  if (uncovered.length) {
+    const chipHtml = uncovered.map(s => {
       const col = COL[s.status] || 'var(--muted)';
       const tip = [s.detail, s.as_of ? `per ${s.as_of}` : '', s.theory ? `Teori: ${s.theory}` : '', s.stale ? '⚠ data lebih lama dari kadens normal' : '']
         .filter(Boolean).join(' — ');
       const staleMark = s.stale ? ' <span style="color:var(--yellow)">⚠</span>' : '';
-      const val = s.status === 'unavailable' ? '' : ` ${escHtml(s.display || '')}`;
-      return `<span class="fund-labour-chip" title="${escHtml(tip)}">${escHtml(s.label)} <span class="arr" style="color:${col}">${ARR[s.raw] || '·'}</span>${val}${staleMark}</span>`;
+      return `<span class="fund-labour-chip" title="${escHtml(tip)}">${escHtml(s.label)} <span class="arr" style="color:${col}">${ARR[s.raw] || '·'}</span> ${escHtml(s.display || '')}${staleMark}</span>`;
     }).join('');
-    html += `<div class="fund-labour-dim"><span class="fund-labour-dim-label">${dim}</span><div class="fund-labour-chips">${chips}</div></div>`;
+    chips = `<div class="fund-labour-dim"><span class="fund-labour-dim-label">TREN FRED</span><div class="fund-labour-chips">${chipHtml}</div></div>`;
   }
+  chips += `<div class="fund-labour-foot">Label = tren 9 seri FRED vs 3–6 bln terakhir (panah ikut arah data, warna ikut dampak). Konteks, bukan sinyal — sudah priced-in.</div>`;
 
-  if (d.narrative) html += `<div class="fund-labour-narr">${escHtml(d.narrative)}</div>`;
-  html += `<div class="fund-labour-foot">Konteks, bukan sinyal — data sudah priced-in ke konsensus. Sumber: FRED, rule-based tanpa AI.</div>`;
-  html += `</div>`;
-  return html;
+  return { summary, chips };
 }
 
 // ── DAILY PULSE ──────────────────────────────────────────────────────────────
@@ -6657,6 +6683,9 @@ function renderFundamental() {
 
 let fdOpenCur = null;
 let fdScores  = null; // saved from renderFundamental() for overlay use
+// Filter golongan indikator di detail (SEMUA = tanpa filter). Sengaja nempel
+// saat pindah currency — enak utk membandingkan golongan yang sama antar-mata uang.
+let fdSection = 'SEMUA';
 
 const FUND_SECTIONS_MAP = {
   'CPI YoY':'Inflasi','CPI MoM':'Inflasi','Core CPI MoM':'Inflasi','Core CPI YoY':'Inflasi',
@@ -6799,19 +6828,36 @@ function _renderFundDetail() {
     </div>`;
   }
 
-  // US Labour Market assessment (hanya USD) — trigger fetch di sini (bukan cuma
-  // openFundDetail) supaya swipe/tab pindah ke USD juga memuat datanya
-  if (s.cur === 'USD') {
-    if (!labourData) fetchLabourMarket(); // TTL 6 jam di dalam; render ulang saat data tiba
-    html += _buildLabourFdHtml();
-  }
+  // US Labour Market assessment dilebur ke section Ketenagakerjaan (USD) —
+  // trigger fetch di sini supaya swipe/tab pindah ke USD juga memuat datanya
+  if (s.cur === 'USD' && !labourData) fetchLabourMarket(); // TTL 6 jam; render ulang saat data tiba
+
+  // Chip filter golongan: hanya section yang ada isinya utk currency ini.
+  // fdSection yang tidak tersedia di currency aktif → tampil sebagai SEMUA
+  // (nilai fdSection dipertahankan supaya kembali berlaku saat pindah currency).
+  const sectionsAvail = [...FUND_SECTION_ORDER, 'Lainnya'].filter(sec =>
+    (buckets[sec] && buckets[sec].length > 0) || (sec === 'Ketenagakerjaan' && s.cur === 'USD' && labourData));
+  const secActive = sectionsAvail.includes(fdSection) ? fdSection : 'SEMUA';
+  document.getElementById('fdSecTabs').innerHTML = ['SEMUA', ...sectionsAvail].map(sec => {
+    const active = sec === secActive;
+    const col = FUND_SECTION_COLORS[sec];
+    return `<button class="fd-sec-tab${active ? ' active' : ''}"${active && col ? ` style="color:${col};border-color:${col}"` : ''} onclick="fdSection='${sec}';_renderFundDetail();document.getElementById('fdBody').scrollTop=0">${sec}</button>`;
+  }).join('');
 
   // Indicator sections
   [...FUND_SECTION_ORDER, 'Lainnya'].forEach(sec => {
-    const rows = buckets[sec];
-    if (!rows || rows.length === 0) return;
+    if (secActive !== 'SEMUA' && sec !== secActive) return;
+    const rows = buckets[sec] || [];
+    // Section Ketenagakerjaan USD: ringkasan assessment + chip tren FRED yang
+    // tidak duplikat dengan baris headline — section tetap dirender walau baris
+    // headline kosong (data FRED deterministik, tidak bergantung parse headline)
+    const labourExtra = (sec === 'Ketenagakerjaan' && s.cur === 'USD')
+      ? _buildLabourMergedHtml(rows.map(([k]) => k))
+      : null;
+    if (rows.length === 0 && !labourExtra) return;
     const sCol = FUND_SECTION_COLORS[sec] || '#6b6860';
     html += `<div class="fd-section-hdr"><span class="fd-section-dot" style="background:${sCol}"></span><span style="color:${sCol}">${sec}</span></div>`;
+    if (labourExtra) html += labourExtra.summary;
     rows.forEach(([k, v]) => {
       const sig    = scoreInd(k, v.actual, v.previous);
       const sigCol = sig === 1 ? 'var(--green)' : sig === -1 ? 'var(--red)' : 'var(--text)';
@@ -6826,10 +6872,11 @@ function _renderFundDetail() {
         </div>
       </div>`;
     });
+    if (labourExtra) html += labourExtra.chips;
   });
 
-  // Yield Curve block (USD/EUR)
-  if ((s.cur === 'USD' || s.cur === 'EUR') && realYieldsYieldCurve?.[s.cur]) {
+  // Yield Curve block (USD/EUR) — blok ekstra hanya tampil saat filter SEMUA
+  if (secActive === 'SEMUA' && (s.cur === 'USD' || s.cur === 'EUR') && realYieldsYieldCurve?.[s.cur]) {
     const yc = realYieldsYieldCurve[s.cur];
     const spread = yc.spread_2y10y;
     const spreadColor = spread == null ? 'var(--muted)' : spread < 0 ? 'var(--red)' : spread < 0.2 ? 'var(--yellow)' : 'var(--green)';
@@ -6844,8 +6891,8 @@ function _renderFundDetail() {
     }
   }
 
-  // Liquidity block (USD)
-  if (s.cur === 'USD' && realYieldsLiquidity) {
+  // Liquidity block (USD) — blok ekstra hanya tampil saat filter SEMUA
+  if (secActive === 'SEMUA' && s.cur === 'USD' && realYieldsLiquidity) {
     const liq = realYieldsLiquidity;
     const parts = [];
     if (liq.fed_assets_bn != null) parts.push(['Fed Assets', `$${liq.fed_assets_bn.toLocaleString()}B`, 'var(--muted)']);
@@ -13681,6 +13728,7 @@ document.addEventListener('keydown', function(e) {
     </div>
     <div class="fd-score-strip" id="fdScoreStrip"></div>
     <div class="fd-cur-tabs" id="fdCurTabs"></div>
+    <div class="fd-sec-tabs" id="fdSecTabs"></div>
     <div class="fd-body" id="fdBody"></div>
   </div>
 </div>
