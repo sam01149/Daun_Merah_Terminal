@@ -1642,6 +1642,15 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .cb-hl-title { font-size: 8px; color: var(--muted); letter-spacing: .6px; text-transform: uppercase; margin-bottom: 5px; }
 .cb-hl-item  { font-size: 9px; color: rgba(255,255,255,.6); line-height: 1.6; padding-left: 8px; }
 .cb-hl-item::before { content: '•'; margin-right: 5px; color: var(--muted); }
+/* CB Shock Detector (plan G6) — reaksi rapat bank sentral terakhir, rule-based */
+.cb-shock-wrap { margin-top: 10px; border-top: 1px solid var(--border); padding-top: 8px; font-family: 'DM Mono', monospace; }
+.cb-shock-title { font-size: 8px; color: var(--muted); letter-spacing: .6px; text-transform: uppercase; margin-bottom: 6px; }
+.cb-shock-item { display: flex; align-items: flex-start; gap: 7px; padding: 5px 0; border-bottom: 1px solid rgba(255,255,255,.04); }
+.cb-shock-item:last-of-type { border-bottom: none; }
+.cb-shock-badge { font-size: 8px; font-weight: 700; padding: 2px 6px; border-radius: 3px; border: 1px solid; letter-spacing: .04em; white-space: nowrap; flex-shrink: 0; margin-top: 1px; }
+.cb-shock-text { font-size: 10px; color: var(--text-mid); line-height: 1.55; min-width: 0; }
+.cb-shock-meta { font-size: 8px; color: var(--muted); margin-top: 1px; }
+.cb-shock-foot { font-size: 8px; color: var(--muted); line-height: 1.5; margin-top: 6px; opacity: .75; }
 .cb-override-row { display: flex; align-items: center; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
 .cb-override-sel {
   flex: 1; min-width: 120px; background: var(--bg); color: var(--text);
@@ -5578,11 +5587,52 @@ async function fetchCBStatus() {
     cbData = cbMergeOverrides(data.banks);
     cbFetchedAt = Date.now();
     renderCBTracker();
+    fetchCbShock(); // fire-and-forget (plan G6) — re-render saat data shock tiba
     const _cbSel = document.getElementById('ckPairSelector');
     if (_cbSel && _cbSel.value) ckAutoTickRegimeCheck(_cbSel.value);
   } catch(e) {
     console.warn('CB fetch failed:', e.message);
   }
+}
+
+// ── CB SHOCK DETECTOR (plan G6) — /api/cb-status?section=shock ───────────────
+// Rule-based di server (tanpa AI); klien cuma render. TTL klien 1 jam (samakan
+// dengan cache server cb_shock_cache).
+let cbShockData = null, cbShockFetchedAt = 0;
+async function fetchCbShock(force = false) {
+  if (!force && cbShockData && Date.now() - cbShockFetchedAt < 60 * 60 * 1000) return;
+  try {
+    const res = await fetch('/api/cb-status?section=shock', { signal: AbortSignal.timeout(15000) });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    cbShockData = await res.json();
+    cbShockFetchedAt = Date.now();
+    renderCBTracker();
+  } catch(e) { console.warn('CB shock fetch failed:', e.message); }
+}
+
+function _buildCbShockHtml() {
+  const d = cbShockData;
+  if (!d || !Array.isArray(d.events) || d.events.length === 0) return '';
+  // Badge = state + label teks (tidak pernah warna saja); warna token existing.
+  const BADGE = {
+    policy_shock:      { label: 'POLICY SHOCK', col: 'var(--green)' },
+    information_shock: { label: 'INFO SHOCK',   col: 'var(--yellow)' },
+    no_shock:          { label: 'NO SHOCK',     col: 'var(--muted)' },
+    insufficient_data: { label: 'DATA KURANG',  col: 'var(--muted)' },
+  };
+  const items = d.events.map(ev => {
+    const b = BADGE[ev.classification] || BADGE.insufficient_data;
+    const movePart = (typeof ev.currency_move_pct === 'number')
+      ? ' · reaksi ' + (ev.currency_move_pct > 0 ? '+' : '') + ev.currency_move_pct.toFixed(2) + '% (' + escHtml(ev.proxy_pair || '') + ', ' + ev.reaction_window_hours + ' jam)'
+      : '';
+    return '<div class="cb-shock-item">'
+      + '<span class="cb-shock-badge" style="color:' + b.col + ';border-color:' + b.col + '">' + b.label + '</span>'
+      + '<div class="cb-shock-text">' + escHtml(ev.narrative || '')
+      + '<div class="cb-shock-meta">' + escHtml(ev.currency || '') + ' · rapat ' + escHtml(ev.meeting_date || '—') + movePart + '</div>'
+      + '</div></div>';
+  }).join('');
+  return '<div class="cb-shock-wrap"><div class="cb-shock-title">Reaksi Rapat CB Terakhir (jendela ' + (d.window_days || 8) + ' hari)</div>' + items
+    + '<div class="cb-shock-foot">' + escHtml(d.disclaimer || '') + '</div></div>';
 }
 
 function renderCBTracker() {
@@ -5676,7 +5726,7 @@ function renderCBTracker() {
       + '</tr>';
   }).join('');
 
-  grid.innerHTML = '<table class="cb-table"><tbody>' + rows + '</tbody></table>';
+  grid.innerHTML = '<table class="cb-table"><tbody>' + rows + '</tbody></table>' + _buildCbShockHtml();
 
   const latestUpdate = cbData.filter(c => c.bias_updated).map(c => c.bias_updated).sort().pop();
   if (latestUpdate) {

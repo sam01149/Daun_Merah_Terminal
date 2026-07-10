@@ -1,10 +1,33 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-07-10 (session 155 lanjutan 4 — plan G1-G5 dieksekusi + retail sentiment auto-refresh 15 menit via GitHub Action)
+> **Last updated:** 2026-07-10 (session 155 lanjutan 5 — plan G6 FOMC/CB Shock Detector dieksekusi; seluruh plan G G1-G6 selesai)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root).
+
+---
+
+## Changelog Session 155 lanjutan 5 (2026-07-10) — Plan G6: FOMC/Central Bank Shock Detector (plan G selesai seluruhnya)
+
+**Konteks:** item terakhir plan G (`daun_merah_plan.md`), dikerjakan setelah G1-G5. Rule-based SEPENUHNYA — **nol panggilan AI** (klasifikasi dihitung pasti di kode, narasi Bahasa Indonesia dari template deterministik, pola persis labour market S154). Kerangka teori: Nakamura & Steinsson (poin 7 file referensi riset) — reaksi pasar atas keputusan bank sentral dipilah jadi *policy shock* vs *information shock*.
+
+**Langkah persiapan (sesuai plan):**
+- [api/rate-path.js](../api/rate-path.js) di-refactor: logic cache→compute→stale dipisah jadi `getRatePathData({ force, cacheOnly })` (reusable/importable, pola `_cb_rates.js`), handler HTTP tinggal wrapper tipis. Perilaku endpoint `/api/rate-path` tidak berubah (X-Cache HIT/MISS/STALE + shape response sama). Opsi `cacheOnly: true` ditambah dari evaluasi mandiri: konsumen sekunder (shock) TIDAK boleh memicu rantai fallback CME (bisa puluhan detik) di tengah request user — cache miss cukup return `null`.
+- Modul shared baru [api/_ohlcv_fetch.js](../api/_ohlcv_fetch.js): `fetchYahooOhlcv1h()` + `fetchBinancePaxg1h()` diekstrak dari `admin.js` (perilaku tidak berubah, `admin.js` sekarang require dari sini), dipakai bersama cb-status shock.
+
+**Fitur inti — [api/_cb_shock.js](../api/_cb_shock.js) + branch `?section=shock` di [api/cb-status.js](../api/cb-status.js)** (bukan file api baru — 12/12 limit tetap):
+- `classifyCbShock()` (pure function): 4 kelas — `policy_shock` (keputusan berubah + harga bergerak searah arah keputusan), `information_shock` (hold tapi harga bergerak signifikan; ATAU keputusan berubah tapi harga berlawanan arah; ATAU perubahan lebih kecil dari yang di-price-in `rate-path` pre-meeting), `no_shock` (dalam band noise), `insufficient_data` (gap candle → "jangan menebak").
+- Band noise ±0,3% FX = **heuristik tahap pertama, ditulis eksplisit di kode sebagai perlu kalibrasi dari observasi live** (pola flat-band labour market).
+- Reaksi harga: `computeHourlyReaction()` dari candle 1 jam (Redis `ohlcv:{symbol}:1h` hasil ohlcv_sync, fallback fetch Yahoo via `_ohlcv_fetch`) — close candle terakhir pre-announce → close +3 jam. Jam pengumuman per bank di-approx per-currency (`CB_ANNOUNCE_HOUR_UTC`). Proxy pair per currency (`CB_SHOCK_PROXY`, USD via EUR/USD inverted dst; dedupe fetch per simbol).
+- Ekspektasi pre-meeting (`expected_change_bps`): hanya USD via `getRatePathData({cacheOnly:true})`, dan hanya kalau cache rate_path masih memuat meeting tsb sebagai meeting mendatang — pasca-rapat jujur `null` (ekspektasi historis tidak pernah disimpan, tidak direka ulang).
+- Response di-cache `cb_shock_cache` TTL 1 jam; jendela rapat = 8 hari terakhir (batas jangkauan data 1h range=10d).
+
+**UI (index.html):** blok "Reaksi Rapat CB Terakhir" di bawah tabel CB Tracker (`_buildCbShockHtml`, fetch fire-and-forget `fetchCbShock()` dari `fetchCBStatus()`, TTL klien 1 jam). Badge per kelas selalu disertai label teks (bukan warna saja). **Disclaimer wajib tampil** (sesuai plan): resolusi 1 jam bukan 30-60 menit presisi, reaksi keputusan vs konferensi pers bisa tercampur, band noise masih heuristik — "Konteks, bukan sinyal".
+
+**Verifikasi:** unit test baru [test/cb_shock.test.js](../test/cb_shock.test.js) (14 test: 4 kelas klasifikasi, invert quote-currency, reaksi per-jam, gap→null, narasi per kelas, proxy map 8 currency) + 6 test tambahan `applyRegimeConfidenceGuard` (G5) di `test/market_digest_thesis.test.js`. Full suite **178/178 hijau**. Integration smoke test lokal dengan Redis mock: FOMC cut -25bps + USD menguat +1% → `information_shock` dengan narasi benar, nol network call eksternal. **Verifikasi live menunggu rapat bank sentral mayor berikutnya: FOMC 2026-07-30** (dari `getNextFOMCMeetings`) — dicatat sesuai kriteria selesai plan.
+
+**Plan file:** seksi G6 dihapus dari `daun_merah_plan.md` (SELESAI) — seluruh plan G G1-G6 kini selesai; yang tersisa di sana hanya item "Ditahan" (pembobotan nowcasting, carry trade) + backlog F/E.
 
 ---
 

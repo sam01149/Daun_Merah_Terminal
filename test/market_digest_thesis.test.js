@@ -78,3 +78,56 @@ test('validateThesis: field lain tetap divalidasi seperti sebelumnya', () => {
   assert.strictEqual(validateThesis(baseThesis({ confidence_1_to_5: 9 })), false);
   assert.strictEqual(validateThesis(baseThesis({ xau_bias: 'up' })), false);
 });
+
+// ── applyRegimeConfidenceGuard (plan G5): jaring pengaman kode berbasis regime mentah ──
+
+const { applyRegimeConfidenceGuard } = require('../api/market-digest.js');
+
+test('regime guard: risk_off + long AUD/USD → confidence capped ke 2 + regime_note', () => {
+  const t = baseThesis({ pair_recommendation: 'AUD/USD', direction: 'long', strongest_currency: 'AUD', weakest_currency: 'USD', confidence_1_to_5: 4, invalidation_condition: 'AUD melemah tajam' });
+  const g = applyRegimeConfidenceGuard(t, { regime: 'risk_off' });
+  assert.strictEqual(g.confidence_1_to_5, 2);
+  assert.ok(typeof g.regime_note === 'string' && g.regime_note.includes('risk_off'));
+  assert.strictEqual(t.confidence_1_to_5, 4, 'input tidak boleh dimutasi (pure function)');
+  assert.strictEqual(validateThesis(g), true, 'hasil guard harus tetap lolos schema');
+});
+
+test('regime guard: arah efektif dihitung dari direction — short NZD/USD (jual NZD) tidak kena, short USD/NZD (beli NZD) kena', () => {
+  // short NZD/USD = jual NZD (bukan long risk currency) → tidak kena
+  const sell = baseThesis({ pair_recommendation: 'NZD/USD', direction: 'short', invalidation_condition: 'NZD menguat' });
+  assert.strictEqual(applyRegimeConfidenceGuard(sell, { regime: 'risk_off' }), sell);
+  // short USD/NZD = efektif beli NZD vs safe haven USD → kena cap
+  const buy = baseThesis({ pair_recommendation: 'USD/NZD', direction: 'short', invalidation_condition: 'USD menguat', confidence_1_to_5: 5 });
+  const g = applyRegimeConfidenceGuard(buy, { regime: 'risk_off' });
+  assert.strictEqual(g.confidence_1_to_5, 2);
+});
+
+test('regime guard: risk_on / neutral / elevated → thesis tidak berubah (elevated DITAHAN, scope MVP)', () => {
+  const t = baseThesis({ pair_recommendation: 'AUD/USD', direction: 'long', invalidation_condition: 'AUD melemah', confidence_1_to_5: 4 });
+  assert.strictEqual(applyRegimeConfidenceGuard(t, { regime: 'risk_on' }), t);
+  assert.strictEqual(applyRegimeConfidenceGuard(t, { regime: 'neutral' }), t);
+  assert.strictEqual(applyRegimeConfidenceGuard(t, { regime: 'elevated' }), t);
+});
+
+test('regime guard: riskRegimeData null/undefined → fail-open, thesis utuh', () => {
+  const t = baseThesis({ pair_recommendation: 'AUD/USD', direction: 'long', invalidation_condition: 'AUD melemah' });
+  assert.strictEqual(applyRegimeConfidenceGuard(t, null), t);
+  assert.strictEqual(applyRegimeConfidenceGuard(t, undefined), t);
+  assert.strictEqual(applyRegimeConfidenceGuard(null, { regime: 'risk_off' }), null);
+});
+
+test('regime guard: pair non-risk (USD/JPY) atau no_trade atau pair rusak → tidak berubah', () => {
+  const usdjpy = baseThesis();
+  assert.strictEqual(applyRegimeConfidenceGuard(usdjpy, { regime: 'risk_off' }), usdjpy);
+  const noTrade = baseThesis({ direction: 'no_trade' });
+  assert.strictEqual(applyRegimeConfidenceGuard(noTrade, { regime: 'risk_off' }), noTrade);
+  const broken = baseThesis({ pair_recommendation: 'AUDUSD', direction: 'long' });
+  assert.strictEqual(applyRegimeConfidenceGuard(broken, { regime: 'risk_off' }), broken);
+});
+
+test('regime guard: confidence sudah <=2 → tetap dapat note tapi angka tidak naik', () => {
+  const t = baseThesis({ pair_recommendation: 'AUD/JPY', direction: 'long', invalidation_condition: 'AUD melemah', confidence_1_to_5: 1 });
+  const g = applyRegimeConfidenceGuard(t, { regime: 'risk_off' });
+  assert.strictEqual(g.confidence_1_to_5, 1);
+  assert.ok(g.regime_note);
+});

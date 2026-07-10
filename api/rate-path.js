@@ -328,6 +328,48 @@ function getNextFOMCMeetings(from, count) {
   return known.filter(d => d > fromStr).slice(0, count);
 }
 
+// Logic inti cache→compute→stale, dipisah dari HTTP wrapper (plan G6 langkah
+// persiapan — pola identik _cb_rates.js getLiveCbRates) supaya bisa di-import
+// modul lain (cb-status.js ?section=shock) tanpa lewat HTTP. Return:
+// { data, cacheStatus: 'HIT'|'MISS'|'STALE' } — data.stale true hanya utk STALE.
+// Throw kalau compute gagal DAN tidak ada cache sama sekali.
+// cacheOnly: true → JANGAN compute saat cache miss (rantai fallback CME bisa
+// makan puluhan detik) — return { data: null }; dipakai konsumen sekunder yang
+// tidak boleh menambah latensi request user.
+async function getRatePathData({ force = false, cacheOnly = false } = {}) {
+  if (!force) {
+    try {
+      const cached = await redisCmd('GET', CACHE_KEY);
+      if (cached) {
+        const d = JSON.parse(cached);
+        const age = Date.now() - new Date(d.computed_at).getTime();
+        if (age < CACHE_TTL * 1000) return { data: { ...d, stale: false }, cacheStatus: 'HIT' };
+        if (cacheOnly) return { data: { ...d, stale: true }, cacheStatus: 'STALE' };
+      }
+    } catch(e) {
+      console.warn('rate-path cache read failed:', e.message);
+    }
+  }
+  if (cacheOnly) return { data: null, cacheStatus: 'MISS' };
+
+  try {
+    const data = await computeRatePath();
+    try {
+      await redisCmd('SET', CACHE_KEY, JSON.stringify(data), 'EX', CACHE_TTL);
+    } catch(e) {
+      console.warn('rate-path cache write failed:', e.message);
+    }
+    return { data: { ...data, stale: false }, cacheStatus: 'MISS' };
+  } catch(e) {
+    console.error('rate-path computation failed:', e.message);
+    try {
+      const cached = await redisCmd('GET', CACHE_KEY);
+      if (cached) return { data: { ...JSON.parse(cached), stale: true }, cacheStatus: 'STALE' };
+    } catch(e2) {}
+    throw e;
+  }
+}
+
 const { requireAppKey } = require('./_app_key');
 module.exports = async function handler(req, res) {
   if (requireAppKey(req, res)) return; // gate APP_KEY (cron/admin secret lolos) — lihat api/_app_key.js
@@ -337,49 +379,16 @@ module.exports = async function handler(req, res) {
 
   if (await rateLimit(req, res, { limit: 15, windowSecs: 60, endpoint: 'rate-path' })) return;
 
-  const forceRefresh = req.query.force === '1';
-
-  // Try Redis cache first (skip if ?force=1)
-  if (!forceRefresh) {
-    try {
-      const cached = await redisCmd('GET', CACHE_KEY);
-      if (cached) {
-        const d = JSON.parse(cached);
-        const age = Date.now() - new Date(d.computed_at).getTime();
-        if (age < CACHE_TTL * 1000) {
-          res.setHeader('X-Cache', 'HIT');
-          return res.status(200).json({ ...d, stale: false });
-        }
-      }
-    } catch(e) {
-      console.warn('rate-path cache read failed:', e.message);
-    }
-  }
-
-  // Compute fresh data (no API key required — uses keyless FRED CSV)
-  let data;
   try {
-    data = await computeRatePath();
-    // Save to Redis
-    try {
-      await redisCmd('SET', CACHE_KEY, JSON.stringify(data), 'EX', CACHE_TTL);
-    } catch(e) {
-      console.warn('rate-path cache write failed:', e.message);
-    }
-    res.setHeader('X-Cache', 'MISS');
-    return res.status(200).json({ ...data, stale: false });
+    const { data, cacheStatus } = await getRatePathData({ force: req.query.force === '1' });
+    res.setHeader('X-Cache', cacheStatus);
+    return res.status(200).json(data);
   } catch(e) {
-    console.error('rate-path computation failed:', e.message);
-
-    // Try stale cache
-    try {
-      const cached = await redisCmd('GET', CACHE_KEY);
-      if (cached) {
-        res.setHeader('X-Cache', 'STALE');
-        return res.status(200).json({ ...JSON.parse(cached), stale: true });
-      }
-    } catch(e2) {}
-
     return res.status(500).json({ error: 'Rate path unavailable', detail: e.message });
   }
 };
+
+// Ekspor helper reusable (properti tambahan pada handler function — pola
+// module.exports.parseRetailPositions di feeds.js).
+module.exports.getRatePathData = getRatePathData;
+module.exports.getNextFOMCMeetings = getNextFOMCMeetings;
