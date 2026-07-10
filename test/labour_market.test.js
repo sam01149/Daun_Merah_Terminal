@@ -230,6 +230,19 @@ test('narasi memuat framing teori dan disclaimer priced-in', () => {
 
 // ── fetchLabourSeries: filter '.' + kegagalan per-seri tidak fatal ───────────
 
+test('fetchLabourSeries: scale ADP diterapkan (seri berunit orang → ribuan)', async () => {
+  process.env.FRED_API_KEY = 'test-key';
+  const mockFetch = async () => ({
+    ok: true,
+    json: async () => ({ observations: [{ value: '134500000', date: '2026-06-01' }] }),
+  });
+  const obsList = await fetchLabourSeries(mockFetch);
+  const adpIdx = LABOUR_INDICATORS.findIndex(c => c.id === 'ADPMNUSNERSA');
+  assert.equal(obsList[adpIdx][0].value, 134500, 'ADP 134.5jt orang harus jadi 134500 (ribuan)');
+  const jtsIdx = LABOUR_INDICATORS.findIndex(c => c.id === 'JTSJOL');
+  assert.equal(obsList[jtsIdx][0].value, 134500000, 'seri tanpa scale tidak berubah');
+});
+
 test('fetchLabourSeries: observasi "." terfilter, seri gagal → null (unavailable)', async () => {
   process.env.FRED_API_KEY = 'test-key';
   const mockFetch = async (url) => {

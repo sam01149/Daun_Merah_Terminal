@@ -20,7 +20,10 @@ const LABOUR_INDICATORS = [
     theory: 'lowongan kerja terbuka — proxy permintaan tenaga kerja' },
   { id: 'JTSQUR',        label: 'Quits Rate',      dim: 'HIRING',  invert: false, cadence: 'monthly', limit: 12, method: 'latest_vs_mean6',      band: 0.1, bandKind: 'pp',  fmt: 'pct1',
     theory: 'quits tinggi secara teori = pekerja pede pindah kerja' },
-  { id: 'ADPMNUSNERSA',  label: 'ADP Employment',  dim: 'HIRING',  invert: false, cadence: 'monthly', limit: 12, method: 'delta3m_vs_prior3m',   band: 25,  bandKind: 'abs', fmt: 'deltaK',
+  // scale 0.001: seri FRED ini berunit ORANG (level ~134 juta), bukan ribuan —
+  // dinormalisasi ke ribuan supaya band ±25 berarti ±25 ribu & display benar
+  // (terverifikasi dari data live 2026-07-10: tanpa scale, display "+108333rb/bln")
+  { id: 'ADPMNUSNERSA',  label: 'ADP Employment',  dim: 'HIRING',  invert: false, cadence: 'monthly', limit: 12, method: 'delta3m_vs_prior3m',   band: 25,  bandKind: 'abs', fmt: 'deltaK', scale: 0.001,
     theory: 'laju penambahan payroll swasta (rata-rata 3 bulan)' },
   { id: 'TEMPHELPS',     label: 'Temp Help',       dim: 'HIRING',  invert: false, cadence: 'monthly', limit: 12, method: 'mean3_vs_prior3',      band: 0.5, bandKind: 'pct', fmt: 'kJt',
     theory: 'temp hiring secara teori sering bergerak duluan' },
@@ -229,7 +232,7 @@ async function fetchLabourSeries(fetchImpl = fetch) {
     // Filter '.' (placeholder FRED utk data kosong) — pola fetchFred existing
     return (json.observations || [])
       .filter(o => o.value !== '.')
-      .map(o => ({ value: parseFloat(o.value), date: o.date }))
+      .map(o => ({ value: parseFloat(o.value) * (cfg.scale || 1), date: o.date }))
   }))
 
   return LABOUR_INDICATORS.map((cfg, i) => {
