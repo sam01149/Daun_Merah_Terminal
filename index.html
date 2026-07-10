@@ -1170,6 +1170,12 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   display: flex; justify-content: space-between; align-items: flex-start;
   padding: 11px 0; border-bottom: 1px solid rgba(255,255,255,.04);
 }
+/* Desktop: overlay dilebarkan & baris indikator 2 kolom supaya lebar terpakai
+   (600px penuh dipertahankan di HP/tablet kecil) */
+@media (min-width: 1024px) {
+  .fd-inner { max-width: 920px; }
+  .fd-sec-rows { display: grid; grid-template-columns: 1fr 1fr; gap: 0 36px; align-items: start; }
+}
 .fd-row:last-child { border-bottom: none; }
 .fd-row-name {
   font: 13px 'DM Mono',monospace; color: var(--muted);
@@ -6858,12 +6864,13 @@ function _renderFundDetail() {
     const sCol = FUND_SECTION_COLORS[sec] || '#6b6860';
     html += `<div class="fd-section-hdr"><span class="fd-section-dot" style="background:${sCol}"></span><span style="color:${sCol}">${sec}</span></div>`;
     if (labourExtra) html += labourExtra.summary;
+    let rowsHtml = '';
     rows.forEach(([k, v]) => {
       const sig    = scoreInd(k, v.actual, v.previous);
       const sigCol = sig === 1 ? 'var(--green)' : sig === -1 ? 'var(--red)' : 'var(--text)';
       const arrow  = sig === 1 ? '↑' : sig === -1 ? '↓' : '';
       const period = v.period && v.period !== '—' ? v.period : '';
-      html += `<div class="fd-row">
+      rowsHtml += `<div class="fd-row">
         <div class="fd-row-name">${escHtml(k)}</div>
         <div class="fd-row-right">
           <div class="fd-row-val" style="color:${sigCol}">${escHtml(v.actual || '—')}${arrow ? `<span class="fd-val-arrow">${arrow}</span>` : ''}</div>
@@ -6872,6 +6879,8 @@ function _renderFundDetail() {
         </div>
       </div>`;
     });
+    // Wrapper .fd-sec-rows → grid 2 kolom di desktop (≥1024px), stack biasa di HP
+    if (rowsHtml) html += `<div class="fd-sec-rows">${rowsHtml}</div>`;
     if (labourExtra) html += labourExtra.chips;
   });
 
