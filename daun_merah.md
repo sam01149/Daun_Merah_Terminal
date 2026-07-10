@@ -1,11 +1,21 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-07-10 (session 152 — 3 fix: Thesis Alert salah baca ranking headline, parser Retail Sentiment ambil kolom salah, dan menu HP tumpang-tindih klik dengan REGIME banner)
+> **Last updated:** 2026-07-10 (session 153 — riset NFP Celah 2 Kalshi dieksekusi penuh via VPN: GAGAL, 45,5% vs baseline 60,6%; STOP proyek tetap berlaku)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 
 ---
+
+## Changelog Session 153 (2026-07-10) — Riset NFP Celah 2 (Kalshi) Akhirnya Dieksekusi Penuh via VPN: GAGAL
+
+**Konteks:** Melunasi action item Session 151 ("jalankan `fetch_kalshi.py` via VPN"). User mengaktifkan VPN → probe sukses (exchange aktif, S3 reporting HTTP 200) → pipeline penuh `python fetch_kalshi.py` dieksekusi sampai selesai (exit 0). Sebelumnya terverifikasi juga bahwa tanpa VPN akses masih terblokir (probe → SSL error internetpositif), jadi blokir Kominfo masih aktif — reproduksi selalu butuh VPN. Semua tetap terisolasi di `NFP_PROYEK/` (gitignored), nol perubahan kode app.
+
+**Hasil: GAGAL.** Dari 40 rilis dicoba (ref 2023-02..2026-06), 33 ber-harga: jalur S3 dump reporting harian (2023-03..2025-08, file 0,4–32 MB) + jalur API candlesticks (2026-04..06). Gap jujur: 6 rilis ref 2025-09..2026-03 (file S3 meledak 435 MB–1,9 GB karena market sports, > limit 120 MB → skip terdokumentasi) + 1 rilis 2023-02 (strike terdekat terlalu jauh dari konsensus). Evaluasi pola Fase 1 (pred = sign(P_implied H-1 − 0,5) vs `tgt_surprise_dir`, baseline max(majority, alternation), permutation circular-shift): **hit-rate 45,45% vs baseline 60,61%, p_perm 0,9005 → tidak lolos**. Implied probability pasar Kalshi H-1 bahkan di bawah coin-flip pada sampel ini. Label "INDIKASI AWAL" (n=33 kecil + gap) tapi arah temuan konsisten dengan 0/25 Fase 1 dan SPF skill 0/6. KYC ternyata TIDAK dibutuhkan — data publik S3 + API cukup.
+
+**Kill-gate gabungan (final untuk 3 celah): Celah 1 GAGAL, Celah 2 GAGAL, Celah 3 bukan unit kill-gate → akumulasi lolos tetap 0 dari syarat ≥3 → STOP proyek utama TETAP BERLAKU.** Satu-satunya yang masih hidup: tracking observasional Celah 3 (`predict_live.py`, prediksi pertama H-1 rilis NFP 2026-08-07) + action item opsional WARN via ICPSR. Tetap TIDAK ada integrasi ke app, TIDAK ada angka prediksi NFP di UI, TIDAK ada sinyal trading.
+
+**Output & dokumentasi:** `NFP_PROYEK/data/kalshi_h1_prob.csv` (40 baris berformat final source/note/status, menimpa CSV parsial 3-baris dari sesi VPN 07-07/08), `data/kalshi_s3/` (cache 31 dump H-1), `results/kalshi_relationship.csv` (baru). `REPORT.md` §8.2, `STATUS.md` (section Celah 2 + kill-gate), dan `daun_merah_plan.md` diperbarui dari "TIDAK BISA DIUJI / action item" → "GAGAL, dieksekusi 2026-07-10".
 
 ## Changelog Session 152 (2026-07-10) — Fix Bug Thesis Alert: Salah Baca Ranking "Currency Strength Chart"
 
