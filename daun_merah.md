@@ -1,13 +1,25 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-07-10 (session 154 — eksekusi Plan H/I/J/K: kartu US Labour Market rule-based, chart korelasi COR-H, dead-code pass, audit anti-copy Opsi A)
+> **Last updated:** 2026-07-10 (session 155 — fix bug thesis: invalidation trigger currency tidak konsisten dengan pair)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 
 ---
 
-## Changelog Session 154 (2026-07-10) — Eksekusi Plan H/I/J/K: Labour Market Card, Chart Korelasi (COR-H), Dead-Code Pass, Audit Anti-Copy
+## Changelog Session 155 (2026-07-10) — Fix Bug Thesis Call 3: Invalidation Trigger Currency Tidak Konsisten dengan Pair (CAD di Thesis USD/JPY)
+
+**Konteks:** User menempel screenshot dashboard RINGKASAN — kartu AI Thesis USD/JPY SHORT dengan `INVALIDASI: "Pengumuman CAD Employment Change dan Unemployment Rate dalam 2 jam ke depan"`. CAD bukan bagian pair USD/JPY sama sekali, tanya "ini hubungannya apa?".
+
+**Root cause:** Call 3 (`thesisPrompt` di [api/market-digest.js](api/market-digest.js#L1716)) mengirim `calBlock` berisi SEMUA event kalender high-impact 3 hari ke depan dari 8 major currency (tidak difilter per pair) ke model, lalu cuma menyuruh lewat instruksi teks "if a high-impact event for one of the pair currencies is scheduled... name it as the primary invalidation trigger" — tanpa validasi pasca-generate. Model (SambaNova DeepSeek-V3.2 / fallback Groq) bisa salah comot event currency yang tidak relevan dengan pair yang direkomendasikan (event kalender paling menonjol/terdekat waktu, bukan yang relevan ke pair). `validateThesis()` lama cuma cek enum field (regime/currency/direction/confidence/xau_*), tidak pernah cek konsistensi currency dalam `invalidation_condition` terhadap `pair_recommendation`.
+
+**Fix (2 lapis, [api/market-digest.js](api/market-digest.js)):**
+1. **Prompt diperkuat** — instruksi CRITICAL eksplisit: calBlock berisi event 8 currency, hanya boleh kutip event yang currency-nya benar-benar salah satu dari dua currency di `pair_recommendation`; kalau tidak ada event yang cocok, dasarkan `invalidation_condition` pada price/technical/fundamental, jangan pinjam event currency lain.
+2. **Validasi pasca-generate (jaring pengaman)** — helper murni baru di module scope (bukan lagi nested di handler, supaya unit-testable): `thesisPairCurrencies()` (parse "USD/JPY" → `['USD','JPY']`, null kalau format rusak/currency sama/bukan major) dan `thesisInvalidationCurrencyConsistent()` (ekstrak currency code eksplisit dari teks `invalidation_condition` via regex, tolak kalau ada currency di luar pair; `direction:'no_trade'` selalu lolos karena tak ada pair yang benar-benar ditradingkan). Diplug ke `validateThesis()` — kalau gagal, sama seperti schema-invalid lain: loop lanjut ke provider fallback (SambaNova→Groq), kalau dua-duanya gagal thesis tetap `null` dan UI sajikan `latest_thesis` lama dari Redis (tak fatal, pola existing).
+
+**Keterbatasan yang disadari:** regex cuma menangkap currency ditulis sebagai kode eksplisit (USD/CAD/dst) — kalau model menulis dalam Bahasa Indonesia tanpa kode currency (mis. "data ketenagakerjaan Kanada" tanpa kata "CAD"), validator tidak menangkap. Prompt yang diperkuat adalah lapis pencegahan utama; validator adalah jaring pengaman untuk kasus paling jelas (termasuk bug asli yang ditemukan, yang eksplisit menulis "CAD").
+
+**Pengujian:** [test/market_digest_thesis.test.js](test/market_digest_thesis.test.js) baru — 8 test (parse pair valid/rusak, invalidation lolos kalau currency in-pair, GAGAL persis reproduksi bug asli CAD-di-USD/JPY, no_trade selalu lolos, pair rusak pada direction aktif gagal, no-regression field lain). `npm test` penuh: **144/144 pass** (136 lama + 8 baru), tidak ada regresi dari pemindahan `validateThesis`/const terkait dari block-scope handler ke module-scope.
 
 **Konteks:** Perintah user "kerjakan daun_merah_plan.md (H, I, J, K) dengan framework claude.md". Keempat plan dieksekusi berurutan dalam satu sesi; seluruh section H/I/J/K dihapus dari `daun_merah_plan.md` setelah selesai.
 

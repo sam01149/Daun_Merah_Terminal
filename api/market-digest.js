@@ -230,6 +230,51 @@ async function fetchTaCache(symbol) {
 }
 async function fetchXauTA() { return fetchTaCache('GC=F'); }
 
+// Call 3 (trade thesis) schema constants + validators — pure functions, module scope
+// so they're unit-testable without spinning up the full handler.
+const THESIS_VALID_DIR        = ['long', 'short', 'no_trade'];
+const THESIS_VALID_REG        = ['risk_on', 'risk_off', 'neutral'];
+const THESIS_VALID_CURR       = new Set(['USD','EUR','GBP','JPY','CAD','AUD','NZD','CHF']);
+const THESIS_VALID_XAU_BIAS   = ['bullish', 'bearish', 'neutral', 'conflicting'];
+const THESIS_VALID_XAU_DRIVER = ['real_yield', 'safe_haven', 'risk_sentiment', 'usd_strength', 'insufficient_data'];
+const THESIS_CURRENCY_CODE_RE = /\b(USD|EUR|GBP|JPY|CAD|AUD|NZD|CHF)\b/g;
+
+// "USD/JPY" -> ['USD','JPY']; null kalau formatnya rusak, sisi kiri=kanan, atau bukan major currency.
+function thesisPairCurrencies(pairRecommendation) {
+  if (typeof pairRecommendation !== 'string') return null;
+  const m = pairRecommendation.trim().toUpperCase().match(/^([A-Z]{3})\/([A-Z]{3})$/);
+  if (!m) return null;
+  const [, base, quote] = m;
+  if (base === quote || !THESIS_VALID_CURR.has(base) || !THESIS_VALID_CURR.has(quote)) return null;
+  return [base, quote];
+}
+
+// Cegah model mengutip currency di luar pair sebagai invalidation trigger — mis. event
+// kalender CAD dipakai jadi alasan invalidasi thesis USD/JPY, padahal CAD bukan bagian
+// pair itu. calBlock yang dikirim ke prompt berisi event dari semua 8 major currency
+// (belum tentu currency pair yang direkomendasikan), jadi model bisa salah comot.
+function thesisInvalidationCurrencyConsistent(parsed) {
+  if (parsed.direction === 'no_trade') return true;
+  const pairCurrencies = thesisPairCurrencies(parsed.pair_recommendation);
+  if (!pairCurrencies) return false;
+  const mentioned = String(parsed.invalidation_condition || '').match(THESIS_CURRENCY_CODE_RE) || [];
+  return mentioned.every(code => pairCurrencies.includes(code));
+}
+
+function validateThesis(parsed) {
+  return (
+    THESIS_VALID_REG.includes(parsed.dominant_regime) &&
+    THESIS_VALID_CURR.has(parsed.strongest_currency) &&
+    THESIS_VALID_CURR.has(parsed.weakest_currency) &&
+    THESIS_VALID_DIR.includes(parsed.direction) &&
+    typeof parsed.confidence_1_to_5 === 'number' &&
+    parsed.confidence_1_to_5 >= 1 && parsed.confidence_1_to_5 <= 5 &&
+    THESIS_VALID_XAU_BIAS.includes(parsed.xau_bias) &&
+    THESIS_VALID_XAU_DRIVER.includes(parsed.xau_dominant_driver) &&
+    thesisInvalidationCurrencyConsistent(parsed)
+  );
+}
+
 // Strip <think>...</think> blocks from Qwen3 thinking models — content after </think> is the actual response
 function stripThinking(text) {
   const lastClose = text.lastIndexOf('</think>');
@@ -1762,7 +1807,7 @@ ${xauHistoryBlock}`;
       'Use only 8 major currencies: USD EUR GBP JPY CAD AUD NZD CHF.',
       'Set direction to "no_trade" and confidence to 1-2 if conviction is low.',
       'Only recommend a pair if CB bias divergence between the two currencies is at least 2 levels apart (e.g. Hawkish vs Dovish).',
-      'Use the calendar events to inform invalidation_condition — if a high-impact event for one of the pair currencies is scheduled within time_horizon_days, name it as the primary invalidation trigger.',
+      'Use the calendar events to inform invalidation_condition — if a high-impact event for one of the pair currencies is scheduled within time_horizon_days, name it as the primary invalidation trigger. CRITICAL: the calendar list contains events for all 8 major currencies, not just the recommended pair — only cite an event whose currency is literally one of the two currencies in pair_recommendation (e.g. for USD/JPY, only a USD or JPY event qualifies; never cite a CAD, EUR, GBP, AUD, NZD or CHF event even if it is the most prominent one in the list). If no calendar event matches the pair\'s two currencies, base invalidation_condition on price/technical or fundamental grounds instead — do not borrow an unrelated currency\'s event.',
       'dominant_regime must directly copy the "Regime" classification from the risk regime data above when available, using this exact mapping: risk_off or elevated → "risk_off"; risk_on → "risk_on"; neutral → "neutral". Do not reinterpret or override this with headline sentiment — if the data says neutral, output "neutral" even if headlines feel risk-on or risk-off. Only fall back to inferring from headlines if risk regime data is unavailable.',
       'If rate path data shows bps already priced in for USD, weigh this into confidence — a pair recommendation that fights an already-priced rate path needs stronger non-rate justification.',
       'If options skew for the recommended pair contradicts the recommended direction (e.g. recommending long but skew is put-skewed), lower confidence by at least 1 point and mention the conflict in catalyst_dependency.',
@@ -1778,24 +1823,6 @@ ${xauHistoryBlock}`;
     ].join('\n');
 
     const call3Messages = [{ role: 'user', content: thesisPrompt }];
-    const VALID_DIR = ['long', 'short', 'no_trade'];
-    const VALID_REG = ['risk_on', 'risk_off', 'neutral'];
-    const VALID_CURR = new Set(['USD','EUR','GBP','JPY','CAD','AUD','NZD','CHF']);
-    const VALID_XAU_BIAS = ['bullish', 'bearish', 'neutral', 'conflicting'];
-    const VALID_XAU_DRIVER = ['real_yield', 'safe_haven', 'risk_sentiment', 'usd_strength', 'insufficient_data'];
-
-    function validateThesis(parsed) {
-      return (
-        VALID_REG.includes(parsed.dominant_regime) &&
-        VALID_CURR.has(parsed.strongest_currency) &&
-        VALID_CURR.has(parsed.weakest_currency) &&
-        VALID_DIR.includes(parsed.direction) &&
-        typeof parsed.confidence_1_to_5 === 'number' &&
-        parsed.confidence_1_to_5 >= 1 && parsed.confidence_1_to_5 <= 5 &&
-        VALID_XAU_BIAS.includes(parsed.xau_bias) &&
-        VALID_XAU_DRIVER.includes(parsed.xau_dominant_driver)
-      );
-    }
 
     // Nemotron 3 Ultra — DIDEMOTE dari primary (session 145 lanjutan 4, lihat catatan
     // lengkap di Call 1): 4/4 tes live gagal across 2 sumber, tidak dipanggil lagi di
@@ -2023,4 +2050,7 @@ module.exports.OLLAMA_NEMOTRON_MODEL = OLLAMA_NEMOTRON_MODEL;
 module.exports.CB_OLLAMA_NEMOTRON = CB_OLLAMA_NEMOTRON;
 module.exports.withNoThink = withNoThink;
 module.exports.NEMOTRON_SUPER_MODEL = NEMOTRON_SUPER_MODEL;
+module.exports.validateThesis = validateThesis;
+module.exports.thesisPairCurrencies = thesisPairCurrencies;
+module.exports.thesisInvalidationCurrencyConsistent = thesisInvalidationCurrencyConsistent;
 module.exports.CB_OPENROUTER_NEMOTRON_SUPER = CB_OPENROUTER_NEMOTRON_SUPER;
