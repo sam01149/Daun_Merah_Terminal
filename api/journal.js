@@ -46,7 +46,11 @@ async function callProvider(url, apiKey, model, messages, maxTokens, temperature
     throw e;
   }
   const data = await r.json();
-  const txt = data?.choices?.[0]?.message?.content?.trim() || '';
+  const choice = data?.choices?.[0];
+  if (choice?.finish_reason === 'length') {
+    console.warn(`journal aiCall truncated (finish_reason=length, model=${model}, max_tokens=${maxTokens})`);
+  }
+  const txt = choice?.message?.content?.trim() || '';
   if (!txt) throw new Error('Empty response');
   return txt;
 }
@@ -398,8 +402,8 @@ module.exports = async function handler(req, res) {
     try {
       analysis = await aiCall([
         { role: 'system', content: 'Kamu adalah coach trading forex profesional yang menganalisis jurnal trading seorang trader discretionary macro. Trader ini menggunakan framework berbasis: CB bias per currency (hawkish/dovish), regime pasar (risk_on/off/neutral), COT positioning, dan thesis fundamental makro. Berikan analisis jujur, spesifik, dan actionable dalam Bahasa Indonesia. Format: heading dengan **bold**, poin-poin ringkas. Fokus pada pola nyata dari data — jangan generik, jangan teori umum trading.' },
-        { role: 'user', content: `Analisis ${entries.length} trade closed berikut:\n\nStatistik: Win rate ${winRate}% | Total R ${typeof totalR === 'number' ? totalR.toFixed(2) : totalR} | Avg R/trade ${avgR}\n\n${tradeSummaries}\n\nAnalisis:\n1. **Pola Hasil** — identifikasi pola win/loss berdasarkan regime, pair, atau horizon. Apakah ada kondisi spesifik di mana trader ini lebih sering menang atau kalah?\n2. **Keselarasan Framework** — untuk setiap trade, apakah CB bias kedua currency, regime, dan positioning institusional (COT) mendukung arah trade saat entry? Sebutkan trade mana yang masuk meski konteks tidak selaras (termasuk yang ditandai "KONTRA smart money"), dan apakah hasilnya konsisten dengan itu.\n3. **Kualitas Thesis & Driver** — seberapa spesifik dan dapat difalsifikasi thesis yang dicantumkan? Apakah driver yang disebutkan terbukti relevan dengan hasil?\n4. **Realitas Eksekusi (MFE/MAE)** — kalau data excursion tersedia, bedakan trade yang LOSS karena thesis salah (MFE kecil, harga nggak pernah ke arah yang diharapkan) vs trade yang LOSS karena panic-exit/noise (MFE besar/menguntungkan tapi tetap exit rugi — artinya thesis sempat benar tapi eksekusinya yang gagal). Sebutkan trade spesifik mana yang masuk kategori panic-exit kalau ada.\n5. **Kelemahan Utama** — 2-3 kelemahan paling jelas yang terpola dari data, bukan dari teori\n6. **Rekomendasi Konkret** — 3 hal spesifik yang bisa langsung diubah dalam proses entry/eksekusi berikutnya\n\nMaksimal 650 kata.` },
-      ], 1400);
+        { role: 'user', content: `Analisis ${entries.length} trade closed berikut:\n\nStatistik: Win rate ${winRate}% | Total R ${typeof totalR === 'number' ? totalR.toFixed(2) : totalR} | Avg R/trade ${avgR}\n\n${tradeSummaries}\n\nAnalisis:\n1. **Pola Hasil** — identifikasi pola win/loss berdasarkan regime, pair, atau horizon. Apakah ada kondisi spesifik di mana trader ini lebih sering menang atau kalah?\n2. **Keselarasan Framework** — untuk setiap trade, apakah CB bias kedua currency, regime, dan positioning institusional (COT) mendukung arah trade saat entry? Sebutkan trade mana yang masuk meski konteks tidak selaras (termasuk yang ditandai "KONTRA smart money"), dan apakah hasilnya konsisten dengan itu.\n3. **Kualitas Thesis & Driver** — seberapa spesifik dan dapat difalsifikasi thesis yang dicantumkan? Apakah driver yang disebutkan terbukti relevan dengan hasil?\n4. **Realitas Eksekusi (MFE/MAE)** — kalau data excursion tersedia, bedakan trade yang LOSS karena thesis salah (MFE kecil, harga nggak pernah ke arah yang diharapkan) vs trade yang LOSS karena panic-exit/noise (MFE besar/menguntungkan tapi tetap exit rugi — artinya thesis sempat benar tapi eksekusinya yang gagal). Sebutkan trade spesifik mana yang masuk kategori panic-exit kalau ada.\n5. **Kelemahan Utama** — 2-3 kelemahan paling jelas yang terpola dari data, bukan dari teori\n6. **Rekomendasi Konkret** — 3 hal spesifik yang bisa langsung diubah dalam proses entry/eksekusi berikutnya\n\nJangan pakai tabel markdown (boros token, sering kepotong) — pakai poin-poin ringkas untuk semua section. Maksimal 650 kata TOTAL untuk semua 6 section gabungan.` },
+      ], 2200);
     } catch(e) {
       console.error('journal analyze: AI call failed:', e.message);
       return res.status(502).json({ error: 'AI tidak tersedia: ' + e.message });
