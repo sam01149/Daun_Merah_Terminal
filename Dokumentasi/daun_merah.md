@@ -1,9 +1,31 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-07-10 (session 155 — fix bug thesis: invalidation trigger currency tidak konsisten dengan pair)
+> **Last updated:** 2026-07-10 (session 155 lanjutan — riset referensi akademis makro/forex)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
+> **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root).
+
+---
+
+## Changelog Session 155 lanjutan (2026-07-10) — Perpustakaan Rujukan Riset Akademis Makro/Forex
+
+**Konteks:** user konsultasi dengan LLM lain soal riset seperti Klein (2022) yang bisa jadi "paper pembatas" (constraint paper) untuk proyek forex/makro Daun Merah ke depan, lalu minta pendapat. Diikuti follow-up "riset apa saja yang dibutuhkan, cukup itu saja kah?" — jawabannya tidak: 7 paper dari LLM konsultasi itu cuma menutup satu wilayah (prediktabilitas FX/NFP umum), sementara Daun Merah punya fitur lain yang masing-masing butuh rujukan sendiri, termasuk satu fitur LIVE yang mendorong sinyal trading nyata.
+
+**Kerja:** setiap sitasi (dari LLM konsultasi user MAUPUN yang saya tambahkan sendiri) diverifikasi via web search terhadap sumber primer (NBER/JSTOR/RePEc/jurnal) sebelum dipakai — bukan ditelan mentah, karena bibliografi hasil LLM punya risiko sitasi fabrikasi (nama/tahun/jurnal salah).
+
+**Hasil — file baru [Dokumentasi/daun_merah_referensi_riset.md](Dokumentasi/daun_merah_referensi_riset.md)**, 7 kategori dipetakan ke fitur spesifik Daun Merah (bukan daftar generik):
+1. Prediktabilitas FX (Meese & Rogoff 1983; Cheung/Chinn/Pascual 2005+2019; Rossi 2013 JEL; Kwas/Beckmann/Rubaszek 2024 IJF) → Thesis AI `pair_recommendation`/`direction`.
+2. Data makro vs konsensus (Klein 2022) → sudah dipakai penuh di riset NFP (STOP).
+3. Nowcasting (Giannone/Reichlin/Small 2008 JME) → dasar metodologis retroaktif untuk [[labour-market-assessment-pivot]] yang sudah dieksekusi S154.
+4. Kombinasi forecast (Bates & Granger 1969; Timmermann 2006; forecast-combination-puzzle) → validasi desain `buildAssessment()` labour market pakai agreement count sederhana, BUKAN pembobotan statistik — literatur bilang simple average sering menang vs optimal weighting.
+5. Central bank information effect (Nakamura & Steinsson 2018 QJE) → invalidation trigger seputar FOMC/rate decision (belum diimplementasi eksplisit, dicatat sebagai referensi masa depan).
+6. Reaksi pasar terhadap rilis makro (Andersen/Bollerslev/Diebold/Vega 2003 AER) → mengonfirmasi arsitektur kalender existing (surprise vs consensus, bukan level harga) sudah benar; relevan langsung ke bug Session 152 (Thesis Alert salah baca headline "Currency Strength Chart") & Session 155 (invalidation trigger currency salah pair).
+7. **⚠️ Positioning retail sebagai sinyal kontrarian** (Klitgaard & Weir 2004, NY Fed Economic Policy Review) → **fitur LIVE** (Retail Sentiment `api/feeds.js`, dipakai Journal/Sizing/Scenario Comparison sejak session 134). Temuan: data CFTC net position spekulan berkorelasi kontemporer kuat dengan pergerakan FX TAPI **tidak terbukti prediktif** ke depan. Pencarian literatur akademik (bukan blog trading) untuk klaim "retail positioning ekstrem → reversal" mayoritas hanya menemukan konten praktisi tanpa validasi statistik formal. **Bukan rekomendasi hapus fitur** — murni dicatat supaya user sadar belum ada bukti akademis kuat yang ditemukan untuk edge statistik ini, beda dengan prinsip surprise-vs-consensus (poin 6) yang dukungan literaturnya jelas. Kalau mau diuji rigor gaya kill-gate NFP, ini titik awal yang tepat.
+
+**Cara pakai (didokumentasikan di file):** sebelum proyek makro/forex baru, cek dulu apakah topiknya sudah ada constraint paper relevan → kalau constraint-nya negatif, pertimbangkan pivot tujuan riset dari "cari edge" ke "assessment kontekstual" (pola nowcasting) SEBELUM investasi waktu besar seperti yang terjadi di proyek NFP.
+
+**Tidak ada perubahan kode/fitur** — sesi ini murni riset & dokumentasi, tidak menyentuh `api/*.js` atau `index.html`.
 
 ---
 
