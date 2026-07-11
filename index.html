@@ -2428,7 +2428,11 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
    Strategi: window.print() bawaan browser (bukan library tambahan) +
    @media print yang cuma menampilkan panel aktif + letterhead dinamis.
    visibility (bukan display) dipakai untuk hide non-target supaya layout
-   tidak collapse aneh — pola standar "print only this element". */
+   tidak collapse aneh — pola standar "print only this element".
+   Gaya PDF sengaja BEDA dari dashboard live (yang card berwarna/rounded,
+   lihat .ringkasan-card di atas) — dokumen cetak butuh nada "laporan
+   resmi": flat, sudut tegas, hierarki tipografi jelas, warna dipakai
+   seperlunya sebagai sinyal (bullish/bearish/highlight) bukan dekorasi. */
 .print-btn {
   display: inline-flex; align-items: center; justify-content: center;
   width: 30px; height: 30px; margin-left: 6px; flex-shrink: 0;
@@ -2456,32 +2460,67 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .no-print, .no-print * { display: none !important; }
   .print-letterhead { display: block !important; }
 
-  /* Palet cetak profesional: putih + hitam, aksen warna dipertahankan tapi
-     disesuaikan kontrasnya untuk kertas putih (bukan dark theme app). */
+  /* Palet cetak: putih + hitam-kecoklatan (bukan hitam pekat — lebih lembut
+     di kertas), aksen warna dipertahankan tapi kontrasnya dinaikkan untuk
+     latar putih (versi dark-theme terlalu terang/pastel di kertas). */
   :root {
-    --bg: #ffffff; --surface: #f7f6f2; --border: #cfcabf;
+    --bg: #ffffff; --surface: #ffffff; --border: #c9c3b6;
     --accent: #96261c; --accent-dim: #6e1c14; --gate: #6e1c14;
-    --text: #17140f; --muted: #57503f; --text-mid: #332e22;
+    --text: #1c1a15; --muted: #625c4d; --text-mid: #35311f;
     --green: #1c6b3d; --green-dim: #164f2d; --red: #96261c;
-    --yellow: #99590f; --orange: #99590f; --purple: #5c449c; --pink: #a13d68;
+    --yellow: #8a530d; --orange: #8a530d; --purple: #5c449c; --pink: #a13d68;
   }
   html, body { height: auto !important; overflow: visible !important; background: #fff !important; }
-  body { font-family: Georgia, 'Times New Roman', serif !important; color: var(--text) !important; font-size: 12px; }
+  body {
+    font-family: 'DM Mono', 'Courier New', monospace !important;
+    color: var(--text) !important; font-size: 11px; line-height: 1.6;
+  }
   body.printing-ringkasan #ringkasanPanel, body.printing-analisa #analisaPanel {
-    padding: 0 24px 24px !important; overflow: visible !important; max-height: none !important;
+    padding: 0 26mm 20mm !important; overflow: visible !important; max-height: none !important;
   }
-  .ringkasan-card, .thesis-card, .thesis-alert-card, .analisa-tf-card, .analisa-ai-result {
-    page-break-inside: avoid; border: 1px solid var(--border) !important; background: var(--surface) !important;
+
+  /* Kartu jadi FLAT: hilangkan rounded corner + shadow + bar warna tebal
+     ala app; ganti divider tipis + label kapital kecil di atasnya — gaya
+     "section laporan", bukan "widget dashboard". ::before (bar warna 3px
+     di app) sengaja dimatikan di print, diganti border-top polos. */
+  .ringkasan-card, .thesis-card, .thesis-alert-card, .analisa-tf-card,
+  .analisa-ai-result, .rstat {
+    page-break-inside: avoid; border-radius: 0 !important; box-shadow: none !important;
+    background: transparent !important; border: none !important;
+    border-top: 1px solid var(--border) !important;
+    padding: 10mm 0 4mm !important; margin: 0 0 2mm !important;
   }
+  .ringkasan-card::before, .thesis-card::before, .ringkasan-card-xau::before,
+  .thesis-card.xau::before { display: none !important; }
+  .ringkasan-card:first-child, .thesis-card:first-child { border-top: none !important; padding-top: 0 !important; }
+
+  /* Badge/pill berwarna (thesis-dir, ringkasan-method, dll) diflatkan jadi
+     teks polos berwarna — pill di kertas cuma jadi kotak abu-abu berat. */
+  .thesis-dir { background: none !important; border: 1px solid currentColor; padding: 1px 6px !important; border-radius: 2px !important; }
+  .ringkasan-method { background: none !important; padding: 0 !important; }
+
+  h1, h2, h3, .ringkasan-fx-label, .ringkasan-xau-label, .thesis-section-label,
+  .analisa-tf-label, .analisa-pair-label {
+    font-family: 'Syne', sans-serif !important; letter-spacing: .04em;
+  }
+
   .ai-disclaimer {
-    border-top: 1px solid var(--border); margin-top: 16px; padding-top: 8px;
+    border-top: 1px solid var(--border); margin-top: 8mm; padding-top: 3mm;
     font-size: 9px; color: var(--muted) !important; font-family: 'DM Mono', monospace;
   }
+
+  /* Footer halaman: nomor halaman bawaan browser + nama app kecil di kiri
+     (browser print umumnya sudah nambah header/footer URL+tanggal sendiri
+     via pengaturan "Headers and footers" — ini pelengkap kalau dimatikan). */
+  @page { margin: 14mm 12mm; }
 }
-.print-letterhead { border-bottom: 2px solid var(--accent); padding-bottom: 10px; margin-bottom: 16px; }
-.print-letterhead .pl-brand { font-family: 'Syne', sans-serif; font-weight: 800; font-size: 19px; color: var(--accent); letter-spacing: .02em; }
-.print-letterhead .pl-title { font-size: 13px; color: var(--text); margin-top: 2px; }
-.print-letterhead .pl-meta { font-size: 10px; color: var(--muted); margin-top: 4px; font-family: 'DM Mono', monospace; }
+.print-letterhead {
+  border-bottom: 3px solid var(--accent); padding-bottom: 10px; margin-bottom: 18px;
+  display: flex; justify-content: space-between; align-items: flex-end; flex-wrap: wrap; gap: 6px;
+}
+.print-letterhead .pl-brand { font-family: 'Syne', sans-serif; font-weight: 800; font-size: 20px; color: var(--accent); letter-spacing: .02em; }
+.print-letterhead .pl-title { font-size: 13px; color: var(--text); margin-top: 2px; font-weight: 600; }
+.print-letterhead .pl-meta { font-size: 10px; color: var(--muted); margin-top: 4px; font-family: 'DM Mono', monospace; text-align: right; }
 </style>
 </head>
 <body>
@@ -4596,12 +4635,19 @@ function renderRingkasan() {
         <div class="icon">📋</div>
         <p>Tap tombol di bawah untuk<br>generate ringkasan pasar.</p>
       </div>
-      <button class="ringkasan-gen-btn" id="ringkasanBtn" onclick="generateRingkasan()">
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-          <circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/>
-        </svg>
-        <span>Ringkas Berita</span>
-      </button>`;
+      <div class="print-btn-row">
+        <button class="ringkasan-gen-btn" id="ringkasanBtn" onclick="generateRingkasan()">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/>
+          </svg>
+          <span>Ringkas Berita</span>
+        </button>
+        <button class="print-btn no-print" onclick="cetakRingkasan()" title="Cetak PDF">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M6 9V2h9l3 3v4"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/>
+          </svg>
+        </button>
+      </div>`;
     return;
   }
 
@@ -4638,13 +4684,20 @@ function renderRingkasan() {
 
     ${renderArticleSections(d.article)}
 
-    <button class="ringkasan-gen-btn" id="ringkasanBtn" onclick="generateRingkasan()">
-      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-        <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>
-        <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
-      </svg>
-      <span>Ringkas Ulang</span>
-    </button>
+    <div class="print-btn-row">
+      <button class="ringkasan-gen-btn" id="ringkasanBtn" onclick="generateRingkasan()">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>
+          <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+        </svg>
+        <span>Ringkas Ulang</span>
+      </button>
+      <button class="print-btn no-print" onclick="cetakRingkasan()" title="Cetak PDF">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M6 9V2h9l3 3v4"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/>
+        </svg>
+      </button>
+    </div>
     <div class="ringkasan-ts">Data: ${d.news_count} headline + ${d.cal_count} event high-impact</div>
   `;
 }
@@ -4655,17 +4708,46 @@ function renderRingkasan() {
 // cuma menampilkan panel yang lagi dicetak (via class body.printing-*),
 // sembunyikan tombol/chip/link interaktif (.no-print), dan restyle ke
 // palet terang untuk kertas (bukan dark theme app).
-function _printPanel(bodyClass, letterheadId, titleText) {
+//
+// beforeprint (bukan cuma tombol "Cetak PDF") sengaja di-hook juga — kalau
+// user pakai Ctrl+P / menu browser langsung alih-alih tombol kita, styling
+// profesional ini TETAP kepakai otomatis berdasarkan tab yang lagi aktif,
+// bukan cuma dump halaman dark-theme mentah kayak print biasa.
+function _printMeta(bodyClass) {
+  if (bodyClass === 'printing-ringkasan') {
+    const d = ringkasanCache;
+    if (!d?.article) return null;
+    const meta = `${d.news_count ?? 0} berita · ${d.cal_count ?? 0} event kalender`;
+    return { letterheadId: 'printLetterheadRingkasan', titleText: 'Ringkasan Pasar Forex & Emas', meta };
+  }
+  if (bodyClass === 'printing-analisa') {
+    const symbol = analisaActive.symbol, label = analisaActive.label;
+    const d = symbol ? analisaDataCache[symbol] : null;
+    if (!d) return null;
+    const price = d.h1?.current != null ? `Harga saat data: ${d.h1.current}` : '';
+    const bias = analisaAiCache[symbol]?.structured?.bias;
+    const biasStr = bias ? ` · Bias AI: ${bias.toUpperCase()}` : '';
+    return { letterheadId: 'printLetterheadAnalisa', titleText: `Analisa Teknikal — ${label}`, meta: `${price}${biasStr}` };
+  }
+  return null;
+}
+
+function _setupPrintLetterhead(letterheadId, titleText, metaExtra) {
   const lh = document.getElementById(letterheadId);
-  if (lh) {
-    const now = new Date();
-    const wib = new Date(now.getTime() + 7 * 3600000);
-    const dateStr = `${String(wib.getUTCDate()).padStart(2,'0')}/${String(wib.getUTCMonth()+1).padStart(2,'0')}/${wib.getUTCFullYear()} ${String(wib.getUTCHours()).padStart(2,'0')}:${String(wib.getUTCMinutes()).padStart(2,'0')} WIB`;
-    lh.innerHTML = `
+  if (!lh) return;
+  const now = new Date();
+  const wib = new Date(now.getTime() + 7 * 3600000);
+  const dateStr = `${String(wib.getUTCDate()).padStart(2,'0')}/${String(wib.getUTCMonth()+1).padStart(2,'0')}/${wib.getUTCFullYear()} ${String(wib.getUTCHours()).padStart(2,'0')}:${String(wib.getUTCMinutes()).padStart(2,'0')} WIB`;
+  lh.innerHTML = `
+    <div>
       <div class="pl-brand">DAUN MERAH</div>
       <div class="pl-title">${escHtml(titleText)}</div>
-      <div class="pl-meta">Dicetak ${dateStr}</div>`;
-  }
+    </div>
+    <div class="pl-meta">Dicetak ${dateStr}${metaExtra ? `<br>${escHtml(metaExtra)}` : ''}</div>`;
+}
+
+function _printPanel(bodyClass, letterheadId, titleText, metaExtra) {
+  _setupPrintLetterhead(letterheadId, titleText, metaExtra);
   document.body.classList.add(bodyClass);
   // Timeout kecil: pastikan reflow layout (letterhead + class toggle) selesai
   // sebelum browser menangkap halaman untuk dialog print.
@@ -4674,22 +4756,28 @@ function _printPanel(bodyClass, letterheadId, titleText) {
 window.addEventListener('afterprint', () => {
   document.body.classList.remove('printing-ringkasan', 'printing-analisa');
 });
+// Ctrl+P / menu browser: body belum punya class printing-* (cuma tombol kita
+// yang set itu) — deteksi tab aktif di sini dan setup letterhead yang sama.
+window.addEventListener('beforeprint', () => {
+  if (document.body.classList.contains('printing-ringkasan') || document.body.classList.contains('printing-analisa')) return;
+  const target = activeView === 'ringkasan' ? 'printing-ringkasan' : activeView === 'analisa' ? 'printing-analisa' : null;
+  if (!target) return; // tab lain belum didukung cetak — biarkan browser print apa adanya
+  const m = _printMeta(target);
+  if (!m) return; // belum ada data di tab itu — biarkan print apa adanya, bukan halaman kosong custom
+  _setupPrintLetterhead(m.letterheadId, m.titleText, m.meta);
+  document.body.classList.add(target);
+});
 
 function cetakRingkasan() {
-  if (!ringkasanCache || !ringkasanCache.article) {
-    showToast('Belum Ada Data', 'Generate ringkasan dulu sebelum cetak.', 3000);
-    return;
-  }
-  _printPanel('printing-ringkasan', 'printLetterheadRingkasan', 'Ringkasan Pasar Forex & Emas');
+  const m = _printMeta('printing-ringkasan');
+  if (!m) { showToast('Belum Ada Data', 'Generate ringkasan dulu sebelum cetak.', 3000); return; }
+  _printPanel('printing-ringkasan', m.letterheadId, m.titleText, m.meta);
 }
 
 function cetakAnalisa() {
-  const symbol = analisaActive.symbol, label = analisaActive.label;
-  if (!symbol || !analisaDataCache[symbol]) {
-    showToast('Belum Ada Data', 'Pilih pair dan tunggu data termuat dulu sebelum cetak.', 3000);
-    return;
-  }
-  _printPanel('printing-analisa', 'printLetterheadAnalisa', `Analisa Teknikal — ${label}`);
+  const m = _printMeta('printing-analisa');
+  if (!m) { showToast('Belum Ada Data', 'Pilih pair dan tunggu data termuat dulu sebelum cetak.', 3000); return; }
+  _printPanel('printing-analisa', m.letterheadId, m.titleText, m.meta);
 }
 
 function escHtml(s) {

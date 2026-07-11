@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-07-11 (session 157 lanjutan 10 — fitur Cetak PDF profesional untuk Ringkasan & Analisa AI)
+> **Last updated:** 2026-07-11 (session 157 lanjutan 11 — fix tombol cetak hilang setelah generate + redesign CSS print + hook Ctrl+P)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -155,6 +155,27 @@
 - Fungsi baru: `_printPanel()` (helper generate letterhead + toggle body class + `window.print()`), `cetakRingkasan()`, `cetakAnalisa()` — dua-duanya guard "belum ada data" (toast, bukan cetak halaman kosong) sebelum lanjut cetak. Cleanup class via listener `afterprint` (jalan baik user benar-benar cetak maupun batal dialog).
 
 **Diverifikasi:** `node --check` bersih di semua inline script, brace CSS seimbang (1183/1183), simulasi letterhead (format tanggal WIB benar untuk Ringkasan & Analisa) + guard belum-ada-data (4 skenario: cache null, cache tanpa article, symbol null, data belum load) — semua PASS, test suite 190/190 tetap hijau. Verifikasi visual output PDF asli (hasil "Save as PDF" browser) belum dilakukan — perlu dicek manual oleh user karena environment ini tidak punya browser untuk render print preview sungguhan.
+
+---
+
+## Changelog Session 157 lanjutan 11 (2026-07-11) — Fix Tombol Cetak Hilang Setelah Generate + Redesign CSS Print + Hook Ctrl+P
+
+**Konteks:** 3 masalah ditemukan berurutan saat user coba fitur cetak dari lanjutan 10:
+1. **Tombol cetak Ringkasan hilang setelah klik "Ringkas Berita".** Root cause: tombol cetak cuma ditambahkan ke HTML statis awal (state kosong) — begitu `renderRingkasan()` jalan dan mengisi `#ringkasanInner` dengan `innerHTML =` (mengganti total, bukan menambah), tombol cetak ikut terhapus karena template dinamisnya belum di-update.
+2. **"Kok kayak gini sih, sama aja dong dengan ctrl+p"** — styling profesional (letterhead, palet terang, sembunyikan tombol) SEBELUMNYA cuma ter-trigger kalau klik tombol kita, karena logic setup-nya ada di dalam `onclick` handler. Ctrl+P/menu browser langsung bypass semua itu, hasilnya print biasa dark-theme mentah — user kemungkinan besar sempat coba Ctrl+P karena tombolnya sendiri hilang (masalah #1).
+3. **User ingat ada sesi lama soal redesign tab RINGKASAN jadi "laporan profesional flat & minimal"** — dicek riwayat: redesign itu SEMPAT dibuat (Session ~104) tapi KEMUDIAN DI-REVERT total balik ke tampilan card berwarna/rounded (Session ~106+, "Revert total redesign RINGKASAN — balik ke tampilan awal"). CSS print di lanjutan 10 pakai font serif (Georgia) yang justru merupakan opsi yang TIDAK dipilih user dulu (dipilih: flat-minimal, bukan serif-body) — inkonsistensi ditemukan sendiri, dikoreksi.
+
+**Fix #1 — [index.html](../index.html):** tombol cetak (+ `.print-btn-row`) ditambahkan ke KEDUA branch template `renderRingkasan()` (state kosong DAN state ada data), bukan cuma HTML statis awal.
+
+**Fix #2 — hook `beforeprint`:** logic setup letterhead + `body.printing-*` class diekstrak ke helper `_setupPrintLetterhead()` + `_printMeta()` (deteksi tab aktif via `activeView` + validasi data tersedia), dipanggil dari DUA jalur: tombol (`cetakRingkasan()`/`cetakAnalisa()`, seperti sebelumnya) DAN listener `window.addEventListener('beforeprint', ...)` baru yang auto-detect tab aktif — kalau body belum punya class `printing-*` (artinya bukan dari tombol kita), cek `activeView` dan setup otomatis. Ctrl+P sekarang dapat treatment yang sama persis dengan tombol.
+
+**Fix #3 — redesain CSS print (bukan pakai gaya dashboard, bukan pakai serif yang direjek dulu):** karena redesign flat-minimal DI-APP sudah pernah di-revert (keputusan lama, tidak diusik lagi), PDF dirancang sebagai konteks TERPISAH — dokumen cetak butuh nada "laporan resmi" yang beda dari dashboard interaktif berwarna:
+- Font: `'DM Mono'` (body/data, konsisten dengan identitas app — bukan Georgia serif asing) + `'Syne'` (heading/label, sudah jadi font brand app).
+- Kartu (`.ringkasan-card`, `.thesis-card`, dll) di-flatkan KHUSUS untuk print: `border-radius:0`, bar warna 3px (`::before`) disembunyikan, diganti `border-top` tipis + spacing — gaya "section laporan" bukan "widget kartu". Badge/pill (thesis-dir, ringkasan-method) juga diflatkan jadi outline/teks polos.
+- Letterhead diperkaya: sekarang tampilkan metadata kontekstual (Ringkasan: jumlah berita + event kalender; Analisa: harga saat data + bias AI kalau sudah ada) via `_printMeta()`, bukan cuma judul+tanggal generik.
+- `@page { margin: 14mm 12mm }` — margin kertas proper alih-alih mengandalkan default browser.
+
+**Diverifikasi:** `node --check` bersih, brace CSS seimbang (1189/1189), simulasi `_printMeta()` 6 skenario (Ringkasan ada/tanpa data, Analisa lengkap/tanpa hasil AI/belum pilih pair, tab lain) — semua PASS termasuk guard yang benar (tidak memaksa print halaman kosong dari Ctrl+P di tab yang belum siap), test suite 190/190 tetap hijau.
 
 ---
 
