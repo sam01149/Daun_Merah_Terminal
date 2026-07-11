@@ -4968,6 +4968,13 @@ function renderAnalisa() {
     const abs   = Math.abs(val);
     const rrCls = abs < 0.2 ? '' : val > 0 ? 'up' : 'down';
     const rrLbl = abs < 0.2 ? 'Neutral' : val > 0 ? 'Call Bias ↑ (bullish)' : 'Put Bias ↓ (bearish)';
+    // Momentum kecil (session 157 lanjutan 7) — cuma 1 panah nempel di angka yang sudah
+    // ada, BUKAN baris baru, biar tidak numpuk stat yang butuh interpretasi (skew momentum
+    // detail + vol level + convexity sengaja hanya masuk ke narasi AI, lihat admin.js
+    // _formatOptionsSentimentBlock — bukan dijadikan stat UI mentah karena noise).
+    const momentumTag = (rr.skew_change_pct != null && abs >= 0.1)
+      ? (Math.sign(val) === Math.sign(rr.skew_change_pct) ? ' <span title="Sentimen menguat dari kemarin" style="opacity:.7">▲</span>' : ' <span title="Sentimen mereda dari kemarin" style="opacity:.7">▼</span>')
+      : '';
     const SRC_LABEL = { cme_cvol: 'CME CVOL', barchart: 'Barchart 25d', cme_zq_quote: 'CME' };
     const srcLbl = SRC_LABEL[rrData.source] || rrData.source || '';
     // call_iv/put_iv: dari upvarMetric/dnvarMetric CME (session 157 lanjutan 6) atau
@@ -4976,7 +4983,7 @@ function renderAnalisa() {
       ? `<div class="analisa-stat"><div class="analisa-stat-label">CALL IV / PUT IV</div><div class="analisa-stat-val" style="font-size:11px">${rr.call_iv.toFixed(2)} / ${rr.put_iv.toFixed(2)}</div></div>`
       : '';
     indSections += `<div class="analisa-tf-main" style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border)">
-      <div class="analisa-stat"><div class="analisa-stat-label">RISK REVERSAL 25D</div><div class="analisa-stat-val ${rrCls}">${val > 0 ? '+' : ''}${val.toFixed(2)} <small>${rrLbl}</small></div></div>
+      <div class="analisa-stat"><div class="analisa-stat-label">RISK REVERSAL 25D</div><div class="analisa-stat-val ${rrCls}">${val > 0 ? '+' : ''}${val.toFixed(2)}${momentumTag} <small>${rrLbl}</small></div></div>
       ${ivHtml}
       <div class="analisa-stat"><div class="analisa-stat-label">SUMBER</div><div class="analisa-stat-val" style="font-size:11px">${srcLbl}</div></div>
     </div>`;

@@ -2065,6 +2065,47 @@ function _formatFundamentalBlock({ label, isXau, cbBias, cot, risk, nowMs }) {
   return `FUNDAMENTAL TERSTRUKTUR (cache server, bukan dari artikel — ${note}):\n${lines.join('\n')}`;
 }
 
+// Session 157 lanjutan 7: konteks sentimen pasar options (CME CVOL) per pair, bahasa
+// sederhana bukan istilah teknis mentah (skew/convexity) — supaya AI meneruskan
+// dengan nada yang sama ke commentary, bukan sekadar dump angka jargon. 3 sinyal
+// terpisah (lihat correlations.js untuk sumber field, dan diskusi kenapa 3 axis ini
+// tidak saling redundant — level vs arah vs kelengkungan smile):
+// 1. Arah + momentum sentimen (skew + skewPercentChange)
+// 2. Level volatilitas yang diharapkan pasar (cvolPrice + %chg)
+// 3. Antisipasi kejutan mendadak 2 arah sekaligus, independen dari arah (convexInd + %chg)
+function _formatOptionsSentimentBlock(rr) {
+  if (!rr) return '';
+  const val = rr.rr_value;
+  const abs = Math.abs(val);
+  const arah = abs < 0.2
+    ? 'netral (tidak condong ke arah manapun)'
+    : val < 0
+      ? 'condong pesimis (put lebih diminati — pasar options bayar mahal untuk proteksi turun)'
+      : 'condong optimis (call lebih diminati — pasar options bayar mahal untuk upside)';
+  const lines = [`Sentimen pasar options: ${arah} (skor ${val > 0 ? '+' : ''}${val.toFixed(2)})`];
+
+  if (rr.skew_change_pct != null && abs >= 0.1) {
+    const arahSama = Math.sign(val) === Math.sign(rr.skew_change_pct);
+    lines.push(arahSama
+      ? `Sentimen ini SEDANG MENGUAT dibanding kemarin (${rr.skew_change_pct > 0 ? '+' : ''}${rr.skew_change_pct.toFixed(1)}%) — makin yakin ke arah itu.`
+      : `Sentimen ini SEDANG MEREDA dibanding kemarin (${rr.skew_change_pct > 0 ? '+' : ''}${rr.skew_change_pct.toFixed(1)}%) — mulai ragu / berbalik arah, jangan anggap sentimen di atas masih penuh.`);
+  }
+
+  if (rr.vol_change_pct != null) {
+    lines.push(rr.vol_change_pct > 0
+      ? `Pasar memperkirakan pergerakan harga LEBIH BESAR dari biasanya (ekspektasi volatilitas naik ${rr.vol_change_pct.toFixed(1)}% dari kemarin).`
+      : `Pasar memperkirakan pergerakan harga LEBIH TENANG dari biasanya (ekspektasi volatilitas turun ${Math.abs(rr.vol_change_pct).toFixed(1)}% dari kemarin).`);
+  }
+
+  if (rr.convexity_change_pct != null) {
+    lines.push(rr.convexity_change_pct > 0
+      ? `Ada tanda pasar mulai WASPADA kemungkinan kejutan mendadak ke arah manapun (naik ${rr.convexity_change_pct.toFixed(1)}% dari kemarin) — kalau ada rilis data/event besar dalam waktu dekat, sebut ini sebagai alasannya.`
+      : `Tidak ada tanda pasar sedang mengantisipasi kejutan mendadak saat ini (indikator ini turun ${Math.abs(rr.convexity_change_pct).toFixed(1)}% dari kemarin).`);
+  }
+
+  return `SENTIMEN PASAR OPTIONS (dari CME, sumber terpisah dari data teknikal chart — pakai sebagai cross-check tambahan, BUKAN sinyal utama; kalau bertentangan dengan bias teknikal, sebut sebagai catatan risiko di paragraf integrasi, jangan mengubah bias):\n${lines.join('\n')}`;
+}
+
 async function ohlcvAnalyzeHandler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Cache-Control', 'no-cache');
@@ -2166,12 +2207,27 @@ async function ohlcvAnalyzeHandler(req, res) {
       });
     } catch (e) { /* opsional — jangan gagalkan analisa kalau cache fundamental kosong */ }
 
+    // Sentimen pasar options (CME CVOL) per pair — session 157 lanjutan 7. Cache
+    // ditulis correlations.js (rr_cache_v2, TTL 1h), dibaca read-only di sini (tidak
+    // memicu fetch CME baru — kalau cache kosong/expired, blok ini kosong, tidak
+    // menunggu/gagalkan analisa). NZD/USD & USD/CHF tidak punya data (options CME
+    // terlalu illiquid) — blok otomatis kosong untuk keduanya, bukan bug.
+    let rrBlock = '';
+    try {
+      const rawRR = await redisCmd('GET', 'rr_cache_v2');
+      if (rawRR) {
+        const rrCache = JSON.parse(rawRR);
+        rrBlock = _formatOptionsSentimentBlock(rrCache?.pairs?.[data.label]);
+      }
+    } catch (e) { /* opsional — jangan gagalkan analisa kalau cache RR kosong */ }
+
     const makroHeader = makroAgeH != null
       ? `KONTEKS MAKRO (dari Ringkasan ${makroAgeH} jam lalu${makroAgeH > 4 ? ' — SUDAH AGAK BASI: kalau ada rilis/berita besar setelah itu, beri bobot lebih rendah dan sebut ketidakpastiannya' : ''}):`
       : 'KONTEKS MAKRO:';
     const ctxParts = [];
     if (ringkasanContext) ctxParts.push(`${makroHeader}\n${ringkasanContext}`);
     if (fundBlock)        ctxParts.push(fundBlock);
+    if (rrBlock)          ctxParts.push(rrBlock);
     ctxParts.push(`DATA TEKNIKAL:\n${textBlock}${expiryBlock}`);
     const makroBlock = ctxParts.join('\n\n');
 
@@ -2187,6 +2243,7 @@ async function ohlcvAnalyzeHandler(req, res) {
       expiryBlock            ? 'option expiry' : null,
       ringkasanContext       ? 'konteks makro' : null,
       fundBlock              ? 'fundamental terstruktur' : null,
+      rrBlock                ? 'sentimen options' : null,
     ].filter(Boolean).join(' + ');
 
     const p4Macro = (ringkasanContext || fundBlock)

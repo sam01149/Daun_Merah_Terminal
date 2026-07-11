@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-07-11 (session 157 lanjutan 6 — Risk Reversal pindah ke panel teknikal per-pair + Call/Put IV gratis)
+> **Last updated:** 2026-07-11 (session 157 lanjutan 7 — sentimen options CME (momentum/vol/convexity) masuk prompt AI Analisa, 0 credit tambahan)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -97,6 +97,21 @@
 **Bonus temuan user (di tengah kerjaan ini) — Call IV / Put IV ternyata GRATIS:** user tanya "bisa ga masing-masing pair dipanggil put/call-nya, tetap 1 credit?" — dicek ulang JSON respons CME CVOL yang sudah didapat sebelumnya, ternyata field `upvarMetric` dan `dnvarMetric` **sudah ada di respons yang sama** (0 credit tambahan) dan secara matematis **persis** `upvarMetric − dnvarMetric = skew` (diverifikasi exact match 3/3 pair dari data live). `upvarMetric` = komponen upside/call, `dnvarMetric` = komponen downside/put — padanan `call_iv`/`put_iv` yang sebelumnya cuma tersedia dari fallback Barchart (yang sendirinya tidak aktif). Sekarang diekstrak di [api/correlations.js](../api/correlations.js) dan ditampilkan sebagai baris "CALL IV / PUT IV" di kartu indikator.
 
 **Diverifikasi:** simulasi end-to-end backend-parsing + frontend-render pakai data JSON asli (EUR/USD → put bias -0.45, call/put IV 5.35/5.81; USD/JPY → call bias +2.40, call/put IV 9.26/6.85; NZD/USD → di-skip aman tanpa data) — semua PASS. `node --check` bersih di kedua file, grep memastikan tidak ada sisa referensi ke elemen DOM yang dihapus, test suite 190/190 tetap hijau.
+
+---
+
+## Changelog Session 157 lanjutan 7 (2026-07-11) — Sentimen Options CME (Momentum/Vol/Convexity) Masuk Prompt AI Analisa
+
+**Konteks:** user tanya "ada info lain yang bisa ditarik, 0-1 credit tambahan, penting tapi tanpa noise?" dari respons CME CVOL yang sama. Ditemukan 3 field belum kepakai: `skewPercentChange` (momentum sentimen), `cvolPrice`+`%chg` (level volatilitas implied — axis beda dari arah skew), `convexInd`+`%chg` (convexity — "kelengkungan" smile, antisipasi gerakan besar 2 arah sekaligus, independen dari arah skew). Diverifikasi konseptual: level/arah/convexity itu 3 sumbu matematis ortogonal dari volatility smile yang sama, bukan turunan satu sama lain — dan data live (JPY convexity 1.15 > EUR 1.06 > GBP 1.04) konsisten dengan realita (JPY memang rawan gerakan ekstrem, carry unwind/intervensi BOJ).
+
+**Keputusan penempatan:** user minta "masukin ke analisa aja" (bukan UI, karena butuh interpretasi) untuk skew momentum + vol level + convexity — 3 metrik ini masuk **prompt AI** (fitur Analisa AI per pair), bukan jadi baris stat mentah baru di kartu indikator (yang user sendiri sadar berisiko jadi "noise" kalau numpuk angka tanpa konteks). RR/skew dasar + Call/Put IV (dari session sebelumnya) tetap di UI karena sudah cukup jelas dibaca langsung tanpa interpretasi tambahan.
+
+**Perubahan:**
+- [api/correlations.js](../api/correlations.js): tangkap `skewPercentChange`, `cvolPrice`/`cvolPricePercentChange`, `convexInd`/`convexIndPercentChange` per pair dari respons CME yang SAMA (0 credit tambahan) — disimpan di `rr_cache_v2` sebagai `skew_change_pct`, `vol_level`/`vol_change_pct`, `convexity`/`convexity_change_pct`.
+- [api/admin.js](../api/admin.js): fungsi baru `_formatOptionsSentimentBlock()` menerjemahkan 3 metrik itu ke **bahasa Indonesia sederhana** (bukan istilah "skew"/"convexity" mentah) — contoh: "Ada tanda pasar mulai WASPADA kemungkinan kejutan mendadak ke arah manapun... kalau ada rilis data/event besar dalam waktu dekat, sebut ini sebagai alasannya." Dibaca read-only dari cache `rr_cache_v2` (tidak memicu fetch CME baru), masuk ke `ctxParts` prompt `ohlcvAnalyzeHandler` dengan instruksi eksplisit "cross-check tambahan, BUKAN sinyal utama — jangan mengubah bias, cuma catatan risiko".
+- [index.html](../index.html): 1 kompromi UI minimal (bukan baris baru) — panah ▲/▼ kecil nempel di angka Risk Reversal yang sudah ada, nunjukin momentum tanpa nambah clutter.
+
+**Diverifikasi:** simulasi wording pakai data live asli (EUR/USD → pesimis+mereda+vol naik+waspada kejutan; USD/JPY → optimis+menguat+vol naik+tidak ada tanda kejutan; skew netral → baris momentum di-skip; pair tanpa data → blok kosong tanpa crash) — semua PASS, termasuk cek arah panah UI konsisten dengan logic backend. `node --check` bersih di 2 file JS, test suite 190/190 tetap hijau.
 
 ---
 

@@ -514,12 +514,37 @@ module.exports = async function handler(req, res) {
         const callIv = parseFloat(entry.upvarMetric ?? 'x');
         const putIv  = parseFloat(entry.dnvarMetric ?? 'x');
         const ivFields = (!isNaN(callIv) && !isNaN(putIv)) ? { call_iv: callIv, put_iv: putIv } : {};
-        ok.push({ pair, rr_value: +skew.toFixed(3), source: 'CME CVOL', ...ivFields });
+        // Session 157 lanjutan 7: 3 field tambahan, SEMUA dari respons yang sama (0 credit
+        // tambahan) — dipakai sebagai KONTEKS PROMPT AI (ohlcv_analyze), bukan stat mentah
+        // di UI (biar tidak numpuk angka yang butuh interpretasi). Sengaja simpan raw +
+        // percent-change CME sendiri (bukan dihitung ulang manual) supaya konsisten dengan
+        // metodologi CME:
+        // - skewPercentChange: momentum sentimen (menguat/mereda dari kemarin)
+        // - cvolPrice(+%chg): level volatilitas implied keseluruhan (axis beda dari arah skew)
+        // - convexInd(+%chg): "kelengkungan" smile — antisipasi gerakan besar 2 arah sekaligus,
+        //   independen dari arah skew (lihat diskusi user — bukan turunan skew/level, axis ke-3)
+        const skewChangePct = parseFloat(entry.skewPercentChange ?? 'x');
+        const cvolPrice     = parseFloat(entry.cvolPrice ?? 'x');
+        const cvolChangePct = parseFloat(entry.cvolPricePercentChange ?? 'x');
+        const convexity     = parseFloat(entry.convexInd ?? 'x');
+        const convexChangePct = parseFloat(entry.convexIndPercentChange ?? 'x');
+        const extraFields = {
+          ...(!isNaN(skewChangePct) ? { skew_change_pct: skewChangePct } : {}),
+          ...(!isNaN(cvolPrice) && !isNaN(cvolChangePct) ? { vol_level: cvolPrice, vol_change_pct: cvolChangePct } : {}),
+          ...(!isNaN(convexity) && !isNaN(convexChangePct) ? { convexity, convexity_change_pct: convexChangePct } : {}),
+        };
+        ok.push({ pair, rr_value: +skew.toFixed(3), source: 'CME CVOL', ...ivFields, ...extraFields });
       }
       cmeFailedReasons = failed;
       if (failed.length) console.warn('risk-reversal: CME CVOL batch partial failures:', failed);
       if (ok.length >= 3) {
-        ok.forEach(d => { pairs[d.pair] = { rr_value: d.rr_value, source: d.source, call_iv: d.call_iv, put_iv: d.put_iv }; });
+        ok.forEach(d => {
+          pairs[d.pair] = {
+            rr_value: d.rr_value, source: d.source, call_iv: d.call_iv, put_iv: d.put_iv,
+            skew_change_pct: d.skew_change_pct, vol_level: d.vol_level, vol_change_pct: d.vol_change_pct,
+            convexity: d.convexity, convexity_change_pct: d.convexity_change_pct,
+          };
+        });
         source = 'cme_cvol';
       } else {
         throw new Error(`Only ${ok.length}/6 CME CVOL pairs returned data`);
