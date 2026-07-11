@@ -2423,6 +2423,65 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   z-index: 8000;
 }
 .kb-gmode.show { opacity: 1; }
+
+/* ═══════════════ CETAK PDF (Ringkasan & Analisa AI) ═══════════════
+   Strategi: window.print() bawaan browser (bukan library tambahan) +
+   @media print yang cuma menampilkan panel aktif + letterhead dinamis.
+   visibility (bukan display) dipakai untuk hide non-target supaya layout
+   tidak collapse aneh — pola standar "print only this element". */
+.print-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 30px; height: 30px; margin-left: 6px; flex-shrink: 0;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 4px;
+  color: var(--accent); cursor: pointer; transition: background .15s, border-color .15s;
+}
+.print-btn:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
+.print-btn-row { display: flex; align-items: stretch; gap: 0; }
+.print-btn-row .ringkasan-gen-btn { flex: 1; }
+.print-letterhead { display: none; }
+
+@media print {
+  body * { visibility: hidden; }
+  body.printing-ringkasan #ringkasanPanel,
+  body.printing-ringkasan #ringkasanPanel *,
+  body.printing-analisa #analisaPanel,
+  body.printing-analisa #analisaPanel * {
+    visibility: visible;
+  }
+  body.printing-ringkasan #ringkasanPanel,
+  body.printing-analisa #analisaPanel {
+    position: absolute; left: 0; top: 0; width: 100%;
+    display: block !important; overflow: visible !important; height: auto !important;
+  }
+  .no-print, .no-print * { display: none !important; }
+  .print-letterhead { display: block !important; }
+
+  /* Palet cetak profesional: putih + hitam, aksen warna dipertahankan tapi
+     disesuaikan kontrasnya untuk kertas putih (bukan dark theme app). */
+  :root {
+    --bg: #ffffff; --surface: #f7f6f2; --border: #cfcabf;
+    --accent: #96261c; --accent-dim: #6e1c14; --gate: #6e1c14;
+    --text: #17140f; --muted: #57503f; --text-mid: #332e22;
+    --green: #1c6b3d; --green-dim: #164f2d; --red: #96261c;
+    --yellow: #99590f; --orange: #99590f; --purple: #5c449c; --pink: #a13d68;
+  }
+  html, body { height: auto !important; overflow: visible !important; background: #fff !important; }
+  body { font-family: Georgia, 'Times New Roman', serif !important; color: var(--text) !important; font-size: 12px; }
+  body.printing-ringkasan #ringkasanPanel, body.printing-analisa #analisaPanel {
+    padding: 0 24px 24px !important; overflow: visible !important; max-height: none !important;
+  }
+  .ringkasan-card, .thesis-card, .thesis-alert-card, .analisa-tf-card, .analisa-ai-result {
+    page-break-inside: avoid; border: 1px solid var(--border) !important; background: var(--surface) !important;
+  }
+  .ai-disclaimer {
+    border-top: 1px solid var(--border); margin-top: 16px; padding-top: 8px;
+    font-size: 9px; color: var(--muted) !important; font-family: 'DM Mono', monospace;
+  }
+}
+.print-letterhead { border-bottom: 2px solid var(--accent); padding-bottom: 10px; margin-bottom: 16px; }
+.print-letterhead .pl-brand { font-family: 'Syne', sans-serif; font-weight: 800; font-size: 19px; color: var(--accent); letter-spacing: .02em; }
+.print-letterhead .pl-title { font-size: 13px; color: var(--text); margin-top: 2px; }
+.print-letterhead .pl-meta { font-size: 10px; color: var(--muted); margin-top: 4px; font-family: 'DM Mono', monospace; }
 </style>
 </head>
 <body>
@@ -2583,24 +2642,32 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 
 <!-- RINGKASAN PANEL -->
 <div class="feed-scroll" id="ringkasanPanel" style="display:none">
+  <div class="print-letterhead" id="printLetterheadRingkasan"></div>
   <div class="ringkasan-inner" id="ringkasanInner">
     <div class="state-box">
       <div class="icon">📋</div>
       <p>Tap tombol di bawah untuk<br>generate ringkasan pasar.</p>
     </div>
-    <button class="ringkasan-gen-btn" id="ringkasanBtn" onclick="generateRingkasan()">
-      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-        <circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/>
-      </svg>
-      <span>Ringkas Berita</span>
-    </button>
+    <div class="print-btn-row">
+      <button class="ringkasan-gen-btn" id="ringkasanBtn" onclick="generateRingkasan()">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/>
+        </svg>
+        <span>Ringkas Berita</span>
+      </button>
+      <button class="print-btn no-print" onclick="cetakRingkasan()" title="Cetak PDF">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M6 9V2h9l3 3v4"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/>
+        </svg>
+      </button>
+    </div>
   </div>
   <div class="ringkasan-inner" style="padding-top:0" id="polymarketWrap">
-    <div class="corr-section" id="polymarketPanel">
+    <div class="corr-section no-print" id="polymarketPanel">
       <div class="corr-title">POLYMARKET — PROBABILITAS PASAR</div>
       <div style="font-size:10px;color:var(--muted);font-family:'DM Mono',monospace">Probabilitas event makro dari prediction market (uang nyata).</div>
     </div>
-    <div style="margin-top:8px">
+    <div class="no-print" style="margin-top:8px">
       <button id="polyBtn" class="jn-btn-sec" onclick="fetchPolymarket()" style="width:100%;font-size:10px">↻ Refresh Polymarket Macro</button>
     </div>
     <div class="ai-disclaimer">⚠ Ringkasan dihasilkan AI dari headline &amp; data pihak ketiga — bisa keliru, bukan nasihat keuangan. Detail di tab PETUNJUK › Disclaimer.</div>
@@ -2610,7 +2677,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 <!-- ANALISA PANEL -->
 <div class="feed-scroll" id="analisaPanel" style="display:none">
   <div class="analisa-inner">
-    <div class="analisa-pairs">
+    <div class="print-letterhead" id="printLetterheadAnalisa"></div>
+    <div class="analisa-pairs no-print">
       <button class="analisa-chip" onclick="loadAnalisa('GC=F','XAU/USD',this)">XAU/USD</button>
       <button class="analisa-chip" onclick="loadAnalisa('EURUSD=X','EUR/USD',this)">EUR/USD</button>
       <button class="analisa-chip" onclick="loadAnalisa('GBPUSD=X','GBP/USD',this)">GBP/USD</button>
@@ -2630,10 +2698,17 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
       <div id="analisaH4Card"></div>
       <div id="analisaH1Card"></div>
       <div id="analisaIndCard"></div>
-      <button class="ringkasan-gen-btn" id="analisaAiBtn" onclick="analyzeOhlcvAi()" style="margin-top:4px">
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2a10 10 0 1 0 10 10"/><path d="M12 8v4l3 3"/></svg>
-        <span>Analisa AI</span>
-      </button>
+      <div class="print-btn-row">
+        <button class="ringkasan-gen-btn" id="analisaAiBtn" onclick="analyzeOhlcvAi()" style="margin-top:4px">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2a10 10 0 1 0 10 10"/><path d="M12 8v4l3 3"/></svg>
+          <span>Analisa AI</span>
+        </button>
+        <button class="print-btn no-print" style="margin-top:4px" onclick="cetakAnalisa()" title="Cetak PDF">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M6 9V2h9l3 3v4"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/>
+          </svg>
+        </button>
+      </div>
       <div id="analisaAiResult" style="display:none"></div>
       <div class="ai-disclaimer">⚠ Level &amp; bias di atas dihasilkan AI dan bisa keliru — bukan nasihat keuangan. Verifikasi ke chart sebelum dipakai.</div>
     </div>
@@ -4574,6 +4649,49 @@ function renderRingkasan() {
   `;
 }
 
+// ── CETAK PDF (Ringkasan & Analisa AI) ────────────────────────────────────
+// Strategi: window.print() bawaan browser (bukan library tambahan) — user
+// pilih "Simpan sebagai PDF" di dialog print. @media print (lihat <style>)
+// cuma menampilkan panel yang lagi dicetak (via class body.printing-*),
+// sembunyikan tombol/chip/link interaktif (.no-print), dan restyle ke
+// palet terang untuk kertas (bukan dark theme app).
+function _printPanel(bodyClass, letterheadId, titleText) {
+  const lh = document.getElementById(letterheadId);
+  if (lh) {
+    const now = new Date();
+    const wib = new Date(now.getTime() + 7 * 3600000);
+    const dateStr = `${String(wib.getUTCDate()).padStart(2,'0')}/${String(wib.getUTCMonth()+1).padStart(2,'0')}/${wib.getUTCFullYear()} ${String(wib.getUTCHours()).padStart(2,'0')}:${String(wib.getUTCMinutes()).padStart(2,'0')} WIB`;
+    lh.innerHTML = `
+      <div class="pl-brand">DAUN MERAH</div>
+      <div class="pl-title">${escHtml(titleText)}</div>
+      <div class="pl-meta">Dicetak ${dateStr}</div>`;
+  }
+  document.body.classList.add(bodyClass);
+  // Timeout kecil: pastikan reflow layout (letterhead + class toggle) selesai
+  // sebelum browser menangkap halaman untuk dialog print.
+  setTimeout(() => window.print(), 50);
+}
+window.addEventListener('afterprint', () => {
+  document.body.classList.remove('printing-ringkasan', 'printing-analisa');
+});
+
+function cetakRingkasan() {
+  if (!ringkasanCache || !ringkasanCache.article) {
+    showToast('Belum Ada Data', 'Generate ringkasan dulu sebelum cetak.', 3000);
+    return;
+  }
+  _printPanel('printing-ringkasan', 'printLetterheadRingkasan', 'Ringkasan Pasar Forex & Emas');
+}
+
+function cetakAnalisa() {
+  const symbol = analisaActive.symbol, label = analisaActive.label;
+  if (!symbol || !analisaDataCache[symbol]) {
+    showToast('Belum Ada Data', 'Pilih pair dan tunggu data termuat dulu sebelum cetak.', 3000);
+    return;
+  }
+  _printPanel('printing-analisa', 'printLetterheadAnalisa', `Analisa Teknikal — ${label}`);
+}
+
 function escHtml(s) {
   return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
@@ -4775,10 +4893,10 @@ function _renderStructuredAi(structured, commentary, model, hasMakro, isCached, 
     html += `<div style="display:flex;align-items:flex-start;gap:10px;margin:8px 0 10px;flex-wrap:wrap">
       <span style="background:${biasColor};color:#0a0f1a;font-size:10px;font-weight:700;padding:3px 10px;border-radius:3px;font-family:'DM Mono',monospace;letter-spacing:.06em;flex-shrink:0">${biasLabel}</span>
       ${alignChip}
-      ${structured.trigger ? `<span style="font-size:11px;color:var(--fg);flex:1;min-width:160px;line-height:1.5">${escHtml(structured.trigger)}</span>` : ''}
+      ${structured.trigger ? `<span style="font-size:11px;color:var(--text);flex:1;min-width:160px;line-height:1.5">${escHtml(structured.trigger)}</span>` : ''}
     </div>`;
     if (structured.makro_alignment_reason) {
-      html += `<div style="margin:-4px 0 10px;font-size:10.5px;color:var(--muted);line-height:1.5"><span style="color:var(--fg)">MAKRO </span>${escHtml(structured.makro_alignment_reason)}</div>`;
+      html += `<div style="margin:-4px 0 10px;font-size:10.5px;color:var(--muted);line-height:1.5"><span style="color:var(--text)">MAKRO </span>${escHtml(structured.makro_alignment_reason)}</div>`;
     }
     if (structured.entry_zone || structured.sl || structured.tp) {
       html += `<div style="display:flex;gap:16px;margin-bottom:10px;font-family:'DM Mono',monospace;font-size:11px;flex-wrap:wrap">
@@ -4788,13 +4906,13 @@ function _renderStructuredAi(structured, commentary, model, hasMakro, isCached, 
         ${structured.risk_reward ? `<span><span style="color:var(--muted)">RR </span>1:${escHtml(String(structured.risk_reward))}</span>` : ''}
       </div>`;
       if (structured.entry_basis) {
-        html += `<div style="margin:-4px 0 10px;font-size:10.5px;color:var(--muted);line-height:1.5"><span style="color:var(--fg)">DASAR </span>${escHtml(structured.entry_basis)}</div>`;
+        html += `<div style="margin:-4px 0 10px;font-size:10.5px;color:var(--muted);line-height:1.5"><span style="color:var(--text)">DASAR </span>${escHtml(structured.entry_basis)}</div>`;
       }
     }
     if (structured.invalidation_condition || structured.time_horizon_days) {
       html += `<div style="margin-bottom:10px;font-size:11px;color:var(--muted);line-height:1.5">
-        ${structured.invalidation_condition ? `<div><span style="color:var(--fg)">INVALIDASI </span>${escHtml(structured.invalidation_condition)}</div>` : ''}
-        ${structured.time_horizon_days ? `<div><span style="color:var(--fg)">HORIZON </span>~${escHtml(String(structured.time_horizon_days))} hari</div>` : ''}
+        ${structured.invalidation_condition ? `<div><span style="color:var(--text)">INVALIDASI </span>${escHtml(structured.invalidation_condition)}</div>` : ''}
+        ${structured.time_horizon_days ? `<div><span style="color:var(--text)">HORIZON </span>~${escHtml(String(structured.time_horizon_days))} hari</div>` : ''}
       </div>`;
     }
   }
@@ -4854,7 +4972,7 @@ function renderAnalisa() {
 
   document.getElementById('analisaHeader').innerHTML = `
     <span class="analisa-pair-label">${escHtml(d.label)}</span>
-    <span class="analisa-ts-label">${tsStr} · <a href="#" onclick="loadAnalisa('${d.symbol}','${d.label}',document.querySelector('.analisa-chip.active'));return false" style="color:var(--accent);text-decoration:none">↻ refresh</a> · <span style="color:var(--muted)">auto 5m</span>${staleHtml}</span>`;
+    <span class="analisa-ts-label">${tsStr} <span class="no-print">· <a href="#" onclick="loadAnalisa('${d.symbol}','${d.label}',document.querySelector('.analisa-chip.active'));return false" style="color:var(--accent);text-decoration:none">↻ refresh</a> · <span style="color:var(--muted)">auto 5m</span></span>${staleHtml}</span>`;
 
   // Daily card
   const d1 = d.d1;

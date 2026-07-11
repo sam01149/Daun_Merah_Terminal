@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-07-11 (session 157 lanjutan 8 — tambah Paragraf 5 KESIMPULAN di commentary Analisa AI per pair)
+> **Last updated:** 2026-07-11 (session 157 lanjutan 10 — fitur Cetak PDF profesional untuk Ringkasan & Analisa AI)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -124,6 +124,37 @@
 **Catatan ketemu sekaligus saat investigasi:** live cache `rr_cache_v2` sempat masih versi lama (tanpa field momentum/vol/convexity dari lanjutan 7) saat user generate analisa pertama kali — jadi AI cuma dapat skor dasar RR, bukan elaborasi lengkap. Setelah TTL 1 jam refresh (dipicu manual via curl saat investigasi), field baru sudah lengkap di cache — tidak perlu perubahan kode, cuma soal timing cache alami.
 
 **Diverifikasi:** perubahan murni teks prompt (instruksi AI), tidak menyentuh logic — `node --check` bersih, test suite 190/190 tetap hijau (tidak ada assertion otomatis untuk kualitas output AI generatif; verifikasi kualitas Paragraf 5 perlu dicek manual oleh user di run berikutnya).
+
+---
+
+## Changelog Session 157 lanjutan 9 (2026-07-11) — Fix Label "Paragraf N" Bocor ke Output + Styling KESIMPULAN
+
+**Konteks:** user cek live output Paragraf 5 (dari lanjutan 8) — ternyata SEMUA paragraf (1-5) muncul dengan prefix literal "Paragraf 1 —", "Paragraf 2 —" dst di output AI, bukan cuma "KESIMPULAN:" yang dimaksud untuk paragraf 5. Root cause: instruksi prompt di [api/admin.js](../api/admin.js) memakai label "Paragraf 1 —", "Paragraf 2 —" dst sebagai penanda urutan untuk AI, tapi tidak eksplisit bilang itu HANYA panduan internal — AI mengutipnya literal ke output.
+
+**Fix — [api/admin.js](../api/admin.js):** instruksi diperjelas — "label paragraf 1-5 di bawah HANYA panduan urutan penulisan, BUKAN teks yang boleh muncul di output". 4 paragraf pertama diinstruksikan WAJIB tanpa header/judul apapun (langsung prosa mengalir); paragraf 5 SATU-SATUNYA pengecualian yang harus mulai literal dengan "KESIMPULAN:".
+
+**Perubahan — [index.html](../index.html):** paragraf yang diawali "KESIMPULAN:" sekarang dirender dalam box terpisah (border kiri warna accent, label bold berwarna) via deteksi regex `/^kesimpulan:\s*(.*)$/i` di `_renderStructuredAi()` — supaya benar-benar menonjol dan gampang ditemukan sesuai tujuan awal fitur ini (lanjutan 8), bukan cuma teks biasa yang menyatu dengan paragraf lain.
+
+**Bonus bug ditemukan saat investigasi (tidak berhubungan, diperbaiki sekalian):** variabel CSS `--fg` dipakai di 5 tempat (`_renderStructuredAi()`, label trigger/makro/dasar/invalidasi) tapi tidak pernah didefinisikan di `:root` — fallback diam-diam ke warna inherited, bukan warna yang dimaksud. Diganti ke `--text` (variabel yang benar-benar terdefinisi) di semua 5 lokasi.
+
+**Diverifikasi:** `node --check` bersih, test suite 190/190 tetap hijau.
+
+---
+
+## Changelog Session 157 lanjutan 10 (2026-07-11) — Fitur Cetak PDF Profesional untuk Ringkasan & Analisa AI
+
+**Konteks:** user minta fitur cetak PDF untuk panel Ringkasan Berita dan Analisa AI, dengan tampilan profesional, tombol ikon dokumen warna app (`--accent`), dan diminta ikuti protokol CLAUDE.md penuh (evaluasi mandiri, uji, dokumentasi).
+
+**Strategi:** `window.print()` bawaan browser (bukan library tambahan seperti jsPDF/html2pdf) — user pilih "Simpan sebagai PDF" di dialog print browser. Pendekatan "print hanya elemen ini": `visibility:hidden` di seluruh `body`, lalu `visibility:visible` cuma untuk panel yang lagi dicetak (ditandai lewat class `body.printing-ringkasan`/`body.printing-analisa`) — standar pola print-scoped-element yang tidak merusak layout flow dibanding `display:none`.
+
+**Perubahan — [index.html](../index.html):**
+- CSS `@media print` baru: palet terang profesional (override `:root` — putih/hitam dengan aksen warna disesuaikan kontras kertas, bukan dark theme app), font serif (Georgia) untuk kesan dokumen resmi, `page-break-inside:avoid` di kartu-kartu supaya tidak terpotong aneh antar halaman.
+- Letterhead dinamis (`.print-letterhead`, div `#printLetterheadRingkasan` & `#printLetterheadAnalisa`): brand "DAUN MERAH" + judul dokumen + timestamp cetak (WIB), di-generate ulang tiap klik cetak.
+- Class `.no-print` disematkan ke elemen interaktif yang tidak relevan dicetak: tombol generate/refresh, chip pemilih pair, link "↻ refresh · auto 5m" di header Analisa, widget Polymarket — disclaimer AI SENGAJA tetap tercetak (bukan no-print).
+- Tombol cetak baru (ikon dokumen SVG, warna `--accent`) di sebelah tombol "Ringkas Berita"/"Ringkas Ulang" dan "Analisa AI", pakai class `.print-btn` + `.print-btn-row` (flex layout).
+- Fungsi baru: `_printPanel()` (helper generate letterhead + toggle body class + `window.print()`), `cetakRingkasan()`, `cetakAnalisa()` — dua-duanya guard "belum ada data" (toast, bukan cetak halaman kosong) sebelum lanjut cetak. Cleanup class via listener `afterprint` (jalan baik user benar-benar cetak maupun batal dialog).
+
+**Diverifikasi:** `node --check` bersih di semua inline script, brace CSS seimbang (1183/1183), simulasi letterhead (format tanggal WIB benar untuk Ringkasan & Analisa) + guard belum-ada-data (4 skenario: cache null, cache tanpa article, symbol null, data belum load) — semua PASS, test suite 190/190 tetap hijau. Verifikasi visual output PDF asli (hasil "Save as PDF" browser) belum dilakukan — perlu dicek manual oleh user karena environment ini tidak punya browser untuk render print preview sungguhan.
 
 ---
 
