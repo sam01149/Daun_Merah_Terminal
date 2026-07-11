@@ -50,7 +50,7 @@ Semua workflow di atas autentikasi ke `api/*.js` lewat header `x-cron-secret`, d
 | **Bank of England, Bank of Japan, Bank of Canada, RBA, RBNZ, SNB** (situs resmi masing-masing) | Suku bunga acuan live per bank sentral non-Fed/ECB (`_cb_rates.js`) | Free, scraping halaman publik | — |
 | **CFTC** (`cftc.gov`) | Commitment of Traders (COT) — positioning institusional | Free, file publik | — |
 | **CME Group** (`cmegroup.com`) | FedWatch Tool (probabilitas keputusan FOMC) + CVOL (implied volatility FX) — via `rate-path.js`, `correlations.js` | Free, tapi **diblokir Akamai WAF untuk IP Vercel** → wajib lewat proxy ScraperAPI (lihat §5) | — |
-| **Barchart OnDemand** | Fallback sumber risk-reversal FX kalau CME CVOL gagal | Free (signup manual) | `BARCHART_API_KEY` |
+| **Barchart OnDemand** | Fallback sumber risk-reversal FX kalau CME CVOL gagal | **Enterprise berbayar** (dikonfirmasi Session 47 — bukan free seperti awalnya dikira dari komentar kode "free signup"). Path tetap ada di kode tapi **tidak dipakai** — `BARCHART_API_KEY` kemungkinan besar tidak pernah di-set | `BARCHART_API_KEY` |
 | **Polymarket (Gamma API)** | Data prediction market untuk sinyal sentimen | Free, publik | — |
 
 ---
@@ -70,7 +70,7 @@ Semua workflow di atas autentikasi ke `api/*.js` lewat header `x-cron-secret`, d
 
 | Vendor | Fungsi | Tier | Env var |
 |---|---|---|---|
-| **ScraperAPI** | Proxy residential IP — dipakai KHUSUS untuk fetch CME (FedWatch + CVOL) karena CME memblokir IP datacenter Vercel lewat Akamai WAF | **Berbayar** (satu-satunya vendor berbayar murni di app ini) | `SCRAPER_API_KEY` |
+| **ScraperAPI** | Proxy residential IP — dipakai KHUSUS untuk fetch CME (FedWatch + CVOL) karena CME memblokir IP datacenter Vercel lewat Akamai WAF | **Free tier permanen: 1.000 credit/bulan, maks 5 concurrent connection** (dikonfirmasi dari docs.scraperapi.com — bukan trial sekali pakai). Pemakaian aktual app ini ~120-180 request/bulan (dicatat Session 47) = ~12-18% dari jatah gratis, request-nya standar tanpa parameter premium (`render`, geotargeting) yang biasanya menambah biaya credit. **Kemungkinan besar TIDAK benar-benar berbayar** — lihat §9 untuk detail | `SCRAPER_API_KEY` |
 
 ---
 
@@ -132,6 +132,17 @@ VAPID_SUBJECT
 
 ---
 
-## 9. Satu-satunya Vendor Berbayar
+## 9. Status Berbayar — Dikoreksi (2026-07-11)
 
-Dari semua vendor di atas, **hanya ScraperAPI** yang murni berbayar (proxy residential untuk bypass blokir CME). Semua vendor lain — termasuk semua AI provider — beroperasi di tier gratis persisten (bukan trial credit). Kalau suatu saat ScraperAPI tidak tersedia/kena limit, fallback-nya adalah fetch langsung ke CME tanpa proxy (`cmeFetch()` di `rate-path.js`/`correlations.js`), yang kemungkinan besar diblokir WAF — jadi fitur FedWatch/CVOL akan otomatis jatuh ke sumber fallback berikutnya (Barchart untuk CVOL) atau kosong dengan graceful degradation, bukan crash.
+**Klaim versi sebelumnya ("ScraperAPI satu-satunya vendor berbayar murni") TIDAK AKURAT** — dikoreksi setelah user menanyakan limit persisnya dan ketemu catatan Session 47 yang sebelumnya terlewat.
+
+### ScraperAPI — kemungkinan besar sebenarnya GRATIS
+Dikonfirmasi dari [docs.scraperapi.com](https://docs.scraperapi.com/resources/faq/plans-and-billing): free tier-nya **permanen (bukan trial 7 hari saja)** — **1.000 credit/bulan, maks 5 concurrent connection**, tanpa kartu kredit. Pemakaian aktual app ini (dicatat Session 47): **~120-180 request/bulan** untuk fetch CME (FedWatch + CVOL), request standar tanpa parameter premium (`render=true`, geotargeting) yang biasanya menambah biaya credit per request — jadi 1 request ≈ 1 credit. Itu cuma **12-18% dari jatah 1.000/bulan**, jauh di bawah batas.
+
+**Kesimpulan:** kecuali akun yang dipakai memang sudah di-upgrade manual ke plan berbayar (Hobby $49/bulan dst — tidak ada bukti di kode untuk ini), app ini **tidak perlu bayar apa-apa untuk ScraperAPI**. Catatan lama di `daun_merah.md` Session 47 ("Free tier: 5.000 credits/bulan") kemungkinan mengacu ke jatah trial 7-hari (5.000 credit), bukan jatah bulanan permanen (1.000 credit) — beda sumber informasi, tapi kesimpulan praktisnya sama: pemakaian aktual jauh di bawah kapasitas gratis manapun yang berlaku.
+
+### Barchart OnDemand — dikoreksi jadi berbayar
+Versi sebelumnya salah menyebut ini "free (signup manual)" berdasarkan komentar kode. Catatan Session 47 (`daun_merah.md` baris 3113) sudah mengonfirmasi lebih dulu: **"Barchart OnDemand: dikonfirmasi enterprise berbayar (bukan free) — path tetap ada di kode tapi tidak digunakan."** `BARCHART_API_KEY` kemungkinan besar tidak pernah benar-benar di-set di Vercel karena itu.
+
+### Kesimpulan baru
+Berdasarkan bukti yang ada, **kemungkinan besar TIDAK ADA vendor berbayar yang aktif dipakai** di app ini sama sekali — ScraperAPI di jatah gratisnya, Barchart path mati/tidak dipakai. Satu-satunya cara memastikan 100% adalah cek langsung dashboard billing ScraperAPI (butuh akses akun yang tidak saya punya). Kalau suatu saat ScraperAPI kena limit/tidak tersedia, fallback-nya adalah fetch langsung ke CME tanpa proxy (`cmeFetch()` di `rate-path.js`/`correlations.js`), yang kemungkinan besar diblokir WAF — fitur FedWatch/CVOL otomatis jatuh ke sumber fallback berikutnya (Barchart untuk CVOL — tapi ini juga tidak aktif) atau kosong dengan graceful degradation, bukan crash.

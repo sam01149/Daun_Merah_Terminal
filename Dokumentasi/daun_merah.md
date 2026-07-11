@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-07-11 (session 157 lanjutan 2 — single-flight lock market-digest + label jam analisa)
+> **Last updated:** 2026-07-11 (session 157 lanjutan 3 — koreksi status berbayar ScraperAPI/Barchart di daun_merah_vendor.md)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -42,6 +42,17 @@
 - `_renderStructuredAi()` ([index.html](../index.html)) dapat parameter baru `analyzedAt` (dari `resultPayload.loaded_at` yang sudah ada di `api/admin.js`, cuma belum pernah dikirim ke render) — ditampilkan di header hasil pakai `fmtCBTime()` yang sudah ada (reuse, bukan formatter baru).
 - Berlaku di 3 jalur: klik manual "Analisa AI", auto-load XAU/USD dari cache cron, dan restore dari localStorage — device tahu persis kapan hasil yang dilihat benar-benar di-generate server, bukan cuma kapan browser menerimanya, terutama penting saat badge "(cached)" muncul.
 - **Diverifikasi** via ekstraksi fungsi langsung dari `index.html` + 3 skenario test (fresh dengan jam, tanpa `analyzedAt` label tidak muncul, kombinasi cached+jam) — semua PASS.
+
+---
+
+## Changelog Session 157 lanjutan 3 (2026-07-11) — Koreksi Status Berbayar ScraperAPI & Barchart
+
+**Konteks:** user menanyakan limit persis ScraperAPI (satu-satunya vendor yang ditandai "berbayar" di `daun_merah_vendor.md` §9). Saat dicek ke docs.scraperapi.com resmi + catatan lama project sendiri (Session 47, baris 3101 & 3113 dokumen ini), ketemu 2 klaim yang salah di draft `daun_merah_vendor.md` sebelumnya:
+
+1. **ScraperAPI kemungkinan besar sebenarnya GRATIS, bukan berbayar.** Free tier resmi (dikonfirmasi docs.scraperapi.com): **1.000 credit/bulan permanen** (bukan cuma trial 7 hari), maks 5 concurrent connection. Pemakaian aktual app ini ~120-180 request/bulan (dicatat Session 47) = 12-18% dari jatah gratis — request-nya standar (tanpa `render`/geotargeting yang menambah biaya credit). Catatan lama Session 47 yang bilang "5.000 credits/bulan" kemungkinan mengacu ke jatah trial 7-hari, bukan jatah bulanan permanen (1.000) — tapi kesimpulannya sama: pemakaian jauh di bawah kapasitas gratis manapun.
+2. **Barchart OnDemand sebenarnya BERBAYAR (enterprise), bukan gratis** — draft sebelumnya salah menyimpulkan "free (signup manual)" dari komentar kode, padahal Session 47 (baris 3113 dokumen ini) SUDAH mengonfirmasi lebih dulu "enterprise berbayar (bukan free)". `BARCHART_API_KEY` kemungkinan besar tidak pernah benar-benar di-set.
+
+**Kesimpulan baru:** kemungkinan besar **tidak ada vendor berbayar yang aktif dipakai** di app ini — ScraperAPI di jatah gratisnya, Barchart path mati/tidak dipakai. Tidak bisa dipastikan 100% tanpa cek langsung dashboard billing ScraperAPI. §9 `daun_merah_vendor.md` ditulis ulang total untuk mencerminkan ini. **Pelajaran:** draft dokumentasi awal sempat menyimpulkan tier dari komentar kode ("free signup") tanpa cross-check ke catatan riwayat project sendiri yang sudah pernah verifikasi langsung — akan lebih hati-hati grep changelog lama dulu sebelum menulis klaim tier vendor.
 
 **Verifikasi ulang (diminta user setelah draft pertama):** cek baris-per-baris ulang rantai fallback tiap fitur langsung dari kode (bukan dari draft sebelumnya). Ketemu 1 koreksi lagi: **Analisa AI per Pair (`ohlcv_analyze`) TIDAK punya Groq di rantainya** — cuma 2 tingkat (SambaNova akun-1 → akun-2), berbeda dari 3 fitur AI lain yang semuanya punya Groq sebagai jaring pengaman terakhir. Groq & Ollama Cloud sengaja dicoret dari rantai ini 2026-07-10 (Ollama timeout konsisten 15s, kualitas Groq/llama-3.3 dinilai di bawah DeepSeek-V3.2 akun-2). Juga ditambahkan: Ringkasan Berita Call 1 punya fallback ke-4 non-AI (template deterministik berbasis kategori berita) kalau semua provider AI gagal — jadi fitur itu tidak pernah benar-benar kosong.
 
