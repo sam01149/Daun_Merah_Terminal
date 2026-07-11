@@ -4904,8 +4904,14 @@ function _articleToPdfBlocks(text) {
 // terpisah) bukan cuma bikin glyph-nya sendiri tampil salah, tapi SATU BARIS PENUH yang
 // memuatnya ikut kena bug spasi-antar-huruf melebar — mirip gejala bug lama tapi beda akar
 // (bukan align:'justify', yang itu sudah dibuang). Saring dulu sebelum ditulis ke PDF.
-const _PDF_SYMBOL_MAP = { '▲': '', '▼': '', '⟷': '<->', '→': '-', '⚠': '!', '★': '*', '☆': '*', '✓': 'v', '✗': 'x' };
-const _PDF_UNSAFE_RE = /[^\x00-\x7F -ÿ–—‘’“”…‹›]/g;
+// PENTING: dash "pintar" (–—), kutip pintar (‘’“”), ellipsis (…), dan guillemet (‹›) — walau
+// SEMUA resminya bagian WinAnsiEncoding/Windows-1252 — terbukti dari repro langsung (generate
+// PDF Node, cek content stream mentah) DIBUANG TOTAL oleh jsPDF 2.5.2 saat pakai font Times
+// (bukan cuma glyph salah, tapi karakternya lenyap dari string Tj), nyisain celah/spasi ganda
+// yang kelihatan "renggang" — ini akar bug beneran di teks disclaimer footer. Jangan
+// dianggap aman cuma karena masuk WinAnsi; verifikasi dulu render aslinya kalau nambah simbol.
+const _PDF_SYMBOL_MAP = { '▲': '', '▼': '', '⟷': '<->', '→': '-', '⚠': '!', '★': '*', '☆': '*', '✓': 'v', '✗': 'x', '›': '>', '‹': '<', '–': '-', '—': '-', '‘': "'", '’': "'", '“': '"', '”': '"', '…': '...' };
+const _PDF_UNSAFE_RE = /[^\x00-\x7F\u00A0-\u00FF]/g;
 function pdfSafe(s) {
   s = String(s ?? '');
   for (const bad in _PDF_SYMBOL_MAP) s = s.split(bad).join(_PDF_SYMBOL_MAP[bad]);

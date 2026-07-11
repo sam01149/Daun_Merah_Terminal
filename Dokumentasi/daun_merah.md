@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-07-11 (session 157 lanjutan 17 — kop PDF pakai warna brand, badan tetap monokrom)
+> **Last updated:** 2026-07-11 (session 157 lanjutan 18 — fix karakter tipografi hilang di footer disclaimer PDF)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -67,6 +67,18 @@
 **[index.html](../index.html):** `_pdfBuilder().letterhead()` — teks "DAUN MERAH" + garis pembatas kop sekarang pakai `BRAND_COLOR` (`#c0392b`, sama dengan `--accent` CSS di app), sementara judul dokumen, baris meta, dan seluruh badan (paragraf, thesis, kv, dst) tetap grayscale seperti sebelumnya. Ini konvensi kop surat resmi umum (identitas/logo berwarna, badan surat monokrom) — bukan pelanggaran aturan lama "JANGAN ADA WARNA" (itu soal badan dokumen). Berlaku otomatis untuk Ringkasan & Analisa karena satu builder yang sama.
 
 **Diverifikasi:** `node --check` bersih, test suite 190/190 hijau, regenerate PDF asli (jsPDF npm sementara) + inspeksi content stream mentah — konfirmasi operator warna `0.753 0.224 0.169 rg`/`RG` cuma di teks "DAUN MERAH" & garis kop, judul/meta/isi tetap `g` (grayscale). Analisa PDF juga diregenerate ulang & dicek — tidak ada lagi operator `Tz`/`Tc`/`Tw` (bug justify lanjutan 16 sudah bersih di kedua fitur).
+
+---
+
+## Changelog Session 157 lanjutan 18 (2026-07-11) — Fix Karakter Tipografi Hilang di Footer Disclaimer PDF (Bukan Bug Spasi Baru)
+
+**Konteks:** user lapor teks footer disclaimer PDF ("⚠ Ringkasan dihasilkan AI... Detail di tab PETUNJUK › Disclaimer.") tampak "merenggang". Bug ini beda akar dari lanjutan 16 (justify sudah dibuang total sejak itu).
+
+**Root cause:** `pdfSafe()` (filter karakter sebelum ditulis ke jsPDF) meng-whitelist em/en dash (–—), kutip pintar (‘’“”), ellipsis (…), dan guillemet (‹›) sebagai "aman" karena resminya masuk WinAnsiEncoding/Windows-1252. Ternyata **asumsi ini salah** — dikonfirmasi lewat repro langsung (generate PDF asli via jsPDF npm sementara, inspeksi content stream mentah byte-per-byte): jsPDF 2.5.2 dengan font standar Times **membuang total** karakter-karakter itu dari string `Tj` (bukan cuma render glyph salah — karakternya lenyap), menyisakan celah/spasi ganda yang di layar kelihatan seperti teks renggang. Terverifikasi persis di teks disclaimer footer karena baris itu pendek dan padat memuat `—` dan `›` sekaligus, jadi celahnya paling kentara. Karakter Latin-1 murni (é, ñ, ü, °, dst, U+00A0–U+00FF) tetap aman, tidak kena masalah ini.
+
+**Fix — [index.html](../index.html):** `_PDF_SYMBOL_MAP` ditambah mapping ke padanan ASCII (`–`/`—` → `-`, `‘`/`’` → `'`, `“`/`”` → `"`, `…` → `...`, `›`/`‹` → `>`/`<`); `_PDF_UNSAFE_RE` disempitkan jadi cuma ASCII (`\x00-\x7F`) + Latin-1 supplement (` -ÿ`) — karakter tipografi Windows-1252 di luar itu tidak lagi diklaim "aman" tanpa verifikasi render nyata.
+
+**Diverifikasi:** test suite 190/190 hijau. Repro langsung 3 tahap pakai `jspdf` npm sementara (`--no-save`, dihapus lagi setelah tes — sempat kehapus bareng seluruh `node_modules` proyek karena `rm -rf` ceroboh, dipulihkan via `npm ci`, test suite dicek ulang hijau): (1) buktikan karakter dash/kutip/guillemet lenyap dari `Tj` string di font Times sebelum fix (bukan cuma di footer — berlaku semua paragraf, tapi paling kentara di baris pendek), (2) setelah fix, `pdfSafe()` pada teks disclaimer asli menghasilkan string ASCII bersih tanpa karakter hilang, (3) generate ulang PDF footer sungguhan — content stream `Tj` sekarang utuh, tidak ada celah/spasi ganda.
 
 ---
 
