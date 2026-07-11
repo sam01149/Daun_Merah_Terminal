@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-07-11 (session 157 — dokumentasi baru: daun_merah_ai.md + daun_merah_vendor.md)
+> **Last updated:** 2026-07-11 (session 157 lanjutan 2 — single-flight lock market-digest + label jam analisa)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -24,6 +24,24 @@
 - **ScraperAPI** teridentifikasi sebagai satu-satunya vendor berbayar murni di seluruh app (proxy residential IP untuk bypass blokir Akamai WAF milik CME Group).
 
 **Tidak ada perubahan kode** — murni dokumentasi baru berdasarkan audit kode yang sudah ada.
+
+---
+
+## Changelog Session 157 lanjutan 2 (2026-07-11) — Single-Flight Lock Market Digest + Label Jam Analisa
+
+**Konteks:** diskusi lanjutan soal rate limit AI dari audit dokumentasi sebelumnya. User menanyakan kenapa tiap device generate ringkasan sendiri-sendiri padahal hasilnya sama untuk semua orang. Setelah dibahas (usulan "device admin" → disederhanakan jadi cache freshness gate → user menemukan celah: gate waktu doang tidak cegah burst request BERSAMAAN), solusi final: **single-flight lock** — pola yang sudah ada di `api/_fetch_lock.js` (dipakai untuk fetch XAU spot), sekarang diterapkan juga ke generate digest utama.
+
+**1. Single-flight lock — [api/market-digest.js](../api/market-digest.js):**
+- `lock:market_digest_generate` (Redis `SET NX EX 55`) dipasang tepat setelah rate limit check, sebelum RSS/calendar/Call 1-4 mulai. Request yang gagal dapat lock (karena ada request lain sedang generate ATAU baru saja selesai) langsung disajikan `latest_article` apa adanya (`from_cache: 'busy'`, `thesis_alerts: null`) — nol tambahan panggilan AI.
+- **Beda dari `withSingleFlight()` generik**: helper itu didesain untuk fetch cepat (~1-2 detik, polling pendek cukup) — generate digest bisa sampai 45-55 detik, jadi di sini losers TIDAK polling sama sekali, langsung serve cache lama (bisa dari cron beberapa jam lalu). Lock TIDAK di-release manual — TTL 55 detik dibiarkan berfungsi ganda: mutex selama generate aktif + cooldown pendek setelah selesai.
+- Cron dikecualikan total (selalu generate fresh, 3 jadwal berjam-jam terpisah, tidak pernah tabrakan).
+- Edge case: kalau `latest_article` kosong total (cold start), request tetap lanjut generate walau lock dipegang — supaya user tidak dapat respons kosong.
+- **Diverifikasi** via simulasi isolated (mock Redis, 3 skenario: lock kosong → lanjut generate; lock dipegang + ada cache → short-circuit; lock dipegang + cold start → tetap generate) — semua PASS. Test suite 190/190 tetap hijau, `node --check` bersih.
+
+**2. Label "di analisa jam HH:MM WIB" — fitur Analisa AI per Pair:**
+- `_renderStructuredAi()` ([index.html](../index.html)) dapat parameter baru `analyzedAt` (dari `resultPayload.loaded_at` yang sudah ada di `api/admin.js`, cuma belum pernah dikirim ke render) — ditampilkan di header hasil pakai `fmtCBTime()` yang sudah ada (reuse, bukan formatter baru).
+- Berlaku di 3 jalur: klik manual "Analisa AI", auto-load XAU/USD dari cache cron, dan restore dari localStorage — device tahu persis kapan hasil yang dilihat benar-benar di-generate server, bukan cuma kapan browser menerimanya, terutama penting saat badge "(cached)" muncul.
+- **Diverifikasi** via ekstraksi fungsi langsung dari `index.html` + 3 skenario test (fresh dengan jam, tanpa `analyzedAt` label tidak muncul, kombinasi cached+jam) — semua PASS.
 
 **Verifikasi ulang (diminta user setelah draft pertama):** cek baris-per-baris ulang rantai fallback tiap fitur langsung dari kode (bukan dari draft sebelumnya). Ketemu 1 koreksi lagi: **Analisa AI per Pair (`ohlcv_analyze`) TIDAK punya Groq di rantainya** — cuma 2 tingkat (SambaNova akun-1 → akun-2), berbeda dari 3 fitur AI lain yang semuanya punya Groq sebagai jaring pengaman terakhir. Groq & Ollama Cloud sengaja dicoret dari rantai ini 2026-07-10 (Ollama timeout konsisten 15s, kualitas Groq/llama-3.3 dinilai di bawah DeepSeek-V3.2 akun-2). Juga ditambahkan: Ringkasan Berita Call 1 punya fallback ke-4 non-AI (template deterministik berbasis kategori berita) kalau semua provider AI gagal — jadi fitur itu tidak pernah benar-benar kosong.
 

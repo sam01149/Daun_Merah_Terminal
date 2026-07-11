@@ -4733,13 +4733,13 @@ async function _autoLoadXauAnalysis(symbol) {
     const data = await res.json();
     if (!data.cached || (!data.commentary && !data.structured)) return;
     if (analisaAiCache[symbol]) return; // user already ran a manual analyze while this was in flight
-    analisaAiCache[symbol] = { commentary: data.commentary, structured: data.structured || null, model: data.model, hasMakro: !!data.hasMakro, hasFund: !!data.hasFund, makroAt: data.makro_generated_at || null, saved_at: Date.now() };
+    analisaAiCache[symbol] = { commentary: data.commentary, structured: data.structured || null, model: data.model, hasMakro: !!data.hasMakro, hasFund: !!data.hasFund, makroAt: data.makro_generated_at || null, analyzedAt: data.loaded_at || null, saved_at: Date.now() };
     _analisaSaveAi(symbol);
     if (analisaActive.symbol === symbol) _restoreAiResult(symbol);
   } catch(e) { /* silent — tombol "Analisa AI" manual tetap tersedia */ }
 }
 
-function _renderStructuredAi(structured, commentary, model, hasMakro, isCached, hasFund, makroAt) {
+function _renderStructuredAi(structured, commentary, model, hasMakro, isCached, hasFund, makroAt, analyzedAt) {
   // Label sumber: teknikal selalu; + makro (dengan umur ringkasan) kalau excerpt artikel
   // terpakai; + fundamental kalau blok terstruktur (cb_bias/COT/risk regime) terpakai.
   let makroLbl = 'makro';
@@ -4753,7 +4753,11 @@ function _renderStructuredAi(structured, commentary, model, hasMakro, isCached, 
   const srcTag = sources.length > 1 ? ` · <span style="color:#a78bfa">${sources.join(' + ')}</span>` : ' · teknikal';
   const cachedBadge = isCached ? ' <span style="color:var(--muted);font-size:10px">(cached)</span>' : '';
   const modelStr   = model ? ` · ${model}` : '';
-  let html = `<div class="analisa-ai-result"><div class="analisa-ai-label">🧠 AI${modelStr}${srcTag}${cachedBadge}</div>`;
+  // Jam analisa (WIB) — kapan hasil ini benar-benar di-generate server, bukan kapan
+  // browser menerimanya, supaya jelas beda antara hasil baru vs hasil cache lama
+  // yang di-restore dari localStorage/mode=cached.
+  const analyzedTag = analyzedAt ? ` <span style="color:var(--muted);font-size:10px">· di analisa jam ${fmtCBTime(analyzedAt)}</span>` : '';
+  let html = `<div class="analisa-ai-result"><div class="analisa-ai-label">🧠 AI${modelStr}${srcTag}${cachedBadge}${analyzedTag}</div>`;
 
   if (structured) {
     const bias      = (structured.bias || 'neutral').toLowerCase();
@@ -4805,7 +4809,7 @@ function _restoreAiResult(symbol) {
   const cached = analisaAiCache[symbol];
   if (!cached) return;
   const resultEl = document.getElementById('analisaAiResult');
-  resultEl.innerHTML = _renderStructuredAi(cached.structured || null, cached.commentary, cached.model, !!cached.hasMakro, true, !!cached.hasFund, cached.makroAt || null);
+  resultEl.innerHTML = _renderStructuredAi(cached.structured || null, cached.commentary, cached.model, !!cached.hasMakro, true, !!cached.hasFund, cached.makroAt || null, cached.analyzedAt || null);
   resultEl.style.display = 'block';
 }
 
@@ -5033,10 +5037,10 @@ async function analyzeOhlcvAi() {
       const hasMakro = data.hasMakro != null ? !!data.hasMakro : !!ringkasanContext;
       const hasFund  = !!data.hasFund;
       const makroAt  = data.makro_generated_at || (hasMakro ? ringkasanGeneratedAt : null);
-      analisaAiCache[reqSymbol] = { commentary: data.commentary, structured: data.structured || null, model: data.model, hasMakro, hasFund, makroAt, saved_at: Date.now() };
+      analisaAiCache[reqSymbol] = { commentary: data.commentary, structured: data.structured || null, model: data.model, hasMakro, hasFund, makroAt, analyzedAt: data.loaded_at || null, saved_at: Date.now() };
       _analisaSaveAi(reqSymbol);
       if (analisaActive.symbol === reqSymbol) {
-        resultEl.innerHTML = _renderStructuredAi(data.structured || null, data.commentary, data.model, hasMakro, false, hasFund, makroAt);
+        resultEl.innerHTML = _renderStructuredAi(data.structured || null, data.commentary, data.model, hasMakro, false, hasFund, makroAt, data.loaded_at || null);
         resultEl.style.display = 'block';
       }
     } else {

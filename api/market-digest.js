@@ -815,6 +815,41 @@ module.exports = async function handler(req, res) {
   res.setHeader('Surrogate-Control', 'no-store');
   res.setHeader('x-vercel-cache', 'BYPASS');
 
+  // Single-flight throttle (non-cron only): kalau ada request LAIN yang lagi generate
+  // atau baru saja selesai generate dalam DIGEST_LOCK_TTL detik terakhir, jangan ikut
+  // generate lagi — Call 1/2/3 hasilnya SAMA untuk semua orang (shared, bukan per-device,
+  // lihat latest_article), jadi generate ulang cuma menghasilkan kalimat beda-beda dari
+  // data yang sama, boros jatah AI harian (_ai_guard.js) untuk nol informasi baru.
+  // Beda dari withSingleFlight()/_fetch_lock.js yang polling pendek (cocok untuk fetch
+  // cepat ~1-2s) — generate digest bisa makan sampai 45-55s, jadi di sini losers TIDAK
+  // polling, langsung sajikan `latest_article` apa adanya (walau dari cron beberapa jam
+  // lalu) daripada ikut antre / ikut generate. TTL 55 detik ganda fungsi: mutex selama
+  // generate aktif + jeda pendek setelah selesai (tidak di-release manual — biar TTL
+  // alami jadi cooldown, request berikutnya yang datang saat TTL masih hidup otomatis
+  // dapat hasil segar yang baru saja ditulis pemenang, tanpa perlu generate baru lagi).
+  // Cron dikecualikan total — 3 jadwal tetap berjam-jam terpisah, tidak pernah tabrakan,
+  // dan harus selalu generate fresh apapun kondisi cache.
+  const DIGEST_LOCK_KEY = 'lock:market_digest_generate';
+  const DIGEST_LOCK_TTL = 55;
+  if (!isCronCall) {
+    let gotDigestLock = true;
+    try {
+      gotDigestLock = !!(await redisCmd('SET', DIGEST_LOCK_KEY, '1', 'NX', 'EX', DIGEST_LOCK_TTL));
+    } catch(e) { console.warn('Digest single-flight lock check failed (fail-open):', e.message); }
+    if (!gotDigestLock) {
+      try {
+        const raw = await redisCmd('GET', 'latest_article');
+        if (raw) {
+          console.log('market-digest: single-flight busy — serving latest_article without generating');
+          return res.status(200).json({ ...JSON.parse(raw), thesis_alerts: null, from_cache: 'busy' });
+        }
+      } catch(e) { console.warn('Digest single-flight cache read failed — falling through to generate:', e.message); }
+      // Tidak ada cache sama sekali (cold start) — lanjut generate walau lock dipegang
+      // request lain, lebih baik dobel generate sesekali di awal daripada user dapat
+      // respons kosong total.
+    }
+  }
+
   const OPENROUTER_KEY = process.env.OPENROUTER_API_KEY;
   const SAMBANOVA_KEY  = process.env.SAMBANOVA_API_KEY;
   const SAMBANOVA_KEY_CALL1 = process.env.SAMBANOVA_API_KEY_CALL1;
