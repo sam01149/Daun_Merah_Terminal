@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-07-11 (session 157 lanjutan 15 — download PDF langsung via jsPDF, ganti alur window.print())
+> **Last updated:** 2026-07-11 (session 157 lanjutan 16 — fix bug spasi-antar-huruf di PDF, justify jsPDF dibuang)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -45,6 +45,18 @@
 **Diverifikasi:**
 - `node --check` bersih (extract inline `<script>`, 518KB), CSS balanced (1204/1204 brace), test suite 190/190 hijau (1 test lama `_renderStructuredAi` sempat merah gara-gara dependency baru ke `_makroAgeLabel` belum di-extract di test — [test/esc_html.test.js](../test/esc_html.test.js) diperbaiki).
 - Smoke test terpisah (Node + paket `jspdf` npm sementara, `--no-save`, dihapus lagi setelah tes): jalankan `downloadRingkasanPdf`/`downloadAnalisaPdf` versi persis dari index.html dengan data mock realistis (thesis, thesis alert, artikel FX+XAU dengan tag, structured AI bias mixed + KESIMPULAN) — kedua fungsi menghasilkan PDF valid (`%PDF` magic bytes, >7KB, teks vector asli ketemu secara literal di content stream: "DAUN MERAH", "KESIMPULAN", "EUR/USD", dst — bukan gambar), filename match format `ringkasan_DD-MM-YYYY_HH-mm.pdf` / `analisa_...`. Edge case data kosong: toast muncul, tidak crash, tidak ada file ke-save.
+
+---
+
+## Changelog Session 157 lanjutan 16 (2026-07-11) — Fix Bug Spasi-Antar-Huruf di PDF (justify jsPDF dibuang)
+
+**Konteks:** user langsung coba download PDF hasil lanjutan 15 (screenshot PDF asli, bukan simulasi) — ketemu bug visual nyata: paragraf tertentu (contoh: bagian "Korelasi" di Ringkasan XAU) tampil dengan **spasi antar-HURUF melebar parah** ("A n o m a l i   k o r e l a s i..."), bukan cuma spasi antar-kata yang wajar untuk teks rata kanan-kiri.
+
+**Root cause:** `_pdfBuilder().para()` pakai `doc.text(line, x, y, { maxWidth, align: 'justify' })` bawaan jsPDF untuk efek rata kanan-kiri ala dokumen resmi. Implementasi justify jsPDF 2.5.2 ternyata meregangkan named-width lewat operator PDF `Tz`/`Tc` yang mendistribusikan sisa lebar ke **setiap karakter**, bukan cuma ke spasi antar-kata — di baris pendek/sedikit kata jadi terlihat rusak parah. Dikonfirmasi lewat inspeksi content stream PDF asli: versi lama pakai `Tz`/`Tc`, sedangkan `doc.text()` polos (tanpa `align`) cuma pakai `Tj` biasa.
+
+**Fix — [index.html](../index.html):** opsi `justify` dibuang total dari `para()` di `_pdfBuilder()` — semua paragraf PDF (Ringkasan & Analisa) sekarang rata kiri (ragged-right) polos, bukan full-justify. Tiga call-site (`{ justify: true }` di artikel FX/XAU dan komentar Analisa) ikut dibersihkan.
+
+**Diverifikasi:** `node --check` bersih, test suite 190/190 hijau, inspeksi langsung content stream PDF hasil generate (jsPDF npm sementara, `--no-save`) — konfirmasi tidak ada lagi operator `Tz`/`Tc` di teks paragraf, cuma `Tj` polos.
 
 ---
 

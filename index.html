@@ -4944,6 +4944,10 @@ function _pdfBuilder() {
     lines.forEach(line => { ensureSpace(5); doc.text(line, marginX, y); y += 5; });
     y += 1;
   }
+  // Rata kiri (ragged-right), BUKAN justify: align:'justify' bawaan jsPDF meregangkan
+  // spasi ANTAR-HURUF (bukan cuma antar-kata) buat ngisi lebar penuh — kelihatan wajar
+  // untuk baris panjang, tapi baris pendek/sedikit kata jadi terlihat "T e r e n g g a n g"
+  // parah (bug nyata, dikonfirmasi user dari hasil cetak). Rata kiri jauh lebih aman.
   function para(text, opts = {}) {
     if (!text || !text.trim()) return;
     const size = opts.size || 10.2;
@@ -4952,11 +4956,9 @@ function _pdfBuilder() {
     doc.setTextColor(...(opts.color || [26, 26, 26]));
     const lines = doc.splitTextToSize(text, contentW);
     const lh = ptToMm(size);
-    lines.forEach((line, i) => {
+    lines.forEach(line => {
       ensureSpace(lh + 1);
-      const isLast = i === lines.length - 1;
-      if (opts.justify && !isLast) doc.text(line, marginX, y, { maxWidth: contentW, align: 'justify' });
-      else doc.text(line, marginX, y);
+      doc.text(line, marginX, y);
       y += lh;
     });
     y += opts.gapAfter ?? 2.8;
@@ -5051,11 +5053,11 @@ function downloadRingkasanPdf() {
   const { fx, xau } = splitArticleParts(d.article);
   if (fx) {
     b.heading('Analisis Berita · Headline Momentum');
-    _articleToPdfBlocks(fx).forEach(blk => { if (blk.tag) b.subheading(blk.tag); b.para(blk.body, { justify: true }); });
+    _articleToPdfBlocks(fx).forEach(blk => { if (blk.tag) b.subheading(blk.tag); b.para(blk.body); });
   }
   if (xau) {
     b.heading('XAUUSD');
-    _articleToPdfBlocks(xau).forEach(blk => { if (blk.tag) b.subheading(blk.tag); b.para(blk.body, { justify: true }); });
+    _articleToPdfBlocks(xau).forEach(blk => { if (blk.tag) b.subheading(blk.tag); b.para(blk.body); });
   }
 
   b.footer('⚠ Ringkasan dihasilkan AI dari headline & data pihak ketiga — bisa keliru, bukan nasihat keuangan. Detail di tab PETUNJUK › Disclaimer.');
@@ -5111,7 +5113,7 @@ function downloadAnalisaPdf() {
     const trimmed = l.trim();
     const m = trimmed.match(/^kesimpulan:\s*(.*)$/i);
     if (m) b.kesimpulanBox(m[1]);
-    else b.para(trimmed, { justify: true });
+    else b.para(trimmed);
   });
 
   b.footer('⚠ Level & bias di atas dihasilkan AI dan bisa keliru — bukan nasihat keuangan. Verifikasi ke chart sebelum dipakai.');
