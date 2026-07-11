@@ -3917,6 +3917,24 @@ Nvidia NIM:  https://integrate.api.nvidia.com/v1
 Mistral:     https://api.mistral.ai/v1
 ```
 
+### Update 2026-07-11 — Scan Provider Baru (Cerebras/SambaNova-like)
+
+> Konteks: user minta cari cloud inference AI baru selain yang sudah dinilai di atas. Kriteria sama seperti riset awal: truly free persisten (bukan credit trial), tanpa kartu kredit, OpenAI-compatible, model cukup besar/mumpuni, rate limit viable produksi (bukan 2 RPM ala Mistral).
+
+| Provider | Model Terbesar Gratis | Rate Limit Free | OpenAI-compat | Verdict |
+|----------|----------------------|------------------|----------------|---------|
+| **Vercel AI Gateway** | Ratusan model (routing ke OpenAI/Anthropic/Gemini/Mistral/xAI/dst) | $5 kredit/bulan (refresh otomatis), pass-through harga provider asli (bukan diskon) | Ya (`ai-gateway.vercel.sh` — AI SDK, OpenAI Chat Completions, Anthropic Messages) | **Menarik karena app sudah di Vercel** — base URL swap doang, tanpa perlu banyak API key. Tapi $5/bulan pass-through ke harga asli provider = tidak lebih murah dari pakai Groq/Cerebras langsung yang $0. Nilai utamanya: auto-failover antar provider built-in, bisa gantikan logic fallback manual di kode. **Worth dicoba sebagai layer routing**, bukan sebagai sumber token gratis tambahan. |
+| **GitHub Models** | `Meta-Llama-3.1-405B-Instruct` | Tier gratis: ~50 RPD / 10 RPM untuk model besar (naik kalau akun ada histori GitHub Copilot) | Ya (`models.github.ai/inference`) | **Tidak viable produksi** — 50 RPD terlalu rendah untuk cron/briefing rutin, sama seperti alasan Mistral direject. |
+| **Cohere** | Command R+ | 20 RPM tapi cuma 1.000 call/bulan, **trial key eksplisit dilarang dipakai produksi/komersial** di ToS | Tidak native (custom SDK, meski ada wrapper OpenAI-compat pihak ketiga) | **Reject** — dilarang untuk use case produksi oleh ToS sendiri, bukan cuma soal limit. |
+| **SiliconFlow** | Hanya model kecil yang gratis permanen: `Qwen3-8B`, `DeepSeek-R1-Distill-Qwen-7B` (model besar seperti DeepSeek-V3/R1 penuh = berbayar) | 100 request/hari untuk model gratis | Ya (`api.siliconflow.com/v1`) | **Reject untuk Call 1** — model gratis terlalu kecil (8B) dibanding Qwen3-235B yang jadi benchmark. Bisa dipertimbangkan kalau butuh model kecil murah untuk tugas ringan (bukan briefing utama). |
+| **Zhipu AI / GLM (Z AI)** | GLM-4.5-Flash / GLM-4.7-Flash, 128-200K context | Gratis tanpa kartu, **tapi cuma 1 concurrent request** (sequential only) | Ya (`open.bigmodel.cn/api/paas/v4`) | **Reject** — signup butuh nomor telepon China, jadi blocker duluan sebelum sempat nilai rate limit. |
+| **Kluster.ai** | Klaim host DeepSeek-R1, Qwen3-235B | **Rate limit tidak dipublikasikan** — tidak ketemu angka pasti dari dokumentasi maupun review pihak ketiga | Ya (klaim OpenAI-compat) | **Undetermined** — perlu signup manual buat cek limit aktual sebelum bisa dinilai. Tidak direkomendasikan tanpa verifikasi langsung. |
+| **LLM7.io** | DeepSeek R1, Qwen2.5 Coder | 15 RPM (30 RPM dengan token gratis tambahan) | Ya | Kandidat tambahan tier 2 (mirip Groq TPM-limited) — belum diverifikasi langsung, tapi tidak masuk kategori "reject" otomatis. Prioritas rendah, provider kecil/kurang dikenal. |
+| **Pollinations AI** | `openai-large` (text) | Tanpa signup, tapi rate limit per-IP **tidak terdokumentasi** dan berpotensi shared/exhausted karena IP Vercel serverless sering shared range | Ya (`gen.pollinations.ai/v1`, ada wrapper text/audio/image) | **Reject untuk produksi** — reliabilitas dan kualitas model tidak jelas, rate limit per-IP berisiko besar di lingkungan serverless (IP bisa dipakai bareng tenant lain). |
+| **NVIDIA NIM, ModelScope, AnyAPI** | — | — | Variatif (ModelScope tidak OpenAI-compat) | Tidak menambah value dibanding provider yang sudah masuk Tier 1 (NVIDIA NIM sudah dinilai credit-only; AnyAPI cuma agregator dengan limit setara OpenRouter yang sudah dipakai). |
+
+**Kesimpulan:** tidak ada provider baru yang mengalahkan kombinasi Tier 1 yang sudah ada (Cerebras, OpenRouter, SambaNova, Google AI Studio, Groq). Satu-satunya temuan yang benar-benar berguna adalah **Vercel AI Gateway** sebagai potensi *routing layer* (bukan sumber token gratis) karena app sudah native di Vercel — bisa menyederhanakan kode fallback multi-provider jadi satu base URL, tapi butuh keputusan terpisah apakah worth trade-off (harga pass-through penuh vs $0 di provider free tier langsung). Tidak ada perubahan kode dari riset ini.
+
 ---
 
 ## Backlog — Data Source Upgrades
