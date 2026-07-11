@@ -1,10 +1,29 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-07-11 (session 156 — audit SIMULASI kalender: fix jebakan BEAT/MISS indikator terbalik + transparansi dasar bertumpu)
+> **Last updated:** 2026-07-11 (session 157 — dokumentasi baru: daun_merah_ai.md + daun_merah_vendor.md)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
-> **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root).
+> **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+---
+
+## Changelog Session 157 (2026-07-11) — Dokumentasi Baru: Pemakaian AI + Inventaris Vendor
+
+**Konteks:** permintaan user untuk dua dokumen referensi baru terpisah dari `daun_merah.md` yang sudah sangat panjang: `daun_merah_ai.md` (khusus AI — limit detail + estimasi "paling banyak dipakai berapa kali", bahasa sederhana) dan `daun_merah_vendor.md` (semua vendor/layanan eksternal, AI maupun bukan).
+
+**[daun_merah_ai.md](daun_merah_ai.md)** — disusun dari pembacaan langsung kode (`api/market-digest.js`, `api/admin.js`, `api/journal.js`, `api/_ai_guard.js`), bukan asumsi:
+- Peta 4 fitur AI (Ringkasan Berita, Analisa AI per Pair, Analisa Fundamental, AI Coach Jurnal): tombol, trigger otomatis, cache, rate limit.
+- **Temuan penting saat penyusunan:** dugaan awal (Nemotron 3 Ultra via OpenRouter jadi primary Call 1/2/3) TERNYATA SALAH — kode menunjukkan Nemotron **didemote dari jalur produksi** (session 145 lanjutan 4, 4/4 tes live gagal), SambaNova kembali jadi primary asli. OpenRouter (45/hari) dan Ollama Cloud (150/hari) saat ini **idle** — nyaris tidak terpakai kecuali dites manual via `?test_nemotron=1`. Draft awal dokumen sempat menulis rantai fallback yang salah, dikoreksi sebelum difinalkan.
+- Rantai fallback provider yang benar per fitur, tabel jatah harian per pool (`_ai_guard.js` `DEFAULT_LIMITS`), dan identifikasi **SambaNova akun-1** sebagai pool paling ramai (dipakai primary oleh 2 fitur sekaligus: Ringkasan Berita Call 2/3/4 DAN Analisa AI per Pair).
+- Estimasi pemakaian harian dalam bahasa sederhana: Ringkasan Berita manual ±97×/hari (kalau sendirian), Analisa AI per Pair ±60-75×/hari, Analisa Fundamental **maksimal mutlak 4×/hari** (cache global 6 jam, tanpa tombol paksa refresh), kombinasi akun-1 di hari ramai ±100-125 dari jatah 200/hari.
+
+**[daun_merah_vendor.md](daun_merah_vendor.md)** — inventaris lengkap via grep `process.env.*` di seluruh `api/*.js` + `.github/workflows/*.yml`:
+- Infrastruktur inti (Vercel, GitHub Actions cron, Upstash Redis), AI providers (ringkas, cross-ref ke daun_merah_ai.md), data makro/bank sentral (FRED, ECB, BoE/BoJ/BoC/RBA/RBNZ/SNB, CFTC, CME, Barchart, Polymarket), data harga (Yahoo Finance, Binance, Stooq, TradingView), proxy (ScraperAPI), RSS/berita (FinancialJuice, InvestingLive, ActionForex, dll), notifikasi (Telegram, VAPID).
+- **Temuan:** daftar env var lama di § Environment (blok "Stack" di bawah) sudah tidak lengkap — tidak menyebut `SCRAPER_API_KEY`, `BARCHART_API_KEY`, `APP_KEY`, atau env var AI selain `GROQ_API_KEY`. Daftar terlengkap sekarang ada di daun_merah_vendor.md §8.
+- **ScraperAPI** teridentifikasi sebagai satu-satunya vendor berbayar murni di seluruh app (proxy residential IP untuk bypass blokir Akamai WAF milik CME Group).
+
+**Tidak ada perubahan kode** — murni dokumentasi baru berdasarkan audit kode yang sudah ada.
 
 ---
 
