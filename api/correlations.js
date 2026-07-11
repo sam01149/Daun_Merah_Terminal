@@ -428,14 +428,19 @@ module.exports = async function handler(req, res) {
   // Sources (tried in order): CME CVOL Skew → Barchart OnDemand → unavailable message.
   if (req.query.action === 'risk-reversal') {
     const RR_CACHE_KEY = 'rr_cache_v2'; // v2: new /services/cvol endpoint + 6 pairs incl XAU
-    // TTL dinaikkan dari 3600 (1h) ke 21600 (6h) — session 157 lanjutan 4: tiap refresh
-    // menghabiskan 6 ScraperAPI credit (1 per pair CME CVOL), dan di TTL 1h itu bisa
-    // menghabiskan free tier ScraperAPI (1.000 credit/bulan) dalam ~12 hari kalau trafik
-    // panel korelasi/vol ramai tiap jam. RR/skew opsi juga secara alami lambat bergerak
-    // (positioning institusional, bukan harga real-time) — 6h konsisten dengan TTL
-    // rate-path.js (Fed Funds futures, juga 4h) dan fundamental_analysis (6h). Lihat
-    // CATATAN STALENESS di market-digest.js yang sekarang mencakup blok ini juga.
-    const RR_CACHE_TTL = 21600;
+    // Session 157 lanjutan 4: sempat dinaikkan 3600 (1h) -> 21600 (6h) karena tiap refresh
+    // dulu menghabiskan 6 ScraperAPI credit (1 per pair, 6 request terpisah) — di TTL 1h itu
+    // menghabiskan free tier (1.000 credit/bulan) dalam ~12 hari (dikonfirmasi lewat dashboard
+    // ScraperAPI user: 417/1.000 credit terpakai dalam 5 hari).
+    // Session 157 lanjutan 5: DIBALIKIN ke 3600 (1h) setelah fetch di-batch jadi 1 request
+    // (lihat komentar di CME_CVOL_PAIRS fetch di bawah) — cost turun 6x jadi 1 credit/refresh,
+    // jadi 1h sekarang cuma ~720 credit/bulan (CVOL) + ~180 (FedWatch rate-path.js) = ~900/bulan
+    // skenario TERBURUK (asumsi trafik nonstop 24 jam) — realistisnya jauh di bawah itu karena
+    // trafik riil app ini tidak 24 jam penuh. RR/skew tetap lambat bergerak secara alami
+    // (positioning institusional), tapi user memilih freshness lebih tinggi selama budget masih
+    // aman — 1h dipilih sebagai titik seimbang, BUKAN 30/45 menit yang sudah lewat budget bahkan
+    // di skenario batched ini (lihat perhitungan session 157 lanjutan 5).
+    const RR_CACHE_TTL = 3600;
 
     try {
       const cached = await redisCmd('GET', RR_CACHE_KEY);
@@ -473,31 +478,39 @@ module.exports = async function handler(req, res) {
     let pairs = {}, source = null, cmeFailedReasons = [];
     const scraperKey = process.env.SCRAPER_API_KEY;
 
-    // Attempt 1: CME CVOL /services endpoint — via ScraperAPI proxy if key set, else direct
-    // Response: array [{ skew: "-0.4020", atmInd, cvolPrice, ... }]
+    // Attempt 1: CME CVOL /services endpoint — via ScraperAPI proxy if key set, else direct.
+    // Session 157 lanjutan 5: dibatch jadi SATU request untuk semua 6 symbol (comma-separated)
+    // alih-alih 6 request paralel terpisah — dikonfirmasi via live test bahwa endpoint CME ini
+    // support multi-symbol (`?symbol=EUVL,GBVL,JPVL,...`), balikin array berisi satu entry per
+    // symbol. Ini motong biaya ScraperAPI dari 6 credit/refresh jadi 1 credit/refresh (6x lebih
+    // hemat) — itu sebabnya RR_CACHE_TTL di atas bisa balik ke 1 jam (bukan 6 jam) tanpa risiko
+    // kuota bulanan habis lagi: 24 refresh/hari × 1 credit = 24 credit/hari, di bawah rata-rata
+    // ~33/hari yang aman untuk jatah 1.000/bulan.
     try {
-      const settled = await Promise.allSettled(
-        Object.entries(CME_CVOL_PAIRS).map(async ([pair, code]) => {
-          const targetUrl = `https://www.cmegroup.com/services/cvol?symbol=${code}&isProtected&_t=${Date.now()}`;
-          const fetchUrl = scraperKey
-            ? `https://api.scraperapi.com?api_key=${scraperKey}&url=${encodeURIComponent(targetUrl)}`
-            : targetUrl;
-          const fetchHeaders = scraperKey ? { 'Accept': 'application/json' } : CME_HDR;
-          const r = await fetch(fetchUrl, { headers: fetchHeaders, signal: AbortSignal.timeout(15000) });
-          if (!r.ok) throw new Error(`CME CVOL ${code} HTTP ${r.status}`);
-          const json = await r.json();
-          // Response is array or single object — normalize to single entry
-          const entry = Array.isArray(json) ? json[0] : json;
-          if (!entry) throw new Error(`CME CVOL ${code}: empty response`);
-          const skew = parseFloat(entry.skew ?? entry.SkewDiff ?? entry.skewDiff ?? entry.value ?? 'x');
-          if (isNaN(skew)) throw new Error(`CME CVOL ${code}: no parseable skew (keys: ${Object.keys(entry).join(',')})`);
-          return { pair, rr_value: +skew.toFixed(3), source: 'CME CVOL' };
-        })
-      );
-      const ok = settled.filter(r => r.status === 'fulfilled').map(r => r.value);
-      const failed = settled.filter(r => r.status === 'rejected').map(r => r.reason?.message);
+      const codeToPair = Object.fromEntries(Object.entries(CME_CVOL_PAIRS).map(([pair, code]) => [code, pair]));
+      const symbolList = Object.values(CME_CVOL_PAIRS).join(',');
+      const targetUrl = `https://www.cmegroup.com/services/cvol?symbol=${symbolList}&isProtected&_t=${Date.now()}`;
+      const fetchUrl = scraperKey
+        ? `https://api.scraperapi.com?api_key=${scraperKey}&url=${encodeURIComponent(targetUrl)}`
+        : targetUrl;
+      const fetchHeaders = scraperKey ? { 'Accept': 'application/json' } : CME_HDR;
+      const r = await fetch(fetchUrl, { headers: fetchHeaders, signal: AbortSignal.timeout(15000) });
+      if (!r.ok) throw new Error(`CME CVOL batch HTTP ${r.status}`);
+      const json = await r.json();
+      // Response: array of entries, satu per symbol — urutan tidak dijamin sama dengan query,
+      // jadi mapping balik ke pair lewat field `symbol` di tiap entry, bukan posisi array.
+      const entries = Array.isArray(json) ? json : [json];
+      const ok = [], failed = [];
+      for (const entry of entries) {
+        const code = entry?.symbol;
+        const pair = code ? codeToPair[code] : null;
+        if (!pair) { failed.push(`CME CVOL: unrecognized symbol in response "${code}"`); continue; }
+        const skew = parseFloat(entry.skew ?? entry.SkewDiff ?? entry.skewDiff ?? entry.value ?? 'x');
+        if (isNaN(skew)) { failed.push(`CME CVOL ${code}: no parseable skew (keys: ${Object.keys(entry).join(',')})`); continue; }
+        ok.push({ pair, rr_value: +skew.toFixed(3), source: 'CME CVOL' });
+      }
       cmeFailedReasons = failed;
-      if (failed.length) console.warn('risk-reversal: CME CVOL partial failures:', failed);
+      if (failed.length) console.warn('risk-reversal: CME CVOL batch partial failures:', failed);
       if (ok.length >= 3) {
         ok.forEach(d => { pairs[d.pair] = { rr_value: d.rr_value, source: d.source }; });
         source = 'cme_cvol';

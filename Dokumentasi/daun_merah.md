@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-07-11 (session 157 lanjutan 4 — fix pemakaian ScraperAPI: TTL CVOL 1h→6h + staleness note)
+> **Last updated:** 2026-07-11 (session 157 lanjutan 5 — CVOL di-batch jadi 1 request, TTL balik ke 1h tanpa tambah biaya)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -68,6 +68,20 @@
 - **Diverifikasi**: `node --check` bersih di kedua file, test suite 190/190 tetap hijau, plus simulasi isolated 4 skenario untuk logic age-tag (data segar, data 3.5 jam, tanpa computed_at/legacy, data unavailable) — semua PASS.
 
 **Verifikasi ulang (diminta user setelah draft pertama):** cek baris-per-baris ulang rantai fallback tiap fitur langsung dari kode (bukan dari draft sebelumnya). Ketemu 1 koreksi lagi: **Analisa AI per Pair (`ohlcv_analyze`) TIDAK punya Groq di rantainya** — cuma 2 tingkat (SambaNova akun-1 → akun-2), berbeda dari 3 fitur AI lain yang semuanya punya Groq sebagai jaring pengaman terakhir. Groq & Ollama Cloud sengaja dicoret dari rantai ini 2026-07-10 (Ollama timeout konsisten 15s, kualitas Groq/llama-3.3 dinilai di bawah DeepSeek-V3.2 akun-2). Juga ditambahkan: Ringkasan Berita Call 1 punya fallback ke-4 non-AI (template deterministik berbasis kategori berita) kalau semua provider AI gagal — jadi fitur itu tidak pernah benar-benar kosong.
+
+---
+
+## Changelog Session 157 lanjutan 5 (2026-07-11) — CVOL Di-batch Jadi 1 Request, TTL Balik ke 1 Jam Tanpa Tambah Biaya
+
+**Konteks:** setelah fix TTL 1h→6h (lanjutan 4), user push balik: "harusnya makin cepat kita menerima info itu makin bagus ga sih?" lalu "emang ga ada cara yang bisa kita usahakan?". Alih-alih trade-off freshness-vs-biaya, dicari cara motong BIAYA per refresh alih-alih frekuensinya.
+
+**Temuan kunci:** endpoint CME `/services/cvol` ternyata **support multi-symbol dalam satu request** (`?symbol=EUVL,GBVL,JPVL,...` comma-separated) — awalnya dites dari environment saya sendiri (403, ternyata IP saya juga diblokir WAF CME, bukan cuma Vercel), jadi user yang menjalankan test langsung pakai `SCRAPER_API_KEY` sendiri via `curl.exe` di PowerShell. Hasilnya: 1 request balikin array 3 entry (EUVL, GBVL, JPVL) dengan field `skew` masing-masing utuh — dikonfirmasi CME support batching.
+
+**Fix — [api/correlations.js](../api/correlations.js):** fetch CVOL direfactor dari **6 request paralel terpisah (6 credit/refresh)** jadi **1 request batch (1 credit/refresh)** — cost turun 6x. Mapping balik ke pair dilakukan lewat field `symbol` di tiap entry response (bukan posisi array — CME tidak menjamin urutan sama dengan query). `RR_CACHE_TTL` **dibalikin dari 21600 (6h) ke 3600 (1 jam)** — dengan cost baru, 1 jam TTL cuma ~720 credit/bulan (CVOL) + ~180 (FedWatch, rate-path.js TTL 4h terpisah) = ~900/bulan skenario TERBURUK (trafik nonstop 24 jam), masih di bawah jatah 1.000/bulan. Sempat dihitung opsi 30/45 menit tapi keduanya lewat budget bahkan di skenario batched ini — 1 jam jadi titik seimbang.
+
+**Bonus temuan:** user tanya di mana bisa lihat angka skew XAU/USD — jawabannya ada di tab "Fundamental Data", kotak "RISK REVERSAL 25-DELTA" di bagian atas (bukan di panel Analisa AI per pair). Kode render (`renderRiskReversal()` di index.html) tidak meng-exclude XAU/USD — render generik dari `Object.entries(rrData.pairs)` — jadi kalau XAU/USD tidak muncul di sana, kemungkinan besar fetch GCVL (kode CME untuk gold) sedang gagal di siklus tertentu, bukan bug UI. Belum diinvestigasi lebih lanjut (di luar scope fix TTL/batching ini).
+
+**Diverifikasi:** simulasi parsing pakai data JSON ASLI dari live test user (termasuk kasus symbol tak dikenal & skew rusak — di-drop dengan benar, tidak crash), `node --check` bersih, test suite 190/190 tetap hijau. Penanda umur `[data X jam lalu]` + perluasan CATATAN STALENESS dari fix sebelumnya (lanjutan 4) tetap dipertahankan — sekarang biasanya menunjukkan "<1 jam" alih-alih "beberapa jam".
 
 ---
 
