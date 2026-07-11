@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-07-11 (session 157 lanjutan 5 — CVOL di-batch jadi 1 request, TTL balik ke 1h tanpa tambah biaya)
+> **Last updated:** 2026-07-11 (session 157 lanjutan 6 — Risk Reversal pindah ke panel teknikal per-pair + Call/Put IV gratis)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -82,6 +82,21 @@
 **Bonus temuan:** user tanya di mana bisa lihat angka skew XAU/USD — jawabannya ada di tab "Fundamental Data", kotak "RISK REVERSAL 25-DELTA" di bagian atas (bukan di panel Analisa AI per pair). Kode render (`renderRiskReversal()` di index.html) tidak meng-exclude XAU/USD — render generik dari `Object.entries(rrData.pairs)` — jadi kalau XAU/USD tidak muncul di sana, kemungkinan besar fetch GCVL (kode CME untuk gold) sedang gagal di siklus tertentu, bukan bug UI. Belum diinvestigasi lebih lanjut (di luar scope fix TTL/batching ini).
 
 **Diverifikasi:** simulasi parsing pakai data JSON ASLI dari live test user (termasuk kasus symbol tak dikenal & skew rusak — di-drop dengan benar, tidak crash), `node --check` bersih, test suite 190/190 tetap hijau. Penanda umur `[data X jam lalu]` + perluasan CATATAN STALENESS dari fix sebelumnya (lanjutan 4) tetap dipertahankan — sekarang biasanya menunjukkan "<1 jam" alih-alih "beberapa jam".
+
+---
+
+## Changelog Session 157 lanjutan 6 (2026-07-11) — Risk Reversal Pindah ke Panel Teknikal Per-Pair + Call/Put IV Gratis
+
+**Konteks:** user bingung XAU/USD skew tidak ketemu di tab Fundamental (dicek lewat curl live: datanya sebenarnya ADA dan segar — murni user cari di lokasi yang salah, XAU tidak masuk 8 kartu currency karena bukan currency). Dari situ user mengusulkan: "mending dibuat ke pair teknikal aja la, biar cocok aja gitu" + "sesuaikan dengan pairnya" — RR itu metrik per-pair, jadi lebih pas ditaruh di panel Analisa (RSI/SMA/MACD/ATR) yang memang per-pair, bukan di tab Fundamental yang terorganisir per-currency.
+
+**Perubahan — [index.html](../index.html):**
+- Kotak "RISK REVERSAL 25-DELTA" generik (6 pair sekaligus) di tab Fundamental **dihapus** (`fundRRSection`/`fundRRGrid`/`fundRRSource` + fungsi `renderRiskReversal()`).
+- `fetchRiskReversal()` sekarang dipicu dari `loadAnalisa()` (sekali per sesi, `rrData` dicache global), bukan dari `fetchFundamental()`.
+- `renderAnalisa()` — kartu "INDIKATOR" (dulu "RSI / SMA / MACD / ATR", sekarang **"... / RR"**) dapat blok baru: RR value pair aktif (`rrData.pairs[analisaActive.label]`), dengan label Call Bias/Put Bias/Neutral sama seperti sebelumnya. NZD/USD & USD/CHF (2 pair tanpa data CVOL karena options terlalu illiquid) otomatis skip blok ini, tidak crash.
+
+**Bonus temuan user (di tengah kerjaan ini) — Call IV / Put IV ternyata GRATIS:** user tanya "bisa ga masing-masing pair dipanggil put/call-nya, tetap 1 credit?" — dicek ulang JSON respons CME CVOL yang sudah didapat sebelumnya, ternyata field `upvarMetric` dan `dnvarMetric` **sudah ada di respons yang sama** (0 credit tambahan) dan secara matematis **persis** `upvarMetric − dnvarMetric = skew` (diverifikasi exact match 3/3 pair dari data live). `upvarMetric` = komponen upside/call, `dnvarMetric` = komponen downside/put — padanan `call_iv`/`put_iv` yang sebelumnya cuma tersedia dari fallback Barchart (yang sendirinya tidak aktif). Sekarang diekstrak di [api/correlations.js](../api/correlations.js) dan ditampilkan sebagai baris "CALL IV / PUT IV" di kartu indikator.
+
+**Diverifikasi:** simulasi end-to-end backend-parsing + frontend-render pakai data JSON asli (EUR/USD → put bias -0.45, call/put IV 5.35/5.81; USD/JPY → call bias +2.40, call/put IV 9.26/6.85; NZD/USD → di-skip aman tanpa data) — semua PASS. `node --check` bersih di kedua file, grep memastikan tidak ada sisa referensi ke elemen DOM yang dihapus, test suite 190/190 tetap hijau.
 
 ---
 

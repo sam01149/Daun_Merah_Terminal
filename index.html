@@ -3339,11 +3339,6 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
         </button>
       </div>
     </div>
-    <!-- Risk Reversal (25-delta implied vol skew) -->
-    <div id="fundRRSection" style="display:none;margin-bottom:12px;padding:10px 12px;background:var(--surface);border:1px solid var(--border);border-radius:4px;font-family:'DM Mono',monospace">
-      <div style="font-size:9px;color:var(--muted);letter-spacing:.1em;margin-bottom:8px">RISK REVERSAL 25-DELTA <span id="fundRRSource" style="color:var(--border);margin-left:4px"></span></div>
-      <div id="fundRRGrid" style="display:flex;flex-wrap:wrap;gap:8px 16px"></div>
-    </div>
     <!-- Strength Ranking Overview -->
     <div class="fund-rank-section" id="fundRankSection" style="display:none">
       <div class="fund-rank-label">
@@ -4678,6 +4673,11 @@ async function loadAnalisa(symbol, label, chipEl) {
   startAnalisaAutoRefresh();
   try { localStorage.setItem(LS_ANALISA_LAST, symbol); } catch(e) {}
 
+  // Risk Reversal: fetch sekali (global, semua pair sekaligus), lalu tiap ganti pair
+  // tinggal re-render dari cache rrData yang sudah ada (lihat renderAnalisa()) —
+  // tidak perlu fetch ulang per klik pair.
+  if (!rrData) fetchRiskReversal();
+
   const emptyEl   = document.getElementById('analisaEmpty');
   const contentEl = document.getElementById('analisaContent');
   const resultEl  = document.getElementById('analisaAiResult');
@@ -4959,9 +4959,32 @@ function renderAnalisa() {
     </div>`;
   }
 
+  // Risk Reversal 25-delta (session 157 lanjutan 6) — per-pair, bukan lump semua pair
+  // seperti dulu di tab Fundamental. NZD/USD & USD/CHF sengaja tidak punya data (CME:
+  // options terlalu illiquid, tidak ada field skew) — blok ini otomatis skip di situ.
+  const rr = rrData?.pairs?.[analisaActive.label];
+  if (rr) {
+    const val   = rr.rr_value;
+    const abs   = Math.abs(val);
+    const rrCls = abs < 0.2 ? '' : val > 0 ? 'up' : 'down';
+    const rrLbl = abs < 0.2 ? 'Neutral' : val > 0 ? 'Call Bias ↑ (bullish)' : 'Put Bias ↓ (bearish)';
+    const SRC_LABEL = { cme_cvol: 'CME CVOL', barchart: 'Barchart 25d', cme_zq_quote: 'CME' };
+    const srcLbl = SRC_LABEL[rrData.source] || rrData.source || '';
+    // call_iv/put_iv: dari upvarMetric/dnvarMetric CME (session 157 lanjutan 6) atau
+    // fallback Barchart — sama-sama 0 credit tambahan, sudah ikut di response utama.
+    const ivHtml = (rr.call_iv != null && rr.put_iv != null)
+      ? `<div class="analisa-stat"><div class="analisa-stat-label">CALL IV / PUT IV</div><div class="analisa-stat-val" style="font-size:11px">${rr.call_iv.toFixed(2)} / ${rr.put_iv.toFixed(2)}</div></div>`
+      : '';
+    indSections += `<div class="analisa-tf-main" style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border)">
+      <div class="analisa-stat"><div class="analisa-stat-label">RISK REVERSAL 25D</div><div class="analisa-stat-val ${rrCls}">${val > 0 ? '+' : ''}${val.toFixed(2)} <small>${rrLbl}</small></div></div>
+      ${ivHtml}
+      <div class="analisa-stat"><div class="analisa-stat-label">SUMBER</div><div class="analisa-stat-val" style="font-size:11px">${srcLbl}</div></div>
+    </div>`;
+  }
+
   if (indSections) {
     indEl.innerHTML = `<div class="analisa-tf-card" style="border-left-color:#a78bfa">
-      <div class="analisa-tf-label">INDIKATOR — RSI / SMA / MACD / ATR</div>
+      <div class="analisa-tf-label">INDIKATOR — RSI / SMA / MACD / ATR / RR</div>
       ${indSections}
     </div>`;
   } else {
@@ -6425,7 +6448,6 @@ async function fetchFundamental(refresh = false) {
     const el = document.getElementById('fundLastUpdated');
     if (el) el.textContent = 'baru saja';
     renderFundamental();
-    fetchRiskReversal(); // fire-and-forget: load RR independently
     fetchLabourMarket(refresh); // fire-and-forget: refresh=true memaksa bypass TTL client
   } catch(e) {
     if (grid) grid.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:20px;color:var(--muted);font-size:11px">Gagal memuat: ${escHtml(e.message)}</div>`;
@@ -6434,54 +6456,20 @@ async function fetchFundamental(refresh = false) {
   }
 }
 
+// Risk Reversal (25-delta skew) — session 157 lanjutan 6: dipindah dari kotak generik
+// 6-pair di tab Fundamental ke kartu INDIKATOR panel Analisa per-pair (lebih "cocok"
+// karena RR itu sendiri memang metrik per-pair, bukan per-currency seperti data
+// fundamental lain di tab itu). Di-fetch sekali (global, semua pair) lalu di-render
+// ulang tiap ganti pair via renderAnalisa() — filter ke rrData.pairs[label] pair aktif.
 let rrData = null;
 
 async function fetchRiskReversal() {
   try {
     const r = await fetch('/api/correlations?action=risk-reversal', { signal: AbortSignal.timeout(12000) });
     if (!r.ok) return;
-    const d = await r.json();
-    rrData = d;
-    renderRiskReversal();
+    rrData = await r.json();
+    renderAnalisa();
   } catch(e) { console.warn('fetchRiskReversal failed:', e.message); }
-}
-
-function renderRiskReversal() {
-  const section = document.getElementById('fundRRSection');
-  const grid    = document.getElementById('fundRRGrid');
-  const srcEl   = document.getElementById('fundRRSource');
-  if (!section || !grid) return;
-
-  if (!rrData || !rrData.available || !rrData.pairs) {
-    section.style.display = 'none';
-    return;
-  }
-
-  const SRC_LABEL = { cme_cvol: 'CME CVOL', barchart: 'Barchart 25d', cme_zq_quote: 'CME' };
-  if (srcEl) srcEl.textContent = SRC_LABEL[rrData.source] || rrData.source || '';
-
-  const items = Object.entries(rrData.pairs).map(([pair, d]) => {
-    const val  = d.rr_value;
-    const abs  = Math.abs(val);
-    const color = abs < 0.2 ? 'var(--muted)'
-                : val > 0   ? 'var(--green)'
-                :              'var(--accent)';
-    const label = abs < 0.2 ? 'Neutral'
-                : val > 0   ? 'Call Bias ↑'
-                :              'Put Bias ↓';
-    const tip = d.call_iv != null
-      ? `title="Call IV: ${d.call_iv}  Put IV: ${d.put_iv}"`
-      : '';
-    return `<div ${tip} style="min-width:100px">
-      <div style="font-size:9px;color:var(--muted)">${pair}</div>
-      <div style="font-size:13px;font-weight:600;color:${color}">${val > 0 ? '+' : ''}${val.toFixed(2)}</div>
-      <div style="font-size:8px;color:${color}">${label}</div>
-    </div>`;
-  });
-
-  if (items.length === 0) { section.style.display = 'none'; return; }
-  grid.innerHTML = items.join('');
-  section.style.display = 'block';
 }
 
 // ── US LABOUR MARKET ASSESSMENT (blok di dalam detail USD / fd overlay) ──────

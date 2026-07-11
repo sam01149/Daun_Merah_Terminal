@@ -507,12 +507,19 @@ module.exports = async function handler(req, res) {
         if (!pair) { failed.push(`CME CVOL: unrecognized symbol in response "${code}"`); continue; }
         const skew = parseFloat(entry.skew ?? entry.SkewDiff ?? entry.skewDiff ?? entry.value ?? 'x');
         if (isNaN(skew)) { failed.push(`CME CVOL ${code}: no parseable skew (keys: ${Object.keys(entry).join(',')})`); continue; }
-        ok.push({ pair, rr_value: +skew.toFixed(3), source: 'CME CVOL' });
+        // Session 157 lanjutan 6: upvarMetric/dnvarMetric SUDAH ada di respons yang sama
+        // (0 credit tambahan) — dikonfirmasi upvar-dnvar = skew persis (live test user, 3/3
+        // pair match exact). upvar = komponen upside/call, dnvar = komponen downside/put —
+        // padanan call_iv/put_iv yang dulu cuma tersedia dari fallback Barchart.
+        const callIv = parseFloat(entry.upvarMetric ?? 'x');
+        const putIv  = parseFloat(entry.dnvarMetric ?? 'x');
+        const ivFields = (!isNaN(callIv) && !isNaN(putIv)) ? { call_iv: callIv, put_iv: putIv } : {};
+        ok.push({ pair, rr_value: +skew.toFixed(3), source: 'CME CVOL', ...ivFields });
       }
       cmeFailedReasons = failed;
       if (failed.length) console.warn('risk-reversal: CME CVOL batch partial failures:', failed);
       if (ok.length >= 3) {
-        ok.forEach(d => { pairs[d.pair] = { rr_value: d.rr_value, source: d.source }; });
+        ok.forEach(d => { pairs[d.pair] = { rr_value: d.rr_value, source: d.source, call_iv: d.call_iv, put_iv: d.put_iv }; });
         source = 'cme_cvol';
       } else {
         throw new Error(`Only ${ok.length}/6 CME CVOL pairs returned data`);
