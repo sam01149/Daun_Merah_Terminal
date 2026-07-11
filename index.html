@@ -1505,6 +1505,11 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .cal-scenario-btn.miss:hover, .cal-scenario-btn.miss.active {
   background: rgba(255,71,87,.15); color: #ff4757;
 }
+.cal-scenario-inv-note {
+  margin: -2px 12px 0; padding: 5px 8px; border-radius: 4px;
+  background: rgba(96,165,250,.07); border: 1px solid rgba(96,165,250,.15);
+  font-size: 8px; color: var(--muted); font-family: 'DM Mono', monospace; line-height: 1.5;
+}
 .cal-scenario-results { padding: 0 12px 12px; }
 .cal-scenario-subheading {
   font-size: 8px; color: var(--muted); letter-spacing: .8px; text-transform: uppercase;
@@ -1561,6 +1566,12 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .scen-verdict.cukup   { background: rgba(96,165,250,.12); color: #60a5fa; border: 1px solid rgba(96,165,250,.3); }
 .scen-verdict.campur  { background: rgba(255,200,0,.1);   color: #e6b800; border: 1px solid rgba(255,200,0,.25); }
 .scen-verdict.konflik { background: rgba(255,71,87,.12);  color: #ff4757; border: 1px solid rgba(255,71,87,.3); }
+.scen-direct-tag {
+  display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 3px;
+  font-size: 8px; letter-spacing: .06em; font-family: 'DM Mono', monospace;
+  font-weight: 700; vertical-align: 2px; white-space: nowrap; cursor: help;
+  background: rgba(255,200,0,.1); color: #e6b800; border: 1px solid rgba(255,200,0,.25);
+}
 .scen-conf-caption {
   font-size: 8px; color: var(--muted); font-family: 'DM Mono', monospace;
   line-height: 1.5; margin: 2px 0 4px; opacity: .8;
@@ -4570,6 +4581,13 @@ function renderRingkasan() {
 
 function escHtml(s) {
   return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// Untuk menyisipkan string ke literal JS di dalam atribut onclick="fn('...')" —
+// escape backslash & kutip dulu (nama event ber-apostrof tidak mematahkan handler),
+// baru escHtml untuk konteks atribut HTML-nya.
+function escJs(s) {
+  return escHtml(String(s ?? '').replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'\\u0022'));
 }
 
 // ── ANALISA ──────────────────────────────────────────────
@@ -7641,9 +7659,12 @@ function renderCalendar() {
         </div>` : '';
 
       const simulasiBtn = ev.impact === 'High'
-        ? `<button class="cal-tren-btn" style="font-size:8px;padding:2px 7px;border-radius:3px;background:rgba(255,255,255,.07);border:none;color:var(--muted);cursor:pointer;font-family:'DM Mono',monospace;margin-left:4px" id="calScenBtn-${evId}" onclick="calOpenScenario('${evId}','${ev.currency}','${escHtml(ev.event)}','${ev.forecast||''}','${ev.previous||''}')">SIMULASI</button>`
+        ? `<button class="cal-tren-btn" style="font-size:8px;padding:2px 7px;border-radius:3px;background:rgba(255,255,255,.07);border:none;color:var(--muted);cursor:pointer;font-family:'DM Mono',monospace;margin-left:4px" id="calScenBtn-${evId}" onclick="calOpenScenario('${evId}','${ev.currency}','${escJs(ev.event)}','${escJs(ev.forecast||'')}','${escJs(ev.previous||'')}')">SIMULASI</button>`
         : '';
 
+      // Indikator terbalik (unemployment/claims/...): angka NAIK = buruk, jadi
+      // panah tombol mengikuti arah ANGKA rilis — BEAT (bagus utk currency) = ▼.
+      const isInvEv = CAL_INVERSE_INDICATOR_RE.test(ev.event);
       const scenarioPanel = ev.impact === 'High'
         ? `<div class="cal-scenario-panel" id="calScenPanel-${evId}">
             <div class="cal-scenario-header">
@@ -7651,9 +7672,10 @@ function renderCalendar() {
               <button class="cal-scenario-close" onclick="calCloseScenario('${evId}')">×</button>
             </div>
             <div class="cal-scenario-btns">
-              <button class="cal-scenario-btn beat" id="calScenBeat-${evId}" onclick="calRunScenario('${evId}','${ev.currency}','beat','${escHtml(ev.event)}')">▲ BEAT</button>
-              <button class="cal-scenario-btn miss" id="calScenMiss-${evId}" onclick="calRunScenario('${evId}','${ev.currency}','miss','${escHtml(ev.event)}')">▼ MISS</button>
+              <button class="cal-scenario-btn beat" id="calScenBeat-${evId}" onclick="calRunScenario('${evId}','${ev.currency}','beat','${escJs(ev.event)}')">${isInvEv ? '▼' : '▲'} BEAT</button>
+              <button class="cal-scenario-btn miss" id="calScenMiss-${evId}" onclick="calRunScenario('${evId}','${ev.currency}','miss','${escJs(ev.event)}')">${isInvEv ? '▲' : '▼'} MISS</button>
             </div>
+            ${isInvEv ? `<div class="cal-scenario-inv-note">Indikator terbalik — BEAT = angka lebih RENDAH dari forecast (bagus untuk ${ev.currency}), MISS = angka lebih tinggi (buruk). Arah panah mengikuti angka rilis, bukan arah currency.</div>` : ''}
             <div class="cal-scenario-results" id="calScenResults-${evId}"></div>
           </div>`
         : '';
@@ -7870,9 +7892,15 @@ function scenarioRankCurrencies(eventCur, direction) {
 }
 
 function scenarioRenderResults(pairs, eventCur, direction, eventName, evId) {
+  // Indikator terbalik: BEAT = angka turun (bagus utk currency) — panah ikut angka
+  const isInv = CAL_INVERSE_INDICATOR_RE.test(eventName || '');
   const dirLabel = direction === 'beat'
-    ? `<span style="color:#00c896">▲ BEAT → ${eventCur} menguat</span>`
-    : `<span style="color:#ff4757">▼ MISS → ${eventCur} melemah</span>`;
+    ? `<span style="color:#00c896">${isInv ? '▼' : '▲'} BEAT${isInv ? ' (angka turun)' : ''} → ${eventCur} menguat</span>`
+    : `<span style="color:#ff4757">${isInv ? '▲' : '▼'} MISS${isInv ? ' (angka naik)' : ''} → ${eventCur} melemah</span>`;
+
+  // Pair mayor mata uang event — tempat reaksi awal kejutan data biasanya paling
+  // cepat & likuid. Untuk event USD semua kandidat memuat USD, jadi tag tak perlu.
+  const directPair = eventCur !== 'USD' ? SCENARIO_PAIR_MAP[eventCur]?.pair : null;
 
   const pairsHtml = pairs.map((p, i) => {
     const key  = p.pair.replace('/', '');
@@ -7883,7 +7911,7 @@ function scenarioRenderResults(pairs, eventCur, direction, eventName, evId) {
     <div class="cal-scenario-pair">
       <div class="cal-scenario-rank">#${i+1}</div>
       <div class="cal-scenario-pair-body">
-        <div class="cal-scenario-pair-name">${p.dir === 'long' ? 'LONG' : 'SHORT'} <span style="color:var(--text)">${p.pair}</span>${scenarioVerdictBadge(evId, key, conf.plus, conf.minus)}</div>
+        <div class="cal-scenario-pair-name">${p.dir === 'long' ? 'LONG' : 'SHORT'} <span style="color:var(--text)">${p.pair}</span>${scenarioVerdictBadge(evId, key, conf.plus, conf.minus)}${p.pair === directPair ? `<span class="scen-direct-tag" title="Pair mayor ${eventCur} vs USD — reaksi awal kejutan data biasanya paling cepat dan likuid di sini, meski ranking dasar-bertumpu bisa menempatkannya lebih rendah">⚡ reaksi langsung</span>` : ''}</div>
         <div class="cal-scenario-pair-dir ${p.dir}">${p.dir.toUpperCase()}</div>
         <div class="scen-conf">${conf.rows.join('')}${taRow}</div>
         <div class="scen-pair-actions">
@@ -7895,11 +7923,11 @@ function scenarioRenderResults(pairs, eventCur, direction, eventName, evId) {
   }).join('');
 
   return `
-    <div class="cal-scenario-subheading">SIMULASI: ${eventName} ${dirLabel}</div>
-    <div class="scen-conf-caption">Dasar bertumpu — tiap pair diuji terhadap faktor independen: bias bank sentral · fundamental makro · flow COT · retail · korelasi antar-leg · teknikal. Makin banyak ✓, makin kuat alasan trade selain kejutan data itu sendiri.</div>
+    <div class="cal-scenario-subheading">SIMULASI: ${escHtml(eventName)} ${dirLabel}</div>
+    <div class="scen-conf-caption">Dasar bertumpu — tiap pair diuji terhadap 6 faktor pendukung: bias bank sentral · fundamental makro · flow COT · retail · korelasi antar-leg · teknikal (dimuat menyusul, tidak mengubah urutan). Makin banyak ✓ makin kuat alasan trade selain kejutan data itu sendiri — tapi faktor-faktor ini saling berkaitan, dan ranking mengukur konteks latar, bukan seberapa besar pair biasanya bereaksi ke rilis ini.</div>
     ${pairsHtml}
     <div class="cal-scenario-warn">
-      ⚠ Ini rekomendasi awal, bukan sinyal entry — validasi kondisi pasar via CHECKLIST, lalu hitung ukuran lot yang aman via SIZING sebelum eksekusi.
+      ⚠ Ini rekomendasi awal, bukan sinyal entry — besaran deviasi actual vs forecast ikut menentukan kekuatan reaksi (beat/miss tipis sering diabaikan pasar). Validasi kondisi pasar via CHECKLIST, lalu hitung ukuran lot yang aman via SIZING sebelum eksekusi.
     </div>`;
 }
 
@@ -7944,7 +7972,13 @@ function scenarioConfluence(pairName, pairDir, eventCur, direction) {
   if (cbData && cbData.length > 0) {
     const gap = direction === 'beat' ? cbLvl(cbE) - cbLvl(cbC) : cbLvl(cbC) - cbLvl(cbE);
     const v = gap > 0 ? 1 : gap < 0 ? -1 : 0;
-    const fmtCb = (cur, cb) => `${cur} ${escHtml(cb?.bias || 'Neutral')}${cb?.rate_display || cb?.rate ? ' · ' + escHtml(String(cb.rate_display || cb.rate)) : ''}`;
+    // Label ortogonal (bukan titik di axis hawk-dove) dibaca sebagai netral saat
+    // dibandingkan — kasih tanda supaya "divergensi" vs label begini tidak overclaim
+    const CB_ORTHO = new Set(['data dependent', 'on hold', 'split']);
+    const fmtCb = (cur, cb) => {
+      const b = cb?.bias || 'Neutral';
+      return `${cur} ${escHtml(b)}${CB_ORTHO.has(b.toLowerCase()) ? ' (≈netral)' : ''}${cb?.rate_display || cb?.rate ? ' · ' + escHtml(String(cb.rate_display || cb.rate)) : ''}`;
+    };
     add(v, 'Bias CB:', `${fmtCb(eventCur, cbE)} vs ${fmtCb(counter, cbC)} — ${
       v === 1 ? 'divergensi kebijakan menopang arah trade'
       : v === -1 ? 'arah kebijakan justru melawan skenario'
@@ -8000,7 +8034,9 @@ function scenarioConfluence(pairName, pairDir, eventCur, direction) {
     add(null, 'COT:', 'data COT belum dimuat…');
   }
 
-  // 4. Retail sentiment — kontrarian (hanya untuk pair yang tercakup datanya)
+  // 4. Retail sentiment — kontrarian. Baris tetap dirender saat data tidak
+  //    tersedia supaya jumlah faktor yang dinilai setara antar pair (verdict
+  //    badge apples-to-apples), bukan diam-diam hilang.
   const rp = retailData?.positions?.[pairName.replace('/', '')];
   if (rp && rp.long_pct != null) {
     const v = rp.signal === 'NEUTRAL' || !rp.signal ? 0
@@ -8010,6 +8046,10 @@ function scenarioConfluence(pairName, pairDir, eventCur, direction) {
       : v === -1 ? 'sinyal kontrarian retail justru melawan arah trade'
       : 'posisi retail berimbang (netral)'}`);
     if (v !== 0) bonus += v * 0.5;
+  } else if (retailData) {
+    add(0, 'Retail:', `data sentimen retail tidak tersedia untuk ${pairName} — faktor ini tidak ikut dinilai`);
+  } else {
+    add(null, 'Retail:', 'data retail belum dimuat…');
   }
 
   // 5. Korelasi antar-leg — seberapa berlawanan kekuatan kedua mata uang bergerak

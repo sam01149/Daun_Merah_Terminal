@@ -1,10 +1,30 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-07-10 (session 155 lanjutan 5 — plan G6 FOMC/CB Shock Detector dieksekusi; seluruh plan G G1-G6 selesai)
+> **Last updated:** 2026-07-11 (session 156 — audit SIMULASI kalender: fix jebakan BEAT/MISS indikator terbalik + transparansi dasar bertumpu)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root).
+
+---
+
+## Changelog Session 156 (2026-07-11) — Audit SIMULASI Kalender: Fix Jebakan BEAT/MISS Indikator Terbalik + Transparansi "Dasar Bertumpu"
+
+**Konteks:** audit atas pertanyaan user "apakah blok simulasi cukup informatif dan bisa jadi dasar memilih pair?". Kesimpulan audit: informatif sebagai konteks latar, tapi ada 1 jebakan serius + beberapa klaim yang overclaim. Semua temuan diperbaiki (fitur S143 lanjutan 3).
+
+**Temuan #1 (paling serius) — jebakan "▲ BEAT" pada indikator terbalik:** untuk event macam Unemployment Rate, BEAT (bagus untuk currency) = angka LEBIH RENDAH dari forecast, tapi tombol hardcoded "▲ BEAT" menyiratkan angka naik — user yang mensimulasikan "unemployment naik" bisa klik ▲ BEAT dan dapat rekomendasi pair yang **persis terbalik**. Fix: panah tombol & header hasil kini mengikuti arah ANGKA rilis via `CAL_INVERSE_INDICATOR_RE` (regex yang sudah dipakai pewarnaan actual di kalender) — indikator terbalik jadi "▼ BEAT" / "▲ MISS", header hasil diberi keterangan "(angka turun)"/"(angka naik)", plus catatan penjelas `.cal-scenario-inv-note` di panel.
+
+**Temuan lain yang diperbaiki di `scenarioConfluence`/`scenarioRenderResults` (index.html):**
+- **Baris Retail selalu dirender** — sebelumnya diam-diam hilang untuk pair yang tak tercakup data retail, bikin jumlah faktor verdict badge tidak apples-to-apples antar pair (#1 dinilai 5 faktor vs #3 dinilai 6). Kini ada 3 status: tersedia / "tidak tersedia untuk pair ini — tidak ikut dinilai" (netral −) / "belum dimuat…".
+- **Tag `⚡ reaksi langsung`** di pair mayor mata uang event (mis. USD/CAD untuk event CAD; tidak dipakai untuk event USD) — menandai instrumen tempat reaksi awal kejutan biasanya paling cepat & likuid, karena ranking dasar-bertumpu berbasis konteks latar bisa menempatkannya lebih rendah dari cross.
+- **Caption diperbaiki** — klaim "faktor independen" dihapus (bias CB/makro/COT saling berkaitan); ditegaskan ranking mengukur konteks latar, BUKAN seberapa responsif pair terhadap rilis; dicatat teknikal dimuat menyusul tanpa mengubah urutan.
+- **Footer warn** ditambah: besaran deviasi actual vs forecast ikut menentukan kekuatan reaksi (beat/miss tipis sering diabaikan pasar).
+- **Bias CB ortogonal** (Data Dependent/On Hold/Split) diberi tanda "(≈netral)" di baris Bias CB — konsisten dengan `HAWK_DOVE_AXIS` yang memang mengecualikan label ini dari axis hawk-dove, supaya "divergensi vs Data Dependent" tidak overclaim.
+- **Hardening `escJs()`** (helper baru di samping `escHtml`): nama event ber-apostrof/kutip tidak lagi bisa mematahkan literal JS di atribut `onclick` tombol SIMULASI/BEAT/MISS; subheading hasil kini `escHtml(eventName)`.
+
+**Sengaja TIDAK diubah:** logika ranking (CB gap + bonus konfluensi) — perilaku skor tetap sama persis; perbaikan ini murni koreksi label yang menyesatkan + kejujuran presentasi. Faktor "reaksi historis pair terhadap event" dicatat sebagai kandidat backlog (butuh dataset event-reaction baru).
+
+**Verifikasi:** test baru [test/cal_scenario_sim.test.js](../test/cal_scenario_sim.test.js) (12 test: regex terbalik, header BEAT/MISS dua mode, tag reaksi langsung ada/absen, caption/footer, 3 status baris retail, tanda ≈netral, escJs round-trip eval) — full suite **190/190 hijau**; syntax check seluruh blok script inline bersih; grep memastikan tidak ada label "▲ BEAT" hardcoded tersisa.
 
 ---
 
