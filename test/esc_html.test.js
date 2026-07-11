@@ -13,6 +13,14 @@ assert.ok(start !== -1, 'fungsi escHtml harus ada di index.html');
 const end = html.indexOf('\n}', start) + 2;
 const escHtml = eval(`(${html.slice(start, end).trim()})`);
 
+// _renderStructuredAi (dites di bawah) memanggil _makroAgeLabel — didefinisikan
+// terpisah di index.html (dipakai bareng oleh downloadAnalisaPdf), jadi perlu
+// di-extract juga supaya eval-nya nggak ReferenceError.
+const mrStart = html.indexOf('function _makroAgeLabel(');
+assert.ok(mrStart !== -1, 'fungsi _makroAgeLabel harus ada di index.html');
+const mrEnd = html.indexOf('\n}', mrStart) + 2;
+const _makroAgeLabel = eval(`(${html.slice(mrStart, mrEnd).trim()})`);
+
 test('escHtml: tidak throw untuk number/boolean/array (bug asli)', () => {
   assert.strictEqual(escHtml(4155.5), '4155.5');
   assert.strictEqual(escHtml(0), '0');

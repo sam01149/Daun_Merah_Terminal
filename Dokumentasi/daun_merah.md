@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-07-11 (session 157 lanjutan 14 — font serif klasik untuk PDF + nama file ringkasan/analisa_{tgl-jam}.pdf)
+> **Last updated:** 2026-07-11 (session 157 lanjutan 15 — download PDF langsung via jsPDF, ganti alur window.print())
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -24,6 +24,27 @@
 - **ScraperAPI** teridentifikasi sebagai satu-satunya vendor berbayar murni di seluruh app (proxy residential IP untuk bypass blokir Akamai WAF milik CME Group).
 
 **Tidak ada perubahan kode** — murni dokumentasi baru berdasarkan audit kode yang sudah ada.
+
+---
+
+## Changelog Session 157 lanjutan 15 (2026-07-11) — Download PDF Langsung via jsPDF + Rapihkan Label Jam Analisa
+
+**Konteks:** user lapor nama file "Save as PDF" tetap kosong walau sudah ada trik `document.title` (lanjutan 14) — ternyata bukan bug kode kita: dialog di screenshot user adalah **"Microsoft Print to PDF"** (driver printer Windows), bukan destination "Save as PDF" bawaan Chrome. Windows 11 memang menghapus fitur auto-nama-file untuk driver itu (dikonfirmasi via web search, bug Microsoft, bukan hal yang bisa diperbaiki dari sisi web/JS). Solusi yang dipilih user: skip printer/dialog OS sama sekali, download PDF langsung — opsi jsPDF (vector text asli, bukan screenshot) dipilih di atas html2pdf.js (screenshot-based) karena dokumen resmi ini idealnya teksnya bisa di-select/copy.
+
+**1. Download PDF langsung — [index.html](../index.html):**
+- Library `jsPDF 2.5.2` dimuat via CDN (`jsdelivr`), satu-satunya dependency eksternal baru di app ini selain Google Fonts.
+- `_pdfBuilder()`: builder kecil di atas jsPDF — letterhead (brand + judul + meta), heading/subheading, paragraf ber-justify + auto page-break, key-value block, box KESIMPULAN bergaris tepi, footer disclaimer. Font Times (serif bawaan jsPDF, padanan Georgia versi print lama, tanpa perlu embed font custom), tetap monokrom sesuai keputusan lama user ("JANGAN ADA WARNA" di dokumen resmi).
+- `downloadRingkasanPdf()` & `downloadAnalisaPdf()`: compose ulang dari data cache (`ringkasanCache` / `analisaDataCache` / `analisaAiCache`) langsung ke PDF — bukan screenshot dari DOM. Ringkasan PDF sekarang eksplisit menyertakan **"Ringkasan dibuat: HH:MM WIB"** di letterhead (permintaan user), terpisah dari "Diunduh: [waktu sekarang]". Analisa PDF menyertakan "Dianalisa: HH:MM WIB", harga saat data, dan sumber (teknikal/makro/fundamental).
+- Tombol "Cetak PDF" (3 lokasi: 2× Ringkasan, 1× Analisa) diganti jadi "Download PDF" — `onclick` ke fungsi baru, ikon SVG printer diganti ikon download panah-bawah. `doc.save(filename)` trigger download langsung dari browser, sama sekali tidak lewat dialog print/OS — menghilangkan bug filename kosong secara total.
+- Alur `window.print()` lama (letterhead print, CSS `@media print`, hook Ctrl+P) **tetap dipertahankan apa adanya** sebagai fallback buat yang tetap mau print fisik via Ctrl+P — cuma tidak lagi terhubung ke tombol utama.
+
+**2. Rapihkan baris meta Analisa AI (on-screen) — [index.html](../index.html):**
+- Baris `AI · model · sumber · (cached) · di analisa jam HH:MM` sebelumnya semua bagian sama besar/tebal (9-10px bold uppercase), padat dan berat dibaca. Sekarang dipisah 2 tingkat: **primer** ("AI · model · sumber", tanpa qualifier umur) tetap bold-uppercase-accent 9px; **sekunder** (umur ringkasan makro, status cache, jam analisa — digabung jadi `.analisa-ai-meta`) dikecilkan ke 8px, non-kapital, warna muted, lebih ringan dibanding sekelilingnya (permintaan eksplisit user: "kecilin bagian yang kurang dilihat").
+- Helper `_makroAgeLabel(makroAt)` diekstrak (dipakai bareng oleh baris meta on-screen & letterhead PDF Analisa) — hilangkan duplikasi logic umur makro yang sebelumnya ada 2x.
+
+**Diverifikasi:**
+- `node --check` bersih (extract inline `<script>`, 518KB), CSS balanced (1204/1204 brace), test suite 190/190 hijau (1 test lama `_renderStructuredAi` sempat merah gara-gara dependency baru ke `_makroAgeLabel` belum di-extract di test — [test/esc_html.test.js](../test/esc_html.test.js) diperbaiki).
+- Smoke test terpisah (Node + paket `jspdf` npm sementara, `--no-save`, dihapus lagi setelah tes): jalankan `downloadRingkasanPdf`/`downloadAnalisaPdf` versi persis dari index.html dengan data mock realistis (thesis, thesis alert, artikel FX+XAU dengan tag, structured AI bias mixed + KESIMPULAN) — kedua fungsi menghasilkan PDF valid (`%PDF` magic bytes, >7KB, teks vector asli ketemu secara literal di content stream: "DAUN MERAH", "KESIMPULAN", "EUR/USD", dst — bukan gambar), filename match format `ringkasan_DD-MM-YYYY_HH-mm.pdf` / `analisa_...`. Edge case data kosong: toast muncul, tidak crash, tidak ada file ke-save.
 
 ---
 

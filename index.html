@@ -802,6 +802,10 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 .analisa-ai-label { font-size: 9px; font-weight: 700; letter-spacing: .08em; color: var(--accent); text-transform: uppercase; margin-bottom: 6px; }
+/* Info sekunder (umur makro, status cache, jam analisa) dalam baris label — kurang
+   penting buat dilihat sekilas dibanding sumber & model, jadi dikecilkan & dilepas
+   dari gaya kapital-tebal induknya biar hierarki baca jelas. */
+.analisa-ai-meta { text-transform: none; font-weight: 400; letter-spacing: normal; font-size: 8px; color: var(--muted); }
 
 /* ── COT POSITIONING ──*/
 
@@ -2549,6 +2553,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   }
   .r-tag { font-size: 10px !important; }
   .analisa-ai-label { font-size: 12px !important; color: var(--text) !important; font-weight: 700; }
+  .analisa-ai-meta { font-size: 9px !important; color: var(--muted) !important; }
 
   /* Bintang keyakinan (★★★☆☆) diganti teks resmi di dokumen — dua-duanya
      dirender di HTML, CSS ini yang milih mana yang tampil per konteks. */
@@ -2752,9 +2757,9 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
         </svg>
         <span>Ringkas Berita</span>
       </button>
-      <button class="print-btn no-print" onclick="cetakRingkasan()" title="Cetak PDF">
+      <button class="print-btn no-print" onclick="downloadRingkasanPdf()" title="Download PDF">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M6 9V2h9l3 3v4"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/>
+          <path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M4 21h16"/>
         </svg>
       </button>
     </div>
@@ -2800,9 +2805,9 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2a10 10 0 1 0 10 10"/><path d="M12 8v4l3 3"/></svg>
           <span>Analisa AI</span>
         </button>
-        <button class="print-btn no-print" style="margin-top:4px" onclick="cetakAnalisa()" title="Cetak PDF">
+        <button class="print-btn no-print" style="margin-top:4px" onclick="downloadAnalisaPdf()" title="Download PDF">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M6 9V2h9l3 3v4"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/>
+            <path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M4 21h16"/>
           </svg>
         </button>
       </div>
@@ -3722,6 +3727,11 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   </div>
 </div>
 
+<!-- jsPDF: dipakai buat generate PDF Ringkasan & Analisa AI langsung (vector text,
+     bukan screenshot) — download langsung lewat doc.save(), sama sekali tidak lewat
+     dialog print OS (workaround bug "Microsoft Print to PDF" yang nama filenya
+     selalu kosong, lihat diskusi user). -->
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
 <script>
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
@@ -4700,9 +4710,9 @@ function renderRingkasan() {
           </svg>
           <span>Ringkas Berita</span>
         </button>
-        <button class="print-btn no-print" onclick="cetakRingkasan()" title="Cetak PDF">
+        <button class="print-btn no-print" onclick="downloadRingkasanPdf()" title="Download PDF">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M6 9V2h9l3 3v4"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/>
+            <path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M4 21h16"/>
           </svg>
         </button>
       </div>`;
@@ -4750,9 +4760,9 @@ function renderRingkasan() {
         </svg>
         <span>Ringkas Ulang</span>
       </button>
-      <button class="print-btn no-print" onclick="cetakRingkasan()" title="Cetak PDF">
+      <button class="print-btn no-print" onclick="downloadRingkasanPdf()" title="Download PDF">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M6 9V2h9l3 3v4"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/>
+          <path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M4 21h16"/>
         </svg>
       </button>
     </div>
@@ -4860,6 +4870,240 @@ function cetakAnalisa() {
   const m = _printMeta('printing-analisa');
   if (!m) { showToast('Belum Ada Analisa', 'Jalankan "Analisa AI" dulu — dokumen cetak berisi analisa tertulisnya.', 3500); return; }
   _printPanel('printing-analisa', m.letterheadId, m.titleText, m.meta);
+}
+
+// ── DOWNLOAD PDF (Ringkasan & Analisa AI) — jsPDF, vector text ────────────
+// Ganti total dari alur window.print(): dialog "Save as PDF"/"Microsoft Print
+// to PDF" bawaan Windows terbukti sering kosong nama filenya (bug driver OS,
+// bukan sesuatu yang bisa kita kontrol dari JS — lihat diskusi user). doc.save()
+// di sini langsung trigger download browser dengan nama file yang sudah kita
+// tentukan, tanpa dialog print/OS sama sekali.
+function _makroAgeLabel(makroAt) {
+  if (!makroAt) return '';
+  const ageH = (Date.now() - new Date(makroAt).getTime()) / 3600000;
+  if (isNaN(ageH) || ageH < 0) return '';
+  return `${ageH < 1 ? '<1' : Math.round(ageH * 10) / 10}j lalu`;
+}
+
+// Ubah teks artikel (format "{{TAG: label}}" antar-paragraf, sama seperti dipakai
+// articleToHtml) jadi array blok {tag, body} urut, siap ditulis manual ke PDF.
+function _articleToPdfBlocks(text) {
+  const out = [];
+  text.trim().split(/\n\n+/).forEach(block => {
+    const parts = block.split(/\{\{TAG:\s*([^}]+)\}\}\s*/);
+    if (parts.length === 1) { if (parts[0].trim()) out.push({ tag: null, body: parts[0].trim() }); return; }
+    if (parts[0].trim()) out.push({ tag: null, body: parts[0].trim() });
+    for (let i = 1; i < parts.length; i += 2) out.push({ tag: parts[i].trim(), body: (parts[i + 1] || '').trim() });
+  });
+  return out;
+}
+
+// Builder kecil di atas jsPDF: dokumen resmi monokrom (permintaan lama user untuk
+// versi cetak — "JANGAN ADA WARNA"), font Times (serif, padanan Georgia yang
+// dipakai versi print, tapi Times bawaan jsPDF jadi tidak perlu embed font custom),
+// auto page-break per elemen via ensureSpace().
+function _pdfBuilder() {
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+  const pageW = doc.internal.pageSize.getWidth();
+  const pageH = doc.internal.pageSize.getHeight();
+  const marginX = 20, marginTop = 18, marginBottom = 18;
+  const contentW = pageW - marginX * 2;
+  const ptToMm = pt => (pt / 2.8346) * 1.22; // tinggi baris per ukuran font, dilonggarkan dikit
+  let y = marginTop;
+
+  function ensureSpace(h) {
+    if (y + h > pageH - marginBottom) { doc.addPage(); y = marginTop; }
+  }
+  function rule(gapBefore, gapAfter) {
+    y += gapBefore;
+    doc.setDrawColor(190); doc.setLineWidth(0.2);
+    doc.line(marginX, y, marginX + contentW, y);
+    y += gapAfter;
+  }
+  function letterhead(titleText, metaLines) {
+    doc.setFont('times', 'bold'); doc.setFontSize(18); doc.setTextColor(20);
+    doc.text('DAUN MERAH', marginX, y); y += 7;
+    doc.setFont('times', 'bold'); doc.setFontSize(12); doc.setTextColor(20);
+    doc.text(titleText, marginX, y); y += 5.5;
+    doc.setFont('times', 'normal'); doc.setFontSize(8.5); doc.setTextColor(90);
+    metaLines.forEach(line => { doc.text(line, marginX, y); y += 3.9; });
+    rule(3, 6);
+  }
+  function heading(text) {
+    ensureSpace(9);
+    doc.setFont('times', 'bold'); doc.setFontSize(10); doc.setTextColor(20);
+    doc.text(text.toUpperCase(), marginX, y); y += 2.6;
+    doc.setDrawColor(20); doc.setLineWidth(0.15);
+    doc.line(marginX, y, marginX + contentW, y); y += 5.5;
+  }
+  function subheading(text) {
+    ensureSpace(6);
+    doc.setFont('times', 'bold'); doc.setFontSize(10.5); doc.setTextColor(20);
+    const lines = doc.splitTextToSize(text, contentW);
+    lines.forEach(line => { ensureSpace(5); doc.text(line, marginX, y); y += 5; });
+    y += 1;
+  }
+  function para(text, opts = {}) {
+    if (!text || !text.trim()) return;
+    const size = opts.size || 10.2;
+    doc.setFont('times', opts.bold ? 'bold' : (opts.italic ? 'italic' : 'normal'));
+    doc.setFontSize(size);
+    doc.setTextColor(...(opts.color || [26, 26, 26]));
+    const lines = doc.splitTextToSize(text, contentW);
+    const lh = ptToMm(size);
+    lines.forEach((line, i) => {
+      ensureSpace(lh + 1);
+      const isLast = i === lines.length - 1;
+      if (opts.justify && !isLast) doc.text(line, marginX, y, { maxWidth: contentW, align: 'justify' });
+      else doc.text(line, marginX, y);
+      y += lh;
+    });
+    y += opts.gapAfter ?? 2.8;
+  }
+  function kv(label, value) {
+    if (!value) return;
+    ensureSpace(6);
+    doc.setFont('times', 'bold'); doc.setFontSize(8.3); doc.setTextColor(90);
+    doc.text(String(label).toUpperCase(), marginX, y); y += 3.8;
+    doc.setFont('times', 'normal'); doc.setFontSize(9.8); doc.setTextColor(26);
+    const lines = doc.splitTextToSize(String(value), contentW);
+    lines.forEach(line => { ensureSpace(4.3); doc.text(line, marginX, y); y += 4.3; });
+    y += 2;
+  }
+  function kesimpulanBox(text) {
+    const size = 10.2, lh = ptToMm(size);
+    const lines = doc.splitTextToSize(text, contentW - 6);
+    const boxH = lines.length * lh + 8;
+    ensureSpace(boxH + 3);
+    doc.setDrawColor(20); doc.setLineWidth(0.7);
+    doc.line(marginX, y, marginX, y + boxH);
+    doc.setFont('times', 'bold'); doc.setFontSize(8); doc.setTextColor(20);
+    doc.text('KESIMPULAN', marginX + 4, y + 4);
+    doc.setFont('times', 'normal'); doc.setFontSize(size); doc.setTextColor(26);
+    let ly = y + 4 + lh;
+    lines.forEach(line => { doc.text(line, marginX + 4, ly); ly += lh; });
+    y += boxH + 4;
+  }
+  function footer(text) {
+    ensureSpace(12);
+    rule(2, 4);
+    doc.setFont('times', 'italic'); doc.setFontSize(7.8); doc.setTextColor(90);
+    doc.splitTextToSize(text, contentW).forEach(line => { doc.text(line, marginX, y); y += 3.4; });
+  }
+  return { doc, letterhead, heading, subheading, para, kv, kesimpulanBox, footer };
+}
+
+function downloadRingkasanPdf() {
+  const d = ringkasanCache;
+  if (!d?.article) { showToast('Belum Ada Data', 'Generate ringkasan dulu sebelum download.', 3000); return; }
+  const b = _pdfBuilder();
+  b.letterhead('Ringkasan Pasar Forex & Emas', [
+    `Ringkasan dibuat: ${fmtCBTime(d.generated_at)}`,
+    `Diunduh: ${_printWibNow().display}`,
+    `${d.news_count} berita · ${d.cal_count} event kalender${d.gold_count ? ' · ' + d.gold_count + ' XAU' : ''}${d.from_cache ? ' · cache' : ''}`,
+    'Sumber: CME · FRED · FinancialJuice · Yahoo Finance',
+  ]);
+
+  if (d.thesis && d.thesis.confidence_1_to_5 >= 3) {
+    const t = d.thesis;
+    b.heading('AI Thesis · CB Bias + TA');
+    const dirLabel  = t.direction === 'no_trade' ? 'NO TRADE' : String(t.direction || '').toUpperCase();
+    const confLabel = t.confidence_1_to_5 >= 4 ? 'Tinggi' : t.confidence_1_to_5 >= 3 ? 'Sedang' : 'Rendah';
+    b.subheading(`${t.pair_recommendation || '—'} · ${dirLabel}  (Keyakinan: ${confLabel}, ${t.confidence_1_to_5}/5)`);
+    b.kv('Invalidasi', t.invalidation_condition);
+    b.kv('Catatan Regime', t.regime_note);
+    b.kv('Katalis', t.catalyst_dependency);
+    if (t.time_horizon_days) b.kv('Horizon', `~${t.time_horizon_days} hari (fundamental, bukan sinyal entry presisi jangka pendek)`);
+  }
+
+  if (d.thesis && d.thesis.xau_bias && d.thesis.xau_dominant_driver !== 'insufficient_data') {
+    const t = d.thesis;
+    b.heading('AI Thesis · XAU/USD');
+    const confLabel = t.xau_confidence >= 4 ? 'Tinggi' : t.xau_confidence >= 3 ? 'Sedang' : 'Rendah';
+    b.subheading(`${(t.xau_bias || '').toUpperCase()}${t.xau_confidence ? ` (Keyakinan: ${confLabel}, ${t.xau_confidence}/5)` : ''}`);
+    const driverLabel = (t.xau_dominant_driver || '').replace(/_/g, ' ').toUpperCase();
+    b.kv('Driver', driverLabel);
+    b.kv('Bukti', t.xau_driver_evidence);
+    b.kv('Trigger', t.xau_key_trigger);
+  }
+
+  if (d.thesis_alerts && d.thesis_alerts.length > 0) {
+    b.heading(`Thesis Alert · ${d.thesis_alerts.length} headline kontra buy/sell limit`);
+    d.thesis_alerts.forEach(a => {
+      b.subheading(`⚠ ${a.pair} ${(a.direction || '').toUpperCase()}`);
+      b.para(`"${a.headline}"`, { size: 9.5, italic: true, gapAfter: 1.5 });
+      b.para(a.reason, { size: 9.5, color: [90, 90, 90], gapAfter: 4 });
+    });
+  }
+
+  const { fx, xau } = splitArticleParts(d.article);
+  if (fx) {
+    b.heading('Analisis Berita · Headline Momentum');
+    _articleToPdfBlocks(fx).forEach(blk => { if (blk.tag) b.subheading(blk.tag); b.para(blk.body, { justify: true }); });
+  }
+  if (xau) {
+    b.heading('XAUUSD');
+    _articleToPdfBlocks(xau).forEach(blk => { if (blk.tag) b.subheading(blk.tag); b.para(blk.body, { justify: true }); });
+  }
+
+  b.footer('⚠ Ringkasan dihasilkan AI dari headline & data pihak ketiga — bisa keliru, bukan nasihat keuangan. Detail di tab PETUNJUK › Disclaimer.');
+  b.doc.save(`ringkasan_${_printWibNow().filename}.pdf`);
+}
+
+function downloadAnalisaPdf() {
+  const symbol = analisaActive.symbol, label = analisaActive.label;
+  const d  = symbol ? analisaDataCache[symbol] : null;
+  const ai = symbol ? analisaAiCache[symbol] : null;
+  if (!d || !ai || (!ai.commentary && !ai.structured)) {
+    showToast('Belum Ada Analisa', 'Jalankan "Analisa AI" dulu — dokumen berisi analisa tertulisnya.', 3500);
+    return;
+  }
+  const b = _pdfBuilder();
+  const srcBits = ['teknikal'];
+  if (ai.hasMakro) { const age = _makroAgeLabel(ai.makroAt); srcBits.push(age ? `makro (${age})` : 'makro'); }
+  if (ai.hasFund) srcBits.push('fundamental');
+  const metaLines = [];
+  if (ai.analyzedAt) metaLines.push(`Dianalisa: ${fmtCBTime(ai.analyzedAt)}`);
+  metaLines.push(`Diunduh: ${_printWibNow().display}`);
+  if (d.h1?.current != null) metaLines.push(`Harga saat data: ${d.h1.current}`);
+  metaLines.push(`AI${ai.model ? ' · ' + ai.model : ''} · sumber: ${srcBits.join(' + ')}`);
+  metaLines.push('Sumber data: CME · FRED · FinancialJuice · Yahoo Finance');
+  b.letterhead(`Analisa Teknikal — ${label}`, metaLines);
+
+  const st = ai.structured;
+  if (st) {
+    const biasLabel = { bullish: '▲ BULLISH', bearish: '▼ BEARISH', mixed: '⟷ MIXED' }[(st.bias || 'neutral').toLowerCase()] || '→ NEUTRAL';
+    b.subheading(`BIAS: ${biasLabel}`);
+    if (st.trigger) b.para(st.trigger, { size: 10, italic: true, gapAfter: 3.5 });
+    if (st.makro_alignment) {
+      const al = { searah: 'MAKRO SEARAH', konflik: 'MAKRO KONFLIK', netral: 'MAKRO NETRAL' }[st.makro_alignment] || String(st.makro_alignment).toUpperCase();
+      b.kv('Keselarasan Makro', al + (st.makro_alignment_reason ? ' — ' + st.makro_alignment_reason : ''));
+    }
+    if (st.entry_zone || st.sl || st.tp) {
+      const bits = [];
+      if (st.entry_zone) bits.push(`Entry ${st.entry_zone}`);
+      if (st.sl) bits.push(`SL ${st.sl}`);
+      if (st.tp) bits.push(`TP ${st.tp}`);
+      if (st.risk_reward) bits.push(`RR 1:${st.risk_reward}`);
+      b.kv('Level', bits.join('   '));
+      b.kv('Dasar', st.entry_basis);
+    }
+    b.kv('Invalidasi', st.invalidation_condition);
+    if (st.time_horizon_days) b.kv('Horizon', `~${st.time_horizon_days} hari`);
+  }
+
+  b.heading('Analisa Tertulis');
+  const text = (st?.commentary || ai.commentary || '').trim();
+  text.split('\n').filter(l => l.trim()).forEach(l => {
+    const trimmed = l.trim();
+    const m = trimmed.match(/^kesimpulan:\s*(.*)$/i);
+    if (m) b.kesimpulanBox(m[1]);
+    else b.para(trimmed, { justify: true });
+  });
+
+  b.footer('⚠ Level & bias di atas dihasilkan AI dan bisa keliru — bukan nasihat keuangan. Verifikasi ke chart sebelum dipakai.');
+  b.doc.save(`analisa_${_printWibNow().filename}.pdf`);
 }
 
 function escHtml(s) {
@@ -5028,24 +5272,28 @@ async function _autoLoadXauAnalysis(symbol) {
 }
 
 function _renderStructuredAi(structured, commentary, model, hasMakro, isCached, hasFund, makroAt, analyzedAt) {
-  // Label sumber: teknikal selalu; + makro (dengan umur ringkasan) kalau excerpt artikel
-  // terpakai; + fundamental kalau blok terstruktur (cb_bias/COT/risk regime) terpakai.
-  let makroLbl = 'makro';
-  if (makroAt) {
-    const ageH = (Date.now() - new Date(makroAt).getTime()) / 3600000;
-    if (!isNaN(ageH) && ageH >= 0) makroLbl = `makro (${ageH < 1 ? '<1' : Math.round(ageH * 10) / 10}j lalu)`;
-  }
+  // Label sumber: teknikal selalu; + makro kalau excerpt artikel terpakai; + fundamental
+  // kalau blok terstruktur (cb_bias/COT/risk regime) terpakai. Umur makro DIPISAH ke info
+  // sekunder di bawah (baris ini cuma nama sumbernya, biar ringkas & gak dobel kapital).
   const sources = ['teknikal'];
-  if (hasMakro) sources.push(makroLbl);
+  if (hasMakro) sources.push('makro');
   if (hasFund)  sources.push('fundamental');
   const srcTag = sources.length > 1 ? ` · <span style="color:#a78bfa">${sources.join(' + ')}</span>` : ' · teknikal';
-  const cachedBadge = isCached ? ' <span style="color:var(--muted);font-size:10px">(cached)</span>' : '';
-  const modelStr   = model ? ` · ${model}` : '';
-  // Jam analisa (WIB) — kapan hasil ini benar-benar di-generate server, bukan kapan
-  // browser menerimanya, supaya jelas beda antara hasil baru vs hasil cache lama
-  // yang di-restore dari localStorage/mode=cached.
-  const analyzedTag = analyzedAt ? ` <span style="color:var(--muted);font-size:10px">· di analisa jam ${fmtCBTime(analyzedAt)}</span>` : '';
-  let html = `<div class="analisa-ai-result"><div class="analisa-ai-label"><span class="no-print">🧠 </span>AI${modelStr}${srcTag}${cachedBadge}${analyzedTag}</div>`;
+  const modelStr = model ? ` · ${model}` : '';
+
+  // Info sekunder: umur ringkasan makro, status cache, jam analisa (WIB — kapan hasil ini
+  // BENAR-BENAR di-generate server, bukan kapan browser menerimanya, supaya jelas beda
+  // hasil baru vs hasil cache lama yang di-restore dari localStorage/mode=cached). Digabung
+  // satu grup kecil & non-kapital, terpisah gaya dari "AI · model · sumber" yang lebih
+  // penting dilihat sekilas (permintaan user: kurangi bobot visual bagian kurang dilihat).
+  const secondaryBits = [];
+  const makroAge = _makroAgeLabel(makroAt);
+  if (makroAge) secondaryBits.push(`makro ${makroAge}`);
+  if (isCached) secondaryBits.push('cache');
+  if (analyzedAt) secondaryBits.push(`dianalisa ${fmtCBTime(analyzedAt)}`);
+  const secondaryTag = secondaryBits.length ? ` <span class="analisa-ai-meta">· ${secondaryBits.join(' · ')}</span>` : '';
+
+  let html = `<div class="analisa-ai-result"><div class="analisa-ai-label"><span class="no-print">🧠 </span>AI${modelStr}${srcTag}${secondaryTag}</div>`;
 
   if (structured) {
     const bias      = (structured.bias || 'neutral').toLowerCase();
