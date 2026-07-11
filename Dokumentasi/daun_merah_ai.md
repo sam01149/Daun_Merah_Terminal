@@ -48,16 +48,39 @@ Satu kali "generate" sebenarnya adalah **3-4 panggilan AI sekaligus**, bukan 1:
 - **Otomatis (cron):** 3×/hari via GitHub Actions — 07:00, 14:00, 19:30 WIB (jam buka sesi Asia/Eropa/New York). Cron ini TIDAK kena rate limit apapun (diautentikasi lewat secret).
 - **Manual:** tombol "Ringkas Berita"/"Ringkas Ulang" — siapa pun bisa klik kapan saja, dibatasi cooldown 90 detik/device + rate limit server 4x/menit/IP.
 
-**Rantai fallback provider yang benar-benar jalan di produksi saat ini:**
-```
-Call 1 (prosa):       SambaNova akun-2 (DeepSeek-V3.2) → OpenRouter (gpt-oss-120b:free) → Groq (llama-3.3-70b)
-Call 2 (bias JSON):   SambaNova akun-1 (DeepSeek-V3.2) → Groq (llama-3.3-70b)
-Call 3 (thesis JSON): SambaNova akun-1 (DeepSeek-V3.2) → Groq (llama-3.3-70b)
-Call 4 (monitor):     SambaNova akun-1 (DeepSeek-V3.2) → Groq (llama-3.3-70b)
-```
-Kalau primary gagal (limit habis / error / timeout), otomatis lompat ke berikutnya — user tidak akan lihat error kecuali **semua** tingkat di rantai itu gagal sekaligus. Kalau semua tingkat AI Call 1 gagal, ada **fallback ke-4 non-AI**: artikel dirangkai dari template deterministik berbasis kategori berita (bukan AI sama sekali) — jadi Ringkasan Berita tidak pernah benar-benar kosong, walau kualitasnya jauh di bawah versi AI.
+**Rantai fallback provider LENGKAP** (termasuk tingkat yang sedang non-aktif, supaya diagram ini jadi satu-satunya sumber kebenaran — tidak perlu baca potongan kode untuk tahu urutan pastinya):
 
-> **Catatan penting — Nemotron 3 Ultra/Super via OpenRouter atau Ollama Cloud SAAT INI TIDAK dipakai di jalur produksi.** Model ini sempat dijadikan primary (session 145) tapi **didemote** setelah 4 dari 4 percobaan live gagal di 2 sumber berbeda (OpenRouter & Ollama Cloud) — polanya konsisten resource-contention (model 550B baru rilis, kemungkinan diprioritaskan rendah di tier gratis), bukan bug di kode kita. SambaNova dikembalikan jadi primary asli karena terbukti reliable berbulan-bulan. Nemotron masih bisa dites ulang kapan pun lewat parameter diagnostik `?test_nemotron=1` / `?test_nemotron_super=1`, tapi **tidak** dipanggil otomatis oleh cron maupun tombol "Ringkas Berita" biasa. Praktis artinya: **jatah harian OpenRouter (45/hari) dan Ollama (150/hari) nyaris tidak terpakai sehari-hari** — dua pool ini sedang "menganggur", disiapkan untuk pengujian ulang Nemotron di masa depan, bukan bagian dari kapasitas harian yang aktif dipakai.
+```
+Call 1 (prosa):
+  [NON-AKTIF, hanya via ?test_nemotron=1]      Ollama Nemotron 3 Ultra → OpenRouter Nemotron 3 Ultra
+  [NON-AKTIF, hanya via ?test_nemotron_super=1] OpenRouter Nemotron 3 Super
+  1. SambaNova akun-2 (DeepSeek-V3.2)     — PRIMARY produksi
+  2. OpenRouter (gpt-oss-120b:free)       — fallback
+  3. Groq (llama-3.3-70b-versatile)       — fallback terakhir (AI)
+  4. Template deterministik non-AI (berdasarkan kategori berita) — fallback absolut, tidak pernah kosong
+
+Call 2 (bias bank sentral, JSON):
+  [NON-AKTIF, hanya via ?test_nemotron=1] Ollama Nemotron 3 Ultra → OpenRouter Nemotron 3 Ultra
+  1. SambaNova akun-1 (DeepSeek-V3.2)     — PRIMARY produksi
+  2. Groq (llama-3.3-70b-versatile)       — fallback terakhir
+  (kalau keduanya gagal: bias bank sentral TIDAK diupdate siklus itu — data lama di Redis tetap dipakai, bukan kosong/error)
+
+Call 3 (trade thesis, JSON):
+  [NON-AKTIF, hanya via ?test_nemotron=1] Ollama Nemotron 3 Ultra → OpenRouter Nemotron 3 Ultra
+  (Nemotron 3 Super SENGAJA tidak disertakan di Call 3 — dibatasi ke Call 1 saja, lihat catatan di bawah)
+  1. SambaNova akun-1 (DeepSeek-V3.2)     — PRIMARY produksi
+  2. Groq (llama-3.3-70b-versatile)       — fallback terakhir
+  (kalau keduanya gagal: tidak ada trade thesis baru ditampilkan siklus itu, bukan error)
+
+Call 4 (cek kontradiksi thesis terbuka):
+  1. SambaNova akun-1 (DeepSeek-V3.2)     — PRIMARY produksi
+  2. Groq (llama-3.3-70b-versatile)       — fallback terakhir
+  (tidak ada jalur diagnostik Nemotron untuk Call 4; kalau keduanya gagal: tidak ada thesis alert siklus itu, bukan error)
+```
+
+**Kenapa tingkat Nemotron ditandai NON-AKTIF:** model ini sempat dijadikan primary (session 145) tapi **didemote** setelah 4 dari 4 percobaan live gagal di 2 sumber berbeda (OpenRouter & Ollama Cloud) — polanya konsisten resource-contention (model 550B baru rilis, kemungkinan diprioritaskan rendah di tier gratis), bukan bug di kode kita. SambaNova dikembalikan jadi primary asli karena terbukti reliable berbulan-bulan. Jalur ini masih ada di kode (tidak dihapus) supaya bisa dites ulang kapan pun lewat parameter diagnostik, tapi **tidak pernah** dipanggil otomatis oleh cron maupun tombol "Ringkas Berita" biasa. Praktis artinya: **jatah harian OpenRouter (45/hari, di luar peran fallback-2 Call 1) dan Ollama (150/hari) nyaris tidak terpakai sehari-hari** — dua pool ini sedang "menganggur", disiapkan untuk pengujian ulang Nemotron di masa depan.
+
+Kalau primary gagal (limit habis / error / timeout), otomatis lompat ke tingkat berikutnya — user tidak akan lihat error kecuali **semua** tingkat produksi (bukan yang non-aktif) gagal sekaligus.
 
 ### 3.2 Analisa AI per Pair — `api/admin.js` (`action=ohlcv_analyze`)
 
