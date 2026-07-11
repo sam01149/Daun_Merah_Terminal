@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-07-11 (session 157 lanjutan 7 — sentimen options CME (momentum/vol/convexity) masuk prompt AI Analisa, 0 credit tambahan)
+> **Last updated:** 2026-07-11 (session 157 lanjutan 8 — tambah Paragraf 5 KESIMPULAN di commentary Analisa AI per pair)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -112,6 +112,18 @@
 - [index.html](../index.html): 1 kompromi UI minimal (bukan baris baru) — panah ▲/▼ kecil nempel di angka Risk Reversal yang sudah ada, nunjukin momentum tanpa nambah clutter.
 
 **Diverifikasi:** simulasi wording pakai data live asli (EUR/USD → pesimis+mereda+vol naik+waspada kejutan; USD/JPY → optimis+menguat+vol naik+tidak ada tanda kejutan; skew netral → baris momentum di-skip; pair tanpa data → blok kosong tanpa crash) — semua PASS, termasuk cek arah panah UI konsisten dengan logic backend. `node --check` bersih di 2 file JS, test suite 190/190 tetap hijau.
+
+---
+
+## Changelog Session 157 lanjutan 8 (2026-07-11) — Tambah Paragraf 5 KESIMPULAN di Commentary Analisa AI
+
+**Konteks:** user cek live output Analisa AI XAU/USD — label "di analisa jam 12:34 WIB" dan blok sentimen options (lanjutan 7) sudah kebaca AI ("Sentimen options yang pesimis (skor -0.85) juga mengisyaratkan kekhawatiran pasar" muncul di paragraf integrasi). User lalu minta paragraf baru khusus "kesimpulan" — sebelumnya paragraf terdekat yang mirip cuma Paragraf 4 ("Integrasi"), tapi nadanya analitis (gabungan faktor), bukan verdict tegas yang berdiri sendiri.
+
+**Perubahan — [api/admin.js](../api/admin.js)** (`ohlcvAnalyzeHandler`, prompt Call AI Analisa per pair): commentary sekarang **5 paragraf wajib** (sebelumnya "4-5"). Paragraf 5 (KESIMPULAN) instruksinya eksplisit: 3-4 kalimat MAKSIMAL, tidak boleh mengulang detail/angka paragraf 1-4, harus bisa berdiri sendiri untuk trader yang cuma sempat baca 1 paragraf — isi wajib: (1) bias akhir + level keyakinan + alasan singkat, (2) satu trigger utama yang ditunggu (dengan levelnya), (3) satu risiko/pembatal utama. Aturan "minimal 2 angka konkret per paragraf" disesuaikan jadi minimal 1 angka khusus untuk Paragraf 5 (levelnya trigger) supaya tetap ringkas, tidak dipaksa padat data seperti paragraf analitis lainnya.
+
+**Catatan ketemu sekaligus saat investigasi:** live cache `rr_cache_v2` sempat masih versi lama (tanpa field momentum/vol/convexity dari lanjutan 7) saat user generate analisa pertama kali — jadi AI cuma dapat skor dasar RR, bukan elaborasi lengkap. Setelah TTL 1 jam refresh (dipicu manual via curl saat investigasi), field baru sudah lengkap di cache — tidak perlu perubahan kode, cuma soal timing cache alami.
+
+**Diverifikasi:** perubahan murni teks prompt (instruksi AI), tidak menyentuh logic — `node --check` bersih, test suite 190/190 tetap hijau (tidak ada assertion otomatis untuk kualitas output AI generatif; verifikasi kualitas Paragraf 5 perlu dicek manual oleh user di run berikutnya).
 
 ---
 
