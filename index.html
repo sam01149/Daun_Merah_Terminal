@@ -4994,9 +4994,20 @@ function _pdfBuilder() {
   return { doc, letterhead, heading, subheading, para, kv, kesimpulanBox, footer };
 }
 
+// jsPDF dimuat dari CDN (script tag terpisah di <head>) — kalau gagal load (offline
+// pas page load, ad-blocker, dll), window.jspdf tidak ada dan _pdfBuilder() akan throw
+// silent. Fallback: kasih toast + tetap coba cetak lewat window.print() lama (sudah
+// bawaan browser, tidak butuh CDN eksternal) supaya user tidak buntu total.
+function _pdfLibReady() {
+  if (window.jspdf?.jsPDF) return true;
+  showToast('PDF Tidak Bisa Dimuat', 'Library PDF gagal dimuat (jaringan/ad-blocker) — dialihkan ke cetak biasa.', 4000);
+  return false;
+}
+
 function downloadRingkasanPdf() {
   const d = ringkasanCache;
   if (!d?.article) { showToast('Belum Ada Data', 'Generate ringkasan dulu sebelum download.', 3000); return; }
+  if (!_pdfLibReady()) { cetakRingkasan(); return; }
   const b = _pdfBuilder();
   b.letterhead('Ringkasan Pasar Forex & Emas', [
     `Ringkasan dibuat: ${fmtCBTime(d.generated_at)}`,
@@ -5059,6 +5070,7 @@ function downloadAnalisaPdf() {
     showToast('Belum Ada Analisa', 'Jalankan "Analisa AI" dulu — dokumen berisi analisa tertulisnya.', 3500);
     return;
   }
+  if (!_pdfLibReady()) { cetakAnalisa(); return; }
   const b = _pdfBuilder();
   const srcBits = ['teknikal'];
   if (ai.hasMakro) { const age = _makroAgeLabel(ai.makroAt); srcBits.push(age ? `makro (${age})` : 'makro'); }
