@@ -4800,7 +4800,20 @@ function _renderStructuredAi(structured, commentary, model, hasMakro, isCached, 
   }
 
   const text = (structured?.commentary || commentary || '').trim();
-  if (text) html += text.split('\n').filter(l => l.trim()).map(l => `<p style="margin:0 0 6px;font-size:12px">${escHtml(l)}</p>`).join('');
+  // Paragraf KESIMPULAN (session 157 lanjutan 8) dikasih box terpisah + bold — biar
+  // langsung kelihatan tanpa perlu baca 4 paragraf lain, sesuai tujuannya. Deteksi via
+  // prefix literal "KESIMPULAN:" yang diwajibkan di prompt admin.js.
+  if (text) html += text.split('\n').filter(l => l.trim()).map(l => {
+    const trimmed = l.trim();
+    const m = trimmed.match(/^kesimpulan:\s*(.*)$/i);
+    if (m) {
+      return `<p style="margin:10px 0 6px;padding:10px 12px;background:var(--surface);border-left:3px solid var(--accent);border-radius:3px;font-size:12px">
+        <span style="color:var(--accent);font-weight:700;letter-spacing:.06em;font-size:10px">KESIMPULAN</span><br>
+        <span>${escHtml(m[1])}</span>
+      </p>`;
+    }
+    return `<p style="margin:0 0 6px;font-size:12px">${escHtml(trimmed)}</p>`;
+  }).join('');
   html += '</div>';
   return html;
 }
