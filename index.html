@@ -2458,18 +2458,22 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
     display: block !important; overflow: visible !important; height: auto !important;
   }
   .no-print, .no-print * { display: none !important; }
-  .print-letterhead { display: block !important; }
+  .print-letterhead { display: flex !important; }
 
-  /* Palet cetak: putih + hitam-kecoklatan (bukan hitam pekat — lebih lembut
-     di kertas), aksen warna dipertahankan tapi kontrasnya dinaikkan untuk
-     latar putih (versi dark-theme terlalu terang/pastel di kertas). */
+  /* Palet cetak: MONOKROM TOTAL (permintaan eksplisit user: "JANGAN ADA
+     WARNA" — dokumen resmi hitam/putih/abu). Semua variabel warna sinyal
+     (green/red/yellow/pink/purple) dipetakan ke hitam-abu; arah bias tetap
+     terbaca dari TEKSNYA (LONG/SHORT/BULLISH/BEARISH), bukan dari warna. */
   :root {
-    --bg: #ffffff; --surface: #ffffff; --border: #c9c3b6;
-    --accent: #96261c; --accent-dim: #6e1c14; --gate: #6e1c14;
-    --text: #1c1a15; --muted: #625c4d; --text-mid: #35311f;
-    --green: #1c6b3d; --green-dim: #164f2d; --red: #96261c;
-    --yellow: #8a530d; --orange: #8a530d; --purple: #5c449c; --pink: #a13d68;
+    --bg: #ffffff; --surface: #ffffff; --border: #bdbdbd;
+    --accent: #1a1a1a; --accent-dim: #1a1a1a; --gate: #1a1a1a;
+    --text: #1a1a1a; --muted: #5a5a5a; --text-mid: #333333;
+    --green: #1a1a1a; --green-dim: #1a1a1a; --red: #1a1a1a;
+    --yellow: #1a1a1a; --orange: #1a1a1a; --purple: #1a1a1a; --pink: #5a5a5a;
   }
+  /* Highlight berwarna di teks artikel (angka kuning, currency merah, dst)
+     + warna hardcoded lain: netralkan ke warna teks biasa. */
+  .hl-num, .hl-cur, .hl-bull, .hl-bear { color: inherit !important; font-weight: inherit !important; }
   html, body { height: auto !important; overflow: visible !important; background: #fff !important; }
   body {
     font-family: 'DM Mono', 'Courier New', monospace !important;
@@ -2523,6 +2527,27 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
     font-family: 'Syne', sans-serif !important; letter-spacing: .04em;
   }
 
+  /* ANALISA: dokumen cetak = analisa TERTULIS saja (permintaan user) —
+     kartu OHLCV Daily/4H/1H, tabel candle, dan kartu indikator disembunyikan
+     total; angka pentingnya toh sudah dinarasikan AI di paragraf analisa. */
+  body.printing-analisa #analisaD1Card,
+  body.printing-analisa #analisaH4Card,
+  body.printing-analisa #analisaH1Card,
+  body.printing-analisa #analisaIndCard { display: none !important; }
+
+  /* Section header dibesarkan (permintaan user) — label 9px versi layar
+     kekecilan untuk dokumen. Inline style butuh !important untuk kalah. */
+  .ringkasan-fx-label, .ringkasan-xau-label, .thesis-section-label {
+    font-size: 13px !important; color: var(--text) !important; font-weight: 700;
+  }
+  .r-tag { font-size: 10px !important; }
+  .analisa-ai-label { font-size: 12px !important; color: var(--text) !important; font-weight: 700; }
+
+  /* Bintang keyakinan (★★★☆☆) diganti teks resmi di dokumen — dua-duanya
+     dirender di HTML, CSS ini yang milih mana yang tampil per konteks. */
+  .conf-stars { display: none !important; }
+  .conf-text  { display: inline !important; color: var(--muted) !important; font-size: 10px; }
+
   .analisa-candle-table { font-size: 9px !important; }
 
   .ai-disclaimer {
@@ -2534,9 +2559,15 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 
   @page { margin: 14mm 12mm; }
 }
+/* Pasangan .conf-stars/.conf-text (lihat @media print): di layar bintang
+   tampil, teks resmi disembunyikan. */
+.conf-text { display: none; }
 .print-letterhead {
+  /* JANGAN set display di sini — display dikontrol terpisah: none di layar
+     (rule di atas), flex saat print (di @media print). display:flex yang
+     dulu ada di sini yang bikin letterhead bocor tampil di layar app. */
   border-bottom: 3px solid var(--accent); padding-bottom: 10px; margin-bottom: 18px;
-  display: flex; justify-content: space-between; align-items: flex-end; flex-wrap: wrap; gap: 6px;
+  justify-content: space-between; align-items: flex-end; flex-wrap: wrap; gap: 6px;
 }
 .print-letterhead .pl-brand { font-family: 'Syne', sans-serif; font-weight: 800; font-size: 20px; color: var(--accent); letter-spacing: .02em; }
 .print-letterhead .pl-title { font-size: 13px; color: var(--text); margin-top: 2px; font-weight: 600; }
@@ -4743,9 +4774,12 @@ function _printMeta(bodyClass) {
   if (bodyClass === 'printing-analisa') {
     const symbol = analisaActive.symbol, label = analisaActive.label;
     const d = symbol ? analisaDataCache[symbol] : null;
-    if (!d) return null;
+    // Dokumen cetak Analisa = analisa TERTULIS (kartu OHLCV/indikator di-hide saat
+    // print) — tanpa hasil AI dokumennya kosong, jadi hasil AI wajib ada dulu.
+    const ai = symbol ? analisaAiCache[symbol] : null;
+    if (!d || !ai || (!ai.commentary && !ai.structured)) return null;
     const price = d.h1?.current != null ? `Harga saat data: ${d.h1.current}` : '';
-    const bias = analisaAiCache[symbol]?.structured?.bias;
+    const bias = ai.structured?.bias;
     const biasStr = bias ? ` · Bias AI: ${bias.toUpperCase()}` : '';
     return { letterheadId: 'printLetterheadAnalisa', titleText: `Analisa Teknikal — ${label}`, meta: `${price}${biasStr}` };
   }
@@ -4796,7 +4830,7 @@ function cetakRingkasan() {
 
 function cetakAnalisa() {
   const m = _printMeta('printing-analisa');
-  if (!m) { showToast('Belum Ada Data', 'Pilih pair dan tunggu data termuat dulu sebelum cetak.', 3000); return; }
+  if (!m) { showToast('Belum Ada Analisa', 'Jalankan "Analisa AI" dulu — dokumen cetak berisi analisa tertulisnya.', 3500); return; }
   _printPanel('printing-analisa', m.letterheadId, m.titleText, m.meta);
 }
 
@@ -5409,14 +5443,17 @@ function renderThesisCard(t) {
   _lastThesis = t;
   try { localStorage.setItem('daun_merah_thesis', JSON.stringify(t)); } catch(_) {}
   const stars = '★'.repeat(t.confidence_1_to_5) + '☆'.repeat(5 - t.confidence_1_to_5);
+  // conf-stars tampil di layar, conf-text (teks resmi tanpa simbol) menggantikannya
+  // di dokumen cetak — lihat pasangan CSS .conf-stars/.conf-text di @media print.
+  const confText = `Keyakinan: ${t.confidence_1_to_5 >= 4 ? 'Tinggi' : t.confidence_1_to_5 >= 3 ? 'Sedang' : 'Rendah'} (${t.confidence_1_to_5}/5)`;
   const dirClass = t.direction === 'long' ? 'long' : 'short';
   const dirLabel = t.direction === 'no_trade' ? 'NO TRADE' : t.direction.toUpperCase();
   return `<div class="thesis-card">
-    <div style="font-size:9px;color:var(--pink);font-family:'DM Mono',monospace;letter-spacing:.1em;margin-bottom:8px">AI THESIS · CB BIAS + TA</div>
+    <div class="thesis-section-label" style="font-size:9px;color:var(--pink);font-family:'DM Mono',monospace;letter-spacing:.1em;margin-bottom:8px">AI THESIS · CB BIAS + TA</div>
     <div style="display:flex;align-items:center">
       <span class="thesis-pair">${t.pair_recommendation || '—'}</span>
       ${t.direction !== 'no_trade' ? `<span class="thesis-dir ${dirClass}">${dirLabel}</span>` : `<span class="thesis-dir" style="background:var(--border);color:var(--muted)">${dirLabel}</span>`}
-      <span class="thesis-conf">${stars}</span>
+      <span class="thesis-conf"><span class="conf-stars">${stars}</span><span class="conf-text">${confText}</span></span>
     </div>
     ${t.invalidation_condition ? `<div class="thesis-label">INVALIDASI</div><div class="thesis-val">${escHtml(t.invalidation_condition)}</div>` : ''}
     ${t.regime_note ? `<div class="thesis-label" style="color:var(--yellow)">CATATAN REGIME</div><div class="thesis-val" style="color:var(--yellow)">${escHtml(t.regime_note)}</div>` : ''}
@@ -5431,13 +5468,14 @@ function renderXauThesisCard(t) {
   const xauColorMap = { bullish: 'var(--green)', bearish: 'var(--accent)', conflicting: 'var(--yellow)', neutral: 'var(--muted)' };
   const xauColor = xauColorMap[t.xau_bias] || 'var(--muted)';
   const xauStars = t.xau_confidence ? '★'.repeat(t.xau_confidence) + '☆'.repeat(5 - t.xau_confidence) : '';
+  const xauConfText = t.xau_confidence ? `Keyakinan: ${t.xau_confidence >= 4 ? 'Tinggi' : t.xau_confidence >= 3 ? 'Sedang' : 'Rendah'} (${t.xau_confidence}/5)` : '';
   const driverLabel = (t.xau_dominant_driver || '').replace(/_/g, ' ').toUpperCase();
   return `<div class="thesis-card xau">
-    <div style="font-size:9px;color:var(--yellow);font-family:'DM Mono',monospace;letter-spacing:.1em;margin-bottom:8px">AI THESIS · XAU/USD</div>
+    <div class="thesis-section-label" style="font-size:9px;color:var(--yellow);font-family:'DM Mono',monospace;letter-spacing:.1em;margin-bottom:8px">AI THESIS · XAU/USD</div>
     <div style="display:flex;align-items:center;flex-wrap:wrap;gap:4px;margin-bottom:6px">
       <span class="thesis-pair" style="font-size:15px">XAU/USD</span>
       <span class="thesis-dir" style="background:${xauColor}22;color:${xauColor}">${(t.xau_bias || '').toUpperCase()}</span>
-      ${xauStars ? `<span class="thesis-conf">${xauStars}</span>` : ''}
+      ${xauStars ? `<span class="thesis-conf"><span class="conf-stars">${xauStars}</span><span class="conf-text">${xauConfText}</span></span>` : ''}
     </div>
     ${driverLabel ? `<div class="thesis-label">DRIVER</div><div class="thesis-val">${driverLabel}</div>` : ''}
     ${t.xau_driver_evidence ? `<div class="thesis-label">BUKTI</div><div class="thesis-val">${escHtml(t.xau_driver_evidence)}</div>` : ''}

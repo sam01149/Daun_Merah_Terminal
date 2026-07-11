@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-07-11 (session 157 lanjutan 12 — polish PDF berdasarkan hasil cetak nyata user: tombol/duplikat/spasi kosong dibersihkan)
+> **Last updated:** 2026-07-11 (session 157 lanjutan 13 — PDF jadi dokumen resmi monokrom + fix letterhead bocor ke layar)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -155,6 +155,20 @@
 - Fungsi baru: `_printPanel()` (helper generate letterhead + toggle body class + `window.print()`), `cetakRingkasan()`, `cetakAnalisa()` — dua-duanya guard "belum ada data" (toast, bukan cetak halaman kosong) sebelum lanjut cetak. Cleanup class via listener `afterprint` (jalan baik user benar-benar cetak maupun batal dialog).
 
 **Diverifikasi:** `node --check` bersih di semua inline script, brace CSS seimbang (1183/1183), simulasi letterhead (format tanggal WIB benar untuk Ringkasan & Analisa) + guard belum-ada-data (4 skenario: cache null, cache tanpa article, symbol null, data belum load) — semua PASS, test suite 190/190 tetap hijau. Verifikasi visual output PDF asli (hasil "Save as PDF" browser) belum dilakukan — perlu dicek manual oleh user karena environment ini tidak punya browser untuk render print preview sungguhan.
+
+---
+
+## Changelog Session 157 lanjutan 13 (2026-07-11) — PDF Jadi Dokumen Resmi Monokrom + Fix Letterhead Bocor ke Layar
+
+**Konteks:** user kirim screenshot layar tab RINGKASAN dan bertanya "fungsi daun merah di atas itu apa (bukan bagian header)" — itu ternyata **BUG: letterhead PDF bocor tampil di layar app**. Root cause: rule dasar `.print-letterhead` yang seharusnya `display:none` di layar tertimpa oleh rule kedua di bawahnya (layout flex dari lanjutan 11) yang menyetel `display:flex` tanpa scope print — CSS same-specificity, yang terakhir menang. **Fix:** properti `display` dihapus dari rule layout dasar (properti flex lain tetap), `display:flex !important` dipindah ke dalam `@media print`. Diverifikasi via inspeksi rule (bukan cuma regex — cek pertama sempat positif palsu karena kata "display:flex" ada di komentar CSS sendiri).
+
+**Permintaan desain user di pesan yang sama (semuanya untuk DOKUMEN CETAK, layar app tidak diubah):**
+1. **"JANGAN ADA WARNA" — monokrom total:** palet `:root` di `@media print` sekarang hitam/putih/abu murni — semua warna sinyal (green/red/yellow/pink/purple/accent) dipetakan ke `#1a1a1a`/`#5a5a5a`. Arah bias tetap terbaca dari TEKSNYA (LONG/SHORT/BULLISH/BEARISH), bukan warna. Highlight artikel (`.hl-num/.hl-cur/.hl-bull/.hl-bear`) dinetralkan ke `color:inherit`. Letterhead (brand + garis) ikut hitam.
+2. **Bintang ★★★☆☆ → teks resmi:** `renderThesisCard`/`renderXauThesisCard` sekarang merender DUA versi — `.conf-stars` (bintang, tampil di layar) + `.conf-text` ("Keyakinan: Tinggi/Sedang/Rendah (n/5)", tampil HANYA di print). CSS pasangan yang memilih mana yang tampil per konteks; layar app tidak berubah.
+3. **Section header lebih besar di print:** `.ringkasan-fx-label`/`.ringkasan-xau-label`/`.thesis-section-label` (class baru ditambahkan ke label inline thesis card) 9px → 13px bold hitam di print; `.analisa-ai-label` → 12px.
+4. **Analisa PDF = analisa tertulis SAJA:** kartu Daily/4H/1H, tabel candle, dan kartu indikator (`#analisaD1Card/H4/H1/IndCard`) disembunyikan total saat print — angka pentingnya sudah dinarasikan AI di paragraf. Konsekuensi: guard `cetakAnalisa()`/`_printMeta()` sekarang mewajibkan **hasil Analisa AI sudah ada** (bukan cuma data OHLCV) — tanpa itu dokumennya kosong, toast "Jalankan Analisa AI dulu".
+
+**Diverifikasi:** syntax bersih, CSS balanced (1201/1201), inspeksi manual rule letterhead (display hanya di 2 tempat yang benar), test suite 190/190 hijau.
 
 ---
 
