@@ -2479,39 +2479,59 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
     padding: 0 26mm 20mm !important; overflow: visible !important; max-height: none !important;
   }
 
+  /* SEMUA tombol tidak pernah relevan di kertas — sembunyikan global
+     (generate/refresh/Analisa AI/Mulai ke Sizing Calc/print sendiri).
+     Ini nutup bug PDF pertama user: tombol "Ringkas Ulang" & "Mulai ke
+     Sizing Calc →" ikut tercetak. */
+  button { display: none !important; }
+
+  /* Elemen redundan/dobel di kertas: kotak statistik besar (angkanya sudah
+     ada di letterhead + baris meta), baris "Data: N headline..." (sama),
+     badge model ber-emoji (blob aneh di print), provider log debug. */
+  .ringkasan-stats, .ringkasan-ts, .ringkasan-method, .ringkasan-method-note,
+  .ringkasan-provider-log { display: none !important; }
+
   /* Kartu jadi FLAT: hilangkan rounded corner + shadow + bar warna tebal
      ala app; ganti divider tipis + label kapital kecil di atasnya — gaya
      "section laporan", bukan "widget dashboard". ::before (bar warna 3px
-     di app) sengaja dimatikan di print, diganti border-top polos. */
+     di app) sengaja dimatikan di print, diganti border-top polos.
+     page-break-inside:avoid HANYA untuk kartu pendek (thesis, indikator) —
+     kartu teks panjang (artikel, hasil AI) dibiarkan mengalir lintas
+     halaman, kalau dipaksa avoid malah ninggalin halaman setengah kosong
+     (kelihatan di PDF pertama user: page 2 analisa nyaris kosong). */
   .ringkasan-card, .thesis-card, .thesis-alert-card, .analisa-tf-card,
-  .analisa-ai-result, .rstat {
-    page-break-inside: avoid; border-radius: 0 !important; box-shadow: none !important;
+  .analisa-ai-result {
+    border-radius: 0 !important; box-shadow: none !important;
     background: transparent !important; border: none !important;
     border-top: 1px solid var(--border) !important;
-    padding: 10mm 0 4mm !important; margin: 0 0 2mm !important;
+    padding: 5mm 0 2mm !important; margin: 0 0 1mm !important;
   }
+  .thesis-card, .thesis-alert-card, .analisa-tf-card { page-break-inside: avoid; }
   .ringkasan-card::before, .thesis-card::before, .ringkasan-card-xau::before,
   .thesis-card.xau::before { display: none !important; }
   .ringkasan-card:first-child, .thesis-card:first-child { border-top: none !important; padding-top: 0 !important; }
 
-  /* Badge/pill berwarna (thesis-dir, ringkasan-method, dll) diflatkan jadi
-     teks polos berwarna — pill di kertas cuma jadi kotak abu-abu berat. */
+  /* Badan teks laporan: rata kiri-kanan ala dokumen resmi. */
+  .ringkasan-text .r-para, .analisa-ai-result p { text-align: justify; }
+
+  /* Badge/pill berwarna (thesis-dir, dll) diflatkan jadi teks outline
+     tipis — pill solid di kertas cuma jadi kotak abu-abu berat. */
   .thesis-dir { background: none !important; border: 1px solid currentColor; padding: 1px 6px !important; border-radius: 2px !important; }
-  .ringkasan-method { background: none !important; padding: 0 !important; }
 
   h1, h2, h3, .ringkasan-fx-label, .ringkasan-xau-label, .thesis-section-label,
   .analisa-tf-label, .analisa-pair-label {
     font-family: 'Syne', sans-serif !important; letter-spacing: .04em;
   }
 
+  .analisa-candle-table { font-size: 9px !important; }
+
   .ai-disclaimer {
-    border-top: 1px solid var(--border); margin-top: 8mm; padding-top: 3mm;
+    border: none !important; border-top: 1px solid var(--border) !important;
+    border-radius: 0 !important; background: transparent !important;
+    margin-top: 6mm; padding: 3mm 0 0 !important;
     font-size: 9px; color: var(--muted) !important; font-family: 'DM Mono', monospace;
   }
 
-  /* Footer halaman: nomor halaman bawaan browser + nama app kecil di kiri
-     (browser print umumnya sudah nambah header/footer URL+tanggal sendiri
-     via pengaturan "Headers and footers" — ini pelengkap kalau dimatikan). */
   @page { margin: 14mm 12mm; }
 }
 .print-letterhead {
@@ -4963,7 +4983,7 @@ function _renderStructuredAi(structured, commentary, model, hasMakro, isCached, 
   // browser menerimanya, supaya jelas beda antara hasil baru vs hasil cache lama
   // yang di-restore dari localStorage/mode=cached.
   const analyzedTag = analyzedAt ? ` <span style="color:var(--muted);font-size:10px">· di analisa jam ${fmtCBTime(analyzedAt)}</span>` : '';
-  let html = `<div class="analisa-ai-result"><div class="analisa-ai-label">🧠 AI${modelStr}${srcTag}${cachedBadge}${analyzedTag}</div>`;
+  let html = `<div class="analisa-ai-result"><div class="analisa-ai-label"><span class="no-print">🧠 </span>AI${modelStr}${srcTag}${cachedBadge}${analyzedTag}</div>`;
 
   if (structured) {
     const bias      = (structured.bias || 'neutral').toLowerCase();

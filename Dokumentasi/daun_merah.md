@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-07-11 (session 157 lanjutan 11 — fix tombol cetak hilang setelah generate + redesign CSS print + hook Ctrl+P)
+> **Last updated:** 2026-07-11 (session 157 lanjutan 12 — polish PDF berdasarkan hasil cetak nyata user: tombol/duplikat/spasi kosong dibersihkan)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -155,6 +155,22 @@
 - Fungsi baru: `_printPanel()` (helper generate letterhead + toggle body class + `window.print()`), `cetakRingkasan()`, `cetakAnalisa()` — dua-duanya guard "belum ada data" (toast, bukan cetak halaman kosong) sebelum lanjut cetak. Cleanup class via listener `afterprint` (jalan baik user benar-benar cetak maupun batal dialog).
 
 **Diverifikasi:** `node --check` bersih di semua inline script, brace CSS seimbang (1183/1183), simulasi letterhead (format tanggal WIB benar untuk Ringkasan & Analisa) + guard belum-ada-data (4 skenario: cache null, cache tanpa article, symbol null, data belum load) — semua PASS, test suite 190/190 tetap hijau. Verifikasi visual output PDF asli (hasil "Save as PDF" browser) belum dilakukan — perlu dicek manual oleh user karena environment ini tidak punya browser untuk render print preview sungguhan.
+
+---
+
+## Changelog Session 157 lanjutan 12 (2026-07-11) — Polish PDF Berdasarkan Hasil Cetak Nyata User
+
+**Konteks:** user kirim 2 PDF hasil cetak asli (ringkasan.pdf + analisa.pdf) — "aneh banget, kayak ga professional". Dari PDF-nya keliatan 4 masalah konkret yang tidak ketahuan dari simulasi kode (butuh render print nyata):
+1. **Tombol interaktif ikut tercetak** — "Ringkas Ulang", "Analisa AI", "Mulai ke Sizing Calc →" muncul di kertas. Fix: `button { display:none !important }` global di `@media print` (tombol tidak pernah relevan di kertas, apapun itu).
+2. **Informasi dobel 3x di halaman 1 Ringkasan** — letterhead menyebut "150 berita · 0 event", baris meta menyebut lagi, lalu 2 kotak statistik besar (`.ringkasan-stats`) menyebut hal yang sama ketiga kalinya. Fix: `.ringkasan-stats`, `.ringkasan-ts` (baris "Data: N headline..."), `.ringkasan-method` (badge model ber-emoji yang tercetak jadi blob), `.ringkasan-provider-log` semua disembunyikan di print.
+3. **Spasi kosong raksasa** (page 2 analisa nyaris kosong; bagian bawah page 1 ringkasan kosong separuh) — kombinasi padding section 10mm kegedean + `page-break-inside:avoid` diterapkan ke SEMUA kartu termasuk yang panjang (artikel/hasil AI lebih dari 1 halaman, avoid memaksa mulai di halaman baru). Fix: padding diturunkan ke 5mm, `avoid` sekarang HANYA untuk kartu pendek (thesis/indikator/alert) — kartu teks panjang dibiarkan mengalir lintas halaman.
+4. **Emoji 🧠 di label hasil AI tercetak** sebagai blob pink — dibungkus `<span class="no-print">`.
+
+Bonus: badan teks laporan (paragraf artikel + commentary AI) sekarang `text-align: justify` di print — rata kiri-kanan ala dokumen resmi; tabel candle dikecilkan ke 9px.
+
+**Catatan untuk hasil cetak user berikutnya:** label "Paragraf 1 —" dst yang masih muncul di analisa.pdf user itu **hasil AI CACHED jam 12:44** (di-generate sebelum fix prompt lanjutan 9 deploy) — bukan bug baru; klik "Analisa AI" lagi untuk hasil bersih. Letterhead analisa.pdf juga masih layout lama (dicetak sebelum deploy lanjutan 11 selesai).
+
+**Diverifikasi:** syntax bersih, CSS balanced (1193/1193), test suite 190/190 hijau. Verifikasi visual final tetap butuh cetak ulang oleh user.
 
 ---
 
