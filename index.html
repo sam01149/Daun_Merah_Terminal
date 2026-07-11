@@ -4915,20 +4915,26 @@ function _pdfBuilder() {
   function ensureSpace(h) {
     if (y + h > pageH - marginBottom) { doc.addPage(); y = marginTop; }
   }
-  function rule(gapBefore, gapAfter) {
+  function rule(gapBefore, gapAfter, color) {
     y += gapBefore;
-    doc.setDrawColor(190); doc.setLineWidth(0.2);
+    if (color) { doc.setDrawColor(...color); doc.setLineWidth(0.9); }
+    else { doc.setDrawColor(190); doc.setLineWidth(0.2); }
     doc.line(marginX, y, marginX + contentW, y);
     y += gapAfter;
   }
+  // Header pakai warna primer brand (#c0392b) — konvensi kop surat resmi umum (logo/nama
+  // instansi berwarna, badan surat tetap monokrom), bukan pelanggaran aturan "JANGAN ADA
+  // WARNA" lama (itu soal badan dokumen, bukan identitas brand di kop). Judul/meta/isi
+  // tetap abu-abu/hitam total.
+  const BRAND_COLOR = [192, 57, 43];
   function letterhead(titleText, metaLines) {
-    doc.setFont('times', 'bold'); doc.setFontSize(18); doc.setTextColor(20);
+    doc.setFont('times', 'bold'); doc.setFontSize(18); doc.setTextColor(...BRAND_COLOR);
     doc.text('DAUN MERAH', marginX, y); y += 7;
     doc.setFont('times', 'bold'); doc.setFontSize(12); doc.setTextColor(20);
     doc.text(titleText, marginX, y); y += 5.5;
     doc.setFont('times', 'normal'); doc.setFontSize(8.5); doc.setTextColor(90);
     metaLines.forEach(line => { doc.text(line, marginX, y); y += 3.9; });
-    rule(3, 6);
+    rule(3, 6, BRAND_COLOR);
   }
   function heading(text) {
     ensureSpace(9);

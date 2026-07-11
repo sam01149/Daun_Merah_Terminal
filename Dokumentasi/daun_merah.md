@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-07-11 (session 157 lanjutan 16 — fix bug spasi-antar-huruf di PDF, justify jsPDF dibuang)
+> **Last updated:** 2026-07-11 (session 157 lanjutan 17 — kop PDF pakai warna brand, badan tetap monokrom)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -57,6 +57,16 @@
 **Fix — [index.html](../index.html):** opsi `justify` dibuang total dari `para()` di `_pdfBuilder()` — semua paragraf PDF (Ringkasan & Analisa) sekarang rata kiri (ragged-right) polos, bukan full-justify. Tiga call-site (`{ justify: true }` di artikel FX/XAU dan komentar Analisa) ikut dibersihkan.
 
 **Diverifikasi:** `node --check` bersih, test suite 190/190 hijau, inspeksi langsung content stream PDF hasil generate (jsPDF npm sementara, `--no-save`) — konfirmasi tidak ada lagi operator `Tz`/`Tc` di teks paragraf, cuma `Tj` polos.
+
+---
+
+## Changelog Session 157 lanjutan 17 (2026-07-11) — Kop PDF Pakai Warna Brand, Badan Tetap Monokrom
+
+**Konteks:** setelah fix bug justify (lanjutan 16), user minta cek juga Analisa PDF punya bug spasi yang sama (sudah tercakup fix sebelumnya karena satu fungsi `para()` dipakai bareng, diverifikasi ulang), lalu usul: kop suratnya saja yang ikut warna primer brand, badan dokumen tetap monokrom.
+
+**[index.html](../index.html):** `_pdfBuilder().letterhead()` — teks "DAUN MERAH" + garis pembatas kop sekarang pakai `BRAND_COLOR` (`#c0392b`, sama dengan `--accent` CSS di app), sementara judul dokumen, baris meta, dan seluruh badan (paragraf, thesis, kv, dst) tetap grayscale seperti sebelumnya. Ini konvensi kop surat resmi umum (identitas/logo berwarna, badan surat monokrom) — bukan pelanggaran aturan lama "JANGAN ADA WARNA" (itu soal badan dokumen). Berlaku otomatis untuk Ringkasan & Analisa karena satu builder yang sama.
+
+**Diverifikasi:** `node --check` bersih, test suite 190/190 hijau, regenerate PDF asli (jsPDF npm sementara) + inspeksi content stream mentah — konfirmasi operator warna `0.753 0.224 0.169 rg`/`RG` cuma di teks "DAUN MERAH" & garis kop, judul/meta/isi tetap `g` (grayscale). Analisa PDF juga diregenerate ulang & dicek — tidak ada lagi operator `Tz`/`Tc`/`Tw` (bug justify lanjutan 16 sudah bersih di kedua fitur).
 
 ---
 
