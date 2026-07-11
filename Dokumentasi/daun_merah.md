@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-07-11 (session 157 lanjutan 3 — koreksi status berbayar ScraperAPI/Barchart di daun_merah_vendor.md)
+> **Last updated:** 2026-07-11 (session 157 lanjutan 4 — fix pemakaian ScraperAPI: TTL CVOL 1h→6h + staleness note)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -53,6 +53,19 @@
 2. **Barchart OnDemand sebenarnya BERBAYAR (enterprise), bukan gratis** — draft sebelumnya salah menyimpulkan "free (signup manual)" dari komentar kode, padahal Session 47 (baris 3113 dokumen ini) SUDAH mengonfirmasi lebih dulu "enterprise berbayar (bukan free)". `BARCHART_API_KEY` kemungkinan besar tidak pernah benar-benar di-set.
 
 **Kesimpulan baru:** kemungkinan besar **tidak ada vendor berbayar yang aktif dipakai** di app ini — ScraperAPI di jatah gratisnya, Barchart path mati/tidak dipakai. Tidak bisa dipastikan 100% tanpa cek langsung dashboard billing ScraperAPI. §9 `daun_merah_vendor.md` ditulis ulang total untuk mencerminkan ini. **Pelajaran:** draft dokumentasi awal sempat menyimpulkan tier dari komentar kode ("free signup") tanpa cross-check ke catatan riwayat project sendiri yang sudah pernah verifikasi langsung — akan lebih hati-hati grep changelog lama dulu sebelum menulis klaim tier vendor.
+
+---
+
+## Changelog Session 157 lanjutan 4 (2026-07-11) — Fix Pemakaian ScraperAPI: TTL CVOL 1h→6h + Staleness Note
+
+**Konteks:** user cek langsung dashboard ScraperAPI dan menemukan **417/1.000 credit terpakai dalam ~5 hari** — proyeksi ~2.500 credit/bulan (2,5x jatah gratis), bakal habis hari ke-12 dari 30. Root cause: fitur Risk Reversal/CVOL (`correlations.js`) menghabiskan 6 credit/refresh (1 per pair CME CVOL, paralel) dengan TTL cuma 1 jam — bisa sampai 144 credit/hari kalau panel korelasi/vol ramai. Estimasi lama Session 47 ("~120-180 request/bulan") ditulis SEBELUM fitur CVOL 6-pair ditambahkan di sesi yang sama, jadi tidak terupdate.
+
+**Riset vendor alternatif (diminta user, "cari vendor baru" sebelum eksekusi fix):** dicek 7 provider (ScrapingAnt 10.000 credit/bulan, Scrapfly 1.000 credit/bulan, Scrape.do, ScrapingBee, Crawlbase, WebScrapingAPI, Zyte) — **tidak ada yang lebih baik**. Semua kompetitor (kecuali klaim tak terverifikasi WebScrapingAPI) menerapkan pengali 25-30x credit untuk fitur residential-proxy/anti-WAF yang dibutuhkan buat lolos Akamai (dipakai CME) — kapasitas efektif untuk kasus spesifik ini jadi lebih kecil dari ScraperAPI (yang base rate 1 credit-nya sudah residential-grade tanpa toggle premium, terbukti dari kode yang polos tanpa parameter tambahan tapi tetap berhasil). Temuan tambahan: akun Scrapfly yang sempat dibuat user punya toggle **"PAG" (Pay As you Go) auto-billing overage aktif by default** — user diingatkan untuk mematikan ini demi menghindari risiko tagihan tak terduga.
+
+**Fix yang diterapkan** (perbaiki pola pemakaian, bukan ganti vendor):
+- [api/correlations.js](../api/correlations.js): `RR_CACHE_TTL` 3600 (1h) → **21600 (6h)** — konsisten dengan TTL `rate-path.js` (4h) dan `fundamental_analysis` (6h). Data ini juga inherently lambat bergerak (positioning institusional options, bukan harga real-time) jadi 6h freshness masuk akal.
+- [api/market-digest.js](../api/market-digest.js): blok SKEW OPSI (dipakai Call 1 & Call 3, variabel `riskReversalBlock` yang sama) sekarang dapat penanda umur eksplisit `[data X jam lalu]` (pola sama seperti `makroAgeH` di `ohlcv_analyze`), dan CATATAN STALENESS yang sebelumnya cuma cover REAL YIELD/RISK REGIME/RATE PATH diperluas mencakup SKEW OPSI juga — dipindah posisinya ke setelah blok SKEW OPSI supaya urutan logis. Ini menutup celah akurasi: AI sekarang diinstruksikan eksplisit memberi bobot lebih ke headline segar kalau skew yang di-cache lebih lama (sampai 6h) ternyata bertentangan dengan berita terbaru.
+- **Diverifikasi**: `node --check` bersih di kedua file, test suite 190/190 tetap hijau, plus simulasi isolated 4 skenario untuk logic age-tag (data segar, data 3.5 jam, tanpa computed_at/legacy, data unavailable) — semua PASS.
 
 **Verifikasi ulang (diminta user setelah draft pertama):** cek baris-per-baris ulang rantai fallback tiap fitur langsung dari kode (bukan dari draft sebelumnya). Ketemu 1 koreksi lagi: **Analisa AI per Pair (`ohlcv_analyze`) TIDAK punya Groq di rantainya** — cuma 2 tingkat (SambaNova akun-1 → akun-2), berbeda dari 3 fitur AI lain yang semuanya punya Groq sebagai jaring pengaman terakhir. Groq & Ollama Cloud sengaja dicoret dari rantai ini 2026-07-10 (Ollama timeout konsisten 15s, kualitas Groq/llama-3.3 dinilai di bawah DeepSeek-V3.2 akun-2). Juga ditambahkan: Ringkasan Berita Call 1 punya fallback ke-4 non-AI (template deterministik berbasis kategori berita) kalau semua provider AI gagal — jadi fitur itu tidak pernah benar-benar kosong.
 

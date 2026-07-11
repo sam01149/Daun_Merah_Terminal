@@ -428,7 +428,14 @@ module.exports = async function handler(req, res) {
   // Sources (tried in order): CME CVOL Skew → Barchart OnDemand → unavailable message.
   if (req.query.action === 'risk-reversal') {
     const RR_CACHE_KEY = 'rr_cache_v2'; // v2: new /services/cvol endpoint + 6 pairs incl XAU
-    const RR_CACHE_TTL = 3600;
+    // TTL dinaikkan dari 3600 (1h) ke 21600 (6h) — session 157 lanjutan 4: tiap refresh
+    // menghabiskan 6 ScraperAPI credit (1 per pair CME CVOL), dan di TTL 1h itu bisa
+    // menghabiskan free tier ScraperAPI (1.000 credit/bulan) dalam ~12 hari kalau trafik
+    // panel korelasi/vol ramai tiap jam. RR/skew opsi juga secara alami lambat bergerak
+    // (positioning institusional, bukan harga real-time) — 6h konsisten dengan TTL
+    // rate-path.js (Fed Funds futures, juga 4h) dan fundamental_analysis (6h). Lihat
+    // CATATAN STALENESS di market-digest.js yang sekarang mencakup blok ini juga.
+    const RR_CACHE_TTL = 21600;
 
     try {
       const cached = await redisCmd('GET', RR_CACHE_KEY);

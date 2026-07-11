@@ -1226,6 +1226,9 @@ module.exports = async function handler(req, res) {
   }
 
   // Build FX/XAU options positioning block (25-delta risk reversal skew) — institutional positioning signal
+  // Umur data disisipkan di sini (bukan cuma di CATATAN STALENESS generik) karena TTL-nya
+  // sekarang 6 jam (session 157 lanjutan 4, naik dari 1 jam — lihat correlations.js) —
+  // AI perlu tahu persis seberapa basi angka ini, sama seperti pola makroAgeH di ohlcv_analyze.
   let riskReversalBlock = '(Data risk reversal/skew opsi tidak tersedia)';
   if (riskReversalData?.available && riskReversalData.pairs) {
     const entries = Object.entries(riskReversalData.pairs);
@@ -1235,6 +1238,10 @@ module.exports = async function handler(req, res) {
         const lean = skew > 0.05 ? 'call-skewed (bullish bias)' : skew < -0.05 ? 'put-skewed (bearish bias)' : 'netral';
         return `${pair}: ${skew} (${lean})`;
       }).join(' | ');
+      const rrAgeH = riskReversalData.computed_at ? (Date.now() - new Date(riskReversalData.computed_at).getTime()) / 3600000 : null;
+      if (rrAgeH != null && !isNaN(rrAgeH) && rrAgeH >= 0) {
+        riskReversalBlock += ` [data ${rrAgeH < 1 ? '<1' : Math.round(rrAgeH * 10) / 10} jam lalu]`;
+      }
     }
   }
 
@@ -1554,13 +1561,13 @@ ${riskRegimeBlock}
 === RATE PATH USD (market-implied dari Fed Funds futures — angka konkret untuk mekanisme rate differential) ===
 ${ratePathBlock}
 
-CATATAN STALENESS: Blok REAL YIELD/RISK REGIME/RATE PATH di atas di-cache (TTL menit-jam), bisa sedikit basi. Kalau ada headline yang JELAS lebih baru dan bertentangan dengan angka di blok itu (misal yield spike besar baru saja, VIX melonjak tajam yang belum tercermin di RISK REGIME) — sebut konflik itu eksplisit dan beri bobot lebih ke sinyal yang lebih segar, jangan diam-diam pilih salah satu tanpa penjelasan.
-
 === KORELASI CROSS-ASSET (anomali = sinyal regime berubah, gunakan sebagai cek silang) ===
 ${correlationBlock}
 
 === SKEW OPSI FX/XAU 25-delta (positioning institusional — confirm/contradict arah fundamental) ===
 ${riskReversalBlock}
+
+CATATAN STALENESS: Blok REAL YIELD/RISK REGIME/RATE PATH/SKEW OPSI di atas di-cache (TTL menit-jam, SKEW OPSI sampai 6 jam — lihat penanda umur di blok itu sendiri), bisa sedikit basi. Kalau ada headline yang JELAS lebih baru dan bertentangan dengan angka di blok itu (misal yield spike besar baru saja, VIX melonjak tajam yang belum tercermin di RISK REGIME, atau shock volatilitas besar yang belum tercermin di SKEW OPSI) — sebut konflik itu eksplisit dan beri bobot lebih ke sinyal yang lebih segar, jangan diam-diam pilih salah satu tanpa penjelasan.
 
 === HEADLINE BERITA TERKINI (${headlinesForBriefing.length} dari ${recentItems.length} berita, 36 jam terakhir) ===
 ${headlinesBlock}
