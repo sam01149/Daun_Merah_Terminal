@@ -4898,6 +4898,20 @@ function _articleToPdfBlocks(text) {
   return out;
 }
 
+// jsPDF font 'times' cuma dukung WinAnsiEncoding (Latin-1 + simbol tipografi Windows-1252
+// standar), BUKAN Unicode penuh. Karakter di luar itu (panah ▲▼⟷→, ⚠, emoji, dll — yang kita
+// pakai buat label BIAS/warning, atau ikut kebawa dari teks AI) terbukti (via repro jsPDF
+// terpisah) bukan cuma bikin glyph-nya sendiri tampil salah, tapi SATU BARIS PENUH yang
+// memuatnya ikut kena bug spasi-antar-huruf melebar — mirip gejala bug lama tapi beda akar
+// (bukan align:'justify', yang itu sudah dibuang). Saring dulu sebelum ditulis ke PDF.
+const _PDF_SYMBOL_MAP = { '▲': '', '▼': '', '⟷': '<->', '→': '-', '⚠': '!', '★': '*', '☆': '*', '✓': 'v', '✗': 'x' };
+const _PDF_UNSAFE_RE = /[^\x00-\x7F -ÿ–—‘’“”…‹›]/g;
+function pdfSafe(s) {
+  s = String(s ?? '');
+  for (const bad in _PDF_SYMBOL_MAP) s = s.split(bad).join(_PDF_SYMBOL_MAP[bad]);
+  return s.replace(_PDF_UNSAFE_RE, '').replace(/[ \t]{2,}/g, ' ').trim();
+}
+
 // Builder kecil di atas jsPDF: dokumen resmi monokrom (permintaan lama user untuk
 // versi cetak — "JANGAN ADA WARNA"), font Times (serif, padanan Georgia yang
 // dipakai versi print, tapi Times bawaan jsPDF jadi tidak perlu embed font custom),
@@ -4931,22 +4945,22 @@ function _pdfBuilder() {
     doc.setFont('times', 'bold'); doc.setFontSize(18); doc.setTextColor(...BRAND_COLOR);
     doc.text('DAUN MERAH', marginX, y); y += 7;
     doc.setFont('times', 'bold'); doc.setFontSize(12); doc.setTextColor(20);
-    doc.text(titleText, marginX, y); y += 5.5;
+    doc.text(pdfSafe(titleText), marginX, y); y += 5.5;
     doc.setFont('times', 'normal'); doc.setFontSize(8.5); doc.setTextColor(90);
-    metaLines.forEach(line => { doc.text(line, marginX, y); y += 3.9; });
+    metaLines.forEach(line => { doc.text(pdfSafe(line), marginX, y); y += 3.9; });
     rule(3, 6, BRAND_COLOR);
   }
   function heading(text) {
     ensureSpace(9);
     doc.setFont('times', 'bold'); doc.setFontSize(10); doc.setTextColor(20);
-    doc.text(text.toUpperCase(), marginX, y); y += 2.6;
+    doc.text(pdfSafe(text).toUpperCase(), marginX, y); y += 2.6;
     doc.setDrawColor(20); doc.setLineWidth(0.15);
     doc.line(marginX, y, marginX + contentW, y); y += 5.5;
   }
   function subheading(text) {
     ensureSpace(6);
     doc.setFont('times', 'bold'); doc.setFontSize(10.5); doc.setTextColor(20);
-    const lines = doc.splitTextToSize(text, contentW);
+    const lines = doc.splitTextToSize(pdfSafe(text), contentW);
     lines.forEach(line => { ensureSpace(5); doc.text(line, marginX, y); y += 5; });
     y += 1;
   }
@@ -4960,7 +4974,7 @@ function _pdfBuilder() {
     doc.setFont('times', opts.bold ? 'bold' : (opts.italic ? 'italic' : 'normal'));
     doc.setFontSize(size);
     doc.setTextColor(...(opts.color || [26, 26, 26]));
-    const lines = doc.splitTextToSize(text, contentW);
+    const lines = doc.splitTextToSize(pdfSafe(text), contentW);
     const lh = ptToMm(size);
     lines.forEach(line => {
       ensureSpace(lh + 1);
@@ -4973,15 +4987,15 @@ function _pdfBuilder() {
     if (!value) return;
     ensureSpace(6);
     doc.setFont('times', 'bold'); doc.setFontSize(8.3); doc.setTextColor(90);
-    doc.text(String(label).toUpperCase(), marginX, y); y += 3.8;
+    doc.text(pdfSafe(label).toUpperCase(), marginX, y); y += 3.8;
     doc.setFont('times', 'normal'); doc.setFontSize(9.8); doc.setTextColor(26);
-    const lines = doc.splitTextToSize(String(value), contentW);
+    const lines = doc.splitTextToSize(pdfSafe(value), contentW);
     lines.forEach(line => { ensureSpace(4.3); doc.text(line, marginX, y); y += 4.3; });
     y += 2;
   }
   function kesimpulanBox(text) {
     const size = 10.2, lh = ptToMm(size);
-    const lines = doc.splitTextToSize(text, contentW - 6);
+    const lines = doc.splitTextToSize(pdfSafe(text), contentW - 6);
     const boxH = lines.length * lh + 8;
     ensureSpace(boxH + 3);
     doc.setDrawColor(20); doc.setLineWidth(0.7);
@@ -4994,10 +5008,11 @@ function _pdfBuilder() {
     y += boxH + 4;
   }
   function footer(text) {
-    ensureSpace(12);
-    rule(2, 4);
     doc.setFont('times', 'italic'); doc.setFontSize(7.8); doc.setTextColor(90);
-    doc.splitTextToSize(text, contentW).forEach(line => { doc.text(line, marginX, y); y += 3.4; });
+    const lines = doc.splitTextToSize(pdfSafe(text), contentW);
+    ensureSpace(6 + lines.length * 3.4);
+    rule(2, 4);
+    lines.forEach(line => { doc.text(line, marginX, y); y += 3.4; });
   }
   return { doc, letterhead, heading, subheading, para, kv, kesimpulanBox, footer };
 }
