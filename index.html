@@ -2475,9 +2475,13 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
      + warna hardcoded lain: netralkan ke warna teks biasa. */
   .hl-num, .hl-cur, .hl-bull, .hl-bear { color: inherit !important; font-weight: inherit !important; }
   html, body { height: auto !important; overflow: visible !important; background: #fff !important; }
-  body {
-    font-family: 'DM Mono', 'Courier New', monospace !important;
-    color: var(--text) !important; font-size: 11px; line-height: 1.6;
+  body { color: var(--text) !important; font-size: 12px; line-height: 1.65; }
+  /* Font isi: SERIF KLASIK (pilihan user — standar laporan/surat resmi).
+     Rule pakai ID supaya menang melawan 'DM Mono' yang menempel eksplisit
+     di banyak class app; heading di-Syne-kan balik oleh rule :is() di bawah
+     (specificity lebih tinggi). */
+  #ringkasanPanel, #ringkasanPanel *, #analisaPanel, #analisaPanel * {
+    font-family: Georgia, 'Times New Roman', serif !important;
   }
   body.printing-ringkasan #ringkasanPanel, body.printing-analisa #analisaPanel {
     padding: 0 26mm 20mm !important; overflow: visible !important; max-height: none !important;
@@ -2522,8 +2526,11 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
      tipis — pill solid di kertas cuma jadi kotak abu-abu berat. */
   .thesis-dir { background: none !important; border: 1px solid currentColor; padding: 1px 6px !important; border-radius: 2px !important; }
 
-  h1, h2, h3, .ringkasan-fx-label, .ringkasan-xau-label, .thesis-section-label,
-  .analisa-tf-label, .analisa-pair-label {
+  /* Heading tetap Syne (identitas brand) — :is() dengan ID supaya
+     specificity-nya menang balik dari rule serif ber-ID di atas. */
+  :is(#ringkasanPanel, #analisaPanel) :is(h1, h2, h3, .ringkasan-fx-label,
+  .ringkasan-xau-label, .thesis-section-label, .analisa-tf-label,
+  .analisa-pair-label, .analisa-ai-label, .pl-brand) {
     font-family: 'Syne', sans-serif !important; letter-spacing: .04em;
   }
 
@@ -2554,7 +2561,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
     border: none !important; border-top: 1px solid var(--border) !important;
     border-radius: 0 !important; background: transparent !important;
     margin-top: 6mm; padding: 3mm 0 0 !important;
-    font-size: 9px; color: var(--muted) !important; font-family: 'DM Mono', monospace;
+    font-size: 9px; color: var(--muted) !important; font-style: italic;
   }
 
   @page { margin: 14mm 12mm; }
@@ -4786,22 +4793,41 @@ function _printMeta(bodyClass) {
   return null;
 }
 
+// Timestamp WIB terpisah untuk (a) tampilan letterhead dan (b) nama file.
+function _printWibNow() {
+  const wib = new Date(Date.now() + 7 * 3600000);
+  const p = n => String(n).padStart(2, '0');
+  return {
+    display:  `${p(wib.getUTCDate())}/${p(wib.getUTCMonth()+1)}/${wib.getUTCFullYear()} ${p(wib.getUTCHours())}:${p(wib.getUTCMinutes())} WIB`,
+    filename: `${p(wib.getUTCDate())}-${p(wib.getUTCMonth()+1)}-${wib.getUTCFullYear()}_${p(wib.getUTCHours())}-${p(wib.getUTCMinutes())}`,
+  };
+}
+
 function _setupPrintLetterhead(letterheadId, titleText, metaExtra) {
   const lh = document.getElementById(letterheadId);
   if (!lh) return;
-  const now = new Date();
-  const wib = new Date(now.getTime() + 7 * 3600000);
-  const dateStr = `${String(wib.getUTCDate()).padStart(2,'0')}/${String(wib.getUTCMonth()+1).padStart(2,'0')}/${wib.getUTCFullYear()} ${String(wib.getUTCHours()).padStart(2,'0')}:${String(wib.getUTCMinutes()).padStart(2,'0')} WIB`;
   lh.innerHTML = `
     <div>
       <div class="pl-brand">DAUN MERAH</div>
       <div class="pl-title">${escHtml(titleText)}</div>
     </div>
-    <div class="pl-meta">Dicetak ${dateStr}${metaExtra ? `<br>${escHtml(metaExtra)}` : ''}</div>`;
+    <div class="pl-meta">Dicetak ${_printWibNow().display}${metaExtra ? `<br>${escHtml(metaExtra)}` : ''}<br><span style="font-size:8.5px">Dokumen otomatis · Sumber: CME · FRED · FinancialJuice · Yahoo Finance</span></div>`;
+}
+
+// Nama file default "Save as PDF" browser = document.title — set sementara ke
+// format yang diminta user (ringkasan{tgl-jam}.pdf / analisa{tgl-jam}.pdf),
+// dipulihkan di afterprint. Karakter / dan : tidak valid di nama file,
+// dipakai - dan _ sebagai gantinya.
+let _titleBeforePrint = null;
+function _setPrintDocTitle(bodyClass) {
+  const prefix = bodyClass === 'printing-ringkasan' ? 'ringkasan' : 'analisa';
+  _titleBeforePrint = document.title;
+  document.title = `${prefix}_${_printWibNow().filename}`;
 }
 
 function _printPanel(bodyClass, letterheadId, titleText, metaExtra) {
   _setupPrintLetterhead(letterheadId, titleText, metaExtra);
+  _setPrintDocTitle(bodyClass);
   document.body.classList.add(bodyClass);
   // Timeout kecil: pastikan reflow layout (letterhead + class toggle) selesai
   // sebelum browser menangkap halaman untuk dialog print.
@@ -4809,6 +4835,7 @@ function _printPanel(bodyClass, letterheadId, titleText, metaExtra) {
 }
 window.addEventListener('afterprint', () => {
   document.body.classList.remove('printing-ringkasan', 'printing-analisa');
+  if (_titleBeforePrint != null) { document.title = _titleBeforePrint; _titleBeforePrint = null; }
 });
 // Ctrl+P / menu browser: body belum punya class printing-* (cuma tombol kita
 // yang set itu) — deteksi tab aktif di sini dan setup letterhead yang sama.
@@ -4819,6 +4846,7 @@ window.addEventListener('beforeprint', () => {
   const m = _printMeta(target);
   if (!m) return; // belum ada data di tab itu — biarkan print apa adanya, bukan halaman kosong custom
   _setupPrintLetterhead(m.letterheadId, m.titleText, m.meta);
+  _setPrintDocTitle(target);
   document.body.classList.add(target);
 });
 

@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-07-11 (session 157 lanjutan 13 — PDF jadi dokumen resmi monokrom + fix letterhead bocor ke layar)
+> **Last updated:** 2026-07-11 (session 157 lanjutan 14 — font serif klasik untuk PDF + nama file ringkasan/analisa_{tgl-jam}.pdf)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -155,6 +155,20 @@
 - Fungsi baru: `_printPanel()` (helper generate letterhead + toggle body class + `window.print()`), `cetakRingkasan()`, `cetakAnalisa()` — dua-duanya guard "belum ada data" (toast, bukan cetak halaman kosong) sebelum lanjut cetak. Cleanup class via listener `afterprint` (jalan baik user benar-benar cetak maupun batal dialog).
 
 **Diverifikasi:** `node --check` bersih di semua inline script, brace CSS seimbang (1183/1183), simulasi letterhead (format tanggal WIB benar untuk Ringkasan & Analisa) + guard belum-ada-data (4 skenario: cache null, cache tanpa article, symbol null, data belum load) — semua PASS, test suite 190/190 tetap hijau. Verifikasi visual output PDF asli (hasil "Save as PDF" browser) belum dilakukan — perlu dicek manual oleh user karena environment ini tidak punya browser untuk render print preview sungguhan.
+
+---
+
+## Changelog Session 157 lanjutan 14 (2026-07-11) — Font Serif Klasik untuk PDF + Nama File Otomatis
+
+**Konteks:** kelanjutan penyempurnaan PDF. Saya audit jujur kesesuaian dengan standar "surat/laporan profesional" atas pertanyaan user — 3 gap ketemu: (1) font isi masih monospace (kesan "printout terminal", bukan laporan; laporan resmi lazim serif/sans proporsional), (2) nomor halaman bergantung setting browser, (3) belum ada baris identitas sumber data. User memilih **serif klasik** dari 3 opsi yang ditawarkan (serif klasik / sans modern / tetap mono). Dua permintaan tambahan: nama file default `ringkasan{tgl-jam}.pdf` dan `analisa{tgl-jam}.pdf`.
+
+**Perubahan — [index.html](../index.html):**
+- **Font isi PDF → Georgia/Times serif** via rule ber-ID (`#ringkasanPanel *`, `#analisaPanel *` + `!important`) supaya menang melawan `'DM Mono'` yang menempel eksplisit di banyak class; heading dikembalikan ke Syne (identitas brand) via `:is()` ber-ID yang specificity-nya lebih tinggi. Body 11px→12px (serif terbaca lebih kecil dari mono di ukuran sama). Disclaimer jadi italic kecil (konvensi catatan kaki laporan).
+- **Nama file PDF otomatis:** browser memakai `document.title` sebagai nama default "Save as PDF" — di-set sementara ke `ringkasan_DD-MM-YYYY_HH-mm` / `analisa_DD-MM-YYYY_HH-mm` (karakter `/` dan `:` tidak valid di nama file, diganti `-`/`_`) saat print dimulai (baik via tombol maupun Ctrl+P), dipulihkan di `afterprint`. Helper `_printWibNow()` menyatukan format timestamp display + filename.
+- **Baris identitas sumber:** kop sekarang mencantumkan "Dokumen otomatis · Sumber: CME · FRED · FinancialJuice · Yahoo Finance" (8.5px, di bawah timestamp).
+- Catatan nomor halaman: tidak bisa dijamin dari CSS (Chrome tidak dukung `@page` margin-box counters) — user perlu aktifkan "Headers and footers" di dialog print kalau mau nomor halaman.
+
+**Diverifikasi:** syntax bersih, CSS balanced (1202/1202), simulasi nama file (`ringkasan_11-07-2026_13-46` — karakter aman), test suite 190/190 hijau.
 
 ---
 
