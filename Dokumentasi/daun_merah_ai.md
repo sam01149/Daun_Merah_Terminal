@@ -55,7 +55,7 @@ Call 2 (bias JSON):   SambaNova akun-1 (DeepSeek-V3.2) → Groq (llama-3.3-70b)
 Call 3 (thesis JSON): SambaNova akun-1 (DeepSeek-V3.2) → Groq (llama-3.3-70b)
 Call 4 (monitor):     SambaNova akun-1 (DeepSeek-V3.2) → Groq (llama-3.3-70b)
 ```
-Kalau primary gagal (limit habis / error / timeout), otomatis lompat ke berikutnya — user tidak akan lihat error kecuali **semua** tingkat di rantai itu gagal sekaligus.
+Kalau primary gagal (limit habis / error / timeout), otomatis lompat ke berikutnya — user tidak akan lihat error kecuali **semua** tingkat di rantai itu gagal sekaligus. Kalau semua tingkat AI Call 1 gagal, ada **fallback ke-4 non-AI**: artikel dirangkai dari template deterministik berbasis kategori berita (bukan AI sama sekali) — jadi Ringkasan Berita tidak pernah benar-benar kosong, walau kualitasnya jauh di bawah versi AI.
 
 > **Catatan penting — Nemotron 3 Ultra/Super via OpenRouter atau Ollama Cloud SAAT INI TIDAK dipakai di jalur produksi.** Model ini sempat dijadikan primary (session 145) tapi **didemote** setelah 4 dari 4 percobaan live gagal di 2 sumber berbeda (OpenRouter & Ollama Cloud) — polanya konsisten resource-contention (model 550B baru rilis, kemungkinan diprioritaskan rendah di tier gratis), bukan bug di kode kita. SambaNova dikembalikan jadi primary asli karena terbukti reliable berbulan-bulan. Nemotron masih bisa dites ulang kapan pun lewat parameter diagnostik `?test_nemotron=1` / `?test_nemotron_super=1`, tapi **tidak** dipanggil otomatis oleh cron maupun tombol "Ringkas Berita" biasa. Praktis artinya: **jatah harian OpenRouter (45/hari) dan Ollama (150/hari) nyaris tidak terpakai sehari-hari** — dua pool ini sedang "menganggur", disiapkan untuk pengujian ulang Nemotron di masa depan, bukan bagian dari kapasitas harian yang aktif dipakai.
 
@@ -72,7 +72,7 @@ Hasil tiap analisa disimpan 6 jam supaya kalau tab ditutup-buka lagi, versi tera
 
 **Otomatis:** hanya XAU/USD, 3×/hari, nempel di jadwal cron Ringkasan Berita (workflow yang sama, langkah kedua).
 
-**Rantai fallback:** SambaNova akun-1 (DeepSeek-V3.2) → SambaNova akun-2 → Groq (llama-3.3-70b).
+**Rantai fallback: SambaNova akun-1 (DeepSeek-V3.2) → SambaNova akun-2 (DeepSeek-V3.2) — HANYA 2 tingkat, TIDAK ada Groq.** Groq dan Ollama Cloud pernah ada di rantai ini tapi **sengaja dicoret** (2026-07-10): live test membuktikan Ollama timeout konsisten 15 detik sampai circuit breaker terbuka, dan kualitas Groq/llama-3.3 dinilai paling rendah dibanding DeepSeek-V3.2 akun-2 sebagai fallback tunggal — jadi kalau kedua akun SambaNova gagal sekaligus, fitur ini **langsung menampilkan "AI tidak tersedia"**, tidak sempat coba provider lain. Ini beda dari 3 fitur AI lainnya yang semuanya masih punya Groq sebagai jaring pengaman terakhir.
 
 ### 3.3 Analisa Fundamental — `api/admin.js` (`action=fundamental_analysis`)
 
@@ -99,7 +99,7 @@ Ini lapisan pembatas paling penting untuk dipahami. **Jatah ini dibagi rata ke s
 | **SambaNova akun-1** (`sambanova_main`) | 200 request/hari | ~10-20 request/menit, truly free persisten | Ringkasan Berita Call 2, Call 3, Call 4 (**primary**, ketiganya), Analisa AI per Pair (**primary**) — pool paling ramai, dipakai bareng 2 fitur sekaligus |
 | **SambaNova akun-2** (`sambanova_c1`) | 200 request/hari | Sama seperti akun-1, tapi akun terpisah (kuota terpisah) | Ringkasan Berita Call 1 (**primary**), Analisa Fundamental (fallback), AI Coach Jurnal (fallback), Analisa AI per Pair (fallback) |
 | **Cerebras** | 200 request/hari | ~30 request/menit, 1 juta token/hari (jauh lebih longgar — kita sengaja konservatif dari sisi jumlah request) | Analisa Fundamental (**primary**), AI Coach Jurnal (**primary**) |
-| **Groq** | 500 request/hari | 30 request/menit, ribuan/hari tergantung model | Fallback terakhir SEMUA fitur AI (jaring pengaman, selalu dicoba tanpa circuit breaker) |
+| **Groq** | 500 request/hari | 30 request/menit, ribuan/hari tergantung model | Fallback terakhir untuk Ringkasan Berita, Analisa Fundamental, AI Coach Jurnal (jaring pengaman, selalu dicoba tanpa circuit breaker) — **kecuali** Analisa AI per Pair, yang tidak punya Groq di rantainya (lihat §3.2 & §6) |
 | **OpenRouter** (Nemotron, saat ini idle) | 45 request/hari | 50/hari (akun belum top-up) atau 1.000/hari (sudah top-up $10+) | Ringkasan Berita Call 1 fallback-2 (`gpt-oss-120b:free`) — kepakai hanya kalau SambaNova akun-2 gagal. Nemotron Ultra/Super cuma lewat sini kalau dites manual (`?test_nemotron=1`) |
 | **Ollama Cloud** (saat ini idle) | 150 request/hari | Tidak dipublikasikan resmi (konservatif) | Tidak dipakai di jalur produksi mana pun saat ini — disiapkan untuk pengujian ulang Nemotron |
 
@@ -147,11 +147,15 @@ Karena keduanya berebut jatah 200/hari yang sama, totalnya harus dijumlah: 6 (cr
 
 ## 6. Kalau Semua Fallback di Satu Rantai Habis/Gagal
 
-Setiap fitur AI punya jaring pengaman terakhir (biasanya Groq) yang **selalu dicoba tanpa circuit breaker** — jadi kegagalan sementara di provider lain tidak pernah membuat fitur benar-benar mati total, kecuali:
+3 dari 4 fitur AI (Ringkasan Berita, Analisa Fundamental, AI Coach Jurnal) punya **Groq sebagai jaring pengaman terakhir** yang selalu dicoba tanpa circuit breaker — jadi kegagalan sementara di provider lain tidak pernah membuat fitur itu benar-benar mati total, kecuali:
 1. Semua provider di rantai itu gagal di hari yang sama (sangat jarang, karena tiap provider beda infrastruktur), atau
 2. Jatah harian kita sendiri (§4) sudah habis di SEMUA provider dalam rantai tersebut.
 
-Kalau itu terjadi, user akan melihat pesan "AI tidak tersedia — coba beberapa saat lagi" di UI, bukan error yang membingungkan. Redis juga fail-open (kalau Redis down, guard `_ai_guard.js` otomatis mengizinkan panggilan lewat, bukan memblokir) — jadi masalah infrastruktur cache tidak pernah jadi alasan AI mati.
+**Analisa AI per Pair adalah pengecualian** (lihat §3.2) — rantainya cuma 2 tingkat (SambaNova akun-1 → akun-2), tidak ada Groq. Kalau kedua akun SambaNova bermasalah bersamaan, fitur ini langsung gagal tanpa jaring pengaman tambahan.
+
+Ringkasan Berita Call 1 (prosa) punya pengaman ekstra di luar AI: kalau semua provider AI gagal, ada template non-AI berbasis kategori berita (lihat §3.1) — jadi khusus Call 1, "AI tidak tersedia" tidak pernah benar-benar terjadi di UI, cuma kualitasnya turun.
+
+Kalau gagal total terjadi, user akan melihat pesan "AI tidak tersedia — coba beberapa saat lagi" di UI, bukan error yang membingungkan. Redis juga fail-open (kalau Redis down, guard `_ai_guard.js` otomatis mengizinkan panggilan lewat, bukan memblokir) — jadi masalah infrastruktur cache tidak pernah jadi alasan AI mati.
 
 ---
 
@@ -162,7 +166,7 @@ Kalau itu terjadi, user akan melihat pesan "AI tidak tersedia — coba beberapa 
 | SambaNova (akun-1) | `api.sambanova.ai/v1/chat/completions` | `DeepSeek-V3.2` | **Primary** — Ringkasan Berita Call 2/3/4, Analisa AI per Pair | `SAMBANOVA_API_KEY` |
 | SambaNova (akun-2) | `api.sambanova.ai/v1/chat/completions` | `DeepSeek-V3.2` | **Primary** — Ringkasan Berita Call 1; fallback fitur lain | `SAMBANOVA_API_KEY_CALL1` |
 | Cerebras | `api.cerebras.ai/v1/chat/completions` | `gpt-oss-120b` | **Primary** — Analisa Fundamental, AI Coach Jurnal | `CEREBRAS_API_KEY` |
-| Groq | `api.groq.com/openai/v1/chat/completions` | `llama-3.3-70b-versatile` | Fallback terakhir — semua fitur | `GROQ_API_KEY` |
+| Groq | `api.groq.com/openai/v1/chat/completions` | `llama-3.3-70b-versatile` | Fallback terakhir — Ringkasan Berita, Analisa Fundamental, AI Coach Jurnal (**bukan** Analisa AI per Pair — lihat §3.2) | `GROQ_API_KEY` |
 | OpenRouter | `openrouter.ai/api/v1/chat/completions` | `openai/gpt-oss-120b:free` (fallback aktif); `nvidia/nemotron-3-ultra-550b-a55b:free`, `nvidia/nemotron-3-super-120b-a12b:free` (diagnostik saja) | Fallback-2 Ringkasan Berita Call 1; Nemotron **idle** (lihat §3.1) | `OPENROUTER_API_KEY` |
 | Ollama Cloud | `ollama.com/api/chat` (native, bukan `/v1/chat/completions`) | `nemotron-3-ultra` | **Idle** — hanya lewat `?test_nemotron=1` | `OLLAMA_API_KEY` |
 

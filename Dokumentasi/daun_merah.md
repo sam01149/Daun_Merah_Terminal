@@ -25,6 +25,8 @@
 
 **Tidak ada perubahan kode** — murni dokumentasi baru berdasarkan audit kode yang sudah ada.
 
+**Verifikasi ulang (diminta user setelah draft pertama):** cek baris-per-baris ulang rantai fallback tiap fitur langsung dari kode (bukan dari draft sebelumnya). Ketemu 1 koreksi lagi: **Analisa AI per Pair (`ohlcv_analyze`) TIDAK punya Groq di rantainya** — cuma 2 tingkat (SambaNova akun-1 → akun-2), berbeda dari 3 fitur AI lain yang semuanya punya Groq sebagai jaring pengaman terakhir. Groq & Ollama Cloud sengaja dicoret dari rantai ini 2026-07-10 (Ollama timeout konsisten 15s, kualitas Groq/llama-3.3 dinilai di bawah DeepSeek-V3.2 akun-2). Juga ditambahkan: Ringkasan Berita Call 1 punya fallback ke-4 non-AI (template deterministik berbasis kategori berita) kalau semua provider AI gagal — jadi fitur itu tidak pernah benar-benar kosong.
+
 ---
 
 ## Changelog Session 156 (2026-07-11) — Audit SIMULASI Kalender: Fix Jebakan BEAT/MISS Indikator Terbalik + Transparansi "Dasar Bertumpu"
