@@ -200,6 +200,11 @@ async function fetchTradingViewEvents(rangeStartWib, rangeEndWib) {
   }).map(e => {
     const utc = new Date(e.date);
     const wib = new Date(utc.getTime() + 7 * 3600000);
+    // Audit vendor 2026-07-12: response TradingView juga berisi field yang selama ini
+    // dibuang — actualRaw/forecastRaw/previousRaw (angka mentah, beat/miss bisa dihitung
+    // numerik tanpa parsing string berformat), period (periode acuan rilis, mis. "Jun"),
+    // dan comment (penjelasan 1 kalimat indikatornya). Nol request tambahan.
+    const num = v => (typeof v === 'number' && isFinite(v)) ? v : null;
     return {
       date:     toDateStr(wib),
       time_wib: `${String(wib.getUTCHours()).padStart(2,'0')}:${String(wib.getUTCMinutes()).padStart(2,'0')} WIB`,
@@ -209,6 +214,15 @@ async function fetchTradingViewEvents(rangeStartWib, rangeEndWib) {
       forecast: formatTVValue(e.forecast, e.scale, e.unit),
       previous: formatTVValue(e.previous, e.scale, e.unit),
       actual:   formatTVValue(e.actual, e.scale, e.unit),
+      // HANYA field *Raw (skala penuh, mis. 7618000) — jangan fallback ke e.forecast
+      // (terskalakan, 7.618 + scale "M"): campuran keduanya antar field bikin
+      // perbandingan beat/miss salah total. Kalau raw tidak ada, client jatuh ke
+      // perbandingan string seperti sebelumnya.
+      forecast_raw: num(e.forecastRaw),
+      previous_raw: num(e.previousRaw),
+      actual_raw:   num(e.actualRaw),
+      period:   (typeof e.period === 'string' && e.period) ? e.period : null,
+      comment:  (typeof e.comment === 'string' && e.comment) ? e.comment.slice(0, 300) : null,
       url:      e.source_url || null,
     };
   });

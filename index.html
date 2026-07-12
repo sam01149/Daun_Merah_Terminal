@@ -325,6 +325,16 @@ body {
 .corr-chart-row-vals  { text-align:right; font-size:10px; font-family:'DM Mono',monospace; color:var(--text); white-space:nowrap; }
 .corr-chart-row-vals .v60 { color:var(--muted); font-size:9px; }
 .corr-narrative   { font-size:10px; color:var(--text-mid); font-family:'DM Mono',monospace; line-height:1.6; background:var(--surface); border-left:2px solid var(--yellow); border-radius:2px; padding:6px 8px; margin-bottom:10px; }
+/* Penjelasan awam (2026-07-12): kalimat baca per kartu anomali + panel "cara membaca" */
+.corr-anomaly-read { margin-top:5px; padding-top:5px; border-top:1px dashed var(--border); font-size:9px; color:var(--text-mid); font-family:inherit; line-height:1.55; }
+.corr-explainer { margin-bottom:10px; }
+.corr-explainer summary { font-size:9px; color:var(--muted); font-family:'DM Mono',monospace; cursor:pointer; padding:4px 6px; list-style:none; border:1px dashed var(--border); border-radius:3px; display:inline-block; }
+.corr-explainer summary::before { content:'? '; color:var(--yellow); font-weight:700; }
+.corr-explainer summary:hover { color:var(--text); border-color:var(--text-mid); }
+.corr-explainer[open] summary { border-style:solid; color:var(--text); }
+.corr-explainer-body { margin-top:6px; padding:8px 10px; background:var(--surface); border:1px solid var(--border); border-radius:3px; font-size:10px; color:var(--text-mid); line-height:1.65; }
+.corr-explainer-body p { margin:0 0 8px; }
+.corr-explainer-body p:last-child { margin-bottom:0; }
 .corr-anomaly-more summary { font-size:9px; color:var(--muted); font-family:'DM Mono',monospace; cursor:pointer; padding:4px 0; list-style:none; }
 .corr-anomaly-more summary::before { content:'▸ '; }
 .corr-anomaly-more[open] summary::before { content:'▾ '; }
@@ -926,6 +936,22 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   display: flex; align-items: center;
 }
 
+/* %OI + percentile 3 tahun per baris — tooltip pola sama dengan .cot-pie */
+.cot-poi {
+  position: relative; font: 8px 'DM Mono', monospace; color: var(--muted);
+  letter-spacing: .03em; cursor: default; white-space: nowrap;
+}
+.cot-poi.ext { color: var(--yellow); }
+.cot-poi::after {
+  content: attr(data-tip);
+  position: absolute; right: 0; bottom: calc(100% + 4px);
+  background: #1c1c22; border: 1px solid var(--border); border-radius: 4px;
+  padding: 5px 8px; font-size: 9px; color: var(--text); line-height: 1.45;
+  width: max-content; max-width: 230px; white-space: normal; text-align: left;
+  opacity: 0; pointer-events: none; transition: opacity .15s; z-index: 30;
+}
+.cot-poi:hover::after { opacity: 1; }
+
 /* ── COT TREND PANEL ── */
 .cot-tren-btn {
   display: inline-flex; align-items: center; gap: 3px;
@@ -1277,6 +1303,33 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .fd-extra-row-val { font-size: 16px; font-weight: 700; text-align: right; }
 
 /* ── CALENDAR TAB ──*/
+
+/* Badge hasil rilis (BEAT/MISS/SESUAI) — dihitung numerik dari actual_raw vs
+   forecast_raw TradingView; periode acuan + deskripsi indikator (field comment). */
+.cal-af-badge {
+  display: inline-block; margin-left: 6px; padding: 1px 5px; border-radius: 3px;
+  font-family: 'DM Mono', monospace; font-size: 7px; font-weight: 700; letter-spacing: .4px;
+  vertical-align: middle;
+}
+.cal-af-badge.beat   { background: rgba(74,222,128,.14); color: #4ade80; }
+.cal-af-badge.miss   { background: rgba(248,113,113,.14); color: #f87171; }
+.cal-af-badge.inline { background: rgba(148,163,184,.1);  color: var(--muted); }
+.cal-period {
+  font-family: 'DM Mono', monospace; font-size: 8px; color: var(--muted);
+  border: 1px solid var(--border); border-radius: 3px; padding: 0 4px;
+  vertical-align: middle; white-space: nowrap;
+}
+.cal-info-btn {
+  background: none; border: none; color: var(--muted); cursor: pointer;
+  font-size: 10px; padding: 0 2px; vertical-align: middle; opacity: .7;
+}
+.cal-info-btn:hover { color: var(--text); opacity: 1; }
+.cal-ev-desc {
+  display: none; margin-top: 4px; padding: 5px 8px;
+  background: rgba(255,255,255,.03); border-left: 2px solid var(--border);
+  border-radius: 0 3px 3px 0; font-size: 9px; color: var(--muted); line-height: 1.5;
+}
+.cal-ev-desc.visible { display: block; }
 
 /* CAL TOOLBAR — two clear rows (impact filter, then week + meta/refresh)
    instead of one long wrapping line, so it stays readable on narrow screens. */
@@ -3543,6 +3596,9 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
         Posisi net <strong>Leveraged Funds</strong> (hedge fund & spekulan) dari laporan CFTC Commitments of Traders.
         Dirilis setiap <strong>Jumat 3:30 PM ET</strong>, mencakup posisi per Selasa minggu tersebut.
         Net positif = lebih banyak long, net negatif = lebih banyak short.
+        <strong>% OI</strong> = net dibanding total open interest (ukuran berat sebelahnya pasar).
+        <strong>P##</strong> = posisi sekarang dibanding 3 tahun terakhir — P90+ / P10− (⚠ kuning) artinya
+        posisi sudah ekstrem satu arah dan secara historis rawan berbalik.
       </div>
     </div>
     <div id="cotGrid">
@@ -3797,11 +3853,11 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 <!-- newscat.js: engine klasifikasi kategori berita (single source of truth,
      dipakai juga sw.js & api/). Query ?v= = cache-buster — naikkan tiap kali
      newscat.js berubah, samakan dengan NEWSCAT_VERSION di sw.js. -->
-<script src="/newscat.js?v=2026.07.12.2"></script>
+<script src="/newscat.js?v=2026.07.12.3"></script>
 <script>
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.07.12.2';
+const APP_VERSION = '2026.07.12.3';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
@@ -6433,7 +6489,9 @@ function renderCBTracker() {
     if (cb.currency === 'USD' && ratePathData && ratePathData.USD) {
       const rp = ratePathData.USD;
       const nm = rp.next_meetings && rp.next_meetings[0];
-      if (nm) {
+      // Guard null: meeting tanpa data (no_data dari rate-path.js) jangan dirender
+      // sebagai "H0%/C0%" — itu terlihat seperti probabilitas nyata padahal kosong.
+      if (nm && nm.prob_hold != null) {
         const holdPct = Math.round((nm.prob_hold || 0) * 100);
         const cutPct  = Math.round((nm.prob_cut25 || 0) * 100);
         pathHtml = '<br><span style="font-size:7px;color:var(--muted)" title="Heuristik">H' + holdPct + '%/C' + cutPct + '%</span>';
@@ -6676,8 +6734,16 @@ function renderPolymarket(data) {
     if (m.yes_prob !== null) {
       const p = m.yes_prob;
       const col = p >= 70 ? '#4caf50' : p <= 30 ? '#e05c5c' : '#f59e0b';
+      // Δ1d = pergeseran probabilitas 24 jam (audit vendor 2026-07-12) — momentum
+      // pasar prediksi; hijau = makin yakin YA, merah = makin ragu.
+      let chgHtml = '';
+      if (m.change_1d != null && m.change_1d !== 0) {
+        const cCol = m.change_1d > 0 ? '#4ade80' : '#f87171';
+        const cArrow = m.change_1d > 0 ? '▲' : '▼';
+        chgHtml = `<div style="font-size:8px;color:${cCol};font-family:'DM Mono',monospace;margin-top:1px" title="Pergeseran probabilitas 24 jam terakhir">${cArrow} ${m.change_1d > 0 ? '+' : ''}${m.change_1d}pp / 24j</div>`;
+      }
       probHtml = `<span style="color:${col};font-weight:700;font-size:13px;font-family:'DM Mono',monospace">${p}%</span>`
-        + `<span style="font-size:9px;color:var(--muted)"> YA</span>`;
+        + `<span style="font-size:9px;color:var(--muted)"> YA</span>` + chgHtml;
     } else {
       probHtml = m.outcomes.map((o, i) => {
         const p = m.prices[i] || 0;
@@ -6823,6 +6889,43 @@ function _corrBarHtml(r20, r60) {
 
 const _CORR_CHART_KEY = `<div class="corr-chart-key"><span class="k-bar"></span> korelasi 20 hari<span class="k-tick"></span> norma 60 hari · skala −1&hairsp;…&hairsp;+1</div>`;
 
+// ── Penjelasan bahasa awam (request user 2026-07-12: "pasti ada yang bingung") ──
+
+// Terjemahkan angka korelasi ke kata — dipakai narasi anomali + tooltip baris.
+function corrWord(r) {
+  if (r == null || !isFinite(r)) return 'tidak ada data';
+  const a = Math.abs(r);
+  if (a < 0.2) return 'hampir tidak berhubungan';
+  const kuat = a >= 0.7 ? 'kuat' : a >= 0.4 ? 'cukup kuat' : 'lemah';
+  return r > 0 ? `bergerak searah (${kuat})` : `bergerak berlawanan (${kuat})`;
+}
+
+// Kalimat awam per kartu anomali: kebiasaan lama → kondisi sekarang → artinya buat trader.
+function _anomalyReadable(a) {
+  const w60 = corrWord(a.r60), w20 = corrWord(a.r20);
+  const signFlip = a.r20 != null && a.r60 != null
+    && Math.sign(a.r20) !== Math.sign(a.r60)
+    && Math.abs(a.r20) >= 0.15 && Math.abs(a.r60) >= 0.15;
+  let makna;
+  if (signFlip) makna = 'arah hubungannya BERBALIK dari kebiasaan — jangan pakai yang satu sebagai patokan arah yang lain dulu';
+  else if (a.r20 != null && a.r60 != null && Math.abs(a.r20) < Math.abs(a.r60)) makna = 'hubungan yang biasanya bisa dijadikan patokan sedang MELEMAH — patokan lama kurang bisa diandalkan sementara ini';
+  else makna = 'hubungannya sedang LEBIH KETAT dari biasanya — pergerakan yang satu makin menular ke yang lain';
+  return `Biasanya keduanya ${w60}; 20 hari terakhir ${w20}. Artinya: ${makna}.`;
+}
+
+// Panel penjelasan collapsible — default tertutup (anti-noise), sekali klik untuk belajar.
+const _CORR_EXPLAINER = `<details class="corr-explainer"><summary>Cara membaca panel ini</summary>
+<div class="corr-explainer-body">
+<p><strong>Korelasi</strong> = seberapa kompak dua aset bergerak bersama, skala <strong>−1 … +1</strong>:<br>
++1 = selalu naik/turun BARENG &nbsp;·&nbsp; −1 = selalu BERLAWANAN arah &nbsp;·&nbsp; 0 = tidak ada hubungan.<br>
+Patokan kekuatan: |angka| ≥ 0.7 kuat · 0.4–0.7 sedang · di bawah 0.4 lemah (boleh diabaikan).</p>
+<p><strong>Dua angka per baris (mis. −0.72 / −0.85):</strong> angka pertama = kebiasaan <strong>20 hari</strong> terakhir (digambar sebagai bar), angka kedua = kebiasaan normal <strong>60 hari</strong> (garis kecil terang). Kalau keduanya jauh berbeda, muncul tanda Δ — hubungan yang biasa dipakai patokan sedang bergeser.</p>
+<p><strong>Kenapa penting buat trading:</strong></p>
+<p>1. <strong>Hindari risiko dobel</strong> — buka 2 posisi di aset yang korelasinya kuat searah = 1 taruhan dengan ukuran 2x, bukan diversifikasi.<br>
+2. <strong>Cek kesehatan pergerakan</strong> — misal Gold naik PADAHAL DXY juga naik (biasanya berlawanan): salah satu pergerakan itu rapuh, cari tahu kenapa sebelum ikut.<br>
+3. <strong>Anomali (Δ &gt; 0.4)</strong> = alarm bahwa "aturan main" antar aset sedang berubah — patokan lama (mis. "USD naik berarti emas turun") jangan dipakai buta selama anomali aktif.</p>
+</div></details>`;
+
 // Narasi anomali — template deterministik (bukan LLM), anti-noise: kosong saat
 // tidak ada anomali (tidak ada section narasi sama sekali).
 function _buildAnomalyNarrative(anomalies) {
@@ -6939,6 +7042,7 @@ function renderCorrelations() {
   const { anomalies, gold_correlations, computed_at, stale } = corrData;
   const tsStr = computed_at ? new Date(computed_at).toLocaleDateString('id-ID', { day:'numeric', month:'short' }) : '—';
   let html = `<div class="corr-title">CROSS-ASSET CORRELATIONS · ${tsStr}${stale ? ' · stale' : ''}</div>`;
+  html += _CORR_EXPLAINER;
 
   // COR-H: narasi storytelling di atas kedua chart — HANYA saat ada anomali
   // (anti-noise: kosong = tidak ada elemen narasi sama sekali)
@@ -6966,7 +7070,9 @@ function renderCorrelations() {
       const deltaStr = g.delta !== null ? `Δ ${(g.delta >= 0 ? '+' : '')}${g.delta.toFixed(2)}` : '';
       const deltaWarn = g.delta !== null && Math.abs(g.delta) > 0.3;
       const track = _corrBarHtml(g.r20, g.r60) || '<span class="corr-neu" style="font-size:9px;text-align:center">—</span>';
-      html += `<div class="corr-chart-row" title="${meta.hint}${deltaStr ? ' · ' + deltaStr : ''}">
+      // Tooltip diawali terjemahan awam kondisi sekarang (corrWord), bukan cuma mekanisme statis
+      const readNow = `Gold & ${meta.label}: 20 hari terakhir ${corrWord(g.r20)}${g.r60 != null ? `, biasanya ${corrWord(g.r60)}` : ''}`;
+      html += `<div class="corr-chart-row" title="${escHtml(readNow)} · ${meta.hint}${deltaStr ? ' · ' + deltaStr : ''}">
         <div><div class="corr-chart-row-name">${meta.label}</div><div class="corr-chart-row-hint">${meta.hint}</div></div>
         ${track}
         <div class="corr-chart-row-vals">${g.r20 != null ? g.r20.toFixed(2) : '—'} <span class="v60">/ ${g.r60 != null ? g.r60.toFixed(2) : '—'}</span>${deltaWarn ? ' <span style="color:var(--yellow)">Δ</span>' : ''}</div>
@@ -6998,6 +7104,7 @@ function renderCorrelations() {
           &nbsp;·&nbsp;
           60d: <span class="${r60Cls}">${a.r60 != null ? a.r60.toFixed(2) : '—'}</span>
         </div>
+        <div class="corr-anomaly-read">${_anomalyReadable(a)}</div>
       </div>`;
     };
     html += _CORR_CHART_KEY;
@@ -7463,13 +7570,13 @@ function renderFundamental() {
       }
     }
 
-    // Liquidity indicators for USD only
+    // Liquidity indicators for USD only — RRP + Net Liquidity (WALCL − TGA − RRP)
+    // ditambahkan 2026-07-12; net adalah angka utamanya, komponen jadi pendukung.
     let liquidityHtml = '';
     if (cur === 'USD' && realYieldsLiquidity) {
       const liq = realYieldsLiquidity;
       const parts = [];
       if (liq.fed_assets_bn != null) {
-        const fedColor = 'var(--muted)';
         parts.push(`Fed Assets: $${liq.fed_assets_bn.toLocaleString()}B`);
       }
       if (liq.tga_balance_bn != null) {
@@ -7477,10 +7584,19 @@ function renderFundamental() {
         const tgaColor = liq.tga_change_bn != null ? (liq.tga_change_bn > 0 ? 'var(--red)' : 'var(--green)') : 'var(--muted)';
         parts.push(`TGA: <span style="color:${tgaColor}">$${liq.tga_balance_bn.toLocaleString()}B${tgaDir}</span>`);
       }
+      if (liq.rrp_bn != null) {
+        const rrpDir = liq.rrp_change_bn != null ? (liq.rrp_change_bn > 0 ? ' ▲ serap' : ' ▼ inject') : '';
+        const rrpColor = liq.rrp_change_bn != null ? (liq.rrp_change_bn > 0 ? 'var(--red)' : 'var(--green)') : 'var(--muted)';
+        parts.push(`RRP: <span style="color:${rrpColor}">$${liq.rrp_bn.toLocaleString()}B${rrpDir}</span>`);
+      }
+      const netLine = liq.net_liquidity_bn != null
+        ? `<div style="margin-top:2px" title="Net Liquidity = Fed Assets − TGA − RRP — likuiditas dolar yang benar-benar beredar di pasar">NET: <span style="color:var(--text);font-weight:600">$${liq.net_liquidity_bn.toLocaleString()}B</span></div>`
+        : '';
       if (parts.length > 0) {
         liquidityHtml = `<div style="margin-top:6px;padding-top:6px;border-top:1px solid var(--border);font-size:10px;color:var(--muted);font-family:'DM Mono',monospace">
           <div style="color:var(--text);font-weight:600;margin-bottom:2px">LIQUIDITY USD</div>
           <div>${parts.join(' · ')}</div>
+          ${netLine}
         </div>`;
       }
     }
@@ -7728,6 +7844,14 @@ function _renderFundDetail() {
       const tgaCol = liq.tga_change_bn != null ? (liq.tga_change_bn > 0 ? 'var(--red)' : 'var(--green)') : 'var(--muted)';
       parts.push(['TGA Balance', `$${liq.tga_balance_bn.toLocaleString()}B${tgaDir}`, tgaCol]);
     }
+    if (liq.rrp_bn != null) {
+      const rrpDir = liq.rrp_change_bn != null ? (liq.rrp_change_bn > 0 ? ' ▲ serap' : ' ▼ inject') : '';
+      const rrpCol = liq.rrp_change_bn != null ? (liq.rrp_change_bn > 0 ? 'var(--red)' : 'var(--green)') : 'var(--muted)';
+      parts.push(['Reverse Repo (RRP)', `$${liq.rrp_bn.toLocaleString()}B${rrpDir}`, rrpCol]);
+    }
+    if (liq.net_liquidity_bn != null) {
+      parts.push(['Net Liquidity (BS−TGA−RRP)', `$${liq.net_liquidity_bn.toLocaleString()}B`, 'var(--text)']);
+    }
     if (parts.length) {
       html += `<div class="fd-extra-block">
         <div class="fd-extra-title">Likuiditas USD</div>
@@ -7776,7 +7900,11 @@ let retailData = null;
 let retailFetchedAt = 0;
 // Selaras dengan cache server (lihat RETAIL_CACHE_TTL di api/feeds.js) yang
 // dijaga tetap segar tiap 15 menit oleh GitHub Action retail-sentiment-warm.yml.
-const RETAIL_CLIENT_TTL = 15 * 60 * 1000;
+// 5 menit (dulu 15): server cache di-warm GitHub Action tiap 15 menit — client yang
+// nunggu 15 menit lagi di atasnya bisa telat sampai ~30 menit total. 5 menit menjaga
+// dashboard/COT tab selalu maksimal ~1 siklus warm di belakang sumber. Fetch-nya cuma
+// baca cache Redis server (bukan scrape ulang), jadi murah.
+const RETAIL_CLIENT_TTL = 5 * 60 * 1000;
 
 // Pair → display color (matches COT colors)
 const RETAIL_PAIR_COLORS = {
@@ -7987,7 +8115,7 @@ function renderCOT() {
     </svg>`;
   }
 
-  function makeRow(cur, netKey, changeKey, longKey, shortKey, withTren) {
+  function makeRow(cur, netKey, changeKey, longKey, shortKey, withTren, kind) {
     const resolveNet = (d, k) => d[k] !== undefined ? d[k] : (k === 'lev_net' ? d.net : null);
     const resolveChg = (d, k) => d[k] !== undefined ? d[k] : (k === 'lev_change_net' ? d.change_net : null);
     const fmtAbs = n => { if (!n && n !== 0) return '—'; const a = Math.abs(n); return a >= 1000 ? (a / 1000).toFixed(1) + 'K' : String(a); };
@@ -8005,6 +8133,20 @@ function renderCOT() {
     const trenBtn  = withTren
       ? `<button class="cot-tren-btn" id="cotTrenBtn-${cur}" onclick="cotToggleTrend('${cur}')">TREN</button>`
       : '';
+
+    // %OI + percentile 3 tahun (audit vendor 2026-07-12) — net dinormalisasi ke open
+    // interest + posisi relatif terhadap 3 tahun terakhir. P≥90/P≤10 = ekstrem (kuning).
+    const pctOi  = kind === 'am' ? d.am_net_pct_oi : d.lev_net_pct_oi;
+    const pctile = cotData.percentiles?.[cur]?.[kind === 'am' ? 'am_pctile' : 'lev_pctile'];
+    const isExt  = pctile != null && (pctile >= 90 || pctile <= 10);
+    let poiHtml  = '';
+    if (pctOi != null || pctile != null) {
+      const tipParts = [];
+      if (pctOi != null) tipParts.push(`Net = ${pctOi > 0 ? '+' : ''}${pctOi}% dari total open interest${d.oi ? ` (OI ${fmtAbs(d.oi)})` : ''}`);
+      if (pctile != null) tipParts.push(`P${pctile} = lebih ${pctile >= 50 ? 'long' : 'short'} dari ${pctile >= 50 ? pctile : 100 - pctile}% minggu dalam 3 tahun terakhir${isExt ? ' — posisi EKSTREM, rawan berbalik' : ''}`);
+      poiHtml = `<span class="cot-poi${isExt ? ' ext' : ''}" data-tip="${escHtml(tipParts.join(' · '))}">${pctOi != null ? `${pctOi > 0 ? '+' : ''}${pctOi}% OI` : ''}${pctOi != null && pctile != null ? ' · ' : ''}${pctile != null ? `P${pctile}${isExt ? ' ⚠' : ''}` : ''}</span>`;
+    }
+
     return `<div class="cot-row">
       <span class="cot-cur" style="color:${color}">${cur}</span>
       <div class="cot-pie" data-tip="Long ${longPct}% · Short ${100 - longPct}%">${makePie(longPct)}</div>
@@ -8015,6 +8157,7 @@ function renderCOT() {
       <div class="cot-net-wrap">
         <span class="cot-net ${isLong ? 'long' : 'short'}">${fmtK(net)}</span>
         ${chg !== null ? `<span class="cot-change ${chgClass}">${chgIcon} ${fmtK(chg)}</span>` : ''}
+        ${poiHtml}
         ${withTren ? `<span class="cot-4w" id="cot4w-${cur}"></span>` : ''}
         ${trenBtn}
       </div>
@@ -8024,12 +8167,12 @@ function renderCOT() {
   const currencies = ORDER.filter(c => cotData.positions[c]);
 
   const levRows = currencies.map(cur =>
-    makeRow(cur, 'lev_net', 'lev_change_net', 'lev_long', 'lev_short', true)
+    makeRow(cur, 'lev_net', 'lev_change_net', 'lev_long', 'lev_short', true, 'lev')
     + `<div class="cot-tren-panel" id="cotTrenPanel-${cur}"><div class="cot-tren-loading loading-pulse">Memuat data tren...</div></div>`
   ).join('');
 
   const amRows = currencies.map(cur =>
-    makeRow(cur, 'am_net', 'am_change_net', 'am_long', 'am_short', false)
+    makeRow(cur, 'am_net', 'am_change_net', 'am_long', 'am_short', false, 'am')
   ).join('');
 
   grid.innerHTML = `
@@ -8280,15 +8423,40 @@ function setCalFilter(f) {
 // number, not a literal magnitude.
 const CAL_INVERSE_INDICATOR_RE = /unemploy|claims|job cuts|inventories|bankrupt|delinquenc|default/i;
 
-function compareActualForecast(actual, forecast, eventTitle) {
-  if (!actual || !forecast) return '';
-  const a = parseFloat(actual.replace(/[^0-9.\-]/g,''));
-  const f = parseFloat(forecast.replace(/[^0-9.\-]/g,''));
-  if (isNaN(a) || isNaN(f)) return '';
+// ev opsional: kalau event punya actual_raw/forecast_raw (angka mentah TradingView,
+// audit vendor 2026-07-12) pakai itu — parsing string berformat ("1.2M", "£3.4B")
+// rawan salah baca; raw numerik presisi. Fallback tetap string untuk sumber
+// ForexFactory / actual hasil enrichCalActuals dari headline.
+function compareActualForecast(actual, forecast, eventTitle, ev) {
+  let a = null, f = null;
+  if (ev && typeof ev.actual_raw === 'number' && typeof ev.forecast_raw === 'number') {
+    a = ev.actual_raw; f = ev.forecast_raw;
+  } else {
+    if (!actual || !forecast) return '';
+    a = parseFloat(String(actual).replace(/[^0-9.\-]/g,''));
+    f = parseFloat(String(forecast).replace(/[^0-9.\-]/g,''));
+  }
+  if (a == null || f == null || isNaN(a) || isNaN(f)) return '';
   if (a === f) return 'actual-inline';
   const isInverse = CAL_INVERSE_INDICATOR_RE.test(eventTitle || '');
   const beat = isInverse ? a < f : a > f;
   return beat ? 'actual-beat' : 'actual-miss';
+}
+
+// Label badge hasil rilis dari kelas compareActualForecast — BEAT/MISS dari sudut
+// pandang currency (indikator terbalik sudah ditangani di compareActualForecast).
+function calResultBadge(cls) {
+  if (cls === 'actual-beat')   return '<span class="cal-af-badge beat">▲ BEAT</span>';
+  if (cls === 'actual-miss')   return '<span class="cal-af-badge miss">▼ MISS</span>';
+  if (cls === 'actual-inline') return '<span class="cal-af-badge inline">= SESUAI</span>';
+  return '';
+}
+
+// Toggle deskripsi indikator (field comment TradingView) — tombol ⓘ di nama event.
+// Toggle onclick (bukan tooltip hover) supaya jalan di layar sentuh/PWA.
+function calToggleDesc(evId) {
+  const el = document.getElementById('calEvDesc-' + evId);
+  if (el) el.classList.toggle('visible');
 }
 
 const CUR_COLORS = {
@@ -8346,7 +8514,7 @@ function renderCalendar() {
     const rows = events.map(ev => {
       const impactClass = ev.impact === 'High' ? 'high' : 'medium';
       const hasData = ev.forecast || ev.previous || ev.actual;
-      const actualClass = compareActualForecast(ev.actual, ev.forecast, ev.event);
+      const actualClass = compareActualForecast(ev.actual, ev.forecast, ev.event, ev);
       const evId = (ev.date + '_' + ev.currency + '_' + ev.event).replace(/\W/g, '_');
 
       const dataRow = hasData ? `
@@ -8361,7 +8529,7 @@ function renderCalendar() {
           </div>
           <div class="cal-data-cell">
             <div class="cal-data-label">Actual</div>
-            <div class="cal-data-val ${ev.actual ? actualClass : 'no-data'}">${ev.actual || '—'}</div>
+            <div class="cal-data-val ${ev.actual ? actualClass : 'no-data'}">${ev.actual || '—'}${ev.actual ? calResultBadge(actualClass) : ''}</div>
           </div>
         </div>` : '';
 
@@ -8396,13 +8564,14 @@ function renderCalendar() {
             </div>
             <div class="cal-body">
               <div class="cal-event-header">
-                <div class="cal-event-name">${escHtml(ev.event)}</div>
+                <div class="cal-event-name">${escHtml(ev.event)}${ev.period ? ` <span class="cal-period" title="Periode acuan rilis">${escHtml(ev.period)}</span>` : ''}${ev.comment ? ` <button class="cal-info-btn" onclick="calToggleDesc('${evId}')" title="Apa itu indikator ini?">ⓘ</button>` : ''}</div>
                 <div class="cal-badges">
                   <span class="cal-cur-tag" style="color:${CUR_COLORS[ev.currency]||'#888'};background:${CUR_COLORS[ev.currency]||'#888'}22">${ev.currency}</span>
                   <span class="cal-impact-badge ${impactClass}">${ev.impact === 'High' ? '● HIGH' : '● MED'}</span>
                   ${simulasiBtn}
                 </div>
               </div>
+              ${ev.comment ? `<div class="cal-ev-desc" id="calEvDesc-${evId}">${escHtml(ev.comment)}</div>` : ''}
             </div>
           </div>
           ${dataRow}
@@ -14064,6 +14233,13 @@ async function initDashboard() {
   if (!ringkasanCache)
     fetches.push(loadCachedRingkasan().catch(() => {}));
 
+  // Retail sentiment: dulu strip dashboard cuma terisi kalau user pernah buka tab COT
+  // (stuck "Memuat..." selamanya kalau langsung ke dashboard) — sekarang dashboard
+  // fetch sendiri, dan interval 60s di bawah menjaga tetap segar (TTL client 5 menit,
+  // server di-warm GitHub Action tiap 15 menit).
+  if (!retailData || (now - retailFetchedAt) > RETAIL_CLIENT_TTL)
+    fetches.push(fetchRetailSentiment().catch(() => {}));
+
   fetches.push(fetchDashAnalisa().catch(() => {}));
 
   if (fetches.length > 0) {
@@ -14074,7 +14250,13 @@ async function initDashboard() {
 
   if (dashRefreshInterval) clearInterval(dashRefreshInterval);
   dashRefreshInterval = setInterval(() => {
-    if (activeView === 'dashboard') refreshDashboard();
+    if (activeView === 'dashboard') {
+      refreshDashboard();
+      // Retail realtime: re-fetch tiap tick tapi digerbang RETAIL_CLIENT_TTL (5 menit)
+      // di dalam fetchRetailSentiment — efektif refresh tiap 5 menit selama dashboard
+      // terbuka, mengikuti server yang di-warm tiap 15 menit.
+      fetchRetailSentiment().catch(() => {});
+    }
     else { clearInterval(dashRefreshInterval); dashRefreshInterval = null; }
   }, 60000);
 }
@@ -14115,6 +14297,7 @@ function refreshDashboard() {
   renderDashBias();
   renderDashEvents();
   renderDashAnalisa();
+  renderDashRetail(); // ikut re-render tiap 60s — teks umur data ("Xm lalu") tetap akurat
   DASH_COLS.forEach((id, i) => { const el = document.getElementById(id); if (el && savedScroll[i]) el.scrollTop = savedScroll[i]; });
   const badge = document.getElementById('dashAutoRefreshBadge');
   if (badge) badge.textContent = 'auto-refresh 60s';

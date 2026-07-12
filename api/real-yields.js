@@ -144,6 +144,7 @@ module.exports = async function handler(req, res) {
     usdClevFedResult,
     liquidityResult,
     yieldCurveResult,
+    ecbSpfResult,
     ...otherNomResults
   ] = await Promise.allSettled([
     fetchFred('DGS10'),
@@ -151,12 +152,26 @@ module.exports = async function handler(req, res) {
     fetchFred('EXPINF10YR'),
     fetchLiquidityIndicators(),
     fetchYieldCurve(),
+    fetchEcbSpfEur(),
     ...otherCurrencies.map(cur =>
       fetchFred(FRED_NOMINAL_SERIES[cur])
         .then(d => ({ cur, data: d }))
         .catch(e => { console.warn(`real-yields: ${cur} nominal fetch failed:`, e.message); return { cur, data: null } })
     ),
   ])
+
+  // EUR: ekspektasi inflasi dari ECB SPF live (API yang sama dengan yield curve EUR) —
+  // menggantikan hardcode kuartalan KHUSUS untuk EUR; 6 mata uang lain tetap hardcode
+  // karena survei mereka memang tidak punya API (audit vendor 2026-07-12). Gagal fetch →
+  // hardcode tetap dipakai (fallback, bukan error).
+  if (ecbSpfResult.status === 'fulfilled' && ecbSpfResult.value) {
+    const spf = ecbSpfResult.value
+    inflationExp.EUR = {
+      value: spf.value,
+      source: `ECB SPF ${spf.period || 'live'} (auto)`,
+      as_of: new Date().toISOString().slice(0, 10),
+    }
+  }
 
   // Process supplementary results
   if (liquidityResult.status === 'fulfilled') {
@@ -302,9 +317,14 @@ async function handleLabourSection(req, res) {
 // fiscaldata.treasury.gov is blocked from Vercel datacenter IPs — FRED is the reliable path.
 
 async function fetchLiquidityIndicators() {
-  const [fedAssetsResult, tgaResult] = await Promise.allSettled([
+  // RRPONTSYD = ON Reverse Repo (miliar USD, harian) — kaki ketiga formula net
+  // liquidity standar: WALCL − TGA − RRP (audit vendor 2026-07-12). Tanpa RRP,
+  // drain TGA yang cuma pindah parkir ke RRP terbaca keliru sebagai perubahan
+  // likuiditas pasar.
+  const [fedAssetsResult, tgaResult, rrpResult] = await Promise.allSettled([
     fetchFred('WALCL'),
     fetchFredMulti('WDTGAL', 2),
+    fetchFredMulti('RRPONTSYD', 2),
   ])
 
   const result = { computed_at: new Date().toISOString() }
@@ -325,7 +345,45 @@ async function fetchLiquidityIndicators() {
     }
   }
 
+  if (rrpResult.status === 'fulfilled') {
+    const obs = rrpResult.value
+    if (obs.length > 0) {
+      // RRPONTSYD sudah dalam miliar (beda dari WALCL/WDTGAL yang jutaan)
+      result.rrp_bn = Math.round(obs[0].value)
+      result.rrp_date = obs[0].date
+      if (obs.length > 1) result.rrp_change_bn = result.rrp_bn - Math.round(obs[1].value)
+    }
+  }
+
+  if (result.fed_assets_bn != null && result.tga_balance_bn != null && result.rrp_bn != null) {
+    result.net_liquidity_bn = result.fed_assets_bn - result.tga_balance_bn - result.rrp_bn
+  }
+
   return result
+}
+
+// ── ECB SPF — ekspektasi inflasi longer-term euro area (kuartalan) ────────────
+// Dataflow SPF, key Q.U2.HICP.POINT.LT.Q.AVG = rata-rata point forecast HICP
+// longer-term. Diverifikasi live 2026-07-12: nilai ~2.03%, konsisten dengan
+// hardcode lama 2.0 (ECB SPF Q2 2026). API yang sama dengan yield curve EUR.
+async function fetchEcbSpfEur() {
+  const url = 'https://data-api.ecb.europa.eu/service/data/SPF/Q.U2.HICP.POINT.LT.Q.AVG?format=jsondata&lastNObservations=1'
+  const r = await fetch(url, { signal: AbortSignal.timeout(8000) })
+  if (!r.ok) throw new Error(`ECB SPF HTTP ${r.status}`)
+  const j = await r.json()
+  const seriesObj = j?.dataSets?.[0]?.series?.['0:0:0:0:0:0:0']?.observations
+  if (!seriesObj) return null
+  const keys = Object.keys(seriesObj).sort((a, b) => +b - +a)
+  const raw = seriesObj[keys[0]]?.[0]
+  const value = parseFloat(raw)
+  if (isNaN(value) || value < -2 || value > 15) return null
+  // Label periode (mis. "2026-Q3") dari dimensi waktu — best-effort, boleh null
+  let period = null
+  try {
+    const timeDim = (j?.structure?.dimensions?.observation || []).find(d => d.id === 'TIME_PERIOD')
+    period = timeDim?.values?.[+keys[0]]?.id || timeDim?.values?.[+keys[0]]?.name || null
+  } catch(e) {}
+  return { value: +value.toFixed(2), period }
 }
 
 // ── Yield Curve (USD from FRED, EUR from ECB SDW) ────────────────────────────
@@ -426,3 +484,7 @@ async function redisCmd(...args) {
   })
   return (await r.json()).result
 }
+
+// Ekspor helper murni untuk unit/live test — properti tambahan pada handler
+// function tidak mengubah perilaku Vercel (pola sama dengan feeds.js).
+module.exports.fetchEcbSpfEur = fetchEcbSpfEur

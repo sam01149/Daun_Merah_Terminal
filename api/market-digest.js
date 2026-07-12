@@ -1030,9 +1030,9 @@ module.exports = async function handler(req, res) {
   // 3b. Load digest history + xau history + real yields + XAU spot + XAU TA + liquidity + yield curve
   //     + risk regime (VIX/MOVE/HY) + rate path (Fed Funds futures) + cross-asset correlations + FX skew, in parallel
   let digestHistory = [], xauHistory = [], realYieldsData = null, xauSpot = null, xauTa = null, liqData = null, ycData = null, rawPrevThesis = null;
-  let riskRegimeData = null, ratePathData = null, correlationsData = null, riskReversalData = null;
+  let riskRegimeData = null, ratePathData = null, correlationsData = null, riskReversalData = null, cotData = null, polymarketData = null;
   try {
-    const [rawHist, rawXauHist, rawRY, spotResult, taResult, rawLiq, rawYc, _rawPrevThesis, rawRisk, rawRate, rawCorr, rawRR] = await Promise.all([
+    const [rawHist, rawXauHist, rawRY, spotResult, taResult, rawLiq, rawYc, _rawPrevThesis, rawRisk, rawRate, rawCorr, rawRR, rawCot, rawPoly] = await Promise.all([
       redisCmd('LRANGE', 'digest_history', 0, 6),
       redisCmd('LRANGE', 'xau_history', 0, 3),
       redisCmd('GET', 'real_yields'),
@@ -1045,8 +1045,16 @@ module.exports = async function handler(req, res) {
       fetchOrWarm('rate_path', '/api/rate-path'),
       fetchOrWarm('correlations_v3', '/api/correlations'),
       fetchOrWarm('rr_cache_v2', '/api/correlations?action=risk-reversal'),
+      // Distribusi makro → Ringkasan (2026-07-12): COT & Polymarket adalah konteks
+      // makro (positioning mingguan institusional + probabilitas event pasar prediksi)
+      // — masuk prompt Ringkasan sebagai INFORMASI, bukan sinyal. Cache-first seperti
+      // blok lain; warm hanya kalau kosong.
+      fetchOrWarm('cot_cache_v2', '/api/feeds?type=cot', 25000),
+      fetchOrWarm('polymarket_signal_v3', '/api/admin?action=polymarket'),
     ]);
     rawPrevThesis = _rawPrevThesis;
+    if (rawCot)  { try { cotData        = JSON.parse(rawCot);  } catch(_) {} }
+    if (rawPoly) { try { polymarketData = JSON.parse(rawPoly); } catch(_) {} }
     if (Array.isArray(rawHist)) digestHistory = rawHist.map(e => { try { return JSON.parse(e); } catch(_) { return null; } }).filter(Boolean);
     if (Array.isArray(rawXauHist)) xauHistory = rawXauHist.map(e => { try { return JSON.parse(e); } catch(_) { return null; } }).filter(Boolean);
     if (rawRY) realYieldsData = JSON.parse(rawRY);
@@ -1119,6 +1127,15 @@ module.exports = async function handler(req, res) {
     const ch = liqData.tga_change_bn ?? 0;
     const tgaDir = ch > 5 ? `NAIK +$${ch}B (drain likuiditas)` : ch < -5 ? `TURUN $${ch}B (injeksi likuiditas)` : 'stabil';
     realYieldBlock += `\nLIKUIDITAS USD: TGA $${liqData.tga_balance_bn}B [${tgaDir}] | Fed Balance Sheet $${liqData.fed_assets_bn ?? '?'}B`;
+    // RRP + net liquidity (WALCL − TGA − RRP) — kaki ketiga yang dulu hilang (2026-07-12)
+    if (liqData.rrp_bn != null) {
+      const rch = liqData.rrp_change_bn ?? 0;
+      const rrpDir = rch > 5 ? `naik +$${rch}B (parkir uang bertambah = drain)` : rch < -5 ? `turun $${rch}B (uang keluar parkiran = injeksi)` : 'stabil';
+      realYieldBlock += ` | RRP $${liqData.rrp_bn}B [${rrpDir}]`;
+    }
+    if (liqData.net_liquidity_bn != null) {
+      realYieldBlock += `\nNET LIQUIDITY (Fed BS − TGA − RRP): $${liqData.net_liquidity_bn.toLocaleString('en-US')}B — pakai ini (bukan TGA saja) untuk klaim likuiditas dolar: TGA turun yang cuma pindah ke RRP BUKAN injeksi likuiditas nyata`;
+    }
   }
   if (ycData?.USD?.spread_2y10y != null) {
     const spread = ycData.USD.spread_2y10y;
@@ -1250,6 +1267,59 @@ module.exports = async function handler(req, res) {
       if (rrAgeH != null && !isNaN(rrAgeH) && rrAgeH >= 0) {
         riskReversalBlock += ` [data ${rrAgeH < 1 ? '<1' : Math.round(rrAgeH * 10) / 10} jam lalu]`;
       }
+    }
+  }
+
+  // Build COT positioning block — konteks makro POSITIONING mingguan (CFTC), masuk
+  // Ringkasan sebagai INFORMASI: siapa yang sudah berat sebelah, bukan sinyal arah.
+  // %OI = net dinormalisasi ke open interest; P## = percentile 3 tahun (ekstremitas).
+  let cotBlock = '(Data COT tidak tersedia)';
+  if (cotData?.positions && Object.keys(cotData.positions).length > 0) {
+    const ORDER = ['USD','EUR','GBP','JPY','CAD','AUD','NZD','CHF'];
+    const k = n => `${n >= 0 ? '+' : ''}${(n / 1000).toFixed(1)}K`;
+    const lines = [];
+    for (const cur of ORDER) {
+      const p = cotData.positions[cur];
+      if (!p || typeof p.lev_net !== 'number') continue;
+      const pct = cotData.percentiles?.[cur];
+      const levTag = [
+        typeof p.lev_change_net === 'number' ? `${k(p.lev_change_net)} w/w` : null,
+        p.lev_net_pct_oi != null ? `${p.lev_net_pct_oi > 0 ? '+' : ''}${p.lev_net_pct_oi}% OI` : null,
+        pct?.lev_pctile != null ? `P${pct.lev_pctile}/3thn${pct.lev_pctile >= 90 ? ' EKSTREM-LONG' : pct.lev_pctile <= 10 ? ' EKSTREM-SHORT' : ''}` : null,
+      ].filter(Boolean).join(', ');
+      const amTag = [
+        p.am_net_pct_oi != null ? `${p.am_net_pct_oi > 0 ? '+' : ''}${p.am_net_pct_oi}% OI` : null,
+        pct?.am_pctile != null ? `P${pct.am_pctile}/3thn` : null,
+      ].filter(Boolean).join(', ');
+      lines.push(`${cur}: Lev net ${k(p.lev_net)}${levTag ? ` (${levTag})` : ''} | AM net ${typeof p.am_net === 'number' ? k(p.am_net) : '?'}${amTag ? ` (${amTag})` : ''}`);
+    }
+    if (lines.length > 0) {
+      cotBlock = lines.join('\n');
+      if (cotData.report_date) cotBlock += `\n[posisi per ${cotData.report_date} — COT dirilis mingguan, ini positioning TERPASANG, bukan arah hari ini]`;
+    }
+  }
+
+  // Build Polymarket block — konteks makro SENTIMEN pasar prediksi. Δ1d = pergeseran
+  // probabilitas 24 jam (poin persen) — pergeseran besar lebih informatif dari levelnya.
+  let polymarketBlock = '(Data prediction market tidak tersedia)';
+  if (Array.isArray(polymarketData?.markets) && polymarketData.markets.length > 0) {
+    const withProb = polymarketData.markets.filter(m => m.yes_prob != null);
+    const movers = withProb
+      .filter(m => m.change_1d != null && Math.abs(m.change_1d) >= 4)
+      .sort((a, b) => Math.abs(b.change_1d) - Math.abs(a.change_1d))
+      .slice(0, 4);
+    const rest = withProb
+      .filter(m => !movers.includes(m))
+      .sort((a, b) => (b.volume24h || 0) - (a.volume24h || 0))
+      .slice(0, Math.max(0, 6 - movers.length));
+    const fmt = m => {
+      const chg = m.change_1d != null && m.change_1d !== 0 ? ` (Δ1d ${m.change_1d > 0 ? '+' : ''}${m.change_1d}pp)` : '';
+      return `- [${m.category}] "${m.question}" → ${m.yes_prob}% YA${chg}`;
+    };
+    const lines = [...movers.map(fmt), ...rest.map(fmt)];
+    if (lines.length > 0) {
+      polymarketBlock = lines.join('\n');
+      if (movers.length > 0) polymarketBlock += `\n[${movers.length} market teratas diurutkan berdasar pergeseran 24 jam terbesar — pergeseran tajam = pasar prediksi baru berubah pikiran, cek apakah headline menjelaskan kenapa]`;
     }
   }
 
@@ -1586,6 +1656,12 @@ ${correlationBlock}
 
 === SKEW OPSI FX/XAU 25-delta (positioning institusional — confirm/contradict arah fundamental) ===
 ${riskReversalBlock}
+
+=== POSITIONING CFTC COT (INFORMASI KONTEKS — positioning mingguan yang SUDAH terpasang, bukan sinyal arah hari ini; pakai untuk menilai apakah narasi headline melawan atau searah posisi institusional, dan sebut ekstremitas P90+/P10− sebagai risiko crowded/squeeze) ===
+${cotBlock}
+
+=== PREDICTION MARKETS Polymarket (INFORMASI KONTEKS — probabilitas event versi pasar prediksi; pakai HANYA kalau relevan dengan tema yang sedang dibahas, misal probabilitas keputusan Fed/gencatan senjata/tarif. Pergeseran Δ1d tajam yang sejalan/berlawanan dengan headline layak disebut satu kalimat; JANGAN bikin tema baru hanya dari blok ini) ===
+${polymarketBlock}
 
 CATATAN STALENESS: Blok REAL YIELD/RISK REGIME/RATE PATH/SKEW OPSI di atas di-cache (TTL menit-jam, SKEW OPSI sampai 6 jam — lihat penanda umur di blok itu sendiri), bisa sedikit basi. Kalau ada headline yang JELAS lebih baru dan bertentangan dengan angka di blok itu (misal yield spike besar baru saja, VIX melonjak tajam yang belum tercermin di RISK REGIME, atau shock volatilitas besar yang belum tercermin di SKEW OPSI) — sebut konflik itu eksplisit dan beri bobot lebih ke sinyal yang lebih segar, jangan diam-diam pilih salah satu tanpa penjelasan.
 

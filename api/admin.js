@@ -2045,7 +2045,7 @@ function _extractRingkasanExcerpt(article, label, isXau) {
 // Sumber: cb_bias (dirawat Call 2 digest), cot_cache_v2 (CFTC; USD = Dollar Index),
 // risk_regime — data langsung dari cache server, BUKAN turunan prosa artikel, jadi
 // Analisa tetap dapat fundamental kedua leg meski artikel hari itu tidak membahasnya.
-function _formatFundamentalBlock({ label, isXau, cbBias, cot, risk, nowMs }) {
+function _formatFundamentalBlock({ label, isXau, cbBias, cot, risk, retail, nowMs }) {
   const legs = String(label || '').toUpperCase().split('/').map(s => s.trim()).filter(Boolean);
   if (legs.length === 0) return '';
   const ageH = iso => {
@@ -2064,9 +2064,29 @@ function _formatFundamentalBlock({ label, isXau, cbBias, cot, risk, nowMs }) {
     const cp = cot?.positions?.[leg];
     if (cp && typeof cp.lev_net === 'number') {
       const k = n => `${n >= 0 ? '+' : ''}${(n / 1000).toFixed(1)}K`;
-      parts.push(`COT leveraged net ${k(cp.lev_net)}${typeof cp.lev_change_net === 'number' ? ` (${k(cp.lev_change_net)} w/w)` : ''}`);
+      // %OI + percentile 3thn (audit vendor 2026-07-12): normalisasi + ekstremitas —
+      // "net +50K" tanpa konteks OI/persentil tidak bisa dinilai crowded atau tidak.
+      const pctile = cot?.percentiles?.[leg];
+      const extras = [
+        typeof cp.lev_change_net === 'number' ? `${k(cp.lev_change_net)} w/w` : null,
+        cp.lev_net_pct_oi != null ? `${cp.lev_net_pct_oi > 0 ? '+' : ''}${cp.lev_net_pct_oi}% dari OI` : null,
+        pctile?.lev_pctile != null ? `persentil 3thn P${pctile.lev_pctile}${pctile.lev_pctile >= 90 ? ' — CROWDED LONG, rawan squeeze turun' : pctile.lev_pctile <= 10 ? ' — CROWDED SHORT, rawan squeeze naik' : ''}` : null,
+      ].filter(Boolean).join(', ');
+      parts.push(`COT leveraged net ${k(cp.lev_net)}${extras ? ` (${extras})` : ''}`);
     }
     if (parts.length > 0) lines.push(`${leg}: ${parts.join(' | ')}`);
+  }
+  // Retail sentiment (mikro/taktis — intraday, kontrarian): keyed per PAIR, bukan per leg.
+  const pairKey = isXau ? 'XAUUSD' : legs.join('');
+  const rt = retail?.positions?.[pairKey];
+  if (rt && rt.long_pct != null) {
+    const sig = rt.signal === 'CONTRARIAN_SHORT'
+      ? 'crowd retail berat LONG → sinyal kontrarian condong SHORT'
+      : rt.signal === 'CONTRARIAN_LONG'
+        ? 'crowd retail berat SHORT → sinyal kontrarian condong LONG'
+        : 'seimbang, tidak ada sinyal kontrarian';
+    const a = ageH(retail.fetched_at);
+    lines.push(`RETAIL SENTIMENT ${pairKey}: ${rt.long_pct}% long / ${rt.short_pct}% short — ${sig}${a != null ? ` (data ${a < 1 ? '<1' : a}j lalu)` : ''} [kontrarian lemah kalau melawan COT; cek baris COT di atas]`);
   }
   if (risk?.regime) {
     const parts = [`Regime: ${String(risk.regime).toUpperCase()}`];
@@ -2209,16 +2229,18 @@ async function ohlcvAnalyzeHandler(req, res) {
     // risk regime), bukan turunan artikel. Best-effort: gagal baca = blok kosong.
     let fundBlock = '';
     try {
-      const [rawBias, rawCot, rawRisk] = await Promise.all([
+      const [rawBias, rawCot, rawRisk, rawRetail] = await Promise.all([
         redisCmd('GET', 'cb_bias'),
         redisCmd('GET', 'cot_cache_v2'),
         redisCmd('GET', 'risk_regime'),
+        redisCmd('GET', 'retail_sentiment_cache'),
       ]);
       fundBlock = _formatFundamentalBlock({
         label: data.label, isXau: data.is_xau,
         cbBias: rawBias ? JSON.parse(rawBias) : null,
         cot:    rawCot  ? JSON.parse(rawCot)  : null,
         risk:   rawRisk ? JSON.parse(rawRisk) : null,
+        retail: rawRetail ? JSON.parse(rawRetail) : null,
         nowMs:  Date.now(),
       });
     } catch (e) { /* opsional — jangan gagalkan analisa kalau cache fundamental kosong */ }
@@ -2583,6 +2605,14 @@ async function polymarketHandler(req, res) {
         const outcomes = Array.isArray(m.outcomes)      ? m.outcomes      : JSON.parse(m.outcomes      || '[]');
         const yesIdx = outcomes.findIndex(o => o.toLowerCase() === 'yes');
         const prob   = yesIdx >= 0 ? Math.round(parseFloat(prices[yesIdx] || 0) * 100) : null;
+        // Audit vendor 2026-07-12: oneDayPriceChange & liquidity SUDAH ada di response
+        // yang sama (0 call tambahan, diverifikasi live). Momentum = pergeseran
+        // probabilitas 24 jam dalam poin persen — "prob turun 62→48 semalam" adalah
+        // sinyal yang tidak terlihat dari level saja. change_1d mengikuti outcome YA
+        // (positif = pasar makin yakin YA).
+        const rawChg = parseFloat(m.oneDayPriceChange);
+        const change1d = (!isNaN(rawChg) && prob !== null) ? Math.round(rawChg * 100) : null;
+        const liqRaw = parseFloat(m.liquidityNum ?? m.liquidity);
         return {
           question:  m.question,
           slug:      m.slug,
@@ -2590,6 +2620,8 @@ async function polymarketHandler(req, res) {
           outcomes,
           prices:    prices.map(p => Math.round(parseFloat(p) * 100)),
           yes_prob:  prob,
+          change_1d: change1d,
+          liquidity: !isNaN(liqRaw) ? Math.round(liqRaw) : null,
           volume24h: Math.round(m.volume24hr || 0),
           end_date:  m.endDate,
         };

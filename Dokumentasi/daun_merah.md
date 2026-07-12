@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-07-12 (session 158 lanjutan 6 — audit kurasan vendor: temuan data zero-cost yang masih dibuang + backlog RRP/ECB SPF/COT percentile)
+> **Last updated:** 2026-07-12 (session 158 lanjutan 7 — EKSEKUSI penuh audit kurasan vendor Grup A+B: COT %OI+percentile, kalender raw/period/comment, FedWatch fix, RRP/net liquidity, ECB SPF auto, Polymarket Δ1d; + retail realtime dashboard + panel korelasi bahasa awam)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -8,9 +8,51 @@
 
 ---
 
+## Changelog Session 158 lanjutan 7 (2026-07-12) — Eksekusi Penuh Audit Vendor: Grup A + B Dikuras, Distribusi Makro→Ringkasan / Mikro→Analisa, Retail Realtime, Korelasi Bahasa Awam
+
+**Konteks:** eksekusi keputusan user atas temuan audit lanjutan 6 — "kuras saja semua, jangan kuras yang tidak kamu sarankan" (Grup A + B dieksekusi, Grup C sengaja TIDAK), plus 3 permintaan tambahan: (a) distribusi data — konteks makro masuk Ringkasan sebagai INFORMASI, mikro masuk Analisa, data lain ke fiturnya masing-masing, dirapikan bukan asal tempel; (b) retail sentiment harus realtime sampai fitur Dashboard; (c) panel CROSS-ASSET CORRELATIONS & ANOMALI Δ>0.4 harus bisa dipahami orang awam.
+
+### Grup A — data yang sudah di-fetch tapi dibuang, sekarang dipakai
+
+1. **COT %OI ([api/feeds.js](../api/feeds.js)):** `_parseOpenInterest()` + `_parseCotPercentLine()` (pure, dites) membaca `Open Interest is X` dan baris "Percent of Open Interest" dari blok teks yang SAMA — payload `cot_cache_v2` kini punya `oi`, `am_net_pct_oi`, `lev_net_pct_oi` per currency. Kolom persen sejajar baris Positions (idx 3/4 AM, 6/7 Lev), diverifikasi dari fetch live.
+2. **Kalender TradingView ([api/calendar.js](../api/calendar.js)):** event kini membawa `actual_raw`/`forecast_raw`/`previous_raw` (HANYA dari field *Raw — tanpa fallback ke nilai terskalakan, catatan bug di komentar kode), `period` (mis. "Jun"), `comment` (penjelasan indikator, cap 300 char). UI kalender: badge **▲ BEAT / ▼ MISS / = SESUAI** di sel Actual dihitung numerik (`compareActualForecast` upgrade, indikator terbalik tetap ditangani), chip periode di nama event, tombol ⓘ toggle deskripsi indikator (klik, bukan hover — ramah layar sentuh).
+3. **Polymarket ([api/admin.js](../api/admin.js)):** payload +`change_1d` (pergeseran probabilitas 24j, poin persen, dari `oneDayPriceChange` — verifikasi live via r.jina.ai; catatan: `oneWeekPriceChange` TIDAK ada di response) +`liquidity`. UI panel: baris "▲/▼ Xpp / 24j" berwarna di bawah probabilitas.
+4. **FedWatch ([api/rate-path.js](../api/rate-path.js)):** fabrikasi 50/50 DIHAPUS — meeting tanpa data kini `no_data:true` (null semua) dan dikecualikan dari kumulatif; kalau meeting PERTAMA tak ada, seluruh path FedWatch dianggap gagal → fallback ZQ/T-bill ambil alih. Parser bucket baru `_aggregateFedwatchProbs()` (pure, dites): klasifikasi label range target ("350-375" bps / "3.50-3.75" persen, dibanding upper bound vs DFEDTARU) + kata kunci, MENJUMLAHKAN semua bucket ease (parser lama `.find()` cuma ambil satu — understate saat ada bucket −50bp; label range juga salah tangkap regex `'-'` lama), kumulatif = Σ prob×Δbps (`expected_move_bps`). UI cb-tracker: guard `prob_hold != null` supaya tidak render "H0%/C0%" palsu.
+
+### Grup B — call baru murah
+
+5. **RRP + Net Liquidity ([api/real-yields.js](../api/real-yields.js)):** `fetchLiquidityIndicators()` +RRPONTSYD (FRED, satuan miliar — beda dari WALCL/WDTGAL jutaan) → `rrp_bn`, `rrp_change_bn`, dan **`net_liquidity_bn` = Fed BS − TGA − RRP**. UI: kartu LIQUIDITY USD & detail USD (fdOverlay) tampil RRP ▲serap/▼inject + baris NET.
+6. **ECB SPF auto (real-yields.js):** `fetchEcbSpfEur()` — dataflow `SPF/Q.U2.HICP.POINT.LT.Q.AVG`, menggantikan hardcode EUR (live test: 2.03%, period 2026-Q2, konsisten hardcode 2.0); gagal fetch → hardcode tetap jadi fallback. 6 mata uang lain tetap manual (survei tanpa API).
+7. **COT percentile 3 tahun (feeds.js):** `updateCotPercentiles()` — CFTC Socrata dataset **`yw9f-hn96`** (TFF Combined, sumber sama dengan financial_lof; USD INDEX + 7 mata uang, ~156 minggu × 8 market dalam SATU request, diverifikasi identik dengan rilis 2026-07-07). Refresh mingguan fire-and-forget (lock NX 20 jam, cache `cot_pctile_v1` 8 hari), payload +`percentiles` (`am_pctile`/`lev_pctile`). UI COT: baris "+X% OI · P##" per currency, ⚠ kuning saat P≥90/P≤10, tooltip penjelasan; deskripsi panel diperluas.
+
+### Distribusi makro→Ringkasan / mikro→Analisa ([api/market-digest.js](../api/market-digest.js), admin.js)
+
+- **Ringkasan (INFORMASI):** 2 blok prompt baru — `POSITIONING CFTC COT` (net + w/w + %OI + P## per currency, header menegaskan "positioning terpasang, bukan sinyal arah hari ini") dan `PREDICTION MARKETS Polymarket` (4 pergeseran Δ1d terbesar ≥4pp + sisanya by volume, maks 6; instruksi: pakai hanya jika relevan tema, jangan bikin tema baru). Dimuat via `fetchOrWarm` cache-first seperti blok lain. Baris LIKUIDITAS ditambah RRP + baris NET LIQUIDITY dengan peringatan "TGA turun yang pindah ke RRP bukan injeksi".
+- **Analisa (mikro):** `_formatFundamentalBlock` +%OI & percentile pada baris COT (P≥90 = "CROWDED LONG, rawan squeeze turun") + blok baru **RETAIL SENTIMENT per pair** (kontrarian, keyed XAUUSD/pair tanpa slash, umur data dicantumkan, catatan "lemah kalau melawan COT").
+
+### Retail sentiment realtime → Dashboard ([index.html](../index.html))
+
+Akar masalah: strip retail dashboard hanya terisi kalau user pernah buka tab COT (stuck "Memuat..." selamanya kalau langsung ke Dashboard), `refreshDashboard()` tidak me-render ulang strip, dan tidak ada re-fetch periodik. Fix: `initDashboard()` ikut fetch retail; interval 60s dashboard memanggil `fetchRetailSentiment()` (digerbang TTL); `refreshDashboard()` +`renderDashRetail()` (umur "Xm lalu" selalu akurat); `RETAIL_CLIENT_TTL` 15→**5 menit** (server di-warm GitHub Action tiap 15 menit — client 15 menit di atasnya bisa telat ~30 menit total; fetch client cuma baca Redis, murah). Rantai penuh: ForexBenchmark → Action warm 15m → Redis → client ≤5m → dashboard re-render 60s.
+
+### Panel korelasi bahasa awam (index.html)
+
+- `corrWord(r)` — terjemahan angka ke kata ("bergerak berlawanan (kuat)" dst).
+- Panel collapsible **"? Cara membaca panel ini"** (default tertutup, anti-noise): skala −1…+1, arti dua angka 20d/60d, patokan kekuatan |r|, dan 3 alasan kenapa trader peduli (risiko dobel, cek kesehatan pergerakan, anomali = aturan main berubah).
+- Tiap kartu anomali +kalimat awam `_anomalyReadable()`: "Biasanya keduanya bergerak searah (kuat); 20 hari terakhir hampir tidak berhubungan. Artinya: hubungan yang biasanya bisa dijadikan patokan sedang MELEMAH…" (3 varian: berbalik arah / melemah / makin ketat).
+- Tooltip baris korelasi Gold diawali terjemahan kondisi sekarang, bukan cuma mekanisme statis.
+
+### Verifikasi & catatan
+
+- **Test:** +11 test baru [test/vendor_squeeze.test.js](../test/vendor_squeeze.test.js) (sampel COT dari fetch LIVE, bukan karangan — pelajaran lanjutan 4); suite penuh **269/269 hijau**; `node --check` semua file API + validasi sintaks seluruh `<script>` inline index.html bersih; SPF live-test OK (2.03/2026-Q2); RRPONTSYD dikonfirmasi ada & satuan miliar.
+- Versi serempak naik → `2026.07.12.3` (APP_VERSION, ?v=, NEWSCAT_VERSION, NewsCat.VERSION) — newscat tidak berubah, tapi invariant 4-versi-lockstep dipertahankan.
+- **Belum terverifikasi di produksi** (butuh deploy + trafik nyata): isi cache `cot_pctile_v1` pertama (fire-and-forget pasca-response di Vercel — preseden `storeCOTHistory` dengan pola sama terbukti jalan), field `change_1d` Polymarket di production (endpoint diblokir Kominfo dari jaringan lokal), dan bentuk respons FedWatch asli (403 dari IP lokal; parser dibuat defensif multi-bentuk + fallback chain utuh).
+- Grup C tetap TIDAK dieksekusi sesuai keputusan: tanpa seri makro FRED baru sebagai sinyal, tanpa CLOB Polymarket, tanpa interval <1h, Barchart dibiarkan (kandidat cleanup terpisah).
+
+---
+
 ## Changelog Session 158 lanjutan 6 (2026-07-12) — Audit Kurasan Vendor: Data yang Sudah Kita Fetch tapi Dibuang
 
-**Konteks:** user minta audit semua vendor — "apakah informasi yang mereka sediakan sudah kita kuras habis untuk keuntungan kita, tanpa noise?" Audit READ-ONLY: belum ada kode yang diubah; temuan di bawah adalah backlog kandidat, menunggu keputusan user.
+**Konteks:** user minta audit semua vendor — "apakah informasi yang mereka sediakan sudah kita kuras habis untuk keuntungan kita, tanpa noise?" Audit READ-ONLY: belum ada kode yang diubah; temuan di bawah adalah backlog kandidat, menunggu keputusan user. **→ DIEKSEKUSI PENUH di lanjutan 7 (Grup A+B; Grup C tetap tidak).**
 
 **Metode:** baca seluruh integrasi di `api/*.js` + cross-check [daun_merah_vendor.md](daun_merah_vendor.md), lalu verifikasi live 4 endpoint dari mesin lokal: CFTC ✅, TradingView ✅, Polymarket ❌ (diblokir Kominfo/Internet Positif dari jaringan Indonesia — redirect `internet-positif.info`; produksi Vercel tidak terpengaruh), CME ❌ (403 Akamai, IP lokal juga diblokir seperti IP Vercel).
 

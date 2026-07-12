@@ -83,6 +83,63 @@ function cmeFetch(targetUrl, directHeaders, timeoutMs = 15000) {
   return fetch(targetUrl, { headers: directHeaders, signal: AbortSignal.timeout(Math.min(timeoutMs, 10000)) });
 }
 
+// Klasifikasi + agregasi bucket probabilitas FedWatch (pure — dipakai computeRatePath
+// + unit test). Tiap entry diklasifikasikan jadi Δbps terhadap rate sekarang:
+// 1. Label range target ("350-375" bps atau "3.50-3.75" persen) → Δ = upper bound − rate
+//    sekarang (DFEDTARU juga upper bound, apple-to-apple).
+// 2. Label kata kunci: no change/unch → 0; ease/cut → −25; hike/tighten → +25.
+// 3. Entry yang tidak terklasifikasi dilewati (bukan dianggap nol).
+// Probabilitas dinormalisasi otomatis (respons bisa 0-1 atau 0-100).
+// Return null kalau tidak ada satupun entry valid — biar pemanggil bisa bedakan
+// "tidak ada data" dari "0% cut".
+function _aggregateFedwatchProbs(probs, currentRatePct) {
+  if (!Array.isArray(probs) || probs.length === 0) return null;
+  const currentBps = Math.round(currentRatePct * 100);
+
+  const entries = [];
+  for (const p of probs) {
+    const prob = parseFloat(p?.probPct ?? p?.probability ?? p?.prob ?? 'x');
+    if (isNaN(prob) || prob < 0) continue;
+    const label = String(p?.label ?? p?.targetRate ?? p?.target ?? '').trim();
+    let deltaBps = null;
+    const range = label.match(/(\d+(?:\.\d+)?)\s*[-–]\s*(\d+(?:\.\d+)?)/);
+    if (range) {
+      let upper = Math.max(parseFloat(range[1]), parseFloat(range[2]));
+      if (upper < 20) upper = Math.round(upper * 100); // format persen (3.75) → bps
+      deltaBps = upper - currentBps;
+    } else if (/no\s*change|unch|hold/i.test(label)) {
+      deltaBps = 0;
+    } else if (/ease|cut/i.test(label)) {
+      deltaBps = -25;
+    } else if (/hike|tighten|raise/i.test(label)) {
+      deltaBps = 25;
+    }
+    if (deltaBps === null) continue;
+    entries.push({ prob, deltaBps });
+  }
+  if (entries.length === 0) return null;
+
+  // Normalisasi: kalau total >1.5 berarti skala 0-100
+  const total = entries.reduce((s, e) => s + e.prob, 0);
+  const scale = total > 1.5 ? 100 : 1;
+
+  let hold = 0, cut = 0, hike = 0, expected = 0;
+  for (const e of entries) {
+    const pr = e.prob / scale;
+    if (e.deltaBps === 0) hold += pr;
+    else if (e.deltaBps < 0) cut += pr;
+    else hike += pr;
+    expected += pr * e.deltaBps;
+  }
+  const r4 = v => Math.round(v * 10000) / 10000;
+  return {
+    prob_hold: r4(hold),
+    prob_cut: r4(cut),
+    prob_hike: r4(hike),
+    expected_move_bps: Math.round(expected * 10) / 10,
+  };
+}
+
 // Fetch from CME FedWatch hidden API — tries V1 then V2 URL pattern
 async function fetchCMEFedWatch() {
   const now = new Date();
@@ -172,30 +229,47 @@ async function computeRatePath() {
   // Step 1: try CME FedWatch hidden API (exact probabilities, same source as fedwatch tool)
   try {
     const fwData = await fetchCMEFedWatch();
-    // Parse meeting probabilities from FedWatch response
-    // Response structure varies — try common shapes
+    // Audit vendor 2026-07-12 — dua perbaikan parsing (respons yang sama, 0 credit tambahan):
+    // 1. Meeting yang TIDAK ketemu di respons dulu difabrikasi 50/50 dan tampil seolah
+    //    data pasar — sekarang ditandai no_data (null semua) dan dikecualikan dari
+    //    kumulatif; kalau meeting PERTAMA pun tidak ada, seluruh path FedWatch dianggap
+    //    gagal supaya fallback ZQ/T-bill yang berbasis data asli mengambil alih.
+    // 2. Bucket distribusi penuh dijumlahkan semua (dulu .find() ambil SATU entry ease
+    //    pertama saja — kalau respons memisah bucket -25bp dan -50bp, probabilitas cut
+    //    tertulis lebih kecil dari kenyataan; label range "350-375" juga salah tangkap
+    //    karena heuristik lama menganggap semua label mengandung '-' berarti cut).
+    //    Ekspektasi pergerakan (expected_move_bps) = Σ prob × Δbps per bucket.
     const meetingProbs = nextMeetings.map(date => {
       const mtg = fwData.meetings.find(m => {
         const d = m.meeting_date || m.meetingDate || m.date || '';
         return d.startsWith(date) || d.includes(date.slice(5)); // match YYYY-MM-DD or MM-DD
       });
-      if (!mtg) return { date, prob_hold: 0.5, prob_cut25: 0.5, prob_hike25: 0, implied_rate: null };
-      // Find hold/cut/hike probabilities from probs array
-      const probs = mtg.probs || mtg.probabilities || mtg.targetRateProbabilities || [];
-      const holdEntry = probs.find(p => (p.label||p.targetRate||'').toString().includes('NO CHANGE') || (p.probPct ?? p.probability) !== undefined && (p.label||'').toLowerCase().includes('no'));
-      const cutEntry  = probs.find(p => (p.label||p.targetRate||'').toString().toLowerCase().includes('ease') || (p.label||'').includes('-'));
-      const hikeEntry = probs.find(p => (p.label||p.targetRate||'').toString().toLowerCase().includes('hike') || (p.label||'').includes('+'));
-      const prob_hold   = Math.round((parseFloat(holdEntry?.probPct ?? holdEntry?.probability ?? 50)) * 100) / 10000;
-      const prob_cut25  = Math.round((parseFloat(cutEntry?.probPct  ?? cutEntry?.probability  ?? 0))  * 100) / 10000;
-      const prob_hike25 = Math.round((parseFloat(hikeEntry?.probPct ?? hikeEntry?.probability ?? 0))  * 100) / 10000;
-      return { date, prob_hold, prob_cut25, prob_hike25, implied_rate: null };
+      const probs = mtg ? (mtg.probs || mtg.probabilities || mtg.targetRateProbabilities || []) : [];
+      const agg = _aggregateFedwatchProbs(probs, currentRate);
+      if (!agg) return { date, prob_hold: null, prob_cut25: null, prob_hike25: null, implied_rate: null, no_data: true };
+      return {
+        date,
+        prob_hold:  agg.prob_hold,
+        prob_cut25: agg.prob_cut,   // nama field lama dipertahankan (konsumen: UI + digest); isinya = TOTAL prob ease semua bucket
+        prob_hike25: agg.prob_hike,
+        expected_move_bps: agg.expected_move_bps,
+        implied_rate: null,
+      };
     });
 
-    const totalCutProb3m = meetingProbs.slice(0,3).reduce((s,m) => s + m.prob_cut25, 0);
+    if (meetingProbs[0]?.no_data) throw new Error('FedWatch: meeting terdekat tidak ada di respons — pakai fallback');
+
+    const withData = meetingProbs.filter(m => !m.no_data);
+    // Kumulatif = Σ expected move per meeting (memperhitungkan bucket 50bp, bukan cuma 25bp).
+    const cum3m = Math.round(withData.slice(0, 3).reduce((s, m) => s + (m.expected_move_bps ?? -(m.prob_cut25 * 25)), 0));
     return {
       source: 'cme_fedwatch',
       current_rate: currentRate,
-      USD: { next_meetings: meetingProbs, cumulative_3m_bps: Math.round(-totalCutProb3m * 25) },
+      USD: {
+        next_meetings: meetingProbs,
+        cumulative_3m_bps: cum3m,
+        ...(withData.length < meetingProbs.length ? { meetings_no_data: meetingProbs.filter(m => m.no_data).map(m => m.date) } : {}),
+      },
       trade_date: fwData.trade_date,
       computed_at: new Date().toISOString(),
     };
@@ -392,3 +466,4 @@ module.exports = async function handler(req, res) {
 // module.exports.parseRetailPositions di feeds.js).
 module.exports.getRatePathData = getRatePathData;
 module.exports.getNextFOMCMeetings = getNextFOMCMeetings;
+module.exports._aggregateFedwatchProbs = _aggregateFedwatchProbs;

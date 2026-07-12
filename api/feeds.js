@@ -384,9 +384,20 @@ async function cotHandler(req, res) {
       }
     }
 
+    // Open Interest + baris "Percent of Open Interest ..." — dua-duanya SUDAH ada di
+    // blok teks yang sama (audit vendor 2026-07-12, terverifikasi live): net mentah 50K
+    // kontrak beda makna saat OI 200K vs 700K, jadi net sebagai % of OI adalah
+    // normalisasi ekstremitas standar. Nol fetch tambahan. Kolom baris persen persis
+    // sejajar dengan baris Positions (idx 3/4 = AM long/short, 6/7 = Lev long/short).
+    const oi = _parseOpenInterest(block);
+    const { amNetPctOi, levNetPctOi } = _parseCotPercentLine(lines);
+
     positions[currency] = {
       am_long: amLong, am_short: amShort, am_net: amNet, am_change_net: amChangeNet,
       lev_long: levLong, lev_short: levShort, lev_net: levNet, lev_change_net: levChangeNet,
+      ...(oi != null ? { oi } : {}),
+      ...(amNetPctOi  != null ? { am_net_pct_oi:  amNetPctOi  } : {}),
+      ...(levNetPctOi != null ? { lev_net_pct_oi: levNetPctOi } : {}),
     };
   }
 
@@ -410,10 +421,25 @@ async function cotHandler(req, res) {
     return res.status(500).json({ error: `COT parser degraded: only ${parsedCount}/8 currencies parsed`, positions });
   }
 
+  // Percentile posisi 3 tahun (CFTC Socrata API) — konteks ekstremitas jangka panjang
+  // yang tidak bisa dijawab cot_history internal (baru 90 hari). Cache terpisah,
+  // refresh mingguan fire-and-forget; kalau belum ada, payload tetap jalan tanpanya.
+  let percentiles = null;
+  try {
+    const rawPctile = await redisCmd('GET', 'cot_pctile_v1');
+    if (rawPctile) {
+      const p = JSON.parse(rawPctile);
+      if (p && p.by_currency) percentiles = p;
+    }
+  } catch(e) {}
+  const pctileStaleMs = percentiles ? Date.now() - new Date(percentiles.stored_at).getTime() : Infinity;
+  if (pctileStaleMs > 6 * 24 * 3600 * 1000) updateCotPercentiles().catch(e => console.warn('cot pctile refresh failed:', e.message));
+
   const payload = {
     positions,
     report_date: reportDate,
     release_date: releaseDate,
+    ...(percentiles ? { percentiles: percentiles.by_currency, percentiles_asof: percentiles.report_date } : {}),
     fetched_at: new Date().toISOString(),
   };
 
@@ -423,6 +449,119 @@ async function cotHandler(req, res) {
   storeCOTHistory(positions, reportDate).catch(() => {});
 
   return res.status(200).json(payload);
+}
+
+// ── Helper parse blok COT (pure, dipakai cotHandler + unit test) ──────────────
+
+function _parseOpenInterest(block) {
+  const m = String(block || '').match(/Open Interest is\s+([\d,]+)/i);
+  return m ? parseInt(m[1].replace(/,/g, '')) : null;
+}
+
+// Baris "Percent of Open Interest Represented by Each Category of Trader" punya
+// kolom yang persis sejajar dengan baris Positions: idx 3/4 = AM long/short,
+// idx 6/7 = Lev long/short. Kembalikan net (long − short) sebagai % of OI.
+function _parseCotPercentLine(lines) {
+  const empty = { amNetPctOi: null, levNetPctOi: null };
+  if (!Array.isArray(lines)) return empty;
+  for (let i = 0; i < lines.length; i++) {
+    if (!/Percent of Open Interest/i.test(lines[i])) continue;
+    for (let j = i + 1; j < Math.min(i + 4, lines.length); j++) {
+      const pcts = lines[j].trim().split(/\s+/)
+        .filter(s => /^-?[\d.]+$/.test(s))
+        .map(parseFloat);
+      if (pcts.length >= 8) {
+        return {
+          amNetPctOi:  +(pcts[3] - pcts[4]).toFixed(1),
+          levNetPctOi: +(pcts[6] - pcts[7]).toFixed(1),
+        };
+      }
+    }
+    return empty;
+  }
+  return empty;
+}
+
+// ── COT percentile 3 tahun (CFTC Socrata public API) ─────────────────────────
+// Dataset yw9f-hn96 = "Traders in Financial Futures — Combined" (futures+options,
+// sumber yang sama dengan financial_lof.htm). Satu request mingguan menarik ~156
+// laporan mingguan x 8 market, lalu dihitung percentile rank posisi net TERAKHIR
+// (AM & Lev) terhadap distribusi 3 tahunnya sendiri. Diverifikasi live 2026-07-12:
+// row terbaru identik dengan rilis financial_lof (EUR AM net +279.5K, Lev -66.1K).
+const COT_SOCRATA_MARKETS = {
+  USD: ['USD INDEX', 'U.S. DOLLAR INDEX - ICE FUTURES U.S.'],
+  EUR: ['EURO FX'],
+  GBP: ['BRITISH POUND', 'BRITISH POUND STERLING'],
+  JPY: ['JAPANESE YEN'],
+  CAD: ['CANADIAN DOLLAR'],
+  AUD: ['AUSTRALIAN DOLLAR'],
+  NZD: ['NZ DOLLAR', 'NEW ZEALAND DOLLAR'],
+  CHF: ['SWISS FRANC'],
+};
+
+// Percentile rank (0-100) nilai terakhir terhadap seluruh distribusi (inklusif).
+function _pctileRank(values, latest) {
+  if (!Array.isArray(values) || values.length < 20 || latest == null) return null;
+  const below = values.filter(v => v <= latest).length;
+  return Math.round(below / values.length * 100);
+}
+
+async function updateCotPercentiles() {
+  // Lock NX 20 jam — gagal fetch tetap tidak retry-storm; sukses di-cache 8 hari.
+  const lock = await redisCmd('SET', 'cot_pctile_lock', '1', 'EX', 72000, 'NX');
+  if (!lock) return;
+
+  const allNames = Object.values(COT_SOCRATA_MARKETS).flat();
+  const inList = allNames.map(n => `'${n.replace(/'/g, "''")}'`).join(',');
+  const cutoff = new Date(Date.now() - 3 * 365 * 86400000).toISOString().slice(0, 10);
+  const params = new URLSearchParams({
+    '$select': 'contract_market_name,report_date_as_yyyy_mm_dd,asset_mgr_positions_long,asset_mgr_positions_short,lev_money_positions_long,lev_money_positions_short',
+    '$where': `contract_market_name in(${inList}) AND report_date_as_yyyy_mm_dd>'${cutoff}'`,
+    '$limit': '3000',
+  });
+  const r = await fetch(`https://publicreporting.cftc.gov/resource/yw9f-hn96.json?${params}`, {
+    headers: { 'Accept': 'application/json', 'User-Agent': 'Mozilla/5.0 (compatible; FJFeed/1.0)' },
+    signal: AbortSignal.timeout(20000),
+  });
+  if (!r.ok) throw new Error(`CFTC Socrata HTTP ${r.status}`);
+  const rows = await r.json();
+  if (!Array.isArray(rows) || rows.length < 100) throw new Error(`CFTC Socrata: cuma ${Array.isArray(rows) ? rows.length : 0} row`);
+
+  const nameToCur = {};
+  for (const [cur, names] of Object.entries(COT_SOCRATA_MARKETS))
+    for (const n of names) nameToCur[n] = cur;
+
+  const series = {}; // { USD: [{date, am_net, lev_net}, ...] }
+  for (const row of rows) {
+    const cur = nameToCur[row.contract_market_name];
+    if (!cur) continue;
+    const amNet  = parseInt(row.asset_mgr_positions_long) - parseInt(row.asset_mgr_positions_short);
+    const levNet = parseInt(row.lev_money_positions_long) - parseInt(row.lev_money_positions_short);
+    if (isNaN(amNet) || isNaN(levNet)) continue;
+    (series[cur] = series[cur] || []).push({ date: row.report_date_as_yyyy_mm_dd, am_net: amNet, lev_net: levNet });
+  }
+
+  const by_currency = {};
+  let latestDate = null;
+  for (const [cur, arr] of Object.entries(series)) {
+    arr.sort((a, b) => a.date < b.date ? -1 : 1);
+    const latest = arr[arr.length - 1];
+    const amPct  = _pctileRank(arr.map(x => x.am_net), latest.am_net);
+    const levPct = _pctileRank(arr.map(x => x.lev_net), latest.lev_net);
+    if (amPct == null && levPct == null) continue;
+    by_currency[cur] = { am_pctile: amPct, lev_pctile: levPct, n_weeks: arr.length };
+    if (!latestDate || latest.date > latestDate) latestDate = latest.date;
+  }
+  if (Object.keys(by_currency).length < 5) throw new Error(`CFTC Socrata: cuma ${Object.keys(by_currency).length}/8 market terhitung`);
+
+  const payload = {
+    by_currency,
+    report_date: latestDate ? latestDate.slice(0, 10) : null,
+    window_years: 3,
+    stored_at: new Date().toISOString(),
+  };
+  await redisCmd('SET', 'cot_pctile_v1', JSON.stringify(payload), 'EX', 8 * 24 * 3600);
+  console.log(`cot pctile updated: ${Object.keys(by_currency).length} markets, report ${payload.report_date}`);
 }
 
 async function storeCOTHistory(positions, reportDate) {
@@ -1251,3 +1390,6 @@ module.exports.retailHistoryHandler = retailHistoryHandler;
 module.exports.newsHistoryHandler = newsHistoryHandler;
 module.exports.storeNewsHistory = storeNewsHistory;
 module.exports.parseRSSItems = parseRSSItems;
+module.exports._pctileRank = _pctileRank;
+module.exports._parseOpenInterest = _parseOpenInterest;
+module.exports._parseCotPercentLine = _parseCotPercentLine;
