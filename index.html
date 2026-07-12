@@ -3764,47 +3764,24 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
      dialog print OS (workaround bug "Microsoft Print to PDF" yang nama filenya
      selalu kosong, lihat diskusi user). -->
 <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
+<!-- newscat.js: engine klasifikasi kategori berita (single source of truth,
+     dipakai juga sw.js & api/). Query ?v= = cache-buster — naikkan tiap kali
+     newscat.js berubah, samakan dengan NEWSCAT_VERSION di sw.js. -->
+<script src="/newscat.js?v=2026.07.12"></script>
 <script>
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.07.03';
+const APP_VERSION = '2026.07.12';
 const FETCH_URL = '/api/feeds?type=rss';
 
-const CATS = {
-  'market-moving': ['market moving','breaking','urgent','war','blockade'],
-  'forex': [
-    'eur/usd','gbp/usd','usd/jpy','aud/usd','usd/cad','nzd/usd','usd/chf','usd/cnh','usd/cny',
-    'eur/gbp','eur/jpy','eur/chf','eur/cad','eur/aud','eur/nzd',
-    'gbp/jpy','gbp/chf','gbp/cad','gbp/aud','gbp/nzd',
-    'aud/jpy','aud/cad','aud/chf','aud/nzd','nzd/jpy','nzd/cad','nzd/chf',
-    'cad/jpy','cad/chf','chf/jpy',
-    '/usd','/eur','/gbp','/jpy','/cad','/chf','/aud','/nzd','/cnh',
-    'us dollar','euro zone','euro area','the euro','sterling','pound sterling',
-    'japanese yen','swiss franc','canadian dollar','australian dollar','new zealand dollar',
-    'chinese yuan','chinese renminbi','offshore yuan',
-    'loonie','aussie dollar','kiwi dollar','cable','swissy','fiber','greenback',
-    'fx options','options expir','dollar index','dxy','currency pair',
-    'forex','foreign exchange','spot rate','exchange rate',
-    'forint','zloty','krona','won','ringgit','lira','rupee','peso','rand',
-  ],
-  'equities': ['s&p','nasdaq','dow jones','ftse','dax','nikkei','hang seng','stock','equity','shares','earnings','ipo','nyse','spx','nvda','apple','tesla','meta ','alphabet','microsoft','amazon','samsung','tsmc'],
-  'commodities': ['gold','silver','copper','wheat','corn','soybean','coffee','cocoa','cotton','lumber','palladium','platinum','xau','xag','commodity','zinc','nickel','iron ore','steel','alumin'],
-  'energy':   ['oil','crude','brent','wti','opec','gasoline','diesel','natural gas','barrel','petroleum','hormuz','strait','iea','tanker','refiner','pipeline','lng','energy price','fuel'],
-  'bonds':    ['bond','yield','treasury','gilt','bund','t-note','10-year','2-year','30-year','fixed income','debt','sovereign','auction'],
-  'crypto':   ['bitcoin','btc','ethereum','eth','crypto','blockchain','coinbase','binance','stablecoin','defi','nft','altcoin','ripple','xrp','solana'],
-  'indexes':  ['composite index'],
-  'macro':    ['fed ','fomc','powell','goolsbee','waller','kashkari','warsh','federal reserve','rate cut','rate hike','interest rate','ecb','boe','rba','boj','pboc','rbnz','boc ','central bank','monetary policy','lagarde','bailey','ueda','imf','world bank','g7','g20','recession'],
-  'econ-data':['actual','forecast','previous','cpi','nfp','gdp','pmi','ism ','ism manufacturing','ism services','manufacturing pmi','services pmi','composite pmi','flash pmi','flash cpi','flash gdp','unemployment','retail sales','trade balance','consumer confidence','business confidence','industrial production','housing','payroll','nab business','westpac','consumer sentiment','capacity utilization','wholesale price','ppi','durable goods','housing starts','building permits','caixin','ifo','zew','gfk'],
-  'geopolitical':['iran','iranian','tehran','nuclear','ceasefire','hezbollah','israel','lebanon','russia','ukraine','china','chinese','xi jinping','beijing','taiwan','north korea','sanction','tariff','trade war','trump','white house','nato','military','war','conflict','diplomat','vance'],
-};
-
+// Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
+// (single source of truth — dipakai juga sw.js, api/market-digest.js, api/admin.js).
+// Perombakan inti: word-boundary match (bukan substring — "shipping" tidak lagi
+// kena 'ppi', "Goldman" tidak kena 'gold') + scoring berbobot antar kategori.
+// Guard typeof: kalau /newscat.js gagal dimuat, jangan matikan seluruh feed —
+// fallback 'macro' sama dengan perilaku default lama.
 function detectCat(title) {
-  const t = title.toLowerCase();
-  if (/\bactual\b/.test(t) && (/\bforecast\b/.test(t) || /\bprevious\b/.test(t))) return 'econ-data';
-  for (const [cat, kws] of Object.entries(CATS)) {
-    if (kws.some(k => t.includes(k))) return cat;
-  }
-  return 'macro';
+  return (typeof NewsCat !== 'undefined') ? NewsCat.detectCat(title) : 'macro';
 }
 
 let allItems     = [];

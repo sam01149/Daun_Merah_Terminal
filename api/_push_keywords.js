@@ -1,14 +1,23 @@
 // api/_push_keywords.js — keyword lists for push notification categorization
 // Digunakan oleh detectPushCat() di admin.js
 // Tambah/hapus kata di sini bebas — tidak ada batas baris, tidak mempengaruhi logika lain
+//
+// Session 158: matching tidak lagi substring polos — daftar ini dikompilasi lewat
+// engine newscat.js (root repo). Aturan penulisan keyword (mini-DSL):
+//   'stock'     → word-boundary dua sisi + plural otomatis (match "stocks", BUKAN "stockpile")
+//   'rate cut'  → frasa, plural di kata terakhir ("rate cuts")
+//   'iran*'     → prefix match eksplisit (match "iranian") — wildcard harus ditulis sadar
+//   'eur/'      → notasi pair FX, sisi slash terbuka
+// Trailing-space trick lama ('fed ', 'qe ') TIDAK perlu lagi — boundary otomatis.
 
 module.exports = {
 
   // 🔴 Berita yang langsung menggerakkan pasar secara besar
   // Hanya kata yang benar-benar eksklusif untuk kejadian besar — jangan terlalu luas
   MARKET_MOVING: [
-    'market moving', 'breaking', 'blockade',
-    'flash crash', 'circuit breaker', 'trading halt', 'market halt',
+    'market moving', 'breaking', 'urgent', 'blockade',
+    'flash crash', 'circuit breaker', 'trading halt', 'trading halted',
+    'halts trading', 'market halt',
     'emergency meeting', 'surprise rate', 'unexpected rate', 'shock decision',
     'market crash', 'market rout', 'market meltdown', 'market turmoil',
     'black swan',
@@ -54,7 +63,7 @@ module.exports = {
   ENERGY: [
     'oil', 'crude', 'brent', 'wti', 'natural gas', 'hormuz', 'iea',
     'opec', 'opec+', 'opec cut', 'opec output', 'opec production',
-    'lng', 'gasoline', 'petroleum', 'refinery', 'pipeline',
+    'lng', 'gasoline', 'petroleum', 'refiner*', 'pipeline',
     'energy prices', 'oil prices', 'oil production', 'oil output',
     'oil supply', 'oil demand', 'oil inventory', 'oil stockpile',
     'shale', 'offshore drilling', 'rig count', 'baker hughes',
@@ -65,7 +74,7 @@ module.exports = {
   // 🏦 Bank sentral & kebijakan moneter
   MACRO: [
     // Fed / AS
-    'fed ', 'fomc', 'powell', 'warsh', 'federal reserve', 'fed minutes', 'beige book',
+    'fed', 'fomc', 'powell', 'warsh', 'federal reserve', 'fed minutes', 'beige book',
     'fed funds', 'fed pivot', 'fed hold', 'fed pause', 'dot plot',
     // ECB / Eropa
     'ecb', 'lagarde', 'european central bank', 'ecb minutes',
@@ -89,7 +98,7 @@ module.exports = {
     'rate cut', 'rate hike', 'rate decision', 'rate pause', 'rate hold',
     'rate outlook', 'policy rate', 'benchmark rate', 'overnight rate',
     'base rate', 'interest rate', 'monetary policy', 'central bank',
-    'quantitative easing', 'qe ', ' qt ', 'quantitative tightening',
+    'quantitative easing', 'qe', 'qt', 'quantitative tightening',
     'balance sheet', 'inflation target', 'inflation forecast',
     'hawkish', 'dovish', 'neutral stance',
     // Yield & obligasi (erat kaitannya dengan kebijakan moneter)
@@ -100,12 +109,12 @@ module.exports = {
   // 🌐 Geopolitik — konflik, sanksi, perdagangan, politik
   GEOPOLITICAL: [
     // Negara / aktor konflik
-    'iran', 'israel', 'russia', 'ukraine', 'china', 'trump', 'nato',
-    'taiwan', 'north korea', 'korea', 'middle east', 'red sea',
-    'houthi', 'hamas', 'hezbollah',
+    'iran*', 'israel*', 'russia*', 'ukrain*', 'china', 'chinese', 'trump', 'nato',
+    'taiwan', 'north korea', 'korea*', 'middle east', 'red sea',
+    'houthi*', 'hamas', 'hezbollah',
     // Peristiwa geopolitik
     'war', 'ceasefire', 'peace talks', 'military', 'invasion',
-    'airstrike', 'missile', 'nuclear', 'sanctions', 'blockade',
+    'airstrike*', 'missile*', 'nuclear', 'sanction*', 'blockade',
     // Perdagangan internasional (kata yang murni politis, bukan data rilis)
     'tariff', 'trade deal', 'trade war', 'trade tension',
     'import duty', 'export ban', 'embargo',
@@ -126,7 +135,7 @@ module.exports = {
     'pce', 'core inflation', 'core cpi', 'core pce',
     'gdp', 'gdp growth', 'gdp estimate', 'gdp revised',
     'retail sales', 'consumer spending', 'personal spending', 'personal income',
-    'pmi', 'ism ', 'manufacturing pmi', 'services pmi', 'composite pmi',
+    'pmi', 'ism', 'manufacturing pmi', 'services pmi', 'composite pmi',
     'durable goods', 'factory orders', 'industrial production', 'capacity utilization',
     'trade balance', 'current account', 'trade deficit', 'trade surplus',
     'housing starts', 'building permits', 'existing home sales', 'new home sales',

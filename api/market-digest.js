@@ -7,6 +7,9 @@ const { getLiveCbRates } = require('./_cb_rates');
 const { configureVapid, sendWebPush } = require('./_webpush');
 const { allowAiCall, providerFromUrl } = require('./_ai_guard');
 const { CB_KW, kwTest, isCbHeadline, stripHtml } = require('./_cb_keywords');
+// Session 158: detectCat pindah ke newscat.js (root repo) — single source of truth
+// bersama index.html & sw.js; word-boundary match + scoring, bukan substring polos.
+const { detectCat } = require('../newscat');
 
 // Call 2 (CB bias) evidence trail: accumulate distinct headlines across cycles instead of
 // overwriting with only the current cycle's matches. Without this, a bias correctly carried
@@ -2188,29 +2191,6 @@ function convertToWIB(timeStr) {
   return `${String((hour+7)%24).padStart(2,'0')}:${String(min).padStart(2,'0')} WIB`;
 }
 
-
-function detectCat(title) {
-  const t=title.toLowerCase();
-  // Rilis data kalender (format FinancialJuice: "... Actual X Forecast Y Previous Z")
-  // selalu econ-data, dicek duluan supaya tidak "direbut" kategori generik lain
-  // (market-moving, indexes, macro, bonds — lihat daun_merah.md session 135).
-  if (/\bactual\b/.test(t) && (/\bforecast\b/.test(t) || /\bprevious\b/.test(t))) return 'econ-data';
-  const CATS = {
-    'market-moving':['market moving','breaking','urgent','war','blockade'],
-    'forex':['eur/','gbp/','usd/','aud/','nzd/','cad/','chf/','jpy/','/usd','/eur','/gbp','/jpy','/cad','/chf','/aud','/nzd','fx options','dollar index','dxy','cable','loonie','aussie','kiwi','fiber'],
-    'equities':['s&p','nasdaq','dow','ftse','dax','nikkei','hang seng','stock','equity','shares','earnings','nyse','spx'],
-    'commodities':['gold','silver','copper','wheat','corn','xau','xag','commodity','zinc','nickel'],
-    'energy':['oil','crude','brent','wti','opec','gasoline','diesel','natural gas','barrel','hormuz','iea','tanker','lng'],
-    'bonds':['bond','yield','treasury','gilt','bund','10-year','2-year','30-year','fixed income'],
-    'crypto':['bitcoin','btc','ethereum','eth','crypto','blockchain','binance','stablecoin'],
-    'indexes':['composite index'],
-    'macro':['fed ','fomc','powell','warsh','federal reserve','rate cut','rate hike','ecb','boe','boj','pboc','central bank','recession','imf'],
-    'econ-data':['actual','forecast','previous','cpi','nfp','gdp','pmi','ism ','ism manufacturing','ism services','manufacturing pmi','services pmi','composite pmi','flash pmi','flash cpi','flash gdp','unemployment','retail sales','trade balance','payroll','ppi','durable goods','housing starts','building permits','caixin','ifo','zew'],
-    'geopolitical':['iran','iranian','nuclear','ceasefire','israel','russia','ukraine','china','chinese','taiwan','sanction','tariff','trump','nato','military'],
-  };
-  for (const [cat,kws] of Object.entries(CATS)) { if(kws.some(k=>t.includes(k)))return cat; }
-  return 'macro';
-}
 
 // Ekspor helper murni untuk unit test (module.exports = handler function; properti
 // tambahan tidak mengganggu Vercel yang cuma memanggilnya sebagai function biasa)

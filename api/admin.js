@@ -11,6 +11,7 @@
 //   /api/push   → /api/admin?action=push
 
 const PUSH_KW  = require('./_push_keywords');
+const newscat  = require('../newscat');
 const { autoUpdateFundamentals } = require('./_fundamental_parser');
 const { getLiveCbRates } = require('./_cb_rates');
 const { configureVapid, sendWebPush } = require('./_webpush');
@@ -624,14 +625,29 @@ function parsePushRSS(xml) {
   return items;
 }
 
+// Session 158: matching pindah ke engine word-boundary newscat.js — substring
+// polos bikin salah kategori push ("software"⊂'war'→geopolitical, "turmoil"⊂
+// 'oil'→energy). Daftar keyword tetap di _push_keywords.js (tuning kebisingan
+// push sengaja beda dari filter feed), urutan first-match juga dipertahankan.
+const PUSH_RX = Object.fromEntries(
+  Object.entries(PUSH_KW).map(([k, list]) => [k, newscat.compileList(list)])
+);
+const PUSH_CAT_ORDER = [
+  ['MARKET_MOVING', 'market-moving'],
+  ['FOREX',         'forex'],
+  ['ENERGY',        'energy'],
+  ['MACRO',         'macro'],
+  ['GEOPOLITICAL',  'geopolitical'],
+  ['ECON_DATA',     'econ-data'],
+];
 function detectPushCat(t) {
-  t = t.toLowerCase();
-  if (PUSH_KW.MARKET_MOVING.some(k => t.includes(k))) return 'market-moving';
-  if (PUSH_KW.FOREX.some(k => t.includes(k)))         return 'forex';
-  if (PUSH_KW.ENERGY.some(k => t.includes(k)))        return 'energy';
-  if (PUSH_KW.MACRO.some(k => t.includes(k)))         return 'macro';
-  if (PUSH_KW.GEOPOLITICAL.some(k => t.includes(k)))  return 'geopolitical';
-  if (PUSH_KW.ECON_DATA.some(k => t.includes(k)))     return 'econ-data';
+  t = newscat.normalize(t);
+  // Rilis kalender (Actual + Forecast/Previous) selalu econ-data — tanpa ini
+  // "Korea Trade Balance Actual …" nyangkut duluan di GEOPOLITICAL via 'korea*'.
+  if (newscat.isCalendarRelease(t)) return 'econ-data';
+  for (const [key, cat] of PUSH_CAT_ORDER) {
+    if (newscat.anyMatch(t, PUSH_RX[key])) return cat;
+  }
   return 'news';
 }
 
@@ -2594,6 +2610,7 @@ async function polymarketHandler(req, res) {
 
 // Ekspor helper murni untuk unit test (module.exports = handler function; properti
 // tambahan tidak mengganggu Vercel yang hanya memanggil function-nya).
+module.exports.detectPushCat = detectPushCat;
 module.exports._pickExpiryLevels = _pickExpiryLevels;
 module.exports._findSwings = _findSwings;
 module.exports._classifyStructure = _classifyStructure;

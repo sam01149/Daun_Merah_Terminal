@@ -1,3 +1,12 @@
+// newscat.js: engine klasifikasi kategori berita (single source of truth, sama
+// dengan index.html & api/). NEWSCAT_VERSION = cache-buster; naikkan tiap kali
+// newscat.js berubah supaya SW update ikut mengambil versi baru (byte sw.js
+// berubah → browser re-install SW → importScripts di-fetch ulang).
+const NEWSCAT_VERSION = '2026.07.12';
+// try/catch: kalau fetch newscat.js gagal saat install, jangan gagalkan evaluasi
+// seluruh SW — detectCat() di bawah punya fallback 'macro' (typeof guard).
+try { importScripts('/newscat.js?v=' + NEWSCAT_VERSION); } catch (e) {}
+
 const CACHE_NAME = 'fjfeed-v1';
 const FETCH_URL = '/api/feeds?type=rss';
 const STATE_CACHE = 'daun-merah-state';
@@ -95,31 +104,12 @@ function parseItems(xml) {
   return items;
 }
 
-// Disinkronkan dengan detectCat() index.html/api/market-digest.js (fix Session 135/138):
-// rilis format kalender (Actual + Forecast/Previous) SELALU econ-data — dicek duluan
-// supaya tidak "direbut" kategori generik; 'flash'/'alert' dihapus dari market-moving
-// (Flash CPI/PMI = terminologi rilis preliminer, bukan breaking news); 'pmi' dkk pindah
-// ke econ-data; bare 'gdp'/'inflation' tidak lagi di macro.
+// Session 158: salinan lokal detectCat dihapus — logika & tabel keyword sekarang
+// satu sumber di /newscat.js (word-boundary match + scoring berbobot, bukan
+// substring polos). Guard typeof: kalau importScripts di atas gagal (mis. offline
+// saat install), notifikasi tetap jalan dengan label default 'macro'.
 function detectCat(title) {
-  const t = title.toLowerCase();
-  if (/\bactual\b/.test(t) && (/\bforecast\b/.test(t) || /\bprevious\b/.test(t))) return 'econ-data';
-  const CATS = {
-    'market-moving': ['market moving', 'breaking', 'urgent', 'war', 'blockade'],
-    'forex':    ['eur/', '/usd', 'gbp/', '/jpy', 'aud/', 'cad/', 'nzd/', '/chf', 'fx options', 'options expir', 'usd/cad', 'eur/usd', 'gbp/usd', 'dollar index', 'dxy', 'cable', 'loonie', 'aussie', 'kiwi', 'fiber'],
-    'equities': ['s&p', 'nasdaq', 'dow', 'ftse', 'dax', 'nikkei', 'hang seng', 'stock', 'equity', 'shares', 'earnings', 'ipo', 'nyse', 'spx', 'nvda', 'apple', 'tesla', 'meta ', 'alphabet', 'microsoft'],
-    'commodities': ['gold', 'silver', 'copper', 'wheat', 'corn', 'soybean', 'coffee', 'cocoa', 'cotton', 'lumber', 'palladium', 'platinum', 'xau', 'xag', 'commodity'],
-    'energy':   ['oil', 'crude', 'brent', 'wti', 'opec', 'gasoline', 'diesel', 'natural gas', 'barrel', 'petroleum', 'hormuz', 'strait', 'iea', 'tanker', 'refiner', 'pipeline', 'lng'],
-    'bonds':    ['bond', 'yield', 'treasury', 'gilt', 'bund', '2-year', '10-year', '30-year', 'fixed income', 'sovereign'],
-    'crypto':   ['bitcoin', 'btc', 'ethereum', 'eth', 'crypto', 'blockchain', 'coinbase', 'binance', 'stablecoin', 'defi', 'nft', 'altcoin'],
-    'indexes':  ['composite index'],
-    'macro':    ['fed ', 'fomc', 'powell', 'goolsbee', 'waller', 'kashkari', 'warsh', 'federal reserve', 'rate cut', 'rate hike', 'interest rate', 'ecb', 'boe', 'rba', 'boj', 'pboc', 'central bank', 'monetary policy', 'recession', 'imf', 'world bank', 'g7', 'g20', 'lagarde', 'bailey', 'ueda'],
-    'econ-data': ['actual', 'forecast', 'previous', 'cpi', 'nfp', 'gdp', 'pmi', 'ism ', 'manufacturing pmi', 'services pmi', 'composite pmi', 'flash pmi', 'flash cpi', 'flash gdp', 'unemployment', 'retail sales', 'trade balance', 'consumer confidence', 'business confidence', 'industrial production', 'housing', 'jobs', 'payroll', 'ppi', 'durable goods', 'caixin', 'ifo', 'zew', 'gfk', 'nab business', 'westpac', 'sentiment'],
-    'geopolitical': ['iran', 'iranian', 'tehran', 'nuclear', 'ceasefire', 'hezbollah', 'israel', 'lebanon', 'russia', 'ukraine', 'china', 'chinese', 'xi jinping', 'yuan', 'beijing', 'taiwan', 'north korea', 'sanctions', 'tariff', 'trade war', 'trump', 'white house', 'nato', 'military'],
-  };
-  for (const [cat, kws] of Object.entries(CATS)) {
-    if (kws.some(k => t.includes(k))) return cat;
-  }
-  return 'macro';
+  return (typeof NewsCat !== 'undefined') ? NewsCat.detectCat(title) : 'macro';
 }
 
 async function checkForNewItems() {

@@ -1,10 +1,35 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-07-12 (session 158 lanjutan 2 — stat bar NEWS jadi kartu "Distribusi Berita" + ikut hitung load-more)
+> **Last updated:** 2026-07-12 (session 158 lanjutan 3 — perombakan total filter kategori NEWS: engine word-boundary `newscat.js` single source of truth)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+---
+
+## Changelog Session 158 lanjutan 3 (2026-07-12) — Perombakan Total Filter Kategori NEWS: Engine `newscat.js` (Word-Boundary + Scoring, Single Source of Truth)
+
+**Konteks:** eksekusi "item terbuka" dari entry sebelumnya — bug `detectCat()` substring-tanpa-boundary (repro nyata user: headline shipping Selat Hormuz ke-tag ECON DATA karena "ppi" ⊂ "shi**ppi**ng"). User minta perbaikan menyeluruh: "cek segala kemungkinan agar berita memang layak ke kategori ini", bebas pilih pendekatan. Investigasi menemukan masalahnya lebih luas dari satu fungsi: ada **4 klasifikator keyword terpisah yang saling drift** — `detectCat()` di [index.html](../index.html) (paling lengkap), salinan berbeda di [sw.js](../sw.js) (notifikasi background), salinan berbeda lagi di [api/market-digest.js](../api/market-digest.js) (grouping headline untuk prompt AI Ringkasan), dan `detectPushCat()` di [api/admin.js](../api/admin.js) (filter push device/Telegram, keyword di `_push_keywords.js`) — semuanya `t.includes(k)` polos. False positive sistemik yang terdokumentasi: "shipping"→`ppi`→econ-data, "Goldman"→`gold`→commodities, "turmoil"→`oil`→energy, "software"/"warning"→`war`→market-moving, "Boeing"→`boe`→macro, "Bundesbank"→`bund`→bonds, "won (menang)"→`won`→forex, "Taiwan Strait"→`strait`→energy.
+
+**Keputusan pendekatan:** rule-based engine yang di-test, BUKAN model ML — konsisten prinsip plan G ("kalau bisa dihitung pasti di kode, hitung di kode"), zero dependency, zero latency, bisa jalan identik di browser+SW+Node, dan setiap keputusan kategorinya bisa diaudit. Preseden internal: `kwTest()` di `_cb_keywords.js` sudah lebih dulu pakai `\b` word-boundary untuk masalah yang sama.
+
+**1. Library baru [newscat.js](../newscat.js) (root repo, UMD) — single source of truth:** satu file dipakai 4 konsumen: `<script src="/newscat.js?v=…">` di index.html (`window.NewsCat`), `importScripts` di sw.js (dibungkus try/catch + typeof-guard fallback 'macro' supaya SW tidak mati kalau fetch gagal), `require('../newscat')` di market-digest.js & admin.js (Vercel nft otomatis bundle relative require). Isinya:
+- **Mini-DSL keyword → RegExp:** `'stock'` → `\bstock(?:e?s)?\b` (boundary dua sisi + plural otomatis, match "stocks" TANPA kena "stockpile"); plural `-y`→`-ies` (`'treasury'` match "treasuries"); wildcard eksplisit `'iran*'` (match "Iranian" — prefix match harus ditulis sadar, bukan efek samping); notasi pair FX `'eur/'`/`'/usd'` (sisi slash terbuka); metachar di-escape (`'opec+'`, `'s&p'`). Apostrof otomatis jadi boundary ("Fed's" tetap match `'fed'`).
+- **Normalisasi tipografi feed:** kutip melengkung/dash panjang/spasi ganda disamakan dulu sebelum match (pelajaran dari insiden PDF session 157).
+- **Scoring berbobot antar kategori, bukan first-match-wins:** semua kategori dihitung skornya (frasa multi-kata & notasi pair berbobot 2, kata tunggal 1), skor tertinggi menang, seri jatuh ke urutan prioritas lama (perilaku headline satu-topik tidak berubah). Efek: "Trump: China tariffs will rise" → geopolitical (skor 3) walau menyebut steel; "US debt ceiling standoff" → macro (`debt ceiling` bobot 2 di macro) bukan bonds (`debt` bobot 1).
+- **Hard rule dipertahankan di depan:** format rilis kalender (Actual + Forecast/Previous) SELALU econ-data (keputusan session 135); marker urgensi eksplisit (BREAKING, urgent, trading halt, circuit breaker, market turmoil, …) SELALU market-moving.
+- **Kurasi keyword:** `'war'` DIPINDAH dari market-moving ke geopolitical (dulu cuma "kerja" karena substring, dan ikut menjerat "warning"/"software"); `'won'`→`'korean won'`, `'rand'`→`'south african rand'`, `'strait'` bare dibuang (cukup `'hormuz'`; "Taiwan Strait" kini geopolitical), `'sentiment'` bare dibuang; tambahan yang hilang: `'bundesbank'`, `'btp'`, `'jgb'`, varian `'cut rates'`/`'hike rates'` (urutan kata kebalikan `'rate cut'`), dsb.
+
+**2. Empat konsumen dipangkas jadi pemanggil tipis:** index.html & sw.js → wrapper `detectCat()` 1 baris + typeof-guard; market-digest.js → require langsung (salinan lokal ~20 baris dihapus); admin.js `detectPushCat()` → daftar `_push_keywords.js` tetap (tuning kebisingan push sengaja beda dari filter feed) tapi dikompilasi lewat engine yang sama, plus hard rule kalender ditambahkan (tanpa itu "Korea Trade Balance Actual …" nyangkut di geopolitical via `korea*`). `_push_keywords.js` dimigrasi ke DSL: trailing-space trick lama (`'fed '`, `'qe '`) dihapus, wildcard eksplisit (`'iran*'`, `'korea*'`, `'ukrain*'`, `'sanction*'`, `'refiner*'`), + marker halt/urgent disamakan dengan feed.
+
+**3. Infra:** `vercel.json` header `Cache-Control: no-cache` untuk `/newscat.js`; cache-buster `?v=` di index.html & sw.js (`NEWSCAT_VERSION`, naikkan tiap newscat.js berubah); `APP_VERSION` → 2026.07.12.
+
+**Diverifikasi:**
+- Test baru [test/newscat.test.js](../test/newscat.test.js) — 39 test, 3 lapis: engine (boundary/plural/wildcard/pair/normalisasi), korpus headline gaya FJ (semua false positive terdokumentasi + regresi perilaku lama per kategori + hard rule), dan `detectPushCat` (diekspor dari admin.js). Total suite repo **242/242 hijau**.
+- Simulasi korpus 40 headline realistis campuran (rilis kalender, CB, forex, energi, geopolitik, jebakan substring) — semua jatuh ke kategori yang layak; sweep regresi false-positive bersih (mis. "Warsaw stock exchange" → equities bukan market-moving, "Investors won over by earnings" → equities bukan forex).
+- Jalur non-Node diverifikasi via `vm.createContext` (emulasi `self` browser/SW): UMD mendaftar `NewsCat` global dengan benar; `node --check` bersih untuk semua file yang diubah.
+- **Belum diverifikasi di browser sungguhan** (kendala sandbox yang sama — tidak ada chromium). Yang perlu dicek user di production: badge kategori di tab NEWS + kartu "Distribusi Berita" masuk akal, dan push notif masih terkirim (cron `?action=push`).
 
 ---
 
