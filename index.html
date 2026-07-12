@@ -122,20 +122,34 @@ body {
 .header-menu-item.enabled { color:var(--accent); }
 .header-menu-item + .header-menu-item { border-top:1px solid var(--border); }
 
-/* STATS */
-.stats-bar {
+/* STATS — dibungkus kartu berlabel "Distribusi Berita" (gaya sama dengan caption
+   "Max Drawdown" di panel equity curve Jurnal), bukan angka mentah nempel di header.
+   Cuma breakdown kasar (keyword-based, lihat detectCat()) — bukan sinyal presisi. */
+.news-dist-card {
   flex-shrink: 0;
-  display:flex; gap:0;
-  border-bottom:1px solid var(--border);
-  background:var(--surface);
-  overflow-x:auto; scrollbar-width:none;
+  flex-direction: column;
+  margin: 10px 14px 6px;
+  padding: 9px 12px 7px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
 }
-.stats-bar::-webkit-scrollbar { display:none; }
+.news-dist-title {
+  font-family: 'DM Mono', monospace; font-size: 8px; color: var(--muted);
+  letter-spacing: .6px; text-transform: uppercase; margin-bottom: 7px;
+}
+.news-dist-row {
+  display: flex; gap: 0;
+  overflow-x: auto; scrollbar-width: none;
+}
+.news-dist-row::-webkit-scrollbar { display: none; }
 .stat {
-  flex-shrink:0; padding:8px 14px;
+  flex-shrink:0; padding:2px 14px;
   display:flex; flex-direction:column; gap:2px;
   border-right:1px solid var(--border);
 }
+.stat:first-child { padding-left: 0; }
+.stat:last-child { border-right: none; }
 .stat-val { font-family:'Syne',sans-serif; font-size:17px; font-weight:700; }
 .stat-label { font-size:8px; color:var(--muted); letter-spacing:.5px; text-transform:uppercase; white-space:nowrap; }
 
@@ -1736,7 +1750,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 /* ── RESPONSIVE ── */
 @media (min-width: 768px) {
   .header { padding: 14px 24px; }
-  .stats-bar .stat { padding: 10px 20px; }
+  .news-dist-card .stat { padding: 2px 20px; }
   .stat-val { font-size: 20px; }
   .nav-views, .nav-filters { padding: 0 16px; }
   .nvtab { padding: 13px 18px; font-size: 11px; }
@@ -1771,7 +1785,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 }
 
 @media (max-width: 480px) {
-  .stats-bar .stat { padding: 7px 10px; }
+  .news-dist-card .stat { padding: 2px 10px; }
   .stat-val { font-size: 15px; }
   .nvtab { padding: 10px 11px; font-size: 11px; }
   .ftab  { padding: 6px 9px;  font-size: 8px; }
@@ -2653,13 +2667,16 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 </div>
 
 <!-- STATS -->
-<div class="stats-bar" id="statsBar">
-  <div class="stat"><div class="stat-val" id="sTotal">—</div><div class="stat-label">Total</div></div>
-  <div class="stat"><div class="stat-val" id="sMoving" style="color:#ff4757">—</div><div class="stat-label">Mkt Moving</div></div>
-  <div class="stat"><div class="stat-val" id="sFx" style="color:var(--green)">—</div><div class="stat-label">Forex</div></div>
-  <div class="stat"><div class="stat-val" id="sMacro" style="color:var(--accent)">—</div><div class="stat-label">Macro</div></div>
-  <div class="stat"><div class="stat-val" id="sEnergy" style="color:var(--orange)">—</div><div class="stat-label">Energy</div></div>
-  <div class="stat"><div class="stat-val" id="sGeo" style="color:#fb923c">—</div><div class="stat-label">Geopolit.</div></div>
+<div class="news-dist-card" id="statsBar">
+  <div class="news-dist-title">Distribusi Berita</div>
+  <div class="news-dist-row">
+    <div class="stat"><div class="stat-val" id="sTotal">—</div><div class="stat-label">Total</div></div>
+    <div class="stat"><div class="stat-val" id="sMoving" style="color:#ff4757">—</div><div class="stat-label">Mkt Moving</div></div>
+    <div class="stat"><div class="stat-val" id="sFx" style="color:var(--green)">—</div><div class="stat-label">Forex</div></div>
+    <div class="stat"><div class="stat-val" id="sMacro" style="color:var(--accent)">—</div><div class="stat-label">Macro</div></div>
+    <div class="stat"><div class="stat-val" id="sEnergy" style="color:var(--orange)">—</div><div class="stat-label">Energy</div></div>
+    <div class="stat"><div class="stat-val" id="sGeo" style="color:#fb923c">—</div><div class="stat-label">Geopolit.</div></div>
+  </div>
 </div>
 
 <!-- PRIMARY NAV -->
@@ -4492,13 +4509,19 @@ function _feedItemHtml(item, isNew, idx) {
     </div>`;
 }
 
+// allItems (live, capped 100) + historyItems (load-more), dedupe by guid — dipakai
+// bareng oleh renderFeed() dan updateStats() supaya "Distribusi Berita" ikut menghitung
+// berita yang sudah di-load-more, bukan cuma 100 item live (bug yang sempat ditemukan
+// saat evaluasi stat bar ini).
+function _combinedNewsItems() {
+  const liveGuids = new Set(allItems.map(i => i.guid));
+  return allItems.concat(historyItems.filter(i => !liveGuids.has(i.guid)));
+}
+
 function renderFeed(markNew = false) {
   const scroll = document.getElementById('feedScroll');
   const newGuids = markNew ? new Set(allItems.slice(0,10).map(i=>i.guid)) : new Set();
-  // Dedupe terhadap allItems: kalau live poll narik ulang guid yang kebetulan
-  // sudah nangkring di historyItems (feed bergeser), jangan render dobel.
-  const liveGuids = new Set(allItems.map(i => i.guid));
-  const combined = allItems.concat(historyItems.filter(i => !liveGuids.has(i.guid)));
+  const combined = _combinedNewsItems();
   let items = activeFilter === 'all' ? combined : combined.filter(i => detectCat(i.title) === activeFilter);
   if (items.length === 0) {
     scroll.innerHTML = `<div class="state-box"><div class="icon">🔍</div><p>Tidak ada berita untuk kategori ini</p></div>`;
@@ -4539,6 +4562,7 @@ async function loadMoreHistory() {
   } finally {
     historyLoading = false;
     renderFeed();
+    updateStats();
   }
 }
 
@@ -4662,12 +4686,13 @@ function fmtTime(ds) {
 }
 
 function updateStats() {
-  document.getElementById('sTotal').textContent  = allItems.length;
-  document.getElementById('sMoving').textContent = allItems.filter(i=>detectCat(i.title)==='market-moving').length;
-  document.getElementById('sFx').textContent     = allItems.filter(i=>detectCat(i.title)==='forex').length;
-  document.getElementById('sMacro').textContent  = allItems.filter(i=>detectCat(i.title)==='macro').length;
-  document.getElementById('sEnergy').textContent = allItems.filter(i=>detectCat(i.title)==='energy').length;
-  document.getElementById('sGeo').textContent    = allItems.filter(i=>detectCat(i.title)==='geopolitical').length;
+  const combined = _combinedNewsItems();
+  document.getElementById('sTotal').textContent  = combined.length;
+  document.getElementById('sMoving').textContent = combined.filter(i=>detectCat(i.title)==='market-moving').length;
+  document.getElementById('sFx').textContent     = combined.filter(i=>detectCat(i.title)==='forex').length;
+  document.getElementById('sMacro').textContent  = combined.filter(i=>detectCat(i.title)==='macro').length;
+  document.getElementById('sEnergy').textContent = combined.filter(i=>detectCat(i.title)==='energy').length;
+  document.getElementById('sGeo').textContent    = combined.filter(i=>detectCat(i.title)==='geopolitical').length;
 }
 
 function setStatus(state, text) {

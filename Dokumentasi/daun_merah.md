@@ -1,10 +1,27 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-07-12 (session 158 lanjutan — tab NEWS: "Muat Berita Lebih Lama", load-more read-only atas archive 36 jam)
+> **Last updated:** 2026-07-12 (session 158 lanjutan 2 — stat bar NEWS jadi kartu "Distribusi Berita" + ikut hitung load-more)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+---
+
+## Changelog Session 158 lanjutan 2 (2026-07-12) — Stat Bar NEWS Jadi Kartu "Distribusi Berita" + Ikut Hitung Load-More
+
+**Konteks:** user tanya apakah stat bar 6-angka (Total/Mkt Moving/Forex/Macro/Energy/Geopolit.) di atas tab NEWS itu perlu. Setelah diskusi objektif ditemukan 2 masalah nyata: (1) tampilannya angka mentah nempel langsung di bawah header tanpa label/konteks; (2) begitu fitur load-more (entry sebelumnya) dipakai, angkanya jadi bohong — `updateStats()` cuma hitung `allItems` (100 item live), tidak ikut `historyItems`. User sempat juga curiga soal **akurasi kategorinya sendiri** (apakah GEOPOLIT. beneran isinya berita geopolitik) — dicek dan terbukti benar ada bug: `detectCat()` di [index.html:3784-3791](../index.html#L3784-L3791) pakai `.includes()` tanpa word-boundary, jadi keyword pendek nyangkut di substring kata lain (**contoh reproduksi nyata dari user**: headline soal kapal di Selat Hormuz ke-tag "ECON DATA" karena kata "ppi" — keyword econ-data buat Producer Price Index — kebetulan jadi substring dari "shi**ppi**ng"). **Perbaikan kategorisasi ini SENGAJA TIDAK dikerjakan** — user eksplisit mau delegasikan "tugas filter news" itu ke model/AI lain terpisah; scope sesi ini cuma 2 hal di bawah.
+
+**1. Restyle jadi kartu berlabel — [index.html](../index.html):** `.stats-bar` (flat, full-bleed, tanpa judul) diganti `.news-dist-card` — kartu bordered dengan judul kecil uppercase **"Distribusi Berita"** di atasnya, gaya konsisten dengan caption "Max Drawdown: X.XXR" di panel equity curve Jurnal (referensi eksplisit dari user). Class `.stat`/`.stat-val`/`.stat-label` di dalamnya dipertahankan, id `statsBar` dipertahankan di wrapper (kompatibel dengan `setFeedUI()` yang toggle `display` via ID). Dua selector responsive (`@media 768px`/`480px`) yang tadinya target `.stats-bar .stat` ikut di-rename ke `.news-dist-card .stat`.
+
+**2. Fix hitungan supaya ikut load-more — [index.html](../index.html) `_combinedNewsItems()`:** helper baru (dipakai bareng `renderFeed()` dan `updateStats()`) — gabung `allItems + historyItems` dengan dedupe by guid (guard yang sama dipakai `renderFeed()` sejak fitur load-more). `updateStats()` sekarang hitung dari gabungan ini, dan dipanggil ulang di `loadMoreHistory()` (sebelumnya cuma `renderFeed()` yang dipanggil ulang, stat bar tidak update sama sekali setelah klik "Muat Berita Lebih Lama").
+
+**Diverifikasi:**
+- CSS brace balance 1214/1214, inline `<script>` syntax check bersih (`new Function()`), test suite tetap 203/203 hijau (tidak ada test yang menyentuh stat bar/kategori — murni UI, tidak ada regresi logic lain).
+- Simulasi manual `_combinedNewsItems`/`updateStats` di Node: total naik benar setelah simulasi load-more (2→4 untuk 3 item baru + 1 duplikat guid yang benar-benar ke-exclude), breakdown per-kategori ikut update.
+- **Belum diverifikasi di browser sungguhan** — kendala sandbox yang sama (Redis/`APP_KEY` Sensitive-masked, `chromium-cli` tidak ada).
+
+**Item terbuka (bukan tugas sesi ini):** bug `detectCat()` substring-tanpa-boundary di atas — akan dikerjakan lewat AI/model lain sesuai arahan user. Lihat juga pola serupa yang sudah pernah diperbaiki di `kwTest()` (`api/_cb_keywords.js`) yang secara sengaja pakai `\b` word-boundary untuk keyword satu kata — pola yang sama bisa dicontoh untuk `detectCat()`/`CATS` kalau nanti dikerjakan.
 
 ---
 
