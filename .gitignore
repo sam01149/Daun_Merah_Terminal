@@ -14,7 +14,6 @@ environtment.txt
 
 # Claude Code local config — berisi API key/secret di allow-list, JANGAN commit
 .claude/
-daun_merah.plan
 __pycache__/
 
 # Riset/model BTC ML dipindah keluar dari kode app aktif, diasingkan dari git tracking
@@ -22,7 +21,8 @@ project_delay/
 .env*
 node_modules/
 
-#bridge
-start_bridge.bat
-start_bridge_min.vbs
-mt5_bridge.py
+# Arsip lokal (plan lama yang sudah selesai dieksekusi, dsb) — beres-beres 2026-07-12
+archive/
+
+# MT5 bridge lokal (jalan di PC user, bukan bagian deploy Vercel) — dipindah ke bridge/ 2026-07-12
+bridge/

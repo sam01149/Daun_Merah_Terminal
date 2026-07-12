@@ -1,10 +1,23 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-07-12 (session 158 lanjutan 7 — EKSEKUSI penuh audit kurasan vendor Grup A+B: COT %OI+percentile, kalender raw/period/comment, FedWatch fix, RRP/net liquidity, ECB SPF auto, Polymarket Δ1d; + retail realtime dashboard + panel korelasi bahasa awam)
+> **Last updated:** 2026-07-12 (session 158 lanjutan 8 — beres-beres struktur root: bridge/ + archive/ (lokal, gitignored), shortcut Startup di-retarget; lanjutan 7 = eksekusi penuh audit kurasan vendor Grup A+B + distribusi makro/mikro + retail realtime + korelasi bahasa awam)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+---
+
+## Changelog Session 158 lanjutan 8 (2026-07-12) — Beres-Beres Struktur File/Folder Root
+
+**Konteks:** user minta root repo dirapikan + semua referensi lokasi file disesuaikan. Semua file yang dipindah berstatus **gitignored/lokal-only** — commit-nya hanya menyentuh `.gitignore` dan dokumen ini; deploy Vercel tidak terpengaruh sama sekali (PWA assets `index.html`/`sw.js`/`newscat.js`/`manifest.json`/`icon.svg` wajib tetap di root karena di-serve by URL).
+
+- **`bridge/` (baru, gitignored):** `mt5_bridge.py` + `start_bridge.bat` + `start_bridge_min.vbs` pindah dari root. Referensi yang disesuaikan: (1) `cd /d` di dalam `.bat` → `...\Daun_Merah\bridge`; (2) path `.bat` di dalam `.vbs`; (3) **shortcut Startup Windows `DaunMerah-MT5Bridge.lnk`** (Args + WorkingDirectory) di-retarget ke path baru via WScript.Shell — tanpa ini bridge diam-diam tidak jalan lagi di boot berikutnya. Proses bridge yang sedang jalan tidak terpengaruh (proses lama pakai file lama di memori); restart berikutnya sudah pakai path baru.
+- **`archive/` (baru, gitignored):** `daun_merah.plan` (plan konsolidasi serverless function lama yang SUDAH selesai dieksekusi — feeds.js dispatcher) dipindah ke sini dari root.
+- **`__pycache__/` root dihapus** (junk hasil run bridge; akan regenerate di dalam `bridge/` dan tetap ter-ignore — pattern `__pycache__/` match di level manapun).
+- `.gitignore` dirapikan: entri per-file bridge + `daun_merah.plan` diganti `bridge/` + `archive/`.
+- `project_delay/` (karantina riset BTC ML) **sengaja tidak disentuh** — sudah berupa folder gitignored yang terdokumentasi, rename hanya akan memutus referensi di workflow/dokumen.
+- Bagian "Struktur File (Current)" di dokumen ini diperbarui.
 
 ---
 
@@ -1293,9 +1306,11 @@ Daun Merah adalah forex news PWA (Progressive Web App) untuk trader forex Indone
 ```
 Financial_Feed_App/
 ├── index.html              # Seluruh UI + JS frontend (~3500+ baris)
-├── mt5_bridge.py           # Local Python bridge → MT5 via MetaTrader5 library (jalankan di PC)
-├── start_bridge.bat        # Klik dua kali untuk jalankan bridge manual
-├── start_bridge_min.vbs    # Wrapper jalankan .bat dalam kondisi minimized (dipakai shortcut startup)
+├── bridge/                 # MT5 bridge lokal (gitignored, jalan di PC user — dipindah dari root 2026-07-12)
+│   ├── mt5_bridge.py       # Local Python bridge → MT5 via MetaTrader5 library (jalankan di PC)
+│   ├── start_bridge.bat    # Klik dua kali untuk jalankan bridge manual
+│   └── start_bridge_min.vbs # Wrapper jalankan .bat minimized (target shortcut startup — shortcut sudah diarahkan ulang)
+├── archive/                # Arsip lokal (gitignored) — plan lama yang sudah selesai (daun_merah.plan)
 ├── manifest.json           # PWA manifest — icon: icon.svg
 ├── sw.js                   # Service Worker — push notif, icon.svg
 ├── icon.svg                # App icon — dual-leaf loop, viewBox="0 20 680 680"
