@@ -133,16 +133,43 @@ body {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 8px;
+  cursor: pointer;
+  transition: border-color .15s ease, background .15s ease;
+}
+.news-dist-card:hover {
+  border-color: var(--text-mid);
+}
+.news-dist-card.collapsed {
+  padding-bottom: 9px;
+}
+.news-dist-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
 }
 .news-dist-title {
   font-family: 'DM Mono', monospace; font-size: 8px; color: var(--muted);
-  letter-spacing: .6px; text-transform: uppercase; margin-bottom: 7px;
+  letter-spacing: .6px; text-transform: uppercase; margin-bottom: 0;
+}
+.news-dist-toggle {
+  border: none; background: transparent; padding: 0;
+  display: flex; align-items: center; gap: 5px;
+  font-family: 'DM Mono', monospace; font-size: 8px; color: var(--text-mid);
+  letter-spacing: .6px; text-transform: uppercase; cursor: pointer;
+}
+.news-dist-toggle::after {
+  content: '▾';
+  font-size: 10px;
+  line-height: 1;
+  color: var(--muted);
+}
+.news-dist-card:not(.collapsed) .news-dist-toggle::after {
+  content: '▴';
 }
 .news-dist-row {
   display: flex; gap: 0;
   overflow-x: auto; scrollbar-width: none;
 }
 .news-dist-row::-webkit-scrollbar { display: none; }
+.news-dist-card.collapsed .news-dist-row { display: none; }
 .stat {
   flex-shrink:0; padding:2px 14px;
   display:flex; flex-direction:column; gap:2px;
@@ -2667,8 +2694,11 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 </div>
 
 <!-- STATS -->
-<div class="news-dist-card" id="statsBar">
-  <div class="news-dist-title">Distribusi Berita</div>
+<div class="news-dist-card collapsed" id="statsBar" onclick="toggleNewsDist(event)" aria-expanded="false">
+  <div class="news-dist-head">
+    <div class="news-dist-title">Distribusi Berita</div>
+    <button class="news-dist-toggle" type="button" id="statsBarToggle" onclick="toggleNewsDist(event)">Buka</button>
+  </div>
   <div class="news-dist-row">
     <div class="stat"><div class="stat-val" id="sTotal">—</div><div class="stat-label">Total</div></div>
     <div class="stat"><div class="stat-val" id="sMoving" style="color:#ff4757">—</div><div class="stat-label">Mkt Moving</div></div>
@@ -4670,6 +4700,18 @@ function updateStats() {
   document.getElementById('sMacro').textContent  = combined.filter(i=>detectCat(i.title)==='macro').length;
   document.getElementById('sEnergy').textContent = combined.filter(i=>detectCat(i.title)==='energy').length;
   document.getElementById('sGeo').textContent    = combined.filter(i=>detectCat(i.title)==='geopolitical').length;
+}
+
+let newsDistOpen = false;
+function toggleNewsDist(event) {
+  if (event) event.stopPropagation();
+  newsDistOpen = !newsDistOpen;
+  const card = document.getElementById('statsBar');
+  const toggle = document.getElementById('statsBarToggle');
+  if (!card || !toggle) return;
+  card.classList.toggle('collapsed', !newsDistOpen);
+  card.setAttribute('aria-expanded', newsDistOpen ? 'true' : 'false');
+  toggle.textContent = newsDistOpen ? 'Tutup' : 'Buka';
 }
 
 function setStatus(state, text) {

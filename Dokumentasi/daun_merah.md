@@ -1,12 +1,25 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-07-12 (session 158 lanjutan 4 — audit filter kategori vs feed FJ asli: fallback 27/100 → 2/100, CFTC positioning per-instrumen, insiden militer/maritim)
+> **Last updated:** 2026-07-12 (session 158 lanjutan 5 — kartu "Distribusi Berita" dijadikan drawdown toggle, default tertutup saat reload)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
 
 ---
+
+## Changelog Session 158 lanjutan 5 (2026-07-12) — Kartu "Distribusi Berita" Jadi Drawdown Toggle
+
+**Konteks:** user minta kartu distribusi berita di tab NEWS dibuat seperti drawdown/accordion: bisa ditekan untuk membuka jumlah distribusi, ditekan lagi untuk menutup, dan saat reload kondisi awal harus tersembunyi.
+
+**Perubahan di [index.html](../index.html):**
+- `.news-dist-card` sekarang punya state `collapsed` default, jadi detail jumlah kategori tersembunyi saat halaman pertama kali dibuka atau reload.
+- Ditambah header interaktif (`.news-dist-head` + tombol `Buka/Tutup`) yang memanggil `toggleNewsDist()`.
+- Saat dibuka, baris statistik tetap memakai hitungan yang sama dari `updateStats()`; saat ditutup, yang terlihat hanya judul kartu.
+
+**Catatan perilaku:** state ini sengaja tidak dipersist ke storage, jadi reload selalu kembali ke kondisi tertutup seperti yang diminta.
+
+**Diverifikasi:** perubahan markup, CSS, dan handler sudah disambungkan ke kartu yang sama dengan stat bar lama, tanpa mengubah logika hitung distribusinya.
 
 ## Changelog Session 158 lanjutan 4 (2026-07-12) — Audit Filter Kategori vs Feed FJ ASLI: Fallback 27/100 → 2/100
 
