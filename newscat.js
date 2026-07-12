@@ -42,7 +42,7 @@
 })(typeof self !== 'undefined' ? self : globalThis, function () {
   'use strict';
 
-  const VERSION = '2026.07.12';
+  const VERSION = '2026.07.12.2';
 
   // Samakan tipografi feed (kutip melengkung, dash panjang) & spasi ganda
   // supaya keyword ASCII selalu ketemu. Sama filosofinya dengan sanitasi PDF.
@@ -139,6 +139,12 @@
       // notasi pair — prefix/suffix menangkap semua kombinasi (eur/usd, usd/idr, …)
       'eur/', 'gbp/', 'usd/', 'aud/', 'nzd/', 'cad/', 'chf/', 'jpy/', 'xau/', 'xag/',
       '/usd', '/eur', '/gbp', '/jpy', '/cad', '/chf', '/aud', '/nzd', '/cnh', '/cny',
+      // kode ISO bare — dipakai FJ untuk rilis positioning per-instrumen
+      // ("EUR CFTC Positions Week Ended …", audit feed asli session 158 lanj.4).
+      // 'try'(kata Inggris), 'won'(verb), 'rub'(verb), 'cop'(COP28), 'all' sengaja TIDAK ada.
+      'usd', 'eur', 'gbp', 'jpy', 'aud', 'nzd', 'chf', 'cad', 'cnh', 'cny',
+      'mxn', 'sek', 'nok', 'dkk', 'zar', 'krw', 'inr', 'idr', 'sgd', 'hkd',
+      'thb', 'brl', 'pln', 'huf', 'czk', 'myr', 'php', 'twd', 'ils', 'aed',
       // indeks & julukan dolar
       'dollar index', 'dxy', 'usdx', 'trade-weighted dollar', 'us dollar', 'greenback',
       // mata uang mayor (nama & julukan)
@@ -161,9 +167,12 @@
     ],
     'equities': [
       's&p', 's&p 500', 'nasdaq', 'dow', 'dow jones', 'ftse', 'dax', 'nikkei',
-      'hang seng', 'russell 2000', 'wall street',
+      'hang seng', 'russell 2000', 'wall street', 'vix',
       'stock', 'stock market', 'equity', 'equities', 'shares', 'share buyback',
       'earnings', 'ipo', 'nyse', 'spx',
+      // ticker futures indeks (rilis CFTC positioning FJ) + order-flow close NYSE.
+      // 'es' bare terlalu ambigu → hanya sebagai frasa 'es cftc'.
+      'nq', 'ym', 'rty', 'es cftc', 'e-mini*', 'moc', 'moc imbalance', 'market wrap',
       'nvda', 'nvidia', 'apple', 'tesla', 'meta', 'alphabet', 'microsoft',
       'amazon', 'samsung', 'tsmc',
     ],
@@ -171,17 +180,21 @@
       'gold', 'bullion', 'silver', 'copper', 'wheat', 'corn', 'soybean',
       'coffee', 'cocoa', 'cotton', 'lumber', 'palladium', 'platinum',
       'xau', 'xag', 'commodity', 'zinc', 'nickel', 'iron ore', 'steel', 'alumin*',
+      'sugar', 'oats', 'cattle', 'hogs',
     ],
     'energy': [
       'oil', 'crude', 'brent', 'wti', 'opec', 'opec+', 'gasoline', 'diesel',
       'natural gas', 'barrel', 'petroleum', 'hormuz', 'strait of hormuz',
       'iea', 'tanker', 'refiner*', 'pipeline', 'lng', 'energy price*', 'fuel',
-      'shale', 'rig count', 'baker hughes', 'heating oil',
-      'crude inventories', 'gasoline inventories',
+      'shale', 'rig count', 'baker hughes', 'heating oil', 'aramco', 'natgas',
+      'crude inventories', 'gasoline inventories', 'oil depot*',
     ],
     'bonds': [
       'bond', 'yield', 'treasury', 'gilt', 'bund', 't-note', 'jgb', 'btp',
       '10-year', '2-year', '30-year', 'fixed income', 'debt', 'sovereign', 'auction',
+      'fitch', "moody's", 'credit rating*', 'sovereign rating*',
+      // ticker futures Treasury CME (rilis CFTC positioning FJ)
+      'zn', 'zt', 'zb', 'zf',
     ],
     'crypto': [
       'bitcoin', 'btc', 'ethereum', 'eth', 'crypto*', 'blockchain', 'coinbase',
@@ -210,6 +223,9 @@
       // institusi & fiskal
       'imf', 'world bank', 'g7', 'g20', 'recession',
       'debt ceiling', 'government shutdown',
+      // pejabat fiskal — 'treasury secretary' bobot 2 supaya menang atas
+      // 'treasury' (1, bonds): "Treasury Secretary Bessent says…" itu macro
+      'treasury secretary', 'bessent', 'finance minister*',
     ],
     'econ-data': [
       'actual', 'forecast', 'previous',
@@ -227,18 +243,40 @@
       'factory orders', 'durable goods', 'wholesale price*',
       'housing', 'housing starts', 'building permits', 'home sales',
       'existing home sales', 'new home sales', 'jobs report',
+      'philly fed', 'empire state', 'budget deficit', 'fiscal deficit',
       'nab business', 'westpac',
     ],
     'geopolitical': [
-      'iran*', 'tehran', 'nuclear', 'ceasefire', 'hezbollah', 'houthi*', 'hamas',
-      'israel*', 'lebanon', 'gaza', 'red sea', 'middle east',
-      'russia*', 'moscow', 'kremlin', 'putin', 'ukrain*', 'zelensk*', 'kyiv',
+      'iran*', 'tehran', 'khamenei', 'irgc', 'revolutionary guard*',
+      'nuclear', 'ceasefire', 'hezbollah', 'houthi*', 'hamas',
+      'israel*', 'netanyahu', 'idf', 'lebanon', 'gaza', 'red sea', 'middle east',
+      // Teluk & sekitarnya — dominan konteks konflik/diplomasi di feed FJ
+      // (audit session 158 lanj.4); headline minyaknya tetap ke energy karena
+      // keyword energy (oil/opec/aramco/hormuz) menang skor/urutan.
+      'saudi*', 'riyadh', 'kuwait*', 'qatar*', 'doha', 'bahrain*', 'oman*',
+      'uae', 'abu dhabi', 'yemen', 'syria*', 'iraq*', 'afghanistan', 'libya*',
+      'turkey', 'turkish', 'erdogan', 'ankara', 'pakistan*', 'mexico*',
+      'russia*', 'moscow', 'kremlin', 'putin', 'lavrov', 'peskov',
+      'ukrain*', 'zelensk*', 'kyiv',
       'china', 'chinese', 'beijing', 'xi jinping', 'taiwan',
-      'korea*', 'north korea',
+      'korea*', 'north korea', 'kim jong un', 'pyongyang',
       'sanction*', 'tariff*', 'trade war', 'trade deal', 'trade tension*',
-      'embargo', 'export ban', 'retaliat*',
+      'trade pact*', 'trade talk*', 'embargo', 'export ban', 'retaliat*',
       'trump', 'vance', 'white house', 'pentagon', 'nato',
-      'military', 'war', 'invasion', 'airstrike*', 'missile*', 'drone*',
+      'state department', 'state dept', 'rubio', 'secretary of state',
+      'commerce secretary', 'lutnick', 'ustr', 'trade representative',
+      'dhs', 'homeland security', 'national intelligence',
+      'united nations', 'security council',
+      'foreign minister*', 'foreign ministry', 'interior ministry',
+      'defense*', 'defence*', 'prime minister*', 'parliament*',
+      'senate', 'congress',
+      // insiden militer/maritim (banyak headline UKMTO/Centcom tanpa nama negara)
+      'military', 'centcom', 'central command', 'ukmto', 'armed forces',
+      'navy', 'naval', 'warship*', 'vessel*', 'container ship*', 'airspace',
+      'air defense*', 'air defence*', 'siren*', 'hostile', 'intercept*',
+      'explosion*', 'blast*', 'security alert*',
+      'war', 'invasion', 'airstrike*', 'missile*', 'drone*',
+      'military strike*', 'retaliatory strike*', 'strikes on', 'strike on',
       'election*', 'referendum', 'coup', 'diplomat*',
     ],
   };

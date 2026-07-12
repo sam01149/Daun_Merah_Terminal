@@ -1,10 +1,32 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-07-12 (session 158 lanjutan 3 — perombakan total filter kategori NEWS: engine word-boundary `newscat.js` single source of truth)
+> **Last updated:** 2026-07-12 (session 158 lanjutan 4 — audit filter kategori vs feed FJ asli: fallback 27/100 → 2/100, CFTC positioning per-instrumen, insiden militer/maritim)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+---
+
+## Changelog Session 158 lanjutan 4 (2026-07-12) — Audit Filter Kategori vs Feed FJ ASLI: Fallback 27/100 → 2/100
+
+**Konteks:** setelah deploy lanjutan 3, user menangkap kelolosan nyata di production: "EUR/AUD/JPY/GBP/CHF/NZD/CAD CFTC Positions Week Ended July 7th" semua ke-tag MACRO (harusnya FOREX), plus "MOC Imbalance" dan "US State Dept: Rubio spoke with Saudi Foreign Minister" juga MACRO. Akar masalah: semuanya **fallback** — nol keyword yang match, dan default fallback memang 'macro'. Pelajaran metodologis: verifikasi lanjutan 3 pakai korpus sintetis (headline yang saya karang), bukan feed asli — jenis headline khas FJ (rilis positioning per-ticker, insiden maritim UKMTO/Centcom, diplomasi Teluk) tidak terwakili.
+
+**Metode kali ini:** tarik **feed FinancialJuice production asli** (100 headline live), klasifikasikan semua, audit khusus item ber-skor nol. Hasil awal: **27/100 fallback** + 1 salah kategori nyata ("Iran's foreign minister … U.S. treasury secretary breaching …" → bonds via `treasury`).
+
+**Perluasan tabel [newscat.js](../newscat.js) (semua dites):**
+1. **Kode ISO mata uang bare → forex:** `usd`,`eur`,`gbp`,`jpy`,`aud`,`nzd`,`chf`,`cad` + ~20 minor (`mxn`,`zar`,`krw`,`idr`,…) — aman sekarang karena word-boundary. Yang ambigu sengaja di-skip: `try`/`won`/`rub`/`cop`/`all` (kata Inggris biasa). Ini yang membuat "EUR CFTC Positions" → forex.
+2. **Ticker futures CFTC lain per asset class:** `zn`/`zt`/`zb`/`zf` → bonds; `nq`/`ym`/`rty`/`e-mini*`/frasa `es cftc` (ES bare terlalu ambigu) → equities; GOLD/Copper/WTI/DXY/BTC sudah tertangkap keyword lama.
+3. **`moc`/`moc imbalance`/`market wrap`/`vix` → equities.**
+4. **Insiden militer/maritim & diplomasi → geopolitical:** `ukmto`, `centcom`, `irgc`, `armed forces`, `navy`/`naval`/`warship*`/`vessel*`, `airspace`, `air defense*`, `siren*`, `explosion*`/`blast*`, `hostile`, `intercept*`, `security alert*`, frasa `strikes on`/`military strike*`; negara Teluk & aktor yang hilang: `saudi*`,`kuwait*`,`qatar*`,`bahrain*`,`oman*`,`uae`,`yemen`,`syria*`,`iraq*`,`turkey`,`pakistan*`,`mexico*`; pejabat/institusi: `state department`/`rubio`/`secretary of state`, `foreign minister*`/`foreign ministry`, `netanyahu`,`idf`,`lavrov`,`peskov`,`kim jong un`, `senate`,`congress`,`parliament*`, `trade pact*`/`trade talk*`.
+5. **Fix salah kategori pejabat fiskal:** `treasury secretary` (bobot 2) + `bessent` + `finance minister*` → macro, menang atas `treasury` (bobot 1, bonds); headline Iran-nya sendiri kini geopolitical (skor iran*+foreign minister* lebih tinggi).
+6. Kecil: `fitch`/`moody's`/`credit rating*` → bonds; `aramco`/`natgas`/`oil depot*` → energy; `sugar`/`oats`/`cattle`/`hogs` → commodities; `philly fed`/`empire state`/`budget deficit` → econ-data.
+
+**Hasil re-audit feed asli yang sama:** fallback **27 → 2** (sisanya memang berita umum tanpa kategori jelas: pengangkatan ketua audit watchdog UK, pembukaan jembatan Kanada); semua CFTC positioning jatuh ke asset class-nya masing-masing; grup Hormuz shipping tetap energy (keputusan lama: `hormuz` = chokepoint energi — bukan regresi). Distribusi feed live: geopolitical dominan (70/100) karena memang isi feed-nya sedang krisis militer AS-Iran.
+
+**Diverifikasi:** korpus test +16 kasus dari audit (total 55 test newscat), seluruh suite repo **258/258 hijau**; sintaks inline `<script>` bersih. Cache-buster naik serempak: `NewsCat.VERSION`/`?v=`/`NEWSCAT_VERSION`/`APP_VERSION` → `2026.07.12.2`.
+
+**Catatan untuk perubahan keyword berikutnya:** jangan validasi pakai korpus karangan saja — jalankan juga audit feed asli (`fetch feed.ashx?xy=rss` → klasifikasikan → periksa yang skor nol), lalu tambahkan temuan ke korpus `test/newscat.test.js` sebelum ubah keyword.
 
 ---
 

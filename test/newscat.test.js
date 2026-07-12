@@ -112,6 +112,24 @@ const CORPUS = [
   ['US debt ceiling standoff rattles markets', 'macro', 'debt ceiling (2, macro) > debt (1, bonds)'],
   ['EU threatens retaliation over steel tariffs', 'geopolitical', 'retaliat*+tariff=3 > steel=1'],
 
+  // audit feed FJ asli (session 158 lanj.4) — 27 headline fallback + salah kategori
+  ['EUR CFTC Positions Week Ended July 7th - FJElite', 'forex', 'kode ISO bare'],
+  ['CAD CFTC Positions Week Ended July 7th - FJElite', 'forex', 'kode ISO bare'],
+  ['ZN CFTC Positions Week Ended July 7th - FJElite', 'bonds', 'ticker futures Treasury'],
+  ['ES CFTC Positions Week Ended July 7th - FJElite', 'equities', 'frasa es cftc'],
+  ['NQ CFTC Positions Week Ended July 7th - FJElite', 'equities', 'ticker futures indeks'],
+  ['GOLD CFTC Positions Week Ended July 7th - FJElite', 'commodities', ''],
+  ['WTI CFTC Positions Week Ended July 7th - FJElite', 'energy', ''],
+  ['MOC Imbalance', 'equities', 'order-flow close NYSE'],
+  ['US State Dept: Rubio spoke with Saudi Foreign Minister.', 'geopolitical', 'dulu fallback macro'],
+  ['UKMTO reports incident 9nm east of Oman', 'geopolitical', 'insiden maritim'],
+  ['Centcom: Military hits over 300 targets on directive', 'geopolitical', ''],
+  ["Kuwait's armed forces: intercepting hostile aerial targets inside Kuwaiti airspace", 'geopolitical', ''],
+  ['Sirens sound in Bahrain: Interior Ministry', 'geopolitical', ''],
+  ['Talks on Pakistan-US reciprocal trade pact held in Washington on July 9-10', 'geopolitical', ''],
+  ["Iran's foreign minister on X: U.S. treasury secretary breaching paragraph 9 of the memorandum", 'geopolitical', 'dulu bonds via treasury'],
+  ['Treasury Secretary Bessent: tariff revenue exceeding expectations', 'macro', 'treasury secretary (2) > treasury (1, bonds)'],
+
   // fallback
   ['Quiet session ahead of holiday weekend', 'macro', 'tanpa match → fallback macro'],
 ];
