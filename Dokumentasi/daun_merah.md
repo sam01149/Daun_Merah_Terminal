@@ -1,10 +1,42 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-07-12 (session 158 lanjutan 5 — kartu "Distribusi Berita" dijadikan drawdown toggle, default tertutup saat reload)
+> **Last updated:** 2026-07-12 (session 158 lanjutan 6 — audit kurasan vendor: temuan data zero-cost yang masih dibuang + backlog RRP/ECB SPF/COT percentile)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+---
+
+## Changelog Session 158 lanjutan 6 (2026-07-12) — Audit Kurasan Vendor: Data yang Sudah Kita Fetch tapi Dibuang
+
+**Konteks:** user minta audit semua vendor — "apakah informasi yang mereka sediakan sudah kita kuras habis untuk keuntungan kita, tanpa noise?" Audit READ-ONLY: belum ada kode yang diubah; temuan di bawah adalah backlog kandidat, menunggu keputusan user.
+
+**Metode:** baca seluruh integrasi di `api/*.js` + cross-check [daun_merah_vendor.md](daun_merah_vendor.md), lalu verifikasi live 4 endpoint dari mesin lokal: CFTC ✅, TradingView ✅, Polymarket ❌ (diblokir Kominfo/Internet Positif dari jaringan Indonesia — redirect `internet-positif.info`; produksi Vercel tidak terpengaruh), CME ❌ (403 Akamai, IP lokal juga diblokir seperti IP Vercel).
+
+### Grup A — Zero-cost: field sudah ada di response yang kita fetch, tapi dibuang
+
+1. **CFTC COT (`feeds.js` cotHandler) — TERVERIFIKASI LIVE.** Blok teks yang sudah kita download & parse juga memuat baris `Open Interest is X` **dan** baris `Percent of Open Interest Represented by Each Category of Trader` (persentase per kategori sudah dihitung CFTC). Saat ini kita hanya ambil AM/Lev long-short-net + perubahan mingguan. Net sebagai % of OI = normalisasi ekstremitas standar (net 50k kontrak beda makna saat OI 200k vs 700k). Nol fetch tambahan.
+2. **TradingView calendar (`calendar.js`) — TERVERIFIKASI LIVE.** Event object punya field yang tidak kita ambil: `actualRaw`/`forecastRaw`/`previousRaw` (angka mentah → **beat/miss bisa dihitung numerik** tanpa parsing string berformat), `period` (mis. "Jun" — menghilangkan ambigu rilis bulan apa), `comment` (penjelasan 1 kalimat indikatornya — bahan tooltip), `referenceDate`, `category`, `ticker`.
+3. **Polymarket Gamma (`admin.js` polymarket handler) — PERLU VERIFIKASI VIA PRODUKSI.** Kita hanya ambil level probabilitas + volume; response `/markets` kemungkinan besar juga berisi `oneDayPriceChange`/`oneWeekPriceChange` + `liquidity`. Momentum ("prob turun 62→48 semalam") justru sinyal paling berharga dari prediction market — level saja tidak menunjukkannya. Verifikasi field harus dari IP non-Indonesia (endpoint diblokir Kominfo dari lokal).
+4. **CME FedWatch (`rate-path.js`) — masalah parsing, bukan fetch.** (a) Meeting yang tidak ketemu di response **difabrikasi 50/50** (`prob_hold: 0.5, prob_cut25: 0.5`) dan tampil seolah data pasar — harusnya ditandai null/absen. (b) Response FedWatch aslinya berisi distribusi bucket penuh (termasuk ±50bp) yang kita kempiskan jadi 3 kategori ±25bp. Konfirmasi bentuk penuh butuh 1 credit ScraperAPI (tidak bisa dites dari lokal, 403).
+
+### Grup B — Butuh call baru, murah, high-signal (bukan noise)
+
+1. **FRED `RRPONTSYD` (Reverse Repo).** Kartu likuiditas sekarang cuma WALCL (Fed assets) + WDTGAL (TGA). Formula net liquidity standar = WALCL − TGA − **RRP** — tanpa RRP, drain TGA yang diserap RRP terbaca keliru. 1 call FRED tambahan di `fetchLiquidityIndicators()`, TTL sama.
+2. **ECB SPF via ECB Data API.** `INFLATION_EXPECTATIONS.EUR` di `real-yields.js` hardcode dengan refresh manual kuartalan; ECB Data API (yang sudah kita pakai untuk yield) juga mem-publish seri SPF → EUR bisa otomatis, menghapus 1 dari 7 titik maintenance manual. (6 mata uang lain tetap hardcode — surveinya memang tanpa API.)
+3. **COT percentile jangka panjang.** `cot_history` internal baru 90 hari — terlalu pendek untuk klaim "positioning ekstrem". CFTC menyediakan file historis tahunan lengkap → fetch mingguan bisa hitung persentil ~3 tahun ("Lev net USD di persentil 95"). Effort sedang.
+
+### Grup C — Sengaja TIDAK disarankan (noise / bertentangan keputusan lama)
+
+- Seri makro FRED tambahan (CPI, retail sales, dll) sebagai sinyal — bertentangan prinsip labour assessment ("konteks bukan sinyal") dan keputusan STOP riset NFP.
+- Polymarket CLOB/order book — presisi berlebih untuk fungsi konteks sentimen.
+- Yahoo interval <1h historis — scope per-jam sudah keputusan sadar (lihat komentar `_ohlcv_fetch.js`).
+- Barchart — bukan untuk digali, justru kandidat cleanup: `call_iv`/`put_iv` kini sudah didapat dari CVOL (0 credit), `BARCHART_API_KEY` tak pernah di-set, path ~40 baris mati dalam praktik. Dipertahankan hanya kalau mau tetap ada fallback terdokumentasi.
+
+### Vendor yang sudah terkuras habis (tidak ada sisa bernilai tanpa noise)
+
+CME CVOL (dikuras tuntas sesi 157 lanj. 6–7: skew, upvar/dnvar, skewPercentChange, cvolPrice, convexInd — semua dari 1 response), FinancialJuice RSS (title/desc/link/date = semua isi RSS), Yahoo OHLCV + VIX/VIX1M/VIX3M term structure, Binance PAXG, Stooq MOVE, scrape 6 bank sentral (deliberate minimal — makin banyak field makin rapuh), ForexFactory XML (semua field diambil), RSS lain (InvestingLive/ActionForex/ING/Fed/ECB/BIS — headline memang isinya), rss2json & ScraperAPI (proxy murni), Telegram/WebPush (kanal keluar).
 
 ---
 
