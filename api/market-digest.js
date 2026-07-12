@@ -6,6 +6,27 @@ const { withSingleFlight } = require('./_fetch_lock');
 const { getLiveCbRates } = require('./_cb_rates');
 const { configureVapid, sendWebPush } = require('./_webpush');
 const { allowAiCall, providerFromUrl } = require('./_ai_guard');
+const { CB_KW, kwTest, isCbHeadline, stripHtml } = require('./_cb_keywords');
+
+// Call 2 (CB bias) evidence trail: accumulate distinct headlines across cycles instead of
+// overwriting with only the current cycle's matches. Without this, a bias correctly carried
+// forward from a substantive headline (e.g. an actual rate-decision statement) shows a stale,
+// uninformative "Dasar AI" box once that original headline ages out of the 36h news window and
+// gets replaced by whatever generic title re-triggered this cycle's re-check.
+const MAX_SOURCE_HEADLINES = 8;
+function mergeSourceHeadlines(prevList, freshList) {
+  const seen = new Set();
+  const merged = [];
+  for (const h of [...freshList, ...(Array.isArray(prevList) ? prevList : [])]) {
+    // Back-compat: entries written before this change are plain strings.
+    const normalized = typeof h === 'string' ? { title: h, description: null, matched_at: null } : h;
+    if (!normalized?.title || seen.has(normalized.title)) continue;
+    seen.add(normalized.title);
+    merged.push(normalized);
+    if (merged.length >= MAX_SOURCE_HEADLINES) break;
+  }
+  return merged;
+}
 
 // AI provider failure threshold before circuit opens (fewer than external sources
 // because AI errors are faster to detect and providers recover quickly)
@@ -97,24 +118,8 @@ const CUR_TO_OHLCV_PAIR = {
   CAD: 'USD/CAD', AUD: 'AUD/USD', NZD: 'NZD/USD', CHF: 'USD/CHF',
 };
 
-// Central-bank keyword map — used both to pick today's dominant FX pair for OHLCV context
-// and to scope Call 2 (CB bias) headline analysis.
-const CB_KW = {
-  USD: ['fed','fomc','powell','goolsbee','waller','kashkari','warsh','federal reserve','us inflation','us gdp','us jobs','nfp','us cpi'],
-  EUR: ['ecb','lagarde','lane','schnabel','euro zone','eurozone','euro area','eu inflation','eu gdp'],
-  GBP: ['boe','bank of england','bailey','pill','gbp','sterling','uk inflation','uk gdp','uk jobs','claimant'],
-  JPY: ['boj','bank of japan','ueda','japan inflation','japan gdp','yen','japanese'],
-  CAD: ['boc','bank of canada','macklem','canada inflation','canada gdp','canadian'],
-  AUD: ['rba','reserve bank of australia','bullock','australia inflation','australia gdp','aussie'],
-  NZD: ['rbnz','reserve bank of new zealand','orr','new zealand inflation','new zealand gdp','kiwi'],
-  CHF: ['snb','swiss national bank','schlegel','switzerland','swiss franc','franc'],
-};
-// Word-boundary match: single words use \b..\b so 'orr' won't match 'worrying',
-// 'boc' won't match 'pboc', 'lane' won't match 'plane', etc.
-// Phrases (containing space) keep simple includes since boundaries don't apply.
-const kwTest = (title, kw) => kw.includes(' ')
-  ? title.includes(kw)
-  : new RegExp('\\b' + kw + '\\b').test(title);
+// CB_KW/kwTest moved to ./_cb_keywords.js (shared with feeds.js's storeNewsHistory,
+// which needs the same map to decide which headlines are worth keeping a description for).
 const GOLD_KEYWORDS = [
   // Direct gold references
   'gold','xau','bullion','spot gold','precious metal','gold price','gold demand','gold rally','gold drop',
@@ -1271,7 +1276,13 @@ module.exports = async function handler(req, res) {
         const lower = i.title.toLowerCase();
         return relevantCurrencies.some(cur => CB_KW[cur].some(kw => kwTest(lower, kw)));
       });
-      const biasHeadlines = relevantHeadlines.slice(0, 50).map((i,idx) => (idx+1) + '. ' + i.title).join('\n');
+      // Description (when captured — see isCbHeadline in parseRSS/parseRSSItems) gives the
+      // model actual content instead of just a title, which for wire-service boilerplate
+      // ("RBNZ Interest Rate Probabilities") carries zero directional signal on its own.
+      const biasHeadlines = relevantHeadlines.slice(0, 50).map((i,idx) => {
+        const desc = i.description ? ' — ' + stripHtml(i.description).slice(0, 200) : '';
+        return (idx+1) + '. ' + i.title + desc;
+      }).join('\n');
       const biasCurrencies = relevantCurrencies.join(', ');
       // A1.1: read prior stance (read-only — the write path below still re-reads under lock
       // right before saving) + live policy rates, so the model judges a SHIFT, not an absolute stance.
@@ -1403,7 +1414,10 @@ module.exports = async function handler(req, res) {
               const prevEntry = existing[cur];
               const prevBias  = prevEntry?.bias;
               const kws = CB_KW[cur] || [];
-              const sourceHeadlines = recentItems.filter(i => kws.some(kw => kwTest(i.title.toLowerCase(), kw))).slice(0, 5).map(i => i.title);
+              const freshHeadlines = recentItems
+                .filter(i => kws.some(kw => kwTest(i.title.toLowerCase(), kw)))
+                .slice(0, 5)
+                .map(i => ({ title: i.title, description: i.description ? stripHtml(i.description).slice(0, 300) || null : null, matched_at: now2 }));
               // Magnitude check only applies when BOTH biases sit on the hawk-dove axis — a transition
               // to/from an orthogonal label (Data Dependent/On Hold/Split) never trips false divergence.
               const prevOnAxis = prevBias && !ORTHOGONAL_LABELS.has(prevBias) && HAWK_DOVE_AXIS.includes(prevBias);
@@ -1414,17 +1428,20 @@ module.exports = async function handler(req, res) {
                   // Large swing but not High-confidence: keep the established bias rather than
                   // flip on ambiguous evidence, but surface a divergence warning instead of
                   // silently discarding the signal — downgrade displayed confidence to Low.
+                  // source_headlines here is deliberately the FRESH list only (not merged) — it's
+                  // evidence for the suggested shift, not the established bias, so it shouldn't
+                  // blend into that bias's accumulated trail (prevEntry.source_headlines untouched below).
                   console.log(`Call 2: divergence ${cur} — ${prevBias}→${bias} (confidence ${confidence}), keeping prev bias + flagging`);
                   existing[cur] = {
                     ...prevEntry,
                     confidence: 'Low',
-                    divergence_warning: { suggested_bias: bias, suggested_confidence: confidence, detected_at: now2, source_headlines: sourceHeadlines },
+                    divergence_warning: { suggested_bias: bias, suggested_confidence: confidence, detected_at: now2, source_headlines: freshHeadlines },
                   };
                   _biasUpdated.push(cur);
                   continue;
                 }
               }
-              existing[cur] = { bias, confidence, updated_at: now2, source_headlines: sourceHeadlines };
+              existing[cur] = { bias, confidence, updated_at: now2, source_headlines: mergeSourceHeadlines(prevEntry?.source_headlines, freshHeadlines) };
               _biasUpdated.push(cur);
             }
             if (_biasUpdated.length > 0) {
@@ -2134,7 +2151,14 @@ function parseRSS(xml) {
     const b = m[1];
     const get = tag => { const r1=new RegExp(`<${tag}[^>]*><!\\[CDATA\\[([\\s\\S]*?)\\]\\]><\\/${tag}>`).exec(b); const r2=new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`).exec(b); return (r1||r2)?.[1]?.trim()||''; };
     const title=get('title').replace(/^FinancialJuice:\s*/i,'').trim(), guid=get('guid'), pubDate=get('pubDate'), link=b.match(/<link>(.*?)<\/link>/)?.[1]||'';
-    if (guid&&title) items.push({title,guid,pubDate,link});
+    if (guid&&title) {
+      const item = { title, guid, pubDate, link };
+      // Same rule as feeds.js's parseRSSItems: only keep the body text for CB-relevant
+      // headlines (Call 2 evidence needs more than a bare title) — everything else stays
+      // title-only so this doesn't balloon the in-memory item list.
+      if (isCbHeadline(title)) item.description = get('description');
+      items.push(item);
+    }
   }
   return items;
 }
@@ -2209,3 +2233,4 @@ module.exports.parseEconNumber = parseEconNumber;
 module.exports.thesisPairCurrencies = thesisPairCurrencies;
 module.exports.thesisInvalidationCurrencyConsistent = thesisInvalidationCurrencyConsistent;
 module.exports.CB_OPENROUTER_NEMOTRON_SUPER = CB_OPENROUTER_NEMOTRON_SUPER;
+module.exports.mergeSourceHeadlines = mergeSourceHeadlines;

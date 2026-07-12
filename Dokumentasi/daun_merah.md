@@ -1,10 +1,34 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-07-11 (session 157 lanjutan 18 — fix karakter tipografi hilang di footer disclaimer PDF)
+> **Last updated:** 2026-07-12 (session 158 — CB bias "Dasar AI" jadi evidence trail akumulatif + description headline)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+---
+
+## Changelog Session 158 (2026-07-12) — CB Bias "Dasar AI" Jadi Evidence Trail Akumulatif + Simpan Description Headline
+
+**Konteks:** user tanya soal tab kalender/dashboard CENTRAL BANKS — bias NZD "Hawkish" cuma didukung 1 headline "RBNZ Interest Rate Probabilities" di kotak "Dasar AI", yang isinya template judul tanpa sinyal arah sama sekali. Investigasi kode menemukan dua lapis masalah nyata, bukan sekadar tampilan:
+1. `cb_bias.source_headlines` (Redis) **ditimpa penuh setiap siklus Call 2**, bukan diakumulasi — begitu headline substantif asli (mis. statement rapat RBNZ) keluar dari window `news_history` 36 jam, jejaknya hilang permanen dan digantikan headline generik apa pun yang kebetulan re-trigger keyword match siklus berikutnya. Bias-nya sendiri kemungkinan tetap akurat (mekanisme "PRIOR STANCE" di prompt mempertahankan bias lama kalau cuma dikonfirmasi ulang), tapi evidence yang ditampilkan ke user salah merepresentasikan alasannya.
+2. Parser RSS (`parseRSS`/`parseRSSItems`) dari awal **cuma menyimpan `title`**, tidak pernah `<description>`, kecuali untuk headline "options expiry" (dipakai fitur lain). Jadi Call 2 (dan kotak "Dasar AI") memang tidak pernah punya lebih dari judul mentah untuk dianalisis.
+
+**1. Shared keyword module — [api/_cb_keywords.js](../api/_cb_keywords.js) (baru):** `CB_KW`, `kwTest`, `isCbHeadline`, `stripHtml` dipindah dari `market-digest.js` ke modul bersama supaya bisa dipakai juga oleh `feeds.js` tanpa duplikasi/drift.
+
+**2. Simpan description untuk headline CB-relevant (bukan cuma option-expiry) — [api/feeds.js](../api/feeds.js) `parseRSSItems()`, [api/market-digest.js](../api/market-digest.js) `parseRSS()` lokal:** headline yang match `isCbHeadline()` (bank sentral mana pun) sekarang ikut simpan `<description>` mentah, disaring lewat `stripHtml()` baru dipakai di titik konsumsi (bukan di titik simpan — jalur `options expiry` yang sudah ada tetap butuh HTML mentah untuk parsing `<li><strong>PAIR:</strong>...`, jadi tidak disentuh).
+
+**3. Prompt Call 2 dapat konteks lebih dari sekadar judul — [api/market-digest.js](../api/market-digest.js) `biasHeadlines`:** tiap baris headline yang dikirim ke AI sekarang menyertakan snippet description (di-`stripHtml`, dipotong 200 char) kalau tersedia, bukan cuma judul.
+
+**4. `source_headlines` jadi evidence trail akumulatif, bukan overwrite — [api/market-digest.js](../api/market-digest.js) `mergeSourceHeadlines()` (baru, diekspor untuk test):** format berubah dari array-of-string ke array-of-object `{title, description, matched_at}`. Tiap siklus, headline baru di-merge dengan `prevEntry.source_headlines` (dedupe by title, cap 8 entri, urutan terbaru dulu) — bukan ditimpa. Back-compat: entri lama format string (data Redis sebelum fix ini) dinormalisasi otomatis, baik di backend (`mergeSourceHeadlines`) maupun frontend (`cbToggleDetail`). Jalur `divergence_warning` SENGAJA tetap pakai list fresh (tidak di-merge) — itu bukti untuk sinyal pergeseran yang BELUM diadopsi, tidak boleh campur dengan trail bias yang sudah established.
+
+**5. UI kotak "Dasar AI" — [index.html](../index.html) `cbToggleDetail()`:** tiap headline sekarang tampil dengan tanggal (`matched_at`, format `YYYY-MM-DD`) dan snippet description (kalau ada) di baris terpisah, CSS baru `.cb-hl-date`/`.cb-hl-desc`. Aman untuk XSS (tetap lewat `escHtml`) dan back-compat kalau `cb.source_headlines` masih format string lama.
+
+**Diverifikasi:**
+- `node -e "require(...)"` bersih untuk ketiga file backend (tidak ada syntax/require error).
+- Test suite penuh **198/198 hijau** (190 lama + 8 baru di [test/cb_bias_evidence.test.js](../test/cb_bias_evidence.test.js)): reproduksi persis skenario NZD (headline lama format-string dipertahankan saat siklus baru cuma nemu headline generik), dedupe judul identik (versi fresh dengan description menang), cap 8 entri prioritas terbaru, `prevList` kosong/undefined/null tidak crash, `isCbHeadline` & `kwTest` konsisten (word-boundary "orr" vs "worrying"), `stripHtml` aman untuk null/HTML/plain text, dan `CB_KW` tidak kehilangan mata uang saat dipindah ke modul shared.
+- Simulasi manual render `cbToggleDetail` di Node (bukan browser sungguhan): headline string lama, object baru dengan description+tanggal, XSS payload di title, dan array kosong — semua render sesuai ekspektasi tanpa crash.
+- **Belum diverifikasi:** live browser test tidak bisa dilakukan dari sandbox ini — kredensial Redis/`APP_KEY` di Vercel ditandai *Sensitive* (selalu kosong lewat `vercel env pull`, lihat catatan lama soal ini) dan `chromium-cli` tidak tersedia di environment. Perubahan bentuk data `source_headlines` baru akan benar-benar terlihat di UI production setelah siklus Call 2 berikutnya jalan (tombol "Ringkas Berita" atau cron) — user disarankan cek tab dashboard CENTRAL BANKS → ⓘ setelah itu.
 
 ---
 

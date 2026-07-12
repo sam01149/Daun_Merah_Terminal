@@ -11,6 +11,7 @@ const { autoUpdateFundamentals } = require('./_fundamental_parser');
 const rateLimit = require('./_ratelimit');
 const cbk = require('./_circuit_breaker');
 const { requireAppKey } = require('./_app_key');
+const { isCbHeadline } = require('./_cb_keywords');
 
 module.exports = async function handler(req, res) {
   const type = req.query.type;
@@ -218,11 +219,11 @@ function parseRSSItems(xml) {
     const link = b.match(/<link>(.*?)<\/link>/)?.[1] || '';
     if (guid && title) {
       const item = { title, guid, pubDate, link };
-      // Keep description only for option-expiry headlines — that's the one
-      // case downstream (fetchFinancialJuiceOptions' history fallback) needs
-      // the body, not just the title; storing it for every item would bloat
-      // the 36h Redis history for no benefit.
-      if (/options?\s*expir/i.test(title)) item.description = get('description');
+      // Keep description only for option-expiry headlines (fetchFinancialJuiceOptions'
+      // history fallback needs the body) and CB-relevant headlines (market-digest's Call 2
+      // bias evidence needs more than a bare title) — storing it for every item would
+      // bloat the 36h Redis history for no benefit.
+      if (/options?\s*expir/i.test(title) || isCbHeadline(title)) item.description = get('description');
       items.push(item);
     }
   }

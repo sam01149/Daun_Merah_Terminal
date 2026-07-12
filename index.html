@@ -1655,8 +1655,10 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   border-top: 1px solid rgba(255,255,255,.05);
 }
 .cb-hl-title { font-size: 8px; color: var(--muted); letter-spacing: .6px; text-transform: uppercase; margin-bottom: 5px; }
-.cb-hl-item  { font-size: 9px; color: rgba(255,255,255,.6); line-height: 1.6; padding-left: 8px; }
+.cb-hl-item  { font-size: 9px; color: rgba(255,255,255,.6); line-height: 1.6; padding-left: 8px; margin-bottom: 4px; }
 .cb-hl-item::before { content: '•'; margin-right: 5px; color: var(--muted); }
+.cb-hl-date  { font-size: 8px; color: var(--muted); margin-left: 6px; }
+.cb-hl-desc  { font-size: 8.5px; color: var(--muted); line-height: 1.5; margin-top: 2px; padding-left: 2px; }
 /* CB Shock Detector (plan G6) — reaksi rapat bank sentral terakhir, rule-based */
 .cb-shock-wrap { margin-top: 10px; border-top: 1px solid var(--border); padding-top: 8px; font-family: 'DM Mono', monospace; }
 .cb-shock-title { font-size: 8px; color: var(--muted); letter-spacing: .6px; text-transform: uppercase; margin-bottom: 6px; }
@@ -6396,7 +6398,13 @@ function cbToggleDetail(cur) {
 
   const headlines = cb.source_headlines || [];
   const hlHtml = headlines.length
-    ? headlines.map(h => '<div class="cb-hl-item">' + escHtml(h) + '</div>').join('')
+    ? headlines.map(h => {
+        // Back-compat: entries saved before the evidence-trail change are plain strings.
+        const item = (typeof h === 'string') ? { title: h, description: null, matched_at: null } : h;
+        const dateTag = item.matched_at ? '<span class="cb-hl-date">' + escHtml(item.matched_at.slice(0, 10)) + '</span>' : '';
+        const descHtml = item.description ? '<div class="cb-hl-desc">' + escHtml(item.description.slice(0, 220)) + '</div>' : '';
+        return '<div class="cb-hl-item">' + escHtml(item.title) + dateTag + descHtml + '</div>';
+      }).join('')
     : '<div class="cb-hl-item" style="font-style:italic;color:var(--muted)">Belum ada data — generate ringkasan dulu</div>';
 
   const curBias = cb.manual ? cb.ai_bias : cb.bias;
