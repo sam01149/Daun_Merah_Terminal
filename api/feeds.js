@@ -6,12 +6,14 @@
 // GET /api/feeds?type=aftek&pair=EUR/USD → ActionForex per-pair technical outlook (4h cache)
 // GET /api/feeds?type=retail         → ForexBenchmark retail positioning JSON (2h cache)
 // GET /api/feeds?type=retail_history → snapshot harian retail positioning (rolling 90 hari)
+// GET /api/feeds?type=news_history&before=<ms>&limit=100 → halaman berita lama dari archive
+//   36 jam untuk tombol "Muat Berita Lebih Lama" di tab NEWS (read-only, UI-only — window
+//   baca dan retensi PERSIS sama dengan yang dipakai market-digest.js Call 2 CB bias).
 
 const { autoUpdateFundamentals } = require('./_fundamental_parser');
 const rateLimit = require('./_ratelimit');
 const cbk = require('./_circuit_breaker');
 const { requireAppKey } = require('./_app_key');
-const { isCbHeadline } = require('./_cb_keywords');
 
 module.exports = async function handler(req, res) {
   const type = req.query.type;
@@ -28,7 +30,8 @@ module.exports = async function handler(req, res) {
   if (type === 'aftek')       return aftekHandler(req, res);
   if (type === 'retail')      return retailHandler(req, res);
   if (type === 'retail_history') return retailHistoryHandler(req, res);
-  return res.status(400).json({ error: 'Missing ?type= — use rss, cot, cot_history, research, options, aftek, retail, or retail_history' });
+  if (type === 'news_history') return newsHistoryHandler(req, res);
+  return res.status(400).json({ error: 'Missing ?type= — use rss, cot, cot_history, research, options, aftek, retail, retail_history, or news_history' });
 };
 
 // ── Shared Redis helper ────────────────────────────────────────────────────────
@@ -209,6 +212,33 @@ async function storeNewsHistory(xml, now) {
   autoUpdateFundamentals(items.slice(0, 50), redisCmd).catch(() => {});
 }
 
+// ── News history handler ("Muat Berita Lebih Lama", plan/UX confirmed dengan user
+//    session ini) — read-only pagination mundur atas 'news_history', sama sekali tidak
+//    mengubah window baca atau perilaku Call 2 (CB bias) di market-digest.js, yang
+//    membaca key Redis yang sama tapi dengan cutoff 36 jam-nya sendiri, terpisah total.
+async function newsHistoryHandler(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+
+  const before = req.query.before !== undefined ? Number(req.query.before) : Date.now();
+  const limit  = Math.min(Math.max(parseInt(req.query.limit, 10) || 100, 1), 100);
+  if (!isFinite(before)) return res.status(400).json({ error: 'invalid before' });
+
+  // ZREVRANGEBYSCORE dengan bound eksklusif "(before" → ambil item yg lebih tua dari
+  // cursor, urutan terbaru-dulu di dalam batch itu, dibatasi `limit` per halaman.
+  const raw = await redisCmd('ZREVRANGEBYSCORE', 'news_history', `(${before}`, '-inf', 'LIMIT', '0', String(limit));
+  const items = Array.isArray(raw)
+    ? raw.map(s => { try { return JSON.parse(s); } catch(e) { return null; } }).filter(Boolean)
+    : [];
+  const oldestTs = items.length ? new Date(items[items.length - 1].pubDate).getTime() : null;
+
+  return res.status(200).json({
+    items,
+    count: items.length,
+    next_before: oldestTs,
+    has_more: items.length === limit,
+  });
+}
+
 function parseRSSItems(xml) {
   const items = [], re = /<item>([\s\S]*?)<\/item>/g; let m;
   while ((m = re.exec(xml)) !== null) {
@@ -218,12 +248,11 @@ function parseRSSItems(xml) {
     const guid = get('guid'), pubDate = get('pubDate');
     const link = b.match(/<link>(.*?)<\/link>/)?.[1] || '';
     if (guid && title) {
-      const item = { title, guid, pubDate, link };
-      // Keep description only for option-expiry headlines (fetchFinancialJuiceOptions'
-      // history fallback needs the body) and CB-relevant headlines (market-digest's Call 2
-      // bias evidence needs more than a bare title) — storing it for every item would
-      // bloat the 36h Redis history for no benefit.
-      if (/options?\s*expir/i.test(title) || isCbHeadline(title)) item.description = get('description');
+      // description disimpan untuk SEMUA item (bukan cuma option-expiry/CB seperti versi
+      // lama) — dipakai tab NEWS "Muat Berita Lebih Lama" biar berita lama juga tampil
+      // dengan isi, bukan cuma judul. Retensi tetap 36 jam (lihat storeNewsHistory), jadi
+      // tambahan storage-nya terbatas, bukan menumpuk tanpa batas.
+      const item = { title, guid, pubDate, link, description: get('description') };
       items.push(item);
     }
   }
@@ -1219,3 +1248,6 @@ function parseRetailPositions(html) {
 module.exports.parseRetailPositions = parseRetailPositions;
 module.exports.storeRetailHistory = storeRetailHistory;
 module.exports.retailHistoryHandler = retailHistoryHandler;
+module.exports.newsHistoryHandler = newsHistoryHandler;
+module.exports.storeNewsHistory = storeNewsHistory;
+module.exports.parseRSSItems = parseRSSItems;

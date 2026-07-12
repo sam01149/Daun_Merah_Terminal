@@ -520,6 +520,19 @@ body {
 }
 @keyframes pulse-badge { 0%,100%{opacity:1} 50%{opacity:.4} }
 
+.feed-loadmore-btn {
+  display:block; width:100%; margin:4px 0 14px; padding:10px;
+  border-radius:10px; border:1px dashed var(--border);
+  background:transparent; color:var(--muted); font-family:'DM Mono',monospace;
+  font-size:10.5px; letter-spacing:.3px; cursor:pointer; transition:all .15s;
+}
+.feed-loadmore-btn:hover:not(:disabled) { border-color:var(--accent); color:var(--accent); }
+.feed-loadmore-btn:disabled { opacity:.6; cursor:default; }
+.feed-history-end {
+  text-align:center; padding:12px 10px 20px; font-size:10px;
+  color:var(--muted); letter-spacing:.2px;
+}
+
 
 @keyframes swipeInRight { from { transform:translateX(70px); opacity:0; } to { transform:translateX(0); opacity:1; } }
 @keyframes swipeInLeft  { from { transform:translateX(-70px); opacity:0; } to { transform:translateX(0); opacity:1; } }
@@ -3787,6 +3800,15 @@ let cdInterval   = null;
 let cdVal        = 60;
 let notifEnabled = false;
 
+// ── "Muat Berita Lebih Lama" (load-more archive, read-only UI, tidak dipersist —
+// balik ke kosong tiap reload) — lihat api/feeds.js?type=news_history. Window &
+// retensi persis sama dengan yang dipakai Call 2 CB bias, cuma cara nampilinnya
+// yang beda: di sini di-accumulate (nambah ke bawah), bukan diganti tiap poll.
+let historyItems     = [];
+let historyBefore    = null;
+let historyExhausted = false;
+let historyLoading   = false;
+
 // ── VOICE READOUT (TTS untuk headline penting) ──────────────────────────
 // Session-only toggle (default mati, harus diaktifkan manual tiap sesi —
 // keputusan user: bukan fitur yang selalu jalan diam-diam). Kategori yang
@@ -4439,45 +4461,85 @@ function toggleFJImg(btn, id) {
   btn.textContent = showing ? btn.dataset.labelShow : btn.dataset.labelHide;
 }
 
+function _feedItemHtml(item, isNew, idx) {
+  const cat = detectCat(item.title);
+  const rawDesc = sanitizeDesc(item.desc);
+  const descHtml = rawDesc.length > 10 ? `<div class="item-desc">${rawDesc}</div>` : '';
+  const fjImgId = `fjImg-${item.guid}`;
+  const fjType = /^\d+$/.test(item.guid) ? fjImageType(item.title) : null;
+  const fjLabels = fjType === 'chart'
+    ? ['Lihat Chart ▾', 'Sembunyikan Chart ▴']
+    : fjType === 'table'
+    ? ['Lihat Gambar ▾', 'Sembunyikan Gambar ▴']
+    : null;
+  const chartHtml = fjLabels
+    ? `<button class="feed-chart-toggle" data-label-show="${fjLabels[0]}" data-label-hide="${fjLabels[1]}" onclick="event.stopPropagation();toggleFJImg(this,'${fjImgId}')">${fjLabels[0]}</button>
+       <div class="feed-chart-wrap" id="${fjImgId}" style="display:none">
+         <img class="feed-chart-img" src="https://www.financialjuice.com/images/${item.guid}.png" loading="lazy" alt="" onerror="const w=this.closest('.feed-chart-wrap');w.className='feed-chart-wrap feed-chart-error';w.textContent='Gambar tidak tersedia';">
+       </div>`
+    : '';
+  const newBadge = isNew ? `<span class="new-badge">NEW</span>` : '';
+  return `
+    <div class="feed-item cat-${cat}" style="animation-delay:${Math.min(idx,15)*0.025}s">
+      <div class="item-meta">
+        <span class="item-time">${fmtTime(item.pubDate)}</span>
+        <span class="item-tag tag-${cat}">${cat.replace('-',' ')}</span>
+        ${newBadge}
+      </div>
+      <div class="item-title">${escHtml(item.title)}</div>
+      ${chartHtml}
+      ${descHtml}
+    </div>`;
+}
+
 function renderFeed(markNew = false) {
   const scroll = document.getElementById('feedScroll');
   const newGuids = markNew ? new Set(allItems.slice(0,10).map(i=>i.guid)) : new Set();
-  let items = activeFilter === 'all' ? allItems : allItems.filter(i => detectCat(i.title) === activeFilter);
+  // Dedupe terhadap allItems: kalau live poll narik ulang guid yang kebetulan
+  // sudah nangkring di historyItems (feed bergeser), jangan render dobel.
+  const liveGuids = new Set(allItems.map(i => i.guid));
+  const combined = allItems.concat(historyItems.filter(i => !liveGuids.has(i.guid)));
+  let items = activeFilter === 'all' ? combined : combined.filter(i => detectCat(i.title) === activeFilter);
   if (items.length === 0) {
     scroll.innerHTML = `<div class="state-box"><div class="icon">🔍</div><p>Tidak ada berita untuk kategori ini</p></div>`;
     return;
   }
-  scroll.innerHTML = items.map((item, idx) => {
-    const cat = detectCat(item.title);
-    const isNew = markNew && newGuids.has(item.guid) && idx < 5;
-    const rawDesc = sanitizeDesc(item.desc);
-    const descHtml = rawDesc.length > 10 ? `<div class="item-desc">${rawDesc}</div>` : '';
-    const fjImgId = `fjImg-${item.guid}`;
-    const fjType = /^\d+$/.test(item.guid) ? fjImageType(item.title) : null;
-    const fjLabels = fjType === 'chart'
-      ? ['Lihat Chart ▾', 'Sembunyikan Chart ▴']
-      : fjType === 'table'
-      ? ['Lihat Gambar ▾', 'Sembunyikan Gambar ▴']
-      : null;
-    const chartHtml = fjLabels
-      ? `<button class="feed-chart-toggle" data-label-show="${fjLabels[0]}" data-label-hide="${fjLabels[1]}" onclick="event.stopPropagation();toggleFJImg(this,'${fjImgId}')">${fjLabels[0]}</button>
-         <div class="feed-chart-wrap" id="${fjImgId}" style="display:none">
-           <img class="feed-chart-img" src="https://www.financialjuice.com/images/${item.guid}.png" loading="lazy" alt="" onerror="const w=this.closest('.feed-chart-wrap');w.className='feed-chart-wrap feed-chart-error';w.textContent='Gambar tidak tersedia';">
-         </div>`
-      : '';
-    const newBadge = isNew ? `<span class="new-badge">NEW</span>` : '';
-    return `
-      <div class="feed-item cat-${cat}" style="animation-delay:${Math.min(idx,15)*0.025}s">
-        <div class="item-meta">
-          <span class="item-time">${fmtTime(item.pubDate)}</span>
-          <span class="item-tag tag-${cat}">${cat.replace('-',' ')}</span>
-          ${newBadge}
-        </div>
-        <div class="item-title">${escHtml(item.title)}</div>
-        ${chartHtml}
-        ${descHtml}
-      </div>`;
-  }).join('');
+  const itemsHtml = items.map((item, idx) => _feedItemHtml(item, markNew && newGuids.has(item.guid) && idx < 5, idx)).join('');
+  // Load-more cuma ditawarkan di filter "All" — histori dicampur dari archive
+  // server yang tidak dipisah kategori, jadi tombolnya disembunyikan saat
+  // difilter supaya tidak menarik data yang sebagian besar bakal ke-filter lagi.
+  const loadMoreHtml = activeFilter !== 'all' ? '' : historyExhausted
+    ? `<div class="feed-history-end">— Sudah mencapai ujung arsip berita (36 jam) —</div>`
+    : `<button class="feed-loadmore-btn" id="feedLoadMoreBtn" onclick="loadMoreHistory()" ${historyLoading ? 'disabled' : ''}>${historyLoading ? '⏳ Memuat…' : '⌄ Muat Berita Lebih Lama'}</button>`;
+  scroll.innerHTML = itemsHtml + loadMoreHtml;
+}
+
+async function loadMoreHistory() {
+  if (historyLoading || historyExhausted) return;
+  historyLoading = true;
+  renderFeed();
+  try {
+    const oldestLive = allItems.length ? new Date(allItems[allItems.length - 1].pubDate).getTime() : Date.now();
+    const cursor = historyBefore != null ? historyBefore : oldestLive;
+    const res = await fetch(`/api/feeds?type=news_history&before=${cursor}&limit=100`, { signal: AbortSignal.timeout(12000) });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    const fetched = Array.isArray(data.items) ? data.items : [];
+    // Server field 'description' → normalisasi ke 'desc' biar sama dengan bentuk
+    // item live (parseRSS() client) yang dipakai _feedItemHtml/sanitizeDesc.
+    const known = new Set(allItems.map(i => i.guid).concat(historyItems.map(i => i.guid)));
+    const fresh = fetched
+      .filter(i => i.guid && i.title && !known.has(i.guid))
+      .map(i => ({ title: i.title, guid: i.guid, pubDate: i.pubDate, link: i.link, desc: i.description || '' }));
+    historyItems = historyItems.concat(fresh);
+    historyBefore = data.next_before != null ? data.next_before : cursor;
+    historyExhausted = fetched.length === 0 || !data.has_more;
+  } catch(e) {
+    showToast('Gagal Muat', 'Tidak bisa memuat berita lebih lama, coba lagi.', 3000);
+  } finally {
+    historyLoading = false;
+    renderFeed();
+  }
 }
 
 function openLink(url) { if(url) window.open(url,'_blank'); }

@@ -1,10 +1,28 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-07-12 (session 158 — CB bias "Dasar AI" jadi evidence trail akumulatif + description headline)
+> **Last updated:** 2026-07-12 (session 158 lanjutan — tab NEWS: "Muat Berita Lebih Lama", load-more read-only atas archive 36 jam)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+---
+
+## Changelog Session 158 lanjutan (2026-07-12) — Tab NEWS: "Muat Berita Lebih Lama" (Load-More Read-Only atas Archive 36 Jam)
+
+**Konteks:** lanjutan diskusi entry sebelumnya (evidence trail CB bias) — user tanya apakah headline 36 jam yang sudah disimpan di Redis bisa dijadikan fitur lihat "berita kemarin". Setelah beberapa putaran klarifikasi (user secara eksplisit menahan eksekusi awal saya yang kebablasan menaikkan retensi ke 7 hari + nyimpan isi lengkap semua berita — dikoreksi user, lalu disepakati versi final yang jauh lebih sederhana), disain final: **load-more murni tampilan, nol perubahan ke window/retensi/perilaku AI.**
+
+**1. Endpoint baru read-only — [api/feeds.js](../api/feeds.js) `newsHistoryHandler` (`type=news_history&before=<ms>&limit=100`):** pagination mundur atas `news_history` (Redis, sudah ada, dipakai bareng Call 2 CB bias) via `ZREVRANGEBYSCORE key (before -inf LIMIT 0 <limit>` — cursor eksklusif, urutan terbaru-dulu per halaman. **Retensi TETAP 36 jam, tidak diubah** — `market-digest.js` (AI) baca key yang sama dengan cutoff 36 jam miliknya sendiri, terpisah total dan sama sekali tidak disentuh perubahan ini.
+
+**2. `parseRSSItems` — description disimpan untuk SEMUA headline, bukan cuma CB/option-expiry:** perubahan session 158 sebelumnya membatasi `<description>` cuma untuk headline bank sentral & option-expiry (demi hemat storage). User klarifikasi: load-more ini untuk baca isi berita juga (bukan cuma judul kosong), jadi gate `isCbHeadline()` di titik ini dibuang — semua item sekarang bawa `description` kalau ada di XML sumber. Karena retensi tetap 36 jam (bukan naik ke 7 hari seperti rencana awal saya yang dibatalkan user), pertambahan storage-nya terbatas/wajar.
+
+**3. UI tab NEWS — [index.html](../index.html):** tombol **"⌄ Muat Berita Lebih Lama"** di bawah list. Klik → tarik 100 headline lebih tua lewat endpoint baru, **ditambahkan** ke bawah (bukan replace) — `_feedItemHtml()` diekstrak jadi helper bersama dari `renderFeed()`'s inline map biar dipakai render item live maupun item archive. State (`historyItems`/`historyBefore`/`historyExhausted`) murni di memori browser, sengaja tidak dipersist — refresh halaman balik ke tampilan awal (behavior yang diminta eksplisit). Mentok ke ujung 36 jam → tombol berubah jadi pesan "— Sudah mencapai ujung arsip berita (36 jam) —". Live-poll (AUTO refresh) tidak menghapus histori yang sudah di-load — `renderFeed()` selalu re-gabung `allItems + historyItems` (dengan dedupe by guid, guard kalau feed live kebetulan menarik ulang guid yang sudah ada di histori). Load-more disembunyikan saat filter kategori aktif (arsip tidak dipisah kategori server-side, jadi hanya ditawarkan di tab "All").
+
+**Diverifikasi:**
+- `node -e "require(...)"` bersih, inline `<script>` (satu blok, seluruh app) lolos syntax check via `new Function()`.
+- Test suite **203/203 hijau** (190 sebelumnya + 8 evidence-trail + 5 baru di [test/news_history.test.js](../test/news_history.test.js)): `parseRSSItems` simpan description untuk headline non-CB, pagination 2-halaman tanpa overlap/kehilangan data sampai archive habis (mock Redis dengan `ZREVRANGEBYSCORE`+`LIMIT`, pola sama seperti test retail_history existing), `before` tidak valid → 400, `limit` di-cap 100 meski diminta lebih besar. Sempat ketemu & diperbaiki 1 bug di mock test-nya sendiri (ZADD multi-pair cuma kebaca 1 pasang) — bukan bug di kode produksi.
+- Simulasi manual `_feedItemHtml`/`loadMoreHistory` logic di Node: dedupe guid antara `allItems` dan `historyItems` bekerja benar, item tanpa description tetap render title-only tanpa error, flag `historyExhausted` berubah benar saat halaman kosong.
+- **Belum diverifikasi di browser sungguhan** — kendala sama seperti entry sebelumnya (kredensial Redis/`APP_KEY` Sensitive-masked di sandbox ini, `chromium-cli` tidak tersedia). User disarankan coba klik "Muat Berita Lebih Lama" di tab NEWS langsung di production setelah deploy.
 
 ---
 
