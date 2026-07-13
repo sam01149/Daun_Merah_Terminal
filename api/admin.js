@@ -2026,6 +2026,101 @@ function _pickExpiryLevels(expiries, pairLabel, nowPrice) {
   return rows.slice(0, 6);
 }
 
+// ── Zona konfluensi deterministik (session 166) ───────────────────────────────
+// Akar masalah "hasil Analisa AI lompat-lompat tiap re-generate": AI dibiarkan
+// MEMILIH sendiri level entry dari belasan kandidat struktur yang tersebar di prompt
+// (S/R, fib, pivot, prev day/week, swing H4, SMA, expiry) + temperature sampling —
+// dua generate dengan data sama persis bisa menghasilkan zona berbeda. Fungsi ini
+// memindahkan pemilihannya ke kode: kumpulkan semua level struktur, cluster yang
+// berdekatan (≤ tolerance ~0.35x ATR Daily), skor = jumlah struktur yang bertumpuk
+// (S/R diberi bobot ekstra dari sentuhan, expiry setengah bobot karena berlaku 1 hari),
+// lalu ranking. AI tinggal MENARASIKAN zona teratas, bukan memilih bebas.
+// Pure function — dites di test/ta_struct.test.js.
+function _confluenceZones(data, expiryLvls) {
+  const dec = data?.dec ?? 5;
+  const now = data?.h1?.available ? data.h1.current : null;
+  if (typeof now !== 'number' || isNaN(now)) return null;
+  const f = n => n.toFixed(dec);
+  const cands = [];
+  const add = (price, name, w = 1) => {
+    const p = typeof price === 'number' ? price : parseFloat(price);
+    if (!isNaN(p) && p > 0) cands.push({ price: p, name, w });
+  };
+  for (const l of data.sr_levels?.above || []) add(l.price, `S/R ${f(l.price)} (${l.touches}x sentuh)`, 1 + Math.min(2, Math.max(0, l.touches - 1) * 0.25));
+  for (const l of data.sr_levels?.below || []) add(l.price, `S/R ${f(l.price)} (${l.touches}x sentuh)`, 1 + Math.min(2, Math.max(0, l.touches - 1) * 0.25));
+  if (data.fib?.available) {
+    add(data.fib.f382, `fib 38.2% ${f(data.fib.f382)}`);
+    add(data.fib.f500, `fib 50% ${f(data.fib.f500)}`);
+    add(data.fib.f618, `fib 61.8% ${f(data.fib.f618)}`);
+  }
+  const piv = data.ref_levels?.available ? data.ref_levels.pivots : null;
+  if (piv) {
+    add(piv.p, `pivot P ${f(piv.p)}`);
+    add(piv.r1, `pivot R1 ${f(piv.r1)}`); add(piv.s1, `pivot S1 ${f(piv.s1)}`);
+    add(piv.r2, `pivot R2 ${f(piv.r2)}`); add(piv.s2, `pivot S2 ${f(piv.s2)}`);
+  }
+  const pd = data.ref_levels?.available ? data.ref_levels.prev_day : null;
+  if (pd) { add(pd.high, `prev day high ${f(pd.high)}`); add(pd.low, `prev day low ${f(pd.low)}`); }
+  const pw = data.ref_levels?.available ? data.ref_levels.prev_week : null;
+  if (pw) { add(pw.high, `prev week high ${f(pw.high)}`); add(pw.low, `prev week low ${f(pw.low)}`); }
+  for (const s of data.h4?.swing_highs || []) add(s.price, `swing high H4 ${f(s.price)}`);
+  for (const s of data.h4?.swing_lows  || []) add(s.price, `swing low H4 ${f(s.price)}`);
+  if (data.indicators?.available) {
+    if (data.indicators.sma_50  != null) add(data.indicators.sma_50,  `SMA50 Daily ${f(data.indicators.sma_50)}`);
+    if (data.indicators.sma_200 != null) add(data.indicators.sma_200, `SMA200 Daily ${f(data.indicators.sma_200)}`);
+  }
+  for (const l of expiryLvls || []) add(l.num, `option expiry ${l.level}${l.size ? ` (${l.size})` : ''}`, 0.5);
+  if (cands.length === 0) return null;
+
+  const atrD = (data.d1_ext?.available && data.d1_ext.atr_d != null) ? data.d1_ext.atr_d : null;
+  const tol = atrD != null ? atrD * 0.35 : now * 0.0015;
+
+  cands.sort((a, b) => a.price - b.price);
+  const clusters = [];
+  for (const c of cands) {
+    const last = clusters[clusters.length - 1];
+    if (last && Math.abs(c.price - last.sum / last.n) <= tol) {
+      last.sum += c.price; last.n++; last.score += c.w; last.members.push(c.name);
+    } else {
+      clusters.push({ sum: c.price, n: 1, score: c.w, members: [c.name] });
+    }
+  }
+  const built = clusters.map(z => ({
+    center:  +(z.sum / z.n).toFixed(dec),
+    score:   +z.score.toFixed(2),
+    members: z.members,
+  }));
+  // Ranking: skor tertinggi dulu; seri → yang paling dekat ke Now menang (lebih
+  // actionable buat entry). Max 3 zona per sisi supaya prompt tetap ringkas.
+  const rank = arr => [...arr].sort((a, b) => b.score - a.score || Math.abs(a.center - now) - Math.abs(b.center - now)).slice(0, 3);
+  const out = {
+    now:       +now.toFixed(dec),
+    tolerance: +tol.toFixed(dec),
+    above:     rank(built.filter(z => z.center >= now)),
+    below:     rank(built.filter(z => z.center <  now)),
+  };
+  if (out.above.length === 0 && out.below.length === 0) return null;
+  return out;
+}
+
+// Render blok [ZONA KONFLUENSI] untuk prompt AI. Zona diberi ID stabil (A1/B1 dst,
+// urut skor) supaya instruksi entry_zone bisa merujuk "pilih dari daftar ini".
+function _formatConfluenceBlock(zones, dec) {
+  if (!zones || (!zones.above?.length && !zones.below?.length)) return '';
+  const f = n => n.toFixed(dec ?? 5);
+  const fmtZone = z => `${f(z.center)} [skor ${z.score}] = ${z.members.join(' + ')}`;
+  const lines = [`[ZONA KONFLUENSI — dihitung DETERMINISTIK oleh kode dari struktur di atas (level berjarak ≤ ${f(zones.tolerance)} digabung); skor = jumlah & kekuatan struktur yang bertumpuk, diurutkan dari terkuat]`];
+  if (zones.above.length) {
+    lines.push('  Di ATAS Now (kandidat area jual / target buy):');
+    zones.above.forEach((z, i) => lines.push(`  A${i + 1}. ${fmtZone(z)}`));
+  }
+  if (zones.below.length) {
+    lines.push('  Di BAWAH Now (kandidat area beli / target sell):');
+    zones.below.forEach((z, i) => lines.push(`  B${i + 1}. ${fmtZone(z)}`));
+  }
+  return lines.join('\n');
+}
+
 // Ekstrak konteks makro dari artikel Ringkasan untuk pair tertentu (pure — dites unit).
 // XAU: blok "XAUUSD:" (memang self-contained). Pair FX: bagian FX dipecah per marker
 // {{TAG: NAMA}} yang disisipkan AI digest — ambil jangkar (teks sebelum tag pertama,
@@ -2235,6 +2330,7 @@ async function ohlcvAnalyzeHandler(req, res) {
     // TTL 4h) — level "magnet" intraday untuk pair ini, sebagai S/R tambahan konteks AI.
     // Data ini sudah lama diparse untuk tab TEK tapi belum pernah dikirim ke AI Analisa.
     let expiryBlock = '';
+    let expiryLvls  = [];
     try {
       const rawOpt = await redisCmd('GET', 'fx_options_cache');
       if (rawOpt) {
@@ -2242,6 +2338,7 @@ async function ohlcvAnalyzeHandler(req, res) {
         const ageOk = opt.fetched_at && (Date.now() - new Date(opt.fetched_at).getTime()) < 24 * 3600 * 1000;
         if (ageOk) {
           const lvls = _pickExpiryLevels(opt.expiries, data.label, nowPrice);
+          expiryLvls = lvls;
           if (lvls.length > 0) {
             expiryBlock = '\n\nOPTION EXPIRIES NY CUT HARI INI (level "magnet" intraday — harga cenderung tertarik ke cluster ini menjelang 15:00 NY / ~02:00 WIB; perlakukan sebagai S/R tambahan berlaku HARI INI saja, bukan sinyal arah):\n'
               + lvls.map(l => `- ${l.level}${l.size ? ` (${l.size})` : ''}`).join('\n');
@@ -2287,11 +2384,16 @@ async function ohlcvAnalyzeHandler(req, res) {
     const makroHeader = makroAgeH != null
       ? `KONTEKS MAKRO (dari Ringkasan ${makroAgeH} jam lalu${makroAgeH > 4 ? ' — SUDAH AGAK BASI: kalau ada rilis/berita besar setelah itu, beri bobot lebih rendah dan sebut ketidakpastiannya' : ''}):`
       : 'KONTEKS MAKRO:';
+    // Zona konfluensi deterministik — dihitung SEKALI di kode dari struktur yang sama
+    // dengan yang dilihat AI, supaya entry/SL/TP tidak "di-reroll" tiap re-generate.
+    const confZones = _confluenceZones(data, expiryLvls);
+    const confBlock = _formatConfluenceBlock(confZones, data.dec);
+
     const ctxParts = [];
     if (ringkasanContext) ctxParts.push(`${makroHeader}\n${ringkasanContext}`);
     if (fundBlock)        ctxParts.push(fundBlock);
     if (rrBlock)          ctxParts.push(rrBlock);
-    ctxParts.push(`DATA TEKNIKAL:\n${textBlock}${expiryBlock}`);
+    ctxParts.push(`DATA TEKNIKAL:\n${textBlock}${expiryBlock}${confBlock ? '\n\n' + confBlock : ''}`);
     const makroBlock = ctxParts.join('\n\n');
 
     const extraCtx = [
@@ -2314,6 +2416,22 @@ async function ohlcvAnalyzeHandler(req, res) {
       : '';
     const p3Atr = extraCtx?.includes('ATR') ? ', volatilitas berdasarkan ATR' : '';
     const p4Label = extraCtx ? `(${extraCtx})` : 'timeframe';
+    // Instruksi entry/sl/tp punya dua varian: kalau [ZONA KONFLUENSI] terhitung, AI
+    // WAJIB memilih dari ranking deterministik itu (bukan mengarang kombinasi sendiri —
+    // akar masalah hasil lompat-lompat antar re-generate); fallback ke instruksi lama
+    // "pilih bebas dari struktur" hanya kalau zona gagal dihitung (data minim).
+    const entryZoneInstr = confBlock
+      ? '- entry_zone: WAJIB pilih dari daftar [ZONA KONFLUENSI] di atas — ambil zona dengan SKOR TERTINGGI yang searah bias dan konsisten dengan harga "Now": bias bearish → zona di ATAS Now (jual di rally ke resistance); bias bullish → zona di BAWAH Now (beli di pullback ke support); pengecualian hanya breakout/breakdown confirmation dengan trigger jelas. Tulis center zona itu atau range sempit di sekitarnya — JANGAN mengarang level di luar daftar. Kalau dua zona skornya sama, pilih yang lebih dekat ke Now. KALAU TIDAK ADA zona layak searah bias (struktur Mixed, harga di tengah range, semua zona skor rendah), set entry_zone, sl, tp, entry_basis ke null dan jelaskan di trigger kondisi apa yang ditunggu — JANGAN memaksakan setup.'
+      : '- entry_zone: level atau range harga ideal untuk entry (angka konkret). WAJIB berpijak pada level STRUKTUR yang benar-benar ada di DATA TEKNIKAL: cluster [LEVEL S/R], level [FIBONACCI], [PIVOT HARIAN], Prev Day/Week H-L, swing H4, SMA, atau option expiry — jangan mengarang angka yang tidak ada di data. PRIORITASKAN KONFLUENSI: area di mana 2+ struktur berbeda jatuh berdekatan (misal fib 61.8% bertepatan dengan cluster S/R yang banyak disentuh dan pivot S1) — itu entry dengan dasar terkuat. WAJIB konsisten dengan harga "Now": kalau bias bearish, entry_zone >= Now (jual di rally ke resistance) ATAU di bawah Now kalau memang breakdown confirmation, TAPI jangan keduanya sekaligus. Kalau Now sudah melewati level breakdown/breakout relevan, jangan minta retracement ke arah berlawanan — definisikan entry di struktur terdekat dari Now. KALAU TIDAK ADA setup dengan dasar struktur jelas searah bias (misal struktur Mixed dan harga di tengah range, jauh dari semua level kuat), set entry_zone, sl, tp, entry_basis ke null dan jelaskan di trigger kondisi apa yang ditunggu — JANGAN memaksakan setup.';
+    const entryBasisInstr = confBlock
+      ? '- entry_basis: salin daftar struktur penyusun zona yang kamu pilih dari [ZONA KONFLUENSI] (bagian setelah tanda "=" di baris zona itu; boleh diringkas tapi minimal satu struktur bernama dengan angkanya). Kalau entry_zone null, field ini juga null.'
+      : '- entry_basis: sebutkan struktur mana saja dari DATA TEKNIKAL yang jadi dasar entry_zone, dengan angkanya (contoh format: "fib 61.8% 1.1712 + cluster S/R 1.1709 (4x sentuh) + pivot S1 1.1705"). Minimal satu struktur bernama; makin banyak konfluensi makin baik. Kalau entry_zone null, field ini juga null.';
+    const slInstr = confBlock
+      ? '- sl: level stop loss konkret DI LUAR zona konfluensi yang melindungi entry — di balik zona [ZONA KONFLUENSI] atau struktur berikutnya setelah entry_zone, dengan buffer minimal ~0.5x ATR-14 H1 dari level itu (jangan tepat di level, rawan wick hunt). Untuk bearish, sl harus di atas entry_zone. Untuk bullish, sl harus di bawah entry_zone.'
+      : '- sl: level stop loss konkret DI LUAR struktur yang melindungi entry — di balik swing H4, cluster S/R, atau Prev Day H/L yang ADA di data, dengan buffer minimal ~0.5x ATR-14 H1 dari level itu (jangan tepat di level, rawan wick hunt). Untuk bearish, sl harus di atas entry_zone. Untuk bullish, sl harus di bawah entry_zone.';
+    const tpInstr = confBlock
+      ? '- tp: zona konfluensi BERIKUTNYA searah bias dari daftar [ZONA KONFLUENSI] (atau struktur [LEVEL S/R] berikutnya kalau tidak ada zona lagi searah itu) — jangan mengarang. Untuk bearish, tp harus di bawah entry_zone. Untuk bullish, tp harus di atas entry_zone. WAJIB risk/reward (jarak entry→tp dibanding entry→sl) minimal 1:1 — kalau struktur data tidak memungkinkan RR ≥1, sebutkan itu di trigger/commentary alih-alih memaksakan level palsu.'
+      : '- tp: level take profit konkret = struktur berikutnya searah bias yang ADA di data (cluster S/R, swing, pivot, fib) — jangan mengarang. Untuk bearish, tp harus di bawah entry_zone. Untuk bullish, tp harus di atas entry_zone. WAJIB risk/reward (jarak entry→tp dibanding entry→sl) minimal 1:1 — kalau struktur data tidak memungkinkan RR ≥1, sebutkan itu di trigger/commentary alih-alih memaksakan level palsu.';
     const userMsg = [
       `Analisa ${data.label}:`,
       '',
@@ -2321,10 +2439,10 @@ async function ohlcvAnalyzeHandler(req, res) {
       '',
       'Isi field JSON berikut:',
       '- bias: trend dominan — bullish/bearish/neutral/mixed. Dasarkan pada GABUNGAN trend Daily + [STRUKTUR H4] (HH+HL vs LH+LL) + BOS kalau ada — bukan cuma perubahan %. Pakai "mixed" kalau timeframe saling kontradiksi (misal Daily naik tapi struktur H4 LH+LL) atau makro vs teknikal berlawanan jelas — jangan paksa ke "neutral" kalau sebenarnya konflik, bukan tanpa-trend.',
-      '- entry_zone: level atau range harga ideal untuk entry (angka konkret). WAJIB berpijak pada level STRUKTUR yang benar-benar ada di DATA TEKNIKAL: cluster [LEVEL S/R], level [FIBONACCI], [PIVOT HARIAN], Prev Day/Week H-L, swing H4, SMA, atau option expiry — jangan mengarang angka yang tidak ada di data. PRIORITASKAN KONFLUENSI: area di mana 2+ struktur berbeda jatuh berdekatan (misal fib 61.8% bertepatan dengan cluster S/R yang banyak disentuh dan pivot S1) — itu entry dengan dasar terkuat. WAJIB konsisten dengan harga "Now": kalau bias bearish, entry_zone >= Now (jual di rally ke resistance) ATAU di bawah Now kalau memang breakdown confirmation, TAPI jangan keduanya sekaligus. Kalau Now sudah melewati level breakdown/breakout relevan, jangan minta retracement ke arah berlawanan — definisikan entry di struktur terdekat dari Now. KALAU TIDAK ADA setup dengan dasar struktur jelas searah bias (misal struktur Mixed dan harga di tengah range, jauh dari semua level kuat), set entry_zone, sl, tp, entry_basis ke null dan jelaskan di trigger kondisi apa yang ditunggu — JANGAN memaksakan setup.',
-      '- entry_basis: sebutkan struktur mana saja dari DATA TEKNIKAL yang jadi dasar entry_zone, dengan angkanya (contoh format: "fib 61.8% 1.1712 + cluster S/R 1.1709 (4x sentuh) + pivot S1 1.1705"). Minimal satu struktur bernama; makin banyak konfluensi makin baik. Kalau entry_zone null, field ini juga null.',
-      '- sl: level stop loss konkret DI LUAR struktur yang melindungi entry — di balik swing H4, cluster S/R, atau Prev Day H/L yang ADA di data, dengan buffer minimal ~0.5x ATR-14 H1 dari level itu (jangan tepat di level, rawan wick hunt). Untuk bearish, sl harus di atas entry_zone. Untuk bullish, sl harus di bawah entry_zone.',
-      '- tp: level take profit konkret = struktur berikutnya searah bias yang ADA di data (cluster S/R, swing, pivot, fib) — jangan mengarang. Untuk bearish, tp harus di bawah entry_zone. Untuk bullish, tp harus di atas entry_zone. WAJIB risk/reward (jarak entry→tp dibanding entry→sl) minimal 1:1 — kalau struktur data tidak memungkinkan RR ≥1, sebutkan itu di trigger/commentary alih-alih memaksakan level palsu.',
+      entryZoneInstr,
+      entryBasisInstr,
+      slInstr,
+      tpInstr,
       '- trigger: SATU kondisi price action spesifik yang HARUS terpenuhi sebelum entry — utamakan konfirmasi berbasis candle/pola di level konkret (misal "tunggu candle H4 close di bawah 1.1710" atau "tunggu rejection/pin bar H1 di area 3340") daripada indikator murni. Jangan sebut dua kondisi alternatif yang saling kontradiksi relatif ke Now. Manfaatkan [POLA CANDLE terdeteksi] kalau relevan.',
       '- invalidation_condition: kondisi spesifik yang membatalkan skenario ini sepenuhnya (beda dari sl — ini soal struktur/tesis, misal "kalau Daily close balik di bawah SMA50 atau swing low H4 terakhir jebol, bias bullish batal")',
       '- time_horizon_days: estimasi jumlah hari realistis skenario ini main out (angka, misal 3, 5, 10) berdasarkan jarak entry-tp dibanding rata-rata gerak harian (ATR/sigma) yang ada di data',
@@ -2376,7 +2494,7 @@ async function ohlcvAnalyzeHandler(req, res) {
           const r = await fetch(OPENROUTER_URL, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${OPENROUTER_KEY}`, ...OPENROUTER_HEADERS },
-            body: JSON.stringify({ model: HERMES_MODEL, messages, max_tokens: 1500, temperature: 0.3 }),
+            body: JSON.stringify({ model: HERMES_MODEL, messages, max_tokens: 1500, temperature: 0 }),
             signal: AbortSignal.timeout(30000),
           });
           if (r.ok) {
@@ -2418,7 +2536,7 @@ async function ohlcvAnalyzeHandler(req, res) {
           const r = await fetch(OLLAMA_URL, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${OLLAMA_KEY}` },
-            body: JSON.stringify({ model: OLLAMA_NANO_MODEL, messages, stream: false, think: false, options: { temperature: 0.3, num_predict: 1500 } }),
+            body: JSON.stringify({ model: OLLAMA_NANO_MODEL, messages, stream: false, think: false, options: { temperature: 0, num_predict: 1500 } }),
             signal: AbortSignal.timeout(20000),
           });
           if (r.ok) {
@@ -2459,7 +2577,7 @@ async function ohlcvAnalyzeHandler(req, res) {
         const r = await fetch('https://api.sambanova.ai/v1/chat/completions', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SAMBANOVA_KEY}` },
-          body: JSON.stringify({ model: 'DeepSeek-V3.2', messages, max_tokens: 1500, temperature: 0.3 }),
+          body: JSON.stringify({ model: 'DeepSeek-V3.2', messages, max_tokens: 1500, temperature: 0 }),
           signal: AbortSignal.timeout(30000),
         });
         if (r.ok) {
@@ -2486,7 +2604,7 @@ async function ohlcvAnalyzeHandler(req, res) {
         const r = await fetch('https://api.sambanova.ai/v1/chat/completions', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SAMBANOVA_KEY_CALL1}` },
-          body: JSON.stringify({ model: 'DeepSeek-V3.2', messages, max_tokens: 1500, temperature: 0.3 }),
+          body: JSON.stringify({ model: 'DeepSeek-V3.2', messages, max_tokens: 1500, temperature: 0 }),
           signal: AbortSignal.timeout(25000),
         });
         if (r.ok) {
@@ -2585,6 +2703,9 @@ async function ohlcvAnalyzeHandler(req, res) {
       commentary, structured, model,
       hasMakro: !!ringkasanContext,
       hasFund:  !!fundBlock,
+      // Zona konfluensi deterministik yang jadi dasar entry/sl/tp — diikutkan di payload
+      // supaya UI bisa menampilkan/memverifikasi bahwa level AI memang dari ranking ini.
+      confluence: confZones || null,
       makro_generated_at: (ringkasanContext && ringkasanAt) ? ringkasanAt : null,
       loaded_at: new Date().toISOString(),
     };
@@ -2771,6 +2892,8 @@ async function polymarketHandler(req, res) {
 // tambahan tidak mengganggu Vercel yang hanya memanggil function-nya).
 module.exports.detectPushCat = detectPushCat;
 module.exports._pickExpiryLevels = _pickExpiryLevels;
+module.exports._confluenceZones = _confluenceZones;
+module.exports._formatConfluenceBlock = _formatConfluenceBlock;
 module.exports._findSwings = _findSwings;
 module.exports._classifyStructure = _classifyStructure;
 module.exports._clusterSrLevels = _clusterSrLevels;

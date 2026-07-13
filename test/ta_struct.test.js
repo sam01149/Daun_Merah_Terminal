@@ -263,3 +263,77 @@ test('buildOhlcvText: data legacy (tanpa field struktur baru) tetap jalan tanpa 
   // Raw 1H tetap dirender (candles24 sudah ada sejak lama di payload ohlcv_read)
   assert.ok(txt.includes('candle 1H terakhir'));
 });
+
+// ── _confluenceZones + _formatConfluenceBlock (session 166) ──────────────────
+
+const { _confluenceZones, _formatConfluenceBlock } = require('../api/admin.js');
+
+test('_confluenceZones: deterministik — dua panggilan data sama hasil identik', () => {
+  const a = _confluenceZones(fullData(), []);
+  const b = _confluenceZones(fullData(), []);
+  assert.deepStrictEqual(a, b);
+});
+
+test('_confluenceZones: cluster struktur bertumpuk & ranking skor', () => {
+  const z = _confluenceZones(fullData(), []);
+  assert.ok(z, 'zona harus terhitung');
+  assert.strictEqual(z.now, 1.17);
+  assert.ok(z.above.length >= 1 && z.above.length <= 3);
+  assert.ok(z.below.length >= 1 && z.below.length <= 3);
+  // Semua zona di sisi yang benar relatif ke Now
+  for (const zz of z.above) assert.ok(zz.center >= z.now, `above ${zz.center} < now`);
+  for (const zz of z.below) assert.ok(zz.center < z.now, `below ${zz.center} >= now`);
+  // Ranking menurun by skor
+  for (let i = 1; i < z.above.length; i++) assert.ok(z.above[i - 1].score >= z.above[i].score);
+  for (let i = 1; i < z.below.length; i++) assert.ok(z.below[i - 1].score >= z.below[i].score);
+  // Zona terkuat bawah = area 1.158-1.16 (S/R 7x sentuh + swing low + SMA50 + prev week low bertumpuk)
+  assert.ok(z.below[0].score > 5, `skor B1 ${z.below[0].score} harus > 5`);
+  assert.ok(Math.abs(z.below[0].center - 1.159) < 0.002, `center B1 ${z.below[0].center} harus ~1.159`);
+  assert.ok(z.below[0].members.some(m => m.includes('S/R')), 'B1 harus memuat S/R');
+  assert.ok(z.below[0].members.some(m => m.includes('SMA50')), 'B1 harus memuat SMA50');
+  // Zona terkuat atas = area 1.175-1.178 (pivot R2 + swing highs + prev week high + S/R 5x)
+  assert.ok(z.above[0].score >= 5, `skor A1 ${z.above[0].score} harus >= 5`);
+  assert.ok(Math.abs(z.above[0].center - 1.1764) < 0.002, `center A1 ${z.above[0].center} harus ~1.1764`);
+});
+
+test('_confluenceZones: option expiry ikut dihitung dengan bobot setengah', () => {
+  const tanpa = _confluenceZones(fullData(), []);
+  const dengan = _confluenceZones(fullData(), [{ num: 1.17, level: '1.1700', size: '1.2B' }]);
+  // expiry 1.17 = tepat di Now → masuk salah satu zona (atau zona baru) sisi atas (center >= now)
+  const all = [...dengan.above, ...dengan.below];
+  assert.ok(all.some(zz => zz.members.some(m => m.includes('option expiry 1.1700'))), 'expiry harus jadi member zona');
+  // Total skor naik 0.5 dibanding tanpa expiry
+  const sum = zs => [...zs.above, ...zs.below].reduce((s, zz) => s + zz.score, 0);
+  assert.ok(sum(dengan) >= sum(tanpa), 'skor total dengan expiry tidak boleh berkurang');
+});
+
+test('_confluenceZones: null kalau h1 tidak tersedia atau tidak ada kandidat', () => {
+  const d = fullData();
+  d.h1 = { available: false };
+  assert.strictEqual(_confluenceZones(d, []), null);
+  const d2 = fullData();
+  delete d2.sr_levels; delete d2.fib; delete d2.ref_levels; delete d2.indicators;
+  d2.h4.swing_highs = []; d2.h4.swing_lows = [];
+  assert.strictEqual(_confluenceZones(d2, []), null);
+});
+
+test('_confluenceZones: tanpa ATR Daily pakai fallback tolerance 0.15% dari Now', () => {
+  const d = fullData();
+  d.d1_ext = { available: false };
+  const z = _confluenceZones(d, []);
+  assert.ok(z, 'tetap jalan tanpa atr_d');
+  assert.ok(Math.abs(z.tolerance - 1.17 * 0.0015) < 0.0001);
+});
+
+test('_formatConfluenceBlock: render header + ID zona A1/B1', () => {
+  const z = _confluenceZones(fullData(), []);
+  const txt = _formatConfluenceBlock(z, 5);
+  assert.ok(txt.includes('[ZONA KONFLUENSI'));
+  assert.ok(txt.includes('A1.'));
+  assert.ok(txt.includes('B1.'));
+  assert.ok(txt.includes('Di ATAS Now'));
+  assert.ok(txt.includes('Di BAWAH Now'));
+  assert.ok(txt.includes('skor'));
+  // Kosong kalau zona null
+  assert.strictEqual(_formatConfluenceBlock(null, 5), '');
+});

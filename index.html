@@ -2959,6 +2959,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
     <div style="font-size:11px;color:var(--muted);margin-bottom:16px;font-family:'DM Mono',monospace;letter-spacing:.05em">POSITION SIZING CALCULATOR</div>
     <div class="sizing-form">
       <label>Equity (USD)<input type="number" id="szEquity" value="10000" min="100"></label>
+      <div id="szEquitySrc" style="font-size:9px;color:var(--muted);font-family:'DM Mono',monospace;margin-top:-8px;padding-bottom:2px"></div>
       <label>Risk %<input type="number" id="szRisk" value="0.5" min="0.01" step="0.1"></label>
       <label>Pair
         <select id="szPair" onchange="szUpdatePipInfo()"></select>
@@ -5375,6 +5376,9 @@ async function _autoLoadXauAnalysis(symbol) {
     analisaAiCache[symbol] = { commentary: data.commentary, structured: data.structured || null, model: data.model, hasMakro: !!data.hasMakro, hasFund: !!data.hasFund, makroAt: data.makro_generated_at || null, analyzedAt: data.loaded_at || null, saved_at: Date.now() };
     _analisaSaveAi(symbol);
     if (analisaActive.symbol === symbol) _restoreAiResult(symbol);
+    // Checklist teknikal XAU/USD ikut ter-update dari hasil cron yang baru dimuat
+    const _ckSel = document.getElementById('ckPairSelector');
+    if (_ckSel && _ckSel.value === 'XAU/USD' && symbol === 'GC=F') ckAutoTickFromAnalisa('XAU/USD');
   } catch(e) { /* silent — tombol "Analisa AI" manual tetap tersedia */ }
 }
 
@@ -5712,6 +5716,13 @@ async function analyzeOhlcvAi() {
       if (analisaActive.symbol === reqSymbol) {
         resultEl.innerHTML = _renderStructuredAi(data.structured || null, data.commentary, data.model, hasMakro, false, hasFund, makroAt, data.loaded_at || null);
         resultEl.style.display = 'block';
+      }
+      // Checklist teknikal pair yang sama ikut ter-update dari hasil baru ini
+      // (guard pola sama dengan hook fetch makro lain — no-op kalau checklist
+      // belum pernah dibuka / pair beda)
+      const _ckSel = document.getElementById('ckPairSelector');
+      if (_ckSel && _ckSel.value && (_ckSel.value === 'XAU/USD' ? 'GC=F' : _ckSel.value.replace('/', '') + '=X') === reqSymbol) {
+        ckAutoTickFromAnalisa(_ckSel.value);
       }
     } else {
       if (analisaActive.symbol === reqSymbol) {
@@ -11048,6 +11059,10 @@ function ckAutoTickRegimeCheck(pair) {
   } else if (ckActivePlaybook === 'mean_reversion') {
     _ckAutoMeanRev();
   }
+
+  // Item teknikal dicentang dari hasil tab Analisa pair yang sama (domain terpisah
+  // dari item makro di atas — lihat komentar ckAutoTickFromAnalisa)
+  ckAutoTickFromAnalisa(pair);
 }
 
 function _ckAutoSMC(base, quote) {
@@ -11130,6 +11145,84 @@ function _ckAutoMeanRev() {
   if (regimeData && (Date.now() - regimeFetchedAt) < 30 * 60 * 1000) {
     if (regimeData.regime === 'neutral' || regimeData.regime === 'elevated')
       ckAutoTick('mr_ra4', `Regime: ${regimeData.regime} — cenderung range/choppy`);
+  }
+}
+
+// ── Auto-tick TEKNIKAL dari tab Analisa (session 166) ────────────────────────
+// Pembagian domain: item makro dicentang dari data Ringkasan/fundamental (rc/f/mm_cb
+// dst di atas), item TEKNIKAL dicentang dari hasil tab Analisa pair yang sama —
+// masing-masing AI hanya menyentuh wilayahnya. Sengaja KONSERVATIF supaya tidak
+// menyesatkan: hanya item yang benar-benar bisa diverifikasi dari data yang ada
+// (BOS/cluster S/R = deterministik server; RR/SL/entry = structured AI yang sudah
+// lolos sanity-check arah & RR di server). Item yang butuh judgment lokasi/konteks
+// (mis. "rejection candle di level", supply/demand) TIDAK disentuh. Semua lewat
+// ckAutoTick/ckAutoBlock yang sama: badge + alasan di tooltip, tetap bisa
+// di-uncheck manual, dan TIDAK mengubah gate skor 50% MT5 sedikit pun.
+function ckAutoTickFromAnalisa(pair) {
+  if (!pair || !pair.includes('/')) return;
+  const symbol = pair === 'XAU/USD' ? 'GC=F' : pair.replace('/', '') + '=X';
+  const now = Date.now();
+
+  // Data teknikal deterministik (ohlcv_read, TTL efektif ~2 jam) — id s2/s4b milik
+  // playbook SMC/ICT, jangan menyentuh state playbook lain
+  const d = (typeof analisaDataCache !== 'undefined') ? analisaDataCache[symbol] : null;
+  const dFresh = d?.loaded_at && (now - new Date(d.loaded_at).getTime()) < 2 * 3600 * 1000;
+  if (dFresh && ckActivePlaybook === 'smc_ict') {
+    if (d.structure?.available && d.structure.bos) {
+      ckAutoTick('s2', `OHLCV: ${d.structure.bos}`);
+    }
+    if (d.sr_levels?.available && (d.sr_levels.above?.length || d.sr_levels.below?.length)) {
+      const fmtL = l => `${l.price} (${l.touches}x)`;
+      const parts = [];
+      if (d.sr_levels.above?.length) parts.push(`R: ${d.sr_levels.above.map(fmtL).join(', ')}`);
+      if (d.sr_levels.below?.length) parts.push(`S: ${d.sr_levels.below.map(fmtL).join(', ')}`);
+      ckAutoTick('s4b', `OHLCV: cluster S/R terdeteksi — ${parts.join(' | ')}`);
+    }
+  }
+
+  // Hasil AI Analisa (structured sudah lolos sanity-check arah & RR di server; TTL 8 jam)
+  const ai = (typeof analisaAiCache !== 'undefined') ? analisaAiCache[symbol] : null;
+  const s = (ai?.saved_at && (now - ai.saved_at) < 8 * 3600 * 1000) ? ai.structured : null;
+  if (!s) return;
+
+  // Arah teknikal vs fundamental (CB bias) — selaras → tick, konflik → block (bisa
+  // override). Branch per playbook, konsisten pola _ckAutoSMC/_ckAutoMacro: hanya
+  // id milik playbook aktif yang disentuh.
+  const rrTxt = (typeof s.risk_reward === 'number' && s.entry_zone && s.sl && s.tp)
+    ? `AI Analisa: entry ${s.entry_zone} / SL ${s.sl} / TP ${s.tp} → RR 1:${s.risk_reward}` : null;
+  const slTxt = (s.sl && s.entry_basis) ? `AI Analisa: SL ${s.sl} — dasar struktur: ${s.entry_basis}` : null;
+
+  if (ckActivePlaybook === 'smc_ict') {
+    if (s.bias === 'bullish' || s.bias === 'bearish') {
+      const [base, quote] = pair.split('/');
+      const cbDir = _ckInferDirFromCbBias(base, quote);
+      const aiDir = s.bias === 'bullish' ? 'long' : 'short';
+      if (cbDir) {
+        const txt = `AI Analisa: bias teknikal ${s.bias.toUpperCase()} vs arah CB bias ${cbDir.toUpperCase()}`;
+        if (cbDir === aiDir) ckAutoTick('s1', `${txt} — selaras`);
+        else ckAutoBlock('s1', `${txt} — KONFLIK`);
+      }
+    }
+    // RR dari level AI (dihitung ulang & divalidasi server, bukan klaim mentah AI)
+    if (rrTxt) {
+      if (s.risk_reward >= 2) ckAutoTick('r1', rrTxt);
+      else ckAutoBlock('r1', `${rrTxt} — di bawah 1:2`);
+    }
+    if (slTxt) ckAutoTick('r2', slTxt);
+  } else if (ckActivePlaybook === 'macro_momentum') {
+    if (rrTxt) {
+      if (s.risk_reward >= 2) ckAutoTick('mm_r3', rrTxt);
+      else ckAutoBlock('mm_r3', `${rrTxt} — di bawah 1:2`);
+    }
+    if (slTxt) ckAutoTick('mm_r2', slTxt);
+    if (s.entry_zone && s.entry_basis) {
+      ckAutoTick('mm_e1', `AI Analisa: entry ${s.entry_zone} di key level — ${s.entry_basis}`);
+    }
+  } else if (ckActivePlaybook === 'mean_reversion') {
+    if (rrTxt) {
+      if (s.risk_reward >= 1.5) ckAutoTick('mr_r3', rrTxt);
+      else ckAutoBlock('mr_r3', `${rrTxt} — di bawah 1:1.5`);
+    }
   }
 }
 
@@ -11454,6 +11547,31 @@ function initSizing() {
   }
   if (szHistoryCache !== null) szRenderHistory(szHistoryCache);
   szLoadHistory();
+  // Saldo asli akun berubah tiap trade — cek ulang tiap kali tab dibuka (bukan cuma
+  // sekali di szInitialized) supaya Equity tidak pernah ketinggalan jauh dari realita.
+  szAutoFillEquityFromBridge();
+}
+
+// Ambil saldo akun ASLI dari MT5 bridge yang sudah jalan (dipakai juga di modal MT5,
+// lihat ckShowMt5ModalAction) supaya Equity tidak perlu diketik manual/ditebak — ini
+// fakta dari akun, bukan saran AI, jadi aman diisi otomatis. Gagal diam-diam (bridge
+// offline/belum jalan) — field tetap pakai nilai manual/restored yang sudah ada.
+async function szAutoFillEquityFromBridge() {
+  const srcEl = document.getElementById('szEquitySrc');
+  try {
+    const r = await fetch(MT5_BRIDGE + '/health', { signal: AbortSignal.timeout(2500) });
+    const d = await r.json();
+    if (d.status === 'ok' && typeof d.balance === 'number') {
+      document.getElementById('szEquity').value = Math.round(d.balance);
+      szPersistForm();
+      if (window._lastSizing && document.getElementById('szPair').value === window._lastSizing.pair) calcSizing();
+      if (srcEl) srcEl.innerHTML = `<span style="color:var(--green)">✓ live dari MT5</span> · Login ${d.login} · ${d.currency} ${d.balance.toLocaleString()}`;
+    } else if (srcEl) {
+      srcEl.textContent = '';
+    }
+  } catch(e) {
+    if (srcEl) srcEl.textContent = '';
+  }
 }
 
 // Event-risk check for Sizing Calculator — reuses the same calData global +
