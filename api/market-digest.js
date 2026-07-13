@@ -1507,6 +1507,22 @@ module.exports = async function handler(req, res) {
           } catch(e) { console.warn('Call 2 OpenRouter Nemotron failed:', e.status || e.message); await cb.onFailure(CB_OPENROUTER_NEMOTRON, AI_CB_THRESHOLD); }
         }
       }
+      // Primary: Z.ai GLM 4.7 (Cerebras) — session 164, dipromosikan dari diagnostik-saja
+      // (?test_glm=1, DITOLAK untuk Call 1 session 163 karena context Preview 8192 token <
+      // prompt Call 1 ~13K). Call 2 jauh lebih pendek (headline capped 50 item, biasanya
+      // muat di bawah 8192 token) jadi keputusan user: coba jadi primary di sini. Kalau
+      // request langka yang tetap kelebihan context, HTTP 400 tertangkap catch() di bawah
+      // seperti biasa dan otomatis jatuh ke SambaNova/Groq — tidak ada request yang gagal
+      // total karena ini. Reuse CB_CEREBRAS_GLM & counter budget 'cerebras' yang sama
+      // dengan diagnostik Call 1 (model & akun sama).
+      if (!biasRaw && !testNemotronOnly && CEREBRAS_KEY && await cb.canCall(CB_CEREBRAS_GLM)) {
+        try {
+          console.log('Call 2: trying Z.ai GLM 4.7 (Cerebras, primary)');
+          biasRaw = await aiCall(CEREBRAS_URL, CEREBRAS_KEY, CEREBRAS_MODEL_GLM, call2Messages, 700, 0.1, 15000, {}, {}, 'cerebras');
+          console.log('Call 2: GLM 4.7 OK');
+          await cb.onSuccess(CB_CEREBRAS_GLM);
+        } catch(e) { console.warn('Call 2 GLM 4.7 failed:', e.status || e.message); await cb.onFailure(CB_CEREBRAS_GLM, AI_CB_THRESHOLD); }
+      } else if (!biasRaw && CEREBRAS_KEY && !testNemotronOnly) { console.log('Call 2: GLM circuit OPEN — skipping to SambaNova'); }
       if (!biasRaw && !testNemotronOnly && SAMBANOVA_KEY && await cb.canCall(CB_SAMBA_MAIN)) {
         try {
           console.log('Call 2: trying SambaNova');
@@ -2297,11 +2313,17 @@ ${xauHistoryBlock}`;
     // Nemotron 3 Super (session 145 lanjutan 5) sengaja TIDAK masuk sini — dibatasi ke
     // Call 1 saja (lihat catatan di Call 1). Saat ?test_nemotron_super=1, Call 3 berjalan
     // NORMAL (SambaNova/Groq seperti biasa) karena yang sedang didiagnosis cuma Call 1.
+    // Z.ai GLM 4.7 (Cerebras) — session 164, dipromosikan jadi primary (lihat catatan
+    // sama di Call 2): prompt Call 3 jauh lebih pendek dari Call 1 (cuma 15 judul
+    // headline, tanpa deskripsi), jadi risiko context-limit yang bikin GLM DITOLAK di
+    // Call 1 (session 163) jauh lebih kecil di sini. Fallback SambaNova/Groq otomatis
+    // kepakai lewat catch() + circuit breaker biasa kalau GLM tetap gagal.
     const call3Providers = [];
     if (testNemotronOnly) {
       if (OLLAMA_KEY)     call3Providers.push({ ollama: true, key: OLLAMA_KEY, model: OLLAMA_NEMOTRON_MODEL, label: 'Ollama Nemotron', timeout: 15000, provider: 'ollama', circuit: CB_OLLAMA_NEMOTRON, noThink: true });
       if (OPENROUTER_KEY) call3Providers.push({ url: OPENROUTER_URL, key: OPENROUTER_KEY, model: NEMOTRON_MODEL, label: 'OpenRouter Nemotron', timeout: 10000, provider: 'openrouter', circuit: CB_OPENROUTER_NEMOTRON, headers: OPENROUTER_HEADERS, noThink: true });
     } else {
+      if (CEREBRAS_KEY)  call3Providers.push({ url: CEREBRAS_URL, key: CEREBRAS_KEY, model: CEREBRAS_MODEL_GLM, label: 'Z.ai GLM 4.7 (Cerebras)', timeout: 15000, provider: 'cerebras', circuit: CB_CEREBRAS_GLM });
       if (SAMBANOVA_KEY) call3Providers.push({ url: SAMBANOVA_URL, key: SAMBANOVA_KEY, model: SAMBANOVA_MODEL, label: 'SambaNova', timeout: 8000, provider: 'sambanova_main', circuit: CB_SAMBA_MAIN });
       if (GROQ_KEY)      call3Providers.push({ url: GROQ_URL,      key: GROQ_KEY,      model: GROQ_MODEL,      label: 'Groq fallback', timeout: 12000, provider: 'groq', circuit: null });
     }
