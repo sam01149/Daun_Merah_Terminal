@@ -20,6 +20,23 @@ function clampStr(v, max) {
   return typeof v === 'string' ? v.slice(0, max) : '';
 }
 
+// Checklist tick-state at the moment a trade was saved (see jnSave() in index.html) —
+// a flat map of item-id -> boolean. Whitelisted to plain booleans and a sane key
+// count/length so a malformed client payload can't blow up storage or the
+// edge_stats aggregation below.
+function sanitizeChecklistSnapshot(snap) {
+  if (!snap || typeof snap !== 'object' || Array.isArray(snap)) return null;
+  const out = {};
+  let n = 0;
+  for (const [k, v] of Object.entries(snap)) {
+    if (n >= 40) break;
+    if (typeof k !== 'string' || !k || k.length > 40) continue;
+    out[k] = !!v;
+    n++;
+  }
+  return n > 0 ? out : null;
+}
+
 const GROQ_URL   = 'https://api.groq.com/openai/v1/chat/completions';
 const GROQ_MODEL = 'llama-3.3-70b-versatile';
 // Cerebras gpt-oss-120b (session 145) — primary baru AI Coach, pool token/hari sendiri
@@ -235,6 +252,12 @@ module.exports = async function handler(req, res) {
       size_lots:         data.size_lots         != null ? parseFloat(data.size_lots)   : null,
       rr_planned:        data.rr_planned        != null ? parseFloat(data.rr_planned)  : null,
       time_horizon:      data.time_horizon      || '',
+      // Checklist state at save time — see sanitizeChecklistSnapshot() and
+      // GET ?action=edge_stats below. null when the entry wasn't created via a
+      // Checklist run for this exact pair (e.g. manual "+ BARU" entry).
+      checklist_snapshot: sanitizeChecklistSnapshot(data.checklist_snapshot),
+      checklist_playbook: clampStr(data.checklist_playbook, 40) || null,
+      checklist_pct:      data.checklist_pct != null ? Math.max(0, Math.min(100, parseInt(data.checklist_pct, 10) || 0)) : null,
       // pending-order tracking — see jnReconcilePendingOrders() in index.html
       order_kind:        clampStr(data.order_kind, 20) || null,
       mt5_ticket:        data.mt5_ticket        != null ? parseInt(data.mt5_ticket, 10) || null : null,
@@ -420,6 +443,70 @@ module.exports = async function handler(req, res) {
     return res.status(200).json(payload);
   }
 
+  // ── GET ?action=edge_stats — win-rate/expectancy split by checklist condition ──
+  // Answers "does this checklist condition actually predict a win?" using the
+  // trader's own closed trades — not a backtest, an aggregation of real outcomes
+  // segmented by which items were ticked at entry (see checklist_snapshot above).
+  if (req.method === 'GET' && req.query.action === 'edge_stats') {
+    const MIN_TOTAL  = 5; // same floor as ?action=analyze
+    const MIN_BUCKET = 3; // per-side minimum so one lucky/unlucky trade can't swing a %
+
+    let entries = [];
+    try {
+      const ids = await redisCmd('ZRANGE', indexKey, 0, -1, 'REV') || [];
+      if (ids.length > 0) {
+        const keys = ids.map(id => `journal:${deviceId}:${id}`);
+        const rawEntries = await redisCmd('MGET', ...keys);
+        entries = (Array.isArray(rawEntries) ? rawEntries : [])
+          .map(raw => { try { return raw ? JSON.parse(raw) : null; } catch(_) { return null; } })
+          .filter(e => e && e.status === 'closed' && e.r_actual != null && e.checklist_snapshot);
+      }
+    } catch(e) {
+      console.error('journal edge_stats: Redis fetch failed:', e.message);
+      return res.status(500).json({ error: 'Gagal membaca data jurnal' });
+    }
+
+    if (entries.length < MIN_TOTAL) {
+      return res.status(200).json({
+        conditions: [], insufficient_data: true, sample_count: entries.length,
+        message: `Butuh minimal ${MIN_TOTAL} trade closed dengan checklist tercatat. Saat ini baru ada ${entries.length}.`,
+      });
+    }
+
+    const ids = new Set();
+    entries.forEach(e => Object.keys(e.checklist_snapshot).forEach(k => ids.add(k)));
+
+    const stat = (group) => {
+      const wins   = group.filter(e => e.r_actual > 0).length;
+      const totalR = group.reduce((s, e) => s + e.r_actual, 0);
+      return {
+        n: group.length,
+        win_rate: Math.round(wins / group.length * 100),
+        avg_r: parseFloat((totalR / group.length).toFixed(2)),
+      };
+    };
+
+    const conditions = [];
+    ids.forEach(id => {
+      const checked   = entries.filter(e => e.checklist_snapshot[id] === true);
+      const unchecked = entries.filter(e => e.checklist_snapshot[id] === false);
+      if (checked.length < MIN_BUCKET || unchecked.length < MIN_BUCKET) return; // not enough data either side yet
+      const checkedStat = stat(checked), uncheckedStat = stat(unchecked);
+      conditions.push({
+        id,
+        checked: checkedStat,
+        unchecked: uncheckedStat,
+        avg_r_delta: parseFloat((checkedStat.avg_r - uncheckedStat.avg_r).toFixed(2)),
+        win_rate_delta: checkedStat.win_rate - uncheckedStat.win_rate,
+      });
+    });
+
+    // Most predictive first — biggest absolute swing in expectancy between ticked/not
+    conditions.sort((a, b) => Math.abs(b.avg_r_delta) - Math.abs(a.avg_r_delta));
+
+    return res.status(200).json({ conditions, insufficient_data: false, sample_count: entries.length });
+  }
+
   // ── GET — list entries ────────────────────────────────
   if (req.method === 'GET') {
     const statusFilter = req.query.status || 'all'; // all | open | closed | archived
@@ -489,3 +576,4 @@ module.exports = async function handler(req, res) {
 // Ekspor helper murni untuk unit test (module.exports = handler function; properti
 // tambahan tidak mengganggu Vercel yang cuma memanggilnya sebagai function biasa)
 module.exports._aiCall = aiCall;
+module.exports._sanitizeChecklistSnapshot = sanitizeChecklistSnapshot;

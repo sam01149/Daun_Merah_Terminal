@@ -3016,6 +3016,12 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
       </button>
       <!-- AI analysis panel -->
       <div class="jn-ai-panel" id="jnAiPanel"></div>
+      <button class="jn-ai-btn" id="jnEdgeBtn" onclick="jnRunEdgeStats()" style="background:linear-gradient(135deg,rgba(96,165,250,.15),rgba(52,211,153,.15));border-color:rgba(96,165,250,.4);color:#60a5fa">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18M18 9l-5 5-4-4-3 3"/></svg>
+        EDGE PER KONDISI CHECKLIST
+      </button>
+      <!-- Edge-per-checklist-condition panel -->
+      <div class="jn-ai-panel" id="jnEdgePanel"></div>
       <!-- Portfolio VaR card — rendered by jnRenderVaR() after entries load -->
       <div id="jnVarCard"></div>
       <div style="display:flex;gap:6px;margin-bottom:12px;align-items:center;flex-wrap:wrap">
@@ -3808,11 +3814,11 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 <!-- newscat.js: engine klasifikasi kategori berita (single source of truth,
      dipakai juga sw.js & api/). Query ?v= = cache-buster — naikkan tiap kali
      newscat.js berubah, samakan dengan NEWSCAT_VERSION di sw.js. -->
-<script src="/newscat.js?v=2026.07.13.7"></script>
+<script src="/newscat.js?v=2026.07.13.8"></script>
 <script>
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.07.13.7';
+const APP_VERSION = '2026.07.13.8';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
@@ -11795,6 +11801,19 @@ async function jnSave() {
     ? Math.abs((target - entry) / (entry - stop))
     : null;
 
+  // Checklist snapshot for edge analytics (jnRunEdgeStats) — only attach when the
+  // in-memory ckState actually belongs to THIS pair (ckCurrentPair tracks that,
+  // per-pair state lives in localStorage). Without this guard, a manual "+ BARU"
+  // entry for a pair the user never ran through Checklist would silently inherit
+  // a stale/unrelated pair's ticks — poisoning the edge-per-condition stats.
+  let checklistSnapshot = null, checklistPlaybook = null, checklistPct = null;
+  if (typeof ckCurrentPair !== 'undefined' && ckCurrentPair === pair &&
+      typeof ckState !== 'undefined' && Object.keys(ckState).length > 0) {
+    checklistSnapshot = { ...ckState };
+    checklistPlaybook = ckActivePlaybook;
+    checklistPct = ckGetVerdict().pct;
+  }
+
   const body = {
     pair, direction: dir, thesis_text: thesis,
     regime_at_entry: regimeData ? regimeData.regime : null,
@@ -11804,6 +11823,9 @@ async function jnSave() {
     entry_price: entry, stop_price: stop, target_price: target,
     size_lots: lots, rr_planned: rrPlanned ? Math.round(rrPlanned * 100) / 100 : null,
     time_horizon: horizon,
+    checklist_snapshot: checklistSnapshot,
+    checklist_playbook: checklistPlaybook,
+    checklist_pct: checklistPct,
   };
 
   try {
@@ -12630,6 +12652,82 @@ async function jnRunAnalysis(force = false) {
   } finally {
     btn.disabled = false;
     btn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg> ANALISA AI`;
+  }
+}
+
+// Human label for a checklist item id — searches PB_REGIME_CHECK (rc1-rc6, shared
+// across all playbooks) plus every playbook-specific section. Falls back to the
+// raw id if a condition was saved under a playbook that no longer defines it.
+function ckLabelForId(id) {
+  const allSections = [PB_REGIME_CHECK, ...Object.values(PLAYBOOKS).flatMap(pb => pb.sections)];
+  for (const sec of allSections) {
+    const it = sec.items.find(i => i.id === id);
+    if (it) return it.label;
+  }
+  return id;
+}
+
+async function jnRunEdgeStats() {
+  const deviceId = szGetDeviceId();
+  const btn   = document.getElementById('jnEdgeBtn');
+  const panel = document.getElementById('jnEdgePanel');
+  if (!btn || !panel) return;
+
+  btn.disabled = true;
+  btn.textContent = 'Menghitung...';
+  panel.style.display = 'block';
+  panel.innerHTML = `<div style="color:var(--muted);font-family:'DM Mono',monospace;font-size:11px;text-align:center;padding:20px">Menghitung win-rate per kondisi checklist...</div>`;
+
+  try {
+    const url = `/api/journal?action=edge_stats&device_id=${encodeURIComponent(deviceId)}`;
+    const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
+    const data = await res.json();
+
+    if (!res.ok) {
+      panel.innerHTML = `<div style="color:var(--accent);font-family:'DM Mono',monospace;font-size:11px">${data.error || 'Gagal memuat data.'}</div>`;
+      return;
+    }
+
+    if (data.insufficient_data) {
+      panel.innerHTML = `<div style="color:var(--muted);font-family:'DM Mono',monospace;font-size:11px;text-align:center;padding:16px">${data.message}<br><br>Catatan: hanya trade yang disimpan lewat tab Checklist (bukan "+ BARU" manual) yang ikut dihitung, karena hanya itu yang punya rekaman kondisi mana yang tercentang.</div>`;
+      return;
+    }
+
+    if (data.conditions.length === 0) {
+      panel.innerHTML = `<div style="color:var(--muted);font-family:'DM Mono',monospace;font-size:11px;text-align:center;padding:16px">Belum ada kondisi checklist dengan cukup sampel di kedua sisi (tercentang vs tidak) — minimal 3 trade masing-masing. Sampel saat ini: ${data.sample_count} trade.</div>`;
+      return;
+    }
+
+    const rows = data.conditions.map(c => {
+      const deltaCol = c.avg_r_delta > 0 ? 'var(--green)' : c.avg_r_delta < 0 ? 'var(--accent)' : 'var(--muted)';
+      const deltaSign = c.avg_r_delta > 0 ? '+' : '';
+      return `<div style="border-top:1px solid var(--border);padding:10px 0">
+        <div style="font-family:'DM Mono',monospace;font-size:11px;color:var(--text);margin-bottom:8px">${ckLabelForId(c.id)}</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <div style="flex:1;min-width:120px;background:var(--bg);border:1px solid var(--border);border-radius:3px;padding:6px 10px">
+            <div style="font-size:9px;color:var(--muted);font-family:'DM Mono',monospace">✅ TERCENTANG (n=${c.checked.n})</div>
+            <div style="font-size:12px;font-family:'DM Mono',monospace;color:var(--text);margin-top:2px">${c.checked.win_rate}% win · ${c.checked.avg_r >= 0 ? '+' : ''}${c.checked.avg_r}R avg</div>
+          </div>
+          <div style="flex:1;min-width:120px;background:var(--bg);border:1px solid var(--border);border-radius:3px;padding:6px 10px">
+            <div style="font-size:9px;color:var(--muted);font-family:'DM Mono',monospace">⬜ TIDAK (n=${c.unchecked.n})</div>
+            <div style="font-size:12px;font-family:'DM Mono',monospace;color:var(--text);margin-top:2px">${c.unchecked.win_rate}% win · ${c.unchecked.avg_r >= 0 ? '+' : ''}${c.unchecked.avg_r}R avg</div>
+          </div>
+          <div style="text-align:center;padding:0 6px">
+            <div style="font-size:9px;color:var(--muted);font-family:'DM Mono',monospace">Δ EXPECTANCY</div>
+            <div style="font-size:13px;font-weight:700;font-family:'DM Mono',monospace;color:${deltaCol}">${deltaSign}${c.avg_r_delta}R</div>
+          </div>
+        </div>
+      </div>`;
+    }).join('');
+
+    panel.innerHTML =
+      `<div style="font-size:9px;color:var(--muted);font-family:'DM Mono',monospace;margin-bottom:4px">${data.sample_count} trade closed dipakai · diurutkan dari kondisi paling menentukan hasil</div>` +
+      rows;
+  } catch(e) {
+    panel.innerHTML = `<div style="color:var(--accent);font-family:'DM Mono',monospace;font-size:11px">Timeout atau error: ${e.message}</div>`;
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18M18 9l-5 5-4-4-3 3"/></svg> EDGE PER KONDISI CHECKLIST`;
   }
 }
 
