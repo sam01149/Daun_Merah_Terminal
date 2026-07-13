@@ -1,10 +1,63 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-07-13 (session 160 — navbar jadi rail kiri ikon+label di desktop/tablet + header full-width fixed permanen di atasnya, gaya terminal profesional; hapus status-pill header, panel "Distribusi Berita", dan tabel candle mentah di tab Analisa karena noise/tidak informatif; sebelumnya session 159 lanjutan 2 — Analisa jadi daftar pair dikelola user +/-; hapus fitur suara/split-view; sederhanakan fallback NEWS jadi stale-cache; samakan warna nav/drawer/dashboard-news; diagnostik Ollama Cloud `?test_ollama=1`; lanjutan 1 = search "···" semua 28 cross pair FX + XAU, diagnostik `?test_hermes=1`)
+> **Last updated:** 2026-07-13 (session 161 — rangkaian 10 revisi UX dari review manual user: cache berita client-side biar tidak "gagal fetch" saat FinancialJuice down, Fundamental mobile collapse-by-default, kalendar default HARI INI SAJA + fallback ForexFactory dihapus, filter sumber ARTIKEL jadi dropdown checklist, checklist auto-check naik dari 5→6 kondisi (+ retail sentiment kontrarian) & emoji petir dihapus, Jurnal thesis dapat toggle collapse, Volume Teknikal disembunyikan utk FX OTC, korelasi/anomali disederhanakan jadi teks tanpa bar chart, Option Expiries dapat fallback direct-fetch (bypass rss2json); sebelumnya session 160 — navbar jadi rail kiri ikon+label di desktop/tablet + header full-width fixed permanen di atasnya, gaya terminal profesional; hapus status-pill header, panel "Distribusi Berita", dan tabel candle mentah di tab Analisa karena noise/tidak informatif)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+---
+
+## Changelog Session 161 (2026-07-13) — 10 Revisi UX dari Review Manual User (Mobile)
+
+**Konteks:** user cek aplikasi langsung di HP (screenshot NEWS error + Fundamental) dan kasih 11 poin revisi sekaligus. Poin 11 (usul fitur "Info Trading" baru) ditanyakan balik ke user — dijawab "tidak usah, cukup ringkas di tempat", jadi tidak dieksekusi. 10 poin sisanya dikerjakan penuh dalam satu sesi.
+
+### 1. Cache berita client-side (`index.html`)
+- Sebelumnya `allItems` cuma variabel in-memory — begitu FinancialJuice gagal fetch DAN belum ada data live sama sekali (cold start), user langsung lihat layar error "Gagal fetch berita dari server", walau sebenarnya app sudah pernah fetch berita sebelumnya.
+- `saveNewsCache()`/`loadNewsCache()` baru — persist 100 item terakhir + timestamp ke `localStorage` (`daun_merah_news_cache_v2`), di-load **sinkron saat parse script** (sebelum fetch live manapun) supaya `allItems` sudah terisi begitu tab NEWS dibuka pertama kali, termasuk di mobile (default view). `window.addEventListener('load')` langsung `renderFeed()` kalau ada cache.
+- Gate `initDashboard()` yang lama (`if (allItems.length===0) fetchFeed()`) diganti flag terpisah `newsFetchAttempted` — supaya cache yang sudah mengisi `allItems` TIDAK menyebabkan fetch live asli ter-skip selamanya.
+- `fetchFeed()` gagal: kalau `allItems.length>0` (dari cache atau fetch sebelumnya), tidak lagi timpa dengan error box — cukup toast sekali ("Sumber sementara tidak tersedia — menampilkan berita terakhir yang tersimpan") lalu diam-diam retry tiap 8 detik seperti biasa.
+
+### 2. Fundamental — mobile default collapsed (`index.html`)
+- Kartu currency (2 kolom sempit di <600px) sebelumnya render 8 baris indikator + yield curve + liquidity sekaligus × 8 currency = sangat padat/noise (sesuai keluhan user).
+- `handleFundCardClick()`: di <600px, tap kartu **toggle expand inline** (`.fund-card.expanded`, `grid-column:1/-1` biar dapat lebar penuh) alih-alih langsung lompat ke overlay detail. Default collapsed = header (currency + rate + skor Bull/Bear/Neut) saja.
+- Overlay detail (`openFundDetail`) sendiri juga dinilai "sangat penuh" — di mobile sekarang default buka ke **section pertama** (`fdSection='auto'` → resolve ke `sectionsAvail[0]`) bukan "SEMUA" indikator sekaligus. Desktop tidak berubah (tetap SEMUA, layar cukup lega).
+
+### 3. "Reaksi Rapat CB Terakhir" — cuma NZD? (`index.html`, riset)
+- Diverifikasi via `api/cb-status.js`/`api/_cb_shock.js`: logic-nya **generic untuk semua 8 currency**, bukan hardcode NZD. NZD kebetulan satu-satunya bank sentral yang rapat dalam window 8 hari terakhir saat dicek. Judul section diperjelas jadi "Reaksi Rapat CB Terakhir — yang rapat 8 hari terakhir" + tooltip, supaya tidak membingungkan lagi ke depannya.
+
+### 4. Kalender: hapus disclaimer Actual, hapus fallback ForexFactory, default HARI INI (`index.html`, `api/calendar.js`)
+- `.cal-disclaimer` ("⚠ Kolom Actual umumnya dari data resmi TradingView. Saat sumber fallback ForexFactory aktif...") dihapus total (HTML+CSS) — jadi moot begitu fallback-nya sendiri dihapus.
+- `api/calendar.js`: `fetchForexFactoryEvents()`/`parseFFXML()`/`convertToWIB()` dihapus total. TradingView sekarang **satu-satunya sumber**; kalau gagal, langsung jatuh ke stale-cache Redis (bukan ganti sumber) — sama filosofinya dengan keputusan NEWS fallback session 159. Riwayat dicatat di `daun_merah_vendor.md`.
+- Default tampilan sekarang **hari ini saja**: `calSelectedDate` di-default ke hari ini via day-strip (chip tanggal yang sudah ada), bukan rolling-window 5 hari yang perlu discroll. `calUserClearedDateFilter` bedakan "belum pernah pilih" (auto-default hari ini) dari "user sengaja pilih lihat semua" (tombol ✕, tidak dipaksa balik).
+
+### 5. Filter sumber ARTIKEL — dropdown checklist, bukan tombol radio (`index.html`)
+- Dulu tombol "pilih satu sumber" (`riset-filter`) di-`flex-wrap` dan tumpang-tindih di layar sempit (banyak sumber: FinancialJuice, InvestingLive, ActionForex, ForexBenchmark, ING Think, Fed/ECB/BIS, FJElite, dst).
+- Diganti **satu ikon filter** (funnel) yang buka dropdown checklist multi-select (centang = tampil). State `risetHiddenSources` (Set, persist localStorage `riset_hidden_sources_v1`), auto-bersih dari sumber yang sudah tidak muncul lagi. Badge angka di ikon menunjukkan jumlah sumber yang disembunyikan. Dropdown `position:absolute` + `max-width:calc(100vw-24px)` + `.riset-meta` dapat `text-overflow:ellipsis` — tidak ada lagi elemen yang tumpang tindih.
+
+### 6. Checklist — hapus emoji petir, auto-check naik 5→6 (`index.html`)
+- ⚡ dihapus dari 3 tempat di fitur CHECKLIST (tombol "Entry MT5" ×2, label "MT5 ENTRY MODAL"); `⚡ ${stopNote}` diganti `⚠` (selaras dengan bahasa peringatan yang sudah dipakai di tempat lain). Emoji di fitur LAIN (Petunjuk, Push kategori, kalender skenario) sengaja tidak disentuh — di luar scope "fitur checklist".
+- User mengira sistem cuma bisa auto-centang 2 kondisi (regime + high-impact) — diverifikasi ternyata **sudah ada 5** (`rc1`-`rc5`: regime, CB bias, COT positioning, high-impact event, real yield differential), semua data-driven dengan badge "✓ auto"/"⚠ blocked" + evidence dots, di-fetch proaktif tiap buka tab Checklist (`ckFetchDataIfNeeded`). Ditambah **rc6 baru**: retail sentiment kontrarian (ForexBenchmark, sudah di-fetch untuk Dashboard) disejajarkan dengan arah bias CB — selaras→auto-tick, berlawanan→auto-block (bisa override), netral→evidence dot manual. Helper `_ckInferDirFromCbBias()` diekstrak (dipakai rc3+rc6, sebelumnya duplikat inline).
+
+### 7. Jurnal — toggle expand/collapse thesis (`index.html`)
+- `jnExpandThesis()` (satu arah, tidak bisa balik) diganti `jnToggleThesis()` — state per-entry di `Set` `jnExpandedTheses`, tombol berganti label "lihat semua" ↔ "perkecil".
+
+### 8. Teknikal — Volume disembunyikan utk FX, korelasi/anomali jadi teks (`index.html`)
+- Volume: dikonfirmasi Yahoo memang tidak punya data volume valid utk pair FX OTC (`=X`) — kartu Volume di grid TA sekarang **disembunyikan total** utk pair itu (bukan tampilkan "n/a" yang terlihat kosong/rusak) via `grid-template-columns:repeat(auto-fit,...)` supaya layout tetap rapi 3 kolom. XAU/futures (`=F`) tetap tampilkan volume asli (datanya memang tersedia).
+- Panel Korelasi Cross-Asset & Anomali: bar chart diverging (`_corrBarHtml`/`_CORR_CHART_KEY`, dead code sekarang) dihapus total, diganti baris teks langsung ("Gold & DXY — bergerak berlawanan (kuat)") — kalimat awam yang sudah ada (`corrWord`/`_anomalyReadable`, dari sesi sebelumnya) sekarang jadi tampilan utama, bukan tooltip tersembunyi di balik bar.
+
+### 9. Option Expiries HTTP 502 (`api/feeds.js`)
+- Root cause: `fetchInvestingLiveOptions()` cuma punya SATU jalur (proxy `api.rss2json.com`, terdokumentasi sering gagal) — kalau itu down BERSAMAAN dengan FinancialJuice DAN cache Redis sudah expired, baru 502 murni.
+- Fix: fallback direct-fetch ke `investinglive.com/feed/forexorders/` (bypass proxy) kalau rss2json gagal — parse XML manual (pola sama dengan parser RSS lain di file ini), sebelum benar-benar throw.
+
+### 10. Header "to the point" — sudah terpenuhi dari session 160
+- Diverifikasi: `.header` sekarang cuma logo + menu ⋮ (tidak ada lagi status-pill/teks panjang — sudah dihapus session 160). Screenshot user yang masih menunjukkan pill "FAILED" kemungkinan cache PWA lama di HP-nya (belum sempat re-fetch service worker) — cache-buster dinaikkan di sesi ini supaya update terdorong.
+
+### Verifikasi
+`node --check` semua file API yang diubah + `new Function()` per blok `<script>` inline `index.html` — bersih, 0 error. Suite penuh **272/272 hijau** (tidak ada test yang bergantung ke kode yang dihapus/diubah). Automasi browser (chromium-cli/playwright) **tidak tersedia** di environment ini (konsisten dengan keterbatasan sesi-sesi sebelumnya) — verifikasi mengandalkan review kode manual yang ketat + trace logic per fitur, bukan screenshot langsung. Rekomendasi: cek visual langsung di HP setelah deploy, terutama dropdown filter Artikel dan collapse card Fundamental.
+
+### Versi
+Cache-buster naik serempak (`APP_VERSION`/`?v=`/`NEWSCAT_VERSION`/`NewsCat.VERSION`) → `2026.07.13.5` — newscat.js sendiri tidak berubah, invariant 4-versi-lockstep dipertahankan.
 
 ---
 

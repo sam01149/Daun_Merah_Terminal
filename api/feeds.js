@@ -895,22 +895,48 @@ async function optionsHandler(req, res) {
   return res.json({ expiries: out, fetched_at: payload.fetched_at, date: latestDate, sources });
 }
 
-// Forexlive moved to investinglive.com — dedicated forexorders feed
+// Forexlive moved to investinglive.com — dedicated forexorders feed.
+// rss2json is a documented recurring single point of failure (proxy 500s
+// independently of the source feed being fine) — on any failure, fall back
+// to fetching the source RSS directly instead of surfacing a hard error.
 async function fetchInvestingLiveOptions() {
-  const FL_RSS_URL = 'https://api.rss2json.com/v1/api.json?rss_url=https%3A%2F%2Finvestinglive.com%2Ffeed%2Fforexorders%2F';
+  const FL_RSS_URL     = 'https://api.rss2json.com/v1/api.json?rss_url=https%3A%2F%2Finvestinglive.com%2Ffeed%2Fforexorders%2F';
+  const DIRECT_RSS_URL = 'https://investinglive.com/feed/forexorders/';
 
-  const r = await fetch(FL_RSS_URL, {
-    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
-    signal: AbortSignal.timeout(10000),
-  });
-  if (!r.ok) throw new Error('rss2json HTTP ' + r.status);
-  const json = await r.json();
-  if (json.status !== 'ok' || !json.items?.length) throw new Error('rss2json returned no items');
+  let items;
+  try {
+    const r = await fetch(FL_RSS_URL, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!r.ok) throw new Error('rss2json HTTP ' + r.status);
+    const json = await r.json();
+    if (json.status !== 'ok' || !json.items?.length) throw new Error('rss2json returned no items');
+    items = json.items.map(it => ({ title: it.title, content: it.content || it.description || '', pubDate: it.pubDate || '', link: it.link || '' }));
+  } catch(proxyErr) {
+    const ua = RSS_USER_AGENTS[Math.floor(Math.random() * RSS_USER_AGENTS.length)];
+    const r2 = await fetch(DIRECT_RSS_URL, {
+      headers: { 'User-Agent': ua, 'Accept': 'application/rss+xml,*/*' },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!r2.ok) throw new Error('Investinglive direct HTTP ' + r2.status + ' (rss2json also failed: ' + proxyErr.message + ')');
+    const xml = await r2.text();
+    const blocks = xml.match(/<item\b[^>]*>([\s\S]*?)<\/item>/g) || [];
+    items = blocks.map(b => {
+      const get = tag => {
+        const r1 = new RegExp(`<${tag}[^>]*><!\\[CDATA\\[([\\s\\S]*?)\\]\\]><\\/${tag}>`).exec(b);
+        const r2b = new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`).exec(b);
+        return (r1||r2b)?.[1]?.trim() || '';
+      };
+      return { title: get('title'), content: get('content:encoded') || get('description'), pubDate: get('pubDate'), link: get('link') };
+    });
+    if (!items.length) throw new Error('Investinglive direct feed returned no items (rss2json also failed: ' + proxyErr.message + ')');
+  }
 
-  const expiryPost = json.items.find(it => /options?\s*expir/i.test(it.title));
+  const expiryPost = items.find(it => /options?\s*expir/i.test(it.title));
   if (!expiryPost) throw new Error('No option expiry post found in feed');
 
-  const rawText  = expiryPost.content || expiryPost.description || '';
+  const rawText  = expiryPost.content || '';
   const postDate = expiryPost.pubDate || '';
   const postLink = expiryPost.link || '';
 

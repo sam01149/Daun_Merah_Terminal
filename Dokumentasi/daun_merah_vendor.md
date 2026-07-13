@@ -62,7 +62,7 @@ Semua workflow di atas autentikasi ke `api/*.js` lewat header `x-cron-secret`, d
 | **Yahoo Finance** (`query1.finance.yahoo.com`, tidak resmi/unofficial) | Sumber utama candle OHLCV semua pair FX + XAU/USD | Free, tanpa API key (endpoint publik tidak resmi) |
 | **Binance API** | Fallback harga (PAXG untuk proxy XAU, dan referensi crypto) | Free, publik |
 | **Stooq** | Data VIX/index tambahan (`risk-regime.js`) | Free, publik |
-| **TradingView** (`economic-calendar.tradingview.com`) | Kalender ekonomi (alternatif/tambahan) | Free, endpoint publik tidak resmi |
+| **TradingView** (`economic-calendar.tradingview.com`) | Kalender ekonomi — sumber SATU-SATUNYA untuk tab CAL sejak fallback ForexFactory dihapus 2026-07-13 (lihat §6); kalau gagal, `api/calendar.js` jatuh ke stale-cache Redis, bukan ganti sumber | Free, endpoint publik tidak resmi |
 
 ---
 
@@ -79,7 +79,7 @@ Semua workflow di atas autentikasi ke `api/*.js` lewat header `x-cron-secret`, d
 | Vendor | Fungsi | Tier |
 |---|---|---|
 | **FinancialJuice** (`financialjuice.com`) | Sumber RSS berita utama untuk headline real-time | Free, RSS publik |
-| **ForexFactory data mirror** (`nfs.faireconomy.media`) | Kalender ekonomi high-impact (format XML ala ForexFactory) | Free, publik |
+| **ForexFactory data mirror** (`nfs.faireconomy.media`) | Dulu fallback kalender tab CAL saat TradingView gagal (`api/calendar.js`) — **dihapus 2026-07-13** atas permintaan user (swap sumber saat outage bikin UX membingungkan; TradingView jarang benar-benar down, dan kalau gagal sekarang langsung stale-cache, bukan ganti sumber). Masih dipakai sebagai sumber KALENDAR SATU-SATUNYA di `api/market-digest.js` untuk konteks AI Ringkasan — fitur berbeda, tidak disentuh | Free, publik |
 | **InvestingLive** (`investinglive.com`) | RSS berita tambahan | Free, publik |
 | **ActionForex** (`actionforex.com`) | RSS analisis teknikal tambahan | Free, publik |
 | **ForexBenchmark** (`forexbenchmark.com`) | Sumber tambahan (kemungkinan data benchmark rate) | Free, publik |

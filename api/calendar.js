@@ -1,14 +1,18 @@
 // api/calendar.js
+//
+// ForexFactory fallback dihapus 2026-07-13 (request user): swap sumber saat
+// TradingView outage bikin UX membingungkan (data dari sumber lain lalu balik
+// lagi). Kalau TradingView gagal, handler jatuh langsung ke stale-cache Redis
+// (lihat catch block di bawah) — riwayat FF sebagai fallback dicatat di
+// Dokumentasi/daun_merah_vendor.md.
 const TV_EVENTS_URL = 'https://economic-calendar.tradingview.com/events';
-const FF_THIS_WEEK = 'https://nfs.faireconomy.media/ff_calendar_thisweek.xml';
-const FF_NEXT_WEEK = 'https://nfs.faireconomy.media/ff_calendar_nextweek.xml';
 const MAJOR_CURRENCIES = new Set(['USD','EUR','GBP','JPY','CAD','AUD','NZD','CHF']);
 // TradingView filters by country code, not currency — map the majors we track.
 const CCY_TO_TV_COUNTRY = { USD:'US', EUR:'EU', GBP:'GB', JPY:'JP', CAD:'CA', AUD:'AU', NZD:'NZ', CHF:'CH' };
 const CACHE_TTL = 6 * 3600; // Redis key TTL — long survival window for stale-serve fallback
 const FRESH_TTL = 60;       // normal serve window — frontend polls every 90s; this previously
                              // had NO freshness gate at all (every single request re-fetched
-                             // ForexFactory unconditionally, worst offender for stampede risk)
+                             // the calendar source unconditionally, worst offender for stampede risk)
 const { withSingleFlight } = require('./_fetch_lock');
 const rateLimit = require('./_ratelimit');
 
@@ -32,11 +36,8 @@ module.exports = async function handler(req, res) {
 
   if (await rateLimit(req, res, { limit: 20, windowSecs: 60, endpoint: 'calendar' })) return;
 
-  // Arbitrary date jump (e.g. "2 bulan ke depan", like ForexFactory's own date
-  // picker) — ?date=YYYY-MM-DD shows the Mon-Sun week containing that date.
-  // ForexFactory's XML feed only ever has this/next week, so a custom date
-  // can't fall back to it (that would silently show the WRONG week's events
-  // under a future date's label) — TradingView only, since it accepts an
+  // Arbitrary date jump (e.g. "2 bulan ke depan") — ?date=YYYY-MM-DD shows the
+  // Mon-Sun week containing that date. TradingView only, since it accepts an
   // arbitrary from/to range.
   const dateParam = req.query && typeof req.query.date === 'string' ? req.query.date : null;
   const isCustomDate = !!dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam) && !isNaN(new Date(dateParam + 'T00:00:00Z').getTime());
@@ -55,7 +56,7 @@ module.exports = async function handler(req, res) {
   }
 
   // Serve Redis cache if still fresh — every open tab polls this every 90s,
-  // so without this gate every poll re-hits ForexFactory regardless of age.
+  // so without this gate every poll re-hits TradingView regardless of age.
   try {
     const cached = await redisCmd('GET', CACHE_KEY);
     if (cached) {
@@ -68,7 +69,7 @@ module.exports = async function handler(req, res) {
   } catch(_) {}
 
   // Cache stale/missing — single-flight lock so concurrent tabs/users hitting
-  // this at the same moment don't all fan out to ForexFactory simultaneously.
+  // this at the same moment don't all fan out to TradingView simultaneously.
   const sf = await withSingleFlight(redisCmd, {
     lockKey: LOCK_KEY,
     cacheKey: CACHE_KEY,
@@ -88,21 +89,11 @@ module.exports = async function handler(req, res) {
       ? computeWeekRange(targetWib, false, true)
       : computeWeekRange(nowWib, isNextWeek);
 
-    // TradingView's public calendar feed is primary — unlike ForexFactory's XML,
-    // it actually populates `actual` once an event releases. ForexFactory is the
-    // fallback when TradingView is unreachable (network blip, endpoint change),
-    // but it only ever covers this/next week — for a custom date, a "fallback"
-    // to FF would silently return the WRONG week's events, so let it fail instead.
-    let allEvents, source;
-    try {
-      allEvents = await fetchTradingViewEvents(rangeStartWib, rangeEndWib);
-      source = 'tradingview';
-    } catch(tvErr) {
-      if (isCustomDate) throw tvErr;
-      console.warn('TradingView calendar failed, falling back to ForexFactory:', tvErr.message);
-      allEvents = await fetchForexFactoryEvents();
-      source = 'forexfactory';
-    }
+    // TradingView adalah satu-satunya sumber (fallback ForexFactory dihapus,
+    // lihat catatan di atas) — kalau ini gagal, error dilempar ke catch block
+    // di bawah yang jatuh ke stale-cache Redis.
+    const allEvents = await fetchTradingViewEvents(rangeStartWib, rangeEndWib);
+    const source = 'tradingview';
 
     const seen = new Set();
     const deduped = allEvents
@@ -127,7 +118,7 @@ module.exports = async function handler(req, res) {
   } catch(e) {
     if (sf.gotLock) sf.release();
     console.error('Calendar error:', e.message);
-    // ForexFactory/Cloudflare block or outage — serve last known-good calendar rather than nothing
+    // TradingView blocked/down or transient network error — serve last known-good calendar rather than nothing
     try {
       const cached = await redisCmd('GET', CACHE_KEY);
       if (cached) {
@@ -236,80 +227,3 @@ function formatTVValue(value, scale, unit) {
   return `${value}${scale || ''}${unit || ''}`;
 }
 
-async function fetchForexFactoryEvents() {
-  const [resThis, resNext] = await Promise.allSettled([
-    fetch(FF_THIS_WEEK, { headers: { 'User-Agent': 'Mozilla/5.0 (compatible; FJFeed/1.0)' }, signal: AbortSignal.timeout(12000) }),
-    fetch(FF_NEXT_WEEK, { headers: { 'User-Agent': 'Mozilla/5.0 (compatible; FJFeed/1.0)' }, signal: AbortSignal.timeout(12000) }),
-  ]);
-
-  let allEvents = [];
-  let anyFetchSucceeded = false;
-  for (const result of [resThis, resNext]) {
-    if (result.status === 'fulfilled' && result.value.ok) {
-      anyFetchSucceeded = true;
-      const xml = await result.value.text();
-      if (xml.includes('<event>')) allEvents = allEvents.concat(parseFFXML(xml));
-    }
-  }
-  // Only fail if both fetches completely failed — empty event list is valid (weekend/no high-impact)
-  if (!anyFetchSucceeded) throw new Error('Both ForexFactory XML fetches failed');
-  return allEvents;
-}
-
-function parseFFXML(xml) {
-  const events = [];
-  const re = /<event>([\s\S]*?)<\/event>/g;
-  let m;
-  while ((m = re.exec(xml)) !== null) {
-    const block = m[1];
-    const get = tag => {
-      const r = new RegExp(`<${tag}>([\\s\\S]*?)<\\/${tag}>`).exec(block);
-      if (!r) return '';
-      return r[1].replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g,'$1').trim();
-    };
-    const title    = get('title');
-    const country  = get('country').toUpperCase();
-    const date     = get('date');
-    const time     = get('time');
-    const impact   = get('impact');
-    const forecast = get('forecast');
-    const previous = get('previous');
-    const actual   = get('actual');
-    const url      = get('url');
-    if (!title || !country) continue;
-    const dp = date.match(/(\d{2})-(\d{2})-(\d{4})/);
-    if (!dp) continue;
-    const wib = convertToWIB(time, `${dp[3]}-${dp[1]}-${dp[2]}`);
-    events.push({
-      date:     wib.date,
-      time_wib: wib.time_wib,
-      currency: country,
-      event:    title,
-      impact,
-      forecast: forecast || null,
-      previous: previous || null,
-      actual:   actual   || null,
-      url:      url      || null,
-    });
-  }
-  return events;
-}
-
-// nfs.faireconomy.media XML stores event times in UTC. WIB = UTC+7.
-function convertToWIB(timeStr, dateStr) {
-  if (!timeStr || timeStr === 'All Day' || timeStr === 'Tentative') return { time_wib: 'Tentative', date: dateStr };
-  const m = timeStr.match(/(\d{1,2}):(\d{2})(am|pm)/i);
-  if (!m) return { time_wib: timeStr, date: dateStr };
-  let hour = parseInt(m[1]);
-  const min = parseInt(m[2]), ampm = m[3].toLowerCase();
-  if (ampm === 'pm' && hour !== 12) hour += 12;
-  if (ampm === 'am' && hour === 12) hour = 0;
-  const wibHour = hour + 7;
-  let dateOut = dateStr;
-  if (wibHour >= 24) {
-    const d = new Date(dateStr + 'T00:00:00Z');
-    d.setUTCDate(d.getUTCDate() + 1);
-    dateOut = toDateStr(d);
-  }
-  return { time_wib: `${String(wibHour % 24).padStart(2,'0')}:${String(min).padStart(2,'0')} WIB`, date: dateOut };
-}
