@@ -2348,6 +2348,9 @@ async function ohlcvAnalyzeHandler(req, res) {
     // (bukan cuma primary seperti test_samba_c1), supaya hasil yang dikembalikan ke
     // client murni dari Hermes, bukan tersamar fallback lain kalau Hermes gagal.
     const testHermesOnly = req.query.test_hermes === '1' || req.body?.test_hermes === true;
+    // Dikembalikan di response (bukan cuma console.warn) — tujuan diagnostik ini supaya
+    // user bisa lihat langsung alasan gagal/lambat tanpa akses server log.
+    let hermesError = null, hermesElapsedMs = null;
 
     if (testHermesOnly) {
       const OPENROUTER_KEY = process.env.OPENROUTER_API_KEY;
@@ -2367,14 +2370,19 @@ async function ohlcvAnalyzeHandler(req, res) {
             if (rawText) await cb.onSuccess(CB_OPENROUTER_HERMES);
             else throw new Error('Empty response');
           } else { throw new Error(`HTTP ${r.status}`); }
-          console.log('ohlcv_analyze: Hermes 3 405B OK,', Date.now() - t0h, 'ms');
+          hermesElapsedMs = Date.now() - t0h;
+          console.log('ohlcv_analyze: Hermes 3 405B OK,', hermesElapsedMs, 'ms');
         } catch(e) {
+          hermesElapsedMs = Date.now() - t0h;
+          hermesError = e.message;
           console.warn('ohlcv_analyze Hermes 3 405B failed:', e.message);
           await cb.onFailure(CB_OPENROUTER_HERMES);
         }
       } else if (OPENROUTER_KEY) {
+        hermesError = 'circuit_open';
         console.log('ohlcv_analyze: test_hermes=1 — circuit OPEN');
       } else {
+        hermesError = 'no_key';
         console.log('ohlcv_analyze: test_hermes=1 — OPENROUTER_API_KEY belum diset');
       }
     }
@@ -2524,7 +2532,12 @@ async function ohlcvAnalyzeHandler(req, res) {
     if ((commentary || structured) && !testHermesOnly) {
       redisCmd('SET', `ohlcv_analysis:${symbol}`, JSON.stringify(resultPayload), 'EX', 21600).catch(() => {});
     }
-    return res.status(200).json({ ...resultPayload, test_hermes: testHermesOnly || undefined });
+    return res.status(200).json({
+      ...resultPayload,
+      test_hermes: testHermesOnly || undefined,
+      hermes_error: testHermesOnly ? hermesError : undefined,
+      hermes_elapsed_ms: testHermesOnly ? hermesElapsedMs : undefined,
+    });
   } catch(e) {
     return res.status(500).json({ error: e.message });
   }
