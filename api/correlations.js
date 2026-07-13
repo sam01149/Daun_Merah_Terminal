@@ -252,9 +252,6 @@ module.exports = async function handler(req, res) {
     const RANGE_MAP = { '5m':'5d', '15m':'60d', '30m':'60d', '1h':'60d', '4h':'60d', '1d':'1y', '1wk':'5y' };
     const range = RANGE_MAP[interval] || '1y';
 
-    // FX OTC pairs have meaningless volume from Yahoo — only show for futures/equities
-    const isFxPair = /=[Xx]$/.test(symbol);
-
     const cacheKey = `ta:${symbol}:${interval}`;
     const cacheTTL = interval === '1d' ? 1800 : 600; // 30min daily, 10min intraday
 
@@ -281,7 +278,6 @@ module.exports = async function handler(req, res) {
       const rsi14   = calcRSI(prices, 14);
       const sma50   = calcSMA(prices, 50,  'close');
       const sma200  = calcSMA(prices, 200, 'close');
-      const volSma20 = isFxPair ? null : calcSMA(prices, 20, 'volume');
 
       const payload = {
         symbol, interval, range,
@@ -291,18 +287,6 @@ module.exports = async function handler(req, res) {
         sma_200:        sma200 != null ? Math.round(sma200 * 100) / 100 : null,
         price_vs_sma50:  sma50  != null ? (current.close > sma50  ? 'above' : 'below') : null,
         price_vs_sma200: sma200 != null ? (current.close > sma200 ? 'above' : 'below') : null,
-        // Volume — only for futures/equities (not FX OTC). `|| null` sebelumnya
-        // salah nol-kan volume 0 yang genuinely valid (candle intraday yang baru
-        // mulai) jadi null — padahal volume_status di bawah tetap benar hitung
-        // "Low" dari angka 0 itu, hasilnya UI nampilin status tanpa angka
-        // ("Volume / Low / —"). != null preserve 0 sebagai nilai asli.
-        current_volume:  isFxPair ? null : (current.volume != null ? current.volume : null),
-        volume_sma_20:   isFxPair ? null : (volSma20 != null ? Math.round(volSma20) : null),
-        volume_status:   isFxPair ? null : (
-          volSma20 == null ? null :
-          current.volume > volSma20 * 1.5 ? 'High' :
-          current.volume < volSma20 * 0.7 ? 'Low' : 'Normal'
-        ),
         computed_at: new Date().toISOString(),
       };
 

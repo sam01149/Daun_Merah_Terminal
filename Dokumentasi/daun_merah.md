@@ -1,10 +1,30 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-07-13 (session 161 lanjutan 1 — root cause Option Expiries 502 ditemukan LIVE via curl langsung ke vendor: bug retensi Redis 4 jam yang sama dengan window freshness bikin stale-cache fallback kehilangan data begitu key expire, dinaikkan ke 48 jam; investinglive.com dikonfirmasi feed kosong 5 hari (vendor issue, bukan blocking); pesan error mentah "HTTP 502" di UI diganti kalimat tenang; layout tab Analisa desktop dilebarkan + kartu jadi grid 2×2 (dulu kolom baca 680px "manjang banget"); korelasi Gold teks "berubah dari biasa" diperjelas jadi "biasanya memiliki korelasi yang {kata}"; volume XAU di Analisa dikonfirmasi data asli (Yahoo GC=F), tidak dihapus. Sebelumnya session 161 — rangkaian 10 revisi UX dari review manual user: cache berita client-side biar tidak "gagal fetch" saat FinancialJuice down, Fundamental mobile collapse-by-default, kalendar default HARI INI SAJA + fallback ForexFactory dihapus, filter sumber ARTIKEL jadi dropdown checklist, checklist auto-check naik dari 5→6 kondisi (+ retail sentiment kontrarian) & emoji petir dihapus, Jurnal thesis dapat toggle collapse, Volume Teknikal disembunyikan utk FX OTC, korelasi/anomali disederhanakan jadi teks tanpa bar chart; sebelumnya session 160 — navbar jadi rail kiri ikon+label di desktop/tablet + header full-width fixed permanen di atasnya, gaya terminal profesional; hapus status-pill header, panel "Distribusi Berita", dan tabel candle mentah di tab Analisa karena noise/tidak informatif)
+> **Last updated:** 2026-07-13 (session 161 lanjutan 2 — bug volume 0 di kartu TA Teknikal ditemukan & difix (`current.volume || null` salah nol-kan volume 0 yang valid), lalu user putuskan Volume di TA Teknikal dihapus total saja alih-alih terus dipatch — field `current_volume`/`volume_sma_20`/`volume_status` dibuang dari `api/correlations.js`, kartu Volume dibuang dari `renderTaPanel`, `fmtVol()` dead code ikut dibersihkan. Sebelumnya session 161 lanjutan 1 — root cause Option Expiries 502 ditemukan LIVE via curl langsung ke vendor: bug retensi Redis 4 jam yang sama dengan window freshness bikin stale-cache fallback kehilangan data begitu key expire, dinaikkan ke 48 jam; investinglive.com dikonfirmasi feed kosong 5 hari (vendor issue, bukan blocking); pesan error mentah "HTTP 502" di UI diganti kalimat tenang; layout tab Analisa desktop dilebarkan + kartu jadi grid 2×2 (dulu kolom baca 680px "manjang banget"); korelasi Gold teks "berubah dari biasa" diperjelas jadi "biasanya memiliki korelasi yang {kata}"; volume XAU di Analisa dikonfirmasi data asli (Yahoo GC=F), tidak dihapus. Sebelumnya session 161 — rangkaian 10 revisi UX dari review manual user: cache berita client-side biar tidak "gagal fetch" saat FinancialJuice down, Fundamental mobile collapse-by-default, kalendar default HARI INI SAJA + fallback ForexFactory dihapus, filter sumber ARTIKEL jadi dropdown checklist, checklist auto-check naik dari 5→6 kondisi (+ retail sentiment kontrarian) & emoji petir dihapus, Jurnal thesis dapat toggle collapse, Volume Teknikal disembunyikan utk FX OTC, korelasi/anomali disederhanakan jadi teks tanpa bar chart; sebelumnya session 160 — navbar jadi rail kiri ikon+label di desktop/tablet + header full-width fixed permanen di atasnya, gaya terminal profesional; hapus status-pill header, panel "Distribusi Berita", dan tabel candle mentah di tab Analisa karena noise/tidak informatif)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+---
+
+## Changelog Session 161 lanjutan 2 (2026-07-13) — Volume TA Teknikal Dihapus Total
+
+**Konteks:** user lapor kartu Volume di panel TA (tab TEKNIKAL) nampilin "Volume / Low / —" — status ada, angka hilang. Setelah bug-nya ditemukan & difix, user memutuskan lebih baik dihapus total daripada terus dipatch untuk fitur yang bukan inti.
+
+### Bug yang ditemukan sebelum keputusan hapus (`api/correlations.js`)
+- `current_volume: current.volume || null` — kalau volume candle terbaru kebetulan **0** (candle intraday yang baru mulai), `0 || null` di JavaScript jatuh ke `null` (0 dianggap falsy). Tapi `volume_status` di baris sebelahnya dihitung dari angka `0` itu dengan benar (`0 < volSma20*0.7` → `'Low'`) — hasilnya persis yang dilaporkan: status "Low" ada, angka "—" hilang. Sempat difix jadi `!= null`, tapi lihat poin berikut.
+
+### Keputusan: hapus total, bukan patch lagi
+- `renderTaPanel()` (`index.html`): `volCellHtml` + seluruh logic `volNA`/`volCls`/`volVal`/`volSub` dihapus — grid TA sekarang tetap 3 sel (RSI 14 / SMA 50 / SMA 200), `.tek-ta-grid` CSS balik ke `repeat(3, 1fr)` (sebelumnya `auto-fit` untuk akomodasi 3-atau-4 sel yang sekarang sudah tidak relevan lagi). `fmtVol()` jadi dead code, ikut dihapus.
+- `api/correlations.js` (`action=ta`): field `current_volume`/`volume_sma_20`/`volume_status` + variabel `isFxPair` (cuma dipakai untuk gate volume itu) + `calcSMA(prices, 20, 'volume')` dihapus dari response — tidak ada lagi consumer di frontend.
+- Kartu Volume XAU di tab **ANALISA** (`api/admin.js` `computeOhlcvMetrics`, beda endpoint/implementasi dari TA Teknikal) **TIDAK ikut dihapus** — sudah dikonfirmasi data asli & tidak punya bug serupa (assignment langsung `vLast = c1d[...].v`, bukan `|| null`).
+
+### Verifikasi
+`node --check api/correlations.js` + `new Function()` blok `<script>` bersih. Suite penuh **272/272 hijau**.
+
+### Versi
+Cache-buster naik serempak → `2026.07.13.7`.
 
 ---
 
