@@ -1507,22 +1507,10 @@ module.exports = async function handler(req, res) {
           } catch(e) { console.warn('Call 2 OpenRouter Nemotron failed:', e.status || e.message); await cb.onFailure(CB_OPENROUTER_NEMOTRON, AI_CB_THRESHOLD); }
         }
       }
-      // Primary: Z.ai GLM 4.7 (Cerebras) — session 164, dipromosikan dari diagnostik-saja
-      // (?test_glm=1, DITOLAK untuk Call 1 session 163 karena context Preview 8192 token <
-      // prompt Call 1 ~13K). Call 2 jauh lebih pendek (headline capped 50 item, biasanya
-      // muat di bawah 8192 token) jadi keputusan user: coba jadi primary di sini. Kalau
-      // request langka yang tetap kelebihan context, HTTP 400 tertangkap catch() di bawah
-      // seperti biasa dan otomatis jatuh ke SambaNova/Groq — tidak ada request yang gagal
-      // total karena ini. Reuse CB_CEREBRAS_GLM & counter budget 'cerebras' yang sama
-      // dengan diagnostik Call 1 (model & akun sama).
-      if (!biasRaw && !testNemotronOnly && CEREBRAS_KEY && await cb.canCall(CB_CEREBRAS_GLM)) {
-        try {
-          console.log('Call 2: trying Z.ai GLM 4.7 (Cerebras, primary)');
-          biasRaw = await aiCall(CEREBRAS_URL, CEREBRAS_KEY, CEREBRAS_MODEL_GLM, call2Messages, 700, 0.1, 15000, {}, {}, 'cerebras');
-          console.log('Call 2: GLM 4.7 OK');
-          await cb.onSuccess(CB_CEREBRAS_GLM);
-        } catch(e) { console.warn('Call 2 GLM 4.7 failed:', e.status || e.message); await cb.onFailure(CB_CEREBRAS_GLM, AI_CB_THRESHOLD); }
-      } else if (!biasRaw && CEREBRAS_KEY && !testNemotronOnly) { console.log('Call 2: GLM circuit OPEN — skipping to SambaNova'); }
+      // Primary: SambaNova DeepSeek-V3.2 (akun 1) — dikembalikan jadi primary (session
+      // 165, 2026-07-13): user memperbarui API key SambaNova. Z.ai GLM 4.7 (Cerebras)
+      // sempat jadi primary di sini (session 164) tapi digeser lagi — reuse
+      // CB_CEREBRAS_GLM tetap ada untuk jalur diagnostik ?test_glm=1 di Call 1.
       if (!biasRaw && !testNemotronOnly && SAMBANOVA_KEY && await cb.canCall(CB_SAMBA_MAIN)) {
         try {
           console.log('Call 2: trying SambaNova');
@@ -2013,48 +2001,13 @@ ${xauHistoryBlock}`;
     const CALL1_HARD_BUDGET_MS = 48000;
     const call1BudgetLeft = () => Date.now() - handlerStart < CALL1_HARD_BUDGET_MS;
 
-    // Primary: Cerebras gpt-oss-120b (session 164) — GANTI dari OpenRouter
-    // (openai/gpt-oss-120b:free, session 163): OpenRouter free tier terbukti sering
-    // timeout di produksi (log nyata: 15010ms, tepat kelewat batas timeout 15000ms).
-    // Cerebras native jauh lebih cepat (~3000 tok/s) dan sudah proven dipakai untuk
-    // gpt-oss-120b di admin.js/journal.js sejak session 145 — lihat CEREBRAS_MODEL_GPTOSS.
-    // Pool token/hari terpisah dari SambaNova/Groq/OpenRouter (counter 'cerebras').
-    if (isIsolatedTest) {
-      if (!article) providerLog.push('cerebras_gptoss:skipped_test');
-    } else if (!article && !call1BudgetLeft()) {
-      providerLog.push('cerebras_gptoss:skipped_budget');
-    } else if (!article && CEREBRAS_KEY && await cb.canCall(CB_CEREBRAS_GPTOSS)) {
-      const t2s = Date.now();
-      try {
-        console.log('Call 1: trying Cerebras gpt-oss-120b (primary)');
-        const raw = await aiCall(CEREBRAS_URL, CEREBRAS_KEY, CEREBRAS_MODEL_GPTOSS, call1Messages, 1300, 0.25, 15000, {}, { reasoning_effort: 'low' }, 'cerebras');
-        const elapsed = Date.now() - t2s;
-        if (raw.trim()) {
-          article = raw.trim(); method = 'gpt-oss-120b';
-          providerLog.push(`cerebras_gptoss:ok(${elapsed}ms,${article.length}c)`);
-        } else {
-          providerLog.push(`cerebras_gptoss:empty(${elapsed}ms)`);
-        }
-        console.log('Call 1: Cerebras gpt-oss-120b OK, length', article?.length);
-        await cb.onSuccess(CB_CEREBRAS_GPTOSS);
-      } catch(e) {
-        const elapsed = Date.now() - t2s;
-        const errMsg = e.status ? `HTTP${e.status}` : (e.message || 'err').slice(0, 40);
-        providerLog.push(`cerebras_gptoss:${errMsg}(${elapsed}ms)`);
-        console.warn('Call 1 Cerebras gpt-oss-120b failed:', e.status || e.message);
-        await cb.onFailure(CB_CEREBRAS_GPTOSS, AI_CB_THRESHOLD);
-      }
-    } else if (!article && CEREBRAS_KEY) {
-      providerLog.push('cerebras_gptoss:circuit_open');
-      console.log('Call 1: Cerebras circuit OPEN — skipping to SambaNova');
-    } else if (!article) {
-      providerLog.push('cerebras_gptoss:no_key');
-    }
-
-    // Fallback 1: SambaNova DeepSeek-V3.2 (akun 2, Call 1 prose only) — digeser dari
-    // primary (session 163, lihat catatan gpt-oss di atas: akun ini sudah kena limit
-    // harian). Tetap di-skip saat ?test_nemotron=1 / ?test_nemotron_super=1 /
-    // ?test_hermes=1 / ?test_glm=1 supaya hasil diagnostik tidak tersamar.
+    // Primary: SambaNova DeepSeek-V3.2 (akun 2, Call 1 prose only) — dikembalikan jadi
+    // primary (session 165, 2026-07-13): user memperbarui SAMBANOVA_API_KEY_CALL1
+    // (limit harian akun lama yang jadi penyebab demote session 163 sudah tidak
+    // relevan dengan key baru). Cerebras gpt-oss-120b (sempat jadi primary session 164)
+    // digeser jadi fallback 1 di bawah. Tetap di-skip saat ?test_nemotron=1 /
+    // ?test_nemotron_super=1 / ?test_hermes=1 / ?test_glm=1 supaya hasil diagnostik
+    // tidak tersamar.
     if (isIsolatedTest) {
       if (!article) providerLog.push('sambanova:skipped_test');
     } else if (!article && !call1BudgetLeft()) {
@@ -2062,7 +2015,7 @@ ${xauHistoryBlock}`;
     } else if (!article && SAMBANOVA_KEY_CALL1 && await cb.canCall(CB_SAMBA_C1)) {
       const t1s = Date.now();
       try {
-        console.log('Call 1: fallback 1 to SambaNova DeepSeek-V3.2 (akun 2 prose)');
+        console.log('Call 1: trying SambaNova DeepSeek-V3.2 (akun 2 prose, primary)');
         const raw = await aiCall(SAMBANOVA_URL_CALL1, SAMBANOVA_KEY_CALL1, SAMBANOVA_MODEL_CALL1, call1Messages, 1300, 0.25, 22000, {}, {}, 'sambanova_c1');
         const elapsed = Date.now() - t1s;
         if (raw.trim()) {
@@ -2077,14 +2030,49 @@ ${xauHistoryBlock}`;
         const elapsed = Date.now() - t1s;
         const errMsg = e.status ? `HTTP${e.status}` : (e.message || 'err').slice(0, 40);
         providerLog.push(`sambanova:${errMsg}(${elapsed}ms)`);
-        console.warn('Call 1 SambaNova V3.2 fallback failed:', e.status || e.message);
+        console.warn('Call 1 SambaNova V3.2 failed:', e.status || e.message);
         await cb.onFailure(CB_SAMBA_C1, AI_CB_THRESHOLD);
       }
     } else if (!article && SAMBANOVA_KEY_CALL1) {
       providerLog.push('sambanova:circuit_open');
-      console.log('Call 1: SambaNova circuit OPEN — skipping to Groq');
+      console.log('Call 1: SambaNova circuit OPEN — skipping to Cerebras gpt-oss-120b');
     } else if (!article) {
       providerLog.push('sambanova:no_key');
+    }
+
+    // Fallback 1: Cerebras gpt-oss-120b — digeser dari primary (session 165, lihat
+    // catatan SambaNova di atas: key baru bikin SambaNova reliable lagi sebagai
+    // primary). Pool token/hari terpisah dari SambaNova/Groq (counter 'cerebras').
+    if (isIsolatedTest) {
+      if (!article) providerLog.push('cerebras_gptoss:skipped_test');
+    } else if (!article && !call1BudgetLeft()) {
+      providerLog.push('cerebras_gptoss:skipped_budget');
+    } else if (!article && CEREBRAS_KEY && await cb.canCall(CB_CEREBRAS_GPTOSS)) {
+      const t2s = Date.now();
+      try {
+        console.log('Call 1: fallback 1 to Cerebras gpt-oss-120b');
+        const raw = await aiCall(CEREBRAS_URL, CEREBRAS_KEY, CEREBRAS_MODEL_GPTOSS, call1Messages, 1300, 0.25, 15000, {}, { reasoning_effort: 'low' }, 'cerebras');
+        const elapsed = Date.now() - t2s;
+        if (raw.trim()) {
+          article = raw.trim(); method = 'gpt-oss-120b';
+          providerLog.push(`cerebras_gptoss:ok(${elapsed}ms,${article.length}c)`);
+        } else {
+          providerLog.push(`cerebras_gptoss:empty(${elapsed}ms)`);
+        }
+        console.log('Call 1: Cerebras gpt-oss-120b OK, length', article?.length);
+        await cb.onSuccess(CB_CEREBRAS_GPTOSS);
+      } catch(e) {
+        const elapsed = Date.now() - t2s;
+        const errMsg = e.status ? `HTTP${e.status}` : (e.message || 'err').slice(0, 40);
+        providerLog.push(`cerebras_gptoss:${errMsg}(${elapsed}ms)`);
+        console.warn('Call 1 Cerebras gpt-oss-120b fallback failed:', e.status || e.message);
+        await cb.onFailure(CB_CEREBRAS_GPTOSS, AI_CB_THRESHOLD);
+      }
+    } else if (!article && CEREBRAS_KEY) {
+      providerLog.push('cerebras_gptoss:circuit_open');
+      console.log('Call 1: Cerebras circuit OPEN — skipping to Groq');
+    } else if (!article) {
+      providerLog.push('cerebras_gptoss:no_key');
     }
 
     // Fallback 2: Groq qwen3-32b (if OpenRouter failed/empty)
@@ -2313,17 +2301,15 @@ ${xauHistoryBlock}`;
     // Nemotron 3 Super (session 145 lanjutan 5) sengaja TIDAK masuk sini — dibatasi ke
     // Call 1 saja (lihat catatan di Call 1). Saat ?test_nemotron_super=1, Call 3 berjalan
     // NORMAL (SambaNova/Groq seperti biasa) karena yang sedang didiagnosis cuma Call 1.
-    // Z.ai GLM 4.7 (Cerebras) — session 164, dipromosikan jadi primary (lihat catatan
-    // sama di Call 2): prompt Call 3 jauh lebih pendek dari Call 1 (cuma 15 judul
-    // headline, tanpa deskripsi), jadi risiko context-limit yang bikin GLM DITOLAK di
-    // Call 1 (session 163) jauh lebih kecil di sini. Fallback SambaNova/Groq otomatis
-    // kepakai lewat catch() + circuit breaker biasa kalau GLM tetap gagal.
+    // Z.ai GLM 4.7 (Cerebras) sempat jadi primary di sini (session 164) tapi digeser
+    // lagi — session 165 (2026-07-13): SambaNova dikembalikan jadi primary karena
+    // user memperbarui API key-nya. CB_CEREBRAS_GLM tetap ada untuk jalur diagnostik
+    // ?test_glm=1 di Call 1.
     const call3Providers = [];
     if (testNemotronOnly) {
       if (OLLAMA_KEY)     call3Providers.push({ ollama: true, key: OLLAMA_KEY, model: OLLAMA_NEMOTRON_MODEL, label: 'Ollama Nemotron', timeout: 15000, provider: 'ollama', circuit: CB_OLLAMA_NEMOTRON, noThink: true });
       if (OPENROUTER_KEY) call3Providers.push({ url: OPENROUTER_URL, key: OPENROUTER_KEY, model: NEMOTRON_MODEL, label: 'OpenRouter Nemotron', timeout: 10000, provider: 'openrouter', circuit: CB_OPENROUTER_NEMOTRON, headers: OPENROUTER_HEADERS, noThink: true });
     } else {
-      if (CEREBRAS_KEY)  call3Providers.push({ url: CEREBRAS_URL, key: CEREBRAS_KEY, model: CEREBRAS_MODEL_GLM, label: 'Z.ai GLM 4.7 (Cerebras)', timeout: 15000, provider: 'cerebras', circuit: CB_CEREBRAS_GLM });
       if (SAMBANOVA_KEY) call3Providers.push({ url: SAMBANOVA_URL, key: SAMBANOVA_KEY, model: SAMBANOVA_MODEL, label: 'SambaNova', timeout: 8000, provider: 'sambanova_main', circuit: CB_SAMBA_MAIN });
       if (GROQ_KEY)      call3Providers.push({ url: GROQ_URL,      key: GROQ_KEY,      model: GROQ_MODEL,      label: 'Groq fallback', timeout: 12000, provider: 'groq', circuit: null });
     }

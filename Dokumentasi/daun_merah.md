@@ -1,10 +1,29 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-07-13 (session 164 lanjutan 1 — GLM 4.7 (Cerebras), yang DITOLAK session 163 untuk Call 1 karena context-limit, dijadikan **primary Call 2 & Call 3** atas permintaan user — prompt kedua call ini jauh lebih pendek dari Call 1 (Call 2 max 50 headline, Call 3 cuma 15 judul) jadi risiko context-limit lebih kecil (belum nol). SambaNova/Groq geser jadi fallback via pola array-provider yang sudah ada; kalau GLM gagal (termasuk context-limit di hari ramai), catch()+circuit breaker otomatis fallback, tidak ada request gagal total. Belum dites live (user minta manual dulu). Suite 287/287 hijau. Sebelumnya session 164 (awal) — user cek provider pihak-ketiga `tokenreply.com`: **DITOLAK** (proxy tidak resmi, domain baru, semua model $0.00, nama model codename arena-testing mencurigakan). Primary Call 1 (live) diganti dari OpenRouter gpt-oss-120b:free (sering timeout, 15010ms tercatat) ke **Cerebras `gpt-oss-120b`** (endpoint sama dgn admin.js/journal.js sejak session 145, ~3000 tok/s, context 128K); fallback SambaNova akun 2 → Groq tidak berubah. Ditemukan 2 isu belum ditindaklanjuti: SambaNova akun 2 HTTP 402, Groq HTTP 413. Sebelumnya session 163 — Z.ai GLM 4.7 via Cerebras dites & DITOLAK untuk Call 1 (context Preview 8192 token < prompt ~13K); akun SambaNova Call 1 (akun 2) terkonfirmasi paid tier bukan free; gpt-oss-120b (OpenRouter) sempat primary Call 1 live, Nemotron Ultra jadi primary khusus 3 cron session-open; guard `CALL1_HARD_BUDGET_MS` (48s) ditambahkan.)
+> **Last updated:** 2026-07-13 (session 165 — user memperbarui API key SambaNova; **SambaNova dikembalikan jadi primary Call 1/2/3** di Ringkasan Berita, menggeser Cerebras `gpt-oss-120b` (primary Call 1 session 164) jadi fallback-1 dan melepas Z.ai GLM 4.7 (primary Call 2/3 session 164) dari rantai produksi sepenuhnya — GLM tetap ada sebagai diagnostik `?test_glm=1` di Call 1. Suite 287/287 hijau. Sebelumnya session 164 lanjutan 1 — GLM 4.7 (Cerebras), yang DITOLAK session 163 untuk Call 1 karena context-limit, dijadikan **primary Call 2 & Call 3** atas permintaan user — prompt kedua call ini jauh lebih pendek dari Call 1 (Call 2 max 50 headline, Call 3 cuma 15 judul) jadi risiko context-limit lebih kecil (belum nol). SambaNova/Groq geser jadi fallback via pola array-provider yang sudah ada; kalau GLM gagal (termasuk context-limit di hari ramai), catch()+circuit breaker otomatis fallback, tidak ada request gagal total. Belum dites live (user minta manual dulu). Suite 287/287 hijau. Sebelumnya session 164 (awal) — user cek provider pihak-ketiga `tokenreply.com`: **DITOLAK** (proxy tidak resmi, domain baru, semua model $0.00, nama model codename arena-testing mencurigakan). Primary Call 1 (live) diganti dari OpenRouter gpt-oss-120b:free (sering timeout, 15010ms tercatat) ke **Cerebras `gpt-oss-120b`** (endpoint sama dgn admin.js/journal.js sejak session 145, ~3000 tok/s, context 128K); fallback SambaNova akun 2 → Groq tidak berubah. Ditemukan 2 isu belum ditindaklanjuti: SambaNova akun 2 HTTP 402, Groq HTTP 413. Sebelumnya session 163 — Z.ai GLM 4.7 via Cerebras dites & DITOLAK untuk Call 1 (context Preview 8192 token < prompt ~13K); akun SambaNova Call 1 (akun 2) terkonfirmasi paid tier bukan free; gpt-oss-120b (OpenRouter) sempat primary Call 1 live, Nemotron Ultra jadi primary khusus 3 cron session-open; guard `CALL1_HARD_BUDGET_MS` (48s) ditambahkan.)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+---
+
+## Changelog Session 165 (2026-07-13) — SambaNova Dikembalikan Jadi Primary Call 1/2/3 (API Key Diperbarui)
+
+**Konteks:** user memperbarui `SAMBANOVA_API_KEY`/`SAMBANOVA_API_KEY_CALL1` di Vercel, lalu minta rantai provider Ringkasan Berita Call 1/2/3 kembali ke SambaNova sebagai primary — persis kondisi "sesi sebelumnya" sebelum session 163/164 mendemote SambaNova karena akun lama kena limit harian. Root cause demote lama (limit harian akun) sudah tidak relevan dengan key baru.
+
+**Perubahan (`api/market-digest.js`):**
+1. **Call 1 (prosa):** urutan tier ditukar balik — SambaNova akun-2 (`SAMBANOVA_API_KEY_CALL1`, `DeepSeek-V3.2`) kembali jadi **primary**, Cerebras `gpt-oss-120b` (primary session 164) digeser jadi **fallback 1**, Groq tetap fallback 2. Cabang cron-only Nemotron Ultra (Ollama, khusus 3 jadwal session-open sejak session 163) TIDAK diubah — di luar scope permintaan ini, tetap dicoba duluan sebelum masuk ke chain SambaNova/Cerebras/Groq untuk cron.
+2. **Call 2 (CB bias):** tier Z.ai GLM 4.7 (Cerebras, primary sejak session 164) dihapus dari chain produksi. SambaNova akun-1 kembali jadi primary, Groq fallback terakhir — persis struktur sebelum session 164.
+3. **Call 3 (trade thesis):** entry GLM 4.7 dihapus dari `call3Providers` (jalur non-`?test_nemotron=1`). SambaNova akun-1 → Groq, persis struktur sebelum session 164.
+4. `CEREBRAS_MODEL_GLM`/`CB_CEREBRAS_GLM` TIDAK dihapus — tetap dipakai jalur diagnostik `?test_glm=1` khusus Call 1 (tidak tersentuh perubahan ini).
+5. Semua komentar kode & log provider (`providerLog`, `console.log`/`console.warn`) diperbarui supaya urutan primary/fallback yang tertulis match kondisi runtime yang sebenarnya — termasuk pesan "skipping to X" di tiap tier.
+
+### Verifikasi
+`node --check api/market-digest.js` bersih. Suite penuh **287/287 hijau** (tidak ada test yang hardcode struktur primary/fallback Call 1/2/3, konsisten dengan temuan session 164 lanjutan 1).
+
+### Versi
+Tidak ada perubahan frontend/cache-buster (fix backend-only, tidak menyentuh `index.html`/`sw.js`).
 
 ---
 
