@@ -54,12 +54,13 @@ Satu kali "generate" sebenarnya adalah **3-4 panggilan AI sekaligus**, bukan 1:
 
 ```
 Call 1 (prosa):
+  1. Nemotron 3 Ultra (Ollama Cloud, think:false native) — PRIMARY produksi
   [NON-AKTIF, hanya via ?test_nemotron=1]      Ollama Nemotron 3 Ultra → OpenRouter Nemotron 3 Ultra
   [NON-AKTIF, hanya via ?test_nemotron_super=1] OpenRouter Nemotron 3 Super
-  1. SambaNova akun-2 (DeepSeek-V3.2)     — PRIMARY produksi
-  2. OpenRouter (gpt-oss-120b:free)       — fallback
-  3. Groq (llama-3.3-70b-versatile)       — fallback terakhir (AI)
-  4. Template deterministik non-AI (berdasarkan kategori berita) — fallback absolut, tidak pernah kosong
+  2. SambaNova akun-2 (DeepSeek-V3.2)     — fallback 1
+  3. OpenRouter (gpt-oss-120b:free)       — fallback 2
+  4. Groq (llama-3.3-70b-versatile)       — fallback 3 (AI)
+  5. Template deterministik non-AI (berdasarkan kategori berita) — fallback absolut, tidak pernah kosong
 
 Call 2 (bias bank sentral, JSON):
   [NON-AKTIF, hanya via ?test_nemotron=1] Ollama Nemotron 3 Ultra → OpenRouter Nemotron 3 Ultra
@@ -80,7 +81,7 @@ Call 4 (cek kontradiksi thesis terbuka):
   (tidak ada jalur diagnostik Nemotron untuk Call 4; kalau keduanya gagal: tidak ada thesis alert siklus itu, bukan error)
 ```
 
-**Kenapa tingkat Nemotron ditandai NON-AKTIF:** model ini sempat dijadikan primary (session 145) tapi **didemote** setelah 4 dari 4 percobaan live gagal di 2 sumber berbeda (OpenRouter & Ollama Cloud) — polanya konsisten resource-contention (model 550B baru rilis, kemungkinan diprioritaskan rendah di tier gratis), bukan bug di kode kita. SambaNova dikembalikan jadi primary asli karena terbukti reliable berbulan-bulan. Jalur ini masih ada di kode (tidak dihapus) supaya bisa dites ulang kapan pun lewat parameter diagnostik, tapi **tidak pernah** dipanggil otomatis oleh cron maupun tombol "Ringkas Berita" biasa. Praktis artinya: **jatah harian OpenRouter (45/hari, di luar peran fallback-2 Call 1) dan Ollama (150/hari) nyaris tidak terpakai sehari-hari** — dua pool ini sedang "menganggur", disiapkan untuk pengujian ulang Nemotron di masa depan.
+**Kenapa tingkat Nemotron jadi PRIMARY produksi:** session 162 lanjutan 3 membuktikan `think:false` native di Ollama Cloud berhasil di Nemotron Ultra 550B, jadi Call 1 sekarang jalan lewat Nemotron dulu dan hanya jatuh ke SambaNova akun-2 kalau primary itu gagal/empty. OpenRouter Nemotron Ultra/Super tetap ada untuk jalur diagnostik terisolasi (`?test_nemotron=1` / `?test_nemotron_super=1`), tapi tidak dipanggil otomatis. Praktis artinya: pool `ollama` sekarang ikut aktif di produksi, sementara OpenRouter masih relevan terutama sebagai fallback-2 Call 1 dan eksperimen manual.
 
 Kalau primary gagal (limit habis / error / timeout), otomatis lompat ke tingkat berikutnya — user tidak akan lihat error kecuali **semua** tingkat produksi (bukan yang non-aktif) gagal sekaligus.
 
@@ -122,11 +123,11 @@ Ini lapisan pembatas paling penting untuk dipahami. **Jatah ini dibagi rata ke s
 | Provider (pool) | Jatah harian kita | Limit asli provider (referensi) | Dipakai oleh |
 |---|---|---|---|
 | **SambaNova akun-1** (`sambanova_main`) | 200 request/hari | ~10-20 request/menit, truly free persisten | Ringkasan Berita Call 2, Call 3, Call 4 (**primary**, ketiganya), Analisa AI per Pair (**primary**) — pool paling ramai, dipakai bareng 2 fitur sekaligus |
-| **SambaNova akun-2** (`sambanova_c1`) | 200 request/hari | Sama seperti akun-1, tapi akun terpisah (kuota terpisah) | Ringkasan Berita Call 1 (**primary**), Analisa Fundamental (fallback), AI Coach Jurnal (fallback), Analisa AI per Pair (fallback) |
+| **SambaNova akun-2** (`sambanova_c1`) | 200 request/hari | Sama seperti akun-1, tapi akun terpisah (kuota terpisah) | Ringkasan Berita Call 1 (fallback 1 setelah Nemotron), Analisa Fundamental (fallback), AI Coach Jurnal (fallback), Analisa AI per Pair (fallback) |
 | **Cerebras** | 200 request/hari | ~30 request/menit, 1 juta token/hari (jauh lebih longgar — kita sengaja konservatif dari sisi jumlah request) | Analisa Fundamental (**primary**), AI Coach Jurnal (**primary**) |
 | **Groq** | 500 request/hari | 30 request/menit, ribuan/hari tergantung model | Fallback terakhir untuk Ringkasan Berita, Analisa Fundamental, AI Coach Jurnal (jaring pengaman, selalu dicoba tanpa circuit breaker) — **kecuali** Analisa AI per Pair, yang tidak punya Groq di rantainya (lihat §3.2 & §6) |
-| **OpenRouter** (Nemotron, saat ini idle) | 45 request/hari | 50/hari (akun belum top-up) atau 1.000/hari (sudah top-up $10+) | Ringkasan Berita Call 1 fallback-2 (`gpt-oss-120b:free`) — kepakai hanya kalau SambaNova akun-2 gagal. Nemotron Ultra/Super cuma lewat sini kalau dites manual (`?test_nemotron=1`); Hermes 3 405B cuma lewat `?test_hermes=1` (market-digest.js & ohlcv_analyze, session 159) — SATU pool sama dengan Nemotron, bukan kuota terpisah. Live test 2026-07-13: HTTP 429 dalam 93ms (rate limited, bukan auth error) |
-| **Ollama Cloud** (saat ini idle) | 150 request/hari | Tidak dipublikasikan resmi (konservatif) | Tidak dipakai di jalur produksi mana pun saat ini — `nemotron-3-ultra` disiapkan untuk pengujian ulang via `?test_nemotron=1`; `nemotron-3-nano:30b-cloud` khusus diagnostik konektivitas via `?test_ollama=1` di `ohlcv_analyze` (session 159, bukan kandidat kualitas). Live test 2026-07-13: HTTP 200 OK tapi content kosong setelah 11,75s (konektivitas/auth OK, kemungkinan token budget habis di reasoning) |
+| **OpenRouter** (Nemotron, saat ini cuma dipakai fallback + diagnostik) | 45 request/hari | 50/hari (akun belum top-up) atau 1.000/hari (sudah top-up $10+) | Ringkasan Berita Call 1 fallback-2 (`gpt-oss-120b:free`) — kepakai hanya kalau Nemotron + SambaNova akun-2 gagal. Nemotron Ultra/Super cuma lewat sini kalau dites manual (`?test_nemotron=1`); Hermes 3 405B cuma lewat `?test_hermes=1` (market-digest.js & ohlcv_analyze, session 159) — SATU pool sama dengan Nemotron, bukan kuota terpisah. Live test 2026-07-13: HTTP 429 dalam 93ms (rate limited, bukan auth error) |
+| **Ollama Cloud** (aktif di produksi untuk Nemotron) | 150 request/hari | Tidak dipublikasikan resmi (konservatif) | Ringkasan Berita Call 1 primary (`nemotron-3-ultra` via native `think:false`); juga dipakai diagnostik `?test_ollama=1` di `ohlcv_analyze` (session 159, bukan kandidat kualitas). Live test 2026-07-13: HTTP 200 OK dan content lengkap setelah 7-8 detik saat dipakai sebagai Nemotron primary |
 
 **Pool yang paling perlu diawasi: SambaNova akun-1.** Ini satu-satunya pool yang dipakai sebagai *primary* oleh 2 fitur berbeda sekaligus (Ringkasan Berita Call 2/3/4 DAN Analisa AI per Pair) — kalau traffic naik di kedua fitur bersamaan, ini yang pertama kali mendekati jatah 200/hari, bukan OpenRouter seperti dugaan awal.
 
@@ -139,9 +140,9 @@ Ini lapisan pembatas paling penting untuk dipahami. **Jatah ini dibagi rata ke s
 Ini jawaban langsung untuk pertanyaan "penggunaan paling banyak fitur AI itu berapa kali", dipecah per fitur:
 
 ### Ringkasan Berita
-- **Otomatis:** pasti 3× sehari, tidak bisa lebih, tidak bisa kurang (jadwal tetap). Tiap generate = 1 request ke SambaNova akun-2 (Call 1) + 2 request ke SambaNova akun-1 (Call 2 & Call 3) — jadi 3 cron/hari = 3 request akun-2 + 6 request akun-1.
-- **Manual:** setiap 1× klik "Ringkas Ulang" menambah **1 request akun-2 + 2 request akun-1** (+1 request akun-1 lagi kalau device itu punya posisi terbuka di jurnal, karena Call 4 ikut jalan). Pool akun-2 (200/hari) longgar untuk fitur ini sendirian — bottleneck sebenarnya ada di **akun-1**, yang dipakai bareng-bareng dengan Analisa AI per Pair (lihat di bawah).
-- **Kesimpulan sederhana:** kalau cuma fitur ini saja yang dipakai (tanpa Analisa AI per Pair), jatah akun-1 (200/hari, dikurangi 6 dari cron) cukup untuk **±97 kali klik manual "Ringkas Ulang"** sehari sebelum SambaNova akun-1 habis dan Call 2/3 otomatis pindah ke Groq (kualitas JSON sedikit lebih rendah, tapi tetap jalan).
+- **Otomatis:** pasti 3× sehari, tidak bisa lebih, tidak bisa kurang (jadwal tetap). Tiap generate normal = 1 request Nemotron primary + 2 request ke SambaNova akun-1 (Call 2 & Call 3) — jadi 3 cron/hari = 3 request Nemotron + 6 request akun-1. Kalau Nemotron primary gagal, baru ada request tambahan ke SambaNova akun-2, OpenRouter, dan/atau Groq.
+- **Manual:** setiap 1× klik "Ringkas Ulang" menambah **1 request Nemotron primary + 2 request akun-1** (+1 request akun-1 lagi kalau device itu punya posisi terbuka di jurnal, karena Call 4 ikut jalan). Pool akun-2 sekarang murni fallback-1, jadi bottleneck harian utama tetap **akun-1** dan, di sisi primary, pool **ollama**.
+- **Kesimpulan sederhana:** kalau cuma fitur ini saja yang dipakai dan Nemotron primary stabil, jatah akun-1 (200/hari, dikurangi 6 dari cron) masih cukup untuk **±97 kali klik manual "Ringkas Ulang"** sehari sebelum SambaNova akun-1 habis dan Call 2/3 otomatis pindah ke Groq. Jika Nemotron primary sesekali gagal, pool akun-2 ikut terpakai sebagai fallback pertama.
 
 ### Analisa AI per Pair
 - **Otomatis:** 3× sehari, khusus XAU/USD saja (juga lewat SambaNova akun-1, ikut cron Ringkasan Berita).
