@@ -36,12 +36,14 @@ const CB_OPENROUTER_HERMES = 'ai:openrouter:hermes';
 // market-digest.js untuk bentuk request/response persis (sengaja duplikasi kecil,
 // bukan shared import — konvensi project ini, lihat komentar OPENROUTER di atas).
 // nemotron-3-nano dipakai KHUSUS untuk diagnostik konektivitas (?test_ollama=1) —
-// model terkecil/tercepat di keluarga Nemotron 3 Ollama Cloud (~500-700ms dilaporkan),
-// tujuannya murni "apakah akun/API Ollama Cloud reachable & terautentikasi", BUKAN
-// kandidat kualitas (beda dari nemotron-3-ultra yang dipakai test_nemotron=1 di
-// market-digest.js, yang memang kandidat serius Call 1).
+// model terkecil/tercepat di keluarga Nemotron 3 Ollama Cloud, tujuannya murni "apakah
+// akun/API Ollama Cloud reachable & terautentikasi", BUKAN kandidat kualitas (beda dari
+// nemotron-3-ultra yang dipakai test_nemotron=1 di market-digest.js, kandidat serius
+// Call 1). Tag `:30b-cloud` WAJIB (dicek ke ollama.com/library — beda dari nemotron-3-
+// ultra yang cloud id-nya tanpa suffix sama sekali; nano punya beberapa varian ukuran
+// jadi butuh tag eksplisit yang menunjuk varian cloud-nya, bukan lokal).
 const OLLAMA_URL         = 'https://ollama.com/api/chat';
-const OLLAMA_NANO_MODEL  = 'nemotron-3-nano';
+const OLLAMA_NANO_MODEL  = 'nemotron-3-nano:30b-cloud';
 const CB_OLLAMA_NANO     = 'ai:ollama:nano';
 
 // Actions callable from the frontend without a secret → rate-limited per IP.
