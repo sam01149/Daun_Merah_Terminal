@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-07-13 (session 160 — navbar jadi rail kiri ikon+label di desktop/tablet, gaya terminal profesional; hapus status-pill header, panel "Distribusi Berita", dan tabel candle mentah di tab Analisa karena noise/tidak informatif; sebelumnya session 159 lanjutan 2 — Analisa jadi daftar pair dikelola user +/-; hapus fitur suara/split-view; sederhanakan fallback NEWS jadi stale-cache; samakan warna nav/drawer/dashboard-news; diagnostik Ollama Cloud `?test_ollama=1`; lanjutan 1 = search "···" semua 28 cross pair FX + XAU, diagnostik `?test_hermes=1`)
+> **Last updated:** 2026-07-13 (session 160 — navbar jadi rail kiri ikon+label di desktop/tablet + header full-width fixed permanen di atasnya, gaya terminal profesional; hapus status-pill header, panel "Distribusi Berita", dan tabel candle mentah di tab Analisa karena noise/tidak informatif; sebelumnya session 159 lanjutan 2 — Analisa jadi daftar pair dikelola user +/-; hapus fitur suara/split-view; sederhanakan fallback NEWS jadi stale-cache; samakan warna nav/drawer/dashboard-news; diagnostik Ollama Cloud `?test_ollama=1`; lanjutan 1 = search "···" semua 28 cross pair FX + XAU, diagnostik `?test_hermes=1`)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -20,6 +20,13 @@
 - **Bug kecil yang ditemukan & diperbaiki sebelum sempat live:** `.toast` (notifikasi popup) pakai `left:12px` yang akan tertimpa rail di desktop — ditambah override `.toast { left: 76px }` khusus ≥768px. `.nvtab[data-view="dashboard"] { display:block }` (media query 1024px) juga diperbaiki jadi `display:flex` supaya tidak merusak stack ikon+label (flex column) tab Dashboard.
 - **Mobile (≤767px) TIDAK diubah** — `.bot-nav` (bottom-nav existing) dipertahankan apa adanya sesuai keputusan user (nyaman & ergonomis untuk jempol satu tangan), cuma nav rail yang baru ini yang disembunyikan total di breakpoint itu (`display:none`, sudah ada sebelumnya).
 - Curation existing (pair mana yang tampil di rail vs masuk drawer "Lainnya") **tidak diubah** — tetap sama seperti sebelumnya (riset/cal/cot/fundamental/sizing/jurnal/petunjuk ke drawer), hanya container/style-nya yang berubah dari tab horizontal ke rail vertikal.
+
+### Susulan (sesi sama): header full-width, rail cuma di samping konten
+
+- User tanya lagi: mending header full horizontal + rail di samping konten, atau tetap rail motong penuh dari atas (state sebelumnya)? Direkomendasikan opsi pertama (pola dashboard profesional — Linear/Vercel/TradingView desktop: strip branding penuh di atas, sidebar sebagai lapisan terpisah di bawahnya) — dikonfirmasi user, langsung dieksekusi.
+- **`.header` dipindah keluar dari `#topChrome`** (sekarang sibling permanen sebelum `#topChrome`, sama seperti rail) — di `@media min-width:768px`: `position:fixed; top:0; left:0; right:0; height:60px (box-sizing:border-box); z-index:210` (di atas rail yang z-index:200). `body` dapat `padding-top:60px` tambahan (selain `padding-left:64px` yang sudah ada). Rail (`.nav-views`) disesuaikan `top:60px; height:calc(100% - 60px)` supaya mulai di bawah header, bukan dari y=0.
+- **Efek samping yang disadari & diterima:** karena header sekarang permanen (sibling di luar `#topChrome`, bukan cuma di desktop tapi juga struktur DOM-nya sama untuk mobile), header **tidak lagi ikut collapse saat scroll** di mobile maupun desktop (dulu ikut collapse bareng regime/install banner). Trade-off yang dinilai wajar: konsisten dengan filosofi "chrome permanen untuk branding+navigasi, cuma banner sekunder (regime/install) yang collapse" — kalau user merasa kehilangan ruang scroll di mobile, ini titik yang perlu direvisit.
+- Mobile tidak terpengaruh oleh perubahan fixed-position (override cuma di dalam `@media min-width:768px`), cuma kehilangan efek collapse header seperti dijelaskan di atas.
 
 ### Dihapus: status-pill header (`index.html`)
 
@@ -44,7 +51,7 @@ Diagnostik Ollama Cloud (test dengan reasoning off, lalu coba model lebih tinggi
 
 ### Versi
 
-Cache-buster naik serempak (`APP_VERSION`/`?v=`/`NEWSCAT_VERSION`/`NewsCat.VERSION`) → `2026.07.13.3` — newscat.js sendiri tidak berubah, invariant 4-versi-lockstep dipertahankan.
+Cache-buster naik serempak (`APP_VERSION`/`?v=`/`NEWSCAT_VERSION`/`NewsCat.VERSION`) → `2026.07.13.4` (naik dua kali di sesi ini: `.3` untuk rail+hapus noise, `.4` untuk susulan header full-width) — newscat.js sendiri tidak berubah, invariant 4-versi-lockstep dipertahankan.
 
 ---
 

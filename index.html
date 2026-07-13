@@ -1737,12 +1737,18 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 
 /* ── RESPONSIVE ── */
 @media (min-width: 768px) {
-  /* rail nav kiri fixed 64px — geser seluruh body ke kanan supaya konten
-     (header, banner, panel) tidak ketiban rail */
-  body { padding-left: 64px; }
-  .nav-views { display: flex; }
+  /* Header full-width fixed di paling atas (permanen, tidak ikut collapse) +
+     rail nav kiri fixed 64px MULAI DI BAWAH header (bukan dari y=0) — header
+     jadi strip branding penuh, rail cuma di samping konten seperti dashboard
+     profesional (Linear/Vercel/TradingView desktop), bukan motong header. */
+  body { padding-left: 64px; padding-top: 60px; }
+  .header {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 210;
+    box-sizing: border-box; height: 60px;
+    padding: 0 24px;
+  }
+  .nav-views { display: flex; top: 60px; height: calc(100% - 60px); }
   .toast { left: 76px; } /* geser toast supaya tidak ketiban rail nav kiri (64px + gap) */
-  .header { padding: 14px 24px; }
   .nav-filters { padding: 0 16px; }
   .ftab { padding: 8px 14px; font-size: 10px; }
   .toolbar { padding: 10px 24px; }
@@ -2607,7 +2613,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 </head>
 <body>
 
-<div id="topChrome">
+<!-- HEADER (permanen, di luar #topChrome — full-width di desktop, tidak ikut
+     collapse saat scroll, sama seperti rail nav kiri) -->
 <div class="header">
   <div class="logo">Daun<span> Merah</span></div>
   <div class="header-right">
@@ -2633,6 +2640,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   </div>
 </div>
 
+<div id="topChrome">
 <div class="install-banner" id="installBanner">
   <p>Install Daun Merah ke homescreen untuk notifikasi background</p>
   <button class="install-btn" id="installBtn">INSTALL</button>
@@ -3763,11 +3771,11 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 <!-- newscat.js: engine klasifikasi kategori berita (single source of truth,
      dipakai juga sw.js & api/). Query ?v= = cache-buster — naikkan tiap kali
      newscat.js berubah, samakan dengan NEWSCAT_VERSION di sw.js. -->
-<script src="/newscat.js?v=2026.07.13.3"></script>
+<script src="/newscat.js?v=2026.07.13.4"></script>
 <script>
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.07.13.3';
+const APP_VERSION = '2026.07.13.4';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
