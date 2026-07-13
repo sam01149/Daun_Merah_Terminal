@@ -388,11 +388,18 @@ function severityTagForHeadline(title) {
   return classifyDataSurpriseSeverity(actual, forecast, t).urgencyTag;
 }
 
-// Strip <think>...</think> blocks from Qwen3 thinking models — content after </think> is the actual response
+// Strip <think>...</think> blocks from Qwen3 thinking models — content after </think> is the actual response.
+// Kalau tag <think> kebuka tapi tidak pernah ketutup (num_predict habis di tengah reasoning —
+// terbukti session 162 lanjutan 4: user lapor output Nemotron kepotong & bahasa Inggris-Indonesia
+// campur), regex fallback lama tidak match (butuh closing tag) sehingga seluruh raw reasoning
+// ikut lolos ke user. Buang semua dari "<think>" ke akhir kalau tidak ada penutup — lebih baik
+// hasil kosong/pendek (ke-reject validasi di call site) daripada bocorin reasoning mentah.
 function stripThinking(text) {
   const lastClose = text.lastIndexOf('</think>');
   if (lastClose !== -1) return text.slice(lastClose + 8).trim();
-  return text.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+  const openIdx = text.indexOf('<think>');
+  if (openIdx !== -1) return text.slice(0, openIdx).trim();
+  return text.trim();
 }
 
 // Nemotron 3 (session 145 lanjutan 3) toggles its reasoning trace via a literal
@@ -470,7 +477,10 @@ async function callOllama(apiKey, model, messages, maxTokens, temperature, timeo
   const j = await r.json();
   const wallMs = Date.now() - t0;
   const serverMs = j?.total_duration != null ? Math.round(j.total_duration / 1e6) : null;
-  console.log(`callOllama: model=${model} wall=${wallMs}ms server=${serverMs}ms eval_count=${j?.eval_count ?? '?'} prompt_eval_count=${j?.prompt_eval_count ?? '?'}`);
+  console.log(`callOllama: model=${model} wall=${wallMs}ms server=${serverMs}ms eval_count=${j?.eval_count ?? '?'} prompt_eval_count=${j?.prompt_eval_count ?? '?'} done_reason=${j?.done_reason ?? '?'}`);
+  if (j?.done_reason === 'length') {
+    console.warn(`callOllama truncated (done_reason=length, model=${model}, num_predict=${maxTokens})`);
+  }
   const content = j?.message?.content?.trim() || null;
   if (!content) throw new Error('Empty response');
   return stripThinking(content).trim();
@@ -1851,14 +1861,23 @@ ${xauHistoryBlock}`;
           console.log('Call 1: trying Nemotron 3 Ultra (Ollama Cloud, think:false native) — primary');
           const raw = await callOllama(OLLAMA_KEY, OLLAMA_NEMOTRON_MODEL, call1Messages, 1300, 0.25, ollamaNemotronPrimaryTimeout, 'ollama', false);
           const elapsed = Date.now() - t0p;
-          if (raw.trim()) {
+          // Session 162 lanjutan 4: user lapor live output rusak 3x berturut-turut
+          // (FX+XAU nyatu tanpa marker "XAUUSD:", bahasa Inggris-Indonesia campur,
+          // XAU kepotong) meski HTTP 200 dan non-empty — think:false native tidak
+          // selalu dihonor, hidden reasoning kadang bocor/menghabiskan num_predict.
+          // Validasi format di sini daripada cuma cek non-empty: gagal → dianggap
+          // failure provider ini (bukan success palsu) supaya circuit breaker akurat
+          // dan request jatuh ke SambaNova (fallback 1, proven) alih-alih serve rusak.
+          if (raw.trim() && raw.includes('XAUUSD:')) {
             article = raw.trim(); method = 'nemotron-3-ultra';
             providerLog.push(`ollama_nemotron:ok(${elapsed}ms,${article.length}c)`);
+            console.log('Call 1: Ollama Nemotron OK, length', article.length);
+            await cb.onSuccess(CB_OLLAMA_NEMOTRON);
           } else {
-            providerLog.push(`ollama_nemotron:empty(${elapsed}ms)`);
+            providerLog.push(`ollama_nemotron:${raw.trim() ? 'bad_format' : 'empty'}(${elapsed}ms)`);
+            console.warn('Call 1 Ollama Nemotron rejected: bad format or empty, length', raw?.trim().length || 0);
+            await cb.onFailure(CB_OLLAMA_NEMOTRON, AI_CB_THRESHOLD);
           }
-          console.log('Call 1: Ollama Nemotron OK, length', article?.length);
-          await cb.onSuccess(CB_OLLAMA_NEMOTRON);
         } catch(e) {
           const elapsed = Date.now() - t0p;
           const errMsg = e.status ? `HTTP${e.status}` : (e.message || 'err').slice(0, 40);

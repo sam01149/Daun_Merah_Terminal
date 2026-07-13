@@ -143,6 +143,31 @@ test('callOllama: strip <think> block dari respons (kalau model kirim reasoning 
   }
 });
 
+// ── Session 162 lanjutan 4: user lapor live output rusak — <think> kepotong (num_predict
+// habis di tengah reasoning) bocor sebagai teks campur bahasa Inggris-Indonesia ke user ──
+
+test('callOllama: <think> yang TIDAK ketutup (kepotong num_predict) tidak boleh bocor ke output', async () => {
+  const orig = global.fetch;
+  global.fetch = async () => ({ ok: true, json: async () => ({ message: { content: '<think>reasoning yang belum selesai dan tiba-tiba stop di sini karena token habis' }, done_reason: 'length' }) });
+  try {
+    const out = await callOllama('sk-ollama', OLLAMA_NEMOTRON_MODEL, [], 1300, 0.25, 18000, 'ollama');
+    assert.strictEqual(out, '', 'harus kosong, bukan raw reasoning trace mentah');
+  } finally {
+    global.fetch = orig;
+  }
+});
+
+test('callOllama: <think> tidak ketutup tapi ada teks SEBELUM tag — teks sebelum tag tetap dipertahankan', async () => {
+  const orig = global.fetch;
+  global.fetch = async () => ({ ok: true, json: async () => ({ message: { content: 'Hasil sudah ditulis. <think>eh mikir lagi belum selesai' } }) });
+  try {
+    const out = await callOllama('sk-ollama', OLLAMA_NEMOTRON_MODEL, [], 1300, 0.25, 18000, 'ollama');
+    assert.strictEqual(out, 'Hasil sudah ditulis.');
+  } finally {
+    global.fetch = orig;
+  }
+});
+
 // ── withNoThink (session 145 lanjutan 3) ────────────────────────────────────────────
 
 test('withNoThink: menambah /no_think ke system message yang sudah ada', () => {
