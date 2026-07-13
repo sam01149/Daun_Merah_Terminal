@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-07-13 (session 159 — tab Analisa: search "···" semua 28 cross pair FX + XAU; diagnostik terisolasi `?test_hermes=1` di market-digest.js & ohlcv_analyze)
+> **Last updated:** 2026-07-13 (session 159 lanjutan 2 — Analisa jadi daftar pair dikelola user +/-; hapus fitur suara/split-view; sederhanakan fallback NEWS jadi stale-cache; samakan warna nav/drawer/dashboard-news; diagnostik Ollama Cloud `?test_ollama=1`; lanjutan 1 = search "···" semua 28 cross pair FX + XAU, diagnostik `?test_hermes=1`)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -31,6 +31,50 @@
 ### Versi
 
 Cache-buster naik serempak (`APP_VERSION`/`?v=`/`NEWSCAT_VERSION`/`NewsCat.VERSION`) → `2026.07.13.1` — newscat.js sendiri tidak berubah, invariant 4-versi-lockstep dipertahankan.
+
+---
+
+## Changelog Session 159 lanjutan 2 (2026-07-13) — Analisa Jadi Daftar Pair Milik User, Bersih-Bersih Fitur, Warna Nav Disamakan, Diagnostik Ollama Cloud
+
+**Konteks:** rangkaian keputusan user dalam satu sesi lanjutan. (1) Setelah `?test_hermes=1` diuji live dan dapat HTTP 429 cepat, user curiga OpenRouter account-wide bermasalah — diminta tes Ollama Cloud terpisah dengan model paling ringan, abaikan kualitas. (2) User memutuskan OpenRouter "sudah tidak relevan" untuk dikejar lebih jauh sebagai kandidat baru. (3) Untuk fallback NEWS: daripada ganti sumber (investing.com ternyata basi ~1,5 hari saat dicek live, ditolak — lihat di bawah), user memilih fallback DIHAPUS total — mending macet di data FinancialJuice terakhir yang familiar daripada headline dunia lain yang membingungkan lalu balik lagi. (4) Sekalian minta hapus fitur suara (TTS) dan Split View (3 window) karena tidak pernah dipakai/tidak jalan sesuai rencana. (5) Analisa didesain ulang total: dari 8 chip major + search "···" (baru dikerjakan di lanjutan 1) jadi daftar KOSONG di awal yang diisi manual user via "+", dengan tombol hapus "-" per pair, persisten ke localStorage. (6) User mempertanyakan psikologi warna: banyak warna berbeda per fitur (nav tab, kategori berita Dashboard) dinilai kontraproduktif — disamakan jadi netral+accent-on-active saja.
+
+### Diagnostik Ollama Cloud — `?test_ollama=1` (`api/admin.js`)
+
+- `OLLAMA_URL`/`OLLAMA_NANO_MODEL` (`nemotron-3-nano:30b-cloud` — **tag `:30b-cloud` wajib**, dicek langsung ke `ollama.com/library`, beda dari `nemotron-3-ultra` yang cloud id-nya tanpa suffix sama sekali) + `CB_OLLAMA_NANO`. Isolasi identik pola Hermes: skip SambaNova sepenuhnya, tidak nulis cache produksi, error/timing dikembalikan di response (`ollama_error`/`ollama_elapsed_ms`). Flag baru `isDiagnosticOnly = testHermesOnly || testOllamaOnly` menggantikan pengulangan kondisi di 3 titik guard SambaNova.
+- **Hasil live:** percobaan pertama model salah (`nemotron-3-nano` tanpa tag) → HTTP 404 (model not found, dikoreksi ke `:30b-cloud`). Percobaan kedua dengan tag benar → **HTTP 200 OK, tapi `message.content` kosong** setelah 11,75 detik (kemungkinan token budget habis di fase "thinking" sebelum sampai jawaban final — bukan gagal auth/konektivitas). **Kesimpulan diagnostik OpenRouter+Ollama gabungan:** baik Hermes (429 dalam 93ms) maupun Ollama nano (200 OK tapi kosong, 11,75s) SAMA-SAMA berhasil melewati tahap autentikasi/konektivitas — tidak ada 401/403 di manapun. Jadi kecurigaan user ("config kita salah") **tidak terbukti** — yang terjadi adalah friksi wajar free-tier (rate limit / reasoning-model boros token), bukan akun/API key rusak.
+
+### NEWS fallback dihapus — mending stale daripada ganti sumber (`api/feeds.js`, `index.html`)
+
+- **Investigasi sebelum eksekusi:** dicek live freshness kedua kandidat — Investinglive (fallback lama) item terbaru **~1,5 jam lalu** (genuinely real-time, format RFC-822 baku), investing.com **~1,5 hari lalu** (`X-Cache-Status: BYPASS`, bukan cache) + tanpa `<guid>` sama sekali (kalau langsung di-swap, SEMUA item hilang karena parser buang item tanpa guid). Investing.com **ditolak** — lebih basi, bukan lebih baik.
+- **Keputusan user (lebih baik dari swap):** `rssHandler` di `api/feeds.js` — blok fetch Investinglive dihapus total. Kalau FinancialJuice gagal, langsung ke tier stale-cache yang sudah ada (`X-Cache-Source: STALE`) alih-alih ganti sumber. Alasan UX: headline dari sumber lain yang beda total, lalu balik lagi ke FJ begitu pulih, adalah DUA kali perubahan mendadak yang membingungkan — mending "macet" di data terakhir yang familiar.
+- `RSS_FALLBACK_URL` + variabel `sourceUsed` dihapus (source sekarang selalu `'financialjuice'`). `index.html`: `lastNewsSource` + badge "LIVE (fallback)" (`.dot.warn` CSS) dihapus — jadi dead code begitu server tidak pernah lagi mengirim source lain.
+
+### Fitur suara (TTS) & Split View dihapus (`index.html`)
+
+- **Voice readout:** `toggleVoice()`, `speakNewsUpdate()`, `VOICE_CAT_OPTIONS`, panel kategori suara, tombol 🔊 SUARA di toolbar NEWS, CSS `.voice-*` — dihapus total (browser `speechSynthesis` API, tidak pernah dipakai user).
+- **Split View (3 Window):** `openSplitView()`, `SPLIT_VIEW_LAYOUT`, tombol menu "Split View (3 Window)" — dihapus (tidak berjalan sesuai rencana). `popoutView()` ("Buka di Window Baru", fitur SATU window terpisah) **dipertahankan** — beda fitur, tidak diminta dihapus.
+
+### Analisa — dari 8 chip tetap jadi daftar pair milik user (`index.html`)
+
+- **Sebelumnya (lanjutan 1, hari yang sama):** 8 chip major + tombol "···" buka search semua 28 cross pair, tapi search itu cuma untuk PINDAH sementara, tidak nge-save pilihan.
+- **Sekarang:** tampilan awal **kosong** ("Belum ada pair dipilih. Klik + untuk menambahkan pair yang ingin dianalisa."). Tombol "···" diganti **"+"**, hasil klik search menambah pair itu ke `analisaTracked` (array symbol, persist `localStorage` key `analisa_tracked_pairs_v1` — bertahan walau laptop dimatikan, sesuai permintaan). Tiap pair yang sudah ditambah dirender sebagai chip dengan tombol hapus "×" kecil di pojok kanan-atas (`analisaRemovePair()`) — hapus pair aktif otomatis pindah ke pair tersisa pertama, atau balik ke state kosong kalau daftar habis.
+- Restore saat tab dibuka & saat diklik dari Dashboard (`openAnalisaFromDash`) disesuaikan: cuma restore last-symbol kalau MASIH ada di `analisaTracked`; klik dari Dashboard otomatis menambahkan pair itu ke daftar kalau belum ada.
+- Tidak ada perubahan backend — `ohlcv_read`/`ohlcv_analyze` sudah generic sejak lanjutan 1, jadi pair apapun yang ditambah user langsung bisa dianalisa.
+
+### Warna nav/drawer/dashboard-news disamakan (`index.html`)
+
+- **Alasan (psikologi warna, atas pertanyaan user):** warna efektif sebagai sinyal justru KARENA jarang dipakai — kalau semua nav tab/drawer/kategori berita punya warna permanen tanpa makna, mata terbiasa (habituation) dan warna berhenti menyampaikan informasi, sekaligus melemahkan sinyal "mana yang aktif sekarang" (kalah ramai). Beda dari warna bias bullish/bearish (merah/hijau) yang DIPERTAHANKAN karena itu semantik & berubah sesuai kondisi — bukan dekorasi permanen.
+- **Nav tab (`.nvtab`):** 10 aturan warna permanen per-`data-view` (ringkasan oranye, cal hijau, cot ungu, checklist kuning, sizing accent, jurnal pink, petunjuk/teknikal biru, riset hijau-mint, analisa oranye) dihapus, diganti SATU aturan `.nvtab.active { color: var(--text); border-bottom-color: var(--accent); }`.
+- **Drawer menu (☰, item overflow):** `DRAWER_ITEMS` kehilangan field `col` per-item; dot & border-kiri sekarang netral (`var(--muted)`) saat idle, `var(--accent)` saat aktif — konsisten dengan nav tab (sistem navigasi yang sama).
+- **Dashboard — cluster berita (FOREX/MACRO/ENERGY/GEOPOLIT./dst):** `CAT_META` kehilangan field `color` per-kategori; dot & label sekarang pakai warna CSS default netral (`var(--accent)` dot, `var(--text-mid)` label) untuk semua kategori, bukan 11 hue berbeda.
+
+### Verifikasi
+
+`node --check` semua file API + sintaks seluruh `<script>` inline `index.html` bersih; suite penuh **272/272 hijau** (tidak ada test yang bergantung ke fitur yang dihapus). Live test Ollama (lihat di atas) langsung ke production setelah deploy.
+
+### Versi
+
+Cache-buster naik serempak → `2026.07.13.2`.
 
 ---
 

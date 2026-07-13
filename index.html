@@ -95,7 +95,6 @@ body {
 .dot.live { background:var(--green); box-shadow:0 0 6px var(--green); animation:blink 1.4s ease-in-out infinite; }
 .dot.loading { background:var(--yellow); }
 .dot.error { background:var(--red); }
-.dot.warn { background:var(--yellow); box-shadow:0 0 6px var(--yellow); animation:blink 0.9s ease-in-out infinite; }
 @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
 
 .header-menu-wrap { position:relative; }
@@ -198,27 +197,14 @@ body {
 }
 .nvtab:hover { color: var(--text-mid); }
 .nvtab:hover { color: var(--text); background: rgba(255,255,255,0.03); }
-.nvtab[data-view="feed"].active      { color: var(--text);   border-bottom-color: var(--accent); }
-.nvtab[data-view="ringkasan"]        { color: var(--accent); }
-.nvtab[data-view="ringkasan"].active { color: var(--accent); border-bottom-color: var(--accent); }
-.nvtab[data-view="cal"]              { color: var(--green);  }
-.nvtab[data-view="cal"].active       { color: var(--green);  border-bottom-color: var(--green); }
-.nvtab[data-view="cot"]              { color: var(--purple); }
-.nvtab[data-view="cot"].active       { color: var(--purple); border-bottom-color: var(--purple); }
-.nvtab[data-view="checklist"]        { color: var(--yellow); }
-.nvtab[data-view="checklist"].active { color: var(--yellow); border-bottom-color: var(--yellow); }
-.nvtab[data-view="sizing"]           { color: var(--accent); }
-.nvtab[data-view="sizing"].active    { color: var(--accent); border-bottom-color: var(--accent); }
-.nvtab[data-view="jurnal"]              { color: var(--pink); }
-.nvtab[data-view="jurnal"].active      { color: var(--pink);   border-bottom-color: var(--pink); }
-.nvtab[data-view="petunjuk"]           { color: #60a5fa; }
-.nvtab[data-view="petunjuk"].active    { color: #60a5fa; border-bottom-color: #60a5fa; }
-.nvtab[data-view="teknikal"]           { color: #38bdf8; }
-.nvtab[data-view="teknikal"].active    { color: #38bdf8; border-bottom-color: #38bdf8; }
-.nvtab[data-view="riset"]             { color: #34d399; }
-.nvtab[data-view="riset"].active      { color: #34d399; border-bottom-color: #34d399; }
-.nvtab[data-view="analisa"]           { color: #fb923c; }
-.nvtab[data-view="analisa"].active    { color: #fb923c; border-bottom-color: #fb923c; }
+/* Session 159 (keputusan user): dulu tiap tab punya warna permanen sendiri
+   (ringkasan oranye, cal hijau, cot ungu, dst) — dari sudut psikologi warna itu
+   kontraproduktif: warna efektif jadi sinyal justru karena jarang dipakai, kalau
+   SEMUA nav item berwarna permanen tanpa makna, mata jadi terbiasa (habituation)
+   dan warna berhenti menyampaikan informasi apa-apa, sekaligus melemahkan sinyal
+   "tab mana yang aktif" (border-bawah) karena kalah ramai. Disatukan: netral saat
+   idle (aturan dasar .nvtab di atas), accent + border-bawah cuma saat aktif. */
+.nvtab.active { color: var(--text); border-bottom-color: var(--accent); }
 
 /* RISET PANEL */
 /* risetPanel overrides feed-scroll: flex column, toolbar fixed, list scrolls */
@@ -456,31 +442,6 @@ body {
 .refresh-btn:active { background:var(--accent); color:var(--bg); }
 .refresh-btn.spinning svg { animation:spin .7s linear infinite; }
 
-.voice-control-group {
-  display:flex; align-items:stretch; border:1px solid var(--border);
-  border-radius:5px; overflow:hidden; transition:border-color .2s;
-}
-.voice-control-group:has(.voice-btn.enabled) { border-color:var(--accent); }
-.voice-btn {
-  display:flex; align-items:center; gap:4px;
-  padding:6px 10px; border:none; background:transparent;
-  color:var(--muted); font-family:'DM Mono',monospace; font-size:10px;
-  cursor:pointer; transition:all .2s;
-}
-.voice-btn.enabled { color:var(--accent); }
-.voice-btn:active { transform:scale(.95); }
-.voice-settings-toggle { padding:6px 8px; font-size:11px; border-left:1px solid var(--border); }
-.voice-settings-panel {
-  display:flex; flex-wrap:wrap; gap:4px; padding:8px 12px;
-  border-top:1px solid var(--border); background:rgba(255,255,255,.02);
-}
-.voice-cat-chip {
-  padding:3px 8px; border-radius:20px; border:1px solid var(--border);
-  background:transparent; color:var(--muted);
-  font-family:'DM Mono',monospace; font-size:8px; letter-spacing:.3px;
-  cursor:pointer; transition:all .15s; text-transform:uppercase;
-}
-.voice-cat-chip.active { border-color:var(--accent); color:var(--accent); background:rgba(192,57,43,.08); }
 @keyframes spin { to{transform:rotate(360deg)} }
 
 /* FEED */
@@ -835,6 +796,15 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .analisa-chip:hover { border-color: var(--accent); color: var(--accent); }
 .analisa-chip.active { background: var(--accent); border-color: var(--accent); color: #0a0f1a; font-weight: 600; }
 .analisa-chip.loading { opacity: .6; pointer-events: none; }
+#analisaTrackedChips { display: contents; }
+.analisa-chip-wrap { position: relative; display: inline-block; }
+.analisa-chip-rm {
+  position: absolute; top: -6px; right: -6px; width: 15px; height: 15px; border-radius: 50%;
+  border: 1px solid var(--border); background: var(--bg); color: var(--muted);
+  font-size: 10px; line-height: 1; cursor: pointer; display: flex; align-items: center; justify-content: center;
+  padding: 0; transition: all .15s;
+}
+.analisa-chip-rm:hover { border-color: var(--red); color: var(--red); }
 .analisa-pair-more { position: relative; display: inline-block; }
 .analisa-pair-more .tek-pair-dropdown { width: 220px; }
 .analisa-pair-more.open .tek-pair-dropdown { display: block; }
@@ -2420,8 +2390,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   transition: background .15s;
 }
 .dash-cluster-header:hover { background: rgba(255,255,255,.04); }
-.dash-cluster-dot { width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0; }
-.dash-cluster-label { font-size: 8px; font-family: 'DM Mono', monospace; letter-spacing: .8px; text-transform: uppercase; flex: 1; font-weight: 600; }
+.dash-cluster-dot { width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0; background: var(--accent); }
+.dash-cluster-label { font-size: 8px; font-family: 'DM Mono', monospace; letter-spacing: .8px; text-transform: uppercase; flex: 1; font-weight: 600; color: var(--text-mid); }
 .dash-cluster-count { font-size: 8px; font-family: 'DM Mono', monospace; color: var(--muted); background: rgba(255,255,255,.06); padding: 1px 5px; border-radius: 3px; }
 .dash-cluster-age { font-size: 8px; font-family: 'DM Mono', monospace; color: var(--muted); min-width: 20px; text-align: right; }
 .dash-cluster-chevron { font-size: 7px; color: var(--muted); transition: transform .2s; flex-shrink: 0; line-height: 1; }
@@ -2489,8 +2459,9 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   transition: all .12s;
 }
 .drawer-item:hover { background: rgba(255,255,255,.04); color: var(--text); }
-.drawer-item.active { color: var(--text); }
-.drawer-item-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.drawer-item.active { color: var(--text); border-left-color: var(--accent); }
+.drawer-item-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; background: var(--muted); }
+.drawer-item.active .drawer-item-dot { background: var(--accent); }
 .drawer-item-label { font: 700 11px 'Syne',sans-serif; letter-spacing: .07em; text-transform: uppercase; line-height: 1.3; }
 .drawer-item-desc { font: 9px 'DM Mono',monospace; color: var(--muted); margin-top: 2px; }
 .drawer-item.active .drawer-item-desc { color: var(--text-mid); }
@@ -2725,10 +2696,6 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="13" height="13" rx="2"/><path d="M16 8h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2v-2"/></svg>
           <span>Buka di Window Baru</span>
         </button>
-        <button class="header-menu-item" id="splitViewBtn" onclick="openSplitView();closeHeaderMenu();" title="Buka TEK, NEWS, RINGKASAN otomatis bersebelahan">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="6" height="16" rx="1"/><rect x="9" y="4" width="6" height="16" rx="1"/><rect x="16" y="4" width="6" height="16" rx="1"/></svg>
-          <span>Split View (3 Window)</span>
-        </button>
       </div>
     </div>
   </div>
@@ -2807,21 +2774,6 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
       <span class="tslider"></span>
     </label>
     <span class="countdown" id="cdText"></span>
-    <div class="voice-control-group" id="voiceControlGroup">
-      <button class="voice-btn" id="voiceBtn" onclick="toggleVoice()" title="Bacakan headline penting via suara">
-        <svg id="voiceIcon" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-          <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
-          <line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/>
-        </svg>
-        SUARA
-      </button>
-      <button class="voice-btn voice-settings-toggle" id="voiceSettingsBtn" onclick="toggleVoiceSettingsPanel()" title="Pilih kategori yang dibacakan" aria-label="Pengaturan kategori suara">
-        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-          <circle cx="12" cy="12" r="3"/>
-          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
-        </svg>
-      </button>
-    </div>
     <button class="refresh-btn" id="refreshBtn" onclick="fetchFeed()">
       <svg id="rIcon" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
         <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>
@@ -2831,7 +2783,6 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
     </button>
   </div>
 </div>
-<div class="voice-settings-panel" id="voiceSettingsPanel" style="display:none"></div>
 
 <!-- FEED -->
 <div class="feed-scroll" id="feedScroll">
@@ -2899,16 +2850,9 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   <div class="analisa-inner">
     <div class="print-letterhead" id="printLetterheadAnalisa"></div>
     <div class="analisa-pairs no-print">
-      <button class="analisa-chip" onclick="loadAnalisa('GC=F','XAU/USD',this)">XAU/USD</button>
-      <button class="analisa-chip" onclick="loadAnalisa('EURUSD=X','EUR/USD',this)">EUR/USD</button>
-      <button class="analisa-chip" onclick="loadAnalisa('GBPUSD=X','GBP/USD',this)">GBP/USD</button>
-      <button class="analisa-chip" onclick="loadAnalisa('USDJPY=X','USD/JPY',this)">USD/JPY</button>
-      <button class="analisa-chip" onclick="loadAnalisa('AUDUSD=X','AUD/USD',this)">AUD/USD</button>
-      <button class="analisa-chip" onclick="loadAnalisa('USDCAD=X','USD/CAD',this)">USD/CAD</button>
-      <button class="analisa-chip" onclick="loadAnalisa('USDCHF=X','USD/CHF',this)">USD/CHF</button>
-      <button class="analisa-chip" onclick="loadAnalisa('NZDUSD=X','NZD/USD',this)">NZD/USD</button>
+      <div id="analisaTrackedChips"></div>
       <div class="analisa-pair-more" id="analisaPairMore">
-        <button type="button" class="analisa-chip analisa-chip-more" id="analisaMoreTrigger" onclick="toggleAnalisaPairDropdown(event)" title="Cari pair FX lain">···</button>
+        <button type="button" class="analisa-chip analisa-chip-more" id="analisaMoreTrigger" onclick="toggleAnalisaPairDropdown(event)" title="Tambah pair untuk dianalisa">+</button>
         <div class="tek-pair-dropdown" id="analisaPairDropdown">
           <input type="text" class="tek-pair-search" id="analisaPairSearch" placeholder="Cari pair... (mis. EUR, JPY)" oninput="renderAnalisaPairOptions()" onclick="event.stopPropagation()" onkeydown="onAnalisaPairSearchKey(event)">
           <div class="tek-pair-list" id="analisaPairList"></div>
@@ -2917,7 +2861,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
     </div>
     <div class="state-box" id="analisaEmpty">
       <div class="icon">📊</div>
-      <p>Pilih pair di atas untuk melihat<br>analisa teknikal multi-timeframe.</p>
+      <p>Belum ada pair dipilih.<br>Klik <strong>+</strong> untuk menambahkan pair yang ingin dianalisa.</p>
     </div>
     <div id="analisaContent" style="display:none">
       <div class="analisa-header" id="analisaHeader"></div>
@@ -3863,11 +3807,11 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 <!-- newscat.js: engine klasifikasi kategori berita (single source of truth,
      dipakai juga sw.js & api/). Query ?v= = cache-buster — naikkan tiap kali
      newscat.js berubah, samakan dengan NEWSCAT_VERSION di sw.js. -->
-<script src="/newscat.js?v=2026.07.13.1"></script>
+<script src="/newscat.js?v=2026.07.13.2"></script>
 <script>
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.07.13.1';
+const APP_VERSION = '2026.07.13.2';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
@@ -3899,88 +3843,6 @@ let historyBefore    = null;
 let historyExhausted = false;
 let historyLoading   = false;
 
-// ── VOICE READOUT (TTS untuk headline penting) ──────────────────────────
-// Session-only toggle (default mati, harus diaktifkan manual tiap sesi —
-// keputusan user: bukan fitur yang selalu jalan diam-diam). Kategori yang
-// dibacakan dipersist ke localStorage karena itu preferensi, bukan state sesi.
-// Default disamakan dengan filter push notif device (lihat PUSH_CATS di
-// api/admin.js) — market-moving + econ-data, paling minim noise.
-const VOICE_CAT_OPTIONS = [
-  { id:'market-moving', label:'Market Moving' },
-  { id:'econ-data',     label:'Econ Data' },
-  { id:'macro',         label:'Macro' },
-  { id:'forex',         label:'Forex' },
-  { id:'energy',        label:'Energy' },
-  { id:'geopolitical',  label:'Geopolitical' },
-  { id:'equities',      label:'Equities' },
-  { id:'commodities',   label:'Commodities' },
-  { id:'bonds',         label:'Bonds' },
-  { id:'crypto',        label:'Crypto' },
-  { id:'indexes',       label:'Indexes' },
-];
-let voiceEnabled = false;
-let voiceCats = (() => {
-  try {
-    const saved = JSON.parse(localStorage.getItem('voiceCats') || 'null');
-    if (Array.isArray(saved) && saved.length) return new Set(saved);
-  } catch(e) {}
-  return new Set(['market-moving', 'econ-data']);
-})();
-
-function toggleVoice() {
-  voiceEnabled = !voiceEnabled;
-  const btn = document.getElementById('voiceBtn');
-  if (btn) {
-    btn.classList.toggle('enabled', voiceEnabled);
-    btn.textContent = voiceEnabled ? '🔊 SUARA' : '🔇 SUARA';
-  }
-  // Beberapa browser cuma mengizinkan speechSynthesis dipanggil pertama kali
-  // dari dalam user gesture (klik ini) — "unlock" dengan utterance kosong
-  // supaya panggilan speak() berikutnya dari fetchFeed() (bukan user gesture) tidak diam-diam gagal.
-  if (voiceEnabled && typeof speechSynthesis !== 'undefined') {
-    try { speechSynthesis.speak(new SpeechSynthesisUtterance('')); } catch(e) {}
-  }
-}
-
-function toggleVoiceSettingsPanel() {
-  const panel = document.getElementById('voiceSettingsPanel');
-  if (!panel) return;
-  if (panel.style.display === 'none') { renderVoiceSettingsPanel(); panel.style.display = 'flex'; }
-  else panel.style.display = 'none';
-}
-
-function renderVoiceSettingsPanel() {
-  const panel = document.getElementById('voiceSettingsPanel');
-  if (!panel) return;
-  panel.innerHTML = VOICE_CAT_OPTIONS.map(c => `
-    <button class="voice-cat-chip${voiceCats.has(c.id) ? ' active' : ''}" onclick="toggleVoiceCat('${c.id}')">${escHtml(c.label)}</button>
-  `).join('');
-}
-
-function toggleVoiceCat(catId) {
-  if (voiceCats.has(catId)) voiceCats.delete(catId); else voiceCats.add(catId);
-  try { localStorage.setItem('voiceCats', JSON.stringify([...voiceCats])); } catch(e) {}
-  renderVoiceSettingsPanel();
-}
-
-// Dipanggil dari fetchFeed() tiap siklus polling. Sengaja sempit: cuma
-// kategori di voiceCats, dan kalau beberapa headline lolos filter dalam
-// satu siklus yang sama, cukup ucapkan jumlahnya saja (bukan baca satu-satu)
-// — supaya rilis data beruntun tidak numpuk jadi antrian suara yang berisik.
-function speakNewsUpdate(newItems) {
-  if (!voiceEnabled || typeof speechSynthesis === 'undefined') return;
-  const qualifying = newItems.filter(i => voiceCats.has(detectCat(i.title)));
-  if (qualifying.length === 0) return;
-  let utt;
-  if (qualifying.length === 1) {
-    utt = new SpeechSynthesisUtterance(qualifying[0].title);
-    utt.lang = 'en-US';
-  } else {
-    utt = new SpeechSynthesisUtterance(`${qualifying.length} berita penting baru`);
-    utt.lang = 'id-ID';
-  }
-  speechSynthesis.speak(utt);
-}
 let deferredInstall = null;
 let activeView   = 'feed';
 let dashClusterState = {};
@@ -4355,8 +4217,6 @@ function sendToSW(msg) {
 }
 
 // ── FETCH RSS ────────────────────────────────────────────
-let lastNewsSource = 'financialjuice';
-
 async function fetchRSS() {
   try {
     const c = new AbortController();
@@ -4364,10 +4224,7 @@ async function fetchRSS() {
     const r = await fetch(FETCH_URL, { signal: c.signal });
     if (r.ok) {
       const t = await r.text();
-      if (t.includes('<rss')) {
-        lastNewsSource = r.headers.get('X-News-Source') || 'financialjuice';
-        return t;
-      }
+      if (t.includes('<rss')) return t;
     }
   } catch(e) {}
   return null;
@@ -4491,11 +4348,7 @@ async function fetchFeed() {
   const now = new Date();
   document.getElementById('lastUpdate').textContent =
     `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')} WIB`;
-  if (lastNewsSource === 'investinglive_fallback') {
-    setStatus('warn', 'LIVE (fallback)');
-  } else {
-    setStatus('live','LIVE');
-  }
+  setStatus('live', 'LIVE');
   updateStats();
   renderFeed(!isFirstLoad && newItems.length > 0);
 
@@ -4504,7 +4357,6 @@ async function fetchFeed() {
   } else if (!isFirstLoad && newItems.length > 1) {
     showToast(`📰 ${newItems.length} berita baru`, newItems.map(i=>i.title).slice(0,2).join(' / '), 4000);
   }
-  if (!isFirstLoad) speakNewsUpdate(newItems);
 
   isFetching = false;
 }
@@ -6076,19 +5928,16 @@ document.querySelectorAll('#navViews .nvtab').forEach(btn => {
       activeView = 'analisa';
       document.getElementById('analisaPanel').style.display = 'block';
       if (Date.now() < analisaAiCooldownEnd) _tickAnalisaCooldown();
-      // Restore last viewed pair from localStorage — always go through loadAnalisa()
-      // (same path as a manual chip click) instead of a bespoke render-from-cache-only
-      // copy. The old code only restored when analisaDataCache[lastSym] happened to
-      // still be within its 2h TTL; if it had expired since the last visit, the whole
-      // branch silently did nothing — tab opened with no pair selected, no loading
-      // state, nothing — looking "kosong" until the user clicked away and back (which
-      // went through loadAnalisa() and worked). loadAnalisa() already handles both
-      // "cache still fresh" and "cache stale/missing, fetch + show loading" cleanly.
-      const lastSym = localStorage.getItem(LS_ANALISA_LAST);
-      if (lastSym && !analisaActive.symbol) {
-        const { chipEl, label } = _analisaChipInfo(lastSym);
-        const lastLabel = label || analisaDataCache[lastSym]?.label || lastSym;
-        loadAnalisa(lastSym, lastLabel, chipEl);
+      renderAnalisaTrackedChips();
+      // Restore last viewed pair — tapi cuma kalau pair itu MASIH ada di daftar
+      // tracked user (bisa saja sudah dihapus sejak kunjungan terakhir). Kalau
+      // tidak ada match, fallback ke pair pertama di daftar; kalau daftar kosong,
+      // biarkan state kosong "pilih pair" (analisaEmpty) yang tampil.
+      if (!analisaActive.symbol && analisaTracked.length > 0) {
+        const lastSym = localStorage.getItem(LS_ANALISA_LAST);
+        const symbol  = analisaTracked.includes(lastSym) ? lastSym : analisaTracked[0];
+        const chipEl  = document.querySelector(`#analisaTrackedChips .analisa-chip[data-symbol="${symbol}"]`);
+        loadAnalisa(symbol, _analisaLabelForSymbol(symbol), chipEl);
       }
     } else if (view === 'cal') {
       setFeedUI(false);
@@ -6167,38 +6016,6 @@ function popoutView() {
   const url = location.origin + location.pathname + '#' + view;
   const w = window.open(url, 'dm_' + view, 'width=480,height=860,resizable=yes,scrollbars=yes');
   if (w) w.focus();
-}
-
-// Susunan default kiri→kanan untuk Split View. Tiap window pakai hash yang
-// sama dengan popoutView() (#view) jadi langsung kebaca restoreViewFromHash().
-const SPLIT_VIEW_LAYOUT = ['teknikal', 'feed', 'ringkasan'];
-
-function openSplitView() {
-  if (window.innerWidth < 1024) {
-    showToast('Khusus Desktop', 'Split View butuh lebar layar untuk berguna — buka dari laptop/PC.', 3500);
-    return;
-  }
-  const cols = SPLIT_VIEW_LAYOUT.length;
-  const sw = window.screen.availWidth;
-  const sh = window.screen.availHeight;
-  const w = Math.floor(sw / cols);
-  const wins = [];
-  SPLIT_VIEW_LAYOUT.forEach((view, i) => {
-    const url = location.origin + location.pathname + '#' + view;
-    const x = i * w;
-    const win = window.open(url, 'dm_split_' + view, `width=${w},height=${sh},left=${x},top=0,resizable=yes,scrollbars=yes`);
-    if (win) {
-      try { win.moveTo(x, 0); win.resizeTo(w, sh); } catch(e) {}
-      wins.push({ win, x });
-    }
-  });
-  // Re-apply setelah delay singkat — browser kadang abaikan posisi window yang sudah ada
-  setTimeout(() => {
-    wins.forEach(({ win, x }) => {
-      try { win.moveTo(x, 0); win.resizeTo(w, sh); } catch(e) {}
-    });
-    if (wins.length) wins[wins.length - 1].win.focus();
-  }, 400);
 }
 
 function restoreViewFromHash() {
@@ -13492,12 +13309,50 @@ function selectTekPair(p) {
   if (corrData) renderCorrelations(); // tabel korelasi kontekstual ikut pair aktif
 }
 
-// ── ANALISA pair search ("···" di sebelah 8 chip major) ────────────────
-// Reuse TEK_ALL_PAIRS/TEK_YAHOO_SYM/tekPairLabel (sudah didefinisikan di atas untuk
-// tab TEKNIKAL) supaya semua 28 cross FX + XAU bisa dipilih di tab Analisa juga, tanpa
-// duplikasi daftar pair. Backend (loadOhlcvData di admin.js) sudah generic — fetch
+// ── ANALISA pair list — dikelola user (tambah "+" / hapus "-"), persist ke ────
+// localStorage supaya tetap ada walau laptop mati/browser ditutup. Session 159
+// (keputusan user): ganti dari 8 chip major tetap + search "···" jadi daftar
+// kosong di awal ("pilih pair utk dianalisa") yang user isi sendiri — minim
+// noise, cuma pair yang benar-benar dipantau yang tampil. Reuse TEK_ALL_PAIRS/
+// TEK_YAHOO_SYM/tekPairLabel (tab TEKNIKAL) untuk daftar pencarian "+", tanpa
+// duplikasi daftar pair. Backend (loadOhlcvData di admin.js) generic — fetch
 // on-demand dari Yahoo untuk symbol apapun, jadi tidak perlu whitelist baru di server.
-const ANALISA_MAJOR_SYMBOLS = ['GC=F','EURUSD=X','GBPUSD=X','USDJPY=X','AUDUSD=X','USDCAD=X','USDCHF=X','NZDUSD=X'];
+const LS_ANALISA_TRACKED = 'analisa_tracked_pairs_v1';
+
+let analisaTracked = (() => {
+  try {
+    const saved = JSON.parse(localStorage.getItem(LS_ANALISA_TRACKED) || 'null');
+    if (Array.isArray(saved)) return saved.filter(s => typeof s === 'string');
+  } catch(e) {}
+  return [];
+})();
+
+function _analisaSaveTracked() {
+  try { localStorage.setItem(LS_ANALISA_TRACKED, JSON.stringify(analisaTracked)); } catch(e) {}
+}
+
+function _analisaSearchablePairs() {
+  return TEK_ALL_PAIRS.filter(p => !TEK_YIELD_INSTRUMENTS.includes(p));
+}
+
+// Symbol → label pendek, dicari dari TEK_ALL_PAIRS (satu-satunya sumber label di app ini).
+function _analisaLabelForSymbol(symbol) {
+  const p = _analisaSearchablePairs().find(x => TEK_YAHOO_SYM[x] === symbol);
+  return p ? tekPairLabel(p) : symbol;
+}
+
+function renderAnalisaTrackedChips() {
+  const wrap = document.getElementById('analisaTrackedChips');
+  if (!wrap) return;
+  wrap.innerHTML = analisaTracked.map(symbol => {
+    const label = _analisaLabelForSymbol(symbol);
+    const active = symbol === analisaActive.symbol ? ' active' : '';
+    return `<span class="analisa-chip-wrap">
+      <button class="analisa-chip${active}" data-symbol="${escHtml(symbol)}" onclick="loadAnalisa('${symbol}','${escHtml(label)}',this)">${escHtml(label)}</button>
+      <button type="button" class="analisa-chip-rm" onclick="analisaRemovePair('${symbol}',event)" title="Hapus pair ini dari daftar">×</button>
+    </span>`;
+  }).join('');
+}
 
 function toggleAnalisaPairDropdown(e) {
   if (e) e.stopPropagation();
@@ -13521,10 +13376,6 @@ document.addEventListener('click', (e) => {
   if (wrap && wrap.classList.contains('open') && !wrap.contains(e.target)) wrap.classList.remove('open');
 });
 
-function _analisaSearchablePairs() {
-  return TEK_ALL_PAIRS.filter(p => !TEK_YIELD_INSTRUMENTS.includes(p));
-}
-
 function renderAnalisaPairOptions() {
   const list = document.getElementById('analisaPairList');
   const searchEl = document.getElementById('analisaPairSearch');
@@ -13535,9 +13386,10 @@ function renderAnalisaPairOptions() {
     list.innerHTML = '<div class="tek-pair-empty">Pair tidak ditemukan.</div>';
     return;
   }
-  list.innerHTML = matches.map(p =>
-    `<div class="tek-pair-opt${TEK_YAHOO_SYM[p] === analisaActive.symbol ? ' active' : ''}" onclick="selectAnalisaPair('${p}')">${tekPairLabel(p)}</div>`
-  ).join('');
+  list.innerHTML = matches.map(p => {
+    const already = analisaTracked.includes(TEK_YAHOO_SYM[p]);
+    return `<div class="tek-pair-opt${already ? ' active' : ''}" onclick="selectAnalisaPair('${p}')">${tekPairLabel(p)}${already ? ' ✓' : ''}</div>`;
+  }).join('');
 }
 
 function onAnalisaPairSearchKey(e) {
@@ -13548,36 +13400,44 @@ function onAnalisaPairSearchKey(e) {
   if (first) selectAnalisaPair(first);
 }
 
-// Cari chip element utk symbol yg diberikan: salah satu 8 chip major (kalau major),
-// atau tombol "···" (kalau cross pair) — dipakai selectAnalisaPair() + restore-on-load
-// (switchView('analisa') dan openAnalisaFromDash) supaya highlight active selalu benar
-// walau pair terakhir yang dibuka adalah cross pair non-major.
-function _analisaChipInfo(symbol) {
-  const chip = document.querySelector(`.analisa-chip[onclick*="'${symbol}'"]`);
-  if (chip) return { chipEl: chip, label: chip.textContent.trim() };
-  const p = _analisaSearchablePairs().find(x => TEK_YAHOO_SYM[x] === symbol);
-  if (p) {
-    const label = tekPairLabel(p);
-    const trigger = document.getElementById('analisaMoreTrigger');
-    if (trigger) trigger.textContent = label;
-    return { chipEl: trigger, label };
-  }
-  return { chipEl: null, label: null };
-}
-
+// Dipanggil dari klik hasil pencarian "+": tambah ke daftar (kalau belum ada), lalu
+// langsung tampilkan analisanya. Klik pair yang SUDAH ada di daftar cukup pindah ke situ
+// (tidak dobel-tambah).
 function selectAnalisaPair(p) {
   const symbol = TEK_YAHOO_SYM[p];
+  const label  = tekPairLabel(p);
   closeAnalisaPairDropdown();
-  const isMajor = ANALISA_MAJOR_SYMBOLS.includes(symbol);
-  if (!isMajor) {
-    const trigger = document.getElementById('analisaMoreTrigger');
-    if (trigger) trigger.textContent = tekPairLabel(p);
-  } else {
-    const trigger = document.getElementById('analisaMoreTrigger');
-    if (trigger) trigger.textContent = '···';
+  if (!analisaTracked.includes(symbol)) {
+    analisaTracked.push(symbol);
+    _analisaSaveTracked();
   }
-  const chipEl = isMajor ? document.querySelector(`.analisa-chip[onclick*="'${symbol}'"]`) : document.getElementById('analisaMoreTrigger');
-  loadAnalisa(symbol, tekPairLabel(p), chipEl);
+  renderAnalisaTrackedChips();
+  const chipEl = document.querySelector(`#analisaTrackedChips .analisa-chip[data-symbol="${symbol}"]`);
+  loadAnalisa(symbol, label, chipEl);
+}
+
+// Hapus pair dari daftar. Kalau pair yang dihapus sedang aktif ditampilkan: pindah
+// otomatis ke pair tersisa pertama (kalau ada), atau kembali ke state kosong "pilih
+// pair" (kalau daftar jadi kosong) — supaya tidak meninggalkan data pair yang sudah
+// dihapus tetap nampang di layar.
+function analisaRemovePair(symbol, e) {
+  if (e) e.stopPropagation();
+  const wasActive = analisaActive.symbol === symbol;
+  analisaTracked = analisaTracked.filter(s => s !== symbol);
+  _analisaSaveTracked();
+  renderAnalisaTrackedChips();
+  if (!wasActive) return;
+  if (analisaTracked.length > 0) {
+    const nextSymbol = analisaTracked[0];
+    const chipEl = document.querySelector(`#analisaTrackedChips .analisa-chip[data-symbol="${nextSymbol}"]`);
+    loadAnalisa(nextSymbol, _analisaLabelForSymbol(nextSymbol), chipEl);
+  } else {
+    analisaActive = { symbol: null, label: null };
+    stopAnalisaAutoRefresh();
+    try { localStorage.removeItem(LS_ANALISA_LAST); } catch(err) {}
+    document.getElementById('analisaEmpty').style.display   = 'block';
+    document.getElementById('analisaContent').style.display = 'none';
+  }
 }
 
 function onTekTFChange() {
@@ -13977,15 +13837,18 @@ function renderTekYield() {
 }
 
 // ── DRAWER ────────────────────────────────────────────────
+// Session 159: item drawer dulu punya warna sendiri-sendiri per view (col: '#...') —
+// disatukan bareng warna nav tab utama (lihat komentar .nvtab.active di CSS) supaya
+// konsisten satu sistem navigasi, bukan cuma sebagian yang diseragamkan.
 const DRAWER_ITEMS = [
-  { view:'cal',         label:'Kalender',    desc:'Economic calendar & event countdown', col:'#00c896' },
-  { view:'riset',       label:'Artikel',     desc:'Riset & artikel macro terbaru',       col:'#34d399' },
-  { view:'cot',         label:'COT',         desc:'COT positioning data mingguan',       col:'#a78bfa' },
-  { view:'checklist',   label:'Checklist',   desc:'Checklist sebelum entry trade',       col:'#facc15' },
-  { view:'fundamental', label:'Fundamental', desc:'Data fundamental 8 mata uang',        col:'#a78bfa' },
-  { view:'sizing',      label:'Sizing',      desc:'Kalkulator lot size & risk',          col:'#60a5fa' },
-  { view:'jurnal',      label:'Jurnal',      desc:'Trade journal & review',              col:'#f472b6' },
-  { view:'petunjuk',    label:'Petunjuk',    desc:'SOP panduan trading end-to-end',      col:'#60a5fa' },
+  { view:'cal',         label:'Kalender',    desc:'Economic calendar & event countdown' },
+  { view:'riset',       label:'Artikel',     desc:'Riset & artikel macro terbaru' },
+  { view:'cot',         label:'COT',         desc:'COT positioning data mingguan' },
+  { view:'checklist',   label:'Checklist',   desc:'Checklist sebelum entry trade' },
+  { view:'fundamental', label:'Fundamental', desc:'Data fundamental 8 mata uang' },
+  { view:'sizing',      label:'Sizing',      desc:'Kalkulator lot size & risk' },
+  { view:'jurnal',      label:'Jurnal',      desc:'Trade journal & review' },
+  { view:'petunjuk',    label:'Petunjuk',    desc:'SOP panduan trading end-to-end' },
 ];
 
 function openDrawer() {
@@ -14004,11 +13867,9 @@ function renderDrawer() {
   if (!nav) return;
   nav.innerHTML = DRAWER_ITEMS.map(item => {
     const isActive = activeView === item.view;
-    const borderCol = isActive ? item.col : 'transparent';
     return '<button class="drawer-item' + (isActive ? ' active' : '') + '"'
-      + ' style="border-left-color:' + borderCol + '"'
       + ' data-view="' + item.view + '">'
-      + '<span class="drawer-item-dot" style="background:' + item.col + '"></span>'
+      + '<span class="drawer-item-dot"></span>'
       + '<div>'
       + '<div class="drawer-item-label">' + item.label + '</div>'
       + '<div class="drawer-item-desc">' + item.desc + '</div>'
@@ -14305,7 +14166,15 @@ function renderDashAnalisa() {
 
 function openAnalisaFromDash(symbol, label) {
   switchView('analisa');
-  setTimeout(() => loadAnalisa(symbol, label, _analisaChipInfo(symbol).chipEl), 60);
+  if (!analisaTracked.includes(symbol)) {
+    analisaTracked.push(symbol);
+    _analisaSaveTracked();
+  }
+  renderAnalisaTrackedChips();
+  setTimeout(() => {
+    const chipEl = document.querySelector(`#analisaTrackedChips .analisa-chip[data-symbol="${symbol}"]`);
+    loadAnalisa(symbol, label, chipEl);
+  }, 60);
 }
 
 async function initDashboard() {
@@ -14417,18 +14286,20 @@ function renderDashNews() {
     return;
   }
 
+  // Session 159 (keputusan user): dulu tiap kategori punya warna sendiri — disatukan
+  // bareng nav tab & drawer (lihat komentar .nvtab.active di CSS) supaya konsisten.
   const CAT_META = {
-    'market-moving': { label: 'MKT MOVING', color: '#ff4757' },
-    'forex':         { label: 'FOREX',       color: '#4ade80' },
-    'macro':         { label: 'MACRO',       color: '#f87171' },
-    'econ-data':     { label: 'ECON DATA',   color: '#c084fc' },
-    'bonds':         { label: 'BONDS',       color: '#60a5fa' },
-    'energy':        { label: 'ENERGY',      color: '#f97316' },
-    'commodities':   { label: 'COMMODITIES', color: '#f59e0b' },
-    'equities':      { label: 'EQUITIES',    color: '#a78bfa' },
-    'geopolitical':  { label: 'GEOPOLIT.',   color: '#fb923c' },
-    'indexes':       { label: 'INDEXES',     color: '#34d399' },
-    'crypto':        { label: 'CRYPTO',      color: '#ec4899' },
+    'market-moving': { label: 'MKT MOVING' },
+    'forex':         { label: 'FOREX' },
+    'macro':         { label: 'MACRO' },
+    'econ-data':     { label: 'ECON DATA' },
+    'bonds':         { label: 'BONDS' },
+    'energy':        { label: 'ENERGY' },
+    'commodities':   { label: 'COMMODITIES' },
+    'equities':      { label: 'EQUITIES' },
+    'geopolitical':  { label: 'GEOPOLIT.' },
+    'indexes':       { label: 'INDEXES' },
+    'crypto':        { label: 'CRYPTO' },
   };
   const CAT_ORDER = ['market-moving','forex','macro','econ-data','bonds','energy','commodities','equities','geopolitical','indexes','crypto'];
 
@@ -14449,21 +14320,21 @@ function renderDashNews() {
   for (const cat of CAT_ORDER) {
     const catItems = groups[cat];
     if (!catItems || catItems.length === 0) continue;
-    const meta = CAT_META[cat] || { label: cat.toUpperCase(), color: 'var(--muted)' };
+    const meta = CAT_META[cat] || { label: cat.toUpperCase() };
     const autoExpand = cat === 'market-moving';
     const isExpanded = dashClusterState[cat] !== undefined ? dashClusterState[cat] : autoExpand;
 
     html += `<div class="dash-cluster" id="cluster-${cat}">
       <div class="dash-cluster-header" onclick="toggleDashCluster('${cat}')">
-        <div class="dash-cluster-dot" style="background:${meta.color}"></div>
-        <div class="dash-cluster-label" style="color:${meta.color}">${meta.label}</div>
+        <div class="dash-cluster-dot"></div>
+        <div class="dash-cluster-label">${meta.label}</div>
         <div class="dash-cluster-count">${catItems.length}</div>
         <div class="dash-cluster-age">${fmtAge(catItems[0].pubDate)}</div>
         <div class="dash-cluster-chevron${isExpanded ? ' open' : ''}">&#9658;</div>
       </div>
       <div class="dash-cluster-items" id="cluster-items-${cat}" style="display:${isExpanded ? 'block' : 'none'}">
         ${catItems.slice(0, 15).map(it => `<div class="dash-news-item">
-          <div class="dash-news-dot" style="background:${meta.color}"></div>
+          <div class="dash-news-dot"></div>
           <div class="dash-news-text">${escHtml(it.title || '')}</div>
           <div class="dash-news-time">${fmtAge(it.pubDate)}</div>
         </div>`).join('')}

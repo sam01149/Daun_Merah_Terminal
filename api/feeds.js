@@ -57,10 +57,6 @@ async function redisCmd(...args) {
 const RSS_CACHE_TTL_MS = 50 * 1000;
 const RSS_CACHE_KEY    = 'rss_cache';
 const RSS_URL          = 'https://www.financialjuice.com/feed.ashx?xy=rss';
-// Fallback when FinancialJuice is down/blocked — standard WordPress RSS, same
-// macro/forex news genre, guid/title/pubDate/link/description shape already
-// compatible with parseRSSItems() / frontend parseRSS().
-const RSS_FALLBACK_URL = 'https://investinglive.com/feed/news/';
 const RSS_USER_AGENTS  = [
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
   'Feedly/1.0 (+http://www.feedly.com/fetcher.html; like FeedFetcher-Google)',
@@ -126,7 +122,7 @@ async function rssHandler(req, res) {
   }
 
   const ua = RSS_USER_AGENTS[Math.floor(Math.random() * RSS_USER_AGENTS.length)];
-  let xml = null, fetchError = null, sourceUsed = 'financialjuice';
+  let xml = null, fetchError = null;
 
   // Circuit breaker 'fj' (shared dengan health dashboard): kalau FinancialJuice
   // sedang OPEN, jangan bayar timeout 12s — langsung coba fallback.
@@ -145,24 +141,16 @@ async function rssHandler(req, res) {
     fetchError = 'CIRCUIT_OPEN';
   }
 
-  // Primary source down/blocked — try fallback source before resorting to stale cache
+  // Primary source down/blocked — serve stale cache instead of switching to a
+  // different source (session 159, keputusan user): sempat pakai Investinglive
+  // sebagai fallback isi (session 80), tapi headline dari sumber lain akan total
+  // berbeda dari yang barusan dilihat user, lalu tiba-tiba balik lagi ke headline
+  // FJ begitu FJ pulih — dua kali perubahan mendadak yang membingungkan. Mending
+  // "macet" di data FJ terakhir yang familiar (stale, ditandai jelas via
+  // X-Cache-Source: STALE) sampai FJ hidup lagi, daripada sekilas tampil dunia
+  // berita yang berbeda lalu berubah lagi.
   if (!xml) {
-    console.warn('FinancialJuice RSS failed:', fetchError, '— trying fallback (Investinglive)');
-    try {
-      const r2 = await fetch(RSS_FALLBACK_URL, {
-        headers: { 'User-Agent': ua, 'Accept': 'application/rss+xml,*/*' },
-        signal: AbortSignal.timeout(12000),
-      });
-      if (r2.ok) {
-        const t2 = await r2.text();
-        if (t2.includes('<rss') && t2.includes('<item>')) { xml = t2; sourceUsed = 'investinglive_fallback'; }
-      }
-    } catch(e2) {
-      console.warn('Fallback RSS (Investinglive) also failed:', e2.message);
-    }
-  }
-
-  if (!xml) {
+    console.warn('FinancialJuice RSS failed:', fetchError, '— serving stale cache instead of switching source');
     if (gotLock) redisCmd('DEL', lockKey).catch(() => {}); // release early so next cycle isn't stuck waiting out the TTL
     try {
       const stale = await redisCmd('GET', RSS_CACHE_KEY);
@@ -174,12 +162,12 @@ async function rssHandler(req, res) {
       }
     } catch(e2) {}
     res.setHeader('Content-Type', 'application/json');
-    return res.status(502).json({ error: 'Upstream fetch failed (primary + fallback)', detail: fetchError });
+    return res.status(502).json({ error: 'Upstream fetch failed', detail: fetchError });
   }
 
   if (gotLock) redisCmd('DEL', lockKey).catch(() => {}); // release as soon as fresh data is about to be cached
 
-  const payload = JSON.stringify({ xml, fetchedAt: now, source: sourceUsed });
+  const payload = JSON.stringify({ xml, fetchedAt: now, source: 'financialjuice' });
   try { await redisCmd('SET', RSS_CACHE_KEY, payload, 'EX', 60); } catch(e3) {
     console.warn('RSS Redis SET failed:', e3.message);
   }
@@ -187,8 +175,8 @@ async function rssHandler(req, res) {
   // Fire-and-forget: persist items to 36h rolling history for market-digest
   storeNewsHistory(xml, now).catch(() => {});
 
-  res.setHeader('X-Cache-Source', sourceUsed === 'financialjuice' ? 'UPSTREAM' : 'FALLBACK');
-  res.setHeader('X-News-Source', sourceUsed);
+  res.setHeader('X-Cache-Source', 'UPSTREAM');
+  res.setHeader('X-News-Source', 'financialjuice');
   return res.status(200).send(xml);
 }
 
