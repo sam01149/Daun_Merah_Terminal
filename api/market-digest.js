@@ -67,7 +67,6 @@ const GROQ_MODEL_PROSE = 'llama-3.3-70b-versatile';        // Call 1 fallback 3:
                                                             // codebase ini buat Call 2/4, dan didokumentasikan resmi cocok
                                                             // untuk "long-form content".
 const OPENROUTER_URL     = 'https://openrouter.ai/api/v1/chat/completions';
-const OPENROUTER_MODEL   = 'openai/gpt-oss-120b:free'; // Call 1 fallback 2: proven stabil, output Bahasa Indonesia
 const OPENROUTER_HEADERS = { 'HTTP-Referer': 'https://financial-feed-app.vercel.app', 'X-Title': 'Daun Merah' };
 // Nemotron 3 Ultra (session 145) — primary baru Call 1/2/3: 550B/55B-active MoE hybrid
 // Mamba-Transformer, context 1M, GPQA Diamond 86.7%. Circuit breaker terpisah dari
@@ -132,6 +131,18 @@ const CB_OPENROUTER_HERMES   = 'ai:openrouter:hermes';
 const CEREBRAS_URL           = 'https://api.cerebras.ai/v1/chat/completions';
 const CEREBRAS_MODEL_GLM     = 'zai-glm-4.7';
 const CB_CEREBRAS_GLM        = 'ai:cerebras:glm';
+
+// gpt-oss-120b via Cerebras (session 164) — GANTI primary Call 1 dari OpenRouter
+// (openai/gpt-oss-120b:free) ke Cerebras native: OpenRouter free tier terbukti sering
+// timeout di produksi (contoh nyata: 15010ms, tepat kelewat batas timeout 15000ms),
+// sementara Cerebras native mengklaim ~3000 tok/s untuk model ini dan full context
+// 128K (jauh di atas prompt Call 1 ~13K token — tidak kena masalah context-cap seperti
+// GLM 4.7 di atas). Model id + endpoint dikonfirmasi sama dengan yang sudah dipakai
+// admin.js (fundamental_analysis) & journal.js (AI Coach) sejak session 145. Pool
+// token/hari Cerebras terpisah dari OpenRouter (counter 'cerebras', lihat _ai_guard.js)
+// — jadi tidak berebut kuota dengan Nemotron Ultra/Super yang masih pakai OpenRouter.
+const CEREBRAS_MODEL_GPTOSS  = 'gpt-oss-120b';
+const CB_CEREBRAS_GPTOSS     = 'ai:cerebras:gptoss';
 
 const MAJOR_CURRENCIES = new Set(['USD','EUR','GBP','JPY','CAD','AUD','NZD','CHF']);
 
@@ -1986,37 +1997,42 @@ ${xauHistoryBlock}`;
     const CALL1_HARD_BUDGET_MS = 48000;
     const call1BudgetLeft = () => Date.now() - handlerStart < CALL1_HARD_BUDGET_MS;
 
-    // Primary: OpenRouter gpt-oss-120b (session 163, 2026-07-13) — dipromosikan dari
-    // fallback 1 jadi primary karena akun SambaNova (SAMBANOVA_KEY_CALL1) sudah kena
-    // limit harian. Kualitas gpt-oss-120b lebih rendah dari DeepSeek-V3.2 — diterima
-    // sementara sambil user cari kandidat model lain (GLM 4.7 via Cerebras sudah dites
-    // & DITOLAK, lihat CEREBRAS_MODEL_GLM). SambaNova TIDAK dihapus, digeser jadi
-    // fallback 1 di bawah — otomatis kepakai lagi begitu limitnya reset/naik.
+    // Primary: Cerebras gpt-oss-120b (session 164) — GANTI dari OpenRouter
+    // (openai/gpt-oss-120b:free, session 163): OpenRouter free tier terbukti sering
+    // timeout di produksi (log nyata: 15010ms, tepat kelewat batas timeout 15000ms).
+    // Cerebras native jauh lebih cepat (~3000 tok/s) dan sudah proven dipakai untuk
+    // gpt-oss-120b di admin.js/journal.js sejak session 145 — lihat CEREBRAS_MODEL_GPTOSS.
+    // Pool token/hari terpisah dari SambaNova/Groq/OpenRouter (counter 'cerebras').
     if (isIsolatedTest) {
-      if (!article) providerLog.push('openrouter_gptoss:skipped_test');
+      if (!article) providerLog.push('cerebras_gptoss:skipped_test');
     } else if (!article && !call1BudgetLeft()) {
-      providerLog.push('openrouter:skipped_budget');
-    } else if (!article && OPENROUTER_KEY) {
+      providerLog.push('cerebras_gptoss:skipped_budget');
+    } else if (!article && CEREBRAS_KEY && await cb.canCall(CB_CEREBRAS_GPTOSS)) {
       const t2s = Date.now();
       try {
-        console.log('Call 1: trying OpenRouter gpt-oss-120b:free (primary)');
-        const raw = await aiCall(OPENROUTER_URL, OPENROUTER_KEY, OPENROUTER_MODEL, call1Messages, 1300, 0.25, 15000, OPENROUTER_HEADERS);
+        console.log('Call 1: trying Cerebras gpt-oss-120b (primary)');
+        const raw = await aiCall(CEREBRAS_URL, CEREBRAS_KEY, CEREBRAS_MODEL_GPTOSS, call1Messages, 1300, 0.25, 15000, {}, { reasoning_effort: 'low' }, 'cerebras');
         const elapsed = Date.now() - t2s;
         if (raw.trim()) {
           article = raw.trim(); method = 'gpt-oss-120b';
-          providerLog.push(`openrouter:ok(${elapsed}ms,${article.length}c)`);
+          providerLog.push(`cerebras_gptoss:ok(${elapsed}ms,${article.length}c)`);
         } else {
-          providerLog.push(`openrouter:empty(${elapsed}ms)`);
+          providerLog.push(`cerebras_gptoss:empty(${elapsed}ms)`);
         }
-        console.log('Call 1: OpenRouter OK, length', article?.length);
+        console.log('Call 1: Cerebras gpt-oss-120b OK, length', article?.length);
+        await cb.onSuccess(CB_CEREBRAS_GPTOSS);
       } catch(e) {
         const elapsed = Date.now() - t2s;
         const errMsg = e.status ? `HTTP${e.status}` : (e.message || 'err').slice(0, 40);
-        providerLog.push(`openrouter:${errMsg}(${elapsed}ms)`);
-        console.warn('Call 1 OpenRouter failed:', e.status || e.message);
+        providerLog.push(`cerebras_gptoss:${errMsg}(${elapsed}ms)`);
+        console.warn('Call 1 Cerebras gpt-oss-120b failed:', e.status || e.message);
+        await cb.onFailure(CB_CEREBRAS_GPTOSS, AI_CB_THRESHOLD);
       }
+    } else if (!article && CEREBRAS_KEY) {
+      providerLog.push('cerebras_gptoss:circuit_open');
+      console.log('Call 1: Cerebras circuit OPEN — skipping to SambaNova');
     } else if (!article) {
-      providerLog.push('openrouter:no_key');
+      providerLog.push('cerebras_gptoss:no_key');
     }
 
     // Fallback 1: SambaNova DeepSeek-V3.2 (akun 2, Call 1 prose only) — digeser dari
