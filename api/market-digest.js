@@ -1806,12 +1806,16 @@ ${xauHistoryBlock}`;
         providerLog.push('nemotron_super:no_key');
       }
     } else if (testNemotronOnly) {
-      const ollamaNemotronTimeout1 = 45000;
+      // Session 162 lanjutan 6: eksperimen user — coba think:true (reasoning DINYALAKAN,
+      // bukan dimatikan) + timeout 60s + num_predict dinaikkan 1300→3500 (reasoning trace
+      // eksplisit ikut makan num_predict, 1300 nyaris pasti kepotong kalau reasoning betulan
+      // jalan). Cuma diagnostik terisolasi (?test_nemotron=1), TIDAK menyentuh primary produksi.
+      const ollamaNemotronTimeout1 = 60000;
       if (OLLAMA_KEY && await cb.canCall(CB_OLLAMA_NEMOTRON)) {
         const t0s = Date.now();
         try {
-          console.log('Call 1: trying Nemotron 3 Ultra (Ollama Cloud, think:false native), timeout', ollamaNemotronTimeout1);
-          const raw = await callOllama(OLLAMA_KEY, OLLAMA_NEMOTRON_MODEL, call1Messages, 1300, 0.25, ollamaNemotronTimeout1, 'ollama', false);
+          console.log('Call 1: trying Nemotron 3 Ultra (Ollama Cloud, think:true native — eksperimen), timeout', ollamaNemotronTimeout1);
+          const raw = await callOllama(OLLAMA_KEY, OLLAMA_NEMOTRON_MODEL, call1Messages, 3500, 0.25, ollamaNemotronTimeout1, 'ollama', true);
           const elapsed = Date.now() - t0s;
           article = raw.trim(); method = 'nemotron-3-ultra';
           providerLog.push(`ollama_nemotron:ok(${elapsed}ms,${article.length}c)`);
