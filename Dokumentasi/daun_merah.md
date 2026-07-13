@@ -24,6 +24,8 @@
 
 **Live test end-to-end di production** (setelah deploy, kredensial `CRON_SECRET` di-pull sementara dari Vercel dengan izin eksplisit user, file `.env.production.local` dihapus lagi setelah selesai): POST langsung ke `/api/market-digest` (jalur manual, bukan cron, supaya chain live diuji apa adanya) — HTTP 200, `provider_log` konfirmasi Call 1 sukses lewat `sambanova:ok(12073ms,2452c)` tanpa perlu jatuh ke Cerebras/Groq sama sekali, Call 2 update bias untuk **8/8 currency** (USD, EUR, JPY, GBP, CAD, AUD, NZD, CHF) via SambaNova, Call 3 menghasilkan thesis JSON valid lengkap (`pair_recommendation":"USD/JPY"`, dst) — juga via SambaNova. Tidak ada jejak GLM 4.7/gpt-oss-120b di `provider_log` karena SambaNova sukses di percobaan pertama untuk ketiga call, persis perilaku primary yang diharapkan.
 
+**Susulan sama sesi — cek Analisa AI per Pair:** user tanya apakah `ohlcv_analyze` (tab "Analisa") juga perlu digeser primary-nya ke SambaNova. Dicek dulu kodenya (`api/admin.js` ~baris 2451): fitur ini **SUDAH SambaNova primary** dari sesi jauh sebelumnya ("Eksperimen GLM-5.2/gpt-oss:120b sebagai primary dihentikan"), tidak pernah tersentuh perubahan session 163/164 — tidak ada kode yang diubah. User minta test khusus XAU/USD (`symbol=GC=F`) untuk konfirmasi: POST `/api/admin?action=ohlcv_analyze` langsung ke production — HTTP 200, `model:"deepseek-v3.2"`, commentary 2482 karakter tergenerate sukses via SambaNova di percobaan pertama.
+
 ### Versi
 Tidak ada perubahan frontend/cache-buster (fix backend-only, tidak menyentuh `index.html`/`sw.js`).
 
