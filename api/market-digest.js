@@ -115,16 +115,20 @@ const CB_OPENROUTER_NEMOTRON_SUPER = 'ai:openrouter:nemotron-super';
 const HERMES_MODEL           = 'nousresearch/hermes-3-llama-3.1-405b:free';
 const CB_OPENROUTER_HERMES   = 'ai:openrouter:hermes';
 
-// Z.ai GLM 4.7 via Cerebras (diagnostik, session 165) — kandidat baru, BELUM pernah
-// dites live. Model id dikonfirmasi dari blog resmi Cerebras ("GLM-4.7: Frontier
-// intelligence at record speed — now available on Cerebras", 8 Jan 2026): 355B params,
-// ~1000 tok/s. Endpoint/API-key SAMA dengan CEREBRAS_URL/CEREBRAS_KEY yang sudah dipakai
-// admin.js (fundamental_analysis) & journal.js (AI Coach) untuk gpt-oss-120b — provider
-// ini belum pernah dipanggil dari market-digest.js sebelumnya, jadi konstanta baru di
-// sini. PENTING: dokumentasi Cerebras menandai model ini tier "Preview" — eksplisit
-// "should not be used in production, as they may be discontinued on short notice", jadi
-// SENGAJA dites hanya via ?test_glm=1 (skip semua tier lain di Call 1, pola sama seperti
-// Hermes), bukan langsung jadi kandidat primary/fallback permanen.
+// Z.ai GLM 4.7 via Cerebras (diagnostik, session 163) — DITOLAK setelah dites live
+// (2026-07-13): HTTP 400 "Please reduce the length of the messages or completion.
+// Current length is 13029 while limit is 8192" — context window model ini di tier
+// Preview Cerebras cuma 8192 token, jauh di bawah prompt Call 1 (~13K token dengan
+// headline+kalender+OHLCV). Bukan bug kode (root-caused via perbaikan error-shape di
+// aiCall(), lihat komentar di sana) — model-nya sendiri yang terlalu kecil context-nya
+// untuk use case ini. Endpoint/API-key SAMA dengan CEREBRAS_URL/CEREBRAS_KEY yang sudah
+// dipakai admin.js (fundamental_analysis) & journal.js (AI Coach) untuk gpt-oss-120b.
+// Model id dikonfirmasi dari blog resmi Cerebras ("GLM-4.7: Frontier intelligence at
+// record speed — now available on Cerebras", 8 Jan 2026): 355B params, tier "Preview"
+// ("should not be used in production, as they may be discontinued on short notice").
+// Jalur ?test_glm=1 TETAP ada (tidak dihapus, pola sama seperti kandidat lain yang
+// ditolak) untuk jaga-jaga kalau Cerebras menaikkan context cap Preview-nya di masa
+// depan — tapi TIDAK direkomendasikan lagi jadi kandidat primary/fallback Call 1.
 const CEREBRAS_URL           = 'https://api.cerebras.ai/v1/chat/completions';
 const CEREBRAS_MODEL_GLM     = 'zai-glm-4.7';
 const CB_CEREBRAS_GLM        = 'ai:cerebras:glm';
@@ -457,7 +461,7 @@ async function aiCall(url, apiKey, model, messages, maxTokens, temperature, time
     const err = await res.json().catch(() => ({}));
     // Providers vary in error shape: OpenAI-style nests it ({error:{message}}), Cerebras
     // returns it flat ({message, type, param, code}) — try both before falling back to a
-    // generic status string (session 165: Cerebras GLM 400 got swallowed as "HTTP 400"
+    // generic status string (session 163: Cerebras GLM 400 got swallowed as "HTTP 400"
     // with zero detail because only the nested shape was checked).
     const e = new Error(err?.error?.message || err?.message || `HTTP ${res.status}`);
     e.status = res.status;
@@ -1932,16 +1936,47 @@ ${xauHistoryBlock}`;
       providerLog.push('nemotron_super:skipped_not_primary', 'openrouter_nemotron:skipped_not_primary', 'ollama_nemotron:skipped_not_primary');
     }
 
-    // Primary: SambaNova DeepSeek-V3.2 (akun 2, Call 1 prose only) — dikembalikan jadi
-    // primary asli (session 162 lanjutan 7, lihat catatan Nemotron di atas). Tetap
-    // di-skip saat ?test_nemotron=1 / ?test_nemotron_super=1 / ?test_hermes=1 supaya
-    // hasil diagnostik tidak tersamar.
+    // Primary: OpenRouter gpt-oss-120b (session 163, 2026-07-13) — dipromosikan dari
+    // fallback 1 jadi primary karena akun SambaNova (SAMBANOVA_KEY_CALL1) sudah kena
+    // limit harian. Kualitas gpt-oss-120b lebih rendah dari DeepSeek-V3.2 — diterima
+    // sementara sambil user cari kandidat model lain (GLM 4.7 via Cerebras sudah dites
+    // & DITOLAK, lihat CEREBRAS_MODEL_GLM). SambaNova TIDAK dihapus, digeser jadi
+    // fallback 1 di bawah — otomatis kepakai lagi begitu limitnya reset/naik.
+    if (isIsolatedTest) {
+      if (!article) providerLog.push('openrouter_gptoss:skipped_test');
+    } else if (!article && OPENROUTER_KEY) {
+      const t2s = Date.now();
+      try {
+        console.log('Call 1: trying OpenRouter gpt-oss-120b:free (primary)');
+        const raw = await aiCall(OPENROUTER_URL, OPENROUTER_KEY, OPENROUTER_MODEL, call1Messages, 1300, 0.25, 15000, OPENROUTER_HEADERS);
+        const elapsed = Date.now() - t2s;
+        if (raw.trim()) {
+          article = raw.trim(); method = 'gpt-oss-120b';
+          providerLog.push(`openrouter:ok(${elapsed}ms,${article.length}c)`);
+        } else {
+          providerLog.push(`openrouter:empty(${elapsed}ms)`);
+        }
+        console.log('Call 1: OpenRouter OK, length', article?.length);
+      } catch(e) {
+        const elapsed = Date.now() - t2s;
+        const errMsg = e.status ? `HTTP${e.status}` : (e.message || 'err').slice(0, 40);
+        providerLog.push(`openrouter:${errMsg}(${elapsed}ms)`);
+        console.warn('Call 1 OpenRouter failed:', e.status || e.message);
+      }
+    } else if (!article) {
+      providerLog.push('openrouter:no_key');
+    }
+
+    // Fallback 1: SambaNova DeepSeek-V3.2 (akun 2, Call 1 prose only) — digeser dari
+    // primary (session 163, lihat catatan gpt-oss di atas: akun ini sudah kena limit
+    // harian). Tetap di-skip saat ?test_nemotron=1 / ?test_nemotron_super=1 /
+    // ?test_hermes=1 / ?test_glm=1 supaya hasil diagnostik tidak tersamar.
     if (isIsolatedTest) {
       if (!article) providerLog.push('sambanova:skipped_test');
     } else if (!article && SAMBANOVA_KEY_CALL1 && await cb.canCall(CB_SAMBA_C1)) {
       const t1s = Date.now();
       try {
-        console.log('Call 1: trying SambaNova DeepSeek-V3.2 (akun 2 prose)');
+        console.log('Call 1: fallback 1 to SambaNova DeepSeek-V3.2 (akun 2 prose)');
         const raw = await aiCall(SAMBANOVA_URL_CALL1, SAMBANOVA_KEY_CALL1, SAMBANOVA_MODEL_CALL1, call1Messages, 1300, 0.25, 22000, {}, {}, 'sambanova_c1');
         const elapsed = Date.now() - t1s;
         if (raw.trim()) {
@@ -1956,40 +1991,14 @@ ${xauHistoryBlock}`;
         const elapsed = Date.now() - t1s;
         const errMsg = e.status ? `HTTP${e.status}` : (e.message || 'err').slice(0, 40);
         providerLog.push(`sambanova:${errMsg}(${elapsed}ms)`);
-        console.warn('Call 1 SambaNova V3.2 failed:', e.status || e.message);
+        console.warn('Call 1 SambaNova V3.2 fallback failed:', e.status || e.message);
         await cb.onFailure(CB_SAMBA_C1, AI_CB_THRESHOLD);
       }
     } else if (!article && SAMBANOVA_KEY_CALL1) {
       providerLog.push('sambanova:circuit_open');
-      console.log('Call 1: SambaNova circuit OPEN — skipping to OpenRouter');
+      console.log('Call 1: SambaNova circuit OPEN — skipping to Groq');
     } else if (!article) {
       providerLog.push('sambanova:no_key');
-    }
-
-    // Fallback 1: OpenRouter gpt-oss-120b (if SambaNova failed/empty)
-    if (isIsolatedTest) {
-      if (!article) providerLog.push('openrouter_gptoss:skipped_test');
-    } else if (!article && OPENROUTER_KEY) {
-      const t2s = Date.now();
-      try {
-        console.log('Call 1: fallback 2 to OpenRouter gpt-oss-120b:free');
-        const raw = await aiCall(OPENROUTER_URL, OPENROUTER_KEY, OPENROUTER_MODEL, call1Messages, 1300, 0.25, 15000, OPENROUTER_HEADERS);
-        const elapsed = Date.now() - t2s;
-        if (raw.trim()) {
-          article = raw.trim(); method = 'gpt-oss-120b';
-          providerLog.push(`openrouter:ok(${elapsed}ms,${article.length}c)`);
-        } else {
-          providerLog.push(`openrouter:empty(${elapsed}ms)`);
-        }
-        console.log('Call 1: OpenRouter OK, length', article?.length);
-      } catch(e) {
-        const elapsed = Date.now() - t2s;
-        const errMsg = e.status ? `HTTP${e.status}` : (e.message || 'err').slice(0, 40);
-        providerLog.push(`openrouter:${errMsg}(${elapsed}ms)`);
-        console.warn('Call 1 OpenRouter fallback failed:', e.status || e.message);
-      }
-    } else if (!article) {
-      providerLog.push('openrouter:no_key');
     }
 
     // Fallback 2: Groq qwen3-32b (if OpenRouter failed/empty)
