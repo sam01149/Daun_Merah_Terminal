@@ -32,6 +32,18 @@ const OPENROUTER_HEADERS = { 'HTTP-Referer': 'https://financial-feed-app.vercel.
 const HERMES_MODEL       = 'nousresearch/hermes-3-llama-3.1-405b:free';
 const CB_OPENROUTER_HERMES = 'ai:openrouter:hermes';
 
+// Ollama Cloud — API native (BUKAN OpenAI-compatible), lihat callOllama() di
+// market-digest.js untuk bentuk request/response persis (sengaja duplikasi kecil,
+// bukan shared import — konvensi project ini, lihat komentar OPENROUTER di atas).
+// nemotron-3-nano dipakai KHUSUS untuk diagnostik konektivitas (?test_ollama=1) —
+// model terkecil/tercepat di keluarga Nemotron 3 Ollama Cloud (~500-700ms dilaporkan),
+// tujuannya murni "apakah akun/API Ollama Cloud reachable & terautentikasi", BUKAN
+// kandidat kualitas (beda dari nemotron-3-ultra yang dipakai test_nemotron=1 di
+// market-digest.js, yang memang kandidat serius Call 1).
+const OLLAMA_URL         = 'https://ollama.com/api/chat';
+const OLLAMA_NANO_MODEL  = 'nemotron-3-nano';
+const CB_OLLAMA_NANO     = 'ai:ollama:nano';
+
 // Actions callable from the frontend without a secret → rate-limited per IP.
 // AI-triggering actions get a tighter budget than cache reads.
 const PUBLIC_ACTION_LIMITS = {
@@ -2387,12 +2399,59 @@ async function ohlcvAnalyzeHandler(req, res) {
       }
     }
 
+    // Diagnostik konektivitas Ollama Cloud (?test_ollama=1) — TIDAK berhubungan dengan
+    // testHermesOnly (provider beda, tidak saling exclude — bisa dites terpisah). Isolasi
+    // total dari SambaNova sama seperti Hermes. Tujuan murni "apakah akun/API-nya
+    // reachable", bukan kandidat kualitas — pakai model terkecil/tercepat (OLLAMA_NANO_MODEL).
+    const testOllamaOnly = req.query.test_ollama === '1' || req.body?.test_ollama === true;
+    let ollamaError = null, ollamaElapsedMs = null;
+
+    if (testOllamaOnly) {
+      const OLLAMA_KEY = process.env.OLLAMA_API_KEY;
+      if (OLLAMA_KEY && await cb.canCall(CB_OLLAMA_NANO)) {
+        const t0o = Date.now();
+        try {
+          if (!await allowAiCall('ollama')) throw new Error('AI daily budget exceeded');
+          console.log('ohlcv_analyze: trying Ollama Cloud nemotron-3-nano — diagnostik test_ollama=1');
+          const r = await fetch(OLLAMA_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${OLLAMA_KEY}` },
+            body: JSON.stringify({ model: OLLAMA_NANO_MODEL, messages, stream: false, options: { temperature: 0.3, num_predict: 1500 } }),
+            signal: AbortSignal.timeout(20000),
+          });
+          if (r.ok) {
+            const j = await r.json(); rawText = j?.message?.content?.trim() || null; model = 'nemotron-3-nano';
+            if (rawText) await cb.onSuccess(CB_OLLAMA_NANO);
+            else throw new Error('Empty response');
+          } else { throw new Error(`HTTP ${r.status}`); }
+          ollamaElapsedMs = Date.now() - t0o;
+          console.log('ohlcv_analyze: Ollama nemotron-3-nano OK,', ollamaElapsedMs, 'ms');
+        } catch(e) {
+          ollamaElapsedMs = Date.now() - t0o;
+          ollamaError = e.message;
+          console.warn('ohlcv_analyze Ollama nemotron-3-nano failed:', e.message);
+          await cb.onFailure(CB_OLLAMA_NANO);
+        }
+      } else if (OLLAMA_KEY) {
+        ollamaError = 'circuit_open';
+        console.log('ohlcv_analyze: test_ollama=1 — circuit OPEN');
+      } else {
+        ollamaError = 'no_key';
+        console.log('ohlcv_analyze: test_ollama=1 — OLLAMA_API_KEY belum diset');
+      }
+    }
+
+    // Dipakai untuk menggerbang dua tier SambaNova + cache produksi — SATU flag untuk
+    // SEMUA diagnostik terisolasi (Hermes/Ollama), supaya nambah kandidat baru nanti
+    // tinggal OR ke sini, bukan cari-cari tiap titik guard satu-satu.
+    const isDiagnosticOnly = testHermesOnly || testOllamaOnly;
+
     // Primary: SambaNova DeepSeek-V3.2 (671B, akun 1) — dikembalikan jadi primary (30s, timeout
     // asli). Eksperimen GLM-5.2/gpt-oss:120b sebagai primary dihentikan: alasan awal coba
     // model lain adalah cari yang LEBIH kuat dari DeepSeek-V3.2, tapi gpt-oss:120b (120B)
     // kemungkinan malah di bawahnya secara kualitas — jadi tidak masuk akal jadi primary
     // yang mengalahkan model yang sudah terbukti lebih kuat & sudah proven di app ini.
-    if (!testHermesOnly && !testC1Only && SAMBANOVA_KEY && await cb.canCall('ai:sambanova:main')) {
+    if (!isDiagnosticOnly && !testC1Only && SAMBANOVA_KEY && await cb.canCall('ai:sambanova:main')) {
       try {
         if (!await allowAiCall('sambanova_main')) throw new Error('AI daily budget exceeded');
         const r = await fetch('https://api.sambanova.ai/v1/chat/completions', {
@@ -2407,7 +2466,7 @@ async function ohlcvAnalyzeHandler(req, res) {
           else throw new Error('Empty response');
         } else { throw new Error(`HTTP ${r.status}`); }
       } catch(e) { console.warn('ohlcv_analyze SambaNova failed:', e.message); await cb.onFailure('ai:sambanova:main'); }
-    } else if (testHermesOnly) { /* sudah di-log di blok Hermes di atas */ }
+    } else if (isDiagnosticOnly) { /* sudah di-log di blok Hermes/Ollama di atas */ }
     else if (testC1Only) { console.log('ohlcv_analyze: test_samba_c1=1 — bypassing primary'); }
     else if (SAMBANOVA_KEY) { console.log('ohlcv_analyze: SambaNova circuit OPEN — skipping to akun 2'); }
 
@@ -2419,7 +2478,7 @@ async function ohlcvAnalyzeHandler(req, res) {
     // setelah 3x gagal beruntun, dan Groq/llama-3.3 kualitasnya paling rendah di rantai
     // ini — DeepSeek-V3.2 akun 2 jauh lebih kuat sebagai fallback tunggal. Timeout 25s
     // supaya total 30s (primary) + 25s tetap di bawah 60s hard limit Vercel.
-    if (!testHermesOnly && !rawText && SAMBANOVA_KEY_CALL1 && await cb.canCall(CB_SAMBA_C1_ADMIN)) {
+    if (!isDiagnosticOnly && !rawText && SAMBANOVA_KEY_CALL1 && await cb.canCall(CB_SAMBA_C1_ADMIN)) {
       try {
         if (!await allowAiCall('sambanova_c1')) throw new Error('AI daily budget exceeded');
         const r = await fetch('https://api.sambanova.ai/v1/chat/completions', {
@@ -2527,9 +2586,9 @@ async function ohlcvAnalyzeHandler(req, res) {
       makro_generated_at: (ringkasanContext && ringkasanAt) ? ringkasanAt : null,
       loaded_at: new Date().toISOString(),
     };
-    // testHermesOnly dikecualikan dari cache produksi — request diagnostik tidak boleh
+    // isDiagnosticOnly dikecualikan dari cache produksi — request diagnostik tidak boleh
     // menimpa hasil analisa AI real yang sedang ditampilkan ke user di tab Analisa.
-    if ((commentary || structured) && !testHermesOnly) {
+    if ((commentary || structured) && !isDiagnosticOnly) {
       redisCmd('SET', `ohlcv_analysis:${symbol}`, JSON.stringify(resultPayload), 'EX', 21600).catch(() => {});
     }
     return res.status(200).json({
@@ -2537,6 +2596,9 @@ async function ohlcvAnalyzeHandler(req, res) {
       test_hermes: testHermesOnly || undefined,
       hermes_error: testHermesOnly ? hermesError : undefined,
       hermes_elapsed_ms: testHermesOnly ? hermesElapsedMs : undefined,
+      test_ollama: testOllamaOnly || undefined,
+      ollama_error: testOllamaOnly ? ollamaError : undefined,
+      ollama_elapsed_ms: testOllamaOnly ? ollamaElapsedMs : undefined,
     });
   } catch(e) {
     return res.status(500).json({ error: e.message });
