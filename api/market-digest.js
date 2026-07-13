@@ -455,7 +455,11 @@ async function aiCall(url, apiKey, model, messages, maxTokens, temperature, time
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    const e = new Error(err?.error?.message || `HTTP ${res.status}`);
+    // Providers vary in error shape: OpenAI-style nests it ({error:{message}}), Cerebras
+    // returns it flat ({message, type, param, code}) — try both before falling back to a
+    // generic status string (session 165: Cerebras GLM 400 got swallowed as "HTTP 400"
+    // with zero detail because only the nested shape was checked).
+    const e = new Error(err?.error?.message || err?.message || `HTTP ${res.status}`);
     e.status = res.status;
     throw e;
   }
