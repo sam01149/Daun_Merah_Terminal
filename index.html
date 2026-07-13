@@ -4257,7 +4257,11 @@ function sendToSW(msg) {
 async function fetchRSS() {
   try {
     const c = new AbortController();
-    setTimeout(() => c.abort(), 12000);
+    // 22s: harus lebih lama dari maxDuration server (20s, lihat vercel.json
+    // api/feeds.js) — timeout client yang lebih pendek dari server membuat
+    // fetch di-abort duluan sebelum server sempat balas, terutama di jaringan
+    // seluler yang RTT-nya lebih tinggi/variatif daripada broadband desktop.
+    setTimeout(() => c.abort(), 22000);
     const r = await fetch(FETCH_URL, { signal: c.signal });
     if (r.ok) {
       const t = await r.text();

@@ -77,7 +77,10 @@ self.addEventListener('message', e => {
 async function fetchRSS() {
   try {
     const c = new AbortController();
-    setTimeout(() => c.abort(), 12000);
+    // 22s: samakan dengan index.html — harus lebih lama dari maxDuration
+    // server (20s, api/feeds.js via vercel.json) supaya polling background
+    // (periodicsync) tidak abort duluan sebelum server sempat balas.
+    setTimeout(() => c.abort(), 22000);
     const r = await fetch(FETCH_URL, { signal: c.signal });
     if (r.ok) {
       const t = await r.text();
