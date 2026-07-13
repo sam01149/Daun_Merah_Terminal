@@ -115,6 +115,20 @@ const CB_OPENROUTER_NEMOTRON_SUPER = 'ai:openrouter:nemotron-super';
 const HERMES_MODEL           = 'nousresearch/hermes-3-llama-3.1-405b:free';
 const CB_OPENROUTER_HERMES   = 'ai:openrouter:hermes';
 
+// Z.ai GLM 4.7 via Cerebras (diagnostik, session 165) — kandidat baru, BELUM pernah
+// dites live. Model id dikonfirmasi dari blog resmi Cerebras ("GLM-4.7: Frontier
+// intelligence at record speed — now available on Cerebras", 8 Jan 2026): 355B params,
+// ~1000 tok/s. Endpoint/API-key SAMA dengan CEREBRAS_URL/CEREBRAS_KEY yang sudah dipakai
+// admin.js (fundamental_analysis) & journal.js (AI Coach) untuk gpt-oss-120b — provider
+// ini belum pernah dipanggil dari market-digest.js sebelumnya, jadi konstanta baru di
+// sini. PENTING: dokumentasi Cerebras menandai model ini tier "Preview" — eksplisit
+// "should not be used in production, as they may be discontinued on short notice", jadi
+// SENGAJA dites hanya via ?test_glm=1 (skip semua tier lain di Call 1, pola sama seperti
+// Hermes), bukan langsung jadi kandidat primary/fallback permanen.
+const CEREBRAS_URL           = 'https://api.cerebras.ai/v1/chat/completions';
+const CEREBRAS_MODEL_GLM     = 'zai-glm-4.7';
+const CB_CEREBRAS_GLM        = 'ai:cerebras:glm';
+
 const MAJOR_CURRENCIES = new Set(['USD','EUR','GBP','JPY','CAD','AUD','NZD','CHF']);
 
 // Map pair label → Yahoo symbol for OHLCV context lookup
@@ -885,6 +899,7 @@ module.exports = async function handler(req, res) {
   const SAMBANOVA_KEY_CALL1 = process.env.SAMBANOVA_API_KEY_CALL1;
   const GROQ_KEY       = process.env.GROQ_API_KEY;
   const OLLAMA_KEY     = process.env.OLLAMA_API_KEY;
+  const CEREBRAS_KEY   = process.env.CEREBRAS_API_KEY;
 
   // Diagnostik sementara (session 145, pola sama seperti ?test_ollama=1 di admin.js
   // session 144): paksa Call 1/2/3 lewat Nemotron 3 Ultra saja, skip tier lain, supaya
@@ -905,7 +920,12 @@ module.exports = async function handler(req, res) {
   // isIsolatedTest di bawah. Uptime rendah model ini membuat isolasi ekstra ini lebih
   // penting dibanding Nemotron yang sudah proven cukup sehat untuk diuji "semi-live".
   const testHermesOnly = req.query.test_hermes === '1';
-  const isIsolatedTest = testHermesOnly || testNemotronOnly || testNemotronSuperOnly;
+
+  // Diagnostik Z.ai GLM 4.7 via Cerebras (lihat CEREBRAS_MODEL_GLM) — pola isolasi sama
+  // seperti Hermes: skip semua tier lain di Call 1, hasil TIDAK ditulis ke
+  // digest_history/latest_article (lihat isIsolatedTest di bawah).
+  const testGlmOnly = req.query.test_glm === '1';
+  const isIsolatedTest = testHermesOnly || testNemotronOnly || testNemotronSuperOnly || testGlmOnly;
 
   const host  = req.headers.host || 'financial-feed-app.vercel.app';
   const proto = host.includes('localhost') ? 'http' : 'https';
@@ -1750,6 +1770,40 @@ ${xauHistoryBlock}`;
       }
     }
 
+    // Z.ai GLM 4.7 (Cerebras) — diagnostik terisolasi via ?test_glm=1 (lihat
+    // CEREBRAS_MODEL_GLM). Timeout dipasang moderat (20s) meski Cerebras mengklaim
+    // ~1000 tok/s untuk model ini — tier "Preview" belum ada data latency nyata sama
+    // sekali, jadi tidak diasumsikan langsung secepat klaim marketing.
+    if (testGlmOnly) {
+      const glmTimeout1 = 20000;
+      if (CEREBRAS_KEY && await cb.canCall(CB_CEREBRAS_GLM)) {
+        const t0g = Date.now();
+        try {
+          console.log('Call 1: trying Z.ai GLM 4.7 (Cerebras) — diagnostik test_glm=1');
+          const raw = await aiCall(CEREBRAS_URL, CEREBRAS_KEY, CEREBRAS_MODEL_GLM, call1Messages, 1300, 0.25, glmTimeout1, {}, {}, 'cerebras');
+          const elapsed = Date.now() - t0g;
+          if (raw.trim()) {
+            article = raw.trim(); method = 'glm-4.7';
+            providerLog.push(`glm:ok(${elapsed}ms,${article.length}c)`);
+          } else {
+            providerLog.push(`glm:empty(${elapsed}ms)`);
+          }
+          console.log('Call 1: GLM 4.7 OK, length', article?.length);
+          await cb.onSuccess(CB_CEREBRAS_GLM);
+        } catch(e) {
+          const elapsed = Date.now() - t0g;
+          const errMsg = e.status ? `HTTP${e.status}` : (e.message || 'err').slice(0, 40);
+          providerLog.push(`glm:${errMsg}(${elapsed}ms)`);
+          console.warn('Call 1 GLM 4.7 failed:', e.status || e.message);
+          await cb.onFailure(CB_CEREBRAS_GLM, AI_CB_THRESHOLD);
+        }
+      } else if (CEREBRAS_KEY) {
+        providerLog.push('glm:circuit_open');
+      } else {
+        providerLog.push('glm:no_key');
+      }
+    }
+
     // Nemotron 3 Ultra — PRIMARY Call 1 (session 162 lanjutan 3, naik dari idle setelah
     // 7/7 percobaan live sukses pakai parameter native think:false, ganti trik prompt
     // /no_think lama yang selalu gagal 4/4 di session 145. Timeout awalnya 20s tapi
@@ -2243,7 +2297,8 @@ ${xauHistoryBlock}`;
   };
 
   // Persist full payload to Redis so cached mode works (exclude thesis_alerts — device-specific).
-  // Diagnostic-only requests (?test_nemotron=1 / ?test_nemotron_super=1 / ?test_hermes=1) must
+  // Diagnostic-only requests (?test_nemotron=1 / ?test_nemotron_super=1 / ?test_hermes=1 /
+  // ?test_glm=1) must
   // NEVER reach here — they're meant to be isolated from production state (see isIsolatedTest
   // above), but this check was missing for test_nemotron* initially, so a "successful"
   // diagnostic response (HTTP 200 with raw reasoning-trace content instead of a real article)
