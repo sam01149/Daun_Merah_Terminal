@@ -451,13 +451,14 @@ async function aiCall(url, apiKey, model, messages, maxTokens, temperature, time
 // Ultra (session 145 lanjutan). Pola & guard budget/error identik dengan _callOllama()
 // di admin.js (dua file duplikasi sengaja per konvensi project ini — lihat komentar
 // OPENROUTER_URL/MODEL di file lain untuk rasionalnya).
-async function callOllama(apiKey, model, messages, maxTokens, temperature, timeoutMs, providerOverride) {
+async function callOllama(apiKey, model, messages, maxTokens, temperature, timeoutMs, providerOverride, think = null) {
   if (!await allowAiCall(providerOverride)) {
     const e = new Error('AI_BUDGET_EXCEEDED');
     e.status = 429;
     throw e;
   }
   const body = { model, messages, stream: false, options: { temperature, num_predict: maxTokens } };
+  if (think !== null) body.think = think;
   const t0 = Date.now();
   const r = await fetch(OLLAMA_URL, {
     method: 'POST',
@@ -1792,8 +1793,8 @@ ${xauHistoryBlock}`;
       if (OLLAMA_KEY && await cb.canCall(CB_OLLAMA_NEMOTRON)) {
         const t0s = Date.now();
         try {
-          console.log('Call 1: trying Nemotron 3 Ultra (Ollama Cloud), timeout', ollamaNemotronTimeout1);
-          const raw = await callOllama(OLLAMA_KEY, OLLAMA_NEMOTRON_MODEL, withNoThink(call1Messages), 1300, 0.25, ollamaNemotronTimeout1, 'ollama');
+          console.log('Call 1: trying Nemotron 3 Ultra (Ollama Cloud, think:false native), timeout', ollamaNemotronTimeout1);
+          const raw = await callOllama(OLLAMA_KEY, OLLAMA_NEMOTRON_MODEL, call1Messages, 1300, 0.25, ollamaNemotronTimeout1, 'ollama', false);
           const elapsed = Date.now() - t0s;
           article = raw.trim(); method = 'nemotron-3-ultra';
           providerLog.push(`ollama_nemotron:ok(${elapsed}ms,${article.length}c)`);
