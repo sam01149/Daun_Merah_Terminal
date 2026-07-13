@@ -1794,7 +1794,7 @@ ${xauHistoryBlock}`;
           const elapsed = Date.now() - t0g;
           const errMsg = e.status ? `HTTP${e.status}` : (e.message || 'err').slice(0, 40);
           providerLog.push(`glm:${errMsg}(${elapsed}ms)`);
-          console.warn('Call 1 GLM 4.7 failed:', e.status || e.message);
+          console.warn('Call 1 GLM 4.7 failed:', e.status, e.message);
           await cb.onFailure(CB_CEREBRAS_GLM, AI_CB_THRESHOLD);
         }
       } else if (CEREBRAS_KEY) {
