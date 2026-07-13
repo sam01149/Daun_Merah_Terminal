@@ -22,7 +22,9 @@
 **Risiko yang disadari, belum divalidasi live:** belum ada data nyata soal (a) apakah GLM konsisten menghasilkan JSON valid untuk schema Call 2/3 (beda dari Call 1 yang prosa bebas), (b) seberapa sering Call 2 kena context-limit di hari headline padat. Timeout dipasang 15s (tidak ada data latency nyata Call 2/3 GLM, dipilih moderat sama seperti diagnostik Call 1 sebelumnya).
 
 ### Verifikasi
-`node --check` bersih, suite penuh **287/287 hijau** (tidak ada test yang hardcode struktur primary/fallback Call 2/3). Perubahan BELUM dites live end-to-end (user minta manual dulu) — cek `provider_log`/`console.log` untuk `Call 2: GLM 4.7 OK` / `Call 3: OK via Z.ai GLM 4.7 (Cerebras)` di request/cron berikutnya untuk konfirmasi, atau fallback otomatis ke SambaNova kalau context-limit kena.
+`node --check` bersih, suite penuh **287/287 hijau** (tidak ada test yang hardcode struktur primary/fallback Call 2/3). **Live test end-to-end dijalankan** (trigger manual `/api/market-digest`, kredensial CRON_SECRET di-pull sementara dari Vercel dengan izin eksplisit, dihapus lagi setelah selesai): HTTP 200, Call 1 (`cerebras_gptoss:ok(994ms,1718c)`), Call 2 (bias_updated 8/8 currency), Call 3 (thesis JSON valid) — semua sukses tanpa error.
+
+**Temuan kualitas dari live test (bukan bug kode):** artikel Call 1 (gpt-oss-120b) nge-tag `{{TAG: ...}}` di HAMPIR SETIAP kalimat, melanggar instruksi prompt yang minta tag cuma dipasang saat pergeseran tema (kalimat dirajut jadi narasi mengalir, bukan blok lepas per kalimat) — efeknya artikel tampil terpecah jadi blok-blok satu-kalimat di frontend. Ditemukan juga tag bertumpuk tanpa teks di antaranya (`{{TAG: Korelasi}}{{TAG: Konfirmasi}}`) dan tag "Konfirmasi" (harusnya cuma penutup FX) nyasar ke kalimat kalender XAU. **Keputusan user: diterima sebagai tradeoff kualitas (gpt-oss vs SambaNova), TIDAK di-fix** — 3 opsi ditawarkan (perkuat prompt anti-overtagging, kembalikan SambaNova primary, post-process tag di kode), semua ditolak eksplisit. Tidak ada perubahan kode dari temuan ini.
 
 ### Versi
 Tidak ada perubahan frontend/cache-buster (fix backend-only).
