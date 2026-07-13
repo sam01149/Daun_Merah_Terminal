@@ -291,8 +291,12 @@ module.exports = async function handler(req, res) {
         sma_200:        sma200 != null ? Math.round(sma200 * 100) / 100 : null,
         price_vs_sma50:  sma50  != null ? (current.close > sma50  ? 'above' : 'below') : null,
         price_vs_sma200: sma200 != null ? (current.close > sma200 ? 'above' : 'below') : null,
-        // Volume — only for futures/equities (not FX OTC)
-        current_volume:  isFxPair ? null : (current.volume || null),
+        // Volume — only for futures/equities (not FX OTC). `|| null` sebelumnya
+        // salah nol-kan volume 0 yang genuinely valid (candle intraday yang baru
+        // mulai) jadi null — padahal volume_status di bawah tetap benar hitung
+        // "Low" dari angka 0 itu, hasilnya UI nampilin status tanpa angka
+        // ("Volume / Low / —"). != null preserve 0 sebagai nilai asli.
+        current_volume:  isFxPair ? null : (current.volume != null ? current.volume : null),
         volume_sma_20:   isFxPair ? null : (volSma20 != null ? Math.round(volSma20) : null),
         volume_status:   isFxPair ? null : (
           volSma20 == null ? null :
