@@ -1923,18 +1923,68 @@ ${xauHistoryBlock}`;
       } else if (!article) {
         providerLog.push('openrouter_nemotron:no_key');
       }
+    } else if (isCronCall && !isIsolatedTest) {
+      // Session 163 (2026-07-13): Nemotron Ultra (Ollama) dicoba lagi, KHUSUS untuk 3
+      // jadwal cron session-open (GitHub Actions market-digest.yml — Asia/Eropa/NY),
+      // bukan tiap live request. Root cause demote sebelumnya (session 162 lanjutan 7)
+      // adalah latency 100% tidak terprediksi (5 sampel 7s/17.5s/23.9s/29.5s/41.2s) yang
+      // fatal untuk live user menunggu di layar — tapi TIDAK masalah untuk cron: hasil
+      // cron ditulis ke latest_article/cache dan dibaca semua user lewat mode=cached,
+      // jadi tidak ada satupun live request yang ikut menunggu Nemotron secara sinkron.
+      // Budget waktu cron (GH Actions --max-time 55s, Vercel maxDuration 60s) masih
+      // cukup untuk timeout 45s ini; CALL3_BUDGET_MS (50s, lihat di bawah) tetap jadi
+      // jaring pengaman kalau kebetulan lambat — thesis cukup skip sekali, dicoba lagi
+      // cron berikutnya 5-7 jam kemudian, bukan tiap request seperti live traffic.
+      // Live/on-demand request (!isCronCall) TETAP pakai gpt-oss-120b primary di bawah
+      // — kualitasnya lebih rendah tapi latency-nya predictable, cocok untuk user yang
+      // menunggu sinkron.
+      const cronOllamaTimeout1 = 45000;
+      if (OLLAMA_KEY && await cb.canCall(CB_OLLAMA_NEMOTRON)) {
+        const t0c = Date.now();
+        try {
+          console.log('Call 1: trying Nemotron 3 Ultra (Ollama Cloud) — cron session-open run');
+          const raw = await callOllama(OLLAMA_KEY, OLLAMA_NEMOTRON_MODEL, call1Messages, 1300, 0.25, cronOllamaTimeout1, 'ollama', false);
+          const elapsed = Date.now() - t0c;
+          article = raw.trim(); method = 'nemotron-3-ultra';
+          providerLog.push(`ollama_nemotron:ok(${elapsed}ms,${article.length}c)`);
+          console.log('Call 1: Ollama Nemotron OK (cron), length', article.length);
+          await cb.onSuccess(CB_OLLAMA_NEMOTRON);
+        } catch(e) {
+          const elapsed = Date.now() - t0c;
+          const errMsg = e.status ? `HTTP${e.status}` : (e.message || 'err').slice(0, 40);
+          providerLog.push(`ollama_nemotron:${errMsg}(${elapsed}ms)`);
+          console.warn('Call 1 Ollama Nemotron failed (cron):', e.status || e.message);
+          await cb.onFailure(CB_OLLAMA_NEMOTRON, AI_CB_THRESHOLD);
+        }
+      } else if (OLLAMA_KEY) {
+        providerLog.push('ollama_nemotron:circuit_open');
+      } else {
+        providerLog.push('ollama_nemotron:no_key');
+      }
+      providerLog.push('nemotron_super:skipped_not_primary', 'openrouter_nemotron:skipped_not_primary');
     } else {
-      // Session 162 lanjutan 7: Nemotron didemote LAGI dari primary (sempat naik di
-      // lanjutan 3) — root cause bukan kualitas (0 pelanggaran frasa terlarang di semua
-      // sampel live, malah lebih patuh prompt daripada SambaNova) tapi latency 100%
-      // tidak terprediksi: 5 sampel completion time nyata 7s/17.5s/23.9s/29.5s/41.2s,
-      // pola naik bukan stabil (resource contention tier gratis model 550B). Timeout
-      // berapa pun (20s → 35s sudah dicoba, masih miss kasus lambat) tidak menyelesaikan
-      // akar masalah karena variannya sendiri yang liar, bukan sekadar kurang longgar.
-      // Nemotron TETAP ada, tidak dihapus — jalur diagnostik ?test_nemotron=1 /
-      // ?test_nemotron_super=1 tetap aktif untuk riset kandidat Ollama Cloud lain.
+      // Nemotron didemote dari primary LIVE (session 162 lanjutan 7) — root cause bukan
+      // kualitas (0 pelanggaran frasa terlarang di semua sampel live, malah lebih patuh
+      // prompt daripada SambaNova) tapi latency 100% tidak terprediksi: 5 sampel
+      // completion time nyata 7s/17.5s/23.9s/29.5s/41.2s, pola naik bukan stabil
+      // (resource contention tier gratis model 550B). Timeout berapa pun (20s → 35s
+      // sudah dicoba, masih miss kasus lambat) tidak menyelesaikan akar masalah karena
+      // variannya sendiri yang liar, bukan sekadar kurang longgar — fatal untuk live
+      // request tapi TIDAK untuk cron (lihat cabang isCronCall di atas, session 163).
+      // Jalur diagnostik ?test_nemotron=1/?test_nemotron_super=1 tetap aktif di luar cabang ini.
       providerLog.push('nemotron_super:skipped_not_primary', 'openrouter_nemotron:skipped_not_primary', 'ollama_nemotron:skipped_not_primary');
     }
+
+    // Batas waktu keras sisa cascade Call 1 (session 163) — sejak cabang isCronCall di
+    // atas bisa menghabiskan 45s (Nemotron Ultra Ollama) sebelum sampai sini, gpt-
+    // oss+SambaNova+Groq berturut-turut (15s+22s+15s=52s) bisa dorong total Call 1
+    // tembus maxDuration 60s Vercel kalau semua tier gagal berantai — bukan cuma bikin
+    // Call 3 skip (CALL3_BUDGET_MS di bawah sudah jaga itu) tapi bisa bikin SELURUH
+    // function dibunuh Vercel sebelum sempat balas apa pun. Guard ini skip tier
+    // berikutnya kalau waktu sejak handler mulai sudah mepet, terima 'fallback' method
+    // daripada resiko function mati total.
+    const CALL1_HARD_BUDGET_MS = 48000;
+    const call1BudgetLeft = () => Date.now() - handlerStart < CALL1_HARD_BUDGET_MS;
 
     // Primary: OpenRouter gpt-oss-120b (session 163, 2026-07-13) — dipromosikan dari
     // fallback 1 jadi primary karena akun SambaNova (SAMBANOVA_KEY_CALL1) sudah kena
@@ -1944,6 +1994,8 @@ ${xauHistoryBlock}`;
     // fallback 1 di bawah — otomatis kepakai lagi begitu limitnya reset/naik.
     if (isIsolatedTest) {
       if (!article) providerLog.push('openrouter_gptoss:skipped_test');
+    } else if (!article && !call1BudgetLeft()) {
+      providerLog.push('openrouter:skipped_budget');
     } else if (!article && OPENROUTER_KEY) {
       const t2s = Date.now();
       try {
@@ -1973,6 +2025,8 @@ ${xauHistoryBlock}`;
     // ?test_hermes=1 / ?test_glm=1 supaya hasil diagnostik tidak tersamar.
     if (isIsolatedTest) {
       if (!article) providerLog.push('sambanova:skipped_test');
+    } else if (!article && !call1BudgetLeft()) {
+      providerLog.push('sambanova:skipped_budget');
     } else if (!article && SAMBANOVA_KEY_CALL1 && await cb.canCall(CB_SAMBA_C1)) {
       const t1s = Date.now();
       try {
@@ -2004,6 +2058,8 @@ ${xauHistoryBlock}`;
     // Fallback 2: Groq qwen3-32b (if OpenRouter failed/empty)
     if (isIsolatedTest) {
       if (!article) providerLog.push('groq_qwen3:skipped_test');
+    } else if (!article && !call1BudgetLeft()) {
+      providerLog.push('groq_qwen3:skipped_budget');
     } else if (!article && GROQ_KEY) {
       const t3s = Date.now();
       try {
