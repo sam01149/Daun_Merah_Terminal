@@ -2414,11 +2414,11 @@ async function ohlcvAnalyzeHandler(req, res) {
         const t0o = Date.now();
         try {
           if (!await allowAiCall('ollama')) throw new Error('AI daily budget exceeded');
-          console.log('ohlcv_analyze: trying Ollama Cloud nemotron-3-nano — diagnostik test_ollama=1');
+          console.log('ohlcv_analyze: trying Ollama Cloud nemotron-3-nano (think:false) — diagnostik test_ollama=1');
           const r = await fetch(OLLAMA_URL, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${OLLAMA_KEY}` },
-            body: JSON.stringify({ model: OLLAMA_NANO_MODEL, messages, stream: false, options: { temperature: 0.3, num_predict: 1500 } }),
+            body: JSON.stringify({ model: OLLAMA_NANO_MODEL, messages, stream: false, think: false, options: { temperature: 0.3, num_predict: 1500 } }),
             signal: AbortSignal.timeout(20000),
           });
           if (r.ok) {
