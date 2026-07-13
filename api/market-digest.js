@@ -1575,8 +1575,8 @@ module.exports = async function handler(req, res) {
     } catch(e) { console.warn('Call 4 Thesis Monitor failed:', e.message); return null; }
   })() : Promise.resolve(null);
 
-  // ── 4. Call 1: Market Briefing — Nemotron primary → SambaNova fallback 1 →
-  // OpenRouter fallback 2 → Groq fallback 3 ────────────────────
+  // ── 4. Call 1: Market Briefing — SambaNova primary → OpenRouter fallback 1 →
+  // Groq fallback 2 (Nemotron non-aktif di produksi, diagnostik saja — lihat lanjutan 7) ──
   let article = null, method = 'fallback';
   const providerLog = [];
   if (recentItems.length > 0) {
@@ -1862,49 +1862,22 @@ ${xauHistoryBlock}`;
         providerLog.push('openrouter_nemotron:no_key');
       }
     } else {
-      providerLog.push('nemotron_super:skipped_not_primary', 'openrouter_nemotron:skipped_not_primary');
-      const ollamaNemotronPrimaryTimeout = 35000;
-      if (OLLAMA_KEY && await cb.canCall(CB_OLLAMA_NEMOTRON)) {
-        const t0p = Date.now();
-        try {
-          console.log('Call 1: trying Nemotron 3 Ultra (Ollama Cloud, think:false native) — primary');
-          const raw = await callOllama(OLLAMA_KEY, OLLAMA_NEMOTRON_MODEL, call1Messages, 1300, 0.25, ollamaNemotronPrimaryTimeout, 'ollama', false);
-          const elapsed = Date.now() - t0p;
-          // Session 162 lanjutan 4: user lapor live output rusak 3x berturut-turut
-          // (FX+XAU nyatu tanpa marker "XAUUSD:", bahasa Inggris-Indonesia campur,
-          // XAU kepotong) meski HTTP 200 dan non-empty — think:false native tidak
-          // selalu dihonor, hidden reasoning kadang bocor/menghabiskan num_predict.
-          // Validasi format di sini daripada cuma cek non-empty: gagal → dianggap
-          // failure provider ini (bukan success palsu) supaya circuit breaker akurat
-          // dan request jatuh ke SambaNova (fallback 1, proven) alih-alih serve rusak.
-          if (raw.trim() && raw.includes('XAUUSD:')) {
-            article = raw.trim(); method = 'nemotron-3-ultra';
-            providerLog.push(`ollama_nemotron:ok(${elapsed}ms,${article.length}c)`);
-            console.log('Call 1: Ollama Nemotron OK, length', article.length);
-            await cb.onSuccess(CB_OLLAMA_NEMOTRON);
-          } else {
-            providerLog.push(`ollama_nemotron:${raw.trim() ? 'bad_format' : 'empty'}(${elapsed}ms)`);
-            console.warn('Call 1 Ollama Nemotron rejected: bad format or empty, length', raw?.trim().length || 0);
-            await cb.onFailure(CB_OLLAMA_NEMOTRON, AI_CB_THRESHOLD);
-          }
-        } catch(e) {
-          const elapsed = Date.now() - t0p;
-          const errMsg = e.status ? `HTTP${e.status}` : (e.message || 'err').slice(0, 40);
-          providerLog.push(`ollama_nemotron:${errMsg}(${elapsed}ms)`);
-          console.warn('Call 1 Ollama Nemotron failed:', e.status || e.message);
-          await cb.onFailure(CB_OLLAMA_NEMOTRON, AI_CB_THRESHOLD);
-        }
-      } else if (OLLAMA_KEY) {
-        providerLog.push('ollama_nemotron:circuit_open');
-      } else {
-        providerLog.push('ollama_nemotron:no_key');
-      }
+      // Session 162 lanjutan 7: Nemotron didemote LAGI dari primary (sempat naik di
+      // lanjutan 3) — root cause bukan kualitas (0 pelanggaran frasa terlarang di semua
+      // sampel live, malah lebih patuh prompt daripada SambaNova) tapi latency 100%
+      // tidak terprediksi: 5 sampel completion time nyata 7s/17.5s/23.9s/29.5s/41.2s,
+      // pola naik bukan stabil (resource contention tier gratis model 550B). Timeout
+      // berapa pun (20s → 35s sudah dicoba, masih miss kasus lambat) tidak menyelesaikan
+      // akar masalah karena variannya sendiri yang liar, bukan sekadar kurang longgar.
+      // Nemotron TETAP ada, tidak dihapus — jalur diagnostik ?test_nemotron=1 /
+      // ?test_nemotron_super=1 tetap aktif untuk riset kandidat Ollama Cloud lain.
+      providerLog.push('nemotron_super:skipped_not_primary', 'openrouter_nemotron:skipped_not_primary', 'ollama_nemotron:skipped_not_primary');
     }
 
-    // Fallback 1: SambaNova DeepSeek-V3.2 (akun 2, Call 1 prose only) — didemote dari
-    // primary ke fallback 1 (session 162 lanjutan 3) setelah Nemotron Ultra naik jadi
-    // primary. Tetap di-skip saat ?test_nemotron=1 / ?test_nemotron_super=1 / ?test_hermes=1
-    // supaya hasil diagnostik tidak tersamar.
+    // Primary: SambaNova DeepSeek-V3.2 (akun 2, Call 1 prose only) — dikembalikan jadi
+    // primary asli (session 162 lanjutan 7, lihat catatan Nemotron di atas). Tetap
+    // di-skip saat ?test_nemotron=1 / ?test_nemotron_super=1 / ?test_hermes=1 supaya
+    // hasil diagnostik tidak tersamar.
     if (isIsolatedTest) {
       if (!article) providerLog.push('sambanova:skipped_test');
     } else if (!article && SAMBANOVA_KEY_CALL1 && await cb.canCall(CB_SAMBA_C1)) {
@@ -1935,7 +1908,7 @@ ${xauHistoryBlock}`;
       providerLog.push('sambanova:no_key');
     }
 
-    // Fallback 2: OpenRouter gpt-oss-120b (if Nemotron + SambaNova failed/empty)
+    // Fallback 1: OpenRouter gpt-oss-120b (if SambaNova failed/empty)
     if (isIsolatedTest) {
       if (!article) providerLog.push('openrouter_gptoss:skipped_test');
     } else if (!article && OPENROUTER_KEY) {
@@ -1961,7 +1934,7 @@ ${xauHistoryBlock}`;
       providerLog.push('openrouter:no_key');
     }
 
-    // Fallback 3: Groq qwen3-32b (if OpenRouter failed/empty)
+    // Fallback 2: Groq qwen3-32b (if OpenRouter failed/empty)
     if (isIsolatedTest) {
       if (!article) providerLog.push('groq_qwen3:skipped_test');
     } else if (!article && GROQ_KEY) {
