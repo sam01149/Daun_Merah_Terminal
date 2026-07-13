@@ -1752,11 +1752,16 @@ ${xauHistoryBlock}`;
 
     // Nemotron 3 Ultra — PRIMARY Call 1 (session 162 lanjutan 3, naik dari idle setelah
     // 7/7 percobaan live sukses pakai parameter native think:false, ganti trik prompt
-    // /no_think lama yang selalu gagal 4/4 di session 145. Timeout 20s (bukan 45s yang
-    // dipakai diagnostik) — sengaja lebih ketat karena sekarang ada di depan rantai
-    // fallback nyata (SambaNova/OpenRouter/Groq) dalam satu maxDuration 60s function
-    // budget; kalau lambat/gagal, jatuh cepat ke SambaNova (proven) daripada menghabiskan
-    // jatah waktu Call 2/3/4. Cakupan cuma Call 1 (prosa bebas) — SENGAJA TIDAK dipakai
+    // /no_think lama yang selalu gagal 4/4 di session 145. Timeout awalnya 20s tapi
+    // session 162 lanjutan 4 (5 sampel completion time nyata di production: 7s, 17.5s,
+    // 23.9s, 29.5s, 41.2s) membuktikan 20s terlalu ketat — mayoritas percobaan nyata
+    // butuh >20s, bikin Nemotron nyaris tidak pernah kepakai (circuit breaker keburu OPEN
+    // dari timeout beruntun) padahal kualitas outputnya nyata lebih patuh prompt (0
+    // pelanggaran frasa terlarang di 3 sampel vs SambaNova yang kedapatan leak "dapat
+    // memberikan"/"di tengah" di production hari yang sama) — dinaikkan ke 35s atas
+    // keputusan eksplisit user (worth it demi kualitas, terima risiko Call 3 kadang skip
+    // di elapsedBeforeCall3 > CALL3_BUDGET_MS kalau kebetulan Nemotron lambat DAN masih
+    // jatuh ke fallback). Cakupan cuma Call 1 (prosa bebas) — SENGAJA TIDAK dipakai
     // di Call 2/3 (JSON ketat) karena keluarga model ini (varian Super) dilaporkan
     // OpenRouter 17,76% structured-output error rate, belum divalidasi untuk Ultra.
     // Nemotron 3 SUPER (session 145 lanjutan 5) — kandidat berbeda, belum pernah dites
@@ -1854,7 +1859,7 @@ ${xauHistoryBlock}`;
       }
     } else {
       providerLog.push('nemotron_super:skipped_not_primary', 'openrouter_nemotron:skipped_not_primary');
-      const ollamaNemotronPrimaryTimeout = 20000;
+      const ollamaNemotronPrimaryTimeout = 35000;
       if (OLLAMA_KEY && await cb.canCall(CB_OLLAMA_NEMOTRON)) {
         const t0p = Date.now();
         try {
