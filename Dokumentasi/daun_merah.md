@@ -1,10 +1,35 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-07-12 (session 158 lanjutan 8 — beres-beres struktur root: bridge/ + archive/ (lokal, gitignored), shortcut Startup di-retarget; lanjutan 7 = eksekusi penuh audit kurasan vendor Grup A+B + distribusi makro/mikro + retail realtime + korelasi bahasa awam)
+> **Last updated:** 2026-07-13 (session 159 — tab Analisa: search "···" semua 28 cross pair FX + XAU; diagnostik terisolasi `?test_hermes=1` di market-digest.js & ohlcv_analyze)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+---
+
+## Changelog Session 159 (2026-07-13) — Analisa Semua Cross Pair FX + Diagnostik Hermes 3 405B Terisolasi
+
+**Konteks:** dua request user. (1) Tab ANALISA cuma punya 8 chip (XAU + 7 major) — user minta semua kombinasi pair FX bisa dianalisa juga, dengan UX "···" yang buka pencarian (pola sama seperti dropdown pair di tab TEKNIKAL), dan tanya perkiraan biaya Redis-nya. (2) User konsultasi dengan Gemini soal mencoba model `nousresearch/hermes-3-llama-3.1-405b:free` (OpenRouter, gratis) sebagai kandidat AI baru — uptime dilaporkan cuma ~55.79% (jauh di bawah kandidat Nemotron Super 97.85% yang sudah dites di saga sebelumnya), jadi diminta jalur tes terisolasi (`?test_hermes=1`) yang tidak menyentuh alur produksi, bukan langsung dipasang jadi primary/fallback.
+
+### 1. Tab Analisa — pencarian semua 28 cross pair FX + XAU
+
+- **Kenapa tanpa whitelist baru di backend:** `loadOhlcvData()`/`ohlcvReadHandler`/`ohlcvAnalyzeHandler` di `api/admin.js` sudah generic sejak awal — fetch Yahoo on-demand untuk symbol APAPUN (throttle 90 detik via `ohlcv_fresh:{symbol}`), bukan dibatasi ke `OHLCV_FIXED_PAIRS` (yang cuma dipakai cron warm harian). Jadi cukup expose semua pair di UI, backend sudah siap.
+- **`index.html`:** 8 chip lama dipertahankan, ditambah tombol `···` (`#analisaMoreTrigger`) yang buka dropdown pencarian (reuse `TEK_ALL_PAIRS`/`TEK_YAHOO_SYM`/`tekPairLabel()` yang sudah ada untuk tab TEKNIKAL — tidak duplikasi daftar pair). Highlight "active" pair non-major ditangani via `_analisaChipInfo(symbol)` (dipakai juga di restore-last-pair saat tab dibuka & `openAnalisaFromDash`) supaya trigger `···` berubah jadi label pair yang dipilih.
+- **Estimasi biaya Redis (dihitung, bukan ditaksir):** worst case kalau user benar-benar buka SEMUA 21 cross pair baru (28 total − 7 major yang sudah ada) sekaligus dalam window TTL yang sama: candle 3 timeframe/pair ≈23.6KB × 21 ≈ **485KB**, cache hasil AI (kalau dianalisa juga) ≈57KB tambahan → **≈0.53MB total**, dari kuota Upstash free tier 256MB (≈0.2%). Data ini lazy (fetch hanya saat pair benar-benar dibuka) dan self-expire (candle TTL 25 jam, cache AI 6 jam) — jauh di bawah bahkan skenario terburuk.
+
+### 2. Diagnostik Hermes 3 405B — `?test_hermes=1`
+
+- **`api/market-digest.js`:** `HERMES_MODEL` (`nousresearch/hermes-3-llama-3.1-405b:free`) + circuit `ai:openrouter:hermes` baru. `testHermesOnly` skip SEMUA tier lain di Call 1 (Nemotron/SambaNova/gpt-oss/Groq) — isolasi total, bukan cuma bypass primary. Konsolidasi flag `isIsolatedTest = testHermesOnly || testNemotronOnly || testNemotronSuperOnly` dipakai di 3 titik skip-chain (SambaNova/OpenRouter gpt-oss/Groq).
+- **Bug lama ikut ditemukan & ditutup:** pengecualian `latest_article` dari cache produksi untuk `test_nemotron*` sudah ada sejak insiden 2026-07-07, tapi `digest_history`/`xau_history` (dipakai sebagai konteks "sesi sebelumnya" di prompt Call 1 berikutnya) **TIDAK pernah dikecualikan** — celah yang sama persis, belum pernah ketahuan karena Nemotron dianggap cukup proven untuk ditolerir "semi-live". Untuk Hermes (uptime rendah) celah ini ditutup sekalian: `isIsolatedTest` sekarang juga menggerbang blok save history.
+- **`api/admin.js` (`ohlcvAnalyzeHandler`):** `testHermesOnly` skip DUA tier SambaNova (primary + akun 2) sepenuhnya, panggil Hermes via OpenRouter langsung. Hasil TIDAK ditulis ke cache `ohlcv_analysis:{symbol}` (supaya tidak menimpa analisa AI real yang sedang tampil ke user) — response JSON dapat flag `test_hermes:true` untuk kejelasan saat dites manual.
+- **Kedua endpoint reuse counter budget `openrouter` yang sudah ada** (account-wide 45/hari, dipakai bersama Nemotron via `aiCall()`'s `providerOverride`) — sengaja tidak dipisah supaya tidak menambah kuota harian OpenRouter secara implisit.
+- **Test:** +3 test baru di `test/market_digest_nemotron.test.js` (model id, circuit key, `aiCall()` request shape) — suite penuh **272/272 hijau**.
+- **Cara pakai manual:** `curl -X POST ".../api/market-digest?test_hermes=1" -H "x-cron-secret: ..."` atau `.../api/admin?action=ohlcv_analyze&symbol=GC%3DF&test_hermes=1` (POST, body `{symbol,label}`) — response `provider_log`/`model` menunjukkan hasil nyata (ok/gagal/timeout), tidak pernah menyentuh `latest_article`/`digest_history`/`ohlcv_analysis` produksi.
+
+### Versi
+
+Cache-buster naik serempak (`APP_VERSION`/`?v=`/`NEWSCAT_VERSION`/`NewsCat.VERSION`) → `2026.07.13.1` — newscat.js sendiri tidak berubah, invariant 4-versi-lockstep dipertahankan.
 
 ---
 

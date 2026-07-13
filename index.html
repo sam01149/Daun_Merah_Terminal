@@ -835,6 +835,9 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .analisa-chip:hover { border-color: var(--accent); color: var(--accent); }
 .analisa-chip.active { background: var(--accent); border-color: var(--accent); color: #0a0f1a; font-weight: 600; }
 .analisa-chip.loading { opacity: .6; pointer-events: none; }
+.analisa-pair-more { position: relative; display: inline-block; }
+.analisa-pair-more .tek-pair-dropdown { width: 220px; }
+.analisa-pair-more.open .tek-pair-dropdown { display: block; }
 .analisa-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
 .analisa-pair-label { font-size: 15px; font-weight: 600; font-family: 'DM Mono', monospace; }
 .analisa-ts-label { font-size: 10px; color: var(--muted); }
@@ -2904,6 +2907,13 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
       <button class="analisa-chip" onclick="loadAnalisa('USDCAD=X','USD/CAD',this)">USD/CAD</button>
       <button class="analisa-chip" onclick="loadAnalisa('USDCHF=X','USD/CHF',this)">USD/CHF</button>
       <button class="analisa-chip" onclick="loadAnalisa('NZDUSD=X','NZD/USD',this)">NZD/USD</button>
+      <div class="analisa-pair-more" id="analisaPairMore">
+        <button type="button" class="analisa-chip analisa-chip-more" id="analisaMoreTrigger" onclick="toggleAnalisaPairDropdown(event)" title="Cari pair FX lain">···</button>
+        <div class="tek-pair-dropdown" id="analisaPairDropdown">
+          <input type="text" class="tek-pair-search" id="analisaPairSearch" placeholder="Cari pair... (mis. EUR, JPY)" oninput="renderAnalisaPairOptions()" onclick="event.stopPropagation()" onkeydown="onAnalisaPairSearchKey(event)">
+          <div class="tek-pair-list" id="analisaPairList"></div>
+        </div>
+      </div>
     </div>
     <div class="state-box" id="analisaEmpty">
       <div class="icon">📊</div>
@@ -3853,11 +3863,11 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 <!-- newscat.js: engine klasifikasi kategori berita (single source of truth,
      dipakai juga sw.js & api/). Query ?v= = cache-buster — naikkan tiap kali
      newscat.js berubah, samakan dengan NEWSCAT_VERSION di sw.js. -->
-<script src="/newscat.js?v=2026.07.12.3"></script>
+<script src="/newscat.js?v=2026.07.13.1"></script>
 <script>
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.07.12.3';
+const APP_VERSION = '2026.07.13.1';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
@@ -6076,9 +6086,9 @@ document.querySelectorAll('#navViews .nvtab').forEach(btn => {
       // "cache still fresh" and "cache stale/missing, fetch + show loading" cleanly.
       const lastSym = localStorage.getItem(LS_ANALISA_LAST);
       if (lastSym && !analisaActive.symbol) {
-        const chip = document.querySelector(`.analisa-chip[onclick*="${lastSym}"]`);
-        const lastLabel = chip ? chip.textContent.trim() : (analisaDataCache[lastSym]?.label || lastSym);
-        loadAnalisa(lastSym, lastLabel, chip);
+        const { chipEl, label } = _analisaChipInfo(lastSym);
+        const lastLabel = label || analisaDataCache[lastSym]?.label || lastSym;
+        loadAnalisa(lastSym, lastLabel, chipEl);
       }
     } else if (view === 'cal') {
       setFeedUI(false);
@@ -13482,6 +13492,94 @@ function selectTekPair(p) {
   if (corrData) renderCorrelations(); // tabel korelasi kontekstual ikut pair aktif
 }
 
+// ── ANALISA pair search ("···" di sebelah 8 chip major) ────────────────
+// Reuse TEK_ALL_PAIRS/TEK_YAHOO_SYM/tekPairLabel (sudah didefinisikan di atas untuk
+// tab TEKNIKAL) supaya semua 28 cross FX + XAU bisa dipilih di tab Analisa juga, tanpa
+// duplikasi daftar pair. Backend (loadOhlcvData di admin.js) sudah generic — fetch
+// on-demand dari Yahoo untuk symbol apapun, jadi tidak perlu whitelist baru di server.
+const ANALISA_MAJOR_SYMBOLS = ['GC=F','EURUSD=X','GBPUSD=X','USDJPY=X','AUDUSD=X','USDCAD=X','USDCHF=X','NZDUSD=X'];
+
+function toggleAnalisaPairDropdown(e) {
+  if (e) e.stopPropagation();
+  const wrap = document.getElementById('analisaPairMore');
+  const opening = !wrap.classList.contains('open');
+  wrap.classList.toggle('open', opening);
+  if (opening) {
+    const search = document.getElementById('analisaPairSearch');
+    search.value = '';
+    renderAnalisaPairOptions();
+    setTimeout(() => search.focus(), 0);
+  }
+}
+
+function closeAnalisaPairDropdown() {
+  document.getElementById('analisaPairMore')?.classList.remove('open');
+}
+
+document.addEventListener('click', (e) => {
+  const wrap = document.getElementById('analisaPairMore');
+  if (wrap && wrap.classList.contains('open') && !wrap.contains(e.target)) wrap.classList.remove('open');
+});
+
+function _analisaSearchablePairs() {
+  return TEK_ALL_PAIRS.filter(p => !TEK_YIELD_INSTRUMENTS.includes(p));
+}
+
+function renderAnalisaPairOptions() {
+  const list = document.getElementById('analisaPairList');
+  const searchEl = document.getElementById('analisaPairSearch');
+  if (!list || !searchEl) return;
+  const q = searchEl.value.trim().toUpperCase().replace('/', '');
+  const matches = _analisaSearchablePairs().filter(p => !q || p.includes(q) || tekPairLabel(p).toUpperCase().includes(q));
+  if (matches.length === 0) {
+    list.innerHTML = '<div class="tek-pair-empty">Pair tidak ditemukan.</div>';
+    return;
+  }
+  list.innerHTML = matches.map(p =>
+    `<div class="tek-pair-opt${TEK_YAHOO_SYM[p] === analisaActive.symbol ? ' active' : ''}" onclick="selectAnalisaPair('${p}')">${tekPairLabel(p)}</div>`
+  ).join('');
+}
+
+function onAnalisaPairSearchKey(e) {
+  if (e.key === 'Escape') { closeAnalisaPairDropdown(); return; }
+  if (e.key !== 'Enter') return;
+  const q = e.target.value.trim().toUpperCase().replace('/', '');
+  const first = _analisaSearchablePairs().find(p => !q || p.includes(q) || tekPairLabel(p).toUpperCase().includes(q));
+  if (first) selectAnalisaPair(first);
+}
+
+// Cari chip element utk symbol yg diberikan: salah satu 8 chip major (kalau major),
+// atau tombol "···" (kalau cross pair) — dipakai selectAnalisaPair() + restore-on-load
+// (switchView('analisa') dan openAnalisaFromDash) supaya highlight active selalu benar
+// walau pair terakhir yang dibuka adalah cross pair non-major.
+function _analisaChipInfo(symbol) {
+  const chip = document.querySelector(`.analisa-chip[onclick*="'${symbol}'"]`);
+  if (chip) return { chipEl: chip, label: chip.textContent.trim() };
+  const p = _analisaSearchablePairs().find(x => TEK_YAHOO_SYM[x] === symbol);
+  if (p) {
+    const label = tekPairLabel(p);
+    const trigger = document.getElementById('analisaMoreTrigger');
+    if (trigger) trigger.textContent = label;
+    return { chipEl: trigger, label };
+  }
+  return { chipEl: null, label: null };
+}
+
+function selectAnalisaPair(p) {
+  const symbol = TEK_YAHOO_SYM[p];
+  closeAnalisaPairDropdown();
+  const isMajor = ANALISA_MAJOR_SYMBOLS.includes(symbol);
+  if (!isMajor) {
+    const trigger = document.getElementById('analisaMoreTrigger');
+    if (trigger) trigger.textContent = tekPairLabel(p);
+  } else {
+    const trigger = document.getElementById('analisaMoreTrigger');
+    if (trigger) trigger.textContent = '···';
+  }
+  const chipEl = isMajor ? document.querySelector(`.analisa-chip[onclick*="'${symbol}'"]`) : document.getElementById('analisaMoreTrigger');
+  loadAnalisa(symbol, tekPairLabel(p), chipEl);
+}
+
 function onTekTFChange() {
   tekTF = document.getElementById('tekTFSelect').value;
   createTVChart();
@@ -14207,7 +14305,7 @@ function renderDashAnalisa() {
 
 function openAnalisaFromDash(symbol, label) {
   switchView('analisa');
-  setTimeout(() => loadAnalisa(symbol, label, document.querySelector(`.analisa-chip[onclick*="'${symbol}'"]`)), 60);
+  setTimeout(() => loadAnalisa(symbol, label, _analisaChipInfo(symbol).chipEl), 60);
 }
 
 async function initDashboard() {

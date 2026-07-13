@@ -104,6 +104,17 @@ const CB_OLLAMA_NEMOTRON     = 'ai:ollama:nemotron';
 const NEMOTRON_SUPER_MODEL         = 'nvidia/nemotron-3-super-120b-a12b:free';
 const CB_OPENROUTER_NEMOTRON_SUPER = 'ai:openrouter:nemotron-super';
 
+// Hermes 3 405B Instruct (diagnostik, belum pernah dites live) — kandidat dari riset
+// user via OpenRouter free tier. Uptime dilaporkan OpenRouter cuma ~55.79% (jauh di
+// bawah Nemotron Super yang 97.85%), jadi TIDAK dipasang di rantai fallback produksi
+// sama sekali (beda dari Nemotron Ultra/Super yang sempat jadi primary/fallback nyata)
+// — satu-satunya jalur panggil adalah ?test_hermes=1, terisolasi total dari Call 1
+// normal (lihat testHermesOnly), supaya kegagalan/lambatnya tidak pernah dirasakan user
+// nyata di Ringkasan. Reuse counter budget 'openrouter' (account-wide, sama seperti
+// Nemotron) via providerOverride di aiCall().
+const HERMES_MODEL           = 'nousresearch/hermes-3-llama-3.1-405b:free';
+const CB_OPENROUTER_HERMES   = 'ai:openrouter:hermes';
+
 const MAJOR_CURRENCIES = new Set(['USD','EUR','GBP','JPY','CAD','AUD','NZD','CHF']);
 
 // Map pair label → Yahoo symbol for OHLCV context lookup
@@ -876,6 +887,14 @@ module.exports = async function handler(req, res) {
   // pembatasan ini). Belum pernah dites live — disiapkan dulu, dijalankan setelah
   // konfirmasi user.
   const testNemotronSuperOnly = req.query.test_nemotron_super === '1';
+
+  // Diagnostik Hermes 3 405B (lihat HERMES_MODEL) — sama pola isolasi seperti dua di
+  // atas: skip semua tier lain di Call 1, dan (beda dari test_nemotron*) HASILNYA JUGA
+  // tidak pernah ditulis ke digest_history/latest_article sama sekali — lihat
+  // isIsolatedTest di bawah. Uptime rendah model ini membuat isolasi ekstra ini lebih
+  // penting dibanding Nemotron yang sudah proven cukup sehat untuk diuji "semi-live".
+  const testHermesOnly = req.query.test_hermes === '1';
+  const isIsolatedTest = testHermesOnly || testNemotronOnly || testNemotronSuperOnly;
 
   const host  = req.headers.host || 'financial-feed-app.vercel.app';
   const proto = host.includes('localhost') ? 'http' : 'https';
@@ -1686,6 +1705,39 @@ ${xauHistoryBlock}`;
       { role: 'user', content: digestUserMsg },
     ];
 
+    // Hermes 3 405B — diagnostik terisolasi via ?test_hermes=1 (lihat HERMES_MODEL).
+    // Dicek PALING ATAS (sebelum Nemotron Super/Ultra) supaya skip semua tier lain,
+    // sama seperti dua diagnostik test_nemotron* di bawah.
+    if (testHermesOnly) {
+      const hermesTimeout1 = 30000;
+      if (OPENROUTER_KEY && await cb.canCall(CB_OPENROUTER_HERMES)) {
+        const t0h = Date.now();
+        try {
+          console.log('Call 1: trying Hermes 3 405B (OpenRouter) — diagnostik test_hermes=1');
+          const raw = await aiCall(OPENROUTER_URL, OPENROUTER_KEY, HERMES_MODEL, call1Messages, 1300, 0.25, hermesTimeout1, OPENROUTER_HEADERS, {}, 'openrouter');
+          const elapsed = Date.now() - t0h;
+          if (raw.trim()) {
+            article = raw.trim(); method = 'hermes-3-405b';
+            providerLog.push(`hermes:ok(${elapsed}ms,${article.length}c)`);
+          } else {
+            providerLog.push(`hermes:empty(${elapsed}ms)`);
+          }
+          console.log('Call 1: Hermes 3 405B OK, length', article?.length);
+          await cb.onSuccess(CB_OPENROUTER_HERMES);
+        } catch(e) {
+          const elapsed = Date.now() - t0h;
+          const errMsg = e.status ? `HTTP${e.status}` : (e.message || 'err').slice(0, 40);
+          providerLog.push(`hermes:${errMsg}(${elapsed}ms)`);
+          console.warn('Call 1 Hermes 3 405B failed:', e.status || e.message);
+          await cb.onFailure(CB_OPENROUTER_HERMES, AI_CB_THRESHOLD);
+        }
+      } else if (OPENROUTER_KEY) {
+        providerLog.push('hermes:circuit_open');
+      } else {
+        providerLog.push('hermes:no_key');
+      }
+    }
+
     // Nemotron 3 Ultra (session 145 lanjutan 4 — DIDEMOTE dari primary): 4/4 percobaan
     // live nyata gagal across 2 sumber (OpenRouter, Ollama Cloud), 2 konfigurasi timeout,
     // dengan & tanpa /no_think — pola konsisten resource-contention (model 550B baru
@@ -1793,10 +1845,10 @@ ${xauHistoryBlock}`;
 
     // Primary: SambaNova DeepSeek-V3.2 (akun 2, Call 1 prose only) — dikembalikan jadi
     // primary asli (session 145 lanjutan 4, lihat catatan Nemotron di atas). Tetap
-    // di-skip saat ?test_nemotron=1 / ?test_nemotron_super=1 supaya hasil diagnostik
-    // Nemotron tidak tersamar.
-    if (testNemotronOnly || testNemotronSuperOnly) {
-      if (!article) providerLog.push('sambanova:skipped_test_nemotron');
+    // di-skip saat ?test_nemotron=1 / ?test_nemotron_super=1 / ?test_hermes=1 supaya
+    // hasil diagnostik tidak tersamar.
+    if (isIsolatedTest) {
+      if (!article) providerLog.push('sambanova:skipped_test');
     } else if (!article && SAMBANOVA_KEY_CALL1 && await cb.canCall(CB_SAMBA_C1)) {
       const t1s = Date.now();
       try {
@@ -1826,8 +1878,8 @@ ${xauHistoryBlock}`;
     }
 
     // Fallback 2: OpenRouter gpt-oss-120b (if Nemotron + SambaNova failed/empty)
-    if (testNemotronOnly || testNemotronSuperOnly) {
-      if (!article) providerLog.push('openrouter_gptoss:skipped_test_nemotron');
+    if (isIsolatedTest) {
+      if (!article) providerLog.push('openrouter_gptoss:skipped_test');
     } else if (!article && OPENROUTER_KEY) {
       const t2s = Date.now();
       try {
@@ -1852,8 +1904,8 @@ ${xauHistoryBlock}`;
     }
 
     // Fallback 3: Groq qwen3-32b (if OpenRouter failed/empty)
-    if (testNemotronOnly || testNemotronSuperOnly) {
-      if (!article) providerLog.push('groq_qwen3:skipped_test_nemotron');
+    if (isIsolatedTest) {
+      if (!article) providerLog.push('groq_qwen3:skipped_test');
     } else if (!article && GROQ_KEY) {
       const t3s = Date.now();
       try {
@@ -1949,7 +2001,12 @@ ${xauHistoryBlock}`;
   }
 
   // ── 5b. Save digest + xau history (parallel) ──
-  if (article && method !== 'fallback' && method !== 'fallback_quota') {
+  // isIsolatedTest dikecualikan (bug pre-existing: hanya latest_article yang dulu
+  // dikecualikan setelah insiden 2026-07-07, digest_history TIDAK — celah ini
+  // ditemukan & ditutup sekalian saat menambah diagnostik Hermes, karena kalau
+  // dibiarkan, digest_history yang dipakai sebagai konteks "sesi sebelumnya" di
+  // prompt Call 1 berikutnya bisa tercemar oleh hasil model eksperimental).
+  if (article && method !== 'fallback' && method !== 'fallback_quota' && !isIsolatedTest) {
     try {
       const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
       const wibStr = `${String(wibNow.getUTCDate()).padStart(2,'0')} ${MONTHS[wibNow.getUTCMonth()]} ${String(wibNow.getUTCHours()).padStart(2,'0')}:${String(wibNow.getUTCMinutes()).padStart(2,'0')} WIB`;
@@ -2155,13 +2212,13 @@ ${xauHistoryBlock}`;
   };
 
   // Persist full payload to Redis so cached mode works (exclude thesis_alerts — device-specific).
-  // Diagnostic-only requests (?test_nemotron=1 / ?test_nemotron_super=1) must NEVER reach here —
-  // they're meant to be isolated from production state (see comments above at testNemotronOnly/
-  // testNemotronSuperOnly), but this check was missing, so a "successful" diagnostic response
-  // (HTTP 200 with raw reasoning-trace content instead of a real article) got cached into
-  // `latest_article` and served to every user via mode=cached, and would have also fired a
-  // push notification with that garbage content (found in production 2026-07-07).
-  if (article && method !== 'fallback' && method !== 'fallback_quota' && !testNemotronOnly && !testNemotronSuperOnly) {
+  // Diagnostic-only requests (?test_nemotron=1 / ?test_nemotron_super=1 / ?test_hermes=1) must
+  // NEVER reach here — they're meant to be isolated from production state (see isIsolatedTest
+  // above), but this check was missing for test_nemotron* initially, so a "successful"
+  // diagnostic response (HTTP 200 with raw reasoning-trace content instead of a real article)
+  // got cached into `latest_article` and served to every user via mode=cached, and would have
+  // also fired a push notification with that garbage content (found in production 2026-07-07).
+  if (article && method !== 'fallback' && method !== 'fallback_quota' && !isIsolatedTest) {
     const toCache = { ...payload, thesis_alerts: null };
     redisCmd('SET', 'latest_article', JSON.stringify(toCache), 'EX', 21600).catch(() => {});
     // A2.2: notify subscribers once per successful digest — fire-and-forget, never block the response.
@@ -2289,4 +2346,6 @@ module.exports.parseEconNumber = parseEconNumber;
 module.exports.thesisPairCurrencies = thesisPairCurrencies;
 module.exports.thesisInvalidationCurrencyConsistent = thesisInvalidationCurrencyConsistent;
 module.exports.CB_OPENROUTER_NEMOTRON_SUPER = CB_OPENROUTER_NEMOTRON_SUPER;
+module.exports.HERMES_MODEL = HERMES_MODEL;
+module.exports.CB_OPENROUTER_HERMES = CB_OPENROUTER_HERMES;
 module.exports.mergeSourceHeadlines = mergeSourceHeadlines;

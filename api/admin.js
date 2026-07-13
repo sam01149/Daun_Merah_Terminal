@@ -21,6 +21,17 @@ const { allowAiCall } = require('./_ai_guard');
 const { requireAppKey } = require('./_app_key');
 const { fetchYahooOhlcv1h } = require('./_ohlcv_fetch');
 
+// Hermes 3 405B Instruct via OpenRouter (free tier) — kandidat diagnostik dari riset
+// user, sama seperti HERMES_MODEL di market-digest.js (circuit breaker key sengaja
+// SAMA — satu account/model, bukan fitur terpisah). Uptime dilaporkan OpenRouter cuma
+// ~55.79%, jadi TIDAK masuk rantai fallback produksi ohlcv_analyze — satu-satunya jalur
+// panggil adalah ?test_hermes=1, yang skip SambaNova sepenuhnya (isolasi total) dan
+// hasilnya TIDAK ditulis ke cache ohlcv_analysis:{symbol} (lihat testHermesOnly di bawah).
+const OPENROUTER_URL     = 'https://openrouter.ai/api/v1/chat/completions';
+const OPENROUTER_HEADERS = { 'HTTP-Referer': 'https://financial-feed-app.vercel.app', 'X-Title': 'Daun Merah' };
+const HERMES_MODEL       = 'nousresearch/hermes-3-llama-3.1-405b:free';
+const CB_OPENROUTER_HERMES = 'ai:openrouter:hermes';
+
 // Actions callable from the frontend without a secret → rate-limited per IP.
 // AI-triggering actions get a tighter budget than cache reads.
 const PUBLIC_ACTION_LIMITS = {
@@ -1160,7 +1171,7 @@ async function journalImportHandler(req, res) {
 
 // ── Circuit breaker status + reset ───────────────────────────────────────────
 
-const KNOWN_CIRCUITS = ['ai:openrouter', 'ai:openrouter:nemotron', 'ai:openrouter:nemotron-super', 'ai:cerebras', 'ai:cerebras:gptoss', 'ai:sambanova:c1', 'ai:sambanova:main', 'ai:ollama:nemotron', 'fred', 'stooq', 'ff', 'fj', 'cftc', 'redis', 'forexbenchmark', 'actionforex'];
+const KNOWN_CIRCUITS = ['ai:openrouter', 'ai:openrouter:nemotron', 'ai:openrouter:nemotron-super', 'ai:openrouter:hermes', 'ai:cerebras', 'ai:cerebras:gptoss', 'ai:sambanova:c1', 'ai:sambanova:main', 'ai:ollama:nemotron', 'fred', 'stooq', 'ff', 'fj', 'cftc', 'redis', 'forexbenchmark', 'actionforex'];
 
 async function circuitStatusHandler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -2332,12 +2343,48 @@ async function ohlcvAnalyzeHandler(req, res) {
     // urutan fallback produksi — hanya bypass satu kali per request eksplisit.
     const testC1Only = req.query.test_samba_c1 === '1' || req.body?.test_samba_c1 === true;
 
+    // Diagnostik Hermes 3 405B (lihat HERMES_MODEL di atas) — isolasi TOTAL dari
+    // SambaNova: kalau flag ini aktif, dua tier SambaNova di bawah di-skip sama sekali
+    // (bukan cuma primary seperti test_samba_c1), supaya hasil yang dikembalikan ke
+    // client murni dari Hermes, bukan tersamar fallback lain kalau Hermes gagal.
+    const testHermesOnly = req.query.test_hermes === '1' || req.body?.test_hermes === true;
+
+    if (testHermesOnly) {
+      const OPENROUTER_KEY = process.env.OPENROUTER_API_KEY;
+      if (OPENROUTER_KEY && await cb.canCall(CB_OPENROUTER_HERMES)) {
+        const t0h = Date.now();
+        try {
+          if (!await allowAiCall('openrouter')) throw new Error('AI daily budget exceeded');
+          console.log('ohlcv_analyze: trying Hermes 3 405B (OpenRouter) — diagnostik test_hermes=1');
+          const r = await fetch(OPENROUTER_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${OPENROUTER_KEY}`, ...OPENROUTER_HEADERS },
+            body: JSON.stringify({ model: HERMES_MODEL, messages, max_tokens: 1500, temperature: 0.3 }),
+            signal: AbortSignal.timeout(30000),
+          });
+          if (r.ok) {
+            const j = await r.json(); rawText = j.choices?.[0]?.message?.content?.trim() || null; model = 'hermes-3-405b';
+            if (rawText) await cb.onSuccess(CB_OPENROUTER_HERMES);
+            else throw new Error('Empty response');
+          } else { throw new Error(`HTTP ${r.status}`); }
+          console.log('ohlcv_analyze: Hermes 3 405B OK,', Date.now() - t0h, 'ms');
+        } catch(e) {
+          console.warn('ohlcv_analyze Hermes 3 405B failed:', e.message);
+          await cb.onFailure(CB_OPENROUTER_HERMES);
+        }
+      } else if (OPENROUTER_KEY) {
+        console.log('ohlcv_analyze: test_hermes=1 — circuit OPEN');
+      } else {
+        console.log('ohlcv_analyze: test_hermes=1 — OPENROUTER_API_KEY belum diset');
+      }
+    }
+
     // Primary: SambaNova DeepSeek-V3.2 (671B, akun 1) — dikembalikan jadi primary (30s, timeout
     // asli). Eksperimen GLM-5.2/gpt-oss:120b sebagai primary dihentikan: alasan awal coba
     // model lain adalah cari yang LEBIH kuat dari DeepSeek-V3.2, tapi gpt-oss:120b (120B)
     // kemungkinan malah di bawahnya secara kualitas — jadi tidak masuk akal jadi primary
     // yang mengalahkan model yang sudah terbukti lebih kuat & sudah proven di app ini.
-    if (!testC1Only && SAMBANOVA_KEY && await cb.canCall('ai:sambanova:main')) {
+    if (!testHermesOnly && !testC1Only && SAMBANOVA_KEY && await cb.canCall('ai:sambanova:main')) {
       try {
         if (!await allowAiCall('sambanova_main')) throw new Error('AI daily budget exceeded');
         const r = await fetch('https://api.sambanova.ai/v1/chat/completions', {
@@ -2352,7 +2399,8 @@ async function ohlcvAnalyzeHandler(req, res) {
           else throw new Error('Empty response');
         } else { throw new Error(`HTTP ${r.status}`); }
       } catch(e) { console.warn('ohlcv_analyze SambaNova failed:', e.message); await cb.onFailure('ai:sambanova:main'); }
-    } else if (testC1Only) { console.log('ohlcv_analyze: test_samba_c1=1 — bypassing primary'); }
+    } else if (testHermesOnly) { /* sudah di-log di blok Hermes di atas */ }
+    else if (testC1Only) { console.log('ohlcv_analyze: test_samba_c1=1 — bypassing primary'); }
     else if (SAMBANOVA_KEY) { console.log('ohlcv_analyze: SambaNova circuit OPEN — skipping to akun 2'); }
 
     // Fallback 1: SambaNova DeepSeek-V3.2 (akun 2, SAMBANOVA_API_KEY_CALL1) — akun terpisah
@@ -2363,7 +2411,7 @@ async function ohlcvAnalyzeHandler(req, res) {
     // setelah 3x gagal beruntun, dan Groq/llama-3.3 kualitasnya paling rendah di rantai
     // ini — DeepSeek-V3.2 akun 2 jauh lebih kuat sebagai fallback tunggal. Timeout 25s
     // supaya total 30s (primary) + 25s tetap di bawah 60s hard limit Vercel.
-    if (!rawText && SAMBANOVA_KEY_CALL1 && await cb.canCall(CB_SAMBA_C1_ADMIN)) {
+    if (!testHermesOnly && !rawText && SAMBANOVA_KEY_CALL1 && await cb.canCall(CB_SAMBA_C1_ADMIN)) {
       try {
         if (!await allowAiCall('sambanova_c1')) throw new Error('AI daily budget exceeded');
         const r = await fetch('https://api.sambanova.ai/v1/chat/completions', {
@@ -2471,10 +2519,12 @@ async function ohlcvAnalyzeHandler(req, res) {
       makro_generated_at: (ringkasanContext && ringkasanAt) ? ringkasanAt : null,
       loaded_at: new Date().toISOString(),
     };
-    if (commentary || structured) {
+    // testHermesOnly dikecualikan dari cache produksi — request diagnostik tidak boleh
+    // menimpa hasil analisa AI real yang sedang ditampilkan ke user di tab Analisa.
+    if ((commentary || structured) && !testHermesOnly) {
       redisCmd('SET', `ohlcv_analysis:${symbol}`, JSON.stringify(resultPayload), 'EX', 21600).catch(() => {});
     }
-    return res.status(200).json(resultPayload);
+    return res.status(200).json({ ...resultPayload, test_hermes: testHermesOnly || undefined });
   } catch(e) {
     return res.status(500).json({ error: e.message });
   }

@@ -15,6 +15,7 @@ const {
   aiCall, NEMOTRON_MODEL, CB_OPENROUTER_NEMOTRON, OPENROUTER_URL, OPENROUTER_HEADERS,
   callOllama, OLLAMA_URL, OLLAMA_NEMOTRON_MODEL, CB_OLLAMA_NEMOTRON, withNoThink,
   NEMOTRON_SUPER_MODEL, CB_OPENROUTER_NEMOTRON_SUPER,
+  HERMES_MODEL, CB_OPENROUTER_HERMES,
 } = require('../api/market-digest.js');
 
 test('NEMOTRON_MODEL: model id persis sesuai slug free-tier OpenRouter (bukan typo, bukan versi berbayar)', () => {
@@ -190,4 +191,32 @@ test('aiCall: request Nemotron Super via OpenRouter — model & providerOverride
     global.fetch = orig;
   }
   assert.strictEqual(capturedBody.model, NEMOTRON_SUPER_MODEL);
+});
+
+// ── Hermes 3 405B (diagnostik ?test_hermes=1, belum pernah dites live) ──────────────
+
+test('HERMES_MODEL: model id persis sesuai slug free-tier OpenRouter (bukan typo)', () => {
+  assert.strictEqual(HERMES_MODEL, 'nousresearch/hermes-3-llama-3.1-405b:free');
+});
+
+test('CB_OPENROUTER_HERMES: circuit terpisah dari kandidat Nemotron lain', () => {
+  assert.strictEqual(CB_OPENROUTER_HERMES, 'ai:openrouter:hermes');
+  assert.notStrictEqual(CB_OPENROUTER_HERMES, CB_OPENROUTER_NEMOTRON);
+  assert.notStrictEqual(CB_OPENROUTER_HERMES, CB_OPENROUTER_NEMOTRON_SUPER);
+});
+
+test('aiCall: request Hermes 3 405B via OpenRouter — model & providerOverride benar', async () => {
+  let capturedBody;
+  const orig = global.fetch;
+  global.fetch = async (url, opts) => {
+    capturedBody = JSON.parse(opts.body);
+    return { ok: true, json: async () => ({ choices: [{ message: { content: 'hasil hermes' } }] }) };
+  };
+  try {
+    const out = await aiCall(OPENROUTER_URL, 'sk-or', HERMES_MODEL, [{ role: 'user', content: 'hi' }], 1300, 0.25, 30000, OPENROUTER_HEADERS, {}, 'openrouter');
+    assert.strictEqual(out, 'hasil hermes');
+  } finally {
+    global.fetch = orig;
+  }
+  assert.strictEqual(capturedBody.model, HERMES_MODEL);
 });
