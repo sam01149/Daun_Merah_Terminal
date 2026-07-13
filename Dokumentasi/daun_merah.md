@@ -1,10 +1,50 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-07-13 (session 159 lanjutan 2 — Analisa jadi daftar pair dikelola user +/-; hapus fitur suara/split-view; sederhanakan fallback NEWS jadi stale-cache; samakan warna nav/drawer/dashboard-news; diagnostik Ollama Cloud `?test_ollama=1`; lanjutan 1 = search "···" semua 28 cross pair FX + XAU, diagnostik `?test_hermes=1`)
+> **Last updated:** 2026-07-13 (session 160 — navbar jadi rail kiri ikon+label di desktop/tablet, gaya terminal profesional; hapus status-pill header, panel "Distribusi Berita", dan tabel candle mentah di tab Analisa karena noise/tidak informatif; sebelumnya session 159 lanjutan 2 — Analisa jadi daftar pair dikelola user +/-; hapus fitur suara/split-view; sederhanakan fallback NEWS jadi stale-cache; samakan warna nav/drawer/dashboard-news; diagnostik Ollama Cloud `?test_ollama=1`; lanjutan 1 = search "···" semua 28 cross pair FX + XAU, diagnostik `?test_hermes=1`)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+---
+
+## Changelog Session 160 (2026-07-13) — Navbar Rail Kiri (Gaya Terminal Profesional) + Bersih-Bersih UI Noise
+
+**Konteks:** user share screenshot referensi app trading (rail ikon+label vertikal di kiri, palet monokrom, indikator aktif halus) dan minta pendapat soal psikologi "tampilan profesional" sebelum diterapkan ke semua fitur. Setelah dikonfirmasi (ikon+label mini, rail fixed selalu sempit, bottom-nav mobile TETAP dipertahankan karena ergonomi jempol — bukan dipaksa ikut jadi rail), dieksekusi langsung. Di tengah pengerjaan, user juga minta buang beberapa elemen UI yang dinilai "noise"/tidak jelas: status-pill header, panel "Distribusi Berita", dan tabel candle mentah di tab Analisa.
+
+### Navbar rail kiri — desktop/tablet ≥768px (`index.html`)
+
+- **`.nav-views` dipindah keluar dari `#topChrome`** (sebelumnya nested di dalam wrapper yang collapse saat scroll) jadi sibling langsung — efek samping yang diinginkan: rail nav sekarang **selalu tampil**, tidak ikut collapse bareng header/regime-banner/stats saat scroll ke bawah, konsisten dengan gaya terminal profesional di referensi.
+- CSS `.nav-views`: `position:fixed; left:0; top:0; height:100%; width:64px`, `flex-direction:column`, `z-index:200`. `.nvtab`: ikon SVG 16×16 (garis, `stroke-width:2`, konsisten satu gaya) + label kecil di bawahnya (`.nvtab-label`, font 8px), indikator aktif jadi **border kiri** (dulu border-bawah, tidak relevan lagi di layout vertikal) + `var(--accent)`, sesuai keputusan psikologi warna dari session 159 (netral saat idle, accent cuma saat aktif).
+- `body { padding-left: 64px }` (di `@media min-width:768px`) supaya seluruh konten (header/panel/toolbar) geser ke kanan, tidak ketiban rail.
+- **Bug kecil yang ditemukan & diperbaiki sebelum sempat live:** `.toast` (notifikasi popup) pakai `left:12px` yang akan tertimpa rail di desktop — ditambah override `.toast { left: 76px }` khusus ≥768px. `.nvtab[data-view="dashboard"] { display:block }` (media query 1024px) juga diperbaiki jadi `display:flex` supaya tidak merusak stack ikon+label (flex column) tab Dashboard.
+- **Mobile (≤767px) TIDAK diubah** — `.bot-nav` (bottom-nav existing) dipertahankan apa adanya sesuai keputusan user (nyaman & ergonomis untuk jempol satu tangan), cuma nav rail yang baru ini yang disembunyikan total di breakpoint itu (`display:none`, sudah ada sebelumnya).
+- Curation existing (pair mana yang tampil di rail vs masuk drawer "Lainnya") **tidak diubah** — tetap sama seperti sebelumnya (riset/cal/cot/fundamental/sizing/jurnal/petunjuk ke drawer), hanya container/style-nya yang berubah dari tab horizontal ke rail vertikal.
+
+### Dihapus: status-pill header (`index.html`)
+
+- `.status-pill` (dot + teks IDLE/FETCHING/LIVE/FAILED/OFFLINE/RECONNECTING) di header dihapus total — dinilai user sebagai "status-status yang gajelas". Fungsi `setStatus()` dan semua 6 call site dihapus.
+- Feedback offline/online tetap dipertahankan tapi lewat toast (`showToast`) yang sudah ada, bukan pill diam — user tetap dapat notifikasi jelas saat koneksi putus/kembali tanpa indikator status permanen yang membingungkan.
+
+### Dihapus: panel "Distribusi Berita" (`index.html`)
+
+- `.news-dist-card`/`#statsBar` (breakdown Total/Mkt Moving/Forex/Macro/Energy/Geopolit. di bawah regime banner) dihapus total atas permintaan user ("ga ada guna") — HTML, CSS (`.news-dist-*`, `.stat`/`.stat-val`/`.stat-label`), dan JS (`updateStats()`, `toggleNewsDist()`, 3 call site) semua dibersihkan, termasuk override di 2 media query yang tersisa.
+
+### Dihapus: tabel candle mentah di tab Analisa (`index.html`)
+
+- Kartu "ENTRY — 1H 3D" di tab Analisa sebelumnya render tabel 24 baris (Waktu/High/Low/Close/Vol) mentah — dinilai user sebagai noise tanpa interpretasi. Tabel dihapus, kartu stat ringkas (TREND/NOW/RANGE 3D/3D%) di atasnya dipertahankan (itu yang informatif). CSS `.analisa-candle-table` (dead code) ikut dihapus.
+
+### Verifikasi
+
+Sintaks seluruh `<script>` inline `index.html` dicek ulang (`new Function()` per blok) — bersih, 0 error. Grep menyeluruh memastikan tidak ada referensi menggantung ke elemen yang dihapus (`statsBar`, `updateStats`, `setStatus`, dll). **Belum sempat screenshot visual langsung** (tool browser otomasi — chromium-cli/playwright — tidak terpasang di environment ini dan instalasinya akan memakan waktu terlalu lama untuk sesi ini); verifikasi mengandalkan review kode manual yang ketat. Rekomendasi: cek tampilan rail nav & breakpoint mobile/desktop langsung di browser sebelum dianggap 100% final.
+
+### Belum dikerjakan (lanjutan sesi berikut)
+
+Diagnostik Ollama Cloud (test dengan reasoning off, lalu coba model lebih tinggi kalau bagus; kalau gagal pivot ke Hugging Face) **ditunda** — user eksplisit minta prioritas bagian tampilan dulu karena limit sesi hampir habis.
+
+### Versi
+
+Cache-buster naik serempak (`APP_VERSION`/`?v=`/`NEWSCAT_VERSION`/`NewsCat.VERSION`) → `2026.07.13.3` — newscat.js sendiri tidak berubah, invariant 4-versi-lockstep dipertahankan.
 
 ---
 

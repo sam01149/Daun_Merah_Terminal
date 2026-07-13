@@ -85,17 +85,6 @@ body {
 .logo { font-family:'Syne',sans-serif; font-weight:800; font-size:20px; color:var(--accent); letter-spacing:-1px; }
 .logo span { color:var(--text); }
 .header-right { display:flex; align-items:center; gap:10px; }
-.status-pill {
-  display: flex; align-items: center; gap: 5px;
-  padding: 4px 10px; border-radius: 20px;
-  border: 1px solid var(--border);
-  font-size: 9px; letter-spacing: 0.8px; color: var(--muted);
-}
-.dot { width:6px; height:6px; border-radius:50%; background:var(--muted); transition:all .3s; }
-.dot.live { background:var(--green); box-shadow:0 0 6px var(--green); animation:blink 1.4s ease-in-out infinite; }
-.dot.loading { background:var(--yellow); }
-.dot.error { background:var(--red); }
-@keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
 
 .header-menu-wrap { position:relative; }
 .header-menu-trigger {
@@ -121,90 +110,41 @@ body {
 .header-menu-item.enabled { color:var(--accent); }
 .header-menu-item + .header-menu-item { border-top:1px solid var(--border); }
 
-/* STATS — dibungkus kartu berlabel "Distribusi Berita" (gaya sama dengan caption
-   "Max Drawdown" di panel equity curve Jurnal), bukan angka mentah nempel di header.
-   Cuma breakdown kasar (keyword-based, lihat detectCat()) — bukan sinyal presisi. */
-.news-dist-card {
-  flex-shrink: 0;
-  flex-direction: column;
-  margin: 10px 14px 6px;
-  padding: 9px 12px 7px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  cursor: pointer;
-  transition: border-color .15s ease, background .15s ease;
-}
-.news-dist-card:hover {
-  border-color: var(--text-mid);
-}
-.news-dist-card.collapsed {
-  padding-bottom: 9px;
-}
-.news-dist-head {
-  display: flex; align-items: center; justify-content: space-between; gap: 10px;
-}
-.news-dist-title {
-  font-family: 'DM Mono', monospace; font-size: 8px; color: var(--muted);
-  letter-spacing: .6px; text-transform: uppercase; margin-bottom: 0;
-}
-.news-dist-toggle {
-  border: none; background: transparent; padding: 0;
-  display: flex; align-items: center; gap: 5px;
-  font-family: 'DM Mono', monospace; font-size: 8px; color: var(--text-mid);
-  letter-spacing: .6px; text-transform: uppercase; cursor: pointer;
-}
-.news-dist-toggle::after {
-  content: '▾';
-  font-size: 10px;
-  line-height: 1;
-  color: var(--muted);
-}
-.news-dist-card:not(.collapsed) .news-dist-toggle::after {
-  content: '▴';
-}
-.news-dist-row {
-  display: flex; gap: 0;
-  overflow-x: auto; scrollbar-width: none;
-}
-.news-dist-row::-webkit-scrollbar { display: none; }
-.news-dist-card.collapsed .news-dist-row { display: none; }
-.stat {
-  flex-shrink:0; padding:2px 14px;
-  display:flex; flex-direction:column; gap:2px;
-  border-right:1px solid var(--border);
-}
-.stat:first-child { padding-left: 0; }
-.stat:last-child { border-right: none; }
-.stat-val { font-family:'Syne',sans-serif; font-size:17px; font-weight:700; }
-.stat-label { font-size:8px; color:var(--muted); letter-spacing:.5px; text-transform:uppercase; white-space:nowrap; }
-
-/* NAV VIEWS (primary) */
+/* NAV VIEWS (primary) — rail vertikal tetap di kiri (desktop/tablet >=768px, lihat
+   media query di bawah utk body padding-left); di mobile disembunyikan total
+   (.bot-nav yang dipakai, lihat @media max-width:767px) karena ergonomi jempol
+   di HP lebih nyaman jangkau bawah daripada kiri-atas. */
 .nav-views {
-  flex-shrink: 0;
-  display: flex; overflow-x: auto; scrollbar-width: none;
-  border-bottom: 1px solid var(--border);
+  display: none; /* diaktifkan (flex) hanya di >=768px, lihat media query */
+  flex-direction: column; align-items: stretch;
+  overflow-y: auto; overflow-x: hidden; scrollbar-width: none;
+  border-right: 1px solid var(--border);
   background: var(--surface);
-  padding: 0 8px;
+  padding: 8px 0;
+  position: fixed; left: 0; top: 0; height: 100%; width: 64px;
+  z-index: 200;
 }
 .nav-views::-webkit-scrollbar { display: none; }
 .nvtab {
-  flex-shrink: 0; padding: 11px 14px;
-  font-family: 'DM Mono', monospace; font-size: 10px; letter-spacing: 1px;
+  flex-shrink: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px;
+  padding: 11px 4px;
+  font-family: 'DM Mono', monospace; font-size: 8px; letter-spacing: .3px;
   color: var(--muted); background: transparent; border: none;
-  border-bottom: 2px solid transparent;
+  border-left: 2px solid transparent;
   cursor: pointer; white-space: nowrap; transition: all .15s; text-transform: uppercase;
 }
-.nvtab:hover { color: var(--text-mid); }
+.nvtab svg { flex-shrink: 0; }
+.nvtab-label { line-height: 1; }
 .nvtab:hover { color: var(--text); background: rgba(255,255,255,0.03); }
 /* Session 159 (keputusan user): dulu tiap tab punya warna permanen sendiri
    (ringkasan oranye, cal hijau, cot ungu, dst) — dari sudut psikologi warna itu
    kontraproduktif: warna efektif jadi sinyal justru karena jarang dipakai, kalau
    SEMUA nav item berwarna permanen tanpa makna, mata jadi terbiasa (habituation)
    dan warna berhenti menyampaikan informasi apa-apa, sekaligus melemahkan sinyal
-   "tab mana yang aktif" (border-bawah) karena kalah ramai. Disatukan: netral saat
-   idle (aturan dasar .nvtab di atas), accent + border-bawah cuma saat aktif. */
-.nvtab.active { color: var(--text); border-bottom-color: var(--accent); }
+   "tab mana yang aktif" (border kiri) karena kalah ramai. Disatukan: netral saat
+   idle (aturan dasar .nvtab di atas), accent + border kiri cuma saat aktif. */
+.nvtab.active { color: var(--text); border-left-color: var(--accent); background: rgba(255,255,255,0.03); }
 
 /* RISET PANEL */
 /* risetPanel overrides feed-scroll: flex column, toolbar fixed, list scrolls */
@@ -828,11 +768,6 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .analisa-levels { font-size: 10px; color: var(--muted); font-family: 'DM Mono', monospace; display: flex; gap: 16px; flex-wrap: wrap; }
 .analisa-levels .res { color: #e57373; }
 .analisa-levels .sup { color: #66bb6a; }
-.analisa-candle-table { width: 100%; border-collapse: collapse; font-family: 'DM Mono', monospace; font-size: 10px; margin-top: 8px; }
-.analisa-candle-table th { color: var(--muted); font-weight: 400; text-align: left; padding: 2px 5px; border-bottom: 1px solid var(--border); }
-.analisa-candle-table td { padding: 2px 5px; }
-.analisa-candle-table tr.bull td:nth-child(4) { color: var(--green); }
-.analisa-candle-table tr.bear td:nth-child(4) { color: var(--red); }
 .analisa-ai-result {
   background: var(--surface); border-radius: 8px; padding: 12px 14px;
   margin-top: 8px; font-size: 13px; line-height: 1.75; border-left: 3px solid var(--accent);
@@ -1802,11 +1737,13 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 
 /* ── RESPONSIVE ── */
 @media (min-width: 768px) {
+  /* rail nav kiri fixed 64px — geser seluruh body ke kanan supaya konten
+     (header, banner, panel) tidak ketiban rail */
+  body { padding-left: 64px; }
+  .nav-views { display: flex; }
+  .toast { left: 76px; } /* geser toast supaya tidak ketiban rail nav kiri (64px + gap) */
   .header { padding: 14px 24px; }
-  .news-dist-card .stat { padding: 2px 20px; }
-  .stat-val { font-size: 20px; }
-  .nav-views, .nav-filters { padding: 0 16px; }
-  .nvtab { padding: 13px 18px; font-size: 11px; }
+  .nav-filters { padding: 0 16px; }
   .ftab { padding: 8px 14px; font-size: 10px; }
   .toolbar { padding: 10px 24px; }
   .feed-scroll { padding: 12px 20px 20px; }
@@ -1838,8 +1775,6 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 }
 
 @media (max-width: 480px) {
-  .news-dist-card .stat { padding: 2px 10px; }
-  .stat-val { font-size: 15px; }
   .nvtab { padding: 10px 11px; font-size: 11px; }
   .ftab  { padding: 6px 9px;  font-size: 8px; }
   .cot-row { grid-template-columns: 34px 1fr auto auto; gap: 6px; }
@@ -2290,10 +2225,10 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 
 /* ── COMMAND CENTER DASHBOARD ── */
 .nvtab[data-view="dashboard"]        { color: #818cf8; display: none; }
-.nvtab[data-view="dashboard"].active { color: #818cf8; border-bottom-color: #818cf8; }
+.nvtab[data-view="dashboard"].active { color: #818cf8; border-left-color: #818cf8; }
 #dashboardPanel { display: none; }
 @media (min-width: 1024px) {
-  .nvtab[data-view="dashboard"] { display: block; }
+  .nvtab[data-view="dashboard"] { display: flex; }
   #dashboardPanel {
     grid-template-columns: 280px 1fr 260px;
     grid-template-rows: 1fr auto auto;
@@ -2417,14 +2352,16 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 #botNav .bot-nav-btn[data-view="petunjuk"] { display: none; }
 
 .nvtab-more {
-  flex-shrink: 0; padding: 11px 14px;
-  font: 700 10px 'DM Mono',monospace; letter-spacing: 1px; text-transform: uppercase;
-  color: var(--muted); background: transparent; border: none; border-bottom: 2px solid transparent;
+  flex-shrink: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px;
+  padding: 11px 4px;
+  font: 700 8px 'DM Mono',monospace; letter-spacing: .3px; text-transform: uppercase;
+  color: var(--muted); background: transparent; border: none; border-left: 2px solid transparent;
   cursor: pointer; white-space: nowrap; transition: all .15s;
-  display: flex; align-items: center; gap: 4px;
+  margin-top: auto; /* selalu di dasar rail, terpisah dari daftar tab */
 }
-.nvtab-more:hover { color: var(--text-mid); }
-.nvtab-more.has-active { color: var(--text); border-bottom-color: var(--text-mid); }
+.nvtab-more:hover { color: var(--text); background: rgba(255,255,255,0.03); }
+.nvtab-more.has-active { color: var(--text); border-left-color: var(--text-mid); }
 
 .drawer-overlay {
   position: fixed; inset: 0; background: rgba(0,0,0,.55); z-index: 300;
@@ -2643,7 +2580,6 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .conf-stars { display: none !important; }
   .conf-text  { display: inline !important; color: var(--muted) !important; font-size: 10px; }
 
-  .analisa-candle-table { font-size: 9px !important; }
 
   .ai-disclaimer {
     border: none !important; border-top: 1px solid var(--border) !important;
@@ -2675,10 +2611,6 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 <div class="header">
   <div class="logo">Daun<span> Merah</span></div>
   <div class="header-right">
-    <div class="status-pill">
-      <div class="dot" id="dot"></div>
-      <span id="statusText">IDLE</span>
-    </div>
     <div class="header-menu-wrap" id="headerMenuWrap">
       <button class="header-menu-trigger" id="headerMenuBtn" onclick="toggleHeaderMenu()" title="Menu">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="12" cy="19" r="1.8"/></svg>
@@ -2715,43 +2647,67 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   </div>
   <div class="regime-detail hidden" id="regimeDetail"></div>
 </div>
+</div><!-- /topChrome -->
 
-<!-- STATS -->
-<div class="news-dist-card collapsed" id="statsBar" onclick="toggleNewsDist(event)" aria-expanded="false">
-  <div class="news-dist-head">
-    <div class="news-dist-title">Distribusi Berita</div>
-    <button class="news-dist-toggle" type="button" id="statsBarToggle" onclick="toggleNewsDist(event)">Buka</button>
-  </div>
-  <div class="news-dist-row">
-    <div class="stat"><div class="stat-val" id="sTotal">—</div><div class="stat-label">Total</div></div>
-    <div class="stat"><div class="stat-val" id="sMoving" style="color:#ff4757">—</div><div class="stat-label">Mkt Moving</div></div>
-    <div class="stat"><div class="stat-val" id="sFx" style="color:var(--green)">—</div><div class="stat-label">Forex</div></div>
-    <div class="stat"><div class="stat-val" id="sMacro" style="color:var(--accent)">—</div><div class="stat-label">Macro</div></div>
-    <div class="stat"><div class="stat-val" id="sEnergy" style="color:var(--orange)">—</div><div class="stat-label">Energy</div></div>
-    <div class="stat"><div class="stat-val" id="sGeo" style="color:#fb923c">—</div><div class="stat-label">Geopolit.</div></div>
-  </div>
-</div>
-
-<!-- PRIMARY NAV -->
+<!-- PRIMARY NAV (rail kiri di desktop/tablet >=768px; disembunyikan di mobile, lihat .bot-nav) -->
 <div class="nav-views" id="navViews">
-  <button class="nvtab" data-view="dashboard" id="dashboardTab">DASHBOARD</button>
-  <button class="nvtab active" data-view="feed" id="feedNavTab">NEWS</button>
-  <button class="nvtab" data-view="riset" id="risetTab">ARTIKEL</button>
-  <button class="nvtab" data-view="ringkasan" id="ringkasanTab">RINGKASAN</button>
-  <button class="nvtab" data-view="analisa" id="analisaTab">ANALISA</button>
-  <button class="nvtab" data-view="cal" id="calTab">CAL<span id="calTabBadge" class="nvtab-badge" style="display:none">!</span></button>
-  <button class="nvtab" data-view="cot" id="cotTab">COT</button>
-  <button class="nvtab" data-view="fundamental" id="fundamentalTab">FUNDAMENTAL</button>
-  <button class="nvtab" data-view="checklist" id="checklistTab">CHECKLIST</button>
-  <button class="nvtab" data-view="sizing" id="sizingTab">SIZING</button>
-  <button class="nvtab" data-view="jurnal" id="jurnalTab">JURNAL</button>
-  <button class="nvtab" data-view="petunjuk" id="petunjukTab">PETUNJUK</button>
-  <button class="nvtab" data-view="teknikal" id="teknikalTab">TEK</button>
+  <button class="nvtab" data-view="dashboard" id="dashboardTab">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>
+    <span class="nvtab-label">Dashboard</span>
+  </button>
+  <button class="nvtab active" data-view="feed" id="feedNavTab">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h13a2 2 0 0 1 2 2v13a1 1 0 0 1-1 1H6a2 2 0 0 1-2-2V4Z"/><path d="M8 8h8M8 12h8M8 16h4"/><path d="M19 6v13a1 1 0 0 0 1 1h1"/></svg>
+    <span class="nvtab-label">News</span>
+  </button>
+  <button class="nvtab" data-view="riset" id="risetTab">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6M9 13h6M9 17h6M9 9h1"/></svg>
+    <span class="nvtab-label">Artikel</span>
+  </button>
+  <button class="nvtab" data-view="ringkasan" id="ringkasanTab">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2Z"/><path d="M7 8h10M7 11h10M7 14h6"/></svg>
+    <span class="nvtab-label">Ringkasan</span>
+  </button>
+  <button class="nvtab" data-view="analisa" id="analisaTab">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 14l4-5 3 3 5-7"/></svg>
+    <span class="nvtab-label">Analisa</span>
+  </button>
+  <button class="nvtab" data-view="cal" id="calTab">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+    <span class="nvtab-label">Cal<span id="calTabBadge" class="nvtab-badge" style="display:none">!</span></span>
+  </button>
+  <button class="nvtab" data-view="cot" id="cotTab">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v18M5 7l-3 6a4 4 0 0 0 6 0Z"/><path d="M19 7l-3 6a4 4 0 0 0 6 0Z"/><path d="M5 7h14M5 21h14"/></svg>
+    <span class="nvtab-label">COT</span>
+  </button>
+  <button class="nvtab" data-view="fundamental" id="fundamentalTab">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a13 13 0 0 1 0 18 13 13 0 0 1 0-18Z"/></svg>
+    <span class="nvtab-label">Fundm</span>
+  </button>
+  <button class="nvtab" data-view="checklist" id="checklistTab">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M7 12l3 3 6-6"/></svg>
+    <span class="nvtab-label">Check</span>
+  </button>
+  <button class="nvtab" data-view="sizing" id="sizingTab">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 21V10M4 6V3M12 21v-6M12 11V3M20 21v-3M20 14V3"/><circle cx="4" cy="8" r="2"/><circle cx="12" cy="13" r="2"/><circle cx="20" cy="16" r="2"/></svg>
+    <span class="nvtab-label">Sizing</span>
+  </button>
+  <button class="nvtab" data-view="jurnal" id="jurnalTab">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z"/></svg>
+    <span class="nvtab-label">Jurnal</span>
+  </button>
+  <button class="nvtab" data-view="petunjuk" id="petunjukTab">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 0 1 4.9.8c0 1.7-2.4 2-2.4 3.7"/><path d="M12 17.5h.01"/></svg>
+    <span class="nvtab-label">Petunjuk</span>
+  </button>
+  <button class="nvtab" data-view="teknikal" id="teknikalTab">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="9" width="3" height="9"/><rect x="10.5" y="4" width="3" height="14"/><rect x="17" y="12" width="3" height="6"/></svg>
+    <span class="nvtab-label">Tek</span>
+  </button>
   <button class="nvtab-more" id="navMoreBtn" onclick="openDrawer()" aria-label="Menu tab lainnya">
     <svg width="13" height="11" viewBox="0 0 13 11" fill="none"><rect y="0" width="13" height="1.5" rx=".75" fill="currentColor"/><rect y="4.75" width="13" height="1.5" rx=".75" fill="currentColor"/><rect y="9.5" width="13" height="1.5" rx=".75" fill="currentColor"/></svg>
+    <span class="nvtab-label">Lainnya</span>
   </button>
 </div>
-</div><!-- /topChrome -->
 
 <!-- CATEGORY FILTERS -->
 <div class="nav-filters" id="navFilters">
@@ -3807,11 +3763,11 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 <!-- newscat.js: engine klasifikasi kategori berita (single source of truth,
      dipakai juga sw.js & api/). Query ?v= = cache-buster — naikkan tiap kali
      newscat.js berubah, samakan dengan NEWSCAT_VERSION di sw.js. -->
-<script src="/newscat.js?v=2026.07.13.2"></script>
+<script src="/newscat.js?v=2026.07.13.3"></script>
 <script>
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.07.13.2';
+const APP_VERSION = '2026.07.13.3';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
@@ -4291,14 +4247,12 @@ async function fetchFeed() {
   isFetching = true;
   const btn = document.getElementById('refreshBtn');
   btn.classList.add('spinning');
-  setStatus('loading','FETCHING');
 
   const xml = await fetchRSS();
 
   btn.classList.remove('spinning');
   if (!xml) {
     isFetching = false;
-    setStatus('error','FAILED');
     if (allItems.length === 0) {
       document.getElementById('feedScroll').innerHTML = `
         <div class="state-box"><div class="icon">⚠️</div>
@@ -4348,8 +4302,6 @@ async function fetchFeed() {
   const now = new Date();
   document.getElementById('lastUpdate').textContent =
     `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')} WIB`;
-  setStatus('live', 'LIVE');
-  updateStats();
   renderFeed(!isFirstLoad && newItems.length > 0);
 
   if (!isFirstLoad && newItems.length === 1) {
@@ -4434,10 +4386,7 @@ function _feedItemHtml(item, isNew, idx) {
     </div>`;
 }
 
-// allItems (live, capped 100) + historyItems (load-more), dedupe by guid — dipakai
-// bareng oleh renderFeed() dan updateStats() supaya "Distribusi Berita" ikut menghitung
-// berita yang sudah di-load-more, bukan cuma 100 item live (bug yang sempat ditemukan
-// saat evaluasi stat bar ini).
+// allItems (live, capped 100) + historyItems (load-more), dedupe by guid.
 function _combinedNewsItems() {
   const liveGuids = new Set(allItems.map(i => i.guid));
   return allItems.concat(historyItems.filter(i => !liveGuids.has(i.guid)));
@@ -4487,7 +4436,6 @@ async function loadMoreHistory() {
   } finally {
     historyLoading = false;
     renderFeed();
-    updateStats();
   }
 }
 
@@ -4608,33 +4556,6 @@ function fmtTime(ds) {
   const dd = String(wib.getUTCDate()).padStart(2,'0');
   const mo = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][wib.getUTCMonth()];
   return `${h}:${mn} · ${dd} ${mo}`;
-}
-
-function updateStats() {
-  const combined = _combinedNewsItems();
-  document.getElementById('sTotal').textContent  = combined.length;
-  document.getElementById('sMoving').textContent = combined.filter(i=>detectCat(i.title)==='market-moving').length;
-  document.getElementById('sFx').textContent     = combined.filter(i=>detectCat(i.title)==='forex').length;
-  document.getElementById('sMacro').textContent  = combined.filter(i=>detectCat(i.title)==='macro').length;
-  document.getElementById('sEnergy').textContent = combined.filter(i=>detectCat(i.title)==='energy').length;
-  document.getElementById('sGeo').textContent    = combined.filter(i=>detectCat(i.title)==='geopolitical').length;
-}
-
-let newsDistOpen = false;
-function toggleNewsDist(event) {
-  if (event) event.stopPropagation();
-  newsDistOpen = !newsDistOpen;
-  const card = document.getElementById('statsBar');
-  const toggle = document.getElementById('statsBarToggle');
-  if (!card || !toggle) return;
-  card.classList.toggle('collapsed', !newsDistOpen);
-  card.setAttribute('aria-expanded', newsDistOpen ? 'true' : 'false');
-  toggle.textContent = newsDistOpen ? 'Tutup' : 'Buka';
-}
-
-function setStatus(state, text) {
-  document.getElementById('dot').className = 'dot ' + state;
-  document.getElementById('statusText').textContent = text;
 }
 
 // ── AUTO REFRESH ─────────────────────────────────────────
@@ -5507,21 +5428,9 @@ function renderAnalisa() {
     document.getElementById('analisaH4Card').innerHTML = `<div class="analisa-tf-card h4"><div class="analisa-tf-label">SWING — 4H 10D</div><div style="color:var(--muted);font-size:11px">Data belum tersedia.</div></div>`;
   }
 
-  // 1H card + candle table
+  // 1H card (tabel candle mentah dihapus — noise, tidak informatif tanpa interpretasi)
   const h1 = d.h1;
   if (h1.available) {
-    const volHeader = d.is_xau ? '<th>Vol</th>' : '';
-    const rows = h1.candles24.slice().reverse().map(c => {
-      const bull = c.c >= c.o;
-      const wib2 = new Date((c.t + 7 * 3600) * 1000);
-      const ts2  = `${String(wib2.getUTCMonth()+1).padStart(2,'0')}/${String(wib2.getUTCDate()).padStart(2,'0')} ${String(wib2.getUTCHours()).padStart(2,'0')}WIB`;
-      let volTd  = '';
-      if (d.is_xau) {
-        const vLabel = c.v > h1.vol_avg * 1.5 ? ' ▲' : c.v < h1.vol_avg * 0.7 ? ' ▼' : '';
-        volTd = c.v > 0 ? `<td>${(c.v/1000).toFixed(1)}K${vLabel}</td>` : '<td>—</td>';
-      }
-      return `<tr class="${bull?'bull':'bear'}"><td>${ts2}</td><td>${fmt(c.h)}</td><td>${fmt(c.l)}</td><td>${fmt(c.c)}</td>${volTd}</tr>`;
-    }).join('');
     document.getElementById('analisaH1Card').innerHTML = `
       <div class="analisa-tf-card h1">
         <div class="analisa-tf-label">ENTRY — 1H 3D</div>
@@ -5531,10 +5440,6 @@ function renderAnalisa() {
           <div class="analisa-stat"><div class="analisa-stat-label">RANGE 3D</div><div class="analisa-stat-val">${fmt(h1.low)} – ${fmt(h1.high)}</div></div>
           <div class="analisa-stat"><div class="analisa-stat-label">3D</div><div class="analisa-stat-val ${h1.change_pct >= 0 ? 'up' : 'down'}">${pct(h1.change_pct)}</div></div>
         </div>
-        <table class="analisa-candle-table">
-          <thead><tr><th>Waktu</th><th>High</th><th>Low</th><th>Close</th>${volHeader}</tr></thead>
-          <tbody>${rows}</tbody>
-        </table>
       </div>`;
   } else {
     document.getElementById('analisaH1Card').innerHTML = `<div class="analisa-tf-card h1"><div class="analisa-tf-label">ENTRY — 1H 3D</div><div style="color:var(--muted);font-size:11px">Data belum tersedia.</div></div>`;
@@ -5885,7 +5790,6 @@ function thesisGoToSizing(pair, direction) {
 function setFeedUI(show) {
   document.getElementById('toolbar').style.display    = show ? 'flex' : 'none';
   document.getElementById('navFilters').style.display = show ? 'flex' : 'none';
-  document.getElementById('statsBar').style.display   = show ? 'flex' : 'none';
 }
 
 function hideAllPanels() {
@@ -9449,15 +9353,12 @@ document.addEventListener('visibilitychange', () => {
 // ── CONNECTIVITY ─────────────────────────────────────────
 // Feedback langsung saat koneksi putus/kembali (penting untuk PWA mobile)
 window.addEventListener('offline', () => {
-  setStatus('error', 'OFFLINE');
+  showToast('🔴 Offline', 'Koneksi terputus.', 2500);
 });
 window.addEventListener('online', () => {
-  setStatus('loading', 'RECONNECTING');
-  fetchFeed(); // refresh feed + status pill begitu jaringan kembali
+  fetchFeed(); // refresh feed begitu jaringan kembali
   showToast('🟢 Kembali online', 'Memuat ulang data terbaru…', 2500);
 });
-// Tampilkan status offline saat awal load jika memang sedang offline
-if (!navigator.onLine) setStatus('error', 'OFFLINE');
 
 // Restore state after bfcache restore (browser back/forward navigation)
 window.addEventListener('pageshow', (e) => {
