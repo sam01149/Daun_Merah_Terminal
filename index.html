@@ -3814,11 +3814,11 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 <!-- newscat.js: engine klasifikasi kategori berita (single source of truth,
      dipakai juga sw.js & api/). Query ?v= = cache-buster — naikkan tiap kali
      newscat.js berubah, samakan dengan NEWSCAT_VERSION di sw.js. -->
-<script src="/newscat.js?v=2026.07.13.8"></script>
+<script src="/newscat.js?v=2026.07.13.9"></script>
 <script>
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.07.13.8';
+const APP_VERSION = '2026.07.13.9';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
@@ -4277,6 +4277,23 @@ async function fetchRSS() {
   return null;
 }
 
+// RSS titles are XML-escaped in the feed (e.g. "S&amp;amp;P" for a literal "&amp;")
+// — regex extraction pulls that escaped text out as-is, so without decoding here,
+// escHtml() at render time escapes the leftover literal "&" a second time and the
+// browser shows raw "&amp;amp;" on screen. Named entities cover what FinancialJuice
+// actually emits; numeric (&#8217; etc.) covers curly quotes/dashes some sources use.
+const XML_NAMED_ENTITIES = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' };
+function decodeXmlEntities(s) {
+  if (!s) return s;
+  return s.replace(/&(#x?[0-9a-fA-F]+|[a-zA-Z]+);/g, (m, ent) => {
+    if (ent[0] === '#') {
+      const code = (ent[1] === 'x' || ent[1] === 'X') ? parseInt(ent.slice(2), 16) : parseInt(ent.slice(1), 10);
+      return Number.isFinite(code) ? String.fromCodePoint(code) : m;
+    }
+    return XML_NAMED_ENTITIES[ent] !== undefined ? XML_NAMED_ENTITIES[ent] : m;
+  });
+}
+
 function parseRSS(xml) {
   const items = [];
   const re = /<item>([\s\S]*?)<\/item>/g;
@@ -4288,7 +4305,7 @@ function parseRSS(xml) {
       const r2 = new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`).exec(b);
       return (r1||r2)?.[1]?.trim() || '';
     };
-    const title = get('title').replace(/^FinancialJuice:\s*/i,'').trim();
+    const title = decodeXmlEntities(get('title')).replace(/^FinancialJuice:\s*/i,'').trim();
     const guid  = get('guid');
     const pubDate = get('pubDate');
     const link  = b.match(/<link>(.*?)<\/link>/)?.[1] || '';

@@ -2,7 +2,7 @@
 // dengan index.html & api/). NEWSCAT_VERSION = cache-buster; naikkan tiap kali
 // newscat.js berubah supaya SW update ikut mengambil versi baru (byte sw.js
 // berubah → browser re-install SW → importScripts di-fetch ulang).
-const NEWSCAT_VERSION = '2026.07.13.8';
+const NEWSCAT_VERSION = '2026.07.13.9';
 // try/catch: kalau fetch newscat.js gagal saat install, jangan gagalkan evaluasi
 // seluruh SW — detectCat() di bawah punya fallback 'macro' (typeof guard).
 try { importScripts('/newscat.js?v=' + NEWSCAT_VERSION); } catch (e) {}
@@ -90,13 +90,29 @@ async function fetchRSS() {
   return null;
 }
 
+// Sama dengan decodeXmlEntities di index.html (lockstep manual, tidak bisa share
+// module lintas SW/main thread) — tanpa ini, judul terescape XML (mis. "S&amp;P"
+// di feed) tampil literal di notifikasi push sebagai "S&amp;P" alih-alih "S&P".
+const XML_NAMED_ENTITIES = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' };
+function decodeXmlEntities(s) {
+  if (!s) return s;
+  return s.replace(/&(#x?[0-9a-fA-F]+|[a-zA-Z]+);/g, (m, ent) => {
+    if (ent[0] === '#') {
+      const code = (ent[1] === 'x' || ent[1] === 'X') ? parseInt(ent.slice(2), 16) : parseInt(ent.slice(1), 10);
+      return Number.isFinite(code) ? String.fromCodePoint(code) : m;
+    }
+    return XML_NAMED_ENTITIES[ent] !== undefined ? XML_NAMED_ENTITIES[ent] : m;
+  });
+}
+
 function parseItems(xml) {
   const items = [];
   const itemRegex = /<item>([\s\S]*?)<\/item>/g;
   let m;
   while ((m = itemRegex.exec(xml)) !== null) {
     const block = m[1];
-    const title = (/<title><!\[CDATA\[(.*?)\]\]><\/title>/.exec(block) || /<title>(.*?)<\/title>/.exec(block))?.[1] || '';
+    const titleRaw = (/<title><!\[CDATA\[(.*?)\]\]><\/title>/.exec(block) || /<title>(.*?)<\/title>/.exec(block))?.[1] || '';
+    const title = decodeXmlEntities(titleRaw);
     const guid = (/<guid[^>]*>(.*?)<\/guid>/.exec(block))?.[1] || '';
     const pubDate = (/<pubDate>(.*?)<\/pubDate>/.exec(block))?.[1] || '';
     const link = (/<link>(.*?)<\/link>/.exec(block))?.[1] || '';

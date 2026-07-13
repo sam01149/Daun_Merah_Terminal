@@ -227,12 +227,30 @@ async function newsHistoryHandler(req, res) {
   });
 }
 
+// RSS titles are XML-escaped in the feed (e.g. literal "&" arrives as "&amp;") —
+// regex extraction pulls that escaped text out verbatim, so without decoding here,
+// escHtml() at client render time escapes the leftover literal "&" a second time
+// and the browser shows raw "&amp;" on screen (session 162 bug report — "S&amp;P
+// 500" headline). Duplicated in index.html/sw.js (own parse contexts, can't share
+// a module) — keep all three in lockstep if this ever changes.
+const XML_NAMED_ENTITIES = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' };
+function decodeXmlEntities(s) {
+  if (!s) return s;
+  return s.replace(/&(#x?[0-9a-fA-F]+|[a-zA-Z]+);/g, (m, ent) => {
+    if (ent[0] === '#') {
+      const code = (ent[1] === 'x' || ent[1] === 'X') ? parseInt(ent.slice(2), 16) : parseInt(ent.slice(1), 10);
+      return Number.isFinite(code) ? String.fromCodePoint(code) : m;
+    }
+    return XML_NAMED_ENTITIES[ent] !== undefined ? XML_NAMED_ENTITIES[ent] : m;
+  });
+}
+
 function parseRSSItems(xml) {
   const items = [], re = /<item>([\s\S]*?)<\/item>/g; let m;
   while ((m = re.exec(xml)) !== null) {
     const b = m[1];
     const get = tag => { const r1 = new RegExp(`<${tag}[^>]*><!\\[CDATA\\[([\\s\\S]*?)\\]\\]><\\/${tag}>`).exec(b); const r2 = new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`).exec(b); return (r1||r2)?.[1]?.trim()||''; };
-    const title = get('title').replace(/^FinancialJuice:\s*/i,'').trim();
+    const title = decodeXmlEntities(get('title')).replace(/^FinancialJuice:\s*/i,'').trim();
     const guid = get('guid'), pubDate = get('pubDate');
     const link = b.match(/<link>(.*?)<\/link>/)?.[1] || '';
     if (guid && title) {
