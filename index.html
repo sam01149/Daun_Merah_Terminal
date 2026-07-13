@@ -1778,6 +1778,15 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .ringkasan-inner { padding: 20px 24px 28px; max-width: 860px; margin: 0 auto; }
   .ringkasan-card { padding: 20px 24px; }
   .ringkasan-text { font-size: 14px; line-height: 1.8; }
+  /* ANALISA (request user 2026-07-13: "manjang banget" di desktop — kolom baca
+     680px terlalu sempit untuk kartu statistik yang sebenarnya cocok grid 2 kolom,
+     bukan teks panjang seperti Ringkasan). D1/H4/H1/Indikator jadi 2×2 di layar
+     lebar; header/tombol/hasil AI tetap full-width (lebih enak dibaca memanjang). */
+  .analisa-inner { padding: 20px 24px 28px; max-width: 1120px; margin: 0 auto; }
+  #analisaContent { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; align-items: start; }
+  #analisaContent > .analisa-header,
+  #analisaContent > .print-btn-row,
+  #analisaContent > #analisaAiResult { grid-column: 1 / -1; }
   .cb-section { padding: 10px 24px 8px; }
   .cal-toolbar { padding: 9px 24px 7px; }
   .cal-panel-inner { padding: 4px 24px 24px; }
@@ -3799,11 +3808,11 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 <!-- newscat.js: engine klasifikasi kategori berita (single source of truth,
      dipakai juga sw.js & api/). Query ?v= = cache-buster — naikkan tiap kali
      newscat.js berubah, samakan dengan NEWSCAT_VERSION di sw.js. -->
-<script src="/newscat.js?v=2026.07.13.5"></script>
+<script src="/newscat.js?v=2026.07.13.6"></script>
 <script>
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.07.13.5';
+const APP_VERSION = '2026.07.13.6';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
@@ -6910,7 +6919,7 @@ function renderCorrelations() {
       const deltaWarn = g.delta !== null && Math.abs(g.delta) > 0.3;
       html += `<div class="corr-text-row">
         <div class="corr-text-pair">Gold &amp; ${meta.label}</div>
-        <div class="corr-text-desc">${corrWord(g.r20)}${deltaWarn ? ' <span style="color:var(--yellow)">· berubah dari biasa</span>' : ''}</div>
+        <div class="corr-text-desc">${corrWord(g.r20)}${deltaWarn ? ` <span style="color:var(--yellow)">· biasanya memiliki korelasi yang ${corrWord(g.r60)}</span>` : ''}</div>
         <div class="corr-text-nums">${g.r20 != null ? g.r20.toFixed(2) : '—'} <span class="v60">/ ${g.r60 != null ? g.r60.toFixed(2) : '—'}</span></div>
       </div>`;
     }
@@ -13662,19 +13671,22 @@ function renderTekOptions() {
   const meta = document.getElementById('tekOptsMeta');
   if (!body) return;
 
+  // Sumber expiry (Investinglive/FinancialJuice) sama-sama cuma posting ~1x/hari dan
+  // kadang keduanya belum ketemu (feed vendor kosong sementara, bukan bug kita) —
+  // tampilkan sebagai "belum ada data" yang tenang, bukan pesan error mentah "HTTP
+  // 502" yang bikin khawatir seolah ada yang rusak (2026-07-13, keluhan user).
   if (!tekOptionsCache) {
-    const msg = tekOptionsFetchError
-      ? `Tidak tersedia (${escHtml(tekOptionsFetchError)})`
-      : 'Tidak ada data option expiry hari ini.';
-    body.innerHTML = `<div class="tek-opts-empty">${msg}</div>`;
-    if (meta) meta.textContent = tekOptionsFetchError ? 'error' : '';
+    body.innerHTML = `<div class="tek-opts-empty">Belum ada data option expiry hari ini — coba lagi nanti.</div>`;
+    if (meta) meta.textContent = '';
+    if (tekOptionsFetchError) console.warn('Option expiries fetch error:', tekOptionsFetchError);
     return;
   }
 
   const { data } = tekOptionsCache;
   if (data.error) {
-    body.innerHTML = `<div class="tek-opts-empty" style="color:var(--accent)">${escHtml(data.error)}</div>`;
-    if (meta) meta.textContent = 'error';
+    body.innerHTML = `<div class="tek-opts-empty">Belum ada data option expiry hari ini — coba lagi nanti.</div>`;
+    if (meta) meta.textContent = '';
+    console.warn('Option expiries error:', data.error);
     return;
   }
 

@@ -42,7 +42,7 @@
 })(typeof self !== 'undefined' ? self : globalThis, function () {
   'use strict';
 
-  const VERSION = '2026.07.13.5';
+  const VERSION = '2026.07.13.6';
 
   // Samakan tipografi feed (kutip melengkung, dash panjang) & spasi ganda
   // supaya keyword ASCII selalu ketemu. Sama filosofinya dengan sanitasi PDF.

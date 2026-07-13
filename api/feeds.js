@@ -807,7 +807,17 @@ function parseCBRSSItems(xml, sourceKey) {
 // forexorders RSS feed and FinancialJuice's "[Day] FX Options Expiries" headline.
 
 const OPTIONS_CACHE_KEY    = 'fx_options_cache';
-const OPTIONS_CACHE_TTL_MS = 4 * 60 * 60 * 1000; // 4h — data published once daily
+const OPTIONS_CACHE_TTL_MS = 4 * 60 * 60 * 1000; // 4h — "masih segar, jangan refetch" window
+// Retensi Redis (EX pada SET) HARUS jauh lebih lama dari OPTIONS_CACHE_TTL_MS —
+// dua konsep berbeda. Bug ditemukan 2026-07-13 (live 502 walau kode fallback
+// investinglive→direct-fetch sudah benar): SET sebelumnya pakai EX 4 jam yang
+// SAMA dengan window freshness, jadi begitu key Redis expire (4 jam sejak fetch
+// sukses terakhir), stale-serve fallback di catch block kehilangan apapun untuk
+// diserve — 502 keras walau app pernah berhasil fetch beberapa jam sebelumnya.
+// Post expiry cuma terbit ~1x/hari dan kadang tidak ketemu sama sekali di jendela
+// live+history kedua sumber untuk beberapa jam — retensi 48 jam kasih jaring
+// pengaman yang realistis tanpa mengubah kapan data dianggap "segar".
+const OPTIONS_STALE_RETENTION_SEC = 48 * 3600;
 
 // Known forex pair aliases for matching Forexlive text
 const PAIR_ALIASES = {
@@ -889,7 +899,7 @@ async function optionsHandler(req, res) {
   expiries = dedupeExpiries(expiries);
 
   const payload = { expiries, fetched_at: new Date().toISOString(), date: latestDate, sources };
-  redisCmd('SET', OPTIONS_CACHE_KEY, JSON.stringify(payload), 'EX', 14400).catch(() => {});
+  redisCmd('SET', OPTIONS_CACHE_KEY, JSON.stringify(payload), 'EX', OPTIONS_STALE_RETENTION_SEC).catch(() => {});
 
   const out = pairFilter ? filterByPair(expiries, pairFilter) : expiries;
   return res.json({ expiries: out, fetched_at: payload.fetched_at, date: latestDate, sources });
