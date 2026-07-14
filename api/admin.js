@@ -2192,7 +2192,7 @@ async function setupStatsHandler(req, res) {
     const bySymbol = {};
     for (const s of log) { (bySymbol[s.symbol] = bySymbol[s.symbol] || []).push(s); }
     const symbols = {};
-    for (const k of Object.keys(bySymbol)) symbols[k] = _aggSetupStats(bySymbol[k]);
+    for (const k of Object.keys(bySymbol)) { symbols[k] = _aggSetupStats(bySymbol[k]); symbols[k].history = bySymbol[k]; }
     return res.status(200).json({ symbols, global: _aggSetupStats(log), recent: log.slice(0, 10) });
   } catch (e) {
     return res.status(500).json({ error: e.message });
@@ -2286,7 +2286,7 @@ async function setupStatsHandler(req, res) {
     const bySymbol = {};
     for (const s of log) { (bySymbol[s.symbol] = bySymbol[s.symbol] || []).push(s); }
     const symbols = {};
-    for (const k of Object.keys(bySymbol)) symbols[k] = _aggSetupStats(bySymbol[k]);
+    for (const k of Object.keys(bySymbol)) { symbols[k] = _aggSetupStats(bySymbol[k]); symbols[k].history = bySymbol[k]; }
     return res.status(200).json({ symbols, global: _aggSetupStats(log), recent: log.slice(0, 10) });
   } catch (e) {
     return res.status(500).json({ error: e.message });
