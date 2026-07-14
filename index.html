@@ -5498,32 +5498,35 @@ function analisaGoToSizing(symbol) {
     return;
   }
 
-  const pairSelect = document.getElementById('szPair');
-  if (pairSelect && symbol) {
-    const targetLabel = _analisaLabelForSymbol(symbol);
-    for (let i = 0; i < pairSelect.options.length; i++) {
-      if (pairSelect.options[i].value === targetLabel || pairSelect.options[i].text === targetLabel) {
-        pairSelect.selectedIndex = i;
-        if (typeof szUpdatePipInfo === 'function') szUpdatePipInfo();
-        break;
+  switchView('sizing');
+  
+  setTimeout(() => {
+    const pairSelect = document.getElementById('szPair');
+    if (pairSelect && symbol) {
+      const targetLabel = _analisaLabelForSymbol(symbol);
+      for (let i = 0; i < pairSelect.options.length; i++) {
+        if (pairSelect.options[i].value === targetLabel || pairSelect.options[i].text === targetLabel) {
+          pairSelect.selectedIndex = i;
+          if (typeof szUpdatePipInfo === 'function') szUpdatePipInfo();
+          break;
+        }
       }
     }
-  }
 
-  if (s.bias === 'bullish') {
-    szSetDir('long');
-  } else if (s.bias === 'bearish') {
-    szSetDir('short');
-  }
+    if (s.bias === 'bullish') {
+      szSetDir('long');
+    } else if (s.bias === 'bearish') {
+      szSetDir('short');
+    }
 
-  szSetMode('price');
-  document.getElementById('szEntryPrice').value = entryPrice;
-  document.getElementById('szSLPrice').value = slPrice;
-  if (s.risk_reward) document.getElementById('szRR').value = s.risk_reward;
-  
-  if (typeof szAutoComputePips === 'function') szAutoComputePips();
-  if (typeof switchTab === 'function') switchTab('tabSizing');
-  showToast('Sizing Calc', `Setup ${s.bias} untuk ${symbol} dimuat`, 3000);
+    szSetMode('price');
+    document.getElementById('szEntryPrice').value = entryPrice;
+    document.getElementById('szSLPrice').value = slPrice;
+    if (s.risk_reward) document.getElementById('szRR').value = s.risk_reward;
+    
+    if (typeof szAutoComputePips === 'function') szAutoComputePips();
+    showToast('Sizing Calc', `Setup ${s.bias} untuk ${symbol} dimuat`, 3000);
+  }, 200);
 }
 
 // ── Track record setup AI (Tier 1 riset, session 166) ────────────────────────
