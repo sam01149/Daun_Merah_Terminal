@@ -8550,12 +8550,12 @@ function renderCalendar() {
       const dataRow = hasData ? `
         <div class="cal-data-row">
           <div class="cal-data-cell">
-            <div class="cal-data-label">Forecast</div>
-            <div class="cal-data-val ${!ev.forecast?'no-data':''}">${ev.forecast || '—'}</div>
-          </div>
-          <div class="cal-data-cell">
             <div class="cal-data-label">Previous</div>
             <div class="cal-data-val ${!ev.previous?'no-data':''}">${ev.previous || '—'}</div>
+          </div>
+          <div class="cal-data-cell">
+            <div class="cal-data-label">Forecast</div>
+            <div class="cal-data-val ${!ev.forecast?'no-data':''}">${ev.forecast || '—'}</div>
           </div>
           <div class="cal-data-cell">
             <div class="cal-data-label">Actual</div>

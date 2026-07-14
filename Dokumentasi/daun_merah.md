@@ -12,7 +12,10 @@
 
 **Konteks:** Menyelaraskan alur kerja dari Ringkasan → Analisa AI → Sizing Calc → Eksekusi MT5, serta meningkatkan "kepintaran" AI agar tidak memaksakan trade saat kondisi makro dan teknikal bertentangan.
 
-**1. Integrasi Analisa AI ke Sizing Calc (`index.html`):**
+**1. Reorder Kalender Ekonomi (`index.html`):**
+- Mengubah urutan tampilan data kalender ekonomi dari (Forecast, Previous, Actual) menjadi (Previous, Forecast, Actual) untuk flow membaca yang lebih natural.
+
+**2. Integrasi Analisa AI ke Sizing Calc (`index.html`):**
 - Menambahkan tombol "➔ KE SIZING CALC" pada UI hasil Analisa AI yang terstruktur.
 - Membuat fungsi `analisaGoToSizing(symbol)` yang secara otomatis membaca cache JSON dari AI (`entry_zone`, `sl`, `risk_reward`, `bias`).
 - Mengubah *tab* secara otomatis ke Sizing Calc, memilih pair yang sesuai, mengatur arah posisi (Long/Short), mengubah mode ke *Price*, dan mengisi input Entry Price serta SL Price berdasarkan angka deterministik.
