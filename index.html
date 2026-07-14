@@ -5535,6 +5535,11 @@ let _setupStatsCache = null, _setupStatsAt = 0;
 async function analisaLoadTrackRecord(symbol) {
   const el = document.getElementById('analisaTrackRecord');
   if (!el) return;
+  
+  // Sembunyikan elemen UI agar tidak mengganggu kognitif user,
+  // namun fungsi fetch tetap dijalankan di latar belakang (jika dibutuhkan sistem).
+  el.style.display = 'none';
+
   try {
     if (!_setupStatsCache || Date.now() - _setupStatsAt > 30 * 60 * 1000) {
       const r = await fetch('/api/admin?action=setup_stats');
@@ -5809,6 +5814,9 @@ async function analyzeOhlcvAi() {
   // supaya AI tidak menimbang narasi basi seolah kondisi sekarang.
   const ringkasanGeneratedAt = ringkasanContext ? (ringkasanCache?.generated_at || null) : null;
 
+  // Hitung arah CB Bias (fundamental) untuk dikirim ke Sistem Hakim (Backend)
+  const cbDir = label.includes('/') ? _ckInferDirFromCbBias(...label.split('/')) : null;
+
   // Send cached ohlcv data as fallback so backend can analyze even if Redis expired
   const ohlcvData = analisaDataCache[symbol] || null;
 
@@ -5816,7 +5824,7 @@ async function analyzeOhlcvAi() {
     const res  = await fetch(`/api/admin?action=ohlcv_analyze`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ symbol, label, ringkasanContext, ringkasanGeneratedAt, ohlcvData }),
+      body: JSON.stringify({ symbol, label, ringkasanContext, ringkasanGeneratedAt, ohlcvData, cbDir }),
     });
     const data = await res.json();
     if (data.commentary || data.structured) {

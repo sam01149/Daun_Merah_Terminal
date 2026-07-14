@@ -2481,6 +2481,7 @@ async function ohlcvAnalyzeHandler(req, res) {
   else if (ringkasanContext.length > 1200) ringkasanContext = ringkasanContext.slice(0, 1197) + '...';
   let ringkasanAt      = req.body?.ringkasanGeneratedAt || null;
   const clientOhlcv    = req.body?.ohlcvData       || null;
+  const cbDir          = req.body?.cbDir           || null;
 
   // Fallback server-side untuk SEMUA pair (dulu GC=F saja): cron tidak punya browser,
   // dan user yang belum pernah buka tab Ringkasan tetap dapat konteks makro selama
@@ -2884,6 +2885,18 @@ async function ohlcvAnalyzeHandler(req, res) {
         structured.makro_alignment_reason = (structured.makro_alignment && typeof structured.makro_alignment_reason === 'string' && structured.makro_alignment_reason.trim())
           ? structured.makro_alignment_reason.trim()
           : null;
+
+        // [SISTEM HAKIM] Soft Block (Hak Veto User) - Mencegat halusinasi makro_alignment
+        if (cbDir && structured.bias) {
+          const techBias = structured.bias.toLowerCase();
+          const isTechLong = techBias.includes('bullish') || techBias === 'long';
+          const isTechShort = techBias.includes('bearish') || techBias === 'short';
+          
+          if ((cbDir === 'long' && isTechShort) || (cbDir === 'short' && isTechLong)) {
+            structured.makro_alignment = 'konflik';
+            structured.makro_alignment_reason = '[SISTEM HAKIM] Terdeteksi konflik nyata antara arah Makro/Fundamental dan Teknikal. Setup ini melanggar aturan konfluensi makro.';
+          }
+        }
       } catch(e) {
         // Keep rawText as commentary, structured stays null
       }
@@ -2909,7 +2922,7 @@ async function ohlcvAnalyzeHandler(req, res) {
     // logging tidak boleh menggagalkan response analisa. Dedup: setup aktif dengan
     // level identik di symbol yang sama tidak dicatat dua kali (re-generate tanpa
     // perubahan level = satu keputusan yang sama, bukan dua track record).
-    if (structured?.entry_zone && structured.sl && structured.tp && !isDiagnosticOnly) {
+    if (structured?.entry_zone && structured.sl && structured.tp && structured.makro_alignment !== 'konflik' && !isDiagnosticOnly) {
       try {
         const rawLog = await redisCmd('GET', 'setup_log:v1');
         let log = rawLog ? JSON.parse(rawLog) : [];
