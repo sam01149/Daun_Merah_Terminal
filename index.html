@@ -5435,7 +5435,7 @@ function _renderStructuredAi(structured, commentary, model, hasMakro, isCached, 
         ${structured.sl ? `<span><span style="color:var(--red)">SL </span>${escHtml(structured.sl)}</span>` : ''}
         ${structured.tp ? `<span><span style="color:var(--green)">TP </span>${escHtml(structured.tp)}</span>` : ''}
         ${structured.risk_reward ? `<span><span style="color:var(--muted)">RR </span>1:${escHtml(String(structured.risk_reward))}</span>` : ''}
-        <button type="button" onclick="analisaGoToSizing(analisaActive.symbol)" style="margin-left:auto;padding:3px 10px;font-family:'DM Mono',monospace;font-size:10px;border-radius:3px;border:1px solid var(--accent);background:var(--accent);color:#fff;cursor:pointer;font-weight:700">➔ KE SIZING CALC</button>
+        <button type="button" onclick="analisaGoToSizing(analisaActive.symbol)" style="margin-left:auto;padding:3px 10px;font-family:'DM Mono',monospace;font-size:10px;border-radius:3px;border:1px solid var(--accent);background:var(--accent);color:#fff;cursor:pointer;font-weight:700">KE SIZING CALC</button>
       </div>`;
       if (structured.entry_basis) {
         html += `<div style="margin:-4px 0 10px;font-size:10.5px;color:var(--muted);line-height:1.5"><span style="color:var(--text)">DASAR </span>${escHtml(structured.entry_basis)}</div>`;
