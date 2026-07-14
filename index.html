@@ -10204,7 +10204,7 @@ function ckConfirmOverride() {
     const badge = item?.querySelector('.auto-badge');
     if (badge) {
       badge.style.cssText = 'font-size:8px;color:var(--yellow);margin-left:6px;opacity:.85';
-      badge.textContent = '⚠ overridden';
+      badge.textContent = '[OVERRIDDEN]';
       badge.title = `Override: ${reason}`;
     }
   }
@@ -10908,7 +10908,7 @@ function ckAutoTick(id, hint) {
       // Always reset color/text — previously this only ran for newly-created badges,
       // so an item that flipped from blocked(red) to auto(green) kept showing red.
       badge.style.cssText = 'font-size:8px;color:var(--green);margin-left:6px;opacity:.7';
-      badge.textContent = '✓ auto';
+      badge.textContent = '[AUTO]';
       badge.title = hint;
     }
   }
@@ -10930,7 +10930,7 @@ function ckAutoBlock(id, hint) {
         item.appendChild(badge);
       }
       badge.style.cssText = 'font-size:8px;color:var(--red);margin-left:6px;opacity:.7';
-      badge.textContent = '⚠ blocked';
+      badge.textContent = '[BLOCKED]';
       badge.title = hint;
     }
   }
