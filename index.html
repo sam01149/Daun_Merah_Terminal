@@ -5435,6 +5435,7 @@ function _renderStructuredAi(structured, commentary, model, hasMakro, isCached, 
         ${structured.sl ? `<span><span style="color:var(--red)">SL </span>${escHtml(structured.sl)}</span>` : ''}
         ${structured.tp ? `<span><span style="color:var(--green)">TP </span>${escHtml(structured.tp)}</span>` : ''}
         ${structured.risk_reward ? `<span><span style="color:var(--muted)">RR </span>1:${escHtml(String(structured.risk_reward))}</span>` : ''}
+        <button type="button" onclick="analisaGoToSizing(analisaActive.symbol)" style="margin-left:auto;padding:3px 10px;font-family:'DM Mono',monospace;font-size:10px;border-radius:3px;border:1px solid var(--accent);background:var(--accent);color:#fff;cursor:pointer;font-weight:700">➔ KE SIZING CALC</button>
       </div>`;
       if (structured.entry_basis) {
         html += `<div style="margin:-4px 0 10px;font-size:10.5px;color:var(--muted);line-height:1.5"><span style="color:var(--text)">DASAR </span>${escHtml(structured.entry_basis)}</div>`;
@@ -5474,6 +5475,55 @@ function _restoreAiResult(symbol) {
   resultEl.innerHTML = _renderStructuredAi(cached.structured || null, cached.commentary, cached.model, !!cached.hasMakro, true, !!cached.hasFund, cached.makroAt || null, cached.analyzedAt || null);
   resultEl.style.display = 'block';
   analisaLoadTrackRecord(symbol);
+}
+
+function analisaGoToSizing(symbol) {
+  const ai = analisaAiCache[symbol];
+  if (!ai || !ai.structured || !ai.structured.entry_zone) {
+    showToast('Info', 'Tidak ada entry zone untuk dikirim ke Sizing Calc', 3000);
+    return;
+  }
+  const s = ai.structured;
+  const entryNums = s.entry_zone.match(/[\d.]+/g);
+  if (!entryNums) {
+    showToast('Info', 'Format entry zone tidak bisa diparse', 3000);
+    return;
+  }
+  
+  const entryPrice = parseFloat(entryNums[0]);
+  const slPrice = parseFloat(s.sl);
+  
+  if (isNaN(entryPrice) || isNaN(slPrice)) {
+    showToast('Info', 'Entry atau SL bukan angka valid', 3000);
+    return;
+  }
+
+  const pairSelect = document.getElementById('szPair');
+  if (pairSelect && symbol) {
+    const targetLabel = _analisaLabelForSymbol(symbol);
+    for (let i = 0; i < pairSelect.options.length; i++) {
+      if (pairSelect.options[i].value === targetLabel || pairSelect.options[i].text === targetLabel) {
+        pairSelect.selectedIndex = i;
+        if (typeof szUpdatePipInfo === 'function') szUpdatePipInfo();
+        break;
+      }
+    }
+  }
+
+  if (s.bias === 'bullish') {
+    szSetDir('long');
+  } else if (s.bias === 'bearish') {
+    szSetDir('short');
+  }
+
+  szSetMode('price');
+  document.getElementById('szEntryPrice').value = entryPrice;
+  document.getElementById('szSLPrice').value = slPrice;
+  if (s.risk_reward) document.getElementById('szRR').value = s.risk_reward;
+  
+  if (typeof szAutoComputePips === 'function') szAutoComputePips();
+  if (typeof switchTab === 'function') switchTab('tabSizing');
+  showToast('Sizing Calc', `Setup ${s.bias} untuk ${symbol} dimuat`, 3000);
 }
 
 // ── Track record setup AI (Tier 1 riset, session 166) ────────────────────────

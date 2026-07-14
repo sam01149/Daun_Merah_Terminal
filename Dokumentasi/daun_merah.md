@@ -1,10 +1,27 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-07-14 (Session 167 — Perluasan auto-tick checklist SMC/ICT, outcome logging setup Analisa AI, dan backtest offline zona konfluensi. Detail history dapat dilihat pada changelog sesi di bawah.)
+> **Last updated:** 2026-07-14 (Session 168 — Integrasi Analisa AI ke Sizing Calc dan pengetatan aturan No-Trade untuk resolusi konflik Makro vs Teknikal. Detail history dapat dilihat pada changelog sesi di bawah.)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+---
+
+## Changelog Session 168 (2026-07-14) — Integrasi Analisa AI ke Sizing Calc & Pengetatan Aturan Konflik Makro
+
+**Konteks:** Menyelaraskan alur kerja dari Ringkasan → Analisa AI → Sizing Calc → Eksekusi MT5, serta meningkatkan "kepintaran" AI agar tidak memaksakan trade saat kondisi makro dan teknikal bertentangan.
+
+**1. Integrasi Analisa AI ke Sizing Calc (`index.html`):**
+- Menambahkan tombol "➔ KE SIZING CALC" pada UI hasil Analisa AI yang terstruktur.
+- Membuat fungsi `analisaGoToSizing(symbol)` yang secara otomatis membaca cache JSON dari AI (`entry_zone`, `sl`, `risk_reward`, `bias`).
+- Mengubah *tab* secara otomatis ke Sizing Calc, memilih pair yang sesuai, mengatur arah posisi (Long/Short), mengubah mode ke *Price*, dan mengisi input Entry Price serta SL Price berdasarkan angka deterministik.
+- Sizing Calc sudah terintegrasi dengan MT5 bridge (`szAutoFillEquityFromBridge`), sehingga modal equity juga otomatis terisi.
+
+**2. Pengetatan Logika AI (No-Trade Rule) (`api/admin.js`):**
+- Menambahkan instruksi kaku pada prompt AI (`entryZoneInstr`).
+- Jika AI mendeteksi status `makro_alignment: "konflik"`, AI DILARANG KERAS memaksakan pemilihan level. AI dipaksa me-return nilai `null` untuk `entry_zone`, `sl`, `tp`, dan `entry_basis`.
+- AI diwajibkan memberikan penjelasan "wait-and-see" di kolom `trigger` agar *trader* terhindar dari *whipsaw* atau false breakout akibat perlawanan fundamental melawan teknikal.
 
 ---
 
