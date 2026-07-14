@@ -2912,6 +2912,11 @@ async function ohlcvAnalyzeHandler(req, res) {
       makro_generated_at: (ringkasanContext && ringkasanAt) ? ringkasanAt : null,
       loaded_at: new Date().toISOString(),
     };
+
+    if (!commentary && !structured) {
+      resultPayload.error = 'SambaNova (Utama & Cadangan) sedang offline, timeout, atau limit harian habis';
+    }
+
     // isDiagnosticOnly dikecualikan dari cache produksi — request diagnostik tidak boleh
     // menimpa hasil analisa AI real yang sedang ditampilkan ke user di tab Analisa.
     if ((commentary || structured) && !isDiagnosticOnly) {
