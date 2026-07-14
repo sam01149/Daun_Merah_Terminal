@@ -213,7 +213,7 @@ async function fetchTradingViewEvents(rangeStartWib, rangeEndWib) {
       previous_raw: num(e.previousRaw),
       actual_raw:   num(e.actualRaw),
       period:   (typeof e.period === 'string' && e.period) ? e.period : null,
-      comment:  (typeof e.comment === 'string' && e.comment) ? e.comment.slice(0, 300) : null,
+      comment:  (typeof e.comment === 'string' && e.comment) ? e.comment.trim() : null,
       url:      e.source_url || null,
     };
   });
