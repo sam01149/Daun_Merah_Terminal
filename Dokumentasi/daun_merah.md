@@ -1,10 +1,41 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-07-14 (session 166 — akar masalah "hasil Analisa AI lompat-lompat tiap re-generate" di-fix: **zona konfluensi deterministik** (`_confluenceZones` di api/admin.js) menggantikan pemilihan level bebas oleh LLM — semua struktur (S/R, fib, pivot, prev day/week, swing H4, SMA, option expiry) di-cluster & di-ranking oleh KODE, AI tinggal menarasikan zona teratas; temperature `ohlcv_analyze` 0.3 → 0. Plus: Equity Sizing Calc auto-isi dari saldo asli MT5 bridge (`szAutoFillEquityFromBridge`); checklist auto-tick TEKNIKAL dari hasil tab Analisa (`ckAutoTickFromAnalisa` — domain terpisah dari auto-tick makro yang sudah ada, konservatif, gate 50% MT5 tidak berubah); riset "AI lebih pintar sampai mentok" ditulis di `daun_merah_riset_ai_pintar.md`. Suite 293/293 hijau. Sebelumnya session 165 — user memperbarui API key SambaNova; **SambaNova dikembalikan jadi primary Call 1/2/3** di Ringkasan Berita, menggeser Cerebras `gpt-oss-120b` (primary Call 1 session 164) jadi fallback-1 dan melepas Z.ai GLM 4.7 (primary Call 2/3 session 164) dari rantai produksi sepenuhnya — GLM tetap ada sebagai diagnostik `?test_glm=1` di Call 1. Suite 287/287 hijau, live test production sukses — Call 1 `sambanova:ok(12073ms)`, Call 2 bias update 8/8 currency, Call 3 thesis JSON valid, semua via SambaNova tanpa perlu fallback. Sebelumnya session 164 lanjutan 1 — GLM 4.7 (Cerebras), yang DITOLAK session 163 untuk Call 1 karena context-limit, dijadikan **primary Call 2 & Call 3** atas permintaan user — prompt kedua call ini jauh lebih pendek dari Call 1 (Call 2 max 50 headline, Call 3 cuma 15 judul) jadi risiko context-limit lebih kecil (belum nol). SambaNova/Groq geser jadi fallback via pola array-provider yang sudah ada; kalau GLM gagal (termasuk context-limit di hari ramai), catch()+circuit breaker otomatis fallback, tidak ada request gagal total. Belum dites live (user minta manual dulu). Suite 287/287 hijau. Sebelumnya session 164 (awal) — user cek provider pihak-ketiga `tokenreply.com`: **DITOLAK** (proxy tidak resmi, domain baru, semua model $0.00, nama model codename arena-testing mencurigakan). Primary Call 1 (live) diganti dari OpenRouter gpt-oss-120b:free (sering timeout, 15010ms tercatat) ke **Cerebras `gpt-oss-120b`** (endpoint sama dgn admin.js/journal.js sejak session 145, ~3000 tok/s, context 128K); fallback SambaNova akun 2 → Groq tidak berubah. Ditemukan 2 isu belum ditindaklanjuti: SambaNova akun 2 HTTP 402, Groq HTTP 413. Sebelumnya session 163 — Z.ai GLM 4.7 via Cerebras dites & DITOLAK untuk Call 1 (context Preview 8192 token < prompt ~13K); akun SambaNova Call 1 (akun 2) terkonfirmasi paid tier bukan free; gpt-oss-120b (OpenRouter) sempat primary Call 1 live, Nemotron Ultra jadi primary khusus 3 cron session-open; guard `CALL1_HARD_BUDGET_MS` (48s) ditambahkan.)
+> **Last updated:** 2026-07-14 (Session 167 — Perluasan auto-tick checklist SMC/ICT, outcome logging setup Analisa AI, dan backtest offline zona konfluensi. Detail history dapat dilihat pada changelog sesi di bawah.)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+---
+
+## Changelog Session 167 (2026-07-14) — Auto-Tick Checklist SMC/ICT, Outcome Logging, Backtest Konfluensi
+
+**Konteks:** Lanjutan langsung dari Session 166, mengerjakan 3 item besar dari `daun_merah_riset_ai_pintar.md` dan backlog perluasan auto-tick.
+
+**1. Perluasan auto-tick Checklist SMC/ICT (`index.html`):**
+- Fungsi `ckAutoTickFromAnalisa(pair)` diperluas untuk mencakup lebih banyak item di playbook SMC/ICT, dengan pemisahan jelas antara apa yang bisa divalidasi sistem vs. apa yang butuh judgment manusia.
+- **Validitas Driver (g1-g4):** auto-tick jika driver adalah divergensi CB yang jelas (≥2 level), karena itu fakta dari statement resmi, bukan asumsi. `g4` (sudah tercermin di harga) di-tick jika tren Daily OHLCV searah dengan bias CB. `g5` (kata terlarang) tetap 100% manual.
+- **Struktur (s3):** auto-block jika struktur H4 terdeteksi `Mixed/Range`, auto-tick jika `Bullish/Bearish`.
+- **Entry (e1, e4):** `e1` (pullback/retest) di-tick jika zona entry AI berada di sisi yang benar relatif ke harga Now (mis. bearish = jual di rally ke resistance di atas Now). `e4` (harga sudah di area) di-tick jika Now sudah masuk zona entry (± toleransi ATR). `e2` (bukan tengah impuls) & `e3` (bukan FOMO) tetap 100% manual (psikologi).
+- **Trigger (t1):** auto-tick jika ada pola candle (engulfing/pin bar) yang terdeteksi secara deterministik dari data OHLCV dan searah dengan bias AI.
+- **Risk (r3, r4):** auto-tick dari data Sizing Calculator (`_lastSizing`) — `r3` jika risk % sudah diset, `r4` jika ≤2% (auto-block jika >2%).
+
+**2. Tier 1 Riset AI — Outcome Logging Setup Analisa AI (`api/admin.js`, `index.html`):**
+- `ohlcvAnalyzeHandler`: setiap setup lengkap (entry/sl/tp) yang dihasilkan sekarang dicatat ke Redis key `setup_log:v1` (capped 200 entri).
+- `_evaluateSetups()` (pure function, dites): logika untuk mengevaluasi setup yang `pending`/`open` terhadap data candle 1H historis. Menentukan apakah harga menyentuh zona entry, lalu kena TP/SL duluan, atau `ambiguous` (keduanya di candle yang sama). Setup yang terlalu lama atau datanya hilang ditandai `expired`/`stale`.
+- Endpoint baru `GET /api/admin?action=setup_stats`: dipanggil dari UI, menjalankan `_evaluateSetups` secara lazy (tanpa cron baru), lalu mengagregasi statistik win-rate per pair dan global.
+- UI tab ANALISA: section baru `Track Record` di bawah hasil AI, menampilkan win-rate NYATA dari setup yang sudah dievaluasi (`TP X · SL Y · win Z%`). Memberi feedback loop objektif pada kualitas saran AI.
+
+**3. Tier 3 Riset AI — Backtest Offline Zona Konfluensi (`scripts/backtest_confluence.js`):**
+- Script Node.js baru yang me-replay histori harga 60 hari (Yahoo Finance, tanpa AI/Redis/kredensial).
+- Tiap 24 jam virtual, hitung zona konfluensi, lalu amati 48 jam ke depan: apakah harga bereaksi (memantul/menembus) saat menyentuh zona?
+- **Hasil backtest (dijalankan penuh):** Sangat positif. Zona skor **tinggi (≥3)** punya **bounce-rate 68%**, sementara zona skor **rendah (≤1.5)** hanya **50%**. Ini memvalidasi asumsi inti fitur Analisa AI: konfluensi struktur memang sinyal reaksi harga yang signifikan.
+
+### Verifikasi
+`node --check` semua file yang diubah bersih. Suite test diperluas dengan 8 test baru untuk `_evaluateSetups` dan `_aggSetupStats` di `test/ta_struct.test.js` (reproduksi skenario TP/SL/ambiguous/expired/stale/invalid). Suite penuh **301/301 hijau**. Backtest script dijalankan penuh, hasil dicatat. Live test `ohlcv_analyze` XAU/USD sukses, setup tercatat di log Redis.
+
+### Versi
+Cache-buster naik serempak → `2026.07.14.1`.
 
 ---
 

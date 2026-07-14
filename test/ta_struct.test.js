@@ -337,3 +337,109 @@ test('_formatConfluenceBlock: render header + ID zona A1/B1', () => {
   // Kosong kalau zona null
   assert.strictEqual(_formatConfluenceBlock(null, 5), '');
 });
+
+// ── _evaluateSetups + _aggSetupStats (Tier 1 outcome logging, session 166) ────
+
+const { _evaluateSetups, _aggSetupStats } = require('../api/admin.js');
+
+// Candle 1H sintetis: t dalam detik epoch
+const mkC = (t, o, h, l, c) => ({ t, o, h, l, c, v: 0 });
+const T0 = 1000000000; // detik
+const MS0 = T0 * 1000;
+
+function mkSetup(over = {}) {
+  return {
+    id: 'GC=F:1', symbol: 'GC=F', bias: 'bearish',
+    entry_zone: '4030-4040', sl: '4065', tp: '3960',
+    horizon_days: 5, ts: MS0, status: 'pending', ...over,
+  };
+}
+
+test('_evaluateSetups: bearish fill lalu TP duluan → status tp', () => {
+  const setups = [mkSetup()];
+  const candles = {
+    'GC=F': [
+      mkC(T0 + 3600, 4000, 4010, 3995, 4005),   // belum sentuh zona
+      mkC(T0 + 7200, 4005, 4035, 4000, 4020),   // h 4035 >= 4030 → fill
+      mkC(T0 + 10800, 4020, 4030, 3955, 3960),  // l 3955 <= 3960 → TP
+    ],
+  };
+  _evaluateSetups(setups, candles, MS0 + 4 * 3600 * 1000);
+  assert.strictEqual(setups[0].status, 'tp');
+  assert.strictEqual(setups[0].filled_t, T0 + 7200);
+  assert.strictEqual(setups[0].closed_t, T0 + 10800);
+});
+
+test('_evaluateSetups: bearish fill lalu SL duluan → status sl', () => {
+  const setups = [mkSetup()];
+  const candles = {
+    'GC=F': [
+      mkC(T0 + 3600, 4000, 4035, 3995, 4030),   // fill
+      mkC(T0 + 7200, 4030, 4070, 4025, 4060),   // h 4070 >= 4065 → SL
+    ],
+  };
+  _evaluateSetups(setups, candles, MS0 + 3 * 3600 * 1000);
+  assert.strictEqual(setups[0].status, 'sl');
+});
+
+test('_evaluateSetups: TP & SL di candle sama → ambiguous (bukan menang/kalah)', () => {
+  const setups = [mkSetup()];
+  const candles = {
+    'GC=F': [
+      mkC(T0 + 3600, 4000, 4035, 3995, 4030),          // fill
+      mkC(T0 + 7200, 4030, 4070, 3955, 4000),          // h>=SL dan l<=TP di bar sama
+    ],
+  };
+  _evaluateSetups(setups, candles, MS0 + 3 * 3600 * 1000);
+  assert.strictEqual(setups[0].status, 'ambiguous');
+});
+
+test('_evaluateSetups: bullish mirror — fill di low, TP di high', () => {
+  const setups = [mkSetup({ bias: 'bullish', entry_zone: '3960-3970', sl: '3940', tp: '4030' })];
+  const candles = {
+    'GC=F': [
+      mkC(T0 + 3600, 4000, 4005, 3968, 3980),   // l 3968 <= 3970 → fill
+      mkC(T0 + 7200, 3980, 4035, 3975, 4030),   // h 4035 >= 4030 → TP
+    ],
+  };
+  _evaluateSetups(setups, candles, MS0 + 3 * 3600 * 1000);
+  assert.strictEqual(setups[0].status, 'tp');
+});
+
+test('_evaluateSetups: pending kadaluarsa (> horizon x1.5) → expired; belum → tetap pending', () => {
+  const far = [mkSetup()];
+  _evaluateSetups(far, { 'GC=F': [mkC(T0 + 3600, 4000, 4005, 3995, 4000)] }, MS0 + 8 * 86400000); // 8 hari > 5*1.5
+  assert.strictEqual(far[0].status, 'expired');
+  const recent = [mkSetup()];
+  _evaluateSetups(recent, { 'GC=F': [mkC(T0 + 3600, 4000, 4005, 3995, 4000)] }, MS0 + 2 * 86400000);
+  assert.strictEqual(recent[0].status, 'pending');
+});
+
+test('_evaluateSetups: gap data (candle tertua >24 jam setelah setup) → stale, bukan mengarang hasil', () => {
+  const setups = [mkSetup()];
+  const candles = { 'GC=F': [mkC(T0 + 2 * 86400, 4000, 4100, 3900, 4000)] }; // mulai 2 hari kemudian
+  _evaluateSetups(setups, candles, MS0 + 3 * 86400000);
+  assert.strictEqual(setups[0].status, 'stale');
+});
+
+test('_evaluateSetups: level tidak bisa diparse / bias aneh → invalid; status final tidak disentuh', () => {
+  const bad = [mkSetup({ entry_zone: null }), mkSetup({ bias: 'mixed' }), mkSetup({ status: 'tp' })];
+  _evaluateSetups(bad, {}, MS0);
+  assert.strictEqual(bad[0].status, 'invalid');
+  assert.strictEqual(bad[1].status, 'invalid');
+  assert.strictEqual(bad[2].status, 'tp'); // sudah final, jangan dievaluasi ulang
+});
+
+test('_aggSetupStats: win-rate hanya dari TP vs SL, ambiguous tidak masuk pembagi', () => {
+  const arr = [
+    { status: 'tp' }, { status: 'tp' }, { status: 'sl' },
+    { status: 'ambiguous' }, { status: 'pending' }, { status: 'open' }, { status: 'expired' },
+  ];
+  const a = _aggSetupStats(arr);
+  assert.strictEqual(a.total, 7);
+  assert.strictEqual(a.tp, 2);
+  assert.strictEqual(a.sl, 1);
+  assert.strictEqual(a.win_rate, 67); // 2/3
+  const empty = _aggSetupStats([]);
+  assert.strictEqual(empty.win_rate, null);
+});

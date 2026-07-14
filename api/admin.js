@@ -55,6 +55,7 @@ const PUBLIC_ACTION_LIMITS = {
   ohlcv_read:           30,
   ohlcv_analyze:         5,
   ohlcv_dashboard:      30,
+  setup_stats:          20,
   polymarket:           30,
   gdpnow:               10,
 };
@@ -87,6 +88,7 @@ module.exports = async function handler(req, res) {
   if (action === 'ohlcv_read')         return ohlcvReadHandler(req, res);
   if (action === 'ohlcv_analyze')      return ohlcvAnalyzeHandler(req, res);
   if (action === 'ohlcv_dashboard')    return ohlcvDashboardHandler(req, res);
+  if (action === 'setup_stats')        return setupStatsHandler(req, res);
   if (action === 'polymarket')         return polymarketHandler(req, res);
   return res.status(400).json({ error: 'Missing ?action= — use health, redis-keys, admin-prompts, push, fundamental_get, fundamental_seed, fundamental_refresh, fundamental_analysis, journal_import, circuit-reset, circuit-status, gdpnow, ohlcv_sync, ohlcv_read, ohlcv_analyze, ohlcv_dashboard, or polymarket' });
 };
@@ -2103,6 +2105,194 @@ function _confluenceZones(data, expiryLvls) {
   return out;
 }
 
+// ── Outcome logging setup Analisa AI (Tier 1 riset, session 166) ──────────────
+// Setiap setup lengkap (entry/sl/tp) yang dihasilkan ohlcv_analyze dicatat ke Redis
+// `setup_log:v1`, lalu dievaluasi lazy tiap kali `?action=setup_stats` dipanggil
+// (tanpa cron baru, tanpa AI call): candle 1H sejak setup dibuat menentukan apakah
+// harga MASUK zona entry dulu (pending→open), lalu kena TP atau SL duluan. Dari sini
+// win-rate NYATA per pair bisa dihitung — bukan self-assessment "keyakinan" LLM.
+//
+// Status: pending (belum fill) → open (sudah masuk zona) → tp | sl | ambiguous
+// (TP & SL tersentuh di candle 1H yang sama — tidak bisa tahu urutannya, JANGAN
+// dihitung menang/kalah); pending terlalu lama → expired; gap data (candle tertua
+// > 24 jam setelah setup dibuat, tidak tahu apa yang terjadi) → stale.
+// Pure function — dites di test/ta_struct.test.js.
+function _evaluateSetups(setups, candlesBySymbol, nowMs) {
+  const DAY = 86400000;
+  const nums = s => (String(s).match(/[\d.]+/g) || []).map(Number).filter(n => !isNaN(n));
+  for (const st of setups || []) {
+    if (!st || (st.status !== 'pending' && st.status !== 'open')) continue;
+    const e = nums(st.entry_zone), sl = nums(st.sl)[0], tp = nums(st.tp)[0];
+    if (!e.length || sl == null || tp == null || (st.bias !== 'bullish' && st.bias !== 'bearish')) {
+      st.status = 'invalid';
+      continue;
+    }
+    const eLo = Math.min(...e), eHi = Math.max(...e);
+    const all = candlesBySymbol?.[st.symbol] || [];
+    // Gap data: setup masih pending tapi candle tertua yang tersedia sudah > 24 jam
+    // setelah setup dibuat — kejadian di gap tidak diketahui, jangan mengarang hasil.
+    if (st.status === 'pending' && all.length && all[0].t * 1000 > st.ts + DAY) {
+      st.status = 'stale';
+      continue;
+    }
+    for (const c of all) {
+      if (c.t * 1000 <= st.ts) continue;
+      if (st.status === 'pending') {
+        const filled = st.bias === 'bearish' ? c.h >= eLo : c.l <= eHi;
+        if (filled) { st.status = 'open'; st.filled_t = c.t; }
+      }
+      if (st.status === 'open') {
+        const hitSl = st.bias === 'bearish' ? c.h >= sl : c.l <= sl;
+        const hitTp = st.bias === 'bearish' ? c.l <= tp : c.h >= tp;
+        if (hitSl && hitTp) { st.status = 'ambiguous'; st.closed_t = c.t; break; }
+        if (hitSl) { st.status = 'sl'; st.closed_t = c.t; break; }
+        if (hitTp) { st.status = 'tp'; st.closed_t = c.t; break; }
+      }
+    }
+    const horizonMs = Math.max(2, st.horizon_days || 5) * 1.5 * DAY;
+    if (st.status === 'pending' && nowMs - st.ts > horizonMs) st.status = 'expired';
+  }
+  return setups;
+}
+
+// Agregat statistik dari log setup. Ambiguous TIDAK masuk pembagi win-rate.
+function _aggSetupStats(arr) {
+  const by = s => arr.filter(x => x.status === s).length;
+  const tp = by('tp'), sl = by('sl');
+  return {
+    total: arr.length,
+    pending: by('pending'), open: by('open'),
+    tp, sl, ambiguous: by('ambiguous'), expired: by('expired'), stale: by('stale') + by('invalid'),
+    win_rate: (tp + sl) > 0 ? Math.round(tp / (tp + sl) * 100) : null,
+  };
+}
+
+async function setupStatsHandler(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Cache-Control', 'no-cache');
+  if (req.method === 'OPTIONS') return res.status(204).end();
+  try {
+    const raw = await redisCmd('GET', 'setup_log:v1');
+    if (!raw) return res.status(200).json({ symbols: {}, global: _aggSetupStats([]), recent: [] });
+    let log = JSON.parse(raw);
+    if (!Array.isArray(log)) log = [];
+    // Evaluasi lazy hanya symbol yang punya setup aktif — hemat Redis call
+    const active = [...new Set(log.filter(s => s && (s.status === 'pending' || s.status === 'open')).map(s => s.symbol))];
+    const candlesBySymbol = {};
+    await Promise.all(active.map(async sym => {
+      try {
+        const r = await redisCmd('GET', `ohlcv:${sym}:1h`);
+        if (r) candlesBySymbol[sym] = JSON.parse(r);
+      } catch (e) { /* candle hilang → setup symbol itu tetap pending */ }
+    }));
+    const before = JSON.stringify(log);
+    log = _evaluateSetups(log, candlesBySymbol, Date.now());
+    const after = JSON.stringify(log);
+    if (after !== before) await redisCmd('SET', 'setup_log:v1', after);
+    const bySymbol = {};
+    for (const s of log) { (bySymbol[s.symbol] = bySymbol[s.symbol] || []).push(s); }
+    const symbols = {};
+    for (const k of Object.keys(bySymbol)) symbols[k] = _aggSetupStats(bySymbol[k]);
+    return res.status(200).json({ symbols, global: _aggSetupStats(log), recent: log.slice(0, 10) });
+  } catch (e) {
+    return res.status(500).json({ error: e.message });
+  }
+}
+
+// ── Outcome logging setup Analisa AI (Tier 1 riset, session 166) ──────────────
+// Setiap setup lengkap (entry/sl/tp) yang dihasilkan ohlcv_analyze dicatat ke Redis
+// `setup_log:v1`, lalu dievaluasi lazy tiap kali `?action=setup_stats` dipanggil
+// (tanpa cron baru, tanpa AI call): candle 1H sejak setup dibuat menentukan apakah
+// harga MASUK zona entry dulu (pending→open), lalu kena TP atau SL duluan. Dari sini
+// win-rate NYATA per pair bisa dihitung — bukan self-assessment "keyakinan" LLM.
+//
+// Status: pending (belum fill) → open (sudah masuk zona) → tp | sl | ambiguous
+// (TP & SL tersentuh di candle 1H yang sama — tidak bisa tahu urutannya, JANGAN
+// dihitung menang/kalah); pending terlalu lama → expired; gap data (candle tertua
+// > 24 jam setelah setup dibuat, tidak tahu apa yang terjadi) → stale.
+// Pure function — dites di test/ta_struct.test.js.
+function _evaluateSetups(setups, candlesBySymbol, nowMs) {
+  const DAY = 86400000;
+  const nums = s => (String(s).match(/[\d.]+/g) || []).map(Number).filter(n => !isNaN(n));
+  for (const st of setups || []) {
+    if (!st || (st.status !== 'pending' && st.status !== 'open')) continue;
+    const e = nums(st.entry_zone), sl = nums(st.sl)[0], tp = nums(st.tp)[0];
+    if (!e.length || sl == null || tp == null || (st.bias !== 'bullish' && st.bias !== 'bearish')) {
+      st.status = 'invalid';
+      continue;
+    }
+    const eLo = Math.min(...e), eHi = Math.max(...e);
+    const all = candlesBySymbol?.[st.symbol] || [];
+    // Gap data: setup masih pending tapi candle tertua yang tersedia sudah > 24 jam
+    // setelah setup dibuat — kejadian di gap tidak diketahui, jangan mengarang hasil.
+    if (st.status === 'pending' && all.length && all[0].t * 1000 > st.ts + DAY) {
+      st.status = 'stale';
+      continue;
+    }
+    for (const c of all) {
+      if (c.t * 1000 <= st.ts) continue;
+      if (st.status === 'pending') {
+        const filled = st.bias === 'bearish' ? c.h >= eLo : c.l <= eHi;
+        if (filled) { st.status = 'open'; st.filled_t = c.t; }
+      }
+      if (st.status === 'open') {
+        const hitSl = st.bias === 'bearish' ? c.h >= sl : c.l <= sl;
+        const hitTp = st.bias === 'bearish' ? c.l <= tp : c.h >= tp;
+        if (hitSl && hitTp) { st.status = 'ambiguous'; st.closed_t = c.t; break; }
+        if (hitSl) { st.status = 'sl'; st.closed_t = c.t; break; }
+        if (hitTp) { st.status = 'tp'; st.closed_t = c.t; break; }
+      }
+    }
+    const horizonMs = Math.max(2, st.horizon_days || 5) * 1.5 * DAY;
+    if (st.status === 'pending' && nowMs - st.ts > horizonMs) st.status = 'expired';
+  }
+  return setups;
+}
+
+// Agregat statistik dari log setup. Ambiguous TIDAK masuk pembagi win-rate.
+function _aggSetupStats(arr) {
+  const by = s => arr.filter(x => x.status === s).length;
+  const tp = by('tp'), sl = by('sl');
+  return {
+    total: arr.length,
+    pending: by('pending'), open: by('open'),
+    tp, sl, ambiguous: by('ambiguous'), expired: by('expired'), stale: by('stale') + by('invalid'),
+    win_rate: (tp + sl) > 0 ? Math.round(tp / (tp + sl) * 100) : null,
+  };
+}
+
+async function setupStatsHandler(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Cache-Control', 'no-cache');
+  if (req.method === 'OPTIONS') return res.status(204).end();
+  try {
+    const raw = await redisCmd('GET', 'setup_log:v1');
+    if (!raw) return res.status(200).json({ symbols: {}, global: _aggSetupStats([]), recent: [] });
+    let log = JSON.parse(raw);
+    if (!Array.isArray(log)) log = [];
+    // Evaluasi lazy hanya symbol yang punya setup aktif — hemat Redis call
+    const active = [...new Set(log.filter(s => s && (s.status === 'pending' || s.status === 'open')).map(s => s.symbol))];
+    const candlesBySymbol = {};
+    await Promise.all(active.map(async sym => {
+      try {
+        const r = await redisCmd('GET', `ohlcv:${sym}:1h`);
+        if (r) candlesBySymbol[sym] = JSON.parse(r);
+      } catch (e) { /* candle hilang → setup symbol itu tetap pending */ }
+    }));
+    const before = JSON.stringify(log);
+    log = _evaluateSetups(log, candlesBySymbol, Date.now());
+    const after = JSON.stringify(log);
+    if (after !== before) await redisCmd('SET', 'setup_log:v1', after);
+    const bySymbol = {};
+    for (const s of log) { (bySymbol[s.symbol] = bySymbol[s.symbol] || []).push(s); }
+    const symbols = {};
+    for (const k of Object.keys(bySymbol)) symbols[k] = _aggSetupStats(bySymbol[k]);
+    return res.status(200).json({ symbols, global: _aggSetupStats(log), recent: log.slice(0, 10) });
+  } catch (e) {
+    return res.status(500).json({ error: e.message });
+  }
+}
+
 // Render blok [ZONA KONFLUENSI] untuk prompt AI. Zona diberi ID stabil (A1/B1 dst,
 // urut skor) supaya instruksi entry_zone bisa merujuk "pilih dari daftar ini".
 function _formatConfluenceBlock(zones, dec) {
@@ -2714,6 +2904,32 @@ async function ohlcvAnalyzeHandler(req, res) {
     if ((commentary || structured) && !isDiagnosticOnly) {
       redisCmd('SET', `ohlcv_analysis:${symbol}`, JSON.stringify(resultPayload), 'EX', 21600).catch(() => {});
     }
+    // Outcome logging (Tier 1 riset, session 166): catat setiap setup lengkap supaya
+    // win-rate NYATA bisa dihitung via ?action=setup_stats. Best-effort — kegagalan
+    // logging tidak boleh menggagalkan response analisa. Dedup: setup aktif dengan
+    // level identik di symbol yang sama tidak dicatat dua kali (re-generate tanpa
+    // perubahan level = satu keputusan yang sama, bukan dua track record).
+    if (structured?.entry_zone && structured.sl && structured.tp && !isDiagnosticOnly) {
+      try {
+        const rawLog = await redisCmd('GET', 'setup_log:v1');
+        let log = rawLog ? JSON.parse(rawLog) : [];
+        if (!Array.isArray(log)) log = [];
+        const dup = log.find(x => x && x.symbol === symbol
+          && (x.status === 'pending' || x.status === 'open')
+          && x.entry_zone === structured.entry_zone && x.sl === structured.sl && x.tp === structured.tp);
+        if (!dup) {
+          log.unshift({
+            id: `${symbol}:${Date.now()}`,
+            symbol, label: data.label, bias: structured.bias,
+            entry_zone: structured.entry_zone, sl: structured.sl, tp: structured.tp,
+            rr: structured.risk_reward ?? null,
+            horizon_days: structured.time_horizon_days ?? null,
+            model, ts: Date.now(), status: 'pending',
+          });
+          await redisCmd('SET', 'setup_log:v1', JSON.stringify(log.slice(0, 200)));
+        }
+      } catch (e) { console.warn('setup_log write failed:', e.message); }
+    }
     return res.status(200).json({
       ...resultPayload,
       test_hermes: testHermesOnly || undefined,
@@ -2894,6 +3110,8 @@ module.exports.detectPushCat = detectPushCat;
 module.exports._pickExpiryLevels = _pickExpiryLevels;
 module.exports._confluenceZones = _confluenceZones;
 module.exports._formatConfluenceBlock = _formatConfluenceBlock;
+module.exports._evaluateSetups = _evaluateSetups;
+module.exports._aggSetupStats = _aggSetupStats;
 module.exports._findSwings = _findSwings;
 module.exports._classifyStructure = _classifyStructure;
 module.exports._clusterSrLevels = _clusterSrLevels;

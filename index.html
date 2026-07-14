@@ -2883,6 +2883,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
         </button>
       </div>
       <div id="analisaAiResult" style="display:none"></div>
+      <div id="analisaTrackRecord" class="no-print" style="display:none;font-size:10px;color:var(--muted);font-family:'DM Mono',monospace;margin-top:6px;padding:6px 10px;border:1px solid var(--border);border-radius:3px"></div>
       <div class="ai-disclaimer">⚠ Level &amp; bias di atas dihasilkan AI dan bisa keliru — bukan nasihat keuangan. Verifikasi ke chart sebelum dipakai.</div>
     </div>
   </div>
@@ -5328,12 +5329,13 @@ async function loadAnalisa(symbol, label, chipEl) {
   if (analisaDataCache[symbol]) {
     renderAnalisa();
     if (analisaAiCache[symbol]) _restoreAiResult(symbol);
-    else resultEl.style.display = 'none';
+    else { resultEl.style.display = 'none'; const tr = document.getElementById('analisaTrackRecord'); if (tr) tr.style.display = 'none'; }
   } else {
     document.getElementById('analisaHeader').innerHTML = `<span class="analisa-pair-label">${label}</span><span class="analisa-ts-label">Memuat...</span>`;
     document.getElementById('analisaD1Card').innerHTML = '<div style="color:var(--muted);font-size:11px;padding:12px 0">Memuat data...</div>';
     ['analisaH4Card','analisaH1Card','analisaIndCard'].forEach(id => document.getElementById(id).innerHTML = '');
     resultEl.style.display = 'none';
+    const tr = document.getElementById('analisaTrackRecord'); if (tr) tr.style.display = 'none';
   }
 
   try {
@@ -5471,6 +5473,40 @@ function _restoreAiResult(symbol) {
   const resultEl = document.getElementById('analisaAiResult');
   resultEl.innerHTML = _renderStructuredAi(cached.structured || null, cached.commentary, cached.model, !!cached.hasMakro, true, !!cached.hasFund, cached.makroAt || null, cached.analyzedAt || null);
   resultEl.style.display = 'block';
+  analisaLoadTrackRecord(symbol);
+}
+
+// ── Track record setup AI (Tier 1 riset, session 166) ────────────────────────
+// Win-rate NYATA per pair dari log setup_stats server (setup lengkap yang tercatat
+// otomatis tiap generate; TP/SL dievaluasi dari candle 1H sungguhan) — pembanding
+// jujur untuk label "keyakinan" LLM. Fetch 1x per 30 menit per sesi (shared cache
+// semua pair — response sudah memuat semua symbol sekaligus).
+let _setupStatsCache = null, _setupStatsAt = 0;
+async function analisaLoadTrackRecord(symbol) {
+  const el = document.getElementById('analisaTrackRecord');
+  if (!el) return;
+  try {
+    if (!_setupStatsCache || Date.now() - _setupStatsAt > 30 * 60 * 1000) {
+      const r = await fetch('/api/admin?action=setup_stats');
+      if (!r.ok) return;
+      _setupStatsCache = await r.json();
+      _setupStatsAt = Date.now();
+    }
+    const st = _setupStatsCache?.symbols?.[symbol];
+    if (!st || st.total === 0) { el.style.display = 'none'; return; }
+    const decided = st.tp + st.sl;
+    let txt;
+    if (decided === 0) {
+      txt = `📒 Track record: ${st.total} setup tercatat — belum ada yang selesai (${st.pending} menunggu fill, ${st.open} berjalan)`;
+    } else {
+      const wrColor = st.win_rate >= 55 ? 'var(--green)' : st.win_rate <= 45 ? 'var(--red)' : 'var(--text)';
+      txt = `📒 Track record pair ini: ${decided} selesai — TP ${st.tp} · SL ${st.sl} · <span style="color:${wrColor};font-weight:700">win ${st.win_rate}%</span>`
+        + (st.ambiguous ? ` · ${st.ambiguous} ambigu` : '')
+        + (decided < 5 ? ' <span style="opacity:.7">(sampel masih kecil, jangan dijadikan patokan)</span>' : '');
+    }
+    el.innerHTML = txt;
+    el.style.display = 'block';
+  } catch (e) { /* track record opsional — jangan ganggu hasil analisa */ }
 }
 
 function renderAnalisa() {
@@ -5716,6 +5752,8 @@ async function analyzeOhlcvAi() {
       if (analisaActive.symbol === reqSymbol) {
         resultEl.innerHTML = _renderStructuredAi(data.structured || null, data.commentary, data.model, hasMakro, false, hasFund, makroAt, data.loaded_at || null);
         resultEl.style.display = 'block';
+        _setupStatsAt = 0; // setup baru saja dicatat server — paksa refresh track record
+        analisaLoadTrackRecord(reqSymbol);
       }
       // Checklist teknikal pair yang sama ikut ter-update dari hasil baru ini
       // (guard pola sama dengan hook fetch makro lain — no-op kalau checklist
@@ -11066,6 +11104,8 @@ function ckAutoTickRegimeCheck(pair) {
 }
 
 function _ckAutoSMC(base, quote) {
+  const pair = `${base}/${quote}`;
+  const symbol = pair === 'XAU/USD' ? 'GC=F' : pair.replace('/', '') + '=X';
   if (cbData) {
     const b = cbData.find(c => c.currency === base);
     const q = cbData.find(c => c.currency === quote);
@@ -11081,12 +11121,54 @@ function _ckAutoSMC(base, quote) {
         ckAutoTick('f4b', `CB divergence: ${base} ${b.bias} vs ${quote} ${q.bias}`);
         ckAutoTick('f6', `${base} strong vs ${quote} weak — divergence terkonfirmasi`);
       }
+      // ── VALIDITAS DRIVER (g1-g4) dari data makro AI Ringkasan ──
+      // Hanya kalau divergence CB tegas (≥2 level): itu driver dari statement resmi
+      // bank sentral — bukan asumsi pribadi (g1), bukti nyata (g2), terverifikasi (g3).
+      // Divergence tipis = keputusan manusia (driver bisa dari faktor lain yang
+      // hanya trader tahu). g5 (kata terlarang) SELALU manusia — disiplin bahasa.
+      const div = Math.abs(bLvl - qLvl);
+      if (div >= 2) {
+        const drvTxt = `AI Ringkasan: driver = CB divergence resmi ${base} ${b.bias} vs ${quote} ${q.bias} (${div} level)`;
+        ckAutoTick('g1', drvTxt);
+        ckAutoTick('g2', `${drvTxt} — sumber: statement/bias bank sentral, bukan opini`);
+        ckAutoTick('g3', drvTxt);
+        // g4 "sudah tercermin di harga": cek trend Daily dari data OHLCV pair yang
+        // sama searah arah CB — faktual, bukan tebakan. Berlawanan → biarkan manual
+        // (bisa berarti belum priced-in; menilai itu keputusan manusia).
+        const cbDir = bLvl > qLvl ? 'long' : 'short';
+        const dTrend = (typeof analisaDataCache !== 'undefined') ? analisaDataCache[symbol]?.d1?.trend : null;
+        if ((cbDir === 'long' && dTrend === 'Uptrend') || (cbDir === 'short' && dTrend === 'Downtrend')) {
+          ckAutoTick('g4', `OHLCV: trend Daily ${dTrend} searah arah CB ${cbDir.toUpperCase()} — driver sudah tercermin di harga`);
+        }
+      }
     }
   }
-  // Session timing auto-tick
+  // ── PRE-MARKET p4 "sudah ada skenario": arah dari Thesis AI (Ringkasan) + area
+  // entry dari AI Analisa pair yang sama. p1/p2/p3 SELALU manusia (komitmen perilaku:
+  // kapan bias ditentukan, tidak berubah tanpa news, batas jumlah pair).
+  const _ai = (typeof analisaAiCache !== 'undefined') ? analisaAiCache[symbol] : null;
+  const _aiS = (_ai?.saved_at && (Date.now() - _ai.saved_at) < 8 * 3600 * 1000) ? _ai.structured : null;
+  if (_lastThesis && _lastThesis.pair_recommendation === pair && _lastThesis.direction && _lastThesis.direction !== 'no_trade' && _aiS?.entry_zone) {
+    ckAutoTick('p4', `AI: arah ${_lastThesis.direction.toUpperCase()} dari Thesis Ringkasan + area entry ${_aiS.entry_zone} dari Analisa`);
+  }
+  // Session timing auto-tick — tick juga parent tm1 (subs hanya panduan, tidak dihitung skor)
   const h = new Date().getUTCHours();
   if (h >= 8 && h < 16)  ckAutoTick('tm1a', 'London session aktif');
   if (h >= 13 && h < 21) ckAutoTick('tm1b', 'New York session aktif');
+  if (h >= 8 && h < 21)  ckAutoTick('tm1', h < 13 ? 'London session aktif' : h < 16 ? 'London + New York overlap' : 'New York session aktif');
+  if (h < 8) ckAutoBlock('tm2', `Sesi Tokyo aktif (${String(h).padStart(2,'0')}:xx UTC) — entry Tokyo hanya untuk setup sangat jelas`);
+  else if (h < 21) ckAutoTick('tm2', 'Di luar jam Tokyo-only');
+  // tm3 "tidak dekat news high impact" — logika sama dengan rc4 (<6 jam)
+  if (calData) {
+    const now = Date.now();
+    const soon6 = calData.some(ev => {
+      if (ev.impact !== 'High' || (ev.currency !== base && ev.currency !== quote)) return false;
+      const t = _ckEvTimestamp(ev);
+      return t && t > now && t < now + 6 * 3600 * 1000;
+    });
+    if (soon6) ckAutoBlock('tm3', `Ada event high-impact <6 jam untuk ${base}/${quote}`);
+    else ckAutoTick('tm3', 'Tidak ada event high-impact <6 jam');
+  }
 }
 
 function _ckAutoMacro(base, quote) {
@@ -11171,13 +11253,23 @@ function ckAutoTickFromAnalisa(pair) {
     if (d.structure?.available && d.structure.bos) {
       ckAutoTick('s2', `OHLCV: ${d.structure.bos}`);
     }
+    // s3 "tidak ranging sempit": dari label struktur H4 deterministik — Mixed/Range
+    // → block (bisa override), Bullish/Bearish → tick
+    if (d.structure?.available && d.structure.label) {
+      if (/Mixed|Range/i.test(d.structure.label)) ckAutoBlock('s3', `OHLCV: struktur H4 ${d.structure.label} — ${d.structure.detail}`);
+      else ckAutoTick('s3', `OHLCV: struktur H4 ${d.structure.label} — bukan range`);
+    }
     if (d.sr_levels?.available && (d.sr_levels.above?.length || d.sr_levels.below?.length)) {
       const fmtL = l => `${l.price} (${l.touches}x)`;
       const parts = [];
       if (d.sr_levels.above?.length) parts.push(`R: ${d.sr_levels.above.map(fmtL).join(', ')}`);
       if (d.sr_levels.below?.length) parts.push(`S: ${d.sr_levels.below.map(fmtL).join(', ')}`);
-      ckAutoTick('s4b', `OHLCV: cluster S/R terdeteksi — ${parts.join(' | ')}`);
+      const srTxt = `OHLCV: cluster S/R terdeteksi — ${parts.join(' | ')}`;
+      ckAutoTick('s4', srTxt);   // parent yang dihitung skor; sub hanya panduan
+      ckAutoTick('s4b', srTxt);
     }
+    // s5 (liquidity/sweep) SELALU manusia — tidak dihitung algoritmik, menilai equal
+    // highs/lows & stop hunt butuh baca chart.
   }
 
   // Hasil AI Analisa (structured sudah lolos sanity-check arah & RR di server; TTL 8 jam)
@@ -11203,12 +11295,46 @@ function ckAutoTickFromAnalisa(pair) {
         else ckAutoBlock('s1', `${txt} — KONFLIK`);
       }
     }
+    // ── ENTRY LOCATION: e1 hanya kalau entry_zone terbukti pullback/retest (bearish:
+    // zona di atas Now = jual di rally; bullish: di bawah Now = beli di pullback).
+    // Sisi breakout TIDAK di-tick — menilai konfirmasi breakout keputusan manusia.
+    // e2 (bukan tengah impuls) & e3 (bukan FOMO) SELALU manusia — psikologi/disiplin.
+    const nowPx = d?.h1?.available ? d.h1.current : null;
+    const entryNums = s.entry_zone ? (String(s.entry_zone).match(/[\d.]+/g) || []).map(Number).filter(n => !isNaN(n)) : [];
+    if (entryNums.length && typeof nowPx === 'number' && (s.bias === 'bullish' || s.bias === 'bearish')) {
+      const eLo = Math.min(...entryNums), eHi = Math.max(...entryNums);
+      const isPullback = s.bias === 'bearish' ? eHi >= nowPx : eLo <= nowPx;
+      if (isPullback) {
+        ckAutoTick('e1', `AI Analisa: entry ${s.entry_zone} = ${s.bias === 'bearish' ? 'jual di rally ke resistance' : 'beli di pullback ke support'}${s.entry_basis ? ` — ${s.entry_basis}` : ''}`);
+      }
+      // e4 "harga sudah kembali ke area": faktual — Now di dalam zona entry (±0.25x ATR H1).
+      // Belum sampai → biarkan kosong (menunggu), bukan block.
+      const tolE = (d?.atr?.available && d.atr.atr_h1) ? d.atr.atr_h1 * 0.25 : 0;
+      if (nowPx >= eLo - tolE && nowPx <= eHi + tolE) {
+        ckAutoTick('e4', `OHLCV: harga Now ${nowPx} sudah di area entry ${s.entry_zone}`);
+      }
+    }
+    // ── TRIGGER t1: pola candle terdeteksi (deterministik dari OHLC) yang SEARAH
+    // bias AI. t2 (sesuai rencana, bukan spontan) SELALU manusia.
+    if (dFresh && d.patterns?.available && (s.bias === 'bullish' || s.bias === 'bearish')) {
+      const wantRe = s.bias === 'bullish' ? /Bullish Engulfing|Pin Bar bawah/ : /Bearish Engulfing|Pin Bar atas/;
+      const hit = [...(d.patterns.h4 || []), ...(d.patterns.d1 || [])].find(p => wantRe.test(p.label));
+      if (hit) ckAutoTick('t1', `OHLCV: ${hit.label} terdeteksi (close ${hit.close})${hit.running ? ' — candle masih berjalan, tunggu close' : ''}`);
+    }
     // RR dari level AI (dihitung ulang & divalidasi server, bukan klaim mentah AI)
     if (rrTxt) {
       if (s.risk_reward >= 2) ckAutoTick('r1', rrTxt);
       else ckAutoBlock('r1', `${rrTxt} — di bawah 1:2`);
     }
     if (slTxt) ckAutoTick('r2', slTxt);
+    // r3/r4 dari Sizing Calculator (angka user sendiri, bukan AI): risk % sudah
+    // ditentukan → r3; ≤2% → r4, >2% → block (overleverage).
+    const sz = window._lastSizing;
+    if (sz && sz.pair === pair && sz.riskPct) {
+      ckAutoTick('r3', `Sizing: risk ${sz.riskPct}% per trade terkunci dari kalkulator`);
+      if (sz.riskPct <= 2) ckAutoTick('r4', `Sizing: risk ${sz.riskPct}% ≤ 2% — tidak overleverage`);
+      else ckAutoBlock('r4', `Sizing: risk ${sz.riskPct}% > 2% — indikasi overleverage`);
+    }
   } else if (ckActivePlaybook === 'macro_momentum') {
     if (rrTxt) {
       if (s.risk_reward >= 2) ckAutoTick('mm_r3', rrTxt);
