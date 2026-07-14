@@ -5815,7 +5815,14 @@ async function analyzeOhlcvAi() {
   const ringkasanGeneratedAt = ringkasanContext ? (ringkasanCache?.generated_at || null) : null;
 
   // Hitung arah CB Bias (fundamental) untuk dikirim ke Sistem Hakim (Backend)
-  const cbDir = label.includes('/') ? _ckInferDirFromCbBias(...label.split('/')) : null;
+  let cbDir = null;
+  if (label === 'XAU/USD') {
+    const xBias = ringkasanCache?.thesis?.xau_bias;
+    if (xBias === 'bullish') cbDir = 'long';
+    else if (xBias === 'bearish') cbDir = 'short';
+  } else if (label.includes('/')) {
+    cbDir = _ckInferDirFromCbBias(...label.split('/'));
+  }
 
   // Send cached ohlcv data as fallback so backend can analyze even if Redis expired
   const ohlcvData = analisaDataCache[symbol] || null;
