@@ -8,6 +8,24 @@
 
 ---
 
+## Changelog Session 170 (2026-07-15) — Implementasi Light Theme (Tema Terang) & Toggle Responsif
+
+**Konteks:** Sesuai permintaan pengguna, ditambahkan fitur tema terang (Light Mode) yang dilengkapi dengan psikologi desain khusus agar tidak menyilaukan mata dan tetap terkesan premium, serta logika *default* responsif (terang di HP, gelap di PC).
+
+**1. Desain Tema Terang (`index.html`):**
+- Menggunakan palet yang dirancang sesuai psikologi desain: *background* tidak menggunakan putih murni melainkan putih-tulang hangat (`#f8f7f5`), sementara teks menggunakan abu-abu *charcoal* tebal (`#2d2c2a`) alih-alih hitam pekat. Ini menurunkan kekerasan kontras dan mencegah kelelahan mata (*eye strain*).
+- Warna aksen aplikasi (`--accent`, merah) disesuaikan kontrasnya menjadi sedikit lebih dalam (`#b32d22`) agar mudah dibaca di latar terang.
+- Sistem *overlay/border* opasitas yang sebelumnya kaku (*hardcoded* `rgba(255,255,255,...)`) telah diganti secara global menjadi variabel `--fg-rgb`. Di mode gelap variabel ini bernilai putih (255, 255, 255), sedangkan di mode terang ia berubah menjadi hitam (0, 0, 0). Ini memastikan batas kartu (*border*) dan efek sentuh (*hover*) tetap elegan tanpa harus menulis ulang puluhan baris kode CSS.
+
+**2. Mekanika Toggle & Default Layout (`index.html`):**
+- Ditambahkan tombol beralih tema (ikon Matahari / Bulan) di area navigasi atas (kanan). 
+- State preferensi tema otomatis tersimpan ke `localStorage` (`theme: 'light' | 'dark'`).
+- Jika pengunjung baru pertama kali membuka (belum ada state tersimpan), aplikasi akan mengecek lebar layar (`window.innerWidth`):
+  - **HP (<768px):** *Default* ke Light Theme. Cocok untuk lingkungan layar *outdoor* (HP sering digunakan di luar ruangan dengan paparan cahaya matahari terang).
+  - **Laptop/PC (≥768px):** *Default* ke Dark Theme. Cocok untuk *trading station* (*desktop*) yang sering menuntut pengguna menatap layar berjam-jam secara statis.
+
+---
+
 ## Changelog Session 169 (2026-07-15) — Fix Klasifikasi Kategori Forex & Geopolitical di newscat.js
 
 **Konteks:** User melaporkan dua misklasifikasi berita di feed yang masuk ke kategori `macro` padahal seharusnya masuk ke `forex` dan `geopolitical`. Keduanya disebabkan oleh ketidakcocokan *keyword* di engine klasiikasi lokal (`newscat.js`), sehingga sistem melakukan *fallback* ke kategori default (`macro`).
