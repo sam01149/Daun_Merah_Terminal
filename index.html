@@ -69,7 +69,7 @@ body {
 /* HEADER */
 .header {
   flex-shrink: 0;
-  background: rgba(10,10,8,0.97);
+  background: rgba(var(--bg-rgb),0.97);
   backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--border);
   padding: 12px 16px;
@@ -2107,7 +2107,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
     display: flex;
     position: fixed;
     bottom: 0; left: 0; right: 0;
-    background: rgba(10,10,8,0.97);
+    background: rgba(var(--bg-rgb),0.97);
     backdrop-filter: blur(12px);
     border-top: 1px solid var(--border);
     z-index: 200;
@@ -2658,6 +2658,7 @@ body.light-theme {
   --purple: #7c3aed;
   --pink: #db2777;
   --fg-rgb: 0, 0, 0;
+  --bg-rgb: 248, 247, 245;
 }
 
 </style>
@@ -2671,15 +2672,14 @@ body.light-theme {
   <div class="header-right">
     <div class="header-menu-wrap" id="headerMenuWrap">
       
-      <button class="header-menu-trigger" id="themeToggleBtn" onclick="toggleTheme()" title="Toggle Theme" style="margin-right: 4px;">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" id="themeIcon">
-          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
-        </svg>
-      </button>
       <button class="header-menu-trigger" id="headerMenuBtn" onclick="toggleHeaderMenu()" title="Menu">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="12" cy="19" r="1.8"/></svg>
       </button>
       <div class="header-menu-dropdown" id="headerMenuDropdown" style="display:none">
+        <button class="header-menu-item" id="themeToggleBtn" onclick="toggleTheme();closeHeaderMenu();">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" id="themeIcon"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
+          <span>Ganti Tema</span>
+        </button>
         <button class="header-menu-item" id="notifBtn" onclick="toggleNotif();closeHeaderMenu();">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
           <span>Notifikasi</span>
@@ -3857,11 +3857,13 @@ function updateThemeIcon() {
   const icon = document.getElementById('themeIcon');
   if (!icon) return;
   if (document.body.classList.contains('light-theme')) {
-    // Sun icon for light mode
     icon.innerHTML = '<circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>';
   } else {
-    // Moon icon for dark mode
     icon.innerHTML = '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>';
+  }
+  // Re-render chart if active
+  if (currentView === 'teknikal' && typeof createTVChart === 'function') {
+    createTVChart();
   }
 }
 
@@ -13819,10 +13821,10 @@ function createTVChart() {
       symbol: TEK_TV_SYM[tekPair] || 'FX:EURUSD',
       interval: tekTF,
       timezone: 'Asia/Jakarta',
-      theme: 'dark',
+      theme: document.body.classList.contains('light-theme') ? 'light' : 'dark',
       style: '1',
       locale: 'id',
-      toolbar_bg: '#0d0f14',
+      toolbar_bg: document.body.classList.contains('light-theme') ? '#f8f7f5' : '#0d0f14',
       enable_publishing: false,
       withdateranges: false,
       hide_side_toolbar: true,

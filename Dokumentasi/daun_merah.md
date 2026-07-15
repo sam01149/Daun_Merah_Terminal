@@ -18,11 +18,16 @@
 - Sistem *overlay/border* opasitas yang sebelumnya kaku (*hardcoded* `rgba(255,255,255,...)`) telah diganti secara global menjadi variabel `--fg-rgb`. Di mode gelap variabel ini bernilai putih (255, 255, 255), sedangkan di mode terang ia berubah menjadi hitam (0, 0, 0). Ini memastikan batas kartu (*border*) dan efek sentuh (*hover*) tetap elegan tanpa harus menulis ulang puluhan baris kode CSS.
 
 **2. Mekanika Toggle & Default Layout (`index.html`):**
-- Ditambahkan tombol beralih tema (ikon Matahari / Bulan) di area navigasi atas (kanan). 
+- Ditambahkan tombol "Ganti Tema" dengan ikon Matahari / Bulan di dalam menu dropdown (*3-dot menu*) di navigasi atas.
+- Latar belakang navigasi atas (`.header`) dan bawah (`.bot-nav` untuk mobile) telah diubah agar dinamis mengikuti warna latar tema saat ini (`--bg-rgb`), sehingga tidak lagi statis berwarna gelap.
 - State preferensi tema otomatis tersimpan ke `localStorage` (`theme: 'light' | 'dark'`).
 - Jika pengunjung baru pertama kali membuka (belum ada state tersimpan), aplikasi akan mengecek lebar layar (`window.innerWidth`):
   - **HP (<768px):** *Default* ke Light Theme. Cocok untuk lingkungan layar *outdoor* (HP sering digunakan di luar ruangan dengan paparan cahaya matahari terang).
   - **Laptop/PC (≥768px):** *Default* ke Dark Theme. Cocok untuk *trading station* (*desktop*) yang sering menuntut pengguna menatap layar berjam-jam secara statis.
+
+**3. Adaptasi Widget TradingView (`index.html`):**
+- Fitur *embedded chart* TradingView di tab Teknikal sekarang sepenuhnya sinkron dengan sistem tema. Saat menggunakan tema terang, *chart* akan menggunakan parameter `theme: 'light'` dengan *toolbar* berwarna putih-tulang (`#f8f7f5`).
+- Saat pengguna me-*toggle* tema di dalam tab Teknikal, *chart* TradingView akan secara otomatis di-*render* ulang (`createTVChart()`) tanpa perlu me-muat ulang seluruh halaman PWA.
 
 ---
 
