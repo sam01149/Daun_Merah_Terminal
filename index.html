@@ -3605,7 +3605,7 @@ body.light-theme .regime-banner.unavail  { background: #eef0eb; color: var(--tex
       <div class="cot-retail-hdr">
         <div>
           <span class="cot-group-label" style="margin:0;padding:0;border:none">RETAIL SENTIMENT</span>
-          <span class="cot-retail-src">ForexBenchmark</span>
+          <span class="cot-retail-src">FXSSI</span>
         </div>
         <button class="cot-retail-refresh" onclick="fetchRetailSentiment(true)" title="Refresh">↻</button>
       </div>
@@ -7991,7 +7991,7 @@ async function generateFundamentalAnalysis() {
 }
 
 // ── COT POSITIONING ──────────────────────────────────────
-// ── Retail Sentiment (ForexBenchmark) ────────────────────────────────────────
+// ── Retail Sentiment (FXSSI) ────────────────────────────────────────
 
 let retailData = null;
 let retailFetchedAt = 0;
@@ -8098,7 +8098,7 @@ function renderRetailSentiment() {
   grid.innerHTML = rows || '<div class="cot-empty">Tidak ada data untuk pair yang dipilih.</div>';
   if (meta) {
     const t = fmtTime(fetched_at);
-    meta.textContent = (stale ? '⚠ cache lama · ' : '') + 'diperbarui ' + t + ' · sumber: ForexBenchmark';
+    meta.textContent = (stale ? '⚠ cache lama · ' : '') + 'diperbarui ' + t + ' · sumber: FXSSI';
   }
   renderDashRetail();
 }
@@ -11237,7 +11237,7 @@ function ckAutoTickRegimeCheck(pair) {
   }
 
   // rc6 ("Retail sentiment kontrarian tidak melawan arah") — sinyal retail dari
-  // ForexBenchmark sudah dihitung server-side sebagai arah KONTRARIAN
+  // FXSSI sudah dihitung server-side sebagai arah KONTRARIAN
   // (CONTRARIAN_LONG/SHORT: crowd berat sebelah → kontrarian condong ke arah
   // berlawanan). Sejajarkan dengan arah bias CB, sama seperti rc3/COT — selaras
   // → auto-tick, berlawanan → auto-block (bisa override), netral/bias belum

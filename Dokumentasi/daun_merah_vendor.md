@@ -82,7 +82,7 @@ Semua workflow di atas autentikasi ke `api/*.js` lewat header `x-cron-secret`, d
 | **ForexFactory data mirror** (`nfs.faireconomy.media`) | Dulu fallback kalender tab CAL saat TradingView gagal (`api/calendar.js`) — **dihapus 2026-07-13** atas permintaan user (swap sumber saat outage bikin UX membingungkan; TradingView jarang benar-benar down, dan kalau gagal sekarang langsung stale-cache, bukan ganti sumber). Masih dipakai sebagai sumber KALENDAR SATU-SATUNYA di `api/market-digest.js` untuk konteks AI Ringkasan — fitur berbeda, tidak disentuh | Free, publik |
 | **InvestingLive** (`investinglive.com`) | RSS berita tambahan | Free, publik |
 | **ActionForex** (`actionforex.com`) | RSS analisis teknikal tambahan | Free, publik |
-| **ForexBenchmark** (`forexbenchmark.com`) | Sumber tambahan (kemungkinan data benchmark rate) | Free, publik |
+| **FXSSI** (`fxssi.com`) | Sumber sentimen retail (current ratio) | Free, publik |
 | **ING Think** (`think.ing.com`) | RSS riset makro tambahan | Free, publik |
 | **rss2json** (`api.rss2json.com`) | Proxy konversi RSS→JSON untuk feed yang butuh parsing khusus | Free, publik |
 | **Federal Reserve, ECB, BIS press release feeds** | RSS resmi rilis kebijakan bank sentral | Free, publik |

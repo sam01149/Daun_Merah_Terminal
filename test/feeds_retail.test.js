@@ -10,23 +10,40 @@ const assert = require('node:assert/strict');
 const { parseRetailPositions, storeRetailHistory, retailHistoryHandler } = require('../api/feeds.js');
 
 const FIXTURE_HTML = `
-<table>
-<thead>
-<tr><th>Symbol</th><th>Currency difference</th><th>Percentage long</th><th>Percentage / max</th><th>Volume / max</th><th>Price distance / max</th></tr>
-</thead>
-<tbody>
-<tr><td><b><a href="https://www.myfxbook.com/community/outlook/EURUSD">EURUSD</a></b></td><td style="color:#dd5050">-48.6</td><td style="color:#dd5050">19.6</td><td>0.82</td><td>0.04</td><td>0.43</td></tr>
-<tr><td><b><a href="https://www.myfxbook.com/community/outlook/AUDUSD">AUDUSD</a></b></td><td>-90.0</td><td>5.2</td><td>0.99</td><td>0.02</td><td>0.61</td></tr>
-<tr><td><b><a href="https://www.myfxbook.com/community/outlook/USDCHF">USDCHF</a></b></td><td>85.8</td><td>92.9</td><td>0.99</td><td>0.03</td><td>0.70</td></tr>
-<tr><td><b><a href="https://www.myfxbook.com/community/outlook/XAUUSD">XAUUSD</a></b></td><td>-6.0</td><td>44.0</td><td>0.61</td><td>0.05</td><td>0.58</td></tr>
-</tbody>
-</table>
+<div class="line">
+    <div class="symbol">EURUSD</div>
+    <div class="ratio">
+        <div class="ratio-bar-left">19.6%</div>
+        <div class="ratio-bar-right">80.4%</div>
+    </div>
+</div>
+<div class="line">
+    <div class="symbol">AUDUSD</div>
+    <div class="ratio">
+        <div class="ratio-bar-left">5.2%</div>
+        <div class="ratio-bar-right">94.8%</div>
+    </div>
+</div>
+<div class="line">
+    <div class="symbol">USDCHF</div>
+    <div class="ratio">
+        <div class="ratio-bar-left">92.9%</div>
+        <div class="ratio-bar-right">7.1%</div>
+    </div>
+</div>
+<div class="line">
+    <div class="symbol">XAUUSD</div>
+    <div class="ratio">
+        <div class="ratio-bar-left">44%</div>
+        <div class="ratio-bar-right">56%</div>
+    </div>
+</div>
 `;
 
-test('parseRetailPositions: membaca kolom "Percentage long", bukan "Currency difference"', () => {
+test('parseRetailPositions: membaca long_pct dari class ratio-bar-left', () => {
   const positions = parseRetailPositions(FIXTURE_HTML);
-  assert.equal(positions.EURUSD.long_pct, 19.6, 'EURUSD long_pct harus 19.6 (bukan 48.6 dari kolom Currency difference)');
-  assert.equal(positions.XAUUSD.long_pct, 44.0, 'XAUUSD long_pct harus 44.0 (bukan 6.0)');
+  assert.equal(positions.EURUSD.long_pct, 19.6, 'EURUSD long_pct harus 19.6');
+  assert.equal(positions.XAUUSD.long_pct, 44.0, 'XAUUSD long_pct harus 44.0');
 });
 
 test('parseRetailPositions: sinyal kontrarian dihitung dari long_pct yang benar', () => {

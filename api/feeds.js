@@ -4,7 +4,7 @@
 // GET /api/feeds?type=research       → CB speeches/publications + macro research JSON (6h cache)
 // GET /api/feeds?type=options        → FX option expiries JSON, merged from Investinglive + FinancialJuice (4h cache)
 // GET /api/feeds?type=aftek&pair=EUR/USD → ActionForex per-pair technical outlook (4h cache)
-// GET /api/feeds?type=retail         → ForexBenchmark retail positioning JSON (2h cache)
+// GET /api/feeds?type=retail         → FXSSI retail positioning JSON (2h cache)
 // GET /api/feeds?type=retail_history → snapshot harian retail positioning (rolling 90 hari)
 // GET /api/feeds?type=news_history&before=<ms>&limit=100 → halaman berita lama dari archive
 //   36 jam untuk tombol "Muat Berita Lebih Lama" di tab NEWS (read-only, UI-only — window
@@ -1237,12 +1237,12 @@ async function aftekHandler(req, res) {
   }
 }
 
-// ── Retail Sentiment handler (ForexBenchmark) ─────────────────────────────────
+// ── Retail Sentiment handler (FXSSI) ──────────────────────────────────────────
 // GET /api/feeds?type=retail
-// Scrapes forexbenchmark.com/quant/retail_positions/ — no login required
+// Scrapes fxssi.com/tools/current-ratio — no login required
 // Returns { positions: { EURUSD: { long_pct, short_pct, signal }, ... }, fetched_at }
 
-const RETAIL_URL       = 'https://forexbenchmark.com/quant/retail_positions/';
+const RETAIL_URL       = 'https://fxssi.com/tools/current-ratio';
 const RETAIL_CACHE_KEY = 'retail_sentiment_cache';
 // 15 menit — dijaga tetap segar oleh GitHub Action retail-sentiment-warm.yml
 // (cron */15) yang panggil ?force=1; TTL ini cuma jaring pengaman kalau
@@ -1272,27 +1272,27 @@ async function retailHandler(req, res) {
 
   let html = '';
   try {
-    if (!await cbk.canCall('forexbenchmark')) throw new Error('CIRCUIT_OPEN');
+    if (!await cbk.canCall('fxssi')) throw new Error('CIRCUIT_OPEN');
     const r = await fetch(RETAIL_URL, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
         'Accept-Language': 'en-US,en;q=0.5',
-        'Referer': 'https://forexbenchmark.com/',
+        'Referer': 'https://fxssi.com/',
       },
       signal: AbortSignal.timeout(12000),
     });
     if (!r.ok) throw new Error('HTTP ' + r.status);
     html = await r.text();
-    cbk.onSuccess('forexbenchmark').catch(() => {});
+    cbk.onSuccess('fxssi').catch(() => {});
   } catch(e) {
-    if (e.message !== 'CIRCUIT_OPEN') cbk.onFailure('forexbenchmark').catch(() => {});
-    console.warn('ForexBenchmark fetch failed:', e.message);
+    if (e.message !== 'CIRCUIT_OPEN') cbk.onFailure('fxssi').catch(() => {});
+    console.warn('FXSSI fetch failed:', e.message);
     try {
       const stale = await redisCmd('GET', RETAIL_CACHE_KEY);
       if (stale) return res.json({ ...JSON.parse(stale), stale: true });
     } catch(e2) {}
-    return res.status(502).json({ error: 'ForexBenchmark unavailable: ' + e.message });
+    return res.status(502).json({ error: 'FXSSI unavailable: ' + e.message });
   }
 
   const positions = parseRetailPositions(html);
@@ -1376,49 +1376,34 @@ function parseRetailPositions(html) {
     .replace(/<script[\s\S]*?<\/script>/gi, '')
     .replace(/<style[\s\S]*?<\/style>/gi, '');
 
-  // ForexBenchmark's retail table columns (verified against live <thead>, 2026-07-10):
-  // Symbol | Currency difference | Percentage long | Percentage/max | Volume/max | Price distance/max | ...
-  // "Percentage long" is column index 2 (0-based) — NOT the first number in the row.
-  // A prior version grabbed the first digit run in the row's flattened text, which
-  // landed on "Currency difference" (col 1) instead — a different, unrelated metric
-  // that happens to also fall in the 0-100 range often enough to pass validation
-  // silently (e.g. AUDUSD showed 61.1 "long" when the real Percentage long was 5.2 —
-  // the opposite lean). Parse per-<td> by index instead of scanning row text.
-  const trRe = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
-  let m;
-  while ((m = trRe.exec(clean)) !== null) {
-    const row = m[1];
-    const cellRe = /<td[^>]*>([\s\S]*?)<\/td>/gi;
-    const cells = [];
-    let c;
-    while ((c = cellRe.exec(row)) !== null) {
-      cells.push(c[1].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim());
-    }
-    if (cells.length < 3) continue;
+  // Split by "<div class=\"line\""
+  const blocks = clean.split(/<div class="line"/i);
 
-    const symbolText = cells[0].toUpperCase();
-    let foundPair = null;
-    for (const pair of RETAIL_PAIRS) {
-      // Match exact pair or slash-separated form (EUR/USD or EURUSD)
-      const slashed = pair.slice(0, 3) + '/' + pair.slice(3);
-      if (symbolText.includes(pair) || symbolText.includes(slashed)) {
-        foundPair = pair;
-        break;
-      }
-    }
-    if (!foundPair) continue;
+  // Skip the first block (it is the header/prefix of the page)
+  for (let i = 1; i < blocks.length; i++) {
+    const block = blocks[i];
 
-    const longPct = parseFloat(cells[2]);
-    if (isNaN(longPct) || longPct < 0 || longPct > 100) continue;
+    const symbolMatch = block.match(/<div class="symbol">([A-Z/]+)<\/div>/i);
+    if (!symbolMatch) continue;
 
-    const shortPct = parseFloat((100 - longPct).toFixed(1));
+    const symbolText = symbolMatch[1].toUpperCase().replace('/', '');
+    if (!RETAIL_PAIRS.includes(symbolText)) continue;
 
-    // Contrarian signal: extreme retail long → institutional short bias; extreme retail short → long bias
+    const leftMatch = block.match(/class="ratio-bar-left"[^>]*>\s*(\d+(?:\.\d+)?)%\s*<\/div>/i);
+    const rightMatch = block.match(/class="ratio-bar-right"[^>]*>\s*(\d+(?:\.\d+)?)%\s*<\/div>/i);
+
+    if (!leftMatch || !rightMatch) continue;
+
+    const longPct = parseFloat(leftMatch[1]);
+    const shortPct = parseFloat(rightMatch[1]);
+
+    if (isNaN(longPct) || isNaN(shortPct)) continue;
+
     let signal = 'NEUTRAL';
     if (longPct >= 65)      signal = 'CONTRARIAN_SHORT'; // retail crowded long → lean short
     else if (longPct <= 35) signal = 'CONTRARIAN_LONG';  // retail crowded short → lean long
 
-    positions[foundPair] = { long_pct: longPct, short_pct: shortPct, signal };
+    positions[symbolText] = { long_pct: longPct, short_pct: shortPct, signal };
   }
 
   return positions;

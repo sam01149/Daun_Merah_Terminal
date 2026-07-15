@@ -8,6 +8,32 @@
 
 ---
 
+## Changelog Session 172 (2026-07-15) — Migrasi Sentimen Retail ke FXSSI
+
+**Konteks:** Memindahkan sumber data sentimen retail dari \`forexbenchmark.com\` (yang sudah tidak real-time/mati) ke \`fxssi.com/tools/current-ratio\`.
+
+**1. Pembaruan Endpoint & Circuit Breaker (\\\`api/feeds.js\\\` & \\\`api/admin.js\\\`):**
+- Mengubah \\\`RETAIL_URL\\\` menjadi \\\`https://fxssi.com/tools/current-ratio\\\`.
+- Mengganti seluruh sirkuit *circuit breaker* dari \\\`'forexbenchmark'\\\` menjadi \\\`'fxssi'\\\`.
+- Menyesuaikan header request dan referer fetch agar kompatibel dengan kebijakan server FXSSI.
+- Memperbarui daftar sirkuit \\\`KNOWN_CIRCUITS\\\` di \\\`api/admin.js\\\` untuk memantau status sirkuit \\\`'fxssi'\\\` yang baru.
+
+**2. Rekonstruksi Parser HTML Sentimen Retail (\\\`api/feeds.js\\\`):**
+- Tulis ulang fungsi \\\`parseRetailPositions()\\\` menggunakan metode pemisahan blok HTML berbasis kelas CSS \\\`<div class="line"\\\`.
+- Ekstraksi data \\\`symbolText\\\`, persentase \\\`long_pct\\\` dari \\\`class="ratio-bar-left"\\\`, dan \\\`short_pct\\\` dari \\\`class="ratio-bar-right"\\\`.
+- Logika arah sentimen kontrarian tetap dipertahankan (crowded long ≥65% -> \\\`CONTRARIAN_SHORT\\\`; crowded short ≤35% -> \\\`CONTRARIAN_LONG\\\`).
+
+**3. Penyesuaian Unit Test & Dokumentasi (\\\`test/feeds_retail.test.js\\\` & \\\`Dokumentasi/daun_merah_vendor.md\\\`):**
+- Memperbarui \\\`FIXTURE_HTML\\\` pada \\\`test/feeds_retail.test.js\\\` untuk meniru struktur baris sentimen FXSSI asli.
+- Menyesuaikan *assertion* unit test agar memverifikasi kelancaran pembacaan dari struktur rasio kiri/kanan yang baru.
+- Mengubah referensi data ForexBenchmark menjadi FXSSI di berkas inventaris vendor \\\`daun_merah_vendor.md\\\`.
+
+**4. Penyesuaian Tampilan Frontend (\\\`index.html\\\`):**
+- Mengubah label sumber di UI COT/Dashboard secara visual menjadi "FXSSI" (sebelumnya "ForexBenchmark").
+- Memperbarui komentar kode dan teks metadata status agar sinkron dengan perubahan sumber data.
+
+---
+
 ## Changelog Session 170 (2026-07-15) — Implementasi Light Theme (Tema Terang) & Toggle Responsif
 
 **Konteks:** Sesuai permintaan pengguna, ditambahkan fitur tema terang (Light Mode) yang dilengkapi dengan psikologi desain khusus agar tidak menyilaukan mata dan tetap terkesan premium, serta logika *default* responsif (terang di HP, gelap di PC).
