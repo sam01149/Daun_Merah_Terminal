@@ -8,6 +8,22 @@
 
 ---
 
+## Changelog Session 173 (2026-07-15) — Fix Kontras Warna Mode Terang (Light Mode)
+
+**Konteks:** Menindaklanjuti keluhan pengguna terkait elemen visual di Mode Terang (Light Mode) yang memiliki tingkat kontras rendah dan sulit dibaca (teks gelap di atas latar gelap).
+
+**1. Pembenahan Desain Badge Jurnal (`index.html`):**
+- Mengganti latar belakang status open, closed, archived, pending, dan cancelled di tema terang menggunakan warna pastel yang kontras dengan teksnya (misalnya, open menggunakan latar biru muda `#e0f2fe` dengan teks biru tua `#0284c7`, cancelled menggunakan latar merah muda `var(--accent-dim)` dengan teks merah tua `var(--accent)`).
+- Menyesuaikan warna badge arah posisi (`LONG` dan `SHORT`) agar senada dengan skema warna baru di tema terang.
+
+**2. Perbaikan Kontras Tab Analisa (`index.html`):**
+- Mengubah warna teks pada chip pair aktif (`.analisa-chip.active`) menjadi putih (`#ffffff`) secara global untuk menggantikan warna gelap `#0a0f1a` yang sebelumnya sulit dibaca pada latar belakang merah.
+
+**3. Perbaikan Badge Gate pada Fitur Checklist (`index.html`):**
+- Menambahkan aturan khusus mode terang untuk badge bertipe gate (`.ck-bdg-gate`) agar menggunakan warna latar `var(--accent-dim)` dan warna teks `var(--accent)`.
+
+---
+
 ## Changelog Session 172 (2026-07-15) — Migrasi Sentimen Retail ke FXSSI
 
 **Konteks:** Memindahkan sumber data sentimen retail dari \`forexbenchmark.com\` (yang sudah tidak real-time/mati) ke \`fxssi.com/tools/current-ratio\`.

@@ -749,7 +749,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   font-family: 'DM Mono', monospace; cursor: pointer; transition: all .15s;
 }
 .analisa-chip:hover { border-color: var(--accent); color: var(--accent); }
-.analisa-chip.active { background: var(--accent); border-color: var(--accent); color: #0a0f1a; font-weight: 600; }
+.analisa-chip.active { background: var(--accent); border-color: var(--accent); color: #ffffff; font-weight: 600; }
 .analisa-chip.loading { opacity: .6; pointer-events: none; }
 #analisaTrackedChips { display: contents; }
 .analisa-chip-wrap { position: relative; display: inline-block; }
@@ -2667,6 +2667,17 @@ body.light-theme .regime-banner.neutral  { background: #eef0eb; color: var(--tex
 body.light-theme .regime-banner.elevated { background: #fff3e0; color: #e65100; }
 body.light-theme .regime-banner.risk-off { background: #ffebee; color: #c62828; }
 body.light-theme .regime-banner.unavail  { background: #eef0eb; color: var(--text-mid); }
+
+body.light-theme .jn-dir.long  { background: var(--green-dim); color: var(--green); }
+body.light-theme .jn-dir.short { background: var(--accent-dim); color: var(--accent); }
+
+body.light-theme .jn-status.open     { background: #e0f2fe; color: #0284c7; }
+body.light-theme .jn-status.closed   { background: var(--green-dim); color: var(--green); }
+body.light-theme .jn-status.archived { background: var(--border); color: var(--muted); }
+body.light-theme .jn-status.pending  { background: #fef3c7; color: #b45309; }
+body.light-theme .jn-status.cancelled{ background: var(--accent-dim); color: var(--accent); }
+
+body.light-theme .ck-bdg-gate { background: var(--accent-dim); color: var(--accent); }
 
 </style>
 </head>
