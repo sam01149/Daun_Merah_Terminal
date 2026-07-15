@@ -2,7 +2,7 @@
 // dengan index.html & api/). NEWSCAT_VERSION = cache-buster; naikkan tiap kali
 // newscat.js berubah supaya SW update ikut mengambil versi baru (byte sw.js
 // berubah → browser re-install SW → importScripts di-fetch ulang).
-const NEWSCAT_VERSION = '2026.07.13.9';
+const NEWSCAT_VERSION = '2026.07.15.2';
 // try/catch: kalau fetch newscat.js gagal saat install, jangan gagalkan evaluasi
 // seluruh SW — detectCat() di bawah punya fallback 'macro' (typeof guard).
 try { importScripts('/newscat.js?v=' + NEWSCAT_VERSION); } catch (e) {}

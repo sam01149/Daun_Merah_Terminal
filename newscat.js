@@ -42,7 +42,7 @@
 })(typeof self !== 'undefined' ? self : globalThis, function () {
   'use strict';
 
-  const VERSION = '2026.07.13.9';
+  const VERSION = '2026.07.15.2';
 
   // Samakan tipografi feed (kutip melengkung, dash panjang) & spasi ganda
   // supaya keyword ASCII selalu ketemu. Sama filosofinya dengan sanitasi PDF.
@@ -157,7 +157,7 @@
       'new zealand dollar', 'kiwi',
       'yuan', 'renminbi', 'offshore yuan',
       // pasar FX generik
-      'fx options', 'options expir*', 'currency pair*', 'currency market',
+      'fx option', 'option expir*', 'currency pair*', 'currency market',
       'currency intervention', 'fx intervention', 'currency war',
       'forex', 'foreign exchange', 'fx market', 'spot rate', 'exchange rate',
       'safe haven', 'carry trade', 'devaluation',
@@ -275,7 +275,7 @@
       'navy', 'naval', 'warship*', 'vessel*', 'container ship*', 'airspace',
       'air defense*', 'air defence*', 'siren*', 'hostile', 'intercept*',
       'explosion*', 'blast*', 'security alert*',
-      'war', 'invasion', 'airstrike*', 'missile*', 'drone*',
+      'war', 'invasion', 'attack*', 'airstrike*', 'missile*', 'drone*',
       'military strike*', 'retaliatory strike*', 'strikes on', 'strike on',
       'election*', 'referendum', 'coup', 'diplomat*',
     ],

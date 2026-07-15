@@ -8,6 +8,25 @@
 
 ---
 
+## Changelog Session 169 (2026-07-15) — Fix Klasifikasi Kategori Forex & Geopolitical di newscat.js
+
+**Konteks:** User melaporkan dua misklasifikasi berita di feed yang masuk ke kategori `macro` padahal seharusnya masuk ke `forex` dan `geopolitical`. Keduanya disebabkan oleh ketidakcocokan *keyword* di engine klasiikasi lokal (`newscat.js`), sehingga sistem melakukan *fallback* ke kategori default (`macro`).
+
+**1. Perbaikan Kategori Forex (`newscat.js`):**
+- Berita "Wednesday FX Option Expiries" terlempar ke `macro`.
+- **Akar masalah:** Kata kunci di array `CATS['forex']` ditulis dalam bentuk jamak (`'fx options'` dan `'options expir*'`). Karena engine `newscat.js` memiliki fitur auto-plural yang hanya mengubah bentuk tunggal menjadi jamak (bukan sebaliknya), kata kunci jamak ini gagal menangkap teks berita dalam bentuk tunggal ("Option").
+- **Fix:** Mengubah kata kunci menjadi bentuk tunggal (`'fx option'` dan `'option expir*'`). Kini, regular expression yang di-compile akan mencakup frasa tunggal maupun jamak sekaligus (`fx option(?:e?s)?\b`).
+
+**2. Perbaikan Kategori Geopolitical (`newscat.js`):**
+- Berita mengenai serangan ("Several locations in the city of Ahvaz were targeted by attacks by the US - Mehr News") terlempar ke `macro`.
+- **Akar masalah:** Kategori geopolitik hanya memiliki kata kunci militer spesifik (`airstrike*`, `missile*`, `drone*`), tetapi kehilangan kata umum yang juga kuat mengisyaratkan konflik maritim/internasional.
+- **Fix:** Menambahkan *wildcard keyword* `'attack*'` ke array `CATS['geopolitical']`. *Wildcard* menjamin bentuk seperti `attack`, `attacks`, `attacked`, atau `attacker` semuanya diikat ke dalam payung geopolitik.
+
+**3. Versioning (Cache-buster):**
+- **Diperbarui:** Versi cache-buster dinaikkan serempak menjadi `2026.07.15.2` (pada `APP_VERSION` dan query string di `index.html`, `VERSION` di `newscat.js`, dan `NEWSCAT_VERSION` di `sw.js`). Ini memaksa *Service Worker* pada perangkat pangguna untuk mem-fetch ulang file `newscat.js` terbaru tanpa tersangkut cache lokal.
+
+---
+
 ## Changelog Session 168 (2026-07-14) — Integrasi Analisa AI ke Sizing Calc & Pengetatan Aturan Konflik Makro
 
 **Konteks:** Menyelaraskan alur kerja dari Ringkasan → Analisa AI → Sizing Calc → Eksekusi MT5, serta meningkatkan "kepintaran" AI agar tidak memaksakan trade saat kondisi makro dan teknikal bertentangan.

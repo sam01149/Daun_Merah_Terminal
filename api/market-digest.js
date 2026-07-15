@@ -2083,6 +2083,9 @@ ${xauHistoryBlock}`;
     } else if (!article && GROQ_KEY) {
       const t3s = Date.now();
       try {
+        // TODO: (Cosmetic) Teks log di bawah (beserta providerLog) masih hardcoded 'qwen3-32b',
+        // padahal model aktual yang dipanggil adalah llama-3.3-70b-versatile (GROQ_MODEL_PROSE).
+        // Jangan hapus/ubah dulu sesuai instruksi, cukup ingat ini agar tidak bingung saat baca log Vercel.
         console.log('Call 1: fallback 3 to Groq qwen3-32b');
         const raw = await aiCall(GROQ_URL, GROQ_KEY, GROQ_MODEL_PROSE, call1Messages, 1300, 0.25, 15000);
         const elapsed = Date.now() - t3s;
