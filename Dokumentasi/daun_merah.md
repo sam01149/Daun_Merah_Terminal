@@ -19,7 +19,7 @@
 
 **2. Mekanika Toggle & Default Layout (`index.html`):**
 - Ditambahkan tombol "Ganti Tema" dengan ikon Matahari / Bulan di dalam menu dropdown (*3-dot menu*) di navigasi atas.
-- Latar belakang navigasi atas (`.header`) dan bawah (`.bot-nav` untuk mobile) telah diubah agar dinamis mengikuti warna latar tema saat ini (`--bg-rgb`), sehingga tidak lagi statis berwarna gelap.
+- Latar belakang navigasi atas (`.header`), navigasi bawah (`.bot-nav`), area *banner regime* (Risk-On / Risk-Off), dan *drawer* "Menu Lainnya" telah diubah agar dinamis mengikuti warna latar tema saat ini (`--bg-rgb`, `--surface`), sehingga tidak lagi statis berwarna gelap. Tag `<meta name="theme-color">` juga ikut disinkronisasi untuk mewarnai *status bar* di peramban *mobile*.
 - State preferensi tema otomatis tersimpan ke `localStorage` (`theme: 'light' | 'dark'`).
 - Jika pengunjung baru pertama kali membuka (belum ada state tersimpan), aplikasi akan mengecek lebar layar (`window.innerWidth`):
   - **HP (<768px):** *Default* ke Light Theme. Cocok untuk lingkungan layar *outdoor* (HP sering digunakan di luar ruangan dengan paparan cahaya matahari terang).

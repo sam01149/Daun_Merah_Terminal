@@ -2406,7 +2406,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .drawer-overlay.open { opacity: 1; pointer-events: all; transition: opacity .25s ease-out; }
 .drawer-panel {
   position: fixed; top: 0; right: 0; height: 100%; width: 260px;
-  background: #111110; border-left: 1px solid var(--border);
+  background: var(--surface); border-left: 1px solid var(--border);
   z-index: 301; transform: translateX(100%);
   /* closing: ease-in — cepat pergi */
   transition: transform .18s ease-in;
@@ -2660,6 +2660,13 @@ body.light-theme {
   --fg-rgb: 0, 0, 0;
   --bg-rgb: 248, 247, 245;
 }
+
+
+body.light-theme .regime-banner.risk-on  { background: #e8f5e9; color: #2e7d32; }
+body.light-theme .regime-banner.neutral  { background: #eef0eb; color: var(--text-mid); }
+body.light-theme .regime-banner.elevated { background: #fff3e0; color: #e65100; }
+body.light-theme .regime-banner.risk-off { background: #ffebee; color: #c62828; }
+body.light-theme .regime-banner.unavail  { background: #eef0eb; color: var(--text-mid); }
 
 </style>
 </head>
@@ -3856,7 +3863,11 @@ function toggleTheme() {
 function updateThemeIcon() {
   const icon = document.getElementById('themeIcon');
   if (!icon) return;
-  if (document.body.classList.contains('light-theme')) {
+  const isLight = document.body.classList.contains('light-theme');
+  const metaTheme = document.querySelector('meta[name="theme-color"]');
+  if (metaTheme) metaTheme.setAttribute('content', isLight ? '#f8f7f5' : '#0a0a08');
+  
+  if (isLight) {
     icon.innerHTML = '<circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>';
   } else {
     icon.innerHTML = '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>';
