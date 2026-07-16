@@ -2780,30 +2780,33 @@ body.light-theme .ck-bdg-gate { background: var(--accent-dim); color: var(--acce
   hyphens: auto !important;
 }
 
-/* PEMBATASAN LEBAR BACAAN UTAMA (MEASURE) AGAR SESUAI STANDAR PROFESIONAL (MAX 720PX) */
+/* PEMBATASAN LEBAR BACAAN UTAMA (MEASURE) AGAR SESUAI STANDAR PROFESIONAL (MAX 680PX) */
 @media (min-width: 768px) {
   .ringkasan-inner {
-    max-width: 720px !important; /* Mempersempit kolom bacaan ringkasan agar mata tidak lelah */
+    max-width: 680px !important; /* Mempersempit kolom bacaan ringkasan agar mata tidak lelah */
+  }
+  .analisa-inner {
+    max-width: 680px !important; /* Mempersempit seluruh panel analisa agar sejajar simetris dari atas ke bawah */
   }
   .analisa-ai-result {
-    max-width: 720px !important; /* Mempersempit kolom bacaan hasil analisa AI di desktop */
-    margin-left: auto !important;
-    margin-right: auto !important;
+    max-width: 100% !important;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
   }
   
-  /* MEMPERBAIKI BUG DISPLAY GRID ANALISA CONTENT KARENA INLINE STYLE JS */
+  /* MEMATIKAN GRID 2 KOLOM YANG ASIMETRIS KAKU & PINCANG */
   #analisaContent {
-    display: grid !important; /* Menimpa display: block dari inline JS loadAnalisa() */
-    grid-template-columns: 1fr 1fr !important;
-    gap: 0 16px !important;
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 12px !important;
   }
   
-  /* Membatasi lebar tombol ANALISA AI agar tidak melar terlalu panjang (sesuai lebar teks 720px) */
+  /* Sesuaikan tombol ANALISA AI agar sejajar rapi selebar 100% dari kolom 680px */
   #analisaContent > .print-btn-row {
-    grid-column: 1 / -1 !important;
+    grid-column: auto !important;
     width: 100% !important;
-    max-width: 720px !important;
-    margin: 16px auto !important;
+    max-width: 100% !important;
+    margin: 12px 0 !important;
   }
 }
 
