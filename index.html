@@ -13430,16 +13430,45 @@ function jnExportCSV() {
     return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
   }
 
-  function getRcVal(e, rcId, labelPart) {
-    if (e.checklist_snapshot && e.checklist_snapshot[rcId] !== undefined) {
-      return e.checklist_snapshot[rcId] ? 'YA' : 'TIDAK';
+  // 1. Gather all unique checklist items across all playbooks dynamically
+  const allChecklistCols = [];
+  
+  // First, the shared regime checks
+  if (typeof PB_REGIME_CHECK !== 'undefined' && PB_REGIME_CHECK.items) {
+    PB_REGIME_CHECK.items.forEach(it => {
+      allChecklistCols.push({ id: it.id, header: `Shared: ${it.label}`, label: it.label });
+    });
+  }
+  
+  // Then, playbook-specific checks
+  if (typeof PLAYBOOKS !== 'undefined') {
+    Object.entries(PLAYBOOKS).forEach(([pbKey, pb]) => {
+      if (!pb.sections) return;
+      pb.sections.forEach(sec => {
+        if (sec.id === 'regime_check') return;
+        sec.items.forEach(it => {
+          if (!allChecklistCols.some(c => c.id === it.id)) {
+            allChecklistCols.push({
+              id: it.id,
+              header: `${pb.name} - ${sec.title}: ${it.label}`,
+              label: it.label
+            });
+          }
+        });
+      });
+    });
+  }
+
+  function getChecklistVal(e, itId, itLabel) {
+    if (e.checklist_snapshot && e.checklist_snapshot[itId] !== undefined) {
+      return e.checklist_snapshot[itId] ? 'YA' : 'TIDAK';
     }
     if (e.thesis_text) {
       const lines = e.thesis_text.split(/\r?\n/);
       for (const line of lines) {
-        if (line.includes(labelPart)) {
-          if (line.includes('✅')) return 'YA';
-          if (line.includes('⬜')) return 'TIDAK';
+        if (line.includes(itLabel)) {
+          if (line.includes('✅') || line.includes('☑') || line.includes('[x]') || line.includes('[X]')) return 'YA';
+          if (line.includes('⬜') || line.includes('☐') || line.includes('[ ]')) return 'TIDAK';
         }
       }
     }
@@ -13451,60 +13480,93 @@ function jnExportCSV() {
     const lines = text.split(/\r?\n/);
     const cleanedLines = [];
     for (const line of lines) {
-      const isRcLine = line.includes('Regime saat ini') ||
-                       line.includes('CB bias') ||
-                       line.includes('COT positioning') ||
-                       line.includes('Tidak ada high-impact') ||
-                       line.includes('Real yield') ||
-                       line.includes('Retail sentiment');
-      if (isRcLine) continue;
-      if (line.includes('REGIME CHECK') && line.trim().startsWith('—')) continue;
+      const trimmed = line.trim();
+      // Skip checklist item lines
+      if (trimmed.startsWith('✅') || trimmed.startsWith('⬜') || 
+          trimmed.startsWith('☑') || trimmed.startsWith('☐') ||
+          trimmed.startsWith('[x]') || trimmed.startsWith('[ ]') ||
+          trimmed.startsWith('  ✅') || trimmed.startsWith('  ⬜') ||
+          trimmed.startsWith('  ☑') || trimmed.startsWith('  ☐') ||
+          trimmed.startsWith('  [x]') || trimmed.startsWith('  [ ]') ||
+          line.includes('✅') || line.includes('⬜') || 
+          line.includes('☑') || line.includes('☐') ||
+          line.includes('[x]') || line.includes('[ ]')) {
+        continue;
+      }
+      // Skip section headers starting with "—" that are checklist sections
+      if (trimmed.startsWith('—') && (
+        trimmed.includes('REGIME CHECK') ||
+        trimmed.includes('VALIDITAS DRIVER') ||
+        trimmed.includes('FUNDAMENTAL BIAS') ||
+        trimmed.includes('PRE-MARKET DECISION') ||
+        trimmed.includes('STRUKTUR TEKNIKAL') ||
+        trimmed.includes('ENTRY LOCATION') ||
+        trimmed.includes('TRIGGER ENTRY') ||
+        trimmed.includes('RISK MANAGEMENT') ||
+        trimmed.includes('TIMING') ||
+        trimmed.includes('DISIPLIN') ||
+        trimmed.includes('TREND MAKRO') ||
+        trimmed.includes('CB DIVERGENCE') ||
+        trimmed.includes('COT POSITIONING') ||
+        trimmed.includes('ENTRY') ||
+        trimmed.includes('IDENTIFIKASI EVENT') ||
+        trimmed.includes('THESIS ARAH EVENT') ||
+        trimmed.includes('PRE-EVENT POSITIONING') ||
+        trimmed.includes('IDENTIFIKASI RANGE') ||
+        trimmed.includes('LEVEL EKSTREM') ||
+        trimmed.includes('KONFIRMASI REVERSAL')
+      )) {
+        continue;
+      }
       cleanedLines.push(line);
     }
     return cleanedLines.join('\n').replace(/\n{3,}/g, '\n\n').trim();
   }
 
-  const headers = [
+  const baseHeaders = [
     'No','Tanggal Buka','Pair','Arah','Status',
     'Entry','SL','TP','Lots','RR Plan','R Aktual',
     'Exit Price','Tanggal Tutup','Alasan Keluar',
-    'Horizon','Regime',
-    'RC1: Regime','RC2: CB Bias','RC3: COT','RC4: Event <6h','RC5: Yield Diff','RC6: Sentiment',
-    'Thesis','Catatan Post-Trade'
+    'Horizon','Regime'
   ];
+  
+  const checklistHeaders = allChecklistCols.map(c => c.header);
+  const endHeaders = ['Thesis','Catatan Post-Trade'];
+  const headers = [...baseHeaders, ...checklistHeaders, ...endHeaders];
 
   const sorted = [...jnAllEntries].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
 
-  const rows = sorted.map((e, i) => [
-    i + 1,
-    fmtDate(e.created_at),
-    e.pair,
-    e.direction,
-    // Same derived label as the JURNAL card badge — a resting pending order
-    // shouldn't export as plain "open" any more than it should show that way on-screen.
-    e.status === 'open' && e.fill_state === 'pending'   ? 'pending'
-      : e.status === 'open' && e.fill_state === 'cancelled' ? 'cancelled'
-      : e.status,
-    e.entry_price  != null ? e.entry_price  : '',
-    e.stop_price   != null ? e.stop_price   : '',
-    e.target_price != null ? e.target_price : '',
-    e.size_lots    != null ? e.size_lots    : '',
-    e.rr_planned   != null ? e.rr_planned   : '',
-    e.r_actual     != null ? e.r_actual     : '',
-    e.exit_price   != null ? e.exit_price   : '',
-    fmtDate(e.closed_at),
-    e.exit_reason  || '',
-    e.time_horizon || '',
-    e.regime_at_entry ? e.regime_at_entry.replace(/_/g, ' ') : '',
-    getRcVal(e, 'rc1', 'Regime saat ini'),
-    getRcVal(e, 'rc2', 'CB bias'),
-    getRcVal(e, 'rc3', 'COT positioning'),
-    getRcVal(e, 'rc4', 'Tidak ada high-impact'),
-    getRcVal(e, 'rc5', 'Real yield'),
-    getRcVal(e, 'rc6', 'Retail sentiment'),
-    cleanThesis(e.thesis_text),
-    e.attribution_notes || '',
-  ].map(csvCell).join(','));
+  const rows = sorted.map((e, i) => {
+    const baseFields = [
+      i + 1,
+      fmtDate(e.created_at),
+      e.pair,
+      e.direction,
+      e.status === 'open' && e.fill_state === 'pending'   ? 'pending'
+        : e.status === 'open' && e.fill_state === 'cancelled' ? 'cancelled'
+        : e.status,
+      e.entry_price  != null ? e.entry_price  : '',
+      e.stop_price   != null ? e.stop_price   : '',
+      e.target_price != null ? e.target_price : '',
+      e.size_lots    != null ? e.size_lots    : '',
+      e.rr_planned   != null ? e.rr_planned   : '',
+      e.r_actual     != null ? e.r_actual     : '',
+      e.exit_price   != null ? e.exit_price   : '',
+      fmtDate(e.closed_at),
+      e.exit_reason  || '',
+      e.time_horizon || '',
+      e.regime_at_entry ? e.regime_at_entry.replace(/_/g, ' ') : ''
+    ];
+    
+    const checklistFields = allChecklistCols.map(col => getChecklistVal(e, col.id, col.label));
+    
+    const endFields = [
+      cleanThesis(e.thesis_text),
+      e.attribution_notes || ''
+    ];
+    
+    return [...baseFields, ...checklistFields, ...endFields].map(csvCell).join(',');
+  });
 
   const today   = new Date();
   const dateStr = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;

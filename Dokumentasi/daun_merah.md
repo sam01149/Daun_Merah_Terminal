@@ -10,23 +10,18 @@
 
 ## Changelog Session 176 (2026-07-16) — Export Jurnal CSV dalam Bentuk Tabel Checklist Terstruktur
 
-**Konteks:** Menjawab masukan pengguna yang merasa hasil export CSV jurnal sulit dibaca karena data checklist regime check (`rc1-rc6`) tergabung secara multi-line di dalam satu kolom `Thesis`. Hal ini menyebabkan row height di Excel menjadi berantakan. Solusinya adalah memisahkan checklist regime check ke kolom/tabel terstruktur.
+**Konteks:** Menjawab masukan pengguna yang merasa hasil export CSV jurnal sulit dibaca karena seluruh data checklist (baik `rc1-rc6` maupun checklist spesifik playbook seperti `VALIDITAS DRIVER`, `FUNDAMENTAL BIAS`, dll.) tergabung secara multi-line di dalam satu kolom `Thesis`. Hal ini menyebabkan row height di Excel menjadi sangat tinggi dan berantakan. Solusinya adalah memisahkan seluruh kriteria checklist ke kolom/tabel datar terstruktur.
 
-**1. Kolom Terstruktur Baru pada Export CSV (`index.html` → `jnExportCSV()`)**
-- Menambahkan 6 kolom baru di header CSV:
-  - `RC1: Regime`
-  - `RC2: CB Bias`
-  - `RC3: COT`
-  - `RC4: Event <6h`
-  - `RC5: Yield Diff`
-  - `RC6: Sentiment`
-- Implementasi helper `getRcVal(entry, rcId, labelPart)`:
-  - Mengambil data boolean dari `entry.checklist_snapshot[rcId]` jika tersedia (di-map ke `'YA'` atau `'TIDAK'`).
-  - Sebagai fallback defensif untuk entry lama yang belum memiliki snapshot terstruktur, mengekstrak status dari text thesis (`✅` -> `'YA'`, `⬜` -> `'TIDAK'`).
-  - Mengembalikan string kosong jika tidak ditemukan.
+**1. Kolom Terstruktur Dinamis Baru pada Export CSV (`index.html` → `jnExportCSV()`)**
+- Menambahkan kode untuk secara dinamis mengumpulkan seluruh item checklist unik dari `PB_REGIME_CHECK` dan semua `PLAYBOOKS` (seperti SMC/ICT, Macro Momentum, dll.).
+- Menghasilkan header kolom CSV datar secara dinamis untuk setiap kriteria checklist (misal: `Shared: ...`, `SMC/ICT — Daun Merah - VALIDITAS DRIVER: ...`, dll.).
+- Implementasi helper `getChecklistVal(entry, itId, itLabel)`:
+  - Mengambil data boolean dari `entry.checklist_snapshot[itId]` jika tersedia (di-map ke `'YA'` atau `'TIDAK'`).
+  - Sebagai fallback defensif untuk entry lama yang belum memiliki snapshot terstruktur, mengekstrak status dengan melakukan parsing baris teks thesis (mencocokkan label dan mendeteksi tanda `✅`, `⬜`, `☑`, `☐`, `[x]`, atau `[ ]` -> `'YA'` atau `'TIDAK'`).
+  - Mengembalikan string kosong jika kriteria tersebut tidak berlaku atau tidak dicentang untuk playbook terkait.
 
-**2. Pembersihan Kolom Thesis pada Export CSV**
-- Menambahkan helper `cleanThesis(text)` yang membersihkan baris checklist `rc1-rc6` beserta header `— REGIME CHECK:` agar tidak terjadi redundansi dan menjaga isi kolom `Thesis` tetap ringkas (hanya berisi catatan AI Thesis, catalyst, invalidation triggers, dsb).
+**2. Pembersihan Total Kolom Thesis pada Export CSV**
+- Memperbarui helper `cleanThesis(text)` untuk membersihkan seluruh baris checklist (yang diawali atau mengandung marker `✅`/`⬜`/`☑`/`☐`/`[x]`/`[ ]`) serta header section (seperti `— VALIDITAS DRIVER:`, `— FUNDAMENTAL BIAS:`, dll.) agar tidak terjadi redundansi dan menjaga isi kolom `Thesis` tetap datar (row height normal, hanya berisi catatan teks penjelasan trade dari user).
 
 **3. Evaluasi Mandiri & Perbaikan Bug**
 - Memperbaiki bug pada `decodeHtmlEntities()` di `index.html` yang secara salah mengembalikan string kosong `''` ketika argumen bernilai `0` atau `false` (falsy check `!s` diganti dengan explicit null/empty check `s == null || s === ''`). Perbaikan ini juga menormalkan kembali unit test `esc_html.test.js` yang sempat gagal.
