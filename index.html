@@ -2790,6 +2790,21 @@ body.light-theme .ck-bdg-gate { background: var(--accent-dim); color: var(--acce
     margin-left: auto !important;
     margin-right: auto !important;
   }
+  
+  /* MEMPERBAIKI BUG DISPLAY GRID ANALISA CONTENT KARENA INLINE STYLE JS */
+  #analisaContent {
+    display: grid !important; /* Menimpa display: block dari inline JS loadAnalisa() */
+    grid-template-columns: 1fr 1fr !important;
+    gap: 0 16px !important;
+  }
+  
+  /* Membatasi lebar tombol ANALISA AI agar tidak melar terlalu panjang (sesuai lebar teks 720px) */
+  #analisaContent > .print-btn-row {
+    grid-column: 1 / -1 !important;
+    width: 100% !important;
+    max-width: 720px !important;
+    margin: 16px auto !important;
+  }
 }
 
 
