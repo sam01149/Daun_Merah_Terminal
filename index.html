@@ -2769,14 +2769,29 @@ body.light-theme .ck-bdg-gate { background: var(--accent-dim); color: var(--acce
   font-weight: 700 !important;
 }
 
-/* RATA KANAN-KIRI (JUSTIFY) UNTUK RINGKASAN & ANALISA */
+/* RATA KANAN-KIRI (JUSTIFY) UNTUK RINGKASAN & ANALISA DENGAN PROTEKSI READABILITY */
 .ringkasan-text, 
 .ringkasan-text .r-para, 
 .analisa-ai-result, 
 .analisa-ai-result p,
 .thesis-val {
   text-align: justify !important;
+  word-break: break-word !important;
+  hyphens: auto !important;
 }
+
+/* PEMBATASAN LEBAR BACAAN UTAMA (MEASURE) AGAR SESUAI STANDAR PROFESIONAL (MAX 720PX) */
+@media (min-width: 768px) {
+  .ringkasan-inner {
+    max-width: 720px !important; /* Mempersempit kolom bacaan ringkasan agar mata tidak lelah */
+  }
+  .analisa-ai-result {
+    max-width: 720px !important; /* Mempersempit kolom bacaan hasil analisa AI di desktop */
+    margin-left: auto !important;
+    margin-right: auto !important;
+  }
+}
+
 
 /* 2. TIPOGRAFI & HEADER FORM */
 /* Menggunakan Syne untuk label form dan judul section agar terkesan modern-editorial */
