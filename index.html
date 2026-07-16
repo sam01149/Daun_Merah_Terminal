@@ -13417,8 +13417,9 @@ function jnExportCSV() {
 
   function csvCell(val) {
     if (val == null) return '';
-    const s = String(val);
-    if (s.includes(',') || s.includes('"') || s.includes('\n') || s.includes('\r')) {
+    let s = String(val);
+    s = s.replace(/\r?\n/g, ' | ');
+    if (s.includes(',') || s.includes('"')) {
       return '"' + s.replace(/"/g, '""') + '"';
     }
     return s;
@@ -13570,7 +13571,7 @@ function jnExportCSV() {
 
   const today   = new Date();
   const dateStr = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
-  const csv     = '﻿' + headers.map(csvCell).join(',') + '\r\n' + rows.join('\r\n');
+  const csv     = '\ufeffsep=,\r\n' + headers.map(csvCell).join(',') + '\r\n' + rows.join('\r\n');
 
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
   const url  = URL.createObjectURL(blob);
