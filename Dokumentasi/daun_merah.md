@@ -31,7 +31,10 @@
 - Meredupkan warna latar belakang tema gelap dari hitam pekat `#0a0a08` ke abu-abu gelap hangat `#0e0e0c`, permukaan panel ke `#151513`, dan border ke `#252523` untuk meredam pendaran cahaya teks (efek halation) bagi kenyamanan mata trader.
 - Meredupkan warna aksen merah menyala di tema gelap menjadi merah editorial yang lebih lembut (`#b23c30`) untuk mengurangi stimulasi stres bawah sadar (alarm/loss).
 
-**4. Keamanan Repositori & Git (`.gitignore`):**
+**4. Perbaikan Bug Visual & Kompatibilitas Browser (`index.html`):**
+- Memasang kelas `notranslate` and atribut `translate="no"` secara defensif pada kontainer menu dropdown pojok kanan atas (`#headerMenuDropdown`). Hal ini memblokir intervensi Google Translate / penerjemah otomatis browser yang sebelumnya memicu penumpukan visual (*text overlap*) ganda pada tombol menu `Ganti Tema`.
+
+**5. Keamanan Repositori & Git (`.gitignore`):**
 - Memasukkan folder `.agents/` ke dalam `.gitignore` agar file konfigurasi aturan perilaku lokal agen tidak ikut terunggah ke repositori GitHub.
 - Menghapus berkas `.agents/AGENTS.md` dari riwayat index pelacakan Git (*untrack*) dengan tetap menjaga fisiknya secara lokal.
 
