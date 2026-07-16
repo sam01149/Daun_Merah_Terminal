@@ -33,6 +33,7 @@
 
 **4. Perbaikan Bug Visual & Kompatibilitas Browser (`index.html`):**
 - Memasang kelas `notranslate` and atribut `translate="no"` secara defensif pada kontainer menu dropdown pojok kanan atas (`#headerMenuDropdown`). Hal ini memblokir intervensi Google Translate / penerjemah otomatis browser yang sebelumnya memicu penumpukan visual (*text overlap*) ganda pada tombol menu `Ganti Tema`.
+- Mengatasi bug visual dropdown transparan dengan mengganti properti background `.header-menu-dropdown` dari variabel `--card` yang tidak terdefinisi (sehingga di-render transparan oleh browser) menjadi warna permukaan solid `var(--surface)`. Hal ini mencegah teks latar belakang halaman bocor tembus pandang ke menu dropdown.
 
 **5. Keamanan Repositori & Git (`.gitignore`):**
 - Memasukkan folder `.agents/` ke dalam `.gitignore` agar file konfigurasi aturan perilaku lokal agen tidak ikut terunggah ke repositori GitHub.
