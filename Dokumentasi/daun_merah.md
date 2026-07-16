@@ -25,6 +25,10 @@
 - Meredupkan warna latar belakang tema gelap dari hitam pekat `#0a0a08` ke abu-abu gelap hangat `#0e0e0c`, permukaan panel ke `#151513`, dan border ke `#252523` untuk meredam pendaran cahaya teks (efek halation) bagi kenyamanan mata trader.
 - Meredupkan warna aksen merah menyala di tema gelap menjadi merah editorial yang lebih lembut (`#b23c30`) untuk mengurangi stimulasi stres bawah sadar (alarm/loss).
 
+**4. Keamanan Repositori & Git (`.gitignore`):**
+- Memasukkan folder `.agents/` ke dalam `.gitignore` agar file konfigurasi aturan perilaku lokal agen tidak ikut terunggah ke repositori GitHub.
+- Menghapus berkas `.agents/AGENTS.md` dari riwayat index pelacakan Git (*untrack*) dengan tetap menjaga fisiknya secara lokal.
+
 ---
 
 ## Changelog Session 173 (2026-07-15) — Fix Kontras Warna Mode Terang (Light Mode)
