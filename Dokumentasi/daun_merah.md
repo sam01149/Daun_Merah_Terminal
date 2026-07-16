@@ -19,6 +19,8 @@
 - Menyelaraskan tipografi judul kolom di Command Center Dashboard (`.dash-col-title` & `.das-section-label`) dari monospace `DM Mono` berukuran kecil (8px) menjadi sans-serif modern `Syne` tebal (10px) dengan pendaran warna yang lebih tegas dan padding yang lebih seimbang.
 - Menambahkan efek transisi hover interaktif yang premium pada kartu mini teknikal bawah (`.das-chip`) di Dashboard dengan efek angkat vertikal (`translateY(-1px)`) dan pendaran bayangan tipis.
 - Merapikan visualisasi teks artikel pada tab **Riset** (`.riset-title`) dan feed berita pada **Berita Terkait** di tab Teknikal (`.tek-news-title`) dengan memigrasikan jenis font dari monospace `DM Mono` yang kaku ke sans-serif modern (`system-ui`), menyetel rata kiri-kanan (`text-align: justify; text-justify: inter-word; text-align-last: left`), serta memperlonggar line-height menjadi `1.5` demi kenyamanan psikologis mata trader saat membaca teks yang panjang.
+- Menyelaraskan border-radius secara global di seluruh fitur utama: menyetel radius card utama (`.jn-card`, `.sz-result-block`, `.sz-hist-item`, `.ck-sec`, `.ck-w`, `.corr-anomaly`, `.corr-narrative`, `.corr-explainer-body`) ke **10px** demi konsistensi visual yang melengkung modern, serta menyetel radius input form, select, textarea, tombol, dan checkbox box (`.ck-box`, `.ck-sbox`) ke **6px/3px** agar serasi dan kohesif secara geometris.
+- Meningkatkan keterbacaan breakdown data detail Regime Banner (`.regime-detail`) dengan memigrasikan font monospace bawaan ke sans-serif modern (`system-ui`) berukuran **11px** dengan line-height `1.6`.
 
 **2. Premiumisasi Desain Form & Tombol (`index.html`):**
 - Memberikan padding dan transisi fokus yang halus pada input form (`.sizing-form input`, `.jn-form input`, dll.).
