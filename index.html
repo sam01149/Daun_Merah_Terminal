@@ -15649,6 +15649,13 @@ document.addEventListener('keydown', function(e) {
     kbGSeq = false;
     clearTimeout(kbGTimer);
     document.getElementById('kbGMode')?.classList.remove('show');
+    
+    if (key === 'w' || key === 'o') {
+      e.preventDefault();
+      popoutView();
+      return;
+    }
+
     const map = {
       n:'feed', b:'riset', r:'ringkasan', a:'analisa', k:'cal',
       c:'cot',  f:'fundamental', l:'checklist',
@@ -15805,6 +15812,7 @@ document.addEventListener('keydown', function(e) {
     </div>
     <div class="kb-sec">
       <div class="kb-sec-title">Global</div>
+      <div class="kb-row"><div class="kb-keys"><span class="kb-key">G</span><span class="kb-key">W</span></div><span class="kb-desc">Buka di Window Baru</span></div>
       <div class="kb-row"><div class="kb-keys"><span class="kb-key">?</span></div><span class="kb-desc">Buka / tutup halaman ini</span></div>
       <div class="kb-row"><div class="kb-keys"><span class="kb-key">Esc</span></div><span class="kb-desc">Tutup panel / overlay</span></div>
     </div>
