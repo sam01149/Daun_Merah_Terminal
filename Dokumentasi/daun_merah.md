@@ -39,6 +39,7 @@
 - Mengatasi bug visual dropdown transparan dengan mengganti properti background `.header-menu-dropdown` dari variabel `--card` yang tidak terdefinisi (sehingga di-render transparan oleh browser) menjadi warna permukaan solid `var(--surface)`. Hal ini mencegah teks latar belakang halaman bocor tembus pandang ke menu dropdown.
 - Menambahkan pintasan keyboard global **`G + W`** (dan `G + O` sebagai alternatif) untuk memicu fungsi "Buka di Window Baru" (`popoutView()`) secara langsung dari tab aktif mana pun, serta mendokumentasikannya di modal bantuan shortcut keyboard (`#kbOverlay`).
 - Memasang UI filter baru pada panel Riset dengan mengganti tombol static "tampilkan semua" menjadi tombol toggle dinamis ("tampilkan semua" / "bersihkan semua" warna merah) tanpa memakan ruang visual baru, serta menambahkan fitur *exclusive solo-selection* (klik teks nama sumber untuk menyaring sumber itu saja secara instan).
+- Memperbaiki bug kebocoran HTML entity (seperti `&#39;` untuk apostrof `'`) yang muncul di feed berita utama, artikel Riset, dan Berita Terkait Teknikal dengan menyuntikkan fungsi decoder defensif `decodeHtmlEntities()` dua tingkat di dalam fungsi `escHtml()`. Hal ini secara otomatis membersihkan semua data feed ter-escape ganda dari vendor API pihak ketiga.
 
 **5. Keamanan Repositori & Git (`.gitignore`):**
 - Memasukkan folder `.agents/` ke dalam `.gitignore` agar file konfigurasi aturan perilaku lokal agen tidak ikut terunggah ke repositori GitHub.
