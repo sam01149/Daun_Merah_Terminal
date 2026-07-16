@@ -23,6 +23,7 @@
 - Mengubah susunan tata letak (DOM) di panel Analisa dengan memindahkan tombol "ANALISA AI" (`.print-btn-row`) ke paling bawah, tepat di bawah kontainer hasil teks analisis AI (`#analisaAiResult`). Hal ini memberikan alur membaca yang lebih alami dan profesional (data → baca hasil → refresh jika diperlukan).
 - Memecah representasi visual hasil Analisa AI (`_renderStructuredAi` di `index.html`) dari satu box tunggal padat menjadi tiga kartu/section terpisah (AI Setup & Bias, Analisis Detail, Kesimpulan Eksekusi) dengan margin-bottom 12px dan border kiri warna fungsional terpisah, meniru gaya modular PWA premium pada fitur Ringkasan.
 - Menambahkan penanda label kecil bergaya `.r-tag` di atas setiap paragraf di dalam kartu **Analisis Detail** untuk merinci tahapan analisis secara struktural: (1) `DAILY TREND & MACRO RANGE`, (2) `H4 SWING & S/R STRUCTURE`, (3) `INTRADAY MOMENTUM & CANDLE PATTERNS`, dan (4) `CONFLUENCE & RISK ASSESSMENT`.
+- Menyetarakan ukuran font teks narasi Analisa AI dengan Ringkasan AI dengan menghapus *hardcoded* inline `font-size: 12px` di fungsi render. Hal ini membuat teks narasi Analisa mewarisi kelas `.ringkasan-text` secara dinamis (yaitu **14px di desktop** dan **13px di mobile**).
 
 **3. Optimalisasi Kenyamanan & Psikologi Tema Gelap (`index.html`):**
 - Meredupkan warna latar belakang tema gelap dari hitam pekat `#0a0a08` ke abu-abu gelap hangat `#0e0e0c`, permukaan panel ke `#151513`, dan border ke `#252523` untuk meredam pendaran cahaya teks (efek halation) bagi kenyamanan mata trader.
