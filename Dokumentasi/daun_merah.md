@@ -1,10 +1,29 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-07-14 (Session 168 — Integrasi Analisa AI ke Sizing Calc dan pengetatan aturan No-Trade untuk resolusi konflik Makro vs Teknikal. Detail history dapat dilihat pada changelog sesi di bawah.)
+> **Last updated:** 2026-07-16 (Session 174 — Penyelarasan Estetika Visual UI & Optimalisasi Kenyamanan Tema Gelap. Detail history dapat dilihat pada changelog sesi di bawah.)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+---
+
+## Changelog Session 174 (2026-07-16) — Penyelarasan Estetika Visual UI & Optimalisasi Kenyamanan Tema Gelap
+
+**Konteks:** Menindaklanjuti masukan pengguna yang sangat menyukai visual profesional fitur News, namun merasa fitur lain (Sizing, Jurnal, Kalender, Korelasi) kurang premium/nyaman dilihat. Juga mengoptimalkan kontras tema gelap untuk mengurangi kelelahan mata (efek halation) dan stres visual bawah sadar dari warna merah menyala.
+
+**1. Penyelarasan Tipografi & Sudut Kartu (`index.html`):**
+- Mengganti font label form, judul bagian (korelasi, bank sentral, detail shock, dll.) dari monospace (`DM Mono`) menjadi sans-serif modern (`Syne`) agar selaras dengan hirarki visual editorial fitur News.
+- Menyamakan border-radius dari card jurnal, block hasil sizing, block korelasi, panel teknikal, dan detail bank sentral dari 3px-4px (kaku) menjadi 10px (lembut & modern) agar seirama dengan feed berita.
+- Mengatur border-radius tombol toggle (LONG/SHORT, mode stop loss) menjadi 6px agar terkesan lebih rapi dan premium.
+
+**2. Premiumisasi Desain Form & Tombol (`index.html`):**
+- Memberikan padding dan transisi fokus yang halus pada input form (`.sizing-form input`, `.jn-form input`, dll.).
+- Mengubah gaya tombol aksi utama (HITUNG, Simpan Jurnal, Ringkas Berita) dengan sudut melengkung 8px, font `Syne`, dan efek hover micro-animation (sedikit terangkat dan bercahaya halus).
+
+**3. Optimalisasi Kenyamanan & Psikologi Tema Gelap (`index.html`):**
+- Meredupkan warna latar belakang tema gelap dari hitam pekat `#0a0a08` ke abu-abu gelap hangat `#0e0e0c`, permukaan panel ke `#151513`, dan border ke `#252523` untuk meredam pendaran cahaya teks (efek halation) bagi kenyamanan mata trader.
+- Meredupkan warna aksen merah menyala di tema gelap menjadi merah editorial yang lebih lembut (`#b23c30`) untuk mengurangi stimulasi stres bawah sadar (alarm/loss).
 
 ---
 

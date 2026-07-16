@@ -2679,6 +2679,149 @@ body.light-theme .jn-status.cancelled{ background: var(--accent-dim); color: var
 
 body.light-theme .ck-bdg-gate { background: var(--accent-dim); color: var(--accent); }
 
+/* ────────────────────────────────────────────────────────── */
+/* DAUN MERAH VISUAL REVAMP (Professional Trader Aesthetic) */
+/* ────────────────────────────────────────────────────────── */
+
+/* 1. KONSISTENSI BORDER RADIUS & SHADOWS */
+.jn-card, 
+.sz-result-block, 
+.corr-anomaly, 
+.jn-ai-panel, 
+.tek-ta-panel,
+.cal-countdown,
+.cb-section,
+.corr-narrative {
+  border-radius: 10px !important;
+}
+
+/* Tombol-tombol toggles di Sizing dan Jurnal */
+#szDirLong, #szDirShort, #szModePips, #szModePrice, .jn-tab {
+  border-radius: 6px !important;
+  font-family: 'Syne', sans-serif !important;
+  font-weight: 700 !important;
+}
+
+/* 2. TIPOGRAFI & HEADER FORM */
+/* Menggunakan Syne untuk label form dan judul section agar terkesan modern-editorial */
+.sizing-form label,
+.jn-form label,
+.corr-title,
+.cb-section-title,
+.tek-opts-title,
+.cb-hl-title,
+.cb-shock-title {
+  font-family: 'Syne', sans-serif !important;
+  font-weight: 700 !important;
+  font-size: 9px !important;
+  letter-spacing: .08em !important;
+  text-transform: uppercase !important;
+  color: var(--text-mid) !important;
+}
+
+/* 3. DESAIN INPUT & SELECT PREMIUM */
+.sizing-form input, 
+.sizing-form select,
+.jn-form input, 
+.jn-form select, 
+.jn-form textarea {
+  border-radius: 6px !important;
+  border: 1px solid var(--border) !important;
+  background: var(--surface) !important;
+  color: var(--text) !important;
+  padding: 9px 12px !important;
+  font-family: 'DM Mono', monospace !important;
+  font-size: 11px !important;
+  box-shadow: inset 0 1px 2px rgba(0,0,0,0.1) !important;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease !important;
+}
+
+.sizing-form input:focus, 
+.sizing-form select:focus,
+.jn-form input:focus, 
+.jn-form select:focus, 
+.jn-form textarea:focus {
+  outline: none !important;
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 3px rgba(192, 57, 43, 0.15) !important;
+}
+
+/* 4. DESAIN TOMBOL AKSI UTAMA */
+.sizing-form button:not([id]), /* Tombol HITUNG */
+.jn-btn,
+.ringkasan-gen-btn,
+.jn-ai-btn {
+  border-radius: 8px !important;
+  font-family: 'Syne', sans-serif !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  letter-spacing: .08em !important;
+  text-transform: uppercase !important;
+  padding: 11px 16px !important;
+  border: none !important;
+  cursor: pointer !important;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.15) !important;
+}
+
+/* Hover & Active States untuk Tombol Utama */
+.sizing-form button:not([id]):hover,
+.jn-btn:hover,
+.ringkasan-gen-btn:hover {
+  filter: brightness(1.15) !important;
+  transform: translateY(-1px) !important;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.2) !important;
+}
+
+.sizing-form button:not([id]):active,
+.jn-btn:active,
+.ringkasan-gen-btn:active {
+  transform: translateY(0) !important;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1) !important;
+}
+
+/* Hover state untuk tombol sekunder */
+.jn-btn-sec {
+  border-radius: 6px !important;
+  transition: all 0.15s ease !important;
+}
+.jn-btn-sec:hover {
+  border-color: var(--text-mid) !important;
+  color: var(--text) !important;
+  background: rgba(var(--fg-rgb), 0.03) !important;
+}
+
+/* 5. TEMA TERANG: PENYEMPURNAAN WARNA BADGE & STATUS */
+/* Kurangi kekerasan kontras agar badge di tema terang tetap ramah di mata */
+body.light-theme .jn-card {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.02) !important;
+  border-color: #eae8e3 !important;
+}
+
+body.light-theme .sizing-form input,
+body.light-theme .sizing-form select,
+body.light-theme .jn-form input,
+body.light-theme .jn-form select,
+body.light-theme .jn-form textarea {
+  background: #ffffff !important;
+  border-color: #e2e0da !important;
+}
+
+/* 6. TEMA GELAP: OPTIMALISASI PSIKOLOGI WARNA & READABILITY */
+/* Meredupkan latar belakang tema gelap dari hitam murni #0a0a08 ke abu-abu gelap hangat #0d0d0b untuk mengurangi efek halation */
+body:not(.light-theme) {
+  --bg: #0e0e0c;
+  --surface: #151513;
+  --border: #252523;
+}
+
+/* Meredupkan pendaran warna merah aksen di tema gelap agar tidak memicu stress visual bawah sadar */
+body:not(.light-theme) .sizing-form button:not([id]),
+body:not(.light-theme) .jn-btn,
+body:not(.light-theme) .ringkasan-gen-btn {
+  background: #b23c30 !important; /* warna merah yang lebih 'dusty/editorial' alih-alih merah alarm */
+}
+
 </style>
 </head>
 <body>
