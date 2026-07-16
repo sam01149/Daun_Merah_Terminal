@@ -5612,8 +5612,28 @@ function downloadAnalisaPdf() {
   b.doc.save(`analisa_${_printWibNow().filename}.pdf`);
 }
 
+function decodeHtmlEntities(s) {
+  if (!s) return '';
+  let str = String(s);
+  for (let i = 0; i < 2; i++) {
+    const prev = str;
+    str = str
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/&apos;/g, "'")
+      .replace(/&#x27;/g, "'")
+      .replace(/&#x2f;/g, "/");
+    if (str === prev) break;
+  }
+  return str;
+}
+
 function escHtml(s) {
-  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const decoded = decodeHtmlEntities(s);
+  return String(decoded).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
 // Untuk menyisipkan string ke literal JS di dalam atribut onclick="fn('...')" —
