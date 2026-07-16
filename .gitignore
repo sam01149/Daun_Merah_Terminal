@@ -14,6 +14,7 @@ environtment.txt
 
 # Claude Code local config — berisi API key/secret di allow-list, JANGAN commit
 .claude/
+.agents/
 __pycache__/
 
 # Riset/model BTC ML dipindah keluar dari kode app aktif, diasingkan dari git tracking
