@@ -18,6 +18,7 @@
 - Mengatur border-radius tombol toggle (LONG/SHORT, mode stop loss) menjadi 6px agar terkesan lebih rapi dan premium.
 - Menyelaraskan tipografi judul kolom di Command Center Dashboard (`.dash-col-title` & `.das-section-label`) dari monospace `DM Mono` berukuran kecil (8px) menjadi sans-serif modern `Syne` tebal (10px) dengan pendaran warna yang lebih tegas dan padding yang lebih seimbang.
 - Menambahkan efek transisi hover interaktif yang premium pada kartu mini teknikal bawah (`.das-chip`) di Dashboard dengan efek angkat vertikal (`translateY(-1px)`) dan pendaran bayangan tipis.
+- Merapikan visualisasi teks artikel pada tab **Riset** (`.riset-title`) dan feed berita pada **Berita Terkait** di tab Teknikal (`.tek-news-title`) dengan memigrasikan jenis font dari monospace `DM Mono` yang kaku ke sans-serif modern (`system-ui`), menyetel rata kiri-kanan (`text-align: justify; text-justify: inter-word; text-align-last: left`), serta memperlonggar line-height menjadi `1.5` demi kenyamanan psikologis mata trader saat membaca teks yang panjang.
 
 **2. Premiumisasi Desain Form & Tombol (`index.html`):**
 - Memberikan padding dan transisi fokus yang halus pada input form (`.sizing-form input`, `.jn-form input`, dll.).
