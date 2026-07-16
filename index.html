@@ -229,9 +229,9 @@ body {
   background:rgba(var(--fg-rgb),.03); border-left:2px solid var(--yellow);
   padding:6px 8px; margin-bottom:8px; border-radius:2px;
 }
-.riset-title { font-size:11px; font-family:'DM Mono',monospace; color:var(--text); text-decoration:none; line-height:1.4; display:block; }
+.riset-title { font: 400 12px system-ui, -apple-system, sans-serif; color:var(--text); text-decoration:none; line-height:1.5; display:block; text-align:justify; text-justify:inter-word; text-align-last:left; transition:color 0.15s ease; }
 .riset-title:hover { color:#34d399; }
-.riset-date { font-size:9px; color:var(--muted); font-family:'DM Mono',monospace; margin-top:3px; }
+.riset-date { font-size:9px; color:var(--muted); font-family:'DM Mono',monospace; margin-top:4px; }
 
 /* SIZING FORM */
 .sizing-form { display:flex; flex-direction:column; gap:10px; }
@@ -2246,18 +2246,19 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .tek-news-hdr-pair { font: 700 9px 'DM Mono',monospace; color: #38bdf8; }
 .tek-news-empty { font: 10px 'DM Mono',monospace; color: var(--muted); padding: 10px 0 4px; }
 .tek-news-item {
-  padding: 8px 0 7px; border-bottom: 1px solid rgba(34,34,32,.5); cursor: default;
+  padding: 10px 0 9px; border-bottom: 1px solid rgba(var(--fg-rgb),.05); cursor: default;
+  transition: background .15s ease;
 }
 .tek-news-item:last-child { border-bottom: none; }
 .tek-news-item-link { cursor: pointer; }
 .tek-news-item-link:hover .tek-news-title { color: #38bdf8; }
-.tek-news-meta { display: flex; align-items: center; gap: 6px; margin-bottom: 3px; }
+.tek-news-meta { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
 .tek-news-time { font: 9px 'DM Mono',monospace; color: var(--muted); }
 .tek-news-cat {
-  font: 700 8px 'DM Mono',monospace; padding: 1px 5px; border-radius: 3px;
-  text-transform: uppercase; letter-spacing: .04em;
+  font: 700 8px 'DM Mono',monospace; padding: 2px 6px; border-radius: 4px;
+  text-transform: uppercase; letter-spacing: .06em;
 }
-.tek-news-title { font: 11px 'DM Mono',monospace; color: var(--text); line-height: 1.45; }
+.tek-news-title { font: 400 12px system-ui, -apple-system, sans-serif; color: var(--text); line-height: 1.5; text-align: justify; text-justify: inter-word; text-align-last: left; transition: color 0.15s ease; }
 
 /* ── COMMAND CENTER DASHBOARD ── */
 .nvtab[data-view="dashboard"]        { color: #818cf8; display: none; }
