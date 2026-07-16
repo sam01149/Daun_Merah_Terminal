@@ -1,10 +1,37 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-07-16 (Session 174 — Penyelarasan Estetika Visual UI & Optimalisasi Kenyamanan Tema Gelap. Detail history dapat dilihat pada changelog sesi di bawah.)
+> **Last updated:** 2026-07-16 (Session 175 — Fitur Data Kuantitatif Baru: Peta Divergensi, Profil Volatilitas Opsi, dan Skor Kejutan Ekonomi. Detail history dapat dilihat pada changelog sesi di bawah.)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+---
+
+## Changelog Session 175 (2026-07-16) — Fitur Data Kuantitatif Baru: Peta Divergensi, Profil Volatilitas Opsi, dan Skor Kejutan Ekonomi
+
+**Konteks:** Implementasi tiga fitur informasional baru berdasarkan data backend yang sudah tersedia namun belum dipresentasikan ke UI. Ketiganya dikerjakan dalam satu sesi tanpa perubahan backend apapun — murni frontend `index.html`.
+
+**1. Skor Kejutan Data Ekonomi AS — Tab Kalender (`renderEconomicSurpriseIndex`)**
+- Fungsi baru yang memproses array event kalender aktif, memfilter event USD high/medium yang sudah punya nilai aktual, lalu menghitung rasio Beat/Miss menggunakan logika `compareActualForecast` yang sudah ada (respects `CAL_INVERSE_INDICATOR_RE`).
+- Gauge horizontal (`#calSurpriseSection`) dengan bar berwarna dinamis: hijau (≥60% beat), merah (≤40%), abu-abu (bercampur) + deskripsi implikasi terhadap USD dalam bahasa awam.
+- Dirender otomatis di awal `renderCalendar()` dan reset ketika user switch week (this/next/custom).
+
+**2. Profil Volatilitas Opsi CME — Tab Teknikal (`renderTekVolProfile`)**
+- Mengambil field dari `rrData.pairs[tekPair]` yang sudah tersedia namun sebelumnya hanya dipakai untuk Risk Reversal 25d di tab Analisa: `vol_level` (cvolPrice CME CVOL = kecemasan opsi), `convexity` (convexInd = antisipasi ledakan dua arah), `vol_change_pct`, `convexity_change_pct`.
+- Card 2x2 grid (`#tekVolProfileSection`, di bawah textarea catatan, sebelum Option Expiries) dengan label non-teknis: "Kecemasan Pasar Opsi" / "Risiko Gerakan Eksplosif" / "Bias Arah Pasar Opsi" / "IV Call / Put".
+- Threshold vol_level: ≥14 = "Sangat Waspada" (merah), ≥9 = "Waspada" (kuning), ≥5 = "Normal", <5 = "Sangat Tenang" (hijau).
+- Di-hook ke `fetchRiskReversal()` (data tiba), `selectTekPair()` (ganti pair), dan `initTeknikal()` (tab dibuka, jika data sudah ada).
+
+**3. Peta Divergensi Spekulan Besar vs Trader Retail — Tab COT (`renderCotDivergenceMatrix`)**
+- Menggabungkan `cotData.positions[cur].lev_net` (COT Leveraged Funds CFTC) dengan `retailData.positions[pairKey].long_pct/short_pct` (FXSSI) untuk 4 major pair: EUR/USD, GBP/USD, USD/JPY, AUD/USD.
+- Logika arah: COT net >+1K = "long", <-1K = "short". Retail long ≥60% = sinyal short (kontrarian), short ≥60% = sinyal long.
+- Empat kategori badge: "Dorongan Naik Kuat" / "Dorongan Turun Kuat" / "Divergensi Naik" / "Divergensi Turun" / "Belum Jelas".
+- Tabel clean di `#cotDivergenceSection` (di atas cotGrid). Di-hook ke `fetchCOT()` dan di akhir `renderRetailSentiment()`.
+
+**CSS baru (`index.html`):** `.div-matrix-table`, `.div-badge` (strong-up/down/neutral), `.vol-profile-card`, `.vol-profile-grid`, `.surprise-wrap`, `.surprise-track`, `.surprise-bar` — semua mengikuti design system yang sudah ada (border-radius 10px, var(--surface/border/muted), DM Mono for numbers, Syne for title labels).
+
+**Tidak ada perubahan backend.** `node --check` index.html syntax OK via new Function() per blok script.
 
 ---
 

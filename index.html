@@ -295,6 +295,36 @@ body {
 .fund-labour-narr { font-size:11px; color:var(--text-mid); line-height:1.65; margin-top:10px; border-top:1px solid rgba(var(--fg-rgb),.04); padding-top:10px; font-family:'DM Mono',monospace; }
 .fund-labour-foot { font-size:9px; color:var(--muted); margin-top:8px; line-height:1.5; font-family:'DM Mono',monospace; opacity:.75; }
 
+/* ── FITUR BARU: DIVERGENSI, VOLATILITAS OPSI, DAN KEJUTAN EKONOMI ── */
+.div-matrix-table { width:100%; border-collapse:collapse; font-size:11px; margin-top:8px; }
+.div-matrix-table th { color:var(--muted); font-weight:400; font-size:9px; text-align:left; padding:6px 8px; border-bottom:1px solid var(--border); text-transform:uppercase; letter-spacing:.05em; }
+.div-matrix-table td { padding:8px; border-bottom:1px solid rgba(var(--fg-rgb),.03); vertical-align:middle; }
+.div-badge { padding:3px 8px; border-radius:4px; font-weight:700; font-size:10px; text-transform:uppercase; display:inline-block; text-align:center; }
+.div-badge.strong-up { background:rgba(52,211,153,.15); color:#34d399; }
+.div-badge.strong-down { background:rgba(239,68,68,.15); color:#f87171; }
+.div-badge.neutral { background:rgba(var(--fg-rgb),.05); color:var(--muted); }
+
+.vol-profile-card { background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:12px; margin-bottom:12px; }
+.vol-profile-title { font:700 9px 'Syne',sans-serif; color:var(--muted); letter-spacing:.1em; text-transform:uppercase; margin-bottom:10px; }
+.vol-profile-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+.vol-profile-item { display:flex; flex-direction:column; gap:4px; }
+.vol-profile-label { font-size:9px; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; }
+.vol-profile-val { font-size:12px; font-weight:700; color:var(--text); }
+.vol-profile-val.alert-high { color:#fbbf24; }
+.vol-profile-val.alert-danger { color:#f87171; }
+.vol-profile-val.alert-calm { color:#34d399; }
+
+.surprise-wrap { background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:12px; }
+.surprise-hdr { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; }
+.surprise-title { font:700 9px 'Syne',sans-serif; color:var(--muted); letter-spacing:.1em; text-transform:uppercase; }
+.surprise-val { font-family:'DM Mono',monospace; font-size:13px; font-weight:700; }
+.surprise-val.positive { color:#34d399; }
+.surprise-val.negative { color:#f87171; }
+.surprise-val.neutral { color:var(--muted); }
+.surprise-track { height:8px; background:rgba(var(--fg-rgb),.05); border-radius:4px; overflow:hidden; position:relative; }
+.surprise-bar { height:100%; transition:width .4s, background-color .4s; }
+.surprise-desc { font-size:10px; color:var(--muted); margin-top:6px; line-height:1.4; }
+
 /* JURNAL */
 .jn-form { display:flex; flex-direction:column; gap:10px; }
 .jn-form label { display:flex; flex-direction:column; gap:4px; font-size:10px; color:var(--muted); font-family:'DM Mono',monospace; letter-spacing:.05em; text-transform:uppercase; }
@@ -3271,6 +3301,7 @@ body:not(.light-theme) .ringkasan-gen-btn {
       </div>
     </div>
   </div>
+  <div id="calSurpriseSection" style="margin: 10px 12px 14px;"></div>
   <div class="cal-toolbar">
     <div class="cal-toolbar-row">
       <div class="cal-filter-group">
@@ -3847,6 +3878,7 @@ body:not(.light-theme) .ringkasan-gen-btn {
       <div class="tek-note-label">Catatan analisa <button class="tek-note-auto-btn" id="tekNoteAutoBtn" onclick="autoFillTekNote()" title="Isi/ganti catatan dengan ringkasan otomatis dari data Makro/Swing/Entry">↻ Auto</button></div>
       <textarea id="tekNote" placeholder="Key levels, setup yang dipantau, atau catatan sesi..." oninput="saveTekNote()"></textarea>
     </div>
+    <div id="tekVolProfileSection" style="margin-top:10px"></div>
     <div id="tekNewsSection" style="margin-top:6px"></div>
     <div class="tek-opts-section" id="tekOptsSection">
       <div class="tek-opts-hdr">
@@ -3923,6 +3955,7 @@ body:not(.light-theme) .ringkasan-gen-btn {
         posisi sudah ekstrem satu arah dan secara historis rawan berbalik.
       </div>
     </div>
+    <div id="cotDivergenceSection" style="margin-bottom:14px"></div>
     <div id="cotGrid">
       <div class="cot-empty loading-pulse">Memuat data COT...</div>
     </div>
@@ -7796,7 +7829,102 @@ async function fetchRiskReversal() {
     if (!r.ok) return;
     rrData = await r.json();
     renderAnalisa();
+    renderTekVolProfile();
   } catch(e) { console.warn('fetchRiskReversal failed:', e.message); }
+}
+
+// ── PROFIL VOLATILITAS OPSI CME ─────────────────────────────────────────────
+// Menerjemahkan data teknis CME CVOL (vol_level, convexity, rr_value, call_iv,
+// put_iv) ke bahasa non-teknis yang mudah dimengerti trader.
+// Ditempel di #tekVolProfileSection — re-render saat pair diganti atau data tiba.
+function renderTekVolProfile() {
+  const el = document.getElementById('tekVolProfileSection');
+  if (!el) return;
+
+  // tekPair mengikuti pair aktif di tab Teknikal
+  const pairKey = typeof tekPair !== 'undefined' ? tekPair : null;
+  if (!pairKey || !rrData || !rrData.pairs) { el.innerHTML = ''; return; }
+
+  // Cari data dengan berbagai format kunci pair (EURUSD vs EUR/USD)
+  const rr = rrData.pairs[pairKey] || rrData.pairs[pairKey.replace('/', '')];
+  if (!rr) { el.innerHTML = ''; return; }
+
+  const { vol_level, vol_change_pct, convexity, convexity_change_pct, rr_value, call_iv, put_iv } = rr;
+
+  // vol_level (cvolPrice): tingkat kecemasan opsi — skala ~1-20+
+  let volLabel = 'Normal', volCls = '', volDesc = '';
+  if (vol_level != null) {
+    if (vol_level >= 14) {
+      volLabel = 'Sangat Waspada'; volCls = 'alert-danger';
+      volDesc = 'Pasar opsi sangat tegang. Pergerakan besar sangat mungkin terjadi.';
+    } else if (vol_level >= 9) {
+      volLabel = 'Waspada'; volCls = 'alert-high';
+      volDesc = 'Kecemasan pasar mulai meningkat. Pergerakan di luar normal bisa terjadi.';
+    } else if (vol_level >= 5) {
+      volLabel = 'Normal'; volCls = '';
+      volDesc = 'Pasar opsi relatif tenang. Pergerakan harga masih dalam rentang biasa.';
+    } else {
+      volLabel = 'Sangat Tenang'; volCls = 'alert-calm';
+      volDesc = 'Pasar opsi sangat tenang. Hati-hati — ketenangan berlebihan bisa berakhir mendadak.';
+    }
+  }
+
+  // convexity (convexInd): antisipasi ledakan volatilitas ke dua arah sekaligus
+  let convLabel = '—', convCls = '', convDesc = '';
+  if (convexity != null) {
+    if (convexity >= 1.5) {
+      convLabel = 'Tinggi'; convCls = 'alert-high';
+      convDesc = 'Pasar mengantisipasi potensi gerakan besar ke DUA arah sekaligus. Momentum bisa eksplosif.';
+    } else if (convexity >= 0.8) {
+      convLabel = 'Sedang'; convCls = '';
+      convDesc = 'Ada antisipasi gerakan yang lebih dari biasa, tapi belum ekstrem.';
+    } else {
+      convLabel = 'Rendah'; convCls = 'alert-calm';
+      convDesc = 'Tidak ada antisipasi gerakan besar dari pasar opsi.';
+    }
+  }
+
+  // rr_value: arah bias (positif = call/beli dominan, negatif = put/jual dominan)
+  let biasLabel = 'Netral', biasCls = '';
+  if (rr_value != null) {
+    const abs = Math.abs(rr_value);
+    if (abs >= 0.2) {
+      biasLabel = rr_value > 0 ? 'Bias Naik' : 'Bias Turun';
+      biasCls = rr_value > 0 ? 'alert-calm' : 'alert-danger';
+    }
+  }
+
+  const volChangeTag = vol_change_pct != null
+    ? ` <span style="font-size:10px;opacity:.65">${vol_change_pct >= 0 ? '+' : ''}${vol_change_pct.toFixed(1)}%</span>` : '';
+  const convChangeTag = convexity_change_pct != null
+    ? ` <span style="font-size:10px;opacity:.65">${convexity_change_pct >= 0 ? '+' : ''}${convexity_change_pct.toFixed(1)}%</span>` : '';
+
+  el.innerHTML = `<div class="vol-profile-card">
+    <div class="vol-profile-title">Profil Volatilitas Opsi · ${pairKey}</div>
+    <div class="vol-profile-grid">
+      <div class="vol-profile-item">
+        <div class="vol-profile-label">Kecemasan Pasar Opsi</div>
+        <div class="vol-profile-val ${volCls}" title="${volDesc}">${vol_level != null ? vol_level.toFixed(2) + volChangeTag : '—'}</div>
+        <div style="font-size:9px;color:var(--muted);margin-top:2px">${volLabel}</div>
+      </div>
+      <div class="vol-profile-item">
+        <div class="vol-profile-label">Risiko Gerakan Eksplosif</div>
+        <div class="vol-profile-val ${convCls}" title="${convDesc}">${convexity != null ? convexity.toFixed(2) + convChangeTag : '—'}</div>
+        <div style="font-size:9px;color:var(--muted);margin-top:2px">${convLabel}</div>
+      </div>
+      <div class="vol-profile-item">
+        <div class="vol-profile-label">Bias Arah Pasar Opsi</div>
+        <div class="vol-profile-val ${biasCls}">${biasLabel}</div>
+        <div style="font-size:9px;color:var(--muted);margin-top:2px">${rr_value != null ? (rr_value > 0 ? '+' : '') + rr_value.toFixed(2) : '—'}</div>
+      </div>
+      ${call_iv != null && put_iv != null ? `<div class="vol-profile-item">
+        <div class="vol-profile-label">IV Call / Put</div>
+        <div class="vol-profile-val" style="font-size:11px">${call_iv.toFixed(2)} / ${put_iv.toFixed(2)}</div>
+        <div style="font-size:9px;color:var(--muted);margin-top:2px">Implied Volatility 25d</div>
+      </div>` : ''}
+    </div>
+    ${vol_level != null ? `<div style="font-size:10px;color:var(--muted);margin-top:8px;line-height:1.45">${volDesc}</div>` : ''}
+  </div>`;
 }
 
 // ── US LABOUR MARKET ASSESSMENT (blok di dalam detail USD / fd overlay) ──────
@@ -8528,6 +8656,7 @@ function renderRetailSentiment() {
     meta.textContent = (stale ? '⚠ cache lama · ' : '') + 'diperbarui ' + t + ' · sumber: FXSSI';
   }
   renderDashRetail();
+  renderCotDivergenceMatrix(); // perbarui matriks divergensi saat retail data tiba
 }
 
 // Versi ringkas retail sentiment untuk kolom kanan dashboard — sort by
@@ -8577,6 +8706,7 @@ async function fetchCOT() {
     cotData      = data;
     cotFetchedAt = Date.now();
     renderCOT();
+    renderCotDivergenceMatrix();               // peta divergensi spekulan vs retail
     cotRenderTrendBadges();                    // badge tren 4W (async, fire-and-forget)
     if (retailData) renderRetailSentiment();   // refresh badge konfluensi retail×COT
     const _cotSel = document.getElementById('ckPairSelector');
@@ -8586,6 +8716,91 @@ async function fetchCOT() {
     document.getElementById('cotGrid').innerHTML =
       '<div class="cot-empty">COT data tidak tersedia saat ini.</div>';
   }
+}
+
+// ── PETA DIVERGENSI: SPEKULAN BESAR vs TRADER RETAIL ─────────────────────
+// Membandingkan arah net posisi Leveraged Funds (COT CFTC) dengan sentimen
+// retail FXSSI untuk major pair. Secara kontrarian, sinyal terkuat muncul
+// ketika spekulan besar dan retail bergerak ke arah berlawanan.
+function renderCotDivergenceMatrix() {
+  const el = document.getElementById('cotDivergenceSection');
+  if (!el) return;
+  if (!cotData?.positions || !retailData?.positions) { el.innerHTML = ''; return; }
+
+  // Pair yang dievaluasi: base → quote → pair key di retailData
+  const PAIRS = [
+    { base: 'EUR', quote: 'USD', retailKey: 'EURUSD', label: 'EUR/USD', color: '#c0392b' },
+    { base: 'GBP', quote: 'USD', retailKey: 'GBPUSD', label: 'GBP/USD', color: '#a78bfa' },
+    { base: 'USD', quote: 'JPY', retailKey: 'USDJPY', label: 'USD/JPY', color: '#ffd32a', usdBase: true },
+    { base: 'AUD', quote: 'USD', retailKey: 'AUDUSD', label: 'AUD/USD', color: '#00c896' },
+  ];
+
+  let rows = '';
+  let hasAny = false;
+
+  PAIRS.forEach(({ base, quote, retailKey, label, color, usdBase }) => {
+    const bPos = cotData.positions[base];
+    const qPos = cotData.positions[quote];
+    const ret  = retailData.positions?.[retailKey];
+    if (!bPos || !ret) return;
+
+    // Arah COT Lev Funds: hitung net posisi base vs quote
+    const bNet = bPos.lev_net ?? bPos.net ?? null;
+    const qNet = qPos ? (qPos.lev_net ?? qPos.net ?? null) : 0;
+    if (bNet === null) return;
+
+    // net positif = spekulan besar net long base vs quote
+    const cotNetPair = usdBase ? -(bNet - (qNet || 0)) : (bNet - (qNet || 0));
+    const cotDir     = cotNetPair > 1000 ? 'long' : cotNetPair < -1000 ? 'short' : 'netral';
+
+    // Arah Retail (kontrarian): retail long > 60% → sinyal turun, short > 60% → sinyal naik
+    const { long_pct, short_pct } = ret;
+    const retDir = long_pct >= 60 ? 'short_signal' : short_pct >= 60 ? 'long_signal' : 'netral';
+
+    // Keselarasan: COT long & retail net short signal = DORONGAN NAIK KUAT, dll.
+    let badge = '', badgeCls = '', desc = '';
+    if (cotDir === 'long' && retDir === 'long_signal') {
+      badge = 'Dorongan Naik Kuat'; badgeCls = 'strong-up';
+      desc = 'Spekulan besar beli, retail juga optimis — arah naik terkonfirmasi dua sisi.';
+    } else if (cotDir === 'short' && retDir === 'short_signal') {
+      badge = 'Dorongan Turun Kuat'; badgeCls = 'strong-down';
+      desc = 'Spekulan besar jual, retail juga pesimis — arah turun terkonfirmasi dua sisi.';
+    } else if (cotDir === 'long' && retDir === 'short_signal') {
+      badge = 'Divergensi Naik'; badgeCls = 'strong-up';
+      desc = 'Spekulan besar beli, tetapi retail juga beli — sinyal kontrarian melemah.';
+    } else if (cotDir === 'short' && retDir === 'long_signal') {
+      badge = 'Divergensi Turun'; badgeCls = 'strong-down';
+      desc = 'Spekulan besar jual, retail masih optimis — setup kontrarian klasik.';
+    } else {
+      badge = 'Belum Jelas'; badgeCls = 'neutral';
+      desc = 'Posisi belum terakumulasi ke satu arah yang jelas.';
+    }
+
+    hasAny = true;
+    const fmtNet = n => n >= 0 ? '+' + Math.round(n / 1000) + 'K' : Math.round(n / 1000) + 'K';
+    rows += `<tr>
+      <td><span style="color:${color};font-weight:700">${label}</span></td>
+      <td style="color:var(--text-mid);font-size:10px">${fmtNet(cotNetPair)}</td>
+      <td style="color:var(--text-mid);font-size:10px">${long_pct}% L / ${short_pct}% S</td>
+      <td><span class="div-badge ${badgeCls}" title="${desc}">${badge}</span></td>
+    </tr>`;
+  });
+
+  if (!hasAny) { el.innerHTML = ''; return; }
+
+  el.innerHTML = `<div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px;">
+    <div style="font:700 9px 'Syne',sans-serif;color:var(--muted);letter-spacing:.1em;text-transform:uppercase;margin-bottom:8px">Arah Spekulan Besar vs Trader Retail</div>
+    <table class="div-matrix-table">
+      <thead><tr>
+        <th>Pair</th>
+        <th>Spekulan Besar (Net)</th>
+        <th>Trader Retail</th>
+        <th>Penilaian</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    <div style="font-size:9px;color:var(--muted);margin-top:8px;line-height:1.5">Spekulan Besar = Leveraged Funds (CFTC COT). Trader Retail = sentimen real-time FXSSI.</div>
+  </div>`;
 }
 
 function renderCOT() {
@@ -9000,8 +9215,73 @@ const CUR_COLORS = {
   NZD:'#34d399', CHF:'#ff4757',
 };
 
+// ── SKOR KEJUTAN DATA EKONOMI AS ──────────────────────────────
+// Berapa persen rilis data penting USD dalam kalender aktif berhasil mengalahkan
+// estimasi analis? Semakin tinggi, semakin kuat USD. Hanya dihitung dari event
+// yang sudah punya nilai aktual (rilis sudah terjadi). Tempel di #calSurpriseSection.
+function renderEconomicSurpriseIndex() {
+  const el = document.getElementById('calSurpriseSection');
+  if (!el) return;
+
+  const allEvents = calActiveSourceData();
+  if (!allEvents || allEvents.length === 0) { el.innerHTML = ''; return; }
+
+  // Filter hanya event USD high/medium yang sudah ada nilai aktual-nya
+  const usdEvents = allEvents.filter(ev =>
+    ev.currency === 'USD' &&
+    (ev.impact === 'High' || ev.impact === 'Medium') &&
+    (ev.actual || ev.actual_raw !== undefined)
+  );
+
+  if (usdEvents.length === 0) { el.innerHTML = ''; return; }
+
+  let beat = 0, miss = 0, inline = 0;
+  usdEvents.forEach(ev => {
+    const cls = compareActualForecast(ev.actual, ev.forecast, ev.event, ev);
+    if (cls === 'actual-beat')   beat++;
+    else if (cls === 'actual-miss') miss++;
+    else if (cls === 'actual-inline') inline++;
+  });
+
+  const total = beat + miss + inline;
+  if (total === 0) { el.innerHTML = ''; return; }
+
+  const pct = Math.round((beat / total) * 100);
+  const netScore = beat - miss;
+
+  let valClass = 'neutral', desc = '', barColor = 'rgba(var(--fg-rgb),.2)';
+  if (pct >= 60) {
+    valClass = 'positive';
+    desc = 'Lebih banyak data ekonomi AS yang melampaui estimasi — mendukung USD.';
+    barColor = '#34d399';
+  } else if (pct <= 40) {
+    valClass = 'negative';
+    desc = 'Lebih banyak data ekonomi AS yang meleset — tekanan pada USD.';
+    barColor = '#f87171';
+  } else {
+    valClass = 'neutral';
+    desc = 'Rilis data ekonomi AS bercampur — arah USD belum jelas dari data.';
+    barColor = '#94a3b8';
+  }
+
+  const scoreLabel = netScore > 0 ? '+' + netScore : String(netScore);
+  const barW = Math.min(100, pct);
+
+  el.innerHTML = `<div class="surprise-wrap">
+    <div class="surprise-hdr">
+      <span class="surprise-title">Skor Kejutan Data Ekonomi AS</span>
+      <span class="surprise-val ${valClass}">${pct}% BEAT</span>
+    </div>
+    <div class="surprise-track">
+      <div class="surprise-bar" style="width:${barW}%;background:${barColor}"></div>
+    </div>
+    <div class="surprise-desc">${desc} ${beat} BEAT · ${miss} MISS · ${inline} Sesuai dari ${total} rilis USD.</div>
+  </div>`;
+}
+
 function renderCalendar() {
   calScenarioOpen = null; // reset scenario state on re-render
+  renderEconomicSurpriseIndex();
 
   // Default HARI INI SAJA (request user 2026-07-13, ganti perilaku rolling-window
   // yang perlu discroll untuk tanggal lain): kalau belum pernah pilih tanggal &
@@ -14343,6 +14623,7 @@ function selectTekPair(p) {
   fetchAFTek();
   autoFillMtfSelectors();
   renderTekYield();
+  renderTekVolProfile(); // profil volatilitas opsi ikut pair aktif
   if (corrData) renderCorrelations(); // tabel korelasi kontekstual ikut pair aktif
 }
 
@@ -14838,6 +15119,7 @@ function initTeknikal() {
   if (!corrData || (Date.now() - corrFetAt) > 24 * 60 * 60 * 1000) fetchCorrelations();
   if (!realYieldsData || (Date.now() - realYieldsFetAt) > 6 * 60 * 60 * 1000) fetchRealYields();
   else renderTekYield();
+  if (rrData) renderTekVolProfile(); // tampilkan profil vol jika data sudah ada
 }
 
 // US10Y nominal + real yield — driver utama Gold (inverse correlation), konteks makro untuk pair USD lain.
