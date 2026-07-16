@@ -16,6 +16,8 @@
 - Mengganti font label form, judul bagian (korelasi, bank sentral, detail shock, dll.) dari monospace (`DM Mono`) menjadi sans-serif modern (`Syne`) agar selaras dengan hirarki visual editorial fitur News.
 - Menyamakan border-radius dari card jurnal, block hasil sizing, block korelasi, panel teknikal, dan detail bank sentral dari 3px-4px (kaku) menjadi 10px (lembut & modern) agar seirama dengan feed berita.
 - Mengatur border-radius tombol toggle (LONG/SHORT, mode stop loss) menjadi 6px agar terkesan lebih rapi dan premium.
+- Menyelaraskan tipografi judul kolom di Command Center Dashboard (`.dash-col-title` & `.das-section-label`) dari monospace `DM Mono` berukuran kecil (8px) menjadi sans-serif modern `Syne` tebal (10px) dengan pendaran warna yang lebih tegas dan padding yang lebih seimbang.
+- Menambahkan efek transisi hover interaktif yang premium pada kartu mini teknikal bawah (`.das-chip`) di Dashboard dengan efek angkat vertikal (`translateY(-1px)`) dan pendaran bayangan tipis.
 
 **2. Premiumisasi Desain Form & Tombol (`index.html`):**
 - Memberikan padding dan transisi fokus yang halus pada input form (`.sizing-form input`, `.jn-form input`, dll.).
