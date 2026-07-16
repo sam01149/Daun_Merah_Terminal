@@ -5832,10 +5832,25 @@ function _renderStructuredAi(structured, commentary, model, hasMakro, isCached, 
 
     // Kartu 2: Narasi Detail
     if (narrativeParas.length > 0) {
+      const labels = [
+        'DAILY TREND & MACRO RANGE',
+        'H4 SWING & S/R STRUCTURE',
+        'INTRADAY MOMENTUM & CANDLE PATTERNS',
+        'CONFLUENCE & RISK ASSESSMENT'
+      ];
+      let narrativeHtml = '';
+      narrativeParas.forEach((p, idx) => {
+        const labelText = labels[idx] || 'ANALISIS TAMBAHAN';
+        narrativeHtml += `
+          <div class="r-tag" style="margin-top: ${idx === 0 ? '4px' : '14px'} !important; margin-bottom: 6px !important;">${labelText}</div>
+          <p style="margin: 0 0 12px; font-size: 12px; line-height: 1.75;">${escHtml(p)}</p>
+        `;
+      });
+
       html += `<div class="analisa-tf-card" style="border-left-color: var(--muted); margin-bottom: 12px;">
         <div class="analisa-tf-label">ANALISIS DETAIL</div>
         <div class="ringkasan-text" style="font-size:12px; line-height:1.75; color:var(--text-mid)">
-          ${narrativeParas.map(p => `<p style="margin:0 0 10px;">${escHtml(p)}</p>`).join('')}
+          ${narrativeHtml}
         </div>
       </div>`;
     }
