@@ -3155,7 +3155,7 @@ body:not(.light-theme) .ringkasan-gen-btn {
       <div class="riset-filter-dropdown" id="risetFilterDropdown">
         <div class="riset-filter-dropdown-hdr">
           <span class="riset-filter-dropdown-title">Sumber</span>
-          <button class="riset-filter-dropdown-all" onclick="risetShowAllSources()">tampilkan semua</button>
+          <button class="riset-filter-dropdown-all" id="risetFilterDropdownAllBtn" onclick="risetToggleAllSourcesBtn()">tampilkan semua</button>
         </div>
         <div id="risetFilterItems"></div>
       </div>
@@ -7237,8 +7237,36 @@ function risetToggleSource(src) {
   renderResearch();
 }
 
-function risetShowAllSources() {
+function risetToggleAllSourcesBtn() {
+  const instItems = (researchCache && researchCache.items) || [];
+  const fjItems = fjResearchItems.map(i => ({ source: 'FJElite' }));
+  const items = [...instItems, ...fjItems];
+  const availSources = [...new Set(items.map(it => it.source))];
+
+  const isAllChecked = risetHiddenSources.size === 0;
+  if (isAllChecked) {
+    // Sembunyikan semua
+    availSources.forEach(s => risetHiddenSources.add(s));
+  } else {
+    // Tampilkan semua
+    risetHiddenSources.clear();
+  }
+  _risetSaveHidden();
+  renderResearch();
+}
+
+function risetSoloSource(soloSrc) {
+  const instItems = (researchCache && researchCache.items) || [];
+  const fjItems = fjResearchItems.map(i => ({ source: 'FJElite' }));
+  const items = [...instItems, ...fjItems];
+  const availSources = [...new Set(items.map(it => it.source))];
+
   risetHiddenSources.clear();
+  availSources.forEach(s => {
+    if (s !== soloSrc) {
+      risetHiddenSources.add(s);
+    }
+  });
   _risetSaveHidden();
   renderResearch();
 }
@@ -7294,13 +7322,30 @@ function renderResearch() {
     fi.innerHTML = availSources.map(s => {
       const checked = !risetHiddenSources.has(s);
       const cnt = items.filter(i => i.source === s).length;
-      return `<label class="riset-filter-item"><input type="checkbox" ${checked ? 'checked' : ''} onchange="risetToggleSource('${escHtml(s)}')">${escHtml(s)}<span class="cnt">${cnt}</span></label>`;
+      return `<div class="riset-filter-item">
+        <input type="checkbox" ${checked ? 'checked' : ''} onchange="risetToggleSource('${escHtml(s)}')">
+        <span onclick="risetSoloSource('${escHtml(s)}')" style="flex:1; cursor:pointer; user-select:none;" title="Klik untuk memfilter sumber ini saja">${escHtml(s)}</span>
+        <span class="cnt">${cnt}</span>
+      </div>`;
     }).join('');
   }
   if (badge) {
     const n = risetHiddenSources.size;
     badge.style.display = n > 0 ? '' : 'none';
     badge.textContent = n;
+  }
+
+  // Update tombol toggle dinamis: tampilkan semua / bersihkan semua
+  const allBtn = document.getElementById('risetFilterDropdownAllBtn');
+  if (allBtn) {
+    const isAllChecked = risetHiddenSources.size === 0;
+    if (isAllChecked) {
+      allBtn.textContent = 'bersihkan semua';
+      allBtn.style.color = 'var(--red)';
+    } else {
+      allBtn.textContent = 'tampilkan semua';
+      allBtn.style.color = '#34d399';
+    }
   }
 
   const filtered = items.filter(it => !risetHiddenSources.has(it.source));
