@@ -1,10 +1,36 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-07-16 (Session 175 — Fitur Data Kuantitatif Baru: Peta Divergensi, Profil Volatilitas Opsi, dan Skor Kejutan Ekonomi. Detail history dapat dilihat pada changelog sesi di bawah.)
+> **Last updated:** 2026-07-16 (Session 176 — Export Jurnal CSV dalam Bentuk Tabel Checklist Terstruktur. Detail history dapat dilihat pada changelog sesi di bawah.)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+---
+
+## Changelog Session 176 (2026-07-16) — Export Jurnal CSV dalam Bentuk Tabel Checklist Terstruktur
+
+**Konteks:** Menjawab masukan pengguna yang merasa hasil export CSV jurnal sulit dibaca karena data checklist regime check (`rc1-rc6`) tergabung secara multi-line di dalam satu kolom `Thesis`. Hal ini menyebabkan row height di Excel menjadi berantakan. Solusinya adalah memisahkan checklist regime check ke kolom/tabel terstruktur.
+
+**1. Kolom Terstruktur Baru pada Export CSV (`index.html` → `jnExportCSV()`)**
+- Menambahkan 6 kolom baru di header CSV:
+  - `RC1: Regime`
+  - `RC2: CB Bias`
+  - `RC3: COT`
+  - `RC4: Event <6h`
+  - `RC5: Yield Diff`
+  - `RC6: Sentiment`
+- Implementasi helper `getRcVal(entry, rcId, labelPart)`:
+  - Mengambil data boolean dari `entry.checklist_snapshot[rcId]` jika tersedia (di-map ke `'YA'` atau `'TIDAK'`).
+  - Sebagai fallback defensif untuk entry lama yang belum memiliki snapshot terstruktur, mengekstrak status dari text thesis (`✅` -> `'YA'`, `⬜` -> `'TIDAK'`).
+  - Mengembalikan string kosong jika tidak ditemukan.
+
+**2. Pembersihan Kolom Thesis pada Export CSV**
+- Menambahkan helper `cleanThesis(text)` yang membersihkan baris checklist `rc1-rc6` beserta header `— REGIME CHECK:` agar tidak terjadi redundansi dan menjaga isi kolom `Thesis` tetap ringkas (hanya berisi catatan AI Thesis, catalyst, invalidation triggers, dsb).
+
+**3. Evaluasi Mandiri & Perbaikan Bug**
+- Memperbaiki bug pada `decodeHtmlEntities()` di `index.html` yang secara salah mengembalikan string kosong `''` ketika argumen bernilai `0` atau `false` (falsy check `!s` diganti dengan explicit null/empty check `s == null || s === ''`). Perbaikan ini juga menormalkan kembali unit test `esc_html.test.js` yang sempat gagal.
+- Mengupdate unit test `test/esc_html.test.js` dan `test/cal_scenario_sim.test.js` agar menyertakan evaluasi `decodeHtmlEntities` ke context test, sehingga suite 301/301 tes berhasil lolos sepenuhnya.
 
 ---
 

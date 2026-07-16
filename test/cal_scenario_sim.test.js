@@ -29,6 +29,7 @@ const src = [
   'var cbData = null, fundData = null, cotData = null, retailData = null, corrData = null;',
   'function scoreInd() { return null; }',
   grab('const CAL_INVERSE_INDICATOR_RE', '\nfunction compareActualForecast'),
+  grab('function decodeHtmlEntities(s)', 'function escHtml(s)'),
   grab('function escHtml(s)', '\n// ── ANALISA'),
   grab('const SCENARIO_PAIR_MAP', '\nfunction calOpenScenario'),
   grab('const CB_BIAS_LEVEL', '\n// Bandingin arah'),

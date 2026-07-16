@@ -5646,7 +5646,7 @@ function downloadAnalisaPdf() {
 }
 
 function decodeHtmlEntities(s) {
-  if (!s) return '';
+  if (s == null || s === '') return '';
   let str = String(s);
   for (let i = 0; i < 2; i++) {
     const prev = str;
@@ -7845,8 +7845,10 @@ function renderTekVolProfile() {
   const pairKey = typeof tekPair !== 'undefined' ? tekPair : null;
   if (!pairKey || !rrData || !rrData.pairs) { el.innerHTML = ''; return; }
 
-  // Cari data dengan berbagai format kunci pair (EURUSD vs EUR/USD)
-  const rr = rrData.pairs[pairKey] || rrData.pairs[pairKey.replace('/', '')];
+  // rrData.pairs memakai format "EUR/USD" (dengan slash), sedangkan tekPair memakai
+  // format "EURUSD" (tanpa slash). Konversi: insert slash di posisi 3 ("XAUUSD" → "XAU/USD").
+  const pairWithSlash = pairKey.replace(/^(.{3})(.+)$/, '$1/$2');
+  const rr = rrData.pairs[pairWithSlash] || rrData.pairs[pairKey];
   if (!rr) { el.innerHTML = ''; return; }
 
   const { vol_level, vol_change_pct, convexity, convexity_change_pct, rr_value, call_iv, put_iv } = rr;
@@ -13428,11 +13430,47 @@ function jnExportCSV() {
     return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
   }
 
+  function getRcVal(e, rcId, labelPart) {
+    if (e.checklist_snapshot && e.checklist_snapshot[rcId] !== undefined) {
+      return e.checklist_snapshot[rcId] ? 'YA' : 'TIDAK';
+    }
+    if (e.thesis_text) {
+      const lines = e.thesis_text.split(/\r?\n/);
+      for (const line of lines) {
+        if (line.includes(labelPart)) {
+          if (line.includes('✅')) return 'YA';
+          if (line.includes('⬜')) return 'TIDAK';
+        }
+      }
+    }
+    return '';
+  }
+
+  function cleanThesis(text) {
+    if (!text) return '';
+    const lines = text.split(/\r?\n/);
+    const cleanedLines = [];
+    for (const line of lines) {
+      const isRcLine = line.includes('Regime saat ini') ||
+                       line.includes('CB bias') ||
+                       line.includes('COT positioning') ||
+                       line.includes('Tidak ada high-impact') ||
+                       line.includes('Real yield') ||
+                       line.includes('Retail sentiment');
+      if (isRcLine) continue;
+      if (line.includes('REGIME CHECK') && line.trim().startsWith('—')) continue;
+      cleanedLines.push(line);
+    }
+    return cleanedLines.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  }
+
   const headers = [
     'No','Tanggal Buka','Pair','Arah','Status',
     'Entry','SL','TP','Lots','RR Plan','R Aktual',
     'Exit Price','Tanggal Tutup','Alasan Keluar',
-    'Horizon','Regime','Thesis','Catatan Post-Trade'
+    'Horizon','Regime',
+    'RC1: Regime','RC2: CB Bias','RC3: COT','RC4: Event <6h','RC5: Yield Diff','RC6: Sentiment',
+    'Thesis','Catatan Post-Trade'
   ];
 
   const sorted = [...jnAllEntries].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
@@ -13458,7 +13496,13 @@ function jnExportCSV() {
     e.exit_reason  || '',
     e.time_horizon || '',
     e.regime_at_entry ? e.regime_at_entry.replace(/_/g, ' ') : '',
-    e.thesis_text  || '',
+    getRcVal(e, 'rc1', 'Regime saat ini'),
+    getRcVal(e, 'rc2', 'CB bias'),
+    getRcVal(e, 'rc3', 'COT positioning'),
+    getRcVal(e, 'rc4', 'Tidak ada high-impact'),
+    getRcVal(e, 'rc5', 'Real yield'),
+    getRcVal(e, 'rc6', 'Retail sentiment'),
+    cleanThesis(e.thesis_text),
     e.attribution_notes || '',
   ].map(csvCell).join(','));
 

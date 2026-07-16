@@ -8,6 +8,12 @@ const fs = require('fs');
 const path = require('path');
 
 const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+
+const deStart = html.indexOf('function decodeHtmlEntities(s)');
+assert.ok(deStart !== -1, 'fungsi decodeHtmlEntities harus ada di index.html');
+const deEnd = html.indexOf('\n}', deStart) + 2;
+const decodeHtmlEntities = eval(`(${html.slice(deStart, deEnd).trim()})`);
+
 const start = html.indexOf('function escHtml(s)');
 assert.ok(start !== -1, 'fungsi escHtml harus ada di index.html');
 const end = html.indexOf('\n}', start) + 2;
