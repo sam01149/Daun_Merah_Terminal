@@ -21,6 +21,7 @@
 - Memberikan padding dan transisi fokus yang halus pada input form (`.sizing-form input`, `.jn-form input`, dll.).
 - Mengubah gaya tombol aksi utama (HITUNG, Simpan Jurnal, Ringkas Berita) dengan sudut melengkung 8px, font `Syne`, dan efek hover micro-animation (sedikit terangkat dan bercahaya halus).
 - Mengubah susunan tata letak (DOM) di panel Analisa dengan memindahkan tombol "ANALISA AI" (`.print-btn-row`) ke paling bawah, tepat di bawah kontainer hasil teks analisis AI (`#analisaAiResult`). Hal ini memberikan alur membaca yang lebih alami dan profesional (data → baca hasil → refresh jika diperlukan).
+- Memecah representasi visual hasil Analisa AI (`_renderStructuredAi` di `index.html`) dari satu box tunggal padat menjadi tiga kartu/section terpisah (AI Setup & Bias, Analisis Detail, Kesimpulan Eksekusi) dengan margin-bottom 12px dan border kiri warna fungsional terpisah, meniru gaya modular PWA premium pada fitur Ringkasan.
 
 **3. Optimalisasi Kenyamanan & Psikologi Tema Gelap (`index.html`):**
 - Meredupkan warna latar belakang tema gelap dari hitam pekat `#0a0a08` ke abu-abu gelap hangat `#0e0e0c`, permukaan panel ke `#151513`, dan border ke `#252523` untuk meredam pendaran cahaya teks (efek halation) bagi kenyamanan mata trader.
