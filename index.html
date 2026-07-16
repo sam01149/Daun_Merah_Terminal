@@ -2769,6 +2769,15 @@ body.light-theme .ck-bdg-gate { background: var(--accent-dim); color: var(--acce
   font-weight: 700 !important;
 }
 
+/* RATA KANAN-KIRI (JUSTIFY) UNTUK RINGKASAN & ANALISA */
+.ringkasan-text, 
+.ringkasan-text .r-para, 
+.analisa-ai-result, 
+.analisa-ai-result p,
+.thesis-val {
+  text-align: justify !important;
+}
+
 /* 2. TIPOGRAFI & HEADER FORM */
 /* Menggunakan Syne untuk label form dan judul section agar terkesan modern-editorial */
 .sizing-form label,
@@ -2881,6 +2890,16 @@ body.light-theme .jn-btn,
 body.light-theme .ringkasan-gen-btn {
   background: var(--accent) !important;
   color: #ffffff !important;
+}
+
+/* Perbaikan warna badge AI Thesis (LONG/SHORT) agar kontras di tema terang */
+body.light-theme .thesis-dir.long {
+  background: var(--green-dim) !important;
+  color: var(--green) !important;
+}
+body.light-theme .thesis-dir.short {
+  background: var(--accent-dim) !important;
+  color: var(--accent) !important;
 }
 
 /* 6. TEMA GELAP: OPTIMALISASI PSIKOLOGI WARNA & READABILITY */
