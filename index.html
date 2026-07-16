@@ -2780,6 +2780,14 @@ body.light-theme .ck-bdg-gate { background: var(--accent-dim); color: var(--acce
   hyphens: auto !important;
 }
 
+/* Membuat container luar analisa AI transparan & borderless agar kartu di dalamnya tampil sebagai section mandiri */
+.analisa-ai-result {
+  background: transparent !important;
+  border: none !important;
+  padding: 0 !important;
+  margin-top: 0 !important;
+}
+
 /* PEMBATASAN LEBAR BACAAN UTAMA (MEASURE) AGAR SESUAI STANDAR PROFESIONAL (MAX 680PX) */
 @media (min-width: 768px) {
   .ringkasan-inner {
@@ -5741,20 +5749,12 @@ async function _autoLoadXauAnalysis(symbol) {
 }
 
 function _renderStructuredAi(structured, commentary, model, hasMakro, isCached, hasFund, makroAt, analyzedAt) {
-  // Label sumber: teknikal selalu; + makro kalau excerpt artikel terpakai; + fundamental
-  // kalau blok terstruktur (cb_bias/COT/risk regime) terpakai. Umur makro DIPISAH ke info
-  // sekunder di bawah (baris ini cuma nama sumbernya, biar ringkas & gak dobel kapital).
   const sources = ['teknikal'];
   if (hasMakro) sources.push('makro');
   if (hasFund)  sources.push('fundamental');
   const srcTag = sources.length > 1 ? ` · <span style="color:#a78bfa">${sources.join(' + ')}</span>` : ' · teknikal';
   const modelStr = model ? ` · ${model}` : '';
 
-  // Info sekunder: umur ringkasan makro, status cache, jam analisa (WIB — kapan hasil ini
-  // BENAR-BENAR di-generate server, bukan kapan browser menerimanya, supaya jelas beda
-  // hasil baru vs hasil cache lama yang di-restore dari localStorage/mode=cached). Digabung
-  // satu grup kecil & non-kapital, terpisah gaya dari "AI · model · sumber" yang lebih
-  // penting dilihat sekilas (permintaan user: kurangi bobot visual bagian kurang dilihat).
   const secondaryBits = [];
   const makroAge = _makroAgeLabel(makroAt);
   if (makroAge) secondaryBits.push(`makro ${makroAge}`);
@@ -5762,65 +5762,95 @@ function _renderStructuredAi(structured, commentary, model, hasMakro, isCached, 
   if (analyzedAt) secondaryBits.push(`dianalisa ${fmtCBTime(analyzedAt)}`);
   const secondaryTag = secondaryBits.length ? ` <span class="analisa-ai-meta">· ${secondaryBits.join(' · ')}</span>` : '';
 
-  let html = `<div class="analisa-ai-result"><div class="analisa-ai-label"><span class="no-print">🧠 </span>AI${modelStr}${srcTag}${secondaryTag}</div>`;
+  let html = `<div class="analisa-ai-result-meta" style="font-size:9px;color:var(--muted);font-family:'DM Mono',monospace;margin: 12px 0 6px;text-transform:uppercase;letter-spacing:.05em" class="no-print">
+    🧠 AI${modelStr}${srcTag}${secondaryTag}
+  </div>`;
 
   if (structured) {
     const bias      = (structured.bias || 'neutral').toLowerCase();
     const biasColor = bias === 'bullish' ? 'var(--green)' : bias === 'bearish' ? 'var(--red)' : bias === 'mixed' ? '#f5a623' : 'var(--muted)';
     const biasLabel = bias === 'bullish' ? '▲ BULLISH' : bias === 'bearish' ? '▼ BEARISH' : bias === 'mixed' ? '⟷ MIXED' : '→ NEUTRAL';
-    // Badge alignment makro-vs-teknikal (outline, beda dari badge bias yang solid) —
-    // padanan verdict "dasar bertumpu" di SIMULASI: searah/konflik/netral.
+    
     let alignChip = '';
     if (structured.makro_alignment) {
       const a = structured.makro_alignment;
       const ac = a === 'searah' ? 'var(--green)' : a === 'konflik' ? '#f5a623' : 'var(--muted)';
       const al = a === 'searah' ? '✓ MAKRO SEARAH' : a === 'konflik' ? '⚠ MAKRO KONFLIK' : '– MAKRO NETRAL';
-      alignChip = `<span title="${escHtml(structured.makro_alignment_reason || '')}" style="border:1px solid ${ac};color:${ac};font-size:10px;font-weight:700;padding:2px 9px;border-radius:3px;font-family:'DM Mono',monospace;letter-spacing:.06em;flex-shrink:0">${al}</span>`;
+      alignChip = `<span title="${escHtml(structured.makro_alignment_reason || '')}" style="border:1px solid ${ac};color:${ac};font-size:9px;font-weight:700;padding:2px 8px;border-radius:3px;font-family:'DM Mono',monospace;letter-spacing:.06em;flex-shrink:0">${al}</span>`;
     }
-    html += `<div style="display:flex;align-items:flex-start;gap:10px;margin:8px 0 10px;flex-wrap:wrap">
-      <span style="background:${biasColor};color:#0a0f1a;font-size:10px;font-weight:700;padding:3px 10px;border-radius:3px;font-family:'DM Mono',monospace;letter-spacing:.06em;flex-shrink:0">${biasLabel}</span>
-      ${alignChip}
-      ${structured.trigger ? `<span style="font-size:11px;color:var(--text);flex:1;min-width:160px;line-height:1.5">${escHtml(structured.trigger)}</span>` : ''}
-    </div>`;
+
+    html += `<div class="analisa-tf-card" style="border-left-color: var(--accent); margin-bottom: 12px;">
+      <div class="analisa-tf-label" style="color:var(--accent) !important">AI SETUP &amp; BIAS</div>
+      <div style="display:flex;align-items:center;gap:10px;margin:8px 0 10px;flex-wrap:wrap">
+        <span style="background:${biasColor};color:#0a0f1a;font-size:9px;font-weight:700;padding:3px 8px;border-radius:3px;font-family:'DM Mono',monospace;letter-spacing:.06em;flex-shrink:0">${biasLabel}</span>
+        ${alignChip}
+        ${structured.trigger ? `<span style="font-size:11px;color:var(--text);flex:1;min-width:160px;line-height:1.5">${escHtml(structured.trigger)}</span>` : ''}
+      </div>`;
+
     if (structured.makro_alignment_reason) {
-      html += `<div style="margin:-4px 0 10px;font-size:10.5px;color:var(--muted);line-height:1.5"><span style="color:var(--text)">MAKRO </span>${escHtml(structured.makro_alignment_reason)}</div>`;
+      html += `<div style="margin:-4px 0 10px;font-size:10px;color:var(--muted);line-height:1.5"><span style="color:var(--text)">MAKRO </span>${escHtml(structured.makro_alignment_reason)}</div>`;
     }
+
     if (structured.entry_zone || structured.sl || structured.tp) {
-      html += `<div style="display:flex;gap:16px;margin-bottom:10px;font-family:'DM Mono',monospace;font-size:11px;flex-wrap:wrap">
+      html += `<div style="display:flex;gap:14px;margin-bottom:10px;font-family:'DM Mono',monospace;font-size:11px;flex-wrap:wrap;align-items:center">
         ${structured.entry_zone ? `<span><span style="color:var(--muted)">ENTRY </span>${escHtml(structured.entry_zone)}</span>` : ''}
         ${structured.sl ? `<span><span style="color:var(--red)">SL </span>${escHtml(structured.sl)}</span>` : ''}
         ${structured.tp ? `<span><span style="color:var(--green)">TP </span>${escHtml(structured.tp)}</span>` : ''}
         ${structured.risk_reward ? `<span><span style="color:var(--muted)">RR </span>1:${escHtml(String(structured.risk_reward))}</span>` : ''}
-        <button type="button" onclick="analisaGoToSizing(analisaActive.symbol)" style="margin-left:auto;padding:3px 10px;font-family:'DM Mono',monospace;font-size:10px;border-radius:3px;border:1px solid var(--accent);background:var(--accent);color:#fff;cursor:pointer;font-weight:700">KE SIZING CALC</button>
+        <button type="button" onclick="analisaGoToSizing(analisaActive.symbol)" style="margin-left:auto;padding:3px 10px;font-family:'DM Mono',monospace;font-size:9px;border-radius:3px;border:1px solid var(--accent);background:var(--accent);color:#fff;cursor:pointer;font-weight:700">KE SIZING CALC</button>
       </div>`;
+
       if (structured.entry_basis) {
-        html += `<div style="margin:-4px 0 10px;font-size:10.5px;color:var(--muted);line-height:1.5"><span style="color:var(--text)">DASAR </span>${escHtml(structured.entry_basis)}</div>`;
+        html += `<div style="margin:-4px 0 10px;font-size:10px;color:var(--muted);line-height:1.5"><span style="color:var(--text)">DASAR </span>${escHtml(structured.entry_basis)}</div>`;
       }
     }
+
     if (structured.invalidation_condition || structured.time_horizon_days) {
-      html += `<div style="margin-bottom:10px;font-size:11px;color:var(--muted);line-height:1.5">
+      html += `<div style="margin-bottom:2px;font-size:10.5px;color:var(--muted);line-height:1.5">
         ${structured.invalidation_condition ? `<div><span style="color:var(--text)">INVALIDASI </span>${escHtml(structured.invalidation_condition)}</div>` : ''}
         ${structured.time_horizon_days ? `<div><span style="color:var(--text)">HORIZON </span>~${escHtml(String(structured.time_horizon_days))} hari</div>` : ''}
       </div>`;
     }
+
+    html += `</div>`;
   }
 
   const text = (structured?.commentary || commentary || '').trim();
-  // Paragraf KESIMPULAN (session 157 lanjutan 8) dikasih box terpisah + bold — biar
-  // langsung kelihatan tanpa perlu baca 4 paragraf lain, sesuai tujuannya. Deteksi via
-  // prefix literal "KESIMPULAN:" yang diwajibkan di prompt admin.js.
-  if (text) html += text.split('\n').filter(l => l.trim()).map(l => {
-    const trimmed = l.trim();
-    const m = trimmed.match(/^kesimpulan:\s*(.*)$/i);
-    if (m) {
-      return `<p style="margin:10px 0 6px;padding:10px 12px;background:var(--surface);border-left:3px solid var(--accent);border-radius:3px;font-size:12px">
-        <span style="color:var(--accent);font-weight:700;letter-spacing:.06em;font-size:10px">KESIMPULAN</span><br>
-        <span>${escHtml(m[1])}</span>
-      </p>`;
+  if (text) {
+    let narrativeParas = [];
+    let conclusionText = '';
+
+    text.split('\n').filter(l => l.trim()).forEach(l => {
+      const trimmed = l.trim();
+      const m = trimmed.match(/^kesimpulan:\s*(.*)$/i);
+      if (m) {
+        conclusionText = m[1];
+      } else {
+        narrativeParas.push(trimmed);
+      }
+    });
+
+    // Kartu 2: Narasi Detail
+    if (narrativeParas.length > 0) {
+      html += `<div class="analisa-tf-card" style="border-left-color: var(--muted); margin-bottom: 12px;">
+        <div class="analisa-tf-label">ANALISIS DETAIL</div>
+        <div class="ringkasan-text" style="font-size:12px; line-height:1.75; color:var(--text-mid)">
+          ${narrativeParas.map(p => `<p style="margin:0 0 10px;">${escHtml(p)}</p>`).join('')}
+        </div>
+      </div>`;
     }
-    return `<p style="margin:0 0 6px;font-size:12px">${escHtml(trimmed)}</p>`;
-  }).join('');
-  html += '</div>';
+
+    // Kartu 3: Kesimpulan
+    if (conclusionText) {
+      html += `<div class="analisa-tf-card" style="border-left-color: var(--yellow); margin-bottom: 12px;">
+        <div class="analisa-tf-label" style="color: var(--yellow) !important;">KESIMPULAN EKSEKUSI</div>
+        <div class="ringkasan-text" style="font-size:12px; line-height:1.6; color:var(--text)">
+          ${escHtml(conclusionText)}
+        </div>
+      </div>`;
+    }
+  }
+
   return html;
 }
 
