@@ -152,7 +152,11 @@ const CB_CEREBRAS_GPTOSS     = 'ai:cerebras:gptoss';
 // Gemini: endpoint OpenAI-compat resmi Google AI Studio. Model non-preview termurah/
 // tercepat free tier (10 RPM/1.500 RPD per project, ai.google.dev/gemini-api/docs/rate-limits).
 const GEMINI_URL   = 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions';
-const GEMINI_MODEL = 'gemini-2.5-flash';
+// gemini-2.5-flash dites live (2026-07-18) → HTTP 404, generasi model sudah bergeser ke
+// Gemini 3.x per riset ulang saat itu juga. Pakai alias resmi Google -latest (hot-swap
+// otomatis ke rilis stabil terbaru, ai.google.dev/gemini-api/docs/models) supaya tidak
+// basi lagi kalau Google merilis versi baru — sekarang resolve ke gemini-3.5-flash.
+const GEMINI_MODEL = 'gemini-flash-latest';
 const CB_GEMINI     = 'ai:gemini';
 // Mistral La Plateforme, tier gratis "Experiment". Pakai alias -latest (bukan versi
 // tertanggal eksplisit) supaya tidak perlu update manual tiap Mistral merilis versi baru
@@ -167,10 +171,12 @@ const CB_MISTRAL     = 'ai:mistral';
 // testing and evaluation purposes, not in production"). Kode diagnostik tetap dibuat
 // (murah, konsisten pola kandidat lain yang ditolak) untuk jaga-jaga kalau NVIDIA membuka
 // tier produksi gratis di masa depan — TIDAK dijalankan sebagai bagian gate promosi.
-// Model: DeepSeek-V3.2 yang di-host NIM (familiar — sama keluarga dengan primary produksi
-// SambaNova sekarang), id dikonfirmasi dari build.nvidia.com/deepseek-ai/deepseek-v3_2.
+// Model: DeepSeek yang di-host NIM (familiar — sama keluarga dengan primary produksi
+// SambaNova sekarang). id "deepseek-ai/deepseek-v3.2" (dari catatan katalog) dites live
+// 2026-07-18 → HTTP 404 (slug API != slug URL modelcard) — diganti "deepseek-ai/deepseek-v3.1",
+// id yang paling banyak dikonfirmasi contoh kerja pihak ketiga per riset ulang saat itu juga.
 const NVIDIA_URL   = 'https://integrate.api.nvidia.com/v1/chat/completions';
-const NVIDIA_MODEL = 'deepseek-ai/deepseek-v3.2';
+const NVIDIA_MODEL = 'deepseek-ai/deepseek-v3.1';
 const CB_NVIDIA     = 'ai:nvidia';
 
 const MAJOR_CURRENCIES = new Set(['USD','EUR','GBP','JPY','CAD','AUD','NZD','CHF']);
