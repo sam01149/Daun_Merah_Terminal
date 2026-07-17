@@ -1803,6 +1803,18 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   font-family:'DM Mono',monospace; font-size:10px;
   border:none; cursor:pointer;
 }
+.update-banner {
+  flex-shrink:0; display:none;
+  background:rgba(230,126,34,.08); border-bottom:1px solid rgba(230,126,34,.25);
+  padding:10px 14px; align-items:center; gap:10px;
+}
+.update-banner p { font-size:11px; color:var(--yellow); flex:1; line-height:1.4; }
+.update-btn {
+  flex-shrink:0; padding:6px 12px; border-radius:5px;
+  background:var(--yellow); color:var(--bg);
+  font-family:'DM Mono',monospace; font-size:10px;
+  border:none; cursor:pointer;
+}
 
 /* ── RESPONSIVE ── */
 @media (min-width: 768px) {
@@ -3082,6 +3094,11 @@ body:not(.light-theme) .ringkasan-gen-btn {
   <button class="install-btn" id="installBtn">INSTALL</button>
 </div>
 
+<div class="update-banner" id="updateBanner">
+  <p>Versi baru tersedia — ketuk untuk memuat ulang</p>
+  <button class="update-btn" id="updateBtn">MUAT ULANG</button>
+</div>
+
 <!-- REGIME BANNER -->
 <div class="regime-banner neutral" id="regimeBanner" onclick="toggleRegimeDetail()">
   <div class="regime-row">
@@ -4283,7 +4300,7 @@ window.addEventListener('DOMContentLoaded', updateThemeIcon);
 
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.07.17.13';
+const APP_VERSION = '2026.07.18.1';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
@@ -13756,26 +13773,74 @@ async function jnRenderVaR() {
     </div>`;
 }
 
-function jnExportCSV() {
-  if (!jnAllEntries || jnAllEntries.length === 0) {
-    showToast('Tidak ada data', 'Muat jurnal terlebih dahulu sebelum export.');
-    return;
-  }
+// Sesi FX entry (UTC) — HARUS identik dengan JOURNAL_BIAS_SESSIONS/sessionOf di
+// api/journal.js (_journalBiasStats). Jangan bikin definisi sesi kedua yang beda.
+const JN_CSV_SESSIONS = [
+  { key: 'tokyo',   label: 'Tokyo',              start: 0,       end: 8 * 60 },
+  { key: 'london',  label: 'London',             start: 8 * 60,  end: 13 * 60 },
+  { key: 'overlap', label: 'London+NY Overlap',  start: 13 * 60, end: 16 * 60 },
+  { key: 'ny',      label: 'New York',           start: 16 * 60, end: 21 * 60 },
+  { key: 'closed',  label: 'Market Closed',      start: 21 * 60, end: 24 * 60 },
+];
 
-  function csvCell(val) {
-    if (val == null) return '';
-    let s = String(val);
-    s = s.replace(/\r?\n/g, ' | ');
-    if (s.includes(',') || s.includes('"')) {
-      return '"' + s.replace(/"/g, '""') + '"';
-    }
-    return s;
-  }
+// Peta id item checklist -> label, playbook-agnostic. Dibangun dari definisi
+// PLAYBOOKS (sections + subs) apa adanya — item baru di playbook manapun otomatis
+// ikut terbaca tanpa perlu menyentuh fungsi export ini lagi.
+function jnChecklistLabelMap() {
+  const map = {};
+  if (typeof PLAYBOOKS === 'undefined') return map;
+  Object.values(PLAYBOOKS).forEach(pb => {
+    (pb.sections || []).forEach(sec => {
+      (sec.items || []).forEach(it => {
+        if (it.id && it.label) map[it.id] = it.label;
+        (it.subs || []).forEach(s => { if (s.id && s.label) map[s.id] = s.label; });
+      });
+    });
+  });
+  return map;
+}
+
+// Pure: susun data export jadi { headers, rows } — bisa diuji dari console tanpa
+// klik tombol (mis. jnBuildCsvRows(jnAllEntries).rows[0].length === headers.length).
+function jnBuildCsvRows(entries) {
+  const headers = [
+    'No','Tanggal Buka','Tanggal Tutup','Durasi Jam','Sesi Entry','Pair','Arah','Status','Hasil',
+    'Entry','SL','TP','Exit','Lots','RR Plan','R Aktual','Alasan Keluar','Horizon','Regime',
+    'Playbook','Skor','Verdict','Item Terpenuhi','Item Tidak Terpenuhi',
+    'Drivers','Thesis','Catatan Post-Trade'
+  ];
+
+  const labelMap = jnChecklistLabelMap();
 
   function fmtDate(iso) {
     if (!iso) return '';
     const d = new Date(iso);
+    if (isNaN(d.getTime())) return '';
     return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+  }
+
+  function sessionOf(iso) {
+    if (!iso) return '';
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return '';
+    const mins = d.getUTCHours() * 60 + d.getUTCMinutes();
+    const s = JN_CSV_SESSIONS.find(s => mins >= s.start && mins < s.end) || JN_CSV_SESSIONS[JN_CSV_SESSIONS.length - 1];
+    return s.label;
+  }
+
+  function durationHours(createdAt, closedAt) {
+    if (!closedAt) return '';
+    const c = new Date(createdAt).getTime();
+    const x = new Date(closedAt).getTime();
+    if (!isFinite(c) || !isFinite(x) || x < c) return '';
+    return Math.round((x - c) / 3600000 * 10) / 10;
+  }
+
+  function hasil(e) {
+    if (typeof e.r_actual !== 'number' || isNaN(e.r_actual)) return '';
+    if (e.r_actual > 0) return 'WIN';
+    if (e.r_actual < 0) return 'LOSS';
+    return 'BE';
   }
 
   function parseThesisHeader(e) {
@@ -13797,127 +13862,122 @@ function jnExportCSV() {
     return res;
   }
 
-  function getRcVal(e, rcId, labelPart) {
-    if (e.checklist_snapshot && e.checklist_snapshot[rcId] !== undefined) {
-      return e.checklist_snapshot[rcId] ? 'YA' : 'TIDAK';
-    }
-    if (e.thesis_text) {
-      const lines = e.thesis_text.split(/\r?\n/);
-      for (const line of lines) {
-        if (line.includes(labelPart)) {
-          if (line.includes('✅') || line.includes('☑') || line.includes('[x]') || line.includes('[X]')) return 'YA';
-          if (line.includes('⬜') || line.includes('☐') || line.includes('[ ]')) return 'TIDAK';
-        }
+  // Playbook-agnostic: baca checklist_snapshot apa adanya (id -> boolean), map ke
+  // label via jnChecklistLabelMap(). Id yang tidak ditemukan di definisi (playbook
+  // pernah direvisi) tampil sebagai id mentah, bukan crash/skip.
+  function checklistLists(e) {
+    const met = [], unmet = [];
+    if (e.checklist_snapshot && typeof e.checklist_snapshot === 'object') {
+      for (const [id, val] of Object.entries(e.checklist_snapshot)) {
+        const label = labelMap[id] || id;
+        (val ? met : unmet).push(label);
       }
     }
-    return '';
+    return { met: met.join('; '), unmet: unmet.join('; ') };
   }
 
+  // Aturan generik tanpa daftar nama section: buang baris glyph checklist dan baris
+  // section header berpola "— TEKS KAPITAL" (tanpa huruf kecil sama sekali).
   function cleanThesis(text) {
     if (!text) return '';
     const lines = text.split(/\r?\n/);
-    const cleanedLines = [];
+    const out = [];
     for (const line of lines) {
       const trimmed = line.trim();
-      
-      // Skip header info and Pair line since we have separate columns
       if (trimmed.startsWith('[') && trimmed.includes('|') && trimmed.endsWith(']')) continue;
       if (trimmed.startsWith('Pair:')) continue;
-      
-      // Skip checklist item lines
-      if (trimmed.startsWith('✅') || trimmed.startsWith('⬜') || 
-          trimmed.startsWith('☑') || trimmed.startsWith('☐') ||
-          trimmed.startsWith('[x]') || trimmed.startsWith('[ ]') ||
-          trimmed.startsWith('  ✅') || trimmed.startsWith('  ⬜') ||
-          trimmed.startsWith('  ☑') || trimmed.startsWith('  ☐') ||
-          trimmed.startsWith('  [x]') || trimmed.startsWith('  [ ]') ||
-          line.includes('✅') || line.includes('⬜') || 
-          line.includes('☑') || line.includes('☐') ||
-          line.includes('[x]') || line.includes('[ ]')) {
-        continue;
+      if (/[✅⬜☑☐]/.test(trimmed) || /\[x\]/i.test(trimmed) || trimmed.includes('[ ]')) continue;
+      if (trimmed.startsWith('—')) {
+        const rest = trimmed.slice(1).trim().replace(/:\s*$/, '');
+        if (rest && !/[a-z]/.test(rest) && /[A-Z]/.test(rest)) continue;
       }
-      
-      // Skip section headers starting with "—" that are checklist sections
-      if (trimmed.startsWith('—') && (
-        trimmed.includes('REGIME CHECK') ||
-        trimmed.includes('VALIDITAS DRIVER') ||
-        trimmed.includes('FUNDAMENTAL BIAS') ||
-        trimmed.includes('PRE-MARKET DECISION') ||
-        trimmed.includes('STRUKTUR TEKNIKAL') ||
-        trimmed.includes('ENTRY LOCATION') ||
-        trimmed.includes('TRIGGER ENTRY') ||
-        trimmed.includes('RISK MANAGEMENT') ||
-        trimmed.includes('TIMING') ||
-        trimmed.includes('DISIPLIN') ||
-        trimmed.includes('TREND MAKRO') ||
-        trimmed.includes('CB DIVERGENCE') ||
-        trimmed.includes('COT POSITIONING') ||
-        trimmed.includes('ENTRY') ||
-        trimmed.includes('IDENTIFIKASI EVENT') ||
-        trimmed.includes('THESIS ARAH EVENT') ||
-        trimmed.includes('PRE-EVENT POSITIONING') ||
-        trimmed.includes('IDENTIFIKASI RANGE') ||
-        trimmed.includes('LEVEL EKSTREM') ||
-        trimmed.includes('KONFIRMASI REVERSAL')
-      )) {
-        continue;
-      }
-      cleanedLines.push(line);
+      out.push(line);
     }
-    return cleanedLines.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+    return out.join('\n').replace(/\n{3,}/g, '\n\n').trim();
   }
 
-  const headers = [
-    'No','Tanggal Buka','Pair','Arah','Status',
-    'Entry','SL','TP','Lots','RR Plan','R Aktual',
-    'Exit Price','Tanggal Tutup','Alasan Keluar',
-    'Horizon','Regime',
-    'Playbook','Skor Checklist','Verdict',
-    'RC1: Regime','RC2: CB Bias','RC3: COT','RC4: Event <6h','RC5: Yield Diff','RC6: Sentiment',
-    'Thesis','Catatan Post-Trade'
-  ];
-
-  const sorted = [...jnAllEntries].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+  const sorted = [...entries].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
 
   const rows = sorted.map((e, i) => {
-    const headerInfo = parseThesisHeader(e);
-    
+    const h  = parseThesisHeader(e);
+    const cl = checklistLists(e);
+    const drivers = Array.isArray(e.driver_references) && e.driver_references.length > 0
+      ? e.driver_references.join(', ') : '';
+
     return [
       i + 1,
       fmtDate(e.created_at),
-      e.pair,
-      e.direction,
+      fmtDate(e.closed_at),
+      durationHours(e.created_at, e.closed_at),
+      sessionOf(e.created_at),
+      e.pair || '',
+      e.direction || '',
       e.status === 'open' && e.fill_state === 'pending'   ? 'pending'
         : e.status === 'open' && e.fill_state === 'cancelled' ? 'cancelled'
         : e.status,
+      hasil(e),
       e.entry_price  != null ? e.entry_price  : '',
       e.stop_price   != null ? e.stop_price   : '',
       e.target_price != null ? e.target_price : '',
+      e.exit_price   != null ? e.exit_price   : '',
       e.size_lots    != null ? e.size_lots    : '',
       e.rr_planned   != null ? e.rr_planned   : '',
       e.r_actual     != null ? e.r_actual     : '',
-      e.exit_price   != null ? e.exit_price   : '',
-      fmtDate(e.closed_at),
       e.exit_reason  || '',
       e.time_horizon || '',
       e.regime_at_entry ? e.regime_at_entry.replace(/_/g, ' ') : '',
-      headerInfo.playbook,
-      headerInfo.pct,
-      headerInfo.verdict,
-      getRcVal(e, 'rc1', 'Regime saat ini'),
-      getRcVal(e, 'rc2', 'CB bias'),
-      getRcVal(e, 'rc3', 'COT positioning'),
-      getRcVal(e, 'rc4', 'Tidak ada high-impact'),
-      getRcVal(e, 'rc5', 'Real yield'),
-      getRcVal(e, 'rc6', 'Retail sentiment'),
+      h.playbook,
+      h.pct,
+      h.verdict,
+      cl.met,
+      cl.unmet,
+      drivers,
       cleanThesis(e.thesis_text),
       e.attribution_notes || '',
     ];
-  }).map(row => row.map(csvCell).join(','));
+  });
+
+  return { headers, rows };
+}
+
+// Pure: serialisasi { headers, rows } jadi teks CSV. Format (a) — delimiter ";" +
+// desimal koma + tanpa baris "sep=" — target Excel Windows locale Indonesia.
+function jnCsvSerialize(built, opts) {
+  opts = opts || {};
+  const delimiter    = opts.delimiter || ';';
+  const decimalComma = opts.decimalComma !== false;
+
+  function fmtCell(val) {
+    if (val == null) return '';
+    let s;
+    if (typeof val === 'number') {
+      if (!isFinite(val)) return '';
+      s = decimalComma ? String(val).replace('.', ',') : String(val);
+    } else {
+      s = String(val).replace(/\r?\n/g, ' | ');
+    }
+    if (s.includes(delimiter) || s.includes('"')) {
+      return '"' + s.replace(/"/g, '""') + '"';
+    }
+    return s;
+  }
+
+  const headerLine = built.headers.map(fmtCell).join(delimiter);
+  const bodyLines   = built.rows.map(row => row.map(fmtCell).join(delimiter));
+  return '﻿' + headerLine + '\r\n' + bodyLines.join('\r\n');
+}
+
+function jnExportCSV() {
+  if (!jnAllEntries || jnAllEntries.length === 0) {
+    showToast('Tidak ada data', 'Muat jurnal terlebih dahulu sebelum export.');
+    return;
+  }
+
+  const built = jnBuildCsvRows(jnAllEntries);
+  const csv   = jnCsvSerialize(built, { delimiter: ';', decimalComma: true });
 
   const today   = new Date();
   const dateStr = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
-  const csv     = '\ufeffsep=,\r\n' + headers.map(csvCell).join(',') + '\r\n' + rows.join('\r\n');
 
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
   const url  = URL.createObjectURL(blob);
@@ -13929,9 +13989,8 @@ function jnExportCSV() {
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
 
-  showToast('Export berhasil', `${sorted.length} trade diexport ke jurnal_daun_merah_${dateStr}.csv`);
+  showToast('Export berhasil', `${built.rows.length} trade diexport ke jurnal_daun_merah_${dateStr}.csv`);
 }
-
 window._jnClosingEntry = null;
 
 function jnRenderCurve() {

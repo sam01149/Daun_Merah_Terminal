@@ -1,10 +1,27 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-07-17 (Session 181 — HOTFIX: teks liar "kalau" di baris 1 index.html, tampil sebagai judul palsu di pojok kiri-atas semua tab. Detail history dapat dilihat pada changelog sesi di bawah.)
+> **Last updated:** 2026-07-18 (Session 182 — Plan L: Template Export CSV Jurnal v2, playbook-agnostic. Detail history dapat dilihat pada changelog sesi di bawah.)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+---
+
+## Changelog Session 182 (2026-07-18) — Plan L: Template Export CSV Jurnal v2 (Playbook-Agnostic)
+
+**Konteks:** template export CSV jurnal (`jnExportCSV()`) tertinggal dari evolusi data — kolom checklist masih hardcoded RC1-RC6 (checklist lama), sementara 3 playbook (SMC 18 item, Macro Momentum 8, Mean Reversion 6, sejak Plan I item 4 sesi 180) tidak ikut terexport terstruktur. `cleanThesis()` juga menyaring baris checklist dari thesis pakai daftar 20 nama section hardcoded — section baru bocor ke kolom Thesis.
+
+**Perubahan (`index.html`, murni client-side, 0 AI call, 0 endpoint baru):**
+- Refactor jadi 3 fungsi pure: `jnChecklistLabelMap()` (peta id→label playbook-agnostic dari definisi `PLAYBOOKS`, termasuk `subs`), `jnBuildCsvRows(entries)` (susun `{headers, rows}`), `jnCsvSerialize(built, opts)` (serialisasi delimiter/desimal) — bisa diuji dari console tanpa klik tombol.
+- Kolom checklist generik: "Item Terpenuhi"/"Item Tidak Terpenuhi" dibaca apa adanya dari `checklist_snapshot` (id→boolean), label diambil dari `PLAYBOOKS` kalau ditemukan, fallback id mentah kalau tidak (playbook pernah direvisi). Entri lama ber-snapshot `rc1..rc6` tetap terbaca lewat jalur yang sama (`PB_REGIME_CHECK` dipakai bersama semua playbook).
+- `cleanThesis()` diganti aturan generik tanpa daftar nama: buang baris section header berpola `— TEKS KAPITAL` (tanpa huruf kecil sama sekali) — baris seperti `— AI Thesis (4/5):` (mixed-case) sengaja TIDAK ikut terfilter.
+- Kolom baru: Tanggal Tutup, Durasi Jam, Sesi Entry (UTC, boundary IDENTIK dengan `_journalBiasStats`/`sessionOf` di `api/journal.js` — tidak ada definisi sesi kedua), Hasil (WIN/LOSS/BE), Drivers (`driver_references`, saat ini selalu kosong di data existing — field belum dipakai penulis manapun, disiapkan untuk masa depan).
+- Format file: delimiter `;` + desimal koma + tanpa baris `sep=` (Excel Windows locale Indonesia — keputusan default plan, user tidak override).
+- Edge case: `closed_at < created_at` (data korup) → Durasi kosong bukan negatif; `checklist_snapshot`/`thesis_text` null → kolom kosong, tidak crash.
+
+### Verifikasi
+Node harness (bukan browser, lingkungan tidak ada UI) menguji 4 jenis entri (legacy `rc1-6`, playbook Macro Momentum baru, open pending/cancelled, tanpa thesis/checklist sama sekali) — semua baris konsisten 27 sel, label item MM/legacy terbaca benar (bukan id mentah), section header hilang dari Thesis sementara "AI Thesis" mixed-case tetap ada, delimiter/desimal-koma/BOM/tanpa-`sep=` sesuai target. `npm test` 315/315 hijau, parse-check inline script bersih, baris 1 `<!DOCTYPE html>` dikonfirmasi bersih. `APP_VERSION` → `2026.07.18.1`.
 
 ---
 
