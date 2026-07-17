@@ -35,7 +35,9 @@
 - Kuota: +1 AI call HANYA saat tombol ditekan (bukan otomatis tiap analisa) — konsisten dengan filosofi "hemat" versi Plan I vs Plan H penuh.
 
 ### Verifikasi
-`node --check api/market-digest.js` + `node --check api/admin.js` bersih; parse-check inline script `index.html` bersih; `npm test` 307/307 hijau (301 lama + 6 baru). Verifikasi kualitatif (live test 1 call + tombol muncul/sembunyi) dilakukan setelah deploy — dicatat di entri berikutnya.
+`node --check api/market-digest.js` + `node --check api/admin.js` bersih; parse-check inline script `index.html` bersih; `npm test` 307/307 hijau (301 lama + 6 baru).
+
+**Live test item 3 (1 AI call, setelah deploy):** `GET /api/admin?action=ohlcv_critic&symbol=GC=F` → HTTP 200, JSON valid, 3 objections dengan angka konkret (kalender: "Michigan Consumer Sentiment dalam 1.3 jam"; track record: "win rate 33% (2 TP/4 SL) dari 6 setup" — sekaligus memverifikasi item 2 `_formatTrackRecordBlock` juga hidup di production; COT: "leveraged net -4.5K"), verdict "tunda", model deepseek-v3.2 (primary SambaNova, tidak perlu fallback Groq). End-to-end terkonfirmasi jalan sesuai desain.
 
 ---
 
