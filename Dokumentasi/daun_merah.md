@@ -5152,3 +5152,32 @@ Mistral:     https://api.mistral.ai/v1
 ✅ Semua item di backlog asli ini sudah selesai — detail lengkap (root cause, implementasi, symbol mapping CME CVOL, status per endpoint) ada di entry changelog masing-masing: **Session 44-46** (GDPNow, TGA/Fed Balance Sheet, Cleveland Fed Inflation Nowcast, CME FedWatch fix, Portfolio VaR, FX Risk Reversals) dan **Session 47** (ScraperAPI Proxy + CME CVOL endpoint baru, 6 pair live).
 
 ---
+
+## Changelog Session 175 (2026-07-17) — Visual Polish, Anti-Noise (Hapus Emoji UI), & Penyelarasan Layout Premium
+
+**Konteks:** Perapian visual UI secara top-down berfokus pada visual psychology, profesionalisme, peniadaan emoji pada teks antarmuka UI (sesuai aturan CLAUDE.md), peningkatan responsiveness, dan verifikasi kualitas unit test.
+
+### Perubahan Utama:
+1. **Penyelarasan Text Alignment (`index.html`)**:
+   - Menambahkan `text-align: justify` pada `.ringkasan-text` dan `.dash-digest-text` di stylesheet agar tata letak pembacaan berita dan analisis AI terasa profesional dan tidak melebar berantakan di desktop/mobile.
+
+2. **Pembersihan Total Emoji dari Teks UI (`index.html`)**:
+   - Sesuai dengan batasan di `CLAUDE.md`, semua emoji unicode yang digunakan untuk status atau feedback antarmuka dihapus dan digantikan oleh deskripsi profesional atau ikon SVG:
+     - `showToast` online/offline: `🔴 Offline` -> `Offline`, `🟢 Kembali online` -> `Kembali online`.
+     - `showToast` order & jurnal: `Order Masuk ✓` -> `Order Masuk`, `⚠ Jurnal Gagal Tersimpan` -> `Jurnal Gagal Tersimpan`.
+     - Status AI Provider: `⚡ Cerebras` -> `Cerebras`, `🧠 SambaNova` -> `SambaNova`, `✨ Gemini` -> `Gemini`, dll.
+     - Status cache/stale data: Mengganti emoji warning `⚠` pada `calStaleBadge`, `cotStaleBadge`, dan retail sentiment metadata dengan ikon SVG warning yang bersih dan premium.
+     - Navigasi Kalender: Mengganti emoji unicode `📅` pada tombol `calDateJumpToggle` dengan SVG icon stroke kalender yang rapi.
+     - Tampilan persentase COT: Mengubah penanda ekstrem `P${pctile} ⚠` menjadi `P${pctile} *` dengan highlight visual kuning dari class `.cot-poi.ext` yang sudah ada.
+
+3. **Peningkatan Desain Premium Fitur Baru (`index.html`)**:
+   - **Smart Money Divergence Matrix (Tab COT)**: Penambahan efek transisi pada baris tabel (`tr:hover`) dan dynamic badge `.div-badge` (`transition: all 0.2s ease`). Penggunaan `table-layout: fixed` untuk kestabilan lebar kolom.
+   - **CME Volatility Profile (Tab Teknikal)**: Mengubah grid system dari 2 kolom menjadi auto-responsive CSS Grid (`repeat(auto-fit, minmax(100px, 1fr))`) agar visualisasi optimal di berbagai breakpoint layar. Penambahan efek hover interaktif pada card dan item.
+   - **US Economic Surprise Index (Tab Kalender)**: Penambahan garis putus-putus vertikal (`::after` border-left dashed) di titik tengah (50% netral) track gauge agar trader mengetahui batas netralitas secara visual dengan cepat. Transition width diubah menjadi cubic-bezier (`.4s cubic-bezier(0.4, 0, 0.2, 1)`) untuk animasi bar pengukur yang mulus.
+
+### Verifikasi:
+- Menjalankan suite pengujian otomatis (`npm test`). Hasil: **301/301 unit test lulus tanpa kegagalan (100% PASS)**, mengonfirmasi tidak ada regresi pada parser data utama, kalkulasi pivot, maupun logika analitik PWA.
+- File diperiksa dari sisi sintaks dasar JS (`node --check`) dan HTML - bersih tanpa masalah.
+
+### Versi:
+- Cache-buster dinaikkan secara lockstep serempak ke `2026.07.17.1`.

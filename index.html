@@ -296,25 +296,30 @@ body {
 .fund-labour-foot { font-size:9px; color:var(--muted); margin-top:8px; line-height:1.5; font-family:'DM Mono',monospace; opacity:.75; }
 
 /* ── FITUR BARU: DIVERGENSI, VOLATILITAS OPSI, DAN KEJUTAN EKONOMI ── */
-.div-matrix-table { width:100%; border-collapse:collapse; font-size:11px; margin-top:8px; }
+.div-matrix-table { width:100%; border-collapse:collapse; font-size:11px; margin-top:8px; table-layout: fixed; }
 .div-matrix-table th { color:var(--muted); font-weight:400; font-size:9px; text-align:left; padding:6px 8px; border-bottom:1px solid var(--border); text-transform:uppercase; letter-spacing:.05em; }
-.div-matrix-table td { padding:8px; border-bottom:1px solid rgba(var(--fg-rgb),.03); vertical-align:middle; }
-.div-badge { padding:3px 8px; border-radius:4px; font-weight:700; font-size:10px; text-transform:uppercase; display:inline-block; text-align:center; }
-.div-badge.strong-up { background:rgba(52,211,153,.15); color:#34d399; }
-.div-badge.strong-down { background:rgba(239,68,68,.15); color:#f87171; }
+.div-matrix-table td { padding:8px; border-bottom:1px solid rgba(var(--fg-rgb),.03); vertical-align:middle; text-overflow: ellipsis; overflow: hidden; white-space: nowrap; }
+.div-matrix-table tr { transition: background-color 0.2s ease; }
+.div-matrix-table tr:hover { background-color: rgba(var(--fg-rgb), 0.02); }
+.div-badge { padding:3px 8px; border-radius:4px; font-weight:700; font-size:10px; text-transform:uppercase; display:inline-block; text-align:center; transition: all 0.2s ease; cursor: default; }
+.div-badge.strong-up { background:rgba(52,211,153,.12); color:#34d399; }
+.div-badge.strong-down { background:rgba(239,68,68,.12); color:#f87171; }
 .div-badge.neutral { background:rgba(var(--fg-rgb),.05); color:var(--muted); }
 
-.vol-profile-card { background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:12px; margin-bottom:12px; }
+.vol-profile-card { background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:12px; margin-bottom:12px; transition: border-color 0.2s ease, transform 0.2s ease; }
+.vol-profile-card:hover { border-color: rgba(var(--fg-rgb), 0.15); }
 .vol-profile-title { font:700 9px 'Syne',sans-serif; color:var(--muted); letter-spacing:.1em; text-transform:uppercase; margin-bottom:10px; }
-.vol-profile-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
-.vol-profile-item { display:flex; flex-direction:column; gap:4px; }
+.vol-profile-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(100px, 1fr)); gap:12px; }
+.vol-profile-item { display:flex; flex-direction:column; gap:4px; padding:6px; border-radius:6px; transition: background-color 0.2s ease; }
+.vol-profile-item:hover { background-color: rgba(var(--fg-rgb), 0.015); }
 .vol-profile-label { font-size:9px; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; }
-.vol-profile-val { font-size:12px; font-weight:700; color:var(--text); }
+.vol-profile-val { font-size:12px; font-weight:700; color:var(--text); font-family:'DM Mono',monospace; }
 .vol-profile-val.alert-high { color:#fbbf24; }
 .vol-profile-val.alert-danger { color:#f87171; }
 .vol-profile-val.alert-calm { color:#34d399; }
 
-.surprise-wrap { background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:12px; }
+.surprise-wrap { background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:12px; transition: border-color 0.2s ease; }
+.surprise-wrap:hover { border-color: rgba(var(--fg-rgb), 0.15); }
 .surprise-hdr { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; }
 .surprise-title { font:700 9px 'Syne',sans-serif; color:var(--muted); letter-spacing:.1em; text-transform:uppercase; }
 .surprise-val { font-family:'DM Mono',monospace; font-size:13px; font-weight:700; }
@@ -322,8 +327,9 @@ body {
 .surprise-val.negative { color:#f87171; }
 .surprise-val.neutral { color:var(--muted); }
 .surprise-track { height:8px; background:rgba(var(--fg-rgb),.05); border-radius:4px; overflow:hidden; position:relative; }
-.surprise-bar { height:100%; transition:width .4s, background-color .4s; }
-.surprise-desc { font-size:10px; color:var(--muted); margin-top:6px; line-height:1.4; }
+.surprise-track::after { content:''; position:absolute; left:50%; top:0; width:1px; height:100%; border-left:1px dashed rgba(var(--fg-rgb), 0.2); pointer-events:none; }
+.surprise-bar { height:100%; transition:width .4s cubic-bezier(0.4, 0, 0.2, 1), background-color .4s; }
+.surprise-desc { font-size:10px; color:var(--muted); margin-top:6px; line-height:1.45; }
 
 /* JURNAL */
 .jn-form { display:flex; flex-direction:column; gap:10px; }
@@ -688,6 +694,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   font-size: 13px; font-weight: 400; line-height: 1.75; color: var(--text);
   overflow-wrap: break-word;
+  text-align: justify; text-justify: inter-word;
 }
 .ringkasan-text .r-para {
   margin: 0 0 1.2em; padding: 0;
@@ -2357,7 +2364,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .dash-digest-section { padding: 10px 12px 8px; border-bottom: 1px solid var(--border); }
 .dash-digest-arrow { background: var(--surface); border: 1px solid var(--border); color: var(--muted); border-radius: 4px; width: 18px; height: 18px; line-height: 1; cursor: pointer; font-size: 11px; padding: 0; }
 .dash-digest-arrow:hover { border-color: var(--accent); color: var(--text); }
-.dash-digest-text { font-size: 13px; color: var(--text); line-height: 1.75; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+.dash-digest-text { font-size: 13px; color: var(--text); line-height: 1.75; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; text-align: justify; text-justify: inter-word; }
 .dash-digest-text .r-para { margin: 0 0 1.2em; padding: 0; }
 .dash-digest-text .r-para:last-child { margin-bottom: 0; }
 .dash-bias-row {
@@ -3315,11 +3322,16 @@ body:not(.light-theme) .ringkasan-gen-btn {
       <div class="cal-filter-group">
         <button class="cal-filter-btn active-all" id="calWeekThis" onclick="setCalWeekView('this')">Minggu Ini</button>
         <button class="cal-filter-btn" id="calWeekNext" onclick="setCalWeekView('next')">Minggu Depan ›</button>
-        <button class="cal-filter-btn" id="calDateJumpToggle" onclick="toggleCalDateJump()" title="Lompat ke tanggal tertentu">📅</button>
+        <button class="cal-filter-btn" id="calDateJumpToggle" onclick="toggleCalDateJump()" title="Lompat ke tanggal tertentu" style="display:flex;align-items:center;justify-content:center;padding:5px 8px">
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+        </button>
         <button class="cal-filter-btn active-all" id="calCustomChip" style="display:none" onclick="calClearCustomWeek()"></button>
       </div>
       <div style="display:flex;align-items:center;gap:8px">
-        <span class="cot-stale-badge" id="calStaleBadge" style="display:none">⚠ Data lama</span>
+        <span class="cot-stale-badge" id="calStaleBadge" style="display:none;align-items:center;gap:4px">
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+          DATA LAMA
+        </span>
         <span id="calLastUpdated" style="font-size:9px;color:var(--muted);font-family:'DM Mono',monospace"></span>
         <button class="cal-refresh-btn" id="calRefreshBtn" onclick="fetchCalendar()" title="Auto-refresh setiap 60 menit">
           <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
@@ -3944,14 +3956,17 @@ body:not(.light-theme) .ringkasan-gen-btn {
       <div class="cot-panel-title">COT Positioning</div>
       <div class="cot-meta-row">
         <span class="cot-report-badge" id="cotReportBadge">Memuat...</span>
-        <span class="cot-stale-badge" id="cotStaleBadge" style="display:none">⚠ Data lama</span>
+        <span class="cot-stale-badge" id="cotStaleBadge" style="display:none;align-items:center;gap:4px">
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+          DATA LAMA
+        </span>
       </div>
       <div class="cot-desc">
         Posisi net <strong>Leveraged Funds</strong> (hedge fund & spekulan) dari laporan CFTC Commitments of Traders.
         Dirilis setiap <strong>Jumat 3:30 PM ET</strong>, mencakup posisi per Selasa minggu tersebut.
         Net positif = lebih banyak long, net negatif = lebih banyak short.
         <strong>% OI</strong> = net dibanding total open interest (ukuran berat sebelahnya pasar).
-        <strong>P##</strong> = posisi sekarang dibanding 3 tahun terakhir — P90+ / P10− (⚠ kuning) artinya
+        <strong>P##</strong> = posisi sekarang dibanding 3 tahun terakhir — P90+ / P10− (kuning) artinya
         posisi sudah ekstrem satu arah dan secara historis rawan berbalik.
       </div>
     </div>
@@ -4651,7 +4666,7 @@ async function _doSubscribe(categories) {
       body: JSON.stringify({ subscription: sub.toJSON(), categories, device_id: szGetDeviceId() }),
     });
     if (res.ok) {
-      showToast('Push Notif Aktif ✓', 'Notif akan datang meski app ditutup & layar mati.', 4000);
+      showToast('Push Notif Aktif', 'Notif akan datang meski app ditutup & layar mati.', 4000);
       localStorage.setItem('pushSubscribed', '1');
     } else {
       throw new Error('Server tolak subscription: HTTP ' + res.status);
@@ -4659,7 +4674,7 @@ async function _doSubscribe(categories) {
   } catch(e) {
     console.warn('Web Push failed:', e.message);
     localStorage.removeItem('pushSubscribed');
-    showToast('Notifikasi Terbatas ⚠', 'Notif hanya aktif saat app terbuka. Push background gagal: ' + e.message, 7000);
+    showToast('Notifikasi Terbatas', 'Notif hanya aktif saat app terbuka. Push background gagal: ' + e.message, 7000);
   }
 }
 
@@ -4683,7 +4698,7 @@ async function pushUpdateCategories() {
   closeHeaderMenu();
   openPushCatModal(async (cats) => {
     await _doSubscribe(cats);
-    showToast('Preferensi Disimpan ✓', `${cats.length} kategori aktif.`, 3000);
+    showToast('Preferensi Disimpan', `${cats.length} kategori aktif.`, 3000);
   }, 'settings');
 }
 
@@ -4798,13 +4813,19 @@ async function fetchFeed() {
       // Benar-benar tidak ada apapun (bahkan cache) — satu-satunya kondisi
       // yang masih layak dianggap error keras.
       document.getElementById('feedScroll').innerHTML = `
-        <div class="state-box"><div class="icon">⚠️</div>
-        <p>Gagal fetch berita dari server.<br>Sumber mungkin sementara tidak tersedia — coba refresh atau tunggu sebentar.</p></div>`;
+        <div class="state-box">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--pink)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom:8px">
+            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+            <line x1="12" y1="9" x2="12" y2="13"></line>
+            <line x1="12" y1="17" x2="12.01" y2="17"></line>
+          </svg>
+          <p>Gagal fetch berita dari server.<br>Sumber mungkin sementara tidak tersedia — coba refresh atau tunggu sebentar.</p>
+        </div>`;
     } else if (!newsCacheStaleNotified) {
       // Ada cache/berita lama yang sudah tampil — jangan timpa dengan error,
       // cukup beri tahu sekali (bukan tiap retry 8 detik) lalu diam-diam retry.
       newsCacheStaleNotified = true;
-      showToast('⚠️ Gagal update berita', 'Sumber sementara tidak tersedia — menampilkan berita terakhir yang tersimpan.', 4000);
+      showToast('Gagal update berita', 'Sumber sementara tidak tersedia — menampilkan berita terakhir yang tersimpan.', 4000);
     }
     setTimeout(fetchFeed, 8000);
     return;
@@ -4856,9 +4877,9 @@ async function fetchFeed() {
   renderFeed(!isFirstLoad && newItems.length > 0);
 
   if (!isFirstLoad && newItems.length === 1) {
-    showToast(`📰 ${detectCat(newItems[0].title).replace('-',' ').toUpperCase()}`, newItems[0].title, 4000);
+    showToast(`BERITA: ${detectCat(newItems[0].title).replace('-',' ').toUpperCase()}`, newItems[0].title, 4000);
   } else if (!isFirstLoad && newItems.length > 1) {
-    showToast(`📰 ${newItems.length} berita baru`, newItems.map(i=>i.title).slice(0,2).join(' / '), 4000);
+    showToast(`${newItems.length} berita baru`, newItems.map(i=>i.title).slice(0,2).join(' / '), 4000);
   }
 
   isFetching = false;
@@ -5224,7 +5245,7 @@ function renderRingkasan() {
   inner.innerHTML = `
     <div class="ringkasan-meta">
       <div class="ringkasan-meta-left">${tsStr} · ${d.news_count} berita${d.gold_count ? ' · ' + d.gold_count + ' XAU' : ''} · ${d.cal_count} kalender${d.from_cache ? ' · cache' : ''}</div>
-      <span class="ringkasan-method ${d.method}" title="${['gpt-oss-120b','groq','qwen3-32b'].includes(d.method) ? 'model cadangan — gaya naratif mungkin kurang tajam' : ''}">${{'cerebras':'⚡ Cerebras','groq':'⚡ Groq','gemini':'✨ Gemini','deepseek-v3.2':'🧠 SambaNova V3.2','deepseek-v3.1':'🧠 SambaNova V3.1','nemotron-3-ultra':'🧠 Nemotron 3 Ultra','gpt-oss-120b':'🤖 OpenRouter','qwen3-32b':'⚡ Groq Qwen3','fallback':'⚠ Fallback','fallback_quota':'⚠ Quota'}[d.method] || d.method || '⚙️ Auto'}</span>${['gpt-oss-120b','groq','qwen3-32b'].includes(d.method) ? ' <span class="ringkasan-method-note" style="font-size:0.72rem;color:var(--muted)">model cadangan</span>' : ''}
+      <span class="ringkasan-method ${d.method}" title="${['gpt-oss-120b','groq','qwen3-32b'].includes(d.method) ? 'model cadangan — gaya naratif mungkin kurang tajam' : ''}">${{'cerebras':'Cerebras','groq':'Groq','gemini':'Gemini','deepseek-v3.2':'SambaNova V3.2','deepseek-v3.1':'SambaNova V3.1','nemotron-3-ultra':'Nemotron 3 Ultra','gpt-oss-120b':'OpenRouter','qwen3-32b':'Groq Qwen3','fallback':'Fallback','fallback_quota':'Quota'}[d.method] || d.method || 'Auto'}</span>${['gpt-oss-120b','groq','qwen3-32b'].includes(d.method) ? ' <span class="ringkasan-method-note" style="font-size:0.72rem;color:var(--muted)">model cadangan</span>' : ''}
     </div>
 
     <div class="ringkasan-stats">
@@ -8655,7 +8676,7 @@ function renderRetailSentiment() {
   grid.innerHTML = rows || '<div class="cot-empty">Tidak ada data untuk pair yang dipilih.</div>';
   if (meta) {
     const t = fmtTime(fetched_at);
-    meta.textContent = (stale ? '⚠ cache lama · ' : '') + 'diperbarui ' + t + ' · sumber: FXSSI';
+    meta.textContent = (stale ? 'CACHE LAMA · ' : '') + 'diperbarui ' + t + ' · sumber: FXSSI';
   }
   renderDashRetail();
   renderCotDivergenceMatrix(); // perbarui matriks divergensi saat retail data tiba
@@ -8885,7 +8906,7 @@ function renderCOT() {
       const tipParts = [];
       if (pctOi != null) tipParts.push(`Net = ${pctOi > 0 ? '+' : ''}${pctOi}% dari total open interest${d.oi ? ` (OI ${fmtAbs(d.oi)})` : ''}`);
       if (pctile != null) tipParts.push(`P${pctile} = lebih ${pctile >= 50 ? 'long' : 'short'} dari ${pctile >= 50 ? pctile : 100 - pctile}% minggu dalam 3 tahun terakhir${isExt ? ' — posisi EKSTREM, rawan berbalik' : ''}`);
-      poiHtml = `<span class="cot-poi${isExt ? ' ext' : ''}" data-tip="${escHtml(tipParts.join(' · '))}">${pctOi != null ? `${pctOi > 0 ? '+' : ''}${pctOi}% OI` : ''}${pctOi != null && pctile != null ? ' · ' : ''}${pctile != null ? `P${pctile}${isExt ? ' ⚠' : ''}` : ''}</span>`;
+      poiHtml = `<span class="cot-poi${isExt ? ' ext' : ''}" data-tip="${escHtml(tipParts.join(' · '))}">${pctOi != null ? `${pctOi > 0 ? '+' : ''}${pctOi}% OI` : ''}${pctOi != null && pctile != null ? ' · ' : ''}${pctile != null ? `P${pctile}${isExt ? ' *' : ''}` : ''}</span>`;
     }
 
     return `<div class="cot-row">
@@ -10455,11 +10476,11 @@ document.addEventListener('visibilitychange', () => {
 // ── CONNECTIVITY ─────────────────────────────────────────
 // Feedback langsung saat koneksi putus/kembali (penting untuk PWA mobile)
 window.addEventListener('offline', () => {
-  showToast('🔴 Offline', 'Koneksi terputus.', 2500);
+  showToast('Offline', 'Koneksi terputus.', 2500);
 });
 window.addEventListener('online', () => {
   fetchFeed(); // refresh feed begitu jaringan kembali
-  showToast('🟢 Kembali online', 'Memuat ulang data terbaru…', 2500);
+  showToast('Kembali online', 'Memuat ulang data terbaru…', 2500);
 });
 
 // Restore state after bfcache restore (browser back/forward navigation)
@@ -11519,7 +11540,7 @@ async function ckMt5OrderConfirm() {
     await ckMt5AutoJournal(pair, direction, fill, lots, sl, tp);
     // entry (locked field, Sizing Calc) for pending orders; fill.fill_price is 0
     // for those since MT5 only returns a real execution price for market deals.
-    showToast('Order Masuk ✓', `${pair} ${direction.toUpperCase()} @ ${entry || fill.fill_price} · Ticket #${fill.ticket}`, 6000);
+    showToast('Order Masuk', `${pair} ${direction.toUpperCase()} @ ${entry || fill.fill_price} · Ticket #${fill.ticket}`, 6000);
 
   } catch(e) {
     const msg = (e.message.includes('fetch') || e.message.includes('Failed'))
@@ -11632,7 +11653,7 @@ async function ckMt5AutoJournal(pair, direction, fill, lots, sl, tp) {
     // error ini dibuang diam-diam (.catch(()=>{})), jadi trade nyangkut di MT5 tanpa
     // jejak di jurnal dan user tidak pernah tahu kenapa. Sekarang ditandai eksplisit.
     console.error('ckMt5AutoJournal gagal simpan ke jurnal:', e.message);
-    showToast('⚠ Jurnal Gagal Tersimpan', `Order MT5 #${fill.ticket} sukses, tapi gagal dicatat ke jurnal: ${e.message}. Catat manual via "+ BARU" di tab JURNAL.`, 9000);
+    showToast('Jurnal Gagal Tersimpan', `Order MT5 #${fill.ticket} sukses, tapi gagal dicatat ke jurnal: ${e.message}. Catat manual via "+ BARU" di tab JURNAL.`, 9000);
   }
 }
 
