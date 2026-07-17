@@ -1,10 +1,25 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-07-17 (Session 180 — Plan I SELESAI SEMUA (Item 1-5): + Journal Bias Analyzer. Detail history dapat dilihat pada changelog sesi di bawah.)
+> **Last updated:** 2026-07-17 (Session 181 — HOTFIX: teks liar "kalau" di baris 1 index.html, tampil sebagai judul palsu di pojok kiri-atas semua tab. Detail history dapat dilihat pada changelog sesi di bawah.)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+---
+
+## Changelog Session 181 (2026-07-17) — HOTFIX: Teks Liar "kalau" di Baris 1 `index.html`
+
+**Konteks:** user lapor ada kata "kalau" muncul di pojok kiri-atas semua tab (persisten walau refresh), tepat di atas bar REGIME. Awalnya diduga sisa ketikan di kolom input, tapi bertahan lintas reload — ditelusuri lebih lanjut.
+
+**Root cause:** `git blame` menunjuk ke commit `a8c9b499` (item 8a/4 sesi 179, edit disclaimer text) — baris 1 file berubah dari `<!DOCTYPE html>` menjadi `kalau<!DOCTYPE html>`. Teks "kalau" nyasar ke depan DOCTYPE (kemungkinan artefak proses tooling saat edit berlangsung bersamaan pesan user masuk mid-turn), lolos dari parse-check inline-script (karena bukan di dalam tag `<script>`) dan dari `npm test` (tidak menyentuh HTML statis). Browser me-render teks di luar tag apa pun sebagai node teks biasa di awal `<body>` — makanya muncul sebagai "judul" di pojok kiri-atas, di SETIAP tab (karena posisinya di root document, bukan per-view).
+
+**Fix:** hapus `kalau` dari baris 1 — `<!DOCTYPE html>` bersih kembali.
+
+**Pelajaran:** parse-check inline-script tidak menangkap korupsi di luar tag `<script>` — perlu tambahan sanity-check "baris 1 harus persis `<!DOCTYPE html>`" kalau mau dicegah otomatis ke depannya (belum dieksekusi, dicatat sebagai potensi item lanjutan).
+
+### Verifikasi
+`npm test` 315/315 hijau; baris 1 dikonfirmasi manual `<!DOCTYPE html>` bersih. `APP_VERSION` → `2026.07.17.13`.
 
 ---
 
