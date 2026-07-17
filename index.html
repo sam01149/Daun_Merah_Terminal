@@ -4277,7 +4277,7 @@ window.addEventListener('DOMContentLoaded', updateThemeIcon);
 
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.07.17.7';
+const APP_VERSION = '2026.07.17.8';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
@@ -5140,6 +5140,18 @@ function fmtTime(ds) {
   const dd = String(wib.getUTCDate()).padStart(2,'0');
   const mo = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][wib.getUTCMonth()];
   return `${h}:${mn} · ${dd} ${mo}`;
+}
+
+function fmtTimeAgo(ds) {
+  const diff = Date.now() - new Date(ds).getTime();
+  if (diff < 0) return '';
+  const m = Math.floor(diff / 60000);
+  if (m < 1) return 'baru saja';
+  if (m < 60) return m + 'm lalu';
+  const h = Math.floor(m / 60);
+  if (h < 24) return h + 'j lalu';
+  const d = Math.floor(h / 24);
+  return d + 'h lalu';
 }
 
 // ── AUTO REFRESH ─────────────────────────────────────────
@@ -14447,7 +14459,8 @@ function renderTekNews() {
   let html = '<div class="tek-news-hdr">'
     + '<span class="tek-news-hdr-title">Berita Terkait</span>'
     + '<span class="tek-news-hdr-pair">' + pairLabel + '</span>'
-    + '</div>';
+    + '</div>'
+    + '<div style="font:9px \'DM Mono\',monospace;color:var(--muted);margin-bottom:4px;opacity:.7">Artikel AF · tek bisa diklik untuk detail teknikal lengkap</div>';
 
   // ActionForex technical outlook — pinned at top
   const af = tekAFCache[tekPair];
@@ -14458,7 +14471,7 @@ function renderTekNews() {
       const clickAttr = safeLink ? ' onclick="openLink(\'' + safeLink + '\')"' : '';
       return '<div class="tek-news-item' + linkClass + '"' + clickAttr + '>'
         + '<div class="tek-news-meta">'
-        + '<span class="tek-news-time">' + fmtTime(item.pubDate) + '</span>'
+        + '<span class="tek-news-time">' + fmtTime(item.pubDate) + ' · ' + fmtTimeAgo(item.pubDate) + '</span>'
         + '<span class="tek-news-cat" style="background:rgba(56,189,248,.15);color:#38bdf8">AF · tek</span>'
         + '</div>'
         + '<div class="tek-news-title">' + escHtml(item.title) + '</div>'
@@ -14504,7 +14517,7 @@ function renderTekNews() {
           : '';
         return '<div class="tek-news-item">'
           + '<div class="tek-news-meta">'
-          + '<span class="tek-news-time">' + fmtTime(item.pubDate) + '</span>'
+          + '<span class="tek-news-time">' + fmtTime(item.pubDate) + ' · ' + fmtTimeAgo(item.pubDate) + '</span>'
           + '<span class="tek-news-cat" style="background:' + bg + ';color:' + col + '">' + cat.replace('-',' ') + '</span>'
           + '</div>'
           + '<div class="tek-news-title">' + escHtml(item.title) + '</div>'
