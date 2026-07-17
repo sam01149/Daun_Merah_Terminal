@@ -1,10 +1,38 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-07-16 (Session 176 — Export Jurnal CSV dalam Bentuk Tabel Checklist Terstruktur. Detail history dapat dilihat pada changelog sesi di bawah.)
+> **Last updated:** 2026-07-17 (Session 179 — Audit 11 Revisi User: Mayoritas Sudah Fixed Sesi 2026-07-13, Root Cause Versi-Basi PWA Ditemukan. Detail history dapat dilihat pada changelog sesi di bawah.)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+---
+
+## Changelog Session 179 (2026-07-17) — Audit 11 Revisi User: Mayoritas Sudah Fixed Sesi 2026-07-13
+
+**Konteks:** user menulis 11 revisi hasil cek langsung di HP (`daun_merah_plan.md`), lalu bertanya "perlu persiapan apa dulu untuk menghemat token". Sebelum eksekusi buta, tiap item dicek dulu terhadap kode aktual + changelog.
+
+**Temuan utama — 6 dari 11 item TERNYATA SUDAH ADA di kode, ditulis sesi 2026-07-13, redaksi keluhan user nyaris identik dengan komentar kode yang sudah fix:**
+1. Cache berita lama saat FinancialJuice down (`NEWS_CACHE_KEY`/`loadNewsCache`) — sudah ada.
+2. Kartu Fundamental mobile collapsed-by-default + overlay detail buka ke 1 section saja (bukan SEMUA) — sudah ada (`fund-card-toggle-hint`, `handleFundCardClick`, `openFundDetail`).
+3. Fallback ForexFactory kalender — sudah dihapus total (`api/calendar.js`), termasuk dari daftar sumber di `daun_merah_vendor.md`.
+4. Kalender default HARI INI SAJA (day-strip, bukan rolling semua tanggal) — sudah ada (`calSelectedDate` auto-pick hari ini).
+5. Filter sumber Artikel via checkbox toggle + badge count — sudah ada (`risetFilterItems`/`risetToggleSource`).
+6. Tombol "perkecil" untuk membalik "lihat semua" thesis Jurnal — sudah ada (`jnToggleThesis`).
+7. Pesan mentah "Tidak tersedia (HTTP 502)" di Option Expiries — sudah diganti pesan tenang "Belum ada data...".
+8. Korelasi & anomali di tab TEK — sudah teks-langsung tanpa bar chart ("to the point", sesuai persis permintaan ulang user).
+
+**Root cause ditemukan kenapa user masih melihat versi lama:** `sw.js` `controllerchange` listener (anti-versi-basi, sudah ada sejak Session 48b) cuma auto-reload kalau **byte `sw.js` sendiri berubah** — tapi mayoritas fix di atas murni perubahan `index.html` (tidak menyentuh `sw.js`), jadi tidak pernah memicu SW baru / tidak pernah trigger auto-reload. Kalau PWA di HP user tidak pernah benar-benar ditutup paksa (bukan sekadar minimize), JS lama tetap jalan di memori tab meski server sudah punya versi baru — persis mekanisme insiden lama yang didokumentasikan session 48b ("hapus cache pun tidak menolong"). **Rekomendasi ke user:** force-close PWA dari app switcher lalu buka ulang, baru nilai ulang mana yang masih benar-benar bermasalah. **Belum dieksekusi** (butuh keputusan user): mekanisme polling versi independen dari `sw.js` (mis. cek `APP_VERSION` server tiap load foreground) supaya masalah ini tidak berulang tiap ada fix `index.html`-only.
+
+**Perbaikan nyata yang benar-benar baru dikerjakan sesi ini:**
+- **Item 8 (Volume kosong di chart Teknikal):** root cause dikonfirmasi — simbol `FX:` di TradingView widget tidak punya data volume real (forex spot tidak tersentralisasi, ini batasan vendor, bukan bug kita). Ditambahkan `hide_volume: true` ke konfig `TradingView.widget` (`createTVChart()`) supaya panel kosong tidak lagi tampil sebagai noise, sesuai instruksi eksplisit user ("kalau gabisa, hapus saja").
+- **Item 4 (leftover):** kalimat disclaimer di tab PETUNJUK yang masih menyebut "Kolom Actual kalender saat fallback aktif..." dihapus — sisa referensi ke fallback ForexFactory yang sudah dihapus 2026-07-13, jadi kalimatnya sudah tidak akurat.
+- **Item 3 (Reaksi Rapat CB Terakhir "kok NZD doang"):** dikonfirmasi BUKAN bug — `cb-status.js?section=shock` selalu mengecek **semua 8 bank sentral**, cuma menampilkan yang rapat dalam 8 hari terakhir (`SHOCK_WINDOW_DAYS`). NZD kebetulan satu-satunya yang baru rapat saat dicek; title tooltip sudah menjelaskan ini.
+
+**Item yang masih genuinely open (belum dikerjakan, perlu lanjutan sesi berikut):** Item 6 auto-tick playbook Macro Momentum/Mean Reversion (bagian ini bukan duplikat — belum ada di kode), Item 10 (ringkas teks header), Item 11 (fitur baru "Informasi Trading" — direkomendasikan SKIP karena tumpang tindih dengan tab Petunjuk existing, sejalan dengan keraguan user sendiri di teks aslinya). Emoji pictograph (📋🏦💱⚡🌐🔴🟡 dkk) masih ada di beberapa picker (kategori push notif, filter kalender) — di luar scope "checklist" yang diminta user (checklist sendiri tidak mengandung ⚡ literal); menunggu konfirmasi scope sebelum sweep lebih luas.
+
+### Verifikasi
+`npm test` 301/301 hijau setelah 2 perubahan (`hide_volume`, disclaimer text). `APP_VERSION` → `2026.07.17.9`.
 
 ---
 

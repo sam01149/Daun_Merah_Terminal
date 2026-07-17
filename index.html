@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+kalau<!DOCTYPE html>
 <html lang="id">
 <head>
 <meta charset="UTF-8">
@@ -3843,7 +3843,7 @@ body:not(.light-theme) .ringkasan-gen-btn {
     <div style="padding:14px;font-size:10px;line-height:1.75;color:var(--text-mid)">
       <p style="margin:0 0 10px"><strong style="color:var(--text)">Bukan nasihat keuangan.</strong> Semua konten di aplikasi ini — termasuk ringkasan AI, analisa teknikal AI, bias bank sentral, ranking fundamental, dan thesis — bersifat informasional dan edukasional. Tidak ada satupun yang merupakan rekomendasi, ajakan, atau nasihat investasi/trading. Keputusan entry, exit, dan sizing sepenuhnya tanggung jawab kamu.</p>
       <p style="margin:0 0 10px"><strong style="color:var(--text)">Output AI bisa keliru.</strong> Ringkasan dan analisa dihasilkan model bahasa (LLM) yang bisa salah membaca konteks, salah angka, atau percaya diri pada kesimpulan yang keliru (hallucination). Selalu verifikasi level harga, jadwal event, dan angka rilis ke sumber resmi sebelum dipakai sebagai dasar keputusan.</p>
-      <p style="margin:0 0 10px"><strong style="color:var(--text)">Data pihak ketiga.</strong> Berita, kalender, COT, positioning retail, dan harga berasal dari sumber eksternal gratis yang bisa tertunda, tidak lengkap, atau berubah format sewaktu-waktu. Kolom "Actual" kalender saat fallback aktif diisi otomatis dari headline dan bisa meleset.</p>
+      <p style="margin:0 0 10px"><strong style="color:var(--text)">Data pihak ketiga.</strong> Berita, kalender, COT, positioning retail, dan harga berasal dari sumber eksternal gratis yang bisa tertunda, tidak lengkap, atau berubah format sewaktu-waktu.</p>
       <p style="margin:0"><strong style="color:var(--text)">Risiko trading.</strong> Trading forex, emas, dan instrumen ber-leverage memiliki risiko kerugian tinggi dan tidak cocok untuk semua orang. Jangan pernah mempertaruhkan dana yang tidak siap kamu hilangkan. Aplikasi ini bukan produk yang terdaftar/diawasi OJK atau Bappebti.</p>
     </div>
   </div>
@@ -4277,7 +4277,7 @@ window.addEventListener('DOMContentLoaded', updateThemeIcon);
 
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.07.17.8';
+const APP_VERSION = '2026.07.17.9';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
@@ -14787,6 +14787,11 @@ function createTVChart() {
       allow_symbol_change: false,
       save_image: false,
       container_id: id,
+      // FX: feed (semua pair non-XAU) tidak punya data volume nyata di
+      // TradingView — forex spot tidak tersentralisasi, jadi panel Volume
+      // selalu tampil kosong/nol. Daripada noise, sembunyikan sekalian
+      // (user request 2026-07-17): "kalau gabisa, hapus saja".
+      hide_volume: true,
       // Plot the same indicators the "INDIKATOR" stat cards below the chart
       // already compute (RSI 14, SMA 50, SMA 200) — previously the chart was
       // plain candles with no visual tie to those numbers.
