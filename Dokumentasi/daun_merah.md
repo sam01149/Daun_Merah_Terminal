@@ -1,10 +1,23 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-07-17 (Session 179 — Audit 11 Revisi User: Mayoritas Sudah Fixed Sesi 2026-07-13, Root Cause Versi-Basi PWA Ditemukan. Detail history dapat dilihat pada changelog sesi di bawah.)
+> **Last updated:** 2026-07-17 (Session 180 — Eksekusi Plan I Item 1: Transmisi Komoditas di Prompt Ringkasan. Detail history dapat dilihat pada changelog sesi di bawah.)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+---
+
+## Changelog Session 180 (2026-07-17) — Eksekusi Plan I (Kecerdasan & Disiplin AI)
+
+**Konteks:** lanjutan Plan I di `daun_merah_plan.md` (5 item bertahap, tiap item 1 siklus kerjakan→uji→push).
+
+**Item 1 — Transmisi Komoditas di prompt Ringkasan (`api/market-digest.js`):**
+- Instruksi baru disisipkan ke `DIGEST_SYSTEM_DEFAULT` bagian DETAIL PER TEMA (setelah baris Rate Differential): hubungkan pergerakan CAD/AUD/NZD ke komoditas ekspor utamanya (CAD-WTI, AUD-Gold/Copper/Biji Besi) via Terms of Trade, bukan cuma narasi "USD kuat/lemah".
+- 0 AI call tambahan, tidak menyentuh Call 2/3 — murni penguat kualitas narasi Call 1. Tidak ada perubahan logika/angka.
+
+### Verifikasi
+`node --check api/market-digest.js` bersih; `npm test` 301/301 hijau. Verifikasi kualitatif menunggu run Ringkasan berikutnya (cron alami, tanpa AI call tambahan sesuai instruksi hemat kuota).
 
 ---
 
