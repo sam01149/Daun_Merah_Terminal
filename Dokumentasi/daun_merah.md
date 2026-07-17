@@ -1,10 +1,70 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-07-18 (Session 182 — Plan L: Template Export CSV Jurnal v2, playbook-agnostic. Detail history dapat dilihat pada changelog sesi di bawah.)
+> **Last updated:** 2026-07-18 (Session 183 — Plan N: riset provider AI baru Gemini/Mistral/NVIDIA NIM, tahap 0-3 sebagian, BELUM ada keputusan promosi final. Detail history dapat dilihat pada changelog sesi di bawah.)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+---
+
+## Changelog Session 183 (2026-07-18) — Plan N: Riset Provider AI Baru Gemini/Mistral/NVIDIA NIM (Tahap 0-3 sebagian)
+
+**Konteks:** cari kandidat gratis baru untuk Call 1/2/3 Ringkasan (env var `GEMINI_API_KEY`,
+`MISTRAL_API_KEY`, `NVIDIA_API_KEY` sudah di-set user di Vercel — nama var aktual berbeda
+dari tebakan awal plan `daun_merah_plan.md` bagian N, dicocokkan via `vercel env ls`).
+
+**Desk research (Tahap 0):** tabel lengkap + sumber di `Dokumentasi/daun_merah_riset.md`.
+Temuan paling penting: ToS resmi **NVIDIA API Trial** (PDF resmi, bukan artikel pihak
+ketiga) melarang eksplisit penggunaan produksi tanpa Subscription berbayar — jadi **NVIDIA
+NIM diputuskan REJECT permanen untuk promosi chain produksi SEBELUM satu baris kode pun
+ditulis**, terlepas hasil tes teknis apapun. Gemini free tier BOLEH dipakai (prompt/output
+dipakai Google untuk training, diterima karena isinya berita publik). Mistral ambigu
+(free-tier training-data opt-out, tidak ada larangan produksi eksplisit) — lanjut riset.
+
+**Kode (Tahap 2, `api/market-digest.js` + `api/_ai_guard.js`):** 3 tier diagnostik baru
+`?test_gemini=1` / `?test_mistral=1` / `?test_nvidia=1` di Call 1, pola isolasi persis
+`?test_glm=1`/`?test_hermes=1` yang sudah ada (`isIsolatedTest` — hasil TIDAK pernah
+menimpa `latest_article` produksi). Ditambahkan ke `DEFAULT_LIMITS` (`_ai_guard.js`) dengan
+budget konservatif 200/hari masing-masing.
+
+**Verifikasi live (Tahap 1) — 2 model id butuh perbaikan setelah tes nyata:**
+- Gemini: `gemini-2.5-flash` → HTTP 404 (generasi model sudah bergeser ke 3.x saat riset
+  ulang dilakukan) → diganti alias resmi `gemini-flash-latest` (hot-swap otomatis). Masalah
+  kedua: `finish_reason=length` dengan output cuma 109 karakter — Gemini 3.x selalu
+  "thinking" dan tidak bisa dimatikan total, budget token 1300 habis untuk reasoning trace
+  sebelum sampai jawaban. Fix: `reasoning_effort:'low'` + `max_tokens` naik ke 3000.
+- Mistral: `mistral-medium-latest` sukses first try, tidak perlu iterasi.
+- NVIDIA: 3 model id dicoba (`deepseek-v3.2`, `deepseek-v3.1`, `deepseek-v3.1-terminus`)
+  semuanya HTTP 404 (~40ms, gateway-level, key sendiri valid) — TIDAK diselidiki lebih
+  lanjut karena sudah REJECT permanen by ToS, menemukan model id yang benar tidak mengubah
+  keputusan promosi.
+
+**Sampel batch awal (Tahap 3, PENTING — baca catatan status):** 4 sampel Gemini + 3 sampel
+Mistral, semua dikumpulkan BACK-TO-BACK dalam satu sesi eksekusi (bukan tersebar di jam
+berbeda seperti disyaratkan gate Tahap 4 plan — metodologi yang sama yang membunuh Nemotron
+sesi 162 butuh sampel lintas jam sibuk). Hasil (tabel lengkap di `daun_merah_riset.md`):
+- **Gemini** — 4/4 sukses, latency stabil 5.4-7.8s (jauh di bawah timeout), Bahasa Indonesia
+  bersih, patuh format `{{TAG: X}}`. Concern: 2/4 sampel melanggar FORBIDDEN_PHRASES
+  ("di tengah") — n terlalu kecil untuk simpulkan pola vs kebetulan.
+- **Mistral** — 3/3 sukses TAPI dua red flag: (1) 2/3 sampel menulis "Fed's Hammack"
+  (struktur posesif Bahasa Inggris tersisip ke kalimat Indonesia — pelanggaran eksplisit
+  kriteria gate "harus Indonesia penuh"); (2) latency naik tiap sampel (6.6s→11.8s→13.1s,
+  pola belum jelas). Output juga jauh lebih pendek dari Gemini (1.5-1.9K vs 2.6-3.1K
+  karakter) untuk prompt identik.
+
+**STATUS: BELUM ada keputusan PROMOTE/REJECT final untuk Gemini/Mistral** — perlu sampel
+tambahan tersebar di jam berbeda (termasuk sesi US) di sesi berikutnya sebelum Tahap 4
+gate dan Tahap 5 (Call 2/3 JSON) bisa dijalankan. NVIDIA sudah REJECT permanen (ToS).
+Tidak ada perubahan ke chain produksi — commit ini murni diagnostik, isolated dari
+`latest_article`/badge method UI.
+
+### Verifikasi
+`npm test` 318/318 hijau, `node --check` bersih di kedua file yang diubah. 4 sampel Gemini
++ 3 sampel Mistral dites live di production (`financial-feed-app.vercel.app`) via query
+diagnostik, dikonfirmasi TIDAK menimpa `latest_article` (payload tetap datang dari chain
+produksi normal saat dicek tanpa query test). 12/12 function Vercel tidak bertambah (numpang
+`market-digest.js` existing).
 
 ---
 

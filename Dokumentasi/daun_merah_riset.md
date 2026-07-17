@@ -1,128 +1,70 @@
-# Riset: Membuat AI Analisa "Lebih Pintar Baca Pasar" — Peta Jalan Sampai Mentok
+# Daun Merah — Riset & Pembelajaran
 
-> Ditulis session 166 (2026-07-14) atas permintaan user: "cari tau lagi potensi yang bisa
-> bikin AI pintar lagi sampai mentok". Dokumen keputusan/rujukan — bukan plan eksekusi.
-> Kalau salah satu tier mau dikerjakan, buat plan terpisah di `daun_merah_plan.md`.
+> **Aturan dokumen ini (2026-07-18):** tiga jenis isi — (1) **riset aktif** (desk research /
+> eksperimen yang sedang berjalan, entri WAJIB pakai tanggal + sumber URL/sesi), (2)
+> **pertanyaan terbuka & parkiran ide** (belum layak jadi plan), (3) **pembelajaran proyek**
+> (pelajaran TERDISTILASI: satu prinsip + konteks satu baris + rujukan sesi — bukan cerita
+> ulang; cerita lengkap tetap di changelog `daun_merah.md`). Pembelajaran yang bentuknya
+> aturan perilaku AI juga disalin ke `.agents/AGENTS.md` (file yang dipatuhi AI pelaksana).
+>
+> **Yang BUKAN tempatnya di sini:** changelog (`daun_merah.md`), konfigurasi kondisi-sekarang
+> (`daun_merah_ai.md` / `daun_merah_vendor.md`), langkah eksekusi (`daun_merah_plan.md`),
+> sitasi paper akademis (`daun_merah_referensi_riset.md`).
+>
+> **Aturan hapus:** riset selesai / ide yang sudah dieksekusi / entri basi → hapus dari sini;
+> riwayatnya cukup di changelog + git history. Isi lama dokumen ini (peta jalan "AI lebih
+> pintar" session 166, sebagian besar sudah jadi fitur: Tier 1 = setup_log, Tier 4 = AI
+> Kritikus) dihapus 2026-07-18 — masih bisa dibaca di git history (`daun_merah_riset_ai_pintar.md`).
 
-## Batas fundamental yang tidak bisa ditembus (baca dulu)
+---
 
-1. **LLM (DeepSeek-V3.2 dkk) adalah model bahasa, bukan model prediksi harga.** Dia pintar
-   mengaitkan dan menarasikan angka yang DIBERIKAN, tapi tidak pernah belajar dari histori
-   pergerakan harga sungguhan. Ganti model sekuat apapun tidak mengubah sifat ini.
-2. **Market itu probabilistik.** Sinyal apapun (AI atau analis manusia) pasti salah sebagian
-   waktu. Target yang realistis: edge kecil yang konsisten + risk management ketat (sudah
-   ada di app: sizing, checklist, RR gate) — bukan "tidak pernah keliru".
-3. **Referensi historis proyek ini sendiri:** riset NFP causal (Fase 1, session 153) gagal
-   0/25 — bukti internal bahwa "menebak arah dari data publik" itu memang sulit. Jangan
-   ulangi ekspektasi yang sama di fitur Analisa.
+# Pertanyaan Terbuka & Parkiran Ide
 
-Dengan plafon itu, di bawah ini yang MASIH BISA diusahakan, diurutkan dari ROI tertinggi.
+- **Kalibrasi keyakinan berbasis outcome** (eks "Tier 2", session 166): ikat badge keyakinan
+  Analisa AI ke win-rate historis segmen serupa (pair + bias + rentang skor konfluensi) dari
+  `setup_log:v1`, bukan self-assessment LLM. Prasyarat: sampel setup selesai cukup (indikatif
+  ≥30 per segmen) — data sedang terakumulasi otomatis, cek berkala.
+- **Re-run backtest konfluensi berkala** (`scripts/backtest_confluence.js`): angka bergerak
+  antar-run (jendela 60 hari bergeser) — jalankan ulang tiap beberapa minggu dan bandingkan
+  TREN, jangan kutip satu angka sebagai konstanta. Run terakhir 2026-07-17: zona skor tinggi
+  bounce 55% vs break 22% (~2.5:1, asumsi "konfluensi = area reaksi" didukung); kontrol skor
+  rendah terlalu kecil (30 zona / 7 sentuh) untuk klaim pembanding; GBP/USD terlemah (47%).
+- **Seasonality bulanan/mingguan per pair** — hitung offline dari data Daily yang sudah ada
+  di Redis; 0 AI call. Sajikan sebagai konteks, bukan sinyal.
+- **Volatility regime** — persentil ATR vs 6 bulan sebagai konteks "market tenang/liar".
+- **Bobot lebih untuk posisi harga vs option expiry besar H-1** — datanya sudah ada, belum
+  diberi peran di scoring.
+- **Carry trade / currency crash risk** — masih tahap riset literatur, BELUM diverifikasi ke
+  sumber primer; jangan dieksekusi sebelum itu (lihat juga catatan "Ditahan" Plan G).
 
-## Tier 1 — Track record / outcome logging (ROI paling tinggi, belum ada sama sekali)
+---
 
-**Masalah:** setiap hasil Analisa AI hilang begitu saja. Tidak ada yang tahu — termasuk kita —
-apakah rekomendasinya lebih sering benar atau salah. Label "keyakinan tinggi" murni
-self-assessment LLM tanpa dasar historis.
+# Pembelajaran Proyek
 
-**Yang dibangun:**
-- Setiap `ohlcv_analyze` yang menghasilkan setup lengkap (entry/sl/tp) → tulis snapshot ke
-  Redis list/stream: `{symbol, bias, entry, sl, tp, rr, confluence_score, ts}`.
-- Cron harian (GitHub Actions, tanpa AI call — murni baca harga Yahoo yang sudah di-sync)
-  mengecek tiap setup terbuka: harga menyentuh TP duluan, SL duluan, atau expired
-  (lewat `time_horizon_days` tanpa kena keduanya).
-- Agregasi win-rate per pair / per bias / per skor konfluensi → tampilkan di UI.
-
-**Biaya:** 0 AI call tambahan. Hanya storage Redis kecil + 1 cron ringan.
-**Hasil:** angka akurasi NYATA ("dari 100 saran XAU/USD, 54 kena TP") — fondasi semua tier lain.
-
-## Tier 2 — Kalibrasi keyakinan & gate kualitas
-
-Bergantung pada Tier 1 (butuh data outcome).
-- Badge keyakinan diikat ke win-rate historis segmen serupa (pair + bias + rentang skor
-  konfluensi), bukan klaim LLM.
-- Gate: sembunyikan setup kalau skor konfluensi < ambang ATAU RR < 1.5 (sekarang baru RR ≥ 1
-  di sanity-check server) — `entry_zone: null` + alasan, lebih jujur daripada setup lemah.
-- Kalau win-rate segmen tertentu terbukti < ~45% dalam jangka panjang → tampilkan peringatan
-  eksplisit di UI untuk segmen itu (atau matikan setup otomatisnya).
-
-**Biaya:** 0 AI call tambahan.
-
-## Tier 3 — Backtest zona konfluensi (bisa jalan duluan, offline)
-
-Data 6 bulan Daily + 10 hari 4H + 5 hari 1H per pair sudah ada di Redis (`ohlcv_sync`).
-- Replay historis: untuk tiap titik waktu t di masa lalu, hitung `_confluenceZones` dari data
-  sampai t, lalu ukur: seberapa sering harga BEREAKSI (memantul/menembus lalu retest) di zona
-  skor tinggi vs level acak?
-- Murni komputasi lokal / script Node — **0 AI call, 0 biaya**, bisa dites di test runner.
-- Hasilnya memvalidasi (atau membantah) asumsi inti fitur Analisa: "konfluensi = area reaksi".
-  Kalau terbukti tidak prediktif, semua tier lain perlu dipikir ulang — makanya ini layak
-  dikerjakan awal.
-
-### HASIL (dijalankan via `scripts/backtest_confluence.js`)
-
-**Run 2026-07-17** (4 pair, 60 hari 1H, 177 titik evaluasi, jendela sentuh 48 jam,
-jendela reaksi 12 jam, ambang gerak 0.3x ATR Daily):
-
-| Bucket | Zona | Tersentuh | Bounce | Break | Chop |
-|---|---|---|---|---|---|
-| Skor TINGGI (≥3) | 927 | 376 (41%) | **55%** | 22% | 24% |
-| Skor RENDAH (≤1.5) | 30 | 7 (23%) | 57% | 29% | 14% |
-
-Per pair (bounce-rate zona tinggi): XAU/USD 59% (91 sentuh), EUR/USD 59% (95),
-USD/JPY 53% (86), GBP/USD 47% (104).
-
-**Interpretasi jujur:**
-1. **Yang valid:** di zona skor tinggi, bounce (55%) mengalahkan break (22%) ~2.5:1 —
-   zona konfluensi memang lebih sering jadi area pantulan daripada tembusan. Asumsi
-   "konfluensi = area reaksi" DIDUKUNG dalam arti ini.
-2. **Yang TIDAK bisa diklaim:** perbandingan "skor tinggi vs rendah" tidak konklusif —
-   kontrol skor rendah cuma 30 zona / 7 sentuhan (ranking top-3 by skor memang jarang
-   meloloskan zona lemah, cacat desain kontrol). Klaim changelog session 167 ("68% vs
-   50%, sangat positif") berasal dari run jendela sebelumnya dan TERLALU OPTIMIS —
-   angka run terbaru lebih rendah (55%) dan kontrolnya terlalu kecil untuk dibandingkan.
-3. **Catatan GBP/USD** paling lemah (47%) — kalau nanti track record live (Tier 1)
-   juga konsisten lemah di pair ini, pertimbangkan peringatan khusus di UI.
-4. **Angka bergerak antar-run** karena jendela 60 hari bergeser — jangan kutip satu
-   angka sebagai konstanta; jalankan ulang berkala (gratis) dan bandingkan tren.
-
-## Tier 4 — Ensemble / cross-check dua model (selektif, bukan tiap request)
-
-- Jalankan model kedua (mis. Cerebras gpt-oss-120b yang sudah terpasang sebagai fallback)
-  HANYA saat momen penting (menjelang entry riil, bukan tiap klik).
-- Sepakat (bias & zona sama) → sinyal lebih kuat; beda jauh → pasar ambigu, itu sendiri
-  informasi ("jangan entry").
-- **Biaya:** +1 AI call per pemakaian — jadikan tombol manual terpisah ("second opinion"),
-  bukan otomatis, supaya hemat kuota.
-
-## Tier 5 — Data baru yang benar-benar menambah informasi (marginal, paling akhir)
-
-Sudah dipakai: OHLCV multi-TF, indikator, struktur/swing/BOS, S/R cluster, fib, pivot,
-option expiry, CB bias, COT, risk regime, retail sentiment, options RR/CVOL, konteks makro
-artikel. Yang tersisa dan realistis gratis:
-- **Seasonality bulanan/mingguan** per pair (hitung sendiri dari data Daily historis — offline).
-- **Volatility regime** (percentile ATR vs 6 bulan) sebagai konteks "market lagi tenang/liar".
-- **Posisi harga vs option expiry besar H-1** (sudah ada datanya, bisa diberi bobot lebih).
-Yang TIDAK realistis di stack gratis: order flow/depth sungguhan, positioning bank, data tick.
-
-## Yang secara sadar TIDAK direkomendasikan
-
-- **Fine-tuning / training model sendiri** — butuh data label outcome bertahun-tahun,
-  infra GPU, dan hasilnya belum tentu mengalahkan confluence-scorer sederhana. Jauh melebihi
-  skala proyek ini.
-- **Menambah lagi jumlah indikator ke prompt** — prompt sudah padat; masalahnya bukan
-  kurang data, tapi belum ada feedback loop (Tier 1). Data berlebih = noise (kekhawatiran
-  user soal "catatan kebanyakan" valid di sini).
-- **Model "lebih besar" sebagai solusi tunggal** — sudah dibuktikan berkali-kali di proyek
-  ini (saga Nemotron, GLM, Qwen): ganti model efeknya kecil dibanding memperbaiki struktur
-  input/output.
-
-## Urutan eksekusi yang disarankan
-
-1. Tier 3 (backtest offline — validasi asumsi, gratis, tanpa risiko produksi)
-2. Tier 1 (outcome logging — mulai kumpulkan data secepatnya, makin lama makin berharga)
-3. Tier 2 (kalibrasi — setelah data Tier 1 terkumpul minimal ~1-2 bulan)
-4. Tier 4 (second opinion manual — kapan saja, murah)
-5. Tier 5 (data tambahan — hanya kalau Tier 3 membuktikan konfluensi memang prediktif)
+- **Unit test hijau bukan bukti fitur benar.** Bug skala ADP (seri berunit orang vs ribuan)
+  dan filter Inside Bar `mr_co1` hanya ketahuan saat verifikasi data live production, bukan
+  dari test. Selalu uji dengan data/deploy nyata sebelum menyimpulkan. (S154, S180)
+- **Masalah model gratis = reliability, bukan kualitas.** Nemotron 3 Ultra outputnya bagus
+  (0 pelanggaran frasa) tapi latency 7-41 detik tak terprediksi → didemote. Memperbaiki
+  struktur input/output (fact sheet deterministik) berdampak jauh lebih besar daripada
+  ganti-ganti model. (S162, S180)
+- **Baca ToS sumber primer SEBELUM menulis kode.** NVIDIA API Trial melarang eksplisit
+  penggunaan produksi — ketahuan di desk research dari PDF resmi (bukan artikel pihak
+  ketiga), menghemat seluruh siklus uji live yang hasilnya tidak akan bisa dipakai. (Plan N,
+  2026-07-18; precedent: Kimi K2.6 403, S144)
+- **Korupsi di luar tag `<script>` lolos semua lapis test.** Teks nyasar sebelum
+  `<!DOCTYPE html>` tampil sebagai "judul palsu" di semua tab dan tidak tertangkap
+  parse-check maupun `npm test`. Mitigasi: test integritas statis (Plan M3). (S181)
+- **Timeout client harus lebih panjang dari timeout server.** Root cause NEWS mobile gagal:
+  client abort sebelum server `maxDuration` selesai — pola yang sama bisa menular ke endpoint
+  lain kalau tidak diperiksa saat menambah fitur lambat. (S161)
+- **Env var Sensitive di Vercel selalu terbaca kosong via `vercel env ls/pull`.** Itu bukan
+  bukti var tidak ter-set — verifikasi harus FUNGSIONAL (call kecil yang memakai key-nya).
+  (S163+, terbukti lagi di Plan N saat konfirmasi nama var aktual)
+- **PWA bisa nyangkut di versi lama berhari-hari.** Auto-reload hanya terpicu perubahan byte
+  `sw.js`; fix `index.html`-only tidak pernah sampai ke device yang tidak di-force-close —
+  sebelum menyimpulkan "belum difix", pastikan versi yang dilihat user memang versi terbaru.
+  Mitigasi permanen: probe versi Plan M3. (S179, S48b)
 
 ---
 
@@ -165,7 +107,28 @@ gratis, tapi TIDAK dijalankan sebagai bagian gate promosi.
 
 ## Tahap 1 — Verifikasi Fungsional Key
 
-(diisi saat eksekusi — lihat hasil di bawah)
+Dites live 2026-07-18 via `?test_gemini=1` / `?test_mistral=1` / `?test_nvidia=1` di
+`financial-feed-app.vercel.app/api/market-digest` (jalur diagnostik terisolasi, TIDAK
+menimpa `latest_article`):
+
+- **Gemini** — key valid. Model awal `gemini-2.5-flash` → HTTP 404 (generasi model sudah
+  bergeser ke Gemini 3.x per riset ulang saat itu). Diganti alias resmi `gemini-flash-latest`
+  (hot-swap otomatis, resolve ke `gemini-3.5-flash`) → OK. Masalah kedua: `finish_reason=length`
+  dengan output cuma 109 karakter di percobaan pertama — Gemini 3.x selalu "thinking" (tidak
+  bisa dimatikan total, beda dari 2.5 yang bisa `reasoning_effort:'none'`), budget token
+  1300 habis untuk reasoning trace. Fix: `reasoning_effort:'low'` + `max_tokens` naik ke
+  3000 → OK, output 2.900-3.100 karakter konsisten setelahnya.
+- **Mistral** — key valid, model `mistral-medium-latest` sukses di percobaan PERTAMA, tanpa
+  perlu iterasi.
+- **NVIDIA NIM** — key valid (tidak pernah dapat error auth), TAPI 3 model id dicoba
+  (`deepseek-ai/deepseek-v3.2`, `deepseek-ai/deepseek-v3.1`, `deepseek-ai/deepseek-v3.1-terminus`
+  — id terakhir dikonfirmasi dari `docs.api.nvidia.com/nim/reference/`) semuanya HTTP 404
+  (~40ms, kemungkinan ditolak di layer gateway/routing sebelum sampai model backend, bukan
+  auth/network gagal). **Tidak diselidiki lebih lanjut** — NVIDIA sudah REJECT permanen by
+  ToS (lihat Keputusan Gate Awal di atas), jadi menyelesaikan model id yang benar tidak
+  mengubah keputusan promosi apapun hasilnya. Kalau suatu saat NVIDIA membuka tier produksi
+  gratis dan riset ini dibuka kembali, cek daftar model AKTUAL via `GET /v1/models` dengan
+  key asli (butuh akses key plaintext yang tidak tersedia dari sesi eksekusi ini).
 
 ## Tahap 2 — Tier Diagnostik Call 1
 
@@ -174,8 +137,67 @@ Ditambahkan di `api/market-digest.js`: `?test_gemini=1`, `?test_mistral=1`, `?te
 
 ## Tahap 3 — Sampel Live Call 1
 
-(diisi progresif — lihat tabel di bawah per provider)
+**STATUS: batch awal saja (2026-07-18, ~23:30-23:45 UTC / ~06:30-06:45 WIB), semua sampel
+dikumpulkan BACK-TO-BACK dalam satu sesi eksekusi — BUKAN tersebar di jam berbeda seperti
+disyaratkan Tahap 3/gate Tahap 4 plan ini (sesi eksekusi AI tunggal tidak bisa menunggu
+berjam-jam antar sampel). Jangan pakai data ini sebagai gate PROMOTE final — perlu sesi
+tambahan di jam sibuk sesi US dan jam-jam lain sebelum keputusan akhir, sesuai metodologi
+yang sama yang membunuh Nemotron (session 162).**
+
+### Gemini (`gemini-flash-latest`, 4 sampel)
+
+| # | Latency | Sukses | Panjang | Forbidden phrase | Bahasa |
+|---|---|---|---|---|---|
+| 1 | 5.4s | Ya | 2.993c | 0 | ID penuh |
+| 2 | 6.5s | Ya | 2.940c | 0 | ID penuh |
+| 3 | 7.8s | Ya | 3.091c | 1 ("di tengah") | ID penuh |
+| 4 | 6.3s | Ya | 2.599c | 1 ("di tengah") | ID penuh |
+
+4/4 sukses, latency 5.4-7.8s (jauh di bawah timeout 25s dan budget produksi 22s). Format
+`{{TAG: X}}` (label navigasi topik, fitur yang DISENGAJA — lihat prompt Call 1 & parser
+`index.html`) diikuti dengan benar di semua sampel. 2/4 sampel melanggar FORBIDDEN_PHRASES
+("di tengah") — pelanggaran yang SAMA yang pernah tercatat di produksi SambaNova (bukan
+kelemahan unik Gemini), tapi rate 50% di sampel kecil ini lebih tinggi dari yang diinginkan.
+
+### Mistral (`mistral-medium-latest`, 3 sampel)
+
+| # | Latency | Sukses | Panjang | Forbidden phrase | Bahasa |
+|---|---|---|---|---|---|
+| 1 | 6.6s | Ya | 1.578c | 0 | ID penuh |
+| 2 | 11.8s | Ya | 1.656c | 1 ("di tengah") | Campur — "Fed's Hammack" (posesif Inggris) |
+| 3 | 13.1s | Ya | 1.916c | 0 | Campur — "Fed's Hammack" lagi di sampel ini |
+
+3/3 sukses, TAPI 2 catatan: (1) latency naik tiap sampel (6.6s → 11.8s → 13.1s, pola belum
+jelas apakah kebetulan atau tren memburuk — butuh lebih banyak sampel); (2) **konsisten
+menulis "Fed's Hammack"** (struktur posesif Bahasa Inggris disisipkan ke kalimat Bahasa
+Indonesia) di 2/3 sampel — pelanggaran eksplisit kriteria gate Tahap 4 ("harus Indonesia
+penuh"). Panjang output juga jauh lebih pendek dari Gemini (1.5-1.9K vs 2.6-3.1K karakter)
+untuk prompt yang identik — mengindikasikan Mistral lebih ringkas/kurang detail, bukan
+otomatis buruk tapi beda karakter dari DeepSeek-V3.2 yang jadi baseline pembanding.
+
+### NVIDIA NIM
+
+Tidak dijalankan — lihat Keputusan Gate Awal (ToS) dan Tahap 1 (model id belum ketemu,
+tidak diprioritaskan diselesaikan).
 
 ## Tahap 6 — Keputusan Final
 
-(diisi setelah gate Tahap 3/4/5 cukup sampel)
+**BELUM FINAL — butuh sampel tambahan tersebar di jam berbeda (Tahap 3 plan) sebelum
+PROMOTE/REJECT definitif.** Baca sebagai status sementara per 2026-07-18:
+
+- **Gemini** — kandidat paling menjanjikan sejauh ini: 4/4 sukses, latency stabil rendah
+  (5-8s), Bahasa Indonesia bersih, patuh format `{{TAG}}`. Concern: rate forbidden-phrase
+  50% (n=4, terlalu kecil untuk disimpulkan) — perlu sampel lebih banyak untuk lihat apakah
+  ini kebetulan atau pola.
+- **Mistral** — sukses secara teknis (3/3) tapi DUA red flag konsisten di sampel kecil ini:
+  bahasa campur ("Fed's Hammack", 2/3 sampel) dan latency naik (6.6→13.1s). Kalau pola
+  bahasa campur ini konsisten di sampel lanjutan, ini gate FAIL eksplisit (lihat Edge Case
+  plan: "kualitas Bahasa Indonesia... itu kriteria gagal eksplisit, bukan diterima sambil
+  jalan") — TIDAK direkomendasikan lanjut ke Tahap 5 (Call 2/3 JSON) sampai isu ini
+  diperiksa lebih jauh di sampel berikutnya.
+- **NVIDIA NIM** — REJECT permanen (ToS), independen dari hasil teknis. Tidak lanjut ke
+  Tahap 3-5.
+- **Belum dikerjakan:** Tahap 5 (Call 2/3 JSON) untuk kedua kandidat — plan mensyaratkan
+  lolos Tahap 4 dulu (5/5 sampel bersih), dan sampel saat ini baru 3-4 per provider dengan
+  isu terbuka di keduanya. Lanjutkan di sesi berikutnya dengan sampel tambahan tersebar
+  jam berbeda sebelum memutuskan promosi.
