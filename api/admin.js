@@ -54,6 +54,7 @@ const PUBLIC_ACTION_LIMITS = {
   fundamental_analysis:  5,
   ohlcv_read:           30,
   ohlcv_analyze:         5,
+  ohlcv_critic:          3,
   ohlcv_dashboard:      30,
   setup_stats:          20,
   polymarket:           30,
@@ -87,10 +88,11 @@ module.exports = async function handler(req, res) {
   if (action === 'ohlcv_sync')         return ohlcvSyncHandler(req, res);
   if (action === 'ohlcv_read')         return ohlcvReadHandler(req, res);
   if (action === 'ohlcv_analyze')      return ohlcvAnalyzeHandler(req, res);
+  if (action === 'ohlcv_critic')       return ohlcvCriticHandler(req, res);
   if (action === 'ohlcv_dashboard')    return ohlcvDashboardHandler(req, res);
   if (action === 'setup_stats')        return setupStatsHandler(req, res);
   if (action === 'polymarket')         return polymarketHandler(req, res);
-  return res.status(400).json({ error: 'Missing ?action= — use health, redis-keys, admin-prompts, push, fundamental_get, fundamental_seed, fundamental_refresh, fundamental_analysis, journal_import, circuit-reset, circuit-status, gdpnow, ohlcv_sync, ohlcv_read, ohlcv_analyze, ohlcv_dashboard, or polymarket' });
+  return res.status(400).json({ error: 'Missing ?action= — use health, redis-keys, admin-prompts, push, fundamental_get, fundamental_seed, fundamental_refresh, fundamental_analysis, journal_import, circuit-reset, circuit-status, gdpnow, ohlcv_sync, ohlcv_read, ohlcv_analyze, ohlcv_critic, ohlcv_dashboard, or polymarket' });
 };
 
 // ── Shared Redis helper ────────────────────────────────────────────────────────
@@ -2378,6 +2380,18 @@ function _formatTrackRecordBlock(log, symbol) {
   return `[TRACK RECORD setup AI pair ini]\n${total} setup selesai (segala arah): ${tp} TP / ${sl} SL (win rate ${winRate}%).${advice}`;
 }
 
+// Konversi event kalender (date "YYYY-MM-DD" kalender WIB + time_wib "HH:MM WIB",
+// lihat api/calendar.js) jadi epoch ms — dipakai AI Kritikus (Plan I item 3) untuk
+// filter "event <24 jam". "Tentative" (jam belum pasti) → null, jangan dihitung
+// jaraknya (bisa salah jauh). Pure function — dites di ta_struct.test.js.
+function _calEventMsWib(dateStr, timeWib) {
+  if (!dateStr || !timeWib || timeWib === 'Tentative') return null;
+  const m = /^(\d{2}):(\d{2})/.exec(timeWib);
+  if (!m) return null;
+  const t = new Date(`${dateStr}T${m[1]}:${m[2]}:00+07:00`).getTime();
+  return isNaN(t) ? null : t;
+}
+
 async function ohlcvAnalyzeHandler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Cache-Control', 'no-cache');
@@ -2903,6 +2917,177 @@ async function ohlcvAnalyzeHandler(req, res) {
   }
 }
 
+// ── AI Kritikus — tombol "UJI KELEMAHAN" (Plan I item 3, session 180) ─────────
+// Decision Critic hemat: BUKAN otomatis tiap analisa (beda dari Plan H penuh),
+// tombol terpisah yang user tekan saat serius mau entry. Numpang admin.js
+// (?action=ohlcv_critic), BUKAN function baru (Vercel Hobby 12/12 penuh).
+// Fact sheet 100% deterministik dari Redis yang sudah ada (cb_bias, cot_cache_v2,
+// risk_regime, retail_sentiment_cache, rr_cache_v2, calendar_v1, setup_log:v1) —
+// TIDAK ada fetch eksternal baru, cuma 1 AI call (SambaNova → Groq fallback).
+async function ohlcvCriticHandler(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Cache-Control', 'no-cache');
+  if (req.method === 'OPTIONS') return res.status(204).end();
+
+  const symbol = req.query.symbol || req.body?.symbol;
+  if (!symbol) return res.status(400).json({ error: 'symbol required' });
+  const label = req.query.label || req.body?.label
+    || Object.entries(OHLCV_PAIR_SYMBOL_MAP).find(([, s]) => s === symbol)?.[0]
+    || symbol;
+
+  // WAJIB sudah ada analisa dengan setup lengkap — JANGAN analisa ulang di sini,
+  // kritikus cuma mengaudit keputusan yang SUDAH ada, bukan bikin keputusan baru.
+  let analysis = null;
+  try {
+    const raw = await redisCmd('GET', `ohlcv_analysis:${symbol}`);
+    if (raw) analysis = JSON.parse(raw);
+  } catch (e) { /* treat as missing — fall through ke pesan error di bawah */ }
+
+  const st = analysis?.structured;
+  if (!st || !st.entry_zone || !st.sl || !st.tp) {
+    return res.status(200).json({ error: 'Belum ada setup untuk dikritik — jalankan Analisa AI dulu.' });
+  }
+
+  const isXau = symbol === 'GC=F';
+
+  // Fact sheet ringkas — tiap blok independen try/catch (kegagalan satu cache
+  // tidak boleh mengosongkan blok lain), sama pola dengan ohlcvAnalyzeHandler.
+  let fundBlock = '', rrBlock = '', trackBlock = '', calBlock = '';
+  const [rawBias, rawCot, rawRisk, rawRetail, rawRR, rawCal, rawLog] = await Promise.all([
+    redisCmd('GET', 'cb_bias').catch(() => null),
+    redisCmd('GET', 'cot_cache_v2').catch(() => null),
+    redisCmd('GET', 'risk_regime').catch(() => null),
+    redisCmd('GET', 'retail_sentiment_cache').catch(() => null),
+    redisCmd('GET', 'rr_cache_v2').catch(() => null),
+    redisCmd('GET', 'calendar_v1').catch(() => null),
+    redisCmd('GET', 'setup_log:v1').catch(() => null),
+  ]);
+  try {
+    fundBlock = _formatFundamentalBlock({
+      label, isXau,
+      cbBias: rawBias ? JSON.parse(rawBias) : null,
+      cot:    rawCot  ? JSON.parse(rawCot)  : null,
+      risk:   rawRisk ? JSON.parse(rawRisk) : null,
+      retail: rawRetail ? JSON.parse(rawRetail) : null,
+      nowMs:  Date.now(),
+    });
+  } catch (e) { /* opsional */ }
+  try {
+    if (rawRR) rrBlock = _formatOptionsSentimentBlock(JSON.parse(rawRR)?.pairs?.[label]);
+  } catch (e) { /* opsional */ }
+  try {
+    if (rawLog) {
+      const log = JSON.parse(rawLog);
+      trackBlock = _formatTrackRecordBlock(Array.isArray(log) ? log : [], symbol);
+    }
+  } catch (e) { /* opsional */ }
+  try {
+    if (rawCal) {
+      const cal = JSON.parse(rawCal);
+      const legs = String(label).toUpperCase().split('/').map(s => s.trim()).filter(Boolean);
+      const now = Date.now();
+      const upcoming = (cal.events || [])
+        .filter(e => legs.includes(e.currency))
+        .map(e => ({ ...e, _ms: _calEventMsWib(e.date, e.time_wib) }))
+        .filter(e => e._ms != null && e._ms > now && e._ms - now <= 24 * 3600 * 1000)
+        .sort((a, b) => a._ms - b._ms);
+      if (upcoming.length > 0) {
+        calBlock = '[KALENDER <24 JAM untuk pair ini]\n' + upcoming
+          .map(e => `- ${e.event} (${e.currency}, impact ${e.impact}) dalam ${((e._ms - now) / 3600000).toFixed(1)} jam`)
+          .join('\n');
+      }
+    }
+  } catch (e) { /* opsional */ }
+
+  const ageMin = analysis.loaded_at ? Math.round((Date.now() - new Date(analysis.loaded_at).getTime()) / 60000) : null;
+  const setupBlock = [
+    `[SETUP YANG DIUSULKAN]`,
+    `Pair: ${label} | Bias: ${st.bias || '—'} | Entry: ${st.entry_zone} | SL: ${st.sl} | TP: ${st.tp}${st.risk_reward ? ` | RR: ${st.risk_reward}` : ''}`,
+    `Trigger: ${st.trigger || '—'}`,
+    st.invalidation_condition ? `Invalidation: ${st.invalidation_condition}` : null,
+    st.makro_alignment ? `Makro alignment: ${st.makro_alignment}${st.makro_alignment_reason ? ` (${st.makro_alignment_reason})` : ''}` : null,
+    ageMin != null ? `Analisa ini dibuat ${ageMin} menit lalu — kalau sudah lama, harga bisa sudah bergerak jauh dari saat analisa dibuat.` : null,
+  ].filter(Boolean).join('\n');
+
+  const factParts = [setupBlock, fundBlock, rrBlock, trackBlock, calBlock].filter(Boolean);
+  const userMsg = factParts.join('\n\n') + '\n\nBalas HANYA satu objek JSON valid (tanpa markdown fence, tanpa teks lain) persis format ini: {"objections":[{"severity":"tinggi","reason":"..."}],"verdict":"lanjut"}. Maksimal 3 objections. Kalau tidak ada keberatan berarti, objections HARUS array kosong [] dan verdict "lanjut".';
+
+  const messages = [
+    { role: 'system', content: 'Kamu auditor risiko trading yang skeptis. Setup yang diusulkan Senior Trader + fakta pasar terlampir adalah FAKTA, bukan tebakan. Tugasmu SATU-SATUNYA: cari alasan kenapa trade ini TIDAK layak diambil SEKARANG — fokus konflik makro, ancaman rilis kalender terdekat, crowded positioning (retail/COT), dan win-rate historis kalau tersedia. Maksimal 3 keberatan, masing-masing WAJIB mengutip angka/fakta KONKRET dari data terlampir — keberatan generik tanpa angka DILARANG. Kalau memang tidak ada keberatan berarti (data mendukung, tidak ada event dekat, positioning tidak ekstrem), verdict WAJIB "lanjut" dengan objections kosong — JANGAN mengarang risiko yang tidak ada di data. verdict: "lanjut" (tidak ada keberatan berarti) / "tunda" (ada keberatan tapi bisa dilewati dengan menunggu) / "batalkan" (keberatan fundamental terhadap tesis itu sendiri). Bahasa Indonesia.' },
+    { role: 'user', content: userMsg },
+  ];
+
+  const SAMBANOVA_KEY = process.env.SAMBANOVA_API_KEY;
+  const GROQ_KEY       = process.env.GROQ_API_KEY;
+  let rawText = null, model = null;
+
+  // Primary: SambaNova akun 1 — SAMA account/circuit dengan ohlcv_analyze primary
+  // (memang endpoint fisik yang sama, circuit breaker WAJIB dibagi supaya outage
+  // di satu tempat langsung terdeteksi di keduanya, bukan dites dobel).
+  if (SAMBANOVA_KEY && await cb.canCall('ai:sambanova:main')) {
+    try {
+      if (!await allowAiCall('sambanova_main')) throw new Error('AI daily budget exceeded');
+      const r = await fetch('https://api.sambanova.ai/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SAMBANOVA_KEY}` },
+        body: JSON.stringify({ model: 'DeepSeek-V3.2', messages, max_tokens: 600, temperature: 0 }),
+        signal: AbortSignal.timeout(25000),
+      });
+      if (r.ok) {
+        const j = await r.json(); rawText = j.choices?.[0]?.message?.content?.trim() || null; model = 'deepseek-v3.2';
+        if (rawText) await cb.onSuccess('ai:sambanova:main');
+        else throw new Error('Empty response');
+      } else { throw new Error(`HTTP ${r.status}`); }
+    } catch(e) { console.warn('ohlcv_critic SambaNova failed:', e.message); await cb.onFailure('ai:sambanova:main'); }
+  } else if (SAMBANOVA_KEY) { console.log('ohlcv_critic: SambaNova circuit OPEN — skipping to Groq'); }
+
+  // Fallback: Groq (last resort, tanpa circuit breaker — pola sama dengan
+  // fundamentalAnalysisHandler fallback 2, lihat daun_merah_plan.md Session 145).
+  if (!rawText && GROQ_KEY) {
+    try {
+      if (!await allowAiCall('groq')) throw new Error('AI daily budget exceeded');
+      const r = await fetch(GROQ_URL_FUND, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${GROQ_KEY}` },
+        body: JSON.stringify({ model: GROQ_MODEL_FUND, messages, max_tokens: 600, temperature: 0 }),
+        signal: AbortSignal.timeout(25000),
+      });
+      if (r.ok) {
+        const j = await r.json(); rawText = j.choices?.[0]?.message?.content?.trim() || null; model = GROQ_MODEL_FUND;
+        if (!rawText) throw new Error('Empty response');
+      } else { throw new Error(`HTTP ${r.status}`); }
+    } catch(e) { console.warn('ohlcv_critic Groq fallback failed:', e.message); }
+  }
+
+  if (!rawText) {
+    return res.status(200).json({ error: 'AI Kritikus tidak tersedia (SambaNova & Groq offline/limit habis) — coba lagi nanti.' });
+  }
+
+  let objections = null, verdict = null;
+  try {
+    const jsonStart = rawText.indexOf('{');
+    const jsonEnd   = rawText.lastIndexOf('}');
+    const cleaned   = jsonStart !== -1 && jsonEnd !== -1 ? rawText.slice(jsonStart, jsonEnd + 1) : rawText;
+    const parsed = JSON.parse(cleaned);
+    if (Array.isArray(parsed.objections)) {
+      objections = parsed.objections
+        .filter(o => o && typeof o.reason === 'string' && o.reason.trim())
+        .slice(0, 3)
+        .map(o => ({ severity: o.severity === 'tinggi' ? 'tinggi' : 'sedang', reason: o.reason.trim() }));
+    }
+    verdict = ['lanjut', 'tunda', 'batalkan'].includes(parsed.verdict) ? parsed.verdict : (objections?.length ? 'tunda' : 'lanjut');
+  } catch (e) {
+    console.warn('ohlcv_critic: JSON parse gagal, fallback raw text:', e.message);
+  }
+
+  return res.status(200).json({
+    objections, verdict, model,
+    raw: objections === null ? rawText : undefined, // fallback tampilan mentah kalau parse gagal
+    symbol, label,
+    generated_at: new Date().toISOString(),
+  });
+}
+
 async function ohlcvDashboardHandler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Cache-Control', 'no-cache');
@@ -3085,3 +3270,4 @@ module.exports.resampleTo4h = resampleTo4h;
 module.exports._extractRingkasanExcerpt = _extractRingkasanExcerpt;
 module.exports._formatFundamentalBlock = _formatFundamentalBlock;
 module.exports._formatTrackRecordBlock = _formatTrackRecordBlock;
+module.exports._calEventMsWib = _calEventMsWib;

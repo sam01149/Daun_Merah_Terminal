@@ -4277,7 +4277,7 @@ window.addEventListener('DOMContentLoaded', updateThemeIcon);
 
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.07.17.9';
+const APP_VERSION = '2026.07.17.10';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
@@ -5748,6 +5748,14 @@ const LS_ANALISA_COOLDOWN = 'analisa_ai_cooldown_end';
 let analisaAiCooldownEnd = parseInt(localStorage.getItem(LS_ANALISA_COOLDOWN) || '0');
 let analisaAiCooldownInterval = null;
 
+// AI Kritikus (Plan I item 3) — cache client per symbol 30 menit (key = symbol +
+// fingerprint setup, jadi setup baru dari re-generate Analisa otomatis invalidate
+// cache lama, bukan nunjukin kritik untuk setup yang sudah berubah) + cooldown
+// tombol 90 detik terpisah dari cooldown Analisa AI (fitur beda, kuota beda).
+let analisaCriticCache = {}; // { [symbol]: { data, fingerprint, ts } }
+let analisaCriticCooldownEnd = 0;
+let analisaCriticCooldownInterval = null;
+
 function _startAnalisaCooldown() {
   analisaAiCooldownEnd = Date.now() + 90000;
   try { localStorage.setItem(LS_ANALISA_COOLDOWN, analisaAiCooldownEnd); } catch(e) {}
@@ -5768,6 +5776,106 @@ function _tickAnalisaCooldown() {
       btn.querySelector('span').textContent = 'Analisa AI';
     }
   }, 1000);
+}
+
+function _startCriticCooldown() {
+  analisaCriticCooldownEnd = Date.now() + 90000;
+  _tickCriticCooldown();
+}
+function _tickCriticCooldown() {
+  clearInterval(analisaCriticCooldownInterval);
+  analisaCriticCooldownInterval = setInterval(() => {
+    const remaining = Math.ceil((analisaCriticCooldownEnd - Date.now()) / 1000);
+    const btn = document.getElementById('analisaCriticBtn');
+    if (!btn) { clearInterval(analisaCriticCooldownInterval); return; }
+    if (remaining > 0) {
+      btn.disabled = true;
+      btn.textContent = `Tunggu ${remaining}s`;
+    } else {
+      clearInterval(analisaCriticCooldownInterval);
+      btn.disabled = false;
+      btn.textContent = 'Uji Kelemahan';
+    }
+  }, 1000);
+}
+
+function _renderCriticResult(data) {
+  const box = document.getElementById('analisaCriticBox');
+  if (!box) return;
+  box.style.display = 'block';
+  if (data.error) {
+    box.innerHTML = `<div class="analisa-tf-card" style="border-left-color:var(--muted);margin-bottom:0">
+      <div class="analisa-tf-label">UJI KELEMAHAN</div>
+      <div style="font-size:11px;color:var(--muted);line-height:1.5">${escHtml(data.error)}</div>
+    </div>`;
+    return;
+  }
+  if (!data.objections) {
+    // JSON gagal parse di server — tampilkan teks mentah alih-alih menyembunyikan hasil.
+    box.innerHTML = `<div class="analisa-tf-card" style="border-left-color:var(--yellow);margin-bottom:0">
+      <div class="analisa-tf-label" style="color:var(--yellow) !important">UJI KELEMAHAN</div>
+      <div style="font-size:11px;color:var(--text);white-space:pre-wrap;line-height:1.5">${escHtml(data.raw || '(kosong)')}</div>
+    </div>`;
+    return;
+  }
+  const VERDICT = {
+    lanjut:   { label: 'LANJUT',   col: 'var(--green)' },
+    tunda:    { label: 'TUNDA',    col: 'var(--yellow)' },
+    batalkan: { label: 'BATALKAN', col: 'var(--red)' },
+  };
+  const v = VERDICT[data.verdict] || { label: (data.verdict || '—').toUpperCase(), col: 'var(--muted)' };
+  const objHtml = data.objections.length > 0
+    ? data.objections.map(o => {
+        const sevCol = o.severity === 'tinggi' ? 'var(--red)' : 'var(--yellow)';
+        return `<div style="margin-top:6px;padding-left:8px;border-left:2px solid ${sevCol}">
+          <span style="font-size:8px;font-weight:700;color:${sevCol};letter-spacing:.05em">${o.severity.toUpperCase()}</span>
+          <div style="font-size:11px;color:var(--text);line-height:1.5">${escHtml(o.reason)}</div>
+        </div>`;
+      }).join('')
+    : `<div style="font-size:11px;color:var(--muted);line-height:1.5">Tidak ada keberatan signifikan — data yang tersedia mendukung setup ini.</div>`;
+  box.innerHTML = `<div class="analisa-tf-card" style="border-left-color:${v.col};margin-bottom:0">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+      <div class="analisa-tf-label" style="margin-bottom:0">UJI KELEMAHAN</div>
+      <span style="background:${v.col};color:#0a0f1a;font-size:9px;font-weight:700;padding:2px 8px;border-radius:3px;font-family:'DM Mono',monospace;letter-spacing:.06em">${v.label}</span>
+    </div>
+    ${objHtml}
+  </div>`;
+}
+
+async function analisaRunCritic(symbol) {
+  if (!symbol) return;
+  const ai = analisaAiCache[symbol];
+  const st = ai?.structured;
+  if (!st || !st.entry_zone) { showToast('Info', 'Jalankan Analisa AI dulu sebelum uji kelemahan.', 3000); return; }
+
+  const fingerprint = `${st.entry_zone}|${st.sl}|${st.tp}`;
+  const cached = analisaCriticCache[symbol];
+  if (cached && cached.fingerprint === fingerprint && Date.now() - cached.ts < 30 * 60 * 1000) {
+    _renderCriticResult(cached.data);
+    return;
+  }
+  if (Date.now() < analisaCriticCooldownEnd) return; // tombol seharusnya sudah disabled, jaga-jaga double click
+
+  const btn = document.getElementById('analisaCriticBtn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Menguji...'; }
+  const box = document.getElementById('analisaCriticBox');
+  if (box) { box.style.display = 'none'; }
+
+  try {
+    const res = await fetch('/api/admin?action=ohlcv_critic', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ symbol, label: analisaActive.label }),
+      signal: AbortSignal.timeout(30000),
+    });
+    const data = await res.json();
+    analisaCriticCache[symbol] = { data, fingerprint, ts: Date.now() };
+    _renderCriticResult(data);
+  } catch(e) {
+    _renderCriticResult({ error: 'Kritik tidak tersedia, coba lagi.' });
+  } finally {
+    _startCriticCooldown();
+  }
 }
 
 function _analisaSaveData(symbol) {
@@ -5933,6 +6041,16 @@ function _renderStructuredAi(structured, commentary, model, hasMakro, isCached, 
 
       if (structured.entry_basis) {
         html += `<div style="margin:-4px 0 10px;font-size:10px;color:var(--muted);line-height:1.5"><span style="color:var(--text)">DASAR </span>${escHtml(structured.entry_basis)}</div>`;
+      }
+
+      // AI Kritikus (Plan I item 3) — hanya muncul kalau ada entry_zone (kalau
+      // makro_alignment konflik, entry_zone sudah di-null-kan di kode, jadi
+      // tombol otomatis tidak muncul — tidak ada setup untuk dikritik).
+      if (structured.entry_zone) {
+        html += `<div style="margin-top:8px">
+          <button type="button" id="analisaCriticBtn" onclick="analisaRunCritic(analisaActive.symbol)" style="width:100%;padding:6px;font-family:'DM Mono',monospace;font-size:9px;letter-spacing:.05em;text-transform:uppercase;border-radius:3px;border:1px solid var(--yellow);background:transparent;color:var(--yellow);cursor:pointer;font-weight:700">Uji Kelemahan</button>
+          <div id="analisaCriticBox" style="display:none;margin-top:8px"></div>
+        </div>`;
       }
     }
 

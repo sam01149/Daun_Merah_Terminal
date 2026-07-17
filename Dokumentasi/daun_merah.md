@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-07-17 (Session 180 — Eksekusi Plan I Item 1-2: Transmisi Komoditas + Track Record ke Prompt Analisa. Detail history dapat dilihat pada changelog sesi di bawah.)
+> **Last updated:** 2026-07-17 (Session 180 — Eksekusi Plan I Item 1-3: Transmisi Komoditas, Track Record ke Prompt Analisa, AI Kritikus "Uji Kelemahan". Detail history dapat dilihat pada changelog sesi di bawah.)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -25,8 +25,17 @@
 
 **Bonus — bug dead-code ditemukan saat self-evaluasi (`api/admin.js`):** `_evaluateSetups`, `_aggSetupStats`, dan `setupStatsHandler` ternyata terduplikasi 100% identik (2 blok ~90 baris persis sama, kemungkinan besar dari paste ganda sesi lampau). Blok kedua (dead code, redeclare tanpa efek fungsional) dihapus.
 
+**Item 3 — AI Kritikus: tombol "UJI KELEMAHAN" (`api/admin.js` + `index.html`):**
+- Action baru `?action=ohlcv_critic` (numpang admin.js, BUKAN function baru — Vercel Hobby 12/12 penuh), rate limit 3/menit via `PUBLIC_ACTION_LIMITS`.
+- Handler `ohlcvCriticHandler`: WAJIB sudah ada `ohlcv_analysis:<symbol>` dengan `entry_zone` — kalau kosong, balas error "jalankan Analisa AI dulu" TANPA analisa ulang. Fact sheet 100% deterministik dari Redis yang sudah ada (`cb_bias`, `cot_cache_v2`, `risk_regime`, `retail_sentiment_cache`, `rr_cache_v2`, `calendar_v1`, `setup_log:v1`) — reuse `_formatFundamentalBlock`/`_formatOptionsSentimentBlock`/`_formatTrackRecordBlock` yang sudah ada, TIDAK ada fetch eksternal baru.
+- Helper pure baru `_calEventMsWib(dateStr, timeWib)`: konversi event kalender WIB ke epoch ms untuk filter "event <24 jam" — "Tentative" (jam belum pasti) → null, tidak dihitung.
+- Prompt kritikus 1 AI call (SambaNova akun 1, circuit `ai:sambanova:main` DIBAGI dengan `ohlcv_analyze` primary — sengaja, endpoint fisik sama → Groq fallback tanpa circuit breaker, pola `fundamentalAnalysisHandler`), timeout 25s: cari maksimal 3 keberatan kenapa trade TIDAK layak diambil, tiap keberatan wajib kutip angka dari fact sheet. Output JSON `{objections:[{severity,reason}], verdict}` diekstrak via brace-matching (robust terhadap markdown fence), fallback ke `raw` text kalau parse gagal.
+- Frontend: tombol "Uji Kelemahan" muncul di kartu AI SETUP & BIAS hanya kalau `structured.entry_zone` ada (otomatis tersembunyi saat `makro_alignment: konflik` karena entry_zone sudah di-null-kan aturan session 168 — tidak perlu logika tambahan). Hasil dirender kotak terpisah (`analisaCriticBox`) dengan badge verdict berwarna. Cache client per symbol 30 menit, key termasuk fingerprint setup (entry/sl/tp) supaya re-generate Analisa dengan setup baru otomatis invalidate cache lama. Cooldown tombol 90 detik terpisah dari cooldown Analisa AI (pola `_startAnalisaCooldown`, disalin jadi `_startCriticCooldown`).
+- 4 unit test baru untuk `_calEventMsWib` + fact-sheet reuse sudah tercakup test `_formatTrackRecordBlock` (item 2).
+- Kuota: +1 AI call HANYA saat tombol ditekan (bukan otomatis tiap analisa) — konsisten dengan filosofi "hemat" versi Plan I vs Plan H penuh.
+
 ### Verifikasi
-`node --check api/market-digest.js` + `node --check api/admin.js` bersih; `npm test` 305/305 hijau (301 lama + 4 baru). Verifikasi kualitatif item 1 & 2 menunggu run Ringkasan/Analisa berikutnya (cron alami / klik user, tanpa AI call tambahan sesuai instruksi hemat kuota).
+`node --check api/market-digest.js` + `node --check api/admin.js` bersih; parse-check inline script `index.html` bersih; `npm test` 307/307 hijau (301 lama + 6 baru). Verifikasi kualitatif (live test 1 call + tombol muncul/sembunyi) dilakukan setelah deploy — dicatat di entri berikutnya.
 
 ---
 

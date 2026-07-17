@@ -340,7 +340,7 @@ test('_formatConfluenceBlock: render header + ID zona A1/B1', () => {
 
 // ── _evaluateSetups + _aggSetupStats (Tier 1 outcome logging, session 166) ────
 
-const { _evaluateSetups, _aggSetupStats, _formatTrackRecordBlock } = require('../api/admin.js');
+const { _evaluateSetups, _aggSetupStats, _formatTrackRecordBlock, _calEventMsWib } = require('../api/admin.js');
 
 // Candle 1H sintetis: t dalam detik epoch
 const mkC = (t, o, h, l, c) => ({ t, o, h, l, c, v: 0 });
@@ -487,4 +487,23 @@ test('_formatTrackRecordBlock: symbol lain / log kosong / korup → string koson
   assert.strictEqual(_formatTrackRecordBlock([], 'EURUSD'), ''); // log kosong
   assert.strictEqual(_formatTrackRecordBlock(null, 'EURUSD'), ''); // korup (bukan array)
   assert.strictEqual(_formatTrackRecordBlock(log, null), ''); // symbol kosong
+});
+
+// ── _calEventMsWib (AI Kritikus, Plan I item 3, session 180) ──────────────────
+
+test('_calEventMsWib: "HH:MM WIB" terkonversi ke epoch ms yang benar (WIB = UTC+7)', () => {
+  const ms = _calEventMsWib('2026-07-20', '14:30 WIB');
+  const d = new Date(ms);
+  assert.strictEqual(d.getUTCHours(), 7); // 14:30 WIB - 7 jam = 07:30 UTC
+  assert.strictEqual(d.getUTCMinutes(), 30);
+  assert.strictEqual(d.getUTCFullYear(), 2026);
+  assert.strictEqual(d.getUTCMonth(), 6); // Juli = index 6
+  assert.strictEqual(d.getUTCDate(), 20);
+});
+
+test('_calEventMsWib: "Tentative" atau input kosong/korup → null, jangan dihitung jaraknya', () => {
+  assert.strictEqual(_calEventMsWib('2026-07-20', 'Tentative'), null);
+  assert.strictEqual(_calEventMsWib(null, '14:30 WIB'), null);
+  assert.strictEqual(_calEventMsWib('2026-07-20', null), null);
+  assert.strictEqual(_calEventMsWib('2026-07-20', 'garbage'), null);
 });
