@@ -1,0 +1,7 @@
+Heartbeat file untuk workflow keepalive.yml.
+Tujuan: mencegah GitHub menonaktifkan scheduled workflow otomatis di repo publik
+yang tidak ada aktivitas (commit) selama 60 hari.
+Jangan hapus file ini. Timestamp terakhir di bawah diperbarui otomatis oleh
+workflow keepalive.yml tiap bulan — jangan edit manual.
+
+last_run: (belum pernah dijalankan)

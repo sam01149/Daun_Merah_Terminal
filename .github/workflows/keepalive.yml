@@ -1,0 +1,36 @@
+name: Keepalive Heartbeat
+
+# Tujuan: GitHub menonaktifkan scheduled workflow otomatis di repo publik
+# yang 60 hari tanpa aktivitas commit. Job ini bikin 1 commit kecil tiap
+# bulan supaya semua cron produksi (ohlcv-sync, market-digest, dll) tidak
+# mati diam-diam. Kalau app dipensiunkan, matikan workflow ini manual
+# (lihat catatan di daun_merah_vendor.md §cron).
+
+on:
+  schedule:
+    - cron: '0 3 1 * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  heartbeat:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Update heartbeat timestamp
+        run: |
+          echo "last_run: $(date -u +'%Y-%m-%dT%H:%M:%SZ')" > /tmp/last_run.txt
+          sed -i '/^last_run:/d' .github/heartbeat.txt
+          cat /tmp/last_run.txt >> .github/heartbeat.txt
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add .github/heartbeat.txt
+          git diff --cached --quiet && exit 0
+          git commit -m "chore: keepalive [skip ci]"
+          git push

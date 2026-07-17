@@ -171,13 +171,15 @@ const CB_MISTRAL     = 'ai:mistral';
 // testing and evaluation purposes, not in production"). Kode diagnostik tetap dibuat
 // (murah, konsisten pola kandidat lain yang ditolak) untuk jaga-jaga kalau NVIDIA membuka
 // tier produksi gratis di masa depan — TIDAK dijalankan sebagai bagian gate promosi.
-// Model: DeepSeek yang di-host NIM (familiar — sama keluarga dengan primary produksi
-// SambaNova sekarang). "deepseek-ai/deepseek-v3.2" lalu "deepseek-ai/deepseek-v3.1" sama-
-// sama HTTP 404 saat dites live 2026-07-18 (slug API NVIDIA sering beda dari slug URL
-// modelcard) — id final dikonfirmasi dari docs.api.nvidia.com/nim/reference/deepseek-ai-
-// deepseek-v3_1-terminus (checkpoint terbaru V3.1, ganti akhiran "-terminus").
+// Model: 3 slug DeepSeek dicoba dulu (v3.2, v3.1, v3.1-terminus) — semua HTTP 404 (session
+// 183, 2026-07-18). Atas permintaan user, diganti ke Nemotron 3 Ultra — model NVIDIA
+// sendiri (native NIM, bukan pihak ketiga), sudah dikenal proyek ini via OpenRouter/Ollama
+// Cloud (lihat NEMOTRON_MODEL/OLLAMA_NEMOTRON_MODEL) tapi BELUM PERNAH dites via NIM
+// langsung — infra hosting beda, jadi masalah latency liar 7-41s yang bikin didemote dari
+// primary (session 162, Ollama Cloud) TIDAK otomatis berlaku di sini, perlu dites ulang.
+// id dikonfirmasi docs.api.nvidia.com/nim/reference/nvidia-nemotron-3-ultra-550b-a55b.
 const NVIDIA_URL   = 'https://integrate.api.nvidia.com/v1/chat/completions';
-const NVIDIA_MODEL = 'deepseek-ai/deepseek-v3.1-terminus';
+const NVIDIA_MODEL = 'nvidia/nemotron-3-ultra-550b-a55b';
 const CB_NVIDIA     = 'ai:nvidia';
 
 const MAJOR_CURRENCIES = new Set(['USD','EUR','GBP','JPY','CAD','AUD','NZD','CHF']);
@@ -1946,20 +1948,25 @@ ${xauHistoryBlock}`;
       }
     }
 
-    // NVIDIA NIM DeepSeek-V3.2 — diagnostik terisolasi Plan N. TIDAK akan pernah
+    // NVIDIA NIM Nemotron 3 Ultra — diagnostik terisolasi Plan N. TIDAK akan pernah
     // dipromosikan ke chain produksi (ToS trial melarang produksi eksplisit, lihat
     // NVIDIA_URL/NVIDIA_MODEL) — jalur ini disiapkan murni untuk dokumentasi/jaga-jaga,
-    // bukan bagian gate promosi aktif.
+    // bukan bagian gate promosi aktif. Timeout dilonggarkan (45s, sama seperti Ollama
+    // Cloud di testNemotronOnly di atas) karena model/keluarga ini pernah tercatat latency
+    // liar 7-41s di infra LAIN (session 162) — NIM native infra-nya beda, belum tentu sama,
+    // tapi headroom disiapkan dulu daripada timeout palsu menutupi hasil nyata.
+    // chat_template_kwargs.enable_thinking:false — parameter native vLLM yang sudah
+    // terbukti kerja untuk keluarga Nemotron 3 di project ini (lihat NEMOTRON_SUPER_MODEL).
     if (testNvidiaOnly) {
-      const nvidiaTimeout1 = 20000;
+      const nvidiaTimeout1 = 45000;
       if (NVIDIA_KEY && await cb.canCall(CB_NVIDIA)) {
         const t0nv = Date.now();
         try {
-          console.log('Call 1: trying NVIDIA NIM DeepSeek-V3.2 — diagnostik test_nvidia=1');
-          const raw = await aiCall(NVIDIA_URL, NVIDIA_KEY, NVIDIA_MODEL, call1Messages, 1300, 0.25, nvidiaTimeout1, {}, {}, 'nvidia');
+          console.log('Call 1: trying NVIDIA NIM Nemotron 3 Ultra — diagnostik test_nvidia=1');
+          const raw = await aiCall(NVIDIA_URL, NVIDIA_KEY, NVIDIA_MODEL, call1Messages, 1300, 0.25, nvidiaTimeout1, {}, { chat_template_kwargs: { enable_thinking: false } }, 'nvidia');
           const elapsed = Date.now() - t0nv;
           if (raw.trim()) {
-            article = raw.trim(); method = 'nvidia-nim-deepseek';
+            article = raw.trim(); method = 'nvidia-nim-nemotron-ultra';
             providerLog.push(`nvidia:ok(${elapsed}ms,${article.length}c)`);
           } else {
             providerLog.push(`nvidia:empty(${elapsed}ms)`);
