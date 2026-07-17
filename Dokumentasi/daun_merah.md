@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-07-17 (Session 180 — Eksekusi Plan I Item 1-4: + Perataan Auto-Tick Playbook Non-SMC. Detail history dapat dilihat pada changelog sesi di bawah.)
+> **Last updated:** 2026-07-17 (Session 180 — Plan I SELESAI SEMUA (Item 1-5): + Journal Bias Analyzer. Detail history dapat dilihat pada changelog sesi di bawah.)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -48,6 +48,15 @@
 
 ### Verifikasi
 `npm test` 307/307 hijau; parse-check inline script `index.html` bersih; field shape (`d1`, `d1_ext`, `h4`, `structure`, `rsi_h4`, `patterns`, COT `positions`) dicek via curl endpoint production — semua cocok kecuali `percentiles` (lihat keterbatasan di atas). Uji visual UI checklist langsung di browser BELUM dilakukan sesi ini (di luar kapasitas tool non-interaktif) — disarankan pengecekan manual user di 3 playbook sebelum dianggap benar-benar tuntas.
+
+**Item 5 — Journal Bias Analyzer (`api/journal.js` + `index.html`), Plan I SELESAI SEMUA:**
+- Pure function baru `_journalBiasStats(entries)`: 5 metrik deterministik dari trade closed — (1) disposition effect (rasio avg win R / avg loss R), (2) overtrading/revenge trading (jarak jam dari close trade sebelumnya ke entry berikutnya, dipisah setelah-win vs setelah-loss — sinyal true kalau jarak setelah-loss <60% dari setelah-win), (3) distribusi sesi FX (Tokyo/London/Overlap/NY/Closed, UTC) + win-rate per sesi, (4) win-rate & avg R per `checklist_playbook`, (5) streak saat ini + loss streak terpanjang historis. Gate sampel: <10 trade closed → `{sufficient:false}`, TIDAK menghitung apa pun lagi (0 biaya komputasi sia-sia, 0 AI call).
+- Action baru `?action=bias_diagnosis` (numpang `api/journal.js`, function existing): baca semua entries device, hitung stats, kalau cukup sampel baru panggil 1 AI call (Cerebras → SambaNova akun2 → Groq, chain `aiCall()` yang sudah ada) untuk menarasikan angka dalam bahasa suportif non-menghakimi — prompt eksplisit melarang AI menghitung ulang/mengubah angka atau mengarang masalah yang tidak ada di data. Cache 24h di Redis (`journal_bias:<device>`), TAPI diinvalidasi otomatis kalau `sample_count` berubah (trade baru ditutup) — bukan cache waktu buta.
+- Frontend: tombol "DIAGNOSA PERILAKU" di tab Jurnal (pola identik `jnRunEdgeStats` yang sudah ada) — render kartu Disposition Effect, Overtrading, Distribusi Sesi, Win-Rate per Playbook, Streak, lalu narasi AI di bawahnya. Kalau AI gagal, statistik tetap tampil (fitur inti tidak digugurkan oleh AI down).
+- 8 unit test baru (`test/journal_bias.test.js`): gate sampel, filter status/field, disposition ratio, overtrading signal (true & false case), distribusi sesi, win-rate per playbook, streak.
+
+### Verifikasi
+`node --check api/journal.js` bersih; parse-check inline script `index.html` bersih; `npm test` 315/315 hijau (307 + 8 baru). Verifikasi live jalur AI-narrative BELUM dilakukan (butuh device dengan ≥10 trade closed asli — tidak membuat data uji palsu di production untuk menghindari polusi jurnal user sungguhan); jalur gate-sampel (0 AI call) aman diverifikasi cepat pasca-deploy dengan device_id kosong.
 
 ---
 

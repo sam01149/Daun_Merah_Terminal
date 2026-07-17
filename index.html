@@ -3436,6 +3436,12 @@ body:not(.light-theme) .ringkasan-gen-btn {
       </button>
       <!-- Edge-per-checklist-condition panel -->
       <div class="jn-ai-panel" id="jnEdgePanel"></div>
+      <button class="jn-ai-btn" id="jnBiasBtn" onclick="jnRunBiasDiagnosis()" style="background:linear-gradient(135deg,rgba(167,139,250,.15),rgba(244,114,182,.15));border-color:rgba(167,139,250,.4);color:#a78bfa">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg>
+        DIAGNOSA PERILAKU
+      </button>
+      <!-- Journal Bias Analyzer panel (Plan I item 5) -->
+      <div class="jn-ai-panel" id="jnBiasPanel"></div>
       <!-- Portfolio VaR card — rendered by jnRenderVaR() after entries load -->
       <div id="jnVarCard"></div>
       <div style="display:flex;gap:6px;margin-bottom:12px;align-items:center;flex-wrap:wrap">
@@ -4277,7 +4283,7 @@ window.addEventListener('DOMContentLoaded', updateThemeIcon);
 
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.07.17.11';
+const APP_VERSION = '2026.07.17.12';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
@@ -14312,6 +14318,92 @@ async function jnRunEdgeStats() {
   } finally {
     btn.disabled = false;
     btn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18M18 9l-5 5-4-4-3 3"/></svg> EDGE PER KONDISI CHECKLIST`;
+  }
+}
+
+// Journal Bias Analyzer (Plan I item 5, session 180) — statistik dihitung server
+// (deterministik, 0 AI call kalau sampel <10), narasi AI cuma menjelaskan angka
+// yang sudah pasti benar dalam bahasa suportif non-menghakimi.
+const JN_BIAS_SESS_LABEL = { tokyo: 'Tokyo', london: 'London', overlap: 'London+NY Overlap', ny: 'New York', closed: 'Market Closed' };
+async function jnRunBiasDiagnosis(force = false) {
+  const deviceId = szGetDeviceId();
+  const btn   = document.getElementById('jnBiasBtn');
+  const panel = document.getElementById('jnBiasPanel');
+  if (!btn || !panel) return;
+
+  btn.disabled = true;
+  btn.textContent = 'Menganalisa...';
+  panel.style.display = 'block';
+  panel.innerHTML = `<div style="color:var(--muted);font-family:'DM Mono',monospace;font-size:11px;text-align:center;padding:20px">Menghitung statistik jurnal...</div>`;
+
+  try {
+    const url = `/api/journal?action=bias_diagnosis&device_id=${encodeURIComponent(deviceId)}${force ? '&force=1' : ''}`;
+    const res = await fetch(url, { signal: AbortSignal.timeout(30000) });
+    const data = await res.json();
+
+    if (!res.ok) {
+      panel.innerHTML = `<div style="color:var(--accent);font-family:'DM Mono',monospace;font-size:11px">${data.error || 'Gagal memuat data.'}</div>`;
+      return;
+    }
+    if (!data.sufficient) {
+      panel.innerHTML = `<div style="color:var(--muted);font-family:'DM Mono',monospace;font-size:11px;text-align:center;padding:16px">${data.message}<br><br>Fitur ini butuh histori jurnal yang cukup untuk statistik yang bermakna (bukan sinyal trading — cermin disiplin dari trade-mu sendiri).</div>`;
+      return;
+    }
+
+    const s = data.stats;
+    const dispCol = s.disposition.ratio != null && s.disposition.ratio < 0.7 ? 'var(--accent)' : s.disposition.ratio != null && s.disposition.ratio < 1 ? 'var(--yellow)' : 'var(--green)';
+    const dispTxt = s.disposition.ratio == null ? 'Data belum cukup (butuh win & loss keduanya).'
+      : s.disposition.ratio < 0.7 ? `Indikasi disposition effect KUAT — profit rata-rata (${s.disposition.avg_win_r}R) jauh lebih kecil dari loss rata-rata (${s.disposition.avg_loss_r}R).`
+      : s.disposition.ratio < 1 ? `Indikasi disposition effect ringan — profit (${s.disposition.avg_win_r}R avg) sedikit lebih kecil dari loss (${s.disposition.avg_loss_r}R avg).`
+      : `Sehat — profit rata-rata (${s.disposition.avg_win_r}R) tidak lebih kecil dari loss rata-rata (${s.disposition.avg_loss_r}R).`;
+
+    const otCol = s.overtrading.signal === true ? 'var(--accent)' : 'var(--green)';
+    const otTxt = s.overtrading.signal == null ? 'Data belum cukup.'
+      : s.overtrading.signal === true ? `Indikasi revenge trading — rata-rata cuma ${s.overtrading.avg_gap_after_loss_h}j jeda setelah LOSS, vs ${s.overtrading.avg_gap_after_win_h}j setelah WIN.`
+      : `Tidak ada indikasi revenge trading — jeda setelah loss (${s.overtrading.avg_gap_after_loss_h}j) tidak jauh lebih pendek dari setelah win (${s.overtrading.avg_gap_after_win_h}j).`;
+
+    const sessRows = s.session_stats.map(sess => `<div style="display:flex;justify-content:space-between;font-size:10px;font-family:'DM Mono',monospace;padding:3px 0;border-top:1px solid var(--border)">
+      <span style="color:var(--muted)">${JN_BIAS_SESS_LABEL[sess.session] || sess.session} (n=${sess.n})</span>
+      <span style="color:var(--text)">${sess.win_rate}% win · ${sess.avg_r >= 0 ? '+' : ''}${sess.avg_r}R avg</span>
+    </div>`).join('');
+
+    const pbRows = s.playbook_stats.map(pb => `<div style="display:flex;justify-content:space-between;font-size:10px;font-family:'DM Mono',monospace;padding:3px 0;border-top:1px solid var(--border)">
+      <span style="color:var(--muted)">${escHtml(pb.playbook)} (n=${pb.n})</span>
+      <span style="color:var(--text)">${pb.win_rate}% win · ${pb.avg_r >= 0 ? '+' : ''}${pb.avg_r}R avg</span>
+    </div>`).join('');
+
+    const streakTxt = `${s.streak.current}x ${s.streak.current_type === 'win' ? 'MENANG' : 'KALAH'} beruntun saat ini · loss streak terpanjang historis: ${s.streak.longest_loss_streak}x`;
+
+    const narrativeHtml = data.narrative
+      ? `<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);font-size:11px;line-height:1.7;color:var(--text);white-space:pre-wrap">${escHtml(data.narrative)}</div>`
+      : `<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);font-size:10px;color:var(--muted)">Narasi AI tidak tersedia saat ini — statistik di atas tetap valid (dihitung kode, bukan AI).</div>`;
+
+    panel.innerHTML = `
+      <div style="font-size:9px;color:var(--muted);font-family:'DM Mono',monospace;margin-bottom:8px">${s.sample_count} trade closed dipakai${data.from_cache ? ' · dari cache' : ''} · <span onclick="jnRunBiasDiagnosis(true)" style="cursor:pointer;text-decoration:underline">refresh</span></div>
+      <div style="background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:8px 10px;margin-bottom:6px">
+        <div style="font-size:9px;color:var(--muted);font-family:'DM Mono',monospace;text-transform:uppercase">Disposition Effect</div>
+        <div style="font-size:11px;color:${dispCol};line-height:1.5;margin-top:2px">${dispTxt}</div>
+      </div>
+      <div style="background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:8px 10px;margin-bottom:6px">
+        <div style="font-size:9px;color:var(--muted);font-family:'DM Mono',monospace;text-transform:uppercase">Overtrading / Revenge Trading</div>
+        <div style="font-size:11px;color:${otCol};line-height:1.5;margin-top:2px">${otTxt}</div>
+      </div>
+      <div style="background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:8px 10px;margin-bottom:6px">
+        <div style="font-size:9px;color:var(--muted);font-family:'DM Mono',monospace;text-transform:uppercase">Distribusi Sesi Entry</div>
+        ${sessRows}
+      </div>
+      <div style="background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:8px 10px;margin-bottom:6px">
+        <div style="font-size:9px;color:var(--muted);font-family:'DM Mono',monospace;text-transform:uppercase">Win-Rate per Playbook</div>
+        ${pbRows}
+      </div>
+      <div style="font-size:10px;color:var(--muted);font-family:'DM Mono',monospace">${streakTxt}</div>
+      ${narrativeHtml}
+    `;
+  } catch(e) {
+    panel.innerHTML = `<div style="color:var(--accent);font-family:'DM Mono',monospace;font-size:11px">Timeout atau error: ${e.message}</div>`;
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg> DIAGNOSA PERILAKU`;
   }
 }
 

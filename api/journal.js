@@ -204,6 +204,114 @@ async function computeMfeMae(entry) {
   return { quality: 'unavailable', reason: 'data_window_exceeded' };
 }
 
+// ── Journal Bias Analyzer (Plan I item 5, session 180) ────────────────────────
+// Diagnosa kebiasaan buruk trading dari data jurnal yang SUDAH ada — statistik
+// dihitung KODE (deterministik, testable), AI cuma menarasikan 1x saat user minta
+// (lihat biasDiagnosisHandler di bawah). Konsep dari referensi user (Vibe-Trading),
+// diadaptasi versi mini: bukan sinyal trading, cermin disiplin dari jurnal sendiri.
+const JOURNAL_BIAS_MIN_SAMPLE = 10;
+const JOURNAL_BIAS_SESSIONS = [
+  { key: 'tokyo',   label: 'Tokyo',              start: 0,      end: 8 * 60 },
+  { key: 'london',  label: 'London',             start: 8 * 60, end: 13 * 60 },
+  { key: 'overlap', label: 'London+NY Overlap',  start: 13 * 60, end: 16 * 60 },
+  { key: 'ny',      label: 'New York',           start: 16 * 60, end: 21 * 60 },
+  { key: 'closed',  label: 'Market Closed',      start: 21 * 60, end: 24 * 60 },
+];
+
+function _journalBiasStats(entries) {
+  const closed = (Array.isArray(entries) ? entries : [])
+    .filter(e => e && e.status === 'closed' && typeof e.r_actual === 'number' && !isNaN(e.r_actual) && e.created_at);
+  if (closed.length < JOURNAL_BIAS_MIN_SAMPLE) {
+    return { sufficient: false, sample_count: closed.length, min_required: JOURNAL_BIAS_MIN_SAMPLE };
+  }
+  const sorted = [...closed].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+  const avg = arr => arr.length ? arr.reduce((s, x) => s + x, 0) / arr.length : null;
+
+  // 1. Disposition effect: rasio avg win R / avg loss R (magnitude). < 1 = profit
+  // kecil-kecil diambil buru-buru, loss dibiarkan besar — indikasi klasik.
+  const winsR   = sorted.filter(e => e.r_actual > 0).map(e => e.r_actual);
+  const lossesR = sorted.filter(e => e.r_actual < 0).map(e => Math.abs(e.r_actual));
+  const avgWinR  = avg(winsR), avgLossR = avg(lossesR);
+  const dispositionRatio = (avgWinR != null && avgLossR != null && avgLossR > 0)
+    ? +(avgWinR / avgLossR).toFixed(2) : null;
+
+  // 2. Overtrading/revenge trading: jarak (jam) dari CLOSE trade sebelumnya ke
+  // ENTRY trade berikutnya, dipisah berdasarkan apakah trade sebelumnya win/loss.
+  // Jarak jauh lebih pendek setelah loss = indikasi revenge trading.
+  const gapsAfterWin = [], gapsAfterLoss = [];
+  for (let i = 1; i < sorted.length; i++) {
+    const prev = sorted[i - 1], cur = sorted[i];
+    const prevCloseMs = new Date(prev.closed_at || prev.created_at).getTime();
+    const curEntryMs  = new Date(cur.created_at).getTime();
+    const gapH = (curEntryMs - prevCloseMs) / 3600000;
+    if (!isFinite(gapH) || gapH < 0) continue;
+    if (prev.r_actual > 0) gapsAfterWin.push(gapH);
+    else if (prev.r_actual < 0) gapsAfterLoss.push(gapH);
+  }
+  const avgGapAfterWin  = avg(gapsAfterWin);
+  const avgGapAfterLoss = avg(gapsAfterLoss);
+  const overtradingSignal = (avgGapAfterWin != null && avgGapAfterLoss != null && avgGapAfterWin > 0)
+    ? avgGapAfterLoss < avgGapAfterWin * 0.6
+    : null;
+
+  // 3. Distribusi jam entry vs sesi FX (UTC) — sesi mana yang paling sering
+  // dipakai entry, dan win-rate-nya masing-masing (mis. sering entry pas CLOSED
+  // / Tokyo yang minim likuiditas).
+  const sessionOf = iso => {
+    const d = new Date(iso);
+    const mins = d.getUTCHours() * 60 + d.getUTCMinutes();
+    return JOURNAL_BIAS_SESSIONS.find(s => mins >= s.start && mins < s.end) || JOURNAL_BIAS_SESSIONS[JOURNAL_BIAS_SESSIONS.length - 1];
+  };
+  const bySession = {};
+  for (const e of sorted) {
+    const key = sessionOf(e.created_at).key;
+    if (!bySession[key]) bySession[key] = { n: 0, wins: 0, totalR: 0 };
+    bySession[key].n++;
+    if (e.r_actual > 0) bySession[key].wins++;
+    bySession[key].totalR += e.r_actual;
+  }
+  const sessionStats = Object.entries(bySession)
+    .map(([key, v]) => ({ session: key, n: v.n, win_rate: Math.round(v.wins / v.n * 100), avg_r: +(v.totalR / v.n).toFixed(2) }))
+    .sort((a, b) => b.n - a.n);
+
+  // 4. Win-rate per playbook (checklist_playbook — null = entri manual tanpa checklist).
+  const byPb = {};
+  for (const e of sorted) {
+    const key = e.checklist_playbook || 'manual (tanpa checklist)';
+    if (!byPb[key]) byPb[key] = { n: 0, wins: 0, totalR: 0 };
+    byPb[key].n++;
+    if (e.r_actual > 0) byPb[key].wins++;
+    byPb[key].totalR += e.r_actual;
+  }
+  const playbookStats = Object.entries(byPb)
+    .map(([key, v]) => ({ playbook: key, n: v.n, win_rate: Math.round(v.wins / v.n * 100), avg_r: +(v.totalR / v.n).toFixed(2) }))
+    .sort((a, b) => b.n - a.n);
+
+  // 5. Streak: beruntun saat ini (dari trade terbaru mundur) + loss streak terpanjang historis.
+  let currentStreak = 0, currentStreakType = null;
+  for (let i = sorted.length - 1; i >= 0; i--) {
+    const isWin = sorted[i].r_actual > 0;
+    if (i === sorted.length - 1) { currentStreakType = isWin ? 'win' : 'loss'; currentStreak = 1; }
+    else if ((isWin && currentStreakType === 'win') || (!isWin && currentStreakType === 'loss')) currentStreak++;
+    else break;
+  }
+  let longestLossStreak = 0, runLoss = 0;
+  for (const e of sorted) {
+    if (e.r_actual <= 0) { runLoss++; longestLossStreak = Math.max(longestLossStreak, runLoss); }
+    else runLoss = 0;
+  }
+
+  return {
+    sufficient: true,
+    sample_count: sorted.length,
+    disposition: { avg_win_r: avgWinR != null ? +avgWinR.toFixed(2) : null, avg_loss_r: avgLossR != null ? +avgLossR.toFixed(2) : null, ratio: dispositionRatio },
+    overtrading: { avg_gap_after_win_h: avgGapAfterWin != null ? +avgGapAfterWin.toFixed(1) : null, avg_gap_after_loss_h: avgGapAfterLoss != null ? +avgGapAfterLoss.toFixed(1) : null, signal: overtradingSignal },
+    session_stats: sessionStats,
+    playbook_stats: playbookStats,
+    streak: { current: currentStreak, current_type: currentStreakType, longest_loss_streak: longestLossStreak },
+  };
+}
+
 const { requireAppKey } = require('./_app_key');
 module.exports = async function handler(req, res) {
   if (requireAppKey(req, res)) return; // gate APP_KEY (cron/admin secret lolos) — lihat api/_app_key.js
@@ -507,6 +615,79 @@ module.exports = async function handler(req, res) {
     return res.status(200).json({ conditions, insufficient_data: false, sample_count: entries.length });
   }
 
+  // ── GET ?action=bias_diagnosis — Journal Bias Analyzer (Plan I item 5) ────
+  // Stats deterministik dari _journalBiasStats (0 AI call kalau sampel kurang);
+  // narasi AI 1x per klik, cache 24h (dipakai mingguan, bukan tiap buka jurnal).
+  if (req.method === 'GET' && req.query.action === 'bias_diagnosis') {
+    const cacheKey = `journal_bias:${deviceId}`;
+    const force    = req.query.force === '1';
+
+    let entries = [];
+    try {
+      const ids = await redisCmd('ZRANGE', indexKey, 0, -1, 'REV') || [];
+      if (ids.length > 0) {
+        const keys = ids.map(id => `journal:${deviceId}:${id}`);
+        const rawEntries = await redisCmd('MGET', ...keys);
+        entries = (Array.isArray(rawEntries) ? rawEntries : [])
+          .map(raw => { try { return raw ? JSON.parse(raw) : null; } catch(_) { return null; } })
+          .filter(Boolean);
+      }
+    } catch(e) {
+      console.error('journal bias_diagnosis: Redis fetch failed:', e.message);
+      return res.status(500).json({ error: 'Gagal membaca data jurnal' });
+    }
+
+    const stats = _journalBiasStats(entries);
+    if (!stats.sufficient) {
+      return res.status(200).json({
+        ...stats, narrative: null,
+        message: `Butuh minimal ${stats.min_required} trade closed untuk diagnosa perilaku. Saat ini baru ada ${stats.sample_count}.`,
+      });
+    }
+
+    if (!force) {
+      try {
+        const cached = await redisCmd('GET', cacheKey);
+        if (cached) {
+          const obj = JSON.parse(cached);
+          // Cache hanya valid kalau sample_count sama — trade baru ditambah/ditutup
+          // sejak diagnosa terakhir harus memicu narasi ulang, bukan angka basi.
+          if (obj.stats?.sample_count === stats.sample_count) {
+            return res.status(200).json({ ...obj, from_cache: true });
+          }
+        }
+      } catch(e) { console.warn('journal bias_diagnosis: Redis GET failed:', e.message); }
+    }
+
+    const SESS_ID = { tokyo: 'Tokyo', london: 'London', overlap: 'London+NY Overlap', ny: 'New York', closed: 'Market Closed (low liquidity)' };
+    const sessionLines = stats.session_stats.map(s => `  ${SESS_ID[s.session] || s.session}: ${s.n} trade, win-rate ${s.win_rate}%, avg ${s.avg_r >= 0 ? '+' : ''}${s.avg_r}R`).join('\n');
+    const playbookLines = stats.playbook_stats.map(p => `  ${p.playbook}: ${p.n} trade, win-rate ${p.win_rate}%, avg ${p.avg_r >= 0 ? '+' : ''}${p.avg_r}R`).join('\n');
+    const statsBlock = [
+      `Sampel: ${stats.sample_count} trade closed.`,
+      `Disposition effect: avg win ${stats.disposition.avg_win_r ?? 'N/A'}R vs avg loss ${stats.disposition.avg_loss_r ?? 'N/A'}R (rasio ${stats.disposition.ratio ?? 'N/A'}).`,
+      `Overtrading: rata-rata jarak entry setelah WIN ${stats.overtrading.avg_gap_after_win_h ?? 'N/A'} jam, setelah LOSS ${stats.overtrading.avg_gap_after_loss_h ?? 'N/A'} jam (sinyal revenge trading: ${stats.overtrading.signal === true ? 'YA' : stats.overtrading.signal === false ? 'tidak' : 'data kurang'}).`,
+      `Distribusi sesi:\n${sessionLines}`,
+      `Win-rate per playbook:\n${playbookLines}`,
+      `Streak saat ini: ${stats.streak.current}x ${stats.streak.current_type === 'win' ? 'menang' : 'kalah'} beruntun. Loss streak terpanjang historis: ${stats.streak.longest_loss_streak}x.`,
+    ].join('\n');
+
+    let narrative = null;
+    try {
+      narrative = await aiCall([
+        { role: 'system', content: 'Kamu adalah coach psikologi trading yang suportif dan non-menghakimi. Tugasmu menarasikan statistik jurnal trading (SUDAH dihitung, jangan hitung ulang atau ubah angkanya) jadi bahasa yang mudah dipahami trader. Sebut angka-angka konkret yang diberikan, jangan generik. Kalau ada indikasi bias (disposition effect, revenge trading, dst), sampaikan sebagai observasi + saran konkret, BUKAN vonis atau kritik keras — trader yang baca ini sedang berusaha memperbaiki diri, bukan dihakimi. Kalau angkanya justru sehat (tidak ada indikasi bias), katakan itu juga secara jujur — jangan mengarang masalah yang tidak ada. Bahasa Indonesia, maksimal 250 kata, poin-poin ringkas bukan tabel.' },
+        { role: 'user', content: `Statistik jurnal trading:\n\n${statsBlock}\n\nNarasikan dalam 3 bagian singkat: (1) Pola yang paling menonjol dari data di atas, (2) apakah ada indikasi disposition effect / revenge trading / sesi yang perlu dihindari — jelaskan dengan angka spesifik dari data, (3) satu saran konkret paling actionable untuk minggu depan.` },
+      ], 900);
+    } catch(e) {
+      console.warn('journal bias_diagnosis: AI narrative failed:', e.message);
+      // Stats tetap dikembalikan tanpa narasi — fitur inti (angka) tidak boleh gagal
+      // gara-gara AI down, sesuai filosofi "statistik dihitung kode, AI cuma narasi opsional".
+    }
+
+    const payload = { stats, narrative, generated_at: new Date().toISOString() };
+    redisCmd('SET', cacheKey, JSON.stringify(payload), 'EX', 24 * 3600).catch(() => {});
+    return res.status(200).json(payload);
+  }
+
   // ── GET — list entries ────────────────────────────────
   if (req.method === 'GET') {
     const statusFilter = req.query.status || 'all'; // all | open | closed | archived
@@ -577,3 +758,4 @@ module.exports = async function handler(req, res) {
 // tambahan tidak mengganggu Vercel yang cuma memanggilnya sebagai function biasa)
 module.exports._aiCall = aiCall;
 module.exports._sanitizeChecklistSnapshot = sanitizeChecklistSnapshot;
+module.exports._journalBiasStats = _journalBiasStats;
