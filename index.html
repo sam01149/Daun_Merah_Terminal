@@ -4277,7 +4277,7 @@ window.addEventListener('DOMContentLoaded', updateThemeIcon);
 
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.07.17.10';
+const APP_VERSION = '2026.07.17.11';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
@@ -12330,6 +12330,34 @@ function _ckAutoMacro(base, quote) {
       if (qAM != null) parts.push(`${quote} AM Net: ${qAM > 0 ? '+' : ''}${qAM}`);
       ckAutoTick('mm_co2', parts.join(' | '));
     }
+    // mm_co1 (Plan I item 4): leveraged funds TIDAK extreme (persentil 3thn di luar
+    // 10-90) di kedua leg — posisi extreme rawan squeeze/reversal, basis momentum
+    // yang rapuh. mm_co3: lev_change_net minggu ini berlawanan arah cukup besar
+    // (>=15% dari net saat ini) = tanda mulai unwind, bukan menambah searah.
+    const bPctile = cotData.percentiles?.[base]?.lev_pctile;
+    const qPctile = cotData.percentiles?.[quote]?.lev_pctile;
+    const isExtreme = p => p != null && (p >= 90 || p <= 10);
+    if (bPctile != null || qPctile != null) {
+      if (!isExtreme(bPctile) && !isExtreme(qPctile)) {
+        const parts = [bPctile != null ? `${base} P${bPctile}` : null, qPctile != null ? `${quote} P${qPctile}` : null].filter(Boolean);
+        ckAutoTick('mm_co1', `Leveraged funds tidak extreme (${parts.join(', ')})`);
+      } else {
+        const which = isExtreme(bPctile) ? `${base} P${bPctile}` : `${quote} P${qPctile}`;
+        ckAutoBlock('mm_co1', `Leveraged funds EXTREME di ${which} — rawan squeeze berbalik arah`);
+      }
+    }
+    const bNet = bPos ? (bPos.lev_net ?? bPos.net ?? null) : null;
+    const qNet = qPos ? (qPos.lev_net ?? qPos.net ?? null) : null;
+    const bChg = bPos ? (bPos.lev_change_net ?? bPos.change_net ?? null) : null;
+    const qChg = qPos ? (qPos.lev_change_net ?? qPos.change_net ?? null) : null;
+    const isReversal = (net, chg) => net != null && chg != null && net !== 0 && Math.sign(net) !== Math.sign(chg) && Math.abs(chg) >= Math.abs(net) * 0.15;
+    const bRev = isReversal(bNet, bChg), qRev = isReversal(qNet, qChg);
+    if (bRev || qRev) {
+      const which = bRev ? base : quote, chg = bRev ? bChg : qChg;
+      ckAutoBlock('mm_co3', `${which}: lev funds berbalik arah w/w (${chg > 0 ? '+' : ''}${chg}) — tanda reversal positioning`);
+    } else if (bNet != null || qNet != null) {
+      ckAutoTick('mm_co3', 'Tidak ada tanda reversal positioning w/w yang signifikan');
+    }
   }
 }
 
@@ -12471,10 +12499,74 @@ function ckAutoTickFromAnalisa(pair) {
     if (s.entry_zone && s.entry_basis) {
       ckAutoTick('mm_e1', `AI Analisa: entry ${s.entry_zone} di key level — ${s.entry_basis}`);
     }
+    // mm_t1/mm_t2 (Plan I item 4): trend makro jelas & struktur HH/HL — HANYA kalau
+    // trend Daily TEGAS (bukan Sideways) supaya tidak mencentang "trend kuat" palsu
+    // dari data yang genuinely tanpa arah.
+    if (dFresh && d.d1?.available && d.d1.trend !== 'Sideways') {
+      const chg6 = d.d1_ext?.available ? d.d1_ext.chg_6m_pct : null;
+      if (chg6 != null && Math.abs(chg6) >= 3) {
+        ckAutoTick('mm_t1', `OHLCV: trend Daily ${d.d1.trend}, 6M ${chg6 >= 0 ? '+' : ''}${chg6}% — trend makro jelas`);
+      }
+      if (d.structure?.available) {
+        const structDir = /Bullish/.test(d.structure.label) ? 'Uptrend' : /Bearish/.test(d.structure.label) ? 'Downtrend' : null;
+        if (structDir && structDir === d.d1.trend) {
+          ckAutoTick('mm_t2', `OHLCV: struktur H4 ${d.structure.label} searah trend Daily ${d.d1.trend}`);
+        }
+      }
+    }
+    // mm_t3: pullback dalam trend, bukan reversal — logika sama dengan e1 SMC
+    // (entry_zone di sisi retracement dari Now, bukan breakout searah).
+    const nowPxMm = d?.h1?.available ? d.h1.current : null;
+    const entryNumsMm = s.entry_zone ? (String(s.entry_zone).match(/[\d.]+/g) || []).map(Number).filter(n => !isNaN(n)) : [];
+    if (entryNumsMm.length && typeof nowPxMm === 'number' && (s.bias === 'bullish' || s.bias === 'bearish')) {
+      const eLoMm = Math.min(...entryNumsMm), eHiMm = Math.max(...entryNumsMm);
+      const isPullbackMm = s.bias === 'bearish' ? eHiMm >= nowPxMm : eLoMm <= nowPxMm;
+      if (isPullbackMm) ckAutoTick('mm_t3', `AI Analisa: entry ${s.entry_zone} = pullback dalam trend, bukan reversal`);
+    }
   } else if (ckActivePlaybook === 'mean_reversion') {
     if (rrTxt) {
       if (s.risk_reward >= 1.5) ckAutoTick('mr_r3', rrTxt);
       else ckAutoBlock('mr_r3', `${rrTxt} — di bawah 1:1.5`);
+    }
+    // mr_ra1 (Plan I item 4): struktur H4 Mixed/Range = TICK (kebalikan SMC s3 yang
+    // justru BLOCK kondisi sama) — arah logika per playbook memang terbalik, itu
+    // intinya: SMC butuh trending, Mean Reversion butuh ranging.
+    if (dFresh && d.structure?.available && d.structure.label) {
+      if (/Mixed|Range/i.test(d.structure.label)) ckAutoTick('mr_ra1', `OHLCV: struktur H4 ${d.structure.label} — pasar ranging`);
+      else ckAutoBlock('mr_ra1', `OHLCV: struktur H4 ${d.structure.label} — bukan ranging, ini trending`);
+    }
+    // mr_lv1: posisi Now vs range H4 — dekat high/low (top/bottom 20%) = area ekstrem.
+    if (dFresh && d.h4?.available && typeof d.h4.current === 'number') {
+      const { high, low, current } = d.h4;
+      const rangeSize = high - low;
+      if (rangeSize > 0) {
+        const posPct = (current - low) / rangeSize * 100;
+        if (posPct >= 80) ckAutoTick('mr_lv1', `OHLCV: harga ${current} di ${posPct.toFixed(0)}% range H4 (${low}-${high}) — dekat high`);
+        else if (posPct <= 20) ckAutoTick('mr_lv1', `OHLCV: harga ${current} di ${posPct.toFixed(0)}% range H4 (${low}-${high}) — dekat low`);
+      }
+    }
+    // mr_lv2: RSI H4 oversold/overbought (opsional, konfirmasi tambahan).
+    if (dFresh && d.rsi_h4?.available && typeof d.rsi_h4.value === 'number') {
+      if (d.rsi_h4.value <= 30) ckAutoTick('mr_lv2', `OHLCV: RSI H4 ${d.rsi_h4.value} — oversold`);
+      else if (d.rsi_h4.value >= 70) ckAutoTick('mr_lv2', `OHLCV: RSI H4 ${d.rsi_h4.value} — overbought`);
+    }
+    // mr_co1: rejection candle apa pun terdeteksi (doji/engulfing/pin bar) — beda
+    // dari t1 SMC yang filter searah bias, di sini pola apa pun dihitung karena
+    // playbook ini soal reversal di level, bukan konfirmasi arah trend. "Inside Bar"
+    // SENGAJA dikecualikan — itu pola konsolidasi/indecision, bukan rejection.
+    if (dFresh && d.patterns?.available) {
+      const isRejection = p => /Engulfing|Pin Bar|Doji/i.test(p.label);
+      const hitMr = [...(d.patterns.h4 || []), ...(d.patterns.d1 || [])].find(isRejection);
+      if (hitMr) ckAutoTick('mr_co1', `OHLCV: ${hitMr.label} terdeteksi (close ${hitMr.close})${hitMr.running ? ' — candle masih berjalan, tunggu close' : ''}`);
+    }
+    // mr_r1: stop WAJIB di luar range H4 (bukan di dalam range) — dari Sizing Calc.
+    const szMr = window._lastSizing;
+    if (dFresh && d.h4?.available && szMr && szMr.pair === pair && szMr.slPrice) {
+      const slP = parseFloat(szMr.slPrice);
+      if (!isNaN(slP)) {
+        if (slP > d.h4.high || slP < d.h4.low) ckAutoTick('mr_r1', `Sizing: SL ${slP} di luar range H4 (${d.h4.low}-${d.h4.high})`);
+        else ckAutoBlock('mr_r1', `Sizing: SL ${slP} MASIH DI DALAM range H4 (${d.h4.low}-${d.h4.high}) — rawan kena stop dari noise range`);
+      }
     }
   }
 }

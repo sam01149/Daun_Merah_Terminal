@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-07-17 (Session 180 — Eksekusi Plan I Item 1-3: Transmisi Komoditas, Track Record ke Prompt Analisa, AI Kritikus "Uji Kelemahan". Detail history dapat dilihat pada changelog sesi di bawah.)
+> **Last updated:** 2026-07-17 (Session 180 — Eksekusi Plan I Item 1-4: + Perataan Auto-Tick Playbook Non-SMC. Detail history dapat dilihat pada changelog sesi di bawah.)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -38,6 +38,16 @@
 `node --check api/market-digest.js` + `node --check api/admin.js` bersih; parse-check inline script `index.html` bersih; `npm test` 307/307 hijau (301 lama + 6 baru).
 
 **Live test item 3 (1 AI call, setelah deploy):** `GET /api/admin?action=ohlcv_critic&symbol=GC=F` → HTTP 200, JSON valid, 3 objections dengan angka konkret (kalender: "Michigan Consumer Sentiment dalam 1.3 jam"; track record: "win rate 33% (2 TP/4 SL) dari 6 setup" — sekaligus memverifikasi item 2 `_formatTrackRecordBlock` juga hidup di production; COT: "leveraged net -4.5K"), verdict "tunda", model deepseek-v3.2 (primary SambaNova, tidak perlu fallback Groq). End-to-end terkonfirmasi jalan sesuai desain.
+
+**Item 4 — Perataan Auto-Tick Playbook Non-SMC (`index.html`):**
+- Macro Momentum (5 item baru — total sekarang 8): `mm_t1` (trend makro jelas: `d.d1.trend` tegas + `d.d1_ext.chg_6m_pct` ≥3%), `mm_t2` (HH/HL H4 searah trend Daily, dari `d.structure.label`), `mm_t3` (pullback dalam trend — logika sama persis dengan e1 SMC), `mm_co1` (leveraged funds tidak extreme — persentil 3thn di `_ckAutoMacro`, block kalau P≥90/P≤10), `mm_co3` (reversal positioning — `lev_change_net` berlawanan arah ≥15% dari net saat ini, block kalau terjadi).
+- Mean Reversion (5 item baru — total sekarang 6): `mr_ra1` (struktur H4 Mixed/Range = TICK, kebalikan `s3` SMC yang BLOCK kondisi sama — arah logika playbook memang terbalik), `mr_lv1` (posisi Now top/bottom 20% range H4), `mr_lv2` (RSI H4 ≤30/≥70 dari `d.rsi_h4.value`), `mr_co1` (rejection candle apa pun — Doji/Engulfing/Pin Bar, "Inside Bar" sengaja dikecualikan karena itu pola konsolidasi bukan rejection), `mr_r1` (SL dari Sizing Calc wajib di luar range H4, block kalau masih di dalam).
+- **Bug ditemukan & diperbaiki saat verifikasi data live** (bukan dari unit test — field shape dicek via curl production): draft awal `mr_co1` mengambil pattern PERTAMA tanpa filter, sehingga "Inside Bar" (pola netral) bisa ke-tick sebagai "rejection candle" — diperbaiki jadi filter eksplisit `/Engulfing|Pin Bar|Doji/i`.
+- **Keterbatasan diketahui:** `mm_co1` bergantung `cotData.percentiles` dari `/api/feeds?type=cot`, yang hanya terisi kalau cache `cot_pctile_v1` sudah warm (self-populate async, TTL 8 hari) — verifikasi live saat sesi ini menunjukkan field itu masih kosong di production, jadi `mm_co1` untuk saat ini tidak akan ter-tick/block sampai cache itu terisi. Bukan bug kode (graceful no-op sudah oleh desain), tapi dicatat supaya tidak mengira fitur ini rusak kalau di-test sebelum cache warm.
+- Semua item baru dibiarkan KOSONG (bukan tick maupun block) kalau data belum cukup — konsisten filosofi "menunggu, bukan menyesatkan" yang sudah dipakai SMC (`e4`).
+
+### Verifikasi
+`npm test` 307/307 hijau; parse-check inline script `index.html` bersih; field shape (`d1`, `d1_ext`, `h4`, `structure`, `rsi_h4`, `patterns`, COT `positions`) dicek via curl endpoint production — semua cocok kecuali `percentiles` (lihat keterbatasan di atas). Uji visual UI checklist langsung di browser BELUM dilakukan sesi ini (di luar kapasitas tool non-interaktif) — disarankan pengecekan manual user di 3 playbook sebelum dianggap benar-benar tuntas.
 
 ---
 
