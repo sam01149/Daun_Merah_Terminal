@@ -56,7 +56,15 @@
 - 8 unit test baru (`test/journal_bias.test.js`): gate sampel, filter status/field, disposition ratio, overtrading signal (true & false case), distribusi sesi, win-rate per playbook, streak.
 
 ### Verifikasi
-`node --check api/journal.js` bersih; parse-check inline script `index.html` bersih; `npm test` 315/315 hijau (307 + 8 baru). Verifikasi live jalur AI-narrative BELUM dilakukan (butuh device dengan ≥10 trade closed asli — tidak membuat data uji palsu di production untuk menghindari polusi jurnal user sungguhan); jalur gate-sampel (0 AI call) aman diverifikasi cepat pasca-deploy dengan device_id kosong.
+`node --check api/journal.js` bersih; parse-check inline script `index.html` bersih; `npm test` 315/315 hijau (307 + 8 baru). Verifikasi live jalur AI-narrative BELUM dilakukan (butuh device dengan ≥10 trade closed asli — tidak membuat data uji palsu di production untuk menghindari polusi jurnal user sungguhan).
+
+**Live test gate-sampel (setelah deploy, device_id kosong):** `GET /api/journal?action=bias_diagnosis&device_id=test_verify_session180` → HTTP 200, `{"sufficient":false,"sample_count":0,"min_required":10,"narrative":null,...}` — dikonfirmasi 0 AI call terpicu untuk device tanpa histori, persis sesuai desain.
+
+---
+
+## PLAN I SELESAI SEMUA — SESSION 180 (2026-07-17)
+
+5/5 item Plan I dieksekusi tuntas dalam satu sesi berurutan (Terms of Trade → Track Record → AI Kritikus → Auto-Tick Non-SMC → Journal Bias Analyzer), masing-masing 1 siklus penuh (kerjakan → uji → changelog → push) sesuai aturan plan. Total 6 commit terpisah, `npm test` 301→315 (14 test baru), 0 regresi. `daun_merah_plan.md` sudah dirapikan — bagian "I. PAKET BERTAHAP" dihapus seluruhnya (aturan dokumen: item selesai tidak disimpan ganda), Plan H diupdate mencatat Plan I tuntas.
 
 ---
 
