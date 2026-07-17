@@ -388,10 +388,15 @@ module.exports = async function handler(req, res) {
       const variance = recentReturns.reduce((acc, r) => acc + (r - meanR) ** 2, 0) / recentReturns.length;
       const dailySigma = Math.sqrt(variance);
 
+      const currentCandle = candles[candles.length - 1];
+      const todayRange = currentCandle.high - currentCandle.low;
+      const todayRangePips = Math.round(todayRange / pipSize);
+
       const payload = {
         pair: pairInput, symbol,
         atr_14d: +atr14.toFixed(6),
         atr_pips: atrPips,
+        today_range_pips: todayRangePips,
         daily_sigma: +dailySigma.toFixed(6),
         pip_size: pipSize,
         computed_at: new Date().toISOString(),

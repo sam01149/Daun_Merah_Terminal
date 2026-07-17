@@ -377,6 +377,14 @@ body {
 .tek-event-name { font-family:'DM Mono',monospace; font-size:9px; color:var(--text-mid); letter-spacing:.03em; }
 .tek-event-time { font-family:'DM Mono',monospace; font-size:9px; color:var(--muted); margin-left:2px; }
 .tek-event-hi { border-color:rgba(239,68,68,.35); }
+@keyframes imminentPulse {
+  0% { opacity: 0.85; }
+  50% { opacity: 1; border-color: rgb(239,68,68); box-shadow: 0 0 6px rgba(239,68,68,0.25); }
+  100% { opacity: 0.85; }
+}
+.imminent-pulse {
+  animation: imminentPulse 1.8s infinite ease-in-out;
+}
 
 /* NAV FILTERS (secondary — only shown on NEWS view) */
 .nav-filters {
@@ -872,10 +880,11 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   position: absolute;
   bottom: calc(100% + 6px);
   left: 50%; transform: translateX(-50%);
-  background: #1a1a2e; border: 1px solid var(--border);
+  background: var(--surface); border: 1px solid var(--border);
   color: var(--text); font-family: 'DM Mono', monospace; font-size: 9px; letter-spacing: .3px;
   padding: 4px 9px; border-radius: 5px; white-space: nowrap;
   opacity: 0; pointer-events: none; transition: opacity .15s; z-index: 20;
+  box-shadow: 0 2px 8px rgba(0,0,0,.15);
 }
 .cot-pie:hover::after { opacity: 1; }
 .cot-ls-vals { display: flex; flex-direction: column; gap: 2px; }
@@ -904,10 +913,11 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .cot-poi::after {
   content: attr(data-tip);
   position: absolute; right: 0; bottom: calc(100% + 4px);
-  background: #1c1c22; border: 1px solid var(--border); border-radius: 4px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 4px;
   padding: 5px 8px; font-size: 9px; color: var(--text); line-height: 1.45;
   width: max-content; max-width: 230px; white-space: normal; text-align: left;
   opacity: 0; pointer-events: none; transition: opacity .15s; z-index: 30;
+  box-shadow: 0 2px 8px rgba(0,0,0,.15);
 }
 .cot-poi:hover::after { opacity: 1; }
 
@@ -944,10 +954,11 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 }
 .cot-tren-tooltip {
   position: fixed; pointer-events: none; z-index: 999;
-  background: rgba(20,20,28,.95); border: 1px solid rgba(var(--fg-rgb),.1);
+  background: var(--surface); border: 1px solid var(--border);
   border-radius: 5px; padding: 5px 9px; font-size: 9px;
-  font-family: 'DM Mono', monospace; color: var(--text-mid);
+  font-family: 'DM Mono', monospace; color: var(--text);
   white-space: nowrap; display: none;
+  box-shadow: 0 2px 8px rgba(0,0,0,.15);
 }
 
 /* ── RETAIL SENTIMENT (COT tab) ── */
@@ -2257,7 +2268,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .tek-note-auto-btn:hover { color:#38bdf8; border-color:#38bdf8; }
 .tek-note-auto-btn:disabled { opacity:.4; cursor:default; }
 .tek-note-wrap textarea {
-  width: 100%; min-height: 150px; background: var(--surface); color: var(--text);
+  width: 100%; min-height: 220px; background: var(--surface); color: var(--text);
   border: 1px solid var(--border); border-radius: 6px; padding: 9px 11px;
   font: 12px 'DM Mono',monospace; resize: vertical; outline: none; transition: border-color .15s;
 }
@@ -3881,6 +3892,7 @@ body:not(.light-theme) .ringkasan-gen-btn {
     <div class="tek-mtf-align" id="mtfAlignBadge"></div>
   </div>
   <div class="tek-yield-strip" id="tekYieldStrip" style="display:none"></div>
+  <div class="tek-yield-strip" id="tekRangeStrip" style="display:none; border-top:none; padding-top:2px"></div>
   <div id="tekTaPanel" class="tek-ta-panel">
     <div class="tek-ta-loading" id="tekTaLoading">Memuat indikator...</div>
     <div class="tek-ta-grid" id="tekTaGrid" style="display:none"></div>
@@ -4265,7 +4277,7 @@ window.addEventListener('DOMContentLoaded', updateThemeIcon);
 
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.07.15.2';
+const APP_VERSION = '2026.07.17.7';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
@@ -7304,6 +7316,23 @@ document.addEventListener('click', (e) => {
   document.getElementById('risetFilterBtn')?.classList.remove('open');
 });
 
+function risetToggleExpand(idx) {
+  const prevEl = document.getElementById(`risetPrev-${idx}`);
+  const fullEl = document.getElementById(`risetFull-${idx}`);
+  const btnEl  = document.getElementById(`risetToggleBtn-${idx}`);
+  if (!prevEl || !fullEl || !btnEl) return;
+  const isExpanded = prevEl.style.display === 'none';
+  if (isExpanded) {
+    prevEl.style.display = 'block';
+    fullEl.style.display = 'none';
+    btnEl.textContent = 'Baca Selengkapnya ▾';
+  } else {
+    prevEl.style.display = 'none';
+    fullEl.style.display = 'block';
+    btnEl.textContent = 'Perkecil ▴';
+  }
+}
+
 function risetToggleSource(src) {
   if (risetHiddenSources.has(src)) risetHiddenSources.delete(src);
   else risetHiddenSources.add(src);
@@ -7429,21 +7458,34 @@ function renderResearch() {
 
   list.innerHTML = filtered.length === 0
     ? '<div class="state-box"><p style="font-size:11px;color:var(--muted)">Tidak ada artikel untuk sumber ini.</p></div>'
-    : filtered.map(it => it.fullText ? `
-      <div class="riset-item">
-        <div class="riset-item-top">
-          <span class="riset-badge ${escHtml(it.source)}">${escHtml(it.source)}</span>
-          <div class="riset-title" style="white-space:pre-wrap">${escHtml(it.fullText)}</div>
-        </div>
-        <div class="riset-date">${fmtDate(it.pubDate)} · <a href="${escHtml(it.link)}" target="_blank" rel="noopener noreferrer" style="color:var(--muted)">via FinancialJuice ↗</a></div>
-      </div>` : `
-      <div class="riset-item">
-        <div class="riset-item-top">
-          <span class="riset-badge ${escHtml(it.source)}">${escHtml(it.source)}</span>
-          <a href="${escHtml(it.link)}" target="_blank" rel="noopener noreferrer" class="riset-title">${escHtml(it.title)}</a>
-        </div>
-        <div class="riset-date">${fmtDate(it.pubDate)}</div>
-      </div>`).join('');
+    : filtered.map((it, idx) => {
+        if (!it.fullText) {
+          return `
+          <div class="riset-item">
+            <div class="riset-item-top">
+              <span class="riset-badge ${escHtml(it.source)}">${escHtml(it.source)}</span>
+              <a href="${escHtml(it.link)}" target="_blank" rel="noopener noreferrer" class="riset-title">${escHtml(it.title)}</a>
+            </div>
+            <div class="riset-date">${fmtDate(it.pubDate)}</div>
+          </div>`;
+        }
+        const needCollapse = it.fullText.length > 280;
+        const textHtml = needCollapse ? `
+          <div class="riset-body-wrapper">
+            <div class="riset-title" id="risetPrev-${idx}" style="white-space:pre-wrap">${escHtml(it.fullText.slice(0, 260).trim())}...</div>
+            <div class="riset-title" id="risetFull-${idx}" style="white-space:pre-wrap; display:none">${escHtml(it.fullText)}</div>
+            <span onclick="risetToggleExpand(${idx})" id="risetToggleBtn-${idx}" class="riset-toggle-expand-btn" style="cursor:pointer; display:inline-block; margin-top:6px; font-size:9px; font-family:'DM Mono',monospace; color:var(--accent); text-decoration:underline; text-underline-offset:2px">Baca Selengkapnya ▾</span>
+          </div>` : `
+          <div class="riset-title" style="white-space:pre-wrap">${escHtml(it.fullText)}</div>`;
+        return `
+        <div class="riset-item">
+          <div class="riset-item-top">
+            <span class="riset-badge ${escHtml(it.source)}">${escHtml(it.source)}</span>
+            ${textHtml}
+          </div>
+          <div class="riset-date">${fmtDate(it.pubDate)} · <a href="${escHtml(it.link)}" target="_blank" rel="noopener noreferrer" style="color:var(--muted)">via FinancialJuice ↗</a></div>
+        </div>`;
+      }).join('');
 }
 
 // Metadata for gold cross-asset correlations: label shown to user + context hint
@@ -7708,6 +7750,62 @@ async function fetchRealYields() {
   } catch(e) {
     console.warn('Real yields fetch failed:', e.message);
   }
+}
+
+let tekAtrCache = {};
+
+async function fetchTekRange() {
+  const el = document.getElementById('tekRangeStrip');
+  if (!el) return;
+
+  const pair = tekPair;
+  const cached = tekAtrCache[pair];
+  if (cached && Date.now() - cached.ts < 5 * 60 * 1000) {
+    renderTekRange(cached.data);
+    return;
+  }
+
+  try {
+    const res = await fetch(`/api/correlations?action=atr&pair=${encodeURIComponent(pair)}`, { signal: AbortSignal.timeout(8000) });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    tekAtrCache[pair] = { data, ts: Date.now() };
+    renderTekRange(data);
+  } catch(e) {
+    console.warn('fetchTekRange failed:', e.message);
+    el.style.display = 'none';
+  }
+}
+
+function renderTekRange(d) {
+  const el = document.getElementById('tekRangeStrip');
+  if (!el || tekPair !== d.pair) return;
+
+  const atr = d.atr_pips;
+  const today = d.today_range_pips;
+  if (atr == null || today == null) { el.style.display = 'none'; return; }
+
+  const pct = Math.round((today / atr) * 100);
+  let color = '#27ae60'; // green
+  let status = 'ACTIVE';
+  if (pct >= 90) {
+    color = '#e74c3c'; // red
+    status = 'EXHAUSTED';
+  } else if (pct >= 75) {
+    color = '#f39c12'; // yellow
+    status = 'LATE';
+  }
+
+  const barWidth = Math.min(100, pct);
+
+  el.innerHTML = `<span class="tek-yield-lbl">DAILY RANGE</span>`
+    + `<span class="tek-yield-val" style="color:var(--text);font-weight:700">${today} <span style="font-weight:400;color:var(--muted)">/ ${atr} pips</span></span>`
+    + `<div style="width:50px;height:4px;background:rgba(255,255,255,0.07);border-radius:2px;overflow:hidden;margin:0 6px;display:inline-block;vertical-align:middle">`
+    + `<div style="width:${barWidth}%;height:100%;background:${color};border-radius:2px"></div>`
+    + `</div>`
+    + `<span class="tek-yield-val" style="color:${color};font-weight:700">${pct}% ${status}</span>`
+    + `${pct >= 90 ? ` <span class="tek-yield-hint" style="color:var(--muted)">· range harian jenuh</span>` : ''}`;
+  el.style.display = 'flex';
 }
 
 // ── FUNDAMENTAL DATA ──────────────────────────────────────
@@ -8184,7 +8282,8 @@ function renderFundamental() {
   }
 
   // Render currency cards
-  const CARD_ROW_LIMIT = 8; // di atas ini, sisanya disembunyikan di balik "Selengkapnya" (buka detail overlay ter-section)
+  const isMobile = window.innerWidth < 600;
+  const CARD_ROW_LIMIT = isMobile ? 3 : 8; // di atas ini, sisanya disembunyikan di balik "Selengkapnya" (buka detail overlay ter-section)
   const sectionRank = Object.fromEntries(FUND_SECTION_ORDER.map((s, i) => [s, i]));
   grid.innerHTML = scores.map(({ cur, data, rateKey, rateVal, score, scoreLabel, scoreColor, confTier, confLabel, scoredCt, col }) => {
     const allEntries = Object.entries(data).filter(([k]) => k !== rateKey);
@@ -8219,9 +8318,9 @@ function renderFundamental() {
         <span class="fund-score-conf ${confTier}">${confLabel}</span>
       </div>` : '';
 
-    // Yield curve section for USD and EUR
+    // Yield curve section for USD and EUR (desktop only to reduce mobile card height)
     let yieldCurveHtml = '';
-    if ((cur === 'USD' || cur === 'EUR') && realYieldsYieldCurve?.[cur]) {
+    if (!isMobile && (cur === 'USD' || cur === 'EUR') && realYieldsYieldCurve?.[cur]) {
       const yc = realYieldsYieldCurve[cur];
       const spread = yc.spread_2y10y;
       const spreadColor = spread == null ? 'var(--muted)' : spread < 0 ? 'var(--red)' : spread < 0.2 ? 'var(--yellow)' : 'var(--green)';
@@ -8240,10 +8339,9 @@ function renderFundamental() {
       }
     }
 
-    // Liquidity indicators for USD only — RRP + Net Liquidity (WALCL − TGA − RRP)
-    // ditambahkan 2026-07-12; net adalah angka utamanya, komponen jadi pendukung.
+    // Liquidity indicators for USD only (desktop only to reduce mobile card height)
     let liquidityHtml = '';
-    if (cur === 'USD' && realYieldsLiquidity) {
+    if (!isMobile && cur === 'USD' && realYieldsLiquidity) {
       const liq = realYieldsLiquidity;
       const parts = [];
       if (liq.fed_assets_bn != null) {
@@ -8784,16 +8882,16 @@ function renderCotDivergenceMatrix() {
     let badge = '', badgeCls = '', desc = '';
     if (cotDir === 'long' && retDir === 'long_signal') {
       badge = 'Dorongan Naik Kuat'; badgeCls = 'strong-up';
-      desc = 'Spekulan besar beli, retail juga optimis — arah naik terkonfirmasi dua sisi.';
+      desc = 'Spekulan besar beli, retail menumpuk short — arah naik terkonfirmasi dari dua sisi (institusi + kontrarian).';
     } else if (cotDir === 'short' && retDir === 'short_signal') {
       badge = 'Dorongan Turun Kuat'; badgeCls = 'strong-down';
-      desc = 'Spekulan besar jual, retail juga pesimis — arah turun terkonfirmasi dua sisi.';
+      desc = 'Spekulan besar jual, retail menumpuk long — arah turun terkonfirmasi dari dua sisi (institusi + kontrarian).';
     } else if (cotDir === 'long' && retDir === 'short_signal') {
       badge = 'Divergensi Naik'; badgeCls = 'strong-up';
-      desc = 'Spekulan besar beli, tetapi retail juga beli — sinyal kontrarian melemah.';
+      desc = 'Spekulan besar beli, tetapi retail juga menumpuk long — sinyal kontrarian melemah.';
     } else if (cotDir === 'short' && retDir === 'long_signal') {
       badge = 'Divergensi Turun'; badgeCls = 'strong-down';
-      desc = 'Spekulan besar jual, retail masih optimis — setup kontrarian klasik.';
+      desc = 'Spekulan besar jual, tetapi retail juga menumpuk short — sinyal kontrarian melemah.';
     } else {
       badge = 'Belum Jelas'; badgeCls = 'neutral';
       desc = 'Posisi belum terakumulasi ke satu arah yang jelas.';
@@ -14752,6 +14850,7 @@ function selectTekPair(p) {
   renderTekYield();
   renderTekVolProfile(); // profil volatilitas opsi ikut pair aktif
   if (corrData) renderCorrelations(); // tabel korelasi kontekstual ikut pair aktif
+  fetchTekRange();
 }
 
 // ── ANALISA pair list — dikelola user (tambah "+" / hapus "-"), persist ke ────
@@ -15217,7 +15316,9 @@ function renderTekEventStrip() {
     const cd     = diffH > 0 ? `${diffH}j ${diffM}m` : `${diffM}m`;
     const col    = CUR_COLORS[ev.currency] || '#888';
     const wib    = (ev.time_wib || '').replace(' WIB', '');
-    return `<div class="tek-event-chip tek-event-hi">
+    const isImminent = diffMs <= 60 * 60000; // kurang dari 1 jam
+    const pulseCls   = isImminent ? ' imminent-pulse' : '';
+    return `<div class="tek-event-chip tek-event-hi${pulseCls}">
       <span class="tek-event-dot" style="background:${col}"></span>
       <span class="tek-event-name">${escHtml(ev.event)}</span>
       <span class="tek-event-time">${wib} · ${cd}</span>
@@ -15247,6 +15348,7 @@ function initTeknikal() {
   if (!realYieldsData || (Date.now() - realYieldsFetAt) > 6 * 60 * 60 * 1000) fetchRealYields();
   else renderTekYield();
   if (rrData) renderTekVolProfile(); // tampilkan profil vol jika data sudah ada
+  fetchTekRange();
 }
 
 // US10Y nominal + real yield — driver utama Gold (inverse correlation), konteks makro untuk pair USD lain.

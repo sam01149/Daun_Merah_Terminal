@@ -8,6 +8,47 @@
 
 ---
 
+## Changelog Session 177 (2026-07-17) — Audit Kualitas Informasi & Perbaikan Divergensi COT vs Retail
+
+**Konteks:** Menindaklanjuti permintaan audit kualitas informasi dan noise pada aplikasi Daun Merah dengan pendekatan psikologi perilaku dan kognisi trader. Ditemukan bug logika deskripsi verbal pada peta divergensi COT vs Retail di mana posisi fisik retail (long/short) terbalik maknanya dalam narasi penjelas yang ditampilkan ke trader.
+
+**1. Perbaikan Deskripsi Divergensi COT vs Retail (`index.html` → `renderCotDivergenceMatrix()`)**
+- Memperbaiki logika deskripsi verbal agar mencerminkan posisi fisik retail sesungguhnya (pesimis/menumpuk short saat retail short >= 60%, dan optimis/menumpuk long saat retail long >= 60%), menghilangkan inkonsistensi penafsiran (*cognitive dissonance*).
+- Contoh usulan teks baru yang diterapkan:
+  - `Dorongan Naik Kuat`: *"Spekulan besar beli, retail menumpuk short — arah naik terkonfirmasi dari dua sisi (institusi + kontrarian)."*
+  - `Dorongan Turun Kuat`: *"Spekulan besar jual, retail menumpuk long — arah turun terkonfirmasi dari dua sisi (institusi + kontrarian)."*
+  - `Divergensi Naik`: *"Spekulan besar beli, tetapi retail juga menumpuk long — sinyal kontrarian melemah."*
+  - `Divergensi Turun`: *"Spekulan besar jual, tetapi retail juga menumpuk short — sinyal kontrarian melemah."*
+
+**2. Perbaikan Kontras Hover Tooltip di Light Mode (`index.html` → stylesheet)**
+- Mengubah warna latar belakang *hardcoded* gelap pada `.cot-pie::after`, `.cot-poi::after`, dan `.cot-tren-tooltip` menjadi `var(--surface)` yang dinamis, serta mengarahkan warna teks ke `var(--text)`. Hal ini memperbaiki kontras di Light Mode (background putih, teks gelap) sekaligus mempertahankan kegagahan visual Dark Mode, ditambah dengan efek bayangan (`box-shadow`) halus yang premium.
+
+**3. Fitur Collapsible Artikel Riset (`index.html` → `renderResearch()` & `risetToggleExpand()`)**
+- Membatasi tampilan teks panjang dari riset `FJElite` secara default (jika > 280 karakter) untuk menghindari scrolling tak berujung di mobile. Teks akan terpotong pada 260 karakter awal dan dilengkapi tombol interaktif `[Baca Selengkapnya ▾]` / `[Perkecil ▴]` untuk membuka/menutup seluruh isi teks riset.
+
+**4. Penyederhanaan Tampilan Kartu Fundamental di Mobile (`index.html` → `renderFundamental()`)**
+- Membatasi baris indikator yang dirender di dalam kartu fundamental yang diekspansi inline pada mobile dari 8 baris menjadi 3 baris teratas (paling relevan).
+- Melakukan bump `APP_VERSION` menjadi `'2026.07.17.6'` untuk pembaruan cache PWA.
+
+**5. Audit Kualitas Informasi & Noise**
+- Menyusun laporan audit komprehensif pada file `audit_kualitas_informasi_noise.md` di folder artifacts, mengevaluasi aspek visual kognitif, friction-by-design (checklist reset & speed flag), dan proteksi psikologis (no floating P&L).
+- Mengambil keputusan pragmatis untuk tidak membuat penyaringan berita real-time yang kompleks, karena fitur Ringkasan AI sudah memangkas kebisingan informasi makro dengan efektif bagi trader.
+
+**6. Visualisasi Daily Range vs ATR 14D (`index.html` + `api/correlations.js`)**
+- Menambahkan strip `#tekRangeStrip` di bawah yield strip yang menampilkan range harian hari ini (pips) vs ATR 14 hari, lengkap dengan bar progress dan status teks berwarna (ACTIVE/LATE/EXHAUSTED).
+- Backend: menambahkan `today_range_pips` pada payload endpoint `action=atr` di `correlations.js`.
+- Frontend: menambahkan fungsi `fetchTekRange()` dan `renderTekRange()`, dipanggil dari `initTeknikal()` dan `selectTekPair()`. Client-side cache 5 menit.
+
+**7. Animasi Peringatan Imminent pada Event Strip (`index.html` → `renderTekEventStrip()`)**
+- Menambahkan animasi CSS `@keyframes imminentPulse` dengan efek berkedip halus (opacity + border-color + box-shadow) pada chip event makro high-impact yang akan rilis dalam < 60 menit.
+- Kelas `.imminent-pulse` diterapkan secara kondisional berdasarkan selisih waktu event (`diffMs <= 60 * 60000`).
+
+**8. Peninggian Default Catatan Analisa (`index.html` → stylesheet)**
+- Meningkatkan `min-height` textarea `.tek-note-wrap textarea` dari `150px` menjadi `220px` untuk ruang ketik yang lebih lega.
+- Melakukan bump `APP_VERSION` menjadi `'2026.07.17.7'` untuk pembaruan cache PWA.
+
+---
+
 ## Changelog Session 176 (2026-07-16) — Export Jurnal CSV dalam Bentuk Tabel Checklist Terstruktur
 
 **Konteks:** Menjawab masukan pengguna yang merasa hasil export CSV jurnal sulit dibaca karena seluruh data checklist (baik `rc1-rc6` maupun checklist spesifik playbook seperti `VALIDITAS DRIVER`, `FUNDAMENTAL BIAS`, dll.) tergabung secara multi-line di dalam satu kolom `Thesis`. Hal ini menyebabkan row height di Excel menjadi sangat tinggi dan berantakan. Solusinya adalah memisahkan seluruh kriteria checklist ke kolom/tabel datar terstruktur.
