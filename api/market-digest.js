@@ -172,11 +172,12 @@ const CB_MISTRAL     = 'ai:mistral';
 // (murah, konsisten pola kandidat lain yang ditolak) untuk jaga-jaga kalau NVIDIA membuka
 // tier produksi gratis di masa depan — TIDAK dijalankan sebagai bagian gate promosi.
 // Model: DeepSeek yang di-host NIM (familiar — sama keluarga dengan primary produksi
-// SambaNova sekarang). id "deepseek-ai/deepseek-v3.2" (dari catatan katalog) dites live
-// 2026-07-18 → HTTP 404 (slug API != slug URL modelcard) — diganti "deepseek-ai/deepseek-v3.1",
-// id yang paling banyak dikonfirmasi contoh kerja pihak ketiga per riset ulang saat itu juga.
+// SambaNova sekarang). "deepseek-ai/deepseek-v3.2" lalu "deepseek-ai/deepseek-v3.1" sama-
+// sama HTTP 404 saat dites live 2026-07-18 (slug API NVIDIA sering beda dari slug URL
+// modelcard) — id final dikonfirmasi dari docs.api.nvidia.com/nim/reference/deepseek-ai-
+// deepseek-v3_1-terminus (checkpoint terbaru V3.1, ganti akhiran "-terminus").
 const NVIDIA_URL   = 'https://integrate.api.nvidia.com/v1/chat/completions';
-const NVIDIA_MODEL = 'deepseek-ai/deepseek-v3.1';
+const NVIDIA_MODEL = 'deepseek-ai/deepseek-v3.1-terminus';
 const CB_NVIDIA     = 'ai:nvidia';
 
 const MAJOR_CURRENCIES = new Set(['USD','EUR','GBP','JPY','CAD','AUD','NZD','CHF']);
@@ -1877,16 +1878,22 @@ ${xauHistoryBlock}`;
 
     // Gemini 2.5 Flash (Google AI Studio) — diagnostik terisolasi Plan N, belum pernah
     // dites live. Endpoint OpenAI-compat resmi, lihat GEMINI_URL/GEMINI_MODEL untuk konteks.
+    // Percobaan pertama (2026-07-18) 1300 token/tanpa reasoning_effort → finish_reason=length
+    // dengan output cuma 109 karakter: gemini-flash-latest (Gemini 3.x) SELALU "thinking"
+    // dan tidak bisa dimatikan total (beda dari 2.5 yang bisa reasoning_effort:'none') —
+    // budget token habis duluan buat reasoning trace sebelum sampai jawaban. Mitigasi:
+    // reasoning_effort:'low' (dipetakan otomatis ke thinking_level Gemini 3.x oleh layer
+    // OpenAI-compat) + max_tokens dinaikkan jadi 3000 supaya ada sisa ruang jawaban nyata.
     if (testGeminiOnly) {
-      const geminiTimeout1 = 20000;
+      const geminiTimeout1 = 25000;
       if (GEMINI_KEY && await cb.canCall(CB_GEMINI)) {
         const t0ge = Date.now();
         try {
-          console.log('Call 1: trying Gemini 2.5 Flash — diagnostik test_gemini=1');
-          const raw = await aiCall(GEMINI_URL, GEMINI_KEY, GEMINI_MODEL, call1Messages, 1300, 0.25, geminiTimeout1, {}, {}, 'gemini');
+          console.log('Call 1: trying Gemini (flash-latest) — diagnostik test_gemini=1');
+          const raw = await aiCall(GEMINI_URL, GEMINI_KEY, GEMINI_MODEL, call1Messages, 3000, 0.25, geminiTimeout1, {}, { reasoning_effort: 'low' }, 'gemini');
           const elapsed = Date.now() - t0ge;
           if (raw.trim()) {
-            article = raw.trim(); method = 'gemini-2.5-flash';
+            article = raw.trim(); method = 'gemini-flash-latest';
             providerLog.push(`gemini:ok(${elapsed}ms,${article.length}c)`);
           } else {
             providerLog.push(`gemini:empty(${elapsed}ms)`);
