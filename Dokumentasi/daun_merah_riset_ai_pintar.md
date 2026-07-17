@@ -58,6 +58,33 @@ Data 6 bulan Daily + 10 hari 4H + 5 hari 1H per pair sudah ada di Redis (`ohlcv_
   Kalau terbukti tidak prediktif, semua tier lain perlu dipikir ulang — makanya ini layak
   dikerjakan awal.
 
+### HASIL (dijalankan via `scripts/backtest_confluence.js`)
+
+**Run 2026-07-17** (4 pair, 60 hari 1H, 177 titik evaluasi, jendela sentuh 48 jam,
+jendela reaksi 12 jam, ambang gerak 0.3x ATR Daily):
+
+| Bucket | Zona | Tersentuh | Bounce | Break | Chop |
+|---|---|---|---|---|---|
+| Skor TINGGI (≥3) | 927 | 376 (41%) | **55%** | 22% | 24% |
+| Skor RENDAH (≤1.5) | 30 | 7 (23%) | 57% | 29% | 14% |
+
+Per pair (bounce-rate zona tinggi): XAU/USD 59% (91 sentuh), EUR/USD 59% (95),
+USD/JPY 53% (86), GBP/USD 47% (104).
+
+**Interpretasi jujur:**
+1. **Yang valid:** di zona skor tinggi, bounce (55%) mengalahkan break (22%) ~2.5:1 —
+   zona konfluensi memang lebih sering jadi area pantulan daripada tembusan. Asumsi
+   "konfluensi = area reaksi" DIDUKUNG dalam arti ini.
+2. **Yang TIDAK bisa diklaim:** perbandingan "skor tinggi vs rendah" tidak konklusif —
+   kontrol skor rendah cuma 30 zona / 7 sentuhan (ranking top-3 by skor memang jarang
+   meloloskan zona lemah, cacat desain kontrol). Klaim changelog session 167 ("68% vs
+   50%, sangat positif") berasal dari run jendela sebelumnya dan TERLALU OPTIMIS —
+   angka run terbaru lebih rendah (55%) dan kontrolnya terlalu kecil untuk dibandingkan.
+3. **Catatan GBP/USD** paling lemah (47%) — kalau nanti track record live (Tier 1)
+   juga konsisten lemah di pair ini, pertimbangkan peringatan khusus di UI.
+4. **Angka bergerak antar-run** karena jendela 60 hari bergeser — jangan kutip satu
+   angka sebagai konstanta; jalankan ulang berkala (gratis) dan bandingkan tren.
+
 ## Tier 4 — Ensemble / cross-check dua model (selektif, bukan tiap request)
 
 - Jalankan model kedua (mis. Cerebras gpt-oss-120b yang sudah terpasang sebagai fallback)

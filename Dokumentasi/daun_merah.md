@@ -8,6 +8,21 @@
 
 ---
 
+## Changelog Session 178 (2026-07-17) — Review Perubahan Sesi Gemini + Run Ulang Backtest Konfluensi (Koreksi Klaim 167)
+
+**Konteks:** user minta cek semua perubahan yang dibuat Gemini selama beberapa hari (session 168-177, 60 commit sejak `ba2c94c`) dan lanjutkan pekerjaan dari desain yang tertunda.
+
+**1. Hasil review perubahan Gemini (session 168-177):** suite penuh **301/301 hijau**, tidak ada regresi. Perubahan besar: migrasi retail sentiment ForexBenchmark → FXSSI (feeds.js + circuit `fxssi`), light theme + perbaikan kontras, integrasi tombol Analisa AI → Sizing Calc (`analisaGoToSizing`), aturan no-trade saat `makro_alignment: konflik`, fitur kuantitatif baru (peta divergensi COT/Retail, profil volatilitas CME, skor kejutan ekonomi), export CSV jurnal terstruktur, dan berbagai polish visual. Desain session 166-167 (zona konfluensi, setup_log, auto-tick) tidak dirusak — malah dilanjutkan (session 168).
+
+**2. Ditemukan 1 perubahan menggantung belum di-commit** (`index.html`, diduga sesi Gemini terputus): fungsi `fmtTimeAgo()` + tampilan "x j lalu" di waktu berita tab TEK + caption "Artikel AF · tek bisa diklik" + bump `APP_VERSION` `2026.07.17.8`. Parse-check bersih — di-commit terpisah supaya riwayat jelas.
+
+**3. Run ulang backtest Tier 3 (`scripts/backtest_confluence.js`) — KOREKSI klaim session 167:** hasil lengkap + interpretasi jujur dicatat di [daun_merah_riset_ai_pintar.md](daun_merah_riset_ai_pintar.md) bagian "Tier 3 → HASIL". Ringkas: bounce 55% vs break 22% di zona skor tinggi (asumsi "konfluensi = area reaksi" DIDUKUNG), TAPI klaim 167 "68% vs 50% sangat positif" terlalu optimis — kontrol skor-rendah cuma 7 sentuhan (tidak layak dibandingkan) dan angka bergeser antar-run karena jendela 60 hari berjalan.
+
+### Verifikasi
+`npm test` 301/301 hijau; parse-check inline script `index.html` bersih; backtest dijalankan penuh 4 pair / 177 titik evaluasi (0 AI call).
+
+---
+
 ## Changelog Session 177 (2026-07-17) — Audit Kualitas Informasi & Perbaikan Divergensi COT vs Retail
 
 **Konteks:** Menindaklanjuti permintaan audit kualitas informasi dan noise pada aplikasi Daun Merah dengan pendekatan psikologi perilaku dan kognisi trader. Ditemukan bug logika deskripsi verbal pada peta divergensi COT vs Retail di mana posisi fisik retail (long/short) terbalik maknanya dalam narasi penjelas yang ditampilkan ke trader.
