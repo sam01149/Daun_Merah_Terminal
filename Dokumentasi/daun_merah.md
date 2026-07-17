@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-07-17 (Session 180 — Eksekusi Plan I Item 1: Transmisi Komoditas di Prompt Ringkasan. Detail history dapat dilihat pada changelog sesi di bawah.)
+> **Last updated:** 2026-07-17 (Session 180 — Eksekusi Plan I Item 1-2: Transmisi Komoditas + Track Record ke Prompt Analisa. Detail history dapat dilihat pada changelog sesi di bawah.)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -16,8 +16,17 @@
 - Instruksi baru disisipkan ke `DIGEST_SYSTEM_DEFAULT` bagian DETAIL PER TEMA (setelah baris Rate Differential): hubungkan pergerakan CAD/AUD/NZD ke komoditas ekspor utamanya (CAD-WTI, AUD-Gold/Copper/Biji Besi) via Terms of Trade, bukan cuma narasi "USD kuat/lemah".
 - 0 AI call tambahan, tidak menyentuh Call 2/3 — murni penguat kualitas narasi Call 1. Tidak ada perubahan logika/angka.
 
+**Item 2 — Track Record disuapkan ke prompt Analisa (`api/admin.js`):**
+- Helper pure baru `_formatTrackRecordBlock(log, symbol)`: filter log `setup_log:v1` ke symbol + status final (`tp`/`sl` saja — `ambiguous`/`expired`/`stale`/`invalid`/`pending`/`open` TIDAK dihitung menang/kalah, konsisten dengan `_aggSetupStats`). Return `''` kalau sampel selesai < 5 (sampel kecil = noise, jangan disuap ke AI).
+- `ohlcvAnalyzeHandler`: tambah 1 GET Redis (`setup_log:v1`), blok `[TRACK RECORD setup AI pair ini]` disisipkan ke `ctxParts` sebelum `DATA TEKNIKAL` kalau tersedia. Format: "N setup selesai (segala arah): X TP / Y SL (win rate Z%)" + saran eksplisit "WAJIB lebih konservatif" kalau win-rate < 50%.
+- Instruksi paragraf KESIMPULAN (`p5Track`): kalau blok tersedia, AI WAJIB sebut win-rate historis sebagai bagian pertimbangan level keyakinan.
+- 4 unit test baru (`test/ta_struct.test.js`): sampel <5 → kosong, sampel ≥5 → format + saran konservatif benar, status non-final diabaikan dari perhitungan, symbol lain/log kosong/korup → kosong.
+- 0 AI call tambahan (cuma teks prompt + 1 GET Redis), tidak mengubah Call 2/3.
+
+**Bonus — bug dead-code ditemukan saat self-evaluasi (`api/admin.js`):** `_evaluateSetups`, `_aggSetupStats`, dan `setupStatsHandler` ternyata terduplikasi 100% identik (2 blok ~90 baris persis sama, kemungkinan besar dari paste ganda sesi lampau). Blok kedua (dead code, redeclare tanpa efek fungsional) dihapus.
+
 ### Verifikasi
-`node --check api/market-digest.js` bersih; `npm test` 301/301 hijau. Verifikasi kualitatif menunggu run Ringkasan berikutnya (cron alami, tanpa AI call tambahan sesuai instruksi hemat kuota).
+`node --check api/market-digest.js` + `node --check api/admin.js` bersih; `npm test` 305/305 hijau (301 lama + 4 baru). Verifikasi kualitatif item 1 & 2 menunggu run Ringkasan/Analisa berikutnya (cron alami / klik user, tanpa AI call tambahan sesuai instruksi hemat kuota).
 
 ---
 

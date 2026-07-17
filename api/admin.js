@@ -2199,100 +2199,6 @@ async function setupStatsHandler(req, res) {
   }
 }
 
-// ── Outcome logging setup Analisa AI (Tier 1 riset, session 166) ──────────────
-// Setiap setup lengkap (entry/sl/tp) yang dihasilkan ohlcv_analyze dicatat ke Redis
-// `setup_log:v1`, lalu dievaluasi lazy tiap kali `?action=setup_stats` dipanggil
-// (tanpa cron baru, tanpa AI call): candle 1H sejak setup dibuat menentukan apakah
-// harga MASUK zona entry dulu (pending→open), lalu kena TP atau SL duluan. Dari sini
-// win-rate NYATA per pair bisa dihitung — bukan self-assessment "keyakinan" LLM.
-//
-// Status: pending (belum fill) → open (sudah masuk zona) → tp | sl | ambiguous
-// (TP & SL tersentuh di candle 1H yang sama — tidak bisa tahu urutannya, JANGAN
-// dihitung menang/kalah); pending terlalu lama → expired; gap data (candle tertua
-// > 24 jam setelah setup dibuat, tidak tahu apa yang terjadi) → stale.
-// Pure function — dites di test/ta_struct.test.js.
-function _evaluateSetups(setups, candlesBySymbol, nowMs) {
-  const DAY = 86400000;
-  const nums = s => (String(s).match(/[\d.]+/g) || []).map(Number).filter(n => !isNaN(n));
-  for (const st of setups || []) {
-    if (!st || (st.status !== 'pending' && st.status !== 'open')) continue;
-    const e = nums(st.entry_zone), sl = nums(st.sl)[0], tp = nums(st.tp)[0];
-    if (!e.length || sl == null || tp == null || (st.bias !== 'bullish' && st.bias !== 'bearish')) {
-      st.status = 'invalid';
-      continue;
-    }
-    const eLo = Math.min(...e), eHi = Math.max(...e);
-    const all = candlesBySymbol?.[st.symbol] || [];
-    // Gap data: setup masih pending tapi candle tertua yang tersedia sudah > 24 jam
-    // setelah setup dibuat — kejadian di gap tidak diketahui, jangan mengarang hasil.
-    if (st.status === 'pending' && all.length && all[0].t * 1000 > st.ts + DAY) {
-      st.status = 'stale';
-      continue;
-    }
-    for (const c of all) {
-      if (c.t * 1000 <= st.ts) continue;
-      if (st.status === 'pending') {
-        const filled = st.bias === 'bearish' ? c.h >= eLo : c.l <= eHi;
-        if (filled) { st.status = 'open'; st.filled_t = c.t; }
-      }
-      if (st.status === 'open') {
-        const hitSl = st.bias === 'bearish' ? c.h >= sl : c.l <= sl;
-        const hitTp = st.bias === 'bearish' ? c.l <= tp : c.h >= tp;
-        if (hitSl && hitTp) { st.status = 'ambiguous'; st.closed_t = c.t; break; }
-        if (hitSl) { st.status = 'sl'; st.closed_t = c.t; break; }
-        if (hitTp) { st.status = 'tp'; st.closed_t = c.t; break; }
-      }
-    }
-    const horizonMs = Math.max(2, st.horizon_days || 5) * 1.5 * DAY;
-    if (st.status === 'pending' && nowMs - st.ts > horizonMs) st.status = 'expired';
-  }
-  return setups;
-}
-
-// Agregat statistik dari log setup. Ambiguous TIDAK masuk pembagi win-rate.
-function _aggSetupStats(arr) {
-  const by = s => arr.filter(x => x.status === s).length;
-  const tp = by('tp'), sl = by('sl');
-  return {
-    total: arr.length,
-    pending: by('pending'), open: by('open'),
-    tp, sl, ambiguous: by('ambiguous'), expired: by('expired'), stale: by('stale') + by('invalid'),
-    win_rate: (tp + sl) > 0 ? Math.round(tp / (tp + sl) * 100) : null,
-  };
-}
-
-async function setupStatsHandler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Cache-Control', 'no-cache');
-  if (req.method === 'OPTIONS') return res.status(204).end();
-  try {
-    const raw = await redisCmd('GET', 'setup_log:v1');
-    if (!raw) return res.status(200).json({ symbols: {}, global: _aggSetupStats([]), recent: [] });
-    let log = JSON.parse(raw);
-    if (!Array.isArray(log)) log = [];
-    // Evaluasi lazy hanya symbol yang punya setup aktif — hemat Redis call
-    const active = [...new Set(log.filter(s => s && (s.status === 'pending' || s.status === 'open')).map(s => s.symbol))];
-    const candlesBySymbol = {};
-    await Promise.all(active.map(async sym => {
-      try {
-        const r = await redisCmd('GET', `ohlcv:${sym}:1h`);
-        if (r) candlesBySymbol[sym] = JSON.parse(r);
-      } catch (e) { /* candle hilang → setup symbol itu tetap pending */ }
-    }));
-    const before = JSON.stringify(log);
-    log = _evaluateSetups(log, candlesBySymbol, Date.now());
-    const after = JSON.stringify(log);
-    if (after !== before) await redisCmd('SET', 'setup_log:v1', after);
-    const bySymbol = {};
-    for (const s of log) { (bySymbol[s.symbol] = bySymbol[s.symbol] || []).push(s); }
-    const symbols = {};
-    for (const k of Object.keys(bySymbol)) { symbols[k] = _aggSetupStats(bySymbol[k]); symbols[k].history = bySymbol[k]; }
-    return res.status(200).json({ symbols, global: _aggSetupStats(log), recent: log.slice(0, 10) });
-  } catch (e) {
-    return res.status(500).json({ error: e.message });
-  }
-}
-
 // Render blok [ZONA KONFLUENSI] untuk prompt AI. Zona diberi ID stabil (A1/B1 dst,
 // urut skor) supaya instruksi entry_zone bisa merujuk "pilih dari daftar ini".
 function _formatConfluenceBlock(zones, dec) {
@@ -2452,6 +2358,26 @@ function _formatOptionsSentimentBlock(rr) {
   return `SENTIMEN PASAR OPTIONS (dari CME, sumber terpisah dari data teknikal chart — pakai sebagai cross-check tambahan, BUKAN sinyal utama; kalau bertentangan dengan bias teknikal, sebut sebagai catatan risiko di paragraf integrasi, jangan mengubah bias):\n${lines.join('\n')}`;
 }
 
+// Track record historis disuapkan ke prompt Analisa (Plan I item 2, session 180) —
+// AI menimbang rapornya sendiri sebelum percaya diri, bukan self-assessment
+// "keyakinan" tanpa dasar. HANYA tp/sl (hasil final) yang dihitung — ambiguous
+// (TP&SL sama-sama tersentuh, urutan tak diketahui), expired/stale/invalid/pending/
+// open TIDAK dihitung sebagai menang/kalah (lihat _evaluateSetups). Sampel < 5 =
+// noise, jangan disuap ke AI (return ''). Pure function — dites di ta_struct.test.js.
+function _formatTrackRecordBlock(log, symbol) {
+  if (!Array.isArray(log) || !symbol) return '';
+  const decided = log.filter(s => s && s.symbol === symbol && (s.status === 'tp' || s.status === 'sl'));
+  const tp = decided.filter(s => s.status === 'tp').length;
+  const sl = decided.filter(s => s.status === 'sl').length;
+  const total = tp + sl;
+  if (total < 5) return '';
+  const winRate = Math.round(tp / total * 100);
+  const advice = winRate < 50
+    ? ' Win-rate di bawah 50% — WAJIB lebih konservatif: naikkan syarat konfirmasi di trigger atau turunkan keyakinan di kesimpulan, jangan abaikan fakta ini.'
+    : '';
+  return `[TRACK RECORD setup AI pair ini]\n${total} setup selesai (segala arah): ${tp} TP / ${sl} SL (win rate ${winRate}%).${advice}`;
+}
+
 async function ohlcvAnalyzeHandler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Cache-Control', 'no-cache');
@@ -2572,6 +2498,16 @@ async function ohlcvAnalyzeHandler(req, res) {
       }
     } catch (e) { /* opsional — jangan gagalkan analisa kalau cache RR kosong */ }
 
+    // Track record historis setup AI pair ini (Plan I item 2) — 1 GET Redis, 0 AI call.
+    let trackBlock = '';
+    try {
+      const rawSetupLog = await redisCmd('GET', 'setup_log:v1');
+      if (rawSetupLog) {
+        const setupLog = JSON.parse(rawSetupLog);
+        trackBlock = _formatTrackRecordBlock(Array.isArray(setupLog) ? setupLog : [], data.label);
+      }
+    } catch (e) { /* opsional — jangan gagalkan analisa kalau log setup kosong/korup */ }
+
     const makroHeader = makroAgeH != null
       ? `KONTEKS MAKRO (dari Ringkasan ${makroAgeH} jam lalu${makroAgeH > 4 ? ' — SUDAH AGAK BASI: kalau ada rilis/berita besar setelah itu, beri bobot lebih rendah dan sebut ketidakpastiannya' : ''}):`
       : 'KONTEKS MAKRO:';
@@ -2584,6 +2520,7 @@ async function ohlcvAnalyzeHandler(req, res) {
     if (ringkasanContext) ctxParts.push(`${makroHeader}\n${ringkasanContext}`);
     if (fundBlock)        ctxParts.push(fundBlock);
     if (rrBlock)          ctxParts.push(rrBlock);
+    if (trackBlock)       ctxParts.push(trackBlock);
     ctxParts.push(`DATA TEKNIKAL:\n${textBlock}${expiryBlock}${confBlock ? '\n\n' + confBlock : ''}`);
     const makroBlock = ctxParts.join('\n\n');
 
@@ -2600,6 +2537,7 @@ async function ohlcvAnalyzeHandler(req, res) {
       ringkasanContext       ? 'konteks makro' : null,
       fundBlock              ? 'fundamental terstruktur' : null,
       rrBlock                ? 'sentimen options' : null,
+      trackBlock             ? 'track record historis' : null,
     ].filter(Boolean).join(' + ');
 
     const p4Macro = (ringkasanContext || fundBlock)
@@ -2607,6 +2545,9 @@ async function ohlcvAnalyzeHandler(req, res) {
       : '';
     const p3Atr = extraCtx?.includes('ATR') ? ', volatilitas berdasarkan ATR' : '';
     const p4Label = extraCtx ? `(${extraCtx})` : 'timeframe';
+    const p5Track = trackBlock
+      ? ' Kalau [TRACK RECORD setup AI pair ini] tersedia di atas, WAJIB sebut win-rate historisnya secara singkat sebagai bagian pertimbangan level keyakinan.'
+      : '';
     // Instruksi entry/sl/tp punya dua varian: kalau [ZONA KONFLUENSI] terhitung, AI
     // WAJIB memilih dari ranking deterministik itu (bukan mengarang kombinasi sendiri —
     // akar masalah hasil lompat-lompat antar re-generate); fallback ke instruksi lama
@@ -2645,7 +2586,7 @@ async function ohlcvAnalyzeHandler(req, res) {
       `Isi paragraf kedua (tanpa header) — struktur H4: pakai [STRUKTUR H4] (HH+HL / LH+LL / mixed) dan posisi harga terhadap cluster [LEVEL S/R] terdekat; fase akumulasi/distribusi/breakout; MACD H4 konfirmasi atau divergensi.`,
       `Isi paragraf ketiga (tanpa header) — momentum & pola: momentum H1 terkini, RSI H4 (arah naik/turun), pola candle yang terdeteksi dan artinya di posisi sekarang${p3Atr}, konfluensi atau perbedaan arah dengan H4.`,
       `Isi paragraf keempat (tanpa header) — integrasi ${p4Label}: simpulkan kekuatan setup (berapa struktur yang konfluens di entry_zone), risiko utama, dan kondisi pasar yang memvalidasi atau membatalkan skenario ini${p4Macro}.`,
-      `Isi paragraf kelima — mulai literal dengan "KESIMPULAN:" lalu isi (WAJIB, paragraf penutup terpisah — jangan digabung ke paragraf keempat): 3-4 kalimat MAKSIMAL setelah kata "KESIMPULAN:", jangan mengulang detail/angka yang sudah dijelaskan panjang di paragraf sebelumnya. Harus BISA BERDIRI SENDIRI untuk trader yang cuma sempat baca satu paragraf ini: (1) bias akhir + level keyakinan (tinggi/sedang/rendah) dengan alasan singkat kenapa segitu, (2) SATU kondisi konkret yang ditunggu sebelum entry (ulangi trigger utama secara ringkas, minimal sebutkan levelnya), (3) SATU risiko/pembatal utama dalam satu kalimat. Nada tegas dan actionable, bukan mengulang narasi eksploratif paragraf sebelumnya.`,
+      `Isi paragraf kelima — mulai literal dengan "KESIMPULAN:" lalu isi (WAJIB, paragraf penutup terpisah — jangan digabung ke paragraf keempat): 3-4 kalimat MAKSIMAL setelah kata "KESIMPULAN:", jangan mengulang detail/angka yang sudah dijelaskan panjang di paragraf sebelumnya. Harus BISA BERDIRI SENDIRI untuk trader yang cuma sempat baca satu paragraf ini: (1) bias akhir + level keyakinan (tinggi/sedang/rendah) dengan alasan singkat kenapa segitu, (2) SATU kondisi konkret yang ditunggu sebelum entry (ulangi trigger utama secara ringkas, minimal sebutkan levelnya), (3) SATU risiko/pembatal utama dalam satu kalimat. Nada tegas dan actionable, bukan mengulang narasi eksploratif paragraf sebelumnya.${p5Track}`,
       '4 paragraf pertama wajib sebut minimal 2 angka konkret masing-masing (harga, %, atau nilai indikator); paragraf kelima minimal 1 angka (level trigger). DILARANG kalimat generik tanpa angka (misal "harga bergerak sideways", "momentum masih lemah", "perlu konfirmasi lebih lanjut" tanpa data pendukung) — setiap klaim harus berpijak pada angka yang ada di DATA TEKNIKAL.',
     ].join('\n');
 
@@ -3143,3 +3084,4 @@ module.exports.computeOhlcvMetrics = computeOhlcvMetrics;
 module.exports.resampleTo4h = resampleTo4h;
 module.exports._extractRingkasanExcerpt = _extractRingkasanExcerpt;
 module.exports._formatFundamentalBlock = _formatFundamentalBlock;
+module.exports._formatTrackRecordBlock = _formatTrackRecordBlock;

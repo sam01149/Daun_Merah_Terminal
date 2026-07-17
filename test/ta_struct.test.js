@@ -340,7 +340,7 @@ test('_formatConfluenceBlock: render header + ID zona A1/B1', () => {
 
 // ── _evaluateSetups + _aggSetupStats (Tier 1 outcome logging, session 166) ────
 
-const { _evaluateSetups, _aggSetupStats } = require('../api/admin.js');
+const { _evaluateSetups, _aggSetupStats, _formatTrackRecordBlock } = require('../api/admin.js');
 
 // Candle 1H sintetis: t dalam detik epoch
 const mkC = (t, o, h, l, c) => ({ t, o, h, l, c, v: 0 });
@@ -442,4 +442,49 @@ test('_aggSetupStats: win-rate hanya dari TP vs SL, ambiguous tidak masuk pembag
   assert.strictEqual(a.win_rate, 67); // 2/3
   const empty = _aggSetupStats([]);
   assert.strictEqual(empty.win_rate, null);
+});
+
+// ── _formatTrackRecordBlock (Plan I item 2, session 180) ──────────────────────
+
+test('_formatTrackRecordBlock: sampel < 5 (tp+sl) → string kosong, jangan disuap ke AI', () => {
+  const log = [
+    { symbol: 'EURUSD', status: 'tp' }, { symbol: 'EURUSD', status: 'tp' },
+    { symbol: 'EURUSD', status: 'sl' }, { symbol: 'EURUSD', status: 'sl' },
+  ]; // cuma 4
+  assert.strictEqual(_formatTrackRecordBlock(log, 'EURUSD'), '');
+});
+
+test('_formatTrackRecordBlock: sampel >= 5 → format blok benar + saran konservatif kalau win-rate < 50%', () => {
+  const log = [
+    { symbol: 'EURUSD', status: 'tp' }, { symbol: 'EURUSD', status: 'tp' },
+    { symbol: 'EURUSD', status: 'sl' }, { symbol: 'EURUSD', status: 'sl' },
+    { symbol: 'EURUSD', status: 'sl' },
+  ]; // 2 TP / 3 SL = win 40%
+  const block = _formatTrackRecordBlock(log, 'EURUSD');
+  assert.match(block, /\[TRACK RECORD setup AI pair ini\]/);
+  assert.match(block, /5 setup selesai/);
+  assert.match(block, /2 TP \/ 3 SL/);
+  assert.match(block, /win rate 40%/);
+  assert.match(block, /WAJIB lebih konservatif/); // win-rate < 50%
+});
+
+test('_formatTrackRecordBlock: ambiguous/expired/stale/pending/open TIDAK dihitung sebagai menang/kalah', () => {
+  const log = [
+    { symbol: 'EURUSD', status: 'tp' }, { symbol: 'EURUSD', status: 'tp' }, { symbol: 'EURUSD', status: 'tp' },
+    { symbol: 'EURUSD', status: 'sl' }, { symbol: 'EURUSD', status: 'sl' },
+    { symbol: 'EURUSD', status: 'ambiguous' }, { symbol: 'EURUSD', status: 'expired' },
+    { symbol: 'EURUSD', status: 'stale' }, { symbol: 'EURUSD', status: 'pending' }, { symbol: 'EURUSD', status: 'open' },
+  ]; // 3 TP / 2 SL = 5 decided, win 60% — status lain diabaikan
+  const block = _formatTrackRecordBlock(log, 'EURUSD');
+  assert.match(block, /5 setup selesai/);
+  assert.match(block, /win rate 60%/);
+  assert.doesNotMatch(block, /WAJIB lebih konservatif/); // win-rate >= 50%, tidak ada saran ekstra
+});
+
+test('_formatTrackRecordBlock: symbol lain / log kosong / korup → string kosong', () => {
+  const log = Array.from({ length: 6 }, () => ({ symbol: 'GC=F', status: 'tp' }));
+  assert.strictEqual(_formatTrackRecordBlock(log, 'EURUSD'), ''); // symbol tidak cocok
+  assert.strictEqual(_formatTrackRecordBlock([], 'EURUSD'), ''); // log kosong
+  assert.strictEqual(_formatTrackRecordBlock(null, 'EURUSD'), ''); // korup (bukan array)
+  assert.strictEqual(_formatTrackRecordBlock(log, null), ''); // symbol kosong
 });
