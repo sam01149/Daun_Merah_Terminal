@@ -48,6 +48,15 @@ const DEFAULT_LIMITS = {
   // yang capnya jauh lebih longgar) — cukup untuk 2 fitur on-demand + cache 6h/1h.
   cerebras:        200,
   ollama:          150,   // Ollama Cloud free tier: GPU-time based (bukan RPM/token), belum ada data pasti — konservatif
+  // Plan N (session 182) — diagnostik ?test_gemini=1/?test_mistral=1/?test_nvidia=1,
+  // BUKAN chain produksi. Limit konservatif di bawah kuota resmi riset (daun_merah_riset.md):
+  // Gemini Flash free tier 250-1.500 RPD per PROJECT (bukan per key) — 200 aman untuk
+  // dites manual tanpa mepet limit asli Google. Mistral ±1M token/bulan (jauh lebih
+  // longgar per-request) tetap dikonservatifkan sama dengan provider lain. NVIDIA 40 RPM
+  // baseline — 200/hari jauh di bawah itu (dites manual, bukan burst).
+  gemini:          200,
+  mistral:         200,
+  nvidia:          200,
 };
 
 function dailyLimit(provider) {

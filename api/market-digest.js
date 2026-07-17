@@ -144,6 +144,35 @@ const CB_CEREBRAS_GLM        = 'ai:cerebras:glm';
 const CEREBRAS_MODEL_GPTOSS  = 'gpt-oss-120b';
 const CB_CEREBRAS_GPTOSS     = 'ai:cerebras:gptoss';
 
+// Riset provider baru (Plan N, session 182, 2026-07-18) — 3 kandidat BELUM PERNAH dites
+// live, terisolasi total via ?test_gemini=1 / ?test_mistral=1 / ?test_nvidia=1 (pola
+// persis testGlmOnly/testHermesOnly di atas — hasil TIDAK ditulis ke digest_history/
+// latest_article, lihat isIsolatedTest). Env var Vercel dikonfirmasi (BUKAN nama tebakan
+// awal plan): GEMINI_API_KEY, MISTRAL_API_KEY, NVIDIA_API_KEY.
+// Gemini: endpoint OpenAI-compat resmi Google AI Studio. Model non-preview termurah/
+// tercepat free tier (10 RPM/1.500 RPD per project, ai.google.dev/gemini-api/docs/rate-limits).
+const GEMINI_URL   = 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions';
+const GEMINI_MODEL = 'gemini-2.5-flash';
+const CB_GEMINI     = 'ai:gemini';
+// Mistral La Plateforme, tier gratis "Experiment". Pakai alias -latest (bukan versi
+// tertanggal eksplisit) supaya tidak perlu update manual tiap Mistral merilis versi baru
+// — konvensi resmi Mistral untuk semua model line-nya.
+const MISTRAL_URL   = 'https://api.mistral.ai/v1/chat/completions';
+const MISTRAL_MODEL = 'mistral-medium-latest';
+const CB_MISTRAL     = 'ai:mistral';
+// NVIDIA NIM — DITOLAK untuk promosi chain produksi SEBELUM diuji live (lihat
+// daun_merah_riset.md "Riset Provider AI Baru" §Keputusan Gate Awal): ToS resmi NVIDIA API
+// Trial (assets.ngc.nvidia.com, v.19 Sep 2025 §1.2/1.4) melarang eksplisit penggunaan
+// produksi tanpa Subscription berbayar ("you may only use the API Service for internal
+// testing and evaluation purposes, not in production"). Kode diagnostik tetap dibuat
+// (murah, konsisten pola kandidat lain yang ditolak) untuk jaga-jaga kalau NVIDIA membuka
+// tier produksi gratis di masa depan — TIDAK dijalankan sebagai bagian gate promosi.
+// Model: DeepSeek-V3.2 yang di-host NIM (familiar — sama keluarga dengan primary produksi
+// SambaNova sekarang), id dikonfirmasi dari build.nvidia.com/deepseek-ai/deepseek-v3_2.
+const NVIDIA_URL   = 'https://integrate.api.nvidia.com/v1/chat/completions';
+const NVIDIA_MODEL = 'deepseek-ai/deepseek-v3.2';
+const CB_NVIDIA     = 'ai:nvidia';
+
 const MAJOR_CURRENCIES = new Set(['USD','EUR','GBP','JPY','CAD','AUD','NZD','CHF']);
 
 // Map pair label → Yahoo symbol for OHLCV context lookup
@@ -919,6 +948,9 @@ module.exports = async function handler(req, res) {
   const GROQ_KEY       = process.env.GROQ_API_KEY;
   const OLLAMA_KEY     = process.env.OLLAMA_API_KEY;
   const CEREBRAS_KEY   = process.env.CEREBRAS_API_KEY;
+  const GEMINI_KEY     = process.env.GEMINI_API_KEY;
+  const MISTRAL_KEY    = process.env.MISTRAL_API_KEY;
+  const NVIDIA_KEY     = process.env.NVIDIA_API_KEY;
 
   // Diagnostik sementara (session 145, pola sama seperti ?test_ollama=1 di admin.js
   // session 144): paksa Call 1/2/3 lewat Nemotron 3 Ultra saja, skip tier lain, supaya
@@ -944,7 +976,16 @@ module.exports = async function handler(req, res) {
   // seperti Hermes: skip semua tier lain di Call 1, hasil TIDAK ditulis ke
   // digest_history/latest_article (lihat isIsolatedTest di bawah).
   const testGlmOnly = req.query.test_glm === '1';
-  const isIsolatedTest = testHermesOnly || testNemotronOnly || testNemotronSuperOnly || testGlmOnly;
+
+  // Diagnostik provider baru (Plan N, session 182) — Gemini/Mistral/NVIDIA NIM, pola
+  // isolasi sama seperti Hermes/GLM di atas (lihat konstanta GEMINI_URL dkk untuk konteks
+  // lengkap termasuk kenapa NVIDIA tidak akan pernah dipromosikan ke chain produksi).
+  const testGeminiOnly  = req.query.test_gemini === '1';
+  const testMistralOnly = req.query.test_mistral === '1';
+  const testNvidiaOnly  = req.query.test_nvidia === '1';
+
+  const isIsolatedTest = testHermesOnly || testNemotronOnly || testNemotronSuperOnly || testGlmOnly ||
+    testGeminiOnly || testMistralOnly || testNvidiaOnly;
 
   const host  = req.headers.host || 'financial-feed-app.vercel.app';
   const proto = host.includes('localhost') ? 'http' : 'https';
@@ -1825,6 +1866,104 @@ ${xauHistoryBlock}`;
         providerLog.push('glm:circuit_open');
       } else {
         providerLog.push('glm:no_key');
+      }
+    }
+
+    // Gemini 2.5 Flash (Google AI Studio) — diagnostik terisolasi Plan N, belum pernah
+    // dites live. Endpoint OpenAI-compat resmi, lihat GEMINI_URL/GEMINI_MODEL untuk konteks.
+    if (testGeminiOnly) {
+      const geminiTimeout1 = 20000;
+      if (GEMINI_KEY && await cb.canCall(CB_GEMINI)) {
+        const t0ge = Date.now();
+        try {
+          console.log('Call 1: trying Gemini 2.5 Flash — diagnostik test_gemini=1');
+          const raw = await aiCall(GEMINI_URL, GEMINI_KEY, GEMINI_MODEL, call1Messages, 1300, 0.25, geminiTimeout1, {}, {}, 'gemini');
+          const elapsed = Date.now() - t0ge;
+          if (raw.trim()) {
+            article = raw.trim(); method = 'gemini-2.5-flash';
+            providerLog.push(`gemini:ok(${elapsed}ms,${article.length}c)`);
+          } else {
+            providerLog.push(`gemini:empty(${elapsed}ms)`);
+          }
+          console.log('Call 1: Gemini OK, length', article?.length);
+          await cb.onSuccess(CB_GEMINI);
+        } catch(e) {
+          const elapsed = Date.now() - t0ge;
+          const errMsg = e.status ? `HTTP${e.status}` : (e.message || 'err').slice(0, 40);
+          providerLog.push(`gemini:${errMsg}(${elapsed}ms)`);
+          console.warn('Call 1 Gemini failed:', e.status || e.message);
+          await cb.onFailure(CB_GEMINI, AI_CB_THRESHOLD);
+        }
+      } else if (GEMINI_KEY) {
+        providerLog.push('gemini:circuit_open');
+      } else {
+        providerLog.push('gemini:no_key');
+      }
+    }
+
+    // Mistral Medium (La Plateforme, tier gratis Experiment) — diagnostik terisolasi
+    // Plan N, belum pernah dites live. Lihat MISTRAL_URL/MISTRAL_MODEL untuk konteks ToS.
+    if (testMistralOnly) {
+      const mistralTimeout1 = 20000;
+      if (MISTRAL_KEY && await cb.canCall(CB_MISTRAL)) {
+        const t0mi = Date.now();
+        try {
+          console.log('Call 1: trying Mistral Medium — diagnostik test_mistral=1');
+          const raw = await aiCall(MISTRAL_URL, MISTRAL_KEY, MISTRAL_MODEL, call1Messages, 1300, 0.25, mistralTimeout1, {}, {}, 'mistral');
+          const elapsed = Date.now() - t0mi;
+          if (raw.trim()) {
+            article = raw.trim(); method = 'mistral-medium';
+            providerLog.push(`mistral:ok(${elapsed}ms,${article.length}c)`);
+          } else {
+            providerLog.push(`mistral:empty(${elapsed}ms)`);
+          }
+          console.log('Call 1: Mistral OK, length', article?.length);
+          await cb.onSuccess(CB_MISTRAL);
+        } catch(e) {
+          const elapsed = Date.now() - t0mi;
+          const errMsg = e.status ? `HTTP${e.status}` : (e.message || 'err').slice(0, 40);
+          providerLog.push(`mistral:${errMsg}(${elapsed}ms)`);
+          console.warn('Call 1 Mistral failed:', e.status || e.message);
+          await cb.onFailure(CB_MISTRAL, AI_CB_THRESHOLD);
+        }
+      } else if (MISTRAL_KEY) {
+        providerLog.push('mistral:circuit_open');
+      } else {
+        providerLog.push('mistral:no_key');
+      }
+    }
+
+    // NVIDIA NIM DeepSeek-V3.2 — diagnostik terisolasi Plan N. TIDAK akan pernah
+    // dipromosikan ke chain produksi (ToS trial melarang produksi eksplisit, lihat
+    // NVIDIA_URL/NVIDIA_MODEL) — jalur ini disiapkan murni untuk dokumentasi/jaga-jaga,
+    // bukan bagian gate promosi aktif.
+    if (testNvidiaOnly) {
+      const nvidiaTimeout1 = 20000;
+      if (NVIDIA_KEY && await cb.canCall(CB_NVIDIA)) {
+        const t0nv = Date.now();
+        try {
+          console.log('Call 1: trying NVIDIA NIM DeepSeek-V3.2 — diagnostik test_nvidia=1');
+          const raw = await aiCall(NVIDIA_URL, NVIDIA_KEY, NVIDIA_MODEL, call1Messages, 1300, 0.25, nvidiaTimeout1, {}, {}, 'nvidia');
+          const elapsed = Date.now() - t0nv;
+          if (raw.trim()) {
+            article = raw.trim(); method = 'nvidia-nim-deepseek';
+            providerLog.push(`nvidia:ok(${elapsed}ms,${article.length}c)`);
+          } else {
+            providerLog.push(`nvidia:empty(${elapsed}ms)`);
+          }
+          console.log('Call 1: NVIDIA NIM OK, length', article?.length);
+          await cb.onSuccess(CB_NVIDIA);
+        } catch(e) {
+          const elapsed = Date.now() - t0nv;
+          const errMsg = e.status ? `HTTP${e.status}` : (e.message || 'err').slice(0, 40);
+          providerLog.push(`nvidia:${errMsg}(${elapsed}ms)`);
+          console.warn('Call 1 NVIDIA NIM failed:', e.status || e.message);
+          await cb.onFailure(CB_NVIDIA, AI_CB_THRESHOLD);
+        }
+      } else if (NVIDIA_KEY) {
+        providerLog.push('nvidia:circuit_open');
+      } else {
+        providerLog.push('nvidia:no_key');
       }
     }
 
