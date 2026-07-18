@@ -1,10 +1,20 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-07-18 (Session 188 — lapisan self-healing 4 lapis: proses daemon (crash → restart Railway otomatis), Redis (backoff degradasi saat gagal beruntun/quota), WebSocket zombie (ping + paksa reconnect), dan data (candle basi → trigger ohlcv_sync otomatis dari daemon DAN dari `action=health` Vercel; scheduler gagal → retry). `npm test` 374/374 hijau.).
+> **Last updated:** 2026-07-18 (Session 189 — housekeeping `.gitignore`: `scratch/` di-ignore + duplikat `.env*` dihapus. Sebelumnya Session 188 — lapisan self-healing 4 lapis: proses daemon (crash → restart Railway otomatis), Redis (backoff degradasi saat gagal beruntun/quota), WebSocket zombie (ping + paksa reconnect), dan data (candle basi → trigger ohlcv_sync otomatis dari daemon DAN dari `action=health` Vercel; scheduler gagal → retry). `npm test` 374/374 hijau.).
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+---
+
+## Changelog Session 189 (2026-07-18) — Housekeeping .gitignore
+
+**Konteks:** Audit ringan struktur repo atas pertanyaan user "file/folder kebanyakan ga?". Kesimpulan: repo sehat (100 file tracked; 35rb file lokal hampir semuanya `.venv` + `project_delay/` yang memang di-ignore). Dua rapikan kecil dieksekusi:
+- `scratch/` (script tes sekali pakai `test_analyze_nvidia.js`, `test_nvidia_custom.js`) ditambah ke `.gitignore` — sebelumnya nyangkut sebagai untracked di `git status`.
+- Duplikat `.env*` di baris terakhir `.gitignore` dihapus (sudah tercakup baris 22, diverifikasi `git check-ignore`).
+
+Tidak ada perubahan kode app. Catatan terbuka dari audit: `index.html` 883 KB satu file — kandidat refactor besar suatu saat, bukan urusan housekeeping ini.
 
 ---
 

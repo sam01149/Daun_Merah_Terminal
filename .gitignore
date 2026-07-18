@@ -28,4 +28,5 @@ archive/
 # MT5 bridge lokal (jalan di PC user, bukan bagian deploy Vercel) — dipindah ke bridge/ 2026-07-12
 bridge/
 
-.env*
+# Coret-coretan lokal (script tes sekali pakai), bukan bagian app
+scratch/
