@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-07-18 (Session 187 lanjutan — Plan Q-1: Render & Oracle GAGAL verifikasi kartu (kartu BNI user ditolak di keduanya), pivot ke Railway (tanpa kartu di signup, trade-off kredit terpakai bukan jam gratis); kode heartbeat platform-agnostic, gate uptime 7 hari menunggu user deploy manual).
+> **Last updated:** 2026-07-18 (Session 187 lanjutan 2 — Plan Q-1: deploy Railway BERHASIL (heartbeat live nulis ke Redis), pinger cron-job.org ternyata TIDAK diperlukan untuk Railway (koreksi dari asumsi Render — sleep Railway opt-in & berbasis outbound traffic, heartbeat 60s sudah cukup); gate uptime 7-14 hari sedang berjalan).
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -5601,3 +5601,16 @@ Dicek live ke `docs.railway.com` (free-trial & FAQ): signup Railway **tidak mint
 
 ### Status Q-1 — MASIH BELUM SELESAI (menunggu aksi user):
 Deploy ke Railway (ikuti `vps/README-deploy.md` versi baru) + pasang pinger cron-job.org + jalani gate uptime 7-14 hari, sambil pantau Usage Railway. Tidak ada bagian ini yang bisa dieksekusi dari sisi kode.
+
+---
+
+## Changelog Session 187 lanjutan 2 (2026-07-18) — Plan Q-1: Deploy Railway Berhasil, Koreksi Pinger Tidak Diperlukan
+
+**Konteks:** User eksekusi deploy manual ke Railway mengikuti `vps/README-deploy.md`. Build pertama gagal (Railway coba build dari root repo, bukan folder `vps/`, karena Root Directory belum diisi — persis dugaan awal, dikonfirmasi oleh fitur auto-diagnosis Railway sendiri "Set the root directory to 'vps'..."). Setelah Root Directory diisi `/vps` + 2 env var Redis ditambahkan di tab Variables, deploy sukses. Domain publik ter-generate: `daunmerahterminal-production.up.railway.app`, verifikasi manual browser mengembalikan `last_beat_epoch` terisi (heartbeat sudah menulis ke Redis).
+
+**Godaan yang DITOLAK:** Vercel Marketplace menawarkan integrasi resmi "Add Integration" untuk Railway yang minta izin luas ("managing deployments or managing environment variables" ke seluruh project Vercel). User sempat menemukan halaman ini tapi BELUM mengklik — dikonfirmasi ke user untuk TIDAK diklik, karena bertentangan langsung dengan prinsip keamanan Plan Q (host eksternal cuma boleh pegang token Redis+Telegram+Deriv, bukan akses ke semua secret Vercel termasuk kunci AI berbayar). Env var Redis tetap diisi manual copy-paste, bukan lewat integrasi.
+
+**Koreksi dokumentasi — pinger cron-job.org TERNYATA TIDAK diperlukan untuk Railway:** Entri sebelumnya (S187 lanjutan) masih mewarisi asumsi dari Render bahwa pinger wajib melawan spin-down. Dicek live ke `docs.railway.com/reference/app-sleeping`: fitur sleep Railway ("Serverless") bersifat **opt-in** (tidak nyala otomatis untuk service baru) dan pemicunya beda dari Render — Railway melihat **outbound traffic** (bukan inbound/request masuk), sleep baru terjadi kalau tidak ada outbound packet >10 menit. `heartbeat.js` sendiri sudah mengirim outbound request ke Upstash tiap 60 detik, jauh di bawah ambang itu — daemon mencegah dirinya sendiri tertidur tanpa bantuan eksternal apa pun. `vps/README-deploy.md` §2 ditulis ulang: pinger dihapus dari langkah wajib, diganti catatan cek manual toggle "Serverless" harus OFF. Ini koreksi murni dokumentasi (bukan bug kode) yang ditemukan SEBELUM sempat jadi masalah nyata di gate Q-1.
+
+### Status Q-1 — MASIH BERJALAN (gate 7-14 hari baru mulai):
+Service Railway sudah live & menulis heartbeat. Yang tersisa: biarkan berjalan 7-14 hari, pantau `admin?action=health` source `vps_heartbeat` + Usage Railway sesekali. Belum ada gap tercatat sejak deploy sukses hari ini.

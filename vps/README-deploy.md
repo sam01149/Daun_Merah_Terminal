@@ -1,4 +1,4 @@
-# Deploy — Plan Q-1 (Railway free trial + pinger)
+# Deploy — Plan Q-1 (Railway free trial)
 
 ## Riwayat percobaan (2026-07-18, Session 187 lanjutan)
 
@@ -42,18 +42,31 @@ mencurigakan, jangan langsung simpulkan daemon/koneksi yang salah).
    (nilai sama dengan yang di Vercel env / `.env.local` lokal)
 5. Tab **Settings → Networking** → klik **Generate Domain** (Railway TIDAK
    otomatis expose service ke publik, beda dari Render — wajib langkah ini
-   supaya pinger cron-job.org bisa menembak URL-nya).
+   supaya bisa verifikasi manual & pantau `admin?action=health` dari luar).
 6. Deploy otomatis jalan. Catat domain publik, contoh:
    `https://daun-merah-terminal-production.up.railway.app`.
 7. Verifikasi manual: buka domain tsb di browser — harus balas JSON
    `{"status":"up","last_beat_epoch":...}`.
 
-## 2. Pasang pinger cron-job.org (wajib — melawan idle/sleep)
+## 2. Pinger cron-job.org — TIDAK diperlukan untuk Railway (beda dari Render)
 
-1. https://cron-job.org → daftar/login → **Create cronjob**.
-2. URL: domain Railway dari langkah 1 (root path, method GET).
-3. Interval: tiap **10 menit**.
-4. Simpan, biarkan jalan terus selama masa uji Q-1.
+Dicek live ke `docs.railway.com/reference/app-sleeping`: fitur sleep Railway
+(nama resminya **Serverless**) itu **opt-in** (harus diaktifkan manual di
+Settings, TIDAK nyala otomatis untuk service baru) — beda dari Render yang
+spin-down otomatis tiap 15 menit idle. Pemicunya pun beda: Railway melihat
+**outbound traffic** (bukan ada/tidaknya request masuk), sleep baru terjadi
+kalau tidak ada outbound packet sama sekali selama >10 menit. `heartbeat.js`
+sendiri mengirim outbound request ke Upstash Redis **tiap 60 detik** — jauh
+di bawah ambang 10 menit itu, jadi daemon otomatis mencegah dirinya sendiri
+tertidur, tanpa bantuan pinger eksternal.
+
+**Yang tetap perlu dicek manual sekali:** buka tab **Settings** service ini
+di Railway → pastikan toggle **"Serverless"** dalam keadaan **OFF** (default
+seharusnya begitu untuk service baru, tapi konfirmasi langsung supaya pasti).
+
+Kalau nanti pindah balik ke Render/platform lain yang spin-down berbasis
+inbound traffic, baru pinger cron-job.org jadi wajib lagi — endpoint HTTP di
+`heartbeat.js` sudah disiapkan generic untuk kebutuhan itu.
 
 ## 3. Pantau kredit Railway (spesifik Railway, tidak ada di Render)
 
