@@ -4115,6 +4115,11 @@ body:not(.light-theme) .ringkasan-gen-btn {
       <div class="ck-clock" id="ckClock">--:--:--</div>
       <div class="ck-sess" id="ckSess">—</div>
     </div>
+    <div class="ck-w">
+      <div class="ck-w-ttl">Pre-Entry Check</div>
+      <button type="button" class="ck-pec-btn" id="ckPecBtn" onclick="ckRunPreEntryCheck()" style="width:100%;padding:7px;font-family:'DM Mono',monospace;font-size:9px;letter-spacing:.05em;text-transform:uppercase;border-radius:3px;border:1px solid var(--accent);background:transparent;color:var(--accent);cursor:pointer;font-weight:700">Pre-Entry Check</button>
+      <div id="ckPecBox" style="display:none;margin-top:8px"></div>
+    </div>
     <button class="ck-jurnal-btn" id="ckJurnalBtn" onclick="ckPrefillJurnal()" style="display:none">→ Buat Jurnal dari Checklist</button>
     <button class="ck-mt5-btn" id="ckMt5Btn" onclick="ckShowMt5Modal()" style="display:none">Entry MT5</button>
     <button class="ck-reset" onclick="ckResetAll()">↺ RESET CHECKLIST</button>
@@ -4300,7 +4305,7 @@ window.addEventListener('DOMContentLoaded', updateThemeIcon);
 
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.07.18.2';
+const APP_VERSION = '2026.07.18.3';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
@@ -11131,6 +11136,10 @@ let ckAutoBlocked = {};
 let ckAutoBlockHints = {};
 let ckOverrideReasons = {};
 let ckOverridePendingId = null;
+// ckAutoHints (Plan R-2): alasan TICK auto (kebalikan ckAutoBlockHints yang cuma nyimpan
+// alasan BLOCK) — sebelumnya cuma hidup di badge.title DOM, tidak bisa dibaca programatik.
+// Dibutuhkan untuk fact sheet Pre-Entry Check (kirim status + evidence tiap item ke AI).
+let ckAutoHints = {};
 
 function _ckPairKey(pair) {
   const p = (pair || ckCurrentPair || '').replace('/', '');
@@ -11588,6 +11597,8 @@ function ckResetAll() {
   } catch(e) {}
   ckRender();
   ckUpdateResetCooldownUI();
+  const pecBox = document.getElementById('ckPecBox');
+  if (pecBox) pecBox.style.display = 'none';
 }
 
 const PB_INFO = {
@@ -11666,7 +11677,7 @@ function ckPrefillJurnalAction(pct, verdict) {
   if (thesisAlerts.length > 0) {
     lines.push(`\n— ALERT BUY/SELL LIMIT:`);
     thesisAlerts.slice(0, 3).forEach(a => {
-      lines.push(`  ⚠ ${a.headline}`);
+      lines.push(`  [ALERT] ${a.headline}`);
       if (a.reason) lines.push(`    ${a.reason}`);
     });
   }
@@ -11676,10 +11687,10 @@ function ckPrefillJurnalAction(pct, verdict) {
     if (!checked.length && !missing.length) return;
     lines.push(`\n— ${sec.title}:`);
     checked.forEach(it => {
-      const overrideNote = ckOverrideReasons[it.id] ? ` (⚠ override: "${ckOverrideReasons[it.id]}")` : '';
-      lines.push(`  ✅ ${it.label}${overrideNote}`);
+      const overrideNote = ckOverrideReasons[it.id] ? ` (override: "${ckOverrideReasons[it.id]}")` : '';
+      lines.push(`  [x] ${it.label}${overrideNote}`);
     });
-    missing.forEach(it => lines.push(`  ⬜ ${it.label}`));
+    missing.forEach(it => lines.push(`  [ ] ${it.label}`));
   });
 
   // Navigate to jurnal tab
@@ -11879,7 +11890,7 @@ async function ckMt5AutoJournal(pair, direction, fill, lots, sl, tp) {
   if (thesisAlerts.length > 0) {
     lines.push(`\n— ALERT BUY/SELL LIMIT:`);
     thesisAlerts.slice(0, 3).forEach(a => {
-      lines.push(`  ⚠ ${a.headline}`);
+      lines.push(`  [ALERT] ${a.headline}`);
       if (a.reason) lines.push(`    ${a.reason}`);
     });
   }
@@ -11889,10 +11900,10 @@ async function ckMt5AutoJournal(pair, direction, fill, lots, sl, tp) {
     if (!checked.length && !missing.length) return;
     lines.push(`\n— ${sec.title}:`);
     checked.forEach(it => {
-      const overrideNote = ckOverrideReasons[it.id] ? ` (⚠ override: "${ckOverrideReasons[it.id]}")` : '';
-      lines.push(`  ✅ ${it.label}${overrideNote}`);
+      const overrideNote = ckOverrideReasons[it.id] ? ` (override: "${ckOverrideReasons[it.id]}")` : '';
+      lines.push(`  [x] ${it.label}${overrideNote}`);
     });
-    missing.forEach(it => lines.push(`  ⬜ ${it.label}`));
+    missing.forEach(it => lines.push(`  [ ] ${it.label}`));
   });
 
   // Snapshot CB bias
@@ -12040,6 +12051,7 @@ function ckUpdateClock() {
 function ckAutoTick(id, hint) {
   ckState[id] = true;
   ckAutoBlocked[id] = false;
+  ckAutoHints[id] = hint;
   delete ckAutoBlockHints[id];
   // The system now agrees the condition is fine — an earlier user override (if any)
   // is moot, drop it so the Jurnal thesis doesn't carry a stale "override" note.
@@ -12068,6 +12080,7 @@ function ckAutoBlock(id, hint) {
   ckState[id] = false;
   ckAutoBlocked[id] = true;
   ckAutoBlockHints[id] = hint;
+  delete ckAutoHints[id];
   const box = document.getElementById('ckbox_' + id);
   if (box) {
     const item = box.closest('.ck-item');
@@ -12595,6 +12608,21 @@ function ckAutoTickFromAnalisa(pair) {
       const isPullbackMm = s.bias === 'bearish' ? eHiMm >= nowPxMm : eLoMm <= nowPxMm;
       if (isPullbackMm) ckAutoTick('mm_t3', `AI Analisa: entry ${s.entry_zone} = pullback dalam trend, bukan reversal`);
     }
+    // mm_e3 (Plan R item R-1): konfirmasi price action — pola candle sama yang
+    // dipakai trigger t1 SMC (deterministik dari OHLC), searah bias AI Analisa.
+    if (dFresh && d.patterns?.available && (s.bias === 'bullish' || s.bias === 'bearish')) {
+      const wantReMm = s.bias === 'bullish' ? /Bullish Engulfing|Pin Bar bawah/ : /Bearish Engulfing|Pin Bar atas/;
+      const hitMm = [...(d.patterns.h4 || []), ...(d.patterns.d1 || [])].find(p => wantReMm.test(p.label));
+      if (hitMm) ckAutoTick('mm_e3', `OHLCV: ${hitMm.label} terdeteksi (close ${hitMm.close})${hitMm.running ? ' — candle masih berjalan, tunggu close' : ''}`);
+    }
+    // mm_r4 (Plan R item R-1): risk per trade ≤1% dari Sizing Calculator — pola sama
+    // dengan r4 SMC, ambang lebih ketat (1% vs 2%) karena horizon swing 1-4 minggu
+    // menahan exposure lebih lama.
+    const szMm = window._lastSizing;
+    if (szMm && szMm.pair === pair && szMm.riskPct) {
+      if (szMm.riskPct <= 1) ckAutoTick('mm_r4', `Sizing: risk ${szMm.riskPct}% ≤ 1% — sesuai horizon swing`);
+      else ckAutoBlock('mm_r4', `Sizing: risk ${szMm.riskPct}% > 1% — terlalu besar untuk horizon swing 1-4 minggu`);
+    }
   } else if (ckActivePlaybook === 'mean_reversion') {
     if (rrTxt) {
       if (s.risk_reward >= 1.5) ckAutoTick('mr_r3', rrTxt);
@@ -12643,6 +12671,134 @@ function ckAutoTickFromAnalisa(pair) {
   }
 }
 
+// ── Pre-Entry Check (Plan R, session 186 lanjutan) ────────────────────────────
+// Auto-tick semua item deterministik (R-1) sudah selesai client-side sebelum tombol
+// ini ditekan — endpoint server (api/admin.js action=pre_entry_check) HANYA menilai
+// sisa item discretionary + mencari kontradiksi antar fakta. Cache 45 menit per
+// pair+playbook+fingerprint (fingerprint berubah begitu ada item yang di-toggle,
+// jadi cache lama otomatis tidak dipakai untuk state checklist yang beda) + cooldown
+// tombol 90 detik, pola SAMA persis dengan AI Kritikus (_startCriticCooldown) di atas.
+let ckPecCache = {}; // { [pair]: { data, fingerprint, ts } }
+let ckPecCooldownEnd = 0;
+let ckPecCooldownInterval = null;
+
+function _startPecCooldown() {
+  ckPecCooldownEnd = Date.now() + 90000;
+  _tickPecCooldown();
+}
+function _tickPecCooldown() {
+  clearInterval(ckPecCooldownInterval);
+  ckPecCooldownInterval = setInterval(() => {
+    const remaining = Math.ceil((ckPecCooldownEnd - Date.now()) / 1000);
+    const btn = document.getElementById('ckPecBtn');
+    if (!btn) { clearInterval(ckPecCooldownInterval); return; }
+    if (remaining > 0) {
+      btn.disabled = true;
+      btn.textContent = `Tunggu ${remaining}s`;
+    } else {
+      clearInterval(ckPecCooldownInterval);
+      btn.disabled = false;
+      btn.textContent = 'Pre-Entry Check';
+    }
+  }, 1000);
+}
+
+// Fact sheet: HANYA item parent (subs bukan bagian dari skor — konsisten dengan
+// ckGetVerdict/ckGetScore) + status FAKTA (tick/block, evidence dari ckAutoHints/
+// ckAutoBlockHints) vs MANUAL (checked/unchecked, evidence override kalau ada).
+function _ckBuildPecItems() {
+  const items = [];
+  CK_SECTIONS.forEach(sec => {
+    sec.items.forEach(it => {
+      const id = it.id;
+      let status, evidence = null;
+      if (ckAutoHints[id] && ckState[id]) { status = 'tick'; evidence = ckAutoHints[id]; }
+      else if (ckAutoBlocked[id]) { status = 'block'; evidence = ckAutoBlockHints[id] || null; }
+      else { status = ckState[id] ? 'checked' : 'unchecked'; }
+      if (ckOverrideReasons[id]) evidence = (evidence ? evidence + ' | ' : '') + `Override manual: "${ckOverrideReasons[id]}"`;
+      items.push({ label: `[${sec.title}] ${it.label}`, status, evidence });
+    });
+  });
+  return items;
+}
+
+function _renderPecResult(data, deterministicOnly) {
+  const box = document.getElementById('ckPecBox');
+  if (!box) return;
+  box.style.display = 'block';
+  const { pct, verdict: ckVerdict, cls, gatesOk } = ckGetVerdict();
+  const scoreLine = `<div style="font-size:10px;color:var(--muted);margin-bottom:6px">Skor deterministik: ${pct}% (${gatesOk ? 'gate lengkap' : 'gate belum lengkap'})</div>`;
+  if (deterministicOnly || !data || data.error) {
+    box.innerHTML = `<div class="analisa-tf-card" style="border-left-color:var(--muted);margin-bottom:0">
+      ${scoreLine}
+      <div style="font-size:11px;color:var(--muted);line-height:1.5">Penilaian AI tidak tersedia saat ini — hasil di atas murni deterministik dari data pasar, review sisanya manual.</div>
+    </div>`;
+    return;
+  }
+  const V = {
+    LAYAK:       { label: 'LAYAK',       col: 'var(--green)' },
+    TIDAK_LAYAK: { label: 'TIDAK LAYAK', col: 'var(--accent)' },
+  };
+  const v = V[data.verdict] || { label: '—', col: 'var(--muted)' };
+  const failedHtml = (data.failed_items && data.failed_items.length > 0)
+    ? data.failed_items.map(f => `<div style="margin-top:6px;padding-left:8px;border-left:2px solid var(--yellow)">
+        <span style="font-size:10px;color:var(--text);font-weight:700">${escHtml(f.item)}</span>
+        <div style="font-size:11px;color:var(--muted);line-height:1.5">${escHtml(f.alasan)}</div>
+      </div>`).join('')
+    : `<div style="font-size:11px;color:var(--muted);line-height:1.5">Tidak ada item bermasalah — penilaian AI selaras dengan checklist deterministik.</div>`;
+  box.innerHTML = `<div class="analisa-tf-card" style="border-left-color:${v.col};margin-bottom:0">
+    ${scoreLine}
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+      <span style="font-size:9px;color:var(--muted);letter-spacing:.05em;text-transform:uppercase">Verdict AI</span>
+      <span style="background:${v.col};color:#0a0f1a;font-size:9px;font-weight:700;padding:2px 8px;border-radius:3px;font-family:'DM Mono',monospace;letter-spacing:.06em">${v.label}</span>
+    </div>
+    ${failedHtml}
+    ${data.catatan ? `<div style="margin-top:8px;font-size:11px;color:var(--text);line-height:1.5;font-style:italic">${escHtml(data.catatan)}</div>` : ''}
+    <div style="margin-top:10px;padding-top:8px;border-top:1px solid var(--border);font-size:9px;color:var(--muted);line-height:1.4">Verdict ini konteks keputusan, bukan sinyal eksekusi otomatis — entry tetap keputusan dan tindakan kamu sendiri.</div>
+  </div>`;
+}
+
+async function ckRunPreEntryCheck() {
+  const pair = document.getElementById('ckPairSelector')?.value;
+  if (!pair) return;
+  const { pct, gatesOk } = ckGetVerdict();
+  if (!pct) { showToast('Info', 'Lengkapi checklist dulu sebelum Pre-Entry Check.', 3000); return; }
+
+  const checkedIds = CK_SECTIONS.flatMap(sec => sec.items.map(it => it.id)).filter(id => ckState[id]);
+  const fingerprint = `${ckActivePlaybook}|${pct}|${checkedIds.join(',')}`;
+  const cached = ckPecCache[pair];
+  if (cached && cached.fingerprint === fingerprint && Date.now() - cached.ts < 45 * 60 * 1000) {
+    _renderPecResult(cached.data, false);
+    return;
+  }
+  if (Date.now() < ckPecCooldownEnd) return; // tombol seharusnya sudah disabled, jaga-jaga double click
+
+  const btn = document.getElementById('ckPecBtn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Menilai...'; }
+  const box = document.getElementById('ckPecBox');
+  if (box) box.style.display = 'none';
+
+  try {
+    const res = await fetch('/api/admin?action=pre_entry_check', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pair, playbook: PLAYBOOKS[ckActivePlaybook]?.name || ckActivePlaybook, items: _ckBuildPecItems() }),
+      signal: AbortSignal.timeout(25000),
+    });
+    const data = await res.json();
+    if (data.error === 'ai_unavailable' || data.error === 'parse_failed') {
+      _renderPecResult(null, true);
+    } else {
+      ckPecCache[pair] = { data, fingerprint, ts: Date.now() };
+      _renderPecResult(data, false);
+    }
+  } catch(e) {
+    _renderPecResult(null, true);
+  } finally {
+    _startPecCooldown();
+  }
+}
+
 function ckOnPairChange() {
   const pair = document.getElementById('ckPairSelector').value;
   // Save state for old pair before switching
@@ -12653,6 +12809,10 @@ function ckOnPairChange() {
   ckBuildUI();
   ckRender();
   ckAutoTickRegimeCheck(pair);
+  // Hasil Pre-Entry Check pair sebelumnya tidak relevan untuk pair baru — sembunyikan,
+  // cache per-pair tetap tersimpan (dipakai lagi kalau user balik ke pair yang sama).
+  const pecBox = document.getElementById('ckPecBox');
+  if (pecBox) pecBox.style.display = 'none';
 }
 
 function ckSwitchPlaybook(id) {
@@ -12685,6 +12845,8 @@ function ckSwitchPlaybook(id) {
   try { localStorage.removeItem(_ckFirstCheckKey()); } catch(e) {}
   ckBuildUI();
   ckRender();
+  const pecBox = document.getElementById('ckPecBox');
+  if (pecBox) pecBox.style.display = 'none';
   // Re-init pair selector if needed
   const ckSel = document.getElementById('ckPairSelector');
   if (ckSel && ckSel.options.length === 1 && SZ_PAIRS) {

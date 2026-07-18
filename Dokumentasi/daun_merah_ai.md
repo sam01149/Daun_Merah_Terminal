@@ -18,7 +18,7 @@ Ada 2 lapis pembatas yang perlu dibedakan:
 
 ---
 
-## 2. Peta 4 Fitur AI
+## 2. Peta 5 Fitur AI
 
 | # | Fitur | Tombol di UI | Dipicu otomatis? | Cache | Rate limit server |
 |---|-------|--------------|-------------------|-------|--------------------|
@@ -26,6 +26,7 @@ Ada 2 lapis pembatas yang perlu dibedakan:
 | 2 | **Analisa AI per Pair** (komentar + level entry/SL/TP teknikal per pasangan mata uang) | "Analisa AI" (per pair, termasuk XAU/USD) | Ya — XAU/USD saja, 3×/hari (nempel di cron #1) | Tidak ada cache sebelum generate (selalu fresh tiap klik); hasil disimpan 6 jam untuk auto-tampil | 5 request/menit/IP |
 | 3 | **Analisa Fundamental** (ringasan kondisi fundamental semua mata uang) | "Analisa Fundamental" | Tidak | **6 jam, GLOBAL** (satu cache untuk semua orang — lihat §4.3) | 5 request/menit/IP |
 | 4 | **AI Coach Jurnal** (analisis pola menang/kalah dari trade yang sudah closed) | "Analisis AI" di tab Jurnal | Tidak | 1 jam per device, ada tombol "paksa ulang" | 30 request/menit/IP (endpoint jurnal secara umum) |
+| 5 | **Pre-Entry Check** (Plan R, 2026-07-18 — verdict LAYAK/TIDAK LAYAK dari checklist: auto-tick deterministik client-side + 1 call AI menilai sisa item discretionary & kontradiksi) | "Pre-Entry Check" di tab CHECKLIST | Tidak | 45 menit per pair, key = fingerprint state checklist (invalid begitu ada item ditoggle) | 3 request/menit/IP |
 
 Semua tombol AI di atas (kecuali Coach Jurnal) juga punya **cooldown 90 detik di browser** (disimpan di localStorage) — jadi secara wajar 1 orang tidak bisa klik lebih dari sekali per 90 detik meski server sendiri masih izinkan lebih cepat dari itu.
 
@@ -58,34 +59,40 @@ Call 1 (prosa):
   [NON-AKTIF, hanya via ?test_nemotron_super=1] OpenRouter Nemotron 3 Super
   [NON-AKTIF, hanya via ?test_hermes=1]         Hermes 3 405B (OpenRouter)
   [NON-AKTIF, hanya via ?test_glm=1]            Z.ai GLM 4.7 (Cerebras) — DITOLAK, context 8192 token < prompt ~13K
-  1. SambaNova akun-2 (DeepSeek-V3.2)     — PRIMARY produksi (kembali sejak session 165)
-  2. Cerebras (gpt-oss-120b)              — fallback 1
-  3. Google AI Studio (Gemini-Flash)      — fallback 2 (dipromosikan Plan N 2026-07-18)
-  4. Groq (llama-3.3-70b-versatile)       — fallback 3 (AI)
-  5. Template deterministik non-AI (berdasarkan kategori berita) — fallback absolut, tidak pernah kosong
+  1. DeepSeek v4-flash (API resmi)        — PRIMARY produksi (Plan O-3, 2026-07-18 — promosi dari diagnostik setelah tes live flash unggul vs V3.2, timeout 30s)
+     [khusus jadwal cron session-open] fallback tambahan: Ollama Nemotron 3 Ultra, timeout ADAPTIF (sisa budget − 3s, floor 15s, mencegah dobel-timeout dgn DeepSeek — Plan O-2)
+  2. SambaNova akun-2 (DeepSeek-V3.2)     — fallback 1 (primary lama sejak session 165, sekarang digeser)
+  3. Cerebras (gpt-oss-120b)              — fallback 2
+  4. Google AI Studio (Gemini-Flash)      — fallback 3
+  5. Groq (llama-3.3-70b-versatile)       — fallback 4 (AI)
+  6. Template deterministik non-AI (berdasarkan kategori berita) — fallback absolut, tidak pernah kosong
 
 Call 2 (bias bank sentral, JSON):
   [NON-AKTIF, hanya via ?test_nemotron=1] Ollama Nemotron 3 Ultra → OpenRouter Nemotron 3 Ultra
-  1. SambaNova akun-1 (DeepSeek-V3.2)     — PRIMARY produksi (kembali sejak session 165)
-  2. Google AI Studio (Gemini-Flash)      — fallback 1 (dipromosikan Plan N 2026-07-18 — response_format native)
-  3. Groq (llama-3.3-70b-versatile)       — fallback terakhir
+  1. DeepSeek v4-flash (API resmi)        — PRIMARY produksi (Plan O-3, response_format json_object native)
+  2. SambaNova akun-1 (DeepSeek-V3.2)     — fallback 1 (primary lama sejak session 165, sekarang digeser)
+  3. Google AI Studio (Gemini-Flash)      — fallback 2 (response_format native)
+  4. Groq (llama-3.3-70b-versatile)       — fallback terakhir
   (Z.ai GLM 4.7 via Cerebras sempat jadi primary session 164, digeser lagi session 165 — tidak ada lagi di rantai produksi Call 2)
-  (kalau ketiganya gagal: bias bank sentral TIDAK diupdate siklus itu — data lama di Redis tetap dipakai, bukan kosong/error)
+  (kalau semua gagal: bias bank sentral TIDAK diupdate siklus itu — data lama di Redis tetap dipakai, bukan kosong/error)
 
 Call 3 (trade thesis, JSON):
   [NON-AKTIF, hanya via ?test_nemotron=1] Ollama Nemotron 3 Ultra → OpenRouter Nemotron 3 Ultra
   (Nemotron 3 Super SENGAJA tidak disertakan di Call 3 — dibatasi ke Call 1 saja, lihat catatan di bawah)
-  1. SambaNova akun-1 (DeepSeek-V3.2)     — PRIMARY produksi (kembali sejak session 165)
-  2. Google AI Studio (Gemini-Flash)      — fallback 1 (dipromosikan Plan N 2026-07-18 — response_format native)
-  3. Groq (llama-3.3-70b-versatile)       — fallback terakhir
+  1. DeepSeek v4-flash (API resmi)        — PRIMARY produksi (Plan O-3; maxTokens 800→1200 — Plan O-1, cegah truncation JSON thesis skema 13 field)
+  2. SambaNova akun-1 (DeepSeek-V3.2)     — fallback 1 (primary lama sejak session 165, sekarang digeser)
+  3. Google AI Studio (Gemini-Flash)      — fallback 2 (response_format native)
+  4. Groq (llama-3.3-70b-versatile)       — fallback terakhir
   (Z.ai GLM 4.7 via Cerebras sempat jadi primary session 164, digeser lagi session 165 — tidak ada lagi di rantai produksi Call 3)
-  (kalau ketiganya gagal: tidak ada trade thesis baru ditampilkan siklus itu, bukan error)
+  (kalau semua gagal: tidak ada trade thesis baru ditampilkan siklus itu, bukan error)
 
 Call 4 (cek kontradiksi thesis terbuka):
-  1. SambaNova akun-1 (DeepSeek-V3.2)     — PRIMARY produksi
+  1. SambaNova akun-1 (DeepSeek-V3.2)     — PRIMARY produksi (SENGAJA TETAP SambaNova, bukan DeepSeek flash — jarang terpanggil, hemat saldo top-up, belum diuji flash untuk Call 4)
   2. Groq (llama-3.3-70b-versatile)       — fallback terakhir
   (tidak ada jalur diagnostik Nemotron untuk Call 4; kalau keduanya gagal: tidak ada thesis alert siklus itu, bukan error)
 ```
+
+**Saldo habis (HTTP 402) di tengah bulan (Plan O-4):** aiCall() melempar 402 sebagai error status biasa (tidak beda dari 429/500) — ditangkap catch di tiap tingkat, ditandai eksplisit `deepseek:HTTP402_insufficient_balance` di log/providerLog, lalu fallback lanjut otomatis ke SambaNova. TIDAK hang, TIDAK butuh perubahan kode setelah user top-up lagi — begitu saldo terisi, request berikutnya otomatis balik pakai DeepSeek (tidak ada circuit breaker permanen untuk 402, hanya threshold kegagalan beruntun yang sama seperti error lain).
 
 **Kenapa tingkat Nemotron ditandai NON-AKTIF (lagi):** session 162 lanjutan 3 sempat menaikkan Nemotron 3 Ultra jadi primary Call 1 setelah `think:false` native terbukti berhasil di diagnostik (1 sampel, 7 detik). Lanjutan 4 menemukan output kadang rusak (format nyatu/bahasa campur/kepotong) — sudah difix (validasi format + circuit breaker akurat). Lanjutan 5-6 menemukan akar masalah sebenarnya: 5 sampel completion time nyata di production (7s/17.5s/23.9s/29.5s/41.2s) membuktikan latency-nya 100% tidak terprediksi (resource contention tier gratis model 550B) — timeout 20s maupun 35s sama-sama tidak cukup karena variannya sendiri yang liar, bukan soal kurang longgar. Eksperimen `think:true` (reasoning dinyalakan) malah lebih buruk — 1 dari beberapa percobaan gagal TOTAL (Empty response, seluruh token budget habis di reasoning tanpa pernah sampai jawaban). Kualitas Nemotron sebenarnya BAGUS (0 pelanggaran frasa terlarang di semua sampel, malah lebih patuh prompt daripada SambaNova yang kedapatan leak 2×) — masalahnya murni reliability, bukan output. Lanjutan 7: didemote lagi ke non-aktif, SambaNova akun-2 kembali jadi primary asli. Nemotron TIDAK dihapus — tetap bisa dites ulang kapan pun via `?test_nemotron=1` / `?test_nemotron_super=1`, riset kandidat Ollama Cloud lain masih berlanjut.
 
@@ -108,6 +115,8 @@ Hasil tiap analisa disimpan 6 jam supaya kalau tab ditutup-buka lagi, versi tera
 
 **Rantai fallback: SambaNova akun-1 (DeepSeek-V3.2) → SambaNova akun-2 (DeepSeek-V3.2) — HANYA 2 tingkat, TIDAK ada Groq.** Groq dan Ollama Cloud pernah ada di rantai ini tapi **sengaja dicoret** (2026-07-10): live test membuktikan Ollama timeout konsisten 15 detik sampai circuit breaker terbuka, dan kualitas Groq/llama-3.3 dinilai paling rendah dibanding DeepSeek-V3.2 akun-2 sebagai fallback tunggal — jadi kalau kedua akun SambaNova gagal sekaligus, fitur ini **langsung menampilkan "AI tidak tersedia"**, tidak sempat coba provider lain. Ini beda dari 3 fitur AI lainnya yang semuanya masih punya Groq sebagai jaring pengaman terakhir.
 
+**DeepSeek v4-flash — jalur diagnostik `?test_deepseek=1` (Plan O-6, 2026-07-18), BELUM promosi jadi primary.** Beda dari Ringkasan Berita (§3.1) yang sudah dipromosikan langsung, kualitas flash untuk tugas numerik Entry/SL/TP di sini belum divalidasi live — jalur diagnostik TERISOLASI total (skip 2 tingkat SambaNova, hasil TIDAK ditulis ke cache `ohlcv_analysis:{symbol}` 6 jam). Promosi jadi primary MENUNGGU hasil tes 2-3 pair (termasuk XAU/USD) dibandingkan kualitas vs SambaNova V3.2 — lihat `daun_merah.md` untuk hasil & keputusan gate.
+
 ### 3.3 Analisa Fundamental — `api/admin.js` (`action=fundamental_analysis`)
 
 Ini fitur AI yang **paling hemat** secara desain: hasilnya di-cache **6 jam untuk SEMUA orang** (satu key Redis global, bukan per-user/per-device), dan frontend tidak pernah minta "paksa refresh". Artinya:
@@ -122,19 +131,27 @@ Menganalisis pola menang/kalah dari trade yang sudah ditutup (butuh minimal 3 tr
 
 **Rantai fallback:** Cerebras (`gpt-oss-120b`) → SambaNova akun-2 (DeepSeek-V3.2) → Groq (llama-3.3-70b).
 
+### 3.5 Pre-Entry Check — `api/admin.js` (`action=pre_entry_check`, Plan R 2026-07-18)
+
+Berbeda dari 4 fitur di atas: **fact sheet dibangun 100% client-side** (checklist state cuma hidup di localStorage per-device, tidak ada di Redis), bukan fetch server dari cache. Kode client (`ckAutoTick`/`ckAutoBlock`/`ckAutoTickFromAnalisa` di `index.html`) sudah men-auto-tick semua item yang datanya tersedia (CB bias, COT, real yield, retail sentiment, kalender, OHLCV/pola candle, sizing calculator) SEBELUM tombol ditekan — endpoint ini menerima daftar item lengkap (status FAKTA-tick/FAKTA-block/manual-checked/manual-unchecked + evidence tiap item auto), lalu **satu call AI** menilai HANYA item manual yang masih kosong + mencari kontradiksi logis antar item FAKTA. Server TIDAK fetch Redis apa pun untuk fitur ini — payload dari client sudah cukup.
+
+**Rantai fallback:** DeepSeek v4-flash (primary, sama seperti Ringkasan Berita) → SambaNova akun-1 (DeepSeek-V3.2). Kalau keduanya gagal: `error: 'ai_unavailable'`, client tampilkan skor deterministik saja dengan label "penilaian AI tidak tersedia" — fitur tetap berguna tanpa AI, bukan mati total.
+
+**Garis keras (desain, bukan implementasi teknis):** verdict LAYAK/TIDAK LAYAK adalah **konteks keputusan, bukan sinyal eksekusi** — tidak ada auto-entry di jalur mana pun, user tetap yang menekan tombol entry MT5/manual sendiri.
+
 ---
 
 ## 4. Jatah Harian (Budget Guard) — `api/_ai_guard.js`
 
 Ini lapisan pembatas paling penting untuk dipahami. **Jatah ini dibagi rata ke semua fitur yang pakai provider yang sama** — bukan per-fitur. Kalau salah satu fitur boros, fitur lain yang berbagi provider ikut kena dampak (fallback ke tingkat berikutnya, bukan error — lihat §5).
 
-| SambaNova (akun-1 & akun-2) | 200 request/hari masing-masing | ~10-20 RPM, free persisten | SambaNova 1: Call 2/3/4 primary, Analisa AI primary. SambaNova 2: Call 1 primary |
-| **Google AI Studio (Gemini)** | 200 request/hari | 10 RPM, 1.500 RPD | Fallback 2 Call 1, Fallback 1 Call 2/3 (JSON native) — dipromosikan Plan N (2026-07-18) |
-| **Cerebras** | 200 request/hari | ~30 RPM, 1M token/hari | Analisa Fundamental primary, AI Coach primary, Fallback 1 Call 1 |
+| SambaNova (akun-1 & akun-2) | 200 request/hari masing-masing | ~10-20 RPM, free persisten | Fallback 1 di semua Call 1/2/3 (digeser dari primary — Plan O-3), Analisa AI primary |
+| **Google AI Studio (Gemini)** | 200 request/hari | 10 RPM, 1.500 RPD | Fallback 3 Call 1, Fallback 2 Call 2/3 (JSON native) |
+| **Cerebras** | 200 request/hari | ~30 RPM, 1M token/hari | Analisa Fundamental primary, AI Coach primary, Fallback 2 Call 1 |
 | **Groq** | 500 request/hari | 30 RPM | Fallback terakhir untuk Call 1/2/3, Analisa Fundamental, AI Coach |
 | **OpenRouter** (Nemotron/Hermes) | 45 request/hari | 50/hari (gratis) | Idle di produksi, hanya via ?test_nemotron dsb |
-| **Ollama Cloud** (Nemotron) | 150 request/hari | - | Idle di produksi, hanya via ?test_nemotron dsb |
-| **DeepSeek API resmi** | 50 request/hari (PAGAR BIAYA — provider berbayar dari saldo top-up user, bukan free tier) | Tidak ada limit request; yang membatasi saldo (top-up $2, 2026-07-18) | Idle di produksi, hanya via ?test_deepseek=1 (diagnostik Session 186) |
+| **Ollama Cloud** (Nemotron) | 150 request/hari | - | Fallback cron-only Call 1 (timeout adaptif — Plan O-2); idle untuk live/on-demand, hanya via ?test_nemotron dsb |
+| **DeepSeek API resmi** | 50 request/hari (PAGAR BIAYA — provider berbayar dari saldo top-up user, bukan free tier) | Tidak ada limit request; yang membatasi saldo (top-up $2, 2026-07-18, burn rate live ±$0.0033/generate) | **PRIMARY Call 1/2/3 Ringkasan Berita** (Plan O-3, 2026-07-18) + Pre-Entry Check (Plan R-2). Diagnostik `?test_deepseek=1` di Analisa AI per Pair (Plan O-6, belum promosi) |
 
 **Pool yang paling perlu diawasi: SambaNova akun-1 dan Google AI Studio (Gemini).** SambaNova 1 masih primary di banyak tempat, sedangkan Gemini adalah fallback pertama JSON yang jika SambaNova error akan memikul beban JSON parse. Kuota Gemini gratis (1500 RPD) sangat cukup untuk headroom.
 

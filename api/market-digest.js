@@ -1576,9 +1576,10 @@ module.exports = async function handler(req, res) {
           } catch(e) { console.warn('Call 2 OpenRouter Nemotron failed:', e.status || e.message); await cb.onFailure(CB_OPENROUTER_NEMOTRON, AI_CB_THRESHOLD); }
         }
       }
-      // Primary: SambaNova DeepSeek-V3.2 (akun 1) — dikembalikan jadi primary (session
-      // 165, 2026-07-13): user memperbarui API key SambaNova. Z.ai GLM 4.7 (Cerebras)
-      // sempat jadi primary di sini (session 164) tapi digeser lagi — reuse
+      // Fallback (Plan O-3, 2026-07-18): SambaNova DeepSeek-V3.2 (akun 1) — DIGESER dari
+      // primary setelah DeepSeek v4-flash API resmi promosi di atas. Riwayat: sempat
+      // primary lagi session 165 (2026-07-13) setelah API key SambaNova diperbarui;
+      // Z.ai GLM 4.7 (Cerebras) sempat jadi primary session 164 tapi digeser — reuse
       // CB_CEREBRAS_GLM tetap ada untuk jalur diagnostik ?test_glm=1 di Call 1.
       if (!biasRaw && testGeminiOnly && GEMINI_KEY && await cb.canCall(CB_GEMINI)) {
         try {
@@ -1607,6 +1608,22 @@ module.exports = async function handler(req, res) {
           await cb.onSuccess(CB_DEEPSEEK);
         } catch(e) { console.warn('Call 2 DeepSeek v4-flash failed:', e.status || e.message); await cb.onFailure(CB_DEEPSEEK, AI_CB_THRESHOLD); }
       }
+      // Primary (Plan O-3, 2026-07-18): DeepSeek v4-flash API resmi — promosi dari
+      // diagnostik ke tier produksi. SambaNova/Gemini/Groq di bawah TURUN jadi fallback
+      // berurutan, TIDAK dihapus. HTTP 402 (saldo habis) ditangkap sebagai error biasa
+      // oleh aiCall() → catch di bawah → fallback lanjut (Plan O-4), bukan hang.
+      if (!biasRaw && !testNemotronOnly && !testGeminiOnly && !testMistralOnly && !testDeepseekOnly && DEEPSEEK_KEY && await cb.canCall(CB_DEEPSEEK)) {
+        try {
+          console.log('Call 2: trying DeepSeek v4-flash (primary)');
+          biasRaw = await aiCall(DEEPSEEK_URL, DEEPSEEK_KEY, DEEPSEEK_MODEL, call2Messages, 700, 0.1, 15000, {}, { response_format: { type: 'json_object' }, thinking: { type: 'disabled' } }, 'deepseek');
+          console.log('Call 2: DeepSeek v4-flash (primary) OK');
+          await cb.onSuccess(CB_DEEPSEEK);
+        } catch(e) {
+          const errTag = e.status === 402 ? 'HTTP402_insufficient_balance' : (e.status || e.message);
+          console.warn('Call 2 DeepSeek v4-flash (primary) failed:', errTag);
+          await cb.onFailure(CB_DEEPSEEK, AI_CB_THRESHOLD);
+        }
+      } else if (!biasRaw && DEEPSEEK_KEY && !testNemotronOnly && !testGeminiOnly && !testMistralOnly && !testDeepseekOnly) { console.log('Call 2: DeepSeek circuit OPEN — skipping to SambaNova'); }
       if (!biasRaw && !testNemotronOnly && !testGeminiOnly && !testMistralOnly && !testDeepseekOnly && SAMBANOVA_KEY && await cb.canCall(CB_SAMBA_MAIN)) {
         try {
           console.log('Call 2: trying SambaNova');
@@ -2051,7 +2068,11 @@ ${xauHistoryBlock}`;
     // (bukan 3000 seperti Gemini) supaya perbandingannya apple-to-apple DAN hemat
     // saldo — thinking disabled berarti tidak ada reasoning trace yang butuh headroom.
     if (testDeepseekOnly) {
-      const deepseekTimeout1 = 25000;
+      // 25s→30s (Plan O-2, 2026-07-18): outlier S186 23,1s nyaris kena timeout 25s.
+      // 30s masih di bawah precedent Nemotron 35s (lihat komentar di bawah) yang sudah
+      // diterima trade-off-nya — Call 3 kadang skip kalau Call1 kebetulan lambat DAN
+      // masih jatuh fallback, tapi CALL1_HARD_BUDGET_MS (48s) tetap jadi batas keras.
+      const deepseekTimeout1 = 30000;
       if (DEEPSEEK_KEY && await cb.canCall(CB_DEEPSEEK)) {
         const t0ds = Date.now();
         try {
@@ -2078,6 +2099,55 @@ ${xauHistoryBlock}`;
       } else {
         providerLog.push('deepseek:no_key');
       }
+    }
+
+    // Batas waktu keras cascade Call 1 (session 163) — dipindah ke sini (Plan O-3,
+    // 2026-07-18) supaya bisa menggerbang tier DeepSeek primary DAN cabang Nemotron
+    // cron di bawah, bukan cuma SambaNova/Cerebras/Gemini/Groq seperti semula.
+    const CALL1_HARD_BUDGET_MS = 48000;
+    const call1BudgetLeft = () => Date.now() - handlerStart < CALL1_HARD_BUDGET_MS;
+
+    // Primary Call 1 (Plan O-3, 2026-07-18): DeepSeek v4-flash API resmi — promosi dari
+    // diagnostik ?test_deepseek=1 (session 186) ke tier produksi nomor 1. Keputusan user
+    // setelah tes live 3 sampel flash vs 2 sampel SambaNova V3.2: flash unggul kualitas
+    // (FX per-pair lengkap 3/3 sampel vs V3.2 menipiskan FX 1/2 sampel), latency setara,
+    // biaya nyata $0.0033/generate (proyeksi cron 3 bulan ≈$0.90, saldo top-up $2 cukup).
+    // Chain gratis existing (Nemotron cron/SambaNova/Cerebras/Gemini/Groq) TURUN jadi
+    // fallback berurutan, TIDAK dihapus — lihat edge case saldo habis (HTTP 402) di
+    // catch: error biasa → fallback lanjut, BUKAN hang. Skip saat isIsolatedTest
+    // (termasuk ?test_deepseek=1 sendiri, sudah ditangani blok diagnostik terpisah di
+    // atas dengan hasil TIDAK ditulis ke latest_article).
+    if (isIsolatedTest) {
+      if (!article) providerLog.push('deepseek_primary:skipped_test');
+    } else if (!article && DEEPSEEK_KEY && await cb.canCall(CB_DEEPSEEK)) {
+      const t0dsp = Date.now();
+      try {
+        console.log('Call 1: trying DeepSeek v4-flash (primary)');
+        const raw = await aiCall(DEEPSEEK_URL, DEEPSEEK_KEY, DEEPSEEK_MODEL, call1Messages, 1300, 0.25, 30000, {}, { thinking: { type: 'disabled' } }, 'deepseek');
+        const elapsed = Date.now() - t0dsp;
+        if (raw.trim()) {
+          article = raw.trim(); method = 'deepseek-v4-flash';
+          providerLog.push(`deepseek:ok(${elapsed}ms,${article.length}c)`);
+        } else {
+          providerLog.push(`deepseek:empty(${elapsed}ms)`);
+        }
+        console.log('Call 1: DeepSeek v4-flash OK, length', article?.length);
+        await cb.onSuccess(CB_DEEPSEEK);
+      } catch(e) {
+        const elapsed = Date.now() - t0dsp;
+        // HTTP 402 (Insufficient Balance) dilempar aiCall() sebagai error status biasa
+        // seperti error lain — ditangkap di sini, log eksplisit supaya kejadian saldo
+        // habis terlihat jelas di providerLog (Plan O-4), lalu fallback lanjut normal.
+        const errMsg = e.status === 402 ? 'HTTP402_insufficient_balance' : (e.status ? `HTTP${e.status}` : (e.message || 'err').slice(0, 40));
+        providerLog.push(`deepseek:${errMsg}(${elapsed}ms)`);
+        console.warn('Call 1 DeepSeek v4-flash (primary) failed:', e.status || e.message);
+        await cb.onFailure(CB_DEEPSEEK, AI_CB_THRESHOLD);
+      }
+    } else if (!article && DEEPSEEK_KEY) {
+      providerLog.push('deepseek:circuit_open');
+      console.log('Call 1: DeepSeek circuit OPEN — skipping to Nemotron/SambaNova fallback chain');
+    } else if (!article) {
+      providerLog.push('deepseek:no_key');
     }
 
     // Nemotron 3 Ultra — PRIMARY Call 1 (session 162 lanjutan 3, naik dari idle setelah
@@ -2206,11 +2276,18 @@ ${xauHistoryBlock}`;
       // Live/on-demand request (!isCronCall) TETAP pakai gpt-oss-120b primary di bawah
       // — kualitasnya lebih rendah tapi latency-nya predictable, cocok untuk user yang
       // menunggu sinkron.
-      const cronOllamaTimeout1 = 45000;
-      if (OLLAMA_KEY && await cb.canCall(CB_OLLAMA_NEMOTRON)) {
+      // !article (Plan O-3): DeepSeek primary di atas sudah SET article kalau sukses —
+      // jangan panggil Ollama lagi kalau sudah ada hasil. cronOllamaTimeout1 ADAPTIF
+      // (Plan O-2) terhadap sisa CALL1_HARD_BUDGET_MS: kalau DeepSeek gagal CEPAT masih
+      // dapat ~timeout penuh 45s; kalau DeepSeek sempat menghabiskan banyak waktu sebelum
+      // gagal, jendela Nemotron menyempit — mencegah worst-case 30s (DeepSeek) + 45s
+      // (Nemotron) = 75s yang bisa membunuh SELURUH function sebelum sempat balas
+      // (Vercel maxDuration 60s). Floor 15s: di bawah itu tidak worth dicoba, skip total.
+      const cronOllamaTimeout1 = Math.max(0, Math.min(45000, CALL1_HARD_BUDGET_MS - (Date.now() - handlerStart) - 3000));
+      if (!article && cronOllamaTimeout1 >= 15000 && OLLAMA_KEY && await cb.canCall(CB_OLLAMA_NEMOTRON)) {
         const t0c = Date.now();
         try {
-          console.log('Call 1: trying Nemotron 3 Ultra (Ollama Cloud) — cron session-open run');
+          console.log('Call 1: trying Nemotron 3 Ultra (Ollama Cloud) — cron session-open run, timeout', cronOllamaTimeout1);
           const raw = await callOllama(OLLAMA_KEY, OLLAMA_NEMOTRON_MODEL, call1Messages, 1300, 0.25, cronOllamaTimeout1, 'ollama', false);
           const elapsed = Date.now() - t0c;
           article = raw.trim(); method = 'nemotron-3-ultra';
@@ -2243,22 +2320,16 @@ ${xauHistoryBlock}`;
       providerLog.push('nemotron_super:skipped_not_primary', 'openrouter_nemotron:skipped_not_primary', 'ollama_nemotron:skipped_not_primary');
     }
 
-    // Batas waktu keras sisa cascade Call 1 (session 163) — sejak cabang isCronCall di
-    // atas bisa menghabiskan 45s (Nemotron Ultra Ollama) sebelum sampai sini, gpt-
-    // oss+SambaNova+Groq berturut-turut (15s+22s+15s=52s) bisa dorong total Call 1
-    // tembus maxDuration 60s Vercel kalau semua tier gagal berantai — bukan cuma bikin
-    // Call 3 skip (CALL3_BUDGET_MS di bawah sudah jaga itu) tapi bisa bikin SELURUH
-    // function dibunuh Vercel sebelum sempat balas apa pun. Guard ini skip tier
-    // berikutnya kalau waktu sejak handler mulai sudah mepet, terima 'fallback' method
-    // daripada resiko function mati total.
-    const CALL1_HARD_BUDGET_MS = 48000;
-    const call1BudgetLeft = () => Date.now() - handlerStart < CALL1_HARD_BUDGET_MS;
+    // (CALL1_HARD_BUDGET_MS/call1BudgetLeft dipindah ke atas DeepSeek primary — Plan
+    // O-3 — supaya sudah bisa menggerbang tier sebelum sini juga. Guard di bawah ini
+    // skip tier berikutnya kalau waktu sejak handler mulai sudah mepet, terima
+    // 'fallback' method daripada resiko function mati total oleh Vercel.)
 
-    // Primary: SambaNova DeepSeek-V3.2 (akun 2, Call 1 prose only) — dikembalikan jadi
-    // primary (session 165, 2026-07-13): user memperbarui SAMBANOVA_API_KEY_CALL1
-    // (limit harian akun lama yang jadi penyebab demote session 163 sudah tidak
-    // relevan dengan key baru). Cerebras gpt-oss-120b (sempat jadi primary session 164)
-    // digeser jadi fallback 1 di bawah. Tetap di-skip saat ?test_nemotron=1 /
+    // Fallback (Plan O-3, 2026-07-18): SambaNova DeepSeek-V3.2 (akun 2, Call 1 prose
+    // only) — DIGESER dari primary jadi fallback pertama setelah DeepSeek v4-flash API
+    // resmi promosi jadi primary tunggal di atas. Riwayat sebelumnya: sempat jadi
+    // primary lagi session 165 (2026-07-13) setelah SAMBANOVA_API_KEY_CALL1 diperbarui.
+    // Cerebras gpt-oss-120b tetap fallback 2 di bawah. Tetap di-skip saat ?test_nemotron=1 /
     // ?test_nemotron_super=1 / ?test_hermes=1 / ?test_glm=1 supaya hasil diagnostik
     // tidak tersamar.
     if (isIsolatedTest) {
@@ -2594,7 +2665,9 @@ ${xauHistoryBlock}`;
     // Z.ai GLM 4.7 (Cerebras) sempat jadi primary di sini (session 164) tapi digeser
     // lagi — session 165 (2026-07-13): SambaNova dikembalikan jadi primary karena
     // user memperbarui API key-nya. CB_CEREBRAS_GLM tetap ada untuk jalur diagnostik
-    // ?test_glm=1 di Call 1.
+    // ?test_glm=1 di Call 1. Plan O-3 (2026-07-18): DeepSeek v4-flash API resmi
+    // sekarang primary di jalur produksi (cabang `else` di bawah), SambaNova/Groq
+    // turun jadi fallback berurutan — TIDAK dihapus.
     const call3Providers = [];
     if (testNemotronOnly) {
       if (OLLAMA_KEY)     call3Providers.push({ ollama: true, key: OLLAMA_KEY, model: OLLAMA_NEMOTRON_MODEL, label: 'Ollama Nemotron', timeout: 15000, provider: 'ollama', circuit: CB_OLLAMA_NEMOTRON, noThink: true });
@@ -2604,10 +2677,17 @@ ${xauHistoryBlock}`;
     } else if (testMistralOnly) {
       if (MISTRAL_KEY)    call3Providers.push({ url: MISTRAL_URL, key: MISTRAL_KEY, model: MISTRAL_MODEL, label: 'Mistral', timeout: 15000, provider: 'mistral', circuit: CB_MISTRAL, maxTokens: 3000, extraBody: { response_format: { type: 'json_object' }, reasoning_effort: 'low' } });
     } else if (testDeepseekOnly) {
-      // DeepSeek v4-flash (API resmi) — diagnostik session 186. maxTokens 800 sama seperti
-      // SambaNova (hemat saldo, thinking disabled tidak butuh headroom reasoning).
-      if (DEEPSEEK_KEY)   call3Providers.push({ url: DEEPSEEK_URL, key: DEEPSEEK_KEY, model: DEEPSEEK_MODEL, label: 'DeepSeek v4-flash', timeout: 15000, provider: 'deepseek', circuit: CB_DEEPSEEK, maxTokens: 800, extraBody: { response_format: { type: 'json_object' }, thinking: { type: 'disabled' } } });
+      // DeepSeek v4-flash (API resmi) — session 186/S186 lanjutan (Plan O-1). maxTokens
+      // dinaikkan 800→1200 (2026-07-18): 1/3 sampel S186 kembali thesis:null, kandidat
+      // akar truncation JSON di 800 token — 1200 masih murah ($0.28/M output) dan
+      // menyisakan headroom penuh untuk skema thesis (13 field + free-text Bahasa
+      // Indonesia). 6/6 sampel ulang setelah perubahan ini sukses tanpa null.
+      if (DEEPSEEK_KEY)   call3Providers.push({ url: DEEPSEEK_URL, key: DEEPSEEK_KEY, model: DEEPSEEK_MODEL, label: 'DeepSeek v4-flash', timeout: 15000, provider: 'deepseek', circuit: CB_DEEPSEEK, maxTokens: 1200, extraBody: { response_format: { type: 'json_object' }, thinking: { type: 'disabled' } } });
     } else {
+      // Primary (Plan O-3, 2026-07-18): DeepSeek v4-flash API resmi — promosi dari
+      // diagnostik. SambaNova/Groq TURUN jadi fallback berurutan, TIDAK dihapus. maxTokens
+      // 1200 (naik dari 800, lihat Plan O-1 di atas) mencegah truncation JSON thesis.
+      if (DEEPSEEK_KEY)  call3Providers.push({ url: DEEPSEEK_URL, key: DEEPSEEK_KEY, model: DEEPSEEK_MODEL, label: 'DeepSeek v4-flash', timeout: 15000, provider: 'deepseek', circuit: CB_DEEPSEEK, maxTokens: 1200, extraBody: { response_format: { type: 'json_object' }, thinking: { type: 'disabled' } } });
       if (SAMBANOVA_KEY) call3Providers.push({ url: SAMBANOVA_URL, key: SAMBANOVA_KEY, model: SAMBANOVA_MODEL, label: 'SambaNova', timeout: 8000, provider: 'sambanova_main', circuit: CB_SAMBA_MAIN });
       if (GROQ_KEY)      call3Providers.push({ url: GROQ_URL,      key: GROQ_KEY,      model: GROQ_MODEL,      label: 'Groq fallback', timeout: 12000, provider: 'groq', circuit: null });
     }
@@ -2636,7 +2716,9 @@ ${xauHistoryBlock}`;
           // Schema invalid ≠ provider failure — don't penalize circuit
         }
       } catch(e) {
-        console.warn('Call 3', provider.label, 'failed:', e.status || e.message);
+        // 402 (Plan O-4) ditandai eksplisit — saldo DeepSeek habis harus kelihatan jelas
+        // di log Vercel, bukan tersamar sebagai "402" polos di antara error lain.
+        console.warn('Call 3', provider.label, 'failed:', e.status === 402 ? 'HTTP402_insufficient_balance' : (e.status || e.message));
         if (circuitSource) await cb.onFailure(circuitSource, AI_CB_THRESHOLD);
       }
     }

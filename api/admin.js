@@ -55,6 +55,7 @@ const PUBLIC_ACTION_LIMITS = {
   ohlcv_read:           30,
   ohlcv_analyze:         5,
   ohlcv_critic:          3,
+  pre_entry_check:       3,
   ohlcv_dashboard:      30,
   setup_stats:          20,
   polymarket:           30,
@@ -89,10 +90,11 @@ module.exports = async function handler(req, res) {
   if (action === 'ohlcv_read')         return ohlcvReadHandler(req, res);
   if (action === 'ohlcv_analyze')      return ohlcvAnalyzeHandler(req, res);
   if (action === 'ohlcv_critic')       return ohlcvCriticHandler(req, res);
+  if (action === 'pre_entry_check')    return preEntryCheckHandler(req, res);
   if (action === 'ohlcv_dashboard')    return ohlcvDashboardHandler(req, res);
   if (action === 'setup_stats')        return setupStatsHandler(req, res);
   if (action === 'polymarket')         return polymarketHandler(req, res);
-  return res.status(400).json({ error: 'Missing ?action= — use health, redis-keys, admin-prompts, push, fundamental_get, fundamental_seed, fundamental_refresh, fundamental_analysis, journal_import, circuit-reset, circuit-status, gdpnow, ohlcv_sync, ohlcv_read, ohlcv_analyze, ohlcv_critic, ohlcv_dashboard, or polymarket' });
+  return res.status(400).json({ error: 'Missing ?action= — use health, redis-keys, admin-prompts, push, fundamental_get, fundamental_seed, fundamental_refresh, fundamental_analysis, journal_import, circuit-reset, circuit-status, gdpnow, ohlcv_sync, ohlcv_read, ohlcv_analyze, ohlcv_critic, pre_entry_check, ohlcv_dashboard, or polymarket' });
 };
 
 // ── Shared Redis helper ────────────────────────────────────────────────────────
@@ -1215,7 +1217,7 @@ async function journalImportHandler(req, res) {
 
 // ── Circuit breaker status + reset ───────────────────────────────────────────
 
-const KNOWN_CIRCUITS = ['ai:openrouter', 'ai:openrouter:nemotron', 'ai:openrouter:nemotron-super', 'ai:openrouter:hermes', 'ai:cerebras', 'ai:cerebras:gptoss', 'ai:cerebras:glm', 'ai:sambanova:c1', 'ai:sambanova:main', 'ai:ollama:nemotron', 'fred', 'stooq', 'ff', 'fj', 'cftc', 'redis', 'fxssi', 'actionforex'];
+const KNOWN_CIRCUITS = ['ai:openrouter', 'ai:openrouter:nemotron', 'ai:openrouter:nemotron-super', 'ai:openrouter:hermes', 'ai:cerebras', 'ai:cerebras:gptoss', 'ai:cerebras:glm', 'ai:sambanova:c1', 'ai:sambanova:main', 'ai:ollama:nemotron', 'ai:deepseek', 'fred', 'stooq', 'ff', 'fj', 'cftc', 'redis', 'fxssi', 'actionforex'];
 
 async function circuitStatusHandler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -2769,10 +2771,58 @@ async function ohlcvAnalyzeHandler(req, res) {
       }
     }
 
+    // Diagnostik DeepSeek v4-flash API resmi (Plan O-6, 2026-07-18) — gate SEBELUM
+    // promosi jadi primary Analisa per Pair (beda dari Ringkasan yang sudah dipromosikan
+    // langsung di Plan O-3/market-digest.js: di sini kualitas belum divalidasi live untuk
+    // tugas Entry/SL/TP numerik, jadi TETAP terisolasi total dari cache produksi sampai
+    // dinilai — pola sama seperti Hermes/Ollama di atas). response_format json_object
+    // TIDAK dipakai (beda dari Call 2/3 market-digest.js) karena skema jawaban di sini
+    // dua-bagian (JSON + "===COMMENTARY===" + prosa), bukan JSON murni.
+    const testDeepseekOnly = req.query.test_deepseek === '1' || req.body?.test_deepseek === true;
+    let deepseekError = null, deepseekElapsedMs = null;
+
+    if (testDeepseekOnly) {
+      const DEEPSEEK_KEY = process.env.DEEPSEEK_API_KEY;
+      if (DEEPSEEK_KEY && await cb.canCall('ai:deepseek')) {
+        const t0ds = Date.now();
+        try {
+          if (!await allowAiCall('deepseek')) throw new Error('AI daily budget exceeded');
+          console.log('ohlcv_analyze: trying DeepSeek v4-flash (API resmi) — diagnostik test_deepseek=1');
+          const r = await fetch('https://api.deepseek.com/chat/completions', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${DEEPSEEK_KEY}` },
+            body: JSON.stringify({ model: 'deepseek-v4-flash', messages, max_tokens: 1500, temperature: 0, thinking: { type: 'disabled' } }),
+            signal: AbortSignal.timeout(20000),
+          });
+          if (r.ok) {
+            const j = await r.json(); rawText = j.choices?.[0]?.message?.content?.trim() || null; model = 'deepseek-v4-flash';
+            if (rawText) await cb.onSuccess('ai:deepseek');
+            else throw new Error('Empty response');
+          } else {
+            const errJ = await r.json().catch(() => ({}));
+            throw new Error(r.status === 402 ? 'HTTP402_insufficient_balance' : (errJ?.error?.message || `HTTP ${r.status}`));
+          }
+          deepseekElapsedMs = Date.now() - t0ds;
+          console.log('ohlcv_analyze: DeepSeek v4-flash OK,', deepseekElapsedMs, 'ms');
+        } catch(e) {
+          deepseekElapsedMs = Date.now() - t0ds;
+          deepseekError = e.message;
+          console.warn('ohlcv_analyze DeepSeek v4-flash failed:', e.message);
+          await cb.onFailure('ai:deepseek');
+        }
+      } else if (DEEPSEEK_KEY) {
+        deepseekError = 'circuit_open';
+        console.log('ohlcv_analyze: test_deepseek=1 — circuit OPEN');
+      } else {
+        deepseekError = 'no_key';
+        console.log('ohlcv_analyze: test_deepseek=1 — DEEPSEEK_API_KEY belum diset');
+      }
+    }
+
     // Dipakai untuk menggerbang dua tier SambaNova + cache produksi — SATU flag untuk
-    // SEMUA diagnostik terisolasi (Hermes/Ollama), supaya nambah kandidat baru nanti
-    // tinggal OR ke sini, bukan cari-cari tiap titik guard satu-satu.
-    const isDiagnosticOnly = testHermesOnly || testOllamaOnly;
+    // SEMUA diagnostik terisolasi (Hermes/Ollama/DeepSeek), supaya nambah kandidat baru
+    // nanti tinggal OR ke sini, bukan cari-cari tiap titik guard satu-satu.
+    const isDiagnosticOnly = testHermesOnly || testOllamaOnly || testDeepseekOnly;
 
     // Primary: SambaNova DeepSeek-V3.2 (671B, akun 1) — dikembalikan jadi primary (30s, timeout
     // asli). Eksperimen GLM-5.2/gpt-oss:120b sebagai primary dihentikan: alasan awal coba
@@ -2973,6 +3023,9 @@ async function ohlcvAnalyzeHandler(req, res) {
       test_ollama: testOllamaOnly || undefined,
       ollama_error: testOllamaOnly ? ollamaError : undefined,
       ollama_elapsed_ms: testOllamaOnly ? ollamaElapsedMs : undefined,
+      test_deepseek: testDeepseekOnly || undefined,
+      deepseek_error: testDeepseekOnly ? deepseekError : undefined,
+      deepseek_elapsed_ms: testDeepseekOnly ? deepseekElapsedMs : undefined,
     });
   } catch(e) {
     return res.status(500).json({ error: e.message });
@@ -3147,6 +3200,124 @@ async function ohlcvCriticHandler(req, res) {
     raw: objections === null ? rawText : undefined, // fallback tampilan mentah kalau parse gagal
     symbol, label,
     generated_at: new Date().toISOString(),
+  });
+}
+
+// ── Pre-Entry Check — tombol "Pre-Entry Check" (Plan R, session 186 lanjutan) ────
+// Auto-tick semua item deterministik sudah selesai CLIENT-SIDE (ckAutoTick/
+// ckAutoTickFromAnalisa di index.html, lihat R-0/R-1) — endpoint ini HANYA menilai
+// sisa item discretionary + mencari kontradiksi antar item yang sudah FAKTA (auto-tick).
+// Pola SAMA dengan ohlcv_critic (AI Kritikus) di atas: SATU AI call, fact sheet
+// deterministik dikirim client (bukan fetch ulang dari Redis — checklist state cuma
+// hidup di localStorage per-device, lihat catatan "tidak ikut ter-sync" di PETUNJUK).
+// DeepSeek v4-flash primary (Plan O sudah promosi jadi primary produksi) → SambaNova
+// fallback. GARIS KERAS (Plan R): verdict = konteks keputusan, BUKAN auto-entry — user
+// tetap yang menekan tombol entry sendiri, tidak ada eksekusi otomatis apa pun di sini.
+async function preEntryCheckHandler(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Cache-Control', 'no-cache');
+  if (req.method === 'OPTIONS') return res.status(204).end();
+
+  const pair = req.body?.pair;
+  const playbook = req.body?.playbook;
+  let items = req.body?.items;
+  if (!pair || !Array.isArray(items) || items.length === 0) {
+    return res.status(400).json({ error: 'pair dan items diperlukan' });
+  }
+
+  // Input klien di-cap defensif (sama pola dengan ohlcvAnalyzeHandler.ringkasanContext):
+  // body adalah input publik, jangan biarkan array/string raksasa menggelembungkan prompt.
+  items = items.slice(0, 80).map(it => ({
+    label: String(it?.label || '').slice(0, 200),
+    status: it?.status === 'tick' ? 'tick' : it?.status === 'block' ? 'block' : it?.checked ? 'checked' : 'unchecked',
+    evidence: it?.evidence ? String(it.evidence).slice(0, 300) : null,
+  }));
+
+  const STATUS_TAG = { tick: '[FAKTA-TERPENUHI]', block: '[FAKTA-TIDAK TERPENUHI]', checked: '[MANUAL-DICENTANG]', unchecked: '[MANUAL-KOSONG]' };
+  const factLines = items.map(it => `${STATUS_TAG[it.status]} ${it.label}${it.evidence ? ` — ${it.evidence}` : ''}`);
+  const userMsg = `Playbook: ${String(playbook || '-').slice(0, 60)} | Pair: ${String(pair).slice(0, 20)}\n\n` +
+    factLines.join('\n') +
+    '\n\nBalas HANYA satu objek JSON valid (tanpa markdown fence, tanpa teks lain) persis format ini: {"verdict":"LAYAK","failed_items":[{"item":"...","alasan":"..."}],"catatan":"..."}. verdict HARUS persis "LAYAK" atau "TIDAK_LAYAK". failed_items maksimal 5, HANYA untuk item [MANUAL-KOSONG] yang menurutmu genuinely belum terpenuhi ATAU kontradiksi nyata yang kamu temukan antar item [FAKTA-*] — JANGAN mengarang alasan untuk item yang sudah [FAKTA-TERPENUHI]. catatan maksimal 2 kalimat.';
+
+  const messages = [
+    { role: 'system', content: 'Kamu auditor pre-entry checklist trading yang skeptis dan teliti. Item bertag [FAKTA-*] SUDAH diverifikasi deterministik dari data pasar real-time — JANGAN meragukan atau membantahnya, tugasmu HANYA: (1) menilai item [MANUAL-KOSONG] apakah genuinely masih kosong atau sebenarnya bisa disimpulkan dari fakta lain di atas, (2) mencari KONTRADIKSI LOGIS antar item [FAKTA-*] (misal satu bilang market trending, satu lagi bilang ranging — dua-duanya tidak boleh benar sekaligus). verdict "LAYAK" HANYA kalau tidak ada gate/section wajib yang gagal dan tidak ada kontradiksi berarti; "TIDAK_LAYAK" kalau ada. JANGAN sycophant — setup dengan banyak item [MANUAL-KOSONG] penting atau kontradiksi jelas HARUS dinilai TIDAK_LAYAK meski user berharap sebaliknya. Bahasa Indonesia.' },
+    { role: 'user', content: userMsg },
+  ];
+
+  const DEEPSEEK_KEY  = process.env.DEEPSEEK_API_KEY;
+  const SAMBANOVA_KEY = process.env.SAMBANOVA_API_KEY;
+  let rawText = null, model = null;
+
+  // Primary: DeepSeek v4-flash — 1 call/klik masuk pool 'deepseek' di _ai_guard.js
+  // (limit harian 50, dibagi bersama Ringkasan/Analisa — lihat CB_DEEPSEEK market-digest.js).
+  if (DEEPSEEK_KEY && await cb.canCall('ai:deepseek')) {
+    try {
+      if (!await allowAiCall('deepseek')) throw new Error('AI daily budget exceeded');
+      const r = await fetch('https://api.deepseek.com/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${DEEPSEEK_KEY}` },
+        body: JSON.stringify({ model: 'deepseek-v4-flash', messages, max_tokens: 700, temperature: 0, response_format: { type: 'json_object' }, thinking: { type: 'disabled' } }),
+        signal: AbortSignal.timeout(20000),
+      });
+      if (r.ok) {
+        const j = await r.json(); rawText = j.choices?.[0]?.message?.content?.trim() || null; model = 'deepseek-v4-flash';
+        if (rawText) await cb.onSuccess('ai:deepseek');
+        else throw new Error('Empty response');
+      } else {
+        const errJ = await r.json().catch(() => ({}));
+        throw new Error(r.status === 402 ? 'HTTP402_insufficient_balance' : (errJ?.error?.message || `HTTP ${r.status}`));
+      }
+    } catch(e) { console.warn('pre_entry_check DeepSeek failed:', e.message); await cb.onFailure('ai:deepseek'); }
+  } else if (DEEPSEEK_KEY) { console.log('pre_entry_check: DeepSeek circuit OPEN — skipping to SambaNova'); }
+
+  // Fallback: SambaNova akun 1 — circuit SAMA dengan ohlcv_analyze/ohlcv_critic (akun
+  // fisik yang sama, lihat catatan ohlcv_critic di atas).
+  if (!rawText && SAMBANOVA_KEY && await cb.canCall('ai:sambanova:main')) {
+    try {
+      if (!await allowAiCall('sambanova_main')) throw new Error('AI daily budget exceeded');
+      const r = await fetch('https://api.sambanova.ai/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SAMBANOVA_KEY}` },
+        body: JSON.stringify({ model: 'DeepSeek-V3.2', messages, max_tokens: 700, temperature: 0 }),
+        signal: AbortSignal.timeout(25000),
+      });
+      if (r.ok) {
+        const j = await r.json(); rawText = j.choices?.[0]?.message?.content?.trim() || null; model = 'deepseek-v3.2';
+        if (rawText) await cb.onSuccess('ai:sambanova:main');
+        else throw new Error('Empty response');
+      } else { throw new Error(`HTTP ${r.status}`); }
+    } catch(e) { console.warn('pre_entry_check SambaNova fallback failed:', e.message); await cb.onFailure('ai:sambanova:main'); }
+  } else if (!rawText && SAMBANOVA_KEY) { console.log('pre_entry_check: SambaNova circuit OPEN'); }
+
+  if (!rawText) {
+    // R-3 fallback (Plan R): AI tidak tersedia → client tampilkan hasil deterministik
+    // saja (skor + item tercentang), fitur tetap berguna tanpa AI — bukan fitur mati.
+    return res.status(200).json({ error: 'ai_unavailable', verdict: null, failed_items: null, catatan: null });
+  }
+
+  let verdict = null, failedItems = null, catatan = null;
+  try {
+    const jsonStart = rawText.indexOf('{');
+    const jsonEnd   = rawText.lastIndexOf('}');
+    const cleaned   = jsonStart !== -1 && jsonEnd !== -1 ? rawText.slice(jsonStart, jsonEnd + 1) : rawText;
+    const parsed = JSON.parse(cleaned);
+    verdict = ['LAYAK', 'TIDAK_LAYAK'].includes(parsed.verdict) ? parsed.verdict : null;
+    if (Array.isArray(parsed.failed_items)) {
+      failedItems = parsed.failed_items
+        .filter(f => f && typeof f.alasan === 'string' && f.alasan.trim())
+        .slice(0, 5)
+        .map(f => ({ item: String(f.item || '').slice(0, 200), alasan: String(f.alasan).trim().slice(0, 300) }));
+    }
+    catatan = typeof parsed.catatan === 'string' ? parsed.catatan.trim().slice(0, 400) : null;
+    if (!verdict) verdict = (failedItems && failedItems.length > 0) ? 'TIDAK_LAYAK' : 'LAYAK';
+  } catch(e) {
+    console.warn('pre_entry_check: JSON parse gagal:', e.message);
+    return res.status(200).json({ error: 'parse_failed', verdict: null, failed_items: null, catatan: null, raw: rawText, model });
+  }
+
+  return res.status(200).json({
+    verdict, failed_items: failedItems, catatan, model,
+    pair, generated_at: new Date().toISOString(),
   });
 }
 
