@@ -127,6 +127,97 @@ async function fetchFallbackCandles(yahooSymbol, interval) {
   return candles;
 }
 
+// ── Primary provider FX: Deriv WebSocket API (Plan P, 2026-07-18) ──────────────
+// Broker-grade, streaming-capable, 15/15 pair Daun Merah tersedia via `frx*` symbol.
+// SENGAJA hanya 14 pair FX — XAU/USD (GC=F) TIDAK ikut migrasi: GC=F harga FUTURES,
+// frxXAUUSD SPOT (level absolut beda beberapa dolar, campur sumber = zona konfluensi
+// melompat) DAN GC=F volume dipakai analisis sedangkan Deriv tidak punya volume.
+// Emas tetap Yahoo → PAXG Binance → Twelve Data (lihat fetchYahooOhlcv1h di atas).
+//
+// DERIV_APP_ID (2026-07-18): sementara pakai app_id PUBLIK 1089 — app_id dedicated
+// yang didaftarkan user via developers.deriv.com TERNYATA tidak kompatibel dengan
+// endpoint ws.derivws.com ini (server balas {"error":"InvalidAppID"}, diverifikasi
+// live terhadap 3 titik server (ws/green/blue).derivws.com). Root cause: Deriv
+// punya 2 sistem developer terpisah (portal baru developers.deriv.com vs API lama
+// yang dipakai endpoint ini) yang app_id-nya belum/tidak saling kompatibel — belum
+// ditemukan jalur self-service untuk app_id lama yang kompatibel (semua link
+// "API developer" di akun mengarah ke portal baru). Risiko app_id publik: dibagi
+// SEMUA developer dunia (rate limit bisa kena walau traffic kita sendiri kecil),
+// dan Deriv bisa mematikan/membatasi 1089 sepihak kapan saja (bukan untuk trafik
+// produksi). Ganti via env var DERIV_APP_ID begitu dapat app_id dedicated yang
+// terbukti kompatibel — TIDAK perlu ubah kode apa pun di sini.
+const YAHOO_TO_DERIV_SYMBOL = {
+  'EURUSD=X': 'frxEURUSD', 'GBPUSD=X': 'frxGBPUSD', 'USDJPY=X': 'frxUSDJPY',
+  'AUDUSD=X': 'frxAUDUSD', 'USDCAD=X': 'frxUSDCAD', 'USDCHF=X': 'frxUSDCHF',
+  'NZDUSD=X': 'frxNZDUSD', 'EURJPY=X': 'frxEURJPY', 'GBPJPY=X': 'frxGBPJPY',
+  'EURGBP=X': 'frxEURGBP', 'AUDJPY=X': 'frxAUDJPY', 'EURAUD=X': 'frxEURAUD',
+  'GBPAUD=X': 'frxGBPAUD', 'GBPCAD=X': 'frxGBPCAD',
+  // 'GC=F' SENGAJA TIDAK dipetakan — lihat catatan scope di atas.
+};
+
+function mapYahooSymbolToDeriv(yahooSymbol) {
+  return YAHOO_TO_DERIV_SYMBOL[yahooSymbol] || null;
+}
+
+// interval: '1h' | '1d' (konvensi internal app, sama dengan fetchFallbackCandles).
+// count: jumlah candle diminta — 250 (1h, ~mendekati window Yahoo range=10d untuk
+// resampleTo4h) / 140 (1d, ~mendekati Yahoo range=6mo), sama dengan outputsize
+// Twelve Data supaya konsisten window historis di seluruh fallback chain.
+async function fetchDerivCandles(yahooSymbol, interval, count) {
+  const derivSymbol = mapYahooSymbolToDeriv(yahooSymbol);
+  if (!derivSymbol) throw new Error(`fetchDerivCandles: tidak ada mapping Deriv untuk ${yahooSymbol}`);
+  const appId = process.env.DERIV_APP_ID;
+  if (!appId) throw new Error('fetchDerivCandles: DERIV_APP_ID belum diset');
+  const granularity = interval === '1d' ? 86400 : 3600;
+
+  return new Promise((resolve, reject) => {
+    // Timeout total 8s (Plan P-2) — di bawah timeout Yahoo (12s) supaya rantai
+    // fallback Deriv→Yahoo→TwelveData tidak melar kalau Deriv lambat/down.
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      try { ws.close(); } catch (e) {}
+      reject(new Error(`fetchDerivCandles ${derivSymbol}: timeout 8s`));
+    }, 8000);
+    const ws = new WebSocket(`wss://ws.derivws.com/websockets/v3?app_id=${appId}`);
+    ws.addEventListener('open', () => {
+      ws.send(JSON.stringify({ ticks_history: derivSymbol, style: 'candles', granularity, count, end: 'latest' }));
+    });
+    ws.addEventListener('message', (ev) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      try { ws.close(); } catch (e) {}
+      let data;
+      try { data = JSON.parse(ev.data); } catch (e) { return reject(new Error(`fetchDerivCandles ${derivSymbol}: response bukan JSON valid`)); }
+      if (data.error) return reject(new Error(`fetchDerivCandles ${derivSymbol}: ${data.error.code || 'error'} — ${data.error.message || ''}`));
+      const raw = Array.isArray(data.candles) ? data.candles : [];
+      if (raw.length === 0) return reject(new Error(`fetchDerivCandles ${derivSymbol}: 0 candle`));
+      // Normalisasi ke shape {t,o,h,l,c,v} IDENTIK dengan Yahoo/Twelve Data — konsumen
+      // downstream (resampleTo4h, indikator, cache Redis) tidak berubah. Deriv tanpa
+      // volume (v:0) — FX Yahoo volumenya juga selalu 0, bukan regresi.
+      const candles = raw
+        .map(c => ({
+          t: c.epoch,
+          o: +parseFloat(c.open).toFixed(6), h: +parseFloat(c.high).toFixed(6),
+          l: +parseFloat(c.low).toFixed(6), c: +parseFloat(c.close).toFixed(6),
+          v: 0,
+        }))
+        .filter(c => !isNaN(c.o) && !isNaN(c.h) && !isNaN(c.l) && !isNaN(c.c))
+        .sort((a, b) => a.t - b.t);
+      if (candles.length === 0) return reject(new Error(`fetchDerivCandles ${derivSymbol}: 0 candle valid setelah normalisasi`));
+      resolve(candles);
+    });
+    ws.addEventListener('error', () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      reject(new Error(`fetchDerivCandles ${derivSymbol}: WebSocket error`));
+    });
+  });
+}
+
 // Keputusan alert Telegram "Yahoo down" — pure function, dipanggil dari admin.js
 // setelah update counter yahoo_fail_streak di Redis. threshold/cooldown eksplisit
 // jadi param (bukan konstanta tersembunyi) supaya gampang diuji.
@@ -139,5 +230,6 @@ function shouldSendYahooAlert(streak, lastAlertTs, now, threshold = 3, cooldownM
 module.exports = {
   fetchYahooOhlcv1h, fetchBinancePaxg1h,
   mapYahooSymbolToTwelveData, normalizeTwelveDataCandles, fetchFallbackCandles,
+  mapYahooSymbolToDeriv, fetchDerivCandles,
   shouldSendYahooAlert,
 };

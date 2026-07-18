@@ -19,7 +19,7 @@ const cb = require('./_circuit_breaker');
 const rateLimit = require('./_ratelimit');
 const { allowAiCall } = require('./_ai_guard');
 const { requireAppKey } = require('./_app_key');
-const { fetchYahooOhlcv1h, fetchFallbackCandles, shouldSendYahooAlert } = require('./_ohlcv_fetch');
+const { fetchYahooOhlcv1h, fetchFallbackCandles, shouldSendYahooAlert, mapYahooSymbolToDeriv, fetchDerivCandles } = require('./_ohlcv_fetch');
 
 // Hermes 3 405B Instruct via OpenRouter (free tier) — kandidat diagnostik dari riset
 // user, sama seperti HERMES_MODEL di market-digest.js (circuit breaker key sengaja
@@ -1397,30 +1397,67 @@ async function ohlcvSyncHandler(req, res) {
     console.warn('ohlcv_sync: latest_thesis read failed:', e.message);
   }
 
+  // Plan P (2026-07-18): Deriv primary untuk pair FX — dicoba BERURUTAN (bukan
+  // paralel per pair, edge case Plan P: "jangan loop 15 pair paralel tanpa jeda dari
+  // satu function") sebelum masuk fan-out Yahoo di bawah. GC=F (XAU/USD) TIDAK
+  // dipetakan, otomatis lewat ke Yahoo seperti biasa. Hasil disimpan per symbol,
+  // dikonsumsi loop paralel Yahoo/TwelveData di bawah — pair yang sudah dapat Deriv
+  // skip Yahoo sepenuhnya (satu array satu sumber, tidak pernah gabung).
+  // Guard budget (Plan P): kalau Deriv down TOTAL, loop sekuensial 7 pair x 2
+  // interval x timeout 8s bisa sampai 112s — jauh lewat batas 60s Vercel/55s GH
+  // Actions. Berhenti mencoba Deriv untuk pair SISA begitu elapsed lewat ambang,
+  // biar masih ada waktu cukup untuk fan-out Yahoo di bawah untuk semua pair.
+  const derivPrefetchStart = Date.now();
+  const DERIV_PREFETCH_BUDGET_MS = 20000;
+  const derivResults = new Map(); // symbol -> { candles1h, candles1d }
+  for (const { symbol } of pairsToSync) {
+    if (!mapYahooSymbolToDeriv(symbol)) continue; // GC=F — bukan kandidat Deriv
+    if (Date.now() - derivPrefetchStart > DERIV_PREFETCH_BUDGET_MS) {
+      console.warn(`ohlcv_sync: Deriv prefetch budget habis — sisa pair langsung ke Yahoo`);
+      break;
+    }
+    const entry = { candles1h: null, candles1d: null };
+    try { entry.candles1h = await fetchDerivCandles(symbol, '1h', 250); }
+    catch (e) { console.warn(`ohlcv_sync: Deriv 1h ${symbol} gagal (${e.message}), fallback Yahoo`); }
+    try { entry.candles1d = await fetchDerivCandles(symbol, '1d', 140); }
+    catch (e) { console.warn(`ohlcv_sync: Deriv 1d ${symbol} gagal (${e.message}), fallback Yahoo`); }
+    derivResults.set(symbol, entry);
+  }
+
   // Fetch all pairs in parallel — individual failures don't block others.
   // M1 (2026-07-18): Yahoo gagal/0 candle -> fallback Twelve Data (no-op kalau
   // TWELVEDATA_API_KEY belum diset — fetchFallbackCandles throw, error asli tetap
   // dilempar lewat catch di bawah, perilaku identik sebelum M1 ada).
   const results = await Promise.allSettled(
     pairsToSync.map(async ({ symbol, label }) => {
+      const deriv = derivResults.get(symbol);
+
       let candles1h, source1h = 'yahoo';
-      try {
-        candles1h = await fetchYahooOhlcv1h(symbol);
-        if (candles1h.length === 0) throw new Error(`${symbol}: empty candles`);
-      } catch (yahooErr) {
-        candles1h = await fetchFallbackCandles(symbol, '1h');
-        source1h = 'twelvedata';
+      if (deriv?.candles1h) {
+        candles1h = deriv.candles1h; source1h = 'deriv';
+      } else {
+        try {
+          candles1h = await fetchYahooOhlcv1h(symbol);
+          if (candles1h.length === 0) throw new Error(`${symbol}: empty candles`);
+        } catch (yahooErr) {
+          candles1h = await fetchFallbackCandles(symbol, '1h');
+          source1h = 'twelvedata';
+        }
       }
 
       const candles4h = resampleTo4h(candles1h);
 
       let candles1d, source1d = 'yahoo';
-      try {
-        candles1d = await fetchYahooOhlcvDaily(symbol);
-        if (candles1d.length === 0) throw new Error(`${symbol}: empty daily candles`);
-      } catch (yahooErr) {
-        candles1d = await fetchFallbackCandles(symbol, '1d');
-        source1d = 'twelvedata';
+      if (deriv?.candles1d) {
+        candles1d = deriv.candles1d; source1d = 'deriv';
+      } else {
+        try {
+          candles1d = await fetchYahooOhlcvDaily(symbol);
+          if (candles1d.length === 0) throw new Error(`${symbol}: empty daily candles`);
+        } catch (yahooErr) {
+          candles1d = await fetchFallbackCandles(symbol, '1d');
+          source1d = 'twelvedata';
+        }
       }
 
       // Store 3 TFs + source tag (diagnosa M1) in parallel
@@ -1695,22 +1732,45 @@ async function refreshOhlcvFromYahoo(symbol) {
     if (await redisCmd('GET', `ohlcv_fresh:${symbol}`)) return false;
   } catch (e) { /* throttle check best-effort — fall through to fetch */ }
 
+  // Plan P (2026-07-18): Deriv primary untuk 14 pair FX — dicoba dulu SEBELUM Yahoo.
+  // GC=F (XAU/USD) TIDAK dipetakan (lihat catatan scope di _ohlcv_fetch.js), jadi
+  // otomatis lewat ke alur Yahoo→TwelveData di bawah, TIDAK berubah untuk emas.
+  const derivEligible = !!mapYahooSymbolToDeriv(symbol);
+  let candles1h = null, source1h = null, candles1d = null, source1d = null;
+  if (derivEligible) {
+    const [rd1h, rd1d] = await Promise.allSettled([
+      fetchDerivCandles(symbol, '1h', 250),
+      fetchDerivCandles(symbol, '1d', 140),
+    ]);
+    if (rd1h.status === 'fulfilled') { candles1h = rd1h.value; source1h = 'deriv'; }
+    else console.warn(`refreshOhlcvFromYahoo: Deriv 1h ${symbol} gagal (${rd1h.reason?.message}), fallback Yahoo`);
+    if (rd1d.status === 'fulfilled') { candles1d = rd1d.value; source1d = 'deriv'; }
+    else console.warn(`refreshOhlcvFromYahoo: Deriv 1d ${symbol} gagal (${rd1d.reason?.message}), fallback Yahoo`);
+  }
+
+  // Aturan anti-campur-sumber (Plan P-3): hanya minta Yahoo untuk interval yang BELUM
+  // didapat dari Deriv — satu array candle HARUS dari satu sumber, tidak pernah gabung.
+  const need1h = !candles1h, need1d = !candles1d;
   const [r1h, r1d] = await Promise.allSettled([
-    fetchYahooOhlcv1h(symbol),
-    fetchYahooOhlcvDaily(symbol),
+    need1h ? fetchYahooOhlcv1h(symbol) : Promise.resolve(null),
+    need1d ? fetchYahooOhlcvDaily(symbol) : Promise.resolve(null),
   ]);
 
   // M1: kalau Yahoo gagal/0 candle di jalur on-demand ini, coba Twelve Data sebelum
   // menyerah — no-op (tetap reject) kalau TWELVEDATA_API_KEY belum diset.
-  let candles1h = (r1h.status === 'fulfilled' && r1h.value?.length) ? r1h.value : null;
-  let source1h = candles1h ? 'yahoo' : null;
-  if (!candles1h) {
-    try { candles1h = await fetchFallbackCandles(symbol, '1h'); source1h = 'twelvedata'; } catch (e) {}
+  if (need1h) {
+    candles1h = (r1h.status === 'fulfilled' && r1h.value?.length) ? r1h.value : null;
+    source1h = candles1h ? 'yahoo' : null;
+    if (!candles1h) {
+      try { candles1h = await fetchFallbackCandles(symbol, '1h'); source1h = 'twelvedata'; } catch (e) {}
+    }
   }
-  let candles1d = (r1d.status === 'fulfilled' && r1d.value?.length) ? r1d.value : null;
-  let source1d = candles1d ? 'yahoo' : null;
-  if (!candles1d) {
-    try { candles1d = await fetchFallbackCandles(symbol, '1d'); source1d = 'twelvedata'; } catch (e) {}
+  if (need1d) {
+    candles1d = (r1d.status === 'fulfilled' && r1d.value?.length) ? r1d.value : null;
+    source1d = candles1d ? 'yahoo' : null;
+    if (!candles1d) {
+      try { candles1d = await fetchFallbackCandles(symbol, '1d'); source1d = 'twelvedata'; } catch (e) {}
+    }
   }
 
   const writes = [];
