@@ -1,0 +1,13 @@
+{
+  "name": "daun-merah-vps",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Daun Merah — Plan Q daemon (heartbeat Q-1, streaming Q-2+). Deploy terpisah dari app utama, lihat README-deploy.md.",
+  "main": "heartbeat.js",
+  "scripts": {
+    "start": "node heartbeat.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

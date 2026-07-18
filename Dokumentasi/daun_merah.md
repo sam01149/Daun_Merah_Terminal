@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-07-18 (Session 184 — Eksekusi Plan M & N SELESAI SEMUA. Gemini sukses dipromosikan sebagai fallback Call 1/2/3, Twelve Data fallback & keepalive yml & version probe M3 selesai terpasang dan test 100% hijau).
+> **Last updated:** 2026-07-18 (Session 187 — Plan Q-1: pivot ke Render free tier (CepatCloud belum aktif), kode heartbeat daemon + probe `vps_heartbeat` di `admin?action=health` selesai & live-verified; gate uptime 7 hari menunggu user deploy manual di Render).
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -5549,4 +5549,26 @@ Deriv sekarang punya **dua portal developer terpisah**: portal BARU (`developers
 
 ### Ditunda (belum bagian sesi ini):
 - **Plan Q** (daemon VPS) — masih terkunci prasyarat: VPS CepatCloud belum aktif DAN baru boleh mulai setelah Plan P (sudah selesai sekarang, jadi tinggal menunggu VPS aktif).
+
+---
+
+## Changelog Session 187 (2026-07-18) — Plan Q-1: Pivot ke Render Free Tier, Kode Heartbeat Selesai & Live-Verified
+
+**Konteks:** Melanjutkan Plan Q setelah Plan P selesai (entri sebelumnya). VPS CepatCloud user masih belum aktif — ditanya langsung, user memilih pivot ke **Plan B: Render free tier** (kandidat kedua yang sudah tercatat di `daun_merah_plan.md`) daripada menunggu lebih lama.
+
+### Kode:
+1. **`vps/heartbeat.js`** (BARU) — daemon Node tunggal: tiap 60 detik `SET vps:heartbeat <epoch> EX 300` ke Upstash Redis via REST API, TANPA token AI/Deriv/Telegram apa pun (kalau host gratis kompromi, tidak ada kunci berbayar ikut bocor). Karena Render free tier adalah Web Service (bukan background worker polos), proses juga membuka HTTP server minimal (`node:http`, tanpa dependency) di `$PORT` yang membalas status JSON — dipakai ganda sebagai target health check Render DAN target pinger `cron-job.org`.
+2. **`vps/package.json`** + **`vps/Dockerfile`** (BARU) — image `node:22-alpine` (selaras versi Node GH Actions lain di repo), tanpa dependency eksternal.
+3. **`vps/README-deploy.md`** (BARU) — langkah deploy Render (Root Directory `vps`, runtime Docker, env `UPSTASH_REDIS_REST_URL`/`UPSTASH_REDIS_REST_TOKEN` saja) + setup pinger `cron-job.org` tiap 10 menit melawan spin-down 15 menit + kriteria gate Q-1. **Tidak ada langkah SSH** — beda dari asumsi awal plan (VPS tradisional), Render sepenuhnya Git + dashboard.
+4. **`api/admin.js`** — probe baru `vps_heartbeat` di `action=health` (mengikuti pola `PROBES`/`SOURCE_CACHE_KEYS` yang sudah ada, bukan endpoint terpisah — hemat jatah 12/12 function Vercel Hobby): `GET vps:heartbeat`, DOWN kalau key tidak ada atau umur >5 menit, detail `age_seconds` kalau OK. Otomatis dapat alert Telegram existing (`toAlert`/`HEALTH_ALERT_THRESHOLD` 2 jam) dan `down_since_mins` di response JSON untuk memantau gap harian. Key didaftarkan di `KEY_REGISTRY` (`redis-keys` handler) untuk konsistensi dokumentasi internal.
+
+### Verifikasi (live, bukan hanya unit test — pelajaran S154/S180):
+- `npm test`: **334/334 hijau**.
+- `heartbeat.js` dijalankan lokal melawan Upstash Redis PRODUCTION sungguhan (bukan mock): `SET vps:heartbeat` sukses, `GET` balik epoch benar, `TTL` terkonfirmasi 297s (dekat `EX 300`), endpoint HTTP `:PORT/` melaporkan `last_beat_epoch` yang sama. Logika `age_seconds` di `probeVpsHeartbeat` (`admin.js`) diverifikasi terpisah menghasilkan angka identik dengan kalkulasi manual atas data live yang sama. Key test dihapus (`DEL`) setelah verifikasi, proses lokal dihentikan — tidak ada proses/queue tersisa.
+
+### Status Q-1 — BELUM SELESAI (menunggu aksi user):
+Kode siap, tapi gate Q-1 ("tidak ada gap heartbeat >5 menit selama minimal 7 hari berturut") baru bisa mulai berjalan setelah **user** (1) push branch ini agar Render bisa connect ke GitHub, (2) deploy service di dashboard Render mengikuti `vps/README-deploy.md`, (3) pasang pinger `cron-job.org`. Tidak ada langkah ini yang bisa dieksekusi dari sisi kode — perlu akun pihak ketiga milik user. Setelah deploy, pantau via `GET /api/admin?action=health` (header `x-admin-secret`) source `vps_heartbeat` selama 7-14 hari sebelum lanjut Q-2 (streaming).
+
+### Versi:
+Perubahan API-only (`admin.js`) + folder baru `vps/` yang tidak disentuh `index.html`/`sw.js` — sesuai aturan plan, **`?v=` TIDAK dinaikkan**.
 - Mendapatkan `app_id` Deriv dedicated yang kompatibel dengan `ws.derivws.com` — perlu tindak lanjut user (kontak `api-support@deriv.com` atau proses Partner), TIDAK memblokir Plan P (sudah jalan pakai `1089`).

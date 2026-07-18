@@ -129,6 +129,7 @@ const SOURCE_CACHE_KEYS = {
   cftc:           ['cot_cache_v2'],
   forexfactory:   [],
   redis:          [], // can't clear Redis keys if Redis itself is down
+  vps_heartbeat:  [], // tidak ada cache turunan — hanya sinyal umur beat
 };
 
 async function sendHealthTelegram(text) {
@@ -240,6 +241,18 @@ async function probeRedis() {
   return {};
 }
 
+// Plan Q-1: daemon vps/heartbeat.js (Render free tier) menulis epoch tiap 60s
+// dengan TTL 300s (EX 300) — key otomatis hilang kalau proses berhenti kirim
+// beat, jadi "key hilang" dan "beat basi >5 menit" sama-sama berarti DOWN di
+// sini. Gate Q-1: tidak boleh ada gap >5 menit selama 7 hari berturut-turut.
+async function probeVpsHeartbeat() {
+  const raw = await redisCmd('GET', 'vps:heartbeat');
+  if (!raw) throw new Error('vps:heartbeat belum pernah diset atau sudah kedaluwarsa (>5 menit)');
+  const ageMs = Date.now() - Number(raw) * 1000;
+  if (ageMs > 5 * 60 * 1000) throw new Error(`Heartbeat basi: ${Math.round(ageMs / 1000)}s sejak beat terakhir`);
+  return { age_seconds: Math.round(ageMs / 1000) };
+}
+
 const PROBES = {
   fred:           { fn: probeFred,           label: 'FRED API' },
   stooq:          { fn: probeStooq,          label: 'Stooq CSV' },
@@ -247,6 +260,7 @@ const PROBES = {
   financialjuice: { fn: probeFinancialJuice, label: 'FinancialJuice RSS' },
   cftc:           { fn: probeCFTC,           label: 'CFTC COT' },
   redis:          { fn: probeRedis,          label: 'Upstash Redis' },
+  vps_heartbeat:  { fn: probeVpsHeartbeat,   label: 'VPS Heartbeat (Plan Q-1)' },
 };
 
 async function healthHandler(req, res) {
@@ -392,6 +406,7 @@ const KEY_REGISTRY = [
   { key: 'fundamental:*',        owner: 'api/admin.js',          ttl_expected: null,   note: 'HSET fundamental data per currency (no TTL — overwritten when new data)' },
   { key: 'fundamental_analysis', owner: 'api/admin.js',          ttl_expected: 21600,  note: 'Groq AI analysis of fundamental data, cached 6h' },
   { key: 'cb_decisions',         owner: 'api/market-digest.js',  ttl_expected: null,   note: 'HSET CB rate decisions detected from headlines, overrides CB_FALLBACK metadata' },
+  { key: 'vps:heartbeat',        owner: 'vps/heartbeat.js',      ttl_expected: 300,    note: 'Plan Q-1: epoch beat daemon Render, dibaca api/admin.js?action=health source=vps_heartbeat' },
 ];
 
 const DEPRECATED_KEYS = [
