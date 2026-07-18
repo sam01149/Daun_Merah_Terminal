@@ -5522,6 +5522,31 @@ Mistral:     https://api.mistral.ai/v1
 - `APP_VERSION` dinaikkan `2026.07.18.2` → `2026.07.18.3`.
 - 3 commit terpisah di-push ke `main` (Vercel auto-deploy per commit): (1) kode Plan O Call1/2/3 + Plan R lengkap + fix emoji jurnal, (2) promosi O-6 setelah gate lolos, (3) fix bug `currentView`. Semua diverifikasi live di production URL setelah tiap deploy, bukan cuma preview.
 
-### Ditunda (bukan bagian sesi ini):
+### Ditunda saat itu (bukan bagian entri di atas):
 - **Plan P** (Deriv primary candle FX) — butuh `DERIV_APP_ID`, pendaftaran akun oleh user di api.deriv.com belum dilakukan.
 - **Plan Q** (daemon VPS) — prasyarat keras VPS CepatCloud belum aktif, TIDAK bisa dimulai (sesuai catatan plan sendiri).
+
+---
+
+## Changelog Session 186 lanjutan malam 2 (2026-07-18) — Plan P (Deriv Primary Candle FX) DIEKSEKUSI, Temuan Migrasi API Deriv
+
+**Konteks:** Lanjutan langsung setelah entri di atas — user mendaftarkan `app_id` di Deriv untuk Plan P. Proses pendaftaran ternyata jauh lebih rumit dari perkiraan riset S186 pagi karena Deriv sedang migrasi platform developer.
+
+### Temuan kunci — dua sistem developer Deriv tidak saling kompatibel:
+Deriv sekarang punya **dua portal developer terpisah**: portal BARU (`developers.deriv.com`, ada fitur "AI Hub"/"App builder Beta") dan sistem LAMA (`api.deriv.com` — sekarang redirect otomatis ke `legacy-api.deriv.com`, eksplisit dilabeli "Legacy"). User mendaftarkan aplikasi "Daun Merah" di portal BARU, dapat `app_id` alfanumerik (`33RyBFgARobk7a2y4UuUc`) — **diverifikasi live TIDAK KOMPATIBEL** dengan endpoint `wss://ws.derivws.com` yang jadi basis riset S186 pagi: server balas `{"error":"InvalidAppID"}` secara konsisten di 3 titik server berbeda (ws/green/blue.derivws.com), sementara app_id publik `1089` (kontrol) tetap berfungsi normal di endpoint yang sama. Ditelusuri lebih jauh: semua jalur "API developer" dari akun Deriv user (termasuk menu "Partnership programme" di dashboard utama) mengarah balik ke portal baru — jalur self-service untuk app_id gaya lama yang kompatibel dengan `ws.derivws.com` **tidak ditemukan** dalam sesi ini. Kemungkinan perlu kontak `api-support@deriv.com` langsung atau proses "Partner" terpisah.
+
+**Keputusan:** eksekusi Plan P TETAP JALAN memakai app_id publik `1089` sebagai solusi interim (gratis, terverifikasi live, tanpa akun) — sesuai instruksi user "kerjakan yang bisa dikerjakan dulu". Risiko didokumentasikan eksplisit di kode & `daun_merah_vendor.md` §4: rate limit dibagi semua developer dunia, Deriv bisa membatasi/mematikan `1089` sepihak kapan saja karena bukan untuk trafik produksi. Ganti via env var `DERIV_APP_ID` begitu dapat app_id dedicated yang kompatibel — **tidak perlu ubah kode apa pun**.
+
+### Implementasi:
+1. **P-1:** Runtime Node 24.x dikonfirmasi di Vercel (dari project settings) — di atas syarat ≥22 untuk WebSocket native, tidak perlu dependency `ws`.
+2. **P-2:** `fetchDerivCandles(yahooSymbol, interval, count)` baru di `api/_ohlcv_fetch.js` — WebSocket ke `wss://ws.derivws.com`, timeout 8s, normalisasi ke shape `{t,o,h,l,c,v}` identik Yahoo/Twelve Data (`v:0`, Deriv tanpa volume). Map `YAHOO_TO_DERIV_SYMBOL` untuk 14 pair FX (pola persis `YAHOO_TO_TWELVEDATA_SYMBOL`) — `GC=F` SENGAJA tidak dipetakan (futures vs spot, volume dipakai analisis).
+3. **P-3:** Terintegrasi ke 2 jalur pemanggil: `refreshOhlcvFromYahoo` (on-demand, Deriv dicoba paralel untuk 1h+1d SATU pair) dan `ohlcvSyncHandler` (cron, Deriv dicoba **SEKUENSIAL** — bukan 14 pair paralel — sesuai edge case rate limit Plan P, dengan budget guard 20s supaya kalau Deriv down total tidak menghabiskan seluruh jatah waktu function sebelum sempat fallback ke Yahoo). Aturan satu-array-satu-sumber dijaga di kedua jalur.
+4. **P-4 (verifikasi live):** Trigger `?action=ohlcv_read` untuk 7 pair FX tetap (`OHLCV_FIXED_PAIRS`) di production — SEMUA menunjukkan `source: "deriv"` di `?action=ohlcv_dashboard`, XAU/USD tetap `"yahoo"` (scope terjaga). Perbandingan harga close Deriv vs Yahoo langsung: EUR/USD selisih ~4,6 pip, GBP/USD ~6,2 pip, AUD/USD ~0,2 pip — semua dalam toleransi wajar broker berbeda.
+5. **P-5 (uji fallback):** Diverifikasi dengan memanggil `fetchDerivCandles()` langsung memakai `app_id` salah (`99999999`) secara terisolasi (bukan ubah env var production) — melempar Error bersih (`InvalidAppID`) yang tertangkap try/catch fallback, pola identik dengan jalur `GC=F` yang sudah lama berjalan aman di production. `npm test` 334/334 hijau.
+6. **P-6 (dokumentasi):** `daun_merah_vendor.md` §4 — entri Deriv API baru + update entri Twelve Data (temuan tambahan: `TWELVEDATA_API_KEY` masih belum di-set di Vercel production sama sekali — action item lama masih terbuka; `.env.local` sempat punya key salah nama `TWELVE_DATA_API_KEY` yang tidak akan pernah terbaca kode).
+
+**Verifikasi:** 334/334 unit test; live production via `curl` langsung (bukan preview) untuk semua 7 pair FX tetap + perbandingan harga 3 pair vs Yahoo.
+
+### Ditunda (belum bagian sesi ini):
+- **Plan Q** (daemon VPS) — masih terkunci prasyarat: VPS CepatCloud belum aktif DAN baru boleh mulai setelah Plan P (sudah selesai sekarang, jadi tinggal menunggu VPS aktif).
+- Mendapatkan `app_id` Deriv dedicated yang kompatibel dengan `ws.derivws.com` — perlu tindak lanjut user (kontak `api-support@deriv.com` atau proses Partner), TIDAK memblokir Plan P (sudah jalan pakai `1089`).
