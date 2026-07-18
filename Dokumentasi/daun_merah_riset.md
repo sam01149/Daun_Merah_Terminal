@@ -36,6 +36,10 @@
   diberi peran di scoring.
 - **Carry trade / currency crash risk** — masih tahap riset literatur, BELUM diverifikasi ke
   sumber primer; jangan dieksekusi sebelum itu (lihat juga catatan "Ditahan" Plan G).
+- **Integrasi MT5 Broker Demo & Free VPS (Hugging Face / CepatCloud)** (Ide baru, session 185):
+  * *Tujuan:* Menyelesaikan masalah ketidakstabilan Yahoo Finance ("bom waktu") dan memangkas delay lilin teknikal (H1/H4) ke 0-delay secara 100% gratis, legal, dan tanpa batas kuota API key.
+  * *Konsep:* Menjalankan terminal MT5 (akun demo gratis broker komersial) di VPS gratis (CepatCloud atau Hugging Face Spaces + pinger anti-sleep). Script jembatan Node.js/Python menarik data tick harga & candle OHLCV langsung dari server broker, lalu menulisnya instan ke Redis Daun Merah.
+  * *Status:* Siap untuk dievaluasi sebagai peta jalan pembaruan infrastruktur data masa depan.
 
 ---
 
