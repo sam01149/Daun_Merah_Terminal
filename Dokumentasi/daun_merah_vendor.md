@@ -24,6 +24,7 @@
 | `btc-sync.yml` | **Nonaktif** (schedule dimatikan 2026-06-22) | Riset BTC ML — diasingkan ke folder gitignored, `workflow_dispatch` manual saja kalau mau diaktifkan lagi |
 | `btc-backfill.yml` | Manual (`workflow_dispatch`) | Backfill data historis BTC (riset, sama nasibnya dengan `btc-sync.yml`) |
 | `test-deribit.yml` | Manual (`workflow_dispatch`) | Diagnostik koneksi Deribit API (BTC options), bukan fitur produksi |
+| `keepalive.yml` | 1x/bulan (tgl 1, 03:00 UTC) | Commit heartbeat (`.github/heartbeat.txt`) supaya GitHub tidak menonaktifkan otomatis semua scheduled workflow di atas — GitHub mematikan cron di repo publik yang 60 hari tanpa aktivitas commit (M2, audit 2026-07-18). **Kalau app dipensiunkan, matikan workflow ini manual** (hapus/nonaktifkan `.github/workflows/keepalive.yml`) — jangan biarkan heartbeat palsu terus commit ke repo mati. |
 
 Semua workflow di atas autentikasi ke `api/*.js` lewat header `x-cron-secret`, dicocokkan ke `CRON_SECRET` di kode (`api/_app_key.js`, `api/_ratelimit.js` — whitelist otomatis, tidak kena rate limit per-IP).
 
@@ -38,6 +39,7 @@ Semua workflow di atas autentikasi ke `api/*.js` lewat header `x-cron-secret`, d
 | SambaNova (2 akun terpisah) | `SAMBANOVA_API_KEY`, `SAMBANOVA_API_KEY_CALL1` | Free (persisten) |
 | Groq | `GROQ_API_KEY` | Free (persisten) |
 | Ollama Cloud | `OLLAMA_API_KEY` | Free |
+| Google AI Studio (Gemini) | `GEMINI_API_KEY` | Free (1.500 RPD) — dipromosikan Plan N (2026-07-18) |
 
 ---
 
@@ -60,7 +62,8 @@ Semua workflow di atas autentikasi ke `api/*.js` lewat header `x-cron-secret`, d
 | Vendor | Fungsi | Tier |
 |---|---|---|
 | **Yahoo Finance** (`query1.finance.yahoo.com`, tidak resmi/unofficial) | Sumber utama candle OHLCV semua pair FX + XAU/USD | Free, tanpa API key (endpoint publik tidak resmi) |
-| **Binance API** | Fallback harga (PAXG untuk proxy XAU, dan referensi crypto) | Free, publik |
+| **Binance API** | Fallback harga (PAXG untuk proxy XAU, dan referensi crypto) — dicoba PERTAMA untuk XAU/USD sebelum Twelve Data (di dalam `fetchYahooOhlcv1h`) | Free, publik |
+| **Twelve Data** (`api.twelvedata.com`) | Fallback candle OHLCV kedua untuk SEMUA 15 pair FX/XAU kalau Yahoo (dan Binance khusus XAU) gagal/0 candle (M1, audit 2026-07-18) — mengatasi titik-gagal-tunggal Yahoo di `_ohlcv_fetch.js` (`fetchFallbackCandles`), dipakai `ohlcv_sync` (cron) & `refreshOhlcvFromYahoo` (on-demand tab Analisa). Symbol format `EUR/USD` (beda dari Yahoo `EURUSD=X`, mapping di kode). Source aktual per-pair per-run ditandai di Redis `ohlcv:<symbol>:source`, dibaca `?action=ohlcv_dashboard`. Counter `yahoo_fail_streak` + alert Telegram kalau 3x sync beruntun Yahoo down sistemik (cooldown 6 jam). | **Free tier: 800 credit/hari, 8 request/menit** (diverifikasi 2026-07-18 via docs.twelvedata.com — 1 credit/request). **Action item user:** daftar akun gratis di twelvedata.com, buat API key, set `TWELVEDATA_API_KEY` di Vercel env — tanpa ini, fallback no-op diam-diam (perilaku identik sebelum M1: Yahoo gagal → stale cache, tidak ada error baru) |
 | **Stooq** | Data VIX/index tambahan (`risk-regime.js`) | Free, publik |
 | **TradingView** (`economic-calendar.tradingview.com`) | Kalender ekonomi — sumber SATU-SATUNYA untuk tab CAL sejak fallback ForexFactory dihapus 2026-07-13 (lihat §6); kalau gagal, `api/calendar.js` jatuh ke stale-cache Redis, bukan ganti sumber | Free, endpoint publik tidak resmi |
 
@@ -108,11 +111,13 @@ SAMBANOVA_API_KEY
 SAMBANOVA_API_KEY_CALL1
 GROQ_API_KEY
 OLLAMA_API_KEY
+GEMINI_API_KEY       # Dipromosikan Plan N (2026-07-18) — Google AI Studio (Gemini)
 
 # Data
 FRED_API_KEY
 BARCHART_API_KEY
 SCRAPER_API_KEY
+TWELVEDATA_API_KEY   # M1 2026-07-18 — belum di-set user, fallback no-op sampai ada
 
 # Infra
 UPSTASH_REDIS_REST_URL
@@ -162,3 +167,12 @@ User cek langsung dashboard ScraperAPI: **417 dari 1.000 credit terpakai dalam ~
 - `market-digest.js`: penanda umur `[data X jam lalu]` + perluasan CATATAN STALENESS (dari fix v1) **tetap dipertahankan** — praktik baik ini valid di TTL manapun, cuma sekarang biasanya menunjukkan "<1 jam" bukan "beberapa jam".
 - Margin budget dihitung ulang: 1 jam TTL + FedWatch (rate-path.js, TTL 4h terpisah) = ~900 credit/bulan skenario TERBURUK (trafik nonstop 24 jam), realistisnya jauh di bawah itu berdasarkan pola trafik riil (~14 jam aktif/hari dari data dashboard).
 - Diverifikasi: simulasi parsing pakai data JSON ASLI dari live test user (termasuk kasus symbol tak dikenal & skew rusak, tidak crash) + test suite 190/190 tetap hijau.
+
+---
+
+## 10. Catatan Operasional (M4, audit 2026-07-18 — tanpa kode)
+
+- **Upstash Redis:** cek dashboard (command count & storage) tiap awal bulan — semua endpoint bergantung pada Redis ini, kalau limit free tier kena, seluruh app (cache, rate limit, circuit breaker, jatah AI harian) ikut terganggu serentak.
+- **Billing SambaNova:** mekanisme top-up TIDAK dikonfirmasi (lihat riwayat session 163-165, `daun_merah.md`) — kalau Ringkasan mendadak sering jatuh ke fallback chain, cek akun SambaNova langsung DULU sebelum mengubah kode.
+- **Deprecation model AI** (DeepSeek-V3.2 dkk): kalau provider menghapus/mengganti model, gejalanya error tertelan diam-diam oleh fallback chain (tidak crash, tapi kualitas turun) — pantau badge method di UI Ringkasan secara berkala, jangan asumsikan diam = sehat.
+- **GitHub Actions email warning:** kalau GitHub mengirim email "workflow disabled due to inactivity" untuk repo ini, JANGAN diabaikan — itu tandanya `keepalive.yml` (§1) gagal jalan atau baru dipasang setelah repo sudah kena nonaktifkan; re-enable manual via tab Actions.

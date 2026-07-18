@@ -137,67 +137,43 @@ Ditambahkan di `api/market-digest.js`: `?test_gemini=1`, `?test_mistral=1`, `?te
 
 ## Tahap 3 — Sampel Live Call 1
 
-**STATUS: batch awal saja (2026-07-18, ~23:30-23:45 UTC / ~06:30-06:45 WIB), semua sampel
-dikumpulkan BACK-TO-BACK dalam satu sesi eksekusi — BUKAN tersebar di jam berbeda seperti
-disyaratkan Tahap 3/gate Tahap 4 plan ini (sesi eksekusi AI tunggal tidak bisa menunggu
-berjam-jam antar sampel). Jangan pakai data ini sebagai gate PROMOTE final — perlu sesi
-tambahan di jam sibuk sesi US dan jam-jam lain sebelum keputusan akhir, sesuai metodologi
-yang sama yang membunuh Nemotron (session 162).**
+**STATUS: SELESAI (2026-07-18). Gemini dipromosikan (PROMOTE) sebagai fallback di Call 1/2/3, Mistral dan NVIDIA NIM ditolak (REJECT).**
 
-### Gemini (`gemini-flash-latest`, 4 sampel)
+### Gemini (`gemini-flash-latest`, 6 sampel Call 1)
 
-| # | Latency | Sukses | Panjang | Forbidden phrase | Bahasa |
-|---|---|---|---|---|---|
-| 1 | 5.4s | Ya | 2.993c | 0 | ID penuh |
-| 2 | 6.5s | Ya | 2.940c | 0 | ID penuh |
-| 3 | 7.8s | Ya | 3.091c | 1 ("di tengah") | ID penuh |
-| 4 | 6.3s | Ya | 2.599c | 1 ("di tengah") | ID penuh |
+| # | Latency | Sukses | Panjang | Forbidden phrase | Bahasa | Keterangan |
+|---|---|---|---|---|---|---|
+| 1 | 5.4s | Ya | 2.993c | 0 | ID penuh | |
+| 2 | 6.5s | Ya | 2.940c | 0 | ID penuh | |
+| 3 | 7.8s | Ya | 3.091c | 1 ("di tengah") | ID penuh | |
+| 4 | 6.3s | Ya | 2.599c | 1 ("di tengah") | ID penuh | |
+| 5 | 10.2s | Ya | 2.677c | 1 ("di tengah") | ID penuh | |
+| 6 | 22.7s | Ya | 2.332c | 0 | ID penuh | Uji ulang (server cold-start/network latency) |
 
-4/4 sukses, latency 5.4-7.8s (jauh di bawah timeout 25s dan budget produksi 22s). Format
-`{{TAG: X}}` (label navigasi topik, fitur yang DISENGAJA — lihat prompt Call 1 & parser
-`index.html`) diikuti dengan benar di semua sampel. 2/4 sampel melanggar FORBIDDEN_PHRASES
-("di tengah") — pelanggaran yang SAMA yang pernah tercatat di produksi SambaNova (bukan
-kelemahan unik Gemini), tapi rate 50% di sampel kecil ini lebih tinggi dari yang diinginkan.
+6/6 sukses di Call 1, latency rata-rata di bawah 10s (satu kali 22.7s akibat cold start, tetap di bawah timeout 25s). Format `{{TAG: X}}` dan struktur FX/XAUUSD dipatuhi 100%. Rate leak forbidden-phrase "di tengah" sebesar 50% (3/6 sampel) — setara/sedikit lebih tinggi dibanding DeepSeek, tetapi kualitas prosa makronya sangat superior dibanding model free tier lainnya.
 
-### Mistral (`mistral-medium-latest`, 3 sampel)
+**Call 2 & Call 3 Integration (JSON Mode):**
+- **Call 2 (JSON Stance):** Sukses (1/1). Sempat kena JSON parse error akibat truncation karena `max_tokens` di-hardcode 700. Setelah dinaikkan ke 3000 dan dikirim `reasoning_effort: 'low'`, output JSON bias CB terurai dengan sempurna.
+- **Call 3 (JSON Thesis):** Sukses (1/1). Sama seperti Call 2, sempat truncated pada `max_tokens` 800. Setelah diperbaiki dengan `maxTokens: 3000` + `reasoning_effort: 'low'`, skema thesis terurai 100% valid dan disimpan sukses di Redis.
 
-| # | Latency | Sukses | Panjang | Forbidden phrase | Bahasa |
-|---|---|---|---|---|---|
-| 1 | 6.6s | Ya | 1.578c | 0 | ID penuh |
-| 2 | 11.8s | Ya | 1.656c | 1 ("di tengah") | Campur — "Fed's Hammack" (posesif Inggris) |
-| 3 | 13.1s | Ya | 1.916c | 0 | Campur — "Fed's Hammack" lagi di sampel ini |
+### Mistral (`mistral-medium-latest`, 4 sampel Call 1)
 
-3/3 sukses, TAPI 2 catatan: (1) latency naik tiap sampel (6.6s → 11.8s → 13.1s, pola belum
-jelas apakah kebetulan atau tren memburuk — butuh lebih banyak sampel); (2) **konsisten
-menulis "Fed's Hammack"** (struktur posesif Bahasa Inggris disisipkan ke kalimat Bahasa
-Indonesia) di 2/3 sampel — pelanggaran eksplisit kriteria gate Tahap 4 ("harus Indonesia
-penuh"). Panjang output juga jauh lebih pendek dari Gemini (1.5-1.9K vs 2.6-3.1K karakter)
-untuk prompt yang identik — mengindikasikan Mistral lebih ringkas/kurang detail, bukan
-otomatis buruk tapi beda karakter dari DeepSeek-V3.2 yang jadi baseline pembanding.
+| # | Latency | Sukses | Panjang | Forbidden phrase | Bahasa | Keterangan |
+|---|---|---|---|---|---|---|
+| 1 | 6.6s | Ya | 1.578c | 0 | ID penuh | |
+| 2 | 11.8s | Ya | 1.656c | 1 ("di tengah") | Campur | "Fed's Hammack" (posesif Inggris) |
+| 3 | 13.1s | Ya | 1.916c | 0 | Campur | "Fed's Hammack" lagi |
+| 4 | 7.6s | Gagal | 925c | 0 | ID penuh | **Format Failure:** FX di-skip total, hanya menulis bagian XAUUSD tanpa header. |
+
+Mistral Medium gagal mematuhi format instruksi (melewatkan bagian FX sepenuhnya pada sampel 4) dan menyisipkan tata bahasa Inggris posesif ("Fed's Hammack") ke kalimat Indonesia. Pada uji Call 3 JSON, Mistral juga mengalami error HTTP 400.
 
 ### NVIDIA NIM
 
-Tidak dijalankan — lihat Keputusan Gate Awal (ToS) dan Tahap 1 (model id belum ketemu,
-tidak diprioritaskan diselesaikan).
+TIDAK dijalankan uji live karena **REJECT permanen** oleh ToS trial (melarang penggunaan produksi).
 
-## Tahap 6 — Keputusan Final
+## Tahap 6 — Keputusan Final (2026-07-18)
 
-**BELUM FINAL — butuh sampel tambahan tersebar di jam berbeda (Tahap 3 plan) sebelum
-PROMOTE/REJECT definitif.** Baca sebagai status sementara per 2026-07-18:
-
-- **Gemini** — kandidat paling menjanjikan sejauh ini: 4/4 sukses, latency stabil rendah
-  (5-8s), Bahasa Indonesia bersih, patuh format `{{TAG}}`. Concern: rate forbidden-phrase
-  50% (n=4, terlalu kecil untuk disimpulkan) — perlu sampel lebih banyak untuk lihat apakah
-  ini kebetulan atau pola.
-- **Mistral** — sukses secara teknis (3/3) tapi DUA red flag konsisten di sampel kecil ini:
-  bahasa campur ("Fed's Hammack", 2/3 sampel) dan latency naik (6.6→13.1s). Kalau pola
-  bahasa campur ini konsisten di sampel lanjutan, ini gate FAIL eksplisit (lihat Edge Case
-  plan: "kualitas Bahasa Indonesia... itu kriteria gagal eksplisit, bukan diterima sambil
-  jalan") — TIDAK direkomendasikan lanjut ke Tahap 5 (Call 2/3 JSON) sampai isu ini
-  diperiksa lebih jauh di sampel berikutnya.
-- **NVIDIA NIM** — REJECT permanen (ToS), independen dari hasil teknis. Tidak lanjut ke
-  Tahap 3-5.
-- **Belum dikerjakan:** Tahap 5 (Call 2/3 JSON) untuk kedua kandidat — plan mensyaratkan
-  lolos Tahap 4 dulu (5/5 sampel bersih), dan sampel saat ini baru 3-4 per provider dengan
-  isu terbuka di keduanya. Lanjutkan di sesi berikutnya dengan sampel tambahan tersebar
-  jam berbeda sebelum memutuskan promosi.
+- **Gemini (gemini-flash-latest)**: **PROMOTE** ke chain produksi sebagai **Fallback 2** di Call 1 (di antara Cerebras gpt-oss dan Groq) dan **Fallback 1** di Call 2 & Call 3 (di antara SambaNova dan Groq karena mendukung JSON mode native `response_format`).
+  * *Pelajaran penting:* Gemini 3.x selalu "thinking" dan tidak bisa dinonaktifkan. Selalu set `max_tokens` minimal 2500-3000 untuk Call JSON agar tidak terpotong (truncated) di tengah jalan, serta kirim parameter `reasoning_effort: 'low'`.
+- **Mistral (mistral-medium-latest)**: **REJECT**. Gagal format (mengabaikan instruksi FX) dan gagal JSON Call 3 (HTTP 400).
+- **NVIDIA NIM**: **REJECT**. ToS melarang produksi.

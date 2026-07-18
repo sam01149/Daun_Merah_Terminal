@@ -66,4 +66,78 @@ async function fetchBinancePaxg1h(limit = 250) {
   }));
 }
 
-module.exports = { fetchYahooOhlcv1h, fetchBinancePaxg1h };
+// ── Fallback provider: Twelve Data (M1, audit 2026-07-18) ──────────────────────
+// Yahoo = titik gagal tunggal semua candle FX (blokir IP/ubah skema → seluruh
+// tab TEK/Analisa/Kritikus/checklist kehilangan data serentak, tanpa notifikasi).
+// Twelve Data free tier (diverifikasi 2026-07-18 via docs.twelvedata.com):
+// 800 credit/hari, 8 request/menit, symbol forex format "EUR/USD" (BUKAN
+// "EURUSD=X" ala Yahoo) — endpoint time_series, 1 credit/request terlepas dari
+// outputsize. Dipakai HANYA saat Yahoo gagal/0 candle (lihat pemanggil di
+// admin.js ohlcvSyncHandler & refreshOhlcvFromYahoo) — bukan sumber utama.
+const YAHOO_TO_TWELVEDATA_SYMBOL = {
+  'GC=F':     'XAU/USD',
+  'EURUSD=X': 'EUR/USD', 'GBPUSD=X': 'GBP/USD', 'USDJPY=X': 'USD/JPY',
+  'AUDUSD=X': 'AUD/USD', 'USDCAD=X': 'USD/CAD', 'USDCHF=X': 'USD/CHF',
+  'NZDUSD=X': 'NZD/USD', 'EURJPY=X': 'EUR/JPY', 'GBPJPY=X': 'GBP/JPY',
+  'EURGBP=X': 'EUR/GBP', 'AUDJPY=X': 'AUD/JPY', 'EURAUD=X': 'EUR/AUD',
+  'GBPAUD=X': 'GBP/AUD', 'GBPCAD=X': 'GBP/CAD',
+};
+
+function mapYahooSymbolToTwelveData(yahooSymbol) {
+  return YAHOO_TO_TWELVEDATA_SYMBOL[yahooSymbol] || null;
+}
+
+// Twelve Data time_series (timezone=UTC, order=asc) values[] -> shape IDENTIK
+// dengan fetchYahooOhlcv1h/fetchYahooOhlcvDaily: {t (epoch detik UTC), o, h, l, c, v}
+// — konsumen downstream (resampleTo4h, indikator, cache Redis) tidak berubah.
+function normalizeTwelveDataCandles(values) {
+  if (!Array.isArray(values)) return [];
+  const out = [];
+  for (const v of values) {
+    if (!v || !v.datetime) continue;
+    const o = parseFloat(v.open), h = parseFloat(v.high), l = parseFloat(v.low), c = parseFloat(v.close);
+    if ([o, h, l, c].some(n => isNaN(n))) continue;
+    // "YYYY-MM-DD HH:mm:ss" (timezone=UTC dari query) -> epoch detik UTC.
+    const t = Math.floor(Date.parse(v.datetime.replace(' ', 'T') + 'Z') / 1000);
+    if (isNaN(t)) continue;
+    out.push({ t, o: +o.toFixed(6), h: +h.toFixed(6), l: +l.toFixed(6), c: +c.toFixed(6), v: Math.round(parseFloat(v.volume) || 0) });
+  }
+  return out.sort((a, b) => a.t - b.t);
+}
+
+// interval: '1h' | '1d' (konvensi internal app, sama dengan key Redis ohlcv:<symbol>:<interval>).
+async function fetchFallbackCandles(yahooSymbol, interval) {
+  const apiKey = process.env.TWELVEDATA_API_KEY;
+  if (!apiKey) throw new Error('fetchFallbackCandles: TWELVEDATA_API_KEY belum diset');
+  const tdSymbol = mapYahooSymbolToTwelveData(yahooSymbol);
+  if (!tdSymbol) throw new Error(`fetchFallbackCandles: tidak ada mapping Twelve Data untuk ${yahooSymbol}`);
+  const tdInterval = interval === '1d' ? '1day' : interval;
+  // outputsize: 250 (1h) ~ mendekati window Yahoo range=10d (240 jam) untuk resampleTo4h
+  // punya cukup bar; 140 (1d) ~ mendekati Yahoo range=6mo (~130 bar dagang). 1 credit/request
+  // terlepas dari outputsize (docs.twelvedata.com), jadi tidak ada biaya tambahan minta lebih banyak.
+  const outputsize = interval === '1d' ? 140 : 250;
+  const url = `https://api.twelvedata.com/time_series?symbol=${encodeURIComponent(tdSymbol)}&interval=${tdInterval}&outputsize=${outputsize}&timezone=UTC&order=asc&apikey=${encodeURIComponent(apiKey)}`;
+  const r = await fetch(url, { signal: AbortSignal.timeout(10000) });
+  const json = await r.json();
+  if (json.status === 'error' || !Array.isArray(json.values)) {
+    throw new Error(`Twelve Data ${tdSymbol} ${tdInterval}: ${json.message || `HTTP ${r.status}`}`);
+  }
+  const candles = normalizeTwelveDataCandles(json.values);
+  if (candles.length === 0) throw new Error(`Twelve Data ${tdSymbol} ${tdInterval}: 0 candle valid`);
+  return candles;
+}
+
+// Keputusan alert Telegram "Yahoo down" — pure function, dipanggil dari admin.js
+// setelah update counter yahoo_fail_streak di Redis. threshold/cooldown eksplisit
+// jadi param (bukan konstanta tersembunyi) supaya gampang diuji.
+function shouldSendYahooAlert(streak, lastAlertTs, now, threshold = 3, cooldownMs = 6 * 60 * 60 * 1000) {
+  if (streak < threshold) return false;
+  if (!lastAlertTs) return true;
+  return (now - lastAlertTs) >= cooldownMs;
+}
+
+module.exports = {
+  fetchYahooOhlcv1h, fetchBinancePaxg1h,
+  mapYahooSymbolToTwelveData, normalizeTwelveDataCandles, fetchFallbackCandles,
+  shouldSendYahooAlert,
+};

@@ -19,7 +19,7 @@ const cb = require('./_circuit_breaker');
 const rateLimit = require('./_ratelimit');
 const { allowAiCall } = require('./_ai_guard');
 const { requireAppKey } = require('./_app_key');
-const { fetchYahooOhlcv1h } = require('./_ohlcv_fetch');
+const { fetchYahooOhlcv1h, fetchFallbackCandles, shouldSendYahooAlert } = require('./_ohlcv_fetch');
 
 // Hermes 3 405B Instruct via OpenRouter (free tier) — kandidat diagnostik dari riset
 // user, sama seperti HERMES_MODEL di market-digest.js (circuit breaker key sengaja
@@ -141,6 +141,32 @@ async function sendHealthTelegram(text) {
       signal: AbortSignal.timeout(10000),
     });
   } catch(e) { console.warn('health: Telegram alert failed:', e.message); }
+}
+
+// M1 (audit 2026-07-18): Yahoo Finance = titik gagal tunggal semua candle FX.
+// Counter "gagal beruntun" dihitung per-RUN ohlcv_sync (bukan per-pair) — hanya
+// naik kalau SEMUA pair butuh fallback/gagal di run itu (sinyal Yahoo down
+// sistemik, bukan hiccup 1 simbol). Reset ke 0 begitu ada 1 pair sukses via Yahoo.
+async function trackYahooHealth(yahooFullyDownThisRun) {
+  try {
+    if (!yahooFullyDownThisRun) {
+      await redisCmd('DEL', 'yahoo_fail_streak');
+      return;
+    }
+    const streak = Number(await redisCmd('INCR', 'yahoo_fail_streak')) || 1;
+    const lastAlertRaw = await redisCmd('GET', 'yahoo_last_alert_ts');
+    const lastAlertTs = lastAlertRaw ? Number(lastAlertRaw) : 0;
+    const now = Date.now();
+    if (shouldSendYahooAlert(streak, lastAlertTs, now)) {
+      await sendHealthTelegram(
+        `🔴 *Daun Merah — Yahoo Finance OHLCV Down*\n\n` +
+        `${streak}x sync beruntun: semua pair jatuh ke fallback Twelve Data atau gagal total.\n` +
+        `Cek status Yahoo Finance / kemungkinan IP block Vercel.\n\n` +
+        `_Dicek: ${new Date(now).toISOString().substring(0, 16)} UTC_`
+      );
+      await redisCmd('SET', 'yahoo_last_alert_ts', String(now));
+    }
+  } catch (e) { console.warn('trackYahooHealth failed:', e.message); }
 }
 
 async function probeFred() {
@@ -1369,26 +1395,43 @@ async function ohlcvSyncHandler(req, res) {
     console.warn('ohlcv_sync: latest_thesis read failed:', e.message);
   }
 
-  // Fetch all pairs in parallel — individual failures don't block others
+  // Fetch all pairs in parallel — individual failures don't block others.
+  // M1 (2026-07-18): Yahoo gagal/0 candle -> fallback Twelve Data (no-op kalau
+  // TWELVEDATA_API_KEY belum diset — fetchFallbackCandles throw, error asli tetap
+  // dilempar lewat catch di bawah, perilaku identik sebelum M1 ada).
   const results = await Promise.allSettled(
     pairsToSync.map(async ({ symbol, label }) => {
-      // 1H with range=10d (needed for 4H resampling over full 10 days)
-      const candles1h = await fetchYahooOhlcv1h(symbol);
-      if (candles1h.length === 0) throw new Error(`${symbol}: empty candles`);
+      let candles1h, source1h = 'yahoo';
+      try {
+        candles1h = await fetchYahooOhlcv1h(symbol);
+        if (candles1h.length === 0) throw new Error(`${symbol}: empty candles`);
+      } catch (yahooErr) {
+        candles1h = await fetchFallbackCandles(symbol, '1h');
+        source1h = 'twelvedata';
+      }
 
       const candles4h = resampleTo4h(candles1h);
-      const candles1d = await fetchYahooOhlcvDaily(symbol);
 
-      // Store 3 TFs in parallel: 1H last 120 (5D), 4H last 60 (10D), 1D last 135 (6mo)
+      let candles1d, source1d = 'yahoo';
+      try {
+        candles1d = await fetchYahooOhlcvDaily(symbol);
+        if (candles1d.length === 0) throw new Error(`${symbol}: empty daily candles`);
+      } catch (yahooErr) {
+        candles1d = await fetchFallbackCandles(symbol, '1d');
+        source1d = 'twelvedata';
+      }
+
+      // Store 3 TFs + source tag (diagnosa M1) in parallel
       await Promise.all([
         redisCmd('SET', `ohlcv:${symbol}:1h`, JSON.stringify(candles1h.slice(-120)), 'EX', '90000'), // 25h TTL
         redisCmd('SET', `ohlcv:${symbol}:4h`, JSON.stringify(candles4h.slice(-60)),  'EX', '90000'), // 25h TTL
         redisCmd('SET', `ohlcv:${symbol}:1d`, JSON.stringify(candles1d.slice(-135)), 'EX', '90000'), // 25h TTL
+        redisCmd('SET', `ohlcv:${symbol}:source`, JSON.stringify({ '1h': source1h, '1d': source1d }), 'EX', '90000'),
       ]);
 
       const n1h = Math.min(120, candles1h.length), n4h = Math.min(60, candles4h.length), n1d = Math.min(135, candles1d.length);
-      console.log(`ohlcv_sync: ${label} — 1H:${n1h} 4H:${n4h} 1D:${n1d}`);
-      return { symbol, label, count1h: n1h, count4h: n4h, count1d: n1d };
+      console.log(`ohlcv_sync: ${label} — 1H:${n1h}(${source1h}) 4H:${n4h} 1D:${n1d}(${source1d})`);
+      return { symbol, label, count1h: n1h, count4h: n4h, count1d: n1d, source1h, source1d };
     })
   );
 
@@ -1397,6 +1440,10 @@ async function ohlcvSyncHandler(req, res) {
   const failed = results
     .filter(r => r.status === 'rejected')
     .map((r, i) => ({ symbol: pairsToSync[i]?.symbol, error: r.reason?.message }));
+
+  // M1: run ini dianggap "Yahoo down sistemik" kalau TIDAK ADA satu pair pun yang
+  // berhasil via Yahoo (semua fallback/gagal) — hindari alert dari hiccup 1 simbol.
+  await trackYahooHealth(!synced.some(s => s.source1h === 'yahoo'));
 
   console.log(`ohlcv_sync complete: ${synced.length}/${pairsToSync.length} synced (1H+4H+1D per pair)`);
 
@@ -1651,15 +1698,30 @@ async function refreshOhlcvFromYahoo(symbol) {
     fetchYahooOhlcvDaily(symbol),
   ]);
 
+  // M1: kalau Yahoo gagal/0 candle di jalur on-demand ini, coba Twelve Data sebelum
+  // menyerah — no-op (tetap reject) kalau TWELVEDATA_API_KEY belum diset.
+  let candles1h = (r1h.status === 'fulfilled' && r1h.value?.length) ? r1h.value : null;
+  let source1h = candles1h ? 'yahoo' : null;
+  if (!candles1h) {
+    try { candles1h = await fetchFallbackCandles(symbol, '1h'); source1h = 'twelvedata'; } catch (e) {}
+  }
+  let candles1d = (r1d.status === 'fulfilled' && r1d.value?.length) ? r1d.value : null;
+  let source1d = candles1d ? 'yahoo' : null;
+  if (!candles1d) {
+    try { candles1d = await fetchFallbackCandles(symbol, '1d'); source1d = 'twelvedata'; } catch (e) {}
+  }
+
   const writes = [];
-  if (r1h.status === 'fulfilled' && r1h.value?.length) {
-    const candles1h = r1h.value;
+  if (candles1h) {
     const candles4h = resampleTo4h(candles1h);
     writes.push(redisCmd('SET', `ohlcv:${symbol}:1h`, JSON.stringify(candles1h.slice(-120)), 'EX', '90000'));
     writes.push(redisCmd('SET', `ohlcv:${symbol}:4h`, JSON.stringify(candles4h.slice(-60)),  'EX', '90000'));
   }
-  if (r1d.status === 'fulfilled' && r1d.value?.length) {
-    writes.push(redisCmd('SET', `ohlcv:${symbol}:1d`, JSON.stringify(r1d.value.slice(-135)), 'EX', '90000'));
+  if (candles1d) {
+    writes.push(redisCmd('SET', `ohlcv:${symbol}:1d`, JSON.stringify(candles1d.slice(-135)), 'EX', '90000'));
+  }
+  if (candles1h || candles1d) {
+    writes.push(redisCmd('SET', `ohlcv:${symbol}:source`, JSON.stringify({ '1h': source1h || 'yahoo', '1d': source1d || 'yahoo' }), 'EX', '90000'));
   }
   if (writes.length === 0) {
     // Arm a short throttle so a Yahoo outage doesn't make every read pay the full fetch timeout —
@@ -3096,7 +3158,10 @@ async function ohlcvDashboardHandler(req, res) {
     const pairs = await Promise.all(
       OHLCV_FIXED_PAIRS.map(async ({ symbol, label }) => {
         try {
-          const raw = await redisCmd('GET', `ohlcv:${symbol}:1h`);
+          const [raw, rawSource] = await Promise.all([
+            redisCmd('GET', `ohlcv:${symbol}:1h`),
+            redisCmd('GET', `ohlcv:${symbol}:source`),
+          ]);
           if (!raw) return { symbol, label, available: false };
           const c = JSON.parse(raw);
           if (!Array.isArray(c) || c.length < 6) return { symbol, label, available: false };
@@ -3112,7 +3177,10 @@ async function ohlcvDashboardHandler(req, res) {
           const avgN  = c24.reduce((s, x) => s + x.c, 0) / c24.length;
           const t     = (avgN - avgO) / avgO * 100;
           const trend = t > 0.08 ? 'Uptrend' : t < -0.08 ? 'Downtrend' : 'Sideways';
-          return { symbol, label, available: true, trend, current: curr, change_pct: chg, dec };
+          // M1: source diagnostik — 'yahoo' (default) atau 'twelvedata' (fallback aktif).
+          let source1h = 'yahoo';
+          try { source1h = (rawSource && JSON.parse(rawSource)['1h']) || 'yahoo'; } catch(e) {}
+          return { symbol, label, available: true, trend, current: curr, change_pct: chg, dec, source: source1h };
         } catch(e) {
           return { symbol, label, available: false };
         }

@@ -59,24 +59,27 @@ Call 1 (prosa):
   [NON-AKTIF, hanya via ?test_hermes=1]         Hermes 3 405B (OpenRouter)
   [NON-AKTIF, hanya via ?test_glm=1]            Z.ai GLM 4.7 (Cerebras) — DITOLAK, context 8192 token < prompt ~13K
   1. SambaNova akun-2 (DeepSeek-V3.2)     — PRIMARY produksi (kembali sejak session 165)
-  2. Cerebras (gpt-oss-120b)              — fallback 1 (sempat jadi primary session 164, digeser lagi)
-  3. Groq (llama-3.3-70b-versatile)       — fallback 2 (AI)
-  4. Template deterministik non-AI (berdasarkan kategori berita) — fallback absolut, tidak pernah kosong
+  2. Cerebras (gpt-oss-120b)              — fallback 1
+  3. Google AI Studio (Gemini-Flash)      — fallback 2 (dipromosikan Plan N 2026-07-18)
+  4. Groq (llama-3.3-70b-versatile)       — fallback 3 (AI)
+  5. Template deterministik non-AI (berdasarkan kategori berita) — fallback absolut, tidak pernah kosong
 
 Call 2 (bias bank sentral, JSON):
   [NON-AKTIF, hanya via ?test_nemotron=1] Ollama Nemotron 3 Ultra → OpenRouter Nemotron 3 Ultra
   1. SambaNova akun-1 (DeepSeek-V3.2)     — PRIMARY produksi (kembali sejak session 165)
-  2. Groq (llama-3.3-70b-versatile)       — fallback terakhir
+  2. Google AI Studio (Gemini-Flash)      — fallback 1 (dipromosikan Plan N 2026-07-18 — response_format native)
+  3. Groq (llama-3.3-70b-versatile)       — fallback terakhir
   (Z.ai GLM 4.7 via Cerebras sempat jadi primary session 164, digeser lagi session 165 — tidak ada lagi di rantai produksi Call 2)
-  (kalau keduanya gagal: bias bank sentral TIDAK diupdate siklus itu — data lama di Redis tetap dipakai, bukan kosong/error)
+  (kalau ketiganya gagal: bias bank sentral TIDAK diupdate siklus itu — data lama di Redis tetap dipakai, bukan kosong/error)
 
 Call 3 (trade thesis, JSON):
   [NON-AKTIF, hanya via ?test_nemotron=1] Ollama Nemotron 3 Ultra → OpenRouter Nemotron 3 Ultra
   (Nemotron 3 Super SENGAJA tidak disertakan di Call 3 — dibatasi ke Call 1 saja, lihat catatan di bawah)
   1. SambaNova akun-1 (DeepSeek-V3.2)     — PRIMARY produksi (kembali sejak session 165)
-  2. Groq (llama-3.3-70b-versatile)       — fallback terakhir
+  2. Google AI Studio (Gemini-Flash)      — fallback 1 (dipromosikan Plan N 2026-07-18 — response_format native)
+  3. Groq (llama-3.3-70b-versatile)       — fallback terakhir
   (Z.ai GLM 4.7 via Cerebras sempat jadi primary session 164, digeser lagi session 165 — tidak ada lagi di rantai produksi Call 3)
-  (kalau keduanya gagal: tidak ada trade thesis baru ditampilkan siklus itu, bukan error)
+  (kalau ketiganya gagal: tidak ada trade thesis baru ditampilkan siklus itu, bukan error)
 
 Call 4 (cek kontradiksi thesis terbuka):
   1. SambaNova akun-1 (DeepSeek-V3.2)     — PRIMARY produksi
@@ -125,16 +128,14 @@ Menganalisis pola menang/kalah dari trade yang sudah ditutup (butuh minimal 3 tr
 
 Ini lapisan pembatas paling penting untuk dipahami. **Jatah ini dibagi rata ke semua fitur yang pakai provider yang sama** — bukan per-fitur. Kalau salah satu fitur boros, fitur lain yang berbagi provider ikut kena dampak (fallback ke tingkat berikutnya, bukan error — lihat §5).
 
-| Provider (pool) | Jatah harian kita | Limit asli provider (referensi) | Dipakai oleh |
-|---|---|---|---|
-| **SambaNova akun-1** (`sambanova_main`) | 200 request/hari | ~10-20 request/menit, truly free persisten | Ringkasan Berita Call 2, Call 3, Call 4 (**primary**, ketiganya), Analisa AI per Pair (**primary**) — pool paling ramai, dipakai bareng 2 fitur sekaligus |
-| **SambaNova akun-2** (`sambanova_c1`) | 200 request/hari | Sama seperti akun-1, tapi akun terpisah (kuota terpisah) | Ringkasan Berita Call 1 (**primary**, kembali sejak session 165 — API key diperbarui), Analisa Fundamental (fallback), AI Coach Jurnal (fallback), Analisa AI per Pair (fallback) |
-| **Cerebras** | 200 request/hari | ~30 request/menit, 1 juta token/hari (jauh lebih longgar — kita sengaja konservatif dari sisi jumlah request) | Analisa Fundamental (**primary**), AI Coach Jurnal (**primary**), Ringkasan Berita Call 1 fallback-1 (`gpt-oss-120b`, digeser dari primary session 165) — kepakai hanya kalau SambaNova akun-2 gagal. Z.ai GLM 4.7 cuma lewat `?test_glm=1` (diagnostik Call 1, DITOLAK jadi primary — context 8192 token < prompt Call 1 ~13K), sudah dilepas dari rantai produksi Call 2/3 |
-| **Groq** | 500 request/hari | 30 request/menit, ribuan/hari tergantung model | Fallback terakhir untuk Ringkasan Berita, Analisa Fundamental, AI Coach Jurnal (jaring pengaman, selalu dicoba tanpa circuit breaker) — **kecuali** Analisa AI per Pair, yang tidak punya Groq di rantainya (lihat §3.2 & §6) |
-| **OpenRouter** (Nemotron/Hermes, saat ini idle) | 45 request/hari | 50/hari (akun belum top-up) atau 1.000/hari (sudah top-up $10+) | Nemotron Ultra/Super cuma lewat sini kalau dites manual (`?test_nemotron=1`/`?test_nemotron_super=1`); Hermes 3 405B cuma lewat `?test_hermes=1` — SATU pool sama dengan Nemotron, bukan kuota terpisah. Live test 2026-07-13: berkali-kali HTTP 429 dalam <200ms (rate limited/kuota habis, bukan auth error) — belum berhasil dapat sampel Hermes nyata hari ini |
-| **Ollama Cloud** (saat ini idle lagi) | 150 request/hari | Tidak dipublikasikan resmi (konservatif) | Sempat jadi primary Ringkasan Berita Call 1 (session 162 lanjutan 3-6), didemote lagi (lanjutan 7) karena latency 100% tidak terprediksi (5 sampel nyata: 7s/17.5s/23.9s/29.5s/41.2s) meski kualitas output bagus. Tetap dipakai diagnostik `?test_nemotron=1`/`?test_nemotron_super=1` (market-digest.js) dan `?test_ollama=1` di `ohlcv_analyze` (session 159, bukan kandidat kualitas) — riset kandidat Ollama Cloud lain masih berlanjut |
+| SambaNova (akun-1 & akun-2) | 200 request/hari masing-masing | ~10-20 RPM, free persisten | SambaNova 1: Call 2/3/4 primary, Analisa AI primary. SambaNova 2: Call 1 primary |
+| **Google AI Studio (Gemini)** | 200 request/hari | 10 RPM, 1.500 RPD | Fallback 2 Call 1, Fallback 1 Call 2/3 (JSON native) — dipromosikan Plan N (2026-07-18) |
+| **Cerebras** | 200 request/hari | ~30 RPM, 1M token/hari | Analisa Fundamental primary, AI Coach primary, Fallback 1 Call 1 |
+| **Groq** | 500 request/hari | 30 RPM | Fallback terakhir untuk Call 1/2/3, Analisa Fundamental, AI Coach |
+| **OpenRouter** (Nemotron/Hermes) | 45 request/hari | 50/hari (gratis) | Idle di produksi, hanya via ?test_nemotron dsb |
+| **Ollama Cloud** (Nemotron) | 150 request/hari | - | Idle di produksi, hanya via ?test_nemotron dsb |
 
-**Pool yang paling perlu diawasi: SambaNova akun-1.** Ini satu-satunya pool yang dipakai sebagai *primary* oleh 2 fitur berbeda sekaligus (Ringkasan Berita Call 2/3/4 DAN Analisa AI per Pair) — kalau traffic naik di kedua fitur bersamaan, ini yang pertama kali mendekati jatah 200/hari, bukan OpenRouter seperti dugaan awal.
+**Pool yang paling perlu diawasi: SambaNova akun-1 dan Google AI Studio (Gemini).** SambaNova 1 masih primary di banyak tempat, sedangkan Gemini adalah fallback pertama JSON yang jika SambaNova error akan memikul beban JSON parse. Kuota Gemini gratis (1500 RPD) sangat cukup untuk headroom.
 
 **Kenapa angkanya sengaja lebih rendah dari limit resmi provider?** Supaya selalu ada headroom untuk retry otomatis dan supaya 1 hari yang tiba-tiba ramai tidak langsung mentok di detik-detik terakhir kuota resmi. Override manual bisa lewat env var `AI_DAILY_LIMIT_{PROVIDER}` kalau suatu saat perlu dinaikkan (misal setelah top-up OpenRouter $10+).
 
@@ -196,10 +197,11 @@ Kalau gagal total terjadi, user akan melihat pesan "AI tidak tersedia — coba b
 |---|---|---|---|---|
 | SambaNova (akun-1) | `api.sambanova.ai/v1/chat/completions` | `DeepSeek-V3.2` | **Primary** — Ringkasan Berita Call 2/3/4, Analisa AI per Pair | `SAMBANOVA_API_KEY` |
 | SambaNova (akun-2) | `api.sambanova.ai/v1/chat/completions` | `DeepSeek-V3.2` | **Primary** — Ringkasan Berita Call 1 (kembali sejak session 165); fallback fitur lain | `SAMBANOVA_API_KEY_CALL1` |
-| Cerebras | `api.cerebras.ai/v1/chat/completions` | `gpt-oss-120b` (aktif); `zai-glm-4.7` (diagnostik `?test_glm=1` saja, DITOLAK jadi primary — context 8192 token < prompt Call 1 ~13K) | **Primary** — Analisa Fundamental, AI Coach Jurnal; fallback-1 Ringkasan Berita Call 1 | `CEREBRAS_API_KEY` |
-| Groq | `api.groq.com/openai/v1/chat/completions` | `llama-3.3-70b-versatile` | Fallback terakhir — Ringkasan Berita, Analisa Fundamental, AI Coach Jurnal (**bukan** Analisa AI per Pair — lihat §3.2) | `GROQ_API_KEY` |
-| OpenRouter | `openrouter.ai/api/v1/chat/completions` | `nvidia/nemotron-3-ultra-550b-a55b:free`, `nvidia/nemotron-3-super-120b-a12b:free`, `nousresearch/hermes-3-llama-3.1-405b:free` (semua diagnostik saja) | **Idle** di jalur produksi — Nemotron/Hermes cuma lewat query param diagnostik (lihat §3.1) | `OPENROUTER_API_KEY` |
-| Ollama Cloud | `ollama.com/api/chat` (native, bukan `/v1/chat/completions`) | `nemotron-3-ultra` (diagnostik `?test_nemotron=1`); `nemotron-3-nano:30b-cloud` (diagnostik konektivitas `?test_ollama=1`, ohlcv_analyze) | **Idle** | `OLLAMA_API_KEY` |
+| Google AI Studio | `generativelanguage.googleapis.com/v1beta/openai/chat/completions` | `gemini-flash-latest` | Fallback 2 Call 1, Fallback 1 Call 2/3 (JSON native) — dipromosikan Plan N (2026-07-18) | `GEMINI_API_KEY` |
+| Cerebras | `api.cerebras.ai/v1/chat/completions` | `gpt-oss-120b` (aktif) | **Primary** — Analisa Fundamental, AI Coach Jurnal; fallback-1 Ringkasan Berita Call 1 | `CEREBRAS_API_KEY` |
+| Groq | `api.groq.com/openai/v1/chat/completions` | `llama-3.3-70b-versatile` | Fallback terakhir — Ringkasan Berita, Analisa Fundamental, AI Coach Jurnal | `GROQ_API_KEY` |
+| OpenRouter | `openrouter.ai/api/v1/chat/completions` | `nvidia/nemotron-3-ultra-550b-a55b:free` dkk | **Idle** di jalur produksi — Nemotron/Hermes cuma lewat query param diagnostik (lihat §3.1) | `OPENROUTER_API_KEY` |
+| Ollama Cloud | `ollama.com/api/chat` (native) | `nemotron-3-ultra` | **Idle** | `OLLAMA_API_KEY` |
 
 ---
 

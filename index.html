@@ -4300,7 +4300,7 @@ window.addEventListener('DOMContentLoaded', updateThemeIcon);
 
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.07.18.1';
+const APP_VERSION = '2026.07.18.2';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
@@ -4552,6 +4552,55 @@ if ('serviceWorker' in navigator) {
     if (e.data && e.data.type === 'NEW_ITEMS') fetchFeed();
   });
 }
+
+// ── VERSION PROBE (anti versi basi) ──────────────────────
+// controllerchange di atas cuma reaktif ke perubahan byte sw.js — perubahan
+// index.html-only (HTML/CSS/JS inline, kasus paling umum) tidak memicunya sama
+// sekali (root cause session 179). Probe ini independen: HEAD /index.html,
+// bandingkan ETag/Last-Modified dengan yang tersimpan, tampilkan banner pasif
+// kalau beda (TIDAK auto-reload — bisa menghilangkan draft form yang sedang diisi).
+(function () {
+  const VER_KEY = 'dm_index_etag';
+  const CHECK_INTERVAL_MS = 30 * 60 * 1000;
+  let lastCheck = 0;
+
+  async function probeVersion() {
+    const now = Date.now();
+    if (now - lastCheck < CHECK_INTERVAL_MS) return;
+    lastCheck = now;
+    let tag;
+    try {
+      const res = await fetch('/index.html', { method: 'HEAD', cache: 'no-store' });
+      tag = res.headers.get('ETag') || res.headers.get('Last-Modified');
+    } catch (e) { return; }
+    if (!tag) return;
+    const stored = localStorage.getItem(VER_KEY);
+    if (!stored) { localStorage.setItem(VER_KEY, tag); return; }
+    if (stored !== tag) {
+      const el = document.getElementById('updateBanner');
+      if (el) el.style.display = 'flex';
+    }
+  }
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') probeVersion();
+  });
+  setTimeout(probeVersion, 5000);
+
+  const updateBtn = document.getElementById('updateBtn');
+  if (updateBtn) {
+    updateBtn.addEventListener('click', async () => {
+      try {
+        if ('serviceWorker' in navigator) {
+          const reg = await navigator.serviceWorker.getRegistration();
+          if (reg) await reg.update();
+        }
+      } catch (e) {}
+      localStorage.removeItem(VER_KEY);
+      window.location.reload();
+    });
+  }
+})();
 
 // ── INSTALL PROMPT ───────────────────────────────────────
 window.addEventListener('beforeinstallprompt', e => {

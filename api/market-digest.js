@@ -1561,15 +1561,44 @@ module.exports = async function handler(req, res) {
       // 165, 2026-07-13): user memperbarui API key SambaNova. Z.ai GLM 4.7 (Cerebras)
       // sempat jadi primary di sini (session 164) tapi digeser lagi — reuse
       // CB_CEREBRAS_GLM tetap ada untuk jalur diagnostik ?test_glm=1 di Call 1.
-      if (!biasRaw && !testNemotronOnly && SAMBANOVA_KEY && await cb.canCall(CB_SAMBA_MAIN)) {
+      if (!biasRaw && testGeminiOnly && GEMINI_KEY && await cb.canCall(CB_GEMINI)) {
+        try {
+          console.log('Call 2: trying Gemini (flash-latest) — diagnostik test_gemini=1');
+          biasRaw = await aiCall(GEMINI_URL, GEMINI_KEY, GEMINI_MODEL, call2Messages, 3000, 0.1, 15000, {}, { response_format: { type: 'json_object' }, reasoning_effort: 'low' }, 'gemini');
+          console.log('Call 2: Gemini OK');
+          await cb.onSuccess(CB_GEMINI);
+        } catch(e) { console.warn('Call 2 Gemini failed:', e.status || e.message); await cb.onFailure(CB_GEMINI, AI_CB_THRESHOLD); }
+      }
+      if (!biasRaw && testMistralOnly && MISTRAL_KEY && await cb.canCall(CB_MISTRAL)) {
+        try {
+          console.log('Call 2: trying Mistral — diagnostik test_mistral=1');
+          biasRaw = await aiCall(MISTRAL_URL, MISTRAL_KEY, MISTRAL_MODEL, call2Messages, 700, 0.1, 15000, {}, { response_format: { type: 'json_object' } }, 'mistral');
+          console.log('Call 2: Mistral OK');
+          await cb.onSuccess(CB_MISTRAL);
+        } catch(e) { console.warn('Call 2 Mistral failed:', e.status || e.message); await cb.onFailure(CB_MISTRAL, AI_CB_THRESHOLD); }
+      }
+      if (!biasRaw && !testNemotronOnly && !testGeminiOnly && !testMistralOnly && SAMBANOVA_KEY && await cb.canCall(CB_SAMBA_MAIN)) {
         try {
           console.log('Call 2: trying SambaNova');
           biasRaw = await aiCall(SAMBANOVA_URL, SAMBANOVA_KEY, SAMBANOVA_MODEL, call2Messages, 700, 0.1, 8000, {}, {}, 'sambanova_main');
           console.log('Call 2: SambaNova OK');
           await cb.onSuccess(CB_SAMBA_MAIN);
         } catch(e) { console.warn('Call 2 SambaNova failed:', e.status || e.message); await cb.onFailure(CB_SAMBA_MAIN, AI_CB_THRESHOLD); }
-      } else if (!biasRaw && SAMBANOVA_KEY && !testNemotronOnly) { console.log('Call 2: SambaNova circuit OPEN — skipping to Groq'); }
-      if (!biasRaw && !testNemotronOnly && GROQ_KEY) {
+      } else if (!biasRaw && SAMBANOVA_KEY && !testNemotronOnly && !testGeminiOnly && !testMistralOnly) { console.log('Call 2: SambaNova circuit OPEN — skipping to Gemini'); }
+
+      // Fallback 1: Gemini (Google AI Studio) — dipromosikan dari riset Plan N (2026-07-18).
+      // key dari GEMINI_API_KEY. max_tokens diset 3000 untuk reasoning headroom Gemini 3.x.
+      if (!biasRaw && !testNemotronOnly && !testGeminiOnly && !testMistralOnly && GEMINI_KEY && await cb.canCall(CB_GEMINI)) {
+        try {
+          console.log('Call 2: trying Gemini (flash-latest)');
+          biasRaw = await aiCall(GEMINI_URL, GEMINI_KEY, GEMINI_MODEL, call2Messages, 3000, 0.1, 15000, {}, { response_format: { type: 'json_object' }, reasoning_effort: 'low' }, 'gemini');
+          console.log('Call 2: Gemini OK');
+          await cb.onSuccess(CB_GEMINI);
+        } catch(e) { console.warn('Call 2 Gemini failed:', e.status || e.message); await cb.onFailure(CB_GEMINI, AI_CB_THRESHOLD); }
+      } else if (!biasRaw && GEMINI_KEY && !testNemotronOnly && !testGeminiOnly && !testMistralOnly) { console.log('Call 2: Gemini circuit OPEN — skipping to Groq'); }
+
+      // Fallback 2: Groq
+      if (!biasRaw && !testNemotronOnly && !testGeminiOnly && !testMistralOnly && GROQ_KEY) {
         try {
           console.log('Call 2: falling back to Groq');
           biasRaw = await aiCall(GROQ_URL, GROQ_KEY, GROQ_MODEL, call2Messages, 700, 0.1, 12000);
@@ -2230,12 +2259,46 @@ ${xauHistoryBlock}`;
       }
     } else if (!article && CEREBRAS_KEY) {
       providerLog.push('cerebras_gptoss:circuit_open');
-      console.log('Call 1: Cerebras circuit OPEN — skipping to Groq');
+      console.log('Call 1: Cerebras circuit OPEN — skipping to Gemini');
     } else if (!article) {
       providerLog.push('cerebras_gptoss:no_key');
     }
 
-    // Fallback 2: Groq qwen3-32b (if OpenRouter failed/empty)
+    // Fallback 2: Gemini (Google AI Studio) — dipromosikan dari riset Plan N (2026-07-18).
+    // key dari GEMINI_API_KEY. max_tokens diset 3000 untuk reasoning headroom Gemini 3.x.
+    if (isIsolatedTest) {
+      if (!article) providerLog.push('gemini:skipped_test');
+    } else if (!article && !call1BudgetLeft()) {
+      providerLog.push('gemini:skipped_budget');
+    } else if (!article && GEMINI_KEY && await cb.canCall(CB_GEMINI)) {
+      const t3ge = Date.now();
+      try {
+        console.log('Call 1: fallback 2 to Gemini (flash-latest)');
+        const raw = await aiCall(GEMINI_URL, GEMINI_KEY, GEMINI_MODEL, call1Messages, 3000, 0.25, 15000, {}, { reasoning_effort: 'low' }, 'gemini');
+        const elapsed = Date.now() - t3ge;
+        if (raw.trim()) {
+          article = raw.trim(); method = 'gemini-flash-latest';
+          providerLog.push(`gemini:ok(${elapsed}ms,${article.length}c)`);
+        } else {
+          providerLog.push(`gemini:empty(${elapsed}ms)`);
+        }
+        console.log('Call 1: Gemini OK, length', article?.length);
+        await cb.onSuccess(CB_GEMINI);
+      } catch(e) {
+        const elapsed = Date.now() - t3ge;
+        const errMsg = e.status ? `HTTP${e.status}` : (e.message || 'err').slice(0, 40);
+        providerLog.push(`gemini:${errMsg}(${elapsed}ms)`);
+        console.warn('Call 1 Gemini fallback failed:', e.status || e.message);
+        await cb.onFailure(CB_GEMINI, AI_CB_THRESHOLD);
+      }
+    } else if (!article && GEMINI_KEY) {
+      providerLog.push('gemini:circuit_open');
+      console.log('Call 1: Gemini circuit OPEN — skipping to Groq');
+    } else if (!article) {
+      providerLog.push('gemini:no_key');
+    }
+
+    // Fallback 3: Groq qwen3-32b (if OpenRouter failed/empty)
     if (isIsolatedTest) {
       if (!article) providerLog.push('groq_qwen3:skipped_test');
     } else if (!article && !call1BudgetLeft()) {
@@ -2472,6 +2535,10 @@ ${xauHistoryBlock}`;
     if (testNemotronOnly) {
       if (OLLAMA_KEY)     call3Providers.push({ ollama: true, key: OLLAMA_KEY, model: OLLAMA_NEMOTRON_MODEL, label: 'Ollama Nemotron', timeout: 15000, provider: 'ollama', circuit: CB_OLLAMA_NEMOTRON, noThink: true });
       if (OPENROUTER_KEY) call3Providers.push({ url: OPENROUTER_URL, key: OPENROUTER_KEY, model: NEMOTRON_MODEL, label: 'OpenRouter Nemotron', timeout: 10000, provider: 'openrouter', circuit: CB_OPENROUTER_NEMOTRON, headers: OPENROUTER_HEADERS, noThink: true });
+    } else if (testGeminiOnly) {
+      if (GEMINI_KEY)     call3Providers.push({ url: GEMINI_URL, key: GEMINI_KEY, model: GEMINI_MODEL, label: 'Gemini (flash-latest)', timeout: 15000, provider: 'gemini', circuit: CB_GEMINI, maxTokens: 3000, extraBody: { response_format: { type: 'json_object' }, reasoning_effort: 'low' } });
+    } else if (testMistralOnly) {
+      if (MISTRAL_KEY)    call3Providers.push({ url: MISTRAL_URL, key: MISTRAL_KEY, model: MISTRAL_MODEL, label: 'Mistral', timeout: 15000, provider: 'mistral', circuit: CB_MISTRAL, maxTokens: 3000, extraBody: { response_format: { type: 'json_object' }, reasoning_effort: 'low' } });
     } else {
       if (SAMBANOVA_KEY) call3Providers.push({ url: SAMBANOVA_URL, key: SAMBANOVA_KEY, model: SAMBANOVA_MODEL, label: 'SambaNova', timeout: 8000, provider: 'sambanova_main', circuit: CB_SAMBA_MAIN });
       if (GROQ_KEY)      call3Providers.push({ url: GROQ_URL,      key: GROQ_KEY,      model: GROQ_MODEL,      label: 'Groq fallback', timeout: 12000, provider: 'groq', circuit: null });
@@ -2488,8 +2555,8 @@ ${xauHistoryBlock}`;
         console.log('Call 3: trying', provider.label);
         const messages3 = provider.noThink ? withNoThink(call3Messages) : call3Messages;
         const raw = provider.ollama
-          ? await callOllama(provider.key, provider.model, messages3, 800, 0.1, provider.timeout, provider.provider)
-          : await aiCall(provider.url, provider.key, provider.model, messages3, 800, 0.1, provider.timeout, provider.headers || {}, {}, provider.provider);
+          ? await callOllama(provider.key, provider.model, messages3, provider.maxTokens || 800, 0.1, provider.timeout, provider.provider)
+          : await aiCall(provider.url, provider.key, provider.model, messages3, provider.maxTokens || 800, 0.1, provider.timeout, provider.headers || {}, provider.extraBody || {}, provider.provider);
         const clean = raw.replace(/```json|```/g, '').trim();
         const parsed = JSON.parse(clean);
         if (validateThesis(parsed)) {

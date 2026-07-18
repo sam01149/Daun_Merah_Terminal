@@ -1,10 +1,33 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-07-18 (Session 183 — Plan N: riset provider AI baru Gemini/Mistral/NVIDIA NIM, tahap 0-3 sebagian, BELUM ada keputusan promosi final. Detail history dapat dilihat pada changelog sesi di bawah.)
+> **Last updated:** 2026-07-18 (Session 184 — Eksekusi Plan M & N SELESAI SEMUA. Gemini sukses dipromosikan sebagai fallback Call 1/2/3, Twelve Data fallback & keepalive yml & version probe M3 selesai terpasang dan test 100% hijau).
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+---
+
+## Changelog Session 184 (2026-07-18) — Eksekusi Plan M & N (SELESAI SEMUA)
+
+**Konteks:** Melanjutkan dan menyelesaikan Plan M (Mitigasi Bom Waktu) dan Plan N (Riset Provider AI Baru) yang belum tuntas.
+
+**Plan N (Riset AI Baru — SELESAI & PROMOTE Gemini):**
+- **Eksperimen & Hasil:** Pengujian integrasi penuh Gemini (`gemini-flash-latest` resolving to Gemini 3.5 Flash) dan Mistral Medium dilakukan.
+- **Gemini (PROMOTE):** Lulus semua gate teknis. Call 1 sukses 6/6 sampel dengan prosa makro yang natural dan fasih (leak 'di tengah' 50% diakui tapi dapat ditoleransi). Call 2 & Call 3 JSON sukses diintegrasikan.
+  * *Gotcha & Fix:* Model Gemini 3.x yang selalu "thinking" terpotong (truncated) pada `max_tokens` default 700/800. Ditingkatkan ke `max_tokens: 3000` dan ditambahkan `reasoning_effort: 'low'` untuk Call 2 & Call 3.
+- **Mistral (REJECT):** Gagal gate format di Call 1 (FX dilewatkan total) dan error HTTP 400 di Call 3 JSON.
+- **NVIDIA NIM (REJECT):** ToS melarang produksi.
+- **Wiring Chain:** Gemini dimasukkan ke chain produksi: Fallback 2 di Call 1 (`SambaNova -> Cerebras -> Gemini -> Groq`), Fallback 1 di Call 2 & Call 3 (`SambaNova -> Gemini -> Groq` karena mendukung `response_format` native).
+
+**Plan M (Mitigasi Bom Waktu — SELESAI):**
+- **M1 (Fallback OHLCV & Telegram Alert):** Integrasi Twelve Data (`TWELVEDATA_API_KEY`) sebagai fallback OHLCV cadangan saat Yahoo down (1H/1D), normalisasi candle identik, serta counter alert Telegram `yahoo_fail_streak` (streak >= 3, cooldown 6 jam) diselesaikan dan diverifikasi fungsional.
+- **M2 (Keep-alive GitHub Actions):** Heartbeat commit bulanan via `.github/workflows/keepalive.yml` dan `.github/heartbeat.txt` selesai disiapkan.
+- **M3 (Version Probe & Static Integrity):** Client-side version probe anti versi basi PWA (`visibilitychange` visible/HEAD check ETag/update banner pasif) di `index.html` dan `test/static_integrity.test.js` (sanity check DOCTYPE baris 1 dan versi `newscat.js?v=`) tuntas dan hijau.
+
+**Verifikasi:**
+- `npm test`: **334/334 hijau** (termasuk static integrity, Twelve Data fallback, dan alert counter).
+- Uji integrasi Call 1/2/3 Gemini lewat runner local `test_digest_ai.js` sukses penuh.
 
 ---
 
