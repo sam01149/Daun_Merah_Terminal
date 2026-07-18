@@ -243,14 +243,23 @@ async function probeRedis() {
 
 // Plan Q-1: daemon vps/heartbeat.js (Render free tier) menulis epoch tiap 60s
 // dengan TTL 300s (EX 300) — key otomatis hilang kalau proses berhenti kirim
-// beat, jadi "key hilang" dan "beat basi >5 menit" sama-sama berarti DOWN di
-// sini. Gate Q-1: tidak boleh ada gap >5 menit selama 7 hari berturut-turut.
+// beat. Key hilang PADAHAL 'vps:heartbeat:configured' (marker permanen, tanpa
+// TTL, ditulis sekali oleh heartbeat.js saat beat pertama) sudah ada berarti
+// daemon sempat jalan lalu benar-benar mati — itu baru DOWN asli (alert
+// Telegram). Kalau marker itu SENDIRI belum ada, artinya Render belum pernah
+// di-deploy — status UNCONFIGURED (pola sama probeFred), BUKAN DOWN, supaya
+// tidak spam alert sebelum user sempat deploy. Gate Q-1: tidak boleh ada gap
+// >5 menit selama 7 hari berturut-turut, dihitung SETELAH daemon terkonfirmasi jalan.
 async function probeVpsHeartbeat() {
   const raw = await redisCmd('GET', 'vps:heartbeat');
-  if (!raw) throw new Error('vps:heartbeat belum pernah diset atau sudah kedaluwarsa (>5 menit)');
-  const ageMs = Date.now() - Number(raw) * 1000;
-  if (ageMs > 5 * 60 * 1000) throw new Error(`Heartbeat basi: ${Math.round(ageMs / 1000)}s sejak beat terakhir`);
-  return { age_seconds: Math.round(ageMs / 1000) };
+  if (raw) {
+    const ageMs = Date.now() - Number(raw) * 1000;
+    if (ageMs > 5 * 60 * 1000) throw new Error(`Heartbeat basi: ${Math.round(ageMs / 1000)}s sejak beat terakhir`);
+    return { age_seconds: Math.round(ageMs / 1000) };
+  }
+  const everConfigured = await redisCmd('GET', 'vps:heartbeat:configured');
+  if (!everConfigured) return { status: 'UNCONFIGURED', note: 'Render belum di-deploy — lihat vps/README-deploy.md' };
+  throw new Error('vps:heartbeat hilang >5 menit — daemon sempat aktif, sekarang tidak terdeteksi');
 }
 
 const PROBES = {
@@ -407,6 +416,7 @@ const KEY_REGISTRY = [
   { key: 'fundamental_analysis', owner: 'api/admin.js',          ttl_expected: 21600,  note: 'Groq AI analysis of fundamental data, cached 6h' },
   { key: 'cb_decisions',         owner: 'api/market-digest.js',  ttl_expected: null,   note: 'HSET CB rate decisions detected from headlines, overrides CB_FALLBACK metadata' },
   { key: 'vps:heartbeat',        owner: 'vps/heartbeat.js',      ttl_expected: 300,    note: 'Plan Q-1: epoch beat daemon Render, dibaca api/admin.js?action=health source=vps_heartbeat' },
+  { key: 'vps:heartbeat:configured', owner: 'vps/heartbeat.js',  ttl_expected: null,   note: 'Plan Q-1: marker permanen "daemon pernah jalan" — beda UNCONFIGURED (belum deploy) vs DOWN asli' },
 ];
 
 const DEPRECATED_KEYS = [

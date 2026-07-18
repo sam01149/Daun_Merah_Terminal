@@ -25,17 +25,27 @@ if (!REDIS_URL || !REDIS_TOKEN) {
 let lastBeatOk = null;
 let lastBeatError = null;
 
+async function redisCmd(...args) {
+  const r = await fetch(REDIS_URL, {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${REDIS_TOKEN}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(args),
+    signal: AbortSignal.timeout(10000),
+  });
+  return (await r.json()).result;
+}
+
 async function beat() {
   const epoch = Math.floor(Date.now() / 1000);
   try {
-    const r = await fetch(REDIS_URL, {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${REDIS_TOKEN}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify(['SET', 'vps:heartbeat', String(epoch), 'EX', String(BEAT_TTL_SECS)]),
-      signal: AbortSignal.timeout(10000),
-    });
-    const json = await r.json();
-    if (json.result !== 'OK') throw new Error(`Unexpected Redis reply: ${JSON.stringify(json)}`);
+    const result = await redisCmd('SET', 'vps:heartbeat', String(epoch), 'EX', String(BEAT_TTL_SECS));
+    if (result !== 'OK') throw new Error(`Unexpected Redis reply: ${JSON.stringify(result)}`);
+    // Marker PERMANEN (tanpa EX) — dipakai probeVpsHeartbeat (api/admin.js) untuk
+    // membedakan "daemon belum pernah di-deploy" (diam, jangan alert) dari
+    // "daemon sempat jalan, sekarang beneran mati >5 menit" (alert asli). Tanpa
+    // ini, probe akan mengira BELUM di-deploy = DOWN dan spam Telegram sejak
+    // detik pertama sebelum user sempat deploy ke Render.
+    if (!lastBeatOk) await redisCmd('SET', 'vps:heartbeat:configured', '1');
     lastBeatOk = epoch;
     lastBeatError = null;
     console.log(`heartbeat: OK @ ${epoch}`);
