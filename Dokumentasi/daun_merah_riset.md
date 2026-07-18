@@ -36,10 +36,33 @@
   diberi peran di scoring.
 - **Carry trade / currency crash risk** — masih tahap riset literatur, BELUM diverifikasi ke
   sumber primer; jangan dieksekusi sebelum itu (lihat juga catatan "Ditahan" Plan G).
-- **Integrasi MT5 Broker Demo & Free VPS (Hugging Face / CepatCloud)** (Ide baru, session 185):
-  * *Tujuan:* Menyelesaikan masalah ketidakstabilan Yahoo Finance ("bom waktu") dan memangkas delay lilin teknikal (H1/H4) ke 0-delay secara 100% gratis, legal, dan tanpa batas kuota API key.
-  * *Konsep:* Menjalankan terminal MT5 (akun demo gratis broker komersial) di VPS gratis (CepatCloud atau Hugging Face Spaces + pinger anti-sleep). Script jembatan Node.js/Python menarik data tick harga & candle OHLCV langsung dari server broker, lalu menulisnya instan ke Redis Daun Merah.
-  * *Status:* Siap untuk dievaluasi sebagai peta jalan pembaruan infrastruktur data masa depan.
+- **Roadmap Data Feed & Infra Always-On** (hasil diskusi + verifikasi live session 186,
+  2026-07-18 — menggantikan ide lama "MT5 + Free VPS" session 185 yang konsepnya sudah dikoreksi):
+  * *Urutan disepakati:* (1) promosi DeepSeek flash → (2) Fase A: candle on-demand di Vercel
+    (sumber baru, Yahoo jadi fallback) → (3) Fase B: daemon VPS event-driven (streaming harga →
+    Redis, alert berita high-impact <1 menit, alert harga-sentuh-level saat app tertutup; semua
+    via web-push existing). Prinsip: VPS = penambah, bukan tulang punggung — heartbeat di Redis,
+    UI tampilkan umur data, auto-fallback ke tarik-langsung kalau daemon diam.
+  * *MT5: DICORET.* Terminal Windows/Wine di Linux = rapuh; dan akun demo OANDA user ternyata
+    entitas "OANDA Global Markets" (MT5-only, login portal ditolak) → **API v20 OANDA TERTUTUP
+    untuk pendaftar Indonesia** (verified live 2026-07-18, developer.oanda.com: v20 hanya untuk
+    akun fxTrade).
+  * *Pengganti TERVERIFIKASI LIVE (2026-07-18, tanpa akun):* **Deriv API** (`ws.derivws.com`,
+    WebSocket) — `active_symbols` mengonfirmasi SEMUA 15 pair Daun Merah ada (termasuk
+    frxGBPAUD, frxGBPCAD, frxXAUUSD "Gold/USD"), dan `ticks_history style:candles granularity:3600`
+    mengembalikan OHLC H1 nyata tanpa autentikasi (app_id publik 1089; untuk produksi daftar
+    app_id sendiri — gratis). Cocok untuk Fase A (WS pendek dari Vercel) DAN Fase B (streaming).
+    Kandidat sumber kedua: Twelve Data (REST, free tier, forex+XAU — limit pastinya cek saat
+    signup, indikatif 800 credit/hari 8/menit).
+  * *VPS:* user sudah daftar + pesan VPS gratis CepatCloud.id (2026-07-18, menunggu aktivasi —
+    review forum: pendaftaran kadang tidak diproses, no technical support, IPv4 private saja
+    [cukup, daemon hanya butuh koneksi keluar]). Kalau aktif: uji heartbeat 1-2 minggu dulu
+    TANPA token apa pun, baru daemon naik. Plan B platform: HF Spaces + pinger (area abu-abu
+    ToS, bisa auto-sleep — sadari risikonya). Opsi kelas atas kalau suatu saat ada kartu:
+    Oracle Cloud Always Free.
+  * *GH Actions:* repo PRIVATE = menit terbatas & cron sering telat (bukti 2026-07-18: run
+    digest terjadwal 00:00 UTC jalan 03:16 dan gagal) — JANGAN tambah frekuensi cron (saran
+    Gemini ditolak); arah justru pensiunkan ohlcv-sync/ta-warm setelah Fase B jalan.
 
 ---
 
