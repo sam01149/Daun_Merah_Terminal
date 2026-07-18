@@ -26,7 +26,7 @@ Setelah Q-5 diubah dari polling 60 detik jadi event-driven (dipicu tiap ada harg
 
 **Ikut dikerjakan sesi ini:** `CRON_SECRET` production dirotasi (nilai lama dari rotasi session 145 sudah tidak diketahui siapa pun) — token baru dipasang di Vercel env production + GitHub Actions repo secret via `gh secret set`, diverifikasi FUNGSIONAL (bukan asumsi): endpoint `admin?action=health`/`redis-keys` dites langsung, 401 dengan secret salah, 200 dengan secret baru. Sempat ada percobaan pertama gagal karena trailing whitespace ikut ke-pipe dari PowerShell (`vercel env add` via `"..." | npx vercel ...`), diperbaiki pakai `printf` di Bash (tanpa newline) sebelum di-pipe ulang — pelajaran: hindari pipe string literal PowerShell untuk nilai yang sensitif ke whitespace, pakai `printf` shell POSIX.
 
-**Verifikasi:** `npm test` 345/345 hijau (tidak ada test baru ditambah untuk 2 fix cron-dedup di atas — cakupan test untuk itu masih celah, dicatat sebagai backlog kalau ada waktu sesi terpisah).
+**Verifikasi:** `npm test` 345/345 hijau saat fix di atas ditulis (cakupan test untuk cron-dedup awalnya masih celah) — **ditutup di sesi yang sama**: logic dedup diekstrak jadi modul murni `api/_cron_dedup.js` (`isCronCall`, `isCronDedupFresh`), dipakai bersama oleh `market-digest.js` & `admin.js` (menghapus duplikasi 2 salinan logic identik), ditambah 10 test baru (`test/cron_dedup.test.js`): unit test pure function (window fresh/stale/pas-di-batas/timestamp korup/clock-skew masa depan) + 2 test integrasi end-to-end yang membuktikan handler asli benar-benar short-circuit (cuma 1x panggilan Redis, tidak lanjut ke RSS/AI) saat cache masih fresh. **`npm test` final: 355/355 hijau.**
 
 ---
 

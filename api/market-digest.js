@@ -4,6 +4,7 @@ const cb           = require('./_circuit_breaker');
 const { autoUpdateFundamentals } = require('./_fundamental_parser');
 const { withSingleFlight } = require('./_fetch_lock');
 const { getLiveCbRates } = require('./_cb_rates');
+const { isCronCall: _isCronCallReq, isCronDedupFresh } = require('./_cron_dedup');
 const { configureVapid, sendWebPush } = require('./_webpush');
 const { allowAiCall, providerFromUrl } = require('./_ai_guard');
 const { CB_KW, kwTest, isCbHeadline, stripHtml } = require('./_cb_keywords');
@@ -917,9 +918,7 @@ module.exports = async function handler(req, res) {
   // gated on `&& deviceId` further down) is per-user journal data and is skipped,
   // while the shared briefing/bias/thesis still generate and populate the cache
   // every user's dashboard reads via mode=cached.
-  const isVercelCron = req.headers['x-vercel-cron'] === '1';
-  const cronSecret    = req.headers['x-cron-secret'];
-  const isCronCall    = isVercelCron || (cronSecret && cronSecret === process.env.CRON_SECRET);
+  const isCronCall = _isCronCallReq(req);
 
   // Q-6 (Plan Q, 2026-07-18): vps/daemon.js SEKARANG ikut memicu endpoint ini
   // via x-cron-secret, PARALEL dengan GitHub Actions (sengaja, untuk bandingkan
@@ -927,18 +926,18 @@ module.exports = async function handler(req, res) {
   // DIGEST_LOCK_KEY di bawah ("cron cuma 1 sumber, tidak pernah tabrakan") TIDAK
   // LAGI benar begitu ada 2 sumber cron. DIGEST_LOCK_TTL (55 detik) untuk
   // trafik non-cron TERLALU PENDEK untuk kasus ini (GH Actions pernah telat
-  // berjam-jam), jadi dedup cron pakai window sendiri yang lebih panjang,
-  // dicek dari umur latest_article — jauh lebih pendek dari jarak antar 3
-  // jadwal (~7 jam) supaya slot BERIKUTNYA tidak ikut ke-skip.
+  // berjam-jam), jadi dedup cron pakai window sendiri yang lebih panjang
+  // (isCronDedupFresh, api/_cron_dedup.js), dicek dari umur latest_article —
+  // jauh lebih pendek dari jarak antar 3 jadwal (~7 jam) supaya slot
+  // BERIKUTNYA tidak ikut ke-skip.
   if (isCronCall) {
     const CRON_DEDUP_WINDOW_MS = 30 * 60 * 1000;
     try {
       const raw = await redisCmd('GET', 'latest_article');
       if (raw) {
         const cached = JSON.parse(raw);
-        const age = Date.now() - new Date(cached.generated_at).getTime();
-        if (Number.isFinite(age) && age >= 0 && age < CRON_DEDUP_WINDOW_MS) {
-          console.log(`market-digest: cron call kedua untuk slot yang sama (cache masih fresh ${Math.round(age/1000)}s) — skip generate ulang`);
+        if (isCronDedupFresh(cached.generated_at, Date.now(), CRON_DEDUP_WINDOW_MS)) {
+          console.log('market-digest: cron call kedua untuk slot yang sama (cache masih fresh) — skip generate ulang');
           return res.status(200).json({ ...cached, thesis_alerts: null, from_cache: 'cron_dedup' });
         }
       }

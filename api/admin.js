@@ -15,6 +15,7 @@ const newscat  = require('../newscat');
 const { autoUpdateFundamentals } = require('./_fundamental_parser');
 const { getLiveCbRates } = require('./_cb_rates');
 const { configureVapid, sendWebPush } = require('./_webpush');
+const { isCronCall: _isCronCallReq, isCronDedupFresh } = require('./_cron_dedup');
 const cb = require('./_circuit_breaker');
 const rateLimit = require('./_ratelimit');
 const { allowAiCall } = require('./_ai_guard');
@@ -2574,19 +2575,15 @@ async function ohlcvAnalyzeHandler(req, res) {
   // tidak pernah menahan generate slot berikutnya, cukup panjang menutupi
   // keterlambatan salah satu sumber cron (GH Actions pernah telat berjam-jam,
   // tapi kalaupun cuma beda beberapa menit dengan VPS, tetap ke-dedup).
-  const isCronCall = req.headers['x-vercel-cron'] === '1' ||
-    (process.env.CRON_SECRET && (
-      req.headers['x-cron-secret']  === process.env.CRON_SECRET ||
-      req.headers['x-admin-secret'] === process.env.CRON_SECRET));
+  const isCronCall = _isCronCallReq(req);
   if (isCronCall) {
     const CRON_DEDUP_WINDOW_MS = 30 * 60 * 1000;
     try {
       const raw = await redisCmd('GET', `ohlcv_analysis:${symbol}`);
       if (raw) {
         const cached = JSON.parse(raw);
-        const age = Date.now() - new Date(cached.loaded_at).getTime();
-        if (Number.isFinite(age) && age >= 0 && age < CRON_DEDUP_WINDOW_MS) {
-          console.log(`ohlcv_analyze: cron call kedua untuk ${symbol} (cache masih fresh ${Math.round(age/1000)}s) — skip generate ulang`);
+        if (isCronDedupFresh(cached.loaded_at, Date.now(), CRON_DEDUP_WINDOW_MS)) {
+          console.log(`ohlcv_analyze: cron call kedua untuk ${symbol} (cache masih fresh) — skip generate ulang`);
           return res.status(200).json({ ...cached, cached: true, from_cron_dedup: true });
         }
       }
