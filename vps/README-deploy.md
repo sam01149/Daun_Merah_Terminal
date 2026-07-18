@@ -108,3 +108,72 @@ kandidat lain di luar yang sudah dicoba.
 - Kode (`heartbeat.js`, `Dockerfile`) sengaja platform-agnostic (baca `PORT`
   dari env, bind `0.0.0.0`) — bisa pindah ke Render/platform lain kapan saja
   tanpa ubah kode, kalau blocker kartu di atas nanti selesai ditelusuri.
+
+## 6. Q-2..Q-6 — daemon penuh (2026-07-18, sesi lanjutan)
+
+Entry point service pindah dari `heartbeat.js` ke **`daemon.js`** (Dockerfile
+sudah diupdate, `CMD ["node", "daemon.js"]`) — proses ini SUDAH mencakup fungsi
+heartbeat Q-1 di dalamnya (jalan di proses yang sama), jadi gate uptime yang
+sedang berjalan TIDAK terputus, cuma proses yang menjalankannya bertambah
+tanggung jawab. `heartbeat.js` tetap ada di repo sebagai referensi/rollback
+cepat (tinggal ganti CMD Dockerfile balik kalau perlu).
+
+**Yang ditambahkan:**
+- Q-3: streaming candle 1H 14 pair FX dari Deriv WebSocket langsung ke Redis
+  (`ohlcv:<symbol>:1h`, key & shape SAMA dengan `ohlcv_sync` — Plan P/cron tetap
+  jalan sebagai fallback kalau daemon mati).
+- Q-4: alert berita high-impact (kategori `market-moving` dari `newscat.js`) —
+  web-push + Telegram, dedup 48 jam per `guid`.
+- Q-5: alert level harga (harga live vs zona konfluensi `ohlcv_analysis:<symbol>`)
+  — cooldown 4 jam per zona. Opsional-terpisah: kalau cache konfluensi pair
+  tertentu belum pernah dihitung (pair itu belum dibuka di tab Analisa), pair
+  itu di-skip diam-diam, bukan error.
+- Q-6: scheduler `node-cron` memicu `market-digest` (3 jadwal) + `ohlcv_sync`
+  (tiap jam) lewat HTTP — **jalan PARALEL dengan workflow GitHub Actions**
+  (`market-digest.yml`, `ohlcv-sync.yml` TIDAK dimatikan). `ohlcv_sync` sudah
+  men-warm cache TA sendiri di akhir handler-nya, jadi tidak ada trigger
+  `ta-warm` terpisah dari daemon.
+
+**Env var BARU yang wajib ditambah di Railway dashboard (tab Variables),
+selain 2 yang sudah ada:**
+
+| Env var | Sumber nilai | Wajib untuk |
+|---|---|---|
+| `DERIV_APP_ID` | sama dengan Vercel env (`1089` interim, lihat backlog `[DERIV-APPID]` di `daun_merah_plan.md`) | Q-3 |
+| `CRON_SECRET` | sama dengan Vercel env / GitHub Actions secret | Q-4 (baca `news_history` tidak butuh ini, tapi Q-6 wajib), Q-6 |
+| `TELEGRAM_BOT_TOKEN` | sama dengan Vercel env (bot sudah ada dari Plan M) | Q-3 (alert degraded), Q-4, Q-5 |
+| `TELEGRAM_CHAT_ID` | sama dengan Vercel env | Q-3, Q-4, Q-5 |
+| `VAPID_PUBLIC_KEY` | sama dengan Vercel env | Q-4, Q-5 (web-push) |
+| `VAPID_PRIVATE_KEY` | sama dengan Vercel env | Q-4, Q-5 |
+| `VAPID_SUBJECT` | sama dengan Vercel env (opsional, ada default) | Q-4, Q-5 |
+| `APP_BASE_URL` | opsional, default `https://financial-feed-app.vercel.app` | Q-5, Q-6 |
+
+**Desain fail-open**: tiap modul (Q-3/Q-4/Q-5/Q-6) cek env var-nya sendiri di
+awal — kalau kosong, modul itu SKIP dengan log warning, heartbeat (Q-1) dan
+modul lain tetap jalan normal. Jadi env var di atas BOLEH ditambah bertahap
+(misal cuma `DERIV_APP_ID` dulu untuk uji Q-3 saja) tanpa mematikan yang sudah
+jalan — tapi setiap kali menambah/mengubah Variables, klik **Redeploy** manual
+di Railway (env var baru tidak otomatis ke-pick-up proses yang sedang jalan).
+
+**Verifikasi setelah deploy:**
+- `GET /` (domain publik) → field `deriv_stream` harus `connecting_or_up`
+  (bukan `disabled`) kalau `DERIV_APP_ID` sudah diisi.
+- Redis key `ohlcv:EURUSD=X:1h` (dan 13 pair lain) harus ter-update dengan
+  `source.1h == "deriv_stream"` dalam 1 jam pertama (candle H1 baru close di
+  awal jam) — cek via `admin?action=redis-keys` atau Upstash console.
+- Kirim 1 pesan Telegram test manual dari akun bot yang sama untuk pastikan
+  `TELEGRAM_BOT_TOKEN`/`CHAT_ID` benar SEBELUM mengandalkan alert Q-4/Q-5 (kalau
+  token salah, daemon diam saja — tidak ada error yang terlihat dari luar).
+- Pantau Usage Railway (§3) — daemon penuh (WS + poll 30s + cek zona 60s +
+  cron) tetap jauh lebih ringan dari cap 1 vCPU/0.5GB, tapi volume command
+  Redis naik dari sekadar heartbeat; kalau ada tanda mendekati limit bulanan
+  Upstash (500K command/bulan, cek dashboard Upstash), evaluasi ulang interval
+  poll sebelum menambah pair/fitur lagi.
+
+**Kriteria selesai terukur (dari `daun_merah_plan.md`, BUTUH WAKTU, bukan cuma
+kode jalan) — belum bisa dicentang di hari yang sama dengan deploy:**
+- Q-3: candle H1 di Redis ter-update ≤60 detik setelah close, 3 hari berturut.
+- Q-4: alert berita high-impact sampai <60 detik dari `pubDate`, 3 kejadian nyata.
+- Q-6: 3 hari berturut digest jalan tepat waktu ±2 menit dari jadwal.
+Kalau salah satu gagal konsisten, modul itu (bukan seluruh daemon) yang
+dievaluasi ulang — heartbeat Q-1 dan fallback Plan P/cron tidak terpengaruh.

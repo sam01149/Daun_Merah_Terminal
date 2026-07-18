@@ -1,10 +1,39 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-07-18 (Session 187 lanjutan 2 — Plan Q-1: deploy Railway BERHASIL (heartbeat live nulis ke Redis), pinger cron-job.org ternyata TIDAK diperlukan untuk Railway (koreksi dari asumsi Render — sleep Railway opt-in & berbasis outbound traffic, heartbeat 60s sudah cukup); gate uptime 7-14 hari sedang berjalan).
+> **Last updated:** 2026-07-18 (Session 187 lanjutan 3 — Plan Q-2..Q-6 dieksekusi penuh sekaligus atas keputusan eksplisit user (override prasyarat gate Q-1 7-14 hari, mengandalkan fallback Plan P/cron yang sudah SELESAI): daemon.js (streaming candle Deriv, alert berita, alert level harga, scheduler node-cron) ditulis & di-deploy paralel dengan GH Actions; kriteria selesai terukur (butuh 3 hari live data) BELUM bisa dicentang, lihat status di bawah).
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+---
+
+## Changelog Session 187 lanjutan 3 (2026-07-18) — Plan Q-2..Q-6: daemon penuh (kode SELESAI, live verification BELUM)
+
+**Konteks:** User eksplisit minta semua tahap Plan Q (Q-1 s/d Q-6) dikerjakan sekaligus, bukan bertahap 7-14 hari seperti prasyarat asli — alasan: Plan P (on-demand Deriv/Yahoo) sudah SELESAI jadi fallback penuh, jadi risiko daemon gagal/tidak stabil tidak mematikan fitur apa pun ("VPS = penambah, bukan tulang punggung", prinsip S186). Sebelum eksekusi, dicek dulu 3 alternatif hosting lain (Koyeb, IBM Cloud Lite, Deta Space, SnapDeploy) — semua kalah dari Railway (kartu wajib / servis mati / platform belum teruji), dan estimasi biaya riil dari dashboard Railway user ($0,0004 terpakai beberapa jam pertama, proyeksi masih ≤$0,3/bulan) mengonfirmasi aman dari sisi biaya sebelum lanjut.
+
+**Yang dikerjakan (kode + deploy, BUKAN gate live):**
+- **Q-2 (investigasi budget):** Upstash Redis free tier = 500K command/bulan (~16.600/hari), dikonfirmasi live (bukan asumsi lama "10K/hari" yang sudah basi sejak Maret 2025). Target budget daemon (<3.000 command/hari, sesuai desain Q-2 asli: tulis HANYA saat candle H1 close) = ~18% dari total budget bulanan — aman selama pemakaian existing app tidak sudah mepet limit (belum dicek dashboard Upstash user, direkomendasikan di README).
+- **Q-3 (streaming candle):** `vps/daemon.js` — 1 koneksi WebSocket Deriv (`ws.derivws.com`, app_id sama `1089`), subscribe `candles` granularity 3600 untuk 14 pair FX (scope sama Plan P, XAU/USD tidak ikut). Tulis ke Redis `ohlcv:<symbol>:1h` HANYA saat candle close (dideteksi dari perubahan epoch antar update stream) — key & shape identik `ohlcv_sync` (admin.js), jadi konsumen downstream (TEK, Analisa, Kritikus) tidak berubah. Reconnect exponential backoff (1s→5menit cap); alert Telegram "daemon degraded" kalau gagal reconnect >10 menit (dedup 6 jam via Redis).
+- **Q-4 (alert berita high-impact):** poll `news_history` (Redis, ditulis `api/feeds.js`) tiap 30 detik, klasifikasi kategori `market-moving` via `newscat.js` — **disalin ke `vps/newscat.js`** (bukan di-require lintas folder, karena `vps/` deploy sebagai Docker image terisolasi/Root Directory Railway = `vps/`), dijaga sinkron via test drift-guard byte-identik. Alert web-push (VAPID, baca `push_subs` dari Redis) + Telegram, dedup 48 jam per `guid`.
+- **Q-5 (alert level harga):** cek harga live (dari stream Q-3) vs zona konfluensi `ohlcv_analysis:<symbol>` (dibaca via HTTP `GET /api/admin?action=ohlcv_analyze&mode=cached`, endpoint ini TIDAK butuh auth). Opsional-terpisah sesuai plan: pair yang cache konfluensinya belum pernah dihitung (belum dibuka di tab Analisa) di-skip diam-diam. Cooldown 4 jam per zona.
+- **Q-6 (scheduler):** `node-cron` di proses yang sama memicu `market-digest` (3 jadwal, sama `market-digest.yml`) + `ohlcv_sync` (tiap jam) via HTTP dengan header `x-cron-secret` — **jalan PARALEL dengan GitHub Actions, workflow TIDAK dimatikan** (sesuai desain asli: bandingkan ketepatan dulu sebelum disable satu-satu). Ditemukan `ohlcv_sync` sudah men-warm cache TA sendiri di akhir handler-nya (admin.js) untuk 8 pair yang PERSIS sama dengan `ta-warm.yml` — jadi daemon tidak perlu trigger `ta-warm` terpisah (kemungkinan `ta-warm.yml` sendiri sudah redundant sejak awal, belum ditindaklanjuti — dicatat sebagai temuan, bukan diubah sesi ini).
+- Proses `heartbeat.js` (Q-1) di-fold ke `daemon.js` sebagai satu proses/service (Dockerfile `CMD` pindah ke `node daemon.js`) — `heartbeat.js` tetap ada di repo untuk rollback cepat. Gate uptime Q-1 yang sedang berjalan TIDAK terputus.
+
+**Env var baru wajib ditambah manual di Railway dashboard** (aksi user, tidak bisa dieksekusi dari kode): `DERIV_APP_ID`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` (opsional), `APP_BASE_URL` (opsional) — detail lengkap + tabel sumber nilai di `vps/README-deploy.md` §6. Desain fail-open: env var kosong = modul terkait skip dengan warning, heartbeat & modul lain tetap jalan.
+
+**Verifikasi sejauh ini:**
+- `npm test`: **345/345 hijau** (10 test baru: drift-guard newscat.js + mapping Deriv, pure function `mergeClosedCandle`/`normalizeDerivCandle`/`isHighImpactCategory`/`priceInZone`).
+- Smoke test lokal (`node daemon.js` dengan Redis palsu): HTTP server & heartbeat loop jalan tanpa crash, **koneksi WebSocket Deriv BERHASIL live** dan menerima balasan API asli (`MarketIsClosed` — 2026-07-18 adalah Sabtu, forex tutup weekend, jadi ini respons BENAR bukan bug, sekaligus membuktikan format request Deriv diterima server).
+- **BELUM diverifikasi** (butuh Redis Upstash asli + market FX buka + beberapa hari): candle H1 benar ke-update ≤60 detik setelah close, alert berita/harga benar terkirim, ketepatan jadwal Q-6 vs GH Actions.
+
+**Status kriteria selesai terukur (dari `daun_merah_plan.md`, TIDAK bisa dicentang hari ini — butuh hari, bukan cuma kode jalan):**
+- Q-1: uptime ≥7 hari tanpa gap >5 menit — gate masih berjalan (dimulai 2026-07-18 sore).
+- Q-3: candle H1 ter-update ≤60 detik setelah close, 3 hari berturut — belum diukur.
+- Q-4: alert berita <60 detik dari `pubDate`, 3 kejadian nyata — belum diukur.
+- Q-6: 3 hari berturut digest tepat waktu ±2 menit — belum diukur.
+
+**Keputusan disepakati eksplisit dengan user:** override prasyarat "Q-2+ tidak boleh mulai sebelum Q-1 lolos" karena fallback Plan P sudah lengkap — bukan berarti kriteria selesai terukur di atas jadi tidak berlaku, cuma urutan pengerjaan kode yang dipercepat. Sesi berikutnya WAJIB cek status live (Usage Railway + Usage Upstash + `admin?action=health`) sebelum menganggap Q-3/Q-4/Q-6 "beres".
 
 ---
 
