@@ -57,9 +57,10 @@
   * *VPS:* user sudah daftar + pesan VPS gratis CepatCloud.id (2026-07-18, menunggu aktivasi —
     review forum: pendaftaran kadang tidak diproses, no technical support, IPv4 private saja
     [cukup, daemon hanya butuh koneksi keluar]). Kalau aktif: uji heartbeat 1-2 minggu dulu
-    TANPA token apa pun, baru daemon naik. Plan B platform: HF Spaces + pinger (area abu-abu
-    ToS, bisa auto-sleep — sadari risikonya). Opsi kelas atas kalau suatu saat ada kartu:
-    Oracle Cloud Always Free.
+    TANPA token apa pun, baru daemon naik. **Plan B HF Spaces GUGUR (2026-07-18, dicek
+    langsung di huggingface.co/new-space): Docker/Gradio Space kini butuh plan PRO berbayar,
+    free tier tinggal Static (tanpa compute) — info "16GB gratis" di riset Sesi 185 & Gemini
+    SUDAH BASI.** Alternatif: Oracle Cloud Always Free (butuh kartu) / VPS murah / tunda Fase B.
   * *GH Actions:* repo PRIVATE = menit terbatas & cron sering telat (bukti 2026-07-18: run
     digest terjadwal 00:00 UTC jalan 03:16 dan gagal) — JANGAN tambah frekuensi cron (saran
     Gemini ditolak); arah justru pensiunkan ohlcv-sync/ta-warm setelah Fase B jalan.
@@ -244,5 +245,5 @@ Follow-up langsung dari ide #1 di bawah. User top-up US$2 (saldo top-up TIDAK ex
 
 ### 3. Layanan VPS Gratis Always-On (Tanpa Kartu Kredit)
 *   **CepatCloud.id:** VPS Linux murni gratis selamanya (1 vCPU, 2GB RAM) khusus untuk developer Indonesia. Hanya butuh verifikasi Email & WhatsApp.
-*   **Hugging Face Spaces (Docker SDK):** Container virtual gratis spesifikasi besar (2 vCPU, 16GB RAM). Agar tidak tidur (*auto-sleep*), gunakan pinger gratis (UptimeRobot/Cron-job.org) untuk mem-ping server setiap 5-10 menit.
+*   **Hugging Face Spaces (Docker SDK):** ~~Container virtual gratis 2 vCPU/16GB~~ **BASI — per 2026-07-18 Docker/Gradio Space butuh plan PRO berbayar (verified langsung di halaman new-space); free tier tinggal Static tanpa compute.**
 
