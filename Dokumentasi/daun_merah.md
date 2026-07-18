@@ -1,6 +1,6 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-07-18 (Session 187 — Plan Q-1: pivot ke Render free tier (CepatCloud belum aktif), kode heartbeat daemon + probe `vps_heartbeat` di `admin?action=health` selesai & live-verified; gate uptime 7 hari menunggu user deploy manual di Render).
+> **Last updated:** 2026-07-18 (Session 187 lanjutan — Plan Q-1: Render & Oracle GAGAL verifikasi kartu (kartu BNI user ditolak di keduanya), pivot ke Railway (tanpa kartu di signup, trade-off kredit terpakai bukan jam gratis); kode heartbeat platform-agnostic, gate uptime 7 hari menunggu user deploy manual).
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -5574,3 +5574,30 @@ Kode siap, tapi gate Q-1 ("tidak ada gap heartbeat >5 menit selama minimal 7 har
 ### Versi:
 Perubahan API-only (`admin.js`) + folder baru `vps/` yang tidak disentuh `index.html`/`sw.js` — sesuai aturan plan, **`?v=` TIDAK dinaikkan**.
 - Mendapatkan `app_id` Deriv dedicated yang kompatibel dengan `ws.derivws.com` — perlu tindak lanjut user (kontak `api-support@deriv.com` atau proses Partner), TIDAK memblokir Plan P (sudah jalan pakai `1089`).
+
+---
+
+## Changelog Session 187 lanjutan (2026-07-18) — Plan Q-1: Render & Oracle GAGAL Verifikasi Kartu, Pivot ke Railway
+
+**Konteks:** User mulai deploy manual ke Render mengikuti `vps/README-deploy.md` dari entri sebelumnya. Ditemukan dua masalah berurutan yang mengoreksi asumsi plan.
+
+### Temuan 1 — Render TETAP minta kartu (klaim "tanpa kartu" di dokumentasi resmi terbukti tidak berlaku untuk akun user):
+User sempat salah pilih tipe service (**Private Service**, `dashboard.render.com/pserv/new`) yang memang tidak punya tier Free sama sekali (mulai $7/bulan) — dikoreksi ke **Web Service** (`dashboard.render.com/web/new`) yang benar punya opsi Free $0/bulan. Tapi begitu lanjut ke step deploy, muncul modal **Add Card** yang mewajibkan kartu untuk hold verifikasi $1 USD (dikonfirmasi lewat screenshot langsung — form Stripe eksplisit menyebut "To verify your card, Render will perform a temporary authorization for $1 USD"). Ini bertentangan dengan riset awal S186 ("Render free tier ... tanpa kartu") dan bahkan dengan dokumentasi resmi Render yang diverifikasi ulang hari ini (`render.com/pricing` bilang tidak perlu kartu) — kemungkinan kebijakan anti-fraud khusus akun/region tertentu. **Kartu debit BNI user DITOLAK** di titik verifikasi ini.
+
+### Temuan 2 — Oracle Always Free juga gagal dengan kartu yang sama:
+User mencoba Oracle Always Free sebagai alternatif (kandidat berikutnya di urutan plan) — kartu BNI yang SAMA ditolak juga di sana. Karena gagal konsisten di 2 platform independen, disimpulkan akar masalah kemungkinan besar di kartu/bank (transaksi luar negeri BNI belum aktif, atau kartu GPN-only tanpa jaringan Visa/Mastercard) — bukan bug platform. Menelusuri ini butuh kontak BNI terpisah dan TIDAK dijadikan blocker Plan Q lebih lama.
+
+### Keputusan — pivot ke Railway:
+Dicek live ke `docs.railway.com` (free-trial & FAQ): signup Railway **tidak minta kartu sama sekali**. Trade-off yang disadari dan didokumentasikan eksplisit (beda dari Render): Railway bukan "jam gratis" tapi **kredit terpakai** — trial $5 sekali habis 30 hari, lanjut Free plan $1 kredit/bulan (tidak akumulasi), kalau kredit habis service **berhenti otomatis** (bukan minta kartu paksa). Karena Railway tidak publikasikan tarif per-resource, estimasi biaya `heartbeat.js` (proses sangat ringan) di bawah $1/bulan adalah ASUMSI yang perlu dikonfirmasi dari data Usage riil selama masa uji — bukan dianggap pasti aman.
+
+### Kode disesuaikan jadi platform-agnostic:
+- **`vps/heartbeat.js`**: HTTP server sekarang eksplisit bind ke `0.0.0.0` (syarat Railway — dikonfirmasi dari `docs.railway.com/guides/fixing-common-errors`, tanpa ini request Railway Edge Proxy gagal 502). Tetap baca `$PORT` dari env, jadi kode yang sama persis bisa dipakai di Render/platform lain kapan pun blocker kartu di atas selesai ditelusuri — tidak perlu ubah kode, cuma pindah platform deploy.
+- **`vps/README-deploy.md`**: ditulis ulang total — riwayat percobaan Render/Oracle didokumentasikan sebagai referensi (supaya sesi depan tidak mengulang dari nol), langkah deploy Railway lengkap (Root Directory `vps`, Generate Domain manual — beda dari Render yang otomatis expose, Variables, pinger cron-job.org), plus catatan eksplisit soal pantau Usage Railway supaya gap akibat kredit habis tidak disalahartikan sebagai gagal infra saat membaca gate Q-1.
+- **`daun_merah_plan.md`** §Plan Q: status & urutan kandidat diperbarui (CepatCloud → ~~Render~~ GAGAL kartu → ~~Oracle~~ GAGAL kartu → **Railway SEDANG DICOBA**), termasuk kandidat yang sudah lama didaftar tapi belum sempat ditulis alasan tolaknya (Zeabur — risiko kredit habis sama seperti Railway tanpa keunggulan lain, Glitch — ToS melarang pinger 24/7).
+
+### Verifikasi:
+- `npm test`: **334/334 hijau**.
+- `heartbeat.js` dijalankan ulang lokal setelah perubahan bind `0.0.0.0` — HTTP server terkonfirmasi listening & reachable (`0.0.0.0:PORT`), beat baru sukses tertulis ke Upstash Redis production (bukan mock). Key test dihapus setelah verifikasi.
+
+### Status Q-1 — MASIH BELUM SELESAI (menunggu aksi user):
+Deploy ke Railway (ikuti `vps/README-deploy.md` versi baru) + pasang pinger cron-job.org + jalani gate uptime 7-14 hari, sambil pantau Usage Railway. Tidak ada bagian ini yang bisa dieksekusi dari sisi kode.

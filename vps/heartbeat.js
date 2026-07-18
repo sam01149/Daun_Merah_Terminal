@@ -1,13 +1,16 @@
-// vps/heartbeat.js — Q-1: uji uptime hosting Plan B (Render free tier) sebelum
-// Plan Q dilanjutkan ke daemon streaming (Q-2+). Fungsi TUNGGAL: SET vps:heartbeat
-// <epoch> EX 300 di Upstash Redis tiap 60 detik. TANPA token AI/Deriv/Telegram —
-// kalau host ini kompromi, tidak ada kunci berbayar yang ikut bocor (lihat Edge
-// Case di daun_merah_plan.md §Plan Q).
+// vps/heartbeat.js — Q-1: uji uptime hosting (Render dan Oracle DITOLAK di
+// tahap verifikasi kartu, lihat README-deploy.md — Railway jadi jalur aktif
+// karena tidak minta kartu di signup) sebelum Plan Q lanjut ke daemon
+// streaming (Q-2+). Fungsi TUNGGAL: SET vps:heartbeat <epoch> EX 300 di
+// Upstash Redis tiap 60 detik. TANPA token AI/Deriv/Telegram — kalau host ini
+// kompromi, tidak ada kunci berbayar yang ikut bocor (lihat Edge Case di
+// daun_merah_plan.md §Plan Q).
 //
-// Render free tier = Web Service, bukan background worker biasa — WAJIB listen
-// di $PORT dan balas HTTP supaya Render tidak anggap service mati. Endpoint yang
-// sama juga jadi target pinger cron-job.org (tiap 10 menit) untuk melawan
-// spin-down 15 menit (lihat README-deploy.md).
+// Host Web Service (Render/Railway) BUKAN background worker biasa — WAJIB
+// listen di $PORT dan balas HTTP supaya platform tidak anggap service mati.
+// Endpoint yang sama juga jadi target pinger cron-job.org. Bind eksplisit ke
+// 0.0.0.0 (bukan default) — syarat Railway (lihat docs.railway.com/guides/
+// fixing-common-errors), aman juga untuk Render.
 
 const http = require('node:http');
 
@@ -58,7 +61,7 @@ async function beat() {
 beat();
 setInterval(beat, BEAT_INTERVAL_MS);
 
-// Endpoint minimal untuk Render health check + pinger cron-job.org.
+// Endpoint minimal untuk health check platform + pinger cron-job.org.
 // Sengaja tanpa dependency HTTP framework — satu route saja.
 http.createServer((req, res) => {
   res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -67,6 +70,6 @@ http.createServer((req, res) => {
     last_beat_epoch: lastBeatOk,
     last_beat_error: lastBeatError,
   }));
-}).listen(PORT, () => {
-  console.log(`heartbeat: HTTP server listening on :${PORT}`);
+}).listen(PORT, '0.0.0.0', () => {
+  console.log(`heartbeat: HTTP server listening on 0.0.0.0:${PORT}`);
 });
