@@ -167,13 +167,19 @@ Ditambahkan di `api/market-digest.js`: `?test_gemini=1`, `?test_mistral=1`, `?te
 
 Mistral Medium gagal mematuhi format instruksi (melewatkan bagian FX sepenuhnya pada sampel 4) dan menyisipkan tata bahasa Inggris posesif ("Fed's Hammack") ke kalimat Indonesia. Pada uji Call 3 JSON, Mistral juga mengalami error HTTP 400.
 
-### NVIDIA NIM
+### NVIDIA NIM (`nvidia/nemotron-3-ultra-550b-a55b`, 1 sampel Call 1)
 
-TIDAK dijalankan uji live karena **REJECT permanen** oleh ToS trial (melarang penggunaan produksi).
+| # | Latency | Sukses | Panjang | Forbidden phrase | Bahasa | Keterangan |
+|---|---|---|---|---|---|---|
+| 1 | 20.9s | Gagal | 1.733c | 0 | ID penuh | **Format Failure:** FX (GBP/USD) dilewatkan total, model hanya menulis ulasan XAU/USD. Latency juga sangat tinggi. |
+
+Meskipun model berhasil dihubungi live menggunakan API Key Vercel asli milik user (circuit breaker pulih ke CLOSED), model mengalami kegagalan format kritis dengan mengabaikan bagian FX sepenuhnya, mirip seperti Mistral. Selain itu, latency 20.9s sangat dekat dengan batas timeout 25s, yang berisiko memicu timeout berkala di produksi.
 
 ## Tahap 6 — Keputusan Final (2026-07-18)
 
 - **Gemini (gemini-flash-latest)**: **PROMOTE** ke chain produksi sebagai **Fallback 2** di Call 1 (di antara Cerebras gpt-oss dan Groq) dan **Fallback 1** di Call 2 & Call 3 (di antara SambaNova dan Groq karena mendukung JSON mode native `response_format`).
   * *Pelajaran penting:* Gemini 3.x selalu "thinking" dan tidak bisa dinonaktifkan. Selalu set `max_tokens` minimal 2500-3000 untuk Call JSON agar tidak terpotong (truncated) di tengah jalan, serta kirim parameter `reasoning_effort: 'low'`.
 - **Mistral (mistral-medium-latest)**: **REJECT**. Gagal format (mengabaikan instruksi FX) dan gagal JSON Call 3 (HTTP 400).
-- **NVIDIA NIM**: **REJECT**. ToS melarang produksi.
+- **NVIDIA NIM (Nemotron 3 Ultra)**: **REJECT**. 
+  * *Hambatan Hukum:* Ketentuan Layanan (*Terms of Service*) trial melarang penggunaan di produksi.
+  * *Hambatan Teknis:* Latency sangat tinggi (20.9s) dan mengalami kegagalan format (mengabaikan bagian FX sepenuhnya). Jauh di bawah keandalan Gemini/DeepSeek.
