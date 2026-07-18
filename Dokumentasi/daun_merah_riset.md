@@ -188,3 +188,22 @@ Ditambahkan di `api/market-digest.js`: `?test_gemini=1`, `?test_mistral=1`, `?te
 - **NVIDIA NIM**: **REJECT**. 
   * *Hambatan Hukum:* Ketentuan Layanan (*Terms of Service*) trial melarang penggunaan di produksi.
   * *Hambatan Teknis:* Latency sangat tinggi (20.9s–24.1s) yang mendekati batas maksimal timeout Vercel 25s, sehingga tidak andal sebagai fallback yang stabil. Nemotron juga gagal format (mengabaikan FX). DeepSeek v4 Flash sangat baik dari segi konten, namun latency 24.1s dan leak kata terlarang menggugurkannya sebagai kandidat produksi.
+
+---
+
+## Riset Sesi 185 — Polishing Chain AI & VPS/Data Gratis (2026-07-18)
+
+### 1. Polishing Chain: DeepSeek v4 Pro + GLM-5.2
+*   **Ide:** Memisahkan peran AI. **DeepSeek v4 Pro** (API Resmi) sebagai *Data Analyst* (sangat cerdas logikanya untuk menghitung angka teknikal Entry/SL/TP). Hasilnya dikirim ke **GLM-5.2** (NVIDIA NIM) sebagai *Copywriter* untuk ditulis ulang menjadi Bahasa Indonesia yang luwes dan natural (karena bakat linguistik alami GLM-5.2 sangat tinggi).
+*   **Keuntungan:** Mendapatkan ulasan trading dengan data presisi tinggi sekaligus bahasa yang natural.
+*   **Hambatan Latency:** Akumulasi waktu pengerjaan 2 model berurutan mencapai **20–25+ detik** (DeepSeek ~6s + GLM-5.2 ~15s). Ini pasti memicu *Gateway Timeout* di Vercel, sehingga wajib dijalankan secara *Asinkron* (Background Job di GitHub Actions) atau di-host di VPS *always-on*.
+*   **Alternatif:** Prompt Engineering pada DeepSeek v4 Pro (Few-Shot) dengan memberikan contoh teks GLM-5.2 agar ditiru secara langsung dalam satu kali panggilan (menghemat waktu & token).
+
+### 2. Provider Data Real-time & Gratis
+*   **MT5 (MetaTrader 5) Broker Demo Account (Rekomendasi Utama):** Menghubungkan script backend ke terminal MT5 dengan akun demo gratis broker Forex retail. Ini menyediakan data feed harga & candle (OHLCV) yang **100% real-time milidetik, gratis selamanya, legal, bebas rate-limit**, dan harganya dijamin presisi 100% sama dengan platform trading.
+*   **Finnhub.io:** Opsi API WebSocket gratis instan, namun rentan *rate-limit* jika dinyalakan 24 jam non-stop.
+
+### 3. Layanan VPS Gratis Always-On (Tanpa Kartu Kredit)
+*   **CepatCloud.id:** VPS Linux murni gratis selamanya (1 vCPU, 2GB RAM) khusus untuk developer Indonesia. Hanya butuh verifikasi Email & WhatsApp.
+*   **Hugging Face Spaces (Docker SDK):** Container virtual gratis spesifikasi besar (2 vCPU, 16GB RAM). Agar tidak tidur (*auto-sleep*), gunakan pinger gratis (UptimeRobot/Cron-job.org) untuk mem-ping server setiap 5-10 menit.
+
