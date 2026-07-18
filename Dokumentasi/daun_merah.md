@@ -5440,3 +5440,32 @@ Mistral:     https://api.mistral.ai/v1
 
 ### Versi:
 - Cache-buster dinaikkan secara lockstep serempak ke `2026.07.17.1`.
+
+---
+
+## Changelog Session 186 (2026-07-18) — Tes Live DeepSeek v4-flash (API Resmi) vs DeepSeek-V3.2 (SambaNova)
+
+**Konteks:** User top-up saldo DeepSeek API resmi US$2 (saldo top-up tidak expire) dan minta tes perbandingan `deepseek-v4-flash` vs `DeepSeek-V3.2` yang sekarang jadi primary produksi via SambaNova. Latar: riset Sesi 185 mengusulkan DeepSeek API resmi sebagai kandidat "primary tunggal untuk semua call".
+
+### Perubahan Kode:
+1. **`api/market-digest.js`** — jalur diagnostik terisolasi baru `?test_deepseek=1` (pola persis Plan N `?test_gemini=1`): Call 1/2/3 dialihkan semua ke DeepSeek API resmi (`api.deepseek.com/chat/completions`, model `deepseek-v4-flash`), hasil TIDAK ditulis ke `latest_article`. Parameter hemat: `max_tokens` disamakan SambaNova (1300/700/800), `thinking: {type:'disabled'}` (parameter native DeepSeek v4 — tanpa reasoning trace, lebih cepat & murah), `response_format json_object` untuk Call 2/3.
+2. **`api/_ai_guard.js`** — provider `deepseek` limit harian **50 request** sebagai PAGAR BIAYA (provider berbayar pertama di guard ini): maksimal ~US$0.25/hari sekalipun ada loop/abuse. `providerFromUrl` kenal `deepseek.com`.
+3. Env var `DEEPSEEK_API_KEY` production (sudah ada di Vercel, redeploy untuk membacanya).
+
+### Hasil Tes Live (3 sampel flash + 2 sampel V3.2, data berita sama, selang-seling 65 detik):
+
+| Sampel | Call 1 latency | Panjang | Frasa terlarang | FX lengkap | Thesis (Call 3) | Bias (Call 2) |
+|---|---|---|---|---|---|---|
+| flash #1 | 8.5s | 2.667c | 1 ("sejalan dengan") | Ya | Valid (USD/JPY long conf 4) | USD, GBP |
+| flash #2 | 7.5s | 2.420c | 2 ("sejalan dengan", "di tengah") | Ya | **null** (gagal parse/skema) | USD, GBP |
+| flash #3 | 23.1s | 3.375c | 1 ("sejalan dengan") | Ya | Valid (conf 3) | (kosong) |
+| V3.2 #1 | 21.4s | 1.677c | 1 ("memberikan tekanan") | **Tidak (FX di-skip, hanya GBP umum + XAU)** | Valid (conf 3) | USD, GBP |
+| V3.2 #2 | 6.3s | 2.314c | 1 ("memberikan tekanan") | Ya | Valid (conf 3) | USD, GBP |
+
+**Kualitas prosa:** flash lebih padat data (level harga, skew 25-delta, CFTC contracts per pair, EUR/USD+GBP/USD+USD/JPY semua diulas) di ketiga sampel; V3.2 sekali kedapatan menipiskan bagian FX (sampel #1). Leak frasa terlarang setara (keduanya bocor di semua sampel, frasa beda). Latency sebanding dan sama-sama bervariasi (flash rata-rata 13.0s, V3.2 13.9s; keduanya punya outlier >20s).
+
+**Biaya terverifikasi dari saldo:** 3 generate penuh (Call 1+2+3) = **US$0.01** (saldo $2.00 → $1.99, dicek via `GET api.deepseek.com/user/balance`). Proyeksi: cron 3x/hari selama 3 bulan ≈ **US$0.90** — saldo $2 CUKUP untuk flash sebagai primary market-digest 3 bulan, dengan headroom klik manual.
+
+**Status:** DeepSeek v4-flash BELUM dipromosikan ke chain produksi — menunggu keputusan user. Catatan sebelum promosi: (1) thesis null 1/3 sampel perlu diselidiki (kemungkinan parse JSON — cek log Vercel saat kejadian berikutnya), (2) outlier latency 23.1s dekat timeout 25s, pertimbangkan naikkan timeout Call 1 flash ke 25s+buffer bila jadi primary.
+
+**Verifikasi:** 334/334 unit test lolos; isolasi test terverifikasi live (provider lain `skipped_test`, `latest_article` tidak tersentuh).

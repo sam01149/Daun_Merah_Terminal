@@ -134,6 +134,7 @@ Ini lapisan pembatas paling penting untuk dipahami. **Jatah ini dibagi rata ke s
 | **Groq** | 500 request/hari | 30 RPM | Fallback terakhir untuk Call 1/2/3, Analisa Fundamental, AI Coach |
 | **OpenRouter** (Nemotron/Hermes) | 45 request/hari | 50/hari (gratis) | Idle di produksi, hanya via ?test_nemotron dsb |
 | **Ollama Cloud** (Nemotron) | 150 request/hari | - | Idle di produksi, hanya via ?test_nemotron dsb |
+| **DeepSeek API resmi** | 50 request/hari (PAGAR BIAYA — provider berbayar dari saldo top-up user, bukan free tier) | Tidak ada limit request; yang membatasi saldo (top-up $2, 2026-07-18) | Idle di produksi, hanya via ?test_deepseek=1 (diagnostik Session 186) |
 
 **Pool yang paling perlu diawasi: SambaNova akun-1 dan Google AI Studio (Gemini).** SambaNova 1 masih primary di banyak tempat, sedangkan Gemini adalah fallback pertama JSON yang jika SambaNova error akan memikul beban JSON parse. Kuota Gemini gratis (1500 RPD) sangat cukup untuk headroom.
 
@@ -202,6 +203,7 @@ Kalau gagal total terjadi, user akan melihat pesan "AI tidak tersedia — coba b
 | Groq | `api.groq.com/openai/v1/chat/completions` | `llama-3.3-70b-versatile` | Fallback terakhir — Ringkasan Berita, Analisa Fundamental, AI Coach Jurnal | `GROQ_API_KEY` |
 | OpenRouter | `openrouter.ai/api/v1/chat/completions` | `nvidia/nemotron-3-ultra-550b-a55b:free` dkk | **Idle** di jalur produksi — Nemotron/Hermes cuma lewat query param diagnostik (lihat §3.1) | `OPENROUTER_API_KEY` |
 | Ollama Cloud | `ollama.com/api/chat` (native) | `nemotron-3-ultra` | **Idle** | `OLLAMA_API_KEY` |
+| DeepSeek (API resmi, BERBAYAR) | `api.deepseek.com/chat/completions` | `deepseek-v4-flash` (thinking disabled) | **Idle** — diagnostik `?test_deepseek=1` Call 1/2/3 (Session 186); kandidat primary tunggal, belum dipromosikan | `DEEPSEEK_API_KEY` |
 
 ---
 

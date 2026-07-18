@@ -193,6 +193,22 @@ Ditambahkan di `api/market-digest.js`: `?test_gemini=1`, `?test_mistral=1`, `?te
 
 ## Riset Sesi 185 — Polishing Chain AI & VPS/Data Gratis (2026-07-18)
 
+### 0. HASIL TES LIVE DeepSeek v4-flash vs V3.2 (Session 186, 2026-07-18)
+
+Follow-up langsung dari ide #1 di bawah. User top-up US$2 (saldo top-up TIDAK expire), tes via
+`?test_deepseek=1` (jalur terisolasi baru, pola Plan N) — 3 sampel flash + 2 sampel V3.2
+(SambaNova) dari data berita yang sama. Detail penuh di changelog `daun_merah.md` Session 186.
+
+*   **Kualitas:** flash unggul — FX per-pair lengkap 3/3 sampel + lebih padat angka (skew,
+    CFTC, level), V3.2 kedapatan menipiskan bagian FX 1/2 sampel. Leak frasa terlarang setara.
+*   **Latency:** setara dan sama-sama bervariasi (flash 7.5-23.1s, V3.2 6.3-21.4s).
+*   **Biaya nyata:** 3 generate penuh = US$0.01 (verifikasi endpoint `user/balance`). Proyeksi
+    cron 3x/hari 3 bulan ≈ US$0.90 → saldo $2 cukup untuk flash primary market-digest 3 bulan.
+*   **Catatan pra-promosi:** thesis Call 3 null 1/3 sampel (perlu cek log saat terulang);
+    outlier 23.1s dekat timeout 25s. Pagar biaya sudah dipasang: `_ai_guard.js` deepseek=50/hari.
+*   **Status: BELUM dipromosikan — menunggu keputusan user.** Ide GLM-5.2-via-NIM sebagai
+    copywriter (ide #1) tetap GUGUR untuk produksi (ToS NIM, lihat Keputusan Gate Awal Plan N).
+
 ### 1. Polishing Chain: DeepSeek v4 Pro + GLM-5.2
 *   **Ide:** Memisahkan peran AI. **DeepSeek v4 Pro** (API Resmi) sebagai *Data Analyst* (sangat cerdas logikanya untuk menghitung angka teknikal Entry/SL/TP). Hasilnya dikirim ke **GLM-5.2** (NVIDIA NIM) sebagai *Copywriter* untuk ditulis ulang menjadi Bahasa Indonesia yang luwes dan natural (karena bakat linguistik alami GLM-5.2 sangat tinggi).
 *   **Keuntungan:** Mendapatkan ulasan trading dengan data presisi tinggi sekaligus bahasa yang natural.
