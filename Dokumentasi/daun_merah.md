@@ -5469,3 +5469,21 @@ Mistral:     https://api.mistral.ai/v1
 **Status:** DeepSeek v4-flash BELUM dipromosikan ke chain produksi — menunggu keputusan user. Catatan sebelum promosi: (1) thesis null 1/3 sampel perlu diselidiki (kemungkinan parse JSON — cek log Vercel saat kejadian berikutnya), (2) outlier latency 23.1s dekat timeout 25s, pertimbangkan naikkan timeout Call 1 flash ke 25s+buffer bila jadi primary.
 
 **Verifikasi:** 334/334 unit test lolos; isolasi test terverifikasi live (provider lain `skipped_test`, `latest_article` tidak tersentuh).
+
+---
+
+## Changelog Session 186 lanjutan (2026-07-18) — Roadmap Data Feed & Infra + Plan O/P/Q Ditulis
+
+**Konteks:** Diskusi strategis lanjutan setelah tes flash (entri sebelumnya): user ingin arsitektur event-driven (data update otomatis tanpa cron, push notification saat ada rilis), meninjau chat riset Gemini (VPS gratis + percepat cron GH Actions), dan menyiapkan infrastruktur.
+
+### Keputusan & Temuan (verifikasi live, bukan asumsi):
+1. **OANDA DITUTUP sebagai kandidat data feed.** Akun demo user ternyata entitas "OANDA Global Markets" (MT5-only, server `OANDA_Global-Demo-1`); login portal ditolak; API v20 hanya untuk akun fxTrade yang tidak tersedia untuk pendaftar Indonesia.
+2. **Deriv API TERVERIFIKASI LIVE tanpa akun** (`wss://ws.derivws.com`, app_id publik): `active_symbols` = 15/15 pair Daun Merah tersedia (termasuk frxGBPAUD, frxGBPCAD, frxXAUUSD), `ticks_history style:candles` mengembalikan OHLC H1 EUR/USD nyata. Menggantikan slot OANDA untuk Fase A (on-demand Vercel) DAN Fase B (streaming daemon).
+3. **Saran Gemini "percepat cron GH Actions ke 15 menit" DITOLAK** dengan bukti: repo PRIVATE (menit terbatas, tiap job dibulatkan 1 menit — jadwal existing saja ±4.000 menit terbilling/bulan) dan cron GH tidak presisi (run digest terjadwal 00:00 UTC tercatat jalan 03:16 dan gagal, hari yang sama). Arah yang dipilih: on-demand + daemon, bukan cron lebih rapat.
+4. **VPS:** user daftar + pesan VPS gratis CepatCloud.id (menunggu aktivasi; halaman program diverifikasi masih hidup; review forum: pendaftaran kadang tak diproses, no technical support, IPv4 private — cukup karena daemon hanya butuh koneksi keluar). HF Spaces = plan B (RAM besar tapi auto-sleep + pinger area abu-abu ToS). Prinsip dikunci: **VPS penambah, bukan tulang punggung** (heartbeat + auto-fallback).
+5. **Ditemukan saat riset plan:** Plan M (dieksekusi paralel hari ini) sudah memasang fallback Twelve Data + alert Telegram Yahoo-down di `_ohlcv_fetch.js`/`admin.js` — Plan P/Q dirancang MENYAMBUNG fondasi ini (bukan duplikasi), dan scope P dikoreksi: XAU/USD (GC=F futures, punya volume) TIDAK ikut migrasi Deriv (spot, tanpa volume).
+
+### Dokumen:
+- `daun_merah_plan.md` DITULIS ULANG: plan selesai dihapus, backlog lama dipadatkan, 3 plan baru lengkap — **Plan O** (promosi DeepSeek flash primary + gate Analisa per Pair), **Plan P** (Fase A: Deriv primary candle 14 pair FX, Yahoo/Twelve Data fallback), **Plan Q** (Fase B: daemon VPS — gate heartbeat 7-14 hari, streaming, alert berita <1 menit, alert level harga, migrasi jadwal dari GH Actions).
+- `daun_merah_riset.md`: entri roadmap menggantikan ide MT5/VPS lama (entri sebelumnya hari ini).
+- Belum ada eksekusi kode fitur — sesuai instruksi user (plan-first, menunggu konfirmasi).
