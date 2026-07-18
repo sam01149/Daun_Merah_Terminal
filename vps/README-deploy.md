@@ -9,7 +9,10 @@ diukur lewat gate heartbeat Q-1, bukan diasumsikan aman.
 ## 1. Deploy service di Render
 
 1. https://dashboard.render.com → **New +** → **Web Service**.
-2. Connect repo GitHub `Daun_Merah` (repo yang sama dengan app utama).
+2. Connect repo GitHub `Daun_Merah_Terminal` (repo yang sama dengan app utama, **PRIVATE** — repo lain juga sudah private, tidak perlu diubah).
+   - Kalau ini pertama kali connect GitHub ke Render: klik **Connect account**, akan diarahkan ke halaman GitHub untuk authorize **Render GitHub App**.
+   - Repo private TETAP bisa diakses — pilih **"Only select repositories"** saat instalasi lalu centang `Daun_Merah_Terminal` (atau "All repositories" kalau mau lebih simpel). Ini pakai OAuth GitHub App, BUKAN clone URL publik, jadi repo tidak perlu di-public-kan.
+   - Kalau app-nya sudah pernah di-install sebelumnya tapi repo tidak muncul di daftar: buka github.com → Settings → Applications → Render → **Configure** → tambahkan `Daun_Merah_Terminal` ke daftar repo yang diizinkan.
 3. Isi:
    - **Root Directory**: `vps`
    - **Runtime**: Docker (otomatis terdeteksi dari `vps/Dockerfile`)
@@ -31,10 +34,12 @@ diukur lewat gate heartbeat Q-1, bukan diasumsikan aman.
 ## 3. Verifikasi gap via app utama
 
 `GET /api/admin?action=health` (header `x-admin-secret: <CRON_SECRET>`) sekarang
-melaporkan source `vps_heartbeat` — status `OK`/`DOWN` + `down_since_mins` kalau
-gap terdeteksi. Source ini otomatis DOWN kalau key `vps:heartbeat` di Redis
-belum ada atau lebih tua dari 5 menit (TTL `EX 300` di `heartbeat.js` sudah
-menjamin key hilang sendiri kalau proses berhenti kirim beat).
+melaporkan source `vps_heartbeat` dengan 3 kemungkinan status:
+- `UNCONFIGURED` — normal SEBELUM deploy pertama kali (diam, tidak alert).
+- `OK` + `age_seconds` — beat terakhir masih segar (<5 menit).
+- `DOWN` + `down_since_mins` — daemon SEMPAT aktif tapi sekarang beat hilang
+  >5 menit (TTL `EX 300` di `heartbeat.js` menjamin key hilang sendiri kalau
+  proses berhenti kirim beat) — ini yang jadi ukuran gap gate Q-1.
 
 ## 4. Gate Q-1
 
