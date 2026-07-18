@@ -16,6 +16,7 @@ const { autoUpdateFundamentals } = require('./_fundamental_parser');
 const { getLiveCbRates } = require('./_cb_rates');
 const { configureVapid, sendWebPush } = require('./_webpush');
 const { isCronCall: _isCronCallReq, isCronDedupFresh } = require('./_cron_dedup');
+const marketHours = require('./_market_hours');
 const cb = require('./_circuit_breaker');
 const rateLimit = require('./_ratelimit');
 const { allowAiCall } = require('./_ai_guard');
@@ -131,6 +132,7 @@ const SOURCE_CACHE_KEYS = {
   forexfactory:   [],
   redis:          [], // can't clear Redis keys if Redis itself is down
   vps_heartbeat:  [], // tidak ada cache turunan — hanya sinyal umur beat
+  data_freshness: [], // self-heal-nya trigger ohlcv_sync (lihat trySelfHealOhlcvSync), bukan clear cache
 };
 
 async function sendHealthTelegram(text) {
@@ -263,6 +265,57 @@ async function probeVpsHeartbeat() {
   throw new Error('vps:heartbeat hilang >5 menit — daemon sempat aktif, sekarang tidak terdeteksi');
 }
 
+// SELF-HEALING sisi Vercel (jalan walau daemon Railway mati total): probe umur
+// candle sentinel EURUSD. Basi >3 jam saat market FX buka = SEMUA jalur pengisi
+// (stream daemon, cron daemon, GH Actions) sedang gagal → healthHandler tidak
+// cuma melapor DOWN tapi langsung memicu ohlcv_sync (lihat trySelfHealOhlcvSync).
+// Kunci dedup Redis `selfheal:ohlcv_sync` SENGAJA sama dengan supervisor
+// vps/daemon.js — dua lapisan ini saling dedup, tidak dobel trigger.
+async function probeDataFreshness() {
+  const raw = await redisCmd('GET', 'ohlcv:EURUSD=X:1h');
+  let arr = null;
+  try { arr = raw ? JSON.parse(raw) : null; } catch(_) { arr = null; }
+  const newest = marketHours.newestCandleEpoch(arr);
+  const ageMins = newest != null ? Math.round((Date.now() - newest * 1000) / 60000) : null;
+  if (!marketHours.isFxMarketOpen(new Date())) {
+    return { note: 'market FX tutup — umur candle tidak dinilai', candle_age_mins: ageMins, sentinel: 'EURUSD=X' };
+  }
+  if (marketHours.isCandleStale(arr, Date.now())) {
+    throw new Error(newest == null
+      ? 'ohlcv:EURUSD=X:1h kosong/tidak terbaca padahal market buka'
+      : `candle terakhir ${ageMins} menit lalu (ambang 180) padahal market buka`);
+  }
+  return { candle_age_mins: ageMins, sentinel: 'EURUSD=X' };
+}
+
+// Fire-and-forget self-heal: NX 1 jam anti spam, lalu panggil ohlcv_sync di
+// host sendiri. Timeout klien 5 detik DISENGAJA pendek — begitu request sampai,
+// invocation ohlcv_sync jalan sampai selesai di function-nya sendiri (maxDuration
+// 60s) walau klien ini sudah putus; health check tidak perlu menunggu hasilnya.
+async function trySelfHealOhlcvSync(req) {
+  const CRON_SECRET = process.env.CRON_SECRET;
+  if (!CRON_SECRET) return { attempted: false, reason: 'CRON_SECRET kosong' };
+  try {
+    const got = await redisCmd('SET', 'selfheal:ohlcv_sync', '1', 'NX', 'EX', 3600);
+    if (got !== 'OK') return { attempted: false, reason: 'heal sudah dicoba <1 jam lalu, masih menunggu hasil' };
+  } catch(e) { return { attempted: false, reason: `Redis: ${e.message}` }; }
+  const host = req.headers.host || 'financial-feed-app.vercel.app';
+  try {
+    await fetch(`https://${host}/api/admin?action=ohlcv_sync`, {
+      headers: { 'x-cron-secret': CRON_SECRET },
+      signal: AbortSignal.timeout(5000),
+    });
+    console.log('health: self-heal — ohlcv_sync dipicu karena candle sentinel basi saat market buka');
+    return { attempted: true };
+  } catch(e) {
+    if (e.name === 'TimeoutError' || e.name === 'AbortError') {
+      console.log('health: self-heal — ohlcv_sync dipicu (fire-and-forget, klien putus duluan by design)');
+      return { attempted: true, note: 'fire-and-forget' };
+    }
+    return { attempted: false, reason: e.message };
+  }
+}
+
 const PROBES = {
   fred:           { fn: probeFred,           label: 'FRED API' },
   stooq:          { fn: probeStooq,          label: 'Stooq CSV' },
@@ -271,6 +324,7 @@ const PROBES = {
   cftc:           { fn: probeCFTC,           label: 'CFTC COT' },
   redis:          { fn: probeRedis,          label: 'Upstash Redis' },
   vps_heartbeat:  { fn: probeVpsHeartbeat,   label: 'VPS Heartbeat (Plan Q-1)' },
+  data_freshness: { fn: probeDataFreshness,  label: 'Data Freshness (candle FX)' },
 };
 
 async function healthHandler(req, res) {
@@ -360,6 +414,13 @@ async function healthHandler(req, res) {
     }
   }
 
+  // SELF-HEALING: candle basi terdeteksi → langsung sembuhkan (trigger
+  // ohlcv_sync), bukan hanya alert. Hasil percobaan dilampirkan ke report
+  // supaya terlihat di respons health & log cron.
+  if (report.data_freshness && report.data_freshness.status === 'DOWN') {
+    report.data_freshness.self_heal = await trySelfHealOhlcvSync(req);
+  }
+
   if (toAlert.length > 0) {
     const lines = toAlert.map(d =>
       `• *${d.label}*: ${d.error}${d.lastOk ? ` (OK terakhir: ${d.lastOk.substring(0, 16)} UTC)` : ' (belum pernah OK)'}`
@@ -418,6 +479,8 @@ const KEY_REGISTRY = [
   { key: 'cb_decisions',         owner: 'api/market-digest.js',  ttl_expected: null,   note: 'HSET CB rate decisions detected from headlines, overrides CB_FALLBACK metadata' },
   { key: 'vps:heartbeat',        owner: 'vps/heartbeat.js',      ttl_expected: 300,    note: 'Plan Q-1: epoch beat daemon Render, dibaca api/admin.js?action=health source=vps_heartbeat' },
   { key: 'vps:heartbeat:configured', owner: 'vps/heartbeat.js',  ttl_expected: null,   note: 'Plan Q-1: marker permanen "daemon pernah jalan" — beda UNCONFIGURED (belum deploy) vs DOWN asli' },
+  { key: 'selfheal:ohlcv_sync',      owner: 'api/admin.js + vps/daemon.js', ttl_expected: 3600,  note: 'NX lock self-heal: candle basi → trigger ohlcv_sync otomatis, maks 1x/jam lintas dua lapisan' },
+  { key: 'selfheal:ohlcv_alert_ts',  owner: 'vps/daemon.js',     ttl_expected: 86400,  note: 'Dedup 6 jam alert Telegram "self-heal gagal, candle masih basi setelah trigger otomatis"' },
 ];
 
 const DEPRECATED_KEYS = [

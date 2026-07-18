@@ -42,14 +42,95 @@ if (require.main === module && (!REDIS_URL || !REDIS_TOKEN)) {
   process.exit(1);
 }
 
-async function redisCmd(...args) {
-  const r = await fetch(REDIS_URL, {
-    method: 'POST',
-    headers: { 'Authorization': `Bearer ${REDIS_TOKEN}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify(args),
-    signal: AbortSignal.timeout(10000),
+// ══════════════════════════════════════════════════════════════════════════
+// SELF-HEALING LAPIS 0: safety net level proses.
+// unhandledRejection: ditelan + log (satu promise lupa di-catch tidak boleh
+// mematikan streaming/alert yang sehat). uncaughtException: state proses sudah
+// tidak bisa dipercaya — alert best-effort lalu exit(1); Railway restart
+// otomatis (vps/railway.json restartPolicyType ALWAYS) = penyembuhan level
+// platform. Hanya didaftarkan saat jalan sebagai proses, bukan saat di-require
+// test.
+// ══════════════════════════════════════════════════════════════════════════
+function registerProcessSafetyNet() {
+  process.on('unhandledRejection', (e) => {
+    console.warn('daemon: unhandledRejection (ditelan, proses lanjut):', (e && e.message) || e);
   });
-  return (await r.json()).result;
+  process.on('uncaughtException', (e) => {
+    console.error('daemon: uncaughtException — exit(1) supaya Railway restart proses:', (e && e.stack) || e);
+    const alert = sendTelegram(`*Daemon crash* — uncaughtException: ${(e && e.message) || e}. Proses exit, Railway restart otomatis.`);
+    Promise.race([alert, new Promise(r => setTimeout(r, 5000))]).finally(() => process.exit(1));
+  });
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// SELF-HEALING LAPIS 1: guard degradasi Redis (edge case "Redis budget
+// terlampaui" di daun_merah_plan.md §Plan Q — backoff tulis, bukan retry-storm).
+//
+// Semua kegagalan redisCmd beruntun (network/429 quota Upstash/5xx) dihitung;
+// setelah `threshold` gagal berturut, daemon masuk mode DEGRADED: semua operasi
+// non-esensial (tulis candle, poll berita, GET zona, supervisor) di-skip selama
+// cooldown yang menggandakan diri (60s → maks 30 menit). Heartbeat TIDAK
+// di-gate — dialah probe 60 detik yang me-reset guard begitu Redis pulih.
+// ══════════════════════════════════════════════════════════════════════════
+function createRedisGuard({ threshold = 5, baseCooldownMs = 60 * 1000, maxCooldownMs = 30 * 60 * 1000 } = {}) {
+  let failures = 0;
+  let degradedUntil = 0;
+  let cooldownMs = baseCooldownMs;
+  let degraded = false;
+  return {
+    // return true kalau BARU pulih dari degraded (buat log/alert recovery sekali)
+    onSuccess() {
+      failures = 0; degradedUntil = 0; cooldownMs = baseCooldownMs;
+      const recovered = degraded;
+      degraded = false;
+      return recovered;
+    },
+    // return true kalau BARU masuk degraded (buat alert sekali, bukan tiap gagal)
+    onFailure(now = Date.now()) {
+      failures++;
+      if (failures < threshold) return false;
+      degradedUntil = now + cooldownMs;
+      cooldownMs = Math.min(cooldownMs * 2, maxCooldownMs);
+      const entered = !degraded;
+      degraded = true;
+      return entered;
+    },
+    isDegraded(now = Date.now()) { return degraded && now < degradedUntil; },
+    state() { return { degraded, failures, degradedUntil }; },
+  };
+}
+
+const redisGuard = createRedisGuard();
+let lastRedisAlertAt = 0; // dedup alert in-memory — Redis lagi down, tidak bisa dedup di sana
+
+async function redisCmd(...args) {
+  try {
+    const r = await fetch(REDIS_URL, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${REDIS_TOKEN}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(args),
+      signal: AbortSignal.timeout(10000),
+    });
+    const json = await r.json();
+    // Upstash balas { error } (mis. quota 429) dengan status non-2xx — itu
+    // kegagalan juga, jangan diam-diam return undefined seperti sebelumnya.
+    if (!r.ok || json.error) throw new Error(`Redis HTTP ${r.status}: ${json.error || 'unknown'}`);
+    if (redisGuard.onSuccess()) {
+      console.log('daemon: Redis pulih — mode degraded dicabut, semua modul jalan normal lagi');
+      sendTelegram('*Redis pulih* — daemon keluar dari mode degraded, tulis candle/alert berjalan normal lagi.').catch(() => {});
+    }
+    return json.result;
+  } catch (e) {
+    if (redisGuard.onFailure()) {
+      console.warn(`daemon: Redis DEGRADED — ${redisGuard.state().failures} gagal beruntun (${e.message}); operasi non-esensial di-backoff, heartbeat tetap jadi probe`);
+      const now = Date.now();
+      if (now - lastRedisAlertAt > 6 * 60 * 60 * 1000) {
+        lastRedisAlertAt = now;
+        sendTelegram(`*Redis degraded* — daemon backoff tulis (gagal beruntun: ${e.message}). Heartbeat tetap probe tiap 60 detik; jalur Plan P/cron tidak terpengaruh.`).catch(() => {});
+      }
+    }
+    throw e;
+  }
 }
 
 async function sendTelegram(text) {
@@ -161,6 +242,12 @@ function mergeClosedCandle(existingArr, candle, maxLen = 120) {
 }
 
 async function writeClosedCandle(yahooSymbol, candle) {
+  if (redisGuard.isDegraded()) {
+    // Backoff tulis (self-heal lapis 1) — candle yang terlewat akan diisi
+    // ulang jalur Plan P/cron ohlcv_sync begitu Redis pulih, bukan hilang.
+    console.warn(`daemon: skip tulis candle ${yahooSymbol} — Redis degraded`);
+    return;
+  }
   const key = `ohlcv:${yahooSymbol}:1h`;
   let existing = [];
   try {
@@ -208,6 +295,32 @@ let reconnectDelayMs = 1000;
 const MAX_RECONNECT_MS = 5 * 60 * 1000;
 let firstDegradedAt = null;
 
+// ── SELF-HEALING LAPIS 2: watchdog WS zombie ──────────────────────────────
+// Reconnect existing hanya terpicu event 'close' — koneksi yang mati diam-diam
+// (TCP putus tanpa FIN, umum di container yang NAT-nya di-recycle) statusnya
+// tetap OPEN selamanya dan candle berhenti mengalir tanpa error apa pun.
+// Solusi: ping aplikasi Deriv ({"ping":1}) tiap 60 detik — server balas pong,
+// jadi lastWsActivityAt selalu segar walau market tutup (weekend) — lalu kalau
+// TIDAK ada pesan apa pun >3 menit padahal status OPEN, paksa reconnect.
+const WS_PING_INTERVAL_MS = 60 * 1000;
+const WS_STALL_MS = 3 * 60 * 1000;
+let lastWsActivityAt = 0;
+
+function shouldForceReconnect(lastActivityAt, now, stallMs = WS_STALL_MS) {
+  return lastActivityAt > 0 && (now - lastActivityAt) > stallMs;
+}
+
+function wsWatchdogTick() {
+  if (!derivWs || derivWs.readyState !== 1) return; // belum open / reconnect lain sedang jalan
+  try { derivWs.send(JSON.stringify({ ping: 1 })); } catch (e) { /* close event akan menyusul */ }
+  if (shouldForceReconnect(lastWsActivityAt, Date.now())) {
+    console.warn(`daemon: Deriv WS zombie — tidak ada pesan ${Math.round((Date.now() - lastWsActivityAt) / 1000)}s padahal status OPEN, paksa reconnect`);
+    const dead = derivWs;
+    derivWs = null;
+    if (typeof dead.forceReconnect === 'function') dead.forceReconnect();
+  }
+}
+
 async function maybeSendDegradedAlert() {
   const now = Date.now();
   try {
@@ -235,10 +348,28 @@ function connectDerivStream() {
     return null;
   }
 
+  // Guard per-socket: reconnect hanya boleh dijadwalkan SEKALI per socket —
+  // watchdog zombie bisa membunuh socket yang event 'close'-nya baru datang
+  // belakangan; tanpa guard ini keduanya menjadwalkan reconnect = 2 koneksi
+  // paralel = tulis Redis dobel.
+  let reconnectScheduled = false;
+  let killed = false;
+  const scheduleOnce = () => {
+    if (reconnectScheduled) return;
+    reconnectScheduled = true;
+    scheduleReconnect();
+  };
+  ws.forceReconnect = () => {
+    killed = true;
+    try { ws.close(); } catch (e) {}
+    scheduleOnce(); // jangan andalkan event 'close' dari socket zombie
+  };
+
   ws.addEventListener('open', () => {
     console.log('daemon: Deriv WS connected');
     reconnectDelayMs = 1000;
     firstDegradedAt = null;
+    lastWsActivityAt = Date.now();
     let i = 0;
     for (const derivSymbol of Object.values(YAHOO_TO_DERIV_SYMBOL)) {
       // Stagger subscribe supaya tidak burst 14 request dalam 1 tick.
@@ -255,6 +386,8 @@ function connectDerivStream() {
   });
 
   ws.addEventListener('message', (ev) => {
+    if (killed) return; // socket sudah divonis zombie — penggantinya yang berhak menulis
+    lastWsActivityAt = Date.now();
     let data;
     try { data = JSON.parse(ev.data); } catch (e) { return; }
     if (data.error) {
@@ -266,7 +399,7 @@ function connectDerivStream() {
     }
   });
 
-  ws.addEventListener('close', () => { console.warn('daemon: Deriv WS closed'); scheduleReconnect(); });
+  ws.addEventListener('close', () => { console.warn('daemon: Deriv WS closed'); scheduleOnce(); });
   ws.addEventListener('error', () => { /* 'close' tetap terpicu setelahnya */ });
 
   return ws;
@@ -308,6 +441,7 @@ let lastCursorPersistAt = 0;
 
 async function pollNews() {
   try {
+    if (redisGuard.isDegraded()) return; // backoff — dedup per-guid mencegah alert dobel saat pulih
     if (!newsCursorMs) {
       const savedRaw = await redisCmd('GET', 'daemon_news_cursor');
       newsCursorMs = savedRaw ? Number(savedRaw) : Date.now() - 5 * 60 * 1000;
@@ -384,6 +518,7 @@ async function getZoneData(yahooSymbol) {
   const cached = zoneDataCache[yahooSymbol];
   const now = Date.now();
   if (cached && (now - cached.fetchedAt) < ZONE_DATA_CACHE_TTL_MS) return cached.conf;
+  if (redisGuard.isDegraded()) return cached ? cached.conf : null; // pakai basi/skip, jangan tambah beban Redis
   if (zoneFetchInFlight[yahooSymbol]) return zoneFetchInFlight[yahooSymbol];
   const p = (async () => {
     let conf = null;
@@ -436,19 +571,41 @@ let cron = null;
 try { cron = require('node-cron'); } catch (e) { /* ditangani di startScheduler */ }
 
 async function triggerEndpoint(path) {
-  if (!CRON_SECRET) { console.warn(`daemon: CRON_SECRET kosong, skip trigger ${path}`); return; }
+  if (!CRON_SECRET) { console.warn(`daemon: CRON_SECRET kosong, skip trigger ${path}`); return false; }
   try {
     const r = await fetch(`${APP_BASE_URL}${path}`, {
       headers: { 'x-cron-secret': CRON_SECRET },
       signal: AbortSignal.timeout(55000),
     });
     console.log(`daemon: trigger ${path} -> HTTP ${r.status}`);
-  } catch (e) { console.warn(`daemon: trigger ${path} gagal:`, e.message); }
+    return r.ok;
+  } catch (e) { console.warn(`daemon: trigger ${path} gagal:`, e.message); return false; }
+}
+
+// SELF-HEALING LAPIS 3a: scheduler tidak boleh "sekali gagal, ya sudah" —
+// gagal (timeout/5xx/network) dicoba ulang SEKALI setelah 5 menit. Masih gagal
+// juga → alert Telegram (dedup in-memory 6 jam, karena hourly ohlcv_sync bisa
+// memicu tiap jam kalau Vercel down lama — GH Actions paralel tetap jadi
+// penyelamat selama masa itu).
+const TRIGGER_RETRY_DELAY_MS = 5 * 60 * 1000;
+let lastSchedFailAlertAt = 0;
+
+async function triggerWithRetry(path) {
+  if (await triggerEndpoint(path)) return true;
+  console.warn(`daemon: trigger ${path} gagal — retry sekali dalam ${TRIGGER_RETRY_DELAY_MS / 60000} menit (self-heal)`);
+  await new Promise(r => setTimeout(r, TRIGGER_RETRY_DELAY_MS));
+  if (await triggerEndpoint(path)) return true;
+  const now = Date.now();
+  if (now - lastSchedFailAlertAt > 6 * 60 * 60 * 1000) {
+    lastSchedFailAlertAt = now;
+    await sendTelegram(`*Scheduler gagal* — ${path} gagal 2x berturut (asli + retry 5 menit). GH Actions paralel masih jalan; cek log Vercel/Railway.`);
+  }
+  return false;
 }
 
 async function runDigestCycle() {
-  await triggerEndpoint('/api/market-digest');
-  await triggerEndpoint('/api/admin?action=ohlcv_analyze&symbol=GC%3DF&label=XAU%2FUSD');
+  await triggerWithRetry('/api/market-digest');
+  await triggerWithRetry('/api/admin?action=ohlcv_analyze&symbol=GC%3DF&label=XAU%2FUSD');
 }
 
 function startScheduler() {
@@ -460,8 +617,77 @@ function startScheduler() {
   cron.schedule('30 12 * * *', () => runDigestCycle().catch(() => {}));
   // ohlcv_sync tiap jam, offset menit ke-5 supaya tidak tabrakan detik dengan
   // ohlcv-sync.yml (keduanya sengaja jalan paralel selama masa observasi Q-6).
-  cron.schedule('5 * * * *', () => triggerEndpoint('/api/admin?action=ohlcv_sync').catch(() => {}));
+  cron.schedule('5 * * * *', () => triggerWithRetry('/api/admin?action=ohlcv_sync').catch(() => {}));
   console.log('daemon: Q-6 scheduler aktif (digest 3x/hari + ohlcv_sync tiap jam, paralel GH Actions)');
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// SELF-HEALING LAPIS 3b: supervisor freshness data. Tiap 10 menit cek umur
+// candle sentinel (EURUSD, pair paling likuid) di Redis: kalau candle terakhir
+// >3 jam padahal market FX buka, berarti SEMUA jalur pengisi (stream Q-3, cron
+// daemon, GH Actions) sedang gagal → daemon MENYEMBUHKAN sendiri dengan
+// trigger ohlcv_sync (jalur Plan P penuh: Yahoo→Deriv→Twelve Data), bukan cuma
+// mengeluh. Kunci NX 1 jam mencegah trigger bertubi-tubi; kalau SETELAH heal
+// dicoba data masih basi juga (NX gagal + tetap stale) baru eskalasi ke
+// Telegram (dedup 6 jam). Budget: 1 GET/10 menit = ~144 command/hari.
+//
+// isFxMarketOpen DIDUPLIKASI SADAR di api/_market_hours.js (Vercel tidak bisa
+// require lintas build ke vps/, lihat catatan kepala file) — dijaga sinkron
+// oleh test/self_healing.test.js (sweep 336 jam dibandingkan).
+// ══════════════════════════════════════════════════════════════════════════
+const SUPERVISOR_INTERVAL_MS = 10 * 60 * 1000;
+const CANDLE_STALE_MS = 3 * 60 * 60 * 1000;
+const SUPERVISOR_SENTINEL = 'EURUSD=X';
+
+function isFxMarketOpen(date = new Date()) {
+  const day = date.getUTCDay(), hour = date.getUTCHours();
+  if (day === 6) return false;              // Sabtu tutup penuh
+  if (day === 0) return hour >= 22;         // Minggu buka ~21:00 UTC; 22 = margin aman
+  if (day === 5) return hour < 21;          // Jumat tutup 21:00 UTC
+  return true;
+}
+
+function newestCandleEpoch(arr) {
+  if (!Array.isArray(arr) || arr.length === 0) return null;
+  let max = null;
+  for (const c of arr) {
+    const t = Number(c && c.t);
+    if (Number.isFinite(t) && (max === null || t > max)) max = t;
+  }
+  return max;
+}
+
+function isCandleStale(arr, nowMs, staleMs = CANDLE_STALE_MS) {
+  const t = newestCandleEpoch(arr);
+  if (t == null) return true; // tidak ada data sama sekali = basi
+  return nowMs - t * 1000 > staleMs;
+}
+
+let lastSupervisorHealAt = null; // observability untuk endpoint /status
+
+async function supervisorTick() {
+  try {
+    if (!CRON_SECRET) return;                 // tidak bisa menyembuhkan tanpa secret — lapisan Vercel yang ambil alih
+    if (redisGuard.isDegraded()) return;      // jangan menambah beban saat Redis sendiri bermasalah
+    if (!isFxMarketOpen(new Date())) return;  // weekend: candle tua itu normal
+    const raw = await redisCmd('GET', `ohlcv:${SUPERVISOR_SENTINEL}:1h`);
+    let arr = null;
+    try { arr = raw ? JSON.parse(raw) : null; } catch (e) { arr = null; }
+    if (!isCandleStale(arr, Date.now())) return;
+    const got = await redisCmd('SET', 'selfheal:ohlcv_sync', '1', 'NX', 'EX', '3600');
+    if (got === 'OK') {
+      console.warn('daemon: supervisor — candle basi >3 jam saat market buka, trigger ohlcv_sync (self-heal)');
+      lastSupervisorHealAt = Date.now();
+      await triggerEndpoint('/api/admin?action=ohlcv_sync');
+    } else {
+      // Heal sudah dicoba <1 jam lalu dan data MASIH basi — eskalasi.
+      const lastTs = await redisCmd('GET', 'selfheal:ohlcv_alert_ts');
+      if (!lastTs || Date.now() - Number(lastTs) > 6 * 60 * 60 * 1000) {
+        await sendTelegram('*Self-heal gagal* — candle FX masih basi >3 jam setelah trigger ohlcv_sync otomatis. Kemungkinan Yahoo+Deriv+Twelve Data down bersamaan atau bug — cek log Vercel.');
+        await redisCmd('SET', 'selfheal:ohlcv_alert_ts', String(Date.now()), 'EX', '86400');
+      }
+    }
+  } catch (e) { console.warn('daemon: supervisorTick gagal:', e.message); }
 }
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -475,6 +701,10 @@ function startHttpServer() {
       last_beat_epoch: lastBeatOk,
       last_beat_error: lastBeatError,
       deriv_stream: DERIV_APP_ID ? (derivWs ? 'connecting_or_up' : 'down') : 'disabled',
+      // Observability self-healing (lapis 1-3) — dibaca manual saat debug.
+      ws_last_activity_age_s: lastWsActivityAt ? Math.round((Date.now() - lastWsActivityAt) / 1000) : null,
+      redis_guard: redisGuard.state(),
+      last_supervisor_heal_at: lastSupervisorHealAt,
     }));
   }).listen(PORT, '0.0.0.0', () => {
     console.log(`daemon: HTTP server listening on 0.0.0.0:${PORT}`);
@@ -482,11 +712,14 @@ function startHttpServer() {
 }
 
 function main() {
+  registerProcessSafetyNet();
   beat();
   setInterval(beat, BEAT_INTERVAL_MS);
   startHttpServer();
   startDerivStream();
+  setInterval(wsWatchdogTick, WS_PING_INTERVAL_MS);
   setInterval(() => pollNews().catch(() => {}), NEWS_POLL_INTERVAL_MS);
+  setInterval(() => supervisorTick().catch(() => {}), SUPERVISOR_INTERVAL_MS);
   // Q-5 TIDAK pakai timer sendiri lagi — dipicu langsung dari handleOhlcvUpdate
   // (event-driven, lihat komentar di atas maybeCheckPriceZone).
   startScheduler();
@@ -497,4 +730,6 @@ if (require.main === module) main();
 module.exports = {
   mergeClosedCandle, normalizeDerivCandle, isHighImpactCategory, priceInZone,
   YAHOO_TO_DERIV_SYMBOL, DERIV_TO_YAHOO_SYMBOL,
+  // Self-healing (pure/testable):
+  createRedisGuard, shouldForceReconnect, isFxMarketOpen, newestCandleEpoch, isCandleStale,
 };

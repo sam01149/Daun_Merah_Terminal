@@ -177,3 +177,34 @@ kode jalan) — belum bisa dicentang di hari yang sama dengan deploy:**
 - Q-6: 3 hari berturut digest jalan tepat waktu ±2 menit dari jadwal.
 Kalau salah satu gagal konsisten, modul itu (bukan seluruh daemon) yang
 dievaluasi ulang — heartbeat Q-1 dan fallback Plan P/cron tidak terpengaruh.
+
+## 7. Lapisan self-healing (2026-07-18, sesi lanjutan malam)
+
+Daemon sekarang menyembuhkan dirinya sendiri di 4 lapis (detail teknis di
+komentar `daemon.js`, changelog `daun_merah.md`):
+
+- **Lapis 0 — proses**: `uncaughtException` → alert Telegram best-effort →
+  `exit(1)`; `vps/railway.json` (`restartPolicyType: ALWAYS`) menyuruh Railway
+  restart container-nya. `unhandledRejection` cuma di-log, tidak mematikan
+  proses. TIDAK perlu setting manual di dashboard — file config ikut repo.
+- **Lapis 1 — Redis**: gagal beruntun >=5 (network/429 quota Upstash) → mode
+  degraded: tulis candle, poll berita, GET zona, dan supervisor di-backoff
+  (cooldown 60s menggandakan diri s/d 30 menit); heartbeat tetap jadi probe
+  pemulihan tiap 60 detik. Alert Telegram saat masuk degraded & saat pulih.
+- **Lapis 2 — WebSocket zombie**: ping aplikasi Deriv (`{"ping":1}`) tiap 60
+  detik; kalau TIDAK ada pesan apa pun >3 menit padahal status masih OPEN
+  (TCP putus diam-diam), koneksi dibunuh paksa dan reconnect backoff jalan.
+- **Lapis 3 — data**: (a) scheduler yang gagal (timeout/5xx) di-retry SEKALI
+  setelah 5 menit sebelum menyerah + alert; (b) supervisor tiap 10 menit cek
+  umur candle sentinel `EURUSD=X` — basi >3 jam saat market FX buka → trigger
+  `ohlcv_sync` otomatis (lock `selfheal:ohlcv_sync` NX 1 jam), masih basi
+  setelah itu → alert Telegram (dedup 6 jam).
+
+Lapisan kembar di sisi Vercel (`admin?action=health` probe `data_freshness`)
+melakukan hal yang sama dari luar — tetap ada penyembuhan data walau daemon
+Railway mati total. Kunci lock-nya SAMA (`selfheal:ohlcv_sync`), jadi dua
+lapisan tidak saling dobel-trigger.
+
+Verifikasi observability: `GET /` domain publik daemon sekarang ikut memuat
+`ws_last_activity_age_s` (umur pesan WS terakhir), `redis_guard`
+(degraded/failures), dan `last_supervisor_heal_at`.

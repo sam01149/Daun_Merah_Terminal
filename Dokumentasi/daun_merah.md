@@ -1,10 +1,43 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-07-18 (Session 187 lanjutan 4 — audit budget & fix 2 bug nyata dari Plan Q-2..Q-6: cron ganda market-digest/ohlcv_analyze akan dobel biaya AI + dobel notifikasi tanpa dedup, dan cek zona harga event-driven bisa sampai ~80rb request Redis/hari tanpa cache in-memory. Keduanya sudah diperbaiki, `npm test` 345/345 hijau, CRON_SECRET juga sudah dirotasi & terverifikasi live.).
+> **Last updated:** 2026-07-18 (Session 188 — lapisan self-healing 4 lapis: proses daemon (crash → restart Railway otomatis), Redis (backoff degradasi saat gagal beruntun/quota), WebSocket zombie (ping + paksa reconnect), dan data (candle basi → trigger ohlcv_sync otomatis dari daemon DAN dari `action=health` Vercel; scheduler gagal → retry). `npm test` 374/374 hijau.).
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+---
+
+## Changelog Session 188 (2026-07-18) — Self-Healing 4 Lapis (penyimpanan, komputasi, data)
+
+**Konteks:** User minta aplikasi jadi *self-healing* "baik di penyimpanan, komputasi, dan semuanya". Audit menunjukkan resiliensi yang sudah ada (circuit breaker `api/_circuit_breaker.js`, retry `api/_retry.js`, single-flight `api/_fetch_lock.js`, reconnect backoff WS daemon, fallback chain AI/candle, health check + alert Telegram) semuanya bersifat **bertahan atau melapor** — belum ada yang **menyembuhkan** (memicu perbaikan otomatis). Sesi ini menambah lapisan penyembuhan tanpa mengubah perilaku fitur apa pun.
+
+**Lapis 0 — proses daemon (komputasi):**
+- `vps/daemon.js` `registerProcessSafetyNet()`: `unhandledRejection` ditelan + log (satu promise lupa catch tidak boleh mematikan streaming yang sehat); `uncaughtException` → alert Telegram best-effort (race 5 detik) → `exit(1)`.
+- `vps/railway.json` BARU: `restartPolicyType: ALWAYS` (config-as-code, terbaca otomatis karena Root Directory service = `vps/`) — proses mati karena apa pun di-restart Railway. Kombinasi keduanya = crash loop yang menyembuhkan diri, bukan proses zombie.
+
+**Lapis 1 — guard degradasi Redis (penyimpanan):**
+- `redisCmd` daemon sekarang MELEMPAR error kalau Upstash balas non-2xx / body `{error}` (mis. 429 quota) — sebelumnya diam-diam return `undefined`, kegagalan quota tak terlihat.
+- `createRedisGuard()`: >=5 gagal beruntun → mode degraded dengan cooldown 60 detik yang menggandakan diri (cap 30 menit). Selama degraded: tulis candle di-skip (diisi ulang jalur Plan P/cron saat pulih), poll berita di-skip (dedup per-guid mencegah alert dobel saat pulih), GET zona pakai cache basi/skip, supervisor diam. Heartbeat TIDAK di-gate — dialah probe 60 detik yang me-reset guard saat Redis pulih. Ini implementasi edge case Plan Q "budget terlampaui → backoff tulis, bukan retry-storm" yang sebelumnya baru tertulis di plan, belum di kode.
+- Alert Telegram saat masuk degraded (dedup in-memory 6 jam — Redis-nya sedang down, tidak bisa dedup di sana) dan saat pulih.
+
+**Lapis 2 — watchdog WebSocket zombie (komputasi):**
+- Celah lama: reconnect hanya terpicu event `close`; koneksi yang mati diam-diam (TCP putus tanpa FIN, umum saat NAT container di-recycle) statusnya tetap OPEN selamanya → candle berhenti mengalir tanpa error apa pun, tidak ada yang menyadari.
+- Fix: ping aplikasi Deriv (`{"ping":1}`) tiap 60 detik (server balas pong → aktivitas tetap segar walau market tutup weekend); tidak ada pesan apa pun >3 menit padahal OPEN → koneksi dibunuh paksa (`forceReconnect`). Guard per-socket `reconnectScheduled`/`killed` mencegah reconnect dobel (watchdog + event close yang datang terlambat) = mencegah 2 koneksi paralel yang tulis Redis dobel.
+
+**Lapis 3 — penyembuhan data (pipeline):**
+- **3a scheduler**: `triggerEndpoint` sekarang return sukses/gagal; `triggerWithRetry` mencoba ulang SEKALI setelah 5 menit sebelum menyerah + alert Telegram (dedup in-memory 6 jam). Dipakai digest 3x/hari + `ohlcv_sync` tiap jam.
+- **3b supervisor daemon**: tiap 10 menit cek umur candle sentinel `EURUSD=X` di Redis (~144 command/hari). Basi >3 jam PADAHAL market FX buka (`isFxMarketOpen`: Sabtu tutup, Minggu buka >=22 UTC, Jumat tutup >=21 UTC) = semua jalur pengisi gagal → trigger `ohlcv_sync` otomatis (lock `selfheal:ohlcv_sync` NX EX 1 jam). Masih basi setelah heal dicoba → eskalasi Telegram (dedup 6 jam via `selfheal:ohlcv_alert_ts`). Tanpa `CRON_SECRET` supervisor diam (tidak bisa menyembuhkan) dan lapisan Vercel yang ambil alih.
+- **3c lapisan kembar sisi Vercel** (jalan walau daemon Railway mati total): probe baru `data_freshness` di `admin?action=health` + `trySelfHealOhlcvSync()` — DOWN → langsung memicu `ohlcv_sync` di host sendiri (fire-and-forget, timeout klien 5 detik disengaja; invocation target lanjut sampai selesai di function-nya sendiri). Lock Redis SAMA dengan supervisor daemon → dua lapisan saling dedup, tidak dobel-trigger. Modul murni baru `api/_market_hours.js` (duplikasi sadar dengan daemon — `vps/` build Docker terisolasi — dijaga drift-guard test sweep 336 jam).
+- Registry `admin?action=redis-keys` ditambah entri `selfheal:ohlcv_sync` + `selfheal:ohlcv_alert_ts`; endpoint status daemon (`GET /`) sekarang memuat `ws_last_activity_age_s`, `redis_guard`, `last_supervisor_heal_at` untuk observability.
+
+**Yang SENGAJA tidak disentuh:** frontend `index.html`/`sw.js` (pola "Coba Lagi" manual + silent retry existing sudah memadai; data yang disembuhkan backend otomatis terbaca klien — menyentuh 17rb baris + naikkan `?v=` lockstep tidak sepadan risikonya untuk sesi ini), workflow GH Actions (tetap jadi jalur paralel), dan semua perilaku fitur (self-healing murni aditif).
+
+**Verifikasi:**
+- `npm test` **374/374 hijau** (19 test baru `test/self_healing.test.js`: guard degradasi Redis — ambang, transisi sekali, cooldown menggandakan + cap, reset saat sukses; `shouldForceReconnect` batas 3 menit; `isFxMarketOpen` 7 kasus batas di KEDUA salinan + drift-guard sweep 336 jam daemon vs `_market_hours.js`; `newestCandleEpoch`/`isCandleStale` termasuk input cacat).
+- Smoke test lokal daemon dengan Redis palsu: boot tanpa crash, heartbeat FAILED tertangkap + `redis_guard.failures` naik di endpoint status, WS Deriv connect live (balasan `MarketIsClosed` valid — Sabtu), field observability baru tampil.
+- `node -e "require('./api/admin.js')"` bersih (probe & self-heal baru tidak merusak load).
+- **BELUM diverifikasi live (butuh kondisi nyata, bukan kode):** restart Railway saat crash asli, transisi degraded saat quota Upstash benar-benar habis, heal otomatis saat candle benar-benar basi di market buka. Jalur-jalur ini fail-open — kalau tidak terpicu, perilaku app identik dengan sebelum sesi ini.
 
 ---
 
