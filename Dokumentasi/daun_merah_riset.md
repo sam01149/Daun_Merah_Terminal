@@ -165,21 +165,22 @@ Ditambahkan di `api/market-digest.js`: `?test_gemini=1`, `?test_mistral=1`, `?te
 | 3 | 13.1s | Ya | 1.916c | 0 | Campur | "Fed's Hammack" lagi |
 | 4 | 7.6s | Gagal | 925c | 0 | ID penuh | **Format Failure:** FX di-skip total, hanya menulis bagian XAUUSD tanpa header. |
 
-Mistral Medium gagal mematuhi format instruksi (melewatkan bagian FX sepenuhnya pada sampel 4) dan menyisipkan tata bahasa Inggris posesif ("Fed's Hammack") ke kalimat Indonesia. Pada uji Call 3 JSON, Mistral juga mengalami error HTTP 400.
+### NVIDIA NIM (1 sampel per model, Call 1)
 
-### NVIDIA NIM (`nvidia/nemotron-3-ultra-550b-a55b`, 1 sampel Call 1)
-
-| # | Latency | Sukses | Panjang | Forbidden phrase | Bahasa | Keterangan |
+| Model | Latency | Sukses | Panjang | Forbidden phrase | Bahasa | Keterangan |
 |---|---|---|---|---|---|---|
-| 1 | 20.9s | Gagal | 1.733c | 0 | ID penuh | **Format Failure:** FX (GBP/USD) dilewatkan total, model hanya menulis ulasan XAU/USD. Latency juga sangat tinggi. |
+| `nvidia/nemotron-3-ultra-550b-a55b` | 20.9s | Gagal | 1.733c | 0 | ID penuh | **Format Failure:** Bagian FX dilewatkan total, hanya menulis ulasan XAU/USD. |
+| `deepseek-ai/deepseek-v4-flash` | 24.1s | Ya | 2.915c | 2 ("di tengah", "sejalan dengan") | ID penuh | Ulasan FX dan XAU/USD sangat lengkap dan tajam. Namun latency kritis dekat timeout. |
 
-Meskipun model berhasil dihubungi live menggunakan API Key Vercel asli milik user (circuit breaker pulih ke CLOSED), model mengalami kegagalan format kritis dengan mengabaikan bagian FX sepenuhnya, mirip seperti Mistral. Selain itu, latency 20.9s sangat dekat dengan batas timeout 25s, yang berisiko memicu timeout berkala di produksi.
+**Evaluasi:**
+- **Nemotron 3 Ultra:** Mengalami kegagalan format kritis dengan mengabaikan bagian FX sepenuhnya (mirip seperti Mistral). Latency 20.9s terlalu dekat batas timeout 25s.
+- **DeepSeek v4 Flash:** Kualitas prosa dan struktur analisisnya sangat luar biasa (mengulas EUR/USD, GBP/USD, USD/JPY, AUD/USD, dan XAU/USD secara tajam dan runut). Namun, latency mencapai **24.1s** (sangat riskan mengalami timeout Vercel yang dipotong di 25s) dan membocorkan 2 frasa terlarang.
 
 ## Tahap 6 — Keputusan Final (2026-07-18)
 
 - **Gemini (gemini-flash-latest)**: **PROMOTE** ke chain produksi sebagai **Fallback 2** di Call 1 (di antara Cerebras gpt-oss dan Groq) dan **Fallback 1** di Call 2 & Call 3 (di antara SambaNova dan Groq karena mendukung JSON mode native `response_format`).
   * *Pelajaran penting:* Gemini 3.x selalu "thinking" dan tidak bisa dinonaktifkan. Selalu set `max_tokens` minimal 2500-3000 untuk Call JSON agar tidak terpotong (truncated) di tengah jalan, serta kirim parameter `reasoning_effort: 'low'`.
 - **Mistral (mistral-medium-latest)**: **REJECT**. Gagal format (mengabaikan instruksi FX) dan gagal JSON Call 3 (HTTP 400).
-- **NVIDIA NIM (Nemotron 3 Ultra)**: **REJECT**. 
+- **NVIDIA NIM**: **REJECT**. 
   * *Hambatan Hukum:* Ketentuan Layanan (*Terms of Service*) trial melarang penggunaan di produksi.
-  * *Hambatan Teknis:* Latency sangat tinggi (20.9s) dan mengalami kegagalan format (mengabaikan bagian FX sepenuhnya). Jauh di bawah keandalan Gemini/DeepSeek.
+  * *Hambatan Teknis:* Latency sangat tinggi (20.9s–24.1s) yang mendekati batas maksimal timeout Vercel 25s, sehingga tidak andal sebagai fallback yang stabil. Nemotron juga gagal format (mengabaikan FX). DeepSeek v4 Flash sangat baik dari segi konten, namun latency 24.1s dan leak kata terlarang menggugurkannya sebagai kandidat produksi.
