@@ -60,7 +60,10 @@
     TANPA token apa pun, baru daemon naik. **Plan B HF Spaces GUGUR (2026-07-18, dicek
     langsung di huggingface.co/new-space): Docker/Gradio Space kini butuh plan PRO berbayar,
     free tier tinggal Static (tanpa compute) — info "16GB gratis" di riset Sesi 185 & Gemini
-    SUDAH BASI.** Alternatif: Oracle Cloud Always Free (butuh kartu) / VPS murah / tunda Fase B.
+    SUDAH BASI.** Plan B baru: **Render free** (Docker, tanpa kartu) + pinger cron-job.org 10
+    menit vs spin-down 15 menit; Cloud Run DITOLAK (butuh kartu + serverless membekukan koneksi
+    WS antar-request, ping tidak menolong), Koyeb perlu verifikasi (kartu? kuota bulanan habis =
+    mati sisa bulan). Alternatif lain: Oracle Always Free (butuh kartu) / VPS murah / tunda Fase B.
   * *GH Actions:* repo PRIVATE = menit terbatas & cron sering telat (bukti 2026-07-18: run
     digest terjadwal 00:00 UTC jalan 03:16 dan gagal) — JANGAN tambah frekuensi cron (saran
     Gemini ditolak); arah justru pensiunkan ohlcv-sync/ta-warm setelah Fase B jalan.
