@@ -57,6 +57,13 @@ const DEFAULT_LIMITS = {
   gemini:          200,
   mistral:         200,
   nvidia:          200,
+  // DeepSeek API resmi (platform.deepseek.com) — BERBAYAR dari saldo top-up user
+  // (bukan free tier seperti provider lain di file ini). Limit harian di sini justru
+  // pagar biaya: 50 request/hari ≈ maksimal ~US$0.25/hari pada profil prompt Call 1
+  // (±13K token input, US$0.14/M cache-miss + output US$0.28/M) — saldo $2 tidak
+  // mungkin terkuras diam-diam oleh loop/abuse dalam sehari. Naikkan via env
+  // AI_DAILY_LIMIT_DEEPSEEK kalau nanti dipromosikan primary.
+  deepseek:        50,
 };
 
 function dailyLimit(provider) {
@@ -88,6 +95,7 @@ function providerFromUrl(url) {
   if (url.includes('sambanova.ai'))   return 'sambanova';
   if (url.includes('openrouter.ai'))  return 'openrouter';
   if (url.includes('cerebras.ai'))    return 'cerebras';
+  if (url.includes('deepseek.com'))   return 'deepseek';
   return null;
 }
 
