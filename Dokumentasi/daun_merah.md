@@ -1,10 +1,32 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-07-18 (Session 187 lanjutan 3 — Plan Q-2..Q-6 dieksekusi penuh sekaligus atas keputusan eksplisit user (override prasyarat gate Q-1 7-14 hari, mengandalkan fallback Plan P/cron yang sudah SELESAI): daemon.js (streaming candle Deriv, alert berita, alert level harga, scheduler node-cron) ditulis & di-deploy paralel dengan GH Actions; kriteria selesai terukur (butuh 3 hari live data) BELUM bisa dicentang, lihat status di bawah).
+> **Last updated:** 2026-07-18 (Session 187 lanjutan 4 — audit budget & fix 2 bug nyata dari Plan Q-2..Q-6: cron ganda market-digest/ohlcv_analyze akan dobel biaya AI + dobel notifikasi tanpa dedup, dan cek zona harga event-driven bisa sampai ~80rb request Redis/hari tanpa cache in-memory. Keduanya sudah diperbaiki, `npm test` 345/345 hijau, CRON_SECRET juga sudah dirotasi & terverifikasi live.).
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+---
+
+## Changelog Session 187 lanjutan 4 (2026-07-18) — Fix 2 bug budget Plan Q-6/Q-5 + rotasi CRON_SECRET
+
+**Konteks:** lanjutan langsung dari lanjutan 3 (Plan Q-2..Q-6 baru selesai ditulis). User minta cek ulang semua bagian yang berpotensi membebani/memenuhi kapasitas (Redis, Railway, dll) sebelum dianggap aman — audit ini menemukan 2 bug nyata, bukan cuma soal estimasi kapasitas.
+
+**Bug #1 (kritis) — `market-digest` & `ohlcv_analyze` akan generate AI 2x per slot:**
+Kedua endpoint itu didesain dengan asumsi "cron cuma 1 sumber, tidak pernah tabrakan" (komentar lama di `market-digest.js` sekitar `DIGEST_LOCK_KEY`). Begitu `vps/daemon.js` (Q-6) ikut memicu endpoint yang sama secara paralel dengan GitHub Actions, asumsi itu tidak berlaku lagi — tanpa guard, AI akan dipanggil 2x per slot digest (3x/hari) untuk hasil yang identik, DAN push notifikasi "Ringkasan siap" terkirim 2x ke user untuk sesi yang sama. `ohlcv_analyze` malah lebih parah — sama sekali tidak punya guard dedup apa pun sebelumnya (beda dari `market-digest.js` yang setidaknya punya single-flight 55 detik untuk trafik non-cron).
+- **Fix:** ditambahkan dedup khusus panggilan cron di kedua file (`api/market-digest.js`, `api/admin.js` `ohlcvAnalyzeHandler`) — cek umur `latest_article`/`ohlcv_analysis:<symbol>` sebelum generate; kalau masih fresh (<30 menit), sumber cron kedua cukup disajikan hasil yang sudah ada (`from_cache: 'cron_dedup'`), nol biaya AI tambahan. Window 30 menit sengaja jauh lebih pendek dari jarak antar 3 jadwal (~7 jam) supaya slot berikutnya tidak ikut ke-skip. Fail-open kalau cek Redis gagal (tetap generate, bukan silently block).
+
+**Bug #2 — cek zona harga (Q-5) event-driven bisa sampai ~80.000 request Redis/hari:**
+Setelah Q-5 diubah dari polling 60 detik jadi event-driven (dipicu tiap ada harga baru dari stream Q-3, atas permintaan user), ternyata kalau harga bergerak terus-menerus di 14 pair, itu bisa memicu GET Redis (`ohlcv_analysis:<symbol>`) sampai puluhan ribu kali sehari — jauh di atas target `<3.000/hari` dari Q-2.
+- **Fix:** data zona konfluensi di-cache in-memory di daemon selama 5 menit (`ZONE_DATA_CACHE_TTL_MS`), terpisah dari perbandingan harga-vs-zona (itu murni komputasi lokal, boleh sesering apa pun). Hasil: GET Redis dibatasi ke maks ~4.032/hari (14 pair × 288 refresh/hari).
+
+**Optimasi tambahan (bukan bug, cuma boros):** cursor posisi baca berita (Q-4) tadinya di-persist ke Redis tiap poll (~2.880 SET/hari) — dikurangi jadi tiap 2 menit (~720 SET/hari maks), aman karena dedup alert pakai key per-guid (`news_alert_sent:<guid>`), bukan posisi cursor.
+
+**Estimasi total command Redis daemon/hari setelah fix:** ~10.000 dari jatah rata-rata 16.600/hari (Upstash free 500K/bulan) — aman, tapi porsinya cukup besar; sisa ~6.600/hari harus cukup untuk seluruh app existing (belum diverifikasi dari dashboard Upstash langsung).
+
+**Ikut dikerjakan sesi ini:** `CRON_SECRET` production dirotasi (nilai lama dari rotasi session 145 sudah tidak diketahui siapa pun) — token baru dipasang di Vercel env production + GitHub Actions repo secret via `gh secret set`, diverifikasi FUNGSIONAL (bukan asumsi): endpoint `admin?action=health`/`redis-keys` dites langsung, 401 dengan secret salah, 200 dengan secret baru. Sempat ada percobaan pertama gagal karena trailing whitespace ikut ke-pipe dari PowerShell (`vercel env add` via `"..." | npx vercel ...`), diperbaiki pakai `printf` di Bash (tanpa newline) sebelum di-pipe ulang — pelajaran: hindari pipe string literal PowerShell untuk nilai yang sensitif ke whitespace, pakai `printf` shell POSIX.
+
+**Verifikasi:** `npm test` 345/345 hijau (tidak ada test baru ditambah untuk 2 fix cron-dedup di atas — cakupan test untuk itu masih celah, dicatat sebagai backlog kalau ada waktu sesi terpisah).
 
 ---
 

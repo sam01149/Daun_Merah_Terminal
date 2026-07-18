@@ -921,6 +921,30 @@ module.exports = async function handler(req, res) {
   const cronSecret    = req.headers['x-cron-secret'];
   const isCronCall    = isVercelCron || (cronSecret && cronSecret === process.env.CRON_SECRET);
 
+  // Q-6 (Plan Q, 2026-07-18): vps/daemon.js SEKARANG ikut memicu endpoint ini
+  // via x-cron-secret, PARALEL dengan GitHub Actions (sengaja, untuk bandingkan
+  // ketepatan jadwal — daun_merah_plan.md §Plan Q Q-6). Asumsi lama di komentar
+  // DIGEST_LOCK_KEY di bawah ("cron cuma 1 sumber, tidak pernah tabrakan") TIDAK
+  // LAGI benar begitu ada 2 sumber cron. DIGEST_LOCK_TTL (55 detik) untuk
+  // trafik non-cron TERLALU PENDEK untuk kasus ini (GH Actions pernah telat
+  // berjam-jam), jadi dedup cron pakai window sendiri yang lebih panjang,
+  // dicek dari umur latest_article — jauh lebih pendek dari jarak antar 3
+  // jadwal (~7 jam) supaya slot BERIKUTNYA tidak ikut ke-skip.
+  if (isCronCall) {
+    const CRON_DEDUP_WINDOW_MS = 30 * 60 * 1000;
+    try {
+      const raw = await redisCmd('GET', 'latest_article');
+      if (raw) {
+        const cached = JSON.parse(raw);
+        const age = Date.now() - new Date(cached.generated_at).getTime();
+        if (Number.isFinite(age) && age >= 0 && age < CRON_DEDUP_WINDOW_MS) {
+          console.log(`market-digest: cron call kedua untuk slot yang sama (cache masih fresh ${Math.round(age/1000)}s) — skip generate ulang`);
+          return res.status(200).json({ ...cached, thesis_alerts: null, from_cache: 'cron_dedup' });
+        }
+      }
+    } catch(e) { console.warn('market-digest: cron dedup check gagal (fail-open, tetap generate):', e.message); }
+  }
+
   // Multi-provider AI calls — rate limit to 4 req/min per IP
   if (!isCronCall && await rateLimit(req, res, { limit: 4, windowSecs: 60, endpoint: 'market-digest' })) return;
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');

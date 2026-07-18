@@ -180,6 +180,11 @@ async function handleOhlcvUpdate(ohlcv) {
   const candle = normalizeDerivCandle(ohlcv);
   if (!candle) return;
   lastLivePrice[yahooSymbol] = candle.c;
+  // Harga live berubah -> reaksi Q-5 di sini juga (event-driven), BUKAN nunggu
+  // timer terpisah — dibatasi ZONE_MIN_CHECK_INTERVAL_MS per symbol supaya
+  // tick yang deras (banyak per menit) tidak memaksa GET Redis per-tick juga
+  // (budget Q-2, sama semangatnya dengan larangan tulis candle per-tick).
+  maybeCheckPriceZone(yahooSymbol).catch(e => console.warn(`daemon: cek zona ${yahooSymbol} gagal:`, e.message));
 
   const prevEpoch = lastWrittenEpoch[yahooSymbol];
   if (prevEpoch != null && candle.t === prevEpoch) {
@@ -292,6 +297,15 @@ async function sendNewsAlert(item, cat) {
   ]);
 }
 
+// Cursor di-persist ke Redis TIDAK setiap poll (feed berita nyaris selalu ada
+// item baru tiap 30 detik, jadi kalau ikut poll = ~2.880 SET/hari) — cukup
+// tiap CURSOR_PERSIST_MIN_INTERVAL_MS, sisanya cukup di memori. Ini AMAN
+// karena dedup alert pakai key per-guid (news_alert_sent:<guid>), bukan
+// cursor — restart proses paling apes replay backlog beberapa menit, tidak
+// pernah kirim alert dobel.
+const CURSOR_PERSIST_MIN_INTERVAL_MS = 2 * 60 * 1000;
+let lastCursorPersistAt = 0;
+
 async function pollNews() {
   try {
     if (!newsCursorMs) {
@@ -316,19 +330,40 @@ async function pollNews() {
     }
     if (maxTs > newsCursorMs) {
       newsCursorMs = maxTs;
-      await redisCmd('SET', 'daemon_news_cursor', String(newsCursorMs), 'EX', '172800');
+      const now = Date.now();
+      if (now - lastCursorPersistAt >= CURSOR_PERSIST_MIN_INTERVAL_MS) {
+        lastCursorPersistAt = now;
+        await redisCmd('SET', 'daemon_news_cursor', String(newsCursorMs), 'EX', '172800');
+      }
     }
   } catch (e) { console.warn('daemon: pollNews gagal:', e.message); }
 }
 
 // ══════════════════════════════════════════════════════════════════════════
-// Q-5: alert level harga — cross live price (dari stream Q-3) vs zona
-// konfluensi cache (ohlcv_analysis:<symbol>, HTTP GET mode=cached, TANPA auth —
-// lihat api/admin.js:2556). Fitur opsional-terpisah (plan): kalau cache belum
-// ada untuk suatu pair (baru fresh kalau pair itu pernah dibuka/dianalisa),
-// pair itu di-skip diam-diam, bukan error.
+// Q-5: alert level harga — event-driven, dipicu langsung dari tiap update
+// harga live Q-3 (handleOhlcvUpdate), BUKAN timer polling terpisah.
+//
+// AUDIT BUDGET (2026-07-18, setelah versi awal ternyata bisa sampai ~80.000
+// GET/hari kalau tick deras di 14 pair — jauh di atas target <3.000/hari Q-2):
+// zona konfluensi (ohlcv_analysis:<symbol>) itu HANYA berubah kalau
+// ohlcv_analyze dijalankan ulang (cron/klik user), bukan tiap detik — jadi
+// data zona di-cache in-memory ZONE_DATA_CACHE_TTL_MS (5 menit) per symbol,
+// TERPISAH dari seberapa sering perbandingan harga-vs-zona jalan (itu murni
+// komputasi lokal, boleh sesering apa pun karena tidak menyentuh Redis).
+// Hasil: GET Redis dibatasi ke maks 14 pair x (1440 menit/5) = ~4.032/hari,
+// bukan puluhan ribu.
+//
+// Sumber zona: ohlcv_analysis:<symbol> (HTTP... eh, dibaca LANGSUNG dari Redis
+// di sini, bukan lewat HTTP — key SAMA yang diisi admin.js ohlcv_analyze),
+// BUKAN rr_cache_v2 (itu cache skew CME, beda data). Opsional-terpisah: kalau
+// cache belum ada untuk suatu pair (baru fresh kalau pair itu pernah
+// dibuka/dianalisa), pair itu di-skip diam-diam.
 // ══════════════════════════════════════════════════════════════════════════
-const ZONE_CHECK_INTERVAL_MS = 60 * 1000;
+const ZONE_DATA_CACHE_TTL_MS = 5 * 60 * 1000;
+const ZONE_CHECK_DEBOUNCE_MS = 3 * 1000; // sanity debounce CPU, BUKAN pembatas budget Redis (itu tugas cache TTL di atas)
+const zoneDataCache = {};      // symbol -> { conf, fetchedAt }
+const zoneFetchInFlight = {};  // symbol -> Promise sedang refresh (cegah thundering-herd saat cache basi)
+const lastZoneCheckAt = {};
 
 function priceInZone(price, center, tolerance) {
   if (!Number.isFinite(price) || !Number.isFinite(center) || !Number.isFinite(tolerance)) return false;
@@ -345,17 +380,33 @@ async function sendPriceZoneAlert(yahooSymbol, zone, price) {
   ]);
 }
 
+async function getZoneData(yahooSymbol) {
+  const cached = zoneDataCache[yahooSymbol];
+  const now = Date.now();
+  if (cached && (now - cached.fetchedAt) < ZONE_DATA_CACHE_TTL_MS) return cached.conf;
+  if (zoneFetchInFlight[yahooSymbol]) return zoneFetchInFlight[yahooSymbol];
+  const p = (async () => {
+    let conf = null;
+    try {
+      const raw = await redisCmd('GET', `ohlcv_analysis:${yahooSymbol}`);
+      if (raw) {
+        const data = JSON.parse(raw);
+        if (data?.confluence && Number.isFinite(data.confluence.tolerance)) conf = data.confluence;
+      }
+    } catch (e) { /* conf tetap null, dicoba lagi setelah TTL cache lewat */ }
+    zoneDataCache[yahooSymbol] = { conf, fetchedAt: Date.now() };
+    zoneFetchInFlight[yahooSymbol] = null;
+    return conf;
+  })();
+  zoneFetchInFlight[yahooSymbol] = p;
+  return p;
+}
+
 async function checkPriceZonesFor(yahooSymbol) {
   const price = lastLivePrice[yahooSymbol];
   if (price == null) return; // belum ada data live dari Q-3 untuk pair ini
-  let data;
-  try {
-    const raw = await redisCmd('GET', `ohlcv_analysis:${yahooSymbol}`);
-    if (!raw) return;
-    data = JSON.parse(raw);
-  } catch (e) { return; }
-  const conf = data?.confluence;
-  if (!conf || !Number.isFinite(conf.tolerance)) return;
+  const conf = await getZoneData(yahooSymbol);
+  if (!conf) return;
   const zones = [...(conf.above || []), ...(conf.below || [])];
   for (const zone of zones) {
     if (!priceInZone(price, zone.center, conf.tolerance)) continue;
@@ -368,10 +419,11 @@ async function checkPriceZonesFor(yahooSymbol) {
   }
 }
 
-async function checkPriceZones() {
-  for (const yahooSymbol of Object.keys(YAHOO_TO_DERIV_SYMBOL)) {
-    await checkPriceZonesFor(yahooSymbol);
-  }
+async function maybeCheckPriceZone(yahooSymbol) {
+  const now = Date.now();
+  if (now - (lastZoneCheckAt[yahooSymbol] || 0) < ZONE_CHECK_DEBOUNCE_MS) return;
+  lastZoneCheckAt[yahooSymbol] = now;
+  await checkPriceZonesFor(yahooSymbol);
 }
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -435,7 +487,8 @@ function main() {
   startHttpServer();
   startDerivStream();
   setInterval(() => pollNews().catch(() => {}), NEWS_POLL_INTERVAL_MS);
-  setInterval(() => checkPriceZones().catch(() => {}), ZONE_CHECK_INTERVAL_MS);
+  // Q-5 TIDAK pakai timer sendiri lagi — dipicu langsung dari handleOhlcvUpdate
+  // (event-driven, lihat komentar di atas maybeCheckPriceZone).
   startScheduler();
 }
 

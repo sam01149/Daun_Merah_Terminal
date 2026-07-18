@@ -2563,6 +2563,36 @@ async function ohlcvAnalyzeHandler(req, res) {
     }
   }
 
+  // Q-6 (Plan Q, 2026-07-18): market-digest.yml (GH Actions) memicu ANALISA
+  // XAU/USD lewat action ini setiap slot digest — vps/daemon.js SEKARANG ikut
+  // memicu endpoint yang SAMA secara paralel (sengaja, untuk bandingkan
+  // ketepatan jadwal). Endpoint ini TIDAK PERNAH punya guard "jangan generate
+  // ulang kalau baru saja generate" (beda dari market-digest.js yang setidaknya
+  // punya single-flight 55 detik) — tanpa guard di bawah, 2 sumber cron akan
+  // memanggil AI 2x per slot untuk simbol yang sama, sia-sia (datanya identik).
+  // Window 30 menit: jauh lebih pendek dari jarak antar slot (~7 jam) jadi
+  // tidak pernah menahan generate slot berikutnya, cukup panjang menutupi
+  // keterlambatan salah satu sumber cron (GH Actions pernah telat berjam-jam,
+  // tapi kalaupun cuma beda beberapa menit dengan VPS, tetap ke-dedup).
+  const isCronCall = req.headers['x-vercel-cron'] === '1' ||
+    (process.env.CRON_SECRET && (
+      req.headers['x-cron-secret']  === process.env.CRON_SECRET ||
+      req.headers['x-admin-secret'] === process.env.CRON_SECRET));
+  if (isCronCall) {
+    const CRON_DEDUP_WINDOW_MS = 30 * 60 * 1000;
+    try {
+      const raw = await redisCmd('GET', `ohlcv_analysis:${symbol}`);
+      if (raw) {
+        const cached = JSON.parse(raw);
+        const age = Date.now() - new Date(cached.loaded_at).getTime();
+        if (Number.isFinite(age) && age >= 0 && age < CRON_DEDUP_WINDOW_MS) {
+          console.log(`ohlcv_analyze: cron call kedua untuk ${symbol} (cache masih fresh ${Math.round(age/1000)}s) — skip generate ulang`);
+          return res.status(200).json({ ...cached, cached: true, from_cron_dedup: true });
+        }
+      }
+    } catch(e) { console.warn('ohlcv_analyze: cron dedup check gagal (fail-open, tetap generate):', e.message); }
+  }
+
   // Input klien di-cap defensif: excerpt resmi max 900 char (lihat _extractRingkasanExcerpt) —
   // body adalah input publik, jangan biarkan string raksasa menggelembungkan prompt AI.
   let ringkasanContext = req.body?.ringkasanContext || null;
