@@ -6081,7 +6081,7 @@ function _renderStructuredAi(structured, commentary, model, hasMakro, isCached, 
   const secondaryTag = secondaryBits.length ? ` <span class="analisa-ai-meta">· ${secondaryBits.join(' · ')}</span>` : '';
 
   let html = `<div class="analisa-ai-result-meta" style="font-size:9px;color:var(--muted);font-family:'DM Mono',monospace;margin: 12px 0 6px;text-transform:uppercase;letter-spacing:.05em" class="no-print">
-    🧠 AI${modelStr}${srcTag}${secondaryTag}
+    AI${modelStr}${srcTag}${secondaryTag}
   </div>`;
 
   if (structured) {
