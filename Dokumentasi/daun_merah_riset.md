@@ -24,6 +24,14 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 
 # Pertanyaan Terbuka & Parkiran Ide
 
+- **Desain Auto-Entry & Invalidation pada Berita/Hoax** (Session 199, 2026-07-19):
+  Tantangan otomatisasi keputusan AI ke akun demo riil (misal Deriv API) adalah penanganan *fundamental/geopolitical shock* mendadak setelah pending order terpasang.
+  * *Masalah:* Rapor win-rate historis AI (`setup_log:v1`) bisa terdistorsi akibat kekalahan Stop Loss (SL) yang murni disebabkan oleh kejutan berita mendadak (misalnya berita palsu/hoax geopolitik), bukan karena kualitas level teknikal yang buruk. Ini dapat merusak feedback loop AI (membuat AI terlalu takut mengambil setup teknikal valid).
+  * *Rencana Mitigasi:*
+    1. **Pre-emptive News Filter:** VPS daemon dilarang keras menaruh pending order baru jika terdeteksi rilis berita *high-impact* dalam rentang dekat (misal <4 jam).
+    2. **Mekanisme Auto-Cancel:** Jika terjadi deviasi aktual vs forecast eksternal yang signifikan sebelum harga menyentuh zona entry, VPS daemon secara proaktif membatalkan (*delete*) pending order tersebut di broker dan mengubah status di Redis menjadi `canceled` (bukan `sl`), sehingga terhindar dari bias hitung win-rate.
+    3. **Deteksi V-Shape Reversal:** Di sisi tracker virtual, jika SL tersentuh namun harga berbalik arah melewati entry menuju TP dalam waktu singkat (misal $\le 4$ jam), tandai sebagai `sl_volatile` / `fakeout_sl` agar model AI di masa depan mengetahui bahwa kegagalan tersebut bersifat temporal akibat likuiditas/noise berita palsu.
+    4. **Manual Admin Override:** Hak bagi admin untuk mengubah status transaksi yang rusak akibat anomali hoax di jurnal menjadi `invalid`/`fundamental_shock`.
 - **Kalibrasi keyakinan berbasis outcome** (eks "Tier 2", session 166): ikat badge keyakinan
   Analisa AI ke win-rate historis segmen serupa (pair + bias + rentang skor konfluensi) dari
   `setup_log:v1`, bukan self-assessment LLM. Prasyarat: sampel setup selesai cukup (indikatif
