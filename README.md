@@ -4,13 +4,13 @@
 
 # Daun Merah — Financial Feed PWA
 
-Agregator berita finansial real-time yang dirancang khusus untuk trader forex/XAU Indonesia bergaya *macro discretionary*. Aplikasi ini menggabungkan data makroekonomi bank sentral, sentimen institusional (COT), indikator teknikal multitimeframe, serta analisis fundamental terstruktur yang ditenagai oleh kecerdasan buatan (AI) multi-provider.
+Agregator berita finansial real-time yang dirancang khusus untuk trader forex/XAU Indonesia bergaya macro discretionary. Aplikasi ini menggabungkan data makroekonomi bank sentral, sentimen institusional (COT), indikator teknikal multitimeframe, serta analisis fundamental terstruktur yang ditenagai oleh kecerdasan buatan (AI) multi-provider.
 
-Aplikasi ini menggunakan arsitektur **Single-Page PWA** pada frontend, **Vercel Serverless Functions** (Node.js CommonJS) sebagai backend API, **Upstash Redis** untuk caching dan state persistence, serta **Railway VPS Daemon** sebagai background processor real-time.
+Aplikasi ini menggunakan arsitektur Single-Page PWA pada frontend, Vercel Serverless Functions (Node.js CommonJS) sebagai backend API, Upstash Redis untuk caching dan state persistence, serta Railway VPS Daemon sebagai background processor real-time.
 
 ---
 
-## 🗺️ Arsitektur Aliran Data & Sistem
+## Arsitektur Aliran Data & Sistem
 
 Berikut adalah visualisasi interaksi real-time antara layanan internal, API eksternal, basis data, dan antarmuka pengguna:
 
@@ -49,7 +49,7 @@ graph TD
     GH["GitHub Actions Workflows <br> (Cron Backup)"]
 
     %% Aliran Data Daemon (Railway)
-    DerivWS -->|1. Real-time Price Stream| Railway
+    DerivWS -->|1. Live Price Stream| Railway
     Railway -->|2. Stream & Cache Candle H1| Redis
     Railway -->|3. Cek Zona Konfluensi & Alert| Telegram
     Railway -->|4. Push Alert Berita Kritis| WebPush
@@ -72,48 +72,48 @@ graph TD
 
 ---
 
-## ⚡ Fitur Utama
+## Fitur Utama
 
 Aplikasi ini dibagi menjadi beberapa panel antarmuka yang terintegrasi:
 
-1. **Live RSS Feed (`feedScroll`)**
-   - Agregator berita finansial *real-time* dari FinancialJuice, InvestingLive, ING Think, dan rilis resmi bank sentral.
+1. **Live RSS Feed (feedScroll)**
+   - Agregator berita finansial real-time dari FinancialJuice, InvestingLive, ING Think, dan rilis resmi bank sentral.
    - Cache proxy server-side selama 50 detik via Redis untuk performa maksimal dan efisiensi kuota.
 
-2. **AI Market Digest (`ringkasanPanel`)**
-   - Analisis *pre-session* Bahasa Indonesia:FX macro, fundamental emas (XAU/USD), bias sentimen, dan arah pergerakan pasar.
+2. **AI Market Digest (ringkasanPanel)**
+   - Analisis pre-session Bahasa Indonesia: FX macro, fundamental emas (XAU/USD), bias sentimen, dan arah pergerakan pasar.
    - Dihasilkan otomatis 3 kali sehari (07:00, 14:00, 19:30 WIB) via Cron.
-   - Menggunakan pipeline 3-call AI terstruktur untuk menghasilkan *briefing* prosa, tabel bias bank sentral, dan *trade thesis* terstruktur.
+   - Menggunakan pipeline 3-call AI terstruktur untuk menghasilkan briefing prosa, tabel bias bank sentral, dan trade thesis terstruktur.
 
-3. **Analisa AI per Pair (`analisaPanel`)**
+3. **Analisa AI per Pair (analisaPanel)**
    - Mendukung 15 pasangan mata uang utama (EURUSD, GBPUSD, USDJPY, AUDUSD, USDCAD, USDCHF, NZDUSD, EURJPY, GBPJPY, EURGBP, AUDJPY, EURAUD, GBPAUD, GBPCAD, XAUUSD).
    - Menyediakan analisis teknikal & fundamental detail beserta level entry, Stop Loss (SL), dan Take Profit (TP) tertarget.
 
-4. **CB Bias Tracker & Fundamental Ranking (`fundamentalPanel`)**
-   - Pemantauan kebijakan suku bunga acuan dan sikap moneter (*Hawkish/Dovish*) dari 8 bank sentral utama (Fed, ECB, BoE, BoJ, RBA, RBNZ, BoC, SNB).
-   - Perhitungan otomatis yield spread obligasi pemerintah serta penentuan kekuatan relatif mata uang (*currency strength* tertimbang waktu).
+4. **CB Bias Tracker & Fundamental Ranking (fundamentalPanel)**
+   - Pemantauan kebijakan suku bunga acuan dan sikap moneter (Hawkish/Dovish) dari 8 bank sentral utama (Fed, ECB, BoE, BoJ, RBA, RBNZ, BoC, SNB).
+   - Perhitungan otomatis yield spread obligasi pemerintah serta penentuan kekuatan relatif mata uang (currency strength tertimbang waktu).
 
-5. **Economic Calendar (`calPanel`)**
-   - Kalender ekonomi dengan filter dampak tinggi (*High-Impact*) 7 hari ke depan berbasis data TradingView, dikonversi langsung ke Waktu Indonesia Barat (WIB).
+5. **Economic Calendar (calPanel)**
+   - Kalender ekonomi dengan filter dampak tinggi (High-Impact) 7 hari ke depan berbasis data TradingView, dikonversi langsung ke Waktu Indonesia Barat (WIB).
 
-6. **Commitment of Traders (COT) Report (`cotPanel`)**
-   - Data *positioning* spekulan non-komersial institusional langsung dari CFTC untuk mengukur bias akumulasi/distribusi jangka panjang.
+6. **Commitment of Traders (COT) Report (cotPanel)**
+   - Data positioning spekulan non-komersial institusional langsung dari CFTC untuk mengukur bias akumulasi/distribusi jangka panjang.
 
-7. **Pre-Entry Check (`checklistPanel`)**
+7. **Pre-Entry Check (checklistPanel)**
    - Lembar validasi sebelum melakukan eksekusi trading. Frontend akan men-tick secara deterministik berdasarkan data terkini (CB bias, COT, yield spread, level harga, kalender), kemudian memicu AI untuk memeriksa adanya kontradiksi logis atau faktor diskresioner lainnya.
 
 8. **Risk Regime Indicator**
-   - Pengukur sentimen pasar global (*Risk-On / Risk-Off*) berdasarkan data korelasi aset lintas kelas (VIX, obligasi, komoditas, dan ekuitas global).
+   - Pengukur sentimen pasar global (Risk-On / Risk-Off) berdasarkan data korelasi aset lintas kelas (VIX, obligasi, komoditas, dan ekuitas global).
 
-9. **Position Sizing Calculator (`sizingPanel`)**
+9. **Position Sizing Calculator (sizingPanel)**
    - Alat bantu kalkulasi ukuran lot transaksi berdasarkan persentase risiko, jarak SL, dan nilai pip pasangan mata uang.
 
-10. **Trade Journal & Coach AI (`jurnalPanel`)**
-    - Pencatatan aktivitas trading mandiri yang tersimpan di Redis. Dilengkapi dengan **AI Coach** yang menganalisis pola kemenangan/kekalahan untuk memberikan masukan perilaku berkala.
+10. **Trade Journal & Coach AI (jurnalPanel)**
+    - Pencatatan aktivitas trading mandiri yang tersimpan di Redis. Dilengkapi dengan AI Coach yang menganalisis pola kemenangan/kekalahan untuk memberikan masukan perilaku berkala.
 
 ---
 
-## 🛠️ Stack Teknologi
+## Stack Teknologi
 
 - **Frontend**: Vanilla HTML5, CSS3 (Custom design system), Vanilla JavaScript (PWA, Service Worker, Web Push API).
 - **Backend API**: Vercel Serverless Functions (Node.js, CommonJS).
@@ -124,7 +124,7 @@ Aplikasi ini dibagi menjadi beberapa panel antarmuka yang terintegrasi:
 
 ---
 
-## 📂 Struktur Direktori & Fungsi File
+## Struktur Direktori & Fungsi File
 
 ```
 ├── index.html              # Frontend utama: Struktur UI, PWA Logic, UI render
@@ -167,50 +167,50 @@ Aplikasi ini dibagi menjadi beberapa panel antarmuka yang terintegrasi:
 
 ---
 
-## 🤖 Rantai Fallback & Pipeline AI
+## Rantai Fallback & Pipeline AI
 
-Untuk memastikan uptime 100% menggunakan API gratisan, Daun Merah menerapkan sistem cascading fallback multi-provider yang diatur oleh `api/_ai_guard.js`.
+Untuk memastikan uptime 100% menggunakan API gratisan, Daun Merah menerapkan sistem cascading fallback multi-provider yang diatur oleh api/_ai_guard.js.
 
 ### Rantai Fallback per Endpoint:
 
 1. **Market Briefing (Digest Call 1 - Prosa)**
-   `DeepSeek v4-flash (Official)` ➔ `SambaNova (DeepSeek-V3.2)` ➔ `Cerebras (gpt-oss-120b)` ➔ `Google Gemini Flash` ➔ `Groq (llama-3.3-70b)` ➔ `Template Non-AI Deterministik (Fallback Absolut)`
+   DeepSeek v4-flash (Official) -> SambaNova (DeepSeek-V3.2) -> Cerebras (gpt-oss-120b) -> Google Gemini Flash -> Groq (llama-3.3-70b) -> Template Non-AI Deterministik (Fallback Absolut)
    
 2. **CB Bias & Thesis JSON (Digest Call 2 & 3)**
-   `DeepSeek v4-flash (Official)` ➔ `SambaNova (DeepSeek-V3.2)` ➔ `Google Gemini Flash (JSON Native)` ➔ `Groq (llama-3.3-70b)`
+   DeepSeek v4-flash (Official) -> SambaNova (DeepSeek-V3.2) -> Google Gemini Flash (JSON Native) -> Groq (llama-3.3-70b)
    
-3. **Analisa per Pair (`ohlcv_analyze`)**
-   `DeepSeek v4-flash (Official)` ➔ `SambaNova Akun 1 (DeepSeek-V3.2)` ➔ `SambaNova Akun 2 (DeepSeek-V3.2)` ➔ *(Tanpa Groq/Gemini, jika gagal langsung return AI unavailable)*
+3. **Analisa per Pair (ohlcv_analyze)**
+   DeepSeek v4-flash (Official) -> SambaNova Akun 1 (DeepSeek-V3.2) -> SambaNova Akun 2 (DeepSeek-V3.2) -> (Tanpa Groq/Gemini, jika gagal langsung return AI unavailable)
    
 4. **Analisa Fundamental & Coach Jurnal**
-   `Cerebras (gpt-oss-120b)` ➔ `SambaNova Akun 2 (DeepSeek-V3.2)` ➔ `Groq (llama-3.3-70b)`
+   Cerebras (gpt-oss-120b) -> SambaNova Akun 2 (DeepSeek-V3.2) -> Groq (llama-3.3-70b)
 
 5. **Pre-Entry Check AI Verdict**
-   `DeepSeek v4-flash (Official)` ➔ `SambaNova Akun 1 (DeepSeek-V3.2)` ➔ *(Jika gagal, evaluasi deterministik client-side tetap berjalan)*
+   DeepSeek v4-flash (Official) -> SambaNova Akun 1 (DeepSeek-V3.2) -> (Jika gagal, evaluasi deterministik client-side tetap berjalan)
 
 ### Budget Guard & Cooldown:
 - **Jatah Harian (Redis Counter)**: DeepSeek (50/hari), SambaNova (200/hari per akun), Gemini (200/hari), Cerebras (200/hari), Groq (500/hari).
-- **UI Cooldown**: Pembatasan 90 detik antar-generate disimpan di `localStorage` per peramban klien.
-- **Server Single-Flight Lock**: Lock `lock:market_digest_generate` (TTL 55s) di Redis mencegah generate ganda ketika beberapa klien mengakses menu "Ringkas Ulang" secara bersamaan.
+- **UI Cooldown**: Pembatasan 90 detik antar-generate disimpan di localStorage per peramban klien.
+- **Server Single-Flight Lock**: Lock lock:market_digest_generate (TTL 55s) di Redis mencegah generate ganda ketika beberapa klien mengakses menu "Ringkas Ulang" secara bersamaan.
 
 ---
 
-## 🛡️ Sistem Resiliensi & Self-Healing (4 Lapisan)
+## Sistem Resiliensi & Self-Healing (4 Lapisan)
 
-Daemon VPS (`vps/daemon.js`) dan API Vercel dilengkapi dengan kemampuan penyembuhan mandiri (*self-healing*) otomatis tanpa intervensi manual:
+Daemon VPS (vps/daemon.js) dan API Vercel dilengkapi dengan kemampuan penyembuhan mandiri (self-healing) otomatis tanpa intervensi manual:
 
-- **Lapis 0 (Resiliensi Container)**: Penangkapan error `uncaughtException` di daemon memicu alert Telegram + `process.exit(1)`. File `vps/railway.json` dengan `restartPolicyType: ALWAYS` memaksa Railway segera melakukan restart container segar.
-- **Lapis 1 (Degradasi Redis)**: Kegagalan koneksi/rate limit Upstash Redis berturut-turut sebanyak $\ge 5$ kali memicu **Mode Degraded**. Daemon akan mem-backoff penulisan data dan polling berita (cooldown melipat ganda hingga 30 menit). Heartbeat tetap dikirim sebagai probe pemulihan otomatis.
-- **Lapis 2 (WebSocket Watchdog)**: Daemon mengirim ping `{"ping":1}` ke Deriv WS tiap 60 detik. Jika tidak ada respons masuk $> 180$ detik padahal status socket `OPEN`, koneksi akan dibunuh paksa untuk memicu reconnect backoff bersih.
+- **Lapis 0 (Resiliensi Container)**: Penangkapan error uncaughtException di daemon memicu alert Telegram + process.exit(1). File vps/railway.json dengan restartPolicyType: ALWAYS memaksa Railway segera melakukan restart container segar.
+- **Lapis 1 (Degradasi Redis)**: Kegagalan koneksi/rate limit Upstash Redis berturut-turut sebanyak >= 5 kali memicu Mode Degraded. Daemon akan mem-backoff penulisan data dan polling berita (cooldown melipat ganda hingga 30 menit). Heartbeat tetap dikirim sebagai probe pemulihan otomatis.
+- **Lapis 2 (WebSocket Watchdog)**: Daemon mengirim ping {"ping":1} ke Deriv WS tiap 60 detik. Jika tidak ada respons masuk > 180 detik padahal status socket OPEN, koneksi akan dibunuh paksa untuk memicu reconnect backoff bersih.
 - **Lapis 3 (Resiliensi Sinkronisasi Data)**: 
-  - **Supervisor VPS**: Memeriksa umur candle sentinel `EURUSD=X` tiap 10 menit. Jika data basi $> 3$ jam saat pasar forex buka, daemon akan memicu `ohlcv_sync` otomatis.
-  - **Vercel Kembar**: Jika daemon VPS mati total, endpoint `admin?action=health` di Vercel mendeteksi data basi dan memicu `ohlcv_sync` mandiri via runtime serverless dengan pengunci Redis (`selfheal:ohlcv_sync`) agar tidak tabrakan dengan daemon.
+  - **Supervisor VPS**: Memeriksa umur candle sentinel EURUSD=X tiap 10 menit. Jika data basi > 3 jam saat pasar forex buka, daemon akan memicu ohlcv_sync otomatis.
+  - **Vercel Kembar**: Jika daemon VPS mati total, endpoint admin?action=health di Vercel mendeteksi data basi dan memicu ohlcv_sync mandiri via runtime serverless dengan pengunci Redis (selfheal:ohlcv_sync) agar tidak tabrakan dengan daemon.
 
 ---
 
-## 🔑 Kunci Environment (Env Variables)
+## Kunci Environment (Env Variables)
 
-Buat file `.env.local` di root proyek untuk pengembangan lokal, dan daftarkan variabel berikut pada dashboard Vercel & Railway:
+Buat file .env.local di root proyek untuk pengembangan lokal, dan daftarkan variabel berikut pada dashboard Vercel & Railway:
 
 ### 1. Kredensial AI & Caching (Vercel & Railway)
 ```env
@@ -250,12 +250,12 @@ VAPID_SUBJECT=mailto:sam@domain.com
 
 ---
 
-## 💻 Pengembangan Lokal
+## Pengembangan Lokal
 
 ### Prasyarat
 - Node.js versi 20 atau lebih baru.
 - Akun dan database Upstash Redis aktif.
-- Vercel CLI terinstall secara global (`npm install -g vercel`).
+- Vercel CLI terinstall secara global (npm install -g vercel).
 
 ### Langkah Instalasi
 1. Clone repositori ke mesin lokal Anda:
@@ -285,24 +285,24 @@ VAPID_SUBJECT=mailto:sam@domain.com
 
 ---
 
-## 🧪 Pengujian (Testing)
+## Pengujian (Testing)
 
-Aplikasi ini menggunakan modul *test runner* bawaan Node.js (`node --test`) yang sangat cepat dan bebas dependensi berat.
+Aplikasi ini menggunakan modul test runner bawaan Node.js (node --test) yang sangat cepat dan bebas dependensi berat.
 
 Jalankan seluruh suite pengujian menggunakan perintah:
 ```bash
 npm test
 ```
-*Catatan: Semua file pengujian berlokasi di dalam folder `test/` dan diwajibkan **100% hijau** sebelum perubahan di-push ke branch utama.*
+*Catatan: Semua file pengujian berlokasi di dalam folder test/ dan diwajibkan 100% hijau sebelum perubahan di-push ke branch utama.*
 
 ---
 
-## 🚀 Aturan Rilis & Deployment (ATURAN.md)
+## Aturan Rilis & Deployment (ATURAN.md)
 
-Proyek ini dipandu oleh aturan ketat di dalam [ATURAN.md](file:///c:/Users/sam/Documents/kerja/Daun_Merah/ATURAN.md) sebagai *Single Source of Truth* (SOT) pengembangan:
+Proyek ini dipandu oleh aturan ketat di dalam ATURAN.md sebagai Single Source of Truth (SOT) pengembangan:
 
-- **Deploy Otomatis**: Deployment ke produksi dilakukan secara eksklusif via `git push origin main`. Penggunaan `vercel deploy --prod` diblokir.
-- **Larangan Emoji**: Dilarang keras menampilkan emoji visual (seperti 🧠, ➔, ✅, ⚠️) pada teks antarmuka UI aplikasi. Gunakan styling CSS modern atau ikon berbasis SVG.
-- **Atribusi AI**: Dilarang menyertakan tanda Co-Authored-By AI atau penyebutan kontribusi agen AI dalam pesan commit. Satu-satunya kontributor terdaftar adalah `sam01149`.
-- **Bumping Versi Kunci**: Setiap kali melakukan modifikasi pada file frontend `index.html` atau Service Worker `sw.js`, pastikan meningkatkan nomor versi string variabel `APP_VERSION` dan query cache parameter `?v=` secara serentak (*lockstep*).
-- **Protokol Multi-Sesi**: Jika bekerja dalam mode paralel multi-sesi, klaim paket pekerjaan Anda terlebih dahulu pada file [daun_merah_plan.md](file:///c:/Users/sam/Documents/kerja/Daun_Merah/Dokumentasi/daun_merah_plan.md) untuk menghindari tabrakan kode.
+- **Deploy Otomatis**: Deployment ke produksi dilakukan secara eksklusif via git push origin main. Penggunaan vercel deploy --prod diblokir.
+- **Larangan Emoji**: Dilarang keras menampilkan emoji visual (seperti emoji pikiran, centang, tanda seru peringatan, tanda panah tebal) pada teks antarmuka UI aplikasi. Gunakan styling CSS modern atau ikon berbasis SVG.
+- **Atribusi AI**: Dilarang menyertakan tanda Co-Authored-By AI atau penyebutan kontribusi agen AI dalam pesan commit. Satu-satunya kontributor terdaftar adalah sam01149.
+- **Bumping Versi Kunci**: Setiap kali melakukan modifikasi pada file frontend index.html atau Service Worker sw.js, pastikan meningkatkan nomor versi string variabel APP_VERSION dan query cache parameter ?v= secara serentak (lockstep).
+- **Protokol Multi-Sesi**: Jika bekerja dalam mode paralel multi-sesi, klaim paket pekerjaan Anda terlebih dahulu pada file daun_merah_plan.md untuk menghindari tabrakan kode.
