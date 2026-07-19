@@ -2730,6 +2730,24 @@ async function ohlcvAnalyzeHandler(req, res) {
     }
   }
 
+  // PLAN T-1 (2026-07-19, rapat mitigasi weekend): pasar FX tutup Jumat 21:00 UTC
+  // s/d Minggu ~22:00 UTC — generate baru selama itu cuma menganalisa candle
+  // penutupan Jumat yang beku, nol nilai tambah tapi tetap makan AI call tiap
+  // slot cron/klik manual. Gate ini cover cron GH Actions + daemon VPS + klik
+  // manual sekaligus (semua lewat fungsi ini): nol AI call selama pasar tutup.
+  if (!marketHours.isFxMarketOpen()) {
+    try {
+      const raw = await redisCmd('GET', `ohlcv_analysis:${symbol}`);
+      if (raw) {
+        return res.status(200).json({ ...JSON.parse(raw), cached: true, market_closed: true });
+      }
+    } catch(e) { console.warn('ohlcv_analyze: market_closed cache read gagal:', e.message); }
+    return res.status(200).json({
+      commentary: null, structured: null, cached: false, market_closed: true,
+      error: 'Pasar forex sedang tutup — belum ada analisa tersimpan untuk pair ini.',
+    });
+  }
+
   // Q-6 (Plan Q, 2026-07-18): market-digest.yml (GH Actions) memicu ANALISA
   // XAU/USD lewat action ini setiap slot digest — vps/daemon.js SEKARANG ikut
   // memicu endpoint yang SAMA secara paralel (sengaja, untuk bandingkan

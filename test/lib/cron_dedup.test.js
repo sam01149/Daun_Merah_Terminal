@@ -6,6 +6,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { isCronCall, isCronDedupFresh } = require('../../api/_cron_dedup.js');
+const marketHours = require('../../api/_market_hours.js');
 
 function fakeReq(headers) { return { headers }; }
 
@@ -125,6 +126,11 @@ test('integrasi ohlcv_analyze: cron kedua dengan ohlcv_analysis:<symbol> masih f
     calls.push(String(url));
     return { ok: true, json: async () => ({ result: JSON.stringify(fakeAnalysis) }) };
   };
+  // PLAN T-1: dedup ini khusus menguji cron-dedup, bukan gate market-tutup
+  // (yang dites terpisah di test/admin/) — paksa "market buka" supaya test ini
+  // tidak jadi rapuh terhadap jam/hari nyata saat dijalankan.
+  const origIsOpen = marketHours.isFxMarketOpen;
+  marketHours.isFxMarketOpen = () => true;
 
   try {
     const handler = require('../../api/admin.js');
@@ -136,6 +142,7 @@ test('integrasi ohlcv_analyze: cron kedua dengan ohlcv_analysis:<symbol> masih f
     assert.equal(calls.length, 1, 'harus berhenti setelah 1x GET ohlcv_analysis:<symbol> — tidak boleh lanjut ke loadOhlcvData/AI');
   } finally {
     global.fetch = origFetch;
+    marketHours.isFxMarketOpen = origIsOpen;
     delete process.env.CRON_SECRET;
     delete process.env.UPSTASH_REDIS_REST_URL;
     delete process.env.UPSTASH_REDIS_REST_TOKEN;
