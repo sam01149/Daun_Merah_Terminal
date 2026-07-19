@@ -11,7 +11,7 @@ const {
   severityTagForHeadline,
   parseEconNumber,
   annotateHeadlineSeverity,
-} = require('../api/market-digest.js');
+} = require('../../api/market-digest.js');
 
 // ── parseEconNumber ──────────────────────────────────────────────────────────
 

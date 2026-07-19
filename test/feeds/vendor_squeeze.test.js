@@ -8,8 +8,8 @@
 const { test } = require('node:test');
 const assert = require('node:assert');
 
-const { _parseOpenInterest, _parseCotPercentLine, _pctileRank } = require('../api/feeds.js');
-const { _aggregateFedwatchProbs } = require('../api/rate-path.js');
+const { _parseOpenInterest, _parseCotPercentLine, _pctileRank } = require('../../api/feeds.js');
+const { _aggregateFedwatchProbs } = require('../../api/rate-path.js');
 
 // ── Sampel blok COT asli (dipangkas) ──────────────────────────────────────────
 const COT_BLOCK_REAL = [

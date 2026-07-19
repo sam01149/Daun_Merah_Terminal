@@ -9,9 +9,9 @@ const assert = require('node:assert');
 delete process.env.UPSTASH_REDIS_REST_URL;
 delete process.env.UPSTASH_REDIS_REST_TOKEN;
 
-const { allowAiCall, providerFromUrl, DEFAULT_LIMITS } = require('../api/_ai_guard');
-const rateLimit = require('../api/_ratelimit');
-const cb = require('../api/_circuit_breaker');
+const { allowAiCall, providerFromUrl, DEFAULT_LIMITS } = require('../../api/_ai_guard');
+const rateLimit = require('../../api/_ratelimit');
+const cb = require('../../api/_circuit_breaker');
 
 // ── _ai_guard ───────────────────────────────────────────────────────────────
 
@@ -111,7 +111,7 @@ test('circuit breaker onSuccess/onFailure tidak melempar tanpa Redis env', async
 
 // ── admin.js _pickExpiryLevels (option expiry → ohlcv_analyze, sesi 138) ─────
 
-const { _pickExpiryLevels } = require('../api/admin.js');
+const { _pickExpiryLevels } = require('../../api/admin.js');
 
 test('_pickExpiryLevels: filter pair, buang non-numeric, urut terdekat ke harga, cap 6', () => {
   const expiries = [

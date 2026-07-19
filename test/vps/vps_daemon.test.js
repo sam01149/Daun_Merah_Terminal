@@ -12,14 +12,14 @@ const path = require('path');
 const {
   mergeClosedCandle, normalizeDerivCandle, isHighImpactCategory, priceInZone,
   YAHOO_TO_DERIV_SYMBOL,
-} = require('../vps/daemon.js');
-const { mapYahooSymbolToDeriv } = require('../api/_ohlcv_fetch.js');
+} = require('../../vps/daemon.js');
+const { mapYahooSymbolToDeriv } = require('../../api/_ohlcv_fetch.js');
 
 // ── Drift guard: vps/newscat.js harus byte-identik dengan newscat.js root ───
 
 test('vps/newscat.js byte-identik dengan newscat.js root (single source of truth)', () => {
-  const root = fs.readFileSync(path.join(__dirname, '..', 'newscat.js'), 'utf8');
-  const copy = fs.readFileSync(path.join(__dirname, '..', 'vps', 'newscat.js'), 'utf8');
+  const root = fs.readFileSync(path.join(__dirname, '..', '..', 'newscat.js'), 'utf8');
+  const copy = fs.readFileSync(path.join(__dirname, '..', '..', 'vps', 'newscat.js'), 'utf8');
   assert.equal(copy, root,
     'vps/newscat.js menyimpang dari newscat.js root — salin ulang persis, jangan edit salah satu sendirian');
 });

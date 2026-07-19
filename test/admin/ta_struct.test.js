@@ -11,7 +11,7 @@ delete process.env.UPSTASH_REDIS_REST_TOKEN;
 const {
   _findSwings, _classifyStructure, _clusterSrLevels, _fibLevels,
   _dailyPivots, _prevWeekHighLow, _detectCandlePatterns, _rsi14, buildOhlcvText,
-} = require('../api/admin.js');
+} = require('../../api/admin.js');
 
 const DAY = 86400;
 // Candle sintetis: o=c=(h+l)/2 kecuali dioverride
@@ -266,7 +266,7 @@ test('buildOhlcvText: data legacy (tanpa field struktur baru) tetap jalan tanpa 
 
 // ── _confluenceZones + _formatConfluenceBlock (session 166) ──────────────────
 
-const { _confluenceZones, _formatConfluenceBlock } = require('../api/admin.js');
+const { _confluenceZones, _formatConfluenceBlock } = require('../../api/admin.js');
 
 test('_confluenceZones: deterministik — dua panggilan data sama hasil identik', () => {
   const a = _confluenceZones(fullData(), []);
@@ -340,7 +340,7 @@ test('_formatConfluenceBlock: render header + ID zona A1/B1', () => {
 
 // ── _evaluateSetups + _aggSetupStats (Tier 1 outcome logging, session 166) ────
 
-const { _evaluateSetups, _aggSetupStats, _formatTrackRecordBlock, _calEventMsWib, _buildAnalyzeCalBlock } = require('../api/admin.js');
+const { _evaluateSetups, _aggSetupStats, _formatTrackRecordBlock, _calEventMsWib, _buildAnalyzeCalBlock } = require('../../api/admin.js');
 
 // Candle 1H sintetis: t dalam detik epoch
 const mkC = (t, o, h, l, c) => ({ t, o, h, l, c, v: 0 });

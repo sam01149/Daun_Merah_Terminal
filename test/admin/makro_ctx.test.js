@@ -11,7 +11,7 @@ const path = require('path');
 delete process.env.UPSTASH_REDIS_REST_URL;
 delete process.env.UPSTASH_REDIS_REST_TOKEN;
 
-const { _extractRingkasanExcerpt, _formatFundamentalBlock } = require('../api/admin.js');
+const { _extractRingkasanExcerpt, _formatFundamentalBlock } = require('../../api/admin.js');
 
 // Artikel sintetis bergaya digest: jangkar → tag per currency → Konfirmasi → blok XAU
 const ARTICLE = [
@@ -72,7 +72,7 @@ test('excerpt: pair tanpa segmen match → fallback 3 paragraf, artikel null →
 // ── Mirror client vs server ──────────────────────────────────────────────────
 
 test('mirror: _extractRingkasanExcerptJs (index.html) identik dengan versi server', () => {
-  const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+  const html = fs.readFileSync(path.join(__dirname, '..', '..', 'index.html'), 'utf8');
   const start = html.indexOf('function _extractRingkasanExcerptJs(');
   assert.ok(start !== -1, 'fungsi client harus ada di index.html');
   // Brace-counting naif gagal di sini (fungsi berisi regex dengan {} tak seimbang,

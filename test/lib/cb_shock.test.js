@@ -12,7 +12,7 @@ const {
   buildShockNarrative,
   announceTsFromMeetingDate,
   CB_SHOCK_PROXY,
-} = require('../api/_cb_shock.js');
+} = require('../../api/_cb_shock.js');
 
 // ── classifyCbShock: 4 kelas ─────────────────────────────────────────────────
 

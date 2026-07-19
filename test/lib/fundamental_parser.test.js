@@ -2,7 +2,7 @@
 // Unit test parser murni — jalankan: npm test (node --test, tanpa network/Redis)
 const { test } = require('node:test');
 const assert = require('node:assert');
-const { parseFundamentalFromHeadline, parseCBDecision } = require('../api/_fundamental_parser');
+const { parseFundamentalFromHeadline, parseCBDecision } = require('../../api/_fundamental_parser');
 
 // ── parseFundamentalFromHeadline ────────────────────────────────────────────
 

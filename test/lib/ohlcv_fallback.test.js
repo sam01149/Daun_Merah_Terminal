@@ -8,7 +8,7 @@ const {
   normalizeTwelveDataCandles,
   fetchFallbackCandles,
   shouldSendYahooAlert,
-} = require('../api/_ohlcv_fetch.js');
+} = require('../../api/_ohlcv_fetch.js');
 
 // ── mapYahooSymbolToTwelveData: mapping simbol ──────────────────────────────
 

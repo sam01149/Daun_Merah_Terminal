@@ -16,7 +16,7 @@ const {
   callOllama, OLLAMA_URL, OLLAMA_NEMOTRON_MODEL, CB_OLLAMA_NEMOTRON, withNoThink,
   NEMOTRON_SUPER_MODEL, CB_OPENROUTER_NEMOTRON_SUPER,
   HERMES_MODEL, CB_OPENROUTER_HERMES,
-} = require('../api/market-digest.js');
+} = require('../../api/market-digest.js');
 
 test('NEMOTRON_MODEL: model id persis sesuai slug free-tier OpenRouter (bukan typo, bukan versi berbayar)', () => {
   assert.strictEqual(NEMOTRON_MODEL, 'nvidia/nemotron-3-ultra-550b-a55b:free');

@@ -45,8 +45,8 @@ function errResponse(status) {
 }
 
 // Force fresh require so module-level state (none here, but future-proof) is clean
-delete require.cache[require.resolve('../api/journal.js')];
-const { _aiCall: aiCall } = require('../api/journal.js');
+delete require.cache[require.resolve('../../api/journal.js')];
+const { _aiCall: aiCall } = require('../../api/journal.js');
 
 test('aiCall: Cerebras primary sukses — cuma 1 fetch call, ke api.cerebras.ai dengan model gpt-oss-120b', async () => {
   await withEnv({ CEREBRAS_API_KEY: 'sk-c', SAMBANOVA_API_KEY_CALL1: 'sk-s', GROQ_API_KEY: 'sk-g' }, async () => {

@@ -8,7 +8,7 @@
 // sebagai teks "&amp;" — bukan gambar yang hilang, murni double-escape.
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { parseRSSItems } = require('../api/feeds.js');
+const { parseRSSItems } = require('../../api/feeds.js');
 
 function fixtureItem({ title, guid, pubDate }) {
   return `<item><title>${title}</title><guid>${guid}</guid><pubDate>${pubDate}</pubDate><link>https://example.com/${guid}</link></item>`;

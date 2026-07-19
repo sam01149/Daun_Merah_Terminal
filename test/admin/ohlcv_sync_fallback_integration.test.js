@@ -45,8 +45,8 @@ test('ohlcv_sync: Yahoo mati total -> semua pair fallback ke Twelve Data, shape 
     throw new Error('unhandled URL in test mock: ' + u);
   };
 
-  delete require.cache[require.resolve('../api/admin.js')];
-  const handler = require('../api/admin.js');
+  delete require.cache[require.resolve('../../api/admin.js')];
+  const handler = require('../../api/admin.js');
   const res = fakeRes();
   await handler({
     method: 'GET',

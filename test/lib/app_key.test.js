@@ -7,7 +7,7 @@ const assert = require('node:assert');
 const fs = require('fs');
 const path = require('path');
 
-const { requireAppKey } = require('../api/_app_key');
+const { requireAppKey } = require('../../api/_app_key');
 
 function fakeReqRes(headers = {}, method = 'GET') {
   const req = { headers, method };
@@ -91,7 +91,7 @@ function fakeEndpointRes() {
 
 test('integrasi: calendar & market-digest menolak tanpa kunci SEBELUM kerja apapun', async () => {
   process.env.APP_KEY = 'rahasia-123';
-  for (const mod of ['../api/calendar.js', '../api/market-digest.js']) {
+  for (const mod of ['../../api/calendar.js', '../../api/market-digest.js']) {
     const handler = require(mod);
     const res = fakeEndpointRes();
     await handler({ headers: {}, method: 'GET', query: {} }, res);
@@ -103,7 +103,7 @@ test('integrasi: calendar & market-digest menolak tanpa kunci SEBELUM kerja apap
 
 test('integrasi: feeds type=rss lolos gate (service worker), type=cot diblok', async () => {
   process.env.APP_KEY = 'rahasia-123';
-  const handler = require('../api/feeds.js');
+  const handler = require('../../api/feeds.js');
 
   const cot = fakeEndpointRes();
   await handler({ headers: {}, method: 'GET', query: { type: 'cot' } }, cot);
@@ -124,7 +124,7 @@ test('integrasi: feeds type=rss lolos gate (service worker), type=cot diblok', a
 // ── Client wrapper (diekstrak dari index.html) ───────────────────────────────
 
 function extractWrapper() {
-  const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+  const html = fs.readFileSync(path.join(__dirname, '..', '..', 'index.html'), 'utf8');
   const start = html.indexOf('function _wrapFetchWithAppKey(');
   assert.ok(start !== -1, '_wrapFetchWithAppKey harus ada di index.html');
   let depth = 0, i = html.indexOf('{', start);

@@ -12,8 +12,8 @@ const assert = require('node:assert');
 const fs = require('fs');
 const path = require('path');
 
-const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
-const sw = fs.readFileSync(path.join(__dirname, '..', 'sw.js'), 'utf8');
+const html = fs.readFileSync(path.join(__dirname, '..', '..', 'index.html'), 'utf8');
+const sw = fs.readFileSync(path.join(__dirname, '..', '..', 'sw.js'), 'utf8');
 
 test('index.html: baris 1 persis "<!DOCTYPE html>", tanpa teks nyasar sebelum/sesudahnya', () => {
   const firstLine = html.split('\n')[0].replace(/\r$/, '');

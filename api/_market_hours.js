@@ -8,7 +8,7 @@
 // DUPLIKASI SADAR dengan vps/daemon.js (isFxMarketOpen/newestCandleEpoch/
 // isCandleStale) — vps/ di-build sebagai Docker image terisolasi (Root
 // Directory Railway = vps/) jadi tidak bisa require lintas folder; dijaga
-// sinkron oleh test/self_healing.test.js (sweep per-jam dibandingkan).
+// sinkron oleh test/vps/self_healing.test.js (sweep per-jam dibandingkan).
 
 const CANDLE_STALE_MS = 3 * 60 * 60 * 1000; // 3 jam — candle H1 sehat maks ~2 jam
 

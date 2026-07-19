@@ -7,8 +7,8 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 
-const daemon = require('../vps/daemon.js');
-const marketHours = require('../api/_market_hours.js');
+const daemon = require('../../vps/daemon.js');
+const marketHours = require('../../api/_market_hours.js');
 
 // ── Lapis 1: createRedisGuard ────────────────────────────────────────────────
 

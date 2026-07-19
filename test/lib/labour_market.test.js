@@ -10,7 +10,7 @@ const {
   buildAssessment,
   computeLabourAssessment,
   fetchLabourSeries,
-} = require('../api/_labour_market.js');
+} = require('../../api/_labour_market.js');
 
 const cfgById = (id) => LABOUR_INDICATORS.find(c => c.id === id);
 

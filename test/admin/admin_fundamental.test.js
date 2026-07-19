@@ -57,7 +57,7 @@ function fakeReqRes() {
   return { req, res, headers };
 }
 
-const handler = require('../api/admin.js');
+const handler = require('../../api/admin.js');
 
 test('fundamental_analysis: Cerebras primary sukses — 1 fetch call ke api.cerebras.ai model gpt-oss-120b', async () => {
   await withEnv({ CEREBRAS_API_KEY: 'sk-c', SAMBANOVA_API_KEY_CALL1: 'sk-s', GROQ_API_KEY: 'sk-g' }, async () => {
@@ -148,7 +148,7 @@ test('fundamental_analysis: semua provider gagal -> 500 "All providers failed"',
 });
 
 // ── Helper murni prompt fundamental (2026-07-19): umur rilis + previous ────────
-const { _fundAgeDays, _formatFundDataLine } = require('../api/admin.js');
+const { _fundAgeDays, _formatFundDataLine } = require('../../api/admin.js');
 const NOW_MS = new Date('2026-07-19T12:00:00Z').getTime();
 
 test('_fundAgeDays: YYYY-MM-DD valid -> selisih hari; hari sama -> 0', () => {

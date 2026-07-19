@@ -9,7 +9,7 @@
 //    expectancy terbesar dulu).
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const journalHandler = require('../api/journal.js');
+const journalHandler = require('../../api/journal.js');
 const { _sanitizeChecklistSnapshot: sanitizeChecklistSnapshot } = journalHandler;
 
 // ── sanitizeChecklistSnapshot: pure function ──────────────────────────────

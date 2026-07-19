@@ -633,7 +633,7 @@ function startScheduler() {
 //
 // isFxMarketOpen DIDUPLIKASI SADAR di api/_market_hours.js (Vercel tidak bisa
 // require lintas build ke vps/, lihat catatan kepala file) — dijaga sinkron
-// oleh test/self_healing.test.js (sweep 336 jam dibandingkan).
+// oleh test/vps/self_healing.test.js (sweep 336 jam dibandingkan).
 // ══════════════════════════════════════════════════════════════════════════
 const SUPERVISOR_INTERVAL_MS = 10 * 60 * 1000;
 const CANDLE_STALE_MS = 3 * 60 * 60 * 1000;

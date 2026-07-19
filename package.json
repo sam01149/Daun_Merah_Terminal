@@ -2,7 +2,7 @@
   "name": "daun-merah",
   "version": "1.0.0",
   "scripts": {
-    "test": "node --test \"test/*.test.js\""
+    "test": "node --test \"test/**/*.test.js\""
   },
   "dependencies": {
     "web-push": "^3.6.7"

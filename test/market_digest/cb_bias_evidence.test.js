@@ -5,8 +5,8 @@
 // digantikan headline generik apa pun yang kebetulan match keyword di siklus berikutnya.
 const { test } = require('node:test');
 const assert = require('node:assert');
-const { mergeSourceHeadlines } = require('../api/market-digest.js');
-const { isCbHeadline, stripHtml, kwTest, CB_KW } = require('../api/_cb_keywords.js');
+const { mergeSourceHeadlines } = require('../../api/market-digest.js');
+const { isCbHeadline, stripHtml, kwTest, CB_KW } = require('../../api/_cb_keywords.js');
 
 test('mergeSourceHeadlines: headline lama (format string, pra-fix) tetap dipertahankan saat siklus baru cuma nemu headline generik', () => {
   const prev = ['RBNZ hikes 25bps, Orr signals more tightening ahead'];

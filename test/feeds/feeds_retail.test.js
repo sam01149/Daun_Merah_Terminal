@@ -7,7 +7,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { parseRetailPositions, storeRetailHistory, retailHistoryHandler } = require('../api/feeds.js');
+const { parseRetailPositions, storeRetailHistory, retailHistoryHandler } = require('../../api/feeds.js');
 
 const FIXTURE_HTML = `
 <div class="line">

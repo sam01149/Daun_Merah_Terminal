@@ -7,7 +7,7 @@ const assert = require('node:assert');
 const fs = require('fs');
 const path = require('path');
 
-const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+const html = fs.readFileSync(path.join(__dirname, '..', '..', 'index.html'), 'utf8');
 
 const deStart = html.indexOf('function decodeHtmlEntities(s)');
 assert.ok(deStart !== -1, 'fungsi decodeHtmlEntities harus ada di index.html');

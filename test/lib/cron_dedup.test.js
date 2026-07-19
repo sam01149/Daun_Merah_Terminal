@@ -5,7 +5,7 @@
 // logikanya bisa dites tanpa mock Redis/handler penuh.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { isCronCall, isCronDedupFresh } = require('../api/_cron_dedup.js');
+const { isCronCall, isCronDedupFresh } = require('../../api/_cron_dedup.js');
 
 function fakeReq(headers) { return { headers }; }
 
@@ -96,7 +96,7 @@ test('integrasi market-digest: cron kedua dengan latest_article masih fresh -> c
   };
 
   try {
-    const handler = require('../api/market-digest.js');
+    const handler = require('../../api/market-digest.js');
     const res = fakeRes();
     await handler({ headers: { 'x-cron-secret': 'rahasia-cron' }, method: 'GET', query: {} }, res);
 
@@ -127,7 +127,7 @@ test('integrasi ohlcv_analyze: cron kedua dengan ohlcv_analysis:<symbol> masih f
   };
 
   try {
-    const handler = require('../api/admin.js');
+    const handler = require('../../api/admin.js');
     const res = fakeRes();
     await handler({ headers: { 'x-cron-secret': 'rahasia-cron' }, method: 'GET', query: { action: 'ohlcv_analyze', symbol: 'GC=F', label: 'XAU/USD' } }, res);
 

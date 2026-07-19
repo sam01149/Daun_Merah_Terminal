@@ -5,7 +5,7 @@
 // narasi AI hanya lapisan opsional di atas angka yang sudah pasti benar.
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const journalHandler = require('../api/journal.js');
+const journalHandler = require('../../api/journal.js');
 const { _journalBiasStats: journalBiasStats } = journalHandler;
 
 function mkEntry({ id, createdAt, closedAt, r, playbook = null, pair = 'EUR/USD', status = 'closed' }) {

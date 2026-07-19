@@ -11,7 +11,7 @@ delete process.env.UPSTASH_REDIS_REST_TOKEN;
 
 const {
   validateThesis, thesisPairCurrencies, thesisInvalidationCurrencyConsistent,
-} = require('../api/market-digest.js');
+} = require('../../api/market-digest.js');
 
 function baseThesis(overrides = {}) {
   return {
@@ -81,7 +81,7 @@ test('validateThesis: field lain tetap divalidasi seperti sebelumnya', () => {
 
 // ── applyRegimeConfidenceGuard (plan G5): jaring pengaman kode berbasis regime mentah ──
 
-const { applyRegimeConfidenceGuard } = require('../api/market-digest.js');
+const { applyRegimeConfidenceGuard } = require('../../api/market-digest.js');
 
 test('regime guard: risk_off + long AUD/USD → confidence capped ke 2 + regime_note', () => {
   const t = baseThesis({ pair_recommendation: 'AUD/USD', direction: 'long', strongest_currency: 'AUD', weakest_currency: 'USD', confidence_1_to_5: 4, invalidation_condition: 'AUD melemah tajam' });

@@ -9,7 +9,7 @@
 //    halaman) tidak overlap/kehilangan data saat dipanggil berulang sampai archive habis.
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { parseRSSItems, storeNewsHistory, newsHistoryHandler } = require('../api/feeds.js');
+const { parseRSSItems, storeNewsHistory, newsHistoryHandler } = require('../../api/feeds.js');
 
 function fixtureItem({ title, guid, pubDate, desc }) {
   return `<item><title>${title}</title><guid>${guid}</guid><pubDate>${pubDate}</pubDate><link>https://example.com/${guid}</link>${desc ? `<description>${desc}</description>` : ''}</item>`;
