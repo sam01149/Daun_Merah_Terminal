@@ -95,8 +95,9 @@ module.exports = async function handler(req, res) {
   if (action === 'pre_entry_check')    return preEntryCheckHandler(req, res);
   if (action === 'ohlcv_dashboard')    return ohlcvDashboardHandler(req, res);
   if (action === 'setup_stats')        return setupStatsHandler(req, res);
+  if (action === 'setup_override')     return setupOverrideHandler(req, res);
   if (action === 'polymarket')         return polymarketHandler(req, res);
-  return res.status(400).json({ error: 'Missing ?action= — use health, redis-keys, admin-prompts, push, fundamental_get, fundamental_seed, fundamental_refresh, fundamental_analysis, journal_import, circuit-reset, circuit-status, gdpnow, ohlcv_sync, ohlcv_read, ohlcv_analyze, ohlcv_critic, pre_entry_check, ohlcv_dashboard, or polymarket' });
+  return res.status(400).json({ error: 'Missing ?action= — use health, redis-keys, admin-prompts, push, fundamental_get, fundamental_seed, fundamental_refresh, fundamental_analysis, journal_import, circuit-reset, circuit-status, gdpnow, ohlcv_sync, ohlcv_read, ohlcv_analyze, ohlcv_critic, pre_entry_check, ohlcv_dashboard, setup_stats, setup_override, or polymarket' });
 };
 
 // ── Shared Redis helper ────────────────────────────────────────────────────────
@@ -2397,7 +2398,15 @@ function _confluenceZones(data, expiryLvls) {
 // dihitung menang/kalah); pending terlalu lama → expired; gap data (candle tertua
 // > 24 jam setelah setup dibuat, tidak tahu apa yang terjadi) → stale.
 // Pure function — dites di test/admin/ta_struct.test.js.
-function _evaluateSetups(setups, candlesBySymbol, nowMs) {
+//
+// PLAN U-1 (2026-07-20): saat status jadi 'sl', dua deteksi label penyebab loss
+// otomatis (lihat _detectLossLabel) — mencegah AI "salah belajar" saat SL sebenarnya
+// dipicu news shock/fakeout, bukan level teknikal buruk. Deteksi HANYA jalan pada
+// transisi open->sl di tick evaluasi ini (bukan re-scan entri 'sl' lama dari sebelum
+// fitur ini ada — entri lama tetap tereevaluasi normal, cuma tidak dapat label
+// retroaktif). `calendarEvents` opsional (default []) = backward-compatible, caller
+// lama yang panggil dengan 3 argumen tetap jalan tanpa fundamental_shock.
+function _evaluateSetups(setups, candlesBySymbol, nowMs, calendarEvents) {
   const DAY = 86400000;
   const nums = s => (String(s).match(/[\d.]+/g) || []).map(Number).filter(n => !isNaN(n));
   for (const st of setups || []) {
@@ -2425,7 +2434,12 @@ function _evaluateSetups(setups, candlesBySymbol, nowMs) {
         const hitSl = st.bias === 'bearish' ? c.h >= sl : c.l <= sl;
         const hitTp = st.bias === 'bearish' ? c.l <= tp : c.h >= tp;
         if (hitSl && hitTp) { st.status = 'ambiguous'; st.closed_t = c.t; break; }
-        if (hitSl) { st.status = 'sl'; st.closed_t = c.t; break; }
+        if (hitSl) {
+          st.status = 'sl'; st.closed_t = c.t;
+          const label = _detectLossLabel({ closedT: c.t, eLo, eHi, tp, bias: st.bias, pairLabel: st.label }, all, calendarEvents);
+          if (label) { st.loss_label = label.loss_label; st.label_reason = label.reason; st.label_by = 'auto'; }
+          break;
+        }
         if (hitTp) { st.status = 'tp'; st.closed_t = c.t; break; }
       }
     }
@@ -2435,15 +2449,74 @@ function _evaluateSetups(setups, candlesBySymbol, nowMs) {
   return setups;
 }
 
-// Agregat statistik dari log setup. Ambiguous TIDAK masuk pembagi win-rate.
+// Deteksi penyebab loss otomatis (PLAN U-1). Prioritas: fundamental_shock >
+// fakeout_sl — satu label saja, tidak menumpuk. Pure function, dites unit.
+// - fundamental_shock: ada event kalender impact 'High' untuk currency salah satu
+//   kaki pair (dari `pairLabel`, mis. "XAU/USD" -> legs ['XAU','USD']) dalam ±2 jam
+//   dari closedT. XAU otomatis lolos ke leg USD saja (calendar tidak pernah punya
+//   currency "XAU"), pola sama seperti _buildAnalyzeCalBlock.
+// - fakeout_sl (kriteria KETAT, jangan jadi mesin pemaaf): dalam <=4 jam setelah
+//   closedT, harga KEMBALI menembus zona entry DAN menyentuh TP asli — butuh KEDUA
+//   syarat, bukan salah satu.
+function _detectLossLabel({ closedT, eLo, eHi, tp, bias, pairLabel }, allCandles, calendarEvents) {
+  const legs = String(pairLabel || '').toUpperCase().split('/').map(s => s.trim()).filter(Boolean);
+  const closedMs = closedT * 1000;
+  if (legs.length && Array.isArray(calendarEvents)) {
+    const TWO_H = 2 * 3600000;
+    const shock = calendarEvents.find(ev => {
+      if (!ev || ev.impact !== 'High') return false;
+      if (!legs.includes(String(ev.currency || '').toUpperCase())) return false;
+      const evMs = _calEventMsWib(ev.date, ev.time_wib);
+      return evMs != null && Math.abs(evMs - closedMs) <= TWO_H;
+    });
+    if (shock) return { loss_label: 'fundamental_shock', reason: shock.event || 'event high-impact' };
+  }
+
+  const FOUR_H = 4 * 3600000;
+  let reenteredEntry = false, touchedTp = false;
+  for (const c of allCandles || []) {
+    const cMs = c.t * 1000;
+    if (cMs <= closedMs) continue;
+    if (cMs - closedMs > FOUR_H) break;
+    // Reentry ke zona entry: SL yang membalik bisa datang dari arah manapun (beda
+    // dari fill awal yang selalu dari luar zona ke arah favorit) — overlap range
+    // candle [l,h] vs zona [eLo,eHi] agnostik arah, bukan cek satu sisi seperti fill.
+    if (c.h >= eLo && c.l <= eHi) reenteredEntry = true;
+    if (bias === 'bearish' ? c.l <= tp : c.h >= tp) touchedTp = true;
+  }
+  if (reenteredEntry && touchedTp) {
+    return { loss_label: 'fakeout_sl', reason: 'harga kembali ke zona entry dan mencapai TP asli dalam 4 jam setelah SL' };
+  }
+  return null;
+}
+
+// Agregat statistik dari log setup. Ambiguous TIDAK masuk pembagi win-rate manapun.
+// PLAN U-1: dua metrik — win_rate_raw (semua tp/sl apa adanya, TIDAK PERNAH disensor)
+// dan win_rate_adjusted (sl berlabel loss_label dikeluarkan dari pembagi). `win_rate`
+// lama tetap ada = alias raw (kompatibilitas UI/prompt existing). `canceled` (status
+// baru U-3, auto-cancel virtual) TIDAK masuk pembagi win-rate manapun, sama seperti
+// ambiguous — cukup dihitung terpisah.
 function _aggSetupStats(arr) {
   const by = s => arr.filter(x => x.status === s).length;
   const tp = by('tp'), sl = by('sl');
+  const slEntries = arr.filter(x => x.status === 'sl');
+  const lossCauses = { teknikal: 0, fundamental_shock: 0, fakeout_sl: 0 };
+  for (const x of slEntries) {
+    if (x.loss_label === 'fundamental_shock') lossCauses.fundamental_shock++;
+    else if (x.loss_label === 'fakeout_sl') lossCauses.fakeout_sl++;
+    else lossCauses.teknikal++;
+  }
+  const slAdjusted = lossCauses.teknikal; // sl berlabel dikeluarkan dari pembagi adjusted
+  const winRateRaw = (tp + sl) > 0 ? Math.round(tp / (tp + sl) * 100) : null;
   return {
     total: arr.length,
     pending: by('pending'), open: by('open'),
     tp, sl, ambiguous: by('ambiguous'), expired: by('expired'), stale: by('stale') + by('invalid'),
-    win_rate: (tp + sl) > 0 ? Math.round(tp / (tp + sl) * 100) : null,
+    canceled: by('canceled'),
+    win_rate: winRateRaw,
+    win_rate_raw: winRateRaw,
+    win_rate_adjusted: (tp + slAdjusted) > 0 ? Math.round(tp / (tp + slAdjusted) * 100) : null,
+    loss_causes: lossCauses,
   };
 }
 
@@ -2459,14 +2532,32 @@ async function setupStatsHandler(req, res) {
     // Evaluasi lazy hanya symbol yang punya setup aktif — hemat Redis call
     const active = [...new Set(log.filter(s => s && (s.status === 'pending' || s.status === 'open')).map(s => s.symbol))];
     const candlesBySymbol = {};
-    await Promise.all(active.map(async sym => {
-      try {
-        const r = await redisCmd('GET', `ohlcv:${sym}:1h`);
-        if (r) candlesBySymbol[sym] = JSON.parse(r);
-      } catch (e) { /* candle hilang → setup symbol itu tetap pending */ }
-    }));
+    let calendarEvents = [];
+    await Promise.all([
+      ...active.map(async sym => {
+        try {
+          const r = await redisCmd('GET', `ohlcv:${sym}:1h`);
+          if (r) candlesBySymbol[sym] = JSON.parse(r);
+        } catch (e) { /* candle hilang → setup symbol itu tetap pending */ }
+      }),
+      // Kalender dipakai deteksi fundamental_shock (PLAN U-1) — hanya perlu kalau ada
+      // setup aktif yang bisa berpindah status ke 'sl' di tick ini. calendar_v1/next_v1
+      // sama seperti dipakai ohlcvAnalyzeHandler, gagal fetch = fail-open (label kosong).
+      (async () => {
+        if (!active.length) return;
+        try {
+          const [thisWeek, nextWeek] = await Promise.all([
+            redisCmd('GET', 'calendar_v1'),
+            redisCmd('GET', 'calendar_next_v1'),
+          ]);
+          const ev1 = thisWeek ? (JSON.parse(thisWeek).events || []) : [];
+          const ev2 = nextWeek ? (JSON.parse(nextWeek).events || []) : [];
+          calendarEvents = [...ev1, ...ev2];
+        } catch (e) { /* kalender gagal → deteksi fundamental_shock diskip, bukan crash */ }
+      })(),
+    ]);
     const before = JSON.stringify(log);
-    log = _evaluateSetups(log, candlesBySymbol, Date.now());
+    log = _evaluateSetups(log, candlesBySymbol, Date.now(), calendarEvents);
     const after = JSON.stringify(log);
     if (after !== before) await redisCmd('SET', 'setup_log:v1', after);
     const bySymbol = {};
@@ -2474,6 +2565,54 @@ async function setupStatsHandler(req, res) {
     const symbols = {};
     for (const k of Object.keys(bySymbol)) { symbols[k] = _aggSetupStats(bySymbol[k]); symbols[k].history = bySymbol[k]; }
     return res.status(200).json({ symbols, global: _aggSetupStats(log), recent: log.slice(0, 10) });
+  } catch (e) {
+    return res.status(500).json({ error: e.message });
+  }
+}
+
+const LOSS_LABELS = new Set(['fundamental_shock', 'fakeout_sl', 'invalid_manual']);
+
+// PLAN U-1 Lapis 4: override admin — set/hapus loss_label + label_reason per id setup.
+// Sama seperti fundamentalSeedHandler/journalImportHandler: header x-admin-secret ATAU
+// x-cron-secret sama dengan CRON_SECRET. Data mentah (status, harga, entry/sl/tp)
+// TIDAK PERNAH disentuh — override HANYA mengubah label, jejak keputusan admin
+// (label_by:'admin') dibedakan dari deteksi otomatis (label_by:'auto').
+async function setupOverrideHandler(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  if (req.method === 'OPTIONS') return res.status(204).end();
+  const CRON_SECRET = process.env.CRON_SECRET;
+  const secret = req.headers['x-admin-secret'] || req.headers['x-cron-secret'];
+  if (!CRON_SECRET || secret !== CRON_SECRET) return res.status(401).json({ error: 'Unauthorized' });
+  if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
+  try {
+    let body = '';
+    await new Promise(r => { req.on('data', c => body += c); req.on('end', r); });
+    let parsed;
+    try { parsed = JSON.parse(body); } catch (e) { return res.status(400).json({ error: 'Invalid JSON' }); }
+
+    const { id } = parsed || {};
+    const lossLabel = parsed?.loss_label ?? null;
+    const labelReason = parsed?.label_reason;
+    if (!id) return res.status(400).json({ error: 'id required' });
+    if (lossLabel !== null && !LOSS_LABELS.has(lossLabel)) {
+      return res.status(400).json({ error: 'loss_label harus salah satu: fundamental_shock, fakeout_sl, invalid_manual, atau null' });
+    }
+    if (lossLabel !== null && (!labelReason || !String(labelReason).trim())) {
+      return res.status(400).json({ error: 'label_reason wajib saat mengisi loss_label' });
+    }
+
+    const raw = await redisCmd('GET', 'setup_log:v1');
+    let log = raw ? JSON.parse(raw) : [];
+    if (!Array.isArray(log)) log = [];
+    const idx = log.findIndex(x => x && x.id === id);
+    if (idx === -1) return res.status(404).json({ error: 'setup id tidak ditemukan' });
+
+    log[idx].loss_label = lossLabel;
+    log[idx].label_reason = lossLabel !== null ? String(labelReason).trim() : null;
+    log[idx].label_by = lossLabel !== null ? 'admin' : null;
+
+    await redisCmd('SET', 'setup_log:v1', JSON.stringify(log));
+    return res.status(200).json({ ok: true, setup: log[idx] });
   } catch (e) {
     return res.status(500).json({ error: e.message });
   }
@@ -3345,7 +3484,11 @@ async function ohlcvAnalyzeHandler(req, res) {
     // logging tidak boleh menggagalkan response analisa. Dedup: setup aktif dengan
     // level identik di symbol yang sama tidak dicatat dua kali (re-generate tanpa
     // perubahan level = satu keputusan yang sama, bukan dua track record).
-    if (structured?.entry_zone && structured.sl && structured.tp && structured.makro_alignment !== 'konflik' && !isDiagnosticOnly) {
+    // PLAN U-1 (2026-07-20): setup makro_alignment==='konflik' SEKARANG DICATAT (dulu
+    // di-skip total) dengan alignment:'konflik' — supaya statistik bisa membandingkan
+    // kinerja setup konflik vs selaras (U-6 gate). `source` masih selalu 'manual' di
+    // sini — flag auto=1 (U-2/U-3) yang menandai 'auto' belum ada di paket ini.
+    if (structured?.entry_zone && structured.sl && structured.tp && !isDiagnosticOnly) {
       try {
         const rawLog = await redisCmd('GET', 'setup_log:v1');
         let log = rawLog ? JSON.parse(rawLog) : [];
@@ -3361,6 +3504,9 @@ async function ohlcvAnalyzeHandler(req, res) {
             rr: structured.risk_reward ?? null,
             horizon_days: structured.time_horizon_days ?? null,
             model, ts: Date.now(), status: 'pending',
+            source: 'manual',
+            alignment: structured.makro_alignment || null,
+            loss_label: null, label_reason: null, label_by: null,
           });
           await redisCmd('SET', 'setup_log:v1', JSON.stringify(log.slice(0, 200)));
         }
@@ -3848,6 +3994,7 @@ module.exports._confluenceZones = _confluenceZones;
 module.exports._formatConfluenceBlock = _formatConfluenceBlock;
 module.exports._evaluateSetups = _evaluateSetups;
 module.exports._aggSetupStats = _aggSetupStats;
+module.exports._detectLossLabel = _detectLossLabel;
 module.exports._findSwings = _findSwings;
 module.exports._classifyStructure = _classifyStructure;
 module.exports._clusterSrLevels = _clusterSrLevels;
