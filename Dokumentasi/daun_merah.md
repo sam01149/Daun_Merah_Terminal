@@ -11,11 +11,41 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-07-19 (Session 198 — Plan T: Mitigasi Weekend + UX AI Humanis, multi-sesi paralel. SESI-A/B/C SELESAI & pushed — Plan T tuntas.)
+> **Last updated:** 2026-07-19 (Session 199 — Pengecekan Entry Record AI Setup)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 199 (2026-07-19) — Pengecekan Entry Record AI Setup
+
+**Konteks:** User meminta untuk mengecek entry record dari analisa AI. Pemeriksaan dilakukan langsung ke basis data Upstash Redis pada key `setup_log:v1`.
+
+**Temuan:**
+- Total entri setup AI terdaftar: 22 entri (semuanya adalah pair XAU/USD / `GC=F`).
+- **Status Statistik Global & XAU/USD:**
+  - Pending: 13 setup
+  - Open: 0 setup
+  - TP (Take Profit): 5 setup
+  - SL (Stop Loss): 4 setup
+  - Ambiguous / Expired / Stale / Invalid: 0 setup
+  - Win Rate Real: 56% (5 TP / 4 SL)
+- **10 Setup Terakhir:** (format tanggal timezone Asia/Jakarta):
+  1. [19/7/2026, 19.30.28] [PENDING] Bias: bearish | Entry: 4038.26 | SL: 4065.00 | TP: 3971.13 | Model: deepseek-v4-flash
+  2. [19/7/2026, 07.00.51] [PENDING] Bias: bearish | Entry: 4021.13 | SL: 4045.00 | TP: 3967.54 | Model: deepseek-v4-flash
+  3. [17/7/2026, 21.10.27] [PENDING] Bias: bearish | Entry: 4038.17 | SL: 4100.00 | TP: 3972.58 | Model: deepseek-v3.2
+  4. [17/7/2026, 19.55.06] [TP] Bias: bearish | Entry: 4024.56 | SL: 4069.00 | TP: 3972.58 | Model: deepseek-v3.2
+  5. [17/7/2026, 18.39.25] [PENDING] Bias: bearish | Entry: 4039.09 | SL: 4100.00 | TP: 3972.58 | Model: deepseek-v3.2
+  6. [17/7/2026, 16.12.18] [PENDING] Bias: bearish | Entry: 4039.09 | SL: 4070.00 | TP: 3972.58 | Model: deepseek-v3.2
+  7. [17/7/2026, 10.28.12] [TP] Bias: bearish | Entry: 4021.13 | SL: 4060.00 | TP: 3968.63 | Model: deepseek-v3.2
+  8. [16/7/2026, 22.57.29] [PENDING] Bias: bearish | Entry: 4035.74 | SL: 4065.00 | TP: 3986.57 | Model: deepseek-v3.2
+  9. [16/7/2026, 21.29.42] [PENDING] Bias: bearish | Entry: 4035.74 | SL: 4075.00 | TP: 3986.57 | Model: deepseek-v3.2
+  10. [16/7/2026, 21.04.16] [PENDING] Bias: bearish | Entry: 4035.74 | SL: 4080.00 | TP: 3986.57 | Model: deepseek-v3.2
+
+**Verifikasi:**
+- Data dibaca secara presisi langsung dari Redis via script manual `scratch/check_setup_log.js`. Semua unit test tetap hijau (392/392).
+
+---
 
 ## Changelog Session 198 (2026-07-19) — Plan T: Mitigasi Weekend + UX AI Humanis
 
