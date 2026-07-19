@@ -1,10 +1,35 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-07-19 (Session 190 — Gemini flash fallback fundamental+jurnal, prompt fundamental diperkaya umur rilis+previous, skor tab Fundamental tertimbang recency×kepentingan; Plan S ditulis. Sebelumnya Session 188 — lapisan self-healing 4 lapis: proses daemon (crash → restart Railway otomatis), Redis (backoff degradasi saat gagal beruntun/quota), WebSocket zombie (ping + paksa reconnect), dan data (candle basi → trigger ohlcv_sync otomatis dari daemon DAN dari `action=health` Vercel; scheduler gagal → retry). `npm test` 374/374 hijau.).
+> **Last updated:** 2026-07-19 (Session 191 — Plan S dieksekusi penuh: strip "Rilis Terbaru" + label umur tab Fundamental (S-1), event kalender high-impact 7 hari masuk prompt Analisa (S-2), tag severity di 80 headline Call 1 Ringkasan (S-3). `npm test` 389/389 hijau. Sebelumnya Session 190 — Gemini flash fallback fundamental+jurnal, prompt fundamental diperkaya umur rilis+previous, skor tab Fundamental tertimbang recency×kepentingan.).
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+---
+
+## Changelog Session 191 (2026-07-19) — Plan S Dieksekusi Penuh (Strip Rilis Terbaru, Kalender di Analisa, Severity di Ringkasan)
+
+**Konteks:** Plan S ditulis Session 190 (audit S189-S190: AI & tampilan melihat "apa" tapi bukan "kapan/arah"), lalu di-handoff untuk dieksekusi — sesi ini yang mengerjakan ketiga item sisanya sekaligus atas instruksi user "kerjakan plan di daun_merah_plan.md".
+
+**S-1 — Strip "Rilis Terbaru" + label umur (`index.html`):**
+- Div baru `fundLatestSection`/`fundLatestList` di tab Fundamental, DI ATAS `fundRankSection` (bukan tab terpisah) — fungsi `renderFundLatest(scores)` gabung semua indikator lintas 8 currency (termasuk baris CB Rate, SENGAJA tidak difilter seperti kartu per-currency) yang punya `fundAgeDays(date) !== null`, urut umur termuda dulu, cap 15 baris, format `dd/mm | CUR | indikator | actual ↑/↓ prev` warna hijau/merah dari `scoreInd()` yang sudah ada. List di-scroll internal (`max-height` 220px desktop/170px mobile) supaya tidak menggusur ranking dari viewport. Entri tanpa tanggal valid (seed lama) otomatis ke-skip; kalau tidak ada entri bertanggal sama sekali, section disembunyikan total (bukan kotak kosong).
+- Label umur (`fundAgeLabel()`, sudah ada dari Session 190) ditempel di `<td class="fund-td-per">` tiap baris kartu currency (kolom yang sebelumnya cuma menampilkan `period`).
+- `APP_VERSION` → `2026.07.19.2`.
+
+**S-2 — Kalender ekonomi masuk prompt Analisa (`api/admin.js`, `ohlcvAnalyzeHandler`):**
+- Fungsi murni baru `_buildAnalyzeCalBlock(calThis, calNext, legs, nowMs)` (dekat `_calEventMsWib`, di-export untuk test): filter event kalender ke HANYA currency yang jadi salah satu leg pair (pola sama seperti blok `[KALENDER <24 JAM]` di `ohlcvCriticHandler`) + impact High + jendela 7 hari ke depan, cap 10, dedup, format `- tanggal | jam WIB | CUR | event [F: x | P: y]` diikuti satu kalimat instruksi (event dalam `time_horizon_days` WAJIB disebut di `invalidation_condition`/`trigger`).
+- **Deviasi dari draft plan (dicatat sesuai aturan "baca source dulu, jangan berasumsi"):** plan menyebut sumber "cache FF XML `ff_calendar_thisweek`" — ternyata `market-digest.js` fetch XML itu LANGSUNG tanpa menulis ke cache Redis yang bisa dipakai ulang. Sumber yang benar-benar Redis-cached (dan sudah dipakai persis pola yang sama di `ohlcvCriticHandler`) adalah `calendar_v1`/`calendar_next_v1` (TradingView, ditulis `api/calendar.js`, TTL 6 jam) — dipakai sebagai gantinya, TIDAK ada fetch XML/TradingView baru per request Analisa.
+- XAU otomatis ke-filter ke leg USD saja TANPA kode khusus — currency "XAU" tidak pernah muncul di data kalender, jadi filter `legs.includes(e.currency)` sudah otomatis benar.
+- 6 unit test baru di `test/ta_struct.test.js` (filter legs, XAU→USD implisit, Medium impact & di luar window 7 hari dibuang, gabung calThis+calNext dengan cap 10 + dedup, legs/cache kosong → string kosong).
+
+**S-3 — Tag severity di 80 headline Call 1 Ringkasan (`api/market-digest.js`):**
+- Logic anotasi `severityTagForHeadline` (Session ~180, sebelumnya cuma dipakai Call 4) di-extract jadi helper bersama `annotateHeadlineSeverity(title, idx)` — dipakai baik oleh `headlinesBlock` (Call 1, 80 headline) maupun `headlines30` (Call 4, sudah ada) supaya formatnya identik (baris anotasi `[SEVERITAS: TINGGI...]` TERPISAH berindentasi 3 spasi di bawah headline, bukan digabung ke teks headline — headline tetap utuh kalau perlu dikutip verbatim).
+- Header blok `HEADLINE BERITA TERKINI` di prompt Call 1 ditambah 1 kalimat penjelasan tag + larangan eksplisit "JANGAN menyalin tag mentah ke narasi" (pola sama seperti instruksi Call 4 yang sudah ada).
+- 2 unit test baru di `test/market_digest_severity.test.js` untuk `annotateHeadlineSeverity` (match → 2 baris; non-match → 1 baris, headline verbatim).
+- Item opsional (b) di plan (isi actual kalender dari headline FinancialJuice yang match nama event) **SENGAJA DILEWATI** — fuzzy-matching nama event ke judul headline berisiko rapuh/salah-cocok, plan sendiri menandainya opsional-kalau-murah, dan `[SUDAH RILIS]`/`[AKAN RILIS]` tag lama di `calBlock` sudah menutupi kebutuhan intinya.
+
+**Verifikasi:** `npm test` **389/389 hijau** (47 di `ta_struct.test.js`, 16 di `market_digest_severity.test.js`, plus seluruh suite lain tanpa regresi). Live: 1x `ohlcv_analyze` XAU/USD (S-2) dan 1x generate digest (S-3) — lihat detail di bawah.
 
 ---
 

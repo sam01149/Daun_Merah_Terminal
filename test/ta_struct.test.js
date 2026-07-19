@@ -340,7 +340,7 @@ test('_formatConfluenceBlock: render header + ID zona A1/B1', () => {
 
 // ── _evaluateSetups + _aggSetupStats (Tier 1 outcome logging, session 166) ────
 
-const { _evaluateSetups, _aggSetupStats, _formatTrackRecordBlock, _calEventMsWib } = require('../api/admin.js');
+const { _evaluateSetups, _aggSetupStats, _formatTrackRecordBlock, _calEventMsWib, _buildAnalyzeCalBlock } = require('../api/admin.js');
 
 // Candle 1H sintetis: t dalam detik epoch
 const mkC = (t, o, h, l, c) => ({ t, o, h, l, c, v: 0 });
@@ -506,4 +506,59 @@ test('_calEventMsWib: "Tentative" atau input kosong/korup → null, jangan dihit
   assert.strictEqual(_calEventMsWib(null, '14:30 WIB'), null);
   assert.strictEqual(_calEventMsWib('2026-07-20', null), null);
   assert.strictEqual(_calEventMsWib('2026-07-20', 'garbage'), null);
+});
+
+// ── _buildAnalyzeCalBlock (Plan S-2, session 191) ──────────────────────────────
+const NOW_MS = _calEventMsWib('2026-07-19', '00:00 WIB');
+
+test('_buildAnalyzeCalBlock: filter currency by legs — hanya event USD/JPY yang lolos untuk pair USD/JPY', () => {
+  const calThis = { events: [
+    { date: '2026-07-20', time_wib: '08:30 WIB', currency: 'USD', impact: 'High', event: 'Non-Farm Payrolls', forecast: '180K', previous: '175K' },
+    { date: '2026-07-20', time_wib: '09:00 WIB', currency: 'CAD', impact: 'High', event: 'Employment Change', forecast: '20K', previous: '10K' },
+    { date: '2026-07-21', time_wib: '05:00 WIB', currency: 'JPY', impact: 'High', event: 'BOJ Rate Decision', forecast: null, previous: null },
+  ] };
+  const block = _buildAnalyzeCalBlock(calThis, null, ['USD', 'JPY'], NOW_MS);
+  assert.ok(block.includes('Non-Farm Payrolls'));
+  assert.ok(block.includes('BOJ Rate Decision'));
+  assert.ok(!block.includes('Employment Change')); // CAD bukan leg pair ini
+  assert.ok(block.startsWith('[EVENT HIGH-IMPACT 7 HARI KE DEPAN]'));
+  assert.ok(block.includes('invalidation_condition'));
+});
+
+test('_buildAnalyzeCalBlock: XAU otomatis ke-filter ke leg USD saja (currency "XAU" tidak pernah ada di kalender)', () => {
+  const calThis = { events: [
+    { date: '2026-07-20', time_wib: '08:30 WIB', currency: 'USD', impact: 'High', event: 'CPI YoY', forecast: '3.1%', previous: '3.0%' },
+  ] };
+  const block = _buildAnalyzeCalBlock(calThis, null, ['XAU', 'USD'], NOW_MS);
+  assert.ok(block.includes('CPI YoY'));
+});
+
+test('_buildAnalyzeCalBlock: Medium impact & event di luar window 7 hari dibuang', () => {
+  const calThis = { events: [
+    { date: '2026-07-20', time_wib: '08:30 WIB', currency: 'USD', impact: 'Medium', event: 'Retail Sales', forecast: '0.3%', previous: '0.2%' },
+    { date: '2026-07-30', time_wib: '08:30 WIB', currency: 'USD', impact: 'High', event: 'FOMC Minutes', forecast: null, previous: null },
+    { date: '2026-07-18', time_wib: '08:30 WIB', currency: 'USD', impact: 'High', event: 'Sudah Rilis Kemarin', forecast: null, previous: null },
+  ] };
+  const block = _buildAnalyzeCalBlock(calThis, null, ['USD'], NOW_MS);
+  assert.strictEqual(block, ''); // Medium dibuang, FOMC Minutes >7 hari, event kemarin sudah lewat
+});
+
+test('_buildAnalyzeCalBlock: gabung calThis + calNext, cap 10 event, dedup', () => {
+  const many = Array.from({ length: 8 }, (_, i) => ({
+    date: '2026-07-20', time_wib: `0${i}:00 WIB`, currency: 'USD', impact: 'High', event: `Event ${i}`,
+  }));
+  const calThis = { events: many };
+  const calNext = { events: [
+    { date: '2026-07-24', time_wib: '08:00 WIB', currency: 'USD', impact: 'High', event: 'Extra 1' },
+    { date: '2026-07-24', time_wib: '09:00 WIB', currency: 'USD', impact: 'High', event: 'Extra 2' },
+    { date: '2026-07-24', time_wib: '09:00 WIB', currency: 'USD', impact: 'High', event: 'Extra 2' }, // duplikat
+  ] };
+  const block = _buildAnalyzeCalBlock(calThis, calNext, ['USD'], NOW_MS);
+  const lines = block.split('\n').filter(l => l.startsWith('- '));
+  assert.strictEqual(lines.length, 10); // 8 + 2 (duplikat dibuang, cap 10)
+});
+
+test('_buildAnalyzeCalBlock: legs kosong atau kedua cache null → string kosong', () => {
+  assert.strictEqual(_buildAnalyzeCalBlock(null, null, ['USD'], NOW_MS), '');
+  assert.strictEqual(_buildAnalyzeCalBlock({ events: [{ date: '2026-07-20', time_wib: '08:00 WIB', currency: 'USD', impact: 'High', event: 'X' }] }, null, [], NOW_MS), '');
 });

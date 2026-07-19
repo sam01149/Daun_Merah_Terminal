@@ -2670,6 +2670,38 @@ function _calEventMsWib(dateStr, timeWib) {
   return isNaN(t) ? null : t;
 }
 
+// S-2 (Plan S, 2026-07-19): blok event kalender high-impact 7 hari ke depan untuk
+// prompt ohlcv_analyze — AI diminta isi invalidation_condition/time_horizon_days
+// tapi selama ini buta jadwal rilis, bisa kasih horizon yang melewati NFP/FOMC
+// tanpa tahu. Filter currency by legs (split label "EUR/USD" -> ['EUR','USD']) —
+// pola SAMA dengan blok "[KALENDER <24 JAM untuk pair ini]" di ohlcvCriticHandler
+// (~baris 3376). XAU otomatis ke-filter ke leg USD saja karena calendar events
+// tidak pernah punya currency "XAU" — tidak perlu isXau khusus. Pure function,
+// dites di ta_struct.test.js.
+function _buildAnalyzeCalBlock(calThis, calNext, legs, nowMs) {
+  if (!Array.isArray(legs) || legs.length === 0) return '';
+  const events = [...(calThis?.events || []), ...(calNext?.events || [])];
+  if (events.length === 0) return '';
+
+  const cutoffMs = nowMs + 7 * 24 * 3600 * 1000;
+  const seen = new Set();
+  const upcoming = events
+    .filter(e => e && legs.includes(e.currency) && e.impact === 'High')
+    .map(e => ({ ...e, _ms: _calEventMsWib(e.date, e.time_wib) }))
+    .filter(e => e._ms != null && e._ms > nowMs && e._ms <= cutoffMs)
+    .filter(e => { const k = `${e.date}|${e.time_wib}|${e.currency}|${e.event}`; if (seen.has(k)) return false; seen.add(k); return true; })
+    .sort((a, b) => a._ms - b._ms)
+    .slice(0, 10);
+
+  if (upcoming.length === 0) return '';
+
+  const lines = upcoming.map(e => {
+    const fp = (e.forecast || e.previous) ? ` [F: ${e.forecast || '—'} | P: ${e.previous || '—'}]` : '';
+    return `- ${e.date} | ${e.time_wib} | ${e.currency} | ${e.event}${fp}`;
+  });
+  return `[EVENT HIGH-IMPACT 7 HARI KE DEPAN]\n${lines.join('\n')}\nKalau event di atas jatuh dalam rentang time_horizon_days yang kamu tulis, WAJIB disebut di invalidation_condition atau trigger.`;
+}
+
 async function ohlcvAnalyzeHandler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Cache-Control', 'no-cache');
@@ -2826,6 +2858,23 @@ async function ohlcvAnalyzeHandler(req, res) {
       }
     } catch (e) { /* opsional — jangan gagalkan analisa kalau log setup kosong/korup */ }
 
+    // S-2: event kalender high-impact 7 hari ke depan khusus currency pair ini —
+    // baca cache calendar_v1/calendar_next_v1 (ditulis api/calendar.js, TTL 6h,
+    // dijaga fresh oleh polling tab Kalender) — JANGAN fetch TradingView baru di sini.
+    let calAnalyzeBlock = '';
+    try {
+      const [rawCalThis, rawCalNext] = await Promise.all([
+        redisCmd('GET', 'calendar_v1'),
+        redisCmd('GET', 'calendar_next_v1'),
+      ]);
+      const legs = String(data.label).toUpperCase().split('/').map(s => s.trim()).filter(Boolean);
+      calAnalyzeBlock = _buildAnalyzeCalBlock(
+        rawCalThis ? JSON.parse(rawCalThis) : null,
+        rawCalNext ? JSON.parse(rawCalNext) : null,
+        legs, Date.now(),
+      );
+    } catch (e) { /* opsional — jangan gagalkan analisa kalau cache kalender kosong */ }
+
     const makroHeader = makroAgeH != null
       ? `KONTEKS MAKRO (dari Ringkasan ${makroAgeH} jam lalu${makroAgeH > 4 ? ' — SUDAH AGAK BASI: kalau ada rilis/berita besar setelah itu, beri bobot lebih rendah dan sebut ketidakpastiannya' : ''}):`
       : 'KONTEKS MAKRO:';
@@ -2839,6 +2888,7 @@ async function ohlcvAnalyzeHandler(req, res) {
     if (fundBlock)        ctxParts.push(fundBlock);
     if (rrBlock)          ctxParts.push(rrBlock);
     if (trackBlock)       ctxParts.push(trackBlock);
+    if (calAnalyzeBlock)  ctxParts.push(calAnalyzeBlock);
     ctxParts.push(`DATA TEKNIKAL:\n${textBlock}${expiryBlock}${confBlock ? '\n\n' + confBlock : ''}`);
     const makroBlock = ctxParts.join('\n\n');
 
@@ -2856,6 +2906,7 @@ async function ohlcvAnalyzeHandler(req, res) {
       fundBlock              ? 'fundamental terstruktur' : null,
       rrBlock                ? 'sentimen options' : null,
       trackBlock             ? 'track record historis' : null,
+      calAnalyzeBlock        ? 'event kalender' : null,
     ].filter(Boolean).join(' + ');
 
     const p4Macro = (ringkasanContext || fundBlock)
@@ -3788,3 +3839,4 @@ module.exports._extractRingkasanExcerpt = _extractRingkasanExcerpt;
 module.exports._formatFundamentalBlock = _formatFundamentalBlock;
 module.exports._formatTrackRecordBlock = _formatTrackRecordBlock;
 module.exports._calEventMsWib = _calEventMsWib;
+module.exports._buildAnalyzeCalBlock = _buildAnalyzeCalBlock;

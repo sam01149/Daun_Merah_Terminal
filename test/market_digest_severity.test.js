@@ -10,6 +10,7 @@ const {
   classifyDataSurpriseSeverity,
   severityTagForHeadline,
   parseEconNumber,
+  annotateHeadlineSeverity,
 } = require('../api/market-digest.js');
 
 // ── parseEconNumber ──────────────────────────────────────────────────────────
@@ -107,4 +108,23 @@ test('headline CPI → tanpa tag (di luar mapping); headline biasa tanpa Actual/
   assert.equal(severityTagForHeadline('Fed Chair Powell speaks at Jackson Hole'), '');
   assert.equal(severityTagForHeadline(''), '');
   assert.equal(severityTagForHeadline(null), '');
+});
+
+// ── annotateHeadlineSeverity (Plan S-3, session 191): baris nomor + anotasi ──────
+// terpisah, dipakai bersama Call 1 (headlinesBlock) & Call 4 (headlines30).
+
+test('annotateHeadlineSeverity: headline match sign-effect → baris anotasi terpisah berindentasi, headline verbatim di baris pertama', () => {
+  const out = annotateHeadlineSeverity('US Nonfarm Payrolls Actual 100K (Forecast 130K, Previous 139K)', 0);
+  const lines = out.split('\n');
+  assert.equal(lines[0], '1. US Nonfarm Payrolls Actual 100K (Forecast 130K, Previous 139K)');
+  assert.equal(lines[1], '   [SEVERITAS: TINGGI — data lemah, dampak harga historis lebih besar (sign effect)]');
+  assert.equal(lines.length, 2);
+});
+
+test('annotateHeadlineSeverity: headline non-rilis / beat → satu baris saja, tanpa anotasi', () => {
+  assert.equal(annotateHeadlineSeverity('Fed Chair Powell speaks at Jackson Hole', 4), '5. Fed Chair Powell speaks at Jackson Hole');
+  assert.equal(
+    annotateHeadlineSeverity('US Nonfarm Payrolls Actual 160K (Forecast 130K, Previous 139K)', 1),
+    '2. US Nonfarm Payrolls Actual 160K (Forecast 130K, Previous 139K)'
+  );
 });

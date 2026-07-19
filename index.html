@@ -1025,6 +1025,34 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .fund-title { font-size: 9px; color: var(--muted); letter-spacing: 1px; text-transform: uppercase; font-family: 'DM Mono', monospace; }
 .fund-meta  { font-size: 9px; color: var(--muted); font-family: 'DM Mono', monospace; }
 
+/* Rilis Terbaru — strip lintas currency urut waktu (S-1) */
+.fund-latest-section { margin-bottom: 12px; }
+.fund-latest-label {
+  font-size: 8px; color: var(--muted); letter-spacing: 1px; text-transform: uppercase;
+  font-family: 'DM Mono', monospace; margin-bottom: 6px;
+}
+.fund-latest-list {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+  max-height: 220px; overflow-y: auto;
+}
+.fund-latest-row {
+  display: grid; grid-template-columns: 30px 34px 1fr auto; gap: 6px; align-items: center;
+  padding: 5px 8px; border-bottom: 1px solid rgba(var(--fg-rgb),.04); cursor: pointer;
+  font-family: 'DM Mono', monospace;
+}
+.fund-latest-row:last-child { border-bottom: none; }
+.fund-latest-row:hover { background: rgba(var(--fg-rgb),.03); }
+.fund-latest-date { font-size: 8px; color: var(--muted); }
+.fund-latest-cur  { font-size: 9px; font-weight: 700; }
+.fund-latest-ind  { font-size: 8px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fund-latest-val  { font-size: 9px; color: var(--text); text-align: right; white-space: nowrap; }
+.fund-latest-val.bull { color: var(--green); }
+.fund-latest-val.bear { color: var(--red); }
+.fund-latest-prev { margin-left: 3px; font-size: 7px; color: var(--muted); opacity: .65; }
+@media (max-width: 599px) {
+  .fund-latest-list { max-height: 170px; }
+}
+
 /* Strength Ranking Overview */
 .fund-rank-section {
   margin-bottom: 12px;
@@ -1083,6 +1111,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .fund-arrow { margin-left: 2px; font-size: 8px; }
 .fund-prev  { margin-left: 3px; font-size: 7px; color: var(--muted); opacity: .65; }
 .fund-td-per { display: none; }
+.fund-age { display: block; opacity: .7; }
 .fund-more-link {
   margin-top: 4px; padding-top: 4px; border-top: 1px dashed rgba(var(--fg-rgb),.08);
   font-size: 8px; font-family: 'DM Mono', monospace; letter-spacing: .3px;
@@ -4039,6 +4068,11 @@ body:not(.light-theme) .ringkasan-gen-btn {
         </button>
       </div>
     </div>
+    <!-- Rilis Terbaru: gabungan lintas currency, urut waktu (S-1) -->
+    <div class="fund-latest-section" id="fundLatestSection" style="display:none">
+      <div class="fund-latest-label">Rilis Terbaru</div>
+      <div class="fund-latest-list" id="fundLatestList"></div>
+    </div>
     <!-- Strength Ranking Overview -->
     <div class="fund-rank-section" id="fundRankSection" style="display:none">
       <div class="fund-rank-label">
@@ -4305,7 +4339,7 @@ window.addEventListener('DOMContentLoaded', updateThemeIcon);
 
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.07.19.1';
+const APP_VERSION = '2026.07.19.2';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
@@ -8468,6 +8502,45 @@ function handleFundCardClick(cur, el) {
   }
 }
 
+// Strip "Rilis Terbaru" (S-1): gabungan indikator lintas 8 currency yang punya
+// tanggal rilis valid, diurutkan paling baru dulu — supaya rilis penting tidak
+// terkubur di dalam kartu per-currency yang diurutkan per section (Inflasi dulu, dst).
+function renderFundLatest(scores) {
+  const section = document.getElementById('fundLatestSection');
+  const list    = document.getElementById('fundLatestList');
+  if (!section || !list) return;
+
+  const entries = [];
+  scores.forEach(({ cur, data, col }) => {
+    Object.entries(data).forEach(([k, v]) => {
+      const ageDays = fundAgeDays(v.date);
+      if (ageDays === null) return; // seed lama tanpa tanggal — skip dari strip
+      entries.push({ cur, col, key: k, val: v, ageDays });
+    });
+  });
+
+  if (entries.length === 0) { section.style.display = 'none'; list.innerHTML = ''; return; }
+
+  entries.sort((a, b) => a.ageDays - b.ageDays);
+  const top = entries.slice(0, 15);
+
+  list.innerHTML = top.map(({ cur, col, key, val }) => {
+    const sig      = scoreInd(key, val.actual, val.previous);
+    const sigCls   = sig === 1 ? ' bull' : sig === -1 ? ' bear' : '';
+    const arrow    = sig === 1 ? '↑' : sig === -1 ? '↓' : '';
+    const d        = new Date(String(val.date).slice(0, 10) + 'T00:00:00Z');
+    const dateStr  = isNaN(d.getTime()) ? '' : `${String(d.getUTCDate()).padStart(2, '0')}/${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+    const prevHtml = val.previous ? `<span class="fund-latest-prev">${escHtml(val.previous)}</span>` : '';
+    return `<div class="fund-latest-row" onclick="openFundDetail('${cur}')" title="${cur} — lihat detail">
+      <span class="fund-latest-date">${dateStr}</span>
+      <span class="fund-latest-cur" style="color:${col}">${cur}</span>
+      <span class="fund-latest-ind" title="${escHtml(key)}">${escHtml(key)}</span>
+      <span class="fund-latest-val${sigCls}">${escHtml(val.actual || '—')}${arrow ? `<span class="fund-arrow">${arrow}</span>` : ''}${prevHtml}</span>
+    </div>`;
+  }).join('');
+  section.style.display = 'block';
+}
+
 function renderFundamental() {
   const grid = document.getElementById('fundGrid');
   if (!grid || !fundData) return;
@@ -8510,6 +8583,8 @@ function renderFundamental() {
 
   fdScores = scores; // expose to detail overlay
 
+  renderFundLatest(scores);
+
   // Render strength ranking strip
   const rankSection = document.getElementById('fundRankSection');
   const rankGrid    = document.getElementById('fundRankGrid');
@@ -8548,15 +8623,17 @@ function renderFundamental() {
     const hiddenCount    = sortedEntries.length - visibleEntries.length;
     const rows = visibleEntries
       .map(([k, v]) => {
-        const period  = v.period && v.period !== '—' ? v.period : '';
-        const sig     = scoreInd(k, v.actual, v.previous);
-        const sigCls  = sig === 1 ? ' bull' : sig === -1 ? ' bear' : '';
-        const arrow   = sig === 1 ? '↑' : sig === -1 ? '↓' : '';
+        const period   = v.period && v.period !== '—' ? v.period : '';
+        const sig      = scoreInd(k, v.actual, v.previous);
+        const sigCls   = sig === 1 ? ' bull' : sig === -1 ? ' bear' : '';
+        const arrow    = sig === 1 ? '↑' : sig === -1 ? '↓' : '';
         const prevHtml = v.previous ? `<span class="fund-prev">${escHtml(v.previous)}</span>` : '';
+        const ageLabel = fundAgeLabel(fundAgeDays(v.date));
+        const ageHtml  = ageLabel ? `<span class="fund-age">${ageLabel}</span>` : '';
         return `<tr>
           <td class="fund-td-ind" title="${escHtml(k)}">${escHtml(k)}</td>
           <td class="fund-td-val${v.actual ? sigCls : ' no-data'}">${escHtml(v.actual || '—')}${arrow ? `<span class="fund-arrow">${arrow}</span>` : ''}${prevHtml}</td>
-          <td class="fund-td-per">${escHtml(period)}</td>
+          <td class="fund-td-per">${escHtml(period)}${ageHtml}</td>
         </tr>`;
       }).join('');
     const moreHtml = hiddenCount > 0 ? `<div class="fund-more-link" onclick="event.stopPropagation();openFundDetail('${cur}')">Selengkapnya (+${hiddenCount}) →</div>` : '';

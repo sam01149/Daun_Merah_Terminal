@@ -469,6 +469,14 @@ function severityTagForHeadline(title) {
   return classifyDataSurpriseSeverity(actual, forecast, t).urgencyTag;
 }
 
+// Baris headline bernomor + anotasi severity TERPISAH di bawahnya (indentasi 3 spasi)
+// kalau match — dipakai Call 1 (S-3) & Call 4 (Plan G3), sama persis biar headline
+// tetap bisa dikutip verbatim tanpa tag ikut kepotong/ketempel.
+function annotateHeadlineSeverity(title, idx) {
+  const tag = severityTagForHeadline(title);
+  return `${idx + 1}. ${title}` + (tag ? `\n   ${tag}` : '');
+}
+
 // Strip <think>...</think> blocks from Qwen3 thinking models — content after </think> is the actual response.
 // Kalau tag <think> kebuka tapi tidak pernah ketutup (num_predict habis di tengah reasoning —
 // terbukti session 162 lanjutan 4: user lapor output Nemotron kepotong & bahasa Inggris-Indonesia
@@ -737,10 +745,7 @@ async function checkThesisContradictions(openEntries, recentItems, SAMBANOVA_KEY
   // Plan G3 (sign effect): tag severitas dihitung di kode dari actual vs forecast,
   // ditempel sebagai baris anotasi TERPISAH di bawah headline — bukan digabung ke
   // teks headline, supaya aturan copy-verbatim + validasi headlineSet tetap utuh.
-  const headlines30 = headlineTitles.map((t, i) => {
-    const tag = severityTagForHeadline(t);
-    return `${i+1}. ${t}` + (tag ? `\n   ${tag}` : '');
-  }).join('\n');
+  const headlines30 = headlineTitles.map((t, i) => annotateHeadlineSeverity(t, i)).join('\n');
   const monitorPrompt = [
     'You are a forex trade thesis monitor.', '',
     'Open trade theses:', thesesBlock, '', 'Recent headlines (newest first):', headlines30, '',
@@ -1125,7 +1130,11 @@ module.exports = async function handler(req, res) {
     ), 0);
   };
   const headlinesForBriefing = [...recentItems].sort((a, b) => _headlineRelevance(b.title) - _headlineRelevance(a.title)).slice(0, 80);
-  const headlinesBlock = headlinesForBriefing.length > 0 ? headlinesForBriefing.map((i,idx)=>`${idx+1}. ${i.title}`).join('\n') : '(Tidak ada headline)';
+  // S-3 (Plan S, session 191): tag severitas sign-effect ditempel di bawah headline yang
+  // match, sama persis dengan pola Call 4 (annotateHeadlineSeverity, dipakai bersama).
+  const headlinesBlock = headlinesForBriefing.length > 0
+    ? headlinesForBriefing.map((i, idx) => annotateHeadlineSeverity(i.title, idx)).join('\n')
+    : '(Tidak ada headline)';
   // Beri tag status SUDAH RILIS / AKAN RILIS yang dihitung di kode (bukan diserahkan
   // ke LLM untuk hitung sendiri dari "date | time" mentah) — LLM nggak reliable buat
   // aritmatika tanggal/jam relatif, dan ini ketahuan bikin kesalahan nyata: event hari
@@ -1890,6 +1899,7 @@ ${polymarketBlock}
 CATATAN STALENESS: Blok REAL YIELD/RISK REGIME/RATE PATH/SKEW OPSI di atas di-cache (TTL menit-jam, SKEW OPSI sampai 6 jam — lihat penanda umur di blok itu sendiri), bisa sedikit basi. Kalau ada headline yang JELAS lebih baru dan bertentangan dengan angka di blok itu (misal yield spike besar baru saja, VIX melonjak tajam yang belum tercermin di RISK REGIME, atau shock volatilitas besar yang belum tercermin di SKEW OPSI) — sebut konflik itu eksplisit dan beri bobot lebih ke sinyal yang lebih segar, jangan diam-diam pilih salah satu tanpa penjelasan.
 
 === HEADLINE BERITA TERKINI (${headlinesForBriefing.length} dari ${recentItems.length} berita, 36 jam terakhir) ===
+(Sebagian headline diikuti baris berindentasi [SEVERITAS: ...] — dihitung dari angka actual-vs-forecast yang sudah rilis, bukan bagian dari headline itu sendiri. Data lemah historis menggerakkan harga lebih besar — beri bobot lebih ke headline bertag ini, tapi JANGAN menyalin tag mentah ke narasi.)
 ${headlinesBlock}
 
 === HEADLINE RELEVAN XAUUSD (${goldItems.length} dari ${recentItems.length} berita, 36 jam, difilter) ===
@@ -2924,6 +2934,7 @@ module.exports.validateThesis = validateThesis;
 module.exports.applyRegimeConfidenceGuard = applyRegimeConfidenceGuard;
 module.exports.classifyDataSurpriseSeverity = classifyDataSurpriseSeverity;
 module.exports.severityTagForHeadline = severityTagForHeadline;
+module.exports.annotateHeadlineSeverity = annotateHeadlineSeverity;
 module.exports.parseEconNumber = parseEconNumber;
 module.exports.thesisPairCurrencies = thesisPairCurrencies;
 module.exports.thesisInvalidationCurrencyConsistent = thesisInvalidationCurrencyConsistent;
