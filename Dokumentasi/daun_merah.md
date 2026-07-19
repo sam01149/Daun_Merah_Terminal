@@ -1,6 +1,17 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-07-19 (Session 191 — Plan S dieksekusi penuh: strip "Rilis Terbaru" + label umur tab Fundamental (S-1), event kalender high-impact 7 hari masuk prompt Analisa (S-2), tag severity di 80 headline Call 1 Ringkasan (S-3). `npm test` 389/389 hijau. Sebelumnya Session 190 — Gemini flash fallback fundamental+jurnal, prompt fundamental diperkaya umur rilis+previous, skor tab Fundamental tertimbang recency×kepentingan.).
+```
+=== ATURAN FILE INI (WAJIB PATUH — SOT: ATURAN.md di root) ===
+TUJUAN   : Changelog kronologis per sesi + konteks lengkap proyek (stack, arsitektur, keputusan).
+BOLEH    : Pekerjaan teknis (fitur/bugfix/arsitektur), hasil verifikasi, keputusan penting per sesi.
+DILARANG : Plan aktif (-> daun_merah_plan.md), pekerjaan tertunda (-> daun_merah_progress.md),
+           riset mentah/ide (-> daun_merah_riset.md), daftar pustaka (-> daun_merah_referensi_riset.md).
+FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELALU di paling atas,
+           update juga baris "Last updated" di bawah ini).
+Entri yang melanggar = salah tempat, wajib dipindah.
+```
+
+> **Last updated:** 2026-07-19 (Session 192 — Restrukturisasi dokumentasi: `ATURAN.md` root baru sebagai single source of truth aturan, header ATURAN FILE di semua file Dokumentasi, `daun_merah_progress.md` direpurpose jadi parkir pekerjaan tertunda. Sebelumnya Session 191 — Plan S dieksekusi penuh: strip "Rilis Terbaru" + label umur tab Fundamental (S-1), event kalender high-impact 7 hari masuk prompt Analisa (S-2), tag severity di 80 headline Call 1 Ringkasan (S-3). `npm test` 389/389 hijau. Sebelumnya Session 190 — Gemini flash fallback fundamental+jurnal, prompt fundamental diperkaya umur rilis+previous, skor tab Fundamental tertimbang recency×kepentingan.).
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -29,7 +40,10 @@
 - 2 unit test baru di `test/market_digest_severity.test.js` untuk `annotateHeadlineSeverity` (match → 2 baris; non-match → 1 baris, headline verbatim).
 - Item opsional (b) di plan (isi actual kalender dari headline FinancialJuice yang match nama event) **SENGAJA DILEWATI** — fuzzy-matching nama event ke judul headline berisiko rapuh/salah-cocok, plan sendiri menandainya opsional-kalau-murah, dan `[SUDAH RILIS]`/`[AKAN RILIS]` tag lama di `calBlock` sudah menutupi kebutuhan intinya.
 
-**Verifikasi:** `npm test` **389/389 hijau** (47 di `ta_struct.test.js`, 16 di `market_digest_severity.test.js`, plus seluruh suite lain tanpa regresi). Live: 1x `ohlcv_analyze` XAU/USD (S-2) dan 1x generate digest (S-3) — lihat detail di bawah.
+**Verifikasi:** `npm test` **389/389 hijau** (47 di `ta_struct.test.js`, 16 di `market_digest_severity.test.js`, plus seluruh suite lain tanpa regresi). Deploy Vercel dikonfirmasi live (`APP_VERSION 2026.07.19.2` terbaca dari production). Live checks:
+- **S-1:** `fundamental_get` production di-fetch dan pipeline `renderFundLatest` disimulasikan terhadap datanya — 234 entri bertanggal valid, urut umur benar (contoh 15 teratas: Baker Hughes Rig Count 1 hari lalu, Building Permits/CPI MoM EUR/dll 2 hari lalu). Strip akan tampil non-kosong di production (tidak bisa screenshot browser langsung dari sesi ini, diverifikasi lewat simulasi data server-side dengan logic identik).
+- **S-2:** 1x `ohlcv_analyze` XAU/USD live (model `deepseek-v4-flash`, HTTP 200, JSON valid) — cache `calendar_v1`+`calendar_next_v1` production dicek manual: **0 event High-impact USD** dalam 7 hari ke depan saat ini, jadi `calAnalyzeBlock` benar-benar kosong (fail-open bekerja, tidak ada crash/regresi) dan AI tidak menyebut event apa pun di `invalidation_condition` — sesuai ekspektasi karena memang tidak ada data untuk disebut. Jalur "ada event" sudah dikonfirmasi lewat 6 unit test terpisah; akan otomatis teruji live begitu ada rilis High-impact USD dalam 7 hari (NFP/CPI/FOMC dll — cron 3x/hari).
+- **S-3:** 1x generate digest live (bukan cron-dedup — generate baru sungguhan, `method: deepseek-v4-flash`) — artikel akhir dicek TIDAK mengandung string "SEVERITAS" (tidak bocor ke narasi). 98 headline RSS live saat itu dicek manual lewat `severityTagForHeadline`: **0 match** (tidak ada headline format rilis dari 9 indikator sign-effect saat itu), jadi anotasi memang kosong di siklus ini — konsisten, bukan bug. Mekanisme anotasi sendiri sudah dites lengkap di unit test; akan otomatis teramati live begitu ada headline rilis yang match.
 
 ---
 
