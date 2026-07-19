@@ -1,5 +1,17 @@
 # Daun Merah — Inventaris Vendor & Layanan Eksternal
 
+```
+=== ATURAN FILE INI (WAJIB PATUH — SOT: ATURAN.md di root) ===
+TUJUAN   : Inventaris KONDISI-SEKARANG semua layanan pihak ketiga (infra, data, hosting, dsb).
+BOLEH    : Vendor aktif + fungsi + tier gratis/berbayar + env var terkait + hasil evaluasi
+           kandidat (diterima/ditolak + alasan singkat + tanggal).
+DILARANG : Detail limit/chain provider AI (-> daun_merah_ai.md), cerita proses evaluasi panjang
+           (-> changelog daun_merah.md), plan migrasi vendor (-> daun_merah_plan.md).
+FORMAT   : Update IN PLACE (bukan append changelog) — baris/tabel vendor diubah langsung +
+           catat tanggal perubahan; vendor yang dibuang tetap dicatat singkat sebagai DITOLAK.
+Entri yang melanggar = salah tempat, wajib dipindah.
+```
+
 > **Dibuat:** 2026-07-11 (session 157)
 > **Tujuan dokumen:** daftar lengkap semua layanan pihak ketiga yang dipakai app ini — siapa, buat apa, gratis/berbayar, dan env var mana yang terkait. Untuk detail pemakaian AI secara spesifik (limit, frekuensi, fallback), lihat [daun_merah_ai.md](daun_merah_ai.md).
 

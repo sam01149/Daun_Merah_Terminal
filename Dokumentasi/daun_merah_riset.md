@@ -1,16 +1,20 @@
 # Daun Merah — Riset & Pembelajaran
 
-> **Aturan dokumen ini (2026-07-18):** tiga jenis isi — (1) **riset aktif** (desk research /
-> eksperimen yang sedang berjalan, entri WAJIB pakai tanggal + sumber URL/sesi), (2)
-> **pertanyaan terbuka & parkiran ide** (belum layak jadi plan), (3) **pembelajaran proyek**
-> (pelajaran TERDISTILASI: satu prinsip + konteks satu baris + rujukan sesi — bukan cerita
-> ulang; cerita lengkap tetap di changelog `daun_merah.md`). Pembelajaran yang bentuknya
-> aturan perilaku AI juga disalin ke `.agents/AGENTS.md` (file yang dipatuhi AI pelaksana).
->
-> **Yang BUKAN tempatnya di sini:** changelog (`daun_merah.md`), konfigurasi kondisi-sekarang
-> (`daun_merah_ai.md` / `daun_merah_vendor.md`), langkah eksekusi (`daun_merah_plan.md`),
-> sitasi paper akademis (`daun_merah_referensi_riset.md`).
->
+```
+=== ATURAN FILE INI (WAJIB PATUH — SOT: ATURAN.md di root) ===
+TUJUAN   : Riset internal proyek — 3 jenis isi: (1) riset aktif, (2) pertanyaan terbuka &
+           parkiran ide (belum layak jadi plan), (3) pembelajaran proyek terdistilasi.
+BOLEH    : Riset aktif WAJIB tanggal + sumber URL/sesi; pembelajaran = satu prinsip + konteks
+           satu baris + rujukan sesi (bukan cerita ulang). Pembelajaran berbentuk aturan
+           perilaku universal → usulkan juga masuk ATURAN.md.
+DILARANG : Changelog (-> daun_merah.md), kondisi-sekarang AI/vendor (-> daun_merah_ai.md /
+           daun_merah_vendor.md), langkah eksekusi (-> daun_merah_plan.md), sitasi paper
+           akademis (-> daun_merah_referensi_riset.md), pekerjaan tertunda non-riset
+           (-> daun_merah_progress.md).
+FORMAT   : Entri bertanggal per bagian (Riset Aktif / Pertanyaan Terbuka / Pembelajaran).
+Entri yang melanggar = salah tempat, wajib dipindah.
+```
+
 > **Aturan hapus:** riset selesai / ide yang sudah dieksekusi / entri basi → hapus dari sini;
 > riwayatnya cukup di changelog + git history. Isi lama dokumen ini (peta jalan "AI lebih
 > pintar" session 166, sebagian besar sudah jadi fitur: Tier 1 = setup_log, Tier 4 = AI

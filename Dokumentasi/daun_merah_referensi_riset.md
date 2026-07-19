@@ -1,5 +1,17 @@
 # Daun Merah — Rujukan Riset Akademis (Constraint / Method / Application Papers)
 
+```
+=== ATURAN FILE INI (WAJIB PATUH — SOT: ATURAN.md di root) ===
+TUJUAN   : Daftar pustaka permanen — dokumen/paper peneliti eksternal + relevansinya ke Daun Merah.
+BOLEH    : Sitasi TERVERIFIKASI ke sumber primer (author/tahun/jurnal dicek via web, bukan dari
+           klaim LLM) + tipe (Constraint/Method/Application) + temuan inti + implikasi ke proyek.
+DILARANG : Riset internal/eksperimen sendiri (-> daun_merah_riset.md), sitasi belum diverifikasi,
+           changelog (-> daun_merah.md).
+FORMAT   : Tabel per kategori topik: | Paper | Tipe | Temuan inti | + blok "Implikasi untuk
+           Daun Merah" per kategori.
+Entri yang melanggar = salah tempat, wajib dipindah.
+```
+
 > **Dibuat:** 2026-07-10 (Session 155, lanjutan)
 > **Tujuan:** perpustakaan rujukan permanen yang dicek SEBELUM memulai proyek makro/forex baru di Daun Merah — supaya tidak menghabiskan waktu membuktikan ulang batas yang sudah diketahui literatur (pola yang terjadi di riset NFP, lihat [[nfp-causal-research-framework]] / Session 150-153 di `daun_merah.md`).
 > **Metodologi verifikasi:** semua sitasi di bawah dicek via web search terhadap sumber primer (NBER/JSTOR/jurnal/RePEc) sebelum dimasukkan — bukan disalin mentah dari konsultasi LLM lain. Kalau ada sitasi baru mau ditambahkan ke file ini, verifikasi dulu (author/tahun/jurnal), jangan percaya nama paper dari LLM tanpa cek.

@@ -19,6 +19,26 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 
 ---
 
+## Changelog Session 192 (2026-07-19) — Restrukturisasi Dokumentasi: ATURAN.md sebagai Single Source of Truth
+
+**Konteks:** Rapat dengan user: agent sering salah/lupa mengisi file dokumentasi, dan kewajiban dokumentasi lama (CLAUDE.md poin 6) hanya mencakup pekerjaan teknis — riset/vendor/referensi tidak pernah diwajibkan tercatat. Akar masalah teridentifikasi: (1) aturan routing tidak tertulis di mana pun, (2) `.agents/AGENTS.md` (dibaca Gemini) memuat path basi "daun_merah.md di root" padahal sudah pindah ke `Dokumentasi/`, (3) aturan universal (emoji, atribusi commit, deploy) hanya ada di CLAUDE.md yang agent lain tidak baca.
+
+**Keputusan rapat (user):**
+- Single source of truth = file BARU `ATURAN.md` di root; `CLAUDE.md` dan `.agents/AGENTS.md` hanya merujuk (bukan AGENTS.md dipindah ke root, bukan duplikasi aturan).
+- `daun_merah_progress.md` DIREPURPOSE: parkir pekerjaan TERTUNDA (credit habis/prioritas lain/delay/mentok), bukan laporan progress. `daun_merah_referensi_riset.md` = murni daftar pustaka peneliti eksternal. Keduanya tetap terpisah dari file induk, tanpa rename.
+- Header "ATURAN FILE INI" tegas di baris atas tiap file Dokumentasi.
+
+**Dikerjakan sesi ini:**
+- **`ATURAN.md` (root, BARU):** peta path penting, tabel routing 7 file Dokumentasi, kewajiban dokumentasi untuk SEMUA jenis pekerjaan (termasuk riset/vendor/referensi/pekerjaan tertunda), 10 aturan universal (emoji, atribusi AI commit, deploy via git push, npm test hijau + verifikasi live, 12/12 function, `_ai_guard.js` + gate ToS, `?v=` lockstep, timeout client>server, keyword hanya di `newscat.js`, baca-dulu-jangan-asumsi), template header file dokumentasi.
+- **`CLAUDE.md` dirampingkan:** baris pertama wajib baca ATURAN.md; poin 5-7 lama diganti rujukan ke Aturan Universal + poin 6 diperluas ("update dokumentasi sesuai tabel routing, SEMUA jenis pekerjaan"); mode "buatkan plan" dipertahankan dengan path dikoreksi ke `Dokumentasi/daun_merah_plan.md`.
+- **`.agents/AGENTS.md` diperbarui:** blok wajib-baca ATURAN.md di paling atas, section baru "ATURAN DOKUMENTASI (mutlak)", SEMUA path basi `daun_merah.md` dikoreksi ke `Dokumentasi/daun_merah.md`, konteks proyek ditambah daemon Railway (`vps/`); persona/protokol konteks/standar kualitas/pelajaran dipertahankan utuh.
+- **Header "ATURAN FILE INI" dipasang di 7 file Dokumentasi** (code fence, format seragam TUJUAN/BOLEH/DILARANG/FORMAT): daun_merah.md, plan (konstrain global lama diringkas jadi rujukan ATURAN.md §4), progress, riset (aturan lama 2026-07-18 dilebur ke format baru), referensi_riset, vendor, ai. Vendor & ai ditegaskan sebagai dokumen kondisi-sekarang (update in place), daun_merah.md sebagai changelog append.
+- **`daun_merah_progress.md` ditulis ulang:** laporan SELESAI Plan H/I/J/K (S154) DIHAPUS (melanggar definisi baru; riwayat lengkap tetap di changelog S154) — action item yang masih menggantung dimigrasi jadi 4 entri TERTUNDA berformat baku: Plan K Opsi B minifikasi (S154), Plan I Fase 2 sparkline korelasi (S154), tes Ollama Cloud (S160), refactor index.html 883 KB (S189).
+
+**Verifikasi:** perubahan murni dokumentasi/aturan — tidak ada kode app yang disentuh, `npm test` tidak terpengaruh (tidak dijalankan, tidak relevan). Konsistensi silang dicek manual: rujukan `.agents/AGENTS.md` di plan file & riset tetap valid (file tidak pindah), tidak ada lagi teks yang mengklaim `daun_merah.md` ada di root.
+
+---
+
 ## Changelog Session 191 (2026-07-19) — Plan S Dieksekusi Penuh (Strip Rilis Terbaru, Kalender di Analisa, Severity di Ringkasan)
 
 **Konteks:** Plan S ditulis Session 190 (audit S189-S190: AI & tampilan melihat "apa" tapi bukan "kapan/arah"), lalu di-handoff untuk dieksekusi — sesi ini yang mengerjakan ketiga item sisanya sekaligus atas instruksi user "kerjakan plan di daun_merah_plan.md".

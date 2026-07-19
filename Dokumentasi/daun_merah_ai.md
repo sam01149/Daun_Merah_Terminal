@@ -1,5 +1,18 @@
 # Daun Merah — Pemakaian AI (Referensi Lengkap)
 
+```
+=== ATURAN FILE INI (WAJIB PATUH — SOT: ATURAN.md di root) ===
+TUJUAN   : Referensi KONDISI-SEKARANG pemakaian AI: fitur mana pakai provider/model apa,
+           chain fallback, limit provider + jatah harian buatan sendiri (_ai_guard.js).
+BOLEH    : Peta fitur AI, chain primary→fallback per fitur, limit & cache & rate limit,
+           status provider (aktif/demote/ditolak + alasan satu baris).
+DILARANG : Vendor non-AI (-> daun_merah_vendor.md), cerita kronologis tes model
+           (-> changelog daun_merah.md), ide/eksperimen model masa depan (-> daun_merah_riset.md).
+FORMAT   : Update IN PLACE (bukan append changelog) — setiap ganti chain/limit, ubah langsung
+           tabel terkait + catat tanggal; file ini harus selalu = kondisi produksi terkini.
+Entri yang melanggar = salah tempat, wajib dipindah.
+```
+
 > **Dibuat:** 2026-07-11 (session 157)
 > **Tujuan dokumen:** satu tempat untuk menjawab "fitur AI apa saja yang ada, dipanggil pakai model/provider apa, dan paling banyak dipakai berapa kali sehari" — supaya kalau ada laporan "AI error/limit habis", tinggal buka file ini dulu sebelum ngoprek kode.
 > **Vendor & non-AI infra:** lihat [daun_merah_vendor.md](daun_merah_vendor.md).
