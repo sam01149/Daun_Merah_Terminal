@@ -4307,7 +4307,7 @@ window.addEventListener('DOMContentLoaded', updateThemeIcon);
 
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.07.19.3';
+const APP_VERSION = '2026.07.19.5';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
@@ -8546,10 +8546,25 @@ function renderFundamental() {
       const ageA = fundAgeDays(a[1].date), ageB = fundAgeDays(b[1].date);
       const recentA = ageA !== null && ageA <= 14 ? 1 : 0;
       const recentB = ageB !== null && ageB <= 14 ? 1 : 0;
+      
+      // 1. Prioritaskan data recent (<=14 hari) di atas data lama
       if (recentA !== recentB) return recentB - recentA;
+      
+      // 2. Jika keduanya recent, urutkan berdasarkan umur terkecil (paling baru)
+      if (recentA === 1) {
+        if (ageA !== ageB) return ageA - ageB;
+      }
+      
+      // 3. Fallback: urutkan berdasarkan urutan section
       const ra = sectionRank[FUND_SECTIONS_MAP[a[0]]] ?? FUND_SECTION_ORDER.length;
       const rb = sectionRank[FUND_SECTIONS_MAP[b[0]]] ?? FUND_SECTION_ORDER.length;
-      return ra - rb;
+      if (ra !== rb) return ra - rb;
+      
+      // 4. Jika section sama, taruh yang umurnya lebih baru di atas
+      if (ageA !== null && ageB !== null) return ageA - ageB;
+      if (ageA !== null) return -1;
+      if (ageB !== null) return 1;
+      return 0;
     });
     const visibleEntries = sortedEntries.slice(0, CARD_ROW_LIMIT);
     const hiddenCount    = sortedEntries.length - visibleEntries.length;

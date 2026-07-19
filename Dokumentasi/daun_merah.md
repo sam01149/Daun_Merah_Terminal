@@ -11,11 +11,25 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-07-19 (Session 193 — Hapus strip "Rilis Terbaru" di tab Fundamental (redundant dengan label umur inline S-1), ganti sort recency-first per kartu currency; fix inkonsistensi kerangka ranking di prompt `fundamental_analysis` (CHF vs kerangka hawkish/dovish, salah tafsir PPI). `npm test` 389/389 hijau, live-verified `APP_VERSION 2026.07.19.3`. Sebelumnya Session 192 — Restrukturisasi dokumentasi: `ATURAN.md` root baru sebagai single source of truth aturan, header ATURAN FILE di semua file Dokumentasi, `daun_merah_progress.md` direpurpose jadi parkir pekerjaan tertunda. Sebelumnya Session 191 — Plan S dieksekusi penuh: strip "Rilis Terbaru" + label umur tab Fundamental (S-1), event kalender high-impact 7 hari masuk prompt Analisa (S-2), tag severity di 80 headline Call 1 Ringkasan (S-3). `npm test` 389/389 hijau.).
+> **Last updated:** 2026-07-19 (Session 194 — Fix sorting umur indikator di kartu. `npm test` 389/389 hijau, `APP_VERSION 2026.07.19.5`.)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+---
+
+## Changelog Session 194 (2026-07-19) — Perbaikan Sorting Umur Indikator di Kartu Currency Tab Fundamental
+
+**Konteks:** User mendeteksi bug urutan pada kartu currency di tab Fundamental (tampilan depan/collapsed card): indikator yang berumur lebih baru (misal `4h` / 4 hari lalu) tertukar posisinya di bawah indikator yang lebih lama (misal `1mgg` / 1 minggu lalu) karena sorting hanya memeriksa status `recent` (<=14 hari) lalu langsung jatuh ke sort kategori/section, bukan membandingkan umur hari riil.
+
+**Perubahan (`index.html`):**
+- **JavaScript:**
+  - **Perbaikan Sorting Kartu:** Memperbaiki comparator sort di `renderFundamental()` agar jika kedua entri berstatus `recent` (<=14 hari), mereka diurutkan berdasarkan `ageDays` terkecil terlebih dahulu (`ageA - ageB`, terbaru di atas), baru kemudian jatuh ke fallback sorting per section/golongan (`ra - rb`).
+- **Bumping versi:** `APP_VERSION` ditingkatkan menjadi `2026.07.19.5`.
+
+**Verifikasi:**
+- `npm test` lulus **389/389 hijau** tanpa adanya regresi.
 
 ---
 
