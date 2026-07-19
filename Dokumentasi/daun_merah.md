@@ -11,11 +11,28 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-07-19 (Session 192 — Restrukturisasi dokumentasi: `ATURAN.md` root baru sebagai single source of truth aturan, header ATURAN FILE di semua file Dokumentasi, `daun_merah_progress.md` direpurpose jadi parkir pekerjaan tertunda. Sebelumnya Session 191 — Plan S dieksekusi penuh: strip "Rilis Terbaru" + label umur tab Fundamental (S-1), event kalender high-impact 7 hari masuk prompt Analisa (S-2), tag severity di 80 headline Call 1 Ringkasan (S-3). `npm test` 389/389 hijau. Sebelumnya Session 190 — Gemini flash fallback fundamental+jurnal, prompt fundamental diperkaya umur rilis+previous, skor tab Fundamental tertimbang recency×kepentingan.).
+> **Last updated:** 2026-07-19 (Session 193 — Hapus strip "Rilis Terbaru" di tab Fundamental (redundant dengan label umur inline S-1), ganti sort recency-first per kartu currency; fix inkonsistensi kerangka ranking di prompt `fundamental_analysis` (CHF vs kerangka hawkish/dovish, salah tafsir PPI). `npm test` 389/389 hijau, live-verified `APP_VERSION 2026.07.19.3`. Sebelumnya Session 192 — Restrukturisasi dokumentasi: `ATURAN.md` root baru sebagai single source of truth aturan, header ATURAN FILE di semua file Dokumentasi, `daun_merah_progress.md` direpurpose jadi parkir pekerjaan tertunda. Sebelumnya Session 191 — Plan S dieksekusi penuh: strip "Rilis Terbaru" + label umur tab Fundamental (S-1), event kalender high-impact 7 hari masuk prompt Analisa (S-2), tag severity di 80 headline Call 1 Ringkasan (S-3). `npm test` 389/389 hijau.).
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+---
+
+## Changelog Session 193 (2026-07-19) — Hapus Strip Rilis Terbaru (Redundan), Fix Inkonsistensi Prompt Ranking Fundamental
+
+**Konteks:** User menunjukkan screenshot tab Fundamental (kartu USD dengan Yield Curve + Liquidity) dan komplain strip "Rilis Terbaru" (ditambahkan S-1/Session 191) di atas ranking makan tempat — usul data terbaru cukup ditaruh inline di kartu currency, bukan kotak terpisah. User juga curiga output prompt `fundamental_analysis` "kelihatan benar tapi salah" — dicek dan ditemukan 2 cacat logika konkret di prompt.
+
+**S-1 revisi — Hapus strip "Rilis Terbaru" (`index.html`):**
+- `renderFundLatest()` + div `fundLatestSection`/`fundLatestList` + CSS `.fund-latest-*` (S-1, Session 191) DIHAPUS TOTAL — fungsinya (surface rilis lintas-currency yang tak terkubur di kartu per-section) sekarang tercover oleh 2 hal: label umur inline per baris (`fundAgeLabel()`, sudah ada) + sort baru: baris dengan rilis ≤14 hari dinaikkan ke atas tiap kartu currency SEBELUM sort berdasarkan section (Inflasi > Pertumbuhan > dst), supaya rilis penting tidak tertutup limit `CARD_ROW_LIMIT` (3 mobile/8 desktop) di balik "Selengkapnya" — inilah alasan asli strip itu dibuat dulu, sekarang ditangani inline tanpa kotak terpisah.
+- Label umur baris dengan usia ≤14 hari dikasih class `.fund-age.recent` (warna `var(--accent)`, bold) supaya rilis segar menonjol visual.
+- `APP_VERSION` → `2026.07.19.3`.
+
+**Fix prompt `fundamental_analysis` (`api/admin.js`):** audit manual ranking sample user menemukan CHF di-ranking TERKUAT lewat narasi "safe-haven" (inflasi 0%+suku bunga 0%) yang KONTRADIKTIF dengan kerangka hawkish/dovish yang dipakai untuk 7 currency lain (suku bunga tinggi/naik = bullish) — inkonsistensi kriteria antar-currency dalam ranking yang sama. Juga ditemukan PPI negatif (deflasi produsen) disalahtafsir sebagai "bukti permintaan domestik kuat" di output sample. Prompt diperbaiki: instruksi eksplisit pakai kerangka suku bunga hawkish/dovish KONSISTEN untuk semua 8 currency termasuk CHF (status safe-haven cuma boleh jadi alasan tambahan dengan penjelasan konkret, bukan pengecualian generik dari kerangka rate), plus larangan baru pakai satu indikator sebagai bukti kesimpulan indikator lain yang tak berkaitan langsung (PPI ≠ bukti demand konsumen).
+
+**Verifikasi:** `npm test` 389/389 hijau (regresi nol). Live: `git push` → Vercel auto-deploy dikonfirmasi (`APP_VERSION 2026.07.19.3` terbaca dari production). Perbaikan prompt belum bisa di-live-test langsung tanpa `force=true` (cache 6 jam) — divalidasi lewat pembacaan prompt final, bukan sample output baru.
+
+**Catatan proses:** working directory berisi reorganisasi test (`test/*.test.js` → `test/{admin,feeds,frontend,journal,lib,market_digest,vps}/*.test.js` + update `package.json` glob) yang SUDAH ADA sebelum sesi ini mulai (bukan dikerjakan sesi ini, kemungkinan sesi lain berjalan paralel — pola tabrakan yang sama pernah terjadi saat Plan L/M/N, Session ~186). Sempat ke-commit tak sengaja tercampur (commit pertama `git add index.html api/admin.js` tetap menyertakan rename yang sudah staged sebelumnya) — dikoreksi via `git reset --soft HEAD~1` + unstage total sebelum commit ulang, HANYA `index.html`+`api/admin.js` yang di-push sesi ini; reorganisasi test dibiarkan utuh tak ter-commit untuk sesi/pemilik lain.
 
 ---
 
