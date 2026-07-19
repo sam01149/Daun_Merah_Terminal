@@ -69,6 +69,21 @@ test('excerpt: pair tanpa segmen match → fallback 3 paragraf, artikel null →
   assert.ok(_extractRingkasanExcerpt(longArt, 'EUR/USD', false).length <= 700);
 });
 
+test('cap tertarget 2500 (S194): picked panjang tidak lagi terpotong di 900, fallback tetap 700', () => {
+  const longTagged = [
+    'JANGKAR ' + 'a'.repeat(1400),
+    '{{TAG: EUR}} SEGEUR ' + 'b'.repeat(1400),
+    '{{TAG: Konfirmasi}} KONF ' + 'c'.repeat(400),
+  ].join('\n\n');
+  const out = _extractRingkasanExcerpt(longTagged, 'EUR/USD', false);
+  assert.ok(out.length > 900, `cap lama 900 harus sudah longgar, dapat ${out.length}`);
+  assert.ok(out.length <= 2500, `cap 2500 harus jalan, dapat ${out.length}`);
+  // Blok XAUUSD self-contained = tertarget → ikut cap 2500, bukan 700 lama
+  const longXau = 'Bagian FX dulu.\n\nXAUUSD: ' + 'z'.repeat(3000);
+  const outXau = _extractRingkasanExcerpt(longXau, 'XAU/USD', true);
+  assert.ok(outXau.length > 700 && outXau.length <= 2500, `dapat ${outXau.length}`);
+});
+
 // ── Mirror client vs server ──────────────────────────────────────────────────
 
 test('mirror: _extractRingkasanExcerptJs (index.html) identik dengan versi server', () => {

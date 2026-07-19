@@ -4307,7 +4307,7 @@ window.addEventListener('DOMContentLoaded', updateThemeIcon);
 
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.07.19.5';
+const APP_VERSION = '2026.07.19.6';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
@@ -6508,7 +6508,8 @@ function _extractRingkasanExcerptJs(article, label, isXau) {
     const clean = article.replace(/\{\{TAG:[^}]*\}\}/g, '').trim();
     const xauIdx = clean.search(/\bXAUUSD:/);
     const excerpt = xauIdx !== -1 ? clean.slice(xauIdx) : clean.split(/\n\n+/).slice(0, 3).join('\n\n');
-    return excerpt ? cap(excerpt, 700) : null;
+    // Cap tertarget 2500 / fallback 700 — WAJIB sama dengan _extractRingkasanExcerpt server.
+    return excerpt ? cap(excerpt, xauIdx !== -1 ? 2500 : 700) : null;
   }
   const xauIdx = article.search(/\bXAUUSD:/);
   const fxPart = (xauIdx !== -1 ? article.slice(0, xauIdx) : article).trim();
@@ -6525,7 +6526,7 @@ function _extractRingkasanExcerptJs(article, label, isXau) {
     if (tag.includes('KONFIRMASI') || legs.some(leg => tag.includes(leg))) picked.push(text);
   }
   if (picked.length === 0) return cap(fxPart.replace(/\{\{TAG:[^}]*\}\}/g, ' ').trim().split(/\n\n+/).slice(0, 3).join('\n\n'), 700);
-  return cap(picked.join('\n\n'), 900);
+  return cap(picked.join('\n\n'), 2500);
 }
 
 async function analyzeOhlcvAi() {

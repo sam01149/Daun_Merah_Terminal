@@ -2511,7 +2511,10 @@ function _extractRingkasanExcerpt(article, label, isXau) {
     const clean = article.replace(/\{\{TAG:[^}]*\}\}/g, '').trim();
     const xauIdx = clean.search(/\bXAUUSD:/);
     const excerpt = xauIdx !== -1 ? clean.slice(xauIdx) : clean.split(/\n\n+/).slice(0, 3).join('\n\n');
-    return excerpt ? cap(excerpt, 700) : null;
+    // Blok XAUUSD self-contained = tertarget, cap longgar 2500 (sama seperti FX tertarget
+    // di bawah) supaya segmen geopolitik di ekor tidak terpotong; fallback non-blok tetap
+    // ikut jalur 3-paragraf yang di-cap ketat.
+    return excerpt ? cap(excerpt, xauIdx !== -1 ? 2500 : 700) : null;
   }
   const xauIdx = article.search(/\bXAUUSD:/);
   const fxPart = (xauIdx !== -1 ? article.slice(0, xauIdx) : article).trim();
@@ -2532,9 +2535,12 @@ function _extractRingkasanExcerpt(article, label, isXau) {
   if (picked.length === 0) {
     return cap(fxPart.replace(/\{\{TAG:[^}]*\}\}/g, ' ').trim().split(/\n\n+/).slice(0, 3).join('\n\n'), 700);
   }
-  // Cap 900 (bukan 700): excerpt tertarget sudah minim noise, sedikit lebih longgar
-  // supaya blok Konfirmasi di ekor tidak terpotong.
-  return cap(picked.join('\n\n'), 900);
+  // Cap 2500 (dinaikkan dari 900, S194): excerpt tertarget sudah minim noise dan isi
+  // picked realistis 1.200-1.800 char — 900 masih memotong ekor blok Konfirmasi. 2500
+  // praktis tak pernah memotong; tambahan ~500 token input tidak signifikan (DeepSeek/
+  // Groq konteks 128K, biaya ~$0.00015/analisa). Fallback tanpa-tag SENGAJA tetap 700
+  // (isinya "3 paragraf pertama" apapun pair-nya = noisy, jangan diperbesar).
+  return cap(picked.join('\n\n'), 2500);
 }
 
 // Format blok fundamental terstruktur per pair untuk prompt Analisa (pure — dites unit).
@@ -2750,11 +2756,11 @@ async function ohlcvAnalyzeHandler(req, res) {
     } catch(e) { console.warn('ohlcv_analyze: cron dedup check gagal (fail-open, tetap generate):', e.message); }
   }
 
-  // Input klien di-cap defensif: excerpt resmi max 900 char (lihat _extractRingkasanExcerpt) —
+  // Input klien di-cap defensif: excerpt resmi max 2500 char (lihat _extractRingkasanExcerpt) —
   // body adalah input publik, jangan biarkan string raksasa menggelembungkan prompt AI.
   let ringkasanContext = req.body?.ringkasanContext || null;
   if (typeof ringkasanContext !== 'string' || !ringkasanContext.trim()) ringkasanContext = null;
-  else if (ringkasanContext.length > 1200) ringkasanContext = ringkasanContext.slice(0, 1197) + '...';
+  else if (ringkasanContext.length > 3000) ringkasanContext = ringkasanContext.slice(0, 2997) + '...';
   let ringkasanAt      = req.body?.ringkasanGeneratedAt || null;
   const clientOhlcv    = req.body?.ohlcvData       || null;
   const cbDir          = req.body?.cbDir           || null;

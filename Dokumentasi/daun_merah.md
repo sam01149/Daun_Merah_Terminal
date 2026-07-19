@@ -11,11 +11,30 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-07-19 (Session 194 — Fix sorting umur indikator di kartu. `npm test` 389/389 hijau, `APP_VERSION 2026.07.19.5`.)
+> **Last updated:** 2026-07-19 (Session 196 — Cap excerpt Ringkasan→Analisa 900→2500. `npm test` 390/390 hijau, `APP_VERSION 2026.07.19.6`.)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 196 (2026-07-19) — Cap Excerpt Ringkasan→Analisa Dinaikkan 900→2500 Char
+
+**Konteks:** User menanyakan kenapa excerpt Ringkasan yang disuntik ke prompt Analisa di-cap 900 char dan berapa angka optimalnya. Analisis: 900 bukan batas model (DeepSeek/Groq konteks 128K; prompt Analisa total baru ~3-4K token) melainkan cap konservatif yang masih memotong ekor blok Konfirmasi — isi picked tertarget (jangkar + segmen leg + Konfirmasi) realistis 1.200–1.800 char. Analisis biaya dari saldo DeepSeek user ($0.04/61 req/346K token): tambahan ~500 token input ≈ $0.00015/analisa — negligible.
+
+**Perubahan:**
+- `api/admin.js` — `_extractRingkasanExcerpt`: cap jalur tertarget `{{TAG}}` 900 → **2500**; blok XAUUSD self-contained (juga tertarget) 700 → **2500**; fallback tanpa-tag ("3 paragraf pertama", noisy) SENGAJA tetap **700**. Cap input klien `ringkasanContext` (body publik) 1200 → **3000**.
+- `index.html` — mirror `_extractRingkasanExcerptJs` diubah identik (dijaga test mirror); `APP_VERSION` → `2026.07.19.6`.
+- `test/admin/makro_ctx.test.js` — test baru: picked panjang tidak lagi terpotong di 900 dan ter-cap di 2500 (FX + XAU), fallback tetap ≤700.
+
+**Keputusan:** JANGAN naikkan lagi di atas ~2500 — segmen pair lain sengaja dibuang (akar masalah noise lama), dan prosa lebih panjang hanya menduplikasi blok FUNDAMENTAL TERSTRUKTUR serta mengencerkan fokus dari DATA TEKNIKAL. `?v=` newscat TIDAK di-bump (newscat.js tak berubah; SW tidak meng-cache index.html).
+
+**Verifikasi:** `npm test` 390/390 hijau (389 lama + 1 test baru).
+
+---
+
+## Changelog Session 195 (2026-07-19) — Hapus Emot 🧠 pada Tab Analisa
+**Konteks:** Tampilan emot kurang professional (commit `4821fe8`, 1 baris `index.html`).
+**Perubahan:** hapus emot 🧠 dari tab Analisa.
 
 ---
 
