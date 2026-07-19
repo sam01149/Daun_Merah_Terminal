@@ -208,3 +208,70 @@ lapisan tidak saling dobel-trigger.
 Verifikasi observability: `GET /` domain publik daemon sekarang ikut memuat
 `ws_last_activity_age_s` (umur pesan WS terakhir), `redis_guard`
 (degraded/failures), dan `last_supervisor_heal_at`.
+
+## 8. U-3 — auto-entry virtual (Plan U, fase tes) — 2026-07-20, BELUM DI-PUSH
+
+Dikerjakan di branch lokal `plan-u` (`daun_merah_plan.md` §Plan U — mode
+eksekusi khusus, DILARANG push sampai U-1..U-4 selesai + OK user). Bagian ini
+BELUM live di Railway — dicatat di sini supaya env var-nya sudah siap begitu
+U-6 (fase final Plan U) push ke `main`.
+
+**Yang ditambahkan ke `daemon.js`:**
+- **Lapis 0 — scheduler auto-entry**: node-cron memanggil `ohlcv_analyze` HTTP
+  dengan `&auto=1` untuk pair di `AUTO_ENTRY_PAIRS`, 2 slot/hari/pair (jam via
+  `AUTO_ENTRY_HOURS_UTC`). Setup yang dihasilkan tercatat di `setup_log:v1`
+  seperti biasa — `source:'auto'` baru benar-benar ke-tag begitu backend
+  `api/admin.js` paket U-2 selesai memahami param `auto=1` (saat modul ini
+  ditulis, U-2 belum selesai — lihat komentar besar U-3 di kepala blok kode di
+  `daemon.js`). Desain SENGAJA fail-forward: daemon tetap kirim `auto=1`
+  sekarang, backend yang belum paham param itu mengabaikannya saja (setup
+  tetap tercatat `source:'manual'` sampai U-2 menyusul) — tidak ada yang rusak
+  di kedua arah urutan deploy.
+- **Lapis 1 — filter berita keras**: sebelum tiap panggilan, daemon cek
+  `calendar_v1`+`calendar_next_v1` — ada event *High impact* untuk currency
+  kaki pair dalam <4 jam ke depan → slot di-skip, alasan dicatat ke
+  `auto_skip_log` (Redis LIST, cap 200).
+- **Lapis 2 — auto-cancel virtual: DI-DESCOPE untuk rilis ini.** Sub-riset
+  wajib (plan §U-3 langkah 3a: ukur median latensi field `actual` di
+  `calendar_v1`, butuh ≥3 event high-impact nyata) tidak bisa dituntaskan
+  sinkron dalam satu sesi kerja — dicek langsung ke `calendar_v1` produksi
+  (read-only) saat kode ini ditulis (2026-07-20 dini hari WIB): event
+  high-impact berikutnya baru jatuh malam harinya, >18 jam dari waktu
+  penulisan, di luar jangkauan satu sesi. Sesuai klausul plan sendiri ("kalau
+  median >30 menit, descope Lapis 2, jangan dipaksakan") — data yang tidak
+  bisa diverifikasi diperlakukan sama dengan "belum terbukti aman". Instrumen
+  pengumpulan sampel (poin berikut) tetap jalan begitu daemon live, supaya
+  keputusan berikutnya berbasis data asli.
+- **Sub-riset 3a — instrumentasi latensi `actual`**: poll `calendar_v1`+`next`
+  tiap 10 menit (murni observasi, tidak memicu aksi apa pun); begitu event
+  *High impact* yang sudah lewat jadwal rilisnya (s/d 4 jam) punya `actual`
+  terisi, latensi (waktu-terdeteksi − waktu-jadwal) dicatat ke
+  `calendar_actual_latency_log:v1` (cap 100), sekali per event (dedup via
+  `SET NX`). Setelah ≥3 sampel nyata terkumpul, keputusan Lapis 2 (aktifkan
+  atau descope permanen) bisa diambil ulang di sesi berikutnya.
+- **Uji konsistensi LLM**: 1x/hari (`AUTO_CONSISTENCY_HOUR_UTC`), panggil
+  `ohlcv_analyze` pair pertama `AUTO_ENTRY_PAIRS` 3x berturut dengan
+  `&test_deepseek=1` — flag diagnostik existing yang (a) memaksa model
+  `deepseek-v4-flash`, SAMA dengan primary produksi, dan (b) `isDiagnosticOnly`
+  sehingga TIDAK menulis cache produksi/`setup_log` (tidak mengotori data
+  auto-entry Lapis 0). Hasil (bias identik? entry/SL/TP dalam toleransi 0.5%?)
+  disimpan ke `consistency_log:v1` (cap 60).
+
+**Env var baru (opsional, fail-open — kosong = pakai default di atas):**
+
+| Env var | Default | Keterangan |
+|---|---|---|
+| `AUTO_ENTRY_PAIRS` | `frxXAUUSD,frxEURUSD` | Daftar pair (penamaan Deriv, dipetakan ke symbol/label Yahoo di `AUTO_ENTRY_SYMBOL_MAP`) yang ikut auto-entry + jadi pair uji konsistensi (elemen pertama). |
+| `AUTO_ENTRY_HOURS_UTC` | `8,13` | Jam UTC slot auto-entry (perkiraan buka London/NY) — sengaja digeser dari jadwal digest Q-6 (00:00/07:00/12:30) supaya tidak tertelan dedup 30 menit `ohlcv_analyze`. |
+| `AUTO_CONSISTENCY_HOUR_UTC` | `10` | Jam UTC uji konsistensi LLM (1x/hari). |
+
+Tidak ada env var WAJIB baru untuk U-3 — semua opsional dengan default masuk
+akal; `CRON_SECRET` yang sudah ada (§6) dipakai ulang untuk trigger HTTP-nya.
+
+**Verifikasi setelah U-6 push (belum bisa dilakukan sekarang):**
+- Log Railway menunjukkan baris `daemon: U-3 auto-entry aktif` +
+  `daemon: U-3 uji konsistensi aktif` saat boot.
+- `setup_log:v1` mulai berisi entri `source:'auto'` (butuh U-2 sudah live).
+- `consistency_log:v1` & `calendar_actual_latency_log:v1` bertambah entri
+  harian (`admin?action=redis-keys` atau Upstash console).
+- Gate fase tes penuh: lihat `daun_merah_plan.md` §"Kriteria Fase Tes".
