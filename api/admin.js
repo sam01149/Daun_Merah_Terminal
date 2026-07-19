@@ -1169,11 +1169,11 @@ Pertimbangkan juga:
 - Pertumbuhan GDP vs ekspektasi global
 - Tingkat inflasi vs target bank sentral (umumnya 2%)
 - Kondisi pasar tenaga kerja (unemployment rate, employment change)
-- Arah kebijakan moneter (tingkat suku bunga — makin tinggi = makin hawkish)
+- Arah kebijakan moneter (tingkat suku bunga — makin tinggi/baru dinaikkan = makin hawkish = bullish; makin rendah/baru dipangkas = dovish = bearish). PAKAI KRITERIA INI KONSISTEN untuk SEMUA 8 currency TERMASUK CHF — status "safe-haven" CHF adalah karakteristik struktural, BUKAN alasan untuk mengabaikan suku bunga rendah/inflasi ultra-rendahnya sendiri saat menentukan ranking. Kalau CHF tetap dinaikkan ranking meski suku bunganya terendah, jelaskan alasan konkret (mis. capital inflow risk-off), bukan cuma label "safe-haven" generik.
 - PMI: >50 = ekspansi, <50 = kontraksi
-- Untuk JPY: CPI rendah = deflasi = lemah secara fundamental; untuk CHF: CPI rendah biasa karena franc kuat secara struktural
 - Untuk AUD: bergantung pada commodity prices (terutama minerals); untuk NZD: ekspor dairy sensitive terhadap demand Asia
 - Untuk CAD: correlate kuat dengan harga minyak (Oil mencerminkan ekonomi Canada), tidak fluktuasi independent
+- JANGAN memakai satu indikator sebagai bukti kesimpulan indikator lain yang tidak berkaitan langsung — misal PPI (harga di level produsen) TIDAK membuktikan kuat/lemahnya permintaan konsumen (itu urusan Retail Sales/Consumer Spending); PPI turun/negatif berarti tekanan deflasi di sisi produsen, BUKAN bukti demand domestik kuat.
 
 Format jawaban WAJIB (Bahasa Indonesia, singkat dan actionable):
 
@@ -1713,7 +1713,7 @@ function _findSwings(candles, lookback = 2, keep = 2) {
   };
 }
 
-// ── Struktur teknikal untuk AI Analisa (semua pure function — dites di test/ta_struct.test.js) ──
+// ── Struktur teknikal untuk AI Analisa (semua pure function — dites di test/admin/ta_struct.test.js) ──
 
 // Klasifikasi market structure dari 2 swing high + 2 swing low terakhir H4:
 // HH+HL = bullish, LH+LL = bearish, selain itu mixed/range. BOS = close terakhir
@@ -1978,7 +1978,7 @@ async function loadOhlcvData(symbol, label) {
 }
 
 // Perakitan metrik murni dari candle mentah — dipisah dari I/O Redis/Yahoo supaya bisa
-// diuji end-to-end tanpa infra (test/ta_struct.test.js + scripts smoke test).
+// diuji end-to-end tanpa infra (test/admin/ta_struct.test.js + scripts smoke test).
 function computeOhlcvMetrics({ symbol, label, c1h, c4h, c1dFull, ta }) {
   const isXau = symbol === 'GC=F';
   const isJpy = symbol.includes('JPY');
@@ -2293,7 +2293,7 @@ async function ohlcvReadHandler(req, res) {
 }
 
 // Ambil max 6 level expiry milik pair ini, diurutkan dari yang paling dekat ke harga
-// sekarang (magnet paling relevan duluan). Pure function — dites di test/guards.test.js.
+// sekarang (magnet paling relevan duluan). Pure function — dites di test/lib/guards.test.js.
 function _pickExpiryLevels(expiries, pairLabel, nowPrice) {
   if (!Array.isArray(expiries) || !pairLabel) return [];
   const want = String(pairLabel).toUpperCase().replace('/', '');
@@ -2317,7 +2317,7 @@ function _pickExpiryLevels(expiries, pairLabel, nowPrice) {
 // berdekatan (≤ tolerance ~0.35x ATR Daily), skor = jumlah struktur yang bertumpuk
 // (S/R diberi bobot ekstra dari sentuhan, expiry setengah bobot karena berlaku 1 hari),
 // lalu ranking. AI tinggal MENARASIKAN zona teratas, bukan memilih bebas.
-// Pure function — dites di test/ta_struct.test.js.
+// Pure function — dites di test/admin/ta_struct.test.js.
 function _confluenceZones(data, expiryLvls) {
   const dec = data?.dec ?? 5;
   const now = data?.h1?.available ? data.h1.current : null;
@@ -2396,7 +2396,7 @@ function _confluenceZones(data, expiryLvls) {
 // (TP & SL tersentuh di candle 1H yang sama — tidak bisa tahu urutannya, JANGAN
 // dihitung menang/kalah); pending terlalu lama → expired; gap data (candle tertua
 // > 24 jam setelah setup dibuat, tidak tahu apa yang terjadi) → stale.
-// Pure function — dites di test/ta_struct.test.js.
+// Pure function — dites di test/admin/ta_struct.test.js.
 function _evaluateSetups(setups, candlesBySymbol, nowMs) {
   const DAY = 86400000;
   const nums = s => (String(s).match(/[\d.]+/g) || []).map(Number).filter(n => !isNaN(n));
