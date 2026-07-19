@@ -11,11 +11,22 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-07-19 (Session 196 — Cap excerpt Ringkasan→Analisa 900→2500. `npm test` 390/390 hijau, `APP_VERSION 2026.07.19.6`.)
+> **Last updated:** 2026-07-19 (Session 197 — Pembaruan README.md Lengkap & Profesional. `npm test` 392/392 hijau, `APP_VERSION 2026.07.19.6`.)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 197 (2026-07-19) — Pembaruan README.md Lengkap & Profesional
+**Konteks:** User meminta pembuatan README.md yang lengkap dan profesional untuk repositori proyek Daun Merah.
+
+**Perubahan:**
+- `README.md` — Ditulis ulang sepenuhnya untuk menyajikan penjelasan menyeluruh mengenai proyek Daun Merah. Menambahkan logo utama (`icon.svg`), diagram alur data arsitektural yang komprehensif menggunakan Mermaid (menghubungkan Deriv WS, Railway VPS Daemon, Upstash Redis, Vercel Serverless, klien PWA, AI Providers, dan Telegram), dokumentasi panel fitur UI utama, pemetaan struktur direktori file beserta fungsinya, detail rantai fallback AI & budget guard (`api/_ai_guard.js`), penjelasan 4 lapisan self-healing daemon, inventaris environment variables lengkap, panduan setup pengembangan lokal, panduan pengujian (`npm test`), serta aturan deployment dan rilis global.
+
+**Verifikasi:**
+- Perubahan murni pada dokumentasi repo (`README.md` & `daun_merah.md`), tidak memengaruhi kode aplikasi. `npm test` tetap berjalan 100% hijau (392/392 test lulus).
+
+---
 
 ## Changelog Session 196 (2026-07-19) — Cap Excerpt Ringkasan→Analisa Dinaikkan 900→2500 Char
 
