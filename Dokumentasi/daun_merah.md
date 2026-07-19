@@ -22,6 +22,8 @@
 
 **Verifikasi:** `npm test` **382/382 hijau** (8 test baru: tier Gemini fundamental & journal — urutan 4 fetch, model id, `reasoning_effort`; skip tier tanpa key; error agregat; `_fundAgeDays` batas hari-sama/masa-depan/seed `—`; `_formatFundDataLine` lengkap/seed/previous-sama). `node -e require` admin.js+journal.js bersih. **BELUM diverifikasi live:** tier Gemini hanya aktif saat 3 tier di atasnya gagal — perlu ditunggu kejadian nyata atau tes manual terisolasi nanti (jangan boros, pakai jalur gratis).
 
+**Susulan sesi sama (status dari user):** (1) SEMUA env var daemon Railway sudah ditambahkan (`DERIV_APP_ID`/Telegram/VAPID) — gate live Plan Q murni menunggu waktu, Plan P tetap fallback penuh kalau daemon gagal; (2) item emoji petir sisa audit S179 (6c) dinyatakan beres — dihapus dari plan; (3) app_id publik Deriv 1089 DITERIMA apa adanya, tindak lanjut api-support dibatalkan. Plan S di-handoff ke chatroom Sonnet 5 (eksekusi bukan oleh sesi ini); verifikasi & cleanup plan file menyusul setelah selesai.
+
 ---
 
 ## Changelog Session 189 (2026-07-18) — Housekeeping .gitignore
