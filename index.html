@@ -4294,7 +4294,7 @@ window.addEventListener('DOMContentLoaded', updateThemeIcon);
 
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.07.19.6';
+const APP_VERSION = '2026.07.19.7';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
@@ -5295,6 +5295,11 @@ async function generateRingkasan() {
     if (data.thesis_alerts && data.thesis_alerts.length > 0) {
       showToast('Thesis Alert', `${data.thesis_alerts.length} headline kontra buy/sell limit terdeteksi pada trade terbuka`, 5000);
     }
+    // Plan T-5: auto-chain Ringkas -> Analisa satu klik. Pair aktif dipakai apa
+    // adanya; kalau tab Analisa belum pernah dibuka (analisaActive kosong),
+    // inisialisasi default XAU/USD supaya chain tetap jalan tanpa tab dibuka.
+    if (!analisaActive.symbol) analisaActive = { symbol: 'GC=F', label: 'XAU/USD' };
+    analyzeOhlcvAi(true);
   } catch(e) {
     showToast('Gagal', 'Ringkasan tidak merespons: ' + e.message, 4000);
     btn.classList.remove('loading');
@@ -5824,6 +5829,12 @@ function stopAnalisaAutoRefresh() {
   analisaAutoRefreshTimer = null;
 }
 let analisaActive = { symbol: null, label: null };
+
+// Jendela kesegaran Plan T-5: pair yang baru saja di-generate segar (chain atau manual)
+// tidak perlu request server lagi selama 10 menit — klik manual dalam jendela ini
+// cukup menampilkan hasil terakhir + toast, tanpa AI call baru.
+const ANALISA_FRESH_MS = 10 * 60 * 1000;
+let analisaFreshUntil = {}; // { [symbol]: epochMs }
 
 const LS_ANALISA_DATA = 'analisa_data_cache_v1';
 const LS_ANALISA_AI   = 'analisa_ai_cache_v2'; // v2: bersihkan cache lama yg tersimpan sebelum fix JSON parsing
@@ -6545,10 +6556,18 @@ function _extractRingkasanExcerptJs(article, label, isXau) {
   return cap(picked.join('\n\n'), 2500);
 }
 
-async function analyzeOhlcvAi() {
+async function analyzeOhlcvAi(force) {
   const { symbol, label } = analisaActive;
   if (!symbol) return;
-  if (Date.now() < analisaAiCooldownEnd) return;
+  if (!force) {
+    if (Date.now() < analisaAiCooldownEnd) return;
+    const freshUntil = analisaFreshUntil[symbol];
+    if (freshUntil && Date.now() < freshUntil) {
+      const remainMin = Math.ceil((freshUntil - Date.now()) / 60000);
+      showToast('Info', `Analisa terbaru sudah tampil — tunggu ${remainMin} menit lagi untuk informasi baru.`, 3500);
+      return;
+    }
+  }
   const btn = document.getElementById('analisaAiBtn');
   btn.classList.add('loading');
   btn.querySelector('span').textContent = 'Meminta AI...';
@@ -6592,6 +6611,8 @@ async function analyzeOhlcvAi() {
       const makroAt  = data.makro_generated_at || (hasMakro ? ringkasanGeneratedAt : null);
       analisaAiCache[reqSymbol] = { commentary: data.commentary, structured: data.structured || null, model: data.model, hasMakro, hasFund, makroAt, analyzedAt: data.loaded_at || null, saved_at: Date.now() };
       _analisaSaveAi(reqSymbol);
+      // Jendela kesegaran T-5: hanya di-set untuk generate segar (bukan cache pasar-tutup/error).
+      if (!data.market_closed) analisaFreshUntil[reqSymbol] = Date.now() + ANALISA_FRESH_MS;
       if (analisaActive.symbol === reqSymbol) {
         const marketClosedBanner = data.market_closed
           ? `<div style="font-size:10px;color:var(--muted);font-family:'DM Mono',monospace;padding:4px 0 8px">Pasar forex tutup — menampilkan analisa terakhir.</div>`

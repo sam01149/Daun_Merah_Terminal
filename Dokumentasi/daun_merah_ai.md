@@ -118,8 +118,11 @@ Kalau primary gagal (limit habis / error / timeout), otomatis lompat ke tingkat 
 
 15 pasangan yang dilacak: EUR/USD, GBP/USD, USD/JPY, AUD/USD, USD/CAD, USD/CHF, NZD/USD, EUR/JPY, GBP/JPY, EUR/GBP, AUD/JPY, EUR/AUD, GBP/AUD, GBP/CAD, XAU/USD.
 
-**Penting:** tombol "Analisa AI" **selalu memanggil AI baru setiap diklik** — tidak dicek dulu apakah sudah ada hasil baru-baru ini (beda dengan Analisa Fundamental di §3.3 yang pakai cache global). Yang menahan laju supaya tidak boros adalah:
+**Penting:** tombol "Analisa Pair Ini" **selalu memanggil AI baru setiap diklik** — tidak dicek dulu apakah sudah ada hasil baru-baru ini (beda dengan Analisa Fundamental di §3.3 yang pakai cache global). Yang menahan laju supaya tidak boros adalah:
 - Cooldown 90 detik/device di UI
+- **Jendela kesegaran 10 menit (Plan T-5, Session 198 SESI-C):** `analisaFreshUntil[symbol]` — begitu satu pair berhasil dianalisa segar (manual atau via auto-chain di bawah), klik manual ulang pair yang sama dalam 10 menit **tidak mengirim request sama sekali**, cukup toast "tunggu X menit lagi". Reset per-symbol (in-memory, hilang saat reload), tidak berlaku kalau respons `market_closed` (lihat gate di bawah).
+- **Gate pasar tutup (Plan T-1, Session 198 SESI-A):** di luar jam FX buka, endpoint tidak memanggil AI sama sekali — menyajikan `ohlcv_analysis:<symbol>` apa adanya (`market_closed:true`, nol AI call) atau pesan error kalau belum pernah ada cache untuk pair itu.
+- **Auto-chain (Plan T-5, Session 198 SESI-C):** setiap klik manual "Ringkas Berita"/"Ringkas Ulang" yang sukses otomatis memicu **satu** panggilan tambahan ke fitur ini untuk pair yang sedang aktif di tab Analisa (default XAU/USD kalau tab belum pernah dibuka) — chain ini menembus cooldown 90 detik & jendela kesegaran (input baru = analisa baru), tapi tetap dibatasi oleh lock generate Ringkasan sendiri (§3.1) jadi tidak bisa spam. Kalau sedang gate pasar tutup, chain otomatis dilayani cache tanpa AI call (sama seperti klik manual).
 - Rate limit server 5 request/menit/IP
 - Jatah harian provider bersama (lihat §4)
 

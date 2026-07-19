@@ -11,7 +11,7 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-07-19 (Session 198 — Plan T: Mitigasi Weekend + UX AI Humanis, multi-sesi paralel. SESI-A & SESI-B selesai; SESI-C menyusul.)
+> **Last updated:** 2026-07-19 (Session 198 — Plan T: Mitigasi Weekend + UX AI Humanis, multi-sesi paralel. SESI-A/B/C SELESAI & pushed — Plan T tuntas.)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -41,7 +41,15 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 - Catatan desain: `_renderStructuredAi` disengaja TIDAK diberi side-effect DOM (disclaimer di-update lewat fungsi terpisah `_updateAnalisaDisclaimer` yang dipanggil di 2 call site) — supaya tetap fungsi murni yang bisa dites tanpa `document` (`test/frontend/esc_html.test.js` extract fungsi ini via `eval` di Node polos, sempat merah sebelum refactor ini, sekarang hijau lagi).
 - **Verifikasi:** `npm test` 392/392 hijau. Static server lokal (`node http server` sementara, tanpa build step) mengonfirmasi markup ter-render benar (grep label baru + id disclaimer pada HTML yang disajikan) — API live (cooldown countdown real, banner market_closed, disclaimer model asli) belum diverifikasi karena endpoint `/api/*` butuh deployment Vercel; tooling browser headless (chromium-cli/playwright) tidak tersedia di environment ini untuk screenshot interaktif. Verifikasi live production menyusul setelah push.
 
-**Sisa Plan T:** T-5 + `APP_VERSION` + finalisasi (SESI-C) — lihat papan klaim `daun_merah_plan.md`.
+**SESI-C — T-5 (auto-chain + jendela kesegaran) + `APP_VERSION` + finalisasi, semua di `index.html`, commit `[PLAN T-5]`:**
+- **Auto-chain:** di `generateRingkasan()`, setelah `_applyRingkasanData(data)` sukses (artikel baru sudah di `ringkasanCache`), panggil `analyzeOhlcvAi(true)` untuk pair aktif. Kalau tab Analisa belum pernah dibuka (`analisaActive.symbol` kosong), inisialisasi default `{ symbol: 'GC=F', label: 'XAU/USD' }` dulu supaya chain tetap jalan tanpa tab pernah dibuka. Panggilan tidak di-`await` (background) — hasil dirender ke panel Analisa (walau `display:none`) begitu selesai; tidak ada auto-pindah tab.
+- **`analyzeOhlcvAi(force)`:** parameter baru `force` (default falsy) dipakai chain untuk menembus dua guard klik manual: cooldown 90s tombol (`analisaAiCooldownEnd`, existing) dan jendela kesegaran baru. Anti-spam chain tetap terjaga lewat lock generate Ringkasan sendiri (`AbortSignal.timeout(55000)` + cooldown 90s Ringkasan) — satu klik Ringkas = maksimal satu chain.
+- **Jendela kesegaran 10 menit:** `ANALISA_FRESH_MS = 10*60*1000`, state `analisaFreshUntil[symbol]` di-set HANYA di cabang sukses non-`market_closed` (chain maupun manual) — respons `market_closed`/error tidak menyalakan jendela. Klik manual tombol Analisa saat `Date.now() < analisaFreshUntil[symbol]` → tanpa request server, toast "Analisa terbaru sudah tampil — tunggu X menit lagi untuk informasi baru." (X dibulatkan ke atas); pair lain tidak ikut menunggu (state per-symbol).
+- **Penutup:** `APP_VERSION` `2026.07.19.6` → `2026.07.19.7` (satu-satunya sesi yang boleh, sesuai papan klaim). `NEWSCAT_VERSION` tidak disentuh (tidak ada perubahan `newscat.js`).
+- **Verifikasi cross-package (peran sesi terakhir, `ATURAN.md` §5.8):** gate weekend T-1 (SESI-A) dan jendela kesegaran T-5 tidak bentrok — respons `market_closed:true` dari `analyzeOhlcvAi` sengaja dikecualikan dari `analisaFreshUntil`, jadi saat pasar tutup jendela kesegaran tidak pernah aktif (klik manual tetap boleh coba lagi, kena gate server bukan gate client). Label T-3 ("Analisa Pair Ini") dan cooldown 90s T-2/existing konsisten dipakai bersama tanpa duplikasi teks.
+- **Test:** `npm test` 392/392 hijau (tidak ada test baru — T-5 murni orkestrasi client, tidak ada logika pure baru yang layak diuji terisolasi; parsing seluruh blok `<script>` index.html dicek manual via `new Function()` untuk memastikan tidak ada syntax error).
+- **Verifikasi live:** production URL `https://financial-feed-app.vercel.app` dicek pasca-push — `APP_VERSION` baru & source chain/jendela-kesegaran terkonfirmasi tersaji di HTML yang di-serve. Interaksi klik browser end-to-end (chain real + toast jendela kesegaran) TIDAK bisa dites di environment ini (tanpa tooling browser headless, sama seperti keterbatasan SESI-B) — perilaku logic sudah diverifikasi via pembacaan kode + syntax check; disarankan user coba manual sekali di device sendiri (klik Ringkas Berita → pindah ke tab Analisa, cek hasil sudah muncul).
+- Section Plan T dihapus dari `daun_merah_plan.md` (semua paket SELESAI + PUSHED).
 
 ---
 
