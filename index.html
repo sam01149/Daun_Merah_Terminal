@@ -4305,7 +4305,7 @@ window.addEventListener('DOMContentLoaded', updateThemeIcon);
 
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.07.18.3';
+const APP_VERSION = '2026.07.19.1';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
@@ -8100,6 +8100,41 @@ function parseIndVal(str) {
   return isNaN(n) ? null : n;
 }
 
+// Bobot kepentingan indikator (2026-07-19): GDP/inflasi/tenaga kerja inti menggerakkan
+// ekspektasi kebijakan jauh lebih besar daripada indikator minor — tanpa ini Jobless
+// Claims mingguan bernilai sama dengan GDP di skor currency.
+const FUND_IND_IMPORTANCE = {
+  'GDP QoQ':2,'GDP QoQ Flash':2,'GDP MoM':2,'GDP Nowcast':2,
+  'CPI YoY':2,'CPI MoM':2,'CPI QoQ':2,'Core CPI MoM':2,'Core CPI YoY':2,'Core PCE':2,'Core PCE YoY':2,'CPI Flash YoY':2,
+  'NFP':2,'Employment Change':2,'Unemployment Rate':2,'Wage Growth':2,
+  'Housing Starts':0.5,'Building Permits':0.5,'Building Approvals':0.5,'Factory Orders':0.5,
+  'Existing Home Sales':0.5,'New Home Sales':0.5,'Chicago PMI':0.5,'Capacity Utilization':0.5,
+  'Personal Income':0.5,'Personal Spending':0.5,'GfK Consumer Climate':0.5,
+};
+function fundIndImportance(key) { return FUND_IND_IMPORTANCE[key] ?? 1; }
+
+// Umur data dalam hari dari field date entri ("YYYY-MM-DD" dari parser; seed lama '—').
+function fundAgeDays(dateStr) {
+  if (!dateStr || !/^\d{4}-\d{2}-\d{2}/.test(String(dateStr))) return null;
+  const ms = Date.now() - new Date(String(dateStr).slice(0, 10) + 'T00:00:00Z').getTime();
+  return (isNaN(ms) || ms < 0) ? null : Math.floor(ms / 86400000);
+}
+// Bobot recency: rilis terbaru mendominasi skor, data basi memudar. Umur tak diketahui
+// (seed lama tanpa tanggal) diperlakukan seperti data tua — bukan dibuang, cuma redup.
+function fundRecencyWeight(ageDays) {
+  if (ageDays === null) return 0.25;
+  if (ageDays <= 14) return 1.0;
+  if (ageDays <= 45) return 0.5;
+  return 0.25;
+}
+function fundAgeLabel(ageDays) {
+  if (ageDays === null) return '';
+  if (ageDays === 0) return 'hari ini';
+  if (ageDays < 7)  return `${ageDays}h lalu`;
+  if (ageDays < 30) return `${Math.floor(ageDays / 7)}mgg lalu`;
+  return `${Math.floor(ageDays / 30)}bln lalu`;
+}
+
 // scoring: change vs previous (primary), static threshold (fallback)
 function scoreInd(key, valStr, prevStr) {
   const rule = FUND_SCORE_RULES[key];
@@ -8450,13 +8485,21 @@ function renderFundamental() {
     const data    = fundData[cur] || {};
     const rateKey = RATE_KEYS[cur];
     const rateVal = rateKey && data[rateKey] ? data[rateKey].actual : null;
-    let bullCt = 0, bearCt = 0, scoredCt = 0;
+    // Skor tertimbang (2026-07-19): tiap indikator ±1 dikali bobot kepentingan ×
+    // bobot umur — rilis 2 minggu terakhir mendominasi, data basi/minor memudar.
+    // scoredCt (jumlah mentah) tetap dipakai untuk tier keyakinan.
+    let bullW = 0, totW = 0, scoredCt = 0;
     Object.entries(data).forEach(([k, v]) => {
       if (k === rateKey) return;
       const s = scoreInd(k, v.actual, v.previous);
-      if (s !== null) { scoredCt++; if (s > 0) bullCt++; else bearCt++; }
+      if (s !== null) {
+        scoredCt++;
+        const w = fundIndImportance(k) * fundRecencyWeight(fundAgeDays(v.date));
+        totW += w;
+        if (s > 0) bullW += w;
+      }
     });
-    const score      = scoredCt > 0 ? Math.round(bullCt / scoredCt * 100) : null;
+    const score      = totW > 0 ? Math.round(bullW / totW * 100) : null;
     const scoreLabel = score === null ? 'N/A' : score >= 60 ? 'Bull' : score < 40 ? 'Bear' : 'Neut';
     const scoreColor = score === null ? 'var(--muted)' : score >= 60 ? 'var(--green)' : score < 40 ? 'var(--red)' : 'var(--yellow)';
     const confTier   = scoredCt >= 7 ? 'high' : scoredCt >= 4 ? 'med' : scoredCt > 0 ? 'low' : null;

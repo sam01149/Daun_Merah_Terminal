@@ -927,6 +927,18 @@ const CEREBRAS_MODEL = 'gpt-oss-120b';
 const CB_CEREBRAS_GPTOSS = 'ai:cerebras:gptoss';
 const CB_SAMBA_C1_ADMIN  = 'ai:sambanova:c1'; // sama seperti CB_SAMBA_C1 di market-digest.js — akun 2 dipakai bersama
 
+// Gemini AI Studio — fallback terakhir fundamental_analysis + journal AI Coach
+// (2026-07-19). Konstanta sama dengan market-digest.js (GEMINI_URL/GEMINI_MODEL/
+// CB_GEMINI di sana): endpoint OpenAI-compat resmi, alias -latest supaya tidak basi
+// saat Google ganti generasi (sekarang resolve ke gemini-3.5-flash). Lolos gate ToS
+// produksi (daun_merah_riset.md S183: free tier boleh produksi, prompt = berita
+// publik). Budget guard 'gemini' sudah ada di _ai_guard.js. NVIDIA API (GLM 5.2/
+// Nemotron) SENGAJA tidak dipakai — ToS Trial melarang produksi, lihat KEPUTUSAN
+// GATE AWAL di daun_merah_riset.md.
+const GEMINI_URL_FUND   = 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions';
+const GEMINI_MODEL_FUND = 'gemini-flash-latest';
+const CB_GEMINI_ADMIN   = 'ai:gemini'; // circuit dipakai bersama market-digest.js & journal.js — provider sama
+
 const FUND_SEED = {
   USD: {
     'Fed Rate':          { actual:'3.75%',      period:'Apr 2026',    date:'—', source:'seed' },
@@ -1074,6 +1086,28 @@ async function fundamentalSeedHandler(req, res) {
   }
 }
 
+// Umur data dalam hari dari field `date` entri fundamental ("YYYY-MM-DD" dari parser
+// headline; seed lama pakai '—' = tidak diketahui). Return null kalau tak bisa dihitung.
+function _fundAgeDays(dateStr, nowMs = Date.now()) {
+  if (!dateStr || !/^\d{4}-\d{2}-\d{2}/.test(String(dateStr))) return null;
+  const ms = nowMs - new Date(String(dateStr).slice(0, 10) + 'T00:00:00Z').getTime();
+  if (isNaN(ms) || ms < 0) return null;
+  return Math.floor(ms / 86400000);
+}
+
+// Satu baris data untuk prompt AI fundamental. Dulu cuma "key: actual (period)" —
+// previous & date yang SUDAH tersimpan di Redis dibuang, jadi AI menilai level statis
+// tanpa arah perubahan dan tanpa tahu datanya segar atau basi (audit 2026-07-19).
+function _formatFundDataLine(key, v, nowMs = Date.now()) {
+  const parts = [`  ${key}: ${v.actual || '—'} (${v.period || '—'})`];
+  const extras = [];
+  const age = _fundAgeDays(v.date, nowMs);
+  if (age !== null) extras.push(age === 0 ? 'rilis hari ini' : `rilis ${age} hari lalu`);
+  if (v.previous && v.previous !== '—' && v.previous !== v.actual) extras.push(`sebelumnya ${v.previous}`);
+  if (extras.length > 0) parts.push(` [${extras.join('; ')}]`);
+  return parts.join('');
+}
+
 async function fundamentalAnalysisHandler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Cache-Control', 'no-cache');
@@ -1111,10 +1145,11 @@ async function fundamentalAnalysisHandler(req, res) {
     fundData[cur] = d;
   }
 
+  const nowMs = Date.now();
   const dataBlock = FUND_CURRENCIES.map(cur => {
     const d = fundData[cur] || {};
     const lines = Object.entries(d)
-      .map(([k, v]) => `  ${k}: ${v.actual || '—'} (${v.period || '—'})`)
+      .map(([k, v]) => _formatFundDataLine(k, v, nowMs))
       .join('\n');
     return `${cur}:\n${lines || '  (no data)'}`;
   }).join('\n\n');
@@ -1125,7 +1160,12 @@ ${dataBlock}
 
 Berdasarkan data di atas, analisis dan rankingkan 8 currency dari TERKUAT hingga TERLEMAH dari sisi fundamental ekonomi.
 
-Pertimbangkan:
+ATURAN BOBOT WAKTU (penting — pasar men-trade data terbaru, bukan level lama):
+- Beri bobot TERBESAR pada data dengan tag "rilis <=14 hari lalu", terutama yang berubah vs "sebelumnya" — arah perubahan (membaik/memburuk) lebih penting daripada level absolutnya.
+- Data tanpa tag rilis atau lebih tua dari ~45 hari perlakukan sebagai latar belakang, BUKAN bukti utama ranking.
+- Currency yang beberapa rilis terbarunya konsisten membaik layak naik ranking meski levelnya biasa saja; sebaliknya level bagus yang datanya basi dan mulai memburuk harus turun.
+
+Pertimbangkan juga:
 - Pertumbuhan GDP vs ekspektasi global
 - Tingkat inflasi vs target bank sentral (umumnya 2%)
 - Kondisi pasar tenaga kerja (unemployment rate, employment change)
@@ -1234,6 +1274,31 @@ DIVERGENSI TERBESAR:
     }
   }
 
+  // Fallback 3: Gemini flash (2026-07-19) — last resort baru setelah Groq. Free tier
+  // AI Studio, lolos gate ToS produksi (lihat komentar konstanta GEMINI_URL_FUND).
+  const GEMINI_KEY = process.env.GEMINI_API_KEY;
+  if (!analysis && GEMINI_KEY && await cb.canCall(CB_GEMINI_ADMIN)) {
+    try {
+      if (!await allowAiCall('gemini')) throw new Error('AI daily budget exceeded');
+      const r = await fetch(GEMINI_URL_FUND, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${GEMINI_KEY}` },
+        body: JSON.stringify({ model: GEMINI_MODEL_FUND, messages: fundMessages, max_tokens: 1500, temperature: 0.3, reasoning_effort: 'low' }),
+        signal: AbortSignal.timeout(25000),
+      });
+      if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e?.error?.message || `HTTP ${r.status}`); }
+      const data = await r.json();
+      const txt = data?.choices?.[0]?.message?.content?.trim() || '';
+      if (!txt) throw new Error('Empty response');
+      analysis = txt;
+      await cb.onSuccess(CB_GEMINI_ADMIN);
+      console.log('fundamental_analysis: Gemini fallback OK');
+    } catch(e) {
+      console.warn('fundamental_analysis Gemini fallback failed:', e.message);
+      await cb.onFailure(CB_GEMINI_ADMIN);
+    }
+  }
+
   if (!analysis) return res.status(500).json({ error: 'All providers failed for fundamental_analysis' });
 
   try {
@@ -1306,7 +1371,7 @@ async function journalImportHandler(req, res) {
 
 // ── Circuit breaker status + reset ───────────────────────────────────────────
 
-const KNOWN_CIRCUITS = ['ai:openrouter', 'ai:openrouter:nemotron', 'ai:openrouter:nemotron-super', 'ai:openrouter:hermes', 'ai:cerebras', 'ai:cerebras:gptoss', 'ai:cerebras:glm', 'ai:sambanova:c1', 'ai:sambanova:main', 'ai:ollama:nemotron', 'ai:deepseek', 'fred', 'stooq', 'ff', 'fj', 'cftc', 'redis', 'fxssi', 'actionforex'];
+const KNOWN_CIRCUITS = ['ai:openrouter', 'ai:openrouter:nemotron', 'ai:openrouter:nemotron-super', 'ai:openrouter:hermes', 'ai:cerebras', 'ai:cerebras:gptoss', 'ai:cerebras:glm', 'ai:sambanova:c1', 'ai:sambanova:main', 'ai:ollama:nemotron', 'ai:deepseek', 'ai:gemini', 'fred', 'stooq', 'ff', 'fj', 'cftc', 'redis', 'fxssi', 'actionforex'];
 
 async function circuitStatusHandler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -3701,6 +3766,8 @@ async function polymarketHandler(req, res) {
 // Ekspor helper murni untuk unit test (module.exports = handler function; properti
 // tambahan tidak mengganggu Vercel yang hanya memanggil function-nya).
 module.exports.detectPushCat = detectPushCat;
+module.exports._fundAgeDays = _fundAgeDays;
+module.exports._formatFundDataLine = _formatFundDataLine;
 module.exports._pickExpiryLevels = _pickExpiryLevels;
 module.exports._confluenceZones = _confluenceZones;
 module.exports._formatConfluenceBlock = _formatConfluenceBlock;

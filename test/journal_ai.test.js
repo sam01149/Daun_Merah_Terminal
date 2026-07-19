@@ -1,16 +1,17 @@
 // test/journal_ai.test.js
-// Unit test journal.js aiCall() 3-tier fallback (session 145, re-arsitektur Nemotron):
-// dulu Groq-only tanpa fallback sama sekali, sekarang Cerebras gpt-oss-120b primary ->
-// SambaNova akun2 fallback1 -> Groq fallback2. Redis tidak dikonfigurasi di test ini,
-// jadi circuit breaker/budget guard fail-open (lihat guards.test.js) — test ini fokus
-// ke urutan fallback HTTP-level, bukan skip akibat circuit OPEN.
+// Unit test journal.js aiCall() 4-tier fallback (session 145 re-arsitektur Nemotron,
+// + Gemini 2026-07-19): dulu Groq-only tanpa fallback sama sekali, sekarang Cerebras
+// gpt-oss-120b primary -> SambaNova akun2 fallback1 -> Groq fallback2 -> Gemini flash
+// fallback3. Redis tidak dikonfigurasi di test ini, jadi circuit breaker/budget guard
+// fail-open (lihat guards.test.js) — test ini fokus ke urutan fallback HTTP-level,
+// bukan skip akibat circuit OPEN.
 const { test } = require('node:test');
 const assert = require('node:assert');
 
 delete process.env.UPSTASH_REDIS_REST_URL;
 delete process.env.UPSTASH_REDIS_REST_TOKEN;
 
-const ENV_KEYS = ['CEREBRAS_API_KEY', 'SAMBANOVA_API_KEY_CALL1', 'GROQ_API_KEY'];
+const ENV_KEYS = ['CEREBRAS_API_KEY', 'SAMBANOVA_API_KEY_CALL1', 'GROQ_API_KEY', 'GEMINI_API_KEY'];
 
 async function withEnv(vars, fn) {
   const prev = {};
@@ -99,14 +100,39 @@ test('aiCall: Cerebras + SambaNova gagal -> fallback2 Groq (llama-3.3-70b-versat
   });
 });
 
-test('aiCall: semua 3 tier gagal -> melempar error dari Groq (tier terakhir)', async () => {
-  await withEnv({ CEREBRAS_API_KEY: 'sk-c', SAMBANOVA_API_KEY_CALL1: 'sk-s', GROQ_API_KEY: 'sk-g' }, async () => {
-    await withFetch(async (url) => {
-      if (url.includes('groq.com')) return errResponse(429);
+test('aiCall: Cerebras + SambaNova + Groq gagal -> fallback3 Gemini flash (gemini-flash-latest, reasoning_effort low)', async () => {
+  await withEnv({ CEREBRAS_API_KEY: 'sk-c', SAMBANOVA_API_KEY_CALL1: 'sk-s', GROQ_API_KEY: 'sk-g', GEMINI_API_KEY: 'sk-gm' }, async () => {
+    const calls = [];
+    await withFetch(async (url, opts) => {
+      calls.push({ url, body: JSON.parse(opts.body) });
+      if (url.includes('generativelanguage.googleapis.com')) return okResponse('hasil gemini');
       return errResponse(500);
     }, async () => {
-      await assert.rejects(() => aiCall([{ role: 'user', content: 'hi' }], 500), /boom 429/);
+      const out = await aiCall([{ role: 'user', content: 'hi' }], 500);
+      assert.strictEqual(out, 'hasil gemini');
     });
+    assert.strictEqual(calls.length, 4);
+    assert.ok(calls[3].url.includes('generativelanguage.googleapis.com'));
+    assert.strictEqual(calls[3].body.model, 'gemini-flash-latest');
+    assert.strictEqual(calls[3].body.reasoning_effort, 'low');
+  });
+});
+
+test('aiCall: semua 4 tier gagal -> melempar error agregat (bukan error Groq mentah)', async () => {
+  await withEnv({ CEREBRAS_API_KEY: 'sk-c', SAMBANOVA_API_KEY_CALL1: 'sk-s', GROQ_API_KEY: 'sk-g', GEMINI_API_KEY: 'sk-gm' }, async () => {
+    await withFetch(async () => errResponse(500), async () => {
+      await assert.rejects(() => aiCall([{ role: 'user', content: 'hi' }], 500), /All AI providers failed/);
+    });
+  });
+});
+
+test('aiCall: tanpa GEMINI_API_KEY, Groq gagal -> tetap melempar (tier Gemini di-skip)', async () => {
+  await withEnv({ CEREBRAS_API_KEY: 'sk-c', SAMBANOVA_API_KEY_CALL1: 'sk-s', GROQ_API_KEY: 'sk-g' }, async () => {
+    const calls = [];
+    await withFetch(async (url) => { calls.push(url); return errResponse(429); }, async () => {
+      await assert.rejects(() => aiCall([{ role: 'user', content: 'hi' }], 500), /All AI providers failed/);
+    });
+    assert.strictEqual(calls.length, 3, 'Gemini tidak boleh ikut dipanggil tanpa key');
   });
 });
 
@@ -114,7 +140,7 @@ test('aiCall: tanpa API key sama sekali -> melempar tanpa network call', async (
   await withEnv({}, async () => {
     let fetchCalled = false;
     await withFetch(async () => { fetchCalled = true; return okResponse('x'); }, async () => {
-      await assert.rejects(() => aiCall([{ role: 'user', content: 'hi' }], 500), /No AI provider configured/);
+      await assert.rejects(() => aiCall([{ role: 'user', content: 'hi' }], 500), /All AI providers failed or none configured/);
     });
     assert.strictEqual(fetchCalled, false);
   });

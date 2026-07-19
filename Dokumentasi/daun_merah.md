@@ -1,10 +1,26 @@
 # Daun Merah — Project Context (Full Reference)
 
-> **Last updated:** 2026-07-18 (Session 189 — housekeeping `.gitignore`: `scratch/` di-ignore + duplikat `.env*` dihapus. Sebelumnya Session 188 — lapisan self-healing 4 lapis: proses daemon (crash → restart Railway otomatis), Redis (backoff degradasi saat gagal beruntun/quota), WebSocket zombie (ping + paksa reconnect), dan data (candle basi → trigger ohlcv_sync otomatis dari daemon DAN dari `action=health` Vercel; scheduler gagal → retry). `npm test` 374/374 hijau.).
+> **Last updated:** 2026-07-19 (Session 190 — Gemini flash fallback fundamental+jurnal, prompt fundamental diperkaya umur rilis+previous, skor tab Fundamental tertimbang recency×kepentingan; Plan S ditulis. Sebelumnya Session 188 — lapisan self-healing 4 lapis: proses daemon (crash → restart Railway otomatis), Redis (backoff degradasi saat gagal beruntun/quota), WebSocket zombie (ping + paksa reconnect), dan data (candle basi → trigger ohlcv_sync otomatis dari daemon DAN dari `action=health` Vercel; scheduler gagal → retry). `npm test` 374/374 hijau.).
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+---
+
+## Changelog Session 190 (2026-07-19) — Konteks Waktu untuk AI Fundamental + Gemini Fallback + Plan S
+
+**Konteks:** Audit S189-S190 menemukan tema berulang: AI melihat "apa" (level angka) tapi tidak "kapan dan berubah ke arah mana" — padahal pasar men-trade data terbaru dan surprise-nya. Diskusi user: tab Fundamental menilai NZD "terkuat" dari level, bukan momentum rilis terbaru.
+
+**Dikerjakan sesi ini:**
+- **Prompt `fundamental_analysis` diperkaya** (`api/admin.js`): tiap baris data kini menyertakan `[rilis N hari lalu; sebelumnya X]` via helper murni baru `_fundAgeDays()`/`_formatFundDataLine()` (di-export, ada unit test) — sebelumnya field `date` & `previous` yang SUDAH tersimpan di Redis dibuang saat menyusun prompt, jadi AI menilai snapshot statis. Prompt ditambah blok "ATURAN BOBOT WAKTU" (rilis <=14 hari dominan; >45 hari = latar; momentum beruntun > level).
+- **Skor tab Fundamental tertimbang** (`index.html` dekat `scoreInd`): skor currency = persen bullish TERTIMBANG `FUND_IND_IMPORTANCE` (GDP/CPI/NFP/tenaga kerja ×2, minor ×0.5) × `fundRecencyWeight` umur rilis (≤14 hari ×1.0, ≤45 ×0.5, sisanya/tanpa tanggal ×0.25). `scoredCt` mentah tetap dipakai untuk tier keyakinan. Helper `fundAgeDays()`/`fundAgeLabel()` disiapkan (label umur per baris menyusul di Plan S-1). `APP_VERSION` 2026.07.19.1.
+- **Gemini flash jadi fallback terakhir fundamental + jurnal** (keputusan user): `fundamental_analysis` kini 4-tier (Cerebras gpt-oss-120b → SambaNova akun2 → Groq → **Gemini `gemini-flash-latest`**, `reasoning_effort:'low'`), journal AI Coach juga 4-tier sama — Groq di journal.js kini di-try/catch supaya kegagalannya jatuh ke Gemini (dulu last-resort yang melempar langsung). Circuit `ai:gemini` dipakai bersama market-digest.js & masuk `KNOWN_CIRCUITS`; budget guard `gemini` sudah ada di `_ai_guard.js`. Gate ToS: Gemini AI Studio free tier BOLEH produksi (riset S183). **GLM 5.2/Nemotron via NVIDIA API DITOLAK untuk chain produksi** — bukan soal kualitas, ToS NVIDIA API Trial melarang eksplisit "not in production" (KEPUTUSAN GATE AWAL `daun_merah_riset.md` S183).
+- **Plan S ditulis** di `daun_merah_plan.md` (S-1 strip Rilis Terbaru + label umur; S-2 kalender ekonomi masuk prompt Analisa; S-3 tag ACTUAL/severity di headline Call 1) — item yang sudah selesai di atas TIDAK dimasukkan plan (permintaan user, hemat token).
+
+**Catatan retroaktif (laporan terlewat dari sesi AI lain):** user mengonfirmasi 2026-07-19 bahwa GLM 5.2 & Nemotron via NVIDIA API pernah dites (sesi dikerjakan bersama Gemini, laporan lupa ditulis ke dokumen ini): hasil per keterangan user — GLM 5.2 output lebih natural untuk Ringkasan/Analisa tapi masih melanggar aturan format; Gemini 3.5 juga melanggar aturan format. Detail sampel tidak terdokumentasi. Keputusan produksi tidak berubah (gate ToS NVIDIA di atas tetap berlaku).
+
+**Verifikasi:** `npm test` **382/382 hijau** (8 test baru: tier Gemini fundamental & journal — urutan 4 fetch, model id, `reasoning_effort`; skip tier tanpa key; error agregat; `_fundAgeDays` batas hari-sama/masa-depan/seed `—`; `_formatFundDataLine` lengkap/seed/previous-sama). `node -e require` admin.js+journal.js bersih. **BELUM diverifikasi live:** tier Gemini hanya aktif saat 3 tier di atasnya gagal — perlu ditunggu kejadian nyata atau tes manual terisolasi nanti (jangan boros, pakai jalur gratis).
 
 ---
 

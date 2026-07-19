@@ -47,13 +47,19 @@ const CB_CEREBRAS_GPTOSS = 'ai:cerebras:gptoss';
 // Sama seperti CB_SAMBA_C1 di market-digest.js — akun 2 SambaNova dipakai bersama
 // sebagai fallback1 journal_analysis + fundamental_analysis + primary Call 1 digest.
 const CB_SAMBA_C1 = 'ai:sambanova:c1';
+// Gemini AI Studio — fallback terakhir AI Coach (2026-07-19), konstanta & alasan sama
+// dengan GEMINI_URL_FUND di admin.js (alias -latest → gemini-3.5-flash; lolos gate ToS
+// produksi daun_merah_riset.md S183; budget guard 'gemini' sudah ada di _ai_guard.js).
+const GEMINI_URL   = 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions';
+const GEMINI_MODEL = 'gemini-flash-latest';
+const CB_GEMINI    = 'ai:gemini'; // circuit dipakai bersama market-digest.js & admin.js — provider sama
 const ANALYSIS_CACHE_TTL = 60 * 60; // 1 hour
 
-async function callProvider(url, apiKey, model, messages, maxTokens, temperature, timeoutMs) {
+async function callProvider(url, apiKey, model, messages, maxTokens, temperature, timeoutMs, extraBody = {}) {
   const r = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-    body: JSON.stringify({ model, messages, max_tokens: maxTokens, temperature }),
+    body: JSON.stringify({ model, messages, max_tokens: maxTokens, temperature, ...extraBody }),
     signal: AbortSignal.timeout(timeoutMs),
   });
   if (!r.ok) {
@@ -73,13 +79,14 @@ async function callProvider(url, apiKey, model, messages, maxTokens, temperature
 }
 
 // session 145: dulu Groq-only tanpa fallback/circuit breaker sama sekali — sekarang
-// 3-tier (Cerebras gpt-oss-120b primary -> SambaNova akun2 fallback1 -> Groq fallback2,
-// tetap ada sebagai jaring pengaman terakhir tanpa circuit breaker, konsisten pola
-// project: last-resort selalu dicoba).
+// 4-tier (Cerebras gpt-oss-120b primary -> SambaNova akun2 fallback1 -> Groq fallback2
+// -> Gemini flash fallback3 (2026-07-19), last resort baru; Groq kini ikut di-try/catch
+// supaya kegagalannya jatuh ke Gemini, bukan langsung melempar ke caller).
 async function aiCall(messages, maxTokens = 1000) {
   const CEREBRAS_KEY        = process.env.CEREBRAS_API_KEY;
   const SAMBANOVA_KEY_CALL1 = process.env.SAMBANOVA_API_KEY_CALL1;
   const GROQ_KEY            = process.env.GROQ_API_KEY;
+  const GEMINI_KEY          = process.env.GEMINI_API_KEY;
 
   if (CEREBRAS_KEY && await cb.canCall(CB_CEREBRAS_GPTOSS)) {
     try {
@@ -106,11 +113,27 @@ async function aiCall(messages, maxTokens = 1000) {
   }
 
   if (GROQ_KEY) {
-    if (!await allowAiCall('groq')) throw new Error('AI daily budget exceeded');
-    return await callProvider(GROQ_URL, GROQ_KEY, GROQ_MODEL, messages, maxTokens, 0.4, 30000);
+    try {
+      if (!await allowAiCall('groq')) throw new Error('AI daily budget exceeded');
+      return await callProvider(GROQ_URL, GROQ_KEY, GROQ_MODEL, messages, maxTokens, 0.4, 30000);
+    } catch(e) {
+      console.warn('journal aiCall: Groq failed:', e.message);
+    }
   }
 
-  throw new Error('No AI provider configured (CEREBRAS_API_KEY / SAMBANOVA_API_KEY_CALL1 / GROQ_API_KEY)');
+  if (GEMINI_KEY && await cb.canCall(CB_GEMINI)) {
+    try {
+      if (!await allowAiCall('gemini')) throw new Error('AI daily budget exceeded');
+      const txt = await callProvider(GEMINI_URL, GEMINI_KEY, GEMINI_MODEL, messages, maxTokens, 0.4, 25000, { reasoning_effort: 'low' });
+      await cb.onSuccess(CB_GEMINI);
+      return txt;
+    } catch(e) {
+      console.warn('journal aiCall: Gemini failed:', e.message);
+      await cb.onFailure(CB_GEMINI);
+    }
+  }
+
+  throw new Error('All AI providers failed or none configured (CEREBRAS_API_KEY / SAMBANOVA_API_KEY_CALL1 / GROQ_API_KEY / GEMINI_API_KEY)');
 }
 
 async function redisCmd(...args) {
