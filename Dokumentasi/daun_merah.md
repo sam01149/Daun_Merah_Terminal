@@ -11,11 +11,31 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-07-19 (Session 197 — Pembaruan README.md Lengkap & Profesional. `npm test` 392/392 hijau, `APP_VERSION 2026.07.19.6`.)
+> **Last updated:** 2026-07-19 (Session 198 — Plan T: Mitigasi Weekend + UX AI Humanis, multi-sesi paralel. SESI-A selesai & live-verified.)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 198 (2026-07-19) — Plan T: Mitigasi Weekend + UX AI Humanis
+
+**Konteks:** Rapat 2026-07-19 (Minggu): output Ringkasan weekend berubah jadi rehash teknikal karena cron jalan 7 hari/minggu tanpa kesadaran pasar tutup. 5 paket disepakati (`Dokumentasi/daun_merah_plan.md` §Plan T), dieksekusi beberapa sesi paralel (papan klaim, `ATURAN.md` §5).
+
+**SESI-A — T-1 langkah 1-3 (`api/market-digest.js` + `api/admin.js`), commit `a44fbf7`:**
+- `api/market-digest.js`: require `isFxMarketOpen` dari `_market_hours.js`. `marketClosed` dihitung terpisah dari `isMonEarly` lama, disuntik ke `weekendNote` (dipakai di `digestUserMsg`, SENGAJA di user message supaya tetap berlaku walau `prompt_digest` di-override) — wajib sebut "penutupan Jumat" eksplisit, larang narasi seolah harga bergerak sekarang, teknikal/positioning maks 1 kalimat/mata uang dan dilarang jadi kalimat pembuka.
+- `DIGEST_SYSTEM_DEFAULT`: pengetatan permanen poin Teknikal & Positioning (cap 1 kalimat/mata uang, dilarang jadi jangkar pembuka analisa pair) — berlaku semua hari, bukan cuma weekend. Override Redis `prompt_digest` dicek live sebelum edit: **tidak aktif** (`value: null`), jadi tidak perlu mirror.
+- `api/admin.js` `ohlcvAnalyzeHandler`: gate baru SETELAH blok `mode==='cached'`, SEBELUM cron dedup — bila `!marketHours.isFxMarketOpen()`, sajikan `ohlcv_analysis:<symbol>` apa adanya + `market_closed:true` (atau pesan error jelas kalau belum ada cache), nol AI call. Otomatis cover cron GH Actions + daemon VPS + klik manual (satu handler yang sama).
+- Test: `test/lib/cron_dedup.test.js` — test cron-dedup lama dipaksa `isFxMarketOpen=true` (sebelumnya rapuh, gagal kalau dijalankan pas real-clock weekend — ketemu saat sesi ini berjalan hari Minggu). Test baru `test/admin/ohlcv_analyze_market_closed.test.js` (2 skenario: ada cache / belum ada cache).
+
+**Verifikasi live (production, Minggu 2026-07-19 ~13:20 UTC, pasar FX tutup nyata):**
+1. `GET ohlcv_analyze&symbol=GC=F` (2x berturut) → `market_closed:true`, `cached:true`, `loaded_at` identik kedua kali (tidak ada AI call baru).
+2. `GET ohlcv_analyze&symbol=NZD/USD` (tanpa cache) → `market_closed:true`, `cached:false`, `error:"Pasar forex sedang tutup — belum ada analisa tersimpan untuk pair ini."`.
+3. Generate digest baru dipicu manual (`GET /api/market-digest`, non-cron) → output menyebut eksplisit "ditutup Jumat"/"pada penutupan Jumat" di FX maupun XAUUSD, tidak ada pair yang dibuka dengan positioning/teknikal (jangkar semua tetap klaim fundamental/geopolitik, positioning & teknikal muncul belakangan sebagai `{{TAG: ...}}` terpisah) — sesuai Kriteria Selesai #1 dan #2 Plan T.
+4. `npm test` 392/392 hijau atas working tree gabungan (termasuk WIP SESI-B di `index.html` yang tidak disentuh).
+
+**Sisa Plan T:** T-1 langkah 4 (banner frontend) + T-2/T-3/T-4 (SESI-B) + T-5 + `APP_VERSION` + finalisasi (SESI-C) — lihat papan klaim `daun_merah_plan.md`.
+
+---
 
 ## Changelog Session 197 (2026-07-19) — Pembaruan README.md Lengkap & Profesional
 **Konteks:** User meminta pembuatan README.md yang lengkap dan profesional untuk repositori proyek Daun Merah.
