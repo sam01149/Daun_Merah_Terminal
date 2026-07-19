@@ -648,19 +648,6 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .ringkasan-meta-left {
   font-size: 10px; color: var(--muted);
 }
-.ringkasan-method {
-  font-size: 9px; padding: 2px 8px; border-radius: 3px; letter-spacing: .5px;
-}
-.ringkasan-method.groq,
-.ringkasan-method.qwen3-32b   { background: rgba(245,166,35,.1); color: #f5a623; }
-.ringkasan-method.cerebras    { background: rgba(100,220,160,.1); color: #64dca0; }
-.ringkasan-method.gemini      { background: rgba(255,211,42,.1); color: var(--yellow); }
-.ringkasan-method.fallback,
-.ringkasan-method.fallback_quota { background: rgba(var(--fg-rgb),.06); color: var(--muted); }
-.ringkasan-method.deepseek-v3\.2,
-.ringkasan-method.deepseek-v3\.1 { background: rgba(79,172,254,.12); color: #4facfe; }
-.ringkasan-method.gpt-oss-120b   { background: rgba(16,163,127,.12); color: #10a37f; }
-.ringkasan-method.nemotron-3-ultra { background: rgba(118,185,0,.12); color: #76b900; }
 .ringkasan-provider-log {
   font-size: 10px; color: var(--muted); font-family: 'DM Mono', monospace;
   background: rgba(var(--fg-rgb),.03); border-radius: 6px; padding: 8px 12px;
@@ -2618,7 +2605,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   /* Elemen redundan/dobel di kertas: kotak statistik besar (angkanya sudah
      ada di letterhead + baris meta), baris "Data: N headline..." (sama),
      badge model ber-emoji (blob aneh di print), provider log debug. */
-  .ringkasan-stats, .ringkasan-ts, .ringkasan-method, .ringkasan-method-note,
+  .ringkasan-stats, .ringkasan-ts,
   .ringkasan-provider-log { display: none !important; }
 
   /* Kartu jadi FLAT: hilangkan rounded corner + shadow + bar warna tebal
@@ -3268,7 +3255,7 @@ body:not(.light-theme) .ringkasan-gen-btn {
     <div class="no-print" style="margin-top:8px">
       <button id="polyBtn" class="jn-btn-sec" onclick="fetchPolymarket()" style="width:100%;font-size:10px">↻ Refresh Polymarket Macro</button>
     </div>
-    <div class="ai-disclaimer">⚠ Ringkasan dihasilkan AI dari headline &amp; data pihak ketiga — bisa keliru, bukan nasihat keuangan. Detail di tab PETUNJUK › Disclaimer.</div>
+    <div class="ai-disclaimer" id="ringkasanDisclaimer">⚠ Ringkasan dihasilkan AI dari headline &amp; data pihak ketiga — bisa keliru, bukan nasihat keuangan. Detail di tab PETUNJUK › Disclaimer.</div>
   </div>
 </div>
 
@@ -3300,7 +3287,7 @@ body:not(.light-theme) .ringkasan-gen-btn {
       <div class="print-btn-row">
         <button class="ringkasan-gen-btn" id="analisaAiBtn" onclick="analyzeOhlcvAi()" style="margin-top:4px">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2a10 10 0 1 0 10 10"/><path d="M12 8v4l3 3"/></svg>
-          <span>Analisa AI</span>
+          <span>Analisa Pair Ini</span>
         </button>
         <button class="print-btn no-print" style="margin-top:4px" onclick="downloadAnalisaPdf()" title="Download PDF">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -3309,7 +3296,7 @@ body:not(.light-theme) .ringkasan-gen-btn {
         </button>
       </div>
       <div id="analisaTrackRecord" class="no-print" style="display:none;font-size:10px;color:var(--muted);font-family:'DM Mono',monospace;margin-top:6px;padding:6px 10px;border:1px solid var(--border);border-radius:3px"></div>
-      <div class="ai-disclaimer">⚠ Level &amp; bias di atas dihasilkan AI dan bisa keliru — bukan nasihat keuangan. Verifikasi ke chart sebelum dipakai.</div>
+      <div class="ai-disclaimer" id="analisaDisclaimer">⚠ Level &amp; bias di atas dihasilkan AI dan bisa keliru — bukan nasihat keuangan. Verifikasi ke chart sebelum dipakai.</div>
     </div>
   </div>
 </div>
@@ -3445,7 +3432,7 @@ body:not(.light-theme) .ringkasan-gen-btn {
     <div id="jnListView">
       <button class="jn-ai-btn" id="jnAiBtn" onclick="jnRunAnalysis()">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
-        ANALISA AI
+        RINGKAS JURNAL SAYA
       </button>
       <!-- AI analysis panel -->
       <div class="jn-ai-panel" id="jnAiPanel"></div>
@@ -3699,7 +3686,7 @@ body:not(.light-theme) .ringkasan-gen-btn {
       </div>
       <div class="pt-row">
         <div class="pt-step-num">2.3</div>
-        <div class="pt-step-action"><strong>Buka tab ANALISA — konfirmasi teknikal</strong>Pilih pair yang ingin ditrade → tap "AI Analisa". Baca output 4 paragraf: bias Daily, struktur swing H4, momentum H1, dan integrasi keseluruhan. Catat level <strong>entry_zone, SL, TP, dan trigger</strong> sebelum lanjut ke Checklist. <em>Shortcut: G → A</em></div>
+        <div class="pt-step-action"><strong>Buka tab ANALISA — konfirmasi teknikal</strong>Pilih pair yang ingin ditrade → tap "Analisa Pair Ini". Baca output 4 paragraf: bias Daily, struktur swing H4, momentum H1, dan integrasi keseluruhan. Catat level <strong>entry_zone, SL, TP, dan trigger</strong> sebelum lanjut ke Checklist. <em>Shortcut: G → A</em></div>
         <div class="pt-step-why">Analisa memadukan OHLCV multi-timeframe + indikator (MACD H4, ATR H1, RSI Daily) + konteks makro dari Ringkasan. Level SL/TP didasarkan pada swing struktural H4 yang terdeteksi secara algoritma — bukan perkiraan. Cache berlaku 8 jam; generate ulang jika harga sudah bergerak jauh.</div>
       </div>
       <div class="pt-row">
@@ -4054,7 +4041,7 @@ body:not(.light-theme) .ringkasan-gen-btn {
     </div>
     <div class="fund-analysis-wrap">
       <button class="fund-analysis-btn" id="fundAnalysisBtn" onclick="generateFundamentalAnalysis()">
-        Analisis AI — Currency Terkuat / Terlemah
+        Urutkan Currency Terkuat–Terlemah
       </button>
       <div id="fundAnalysisCard" style="display:none">
         <div class="fund-analysis-card">
@@ -4118,8 +4105,8 @@ body:not(.light-theme) .ringkasan-gen-btn {
       <div class="ck-sess" id="ckSess">—</div>
     </div>
     <div class="ck-w">
-      <div class="ck-w-ttl">Pre-Entry Check</div>
-      <button type="button" class="ck-pec-btn" id="ckPecBtn" onclick="ckRunPreEntryCheck()" style="width:100%;padding:7px;font-family:'DM Mono',monospace;font-size:9px;letter-spacing:.05em;text-transform:uppercase;border-radius:3px;border:1px solid var(--accent);background:transparent;color:var(--accent);cursor:pointer;font-weight:700">Pre-Entry Check</button>
+      <div class="ck-w-ttl">Periksa Sebelum Entry</div>
+      <button type="button" class="ck-pec-btn" id="ckPecBtn" onclick="ckRunPreEntryCheck()" style="width:100%;padding:7px;font-family:'DM Mono',monospace;font-size:9px;letter-spacing:.05em;text-transform:uppercase;border-radius:3px;border:1px solid var(--accent);background:transparent;color:var(--accent);cursor:pointer;font-weight:700">Periksa Sebelum Entry</button>
       <div id="ckPecBox" style="display:none;margin-top:8px"></div>
     </div>
     <button class="ck-jurnal-btn" id="ckJurnalBtn" onclick="ckPrefillJurnal()" style="display:none">→ Buat Jurnal dari Checklist</button>
@@ -5315,6 +5302,22 @@ async function generateRingkasan() {
   }
 }
 
+// Label ramah-baca untuk d.method — dipakai di disclaimer (badge/meta model dihapus
+// dari hasil Ringkasan per Plan T-4, nama model pindah ke sini apa adanya).
+const AI_METHOD_LABELS = {
+  'cerebras':'Cerebras', 'groq':'Groq', 'gemini':'Gemini', 'deepseek-v3.2':'SambaNova V3.2',
+  'deepseek-v3.1':'SambaNova V3.1', 'nemotron-3-ultra':'Nemotron 3 Ultra', 'gpt-oss-120b':'OpenRouter',
+  'qwen3-32b':'Groq Qwen3', 'fallback':'Fallback', 'fallback_quota':'Quota',
+};
+const AI_METHOD_BACKUP_TIER = ['gpt-oss-120b', 'groq', 'qwen3-32b'];
+function _ringkasanDisclaimerHtml(method) {
+  const modelLabel = method ? (AI_METHOD_LABELS[method] || method) : null;
+  const backupNote = modelLabel && AI_METHOD_BACKUP_TIER.includes(method) ? ' — model cadangan' : '';
+  return modelLabel
+    ? `⚠ Ringkasan dihasilkan AI (${escHtml(modelLabel)}${backupNote}) dari headline &amp; data pihak ketiga — bisa keliru, bukan nasihat keuangan. Detail di tab PETUNJUK › Disclaimer.`
+    : `⚠ Ringkasan dihasilkan AI dari headline &amp; data pihak ketiga — bisa keliru, bukan nasihat keuangan. Detail di tab PETUNJUK › Disclaimer.`;
+}
+
 function renderRingkasan() {
   const inner = document.getElementById('ringkasanInner');
   const d = ringkasanCache;
@@ -5345,10 +5348,12 @@ function renderRingkasan() {
   const wib = new Date(ts.getTime() + 7*3600000);
   const tsStr = `${String(wib.getUTCHours()).padStart(2,'0')}:${String(wib.getUTCMinutes()).padStart(2,'0')} WIB`;
 
+  const disclaimerEl = document.getElementById('ringkasanDisclaimer');
+  if (disclaimerEl) disclaimerEl.innerHTML = _ringkasanDisclaimerHtml(d.method);
+
   inner.innerHTML = `
     <div class="ringkasan-meta">
-      <div class="ringkasan-meta-left">${tsStr} · ${d.news_count} berita${d.gold_count ? ' · ' + d.gold_count + ' XAU' : ''} · ${d.cal_count} kalender${d.from_cache ? ' · cache' : ''}</div>
-      <span class="ringkasan-method ${d.method}" title="${['gpt-oss-120b','groq','qwen3-32b'].includes(d.method) ? 'model cadangan — gaya naratif mungkin kurang tajam' : ''}">${{'cerebras':'Cerebras','groq':'Groq','gemini':'Gemini','deepseek-v3.2':'SambaNova V3.2','deepseek-v3.1':'SambaNova V3.1','nemotron-3-ultra':'Nemotron 3 Ultra','gpt-oss-120b':'OpenRouter','qwen3-32b':'Groq Qwen3','fallback':'Fallback','fallback_quota':'Quota'}[d.method] || d.method || 'Auto'}</span>${['gpt-oss-120b','groq','qwen3-32b'].includes(d.method) ? ' <span class="ringkasan-method-note" style="font-size:0.72rem;color:var(--muted)">model cadangan</span>' : ''}
+      <div class="ringkasan-meta-left">${tsStr} · ${d.news_count} berita${d.gold_count ? ' · ' + d.gold_count + ' XAU' : ''} · ${d.cal_count} kalender</div>
     </div>
 
     <div class="ringkasan-stats">
@@ -5490,7 +5495,7 @@ function cetakRingkasan() {
 
 function cetakAnalisa() {
   const m = _printMeta('printing-analisa');
-  if (!m) { showToast('Belum Ada Analisa', 'Jalankan "Analisa AI" dulu — dokumen cetak berisi analisa tertulisnya.', 3500); return; }
+  if (!m) { showToast('Belum Ada Analisa', 'Jalankan "Analisa Pair Ini" dulu — dokumen cetak berisi analisa tertulisnya.', 3500); return; }
   _printPanel('printing-analisa', m.letterheadId, m.titleText, m.meta);
 }
 
@@ -5663,7 +5668,7 @@ function downloadRingkasanPdf() {
   b.letterhead('Ringkasan Pasar Forex & Emas', [
     `Ringkasan dibuat: ${fmtCBTime(d.generated_at)}`,
     `Diunduh: ${_printWibNow().display}`,
-    `${d.news_count} berita · ${d.cal_count} event kalender${d.gold_count ? ' · ' + d.gold_count + ' XAU' : ''}${d.from_cache ? ' · cache' : ''}`,
+    `${d.news_count} berita · ${d.cal_count} event kalender${d.gold_count ? ' · ' + d.gold_count + ' XAU' : ''}`,
     'Sumber: CME · FRED · FinancialJuice · Yahoo Finance',
   ]);
 
@@ -5709,7 +5714,8 @@ function downloadRingkasanPdf() {
     _articleToPdfBlocks(xau).forEach(blk => { if (blk.tag) b.subheading(blk.tag); b.para(blk.body); });
   }
 
-  b.footer('⚠ Ringkasan dihasilkan AI dari headline & data pihak ketiga — bisa keliru, bukan nasihat keuangan. Detail di tab PETUNJUK › Disclaimer.');
+  const pdfModelLabel = d.method ? (AI_METHOD_LABELS[d.method] || d.method) : null;
+  b.footer(`⚠ Ringkasan dihasilkan AI${pdfModelLabel ? ' (' + pdfModelLabel + ')' : ''} dari headline & data pihak ketiga — bisa keliru, bukan nasihat keuangan. Detail di tab PETUNJUK › Disclaimer.`);
   b.doc.save(`ringkasan_${_printWibNow().filename}.pdf`);
 }
 
@@ -5718,7 +5724,7 @@ function downloadAnalisaPdf() {
   const d  = symbol ? analisaDataCache[symbol] : null;
   const ai = symbol ? analisaAiCache[symbol] : null;
   if (!d || !ai || (!ai.commentary && !ai.structured)) {
-    showToast('Belum Ada Analisa', 'Jalankan "Analisa AI" dulu — dokumen berisi analisa tertulisnya.', 3500);
+    showToast('Belum Ada Analisa', 'Jalankan "Analisa Pair Ini" dulu — dokumen berisi analisa tertulisnya.', 3500);
     return;
   }
   if (!_pdfLibReady()) { cetakAnalisa(); return; }
@@ -5730,7 +5736,7 @@ function downloadAnalisaPdf() {
   if (ai.analyzedAt) metaLines.push(`Dianalisa: ${fmtCBTime(ai.analyzedAt)}`);
   metaLines.push(`Diunduh: ${_printWibNow().display}`);
   if (d.h1?.current != null) metaLines.push(`Harga saat data: ${d.h1.current}`);
-  metaLines.push(`AI${ai.model ? ' · ' + ai.model : ''} · sumber: ${srcBits.join(' + ')}`);
+  metaLines.push(`AI · sumber: ${srcBits.join(' + ')}`);
   metaLines.push('Sumber data: CME · FRED · FinancialJuice · Yahoo Finance');
   b.letterhead(`Analisa Teknikal — ${label}`, metaLines);
 
@@ -5765,7 +5771,7 @@ function downloadAnalisaPdf() {
     else b.para(trimmed);
   });
 
-  b.footer('⚠ Level & bias di atas dihasilkan AI dan bisa keliru — bukan nasihat keuangan. Verifikasi ke chart sebelum dipakai.');
+  b.footer(`⚠ Level & bias di atas dihasilkan AI${ai.model ? ' (' + ai.model + ')' : ''} dan bisa keliru — bukan nasihat keuangan. Verifikasi ke chart sebelum dipakai.`);
   b.doc.save(`analisa_${_printWibNow().filename}.pdf`);
 }
 
@@ -5852,7 +5858,7 @@ function _tickAnalisaCooldown() {
     } else {
       clearInterval(analisaAiCooldownInterval);
       btn.disabled = false;
-      btn.querySelector('span').textContent = 'Analisa AI';
+      btn.querySelector('span').textContent = 'Analisa Pair Ini';
     }
   }, 1000);
 }
@@ -5925,7 +5931,7 @@ async function analisaRunCritic(symbol) {
   if (!symbol) return;
   const ai = analisaAiCache[symbol];
   const st = ai?.structured;
-  if (!st || !st.entry_zone) { showToast('Info', 'Jalankan Analisa AI dulu sebelum uji kelemahan.', 3000); return; }
+  if (!st || !st.entry_zone) { showToast('Info', 'Jalankan Analisa Pair Ini dulu sebelum uji kelemahan.', 3000); return; }
 
   const fingerprint = `${st.entry_zone}|${st.sl}|${st.tp}`;
   const cached = analisaCriticCache[symbol];
@@ -6066,22 +6072,31 @@ async function _autoLoadXauAnalysis(symbol) {
   } catch(e) { /* silent — tombol "Analisa AI" manual tetap tersedia */ }
 }
 
+// Disclaimer Analisa dengan nama model — dipanggil terpisah dari _renderStructuredAi
+// (bukan side-effect di dalamnya) supaya _renderStructuredAi tetap fungsi murni yang
+// bisa dites tanpa DOM (lihat test/frontend/esc_html.test.js).
+function _updateAnalisaDisclaimer(model) {
+  const disclaimerEl = document.getElementById('analisaDisclaimer');
+  if (!disclaimerEl) return;
+  disclaimerEl.innerHTML = model
+    ? `⚠ Level &amp; bias di atas dihasilkan AI (${escHtml(model)}) dan bisa keliru — bukan nasihat keuangan. Verifikasi ke chart sebelum dipakai.`
+    : `⚠ Level &amp; bias di atas dihasilkan AI dan bisa keliru — bukan nasihat keuangan. Verifikasi ke chart sebelum dipakai.`;
+}
+
 function _renderStructuredAi(structured, commentary, model, hasMakro, isCached, hasFund, makroAt, analyzedAt) {
   const sources = ['teknikal'];
   if (hasMakro) sources.push('makro');
   if (hasFund)  sources.push('fundamental');
   const srcTag = sources.length > 1 ? ` · <span style="color:#a78bfa">${sources.join(' + ')}</span>` : ' · teknikal';
-  const modelStr = model ? ` · ${model}` : '';
 
   const secondaryBits = [];
   const makroAge = _makroAgeLabel(makroAt);
   if (makroAge) secondaryBits.push(`makro ${makroAge}`);
-  if (isCached) secondaryBits.push('cache');
   if (analyzedAt) secondaryBits.push(`dianalisa ${fmtCBTime(analyzedAt)}`);
   const secondaryTag = secondaryBits.length ? ` <span class="analisa-ai-meta">· ${secondaryBits.join(' · ')}</span>` : '';
 
   let html = `<div class="analisa-ai-result-meta" style="font-size:9px;color:var(--muted);font-family:'DM Mono',monospace;margin: 12px 0 6px;text-transform:uppercase;letter-spacing:.05em" class="no-print">
-    AI${modelStr}${srcTag}${secondaryTag}
+    AI${srcTag}${secondaryTag}
   </div>`;
 
   if (structured) {
@@ -6201,6 +6216,7 @@ function _restoreAiResult(symbol) {
   const cached = analisaAiCache[symbol];
   if (!cached) return;
   const resultEl = document.getElementById('analisaAiResult');
+  _updateAnalisaDisclaimer(cached.model);
   resultEl.innerHTML = _renderStructuredAi(cached.structured || null, cached.commentary, cached.model, !!cached.hasMakro, true, !!cached.hasFund, cached.makroAt || null, cached.analyzedAt || null);
   resultEl.style.display = 'block';
   analisaLoadTrackRecord(symbol);
@@ -6577,7 +6593,11 @@ async function analyzeOhlcvAi() {
       analisaAiCache[reqSymbol] = { commentary: data.commentary, structured: data.structured || null, model: data.model, hasMakro, hasFund, makroAt, analyzedAt: data.loaded_at || null, saved_at: Date.now() };
       _analisaSaveAi(reqSymbol);
       if (analisaActive.symbol === reqSymbol) {
-        resultEl.innerHTML = _renderStructuredAi(data.structured || null, data.commentary, data.model, hasMakro, false, hasFund, makroAt, data.loaded_at || null);
+        const marketClosedBanner = data.market_closed
+          ? `<div style="font-size:10px;color:var(--muted);font-family:'DM Mono',monospace;padding:4px 0 8px">Pasar forex tutup — menampilkan analisa terakhir.</div>`
+          : '';
+        _updateAnalisaDisclaimer(data.model);
+        resultEl.innerHTML = marketClosedBanner + _renderStructuredAi(data.structured || null, data.commentary, data.model, hasMakro, false, hasFund, makroAt, data.loaded_at || null);
         resultEl.style.display = 'block';
         _setupStatsAt = 0; // setup baru saja dicatat server — paksa refresh track record
         analisaLoadTrackRecord(reqSymbol);
@@ -8912,12 +8932,40 @@ function _renderFundDetail() {
   document.getElementById('fdBody').innerHTML = html;
 }
 
+// ── Cooldown 90 detik generik untuk tombol AI (Plan T-2) — pola sama _startCriticCooldown,
+// dipakai tombol yang belum punya cooldown sendiri (Fundamental, Ringkas Jurnal, Diagnosa Perilaku).
+const _aiBtnCooldowns = {}; // { [btnId]: { end, interval, restoreHtml } }
+function _aiBtnCooldownActive(btnId) {
+  const c = _aiBtnCooldowns[btnId];
+  return !!c && Date.now() < c.end;
+}
+function _startAiBtnCooldown(btnId, restoreHtml) {
+  const state = _aiBtnCooldowns[btnId] || (_aiBtnCooldowns[btnId] = {});
+  state.end = Date.now() + 90000;
+  state.restoreHtml = restoreHtml;
+  clearInterval(state.interval);
+  state.interval = setInterval(() => {
+    const remaining = Math.ceil((state.end - Date.now()) / 1000);
+    const btn = document.getElementById(btnId);
+    if (!btn) { clearInterval(state.interval); return; }
+    if (remaining > 0) {
+      btn.disabled = true;
+      btn.textContent = `Tunggu ${remaining}s`;
+    } else {
+      clearInterval(state.interval);
+      btn.disabled = false;
+      btn.innerHTML = state.restoreHtml;
+    }
+  }, 1000);
+}
+
 async function generateFundamentalAnalysis() {
   const btn     = document.getElementById('fundAnalysisBtn');
   const card    = document.getElementById('fundAnalysisCard');
   const textEl  = document.getElementById('fundAnalysisText');
   const ageEl   = document.getElementById('fundAnalysisAge');
   if (!btn) return;
+  if (_aiBtnCooldownActive('fundAnalysisBtn')) return;
 
   btn.disabled    = true;
   btn.textContent = 'Menganalisis...';
@@ -8928,17 +8976,14 @@ async function generateFundamentalAnalysis() {
     if (json.analysis) {
       textEl.textContent = json.analysis;
       const ageMin = Math.floor((Date.now() - new Date(json.generated_at).getTime()) / 60000);
-      ageEl.textContent  = json.from_cache
-        ? (ageMin < 1 ? 'baru saja' : `${ageMin}m lalu · dari cache`)
-        : 'baru digenerate';
+      ageEl.textContent = ageMin < 1 ? 'baru saja' : `Diperbarui ${ageMin}m lalu`;
       card.style.display = 'block';
     }
   } catch(e) {
     if (textEl) textEl.textContent = 'Gagal: ' + e.message;
     if (card)   card.style.display = 'block';
   } finally {
-    btn.disabled    = false;
-    btn.textContent = 'Analisis AI — Currency Terkuat / Terlemah';
+    _startAiBtnCooldown('fundAnalysisBtn', 'Urutkan Currency Terkuat–Terlemah');
   }
 }
 
@@ -12767,7 +12812,7 @@ function _tickPecCooldown() {
     } else {
       clearInterval(ckPecCooldownInterval);
       btn.disabled = false;
-      btn.textContent = 'Pre-Entry Check';
+      btn.textContent = 'Periksa Sebelum Entry';
     }
   }, 1000);
 }
@@ -12831,7 +12876,7 @@ async function ckRunPreEntryCheck() {
   const pair = document.getElementById('ckPairSelector')?.value;
   if (!pair) return;
   const { pct, gatesOk } = ckGetVerdict();
-  if (!pct) { showToast('Info', 'Lengkapi checklist dulu sebelum Pre-Entry Check.', 3000); return; }
+  if (!pct) { showToast('Info', 'Lengkapi checklist dulu sebelum menjalankan Periksa Sebelum Entry.', 3000); return; }
 
   const checkedIds = CK_SECTIONS.flatMap(sec => sec.items.map(it => it.id)).filter(id => ckState[id]);
   const fingerprint = `${ckActivePlaybook}|${pct}|${checkedIds.join(',')}`;
@@ -14522,6 +14567,7 @@ async function jnRunAnalysis(force = false) {
   const btn   = document.getElementById('jnAiBtn');
   const panel = document.getElementById('jnAiPanel');
   if (!btn || !panel) return;
+  if (_aiBtnCooldownActive('jnAiBtn')) return;
 
   btn.disabled = true;
   btn.textContent = 'Menganalisis...';
@@ -14568,19 +14614,15 @@ async function jnRunAnalysis(force = false) {
     const bodyHtml = (data.analysis || '')
       .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
 
-    const cacheNote = data.from_cache
-      ? `<span style="color:var(--muted)">Dari cache</span> · <button onclick="jnRunAnalysis(true)" style="background:none;border:none;color:var(--pink);font-family:'DM Mono',monospace;font-size:9px;cursor:pointer;padding:0">Refresh</button>`
-      : '<span style="color:var(--green)">Baru digenerate</span>';
     const genTime = data.generated_at ? new Date(data.generated_at).toLocaleString('id-ID', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' }) : '';
 
     panel.innerHTML = statsHtml +
       `<div class="jn-ai-body">${bodyHtml}</div>` +
-      `<div class="jn-ai-footer">${cacheNote} · ${genTime}</div>`;
+      `<div class="jn-ai-footer">Diperbarui ${genTime} · <button onclick="jnRunAnalysis(true)" style="background:none;border:none;color:var(--pink);font-family:'DM Mono',monospace;font-size:9px;cursor:pointer;padding:0">Refresh</button></div>`;
   } catch(e) {
     panel.innerHTML = `<div style="color:var(--accent);font-family:'DM Mono',monospace;font-size:11px">Timeout atau error: ${e.message}</div>`;
   } finally {
-    btn.disabled = false;
-    btn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg> ANALISA AI`;
+    _startAiBtnCooldown('jnAiBtn', '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg> RINGKAS JURNAL SAYA');
   }
 }
 
@@ -14669,6 +14711,7 @@ async function jnRunBiasDiagnosis(force = false) {
   const btn   = document.getElementById('jnBiasBtn');
   const panel = document.getElementById('jnBiasPanel');
   if (!btn || !panel) return;
+  if (_aiBtnCooldownActive('jnBiasBtn')) return;
 
   btn.disabled = true;
   btn.textContent = 'Menganalisa...';
@@ -14718,7 +14761,7 @@ async function jnRunBiasDiagnosis(force = false) {
       : `<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);font-size:10px;color:var(--muted)">Narasi AI tidak tersedia saat ini — statistik di atas tetap valid (dihitung kode, bukan AI).</div>`;
 
     panel.innerHTML = `
-      <div style="font-size:9px;color:var(--muted);font-family:'DM Mono',monospace;margin-bottom:8px">${s.sample_count} trade closed dipakai${data.from_cache ? ' · dari cache' : ''} · <span onclick="jnRunBiasDiagnosis(true)" style="cursor:pointer;text-decoration:underline">refresh</span></div>
+      <div style="font-size:9px;color:var(--muted);font-family:'DM Mono',monospace;margin-bottom:8px">${s.sample_count} trade closed dipakai · <span onclick="jnRunBiasDiagnosis(true)" style="cursor:pointer;text-decoration:underline">refresh</span></div>
       <div style="background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:8px 10px;margin-bottom:6px">
         <div style="font-size:9px;color:var(--muted);font-family:'DM Mono',monospace;text-transform:uppercase">Disposition Effect</div>
         <div style="font-size:11px;color:${dispCol};line-height:1.5;margin-top:2px">${dispTxt}</div>
@@ -14741,8 +14784,7 @@ async function jnRunBiasDiagnosis(force = false) {
   } catch(e) {
     panel.innerHTML = `<div style="color:var(--accent);font-family:'DM Mono',monospace;font-size:11px">Timeout atau error: ${e.message}</div>`;
   } finally {
-    btn.disabled = false;
-    btn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg> DIAGNOSA PERILAKU`;
+    _startAiBtnCooldown('jnBiasBtn', '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg> DIAGNOSA PERILAKU');
   }
 }
 
@@ -15310,7 +15352,7 @@ async function autoFillTekNote() {
 
   const text = composeTekAutoNote(d);
   if (!text) {
-    showToast('Data belum tersedia', `MTF ${tekPairLabel(pairAtCall)} belum ke-sync — coba pair major (XAU/EUR/GBP/JPY/AUD/CAD/CHF/NZD) atau buka tab Analisa AI dulu.`, 4000);
+    showToast('Data belum tersedia', `MTF ${tekPairLabel(pairAtCall)} belum ke-sync — coba pair major (XAU/EUR/GBP/JPY/AUD/CAD/CHF/NZD) atau buka tab Analisa dulu.`, 4000);
     return;
   }
   const manual = _tekNoteManualPart(noteEl.value);
@@ -15361,7 +15403,7 @@ async function autoFillMtfSelectors(force = false) {
   if (!autoVals.D1 && !autoVals.H4 && !autoVals.H1) {
     // Cross pairs outside the 8 major OHLCV-synced pairs often have no cached
     // MTF data yet — say so explicitly instead of the button silently doing nothing.
-    if (force) showToast('Data belum tersedia', `MTF ${tekPairLabel(pairAtCall)} belum ke-sync — coba pair major (XAU/EUR/GBP/JPY/AUD/CAD/CHF/NZD) atau buka tab Analisa AI dulu.`, 4000);
+    if (force) showToast('Data belum tersedia', `MTF ${tekPairLabel(pairAtCall)} belum ke-sync — coba pair major (XAU/EUR/GBP/JPY/AUD/CAD/CHF/NZD) atau buka tab Analisa dulu.`, 4000);
     return;
   }
 

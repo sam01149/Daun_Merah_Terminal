@@ -11,7 +11,7 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-07-19 (Session 198 — Plan T: Mitigasi Weekend + UX AI Humanis, multi-sesi paralel. SESI-A selesai & live-verified.)
+> **Last updated:** 2026-07-19 (Session 198 — Plan T: Mitigasi Weekend + UX AI Humanis, multi-sesi paralel. SESI-A & SESI-B selesai; SESI-C menyusul.)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -33,7 +33,15 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 3. Generate digest baru dipicu manual (`GET /api/market-digest`, non-cron) → output menyebut eksplisit "ditutup Jumat"/"pada penutupan Jumat" di FX maupun XAUUSD, tidak ada pair yang dibuka dengan positioning/teknikal (jangkar semua tetap klaim fundamental/geopolitik, positioning & teknikal muncul belakangan sebagai `{{TAG: ...}}` terpisah) — sesuai Kriteria Selesai #1 dan #2 Plan T.
 4. `npm test` 392/392 hijau atas working tree gabungan (termasuk WIP SESI-B di `index.html` yang tidak disentuh).
 
-**Sisa Plan T:** T-1 langkah 4 (banner frontend) + T-2/T-3/T-4 (SESI-B) + T-5 + `APP_VERSION` + finalisasi (SESI-C) — lihat papan klaim `daun_merah_plan.md`.
+**SESI-B — T-1 langkah 4 (banner) + T-2 + T-3 + T-4, semua di `index.html`:**
+- **T-1 langkah 4:** `analyzeOhlcvAi()` — saat respons bawa `market_closed:true` dan ada konten, render banner muted "Pasar forex tutup — menampilkan analisa terakhir." di atas hasil (tanpa emoji); tanpa konten, `data.error` dari server (S198 SESI-A) yang tampil. Jendela kesegaran T-5 sengaja tidak disentuh sesi ini (belum ada, punya SESI-C).
+- **T-2:** Helper generik `_aiBtnCooldownActive(btnId)` / `_startAiBtnCooldown(btnId, restoreHtml)` (pola sama `_startCriticCooldown`) diterapkan ke 3 tombol yang belum punya cooldown: Fundamental (`fundAnalysisBtn`), Ringkas Jurnal (`jnAiBtn`), Diagnosa Perilaku (`jnBiasBtn`). Guard di awal fungsi otomatis meng-cover link "refresh" yang memanggil fungsi sama dengan `force=1` (no-op diam saat cooldown aktif).
+- **T-3:** Relabel user-visible: "Analisa AI"→**"Analisa Pair Ini"**, "Pre-Entry Check"→**"Periksa Sebelum Entry"** (widget title + button + toast + restore), "Analisis AI — Currency Terkuat / Terlemah"→**"Urutkan Currency Terkuat–Terlemah"**, "ANALISA AI" (jurnal)→**"RINGKAS JURNAL SAYA"**. Sweep toast/Petunjuk: semua kemunculan label lama diganti termasuk quoted-reference di tab Petunjuk (typo lama "AI Analisa" ikut dirapikan) dan toast MTF "buka tab Analisa AI dulu"→"buka tab Analisa dulu" (nama tab sebenarnya cuma "Analisa"). Nama fungsi/id elemen/komentar kode TIDAK diubah. `grep` verifikasi: 0 sisa kemunculan user-visible label lama (hanya tersisa di komentar kode, sesuai aturan).
+- **T-4:** Meta Ringkasan & Analisa (termasuk PDF) tak lagi menampilkan `· cache` atau badge nama model mentah. Nama model pindah ke disclaimer masing-masing panel (`id="ringkasanDisclaimer"`/`id="analisaDisclaimer"`, di-update dinamis saat render — fallback "AI" polos tanpa kurung kalau model tak diketahui); Ringkasan pakai mapping `AI_METHOD_LABELS` + catatan "model cadangan" untuk tier gpt-oss-120b/groq/qwen3-32b, Analisa pakai `data.model` mentah dari server. Fundamental: age text disederhanakan jadi "baru saja"/"Diperbarui Xm lalu" (tanpa mention cache). Ringkas Jurnal AI: footer "Diperbarui {genTime} · Refresh" (tombol Refresh selalu ada, bukan cuma saat cache). Diagnosa Perilaku: " · dari cache" dihapus. CSS `.ringkasan-method*` (sudah tak terpakai) ikut dibersihkan.
+- Catatan desain: `_renderStructuredAi` disengaja TIDAK diberi side-effect DOM (disclaimer di-update lewat fungsi terpisah `_updateAnalisaDisclaimer` yang dipanggil di 2 call site) — supaya tetap fungsi murni yang bisa dites tanpa `document` (`test/frontend/esc_html.test.js` extract fungsi ini via `eval` di Node polos, sempat merah sebelum refactor ini, sekarang hijau lagi).
+- **Verifikasi:** `npm test` 392/392 hijau. Static server lokal (`node http server` sementara, tanpa build step) mengonfirmasi markup ter-render benar (grep label baru + id disclaimer pada HTML yang disajikan) — API live (cooldown countdown real, banner market_closed, disclaimer model asli) belum diverifikasi karena endpoint `/api/*` butuh deployment Vercel; tooling browser headless (chromium-cli/playwright) tidak tersedia di environment ini untuk screenshot interaktif. Verifikasi live production menyusul setelah push.
+
+**Sisa Plan T:** T-5 + `APP_VERSION` + finalisasi (SESI-C) — lihat papan klaim `daun_merah_plan.md`.
 
 ---
 
