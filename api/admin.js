@@ -22,6 +22,7 @@ const rateLimit = require('./_ratelimit');
 const { allowAiCall } = require('./_ai_guard');
 const { requireAppKey } = require('./_app_key');
 const { fetchYahooOhlcv1h, fetchFallbackCandles, shouldSendYahooAlert, mapYahooSymbolToDeriv, fetchDerivCandles } = require('./_ohlcv_fetch');
+const { buildPairContext, computeCurrencyStrength } = require('./_pair_context');
 
 // Hermes 3 405B Instruct via OpenRouter (free tier) — kandidat diagnostik dari riset
 // user, sama seperti HERMES_MODEL di market-digest.js (circuit breaker key sengaja
@@ -1473,6 +1474,12 @@ const OHLCV_PAIR_SYMBOL_MAP = {
   'GBP/AUD': 'GBPAUD=X', 'GBP/CAD': 'GBPCAD=X', 'XAU/USD': 'GC=F',
 };
 
+// PLAN U-2: 14 pair FX (XAU/USD dikecualikan — bukan currency) dipakai untuk
+// currency strength lintas pair di api/_pair_context.js.
+const FX_PAIRS_FOR_STRENGTH = Object.entries(OHLCV_PAIR_SYMBOL_MAP)
+  .filter(([label]) => label !== 'XAU/USD')
+  .map(([label, symbol]) => ({ label, symbol }));
+
 // fetchYahooOhlcv1h + fetchBinancePaxg1h dipindah ke ./_ohlcv_fetch.js (plan G6) —
 // dipakai bersama cb-status.js ?section=shock. Perilaku tidak berubah.
 
@@ -2531,14 +2538,18 @@ async function setupStatsHandler(req, res) {
     if (!Array.isArray(log)) log = [];
     // Evaluasi lazy hanya symbol yang punya setup aktif — hemat Redis call
     const active = [...new Set(log.filter(s => s && (s.status === 'pending' || s.status === 'open')).map(s => s.symbol))];
+    // PLAN U-2: currency strength (global, lintas 14 pair FX) numpang response ini
+    // supaya U-4 bisa tampil tanpa call baru — gabung ke fetch candle yang sudah ada
+    // (dedup symbol yang overlap dengan `active`, bukan fetch dobel).
+    const strengthSymbols = [...new Set(FX_PAIRS_FOR_STRENGTH.map(p => p.symbol))];
     const candlesBySymbol = {};
     let calendarEvents = [];
     await Promise.all([
-      ...active.map(async sym => {
+      ...[...new Set([...active, ...strengthSymbols])].map(async sym => {
         try {
           const r = await redisCmd('GET', `ohlcv:${sym}:1h`);
           if (r) candlesBySymbol[sym] = JSON.parse(r);
-        } catch (e) { /* candle hilang → setup symbol itu tetap pending */ }
+        } catch (e) { /* candle hilang → setup symbol itu tetap pending / strength skip pair ini */ }
       }),
       // Kalender dipakai deteksi fundamental_shock (PLAN U-1) — hanya perlu kalau ada
       // setup aktif yang bisa berpindah status ke 'sl' di tick ini. calendar_v1/next_v1
@@ -2564,7 +2575,11 @@ async function setupStatsHandler(req, res) {
     for (const s of log) { (bySymbol[s.symbol] = bySymbol[s.symbol] || []).push(s); }
     const symbols = {};
     for (const k of Object.keys(bySymbol)) { symbols[k] = _aggSetupStats(bySymbol[k]); symbols[k].history = bySymbol[k]; }
-    return res.status(200).json({ symbols, global: _aggSetupStats(log), recent: log.slice(0, 10) });
+    const strengthInput = FX_PAIRS_FOR_STRENGTH.map(p => ({ label: p.label, candles: candlesBySymbol[p.symbol] }));
+    return res.status(200).json({
+      symbols, global: _aggSetupStats(log), recent: log.slice(0, 10),
+      pair_context: { strength: computeCurrencyStrength(strengthInput) },
+    });
   } catch (e) {
     return res.status(500).json({ error: e.message });
   }
@@ -2899,6 +2914,11 @@ async function ohlcvAnalyzeHandler(req, res) {
   // keterlambatan salah satu sumber cron (GH Actions pernah telat berjam-jam,
   // tapi kalaupun cuma beda beberapa menit dengan VPS, tetap ke-dedup).
   const isCronCall = _isCronCallReq(req);
+  // PLAN U-2: flag auto=1 menandai source:'auto' di setup_log (dipakai U-3 daemon
+  // scheduler auto-entry). HANYA berlaku kalau request terautentikasi sebagai cron
+  // call (CRON_SECRET valid) — publik TIDAK BISA spoof source:'auto' dan merusak
+  // integritas statistik gate-live (n>=100 setup auto, kriteria fase tes plan U).
+  const isAutoCall = isCronCall && (req.query.auto === '1' || req.body?.auto === 1 || req.body?.auto === true);
   if (isCronCall) {
     const CRON_DEDUP_WINDOW_MS = 30 * 60 * 1000;
     try {
@@ -3038,6 +3058,22 @@ async function ohlcvAnalyzeHandler(req, res) {
       );
     } catch (e) { /* opsional — jangan gagalkan analisa kalau cache kalender kosong */ }
 
+    // PLAN U-2 (2026-07-20): rezim volatilitas (ATR14 H1 pair ini) + currency
+    // strength (14 pair FX, %change H1 ~3 hari) — modul murni api/_pair_context.js,
+    // I/O Redis di sini saja. Fail-open: gagal fetch/data kurang -> pairCtx.block
+    // kosong, TIDAK menggagalkan analisa (pola sama semua blok di atas).
+    let pairCtx = { regime: null, strength: null, block: '' };
+    try {
+      const symbolsToFetch = [...new Set([symbol, ...FX_PAIRS_FOR_STRENGTH.map(p => p.symbol)])];
+      const rawCandles = await Promise.all(symbolsToFetch.map(s => redisCmd('GET', `ohlcv:${s}:1h`)));
+      const candlesBySymbol = {};
+      symbolsToFetch.forEach((s, i) => {
+        if (!rawCandles[i]) return;
+        try { candlesBySymbol[s] = JSON.parse(rawCandles[i]); } catch (e) { /* skip pair korup */ }
+      });
+      pairCtx = buildPairContext({ candlesBySymbol, symbol, label: data.label, fxPairs: FX_PAIRS_FOR_STRENGTH });
+    } catch (e) { console.warn('ohlcv_analyze: pair context gagal (fail-open):', e.message); }
+
     const makroHeader = makroAgeH != null
       ? `KONTEKS MAKRO (dari Ringkasan ${makroAgeH} jam lalu${makroAgeH > 4 ? ' — SUDAH AGAK BASI: kalau ada rilis/berita besar setelah itu, beri bobot lebih rendah dan sebut ketidakpastiannya' : ''}):`
       : 'KONTEKS MAKRO:';
@@ -3052,6 +3088,7 @@ async function ohlcvAnalyzeHandler(req, res) {
     if (rrBlock)          ctxParts.push(rrBlock);
     if (trackBlock)       ctxParts.push(trackBlock);
     if (calAnalyzeBlock)  ctxParts.push(calAnalyzeBlock);
+    if (pairCtx.block)    ctxParts.push(pairCtx.block);
     ctxParts.push(`DATA TEKNIKAL:\n${textBlock}${expiryBlock}${confBlock ? '\n\n' + confBlock : ''}`);
     const makroBlock = ctxParts.join('\n\n');
 
@@ -3070,6 +3107,8 @@ async function ohlcvAnalyzeHandler(req, res) {
       rrBlock                ? 'sentimen options' : null,
       trackBlock             ? 'track record historis' : null,
       calAnalyzeBlock        ? 'event kalender' : null,
+      pairCtx.regime         ? 'rezim volatilitas' : null,
+      pairCtx.strength       ? 'currency strength' : null,
     ].filter(Boolean).join(' + ');
 
     const p4Macro = (ringkasanContext || fundBlock)
@@ -3112,6 +3151,8 @@ async function ohlcvAnalyzeHandler(req, res) {
       '- time_horizon_days: estimasi jumlah hari realistis skenario ini main out (angka, misal 3, 5, 10) berdasarkan jarak entry-tp dibanding rata-rata gerak harian (ATR/sigma) yang ada di data',
       '- makro_alignment: "searah" kalau KONTEKS MAKRO / FUNDAMENTAL TERSTRUKTUR mendukung arah bias teknikalmu, "konflik" kalau berlawanan, "netral" kalau sinyal makro tidak jelas/campuran. Kalau blok makro dan fundamental dua-duanya tidak tersedia di atas, isi null.',
       '- makro_alignment_reason: SATU kalimat pendek alasannya dengan menyebut data spesifik (misal "bias Fed Dovish + COT USD net short searah dengan bias bearish USD/JPY"). Null kalau makro_alignment null.',
+      '- conflict: bandingkan bias TEKNIKALMU vs (a) arah yang tersirat KONTEKS MAKRO/FUNDAMENTAL TERSTRUKTUR di atas (kalau ada), DAN (b) [EVENT HIGH-IMPACT 7 HARI KE DEPAN] (kalau ada). Isi "arah" kalau makro/fundamental berlawanan jelas dengan bias teknikalmu — INI BUKAN alasan otomatis untuk tidak keluarkan setup, tapi WAJIB dilaporkan di sini. Isi "waktu" kalau ada event high-impact dalam beberapa jam ke depan (sebelum time_horizon_days-mu selesai) yang bisa membatalkan skenario mendadak — ini LEBIH SERIUS dari konflik arah, pilih "waktu" kalau dua-duanya terjadi sekaligus. Isi "none" kalau tidak ada konflik terdeteksi atau data pembanding tidak tersedia.',
+      '- conflict_note: SATU kalimat pendek alasan konkret (sebut data/event spesifik) kalau conflict bukan "none"; null kalau conflict "none".',
       '',
       'Setelah objek JSON, di baris baru tulis PERSIS "===COMMENTARY===" lalu tulis commentary sebagai teks biasa (BUKAN di dalam JSON): analisa naratif mendalam 5 paragraf, pisah tiap paragraf dengan baris baru. PENTING — label "paragraf 1/2/3/4/5" di instruksi di bawah ini HANYA panduan urutan untukmu menulis, BUKAN teks yang harus muncul di output: paragraf 1-4 WAJIB ditulis sebagai prosa mengalir TANPA header/judul/angka urutan apapun di depannya (langsung mulai dengan kalimat isi). Paragraf 5 SATU-SATUNYA pengecualian yang harus mulai literal dengan kata "KESIMPULAN:" — jangan tambahkan header serupa di paragraf lain.',
       `Isi paragraf pertama (tanpa header) — bias & posisi makro harga: arah trend Daily dengan alasan konkret (perubahan %, close vs open, posisi dalam range 6 bulan dari [KONTEKS 6 BULAN] — dekat puncak/lembah/tengah).`,
@@ -3126,7 +3167,7 @@ async function ohlcvAnalyzeHandler(req, res) {
     // — prosa panjang 4-5 paragraf sebagai string JSON rawan gagal JSON.parse (kutip/newline
     // tak ter-escape), yang dulu bikin structured null dan bias/entry/sl/tp hilang total.
     const messages = [
-      { role: 'system', content: 'Kamu analis senior teknikal dan makro. WAJIB jawab dalam DUA bagian persis seperti diminta: (1) SATU objek JSON valid tanpa markdown fence berisi HANYA field {"bias":"...","entry_zone":"...","entry_basis":"...","sl":"...","tp":"...","trigger":"...","invalidation_condition":"...","time_horizon_days":0,"makro_alignment":"...","makro_alignment_reason":"..."} — JANGAN sertakan field commentary di JSON ini; (2) setelah JSON, baris berisi PERSIS "===COMMENTARY===", lalu teks commentary biasa (bukan JSON, bebas tanda kutip/baris baru). Bahasa Indonesia.' },
+      { role: 'system', content: 'Kamu analis senior teknikal dan makro. WAJIB jawab dalam DUA bagian persis seperti diminta: (1) SATU objek JSON valid tanpa markdown fence berisi HANYA field {"bias":"...","entry_zone":"...","entry_basis":"...","sl":"...","tp":"...","trigger":"...","invalidation_condition":"...","time_horizon_days":0,"makro_alignment":"...","makro_alignment_reason":"...","conflict":"...","conflict_note":"..."} — JANGAN sertakan field commentary di JSON ini; (2) setelah JSON, baris berisi PERSIS "===COMMENTARY===", lalu teks commentary biasa (bukan JSON, bebas tanda kutip/baris baru). Bahasa Indonesia.' },
       { role: 'user',   content: userMsg },
     ];
 
@@ -3443,15 +3484,32 @@ async function ohlcvAnalyzeHandler(req, res) {
           ? structured.makro_alignment_reason.trim()
           : null;
 
+        // PLAN U-2: normalisasi conflict (none/arah/waktu) — dipakai U-4 (checklist
+        // dua-kelas) & setup_log.alignment di bawah. Default "none" kalau model tidak
+        // patuh skema, bukan null (beda dari makro_alignment yang boleh null-tanpa-data
+        // — conflict SELALU punya jawaban karena tidak bergantung sumber makro saja).
+        const CONFLICT_CANON = new Set(['none', 'arah', 'waktu']);
+        const conflictRaw = String(structured.conflict || '').toLowerCase().replace(/[^a-z]/g, '');
+        structured.conflict = CONFLICT_CANON.has(conflictRaw) ? conflictRaw : 'none';
+        structured.conflict_note = (structured.conflict !== 'none' && typeof structured.conflict_note === 'string' && structured.conflict_note.trim())
+          ? structured.conflict_note.trim()
+          : null;
+
         // [SISTEM HAKIM] Soft Block (Hak Veto User) - Mencegat halusinasi makro_alignment
         if (cbDir && structured.bias) {
           const techBias = structured.bias.toLowerCase();
           const isTechLong = techBias.includes('bullish') || techBias === 'long';
           const isTechShort = techBias.includes('bearish') || techBias === 'short';
-          
+
           if ((cbDir === 'long' && isTechShort) || (cbDir === 'short' && isTechLong)) {
             structured.makro_alignment = 'konflik';
             structured.makro_alignment_reason = '[SISTEM HAKIM] Terdeteksi konflik nyata antara arah Makro/Fundamental dan Teknikal. Setup ini melanggar aturan konfluensi makro.';
+            // Veto sistem = konflik arah nyata terverifikasi kode, bukan cuma klaim model —
+            // paksa conflict='arah' kecuali model sudah lapor 'waktu' (lebih serius, jangan ditimpa turun).
+            if (structured.conflict !== 'waktu') {
+              structured.conflict = 'arah';
+              structured.conflict_note = structured.makro_alignment_reason;
+            }
           }
         }
       } catch(e) {
@@ -3468,6 +3526,9 @@ async function ohlcvAnalyzeHandler(req, res) {
       confluence: confZones || null,
       makro_generated_at: (ringkasanContext && ringkasanAt) ? ringkasanAt : null,
       loaded_at: new Date().toISOString(),
+      // PLAN U-2: rezim volatilitas + currency strength diikutkan di payload supaya
+      // U-4 bisa menampilkan tanpa call baru (numpang response existing).
+      pair_context: { regime: pairCtx.regime, strength: pairCtx.strength },
     };
 
     if (!commentary && !structured) {
@@ -3486,8 +3547,12 @@ async function ohlcvAnalyzeHandler(req, res) {
     // perubahan level = satu keputusan yang sama, bukan dua track record).
     // PLAN U-1 (2026-07-20): setup makro_alignment==='konflik' SEKARANG DICATAT (dulu
     // di-skip total) dengan alignment:'konflik' — supaya statistik bisa membandingkan
-    // kinerja setup konflik vs selaras (U-6 gate). `source` masih selalu 'manual' di
-    // sini — flag auto=1 (U-2/U-3) yang menandai 'auto' belum ada di paket ini.
+    // kinerja setup konflik vs selaras (U-6 gate).
+    // PLAN U-2: `source` sekarang 'auto' kalau isAutoCall (auto=1 + CRON_SECRET valid,
+    // dipakai U-3), default 'manual'. `alignment` diisi dari `conflict` (U-2) —
+    // conflict!=='none' dipetakan ke 'konflik' (menimpa makro_alignment kalau perlu,
+    // menangkap kasus model bilang makro_alignment='netral' tapi conflict='arah'/'waktu'
+    // dari perbandingan lain), fallback ke makro_alignment kalau conflict 'none'.
     if (structured?.entry_zone && structured.sl && structured.tp && !isDiagnosticOnly) {
       try {
         const rawLog = await redisCmd('GET', 'setup_log:v1');
@@ -3497,6 +3562,9 @@ async function ohlcvAnalyzeHandler(req, res) {
           && (x.status === 'pending' || x.status === 'open')
           && x.entry_zone === structured.entry_zone && x.sl === structured.sl && x.tp === structured.tp);
         if (!dup) {
+          const alignment = (structured.conflict && structured.conflict !== 'none')
+            ? 'konflik'
+            : (structured.makro_alignment || null);
           log.unshift({
             id: `${symbol}:${Date.now()}`,
             symbol, label: data.label, bias: structured.bias,
@@ -3504,8 +3572,8 @@ async function ohlcvAnalyzeHandler(req, res) {
             rr: structured.risk_reward ?? null,
             horizon_days: structured.time_horizon_days ?? null,
             model, ts: Date.now(), status: 'pending',
-            source: 'manual',
-            alignment: structured.makro_alignment || null,
+            source: isAutoCall ? 'auto' : 'manual',
+            alignment,
             loss_label: null, label_reason: null, label_by: null,
           });
           await redisCmd('SET', 'setup_log:v1', JSON.stringify(log.slice(0, 200)));
