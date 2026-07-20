@@ -2550,6 +2550,76 @@ function _detectLossLabel({ closedT, eLo, eHi, tp, bias, pairLabel }, allCandles
   return null;
 }
 
+// Riset tambahan (2026-07-20, diskusi user pasca-Plan U): estimasi spread retail
+// standar per pair, dalam satuan HARGA (bukan pip) — dipakai HANYA untuk expectancy
+// biaya transaksi di _costAdjustedR di bawah. Angka ESTIMASI ballpark broker retail
+// menengah (BUKAN kutipan broker riil tertentu, BUKAN diverifikasi live) — cukup
+// untuk arah besar "apakah edge borderline termakan biaya", bukan presisi akuntansi.
+// Fallback null (tidak ada di tabel) -> expectancy cost-adjusted diskip utuh untuk
+// setup itu (fail-open, sama pola dengan field lain di file ini).
+const SPREAD_PRICE_ESTIMATE = {
+  'XAU/USD': 0.30,
+  'EUR/USD': 0.00012, 'GBP/USD': 0.00016, 'AUD/USD': 0.00018, 'NZD/USD': 0.00025,
+  'USD/CAD': 0.00020, 'USD/CHF': 0.00020, 'USD/JPY': 0.017,
+  'EUR/JPY': 0.025, 'GBP/JPY': 0.035, 'AUD/JPY': 0.025,
+  'EUR/GBP': 0.00020, 'EUR/AUD': 0.00035, 'GBP/AUD': 0.00045, 'GBP/CAD': 0.00040,
+};
+
+// R-multiple realized SEBELUM vs SESUDAH biaya spread, per setup closed (tp/sl).
+// Risk (1R) = |entry_mid - sl|; gross R menang = st.rr (risk_reward tersimpan saat
+// setup dibuat) atau dihitung ulang dari tp kalau rr kosong; gross R kalah = -1 by
+// definisi. Cost dalam satuan R = spread_price / risk (dibayar sekali round-trip,
+// masuk DAN keluar posisi) — dikurangkan dari gross R either arah (menang jadi
+// lebih kecil, kalah jadi lebih besar), sama seperti biaya riil bekerja. Pure
+// function, tidak menyentuh data mentah setup — murni untuk agregat expectancy.
+function _costAdjustedR(st) {
+  if (st.status !== 'tp' && st.status !== 'sl') return null;
+  const spread = SPREAD_PRICE_ESTIMATE[st.label];
+  if (spread == null) return null;
+  const nums = s => (String(s).match(/[\d.]+/g) || []).map(Number).filter(n => !isNaN(n));
+  const e = nums(st.entry_zone), slNum = nums(st.sl)[0], tpNum = nums(st.tp)[0];
+  if (!e.length || slNum == null) return null;
+  const entryMid = (Math.min(...e) + Math.max(...e)) / 2;
+  const risk = Math.abs(entryMid - slNum);
+  if (!risk) return null;
+  let grossR;
+  if (st.status === 'sl') {
+    grossR = -1;
+  } else {
+    grossR = typeof st.rr === 'number' ? st.rr
+      : (tpNum != null ? Math.abs(tpNum - entryMid) / risk : null);
+    if (grossR == null) return null;
+  }
+  const costR = spread / risk;
+  return { grossR, netR: grossR - costR };
+}
+
+// Rata-rata expectancy R gross vs net-biaya lintas setup closed yang punya data
+// spread & level lengkap. n bisa < (tp+sl) kalau sebagian pair/level tidak
+// terhitung (fail-open per-entri, bukan all-or-nothing).
+function _aggCostExpectancy(arr) {
+  const rs = arr.map(_costAdjustedR).filter(Boolean);
+  if (!rs.length) return { n: 0, avg_r_gross: null, avg_r_net: null };
+  const avg = key => +(rs.reduce((a, r) => a + r[key], 0) / rs.length).toFixed(2);
+  return { n: rs.length, avg_r_gross: avg('grossR'), avg_r_net: avg('netR') };
+}
+
+// PLAN (2026-07-20, item #5 diskusi user): kalibrasi confidence AI — win-rate
+// dipecah per level confidence yang AI nyatakan sendiri saat setup dibuat (field
+// `confidence` di setup_log, lihat instruksi JSON ohlcv_analyze). Tujuan: AI yang
+// terkalibrasi baik seharusnya win-rate "tinggi" > "sedang" > "rendah"; kalau flat
+// atau terbalik, confidence-nya tidak informatif (jangan dipakai untuk sizing).
+// Hanya closed (tp/sl) yang dihitung, sama seperti win_rate_raw.
+function _confidenceCalibration(arr) {
+  const out = {};
+  for (const level of ['tinggi', 'sedang', 'rendah']) {
+    const sub = arr.filter(x => x.confidence === level && (x.status === 'tp' || x.status === 'sl'));
+    const tp = sub.filter(x => x.status === 'tp').length;
+    out[level] = { n: sub.length, win_rate: sub.length ? Math.round(tp / sub.length * 100) : null };
+  }
+  return out;
+}
+
 // Agregat statistik dari log setup. Ambiguous TIDAK masuk pembagi win-rate manapun.
 // PLAN U-1: dua metrik — win_rate_raw (semua tp/sl apa adanya, TIDAK PERNAH disensor)
 // dan win_rate_adjusted (sl berlabel loss_label dikeluarkan dari pembagi). `win_rate`
@@ -2577,6 +2647,10 @@ function _aggSetupStats(arr) {
     win_rate_raw: winRateRaw,
     win_rate_adjusted: (tp + slAdjusted) > 0 ? Math.round(tp / (tp + slAdjusted) * 100) : null,
     loss_causes: lossCauses,
+    // Expectancy R gross vs net-biaya spread (estimasi) — lihat _aggCostExpectancy.
+    cost_expectancy: _aggCostExpectancy(arr),
+    // Kalibrasi confidence AI (win-rate per level tinggi/sedang/rendah).
+    confidence_calibration: _confidenceCalibration(arr),
     // PLAN U-5a: manajemen posisi VIRTUAL dilaporkan TERPISAH — makna win_rate di
     // atas TIDAK berubah (tetap kinerja ghost/pasif apa adanya).
     management: _aggManagementStats(arr),
@@ -2611,13 +2685,50 @@ async function _consistencySummary() {
   } catch (e) { return { total: 0, bias_identical: 0, bias_identical_pct: null, recent: [] }; }
 }
 
+// Baca `calendar_actual_latency_log:v1` (list Redis, cap 100 — vps/daemon.js) dan
+// ringkas via _summarizeLatency. Best-effort seperti _consistencySummary.
+async function _pipelineLatencySummary() {
+  try {
+    const raw = await redisCmd('LRANGE', 'calendar_actual_latency_log:v1', '0', '-1');
+    const entries = Array.isArray(raw)
+      ? raw.map(s => { try { return JSON.parse(s); } catch (e) { return null; } }).filter(Boolean)
+      : [];
+    return _summarizeLatency(entries);
+  } catch (e) { return { n: 0, avg_min: null, median_min: null, min_min: null, max_min: null }; }
+}
+
+// Riset tambahan (2026-07-20, item #4 diskusi user): ringkas seberapa cepat pipeline
+// Daun Merah "tahu" angka rilis makro aktual, dari `calendar_actual_latency_log:v1`
+// (ditulis daemon `pollCalendarLatency`, poll tiap 10 menit — lihat vps/daemon.js).
+// latency_ms = jarak waktu rilis terjadwal -> field `actual` calendar_v1 terisi.
+// Pure function atas array entries (bukan I/O) supaya testable tanpa Redis.
+function _summarizeLatency(entries) {
+  const ms = (entries || []).map(e => e && e.latency_ms).filter(n => typeof n === 'number' && n >= 0);
+  if (!ms.length) return { n: 0, avg_min: null, median_min: null, min_min: null, max_min: null };
+  const sorted = [...ms].sort((a, b) => a - b);
+  const toMin = v => Math.round(v / 60000);
+  const mid = sorted.length % 2
+    ? sorted[(sorted.length - 1) / 2]
+    : (sorted[sorted.length / 2 - 1] + sorted[sorted.length / 2]) / 2;
+  return {
+    n: ms.length,
+    avg_min: toMin(ms.reduce((a, b) => a + b, 0) / ms.length),
+    median_min: toMin(mid),
+    min_min: toMin(sorted[0]),
+    max_min: toMin(sorted[sorted.length - 1]),
+  };
+}
+
 // PLAN U-7: payload developer-only scope=auto — agregat `setup_log_auto:v1`
 // dievaluasi TERPISAH dari `setup_log:v1` (tidak pernah digabung satu array, aturan
 // satu-array-satu-sumber), + blok `management` (U-5a) + ringkasan konsistensi (U-3).
 async function _buildAutoScopeStats() {
   const raw = await redisCmd('GET', 'setup_log_auto:v1');
   if (!raw) {
-    return { scope: 'auto', symbols: {}, global: _aggSetupStats([]), recent: [], consistency: await _consistencySummary() };
+    return {
+      scope: 'auto', symbols: {}, global: _aggSetupStats([]), recent: [],
+      consistency: await _consistencySummary(), pipeline_latency: await _pipelineLatencySummary(),
+    };
   }
   let log = JSON.parse(raw);
   if (!Array.isArray(log)) log = [];
@@ -2665,7 +2776,7 @@ async function _buildAutoScopeStats() {
   for (const k of Object.keys(bySymbol)) { symbols[k] = _aggSetupStats(bySymbol[k]); symbols[k].history = bySymbol[k]; }
   return {
     scope: 'auto', symbols, global: _aggSetupStats(log), recent: log.slice(0, 10),
-    consistency: await _consistencySummary(),
+    consistency: await _consistencySummary(), pipeline_latency: await _pipelineLatencySummary(),
   };
 }
 
@@ -3576,6 +3687,7 @@ async function ohlcvAnalyzeHandler(req, res) {
       '- makro_alignment_reason: SATU kalimat pendek alasannya dengan menyebut data spesifik (misal "bias Fed Dovish + COT USD net short searah dengan bias bearish USD/JPY"). Null kalau makro_alignment null.',
       '- conflict: bandingkan bias TEKNIKALMU vs (a) arah yang tersirat KONTEKS MAKRO/FUNDAMENTAL TERSTRUKTUR di atas (kalau ada), DAN (b) [EVENT HIGH-IMPACT 7 HARI KE DEPAN] (kalau ada). Isi "arah" kalau makro/fundamental berlawanan jelas dengan bias teknikalmu — INI BUKAN alasan otomatis untuk tidak keluarkan setup, tapi WAJIB dilaporkan di sini. Isi "waktu" kalau ada event high-impact dalam beberapa jam ke depan (sebelum time_horizon_days-mu selesai) yang bisa membatalkan skenario mendadak — ini LEBIH SERIUS dari konflik arah, pilih "waktu" kalau dua-duanya terjadi sekaligus. Isi "none" kalau tidak ada konflik terdeteksi atau data pembanding tidak tersedia.',
       '- conflict_note: SATU kalimat pendek alasan konkret (sebut data/event spesifik) kalau conflict bukan "none"; null kalau conflict "none".',
+      '- confidence: level keyakinanmu sendiri atas SELURUH setup ini (bukan cuma bias arah) — salah satu "tinggi"/"sedang"/"rendah". HARUS konsisten dengan level keyakinan yang kamu sebut di paragraf KESIMPULAN nanti (field ini SATU-SATUNYA sumber terstruktur untuk itu, dibaca kode/statistik — paragraf teks tidak diparsing). Null HANYA kalau entry_zone null (tidak ada setup untuk dinilai).',
       '',
       'Setelah objek JSON, di baris baru tulis PERSIS "===COMMENTARY===" lalu tulis commentary sebagai teks biasa (BUKAN di dalam JSON): analisa naratif mendalam 5 paragraf, pisah tiap paragraf dengan baris baru. PENTING — label "paragraf 1/2/3/4/5" di instruksi di bawah ini HANYA panduan urutan untukmu menulis, BUKAN teks yang harus muncul di output: paragraf 1-4 WAJIB ditulis sebagai prosa mengalir TANPA header/judul/angka urutan apapun di depannya (langsung mulai dengan kalimat isi). Paragraf 5 SATU-SATUNYA pengecualian yang harus mulai literal dengan kata "KESIMPULAN:" — jangan tambahkan header serupa di paragraf lain.',
       `Isi paragraf pertama (tanpa header) — bias & posisi makro harga: arah trend Daily dengan alasan konkret (perubahan %, close vs open, posisi dalam range 6 bulan dari [KONTEKS 6 BULAN] — dekat puncak/lembah/tengah).`,
@@ -3590,7 +3702,7 @@ async function ohlcvAnalyzeHandler(req, res) {
     // — prosa panjang 4-5 paragraf sebagai string JSON rawan gagal JSON.parse (kutip/newline
     // tak ter-escape), yang dulu bikin structured null dan bias/entry/sl/tp hilang total.
     const messages = [
-      { role: 'system', content: 'Kamu analis senior teknikal dan makro. WAJIB jawab dalam DUA bagian persis seperti diminta: (1) SATU objek JSON valid tanpa markdown fence berisi HANYA field {"bias":"...","entry_zone":"...","entry_basis":"...","sl":"...","tp":"...","trigger":"...","invalidation_condition":"...","time_horizon_days":0,"makro_alignment":"...","makro_alignment_reason":"...","conflict":"...","conflict_note":"..."} — JANGAN sertakan field commentary di JSON ini; (2) setelah JSON, baris berisi PERSIS "===COMMENTARY===", lalu teks commentary biasa (bukan JSON, bebas tanda kutip/baris baru). Bahasa Indonesia.' },
+      { role: 'system', content: 'Kamu analis senior teknikal dan makro. WAJIB jawab dalam DUA bagian persis seperti diminta: (1) SATU objek JSON valid tanpa markdown fence berisi HANYA field {"bias":"...","entry_zone":"...","entry_basis":"...","sl":"...","tp":"...","trigger":"...","invalidation_condition":"...","time_horizon_days":0,"makro_alignment":"...","makro_alignment_reason":"...","conflict":"...","conflict_note":"...","confidence":"..."} — JANGAN sertakan field commentary di JSON ini; (2) setelah JSON, baris berisi PERSIS "===COMMENTARY===", lalu teks commentary biasa (bukan JSON, bebas tanda kutip/baris baru). Bahasa Indonesia.' },
       { role: 'user',   content: userMsg },
     ];
 
@@ -3931,6 +4043,15 @@ async function ohlcvAnalyzeHandler(req, res) {
           ? structured.conflict_note.trim()
           : null;
 
+        // Riset tambahan (2026-07-20, item #5 diskusi user): normalisasi confidence
+        // (tinggi/sedang/rendah) — dipakai kalibrasi win-rate per level di setup_stats
+        // (_confidenceCalibration). BEDA dari conflict: kalau model tidak patuh skema,
+        // default NULL (bukan dipaksa satu nilai) — memaksa nilai keliru mencemari data
+        // kalibrasi, lebih aman diskip daripada dilabeli salah.
+        const CONFIDENCE_CANON = new Set(['tinggi', 'sedang', 'rendah']);
+        const confidenceRaw = String(structured.confidence || '').toLowerCase().replace(/[^a-z]/g, '');
+        structured.confidence = (structured.entry_zone && CONFIDENCE_CANON.has(confidenceRaw)) ? confidenceRaw : null;
+
         // [SISTEM HAKIM] Soft Block (Hak Veto User) - Mencegat halusinasi makro_alignment
         if (cbDir && structured.bias) {
           const techBias = structured.bias.toLowerCase();
@@ -4055,6 +4176,7 @@ async function ohlcvAnalyzeHandler(req, res) {
             model, ts: Date.now(), status: 'pending',
             source: isAutoCall ? 'auto' : 'manual',
             alignment,
+            confidence: structured.confidence ?? null,
             loss_label: null, label_reason: null, label_by: null,
             // PLAN U-5a: manajemen posisi VIRTUAL — null/0 = belum pernah direview.
             intervention: null, managed_status: null, managed_closed_t: null, review_count: 0,
@@ -4546,6 +4668,11 @@ module.exports._confluenceZones = _confluenceZones;
 module.exports._formatConfluenceBlock = _formatConfluenceBlock;
 module.exports._evaluateSetups = _evaluateSetups;
 module.exports._aggSetupStats = _aggSetupStats;
+module.exports._costAdjustedR = _costAdjustedR;
+module.exports._aggCostExpectancy = _aggCostExpectancy;
+module.exports._confidenceCalibration = _confidenceCalibration;
+module.exports._summarizeLatency = _summarizeLatency;
+module.exports.SPREAD_PRICE_ESTIMATE = SPREAD_PRICE_ESTIMATE;
 module.exports.probeCalendarCache = probeCalendarCache;
 module.exports._detectLossLabel = _detectLossLabel;
 module.exports._findSwings = _findSwings;

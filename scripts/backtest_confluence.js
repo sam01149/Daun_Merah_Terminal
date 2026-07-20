@@ -16,10 +16,20 @@
 //   - Bandingkan zona skor TINGGI (≥ 3) vs skor RENDAH (≤ 1.5): kalau konfluensi
 //     memang berarti, bounce-rate zona tinggi harus lebih besar.
 //
+// Perluasan (2026-07-20, diskusi user pasca-Plan U, item #1): 60 hari 1 rentang waktu
+// = "satu kondisi laper" (Rossi 2013, daun_merah_referensi_riset.md §1 — performa
+// model sangat bergantung rezim). Tiap titik evaluasi SEKARANG juga diberi label rezim
+// volatilitas (computeVolatilityRegime, sama persis dengan yang disuntik ke prompt AI
+// Analisa production, api/_pair_context.js) dari histori 1H sampai titik itu (tanpa
+// lookahead, konsisten dengan metode utama) — supaya bounce-rate bisa dipecah per
+// rezim, bukan cuma agregat global yang bisa menyembunyikan bahwa confluence zone
+// cuma bekerja di kondisi tertentu (mis. ranging/tenang) dan tidak di kondisi lain.
+//
 // Jalankan: node scripts/backtest_confluence.js
 // Hasil dicatat di Dokumentasi/daun_merah_riset_ai_pintar.md (bagian Tier 3).
 
 const { computeOhlcvMetrics, resampleTo4h, _confluenceZones } = require('../api/admin.js');
+const { computeVolatilityRegime } = require('../api/_pair_context.js');
 
 const PAIRS = [
   { symbol: 'GC=F',     label: 'XAU/USD' },
@@ -77,10 +87,18 @@ function evalZone(zone, side, tol, atrD, c1hFuture) {
   return { touched: true, outcome: 'chop' };
 }
 
+function emptyBucket() { return { zones: 0, touched: 0, bounce: 0, break: 0, chop: 0 }; }
+
 async function run() {
-  const tally = {
-    high: { zones: 0, touched: 0, bounce: 0, break: 0, chop: 0 },
-    low:  { zones: 0, touched: 0, bounce: 0, break: 0, chop: 0 },
+  const tally = { high: emptyBucket(), low: emptyBucket() };
+  // Rezim (2026-07-20): sama tally high/low, tapi dipecah per label rezim volatilitas
+  // (tenang/normal/bergejolak/unknown — unknown = histori 1H di titik itu belum cukup
+  // buat computeVolatilityRegime, MIN_ATR_SAMPLES=24, lihat api/_pair_context.js).
+  const tallyByRegime = {
+    tenang:     { high: emptyBucket(), low: emptyBucket() },
+    normal:     { high: emptyBucket(), low: emptyBucket() },
+    bergejolak: { high: emptyBucket(), low: emptyBucket() },
+    unknown:    { high: emptyBucket(), low: emptyBucket() },
   };
   const perPair = {};
 
@@ -109,6 +127,10 @@ async function run() {
       pp.points++;
       const atrD = data.d1_ext?.available && data.d1_ext.atr_d != null ? data.d1_ext.atr_d : null;
       if (!atrD) continue;
+      // Rezim dihitung dari histori 1H SAMPAI titik evaluasi ini (c1hHist, tanpa
+      // lookahead) — sama seperti data teknikal lain di titik ini, konsisten metode.
+      const regimeInfo = computeVolatilityRegime(c1hHist);
+      const regimeLabel = regimeInfo ? regimeInfo.regime : 'unknown';
       const future = c1hAll.slice(i + 1);
       for (const side of ['above', 'below']) {
         for (const z of zones[side]) {
@@ -116,10 +138,13 @@ async function run() {
           if (!bucket) continue;
           const r = evalZone(z, side, zones.tolerance, atrD, future);
           tally[bucket].zones++; pp[bucket].zones++;
+          const rb = tallyByRegime[regimeLabel][bucket];
+          rb.zones++;
           if (r.touched) {
             tally[bucket].touched++; pp[bucket].touched++;
             tally[bucket][r.outcome]++;
             if (r.outcome === 'bounce') pp[bucket].bounce++;
+            rb.touched++; rb[r.outcome]++;
           }
         }
       }
@@ -145,6 +170,25 @@ async function run() {
   console.log('\nInterpretasi: kalau bounce-rate zona TINGGI >> zona RENDAH, konfluensi memang');
   console.log('prediktif sebagai area reaksi. Kalau setara → skor konfluensi belum membawa');
   console.log('informasi tambahan, revisit sebelum lanjut Tier 5.');
+
+  console.log('\n══ AGREGAT PER REZIM VOLATILITAS ══');
+  for (const regime of ['tenang', 'normal', 'bergejolak', 'unknown']) {
+    const rt = tallyByRegime[regime];
+    const bucketLine = bucket => {
+      const b = rt[bucket];
+      const touchRate = b.zones ? Math.round(b.touched / b.zones * 100) : 0;
+      const bounceRate = b.touched ? Math.round(b.bounce / b.touched * 100) : 0;
+      return `${b.zones} zona, ${b.touched} sentuh (${touchRate}%) → bounce ${bounceRate}%`;
+    };
+    console.log(`${regime.toUpperCase()}: tinggi[${bucketLine('high')}] | rendah[${bucketLine('low')}]`);
+  }
+  console.log('\nInterpretasi rezim: kalau bounce-rate zona TINGGI konsisten di atas zona RENDAH');
+  console.log('di SEMUA rezim (tenang/normal/bergejolak), confluence zone robust lintas kondisi');
+  console.log('pasar. Kalau cuma unggul di satu rezim (mis. tenang/ranging) dan hilang/terbalik');
+  console.log('di rezim lain (mis. bergejolak/trending), sinyalnya rezim-dependent — pertimbangkan');
+  console.log('gating (kecilkan size / skip entry di rezim yang terbukti tidak bekerja) daripada');
+  console.log('diperlakukan sebagai edge universal. n kecil per rezim (unknown 60 hari data) wajar');
+  console.log('— treat sebagai indikasi awal, bukan kesimpulan final.');
 }
 
 run().catch(e => { console.error('FATAL:', e); process.exit(1); });

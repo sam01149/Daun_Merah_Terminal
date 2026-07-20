@@ -11,11 +11,38 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-07-20 (Session 208 — Plan V-3: circuit breaker terpisah untuk call developer-only Plan U)
+> **Last updated:** 2026-07-20 (Session 209 — Rigor tambahan Plan U: cost expectancy, kalibrasi confidence, latensi pipeline, backtest lintas rezim + carry)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 209 (2026-07-20) — Rigor tambahan Plan U: cost expectancy, kalibrasi confidence, latensi pipeline, backtest lintas rezim + carry
+
+**Konteks:** Diskusi user pasca-Plan U soal apakah virtual trading realistis bisa "menang" (EMH/Meese-Rogoff/Klein sudah tercatat di `daun_merah_referensi_riset.md` sebagai constraint). Disepakati 10 arah kerja untuk memperbaiki KUALITAS evaluasi (bukan mencari alpha baru) — sesi ini eksekusi 5 yang bisa jalan sekarang tanpa menunggu data: cost modeling, kalibrasi confidence, ukur latensi, backtest lintas rezim, backtest carry.
+
+**1. Transaction cost modeling (`api/admin.js`):**
+- `SPREAD_PRICE_ESTIMATE`: tabel spread retail ESTIMASI (bukan kutipan broker riil, bukan diverifikasi live) per 14 pair FX + XAU/USD, satuan harga.
+- `_costAdjustedR(st)`: R-multiple gross vs net-biaya per setup closed (tp/sl) — risk = |entry_mid - sl|, gross menang = `rr` tersimpan (atau dihitung ulang dari tp), gross kalah = -1, cost = spread/risk dikurangkan dari kedua arah.
+- `_aggCostExpectancy(arr)`: rata-rata `avg_r_gross` vs `avg_r_net` — masuk `setup_stats` sebagai field `cost_expectancy` (semua scope, publik & auto). Data mentah (status/level) TIDAK disentuh, murni field agregat baru.
+
+**2. Kalibrasi confidence AI:**
+- `ohlcv_analyze` (`api/admin.js`) — field JSON baru `confidence` (tinggi/sedang/rendah), instruksi eksplisit "HARUS konsisten dengan paragraf KESIMPULAN". Normalisasi: default `null` (BUKAN dipaksa satu nilai seperti `conflict`) kalau model tidak patuh skema ATAU `entry_zone` null — nilai keliru lebih baik diskip daripada mencemari data kalibrasi. Dipersist ke `setup_log:v1`/`setup_log_auto:v1` (field baru, backward-compatible).
+- `_confidenceCalibration(arr)`: win-rate dipecah per level confidence (hanya closed tp/sl) — masuk `setup_stats` sebagai `confidence_calibration`. Tujuan: AI terkalibrasi baik seharusnya win-rate tinggi>sedang>rendah; kalau flat/terbalik, confidence self-assessment AI tidak informatif untuk sizing.
+
+**3. Ukur latensi pipeline (`api/admin.js`, `_buildAutoScopeStats`):**
+- `_summarizeLatency(entries)`: avg/median/min/max (menit) dari `calendar_actual_latency_log:v1` (log existing U-3 sub-riset, poll 10 menit — vps/daemon.js) — pure function, testable tanpa Redis.
+- `_pipelineLatencySummary()`: baca log via Redis, masuk payload `scope=auto` sebagai `pipeline_latency`. Belum ada sampel cukup untuk laporan (log baru mulai terisi sejak deploy Plan U 2026-07-20) — field siap, tunggu data alami terkumpul.
+
+**4. Backtest lintas rezim (`scripts/backtest_confluence.js`):**
+- Tambah `computeVolatilityRegime` (reuse `api/_pair_context.js`, fungsi sama yang disuntik ke prompt AI Analisa produksi) per titik evaluasi — bounce-rate zona tinggi/rendah sekarang dipecah per rezim (tenang/normal/bergejolak), bukan cuma agregat global.
+- **Dijalankan live (2026-07-20):** agregat global HAMPIR IDENTIK run 2026-07-17 (skor tinggi 918 zona, 369 sentuh (40%) → bounce 54%; skor rendah 30 zona, 7 sentuh (23%) → bounce 57% — kontrol rendah MASIH terlalu kecil untuk klaim pembanding, dan kali ini malah SETARA/lebih tinggi dari skor tinggi, bukan lebih rendah seperti run sebelumnya — jangan kutip sebagai bukti confluence tidak bekerja, n kontrol terlalu kecil untuk kesimpulan apa pun). **Temuan baru dari breakdown rezim:** bounce-rate zona skor TINGGI stabil di 51-54% di ketiga rezim (tenang 54%, normal 54%, bergejolak 51%) — TIDAK degradasi signifikan di rezim bergejolak seperti dugaan awal diskusi. Detail lengkap + interpretasi: `daun_merah_riset.md`.
+
+**5. Backtest carry/yield differential (`scripts/backtest_carry.js`, BARU):**
+- Script terpisah dari confluence — signal carry bulanan dari differential yield 10Y nominal (proxy, FRED — sama series `real-yields.js`) EUR/GBP/AUD/JPY vs USD, dibandingkan kontrol Buy&Hold dan Anti-Carry.
+- **BELUM dieksekusi live** — butuh `FRED_API_KEY` yang tidak tersedia di lingkungan sesi ini (`.env.local` lokal cuma punya Redis/Gemini/Telegram/VAPID, bukan FRED). Kode sudah diverifikasi jalan sampai titik fetch (gagal graceful per-pair dengan pesan jelas saat key kosong, tidak crash). User perlu jalankan manual: `FRED_API_KEY=xxx node scripts/backtest_carry.js` (key yang sama dengan Vercel).
+
+**Verifikasi:** `npm test` 550/550 hijau (537 sebelumnya + 13 baru di `test/admin/cost_confidence_latency.test.js`, termasuk 2 test integrasi ohlcv_analyze end-to-end untuk field `confidence`). Tidak ada perubahan `index.html`/`sw.js`/`?v=` (perubahan backend + script riset, tidak menyentuh frontend). Item #6-10 dari 10 arah kerja yang didiskusikan (kalibrasi antar-provider, evaluasi loss-avoidance sbg metrik utama, validasi conviction sizing, out-of-sample split, gating berbasis rezim) SENGAJA belum dikerjakan — butuh sampel `setup_log_auto:v1` cukup (n≥100 gate Plan U) yang baru mulai terkumpul sejak deploy hari ini, bukan bisa dikerjakan offline sekarang.
 
 ## Changelog Session 208 (2026-07-20) — Plan V-3: circuit breaker terpisah untuk call developer-only Plan U
 

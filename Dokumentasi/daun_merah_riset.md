@@ -30,9 +30,23 @@ Entri yang melanggar = salah tempat, wajib dipindah.
   ≥30 per segmen) — data sedang terakumulasi otomatis, cek berkala.
 - **Re-run backtest konfluensi berkala** (`scripts/backtest_confluence.js`): angka bergerak
   antar-run (jendela 60 hari bergeser) — jalankan ulang tiap beberapa minggu dan bandingkan
-  TREN, jangan kutip satu angka sebagai konstanta. Run terakhir 2026-07-17: zona skor tinggi
-  bounce 55% vs break 22% (~2.5:1, asumsi "konfluensi = area reaksi" didukung); kontrol skor
-  rendah terlalu kecil (30 zona / 7 sentuh) untuk klaim pembanding; GBP/USD terlemah (47%).
+  TREN, jangan kutip satu angka sebagai konstanta. Run terakhir 2026-07-20 (Session 209,
+  sekarang dengan breakdown rezim volatilitas via `computeVolatilityRegime`): agregat global
+  skor tinggi 918 zona, 369 sentuh (40%) → bounce 54% | break 22% | chop 24%; skor rendah 30
+  zona, 7 sentuh (23%) → bounce 57% — **kontrol rendah MASIH terlalu kecil (n sentuh tunggal
+  digit) untuk klaim pembanding apa pun**, dan run kali ini bounce rendah malah SETARA/lebih
+  tinggi dari tinggi (beda dari run 2026-07-17 yang skor tinggi menang) — JANGAN disimpulkan
+  sebagai "confluence tidak bekerja", cuma bukti n kontrol terlalu kecil untuk stabil antar-run.
+  **Temuan baru (breakdown rezim):** bounce-rate skor TINGGI stabil 51-54% di tenang/normal/
+  bergejolak (54%/54%/51%) — tidak terlihat degradasi jelas di rezim bergejolak seperti dugaan
+  awal. Perlu run lanjutan dengan rentang data lebih panjang (>60 hari, lintas tahun) sebelum
+  ini jadi kesimpulan robust — 60 hari saat ini kemungkinan besar didominasi satu rezim pasar
+  yang sama untuk urutan bulan tertentu.
+- **Backtest carry/yield differential** (`scripts/backtest_carry.js`, dibuat 2026-07-20,
+  Session 209): signal bulanan dari differential yield 10Y nominal (proxy carry — BUKAN short
+  rate/kebijakan asli, itu tidak tersedia gratis via FRED) EUR/GBP/AUD/JPY vs USD, dibanding
+  kontrol Buy&Hold + Anti-Carry. **BELUM dieksekusi** — butuh `FRED_API_KEY` (tidak ada di
+  `.env.local` lokal sesi ini). Jalankan: `FRED_API_KEY=xxx node scripts/backtest_carry.js`.
 - **Seasonality bulanan/mingguan per pair** — hitung offline dari data Daily yang sudah ada
   di Redis; 0 AI call. Sajikan sebagai konteks, bukan sinyal.
 - **Bobot lebih untuk posisi harga vs option expiry besar H-1** — datanya sudah ada, belum
