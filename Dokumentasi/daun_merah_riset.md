@@ -24,14 +24,6 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 
 # Pertanyaan Terbuka & Parkiran Ide
 
-- **Desain Auto-Entry & Invalidation pada Berita/Hoax** (Session 199, 2026-07-19):
-  Tantangan otomatisasi keputusan AI ke akun demo riil (misal Deriv API) adalah penanganan *fundamental/geopolitical shock* mendadak setelah pending order terpasang.
-  * *Masalah:* Rapor win-rate historis AI (`setup_log:v1`) bisa terdistorsi akibat kekalahan Stop Loss (SL) yang murni disebabkan oleh kejutan berita mendadak (misalnya berita palsu/hoax geopolitik), bukan karena kualitas level teknikal yang buruk. Ini dapat merusak feedback loop AI (membuat AI terlalu takut mengambil setup teknikal valid).
-  * *Rencana Mitigasi:*
-    1. **Pre-emptive News Filter:** VPS daemon dilarang keras menaruh pending order baru jika terdeteksi rilis berita *high-impact* dalam rentang dekat (misal <4 jam).
-    2. **Mekanisme Auto-Cancel:** Jika terjadi deviasi aktual vs forecast eksternal yang signifikan sebelum harga menyentuh zona entry, VPS daemon secara proaktif membatalkan (*delete*) pending order tersebut di broker dan mengubah status di Redis menjadi `canceled` (bukan `sl`), sehingga terhindar dari bias hitung win-rate.
-    3. **Deteksi V-Shape Reversal:** Di sisi tracker virtual, jika SL tersentuh namun harga berbalik arah melewati entry menuju TP dalam waktu singkat (misal $\le 4$ jam), tandai sebagai `sl_volatile` / `fakeout_sl` agar model AI di masa depan mengetahui bahwa kegagalan tersebut bersifat temporal akibat likuiditas/noise berita palsu.
-    4. **Manual Admin Override:** Hak bagi admin untuk mengubah status transaksi yang rusak akibat anomali hoax di jurnal menjadi `invalid`/`fundamental_shock`.
 - **Kalibrasi keyakinan berbasis outcome** (eks "Tier 2", session 166): ikat badge keyakinan
   Analisa AI ke win-rate historis segmen serupa (pair + bias + rentang skor konfluensi) dari
   `setup_log:v1`, bukan self-assessment LLM. Prasyarat: sampel setup selesai cukup (indikatif
@@ -43,9 +35,19 @@ Entri yang melanggar = salah tempat, wajib dipindah.
   rendah terlalu kecil (30 zona / 7 sentuh) untuk klaim pembanding; GBP/USD terlemah (47%).
 - **Seasonality bulanan/mingguan per pair** — hitung offline dari data Daily yang sudah ada
   di Redis; 0 AI call. Sajikan sebagai konteks, bukan sinyal.
-- **Volatility regime** — persentil ATR vs 6 bulan sebagai konteks "market tenang/liar".
 - **Bobot lebih untuk posisi harga vs option expiry besar H-1** — datanya sudah ada, belum
   diberi peran di scoring.
+- **Latensi field `actual` di `calendar_v1` (Plan U-3, sub-riset 2026-07-20):** dicek langsung
+  ke `calendar_v1` produksi (read-only, ~01:00 WIB) — event high-impact berikutnya saat itu
+  (CAD Inflation Rate YoY) baru jatuh >18 jam kemudian, sehingga median latensi ≥3 event nyata
+  TIDAK BISA diukur sinkron dalam satu sesi. **Keputusan: Lapis 2 (auto-cancel virtual setup
+  `pending` `source:'auto'` saat deviasi actual-vs-forecast berlawanan arah bias) DI-DESCOPE**
+  untuk rilis U-3 — sesuai prinsip plan sendiri ("data tidak terverifikasi = jangan
+  dipaksakan"), cukup label pasca-fakta (`fundamental_shock`, U-1) untuk saat ini. Instrumentasi
+  `pollCalendarLatency` (`vps/daemon.js`, poll 10 menit → `calendar_actual_latency_log:v1`)
+  TETAP dibangun & aktif sejak deploy `93b8ceb` (2026-07-20). **Prasyarat lanjut:** begitu
+  ≥3 sampel nyata terkumpul, evaluasi ulang — aktifkan Lapis 2 kalau median ≤30 menit, descope
+  permanen kalau >30 menit. Detail teknis: `vps/README-deploy.md` §8.
 - **Carry trade / currency crash risk** — masih tahap riset literatur, BELUM diverifikasi ke
   sumber primer; jangan dieksekusi sebelum itu (lihat juga catatan "Ditahan" Plan G).
 - **Roadmap Data Feed & Infra Always-On** (hasil diskusi + verifikasi live session 186,
@@ -103,7 +105,10 @@ Entri yang melanggar = salah tempat, wajib dipindah.
   lain kalau tidak diperiksa saat menambah fitur lambat. (S161)
 - **Env var Sensitive di Vercel selalu terbaca kosong via `vercel env ls/pull`.** Itu bukan
   bukti var tidak ter-set — verifikasi harus FUNGSIONAL (call kecil yang memakai key-nya).
-  (S163+, terbukti lagi di Plan N saat konfirmasi nama var aktual)
+  (S163+, terbukti lagi di Plan N saat konfirmasi nama var aktual; terbukti LAGI Plan U-6
+  2026-07-20 — nilai `CRON_SECRET` di `.env.local` tidak match produksi, call `auto=1` uji
+  senyap jatuh diam-diam ke jalur publik alih-alih error — verifikasi kredensial produksi
+  WAJIB dari dashboard Vercel, bukan file lokal manapun)
 - **PWA bisa nyangkut di versi lama berhari-hari.** Auto-reload hanya terpicu perubahan byte
   `sw.js`; fix `index.html`-only tidak pernah sampai ke device yang tidak di-force-close —
   sebelum menyimpulkan "belum difix", pastikan versi yang dilihat user memang versi terbaru.

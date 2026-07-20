@@ -31,7 +31,7 @@ Ada 2 lapis pembatas yang perlu dibedakan:
 
 ---
 
-## 2. Peta 5 Fitur AI
+## 2. Peta Fitur AI
 
 | # | Fitur | Tombol di UI | Dipicu otomatis? | Cache | Rate limit server |
 |---|-------|--------------|-------------------|-------|--------------------|
@@ -41,6 +41,9 @@ Ada 2 lapis pembatas yang perlu dibedakan:
 | 4 | **AI Coach Jurnal** (analisis pola menang/kalah dari trade yang sudah closed) | "Ringkas Jurnal Saya" di tab Jurnal | Tidak | 1 jam per device, ada tombol "Refresh" | 30 request/menit/IP (endpoint jurnal secara umum) |
 | 5 | **Pre-Entry Check** (Plan R, 2026-07-18 — verdict LAYAK/TIDAK LAYAK dari checklist: auto-tick deterministik client-side + 1 call AI menilai sisa item discretionary & kontradiksi) | "Periksa Sebelum Entry" di tab CHECKLIST | Tidak | 45 menit per pair, key = fingerprint state checklist (invalid begitu ada item ditoggle) | 3 request/menit/IP |
 | 6 | **Diagnosa Perilaku Jurnal** (Plan I item 5 — disposition effect, overtrading, distribusi sesi/playbook dari trade closed) | "Diagnosa Perilaku" di tab Jurnal | Tidak | Selama sampel checklist tidak berubah, ada link "refresh" | 30 request/menit/IP (endpoint jurnal secara umum) |
+| 7 | **Auto-Entry Virtual** (Plan U-3, 2026-07-20 — eksperimen **developer-only**, TIDAK ADA di UI publik: daemon Railway memanggil `ohlcv_analyze&auto=1` untuk XAU/USD, sama modelnya dengan fitur #2 tapi TIDAK menulis cache `ohlcv_analysis:<symbol>` & masuk log terpisah `setup_log_auto:v1`) | Tidak ada tombol — murni scheduler daemon | Ya — 2 slot/hari (buka London & NY, hanya saat FX buka), skip kalau ada event high-impact <4 jam | Tidak relevan (selalu fresh, tidak pernah baca cache) | Proteksi `x-cron-secret`===`CRON_SECRET`, publik tidak bisa spoof `source:'auto'` |
+| 8 | **Uji Konsistensi LLM** (Plan U-3 — 3x panggilan berturut ke pair yang sama, jalur diagnostik, TIDAK menulis cache/setup produksi) | Tidak ada tombol — daemon | Ya — 1 slot/hari | Hasil ke `consistency_log:v1` (cap 60), bukan cache analisa | Sama seperti #7 |
+| 9 | **Review Posisi Virtual** (Plan U-5a/U-5b, 2026-07-20 — developer-only: daemon deteksi headline market-moving/geopolitical yang match currency setup eksperimen `open`, trigger 1 call AI menilai HOLD/TIGHTEN_SL/CLOSE_EARLY, validasi kode fail-safe → downgrade HOLD kalau tak patuh skema) | Tidak ada tombol — event-driven dari `pollNews` daemon | Ya — event-driven (headline masuk), dibatasi cooldown 6 jam/posisi + cap 3/hari | Tidak relevan | Sama seperti #7; HANYA melayani id dari `setup_log_auto:v1` (id manual → skip tanpa call AI) |
 
 Semua 6 tombol AI di atas sekarang punya **cooldown 90 detik di browser** (disimpan in-memory, reset saat reload — pola sama Uji Kelemahan/Pre-Entry Check) — jadi secara wajar 1 orang tidak bisa klik lebih dari sekali per 90 detik meski server sendiri masih izinkan lebih cepat dari itu. Sampai Session 198 SESI-B (Plan T-2), Analisa Fundamental/Coach Jurnal/Diagnosa Perilaku belum punya cooldown ini — sekarang sudah lengkap semua.
 
@@ -154,6 +157,16 @@ Berbeda dari 4 fitur di atas: **fact sheet dibangun 100% client-side** (checklis
 
 **Garis keras (desain, bukan implementasi teknis):** verdict LAYAK/TIDAK LAYAK adalah **konteks keputusan, bukan sinyal eksekusi** — tidak ada auto-entry di jalur mana pun, user tetap yang menekan tombol entry MT5/manual sendiri.
 
+### 3.6 Auto-Entry Virtual + Uji Konsistensi LLM — `vps/daemon.js` → `api/admin.js` (`action=ohlcv_analyze&auto=1`, Plan U-3)
+
+**DILARANG provider AI baru untuk fitur ini (aturan plan sendiri)** — memakai rantai fallback yang PERSIS SAMA dengan Analisa AI per Pair §3.2 (`DeepSeek v4-flash → SambaNova akun-1 → SambaNova akun-2`), jadi berbagi jatah harian yang sama, bukan pool terpisah. Bedanya murni di sisi penulisan data (lihat §2 baris #7/#8 dan `Dokumentasi/daun_merah.md` Session 201 §U-7): call `auto=1` TIDAK menulis cache `ohlcv_analysis:<symbol>` (publik tidak pernah melihat hasilnya) dan setup masuk `setup_log_auto:v1` (bukan log manual publik).
+
+**Volume tambahan ke pool DeepSeek/SambaNova akun-1:** +2 call/hari (auto-entry, 2 slot) + 1 call/hari (uji konsistensi ×3 panggilan = +3 request) = **+5 request/hari**. Kecil dibanding pool 200/hari SambaNova, tapi tetap masuk hitungan headroom §5 kalau Analisa AI per Pair manual sedang ramai.
+
+### 3.7 Review Posisi Virtual — `api/admin.js` (`action=position_review`, Plan U-5a/U-5b)
+
+Trigger event-driven dari daemon (headline market-moving/geopolitical yang match currency setup eksperimen `open`), **bukan jadwal tetap**. Rantai fallback: sama dengan §3.6 (chain existing `ohlcv_analyze` via `_ai_guard`, TIDAK ada provider baru). Dibatasi cooldown 6 jam/posisi + cap 3 review/hari (kode, bukan AI) — **maksimal +3 call/hari** ke pool yang sama.
+
 ---
 
 ## 4. Jatah Harian (Budget Guard) — `api/_ai_guard.js`
@@ -205,8 +218,10 @@ Karena keduanya berebut jatah 200/hari yang sama, totalnya harus dijumlah: 6 (cr
 | Analisa AI per Pair (otomatis + manual) | ±63-78 request akun-1 | SambaNova akun-1 (+akun-2 kalau fallback) |
 | Analisa Fundamental | maksimal 4 request | Cerebras |
 | AI Coach Jurnal | ±5-10 request | Cerebras |
+| Auto-Entry Virtual + Uji Konsistensi LLM (Plan U-3, §3.6) | +5 request (2 auto-entry + 3 konsistensi) | SambaNova akun-1 (chain sama Analisa AI per Pair) |
+| Review Posisi Virtual (Plan U-5a/b, §3.7) | maksimal +3 request (event-driven, cap harian kode) | SambaNova akun-1 (chain sama) |
 
-**Total kasar akun-1 di hari ramai: sekitar 100-125 dari jatah 200/hari** — masih ada headroom, tapi ini pool yang paling realistis mendekati limit kalau traffic naik signifikan. Pool lain (Cerebras, Groq, dan OpenRouter/Ollama yang memang idle) jauh dari mentok. Yang bisa membuat kena limit di luar skenario wajar: bug loop, endpoint di-spam otomatis (bot), atau semua fallback sekaligus down di provider aslinya (bukan soal kuota).
+**Total kasar akun-1 di hari ramai: sekitar 108-136 dari jatah 200/hari** (termasuk +8 Plan U) — masih ada headroom, tapi ini pool yang paling realistis mendekati limit kalau traffic naik signifikan. Pool lain (Cerebras, Groq, dan OpenRouter/Ollama yang memang idle) jauh dari mentok. Yang bisa membuat kena limit di luar skenario wajar: bug loop, endpoint di-spam otomatis (bot), atau semua fallback sekaligus down di provider aslinya (bukan soal kuota).
 
 ---
 

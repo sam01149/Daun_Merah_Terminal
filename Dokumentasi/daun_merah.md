@@ -11,11 +11,67 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-07-19 (Session 200 — Penilaian Riset Meta-Analisis Indikator Teknikal)
+> **Last updated:** 2026-07-20 (Session 201 — Plan U: Auto-Entry Virtual (Fase Tes) + Konteks AI + Integritas Pembelajaran)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 201 (2026-07-20) — Plan U: Auto-Entry Virtual (Fase Tes) + Konteks AI + Integritas Pembelajaran
+
+**Konteks:** Menguji kualitas keputusan AI Analisa secara empiris lewat auto-entry VIRTUAL (paper trading, TANPA broker/uang riil), sekaligus memperbaiki integritas data pembelajaran (SL akibat news shock vs level teknikal buruk) dan konteks yang dilihat AI (rezim volatilitas, currency strength, flag konflik). Dikerjakan multi-sesi di branch `plan-u` (papan klaim & detail teknis lengkap ada di git history `daun_merah_plan.md`, dihapus dari file aktif setelah sesi ini). **Keputusan penting yang mengubah desain awal (rapat 2026-07-20): auto-entry & manajemen posisi adalah eksperimen developer-only** — publik HANYA menerima fitur informasi (label penyebab loss, dua metrik, konteks AI, checklist bertingkat); tidak ada jejak auto-entry yang terlihat pengguna.
+
+**U-1 (`d9529a2`) — Tracker: label penyebab loss, dua metrik, override admin:**
+- Skema setup ditambah `source`/`alignment`/`loss_label`/`label_reason`/`label_by` (backward-compatible).
+- Deteksi otomatis penyebab SL: `fundamental_shock` (event high-impact ±2 jam dari `calendar_v1`) dan `fakeout_sl` (kriteria ketat: harga balik tembus zona entry + sentuh TP asli dalam ≤4 jam) — prioritas fundamental_shock, tidak menumpuk.
+- `win_rate_raw` (apa adanya, tidak pernah disensor) vs `win_rate_adjusted` (SL berlabel dikeluarkan) + breakdown `loss_causes`.
+- Action `setup_override` (admin, proteksi `CRON_SECRET`) untuk melabel manual tanpa menyentuh data mentah.
+- Setup `alignment:'konflik'` sekarang DICATAT (dulu di-skip) supaya bisa dibandingkan kinerjanya vs selaras.
+
+**U-2 (`fba301f`) — Konteks AI: rezim volatilitas, currency strength, flag konflik:**
+- Modul `api/_pair_context.js`: rezim volatilitas dari ATR(14) H1 vs persentil 14 hari (`tenang|normal|bergejolak`), currency strength dari agregasi %change 14 pair (fail-open, minimal 6 pair).
+- Prompt `ohlcv_analyze` disuap blok rezim + strength (pola ordinal tanpa persen, sama seperti blok labour market S154).
+- Field `conflict`(`none|arah|waktu`)/`conflict_note` di output structured — dibandingkan bias teknikal vs makro, konflik arah WAJIB dilaporkan (bukan alasan no-trade otomatis).
+
+**U-3 (`b7ecbb9`) — Daemon: scheduler auto-entry virtual + filter berita + uji konsistensi LLM:**
+- Scheduler `vps/daemon.js` memanggil `ohlcv_analyze&auto=1` untuk XAU/USD (`AUTO_ENTRY_PAIRS`, default `frxXAUUSD,frxEURUSD`), 2 slot/hari (London/NY open), hanya saat FX buka.
+- Filter berita keras: skip slot kalau ada event high-impact <4 jam untuk currency kaki pair (log `auto_skip_log`).
+- Uji konsistensi LLM: 1 slot/hari, 3x panggilan berturut jalur diagnostik (tidak menulis cache/setup produksi), skor ke `consistency_log:v1`.
+- **Sub-riset latensi `calendar_v1` (WAJIB sebelum aktifkan Lapis 2 auto-cancel): TIDAK bisa dituntaskan sinkron dalam satu sesi** (event high-impact berikutnya saat itu >18 jam dari waktu kerja) → **Lapis 2 (auto-cancel virtual) DI-DESCOPE** untuk rilis ini, sesuai klausul plan sendiri ("data tidak terverifikasi = jangan dipaksakan"). Instrumentasi pengumpulan sampel (`pollCalendarLatency`, poll 10 menit → `calendar_actual_latency_log:v1`) TETAP dibangun & aktif — keputusan aktifkan/descope permanen menyusul setelah ≥3 sampel nyata terkumpul pasca-live. Detail: `vps/README-deploy.md` §8.
+
+**U-4 (`566d6f0`) — Checklist verdict bertingkat, risk multiplier, pindah tombol Entry MT5:**
+- Konflik kelas WAKTU (rc4, <6 jam) tetap auto-block mutlak. Konflik kelas ARAH (rc3/rc6/flag `conflict:'arah'`) → status "KONFLIK" (via `ckAutoConflict()`, beda dari `ckAutoBlock()`), tidak menggagalkan gate tapi menurunkan verdict.
+- `ckGetVerdict()` menghasilkan `riskMultiplier` (bersih 1.0 / konflik arah 0.5 "HALF SIZE" / <50% & gate waktu gagal = 0). Sizing membaca verdict pair yang sama, tampilkan `risk% × multiplier` eksplisit.
+- Tombol Entry MT5 (`ckShowMt5Modal` → `szShowMt5Modal`) pindah utuh ke panel Sizing (guard `ckCurrentPair === szPair` wajib sebelum baca verdict).
+
+**U-5a (`6ba67b0`) — Backend review posisi virtual:**
+- Field `intervention`/`managed_status`/`managed_closed_t`/`review_count` (backward-compatible, data mentah/status pasif TIDAK PERNAH ditimpa — ghost/counterfactual tetap dievaluasi apa adanya).
+- Handler `position_review`: re-cek murah (setup masih `open`?) sebelum call AI, satu intervensi per posisi, 1 call AI (chain existing via `_ai_guard`) dengan validasi kode fail-safe (TIGHTEN_SL wajib lebih ketat & tidak menyalip entry, CLOSE_EARLY pakai close H1 terakhir — bukan harga karangan; output tak-patuh-skema/timeout → HOLD).
+- `_evaluateManaged` + blok `management` di `_aggSetupStats`: saved/cost dua sisi dilaporkan apa adanya, tidak ada metrik yang menyensor kegagalan intervensi.
+
+**U-5b (`f1cfebf`) — Daemon: trigger review posisi event-driven + heuristik UNCONFIRMED:**
+- Hook di `pollNews` (kategori `market-moving`/`geopolitical`) → deteksi currency headline (keyword lokal di daemon, bukan `newscat.js`) → cari setup `open` yang match.
+- `isCorroborated()`: geopolitik butuh ≥2 item berbeda (guid beda) ±30 menit overlap token — UNCONFIRMED didiskon (default HOLD di prompt), bukan diverifikasi real-time; antrian recheck memori (hangus >30 menit).
+- Guard budget: cooldown per posisi (`posreview_cd:<id>`, default 6 jam) + cap harian (`posreview_daily:<yyyymmdd>`, default 3).
+
+**U-5c — DIBATALKAN.** Sempat dikerjakan (`3ff59ab`, tampilan publik "MANAJEMEN POSISI (VIRTUAL)" di `index.html`) lalu di-revert total (`aecb692`, diff terhadap `566d6f0` kosong) mengikuti REVISI VISIBILITAS: publik tidak boleh melihat jejak eksperimen auto-entry.
+
+**U-7 (`078254c`) — Isolasi senyap auto-entry (eksekusi REVISI VISIBILITAS):**
+- Cache `ohlcv_analysis:<symbol>` SKIP ditulis untuk `isAutoCall` (gate `!isDiagnosticOnly && !isAutoCall`) — pengguna tidak pernah melihat "Analisa sudah jadi"/auto-tick checklist dari call daemon.
+- Log terpisah total: `setup_log_auto:v1` (cap 200 sendiri) untuk `isAutoCall`, `setup_log:v1` murni manual — dievaluasi sebagai dua array terpisah, tidak pernah dicampur.
+- `setup_stats` publik = agregat `setup_log:v1` saja, blok `management` dihilangkan (`_omitManagement`) dari payload publik.
+- `scope=auto` (proteksi `CRON_SECRET`/`x-vercel-cron`) khusus developer — tanpa secret balik response publik biasa (tidak membocorkan keberadaan scope).
+- `position_review` menolak id yang hanya ada di `setup_log:v1` (`{skipped:'not_experiment'}`) tanpa call AI; `vps/daemon.js` dipastikan baca `setup_log_auto:v1` (bukan key lama).
+- `index.html`: baris "Source: manual X · auto Y" (kode mati U-4) dihapus total; `APP_VERSION` → `2026.07.20.2`.
+
+**U-6 (sesi ini) — Merge, push, verifikasi live:**
+- Stash 2 file dokumentasi Session 200 yang sudah modified sebelum Plan U dimulai (bukan bagian Plan U, dikembalikan & di-commit terpisah `3321c28` setelah merge) — sesuai instruksi "JANGAN disentuh sesi U" di header plan.
+- `git merge plan-u --no-ff` ke `main` (`93b8ceb`) — **tanpa konflik**. `npm test` 519/519 hijau sebelum dan sesudah merge. `git push origin main` — deploy live terkonfirmasi (`APP_VERSION 2026.07.20.2` live, 0 hit grep `setup_log_auto` di `index.html` produksi, fitur `riskMultiplier`/`szShowMt5Modal`/`ckAutoConflict` U-4 terkonfirmasi ada di HTML produksi).
+- **Verifikasi live publik (tanpa secret):** `setup_stats` publik tidak punya key `management` (sesuai desain); `scope=auto` TANPA secret balik payload identik dengan publik (byte-identical, dikonfirmasi) — tidak membocorkan keberadaan scope.
+- **Verifikasi senyap dengan secret (kriteria inti U-7): BELUM TUNTAS** — nilai `CRON_SECRET` di `.env.local` lokal tidak terautentikasi ke production (percobaan call `auto=1` dengan header itu jatuh ke jalur PUBLIK/manual biasa: `source:'manual'` masuk `setup_log:v1`, cache `ohlcv_analysis:GC=F` ter-update seperti biasa — perilaku ini BENAR untuk call tanpa auth, BUKAN bukti bug U-7, hanya berarti test belum benar-benar menembus jalur `isAutoCall`). Efek samping: 1 AI call produksi terpakai + 1 entri manual asli tercatat di `setup_log:v1` (tidak berbahaya, setara klik user biasa). **Item ini didorong ke checklist "Kriteria Fase Tes" di `daun_merah_plan.md` sebagai syarat yang masih terbuka** — perlu dijalankan ulang dengan `CRON_SECRET` produksi yang valid (dashboard Vercel, bukan hasil `env pull` lokal — pola sama seperti [[Vercel Sensitive env var gotcha]]).
+- Railway daemon log (konfirmasi `vps/daemon.js` versi baru live & scheduler U-3/U-5b aktif) **tidak diverifikasi sesi ini** (tidak ada akses dashboard Railway) — didelegasikan ke user.
+
+**Kesimpulan:** Kode seluruh Plan U (U-1..U-5b, U-7) live di production sejak `93b8ceb`. Test hijau 519/519, deploy terkonfirmasi via HTTP, isolasi senyap terverifikasi SEBAGIAN (jalur tanpa-secret lolos; jalur dengan-secret masih perlu dicoba ulang dengan kredensial yang benar). Gate "Kriteria Fase Tes" (n≥100 setup, skor konsistensi ≥80%, dst.) mulai berjalan sejak deploy ini.
 
 ## Changelog Session 200 (2026-07-19) — Penilaian Riset Meta-Analisis Indikator Teknikal
 
