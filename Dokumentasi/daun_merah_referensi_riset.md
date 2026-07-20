@@ -104,6 +104,19 @@ Pencarian literatur akademik (bukan blog trading) untuk "retail positioning ekst
 
 ---
 
+## 8. Efektivitas indikator teknikal & sistem hibrida (relevan: **fitur LIVE** — Confluence Zones & Analisa AI per Pair)
+
+| Paper | Tipe | Temuan inti |
+|---|---|---|
+| Scopus AI Synthesis Report (2026) *"Technical analysis indicators for forex trading"* | Method / Constraint | Meta-analisis literatur 2010–2024: Tidak ada indikator tunggal yang mendominasi secara konsisten. Sistem hibrida/multi-indicator yang menggabungkan price-derived levels dengan machine learning/adaptasi dinamik terhadap volatility regime memiliki performa terbaik. Bahaya utama adalah multikolinieritas dan overfitting. |
+
+**Implikasi untuk Daun Merah:**
+1. **Validasi Arsitektur:** Desain *Confluence Zones* (penggabungan S/R, Fibonacci, Pivot, SMA, Expiry) yang dihitung deterministik di backend sebelum masuk ke prompt Analisa AI sudah 100% sejalan dengan rekomendasi riset ini untuk menggunakan sistem hibrida/multi-indikator guna mengurangi *overfitting* LLM.
+2. **Potensi Upgrade (Adaptasi Regim):** Kita bisa membuat toleransi/bobot di `_confluenceZones` dinamis terhadap regim volatilitas (misal: saat volatilitas tinggi/risk-off, kurangi bobot SMA trend-following, naikkan bobot S/R horizontal).
+3. **Potensi Noise (Dihindari):** Penambahan model ML optimisasi kompleks (Genetic Algorithm/PSO) atau penambahan indikator momentum redundan (seperti Stochastic/CCI) adalah *noise* yang harus dihindari karena batasan komputasi serverless Vercel Hobby dan risiko multikolinieritas.
+
+---
+
 ## Cara pakai file ini
 
 Sebelum memulai riset/fitur makro baru di Daun Merah:

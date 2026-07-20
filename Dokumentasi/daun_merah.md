@@ -11,11 +11,21 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-07-19 (Session 199 — Pengecekan Entry Record AI Setup)
+> **Last updated:** 2026-07-19 (Session 200 — Penilaian Riset Meta-Analisis Indikator Teknikal)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 200 (2026-07-19) — Penilaian Riset Meta-Analisis Indikator Teknikal
+
+**Konteks:** User meminta penilaian terhadap riset/meta-analisis eksternal dari Scopus AI mengenai efektivitas indikator teknikal untuk trading forex, serta relevansinya terhadap fitur Analisa AI di tab Analisa Daun Merah.
+
+**Tindakan & Evaluasi:**
+- Menganalisis temuan utama riset (tidak ada indikator tunggal yang dominan; keunggulan sistem hibrida/multi-indikator; pentingnya adaptasi regim volatilitas; bahaya multikolinieritas dan overfitting).
+- Melakukan audit silang terhadap arsitektur Analisa AI saat ini (`_confluenceZones` di `api/admin.js`). Menilai bahwa arsitektur existing yang berbasis Confluence Zones sudah sejalan dengan prinsip hibrida riset ini.
+- Merumuskan rekomendasi upgrade konkret (adaptabilitas toleransi/bobot zona konfluensi terhadap volatilitas live, integrasi kuantitatif Currency Strength Slope) dan mengidentifikasi item yang menjadi noise (DL/Genetic Algorithm optimisasi, indikator momentum redundan).
+- Mencatat referensi riset ini ke `Dokumentasi/daun_merah_referensi_riset.md` §8.
 
 ## Changelog Session 199 (2026-07-19) — Pengecekan Entry Record AI Setup
 
