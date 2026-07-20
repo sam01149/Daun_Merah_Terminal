@@ -737,3 +737,38 @@ test('PLAN V-3 (kontrol negatif): 3x call PUBLIK (manual) gagal beruntun -> circ
     } finally { global.fetch = origFetch; }
   });
 });
+
+function failingSambaMainFetchStub(store) {
+  const redisStub = redisFetchStub(store);
+  return async (url, opts) => {
+    const u = String(url);
+    if (u.includes('fake-upstash.test')) return redisStub(url, opts);
+    if (u.includes('sambanova.ai')) return { ok: false, status: 500, json: async () => ({ error: { message: 'boom' } }) };
+    throw new Error('unexpected network call di test: ' + u);
+  };
+}
+
+test('PLAN V-3: 3x call auto=1 (fallback SambaNova akun-1, tanpa DEEPSEEK_API_KEY) gagal beruntun -> circuit:ai:sambanova:main:experimental OPEN, circuit:ai:sambanova:main (produksi) TIDAK TERSENTUH', async () => {
+  await withEnv({ CRON_SECRET: 'topsecret', SAMBANOVA_API_KEY: 'k' }, async () => {
+    const store = makeStore({
+      'ohlcv_fresh:GBPUSD=X': '1',
+      'ohlcv:GBPUSD=X:1h': JSON.stringify(mkTrendCandles(1.30, 1.28)),
+    });
+    const origFetch = global.fetch;
+    global.fetch = failingSambaMainFetchStub(store);
+    try {
+      const handler = loadHandler();
+      for (let i = 0; i < 3; i++) {
+        const res = fakeRes();
+        await handler({
+          headers: { 'x-cron-secret': 'topsecret' }, method: 'GET',
+          query: { action: 'ohlcv_analyze', symbol: 'GBPUSD=X', label: 'GBP/USD', auto: '1' },
+        }, res);
+        assert.equal(res.statusCode, 200);
+      }
+      const expCircuit = JSON.parse(store.strings['circuit:ai:sambanova:main:experimental']);
+      assert.equal(expCircuit.state, 'open', 'breaker experimental SambaNova akun-1 harus OPEN setelah 3x gagal beruntun call auto');
+      assert.equal(store.strings['circuit:ai:sambanova:main'], undefined, 'breaker produksi ai:sambanova:main TIDAK BOLEH tersentuh oleh kegagalan call auto');
+    } finally { global.fetch = origFetch; }
+  });
+});
