@@ -23,6 +23,7 @@ const { allowAiCall } = require('./_ai_guard');
 const { requireAppKey } = require('./_app_key');
 const { fetchYahooOhlcv1h, fetchFallbackCandles, shouldSendYahooAlert, mapYahooSymbolToDeriv, fetchDerivCandles } = require('./_ohlcv_fetch');
 const { buildPairContext, computeCurrencyStrength } = require('./_pair_context');
+const { validateTightenSl, _evaluateManaged, _aggManagementStats } = require('./_position_review');
 
 // Hermes 3 405B Instruct via OpenRouter (free tier) — kandidat diagnostik dari riset
 // user, sama seperti HERMES_MODEL di market-digest.js (circuit breaker key sengaja
@@ -97,8 +98,9 @@ module.exports = async function handler(req, res) {
   if (action === 'ohlcv_dashboard')    return ohlcvDashboardHandler(req, res);
   if (action === 'setup_stats')        return setupStatsHandler(req, res);
   if (action === 'setup_override')     return setupOverrideHandler(req, res);
+  if (action === 'position_review')    return positionReviewHandler(req, res);
   if (action === 'polymarket')         return polymarketHandler(req, res);
-  return res.status(400).json({ error: 'Missing ?action= — use health, redis-keys, admin-prompts, push, fundamental_get, fundamental_seed, fundamental_refresh, fundamental_analysis, journal_import, circuit-reset, circuit-status, gdpnow, ohlcv_sync, ohlcv_read, ohlcv_analyze, ohlcv_critic, pre_entry_check, ohlcv_dashboard, setup_stats, setup_override, or polymarket' });
+  return res.status(400).json({ error: 'Missing ?action= — use health, redis-keys, admin-prompts, push, fundamental_get, fundamental_seed, fundamental_refresh, fundamental_analysis, journal_import, circuit-reset, circuit-status, gdpnow, ohlcv_sync, ohlcv_read, ohlcv_analyze, ohlcv_critic, pre_entry_check, ohlcv_dashboard, setup_stats, setup_override, position_review, or polymarket' });
 };
 
 // ── Shared Redis helper ────────────────────────────────────────────────────────
@@ -2524,6 +2526,9 @@ function _aggSetupStats(arr) {
     win_rate_raw: winRateRaw,
     win_rate_adjusted: (tp + slAdjusted) > 0 ? Math.round(tp / (tp + slAdjusted) * 100) : null,
     loss_causes: lossCauses,
+    // PLAN U-5a: manajemen posisi VIRTUAL dilaporkan TERPISAH — makna win_rate di
+    // atas TIDAK berubah (tetap kinerja ghost/pasif apa adanya).
+    management: _aggManagementStats(arr),
   };
 }
 
@@ -2569,6 +2574,21 @@ async function setupStatsHandler(req, res) {
     ]);
     const before = JSON.stringify(log);
     log = _evaluateSetups(log, candlesBySymbol, Date.now(), calendarEvents);
+    // PLAN U-5a: outcome manajemen (tighten_sl) dievaluasi SETELAH ghost pasif —
+    // butuh candle symbol yang sudah punya intervention, mungkin di luar `active`
+    // (posisi yang di-manage tapi status ghost-nya sudah tp/sl/dst) — fetch tambahan
+    // best-effort, gagal = _evaluateManaged tetap jalan tanpa update (fail-open).
+    const managedPending = log.filter(s => s && s.intervention?.type === 'tighten_sl' && !s.managed_status);
+    if (managedPending.length) {
+      await Promise.all([...new Set(managedPending.map(s => s.symbol))].map(async sym => {
+        if (candlesBySymbol[sym]) return;
+        try {
+          const r = await redisCmd('GET', `ohlcv:${sym}:1h`);
+          if (r) candlesBySymbol[sym] = JSON.parse(r);
+        } catch (e) { /* symbol itu tetap tak ter-update, dicoba lagi tick berikutnya */ }
+      }));
+      log = _evaluateManaged(log, candlesBySymbol);
+    }
     const after = JSON.stringify(log);
     if (after !== before) await redisCmd('SET', 'setup_log:v1', after);
     const bySymbol = {};
@@ -2628,6 +2648,217 @@ async function setupOverrideHandler(req, res) {
 
     await redisCmd('SET', 'setup_log:v1', JSON.stringify(log));
     return res.status(200).json({ ok: true, setup: log[idx] });
+  } catch (e) {
+    return res.status(500).json({ error: e.message });
+  }
+}
+
+// PLAN U-5a — Review posisi VIRTUAL dipicu event-driven dari daemon (U-5b) saat
+// headline market-moving/geopolitical menyentuh currency kaki pair setup `open`.
+// Auth SAMA seperti setupOverrideHandler (x-admin-secret/x-cron-secret===CRON_SECRET)
+// — endpoint ini TIDAK PERNAH publik, daemon adalah satu-satunya pemanggil produksi.
+// Data mentah (entry_zone/sl/tp/status) TIDAK PERNAH disentuh (prinsip #2 §U-5) —
+// hanya field `intervention`/`managed_status`/`review_count` yang ditulis di sini.
+async function positionReviewHandler(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  if (req.method === 'OPTIONS') return res.status(204).end();
+  const CRON_SECRET = process.env.CRON_SECRET;
+  const secret = req.headers['x-admin-secret'] || req.headers['x-cron-secret'];
+  if (!CRON_SECRET || secret !== CRON_SECRET) return res.status(401).json({ error: 'Unauthorized' });
+  if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
+  try {
+    let body = '';
+    await new Promise(r => { req.on('data', c => body += c); req.on('end', r); });
+    let parsed;
+    try { parsed = JSON.parse(body); } catch (e) { return res.status(400).json({ error: 'Invalid JSON' }); }
+
+    const { id, trigger } = parsed || {};
+    if (!id) return res.status(400).json({ error: 'id required' });
+    if (!trigger || typeof trigger.guid !== 'string' || !trigger.guid.trim()
+      || typeof trigger.title !== 'string' || !trigger.title.trim()) {
+      return res.status(400).json({ error: 'trigger.guid dan trigger.title wajib' });
+    }
+
+    const raw = await redisCmd('GET', 'setup_log:v1');
+    let log = raw ? JSON.parse(raw) : [];
+    if (!Array.isArray(log)) log = [];
+    const idx = log.findIndex(x => x && x.id === id);
+    if (idx === -1) return res.status(404).json({ error: 'setup id tidak ditemukan' });
+
+    // Langkah 2a: re-cek murah SEBELUM call AI — tick _evaluateSetups pakai candle
+    // symbol ini + kalender, sama pola setupStatsHandler (fail-open kalau gagal fetch).
+    const symbol = log[idx].symbol;
+    let candles = [];
+    try {
+      const rawC = await redisCmd('GET', `ohlcv:${symbol}:1h`);
+      if (rawC) candles = JSON.parse(rawC);
+    } catch (e) { /* fail-open: evaluate tetap jalan, status apa adanya tanpa candle baru */ }
+    let calendarEvents = [];
+    try {
+      const [thisWeek, nextWeek] = await Promise.all([
+        redisCmd('GET', 'calendar_v1'),
+        redisCmd('GET', 'calendar_next_v1'),
+      ]);
+      const ev1 = thisWeek ? (JSON.parse(thisWeek).events || []) : [];
+      const ev2 = nextWeek ? (JSON.parse(nextWeek).events || []) : [];
+      calendarEvents = [...ev1, ...ev2];
+    } catch (e) { /* opsional — deteksi fundamental_shock ghost diskip, bukan crash */ }
+
+    const before = JSON.stringify(log);
+    _evaluateSetups(log, { [symbol]: candles }, Date.now(), calendarEvents);
+    const persistTick = async () => { if (JSON.stringify(log) !== before) await redisCmd('SET', 'setup_log:v1', JSON.stringify(log)); };
+    const st = log[idx];
+
+    if (st.status !== 'open') {
+      await persistTick();
+      return res.status(200).json({ skipped: 'not_open', status: st.status });
+    }
+    // Langkah 2b: satu intervensi per posisi — sudah ada tipe apa pun -> skip.
+    if (st.intervention) {
+      await persistTick();
+      return res.status(200).json({ skipped: 'already_managed' });
+    }
+
+    // Langkah 2c: fact sheet ringkas + 1 AI call (chain existing: SambaNova akun 1
+    // -> Groq, SAMA circuit/pool dengan ohlcv_critic — pola sama, bukan provider baru).
+    const closeLast = candles.length ? candles[candles.length - 1].c : null;
+    const recentCandles = candles.slice(-12);
+    const candleLines = recentCandles.length
+      ? recentCandles.map(c => `t=${new Date(c.t * 1000).toISOString()} O:${c.o} H:${c.h} L:${c.l} C:${c.c}`).join('\n')
+      : '(candle tidak tersedia)';
+    const legs = String(st.label || '').toUpperCase().split('/').map(s => s.trim()).filter(Boolean);
+    let calBlock = '(tidak ada event kalender high/medium ±12 jam untuk pair ini)';
+    try {
+      const now = Date.now();
+      const nearby = calendarEvents
+        .filter(e => e && (e.impact === 'High' || e.impact === 'Medium') && legs.includes(String(e.currency || '').toUpperCase()))
+        .map(e => ({ ...e, _ms: _calEventMsWib(e.date, e.time_wib) }))
+        .filter(e => e._ms != null && Math.abs(e._ms - now) <= 12 * 3600 * 1000)
+        .sort((a, b) => Math.abs(a._ms - now) - Math.abs(b._ms - now));
+      if (nearby.length) {
+        calBlock = nearby.map(e => `- ${e.event} (${e.currency}, impact ${e.impact}) ${e._ms > now ? 'dalam' : 'sudah lewat'} ${Math.abs((e._ms - now) / 3600000).toFixed(1)} jam`).join('\n');
+      }
+    } catch (e) { /* opsional */ }
+
+    const corroborated = trigger.corroborated === true;
+    const triggerBlock = [
+      `[TRIGGER PEMICU REVIEW]`,
+      `Headline: ${trigger.title}`,
+      `Kategori: ${trigger.cat || '—'}`,
+      corroborated
+        ? 'Status: TERKONFIRMASI (>=2 sumber berbeda dalam 30 menit).'
+        : 'Status: BELUM TERKONFIRMASI — headline BELUM terkonfirmasi, diskon berat, DILARANG keputusan agresif dua arah, default HOLD kecuali fakta lain sangat kuat.',
+    ].join('\n');
+
+    const setupBlock = [
+      `[SETUP SEDANG BERJALAN]`,
+      `Pair: ${st.label} | Bias: ${st.bias} | Entry: ${st.entry_zone} | SL: ${st.sl} | TP: ${st.tp}`,
+      `Filled: ${st.filled_t ? new Date(st.filled_t * 1000).toISOString() : '—'}`,
+    ].join('\n');
+
+    const candleBlock = `[±12 CANDLE H1 TERAKHIR]\n${candleLines}`;
+
+    const userMsg = [setupBlock, triggerBlock, candleBlock, `[KALENDER ±12 JAM]\n${calBlock}`].join('\n\n')
+      + '\n\nBalas HANYA satu objek JSON valid (tanpa markdown fence, tanpa teks lain) persis format ini: '
+      + '{"decision":"HOLD","new_sl":null,"reason":"...","confidence":"rendah"}. '
+      + 'decision salah satu: HOLD, TIGHTEN_SL, CLOSE_EARLY. new_sl WAJIB angka saat TIGHTEN_SL (arah lebih ketat dari SL lama), null selain itu. confidence salah satu: rendah, sedang, tinggi.';
+
+    const messages = [
+      { role: 'system', content: 'Kamu manajer risiko posisi trading yang sedang berjalan (VIRTUAL, bukan eksekusi broker nyata). Tugasmu menilai apakah posisi terbuka ini perlu diintervensi karena headline pemicu terlampir. HOLD = default aman kalau tidak ada alasan kuat. TIGHTEN_SL = geser stop loss lebih ketat (mengunci kerugian lebih kecil / profit) karena risiko meningkat, BUKAN memperlebar. CLOSE_EARLY = tutup posisi sekarang karena tesis awal sudah tidak valid. Kalau trigger BELUM TERKONFIRMASI, default HOLD kecuali bukti lain (candle/kalender) sangat kuat. Jangan mengarang harga — new_sl HARUS masuk akal relatif terhadap SL lama dan harga sekarang. Bahasa Indonesia.' },
+      { role: 'user', content: userMsg },
+    ];
+
+    const SAMBANOVA_KEY = process.env.SAMBANOVA_API_KEY;
+    const GROQ_KEY = process.env.GROQ_API_KEY;
+    let rawText = null, model = null;
+
+    if (SAMBANOVA_KEY && await cb.canCall('ai:sambanova:main')) {
+      try {
+        if (!await allowAiCall('sambanova_main')) throw new Error('AI daily budget exceeded');
+        const r = await fetch('https://api.sambanova.ai/v1/chat/completions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SAMBANOVA_KEY}` },
+          body: JSON.stringify({ model: 'DeepSeek-V3.2', messages, max_tokens: 400, temperature: 0 }),
+          signal: AbortSignal.timeout(25000),
+        });
+        if (r.ok) {
+          const j = await r.json(); rawText = j.choices?.[0]?.message?.content?.trim() || null; model = 'deepseek-v3.2';
+          if (rawText) await cb.onSuccess('ai:sambanova:main');
+          else throw new Error('Empty response');
+        } else { throw new Error(`HTTP ${r.status}`); }
+      } catch (e) { console.warn('position_review SambaNova failed:', e.message); await cb.onFailure('ai:sambanova:main'); }
+    } else if (SAMBANOVA_KEY) { console.log('position_review: SambaNova circuit OPEN — skipping to Groq'); }
+
+    if (!rawText && GROQ_KEY) {
+      try {
+        if (!await allowAiCall('groq')) throw new Error('AI daily budget exceeded');
+        const r = await fetch(GROQ_URL_FUND, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${GROQ_KEY}` },
+          body: JSON.stringify({ model: GROQ_MODEL_FUND, messages, max_tokens: 400, temperature: 0 }),
+          signal: AbortSignal.timeout(25000),
+        });
+        if (r.ok) {
+          const j = await r.json(); rawText = j.choices?.[0]?.message?.content?.trim() || null; model = GROQ_MODEL_FUND;
+          if (!rawText) throw new Error('Empty response');
+        } else { throw new Error(`HTTP ${r.status}`); }
+      } catch (e) { console.warn('position_review Groq fallback failed:', e.message); }
+    }
+
+    // Langkah 2d: parse + validasi kode (fail-safe -> downgrade HOLD).
+    let decision = 'HOLD', confidence = 'rendah', reason = null, newSlRaw = null, downgraded = false;
+    if (!rawText) {
+      downgraded = true; reason = 'AI tidak tersedia (SambaNova & Groq offline/timeout/limit habis)';
+    } else {
+      try {
+        const s = rawText.indexOf('{'), e = rawText.lastIndexOf('}');
+        const cleaned = s !== -1 && e !== -1 ? rawText.slice(s, e + 1) : rawText;
+        const p = JSON.parse(cleaned);
+        const DECISIONS = new Set(['HOLD', 'TIGHTEN_SL', 'CLOSE_EARLY']);
+        decision = DECISIONS.has(p.decision) ? p.decision : 'HOLD';
+        confidence = ['rendah', 'sedang', 'tinggi'].includes(p.confidence) ? p.confidence : 'rendah';
+        reason = (typeof p.reason === 'string' && p.reason.trim()) ? p.reason.trim() : null;
+        newSlRaw = Number.isFinite(p.new_sl) ? p.new_sl : (typeof p.new_sl === 'string' ? parseFloat(p.new_sl) : null);
+        if (!DECISIONS.has(p.decision)) { downgraded = true; }
+      } catch (e) {
+        downgraded = true; decision = 'HOLD'; reason = 'output AI tidak patuh skema JSON';
+        console.warn('position_review: JSON parse gagal:', e.message);
+      }
+    }
+
+    if (decision === 'TIGHTEN_SL') {
+      const eNums = (String(st.entry_zone).match(/[\d.]+/g) || []).map(Number).filter(n => !isNaN(n));
+      const eLo = eNums.length ? Math.min(...eNums) : null;
+      const eHi = eNums.length ? Math.max(...eNums) : null;
+      const slOld = parseFloat((String(st.sl).match(/[\d.]+/) || [])[0]);
+      const ok = validateTightenSl({ bias: st.bias, slOld, newSl: newSlRaw, closeLast, eLo, eHi });
+      if (!ok) {
+        decision = 'HOLD'; downgraded = true;
+        reason = (reason ? reason + ' — ' : '') + 'TIGHTEN_SL ditolak validasi kode (SL melebar/menyalip zona entry/tidak valid)';
+      }
+    }
+    if (decision === 'CLOSE_EARLY' && closeLast == null) {
+      decision = 'HOLD'; downgraded = true;
+      reason = (reason ? reason + ' — ' : '') + 'candle terakhir tidak tersedia untuk CLOSE_EARLY';
+    }
+
+    // Langkah 2e: terapkan HANYA field manajemen — data mentah/status TIDAK disentuh.
+    st.review_count = (st.review_count || 0) + 1;
+    if (decision === 'TIGHTEN_SL') {
+      st.intervention = { type: 'tighten_sl', t: Date.now(), price: null, new_sl: newSlRaw, reason, trigger_guid: trigger.guid };
+    } else if (decision === 'CLOSE_EARLY') {
+      st.intervention = { type: 'close_early', t: Date.now(), price: closeLast, new_sl: null, reason, trigger_guid: trigger.guid };
+      st.managed_status = 'closed_early';
+      st.managed_closed_t = Math.floor(Date.now() / 1000);
+    }
+    log[idx] = st;
+    await redisCmd('SET', 'setup_log:v1', JSON.stringify(log));
+    await redisCmd('LPUSH', 'position_review_log:v1', JSON.stringify({
+      id, t: Date.now(), trigger: { guid: trigger.guid, title: trigger.title }, decision, confidence, downgraded,
+    }));
+    await redisCmd('LTRIM', 'position_review_log:v1', '0', '99');
+
+    return res.status(200).json({ ok: true, decision, confidence, downgraded, model, setup: st });
   } catch (e) {
     return res.status(500).json({ error: e.message });
   }
@@ -3575,6 +3806,8 @@ async function ohlcvAnalyzeHandler(req, res) {
             source: isAutoCall ? 'auto' : 'manual',
             alignment,
             loss_label: null, label_reason: null, label_by: null,
+            // PLAN U-5a: manajemen posisi VIRTUAL — null/0 = belum pernah direview.
+            intervention: null, managed_status: null, managed_closed_t: null, review_count: 0,
           });
           await redisCmd('SET', 'setup_log:v1', JSON.stringify(log.slice(0, 200)));
         }
