@@ -208,3 +208,125 @@ lapisan tidak saling dobel-trigger.
 Verifikasi observability: `GET /` domain publik daemon sekarang ikut memuat
 `ws_last_activity_age_s` (umur pesan WS terakhir), `redis_guard`
 (degraded/failures), dan `last_supervisor_heal_at`.
+
+## 8. U-3 — auto-entry virtual (Plan U, fase tes) — 2026-07-20, BELUM DI-PUSH
+
+Dikerjakan di branch lokal `plan-u` (`daun_merah_plan.md` §Plan U — mode
+eksekusi khusus, DILARANG push sampai U-1..U-4 selesai + OK user). Bagian ini
+BELUM live di Railway — dicatat di sini supaya env var-nya sudah siap begitu
+U-6 (fase final Plan U) push ke `main`.
+
+**Yang ditambahkan ke `daemon.js`:**
+- **Lapis 0 — scheduler auto-entry**: node-cron memanggil `ohlcv_analyze` HTTP
+  dengan `&auto=1` untuk pair di `AUTO_ENTRY_PAIRS`, 2 slot/hari/pair (jam via
+  `AUTO_ENTRY_HOURS_UTC`). Setup yang dihasilkan tercatat di `setup_log:v1`
+  seperti biasa — `source:'auto'` baru benar-benar ke-tag begitu backend
+  `api/admin.js` paket U-2 selesai memahami param `auto=1` (saat modul ini
+  ditulis, U-2 belum selesai — lihat komentar besar U-3 di kepala blok kode di
+  `daemon.js`). Desain SENGAJA fail-forward: daemon tetap kirim `auto=1`
+  sekarang, backend yang belum paham param itu mengabaikannya saja (setup
+  tetap tercatat `source:'manual'` sampai U-2 menyusul) — tidak ada yang rusak
+  di kedua arah urutan deploy.
+- **Lapis 1 — filter berita keras**: sebelum tiap panggilan, daemon cek
+  `calendar_v1`+`calendar_next_v1` — ada event *High impact* untuk currency
+  kaki pair dalam <4 jam ke depan → slot di-skip, alasan dicatat ke
+  `auto_skip_log` (Redis LIST, cap 200).
+- **Lapis 2 — auto-cancel virtual: DI-DESCOPE untuk rilis ini.** Sub-riset
+  wajib (plan §U-3 langkah 3a: ukur median latensi field `actual` di
+  `calendar_v1`, butuh ≥3 event high-impact nyata) tidak bisa dituntaskan
+  sinkron dalam satu sesi kerja — dicek langsung ke `calendar_v1` produksi
+  (read-only) saat kode ini ditulis (2026-07-20 dini hari WIB): event
+  high-impact berikutnya baru jatuh malam harinya, >18 jam dari waktu
+  penulisan, di luar jangkauan satu sesi. Sesuai klausul plan sendiri ("kalau
+  median >30 menit, descope Lapis 2, jangan dipaksakan") — data yang tidak
+  bisa diverifikasi diperlakukan sama dengan "belum terbukti aman". Instrumen
+  pengumpulan sampel (poin berikut) tetap jalan begitu daemon live, supaya
+  keputusan berikutnya berbasis data asli.
+- **Sub-riset 3a — instrumentasi latensi `actual`**: poll `calendar_v1`+`next`
+  tiap 10 menit (murni observasi, tidak memicu aksi apa pun); begitu event
+  *High impact* yang sudah lewat jadwal rilisnya (s/d 4 jam) punya `actual`
+  terisi, latensi (waktu-terdeteksi − waktu-jadwal) dicatat ke
+  `calendar_actual_latency_log:v1` (cap 100), sekali per event (dedup via
+  `SET NX`). Setelah ≥3 sampel nyata terkumpul, keputusan Lapis 2 (aktifkan
+  atau descope permanen) bisa diambil ulang di sesi berikutnya.
+- **Uji konsistensi LLM**: 1x/hari (`AUTO_CONSISTENCY_HOUR_UTC`), panggil
+  `ohlcv_analyze` pair pertama `AUTO_ENTRY_PAIRS` 3x berturut dengan
+  `&test_deepseek=1` — flag diagnostik existing yang (a) memaksa model
+  `deepseek-v4-flash`, SAMA dengan primary produksi, dan (b) `isDiagnosticOnly`
+  sehingga TIDAK menulis cache produksi/`setup_log` (tidak mengotori data
+  auto-entry Lapis 0). Hasil (bias identik? entry/SL/TP dalam toleransi 0.5%?)
+  disimpan ke `consistency_log:v1` (cap 60).
+
+**Env var baru (opsional, fail-open — kosong = pakai default di atas):**
+
+| Env var | Default | Keterangan |
+|---|---|---|
+| `AUTO_ENTRY_PAIRS` | `frxXAUUSD,frxEURUSD` | Daftar pair (penamaan Deriv, dipetakan ke symbol/label Yahoo di `AUTO_ENTRY_SYMBOL_MAP`) yang ikut auto-entry + jadi pair uji konsistensi (elemen pertama). |
+| `AUTO_ENTRY_HOURS_UTC` | `8,13` | Jam UTC slot auto-entry (perkiraan buka London/NY) — sengaja digeser dari jadwal digest Q-6 (00:00/07:00/12:30) supaya tidak tertelan dedup 30 menit `ohlcv_analyze`. |
+| `AUTO_CONSISTENCY_HOUR_UTC` | `10` | Jam UTC uji konsistensi LLM (1x/hari). |
+
+Tidak ada env var WAJIB baru untuk U-3 — semua opsional dengan default masuk
+akal; `CRON_SECRET` yang sudah ada (§6) dipakai ulang untuk trigger HTTP-nya.
+
+**Verifikasi setelah U-6 push (belum bisa dilakukan sekarang):**
+- Log Railway menunjukkan baris `daemon: U-3 auto-entry aktif` +
+  `daemon: U-3 uji konsistensi aktif` saat boot.
+- `setup_log:v1` mulai berisi entri `source:'auto'` (butuh U-2 sudah live).
+- `consistency_log:v1` & `calendar_actual_latency_log:v1` bertambah entri
+  harian (`admin?action=redis-keys` atau Upstash console).
+- Gate fase tes penuh: lihat `daun_merah_plan.md` §"Kriteria Fase Tes".
+
+## 9. U-5b — trigger review posisi event-driven (Plan U, WAVE 2) — 2026-07-20, BELUM DI-PUSH
+
+Sama seperti §8: dikerjakan di branch lokal `plan-u`, BELUM live di Railway.
+Dicatat di sini supaya env var-nya sudah siap begitu U-6 push ke `main`.
+
+**Yang ditambahkan ke `daemon.js`:**
+- Hook di `pollNews` (dalam loop item `news_history`, SETELAH `cat` dihitung,
+  SEBELUM gate `isHighImpactCategory` yang khusus alert Q-4): tiap item
+  kategori `market-moving` ATAU `geopolitical` dicek `detectCurrencyLegs` (peta
+  keyword lokal 9 currency termasuk XAU) — tidak match currency apa pun = skip
+  (fail-closed, hemat budget).
+- Kandidat yang match currency dicek `isCorroborated` (duplikasi SADAR dari
+  `api/_position_review.js`, pola sama `newscat.js`): `market-moving` selalu
+  corroborated; `geopolitical` butuh >=1 item lain (guid beda) dalam +-30
+  menit dengan overlap >=2 token signifikan. Geopolitical UNCONFIRMED TIDAK
+  memicu review — dicatat ke `posreview_skip_log` (LPUSH cap 50) + diantre di
+  memori (`posReviewRecheckQueue`), dicoba ulang tiap `pollNews` tick s/d 30
+  menit sejak `pubDate` asli (lewat itu = hangus, diskon permanen).
+- Kandidat yang lolos (market-moving atau geopolitical corroborated): `GET
+  setup_log:v1` (HANYA di titik ini, bukan tiap poll), cari setup
+  `status==='open'` yang leg currency label-nya match. Per posisi match:
+  cooldown `posreview_cd:<id>` (SET NX EX, default 6 jam) menahan review
+  dobel dari burst headline; cap harian `posreview_daily:<yyyymmdd>` (INCR,
+  default 3) dicek PER call (bukan per trigger) supaya satu headline yang
+  match banyak posisi tidak melompati cap.
+- Posisi yang lolos cooldown+cap dipicu `POST
+  /api/admin?action=position_review` (header `x-cron-secret`, TANPA retry
+  agresif — review telat lebih baik daripada dobel) dengan timeout client
+  65 detik (> `maxDuration` 60 detik `api/admin.js` di `vercel.json` — S161).
+
+**Env var baru (opsional, fail-open — kosong = pakai default di atas):**
+
+| Env var | Default | Keterangan |
+|---|---|---|
+| `POSREVIEW_COOLDOWN_SECS` | `21600` (6 jam) | Cooldown per posisi (`posreview_cd:<id>`) — satu review per posisi per window. |
+| `POSREVIEW_DAILY_CAP` | `3` | Cap panggilan `position_review` per hari (dicek per call, bukan per trigger). |
+
+Tidak ada env var WAJIB baru — `CRON_SECRET`/`APP_BASE_URL` yang sudah ada
+(§6) dipakai ulang.
+
+**Verifikasi setelah U-6 push (belum bisa dilakukan sekarang):**
+- Log Railway menunjukkan baris `daemon: U-5b position_review <id> -> HTTP
+  200` saat headline market-moving/geopolitical-corroborated menyentuh
+  currency pair yang punya setup `open`.
+- `posreview_skip_log` bertambah entri `reason:'unconfirmed'` saat headline
+  geopolitical belum terkonfirmasi.
+- `position_review_log:v1` (ditulis `api/admin.js`) bertambah entri
+  `decision`/`confidence`/`downgraded` setelah review berjalan.
+- Simulasi lokal (mock Redis+endpoint, dijalankan manual sesi ini
+  2026-07-20): trigger match currency+open setup memanggil endpoint;
+  cooldown menahan trigger kedua untuk posisi sama; cap harian 3 menahan
+  panggilan ke-4 dari 4 posisi kandidat sekaligus; geopolitical unconfirmed
+  di-skip lalu jalan begitu korroborasi datang <=30 menit — SUKSES, semua
+  skenario OK (skrip tidak dicommit, pola sama U-3).

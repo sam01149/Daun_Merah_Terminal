@@ -22,6 +22,8 @@ const rateLimit = require('./_ratelimit');
 const { allowAiCall } = require('./_ai_guard');
 const { requireAppKey } = require('./_app_key');
 const { fetchYahooOhlcv1h, fetchFallbackCandles, shouldSendYahooAlert, mapYahooSymbolToDeriv, fetchDerivCandles } = require('./_ohlcv_fetch');
+const { buildPairContext, computeCurrencyStrength } = require('./_pair_context');
+const { validateTightenSl, _evaluateManaged, _aggManagementStats } = require('./_position_review');
 
 // Hermes 3 405B Instruct via OpenRouter (free tier) — kandidat diagnostik dari riset
 // user, sama seperti HERMES_MODEL di market-digest.js (circuit breaker key sengaja
@@ -95,8 +97,10 @@ module.exports = async function handler(req, res) {
   if (action === 'pre_entry_check')    return preEntryCheckHandler(req, res);
   if (action === 'ohlcv_dashboard')    return ohlcvDashboardHandler(req, res);
   if (action === 'setup_stats')        return setupStatsHandler(req, res);
+  if (action === 'setup_override')     return setupOverrideHandler(req, res);
+  if (action === 'position_review')    return positionReviewHandler(req, res);
   if (action === 'polymarket')         return polymarketHandler(req, res);
-  return res.status(400).json({ error: 'Missing ?action= — use health, redis-keys, admin-prompts, push, fundamental_get, fundamental_seed, fundamental_refresh, fundamental_analysis, journal_import, circuit-reset, circuit-status, gdpnow, ohlcv_sync, ohlcv_read, ohlcv_analyze, ohlcv_critic, pre_entry_check, ohlcv_dashboard, or polymarket' });
+  return res.status(400).json({ error: 'Missing ?action= — use health, redis-keys, admin-prompts, push, fundamental_get, fundamental_seed, fundamental_refresh, fundamental_analysis, journal_import, circuit-reset, circuit-status, gdpnow, ohlcv_sync, ohlcv_read, ohlcv_analyze, ohlcv_critic, pre_entry_check, ohlcv_dashboard, setup_stats, setup_override, position_review, or polymarket' });
 };
 
 // ── Shared Redis helper ────────────────────────────────────────────────────────
@@ -1472,6 +1476,12 @@ const OHLCV_PAIR_SYMBOL_MAP = {
   'GBP/AUD': 'GBPAUD=X', 'GBP/CAD': 'GBPCAD=X', 'XAU/USD': 'GC=F',
 };
 
+// PLAN U-2: 14 pair FX (XAU/USD dikecualikan — bukan currency) dipakai untuk
+// currency strength lintas pair di api/_pair_context.js.
+const FX_PAIRS_FOR_STRENGTH = Object.entries(OHLCV_PAIR_SYMBOL_MAP)
+  .filter(([label]) => label !== 'XAU/USD')
+  .map(([label, symbol]) => ({ label, symbol }));
+
 // fetchYahooOhlcv1h + fetchBinancePaxg1h dipindah ke ./_ohlcv_fetch.js (plan G6) —
 // dipakai bersama cb-status.js ?section=shock. Perilaku tidak berubah.
 
@@ -2397,7 +2407,15 @@ function _confluenceZones(data, expiryLvls) {
 // dihitung menang/kalah); pending terlalu lama → expired; gap data (candle tertua
 // > 24 jam setelah setup dibuat, tidak tahu apa yang terjadi) → stale.
 // Pure function — dites di test/admin/ta_struct.test.js.
-function _evaluateSetups(setups, candlesBySymbol, nowMs) {
+//
+// PLAN U-1 (2026-07-20): saat status jadi 'sl', dua deteksi label penyebab loss
+// otomatis (lihat _detectLossLabel) — mencegah AI "salah belajar" saat SL sebenarnya
+// dipicu news shock/fakeout, bukan level teknikal buruk. Deteksi HANYA jalan pada
+// transisi open->sl di tick evaluasi ini (bukan re-scan entri 'sl' lama dari sebelum
+// fitur ini ada — entri lama tetap tereevaluasi normal, cuma tidak dapat label
+// retroaktif). `calendarEvents` opsional (default []) = backward-compatible, caller
+// lama yang panggil dengan 3 argumen tetap jalan tanpa fundamental_shock.
+function _evaluateSetups(setups, candlesBySymbol, nowMs, calendarEvents) {
   const DAY = 86400000;
   const nums = s => (String(s).match(/[\d.]+/g) || []).map(Number).filter(n => !isNaN(n));
   for (const st of setups || []) {
@@ -2425,7 +2443,12 @@ function _evaluateSetups(setups, candlesBySymbol, nowMs) {
         const hitSl = st.bias === 'bearish' ? c.h >= sl : c.l <= sl;
         const hitTp = st.bias === 'bearish' ? c.l <= tp : c.h >= tp;
         if (hitSl && hitTp) { st.status = 'ambiguous'; st.closed_t = c.t; break; }
-        if (hitSl) { st.status = 'sl'; st.closed_t = c.t; break; }
+        if (hitSl) {
+          st.status = 'sl'; st.closed_t = c.t;
+          const label = _detectLossLabel({ closedT: c.t, eLo, eHi, tp, bias: st.bias, pairLabel: st.label }, all, calendarEvents);
+          if (label) { st.loss_label = label.loss_label; st.label_reason = label.reason; st.label_by = 'auto'; }
+          break;
+        }
         if (hitTp) { st.status = 'tp'; st.closed_t = c.t; break; }
       }
     }
@@ -2435,15 +2458,163 @@ function _evaluateSetups(setups, candlesBySymbol, nowMs) {
   return setups;
 }
 
-// Agregat statistik dari log setup. Ambiguous TIDAK masuk pembagi win-rate.
+// Deteksi penyebab loss otomatis (PLAN U-1). Prioritas: fundamental_shock >
+// fakeout_sl — satu label saja, tidak menumpuk. Pure function, dites unit.
+// - fundamental_shock: ada event kalender impact 'High' untuk currency salah satu
+//   kaki pair (dari `pairLabel`, mis. "XAU/USD" -> legs ['XAU','USD']) dalam ±2 jam
+//   dari closedT. XAU otomatis lolos ke leg USD saja (calendar tidak pernah punya
+//   currency "XAU"), pola sama seperti _buildAnalyzeCalBlock.
+// - fakeout_sl (kriteria KETAT, jangan jadi mesin pemaaf): dalam <=4 jam setelah
+//   closedT, harga KEMBALI menembus zona entry DAN menyentuh TP asli — butuh KEDUA
+//   syarat, bukan salah satu.
+function _detectLossLabel({ closedT, eLo, eHi, tp, bias, pairLabel }, allCandles, calendarEvents) {
+  const legs = String(pairLabel || '').toUpperCase().split('/').map(s => s.trim()).filter(Boolean);
+  const closedMs = closedT * 1000;
+  if (legs.length && Array.isArray(calendarEvents)) {
+    const TWO_H = 2 * 3600000;
+    const shock = calendarEvents.find(ev => {
+      if (!ev || ev.impact !== 'High') return false;
+      if (!legs.includes(String(ev.currency || '').toUpperCase())) return false;
+      const evMs = _calEventMsWib(ev.date, ev.time_wib);
+      return evMs != null && Math.abs(evMs - closedMs) <= TWO_H;
+    });
+    if (shock) return { loss_label: 'fundamental_shock', reason: shock.event || 'event high-impact' };
+  }
+
+  const FOUR_H = 4 * 3600000;
+  let reenteredEntry = false, touchedTp = false;
+  for (const c of allCandles || []) {
+    const cMs = c.t * 1000;
+    if (cMs <= closedMs) continue;
+    if (cMs - closedMs > FOUR_H) break;
+    // Reentry ke zona entry: SL yang membalik bisa datang dari arah manapun (beda
+    // dari fill awal yang selalu dari luar zona ke arah favorit) — overlap range
+    // candle [l,h] vs zona [eLo,eHi] agnostik arah, bukan cek satu sisi seperti fill.
+    if (c.h >= eLo && c.l <= eHi) reenteredEntry = true;
+    if (bias === 'bearish' ? c.l <= tp : c.h >= tp) touchedTp = true;
+  }
+  if (reenteredEntry && touchedTp) {
+    return { loss_label: 'fakeout_sl', reason: 'harga kembali ke zona entry dan mencapai TP asli dalam 4 jam setelah SL' };
+  }
+  return null;
+}
+
+// Agregat statistik dari log setup. Ambiguous TIDAK masuk pembagi win-rate manapun.
+// PLAN U-1: dua metrik — win_rate_raw (semua tp/sl apa adanya, TIDAK PERNAH disensor)
+// dan win_rate_adjusted (sl berlabel loss_label dikeluarkan dari pembagi). `win_rate`
+// lama tetap ada = alias raw (kompatibilitas UI/prompt existing). `canceled` (status
+// baru U-3, auto-cancel virtual) TIDAK masuk pembagi win-rate manapun, sama seperti
+// ambiguous — cukup dihitung terpisah.
 function _aggSetupStats(arr) {
   const by = s => arr.filter(x => x.status === s).length;
   const tp = by('tp'), sl = by('sl');
+  const slEntries = arr.filter(x => x.status === 'sl');
+  const lossCauses = { teknikal: 0, fundamental_shock: 0, fakeout_sl: 0 };
+  for (const x of slEntries) {
+    if (x.loss_label === 'fundamental_shock') lossCauses.fundamental_shock++;
+    else if (x.loss_label === 'fakeout_sl') lossCauses.fakeout_sl++;
+    else lossCauses.teknikal++;
+  }
+  const slAdjusted = lossCauses.teknikal; // sl berlabel dikeluarkan dari pembagi adjusted
+  const winRateRaw = (tp + sl) > 0 ? Math.round(tp / (tp + sl) * 100) : null;
   return {
     total: arr.length,
     pending: by('pending'), open: by('open'),
     tp, sl, ambiguous: by('ambiguous'), expired: by('expired'), stale: by('stale') + by('invalid'),
-    win_rate: (tp + sl) > 0 ? Math.round(tp / (tp + sl) * 100) : null,
+    canceled: by('canceled'),
+    win_rate: winRateRaw,
+    win_rate_raw: winRateRaw,
+    win_rate_adjusted: (tp + slAdjusted) > 0 ? Math.round(tp / (tp + slAdjusted) * 100) : null,
+    loss_causes: lossCauses,
+    // PLAN U-5a: manajemen posisi VIRTUAL dilaporkan TERPISAH — makna win_rate di
+    // atas TIDAK berubah (tetap kinerja ghost/pasif apa adanya).
+    management: _aggManagementStats(arr),
+  };
+}
+
+// PLAN U-7: hapus blok `management` (U-5a) dari agregat sebelum dikirim ke payload
+// PUBLIK — manajemen posisi eksperimen HANYA boleh terlihat lewat scope=auto
+// (REVISI VISIBILITAS). Field informasi U-1 (win_rate_raw/adjusted, loss_causes)
+// tetap ikut apa adanya karena bukan bagian `management`.
+function _omitManagement(stats) {
+  const { management, ...rest } = stats;
+  return rest;
+}
+
+// PLAN U-7: ringkasan consistency_log:v1 (uji konsistensi LLM 3x/hari, U-3) untuk
+// payload developer scope=auto. List Redis (LPUSH+LTRIM cap 60 di daemon) — dibaca
+// penuh di sini (bukan endpoint publik/sering-dipanggil, hemat Redis tidak kritis).
+async function _consistencySummary() {
+  try {
+    const raw = await redisCmd('LRANGE', 'consistency_log:v1', '0', '-1');
+    const entries = Array.isArray(raw)
+      ? raw.map(s => { try { return JSON.parse(s); } catch (e) { return null; } }).filter(Boolean)
+      : [];
+    const identical = entries.filter(e => e.bias_identical).length;
+    return {
+      total: entries.length,
+      bias_identical: identical,
+      bias_identical_pct: entries.length ? Math.round(identical / entries.length * 100) : null,
+      recent: entries.slice(0, 10),
+    };
+  } catch (e) { return { total: 0, bias_identical: 0, bias_identical_pct: null, recent: [] }; }
+}
+
+// PLAN U-7: payload developer-only scope=auto — agregat `setup_log_auto:v1`
+// dievaluasi TERPISAH dari `setup_log:v1` (tidak pernah digabung satu array, aturan
+// satu-array-satu-sumber), + blok `management` (U-5a) + ringkasan konsistensi (U-3).
+async function _buildAutoScopeStats() {
+  const raw = await redisCmd('GET', 'setup_log_auto:v1');
+  if (!raw) {
+    return { scope: 'auto', symbols: {}, global: _aggSetupStats([]), recent: [], consistency: await _consistencySummary() };
+  }
+  let log = JSON.parse(raw);
+  if (!Array.isArray(log)) log = [];
+  const active = [...new Set(log.filter(s => s && (s.status === 'pending' || s.status === 'open')).map(s => s.symbol))];
+  const candlesBySymbol = {};
+  let calendarEvents = [];
+  await Promise.all([
+    ...active.map(async sym => {
+      try {
+        const r = await redisCmd('GET', `ohlcv:${sym}:1h`);
+        if (r) candlesBySymbol[sym] = JSON.parse(r);
+      } catch (e) { /* candle hilang -> setup symbol itu tetap pending */ }
+    }),
+    (async () => {
+      if (!active.length) return;
+      try {
+        const [thisWeek, nextWeek] = await Promise.all([
+          redisCmd('GET', 'calendar_v1'),
+          redisCmd('GET', 'calendar_next_v1'),
+        ]);
+        const ev1 = thisWeek ? (JSON.parse(thisWeek).events || []) : [];
+        const ev2 = nextWeek ? (JSON.parse(nextWeek).events || []) : [];
+        calendarEvents = [...ev1, ...ev2];
+      } catch (e) { /* kalender gagal -> deteksi fundamental_shock diskip */ }
+    })(),
+  ]);
+  const before = JSON.stringify(log);
+  log = _evaluateSetups(log, candlesBySymbol, Date.now(), calendarEvents);
+  const managedPending = log.filter(s => s && s.intervention?.type === 'tighten_sl' && !s.managed_status);
+  if (managedPending.length) {
+    await Promise.all([...new Set(managedPending.map(s => s.symbol))].map(async sym => {
+      if (candlesBySymbol[sym]) return;
+      try {
+        const r = await redisCmd('GET', `ohlcv:${sym}:1h`);
+        if (r) candlesBySymbol[sym] = JSON.parse(r);
+      } catch (e) { /* symbol itu tetap tak ter-update, dicoba lagi tick berikutnya */ }
+    }));
+    log = _evaluateManaged(log, candlesBySymbol);
+  }
+  const after = JSON.stringify(log);
+  if (after !== before) await redisCmd('SET', 'setup_log_auto:v1', after);
+  const bySymbol = {};
+  for (const s of log) { (bySymbol[s.symbol] = bySymbol[s.symbol] || []).push(s); }
+  const symbols = {};
+  for (const k of Object.keys(bySymbol)) { symbols[k] = _aggSetupStats(bySymbol[k]); symbols[k].history = bySymbol[k]; }
+  return {
+    scope: 'auto', symbols, global: _aggSetupStats(log), recent: log.slice(0, 10),
+    consistency: await _consistencySummary(),
   };
 }
 
@@ -2452,28 +2623,356 @@ async function setupStatsHandler(req, res) {
   res.setHeader('Cache-Control', 'no-cache');
   if (req.method === 'OPTIONS') return res.status(204).end();
   try {
+    // PLAN U-7 (REVISI VISIBILITAS): scope=auto developer-only dicek PALING AWAL —
+    // jalur ini TIDAK PERNAH menyentuh setup_log:v1, murni terpisah dari payload
+    // publik di bawah. Tanpa CRON_SECRET valid, JANGAN masuk sini (fall through ke
+    // publik biasa — tidak ada respons yang membocorkan keberadaan scope ini).
+    if (req.query.scope === 'auto' && _isCronCallReq(req)) {
+      return res.status(200).json(await _buildAutoScopeStats());
+    }
+
     const raw = await redisCmd('GET', 'setup_log:v1');
-    if (!raw) return res.status(200).json({ symbols: {}, global: _aggSetupStats([]), recent: [] });
+    if (!raw) return res.status(200).json({ symbols: {}, global: _omitManagement(_aggSetupStats([])), recent: [] });
     let log = JSON.parse(raw);
     if (!Array.isArray(log)) log = [];
     // Evaluasi lazy hanya symbol yang punya setup aktif — hemat Redis call
     const active = [...new Set(log.filter(s => s && (s.status === 'pending' || s.status === 'open')).map(s => s.symbol))];
+    // PLAN U-2: currency strength (global, lintas 14 pair FX) numpang response ini
+    // supaya U-4 bisa tampil tanpa call baru — gabung ke fetch candle yang sudah ada
+    // (dedup symbol yang overlap dengan `active`, bukan fetch dobel).
+    const strengthSymbols = [...new Set(FX_PAIRS_FOR_STRENGTH.map(p => p.symbol))];
     const candlesBySymbol = {};
-    await Promise.all(active.map(async sym => {
-      try {
-        const r = await redisCmd('GET', `ohlcv:${sym}:1h`);
-        if (r) candlesBySymbol[sym] = JSON.parse(r);
-      } catch (e) { /* candle hilang → setup symbol itu tetap pending */ }
-    }));
+    let calendarEvents = [];
+    await Promise.all([
+      ...[...new Set([...active, ...strengthSymbols])].map(async sym => {
+        try {
+          const r = await redisCmd('GET', `ohlcv:${sym}:1h`);
+          if (r) candlesBySymbol[sym] = JSON.parse(r);
+        } catch (e) { /* candle hilang → setup symbol itu tetap pending / strength skip pair ini */ }
+      }),
+      // Kalender dipakai deteksi fundamental_shock (PLAN U-1) — hanya perlu kalau ada
+      // setup aktif yang bisa berpindah status ke 'sl' di tick ini. calendar_v1/next_v1
+      // sama seperti dipakai ohlcvAnalyzeHandler, gagal fetch = fail-open (label kosong).
+      (async () => {
+        if (!active.length) return;
+        try {
+          const [thisWeek, nextWeek] = await Promise.all([
+            redisCmd('GET', 'calendar_v1'),
+            redisCmd('GET', 'calendar_next_v1'),
+          ]);
+          const ev1 = thisWeek ? (JSON.parse(thisWeek).events || []) : [];
+          const ev2 = nextWeek ? (JSON.parse(nextWeek).events || []) : [];
+          calendarEvents = [...ev1, ...ev2];
+        } catch (e) { /* kalender gagal → deteksi fundamental_shock diskip, bukan crash */ }
+      })(),
+    ]);
     const before = JSON.stringify(log);
-    log = _evaluateSetups(log, candlesBySymbol, Date.now());
+    log = _evaluateSetups(log, candlesBySymbol, Date.now(), calendarEvents);
+    // PLAN U-5a: outcome manajemen (tighten_sl) dievaluasi SETELAH ghost pasif —
+    // butuh candle symbol yang sudah punya intervention, mungkin di luar `active`
+    // (posisi yang di-manage tapi status ghost-nya sudah tp/sl/dst) — fetch tambahan
+    // best-effort, gagal = _evaluateManaged tetap jalan tanpa update (fail-open).
+    const managedPending = log.filter(s => s && s.intervention?.type === 'tighten_sl' && !s.managed_status);
+    if (managedPending.length) {
+      await Promise.all([...new Set(managedPending.map(s => s.symbol))].map(async sym => {
+        if (candlesBySymbol[sym]) return;
+        try {
+          const r = await redisCmd('GET', `ohlcv:${sym}:1h`);
+          if (r) candlesBySymbol[sym] = JSON.parse(r);
+        } catch (e) { /* symbol itu tetap tak ter-update, dicoba lagi tick berikutnya */ }
+      }));
+      log = _evaluateManaged(log, candlesBySymbol);
+    }
     const after = JSON.stringify(log);
     if (after !== before) await redisCmd('SET', 'setup_log:v1', after);
     const bySymbol = {};
     for (const s of log) { (bySymbol[s.symbol] = bySymbol[s.symbol] || []).push(s); }
     const symbols = {};
     for (const k of Object.keys(bySymbol)) { symbols[k] = _aggSetupStats(bySymbol[k]); symbols[k].history = bySymbol[k]; }
-    return res.status(200).json({ symbols, global: _aggSetupStats(log), recent: log.slice(0, 10) });
+    const strengthInput = FX_PAIRS_FOR_STRENGTH.map(p => ({ label: p.label, candles: candlesBySymbol[p.symbol] }));
+    // PLAN U-7: blok `management` (U-5a) DIPINDAH keluar payload PUBLIK — hanya
+    // muncul di scope=auto (di atas). Field informasi U-1 tetap publik apa adanya.
+    const publicSymbols = {};
+    for (const k of Object.keys(symbols)) publicSymbols[k] = _omitManagement(symbols[k]);
+    return res.status(200).json({
+      symbols: publicSymbols, global: _omitManagement(_aggSetupStats(log)), recent: log.slice(0, 10),
+      pair_context: { strength: computeCurrencyStrength(strengthInput) },
+    });
+  } catch (e) {
+    return res.status(500).json({ error: e.message });
+  }
+}
+
+const LOSS_LABELS = new Set(['fundamental_shock', 'fakeout_sl', 'invalid_manual']);
+
+// PLAN U-1 Lapis 4: override admin — set/hapus loss_label + label_reason per id setup.
+// Sama seperti fundamentalSeedHandler/journalImportHandler: header x-admin-secret ATAU
+// x-cron-secret sama dengan CRON_SECRET. Data mentah (status, harga, entry/sl/tp)
+// TIDAK PERNAH disentuh — override HANYA mengubah label, jejak keputusan admin
+// (label_by:'admin') dibedakan dari deteksi otomatis (label_by:'auto').
+async function setupOverrideHandler(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  if (req.method === 'OPTIONS') return res.status(204).end();
+  const CRON_SECRET = process.env.CRON_SECRET;
+  const secret = req.headers['x-admin-secret'] || req.headers['x-cron-secret'];
+  if (!CRON_SECRET || secret !== CRON_SECRET) return res.status(401).json({ error: 'Unauthorized' });
+  if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
+  try {
+    let body = '';
+    await new Promise(r => { req.on('data', c => body += c); req.on('end', r); });
+    let parsed;
+    try { parsed = JSON.parse(body); } catch (e) { return res.status(400).json({ error: 'Invalid JSON' }); }
+
+    const { id } = parsed || {};
+    const lossLabel = parsed?.loss_label ?? null;
+    const labelReason = parsed?.label_reason;
+    if (!id) return res.status(400).json({ error: 'id required' });
+    if (lossLabel !== null && !LOSS_LABELS.has(lossLabel)) {
+      return res.status(400).json({ error: 'loss_label harus salah satu: fundamental_shock, fakeout_sl, invalid_manual, atau null' });
+    }
+    if (lossLabel !== null && (!labelReason || !String(labelReason).trim())) {
+      return res.status(400).json({ error: 'label_reason wajib saat mengisi loss_label' });
+    }
+
+    // PLAN U-7: scope=auto melabel setup EKSPERIMEN (setup_log_auto:v1), default
+    // (tanpa scope) tetap setup_log:v1 (manual) seperti semula U-1.
+    const logKey = parsed?.scope === 'auto' ? 'setup_log_auto:v1' : 'setup_log:v1';
+    const raw = await redisCmd('GET', logKey);
+    let log = raw ? JSON.parse(raw) : [];
+    if (!Array.isArray(log)) log = [];
+    const idx = log.findIndex(x => x && x.id === id);
+    if (idx === -1) return res.status(404).json({ error: 'setup id tidak ditemukan' });
+
+    log[idx].loss_label = lossLabel;
+    log[idx].label_reason = lossLabel !== null ? String(labelReason).trim() : null;
+    log[idx].label_by = lossLabel !== null ? 'admin' : null;
+
+    await redisCmd('SET', logKey, JSON.stringify(log));
+    return res.status(200).json({ ok: true, setup: log[idx] });
+  } catch (e) {
+    return res.status(500).json({ error: e.message });
+  }
+}
+
+// PLAN U-5a — Review posisi VIRTUAL dipicu event-driven dari daemon (U-5b) saat
+// headline market-moving/geopolitical menyentuh currency kaki pair setup `open`.
+// Auth SAMA seperti setupOverrideHandler (x-admin-secret/x-cron-secret===CRON_SECRET)
+// — endpoint ini TIDAK PERNAH publik, daemon adalah satu-satunya pemanggil produksi.
+// Data mentah (entry_zone/sl/tp/status) TIDAK PERNAH disentuh (prinsip #2 §U-5) —
+// hanya field `intervention`/`managed_status`/`review_count` yang ditulis di sini.
+async function positionReviewHandler(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  if (req.method === 'OPTIONS') return res.status(204).end();
+  const CRON_SECRET = process.env.CRON_SECRET;
+  const secret = req.headers['x-admin-secret'] || req.headers['x-cron-secret'];
+  if (!CRON_SECRET || secret !== CRON_SECRET) return res.status(401).json({ error: 'Unauthorized' });
+  if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
+  try {
+    let body = '';
+    await new Promise(r => { req.on('data', c => body += c); req.on('end', r); });
+    let parsed;
+    try { parsed = JSON.parse(body); } catch (e) { return res.status(400).json({ error: 'Invalid JSON' }); }
+
+    const { id, trigger } = parsed || {};
+    if (!id) return res.status(400).json({ error: 'id required' });
+    if (!trigger || typeof trigger.guid !== 'string' || !trigger.guid.trim()
+      || typeof trigger.title !== 'string' || !trigger.title.trim()) {
+      return res.status(400).json({ error: 'trigger.guid dan trigger.title wajib' });
+    }
+
+    // PLAN U-7 (REVISI VISIBILITAS): position_review HANYA melayani setup EKSPERIMEN
+    // di setup_log_auto:v1 — setup manual pengguna TIDAK PERNAH direview/diintervensi.
+    const raw = await redisCmd('GET', 'setup_log_auto:v1');
+    let log = raw ? JSON.parse(raw) : [];
+    if (!Array.isArray(log)) log = [];
+    const idx = log.findIndex(x => x && x.id === id);
+    if (idx === -1) {
+      // id bisa jadi setup MANUAL (setup_log:v1) — tolak eksplisit TANPA call AI,
+      // beda dari 404 generik (id benar-benar tidak ditemukan di kedua log).
+      try {
+        const rawManual = await redisCmd('GET', 'setup_log:v1');
+        const manualLog = rawManual ? JSON.parse(rawManual) : [];
+        if (Array.isArray(manualLog) && manualLog.some(x => x && x.id === id)) {
+          return res.status(200).json({ skipped: 'not_experiment' });
+        }
+      } catch (e) { /* fail-open -> 404 generik di bawah */ }
+      return res.status(404).json({ error: 'setup id tidak ditemukan' });
+    }
+
+    // Langkah 2a: re-cek murah SEBELUM call AI — tick _evaluateSetups pakai candle
+    // symbol ini + kalender, sama pola setupStatsHandler (fail-open kalau gagal fetch).
+    const symbol = log[idx].symbol;
+    let candles = [];
+    try {
+      const rawC = await redisCmd('GET', `ohlcv:${symbol}:1h`);
+      if (rawC) candles = JSON.parse(rawC);
+    } catch (e) { /* fail-open: evaluate tetap jalan, status apa adanya tanpa candle baru */ }
+    let calendarEvents = [];
+    try {
+      const [thisWeek, nextWeek] = await Promise.all([
+        redisCmd('GET', 'calendar_v1'),
+        redisCmd('GET', 'calendar_next_v1'),
+      ]);
+      const ev1 = thisWeek ? (JSON.parse(thisWeek).events || []) : [];
+      const ev2 = nextWeek ? (JSON.parse(nextWeek).events || []) : [];
+      calendarEvents = [...ev1, ...ev2];
+    } catch (e) { /* opsional — deteksi fundamental_shock ghost diskip, bukan crash */ }
+
+    const before = JSON.stringify(log);
+    _evaluateSetups(log, { [symbol]: candles }, Date.now(), calendarEvents);
+    const persistTick = async () => { if (JSON.stringify(log) !== before) await redisCmd('SET', 'setup_log_auto:v1', JSON.stringify(log)); };
+    const st = log[idx];
+
+    if (st.status !== 'open') {
+      await persistTick();
+      return res.status(200).json({ skipped: 'not_open', status: st.status });
+    }
+    // Langkah 2b: satu intervensi per posisi — sudah ada tipe apa pun -> skip.
+    if (st.intervention) {
+      await persistTick();
+      return res.status(200).json({ skipped: 'already_managed' });
+    }
+
+    // Langkah 2c: fact sheet ringkas + 1 AI call (chain existing: SambaNova akun 1
+    // -> Groq, SAMA circuit/pool dengan ohlcv_critic — pola sama, bukan provider baru).
+    const closeLast = candles.length ? candles[candles.length - 1].c : null;
+    const recentCandles = candles.slice(-12);
+    const candleLines = recentCandles.length
+      ? recentCandles.map(c => `t=${new Date(c.t * 1000).toISOString()} O:${c.o} H:${c.h} L:${c.l} C:${c.c}`).join('\n')
+      : '(candle tidak tersedia)';
+    const legs = String(st.label || '').toUpperCase().split('/').map(s => s.trim()).filter(Boolean);
+    let calBlock = '(tidak ada event kalender high/medium ±12 jam untuk pair ini)';
+    try {
+      const now = Date.now();
+      const nearby = calendarEvents
+        .filter(e => e && (e.impact === 'High' || e.impact === 'Medium') && legs.includes(String(e.currency || '').toUpperCase()))
+        .map(e => ({ ...e, _ms: _calEventMsWib(e.date, e.time_wib) }))
+        .filter(e => e._ms != null && Math.abs(e._ms - now) <= 12 * 3600 * 1000)
+        .sort((a, b) => Math.abs(a._ms - now) - Math.abs(b._ms - now));
+      if (nearby.length) {
+        calBlock = nearby.map(e => `- ${e.event} (${e.currency}, impact ${e.impact}) ${e._ms > now ? 'dalam' : 'sudah lewat'} ${Math.abs((e._ms - now) / 3600000).toFixed(1)} jam`).join('\n');
+      }
+    } catch (e) { /* opsional */ }
+
+    const corroborated = trigger.corroborated === true;
+    const triggerBlock = [
+      `[TRIGGER PEMICU REVIEW]`,
+      `Headline: ${trigger.title}`,
+      `Kategori: ${trigger.cat || '—'}`,
+      corroborated
+        ? 'Status: TERKONFIRMASI (>=2 sumber berbeda dalam 30 menit).'
+        : 'Status: BELUM TERKONFIRMASI — headline BELUM terkonfirmasi, diskon berat, DILARANG keputusan agresif dua arah, default HOLD kecuali fakta lain sangat kuat.',
+    ].join('\n');
+
+    const setupBlock = [
+      `[SETUP SEDANG BERJALAN]`,
+      `Pair: ${st.label} | Bias: ${st.bias} | Entry: ${st.entry_zone} | SL: ${st.sl} | TP: ${st.tp}`,
+      `Filled: ${st.filled_t ? new Date(st.filled_t * 1000).toISOString() : '—'}`,
+    ].join('\n');
+
+    const candleBlock = `[±12 CANDLE H1 TERAKHIR]\n${candleLines}`;
+
+    const userMsg = [setupBlock, triggerBlock, candleBlock, `[KALENDER ±12 JAM]\n${calBlock}`].join('\n\n')
+      + '\n\nBalas HANYA satu objek JSON valid (tanpa markdown fence, tanpa teks lain) persis format ini: '
+      + '{"decision":"HOLD","new_sl":null,"reason":"...","confidence":"rendah"}. '
+      + 'decision salah satu: HOLD, TIGHTEN_SL, CLOSE_EARLY. new_sl WAJIB angka saat TIGHTEN_SL (arah lebih ketat dari SL lama), null selain itu. confidence salah satu: rendah, sedang, tinggi.';
+
+    const messages = [
+      { role: 'system', content: 'Kamu manajer risiko posisi trading yang sedang berjalan (VIRTUAL, bukan eksekusi broker nyata). Tugasmu menilai apakah posisi terbuka ini perlu diintervensi karena headline pemicu terlampir. HOLD = default aman kalau tidak ada alasan kuat. TIGHTEN_SL = geser stop loss lebih ketat (mengunci kerugian lebih kecil / profit) karena risiko meningkat, BUKAN memperlebar. CLOSE_EARLY = tutup posisi sekarang karena tesis awal sudah tidak valid. Kalau trigger BELUM TERKONFIRMASI, default HOLD kecuali bukti lain (candle/kalender) sangat kuat. Jangan mengarang harga — new_sl HARUS masuk akal relatif terhadap SL lama dan harga sekarang. Bahasa Indonesia.' },
+      { role: 'user', content: userMsg },
+    ];
+
+    const SAMBANOVA_KEY = process.env.SAMBANOVA_API_KEY;
+    const GROQ_KEY = process.env.GROQ_API_KEY;
+    let rawText = null, model = null;
+
+    if (SAMBANOVA_KEY && await cb.canCall('ai:sambanova:main')) {
+      try {
+        if (!await allowAiCall('sambanova_main')) throw new Error('AI daily budget exceeded');
+        const r = await fetch('https://api.sambanova.ai/v1/chat/completions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SAMBANOVA_KEY}` },
+          body: JSON.stringify({ model: 'DeepSeek-V3.2', messages, max_tokens: 400, temperature: 0 }),
+          signal: AbortSignal.timeout(25000),
+        });
+        if (r.ok) {
+          const j = await r.json(); rawText = j.choices?.[0]?.message?.content?.trim() || null; model = 'deepseek-v3.2';
+          if (rawText) await cb.onSuccess('ai:sambanova:main');
+          else throw new Error('Empty response');
+        } else { throw new Error(`HTTP ${r.status}`); }
+      } catch (e) { console.warn('position_review SambaNova failed:', e.message); await cb.onFailure('ai:sambanova:main'); }
+    } else if (SAMBANOVA_KEY) { console.log('position_review: SambaNova circuit OPEN — skipping to Groq'); }
+
+    if (!rawText && GROQ_KEY) {
+      try {
+        if (!await allowAiCall('groq')) throw new Error('AI daily budget exceeded');
+        const r = await fetch(GROQ_URL_FUND, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${GROQ_KEY}` },
+          body: JSON.stringify({ model: GROQ_MODEL_FUND, messages, max_tokens: 400, temperature: 0 }),
+          signal: AbortSignal.timeout(25000),
+        });
+        if (r.ok) {
+          const j = await r.json(); rawText = j.choices?.[0]?.message?.content?.trim() || null; model = GROQ_MODEL_FUND;
+          if (!rawText) throw new Error('Empty response');
+        } else { throw new Error(`HTTP ${r.status}`); }
+      } catch (e) { console.warn('position_review Groq fallback failed:', e.message); }
+    }
+
+    // Langkah 2d: parse + validasi kode (fail-safe -> downgrade HOLD).
+    let decision = 'HOLD', confidence = 'rendah', reason = null, newSlRaw = null, downgraded = false;
+    if (!rawText) {
+      downgraded = true; reason = 'AI tidak tersedia (SambaNova & Groq offline/timeout/limit habis)';
+    } else {
+      try {
+        const s = rawText.indexOf('{'), e = rawText.lastIndexOf('}');
+        const cleaned = s !== -1 && e !== -1 ? rawText.slice(s, e + 1) : rawText;
+        const p = JSON.parse(cleaned);
+        const DECISIONS = new Set(['HOLD', 'TIGHTEN_SL', 'CLOSE_EARLY']);
+        decision = DECISIONS.has(p.decision) ? p.decision : 'HOLD';
+        confidence = ['rendah', 'sedang', 'tinggi'].includes(p.confidence) ? p.confidence : 'rendah';
+        reason = (typeof p.reason === 'string' && p.reason.trim()) ? p.reason.trim() : null;
+        newSlRaw = Number.isFinite(p.new_sl) ? p.new_sl : (typeof p.new_sl === 'string' ? parseFloat(p.new_sl) : null);
+        if (!DECISIONS.has(p.decision)) { downgraded = true; }
+      } catch (e) {
+        downgraded = true; decision = 'HOLD'; reason = 'output AI tidak patuh skema JSON';
+        console.warn('position_review: JSON parse gagal:', e.message);
+      }
+    }
+
+    if (decision === 'TIGHTEN_SL') {
+      const eNums = (String(st.entry_zone).match(/[\d.]+/g) || []).map(Number).filter(n => !isNaN(n));
+      const eLo = eNums.length ? Math.min(...eNums) : null;
+      const eHi = eNums.length ? Math.max(...eNums) : null;
+      const slOld = parseFloat((String(st.sl).match(/[\d.]+/) || [])[0]);
+      const ok = validateTightenSl({ bias: st.bias, slOld, newSl: newSlRaw, closeLast, eLo, eHi });
+      if (!ok) {
+        decision = 'HOLD'; downgraded = true;
+        reason = (reason ? reason + ' — ' : '') + 'TIGHTEN_SL ditolak validasi kode (SL melebar/menyalip zona entry/tidak valid)';
+      }
+    }
+    if (decision === 'CLOSE_EARLY' && closeLast == null) {
+      decision = 'HOLD'; downgraded = true;
+      reason = (reason ? reason + ' — ' : '') + 'candle terakhir tidak tersedia untuk CLOSE_EARLY';
+    }
+
+    // Langkah 2e: terapkan HANYA field manajemen — data mentah/status TIDAK disentuh.
+    st.review_count = (st.review_count || 0) + 1;
+    if (decision === 'TIGHTEN_SL') {
+      st.intervention = { type: 'tighten_sl', t: Date.now(), price: null, new_sl: newSlRaw, reason, trigger_guid: trigger.guid };
+    } else if (decision === 'CLOSE_EARLY') {
+      st.intervention = { type: 'close_early', t: Date.now(), price: closeLast, new_sl: null, reason, trigger_guid: trigger.guid };
+      st.managed_status = 'closed_early';
+      st.managed_closed_t = Math.floor(Date.now() / 1000);
+    }
+    log[idx] = st;
+    await redisCmd('SET', 'setup_log_auto:v1', JSON.stringify(log));
+    await redisCmd('LPUSH', 'position_review_log:v1', JSON.stringify({
+      id, t: Date.now(), trigger: { guid: trigger.guid, title: trigger.title }, decision, confidence, downgraded,
+    }));
+    await redisCmd('LTRIM', 'position_review_log:v1', '0', '99');
+
+    return res.status(200).json({ ok: true, decision, confidence, downgraded, model, setup: st });
   } catch (e) {
     return res.status(500).json({ error: e.message });
   }
@@ -2760,6 +3259,11 @@ async function ohlcvAnalyzeHandler(req, res) {
   // keterlambatan salah satu sumber cron (GH Actions pernah telat berjam-jam,
   // tapi kalaupun cuma beda beberapa menit dengan VPS, tetap ke-dedup).
   const isCronCall = _isCronCallReq(req);
+  // PLAN U-2: flag auto=1 menandai source:'auto' di setup_log (dipakai U-3 daemon
+  // scheduler auto-entry). HANYA berlaku kalau request terautentikasi sebagai cron
+  // call (CRON_SECRET valid) — publik TIDAK BISA spoof source:'auto' dan merusak
+  // integritas statistik gate-live (n>=100 setup auto, kriteria fase tes plan U).
+  const isAutoCall = isCronCall && (req.query.auto === '1' || req.body?.auto === 1 || req.body?.auto === true);
   if (isCronCall) {
     const CRON_DEDUP_WINDOW_MS = 30 * 60 * 1000;
     try {
@@ -2899,6 +3403,22 @@ async function ohlcvAnalyzeHandler(req, res) {
       );
     } catch (e) { /* opsional — jangan gagalkan analisa kalau cache kalender kosong */ }
 
+    // PLAN U-2 (2026-07-20): rezim volatilitas (ATR14 H1 pair ini) + currency
+    // strength (14 pair FX, %change H1 ~3 hari) — modul murni api/_pair_context.js,
+    // I/O Redis di sini saja. Fail-open: gagal fetch/data kurang -> pairCtx.block
+    // kosong, TIDAK menggagalkan analisa (pola sama semua blok di atas).
+    let pairCtx = { regime: null, strength: null, block: '' };
+    try {
+      const symbolsToFetch = [...new Set([symbol, ...FX_PAIRS_FOR_STRENGTH.map(p => p.symbol)])];
+      const rawCandles = await Promise.all(symbolsToFetch.map(s => redisCmd('GET', `ohlcv:${s}:1h`)));
+      const candlesBySymbol = {};
+      symbolsToFetch.forEach((s, i) => {
+        if (!rawCandles[i]) return;
+        try { candlesBySymbol[s] = JSON.parse(rawCandles[i]); } catch (e) { /* skip pair korup */ }
+      });
+      pairCtx = buildPairContext({ candlesBySymbol, symbol, label: data.label, fxPairs: FX_PAIRS_FOR_STRENGTH });
+    } catch (e) { console.warn('ohlcv_analyze: pair context gagal (fail-open):', e.message); }
+
     const makroHeader = makroAgeH != null
       ? `KONTEKS MAKRO (dari Ringkasan ${makroAgeH} jam lalu${makroAgeH > 4 ? ' — SUDAH AGAK BASI: kalau ada rilis/berita besar setelah itu, beri bobot lebih rendah dan sebut ketidakpastiannya' : ''}):`
       : 'KONTEKS MAKRO:';
@@ -2913,6 +3433,7 @@ async function ohlcvAnalyzeHandler(req, res) {
     if (rrBlock)          ctxParts.push(rrBlock);
     if (trackBlock)       ctxParts.push(trackBlock);
     if (calAnalyzeBlock)  ctxParts.push(calAnalyzeBlock);
+    if (pairCtx.block)    ctxParts.push(pairCtx.block);
     ctxParts.push(`DATA TEKNIKAL:\n${textBlock}${expiryBlock}${confBlock ? '\n\n' + confBlock : ''}`);
     const makroBlock = ctxParts.join('\n\n');
 
@@ -2931,6 +3452,8 @@ async function ohlcvAnalyzeHandler(req, res) {
       rrBlock                ? 'sentimen options' : null,
       trackBlock             ? 'track record historis' : null,
       calAnalyzeBlock        ? 'event kalender' : null,
+      pairCtx.regime         ? 'rezim volatilitas' : null,
+      pairCtx.strength       ? 'currency strength' : null,
     ].filter(Boolean).join(' + ');
 
     const p4Macro = (ringkasanContext || fundBlock)
@@ -2973,6 +3496,8 @@ async function ohlcvAnalyzeHandler(req, res) {
       '- time_horizon_days: estimasi jumlah hari realistis skenario ini main out (angka, misal 3, 5, 10) berdasarkan jarak entry-tp dibanding rata-rata gerak harian (ATR/sigma) yang ada di data',
       '- makro_alignment: "searah" kalau KONTEKS MAKRO / FUNDAMENTAL TERSTRUKTUR mendukung arah bias teknikalmu, "konflik" kalau berlawanan, "netral" kalau sinyal makro tidak jelas/campuran. Kalau blok makro dan fundamental dua-duanya tidak tersedia di atas, isi null.',
       '- makro_alignment_reason: SATU kalimat pendek alasannya dengan menyebut data spesifik (misal "bias Fed Dovish + COT USD net short searah dengan bias bearish USD/JPY"). Null kalau makro_alignment null.',
+      '- conflict: bandingkan bias TEKNIKALMU vs (a) arah yang tersirat KONTEKS MAKRO/FUNDAMENTAL TERSTRUKTUR di atas (kalau ada), DAN (b) [EVENT HIGH-IMPACT 7 HARI KE DEPAN] (kalau ada). Isi "arah" kalau makro/fundamental berlawanan jelas dengan bias teknikalmu — INI BUKAN alasan otomatis untuk tidak keluarkan setup, tapi WAJIB dilaporkan di sini. Isi "waktu" kalau ada event high-impact dalam beberapa jam ke depan (sebelum time_horizon_days-mu selesai) yang bisa membatalkan skenario mendadak — ini LEBIH SERIUS dari konflik arah, pilih "waktu" kalau dua-duanya terjadi sekaligus. Isi "none" kalau tidak ada konflik terdeteksi atau data pembanding tidak tersedia.',
+      '- conflict_note: SATU kalimat pendek alasan konkret (sebut data/event spesifik) kalau conflict bukan "none"; null kalau conflict "none".',
       '',
       'Setelah objek JSON, di baris baru tulis PERSIS "===COMMENTARY===" lalu tulis commentary sebagai teks biasa (BUKAN di dalam JSON): analisa naratif mendalam 5 paragraf, pisah tiap paragraf dengan baris baru. PENTING — label "paragraf 1/2/3/4/5" di instruksi di bawah ini HANYA panduan urutan untukmu menulis, BUKAN teks yang harus muncul di output: paragraf 1-4 WAJIB ditulis sebagai prosa mengalir TANPA header/judul/angka urutan apapun di depannya (langsung mulai dengan kalimat isi). Paragraf 5 SATU-SATUNYA pengecualian yang harus mulai literal dengan kata "KESIMPULAN:" — jangan tambahkan header serupa di paragraf lain.',
       `Isi paragraf pertama (tanpa header) — bias & posisi makro harga: arah trend Daily dengan alasan konkret (perubahan %, close vs open, posisi dalam range 6 bulan dari [KONTEKS 6 BULAN] — dekat puncak/lembah/tengah).`,
@@ -2987,7 +3512,7 @@ async function ohlcvAnalyzeHandler(req, res) {
     // — prosa panjang 4-5 paragraf sebagai string JSON rawan gagal JSON.parse (kutip/newline
     // tak ter-escape), yang dulu bikin structured null dan bias/entry/sl/tp hilang total.
     const messages = [
-      { role: 'system', content: 'Kamu analis senior teknikal dan makro. WAJIB jawab dalam DUA bagian persis seperti diminta: (1) SATU objek JSON valid tanpa markdown fence berisi HANYA field {"bias":"...","entry_zone":"...","entry_basis":"...","sl":"...","tp":"...","trigger":"...","invalidation_condition":"...","time_horizon_days":0,"makro_alignment":"...","makro_alignment_reason":"..."} — JANGAN sertakan field commentary di JSON ini; (2) setelah JSON, baris berisi PERSIS "===COMMENTARY===", lalu teks commentary biasa (bukan JSON, bebas tanda kutip/baris baru). Bahasa Indonesia.' },
+      { role: 'system', content: 'Kamu analis senior teknikal dan makro. WAJIB jawab dalam DUA bagian persis seperti diminta: (1) SATU objek JSON valid tanpa markdown fence berisi HANYA field {"bias":"...","entry_zone":"...","entry_basis":"...","sl":"...","tp":"...","trigger":"...","invalidation_condition":"...","time_horizon_days":0,"makro_alignment":"...","makro_alignment_reason":"...","conflict":"...","conflict_note":"..."} — JANGAN sertakan field commentary di JSON ini; (2) setelah JSON, baris berisi PERSIS "===COMMENTARY===", lalu teks commentary biasa (bukan JSON, bebas tanda kutip/baris baru). Bahasa Indonesia.' },
       { role: 'user',   content: userMsg },
     ];
 
@@ -3304,15 +3829,32 @@ async function ohlcvAnalyzeHandler(req, res) {
           ? structured.makro_alignment_reason.trim()
           : null;
 
+        // PLAN U-2: normalisasi conflict (none/arah/waktu) — dipakai U-4 (checklist
+        // dua-kelas) & setup_log.alignment di bawah. Default "none" kalau model tidak
+        // patuh skema, bukan null (beda dari makro_alignment yang boleh null-tanpa-data
+        // — conflict SELALU punya jawaban karena tidak bergantung sumber makro saja).
+        const CONFLICT_CANON = new Set(['none', 'arah', 'waktu']);
+        const conflictRaw = String(structured.conflict || '').toLowerCase().replace(/[^a-z]/g, '');
+        structured.conflict = CONFLICT_CANON.has(conflictRaw) ? conflictRaw : 'none';
+        structured.conflict_note = (structured.conflict !== 'none' && typeof structured.conflict_note === 'string' && structured.conflict_note.trim())
+          ? structured.conflict_note.trim()
+          : null;
+
         // [SISTEM HAKIM] Soft Block (Hak Veto User) - Mencegat halusinasi makro_alignment
         if (cbDir && structured.bias) {
           const techBias = structured.bias.toLowerCase();
           const isTechLong = techBias.includes('bullish') || techBias === 'long';
           const isTechShort = techBias.includes('bearish') || techBias === 'short';
-          
+
           if ((cbDir === 'long' && isTechShort) || (cbDir === 'short' && isTechLong)) {
             structured.makro_alignment = 'konflik';
             structured.makro_alignment_reason = '[SISTEM HAKIM] Terdeteksi konflik nyata antara arah Makro/Fundamental dan Teknikal. Setup ini melanggar aturan konfluensi makro.';
+            // Veto sistem = konflik arah nyata terverifikasi kode, bukan cuma klaim model —
+            // paksa conflict='arah' kecuali model sudah lapor 'waktu' (lebih serius, jangan ditimpa turun).
+            if (structured.conflict !== 'waktu') {
+              structured.conflict = 'arah';
+              structured.conflict_note = structured.makro_alignment_reason;
+            }
           }
         }
       } catch(e) {
@@ -3329,6 +3871,9 @@ async function ohlcvAnalyzeHandler(req, res) {
       confluence: confZones || null,
       makro_generated_at: (ringkasanContext && ringkasanAt) ? ringkasanAt : null,
       loaded_at: new Date().toISOString(),
+      // PLAN U-2: rezim volatilitas + currency strength diikutkan di payload supaya
+      // U-4 bisa menampilkan tanpa call baru (numpang response existing).
+      pair_context: { regime: pairCtx.regime, strength: pairCtx.strength },
     };
 
     if (!commentary && !structured) {
@@ -3337,7 +3882,11 @@ async function ohlcvAnalyzeHandler(req, res) {
 
     // isDiagnosticOnly dikecualikan dari cache produksi — request diagnostik tidak boleh
     // menimpa hasil analisa AI real yang sedang ditampilkan ke user di tab Analisa.
-    if ((commentary || structured) && !isDiagnosticOnly) {
+    // PLAN U-7 (REVISI VISIBILITAS): call auto (isAutoCall) JUGA dikecualikan — eksperimen
+    // developer-only, pengguna TIDAK PERNAH boleh melihat "Analisa sudah jadi"/auto-tick
+    // checklist dari call daemon. Response HTTP ke daemon tetap payload penuh (di bawah),
+    // hanya cache yang dibaca `mode=cached`/tab Analisa publik yang senyap.
+    if ((commentary || structured) && !isDiagnosticOnly && !isAutoCall) {
       redisCmd('SET', `ohlcv_analysis:${symbol}`, JSON.stringify(resultPayload), 'EX', 21600).catch(() => {});
     }
     // Outcome logging (Tier 1 riset, session 166): catat setiap setup lengkap supaya
@@ -3345,15 +3894,30 @@ async function ohlcvAnalyzeHandler(req, res) {
     // logging tidak boleh menggagalkan response analisa. Dedup: setup aktif dengan
     // level identik di symbol yang sama tidak dicatat dua kali (re-generate tanpa
     // perubahan level = satu keputusan yang sama, bukan dua track record).
-    if (structured?.entry_zone && structured.sl && structured.tp && structured.makro_alignment !== 'konflik' && !isDiagnosticOnly) {
+    // PLAN U-1 (2026-07-20): setup makro_alignment==='konflik' SEKARANG DICATAT (dulu
+    // di-skip total) dengan alignment:'konflik' — supaya statistik bisa membandingkan
+    // kinerja setup konflik vs selaras (U-6 gate).
+    // PLAN U-2: `source` sekarang 'auto' kalau isAutoCall (auto=1 + CRON_SECRET valid,
+    // dipakai U-3), default 'manual'. `alignment` diisi dari `conflict` (U-2) —
+    // conflict!=='none' dipetakan ke 'konflik' (menimpa makro_alignment kalau perlu,
+    // menangkap kasus model bilang makro_alignment='netral' tapi conflict='arah'/'waktu'
+    // dari perbandingan lain), fallback ke makro_alignment kalau conflict 'none'.
+    // PLAN U-7: setup dari call auto ditulis ke key TERPISAH `setup_log_auto:v1` (cap 200
+    // sendiri) — BUKAN `setup_log:v1` (tracker/win-rate/cap milik pengguna tidak tersentuh).
+    // Skema field identik (U-1 + U-5a), tidak ada skema kedua.
+    if (structured?.entry_zone && structured.sl && structured.tp && !isDiagnosticOnly) {
+      const setupLogKey = isAutoCall ? 'setup_log_auto:v1' : 'setup_log:v1';
       try {
-        const rawLog = await redisCmd('GET', 'setup_log:v1');
+        const rawLog = await redisCmd('GET', setupLogKey);
         let log = rawLog ? JSON.parse(rawLog) : [];
         if (!Array.isArray(log)) log = [];
         const dup = log.find(x => x && x.symbol === symbol
           && (x.status === 'pending' || x.status === 'open')
           && x.entry_zone === structured.entry_zone && x.sl === structured.sl && x.tp === structured.tp);
         if (!dup) {
+          const alignment = (structured.conflict && structured.conflict !== 'none')
+            ? 'konflik'
+            : (structured.makro_alignment || null);
           log.unshift({
             id: `${symbol}:${Date.now()}`,
             symbol, label: data.label, bias: structured.bias,
@@ -3361,8 +3925,13 @@ async function ohlcvAnalyzeHandler(req, res) {
             rr: structured.risk_reward ?? null,
             horizon_days: structured.time_horizon_days ?? null,
             model, ts: Date.now(), status: 'pending',
+            source: isAutoCall ? 'auto' : 'manual',
+            alignment,
+            loss_label: null, label_reason: null, label_by: null,
+            // PLAN U-5a: manajemen posisi VIRTUAL — null/0 = belum pernah direview.
+            intervention: null, managed_status: null, managed_closed_t: null, review_count: 0,
           });
-          await redisCmd('SET', 'setup_log:v1', JSON.stringify(log.slice(0, 200)));
+          await redisCmd('SET', setupLogKey, JSON.stringify(log.slice(0, 200)));
         }
       } catch (e) { console.warn('setup_log write failed:', e.message); }
     }
@@ -3848,6 +4417,7 @@ module.exports._confluenceZones = _confluenceZones;
 module.exports._formatConfluenceBlock = _formatConfluenceBlock;
 module.exports._evaluateSetups = _evaluateSetups;
 module.exports._aggSetupStats = _aggSetupStats;
+module.exports._detectLossLabel = _detectLossLabel;
 module.exports._findSwings = _findSwings;
 module.exports._classifyStructure = _classifyStructure;
 module.exports._clusterSrLevels = _clusterSrLevels;

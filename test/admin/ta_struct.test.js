@@ -444,6 +444,160 @@ test('_aggSetupStats: win-rate hanya dari TP vs SL, ambiguous tidak masuk pembag
   assert.strictEqual(empty.win_rate, null);
 });
 
+// ── PLAN U-1 (2026-07-20): loss_label, raw vs adjusted, _detectLossLabel ──────
+
+const { _detectLossLabel } = require('../../api/admin.js');
+
+// Bangun event kalender dari epoch ms target supaya _calEventMsWib(date, time_wib)
+// menghasilkan persis epochMs itu (wall-clock WIB = epochMs + 7 jam, pola sama
+// dengan api/calendar.js).
+function mkCalEvent(epochMs, currency, over = {}) {
+  const wib = new Date(epochMs + 7 * 3600000);
+  const date = `${wib.getUTCFullYear()}-${String(wib.getUTCMonth() + 1).padStart(2, '0')}-${String(wib.getUTCDate()).padStart(2, '0')}`;
+  const time_wib = `${String(wib.getUTCHours()).padStart(2, '0')}:${String(wib.getUTCMinutes()).padStart(2, '0')} WIB`;
+  return { date, time_wib, currency, impact: 'High', event: 'Test Event', ...over };
+}
+
+test('_evaluateSetups: entri lama tanpa field baru (label/source/dst) tetap tereevaluasi normal, tanpa crash', () => {
+  const old = [{ id: 'GC=F:1', symbol: 'GC=F', bias: 'bearish', entry_zone: '4030-4040', sl: '4065', tp: '3960', horizon_days: 5, ts: MS0, status: 'pending' }];
+  const candles = { 'GC=F': [
+    mkC(T0 + 3600, 4000, 4035, 3995, 4030),
+    mkC(T0 + 7200, 4030, 4070, 4025, 4060),
+  ] };
+  _evaluateSetups(old, candles, MS0 + 3 * 3600 * 1000, []); // calendarEvents kosong, seperti caller lama
+  assert.strictEqual(old[0].status, 'sl');
+  assert.strictEqual(old[0].loss_label, undefined);
+});
+
+test('_evaluateSetups: calendarEvents diabaikan (undefined) — caller lama 3-argumen tetap jalan', () => {
+  const setups = [mkSetup()];
+  const candles = { 'GC=F': [
+    mkC(T0 + 3600, 4000, 4035, 3995, 4030),
+    mkC(T0 + 7200, 4030, 4070, 4025, 4060),
+  ] };
+  _evaluateSetups(setups, candles, MS0 + 3 * 3600 * 1000); // tanpa argumen ke-4
+  assert.strictEqual(setups[0].status, 'sl');
+});
+
+test('_detectLossLabel: fundamental_shock — event High-impact currency kaki pair dalam ±2 jam dari closedT', () => {
+  const closedT = T0 + 7200;
+  const ev = mkCalEvent(closedT * 1000 + 3600000, 'USD', { event: 'NFP' }); // 1 jam setelah closed
+  const label = _detectLossLabel({ closedT, eLo: 4030, eHi: 4040, tp: 3960, bias: 'bearish', pairLabel: 'XAU/USD' }, [], [ev]);
+  assert.deepStrictEqual(label, { loss_label: 'fundamental_shock', reason: 'NFP' });
+});
+
+test('_detectLossLabel: event > 2 jam dari closedT -> tidak dianggap shock', () => {
+  const closedT = T0 + 7200;
+  const ev = mkCalEvent(closedT * 1000 + 3 * 3600000, 'USD', { event: 'NFP' }); // 3 jam
+  assert.strictEqual(_detectLossLabel({ closedT, eLo: 4030, eHi: 4040, tp: 3960, bias: 'bearish', pairLabel: 'XAU/USD' }, [], [ev]), null);
+});
+
+test('_detectLossLabel: event currency bukan kaki pair -> diabaikan', () => {
+  const closedT = T0 + 7200;
+  const ev = mkCalEvent(closedT * 1000, 'JPY', { event: 'BOJ Rate' }); // XAU/USD tidak punya leg JPY
+  assert.strictEqual(_detectLossLabel({ closedT, eLo: 4030, eHi: 4040, tp: 3960, bias: 'bearish', pairLabel: 'XAU/USD' }, [], [ev]), null);
+});
+
+test('_detectLossLabel: impact Medium/Low -> bukan shock (hanya High)', () => {
+  const closedT = T0 + 7200;
+  const ev = mkCalEvent(closedT * 1000, 'USD', { impact: 'Medium', event: 'ISM' });
+  assert.strictEqual(_detectLossLabel({ closedT, eLo: 4030, eHi: 4040, tp: 3960, bias: 'bearish', pairLabel: 'XAU/USD' }, [], [ev]), null);
+});
+
+test('_detectLossLabel: fakeout_sl — bearish, harga balik ke zona entry DAN sentuh TP asli dalam 4 jam', () => {
+  const closedT = T0;
+  const candles = [
+    mkC(closedT + 3600, 4020, 4038, 3998, 4000),  // masuk kembali ke zona [4030,4040]? h=4038>=4030 & l=3998<=4040 -> overlap
+    mkC(closedT + 7200, 4000, 4000, 3955, 3958),  // l 3955 <= tp 3960 -> TP tersentuh
+  ];
+  const label = _detectLossLabel({ closedT, eLo: 4030, eHi: 4040, tp: 3960, bias: 'bearish', pairLabel: 'XAU/USD' }, candles, []);
+  assert.strictEqual(label.loss_label, 'fakeout_sl');
+});
+
+test('_detectLossLabel: fakeout_sl — hanya reentry TANPA sentuh TP -> tidak dilabel (kriteria ketat)', () => {
+  const closedT = T0;
+  const candles = [
+    mkC(closedT + 3600, 4020, 4038, 3998, 4010), // reentry zona, tapi tidak turun ke TP
+  ];
+  assert.strictEqual(_detectLossLabel({ closedT, eLo: 4030, eHi: 4040, tp: 3960, bias: 'bearish', pairLabel: 'XAU/USD' }, candles, []), null);
+});
+
+test('_detectLossLabel: fakeout_sl — hanya sentuh TP TANPA reentry zona -> tidak dilabel', () => {
+  const closedT = T0;
+  const candles = [
+    mkC(closedT + 3600, 3970, 3975, 3950, 3955), // langsung ke TP tanpa lewat zona (gap down)
+  ];
+  assert.strictEqual(_detectLossLabel({ closedT, eLo: 4030, eHi: 4040, tp: 3960, bias: 'bearish', pairLabel: 'XAU/USD' }, candles, []), null);
+});
+
+test('_detectLossLabel: kedua kondisi terpenuhi tapi lewat 4 jam -> tidak dilabel', () => {
+  const closedT = T0;
+  const candles = [
+    mkC(closedT + 5 * 3600, 4020, 4038, 3955, 3958), // reentry + TP, tapi di jam ke-5 (>4 jam)
+  ];
+  assert.strictEqual(_detectLossLabel({ closedT, eLo: 4030, eHi: 4040, tp: 3960, bias: 'bearish', pairLabel: 'XAU/USD' }, candles, []), null);
+});
+
+test('_detectLossLabel: prioritas fundamental_shock > fakeout_sl saat kedua kondisi terpenuhi (satu label saja)', () => {
+  const closedT = T0;
+  const ev = mkCalEvent(closedT * 1000, 'USD', { event: 'FOMC' });
+  const candles = [
+    mkC(closedT + 3600, 4020, 4038, 3955, 3958), // reentry + TP juga terpenuhi
+  ];
+  const label = _detectLossLabel({ closedT, eLo: 4030, eHi: 4040, tp: 3960, bias: 'bearish', pairLabel: 'XAU/USD' }, candles, [ev]);
+  assert.strictEqual(label.loss_label, 'fundamental_shock');
+});
+
+test('_detectLossLabel: bullish mirror — reentry + TP arah berlawanan', () => {
+  const closedT = T0;
+  const candles = [
+    mkC(closedT + 3600, 3962, 3968, 3958, 3965), // reentry zona [3960,3970]
+    mkC(closedT + 7200, 3965, 4032, 3960, 4030), // h 4032 >= tp 4030
+  ];
+  const label = _detectLossLabel({ closedT, eLo: 3960, eHi: 3970, tp: 4030, bias: 'bullish', pairLabel: 'XAU/USD' }, candles, []);
+  assert.strictEqual(label.loss_label, 'fakeout_sl');
+});
+
+test('_evaluateSetups: transisi open->sl menulis loss_label dari calendarEvents (integrasi)', () => {
+  const setups = [mkSetup({ label: 'XAU/USD' })];
+  const closedSec = T0 + 7200;
+  const candles = {
+    'GC=F': [
+      mkC(T0 + 3600, 4000, 4035, 3995, 4030),   // fill
+      mkC(closedSec, 4030, 4070, 4025, 4060),   // SL
+    ],
+  };
+  const ev = mkCalEvent(closedSec * 1000, 'USD', { event: 'CPI' });
+  _evaluateSetups(setups, candles, MS0 + 3 * 3600 * 1000, [ev]);
+  assert.strictEqual(setups[0].status, 'sl');
+  assert.strictEqual(setups[0].loss_label, 'fundamental_shock');
+  assert.strictEqual(setups[0].label_reason, 'CPI');
+  assert.strictEqual(setups[0].label_by, 'auto');
+});
+
+test('_aggSetupStats: raw vs adjusted berbeda saat ada sl berlabel + breakdown loss_causes', () => {
+  const arr = [
+    { status: 'tp' }, { status: 'tp' },
+    { status: 'sl' }, // teknikal (tanpa label)
+    { status: 'sl', loss_label: 'fundamental_shock' },
+    { status: 'sl', loss_label: 'fakeout_sl' },
+  ];
+  const a = _aggSetupStats(arr);
+  assert.strictEqual(a.tp, 2);
+  assert.strictEqual(a.sl, 3);
+  assert.strictEqual(a.win_rate, 40);          // raw: 2/(2+3)
+  assert.strictEqual(a.win_rate_raw, 40);
+  assert.strictEqual(a.win_rate_adjusted, 67); // adjusted: sl berlabel dikeluarkan -> 2/(2+1)
+  assert.deepStrictEqual(a.loss_causes, { teknikal: 1, fundamental_shock: 1, fakeout_sl: 1 });
+});
+
+test('_aggSetupStats: canceled tidak masuk pembagi win-rate manapun (siap untuk U-3)', () => {
+  const arr = [{ status: 'tp' }, { status: 'sl' }, { status: 'canceled' }, { status: 'canceled' }];
+  const a = _aggSetupStats(arr);
+  assert.strictEqual(a.canceled, 2);
+  assert.strictEqual(a.win_rate, 50); // tp/(tp+sl) = 1/2, canceled tidak dihitung
+});
+
 // ── _formatTrackRecordBlock (Plan I item 2, session 180) ──────────────────────
 
 test('_formatTrackRecordBlock: sampel < 5 (tp+sl) → string kosong, jangan disuap ke AI', () => {

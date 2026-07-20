@@ -455,8 +455,18 @@ async function pollNews() {
       const ts = Date.parse(item.pubDate);
       if (Number.isFinite(ts) && ts > maxTs) maxTs = ts;
       const cat = NewsCat.detectCat(item.title);
-      if (!isHighImpactCategory(cat)) continue;
       const guid = item.guid || item.link;
+
+      // PLAN U-5b (2026-07-20): kandidat review posisi — market-moving ATAU
+      // geopolitical, DI LUAR gate isHighImpactCategory di bawah (yang cuma
+      // market-moving, khusus alert Q-4). Best-effort: kegagalan di sini TIDAK
+      // BOLEH mengganggu/mengubah alur alert existing setelahnya.
+      if (guid) {
+        try { await handlePosReviewCandidate({ guid, title: item.title, pubDate: item.pubDate, cat }); }
+        catch (e) { console.warn('daemon: U-5b handlePosReviewCandidate gagal:', e.message); }
+      }
+
+      if (!isHighImpactCategory(cat)) continue;
       if (!guid) continue;
       const dedupOk = await redisCmd('SET', `news_alert_sent:${guid}`, '1', 'EX', '172800', 'NX');
       if (dedupOk !== 'OK') continue; // sudah pernah dialert
@@ -470,7 +480,216 @@ async function pollNews() {
         await redisCmd('SET', 'daemon_news_cursor', String(newsCursorMs), 'EX', '172800');
       }
     }
+    // PLAN U-5b: antrian recheck geopolitical UNCONFIRMED — dicoba tiap tick,
+    // bukan cuma saat item baru datang (korroborasi bisa muncul di poll berikutnya).
+    await processPosReviewRecheckQueue().catch(e => console.warn('daemon: U-5b processPosReviewRecheckQueue gagal:', e.message));
   } catch (e) { console.warn('daemon: pollNews gagal:', e.message); }
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// PLAN U-5b (2026-07-20): trigger review posisi VIRTUAL event-driven + heuristik
+// UNCONFIRMED. Kunci AI HANYA di Vercel (api/admin.js?action=position_review) —
+// daemon di sini TIDAK PERNAH memanggil provider AI langsung, hanya memicu
+// endpoint dengan CRON_SECRET (pola sama U-3). DILARANG provider AI baru.
+// ══════════════════════════════════════════════════════════════════════════
+
+// Map keyword kecil per currency — LOKAL di daemon SENGAJA (bukan newscat.js,
+// yang SOT-nya kategori berita, bukan currency; ATURAN.md §4.9 tidak dilanggar
+// karena ini bukan keyword kategori). Currency yang tidak match satu pun -> skip
+// (fail-closed, hemat budget AI — langkah 2 plan U-5b).
+const POSREVIEW_CURRENCY_KEYWORDS = {
+  USD: ['fed', 'fomc', 'dollar', 'usd', 'powell', 'nonfarm', 'nfp', 'treasury'],
+  EUR: ['ecb', 'euro', 'eur', 'lagarde', 'eurozone'],
+  GBP: ['boe', 'pound', 'gbp', 'sterling', 'bailey'],
+  JPY: ['boj', 'yen', 'jpy', 'ueda'],
+  AUD: ['rba', 'aussie', 'aud', 'australia'],
+  CAD: ['boc', 'loonie', 'cad', 'canada'],
+  CHF: ['snb', 'franc', 'chf', 'swiss'],
+  NZD: ['rbnz', 'kiwi', 'nzd', 'zealand'],
+  XAU: ['gold', 'xau', 'bullion'],
+};
+
+function detectCurrencyLegs(title) {
+  const t = String(title || '').toLowerCase();
+  const legs = [];
+  for (const [ccy, kws] of Object.entries(POSREVIEW_CURRENCY_KEYWORDS)) {
+    if (kws.some(kw => t.includes(kw))) legs.push(ccy);
+  }
+  return legs;
+}
+
+// Duplikasi SADAR dari api/_position_review.js isCorroborated (Docker vps/
+// terisolasi dari build context app utama, lihat catatan kepala file — pola
+// sama newscat.js/YAHOO_TO_DERIV_SYMBOL). Behavioral test (bukan byte-diff,
+// karena function ini menyatu di file besar) menjaga dua sisi tetap sinkron —
+// lihat test/vps/position_review.test.js.
+// - kategori 'geopolitical': butuh >=1 item LAIN (guid beda) dalam +-30 menit
+//   dengan overlap >=2 token signifikan (lowercase, buang stopword, token >3 huruf).
+// - 'market-moving' (data/bank sentral terjadwal) = corroborated by default.
+const POSREVIEW_STOPWORDS = new Set(['dengan', 'yang', 'untuk', 'dari', 'akan', 'pada', 'dalam', 'oleh',
+  'atau', 'juga', 'masih', 'sudah', 'telah', 'saat', 'para', 'ini', 'itu', 'the', 'and', 'for',
+  'with', 'from', 'that', 'this', 'have', 'has', 'been', 'after', 'before', 'over', 'into']);
+
+function posReviewSignificantTokens(title) {
+  return String(title || '').toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter(t => t.length > 3 && !POSREVIEW_STOPWORDS.has(t));
+}
+
+function isCorroborated(item, recentItems) {
+  if (!item) return false;
+  if (item.cat === 'market-moving') return true;
+  if (item.cat !== 'geopolitical') return false;
+  const itemMs = Date.parse(item.pubDate);
+  if (!Number.isFinite(itemMs)) return false;
+  const itemTokens = new Set(posReviewSignificantTokens(item.title));
+  if (itemTokens.size === 0) return false;
+  const WINDOW_MS = 30 * 60 * 1000;
+  for (const other of recentItems || []) {
+    if (!other || other === item) continue;
+    const otherGuid = other.guid || other.link;
+    const itemGuid = item.guid || item.link;
+    if (otherGuid && itemGuid && otherGuid === itemGuid) continue; // item sama, bukan korroborasi
+    const otherMs = Date.parse(other.pubDate);
+    if (!Number.isFinite(otherMs) || Math.abs(otherMs - itemMs) > WINDOW_MS) continue;
+    const otherTokens = posReviewSignificantTokens(other.title);
+    let overlap = 0;
+    for (const t of otherTokens) { if (itemTokens.has(t)) overlap++; }
+    if (overlap >= 2) return true;
+  }
+  return false;
+}
+
+// Buffer berita ringan di memori (bukan Redis — hemat budget) supaya isCorroborated
+// bisa membandingkan item baru dengan item lain yang baru lewat, TERMASUK yang
+// sudah lewat gate isHighImpactCategory (geopolitical). Window sedikit lebih
+// lebar dari window korroborasi 30 menit supaya tidak memotong tepi.
+const POSREVIEW_NEWS_BUFFER_MS = 35 * 60 * 1000;
+let posReviewNewsBuffer = [];
+
+function prunePosReviewNewsBuffer(nowMs) {
+  posReviewNewsBuffer = posReviewNewsBuffer.filter(it => {
+    const ms = Date.parse(it.pubDate);
+    return Number.isFinite(ms) && nowMs - ms <= POSREVIEW_NEWS_BUFFER_MS;
+  });
+}
+
+// Antrian recheck geopolitical UNCONFIRMED (memori, restart daemon = hilang —
+// DITERIMA per Edge Case U-5: "paling apes satu review hilang, tidak pernah
+// dobel", cooldown tetap di Redis). >30 menit sejak pubDate item asal -> hangus
+// permanen (langkah 4 plan U-5b).
+const POSREVIEW_RECHECK_WINDOW_MS = 30 * 60 * 1000;
+let posReviewRecheckQueue = [];
+
+async function processPosReviewRecheckQueue() {
+  if (!posReviewRecheckQueue.length) return;
+  const now = Date.now();
+  const stillQueued = [];
+  for (const q of posReviewRecheckQueue) {
+    const ageMs = now - Date.parse(q.pubDate);
+    if (!Number.isFinite(ageMs) || ageMs > POSREVIEW_RECHECK_WINDOW_MS) continue; // hangus, diskon permanen
+    if (isCorroborated(q, posReviewNewsBuffer)) {
+      await tryTriggerPosReview(q, q.legs, true);
+    } else {
+      stillQueued.push(q);
+    }
+  }
+  posReviewRecheckQueue = stillQueued;
+}
+
+// Guard budget + eksekusi trigger — dipanggil setelah kandidat lolos filter
+// currency + (corroborated ATAU market-moving). GET setup_log_auto:v1 HANYA di sini
+// (bukan tiap poll), pola hemat sama dengan checkHardNewsSkip (langkah 3).
+// PLAN U-7 (REVISI VISIBILITAS 2026-07-20): manajemen posisi HANYA untuk setup
+// eksperimen auto-entry — dulu baca setup_log:v1 (ditulis U-5b sebelum revisi
+// visibilitas landing), sekarang setup_log_auto:v1 (setup manual pengguna TIDAK
+// PERNAH direview/diintervensi mesin).
+async function tryTriggerPosReview(newsItem, legs, corroborated) {
+  if (redisGuard.isDegraded()) return;
+  if (!isFxMarketOpen()) return;
+  if (!CRON_SECRET) return;
+
+  let raw;
+  try { raw = await redisCmd('GET', 'setup_log_auto:v1'); } catch (e) { return; }
+  let log = [];
+  try { log = raw ? JSON.parse(raw) : []; } catch (e) { return; }
+  if (!Array.isArray(log)) return;
+
+  const candidates = log.filter(s => s && s.status === 'open' && legsFromLabel(s.label).some(l => legs.includes(l)));
+  if (!candidates.length) return;
+
+  const cooldownSecs = parseInt(process.env.POSREVIEW_COOLDOWN_SECS || '21600', 10);
+  const dailyCap = parseInt(process.env.POSREVIEW_DAILY_CAP || '3', 10);
+  const dayKey = `posreview_daily:${new Date().toISOString().slice(0, 10)}`;
+
+  for (const st of candidates) {
+    // Cooldown per posisi (Lapis 5.1) — satu review per posisi per window, mencegah
+    // burst headline nyaris bersamaan memicu review dobel (Edge Case U-5).
+    const got = await redisCmd('SET', `posreview_cd:${st.id}`, '1', 'NX', 'EX', String(cooldownSecs));
+    if (got !== 'OK') continue;
+
+    // Cap harian global (Lapis 5.2) — dicek PER call (bukan per trigger), supaya
+    // satu headline yang match banyak posisi tidak melompati cap.
+    const count = await redisCmd('INCR', dayKey);
+    if (count === 1) redisCmd('EXPIRE', dayKey, '90000').catch(() => {});
+    if (count != null && count > dailyCap) {
+      console.log(`daemon: U-5b posreview daily cap tercapai (${count}/${dailyCap}) — skip ${st.id}`);
+      continue;
+    }
+
+    await triggerPositionReview({ id: st.id, trigger: { guid: newsItem.guid, title: newsItem.title, cat: newsItem.cat, corroborated } });
+  }
+}
+
+// Client timeout WAJIB > maxDuration server (api/admin.js: 60s, vercel.json) —
+// pelajaran S161. TANPA retry agresif (langkah 6): review telat lebih baik
+// daripada dobel (beda filosofi dari triggerWithRetry Q-6/U-3).
+const POSREVIEW_CLIENT_TIMEOUT_MS = 65000;
+
+async function triggerPositionReview(body) {
+  if (!CRON_SECRET) return;
+  try {
+    const r = await fetch(`${APP_BASE_URL}/api/admin?action=position_review`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-cron-secret': CRON_SECRET },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(POSREVIEW_CLIENT_TIMEOUT_MS),
+    });
+    console.log(`daemon: U-5b position_review ${body.id} -> HTTP ${r.status}`);
+  } catch (e) {
+    console.warn(`daemon: U-5b position_review ${body.id} gagal:`, e.message);
+  }
+}
+
+// Entry point dipanggil per item news_history (market-moving/geopolitical saja,
+// lihat pollNews). Deteksi currency -> guard market/degraded -> korroborasi ->
+// trigger langsung (market-moving/corroborated) atau antre recheck (geopolitical
+// unconfirmed, langkah 4).
+async function handlePosReviewCandidate(newsItem) {
+  const now = Date.now();
+  posReviewNewsBuffer.push(newsItem);
+  prunePosReviewNewsBuffer(now);
+
+  const legs = detectCurrencyLegs(newsItem.title);
+  if (!legs.length) return; // fail-closed, tidak match currency apa pun
+
+  if (redisGuard.isDegraded()) return;
+  if (!isFxMarketOpen()) return;
+
+  const corroborated = isCorroborated(newsItem, posReviewNewsBuffer);
+  if (newsItem.cat === 'geopolitical' && !corroborated) {
+    try {
+      await redisCmd('LPUSH', 'posreview_skip_log', JSON.stringify({ ts: now, guid: newsItem.guid, title: newsItem.title, reason: 'unconfirmed' }));
+      await redisCmd('LTRIM', 'posreview_skip_log', '0', '49');
+    } catch (e) { /* opsional, gagal log tidak boleh menggagalkan antrian recheck */ }
+    if (!posReviewRecheckQueue.some(q => q.guid === newsItem.guid)) {
+      posReviewRecheckQueue.push({ ...newsItem, legs });
+    }
+    return;
+  }
+
+  await tryTriggerPosReview(newsItem, legs, corroborated);
 }
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -619,6 +838,257 @@ function startScheduler() {
   // ohlcv-sync.yml (keduanya sengaja jalan paralel selama masa observasi Q-6).
   cron.schedule('5 * * * *', () => triggerWithRetry('/api/admin?action=ohlcv_sync').catch(() => {}));
   console.log('daemon: Q-6 scheduler aktif (digest 3x/hari + ohlcv_sync tiap jam, paralel GH Actions)');
+
+  // U-3 (2026-07-20, Plan U): auto-entry virtual — menit ke-15 supaya tidak
+  // tabrakan waktu dengan slot digest (00:00/07:00/12:30) yang bisa menelan
+  // slot auto-entry via dedup 30 menit ohlcv_analyze (api/admin.js).
+  for (const hour of AUTO_ENTRY_HOURS_UTC) {
+    cron.schedule(`15 ${hour} * * *`, () => runAutoEntryCycle().catch(e => console.warn('daemon: runAutoEntryCycle gagal:', e.message)));
+  }
+  if (AUTO_ENTRY_HOURS_UTC.length) {
+    console.log(`daemon: U-3 auto-entry aktif — pair ${AUTO_ENTRY_PAIRS.join(',')} @ jam ${AUTO_ENTRY_HOURS_UTC.join(',')} UTC`);
+  }
+  if (Number.isFinite(AUTO_CONSISTENCY_HOUR_UTC)) {
+    cron.schedule(`45 ${AUTO_CONSISTENCY_HOUR_UTC} * * *`, () => runConsistencyCheck().catch(e => console.warn('daemon: runConsistencyCheck gagal:', e.message)));
+    console.log(`daemon: U-3 uji konsistensi aktif — pair ${AUTO_ENTRY_PAIRS[0] || '(kosong)'} @ jam ${AUTO_CONSISTENCY_HOUR_UTC}:45 UTC`);
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// PLAN U-3 (2026-07-20): scheduler auto-entry virtual (paper trading di
+// setup_log:v1 — TANPA API broker, TANPA uang/demo riil) + filter berita
+// keras + sub-riset latensi calendar_v1 + uji konsistensi LLM.
+//
+// Prasyarat U-2 (flag `auto=1` di ohlcv_analyze yang menandai source:'auto'
+// di setup_log) BELUM SELESAI saat modul ini ditulis — lihat komentar
+// api/admin.js sekitar penulisan setup_log ("flag auto=1 ... belum ada di
+// paket ini"). Desain di sini SENGAJA fail-forward: daemon tetap kirim
+// `auto=1` di tiap panggilan; backend yang belum paham param itu cukup
+// mengabaikannya (setup tetap tercatat source:'manual' sampai U-2 menyusul).
+// Begitu U-2 landing, marking source:'auto' otomatis aktif TANPA ubah baris
+// di bawah — tidak perlu menunggu U-2 untuk menulis paket ini.
+//
+// LAPIS 2 (auto-cancel virtual) DI-DESCOPE untuk rilis ini: sub-riset wajib
+// (ukur median latensi field `actual` calendar_v1 dari >=3 event high-impact
+// nyata, lihat plan §U-3 langkah 3a) TIDAK BISA dituntaskan sinkron dalam
+// satu sesi kerja — dicek langsung ke calendar_v1 produksi (read-only) saat
+// modul ini ditulis (2026-07-20 01:xx WIB): event high-impact berikutnya
+// (CAD Inflation Rate YoY) baru jatuh 2026-07-20 19:30 WIB, >18 jam dari
+// waktu penulisan. Sesuai klausul plan sendiri ("kalau median >30 menit,
+// descope Lapis 2, jangan dipaksakan") — data yang TIDAK BISA diverifikasi
+// diperlakukan sama dengan "belum terbukti aman", jadi Lapis 2 tidak
+// diaktifkan di paket ini. `pollCalendarLatency` di bawah tetap dibangun &
+// jalan begitu daemon live, supaya sesi berikutnya bisa memutuskan dari data
+// asli (>=3 sampel `calendar_actual_latency_log:v1`), bukan tebakan.
+// ══════════════════════════════════════════════════════════════════════════
+
+// symbol/label Yahoo yang dipahami ohlcv_analyze (api/admin.js), di-key pakai
+// penamaan Deriv (konsisten dengan YAHOO_TO_DERIV_SYMBOL Q-3 di atas) supaya
+// env var AUTO_ENTRY_PAIRS satu bahasa dengan daemon ini. XAU sengaja TIDAK
+// ada di YAHOO_TO_DERIV_SYMBOL (Q-3 streaming tidak cover XAU/USD), jadi peta
+// ini terpisah, bukan reuse.
+const AUTO_ENTRY_SYMBOL_MAP = {
+  frxXAUUSD: { symbol: 'GC=F',     label: 'XAU/USD' },
+  frxEURUSD: { symbol: 'EURUSD=X', label: 'EUR/USD' },
+  frxGBPUSD: { symbol: 'GBPUSD=X', label: 'GBP/USD' },
+  frxUSDJPY: { symbol: 'USDJPY=X', label: 'USD/JPY' },
+  frxAUDUSD: { symbol: 'AUDUSD=X', label: 'AUD/USD' },
+  frxUSDCAD: { symbol: 'USDCAD=X', label: 'USD/CAD' },
+  frxUSDCHF: { symbol: 'USDCHF=X', label: 'USD/CHF' },
+  frxNZDUSD: { symbol: 'NZDUSD=X', label: 'NZD/USD' },
+};
+
+const AUTO_ENTRY_PAIRS = (process.env.AUTO_ENTRY_PAIRS || 'frxXAUUSD,frxEURUSD')
+  .split(',').map(s => s.trim()).filter(Boolean);
+const AUTO_ENTRY_HOURS_UTC = (process.env.AUTO_ENTRY_HOURS_UTC || '8,13')
+  .split(',').map(s => parseInt(s.trim(), 10)).filter(Number.isFinite);
+const AUTO_CONSISTENCY_HOUR_UTC = parseInt(process.env.AUTO_CONSISTENCY_HOUR_UTC || '10', 10);
+const HARD_NEWS_WINDOW_MS = 4 * 3600 * 1000;
+const AUTO_SKIP_LOG_CAP = 200;
+const CONSISTENCY_LOG_CAP = 60;
+const CALENDAR_LATENCY_LOG_CAP = 100;
+const CALENDAR_LATENCY_POLL_MS = 10 * 60 * 1000;
+const CALENDAR_LATENCY_CUTOFF_MS = 4 * 3600 * 1000; // actual masih kosong setelah ini = berhenti dicek, bukan sampel valid
+
+function legsFromLabel(label) {
+  return String(label || '').toUpperCase().split('/').map(s => s.trim()).filter(Boolean);
+}
+
+// Duplikasi SADAR dari _calEventMsWib (api/admin.js) — pure function, aman
+// diduplikasi tanpa require lintas folder (vps/ Docker build terisolasi,
+// lihat catatan kepala file). Event kalender selalu WIB (+07:00).
+function calEventMsWib(dateStr, timeWib) {
+  if (!dateStr || !timeWib || timeWib === 'Tentative') return null;
+  const m = /^(\d{2}):(\d{2})/.exec(timeWib);
+  if (!m) return null;
+  const t = new Date(`${dateStr}T${m[1]}:${m[2]}:00+07:00`).getTime();
+  return isNaN(t) ? null : t;
+}
+
+// Event High-impact pertama untuk currency di `legs` yang jatuh dalam
+// (nowMs, nowMs+windowMs] — dipakai Lapis 1 (filter berita keras).
+function findHardNewsEvent(events, legs, nowMs, windowMs = HARD_NEWS_WINDOW_MS) {
+  if (!Array.isArray(events) || !Array.isArray(legs) || legs.length === 0) return null;
+  for (const e of events) {
+    if (!e || e.impact !== 'High' || !legs.includes(e.currency)) continue;
+    const ms = calEventMsWib(e.date, e.time_wib);
+    if (ms == null) continue;
+    if (ms > nowMs && ms <= nowMs + windowMs) return e;
+  }
+  return null;
+}
+
+function firstNumber(str) {
+  const m = String(str == null ? '' : str).match(/-?[\d.]+/);
+  return m ? parseFloat(m[0]) : null;
+}
+
+// Toleransi 0.5% relatif antar 3x panggilan — cukup ketat mendeteksi level
+// yang benar-benar melompat, cukup longgar untuk pembulatan wajar.
+const CONSISTENCY_TOLERANCE_PCT = 0.005;
+
+// values: array angka/NaN dari 3x panggilan (mis. firstNumber(entry_zone) tiap call).
+// null = tidak cukup data buat dibandingkan (seharusnya tidak terjadi, selalu 3 call).
+function levelsWithinTolerance(values, tolerancePct = CONSISTENCY_TOLERANCE_PCT) {
+  const nums = values.filter(n => Number.isFinite(n));
+  if (nums.length === 0) return true; // semua call sepakat TIDAK ada level (no-trade konsisten)
+  if (nums.length !== values.length) return false; // sebagian ada level, sebagian tidak = tidak konsisten
+  if (nums.length < 2) return null;
+  const min = Math.min(...nums), max = Math.max(...nums);
+  const mean = nums.reduce((a, b) => a + b, 0) / nums.length;
+  if (mean === 0) return min === max;
+  return (max - min) / Math.abs(mean) <= tolerancePct;
+}
+
+// calls: array hasil 3x panggilan { bias, entry_zone, sl, tp } ATAU null (call gagal).
+function computeConsistency(calls) {
+  const biases = calls.map(c => (c && c.bias) || null);
+  const biasIdentical = biases.every(b => b != null) && biases.every(b => b === biases[0]);
+  const entryTol = levelsWithinTolerance(calls.map(c => firstNumber(c && c.entry_zone)));
+  const slTol    = levelsWithinTolerance(calls.map(c => firstNumber(c && c.sl)));
+  const tpTol    = levelsWithinTolerance(calls.map(c => firstNumber(c && c.tp)));
+  const known = [entryTol, slTol, tpTol].filter(t => t !== null);
+  const levelsWithin = known.length ? known.every(Boolean) : null;
+  return { bias_identical: biasIdentical, levels_within_tolerance: levelsWithin };
+}
+
+async function fetchMergedCalendarEvents() {
+  const [rawThis, rawNext] = await Promise.all([
+    redisCmd('GET', 'calendar_v1'),
+    redisCmd('GET', 'calendar_next_v1'),
+  ]);
+  let calThis = null, calNext = null;
+  try { calThis = rawThis ? JSON.parse(rawThis) : null; } catch (e) { /* biarkan null, jangan gagalkan pemanggil */ }
+  try { calNext = rawNext ? JSON.parse(rawNext) : null; } catch (e) { /* sama */ }
+  return [...((calThis && calThis.events) || []), ...((calNext && calNext.events) || [])];
+}
+
+// Lapis 1 — filter berita keras: null = aman lanjut generate, object = SKIP
+// (alasan sudah ditulis ke auto_skip_log). Kalau CEK-nya sendiri gagal (Redis
+// error dll), fail-open ke arah GENERATE (bukan blokir) — filter berita
+// adalah lapisan tambahan di atas fungsi inti, sama semangatnya dengan
+// getZoneData/checkPriceZonesFor di atas yang skip diam-diam saat data
+// pendukung tidak tersedia.
+async function checkHardNewsSkip(pair, label) {
+  try {
+    const events = await fetchMergedCalendarEvents();
+    const legs = legsFromLabel(label);
+    const hit = findHardNewsEvent(events, legs, Date.now());
+    if (!hit) return null;
+    const entry = {
+      ts: Date.now(), pair, label, reason: 'hard_news',
+      event: hit.event, currency: hit.currency, event_time_wib: `${hit.date} ${hit.time_wib}`,
+    };
+    await redisCmd('LPUSH', 'auto_skip_log', JSON.stringify(entry));
+    await redisCmd('LTRIM', 'auto_skip_log', '0', String(AUTO_SKIP_LOG_CAP - 1));
+    return entry;
+  } catch (e) {
+    console.warn(`daemon: checkHardNewsSkip ${pair} gagal (fail-open, tetap generate):`, e.message);
+    return null;
+  }
+}
+
+async function runAutoEntryCycle() {
+  if (!CRON_SECRET) { console.warn('daemon: CRON_SECRET kosong, U-3 auto-entry di-skip'); return; }
+  if (!isFxMarketOpen()) return;
+  for (const pair of AUTO_ENTRY_PAIRS) {
+    const map = AUTO_ENTRY_SYMBOL_MAP[pair];
+    if (!map) { console.warn(`daemon: AUTO_ENTRY_PAIRS berisi pair tak dikenal "${pair}", di-skip`); continue; }
+    const skip = await checkHardNewsSkip(pair, map.label);
+    if (skip) { console.log(`daemon: U-3 auto-entry ${pair} di-skip — hard news "${skip.event}" (${skip.event_time_wib})`); continue; }
+    const path = `/api/admin?action=ohlcv_analyze&symbol=${encodeURIComponent(map.symbol)}&label=${encodeURIComponent(map.label)}&auto=1`;
+    await triggerWithRetry(path);
+  }
+}
+
+// Sub-riset 3a — instrumentasi latensi field `actual` calendar_v1. Poll
+// ringan (budget: 2 GET/10 menit = ~288 command/hari), murni observasi, TIDAK
+// memicu aksi apa pun (Lapis 2 sengaja di-descope, lihat komentar besar di
+// atas). SET NX per event jadi penanda "sudah tercatat" supaya event yang
+// sama tidak dobel-log di poll berikutnya.
+async function pollCalendarLatency() {
+  try {
+    const events = await fetchMergedCalendarEvents();
+    const now = Date.now();
+    for (const e of events) {
+      if (!e || e.impact !== 'High') continue;
+      const ms = calEventMsWib(e.date, e.time_wib);
+      if (ms == null) continue;
+      const age = now - ms;
+      if (age < 0 || age > CALENDAR_LATENCY_CUTOFF_MS) continue; // belum rilis, atau lewat jendela observasi
+      const isFilled = e.actual !== null && e.actual !== undefined && e.actual !== '';
+      if (!isFilled) continue; // dicek lagi di poll berikutnya s/d cutoff
+      const seenKey = `calendar_latency_seen:${e.date}|${e.time_wib}|${e.currency}|${e.event}`;
+      const marked = await redisCmd('SET', seenKey, '1', 'NX', 'EX', String(Math.ceil(CALENDAR_LATENCY_CUTOFF_MS / 1000) + 3600));
+      if (marked !== 'OK') continue; // sudah pernah dicatat
+      const sample = { ts: now, event: e.event, currency: e.currency, scheduled_ms: ms, latency_ms: age };
+      await redisCmd('LPUSH', 'calendar_actual_latency_log:v1', JSON.stringify(sample));
+      await redisCmd('LTRIM', 'calendar_actual_latency_log:v1', '0', String(CALENDAR_LATENCY_LOG_CAP - 1));
+      console.log(`daemon: sub-riset U-3 — actual "${e.event}" (${e.currency}) terisi ${Math.round(age / 60000)} menit setelah rilis`);
+    }
+  } catch (e) { console.warn('daemon: pollCalendarLatency gagal:', e.message); }
+}
+
+async function fetchJsonWithTimeout(path, timeoutMs = 55000) {
+  if (!CRON_SECRET) return null;
+  try {
+    const r = await fetch(`${APP_BASE_URL}${path}`, {
+      headers: { 'x-cron-secret': CRON_SECRET },
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    if (!r.ok) { console.warn(`daemon: fetchJsonWithTimeout ${path} -> HTTP ${r.status}`); return null; }
+    return await r.json();
+  } catch (e) { console.warn(`daemon: fetchJsonWithTimeout ${path} gagal:`, e.message); return null; }
+}
+
+const CONSISTENCY_CALL_GAP_MS = 5000; // jeda antar 3x panggilan berturut
+
+// Uji konsistensi LLM — 3x panggil ohlcv_analyze pair yang sama via
+// `test_deepseek=1` (SAMA model dengan primary produksi 'deepseek-v4-flash',
+// lihat api/admin.js sekitar testDeepseekOnly) dalam mode isDiagnosticOnly
+// (TIDAK menulis cache produksi/setup_log — jalur existing, bukan modifikasi
+// baru). 1x/hari, pair pertama dari AUTO_ENTRY_PAIRS.
+async function runConsistencyCheck() {
+  if (!CRON_SECRET) { console.warn('daemon: CRON_SECRET kosong, U-3 uji konsistensi di-skip'); return; }
+  if (!isFxMarketOpen()) return;
+  const pair = AUTO_ENTRY_PAIRS[0];
+  const map = pair && AUTO_ENTRY_SYMBOL_MAP[pair];
+  if (!map) { console.warn('daemon: U-3 uji konsistensi — AUTO_ENTRY_PAIRS kosong/tak dikenal, di-skip'); return; }
+  const path = `/api/admin?action=ohlcv_analyze&symbol=${encodeURIComponent(map.symbol)}&label=${encodeURIComponent(map.label)}&test_deepseek=1`;
+  const calls = [];
+  for (let i = 0; i < 3; i++) {
+    const json = await fetchJsonWithTimeout(path);
+    const s = json && json.structured;
+    calls.push(s ? { bias: s.bias ?? null, entry_zone: s.entry_zone ?? null, sl: s.sl ?? null, tp: s.tp ?? null } : null);
+    if (i < 2) await new Promise(r => setTimeout(r, CONSISTENCY_CALL_GAP_MS));
+  }
+  const { bias_identical, levels_within_tolerance } = computeConsistency(calls);
+  const entry = { ts: Date.now(), pair, label: map.label, calls, bias_identical, levels_within_tolerance };
+  try {
+    await redisCmd('LPUSH', 'consistency_log:v1', JSON.stringify(entry));
+    await redisCmd('LTRIM', 'consistency_log:v1', '0', String(CONSISTENCY_LOG_CAP - 1));
+    console.log(`daemon: U-3 uji konsistensi ${pair} — bias_identical=${bias_identical} levels_within_tolerance=${levels_within_tolerance}`);
+  } catch (e) { console.warn('daemon: gagal tulis consistency_log:v1:', e.message); }
 }
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -705,6 +1175,9 @@ function startHttpServer() {
       ws_last_activity_age_s: lastWsActivityAt ? Math.round((Date.now() - lastWsActivityAt) / 1000) : null,
       redis_guard: redisGuard.state(),
       last_supervisor_heal_at: lastSupervisorHealAt,
+      // U-3 observability — Lapis 2 (auto-cancel) SENGAJA tidak ada di sini,
+      // di-descope (lihat komentar besar U-3 di atas).
+      auto_entry: { pairs: AUTO_ENTRY_PAIRS, hours_utc: AUTO_ENTRY_HOURS_UTC, consistency_hour_utc: AUTO_CONSISTENCY_HOUR_UTC },
     }));
   }).listen(PORT, '0.0.0.0', () => {
     console.log(`daemon: HTTP server listening on 0.0.0.0:${PORT}`);
@@ -722,6 +1195,9 @@ function main() {
   setInterval(() => supervisorTick().catch(() => {}), SUPERVISOR_INTERVAL_MS);
   // Q-5 TIDAK pakai timer sendiri lagi — dipicu langsung dari handleOhlcvUpdate
   // (event-driven, lihat komentar di atas maybeCheckPriceZone).
+  // U-3 sub-riset 3a: poll murni observasi, tidak butuh CRON_SECRET (baca
+  // Redis langsung, bukan HTTP) — jalan walau scheduler Q-6 di atas di-skip.
+  setInterval(() => pollCalendarLatency().catch(() => {}), CALENDAR_LATENCY_POLL_MS);
   startScheduler();
 }
 
@@ -732,4 +1208,13 @@ module.exports = {
   YAHOO_TO_DERIV_SYMBOL, DERIV_TO_YAHOO_SYMBOL,
   // Self-healing (pure/testable):
   createRedisGuard, shouldForceReconnect, isFxMarketOpen, newestCandleEpoch, isCandleStale,
+  // U-3 (pure/testable):
+  legsFromLabel, calEventMsWib, findHardNewsEvent, firstNumber, levelsWithinTolerance,
+  computeConsistency, AUTO_ENTRY_SYMBOL_MAP, AUTO_ENTRY_PAIRS, AUTO_ENTRY_HOURS_UTC,
+  // U-3 (async, di-export untuk simulasi lokal manual — bukan dipakai node:test):
+  checkHardNewsSkip, runAutoEntryCycle, runConsistencyCheck, pollCalendarLatency,
+  // U-5b (pure/testable):
+  detectCurrencyLegs, isCorroborated, posReviewSignificantTokens, POSREVIEW_CURRENCY_KEYWORDS,
+  // U-5b (async, di-export untuk simulasi lokal manual — bukan dipakai node:test):
+  handlePosReviewCandidate, tryTriggerPosReview, triggerPositionReview, processPosReviewRecheckQueue,
 };
