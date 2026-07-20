@@ -105,10 +105,13 @@ Entri yang melanggar = salah tempat, wajib dipindah.
   lain kalau tidak diperiksa saat menambah fitur lambat. (S161)
 - **Env var Sensitive di Vercel selalu terbaca kosong via `vercel env ls/pull`.** Itu bukan
   bukti var tidak ter-set — verifikasi harus FUNGSIONAL (call kecil yang memakai key-nya).
-  (S163+, terbukti lagi di Plan N saat konfirmasi nama var aktual; terbukti LAGI Plan U-6
-  2026-07-20 — nilai `CRON_SECRET` di `.env.local` tidak match produksi, call `auto=1` uji
-  senyap jatuh diam-diam ke jalur publik alih-alih error — verifikasi kredensial produksi
-  WAJIB dari dashboard Vercel, bukan file lokal manapun)
+  (S163+, terbukti lagi di Plan N saat konfirmasi nama var aktual)
+- **File `.env*` bisa menyimpan value dengan tanda kutip literal di sekitarnya** (`KEY="isi"`)
+  — `.trim()` saja tidak menghapus kutip itu, cuma whitespace. Kalau value dipakai sebagai
+  header/token ke request nyata, kutip ikut terkirim dan diam-diam gagal match tanpa error
+  jelas (bukan 401, cuma jatuh ke jalur tanpa-auth). Selalu strip kutip eksplisit saat parsing
+  manual file env di luar dotenv. (Plan U-6, 2026-07-20 — call `auto=1` uji senyap sempat
+  false-negative karena ini sebelum ketahuan & diperbaiki)
 - **PWA bisa nyangkut di versi lama berhari-hari.** Auto-reload hanya terpicu perubahan byte
   `sw.js`; fix `index.html`-only tidak pernah sampai ke device yang tidak di-force-close —
   sebelum menyimpulkan "belum difix", pastikan versi yang dilihat user memang versi terbaru.
