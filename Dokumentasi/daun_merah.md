@@ -11,11 +11,24 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-07-20 (Session 201 — Plan U: Auto-Entry Virtual (Fase Tes) + Konteks AI + Integritas Pembelajaran)
+> **Last updated:** 2026-07-20 (Session 202 — Plan U-3 lanjutan: cegah posisi virtual auto-entry menumpuk per symbol)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 202 (2026-07-20) — Plan U-3 lanjutan: cegah posisi virtual auto-entry menumpuk per symbol
+
+**Konteks:** Diskusi user pasca-U-6 menemukan celah desain: dedup lama di `ohlcvAnalyzeHandler` (`api/admin.js`) cuma skip kalau entry_zone+SL+TP **persis identik** dengan setup pending/open yang sudah ada — kalau AI kasih level SEDIKIT beda antar-slot (mis. entry 4010 lalu 4000, arah sama), keduanya tercatat sebagai 2 posisi virtual independen di `setup_log_auto:v1`. Risikonya: kalau satu pergerakan harga men-trigger SL di kedua-duanya, itu 1 kesalahan AI terhitung 2x di statistik — mencemari validitas sampel n≥100 yang jadi syarat Kriteria Fase Tes.
+
+**Perubahan (`api/admin.js`, HANYA untuk `isAutoCall` — manual/`setup_log:v1` TIDAK diubah):**
+- Kalau symbol yang sama sudah punya posisi **`open`** (harga sudah masuk zona entry): call auto baru **di-skip total**, tidak menambah ide baru di atas posisi yang sudah live — konsisten dengan prinsip "jangan numpuk risk", dan reaksi ke berita untuk posisi open sudah ranah Review Posisi (U-5), bukan auto-replace buta di sini.
+- Kalau symbol yang sama cuma punya posisi **`pending`** lama (belum kena harga sama sekali) dengan level BEDA dari analisa baru: posisi lama diubah statusnya jadi **`canceled`** (`label_reason:'digantikan analisa auto-entry lebih baru sebelum kena harga'`, `label_by:'auto'` — status `canceled` sudah ada di skema U-1 dan TIDAK PERNAH masuk pembagi win-rate manapun, jadi tidak mencemari statistik tapi juga tidak menghilangkan jejaknya), lalu analisa terbaru tetap dicatat sebagai posisi aktif baru. Hasilnya: cuma 1 ide aktif per symbol setiap saat, tapi pandangan AI terbaru tetap terpakai (bukan di-skip begitu saja).
+- Dedup exact-match lama (level persis sama) TETAP ada di atas kebijakan baru ini — kalau analisa baru levelnya identik dengan yang sudah pending, tidak ada perubahan (tidak dicatat ulang, tidak ada cancel percuma).
+
+**Test baru** (`test/admin/isolation_auto.test.js`, +3): pending lama beda level → dibatalkan + baru dicatat; posisi open → skip total, lama tidak disentuh; call manual dengan pending lama → TIDAK dibatalkan (regresi negatif, kebijakan hanya untuk auto).
+
+**Verifikasi:** `npm test` 522/522 hijau (519 sebelumnya + 3 baru).
 
 ## Changelog Session 201 (2026-07-20) — Plan U: Auto-Entry Virtual (Fase Tes) + Konteks AI + Integritas Pembelajaran
 

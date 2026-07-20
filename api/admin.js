@@ -3914,7 +3914,33 @@ async function ohlcvAnalyzeHandler(req, res) {
         const dup = log.find(x => x && x.symbol === symbol
           && (x.status === 'pending' || x.status === 'open')
           && x.entry_zone === structured.entry_zone && x.sl === structured.sl && x.tp === structured.tp);
-        if (!dup) {
+        // PLAN U-3 lanjutan (2026-07-20, diskusi user): auto-entry berjadwal (2 slot/hari)
+        // bisa numpuk >1 posisi virtual PENDING di symbol yang sama kalau AI ganti level
+        // antar-slot (bukan exact-match `dup` di atas) — mencemari statistik n>=100 dengan
+        // sampel yang berkorelasi (satu pergerakan harga dihitung sebagai >1 kejadian).
+        // Kebijakan HANYA untuk auto (manual TIDAK diubah — tiap klik manual = keputusan
+        // sengaja per klik, bukan hasil jadwal): kalau symbol sudah punya posisi OPEN
+        // (harga sudah masuk zona entry), skip total — jangan numpuk risk di atas posisi
+        // yang sudah live, itu ranahnya Review Posisi (U-5) via trigger berita, bukan
+        // auto-replace buta di sini. Kalau cuma ada PENDING lama (belum kena harga sama
+        // sekali), batalkan (status:'canceled', TIDAK masuk win-rate manapun — U-1) lalu
+        // tetap catat analisa terbaru — supaya pandangan AI yang lebih baru tetap kepakai
+        // (bukan di-skip begitu saja), tapi cuma 1 ide aktif per symbol setiap saat.
+        let blockedByOpenPosition = false;
+        if (isAutoCall && !dup) {
+          const openSame = log.find(x => x && x.symbol === symbol && x.status === 'open');
+          if (openSame) {
+            blockedByOpenPosition = true;
+          } else {
+            const stalePending = log.find(x => x && x.symbol === symbol && x.status === 'pending');
+            if (stalePending) {
+              stalePending.status = 'canceled';
+              stalePending.label_reason = 'digantikan analisa auto-entry lebih baru sebelum kena harga';
+              stalePending.label_by = 'auto';
+            }
+          }
+        }
+        if (!dup && !blockedByOpenPosition) {
           const alignment = (structured.conflict && structured.conflict !== 'none')
             ? 'konflik'
             : (structured.makro_alignment || null);
