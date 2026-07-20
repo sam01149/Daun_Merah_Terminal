@@ -4290,7 +4290,7 @@ window.addEventListener('DOMContentLoaded', updateThemeIcon);
 
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.07.20.1';
+const APP_VERSION = '2026.07.20.2';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
@@ -6326,6 +6326,19 @@ async function analisaLoadTrackRecord(symbol) {
         const nManual = st.history.length - nAuto;
         txt += `<div style="margin-top:2px;font-size:9px;opacity:.85">Source: manual ${nManual} · auto ${nAuto}</div>`;
       }
+      // PLAN U-5c: blok "MANAJEMEN POSISI (VIRTUAL)" — display-only dari payload
+      // st.management (U-5a _aggManagementStats), TANPA logika keputusan di client.
+      // Ghost (= status pasif setup, TIDAK PERNAH ditimpa intervensi) dilaporkan
+      // apa adanya dua sisi (saved & cost), termasuk saat intervensi terbukti
+      // merugikan vs pasif.
+      const mg = st.management;
+      if (mg && mg.reviews > 0) {
+        txt += `<div style="margin-top:6px;padding-top:6px;border-top:1px dashed rgba(var(--fg-rgb),0.15);font-size:9px;opacity:.85">`
+          + `MANAJEMEN POSISI (VIRTUAL): ${mg.reviews} review — hold ${mg.hold} · SL diketatkan ${mg.tighten_sl} · close early ${mg.close_early}`
+          + (mg.tighten_sl > 0 ? `<div style="margin-top:2px">SL diketatkan — saved (ghost SL) ${mg.tighten_saved} · cost (ghost TP) ${mg.tighten_cost}</div>` : '')
+          + (mg.close_early > 0 ? `<div style="margin-top:2px">Close early — saved (ghost SL) ${mg.close_early_saved} · cost (ghost TP) ${mg.close_early_cost}${mg.close_early_ghost_pending ? ` · ${mg.close_early_ghost_pending} ghost belum selesai` : ''}</div>` : '')
+          + `</div>`;
+      }
     }
 
     let histHtml = '';
@@ -6335,11 +6348,32 @@ async function analisaLoadTrackRecord(symbol) {
       const rows = st.history.map(h => {
         const c = h.bias==='bullish'?'var(--green)':h.bias==='bearish'?'var(--red)':'var(--text)';
         const date = new Date(h.ts).toLocaleString('id-ID', {day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});
-        return `<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid rgba(var(--fg-rgb),0.05)">
-          <span style="flex:1;opacity:0.7">${date}</span>
-          <span style="flex:0.6;color:${c}">${(h.bias||'').toUpperCase()}</span>
-          <span style="flex:1;font-family:'DM Mono',monospace">${h.entry_zone}</span>
-          <span style="flex:0.8;color:var(--text)">${(h.status||'').toUpperCase()}</span>
+        // PLAN U-5c: badge manajemen (display-only dari h.intervention/managed_status,
+        // TIDAK ADA logika keputusan di client) — ghost tampil di samping managed,
+        // dua sisi apa adanya (mis. bisa "Ghost: TP" walau intervensi CLOSE EARLY).
+        let mgHtml = '';
+        if (h.intervention) {
+          const isTighten = h.intervention.type === 'tighten_sl';
+          const label = isTighten ? 'SL DIKETATKAN' : 'CLOSE EARLY';
+          const badgeColor = isTighten ? 'var(--orange)' : 'var(--accent)';
+          const ghostLabel = h.status ? (h.status || '').toUpperCase() : 'BELUM SELESAI';
+          const priceStr = isTighten
+            ? (h.intervention.new_sl != null ? ` @ ${h.intervention.new_sl}` : '')
+            : (h.intervention.price != null ? ` @ ${h.intervention.price}` : '');
+          mgHtml = `<div style="margin-top:2px;font-size:9px;opacity:.85">`
+            + `<span style="color:${badgeColor};font-weight:700">${label}</span>${priceStr}`
+            + (h.intervention.reason ? ` — ${escHtml(h.intervention.reason)}` : '')
+            + ` <span style="opacity:.7">| Ghost: ${ghostLabel}</span>`
+            + `</div>`;
+        }
+        return `<div style="padding:4px 0;border-bottom:1px solid rgba(var(--fg-rgb),0.05)">
+          <div style="display:flex;justify-content:space-between">
+            <span style="flex:1;opacity:0.7">${date}</span>
+            <span style="flex:0.6;color:${c}">${(h.bias||'').toUpperCase()}</span>
+            <span style="flex:1;font-family:'DM Mono',monospace">${h.entry_zone}</span>
+            <span style="flex:0.8;color:var(--text)">${(h.status||'').toUpperCase()}</span>
+          </div>
+          ${mgHtml}
         </div>`;
       }).join('');
       
