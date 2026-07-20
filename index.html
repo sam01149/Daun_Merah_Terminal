@@ -1880,6 +1880,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .ck-mobile-verdict.warn    { color: var(--yellow); }
 .ck-mobile-verdict.fail    { color: #7a7670; }
 .ck-mobile-verdict.pending { color: var(--muted); }
+.ck-mobile-verdict.konflik { color: var(--orange); }
 .ck-mobile-prog { display: flex; align-items: center; gap: 8px; flex: 1; }
 .ck-mobile-pb-bg { flex: 1; height: 2px; background: var(--border); }
 .ck-mobile-pb { height: 100%; background: var(--green); transition: width .4s; }
@@ -1961,12 +1962,14 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .ck-verdict-val.warn    { color: var(--yellow); }
 .ck-verdict-val.fail    { color: #7a7670; }
 .ck-verdict-val.pending { color: var(--muted); }
+.ck-verdict-val.konflik { color: var(--orange); }
 .ck-score-pct { font-size: 11px; font-family: 'DM Mono',monospace; text-align: center; margin-bottom: 3px; transition: color .3s; }
 .ck-verdict-sub { font-size: 9px; color: var(--muted); text-align: center; letter-spacing: .4px; }
 .ck-pb-bg { height: 3px; background: var(--border); margin-bottom: 8px; border-radius: 2px; }
 .ck-pb-fill { height: 100%; background: var(--green); transition: width .4s, background .3s; border-radius: 2px; }
 .ck-pb-fill.fail { background: #4a4845; }
 .ck-pb-fill.warn { background: var(--yellow); }
+.ck-pb-fill.konflik { background: var(--orange); }
 .ck-pb-fill.ready { background: #7dba84; }
 .ck-sp { display: flex; flex-direction: column; gap: 4px; }
 .ck-sp-row { display: flex; align-items: center; gap: 5px; }
@@ -2000,13 +2003,6 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   border-radius: 4px; transition: background .2s, border-color .2s; margin-bottom: 6px;
 }
 .ck-jurnal-btn:hover { background: rgba(244,114,182,0.18); border-color: #f472b6; }
-.ck-mt5-btn {
-  width: 100%; padding: 9px; background: rgba(34,197,94,0.12); border: 1px solid rgba(34,197,94,0.4);
-  color: var(--green); font-family: 'DM Mono', monospace; font-size: 9px;
-  letter-spacing: 1.5px; text-transform: uppercase; cursor: pointer;
-  border-radius: 4px; transition: background .2s, border-color .2s; margin-bottom: 6px;
-}
-.ck-mt5-btn:hover { background: rgba(34,197,94,0.22); border-color: var(--green); }
 .ck-pb-info-wrap { position: relative; display: inline-flex; }
 .ck-pb-info-btn {
   background: transparent; border: 1px solid var(--border); color: var(--muted);
@@ -4110,7 +4106,7 @@ body:not(.light-theme) .ringkasan-gen-btn {
       <div id="ckPecBox" style="display:none;margin-top:8px"></div>
     </div>
     <button class="ck-jurnal-btn" id="ckJurnalBtn" onclick="ckPrefillJurnal()" style="display:none">→ Buat Jurnal dari Checklist</button>
-    <button class="ck-mt5-btn" id="ckMt5Btn" onclick="ckShowMt5Modal()" style="display:none">Entry MT5</button>
+    <button class="ck-jurnal-btn" id="ckMt5Btn" onclick="ckGoToSizing()" style="display:none">→ Lanjut ke Sizing</button>
     <button class="ck-reset" onclick="ckResetAll()">↺ RESET CHECKLIST</button>
     <div id="ckResetCooldown" style="display:none;font-size:9px;color:var(--accent);text-align:center;margin-top:4px">Tunggu --s sebelum centang ulang</div>
   </div>
@@ -4294,7 +4290,7 @@ window.addEventListener('DOMContentLoaded', updateThemeIcon);
 
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.07.19.7';
+const APP_VERSION = '2026.07.20.1';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
@@ -6311,14 +6307,27 @@ async function analisaLoadTrackRecord(symbol) {
     const decided = st.tp + st.sl;
     let txt;
     if (decided === 0) {
-      txt = `📒 Track record: ${st.total} setup tercatat — belum ada yang selesai (${st.pending} menunggu fill, ${st.open} berjalan)`;
+      txt = `Track record: ${st.total} setup tercatat — belum ada yang selesai (${st.pending} menunggu fill, ${st.open} berjalan)`;
     } else {
-      const wrColor = st.win_rate >= 55 ? 'var(--green)' : st.win_rate <= 45 ? 'var(--red)' : 'var(--text)';
-      txt = `📒 Track record pair ini: ${decided} selesai — TP ${st.tp} · SL ${st.sl} · <span style="color:${wrColor};font-weight:700">win ${st.win_rate}%</span>`
+      const wrColor = st.win_rate_raw >= 55 ? 'var(--green)' : st.win_rate_raw <= 45 ? 'var(--red)' : 'var(--text)';
+      // PLAN U-1/U-4: raw = semua tp/sl apa adanya (tidak pernah disensor); adjusted =
+      // sl berlabel (fundamental_shock/fakeout_sl) dikeluarkan dari pembagi. Selalu
+      // tampilkan berdampingan supaya adjusted tidak jadi pengganti diam-diam.
+      txt = `Track record pair ini: ${decided} selesai — TP ${st.tp} · SL ${st.sl} · <span style="color:${wrColor};font-weight:700">win raw ${st.win_rate_raw}%</span>`
+        + (st.win_rate_adjusted != null && st.win_rate_adjusted !== st.win_rate_raw ? ` · adjusted ${st.win_rate_adjusted}%` : '')
         + (st.ambiguous ? ` · ${st.ambiguous} ambigu` : '')
         + (decided < 5 ? ' <span style="opacity:.7">(sampel masih kecil, jangan dijadikan patokan)</span>' : '');
+      const lc = st.loss_causes;
+      if (lc && st.sl > 0) {
+        txt += `<div style="margin-top:4px;font-size:9px;opacity:.85">Penyebab SL: teknikal ${lc.teknikal} · fundamental shock ${lc.fundamental_shock} · fakeout ${lc.fakeout_sl}</div>`;
+      }
+      if (st.history && st.history.length > 0) {
+        const nAuto = st.history.filter(h => h.source === 'auto').length;
+        const nManual = st.history.length - nAuto;
+        txt += `<div style="margin-top:2px;font-size:9px;opacity:.85">Source: manual ${nManual} · auto ${nAuto}</div>`;
+      }
     }
-    
+
     let histHtml = '';
     if (st.history && st.history.length > 0) {
       txt = `<span onclick="document.getElementById('analisaTrackRecordHist').style.display = document.getElementById('analisaTrackRecordHist').style.display === 'none' ? 'block' : 'none'" style="cursor:pointer;text-decoration:underline;text-decoration-style:dashed;text-underline-offset:2px" title="Lihat detail riwayat setup">${txt}</span>`;
@@ -11275,6 +11284,13 @@ let ckOverridePendingId = null;
 // alasan BLOCK) — sebelumnya cuma hidup di badge.title DOM, tidak bisa dibaca programatik.
 // Dibutuhkan untuk fact sheet Pre-Entry Check (kirim status + evidence tiap item ke AI).
 let ckAutoHints = {};
+// PLAN U-4: konflik kelas ARAH (rc3/rc6/s1) — item tetap ckState=true (tidak
+// menggagalkan gate/skor, beda dari ckAutoBlocked kelas WAKTU yang tetap mutlak),
+// tapi ditandai di sini supaya ckGetVerdict() bisa menurunkan verdict lewat
+// riskMultiplier 0.5 tanpa memblok NO TRADE. In-memory saja, direcompute tiap
+// ckAutoTickRegimeCheck jalan — sama seperti ckAutoBlocked.
+let ckConflict = {};
+let ckConflictHints = {};
 
 function _ckPairKey(pair) {
   const p = (pair || ckCurrentPair || '').replace('/', '');
@@ -11548,14 +11564,27 @@ function ckGetVerdict() {
   // skip them entirely and still clear 50% on the back of easier sections.
   const incompleteGates = CK_SECTIONS.filter(sec => CK_GATES.includes(sec.id) && !ckGateComplete(sec));
   const gatesOk = incompleteGates.length === 0;
-  let verdict, cls, sub;
-  if (!anyChecked)      { verdict = '—';            cls = 'pending'; sub = 'Lengkapi checklist'; }
-  else if (pct < 50)    { verdict = 'NO TRADE';     cls = 'fail';    sub = `${pct}% — syarat belum cukup`; }
-  else if (!gatesOk)    { verdict = 'NO TRADE';     cls = 'fail';    sub = `Gate belum lengkap: ${incompleteGates.map(s => s.title).join(', ')}`; }
-  else if (pct < 75)    { verdict = 'PERTIMBANGKAN'; cls = 'warn';   sub = `${pct}% — ada celah, review ulang`; }
-  else if (pct < 90)    { verdict = 'SIAP TRADE';   cls = 'ready';   sub = `${pct}% — kondisi terpenuhi`; }
-  else                  { verdict = 'ENTRY';        cls = 'pass';    sub = `${pct}% — semua kondisi kuat`; }
-  return { pct, verdict, cls, sub, ws, tw, gatesOk, incompleteGates };
+  // PLAN U-4: item kelas ARAH yang sedang KONFLIK (ckAutoConflict) — item ini
+  // TIDAK menggagalkan gate (lihat ckGateComplete, ckState-nya tetap true), jadi
+  // dideteksi terpisah di sini untuk menurunkan verdict lewat riskMultiplier,
+  // bukan lewat gate/pct (supaya tidak double-penalize).
+  const conflictItems = [];
+  CK_SECTIONS.forEach(sec => sec.items.forEach(it => { if (ckConflict[it.id]) conflictItems.push(it); }));
+  const hasArahConflict = conflictItems.length > 0;
+
+  let verdict, cls, sub, riskMultiplier;
+  if (!anyChecked)      { verdict = '—';            cls = 'pending'; sub = 'Lengkapi checklist'; riskMultiplier = 0; }
+  else if (pct < 50)    { verdict = 'NO TRADE';     cls = 'fail';    sub = `${pct}% — syarat belum cukup`; riskMultiplier = 0; }
+  else if (!gatesOk)    { verdict = 'NO TRADE';     cls = 'fail';    sub = `Gate belum lengkap: ${incompleteGates.map(s => s.title).join(', ')}`; riskMultiplier = 0; }
+  else if (hasArahConflict) {
+    verdict = 'KONFLIK — HALF SIZE'; cls = 'konflik';
+    sub = `${pct}% — konflik arah: ${conflictItems.map(it => it.label).join(', ')}`;
+    riskMultiplier = 0.5;
+  }
+  else if (pct < 75)    { verdict = 'PERTIMBANGKAN'; cls = 'warn';   sub = `${pct}% — ada celah, review ulang`; riskMultiplier = 1; }
+  else if (pct < 90)    { verdict = 'SIAP TRADE';   cls = 'ready';   sub = `${pct}% — kondisi terpenuhi`; riskMultiplier = 1; }
+  else                  { verdict = 'ENTRY';        cls = 'pass';    sub = `${pct}% — semua kondisi kuat`; riskMultiplier = 1; }
+  return { pct, verdict, cls, sub, ws, tw, gatesOk, incompleteGates, riskMultiplier, hasArahConflict, conflictItems };
 }
 
 function ckBuildUI() {
@@ -11581,9 +11610,9 @@ function ckBuildUI() {
   const mMt5Btn = document.createElement('button');
   mMt5Btn.className = 'ck-mobile-jurnal-btn';
   mMt5Btn.id = 'ckMobileMt5Btn';
-  mMt5Btn.style.cssText = 'background:rgba(34,197,94,0.12);border-color:rgba(34,197,94,0.4);color:var(--green);display:none';
-  mMt5Btn.textContent = 'Entry MT5';
-  mMt5Btn.onclick = ckShowMt5Modal;
+  mMt5Btn.style.display = 'none';
+  mMt5Btn.textContent = '→ Lanjut ke Sizing';
+  mMt5Btn.onclick = ckGoToSizing;
   container.appendChild(mMt5Btn);
 
   const limitAlert = document.createElement('div');
@@ -11693,7 +11722,7 @@ function ckRender() {
   }
   if (sp) {
     sp.textContent = pct > 0 ? `Score: ${pct}%` : '';
-    sp.style.color = cls === 'pass' ? 'var(--green)' : cls === 'ready' ? '#7dba84' : cls === 'warn' ? 'var(--yellow)' : cls === 'fail' ? 'var(--accent)' : 'var(--muted)';
+    sp.style.color = cls === 'pass' ? 'var(--green)' : cls === 'ready' ? '#7dba84' : cls === 'konflik' ? 'var(--orange)' : cls === 'warn' ? 'var(--yellow)' : cls === 'fail' ? 'var(--accent)' : 'var(--muted)';
   }
 
   const mv = document.getElementById('ckMobileVerdict');
@@ -11800,6 +11829,13 @@ function ckPrefillJurnalAction(pct, verdict) {
   // Build thesis from checklist state
   const lines = [`[${pbName} | ${pct}% — ${verdict}]`];
   if (pair) lines.push(`Pair: ${pair}`);
+  // PLAN U-4: rekam konflik arah + risk multiplier ke snapshot jurnal — checklist_snapshot
+  // (id->boolean, lihat sanitizeChecklistSnapshot di api/journal.js) tidak muat metadata
+  // ini, jadi disimpan sebagai baris tesis biasa (tetap terbaca manusia di riwayat jurnal).
+  const { riskMultiplier: _jRiskMult, conflictItems: _jConflictItems } = ckGetVerdict();
+  if (_jRiskMult < 1 && _jConflictItems.length > 0) {
+    lines.push(`Risk Multiplier: ${_jRiskMult}x [KONFLIK ARAH — ${_jConflictItems.map(it => it.label).join(', ')}]`);
+  }
   const speedNote = ckConsumeSpeedAckNote();
   if (speedNote) lines.push(speedNote);
   if (aiThesis) {
@@ -11862,13 +11898,22 @@ const MT5_BRIDGE = 'http://localhost:5000';
 // Bump bareng BRIDGE_VERSION di mt5_bridge.py setiap kali logika /order berubah.
 const MT5_BRIDGE_MIN_PENDING_VERSION = 2;
 
-function ckShowMt5Modal() {
-  const { pct, gatesOk, incompleteGates } = ckGetVerdict();
-  if (pct < 50) { showToast('Checklist belum cukup', `Skor checklist masih ${pct}% — minimal 50% sebelum entry MT5 dibuka.`, 4000); return; }
-  if (!gatesOk) { showToast('Gate Belum Lengkap', `Section wajib belum 100%: ${incompleteGates.map(s => s.title).join(', ')}.`, 5000); return; }
+// PLAN U-4: tombol Entry MT5 di Checklist diganti navigasi murni ke Sizing —
+// guard verdict+gates+ckProceedIfNotSuspicious pindah ke szShowMt5Modal()
+// (dekat calcSizing()) supaya alur Checklist→Sizing→modal tidak ping-pong lagi
+// (dulu: Sizing→Checklist untuk buka modal→balik ke Sizing kalau belum dihitung).
+function ckGoToSizing() {
   const pair = document.getElementById('ckPairSelector').value;
   if (!pair) { showToast('Pilih Pair', 'Pilih pair terlebih dahulu di checklist', 3000); return; }
-  ckProceedIfNotSuspicious(() => ckShowMt5ModalAction(pair));
+  switchView('sizing');
+  setTimeout(() => {
+    const sel = document.getElementById('szPair');
+    if (sel) {
+      for (const opt of sel.options) {
+        if (opt.value === pair) { sel.value = pair; szUpdatePipInfo(); break; }
+      }
+    }
+  }, 200);
 }
 
 function ckShowMt5ModalAction(pair) {
@@ -11955,7 +12000,7 @@ function ckGoToSizingFromModal() {
         if (opt.value === pair) { sel.value = pair; szUpdatePipInfo(); break; }
       }
     }
-    showToast('Hitung Sizing Dulu', `Isi entry/stop untuk ${pair}, lalu balik ke checklist untuk entry.`, 4000);
+    showToast('Hitung Sizing Dulu', `Isi entry/stop untuk ${pair}, lalu klik HITUNG — tombol Entry MT5 muncul di hasil.`, 4000);
   }, 200);
 }
 
@@ -12000,7 +12045,7 @@ async function ckMt5OrderConfirm() {
 }
 
 async function ckMt5AutoJournal(pair, direction, fill, lots, sl, tp) {
-  const { pct, verdict } = ckGetVerdict();
+  const { pct, verdict, riskMultiplier, conflictItems } = ckGetVerdict();
   const pb     = PLAYBOOKS[ckActivePlaybook];
   const pbName = pb?.name || ckActivePlaybook;
   const sizing = window._lastSizing && window._lastSizing.pair === pair ? window._lastSizing : null;
@@ -12018,6 +12063,11 @@ async function ckMt5AutoJournal(pair, direction, fill, lots, sl, tp) {
     `Pair: ${pair} | Entry via Daun Merah MT5 Bridge`,
     `Ticket: #${fill.ticket}`,
   ];
+  // PLAN U-4: rekam konflik arah + risk multiplier yang berlaku saat entry ini dikirim
+  // (lots yang dikirim ke bridge sudah dihitung dengan risk efektif di szShowMt5Modal/calcSizing).
+  if (riskMultiplier < 1 && conflictItems.length > 0) {
+    lines.push(`Risk Multiplier: ${riskMultiplier}x [KONFLIK ARAH — ${conflictItems.map(it => it.label).join(', ')}]`);
+  }
   const speedNote = ckConsumeSpeedAckNote();
   if (speedNote) lines.push(speedNote);
 
@@ -12186,8 +12236,10 @@ function ckUpdateClock() {
 function ckAutoTick(id, hint) {
   ckState[id] = true;
   ckAutoBlocked[id] = false;
+  ckConflict[id] = false;
   ckAutoHints[id] = hint;
   delete ckAutoBlockHints[id];
+  delete ckConflictHints[id];
   // The system now agrees the condition is fine — an earlier user override (if any)
   // is moot, drop it so the Jurnal thesis doesn't carry a stale "override" note.
   if (ckOverrideReasons[id]) { delete ckOverrideReasons[id]; ckSaveOverrides(); }
@@ -12214,8 +12266,10 @@ function ckAutoTick(id, hint) {
 function ckAutoBlock(id, hint) {
   ckState[id] = false;
   ckAutoBlocked[id] = true;
+  ckConflict[id] = false;
   ckAutoBlockHints[id] = hint;
   delete ckAutoHints[id];
+  delete ckConflictHints[id];
   const box = document.getElementById('ckbox_' + id);
   if (box) {
     const item = box.closest('.ck-item');
@@ -12228,6 +12282,39 @@ function ckAutoBlock(id, hint) {
       }
       badge.style.cssText = 'font-size:8px;color:var(--red);margin-left:6px;opacity:.7';
       badge.textContent = '[BLOCKED]';
+      badge.title = hint;
+    }
+  }
+  ckSave(); ckRender();
+}
+
+// PLAN U-4: konflik kelas ARAH (rc3 COT kontra, rc6 retail kontra, s1 bias
+// teknikal-vs-CB atau flag conflict:'arah' dari AI Analisa U-2) — BEDA dari
+// ckAutoBlock: item tetap ckState=true (tidak menggagalkan gate section
+// regime_check atau menurunkan pct), sinyalnya murni ditangkap di ckConflict
+// supaya ckGetVerdict() menurunkan verdict lewat riskMultiplier 0.5, bukan
+// lewat NO TRADE mutlak — sesuai keputusan rapat: konflik arah bukan alasan
+// no-trade otomatis, tapi WAJIB dilaporkan.
+function ckAutoConflict(id, hint) {
+  ckState[id] = true;
+  ckAutoBlocked[id] = false;
+  ckConflict[id] = true;
+  ckConflictHints[id] = hint;
+  ckAutoHints[id] = hint;
+  delete ckAutoBlockHints[id];
+  if (ckOverrideReasons[id]) { delete ckOverrideReasons[id]; ckSaveOverrides(); }
+  const box = document.getElementById('ckbox_' + id);
+  if (box) {
+    const item = box.closest('.ck-item');
+    if (item) {
+      let badge = item.querySelector('.auto-badge');
+      if (!badge) {
+        badge = document.createElement('span');
+        badge.className = 'auto-badge';
+        item.appendChild(badge);
+      }
+      badge.style.cssText = 'font-size:8px;color:var(--orange);margin-left:6px;opacity:.85';
+      badge.textContent = '[KONFLIK]';
       badge.title = hint;
     }
   }
@@ -12365,7 +12452,7 @@ function ckAutoTickRegimeCheck(pair) {
       if (align && align.aligned) {
         ckAutoTick('rc3', align.text);
       } else if (align && !align.aligned) {
-        ckAutoBlock('rc3', align.text);
+        ckAutoConflict('rc3', align.text);
       } else {
         const bNet = bPos ? (bPos.lev_net || bPos.net || 0) : null;
         const qNet = qPos ? (qPos.lev_net || qPos.net || 0) : null;
@@ -12429,7 +12516,7 @@ function ckAutoTickRegimeCheck(pair) {
       } else {
         const retailDir = rd.signal === 'CONTRARIAN_LONG' ? 'long' : 'short';
         const txt = `Retail ${rd.long_pct}%L/${rd.short_pct}%S → sinyal kontrarian ${retailDir.toUpperCase()}, ${retailDir === inferredDir ? 'searah' : 'berlawanan'} bias CB (${inferredDir.toUpperCase()})`;
-        retailDir === inferredDir ? ckAutoTick('rc6', txt) : ckAutoBlock('rc6', txt);
+        retailDir === inferredDir ? ckAutoTick('rc6', txt) : ckAutoConflict('rc6', txt);
       }
     }
   }
@@ -12664,10 +12751,22 @@ function ckAutoTickFromAnalisa(pair) {
       const [base, quote] = pair.split('/');
       const cbDir = _ckInferDirFromCbBias(base, quote);
       const aiDir = s.bias === 'bullish' ? 'long' : 'short';
+      // PLAN U-4: kelas ARAH — konflik arah TIDAK menggagalkan gate (ckAutoConflict),
+      // beda dari WAKTU (rc4) yang tetap mutlak. Dua sumber sinyal digabung: selisih
+      // CB bias lokal (cbDir vs aiDir) DAN flag `conflict` dari AI Analisa sendiri
+      // (U-2, lebih kaya — bisa menangkap konflik vs Ringkasan/makro yang tidak
+      // tertangkap perbandingan CB level saja).
+      const aiFlagsArah = s.conflict === 'arah';
       if (cbDir) {
         const txt = `AI Analisa: bias teknikal ${s.bias.toUpperCase()} vs arah CB bias ${cbDir.toUpperCase()}`;
-        if (cbDir === aiDir) ckAutoTick('s1', `${txt} — selaras`);
-        else ckAutoBlock('s1', `${txt} — KONFLIK`);
+        if (cbDir !== aiDir || aiFlagsArah) {
+          const note = aiFlagsArah && s.conflict_note ? ` — ${s.conflict_note}` : '';
+          ckAutoConflict('s1', `${txt} — KONFLIK ARAH${note}`);
+        } else {
+          ckAutoTick('s1', `${txt} — selaras`);
+        }
+      } else if (aiFlagsArah) {
+        ckAutoConflict('s1', `AI Analisa lapor konflik arah${s.conflict_note ? `: ${s.conflict_note}` : ''}`);
       }
     }
     // ── ENTRY LOCATION: e1 hanya kalau entry_zone terbukti pullback/retest (bearish:
@@ -13367,7 +13466,16 @@ function calcSizing() {
 
   if (!pair || equity <= 0 || riskPct <= 0 || stopPips <= 0) return;
 
-  const dollarRisk = equity * (riskPct / 100);
+  // PLAN U-4: jembatan checklist -> sizing — kalau Checklist YANG SEDANG DIMUAT
+  // (ckCurrentPair) persis pair yang sama dengan Sizing ini, baca verdict+riskMultiplier
+  // dari sana dan terapkan ke risk% efektif. Beda pair (atau Checklist belum pernah
+  // dibuka untuk pair ini) = tidak ada info yang bisa dipercaya, jangan menebak — riskPct
+  // dipakai apa adanya, tanpa catatan multiplier.
+  const ckMatch = (typeof ckCurrentPair !== 'undefined') && ckCurrentPair === pair;
+  const ckVerdict = ckMatch ? ckGetVerdict() : null;
+  const riskMultiplier = (ckVerdict && ckVerdict.riskMultiplier === 0.5) ? 0.5 : 1;
+  const effectiveRiskPct = riskPct * riskMultiplier;
+  const dollarRisk = equity * (effectiveRiskPct / 100);
   const pipVal = calcPipValueUSD(pair, entry || slPrice, szLiveRates);
 
   if (pipVal === null) {
@@ -13461,12 +13569,18 @@ function calcSizing() {
     ? `<div class="sz-sub" style="color:var(--accent)">SL: ${slPrice.toFixed(priceDp)}</div>`
     : '';
 
+  // PLAN U-4: AI confidence (Ringkasan) tampil sebagai INFORMASI saja di Sizing —
+  // bukan checkbox/gate (keputusan rapat), murni konteks buat user.
+  const _szConfThesis = (_lastThesis && _lastThesis.pair_recommendation === pair && _lastThesis.confidence_1_to_5) ? _lastThesis : null;
+
   resultEl.style.display = 'block';
   resultEl.innerHTML = `
     <div class="sz-result-block">
       <div class="sz-main">${lots.toFixed(2)} lots <span style="font-size:14px;color:var(--muted)">${szDir.toUpperCase()}</span></div>
       <div class="sz-sub">${miniLots.toFixed(2)} mini · ${microLots.toFixed(2)} micro</div>
       <div class="sz-sub" style="margin-top:6px">At risk: <span style="color:var(--accent)">$${dollarRisk.toFixed(2)}</span> · Pip value: $${pipVal.toFixed(2)}/lot</div>
+      ${riskMultiplier < 1 ? `<div class="sz-sub" style="margin-top:4px;color:var(--orange)">Risk ${riskPct}% × ${riskMultiplier} [KONFLIK — checklist ${pair}] = ${effectiveRiskPct}%</div>` : ''}
+      ${_szConfThesis ? `<div class="sz-sub" style="margin-top:4px">AI Confidence (Ringkasan): ${_szConfThesis.confidence_1_to_5}/5</div>` : ''}
       ${thesisAlerts.length > 0 ? renderThesisAlertNotice(thesisAlerts) : ''}
       ${dangerousEvents.length > 0 ? `<div style="margin-top:6px;padding:8px 10px;background:rgba(192,57,43,.1);border:1px solid var(--accent);border-radius:4px"><div style="color:var(--accent);font-weight:700;font-size:10px">⛔ Saran diskon 50% (event risk &lt;24 jam)</div><div style="font-size:13px;margin-top:2px">${(Math.floor(lots * 50) / 100).toFixed(2)} lots</div></div>` : ''}
       ${slStr}${tpStr}
@@ -13496,22 +13610,46 @@ function calcSizing() {
         const atrColor = stopPips < atrPips ? 'var(--yellow)' : 'var(--green)';
         return `<div style="margin-top:10px;padding-top:8px;border-top:1px solid var(--border);font-family:'DM Mono',monospace;font-size:10px;color:var(--muted)">ATR 14d: <span style="color:${atrColor}">${atrPips} pip</span>${varUsd ? ` · 1d VaR 95% posisi ${lots.toFixed(2)} lot: <span style="color:var(--text)">$${varUsd}</span>` : ''}</div>`;
       })() : ''}
-      <button onclick="szGoToChecklist()" style="margin-top:10px;width:100%;padding:9px;background:transparent;border:1px solid var(--pink);color:var(--pink);font-family:'DM Mono',monospace;font-size:11px;border-radius:3px;cursor:pointer;letter-spacing:.05em">→ LANJUT KE CHECKLIST</button>
+      <button onclick="szShowMt5Modal()" style="margin-top:10px;width:100%;padding:9px;background:rgba(34,197,94,0.12);border:1px solid rgba(34,197,94,0.4);color:var(--green);font-family:'DM Mono',monospace;font-size:11px;border-radius:3px;cursor:pointer;letter-spacing:.05em;font-weight:700">Entry MT5</button>
+      <button onclick="szGoToChecklist()" style="margin-top:8px;width:100%;padding:9px;background:transparent;border:1px solid var(--pink);color:var(--pink);font-family:'DM Mono',monospace;font-size:11px;border-radius:3px;cursor:pointer;letter-spacing:.05em">→ LANJUT KE CHECKLIST</button>
     </div>`;
 
-  // Store last sizing for journal bridge
-  window._lastSizing = { pair, direction: szDir, lots, entry: entry || null, slPrice: slPrice || null, tpPrice: tpPrice || null, stopPips, riskPct, dollarRisk };
+  // Store last sizing for journal bridge — lots/dollarRisk sudah pakai risk EFEKTIF
+  // (setelah riskMultiplier); riskPct tetap input mentah user untuk transparansi.
+  window._lastSizing = { pair, direction: szDir, lots, entry: entry || null, slPrice: slPrice || null, tpPrice: tpPrice || null, stopPips, riskPct, effectiveRiskPct, riskMultiplier, dollarRisk };
   szPersistLastSizing();
 
   szPersistForm();
   szSaveHistory({ pair, riskPct, lotSize: lots, equity, stopPips, dollarRisk });
 }
 
+// PLAN U-4: guard Entry MT5 dipindah ke sini dari Checklist (dulu ckShowMt5Modal)
+// supaya alur Checklist→Sizing→modal tidak ping-pong — user tidak perlu balik ke
+// Checklist lagi setelah menghitung Sizing. Butuh pair-match TAMBAHAN terhadap
+// ckCurrentPair (checklist state yang sedang dimuat di memori) karena szPair bisa
+// berbeda dari pair yang terakhir dibuka di tab Checklist — tanpa ini verdict yang
+// dibaca ckGetVerdict() bisa jadi milik pair yang salah.
+function szShowMt5Modal() {
+  const pair = document.getElementById('szPair').value;
+  if (!pair) { showToast('Pilih Pair', 'Pilih pair terlebih dahulu.', 3000); return; }
+  if (typeof ckCurrentPair === 'undefined' || ckCurrentPair !== pair) {
+    showToast('Checklist Belum Cocok', `Buka Checklist untuk pair ${pair} dan lengkapi dulu — verdict checklist pair itu belum termuat.`, 5000);
+    return;
+  }
+  const { pct, gatesOk, incompleteGates, riskMultiplier } = ckGetVerdict();
+  if (riskMultiplier <= 0) {
+    if (!gatesOk) { showToast('Gate Belum Lengkap', `Section wajib belum 100%: ${incompleteGates.map(s => s.title).join(', ')}.`, 5000); return; }
+    showToast('Checklist belum cukup', `Skor checklist masih ${pct}% — minimal 50% sebelum entry MT5 dibuka.`, 4000);
+    return;
+  }
+  ckProceedIfNotSuspicious(() => ckShowMt5ModalAction(pair));
+}
+
 // Routes Sizing → Checklist (not straight to Jurnal). Going direct to Jurnal used
 // to skip the checklist gate entirely (no score check, no CB bias/COT snapshot,
 // no override-friction on red items) — the same risk-discipline pipeline every
 // other entry path in this app goes through. Checklist's own MT5/Jurnal buttons
-// already read window._lastSizing (see ckShowMt5Modal) and auto-fill lots/SL/TP
+// already read window._lastSizing (see szShowMt5Modal) and auto-fill lots/SL/TP
 // from it, AS LONG AS the pair selected in Checklist matches — so the one thing
 // this needs to do beyond switchView is sync that pair selector automatically.
 function szGoToChecklist() {
