@@ -3171,7 +3171,10 @@ function _formatOptionsSentimentBlock(rr) {
 // (TP&SL sama-sama tersentuh, urutan tak diketahui), expired/stale/invalid/pending/
 // open TIDAK dihitung sebagai menang/kalah (lihat _evaluateSetups). Sampel < 5 =
 // noise, jangan disuap ke AI (return ''). Pure function — dites di ta_struct.test.js.
-function _formatTrackRecordBlock(log, symbol) {
+// PLAN U-3 lanjutan (2026-07-20): param `combined` opsional — true kalau `log` sudah
+// digabung dari >1 sumber (manual + auto), cuma mengubah label supaya jejaknya jelas
+// kalau prompt/log diperiksa nanti, tidak mengubah cara hitung.
+function _formatTrackRecordBlock(log, symbol, combined) {
   if (!Array.isArray(log) || !symbol) return '';
   const decided = log.filter(s => s && s.symbol === symbol && (s.status === 'tp' || s.status === 'sl'));
   const tp = decided.filter(s => s.status === 'tp').length;
@@ -3182,7 +3185,8 @@ function _formatTrackRecordBlock(log, symbol) {
   const advice = winRate < 50
     ? ' Win-rate di bawah 50% — WAJIB lebih konservatif: naikkan syarat konfirmasi di trigger atau turunkan keyakinan di kesimpulan, jangan abaikan fakta ini.'
     : '';
-  return `[TRACK RECORD setup AI pair ini]\n${total} setup selesai (segala arah): ${tp} TP / ${sl} SL (win rate ${winRate}%).${advice}`;
+  const label = combined ? '[TRACK RECORD setup AI pair ini — gabungan seluruh sumber]' : '[TRACK RECORD setup AI pair ini]';
+  return `${label}\n${total} setup selesai (segala arah): ${tp} TP / ${sl} SL (win rate ${winRate}%).${advice}`;
 }
 
 // Konversi event kalender (date "YYYY-MM-DD" kalender WIB + time_wib "HH:MM WIB",
@@ -3399,13 +3403,36 @@ async function ohlcvAnalyzeHandler(req, res) {
     } catch (e) { /* opsional — jangan gagalkan analisa kalau cache RR kosong */ }
 
     // Track record historis setup AI pair ini (Plan I item 2) — 1 GET Redis, 0 AI call.
+    // BUG LAMA DITEMUKAN & DIFIX (2026-07-20, saat kerja Plan U-3 lanjutan): parameter
+    // kedua di bawah HARUS `symbol` (ticker, mis. "GBPUSD=X"/"GC=F" — sama dengan field
+    // `.symbol` yang disimpan tiap entri setup_log), BUKAN `data.label` (label manusia,
+    // mis. "GBP/USD"). Sejak fitur ini dibuat (Plan I item 2, session 180) kodenya
+    // memakai `data.label`, yang TIDAK PERNAH cocok dengan `.symbol` manapun di
+    // setup_log — filter `_formatTrackRecordBlock` gagal total untuk SEMUA pair,
+    // blok "TRACK RECORD" tidak pernah benar-benar disuap ke prompt sejak awal. Baru
+    // ketahuan sekarang lewat test end-to-end baru (isolation_auto.test.js) yang benar-
+    // benar memeriksa isi prompt, bukan cuma pure-function `_formatTrackRecordBlock`
+    // dengan data mock yang kebetulan konsisten (lihat ta_struct.test.js — semua test
+    // lama pakai symbol sama untuk kedua argumen, tidak pernah menangkap mismatch ini).
+    // PLAN U-3 lanjutan (2026-07-20, diskusi user): auto-entry (developer-only) baru mulai
+    // mengumpulkan datanya sendiri (setup_log_auto:v1) — kalau cuma baca itu, ia "buta"
+    // tanpa rapor sama sekali selama minggu-minggu pertama (gate _formatTrackRecordBlock
+    // butuh >=5 setup selesai). KHUSUS isAutoCall: gabungkan setup_log:v1 + setup_log_auto:v1
+    // (bootstrap dari data manual sambil datanya sendiri menumpuk). Call MANUAL SENGAJA
+    // TIDAK diubah (tetap murni setup_log:v1) — commentary hasil call manual tampil ke
+    // publik, menggabungkan data eksperimen developer-only ke situ berisiko membocorkan
+    // pengaruhnya secara tidak langsung (lewat nada/kalimat komentar) — pelanggaran senyap U-7.
     let trackBlock = '';
     try {
       const rawSetupLog = await redisCmd('GET', 'setup_log:v1');
-      if (rawSetupLog) {
-        const setupLog = JSON.parse(rawSetupLog);
-        trackBlock = _formatTrackRecordBlock(Array.isArray(setupLog) ? setupLog : [], data.label);
+      let combinedLog = rawSetupLog ? JSON.parse(rawSetupLog) : [];
+      if (!Array.isArray(combinedLog)) combinedLog = [];
+      if (isAutoCall) {
+        const rawAutoLog = await redisCmd('GET', 'setup_log_auto:v1');
+        const autoLog = rawAutoLog ? JSON.parse(rawAutoLog) : [];
+        if (Array.isArray(autoLog)) combinedLog = combinedLog.concat(autoLog);
       }
+      trackBlock = _formatTrackRecordBlock(combinedLog, symbol, isAutoCall);
     } catch (e) { /* opsional — jangan gagalkan analisa kalau log setup kosong/korup */ }
 
     // S-2: event kalender high-impact 7 hari ke depan khusus currency pair ini —

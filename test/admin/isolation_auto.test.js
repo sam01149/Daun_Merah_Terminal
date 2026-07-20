@@ -305,6 +305,107 @@ test('PLAN U-3 lanjutan: call MANUAL dengan pending lama di symbol sama -> TIDAK
   });
 });
 
+// ── (i) track record gabungan (manual+auto) HANYA untuk isAutoCall ──────────
+// (Plan U-3 lanjutan, 2026-07-20, diskusi user.)
+
+function makeCapturingFetchStub(store, capturedBodies) {
+  const redisStub = redisFetchStub(store);
+  return async (url, opts) => {
+    const u = String(url);
+    if (u.includes('fake-upstash.test')) return redisStub(url, opts);
+    if (u.includes('api.deepseek.com')) {
+      capturedBodies.push(opts.body);
+      return { ok: true, json: async () => ({ choices: [{ message: { content: AI_RAW_TEXT } }] }) };
+    }
+    throw new Error('unexpected network call di test: ' + u);
+  };
+}
+
+function resolvedSetup(id, status) {
+  return {
+    id, symbol: 'GBPUSD=X', label: 'GBP/USD', bias: 'bearish',
+    entry_zone: '1.30', sl: '1.31', tp: '1.28', rr: 2, horizon_days: 3,
+    model: 'deepseek-v4-flash', ts: 1, status,
+    source: status ? 'manual' : 'manual', alignment: null, loss_label: null, label_reason: null, label_by: null,
+    intervention: null, managed_status: null, managed_closed_t: null, review_count: 0,
+  };
+}
+
+test('PLAN U-3 lanjutan: call auto -> track record GABUNGAN manual+auto disuap ke prompt', async () => {
+  await withEnv({ CRON_SECRET: 'topsecret', DEEPSEEK_API_KEY: 'k' }, async () => {
+    // 3 manual (2 tp/1 sl) + 3 auto (1 tp/2 sl) = 6 selesai total, cukup lolos gate >=5.
+    const manualLog = [resolvedSetup('m1', 'tp'), resolvedSetup('m2', 'tp'), resolvedSetup('m3', 'sl')];
+    const autoLog = [
+      { ...resolvedSetup('a1', 'tp'), source: 'auto' },
+      { ...resolvedSetup('a2', 'sl'), source: 'auto' },
+      { ...resolvedSetup('a3', 'sl'), source: 'auto' },
+    ];
+    const store = makeStore({
+      'ohlcv_fresh:GBPUSD=X': '1',
+      'ohlcv:GBPUSD=X:1h': JSON.stringify(mkTrendCandles(1.30, 1.28)),
+      'setup_log:v1': JSON.stringify(manualLog),
+      'setup_log_auto:v1': JSON.stringify(autoLog),
+    });
+    const captured = [];
+    const origFetch = global.fetch;
+    global.fetch = makeCapturingFetchStub(store, captured);
+    try {
+      const handler = loadHandler();
+      const res = fakeRes();
+      await handler({
+        headers: { 'x-cron-secret': 'topsecret' }, method: 'GET',
+        query: { action: 'ohlcv_analyze', symbol: 'GBPUSD=X', label: 'GBP/USD', auto: '1' },
+      }, res);
+
+      assert.equal(res.statusCode, 200);
+      assert.equal(captured.length, 1, 'harus ada tepat 1 call ke AI provider');
+      const promptBody = JSON.stringify(captured[0]);
+      assert.ok(promptBody.includes('gabungan seluruh sumber'), 'label prompt harus menandai gabungan');
+      assert.ok(promptBody.includes('6 setup selesai'), 'total harus 3 manual + 3 auto = 6, bukan cuma salah satu');
+      assert.ok(promptBody.includes('3 TP / 3 SL'), 'TP/SL harus tergabung (2+1 TP, 1+2 SL)');
+    } finally { global.fetch = origFetch; }
+  });
+});
+
+test('PLAN U-3 lanjutan: call MANUAL -> track record TETAP murni setup_log:v1, TIDAK ikut data auto', async () => {
+  await withEnv({ DEEPSEEK_API_KEY: 'k' }, async () => {
+    // 5 manual (3 tp/2 sl, cukup lolos gate) + auto punya data BEDA — kalau bocor ke
+    // prompt manual, angkanya akan salah (harus tetap 5, bukan gabungan).
+    const manualLog = [
+      resolvedSetup('m1', 'tp'), resolvedSetup('m2', 'tp'), resolvedSetup('m3', 'tp'),
+      resolvedSetup('m4', 'sl'), resolvedSetup('m5', 'sl'),
+    ];
+    const autoLog = [
+      { ...resolvedSetup('a1', 'sl'), source: 'auto' },
+      { ...resolvedSetup('a2', 'sl'), source: 'auto' },
+      { ...resolvedSetup('a3', 'sl'), source: 'auto' },
+      { ...resolvedSetup('a4', 'sl'), source: 'auto' },
+      { ...resolvedSetup('a5', 'sl'), source: 'auto' },
+    ];
+    const store = makeStore({
+      'ohlcv_fresh:GBPUSD=X': '1',
+      'ohlcv:GBPUSD=X:1h': JSON.stringify(mkTrendCandles(1.30, 1.28)),
+      'setup_log:v1': JSON.stringify(manualLog),
+      'setup_log_auto:v1': JSON.stringify(autoLog),
+    });
+    const captured = [];
+    const origFetch = global.fetch;
+    global.fetch = makeCapturingFetchStub(store, captured);
+    try {
+      const handler = loadHandler();
+      const res = fakeRes();
+      await handler({ headers: {}, method: 'GET', query: { action: 'ohlcv_analyze', symbol: 'GBPUSD=X', label: 'GBP/USD' } }, res);
+
+      assert.equal(res.statusCode, 200);
+      assert.equal(captured.length, 1);
+      const promptBody = JSON.stringify(captured[0]);
+      assert.ok(!promptBody.includes('gabungan seluruh sumber'), 'call manual TIDAK BOLEH pakai label gabungan');
+      assert.ok(promptBody.includes('5 setup selesai'), 'harus 5 (murni manual), bukan 10 (kalau auto ikut bocor)');
+      assert.ok(promptBody.includes('3 TP / 2 SL'), 'harus murni angka manual, data auto TIDAK BOLEH ikut memengaruhi commentary publik');
+    } finally { global.fetch = origFetch; }
+  });
+});
+
 // ── (g) lock write setup_log — cegah lost update kalau ada write bersamaan ──
 // (Plan U-3 lanjutan, 2026-07-20, item #1 dari diskusi user.)
 

@@ -11,11 +11,26 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-07-20 (Session 203 — Plan U-3 lanjutan 2: lock race-condition setup_log + probe kesehatan calendar_v1)
+> **Last updated:** 2026-07-20 (Session 204 — Fix bug lama track record + gabung sumber manual/auto untuk auto-entry)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 204 (2026-07-20) — Fix bug lama track record + gabung sumber manual/auto untuk auto-entry
+
+**Konteks:** User bertanya "bagaimana AI belajar dari hasil trade-nya" — jawaban jujurnya: AI tidak di-training ulang (fine-tuning DITOLAK sejak awal proyek), "belajar" cuma lewat blok `[TRACK RECORD setup AI pair ini]` yang disuap ke prompt tiap Analisa (rekap win/loss historis pair itu + instruksi "lebih konservatif" kalau win-rate <50%). User minta auto-entry (Plan U, developer-only) baca gabungan rapor manual+auto (bukan cuma satu sumber) supaya tidak "buta" di minggu-minggu awal sebelum datanya sendiri cukup.
+
+**Bug lama ditemukan saat implementasi (session 180, Plan I item 2 — TIDAK PERNAH berfungsi sejak awal):** pemanggil `_formatTrackRecordBlock` di `ohlcvAnalyzeHandler` memakai `data.label` (label manusia, mis. "GBP/USD") sebagai kunci pencocokan, padahal entri `setup_log` menyimpan identitas pair di field `.symbol` sebagai TICKER (mis. "GBPUSD=X"/"GC=F"). Keduanya tidak pernah sama persis untuk pair manapun — filter di `_formatTrackRecordBlock` gagal total, blok track record **tidak pernah benar-benar tersuap ke prompt** sejak fitur ini dibuat. Lolos tak terdeteksi karena test lama (`ta_struct.test.js`) menguji `_formatTrackRecordBlock` sebagai pure function dengan data mock yang kebetulan konsisten (symbol sama di kedua argumen) — tidak ada test end-to-end yang benar-benar memeriksa isi prompt asli sampai sekarang.
+
+**Perbaikan (`api/admin.js`):**
+1. **Fix bug**: parameter kedua diganti dari `data.label` → `symbol` (ticker) — track record sekarang benar-benar aktif untuk semua pair.
+2. **Gabung sumber KHUSUS untuk `isAutoCall`**: baca `setup_log:v1` + `setup_log_auto:v1`, gabungkan (filter symbol sama), baru dihitung. Label prompt berubah jadi `[TRACK RECORD setup AI pair ini — gabungan seluruh sumber]` supaya jejaknya jelas kalau prompt diperiksa nanti.
+3. **Call MANUAL SENGAJA TIDAK diubah** — tetap murni `setup_log:v1`. Commentary hasil call manual tampil ke publik; menggabungkan data eksperimen developer-only ke situ berisiko membocorkan pengaruhnya secara tidak langsung (lewat nada/kalimat komentar AI) — pelanggaran prinsip senyap U-7 walau bukan lewat jalur payload API.
+
+**Test baru** (`test/admin/isolation_auto.test.js`, +2, end-to-end lewat prompt asli bukan cuma pure function): call auto dengan 3 manual (2TP/1SL) + 3 auto (1TP/2SL) → prompt berisi "gabungan seluruh sumber", "6 setup selesai", "3 TP / 3 SL"; call manual dengan data manual+auto yang beda jauh → prompt TETAP murni angka manual, tidak ada label gabungan, data auto TIDAK bocor.
+
+**Verifikasi:** `npm test` 529/529 hijau (527 + 2 baru).
 
 ## Changelog Session 203 (2026-07-20) — Plan U-3 lanjutan 2: lock race-condition setup_log + probe kesehatan calendar_v1
 

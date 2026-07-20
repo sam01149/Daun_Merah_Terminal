@@ -89,6 +89,13 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 - **Unit test hijau bukan bukti fitur benar.** Bug skala ADP (seri berunit orang vs ribuan)
   dan filter Inside Bar `mr_co1` hanya ketahuan saat verifikasi data live production, bukan
   dari test. Selalu uji dengan data/deploy nyata sebelum menyimpulkan. (S154, S180)
+  **Varian baru (S204, 2026-07-20):** pure-function unit test bisa hijau terus-menerus
+  padahal PEMANGGILNYA salah — `_formatTrackRecordBlock(log, symbol)` diuji dengan mock
+  yang symbol-nya sengaja konsisten di kedua argumen, sementara kode produksi
+  memanggilnya dengan `data.label` (bukan `symbol`), membuat filter gagal total sejak
+  session 180. Baru ketahuan lewat test end-to-end yang benar-benar memeriksa payload
+  prompt asli. Pure-function test WAJIB didampingi ≥1 test integrasi yang memverifikasi
+  pemanggil pakai argumen yang benar, bukan cuma fungsinya sendiri benar.
 - **Masalah model gratis = reliability, bukan kualitas.** Nemotron 3 Ultra outputnya bagus
   (0 pelanggaran frasa) tapi latency 7-41 detik tak terprediksi → didemote. Memperbaiki
   struktur input/output (fact sheet deterministik) berdampak jauh lebih besar daripada
