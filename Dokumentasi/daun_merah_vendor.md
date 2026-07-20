@@ -30,7 +30,7 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 | Workflow | Jadwal | Yang dipanggil |
 |---|---|---|
 | `market-digest.yml` | 07:00, 14:00, 19:30 WIB | Generate Ringkasan Berita penuh + Analisa AI XAU/USD |
-| `ohlcv-sync.yml` | Tiap jam | Sinkron candle OHLCV (H1/H4/D1) untuk semua pair terlacak |
+| `ohlcv-sync.yml` | Tiap jam | Sinkron candle OHLCV (H1/H4/D1) untuk semua pair terlacak. **Dedup cron (Plan V-2, 2026-07-20):** berjalan paralel dengan Railway daemon Q-6 (menit :05) yang memicu endpoint sama — pemicu kedua dalam window 45 menit jadi no-op (`ohlcv_sync:last_run_at`, pola `_cron_dedup.js`), nol fetch/nol TA-warm |
 | `ta-warm.yml` | **Nonaktif** (schedule dimatikan 2026-07-20, Plan V-1) | Pre-warm cache indikator teknikal 8 pair utama — terbukti redundant, `ohlcvSyncHandler` (`api/admin.js`) sudah warm TA cache untuk 8 pair yang sama tiap kali `ohlcv_sync` jalan; `workflow_dispatch` manual tetap ada untuk reaktivasi |
 | `retail-sentiment-warm.yml` | Tiap 15 menit | Paksa refresh cache retail sentiment (COT-adjacent) |
 | `btc-sync.yml` | **Nonaktif** (schedule dimatikan 2026-06-22) | Riset BTC ML — diasingkan ke folder gitignored, `workflow_dispatch` manual saja kalau mau diaktifkan lagi |

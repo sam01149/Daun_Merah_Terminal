@@ -507,6 +507,7 @@ const KEY_REGISTRY = [
   { key: 'vps:heartbeat:configured', owner: 'vps/heartbeat.js',  ttl_expected: null,   note: 'Plan Q-1: marker permanen "daemon pernah jalan" — beda UNCONFIGURED (belum deploy) vs DOWN asli' },
   { key: 'selfheal:ohlcv_sync',      owner: 'api/admin.js + vps/daemon.js', ttl_expected: 3600,  note: 'NX lock self-heal: candle basi → trigger ohlcv_sync otomatis, maks 1x/jam lintas dua lapisan' },
   { key: 'selfheal:ohlcv_alert_ts',  owner: 'vps/daemon.js',     ttl_expected: 86400,  note: 'Dedup 6 jam alert Telegram "self-heal gagal, candle masih basi setelah trigger otomatis"' },
+  { key: 'ohlcv_sync:last_run_at',   owner: 'api/admin.js',      ttl_expected: 5400,   note: 'Plan V-2: marker ISO timestamp cron dedup — GH Actions & Railway daemon Q-6 memicu ohlcv_sync 2x/jam, pemicu kedua dalam window 45 menit di-skip' },
 ];
 
 const DEPRECATED_KEYS = [
@@ -1565,6 +1566,23 @@ async function ohlcvSyncHandler(req, res) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
+  // V-2 (Plan V, 2026-07-20): ohlcv_sync dipicu 2x/jam tanpa saling tahu — GH
+  // Actions ohlcv-sync.yml (menit :00) DAN Railway daemon Q-6 (menit :05) —
+  // keduanya full fetch Deriv+Yahoo/TwelveData ~15 pair + TA-warm 8 pair, sia-sia
+  // karena datanya identik. Window 45 menit: lebih pendek dari interval 60 menit
+  // (sync jam berikutnya tetap jalan), lebih panjang dari offset 5 menit antara
+  // kedua sumber cron (pemicu kedua pasti ke-dedup).
+  const OHLCV_SYNC_DEDUP_WINDOW_MS = 45 * 60 * 1000;
+  if (_isCronCallReq(req)) {
+    try {
+      const lastRunAt = await redisCmd('GET', 'ohlcv_sync:last_run_at');
+      if (isCronDedupFresh(lastRunAt, Date.now(), OHLCV_SYNC_DEDUP_WINDOW_MS)) {
+        console.log('ohlcv_sync: cron call kedua (last_run_at masih fresh) — skip sync ulang');
+        return res.status(200).json({ ok: true, skipped: true, reason: 'cron_dedup', synced_at: lastRunAt });
+      }
+    } catch(e) { console.warn('ohlcv_sync: cron dedup check gagal (fail-open, tetap sync):', e.message); }
+  }
+
   // Determine pairs: fixed set + dynamic pair from latest thesis recommendation
   const pairsToSync = [...OHLCV_FIXED_PAIRS];
   try {
@@ -1669,6 +1687,15 @@ async function ohlcvSyncHandler(req, res) {
   // M1: run ini dianggap "Yahoo down sistemik" kalau TIDAK ADA satu pair pun yang
   // berhasil via Yahoo (semua fallback/gagal) — hindari alert dari hiccup 1 simbol.
   await trackYahooHealth(!synced.some(s => s.source1h === 'yahoo'));
+
+  // V-2: tandai "baru saja sync" HANYA kalau run ini benar-benar dapat sesuatu —
+  // run yang gagal total tidak boleh menahan pemicu berikutnya (fail-open, biar
+  // sync berikutnya tetap coba lagi, bukan didedup gara-gara run yang gagal).
+  if (synced.length > 0) {
+    try {
+      await redisCmd('SET', 'ohlcv_sync:last_run_at', new Date().toISOString(), 'EX', '5400');
+    } catch(e) { console.warn('ohlcv_sync: gagal set last_run_at (non-fatal):', e.message); }
+  }
 
   console.log(`ohlcv_sync complete: ${synced.length}/${pairsToSync.length} synced (1H+4H+1D per pair)`);
 

@@ -11,11 +11,26 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-07-20 (Session 205 — Plan V-1: matikan `ta-warm.yml` yang redundant)
+> **Last updated:** 2026-07-20 (Session 207 — Plan V-2: dedup cron `ohlcv_sync` antar-pemicu)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 207 (2026-07-20) — Plan V-2: dedup cron `ohlcv_sync` antar-pemicu
+
+**Konteks:** Eksekusi item V-2 dari `Dokumentasi/daun_merah_plan.md` (§PLAN V, hasil rapat audit boros 2026-07-20). Temuan rapat: `ohlcv_sync` dipicu 2×/jam tanpa saling tahu — GH Actions `ohlcv-sync.yml` (menit :00) DAN Railway daemon Q-6 (menit :05) — keduanya full fetch Deriv+Yahoo/TwelveData ~15 pair + Redis write + TA-warm 8 pair, sia-sia karena datanya identik.
+
+**Perubahan:**
+1. `api/admin.js` `ohlcvSyncHandler` — dedup reuse pola `_cron_dedup.js` yang sudah dipakai `market-digest.js`/`ohlcvAnalyzeHandler`: kalau request cron (`isCronCall`) dan `ohlcv_sync:last_run_at` masih fresh (window 45 menit), langsung `{ ok:true, skipped:true, reason:'cron_dedup' }` tanpa fetch apa pun. Marker ditulis (`SET ... EX 5400`) HANYA setelah sync sukses (`synced.length > 0`) — run gagal total tidak menahan pemicu berikutnya. Fail-open kalau GET Redis untuk cek marker error.
+2. `api/admin.js` `KEY_REGISTRY` — tambah entri `ohlcv_sync:last_run_at` (pola sama `selfheal:ohlcv_sync`, Session 188).
+3. `test/admin/ohlcv_sync_cron_dedup.test.js` (baru) — 4 test: skip total saat marker fresh (nol fetch), sync penuh + marker baru ditulis saat marker basi, fail-open saat GET marker error, marker TIDAK ditulis saat sync gagal total.
+4. `Dokumentasi/daun_merah_vendor.md` §2 — baris `ohlcv-sync.yml` ditandai punya dedup Plan V-2.
+5. `Dokumentasi/daun_merah_plan.md` — item V-2 dihapus (riwayat cukup di changelog ini). Section §PLAN V TIDAK dihapus seluruhnya di sesi ini — V-3 (dikerjakan paralel sesi lain, lihat catatan tabrakan di bawah) belum di-commit/push, jadi belum genap "SELESAI" secara resmi walau kode & plan doc sudah menandainya begitu; sengaja dibiarkan sampai sesi V-3 commit sendiri.
+
+**Catatan tabrakan multi-sesi:** Plan V-3 (circuit breaker terpisah `isAutoCall`/`test_deepseek=1`) dikerjakan PARALEL oleh sesi lain di working directory yang sama — perubahan V-3 di `api/admin.js`/`test/admin/isolation_auto.test.js` SENGAJA dibiarkan tidak tersentuh (uncommitted) di sesi ini, di-commit terpisah oleh sesi tersebut. Hanya hunk V-2 yang di-stage & commit di sini (diverifikasi lewat `git diff --cached` sebelum commit, tidak ada baris V-3 yang ikut).
+
+**Verifikasi:** `npm test` 536/536 hijau (532 existing + 4 test baru V-2). Tidak ada perubahan `index.html`/`?v=`/`APP_VERSION` (perubahan aditif/isolatif, sesuai prinsip Plan V). Verifikasi live tersisa: tunggu 2 pemicu `ohlcv_sync` cron nyata dalam window 45 menit (GH Actions menit :00 vs Railway daemon menit :05), cek log Vercel — pemicu kedua harus tidak ada baris `ohlcv_sync: <pair> —` dan response `skipped:true`.
 
 ## Changelog Session 205 (2026-07-20) — Plan V-1: matikan `ta-warm.yml` yang redundant
 
