@@ -275,3 +275,58 @@ akal; `CRON_SECRET` yang sudah ada (§6) dipakai ulang untuk trigger HTTP-nya.
 - `consistency_log:v1` & `calendar_actual_latency_log:v1` bertambah entri
   harian (`admin?action=redis-keys` atau Upstash console).
 - Gate fase tes penuh: lihat `daun_merah_plan.md` §"Kriteria Fase Tes".
+
+## 9. U-5b — trigger review posisi event-driven (Plan U, WAVE 2) — 2026-07-20, BELUM DI-PUSH
+
+Sama seperti §8: dikerjakan di branch lokal `plan-u`, BELUM live di Railway.
+Dicatat di sini supaya env var-nya sudah siap begitu U-6 push ke `main`.
+
+**Yang ditambahkan ke `daemon.js`:**
+- Hook di `pollNews` (dalam loop item `news_history`, SETELAH `cat` dihitung,
+  SEBELUM gate `isHighImpactCategory` yang khusus alert Q-4): tiap item
+  kategori `market-moving` ATAU `geopolitical` dicek `detectCurrencyLegs` (peta
+  keyword lokal 9 currency termasuk XAU) — tidak match currency apa pun = skip
+  (fail-closed, hemat budget).
+- Kandidat yang match currency dicek `isCorroborated` (duplikasi SADAR dari
+  `api/_position_review.js`, pola sama `newscat.js`): `market-moving` selalu
+  corroborated; `geopolitical` butuh >=1 item lain (guid beda) dalam +-30
+  menit dengan overlap >=2 token signifikan. Geopolitical UNCONFIRMED TIDAK
+  memicu review — dicatat ke `posreview_skip_log` (LPUSH cap 50) + diantre di
+  memori (`posReviewRecheckQueue`), dicoba ulang tiap `pollNews` tick s/d 30
+  menit sejak `pubDate` asli (lewat itu = hangus, diskon permanen).
+- Kandidat yang lolos (market-moving atau geopolitical corroborated): `GET
+  setup_log:v1` (HANYA di titik ini, bukan tiap poll), cari setup
+  `status==='open'` yang leg currency label-nya match. Per posisi match:
+  cooldown `posreview_cd:<id>` (SET NX EX, default 6 jam) menahan review
+  dobel dari burst headline; cap harian `posreview_daily:<yyyymmdd>` (INCR,
+  default 3) dicek PER call (bukan per trigger) supaya satu headline yang
+  match banyak posisi tidak melompati cap.
+- Posisi yang lolos cooldown+cap dipicu `POST
+  /api/admin?action=position_review` (header `x-cron-secret`, TANPA retry
+  agresif — review telat lebih baik daripada dobel) dengan timeout client
+  65 detik (> `maxDuration` 60 detik `api/admin.js` di `vercel.json` — S161).
+
+**Env var baru (opsional, fail-open — kosong = pakai default di atas):**
+
+| Env var | Default | Keterangan |
+|---|---|---|
+| `POSREVIEW_COOLDOWN_SECS` | `21600` (6 jam) | Cooldown per posisi (`posreview_cd:<id>`) — satu review per posisi per window. |
+| `POSREVIEW_DAILY_CAP` | `3` | Cap panggilan `position_review` per hari (dicek per call, bukan per trigger). |
+
+Tidak ada env var WAJIB baru — `CRON_SECRET`/`APP_BASE_URL` yang sudah ada
+(§6) dipakai ulang.
+
+**Verifikasi setelah U-6 push (belum bisa dilakukan sekarang):**
+- Log Railway menunjukkan baris `daemon: U-5b position_review <id> -> HTTP
+  200` saat headline market-moving/geopolitical-corroborated menyentuh
+  currency pair yang punya setup `open`.
+- `posreview_skip_log` bertambah entri `reason:'unconfirmed'` saat headline
+  geopolitical belum terkonfirmasi.
+- `position_review_log:v1` (ditulis `api/admin.js`) bertambah entri
+  `decision`/`confidence`/`downgraded` setelah review berjalan.
+- Simulasi lokal (mock Redis+endpoint, dijalankan manual sesi ini
+  2026-07-20): trigger match currency+open setup memanggil endpoint;
+  cooldown menahan trigger kedua untuk posisi sama; cap harian 3 menahan
+  panggilan ke-4 dari 4 posisi kandidat sekaligus; geopolitical unconfirmed
+  di-skip lalu jalan begitu korroborasi datang <=30 menit — SUKSES, semua
+  skenario OK (skrip tidak dicommit, pola sama U-3).

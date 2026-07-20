@@ -455,8 +455,18 @@ async function pollNews() {
       const ts = Date.parse(item.pubDate);
       if (Number.isFinite(ts) && ts > maxTs) maxTs = ts;
       const cat = NewsCat.detectCat(item.title);
-      if (!isHighImpactCategory(cat)) continue;
       const guid = item.guid || item.link;
+
+      // PLAN U-5b (2026-07-20): kandidat review posisi — market-moving ATAU
+      // geopolitical, DI LUAR gate isHighImpactCategory di bawah (yang cuma
+      // market-moving, khusus alert Q-4). Best-effort: kegagalan di sini TIDAK
+      // BOLEH mengganggu/mengubah alur alert existing setelahnya.
+      if (guid) {
+        try { await handlePosReviewCandidate({ guid, title: item.title, pubDate: item.pubDate, cat }); }
+        catch (e) { console.warn('daemon: U-5b handlePosReviewCandidate gagal:', e.message); }
+      }
+
+      if (!isHighImpactCategory(cat)) continue;
       if (!guid) continue;
       const dedupOk = await redisCmd('SET', `news_alert_sent:${guid}`, '1', 'EX', '172800', 'NX');
       if (dedupOk !== 'OK') continue; // sudah pernah dialert
@@ -470,7 +480,212 @@ async function pollNews() {
         await redisCmd('SET', 'daemon_news_cursor', String(newsCursorMs), 'EX', '172800');
       }
     }
+    // PLAN U-5b: antrian recheck geopolitical UNCONFIRMED — dicoba tiap tick,
+    // bukan cuma saat item baru datang (korroborasi bisa muncul di poll berikutnya).
+    await processPosReviewRecheckQueue().catch(e => console.warn('daemon: U-5b processPosReviewRecheckQueue gagal:', e.message));
   } catch (e) { console.warn('daemon: pollNews gagal:', e.message); }
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// PLAN U-5b (2026-07-20): trigger review posisi VIRTUAL event-driven + heuristik
+// UNCONFIRMED. Kunci AI HANYA di Vercel (api/admin.js?action=position_review) —
+// daemon di sini TIDAK PERNAH memanggil provider AI langsung, hanya memicu
+// endpoint dengan CRON_SECRET (pola sama U-3). DILARANG provider AI baru.
+// ══════════════════════════════════════════════════════════════════════════
+
+// Map keyword kecil per currency — LOKAL di daemon SENGAJA (bukan newscat.js,
+// yang SOT-nya kategori berita, bukan currency; ATURAN.md §4.9 tidak dilanggar
+// karena ini bukan keyword kategori). Currency yang tidak match satu pun -> skip
+// (fail-closed, hemat budget AI — langkah 2 plan U-5b).
+const POSREVIEW_CURRENCY_KEYWORDS = {
+  USD: ['fed', 'fomc', 'dollar', 'usd', 'powell', 'nonfarm', 'nfp', 'treasury'],
+  EUR: ['ecb', 'euro', 'eur', 'lagarde', 'eurozone'],
+  GBP: ['boe', 'pound', 'gbp', 'sterling', 'bailey'],
+  JPY: ['boj', 'yen', 'jpy', 'ueda'],
+  AUD: ['rba', 'aussie', 'aud', 'australia'],
+  CAD: ['boc', 'loonie', 'cad', 'canada'],
+  CHF: ['snb', 'franc', 'chf', 'swiss'],
+  NZD: ['rbnz', 'kiwi', 'nzd', 'zealand'],
+  XAU: ['gold', 'xau', 'bullion'],
+};
+
+function detectCurrencyLegs(title) {
+  const t = String(title || '').toLowerCase();
+  const legs = [];
+  for (const [ccy, kws] of Object.entries(POSREVIEW_CURRENCY_KEYWORDS)) {
+    if (kws.some(kw => t.includes(kw))) legs.push(ccy);
+  }
+  return legs;
+}
+
+// Duplikasi SADAR dari api/_position_review.js isCorroborated (Docker vps/
+// terisolasi dari build context app utama, lihat catatan kepala file — pola
+// sama newscat.js/YAHOO_TO_DERIV_SYMBOL). Behavioral test (bukan byte-diff,
+// karena function ini menyatu di file besar) menjaga dua sisi tetap sinkron —
+// lihat test/vps/position_review.test.js.
+// - kategori 'geopolitical': butuh >=1 item LAIN (guid beda) dalam +-30 menit
+//   dengan overlap >=2 token signifikan (lowercase, buang stopword, token >3 huruf).
+// - 'market-moving' (data/bank sentral terjadwal) = corroborated by default.
+const POSREVIEW_STOPWORDS = new Set(['dengan', 'yang', 'untuk', 'dari', 'akan', 'pada', 'dalam', 'oleh',
+  'atau', 'juga', 'masih', 'sudah', 'telah', 'saat', 'para', 'ini', 'itu', 'the', 'and', 'for',
+  'with', 'from', 'that', 'this', 'have', 'has', 'been', 'after', 'before', 'over', 'into']);
+
+function posReviewSignificantTokens(title) {
+  return String(title || '').toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter(t => t.length > 3 && !POSREVIEW_STOPWORDS.has(t));
+}
+
+function isCorroborated(item, recentItems) {
+  if (!item) return false;
+  if (item.cat === 'market-moving') return true;
+  if (item.cat !== 'geopolitical') return false;
+  const itemMs = Date.parse(item.pubDate);
+  if (!Number.isFinite(itemMs)) return false;
+  const itemTokens = new Set(posReviewSignificantTokens(item.title));
+  if (itemTokens.size === 0) return false;
+  const WINDOW_MS = 30 * 60 * 1000;
+  for (const other of recentItems || []) {
+    if (!other || other === item) continue;
+    const otherGuid = other.guid || other.link;
+    const itemGuid = item.guid || item.link;
+    if (otherGuid && itemGuid && otherGuid === itemGuid) continue; // item sama, bukan korroborasi
+    const otherMs = Date.parse(other.pubDate);
+    if (!Number.isFinite(otherMs) || Math.abs(otherMs - itemMs) > WINDOW_MS) continue;
+    const otherTokens = posReviewSignificantTokens(other.title);
+    let overlap = 0;
+    for (const t of otherTokens) { if (itemTokens.has(t)) overlap++; }
+    if (overlap >= 2) return true;
+  }
+  return false;
+}
+
+// Buffer berita ringan di memori (bukan Redis — hemat budget) supaya isCorroborated
+// bisa membandingkan item baru dengan item lain yang baru lewat, TERMASUK yang
+// sudah lewat gate isHighImpactCategory (geopolitical). Window sedikit lebih
+// lebar dari window korroborasi 30 menit supaya tidak memotong tepi.
+const POSREVIEW_NEWS_BUFFER_MS = 35 * 60 * 1000;
+let posReviewNewsBuffer = [];
+
+function prunePosReviewNewsBuffer(nowMs) {
+  posReviewNewsBuffer = posReviewNewsBuffer.filter(it => {
+    const ms = Date.parse(it.pubDate);
+    return Number.isFinite(ms) && nowMs - ms <= POSREVIEW_NEWS_BUFFER_MS;
+  });
+}
+
+// Antrian recheck geopolitical UNCONFIRMED (memori, restart daemon = hilang —
+// DITERIMA per Edge Case U-5: "paling apes satu review hilang, tidak pernah
+// dobel", cooldown tetap di Redis). >30 menit sejak pubDate item asal -> hangus
+// permanen (langkah 4 plan U-5b).
+const POSREVIEW_RECHECK_WINDOW_MS = 30 * 60 * 1000;
+let posReviewRecheckQueue = [];
+
+async function processPosReviewRecheckQueue() {
+  if (!posReviewRecheckQueue.length) return;
+  const now = Date.now();
+  const stillQueued = [];
+  for (const q of posReviewRecheckQueue) {
+    const ageMs = now - Date.parse(q.pubDate);
+    if (!Number.isFinite(ageMs) || ageMs > POSREVIEW_RECHECK_WINDOW_MS) continue; // hangus, diskon permanen
+    if (isCorroborated(q, posReviewNewsBuffer)) {
+      await tryTriggerPosReview(q, q.legs, true);
+    } else {
+      stillQueued.push(q);
+    }
+  }
+  posReviewRecheckQueue = stillQueued;
+}
+
+// Guard budget + eksekusi trigger — dipanggil setelah kandidat lolos filter
+// currency + (corroborated ATAU market-moving). GET setup_log:v1 HANYA di sini
+// (bukan tiap poll), pola hemat sama dengan checkHardNewsSkip (langkah 3).
+async function tryTriggerPosReview(newsItem, legs, corroborated) {
+  if (redisGuard.isDegraded()) return;
+  if (!isFxMarketOpen()) return;
+  if (!CRON_SECRET) return;
+
+  let raw;
+  try { raw = await redisCmd('GET', 'setup_log:v1'); } catch (e) { return; }
+  let log = [];
+  try { log = raw ? JSON.parse(raw) : []; } catch (e) { return; }
+  if (!Array.isArray(log)) return;
+
+  const candidates = log.filter(s => s && s.status === 'open' && legsFromLabel(s.label).some(l => legs.includes(l)));
+  if (!candidates.length) return;
+
+  const cooldownSecs = parseInt(process.env.POSREVIEW_COOLDOWN_SECS || '21600', 10);
+  const dailyCap = parseInt(process.env.POSREVIEW_DAILY_CAP || '3', 10);
+  const dayKey = `posreview_daily:${new Date().toISOString().slice(0, 10)}`;
+
+  for (const st of candidates) {
+    // Cooldown per posisi (Lapis 5.1) — satu review per posisi per window, mencegah
+    // burst headline nyaris bersamaan memicu review dobel (Edge Case U-5).
+    const got = await redisCmd('SET', `posreview_cd:${st.id}`, '1', 'NX', 'EX', String(cooldownSecs));
+    if (got !== 'OK') continue;
+
+    // Cap harian global (Lapis 5.2) — dicek PER call (bukan per trigger), supaya
+    // satu headline yang match banyak posisi tidak melompati cap.
+    const count = await redisCmd('INCR', dayKey);
+    if (count === 1) redisCmd('EXPIRE', dayKey, '90000').catch(() => {});
+    if (count != null && count > dailyCap) {
+      console.log(`daemon: U-5b posreview daily cap tercapai (${count}/${dailyCap}) — skip ${st.id}`);
+      continue;
+    }
+
+    await triggerPositionReview({ id: st.id, trigger: { guid: newsItem.guid, title: newsItem.title, cat: newsItem.cat, corroborated } });
+  }
+}
+
+// Client timeout WAJIB > maxDuration server (api/admin.js: 60s, vercel.json) —
+// pelajaran S161. TANPA retry agresif (langkah 6): review telat lebih baik
+// daripada dobel (beda filosofi dari triggerWithRetry Q-6/U-3).
+const POSREVIEW_CLIENT_TIMEOUT_MS = 65000;
+
+async function triggerPositionReview(body) {
+  if (!CRON_SECRET) return;
+  try {
+    const r = await fetch(`${APP_BASE_URL}/api/admin?action=position_review`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-cron-secret': CRON_SECRET },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(POSREVIEW_CLIENT_TIMEOUT_MS),
+    });
+    console.log(`daemon: U-5b position_review ${body.id} -> HTTP ${r.status}`);
+  } catch (e) {
+    console.warn(`daemon: U-5b position_review ${body.id} gagal:`, e.message);
+  }
+}
+
+// Entry point dipanggil per item news_history (market-moving/geopolitical saja,
+// lihat pollNews). Deteksi currency -> guard market/degraded -> korroborasi ->
+// trigger langsung (market-moving/corroborated) atau antre recheck (geopolitical
+// unconfirmed, langkah 4).
+async function handlePosReviewCandidate(newsItem) {
+  const now = Date.now();
+  posReviewNewsBuffer.push(newsItem);
+  prunePosReviewNewsBuffer(now);
+
+  const legs = detectCurrencyLegs(newsItem.title);
+  if (!legs.length) return; // fail-closed, tidak match currency apa pun
+
+  if (redisGuard.isDegraded()) return;
+  if (!isFxMarketOpen()) return;
+
+  const corroborated = isCorroborated(newsItem, posReviewNewsBuffer);
+  if (newsItem.cat === 'geopolitical' && !corroborated) {
+    try {
+      await redisCmd('LPUSH', 'posreview_skip_log', JSON.stringify({ ts: now, guid: newsItem.guid, title: newsItem.title, reason: 'unconfirmed' }));
+      await redisCmd('LTRIM', 'posreview_skip_log', '0', '49');
+    } catch (e) { /* opsional, gagal log tidak boleh menggagalkan antrian recheck */ }
+    if (!posReviewRecheckQueue.some(q => q.guid === newsItem.guid)) {
+      posReviewRecheckQueue.push({ ...newsItem, legs });
+    }
+    return;
+  }
+
+  await tryTriggerPosReview(newsItem, legs, corroborated);
 }
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -994,4 +1209,8 @@ module.exports = {
   computeConsistency, AUTO_ENTRY_SYMBOL_MAP, AUTO_ENTRY_PAIRS, AUTO_ENTRY_HOURS_UTC,
   // U-3 (async, di-export untuk simulasi lokal manual — bukan dipakai node:test):
   checkHardNewsSkip, runAutoEntryCycle, runConsistencyCheck, pollCalendarLatency,
+  // U-5b (pure/testable):
+  detectCurrencyLegs, isCorroborated, posReviewSignificantTokens, POSREVIEW_CURRENCY_KEYWORDS,
+  // U-5b (async, di-export untuk simulasi lokal manual — bukan dipakai node:test):
+  handlePosReviewCandidate, tryTriggerPosReview, triggerPositionReview, processPosReviewRecheckQueue,
 };
