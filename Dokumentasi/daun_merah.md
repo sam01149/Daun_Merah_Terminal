@@ -11,11 +11,25 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-07-20 (Session 202 — Plan U-3 lanjutan: cegah posisi virtual auto-entry menumpuk per symbol)
+> **Last updated:** 2026-07-20 (Session 203 — Plan U-3 lanjutan 2: lock race-condition setup_log + probe kesehatan calendar_v1)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 203 (2026-07-20) — Plan U-3 lanjutan 2: lock race-condition setup_log + probe kesehatan calendar_v1
+
+**Konteks:** Lanjutan audit mandiri pasca-U-6 (`Session 202`) — user diskusi 5 potensi celah, minta 2 dikerjakan sekarang (sisanya cuma perlu dipantau, bukan bug).
+
+**1. Race condition penulisan `setup_log_auto:v1`/`setup_log:v1` (`api/admin.js`):**
+Pola baca-array→ubah→tulis-balik di `ohlcvAnalyzeHandler` tidak atomik — kalau `AUTO_ENTRY_PAIRS` diperluas (>1 pair berbagi satu array yang sama) dan dua request nyaris bersamaan, yang menulis belakangan bisa menimpa perubahan yang menulis duluan (lost update). Aman hari ini (cuma 1 pair, 2 slot/hari berurutan) tapi jadi bug data nyata begitu pair ditambah. Fix: lock singkat `lock:setuplog_write:<key>` (`SET NX EX 10`, pola sama `lock:market_digest_generate`) menyerialkan penulisan per key — kalau lock lagi dipegang, logging kali ini di-skip (best-effort, response analisa tetap 200 seperti biasa, TIDAK PERNAH gagal karena ini).
+
+**2. Probe kesehatan `calendar_v1` (`api/admin.js`, `action=health`):**
+Ditemukan: probe `forexfactory` yang sudah ada cuma cek sumber XML LAMA yang sudah tidak dipakai lagi sejak `api/calendar.js` pindah ke TradingView (session 2026-07-13, fallback FF dihapus) — jadi tidak pernah membuktikan `calendar_v1` (cache yang benar-benar dipakai `fundamental_shock` U-1 & filter berita keras U-3) itu sendiri sehat. Kalau pipeline TradingView→Redis rusak diam-diam, probe lama tetap bilang OK. Probe baru `calendar_cache` baca `calendar_v1` langsung, cek umur `fetched_at` (ambang 180 menit) — DOWN kalau kosong/tidak valid/basi.
+
+**Test baru** (`test/admin/isolation_auto.test.js`, +5): lock dipegang → write di-skip, response tetap 200; lock bebas → write jalan & lock ke-DEL; `probeCalendarCache` segar/basi/kosong (3 kasus).
+
+**Verifikasi:** `npm test` 527/527 hijau (522 + 5 baru).
 
 ## Changelog Session 202 (2026-07-20) — Plan U-3 lanjutan: cegah posisi virtual auto-entry menumpuk per symbol
 

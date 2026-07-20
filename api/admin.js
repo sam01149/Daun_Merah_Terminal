@@ -216,6 +216,27 @@ async function probeForexFactory() {
   return { size_bytes: txt.length };
 }
 
+// PLAN U-3 lanjutan (2026-07-20): probe di atas ('forexfactory') cek sumber XML lama yang
+// SUDAH TIDAK dipakai lagi sejak calendar.js pindah ke TradingView (session 2026-07-13,
+// fallback FF dihapus) — jadi tidak pernah membuktikan calendar_v1 sendiri sehat. Cache ini
+// yang benar-benar dipakai fundamental_shock (U-1) & filter berita keras auto-entry (U-3);
+// kalau pipeline TradingView->Redis rusak diam-diam (bukan sumbernya, tapi proses tulisnya),
+// probe lama tetap bilang OK padahal calendar_v1 basi. Probe ini baca calendar_v1 LANGSUNG.
+async function probeCalendarCache() {
+  const raw = await redisCmd('GET', 'calendar_v1');
+  if (!raw) throw new Error('calendar_v1 kosong/belum pernah ter-fetch');
+  let obj;
+  try { obj = JSON.parse(raw); } catch (e) { throw new Error('calendar_v1 tidak valid JSON'); }
+  const fetchedAtMs = obj.fetched_at ? new Date(obj.fetched_at).getTime() : NaN;
+  if (isNaN(fetchedAtMs)) throw new Error('calendar_v1 tanpa fetched_at yang valid');
+  const ageMins = Math.round((Date.now() - fetchedAtMs) / 60000);
+  const STALE_THRESHOLD_MINS = 180; // 3 jam — longgar dari cadence normal (polling user tiap 90s + digest cron), cukup ketat untuk menangkap pipeline yang benar-benar mati
+  if (ageMins > STALE_THRESHOLD_MINS) {
+    throw new Error(`calendar_v1 basi: ${ageMins} menit sejak fetch terakhir (ambang ${STALE_THRESHOLD_MINS})`);
+  }
+  return { age_mins: ageMins, event_count: Array.isArray(obj.events) ? obj.events.length : null, source: obj.source || null };
+}
+
 async function probeFinancialJuice() {
   const r = await fetch('https://www.financialjuice.com/feed.ashx?xy=rss', {
     headers: {
@@ -324,6 +345,7 @@ const PROBES = {
   fred:           { fn: probeFred,           label: 'FRED API' },
   stooq:          { fn: probeStooq,          label: 'Stooq CSV' },
   forexfactory:   { fn: probeForexFactory,   label: 'ForexFactory' },
+  calendar_cache: { fn: probeCalendarCache,  label: 'Calendar Cache (calendar_v1, fundamental_shock)' },
   financialjuice: { fn: probeFinancialJuice, label: 'FinancialJuice RSS' },
   cftc:           { fn: probeCFTC,           label: 'CFTC COT' },
   redis:          { fn: probeRedis,          label: 'Upstash Redis' },
@@ -3907,7 +3929,18 @@ async function ohlcvAnalyzeHandler(req, res) {
     // Skema field identik (U-1 + U-5a), tidak ada skema kedua.
     if (structured?.entry_zone && structured.sl && structured.tp && !isDiagnosticOnly) {
       const setupLogKey = isAutoCall ? 'setup_log_auto:v1' : 'setup_log:v1';
-      try {
+      // PLAN U-3 lanjutan (2026-07-20, diskusi user): baca-ubah-tulis array ini TIDAK
+      // atomik — kalau AUTO_ENTRY_PAIRS diperluas (>1 pair berbagi array yang sama) dan
+      // dua request nyaris bersamaan, yang nulis belakangan bisa menimpa perubahan yang
+      // nulis duluan (lost update). Lock singkat (pola sama lock:market_digest_generate)
+      // menyerialkan penulisan per key; kalau lock lagi dipegang, skip logging kali ini
+      // saja (best-effort — kegagalan logging TIDAK PERNAH boleh menggagalkan response
+      // analisa, sama seperti sebelumnya).
+      const lockKey = `lock:setuplog_write:${setupLogKey}`;
+      const gotLock = await redisCmd('SET', lockKey, '1', 'NX', 'EX', '10').catch(() => null);
+      if (gotLock !== 'OK') {
+        console.warn(`setup_log write skipped: lock ${lockKey} sedang dipegang (kemungkinan write bersamaan)`);
+      } else { try {
         const rawLog = await redisCmd('GET', setupLogKey);
         let log = rawLog ? JSON.parse(rawLog) : [];
         if (!Array.isArray(log)) log = [];
@@ -3960,6 +3993,7 @@ async function ohlcvAnalyzeHandler(req, res) {
           await redisCmd('SET', setupLogKey, JSON.stringify(log.slice(0, 200)));
         }
       } catch (e) { console.warn('setup_log write failed:', e.message); }
+      finally { redisCmd('DEL', lockKey).catch(() => {}); } }
     }
     return res.status(200).json({
       ...resultPayload,
@@ -4443,6 +4477,7 @@ module.exports._confluenceZones = _confluenceZones;
 module.exports._formatConfluenceBlock = _formatConfluenceBlock;
 module.exports._evaluateSetups = _evaluateSetups;
 module.exports._aggSetupStats = _aggSetupStats;
+module.exports.probeCalendarCache = probeCalendarCache;
 module.exports._detectLossLabel = _detectLossLabel;
 module.exports._findSwings = _findSwings;
 module.exports._classifyStructure = _classifyStructure;

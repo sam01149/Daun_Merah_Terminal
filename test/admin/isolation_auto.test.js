@@ -73,9 +73,18 @@ function redisFetchStub(store) {
     switch (cmd) {
       case 'GET':
         return { ok: true, json: async () => ({ result: Object.prototype.hasOwnProperty.call(store.strings, key) ? store.strings[key] : null }) };
-      case 'SET':
-        store.strings[key] = rest[0];
+      case 'SET': {
+        const value = rest[0];
+        const flags = rest.slice(1).map(v => String(v).toUpperCase());
+        if (flags.includes('NX') && Object.prototype.hasOwnProperty.call(store.strings, key)) {
+          return { ok: true, json: async () => ({ result: null }) }; // NX gagal, key sudah ada
+        }
+        store.strings[key] = value;
         return { ok: true, json: async () => ({ result: 'OK' }) };
+      }
+      case 'DEL':
+        delete store.strings[key];
+        return { ok: true, json: async () => ({ result: 1 }) };
       case 'LPUSH':
         store.lists[key] = [rest[0], ...(store.lists[key] || [])];
         return { ok: true, json: async () => ({ result: store.lists[key].length }) };
@@ -294,6 +303,104 @@ test('PLAN U-3 lanjutan: call MANUAL dengan pending lama di symbol sama -> TIDAK
       assert.equal(old.status, 'pending', 'manual tidak pernah auto-dibatalkan');
     } finally { global.fetch = origFetch; }
   });
+});
+
+// ── (g) lock write setup_log — cegah lost update kalau ada write bersamaan ──
+// (Plan U-3 lanjutan, 2026-07-20, item #1 dari diskusi user.)
+
+test('PLAN U-3 lanjutan: lock setup_log_auto:v1 sedang dipegang -> write di-skip, response tetap 200', async () => {
+  await withEnv({ CRON_SECRET: 'topsecret', DEEPSEEK_API_KEY: 'k' }, async () => {
+    const store = makeStore({
+      'ohlcv_fresh:GBPUSD=X': '1',
+      'ohlcv:GBPUSD=X:1h': JSON.stringify(mkTrendCandles(1.30, 1.28)),
+      'lock:setuplog_write:setup_log_auto:v1': '1', // simulasikan write lain sedang berlangsung
+    });
+    const origFetch = global.fetch;
+    global.fetch = makeAnalyzeFetchStub(store);
+    try {
+      const handler = loadHandler();
+      const res = fakeRes();
+      await handler({
+        headers: { 'x-cron-secret': 'topsecret' }, method: 'GET',
+        query: { action: 'ohlcv_analyze', symbol: 'GBPUSD=X', label: 'GBP/USD', auto: '1' },
+      }, res);
+
+      assert.equal(res.statusCode, 200, 'lock busy TIDAK BOLEH menggagalkan response analisa (best-effort)');
+      assert.ok(res.body.structured, 'analisa tetap dikembalikan walau logging di-skip');
+      assert.equal(store.strings['setup_log_auto:v1'], undefined, 'tidak ada write ke setup_log_auto:v1 selagi lock dipegang pihak lain');
+    } finally { global.fetch = origFetch; }
+  });
+});
+
+test('PLAN U-3 lanjutan: tanpa lock lain -> write tetap jalan normal & lock dilepas setelahnya', async () => {
+  await withEnv({ CRON_SECRET: 'topsecret', DEEPSEEK_API_KEY: 'k' }, async () => {
+    const store = makeStore({
+      'ohlcv_fresh:GBPUSD=X': '1',
+      'ohlcv:GBPUSD=X:1h': JSON.stringify(mkTrendCandles(1.30, 1.28)),
+    });
+    const origFetch = global.fetch;
+    global.fetch = makeAnalyzeFetchStub(store);
+    try {
+      const handler = loadHandler();
+      const res = fakeRes();
+      await handler({
+        headers: { 'x-cron-secret': 'topsecret' }, method: 'GET',
+        query: { action: 'ohlcv_analyze', symbol: 'GBPUSD=X', label: 'GBP/USD', auto: '1' },
+      }, res);
+
+      assert.equal(res.statusCode, 200);
+      assert.ok(store.strings['setup_log_auto:v1'], 'write tetap jalan seperti biasa kalau lock bebas');
+      assert.equal(store.strings['lock:setuplog_write:setup_log_auto:v1'], undefined, 'lock harus dilepas (DEL) setelah write selesai');
+    } finally { global.fetch = origFetch; }
+  });
+});
+
+// ── (h) probeCalendarCache — cek kesehatan calendar_v1 langsung ─────────────
+// (Plan U-3 lanjutan, item #5 — probe 'forexfactory' lama cuma cek sumber XML yang
+// sudah tidak dipakai lagi sejak calendar.js pindah ke TradingView, tidak pernah
+// membuktikan calendar_v1 sendiri sehat.)
+
+test('probeCalendarCache: calendar_v1 segar -> OK dengan age_mins & event_count', async () => {
+  const { probeCalendarCache } = loadHandler();
+  const store = makeStore({
+    'calendar_v1': JSON.stringify({
+      events: [{ date: '2026-07-20', currency: 'USD', impact: 'High', event: 'X' }],
+      count: 1, source: 'tradingview', fetched_at: new Date(Date.now() - 5 * 60000).toISOString(),
+    }),
+  });
+  const origFetch = global.fetch;
+  global.fetch = redisFetchStub(store);
+  try {
+    const detail = await probeCalendarCache();
+    assert.equal(detail.event_count, 1);
+    assert.ok(detail.age_mins < 180);
+    assert.equal(detail.source, 'tradingview');
+  } finally { global.fetch = origFetch; }
+});
+
+test('probeCalendarCache: calendar_v1 basi (>180 menit) -> throw', async () => {
+  const { probeCalendarCache } = loadHandler();
+  const store = makeStore({
+    'calendar_v1': JSON.stringify({
+      events: [], count: 0, source: 'tradingview',
+      fetched_at: new Date(Date.now() - 200 * 60000).toISOString(),
+    }),
+  });
+  const origFetch = global.fetch;
+  global.fetch = redisFetchStub(store);
+  try {
+    await assert.rejects(() => probeCalendarCache(), /basi/);
+  } finally { global.fetch = origFetch; }
+});
+
+test('probeCalendarCache: calendar_v1 kosong/belum pernah fetch -> throw', async () => {
+  const { probeCalendarCache } = loadHandler();
+  const store = makeStore({});
+  const origFetch = global.fetch;
+  global.fetch = redisFetchStub(store);
+  try {
+    await assert.rejects(() => probeCalendarCache(), /kosong/);
+  } finally { global.fetch = origFetch; }
 });
 
 // ── (b) payload publik setup_stats identik sebelum vs sesudah entri auto ────
