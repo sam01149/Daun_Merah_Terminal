@@ -11,11 +11,25 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-07-20 (Session 207 — Plan V-2: dedup cron `ohlcv_sync` antar-pemicu)
+> **Last updated:** 2026-07-20 (Session 208 — Plan V-3: circuit breaker terpisah untuk call developer-only Plan U)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 208 (2026-07-20) — Plan V-3: circuit breaker terpisah untuk call developer-only Plan U
+
+**Konteks:** Eksekusi item V-3 dari `Dokumentasi/daun_merah_plan.md` (§PLAN V, hasil rapat audit boros/self-healing 2026-07-20). Temuan rapat: call AI `isAutoCall` (auto-entry Plan U, developer-only, 4×/hari) dan diagnostik `test_deepseek=1` (uji konsistensi, 3×/hari) memakai circuit breaker KEY SAMA (`ai:deepseek`, dan untuk `isAutoCall` juga `ai:sambanova:main`/`ai:sambanova:c1`) dengan traffic publik (Ringkasan, Analisa manual, Pre-Entry Check) — kegagalan eksperimen developer-only bisa mentrip breaker yang sama dan menjatuhkan fitur publik ke fallback tier padahal provider publik sebenarnya sehat.
+
+**Perubahan:**
+1. `api/admin.js` `ohlcvAnalyzeHandler` — helper lokal `isExperimental = isAutoCall || testDeepseekOnly` + 3 konstanta breaker key (`CB_DEEPSEEK_KEY`/`CB_SAMBA_MAIN_KEY`/`CB_SAMBA_C1_KEY`) yang resolve ke `<key>:experimental` kalau eksperimen, key produksi kalau tidak. Diterapkan konsisten di 3 titik call produksi (DeepSeek primary, SambaNova akun-1, SambaNova akun-2) — `canCall`/`onSuccess`/`onFailure` selalu pakai konstanta yang sama per call, tidak ada campur key. Blok diagnostik `testDeepseekOnly` (selalu eksperimen) diganti key literal `'ai:deepseek:experimental'`.
+2. `api/admin.js` `KNOWN_CIRCUITS` — tambah 3 key experimental (`ai:deepseek:experimental`, `ai:sambanova:main:experimental`, `ai:sambanova:c1:experimental`) supaya terlihat di `action=circuit-status`/`circuit-reset` untuk observability.
+3. `test/admin/isolation_auto.test.js` — 3 test baru: (auto=1) dan (test_deepseek=1) 3x gagal beruntun mentrip breaker experimental TANPA menyentuh breaker produksi; kontrol negatif — call publik 3x gagal mentrip breaker produksi TANPA menyentuh breaker experimental.
+4. `allowAiCall('deepseek')` (jatah harian) SENGAJA TIDAK dipisah — tetap shared by design (`daun_merah_ai.md` §4), sesuai scope minimal plan ini.
+
+**Catatan tabrakan multi-sesi:** Plan V-2 (dedup cron `ohlcv_sync`) dikerjakan PARALEL oleh sesi lain di working directory yang sama (lihat Session 207 di bawah). Perubahan V-3 di `api/admin.js` berada di region kode terpisah (`ohlcvAnalyzeHandler`/`KNOWN_CIRCUITS`, ~baris 1400 & 3700+) dari perubahan V-2 (`ohlcvSyncHandler`/`KEY_REGISTRY`, ~baris 507 & 1565+) — tidak overlap. Commit ini HANYA berisi hunk V-3 (diverifikasi lewat `git diff --cached` sebelum commit); hunk V-2 & `test/admin/ohlcv_sync_cron_dedup.test.js` sengaja dibiarkan tidak tersentuh untuk sesi tersebut commit sendiri.
+
+**Verifikasi:** `npm test` 536/536 hijau (termasuk 3 test baru V-3 di `isolation_auto.test.js`). Tidak ada perubahan `index.html`/`?v=`/`APP_VERSION` (perubahan aditif/isolatif terhadap breaker key, sesuai prinsip Plan V). Verifikasi live tersisa: pantau `action=circuit-status` setelah beberapa siklus auto-entry, konfirmasi `ai:deepseek:experimental` bisa OPEN independen dari `ai:deepseek`.
 
 ## Changelog Session 207 (2026-07-20) — Plan V-2: dedup cron `ohlcv_sync` antar-pemicu
 

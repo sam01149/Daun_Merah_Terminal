@@ -649,3 +649,91 @@ test('PLAN U-7(e): index.html tidak memuat string setup_log_auto (isolasi fronte
   const html = fs.readFileSync(path.join(__dirname, '..', '..', 'index.html'), 'utf8');
   assert.ok(!html.includes('setup_log_auto'), 'index.html TIDAK BOLEH menyebut key eksperimen developer-only');
 });
+
+// ── (j) PLAN V-3: circuit breaker terpisah untuk call isAutoCall/test_deepseek=1 ──
+// Call developer-only (auto-entry, uji konsistensi) berbagi provider AI dengan traffic
+// publik (Ringkasan/Analisa manual/Pre-Entry Check). Tanpa isolasi, 3x gagal beruntun
+// dari eksperimen bisa mentrip breaker yang dipakai publik, menjatuhkan fitur publik ke
+// fallback tier padahal provider publik sebenarnya sehat.
+
+function failingDeepseekFetchStub(store) {
+  const redisStub = redisFetchStub(store);
+  return async (url, opts) => {
+    const u = String(url);
+    if (u.includes('fake-upstash.test')) return redisStub(url, opts);
+    if (u.includes('api.deepseek.com')) return { ok: false, status: 500, json: async () => ({ error: { message: 'boom' } }) };
+    throw new Error('unexpected network call di test: ' + u);
+  };
+}
+
+test('PLAN V-3: 3x call auto=1 gagal beruntun -> circuit:ai:deepseek:experimental OPEN, circuit:ai:deepseek (produksi) TIDAK TERSENTUH', async () => {
+  await withEnv({ CRON_SECRET: 'topsecret', DEEPSEEK_API_KEY: 'k' }, async () => {
+    const store = makeStore({
+      'ohlcv_fresh:GBPUSD=X': '1',
+      'ohlcv:GBPUSD=X:1h': JSON.stringify(mkTrendCandles(1.30, 1.28)),
+    });
+    const origFetch = global.fetch;
+    global.fetch = failingDeepseekFetchStub(store);
+    try {
+      const handler = loadHandler();
+      for (let i = 0; i < 3; i++) {
+        const res = fakeRes();
+        await handler({
+          headers: { 'x-cron-secret': 'topsecret' }, method: 'GET',
+          query: { action: 'ohlcv_analyze', symbol: 'GBPUSD=X', label: 'GBP/USD', auto: '1' },
+        }, res);
+        assert.equal(res.statusCode, 200);
+      }
+      const expCircuit = JSON.parse(store.strings['circuit:ai:deepseek:experimental']);
+      assert.equal(expCircuit.state, 'open', 'breaker experimental harus OPEN setelah 3x gagal beruntun call auto');
+      assert.equal(store.strings['circuit:ai:deepseek'], undefined, 'breaker produksi ai:deepseek TIDAK BOLEH tersentuh oleh kegagalan call auto');
+    } finally { global.fetch = origFetch; }
+  });
+});
+
+test('PLAN V-3: 3x test_deepseek=1 gagal beruntun -> circuit:ai:deepseek:experimental OPEN, circuit:ai:deepseek (produksi) TIDAK TERSENTUH', async () => {
+  await withEnv({ DEEPSEEK_API_KEY: 'k' }, async () => {
+    const store = makeStore({
+      'ohlcv_fresh:GBPUSD=X': '1',
+      'ohlcv:GBPUSD=X:1h': JSON.stringify(mkTrendCandles(1.30, 1.28)),
+    });
+    const origFetch = global.fetch;
+    global.fetch = failingDeepseekFetchStub(store);
+    try {
+      const handler = loadHandler();
+      for (let i = 0; i < 3; i++) {
+        const res = fakeRes();
+        await handler({
+          headers: {}, method: 'GET',
+          query: { action: 'ohlcv_analyze', symbol: 'GBPUSD=X', label: 'GBP/USD', test_deepseek: '1' },
+        }, res);
+        assert.equal(res.statusCode, 200);
+      }
+      const expCircuit = JSON.parse(store.strings['circuit:ai:deepseek:experimental']);
+      assert.equal(expCircuit.state, 'open', 'breaker experimental harus OPEN setelah 3x test_deepseek=1 gagal beruntun');
+      assert.equal(store.strings['circuit:ai:deepseek'], undefined, 'breaker produksi ai:deepseek TIDAK BOLEH tersentuh oleh diagnostik test_deepseek=1');
+    } finally { global.fetch = origFetch; }
+  });
+});
+
+test('PLAN V-3 (kontrol negatif): 3x call PUBLIK (manual) gagal beruntun -> circuit:ai:deepseek (produksi) OPEN, circuit:ai:deepseek:experimental TIDAK TERSENTUH', async () => {
+  await withEnv({ DEEPSEEK_API_KEY: 'k' }, async () => {
+    const store = makeStore({
+      'ohlcv_fresh:GBPUSD=X': '1',
+      'ohlcv:GBPUSD=X:1h': JSON.stringify(mkTrendCandles(1.30, 1.28)),
+    });
+    const origFetch = global.fetch;
+    global.fetch = failingDeepseekFetchStub(store);
+    try {
+      const handler = loadHandler();
+      for (let i = 0; i < 3; i++) {
+        const res = fakeRes();
+        await handler({ headers: {}, method: 'GET', query: { action: 'ohlcv_analyze', symbol: 'GBPUSD=X', label: 'GBP/USD' } }, res);
+        assert.equal(res.statusCode, 200);
+      }
+      const prodCircuit = JSON.parse(store.strings['circuit:ai:deepseek']);
+      assert.equal(prodCircuit.state, 'open', 'breaker produksi harus OPEN setelah 3x gagal beruntun call publik');
+      assert.equal(store.strings['circuit:ai:deepseek:experimental'], undefined, 'breaker experimental TIDAK BOLEH tersentuh oleh kegagalan call publik');
+    } finally { global.fetch = origFetch; }
+  });
+});

@@ -1398,7 +1398,9 @@ async function journalImportHandler(req, res) {
 
 // ── Circuit breaker status + reset ───────────────────────────────────────────
 
-const KNOWN_CIRCUITS = ['ai:openrouter', 'ai:openrouter:nemotron', 'ai:openrouter:nemotron-super', 'ai:openrouter:hermes', 'ai:cerebras', 'ai:cerebras:gptoss', 'ai:cerebras:glm', 'ai:sambanova:c1', 'ai:sambanova:main', 'ai:ollama:nemotron', 'ai:deepseek', 'ai:gemini', 'fred', 'stooq', 'ff', 'fj', 'cftc', 'redis', 'fxssi', 'actionforex'];
+const KNOWN_CIRCUITS = ['ai:openrouter', 'ai:openrouter:nemotron', 'ai:openrouter:nemotron-super', 'ai:openrouter:hermes', 'ai:cerebras', 'ai:cerebras:gptoss', 'ai:cerebras:glm', 'ai:sambanova:c1', 'ai:sambanova:main', 'ai:ollama:nemotron', 'ai:deepseek', 'ai:gemini', 'fred', 'stooq', 'ff', 'fj', 'cftc', 'redis', 'fxssi', 'actionforex',
+  // PLAN V-3 (2026-07-20): breaker terpisah untuk call isAutoCall/test_deepseek=1 (developer-only)
+  'ai:deepseek:experimental', 'ai:sambanova:main:experimental', 'ai:sambanova:c1:experimental'];
 
 async function circuitStatusHandler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -3699,7 +3701,9 @@ async function ohlcvAnalyzeHandler(req, res) {
 
     if (testDeepseekOnly) {
       const DEEPSEEK_KEY = process.env.DEEPSEEK_API_KEY;
-      if (DEEPSEEK_KEY && await cb.canCall('ai:deepseek')) {
+      // PLAN V-3: breaker key khusus ':experimental' — blok ini SELALU diagnostik developer-only,
+      // kegagalannya TIDAK BOLEH mentrip 'ai:deepseek' yang dipakai Ringkasan/Analisa/Pre-Entry publik.
+      if (DEEPSEEK_KEY && await cb.canCall('ai:deepseek:experimental')) {
         const t0ds = Date.now();
         try {
           if (!await allowAiCall('deepseek')) throw new Error('AI daily budget exceeded');
@@ -3712,7 +3716,7 @@ async function ohlcvAnalyzeHandler(req, res) {
           });
           if (r.ok) {
             const j = await r.json(); rawText = j.choices?.[0]?.message?.content?.trim() || null; model = 'deepseek-v4-flash';
-            if (rawText) await cb.onSuccess('ai:deepseek');
+            if (rawText) await cb.onSuccess('ai:deepseek:experimental');
             else throw new Error('Empty response');
           } else {
             const errJ = await r.json().catch(() => ({}));
@@ -3724,7 +3728,7 @@ async function ohlcvAnalyzeHandler(req, res) {
           deepseekElapsedMs = Date.now() - t0ds;
           deepseekError = e.message;
           console.warn('ohlcv_analyze DeepSeek v4-flash failed:', e.message);
-          await cb.onFailure('ai:deepseek');
+          await cb.onFailure('ai:deepseek:experimental');
         }
       } else if (DEEPSEEK_KEY) {
         deepseekError = 'circuit_open';
@@ -3743,6 +3747,17 @@ async function ohlcvAnalyzeHandler(req, res) {
     // if-block-nya sendiri) — dibutuhkan lagi di sini untuk tier primary produksi.
     const DEEPSEEK_KEY = process.env.DEEPSEEK_API_KEY;
 
+    // PLAN V-3 (2026-07-20): call isAutoCall (auto-entry, developer-only) berbagi provider
+    // dengan traffic publik (Ringkasan/Analisa manual/Pre-Entry Check) di 3 titik di bawah —
+    // tanpa isolasi ini, kegagalan eksperimen auto-entry bisa mentrip breaker yang sama dan
+    // menjatuhkan fitur publik ke fallback tier padahal provider publik sebenarnya sehat.
+    // Key ':experimental' terpisah total dari key produksi; 1 call = 1 key konsisten dari
+    // canCall sampai onSuccess/onFailure (pakai konstanta ini, jangan tulis literal lagi).
+    const isExperimental  = isAutoCall || testDeepseekOnly;
+    const CB_DEEPSEEK_KEY   = isExperimental ? 'ai:deepseek:experimental' : 'ai:deepseek';
+    const CB_SAMBA_MAIN_KEY = isExperimental ? 'ai:sambanova:main:experimental' : 'ai:sambanova:main';
+    const CB_SAMBA_C1_KEY   = isExperimental ? `${CB_SAMBA_C1_ADMIN}:experimental` : CB_SAMBA_C1_ADMIN;
+
     // Batas waktu keras cascade AI (Plan O-6, 2026-07-18): sekarang ADA 3 tier
     // (DeepSeek + 2x SambaNova) yang timeout aslinya kalau dijumlah (15+30+25=70s)
     // tembus maxDuration 60s Vercel — timeout SambaNova di bawah dibuat ADAPTIF
@@ -3755,7 +3770,7 @@ async function ohlcvAnalyzeHandler(req, res) {
     // diagnostik ?test_deepseek=1 setelah gate lolos (3/3 sampel live termasuk XAU/USD,
     // EUR/USD, GBP/JPY: JSON valid, entry/SL/TP konsisten arah, tidak ada kontaminasi
     // angka antar-pair). SambaNova akun-1/akun-2 TURUN jadi fallback berurutan.
-    if (!isDiagnosticOnly && DEEPSEEK_KEY && await cb.canCall('ai:deepseek')) {
+    if (!isDiagnosticOnly && DEEPSEEK_KEY && await cb.canCall(CB_DEEPSEEK_KEY)) {
       try {
         if (!await allowAiCall('deepseek')) throw new Error('AI daily budget exceeded');
         const r = await fetch('https://api.deepseek.com/chat/completions', {
@@ -3766,13 +3781,13 @@ async function ohlcvAnalyzeHandler(req, res) {
         });
         if (r.ok) {
           const j = await r.json(); rawText = j.choices?.[0]?.message?.content?.trim() || null; model = 'deepseek-v4-flash';
-          if (rawText) await cb.onSuccess('ai:deepseek');
+          if (rawText) await cb.onSuccess(CB_DEEPSEEK_KEY);
           else throw new Error('Empty response');
         } else {
           const errJ = await r.json().catch(() => ({}));
           throw new Error(r.status === 402 ? 'HTTP402_insufficient_balance' : (errJ?.error?.message || `HTTP ${r.status}`));
         }
-      } catch(e) { console.warn('ohlcv_analyze DeepSeek (primary) failed:', e.message); await cb.onFailure('ai:deepseek'); }
+      } catch(e) { console.warn('ohlcv_analyze DeepSeek (primary) failed:', e.message); await cb.onFailure(CB_DEEPSEEK_KEY); }
     } else if (!isDiagnosticOnly && DEEPSEEK_KEY) { console.log('ohlcv_analyze: DeepSeek circuit OPEN — skipping to SambaNova akun 1'); }
 
     // Fallback 1: SambaNova DeepSeek-V3.2 (671B, akun 1). Eksperimen GLM-5.2/gpt-oss:120b
@@ -3780,7 +3795,7 @@ async function ohlcvAnalyzeHandler(req, res) {
     // DeepSeek-V3.2 secara kualitas — tidak masuk akal jadi primary yang mengalahkan
     // model yang sudah terbukti lebih kuat & proven di app ini.
     const c1Timeout = Math.max(0, Math.min(30000, aiBudgetLeftMs() - 3000));
-    if (!isDiagnosticOnly && !rawText && !testC1Only && c1Timeout >= 10000 && SAMBANOVA_KEY && await cb.canCall('ai:sambanova:main')) {
+    if (!isDiagnosticOnly && !rawText && !testC1Only && c1Timeout >= 10000 && SAMBANOVA_KEY && await cb.canCall(CB_SAMBA_MAIN_KEY)) {
       try {
         if (!await allowAiCall('sambanova_main')) throw new Error('AI daily budget exceeded');
         const r = await fetch('https://api.sambanova.ai/v1/chat/completions', {
@@ -3791,10 +3806,10 @@ async function ohlcvAnalyzeHandler(req, res) {
         });
         if (r.ok) {
           const j = await r.json(); rawText = j.choices?.[0]?.message?.content?.trim() || null; model = 'deepseek-v3.2';
-          if (rawText) await cb.onSuccess('ai:sambanova:main');
+          if (rawText) await cb.onSuccess(CB_SAMBA_MAIN_KEY);
           else throw new Error('Empty response');
         } else { throw new Error(`HTTP ${r.status}`); }
-      } catch(e) { console.warn('ohlcv_analyze SambaNova failed:', e.message); await cb.onFailure('ai:sambanova:main'); }
+      } catch(e) { console.warn('ohlcv_analyze SambaNova failed:', e.message); await cb.onFailure(CB_SAMBA_MAIN_KEY); }
     } else if (isDiagnosticOnly) { /* sudah di-log di blok Hermes/Ollama/DeepSeek di atas */ }
     else if (!rawText && testC1Only) { console.log('ohlcv_analyze: test_samba_c1=1 — bypassing primary'); }
     else if (!rawText && SAMBANOVA_KEY) { console.log('ohlcv_analyze: SambaNova circuit OPEN/budget mepet — skipping to akun 2'); }
@@ -3808,7 +3823,7 @@ async function ohlcvAnalyzeHandler(req, res) {
     // ini — DeepSeek-V3.2 akun 2 jauh lebih kuat sebagai fallback tunggal. Timeout adaptif
     // (Plan O-6) menggantikan fixed 25s supaya cascade 3-tier tetap di bawah 60s Vercel.
     const c2Timeout = Math.max(0, Math.min(25000, aiBudgetLeftMs() - 3000));
-    if (!isDiagnosticOnly && !rawText && c2Timeout >= 10000 && SAMBANOVA_KEY_CALL1 && await cb.canCall(CB_SAMBA_C1_ADMIN)) {
+    if (!isDiagnosticOnly && !rawText && c2Timeout >= 10000 && SAMBANOVA_KEY_CALL1 && await cb.canCall(CB_SAMBA_C1_KEY)) {
       try {
         if (!await allowAiCall('sambanova_c1')) throw new Error('AI daily budget exceeded');
         const r = await fetch('https://api.sambanova.ai/v1/chat/completions', {
@@ -3819,10 +3834,10 @@ async function ohlcvAnalyzeHandler(req, res) {
         });
         if (r.ok) {
           const j = await r.json(); rawText = j.choices?.[0]?.message?.content?.trim() || null; model = 'deepseek-v3.2';
-          if (rawText) await cb.onSuccess(CB_SAMBA_C1_ADMIN);
+          if (rawText) await cb.onSuccess(CB_SAMBA_C1_KEY);
           else throw new Error('Empty response');
         } else { throw new Error(`HTTP ${r.status}`); }
-      } catch(e) { console.warn('ohlcv_analyze SambaNova akun2 failed:', e.message); await cb.onFailure(CB_SAMBA_C1_ADMIN); }
+      } catch(e) { console.warn('ohlcv_analyze SambaNova akun2 failed:', e.message); await cb.onFailure(CB_SAMBA_C1_KEY); }
     } else if (!isDiagnosticOnly && !rawText && SAMBANOVA_KEY_CALL1) { console.log('ohlcv_analyze: SambaNova akun2 circuit OPEN/budget mepet'); }
 
     let structured = null, commentary = rawText;
