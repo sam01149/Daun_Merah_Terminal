@@ -11,11 +11,22 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-07-20 (Session 204 — Fix bug lama track record + gabung sumber manual/auto untuk auto-entry)
+> **Last updated:** 2026-07-20 (Session 205 — Plan V-1: matikan `ta-warm.yml` yang redundant)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 205 (2026-07-20) — Plan V-1: matikan `ta-warm.yml` yang redundant
+
+**Konteks:** Eksekusi item V-1 dari `Dokumentasi/daun_merah_plan.md` (§PLAN V, hasil rapat audit boros 2026-07-20). Temuan rapat: workflow `.github/workflows/ta-warm.yml` (cron tiap jam, warm cache TA 8 pair) PERSIS duplikat sub-langkah yang sudah dilakukan `ohlcvSyncHandler` (`api/admin.js`) sendiri di penutupnya (~baris 1675-1686) — dikonfirmasi ulang di sesi ini: 8 simbol di `ta-warm.yml` cocok 100% dengan `OHLCV_FIXED_PAIRS`, dan keduanya hit endpoint yang identik (`action=ta&interval=1d`). `ohlcv_sync` sendiri sudah dipicu 2×/jam (GH Actions `ohlcv-sync.yml` + Railway daemon Q-6), jadi TA-warm dari cron terpisah ini murni kerja dobel tanpa manfaat tambahan.
+
+**Perubahan:**
+1. `.github/workflows/ta-warm.yml` — blok `schedule: - cron: '0 * * * *'` di-comment (pola persis `btc-sync.yml`), `workflow_dispatch:` dibiarkan aktif untuk reaktivasi manual kalau suatu saat `ohlcv_sync` kehilangan sub-langkah TA-warm-nya.
+2. `Dokumentasi/daun_merah_vendor.md` §2 — baris `ta-warm.yml` ditandai nonaktif + alasan.
+3. `Dokumentasi/daun_merah_plan.md` — item V-1 (state/target, file&path, langkah, kriteria selesai) dihapus dari §PLAN V (SELESAI, sesuai aturan file), sisa V-2/V-3 tetap utuh menunggu eksekusi.
+
+**Verifikasi:** `npm test` 529/529 hijau (tidak ada test baru — perubahan pure infra, tidak menyentuh kode aplikasi). Tidak ada perubahan `index.html`/`?v=`/`APP_VERSION` (workflow-only). Verifikasi live tersisa: cek GitHub Actions tab setelah 1 jam berikutnya — `ta-warm.yml` seharusnya tidak lagi muncul di run terjadwal, sementara `workflow_dispatch` manual tetap bisa dipicu sukses.
 
 ## Changelog Session 204 (2026-07-20) — Fix bug lama track record + gabung sumber manual/auto untuk auto-entry
 

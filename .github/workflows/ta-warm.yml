@@ -1,8 +1,14 @@
 name: TA Cache Warm
 
 on:
-  schedule:
-    - cron: '0 * * * *'
+  # Schedule dimatikan 2026-07-20 — terbukti redundant: ohlcvSyncHandler
+  # (api/admin.js, ~baris 1675-1686) sudah warm ta:<symbol>:1d untuk PERSIS
+  # 8 pair yang sama (OHLCV_FIXED_PAIRS) setiap kali ohlcv_sync jalan (GH Actions
+  # ohlcv-sync.yml tiap jam + Railway daemon Q-6). workflow_dispatch tetap ada
+  # untuk reaktivasi manual kalau suatu saat ohlcv_sync kehilangan sub-langkah
+  # TA-warm-nya. Lihat Dokumentasi/daun_merah.md Session 205 (Plan V-1).
+  # schedule:
+  #   - cron: '0 * * * *'
   workflow_dispatch:
 
 jobs:

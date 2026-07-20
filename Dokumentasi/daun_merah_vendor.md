@@ -31,7 +31,7 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 |---|---|---|
 | `market-digest.yml` | 07:00, 14:00, 19:30 WIB | Generate Ringkasan Berita penuh + Analisa AI XAU/USD |
 | `ohlcv-sync.yml` | Tiap jam | Sinkron candle OHLCV (H1/H4/D1) untuk semua pair terlacak |
-| `ta-warm.yml` | Tiap jam | Pre-warm cache indikator teknikal 8 pair utama |
+| `ta-warm.yml` | **Nonaktif** (schedule dimatikan 2026-07-20, Plan V-1) | Pre-warm cache indikator teknikal 8 pair utama — terbukti redundant, `ohlcvSyncHandler` (`api/admin.js`) sudah warm TA cache untuk 8 pair yang sama tiap kali `ohlcv_sync` jalan; `workflow_dispatch` manual tetap ada untuk reaktivasi |
 | `retail-sentiment-warm.yml` | Tiap 15 menit | Paksa refresh cache retail sentiment (COT-adjacent) |
 | `btc-sync.yml` | **Nonaktif** (schedule dimatikan 2026-06-22) | Riset BTC ML — diasingkan ke folder gitignored, `workflow_dispatch` manual saja kalau mau diaktifkan lagi |
 | `btc-backfill.yml` | Manual (`workflow_dispatch`) | Backfill data historis BTC (riset, sama nasibnya dengan `btc-sync.yml`) |
