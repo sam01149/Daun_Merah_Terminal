@@ -226,20 +226,23 @@ test('ohlcv_analyze: auto=1 TANPA CRON_SECRET valid -> tetap source manual (anti
   });
 });
 
-test('ohlcv_analyze: auto=1 DENGAN x-cron-secret valid -> source auto (dipakai U-3)', async () => {
+test('ohlcv_analyze: auto=1 DENGAN x-cron-secret valid -> source auto, masuk setup_log_auto:v1 (PLAN U-7, bukan setup_log:v1)', async () => {
   await withEnv({ CRON_SECRET: 'topsecret' }, async () => {
     const captured = {};
-    const redisLog = { value: null };
+    const redisLogAuto = { value: null };
+    let manualLogSetCalled = false, cacheSetCalled = false;
     const origFetch = global.fetch;
     global.fetch = async (url, opts) => {
       const u = String(url);
       if (u.includes('fake-redis.test')) {
         const args = JSON.parse(opts.body);
         const [cmd, key, val] = args;
-        if (key === 'setup_log:v1') {
-          if (cmd === 'GET') return { ok: true, json: async () => ({ result: redisLog.value }) };
-          if (cmd === 'SET') { redisLog.value = val; return { ok: true, json: async () => ({ result: 'OK' }) }; }
+        if (key === 'setup_log_auto:v1') {
+          if (cmd === 'GET') return { ok: true, json: async () => ({ result: redisLogAuto.value }) };
+          if (cmd === 'SET') { redisLogAuto.value = val; return { ok: true, json: async () => ({ result: 'OK' }) }; }
         }
+        if (key === 'setup_log:v1' && cmd === 'SET') manualLogSetCalled = true;
+        if (key === 'ohlcv_analysis:EURUSD=X' && cmd === 'SET') cacheSetCalled = true;
         // ohlcv_analysis:<symbol> GET dipakai cron-dedup check — kosongkan (bukan cache fresh)
         if (cmd === 'GET') {
           const has = Object.prototype.hasOwnProperty.call(REDIS_FIXTURES, key);
@@ -262,9 +265,11 @@ test('ohlcv_analyze: auto=1 DENGAN x-cron-secret valid -> source auto (dipakai U
         query: { action: 'ohlcv_analyze', symbol: 'EURUSD=X', label: 'EUR/USD', auto: '1' },
       }, res);
 
-      assert.ok(redisLog.value);
-      const log = JSON.parse(redisLog.value);
+      assert.ok(redisLogAuto.value, 'PLAN U-7: setup call auto harus masuk setup_log_auto:v1');
+      const log = JSON.parse(redisLogAuto.value);
       assert.equal(log[0].source, 'auto');
+      assert.equal(manualLogSetCalled, false, 'PLAN U-7: setup_log:v1 (manual) TIDAK BOLEH tersentuh oleh call auto');
+      assert.equal(cacheSetCalled, false, 'PLAN U-7: cache ohlcv_analysis TIDAK BOLEH ditulis oleh call auto (isolasi senyap)');
     } finally { global.fetch = origFetch; }
   });
 });

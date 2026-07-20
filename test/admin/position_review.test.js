@@ -231,8 +231,11 @@ async function withFetch(stub, fn) {
   try { return await fn(); } finally { global.fetch = orig; }
 }
 
-// Stub gabungan: Upstash Redis REST (setup_log/candle/calendar/circuit/budget) +
+// Stub gabungan: Upstash Redis REST (setup_log_auto/candle/calendar/circuit/budget) +
 // SambaNova AI. `log` di-mutate in-place oleh SET supaya assertion baca state akhir.
+// PLAN U-7 (REVISI VISIBILITAS 2026-07-20): position_review HANYA melayani setup
+// eksperimen di `setup_log_auto:v1` (dulu `setup_log:v1` sebelum revisi) — fixture
+// `log` di sini merepresentasikan log EKSPERIMEN, bukan log manual pengguna.
 function combinedStub({ log, candles = [], calThis = { events: [] }, calNext = { events: [] }, aiJson, aiFail = false }) {
   return async (url, opts) => {
     if (typeof url === 'string' && url.includes('sambanova.ai')) {
@@ -242,14 +245,15 @@ function combinedStub({ log, candles = [], calThis = { events: [] }, calNext = {
     const args = JSON.parse(opts.body);
     if (args[0] === 'GET') {
       const key = args[1];
-      if (key === 'setup_log:v1') return { ok: true, json: async () => ({ result: JSON.stringify(log) }) };
+      if (key === 'setup_log_auto:v1') return { ok: true, json: async () => ({ result: JSON.stringify(log) }) };
+      if (key === 'setup_log:v1') return { ok: true, json: async () => ({ result: null }) }; // log manual kosong di test ini
       if (String(key).startsWith('ohlcv:')) return { ok: true, json: async () => ({ result: candles.length ? JSON.stringify(candles) : null }) };
       if (key === 'calendar_v1') return { ok: true, json: async () => ({ result: JSON.stringify(calThis) }) };
       if (key === 'calendar_next_v1') return { ok: true, json: async () => ({ result: JSON.stringify(calNext) }) };
       return { ok: true, json: async () => ({ result: null }) }; // circuit state dll -> fail-open
     }
     if (args[0] === 'SET') {
-      if (args[1] === 'setup_log:v1') { log.length = 0; log.push(...JSON.parse(args[2])); }
+      if (args[1] === 'setup_log_auto:v1') { log.length = 0; log.push(...JSON.parse(args[2])); }
       return { ok: true, json: async () => ({ result: 'OK' }) };
     }
     if (args[0] === 'INCR') return { ok: true, json: async () => ({ result: 1 }) };

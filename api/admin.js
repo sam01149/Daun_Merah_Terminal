@@ -2532,13 +2532,107 @@ function _aggSetupStats(arr) {
   };
 }
 
+// PLAN U-7: hapus blok `management` (U-5a) dari agregat sebelum dikirim ke payload
+// PUBLIK — manajemen posisi eksperimen HANYA boleh terlihat lewat scope=auto
+// (REVISI VISIBILITAS). Field informasi U-1 (win_rate_raw/adjusted, loss_causes)
+// tetap ikut apa adanya karena bukan bagian `management`.
+function _omitManagement(stats) {
+  const { management, ...rest } = stats;
+  return rest;
+}
+
+// PLAN U-7: ringkasan consistency_log:v1 (uji konsistensi LLM 3x/hari, U-3) untuk
+// payload developer scope=auto. List Redis (LPUSH+LTRIM cap 60 di daemon) — dibaca
+// penuh di sini (bukan endpoint publik/sering-dipanggil, hemat Redis tidak kritis).
+async function _consistencySummary() {
+  try {
+    const raw = await redisCmd('LRANGE', 'consistency_log:v1', '0', '-1');
+    const entries = Array.isArray(raw)
+      ? raw.map(s => { try { return JSON.parse(s); } catch (e) { return null; } }).filter(Boolean)
+      : [];
+    const identical = entries.filter(e => e.bias_identical).length;
+    return {
+      total: entries.length,
+      bias_identical: identical,
+      bias_identical_pct: entries.length ? Math.round(identical / entries.length * 100) : null,
+      recent: entries.slice(0, 10),
+    };
+  } catch (e) { return { total: 0, bias_identical: 0, bias_identical_pct: null, recent: [] }; }
+}
+
+// PLAN U-7: payload developer-only scope=auto — agregat `setup_log_auto:v1`
+// dievaluasi TERPISAH dari `setup_log:v1` (tidak pernah digabung satu array, aturan
+// satu-array-satu-sumber), + blok `management` (U-5a) + ringkasan konsistensi (U-3).
+async function _buildAutoScopeStats() {
+  const raw = await redisCmd('GET', 'setup_log_auto:v1');
+  if (!raw) {
+    return { scope: 'auto', symbols: {}, global: _aggSetupStats([]), recent: [], consistency: await _consistencySummary() };
+  }
+  let log = JSON.parse(raw);
+  if (!Array.isArray(log)) log = [];
+  const active = [...new Set(log.filter(s => s && (s.status === 'pending' || s.status === 'open')).map(s => s.symbol))];
+  const candlesBySymbol = {};
+  let calendarEvents = [];
+  await Promise.all([
+    ...active.map(async sym => {
+      try {
+        const r = await redisCmd('GET', `ohlcv:${sym}:1h`);
+        if (r) candlesBySymbol[sym] = JSON.parse(r);
+      } catch (e) { /* candle hilang -> setup symbol itu tetap pending */ }
+    }),
+    (async () => {
+      if (!active.length) return;
+      try {
+        const [thisWeek, nextWeek] = await Promise.all([
+          redisCmd('GET', 'calendar_v1'),
+          redisCmd('GET', 'calendar_next_v1'),
+        ]);
+        const ev1 = thisWeek ? (JSON.parse(thisWeek).events || []) : [];
+        const ev2 = nextWeek ? (JSON.parse(nextWeek).events || []) : [];
+        calendarEvents = [...ev1, ...ev2];
+      } catch (e) { /* kalender gagal -> deteksi fundamental_shock diskip */ }
+    })(),
+  ]);
+  const before = JSON.stringify(log);
+  log = _evaluateSetups(log, candlesBySymbol, Date.now(), calendarEvents);
+  const managedPending = log.filter(s => s && s.intervention?.type === 'tighten_sl' && !s.managed_status);
+  if (managedPending.length) {
+    await Promise.all([...new Set(managedPending.map(s => s.symbol))].map(async sym => {
+      if (candlesBySymbol[sym]) return;
+      try {
+        const r = await redisCmd('GET', `ohlcv:${sym}:1h`);
+        if (r) candlesBySymbol[sym] = JSON.parse(r);
+      } catch (e) { /* symbol itu tetap tak ter-update, dicoba lagi tick berikutnya */ }
+    }));
+    log = _evaluateManaged(log, candlesBySymbol);
+  }
+  const after = JSON.stringify(log);
+  if (after !== before) await redisCmd('SET', 'setup_log_auto:v1', after);
+  const bySymbol = {};
+  for (const s of log) { (bySymbol[s.symbol] = bySymbol[s.symbol] || []).push(s); }
+  const symbols = {};
+  for (const k of Object.keys(bySymbol)) { symbols[k] = _aggSetupStats(bySymbol[k]); symbols[k].history = bySymbol[k]; }
+  return {
+    scope: 'auto', symbols, global: _aggSetupStats(log), recent: log.slice(0, 10),
+    consistency: await _consistencySummary(),
+  };
+}
+
 async function setupStatsHandler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Cache-Control', 'no-cache');
   if (req.method === 'OPTIONS') return res.status(204).end();
   try {
+    // PLAN U-7 (REVISI VISIBILITAS): scope=auto developer-only dicek PALING AWAL —
+    // jalur ini TIDAK PERNAH menyentuh setup_log:v1, murni terpisah dari payload
+    // publik di bawah. Tanpa CRON_SECRET valid, JANGAN masuk sini (fall through ke
+    // publik biasa — tidak ada respons yang membocorkan keberadaan scope ini).
+    if (req.query.scope === 'auto' && _isCronCallReq(req)) {
+      return res.status(200).json(await _buildAutoScopeStats());
+    }
+
     const raw = await redisCmd('GET', 'setup_log:v1');
-    if (!raw) return res.status(200).json({ symbols: {}, global: _aggSetupStats([]), recent: [] });
+    if (!raw) return res.status(200).json({ symbols: {}, global: _omitManagement(_aggSetupStats([])), recent: [] });
     let log = JSON.parse(raw);
     if (!Array.isArray(log)) log = [];
     // Evaluasi lazy hanya symbol yang punya setup aktif — hemat Redis call
@@ -2596,8 +2690,12 @@ async function setupStatsHandler(req, res) {
     const symbols = {};
     for (const k of Object.keys(bySymbol)) { symbols[k] = _aggSetupStats(bySymbol[k]); symbols[k].history = bySymbol[k]; }
     const strengthInput = FX_PAIRS_FOR_STRENGTH.map(p => ({ label: p.label, candles: candlesBySymbol[p.symbol] }));
+    // PLAN U-7: blok `management` (U-5a) DIPINDAH keluar payload PUBLIK — hanya
+    // muncul di scope=auto (di atas). Field informasi U-1 tetap publik apa adanya.
+    const publicSymbols = {};
+    for (const k of Object.keys(symbols)) publicSymbols[k] = _omitManagement(symbols[k]);
     return res.status(200).json({
-      symbols, global: _aggSetupStats(log), recent: log.slice(0, 10),
+      symbols: publicSymbols, global: _omitManagement(_aggSetupStats(log)), recent: log.slice(0, 10),
       pair_context: { strength: computeCurrencyStrength(strengthInput) },
     });
   } catch (e) {
@@ -2636,7 +2734,10 @@ async function setupOverrideHandler(req, res) {
       return res.status(400).json({ error: 'label_reason wajib saat mengisi loss_label' });
     }
 
-    const raw = await redisCmd('GET', 'setup_log:v1');
+    // PLAN U-7: scope=auto melabel setup EKSPERIMEN (setup_log_auto:v1), default
+    // (tanpa scope) tetap setup_log:v1 (manual) seperti semula U-1.
+    const logKey = parsed?.scope === 'auto' ? 'setup_log_auto:v1' : 'setup_log:v1';
+    const raw = await redisCmd('GET', logKey);
     let log = raw ? JSON.parse(raw) : [];
     if (!Array.isArray(log)) log = [];
     const idx = log.findIndex(x => x && x.id === id);
@@ -2646,7 +2747,7 @@ async function setupOverrideHandler(req, res) {
     log[idx].label_reason = lossLabel !== null ? String(labelReason).trim() : null;
     log[idx].label_by = lossLabel !== null ? 'admin' : null;
 
-    await redisCmd('SET', 'setup_log:v1', JSON.stringify(log));
+    await redisCmd('SET', logKey, JSON.stringify(log));
     return res.status(200).json({ ok: true, setup: log[idx] });
   } catch (e) {
     return res.status(500).json({ error: e.message });
@@ -2679,11 +2780,24 @@ async function positionReviewHandler(req, res) {
       return res.status(400).json({ error: 'trigger.guid dan trigger.title wajib' });
     }
 
-    const raw = await redisCmd('GET', 'setup_log:v1');
+    // PLAN U-7 (REVISI VISIBILITAS): position_review HANYA melayani setup EKSPERIMEN
+    // di setup_log_auto:v1 — setup manual pengguna TIDAK PERNAH direview/diintervensi.
+    const raw = await redisCmd('GET', 'setup_log_auto:v1');
     let log = raw ? JSON.parse(raw) : [];
     if (!Array.isArray(log)) log = [];
     const idx = log.findIndex(x => x && x.id === id);
-    if (idx === -1) return res.status(404).json({ error: 'setup id tidak ditemukan' });
+    if (idx === -1) {
+      // id bisa jadi setup MANUAL (setup_log:v1) — tolak eksplisit TANPA call AI,
+      // beda dari 404 generik (id benar-benar tidak ditemukan di kedua log).
+      try {
+        const rawManual = await redisCmd('GET', 'setup_log:v1');
+        const manualLog = rawManual ? JSON.parse(rawManual) : [];
+        if (Array.isArray(manualLog) && manualLog.some(x => x && x.id === id)) {
+          return res.status(200).json({ skipped: 'not_experiment' });
+        }
+      } catch (e) { /* fail-open -> 404 generik di bawah */ }
+      return res.status(404).json({ error: 'setup id tidak ditemukan' });
+    }
 
     // Langkah 2a: re-cek murah SEBELUM call AI — tick _evaluateSetups pakai candle
     // symbol ini + kalender, sama pola setupStatsHandler (fail-open kalau gagal fetch).
@@ -2706,7 +2820,7 @@ async function positionReviewHandler(req, res) {
 
     const before = JSON.stringify(log);
     _evaluateSetups(log, { [symbol]: candles }, Date.now(), calendarEvents);
-    const persistTick = async () => { if (JSON.stringify(log) !== before) await redisCmd('SET', 'setup_log:v1', JSON.stringify(log)); };
+    const persistTick = async () => { if (JSON.stringify(log) !== before) await redisCmd('SET', 'setup_log_auto:v1', JSON.stringify(log)); };
     const st = log[idx];
 
     if (st.status !== 'open') {
@@ -2852,7 +2966,7 @@ async function positionReviewHandler(req, res) {
       st.managed_closed_t = Math.floor(Date.now() / 1000);
     }
     log[idx] = st;
-    await redisCmd('SET', 'setup_log:v1', JSON.stringify(log));
+    await redisCmd('SET', 'setup_log_auto:v1', JSON.stringify(log));
     await redisCmd('LPUSH', 'position_review_log:v1', JSON.stringify({
       id, t: Date.now(), trigger: { guid: trigger.guid, title: trigger.title }, decision, confidence, downgraded,
     }));
@@ -3768,7 +3882,11 @@ async function ohlcvAnalyzeHandler(req, res) {
 
     // isDiagnosticOnly dikecualikan dari cache produksi — request diagnostik tidak boleh
     // menimpa hasil analisa AI real yang sedang ditampilkan ke user di tab Analisa.
-    if ((commentary || structured) && !isDiagnosticOnly) {
+    // PLAN U-7 (REVISI VISIBILITAS): call auto (isAutoCall) JUGA dikecualikan — eksperimen
+    // developer-only, pengguna TIDAK PERNAH boleh melihat "Analisa sudah jadi"/auto-tick
+    // checklist dari call daemon. Response HTTP ke daemon tetap payload penuh (di bawah),
+    // hanya cache yang dibaca `mode=cached`/tab Analisa publik yang senyap.
+    if ((commentary || structured) && !isDiagnosticOnly && !isAutoCall) {
       redisCmd('SET', `ohlcv_analysis:${symbol}`, JSON.stringify(resultPayload), 'EX', 21600).catch(() => {});
     }
     // Outcome logging (Tier 1 riset, session 166): catat setiap setup lengkap supaya
@@ -3784,9 +3902,13 @@ async function ohlcvAnalyzeHandler(req, res) {
     // conflict!=='none' dipetakan ke 'konflik' (menimpa makro_alignment kalau perlu,
     // menangkap kasus model bilang makro_alignment='netral' tapi conflict='arah'/'waktu'
     // dari perbandingan lain), fallback ke makro_alignment kalau conflict 'none'.
+    // PLAN U-7: setup dari call auto ditulis ke key TERPISAH `setup_log_auto:v1` (cap 200
+    // sendiri) — BUKAN `setup_log:v1` (tracker/win-rate/cap milik pengguna tidak tersentuh).
+    // Skema field identik (U-1 + U-5a), tidak ada skema kedua.
     if (structured?.entry_zone && structured.sl && structured.tp && !isDiagnosticOnly) {
+      const setupLogKey = isAutoCall ? 'setup_log_auto:v1' : 'setup_log:v1';
       try {
-        const rawLog = await redisCmd('GET', 'setup_log:v1');
+        const rawLog = await redisCmd('GET', setupLogKey);
         let log = rawLog ? JSON.parse(rawLog) : [];
         if (!Array.isArray(log)) log = [];
         const dup = log.find(x => x && x.symbol === symbol
@@ -3809,7 +3931,7 @@ async function ohlcvAnalyzeHandler(req, res) {
             // PLAN U-5a: manajemen posisi VIRTUAL — null/0 = belum pernah direview.
             intervention: null, managed_status: null, managed_closed_t: null, review_count: 0,
           });
-          await redisCmd('SET', 'setup_log:v1', JSON.stringify(log.slice(0, 200)));
+          await redisCmd('SET', setupLogKey, JSON.stringify(log.slice(0, 200)));
         }
       } catch (e) { console.warn('setup_log write failed:', e.message); }
     }

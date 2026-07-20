@@ -599,15 +599,19 @@ async function processPosReviewRecheckQueue() {
 }
 
 // Guard budget + eksekusi trigger — dipanggil setelah kandidat lolos filter
-// currency + (corroborated ATAU market-moving). GET setup_log:v1 HANYA di sini
+// currency + (corroborated ATAU market-moving). GET setup_log_auto:v1 HANYA di sini
 // (bukan tiap poll), pola hemat sama dengan checkHardNewsSkip (langkah 3).
+// PLAN U-7 (REVISI VISIBILITAS 2026-07-20): manajemen posisi HANYA untuk setup
+// eksperimen auto-entry — dulu baca setup_log:v1 (ditulis U-5b sebelum revisi
+// visibilitas landing), sekarang setup_log_auto:v1 (setup manual pengguna TIDAK
+// PERNAH direview/diintervensi mesin).
 async function tryTriggerPosReview(newsItem, legs, corroborated) {
   if (redisGuard.isDegraded()) return;
   if (!isFxMarketOpen()) return;
   if (!CRON_SECRET) return;
 
   let raw;
-  try { raw = await redisCmd('GET', 'setup_log:v1'); } catch (e) { return; }
+  try { raw = await redisCmd('GET', 'setup_log_auto:v1'); } catch (e) { return; }
   let log = [];
   try { log = raw ? JSON.parse(raw) : []; } catch (e) { return; }
   if (!Array.isArray(log)) return;
