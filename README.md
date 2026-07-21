@@ -16,48 +16,45 @@ Berikut adalah visualisasi interaksi real-time antara layanan internal, API ekst
 
 ```mermaid
 graph TD
-    %% Antarmuka Pengguna
-    PWA["PWA Frontend (index.html, JS, SW)"]
-    DemoPWA["Demo Visual PWA (demo.html)"]
+    %% 1. Pemicu dan Klien (Tingkat Atas)
+    GH["GitHub Actions <br> (Cron Backup Workflows)"]
+    PWA["PWA Frontend <br> (index.html, JS, SW)"]
 
-    %% Platform Hosting & Komputasi
-    subgraph Hosting_Cloud [Platform Hosting]
-        Vercel["Vercel Serverless API (api/*.js) <br> (12/12 Slots Penuh)"]
-        Railway["Railway VPS Daemon (vps/daemon.js) <br> (Proses Latar Belakang)"]
+    %% 2. Komputasi & Cache (Tingkat Tengah)
+    Vercel["Vercel Serverless API <br> (api/*.js) <br> (12/12 Slots Penuh)"]
+    Railway["Railway VPS Daemon <br> (vps/daemon.js)"]
+    Redis[("Upstash Redis REST API <br> (Cache, State, AI Budget & Locks)")]
+
+    %% 3. Integrasi Eksternal (Tingkat Bawah - Dipecah Modular)
+    subgraph Data_Harga [Data Harga & Teknikal]
+        DerivWS["Deriv WebSocket API"]
+        YahooFin["Yahoo Finance API"]
+        TwelveData["Twelve Data API"]
     end
 
-    %% Database & Cache
-    Redis[("Upstash Redis REST API <br> (State, Cache, AI Budget, Locks)")]
-
-    %% Sumber Data & Layanan Eksternal
-    subgraph Data_Makro_Harga [Data & Harga Eksternal]
-        DerivWS["Deriv WebSocket API <br> (Live Price Stream)"]
-        YahooFin["Yahoo Finance API <br> (Fallback & Volume)"]
-        TwelveData["Twelve Data API <br> (Fallback Kedua)"]
-        FRED["FRED API <br> (Data Makro AS)"]
-        TradingView["TradingView API <br> (Kalender Ekonomi)"]
-        FinJuice["FinancialJuice RSS <br> (Headline Berita)"]
+    subgraph Data_Makro [Makroekonomi & Berita]
+        FRED["FRED API (St. Louis Fed)"]
+        TradingView["TradingView Calendar"]
+        FinJuice["FinancialJuice RSS"]
     end
 
-    %% Kecerdasan Buatan & Notifikasi
-    subgraph Integrasi_AI_Notif [AI & Komunikasi]
-        AIPools["AI Providers <br> (DeepSeek-flash, SambaNova, Cerebras, Gemini, Groq)"]
-        Telegram["Telegram Bot API <br> (Alert Admin)"]
-        WebPush["Web Push VAPID <br> (Notifikasi Browser)"]
+    subgraph AI_Notif [AI & Notifikasi]
+        AIPools["AI Providers <br> (DeepSeek-flash, SambaNova, Gemini, Cerebras, Groq)"]
+        Telegram["Telegram Bot API"]
+        WebPush["Web Push VAPID"]
     end
 
-    %% Scheduler
-    GH["GitHub Actions Workflows <br> (Cron Backup)"]
+    %% Hubungan Level 1 ke Level 2
+    GH -->|Picu Cron Job| Vercel
+    PWA -->|1. Request HTTP JSON| Vercel
+    PWA -->|2. Ambil Arah Sentimen & Sizing| Redis
 
-    %% Aliran Data Daemon (Railway)
-    DerivWS -->|1. Live Price Stream| Railway
-    Railway -->|2. Stream & Cache Candle H1| Redis
-    Railway -->|3. Cek Zona Konfluensi & Alert| Telegram
-    Railway -->|4. Push Alert Berita Kritis| WebPush
-    Railway -->|5. Supervisor Self-Heal| Redis
+    %% Hubungan Level 2 internal
+    Vercel <-->|Baca/Tulis Cache & State| Redis
+    Railway -->|Stream & Cache Candle H1| Redis
+    Railway -->|Supervisor Self-Heal| Redis
 
-    %% Aliran Data Serverless (Vercel)
-    GH -->|Picu Cron Job market-digest & ohlcv_sync| Vercel
+    %% Hubungan Vercel ke Eksternal (Level 2 ke Level 3)
     Vercel -->|1. Ambil & Cache Feed Berita| FinJuice
     Vercel -->|2. Ambil Kalender Ekonomi| TradingView
     Vercel -->|3. Ambil Implied Vol & Yields| FRED
@@ -65,10 +62,10 @@ graph TD
     Vercel -->|5. Fallback Sinkronisasi| TwelveData
     Vercel -->|6. Kirim Request Pipeline AI| AIPools
 
-    %% Aliran Data Klien (PWA)
-    PWA -->|1. Request HTTP JSON| Vercel
-    PWA -->|2. Ambil Arah Sentimen & Sizing| Redis
-    Vercel <-->|Baca/Tulis Cache & State| Redis
+    %% Hubungan Railway ke Eksternal (Level 2 ke Level 3)
+    DerivWS -->|1. Live Price Stream| Railway
+    Railway -->|3. Cek Zona Konfluensi & Alert| Telegram
+    Railway -->|4. Push Alert Berita Kritis| WebPush
 ```
 
 ---
