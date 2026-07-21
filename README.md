@@ -57,7 +57,7 @@ graph TD
     Railway -->|5. Supervisor Self-Heal| Redis
 
     %% Aliran Data Serverless (Vercel)
-    GH -->|Picu Cron Job (market-digest, ohlcv_sync)| Vercel
+    GH -->|Picu Cron Job market-digest & ohlcv_sync| Vercel
     Vercel -->|1. Ambil & Cache Feed Berita| FinJuice
     Vercel -->|2. Ambil Kalender Ekonomi| TradingView
     Vercel -->|3. Ambil Implied Vol & Yields| FRED
