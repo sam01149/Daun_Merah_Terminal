@@ -336,7 +336,6 @@ Proyek ini dipandu oleh aturan ketat di dalam `ATURAN.md` sebagai Single Source 
 
 - **Deploy Otomatis**: Deployment ke produksi dilakukan secara eksklusif via `git push origin main`. Penggunaan `vercel deploy --prod` diblokir.
 - **Larangan Emoji**: Dilarang keras menampilkan emoji visual (seperti emoji pikiran, centang, tanda seru peringatan, tanda panah tebal) pada teks antarmuka UI aplikasi. Gunakan styling CSS modern atau ikon berbasis SVG.
-- **Atribusi AI**: Dilarang menyertakan tanda `Co-Authored-By` AI atau penyebutan kontribusi agen AI dalam pesan commit. Satu-satunya kontributor terdaftar adalah `sam01149`.
 - **Bumping Versi Kunci**: Setiap kali melakukan modifikasi pada file frontend `index.html` atau Service Worker `sw.js`, pastikan meningkatkan nomor versi string variabel `APP_VERSION` dan query cache parameter `?v=` secara serentak (lockstep).
 - **Protokol Multi-Sesi**: Jika bekerja dalam mode paralel multi-sesi, klaim paket pekerjaan Anda terlebih dahulu pada file `daun_merah_plan.md` untuk menghindari tabrakan kode.
 - **Unit Test Hijau**: Perubahan kode wajib lolos pengujian 100% sebelum dapat digabungkan ke branch utama.
