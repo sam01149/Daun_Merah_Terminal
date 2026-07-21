@@ -23,8 +23,8 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 
 **Perubahan:**
 1. `README.md` [MODIFY] — Memperbarui file readme utama dengan detail mutakhir:
-   - Menyertakan halaman `demo.html` yang baru dibuat di bagan direktori dan diagram arsitektur.
-   - Memperbarui diagram Mermaid agar selaras dengan data feed (Deriv WS 14 pair FX primary, CME CVOL via ScraperAPI, TradingView Calendar) serta pool model AI terbaru.
+   - Menyertakan halaman `demo.html` di bagan direktori dan diagram arsitektur.
+   - Merancang ulang diagram Mermaid secara modular dengan struktur 3-tingkat (Trigger & Client di atas, Compute & Cache di tengah, dan kelompok API Eksternal dipecah menjadi 3 subgraph kecil di bawah) untuk mencegah diagram merentang horizontal dan menumpuk secara berantakan di GitHub.
    - Menguraikan detail grounding makro pada panel analisa pair (menggunakan Broad Dollar DXY, Crude Oil WTI, Real Yield USD nominal-vs-inflasi).
    - Menambahkan rincian 5 tingkat resiliensi/self-healing (termasuk race condition lock, cron dedup, 1H fetch dedup Plan V-2b, dan isolasi circuit breaker eksperimen Plan U).
    - Menjelaskan seluruh rantai fallback AI yang digunakan di produksi beserta budget guard harian (`_ai_guard.js`) dan cooldown 90 detik browser.
