@@ -11,11 +11,25 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-07-21 (Session 212 — Pembaruan komprehensif README.md dengan data dan arsitektur terkini)
+> **Last updated:** 2026-07-21 (Session 213 — Verifikasi status operasional daemon VPS Railway dan kinerja awal trading otomatis Plan U)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 213 (2026-07-21) — Verifikasi status operasional daemon VPS Railway dan kinerja awal trading otomatis Plan U
+
+**Konteks:** Melakukan audit operasional pasca-pemasangan daemon VPS di Railway dan aktivasi auto-entry virtual Plan U (2026-07-20). Verifikasi dilakukan dengan menginterogasi database Upstash Redis secara langsung.
+
+**Perubahan/Hasil Audit:**
+1. **Status Uptime Daemon**: VPS Railway terkonfirmasi aktif dan berdenyut secara konsisten (beat terakhir diterima 17 detik yang lalu).
+2. **Kinerja Auto-Entry (setup_log_auto:v1)**:
+   - Terkumpul **5 sampel setup virtual** sejak rilis (2026-07-20). Ini memulai akumulasi sampel menuju target n≥100 untuk Kriteria Fase Tes.
+   - Hasil setup closed: 1 setup menyentuh target profit (EURUSD=X bearish setup -> `🟢 TP` pada 2026-07-20), 2 setup dibatalkan (`canceled`). Win-rate awal 100% pada setup yang terpicu.
+   - Setup pending aktif: 2 setup diterbitkan pada slot pagi ini (EURUSD=X bearish entry 1.14384; GC=F bullish entry 3988.34).
+3. **Uji Konsistensi LLM (consistency_log:v1)**: Terverifikasi berjalan 1x sehari. Entri terbaru (2026-07-21) menunjukkan bias LLM tetap identik (3/3 bullish), namun tingkat toleransi level teknikal gagal dipenuhi karena call ketiga menghasilkan level null (indikasi model tidak patuh skema).
+4. **Log Latensi Kalender (calendar_actual_latency_log:v1)**: Pengumpulan data berjalan. Tercatat latensi aktual data makro CAD *Inflation Rate YoY* terdeteksi terlambat ~63 menit dari jadwal rilis (2026-07-20).
+5. **Skrip Scratch**: Menambahkan skrip bantu `scratch/check_trading.js` untuk memudahkan pengecekan status di masa mendatang.
 
 ## Changelog Session 212 (2026-07-21) — Pembaruan komprehensif README.md dengan data dan arsitektur terkini
 
