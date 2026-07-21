@@ -717,18 +717,30 @@ module.exports = async function handler(req, res) {
       JP: '^JN10Y',
       GB: '^TMBMKGB-10Y',
     };
+    // DXY + WTI (2026-07-21, diskusi user): AI Analisa/Kritikus sebelumnya cuma dikasih
+    // real yield sebagai angka jadi, tanpa dolar broad atau harga minyak — jadi tidak
+    // bisa menelusuri mekanisme (misal "oil naik karena geopolitik -> breakeven inflasi
+    // naik -> real yield") dan cuma menempel dua fakta lepas. Level + %chg mentah di sini
+    // dipakai admin.js (_formatFundamentalBlock) supaya narasi makro AI berpijak angka,
+    // bukan template generik. `driversMap` dipakai untuk parsing hasil di bawah tanpa
+    // mengubah bentuk FX_MAP/YIELD_MAP yang sudah ada konsumennya (frontend Daily Pulse).
+    const DRIVERS_MAP = {
+      DXY: 'DX-Y.NYB',
+      WTI: 'CL=F',
+    };
 
     try {
       const allEntries = [
-        ...Object.entries(FX_MAP).map(([cur, { sym, invert }]) => ({ type: 'fx',    key: cur, sym, invert })),
-        ...Object.entries(YIELD_MAP).map(([key, sym])           => ({ type: 'yield', key,     sym         })),
+        ...Object.entries(FX_MAP).map(([cur, { sym, invert }]) => ({ type: 'fx',      key: cur, sym, invert })),
+        ...Object.entries(YIELD_MAP).map(([key, sym])           => ({ type: 'yield',   key,     sym         })),
+        ...Object.entries(DRIVERS_MAP).map(([key, sym])         => ({ type: 'driver',  key,     sym         })),
       ];
 
       const results = await Promise.allSettled(
         allEntries.map(async (entry) => ({ ...entry, data: await fetchDailyChart(entry.sym) }))
       );
 
-      const fx = {}, yields = {};
+      const fx = {}, yields = {}, drivers = {};
       results.forEach((r, i) => {
         const entry = allEntries[i];
         if (r.status !== 'fulfilled') {
@@ -739,17 +751,22 @@ module.exports = async function handler(req, res) {
         if (entry.type === 'fx') {
           const raw = +((price - prev) / prev * 100).toFixed(3);
           fx[entry.key] = { pct: entry.invert ? -raw : raw };
-        } else {
+        } else if (entry.type === 'yield') {
           // yield quoted in % — difference in pp * 100 = bps
           yields[entry.key] = {
             level:      +price.toFixed(3),
             change_bps: Math.round((price - prev) * 100),
           };
+        } else {
+          drivers[entry.key] = {
+            level: +price.toFixed(3),
+            pct:   +((price - prev) / prev * 100).toFixed(3),
+          };
         }
       });
 
       if (Object.keys(fx).length === 0) throw new Error('all FX fetches failed');
-      const payload = { fx, yields, fetched_at: new Date().toISOString() };
+      const payload = { fx, yields, drivers, fetched_at: new Date().toISOString() };
       redisCmd('SET', SNAP_KEY, JSON.stringify(payload), 'EX', SNAP_TTL).catch(() => {});
       if (snapSf.gotLock) snapSf.release();
       return res.status(200).json({ ...payload, from_cache: false });

@@ -11,11 +11,24 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-07-20 (Session 209 — Rigor tambahan Plan U: cost expectancy, kalibrasi confidence, latensi pipeline, backtest lintas rezim + carry)
+> **Last updated:** 2026-07-21 (Session 210 — Driver makro DXY/WTI/real yield breakdown untuk grounding reasoning AI Analisa/Kritikus)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 210 (2026-07-21) — Driver makro DXY/WTI/real yield breakdown untuk grounding reasoning AI Analisa/Kritikus
+
+**Konteks:** Diskusi user memicu dari contoh output Analisa XAU/USD nyata: baris MAKRO cuma menempel dua fakta lepas ("eskalasi geopolitik AS-Iran seharusnya bullish gold, tapi harga turun karena real yield tinggi & positioning bearish") tanpa angka yang menelusuri mekanismenya. Root cause: prompt `ohlcv_analyze`/`ohlcv_critic` sebelumnya cuma dikasih real yield sebagai angka jadi (`_formatFundamentalBlock`, sumber `real_yields` cache) dan excerpt teks Ringkasan — tidak ada DXY (dolar broad) atau WTI (barometer oil-driven inflation), padahal keduanya sudah difetch di `correlations.js` (`GOLD_CORR_ASSETS`) untuk keperluan lain (matriks korelasi), tidak pernah disuntik ke prompt AI. Kesepakatan desain: bukan hardcode rule "kalau Iran maka cek Hormuz" (rapuh, tidak generalisasi ke skenario lain) — kasih data mentah convergence point (DXY/VIX/real yield selalu relevan lintas skenario) + instruksi eksplisit menelusuri mekanisme pakai angka, biarkan model sendiri yang reasoning.
+
+**Perubahan:**
+1. `api/correlations.js` `action=daily-snapshot` — tambah `DRIVERS_MAP` (DXY `DX-Y.NYB`, WTI `CL=F`), payload sekarang punya field `drivers: {DXY:{level,pct}, WTI:{level,pct}}` di samping `fx`/`yields` yang sudah ada. VIX tidak perlu ditambah — sudah ada di `_formatFundamentalBlock` lewat `risk_regime` cache (`RISK REGIME: ... VIX ...`).
+2. `api/admin.js` `_formatFundamentalBlock` — param baru `drivers`. Baris `DOLLAR & KOMODITAS: DXY x.xx (+x.xx% hari ini) | WTI $x.xx (+x.xx% hari ini)` selalu tampil kalau data ada (barometer global, relevan lintas pair); baris `REAL YIELD USD: nominal x% − ekspektasi inflasi x% = real yield x%` HANYA kalau `USD` termasuk leg pair (breakdown nominal-vs-inflasi dari `real_yields` cache, bukan cuma angka real yield akhir).
+3. `_extractMacroDrivers(rawSnap, rawRY)` — helper baru, parse `daily_snapshot.drivers` + `real_yields.currencies.USD`, fail-open per sumber. Dipanggil di kedua caller `_formatFundamentalBlock` (`ohlcvAnalyzeHandler` + `ohlcv_critic`) yang sekarang ikut fetch `daily_snapshot`+`real_yields` di `Promise.all` yang sudah ada (tidak nambah round-trip baru).
+4. Prompt `ohlcv_analyze` — instruksi `makro_alignment_reason` dan `p4Macro` (paragraf integrasi) diperkuat: kalau alasan menyangkut mekanisme dolar/komoditas/yield, WAJIB kutip angka DXY/WTI/breakdown real yield kalau tersedia di FUNDAMENTAL TERSTRUKTUR (jelaskan apakah real yield bergerak dari sisi nominal atau sisi ekspektasi inflasi) — dilarang mengarang angka kalau data tidak ada, tetap boleh bahasa umum.
+5. `api/market-digest.js` — `real_yields` dipindah dari `redisCmd('GET', ...)` pasif ke `fetchOrWarm('real_yields', '/api/real-yields')` (pola sama dengan `risk_regime`/`correlations_v3`), plus entry baru `fetchOrWarm('daily_snapshot', '/api/correlations?action=daily-snapshot')`. Market-digest.yml menjalankan step digest lalu ANALISA XAU/USD berurutan (bukan paralel) — warming di sini memastikan breakdown DXY/WTI/real yield fresh saat prompt Analisa XAU/USD jalan tiap slot (3x/hari), bukan bergantung ada-tidaknya user buka tab Real Yields/Daily Pulse duluan.
+
+**Verifikasi:** `npm test` 555/555 hijau (15 test baru di `test/admin/makro_ctx.test.js`: baris DOLLAR & KOMODITAS/REAL YIELD USD lengkap & parsial, gating USD-leg-only untuk real yield, fail-open drivers null/kosong, parsing `_extractMacroDrivers` termasuk cache korup). Tidak ada perubahan `index.html`/`sw.js`/`?v=` (murni backend — data tambahan ke prompt AI, tidak ada UI baru). Verifikasi live tersisa: pantau baris MAKRO di Analisa XAU/USD slot berikutnya, konfirmasi `makro_alignment_reason`/paragraf integrasi benar-benar mengutip angka DXY/WTI/nominal-inflasi saat mekanismenya relevan.
 
 ## Changelog Session 209 (2026-07-20) — Rigor tambahan Plan U: cost expectancy, kalibrasi confidence, latensi pipeline, backtest lintas rezim + carry
 

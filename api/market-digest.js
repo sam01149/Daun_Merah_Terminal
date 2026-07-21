@@ -1207,10 +1207,18 @@ module.exports = async function handler(req, res) {
   let digestHistory = [], xauHistory = [], realYieldsData = null, xauSpot = null, xauTa = null, liqData = null, ycData = null, rawPrevThesis = null;
   let riskRegimeData = null, ratePathData = null, correlationsData = null, riskReversalData = null, cotData = null, polymarketData = null;
   try {
+    // Promise.all sengaja punya 1 entry lebih banyak (daily_snapshot) daripada nama yang
+    // di-destructure — market-digest.js sendiri tidak butuh isinya, cuma memicu warming
+    // cache untuk konsumen di admin.js (lihat komentar di entry itu di bawah).
     const [rawHist, rawXauHist, rawRY, spotResult, taResult, rawLiq, rawYc, _rawPrevThesis, rawRisk, rawRate, rawCorr, rawRR, rawCot, rawPoly] = await Promise.all([
       redisCmd('LRANGE', 'digest_history', 0, 6),
       redisCmd('LRANGE', 'xau_history', 0, 3),
-      redisCmd('GET', 'real_yields'),
+      // real_yields dipindah ke fetchOrWarm (2026-07-21, diskusi user soal DXY/WTI/real
+      // yield breakdown) — sebelumnya cuma GET pasif (TTL 6h, hanya fresh kalau ada yang
+      // buka tab Real Yields duluan). Sekarang aktif di-warm tiap slot digest (3x/hari),
+      // supaya breakdown nominal/breakeven yang disuap ke prompt Analisa/Kritikus
+      // (_formatFundamentalBlock di admin.js) jarang kosong/basi.
+      fetchOrWarm('real_yields', '/api/real-yields'),
       fetchXauSpot(),
       fetchXauTA(),
       redisCmd('GET', 'liquidity_usd'),
@@ -1226,6 +1234,10 @@ module.exports = async function handler(req, res) {
       // blok lain; warm hanya kalau kosong.
       fetchOrWarm('cot_cache_v2', '/api/feeds?type=cot', 25000),
       fetchOrWarm('polymarket_signal_v3', '/api/admin?action=polymarket'),
+      // DXY + WTI level/%chg (2026-07-21) — sama alasan dengan real_yields di atas:
+      // dipakai admin.js supaya narasi makro AI bisa menelusuri mekanisme dolar/minyak
+      // dengan angka konkret, bukan cuma label "eskalasi geopolitik".
+      fetchOrWarm('daily_snapshot', '/api/correlations?action=daily-snapshot'),
     ]);
     rawPrevThesis = _rawPrevThesis;
     if (rawCot)  { try { cotData        = JSON.parse(rawCot);  } catch(_) {} }

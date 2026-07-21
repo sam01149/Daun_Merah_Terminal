@@ -3208,7 +3208,7 @@ function _extractRingkasanExcerpt(article, label, isXau) {
 // Sumber: cb_bias (dirawat Call 2 digest), cot_cache_v2 (CFTC; USD = Dollar Index),
 // risk_regime — data langsung dari cache server, BUKAN turunan prosa artikel, jadi
 // Analisa tetap dapat fundamental kedua leg meski artikel hari itu tidak membahasnya.
-function _formatFundamentalBlock({ label, isXau, cbBias, cot, risk, retail, nowMs }) {
+function _formatFundamentalBlock({ label, isXau, cbBias, cot, risk, retail, drivers, nowMs }) {
   const legs = String(label || '').toUpperCase().split('/').map(s => s.trim()).filter(Boolean);
   if (legs.length === 0) return '';
   const ageH = iso => {
@@ -3257,11 +3257,47 @@ function _formatFundamentalBlock({ label, isXau, cbBias, cot, risk, retail, nowM
     if (risk.move != null) parts.push(`MOVE ${risk.move}`);
     lines.push(`RISK REGIME: ${parts.join(' | ')}`);
   }
+  // Driver dolar/komoditas (2026-07-21, diskusi user): sebelumnya AI cuma dikasih label
+  // ("geopolitik eskalasi", "real yield tinggi") tanpa angka mentah untuk menelusuri
+  // mekanismenya sendiri — DXY/WTI di sini + breakdown real yield di bawah supaya klaim
+  // makro_alignment_reason bisa mengutip data konkret (level & %chg), bukan template
+  // generik. DXY/WTI selalu relevan (barometer dolar broad/risk-off berlaku lintas pair);
+  // breakdown real yield USD hanya kalau USD memang salah satu leg pair ini.
+  const dxy = drivers?.dxy, wti = drivers?.wti;
+  const dcParts = [];
+  if (dxy?.pct != null) dcParts.push(`DXY ${dxy.level != null ? dxy.level.toFixed(2) : '?'} (${dxy.pct >= 0 ? '+' : ''}${dxy.pct.toFixed(2)}% hari ini)`);
+  if (wti?.pct != null) dcParts.push(`WTI $${wti.level != null ? wti.level.toFixed(2) : '?'} (${wti.pct >= 0 ? '+' : ''}${wti.pct.toFixed(2)}% hari ini)`);
+  if (dcParts.length > 0) lines.push(`DOLLAR & KOMODITAS: ${dcParts.join(' | ')}`);
+  const ry = drivers?.realYieldUsd;
+  if (legs.includes('USD') && ry && ry.nominal != null && ry.inflation_exp != null && ry.real != null) {
+    lines.push(`REAL YIELD USD: nominal ${ry.nominal}% − ekspektasi inflasi ${ry.inflation_exp}% = real yield ${ry.real}% (driver utama gold — kalau mau klaim "real yield naik/turun karena X", cek dulu apakah X ini sejalan dengan komponen nominal atau inflasi di atas, bukan cuma angka real yield akhir)`);
+  }
   if (lines.length === 0) return '';
   const note = isXau
     ? 'catatan: XAU tidak punya bank sentral — pakai bias Fed (USD) + risk regime sebagai proxy arah dolar/haven'
     : 'gunakan untuk menilai apakah setup teknikal searah atau melawan fundamental kedua leg';
   return `FUNDAMENTAL TERSTRUKTUR (cache server, bukan dari artikel — ${note}):\n${lines.join('\n')}`;
+}
+
+// Ekstrak {dxy, wti, realYieldUsd} dari cache 'daily_snapshot' (correlations.js,
+// action=daily-snapshot) + 'real_yields' (real-yields.js) — dipakai kedua caller
+// _formatFundamentalBlock (ohlcvAnalyzeHandler & ohlcv_critic) supaya parsing tidak
+// dobel-tulis. Fail-open per sumber: cache kosong/korup di salah satu tidak menghapus
+// yang lain (pola sama dengan blok fundamental lain).
+function _extractMacroDrivers(rawSnap, rawRY) {
+  let dxy = null, wti = null;
+  try {
+    if (rawSnap) {
+      const snap = JSON.parse(rawSnap);
+      dxy = snap?.drivers?.DXY || null;
+      wti = snap?.drivers?.WTI || null;
+    }
+  } catch (e) { /* opsional */ }
+  let realYieldUsd = null;
+  try {
+    if (rawRY) realYieldUsd = JSON.parse(rawRY)?.currencies?.USD || null;
+  } catch (e) { /* opsional */ }
+  return { dxy, wti, realYieldUsd };
 }
 
 // Session 157 lanjutan 7: konteks sentimen pasar options (CME CVOL) per pair, bahasa
@@ -3512,11 +3548,13 @@ async function ohlcvAnalyzeHandler(req, res) {
     // risk regime), bukan turunan artikel. Best-effort: gagal baca = blok kosong.
     let fundBlock = '';
     try {
-      const [rawBias, rawCot, rawRisk, rawRetail] = await Promise.all([
+      const [rawBias, rawCot, rawRisk, rawRetail, rawSnap, rawRY] = await Promise.all([
         redisCmd('GET', 'cb_bias'),
         redisCmd('GET', 'cot_cache_v2'),
         redisCmd('GET', 'risk_regime'),
         redisCmd('GET', 'retail_sentiment_cache'),
+        redisCmd('GET', 'daily_snapshot'),
+        redisCmd('GET', 'real_yields'),
       ]);
       fundBlock = _formatFundamentalBlock({
         label: data.label, isXau: data.is_xau,
@@ -3524,6 +3562,7 @@ async function ohlcvAnalyzeHandler(req, res) {
         cot:    rawCot  ? JSON.parse(rawCot)  : null,
         risk:   rawRisk ? JSON.parse(rawRisk) : null,
         retail: rawRetail ? JSON.parse(rawRetail) : null,
+        drivers: _extractMacroDrivers(rawSnap, rawRY),
         nowMs:  Date.now(),
       });
     } catch (e) { /* opsional — jangan gagalkan analisa kalau cache fundamental kosong */ }
@@ -3646,7 +3685,7 @@ async function ohlcvAnalyzeHandler(req, res) {
     ].filter(Boolean).join(' + ');
 
     const p4Macro = (ringkasanContext || fundBlock)
-      ? ' — kalau KONTEKS MAKRO / FUNDAMENTAL TERSTRUKTUR berlawanan jelas dengan struktur teknikal (misal makro risk-off tapi teknikal breakout bullish), sebut konflik itu eksplisit dan turunkan keyakinan setup, jangan diam-diam diabaikan; kesimpulanmu di sini harus konsisten dengan field makro_alignment'
+      ? ' — kalau KONTEKS MAKRO / FUNDAMENTAL TERSTRUKTUR berlawanan jelas dengan struktur teknikal (misal makro risk-off tapi teknikal breakout bullish), sebut konflik itu eksplisit dan turunkan keyakinan setup, jangan diam-diam diabaikan; kesimpulanmu di sini harus konsisten dengan field makro_alignment. Kalau konfliknya bertipe "berita/geopolitik seharusnya mendorong arah A tapi harga malah arah B", JANGAN cuma menempelkan dua fakta lepas (misal "geopolitik naik, tapi real yield tinggi") — telusuri mekanismenya pakai angka DXY/WTI/breakdown real yield di FUNDAMENTAL TERSTRUKTUR kalau tersedia (contoh: naik/turunnya WTI menjelaskan naik/turunnya ekspektasi inflasi, yang lalu menjelaskan kenapa real yield bergerak begitu — bukan cuma menyebut real yield sebagai fakta berdiri sendiri)'
       : '';
     const p3Atr = extraCtx?.includes('ATR') ? ', volatilitas berdasarkan ATR' : '';
     const p4Label = extraCtx ? `(${extraCtx})` : 'timeframe';
@@ -3684,7 +3723,7 @@ async function ohlcvAnalyzeHandler(req, res) {
       '- invalidation_condition: kondisi spesifik yang membatalkan skenario ini sepenuhnya (beda dari sl — ini soal struktur/tesis, misal "kalau Daily close balik di bawah SMA50 atau swing low H4 terakhir jebol, bias bullish batal")',
       '- time_horizon_days: estimasi jumlah hari realistis skenario ini main out (angka, misal 3, 5, 10) berdasarkan jarak entry-tp dibanding rata-rata gerak harian (ATR/sigma) yang ada di data',
       '- makro_alignment: "searah" kalau KONTEKS MAKRO / FUNDAMENTAL TERSTRUKTUR mendukung arah bias teknikalmu, "konflik" kalau berlawanan, "netral" kalau sinyal makro tidak jelas/campuran. Kalau blok makro dan fundamental dua-duanya tidak tersedia di atas, isi null.',
-      '- makro_alignment_reason: SATU kalimat pendek alasannya dengan menyebut data spesifik (misal "bias Fed Dovish + COT USD net short searah dengan bias bearish USD/JPY"). Null kalau makro_alignment null.',
+      '- makro_alignment_reason: SATU kalimat pendek alasannya dengan menyebut data spesifik (misal "bias Fed Dovish + COT USD net short searah dengan bias bearish USD/JPY"). Kalau alasannya menyangkut mekanisme dolar/komoditas/yield (misal "safe-haven vs real yield", "geopolitik vs oil"), WAJIB pakai angka konkret dari baris DOLLAR & KOMODITAS / REAL YIELD USD di FUNDAMENTAL TERSTRUKTUR kalau tersedia (level DXY/WTI, atau breakdown nominal-vs-ekspektasi inflasi) — jangan cuma bilang "real yield tinggi" tanpa angka atau tanpa menjelaskan apakah itu didorong sisi nominal atau sisi inflasi. Kalau data itu tidak tersedia di atas, jangan mengarang angka — tetap boleh pakai bahasa umum. Null kalau makro_alignment null.',
       '- conflict: bandingkan bias TEKNIKALMU vs (a) arah yang tersirat KONTEKS MAKRO/FUNDAMENTAL TERSTRUKTUR di atas (kalau ada), DAN (b) [EVENT HIGH-IMPACT 7 HARI KE DEPAN] (kalau ada). Isi "arah" kalau makro/fundamental berlawanan jelas dengan bias teknikalmu — INI BUKAN alasan otomatis untuk tidak keluarkan setup, tapi WAJIB dilaporkan di sini. Isi "waktu" kalau ada event high-impact dalam beberapa jam ke depan (sebelum time_horizon_days-mu selesai) yang bisa membatalkan skenario mendadak — ini LEBIH SERIUS dari konflik arah, pilih "waktu" kalau dua-duanya terjadi sekaligus. Isi "none" kalau tidak ada konflik terdeteksi atau data pembanding tidak tersedia.',
       '- conflict_note: SATU kalimat pendek alasan konkret (sebut data/event spesifik) kalau conflict bukan "none"; null kalau conflict "none".',
       '- confidence: level keyakinanmu sendiri atas SELURUH setup ini (bukan cuma bias arah) — salah satu "tinggi"/"sedang"/"rendah". HARUS konsisten dengan level keyakinan yang kamu sebut di paragraf KESIMPULAN nanti (field ini SATU-SATUNYA sumber terstruktur untuk itu, dibaca kode/statistik — paragraf teks tidak diparsing). Null HANYA kalau entry_zone null (tidak ada setup untuk dinilai).',
@@ -4239,7 +4278,7 @@ async function ohlcvCriticHandler(req, res) {
   // Fact sheet ringkas — tiap blok independen try/catch (kegagalan satu cache
   // tidak boleh mengosongkan blok lain), sama pola dengan ohlcvAnalyzeHandler.
   let fundBlock = '', rrBlock = '', trackBlock = '', calBlock = '';
-  const [rawBias, rawCot, rawRisk, rawRetail, rawRR, rawCal, rawLog] = await Promise.all([
+  const [rawBias, rawCot, rawRisk, rawRetail, rawRR, rawCal, rawLog, rawSnap, rawRY] = await Promise.all([
     redisCmd('GET', 'cb_bias').catch(() => null),
     redisCmd('GET', 'cot_cache_v2').catch(() => null),
     redisCmd('GET', 'risk_regime').catch(() => null),
@@ -4247,6 +4286,8 @@ async function ohlcvCriticHandler(req, res) {
     redisCmd('GET', 'rr_cache_v2').catch(() => null),
     redisCmd('GET', 'calendar_v1').catch(() => null),
     redisCmd('GET', 'setup_log:v1').catch(() => null),
+    redisCmd('GET', 'daily_snapshot').catch(() => null),
+    redisCmd('GET', 'real_yields').catch(() => null),
   ]);
   try {
     fundBlock = _formatFundamentalBlock({
@@ -4255,6 +4296,7 @@ async function ohlcvCriticHandler(req, res) {
       cot:    rawCot  ? JSON.parse(rawCot)  : null,
       risk:   rawRisk ? JSON.parse(rawRisk) : null,
       retail: rawRetail ? JSON.parse(rawRetail) : null,
+      drivers: _extractMacroDrivers(rawSnap, rawRY),
       nowMs:  Date.now(),
     });
   } catch (e) { /* opsional */ }
@@ -4688,6 +4730,7 @@ module.exports.computeOhlcvMetrics = computeOhlcvMetrics;
 module.exports.resampleTo4h = resampleTo4h;
 module.exports._extractRingkasanExcerpt = _extractRingkasanExcerpt;
 module.exports._formatFundamentalBlock = _formatFundamentalBlock;
+module.exports._extractMacroDrivers = _extractMacroDrivers;
 module.exports._formatTrackRecordBlock = _formatTrackRecordBlock;
 module.exports._calEventMsWib = _calEventMsWib;
 module.exports._buildAnalyzeCalBlock = _buildAnalyzeCalBlock;

@@ -11,7 +11,7 @@ const path = require('path');
 delete process.env.UPSTASH_REDIS_REST_URL;
 delete process.env.UPSTASH_REDIS_REST_TOKEN;
 
-const { _extractRingkasanExcerpt, _formatFundamentalBlock } = require('../../api/admin.js');
+const { _extractRingkasanExcerpt, _formatFundamentalBlock, _extractMacroDrivers } = require('../../api/admin.js');
 
 // Artikel sintetis bergaya digest: jangkar → tag per currency → Konfirmasi → blok XAU
 const ARTICLE = [
@@ -136,4 +136,50 @@ test('fund block: data parsial tetap jalan, semua kosong → string kosong', () 
   assert.ok(onlyRisk.includes('RISK REGIME') && !onlyRisk.includes('EUR:'));
   assert.strictEqual(_formatFundamentalBlock({ label: 'EUR/USD', isXau: false, cbBias: null, cot: null, risk: null, nowMs: NOW }), '');
   assert.strictEqual(_formatFundamentalBlock({ label: '', isXau: false, cbBias: CB, cot: COT, risk: RISK, nowMs: NOW }), '');
+});
+
+// ── Driver makro: DXY/WTI/real yield (2026-07-21) ────────────────────────────
+// Konteks: diskusi user soal AI Analisa yang cuma menempel label ("geopolitik naik,
+// tapi real yield tinggi") tanpa angka mentah untuk menelusuri mekanismenya. Blok ini
+// menyuntik DXY/WTI (dari daily_snapshot) + breakdown nominal/inflasi (dari real_yields)
+// supaya makro_alignment_reason bisa mengutip data konkret.
+
+const DRIVERS = {
+  dxy: { level: 104.32, pct: 0.42 },
+  wti: { level: 68.2,   pct: 1.8 },
+  realYieldUsd: { nominal: 4.2, inflation_exp: 2.35, real: 1.85 },
+};
+
+test('fund block XAU/USD: drivers lengkap -> baris DOLLAR & KOMODITAS + REAL YIELD USD (USD termasuk leg)', () => {
+  const out = _formatFundamentalBlock({ label: 'XAU/USD', isXau: true, cbBias: null, cot: null, risk: null, drivers: DRIVERS, nowMs: NOW });
+  assert.ok(out.includes('DOLLAR & KOMODITAS: DXY 104.32 (+0.42% hari ini) | WTI $68.20 (+1.80% hari ini)'), out);
+  assert.ok(out.includes('REAL YIELD USD: nominal 4.2% − ekspektasi inflasi 2.35% = real yield 1.85%'), out);
+});
+
+test('fund block EUR/GBP: DXY/WTI tetap tampil (barometer global), REAL YIELD USD disembunyikan (USD bukan leg)', () => {
+  const out = _formatFundamentalBlock({ label: 'EUR/GBP', isXau: false, cbBias: null, cot: null, risk: null, drivers: DRIVERS, nowMs: NOW });
+  assert.ok(out.includes('DOLLAR & KOMODITAS'), out);
+  assert.ok(!out.includes('REAL YIELD USD'), out);
+});
+
+test('fund block: drivers kosong/null -> tidak menambah baris apapun (fail-open)', () => {
+  const out = _formatFundamentalBlock({ label: 'EUR/USD', isXau: false, cbBias: null, cot: null, risk: RISK, drivers: null, nowMs: NOW });
+  assert.ok(!out.includes('DOLLAR & KOMODITAS'));
+  assert.ok(!out.includes('REAL YIELD USD'));
+});
+
+test('_extractMacroDrivers: parse daily_snapshot.drivers + real_yields.currencies.USD', () => {
+  const rawSnap = JSON.stringify({ drivers: { DXY: { level: 104.32, pct: 0.42 }, WTI: { level: 68.2, pct: 1.8 } } });
+  const rawRY = JSON.stringify({ currencies: { USD: { nominal: 4.2, inflation_exp: 2.35, real: 1.85 }, EUR: { real: 0.1 } } });
+  const out = _extractMacroDrivers(rawSnap, rawRY);
+  assert.deepStrictEqual(out.dxy, { level: 104.32, pct: 0.42 });
+  assert.deepStrictEqual(out.wti, { level: 68.2, pct: 1.8 });
+  assert.deepStrictEqual(out.realYieldUsd, { nominal: 4.2, inflation_exp: 2.35, real: 1.85 });
+});
+
+test('_extractMacroDrivers: cache kosong/korup/null -> semua null, tidak throw', () => {
+  assert.deepStrictEqual(_extractMacroDrivers(null, null), { dxy: null, wti: null, realYieldUsd: null });
+  assert.deepStrictEqual(_extractMacroDrivers('not json', 'also not json'), { dxy: null, wti: null, realYieldUsd: null });
+  const rawSnapNoDrivers = JSON.stringify({ fx: { EUR: { pct: 0.1 } } });
+  assert.deepStrictEqual(_extractMacroDrivers(rawSnapNoDrivers, null), { dxy: null, wti: null, realYieldUsd: null });
 });
