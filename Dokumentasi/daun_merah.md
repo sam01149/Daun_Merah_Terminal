@@ -11,11 +11,39 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-07-21 (Session 210 — Driver makro DXY/WTI/real yield breakdown untuk grounding reasoning AI Analisa/Kritikus)
+> **Last updated:** 2026-07-21 (Session 212 — Pembaruan komprehensif README.md dengan data dan arsitektur terkini)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 212 (2026-07-21) — Pembaruan komprehensif README.md dengan data dan arsitektur terkini
+
+**Konteks:** Pembaruan file `README.md` utama di root repositori agar mencerminkan kondisi produksi nyata, arsitektur, data feed, runtime daemon, fallback AI, self-healing, isolasi sirkuit, dan fitur-fitur baru terkini sesuai dengan seluruh dokumen yang ada di folder `Dokumentasi/`.
+
+**Perubahan:**
+1. `README.md` [MODIFY] — Memperbarui file readme utama dengan detail mutakhir:
+   - Menyertakan halaman `demo.html` yang baru dibuat di bagan direktori dan diagram arsitektur.
+   - Memperbarui diagram Mermaid agar selaras dengan data feed (Deriv WS 14 pair FX primary, CME CVOL via ScraperAPI, TradingView Calendar) serta pool model AI terbaru.
+   - Menguraikan detail grounding makro pada panel analisa pair (menggunakan Broad Dollar DXY, Crude Oil WTI, Real Yield USD nominal-vs-inflasi).
+   - Menambahkan rincian 5 tingkat resiliensi/self-healing (termasuk race condition lock, cron dedup, 1H fetch dedup Plan V-2b, dan isolasi circuit breaker eksperimen Plan U).
+   - Menjelaskan seluruh rantai fallback AI yang digunakan di produksi beserta budget guard harian (`_ai_guard.js`) dan cooldown 90 detik browser.
+   - Melengkapi daftar semua variabel lingkungan (environment variables) terkini yang aktif digunakan.
+2. `npm test` dijalankan di working directory gabungan dan terkonfirmasi 100% hijau (555/555 pass).
+
+## Changelog Session 211 (2026-07-21) — Pembuatan demo.html untuk presentasi antarmuka trading terminal Daun Merah yang interaktif
+
+**Konteks:** Pengguna meminta pembuatan halaman visual demo interaktif dengan nama `demo.html` yang merangkum estetika trading terminal Daun Merah dan fitur-fitur utamanya secara representatif.
+
+**Perubahan:**
+1. `demo.html` [NEW] — Membuat file demo HTML mandiri (single-file) dengan CSS terintegrasi bergaya terminal gelap (hitam `#0a0a08`, aksen merah `#c0392b`, font monospace 'DM Mono' dan 'Syne' untuk heading). Mendukung layout responsif (desktop sidebar rel kiri tanpa logo "DM" atas permintaan pengguna, mobile bottom-nav bar).
+2. Fitur Demo yang disimulasikan:
+   - **Dashboard/Ringkasan**: AI Digest Harian dan Fundamental Shock Overview.
+   - **Feed Berita**: Simulasi feed berita macro yang bisa disaring (Hawkish/Dovish/USD) dan tombol "+ Tambah Berita (Simulasi)" untuk mendorong berita baru masuk secara real-time dengan efek visual flash.
+   - **Analisa AI (XAU/USD)**: Visualisasi panel analisa yang menyertakan data driver makro terbaru (DXY/WTI) dan Real Yield USD nominal-vs-inflasi, checklist verdict, dan Multiplier Risk.
+   - **Sizing Calculator**: Kalkulator interaktif yang otomatis menghitung lot trading dan nominal risiko berdasarkan input balance, % risk, pair, stop loss, dan verdict multiplier. Terdapat tombol modal simulator instruksi MT5.
+   - **Teknikal & Korelasi (Tek)**: Tabel Option Expiries, Heatmap Gravity bar, dan Matrix Korelasi aset global.
+3. Kepatuhan Aturan: Antarmuka UI sepenuhnya bersih dari emoji (sesuai Aturan Universal #1).
 
 ## Changelog Session 210 (2026-07-21) — Driver makro DXY/WTI/real yield breakdown untuk grounding reasoning AI Analisa/Kritikus
 
