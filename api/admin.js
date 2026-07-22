@@ -4189,6 +4189,7 @@ async function ohlcvAnalyzeHandler(req, res) {
         // tetap catat analisa terbaru — supaya pandangan AI yang lebih baru tetap kepakai
         // (bukan di-skip begitu saja), tapi cuma 1 ide aktif per symbol setiap saat.
         let blockedByOpenPosition = false;
+        let shouldSaveLog = false;
         if (isAutoCall && !dup) {
           const openSame = log.find(x => x && x.symbol === symbol && x.status === 'open');
           if (openSame) {
@@ -4196,9 +4197,33 @@ async function ohlcvAnalyzeHandler(req, res) {
           } else {
             const stalePending = log.find(x => x && x.symbol === symbol && x.status === 'pending');
             if (stalePending) {
-              stalePending.status = 'canceled';
-              stalePending.label_reason = 'digantikan analisa auto-entry lebih baru sebelum kena harga';
-              stalePending.label_by = 'auto';
+              if (stalePending.bias === structured.bias) {
+                // Skenario Refinemen (bias searah): update level entry & SL in-place, jangan di-cancel
+                stalePending.entry_zone = structured.entry_zone;
+                stalePending.sl = structured.sl;
+                stalePending.tp = structured.tp;
+                if (structured.risk_reward != null) stalePending.rr = structured.risk_reward;
+                if (structured.time_horizon_days != null) stalePending.horizon_days = structured.time_horizon_days;
+                if (structured.confidence != null) stalePending.confidence = structured.confidence;
+                stalePending.alignment = (structured.conflict && structured.conflict !== 'none')
+                  ? 'konflik'
+                  : (structured.makro_alignment || null);
+                stalePending.model = model;
+                stalePending.ts = Date.now();
+                stalePending.refined_count = (stalePending.refined_count || 0) + 1;
+                blockedByOpenPosition = true;
+                shouldSaveLog = true;
+              } else {
+                // Skenario Pembalikan Bias (berlawanan): Flip Guard — jika whipsaw (conflict === 'arah'), tahan pending lama
+                const isWhipsaw = structured.conflict === 'arah';
+                if (isWhipsaw) {
+                  blockedByOpenPosition = true;
+                } else {
+                  stalePending.status = 'canceled';
+                  stalePending.label_reason = `digantikan analisa auto-entry bias ${structured.bias} sebelum kena harga`;
+                  stalePending.label_by = 'auto';
+                }
+              }
             }
           }
         }
@@ -4220,6 +4245,9 @@ async function ohlcvAnalyzeHandler(req, res) {
             // PLAN U-5a: manajemen posisi VIRTUAL — null/0 = belum pernah direview.
             intervention: null, managed_status: null, managed_closed_t: null, review_count: 0,
           });
+          shouldSaveLog = true;
+        }
+        if (shouldSaveLog) {
           await redisCmd('SET', setupLogKey, JSON.stringify(log.slice(0, 200)));
         }
       } catch (e) { console.warn('setup_log write failed:', e.message); }

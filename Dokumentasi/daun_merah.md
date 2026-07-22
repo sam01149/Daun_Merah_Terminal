@@ -11,11 +11,22 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-07-22 (Session 215 — Ganti TradingView embed dengan Deriv WebSocket real-time chart)
+> **Last updated:** 2026-07-22 (Session 216 — Refinemen In-Place Setup Auto-Entry & Guard Whipsaw Flips)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 216 (2026-07-22) — Refinemen In-Place Setup Auto-Entry & Guard Whipsaw Flips
+
+**Konteks:** Menanggapi evaluasi pengguna atas log `setup_log:v1` di mana 3 dari 4 setup Emas (`GC=F`) berstatus `canceled` akibat keburu ditimpa oleh run cron auto-entry berkala berikutnya sebelum harganya sempat tersentuh (`"digantikan analisa auto-entry lebih baru..."`).
+
+**Perubahan:**
+1. `api/admin.js` [MODIFY] — Memperbaiki logika perlakuan `stalePending` pada pencatatan `setup_log:v1` / `setup_log_auto:v1` untuk panggilan `isAutoCall`:
+   - **In-Place Refinement (Bias Searah):** Jika cron baru menghasilkan bias yang SAMA (misal `bearish` $\rightarrow$ `bearish`), pending order lama TIDAK di-cancel, melainkan di-update nilai `entry_zone`, `sl`, `tp`, `rr`, `confidence`, `alignment`, `model`, dan `ts`-nya secara langsung, serta menambahkan counter `refined_count`. Ini mencegah kanibalisasi pending order valid.
+   - **Flip Guard (Bias Berlawanan):** Jika cron baru membalikkan bias (misal `bullish` $\rightarrow$ `bearish`), pergeseran hanya membatalkan order lama jika bebas dari status `conflict === 'arah'` (bukan *whipsaw* sinyal mentah). Jika *whipsaw*, pembalikan ditolak dan pending order lama dipertahankan.
+2. `test/admin/isolation_auto.test.js` [MODIFY] — Memperbarui unit test untuk memverifikasi behavior in-place refinement (status tetap `pending`, level ter-update, `refined_count` bertambah) dan pembalikan bias yang valid.
+3. `npm test` dijalankan dan terverifikasi 100% hijau (556/556 pass).
 
 ## Changelog Session 215 (2026-07-22) — Ganti TradingView embed dengan Deriv WebSocket real-time chart
 

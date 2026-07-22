@@ -204,7 +204,7 @@ test('PLAN U-7(a): call manual (bukan auto) tetap menulis cache & setup_log:v1 s
 // (Plan U-3 lanjutan, 2026-07-20, diskusi user — lihat komentar di api/admin.js
 // dekat `blockedByOpenPosition`/`stalePending`.)
 
-test('PLAN U-3 lanjutan: auto=1 dengan PENDING lama di symbol sama (harga beda) -> lama dibatalkan, baru dicatat', async () => {
+test('PLAN U-3 lanjutan: auto=1 dengan PENDING lama bias SEARAH di symbol sama -> di-refine in-place (bukan canceled), level ter-update', async () => {
   await withEnv({ CRON_SECRET: 'topsecret', DEEPSEEK_API_KEY: 'k' }, async () => {
     const oldPending = {
       id: 'GBPUSD=X:111', symbol: 'GBPUSD=X', label: 'GBP/USD', bias: 'bearish',
@@ -230,14 +230,49 @@ test('PLAN U-3 lanjutan: auto=1 dengan PENDING lama di symbol sama (harga beda) 
 
       assert.equal(res.statusCode, 200);
       const log = JSON.parse(store.strings['setup_log_auto:v1']);
-      assert.equal(log.length, 2, 'setup lama TETAP ada (dibatalkan, bukan dihapus) + setup baru');
+      assert.equal(log.length, 1, 'refinement in-place tidak menambah entry baru');
+      const item = log[0];
+      assert.equal(item.status, 'pending', 'status tetap pending, tidak di-cancel');
+      assert.equal(item.entry_zone, '1.2795-1.2805', 'entry_zone di-update ke level analisa terbaru');
+      assert.equal(item.refined_count, 1, 'refined_count bertambah 1');
+    } finally { global.fetch = origFetch; }
+  });
+});
+
+test('PLAN U-3 lanjutan: auto=1 dengan PENDING lama bias BERLAWANAN (tanpa whipsaw) -> lama dibatalkan, baru dicatat', async () => {
+  await withEnv({ CRON_SECRET: 'topsecret', DEEPSEEK_API_KEY: 'k' }, async () => {
+    const oldPending = {
+      id: 'GBPUSD=X:111', symbol: 'GBPUSD=X', label: 'GBP/USD', bias: 'bullish',
+      entry_zone: '1.2700-1.2710', sl: '1.2650', tp: '1.2800',
+      rr: 2, horizon_days: 3, model: 'deepseek-v4-flash', ts: 111, status: 'pending',
+      source: 'auto', alignment: null, loss_label: null, label_reason: null, label_by: null,
+      intervention: null, managed_status: null, managed_closed_t: null, review_count: 0,
+    };
+    const store = makeStore({
+      'ohlcv_fresh:GBPUSD=X': '1',
+      'ohlcv:GBPUSD=X:1h': JSON.stringify(mkTrendCandles(1.30, 1.28)),
+      'setup_log_auto:v1': JSON.stringify([oldPending]),
+    });
+    const origFetch = global.fetch;
+    global.fetch = makeAnalyzeFetchStub(store);
+    try {
+      const handler = loadHandler();
+      const res = fakeRes();
+      await handler({
+        headers: { 'x-cron-secret': 'topsecret' }, method: 'GET',
+        query: { action: 'ohlcv_analyze', symbol: 'GBPUSD=X', label: 'GBP/USD', auto: '1' },
+      }, res);
+
+      assert.equal(res.statusCode, 200);
+      const log = JSON.parse(store.strings['setup_log_auto:v1']);
+      assert.equal(log.length, 2, 'setup lama dibatalkan + setup baru ditambahkan');
       const old = log.find(x => x.id === 'GBPUSD=X:111');
-      assert.equal(old.status, 'canceled', 'setup pending lama harus dibatalkan, bukan tetap pending/dihapus');
+      assert.equal(old.status, 'canceled', 'setup pending lama bias berlawanan di-cancel');
       assert.equal(old.label_by, 'auto');
-      assert.ok(old.label_reason, 'harus ada alasan pembatalan');
+      assert.ok(old.label_reason.includes('bearish'), 'alasan pembatalan mencantumkan bias baru');
       const fresh = log.find(x => x.id !== 'GBPUSD=X:111');
       assert.equal(fresh.status, 'pending');
-      assert.equal(fresh.entry_zone, '1.2795-1.2805', 'entri baru pakai level dari analisa terbaru, bukan level lama');
+      assert.equal(fresh.bias, 'bearish');
     } finally { global.fetch = origFetch; }
   });
 });
