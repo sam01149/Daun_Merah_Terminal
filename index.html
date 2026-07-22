@@ -4290,7 +4290,7 @@ window.addEventListener('DOMContentLoaded', updateThemeIcon);
 
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.07.20.2';
+const APP_VERSION = '2026.07.22.1';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
@@ -6137,7 +6137,7 @@ function _renderStructuredAi(structured, commentary, model, hasMakro, isCached, 
         ${structured.sl ? `<span><span style="color:var(--red)">SL </span>${escHtml(structured.sl)}</span>` : ''}
         ${structured.tp ? `<span><span style="color:var(--green)">TP </span>${escHtml(structured.tp)}</span>` : ''}
         ${structured.risk_reward ? `<span><span style="color:var(--muted)">RR </span>1:${escHtml(String(structured.risk_reward))}</span>` : ''}
-        <button type="button" onclick="analisaGoToSizing(analisaActive.symbol)" style="margin-left:auto;padding:3px 10px;font-family:'DM Mono',monospace;font-size:9px;border-radius:3px;border:1px solid var(--accent);background:var(--accent);color:#fff;cursor:pointer;font-weight:700">KE SIZING CALC</button>
+        <button type="button" onclick="analisaGoToChecklist(analisaActive.symbol)" style="margin-left:auto;padding:3px 10px;font-family:'DM Mono',monospace;font-size:9px;border-radius:3px;border:1px solid var(--accent);background:var(--accent);color:#fff;cursor:pointer;font-weight:700">KE CHECKLIST</button>
       </div>`;
 
       if (structured.entry_basis) {
@@ -6278,6 +6278,25 @@ function analisaGoToSizing(symbol) {
     
     if (typeof szAutoComputePips === 'function') szAutoComputePips();
     showToast('Sizing Calc', `Setup ${s.bias} untuk ${symbol} dimuat`, 3000);
+  }, 200);
+}
+
+function analisaGoToChecklist(symbol) {
+  const targetLabel = _analisaLabelForSymbol(symbol);
+  switchView('checklist');
+  setTimeout(() => {
+    const s = document.getElementById('ckPairSelector');
+    if (s && targetLabel) {
+      const cleanTarget = targetLabel.replace('/', '').toUpperCase();
+      for (let i = 0; i < s.options.length; i++) {
+        if (s.options[i].value.replace('/', '').toUpperCase() === cleanTarget) {
+          s.selectedIndex = i;
+          if (typeof ckOnPairChange === 'function') ckOnPairChange();
+          break;
+        }
+      }
+    }
+    showToast('Checklist Mandiri', `Checklist untuk ${targetLabel} dibuka — lakukan scoring sebelum entry.`, 3500);
   }, 200);
 }
 
@@ -6748,7 +6767,7 @@ function renderThesisCard(t) {
     ${t.catalyst_dependency ? `<div class="thesis-label">KATALIS</div><div class="thesis-val">${escHtml(t.catalyst_dependency)}</div>` : ''}
     ${t.time_horizon_days ? `<div class="thesis-label">HORIZON</div><div class="thesis-val">${t.time_horizon_days} hari</div>` : ''}
     <div class="thesis-horizon-note">Horizon: fundamental, relevan untuk pergerakan menengah-panjang — bukan sinyal entry presisi jangka pendek.</div>
-    ${t.direction !== 'no_trade' ? `<button class="thesis-use-btn" onclick="thesisGoToSizing('${t.pair_recommendation}', '${t.direction}')">Mulai ke Sizing Calc →</button>` : ''}
+    ${t.direction !== 'no_trade' ? `<button class="thesis-use-btn" onclick="thesisGoToChecklist('${t.pair_recommendation}', '${t.direction}')">Mulai ke Checklist →</button>` : ''}
   </div>`;
 }
 
@@ -6768,7 +6787,7 @@ function renderXauThesisCard(t) {
     ${driverLabel ? `<div class="thesis-label">DRIVER</div><div class="thesis-val">${driverLabel}</div>` : ''}
     ${t.xau_driver_evidence ? `<div class="thesis-label">BUKTI</div><div class="thesis-val">${escHtml(t.xau_driver_evidence)}</div>` : ''}
     ${t.xau_key_trigger ? `<div class="thesis-label">TRIGGER</div><div class="thesis-val">${escHtml(t.xau_key_trigger)}</div>` : ''}
-    ${(t.xau_bias === 'bullish' || t.xau_bias === 'bearish') ? `<button class="thesis-use-btn" onclick="thesisGoToSizing('XAU/USD', '${t.xau_bias === 'bullish' ? 'long' : 'short'}')">Mulai ke Sizing Calc →</button>` : ''}
+    ${(t.xau_bias === 'bullish' || t.xau_bias === 'bearish') ? `<button class="thesis-use-btn" onclick="thesisGoToChecklist('XAU/USD', '${t.xau_bias === 'bullish' ? 'long' : 'short'}')">Mulai ke Checklist →</button>` : ''}
   </div>`;
 }
 
@@ -6823,6 +6842,25 @@ function thesisGoToSizing(pair, direction) {
     }
     if (direction === 'long' || direction === 'short') szSetDir(direction);
     showToast('Thesis AI siap dipakai', `${pair} ${(direction||'').toUpperCase()} — isi stop/entry, lanjut ke Checklist sebelum entry.`);
+  }, 200);
+}
+
+function thesisGoToChecklist(pair, direction) {
+  if (!pair) return;
+  switchView('checklist');
+  setTimeout(() => {
+    const sel = document.getElementById('ckPairSelector');
+    if (sel) {
+      const cleanTarget = pair.replace('/', '').toUpperCase();
+      for (let i = 0; i < sel.options.length; i++) {
+        if (sel.options[i].value.replace('/', '').toUpperCase() === cleanTarget) {
+          sel.selectedIndex = i;
+          if (typeof ckOnPairChange === 'function') ckOnPairChange();
+          break;
+        }
+      }
+    }
+    showToast('Checklist Mandiri', `${pair} ${(direction||'').toUpperCase()} — lakukan scoring checklist sebelum Sizing Calculator.`, 3500);
   }, 200);
 }
 
