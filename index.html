@@ -2021,12 +2021,15 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .ck-pb-info-tip.open { display: block; }
 .ck-pb-info-title { color: #a78bfa; font-size: 9px; letter-spacing: .08em; text-transform: uppercase; margin-bottom: 5px; font-weight: 700; }
 .ck-mobile-jurnal-btn {
-  display: none; width: 100%; padding: 8px; background: rgba(244,114,182,0.1);
+  display: none !important; width: 100%; padding: 8px; background: rgba(244,114,182,0.1);
   border: 1px solid rgba(244,114,182,0.35); color: #f472b6; font-family: 'DM Mono', monospace;
   font-size: 9px; letter-spacing: 1.5px; text-transform: uppercase; cursor: pointer;
   border-radius: 4px; margin: 6px 0 2px; transition: background .2s;
 }
-@media (max-width: 600px) { .ck-sidebar { display: none; } }
+@media (max-width: 600px) {
+  .ck-sidebar { display: none; }
+  .ck-mobile-jurnal-btn.visible { display: block !important; }
+}
 
 /* ── REGIME BANNER ── */
 .regime-banner {
@@ -4290,7 +4293,7 @@ window.addEventListener('DOMContentLoaded', updateThemeIcon);
 
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.07.22.1';
+const APP_VERSION = '2026.07.22.2';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
@@ -11778,10 +11781,10 @@ function ckRender() {
   const mt5Btn = document.getElementById('ckMt5Btn');
   const mMt5Btn = document.getElementById('ckMobileMt5Btn');
   const showJurnal = pct >= 50 && gatesOk;
-  if (jBtn)    jBtn.style.display    = showJurnal ? 'block' : 'none';
-  if (mjBtn)   mjBtn.style.display   = showJurnal ? 'block' : 'none';
-  if (mt5Btn)  mt5Btn.style.display  = showJurnal ? 'block' : 'none';
-  if (mMt5Btn) mMt5Btn.style.display = showJurnal ? 'block' : 'none';
+  if (jBtn)    jBtn.style.display = showJurnal ? 'block' : 'none';
+  if (mt5Btn)  mt5Btn.style.display = showJurnal ? 'block' : 'none';
+  if (mjBtn)   mjBtn.classList.toggle('visible', showJurnal);
+  if (mMt5Btn) mMt5Btn.classList.toggle('visible', showJurnal);
 }
 
 function ckResetAll() {
