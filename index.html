@@ -4293,7 +4293,7 @@ window.addEventListener('DOMContentLoaded', updateThemeIcon);
 
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.07.22.3';
+const APP_VERSION = '2026.07.22.4';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
@@ -6284,8 +6284,41 @@ function analisaGoToSizing(symbol) {
   }, 200);
 }
 
+let _pendingSizingSetup = null;
+
+function _storePendingSizingSetup(pair, direction = null, aiStructured = null) {
+  if (!pair) return;
+  const cleanPair = _analisaLabelForSymbol(pair) || pair;
+  let entryPrice = null, slPrice = null, tpPrice = null, rr = null, dir = direction;
+
+  if (aiStructured) {
+    const s = aiStructured;
+    const entryNums = s.entry_zone ? String(s.entry_zone).match(/[\d.]+/g) : null;
+    if (entryNums && entryNums.length > 0) entryPrice = parseFloat(entryNums[0]);
+    if (s.sl) slPrice = parseFloat(s.sl);
+    if (s.tp) tpPrice = parseFloat(s.tp);
+    if (s.risk_reward) rr = s.risk_reward;
+    if (!dir && s.bias) dir = s.bias === 'bullish' ? 'long' : s.bias === 'bearish' ? 'short' : null;
+  }
+
+  _pendingSizingSetup = {
+    pair: cleanPair,
+    direction: dir,
+    entryPrice: entryPrice != null && !isNaN(entryPrice) ? entryPrice : null,
+    slPrice: slPrice != null && !isNaN(slPrice) ? slPrice : null,
+    tpPrice: tpPrice != null && !isNaN(tpPrice) ? tpPrice : null,
+    rr: rr || null
+  };
+}
+
 function analisaGoToChecklist(symbol) {
   const targetLabel = _analisaLabelForSymbol(symbol);
+  const ai = analisaAiCache[symbol];
+  if (ai && ai.structured) {
+    _storePendingSizingSetup(targetLabel, null, ai.structured);
+  } else {
+    _storePendingSizingSetup(targetLabel);
+  }
   switchView('checklist');
   setTimeout(() => {
     const s = document.getElementById('ckPairSelector');
@@ -6299,7 +6332,7 @@ function analisaGoToChecklist(symbol) {
         }
       }
     }
-    showToast('Checklist Mandiri', `Checklist untuk ${targetLabel} dibuka — lakukan scoring sebelum entry.`, 3500);
+    showToast('Checklist Mandiri', `Checklist untuk ${targetLabel} dibuka — lakukan scoring sebelum Sizing Calculator.`, 3500);
   }, 200);
 }
 
@@ -6850,6 +6883,15 @@ function thesisGoToSizing(pair, direction) {
 
 function thesisGoToChecklist(pair, direction) {
   if (!pair) return;
+  let struct = null;
+  for (const sym in analisaAiCache) {
+    if (_analisaLabelForSymbol(sym) === pair || sym.toUpperCase() === pair.replace('/', '').toUpperCase()) {
+      struct = analisaAiCache[sym]?.structured;
+      if (struct) break;
+    }
+  }
+  _storePendingSizingSetup(pair, direction, struct);
+
   switchView('checklist');
   setTimeout(() => {
     const sel = document.getElementById('ckPairSelector');
@@ -11951,6 +11993,20 @@ const MT5_BRIDGE_MIN_PENDING_VERSION = 2;
 function ckGoToSizing() {
   const pair = document.getElementById('ckPairSelector').value;
   if (!pair) { showToast('Pilih Pair', 'Pilih pair terlebih dahulu di checklist', 3000); return; }
+
+  if (!_pendingSizingSetup || _pendingSizingSetup.pair !== pair) {
+    for (const sym in analisaAiCache) {
+      if (_analisaLabelForSymbol(sym) === pair || sym.toUpperCase() === pair.replace('/', '').toUpperCase()) {
+        const struct = analisaAiCache[sym]?.structured;
+        if (struct) {
+          _storePendingSizingSetup(pair, null, struct);
+          break;
+        }
+      }
+    }
+  }
+  const setup = _pendingSizingSetup;
+
   switchView('sizing');
   setTimeout(() => {
     const sel = document.getElementById('szPair');
@@ -11958,6 +12014,25 @@ function ckGoToSizing() {
       for (const opt of sel.options) {
         if (opt.value === pair) { sel.value = pair; szUpdatePipInfo(); break; }
       }
+    }
+
+    if (setup && setup.pair === pair) {
+      if (setup.direction === 'long' || setup.direction === 'short') {
+        szSetDir(setup.direction);
+      }
+      szSetMode('price');
+      if (setup.entryPrice != null) {
+        document.getElementById('szEntryPrice').value = setup.entryPrice;
+      }
+      if (setup.slPrice != null) {
+        document.getElementById('szSLPrice').value = setup.slPrice;
+      }
+      if (setup.rr) {
+        document.getElementById('szRR').value = setup.rr;
+      }
+      if (typeof szAutoComputePips === 'function') szAutoComputePips();
+      const hasLevels = setup.entryPrice != null || setup.slPrice != null;
+      showToast('Sizing Calc', `Setup ${pair} dimuat${hasLevels ? ` (Entry: ${setup.entryPrice || '—'}, SL: ${setup.slPrice || '—'})` : ''}`, 3500);
     }
   }, 200);
 }
