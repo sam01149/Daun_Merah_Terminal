@@ -15526,20 +15526,6 @@ TEK_ALL_PAIRS.forEach(p => { TEK_TV_SYM[p] = p === 'XAUUSD' ? 'FOREXCOM:XAUUSD' 
 TEK_TV_SYM.US10Y = 'FRED:DGS10';
 TEK_TV_SYM.US02Y = 'FRED:DGS2';
 
-// Deriv WebSocket symbol map (real-time streaming, per detik).
-// Yield instruments tidak tersedia di Deriv → null → fallback ke TV embed.
-const TEK_DERIV_SYM = {};
-TEK_ALL_PAIRS.forEach(p => {
-  if (TEK_YIELD_INSTRUMENTS.includes(p)) { TEK_DERIV_SYM[p] = null; return; }
-  TEK_DERIV_SYM[p] = 'frx' + p; // frxEURUSD, frxXAUUSD, etc.
-});
-
-// tekTF string (TradingView interval) → Deriv granularity (detik)
-const TEK_DERIV_GRAN = {
-  '1': 60, '5': 300, '15': 900, '30': 1800,
-  '60': 3600, '240': 14400, 'D': 86400,
-};
-
 const TEK_YIELD_LABELS = { US10Y: 'US 10Y Yield', US02Y: 'US 2Y Yield' };
 function tekPairLabel(p) { return TEK_YIELD_LABELS[p] || (p.slice(0, 3) + '/' + p.slice(3)); }
 
@@ -15547,8 +15533,6 @@ let tekPair = 'XAUUSD';
 let tekTF = '240';
 let tekNotes = {};
 let tvScriptLoaded = false;
-let lwcScriptLoaded = false;
-let derivChartInstance = null; // aktif DerivChart instance
 let tekInited = false;
 
 const MTF_SELS = [
@@ -15739,27 +15723,6 @@ async function autoFillMtfSelectors(force = false) {
   loadMtfForPair(); // re-applies values + colors to the <select> elements and re-renders the align badge
 }
 
-// ── Lightweight Charts loader (MIT, open source by TradingView — no watermark, no delay) ──
-function loadLWCScript(cb) {
-  if (lwcScriptLoaded && typeof LightweightCharts !== 'undefined') { cb(); return; }
-  if (document.getElementById('lwcScript')) {
-    const wait = setInterval(() => {
-      if (typeof LightweightCharts !== 'undefined') { clearInterval(wait); lwcScriptLoaded = true; cb(); }
-    }, 100);
-    return;
-  }
-  const s = document.createElement('script');
-  s.id = 'lwcScript';
-  s.src = 'https://unpkg.com/lightweight-charts@4/dist/lightweight-charts.standalone.production.js';
-  s.onload = () => { lwcScriptLoaded = true; cb(); };
-  s.onerror = () => {
-    const c = document.getElementById('tekChartContainer');
-    if (c) c.innerHTML = '<div class="tek-chart-offline"><span>Chart tidak tersedia</span><span style="font-size:9px">Periksa koneksi internet</span></div>';
-  };
-  document.head.appendChild(s);
-}
-
-// ── TradingView embed (hanya untuk yield instruments yang tidak ada di Deriv) ──
 function loadTVScript(cb) {
   if (tvScriptLoaded && typeof TradingView !== 'undefined') { cb(); return; }
   if (document.getElementById('tvScript')) {
@@ -15779,241 +15742,51 @@ function loadTVScript(cb) {
   document.head.appendChild(s);
 }
 
-// ── DerivChart: real-time WebSocket candlestick chart via Deriv API ──────────
-// Streaming per detik menggunakan app_id=1089 (publik).
-// Lifecycle: buat instance baru tiap ganti pair/TF, destroy() instance lama.
-class DerivChart {
-  constructor(container, symbol, granularity) {
-    this.container = container;
-    this.symbol = symbol;
-    this.gran = granularity;
-    this.ws = null;
-    this.lwcChart = null;
-    this.candleSeries = null;
-    this.sma50Series = null;
-    this.sma200Series = null;
-    this.candles = [];    // array { time, open, high, low, close }
-    this.activeCandle = null;
-    this.reqId = 1;
-    this.destroyed = false;
-    this._retryDelay = 1000;
-    this._retryTimer = null;
-    this._init();
-  }
-
-  _init() {
-    if (this.destroyed) return;
-    this.container.innerHTML = '<div style="height:100%;display:flex;align-items:center;justify-content:center;color:var(--muted);font:11px DM Mono,monospace">Menghubungkan ke Deriv...</div>';
-    loadLWCScript(() => {
-      if (this.destroyed) return;
-      this._buildChart();
-      this._connect();
-    });
-  }
-
-  _buildChart() {
-    this.container.innerHTML = '';
-    const isLight = document.body.classList.contains('light-theme');
-    this.lwcChart = LightweightCharts.createChart(this.container, {
-      width: this.container.clientWidth,
-      height: this.container.clientHeight,
-      layout: {
-        background: { color: isLight ? '#f8f7f5' : '#0d0f14' },
-        textColor: isLight ? '#2c2c2c' : '#c9d1d9',
-      },
-      grid: {
-        vertLines: { color: isLight ? '#e8e6e3' : '#1a1d24' },
-        horzLines: { color: isLight ? '#e8e6e3' : '#1a1d24' },
-      },
-      crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
-      timeScale: {
-        timeVisible: true,
-        secondsVisible: this.gran <= 300,
-        borderColor: isLight ? '#d0ccc8' : '#2a2d35',
-      },
-      rightPriceScale: { borderColor: isLight ? '#d0ccc8' : '#2a2d35' },
-    });
-    this.candleSeries = this.lwcChart.addCandlestickSeries({
-      upColor: '#26a69a', downColor: '#ef5350',
-      borderUpColor: '#26a69a', borderDownColor: '#ef5350',
-      wickUpColor: '#26a69a', wickDownColor: '#ef5350',
-    });
-    this.sma50Series = this.lwcChart.addLineSeries({
-      color: '#f7931a', lineWidth: 1, priceLineVisible: false, lastValueVisible: false,
-    });
-    this.sma200Series = this.lwcChart.addLineSeries({
-      color: '#9b59b6', lineWidth: 1, priceLineVisible: false, lastValueVisible: false,
-    });
-    // Auto-resize saat container berubah ukuran
-    if (window.ResizeObserver) {
-      this._ro = new ResizeObserver(() => {
-        if (!this.destroyed && this.lwcChart) {
-          this.lwcChart.applyOptions({
-            width: this.container.clientWidth,
-            height: this.container.clientHeight,
-          });
-        }
-      });
-      this._ro.observe(this.container);
-    }
-  }
-
-  _connect() {
-    const appId = (typeof DERIV_APP_ID_CLIENT !== 'undefined' && DERIV_APP_ID_CLIENT) ? DERIV_APP_ID_CLIENT : '1089';
-    this.ws = new WebSocket('wss://ws.derivws.com/websockets/v3?app_id=' + appId);
-    this.ws.onopen = () => this._onOpen();
-    this.ws.onmessage = (e) => this._onMessage(JSON.parse(e.data));
-    this.ws.onerror = () => {}; // onclose handles retry
-    this.ws.onclose = () => {
-      if (this.destroyed) return;
-      this._retryTimer = setTimeout(() => {
-        this._retryDelay = Math.min(this._retryDelay * 2, 30000);
-        this._connect();
-      }, this._retryDelay);
-    };
-  }
-
-  _onOpen() {
-    if (this.destroyed) return;
-    this._retryDelay = 1000; // reset backoff on success
-    // Ambil 1000 candle historis + subscribe streaming ticks
-    this.ws.send(JSON.stringify({
-      ticks_history: this.symbol,
-      adjust_start_time: 1,
-      count: 1000,
-      end: 'latest',
-      granularity: this.gran,
-      style: 'candles',
-      subscribe: 1,
-      req_id: this.reqId++,
-    }));
-  }
-
-  _onMessage(msg) {
-    if (this.destroyed) return;
-    if (msg.error) {
-      // Symbol tidak dikenal atau error API — tampilkan info singkat
-      if (this.container) {
-        this.container.innerHTML = '<div class="tek-chart-offline"><span>Chart tidak tersedia</span><span style="font-size:9px">' + (msg.error.message || 'Deriv error') + '</span></div>';
-      }
-      return;
-    }
-    if (msg.msg_type === 'candles') {
-      // History seed
-      const rawCandles = msg.candles || [];
-      this.candles = rawCandles.map(c => ({
-        time: c.epoch,
-        open: parseFloat(c.open),
-        high: parseFloat(c.high),
-        low: parseFloat(c.low),
-        close: parseFloat(c.close),
-      }));
-      if (this.candles.length > 0) {
-        this.candleSeries.setData(this.candles);
-        this._updateSMAs();
-        this.lwcChart.timeScale().fitContent();
-      }
-    } else if (msg.msg_type === 'ohlc') {
-      // Live candle update per detik
-      const o = msg.ohlc;
-      const candle = {
-        time: o.open_time,  // epoch detik dari start candle ini
-        open: parseFloat(o.open),
-        high: parseFloat(o.high),
-        low: parseFloat(o.low),
-        close: parseFloat(o.close),
-      };
-      // Cek apakah ini candle baru atau update candle aktif
-      if (this.candles.length === 0 || candle.time > this.candles[this.candles.length - 1].time) {
-        // Candle baru — push ke array
-        this.candles.push(candle);
-        if (this.candles.length > 2000) this.candles.shift(); // trim agar tidak bocor memori
-      } else {
-        // Update candle terakhir (tick dalam interval yang sama)
-        this.candles[this.candles.length - 1] = candle;
-      }
-      this.candleSeries.update(candle);
-      this._updateSMAs();
-    }
-  }
-
-  _sma(data, period) {
-    // Hitung SMA dari array candle, return array { time, value }
-    const result = [];
-    for (let i = period - 1; i < data.length; i++) {
-      let sum = 0;
-      for (let j = i - period + 1; j <= i; j++) sum += data[j].close;
-      result.push({ time: data[i].time, value: parseFloat((sum / period).toFixed(5)) });
-    }
-    return result;
-  }
-
-  _updateSMAs() {
-    if (this.candles.length >= 50) {
-      this.sma50Series.setData(this._sma(this.candles, 50));
-    }
-    if (this.candles.length >= 200) {
-      this.sma200Series.setData(this._sma(this.candles, 200));
-    }
-  }
-
-  destroy() {
-    this.destroyed = true;
-    if (this._retryTimer) clearTimeout(this._retryTimer);
-    if (this._ro) this._ro.disconnect();
-    if (this.ws) { try { this.ws.close(); } catch(e) {} this.ws = null; }
-    if (this.lwcChart) { try { this.lwcChart.remove(); } catch(e) {} this.lwcChart = null; }
-  }
-}
-
-// ── createTVChart: entry point dipanggil saat pair/TF ganti atau tab dibuka ──
 function createTVChart() {
-  // Destroy instance Deriv sebelumnya jika ada
-  if (derivChartInstance) { derivChartInstance.destroy(); derivChartInstance = null; }
-
   const container = document.getElementById('tekChartContainer');
   if (!container) return;
-
-  const derivSym = TEK_DERIV_SYM[tekPair];
-
-  if (!derivSym) {
-    // Yield instruments (US10Y, US02Y) → gunakan TradingView embed (update harian, bukan real-time)
-    container.innerHTML = '<div style="height:100%;display:flex;align-items:center;justify-content:center;color:var(--muted);font:11px DM Mono,monospace">Memuat chart TradingView...</div>';
-    loadTVScript(() => {
-      if (typeof TradingView === 'undefined') {
-        container.innerHTML = '<div class="tek-chart-offline"><span>TradingView tidak tersedia</span></div>';
-        return;
-      }
-      container.innerHTML = '';
-      const id = 'tvw_' + Date.now();
-      const div = document.createElement('div');
-      div.id = id;
-      div.style.height = '100%';
-      container.appendChild(div);
-      new TradingView.widget({
-        autosize: true,
-        symbol: TEK_TV_SYM[tekPair] || 'FX:EURUSD',
-        interval: tekTF === 'D' ? 'D' : '1D', // yield hanya update harian, paksa D
-        timezone: 'Asia/Jakarta',
-        theme: document.body.classList.contains('light-theme') ? 'light' : 'dark',
-        style: '1',
-        locale: 'id',
-        toolbar_bg: document.body.classList.contains('light-theme') ? '#f8f7f5' : '#0d0f14',
-        enable_publishing: false,
-        withdateranges: false,
-        hide_side_toolbar: true,
-        allow_symbol_change: false,
-        save_image: false,
-        container_id: id,
-        hide_volume: true,
-      });
+  container.innerHTML = '<div style="height:100%;display:flex;align-items:center;justify-content:center;color:var(--muted);font:11px DM Mono,monospace">Memuat chart TradingView...</div>';
+  loadTVScript(() => {
+    if (typeof TradingView === 'undefined') {
+      container.innerHTML = '<div class="tek-chart-offline"><span>TradingView tidak tersedia</span></div>';
+      return;
+    }
+    container.innerHTML = '';
+    const id = 'tvw_' + Date.now();
+    const div = document.createElement('div');
+    div.id = id;
+    div.style.height = '100%';
+    container.appendChild(div);
+    new TradingView.widget({
+      autosize: true,
+      symbol: TEK_TV_SYM[tekPair] || 'FX:EURUSD',
+      interval: tekTF,
+      timezone: 'Asia/Jakarta',
+      theme: document.body.classList.contains('light-theme') ? 'light' : 'dark',
+      style: '1',
+      locale: 'id',
+      toolbar_bg: document.body.classList.contains('light-theme') ? '#f8f7f5' : '#0d0f14',
+      enable_publishing: false,
+      withdateranges: false,
+      hide_side_toolbar: true,
+      allow_symbol_change: false,
+      save_image: false,
+      container_id: id,
+      // FX: feed (semua pair non-XAU) tidak punya data volume nyata di
+      // TradingView — forex spot tidak tersentralisasi, jadi panel Volume
+      // selalu tampil kosong/nol. Daripada noise, sembunyikan sekalian
+      // (user request 2026-07-17): "kalau gabisa, hapus saja".
+      hide_volume: true,
+      // Plot the same indicators the "INDIKATOR" stat cards below the chart
+      // already compute (RSI 14, SMA 50, SMA 200) — previously the chart was
+      // plain candles with no visual tie to those numbers.
+      studies: [
+        { id: 'MASimple@tv-basicstudies', version: 60, inputs: { length: 50 } },
+        { id: 'MASimple@tv-basicstudies', version: 60, inputs: { length: 200 } },
+        { id: 'RSI@tv-basicstudies', version: 60 },
+      ],
     });
-    return;
-  }
-
-  // FX + XAU → Deriv WebSocket real-time (streaming per detik)
-  const gran = TEK_DERIV_GRAN[tekTF] || 14400;
-  derivChartInstance = new DerivChart(container, derivSym, gran);
+  });
 }
 
 function toggleTekPairDropdown(e) {
