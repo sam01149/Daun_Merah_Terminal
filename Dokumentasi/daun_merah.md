@@ -11,11 +11,26 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-07-22 (Session 214 — Perbaikan prompt Call 4 Thesis Monitor terhadap pembalikan arah base/quote currency XAU/USD)
+> **Last updated:** 2026-07-22 (Session 215 — Ganti TradingView embed dengan Deriv WebSocket real-time chart)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 215 (2026-07-22) — Ganti TradingView embed dengan Deriv WebSocket real-time chart
+
+**Konteks:** TradingView embed punya jeda ~5 detik (data TV tidak real-time gratis). User butuh chart real-time per detik di tab Teknikal.
+
+**Perubahan:**
+1. `index.html` [MODIFY] — Mengganti `TradingView.widget` (embed) dengan **Deriv WebSocket streaming** menggunakan **Lightweight Charts v4** (MIT license, open source oleh TradingView sendiri — tanpa watermark, tanpa delay). Perubahan utama:
+   - Tambah `TEK_DERIV_SYM` (map pair → simbol Deriv `frxEURUSD`, dst.), `TEK_DERIV_GRAN` (map `tekTF` → granularity detik Deriv).
+   - Tambah `DerivChart` class: WebSocket ke `wss://ws.derivws.com/websockets/v3?app_id=1089`, fetch 1000 candle historis (`ticks_history`), subscribe live stream (`ohlc` msg per detik), SMA50/SMA200 dihitung client-side, auto-reconnect exponential backoff (1s→30s), auto-resize via `ResizeObserver`, destroy() proper saat ganti pair/TF.
+   - Tambah `loadLWCScript()` loader CDN (lazy, sekali load).
+   - `createTVChart()` (nama fungsi dipertahankan agar tidak break call sites) sekarang dispatch: pair FX+XAU → `DerivChart`; yield pair (US10Y/US02Y) → TV embed (update harian, bukan streaming).
+   - Global `derivChartInstance` menampung instance aktif; di-destroy sebelum instance baru dibuat.
+2. `npm test` dijalankan dan terverifikasi 100% hijau (555/555 pass).
+
+**Hasil:** Chart real-time per detik via Deriv WebSocket. Candle aktif diperbarui tiap ada tick masuk dari Deriv — tanpa jeda 5 detik TV.
 
 ## Changelog Session 214 (2026-07-22) — Perbaikan prompt Call 4 Thesis Monitor & Refinemen Driver XAU/USD Call 3
 
