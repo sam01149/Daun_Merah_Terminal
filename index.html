@@ -4293,7 +4293,7 @@ window.addEventListener('DOMContentLoaded', updateThemeIcon);
 
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.07.22.4';
+const APP_VERSION = '2026.07.22.5';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
@@ -11887,10 +11887,36 @@ function ckTogglePbInfo() {
   btn.classList.toggle('open', !isOpen);
 }
 
+function _syncChecklistForPair(pair) {
+  if (!pair) return;
+  const sel = document.getElementById('ckPairSelector');
+  if (sel && sel.value !== pair) {
+    for (const opt of sel.options) {
+      if (opt.value === pair) {
+        sel.value = pair;
+        if (typeof ckOnPairChange === 'function') ckOnPairChange();
+        break;
+      }
+    }
+  } else if (typeof ckCurrentPair === 'undefined' || ckCurrentPair !== pair) {
+    if (typeof ckOnPairChange === 'function') ckOnPairChange();
+  }
+}
+
 function ckPrefillJurnal() {
+  const targetPair = (document.getElementById('szPair') && document.getElementById('szPair').value) ||
+                     (document.getElementById('ckPairSelector') && document.getElementById('ckPairSelector').value);
+  if (targetPair) _syncChecklistForPair(targetPair);
+
   const { pct, verdict, gatesOk, incompleteGates } = ckGetVerdict();
-  if (pct < 50) return;
-  if (!gatesOk) { showToast('Gate Belum Lengkap', `Section wajib belum 100%: ${incompleteGates.map(s => s.title).join(', ')}.`, 5000); return; }
+  if (pct < 50) {
+    showToast('Checklist Belum Cukup', `Skor checklist untuk ${targetPair || 'pair'} masih ${pct}% — minimal 50% sebelum buat jurnal.`, 4000);
+    return;
+  }
+  if (!gatesOk) {
+    showToast('Gate Belum Lengkap', `Section wajib belum 100%: ${incompleteGates.map(s => s.title).join(', ')}.`, 5000);
+    return;
+  }
   ckProceedIfNotSuspicious(() => ckPrefillJurnalAction(pct, verdict));
 }
 
@@ -13732,7 +13758,8 @@ function calcSizing() {
         return `<div style="margin-top:10px;padding-top:8px;border-top:1px solid var(--border);font-family:'DM Mono',monospace;font-size:10px;color:var(--muted)">ATR 14d: <span style="color:${atrColor}">${atrPips} pip</span>${varUsd ? ` · 1d VaR 95% posisi ${lots.toFixed(2)} lot: <span style="color:var(--text)">$${varUsd}</span>` : ''}</div>`;
       })() : ''}
       <button onclick="szShowMt5Modal()" style="margin-top:10px;width:100%;padding:9px;background:rgba(34,197,94,0.12);border:1px solid rgba(34,197,94,0.4);color:var(--green);font-family:'DM Mono',monospace;font-size:11px;border-radius:3px;cursor:pointer;letter-spacing:.05em;font-weight:700">Entry MT5</button>
-      <button onclick="szGoToChecklist()" style="margin-top:8px;width:100%;padding:9px;background:transparent;border:1px solid var(--pink);color:var(--pink);font-family:'DM Mono',monospace;font-size:11px;border-radius:3px;cursor:pointer;letter-spacing:.05em">→ LANJUT KE CHECKLIST</button>
+      <button onclick="ckPrefillJurnal()" style="margin-top:8px;width:100%;padding:9px;background:rgba(236,72,153,0.12);border:1px solid rgba(236,72,153,0.4);color:var(--pink);font-family:'DM Mono',monospace;font-size:11px;border-radius:3px;cursor:pointer;letter-spacing:.05em;font-weight:700">→ Buat Jurnal</button>
+      <button onclick="szGoToChecklist()" style="margin-top:6px;width:100%;padding:6px;background:transparent;border:none;color:var(--muted);font-family:'DM Mono',monospace;font-size:10px;cursor:pointer">Review / Edit Checklist</button>
     </div>`;
 
   // Store last sizing for journal bridge — lots/dollarRisk sudah pakai risk EFEKTIF
@@ -13746,21 +13773,16 @@ function calcSizing() {
 
 // PLAN U-4: guard Entry MT5 dipindah ke sini dari Checklist (dulu ckShowMt5Modal)
 // supaya alur Checklist→Sizing→modal tidak ping-pong — user tidak perlu balik ke
-// Checklist lagi setelah menghitung Sizing. Butuh pair-match TAMBAHAN terhadap
-// ckCurrentPair (checklist state yang sedang dimuat di memori) karena szPair bisa
-// berbeda dari pair yang terakhir dibuka di tab Checklist — tanpa ini verdict yang
-// dibaca ckGetVerdict() bisa jadi milik pair yang salah.
+// Checklist lagi setelah menghitung Sizing.
 function szShowMt5Modal() {
   const pair = document.getElementById('szPair').value;
   if (!pair) { showToast('Pilih Pair', 'Pilih pair terlebih dahulu.', 3000); return; }
-  if (typeof ckCurrentPair === 'undefined' || ckCurrentPair !== pair) {
-    showToast('Checklist Belum Cocok', `Buka Checklist untuk pair ${pair} dan lengkapi dulu — verdict checklist pair itu belum termuat.`, 5000);
-    return;
-  }
+  _syncChecklistForPair(pair);
+
   const { pct, gatesOk, incompleteGates, riskMultiplier } = ckGetVerdict();
   if (riskMultiplier <= 0) {
     if (!gatesOk) { showToast('Gate Belum Lengkap', `Section wajib belum 100%: ${incompleteGates.map(s => s.title).join(', ')}.`, 5000); return; }
-    showToast('Checklist belum cukup', `Skor checklist masih ${pct}% — minimal 50% sebelum entry MT5 dibuka.`, 4000);
+    showToast('Checklist belum cukup', `Skor checklist untuk ${pair} masih ${pct}% — minimal 50% sebelum entry MT5 dibuka.`, 4000);
     return;
   }
   ckProceedIfNotSuspicious(() => ckShowMt5ModalAction(pair));
