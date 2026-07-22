@@ -754,6 +754,10 @@ async function checkThesisContradictions(openEntries, recentItems, SAMBANOVA_KEY
     'Only flag genuine contradictions — news that directly opposes the trade direction rationale, not tangentially related news.',
     'Ignore price-level headlines; focus on fundamental basis changes (macro data, CB policy shifts, geopolitical reversals).',
     'Ignore "Currency Strength Chart" / currency ranking headlines entirely — they are price-derived technical snapshots, not fundamental catalysts, and their "Strongest: A, B, C... - Weakest" ordering is easy to misread (do NOT use them as contradiction evidence even if a currency appears to sit in the strong or weak half).', '',
+    'CRITICAL DIRECTION GUIDANCE (DO NOT INVERT BASE & QUOTE):',
+    '- "[BASE]/[QUOTE] LONG" or "BULLISH [BASE]/[QUOTE]" means BUYING the first asset (BASE) and SELLING the second asset (QUOTE). Example: XAU/USD LONG or BULLISH XAU/USD means BUYING GOLD. Geopolitical war escalation or safe-haven demand SUPPORTS XAU/USD LONG — it is a TAILWIND, NOT a contradiction!',
+    '- "[BASE]/[QUOTE] SHORT" or "BEARISH [BASE]/[QUOTE]" means SELLING the first asset (BASE) and BUYING the second asset (QUOTE).',
+    '- Always verify which asset is being bought vs sold before declaring a contradiction. News that supports the trade direction is NEVER a contradiction.', '',
     'Some headlines are followed by an indented [SEVERITAS: ...] annotation line — it is computed from the released actual-vs-forecast numbers, not part of the headline. Treat those headlines as HIGHER-urgency contradiction candidates (weak data historically moves price more). Never copy the annotation into the "headline" field.', '',
     'The "headline" field MUST be copied verbatim, character-for-character, from the numbered list above — do not paraphrase or summarize it.',
     'The "entry_id" field MUST be copied verbatim from the [ID:...] tag of the thesis it contradicts.', '',
@@ -2701,6 +2705,7 @@ ${xauHistoryBlock}`;
       'xau_confidence: 1-5 where 5 = multiple converging headlines with clear direction.',
       'If xau_dominant_driver is "safe_haven", it must be corroborated by the risk regime data (VIX/MOVE elevated or risk_off) — if risk regime is benign/risk_on, do not select "safe_haven" as dominant_driver unless headlines show a very fresh, unpriced shock.',
       'If gold correlation anomalies show a breakdown vs DXY or real yield (the usual negative correlation weakening), factor this into xau_confidence — a correlation breakdown signals the dominant driver may be shifting.',
+      'When geopolitical or energy shocks occur alongside high Real Yield / hawkish Fed rate hike expectations (or calm VIX), evaluate whether "real_yield" or "usd_strength" is dominating over "safe_haven" — if rate hike / opportunity cost concerns are dampening gold, set xau_dominant_driver accordingly and adjust xau_bias to reflect the rate pressure.',
     ].join('\n');
 
     const call3Messages = [{ role: 'user', content: thesisPrompt }];

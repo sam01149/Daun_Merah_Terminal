@@ -11,11 +11,20 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-07-21 (Session 213 — Verifikasi status operasional daemon VPS Railway dan kinerja awal trading otomatis Plan U)
+> **Last updated:** 2026-07-22 (Session 214 — Perbaikan prompt Call 4 Thesis Monitor terhadap pembalikan arah base/quote currency XAU/USD)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 214 (2026-07-22) — Perbaikan prompt Call 4 Thesis Monitor & Refinemen Driver XAU/USD Call 3
+
+**Konteks:** Menjawab evaluasi pengguna terkait ketidaknyambungan antara AI Thesis/Analisis Berita XAU/USD vs Thesis Alert, serta memperkuat logika AI dalam mendeteksi pergeseran driver Emas dari *safe-haven* ke *hawkish Fed rate hike / Real Yield* saat terjadi shock energi.
+
+**Perubahan:**
+1. `api/market-digest.js` [MODIFY] — Memperjelas instruksi `monitorPrompt` pada Call 4 dengan penegasan eksplisit aturan arah base/quote (`[BASE]/[QUOTE] LONG` = Beli Base asset/Jual Quote asset; contoh `XAU/USD LONG` = Beli Emas). Berita eskalasi perang/safe-haven demand ditegaskan sebagai pendorong (tailwind), BUKAN kontradiksi.
+2. `api/market-digest.js` [MODIFY] — Memperbarui aturan Call 3 (`xau_rules`) agar AI secara otomatis mendeteksi ketika *shock* geopolitik/energi memicu ekspektasi kenaikan suku bunga Fed (atau Real Yield tetap tinggi), sehingga AI memilih `real_yield` atau `usd_strength` alih-alih terkunci di `safe_haven`.
+3. `npm test` dijalankan dan terverifikasi 100% hijau (555/555 pass).
 
 ## Changelog Session 213 (2026-07-21) — Verifikasi status operasional daemon VPS Railway dan kinerja awal trading otomatis Plan U
 
