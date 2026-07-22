@@ -4293,7 +4293,7 @@ window.addEventListener('DOMContentLoaded', updateThemeIcon);
 
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.07.22.2';
+const APP_VERSION = '2026.07.22.3';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
@@ -11482,6 +11482,16 @@ function ckToggleItem(id) {
   ckSave(); ckRender();
 }
 
+const CK_CONFLICT_DESCRIPTIONS = {
+  s1: 'Teknikal vs Fundamental (Divergensi Bias)',
+  rc3: 'Posisi COT Institusi Kontra Bias',
+  rc6: 'Sentimen Ritel Kontrarian Melawan Arah',
+};
+
+function ckFormatConflictLabel(it) {
+  return CK_CONFLICT_DESCRIPTIONS[it.id] || it.label;
+}
+
 function ckRequestOverride(id) {
   ckOverridePendingId = id;
   const hint = ckAutoBlockHints[id] || '';
@@ -11870,7 +11880,7 @@ function ckPrefillJurnalAction(pct, verdict) {
   // ini, jadi disimpan sebagai baris tesis biasa (tetap terbaca manusia di riwayat jurnal).
   const { riskMultiplier: _jRiskMult, conflictItems: _jConflictItems } = ckGetVerdict();
   if (_jRiskMult < 1 && _jConflictItems.length > 0) {
-    lines.push(`Risk Multiplier: ${_jRiskMult}x [KONFLIK ARAH — ${_jConflictItems.map(it => it.label).join(', ')}]`);
+    lines.push(`Risk Multiplier: ${_jRiskMult}x [KONFLIK ARAH — ${_jConflictItems.map(ckFormatConflictLabel).join(', ')}]`);
   }
   const speedNote = ckConsumeSpeedAckNote();
   if (speedNote) lines.push(speedNote);
@@ -12102,7 +12112,7 @@ async function ckMt5AutoJournal(pair, direction, fill, lots, sl, tp) {
   // PLAN U-4: rekam konflik arah + risk multiplier yang berlaku saat entry ini dikirim
   // (lots yang dikirim ke bridge sudah dihitung dengan risk efektif di szShowMt5Modal/calcSizing).
   if (riskMultiplier < 1 && conflictItems.length > 0) {
-    lines.push(`Risk Multiplier: ${riskMultiplier}x [KONFLIK ARAH — ${conflictItems.map(it => it.label).join(', ')}]`);
+    lines.push(`Risk Multiplier: ${riskMultiplier}x [KONFLIK ARAH — ${conflictItems.map(ckFormatConflictLabel).join(', ')}]`);
   }
   const speedNote = ckConsumeSpeedAckNote();
   if (speedNote) lines.push(speedNote);
