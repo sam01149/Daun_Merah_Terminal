@@ -22,6 +22,19 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 
 ---
 
+- **[2026-07-23] Evaluasi & Perbandingan Biaya Model AI Kandidat (DeepSeek v4-flash vs GLM 5.2 vs Kimi K3)**:
+  Evaluasi komparatif 3 kandidat model AI berbasis kalkulasi penggunaan paling boros Daun Merah (32 call/hari = 704 call/bulan; 22 otomatis + 10 manual):
+  - **DeepSeek v4-flash (Produksi Saat Ini)**: Input $0.14 / Output $0.28 per 1M token. Biaya bulanan: **~$0.50 USD (± Rp 8.150 / bulan)**. Keunggulan: Kecepatan kilat (10–15s, bebas Vercel 60s timeout), presisi JSON 13-field native 100%. Kekurangan: Narasi prosa makro terasa lebih kaku.
+  - **GLM 5.2 (Zhipu AI / Z.ai)**: Input $0.77 / Output $2.42 per 1M token (Cached input $0.143). Biaya bulanan: **~$3.26 USD (± Rp 52.800 / bulan)**. Keunggulan: Narasi & sintesis makro Bahasa Indonesia paling kaya, luwes, dan institusional (terbaik untuk Call 1 Briefing FX). Kekurangan: Latensi 18–30s (lebih lambat dari DeepSeek), 6x lebih mahal.
+  - **Kimi K3 (Moonshot AI)**: Input $3.00 / Output $15.00 per 1M token. Biaya bulanan: **~$15.84 USD (± Rp 256.600 / bulan)**. Keunggulan: Long-horizon reasoning kelas frontier (Fable 5 class) dengan kontrol `reasoning_effort: low`. Kekurangan: Biaya paling tinggi (30x DeepSeek).
+  - **Temuan Komparatif Skenario Hybrid (GLM 5.2 khusus Call 1 + DeepSeek v4-flash untuk Call 2,3 & Auto-Entry)**:
+    - Call 1 (Briefing Prosa, ~132 call/bulan): Diproses GLM 5.2 = $0.84 USD (± Rp 13.600).
+    - Non-Call 1 (Call 2,3, Analisa & Auto-Entry, ~572 call/bulan): Diproses DeepSeek = $0.38 USD (± Rp 6.070).
+    - Total Skenario Hybrid = **~$1.22 USD / bulan (± Rp 19.680 / bulan)**.
+    - *Penemuan Utama:* Skenario Hybrid **TIDAK lebih murah secara nominal (+Rp 11.550/bulan dibanding Full DeepSeek Rp 8.130/bulan)**. Namun secara *Value-for-Money*, Skenario Hybrid adalah kandidat *upgrade* arsitektur paling ideal: memberikan kualitas narasi briefing terbaik dari GLM 5.2 tanpa mengorbankan kepatuhan JSON & kecepatan Auto-Entry dari DeepSeek v4-flash, dengan total biaya yang tetap sangat murah (< Rp 20.000/bulan).
+
+
+
 - **[2026-07-22] Akselerasi Akumulasi Sampel Plan U (Skema Golden Trio 3 Pairs)**:
   Saran penyelarasan antara *kecepatan* pengumpulan sampel global ($n \ge 100$) dan *kedalaman* statistik per-pair ($n \ge 30$).
   - *Dilema:* Mempertahankan 2 pair (XAU & EUR) terlalu lambat ($\approx 50$ hari menuju $n \ge 100$). Menambah ke 6 pair membuat sampel per pair terlalu dangkal ($n \approx 16$, rentang distorsi *win-rate* tinggi).

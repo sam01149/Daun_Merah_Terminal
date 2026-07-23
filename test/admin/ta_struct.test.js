@@ -469,14 +469,18 @@ test('_evaluateSetups: entri lama tanpa field baru (label/source/dst) tetap tere
   assert.strictEqual(old[0].loss_label, undefined);
 });
 
-test('_evaluateSetups: calendarEvents diabaikan (undefined) — caller lama 3-argumen tetap jalan', () => {
-  const setups = [mkSetup()];
+test('_evaluateSetups: candle terbalik (descending) diurutkan otomatis sehingga filled_t <= closed_t', () => {
+  const setups = [mkSetup({ bias: 'bullish', entry_zone: '4050', tp: '4100', sl: '4000' })];
+  // Candle diberikan terbalik: jam ke-2 duluan baru jam ke-1
   const candles = { 'GC=F': [
-    mkC(T0 + 3600, 4000, 4035, 3995, 4030),
-    mkC(T0 + 7200, 4030, 4070, 4025, 4060),
+    mkC(T0 + 7200, 4050, 4110, 4040, 4100), // hit TP pada t=7200
+    mkC(T0 + 3600, 4050, 4060, 4040, 4050), // entry fill pada t=3600
   ] };
-  _evaluateSetups(setups, candles, MS0 + 3 * 3600 * 1000); // tanpa argumen ke-4
-  assert.strictEqual(setups[0].status, 'sl');
+  _evaluateSetups(setups, candles, MS0 + 3 * 3600 * 1000);
+  assert.strictEqual(setups[0].status, 'tp');
+  assert.strictEqual(setups[0].filled_t, T0 + 3600);
+  assert.strictEqual(setups[0].closed_t, T0 + 7200);
+  assert.ok(setups[0].filled_t <= setups[0].closed_t);
 });
 
 test('_detectLossLabel: fundamental_shock — event High-impact currency kaki pair dalam ±2 jam dari closedT', () => {

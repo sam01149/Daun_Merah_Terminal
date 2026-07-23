@@ -2477,7 +2477,8 @@ function _evaluateSetups(setups, candlesBySymbol, nowMs, calendarEvents) {
       continue;
     }
     const eLo = Math.min(...e), eHi = Math.max(...e);
-    const all = candlesBySymbol?.[st.symbol] || [];
+    const rawCandles = candlesBySymbol?.[st.symbol] || [];
+    const all = Array.isArray(rawCandles) ? [...rawCandles].sort((a, b) => a.t - b.t) : [];
     // Gap data: setup masih pending tapi candle tertua yang tersedia sudah > 24 jam
     // setelah setup dibuat — kejadian di gap tidak diketahui, jangan mengarang hasil.
     if (st.status === 'pending' && all.length && all[0].t * 1000 > st.ts + DAY) {

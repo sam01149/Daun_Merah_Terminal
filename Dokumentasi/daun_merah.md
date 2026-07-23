@@ -11,11 +11,21 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-07-23 (Session 224 — Rapikan Tampilan PDF Ringkasan: Rename Thesis, Intisari, Whitespace, Bullet)
+> **Last updated:** 2026-07-23 (Session 225 — Fix Urutan Candle (Ascending Sort) di Evaluator Setup Pasif)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 225 (2026-07-23) — Fix Urutan Candle (Ascending Sort) di Evaluator Setup Pasif
+
+**Konteks:** User melaporkan anomali timestamp pada setup pasif XAU/USD (`GC=F:1784708110704`) di mana `closed_t` (22/7 21:00 WIB) tercatat lebih cepat dari `filled_t` (23/7 20:00 WIB). Investigasi menemukan bahwa `_evaluateSetups` mengambil array candle tanpa menjamin urutan kronologis ascending (`a.t - b.t`). Jika data candle dalam kondisi terbalik (descending), candle terbaru menyulut status `open` terlebih dahulu, lalu iterasi mundur menyulut status `tp` pada candle lama, menghasilkan `filled_t` yang lebih baru dari `closed_t`.
+
+**Perubahan (`api/admin.js` & `test/admin/ta_struct.test.js`):**
+1. **`api/admin.js` (`_evaluateSetups`)**: Menambahkan pengurutan eksplisit `[...rawCandles].sort((a, b) => a.t - b.t)` sebelum iterasi candle diproses. Ini menjamin candle selalu dievaluasi secara kronologis dari paling lama ke paling baru, sehingga `filled_t <= closed_t` selalu terpenuhi.
+2. **`test/admin/ta_struct.test.js`**: Menambahkan unit test baru `_evaluateSetups: candle terbalik (descending) diurutkan otomatis sehingga filled_t <= closed_t` untuk mencegah kembalinya bug ini.
+
+**Verifikasi:** `npm test` 100% hijau (593/593 test lolos).
 
 ## Changelog Session 224 (2026-07-23) — Rapikan Tampilan PDF Ringkasan: Rename Thesis, Intisari, Whitespace, Bullet
 
