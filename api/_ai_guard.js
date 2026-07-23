@@ -64,6 +64,20 @@ const DEFAULT_LIMITS = {
   // mungkin terkuras diam-diam oleh loop/abuse dalam sehari. Naikkan via env
   // AI_DAILY_LIMIT_DEEPSEEK kalau nanti dipromosikan primary.
   deepseek:        50,
+
+  // Counter ':experimental' (audit S218, 2026-07-22/23) — Plan V-3 sudah memisahkan
+  // CIRCUIT BREAKER call isAutoCall/test_deepseek=1 (`ai:deepseek:experimental` dkk)
+  // supaya kegagalan eksperimen developer-only tidak mentrip breaker fitur publik,
+  // TAPI counter KUOTA HARIAN-nya sempat lupa dipisah — auto-entry & manual masih
+  // rebutan pool yang sama. Ditemukan setelah Golden Trio (S217) menaikkan volume
+  // auto-entry+uji konsistensi jadi sampai 9 call/hari, ~18% dari pagar deepseek 50/hari
+  // BERBAYAR yang sama dipakai Ringkasan/Analisa/Pre-Entry Check publik. Limit di bawah
+  // sengaja MASIH KETAT (bukan disamakan produksi) — prinsipnya tetap "pagar biaya kecil
+  // per jalur", bukan menggandakan total anggaran; sesuaikan naik kalau AUTO_ENTRY_PAIRS
+  // diperluas lagi dan sering kena limit (cek via getUsage('deepseek_experimental')).
+  deepseek_experimental:        15,
+  sambanova_main_experimental:  30,
+  sambanova_c1_experimental:    30,
 };
 
 function dailyLimit(provider) {

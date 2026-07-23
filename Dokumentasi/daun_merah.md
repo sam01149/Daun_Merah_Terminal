@@ -11,13 +11,23 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-07-22 (Session 217 — Golden Trio Auto-Entry + Rigor Statistik Backtest Konfluensi)
+> **Last updated:** 2026-07-23 (Session 218 — Audit Auto-Entry: Isolasi Kuota Harian AI Eksperimen vs Produksi)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
 
-## Changelog Session 217 (2026-07-22) — Golden Trio Auto-Entry + Rigor Statistik Backtest Konfluensi
+## Changelog Session 218 (2026-07-23) — Audit Auto-Entry: Isolasi Kuota Harian AI Eksperimen vs Produksi
+
+**Konteks:** User minta audit mandiri jalur auto-entry (Plan U) karena "kurang tenang" soal kualitasnya. Ditemukan dua celah lewat penelusuran kode + cross-check berita live (Iran-AS/real yield/gold, diverifikasi akurat via web search): (1) counter kuota harian AI TIDAK ikut terisolasi dari produksi walau circuit breaker-nya sudah (Plan V-3) — **diperbaiki sesi ini**; (2) filter berita keras pre-entry (`checkHardNewsSkip`) cuma baca kalender ekonomi terjadwal, buta terhadap breaking news geopolitik mendadak — **BELUM diperbaiki, opsi masih didiskusikan dengan user** (lihat `daun_merah_progress.md`).
+
+**Perbaikan (temuan #1):**
+1. `api/_ai_guard.js`: tambah counter kuota harian terpisah `deepseek_experimental` (15/hari), `sambanova_main_experimental` (30/hari), `sambanova_c1_experimental` (30/hari) — mendampingi circuit breaker `:experimental` yang sudah ada sejak Plan V-3. Sebelum ini, `allowAiCall('deepseek')` dkk dipanggil dengan key produksi yang SAMA baik dari call manual publik maupun call `isAutoCall`/`test_deepseek=1`, walau breaker gagalnya sudah dipisah — auto-entry & manual rebutan pagar biaya 50/hari BERBAYAR yang sama. Golden Trio (S217) menaikkan volume auto-entry+uji konsistensi jadi sampai 9 call/hari (~18% pagar produksi) sebelum gap ini ketahuan.
+2. `api/admin.js`: 4 titik `allowAiCall(...)` di `ohlcvAnalyzeHandler` (blok `test_deepseek=1` + 3 tier chain produksi DeepSeek/SambaNova akun1/akun2) sekarang branch ke counter experimental kalau `isAutoCall || testDeepseekOnly`, pola sama seperti `CB_DEEPSEEK_KEY` dkk yang sudah ada.
+3. Test baru: `test/lib/guards.test.js` (+2, DEFAULT_LIMITS & fail-open counter baru), `test/admin/isolation_auto.test.js` (+2, end-to-end call auto=1 vs manual — verifikasi `ai_budget:deepseek_experimental:<tanggal>` naik tanpa menyentuh `ai_budget:deepseek:<tanggal>` produksi, dan sebaliknya).
+4. `npm test` 579/579 hijau (naik dari 575).
+
+**Temuan #2 (belum dieksekusi):** dicatat di `daun_merah_progress.md` sebagai item tertunda dengan breakdown opsi — butuh keputusan user sebelum eksekusi (bukan bug sederhana, melibatkan trade-off deteksi breaking-news).
 
 **Konteks:** Diskusi user pasca-riset Scopus AI ("Sample size and methodology for AI trading signals"): dua ide diadopsi (Golden Trio, cepat), satu ditunda (Dynamic Pair Selector — dinilai mencemari eksperimen Plan U karena mencampur variabel strategi-seleksi-pair dengan pengujian reliabilitas engine AI, ditahan sampai gate fixed-pair lolos). Ketiga ide awalnya diusulkan sesi lain (belum di-commit) di `daun_merah_riset.md`; catatan sitasi PDF Scopus AI di entri itu (#8/#21/#22) TERBUKTI salah tempel saat diverifikasi ulang — section "Cross-Domain Validation" PDF sebenarnya bersitasi #1/#16/#40/#41, belum diperbaiki (housekeeping tertunda, keputusan user).
 

@@ -773,6 +773,53 @@ test('PLAN V-3 (kontrol negatif): 3x call PUBLIK (manual) gagal beruntun -> circ
   });
 });
 
+// Audit S218 (2026-07-22/23): circuit breaker call auto sudah terisolasi (tes PLAN V-3 di
+// atas), TAPI counter KUOTA HARIAN sempat lupa ikut dipisah — ditemukan lewat audit manual,
+// bukan lewat test lama (semua test PLAN V-3 di atas cuma cek circuit breaker, tidak pernah
+// cek key `ai_budget:*`). Fix: counter 'deepseek_experimental' terpisah dari 'deepseek'.
+test('Audit S218: call auto=1 sukses -> ai_budget:deepseek_experimental naik, ai_budget:deepseek (produksi) TIDAK TERSENTUH', async () => {
+  await withEnv({ CRON_SECRET: 'topsecret', DEEPSEEK_API_KEY: 'k' }, async () => {
+    const store = makeStore({
+      'ohlcv_fresh:GBPUSD=X': '1',
+      'ohlcv:GBPUSD=X:1h': JSON.stringify(mkTrendCandles(1.30, 1.28)),
+    });
+    const origFetch = global.fetch;
+    global.fetch = makeAnalyzeFetchStub(store);
+    try {
+      const handler = loadHandler();
+      const res = fakeRes();
+      await handler({
+        headers: { 'x-cron-secret': 'topsecret' }, method: 'GET',
+        query: { action: 'ohlcv_analyze', symbol: 'GBPUSD=X', label: 'GBP/USD', auto: '1' },
+      }, res);
+      assert.equal(res.statusCode, 200);
+      const day = new Date().toISOString().slice(0, 10);
+      assert.equal(store.strings[`ai_budget:deepseek_experimental:${day}`], '1');
+      assert.equal(store.strings[`ai_budget:deepseek:${day}`], undefined, 'counter produksi TIDAK BOLEH tersentuh oleh call auto');
+    } finally { global.fetch = origFetch; }
+  });
+});
+
+test('Audit S218 (kontrol negatif): call PUBLIK (manual) sukses -> ai_budget:deepseek naik, ai_budget:deepseek_experimental TIDAK TERSENTUH', async () => {
+  await withEnv({ DEEPSEEK_API_KEY: 'k' }, async () => {
+    const store = makeStore({
+      'ohlcv_fresh:GBPUSD=X': '1',
+      'ohlcv:GBPUSD=X:1h': JSON.stringify(mkTrendCandles(1.30, 1.28)),
+    });
+    const origFetch = global.fetch;
+    global.fetch = makeAnalyzeFetchStub(store);
+    try {
+      const handler = loadHandler();
+      const res = fakeRes();
+      await handler({ headers: {}, method: 'GET', query: { action: 'ohlcv_analyze', symbol: 'GBPUSD=X', label: 'GBP/USD' } }, res);
+      assert.equal(res.statusCode, 200);
+      const day = new Date().toISOString().slice(0, 10);
+      assert.equal(store.strings[`ai_budget:deepseek:${day}`], '1');
+      assert.equal(store.strings[`ai_budget:deepseek_experimental:${day}`], undefined, 'counter experimental TIDAK BOLEH tersentuh oleh call publik');
+    } finally { global.fetch = origFetch; }
+  });
+});
+
 function failingSambaMainFetchStub(store) {
   const redisStub = redisFetchStub(store);
   return async (url, opts) => {

@@ -3857,7 +3857,10 @@ async function ohlcvAnalyzeHandler(req, res) {
       if (DEEPSEEK_KEY && await cb.canCall('ai:deepseek:experimental')) {
         const t0ds = Date.now();
         try {
-          if (!await allowAiCall('deepseek')) throw new Error('AI daily budget exceeded');
+          // Audit S218: counter kuota juga dipisah dari produksi ('deepseek_experimental'),
+          // senada dengan circuit breaker ':experimental' di atas — blok ini SELALU
+          // developer-only (test_deepseek=1), jangan makan pagar biaya publik.
+          if (!await allowAiCall('deepseek_experimental')) throw new Error('AI daily budget exceeded');
           console.log('ohlcv_analyze: trying DeepSeek v4-flash (API resmi) — diagnostik test_deepseek=1');
           const r = await fetch('https://api.deepseek.com/chat/completions', {
             method: 'POST',
@@ -3908,6 +3911,13 @@ async function ohlcvAnalyzeHandler(req, res) {
     const CB_DEEPSEEK_KEY   = isExperimental ? 'ai:deepseek:experimental' : 'ai:deepseek';
     const CB_SAMBA_MAIN_KEY = isExperimental ? 'ai:sambanova:main:experimental' : 'ai:sambanova:main';
     const CB_SAMBA_C1_KEY   = isExperimental ? `${CB_SAMBA_C1_ADMIN}:experimental` : CB_SAMBA_C1_ADMIN;
+    // Audit S218: counter KUOTA HARIAN (beda dari circuit breaker di atas) sempat lupa
+    // ikut dipisah — auto-entry & manual rebutan pool sama walau breaker-nya sudah
+    // terisolasi sejak V-3. Golden Trio (S217) menaikkan volume eksperimen sampai
+    // 9 call/hari, cukup besar untuk menggerus pagar biaya deepseek 50/hari produksi.
+    const AI_BUDGET_DEEPSEEK_KEY     = isExperimental ? 'deepseek_experimental' : 'deepseek';
+    const AI_BUDGET_SAMBA_MAIN_KEY   = isExperimental ? 'sambanova_main_experimental' : 'sambanova_main';
+    const AI_BUDGET_SAMBA_C1_KEY     = isExperimental ? 'sambanova_c1_experimental' : 'sambanova_c1';
 
     // Batas waktu keras cascade AI (Plan O-6, 2026-07-18): sekarang ADA 3 tier
     // (DeepSeek + 2x SambaNova) yang timeout aslinya kalau dijumlah (15+30+25=70s)
@@ -3923,7 +3933,7 @@ async function ohlcvAnalyzeHandler(req, res) {
     // angka antar-pair). SambaNova akun-1/akun-2 TURUN jadi fallback berurutan.
     if (!isDiagnosticOnly && DEEPSEEK_KEY && await cb.canCall(CB_DEEPSEEK_KEY)) {
       try {
-        if (!await allowAiCall('deepseek')) throw new Error('AI daily budget exceeded');
+        if (!await allowAiCall(AI_BUDGET_DEEPSEEK_KEY)) throw new Error('AI daily budget exceeded');
         const r = await fetch('https://api.deepseek.com/chat/completions', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${DEEPSEEK_KEY}` },
@@ -3948,7 +3958,7 @@ async function ohlcvAnalyzeHandler(req, res) {
     const c1Timeout = Math.max(0, Math.min(30000, aiBudgetLeftMs() - 3000));
     if (!isDiagnosticOnly && !rawText && !testC1Only && c1Timeout >= 10000 && SAMBANOVA_KEY && await cb.canCall(CB_SAMBA_MAIN_KEY)) {
       try {
-        if (!await allowAiCall('sambanova_main')) throw new Error('AI daily budget exceeded');
+        if (!await allowAiCall(AI_BUDGET_SAMBA_MAIN_KEY)) throw new Error('AI daily budget exceeded');
         const r = await fetch('https://api.sambanova.ai/v1/chat/completions', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SAMBANOVA_KEY}` },
@@ -3976,7 +3986,7 @@ async function ohlcvAnalyzeHandler(req, res) {
     const c2Timeout = Math.max(0, Math.min(25000, aiBudgetLeftMs() - 3000));
     if (!isDiagnosticOnly && !rawText && c2Timeout >= 10000 && SAMBANOVA_KEY_CALL1 && await cb.canCall(CB_SAMBA_C1_KEY)) {
       try {
-        if (!await allowAiCall('sambanova_c1')) throw new Error('AI daily budget exceeded');
+        if (!await allowAiCall(AI_BUDGET_SAMBA_C1_KEY)) throw new Error('AI daily budget exceeded');
         const r = await fetch('https://api.sambanova.ai/v1/chat/completions', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SAMBANOVA_KEY_CALL1}` },

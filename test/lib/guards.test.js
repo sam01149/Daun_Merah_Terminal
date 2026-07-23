@@ -73,6 +73,28 @@ test('allowAiCall: cerebras fail-open tanpa Redis', async () => {
   assert.strictEqual(await allowAiCall('cerebras'), true);
 });
 
+// Regression (audit S218, 2026-07-22/23): circuit breaker call isAutoCall/test_deepseek=1
+// sudah dipisah dari produksi sejak Plan V-3 ('ai:deepseek:experimental' dkk), TAPI
+// counter KUOTA HARIAN sempat lupa ikut dipisah — auto-entry & manual publik rebutan
+// pool deepseek 50/hari BERBAYAR yang sama. Golden Trio (S217) menaikkan volume
+// eksperimen sampai 9 call/hari, cukup untuk menggerus pagar biaya publik diam-diam.
+// Fix: counter khusus 'deepseek_experimental'/'sambanova_main_experimental'/
+// 'sambanova_c1_experimental', senada pola isolasi ':experimental' circuit breaker.
+test('DEFAULT_LIMITS: counter kuota harian eksperimen (auto-entry) terpisah dari produksi', () => {
+  assert.strictEqual(typeof DEFAULT_LIMITS.deepseek_experimental, 'number');
+  assert.ok(DEFAULT_LIMITS.deepseek_experimental > 0);
+  assert.ok(DEFAULT_LIMITS.deepseek_experimental < DEFAULT_LIMITS.deepseek,
+    'pagar eksperimen harus tetap lebih ketat dari produksi, bukan menggandakan anggaran');
+  assert.strictEqual(typeof DEFAULT_LIMITS.sambanova_main_experimental, 'number');
+  assert.strictEqual(typeof DEFAULT_LIMITS.sambanova_c1_experimental, 'number');
+});
+
+test('allowAiCall: counter experimental fail-open tanpa Redis (independen dari counter produksi)', async () => {
+  assert.strictEqual(await allowAiCall('deepseek_experimental'), true);
+  assert.strictEqual(await allowAiCall('sambanova_main_experimental'), true);
+  assert.strictEqual(await allowAiCall('sambanova_c1_experimental'), true);
+});
+
 // ── _ratelimit ──────────────────────────────────────────────────────────────
 
 function fakeReqRes(ip) {
