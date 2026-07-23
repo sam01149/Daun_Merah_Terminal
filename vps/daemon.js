@@ -898,7 +898,10 @@ const AUTO_ENTRY_SYMBOL_MAP = {
   frxNZDUSD: { symbol: 'NZDUSD=X', label: 'NZD/USD' },
 };
 
-const AUTO_ENTRY_PAIRS = (process.env.AUTO_ENTRY_PAIRS || 'frxXAUUSD,frxEURUSD')
+// Golden Trio (2026-07-22, diskusi user — percepat akumulasi sampel Plan U dari
+// ~50 hari ke ~16 hari, n≈33/pair tetap lolos ambang CLT n≥30, lihat
+// daun_merah_riset.md): default 2 pair -> 3 pair (tambah GBP/USD).
+const AUTO_ENTRY_PAIRS = (process.env.AUTO_ENTRY_PAIRS || 'frxXAUUSD,frxEURUSD,frxGBPUSD')
   .split(',').map(s => s.trim()).filter(Boolean);
 const AUTO_ENTRY_HOURS_UTC = (process.env.AUTO_ENTRY_HOURS_UTC || '8,13')
   .split(',').map(s => parseInt(s.trim(), 10)).filter(Number.isFinite);

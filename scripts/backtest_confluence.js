@@ -27,9 +27,17 @@
 //
 // Jalankan: node scripts/backtest_confluence.js
 // Hasil dicatat di Dokumentasi/daun_merah_riset_ai_pintar.md (bagian Tier 3).
+//
+// Rigor statistik (2026-07-22, Fase 1 respons riset Scopus AI — lihat
+// daun_merah_riset.md): perbandingan bounce-rate skor TINGGI vs RENDAH
+// sebelumnya cuma dibandingkan sebagai dua persentase mentah ("54% vs 57%,
+// beda tipis, kemungkinan n kontrol kecil"). Sekarang dilengkapi bootstrap CI
+// per bucket + permutation test + Wilcoxon rank-sum untuk p-value beda —
+// mengubah dugaan informal jadi angka signifikansi terukur (scripts/_stats.js).
 
 const { computeOhlcvMetrics, resampleTo4h, _confluenceZones } = require('../api/admin.js');
 const { computeVolatilityRegime } = require('../api/_pair_context.js');
+const { bootstrapCI, permutationTest, wilcoxonRankSum } = require('./_stats.js');
 
 const PAIRS = [
   { symbol: 'GC=F',     label: 'XAU/USD' },
@@ -87,7 +95,7 @@ function evalZone(zone, side, tol, atrD, c1hFuture) {
   return { touched: true, outcome: 'chop' };
 }
 
-function emptyBucket() { return { zones: 0, touched: 0, bounce: 0, break: 0, chop: 0 }; }
+function emptyBucket() { return { zones: 0, touched: 0, bounce: 0, break: 0, chop: 0, outcomes: [] }; }
 
 async function run() {
   const tally = { high: emptyBucket(), low: emptyBucket() };
@@ -141,10 +149,13 @@ async function run() {
           const rb = tallyByRegime[regimeLabel][bucket];
           rb.zones++;
           if (r.touched) {
+            const bounceFlag = r.outcome === 'bounce' ? 1 : 0;
             tally[bucket].touched++; pp[bucket].touched++;
             tally[bucket][r.outcome]++;
+            tally[bucket].outcomes.push(bounceFlag);
             if (r.outcome === 'bounce') pp[bucket].bounce++;
             rb.touched++; rb[r.outcome]++;
+            rb.outcomes.push(bounceFlag);
           }
         }
       }
@@ -167,9 +178,28 @@ async function run() {
     const chopRate = b.touched ? Math.round(b.chop / b.touched * 100) : 0;
     console.log(`Zona skor ${bucket === 'high' ? `TINGGI (≥${HIGH_SCORE})` : `RENDAH (≤${LOW_SCORE})`}: ${b.zones} zona, ${b.touched} tersentuh (${touchRate}%) → bounce ${bounceRate}% | break ${breakRate}% | chop ${chopRate}%`);
   }
-  console.log('\nInterpretasi: kalau bounce-rate zona TINGGI >> zona RENDAH, konfluensi memang');
-  console.log('prediktif sebagai area reaksi. Kalau setara → skor konfluensi belum membawa');
-  console.log('informasi tambahan, revisit sebelum lanjut Tier 5.');
+
+  console.log('\n══ SIGNIFIKANSI STATISTIK (bounce-rate TINGGI vs RENDAH) ══');
+  const highOut = tally.high.outcomes, lowOut = tally.low.outcomes;
+  const ciHigh = bootstrapCI(highOut);
+  const ciLow = bootstrapCI(lowOut);
+  const fmtCI = ci => `${(ci.estimate * 100).toFixed(1)}% [95% CI: ${(ci.lo * 100).toFixed(1)}%-${(ci.hi * 100).toFixed(1)}%] (n=${ci.n})`;
+  console.log(`Bootstrap CI TINGGI: ${fmtCI(ciHigh)}`);
+  console.log(`Bootstrap CI RENDAH: ${fmtCI(ciLow)}`);
+  if (highOut.length && lowOut.length) {
+    const perm = permutationTest(highOut, lowOut);
+    const wil = wilcoxonRankSum(highOut, lowOut);
+    console.log(`Permutation test: beda observed ${(perm.observedDiff * 100).toFixed(1)} poin, p-value=${perm.pValue.toFixed(4)}`);
+    console.log(`Wilcoxon rank-sum: z=${wil.z.toFixed(3)}, p-value=${wil.pValue.toFixed(4)}`);
+    const sig = perm.pValue < 0.05;
+    console.log(`\nInterpretasi: p-value ${sig ? '<' : '>='} 0.05 → beda bounce-rate TINGGI vs RENDAH`);
+    console.log(sig
+      ? 'SIGNIFIKAN secara statistik (bukan cuma kebetulan sampel). Konfluensi terbukti prediktif.'
+      : 'BELUM signifikan pada n saat ini — CI kedua bucket kemungkinan tumpang tindih. JANGAN');
+    if (!sig) console.log('disimpulkan "confluence tidak bekerja", tapi juga JANGAN diklaim terbukti — kumpulkan n lebih banyak / cek lagi run berikutnya sebelum lanjut Tier 5.');
+  } else {
+    console.log('Salah satu bucket 0 sentuhan — signifikansi tidak bisa dihitung.');
+  }
 
   console.log('\n══ AGREGAT PER REZIM VOLATILITAS ══');
   for (const regime of ['tenang', 'normal', 'bergejolak', 'unknown']) {
@@ -180,15 +210,21 @@ async function run() {
       const bounceRate = b.touched ? Math.round(b.bounce / b.touched * 100) : 0;
       return `${b.zones} zona, ${b.touched} sentuh (${touchRate}%) → bounce ${bounceRate}%`;
     };
-    console.log(`${regime.toUpperCase()}: tinggi[${bucketLine('high')}] | rendah[${bucketLine('low')}]`);
+    let sigNote = '(n terlalu kecil)';
+    if (rt.high.outcomes.length && rt.low.outcomes.length) {
+      const p = permutationTest(rt.high.outcomes, rt.low.outcomes).pValue;
+      sigNote = `p=${p.toFixed(3)}${p < 0.05 ? ' *signifikan*' : ''}`;
+    }
+    console.log(`${regime.toUpperCase()}: tinggi[${bucketLine('high')}] | rendah[${bucketLine('low')}] | ${sigNote}`);
   }
   console.log('\nInterpretasi rezim: kalau bounce-rate zona TINGGI konsisten di atas zona RENDAH');
   console.log('di SEMUA rezim (tenang/normal/bergejolak), confluence zone robust lintas kondisi');
   console.log('pasar. Kalau cuma unggul di satu rezim (mis. tenang/ranging) dan hilang/terbalik');
   console.log('di rezim lain (mis. bergejolak/trending), sinyalnya rezim-dependent — pertimbangkan');
   console.log('gating (kecilkan size / skip entry di rezim yang terbukti tidak bekerja) daripada');
-  console.log('diperlakukan sebagai edge universal. n kecil per rezim (unknown 60 hari data) wajar');
-  console.log('— treat sebagai indikasi awal, bukan kesimpulan final.');
+  console.log('diperlakukan sebagai edge universal. Pakai kolom p-value di atas, bukan cuma persen:');
+  console.log('n kecil per rezim (unknown 60 hari data) wajar bikin p-value tinggi walau bounce-rate');
+  console.log('kelihatan beda — itu tandanya treat sebagai indikasi awal, bukan kesimpulan final.');
 }
 
 run().catch(e => { console.error('FATAL:', e); process.exit(1); });

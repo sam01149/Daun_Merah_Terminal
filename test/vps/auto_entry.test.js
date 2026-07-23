@@ -8,6 +8,7 @@ const assert = require('node:assert/strict');
 const {
   legsFromLabel, calEventMsWib, findHardNewsEvent, firstNumber,
   levelsWithinTolerance, computeConsistency, AUTO_ENTRY_SYMBOL_MAP,
+  AUTO_ENTRY_PAIRS,
 } = require('../../vps/daemon.js');
 
 // ── legsFromLabel ────────────────────────────────────────────────────────────
@@ -138,4 +139,11 @@ test('computeConsistency: call gagal (null) dihitung sebagai tidak konsisten', (
 test('AUTO_ENTRY_SYMBOL_MAP: default pairs (frxXAUUSD, frxEURUSD) terpetakan', () => {
   assert.deepEqual(AUTO_ENTRY_SYMBOL_MAP.frxXAUUSD, { symbol: 'GC=F', label: 'XAU/USD' });
   assert.deepEqual(AUTO_ENTRY_SYMBOL_MAP.frxEURUSD, { symbol: 'EURUSD=X', label: 'EUR/USD' });
+});
+
+test('AUTO_ENTRY_PAIRS: default Golden Trio 3 pair (tanpa env var override)', () => {
+  assert.deepEqual(AUTO_ENTRY_PAIRS, ['frxXAUUSD', 'frxEURUSD', 'frxGBPUSD']);
+  for (const pair of AUTO_ENTRY_PAIRS) {
+    assert.ok(AUTO_ENTRY_SYMBOL_MAP[pair], `${pair} harus terpetakan di AUTO_ENTRY_SYMBOL_MAP`);
+  }
 });

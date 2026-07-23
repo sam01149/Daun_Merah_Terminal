@@ -22,8 +22,23 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 
 ---
 
-# Pertanyaan Terbuka & Parkiran Ide
-
+- **[2026-07-22] Akselerasi Akumulasi Sampel Plan U (Skema Golden Trio 3 Pairs)**:
+  Saran penyelarasan antara *kecepatan* pengumpulan sampel global ($n \ge 100$) dan *kedalaman* statistik per-pair ($n \ge 30$).
+  - *Dilema:* Mempertahankan 2 pair (XAU & EUR) terlalu lambat ($\approx 50$ hari menuju $n \ge 100$). Menambah ke 6 pair membuat sampel per pair terlalu dangkal ($n \approx 16$, rentang distorsi *win-rate* tinggi).
+  - *Solusi Sweet Spot (Golden Trio):* Menggunakan **3 pair utama** (`XAU/USD`, `EUR/USD`, `GBP/USD`) dengan 2 slot jam emas (London & NY Open, 08:15 & 13:15 UTC).
+  - *Hasil:* Laju 6 setup/hari $\rightarrow$ Waktu akumulasi global $n \ge 100$ dipangkas dari ~50 hari menjadi **~16 hari**, dengan kedalaman sampel per pair mencapai **$n \approx 33$** (memenuhi ambang batas *Central Limit Theorem* $n \ge 30$).
+  - *Penggunaan Kuota AI:* Hanya 6 call/hari (12% dari pagar biaya DeepSeek v4-flash 50 req/hari di `_ai_guard.js`), sangat aman untuk saldo user.
+- **[2026-07-22] Dynamic Pair Selector Berbasis Fundamental Score (Upgrade Auto-Entry Virtual Plan U)**:
+  Ide memilih instrumen auto-entry secara dinamis berdasarkan skor fundamental mata uang (bukan mematok EUR/USD & XAU/USD).
+  - *Opsi A: Strongest vs Weakest Cross Pairs (mis. AUD/JPY)* — Teori *divergence* paling ekstrem, namun kompleksitas infrastruktur sangat tinggi (butuh data feeds 28 cross pairs, spread broker lebih lebar, dan AI prompt kehilangan anchor USD/DXY).
+  - *Opsi B: Strongest Currency vs USD (Major Pairs Only, mis. AUD/USD)* — **DIREKOMENDASIKAN**. Sangat selaras dengan arsitektur Daun Merah (semua context DXY, COT CFTC, CME volatility, GDPNow US berpusat pada USD), likuiditas maksimal/spread terendah, dan 8 major pairs sudah didukung 100% oleh `AUTO_ENTRY_SYMBOL_MAP` di `vps/daemon.js` tanpa overhead backend.
+  - *Catatan Arsitektur Macro Anchor:* USD dijadikan anchor utama karena struktur bursa derivatif dunia (CFTC COT & CME Options) hanya menerbitkan data bursa resmi berpasangan dengan USD (tidak ada futures bursa resmi untuk cross pairs), plus data *nowcasting* real-time publik gratis (Atlanta Fed GDPNow) hanya ada untuk US. Mata uang non-USD tetap diberi konteks *Currency Strength* (`api/_pair_context.js`) & *Macro Indicators* (`api/_fundamental_parser.js`).
+- **[2026-07-22] Protokol Cross-Domain Validation (Generalisasi Sinyal AI ke Non-USD Cross Pairs)**:
+  Analisis transferabilitas hasil uji ideal $n \ge 100$ dari Major USD Pairs ke Non-USD Cross Pairs (mis. `EUR/JPY`, `GBP/JPY`, `AUD/NZD`).
+  - *In-Domain Validation (Tahap 1 - Plan U Current):* Pengujian $n \ge 100$ di Major USD Pairs membuktikan keandalan *core prompt, risk-reward engine*, dan pembacaan *price action* teknikal AI Daun Merah.
+  - *Cross-Domain Validation (Tahap 2 - Future Upgrade):* Hasil ideal di Tahap 1 BISA diuji ke Non-USD Cross Pairs, namun TIDAK BOLEH diasumsikan otomatis berhasil 100%. Komponen teknikal & R:R bersifat universal, tetapi driver makro non-USD (kebijakan YCC BOJ, ECB rates, harga komoditas susu/minyak) & spread cross pairs berbeda dari USD Major.
+  - *Landasan Akademis:* Disokong oleh temuan Scopus AI report (2026-07-22, sitasi #8, #21, #22 - *Multi-Asset & Cross-Domain Validation*), di mana evaluasi lintas kluster aset wajib melalui validasi *out-of-domain* terpisah untuk mencegah kesalahan generalisasi.
+  - *Status:* Disiapkan sebagai protokol Tahap 2 setelah Plan U $n \ge 100$ tuntas.
 - **Kalibrasi keyakinan berbasis outcome** (eks "Tier 2", session 166): ikat badge keyakinan
   Analisa AI ke win-rate historis segmen serupa (pair + bias + rentang skor konfluensi) dari
   `setup_log:v1`, bukan self-assessment LLM. Prasyarat: sampel setup selesai cukup (indikatif
@@ -42,6 +57,20 @@ Entri yang melanggar = salah tempat, wajib dipindah.
   awal. Perlu run lanjutan dengan rentang data lebih panjang (>60 hari, lintas tahun) sebelum
   ini jadi kesimpulan robust — 60 hari saat ini kemungkinan besar didominasi satu rezim pasar
   yang sama untuk urutan bulan tertentu.
+  **Update 2026-07-22 (rigor statistik, respons riset Scopus AI — `scripts/_stats.js`):**
+  dugaan "n kontrol terlalu kecil" di atas sekarang punya angka formal, bukan cuma feeling.
+  Run ulang: skor tinggi 918 zona, 369 sentuh (40%) → bounce 55% [bootstrap 95% CI: 49,9%-
+  59,9%]; skor rendah 32 zona, 7 sentuh (22%) → bounce 57% [95% CI: 28,6%-85,7%, SANGAT lebar
+  karena n=7]. Permutation test beda observed -2,1 poin, **p=1,000**; Wilcoxon rank-sum z=-0,097,
+  **p=0,891** — beda bounce-rate TINGGI vs RENDAH **BELUM signifikan secara statistik** pada n
+  saat ini (CI kedua bucket tumpang tindih total). Per rezim juga tidak ada yang p<0,05 (tenang
+  p=0,511; normal p=0,223; bergejolak p=1,000). **Kesimpulan: confluence zone BELUM terbukti
+  prediktif secara statistik** — bukan berarti tidak bekerja, tapi klaim "zona skor tinggi lebih
+  reaktif" masih hipotesis, bukan temuan established. Root cause utamanya kemungkinan besar n
+  kontrol (RENDAH) yang kronis kecil (7 sentuh dari 60 hari data) — sampel TINGGI sudah cukup
+  besar (n=369) tapi tidak menolong kalau pembandingnya masih terlalu kecil. Sebelum lanjut Tier
+  5 atau menaikkan bobot confluence di manapun, perlu perbesar n kontrol (rentang data lebih
+  panjang dan/atau perlonggar ambang LOW_SCORE) supaya test punya daya (power) memadai.
 - **Backtest carry/yield differential** (`scripts/backtest_carry.js`, dibuat 2026-07-20,
   Session 209): signal bulanan dari differential yield 10Y nominal (proxy carry — BUKAN short
   rate/kebijakan asli, itu tidak tersedia gratis via FRED) EUR/GBP/AUD/JPY vs USD, dibanding

@@ -11,11 +11,23 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-07-22 (Session 216 — Refinemen In-Place Setup Auto-Entry & Guard Whipsaw Flips)
+> **Last updated:** 2026-07-22 (Session 217 — Golden Trio Auto-Entry + Rigor Statistik Backtest Konfluensi)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 217 (2026-07-22) — Golden Trio Auto-Entry + Rigor Statistik Backtest Konfluensi
+
+**Konteks:** Diskusi user pasca-riset Scopus AI ("Sample size and methodology for AI trading signals"): dua ide diadopsi (Golden Trio, cepat), satu ditunda (Dynamic Pair Selector — dinilai mencemari eksperimen Plan U karena mencampur variabel strategi-seleksi-pair dengan pengujian reliabilitas engine AI, ditahan sampai gate fixed-pair lolos). Ketiga ide awalnya diusulkan sesi lain (belum di-commit) di `daun_merah_riset.md`; catatan sitasi PDF Scopus AI di entri itu (#8/#21/#22) TERBUKTI salah tempel saat diverifikasi ulang — section "Cross-Domain Validation" PDF sebenarnya bersitasi #1/#16/#40/#41, belum diperbaiki (housekeeping tertunda, keputusan user).
+
+**Perubahan:**
+1. **Golden Trio** — `vps/daemon.js`: default `AUTO_ENTRY_PAIRS` diperluas dari 2 pair (`frxXAUUSD,frxEURUSD`) ke 3 pair (+ `frxGBPUSD`). 2 slot/hari/pair = 6 setup/hari → estimasi gate Plan U n≥100 dipangkas dari ~50 hari ke ~16 hari, kedalaman n≈33/pair tetap lolos ambang CLT n≥30. Test baru (`test/vps/auto_entry.test.js`) memverifikasi default array + semua pair terpetakan di `AUTO_ENTRY_SYMBOL_MAP`. `vps/README-deploy.md` §8 & `daun_merah_plan.md` §PLAN U diupdate mengikuti (termasuk perbaikan teks stale "1 pair XAU/USD" yang sebenarnya sudah 2 pair sejak awal).
+2. **Modul statistik generik baru** — `scripts/_stats.js`: bootstrap CI (percentile, seeded PRNG deterministik), permutation test dua-sampel, Wilcoxon rank-sum (Mann-Whitney U, aproksimasi normal), Brier score & Expected Calibration Error. Reusable, tidak ada dependency eksternal. Test lengkap di `test/scripts/_stats.test.js` (18 test, termasuk kasus tepi array kosong & determinisme seed).
+3. **Rigor statistik `scripts/backtest_confluence.js`** — perbandingan bounce-rate zona skor TINGGI vs RENDAH yang sebelumnya cuma dua persentase mentah sekarang dilengkapi bootstrap CI per bucket + permutation test + Wilcoxon rank-sum (agregat & per rezim volatilitas). **Hasil run verifikasi (data live Yahoo, n=369 tersentuh skor tinggi vs n=7 skor rendah): p=1,000 (permutation) / p=0,891 (Wilcoxon) — beda bounce-rate BELUM signifikan secara statistik**, CI kedua bucket tumpang tindih total (55% [49,9%-59,9%] vs 57% [28,6%-85,7%]). Ini temuan baru yang mengoreksi kesan sebelumnya ("kontrol kecil, tapi kelihatan konsisten") menjadi kuantitatif: confluence zone BELUM terbukti prediktif secara statistik, root cause kemungkinan n kontrol (RENDAH) yang kronis kecil. Detail penuh + rekomendasi lanjut: `daun_merah_riset.md`.
+4. `npm test` 575/575 hijau (naik dari 556 — 19 test baru: 1 di `auto_entry.test.js`, 18 di `_stats.test.js`).
+
+**Item Plan U #6-10 (kalibrasi, conviction sizing dst.) belum dikerjakan** — `_stats.js` disiapkan reusable untuk item itu begitu sampel `setup_log_auto:v1` cukup (dipercepat oleh Golden Trio di atas), TIDAK dikerjakan sesi ini (masih TERTUNDA nunggu data, lihat `daun_merah_progress.md`).
 
 ## Changelog Session 216 (2026-07-22) — Refinemen In-Place Setup Auto-Entry & Guard Whipsaw Flips
 
