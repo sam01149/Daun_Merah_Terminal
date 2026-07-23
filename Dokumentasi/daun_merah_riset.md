@@ -28,17 +28,6 @@ Entri yang melanggar = salah tempat, wajib dipindah.
   - *Solusi Sweet Spot (Golden Trio):* Menggunakan **3 pair utama** (`XAU/USD`, `EUR/USD`, `GBP/USD`) dengan 2 slot jam emas (London & NY Open, 08:15 & 13:15 UTC).
   - *Hasil:* Laju 6 setup/hari $\rightarrow$ Waktu akumulasi global $n \ge 100$ dipangkas dari ~50 hari menjadi **~16 hari**, dengan kedalaman sampel per pair mencapai **$n \approx 33$** (memenuhi ambang batas *Central Limit Theorem* $n \ge 30$).
   - *Penggunaan Kuota AI:* Hanya 6 call/hari (12% dari pagar biaya DeepSeek v4-flash 50 req/hari di `_ai_guard.js`), sangat aman untuk saldo user.
-- **[2026-07-22] Dynamic Pair Selector Berbasis Fundamental Score (Upgrade Auto-Entry Virtual Plan U)**:
-  Ide memilih instrumen auto-entry secara dinamis berdasarkan skor fundamental mata uang (bukan mematok EUR/USD & XAU/USD).
-  - *Opsi A: Strongest vs Weakest Cross Pairs (mis. AUD/JPY)* — Teori *divergence* paling ekstrem, namun kompleksitas infrastruktur sangat tinggi (butuh data feeds 28 cross pairs, spread broker lebih lebar, dan AI prompt kehilangan anchor USD/DXY).
-  - *Opsi B: Strongest Currency vs USD (Major Pairs Only, mis. AUD/USD)* — **DIREKOMENDASIKAN**. Sangat selaras dengan arsitektur Daun Merah (semua context DXY, COT CFTC, CME volatility, GDPNow US berpusat pada USD), likuiditas maksimal/spread terendah, dan 8 major pairs sudah didukung 100% oleh `AUTO_ENTRY_SYMBOL_MAP` di `vps/daemon.js` tanpa overhead backend.
-  - *Catatan Arsitektur Macro Anchor:* USD dijadikan anchor utama karena struktur bursa derivatif dunia (CFTC COT & CME Options) hanya menerbitkan data bursa resmi berpasangan dengan USD (tidak ada futures bursa resmi untuk cross pairs), plus data *nowcasting* real-time publik gratis (Atlanta Fed GDPNow) hanya ada untuk US. Mata uang non-USD tetap diberi konteks *Currency Strength* (`api/_pair_context.js`) & *Macro Indicators* (`api/_fundamental_parser.js`).
-- **[2026-07-22] Protokol Cross-Domain Validation (Generalisasi Sinyal AI ke Non-USD Cross Pairs)**:
-  Analisis transferabilitas hasil uji ideal $n \ge 100$ dari Major USD Pairs ke Non-USD Cross Pairs (mis. `EUR/JPY`, `GBP/JPY`, `AUD/NZD`).
-  - *In-Domain Validation (Tahap 1 - Plan U Current):* Pengujian $n \ge 100$ di Major USD Pairs membuktikan keandalan *core prompt, risk-reward engine*, dan pembacaan *price action* teknikal AI Daun Merah.
-  - *Cross-Domain Validation (Tahap 2 - Future Upgrade):* Hasil ideal di Tahap 1 BISA diuji ke Non-USD Cross Pairs, namun TIDAK BOLEH diasumsikan otomatis berhasil 100%. Komponen teknikal & R:R bersifat universal, tetapi driver makro non-USD (kebijakan YCC BOJ, ECB rates, harga komoditas susu/minyak) & spread cross pairs berbeda dari USD Major.
-  - *Landasan Akademis:* Disokong oleh Scopus AI report §5.1 *"Multi-Asset, Multi-Market Testing"* — rujukan lengkap & sitasi terverifikasi (dikoreksi 2026-07-23 dari nomor #8/#21/#22 yang salah alamat) di `daun_merah_referensi_riset.md` §9.
-  - *Status:* Disiapkan sebagai protokol Tahap 2 setelah Plan U $n \ge 100$ tuntas.
 - **Kalibrasi keyakinan berbasis outcome** (eks "Tier 2", session 166): ikat badge keyakinan
   Analisa AI ke win-rate historis segmen serupa (pair + bias + rentang skor konfluensi) dari
   `setup_log:v1`, bukan self-assessment LLM. Prasyarat: sampel setup selesai cukup (indikatif
