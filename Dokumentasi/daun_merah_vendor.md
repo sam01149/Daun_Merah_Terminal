@@ -186,6 +186,14 @@ User cek langsung dashboard ScraperAPI: **417 dari 1.000 credit terpakai dalam ~
 
 ---
 
+## 11. Higgsfield (asset kreatif — icon/foto/video/ppt, BUKAN bagian app produksi)
+
+- **Fungsi:** generator gambar/video/audio AI (MCP tool), dipakai sekali S221 (2026-07-23) untuk bikin asset visual identitas (`asset/` lokal, gitignored, bukan bagian repo/deploy).
+- **Bukan "gratis 1 hari"** seperti awalnya dikira user — ini **trial 3 hari** (mulai otomatis saat MCP connect, berakhir 2026-07-26 07:09 UTC), jatah 100 credit MCP-only. Setelah trial habis, **kartu auto-charge** subscription Plus bulanan kecuali dibatalkan duluan (via widget billing Higgsfield, bilang "cancel auto-renewal").
+- **Status:** DITOLAK lanjut (S221) — credit habis di tengah jalan (100 -> 4), user pilih stop bukan top-up. Kalau mau dipakai lagi nanti, ini bukan vendor produksi app, jadi tidak ada dampak ke `api/_ai_guard.js` atau chain AI produksi.
+- **Harga top-up (kalau mau lanjut nanti):** one-time 500 credit $26 / 1000 credit $49 / 2000 credit $95 / 4000 credit $190 (semua ~44% off harga normal), atau plan Ultra $99/bulan = 3000 credit.
+- **Gotcha biaya:** preflight `get_cost` TANPA parameter `resolution` eksplisit mengestimasi di resolusi default (1K) yang jauh lebih murah dari 2K yang benar-benar dipakai — 8 gambar 2K + beberapa gambar lain menghabiskan ~96 credit padahal preflight awal (1K) memperkirakan low single-digit per gambar. Video (Kling 3.0, Seedance) jauh lebih mahal lagi: ~10-16 credit per klip 5-8 detik bahkan di resolusi rendah.
+
 ## 10. Catatan Operasional (M4, audit 2026-07-18 — tanpa kode)
 
 - **Upstash Redis:** cek dashboard (command count & storage) tiap awal bulan — semua endpoint bergantung pada Redis ini, kalau limit free tier kena, seluruh app (cache, rate limit, circuit breaker, jatah AI harian) ikut terganggu serentak.

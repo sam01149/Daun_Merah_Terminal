@@ -31,3 +31,6 @@ bridge/
 
 # Coret-coretan lokal (script tes sekali pakai), bukan bagian app
 scratch/
+
+# Asset kreatif (icon/foto/video/ppt hasil Higgsfield) — file besar, jangan masuk git
+asset/

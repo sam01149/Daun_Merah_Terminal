@@ -11,11 +11,39 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-07-23 (Session 220 — Persist Buffer Korroborasi Berita ke Redis)
+> **Last updated:** 2026-07-23 (Session 222 — Ganti icon.svg + OG/Twitter Meta)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 222 (2026-07-23) — Ganti icon.svg + OG/Twitter Meta
+
+**Konteks:** Lanjutan S221 — dari 4 varian app-icon hasil Higgsfield (`asset/icon/icon_variant_A/B/C/D.svg`), user pilih `variant_A` (dua daun merah/teal bentuk lebih dinamis, mengisi frame lebih penuh) dibanding `icon.svg` lama (urat daun lebih halus, negative space boros) setelah dibandingkan langsung via render PNG headless Edge.
+
+**Perubahan:**
+1. **`icon.svg` (root)** — ditimpa dengan artwork `variant_A` (path sama persis, cuma dibersihkan: hapus `<metadata>` recraft signature & `transform="translate(0,0)"` no-op, tambah `<title>`+`role="img"` untuk aksesibilitas, drop `width`/`height`/`preserveAspectRatio="none"` biar scaling konsisten dengan gaya file lama). Palet warna tidak berubah (`#b23030` merah, `#0d4d4d` teal, `#f5e6c8` krem) — masih belum sinkron dengan CSS var `--accent`/`--green` app (dicatat sebagai temuan, tidak difix karena di luar scope diskusi ini).
+2. **`apple-touch-icon.png` (baru, root, 180×180)** — di-generate dari `icon.svg` baru (render headless Edge 1024px -> resize Pillow). Sebelumnya `<link rel="apple-touch-icon">` menunjuk ke `icon.svg` langsung, padahal Safari/iOS historically tidak reliable rasterize SVG untuk home-screen icon.
+3. **`og-image.png` (baru, root)** — salinan `asset/icon/wordmark_lockup_A.png` (lockup ikon+"DAUN MERAH"+"FX TERMINAL"). **Sengaja disalin keluar dari `asset/` yang gitignored** ke root yang tracked, karena file ini sekarang benar-benar dipakai production (og:image/twitter:image), beda dari varian lain di `asset/` yang cuma referensi lokal.
+4. **`index.html` `<head>`** — tambah `og:type/url/title/description/image` + `twitter:card/title/description/image` (sebelumnya app sama sekali tidak punya social-preview meta), ganti `apple-touch-icon` href ke PNG baru.
+
+**Diperiksa, tidak diubah:** `manifest.json` (masih 1 entry `icon.svg` purpose `"any maskable"` — cukup karena isi file yang berubah, path tetap sama); `sw.js` (referensi `/icon.svg` untuk notification icon/badge, tetap valid).
+
+**Caveat diketahui (belum difix, di luar scope diminta):** ujung daun `variant_A` mepet ke tepi kanvas — berisiko kepotong kalau Android benar-benar apply circular/squircle mask untuk `purpose:maskable`. Perlu padding safe-zone tambahan kalau mau benar-benar aman sebagai maskable icon.
+
+**Verifikasi:** `npm test` 593/593 hijau (tidak ada test yang tersentuh, perubahan murni asset/markup statis). Render headless Edge dicek manual: icon.svg baru tampil benar di 1024px & 180px, `index.html` masih render normal (tidak ada regresi visual) setelah edit `<head>`.
+
+## Changelog Session 221 (2026-07-23) — Asset Visual Identitas via Higgsfield
+
+**Konteks:** User minta manfaatkan trial gratis Higgsfield (dikira "gratis 1 hari", ternyata trial 3 hari 100 credit MCP, berakhir 2026-07-26, kartu auto-charge kalau tidak dibatalkan — lihat `daun_merah_vendor.md` §11) untuk kuras semua model: identitas visual, video promo, reels sosmed, dan asset fitur. Kredit habis di tengah jalan (2K resolution jauh lebih mahal dari estimasi preflight 1K yang dicek awal) sebelum sempat menyentuh video sama sekali. User memilih berhenti di icon+foto saja, bukan top-up.
+
+**Dihasilkan** (folder `asset/` — gitignored, TIDAK di-push, cuma lokal):
+- `asset/icon/`: 4 varian app-icon (SVG vector, leaf yin-yang merah #b23030 & teal #0d4d4d dari `icon.svg` existing, versi lebih tajam/premium), 2 varian monoline/favicon, 2 wordmark lockup "DAUN MERAH · FX TERMINAL" (PNG 2K).
+- `asset/foto/`: 2 ilustrasi onboarding "Ringkasan" (trader malam di terminal), 1 ilustrasi onboarding "Analisa" (candlestick merah-teal balance), 1 OG/share-card untuk link preview sosmed.
+
+**Belum dikerjakan** (parkir di `daun_merah_progress.md`): video promo/landing hero, reels TikTok/IG/X, background PPT, ilustrasi onboarding "Kalender" + splash screen — semua diblok kehabisan credit.
+
+**Pembelajaran:** preflight `get_cost` Higgsfield tanpa parameter `resolution` eksplisit memberi estimasi di resolusi default (1K) yang jauh lebih murah dari 2K aktual dipakai — preflight ulang HARUS pakai parameter final yang sama persis dengan call sungguhan, terutama `resolution`, sebelum submit batch besar.
 
 ## Changelog Session 220 (2026-07-23) — Persist Buffer Korroborasi Berita ke Redis
 
