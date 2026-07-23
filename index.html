@@ -5465,14 +5465,16 @@ function _setupPrintLetterhead(letterheadId, titleText, metaExtra) {
 }
 
 // Nama file default "Save as PDF" browser = document.title — set sementara ke
-// format yang diminta user (ringkasan{tgl-jam}.pdf / analisa{tgl-jam}.pdf),
-// dipulihkan di afterprint. Karakter / dan : tidak valid di nama file,
-// dipakai - dan _ sebagai gantinya.
+// format yang sama dengan download jsPDF ("Ringkasan Sesi {sesi} {jam}" / "Analisa
+// {pair} {sesi} {jam}"), dipulihkan di afterprint. Fallback ini cuma kepakai kalau
+// CDN jsPDF gagal load atau user Ctrl+P manual — bukan alur utama.
 let _titleBeforePrint = null;
 function _setPrintDocTitle(bodyClass) {
-  const prefix = bodyClass === 'printing-ringkasan' ? 'ringkasan' : 'analisa';
   _titleBeforePrint = document.title;
-  document.title = `${prefix}_${_printWibNow().filename}`;
+  const sesiJam = `${_pdfSessionLabel()} ${_pdfClockLabel()}`;
+  document.title = bodyClass === 'printing-ringkasan'
+    ? _pdfSanitizeFilePart(`Ringkasan Sesi ${sesiJam}`)
+    : _pdfSanitizeFilePart(`Analisa ${analisaActive.label || ''} ${sesiJam}`);
 }
 
 function _printPanel(bodyClass, letterheadId, titleText, metaExtra) {
@@ -5673,7 +5675,49 @@ function _pdfLibReady() {
   return false;
 }
 
-function downloadRingkasanPdf() {
+// Watermark PDF: opacity-nya sudah "dibakar" ke file pdf-watermark.png sendiri
+// (alpha channel ~9%), bukan lewat jsPDF GState — biar tidak bergantung API opacity
+// yang versi-sensitif. Di-fetch sekali & di-cache, cuma dipanggil pas user benar-benar
+// download PDF (lazy, tidak ikut bikin index.html bengkak di setiap page load).
+let _pdfWatermarkDataUrl = null;
+async function _getPdfWatermarkDataUrl() {
+  if (_pdfWatermarkDataUrl) return _pdfWatermarkDataUrl;
+  try {
+    const res = await fetch('/pdf-watermark.png');
+    const blob = await res.blob();
+    _pdfWatermarkDataUrl = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  } catch (e) { _pdfWatermarkDataUrl = false; } // offline/gagal fetch -> skip watermark, PDF tetap jalan
+  return _pdfWatermarkDataUrl;
+}
+function _stampWatermark(doc, dataUrl) {
+  if (!dataUrl) return;
+  const pageW = doc.internal.pageSize.getWidth();
+  const pageH = doc.internal.pageSize.getHeight();
+  const wmW = pageW * 0.62;
+  const wmH = wmW * (615 / 900); // aspect ratio asli pdf-watermark.png (900x615)
+  const x = (pageW - wmW) / 2, y = (pageH - wmH) / 2;
+  const n = doc.internal.getNumberOfPages();
+  for (let i = 1; i <= n; i++) { doc.setPage(i); doc.addImage(dataUrl, 'PNG', x, y, wmW, wmH); }
+}
+
+// Sesi FX + jam WIB dipakai buat nama file PDF (permintaan user: "Ringkasan Sesi
+// {sesi} {jam}" / "Analisa {pair} {sesi} {jam}") — ganti dari tanggal-jam mentah.
+const _FX_SESSION_FILE_LABEL = { tokyo: 'Tokyo', london: 'London', overlap: 'Overlap', ny: 'New York', closed: 'Closed' };
+function _pdfSessionLabel() { return _FX_SESSION_FILE_LABEL[getFxSession().cur.key] || 'Sesi'; }
+function _pdfClockLabel() {
+  const wib = new Date(Date.now() + 7 * 3600000);
+  const p = n => String(n).padStart(2, '0');
+  return `${p(wib.getUTCHours())}.${p(wib.getUTCMinutes())}`;
+}
+// Buang karakter tidak valid di nama file Windows (termasuk "/" di label pair, mis. "EUR/USD").
+function _pdfSanitizeFilePart(s) { return String(s ?? '').replace(/[\\/:*?"<>|]/g, '').replace(/\s{2,}/g, ' ').trim(); }
+
+async function downloadRingkasanPdf() {
   const d = ringkasanCache;
   if (!d?.article) { showToast('Belum Ada Data', 'Generate ringkasan dulu sebelum download.', 3000); return; }
   if (!_pdfLibReady()) { cetakRingkasan(); return; }
@@ -5729,10 +5773,11 @@ function downloadRingkasanPdf() {
 
   const pdfModelLabel = d.method ? (AI_METHOD_LABELS[d.method] || d.method) : null;
   b.footer(`⚠ Ringkasan dihasilkan AI${pdfModelLabel ? ' (' + pdfModelLabel + ')' : ''} dari headline & data pihak ketiga — bisa keliru, bukan nasihat keuangan. Detail di tab PETUNJUK › Disclaimer.`);
-  b.doc.save(`ringkasan_${_printWibNow().filename}.pdf`);
+  _stampWatermark(b.doc, await _getPdfWatermarkDataUrl());
+  b.doc.save(`${_pdfSanitizeFilePart(`Ringkasan Sesi ${_pdfSessionLabel()} ${_pdfClockLabel()}`)}.pdf`);
 }
 
-function downloadAnalisaPdf() {
+async function downloadAnalisaPdf() {
   const symbol = analisaActive.symbol, label = analisaActive.label;
   const d  = symbol ? analisaDataCache[symbol] : null;
   const ai = symbol ? analisaAiCache[symbol] : null;
@@ -5785,7 +5830,8 @@ function downloadAnalisaPdf() {
   });
 
   b.footer(`⚠ Level & bias di atas dihasilkan AI${ai.model ? ' (' + ai.model + ')' : ''} dan bisa keliru — bukan nasihat keuangan. Verifikasi ke chart sebelum dipakai.`);
-  b.doc.save(`analisa_${_printWibNow().filename}.pdf`);
+  _stampWatermark(b.doc, await _getPdfWatermarkDataUrl());
+  b.doc.save(`${_pdfSanitizeFilePart(`Analisa ${label} ${_pdfSessionLabel()} ${_pdfClockLabel()}`)}.pdf`);
 }
 
 function decodeHtmlEntities(s) {

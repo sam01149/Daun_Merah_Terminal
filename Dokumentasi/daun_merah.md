@@ -11,11 +11,25 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-07-23 (Session 222 — Ganti icon.svg + OG/Twitter Meta)
+> **Last updated:** 2026-07-23 (Session 223 — Watermark PDF + Rename File Ringkasan/Analisa)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 223 (2026-07-23) — Watermark PDF + Rename File Ringkasan/Analisa
+
+**Konteks:** Lanjutan S221/S222 — user edit sendiri 2 gambar tambahan di `asset/` (di luar `foto/icon/ppt/video`): satu lockup opaque ("Untitled design (1).png", dari Canva), satu lockup transparan hasil ChatGPT image gen ("ChatGPT Image...png", 95% alpha=0 — dicek programatis, bukan cuma diasumsikan dari nama file). Yang transparan dipakai jadi sumber watermark karena bisa di-overlay bersih ke halaman PDF putih; yang opaque tidak dipakai.
+
+**Perubahan:**
+1. **`pdf-watermark.png` (baru, root, tracked)** — diproses dari `asset/ChatGPT Image...png`: crop ke bounding-box alpha (buang margin transparan kosong), resize ke 900×615px, alpha semua pixel dikalikan 0.09 (opacity ~9%, "dibakar" ke file-nya sendiri, bukan lewat jsPDF GState yang versi-sensitif).
+2. **`index.html`** — helper baru: `_getPdfWatermarkDataUrl()` (fetch+cache lazy, cuma jalan pas user download PDF, gagal fetch = skip watermark diam-diam bukan error), `_stampWatermark(doc, dataUrl)` (loop semua halaman via `doc.setPage()`, taruh watermark 62% lebar halaman di tengah), `_pdfSessionLabel()` (reuse `getFxSession()` yang sudah ada, dipetakan ke label rapi lewat `_FX_SESSION_FILE_LABEL`), `_pdfClockLabel()` (jam WIB format `HH.mm`), `_pdfSanitizeFilePart()` (buang karakter invalid Windows filename termasuk "/" di label pair mis. "EUR/USD" -> "EURUSD").
+3. **Nama file PDF diganti** (permintaan user, format eksplisit tanpa tanggal): `downloadRingkasanPdf()` -> `Ringkasan Sesi {SESI} {jam}.pdf` (mis. "Ringkasan Sesi London 16.16.pdf"); `downloadAnalisaPdf()` -> `Analisa {PAIR} {SESI} {jam}.pdf` (mis. "Analisa EURUSD Overlap 16.16.pdf"). Kedua fungsi jadi `async` (perlu `await` fetch watermark sebelum `doc.save()`).
+4. **Fallback `window.print()`** (`_setPrintDocTitle`, dipakai kalau CDN jsPDF gagal load atau user Ctrl+P manual) — disamakan formatnya biar konsisten dengan alur jsPDF utama, bukan cuma alur utama yang diganti.
+
+**Diperiksa, tidak diubah:** `_printWibNow().filename` (format lama `DD-MM-YYYY_HH-MM`) masih dipakai di tempat lain (bukan nama file PDF) — tidak disentuh.
+
+**Verifikasi:** `npm test` 593/593 hijau (tidak ada test JS browser-side yang tersentuh). Karena backend butuh data live (news/AI) yang tidak tersedia offline, logika baru diuji terpisah: script Node + `jsPDF` (package sementara di scratchpad, direplikasi persis dari kode index.html) generate PDF 2 halaman, dirender ke PNG via PyMuPDF (dipasang sementara di `.venv`, dihapus lagi setelah tes) — watermark terbukti muncul di SEMUA halaman dengan opacity & posisi benar, dan kedua nama file (`Ringkasan Sesi London 16.16.pdf`, `Analisa EURUSD Overlap 16.16.pdf`) ter-generate persis sesuai format yang diminta.
 
 ## Changelog Session 222 (2026-07-23) — Ganti icon.svg + OG/Twitter Meta
 
