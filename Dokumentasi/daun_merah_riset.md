@@ -37,7 +37,7 @@ Entri yang melanggar = salah tempat, wajib dipindah.
   Analisis transferabilitas hasil uji ideal $n \ge 100$ dari Major USD Pairs ke Non-USD Cross Pairs (mis. `EUR/JPY`, `GBP/JPY`, `AUD/NZD`).
   - *In-Domain Validation (Tahap 1 - Plan U Current):* Pengujian $n \ge 100$ di Major USD Pairs membuktikan keandalan *core prompt, risk-reward engine*, dan pembacaan *price action* teknikal AI Daun Merah.
   - *Cross-Domain Validation (Tahap 2 - Future Upgrade):* Hasil ideal di Tahap 1 BISA diuji ke Non-USD Cross Pairs, namun TIDAK BOLEH diasumsikan otomatis berhasil 100%. Komponen teknikal & R:R bersifat universal, tetapi driver makro non-USD (kebijakan YCC BOJ, ECB rates, harga komoditas susu/minyak) & spread cross pairs berbeda dari USD Major.
-  - *Landasan Akademis:* Disokong oleh temuan Scopus AI report (2026-07-22, sitasi #8, #21, #22 - *Multi-Asset & Cross-Domain Validation*), di mana evaluasi lintas kluster aset wajib melalui validasi *out-of-domain* terpisah untuk mencegah kesalahan generalisasi.
+  - *Landasan Akademis:* Disokong oleh Scopus AI report §5.1 *"Multi-Asset, Multi-Market Testing"* — rujukan lengkap & sitasi terverifikasi (dikoreksi 2026-07-23 dari nomor #8/#21/#22 yang salah alamat) di `daun_merah_referensi_riset.md` §9.
   - *Status:* Disiapkan sebagai protokol Tahap 2 setelah Plan U $n \ge 100$ tuntas.
 - **Kalibrasi keyakinan berbasis outcome** (eks "Tier 2", session 166): ikat badge keyakinan
   Analisa AI ke win-rate historis segmen serupa (pair + bias + rentang skor konfluensi) dari

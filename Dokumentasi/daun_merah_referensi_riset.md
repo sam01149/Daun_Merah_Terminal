@@ -117,6 +117,19 @@ Pencarian literatur akademik (bukan blog trading) untuk "retail positioning ekst
 
 ---
 
+## 9. Sample size & rigor statistik evaluasi sinyal AI trading (relevan: Plan U — gate fase tes auto-entry & `scripts/backtest_confluence.js`)
+
+| Paper | Tipe | Temuan inti |
+|---|---|---|
+| Scopus AI Synthesis Report (2026-07-22), *"Evaluating AI/LLM-Generated Financial Trading Signals: Sample Size, Statistical Methodology, and Overfitting Mitigation in Backtesting and Paper Trading"* | Method | Meta-analisis: n ≥ 100 direkomendasikan untuk evaluasi out-of-sample robust (n ≥ 30 cuma batas bawah CLT, sering tidak cukup di praktik); metodologi wajib campuran Monte Carlo, bootstrap/permutation test, t-test/Wilcoxon, dan walk-forward expanding-window; kalibrasi pakai MAE/RMSE/MAPE/R² + metrik kalibrasi (Brier score, expected calibration error); mitigasi overfitting via sampel besar + cross-validation + regularisasi. §5.1 *"Multi-Asset, Multi-Market Testing"*: validasi lintas aset/pasar wajib untuk memastikan generalisasi — **sitasi [1][16][40][41]** (dikoreksi 2026-07-23 dari nomor #8/#21/#22 yang salah alamat di draf pertama; #22 lama bahkan bukan paper trading — soal bias geografis rekomendasi LLM). Rujukan primer §5.1: [1] Li et al. (2026, *Proc. ACM SIGKDD*) — LLM-based investing strategies; [16] Umadevi et al. (2023, *I-SMAC*) — neural network forex forecasting; [40] Friday et al. (2024, *LNEE*) — ML untuk forex decision-making; [41] Mishra et al. (2025, *AIP Conf. Proc.*) — survei ML algorithmic trading. |
+
+**Implikasi untuk Daun Merah:**
+1. **Sudah diadopsi (2026-07-22, `scripts/_stats.js`):** bootstrap 95% CI, permutation test, dan Wilcoxon rank-sum sekarang dipakai di `backtest_confluence.js` — respons langsung terhadap rekomendasi §2.2 report ini. Contoh hasil: beda bounce-rate skor tinggi vs rendah **p=1,000** (permutation) / **p=0,891** (Wilcoxon) — belum signifikan secara statistik pada n saat ini (lihat entri riset aktif di `daun_merah_riset.md`).
+2. **Landasan Plan U Cross-Domain Validation Tahap 2:** §5.1 (sitasi di atas) jadi dasar akademis kenapa validasi Non-USD Cross Pairs harus jadi protokol terpisah (out-of-domain), bukan diasumsikan otomatis berhasil dari hasil in-domain Major USD Pairs — lihat entri riset aktif terkait di `daun_merah_riset.md`.
+3. **Belum diadopsi, kandidat item #6/#10 Plan U (nunggu n≥100, lihat `daun_merah_progress.md`):** metrik kalibrasi (Brier score/ECE) untuk item #6 (kalibrasi antar-provider AI); walk-forward expanding-window untuk item #10 (gating berbasis rezim) — keduanya baru bisa dieksekusi setelah sampel `setup_log_auto:v1` cukup panjang secara temporal, bukan cuma cukup besar secara jumlah.
+
+---
+
 ## Cara pakai file ini
 
 Sebelum memulai riset/fitur makro baru di Daun Merah:
