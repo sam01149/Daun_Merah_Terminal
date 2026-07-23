@@ -506,7 +506,14 @@ const POSREVIEW_CURRENCY_KEYWORDS = {
   CAD: ['boc', 'loonie', 'cad', 'canada'],
   CHF: ['snb', 'franc', 'chf', 'swiss'],
   NZD: ['rbnz', 'kiwi', 'nzd', 'zealand'],
-  XAU: ['gold', 'xau', 'bullion'],
+  // Audit S218 (2026-07-23): headline guncangan pasokan energi Teluk (mis. ancaman
+  // Iran menutup arus minyak Hormuz) relevan ke XAU lewat rantai safe-haven/inflasi
+  // yang sudah mapan, TAPI sebelum ini cuma cocok kalau literally menyebut
+  // "gold"/"xau"/"bullion" — headline "Iran will stop all Gulf oil flow..." lolos
+  // tanpa terdeteksi sama sekali. Ditambah kata kunci guncangan pasokan spesifik
+  // (BUKAN nama negara/tokoh geopolitik generik — supaya tidak kebablasan ke
+  // headline Iran/Timur Tengah yang tidak relevan minyak/pasokan sama sekali).
+  XAU: ['gold', 'xau', 'bullion', 'hormuz', 'opec', 'gulf oil', 'oil supply'],
 };
 
 function detectCurrencyLegs(title) {
@@ -523,8 +530,10 @@ function detectCurrencyLegs(title) {
 // sama newscat.js/YAHOO_TO_DERIV_SYMBOL). Behavioral test (bukan byte-diff,
 // karena function ini menyatu di file besar) menjaga dua sisi tetap sinkron —
 // lihat test/vps/position_review.test.js.
-// - kategori 'geopolitical': butuh >=1 item LAIN (guid beda) dalam +-30 menit
-//   dengan overlap >=2 token signifikan (lowercase, buang stopword, token >3 huruf).
+// - kategori 'geopolitical' ATAU 'energy': butuh >=1 item LAIN (guid beda) dalam
+//   +-30 menit dengan overlap >=2 token signifikan (lowercase, buang stopword,
+//   token >3 huruf). 'energy' ikut disyaratkan korroborasi sejak audit S218
+//   (2026-07-23) — lihat catatan sama di api/_position_review.js.
 // - 'market-moving' (data/bank sentral terjadwal) = corroborated by default.
 const POSREVIEW_STOPWORDS = new Set(['dengan', 'yang', 'untuk', 'dari', 'akan', 'pada', 'dalam', 'oleh',
   'atau', 'juga', 'masih', 'sudah', 'telah', 'saat', 'para', 'ini', 'itu', 'the', 'and', 'for',
@@ -540,7 +549,7 @@ function posReviewSignificantTokens(title) {
 function isCorroborated(item, recentItems) {
   if (!item) return false;
   if (item.cat === 'market-moving') return true;
-  if (item.cat !== 'geopolitical') return false;
+  if (item.cat !== 'geopolitical' && item.cat !== 'energy') return false;
   const itemMs = Date.parse(item.pubDate);
   if (!Number.isFinite(itemMs)) return false;
   const itemTokens = new Set(posReviewSignificantTokens(item.title));
@@ -678,7 +687,10 @@ async function handlePosReviewCandidate(newsItem) {
   if (!isFxMarketOpen()) return;
 
   const corroborated = isCorroborated(newsItem, posReviewNewsBuffer);
-  if (newsItem.cat === 'geopolitical' && !corroborated) {
+  // Audit S218: 'energy' ikut antre-recheck-kalau-belum-terkonfirmasi, konsisten
+  // dengan 'geopolitical' (sebelum ini kategori selain geopolitical/market-moving
+  // lolos ke tryTriggerPosReview TANPA korroborasi sama sekali).
+  if ((newsItem.cat === 'geopolitical' || newsItem.cat === 'energy') && !corroborated) {
     try {
       await redisCmd('LPUSH', 'posreview_skip_log', JSON.stringify({ ts: now, guid: newsItem.guid, title: newsItem.title, reason: 'unconfirmed' }));
       await redisCmd('LTRIM', 'posreview_skip_log', '0', '49');
@@ -1011,6 +1023,51 @@ async function checkHardNewsSkip(pair, label) {
   }
 }
 
+// Lapis 1b — filter berita keras dari BERITA REAL-TIME (bukan kalender terjadwal),
+// pelengkap checkHardNewsSkip di atas. Audit S218 (2026-07-23): checkHardNewsSkip
+// cuma baca calendar_v1 (rilis ekonomi terjadwal) — buta terhadap breaking news
+// geopolitik/guncangan energi mendadak (mis. eskalasi Iran-AS di Selat Hormuz,
+// bukan event kalender). Reuse infra U-5b (posReviewNewsBuffer, detectCurrencyLegs,
+// isCorroborated) — SENGAJA tetap mensyaratkan korroborasi (>=2 sumber, pola sama
+// U-5b) supaya tidak terlalu waspada ke rumor tunggal/berita tidak relevan (lihat
+// diskusi user soal false-positive) — sudah 3 lapis saring: relevansi mata uang
+// (detectCurrencyLegs) -> kategori (geopolitical/energy/market-moving) -> korroborasi.
+//
+// Pure inti (testable) dipisah dari I/O logging, pola sama findHardNewsEvent/
+// checkHardNewsSkip di atas.
+function findBreakingNewsMatch(pairLegs, buffer) {
+  if (!Array.isArray(pairLegs) || !pairLegs.length || !Array.isArray(buffer)) return null;
+  for (const item of buffer) {
+    if (!item) continue;
+    if (item.cat !== 'geopolitical' && item.cat !== 'energy' && item.cat !== 'market-moving') continue;
+    const newsLegs = detectCurrencyLegs(item.title);
+    if (!newsLegs.some(l => pairLegs.includes(l))) continue;
+    if (!isCorroborated(item, buffer)) continue;
+    return item;
+  }
+  return null;
+}
+
+async function checkBreakingNewsSkip(pair, label) {
+  try {
+    const pairLegs = legsFromLabel(label);
+    const now = Date.now();
+    prunePosReviewNewsBuffer(now);
+    const match = findBreakingNewsMatch(pairLegs, posReviewNewsBuffer);
+    if (!match) return null;
+    const entry = {
+      ts: now, pair, label, reason: 'breaking_news',
+      event: match.title, cat: match.cat, pubDate: match.pubDate,
+    };
+    await redisCmd('LPUSH', 'auto_skip_log', JSON.stringify(entry));
+    await redisCmd('LTRIM', 'auto_skip_log', '0', String(AUTO_SKIP_LOG_CAP - 1));
+    return entry;
+  } catch (e) {
+    console.warn(`daemon: checkBreakingNewsSkip ${pair} gagal (fail-open, tetap generate):`, e.message);
+    return null;
+  }
+}
+
 async function runAutoEntryCycle() {
   if (!CRON_SECRET) { console.warn('daemon: CRON_SECRET kosong, U-3 auto-entry di-skip'); return; }
   if (!isFxMarketOpen()) return;
@@ -1019,6 +1076,8 @@ async function runAutoEntryCycle() {
     if (!map) { console.warn(`daemon: AUTO_ENTRY_PAIRS berisi pair tak dikenal "${pair}", di-skip`); continue; }
     const skip = await checkHardNewsSkip(pair, map.label);
     if (skip) { console.log(`daemon: U-3 auto-entry ${pair} di-skip — hard news "${skip.event}" (${skip.event_time_wib})`); continue; }
+    const breakingSkip = await checkBreakingNewsSkip(pair, map.label);
+    if (breakingSkip) { console.log(`daemon: U-3 auto-entry ${pair} di-skip — breaking news "${breakingSkip.event}" (${breakingSkip.cat})`); continue; }
     const path = `/api/admin?action=ohlcv_analyze&symbol=${encodeURIComponent(map.symbol)}&label=${encodeURIComponent(map.label)}&auto=1`;
     await triggerWithRetry(path);
   }
@@ -1214,8 +1273,9 @@ module.exports = {
   // U-3 (pure/testable):
   legsFromLabel, calEventMsWib, findHardNewsEvent, firstNumber, levelsWithinTolerance,
   computeConsistency, AUTO_ENTRY_SYMBOL_MAP, AUTO_ENTRY_PAIRS, AUTO_ENTRY_HOURS_UTC,
+  findBreakingNewsMatch,
   // U-3 (async, di-export untuk simulasi lokal manual — bukan dipakai node:test):
-  checkHardNewsSkip, runAutoEntryCycle, runConsistencyCheck, pollCalendarLatency,
+  checkHardNewsSkip, runAutoEntryCycle, runConsistencyCheck, pollCalendarLatency, checkBreakingNewsSkip,
   // U-5b (pure/testable):
   detectCurrencyLegs, isCorroborated, posReviewSignificantTokens, POSREVIEW_CURRENCY_KEYWORDS,
   // U-5b (async, di-export untuk simulasi lokal manual — bukan dipakai node:test):

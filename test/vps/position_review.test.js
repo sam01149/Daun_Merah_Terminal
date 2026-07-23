@@ -7,6 +7,7 @@ const assert = require('node:assert/strict');
 
 const {
   detectCurrencyLegs, isCorroborated, posReviewSignificantTokens, POSREVIEW_CURRENCY_KEYWORDS,
+  legsFromLabel, findBreakingNewsMatch,
 } = require('../../vps/daemon.js');
 const apiPositionReview = require('../../api/_position_review.js');
 
@@ -34,6 +35,20 @@ test('detectCurrencyLegs: semua 9 currency di POSREVIEW_CURRENCY_KEYWORDS punya 
   const keys = Object.keys(POSREVIEW_CURRENCY_KEYWORDS);
   assert.equal(keys.length, 9);
   for (const k of keys) assert.ok(POSREVIEW_CURRENCY_KEYWORDS[k].length > 0);
+});
+
+// Audit S218 (2026-07-23): headline guncangan pasokan energi Teluk (Iran mengancam
+// tutup arus minyak Hormuz) relevan ke XAU via rantai safe-haven/inflasi, tapi
+// sebelum ini cuma cocok kalau literally sebut "gold"/"xau"/"bullion" — headline
+// nyata "Iran will stop all Gulf oil flow..." lolos tanpa terdeteksi sama sekali.
+test('detectCurrencyLegs: headline guncangan pasokan minyak Teluk (tanpa kata "gold") match XAU', () => {
+  const title = "Iran's Top Joint Military Command: If the US acts on threats, Iran will stop all Gulf oil flow and target oil, gas, electricity and economic infrastructure in the region - State Media";
+  assert.deepEqual(detectCurrencyLegs(title), ['XAU']);
+});
+
+test('detectCurrencyLegs: "hormuz"/"opec" bare juga match XAU', () => {
+  assert.deepEqual(detectCurrencyLegs('Tensions rise near Strait of Hormuz'), ['XAU']);
+  assert.deepEqual(detectCurrencyLegs('OPEC+ considers emergency production cut'), ['XAU']);
 });
 
 // ── isCorroborated ──────────────────────────────────────────────────────────
@@ -65,8 +80,22 @@ test('isCorroborated: item lain overlap token <2 -> false', () => {
   assert.equal(isCorroborated(item, [item, other]), false);
 });
 
-test('isCorroborated: kategori lain (bukan market-moving/geopolitical) -> false', () => {
+test('isCorroborated: kategori lain (bukan market-moving/geopolitical/energy) -> false', () => {
   assert.equal(isCorroborated({ cat: 'lainnya', title: 'x', pubDate: '2026-07-20T10:00:00Z' }, []), false);
+});
+
+// Audit S218 (2026-07-23): 'energy' sekarang ikut disyaratkan korroborasi, sama
+// seperti 'geopolitical' — sebelum ini kategori selain market-moving/geopolitical
+// lolos TANPA korroborasi sama sekali (celah).
+test('isCorroborated: energy satu item sendirian -> false (unconfirmed, sama seperti geopolitical)', () => {
+  const item = { cat: 'energy', title: 'Oil surges after Iran strikes tanker near Hormuz', pubDate: '2026-07-23T01:45:00Z', guid: 'a' };
+  assert.equal(isCorroborated(item, [item]), false);
+});
+
+test('isCorroborated: energy + item lain guid beda, overlap >=2 token dalam 30 menit -> true', () => {
+  const item = { cat: 'energy', title: 'Oil surges after Iran strikes tanker near Hormuz', pubDate: '2026-07-23T01:45:00Z', guid: 'a' };
+  const other = { title: "Iran's military strikes tanker in Hormuz, oil jumps", pubDate: '2026-07-23T01:46:00Z', guid: 'b' };
+  assert.equal(isCorroborated(item, [item, other]), true);
 });
 
 // ── Behavioral drift-guard: isCorroborated daemon.js vs api/_position_review.js ──
@@ -83,6 +112,8 @@ test('drift-guard: isCorroborated daemon.js vs api/_position_review.js berperila
     [{ cat: 'geopolitical', title: 'Border clash reported near capital city', pubDate: '2026-07-20T10:00:00Z', guid: 'a' },
       [{ title: 'Military border clash near capital confirmed', pubDate: '2026-07-20T11:00:00Z', guid: 'b' }]],
     [{ cat: 'lainnya', title: 'x', pubDate: '2026-07-20T10:00:00Z' }, []],
+    [{ cat: 'energy', title: 'Oil surges after Iran strikes tanker near Hormuz', pubDate: '2026-07-23T01:45:00Z', guid: 'a' },
+      [{ title: "Iran's military strikes tanker in Hormuz, oil jumps", pubDate: '2026-07-23T01:46:00Z', guid: 'b' }]],
   ];
   for (const [item, recent] of cases) {
     assert.equal(isCorroborated(item, recent), apiPositionReview.isCorroborated(item, recent),
@@ -91,6 +122,54 @@ test('drift-guard: isCorroborated daemon.js vs api/_position_review.js berperila
 });
 
 // ── posReviewSignificantTokens ───────────────────────────────────────────────
+
+// ── findBreakingNewsMatch (Lapis 1b, audit S218 2026-07-23) ──────────────────
+// Skenario nyata yang memicu perbaikan ini: dua headline "Iran's Top Joint
+// Military Command" 1 menit berbeda (01:45/01:46, 23 Jul) soal ancaman menutup
+// arus minyak Gulf/Hormuz. Headline pertama match XAU via kata kunci minyak/Gulf
+// baru (bukan literally "gold"), headline kedua jadi partner korroborasi.
+const IRAN_OIL_THREAT = {
+  cat: 'geopolitical', guid: 'iran-1',
+  title: "Iran's Top Joint Military Command: If the US acts on threats, Iran will stop all Gulf oil flow and target oil, gas, electricity and economic infrastructure in the region - State Media",
+  pubDate: '2026-07-23T01:45:00Z',
+};
+const IRAN_WAR_EXPANSION = {
+  cat: 'geopolitical', guid: 'iran-2',
+  title: "Iran's Top Joint Military Command: Trump's repeated threats will only lead to expansion of war in the region and beyond - State Media",
+  pubDate: '2026-07-23T01:46:00Z',
+};
+
+test('findBreakingNewsMatch: skenario nyata Iran-Gulf oil (2 headline berdekatan) -> match untuk pair XAU/USD', () => {
+  const pairLegs = legsFromLabel('XAU/USD');
+  const buffer = [IRAN_OIL_THREAT, IRAN_WAR_EXPANSION];
+  const match = findBreakingNewsMatch(pairLegs, buffer);
+  assert.ok(match, 'harus ketemu match — headline oil-threat relevan XAU dan terkorroborasi headline kedua');
+  assert.equal(match.guid, 'iran-1');
+});
+
+test('findBreakingNewsMatch: headline sendirian tanpa korroborasi -> tidak match (belum terkonfirmasi)', () => {
+  const pairLegs = legsFromLabel('XAU/USD');
+  assert.equal(findBreakingNewsMatch(pairLegs, [IRAN_OIL_THREAT]), null);
+});
+
+test('findBreakingNewsMatch: pair tidak relevan (GBP/USD, tidak ada leg XAU) -> tidak match', () => {
+  const pairLegs = legsFromLabel('GBP/USD');
+  const buffer = [IRAN_OIL_THREAT, IRAN_WAR_EXPANSION];
+  assert.equal(findBreakingNewsMatch(pairLegs, buffer), null);
+});
+
+test('findBreakingNewsMatch: kategori di luar geopolitical/energy/market-moving -> diabaikan', () => {
+  const pairLegs = legsFromLabel('XAU/USD');
+  const item = { cat: 'commodities', guid: 'c1', title: 'Gold demand rises in India festival season', pubDate: '2026-07-23T01:45:00Z' };
+  const other = { cat: 'commodities', guid: 'c2', title: 'Gold jewelry demand strong in India festival', pubDate: '2026-07-23T01:46:00Z' };
+  assert.equal(findBreakingNewsMatch(pairLegs, [item, other]), null);
+});
+
+test('findBreakingNewsMatch: buffer/legs kosong -> null, tidak throw', () => {
+  assert.equal(findBreakingNewsMatch([], [IRAN_OIL_THREAT]), null);
+  assert.equal(findBreakingNewsMatch(['XAU'], []), null);
+  assert.equal(findBreakingNewsMatch(null, null), null);
+});
 
 test('posReviewSignificantTokens: buang stopword & token pendek (<=3 huruf), lowercase', () => {
   const tokens = posReviewSignificantTokens('The Border Clash Is On Capital City');

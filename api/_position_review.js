@@ -88,8 +88,14 @@ function _aggManagementStats(arr) {
 // vps/daemon.js (Docker terisolasi) tetap duplikasi pure function ini secara
 // SADAR persis seperti pola isFxMarketOpen/calEventMsWib (lihat catatan kepala
 // vps/daemon.js) — dijaga sinkron oleh test drift-guard.
-// - kategori 'geopolitical': butuh >=1 item LAIN (guid beda) dalam +-30 menit
-//   dengan overlap >=2 token signifikan (lowercase, buang stopword, token >3 huruf).
+// - kategori 'geopolitical' ATAU 'energy': butuh >=1 item LAIN (guid beda) dalam
+//   +-30 menit dengan overlap >=2 token signifikan (lowercase, buang stopword,
+//   token >3 huruf). 'energy' ikut disyaratkan korroborasi sejak audit S218
+//   (2026-07-23) — headline guncangan energi/geopolitik (mis. "Oil surges after
+//   Iran strikes tanker in Hormuz") sering ke-skor newscat.js sebagai 'energy'
+//   bukan 'geopolitical' (kata energy menang skor), padahal substansinya sama-sama
+//   butuh konfirmasi sebelum dipercaya — sebelum ini category lain di luar
+//   geopolitical/market-moving lolos TANPA korroborasi sama sekali (celah).
 // - 'market-moving' (data/bank sentral terjadwal): corroborated by default.
 const STOPWORDS = new Set(['dengan','yang','untuk','dari','akan','pada','dalam','oleh',
   'atau','juga','masih','sudah','telah','saat','para','ini','itu','the','and','for',
@@ -105,7 +111,7 @@ function _significantTokens(title) {
 function isCorroborated(item, recentItems) {
   if (!item) return false;
   if (item.cat === 'market-moving') return true;
-  if (item.cat !== 'geopolitical') return false;
+  if (item.cat !== 'geopolitical' && item.cat !== 'energy') return false;
   const itemMs = Date.parse(item.pubDate);
   if (!Number.isFinite(itemMs)) return false;
   const itemTokens = new Set(_significantTokens(item.title));

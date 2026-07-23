@@ -11,11 +11,25 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-07-23 (Session 218 — Audit Auto-Entry: Isolasi Kuota Harian AI Eksperimen vs Produksi)
+> **Last updated:** 2026-07-23 (Session 219 — Lapis 1b: Filter Berita Keras dari Breaking News Real-Time)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 219 (2026-07-23) — Lapis 1b: Filter Berita Keras dari Breaking News Real-Time
+
+**Konteks:** Lanjutan audit auto-entry S218 — temuan #2 (filter pre-entry `checkHardNewsSkip` cuma baca kalender ekonomi TERJADWAL, buta terhadap breaking news geopolitik mendadak). Dipicu skenario nyata: eskalasi Iran-AS di Selat Hormuz (dua headline "Iran's Top Joint Military Command" 1 menit berbeda, 23 Jul 2026, mengancam menutup arus minyak Gulf). Trade-off (jeda korroborasi 30 menit, laju sampel Golden Trio) dan celah tambahan (headline oil-shock ke-skor `energy` bukan `geopolitical`, currency-leg keyword literal tidak menangkap relevansi kausal minyak→emas) didiskusikan & disepakati user sebelum eksekusi.
+
+**Perubahan:**
+1. **`isCorroborated` (`api/_position_review.js` + `vps/daemon.js`, disinkronkan)** — kategori `energy` sekarang ikut disyaratkan korroborasi (≥2 sumber beda, overlap ≥2 token, ±30 menit), sama seperti `geopolitical`. Sebelumnya kategori apa pun selain `market-moving`/`geopolitical` lolos tanpa korroborasi sama sekali — celah laten yang juga mempengaruhi U-5b (review posisi).
+2. **`POSREVIEW_CURRENCY_KEYWORDS.XAU` (`vps/daemon.js`)** — ditambah kata kunci guncangan pasokan energi (`hormuz`, `opec`, `gulf oil`, `oil supply`), bukan cuma `gold`/`xau`/`bullion` literal. Headline nyata "Iran will stop all Gulf oil flow..." sekarang terdeteksi relevan XAU tanpa perlu menyebut emas sama sekali.
+3. **`handlePosReviewCandidate`** — kondisi antre-recheck-kalau-unconfirmed diperluas mencakup `energy` (konsisten dengan #1).
+4. **Fungsi baru `findBreakingNewsMatch` (pure) + `checkBreakingNewsSkip` (async, Lapis 1b)** di `vps/daemon.js` — reuse `posReviewNewsBuffer`/`detectCurrencyLegs`/`isCorroborated` U-5b. 3 lapis saring: relevansi mata uang → kategori (`geopolitical`/`energy`/`market-moving`) → korroborasi. Di-wire ke `runAutoEntryCycle` setelah `checkHardNewsSkip`, log skip ke `auto_skip_log` (`reason:'breaking_news'`).
+5. Test baru: `test/vps/position_review.test.js` (+9 — keyword XAU baru, `isCorroborated` energy, drift-guard, `findBreakingNewsMatch` termasuk replay skenario nyata Iran-Gulf oil 2 headline).
+6. `npm test` 588/588 hijau (naik dari 579).
+
+**Belum dikerjakan (di luar scope, tidak diminta user):** persist `posReviewNewsBuffer` ke Redis (celah "reset tiap daemon restart" yang dibahas terpisah) — masih di memori seperti desain U-5b asli, bisa menyusul kalau diminta.
 
 ## Changelog Session 218 (2026-07-23) — Audit Auto-Entry: Isolasi Kuota Harian AI Eksperimen vs Produksi
 
