@@ -11,11 +11,26 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-07-23 (Session 223 — Watermark PDF + Rename File Ringkasan/Analisa)
+> **Last updated:** 2026-07-23 (Session 224 — Rapikan Tampilan PDF Ringkasan: Rename Thesis, Intisari, Whitespace, Bullet)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 224 (2026-07-23) — Rapikan Tampilan PDF Ringkasan: Rename Thesis, Intisari, Whitespace, Bullet
+
+**Konteks:** User konsultasi tampilan PDF Ringkasan ke ChatGPT (skor 8.7/10, saran: kurangi kepadatan teks, tambah whitespace, tambah ringkasan 1-kalimat di atas, ganti confidence jadi bintang/kotak). User setuju sebagian besar saran TAPI menolak eksplisit saran bintang/kotak untuk confidence — dikonfirmasi tetap pakai label teks+angka (Tinggi/Sedang/Rendah + X/5), bukan `★★★☆☆`, karena bintang berkonotasi rating konsumen (Yelp/App Store) bukan keyakinan statistik, dan institutional research (Bloomberg/GS) tidak pakai itu.
+
+**Perubahan (`index.html`):**
+1. **Rename "AI Thesis" -> "Thesis"** di semua tempat user-facing yang bersumber dari thesis Ringkasan (demi konsistensi UI, bukan cuma satu tempat): kartu Ringkasan tab (`renderThesisCard`/`renderXauThesisCard`), mirror-nya di Dashboard (`dash-col-title` + kartu mini FX/XAU), PDF (`b.heading(...)`), dan teks clipboard Pre-Entry Check.
+2. **PDF Ringkasan — hapus baris metadata** `"{news_count} berita · {cal_count} event kalender · {gold_count} XAU"` dan `"Sumber: CME · FRED · FinancialJuice · Yahoo Finance"` dari letterhead (permintaan user, dianggap kurang perlu di badan dokumen). Fallback `window.print()` & PDF Analisa TIDAK disentuh (di luar scope, beda baris/kondisi).
+3. **Kotak "Intisari" 1-kalimat** (`_buildRingkasanExecSummary`) — dirakit deterministik dari field thesis yang SUDAH ada (`pair_recommendation`, `direction`, `confidence_1_to_5`, `xau_bias`, `xau_dominant_driver`), BUKAN panggilan AI baru; tampil di PDF lewat `kesimpulanBox()` yang sekarang terima parameter `label` (reuse box "KESIMPULAN" yang sudah ada, cuma ganti judul jadi "INTISARI"). Null-safe: kalau tidak ada thesis sama sekali, box tidak dirender (tidak mengarang isi).
+4. **Whitespace PDF lebih lega** — nilai gap di `_pdfBuilder()` (`heading`, `subheading`, `kv`, `para` default `gapAfter`, `letterhead` rule, `footer` rule) dinaikkan semua (mis. `heading()` sekarang dapat pre-gap `y+=3.5` sebelum judul + ensureSpace lebih besar).
+5. **Paragraf padat dipecah jadi bullet** (`_pdfSentenceSplit` + `_renderArticlePdfBlocks`, dipakai di dua section `downloadRingkasanPdf`: "Analisis Berita" & "XAUUSD") — blok teks artikel yang > 220 karakter DAN >= 3 kalimat dipecah per kalimat jadi list `"- ..."`; blok pendek/1-2 kalimat dibiarkan paragraf biasa (list isi 1 kalimat kelihatan aneh). Split pakai lookbehind regex `(?<=[.!?])\s+(?=[A-Z0-9])` biar singkatan ("dll.", "vs.") tidak ikut kepotong jadi kalimat palsu.
+
+**Diperiksa, tidak diubah:** Bagian PDF Analisa (`downloadAnalisaPdf`) tidak dapat treatment bullet-split maupun Intisari — strukturnya beda (baris komentar bebas, bukan blok `{{TAG:}}`) dan di luar scope diskusi (ChatGPT review spesifik ke PDF Ringkasan). Confidence display TETAP teks+angka, saran bintang/kotak dari ChatGPT ditolak (lihat Konteks).
+
+**Verifikasi:** `node -e` syntax-check semua blok `<script>` di `index.html` (`new Function(s)` per blok) — lolos tanpa error. Test visual: script Node standalone (jsPDF via `npm install jspdf@2.5.2 --no-save`, tidak masuk `package.json`/tracked, `node_modules` sudah gitignored) mereplikasi persis fungsi builder + data tiruan realistis (thesis lengkap FX+XAU, alert, paragraf XAU 4-kalimat panjang seperti keluhan asli) -> PDF 2 halaman -> dirender ke PNG via PyMuPDF (`pip install pymupdf`, dipakai sekali, tidak permanen) -> diperiksa visual langsung: heading "THESIS · ..." (bukan "AI THESIS"), tidak ada baris berita/sumber di letterhead, kotak "INTISARI" tampil dengan kalimat masuk akal, dan paragraf XAU driver yang tadinya satu blok panjang sekarang jadi 4 bullet terpisah rapi. Semua file uji (`_tmp_test_pdf.js`, `test_ringkasan.pdf`, PNG) dihapus setelah verifikasi, tidak ikut commit.
 
 ## Changelog Session 223 (2026-07-23) — Watermark PDF + Rename File Ringkasan/Analisa
 
