@@ -577,6 +577,64 @@ function isCorroborated(item, recentItems) {
 const POSREVIEW_NEWS_BUFFER_MS = 35 * 60 * 1000;
 let posReviewNewsBuffer = [];
 
+// Persist ke Redis (S218/S219 lanjutan, 2026-07-23) — buffer di atas MURNI memori,
+// hilang tiap daemon restart/redeploy ("amnesia" korroborasi: krisis yang sedang
+// berlangsung dianggap laporan pertama lagi setelah restart, butuh 2 laporan BARU
+// sebelum dipercaya lagi). Selama fase development ini restart terjadi beberapa kali
+// SEHARI (tiap push) — gap-nya nyata, bukan teoretis. Cuma kategori yang benar-benar
+// dipakai isCorroborated/gate (geopolitical/energy/market-moving) yang di-persist —
+// mayoritas volume berita (forex/equities/macro/econ-data dst) TIDAK relevan buat
+// korroborasi krisis, persist semuanya buang-buang budget Redis tanpa manfaat nyata.
+// List + cap (pola sama auto_skip_log/posreview_skip_log), BUKAN ZSET presisi waktu —
+// isCorroborated tetap menyaring by pubDate sendiri, cap 150 jauh lebih dari cukup
+// menutup 35 menit untuk kategori sesempit ini.
+const POSREVIEW_NEWS_BUFFER_REDIS_KEY = 'posreview_news_buffer';
+const POSREVIEW_NEWS_BUFFER_REDIS_CAP = 150;
+const POSREVIEW_NEWS_BUFFER_REDIS_CATS = new Set(['geopolitical', 'energy', 'market-moving']);
+
+// Pure (testable) — dipisah dari I/O supaya keputusan "layak di-persist atau
+// tidak" bisa dites tanpa mock Redis, pola sama findHardNewsEvent/findBreakingNewsMatch.
+function shouldPersistNewsBufferItem(item) {
+  return !!(item && POSREVIEW_NEWS_BUFFER_REDIS_CATS.has(item.cat));
+}
+
+// Fire-and-forget, best-effort — kegagalan persist TIDAK BOLEH mengganggu alur
+// utama (buffer in-memory tetap jadi sumber kebenaran selama proses hidup).
+function persistNewsBufferItem(item) {
+  if (!shouldPersistNewsBufferItem(item)) return;
+  redisCmd('LPUSH', POSREVIEW_NEWS_BUFFER_REDIS_KEY, JSON.stringify(item))
+    .then(() => redisCmd('LTRIM', POSREVIEW_NEWS_BUFFER_REDIS_KEY, '0', String(POSREVIEW_NEWS_BUFFER_REDIS_CAP - 1)))
+    .catch(() => {});
+}
+
+// Pure (testable) — filter umur + parse-safety, dipakai loadNewsBufferFromRedis.
+// String gagal parse dilewati diam-diam (data korup di Redis tidak boleh mandekkan
+// boot); item lebih tua dari jendela buffer dibuang (sudah tidak relevan korroborasi).
+function filterFreshBufferItems(rawList, nowMs) {
+  const restored = [];
+  for (const s of rawList || []) {
+    let item;
+    try { item = typeof s === 'string' ? JSON.parse(s) : s; } catch (e) { continue; }
+    const ms = Date.parse(item?.pubDate);
+    if (Number.isFinite(ms) && nowMs - ms <= POSREVIEW_NEWS_BUFFER_MS) restored.push(item);
+  }
+  return restored;
+}
+
+// Dipanggil SEKALI saat boot (main(), sebelum pollNews mulai jalan) — pulihkan
+// buffer in-memory dari Redis supaya korroborasi krisis yang sedang berlangsung
+// tidak "lupa" gara-gara restart. Fail-open: Redis kosong/gagal -> buffer mulai
+// kosong seperti perilaku lama (tidak ada regresi, cuma tidak dapat manfaat baru).
+async function loadNewsBufferFromRedis() {
+  try {
+    const raw = await redisCmd('LRANGE', POSREVIEW_NEWS_BUFFER_REDIS_KEY, '0', '-1');
+    if (!Array.isArray(raw) || !raw.length) return;
+    const restored = filterFreshBufferItems(raw, Date.now());
+    posReviewNewsBuffer = restored.concat(posReviewNewsBuffer);
+    if (restored.length) console.log(`daemon: posReviewNewsBuffer dipulihkan dari Redis — ${restored.length} item`);
+  } catch (e) { console.warn('daemon: loadNewsBufferFromRedis gagal (fail-open, buffer mulai kosong):', e.message); }
+}
+
 function prunePosReviewNewsBuffer(nowMs) {
   posReviewNewsBuffer = posReviewNewsBuffer.filter(it => {
     const ms = Date.parse(it.pubDate);
@@ -679,6 +737,7 @@ async function handlePosReviewCandidate(newsItem) {
   const now = Date.now();
   posReviewNewsBuffer.push(newsItem);
   prunePosReviewNewsBuffer(now);
+  persistNewsBufferItem(newsItem);
 
   const legs = detectCurrencyLegs(newsItem.title);
   if (!legs.length) return; // fail-closed, tidak match currency apa pun
@@ -1246,13 +1305,16 @@ function startHttpServer() {
   });
 }
 
-function main() {
+async function main() {
   registerProcessSafetyNet();
   beat();
   setInterval(beat, BEAT_INTERVAL_MS);
   startHttpServer();
   startDerivStream();
   setInterval(wsWatchdogTick, WS_PING_INTERVAL_MS);
+  // Pulihkan buffer korroborasi SEBELUM pollNews mulai jalan (S218/S219 lanjutan)
+  // — supaya krisis yang sedang berlangsung saat restart tidak "amnesia".
+  await loadNewsBufferFromRedis();
   setInterval(() => pollNews().catch(() => {}), NEWS_POLL_INTERVAL_MS);
   setInterval(() => supervisorTick().catch(() => {}), SUPERVISOR_INTERVAL_MS);
   // Q-5 TIDAK pakai timer sendiri lagi — dipicu langsung dari handleOhlcvUpdate
@@ -1278,6 +1340,8 @@ module.exports = {
   checkHardNewsSkip, runAutoEntryCycle, runConsistencyCheck, pollCalendarLatency, checkBreakingNewsSkip,
   // U-5b (pure/testable):
   detectCurrencyLegs, isCorroborated, posReviewSignificantTokens, POSREVIEW_CURRENCY_KEYWORDS,
+  shouldPersistNewsBufferItem, filterFreshBufferItems,
   // U-5b (async, di-export untuk simulasi lokal manual — bukan dipakai node:test):
   handlePosReviewCandidate, tryTriggerPosReview, triggerPositionReview, processPosReviewRecheckQueue,
+  persistNewsBufferItem, loadNewsBufferFromRedis,
 };

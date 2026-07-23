@@ -7,7 +7,7 @@ const assert = require('node:assert/strict');
 
 const {
   detectCurrencyLegs, isCorroborated, posReviewSignificantTokens, POSREVIEW_CURRENCY_KEYWORDS,
-  legsFromLabel, findBreakingNewsMatch,
+  legsFromLabel, findBreakingNewsMatch, shouldPersistNewsBufferItem, filterFreshBufferItems,
 } = require('../../vps/daemon.js');
 const apiPositionReview = require('../../api/_position_review.js');
 
@@ -169,6 +169,46 @@ test('findBreakingNewsMatch: buffer/legs kosong -> null, tidak throw', () => {
   assert.equal(findBreakingNewsMatch([], [IRAN_OIL_THREAT]), null);
   assert.equal(findBreakingNewsMatch(['XAU'], []), null);
   assert.equal(findBreakingNewsMatch(null, null), null);
+});
+
+// ── Persist buffer korroborasi ke Redis (S218/S219 lanjutan, 2026-07-23) ─────
+// Menutup celah "amnesia" korroborasi tiap daemon restart — cuma kategori yang
+// benar-benar dipakai isCorroborated/gate yang di-persist (budget Redis).
+
+test('shouldPersistNewsBufferItem: geopolitical/energy/market-moving -> true', () => {
+  assert.equal(shouldPersistNewsBufferItem({ cat: 'geopolitical' }), true);
+  assert.equal(shouldPersistNewsBufferItem({ cat: 'energy' }), true);
+  assert.equal(shouldPersistNewsBufferItem({ cat: 'market-moving' }), true);
+});
+
+test('shouldPersistNewsBufferItem: kategori lain/null -> false', () => {
+  assert.equal(shouldPersistNewsBufferItem({ cat: 'macro' }), false);
+  assert.equal(shouldPersistNewsBufferItem({ cat: 'econ-data' }), false);
+  assert.equal(shouldPersistNewsBufferItem(null), false);
+});
+
+test('filterFreshBufferItems: item segar (dalam 35 menit) dipertahankan, item basi dibuang', () => {
+  const now = Date.parse('2026-07-23T02:00:00Z');
+  const raw = [
+    JSON.stringify({ title: 'fresh', pubDate: '2026-07-23T01:45:00Z' }),   // 15 menit lalu -> segar
+    JSON.stringify({ title: 'stale', pubDate: '2026-07-23T01:00:00Z' }),   // 60 menit lalu -> basi
+  ];
+  const result = filterFreshBufferItems(raw, now);
+  assert.equal(result.length, 1);
+  assert.equal(result[0].title, 'fresh');
+});
+
+test('filterFreshBufferItems: JSON korup dilewati diam-diam, tidak throw', () => {
+  const now = Date.now();
+  const raw = ['{bukan json valid', JSON.stringify({ title: 'ok', pubDate: new Date(now).toISOString() })];
+  const result = filterFreshBufferItems(raw, now);
+  assert.equal(result.length, 1);
+  assert.equal(result[0].title, 'ok');
+});
+
+test('filterFreshBufferItems: input null/kosong -> array kosong, tidak throw', () => {
+  assert.deepEqual(filterFreshBufferItems(null, Date.now()), []);
+  assert.deepEqual(filterFreshBufferItems([], Date.now()), []);
 });
 
 test('posReviewSignificantTokens: buang stopword & token pendek (<=3 huruf), lowercase', () => {

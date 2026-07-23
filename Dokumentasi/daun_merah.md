@@ -11,11 +11,25 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-07-23 (Session 219 — Lapis 1b: Filter Berita Keras dari Breaking News Real-Time)
+> **Last updated:** 2026-07-23 (Session 220 — Persist Buffer Korroborasi Berita ke Redis)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 220 (2026-07-23) — Persist Buffer Korroborasi Berita ke Redis
+
+**Konteks:** Lanjutan S219 — `posReviewNewsBuffer` (in-memory, dipakai `isCorroborated`/Lapis 1b `findBreakingNewsMatch`) hilang tiap daemon restart, menciptakan jendela "amnesia" korroborasi tepat saat krisis sedang berlangsung (dibahas eksplisit dengan user, relevan karena fase development ini restart beberapa kali sehari tiap push). Diminta user setelah menimbang untung: menghilangkan gap yang nyata terjadi hari ini juga (3 deploy = 3 restart), biaya Redis kecil.
+
+**Perubahan (`vps/daemon.js`):**
+1. `POSREVIEW_NEWS_BUFFER_REDIS_KEY`/`_CAP`(150)/`_CATS` — cuma kategori `geopolitical`/`energy`/`market-moving` yang di-persist (kategori yang benar-benar dipakai `isCorroborated`; mayoritas volume berita lain tidak relevan korroborasi krisis, buang budget Redis tanpa manfaat kalau ikut disimpan).
+2. `shouldPersistNewsBufferItem`/`filterFreshBufferItems` — pure, testable, dipisah dari I/O (pola sama `findHardNewsEvent`/`findBreakingNewsMatch`).
+3. `persistNewsBufferItem` (fire-and-forget LPUSH+LTRIM, dipanggil dari `handlePosReviewCandidate`) + `loadNewsBufferFromRedis` (LRANGE saat boot, filter umur, prepend ke buffer in-memory) — dipanggil `main()` (sekarang `async`) SEBELUM `pollNews` mulai jalan.
+4. Fail-open penuh: Redis gagal/kosong → buffer mulai kosong seperti perilaku lama, tidak ada regresi.
+5. Test baru: 5 test pure function (`shouldPersistNewsBufferItem`, `filterFreshBufferItems` — kategori valid/invalid, item segar/basi, JSON korup, input kosong).
+6. `npm test` 593/593 hijau (naik dari 588).
+
+**Belum dikerjakan (ditunda user):** dokumentasi "Pembelajaran Proyek" soal keyword list statis/tidak adaptif (`POSREVIEW_CURRENCY_KEYWORDS` khususnya) — user minta nanti.
 
 ## Changelog Session 219 (2026-07-23) — Lapis 1b: Filter Berita Keras dari Breaking News Real-Time
 
