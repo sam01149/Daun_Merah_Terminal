@@ -11,11 +11,21 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-07-24 (Session 240 — Ganti Logo Jadi Ikon Daun Berurat)
+> **Last updated:** 2026-07-25 (Session 241 — Auto-Maximize Window PWA saat Launch)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 241 (2026-07-25) — Auto-Maximize Window PWA saat Launch
+
+**Konteks:** User minta window app (installed PWA di Windows via Chrome/Edge — title bar dengan minimize/maximize/close) langsung fullscreen/maximize begitu dibuka, tanpa perlu klik maximize manual (ditunjukkan via 2 screenshot: kondisi window default vs maximized).
+
+**Perubahan (`index.html`):** Tambah IIFE `autoMaximizeOnLaunch()` di awal blok `<script>` utama (sebelum semua logic lain jalan). Gated dengan `matchMedia('(display-mode: standalone)')` / `window-controls-overlay` / `navigator.standalone` — HANYA jalan saat dibuka sebagai installed PWA, tidak mengganggu kalau app dibuka sebagai tab browser biasa. Pakai `window.moveTo(screen.availLeft, screen.availTop)` + `window.resizeTo(screen.availWidth, screen.availHeight)` — `availLeft/availTop` (non-standar, didukung Chrome/Edge) dipakai alih-alih hardcode `(0,0)` supaya benar di setup multi-monitor (window tidak lompat ke monitor utama kalau app-nya ada di monitor kedua). Seluruh logic dibungkus try/catch (silent) karena `resizeTo`/`moveTo` bisa diblokir browser tertentu — bukan fatal kalau gagal. `APP_VERSION` di-bump `2026.07.24.8` → `2026.07.25.1`.
+
+**Batasan yang diketahui (bukan bug, keterbatasan platform):** `window.resizeTo`/`moveTo` cuma diizinkan browser kalau window punya satu entri history (window baru/fresh launch) — cocok dengan skenario buka app dari shortcut/taskbar (kasus screenshot user), tapi TIDAK akan efeknya kalau user reload/navigasi di window yang sama setelahnya. Tidak bisa diverifikasi otomatis via Playwright karena ini perilaku window-chrome OS-level pada installed PWA, bukan sesuatu yang terlihat dari rendering halaman — perlu diverifikasi manual oleh user: close total app lalu buka ulang dari shortcut/taskbar.
+
+**Verifikasi:** `npm test` 625/625 hijau, syntax-check semua blok `<script>` di `index.html` via `node -e "new Function(...)"` OK.
 
 ## Perubahan Lanjutan Session 240 (lanj. 2) — Watermark PDF & Reorganisasi PNG Produksi ke `brand/`
 
