@@ -14,14 +14,14 @@
 <meta property="og:url" content="https://financial-feed-app.vercel.app">
 <meta property="og:title" content="Daun Merah — FX Terminal">
 <meta property="og:description" content="Forex news & macro briefing PWA untuk trader Indonesia. Berita real-time, AI digest, kalender ekonomi, COT, korelasi cross-asset.">
-<meta property="og:image" content="https://financial-feed-app.vercel.app/og-image.png">
+<meta property="og:image" content="https://financial-feed-app.vercel.app/brand/og-image.png">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="Daun Merah — FX Terminal">
 <meta name="twitter:description" content="Forex news & macro briefing PWA untuk trader Indonesia.">
-<meta name="twitter:image" content="https://financial-feed-app.vercel.app/og-image.png">
+<meta name="twitter:image" content="https://financial-feed-app.vercel.app/brand/og-image.png">
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
-<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="apple-touch-icon" href="brand/apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;700;800&family=DM+Mono:wght@300;400&display=swap" rel="stylesheet">
 <style>
@@ -4324,7 +4324,7 @@ window.addEventListener('DOMContentLoaded', updateThemeIcon);
 
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.07.24.7';
+const APP_VERSION = '2026.07.24.8';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
@@ -5784,7 +5784,7 @@ let _pdfWatermarkDataUrl = null;
 async function _getPdfWatermarkDataUrl() {
   if (_pdfWatermarkDataUrl) return _pdfWatermarkDataUrl;
   try {
-    const res = await fetch('/pdf-watermark.png');
+    const res = await fetch('/brand/pdf-watermark.png');
     const blob = await res.blob();
     _pdfWatermarkDataUrl = await new Promise((resolve, reject) => {
       const reader = new FileReader();
