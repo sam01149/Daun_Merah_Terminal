@@ -11,11 +11,17 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-07-24 (Session 239 — Tema Ikut Preferensi Sistem OS)
+> **Last updated:** 2026-07-24 (Session 240 — Filosofi & Makna Nama di README)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 240 (2026-07-24) — Filosofi & Makna Nama di README
+
+**Konteks:** User minta makna resmi nama "Daun Merah" dirumuskan dan didokumentasikan. Penjelasan user: daun pada umumnya berwarna hijau — selaras dengan konvensi candlestick (hijau = kenaikan harga) — tapi setiap pair pasti juga mengalami penurunan. Warna merah dipilih sengaja untuk merepresentasikan sisi penurunan itu sebagai bagian yang setara dan alami dari siklus harga, bukan anomali yang harus dilawan — filosofi trading: berselaras dengan pola naik-turun yang pasti terjadi, bukan memprediksi/melawannya.
+
+**Perubahan (`README.md`):** Ditambahkan section baru "## Filosofi & Makna Nama" (setelah paragraf intro, sebelum "## Arsitektur Aliran Data & Sistem") berisi rumusan resmi makna nama berdasarkan penjelasan user di atas.
 
 ## Changelog Session 239 (2026-07-24) — Tema Ikut Preferensi Sistem OS
 

@@ -10,6 +10,14 @@ Aplikasi ini menggunakan arsitektur Single-Page PWA pada frontend, Vercel Server
 
 ---
 
+## Filosofi & Makna Nama
+
+Warna hijau pada daun secara alami identik dengan pertumbuhan — selaras dengan konvensi candlestick yang menandai kenaikan harga suatu instrumen. Namun setiap pair, tanpa kecuali, pasti juga mengalami penurunan. **Merah** dipilih secara sengaja untuk merepresentasikan sisi tersebut: bahwa penurunan harga bukan anomali yang harus dilawan, melainkan bagian yang selaras dan setara dengan kenaikan itu sendiri.
+
+Nama **Daun Merah** merangkum filosofi inti di balik aplikasi ini — bukan tentang memprediksi atau melawan arah pasar, melainkan membaca dan berselaras dengan pola naik-turun yang memang pasti terjadi pada setiap instrumen.
+
+---
+
 ## Arsitektur Aliran Data & Sistem
 
 Berikut adalah visualisasi interaksi real-time antara layanan internal, API eksternal, basis data, dan antarmuka pengguna:
