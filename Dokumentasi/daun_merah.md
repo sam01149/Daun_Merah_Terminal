@@ -11,23 +11,28 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-07-25 (Session 241 — PWA Fullscreen Native)
+> **Last updated:** 2026-07-25 (Session 241 — PWA Fullscreen: Manifest Gagal, Solusi Final Launcher Script Lokal)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
 
-## Changelog Session 241 (2026-07-25) — PWA Fullscreen Native (`display: fullscreen`)
+## Changelog Session 241 (2026-07-25) — PWA Fullscreen: Manifest Gagal, Solusi Final Launcher Script Lokal
 
-**Konteks:** User minta installed PWA (Windows, Chrome/Edge) langsung fullscreen begitu dibuka, tanpa perlu pencet tombol fullscreen Chrome manual. Percobaan pertama salah target: dikira user cuma minta window ter-maximize (title bar tetap ada), jadi awalnya ditambahkan JS `resizeTo`/`moveTo` di `index.html` gated ke `display-mode: standalone`. User klarifikasi: yang dia mau adalah kondisi setelah pencet tombol fullscreen Chrome — title bar & semua chrome browser HILANG total, bukan cuma window maximize. Itu berarti solusinya di level manifest PWA, bukan JS resize.
+**Konteks:** User minta installed PWA (Windows, Chrome/Edge) langsung fullscreen begitu dibuka, tanpa perlu pencet tombol fullscreen Chrome manual. Percobaan pertama salah target: dikira user cuma minta window ter-maximize (title bar tetap ada), jadi awalnya ditambahkan JS `resizeTo`/`moveTo` di `index.html` gated ke `display-mode: standalone`. User klarifikasi: yang dia mau adalah kondisi setelah pencet tombol fullscreen Chrome — title bar & semua chrome browser HILANG total, bukan cuma window maximize.
 
-**Perubahan:**
-1. **`manifest.json`** — `"display": "standalone"` → `"display": "fullscreen"` + tambah `"display_override": ["fullscreen", "standalone"]` (fallback kalau browser/OS tidak dukung true fullscreen untuk installed app). `display: fullscreen` adalah sinyal manifest resmi (W3C Web App Manifest spec) yang membuat browser membuka installed PWA tanpa chrome apa pun sejak awal — persis kondisi setelah user pencet tombol fullscreen manual.
-2. **`index.html`** — hack JS `autoMaximizeOnLaunch()` (`resizeTo`/`moveTo`) dari percobaan pertama **dihapus total** karena salah target & jadi dead code (tidak relevan lagi setelah display-mode berubah jadi `fullscreen`, bukan `standalone`). `APP_VERSION` di-bump `2026.07.24.8` → `2026.07.25.2`.
+**Percobaan 1 — manifest `display: fullscreen` (GAGAL di desktop):** `manifest.json` diubah `"display": "standalone"` → `"fullscreen"` + `display_override: ["fullscreen","standalone"]` (sinyal manifest resmi W3C yang seharusnya membuka installed PWA tanpa chrome browser). Setelah reinstall app, user konfirmasi ("tetap") — TIDAK ada efek, Chrome desktop Windows masih buka standalone dengan title bar, menu "Full screen" tetap manual. Kesimpulan: `display: fullscreen` cuma didukung Android/ChromeOS, diabaikan diam-diam (silent fallback) oleh Chrome/Edge desktop Windows untuk installed PWA. `hack JS resizeTo/moveTo` dari percobaan sebelumnya juga dihapus (dead code). Setting manifest **tetap dibiarkan** (`display: fullscreen` + `display_override`) karena tidak merugikan dan bisa berguna di platform yang mendukungnya, tapi TIDAK CUKUP sendirian di Windows.
 
-**Batasan yang diketahui (bukan bug, keterbatasan platform):** Perubahan `display` mode di manifest TIDAK otomatis berlaku ke instance PWA yang sudah ter-install — Chrome/Edge di Windows umumnya perlu **uninstall lalu install ulang** app-nya (bukan sekadar refresh/reload) supaya window baru dibuka pakai mode `fullscreen`. Tidak bisa diverifikasi otomatis via Playwright karena ini perilaku window-chrome OS-level pada installed PWA, bukan sesuatu yang terlihat dari rendering halaman — perlu diverifikasi manual oleh user setelah reinstall.
+**Solusi final — launcher script Windows (di luar repo git, machine-specific):** Karena browser tidak menyediakan jalan native, fullscreen-on-launch diakali di level OS lewat script yang menggantikan shortcut app:
+1. **`...\Chrome Apps\DaunMerah-Fullscreen.ps1`** (folder Start Menu Programs, TIDAK di-commit ke git — path & app-id spesifik ke instalasi mesin user) — cek dulu apakah window Chrome dengan `MainWindowTitle -eq "Daun Merah"` (persis, bukan substring) sudah ada:
+   - **Sudah ada** → `SetForegroundWindow` (fokus saja), **TIDAK** kirim F11. Wajib begini karena F11 itu toggle — kalau app sudah fullscreen lalu di-toggle lagi malah keluar dari fullscreen (ketemu waktu tes: klik ulang ikon taskbar app yang sudah fullscreen tanpa guard ini bikin balik ke windowed).
+   - **Belum ada** → `Start-Process chrome_proxy.exe --profile-directory="Profile 3" --app-id=blpgehnljmdoneipoeiglgkfoaejjefa` (app-id & profile dibaca dari shortcut asli via `WScript.Shell.CreateShortcut`), poll tiap 300ms sampai window muncul (maks 9 detik), `SetForegroundWindow`, lalu `SendKeys("{F11}")`.
+   - Percobaan pertama pakai VBScript `AppActivate` (substring match) — GAGAL karena ada 2 window lain yang judulnya juga mengandung "Daun Merah" (window cmd `Daun Merah — MT5 Bridge`, dan title VS Code yang memuat nama folder proyek), jadi salah fokus. Ditulis ulang pakai PowerShell + `user32.dll SetForegroundWindow` dengan match window title PERSIS (`-eq`, bukan substring) supaya tidak ambigu.
+2. **2 shortcut existing di-repoint** ke script ini (icon & posisi tidak berubah): `...\Start Menu\Programs\Chrome Apps\Daun Merah.lnk` dan `...\Quick Launch\User Pinned\TaskBar\Daun Merah.lnk` (yang dipin di taskbar) — `TargetPath` → `powershell.exe -WindowStyle Hidden -NoProfile -ExecutionPolicy Bypass -File "...\DaunMerah-Fullscreen.ps1"`.
 
-**Verifikasi:** `manifest.json` valid JSON, `npm test` 625/625 hijau.
+**Batasan yang diketahui:** Kalau user reinstall PWA-nya lewat Chrome App Info nanti, Chrome kemungkinan regenerasi ulang shortcut default (menimpa repoint ini) — perlu diulang manual kalau itu terjadi. Script & shortcut ini murni lokal ke mesin user (tidak ada di git repo), jadi tidak ikut ter-deploy/ter-share.
+
+**Verifikasi:** Ditest live 2 skenario via screenshot otomatis (PowerShell `CopyFromScreen`) — (1) app ditutup total → buka shortcut → auto-fullscreen dari kondisi tertutup, dan (2) app sudah fullscreen → klik shortcut lagi → tetap fullscreen, tidak ke-toggle keluar. Keduanya PASS. `manifest.json` valid JSON, `npm test` 625/625 hijau, `APP_VERSION` di-bump `2026.07.24.8` → `2026.07.25.2`.
 
 ## Perubahan Lanjutan Session 240 (lanj. 2) — Watermark PDF & Reorganisasi PNG Produksi ke `brand/`
 
