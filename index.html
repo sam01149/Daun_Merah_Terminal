@@ -1379,11 +1379,12 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 
 /* DATE JUMP — "lompat ke tanggal", like ForexFactory's own date-range picker */
 .cal-date-input {
-  color-scheme: dark; /* app is dark-only — themes the native picker popup to match */
+  color-scheme: dark; /* default: themes native picker popup to match dark app */
   background: transparent; border: 1px solid var(--border); border-radius: 20px;
   color: var(--text); font-family: 'DM Mono', monospace; font-size: 8px;
   padding: 3px 8px; letter-spacing: .3px;
 }
+body.light-theme .cal-date-input { color-scheme: light; }
 
 /* COUNTDOWN TIMER */
 .cal-countdown-wrap {
@@ -4293,20 +4294,26 @@ function updateThemeIcon() {
 }
 
 // Initialize Theme
+// Tombol manual (toggleTheme) tetap ada — localStorage('theme') hanya terisi
+// setelah user menekan tombol itu. Selama belum ditekan, tema ikut preferensi
+// sistem OS dan diperbarui live kalau preferensi sistem berubah saat app terbuka.
 const savedTheme = localStorage.getItem('theme');
-if (savedTheme === 'light') {
+const systemThemeQuery = window.matchMedia ? window.matchMedia('(prefers-color-scheme: light)') : null;
+if (savedTheme === 'light' || (savedTheme === null && systemThemeQuery && systemThemeQuery.matches)) {
   document.body.classList.add('light-theme');
-} else if (savedTheme === null) {
-  // Default: mobile = light, desktop = dark
-  if (window.innerWidth < 768) {
-    document.body.classList.add('light-theme');
-  }
+}
+if (systemThemeQuery) {
+  systemThemeQuery.addEventListener('change', (e) => {
+    if (localStorage.getItem('theme') !== null) return; // user sudah pilih manual, jangan ditimpa
+    document.body.classList.toggle('light-theme', e.matches);
+    updateThemeIcon();
+  });
 }
 window.addEventListener('DOMContentLoaded', updateThemeIcon);
 
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.07.24.5';
+const APP_VERSION = '2026.07.24.6';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js

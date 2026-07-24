@@ -11,13 +11,23 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-07-24 (Session 238 — Fix Overflow Kotak TL;DR PDF + Justify Paragraf PDF)
+> **Last updated:** 2026-07-24 (Session 239 — Tema Ikut Preferensi Sistem OS)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
 
-## Changelog Session 238 (2026-07-24) — Fix Overflow Kotak TL;DR PDF + Justify Paragraf PDF
+## Changelog Session 239 (2026-07-24) — Tema Ikut Preferensi Sistem OS
+
+**Konteks:** User minta latar belakang terang/gelap mengikuti preferensi sistem OS, tapi tombol toggle manual tetap harus ada.
+
+**Perubahan (`index.html`):**
+1. **Init tema (baris ~4296-4312):** Sebelumnya default (saat `localStorage.theme` kosong) adalah heuristik ukuran layar (mobile=light, desktop=dark), sama sekali tidak melihat OS. Sekarang default memakai `window.matchMedia('(prefers-color-scheme: light)').matches`. Tombol manual (`toggleTheme()`) tidak berubah — begitu ditekan, `localStorage.theme` terisi dan jadi override permanen yang menang atas sistem.
+2. **Live-follow:** Ditambahkan `systemThemeQuery.addEventListener('change', ...)` — kalau user belum pernah menekan tombol manual (`localStorage.getItem('theme') === null`), tema ikut berubah live saat preferensi OS berubah selagi app terbuka (mis. dark mode terjadwal Windows/macOS).
+3. **Fix konsistensi ikutan:** `.cal-date-input` (date-picker "lompat ke tanggal" di kalender) sebelumnya hardcode `color-scheme: dark` dengan komentar lama "app is dark-only" — sudah tidak akurat sejak ada `light-theme`. Ditambah override `body.light-theme .cal-date-input { color-scheme: light; }` supaya popup native date-picker browser ikut tema terang, bukan selalu gelap.
+4. **Bump Version:** `APP_VERSION` dinaikkan ke `2026.07.24.6`.
+
+**Verifikasi:** Tidak ada `chromium-cli`/Playwright terpasang di environment ini untuk screenshot browser sungguhan, jadi verifikasi dilakukan lewat simulasi Node atas logika init tema persis (7 skenario: sistem light/dark tanpa saved theme, saved theme menang atas sistem, toggle manual menulis localStorage, event perubahan sistem diabaikan setelah override manual, diikuti live kalau belum ada override) — semua PASS. `npm test` 630/630 hijau, `node --check` atas snippet OK.
 
 **Konteks:** User screenshot kotak TL;DR di PDF Analisa (`Analisa XAUUSD Overlap 20.55.pdf`) — baris teks "merenggang ke samping", keluar dari border kotak. User juga minta paragraf teks di PDF (Ringkasan & Analisa) di-justify biar rapi.
 
