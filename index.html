@@ -8009,11 +8009,10 @@ function _histFor(hist, a, b) {
 }
 // Garis tren mini dari deret r20 (null = celah/hari tanpa data, dilewati).
 // Minimal 2 titik valid supaya ada garis; kalau tidak, tidak render apa-apa (anti-noise).
-function _corrSparkline(values) {
+function _corrSparkline(values, w = 40, h = 14) {
   if (!Array.isArray(values)) return '';
   const pts = values.filter(v => v != null && isFinite(v));
   if (pts.length < 2) return '';
-  const w = 40, h = 14;
   const min = Math.min(...pts), max = Math.max(...pts);
   const range = (max - min) || 1;
   const stepX = w / (values.length - 1);
@@ -8126,15 +8125,18 @@ function _buildPairCorrHtml(pair, data) {
   // Penanda "tidak ada data" harus bisa dibedakan dari nilai valid yang kebetulan
   // netral (corrColor juga mengembalikan corr-neu untuk |r|<0.3) — pakai marker '—'.
   const EMPTY_CELL = '<span class="corr-neu">—</span>';
-  const fmtCell = d => {
+  // Sparkline drift historis (Plan I Fase 2) — sebelumnya cuma dipasang di tabel Gold
+  // dan daftar anomali, tabel per-pair ini (non-XAU) belum ikut. Ukuran dikecilkan
+  // (24×10 vs 40×14 di Gold) supaya muat di kolom leg yang sempit.
+  const fmtCell = (d, sparkHtml) => {
     if (!d || d.r20 == null) return EMPTY_CELL;
     const delta = d.r60 != null ? d.r20 - d.r60 : null;
     const dStr = delta != null && Math.abs(delta) > 0.3
       ? ` <span style="color:var(--yellow);font-size:9px">Δ${delta >= 0 ? '+' : ''}${delta.toFixed(2)}</span>`
       : '';
-    return `<span class="${corrColor(d.r20)}" style="font-weight:700">${d.r20.toFixed(2)}</span>${dStr}`;
+    return `<span class="${corrColor(d.r20)}" style="font-weight:700">${d.r20.toFixed(2)}</span>${dStr}${sparkHtml || ''}`;
   };
-  const gridCols = `1fr ${legs.map(() => '92px').join(' ')}`;
+  const gridCols = `1fr ${legs.map(() => '112px').join(' ')}`;
   const rowWrap = (nameHtml, cells, hint) => `<div style="display:grid;grid-template-columns:${gridCols};gap:0 8px;padding:5px 8px;border-bottom:1px solid var(--border)"${hint ? ` title="${escHtml(hint)}"` : ''}>
       ${nameHtml}
       ${cells.map(c => `<div style="text-align:right;font-size:11px;font-family:'DM Mono',monospace">${c}</div>`).join('')}
@@ -8145,9 +8147,10 @@ function _buildPairCorrHtml(pair, data) {
   if (legs.length === 2) {
     const d = getR(legs[0].inst, legs[1].inst);
     if (d) {
+      const spark = _corrSparkline(_histFor(data.corr_history, legs[0].inst, legs[1].inst), 24, 10);
       rowsHtml += rowWrap(
         `<div><div style="font-size:10px;color:var(--text);font-family:'DM Mono',monospace">${legs[0].cur} × ${legs[1].cur}</div><div style="font-size:8px;color:var(--muted);margin-top:1px">korelasi antar leg</div></div>`,
-        [fmtCell(d), '<span class="corr-neu">·</span>'],
+        [fmtCell(d, spark), '<span class="corr-neu">·</span>'],
         'Korelasi kekuatan kedua leg pair ini satu sama lain'
       );
     }
@@ -8155,7 +8158,7 @@ function _buildPairCorrHtml(pair, data) {
   for (const asset of TEK_CORR_ASSETS) {
     if (!inMatrix(asset.key)) continue;
     if (legs.some(l => l.inst === asset.key)) continue; // jangan korelasikan aset dengan dirinya
-    const cells = legs.map(l => fmtCell(getR(l.inst, asset.key)));
+    const cells = legs.map(l => fmtCell(getR(l.inst, asset.key), _corrSparkline(_histFor(data.corr_history, l.inst, asset.key), 24, 10)));
     if (cells.every(c => c === EMPTY_CELL)) continue; // semua leg tanpa data → skip baris
     rowsHtml += rowWrap(
       `<div><div style="font-size:10px;color:var(--text);font-family:'DM Mono',monospace">${escHtml(asset.label)}</div><div style="font-size:8px;color:var(--muted);margin-top:1px">${escHtml(asset.hint)}</div></div>`,

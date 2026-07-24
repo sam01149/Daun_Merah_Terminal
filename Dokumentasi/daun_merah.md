@@ -11,11 +11,24 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-07-24 (Session 232 — Pisahkan Field `conflict`/`makro_alignment`/`conflict_note` Mentah di Log Setup (Plan W))
+> **Last updated:** 2026-07-24 (Session 233 — Sparkline Drift Korelasi di Tabel Per-Pair TEK (non-XAU))
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 233 (2026-07-24) — Sparkline Drift Korelasi di Tabel Per-Pair TEK (non-XAU)
+
+**Konteks:** User melapor cara penulisan cross-correlation di tab TEK terasa beda antara XAU/USD dan pair lain, dan sepertinya belum diimplementasikan penuh ke semua pair. Ditelusuri: sparkline tren r20 historis (Session 232 sesi sebelumnya — Plan I Fase 2) hanya dipasang di dua tempat — tabel khusus Gold (`gold_correlations`, khusus saat `tekPair === 'XAUUSD'`) dan daftar anomali — sementara tabel korelasi generik `_buildPairCorrHtml()` yang dipakai SEMUA pair non-XAU (EUR/USD, GBP/JPY, dst., ditambahkan sesi sebelum Session 232) tidak ikut memanggil `_corrSparkline()`. Bukan bug data, murni gap "lupa disambungkan" ke satu tempat render.
+
+**Perubahan (`index.html`):**
+1. `_corrSparkline(values)` → `_corrSparkline(values, w=40, h=14)` — ukuran svg jadi parameter opsional (default sama, tidak mengubah pemanggil lama di tabel Gold/anomali).
+2. `_buildPairCorrHtml()`: `fmtCell` sekarang menerima argumen sparkline HTML dan menempelkannya setelah angka r20/Δ — dipanggil dengan `_corrSparkline(_histFor(data.corr_history, instA, instB), 24, 10)` (ukuran dikecilkan vs 40×14 di tabel Gold supaya muat kolom leg yang sempit) di kedua baris: korelasi antar-leg pair (mis. GBP × USD/DXY) dan korelasi leg × aset makro (DXY/US10Y/SPX/dst).
+3. Lebar kolom leg grid dinaikkan `92px` → `112px` untuk menampung sparkline tanpa wrap.
+
+**Verifikasi:** `npm test` 629/629 hijau (termasuk `test/frontend/corr_sparkline.test.js` yang masih pass karena default param `_corrSparkline` tidak berubah). Uji manual via node eval `_buildPairCorrHtml('EURUSD', mockData)` dengan mock `corr_history` — mengonfirmasi 2 elemen `<svg>` muncul (baris leg×leg + baris leg×asset) saat histori tersedia ≥2 titik, kosong (anti-noise) saat histori kurang dari 2 titik — perilaku sama persis dengan tabel Gold.
+
+---
 
 ## Changelog Session 232 (2026-07-24) — Pisahkan Field `conflict`/`makro_alignment`/`conflict_note` Mentah di Log Setup (Plan W)
 
