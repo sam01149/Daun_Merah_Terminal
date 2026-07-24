@@ -38,3 +38,8 @@ test('fjImageType: mengembalikan null untuk berita teks biasa tanpa gambar', () 
   assert.strictEqual(fjImageType('CFTC Positions in the Week Ended June 30th'), null);
   assert.strictEqual(fjImageType('Powell speaks on monetary policy'), null);
 });
+
+test('fjImageType: mengembalikan null untuk quote biasa yang mengandung kata "probability" (guid 9692275, 404 confirmed)', () => {
+  assert.strictEqual(fjImageType("ECB's Simkus: Still see probability of rate hike higher than hold"), null);
+  assert.strictEqual(fjImageType('Trader sees low probability of a Fed rate cut this year'), null);
+});

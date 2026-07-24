@@ -11,11 +11,28 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-07-24 (Session 235 — Pecah Rate-Limit `/api/correlations` Jadi Per-Aksi (Fix 429 Panel Korelasi))
+> **Last updated:** 2026-07-24 (Session 236 — Card UI "Berita Terkait" TEK + Fix False-Positive `fjImageType` "probability")
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 236 (2026-07-24) — Card UI "Berita Terkait" TEK + Fix False-Positive `fjImageType` "probability"
+
+**1. Card UI "Berita Terkait" (tab TEK) disamakan dengan tab NEWS.** User minta tampilan list flat (divider tipis antar-item, ala tabel) diganti card seperti `.feed-item` di NEWS supaya konsisten. Perubahan:
+- CSS `.tek-news-item`: dari `border-bottom` list-style jadi card penuh — `background:var(--surface)`, `border:1px solid var(--border)`, `border-radius:10px`, `padding:12px 14px`, `margin-bottom:8px`, animasi `fadeUp` (identik pola `.feed-item`). Aksen warna kategori di kiri card via `border-left-width:3px !important` (mengikuti pola `.fund-card` yang sudah ada — warna per-instance diisi lewat inline style, bukan class statis).
+- JS `renderTekNews()`: tiap card AF (`tek-news-item-link`) diberi `border-left:3px solid #38bdf8` (cyan tetap, sama seperti badge "AF · tek"); tiap card FJ diberi `border-left:3px solid ${col}` — `col` sudah dihitung dari `TEK_CAT_COLOR[cat]` (variabel yang sama dipakai buat warna badge kategori), jadi aksen kiri & badge kategori selalu senada.
+- CSS `.tek-news-title`: font diseragamkan ke `Syne` 13px/1.45 (sama persis `.item-title` NEWS), gantikan `system-ui` 12px justify yang beda sendiri.
+- Hover state ditambah: `.tek-news-item:hover` border abu redup, `.tek-news-item-link:hover` border cyan (pola sama seperti card clickable lain di app, mis. `.cal-ff-link:hover`).
+- Verifikasi visual: screenshot headless Chrome (dark & light theme) pakai CSS asli dari `index.html` + markup literal dari template `renderTekNews()` — card, warna aksen per kategori, dan badge tampil benar di kedua tema.
+
+**2. Bug ditemukan saat verifikasi (di luar scope awal) — false-positive tombol "Lihat Gambar" di FJ item quote biasa.** User screenshot card "ECB's Simkus: Still see probability of rate hike higher than hold" muncul tombol "Lihat Gambar ▾" padahal itu quote biasa, bukan post tabel probabilitas. Dicek manual: guid `9692275` di `financialjuice.com/images/9692275.png` → **HTTP 404**, gambar memang tidak ada.
+- **Root cause:** `fjImageType()` (`index.html`) match bare `\bprobabilit(y|ies)\b` di mana saja dalam judul — cocok juga di kalimat quote biasa yang kebetulan mengandung kata "probability" tanpa itu post gambar/tabel resmi. Post tabel FJ asli selalu berpola `<CB/currency> ... Rate ... Probabilit(y|ies)` (mis. "SNB Interest Rate Probabilities", "Fed Rate Cut Probability") — kata "rate" SELALU muncul sebelum kata probability/probabilities. Di quote biasa urutannya kebalik ("...probability of **rate** hike...").
+- **Fix:** `fjImageType()` sekarang cek posisi index kemunculan `rate` vs `probabilit(y|ies)` — hanya dianggap `'table'` kalau `rate` muncul lebih dulu. Regex `matrix`/`heatmap`/`implied vol(atility)?` tidak disentuh (belum ada laporan false-positive di situ).
+- **Test:** `test/frontend/fj_image_type.test.js` — tambah case baru khusus quote "probability" (termasuk judul asli dari screenshot user) yang harus `null`; 4 test lama tetap hijau (termasuk "SNB Interest Rate Probabilities" dan "Fed Rate Cut Probability" yang masih benar terdeteksi `'table'`).
+- **Verifikasi:** `npm test` 630/630 hijau (629 lama + 1 baru).
+
+---
 
 ## Changelog Session 235 (2026-07-24) — Pecah Rate-Limit `/api/correlations` Jadi Per-Aksi (Fix 429 Panel Korelasi)
 
