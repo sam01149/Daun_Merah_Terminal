@@ -11,11 +11,24 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-07-23 (Session 225 — Fix Urutan Candle (Ascending Sort) di Evaluator Setup Pasif)
+> **Last updated:** 2026-07-24 (Session 226 — Tambah Pattern Implied Volatility di fjImageType untuk Inline Visual Feed)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 226 (2026-07-24) — Tambah Pattern Implied Volatility di fjImageType untuk Inline Visual Feed
+
+**Konteks:** User melaporkan screenshot feed berita FinancialJuice dengan headline sejenis "Commodities Implied Volatility", "FX Implied Volatility", "US Index Futures Implied Volatility", dan "Top S&P 500 Stock Names Implied Volatility" tidak menampilkan tombol toggle gambar visual/tabel.
+
+**Root cause:** Kata "volatility" secara umum sebelumnya dihapus dari `fjImageType()` karena murni kata umum di komentar/quote ("volatility is down"). Namun, frasa spesifik **"implied volatility"** / **"implied vol"** adalah judul post visual/tabel resmi FinancialJuice yang memang menyediakan gambar di `financialjuice.com/images/{guid}.png`. Selain itu, regex `probabilities?` sebelumnya juga melewatkan "probability" singular.
+
+**Perubahan (`index.html` & `test/frontend/fj_image_type.test.js`):**
+1. **`index.html` (`fjImageType`)**: Menambahkan kata kunci `implied vol(atility)?` dan memperbaik regex probability menjadi `probabilit(y|ies)` ke dalam penanda visual `'table'`. Headline dengan "implied volatility" kini mendapat tombol "Lihat Gambar ▾" / "Sembunyikan Gambar ▴", sedangkan komentar/quote umum tentang "volatility" tetap diabaikan (`null`).
+2. **`index.html` (`APP_VERSION`)**: Bump versi ke `2026.07.24.1`.
+3. **`test/frontend/fj_image_type.test.js`**: Menambahkan unit test regression baru untuk menguji `fjImageType()` terhadap post Implied Volatility, Probabilities/Probability, Matrix, Heatmap, Chart, dan berita teks biasa tanpa gambar.
+
+**Verifikasi:** `npm test` 100% hijau (597/597 test lolos).
 
 ## Changelog Session 225 (2026-07-23) — Fix Urutan Candle (Ascending Sort) di Evaluator Setup Pasif
 

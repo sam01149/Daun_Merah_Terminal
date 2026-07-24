@@ -4302,7 +4302,7 @@ window.addEventListener('DOMContentLoaded', updateThemeIcon);
 
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.07.22.5';
+const APP_VERSION = '2026.07.24.1';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
@@ -4997,11 +4997,11 @@ function fjImageType(title) {
   // Match "Week Ended" specifically — the non-FJElite summary post "CFTC
   // Positions in the Week Ended ..." has no per-instrument image (404).
   if (/\bCFTC Positions Week Ended\b/i.test(title)) return 'chart';
-  // 'volatility' sengaja tidak dipakai di sini — kata umum yang sering muncul di quote/
-  // komentar biasa ("volatility is down"), bukan penanda post gambar/tabel FinancialJuice.
-  // Contoh nyata yang salah ke-tag: guid 9660453 "Fed's Chair Warsh: volatility is down,
-  // yields are down" — tidak ada gambar (financialjuice.com/images/9660453.png = 404).
-  if (/\b(probabilities?|matrix|heatmap)\b/i.test(title)) return 'table';
+  // 'volatility' sendiri kata umum yang sering muncul di quote/komentar biasa ("volatility is down").
+  // Contoh yang salah ke-tag: guid 9660453 "Fed's Chair Warsh: volatility is down, yields are down" (404).
+  // Namun, "implied volatility" / "implied vol" adalah format judul post tabel/gambar visual resmi FJ
+  // (mis. "Commodities Implied Volatility", "FX Implied Volatility", "US Index Futures Implied Volatility").
+  if (/\b(probabilit(y|ies)|matrix|heatmap|implied vol(atility)?)\b/i.test(title)) return 'table';
   return null;
 }
 
