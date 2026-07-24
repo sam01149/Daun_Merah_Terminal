@@ -11,11 +11,38 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-07-24 (Session 227 — Perbaiki Tata Letak PDF Analisa: TL;DR, Badge BIAS, Sub-heading Paragraf)
+> **Last updated:** 2026-07-24 (Session 228 — Sparkline Drift Korelasi Historis (Plan I Fase 2) + Bersihkan 3 Item Progress Tertunda)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 228 (2026-07-24) — Sparkline Drift Korelasi Historis (Plan I Fase 2) + Bersihkan 3 Item Progress Tertunda
+
+**Konteks:** Review `daun_merah_progress.md` bareng user. 3 keputusan: (1) tes Ollama Cloud sebagai kandidat provider AI (S160) DIBATALKAN, (2) Plan K Opsi B build-step minifikasi index.html (S154) DIBATALKAN, (3) Plan I Fase 2 sparkline drift korelasi historis (S154) DIEKSEKUSI.
+
+**Temuan sebelum eksekusi Fase 2:** Fase 1 (diverging bar chart anomali korelasi) yang jadi basis Fase 2 ternyata **sudah dihapus** di S160 (commit `c1c3250`, 2026-07-13) — user waktu itu eksplisit minta "korelasi/anomali jadi teks tanpa bar chart" ("to the point aja"). Karena sparkline tetap elemen visual/chart, dikonfirmasi ulang ke user sebelum lanjut — user pilih tetap bikin sparkline (mini, nempel di baris teks yang sudah ada, bukan chart besar).
+
+**Perubahan (`api/correlations.js`):**
+1. Snapshot r20 harian per pair disimpan ke Redis key baru `correlations_hist_v1` (TTL 20 hari, cap 10 titik/pair) — 1 titik baru otomatis tiap kali cache utama (`correlations_v3`, TTL 24 jam) recompute, tidak perlu cron terpisah.
+2. Logic merge histori diekstrak jadi pure function `mergeCorrHistory(hist, todayStr, matrix20, maxPoints)` — di-export via `module.exports.mergeCorrHistory` supaya bisa diuji langsung tanpa mock Redis. Menangani: hari baru (append + pad null pair yang gagal fetch), tanggal sama (overwrite bukan duplikat titik), pair baru muncul di tengah histori (padding null sebelum titik pertama), cap `maxPoints` (buang titik tertua, semua seri tetap sejajar panjang).
+3. Response `/api/correlations` sekarang menyertakan field baru `corr_history: { dates, series }`.
+
+**Perubahan (`index.html`):**
+1. Helper baru `_histFor(hist, a, b)` (cari key `A|B` dengan fallback `B|A`, sama pola dengan `getR` yang sudah ada) dan `_corrSparkline(values)` (render SVG garis mini, anti-noise: kosong kalau < 2 titik valid, warna ikut `corrColor` dari titik terakhir).
+2. Sparkline dipasang di baris **Gold correlation** (tab XAU/USD) dan kartu **Anomali Korelasi** — TIDAK dipasang di tabel matrix per-leg (grid 92px terlalu sempit, resiko cramping).
+3. **Bug dokumentasi ketemu saat review:** teks panel "Cara membaca panel ini" masih menyebut "(digambar sebagai bar)" / "(garis kecil terang)" — sisa dari UI lama sebelum bar chart dihapus S160, tidak pernah diperbarui. Diperbaiki + ditambah penjelasan sparkline baru.
+4. `APP_VERSION` bump `2026.07.24.2` → `2026.07.24.3`.
+
+**Test baru:** `test/lib/corr_history.test.js` (5 test, `mergeCorrHistory` murni — histori kosong, hari baru, pair baru di tengah, overwrite hari sama, cap maxPoints) + `test/frontend/corr_sparkline.test.js` (4 test, `_histFor` + `_corrSparkline` — fallback key, anti-noise <2 titik, warna sesuai titik terakhir, celah null di tengah tidak crash). `npm test` 606/606 hijau (dari 597, +9).
+
+**Dokumentasi lain:** `daun_merah_riset.md` § Pembelajaran Proyek ditambah 1 entri (keyword list klasifikasi berita sengaja statis bukan adaptif, rujukan S219/S220) — item ini sebelumnya ditunda user ("masalah keyword nanti saja"). `daun_merah_progress.md` dikosongkan dari 3 entri di atas (2 dibatalkan, 1 selesai dieksekusi).
+
+**Catatan multi-sesi:** `api/admin.js` ditemukan berubah (uncommitted) di working tree saat sesi ini berjalan — bukan perubahan sesi ini, sengaja TIDAK disentuh/di-stage (indikasi sesi lain sedang bekerja bersamaan, pola sama dengan [[project-plan-v-concurrent-session-collision]]).
+
+**Verifikasi:** `npm test` 606/606 hijau. Verifikasi live sparkline BELUM dilakukan (butuh ≥2 hari akumulasi data histori dulu supaya ada titik untuk digambar — day-1 hanya 1 titik, anti-noise sengaja tidak render apa-apa sampai cukup data).
+
+---
 
 ## Changelog Session 227 (2026-07-24) — Perbaiki Tata Letak PDF Analisa: TL;DR, Badge BIAS, Sub-heading Paragraf
 

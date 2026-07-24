@@ -168,6 +168,13 @@ Entri yang melanggar = salah tempat, wajib dipindah.
   `sw.js`; fix `index.html`-only tidak pernah sampai ke device yang tidak di-force-close —
   sebelum menyimpulkan "belum difix", pastikan versi yang dilihat user memang versi terbaru.
   Mitigasi permanen: probe versi Plan M3. (S179, S48b)
+- **Keyword list klasifikasi berita sengaja statis, bukan adaptif.** `POSREVIEW_CURRENCY_KEYWORDS`
+  & kategori `newscat.js` murni daftar kata kunci tetap (bukan AI/adaptif) karena gerbang
+  pre-entry harus cepat & deterministik — konsekuensinya butuh maintenance manual tiap ada
+  skenario makro baru yang belum tercakup (contoh nyata: linkage minyak→emas baru ditambahkan
+  S219 dipicu kasus Iran-Gulf). Kategori generik konflik (`military`/`attack*`/dst) relatif
+  tahan lama; `POSREVIEW_CURRENCY_KEYWORDS` (relevansi kausal berita→mata uang) jauh lebih
+  rapuh dan perlu direview tiap ada kasus makro baru yang lolos tanpa terdeteksi. (S219, S220)
 
 ---
 

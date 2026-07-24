@@ -9,6 +9,10 @@ const { withSingleFlight } = require('./_fetch_lock');
 const CORS = { 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-cache' };
 const CACHE_KEY = 'correlations_v3';
 const CACHE_TTL = 86400;
+// Plan I Fase 2: histori r20 harian (sparkline drift), ±1 titik/hari lewat gate CACHE_TTL di atas
+const HIST_KEY = 'correlations_hist_v1';
+const HIST_TTL = 20 * 86400;
+const HIST_MAX_POINTS = 10;
 
 // Yahoo Finance symbols.
 // All FX quoted as X/USD (X stronger = higher value).
@@ -50,6 +54,38 @@ const INVERT = new Set(['JPY', 'CAD', 'CHF']);
 // Gold's key cross-asset relationships — always shown even without anomaly
 // BTC (debasement co-movement), GoldSilverRatio (stretch gauge), GoldCopperRatio (safe-haven vs growth) added per COR-G
 const GOLD_CORR_ASSETS = ['DXY', 'Silver', 'Copper', 'WTI', 'US10Y', 'RealYield', 'SPX', 'VIX', 'JPY', 'AUD', 'EUR', 'BTC', 'GoldSilverRatio', 'GoldCopperRatio'];
+
+// Plan I Fase 2 (2026-07-24): gabungkan snapshot r20 hari ini ke histori tersimpan.
+// Pure function (tanpa I/O) supaya bisa diuji langsung tanpa mock Redis.
+// - hist: { dates: string[], series: { [pairKey]: (number|null)[] } } — semua array sepanjang dates.
+// - todayStr: 'YYYY-MM-DD'. Kalau sama dengan entri terakhir, overwrite slot itu (bukan duplikat titik).
+// - matrix20: { [pairKey]: number|null } hasil komputasi korelasi 20 hari hari ini.
+// - maxPoints: cap jumlah titik historis disimpan (titik terlama dibuang).
+function mergeCorrHistory(hist, todayStr, matrix20, maxPoints) {
+  const dates = Array.isArray(hist && hist.dates) ? hist.dates.slice() : [];
+  const series = {};
+  const srcSeries = (hist && hist.series) || {};
+  for (const key of Object.keys(srcSeries)) series[key] = srcSeries[key].slice();
+
+  const sameDay = dates.length > 0 && dates[dates.length - 1] === todayStr;
+  if (!sameDay) {
+    dates.push(todayStr);
+    for (const key of Object.keys(series)) series[key].push(null);
+  }
+  const idx = dates.length - 1;
+  for (const key of Object.keys(matrix20)) {
+    if (!series[key]) series[key] = new Array(dates.length).fill(null);
+    series[key][idx] = matrix20[key];
+  }
+  if (dates.length > maxPoints) {
+    const cut = dates.length - maxPoints;
+    return {
+      dates: dates.slice(cut),
+      series: Object.fromEntries(Object.keys(series).map(k => [k, series[k].slice(cut)])),
+    };
+  }
+  return { dates, series };
+}
 
 async function redisCmd(...args) {
   const REDIS_URL   = process.env.UPSTASH_REDIS_REST_URL;
@@ -167,7 +203,7 @@ function resample4h(candles1h) {
 }
 
 const { requireAppKey } = require('./_app_key');
-module.exports = async function handler(req, res) {
+const handler = async function handler(req, res) {
   if (requireAppKey(req, res)) return; // gate APP_KEY (cron/admin secret lolos) — lihat api/_app_key.js
   Object.entries(CORS).forEach(([k, v]) => res.setHeader(k, v));
   if (req.method === 'OPTIONS') return res.status(204).end();
@@ -905,12 +941,29 @@ module.exports = async function handler(req, res) {
     }
   }
 
+  // Plan I Fase 2 (2026-07-24): snapshot r20 harian per pair untuk sparkline drift.
+  // Recompute cabang ini hanya kena TTL 24h di atas → otomatis ±1 titik historis/hari.
+  let corrHistory = { dates: [], series: {} };
+  try {
+    const rawHist = await redisCmd('GET', HIST_KEY);
+    if (rawHist) corrHistory = JSON.parse(rawHist);
+  } catch(e) {
+    console.warn('correlations: history read failed:', e.message);
+  }
+  corrHistory = mergeCorrHistory(corrHistory, new Date().toISOString().slice(0, 10), matrix20, HIST_MAX_POINTS);
+  try {
+    await redisCmd('SET', HIST_KEY, JSON.stringify(corrHistory), 'EX', HIST_TTL);
+  } catch(e) {
+    console.warn('correlations: history write failed:', e.message);
+  }
+
   const data = {
     instruments: pairNames,
     matrix_20d: matrix20,
     matrix_60d: matrix60,
     anomalies: anomalies.slice(0, 10),
     gold_correlations: goldCorr,
+    corr_history: corrHistory,
     computed_at: new Date().toISOString(),
   };
 
@@ -924,3 +977,6 @@ module.exports = async function handler(req, res) {
   res.setHeader('X-Cache', 'MISS');
   return res.status(200).json({ ...data, stale: false });
 };
+
+module.exports = handler;
+module.exports.mergeCorrHistory = mergeCorrHistory;
