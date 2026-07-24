@@ -11,11 +11,26 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-07-24 (Session 231 — Tighten SL Preventif Sebelum Weekend Close (Plan U-3 lanjutan))
+> **Last updated:** 2026-07-24 (Session 232 — Pisahkan Field `conflict`/`makro_alignment`/`conflict_note` Mentah di Log Setup (Plan W))
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 232 (2026-07-24) — Pisahkan Field `conflict`/`makro_alignment`/`conflict_note` Mentah di Log Setup (Plan W)
+
+**Konteks:** Lanjutan temuan audit Session 230 — label `alignment` di `setup_log`/`setup_log_auto:v1` ternyata gabungan dua sinyal beda tingkat keparahan (`structured.conflict` ringan vs `structured.makro_alignment` lebih berat), dan detail aslinya (termasuk alasan tertulis AI) dibuang permanen saat ditulis ke log. Ini akan mengaburkan analisis item #6/#8/#10 Plan U begitu gate n≥100 tercapai.
+
+**Perubahan (`api/admin.js`):**
+1. Entri baru `setup_log:v1`/`setup_log_auto:v1` (satu titik penulisan, dipakai bersama manual & auto) sekarang menyimpan 4 field mentah tambahan: `conflict`, `conflict_note`, `makro_alignment`, `makro_alignment_reason` — apa adanya dari `structured{}`, null kalau model tidak isi. Formula `alignment` (lama) TIDAK diubah — identik sebelum/sesudah.
+2. Blok refinement in-place (skenario bias sama, pending lama di-update bukan di-cancel) — 4 field baru ikut diperbarui ke generasi TERBARU setiap kali direfine, supaya tidak nyimpan snapshot conflict dari generasi pertama.
+3. Diverifikasi `_omitManagement()` — fungsi itu hanya menyaring blok agregat (`management`/`cancel_flip_ghost`) dari payload `setup_stats`, bukan field per-entri, jadi 4 field baru otomatis lolos ke publik lewat `history`/`recent` sama seperti field lain (`intervention`, dst) — tidak perlu perubahan.
+
+**Test baru:** `test/admin/isolation_auto.test.js` (+3) — entri baru (auto) menyimpan 4 field + `alignment` regresi identik formula lama; entri baru (manual) juga dapat 4 field (satu titik penulisan); refinement in-place memperbarui ke-4 field ke generasi terbaru (bukan snapshot generasi pertama, dibuktikan dengan `makro_alignment` berubah dari `'searah'` generasi-1 ke `null` generasi-2).
+
+**Verifikasi:** `npm test` 629/629 hijau. Live-verified langsung ke production (`ohlcv_analyze` EUR/USD manual): respons AI nyata mengembalikan `conflict:'arah'` + `conflict_note` (alasan ketidakpastian PMI vs dovish ECB) berdampingan dengan `makro_alignment:'konflik'` — persis kasus yang tadinya collapse jadi satu label `'konflik'` tanpa detail; entri tersimpan di `setup_stats` produksi dengan ke-4 field terisi lengkap.
+
+---
 
 ## Changelog Session 231 (2026-07-24) — Tighten SL Preventif Sebelum Weekend Close (Plan U-3 lanjutan)
 
