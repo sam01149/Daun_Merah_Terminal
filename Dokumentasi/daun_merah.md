@@ -6561,3 +6561,28 @@ Deploy ke Railway (ikuti `vps/README-deploy.md` versi baru) + pasang pinger cron
 
 ### Status Q-1 — MASIH BERJALAN (gate 7-14 hari baru mulai):
 Service Railway sudah live & menulis heartbeat. Yang tersisa: biarkan berjalan 7-14 hari, pantau `admin?action=health` source `vps_heartbeat` + Usage Railway sesekali. Belum ada gap tercatat sejak deploy sukses hari ini.
+
+---
+
+## Changelog Session 241 (2026-07-24) — Fix Kebocoran Credit ScraperAPI: CME FedWatch/ZQ/Quote Dihapus dari `rate-path.js`
+
+**Konteks:** User minta cek dashboard ScraperAPI setelah curiga usage tinggi. Audit live (`api/account` ScraperAPI) menemukan **791/1000 credit terpakai di hari ke-19 dari siklus billing 30 hari** — jauh di atas proyeksi lama (~120-180/bulan, tercatat Session 47) yang ternyata sudah basi.
+
+**Root cause ditemukan via probe langsung** (fetch semua 4 endpoint CME lewat proxy ScraperAPI yang sama persis dipakai produksi): FedWatch V1, FedWatch V2, ZQ Settlement, dan Quote API **semua balik 404 terstruktur** (`"No endpoint GET /CmeWS/mvc/..."`) — bukan diblokir Akamai (beda dari CVOL yang masih jalan normal), tapi seluruh keluarga hidden API `CmeWS/mvc/*` sudah **dipensiunkan CME**. Dikonfirmasi silang lewat dokumentasi resmi CME: FedWatch sekarang cuma tersedia sebagai web tool gratis (tanpa API) atau produk API berbayar (EOD/Intraday, mulai ~$25/bulan). Karena `cmeFetch()` di `rate-path.js` me-routing SEMUA percobaan lewat proxy berbayar dan fallback chain-nya berlapis 4 (FedWatch V1→V2→ZQ→Quote), **setiap cache-miss (tiap 4 jam) membakar 4 credit sekaligus untuk request yang pasti gagal** — ~24 credit/hari terbuang murni, cukup untuk jelasin sebagian besar selisih dari proyeksi lama.
+
+**Upaya cari alternatif gratis (sebelum diputuskan dihapus):**
+- Endpoint pengganti gratis untuk FedWatch tool: NIHIL. Halaman web tool CME (`cme-fedwatch-tool.html`) adalah SPA client-rendered, fetch statis (tanpa `render=true`, hemat credit) tidak menemukan endpoint API ter-embed — untuk menemukan endpoint asli butuh JS-render (mahal, dan kemungkinan CME akan tutup itu juga mengingat mereka baru saja memformalkan FedWatch jadi produk berbayar).
+- CentralBank.watch (situs pihak ketiga, klaim replikasi FedWatch dari data futures gratis): tidak ada API publik, halaman probabilitas per-meeting tidak ter-populate saat dicek.
+- **Polymarket** (sudah terintegrasi gratis di `api/admin.js?action=polymarket`, dipakai `market-digest.js` untuk blok "PREDICTION MARKETS" di prompt AI Ringkasan): TERNYATA sudah menyediakan sinyal Fed-rate-probability real dari pasar prediksi asli (market "Fed decision in [month]" per FOMC meeting), tapi ini sinyal terpisah/general macro-scan (top 200 market by volume, keyword-scored) — TIDAK menggantikan struktur `cumulative_3m_bps/6m_bps` yang dipakai `ratePathBlock`, jadi bukan pengganti satu-ke-satu.
+
+**Keputusan (instruksi eksplisit user — "kalau masih nihil langsung hapus"):** 3 langkah CME mati (FedWatch, ZQ Settlement, Quote API) dihapus total dari `api/rate-path.js`, termasuk fungsi `fetchCMEFedWatch`, `fetchCMEZQData`, `fetchCMEQuoteZQ`, `cmeFetch`, `CME_HEADERS`, 4 URL constant, `lastBusinessDay()`, dan `_aggregateFedwatchProbs` (jadi dead code karena satu-satunya pemanggilnya hilang — tes terkait di `test/feeds/vendor_squeeze.test.js` ikut dihapus). Fallback chain sekarang: **FRED T-bill term structure → heuristik** (2 langkah, keduanya gratis, tanpa ScraperAPI sama sekali). CVOL (`correlations.js`, konsumen ScraperAPI lain) TIDAK disentuh — dites terpisah dan cache-nya terkonfirmasi normal.
+
+**Kerugian dari sisi kita (assessment eksplisit diminta user):**
+1. **Tidak ada penurunan kualitas data hari ini** — output `rate-path.js` SUDAH jatuh ke heuristik sejak endpoint CME mati (mungkin sudah beberapa waktu sebelum ketahuan), jadi menghapus kode mati tidak mengubah apa yang user lihat sekarang.
+2. **Ada gap presisi vs CME asli (kalau CME masih hidup)**: heuristik FRED cuma estimasi kasar (rule distance-from-neutral-rate), bukan probabilitas pasar riil dari harga futures — tapi gap ini sudah ada sejak CME mati, bukan diperparah oleh penghapusan kode.
+3. **Kehilangan kemampuan auto-recovery**: kalau CME suatu saat membuka lagi endpoint gratis (kecil kemungkinan, mengingat mereka baru memformalkan jadi produk berbayar), kode tidak akan otomatis coba lagi — perlu ditambahkan manual.
+4. **Yang didapat sebagai ganti**: ~24 credit/hari (~700+/bulan) ScraperAPI diselamatkan, sisa budget lebih aman untuk CVOL yang justru masih berfungsi; latensi `rate-path.js` juga lebih cepat (tidak lagi menunggu 4 request proxy gagal berurutan sebelum sampai ke FRED).
+
+**Verifikasi:** `npm test` — 625/625 hijau (turun dari sebelumnya karena 5 test FedWatch dihapus bersama fungsinya, bukan regresi). `node -e "require('./api/rate-path.js')"` — modul load bersih tanpa reference error ke fungsi yang sudah dihapus.
+
+**Belum di-deploy** — perubahan ini baru di working tree lokal, menunggu konfirmasi user untuk commit + push.

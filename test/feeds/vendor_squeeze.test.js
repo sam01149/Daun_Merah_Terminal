@@ -1,15 +1,17 @@
 // test/vendor_squeeze.test.js — eksekusi audit kurasan vendor (2026-07-12):
 // 1. COT: parse Open Interest + baris "Percent of Open Interest" (feeds.js)
 // 2. COT: percentile rank 3 tahun (feeds.js)
-// 3. FedWatch: agregasi bucket probabilitas tanpa fabrikasi (rate-path.js)
 // Sampel teks COT diambil dari fetch LIVE financial_lof.htm 2026-07-12 (market
 // #090741) — bukan karangan, sesuai pelajaran audit S158 lanjutan 4.
+//
+// FedWatch bucket-aggregation test dihapus 2026-07-24 bersama _aggregateFedwatchProbs
+// (rate-path.js) — CME mematikan endpoint hidden API yang jadi satu-satunya pemanggil
+// fungsi itu (lihat header comment rate-path.js).
 
 const { test } = require('node:test');
 const assert = require('node:assert');
 
 const { _parseOpenInterest, _parseCotPercentLine, _pctileRank } = require('../../api/feeds.js');
-const { _aggregateFedwatchProbs } = require('../../api/rate-path.js');
 
 // ── Sampel blok COT asli (dipangkas) ──────────────────────────────────────────
 const COT_BLOCK_REAL = [
@@ -60,56 +62,4 @@ test('COT: _pctileRank null saat sampel terlalu kecil / input invalid', () => {
   assert.strictEqual(_pctileRank([1, 2, 3], 2), null);       // <20 minggu
   assert.strictEqual(_pctileRank(null, 5), null);
   assert.strictEqual(_pctileRank(Array(30).fill(1), null), null);
-});
-
-// ── FedWatch bucket aggregation ───────────────────────────────────────────────
-
-test('FedWatch: label range bps ("350-375") — hold/cut terklasifikasi via upper bound', () => {
-  const agg = _aggregateFedwatchProbs([
-    { label: '350-375', probPct: 85 },
-    { label: '325-350', probPct: 15 },
-  ], 3.75);
-  assert.strictEqual(agg.prob_hold, 0.85);
-  assert.strictEqual(agg.prob_cut, 0.15);
-  assert.strictEqual(agg.prob_hike, 0);
-  // 0.15 × −25 = −3.75 → Math.round(−37.5)/10 = −3.7 (round-half-toward-+∞ JS)
-  assert.strictEqual(agg.expected_move_bps, -3.7);
-});
-
-test('FedWatch: label range persen ("3.50-3.75") + probabilitas skala 0-1', () => {
-  const agg = _aggregateFedwatchProbs([
-    { label: '3.50-3.75', probability: 0.6 },
-    { label: '3.25-3.50', probability: 0.4 },
-  ], 3.75);
-  assert.strictEqual(agg.prob_hold, 0.6);
-  assert.strictEqual(agg.prob_cut, 0.4);
-  assert.strictEqual(agg.expected_move_bps, -10);
-});
-
-test('FedWatch: bucket -50bp dijumlah penuh (bukan cuma bucket ease pertama seperti parser lama)', () => {
-  const agg = _aggregateFedwatchProbs([
-    { label: '350-375', probPct: 70 },
-    { label: '325-350', probPct: 20 },
-    { label: '300-325', probPct: 10 },
-  ], 3.75);
-  assert.strictEqual(agg.prob_cut, 0.3);                    // 0.2 + 0.1 — parser lama cuma ambil satu
-  assert.strictEqual(agg.expected_move_bps, -10);           // 0.2×−25 + 0.1×−50
-});
-
-test('FedWatch: label kata kunci (NO CHANGE / EASE / HIKE) tetap didukung', () => {
-  const agg = _aggregateFedwatchProbs([
-    { label: 'NO CHANGE', probPct: 70 },
-    { label: 'EASE', probPct: 25 },
-    { label: 'HIKE', probPct: 5 },
-  ], 3.75);
-  assert.strictEqual(agg.prob_hold, 0.7);
-  assert.strictEqual(agg.prob_cut, 0.25);
-  assert.strictEqual(agg.prob_hike, 0.05);
-});
-
-test('FedWatch: tidak ada entry valid → null (bukan fabrikasi 50/50)', () => {
-  assert.strictEqual(_aggregateFedwatchProbs([], 3.75), null);
-  assert.strictEqual(_aggregateFedwatchProbs(null, 3.75), null);
-  assert.strictEqual(_aggregateFedwatchProbs([{ label: '???', probPct: 'x' }], 3.75), null);
-  assert.strictEqual(_aggregateFedwatchProbs([{ label: 'label aneh tanpa makna', probPct: 50 }], 3.75), null);
 });

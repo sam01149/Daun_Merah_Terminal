@@ -63,7 +63,7 @@ Semua workflow di atas autentikasi ke `api/*.js` lewat header `x-cron-secret`, d
 | **ECB Data API** (`data-api.ecb.europa.eu`) | Yield Eropa + suku bunga acuan ECB | Free, tanpa API key | — |
 | **Bank of England, Bank of Japan, Bank of Canada, RBA, RBNZ, SNB** (situs resmi masing-masing) | Suku bunga acuan live per bank sentral non-Fed/ECB (`_cb_rates.js`) | Free, scraping halaman publik | — |
 | **CFTC** (`cftc.gov`) | Commitment of Traders (COT) — positioning institusional | Free, file publik | — |
-| **CME Group** (`cmegroup.com`) | FedWatch Tool (probabilitas keputusan FOMC) + CVOL (implied volatility FX) — via `rate-path.js`, `correlations.js` | Free, tapi **diblokir Akamai WAF untuk IP Vercel** → wajib lewat proxy ScraperAPI (lihat §5) | — |
+| **CME Group** (`cmegroup.com`) | CVOL (implied volatility FX, `correlations.js`) — MASIH JALAN. FedWatch Tool + ZQ settlement + Quote API (`rate-path.js`) **DIHAPUS 2026-07-24** — seluruh keluarga hidden API `CmeWS/mvc/*` dipensiunkan CME (dikonfirmasi 404 terstruktur di 3 endpoint sekaligus + dokumentasi resmi CME: FedWatch sekarang produk berbayar EOD/Intraday API, mulai ~$25/bulan). `rate-path.js` sekarang langsung ke fallback FRED T-bill / heuristik, tidak coba CME sama sekali lagi | CVOL: free tapi **diblokir Akamai WAF untuk IP Vercel** → wajib proxy ScraperAPI (lihat §5) | — |
 | **Barchart OnDemand** | Fallback sumber risk-reversal FX kalau CME CVOL gagal | **Enterprise berbayar** (dikonfirmasi Session 47 — bukan free seperti awalnya dikira dari komentar kode "free signup"). Path tetap ada di kode tapi **tidak dipakai** — `BARCHART_API_KEY` kemungkinan besar tidak pernah di-set | `BARCHART_API_KEY` |
 | **Polymarket (Gamma API)** | Data prediction market untuk sinyal sentimen | Free, publik | — |
 
@@ -87,7 +87,7 @@ Semua workflow di atas autentikasi ke `api/*.js` lewat header `x-cron-secret`, d
 
 | Vendor | Fungsi | Tier | Env var |
 |---|---|---|---|
-| **ScraperAPI** | Proxy residential IP — dipakai KHUSUS untuk fetch CME (FedWatch + CVOL) karena CME memblokir IP datacenter Vercel lewat Akamai WAF | **Free tier permanen: 1.000 credit/bulan, maks 5 concurrent connection** (dikonfirmasi dari docs.scraperapi.com — bukan trial sekali pakai). Pemakaian aktual app ini ~120-180 request/bulan (dicatat Session 47) = ~12-18% dari jatah gratis, request-nya standar tanpa parameter premium (`render`, geotargeting) yang biasanya menambah biaya credit. **Kemungkinan besar TIDAK benar-benar berbayar** — lihat §9 untuk detail | `SCRAPER_API_KEY` |
+| **ScraperAPI** | Proxy residential IP — dipakai KHUSUS untuk fetch CVOL (CME) karena CME memblokir IP datacenter Vercel lewat Akamai WAF. Sebelum 2026-07-24 juga dipakai untuk FedWatch/ZQ/Quote (`rate-path.js`) — sudah dihapus, lihat baris CME Group di atas | **Free tier permanen: 1.000 credit/bulan, maks 5 concurrent connection**. Angka "~120-180 request/bulan" yang lama (Session 47) TERBUKTI SALAH — audit live 2026-07-24 menemukan **791/1000 credit terpakai di hari ke-19 siklus billing**, jauh di atas proyeksi. Akar masalah: `rate-path.js` retry 4 endpoint CME yang SEMUANYA sudah 404 (dipensiunkan CME) tiap cache-refresh 4 jam — ~24 credit/hari terbuang murni untuk request yang pasti gagal. Setelah fix (endpoint mati dihapus dari kode), sisa konsumen cuma CVOL (`correlations.js`, 1 request/jam TTL) — proyeksi realistis kembali ke puluhan/hari | `SCRAPER_API_KEY` |
 
 ---
 
