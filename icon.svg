@@ -25,6 +25,5 @@
 <path d="M1013,1170 Q850,1195 735,1130" stroke-width="7"></path>
 <path d="M1011,1400 Q890,1435 795,1385" stroke-width="7"></path>
 </g>
-<path d="M1024,1765 C1010,1500 1000,1150 1015,950" fill="none" stroke="rgb(245,230,200)" stroke-width="22" stroke-linecap="round"></path>
-<path d="M1024,1765 C1000,1300 1050,700 1024,330" fill="none" stroke="rgb(245,230,200)" stroke-width="11" stroke-linecap="round"></path>
+<path d="M1024,1765 C1000,1300 1050,700 1024,330" fill="none" stroke="rgb(245,230,200)" stroke-width="15" stroke-linecap="round"></path>
 </svg>
