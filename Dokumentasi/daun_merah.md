@@ -11,13 +11,23 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-07-24 (Session 237 — Cleanup Line Sumber Data AI & Refactor Kotak TL;DR PDF Analisa)
+> **Last updated:** 2026-07-24 (Session 238 — Fix Overflow Kotak TL;DR PDF + Justify Paragraf PDF)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
 
-## Changelog Session 237 (2026-07-24) — Cleanup Line Sumber Data AI & Refactor Kotak TL;DR PDF Analisa
+## Changelog Session 238 (2026-07-24) — Fix Overflow Kotak TL;DR PDF + Justify Paragraf PDF
+
+**Konteks:** User screenshot kotak TL;DR di PDF Analisa (`Analisa XAUUSD Overlap 20.55.pdf`) — baris teks "merenggang ke samping", keluar dari border kotak. User juga minta paragraf teks di PDF (Ringkasan & Analisa) di-justify biar rapi.
+
+**Root cause overflow (`kesimpulanBox()` di `index.html`):** `doc.splitTextToSize()` dipanggil untuk menghitung wrap SEBELUM `doc.setFont`/`doc.setFontSize(10.2)` diset — jsPDF mengukur lebar teks pakai font/size yang AKTIF SAAT ITU JUGA, yang saat itu masih sisa dari elemen sebelumnya (`letterhead()` berakhir di 8.5pt). Baris jadi diukur seolah font-nya lebih kecil dari yang sebenarnya dirender (10.2pt) → baris "muat" versi 8.5pt ternyata jauh lebih lebar saat dirender di 10.2pt, keluar dari box. Dikonfirmasi lewat simulasi Node+jsPDF lokal: baris yang harusnya muat 162mm ternyata dirender 191.65mm (overflow ~30mm). **Fix:** `setFont`/`setFontSize` dipindah ke atas, sebelum `splitTextToSize` — sekarang ukur & render pakai font/size yang sama persis.
+
+**Justify PDF (`para()`, `kv()`, `kesimpulanBox()`, `footer()` di `_pdfBuilder()`):** Percobaan justify lama (align:'justify' bawaan jsPDF) sudah pernah dibuang karena meregangkan spasi ANTAR-HURUF (bug "T e r e n g g a n g" di baris pendek, dikonfirmasi user dari hasil cetak — lihat komentar lama di kode). Kali ini diimplementasi ulang manual: fungsi `justifyLine()` baru menambah lebar SPASI-ANTAR-KATA saja (bukan antar-huruf) memakai `doc.getTextWidth()` per baris, aman karena `pdfSafe()` sudah menormalkan semua whitespace jadi satu spasi. Baris terakhir tiap paragraf sengaja TIDAK di-justify (konvensi umum, boleh pendek apa adanya), dan baris yang butuh stretch >4mm/gap (kata sedikit karena wrap dipaksa) dibiarkan rata kiri supaya tidak ada jarak antar-kata yang aneh lebar. Berlaku otomatis untuk PDF Ringkasan maupun Analisa (satu builder yang sama).
+
+**Verifikasi:** Simulasi lokal Node dengan library `jspdf` yang sama (bukan cuma baca kode) — dikonfirmasi lebar baris kotak TL;DR sekarang selalu ≤ lebar box, dan gap justify per baris ~1.13mm (≈2x lebar spasi normal 0.9mm, jauh di bawah cap 4mm — bukan gejala bug lama). `node --check` atas seluruh script inline `index.html` OK. `npm test` 630/630 hijau. `APP_VERSION` dinaikkan ke `2026.07.24.5`.
+
+---
 
 **Konteks:** User melapor visual PDF Analisa kurang rapi — (1) baris teks metadata `AI · sumber: teknikal + makro ... · Data: CME · FRED ...` di kop PDF dan versi cetak terlalu panjang dan mengganggu, (2) kotak TL;DR/Kesimpulan memiliki garis vertikal hitam tebal yang menjadi sangat panjang saat teks TL;DR multi-baris, dan (3) terdapat teks ganda "jika jika" pada ringkasan pembatalan bias.
 

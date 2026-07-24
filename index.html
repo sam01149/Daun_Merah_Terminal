@@ -4306,7 +4306,7 @@ window.addEventListener('DOMContentLoaded', updateThemeIcon);
 
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.07.24.4';
+const APP_VERSION = '2026.07.24.5';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
@@ -5672,10 +5672,28 @@ function _pdfBuilder() {
     lines.forEach(line => { ensureSpace(5); doc.text(line, marginX, y); y += 5; });
     y += 2;
   }
-  // Rata kiri (ragged-right), BUKAN justify: align:'justify' bawaan jsPDF meregangkan
-  // spasi ANTAR-HURUF (bukan cuma antar-kata) buat ngisi lebar penuh — kelihatan wajar
-  // untuk baris panjang, tapi baris pendek/sedikit kata jadi terlihat "T e r e n g g a n g"
-  // parah (bug nyata, dikonfirmasi user dari hasil cetak). Rata kiri jauh lebih aman.
+  // Justify manual berbasis lebar SPASI-ANTAR-KATA — BUKAN align:'justify' bawaan jsPDF,
+  // yang meregangkan spasi ANTAR-HURUF buat ngisi lebar penuh: kelihatan wajar untuk baris
+  // panjang, tapi baris pendek/sedikit kata jadi terlihat "T e r e n g g a n g" parah (bug
+  // nyata, dikonfirmasi user dari hasil cetak — makanya dulu dibuang total). Implementasi
+  // ini aman dari bug itu karena cuma menambah lebar spasi antar KATA (pdfSafe() sudah
+  // menormalkan semua whitespace jadi satu spasi, jadi getTextWidth(line) akurat dipakai
+  // acuan). Baris terakhir tiap paragraf TIDAK di-justify (konvensi umum, boleh pendek).
+  // Baris 1-kata atau yang butuh stretch >4mm/gap (wrap dipaksa, kata dikit) dibiarkan rata
+  // kiri biar tidak ada jarak antar-kata yang aneh lebar.
+  function justifyLine(line, x, yy, maxWidth, isLast) {
+    const words = line.split(' ');
+    if (isLast || words.length < 2) { doc.text(line, x, yy); return; }
+    const extra = maxWidth - doc.getTextWidth(line);
+    const gapW = extra / (words.length - 1);
+    if (gapW < 0 || gapW > 4) { doc.text(line, x, yy); return; }
+    const spaceW = doc.getTextWidth(' ');
+    let cx = x;
+    words.forEach((w, i) => {
+      doc.text(w, cx, yy);
+      if (i < words.length - 1) cx += doc.getTextWidth(w) + spaceW + gapW;
+    });
+  }
   function para(text, opts = {}) {
     if (!text || !text.trim()) return;
     const size = opts.size || 10.2;
@@ -5684,9 +5702,9 @@ function _pdfBuilder() {
     doc.setTextColor(...(opts.color || [26, 26, 26]));
     const lines = doc.splitTextToSize(pdfSafe(text), contentW);
     const lh = ptToMm(size);
-    lines.forEach(line => {
+    lines.forEach((line, i) => {
       ensureSpace(lh + 1);
-      doc.text(line, marginX, y);
+      justifyLine(line, marginX, y, contentW, i === lines.length - 1);
       y += lh;
     });
     y += opts.gapAfter ?? 3.6;
@@ -5698,11 +5716,16 @@ function _pdfBuilder() {
     doc.text(pdfSafe(label).toUpperCase(), marginX, y); y += 3.8;
     doc.setFont('times', 'normal'); doc.setFontSize(9.8); doc.setTextColor(26);
     const lines = doc.splitTextToSize(pdfSafe(value), contentW);
-    lines.forEach(line => { ensureSpace(4.3); doc.text(line, marginX, y); y += 4.3; });
+    lines.forEach((line, i) => { ensureSpace(4.3); justifyLine(line, marginX, y, contentW, i === lines.length - 1); y += 4.3; });
     y += 3.2;
   }
   function kesimpulanBox(text, label = 'KESIMPULAN') {
     const size = 10.2, lh = ptToMm(size);
+    // setFont/setFontSize HARUS dipanggil sebelum splitTextToSize — jsPDF mengukur lebar
+    // baris pakai font/size yang AKTIF SAAT ITU JUGA. Bug lama: ukuran diukur pakai sisa
+    // font dari elemen sebelumnya (mis. letterhead 8.5pt), lalu dirender di 10.2pt — hasil
+    // baris jadi lebih lebar dari box (kelihatan "merenggang ke samping" keluar border).
+    doc.setFont('times', 'normal'); doc.setFontSize(size);
     const lines = doc.splitTextToSize(pdfSafe(text), contentW - 8);
     const boxH = lines.length * lh + 9;
     ensureSpace(boxH + 3);
@@ -5712,7 +5735,7 @@ function _pdfBuilder() {
     doc.text(pdfSafe(label).toUpperCase(), marginX + 4, y + 4.5);
     doc.setFont('times', 'normal'); doc.setFontSize(size); doc.setTextColor(26);
     let ly = y + 4.5 + lh;
-    lines.forEach(line => { doc.text(line, marginX + 4, ly); ly += lh; });
+    lines.forEach((line, i) => { justifyLine(line, marginX + 4, ly, contentW - 8, i === lines.length - 1); ly += lh; });
     y += boxH + 6;
   }
   function footer(text) {
@@ -5720,7 +5743,7 @@ function _pdfBuilder() {
     const lines = doc.splitTextToSize(pdfSafe(text), contentW);
     ensureSpace(6 + lines.length * 3.4);
     rule(3, 4);
-    lines.forEach(line => { doc.text(line, marginX, y); y += 3.4; });
+    lines.forEach((line, i) => { justifyLine(line, marginX, y, contentW, i === lines.length - 1); y += 3.4; });
   }
   return { doc, letterhead, heading, subheading, para, kv, kesimpulanBox, banner, footer };
 }
