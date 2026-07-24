@@ -4306,7 +4306,7 @@ window.addEventListener('DOMContentLoaded', updateThemeIcon);
 
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.07.24.3';
+const APP_VERSION = '2026.07.24.4';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
@@ -5483,7 +5483,7 @@ function _setupPrintLetterhead(letterheadId, titleText, metaExtra) {
       <div class="pl-brand">DAUN MERAH</div>
       <div class="pl-title">${escHtml(titleText)}</div>
     </div>
-    <div class="pl-meta">Dicetak ${_printWibNow().display}${metaExtra ? `<br>${escHtml(metaExtra)}` : ''}<br><span style="font-size:8.5px">Dokumen otomatis · Sumber: CME · FRED · FinancialJuice · Yahoo Finance</span></div>`;
+    <div class="pl-meta">Dicetak ${_printWibNow().display}${metaExtra ? `<br>${escHtml(metaExtra)}` : ''}</div>`;
 }
 
 // Nama file default "Save as PDF" browser = document.title — set sementara ke
@@ -5703,15 +5703,15 @@ function _pdfBuilder() {
   }
   function kesimpulanBox(text, label = 'KESIMPULAN') {
     const size = 10.2, lh = ptToMm(size);
-    const lines = doc.splitTextToSize(pdfSafe(text), contentW - 6);
-    const boxH = lines.length * lh + 8;
+    const lines = doc.splitTextToSize(pdfSafe(text), contentW - 8);
+    const boxH = lines.length * lh + 9;
     ensureSpace(boxH + 3);
-    doc.setDrawColor(20); doc.setLineWidth(0.7);
-    doc.line(marginX, y, marginX, y + boxH);
-    doc.setFont('times', 'bold'); doc.setFontSize(8); doc.setTextColor(20);
-    doc.text(pdfSafe(label).toUpperCase(), marginX + 4, y + 4);
+    doc.setFillColor(246, 248, 250); doc.setDrawColor(220, 225, 230); doc.setLineWidth(0.3);
+    doc.rect(marginX, y, contentW, boxH, 'FD');
+    doc.setFont('times', 'bold'); doc.setFontSize(8); doc.setTextColor(50);
+    doc.text(pdfSafe(label).toUpperCase(), marginX + 4, y + 4.5);
     doc.setFont('times', 'normal'); doc.setFontSize(size); doc.setTextColor(26);
-    let ly = y + 4 + lh;
+    let ly = y + 4.5 + lh;
     lines.forEach(line => { doc.text(line, marginX + 4, ly); ly += lh; });
     y += boxH + 6;
   }
@@ -5810,7 +5810,16 @@ function _buildAnalisaExecSummary(label, st) {
   const confLabel = { tinggi: 'keyakinan tinggi', sedang: 'keyakinan sedang', rendah: 'keyakinan rendah' }[st.confidence] || null;
   const bits = [`${label} bias ${biasWord}${confLabel ? ` (${confLabel})` : ''}`];
   if (st.trigger) bits.push(st.trigger.trim().replace(/\.$/, ''));
-  if (st.invalidation_condition) bits.push(`Batal jika ${st.invalidation_condition.trim().replace(/\.$/, '')}`);
+  if (st.invalidation_condition) {
+    const inv = st.invalidation_condition.trim().replace(/\.$/, '');
+    if (/^batal jika/i.test(inv)) {
+      bits.push(inv);
+    } else if (/^jika/i.test(inv)) {
+      bits.push(`Batal ${inv}`);
+    } else {
+      bits.push(`Batal jika ${inv}`);
+    }
+  }
   return bits.join('. ') + '.';
 }
 
@@ -5898,7 +5907,6 @@ async function downloadAnalisaPdf() {
   if (d.h1?.current != null) metaLine1.push(`Harga saat data: ${d.h1.current}`);
   b.letterhead(`Analisa Teknikal — ${label}`, [
     metaLine1.join('   ·   '),
-    `AI · sumber: ${srcBits.join(' + ')}   ·   Data: CME · FRED · FinancialJuice · Yahoo Finance`,
   ]);
 
   const execSummary = _buildAnalisaExecSummary(label, st);

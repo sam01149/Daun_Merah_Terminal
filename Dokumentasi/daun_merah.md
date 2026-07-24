@@ -11,13 +11,26 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-07-24 (Session 236 — Card UI "Berita Terkait" TEK + Fix False-Positive `fjImageType` "probability")
+> **Last updated:** 2026-07-24 (Session 237 — Cleanup Line Sumber Data AI & Refactor Kotak TL;DR PDF Analisa)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
 
-## Changelog Session 236 (2026-07-24) — Card UI "Berita Terkait" TEK + Fix False-Positive `fjImageType` "probability"
+## Changelog Session 237 (2026-07-24) — Cleanup Line Sumber Data AI & Refactor Kotak TL;DR PDF Analisa
+
+**Konteks:** User melapor visual PDF Analisa kurang rapi — (1) baris teks metadata `AI · sumber: teknikal + makro ... · Data: CME · FRED ...` di kop PDF dan versi cetak terlalu panjang dan mengganggu, (2) kotak TL;DR/Kesimpulan memiliki garis vertikal hitam tebal yang menjadi sangat panjang saat teks TL;DR multi-baris, dan (3) terdapat teks ganda "jika jika" pada ringkasan pembatalan bias.
+
+**Perubahan (`index.html`):**
+1. **Hapus Baris Metadata Sumber Data:** Baris `AI · sumber: ... · Data: CME · FRED ...` dihapus dari `b.letterhead` pada `downloadAnalisaPdf()` serta dari `_setupPrintLetterhead()`. Kop PDF kini tampil lebih bersih dan rapi hanya dengan informasi waktu analisa/diunduh.
+2. **Refactor Kotak TL;DR (`kesimpulanBox`):** Mengganti garis tegak `doc.line(marginX, y, marginX, y + boxH)` tebal hitam (0.7mm) dengan container box ber-background abu-abu sangat muda halus (`#F6F8FA`, fill `246, 248, 250`) dan border tipis (`220, 225, 230`). Garis vertikal panjang hitam di tepi kiri tidak ada lagi.
+3. **Fix Duplikasi Kata "jika jika":** Pada `_buildAnalisaExecSummary()`, ditambahkan pengecekan regex `/^jika/i` & `/^batal jika/i` pada `st.invalidation_condition` agar tidak menghasilkan `Batal jika jika harga...` ketika AI sudah mengembalikan string diawali kata "jika".
+4. **Bump Version:** `APP_VERSION` dinaikkan ke `2026.07.24.4`.
+
+**Verifikasi:**
+- `npm test` 630/630 hijau (100% pass).
+
+---
 
 **1. Card UI "Berita Terkait" (tab TEK) disamakan dengan tab NEWS.** User minta tampilan list flat (divider tipis antar-item, ala tabel) diganti card seperti `.feed-item` di NEWS supaya konsisten. Perubahan:
 - CSS `.tek-news-item`: dari `border-bottom` list-style jadi card penuh — `background:var(--surface)`, `border:1px solid var(--border)`, `border-radius:10px`, `padding:12px 14px`, `margin-bottom:8px`, animasi `fadeUp` (identik pola `.feed-item`). Aksen warna kategori di kiri card via `border-left-width:3px !important` (mengikuti pola `.fund-card` yang sudah ada — warna per-instance diisi lewat inline style, bukan class statis).
