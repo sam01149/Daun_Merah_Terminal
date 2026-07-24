@@ -11,11 +11,32 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-07-24 (Session 229 — Ghost-Tracking Pending yang Dibatalkan via Flip Guard (Plan U-3 lanjutan))
+> **Last updated:** 2026-07-24 (Session 230 — Audit Kinerja & Workflow Auto-Entry (Plan U), Data Langsung dari Redis Produksi)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 230 (2026-07-24) — Audit Kinerja & Workflow Auto-Entry (Plan U), Data Langsung dari Redis Produksi
+
+**Konteks:** User minta audit kinerja auto-entry trade + analisa workflow. Audit murni read-only — tarik `setup_log_auto:v1`, `consistency_log:v1`, `calendar_actual_latency_log:v1` langsung dari Upstash Redis produksi (kredensial lokal `.env.local` masih valid — pola sama audit S213), lalu jalankan lewat fungsi agregat ASLI yang di-export `api/admin.js` (`_aggSetupStats`, dll — bukan hitung manual) supaya angkanya konsisten dengan yang tampil di `scope=auto`.
+
+**Temuan kinerja:** `setup_log_auto:v1` baru berisi **10 entri** (4 hari sejak deploy 2026-07-20) — 3 pending, 3 tp (win), 0 sl, 4 canceled. `win_rate` 100%, `cost_expectancy` avg 2.11R gross/2.06R net — **tidak bermakna secara statistik** (n=3 closed), jauh di bawah gate n≥100 Plan U. Konsisten dengan catatan tertunda S209 (`daun_merah_progress.md`), tapi ETA "±2,5-3 bulan @ 2 slot/hari" di sana direvisi lebih pesimis: sejak fix refinemen-in-place S216 (2026-07-22), slot yang bias-nya SEARAH dengan pending lama menimpa record yang sama (`refined_count++`) alih-alih membuat record baru, jadi laju sampel independen lebih lambat dari asumsi semula.
+
+**Temuan workflow (positif, terlihat langsung dari histori data):** ke-4 `canceled` semuanya terjadi 2026-07-20 s.d. 2026-07-21 — SEBELUM fix S216 (refinemen in-place + Flip Guard whipsaw) landed. Sejak fix itu, nol pembatalan lagi walau sudah lewat beberapa siklus 08:15/13:15 UTC — bukti langsung bahwa perbaikan S216 berhasil mengurangi churn "setup ditarik gara-gara noise" yang jadi kekhawatiran awal user.
+
+**Bug ditemukan (data, bukan kode — kode sudah difix):** 1 record `tp` (XAU/USD, id `GC=F:1784708110704`) punya `filled_t` (2026-07-23T13:00 UTC) JATUH SETELAH `closed_t` (2026-07-22T14:00 UTC) — urutan mustahil. Root cause persis bug candle-sort yang sudah diperbaiki commit `8448084` (2026-07-23 22:49 WIB), tapi record ini ditulis SEBELUM fix landed dan tidak pernah dikoreksi ulang (`_evaluateSetups` berhenti evaluasi begitu status final). Dicek: TIDAK berdampak ke metrik manapun sekarang (`_aggSetupStats` tidak memakai `filled_t`/`closed_t`), tapi berisiko laten kalau nanti ada fitur avg-hold-time. Keputusan perbaikan (biarkan vs koreksi manual) diparkir ke user — lihat `daun_merah_progress.md` (mutasi data produksi, bukan keputusan sepihak).
+
+**Temuan tambahan:**
+- Konsistensi LLM (`consistency_log:v1`, n=4): `bias_identical=true` di semua 4 sampel — sinyal awal baik, tapi n terlalu kecil untuk klaim kalibrasi (masih #6 di daftar tertunda). 1 dari 4 punya `levels_within_tolerance=false` karena salah satu dari 3 panggilan redundan mengembalikan field null (kegagalan panggilan API, bukan disagreement asli).
+- Latensi pipeline (`calendar_actual_latency_log:v1`, n=9): pola jelas currency-dependent — data GBP (PMI/Retail Sales/Inflasi) ter-update `calendar_v1` dalam ~29-31 menit, sementara JPY (Inflasi/Neraca Dagang) dan EUR (keputusan ECB) makan ~2-2,4 jam. Baru indikasi, bukan angka final (n masih kecil).
+- `npm test` 613/613 hijau — tidak ada regresi.
+
+**Kesimpulan ke user:** belum ada dasar statistik untuk menilai auto-entry "berhasil/gagal" — itu memang sesuai desain (gate n≥100 sengaja ketat, baru 4 hari jalan). Yang bisa dinilai sekarang adalah kualitas workflow, dan di situ ada perbaikan nyata (S216) yang sudah terbukti di data. Detail lengkap disampaikan langsung ke user di sesi ini (bukan diulang di sini).
+
+**Dokumentasi lain:** `daun_merah_progress.md` — entri S209 diperbarui (revisi ETA + n aktual), entri baru untuk keputusan record timestamp terbalik.
+
+---
 
 ## Changelog Session 229 (2026-07-24) — Ghost-Tracking Pending yang Dibatalkan via Flip Guard (Plan U-3 lanjutan)
 
