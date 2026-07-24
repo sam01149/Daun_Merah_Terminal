@@ -11,13 +11,25 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-07-24 (Session 226 — Tambah Pattern Implied Volatility di fjImageType untuk Inline Visual Feed)
+> **Last updated:** 2026-07-24 (Session 227 — Perbaiki Tata Letak PDF Analisa: TL;DR, Badge BIAS, Sub-heading Paragraf)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
 
-## Changelog Session 226 (2026-07-24) — Tambah Pattern Implied Volatility di fjImageType untuk Inline Visual Feed
+## Changelog Session 227 (2026-07-24) — Perbaiki Tata Letak PDF Analisa: TL;DR, Badge BIAS, Sub-heading Paragraf
+
+**Konteks:** User forward hasil konsultasi ChatGPT yang me-review tampilan PDF "Analisa Teknikal" (skor 9.4/10, saran: TL;DR di atas, BIAS lebih mencolok, metadata dipadatkan, paragraf naratif dipecah sub-bagian biar scan-friendly).
+
+**Temuan kunci:** prompt `ohlcv_analyze` (`api/admin.js`) sudah MENJAMIN urutan 5 paragraf tetap (1. Trend Daily, 2. Struktur H4, 3. Momentum & Pola, 4. Integrasi & Risiko, 5. "KESIMPULAN:"), sengaja ditulis TANPA header di teksnya sendiri. Artinya sub-heading bisa ditambahkan murni di lapisan PDF berdasarkan urutan paragraf yang sudah pasti — TANPA perlu ubah prompt AI (yang juga dipakai tampilan live Analisa di UI, jadi perubahan prompt akan lebih luas dampaknya daripada sekadar PDF).
+
+**Perubahan (`index.html`):**
+1. **`_pdfBuilder()`**: tambah helper `banner(label, value)` — kotak border tebal + fill abu muda, tetap monokrom (aturan lama "JANGAN ADA WARNA" di badan dokumen tidak dilanggar). `letterhead()` sekarang wrap metaLines otomatis via `splitTextToSize` (aman kalau baris digabung jadi lebih panjang).
+2. **`_buildAnalisaExecSummary()`** (baru, pola sama `_buildRingkasanExecSummary`): TL;DR 2-3 kalimat dirakit deterministik dari field `structured` yang sudah dihasilkan AI (bias, trigger, invalidation_condition) — BUKAN call AI baru.
+3. **`downloadAnalisaPdf()`**: metadata 5 baris dipadatkan jadi 2 baris; BIAS pindah dari subheading polos ke `banner()`; tambah kotak TL;DR sebelum blok BIAS; paragraf "Analisa Tertulis" sekarang diberi sub-heading (Trend Daily/Struktur H4/Momentum & Pola/Integrasi & Risiko) berdasar urutan tetap di atas + bullet-split kalimat kalau paragraf >220 karakter & >=3 kalimat (reuse pola `_renderArticlePdfBlocks` dari Ringkasan).
+4. **`APP_VERSION`**: bump ke `2026.07.24.2`.
+
+**Verifikasi:** `npm test` (test/frontend) 25/25 lolos. Render headless jsPDF di Node dengan data tiruan (di luar repo) mengonfirmasi urutan section benar (TL;DR → BIAS → Keselarasan Makro → Level → Invalidasi → Analisa Tertulis dengan 4 sub-heading → Kesimpulan) dan tanpa error — tidak ada akses live AI/Redis yang dipakai untuk verifikasi ini.
 
 **Konteks:** User melaporkan screenshot feed berita FinancialJuice dengan headline sejenis "Commodities Implied Volatility", "FX Implied Volatility", "US Index Futures Implied Volatility", dan "Top S&P 500 Stock Names Implied Volatility" tidak menampilkan tombol toggle gambar visual/tabel.
 
