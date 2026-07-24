@@ -4362,6 +4362,12 @@ async function ohlcvAnalyzeHandler(req, res) {
                 stalePending.alignment = (structured.conflict && structured.conflict !== 'none')
                   ? 'konflik'
                   : (structured.makro_alignment || null);
+                // PLAN W: field mentah ikut diperbarui ke generasi TERBARU, jangan
+                // sampai nyimpen snapshot conflict dari generasi pertama (bug diam-diam).
+                stalePending.conflict = structured.conflict ?? null;
+                stalePending.conflict_note = structured.conflict_note ?? null;
+                stalePending.makro_alignment = structured.makro_alignment ?? null;
+                stalePending.makro_alignment_reason = structured.makro_alignment_reason ?? null;
                 stalePending.model = model;
                 stalePending.ts = Date.now();
                 stalePending.refined_count = (stalePending.refined_count || 0) + 1;
@@ -4406,6 +4412,12 @@ async function ohlcvAnalyzeHandler(req, res) {
             source: isAutoCall ? 'auto' : 'manual',
             alignment,
             confidence: structured.confidence ?? null,
+            // PLAN W (2026-07-24): sinyal mentah sebelum digabung jadi `alignment`
+            // (lossy) — murni observasi, tidak dipakai keputusan apa pun di sini.
+            conflict: structured.conflict ?? null,
+            conflict_note: structured.conflict_note ?? null,
+            makro_alignment: structured.makro_alignment ?? null,
+            makro_alignment_reason: structured.makro_alignment_reason ?? null,
             loss_label: null, label_reason: null, label_by: null,
             // PLAN U-5a: manajemen posisi VIRTUAL — null/0 = belum pernah direview.
             intervention: null, managed_status: null, managed_closed_t: null, review_count: 0,

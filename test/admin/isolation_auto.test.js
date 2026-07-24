@@ -340,6 +340,118 @@ test('PLAN U-3 lanjutan: call MANUAL dengan pending lama di symbol sama -> TIDAK
   });
 });
 
+// ── PLAN W (2026-07-24): field mentah conflict/makro_alignment tersimpan &
+// diperbarui saat refine — sebelumnya cuma label gabungan `alignment` (lossy)
+// yang disimpan, detail asli (termasuk alasan tertulis AI) dibuang permanen.
+
+function mkAiRawText(overrides = {}) {
+  const json = { ...AI_JSON, ...overrides };
+  return `${JSON.stringify(json)}\n===COMMENTARY===\nParagraf komentar singkat untuk kebutuhan test PLAN W.`;
+}
+
+function makeCustomAnalyzeFetchStub(store, aiRawText) {
+  const redisStub = redisFetchStub(store);
+  return async (url, opts) => {
+    const u = String(url);
+    if (u.includes('fake-upstash.test')) return redisStub(url, opts);
+    if (u.includes('api.deepseek.com')) {
+      return { ok: true, json: async () => ({ choices: [{ message: { content: aiRawText } }] }) };
+    }
+    throw new Error('unexpected network call di test: ' + u);
+  };
+}
+
+test('PLAN W: entri baru (auto) menyimpan conflict/conflict_note/makro_alignment/makro_alignment_reason mentah, alignment identik formula lama', async () => {
+  await withEnv({ CRON_SECRET: 'topsecret', DEEPSEEK_API_KEY: 'k' }, async () => {
+    const store = makeStore({
+      'ohlcv_fresh:GBPUSD=X': '1',
+      'ohlcv:GBPUSD=X:1h': JSON.stringify(mkTrendCandles(1.30, 1.28)),
+    });
+    const rawText = mkAiRawText({ conflict: 'arah', conflict_note: 'catatan uji PLAN W' });
+    const origFetch = global.fetch;
+    global.fetch = makeCustomAnalyzeFetchStub(store, rawText);
+    try {
+      const handler = loadHandler();
+      const res = fakeRes();
+      await handler({
+        headers: { 'x-cron-secret': 'topsecret' }, method: 'GET',
+        query: { action: 'ohlcv_analyze', symbol: 'GBPUSD=X', label: 'GBP/USD', auto: '1' },
+      }, res);
+      assert.equal(res.statusCode, 200);
+      const log = JSON.parse(store.strings['setup_log_auto:v1']);
+      const item = log[0];
+      assert.equal(item.conflict, 'arah');
+      assert.equal(item.conflict_note, 'catatan uji PLAN W');
+      assert.equal(item.makro_alignment, null);
+      assert.equal(item.makro_alignment_reason, null);
+      assert.equal(item.alignment, 'konflik', 'alignment harus tetap dihitung sama seperti sebelum PLAN W (conflict!=none -> konflik)');
+    } finally { global.fetch = origFetch; }
+  });
+});
+
+test('PLAN W: entri baru (manual) juga menyimpan 4 field mentah yang sama (satu titik penulisan dipakai bersama)', async () => {
+  await withEnv({ DEEPSEEK_API_KEY: 'k' }, async () => {
+    const store = makeStore({
+      'ohlcv_fresh:GBPUSD=X': '1',
+      'ohlcv:GBPUSD=X:1h': JSON.stringify(mkTrendCandles(1.30, 1.28)),
+    });
+    const rawText = mkAiRawText({ conflict: 'waktu', conflict_note: 'catatan manual' });
+    const origFetch = global.fetch;
+    global.fetch = makeCustomAnalyzeFetchStub(store, rawText);
+    try {
+      const handler = loadHandler();
+      const res = fakeRes();
+      await handler({ headers: {}, method: 'GET', query: { action: 'ohlcv_analyze', symbol: 'GBPUSD=X', label: 'GBP/USD' } }, res);
+      assert.equal(res.statusCode, 200);
+      const log = JSON.parse(store.strings['setup_log:v1']);
+      const item = log[0];
+      assert.equal(item.conflict, 'waktu');
+      assert.equal(item.conflict_note, 'catatan manual');
+      assert.equal(item.alignment, 'konflik', 'conflict waktu != none -> tetap konflik, formula lama tidak berubah');
+    } finally { global.fetch = origFetch; }
+  });
+});
+
+test('PLAN W: refinement in-place (bias sama) memperbarui 4 field mentah ke generasi TERBARU, bukan snapshot generasi pertama', async () => {
+  await withEnv({ CRON_SECRET: 'topsecret', DEEPSEEK_API_KEY: 'k' }, async () => {
+    const oldPending = {
+      id: 'GBPUSD=X:111', symbol: 'GBPUSD=X', label: 'GBP/USD', bias: 'bearish',
+      entry_zone: '1.2900-1.2910', sl: '1.2960', tp: '1.2800',
+      rr: 2, horizon_days: 3, model: 'deepseek-v4-flash', ts: 111, status: 'pending',
+      source: 'auto', alignment: 'konflik',
+      conflict: 'arah', conflict_note: 'catatan generasi pertama',
+      makro_alignment: 'searah', makro_alignment_reason: 'alasan generasi pertama',
+      loss_label: null, label_reason: null, label_by: null,
+      intervention: null, managed_status: null, managed_closed_t: null, review_count: 0,
+    };
+    const store = makeStore({
+      'ohlcv_fresh:GBPUSD=X': '1',
+      'ohlcv:GBPUSD=X:1h': JSON.stringify(mkTrendCandles(1.30, 1.28)),
+      'setup_log_auto:v1': JSON.stringify([oldPending]),
+    });
+    const rawText = mkAiRawText({ conflict: 'waktu', conflict_note: 'catatan generasi kedua' });
+    const origFetch = global.fetch;
+    global.fetch = makeCustomAnalyzeFetchStub(store, rawText);
+    try {
+      const handler = loadHandler();
+      const res = fakeRes();
+      await handler({
+        headers: { 'x-cron-secret': 'topsecret' }, method: 'GET',
+        query: { action: 'ohlcv_analyze', symbol: 'GBPUSD=X', label: 'GBP/USD', auto: '1' },
+      }, res);
+      assert.equal(res.statusCode, 200);
+      const log = JSON.parse(store.strings['setup_log_auto:v1']);
+      assert.equal(log.length, 1, 'refinement in-place tidak menambah entry baru');
+      const item = log[0];
+      assert.equal(item.refined_count, 1);
+      assert.equal(item.conflict, 'waktu', 'harus ter-update ke generasi terbaru, bukan tetap "arah" dari generasi pertama');
+      assert.equal(item.conflict_note, 'catatan generasi kedua');
+      assert.equal(item.makro_alignment, null, 'harus ter-update (tidak ada konteks makro di call ini), bukan tetap "searah" dari generasi pertama');
+      assert.equal(item.makro_alignment_reason, null, 'harus ter-update, bukan tetap alasan generasi pertama');
+    } finally { global.fetch = origFetch; }
+  });
+});
+
 // ── (i) track record gabungan (manual+auto) HANYA untuk isAutoCall ──────────
 // (Plan U-3 lanjutan, 2026-07-20, diskusi user.)
 
