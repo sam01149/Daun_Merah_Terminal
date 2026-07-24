@@ -4279,27 +4279,6 @@ body:not(.light-theme) .ringkasan-gen-btn {
 <script src="/newscat.js?v=2026.07.15.2"></script>
 <script>
 
-// Auto-maximize window saat dibuka sebagai installed PWA (window standalone),
-// supaya langsung fullscreen tanpa perlu klik maximize manual. resizeTo/moveTo
-// cuma diizinkan browser kalau window ini punya satu entri history (fresh
-// launch) — cocok dengan skenario buka app dari shortcut/taskbar.
-(function autoMaximizeOnLaunch() {
-  try {
-    const isStandalone = window.matchMedia('(display-mode: standalone)').matches
-      || window.matchMedia('(display-mode: window-controls-overlay)').matches
-      || navigator.standalone === true;
-    if (!isStandalone) return;
-    // availLeft/availTop (non-standar tapi didukung Chrome/Edge) = origin monitor
-    // yang sedang dipakai window ini — fallback ke (0,0) kalau tak tersedia.
-    const left = typeof screen.availLeft === 'number' ? screen.availLeft : 0;
-    const top = typeof screen.availTop === 'number' ? screen.availTop : 0;
-    window.moveTo(left, top);
-    window.resizeTo(screen.availWidth, screen.availHeight);
-  } catch (e) {
-    // resizeTo/moveTo diblokir browser tertentu — abaikan, bukan fatal
-  }
-})();
-
 // Theme Toggle Logic
 function toggleTheme() {
   const isLight = document.body.classList.toggle('light-theme');
@@ -4345,7 +4324,7 @@ window.addEventListener('DOMContentLoaded', updateThemeIcon);
 
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.07.25.1';
+const APP_VERSION = '2026.07.25.2';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js

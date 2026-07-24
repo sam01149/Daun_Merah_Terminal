@@ -11,21 +11,23 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-07-25 (Session 241 — Auto-Maximize Window PWA saat Launch)
+> **Last updated:** 2026-07-25 (Session 241 — PWA Fullscreen Native)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
 
-## Changelog Session 241 (2026-07-25) — Auto-Maximize Window PWA saat Launch
+## Changelog Session 241 (2026-07-25) — PWA Fullscreen Native (`display: fullscreen`)
 
-**Konteks:** User minta window app (installed PWA di Windows via Chrome/Edge — title bar dengan minimize/maximize/close) langsung fullscreen/maximize begitu dibuka, tanpa perlu klik maximize manual (ditunjukkan via 2 screenshot: kondisi window default vs maximized).
+**Konteks:** User minta installed PWA (Windows, Chrome/Edge) langsung fullscreen begitu dibuka, tanpa perlu pencet tombol fullscreen Chrome manual. Percobaan pertama salah target: dikira user cuma minta window ter-maximize (title bar tetap ada), jadi awalnya ditambahkan JS `resizeTo`/`moveTo` di `index.html` gated ke `display-mode: standalone`. User klarifikasi: yang dia mau adalah kondisi setelah pencet tombol fullscreen Chrome — title bar & semua chrome browser HILANG total, bukan cuma window maximize. Itu berarti solusinya di level manifest PWA, bukan JS resize.
 
-**Perubahan (`index.html`):** Tambah IIFE `autoMaximizeOnLaunch()` di awal blok `<script>` utama (sebelum semua logic lain jalan). Gated dengan `matchMedia('(display-mode: standalone)')` / `window-controls-overlay` / `navigator.standalone` — HANYA jalan saat dibuka sebagai installed PWA, tidak mengganggu kalau app dibuka sebagai tab browser biasa. Pakai `window.moveTo(screen.availLeft, screen.availTop)` + `window.resizeTo(screen.availWidth, screen.availHeight)` — `availLeft/availTop` (non-standar, didukung Chrome/Edge) dipakai alih-alih hardcode `(0,0)` supaya benar di setup multi-monitor (window tidak lompat ke monitor utama kalau app-nya ada di monitor kedua). Seluruh logic dibungkus try/catch (silent) karena `resizeTo`/`moveTo` bisa diblokir browser tertentu — bukan fatal kalau gagal. `APP_VERSION` di-bump `2026.07.24.8` → `2026.07.25.1`.
+**Perubahan:**
+1. **`manifest.json`** — `"display": "standalone"` → `"display": "fullscreen"` + tambah `"display_override": ["fullscreen", "standalone"]` (fallback kalau browser/OS tidak dukung true fullscreen untuk installed app). `display: fullscreen` adalah sinyal manifest resmi (W3C Web App Manifest spec) yang membuat browser membuka installed PWA tanpa chrome apa pun sejak awal — persis kondisi setelah user pencet tombol fullscreen manual.
+2. **`index.html`** — hack JS `autoMaximizeOnLaunch()` (`resizeTo`/`moveTo`) dari percobaan pertama **dihapus total** karena salah target & jadi dead code (tidak relevan lagi setelah display-mode berubah jadi `fullscreen`, bukan `standalone`). `APP_VERSION` di-bump `2026.07.24.8` → `2026.07.25.2`.
 
-**Batasan yang diketahui (bukan bug, keterbatasan platform):** `window.resizeTo`/`moveTo` cuma diizinkan browser kalau window punya satu entri history (window baru/fresh launch) — cocok dengan skenario buka app dari shortcut/taskbar (kasus screenshot user), tapi TIDAK akan efeknya kalau user reload/navigasi di window yang sama setelahnya. Tidak bisa diverifikasi otomatis via Playwright karena ini perilaku window-chrome OS-level pada installed PWA, bukan sesuatu yang terlihat dari rendering halaman — perlu diverifikasi manual oleh user: close total app lalu buka ulang dari shortcut/taskbar.
+**Batasan yang diketahui (bukan bug, keterbatasan platform):** Perubahan `display` mode di manifest TIDAK otomatis berlaku ke instance PWA yang sudah ter-install — Chrome/Edge di Windows umumnya perlu **uninstall lalu install ulang** app-nya (bukan sekadar refresh/reload) supaya window baru dibuka pakai mode `fullscreen`. Tidak bisa diverifikasi otomatis via Playwright karena ini perilaku window-chrome OS-level pada installed PWA, bukan sesuatu yang terlihat dari rendering halaman — perlu diverifikasi manual oleh user setelah reinstall.
 
-**Verifikasi:** `npm test` 625/625 hijau, syntax-check semua blok `<script>` di `index.html` via `node -e "new Function(...)"` OK.
+**Verifikasi:** `manifest.json` valid JSON, `npm test` 625/625 hijau.
 
 ## Perubahan Lanjutan Session 240 (lanj. 2) — Watermark PDF & Reorganisasi PNG Produksi ke `brand/`
 
