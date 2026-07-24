@@ -5069,26 +5069,33 @@ function renderFeed(markNew = false) {
   scroll.innerHTML = itemsHtml + loadMoreHtml;
 }
 
+// Fetch+merge murni satu halaman histori (tanpa efek UI) — diekstrak dari loadMoreHistory
+// supaya bisa dipakai ulang oleh prefetch senyap tab TEK (tekLoadMoreNews) tanpa duplikasi
+// logic cursor/dedupe/exhausted. Caller wajib jaga guard historyLoading/historyExhausted sendiri.
+async function _fetchHistoryPage() {
+  const oldestLive = allItems.length ? new Date(allItems[allItems.length - 1].pubDate).getTime() : Date.now();
+  const cursor = historyBefore != null ? historyBefore : oldestLive;
+  const res = await fetch(`/api/feeds?type=news_history&before=${cursor}&limit=100`, { signal: AbortSignal.timeout(12000) });
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  const data = await res.json();
+  const fetched = Array.isArray(data.items) ? data.items : [];
+  // Server field 'description' → normalisasi ke 'desc' biar sama dengan bentuk
+  // item live (parseRSS() client) yang dipakai _feedItemHtml/sanitizeDesc.
+  const known = new Set(allItems.map(i => i.guid).concat(historyItems.map(i => i.guid)));
+  const fresh = fetched
+    .filter(i => i.guid && i.title && !known.has(i.guid))
+    .map(i => ({ title: i.title, guid: i.guid, pubDate: i.pubDate, link: i.link, desc: i.description || '' }));
+  historyItems = historyItems.concat(fresh);
+  historyBefore = data.next_before != null ? data.next_before : cursor;
+  historyExhausted = fetched.length === 0 || !data.has_more;
+}
+
 async function loadMoreHistory() {
   if (historyLoading || historyExhausted) return;
   historyLoading = true;
   renderFeed();
   try {
-    const oldestLive = allItems.length ? new Date(allItems[allItems.length - 1].pubDate).getTime() : Date.now();
-    const cursor = historyBefore != null ? historyBefore : oldestLive;
-    const res = await fetch(`/api/feeds?type=news_history&before=${cursor}&limit=100`, { signal: AbortSignal.timeout(12000) });
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    const data = await res.json();
-    const fetched = Array.isArray(data.items) ? data.items : [];
-    // Server field 'description' → normalisasi ke 'desc' biar sama dengan bentuk
-    // item live (parseRSS() client) yang dipakai _feedItemHtml/sanitizeDesc.
-    const known = new Set(allItems.map(i => i.guid).concat(historyItems.map(i => i.guid)));
-    const fresh = fetched
-      .filter(i => i.guid && i.title && !known.has(i.guid))
-      .map(i => ({ title: i.title, guid: i.guid, pubDate: i.pubDate, link: i.link, desc: i.description || '' }));
-    historyItems = historyItems.concat(fresh);
-    historyBefore = data.next_before != null ? data.next_before : cursor;
-    historyExhausted = fetched.length === 0 || !data.has_more;
+    await _fetchHistoryPage();
   } catch(e) {
     showToast('Gagal Muat', 'Tidak bisa memuat berita lebih lama, coba lagi.', 3000);
   } finally {
@@ -15609,6 +15616,32 @@ const TEK_CAT_COLOR = {
 let tekAFCache = {}; // keyed by pair — { items, fetchedAt, covered }
 const AFTEK_CLIENT_TTL = 4 * 60 * 60 * 1000;
 
+// "Berita Terkait" (tab TEK) — sebelumnya cuma menyaring dari `allItems` (live cap 100,
+// bisa cuma menutup beberapa jam saja di hari ramai berita) lalu potong ke 15 tanpa
+// load-more. Request user 2026-07-24: perpanjang jangkauan sampai batas arsip 36 jam
+// yang sama dengan tombol "Muat Berita Lebih Lama" di tab NEWS (historyItems/_fetchHistoryPage
+// di atas), dengan tombol load-more sendiri di sini (bukan auto-prefetch senyap semua 36 jam
+// sekaligus — boros request untuk pair yang jarang disentuh).
+const TEK_NEWS_PAGE_SIZE = 15;
+let tekNewsVisibleCount = TEK_NEWS_PAGE_SIZE;
+
+// Saring _combinedNewsItems() (live + histori yang sudah termuat) dengan keyword pair aktif —
+// diekstrak dari renderTekNews supaya bisa dipakai ulang oleh tekLoadMoreNews (cek apakah
+// halaman histori baru benar-benar nambah match sebelum berhenti loop-fetch).
+function _tekNewsMatches() {
+  const specificKws = TEK_PAIR_KEYWORDS[tekPair] || [];
+  const sharedKws = TEK_SHARED_KEYWORDS;
+  const negKws = TEK_PAIR_NEGATIVE[tekPair] || [];
+  const specific = [], shared = [];
+  for (const item of _combinedNewsItems()) {
+    const t = item.title.toLowerCase();
+    if (negKws.length && negKws.some(k => t.includes(k))) continue; // false-positive
+    if (specificKws.some(k => t.includes(k))) specific.push(item);
+    else if (sharedKws.some(k => t.includes(k))) shared.push(item);
+  }
+  return specific.concat(shared);
+}
+
 async function fetchAFTek() {
   const cached = tekAFCache[tekPair];
   if (cached && Date.now() - cached.fetchedAt < AFTEK_CLIENT_TTL) return;
@@ -15654,19 +15687,12 @@ function renderTekNews() {
 
   // FinancialJuice news filtered by pair keywords — currency-specific matches
   // ranked first, generic shared/geopolitical ones only fill remaining slots.
+  // Sumber: _combinedNewsItems() (live + histori arsip 36 jam yang sudah termuat),
+  // bukan cuma `allItems` — supaya pair dengan berita jarang tetap kebagian histori lama
+  // begitu user klik "Muat Berita Lebih Lama" (tekLoadMoreNews) di bawah.
   if (allItems && allItems.length > 0) {
-    const specificKws = TEK_PAIR_KEYWORDS[tekPair] || [];
-    const sharedKws = TEK_SHARED_KEYWORDS;
-    const negKws = TEK_PAIR_NEGATIVE[tekPair] || [];
-    const specific = [];
-    const shared = [];
-    for (const item of allItems) {
-      const t = item.title.toLowerCase();
-      if (negKws.length && negKws.some(k => t.includes(k))) continue; // false-positive
-      if (specificKws.some(k => t.includes(k))) specific.push(item);
-      else if (sharedKws.some(k => t.includes(k))) shared.push(item);
-    }
-    const matches = specific.concat(shared).slice(0, 15);
+    const allMatches = _tekNewsMatches();
+    const matches = allMatches.slice(0, tekNewsVisibleCount);
 
     if (matches.length === 0 && (!af || !af.items.length)) {
       html += '<div class="tek-news-empty">Tidak ada berita relevan saat ini.</div>';
@@ -15698,11 +15724,47 @@ function renderTekNews() {
           + '</div>';
       }).join('');
     }
+
+    // Load-more: kalau pool tersaring (allMatches) sudah lebih besar dari yang lagi
+    // ditampilkan, tinggal buka halaman berikutnya (instan, tanpa fetch). Kalau pool
+    // sudah habis tapi arsip 36 jam belum, tawarkan fetch halaman histori baru. Kalau
+    // arsip sudah benar-benar habis, tampilkan penanda ujung arsip (sama seperti NEWS).
+    if (allMatches.length > tekNewsVisibleCount) {
+      html += '<button class="feed-loadmore-btn" onclick="tekLoadMoreNews()">⌄ Tampilkan Lebih Banyak</button>';
+    } else if (!historyExhausted) {
+      html += '<button class="feed-loadmore-btn" onclick="tekLoadMoreNews()" ' + (historyLoading ? 'disabled' : '') + '>'
+        + (historyLoading ? '⏳ Memuat…' : '⌄ Muat Berita Lebih Lama (36 jam)') + '</button>';
+    } else if (allMatches.length > 0) {
+      html += '<div class="feed-history-end">— Sudah mencapai ujung arsip berita (36 jam) —</div>';
+    }
   } else if (!af || !af.items.length) {
     html += '<div class="tek-news-empty">Fetch news terlebih dahulu di tab NEWS.</div>';
   }
 
   sec.innerHTML = html;
+}
+
+// Handler tombol load-more "Berita Terkait" (lihat _tekNewsMatches/TEK_NEWS_PAGE_SIZE
+// di atas). Loop-fetch maks 5 halaman histori sekaligus supaya klik tidak jadi dead-end
+// untuk pair yang beritanya jarang nongol di antara 100 item/halaman archive.
+async function tekLoadMoreNews() {
+  if (_tekNewsMatches().length <= tekNewsVisibleCount && !historyLoading && !historyExhausted) {
+    historyLoading = true;
+    renderTekNews();
+    try {
+      let attempts = 0;
+      while (attempts < 5 && !historyExhausted && _tekNewsMatches().length <= tekNewsVisibleCount) {
+        await _fetchHistoryPage();
+        attempts++;
+      }
+    } catch(e) {
+      showToast('Gagal Muat', 'Tidak bisa memuat berita lebih lama, coba lagi.', 3000);
+    } finally {
+      historyLoading = false;
+    }
+  }
+  tekNewsVisibleCount += TEK_NEWS_PAGE_SIZE;
+  renderTekNews();
 }
 
 const TEK_TV_SYM = {};
@@ -16024,6 +16086,7 @@ function onTekPairSearchKey(e) {
 
 function selectTekPair(p) {
   tekPair = p;
+  tekNewsVisibleCount = TEK_NEWS_PAGE_SIZE; // reset paginasi "Berita Terkait" tiap ganti pair
   const label = document.getElementById('tekPairTriggerLabel');
   if (label) label.textContent = tekPairLabel(p);
   closeTekPairDropdown();

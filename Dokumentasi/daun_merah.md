@@ -11,11 +11,25 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-07-24 (Session 233 — Sparkline Drift Korelasi di Tabel Per-Pair TEK (non-XAU))
+> **Last updated:** 2026-07-24 (Session 234 — "Berita Terkait" TEK Diperpanjang ke Arsip 36 Jam + Load-More)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 234 (2026-07-24) — "Berita Terkait" TEK Diperpanjang ke Arsip 36 Jam + Load-More
+
+**Konteks:** Request user — panel "Berita Terkait" di tab TEK cuma menyaring dari `allItems` (pool live, cap 100 item, bisa cuma menutup beberapa jam saja di hari ramai berita) lalu dipotong statis ke 15 item tanpa cara melihat lebih banyak. Tab NEWS sudah lama punya arsip 36 jam via `historyItems`/tombol "Muat Berita Lebih Lama" (`api/feeds.js?type=news_history`), tapi TEK belum ikut memanfaatkannya.
+
+**Perubahan (`index.html`):**
+1. `loadMoreHistory()` dipecah — logic fetch+merge+dedupe satu halaman histori diekstrak ke `_fetchHistoryPage()` (murni, tanpa efek UI) supaya bisa dipakai ulang tanpa duplikasi.
+2. `_tekNewsMatches()` baru — saring `_combinedNewsItems()` (live + histori yang sudah termuat, bukan cuma `allItems`) dengan keyword pair aktif; menggantikan logic inline yang sebelumnya ada di `renderTekNews()`.
+3. `renderTekNews()`: paginasi client-side via `tekNewsVisibleCount` (mulai 15, kelipatan `TEK_NEWS_PAGE_SIZE`), direset ke 15 tiap ganti pair (`selectTekPair`). Footer kontekstual: "Tampilkan Lebih Banyak" (reveal instan dari pool yang sudah ada) → "Muat Berita Lebih Lama (36 jam)" (fetch halaman arsip baru dari server) → "— Sudah mencapai ujung arsip berita (36 jam) —" (habis, sama seperti NEWS).
+4. `tekLoadMoreNews()` baru — loop-fetch maks 5 halaman histori sekaligus per klik (bukan cuma 1) supaya tombol tidak jadi dead-end untuk pair yang beritanya jarang muncul di antara 100 item/halaman arsip; berhenti begitu ketemu match baru atau arsip benar-benar habis.
+
+**Verifikasi:** `npm test` 629/629 hijau. Simulasi manual via node eval dengan mock `fetch`/2 halaman arsip: klik pertama loop-fetch sampai `historyExhausted`, jumlah match naik dari 1 (live saja) ke 36 (live+histori); klik lanjutan murni reveal (tanpa fetch tambahan, `pageIdx` tidak berubah). Simulasi fetch gagal: `historyLoading` balik ke `false`, toast error muncul sekali, tidak stuck loading.
+
+---
 
 ## Changelog Session 233 (2026-07-24) — Sparkline Drift Korelasi di Tabel Per-Pair TEK (non-XAU)
 
