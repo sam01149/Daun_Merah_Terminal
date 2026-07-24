@@ -32,15 +32,35 @@ function validateTightenSl({ bias, slOld, newSl, closeLast, eLo, eHi }) {
   return false;
 }
 
+// Tighten PREVENTIF sebelum weekend close (diskusi user, 2026-07-24) — beda filosofi
+// dari TIGHTEN_SL reaktif di atas: bukan keputusan LLM merespons berita, tapi aturan
+// KODE MURNI yang jalan sekali tiap Jumat sebelum market tutup, buat semua posisi
+// OPEN, terlepas ada berita atau tidak (proteksi gap weekend, U-3 lanjutan §"apa
+// maksudnya auto tighten sl preventif"). Aturan: new_sl = titik tengah antara sl lama
+// dan harga sekarang — "menyerap" separuh jarak gap seandainya terjadi, tapi tetap
+// kasih ruang (bukan langsung ke breakeven, biar tidak instan kena whipsaw kecil).
+// Reuse validateTightenSl SEBAGAI SATU-SATUNYA aturan validitas (jangan re-implementasi
+// aturan arah/zona entry) — fail-safe: null kalau input tidak valid ATAU titik tengah
+// gagal validasi (mis. harga sudah terlalu dekat sl lama, sisa ruang kurang dari titik
+// tengah yang aman) -> caller WAJIB skip (bukan trading paksa dengan level buatan).
+function computePreventiveTightenSl({ bias, slOld, closeLast, eLo, eHi }) {
+  if (!Number.isFinite(slOld) || !Number.isFinite(closeLast)) return null;
+  const newSl = (slOld + closeLast) / 2;
+  return validateTightenSl({ bias, slOld, newSl, closeLast, eLo, eHi }) ? newSl : null;
+}
+
 // Evaluasi outcome MANAJEMEN (beda dari `status` pasif/ghost yang dievaluasi
 // _evaluateSetups di admin.js — itu tetap jalan apa adanya, tidak disentuh di sini).
-// Hanya intervention.type==='tighten_sl' yang butuh evaluasi lanjutan dari candle
-// (close_early sudah final saat diterapkan handler — managed_status='closed_early'
-// langsung, tidak lewat sini). Pure function, mutasi in-place (pola _evaluateSetups).
+// tighten_sl (reaktif) DAN tighten_sl_preventif (jadwal Jumat, lihat
+// computePreventiveTightenSl di atas) butuh evaluasi lanjutan dari candle yang sama
+// persis (keduanya sama-sama "SL baru vs TP asli") — close_early sudah final saat
+// diterapkan handler (managed_status='closed_early' langsung, tidak lewat sini).
+// Pure function, mutasi in-place (pola _evaluateSetups).
+const TIGHTEN_TYPES = new Set(['tighten_sl', 'tighten_sl_preventive']);
 function _evaluateManaged(setups, candlesBySymbol) {
   const nums = s => (String(s).match(/[\d.]+/g) || []).map(Number).filter(n => !isNaN(n));
   for (const st of setups || []) {
-    if (!st || !st.intervention || st.intervention.type !== 'tighten_sl') continue;
+    if (!st || !st.intervention || !TIGHTEN_TYPES.has(st.intervention.type)) continue;
     if (st.managed_status) continue; // sudah resolved (sl/tp/ambiguous) — jangan re-evaluasi
     const newSl = st.intervention.new_sl;
     const tp = nums(st.tp)[0];
@@ -73,6 +93,12 @@ function _aggManagementStats(arr) {
   const tighten_sl  = tightenEntries.length;
   const close_early = closeEntries.length;
   const hold = Math.max(0, reviews - tighten_sl - close_early);
+  // Preventif (tighten_sl_preventive) SENGAJA dihitung TERPISAH dari tighten_sl reaktif
+  // di atas — jangan digabung ke reviews/hold (bukan hasil review AI per berita, jadi
+  // tidak boleh ikut menentukan "hold"-nya keputusan reaktif) atau ke tighten_saved/cost
+  // (mencampur dua mekanisme beda filosofi akan mengaburkan mana yang benar-benar
+  // berguna: reaktif-per-berita vs jadwal-buta-mingguan).
+  const preventiveEntries = list.filter(x => x && x.intervention && x.intervention.type === 'tighten_sl_preventive');
   return {
     reviews, hold, tighten_sl, close_early,
     close_early_saved:        closeEntries.filter(x => x.status === 'sl').length,
@@ -80,6 +106,11 @@ function _aggManagementStats(arr) {
     close_early_ghost_pending: closeEntries.filter(x => x.status === 'pending' || x.status === 'open').length,
     tighten_saved: tightenEntries.filter(x => x.status === 'sl').length,
     tighten_cost:  tightenEntries.filter(x => x.status === 'tp').length,
+    tighten_preventive: {
+      count: preventiveEntries.length,
+      saved: preventiveEntries.filter(x => x.status === 'sl').length,
+      cost:  preventiveEntries.filter(x => x.status === 'tp').length,
+    },
   };
 }
 
@@ -132,4 +163,4 @@ function isCorroborated(item, recentItems) {
   return false;
 }
 
-module.exports = { validateTightenSl, _evaluateManaged, _aggManagementStats, isCorroborated, _significantTokens };
+module.exports = { validateTightenSl, computePreventiveTightenSl, _evaluateManaged, _aggManagementStats, isCorroborated, _significantTokens };

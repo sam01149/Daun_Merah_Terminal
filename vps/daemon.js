@@ -923,6 +923,11 @@ function startScheduler() {
     cron.schedule(`45 ${AUTO_CONSISTENCY_HOUR_UTC} * * *`, () => runConsistencyCheck().catch(e => console.warn('daemon: runConsistencyCheck gagal:', e.message)));
     console.log(`daemon: U-3 uji konsistensi aktif — pair ${AUTO_ENTRY_PAIRS[0] || '(kosong)'} @ jam ${AUTO_CONSISTENCY_HOUR_UTC}:45 UTC`);
   }
+  // U-3 lanjutan (2026-07-24): tighten preventif weekend gap — hari-of-week 5 = Jumat.
+  if (Number.isFinite(FRIDAY_TIGHTEN_HOUR_UTC)) {
+    cron.schedule(`0 ${FRIDAY_TIGHTEN_HOUR_UTC} * * 5`, () => runFridayTightenCycle().catch(e => console.warn('daemon: runFridayTightenCycle gagal:', e.message)));
+    console.log(`daemon: tighten preventif Jumat aktif @ jam ${FRIDAY_TIGHTEN_HOUR_UTC}:00 UTC (4 jam sebelum tutup)`);
+  }
 }
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -977,6 +982,12 @@ const AUTO_ENTRY_PAIRS = (process.env.AUTO_ENTRY_PAIRS || 'frxXAUUSD,frxEURUSD,f
 const AUTO_ENTRY_HOURS_UTC = (process.env.AUTO_ENTRY_HOURS_UTC || '8,13')
   .split(',').map(s => parseInt(s.trim(), 10)).filter(Number.isFinite);
 const AUTO_CONSISTENCY_HOUR_UTC = parseInt(process.env.AUTO_CONSISTENCY_HOUR_UTC || '10', 10);
+// Tighten preventif weekend gap (diskusi user 2026-07-24) — default 17:00 UTC, 4 jam
+// sebelum tutup Jumat 21:00 UTC (isFxMarketOpen). SENGAJA tidak lebih mepet: 1 jam
+// terakhir sebelum close cenderung choppy/likuiditas tipis (desk mulai square posisi
+// weekend) — tighten pas di jam itu justru rawan kena whipsaw, bukan lebih aman dari
+// noise. 4 jam sebelum (masih sesi NY normal) supaya SL sudah "settle" duluan.
+const FRIDAY_TIGHTEN_HOUR_UTC = parseInt(process.env.FRIDAY_TIGHTEN_HOUR_UTC || '17', 10);
 const HARD_NEWS_WINDOW_MS = 4 * 3600 * 1000;
 const AUTO_SKIP_LOG_CAP = 200;
 const CONSISTENCY_LOG_CAP = 60;
@@ -1212,6 +1223,21 @@ async function runConsistencyCheck() {
   } catch (e) { console.warn('daemon: gagal tulis consistency_log:v1:', e.message); }
 }
 
+// Tighten SL preventif sekali/minggu sebelum weekend close (diskusi user 2026-07-24) —
+// GET sederhana (semua posisi eksperimen OPEN diproses server-side di
+// api/admin.js?action=friday_tighten, tidak butuh body/trigger seperti position_review),
+// pola sama runConsistencyCheck (fetchJsonWithTimeout, 1x percobaan, warn-only kalau
+// gagal — kegagalan minggu ini bukan hal darurat, dicoba lagi Jumat berikutnya).
+// Dijadwalkan jam FRIDAY_TIGHTEN_HOUR_UTC hari Jumat di startScheduler — TIDAK perlu
+// isFxMarketOpen guard eksplisit di sini (jam defaultnya 17:00 UTC, jauh sebelum tutup
+// 21:00 UTC, market pasti masih buka; guard tetap ada di server-side friday_tighten
+// kalau suatu saat jamnya digeser mepet).
+async function runFridayTightenCycle() {
+  if (!CRON_SECRET) { console.warn('daemon: CRON_SECRET kosong, tighten preventif Jumat di-skip'); return; }
+  const json = await fetchJsonWithTimeout('/api/admin?action=friday_tighten');
+  if (json) console.log(`daemon: tighten preventif Jumat — checked=${json.checked} tightened=${json.tightened}`);
+}
+
 // ══════════════════════════════════════════════════════════════════════════
 // SELF-HEALING LAPIS 3b: supervisor freshness data. Tiap 10 menit cek umur
 // candle sentinel (EURUSD, pair paling likuid) di Redis: kalau candle terakhir
@@ -1298,7 +1324,7 @@ function startHttpServer() {
       last_supervisor_heal_at: lastSupervisorHealAt,
       // U-3 observability — Lapis 2 (auto-cancel) SENGAJA tidak ada di sini,
       // di-descope (lihat komentar besar U-3 di atas).
-      auto_entry: { pairs: AUTO_ENTRY_PAIRS, hours_utc: AUTO_ENTRY_HOURS_UTC, consistency_hour_utc: AUTO_CONSISTENCY_HOUR_UTC },
+      auto_entry: { pairs: AUTO_ENTRY_PAIRS, hours_utc: AUTO_ENTRY_HOURS_UTC, consistency_hour_utc: AUTO_CONSISTENCY_HOUR_UTC, friday_tighten_hour_utc: FRIDAY_TIGHTEN_HOUR_UTC },
     }));
   }).listen(PORT, '0.0.0.0', () => {
     console.log(`daemon: HTTP server listening on 0.0.0.0:${PORT}`);
@@ -1337,7 +1363,7 @@ module.exports = {
   computeConsistency, AUTO_ENTRY_SYMBOL_MAP, AUTO_ENTRY_PAIRS, AUTO_ENTRY_HOURS_UTC,
   findBreakingNewsMatch,
   // U-3 (async, di-export untuk simulasi lokal manual — bukan dipakai node:test):
-  checkHardNewsSkip, runAutoEntryCycle, runConsistencyCheck, pollCalendarLatency, checkBreakingNewsSkip,
+  checkHardNewsSkip, runAutoEntryCycle, runConsistencyCheck, runFridayTightenCycle, pollCalendarLatency, checkBreakingNewsSkip,
   // U-5b (pure/testable):
   detectCurrencyLegs, isCorroborated, posReviewSignificantTokens, POSREVIEW_CURRENCY_KEYWORDS,
   shouldPersistNewsBufferItem, filterFreshBufferItems,

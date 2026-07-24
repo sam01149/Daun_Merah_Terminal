@@ -167,6 +167,10 @@ Berbeda dari 4 fitur di atas: **fact sheet dibangun 100% client-side** (checklis
 
 Trigger event-driven dari daemon (headline market-moving/geopolitical yang match currency setup eksperimen `open`), **bukan jadwal tetap**. Rantai fallback: sama dengan §3.6 (chain existing `ohlcv_analyze` via `_ai_guard`, TIDAK ada provider baru). Dibatasi cooldown 6 jam/posisi + cap 3 review/hari (kode, bukan AI) — **maksimal +3 call/hari** ke pool yang sama.
 
+### 3.8 Tighten Preventif Weekend Gap — `api/admin.js` (`action=friday_tighten`, Plan U-3 lanjutan, 2026-07-24)
+
+**0 call AI — murni kode.** Beda dari §3.7 di atas: itu reaktif (LLM menilai berita), ini jadwal buta 1x/minggu (Jumat, `FRIDAY_TIGHTEN_HOUR_UTC`) yang menggeser SL semua posisi eksperimen `open` ke titik tengah SL-lama/harga-sekarang (`computePreventiveTightenSl`), TANPA menilai konteks apa pun — alasannya "market tutup 2 hari, tidak bisa react apa-apa selama itu", bukan sinyal risiko spesifik. Dicatat di sini murni supaya tidak disangka ikut menambah beban pool AI manapun.
+
 ---
 
 ## 4. Jatah Harian (Budget Guard) — `api/_ai_guard.js`

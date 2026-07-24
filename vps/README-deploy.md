@@ -256,6 +256,18 @@ U-6 (fase final Plan U) push ke `main`.
   sehingga TIDAK menulis cache produksi/`setup_log` (tidak mengotori data
   auto-entry Lapis 0). Hasil (bias identik? entry/SL/TP dalam toleransi 0.5%?)
   disimpan ke `consistency_log:v1` (cap 60).
+- **Tighten preventif weekend gap** (U-3 lanjutan, 2026-07-24): 1x/minggu, Jumat
+  jam `FRIDAY_TIGHTEN_HOUR_UTC`, GET `friday_tighten` — semua posisi eksperimen
+  OPEN di `setup_log_auto:v1` yang belum punya `intervention` digeser SL-nya ke
+  titik tengah antara SL lama & harga sekarang (`computePreventiveTightenSl`,
+  murni kode, TIDAK ada call AI). Beda filosofi dari `position_review` di atas:
+  itu reaktif per-berita, ini jadwal buta — market tutup 2 hari (weekend) berarti
+  tidak ada cara react apa pun kalau ada gap besar Senin, jadi risikonya
+  dikurangi duluan Jumat sore. Default 4 jam sebelum tutup (bukan 1 jam) karena
+  jam terakhir sebelum close FX cenderung choppy/likuiditas tipis — tighten pas
+  di jam itu justru rawan whipsaw, bukan lebih aman. Ditandai `intervention.type:
+  'tighten_sl_preventive'` (field terpisah dari `tighten_sl` reaktif di stats
+  `management.tighten_preventive`), data mentah/status tetap tidak disentuh.
 
 **Env var baru (opsional, fail-open — kosong = pakai default di atas):**
 
@@ -264,6 +276,7 @@ U-6 (fase final Plan U) push ke `main`.
 | `AUTO_ENTRY_PAIRS` | `frxXAUUSD,frxEURUSD,frxGBPUSD` | Daftar pair (penamaan Deriv, dipetakan ke symbol/label Yahoo di `AUTO_ENTRY_SYMBOL_MAP`) yang ikut auto-entry + jadi pair uji konsistensi (elemen pertama). **Golden Trio (2026-07-22):** 3 pair mempercepat akumulasi sampel gate Plan U n≥100 dari ~50 hari ke ~16 hari (6 setup/hari), dengan kedalaman n≈33/pair tetap lolos ambang CLT n≥30 — lihat `daun_merah_riset.md`. |
 | `AUTO_ENTRY_HOURS_UTC` | `8,13` | Jam UTC slot auto-entry (perkiraan buka London/NY) — sengaja digeser dari jadwal digest Q-6 (00:00/07:00/12:30) supaya tidak tertelan dedup 30 menit `ohlcv_analyze`. |
 | `AUTO_CONSISTENCY_HOUR_UTC` | `10` | Jam UTC uji konsistensi LLM (1x/hari). |
+| `FRIDAY_TIGHTEN_HOUR_UTC` | `17` | Jam UTC tighten preventif weekend gap, HANYA Jumat (4 jam sebelum tutup 21:00 UTC — lihat alasan choppy-hour di atas kalau mau menggeser lebih mepet). |
 
 Tidak ada env var WAJIB baru untuk U-3 — semua opsional dengan default masuk
 akal; `CRON_SECRET` yang sudah ada (§6) dipakai ulang untuk trigger HTTP-nya.

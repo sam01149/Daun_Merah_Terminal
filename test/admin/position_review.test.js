@@ -8,7 +8,7 @@ const assert = require('node:assert/strict');
 process.env.UPSTASH_REDIS_REST_URL   = 'https://fake-upstash.test';
 process.env.UPSTASH_REDIS_REST_TOKEN = 'fake-token';
 
-const { validateTightenSl, _evaluateManaged, _aggManagementStats, isCorroborated } = require('../../api/_position_review.js');
+const { validateTightenSl, computePreventiveTightenSl, _evaluateManaged, _aggManagementStats, isCorroborated } = require('../../api/_position_review.js');
 const handler = require('../../api/admin.js');
 
 // ── validateTightenSl ───────────────────────────────────────────────────────
@@ -51,6 +51,34 @@ test('validateTightenSl: bullish — SL baru menyalip ke dalam/di atas zona entr
 test('validateTightenSl: input non-finite / bias tak dikenal -> ditolak, bukan crash', () => {
   assert.equal(validateTightenSl({ bias: 'bearish', slOld: NaN, newSl: 4050, closeLast: 4020 }), false);
   assert.equal(validateTightenSl({ bias: 'sideways', slOld: 4065, newSl: 4050, closeLast: 4020 }), false);
+});
+
+// ── computePreventiveTightenSl (U-3 lanjutan, weekend gap protection) ────────
+
+test('computePreventiveTightenSl: bearish — titik tengah slOld & closeLast, valid & di luar zona entry', () => {
+  const newSl = computePreventiveTightenSl({ bias: 'bearish', slOld: 4065, closeLast: 4020, eLo: 4030, eHi: 4040 });
+  assert.equal(newSl, 4042.5); // (4065+4020)/2, tetap > eHi (4040)
+});
+
+test('computePreventiveTightenSl: bullish mirror — titik tengah, valid', () => {
+  const newSl = computePreventiveTightenSl({ bias: 'bullish', slOld: 1.1650, closeLast: 1.1720, eLo: 1.1700, eHi: 1.1710 });
+  assert.equal(newSl, (1.1650 + 1.1720) / 2); // tetap < eLo (1.1700); bandingkan hasil hitung yang sama (hindari salah ketik akibat presisi float literal)
+});
+
+test('computePreventiveTightenSl: titik tengah jatuh DI DALAM zona entry -> null (validateTightenSl menolak, fail-safe)', () => {
+  // bearish: slOld 4065, closeLast 4010 -> titik tengah 4037.5, masuk ke zona entry 4030-4040
+  const newSl = computePreventiveTightenSl({ bias: 'bearish', slOld: 4065, closeLast: 4010, eLo: 4030, eHi: 4040 });
+  assert.equal(newSl, null);
+});
+
+test('computePreventiveTightenSl: harga sudah sangat dekat slOld (jarak minim) -> tetap valid selama titik tengah masih di luar zona & belum tertembus', () => {
+  const newSl = computePreventiveTightenSl({ bias: 'bearish', slOld: 4065, closeLast: 4050, eLo: 4030, eHi: 4040 });
+  assert.equal(newSl, 4057.5);
+});
+
+test('computePreventiveTightenSl: input non-finite / bias tak dikenal -> null, bukan crash', () => {
+  assert.equal(computePreventiveTightenSl({ bias: 'bearish', slOld: NaN, closeLast: 4020 }), null);
+  assert.equal(computePreventiveTightenSl({ bias: 'sideways', slOld: 4065, closeLast: 4020 }), null);
 });
 
 // ── _evaluateManaged ─────────────────────────────────────────────────────────
@@ -125,6 +153,17 @@ test('_evaluateManaged: entri lama tanpa field intervention/managed_status -> am
   assert.doesNotThrow(() => _evaluateManaged(setups, { 'GC=F': [mkC(6, 4018, 4019, 3950, 3958)] }));
 });
 
+test('_evaluateManaged: intervention tighten_sl_preventive (bukan tighten_sl) -> TETAP dievaluasi (pola sama tighten_sl)', () => {
+  const setups = [{
+    symbol: 'GC=F', bias: 'bearish', tp: '3960',
+    intervention: { type: 'tighten_sl_preventive', t: 5 * 3600, new_sl: 4050 },
+    managed_status: null,
+  }];
+  const candles = { 'GC=F': [mkC(6, 4020, 4055, 4015, 4018), mkC(7, 4018, 4019, 3950, 3955)] };
+  _evaluateManaged(setups, candles);
+  assert.equal(setups[0].managed_status, 'sl');
+});
+
 // ── _aggManagementStats ────────────────────────────────────────────────────────
 
 test('_aggManagementStats: reviews/hold/tighten/close_early + saved/cost dari ghost status apa adanya', () => {
@@ -136,9 +175,13 @@ test('_aggManagementStats: reviews/hold/tighten/close_early + saved/cost dari gh
     { review_count: 1, intervention: { type: 'close_early' }, status: 'tp' }, // close_early_cost
     { review_count: 1, intervention: { type: 'close_early' }, status: 'open' }, // close_early_ghost_pending
     { review_count: 0, intervention: null, status: 'pending' }, // belum pernah direview
+    // preventif — TIDAK boleh ikut mempengaruhi reviews/hold/tighten_sl/tighten_saved di atas
+    { intervention: { type: 'tighten_sl_preventive' }, status: 'sl' }, // tighten_preventive.saved
+    { intervention: { type: 'tighten_sl_preventive' }, status: 'tp' }, // tighten_preventive.cost
+    { intervention: { type: 'tighten_sl_preventive' }, status: 'open' }, // belum resolve, tidak masuk saved/cost
   ];
   const m = _aggManagementStats(arr);
-  assert.equal(m.reviews, 6);
+  assert.equal(m.reviews, 6); // tidak berubah walau ada 3 entri preventif tambahan
   assert.equal(m.tighten_sl, 2);
   assert.equal(m.close_early, 3);
   assert.equal(m.hold, 1);
@@ -147,6 +190,7 @@ test('_aggManagementStats: reviews/hold/tighten/close_early + saved/cost dari gh
   assert.equal(m.close_early_saved, 1);
   assert.equal(m.close_early_cost, 1);
   assert.equal(m.close_early_ghost_pending, 1);
+  assert.deepEqual(m.tighten_preventive, { count: 3, saved: 1, cost: 1 });
 });
 
 test('_aggManagementStats: array kosong -> semua nol, bukan crash', () => {
@@ -155,6 +199,7 @@ test('_aggManagementStats: array kosong -> semua nol, bukan crash', () => {
     reviews: 0, hold: 0, tighten_sl: 0, close_early: 0,
     close_early_saved: 0, close_early_cost: 0, close_early_ghost_pending: 0,
     tighten_saved: 0, tighten_cost: 0,
+    tighten_preventive: { count: 0, saved: 0, cost: 0 },
   });
 });
 
@@ -413,5 +458,120 @@ test('position_review: setup lama tanpa field U-5a (intervention/review_count un
       async () => { await handler(req, res); });
     assert.equal(res.statusCode, 200);
     assert.equal(res.body.setup.review_count, 1);
+  });
+});
+
+// ── Handler friday_tighten (api/admin.js, U-3 lanjutan) ──────────────────────
+// Tighten preventif MURNI KODE (tanpa AI) — combinedStub tetap dipakai apa adanya,
+// cabang sambanova.ai-nya tidak akan pernah kena kalau handler ini benar (fail-safe
+// test: aiJson sengaja dibiarkan undefined di semua test di bawah supaya kalau
+// handler tidak sengaja memanggil AI, stub throw dan test gagal).
+
+function fakeReqResFriday({ method = 'GET', headers = {} } = {}) {
+  const resHeaders = {};
+  const req = {
+    method,
+    query: { action: 'friday_tighten' },
+    headers,
+    url: '/api/admin?action=friday_tighten',
+    on(event, cb) { if (event === 'end') cb(); },
+  };
+  const res = {
+    setHeader: (k, v) => { resHeaders[k] = v; },
+    status(code) { this.statusCode = code; return this; },
+    json(obj) { this.body = obj; return this; },
+    end() { return this; },
+  };
+  return { req, res };
+}
+
+test('friday_tighten: tanpa secret -> 401', async () => {
+  await withEnv({}, async () => {
+    const { req, res } = fakeReqResFriday({ headers: {} });
+    await handler(req, res);
+    assert.equal(res.statusCode, 401);
+  });
+});
+
+test('friday_tighten: tidak ada posisi open -> 200, checked 0 tightened 0', async () => {
+  await withEnv({ CRON_SECRET: 'rahasia' }, async () => {
+    const log = [{ ...openSetup, status: 'pending' }];
+    const { req, res } = fakeReqResFriday({ headers: { 'x-cron-secret': 'rahasia' } });
+    await withFetch(combinedStub({ log }), async () => { await handler(req, res); });
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.body.checked, 0);
+    assert.equal(res.body.tightened, 0);
+  });
+});
+
+test('friday_tighten: posisi open sudah punya intervention -> dilewati (satu intervensi per posisi)', async () => {
+  await withEnv({ CRON_SECRET: 'rahasia' }, async () => {
+    const log = [{ ...openSetup, intervention: { type: 'tighten_sl', t: 1, new_sl: 4050 } }];
+    const { req, res } = fakeReqResFriday({ headers: { 'x-cron-secret': 'rahasia' } });
+    await withFetch(combinedStub({ log }), async () => { await handler(req, res); });
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.body.checked, 0);
+    assert.equal(res.body.tightened, 0);
+  });
+});
+
+test('friday_tighten: posisi open valid -> tightened, intervention tersimpan, data mentah TIDAK disentuh', async () => {
+  await withEnv({ CRON_SECRET: 'rahasia' }, async () => {
+    const log = [{ ...openSetup }]; // bearish, entry 4030-4040, sl 4065, tp 3960
+    const { req, res } = fakeReqResFriday({ headers: { 'x-cron-secret': 'rahasia' } });
+    await withFetch(combinedStub({ log, candles: [mkC(1, 4020, 4025, 4015, 4018)] }), async () => { await handler(req, res); });
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.body.checked, 1);
+    assert.equal(res.body.tightened, 1);
+    assert.equal(res.body.setup, undefined); // beda dari position_review — respons friday_tighten tidak echo objek setup penuh
+    assert.equal(log[0].intervention.type, 'tighten_sl_preventive');
+    assert.equal(log[0].intervention.new_sl, (4065 + 4018) / 2);
+    // Data mentah TIDAK disentuh (prinsip sama U-5a)
+    assert.equal(log[0].sl, '4065');
+    assert.equal(log[0].status, 'open');
+  });
+});
+
+test('friday_tighten: candle tidak tersedia untuk symbol -> dilewati (no_candle), bukan crash', async () => {
+  await withEnv({ CRON_SECRET: 'rahasia' }, async () => {
+    const log = [{ ...openSetup }];
+    const { req, res } = fakeReqResFriday({ headers: { 'x-cron-secret': 'rahasia' } });
+    await withFetch(combinedStub({ log, candles: [] }), async () => { await handler(req, res); });
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.body.tightened, 0);
+    assert.equal(log[0].intervention, null);
+  });
+});
+
+test('friday_tighten: titik tengah jatuh di dalam zona entry -> dilewati (invalid_or_too_close), bukan dipaksakan', async () => {
+  await withEnv({ CRON_SECRET: 'rahasia' }, async () => {
+    // closeLast 4010 -> titik tengah dgn sl 4065 = 4037.5, masuk ke zona entry 4030-4040
+    const log = [{ ...openSetup }];
+    const { req, res } = fakeReqResFriday({ headers: { 'x-cron-secret': 'rahasia' } });
+    await withFetch(combinedStub({ log, candles: [mkC(1, 4020, 4015, 4005, 4010)] }), async () => { await handler(req, res); });
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.body.tightened, 0);
+    assert.equal(log[0].intervention, null);
+  });
+});
+
+test('friday_tighten: dua posisi open beda symbol -> keduanya diproses independen', async () => {
+  await withEnv({ CRON_SECRET: 'rahasia' }, async () => {
+    const second = { ...openSetup, id: 'EURUSD:1', symbol: 'EURUSD', bias: 'bullish', entry_zone: '1.1700-1.1710', sl: '1.1650', tp: '1.1800' };
+    const log = [{ ...openSetup }, second];
+    const { req, res } = fakeReqResFriday({ headers: { 'x-cron-secret': 'rahasia' } });
+    const stub = async (url, opts) => {
+      const args = JSON.parse(opts.body);
+      if (args[0] === 'GET' && args[1] === 'ohlcv:EURUSD:1h') {
+        return { ok: true, json: async () => ({ result: JSON.stringify([mkC(1, 1.1720, 1.1725, 1.1715, 1.1720)]) }) };
+      }
+      return combinedStub({ log, candles: [mkC(1, 4020, 4025, 4015, 4018)] })(url, opts);
+    };
+    await withFetch(stub, async () => { await handler(req, res); });
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.body.checked, 2);
+    assert.equal(res.body.tightened, 2);
+    assert.equal(log[0].intervention.type, 'tighten_sl_preventive');
+    assert.equal(log[1].intervention.type, 'tighten_sl_preventive');
   });
 });

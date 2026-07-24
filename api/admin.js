@@ -23,7 +23,7 @@ const { allowAiCall } = require('./_ai_guard');
 const { requireAppKey } = require('./_app_key');
 const { fetchYahooOhlcv1h, fetchFallbackCandles, shouldSendYahooAlert, mapYahooSymbolToDeriv, fetchDerivCandles } = require('./_ohlcv_fetch');
 const { buildPairContext, computeCurrencyStrength } = require('./_pair_context');
-const { validateTightenSl, _evaluateManaged, _aggManagementStats } = require('./_position_review');
+const { validateTightenSl, computePreventiveTightenSl, _evaluateManaged, _aggManagementStats } = require('./_position_review');
 
 // Hermes 3 405B Instruct via OpenRouter (free tier) — kandidat diagnostik dari riset
 // user, sama seperti HERMES_MODEL di market-digest.js (circuit breaker key sengaja
@@ -99,8 +99,9 @@ module.exports = async function handler(req, res) {
   if (action === 'setup_stats')        return setupStatsHandler(req, res);
   if (action === 'setup_override')     return setupOverrideHandler(req, res);
   if (action === 'position_review')    return positionReviewHandler(req, res);
+  if (action === 'friday_tighten')     return fridayTightenHandler(req, res);
   if (action === 'polymarket')         return polymarketHandler(req, res);
-  return res.status(400).json({ error: 'Missing ?action= — use health, redis-keys, admin-prompts, push, fundamental_get, fundamental_seed, fundamental_refresh, fundamental_analysis, journal_import, circuit-reset, circuit-status, gdpnow, ohlcv_sync, ohlcv_read, ohlcv_analyze, ohlcv_critic, pre_entry_check, ohlcv_dashboard, setup_stats, setup_override, position_review, or polymarket' });
+  return res.status(400).json({ error: 'Missing ?action= — use health, redis-keys, admin-prompts, push, fundamental_get, fundamental_seed, fundamental_refresh, fundamental_analysis, journal_import, circuit-reset, circuit-status, gdpnow, ohlcv_sync, ohlcv_read, ohlcv_analyze, ohlcv_critic, pre_entry_check, ohlcv_dashboard, setup_stats, setup_override, position_review, friday_tighten, or polymarket' });
 };
 
 // ── Shared Redis helper ────────────────────────────────────────────────────────
@@ -3218,6 +3219,66 @@ async function positionReviewHandler(req, res) {
     await redisCmd('LTRIM', 'position_review_log:v1', '0', '99');
 
     return res.status(200).json({ ok: true, decision, confidence, downgraded, model, setup: st });
+  } catch (e) {
+    return res.status(500).json({ error: e.message });
+  }
+}
+
+// PLAN U-3 lanjutan (2026-07-24, diskusi user soal weekend gap risk): tighten SL
+// PREVENTIF sekali tiap Jumat sebelum market tutup, untuk SEMUA posisi eksperimen
+// OPEN di setup_log_auto:v1 — beda dari position_review di atas (itu reaktif, dipicu
+// berita spesifik + keputusan LLM). Ini murni kode (computePreventiveTightenSl), TIDAK
+// ADA call AI — tidak butuh alasan/konteks per posisi, cuma "market mau tutup 2 hari,
+// kita tidak bisa react apa-apa selama itu". Dipicu vps/daemon.js (runFridayTightenCycle)
+// via cron Jumat, jam diatur env FRIDAY_TIGHTEN_HOUR_UTC di sisi daemon (bukan di sini).
+async function fridayTightenHandler(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  if (req.method === 'OPTIONS') return res.status(204).end();
+  const isVercelCron = req.headers['x-vercel-cron'] === '1';
+  const cronSecret   = req.headers['x-cron-secret'];
+  if (!isVercelCron && (!cronSecret || cronSecret !== process.env.CRON_SECRET)) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  try {
+    const raw = await redisCmd('GET', 'setup_log_auto:v1');
+    let log = raw ? JSON.parse(raw) : [];
+    if (!Array.isArray(log)) log = [];
+    // Satu intervensi per posisi (pola sama position_review langkah 2b) — kalau sudah
+    // dikelola (reaktif ATAU preventif minggu lalu kalau entah bagaimana belum resolved),
+    // jangan numpuk intervensi kedua di atasnya.
+    const candidates = log.filter(s => s && s.status === 'open' && !s.intervention);
+    if (!candidates.length) return res.status(200).json({ ok: true, checked: 0, tightened: 0 });
+
+    const candlesBySymbol = {};
+    await Promise.all([...new Set(candidates.map(s => s.symbol))].map(async sym => {
+      try {
+        const r = await redisCmd('GET', `ohlcv:${sym}:1h`);
+        if (r) candlesBySymbol[sym] = JSON.parse(r);
+      } catch (e) { /* symbol itu dilewati minggu ini, dicoba lagi Jumat berikutnya */ }
+    }));
+
+    let tightened = 0;
+    const results = [];
+    for (const st of candidates) {
+      const candles = candlesBySymbol[st.symbol];
+      const closeLast = Array.isArray(candles) && candles.length ? candles[candles.length - 1].c : null;
+      if (closeLast == null) { results.push({ id: st.id, tightened: false, reason: 'no_candle' }); continue; }
+      const eNums = (String(st.entry_zone).match(/[\d.]+/g) || []).map(Number).filter(n => !isNaN(n));
+      const eLo = eNums.length ? Math.min(...eNums) : null;
+      const eHi = eNums.length ? Math.max(...eNums) : null;
+      const slOld = parseFloat((String(st.sl).match(/[\d.]+/) || [])[0]);
+      const newSl = computePreventiveTightenSl({ bias: st.bias, slOld, closeLast, eLo, eHi });
+      if (newSl == null) { results.push({ id: st.id, tightened: false, reason: 'invalid_or_too_close' }); continue; }
+      st.intervention = {
+        type: 'tighten_sl_preventive', t: Date.now(), price: null, new_sl: newSl,
+        reason: 'Tighten preventif sebelum weekend close — proteksi gap, bukan reaksi berita.',
+        trigger_guid: null,
+      };
+      tightened++;
+      results.push({ id: st.id, tightened: true, new_sl: newSl });
+    }
+    if (tightened > 0) await redisCmd('SET', 'setup_log_auto:v1', JSON.stringify(log));
+    return res.status(200).json({ ok: true, checked: candidates.length, tightened, results });
   } catch (e) {
     return res.status(500).json({ error: e.message });
   }

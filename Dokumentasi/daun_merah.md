@@ -11,11 +11,32 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-07-24 (Session 230 — Audit Kinerja & Workflow Auto-Entry (Plan U), Data Langsung dari Redis Produksi)
+> **Last updated:** 2026-07-24 (Session 231 — Tighten SL Preventif Sebelum Weekend Close (Plan U-3 lanjutan))
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 231 (2026-07-24) — Tighten SL Preventif Sebelum Weekend Close (Plan U-3 lanjutan)
+
+**Konteks:** Diskusi user soal apa yang terjadi ke posisi virtual `open` kalau ada berita kuat pas market TUTUP (Sabtu, atau Minggu sebelum ~22:00 UTC). Investigasi menemukan `handlePosReviewCandidate` (daemon) return SEBELUM sempat cek korroborasi/antre-recheck kalau `!isFxMarketOpen()` — jadi tidak ada "catch-up scan" pas market buka lagi Senin, sistem murni tidak punya proteksi gap weekend sama sekali untuk posisi live. User pilih mitigasi: tighten SL preventif (bukan force-close semua posisi), sekali per Jumat, timing didiskusikan (awalnya 1 jam sebelum tutup, direvisi ke 3-4 jam karena jam terakhir sebelum close FX cenderung choppy/likuiditas tipis — tighten pas di jam itu rawan whipsaw, bukan lebih aman).
+
+**Perubahan (`api/_position_review.js`):**
+1. Fungsi murni baru `computePreventiveTightenSl({ bias, slOld, closeLast, eLo, eHi })` — new_sl = titik tengah SL-lama & harga sekarang, divalidasi via `validateTightenSl` yang SUDAH ADA (tidak re-implementasi aturan arah/zona entry); null kalau tidak valid (fail-safe, caller wajib skip).
+2. `_evaluateManaged`: filter tipe diperluas dari `'tighten_sl'` ke `Set(['tighten_sl', 'tighten_sl_preventive'])` — evaluasi ghost SL-baru-vs-TP-asli sama persis untuk kedua mekanisme.
+3. `_aggManagementStats`: tambah blok `tighten_preventive: {count, saved, cost}` TERPISAH dari `tighten_sl`/`tighten_saved`/`tighten_cost` reaktif — sengaja tidak digabung (beda filosofi: reaktif-per-berita vs jadwal-buta-mingguan) dan tidak ikut hitungan `reviews`/`hold`.
+
+**Perubahan (`api/admin.js`):** handler baru `fridayTightenHandler` (action `friday_tighten`, GET, auth sama `ohlcv_sync`) — iterasi semua posisi eksperimen `open` di `setup_log_auto:v1` tanpa `intervention` (satu intervensi per posisi, pola sama `position_review`), fetch candle terakhir per symbol, terapkan `computePreventiveTightenSl`. **0 call AI** — murni kode, tidak ada keputusan LLM sama sekali (beda filosofi dari `position_review`).
+
+**Perubahan (`vps/daemon.js`):** `runFridayTightenCycle()` (GET sederhana ke `friday_tighten`, pola sama `runConsistencyCheck`) dijadwalkan `cron.schedule('0 ${FRIDAY_TIGHTEN_HOUR_UTC} * * 5', ...)` — env var baru `FRIDAY_TIGHTEN_HOUR_UTC` default `17` (17:00 UTC, 4 jam sebelum tutup Jumat 21:00 UTC).
+
+**Test baru:** `test/admin/position_review.test.js` (+13: `computePreventiveTightenSl` 5 test termasuk titik-tengah-jatuh-di-zona-entry → null, `_evaluateManaged` tipe preventif, `_aggManagementStats` blok preventif terpisah + array kosong, handler `friday_tighten` 6 test — 401 tanpa secret, tidak ada posisi open, sudah punya intervention, sukses tighten + data mentah tidak disentuh, candle tidak tersedia, titik tengah invalid, 2 posisi beda symbol independen).
+
+**Dokumentasi lain:** `vps/README-deploy.md` (env var baru + penjelasan fitur) dan `daun_merah_ai.md` §3.8 (klarifikasi 0 call AI, supaya tidak disangka menambah beban pool provider manapun).
+
+**Verifikasi:** `npm test` 626/626 hijau. Belum diverifikasi live (butuh sampai Jumat berikutnya + minimal 1 posisi `open` saat itu).
+
+---
 
 ## Changelog Session 230 (2026-07-24) — Audit Kinerja & Workflow Auto-Entry (Plan U), Data Langsung dari Redis Produksi
 
