@@ -91,8 +91,13 @@ body {
     sempit, jadi tap di item menu (mis. "Kategori Push") malah kena regime banner di baliknya */
   z-index: 100;
 }
-.logo { font-family:'Syne',sans-serif; font-weight:800; font-size:20px; color:var(--accent); letter-spacing:-1px; }
-.logo span { color:var(--text); }
+.logo { display:flex; align-items:center; gap:9px; }
+.logo-icon { width:28px; height:28px; border-radius:22%; flex-shrink:0; display:block; }
+.logo-text { display:flex; flex-direction:column; line-height:1.05; }
+.logo-word { font-family:'Syne',sans-serif; font-weight:800; font-size:17px; color:var(--accent); letter-spacing:-0.5px; }
+.logo-word span { color:var(--text); }
+.logo-sub { font-family:'DM Mono',monospace; font-size:8.5px; color:var(--muted); letter-spacing:1.5px; margin-top:1px; }
+@media (max-width:480px) { .logo-sub { display:none; } }
 .header-right { display:flex; align-items:center; gap:10px; }
 
 .header-menu-wrap { position:relative; }
@@ -3061,7 +3066,13 @@ body:not(.light-theme) .ringkasan-gen-btn {
 <!-- HEADER (permanen, di luar #topChrome — full-width di desktop, tidak ikut
      collapse saat scroll, sama seperti rail nav kiri) -->
 <div class="header">
-  <div class="logo">Daun<span> Merah</span></div>
+  <div class="logo">
+    <img class="logo-icon" src="icon.svg" alt="" width="28" height="28">
+    <div class="logo-text">
+      <div class="logo-word">DAUN<span> MERAH</span></div>
+      <div class="logo-sub">FX TERMINAL</div>
+    </div>
+  </div>
   <div class="header-right">
     <div class="header-menu-wrap" id="headerMenuWrap">
       
@@ -4313,7 +4324,7 @@ window.addEventListener('DOMContentLoaded', updateThemeIcon);
 
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.07.24.6';
+const APP_VERSION = '2026.07.24.7';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js

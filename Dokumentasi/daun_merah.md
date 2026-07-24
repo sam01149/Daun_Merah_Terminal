@@ -27,7 +27,20 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 3. **Fix konsistensi ikutan:** `.cal-date-input` (date-picker "lompat ke tanggal" di kalender) sebelumnya hardcode `color-scheme: dark` dengan komentar lama "app is dark-only" — sudah tidak akurat sejak ada `light-theme`. Ditambah override `body.light-theme .cal-date-input { color-scheme: light; }` supaya popup native date-picker browser ikut tema terang, bukan selalu gelap.
 4. **Bump Version:** `APP_VERSION` dinaikkan ke `2026.07.24.6`.
 
-**Verifikasi:** Tidak ada `chromium-cli`/Playwright terpasang di environment ini untuk screenshot browser sungguhan, jadi verifikasi dilakukan lewat simulasi Node atas logika init tema persis (7 skenario: sistem light/dark tanpa saved theme, saved theme menang atas sistem, toggle manual menulis localStorage, event perubahan sistem diabaikan setelah override manual, diikuti live kalau belum ada override) — semua PASS. `npm test` 630/630 hijau, `node --check` atas snippet OK.
+**Verifikasi (awal):** Tidak ada `chromium-cli`/Playwright terpasang di environment ini untuk screenshot browser sungguhan, jadi verifikasi awal dilakukan lewat simulasi Node atas logika init tema persis (7 skenario: sistem light/dark tanpa saved theme, saved theme menang atas sistem, toggle manual menulis localStorage, event perubahan sistem diabaikan setelah override manual, diikuti live kalau belum ada override) — semua PASS.
+
+**Update — Playwright terpasang:** User tanya apakah kapabilitas screenshot browser bisa "diadakan". Jawabannya bisa: `playwright` dipasang sebagai devDependency (`npm install --save-dev playwright` + `npx playwright install chromium`, berhasil unduh binary Chromium lokal tanpa hambatan jaringan). Dipakai untuk verifikasi ulang teori di atas dengan browser Chromium sungguhan (static server lokal + `page.emulateMedia({colorScheme})`) — sistem light/dark tanpa saved theme, klik tombol toggle manual, reload persist, live-follow tanpa reload, dan `color-scheme` date-picker kalender — semua lolos sesuai skenario simulasi. Screenshot & script test bersifat sekali-pakai (dihapus setelah verifikasi, tidak masuk repo); `playwright` devDependency dipertahankan untuk sesi mendatang yang butuh verifikasi visual nyata.
+
+## Perubahan Lanjutan Session 239 — Logo Header Kiri-Atas (Ikon + Wordmark)
+
+**Konteks:** User minta teks polos "Daun Merah" di pojok kiri-atas header diganti pakai identitas visual baru (ikon daun merah-hijau gaya yin-yang + wordmark "DAUN MERAH" / subtitle "FX TERMINAL"). Dikonfirmasi lewat `AskUserQuestion`: dibangun native HTML/CSS (bukan file gambar statis) dan bingkai krem ikon dipertahankan (konsisten dengan favicon/`icon.svg`/`apple-touch-icon.png` yang sudah dipakai app — path data SVG-nya sudah identik, jadi tidak perlu asset baru).
+
+**Perubahan (`index.html`):**
+1. **Markup (`.header` div.logo`, baris ~3066-3073):** `<div class="logo">Daun<span> Merah</span></div>` diganti jadi `<img class="logo-icon" src="icon.svg">` + `.logo-text` (div `.logo-word` "DAUN MERAH" + div `.logo-sub` "FX TERMINAL").
+2. **CSS (baris ~94-100):** `.logo` jadi flex row (ikon 28×28px + kolom teks). `.logo-word` pakai font Syne 800 (sama seperti sebelumnya, ukuran diperkecil 20px→17px karena sekarang berbagi ruang dengan ikon+subtitle). `.logo-sub` pakai DM Mono 8.5px huruf-kapital berspasi lebar, warna `var(--muted)` — konsisten dengan estetika terminal app. Subtitle disembunyikan di layar ≤480px (`.logo-sub{display:none}`) supaya tidak sesak di mobile.
+3. **Bump Version:** `APP_VERSION` dinaikkan ke `2026.07.24.7`.
+
+**Verifikasi:** Screenshot Playwright Chromium nyata (dark theme, light theme, viewport mobile 375px) — ikon+wordmark tampil rapi di kedua tema, subtitle otomatis hilang di lebar mobile sesuai breakpoint. `npm test` 630/630 hijau.
 
 **Konteks:** User screenshot kotak TL;DR di PDF Analisa (`Analisa XAUUSD Overlap 20.55.pdf`) — baris teks "merenggang ke samping", keluar dari border kotak. User juga minta paragraf teks di PDF (Ringkasan & Analisa) di-justify biar rapi.
 
