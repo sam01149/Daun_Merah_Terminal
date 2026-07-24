@@ -11,11 +11,29 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-07-24 (Session 240 — Filosofi & Makna Nama di README)
+> **Last updated:** 2026-07-24 (Session 240 — Ganti Logo Jadi Ikon Daun Berurat)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Perubahan Lanjutan Session 240 — Ganti Logo Jadi Ikon Daun Berurat
+
+**Konteks:** Lanjutan dari makna nama di atas. User usul "ide liar": ganti logo jadi gambar daun setengah hijau setengah merah dengan garis netral di tengah (bukan swirl yin-yang yang dipakai sejak Session 239). Dibuatkan prototipe perbandingan (Artifact) dulu — user setuju arah daun literal lebih gampang diingat & lebih terbaca di ukuran kecil (favicon), tapi minta garis tengahnya dibuat lebih natural/organik (versi awal terlalu lurus mutlak), baru dijadikan icon produksi.
+
+**Perubahan (`icon.svg`):** Artwork yin-yang (path 8-14 lama) diganti total jadi siluet daun literal (bentuk lensa/almond, ujung lancip atas-bawah) dibelah 2 warna via `clipPath` (kiri hijau `rgb(13,77,77)`, kanan merah `rgb(178,48,48)`), dengan:
+- Urat tengah (garis netral) dibuat melengkung organik (bezier kurva-S ringan, bukan garis lurus) + di-layer 2 stroke (lebar 22 di bagian bawah, tipis 11 penuh) untuk efek meruncing (tapering) natural dari pangkal ke ujung.
+- 8 urat sekunder melengkung (bukan garis lurus), posisi kiri-kanan sengaja tidak simetris sejajar (alternating/selang-seling) meniru pola tulang daun asli (pinnate venation).
+- Tangkai daun kecil di ujung bawah (segitiga abu-abu `rgb(159,158,153)`).
+- Bingkai badge rounded-square (background hitam + 4 aksen sudut krem) di path 1-7 TIDAK diubah — tetap sama seperti desain lama.
+
+**Aset turunan diregenerasi via Playwright (headless Chromium, bukan hand-edit binary):**
+- `apple-touch-icon.png` (180×180): screenshot langsung dari `icon.svg` baru.
+- `og-image.png` (2752×1536): banner baru dirender dari HTML (font Syne 800 utk wordmark "DAUN MERAH", DM Mono utk subtitle "FX TERMINAL", warna persis sama dengan `--accent`/`--text`/`--muted` di `index.html`) + ikon daun baru di kiri.
+
+**Verifikasi:** Screenshot Playwright di berbagai ukuran (16/24/32/48/96/180/512px) dan latar (hitam & abu-abu) — bingkai badge 4 sudut tetap utuh, urat tengah & sekunder tetap terbaca jelas sampai ukuran 32px, di 16px tetap terbaca sebagai daun dua-warna dengan garis pemisah.
+
+**Tidak diubah:** `index.html` (logo header & README sudah pakai referensi `icon.svg` langsung, otomatis ikut berubah tanpa edit tambahan), `manifest.json` (sudah referensi `icon.svg` tunggal), `APP_VERSION`/`?v=` (tidak di-bump — aturan bump hanya berlaku saat `index.html`/`sw.js` diedit, sesi ini tidak menyentuh keduanya).
 
 ## Changelog Session 240 (2026-07-24) — Filosofi & Makna Nama di README
 
