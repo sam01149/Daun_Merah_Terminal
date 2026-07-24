@@ -11,11 +11,21 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-07-24 (Session 234 — "Berita Terkait" TEK Diperpanjang ke Arsip 36 Jam + Load-More)
+> **Last updated:** 2026-07-24 (Session 235 — Pecah Rate-Limit `/api/correlations` Jadi Per-Aksi (Fix 429 Panel Korelasi))
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 235 (2026-07-24) — Pecah Rate-Limit `/api/correlations` Jadi Per-Aksi (Fix 429 Panel Korelasi)
+
+**Konteks:** User melapor panel "CROSS-ASSET CORRELATIONS" di TEK gagal dengan "HTTP 429" saat testing langsung setelah Session 233/234 dipush. Ditelusuri: `/api/correlations` punya SATU gate `rateLimit(limit:5, windowSecs:60, endpoint:'correlations')` dipasang sebelum percabangan action, dipakai bersama oleh 3 fitur beda (matrix korelasi default, `action=rates` sizing calculator, `action=daily-snapshot` dashboard) — dan gate itu jalan SEBELUM cek cache masing-masing (cache TTL 24h/5menit/5menit), jadi request cache-hit yang murah pun ikut makan jatah 5/60s yang sama. Kombinasi wajar (reload dashboard + buka TEK + pakai sizing calculator dalam waktu berdekatan, atau beberapa kali reload page saat testing) sudah cukup buat ke-429 walau bukan abuse.
+
+**Perubahan (`api/correlations.js`):** 3 action tadi sekarang masing-masing punya label + gate rate-limit sendiri (`correlations_rates`, `correlations_snapshot`, `correlations_matrix`), limit dinaikkan 5→10/60s tiap satu (aman dinaikkan karena upstream Yahoo yang mahal sudah diproteksi terpisah oleh cache Redis + `withSingleFlight` lock, rate limit ini cuma proteksi jumlah request per-IP, bukan proteksi upstream). `action=risk-reversal` & `action=ta`/`ohlcv` tidak disentuh (sudah punya gate sendiri dari awal, tidak ikut bug ini).
+
+**Verifikasi:** `node --check api/correlations.js` sintaks OK, `npm test` 629/629 hijau (tidak ada test yang hardcode label rate-limit lama).
+
+---
 
 ## Changelog Session 234 (2026-07-24) — "Berita Terkait" TEK Diperpanjang ke Arsip 36 Jam + Load-More
 

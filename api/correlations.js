@@ -634,10 +634,13 @@ const handler = async function handler(req, res) {
     return res.status(200).json({ ...payload, from_cache: false });
   }
 
-  if (await rateLimit(req, res, { limit: 5, windowSecs: 60, endpoint: 'correlations' })) return;
-
   // --- SIZING RATES: live FX rates for accurate cross-pair pip value calculation ---
   if (req.query.action === 'rates') {
+    // Label terpisah dari 'daily-snapshot'/matrix (dulu satu budget bersama 5/60s —
+    // 3 fitur beda saling makan jatah, gampang 429 padahal masing2 cuma baca cache
+    // 5 menit; upstream Yahoo tetap aman lewat singleflight+cache, bukan rate limit
+    // ini). Limit dinaikkan karena baca-cache jauh lebih murah dari fetch Yahoo asli.
+    if (await rateLimit(req, res, { limit: 10, windowSecs: 60, endpoint: 'correlations_rates' })) return;
     const RATES_KEY = 'sizing_rates';
     const RATES_TTL = 300; // 5 minutes
     try {
@@ -699,6 +702,7 @@ const handler = async function handler(req, res) {
 
   // --- DAILY PULSE: FX % change today + 10Y yield moves ---
   if (req.query.action === 'daily-snapshot') {
+    if (await rateLimit(req, res, { limit: 10, windowSecs: 60, endpoint: 'correlations_snapshot' })) return;
     const SNAP_KEY = 'daily_snapshot';
     const SNAP_TTL = 300; // 5 minutes
 
@@ -815,6 +819,11 @@ const handler = async function handler(req, res) {
       return res.status(500).json({ error: e.message });
     }
   }
+
+  // Matrix korelasi utama — label rate-limit sendiri (lihat komentar di action 'rates'
+  // di atas: dulu satu budget 5/60s dipakai bersama rates+daily-snapshot, gampang
+  // ke-429 dari kombinasi reload dashboard+TEK+sizing yang wajar, bukan abuse).
+  if (await rateLimit(req, res, { limit: 10, windowSecs: 60, endpoint: 'correlations_matrix' })) return;
 
   // Try Redis cache first
   try {
