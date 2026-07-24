@@ -2510,6 +2510,71 @@ function _evaluateSetups(setups, candlesBySymbol, nowMs, calendarEvents) {
   return setups;
 }
 
+// PLAN U-3 lanjutan (2026-07-24, diskusi user soal "setup bagus keburu ditarik karena
+// noise"): counterfactual untuk pending yang DIBATALKAN via Flip Guard non-whipsaw
+// (canceled_reason:'bias_flip', lihat penulisan setup_log auto sekitar "Skenario
+// Pembalikan Bias"). Begitu status jadi 'canceled', _evaluateSetups DI ATAS berhenti
+// mengevaluasi setup itu selamanya (loop-nya cuma jalan utk status pending/open) — jadi
+// pembatalan itu tidak pernah diukur tepat atau tidaknya. Fungsi ini SENGAJA terpisah
+// (bukan menyambung status asli) supaya prinsip "data mentah/status TIDAK PERNAH ditimpa"
+// (U-5a) tetap berlaku — hasilnya ditulis ke field ghost_* baru, status tetap 'canceled'
+// apa adanya. Logikanya sengaja MIRIP _evaluateSetups (pending->open->sl/tp/expired),
+// cuma start dari waktu pembatalan (canceled_t) memakai level entry_zone/sl/tp yang sudah
+// dibekukan sejak sebelum di-cancel.
+function _evaluateCanceledGhost(setups, candlesBySymbol, nowMs) {
+  const DAY = 86400000;
+  const nums = s => (String(s).match(/[\d.]+/g) || []).map(Number).filter(n => !isNaN(n));
+  for (const st of setups || []) {
+    if (!st || st.status !== 'canceled' || st.canceled_reason !== 'bias_flip') continue;
+    if (st.ghost_status) continue; // sudah resolved, jangan re-evaluasi
+    const startTs = st.canceled_t || st.ts;
+    if (!Number.isFinite(startTs)) continue;
+    const e = nums(st.entry_zone), sl = nums(st.sl)[0], tp = nums(st.tp)[0];
+    if (!e.length || sl == null || tp == null || (st.bias !== 'bullish' && st.bias !== 'bearish')) {
+      st.ghost_status = 'invalid';
+      continue;
+    }
+    const eLo = Math.min(...e), eHi = Math.max(...e);
+    const rawCandles = candlesBySymbol?.[st.symbol] || [];
+    const all = Array.isArray(rawCandles) ? [...rawCandles].sort((a, b) => a.t - b.t) : [];
+    let ghostPhase = 'pending';
+    for (const c of all) {
+      if (c.t * 1000 <= startTs) continue;
+      if (ghostPhase === 'pending') {
+        const filled = st.bias === 'bearish' ? c.h >= eLo : c.l <= eHi;
+        if (filled) { ghostPhase = 'open'; st.ghost_filled_t = c.t; }
+      }
+      if (ghostPhase === 'open') {
+        const hitSl = st.bias === 'bearish' ? c.h >= sl : c.l <= sl;
+        const hitTp = st.bias === 'bearish' ? c.l <= tp : c.h >= tp;
+        if (hitSl && hitTp) { st.ghost_status = 'ambiguous'; st.ghost_closed_t = c.t; break; }
+        if (hitSl) { st.ghost_status = 'sl'; st.ghost_closed_t = c.t; break; }
+        if (hitTp) { st.ghost_status = 'tp'; st.ghost_closed_t = c.t; break; }
+      }
+    }
+    const horizonMs = Math.max(2, st.horizon_days || 5) * 1.5 * DAY;
+    if (!st.ghost_status && nowMs - startTs > horizonMs) st.ghost_status = 'expired';
+  }
+  return setups;
+}
+
+// Agregat ghost cancel-flip untuk _aggSetupStats di bawah — pola sama _aggManagementStats
+// (api/_position_review.js): saved = flip TEPAT (harga aslinya lanjut ke SL), cost = flip
+// SALAH (harga aslinya lanjut ke TP, berarti setup yang dibatalkan sebenarnya benar —
+// PERSIS ketakutan "setup bagus ditarik karena noise"), pending = belum resolve (belum
+// kena entry_zone sama sekali/masih ditunggu).
+function _aggCancelFlipGhostStats(arr) {
+  const list = (Array.isArray(arr) ? arr : []).filter(x => x && x.canceled_reason === 'bias_flip');
+  return {
+    total: list.length,
+    saved: list.filter(x => x.ghost_status === 'sl').length,
+    cost: list.filter(x => x.ghost_status === 'tp').length,
+    ambiguous: list.filter(x => x.ghost_status === 'ambiguous').length,
+    expired_no_fill: list.filter(x => x.ghost_status === 'expired').length,
+    pending: list.filter(x => !x.ghost_status).length,
+  };
+}
+
 // Deteksi penyebab loss otomatis (PLAN U-1). Prioritas: fundamental_shock >
 // fakeout_sl — satu label saja, tidak menumpuk. Pure function, dites unit.
 // - fundamental_shock: ada event kalender impact 'High' untuk currency salah satu
@@ -2655,15 +2720,18 @@ function _aggSetupStats(arr) {
     // PLAN U-5a: manajemen posisi VIRTUAL dilaporkan TERPISAH — makna win_rate di
     // atas TIDAK berubah (tetap kinerja ghost/pasif apa adanya).
     management: _aggManagementStats(arr),
+    // PLAN U-3 lanjutan (2026-07-24): counterfactual pending yang dibatalkan via Flip
+    // Guard non-whipsaw — lihat _evaluateCanceledGhost/_aggCancelFlipGhostStats di atas.
+    cancel_flip_ghost: _aggCancelFlipGhostStats(arr),
   };
 }
 
-// PLAN U-7: hapus blok `management` (U-5a) dari agregat sebelum dikirim ke payload
-// PUBLIK — manajemen posisi eksperimen HANYA boleh terlihat lewat scope=auto
-// (REVISI VISIBILITAS). Field informasi U-1 (win_rate_raw/adjusted, loss_causes)
-// tetap ikut apa adanya karena bukan bagian `management`.
+// PLAN U-7: hapus blok `management`/`cancel_flip_ghost` (U-5a/U-3 lanjutan) dari agregat
+// sebelum dikirim ke payload PUBLIK — diagnostik keputusan AI eksperimen HANYA boleh
+// terlihat lewat scope=auto (REVISI VISIBILITAS). Field informasi U-1 (win_rate_raw/
+// adjusted, loss_causes) tetap ikut apa adanya karena bukan bagian dua blok itu.
 function _omitManagement(stats) {
-  const { management, ...rest } = stats;
+  const { management, cancel_flip_ghost, ...rest } = stats;
   return rest;
 }
 
@@ -2768,6 +2836,20 @@ async function _buildAutoScopeStats() {
       } catch (e) { /* symbol itu tetap tak ter-update, dicoba lagi tick berikutnya */ }
     }));
     log = _evaluateManaged(log, candlesBySymbol);
+  }
+  // PLAN U-3 lanjutan (2026-07-24): sama pola managedPending di atas, tapi untuk ghost
+  // cancel-flip (lihat _evaluateCanceledGhost) — symbol yang cuma dikenal lewat pending
+  // yang sudah dibatalkan mungkin belum ada di `active`/candlesBySymbol sama sekali.
+  const ghostPending = log.filter(s => s && s.status === 'canceled' && s.canceled_reason === 'bias_flip' && !s.ghost_status);
+  if (ghostPending.length) {
+    await Promise.all([...new Set(ghostPending.map(s => s.symbol))].map(async sym => {
+      if (candlesBySymbol[sym]) return;
+      try {
+        const r = await redisCmd('GET', `ohlcv:${sym}:1h`);
+        if (r) candlesBySymbol[sym] = JSON.parse(r);
+      } catch (e) { /* symbol itu tetap tak ter-update, dicoba lagi tick berikutnya */ }
+    }));
+    log = _evaluateCanceledGhost(log, candlesBySymbol, Date.now());
   }
   const after = JSON.stringify(log);
   if (after !== before) await redisCmd('SET', 'setup_log_auto:v1', after);
@@ -4233,6 +4315,17 @@ async function ohlcvAnalyzeHandler(req, res) {
                   stalePending.status = 'canceled';
                   stalePending.label_reason = `digantikan analisa auto-entry bias ${structured.bias} sebelum kena harga`;
                   stalePending.label_by = 'auto';
+                  // PLAN U-3 lanjutan (2026-07-24, diskusi user soal "setup bagus keburu
+                  // ditarik karena noise"): begitu status jadi 'canceled', _evaluateSetups
+                  // BERHENTI mengevaluasi setup ini selamanya (cuma jalan utk pending/open)
+                  // — jadi tidak pernah ketahuan apakah flip ini tepat (harga lanjut ke SL
+                  // asli) atau salah (harga lanjut ke TP asli, berarti setup yang dibatalkan
+                  // sebenarnya benar). Tandai eksplisit + catat waktu pembatalan supaya
+                  // _evaluateCanceledGhost bisa lanjut memantau counterfactual-nya di field
+                  // TERPISAH (ghost_status/ghost_*) — data mentah/status TIDAK disentuh,
+                  // prinsip sama _evaluateManaged (U-5a).
+                  stalePending.canceled_reason = 'bias_flip';
+                  stalePending.canceled_t = Date.now();
                 }
               }
             }
@@ -4748,6 +4841,8 @@ module.exports._pickExpiryLevels = _pickExpiryLevels;
 module.exports._confluenceZones = _confluenceZones;
 module.exports._formatConfluenceBlock = _formatConfluenceBlock;
 module.exports._evaluateSetups = _evaluateSetups;
+module.exports._evaluateCanceledGhost = _evaluateCanceledGhost;
+module.exports._aggCancelFlipGhostStats = _aggCancelFlipGhostStats;
 module.exports._aggSetupStats = _aggSetupStats;
 module.exports._costAdjustedR = _costAdjustedR;
 module.exports._aggCostExpectancy = _aggCostExpectancy;

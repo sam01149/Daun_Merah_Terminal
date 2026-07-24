@@ -11,11 +11,30 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-07-24 (Session 228 — Sparkline Drift Korelasi Historis (Plan I Fase 2) + Bersihkan 3 Item Progress Tertunda)
+> **Last updated:** 2026-07-24 (Session 229 — Ghost-Tracking Pending yang Dibatalkan via Flip Guard (Plan U-3 lanjutan))
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 229 (2026-07-24) — Ghost-Tracking Pending yang Dibatalkan via Flip Guard (Plan U-3 lanjutan)
+
+**Konteks:** Diskusi user soal cara kerja AI auto-trade saat harga/berita berlawanan dengan setup yang sedang berjalan. User khawatir: "setup yang bagus keburu ditarik/dibatalkan gara-gara noise". Investigasi menemukan Flip Guard (whipsaw, `conflict==='arah'`) sudah menahan pembatalan untuk kasus whipsaw jelas, tapi untuk pembalikan bias yang LOLOS Flip Guard (dianggap genuine, bukan whipsaw), pending yang dibatalkan langsung `status:'canceled'` dan **berhenti dievaluasi selamanya** oleh `_evaluateSetups` (loop itu cuma jalan untuk status `pending`/`open`) — beda dari intervensi CLOSE_EARLY/TIGHTEN_SL di posisi OPEN (U-5a) yang tetap di-ghost-track lewat `status` asli yang tidak disentuh. Titik buta nyata: tidak pernah ketahuan apakah pembatalan itu tepat atau justru menggagalkan setup yang sebenarnya benar.
+
+**Perubahan (`api/admin.js`):**
+1. Titik pembatalan pending (Skenario Pembalikan Bias non-whipsaw) sekarang menandai `canceled_reason:'bias_flip'` + `canceled_t` (waktu pembatalan) — status/level asli tetap TIDAK disentuh (prinsip sama U-5a).
+2. Fungsi murni baru `_evaluateCanceledGhost(setups, candlesBySymbol, nowMs)` — simulasi pending→open→sl/tp/expired yang MIRIP `_evaluateSetups`, tapi start dari `canceled_t` dan menulis hasil ke field terpisah `ghost_status`/`ghost_filled_t`/`ghost_closed_t` (bukan menimpa `status`).
+3. Fungsi murni baru `_aggCancelFlipGhostStats(arr)` — agregat `saved` (ghost=sl, flip tepat) vs `cost` (ghost=tp, flip SALAH — persis skenario yang ditakutkan) vs `ambiguous`/`expired_no_fill`/`pending`, disatukan ke `_aggSetupStats` sebagai blok `cancel_flip_ghost` (pola sama `management`).
+4. `_buildAutoScopeStats()`: fetch candle lazy untuk symbol yang punya ghost pending belum resolve (pola sama `managedPending`), lalu jalankan evaluator ghost sebelum persist.
+5. `_omitManagement()`: `cancel_flip_ghost` ikut disaring dari payload publik — HANYA terlihat lewat `scope=auto` (developer-only), konsisten dengan kebijakan visibilitas U-7.
+
+**Test baru:** `test/admin/ta_struct.test.js` (+8: fill→TP setelah cancel, fill→SL setelah cancel, belum resolve, expired, sudah-resolved tidak dievaluasi ulang, status/reason lain dilewati, agregat lengkap, agregat kosong) + `test/admin/isolation_auto.test.js` (assert `cancel_flip_ghost` undefined di payload publik, ada di `scope=auto`).
+
+**Verifikasi:** `npm test` 613/613 hijau (test baru admin.js; total angka berbeda dari catatan sesi 228 karena turut memuat pekerjaan sesi itu yang berjalan bersamaan).
+
+**Catatan multi-sesi:** sesi ini berjalan BERSAMAAN dengan Session 228 (sparkline korelasi) di `api/correlations.js`/`index.html` — file itu (+ `Dokumentasi/daun_merah_riset.md`) sengaja TIDAK disentuh/di-commit di sini, dibiarkan utuh sesuai yang sudah di-stage sesi lain (lihat [[project-plan-v-concurrent-session-collision]]).
+
+---
 
 ## Changelog Session 228 (2026-07-24) — Sparkline Drift Korelasi Historis (Plan I Fase 2) + Bersihkan 3 Item Progress Tertunda
 

@@ -444,6 +444,100 @@ test('_aggSetupStats: win-rate hanya dari TP vs SL, ambiguous tidak masuk pembag
   assert.strictEqual(empty.win_rate, null);
 });
 
+// ── _evaluateCanceledGhost + _aggCancelFlipGhostStats (PLAN U-3 lanjutan, 2026-07-24) ──
+// Counterfactual pending yang dibatalkan via Flip Guard non-whipsaw — begitu status jadi
+// 'canceled', _evaluateSetups di atas berhenti mengevaluasinya selamanya; fungsi ini
+// mengisi field ghost_* TERPISAH supaya ketahuan apakah pembatalan itu tepat (harga asli
+// lanjut ke SL) atau salah (lanjut ke TP — "setup bagus keburu ditarik karena noise").
+const { _evaluateCanceledGhost, _aggCancelFlipGhostStats } = require('../../api/admin.js');
+
+function mkCanceled(over = {}) {
+  return mkSetup({ status: 'canceled', canceled_reason: 'bias_flip', canceled_t: MS0, ...over });
+}
+
+test('_evaluateCanceledGhost: harga lanjut ke TP asli setelah dibatalkan → ghost_status tp (flip salah)', () => {
+  const setups = [mkCanceled()]; // bearish, entry 4030-4040, sl 4065, tp 3960
+  const candles = {
+    'GC=F': [
+      mkC(T0 + 3600, 4000, 4035, 3995, 4020),   // h 4035 >= 4030 → ghost fill
+      mkC(T0 + 7200, 4020, 4030, 3955, 3960),   // l 3955 <= 3960 → ghost TP
+    ],
+  };
+  _evaluateCanceledGhost(setups, candles, MS0 + 3 * 3600 * 1000);
+  assert.strictEqual(setups[0].status, 'canceled'); // status asli TIDAK disentuh
+  assert.strictEqual(setups[0].ghost_status, 'tp');
+  assert.strictEqual(setups[0].ghost_filled_t, T0 + 3600);
+  assert.strictEqual(setups[0].ghost_closed_t, T0 + 7200);
+});
+
+test('_evaluateCanceledGhost: harga lanjut ke SL asli setelah dibatalkan → ghost_status sl (flip tepat)', () => {
+  const setups = [mkCanceled()];
+  const candles = {
+    'GC=F': [
+      mkC(T0 + 3600, 4000, 4035, 3995, 4030),   // fill
+      mkC(T0 + 7200, 4030, 4070, 4025, 4060),   // h 4070 >= 4065 → ghost SL
+    ],
+  };
+  _evaluateCanceledGhost(setups, candles, MS0 + 3 * 3600 * 1000);
+  assert.strictEqual(setups[0].ghost_status, 'sl');
+});
+
+test('_evaluateCanceledGhost: belum pernah kena entry_zone → ghost_status tetap kosong (belum resolve)', () => {
+  const setups = [mkCanceled()];
+  const candles = { 'GC=F': [mkC(T0 + 3600, 4000, 4010, 3995, 4005)] }; // tidak pernah sentuh 4030-4040
+  _evaluateCanceledGhost(setups, candles, MS0 + 3 * 3600 * 1000);
+  assert.strictEqual(setups[0].ghost_status, undefined);
+});
+
+test('_evaluateCanceledGhost: kadaluarsa (> horizon x1.5) tanpa pernah fill → ghost_status expired', () => {
+  const setups = [mkCanceled()];
+  const candles = { 'GC=F': [mkC(T0 + 3600, 4000, 4010, 3995, 4000)] };
+  _evaluateCanceledGhost(setups, candles, MS0 + 8 * 86400000);
+  assert.strictEqual(setups[0].ghost_status, 'expired');
+});
+
+test('_evaluateCanceledGhost: sudah resolved sebelumnya → tidak dievaluasi ulang', () => {
+  const setups = [mkCanceled({ ghost_status: 'sl', ghost_closed_t: 123 })];
+  const candles = {
+    'GC=F': [mkC(T0 + 3600, 4000, 4035, 3995, 4030), mkC(T0 + 7200, 4030, 4030, 3955, 3960)], // kalau dievaluasi ulang jadi TP
+  };
+  _evaluateCanceledGhost(setups, candles, MS0 + 3 * 3600 * 1000);
+  assert.strictEqual(setups[0].ghost_status, 'sl'); // tidak berubah
+});
+
+test('_evaluateCanceledGhost: status bukan canceled/bias_flip → dilewati (pending/open/canceled reason lain)', () => {
+  const setups = [
+    mkSetup({ status: 'pending' }),
+    mkSetup({ status: 'canceled', canceled_reason: 'lain' }),
+    mkSetup({ status: 'canceled' }), // tanpa canceled_reason sama sekali
+  ];
+  const candles = { 'GC=F': [mkC(T0 + 3600, 4000, 4035, 3995, 4030), mkC(T0 + 7200, 4030, 4030, 3955, 3960)] };
+  _evaluateCanceledGhost(setups, candles, MS0 + 3 * 3600 * 1000);
+  setups.forEach(s => assert.strictEqual(s.ghost_status, undefined));
+});
+
+test('_aggCancelFlipGhostStats: hitung saved (sl)/cost (tp)/ambiguous/expired_no_fill/pending, abaikan non-bias_flip', () => {
+  const arr = [
+    mkCanceled({ ghost_status: 'sl' }),
+    mkCanceled({ ghost_status: 'sl' }),
+    mkCanceled({ ghost_status: 'tp' }),
+    mkCanceled({ ghost_status: 'ambiguous' }),
+    mkCanceled({ ghost_status: 'expired' }),
+    mkCanceled(), // belum resolve
+    mkSetup({ status: 'canceled', canceled_reason: 'lain', ghost_status: 'tp' }), // BUKAN bias_flip, harus diabaikan
+    mkSetup({ status: 'pending' }),
+  ];
+  const a = _aggCancelFlipGhostStats(arr);
+  assert.strictEqual(a.total, 6);
+  assert.strictEqual(a.saved, 2);
+  assert.strictEqual(a.cost, 1);
+  assert.strictEqual(a.ambiguous, 1);
+  assert.strictEqual(a.expired_no_fill, 1);
+  assert.strictEqual(a.pending, 1);
+  const empty = _aggCancelFlipGhostStats([]);
+  assert.strictEqual(empty.total, 0);
+});
+
 // ── PLAN U-1 (2026-07-20): loss_label, raw vs adjusted, _detectLossLabel ──────
 
 const { _detectLossLabel } = require('../../api/admin.js');

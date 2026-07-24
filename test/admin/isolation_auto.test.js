@@ -583,6 +583,10 @@ test('PLAN U-7(b): payload publik setup_stats identik sebelum vs sesudah ada ent
     // Sanity: blok management (U-5a) memang sudah tidak ada di payload publik.
     assert.equal(before.global.management, undefined);
     assert.equal(before.symbols['GC=F'].management, undefined);
+    // Sama untuk cancel_flip_ghost (U-3 lanjutan, 2026-07-24) — diagnostik keputusan
+    // AI eksperimen, ikut aturan visibilitas sama dengan management.
+    assert.equal(before.global.cancel_flip_ghost, undefined);
+    assert.equal(before.symbols['GC=F'].cancel_flip_ghost, undefined);
     // Field informasi U-1 tetap publik.
     assert.ok(Object.prototype.hasOwnProperty.call(before.global, 'win_rate_raw'));
     assert.ok(Object.prototype.hasOwnProperty.call(before.global, 'loss_causes'));
@@ -615,6 +619,7 @@ test('PLAN U-7(c): scope=auto DENGAN CRON_SECRET valid -> data eksperimen (manag
     assert.ok(autoPayload.global.management, 'blok management harus ada di scope=auto');
     assert.equal(autoPayload.global.management.tighten_sl, 1);
     assert.equal(autoPayload.global.management.tighten_cost, 1); // ghost=tp -> intervensi tighten_sl merugi
+    assert.ok(autoPayload.global.cancel_flip_ghost, 'blok cancel_flip_ghost harus ada di scope=auto');
     assert.equal(autoPayload.consistency.total, 2);
     assert.equal(autoPayload.consistency.bias_identical, 1);
     assert.equal(autoPayload.consistency.bias_identical_pct, 50);
