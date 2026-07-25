@@ -489,7 +489,7 @@ body {
   content:''; position:absolute; left:0; top:0; bottom:0;
   width:3px; border-radius:3px 0 0 3px;
 }
-.cat-market-moving::before { background:#ff4757; box-shadow:2px 0 8px rgba(255,71,87,.3); }
+.cat-market-moving::before { background:#ff4757; box-shadow:2px 0 6px rgba(255,71,87,.18); }
 .cat-forex::before { background:var(--green); }
 .cat-equities::before { background:var(--purple); }
 .cat-commodities::before { background:#f59e0b; }
@@ -4333,7 +4333,7 @@ window.addEventListener('DOMContentLoaded', updateThemeIcon);
 
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.07.25.3';
+const APP_VERSION = '2026.07.25.4';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
