@@ -63,6 +63,18 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 
 `APP_VERSION` naik ke `2026.07.25.5`. `npm test` tetap 632/632 hijau, visual dicek ulang via Playwright (tombol REFRESH render netral, tidak ada page error).
 
+**Addendum kedua (lanjutan sesi sama) — sweep `⚠`/`✅`/`🚫`:** User setuju lanjut ke item emoji yang diparkir. Digrep ulang menyeluruh (bukan cuma sample) — ketemu lebih banyak dari estimasi awal: `⚠` di ~30 tempat UI nyata (disclaimer AI, petunjuk/onboarding, modal MT5/override, badge CB bias, stale indicator, checklist, korelasi, sizing warning), plus `✅`/`🚫` di 6 `pt-rule-icon` (Aturan Kunci — 3 larangan, 3 anjuran) dan 2 section header. Semua dihapus/diganti:
+- Teks yang sudah punya warna/badge sendiri (accent/yellow/muted) → simbol dihapus polos, warna sudah cukup bawa makna.
+- `pt-rule-icon` (slot font-size 14px, bukan kotak ikon) → diganti `✗`/`✓` (dingbat teks polos, BUKAN emoji — beda dari `✅`❌ yang eksplisit dicontohkan ATURAN.md) diwarnai `var(--accent)`/`var(--green)` inline, supaya makna larangan/anjuran tetap kebaca tanpa emoji.
+- Badge tanpa warna lain sebagai sinyal (chip "usang" fundamental labour) → diganti teks pendek, bukan dihapus polos, supaya info tidak hilang dari pandangan sekilas.
+- `_updateAnalisaDisclaimer` (dipakai `test/frontend/esc_html.test.js`) dicek dulu — tidak ada assertion ke karakter emoji, aman diedit.
+
+**SENGAJA DIBIARKAN** (bukan kelewat, cek 1-1): 3 pemanggilan `b.subheading()`/`b.footer()` di builder PDF jsPDF (baris ~5917/5934/6015) — beda jalur dari UI, `_PDF_SYMBOL_MAP` (baris ~5625) sudah otomatis convert `⚠`→`!` untuk render PDF; komentar kode `//`; 2 regex pattern (`align.text.replace(/^[✅⚠]\s*/,'')`, `/[✅⬜☑☐]/.test(...)`) yang MENGHAPUS emoji dari input, bukan menampilkan — jadi otomatis jadi no-op aman sekarang sumbernya sudah bersih duluan.
+
+**Temuan baru, TIDAK dikerjakan (beda jenis pekerjaan, di luar lingkup):** emoji piktografik berwarna (`📡📄📋📊🔴🟡👋🔒🍁🔔🏦💱🌐🔍📅⚡⌨⚙` dkk) dipakai sebagai ikon dekoratif di empty-state, label kategori filter push, header section onboarding — beberapa jadi SATU-SATUNYA ikon di tempatnya (state kosong feed, misal), jadi tidak bisa sekadar dihapus tanpa diganti ikon SVG (konsisten dengan ikon nav/header yang sudah pakai `stroke`/`currentColor`). Diparkir ulang di `daun_merah_progress.md` dengan cakupan yang lebih akurat.
+
+`APP_VERSION` naik lagi ke `2026.07.25.6`. `npm test` tetap 632/632 hijau.
+
 ## Changelog Session 242 (2026-07-25) — Bug Timestamp Auto-Entry: ts Reset saat Refine + Race Condition Evaluate-vs-Refine
 
 **Konteks:** User minta cek progres data virtual trading auto-entry (`setup_log_auto:v1`, Plan U). Saat mengecek detail satu entri TP XAU/USD, user sadar `filled_t` (23 Juli) tercatat LEBIH BELAKANGAN dari `closed_t` (22 Juli) — urutan mustahil (TP sebelum entry). Diminta ditelusuri sampai akar & diperbaiki.

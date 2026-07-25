@@ -3290,7 +3290,7 @@ body:not(.light-theme) .ringkasan-gen-btn {
     <div class="no-print" style="margin-top:8px">
       <button id="polyBtn" class="jn-btn-sec" onclick="fetchPolymarket()" style="width:100%;font-size:10px">↻ Refresh Polymarket Macro</button>
     </div>
-    <div class="ai-disclaimer" id="ringkasanDisclaimer">⚠ Ringkasan dihasilkan AI dari headline &amp; data pihak ketiga — bisa keliru, bukan nasihat keuangan. Detail di tab PETUNJUK › Disclaimer.</div>
+    <div class="ai-disclaimer" id="ringkasanDisclaimer">Ringkasan dihasilkan AI dari headline &amp; data pihak ketiga — bisa keliru, bukan nasihat keuangan. Detail di tab PETUNJUK › Disclaimer.</div>
   </div>
 </div>
 
@@ -3331,7 +3331,7 @@ body:not(.light-theme) .ringkasan-gen-btn {
         </button>
       </div>
       <div id="analisaTrackRecord" class="no-print" style="display:none;font-size:10px;color:var(--muted);font-family:'DM Mono',monospace;margin-top:6px;padding:6px 10px;border:1px solid var(--border);border-radius:3px"></div>
-      <div class="ai-disclaimer" id="analisaDisclaimer">⚠ Level &amp; bias di atas dihasilkan AI dan bisa keliru — bukan nasihat keuangan. Verifikasi ke chart sebelum dipakai.</div>
+      <div class="ai-disclaimer" id="analisaDisclaimer">Level &amp; bias di atas dihasilkan AI dan bisa keliru — bukan nasihat keuangan. Verifikasi ke chart sebelum dipakai.</div>
     </div>
   </div>
 </div>
@@ -3760,31 +3760,31 @@ body:not(.light-theme) .ringkasan-gen-btn {
   <!-- ATURAN KUNCI -->
   <div class="pt-section">
     <div class="pt-section-hdr" style="color:#f39c12">
-      <span>⚠</span> Aturan Kunci
+      Aturan Kunci
     </div>
     <div class="pt-rules">
       <div class="pt-rule">
-        <div class="pt-rule-icon">🚫</div>
+        <div class="pt-rule-icon" style="color:var(--accent)">✗</div>
         <div class="pt-rule-text"><strong>Jangan skip CHECKLIST</strong>Kalau setup "terasa bagus tapi checklist tidak pass" — itu bukan edge, itu FOMO. Tidak ada entry.</div>
       </div>
       <div class="pt-rule">
-        <div class="pt-rule-icon">🚫</div>
+        <div class="pt-rule-icon" style="color:var(--accent)">✗</div>
         <div class="pt-rule-text"><strong>Jangan trade di no-trade window</strong>15 menit sebelum dan sesudah high-impact news = dilarang entry. Cek CAL setiap pagi.</div>
       </div>
       <div class="pt-rule">
-        <div class="pt-rule-icon">🚫</div>
+        <div class="pt-rule-icon" style="color:var(--accent)">✗</div>
         <div class="pt-rule-text"><strong>Jangan abaikan COT divergence</strong>Jika COT institusi berlawanan dengan arah trade kamu, kurangi size atau skip. Jangan fight the flow.</div>
       </div>
       <div class="pt-rule">
-        <div class="pt-rule-icon">✅</div>
+        <div class="pt-rule-icon" style="color:var(--green)">✓</div>
         <div class="pt-rule-text"><strong>Ringkas Berita tiap pagi</strong>Jangan trade tanpa konteks hari ini. Ringkasan butuh &lt;30 detik untuk dibaca dan bisa mencegah entry yang salah arah.</div>
       </div>
       <div class="pt-rule">
-        <div class="pt-rule-icon">✅</div>
+        <div class="pt-rule-icon" style="color:var(--green)">✓</div>
         <div class="pt-rule-text"><strong>Risk max 2% per trade</strong>Input ke SIZING setiap kali, jangan hafal lot "kira-kira". Equity berubah setelah setiap trade — hitung ulang selalu.</div>
       </div>
       <div class="pt-rule">
-        <div class="pt-rule-icon">✅</div>
+        <div class="pt-rule-icon" style="color:var(--green)">✓</div>
         <div class="pt-rule-text"><strong>Jurnal setiap trade, bukan hanya yang profit</strong>Trade loss yang terjurnal sama nilainya dengan trade profit — keduanya adalah data untuk improvement.</div>
       </div>
     </div>
@@ -3835,7 +3835,7 @@ body:not(.light-theme) .ringkasan-gen-btn {
         <div class="kb-row"><div class="kb-keys"><span class="kb-key">Esc</span></div><span class="kb-desc">Tutup panel / overlay</span></div>
       </div>
       <div style="font-size:9px;color:var(--muted);margin-top:12px;line-height:1.65">
-        ⚠ Shortcut hanya aktif saat fokus tidak sedang di kotak input/textarea (mis. saat sedang mengetik Catatan Analisa atau Thesis, huruf akan masuk ke kotak teks seperti biasa, bukan jadi shortcut).
+        Shortcut hanya aktif saat fokus tidak sedang di kotak input/textarea (mis. saat sedang mengetik Catatan Analisa atau Thesis, huruf akan masuk ke kotak teks seperti biasa, bukan jadi shortcut).
       </div>
     </div>
   </div>
@@ -3851,7 +3851,7 @@ body:not(.light-theme) .ringkasan-gen-btn {
       </div>
       <button onclick="ptOpenAppKey()" style="padding:8px 12px;background:rgba(245,166,35,0.10);border:1px solid #f5a623;color:#f5a623;font-family:'DM Mono',monospace;font-size:9px;letter-spacing:.05em;cursor:pointer;border-radius:4px">MASUKKAN / UBAH KUNCI AKSES</button>
       <div style="font-size:9px;color:var(--muted);margin-top:10px;line-height:1.65">
-        ⚠ Ganti nilai APP_KEY di Vercel kapan saja untuk mencabut akses semua device sekaligus (semua device harus memasukkan kunci baru).
+        Ganti nilai APP_KEY di Vercel kapan saja untuk mencabut akses semua device sekaligus (semua device harus memasukkan kunci baru).
       </div>
     </div>
   </div>
@@ -3877,7 +3877,7 @@ body:not(.light-theme) .ringkasan-gen-btn {
         <button onclick="ptChangeDeviceId()" style="padding:8px 12px;background:rgba(var(--accent-rgb),0.12);border:1px solid var(--accent-dim);color:var(--accent);font-family:'DM Mono',monospace;font-size:9px;letter-spacing:.05em;cursor:pointer;border-radius:4px;white-space:nowrap">TERAPKAN</button>
       </div>
       <div style="font-size:9px;color:var(--muted);margin-top:10px;line-height:1.65">
-        ⚠ Checklist tersimpan secara lokal di setiap device dan tidak ikut ter-sync. Hanya jurnal dan riwayat sizing yang ter-sync via Device ID.
+        Checklist tersimpan secara lokal di setiap device dan tidak ikut ter-sync. Hanya jurnal dan riwayat sizing yang ter-sync via Device ID.
       </div>
     </div>
   </div>
@@ -3885,7 +3885,7 @@ body:not(.light-theme) .ringkasan-gen-btn {
   <!-- DISCLAIMER & RISIKO -->
   <div class="pt-section" id="ptDisclaimer">
     <div class="pt-section-hdr" style="color:#e57373">
-      <span>⚠</span> Disclaimer &amp; Risiko
+      Disclaimer &amp; Risiko
     </div>
     <div style="padding:14px;font-size:10px;line-height:1.75;color:var(--text-mid)">
       <p style="margin:0 0 10px"><strong style="color:var(--text)">Bukan nasihat keuangan.</strong> Semua konten di aplikasi ini — termasuk ringkasan AI, analisa teknikal AI, bias bank sentral, ranking fundamental, dan thesis — bersifat informasional dan edukasional. Tidak ada satupun yang merupakan rekomendasi, ajakan, atau nasihat investasi/trading. Keputusan entry, exit, dan sizing sepenuhnya tanggung jawab kamu.</p>
@@ -4174,7 +4174,7 @@ body:not(.light-theme) .ringkasan-gen-btn {
       <div class="onboard-step-num">3</div>
       <div class="onboard-step-txt"><strong>NEWS</strong> — setelah punya konteks, monitor headline real-time. Aktifkan AUTO + notifikasi push.</div>
     </div>
-    <div class="onboard-legal">⚠ Semua konten (termasuk output AI) bersifat informasional — bukan nasihat keuangan, dan bisa keliru. Trading ber-leverage berisiko tinggi. Detail di tab PETUNJUK › Disclaimer &amp; Risiko.</div>
+    <div class="onboard-legal">Semua konten (termasuk output AI) bersifat informasional — bukan nasihat keuangan, dan bisa keliru. Trading ber-leverage berisiko tinggi. Detail di tab PETUNJUK › Disclaimer &amp; Risiko.</div>
     <div class="onboard-actions">
       <button class="onboard-btn onboard-btn-sec" onclick="onboardDismiss(true)">Buka Panduan</button>
       <button class="onboard-btn onboard-btn-primary" id="onboardStartBtn" onclick="onboardDismiss(false)">Mulai</button>
@@ -4195,7 +4195,7 @@ body:not(.light-theme) .ringkasan-gen-btn {
       &nbsp;·&nbsp; <span id="mt5ModalOrderKind">Market Order</span>
     </div>
     <div id="mt5ModalNoSizing" style="display:none;padding:12px 10px;background:rgba(var(--accent-rgb),.08);border:1px solid rgba(var(--accent-rgb),.25);border-radius:8px;font-size:10px;color:var(--text);line-height:1.6;margin-bottom:12px">
-      ⚠ Belum ada hasil Sizing Calculator untuk pair ini. Lot/SL/TP tidak boleh diisi manual di sini — hitung dulu di Sizing Calculator agar angkanya objektif, bukan tebakan saat itu.
+      Belum ada hasil Sizing Calculator untuk pair ini. Lot/SL/TP tidak boleh diisi manual di sini — hitung dulu di Sizing Calculator agar angkanya objektif, bukan tebakan saat itu.
       <button onclick="ckGoToSizingFromModal()" style="width:100%;margin-top:10px;padding:9px;background:var(--green);color:#000;border:none;border-radius:6px;font-weight:700;font-size:10px;letter-spacing:.6px;text-transform:uppercase;cursor:pointer">Buka Sizing Calculator →</button>
     </div>
     <div id="mt5ModalFields" style="display:grid;gap:10px">
@@ -4227,7 +4227,7 @@ body:not(.light-theme) .ringkasan-gen-btn {
     </div>
     <div id="mt5ModalStatus" style="margin-top:10px;font-size:10px;color:var(--muted);min-height:16px"></div>
     <div style="margin-top:8px;padding:8px 10px;background:rgba(var(--accent-rgb),.07);border:1px solid rgba(var(--accent-rgb),.2);border-radius:6px;font-size:9px;color:var(--muted);line-height:1.5">
-      ⚠ Kalau Entry Price diisi, sistem akan kirim pending order di harga itu. Kalau kosong, baru market order langsung dieksekusi ke akun MT5. Pastikan <code style="font-size:9px;color:var(--text)">mt5_bridge.py</code> sudah berjalan di PC kamu.
+      Kalau Entry Price diisi, sistem akan kirim pending order di harga itu. Kalau kosong, baru market order langsung dieksekusi ke akun MT5. Pastikan <code style="font-size:9px;color:var(--text)">mt5_bridge.py</code> sudah berjalan di PC kamu.
     </div>
     <button id="mt5ModalConfirmBtn" onclick="ckMt5OrderConfirm()" style="width:100%;margin-top:12px;padding:12px;background:var(--green);color:#000;border:none;border-radius:8px;font-weight:700;font-size:11px;letter-spacing:.8px;text-transform:uppercase;cursor:pointer">Konfirmasi Entry</button>
     <button onclick="ckCloseMt5Modal()" style="width:100%;margin-top:7px;padding:10px;background:transparent;color:var(--muted);border:1px solid var(--border);border-radius:8px;font-size:10px;cursor:pointer">Batal</button>
@@ -4237,7 +4237,7 @@ body:not(.light-theme) .ringkasan-gen-btn {
 <div id="ckOverrideModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9999;align-items:center;justify-content:center">
   <div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:22px 20px;width:min(360px,92vw);max-height:90vh;overflow-y:auto">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-      <div style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--yellow)">⚠ Override Sinyal Otomatis</div>
+      <div style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--yellow)">Override Sinyal Otomatis</div>
       <button onclick="ckCancelOverride()" style="background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer;line-height:1">×</button>
     </div>
     <div id="ckOverrideMsg" style="font-size:11px;color:var(--muted);line-height:1.5;margin-bottom:12px;padding:8px 10px;background:rgba(var(--accent-rgb),.08);border:1px solid rgba(var(--accent-rgb),.2);border-radius:6px"></div>
@@ -4266,7 +4266,7 @@ body:not(.light-theme) .ringkasan-gen-btn {
 <div id="ckSpeedAckModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9999;align-items:center;justify-content:center">
   <div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:22px 20px;width:min(380px,92vw);max-height:90vh;overflow-y:auto">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-      <div style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--accent)">⚠ Kecepatan Tidak Wajar</div>
+      <div style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--accent)">Kecepatan Tidak Wajar</div>
       <button onclick="ckCancelSpeedAck()" style="background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer;line-height:1">×</button>
     </div>
     <div id="ckSpeedAckMsg" style="font-size:11px;color:var(--text);line-height:1.5;margin-bottom:12px;padding:8px 10px;background:rgba(var(--accent-rgb),.08);border:1px solid rgba(var(--accent-rgb),.2);border-radius:6px"></div>
@@ -4335,7 +4335,7 @@ window.addEventListener('DOMContentLoaded', updateThemeIcon);
 
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.07.25.5';
+const APP_VERSION = '2026.07.25.6';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
@@ -5378,8 +5378,8 @@ function _ringkasanDisclaimerHtml(method) {
   const modelLabel = method ? (AI_METHOD_LABELS[method] || method) : null;
   const backupNote = modelLabel && AI_METHOD_BACKUP_TIER.includes(method) ? ' — model cadangan' : '';
   return modelLabel
-    ? `⚠ Ringkasan dihasilkan AI (${escHtml(modelLabel)}${backupNote}) dari headline &amp; data pihak ketiga — bisa keliru, bukan nasihat keuangan. Detail di tab PETUNJUK › Disclaimer.`
-    : `⚠ Ringkasan dihasilkan AI dari headline &amp; data pihak ketiga — bisa keliru, bukan nasihat keuangan. Detail di tab PETUNJUK › Disclaimer.`;
+    ? `Ringkasan dihasilkan AI (${escHtml(modelLabel)}${backupNote}) dari headline &amp; data pihak ketiga — bisa keliru, bukan nasihat keuangan. Detail di tab PETUNJUK › Disclaimer.`
+    : `Ringkasan dihasilkan AI dari headline &amp; data pihak ketiga — bisa keliru, bukan nasihat keuangan. Detail di tab PETUNJUK › Disclaimer.`;
 }
 
 function renderRingkasan() {
@@ -5438,7 +5438,7 @@ function renderRingkasan() {
     ${d.thesis_alerts && d.thesis_alerts.length > 0 ? renderThesisAlerts(d.thesis_alerts) : ''}
 
     ${(d.method === 'fallback' || d.method === 'fallback_quota') && d.provider_log && d.provider_log.length > 0
-      ? `<div class="ringkasan-provider-log">⚠ AI tidak tersedia. Provider log: ${d.provider_log.map(s => escHtml(s)).join(' → ')}</div>`
+      ? `<div class="ringkasan-provider-log">AI tidak tersedia. Provider log: ${d.provider_log.map(s => escHtml(s)).join(' → ')}</div>`
       : ''}
 
     ${renderArticleSections(d.article)}
@@ -6327,8 +6327,8 @@ function _updateAnalisaDisclaimer(model) {
   const disclaimerEl = document.getElementById('analisaDisclaimer');
   if (!disclaimerEl) return;
   disclaimerEl.innerHTML = model
-    ? `⚠ Level &amp; bias di atas dihasilkan AI (${escHtml(model)}) dan bisa keliru — bukan nasihat keuangan. Verifikasi ke chart sebelum dipakai.`
-    : `⚠ Level &amp; bias di atas dihasilkan AI dan bisa keliru — bukan nasihat keuangan. Verifikasi ke chart sebelum dipakai.`;
+    ? `Level &amp; bias di atas dihasilkan AI (${escHtml(model)}) dan bisa keliru — bukan nasihat keuangan. Verifikasi ke chart sebelum dipakai.`
+    : `Level &amp; bias di atas dihasilkan AI dan bisa keliru — bukan nasihat keuangan. Verifikasi ke chart sebelum dipakai.`;
 }
 
 function _renderStructuredAi(structured, commentary, model, hasMakro, isCached, hasFund, makroAt, analyzedAt) {
@@ -6356,7 +6356,7 @@ function _renderStructuredAi(structured, commentary, model, hasMakro, isCached, 
     if (structured.makro_alignment) {
       const a = structured.makro_alignment;
       const ac = a === 'searah' ? 'var(--green)' : a === 'konflik' ? '#f5a623' : 'var(--muted)';
-      const al = a === 'searah' ? '✓ MAKRO SEARAH' : a === 'konflik' ? '⚠ MAKRO KONFLIK' : '– MAKRO NETRAL';
+      const al = a === 'searah' ? 'MAKRO SEARAH' : a === 'konflik' ? 'MAKRO KONFLIK' : '– MAKRO NETRAL';
       alignChip = `<span title="${escHtml(structured.makro_alignment_reason || '')}" style="border:1px solid ${ac};color:${ac};font-size:9px;font-weight:700;padding:2px 8px;border-radius:3px;font-family:'DM Mono',monospace;letter-spacing:.06em;flex-shrink:0">${al}</span>`;
     }
 
@@ -6672,7 +6672,7 @@ function renderAnalisa() {
     const ageMin = Math.round((Date.now() / 1000 - d.last_candle_t) / 60);
     const ageStr = ageMin < 60 ? `${ageMin} menit lalu` : `${(ageMin / 60).toFixed(1)} jam lalu`;
     const isStale = ageMin > 150; // candle 1H seharusnya segar dalam ~2.5 jam
-    staleHtml = ` · <span class="${isStale ? 'down' : ''}" title="Candle 1H terakhir">candle: ${ageStr}${isStale ? ' ⚠' : ''}</span>`;
+    staleHtml = ` · <span class="${isStale ? 'down' : ''}" title="Candle 1H terakhir">candle: ${ageStr}</span>`;
   }
 
   document.getElementById('analisaHeader').innerHTML = `
@@ -7068,7 +7068,7 @@ function renderXauThesisCard(t) {
 function renderThesisAlerts(alerts) {
   const items = alerts.map(a => `
     <div class="thesis-alert-item">
-      <div class="thesis-alert-pair">⚠ ${escHtml(a.pair)} ${escHtml((a.direction||'').toUpperCase())}</div>
+      <div class="thesis-alert-pair">${escHtml(a.pair)} ${escHtml((a.direction||'').toUpperCase())}</div>
       <div class="thesis-alert-headline">"${escHtml(a.headline)}"</div>
       <div class="thesis-alert-reason">${escHtml(a.reason)}</div>
     </div>`).join('');
@@ -7596,21 +7596,21 @@ function renderCBTracker() {
       : null;
     const meetingStale = daysSinceMeeting !== null && daysSinceMeeting > 45;
     const meetingHtml = cb.last_meeting
-      ? '<span style="font-size:7px;color:' + (meetingStale ? 'var(--accent)' : 'var(--muted)') + '">' + (meetingStale ? '⚠ ' : '') + cb.last_meeting + '</span>'
+      ? '<span style="font-size:7px;color:' + (meetingStale ? 'var(--accent)' : 'var(--muted)') + '">' + cb.last_meeting + '</span>'
       : '';
 
     const manualBadge = cb.manual
       ? '<span class="cb-manual-badge">✎ Manual</span>'
       : '';
     const manualWarn = cb.manual && cb.ai_bias && cb.ai_bias !== cb.bias
-      ? '<span class="cb-manual-warn">⚠ Berbeda dari AI: ' + escHtml(cb.ai_bias) + '</span>'
+      ? '<span class="cb-manual-warn">Berbeda dari AI: ' + escHtml(cb.ai_bias) + '</span>'
       : (cb.manual ? '<span class="cb-manual-warn">Anda mengedit manual</span>' : '');
 
     const hlCount = (cb.source_headlines || []).length;
     const infoBtn = '<button class="cb-info-btn" onclick="cbToggleDetail(\'' + cb.currency + '\')" title="' + hlCount + ' headline dasar AI">ⓘ</button>';
 
     const divergenceHtml = cb.divergence_warning
-      ? '<span class="cb-manual-warn" style="color:var(--yellow)" title="AI mendeteksi sinyal ke ' + escHtml(cb.divergence_warning.suggested_bias) + ' (confidence ' + escHtml(cb.divergence_warning.suggested_confidence) + ') tapi bias lama dipertahankan karena belum High confidence">⚠ Divergence: bias mungkin bergeser ke ' + escHtml(cb.divergence_warning.suggested_bias) + '</span>'
+      ? '<span class="cb-manual-warn" style="color:var(--yellow)" title="AI mendeteksi sinyal ke ' + escHtml(cb.divergence_warning.suggested_bias) + ' (confidence ' + escHtml(cb.divergence_warning.suggested_confidence) + ') tapi bias lama dipertahankan karena belum High confidence">Divergence: bias mungkin bergeser ke ' + escHtml(cb.divergence_warning.suggested_bias) + '</span>'
       : '';
 
     return '<tr>'
@@ -8030,7 +8030,7 @@ function renderResearch() {
   const filtered = items.filter(it => !risetHiddenSources.has(it.source));
   const fmtDate  = d => { const dt = new Date(d); return isNaN(dt) ? '' : dt.toLocaleDateString('id-ID', { day:'numeric', month:'short', year:'numeric' }); };
   const srcBreak = availSources.map(s => `${s} ${items.filter(i=>i.source===s).length}`).join(' · ');
-  if (meta) meta.textContent = (stale ? '⚠ cache · ' : '') + srcBreak;
+  if (meta) meta.textContent = (stale ? 'cache · ' : '') + srcBreak;
 
   list.innerHTML = filtered.length === 0
     ? '<div class="state-box"><p style="font-size:11px;color:var(--muted)">Tidak ada artikel untuk sumber ini.</p></div>'
@@ -8773,9 +8773,9 @@ function _buildLabourMergedHtml(rowKeys) {
   if (uncovered.length) {
     const chipHtml = uncovered.map(s => {
       const col = COL[s.status] || 'var(--muted)';
-      const tip = [s.detail, s.as_of ? `per ${s.as_of}` : '', s.theory ? `Teori: ${s.theory}` : '', s.stale ? '⚠ data lebih lama dari kadens normal' : '']
+      const tip = [s.detail, s.as_of ? `per ${s.as_of}` : '', s.theory ? `Teori: ${s.theory}` : '', s.stale ? 'data lebih lama dari kadens normal' : '']
         .filter(Boolean).join(' — ');
-      const staleMark = s.stale ? ' <span style="color:var(--yellow)">⚠</span>' : '';
+      const staleMark = s.stale ? ' <span style="color:var(--yellow)">usang</span>' : '';
       return `<span class="fund-labour-chip" title="${escHtml(tip)}">${escHtml(s.label)} <span class="arr" style="color:${col}">${ARR[s.raw] || '·'}</span> ${escHtml(s.display || '')}${staleMark}</span>`;
     }).join('');
     chips = `<div class="fund-labour-dim"><span class="fund-labour-dim-label">TREN FRED</span><div class="fund-labour-chips">${chipHtml}</div></div>`;
@@ -10450,7 +10450,7 @@ function scenarioRenderResults(pairs, eventCur, direction, eventName, evId) {
     <div class="scen-conf-caption">Dasar bertumpu — tiap pair diuji terhadap 6 faktor pendukung: bias bank sentral · fundamental makro · flow COT · retail · korelasi antar-leg · teknikal (dimuat menyusul, tidak mengubah urutan). Makin banyak ✓ makin kuat alasan trade selain kejutan data itu sendiri — tapi faktor-faktor ini saling berkaitan, dan ranking mengukur konteks latar, bukan seberapa besar pair biasanya bereaksi ke rilis ini.</div>
     ${pairsHtml}
     <div class="cal-scenario-warn">
-      ⚠ Ini rekomendasi awal, bukan sinyal entry — besaran deviasi actual vs forecast ikut menentukan kekuatan reaksi (beat/miss tipis sering diabaikan pasar). Validasi kondisi pasar via CHECKLIST, lalu hitung ukuran lot yang aman via SIZING sebelum eksekusi.
+      Ini rekomendasi awal, bukan sinyal entry — besaran deviasi actual vs forecast ikut menentukan kekuatan reaksi (beat/miss tipis sering diabaikan pasar). Validasi kondisi pasar via CHECKLIST, lalu hitung ukuran lot yang aman via SIZING sebelum eksekusi.
     </div>`;
 }
 
@@ -11011,7 +11011,7 @@ function renderCountdown() {
   const mins    = diffMin % 60;
 
   let timeStr;
-  if (diffMin < 5)      timeStr = '< 5 menit ⚠';
+  if (diffMin < 5)      timeStr = '< 5 menit';
   else if (hours > 0)   timeStr = `${hours}j ${mins}m`;
   else                  timeStr = `${mins}m`;
 
@@ -11769,7 +11769,7 @@ function ckConsumeSpeedAckNote() {
   if (!ckLastSpeedAck || Date.now() - ckLastSpeedAck.at > 5 * 60 * 1000) { ckLastSpeedAck = null; return null; }
   const a = ckLastSpeedAck;
   ckLastSpeedAck = null;
-  return `\n⚠ FLAG KECEPATAN: ${a.checkedCount}/${a.totalParent} item dicentang dalam ${a.elapsedSec.toFixed(1)}s. Alasan lanjut: "${a.reason}"`;
+  return `\nFLAG KECEPATAN: ${a.checkedCount}/${a.totalParent} item dicentang dalam ${a.elapsedSec.toFixed(1)}s. Alasan lanjut: "${a.reason}"`;
 }
 
 function ckToggleItem(id) {
@@ -11991,7 +11991,7 @@ function ckBuildUI() {
         <span class="ck-chev" id="ckch_${sec.id}">▶</span>
       </div>
       <div class="ck-sec-body" id="ckb_${sec.id}">
-        ${sec.stopNote ? `<div class="ck-stop">⚠ ${sec.stopNote}</div>` : ''}
+        ${sec.stopNote ? `<div class="ck-stop">${sec.stopNote}</div>` : ''}
         <div id="ckit_${sec.id}"></div>
       </div>`;
     container.appendChild(div);
@@ -12773,8 +12773,8 @@ function cotAlignmentNote(base, quote, dir) {
   return {
     aligned,
     text: aligned
-      ? `✅ Selaras smart money: lev funds ${flowTxt} kontrak minggu ini — searah ${dir.toUpperCase()}`
-      : `⚠ Kontra smart money: lev funds ${flowTxt} kontrak minggu ini — institusional gerak lawan arah ${dir.toUpperCase()}`,
+      ? `Selaras smart money: lev funds ${flowTxt} kontrak minggu ini — searah ${dir.toUpperCase()}`
+      : `Kontra smart money: lev funds ${flowTxt} kontrak minggu ini — institusional gerak lawan arah ${dir.toUpperCase()}`,
   };
 }
 
@@ -14001,7 +14001,7 @@ function calcSizing() {
       ${thesisAlerts.length > 0 ? renderThesisAlertNotice(thesisAlerts) : ''}
       ${dangerousEvents.length > 0 ? `<div style="margin-top:6px;padding:8px 10px;background:rgba(var(--accent-rgb),.1);border:1px solid var(--accent);border-radius:4px"><div style="color:var(--accent);font-weight:700;font-size:10px">Saran diskon 50% (event risk &lt;24 jam)</div><div style="font-size:13px;margin-top:2px">${(Math.floor(lots * 50) / 100).toFixed(2)} lots</div></div>` : ''}
       ${slStr}${tpStr}
-      ${warnings.map(w => `<div style="color:var(--yellow);font-size:10px;margin-top:6px">⚠ ${w}</div>`).join('')}
+      ${warnings.map(w => `<div style="color:var(--yellow);font-size:10px;margin-top:6px">${w}</div>`).join('')}
       <table class="sz-r-table"><thead><tr style="color:var(--muted);font-size:9px">${thCols}</tr></thead><tbody>${rTableRows}</tbody></table>
       ${szAtrData && szAtrData.atr_pips ? (() => {
         const atrPips = szAtrData.atr_pips;
@@ -14508,7 +14508,7 @@ function jnRenderEntries() {
       <div class="jn-meta">
         ${fmt}${rrStr}${rActStr}
         ${e.regime_at_entry ? ` · Regime: ${e.regime_at_entry.replace('_',' ').toUpperCase()}` : ''}
-        ${e.cot_alignment === true ? ` · <span style="color:var(--green)">✅ selaras COT</span>` : e.cot_alignment === false ? ` · <span style="color:var(--yellow)">⚠ kontra COT</span>` : ''}
+        ${e.cot_alignment === true ? ` · <span style="color:var(--green)">selaras COT</span>` : e.cot_alignment === false ? ` · <span style="color:var(--yellow)">kontra COT</span>` : ''}
       </div>
       ${priceRow}
       ${liveRow}
@@ -14636,7 +14636,7 @@ async function jnRenderVaR() {
       const sameDir   = varItems[i].direction === varItems[j].direction;
       const amplified = (rho > 0 && sameDir) || (rho < 0 && !sameDir);
       warnLines.push(`<div style="font-size:9px;color:${amplified?'var(--yellow)':'var(--muted)'};margin-top:2px">
-        ${amplified?'⚠':'↕'} ${varItems[i].pair} + ${varItems[j].pair} korelasi ${rho.toFixed(2)} — risiko ${amplified?'lebih besar':'tereduksi'}</div>`);
+        ${amplified?'!':'↕'} ${varItems[i].pair} + ${varItems[j].pair} korelasi ${rho.toFixed(2)} — risiko ${amplified?'lebih besar':'tereduksi'}</div>`);
     }
   }
 
@@ -15248,7 +15248,7 @@ async function jnRunEdgeStats() {
         <div style="font-family:'DM Mono',monospace;font-size:11px;color:var(--text);margin-bottom:8px">${ckLabelForId(c.id)}</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
           <div style="flex:1;min-width:120px;background:var(--bg);border:1px solid var(--border);border-radius:3px;padding:6px 10px">
-            <div style="font-size:9px;color:var(--muted);font-family:'DM Mono',monospace">✅ TERCENTANG (n=${c.checked.n})</div>
+            <div style="font-size:9px;color:var(--muted);font-family:'DM Mono',monospace">TERCENTANG (n=${c.checked.n})</div>
             <div style="font-size:12px;font-family:'DM Mono',monospace;color:var(--text);margin-top:2px">${c.checked.win_rate}% win · ${c.checked.avg_r >= 0 ? '+' : ''}${c.checked.avg_r}R avg</div>
           </div>
           <div style="flex:1;min-width:120px;background:var(--bg);border:1px solid var(--border);border-radius:3px;padding:6px 10px">
