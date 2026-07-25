@@ -15,17 +15,15 @@ const cb = require('../../api/_circuit_breaker');
 
 // ── _ai_guard ───────────────────────────────────────────────────────────────
 
-test('providerFromUrl mengenali 4 provider', () => {
-  assert.strictEqual(providerFromUrl('https://api.groq.com/openai/v1/chat/completions'), 'groq');
+test('providerFromUrl mengenali provider yang masih aktif', () => {
   assert.strictEqual(providerFromUrl('https://api.sambanova.ai/v1/chat/completions'), 'sambanova');
-  assert.strictEqual(providerFromUrl('https://openrouter.ai/api/v1/chat/completions'), 'openrouter');
-  assert.strictEqual(providerFromUrl('https://api.cerebras.ai/v1/chat/completions'), 'cerebras');
+  assert.strictEqual(providerFromUrl('https://api.deepseek.com/chat/completions'), 'deepseek');
   assert.strictEqual(providerFromUrl('https://example.com/v1'), null);
   assert.strictEqual(providerFromUrl(null), null);
 });
 
 test('allowAiCall fail-open tanpa Redis env', async () => {
-  assert.strictEqual(await allowAiCall('groq'), true);
+  assert.strictEqual(await allowAiCall('sambanova_main'), true);
 });
 
 test('allowAiCall provider tak dikenal → diizinkan (jangan blokir)', async () => {
@@ -50,27 +48,13 @@ test('allowAiCall: sambanova_main dan sambanova_c1 masing-masing fail-open tanpa
   assert.strictEqual(await allowAiCall('sambanova_c1'), true);
 });
 
-// Regression session 145 (re-arsitektur Nemotron): OpenRouter limit gratis itu
-// ACCOUNT-WIDE (bukan per-model) — 50/hari kalau belum top-up kredit $10+, 1000/hari
-// kalau sudah (dikonfirmasi openrouter.ai/docs). Nemotron 3 Ultra (market-digest.js)
-// sekarang satu-satunya fitur yang pakai pool ini (gpt-oss:120b journal/fundamental
-// dipindah ke Cerebras) — default 45 adalah buffer aman DI BAWAH 50 asli untuk asumsi
-// konservatif belum top-up. JANGAN naikkan default ini tanpa konfirmasi status akun
-// (lihat daun_merah.md Session 145) — kalau dinaikkan tanpa verifikasi, guard kita
-// jadi tidak merepresentasikan limit nyata OpenRouter (persis masalah yang mau dicegah).
-test('DEFAULT_LIMITS: openrouter konservatif (<=45) — jangan overestimate cap 50/hari asli', () => {
-  assert.ok(DEFAULT_LIMITS.openrouter <= 45, `openrouter limit (${DEFAULT_LIMITS.openrouter}) harus <=45, buffer aman di bawah cap gratis asli 50/hari`);
-});
-
-// Cerebras diaktifkan session 145 sebagai primary gpt-oss-120b untuk journal_analysis +
-// fundamental_analysis — pool token/hari terpisah total dari OpenRouter (Nemotron).
-test('DEFAULT_LIMITS: cerebras tetap ada (dipakai journal_analysis + fundamental_analysis sejak session 145)', () => {
-  assert.strictEqual(typeof DEFAULT_LIMITS.cerebras, 'number');
-  assert.ok(DEFAULT_LIMITS.cerebras > 0);
-});
-
-test('allowAiCall: cerebras fail-open tanpa Redis', async () => {
-  assert.strictEqual(await allowAiCall('cerebras'), true);
+// OpenRouter/Cerebras/Groq/Ollama diputus kontraknya 2026-07-25 — counter budget-nya
+// dihapus dari DEFAULT_LIMITS bersamaan dengan kode yang memanggilnya.
+test('DEFAULT_LIMITS: openrouter/cerebras/groq/ollama sudah tidak ada (vendor diputus)', () => {
+  assert.strictEqual(DEFAULT_LIMITS.openrouter, undefined);
+  assert.strictEqual(DEFAULT_LIMITS.cerebras, undefined);
+  assert.strictEqual(DEFAULT_LIMITS.groq, undefined);
+  assert.strictEqual(DEFAULT_LIMITS.ollama, undefined);
 });
 
 // Regression (audit S218, 2026-07-22/23): circuit breaker call isAutoCall/test_deepseek=1

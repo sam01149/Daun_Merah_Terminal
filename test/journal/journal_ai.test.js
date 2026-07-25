@@ -1,17 +1,16 @@
 // test/journal_ai.test.js
-// Unit test journal.js aiCall() 4-tier fallback (session 145 re-arsitektur Nemotron,
-// + Gemini 2026-07-19): dulu Groq-only tanpa fallback sama sekali, sekarang Cerebras
-// gpt-oss-120b primary -> SambaNova akun2 fallback1 -> Groq fallback2 -> Gemini flash
-// fallback3. Redis tidak dikonfigurasi di test ini, jadi circuit breaker/budget guard
-// fail-open (lihat guards.test.js) — test ini fokus ke urutan fallback HTTP-level,
-// bukan skip akibat circuit OPEN.
+// Unit test journal.js aiCall() 2-tier fallback: SambaNova akun2 primary -> Gemini
+// flash fallback (Cerebras/Groq diputus kontraknya 2026-07-25). Redis tidak
+// dikonfigurasi di test ini, jadi circuit breaker/budget guard fail-open (lihat
+// guards.test.js) — test ini fokus ke urutan fallback HTTP-level, bukan skip akibat
+// circuit OPEN.
 const { test } = require('node:test');
 const assert = require('node:assert');
 
 delete process.env.UPSTASH_REDIS_REST_URL;
 delete process.env.UPSTASH_REDIS_REST_TOKEN;
 
-const ENV_KEYS = ['CEREBRAS_API_KEY', 'SAMBANOVA_API_KEY_CALL1', 'GROQ_API_KEY', 'GEMINI_API_KEY'];
+const ENV_KEYS = ['SAMBANOVA_API_KEY_CALL1', 'GEMINI_API_KEY'];
 
 async function withEnv(vars, fn) {
   const prev = {};
@@ -48,91 +47,56 @@ function errResponse(status) {
 delete require.cache[require.resolve('../../api/journal.js')];
 const { _aiCall: aiCall } = require('../../api/journal.js');
 
-test('aiCall: Cerebras primary sukses — cuma 1 fetch call, ke api.cerebras.ai dengan model gpt-oss-120b', async () => {
-  await withEnv({ CEREBRAS_API_KEY: 'sk-c', SAMBANOVA_API_KEY_CALL1: 'sk-s', GROQ_API_KEY: 'sk-g' }, async () => {
+test('aiCall: SambaNova primary sukses — cuma 1 fetch call, ke api.sambanova.ai dengan model DeepSeek-V3.2', async () => {
+  await withEnv({ SAMBANOVA_API_KEY_CALL1: 'sk-s', GEMINI_API_KEY: 'sk-gm' }, async () => {
     const calls = [];
     await withFetch(async (url, opts) => {
       calls.push({ url, body: JSON.parse(opts.body) });
-      return okResponse('hasil cerebras');
-    }, async () => {
-      const out = await aiCall([{ role: 'user', content: 'hi' }], 500);
-      assert.strictEqual(out, 'hasil cerebras');
-    });
-    assert.strictEqual(calls.length, 1, 'harus berhenti di tier pertama, tidak lanjut fallback');
-    assert.strictEqual(calls[0].url, 'https://api.cerebras.ai/v1/chat/completions');
-    assert.strictEqual(calls[0].body.model, 'gpt-oss-120b');
-  });
-});
-
-test('aiCall: Cerebras gagal (HTTP 500) -> fallback1 SambaNova akun2 (DeepSeek-V3.2)', async () => {
-  await withEnv({ CEREBRAS_API_KEY: 'sk-c', SAMBANOVA_API_KEY_CALL1: 'sk-s', GROQ_API_KEY: 'sk-g' }, async () => {
-    const calls = [];
-    await withFetch(async (url, opts) => {
-      calls.push({ url, body: JSON.parse(opts.body) });
-      if (url.includes('cerebras.ai')) return errResponse(500);
-      if (url.includes('sambanova.ai')) return okResponse('hasil sambanova');
-      throw new Error('should not reach ' + url);
+      return okResponse('hasil sambanova');
     }, async () => {
       const out = await aiCall([{ role: 'user', content: 'hi' }], 500);
       assert.strictEqual(out, 'hasil sambanova');
     });
-    assert.strictEqual(calls.length, 2);
-    assert.ok(calls[1].url.includes('sambanova.ai'));
-    assert.strictEqual(calls[1].body.model, 'DeepSeek-V3.2');
+    assert.strictEqual(calls.length, 1, 'harus berhenti di tier pertama, tidak lanjut fallback');
+    assert.strictEqual(calls[0].url, 'https://api.sambanova.ai/v1/chat/completions');
+    assert.strictEqual(calls[0].body.model, 'DeepSeek-V3.2');
   });
 });
 
-test('aiCall: Cerebras + SambaNova gagal -> fallback2 Groq (llama-3.3-70b-versatile)', async () => {
-  await withEnv({ CEREBRAS_API_KEY: 'sk-c', SAMBANOVA_API_KEY_CALL1: 'sk-s', GROQ_API_KEY: 'sk-g' }, async () => {
+test('aiCall: SambaNova gagal (HTTP 500) -> fallback Gemini flash (gemini-flash-latest, reasoning_effort low)', async () => {
+  await withEnv({ SAMBANOVA_API_KEY_CALL1: 'sk-s', GEMINI_API_KEY: 'sk-gm' }, async () => {
     const calls = [];
     await withFetch(async (url, opts) => {
       calls.push({ url, body: JSON.parse(opts.body) });
-      if (url.includes('cerebras.ai'))  return errResponse(500);
-      if (url.includes('sambanova.ai')) return errResponse(503);
-      if (url.includes('groq.com'))     return okResponse('hasil groq');
-      throw new Error('should not reach ' + url);
-    }, async () => {
-      const out = await aiCall([{ role: 'user', content: 'hi' }], 500);
-      assert.strictEqual(out, 'hasil groq');
-    });
-    assert.strictEqual(calls.length, 3);
-    assert.strictEqual(calls[2].body.model, 'llama-3.3-70b-versatile');
-  });
-});
-
-test('aiCall: Cerebras + SambaNova + Groq gagal -> fallback3 Gemini flash (gemini-flash-latest, reasoning_effort low)', async () => {
-  await withEnv({ CEREBRAS_API_KEY: 'sk-c', SAMBANOVA_API_KEY_CALL1: 'sk-s', GROQ_API_KEY: 'sk-g', GEMINI_API_KEY: 'sk-gm' }, async () => {
-    const calls = [];
-    await withFetch(async (url, opts) => {
-      calls.push({ url, body: JSON.parse(opts.body) });
+      if (url.includes('sambanova.ai')) return errResponse(500);
       if (url.includes('generativelanguage.googleapis.com')) return okResponse('hasil gemini');
-      return errResponse(500);
+      throw new Error('should not reach ' + url);
     }, async () => {
       const out = await aiCall([{ role: 'user', content: 'hi' }], 500);
       assert.strictEqual(out, 'hasil gemini');
     });
-    assert.strictEqual(calls.length, 4);
-    assert.ok(calls[3].url.includes('generativelanguage.googleapis.com'));
-    assert.strictEqual(calls[3].body.model, 'gemini-flash-latest');
-    assert.strictEqual(calls[3].body.reasoning_effort, 'low');
+    assert.strictEqual(calls.length, 2);
+    assert.ok(calls[1].url.includes('generativelanguage.googleapis.com'));
+    assert.strictEqual(calls[1].body.model, 'gemini-flash-latest');
+    assert.strictEqual(calls[1].body.reasoning_effort, 'low');
   });
 });
 
-test('aiCall: semua 4 tier gagal -> melempar error agregat (bukan error Groq mentah)', async () => {
-  await withEnv({ CEREBRAS_API_KEY: 'sk-c', SAMBANOVA_API_KEY_CALL1: 'sk-s', GROQ_API_KEY: 'sk-g', GEMINI_API_KEY: 'sk-gm' }, async () => {
+test('aiCall: kedua tier gagal -> melempar error agregat', async () => {
+  await withEnv({ SAMBANOVA_API_KEY_CALL1: 'sk-s', GEMINI_API_KEY: 'sk-gm' }, async () => {
     await withFetch(async () => errResponse(500), async () => {
       await assert.rejects(() => aiCall([{ role: 'user', content: 'hi' }], 500), /All AI providers failed/);
     });
   });
 });
 
-test('aiCall: tanpa GEMINI_API_KEY, Groq gagal -> tetap melempar (tier Gemini di-skip)', async () => {
-  await withEnv({ CEREBRAS_API_KEY: 'sk-c', SAMBANOVA_API_KEY_CALL1: 'sk-s', GROQ_API_KEY: 'sk-g' }, async () => {
+test('aiCall: tanpa GEMINI_API_KEY, SambaNova gagal -> tetap melempar (tier Gemini di-skip)', async () => {
+  await withEnv({ SAMBANOVA_API_KEY_CALL1: 'sk-s' }, async () => {
     const calls = [];
     await withFetch(async (url) => { calls.push(url); return errResponse(429); }, async () => {
       await assert.rejects(() => aiCall([{ role: 'user', content: 'hi' }], 500), /All AI providers failed/);
     });
-    assert.strictEqual(calls.length, 3, 'Gemini tidak boleh ikut dipanggil tanpa key');
+    assert.strictEqual(calls.length, 1, 'Gemini tidak boleh ikut dipanggil tanpa key');
   });
 });
 
@@ -146,17 +110,17 @@ test('aiCall: tanpa API key sama sekali -> melempar tanpa network call', async (
   });
 });
 
-test('aiCall: CEREBRAS_API_KEY kosong -> langsung ke SambaNova (skip tier 1 tanpa error)', async () => {
-  await withEnv({ SAMBANOVA_API_KEY_CALL1: 'sk-s' }, async () => {
+test('aiCall: SAMBANOVA_API_KEY_CALL1 kosong -> langsung ke Gemini (skip tier 1 tanpa error)', async () => {
+  await withEnv({ GEMINI_API_KEY: 'sk-gm' }, async () => {
     const calls = [];
     await withFetch(async (url, opts) => {
       calls.push(url);
-      return okResponse('hasil sambanova');
+      return okResponse('hasil gemini');
     }, async () => {
       const out = await aiCall([{ role: 'user', content: 'hi' }], 500);
-      assert.strictEqual(out, 'hasil sambanova');
+      assert.strictEqual(out, 'hasil gemini');
     });
     assert.strictEqual(calls.length, 1);
-    assert.ok(calls[0].includes('sambanova.ai'));
+    assert.ok(calls[0].includes('generativelanguage.googleapis.com'));
   });
 });

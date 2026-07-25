@@ -1,7 +1,6 @@
 // test/admin_fundamental.test.js
-// Unit test fundamentalAnalysisHandler (api/admin.js) 3-tier fallback (session 145,
-// re-arsitektur Nemotron): dulu Groq primary -> SambaNova akun1 fallback, sekarang
-// Cerebras gpt-oss-120b primary -> SambaNova akun2 fallback1 -> Groq fallback2.
+// Unit test fundamentalAnalysisHandler (api/admin.js) 2-tier fallback: SambaNova akun2
+// primary -> Gemini flash fallback (Cerebras/Groq diputus kontraknya 2026-07-25).
 // Redis/APP_KEY tidak dikonfigurasi -> semua guard fail-open (lihat guards.test.js),
 // jadi test ini murni memverifikasi urutan fallback HTTP-level lewat handler penuh.
 const { test } = require('node:test');
@@ -12,7 +11,7 @@ delete process.env.UPSTASH_REDIS_REST_TOKEN;
 delete process.env.APP_KEY;
 delete process.env.CRON_SECRET;
 
-const ENV_KEYS = ['CEREBRAS_API_KEY', 'SAMBANOVA_API_KEY_CALL1', 'GROQ_API_KEY', 'GEMINI_API_KEY'];
+const ENV_KEYS = ['SAMBANOVA_API_KEY_CALL1', 'GEMINI_API_KEY'];
 
 async function withEnv(vars, fn) {
   const prev = {};
@@ -59,85 +58,46 @@ function fakeReqRes() {
 
 const handler = require('../../api/admin.js');
 
-test('fundamental_analysis: Cerebras primary sukses — 1 fetch call ke api.cerebras.ai model gpt-oss-120b', async () => {
-  await withEnv({ CEREBRAS_API_KEY: 'sk-c', SAMBANOVA_API_KEY_CALL1: 'sk-s', GROQ_API_KEY: 'sk-g' }, async () => {
+test('fundamental_analysis: SambaNova primary sukses — 1 fetch call ke api.sambanova.ai model DeepSeek-V3.2', async () => {
+  await withEnv({ SAMBANOVA_API_KEY_CALL1: 'sk-s', GEMINI_API_KEY: 'sk-gm' }, async () => {
     const calls = [];
     const { req, res } = fakeReqRes();
     await withFetch(async (url, opts) => {
       calls.push({ url, body: JSON.parse(opts.body) });
-      return okResponse('ranking cerebras');
-    }, async () => {
-      await handler(req, res);
-    });
-    assert.strictEqual(res.statusCode, 200);
-    assert.strictEqual(res.body.analysis, 'ranking cerebras');
-    assert.strictEqual(calls.length, 1);
-    assert.strictEqual(calls[0].url, 'https://api.cerebras.ai/v1/chat/completions');
-    assert.strictEqual(calls[0].body.model, 'gpt-oss-120b');
-  });
-});
-
-test('fundamental_analysis: Cerebras gagal -> fallback1 SambaNova akun2 (DeepSeek-V3.2)', async () => {
-  await withEnv({ CEREBRAS_API_KEY: 'sk-c', SAMBANOVA_API_KEY_CALL1: 'sk-s', GROQ_API_KEY: 'sk-g' }, async () => {
-    const calls = [];
-    const { req, res } = fakeReqRes();
-    await withFetch(async (url, opts) => {
-      calls.push({ url, body: JSON.parse(opts.body) });
-      if (url.includes('cerebras.ai'))  return errResponse(500);
-      if (url.includes('sambanova.ai')) return okResponse('ranking sambanova');
-      throw new Error('should not reach ' + url);
+      return okResponse('ranking sambanova');
     }, async () => {
       await handler(req, res);
     });
     assert.strictEqual(res.statusCode, 200);
     assert.strictEqual(res.body.analysis, 'ranking sambanova');
-    assert.strictEqual(calls.length, 2);
-    assert.strictEqual(calls[1].body.model, 'DeepSeek-V3.2');
-    // Fallback1 harus pakai SAMBANOVA_API_KEY_CALL1 (akun 2), bukan SAMBANOVA_API_KEY (akun 1)
-    assert.strictEqual(calls[1].url, 'https://api.sambanova.ai/v1/chat/completions');
+    assert.strictEqual(calls.length, 1);
+    assert.strictEqual(calls[0].url, 'https://api.sambanova.ai/v1/chat/completions');
+    assert.strictEqual(calls[0].body.model, 'DeepSeek-V3.2');
   });
 });
 
-test('fundamental_analysis: Cerebras + SambaNova gagal -> fallback2 Groq (last resort)', async () => {
-  await withEnv({ CEREBRAS_API_KEY: 'sk-c', SAMBANOVA_API_KEY_CALL1: 'sk-s', GROQ_API_KEY: 'sk-g' }, async () => {
+test('fundamental_analysis: SambaNova gagal -> fallback Gemini flash', async () => {
+  await withEnv({ SAMBANOVA_API_KEY_CALL1: 'sk-s', GEMINI_API_KEY: 'sk-gm' }, async () => {
     const calls = [];
     const { req, res } = fakeReqRes();
     await withFetch(async (url, opts) => {
       calls.push({ url, body: JSON.parse(opts.body) });
-      if (url.includes('cerebras.ai'))  return errResponse(500);
-      if (url.includes('sambanova.ai')) return errResponse(503);
-      if (url.includes('groq.com'))     return okResponse('ranking groq');
+      if (url.includes('sambanova.ai')) return errResponse(500);
+      if (url.includes('generativelanguage.googleapis.com')) return okResponse('ranking gemini');
       throw new Error('should not reach ' + url);
     }, async () => {
       await handler(req, res);
     });
     assert.strictEqual(res.statusCode, 200);
-    assert.strictEqual(res.body.analysis, 'ranking groq');
-    assert.strictEqual(calls.length, 3);
-  });
-});
-
-test('fundamental_analysis: Cerebras + SambaNova + Groq gagal -> fallback3 Gemini flash (2026-07-19)', async () => {
-  await withEnv({ CEREBRAS_API_KEY: 'sk-c', SAMBANOVA_API_KEY_CALL1: 'sk-s', GROQ_API_KEY: 'sk-g', GEMINI_API_KEY: 'sk-gm' }, async () => {
-    const calls = [];
-    const { req, res } = fakeReqRes();
-    await withFetch(async (url, opts) => {
-      calls.push({ url, body: JSON.parse(opts.body) });
-      if (url.includes('generativelanguage.googleapis.com')) return okResponse('ranking gemini');
-      return errResponse(500);
-    }, async () => {
-      await handler(req, res);
-    });
-    assert.strictEqual(res.statusCode, 200);
     assert.strictEqual(res.body.analysis, 'ranking gemini');
-    assert.strictEqual(calls.length, 4);
-    assert.strictEqual(calls[3].body.model, 'gemini-flash-latest');
-    assert.strictEqual(calls[3].body.reasoning_effort, 'low');
+    assert.strictEqual(calls.length, 2);
+    assert.strictEqual(calls[1].body.model, 'gemini-flash-latest');
+    assert.strictEqual(calls[1].body.reasoning_effort, 'low');
   });
 });
 
 test('fundamental_analysis: semua provider gagal -> 500 "All providers failed"', async () => {
-  await withEnv({ CEREBRAS_API_KEY: 'sk-c', SAMBANOVA_API_KEY_CALL1: 'sk-s', GROQ_API_KEY: 'sk-g', GEMINI_API_KEY: 'sk-gm' }, async () => {
+  await withEnv({ SAMBANOVA_API_KEY_CALL1: 'sk-s', GEMINI_API_KEY: 'sk-gm' }, async () => {
     const { req, res } = fakeReqRes();
     await withFetch(async () => errResponse(500), async () => {
       await handler(req, res);
