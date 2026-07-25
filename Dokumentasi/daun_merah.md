@@ -11,11 +11,45 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-07-25 (Session 242 — Bug Timestamp Auto-Entry: ts Reset saat Refine + Race Condition Evaluate-vs-Refine)
+> **Last updated:** 2026-07-25 (Session 243 — Revamp Skema Warna: Dual-Tone Rust & Forest "Lebih Tua")
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 243 (2026-07-25) — Revamp Skema Warna: Dual-Tone Rust & Forest "Lebih Tua"
+
+**Konteks:** User konsultasi dengan Gemini soal revamp warna karena sadar palet lama (bg `#0a0a08`, accent crimson `#c0392b`, green `#27ae60`) nyaris identik dengan war-watch.com (dikonfirmasi tabel perbandingan hex Gemini: bg/surface/text/muted/green semua overlap, bukan cuma merahnya). Setelah eksplorasi beberapa preset (Institutional Gold, Emerald, Burgundy dari Gemini, lalu ide sendiri "Rust & Moss" berbasis pigmen alami), user pilih arah **dual-tone filosofis** (hijau=bullish/tumbuh, merah=bearish/alami — selaras nama & logo daun dua-warna) lalu minta versi **"lebih tua"** (warna diredam/didalamkan, bukan cerah).
+
+**Token inti diubah** (`:root` di `index.html`):
+| Token | Lama | Baru |
+|---|---|---|
+| `--bg` | `#0a0a08` | `#070a08` |
+| `--surface` | `#111110` | `#0e130f` |
+| `--border` | `#222220` | `#1a231d` |
+| `--accent`/`--red` | `#c0392b` | `#a83226` |
+| `--accent-dim` | `#7a1f17` | `#6b1f16` |
+| `--gate` | `#8b1a1a` | `#5c1712` |
+| `--green` | `#27ae60` | `#1f6e4a` |
+| `--green-dim` | `#1a5e38` | `#123d29` |
+| `--muted` | `#6b6860` | `#6b7260` |
+| `--text-mid` | `#a8a49a` | `#96a08c` |
+`--text` (`#e8e4d9`), `--yellow`/`--orange`/`--purple`/`--pink` tidak diubah. `body.light-theme` & palet cetak monokrom (`@media print`) **sengaja tidak disentuh** — di luar lingkup permintaan.
+
+**Bug ditemukan & difix di tengah kerja (bukan cuma ganti warna):**
+1. **`--fg-rgb`/`--bg-rgb` tidak pernah didefinisikan di tema gelap (default) sejak lama** — 104 pemakaian `rgba(var(--fg-rgb),X)`/`rgba(var(--bg-rgb),X)` (hover state, divider, grid chart SVG) di seluruh app SELAMA INI invalid/silent-fail di mode gelap (browser mengabaikan properti dengan var() yang unresolved), hanya bekerja benar di `body.light-theme` yang punya definisinya. Ditambahkan ke `:root` dark.
+2. **Override tersembunyi `body:not(.light-theme) { --bg/--surface/--border }`** (baris ~3052, spesifisitas CSS lebih tinggi dari `:root`) diam-diam MENIMPA token yang baru diubah — sempat bikin edit `:root` pertama seolah tidak berefek. Disamakan nilainya dengan `:root` (komentar lama soal "meredupkan dari hitam murni" sudah terpenuhi oleh nilai baru, jadi tidak perlu lapisan peredupan kedua).
+3. **Warna tombol CTA hardcode terpisah** (`body:not(.light-theme) .sizing-form button, .jn-btn, .ringkasan-gen-btn { background:#b23c30 }`, komentar "dusty/editorial alih-alih merah alarm") — ternyata nyaris identik dengan `--accent` baru (`#a83226`), jadi disederhanakan jadi `var(--accent)` (satu sumber kebenaran, bukan warna independen yang kebetulan mirip).
+4. **Konflik makna warna hijau/merah dengan identitas mata uang & kategori** — `#00c896`/`#34d399` (AUD/NZD di `CUR_COLORS*`/`RETAIL_PAIR_COLORS`, trader-type "Asset Mgr" di legend COT) dan badge institusi (`FEDN`/`MTM`)/kategori berita (`cat-indexes`/`tag-indexes`) SENGAJA DIBIARKAN hardcode — beda makna dari sinyal bullish/bearish walau kebetulan hex sama sebelumnya. ~35 hardcode lain yang MEMANG semantik positif/negatif (badge beat/ok/kuat, confidence meter, div-badge strong-up, journal equity curve, dll — termasuk `#c0392b`/rgba(192,57,43) & `#27ae60`/rgba(39,174,96) sisa dari tema lama) dikonsolidasi ke `var(--accent)`/`var(--green)`. Ditambah `--accent-rgb`/`--green-rgb` (dark, light, print) untuk pola `rgba(var(--x-rgb),alpha)` yang sudah dipakai codebase.
+5. **`BIAS_COLORS` di dashboard CB bias (arah kebalik dari konvensi `.cb-bias.*`)** — widget dashboard mewarnai "very hawkish" hijau & "dovish" oranye/pink, padahal badge CB bias di tab Ringkasan/Analisa sudah benar sebaliknya (hawkish=merah/restriktif, dovish=hijau/akomodatif, `.cb-bias.dovish` sudah pakai `var(--green)`). Diselaraskan ke arah yang benar.
+6. **3 emoji di teks UI** (`⛔` di pesan risk warning sizing calculator) — pelanggaran ATURAN.md §4.1, ditemukan tak sengaja saat menyusuri hardcode warna di area yang sama. Dihapus.
+7. **Follow-up TIDAK dikerjakan** (di luar lingkup sesi ini, dicatat di `daun_merah_progress.md`): grep kasar menemukan ~113 karakter emoji lain tersebar di `index.html` — belum diverifikasi satu-satu mana yang di teks UI aktif vs komentar kode/konten nonaktif.
+
+**PDF & widget eksternal:** `BRAND_COLOR` jsPDF letterhead (`[192,57,43]` → `[168,50,38]`) dan `toolbar_bg` TradingView widget (`#0d0f14` → `#0e130f`) diupdate manual (literal, bukan `var()` — dua-duanya render di luar CSSOM halaman: jsPDF generate file terpisah, TradingView widget cross-origin iframe).
+
+**Verifikasi:** `npm test` 632/632 hijau. Visual dicek via Playwright headless (dark mode dipaksa via `colorScheme` + `localStorage.theme`, onboarding overlay di-dismiss): token `getComputedStyle` cocok semua, screenshot Dashboard + dropdown menu header menunjukkan render benar (logo daun dua-warna, card/border/text konsisten), console cuma error 404 API (wajar, tidak ada backend lokal), tidak ada JS exception. `APP_VERSION` dinaikkan `2026.07.25.2` → `2026.07.25.3`, `theme-color` meta + `updateThemeIcon()` runtime disamakan ke `#070a08`.
+
+**Preview interaktif** (artifact, bukan bagian repo): dipakai selama sesi untuk membandingkan opsi sebelum keputusan — mockup shell app dengan toggle Sekarang/Dual-Tone/Dual-Tone Lebih Tua/Rust & Moss + tabel diff token.
 
 ## Changelog Session 242 (2026-07-25) — Bug Timestamp Auto-Entry: ts Reset saat Refine + Race Condition Evaluate-vs-Refine
 

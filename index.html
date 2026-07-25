@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <!-- Zoom dibiarkan aktif (WCAG 1.4.4); double-tap zoom dimatikan via touch-action:manipulation di CSS -->
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="theme-color" content="#0a0a08">
+<meta name="theme-color" content="#070a08">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Daun Merah">
@@ -26,22 +26,26 @@
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;700;800&family=DM+Mono:wght@300;400&display=swap" rel="stylesheet">
 <style>
 :root {
-  --bg: #0a0a08;
-  --surface: #111110;
-  --border: #222220;
-  --accent: #c0392b;
-  --accent-dim: #7a1f17;
-  --gate: #8b1a1a;
+  --bg: #070a08;
+  --surface: #0e130f;
+  --border: #1a231d;
+  --accent: #a83226;
+  --accent-dim: #6b1f16;
+  --gate: #5c1712;
   --text: #e8e4d9;
-  --muted: #6b6860;
-  --text-mid: #a8a49a;
-  --green: #27ae60;
-  --green-dim: #1a5e38;
-  --red: #c0392b;
+  --muted: #6b7260;
+  --text-mid: #96a08c;
+  --green: #1f6e4a;
+  --green-dim: #123d29;
+  --red: #a83226;
   --yellow: #e67e22;
   --orange: #e67e22;
   --purple: #a78bfa;
   --pink: #f472b6;
+  --fg-rgb: 232, 228, 217;
+  --bg-rgb: 7, 10, 8;
+  --accent-rgb: 168, 50, 38;
+  --green-rgb: 31, 110, 74;
 }
 * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
 /* manipulation = pan + pinch-zoom tetap jalan, double-tap zoom mati — pengganti
@@ -174,7 +178,7 @@ body {
   width:26px; height:26px; border-radius:3px; cursor:pointer; flex-shrink:0;
   display:flex; align-items:center; justify-content:center; transition:all .12s; position:relative;
 }
-.riset-filter-icon-btn:hover, .riset-filter-icon-btn.open { color:#34d399; border-color:#34d399; }
+.riset-filter-icon-btn:hover, .riset-filter-icon-btn.open { color:var(--green); border-color:var(--green); }
 .riset-filter-icon-btn .riset-filter-badge {
   position:absolute; top:-4px; right:-4px; background:var(--accent); color:#fff;
   font-size:7px; font-family:'DM Mono',monospace; line-height:1; padding:2px 3px;
@@ -189,10 +193,10 @@ body {
 .riset-filter-dropdown.open { display:block; }
 .riset-filter-dropdown-hdr { display:flex; justify-content:space-between; align-items:center; padding:2px 4px 6px; border-bottom:1px solid var(--border); margin-bottom:4px; }
 .riset-filter-dropdown-title { font-size:9px; color:var(--muted); font-family:'DM Mono',monospace; letter-spacing:.06em; text-transform:uppercase; }
-.riset-filter-dropdown-all { font-size:9px; color:#34d399; font-family:'DM Mono',monospace; cursor:pointer; background:none; border:none; padding:2px 4px; }
+.riset-filter-dropdown-all { font-size:9px; color:var(--green); font-family:'DM Mono',monospace; cursor:pointer; background:none; border:none; padding:2px 4px; }
 .riset-filter-item { display:flex; align-items:center; gap:7px; padding:5px 4px; cursor:pointer; border-radius:2px; font-size:11px; font-family:'DM Mono',monospace; color:var(--text-mid); }
 .riset-filter-item:hover { background:rgba(var(--fg-rgb),.04); }
-.riset-filter-item input[type="checkbox"] { accent-color:#34d399; width:13px; height:13px; flex-shrink:0; cursor:pointer; }
+.riset-filter-item input[type="checkbox"] { accent-color:var(--green); width:13px; height:13px; flex-shrink:0; cursor:pointer; }
 .riset-filter-item .cnt { margin-left:auto; color:var(--muted); font-size:9px; }
 .riset-meta { font-size:8px; color:var(--muted); font-family:'DM Mono',monospace; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .riset-refresh { background:none; border:none; color:var(--muted); font-size:13px; cursor:pointer; padding:2px 4px; flex-shrink:0; line-height:1; margin-left:auto; }
@@ -202,8 +206,8 @@ body {
 .riset-item:hover { background:rgba(var(--fg-rgb),.025); }
 .riset-item-top { display:flex; align-items:flex-start; gap:8px; }
 .riset-badge { font-size:8px; font-weight:700; font-family:'DM Mono',monospace; padding:2px 5px; border-radius:2px; flex-shrink:0; margin-top:2px; }
-.riset-badge.FED  { background:rgba(192,57,43,.18); color:var(--accent); }
-.riset-badge.FOMC { background:rgba(192,57,43,.18); color:var(--accent); }
+.riset-badge.FED  { background:rgba(var(--accent-rgb),.18); color:var(--accent); }
+.riset-badge.FOMC { background:rgba(var(--accent-rgb),.18); color:var(--accent); }
 .riset-badge.ECB  { background:rgba(230,126,34,.18); color:var(--yellow); }
 .riset-badge.ECBB { background:rgba(230,126,34,.18); color:var(--yellow); }
 .riset-badge.BIS  { background:rgba(167,139,250,.18); color:var(--purple); }
@@ -244,7 +248,7 @@ body {
   padding:6px 8px; margin-bottom:8px; border-radius:2px;
 }
 .riset-title { font: 400 12px system-ui, -apple-system, sans-serif; color:var(--text); text-decoration:none; line-height:1.5; display:block; text-align:justify; text-justify:inter-word; text-align-last:left; transition:color 0.15s ease; }
-.riset-title:hover { color:#34d399; }
+.riset-title:hover { color:var(--green); }
 .riset-date { font-size:9px; color:var(--muted); font-family:'DM Mono',monospace; margin-top:4px; }
 
 /* SIZING FORM */
@@ -316,7 +320,7 @@ body {
 .div-matrix-table tr { transition: background-color 0.2s ease; }
 .div-matrix-table tr:hover { background-color: rgba(var(--fg-rgb), 0.02); }
 .div-badge { padding:3px 8px; border-radius:4px; font-weight:700; font-size:10px; text-transform:uppercase; display:inline-block; text-align:center; transition: all 0.2s ease; cursor: default; }
-.div-badge.strong-up { background:rgba(52,211,153,.12); color:#34d399; }
+.div-badge.strong-up { background:rgba(var(--green-rgb),.12); color:var(--green); }
 .div-badge.strong-down { background:rgba(239,68,68,.12); color:#f87171; }
 .div-badge.neutral { background:rgba(var(--fg-rgb),.05); color:var(--muted); }
 
@@ -330,14 +334,14 @@ body {
 .vol-profile-val { font-size:12px; font-weight:700; color:var(--text); font-family:'DM Mono',monospace; }
 .vol-profile-val.alert-high { color:#fbbf24; }
 .vol-profile-val.alert-danger { color:#f87171; }
-.vol-profile-val.alert-calm { color:#34d399; }
+.vol-profile-val.alert-calm { color:var(--green); }
 
 .surprise-wrap { background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:12px; transition: border-color 0.2s ease; }
 .surprise-wrap:hover { border-color: rgba(var(--fg-rgb), 0.15); }
 .surprise-hdr { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; }
 .surprise-title { font:700 9px 'Syne',sans-serif; color:var(--muted); letter-spacing:.1em; text-transform:uppercase; }
 .surprise-val { font-family:'DM Mono',monospace; font-size:13px; font-weight:700; }
-.surprise-val.positive { color:#34d399; }
+.surprise-val.positive { color:var(--green); }
 .surprise-val.negative { color:#f87171; }
 .surprise-val.neutral { color:var(--muted); }
 .surprise-track { height:8px; background:rgba(var(--fg-rgb),.05); border-radius:4px; overflow:hidden; position:relative; }
@@ -357,8 +361,8 @@ body {
 .jn-card-hdr { display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; }
 .jn-pair { font-family:'DM Mono',monospace; font-size:14px; color:var(--text); font-weight:700; }
 .jn-dir { font-size:10px; padding:2px 6px; border-radius:2px; font-family:'DM Mono',monospace; letter-spacing:.05em; }
-.jn-dir.long  { background:#1a5e38; color:var(--green); }
-.jn-dir.short { background:#7a1f17; color:var(--accent); }
+.jn-dir.long  { background:var(--green-dim); color:var(--green); }
+.jn-dir.short { background:var(--accent-dim); color:var(--accent); }
 .jn-meta { font-size:10px; color:var(--muted); font-family:'DM Mono',monospace; line-height:1.7; }
 .jn-status { font-size:9px; padding:2px 5px; border-radius:2px; font-family:'DM Mono',monospace; }
 .jn-status.open     { background:#1a3a5e; color:#60a5fa; }
@@ -441,7 +445,7 @@ body {
   left:3px; top:3px; background:var(--muted);
   border-radius:50%; transition:.3s;
 }
-.toggle input:checked + .tslider { background:rgba(192,57,43,.15); }
+.toggle input:checked + .tslider { background:rgba(var(--accent-rgb),.15); }
 .toggle input:checked + .tslider:before { transform:translateX(16px); background:var(--accent); }
 
 .refresh-btn {
@@ -504,14 +508,14 @@ body {
   letter-spacing:.5px; text-transform:uppercase; font-weight:400;
 }
 .tag-market-moving { background:rgba(255,71,87,.15); color:#ff4757; }
-.tag-forex         { background:rgba(0,200,150,.12); color:var(--green); }
+.tag-forex         { background:rgba(var(--green-rgb),.12); color:var(--green); }
 .tag-equities      { background:rgba(167,139,250,.12); color:var(--purple); }
 .tag-commodities   { background:rgba(245,158,11,.12); color:#f59e0b; }
 .tag-energy        { background:rgba(255,107,53,.12); color:var(--orange); }
 .tag-bonds         { background:rgba(96,165,250,.12); color:#60a5fa; }
 .tag-crypto        { background:rgba(244,114,182,.12); color:var(--pink); }
 .tag-indexes       { background:rgba(52,211,153,.12); color:#34d399; }
-.tag-macro         { background:rgba(192,57,43,.1); color:var(--accent); }
+.tag-macro         { background:rgba(var(--accent-rgb),.1); color:var(--accent); }
 .tag-econ-data     { background:rgba(192,132,252,.12); color:#c084fc; }
 .tag-geopolitical  { background:rgba(251,146,60,.12); color:#fb923c; }
 
@@ -524,7 +528,7 @@ body {
   border-top:1px solid var(--border); padding-top:8px;
 }
 
-.feed-chart-img { width:100%; border-radius:6px; display:block; background:#0d0d0d; }
+.feed-chart-img { width:100%; border-radius:6px; display:block; background:var(--surface); }
 .feed-chart-toggle {
   margin-top:8px; padding:3px 9px; border-radius:20px; border:1px solid var(--border);
   background:transparent; color:var(--muted); font-family:'DM Mono',monospace;
@@ -630,7 +634,7 @@ body {
 .onboard-step  { display:flex; gap:10px; align-items:flex-start; margin-bottom:10px; }
 .onboard-step-num {
   flex:0 0 auto; width:20px; height:20px; border-radius:50%;
-  background:rgba(192,57,43,0.15); color:var(--accent);
+  background:rgba(var(--accent-rgb),0.15); color:var(--accent);
   font-family:'DM Mono',monospace; font-size:10px; display:flex; align-items:center; justify-content:center;
 }
 .onboard-step-txt { font-size:11px; color:var(--text-mid); line-height:1.6; }
@@ -669,7 +673,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 }
 
 .thesis-alert-card {
-  background: rgba(192,57,43,.08); border: 1px solid rgba(192,57,43,.35);
+  background: rgba(var(--accent-rgb),.08); border: 1px solid rgba(var(--accent-rgb),.35);
   border-radius: 10px; padding: 14px 16px; margin-bottom: 14px;
 }
 .thesis-alert-header {
@@ -746,8 +750,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 }
 .thesis-pair { font-family:'DM Mono',monospace; font-size:18px; font-weight:700; color:var(--text); }
 .thesis-dir  { font-size:10px; padding:3px 8px; border-radius:3px; margin-left:8px; font-family:'DM Mono',monospace; letter-spacing:.05em; }
-.thesis-dir.long  { background:#1a5e38; color:var(--green); }
-.thesis-dir.short { background:#7a1f17; color:var(--accent); }
+.thesis-dir.long  { background:var(--green-dim); color:var(--green); }
+.thesis-dir.short { background:var(--accent-dim); color:var(--accent); }
 .thesis-conf { color:var(--yellow); font-size:13px; margin-left:8px; }
 .thesis-label { font-size:9px; color:var(--muted); font-family:'DM Mono',monospace; letter-spacing:.05em; margin-top:8px; }
 .thesis-val   { font-size:11px; color:var(--text-mid); font-family:'DM Mono',monospace; margin-top:2px; overflow-wrap:break-word; }
@@ -931,7 +935,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   transition: background .15s, color .15s; margin-left: 4px;
 }
 .cot-tren-btn:hover { background: rgba(var(--fg-rgb),.13); color: var(--text); }
-.cot-tren-btn.open  { background: rgba(0,200,150,.12); color: #00c896; }
+.cot-tren-btn.open  { background: rgba(var(--green-rgb),.12); color: var(--green); }
 .cot-tren-panel {
   display: none; border-radius: 6px; margin: 6px 0 10px;
   padding: 10px; background: rgba(var(--fg-rgb),.03);
@@ -1004,7 +1008,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   font: 700 8px 'DM Mono',monospace; padding: 2px 6px; border-radius: 3px;
   text-align: center; letter-spacing: .04em; white-space: nowrap;
 }
-.retail-signal.long  { background: rgba(74,222,128,.12); color: #4ade80; }
+.retail-signal.long  { background: rgba(var(--green-rgb),.12); color: var(--green); }
 .retail-signal.short { background: rgba(248,113,113,.12); color: #f87171; }
 .retail-signal.neut  { background: rgba(148,163,184,.08); color: var(--muted); }
 /* Konfluensi retail (kontrarian) × COT lev-funds flow — baris kedua di bawah sinyal */
@@ -1051,8 +1055,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .frnk-rank { font-size: 8px; color: var(--muted); font-family: 'DM Mono', monospace; opacity: .6; }
 .frnk-cur  { font-family: 'Syne', sans-serif; font-size: 11px; font-weight: 700; }
 .frnk-badge { font-size: 7px; padding: 1px 4px; border-radius: 2px; letter-spacing: .3px; white-space: nowrap; }
-.frnk-badge.bull  { background: rgba(0,200,150,.15); color: var(--green); }
-.frnk-badge.bear  { background: rgba(192,57,43,.15); color: var(--red); }
+.frnk-badge.bull  { background: rgba(var(--green-rgb),.15); color: var(--green); }
+.frnk-badge.bear  { background: rgba(var(--accent-rgb),.15); color: var(--red); }
 .frnk-badge.neut  { background: rgba(var(--fg-rgb),.06); color: var(--muted); }
 .frnk-badge.nd    { background: transparent; color: var(--muted); }
 .frnk-bar-bg { width: 100%; height: 2px; background: rgba(var(--fg-rgb),.07); border-radius: 1px; }
@@ -1096,18 +1100,18 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .fund-score-fill { height: 100%; border-radius: 1px; transition: width .4s; }
 .fund-score-num  { font-family: 'DM Mono', monospace; font-size: 8px; font-weight: 700; white-space: nowrap; }
 .fund-score-conf { font-family: 'DM Mono', monospace; font-size: 7px; padding: 1px 4px; border-radius: 2px; letter-spacing: .2px; white-space: nowrap; }
-.fund-score-conf.high { background: rgba(0,200,150,.12); color: var(--green); }
+.fund-score-conf.high { background: rgba(var(--green-rgb),.12); color: var(--green); }
 .fund-score-conf.med  { background: rgba(255,211,42,.10); color: var(--yellow); }
 .fund-score-conf.low  { background: rgba(var(--fg-rgb),.06); color: var(--muted); }
 /* AI Analysis section */
 .fund-analysis-wrap { margin-top: 4px; }
 .fund-analysis-btn {
   width: 100%; padding: 9px; border-radius: 8px;
-  background: rgba(192,57,43,.06); border: 1px solid rgba(192,57,43,.25);
+  background: rgba(var(--accent-rgb),.06); border: 1px solid rgba(var(--accent-rgb),.25);
   color: var(--accent); font-family: 'DM Mono', monospace; font-size: 10px;
   letter-spacing: .5px; cursor: pointer; text-transform: uppercase; transition: all .2s;
 }
-.fund-analysis-btn:hover { background: rgba(192,57,43,.12); }
+.fund-analysis-btn:hover { background: rgba(var(--accent-rgb),.12); }
 .fund-analysis-btn:disabled { opacity: .5; cursor: not-allowed; }
 .fund-analysis-card {
   background: var(--surface); border: 1px solid var(--border);
@@ -1198,7 +1202,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   font: 10px 'DM Mono',monospace; padding: 2px 6px; border-radius: 3px;
   white-space: nowrap; letter-spacing: .2px;
 }
-.fd-score-conf.high { background: rgba(0,200,150,.12); color: var(--green); }
+.fd-score-conf.high { background: rgba(var(--green-rgb),.12); color: var(--green); }
 .fd-score-conf.med  { background: rgba(255,211,42,.10); color: var(--yellow); }
 .fd-score-conf.low  { background: rgba(var(--fg-rgb),.06); color: var(--muted); }
 .fd-cur-tabs {
@@ -1299,7 +1303,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   font-family: 'DM Mono', monospace; font-size: 7px; font-weight: 700; letter-spacing: .4px;
   vertical-align: middle;
 }
-.cal-af-badge.beat   { background: rgba(74,222,128,.14); color: #4ade80; }
+.cal-af-badge.beat   { background: rgba(var(--green-rgb),.14); color: var(--green); }
 .cal-af-badge.miss   { background: rgba(248,113,113,.14); color: #f87171; }
 .cal-af-badge.inline { background: rgba(148,163,184,.1);  color: var(--muted); }
 .cal-period {
@@ -1338,7 +1342,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 }
 .cal-filter-btn.active-high   { border-color: #ff4757; color: #ff4757; background: rgba(255,71,87,.1); }
 .cal-filter-btn.active-medium { border-color: var(--yellow); color: var(--yellow); background: rgba(255,211,42,.1); }
-.cal-filter-btn.active-all    { border-color: var(--accent); color: var(--accent); background: rgba(192,57,43,.08); }
+.cal-filter-btn.active-all    { border-color: var(--accent); color: var(--accent); background: rgba(var(--accent-rgb),.08); }
 .cal-count-badge {
   font-size: 8px; color: var(--muted); padding: 3px 0;
   letter-spacing: .3px;
@@ -1361,7 +1365,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 }
 .cal-day-chip:hover { border-color: rgba(var(--fg-rgb),.15); }
 .cal-day-chip.today { border-color: var(--accent-dim); }
-.cal-day-chip.selected { border-color: var(--accent); background: rgba(192,57,43,.1); }
+.cal-day-chip.selected { border-color: var(--accent); background: rgba(var(--accent-rgb),.1); }
 .cal-day-chip-dow {
   font-size: 7px; color: var(--muted); letter-spacing: .4px; text-transform: uppercase;
 }
@@ -1589,9 +1593,9 @@ body.light-theme .cal-date-input { color-scheme: light; }
   letter-spacing: .5px; cursor: pointer; transition: background .15s;
   background: rgba(var(--fg-rgb),.05); color: var(--text-mid);
 }
-.cal-scenario-btn.beat { border-color: rgba(0,200,150,.3); }
+.cal-scenario-btn.beat { border-color: rgba(var(--green-rgb),.3); }
 .cal-scenario-btn.beat:hover, .cal-scenario-btn.beat.active {
-  background: rgba(0,200,150,.15); color: #00c896;
+  background: rgba(var(--green-rgb),.15); color: var(--green);
 }
 .cal-scenario-btn.miss { border-color: rgba(255,71,87,.3); }
 .cal-scenario-btn.miss:hover, .cal-scenario-btn.miss.active {
@@ -1623,7 +1627,7 @@ body.light-theme .cal-date-input { color-scheme: light; }
   margin-bottom: 2px;
 }
 .cal-scenario-pair-dir { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; }
-.cal-scenario-pair-dir.long  { color: #00c896; }
+.cal-scenario-pair-dir.long  { color: var(--green); }
 .cal-scenario-pair-dir.short { color: #ff4757; }
 .cal-scenario-warn {
   margin-top: 8px; padding: 8px 10px; border-radius: 5px;
@@ -1646,7 +1650,7 @@ body.light-theme .cal-date-input { color-scheme: light; }
 }
 .scen-conf-row strong { color: var(--text-mid); font-weight: 600; }
 .scen-conf-ic { flex: 0 0 10px; text-align: center; font-weight: 700; }
-.scen-conf-row.ok  .scen-conf-ic { color: #00c896; }
+.scen-conf-row.ok  .scen-conf-ic { color: var(--green); }
 .scen-conf-row.bad .scen-conf-ic { color: #ff4757; }
 .scen-conf-row.neu .scen-conf-ic { color: var(--muted); }
 .scen-verdict {
@@ -1654,7 +1658,7 @@ body.light-theme .cal-date-input { color-scheme: light; }
   font-size: 8px; letter-spacing: .06em; font-family: 'DM Mono', monospace;
   font-weight: 700; vertical-align: 2px; white-space: nowrap;
 }
-.scen-verdict.kuat    { background: rgba(0,200,150,.12);  color: #00c896; border: 1px solid rgba(0,200,150,.3); }
+.scen-verdict.kuat    { background: rgba(var(--green-rgb),.12);  color: var(--green); border: 1px solid rgba(var(--green-rgb),.3); }
 .scen-verdict.cukup   { background: rgba(96,165,250,.12); color: #60a5fa; border: 1px solid rgba(96,165,250,.3); }
 .scen-verdict.campur  { background: rgba(255,200,0,.1);   color: #e6b800; border: 1px solid rgba(255,200,0,.25); }
 .scen-verdict.konflik { background: rgba(255,71,87,.12);  color: #ff4757; border: 1px solid rgba(255,71,87,.3); }
@@ -1717,7 +1721,7 @@ body.light-theme .cal-date-input { color-scheme: light; }
   letter-spacing: .3px; display: inline-block;
 }
 .cb-decision.hold { background: rgba(var(--fg-rgb),.06); color: var(--muted); }
-.cb-decision.cut  { background: rgba(0,200,150,.12); color: var(--green); }
+.cb-decision.cut  { background: rgba(var(--green-rgb),.12); color: var(--green); }
 .cb-decision.hike { background: rgba(255,71,87,.12); color: #ff4757; }
 
 .cb-bias {
@@ -1729,10 +1733,10 @@ body.light-theme .cal-date-input { color-scheme: light; }
 .cb-bias.hawkish          { background: rgba(255,71,87,.15);   color: #ff4757; }
 .cb-bias.cautious-hawkish { background: rgba(255,107,53,.12);  color: var(--orange); }
 .cb-bias.neutral          { background: rgba(var(--fg-rgb),.06); color: var(--muted); }
-.cb-bias.data-dependent   { background: rgba(192,57,43,.08);   color: var(--accent); }
+.cb-bias.data-dependent   { background: rgba(var(--accent-rgb),.08);   color: var(--accent); }
 .cb-bias.on-hold          { background: rgba(var(--fg-rgb),.06); color: var(--muted); }
-.cb-bias.cautious-dovish  { background: rgba(52,211,153,.1);   color: #34d399; }
-.cb-bias.dovish           { background: rgba(0,200,150,.12);   color: var(--green); }
+.cb-bias.cautious-dovish  { background: rgba(var(--green-rgb),.1);   color: var(--green); }
+.cb-bias.dovish           { background: rgba(var(--green-rgb),.12);   color: var(--green); }
 .cb-bias.split            { background: rgba(167,139,250,.12); color: var(--purple); }
 .cb-bias.unknown          { background: rgba(var(--fg-rgb),.04); color: var(--muted); font-style: italic; }
 
@@ -1797,7 +1801,7 @@ body.light-theme .cal-date-input { color-scheme: light; }
 
 .install-banner {
   flex-shrink:0; display:none;
-  background:rgba(192,57,43,.07); border-bottom:1px solid rgba(192,57,43,.2);
+  background:rgba(var(--accent-rgb),.07); border-bottom:1px solid rgba(var(--accent-rgb),.2);
   padding:10px 14px; align-items:center; gap:10px;
 }
 .install-banner p { font-size:11px; color:var(--accent); flex:1; line-height:1.4; }
@@ -2027,7 +2031,7 @@ body.light-theme .cal-date-input { color-scheme: light; }
 .ck-pb-info-btn:hover, .ck-pb-info-btn.open { color: var(--text); border-color: var(--muted); }
 .ck-pb-info-tip {
   display: none; position: absolute; top: calc(100% + 6px); left: 0; z-index: 200;
-  background: #1a1a18; border: 1px solid rgba(167,139,250,0.3);
+  background: var(--surface); border: 1px solid rgba(167,139,250,0.3);
   border-radius: 6px; padding: 10px 12px; width: 280px; max-width: 90vw;
   font-size: 10px; color: var(--text-mid); line-height: 1.65;
   word-wrap: break-word; overflow-wrap: break-word;
@@ -2061,11 +2065,11 @@ body.light-theme .cal-date-input { color-scheme: light; }
   min-height: 26px;
   transition: background 0.25s;
 }
-.regime-banner.risk-on  { background: #0f2a14; color: #4caf50; }
-.regime-banner.neutral  { background: #141413; color: var(--muted); }
+.regime-banner.risk-on  { background: #0f2a14; color: var(--green); }
+.regime-banner.neutral  { background: var(--surface); color: var(--muted); }
 .regime-banner.elevated { background: #251e08; color: #f59e0b; }
 .regime-banner.risk-off { background: #2a0f0f; color: #e53935; }
-.regime-banner.unavail  { background: #141413; color: var(--muted); }
+.regime-banner.unavail  { background: var(--surface); color: var(--muted); }
 .regime-row { display: flex; align-items: center; gap: 6px; flex-wrap: nowrap; overflow: hidden; }
 .regime-main { white-space: nowrap; }
 .regime-meta { font-size: 9px; opacity: 0.75; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -2241,11 +2245,11 @@ body.light-theme .cal-date-input { color-scheme: light; }
 .tek-pair-opt:hover { background: rgba(56,189,248,.12); }
 .tek-pair-opt.active { color: #38bdf8; font-weight: 700; }
 .tek-pair-empty { padding: 10px 12px; font: 11px 'DM Mono',monospace; color: var(--muted); }
-.tek-chart-wrap { width: 100%; height: clamp(420px, 62vh, 780px); background: #0d0f14; overflow: hidden; flex-shrink: 0; }
+.tek-chart-wrap { width: 100%; height: clamp(420px, 62vh, 780px); background: var(--surface); overflow: hidden; flex-shrink: 0; }
 #tekChartContainer { width: 100%; height: 100%; }
 .tek-chart-offline {
   height: 100%; display: flex; align-items: center; justify-content: center;
-  color: var(--muted); font: 11px 'DM Mono',monospace; background: #0d0f14;
+  color: var(--muted); font: 11px 'DM Mono',monospace; background: var(--surface);
   border-bottom: 1px solid var(--border); flex-direction: column; gap: 8px;
 }
 .tek-mtf-section { padding: 14px 14px 10px; }
@@ -2295,7 +2299,7 @@ body.light-theme .cal-date-input { color-scheme: light; }
 .tek-ta-label { font: 9px 'DM Mono',monospace; color: var(--muted); text-transform: uppercase; letter-spacing: .07em; margin-bottom: 3px; }
 .tek-ta-val { font: 700 13px 'DM Mono',monospace; color: var(--text); line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tek-ta-sub { font: 9px 'DM Mono',monospace; color: var(--muted); margin-top: 2px; white-space: nowrap; }
-.tek-ta-bull { color: #4ade80; }
+.tek-ta-bull { color: var(--green); }
 .tek-ta-bear { color: #f87171; }
 .tek-ta-warn { color: #fbbf24; }
 .tek-ta-muted { color: var(--muted); }
@@ -2380,7 +2384,7 @@ body.light-theme .cal-date-input { color-scheme: light; }
 .dash-retail-bar-wrap { flex:1; height:5px; border-radius:3px; background:rgba(var(--fg-rgb),.06); overflow:hidden; }
 .dash-retail-bar-fill { height:100%; border-radius:3px; background:var(--green); }
 .dash-retail-sig { font-size:10px; min-width:12px; text-align:right; font-weight:700; }
-.dash-retail-sig.long  { color:#4ade80; }
+.dash-retail-sig.long  { color:var(--green); }
 .dash-retail-sig.short { color:#f87171; }
 .dash-retail-sig.neut  { color:var(--muted); }
 .dash-news-item {
@@ -2596,6 +2600,8 @@ body.light-theme .cal-date-input { color-scheme: light; }
     --accent: #1a1a1a; --accent-dim: #1a1a1a; --gate: #1a1a1a;
     --text: #1a1a1a; --muted: #5a5a5a; --text-mid: #333333;
     --green: #1a1a1a; --green-dim: #1a1a1a; --red: #1a1a1a;
+    --fg-rgb: 26, 26, 26; --bg-rgb: 255, 255, 255;
+    --accent-rgb: 26, 26, 26; --green-rgb: 26, 26, 26;
     --yellow: #1a1a1a; --orange: #1a1a1a; --purple: #1a1a1a; --pink: #5a5a5a;
   }
   /* Highlight berwarna di teks artikel (angka kuning, currency merah, dst)
@@ -2726,6 +2732,8 @@ body.light-theme {
   --pink: #db2777;
   --fg-rgb: 0, 0, 0;
   --bg-rgb: 248, 247, 245;
+  --accent-rgb: 179, 45, 34;
+  --green-rgb: 33, 150, 83;
 }
 
 
@@ -2810,7 +2818,7 @@ body.light-theme .ck-bdg-gate { background: var(--accent-dim); color: var(--acce
 .jn-form textarea:focus {
   outline: none !important;
   border-color: var(--accent) !important;
-  box-shadow: 0 0 0 3px rgba(192, 57, 43, 0.15) !important;
+  box-shadow: 0 0 0 3px rgba(var(--accent-rgb),0.15) !important;
 }
 
 /* ────────────────────────────────────────────────────────── */
@@ -2960,7 +2968,7 @@ body.light-theme .ck-bdg-gate { background: var(--accent-dim); color: var(--acce
 .jn-form textarea:focus {
   outline: none !important;
   border-color: var(--accent) !important;
-  box-shadow: 0 0 0 3px rgba(192, 57, 43, 0.15) !important;
+  box-shadow: 0 0 0 3px rgba(var(--accent-rgb),0.15) !important;
 }
 
 /* 4. DESAIN TOMBOL AKSI UTAMA */
@@ -3044,18 +3052,19 @@ body.light-theme .thesis-dir.short {
 }
 
 /* 6. TEMA GELAP: OPTIMALISASI PSIKOLOGI WARNA & READABILITY */
-/* Meredupkan latar belakang tema gelap dari hitam murni #0a0a08 ke abu-abu gelap hangat #0d0d0b untuk mengurangi efek halation */
+/* Skema dual-tone "lebih tua": bg/surface/border sudah diredupkan dari hitam murni sejak :root
+   (bukan hitam pekat murni), jadi blok ini disamakan dengan :root — bukan lapisan peredupan kedua. */
 body:not(.light-theme) {
-  --bg: #0e0e0c;
-  --surface: #151513;
-  --border: #252523;
+  --bg: #070a08;
+  --surface: #0e130f;
+  --border: #1a231d;
 }
 
-/* Meredupkan pendaran warna merah aksen di tema gelap agar tidak memicu stress visual bawah sadar */
+/* Menyatukan warna tombol CTA utama ke var(--accent) — sudah dusty/editorial by design (rust, bukan merah alarm) */
 body:not(.light-theme) .sizing-form button:not([id]),
 body:not(.light-theme) .jn-btn,
 body:not(.light-theme) .ringkasan-gen-btn {
-  background: #b23c30 !important; /* warna merah yang lebih 'dusty/editorial' alih-alih merah alarm */
+  background: var(--accent) !important;
   color: #ffffff !important;
 }
 
@@ -3437,7 +3446,7 @@ body:not(.light-theme) .ringkasan-gen-btn {
       <button onclick="calcSizing()">HITUNG</button>
     </div>
     <div id="szBlockWarning" style="display:none;padding:12px;border-radius:4px;font-size:11px;margin-top:12px;font-family:'DM Mono',monospace;line-height:1.5"></div>
-    <div id="szEventRiskWarning" style="display:none;padding:12px;border-radius:4px;font-size:11px;margin-top:12px;font-family:'DM Mono',monospace;line-height:1.5;color:var(--accent);border:1px solid var(--accent);background:rgba(192,57,43,.08)"></div>
+    <div id="szEventRiskWarning" style="display:none;padding:12px;border-radius:4px;font-size:11px;margin-top:12px;font-family:'DM Mono',monospace;line-height:1.5;color:var(--accent);border:1px solid var(--accent);background:rgba(var(--accent-rgb),.08)"></div>
     <div id="szResult" style="display:none"></div>
     <div id="szHistory" style="margin-top:24px"></div>
   </div>
@@ -3599,11 +3608,11 @@ body:not(.light-theme) .ringkasan-gen-btn {
 
   <!-- MULAI DARI SINI -->
   <div class="pt-section">
-    <div class="pt-section-hdr" style="color:#4caf50">
+    <div class="pt-section-hdr" style="color:var(--green)">
       <span>👋</span> Mulai dari Sini
     </div>
     <div style="padding:14px;font-size:11px;line-height:1.75;color:var(--text-mid)">
-      <p style="margin:0 0 12px"><strong style="color:var(--text)">Baru pertama kali pakai?</strong> Tab paling atas yang kebuka otomatis (NEWS) itu stream berita mentah real-time — paling berguna kalau kamu SUDAH punya konteks, bukan titik mulai yang enak. Urutan yang lebih nyaman buat pemula: buka <strong style="color:#4caf50">CAL</strong> dulu (jadwal event hari ini, ada jam + level dampak HIGH/MED) lalu <strong style="color:#e57373">RINGKASAN</strong> (ringkasan AI driver pasar hari ini). Setelah dua itu kebaca, baru NEWS bakal masuk akal — kamu sudah tahu apa yang sedang dicari. Nggak harus paham semua tab sekaligus; ikuti alur "Alur Keputusan" di bawah satu per satu, satu sesi cukup fokus ke beberapa langkah pertama saja.</p>
+      <p style="margin:0 0 12px"><strong style="color:var(--text)">Baru pertama kali pakai?</strong> Tab paling atas yang kebuka otomatis (NEWS) itu stream berita mentah real-time — paling berguna kalau kamu SUDAH punya konteks, bukan titik mulai yang enak. Urutan yang lebih nyaman buat pemula: buka <strong style="color:var(--green)">CAL</strong> dulu (jadwal event hari ini, ada jam + level dampak HIGH/MED) lalu <strong style="color:#e57373">RINGKASAN</strong> (ringkasan AI driver pasar hari ini). Setelah dua itu kebaca, baru NEWS bakal masuk akal — kamu sudah tahu apa yang sedang dicari. Nggak harus paham semua tab sekaligus; ikuti alur "Alur Keputusan" di bawah satu per satu, satu sesi cukup fokus ke beberapa langkah pertama saja.</p>
       <p style="margin:0"><strong style="color:var(--text)">Sudah biasa pakai app ini?</strong> Tidak ada yang berubah dari cara kerja atau urutan tab kamu sehari-hari — bagian ini cuma ditambahkan untuk orang yang baru pertama kali buka app, supaya nggak nyasar duluan ke NEWS tanpa konteks.</p>
     </div>
   </div>
@@ -3620,17 +3629,17 @@ body:not(.light-theme) .ringkasan-gen-btn {
       </div>
       <div class="pt-flow-arrow" style="padding-left:36px">↓</div>
       <div class="pt-flow-item">
-        <div class="pt-flow-tag" style="background:rgba(192,57,43,0.12);color:#e57373">RINGKASAN</div>
+        <div class="pt-flow-tag" style="background:rgba(var(--accent-rgb),0.12);color:#e57373">RINGKASAN</div>
         <div class="pt-flow-desc">Driver harian + bias sesi + risiko spike XAU/USD</div>
       </div>
       <div class="pt-flow-arrow" style="padding-left:36px">↓</div>
       <div class="pt-flow-item">
-        <div class="pt-flow-tag" style="background:rgba(39,174,96,0.12);color:#4caf50">CAL</div>
+        <div class="pt-flow-tag" style="background:rgba(var(--green-rgb),0.12);color:var(--green)">CAL</div>
         <div class="pt-flow-desc">Jam berapa high-impact news? Tandai sebagai no-trade zone</div>
       </div>
       <div class="pt-flow-arrow" style="padding-left:36px">↓</div>
       <div class="pt-flow-item">
-        <div class="pt-flow-tag" style="background:rgba(192,57,43,0.12);color:#e57373">NEWS</div>
+        <div class="pt-flow-tag" style="background:rgba(var(--accent-rgb),0.12);color:#e57373">NEWS</div>
         <div class="pt-flow-desc">Monitor real-time — tangkap headline sebelum chart bergerak</div>
       </div>
       <div class="pt-flow-arrow" style="padding-left:36px">↓</div>
@@ -3645,7 +3654,7 @@ body:not(.light-theme) .ringkasan-gen-btn {
       </div>
       <div class="pt-flow-arrow" style="padding-left:36px">↓</div>
       <div class="pt-flow-item">
-        <div class="pt-flow-tag" style="background:rgba(192,57,43,0.12);color:#e57373">SIZING</div>
+        <div class="pt-flow-tag" style="background:rgba(var(--accent-rgb),0.12);color:#e57373">SIZING</div>
         <div class="pt-flow-desc">Hitung lot dari equity, stop pips, dan % risk kamu</div>
       </div>
       <div class="pt-flow-arrow" style="padding-left:36px">↓</div>
@@ -3693,8 +3702,8 @@ body:not(.light-theme) .ringkasan-gen-btn {
 
   <!-- FASE 2: LIVE SESSION -->
   <div class="pt-section">
-    <div class="pt-section-hdr" style="color:#4caf50">
-      <span class="pt-num" style="background:rgba(39,174,96,0.15);color:#4caf50">2</span>
+    <div class="pt-section-hdr" style="color:var(--green)">
+      <span class="pt-num" style="background:rgba(var(--green-rgb),0.15);color:var(--green)">2</span>
       Live Session — Saat Trading Aktif
     </div>
     <div class="pt-section-body">
@@ -3863,7 +3872,7 @@ body:not(.light-theme) .ringkasan-gen-btn {
       <div style="display:flex;gap:6px;align-items:center">
         <input type="text" id="ptDeviceIdInput" placeholder="Paste Device ID dari device lain..."
           style="flex:1;background:var(--surface);border:1px solid var(--border);color:var(--text);padding:8px 10px;font-family:'DM Mono',monospace;font-size:9px;border-radius:4px;outline:none">
-        <button onclick="ptChangeDeviceId()" style="padding:8px 12px;background:rgba(192,57,43,0.12);border:1px solid var(--accent-dim);color:var(--accent);font-family:'DM Mono',monospace;font-size:9px;letter-spacing:.05em;cursor:pointer;border-radius:4px;white-space:nowrap">TERAPKAN</button>
+        <button onclick="ptChangeDeviceId()" style="padding:8px 12px;background:rgba(var(--accent-rgb),0.12);border:1px solid var(--accent-dim);color:var(--accent);font-family:'DM Mono',monospace;font-size:9px;letter-spacing:.05em;cursor:pointer;border-radius:4px;white-space:nowrap">TERAPKAN</button>
       </div>
       <div style="font-size:9px;color:var(--muted);margin-top:10px;line-height:1.65">
         ⚠ Checklist tersimpan secara lokal di setiap device dan tidak ikut ter-sync. Hanya jurnal dan riwayat sizing yang ter-sync via Device ID.
@@ -4183,7 +4192,7 @@ body:not(.light-theme) .ringkasan-gen-btn {
       Pair: <span id="mt5ModalPair" style="color:var(--text);font-weight:700;font-family:'DM Mono',monospace"></span>
       &nbsp;·&nbsp; <span id="mt5ModalOrderKind">Market Order</span>
     </div>
-    <div id="mt5ModalNoSizing" style="display:none;padding:12px 10px;background:rgba(192,57,43,.08);border:1px solid rgba(192,57,43,.25);border-radius:8px;font-size:10px;color:var(--text);line-height:1.6;margin-bottom:12px">
+    <div id="mt5ModalNoSizing" style="display:none;padding:12px 10px;background:rgba(var(--accent-rgb),.08);border:1px solid rgba(var(--accent-rgb),.25);border-radius:8px;font-size:10px;color:var(--text);line-height:1.6;margin-bottom:12px">
       ⚠ Belum ada hasil Sizing Calculator untuk pair ini. Lot/SL/TP tidak boleh diisi manual di sini — hitung dulu di Sizing Calculator agar angkanya objektif, bukan tebakan saat itu.
       <button onclick="ckGoToSizingFromModal()" style="width:100%;margin-top:10px;padding:9px;background:var(--green);color:#000;border:none;border-radius:6px;font-weight:700;font-size:10px;letter-spacing:.6px;text-transform:uppercase;cursor:pointer">Buka Sizing Calculator →</button>
     </div>
@@ -4215,7 +4224,7 @@ body:not(.light-theme) .ringkasan-gen-btn {
       </div>
     </div>
     <div id="mt5ModalStatus" style="margin-top:10px;font-size:10px;color:var(--muted);min-height:16px"></div>
-    <div style="margin-top:8px;padding:8px 10px;background:rgba(192,57,43,.07);border:1px solid rgba(192,57,43,.2);border-radius:6px;font-size:9px;color:var(--muted);line-height:1.5">
+    <div style="margin-top:8px;padding:8px 10px;background:rgba(var(--accent-rgb),.07);border:1px solid rgba(var(--accent-rgb),.2);border-radius:6px;font-size:9px;color:var(--muted);line-height:1.5">
       ⚠ Kalau Entry Price diisi, sistem akan kirim pending order di harga itu. Kalau kosong, baru market order langsung dieksekusi ke akun MT5. Pastikan <code style="font-size:9px;color:var(--text)">mt5_bridge.py</code> sudah berjalan di PC kamu.
     </div>
     <button id="mt5ModalConfirmBtn" onclick="ckMt5OrderConfirm()" style="width:100%;margin-top:12px;padding:12px;background:var(--green);color:#000;border:none;border-radius:8px;font-weight:700;font-size:11px;letter-spacing:.8px;text-transform:uppercase;cursor:pointer">Konfirmasi Entry</button>
@@ -4229,7 +4238,7 @@ body:not(.light-theme) .ringkasan-gen-btn {
       <div style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--yellow)">⚠ Override Sinyal Otomatis</div>
       <button onclick="ckCancelOverride()" style="background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer;line-height:1">×</button>
     </div>
-    <div id="ckOverrideMsg" style="font-size:11px;color:var(--muted);line-height:1.5;margin-bottom:12px;padding:8px 10px;background:rgba(192,57,43,.08);border:1px solid rgba(192,57,43,.2);border-radius:6px"></div>
+    <div id="ckOverrideMsg" style="font-size:11px;color:var(--muted);line-height:1.5;margin-bottom:12px;padding:8px 10px;background:rgba(var(--accent-rgb),.08);border:1px solid rgba(var(--accent-rgb),.2);border-radius:6px"></div>
     <div style="font-size:9px;color:var(--muted);letter-spacing:.8px;text-transform:uppercase;margin-bottom:5px">Kenapa tetap lanjut? (kalimat nyata, bukan "ok"/"aman")</div>
     <textarea id="ckOverrideReasonInput" oninput="ckOverrideInputCheck()" placeholder="Mis: data baru keluar setelah sinyal ini dihitung, sudah saya cek manual..." style="width:100%;min-height:64px;background:var(--bg);color:var(--text);border:1px solid var(--border);padding:8px 10px;border-radius:6px;font-family:'DM Mono',monospace;font-size:11px;box-sizing:border-box;resize:vertical"></textarea>
     <div id="ckOverrideHint" style="font-size:9px;color:var(--accent);min-height:14px;margin-top:4px"></div>
@@ -4258,7 +4267,7 @@ body:not(.light-theme) .ringkasan-gen-btn {
       <div style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--accent)">⚠ Kecepatan Tidak Wajar</div>
       <button onclick="ckCancelSpeedAck()" style="background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer;line-height:1">×</button>
     </div>
-    <div id="ckSpeedAckMsg" style="font-size:11px;color:var(--text);line-height:1.5;margin-bottom:12px;padding:8px 10px;background:rgba(192,57,43,.08);border:1px solid rgba(192,57,43,.2);border-radius:6px"></div>
+    <div id="ckSpeedAckMsg" style="font-size:11px;color:var(--text);line-height:1.5;margin-bottom:12px;padding:8px 10px;background:rgba(var(--accent-rgb),.08);border:1px solid rgba(var(--accent-rgb),.2);border-radius:6px"></div>
     <div style="font-size:9px;color:var(--muted);letter-spacing:.8px;text-transform:uppercase;margin-bottom:5px">Jelaskan kondisi apa yang barusan kamu cek (kalimat nyata)</div>
     <textarea id="ckSpeedAckInput" oninput="ckSpeedAckInputCheck()" placeholder="Mis: saya sudah cek BOS, area entry, dan RR sebelumnya — sekarang cuma konfirmasi ulang sebelum entry..." style="width:100%;min-height:64px;background:var(--bg);color:var(--text);border:1px solid var(--border);padding:8px 10px;border-radius:6px;font-family:'DM Mono',monospace;font-size:11px;box-sizing:border-box;resize:vertical"></textarea>
     <div id="ckSpeedAckHint" style="font-size:9px;color:var(--accent);min-height:14px;margin-top:4px"></div>
@@ -4291,7 +4300,7 @@ function updateThemeIcon() {
   if (!icon) return;
   const isLight = document.body.classList.contains('light-theme');
   const metaTheme = document.querySelector('meta[name="theme-color"]');
-  if (metaTheme) metaTheme.setAttribute('content', isLight ? '#f8f7f5' : '#0a0a08');
+  if (metaTheme) metaTheme.setAttribute('content', isLight ? '#f8f7f5' : '#070a08');
   
   if (isLight) {
     icon.innerHTML = '<circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>';
@@ -4324,7 +4333,7 @@ window.addEventListener('DOMContentLoaded', updateThemeIcon);
 
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.07.25.2';
+const APP_VERSION = '2026.07.25.3';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
@@ -4460,7 +4469,7 @@ function showAppKeyGate() {
       <div style="font-family:'DM Mono',monospace;font-size:12px;color:var(--text,#e5e7eb);letter-spacing:.05em;margin-bottom:8px">🔒 KUNCI AKSES</div>
       <div style="font-size:10px;color:var(--text-mid,#9ca3af);line-height:1.7;margin-bottom:14px">Aplikasi ini dikunci dengan <strong>APP_KEY</strong> supaya orang lain yang menemukan link tidak bisa menghabiskan kuota AI. Masukkan kunci akses (nilai env <code>APP_KEY</code> di Vercel). Kunci disimpan hanya di device ini.</div>
       <input type="password" id="appKeyInput" placeholder="Kunci akses..." autocomplete="off" style="width:100%;box-sizing:border-box;background:var(--bg,#05080f);border:1px solid var(--border,#1f2937);color:var(--text,#e5e7eb);padding:9px 10px;font-family:'DM Mono',monospace;font-size:11px;border-radius:4px;outline:none;margin-bottom:10px">
-      <button onclick="_saveAppKey(document.getElementById('appKeyInput').value.trim())" style="width:100%;padding:9px 12px;background:rgba(192,57,43,0.15);border:1px solid var(--accent,#c0392b);color:var(--accent,#e74c3c);font-family:'DM Mono',monospace;font-size:10px;letter-spacing:.06em;cursor:pointer;border-radius:4px">SIMPAN &amp; MUAT ULANG</button>
+      <button onclick="_saveAppKey(document.getElementById('appKeyInput').value.trim())" style="width:100%;padding:9px 12px;background:rgba(var(--accent-rgb),0.15);border:1px solid var(--accent,#a83226);color:var(--accent,#e74c3c);font-family:'DM Mono',monospace;font-size:10px;letter-spacing:.06em;cursor:pointer;border-radius:4px">SIMPAN &amp; MUAT ULANG</button>
     </div>`;
   document.body.appendChild(wrap);
   const inp = document.getElementById('appKeyInput');
@@ -5643,11 +5652,11 @@ function _pdfBuilder() {
     doc.line(marginX, y, marginX + contentW, y);
     y += gapAfter;
   }
-  // Header pakai warna primer brand (#c0392b) — konvensi kop surat resmi umum (logo/nama
+  // Header pakai warna primer brand (#a83226) — konvensi kop surat resmi umum (logo/nama
   // instansi berwarna, badan surat tetap monokrom), bukan pelanggaran aturan "JANGAN ADA
   // WARNA" lama (itu soal badan dokumen, bukan identitas brand di kop). Judul/meta/isi
   // tetap abu-abu/hitam total.
-  const BRAND_COLOR = [192, 57, 43];
+  const BRAND_COLOR = [168, 50, 38];
   function letterhead(titleText, metaLines) {
     doc.setFont('times', 'bold'); doc.setFontSize(18); doc.setTextColor(...BRAND_COLOR);
     doc.text('DAUN MERAH', marginX, y); y += 7;
@@ -7324,7 +7333,7 @@ async function fetchCalendar() {
     const _calSel = document.getElementById('ckPairSelector');
     if (_calSel && _calSel.value) ckAutoTickRegimeCheck(_calSel.value);
   } catch(e) {
-    inner.innerHTML = `<div class="cal-empty">Gagal memuat kalender.<br><small style="color:#6b6860">${e.message}</small><br><br>
+    inner.innerHTML = `<div class="cal-empty">Gagal memuat kalender.<br><small style="color:var(--muted)">${e.message}</small><br><br>
       <button class="ringkasan-gen-btn" style="margin:0 auto;width:auto;padding:8px 20px" onclick="fetchCalendar()">Coba Lagi</button></div>`;
   } finally {
     if (btn) btn.classList.remove('spinning');
@@ -7347,7 +7356,7 @@ async function fetchCalendarNext() {
     if (calStaleBadge) calStaleBadge.style.display = data.stale ? 'inline' : 'none';
     renderCalendar();
   } catch(e) {
-    inner.innerHTML = `<div class="cal-empty">Gagal memuat kalender minggu depan.<br><small style="color:#6b6860">${e.message}</small><br><br>
+    inner.innerHTML = `<div class="cal-empty">Gagal memuat kalender minggu depan.<br><small style="color:var(--muted)">${e.message}</small><br><br>
       <button class="ringkasan-gen-btn" style="margin:0 auto;width:auto;padding:8px 20px" onclick="fetchCalendarNext()">Coba Lagi</button></div>`;
   } finally {
     if (btn) btn.classList.remove('spinning');
@@ -7414,7 +7423,7 @@ async function fetchCalendarForDate(dateStr) {
     if (calStaleBadge) calStaleBadge.style.display = data.stale ? 'inline' : 'none';
     renderCalendar();
   } catch(e) {
-    inner.innerHTML = `<div class="cal-empty">Gagal memuat kalender untuk tanggal ini.<br><small style="color:#6b6860">${e.message}</small><br><br>
+    inner.innerHTML = `<div class="cal-empty">Gagal memuat kalender untuk tanggal ini.<br><small style="color:var(--muted)">${e.message}</small><br><br>
       <button class="ringkasan-gen-btn" style="margin:0 auto;width:auto;padding:8px 20px" onclick="fetchCalendarForDate('${dateStr}')">Coba Lagi</button></div>`;
   } finally {
     if (jumpBtn) { jumpBtn.disabled = false; jumpBtn.textContent = 'Lompat'; }
@@ -7541,7 +7550,7 @@ function renderCBTracker() {
     'Dovish':           'dovish',
     'Split':            'split',
   };
-  const CONF_COL = { 'High': '#27ae60', 'Medium': '#e67e22', 'Low': '#c0392b' };
+  const CONF_COL = { 'High': 'var(--green)', 'Medium': '#e67e22', 'Low': 'var(--accent)' };
   const CUR_COL  = { USD:'#60a5fa', EUR:'#c0392b', GBP:'#a78bfa', JPY:'#ffd32a', CAD:'#ff6b35', AUD:'#00c896', NZD:'#34d399', CHF:'#ff4757' };
 
   const rows = cbData.map(cb => {
@@ -7767,7 +7776,7 @@ async function fetchPolymarket() {
 }
 
 const POLY_CAT_COLORS = {
-  'CB Policy':'#4caf50','Macro Data':'#60a5fa','USD/Yields':'#f59e0b',
+  'CB Policy':'var(--green)','Macro Data':'#60a5fa','USD/Yields':'#f59e0b',
   'Trade/Tariff':'#f97316','Geopolitical':'#e05c5c','Commodity':'#a78bfa','Political':'#94a3b8'
 };
 
@@ -7815,12 +7824,12 @@ function renderPolymarket(data) {
     let probHtml = '';
     if (m.yes_prob !== null) {
       const p = m.yes_prob;
-      const col = p >= 70 ? '#4caf50' : p <= 30 ? '#e05c5c' : '#f59e0b';
+      const col = p >= 70 ? 'var(--green)' : p <= 30 ? '#e05c5c' : '#f59e0b';
       // Δ1d = pergeseran probabilitas 24 jam (audit vendor 2026-07-12) — momentum
       // pasar prediksi; hijau = makin yakin YA, merah = makin ragu.
       let chgHtml = '';
       if (m.change_1d != null && m.change_1d !== 0) {
-        const cCol = m.change_1d > 0 ? '#4ade80' : '#f87171';
+        const cCol = m.change_1d > 0 ? 'var(--green)' : '#f87171';
         const cArrow = m.change_1d > 0 ? '▲' : '▼';
         chgHtml = `<div style="font-size:8px;color:${cCol};font-family:'DM Mono',monospace;margin-top:1px" title="Pergeseran probabilitas 24 jam terakhir">${cArrow} ${m.change_1d > 0 ? '+' : ''}${m.change_1d}pp / 24j</div>`;
       }
@@ -7829,7 +7838,7 @@ function renderPolymarket(data) {
     } else {
       probHtml = m.outcomes.map((o, i) => {
         const p = m.prices[i] || 0;
-        const col = p >= 70 ? '#4caf50' : p <= 30 ? '#e05c5c' : '#888';
+        const col = p >= 70 ? 'var(--green)' : p <= 30 ? '#e05c5c' : '#888';
         return `<span style="color:${col};font-size:11px;font-family:'DM Mono',monospace">${p}%</span>`
           + `<span style="font-size:8px;color:var(--muted);margin-right:6px"> ${escHtml(o)}</span>`;
       }).join('');
@@ -8012,7 +8021,7 @@ function renderResearch() {
       allBtn.style.color = 'var(--red)';
     } else {
       allBtn.textContent = 'tampilkan semua';
-      allBtn.style.color = '#34d399';
+      allBtn.style.color = 'var(--green)';
     }
   }
 
@@ -8383,7 +8392,7 @@ function renderTekRange(d) {
   if (atr == null || today == null) { el.style.display = 'none'; return; }
 
   const pct = Math.round((today / atr) * 100);
-  let color = '#27ae60'; // green
+  let color = 'var(--green)'; // green
   let status = 'ACTIVE';
   if (pct >= 90) {
     color = '#e74c3c'; // red
@@ -9082,13 +9091,13 @@ const FUND_SECTIONS_MAP = {
 const FUND_SECTION_ORDER = ['Inflasi','Pertumbuhan','Ketenagakerjaan','Aktivitas','Sentimen','Permintaan','Eksternal'];
 const FUND_SECTION_COLORS = {
   'Inflasi':        '#e67e22',
-  'Pertumbuhan':    '#27ae60',
+  'Pertumbuhan':    'var(--green)',
   'Ketenagakerjaan':'#3b9fe8',
   'Aktivitas':      '#a78bfa',
   'Sentimen':       '#f1c40f',
   'Permintaan':     '#1abc9c',
   'Eksternal':      '#7f8c8d',
-  'Lainnya':        '#6b6860',
+  'Lainnya':        'var(--muted)',
 };
 
 function openFundDetail(cur) {
@@ -9231,7 +9240,7 @@ function _renderFundDetail() {
       ? _buildLabourMergedHtml(rows.map(([k]) => k))
       : null;
     if (rows.length === 0 && !labourExtra) return;
-    const sCol = FUND_SECTION_COLORS[sec] || '#6b6860';
+    const sCol = FUND_SECTION_COLORS[sec] || 'var(--muted)';
     html += `<div class="fd-section-hdr"><span class="fd-section-dot" style="background:${sCol}"></span><span style="color:${sCol}">${sec}</span></div>`;
     if (labourExtra) html += labourExtra.summary;
     let rowsHtml = '';
@@ -10062,7 +10071,7 @@ function renderEconomicSurpriseIndex() {
   if (pct >= 60) {
     valClass = 'positive';
     desc = 'Lebih banyak data ekonomi AS yang melampaui estimasi — mendukung USD.';
-    barColor = '#34d399';
+    barColor = 'var(--green)';
   } else if (pct <= 40) {
     valClass = 'negative';
     desc = 'Lebih banyak data ekonomi AS yang meleset — tekanan pada USD.';
@@ -10407,7 +10416,7 @@ function scenarioRenderResults(pairs, eventCur, direction, eventName, evId) {
   // Indikator terbalik: BEAT = angka turun (bagus utk currency) — panah ikut angka
   const isInv = CAL_INVERSE_INDICATOR_RE.test(eventName || '');
   const dirLabel = direction === 'beat'
-    ? `<span style="color:#00c896">${isInv ? '▼' : '▲'} BEAT${isInv ? ' (angka turun)' : ''} → ${eventCur} menguat</span>`
+    ? `<span style="color:var(--green)">${isInv ? '▼' : '▲'} BEAT${isInv ? ' (angka turun)' : ''} → ${eventCur} menguat</span>`
     : `<span style="color:#ff4757">${isInv ? '▲' : '▼'} MISS${isInv ? ' (angka naik)' : ''} → ${eventCur} melemah</span>`;
 
   // Pair mayor mata uang event — tempat reaksi awal kejutan data biasanya paling
@@ -13824,7 +13833,7 @@ function calcSizing() {
     if (dangerousEvents.length > 0) {
       const evList = dangerousEvents.map(e => `${e.currency} ${e.event} (${e.time_wib})`).join(', ');
       eventRiskEl.style.display = 'block';
-      eventRiskEl.innerHTML = `⛔ <b>High Event Risk &lt;24 jam:</b> ${evList}<br>ATR cuma lihat volatilitas 14 hari ke belakang — nggak tahu soal rilis ini. Spread bisa melebar & harga bisa lompat jauh dari jarak SL yang dihitung. Pertimbangkan lot lebih kecil (lihat saran diskon di hasil) atau tunggu sampai event lewat.`;
+      eventRiskEl.innerHTML = `<b>High Event Risk &lt;24 jam:</b> ${evList}<br>ATR cuma lihat volatilitas 14 hari ke belakang — nggak tahu soal rilis ini. Spread bisa melebar & harga bisa lompat jauh dari jarak SL yang dihitung. Pertimbangkan lot lebih kecil (lihat saran diskon di hasil) atau tunggu sampai event lewat.`;
     } else {
       eventRiskEl.style.display = 'none';
     }
@@ -13862,7 +13871,7 @@ function calcSizing() {
   // Risk warnings: >2% soft, >5% hard block
   if (riskPct > 5) {
     warnEl.style.cssText = 'display:block;color:var(--accent);padding:12px;border:1px solid var(--accent);border-radius:4px;font-size:11px;margin-top:12px;font-family:"DM Mono",monospace;line-height:1.5';
-    warnEl.textContent = '⛔ Risk >5% diblokir sistem. Satu trade ini bisa menghapus kerja keras berminggu-minggu. Turunkan lot, atau tutup chart hari ini dan kembali besok.';
+    warnEl.textContent = 'Risk >5% diblokir sistem. Satu trade ini bisa menghapus kerja keras berminggu-minggu. Turunkan lot, atau tutup chart hari ini dan kembali besok.';
     return;
   }
   if (riskPct > 2) {
@@ -13988,7 +13997,7 @@ function calcSizing() {
       ${riskMultiplier < 1 ? `<div class="sz-sub" style="margin-top:4px;color:var(--orange)">Risk ${riskPct}% × ${riskMultiplier} [KONFLIK — checklist ${pair}] = ${effectiveRiskPct}%</div>` : ''}
       ${_szConfThesis ? `<div class="sz-sub" style="margin-top:4px">AI Confidence (Ringkasan): ${_szConfThesis.confidence_1_to_5}/5</div>` : ''}
       ${thesisAlerts.length > 0 ? renderThesisAlertNotice(thesisAlerts) : ''}
-      ${dangerousEvents.length > 0 ? `<div style="margin-top:6px;padding:8px 10px;background:rgba(192,57,43,.1);border:1px solid var(--accent);border-radius:4px"><div style="color:var(--accent);font-weight:700;font-size:10px">⛔ Saran diskon 50% (event risk &lt;24 jam)</div><div style="font-size:13px;margin-top:2px">${(Math.floor(lots * 50) / 100).toFixed(2)} lots</div></div>` : ''}
+      ${dangerousEvents.length > 0 ? `<div style="margin-top:6px;padding:8px 10px;background:rgba(var(--accent-rgb),.1);border:1px solid var(--accent);border-radius:4px"><div style="color:var(--accent);font-weight:700;font-size:10px">Saran diskon 50% (event risk &lt;24 jam)</div><div style="font-size:13px;margin-top:2px">${(Math.floor(lots * 50) / 100).toFixed(2)} lots</div></div>` : ''}
       ${slStr}${tpStr}
       ${warnings.map(w => `<div style="color:var(--yellow);font-size:10px;margin-top:6px">⚠ ${w}</div>`).join('')}
       <table class="sz-r-table"><thead><tr style="color:var(--muted);font-size:9px">${thCols}</tr></thead><tbody>${rTableRows}</tbody></table>
@@ -14942,7 +14951,7 @@ function jnRenderCurve() {
     ticks.push(parseFloat(t.toFixed(2)));
   }
 
-  const posColor = '#34d399', negColor = '#ef4444';
+  const posColor = 'var(--green)', negColor = '#ef4444';
   const lineColor = parseFloat(totalR) >= 0 ? posColor : negColor;
   const totalCol  = parseFloat(totalR) >= 0 ? 'var(--green)' : 'var(--accent)';
 
@@ -14959,7 +14968,7 @@ function jnRenderCurve() {
         <clipPath id="jnCurveClipNeg"><rect x="${PAD.l}" y="${z}" width="${cW}" height="${PAD.t + cH - z}"/></clipPath>
       </defs>
       <line x1="${PAD.l}" y1="${z.toFixed(1)}" x2="${W-PAD.r}" y2="${z.toFixed(1)}" stroke="rgba(var(--fg-rgb),.12)" stroke-width="1" stroke-dasharray="3,3"/>
-      <path d="${posPath}" fill="rgba(52,211,153,.12)" clip-path="url(#jnCurveClipPos)"/>
+      <path d="${posPath}" fill="rgba(var(--green-rgb),.12)" clip-path="url(#jnCurveClipPos)"/>
       <path d="${negPath}" fill="rgba(239,68,68,.12)" clip-path="url(#jnCurveClipNeg)"/>
       <polyline points="${line}" fill="none" stroke="${lineColor}" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/>
       ${ticks.map(t => `
@@ -15672,9 +15681,9 @@ TEK_ALL_PAIRS.forEach(p => {
 });
 
 const TEK_CAT_COLOR = {
-  'market-moving':'#e74c3c','forex':'#38bdf8','macro':'#a78bfa','econ-data':'#27ae60',
+  'market-moving':'#e74c3c','forex':'#38bdf8','macro':'#a78bfa','econ-data':'var(--green)',
   'energy':'#e67e22','geopolitical':'#fb923c','commodities':'#f59e0b',
-  'bonds':'#60a5fa','equities':'#4caf50','crypto':'#f472b6','indexes':'#94a3b8',
+  'bonds':'#60a5fa','equities':'var(--green)','crypto':'#f472b6','indexes':'#94a3b8',
 };
 
 let tekAFCache = {}; // keyed by pair — { items, fetchedAt, covered }
@@ -15870,9 +15879,9 @@ function onMtfChange() {
     const el = document.getElementById(s.id);
     if (!el) return;
     tekMtf[tekPair][s.key] = el.value;
-    const col = el.value === 'bull' ? '#27ae60' : el.value === 'bear' ? '#c0392b' : el.value === 'neut' ? '#7f8c8d' : null;
+    const col = el.value === 'bull' ? 'var(--green)' : el.value === 'bear' ? 'var(--accent)' : el.value === 'neut' ? '#7f8c8d' : null;
     el.style.borderColor = col || '';
-    el.style.color = col ? (el.value === 'bull' ? '#4caf50' : el.value === 'bear' ? '#e74c3c' : '#95a5a6') : '';
+    el.style.color = col ? (el.value === 'bull' ? 'var(--green)' : el.value === 'bear' ? '#e74c3c' : '#95a5a6') : '';
   });
   localStorage.setItem('tek_mtf_v2', JSON.stringify(tekMtf));
   renderMtfAlign();
@@ -15886,9 +15895,9 @@ function renderMtfAlign() {
   const bull = vals.filter(v => v === 'bull').length;
   const bear = vals.filter(v => v === 'bear').length;
   const dom = bull > bear ? 'BULLISH' : bear > bull ? 'BEARISH' : 'MIXED';
-  const fg = dom === 'BULLISH' ? '#4caf50' : dom === 'BEARISH' ? '#e74c3c' : '#95a5a6';
-  const bg = dom === 'BULLISH' ? 'rgba(39,174,96,.15)' : dom === 'BEARISH' ? 'rgba(192,57,43,.15)' : 'rgba(127,140,141,.15)';
-  const br = dom === 'BULLISH' ? '#27ae60' : dom === 'BEARISH' ? '#c0392b' : '#7f8c8d';
+  const fg = dom === 'BULLISH' ? 'var(--green)' : dom === 'BEARISH' ? '#e74c3c' : '#95a5a6';
+  const bg = dom === 'BULLISH' ? 'rgba(var(--green-rgb),.15)' : dom === 'BEARISH' ? 'rgba(var(--accent-rgb),.15)' : 'rgba(127,140,141,.15)';
+  const br = dom === 'BULLISH' ? 'var(--green)' : dom === 'BEARISH' ? 'var(--accent)' : '#7f8c8d';
   badge.textContent = dom;
   badge.style.cssText = 'margin-left:auto;font:700 10px DM Mono,monospace;padding:2px 9px;border-radius:4px;color:' + fg + ';background:' + bg + ';border:1px solid ' + br;
 }
@@ -15899,9 +15908,9 @@ function loadMtfForPair() {
     const el = document.getElementById(s.id);
     if (!el) return;
     el.value = pairData[s.key] || '';
-    const col = el.value === 'bull' ? '#27ae60' : el.value === 'bear' ? '#c0392b' : el.value === 'neut' ? '#7f8c8d' : null;
+    const col = el.value === 'bull' ? 'var(--green)' : el.value === 'bear' ? 'var(--accent)' : el.value === 'neut' ? '#7f8c8d' : null;
     el.style.borderColor = col || '';
-    el.style.color = col ? (el.value === 'bull' ? '#4caf50' : el.value === 'bear' ? '#e74c3c' : '#95a5a6') : '';
+    el.style.color = col ? (el.value === 'bull' ? 'var(--green)' : el.value === 'bear' ? '#e74c3c' : '#95a5a6') : '';
   });
   renderMtfAlign();
 }
@@ -16079,7 +16088,7 @@ function createTVChart() {
       theme: document.body.classList.contains('light-theme') ? 'light' : 'dark',
       style: '1',
       locale: 'id',
-      toolbar_bg: document.body.classList.contains('light-theme') ? '#f8f7f5' : '#0d0f14',
+      toolbar_bg: document.body.classList.contains('light-theme') ? '#f8f7f5' : '#0e130f',
       enable_publishing: false,
       withdateranges: false,
       hide_side_toolbar: true,
@@ -16680,7 +16689,7 @@ function renderTekYield() {
   const isXau = tekPair === 'XAUUSD';
   let html = `<span class="tek-yield-lbl">US10Y</span><span class="tek-yield-val">${usd.nominal.toFixed(2)}%</span>`;
   if (usd.real != null) {
-    const realCol = isXau ? (usd.real > 0 ? '#e74c3c' : '#27ae60') : 'var(--text)';
+    const realCol = isXau ? (usd.real > 0 ? '#e74c3c' : 'var(--green)') : 'var(--text)';
     html += `<span class="tek-yield-lbl">Real</span><span class="tek-yield-val" style="color:${realCol}">${usd.real.toFixed(2)}%</span>`;
     if (isXau) html += `<span class="tek-yield-hint">${usd.real > 0 ? '↑ tekanan ke Gold' : '↓ suportif Gold'}</span>`;
   }
@@ -17310,8 +17319,10 @@ function renderDashBias() {
     return;
   }
 
+  // Diselaraskan dengan konvensi .cb-bias.* (badge Ringkasan/Analisa): hawkish = restriktif/tegang
+  // (merah), dovish = akomodatif/longgar (hijau) — sebelumnya arah ini kebalik di widget dashboard.
   const BIAS_COLORS = {
-    'very hawkish':'#00c896','hawkish':'#34d399','neutral':'#94a3b8','dovish':'#f59e0b','very dovish':'#f472b6'
+    'very hawkish':'#ff4757','hawkish':'var(--orange)','neutral':'var(--muted)','dovish':'var(--green)','very dovish':'var(--green)'
   };
   const CUR_COLORS_DB = { USD:'#38bdf8', EUR:'#c0392b', GBP:'#a78bfa', JPY:'#ffd32a', CAD:'#ff6b35', AUD:'#00c896', NZD:'#34d399', CHF:'#ff4757' };
   const ORDER = ['USD','EUR','GBP','JPY','CAD','AUD','NZD','CHF'];
