@@ -1,6 +1,6 @@
 // api/journal.js
 // Trade journal — POST (create), PATCH (close), GET (list), DELETE (soft-delete)
-// GET ?action=analyze — AI analysis of closed trades (Groq, cached 1h per device)
+// GET ?action=analyze — AI analysis of closed trades (SambaNova, cached 1h per device)
 // Redis: journal:{device_id}:{id} (full entry), journal_index:{device_id} (sorted set by created_at ms)
 
 const CORS = { 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-cache' };
@@ -37,13 +37,6 @@ function sanitizeChecklistSnapshot(snap) {
   return n > 0 ? out : null;
 }
 
-const GROQ_URL   = 'https://api.groq.com/openai/v1/chat/completions';
-const GROQ_MODEL = 'llama-3.3-70b-versatile';
-// Cerebras gpt-oss-120b (session 145) — primary baru AI Coach, pool token/hari sendiri
-// (terpisah dari OpenRouter yang dipakai Nemotron 3 Ultra di market-digest.js).
-const CEREBRAS_URL      = 'https://api.cerebras.ai/v1/chat/completions';
-const CEREBRAS_MODEL    = 'gpt-oss-120b';
-const CB_CEREBRAS_GPTOSS = 'ai:cerebras:gptoss';
 // Sama seperti CB_SAMBA_C1 di market-digest.js — akun 2 SambaNova dipakai bersama
 // sebagai fallback1 journal_analysis + fundamental_analysis + primary Call 1 digest.
 const CB_SAMBA_C1 = 'ai:sambanova:c1';
@@ -78,27 +71,12 @@ async function callProvider(url, apiKey, model, messages, maxTokens, temperature
   return txt;
 }
 
-// session 145: dulu Groq-only tanpa fallback/circuit breaker sama sekali — sekarang
-// 4-tier (Cerebras gpt-oss-120b primary -> SambaNova akun2 fallback1 -> Groq fallback2
-// -> Gemini flash fallback3 (2026-07-19), last resort baru; Groq kini ikut di-try/catch
-// supaya kegagalannya jatuh ke Gemini, bukan langsung melempar ke caller).
+// Vendor cleanup (2026-07-25): Cerebras & Groq diputus kontraknya (tidak dipakai
+// lagi di app manapun). Chain sekarang 2-tier: SambaNova akun2 primary -> Gemini
+// flash fallback (2026-07-19), last resort.
 async function aiCall(messages, maxTokens = 1000) {
-  const CEREBRAS_KEY        = process.env.CEREBRAS_API_KEY;
   const SAMBANOVA_KEY_CALL1 = process.env.SAMBANOVA_API_KEY_CALL1;
-  const GROQ_KEY            = process.env.GROQ_API_KEY;
   const GEMINI_KEY          = process.env.GEMINI_API_KEY;
-
-  if (CEREBRAS_KEY && await cb.canCall(CB_CEREBRAS_GPTOSS)) {
-    try {
-      if (!await allowAiCall('cerebras')) throw new Error('AI daily budget exceeded');
-      const txt = await callProvider(CEREBRAS_URL, CEREBRAS_KEY, CEREBRAS_MODEL, messages, maxTokens, 0.4, 20000);
-      await cb.onSuccess(CB_CEREBRAS_GPTOSS);
-      return txt;
-    } catch(e) {
-      console.warn('journal aiCall: Cerebras failed:', e.message);
-      await cb.onFailure(CB_CEREBRAS_GPTOSS);
-    }
-  }
 
   if (SAMBANOVA_KEY_CALL1 && await cb.canCall(CB_SAMBA_C1)) {
     try {
@@ -109,15 +87,6 @@ async function aiCall(messages, maxTokens = 1000) {
     } catch(e) {
       console.warn('journal aiCall: SambaNova akun2 failed:', e.message);
       await cb.onFailure(CB_SAMBA_C1);
-    }
-  }
-
-  if (GROQ_KEY) {
-    try {
-      if (!await allowAiCall('groq')) throw new Error('AI daily budget exceeded');
-      return await callProvider(GROQ_URL, GROQ_KEY, GROQ_MODEL, messages, maxTokens, 0.4, 30000);
-    } catch(e) {
-      console.warn('journal aiCall: Groq failed:', e.message);
     }
   }
 
@@ -133,7 +102,7 @@ async function aiCall(messages, maxTokens = 1000) {
     }
   }
 
-  throw new Error('All AI providers failed or none configured (CEREBRAS_API_KEY / SAMBANOVA_API_KEY_CALL1 / GROQ_API_KEY / GEMINI_API_KEY)');
+  throw new Error('All AI providers failed or none configured (SAMBANOVA_API_KEY_CALL1 / GEMINI_API_KEY)');
 }
 
 async function redisCmd(...args) {
