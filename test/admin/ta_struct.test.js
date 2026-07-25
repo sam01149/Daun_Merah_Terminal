@@ -406,6 +406,46 @@ test('_evaluateSetups: bullish mirror — fill di low, TP di high', () => {
   assert.strictEqual(setups[0].status, 'tp');
 });
 
+// BUG DITEMUKAN & DIFIX (2026-07-25, diskusi user — status 'tp' palsu tersimpan di GC=F
+// ts 1784708110704): re-evaluasi record yang statusnya SUDAH 'open' dari pass sebelumnya
+// dulu scan ulang SL/TP dari `ts` (waktu sinyal/refine dibuat), bukan dari `filled_t`
+// (kapan posisi benar-benar live) — candle SEBELUM posisi live bisa salah kebaca sebagai
+// TP/SL posisi ini.
+test('_evaluateSetups: re-evaluasi status "open" TIDAK boleh scan ulang dari ts, harus dari filled_t', () => {
+  const setups = [mkSetup({
+    bias: 'bullish', entry_zone: '3960-3970', sl: '3940', tp: '4030',
+    status: 'open', filled_t: T0 + 10800, // posisi baru live jam ke-3
+  })];
+  const candles = {
+    'GC=F': [
+      // Sebelum filled_t — harga sempat sentuh TP di sini, TAPI posisi belum live sama
+      // sekali saat itu. Kalau evaluator salah scan dari `ts`, ini kebaca TP palsu.
+      mkC(T0 + 3600, 4000, 4035, 3995, 4030),
+      // Setelah filled_t — tidak ada apa-apa, posisi harus tetap open.
+      mkC(T0 + 14400, 3980, 3990, 3970, 3985),
+    ],
+  };
+  _evaluateSetups(setups, candles, MS0 + 5 * 3600 * 1000);
+  assert.strictEqual(setups[0].status, 'open', 'candle sebelum filled_t tidak boleh dianggap TP');
+  assert.strictEqual(setups[0].closed_t, undefined);
+});
+
+test('_evaluateSetups: re-evaluasi status "open" — TP yang benar-benar terjadi SETELAH filled_t tetap terdeteksi', () => {
+  const setups = [mkSetup({
+    bias: 'bullish', entry_zone: '3960-3970', sl: '3940', tp: '4030',
+    status: 'open', filled_t: T0 + 10800,
+  })];
+  const candles = {
+    'GC=F': [
+      mkC(T0 + 3600, 4000, 4035, 3995, 4030),   // sebelum filled_t, harus diabaikan
+      mkC(T0 + 14400, 3980, 4035, 3970, 4030),  // setelah filled_t, TP nyata
+    ],
+  };
+  _evaluateSetups(setups, candles, MS0 + 5 * 3600 * 1000);
+  assert.strictEqual(setups[0].status, 'tp');
+  assert.strictEqual(setups[0].closed_t, T0 + 14400);
+});
+
 test('_evaluateSetups: pending kadaluarsa (> horizon x1.5) → expired; belum → tetap pending', () => {
   const far = [mkSetup()];
   _evaluateSetups(far, { 'GC=F': [mkC(T0 + 3600, 4000, 4005, 3995, 4000)] }, MS0 + 8 * 86400000); // 8 hari > 5*1.5

@@ -2486,8 +2486,19 @@ function _evaluateSetups(setups, candlesBySymbol, nowMs, calendarEvents) {
       st.status = 'stale';
       continue;
     }
+    // BUG DITEMUKAN & DIFIX (2026-07-25, diskusi user — status 'tp' palsu di GC=F): kalau
+    // status SUDAH 'open' dari pass evaluasi SEBELUMNYA (bukan transisi baru di pass ini),
+    // scan SL/TP di bawah HARUS mulai dari `filled_t` (kapan posisi benar-benar live),
+    // BUKAN dari `ts` (waktu sinyal/refine dibuat). Sebelum fix ini, re-evaluasi record
+    // 'open' selalu scan ulang dari `ts` — kalau harga kebetulan menyentuh level TP/SL di
+    // SATU candle mana pun antara `ts` dan `filled_t` (periode SEBELUM posisi live sama
+    // sekali), evaluator salah menganggap itu TP/SL posisi ini. Ini akar masalah yang lebih
+    // dalam dari sekadar bug reset `ts` saat refine (sudah difix terpisah) — bug ini bisa
+    // muncul kapan pun `filled_t` > `ts` secara wajar (bukan cuma gara-gara refine).
+    const wasAlreadyOpen = st.status === 'open';
+    const scanFromMs = (wasAlreadyOpen && st.filled_t) ? st.filled_t * 1000 : st.ts;
     for (const c of all) {
-      if (c.t * 1000 <= st.ts) continue;
+      if (c.t * 1000 <= scanFromMs) continue;
       if (st.status === 'pending') {
         const filled = st.bias === 'bearish' ? c.h >= eLo : c.l <= eHi;
         if (filled) { st.status = 'open'; st.filled_t = c.t; }
