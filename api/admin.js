@@ -119,6 +119,26 @@ async function redisCmd(...args) {
   return (await r.json()).result;
 }
 
+// BUG DITEMUKAN & DIFIX (2026-07-25, audit lanjutan pasca-insiden GC=F): lock
+// `lock:setuplog_write:*` sebelumnya SELALU dicoba SEKALI lalu skip-diam-diam kalau
+// gagal (fail-open) — cukup aman untuk tick evaluasi pasif (self-healing tick
+// berikutnya), TAPI fatal untuk jalur penulisan SINYAL AUTO-ENTRY: kalau lock kebetulan
+// dipegang proses lain (makin mungkin sekarang setelah lebih banyak handler ikut pakai
+// lock yang sama), satu panggilan AI yang sudah selesai & sukses bisa hilang TANPA JEJAK
+// selain console.warn — sinyal trading nyata lenyap begitu saja. Helper ini retry
+// singkat (default 4x, jeda 300ms, total <=1.2 detik — kecil dibanding latensi AI call
+// yang sudah puluhan detik) sebelum benar-benar menyerah, dipakai KHUSUS di jalur tulis
+// yang konsekuensinya nyata kalau hilang (bukan di tick evaluasi pasif yang memang
+// sengaja fail-open cepat).
+async function _acquireLockWithRetry(lockKey, { retries = 4, delayMs = 300, ttlSec = 10 } = {}) {
+  for (let i = 0; i <= retries; i++) {
+    const got = await redisCmd('SET', lockKey, '1', 'NX', 'EX', String(ttlSec)).catch(() => null);
+    if (got === 'OK') return true;
+    if (i < retries) await new Promise(r => setTimeout(r, delayMs));
+  }
+  return false;
+}
+
 // ── Health handler (was api/health.js) ────────────────────────────────────────
 
 const HEALTH_CORS            = { 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-cache' };
@@ -2970,7 +2990,23 @@ async function setupStatsHandler(req, res) {
       log = _evaluateManaged(log, candlesBySymbol);
     }
     const after = JSON.stringify(log);
-    if (after !== before) await redisCmd('SET', 'setup_log:v1', after);
+    // BUG DITEMUKAN & DIFIX (2026-07-25, audit lanjutan pasca-insiden GC=F): tick
+    // evaluasi pasif di sini menulis setup_log:v1 TANPA lock, sementara jalur append
+    // manual (ohlcvAnalyzeHandler, non-auto) SUDAH pakai lock `lock:setuplog_write:*`
+    // untuk key yang sama. Race-nya lebih ringan dari kasus auto (manual tidak pernah
+    // refine in-place, jadi tidak bisa fabrikasi status salah) tapi tetap bisa
+    // lost-update: entri baru dari append hilang, atau transisi status hasil evaluate
+    // ketimpa balik. Response tetap pakai `log` hasil evaluasi in-memory (selalu akurat
+    // untuk request ini); yang dijaga lock cuma PERSIST-nya — fail-open kalau lock
+    // dipegang pihak lain (dicoba lagi request berikutnya, pola sama _buildAutoScopeStats).
+    if (after !== before) {
+      const lk = 'lock:setuplog_write:setup_log:v1';
+      const got = await redisCmd('SET', lk, '1', 'NX', 'EX', '10').catch(() => null);
+      if (got === 'OK') {
+        try { await redisCmd('SET', 'setup_log:v1', after); }
+        finally { redisCmd('DEL', lk).catch(() => {}); }
+      }
+    }
     const bySymbol = {};
     for (const s of log) { (bySymbol[s.symbol] = bySymbol[s.symbol] || []).push(s); }
     const symbols = {};
@@ -3047,8 +3083,8 @@ async function setupOverrideHandler(req, res) {
     // (tanpa scope) tetap setup_log:v1 (manual) seperti semula U-1.
     const logKey = parsed?.scope === 'auto' ? 'setup_log_auto:v1' : 'setup_log:v1';
     const lockKey = `lock:setuplog_write:${logKey}`;
-    const gotLock = await redisCmd('SET', lockKey, '1', 'NX', 'EX', '10').catch(() => null);
-    if (gotLock !== 'OK') {
+    const gotLock = await _acquireLockWithRetry(lockKey);
+    if (!gotLock) {
       return res.status(409).json({ error: 'setup_log sedang ditulis proses lain, coba lagi sesaat lagi' });
     }
     try {
@@ -3304,8 +3340,8 @@ async function positionReviewHandler(req, res) {
     // tepat sebelum menulis, dan batalkan kalau posisi sudah berubah (sudah dikelola pihak
     // lain / bukan 'open' lagi) daripada menimpa buta.
     const lockKey2 = 'lock:setuplog_write:setup_log_auto:v1';
-    const gotLock2 = await redisCmd('SET', lockKey2, '1', 'NX', 'EX', '10').catch(() => null);
-    if (gotLock2 !== 'OK') {
+    const gotLock2 = await _acquireLockWithRetry(lockKey2);
+    if (!gotLock2) {
       return res.status(409).json({ error: 'setup_log_auto sedang ditulis proses lain, keputusan AI dibuang, coba lagi' });
     }
     try {
@@ -3361,8 +3397,8 @@ async function fridayTightenHandler(req, res) {
   // situ). Tidak ada call AI di handler ini (murni kode) jadi seluruh siklus aman dibungkus
   // SATU lock, sama seperti _buildAutoScopeStats.
   const lockKey = 'lock:setuplog_write:setup_log_auto:v1';
-  const gotLock = await redisCmd('SET', lockKey, '1', 'NX', 'EX', '10').catch(() => null);
-  if (gotLock !== 'OK') {
+  const gotLock = await _acquireLockWithRetry(lockKey);
+  if (!gotLock) {
     return res.status(409).json({ error: 'setup_log_auto sedang ditulis proses lain, coba lagi' });
   }
   try {
@@ -4446,9 +4482,9 @@ async function ohlcvAnalyzeHandler(req, res) {
       // saja (best-effort — kegagalan logging TIDAK PERNAH boleh menggagalkan response
       // analisa, sama seperti sebelumnya).
       const lockKey = `lock:setuplog_write:${setupLogKey}`;
-      const gotLock = await redisCmd('SET', lockKey, '1', 'NX', 'EX', '10').catch(() => null);
-      if (gotLock !== 'OK') {
-        console.warn(`setup_log write skipped: lock ${lockKey} sedang dipegang (kemungkinan write bersamaan)`);
+      const gotLock = await _acquireLockWithRetry(lockKey);
+      if (!gotLock) {
+        console.warn(`setup_log write GAGAL PERMANEN setelah retry: lock ${lockKey} sedang dipegang — sinyal AI hilang, tidak tersimpan`);
       } else { try {
         const rawLog = await redisCmd('GET', setupLogKey);
         let log = rawLog ? JSON.parse(rawLog) : [];
