@@ -1,7 +1,7 @@
 // api/admin.js — consolidated admin endpoint
 // GET/POST    /api/admin?action=health[&source=...]        → health check all sources
 // GET/POST    /api/admin?action=redis-keys[&key=...]       → Redis key registry
-// GET/POST/DELETE /api/admin?action=admin-prompts&key=...  → manage Groq prompt templates
+// GET/POST/DELETE /api/admin?action=admin-prompts&key=...  → manage AI prompt templates
 // GET         /api/admin?action=push                       → cron: send push notifications
 //
 // Auth: health/redis-keys/admin-prompts use x-admin-secret header
@@ -24,31 +24,6 @@ const { requireAppKey } = require('./_app_key');
 const { fetchYahooOhlcv1h, fetchFallbackCandles, shouldSendYahooAlert, mapYahooSymbolToDeriv, fetchDerivCandles } = require('./_ohlcv_fetch');
 const { buildPairContext, computeCurrencyStrength } = require('./_pair_context');
 const { validateTightenSl, computePreventiveTightenSl, _evaluateManaged, _aggManagementStats } = require('./_position_review');
-
-// Hermes 3 405B Instruct via OpenRouter (free tier) — kandidat diagnostik dari riset
-// user, sama seperti HERMES_MODEL di market-digest.js (circuit breaker key sengaja
-// SAMA — satu account/model, bukan fitur terpisah). Uptime dilaporkan OpenRouter cuma
-// ~55.79%, jadi TIDAK masuk rantai fallback produksi ohlcv_analyze — satu-satunya jalur
-// panggil adalah ?test_hermes=1, yang skip SambaNova sepenuhnya (isolasi total) dan
-// hasilnya TIDAK ditulis ke cache ohlcv_analysis:{symbol} (lihat testHermesOnly di bawah).
-const OPENROUTER_URL     = 'https://openrouter.ai/api/v1/chat/completions';
-const OPENROUTER_HEADERS = { 'HTTP-Referer': 'https://financial-feed-app.vercel.app', 'X-Title': 'Daun Merah' };
-const HERMES_MODEL       = 'nousresearch/hermes-3-llama-3.1-405b:free';
-const CB_OPENROUTER_HERMES = 'ai:openrouter:hermes';
-
-// Ollama Cloud — API native (BUKAN OpenAI-compatible), lihat callOllama() di
-// market-digest.js untuk bentuk request/response persis (sengaja duplikasi kecil,
-// bukan shared import — konvensi project ini, lihat komentar OPENROUTER di atas).
-// nemotron-3-nano dipakai KHUSUS untuk diagnostik konektivitas (?test_ollama=1) —
-// model terkecil/tercepat di keluarga Nemotron 3 Ollama Cloud, tujuannya murni "apakah
-// akun/API Ollama Cloud reachable & terautentikasi", BUKAN kandidat kualitas (beda dari
-// nemotron-3-ultra yang dipakai test_nemotron=1 di market-digest.js, kandidat serius
-// Call 1). Tag `:30b-cloud` WAJIB (dicek ke ollama.com/library — beda dari nemotron-3-
-// ultra yang cloud id-nya tanpa suffix sama sekali; nano punya beberapa varian ukuran
-// jadi butuh tag eksplisit yang menunjuk varian cloud-nya, bukan lokal).
-const OLLAMA_URL         = 'https://ollama.com/api/chat';
-const OLLAMA_NANO_MODEL  = 'nemotron-3-nano:30b-cloud';
-const CB_OLLAMA_NANO     = 'ai:ollama:nano';
 
 // Actions callable from the frontend without a secret → rate-limited per IP.
 // AI-triggering actions get a tighter budget than cache reads.
@@ -488,7 +463,7 @@ async function healthHandler(req, res) {
   let aiBudget = null;
   try {
     const { getUsage } = require('./_ai_guard');
-    const usages = await Promise.all(['groq', 'sambanova_main', 'sambanova_c1', 'ollama', 'openrouter', 'cerebras'].map(getUsage));
+    const usages = await Promise.all(['sambanova_main', 'sambanova_c1', 'gemini', 'deepseek'].map(getUsage));
     aiBudget = Object.fromEntries(usages.map(u => [u.provider, { used: u.used, limit: u.limit }]));
   } catch(e) { /* diagnostik opsional — jangan gagalkan health check */ }
 
@@ -511,9 +486,9 @@ const KEY_REGISTRY = [
   { key: 'rss_cache',          owner: 'api/feeds.js',          ttl_expected: 60,     note: 'FinancialJuice RSS XML' },
   { key: 'real_yields',        owner: 'api/real-yields.js',    ttl_expected: 21600,  note: 'Real yield per currency (DGS10-T10YIE for USD)' },
   { key: 'rate_path',          owner: 'api/rate-path.js',      ttl_expected: 14400,  note: 'USD rate path heuristic (SOFR/EFFR)' },
-  { key: 'latest_thesis',      owner: 'api/market-digest.js',  ttl_expected: 21600,  note: 'Structured trade thesis JSON from Groq Call 3' },
+  { key: 'latest_thesis',      owner: 'api/market-digest.js',  ttl_expected: 21600,  note: 'Structured trade thesis JSON from Call 3 (SambaNova)' },
   { key: 'correlations',       owner: 'api/correlations.js',   ttl_expected: 86400,  note: '20d+60d cross-asset correlation matrix' },
-  { key: 'prompt_digest',      owner: 'api/admin.js',          ttl_expected: null,   note: 'Groq prompt for market briefing (fallback: hardcoded)' },
+  { key: 'prompt_digest',      owner: 'api/admin.js',          ttl_expected: null,   note: 'AI prompt for market briefing (fallback: hardcoded)' },
   { key: 'health_last_ok',     owner: 'api/admin.js',          ttl_expected: null,   note: 'HSET: source → last OK timestamp for alerting' },
   { key: 'push_subs',          owner: 'api/admin.js',          ttl_expected: null,   note: 'HSET push subscriptions endpoint → JSON' },
   { key: 'seen_guids_set',     owner: 'api/admin.js',          ttl_expected: 86400,  note: 'Redis SET of seen RSS GUIDs for push dedup (SADD/SMEMBERS, atomic)' },
@@ -522,7 +497,7 @@ const KEY_REGISTRY = [
   { key: 'journal:*',          owner: 'api/journal.js',        ttl_expected: null,   note: 'Full journal entry JSON per device' },
   { key: 'journal_index:*',      owner: 'api/journal.js',        ttl_expected: null,   note: 'Sorted set: journal entry IDs by created_at timestamp' },
   { key: 'fundamental:*',        owner: 'api/admin.js',          ttl_expected: null,   note: 'HSET fundamental data per currency (no TTL — overwritten when new data)' },
-  { key: 'fundamental_analysis', owner: 'api/admin.js',          ttl_expected: 21600,  note: 'Groq AI analysis of fundamental data, cached 6h' },
+  { key: 'fundamental_analysis', owner: 'api/admin.js',          ttl_expected: 21600,  note: 'AI analysis of fundamental data (SambaNova/Gemini), cached 6h' },
   { key: 'cb_decisions',         owner: 'api/market-digest.js',  ttl_expected: null,   note: 'HSET CB rate decisions detected from headlines, overrides CB_FALLBACK metadata' },
   { key: 'vps:heartbeat',        owner: 'vps/heartbeat.js',      ttl_expected: 300,    note: 'Plan Q-1: epoch beat daemon Render, dibaca api/admin.js?action=health source=vps_heartbeat' },
   { key: 'vps:heartbeat:configured', owner: 'vps/heartbeat.js',  ttl_expected: null,   note: 'Plan Q-1: marker permanen "daemon pernah jalan" — beda UNCONFIGURED (belum deploy) vs DOWN asli' },
@@ -962,17 +937,6 @@ async function fundamentalRefreshHandler(req, res) {
     return res.status(500).json({ error: e.message });
   }
 }
-const GROQ_URL_FUND   = 'https://api.groq.com/openai/v1/chat/completions';
-const GROQ_MODEL_FUND = 'llama-3.3-70b-versatile';
-
-// Cerebras Cloud (session 145) — gpt-oss-120b primary untuk fundamental_analysis DAN
-// journal.js AI Coach (lihat journal.js). OpenAI-compatible, model asli OpenAI di-host
-// Cerebras (bukan via OpenRouter) — pool token/hari terpisah total dari OpenRouter
-// (dipakai Nemotron 3 Ultra di market-digest.js), jadi 2 fitur ini tidak berebut kuota
-// dengan digest. Perlu env CEREBRAS_API_KEY (akun gratis di cerebras.ai/openai).
-const CEREBRAS_URL   = 'https://api.cerebras.ai/v1/chat/completions';
-const CEREBRAS_MODEL = 'gpt-oss-120b';
-const CB_CEREBRAS_GPTOSS = 'ai:cerebras:gptoss';
 const CB_SAMBA_C1_ADMIN  = 'ai:sambanova:c1'; // sama seperti CB_SAMBA_C1 di market-digest.js — akun 2 dipakai bersama
 
 // Gemini AI Studio — fallback terakhir fundamental_analysis + journal AI Coach
@@ -1160,11 +1124,10 @@ async function fundamentalAnalysisHandler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Cache-Control', 'no-cache');
   if (req.method === 'OPTIONS') return res.status(204).end();
-  const GROQ_KEY      = process.env.GROQ_API_KEY;
-  const CEREBRAS_KEY  = process.env.CEREBRAS_API_KEY;
   const SAMBANOVA_KEY_CALL1 = process.env.SAMBANOVA_API_KEY_CALL1;
-  if (!CEREBRAS_KEY && !SAMBANOVA_KEY_CALL1 && !GROQ_KEY) {
-    return res.status(500).json({ error: 'No AI provider configured (CEREBRAS_API_KEY / SAMBANOVA_API_KEY_CALL1 / GROQ_API_KEY)' });
+  const GEMINI_KEY_PRECHECK = process.env.GEMINI_API_KEY;
+  if (!SAMBANOVA_KEY_CALL1 && !GEMINI_KEY_PRECHECK) {
+    return res.status(500).json({ error: 'No AI provider configured (SAMBANOVA_API_KEY_CALL1 / GEMINI_API_KEY)' });
   }
 
   // Return cached if fresh (6h)
@@ -1245,37 +1208,9 @@ DIVERGENSI TERBESAR:
   const fundMessages = [{ role: 'user', content: prompt }];
   let analysis = null;
 
-  // Primary: Cerebras gpt-oss-120b (session 145 — pool token/hari sendiri, terpisah
-  // dari OpenRouter yang dipakai Nemotron di market-digest.js)
-  if (CEREBRAS_KEY && await cb.canCall(CB_CEREBRAS_GPTOSS)) {
-    try {
-      if (!await allowAiCall('cerebras')) throw new Error('AI daily budget exceeded');
-      const r = await fetch(CEREBRAS_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${CEREBRAS_KEY}` },
-        body: JSON.stringify({ model: CEREBRAS_MODEL, messages: fundMessages, max_tokens: 1500, temperature: 0.3, reasoning_effort: 'low' }),
-        signal: AbortSignal.timeout(15000),
-      });
-      if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e?.error?.message || `HTTP ${r.status}`); }
-      const data = await r.json();
-      const txt = data?.choices?.[0]?.message?.content?.trim() || '';
-      if (!txt) throw new Error('Empty response');
-      if (data?.choices?.[0]?.finish_reason === 'length') console.warn('fundamental_analysis: Cerebras output truncated (finish_reason=length) — pertimbangkan naikkan max_tokens');
-      analysis = txt;
-      console.log('fundamental_analysis: Cerebras gpt-oss-120b OK');
-      await cb.onSuccess(CB_CEREBRAS_GPTOSS);
-    } catch(e) {
-      console.warn('fundamental_analysis Cerebras failed:', e.message);
-      await cb.onFailure(CB_CEREBRAS_GPTOSS);
-    }
-  } else if (CEREBRAS_KEY) {
-    console.log('fundamental_analysis: Cerebras circuit OPEN — skipping to SambaNova');
-  }
-
-  // Fallback 1: SambaNova akun 2 (session 145 — geser dari akun 1; akun 2 sekarang
-  // dipakai bersama sebagai fallback journal_analysis + fundamental_analysis + Call 1
-  // market-digest, lihat _ai_guard.js untuk rasionalnya)
-  if (!analysis && SAMBANOVA_KEY_CALL1 && await cb.canCall(CB_SAMBA_C1_ADMIN)) {
+  // Primary: SambaNova akun 2 (Cerebras diputus kontraknya 2026-07-25 — dulu primary
+  // di sini, lihat git history kalau perlu rollback)
+  if (SAMBANOVA_KEY_CALL1 && await cb.canCall(CB_SAMBA_C1_ADMIN)) {
     try {
       if (!await allowAiCall('sambanova_c1')) throw new Error('AI daily budget exceeded');
       const r = await fetch('https://api.sambanova.ai/v1/chat/completions', {
@@ -1290,40 +1225,18 @@ DIVERGENSI TERBESAR:
       if (!txt) throw new Error('Empty response');
       if (data?.choices?.[0]?.finish_reason === 'length') console.warn('fundamental_analysis: SambaNova output truncated (finish_reason=length) — pertimbangkan naikkan max_tokens');
       analysis = txt;
-      console.log('fundamental_analysis: SambaNova akun2 fallback OK');
+      console.log('fundamental_analysis: SambaNova akun2 OK');
       await cb.onSuccess(CB_SAMBA_C1_ADMIN);
     } catch(e) {
-      console.warn('fundamental_analysis SambaNova akun2 fallback failed:', e.message);
+      console.warn('fundamental_analysis SambaNova akun2 failed:', e.message);
       await cb.onFailure(CB_SAMBA_C1_ADMIN);
     }
-  } else if (!analysis && SAMBANOVA_KEY_CALL1) {
-    console.log('fundamental_analysis: SambaNova akun2 circuit OPEN — skipping to Groq');
+  } else if (SAMBANOVA_KEY_CALL1) {
+    console.log('fundamental_analysis: SambaNova akun2 circuit OPEN — skipping to Gemini');
   }
 
-  // Fallback 2: Groq (last resort, tetap ada — lihat daun_merah_plan.md Session 145)
-  if (!analysis && GROQ_KEY) {
-    try {
-      if (!await allowAiCall('groq')) throw new Error('AI daily budget exceeded');
-      const r = await fetch(GROQ_URL_FUND, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${GROQ_KEY}` },
-        body: JSON.stringify({ model: GROQ_MODEL_FUND, messages: fundMessages, max_tokens: 1500, temperature: 0.3 }),
-        signal: AbortSignal.timeout(25000),
-      });
-      if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e?.error?.message || `HTTP ${r.status}`); }
-      const data = await r.json();
-      const txt = data?.choices?.[0]?.message?.content?.trim() || '';
-      if (!txt) throw new Error('Empty response');
-      if (data?.choices?.[0]?.finish_reason === 'length') console.warn('fundamental_analysis: Groq output truncated (finish_reason=length) — pertimbangkan naikkan max_tokens');
-      analysis = txt;
-      console.log('fundamental_analysis: Groq fallback OK');
-    } catch(e) {
-      console.warn('fundamental_analysis Groq fallback failed:', e.message);
-    }
-  }
-
-  // Fallback 3: Gemini flash (2026-07-19) — last resort baru setelah Groq. Free tier
-  // AI Studio, lolos gate ToS produksi (lihat komentar konstanta GEMINI_URL_FUND).
+  // Fallback: Gemini flash (2026-07-19) — last resort. Free tier AI Studio, lolos
+  // gate ToS produksi (lihat komentar konstanta GEMINI_URL_FUND).
   const GEMINI_KEY = process.env.GEMINI_API_KEY;
   if (!analysis && GEMINI_KEY && await cb.canCall(CB_GEMINI_ADMIN)) {
     try {
@@ -1419,7 +1332,7 @@ async function journalImportHandler(req, res) {
 
 // ── Circuit breaker status + reset ───────────────────────────────────────────
 
-const KNOWN_CIRCUITS = ['ai:openrouter', 'ai:openrouter:nemotron', 'ai:openrouter:nemotron-super', 'ai:openrouter:hermes', 'ai:cerebras', 'ai:cerebras:gptoss', 'ai:cerebras:glm', 'ai:sambanova:c1', 'ai:sambanova:main', 'ai:ollama:nemotron', 'ai:deepseek', 'ai:gemini', 'fred', 'stooq', 'ff', 'fj', 'cftc', 'redis', 'fxssi', 'actionforex',
+const KNOWN_CIRCUITS = ['ai:sambanova:c1', 'ai:sambanova:main', 'ai:deepseek', 'ai:gemini', 'fred', 'stooq', 'ff', 'fj', 'cftc', 'redis', 'fxssi', 'actionforex',
   // PLAN V-3 (2026-07-20): breaker terpisah untuk call isAutoCall/test_deepseek=1 (developer-only)
   'ai:deepseek:experimental', 'ai:sambanova:main:experimental', 'ai:sambanova:c1:experimental'];
 
@@ -3208,8 +3121,8 @@ async function positionReviewHandler(req, res) {
       return res.status(200).json({ skipped: 'already_managed' });
     }
 
-    // Langkah 2c: fact sheet ringkas + 1 AI call (chain existing: SambaNova akun 1
-    // -> Groq, SAMA circuit/pool dengan ohlcv_critic — pola sama, bukan provider baru).
+    // Langkah 2c: fact sheet ringkas + 1 AI call (SambaNova akun 1, Groq diputus
+    // kontraknya 2026-07-25 — fail-safe downgrade ke HOLD kalau offline/limit habis).
     const closeLast = candles.length ? candles[candles.length - 1].c : null;
     const recentCandles = candles.slice(-12);
     const candleLines = recentCandles.length
@@ -3258,7 +3171,6 @@ async function positionReviewHandler(req, res) {
     ];
 
     const SAMBANOVA_KEY = process.env.SAMBANOVA_API_KEY;
-    const GROQ_KEY = process.env.GROQ_API_KEY;
     let rawText = null, model = null;
 
     if (SAMBANOVA_KEY && await cb.canCall('ai:sambanova:main')) {
@@ -3276,28 +3188,12 @@ async function positionReviewHandler(req, res) {
           else throw new Error('Empty response');
         } else { throw new Error(`HTTP ${r.status}`); }
       } catch (e) { console.warn('position_review SambaNova failed:', e.message); await cb.onFailure('ai:sambanova:main'); }
-    } else if (SAMBANOVA_KEY) { console.log('position_review: SambaNova circuit OPEN — skipping to Groq'); }
-
-    if (!rawText && GROQ_KEY) {
-      try {
-        if (!await allowAiCall('groq')) throw new Error('AI daily budget exceeded');
-        const r = await fetch(GROQ_URL_FUND, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${GROQ_KEY}` },
-          body: JSON.stringify({ model: GROQ_MODEL_FUND, messages, max_tokens: 400, temperature: 0 }),
-          signal: AbortSignal.timeout(25000),
-        });
-        if (r.ok) {
-          const j = await r.json(); rawText = j.choices?.[0]?.message?.content?.trim() || null; model = GROQ_MODEL_FUND;
-          if (!rawText) throw new Error('Empty response');
-        } else { throw new Error(`HTTP ${r.status}`); }
-      } catch (e) { console.warn('position_review Groq fallback failed:', e.message); }
-    }
+    } else if (SAMBANOVA_KEY) { console.log('position_review: SambaNova circuit OPEN'); }
 
     // Langkah 2d: parse + validasi kode (fail-safe -> downgrade HOLD).
     let decision = 'HOLD', confidence = 'rendah', reason = null, newSlRaw = null, downgraded = false;
     if (!rawText) {
-      downgraded = true; reason = 'AI tidak tersedia (SambaNova & Groq offline/timeout/limit habis)';
+      downgraded = true; reason = 'AI tidak tersedia (SambaNova offline/timeout/limit habis)';
     } else {
       try {
         const s = rawText.indexOf('{'), e = rawText.lastIndexOf('}');
@@ -3504,8 +3400,8 @@ function _extractRingkasanExcerpt(article, label, isXau) {
   }
   // Cap 2500 (dinaikkan dari 900, S194): excerpt tertarget sudah minim noise dan isi
   // picked realistis 1.200-1.800 char — 900 masih memotong ekor blok Konfirmasi. 2500
-  // praktis tak pernah memotong; tambahan ~500 token input tidak signifikan (DeepSeek/
-  // Groq konteks 128K, biaya ~$0.00015/analisa). Fallback tanpa-tag SENGAJA tetap 700
+  // praktis tak pernah memotong; tambahan ~500 token input tidak signifikan (DeepSeek
+  // konteks 128K, biaya ~$0.00015/analisa). Fallback tanpa-tag SENGAJA tetap 700
   // (isinya "3 paragraf pertama" apapun pair-nya = noisy, jangan diperbesar).
   return cap(picked.join('\n\n'), 2500);
 }
@@ -4060,97 +3956,11 @@ async function ohlcvAnalyzeHandler(req, res) {
     // urutan fallback produksi — hanya bypass satu kali per request eksplisit.
     const testC1Only = req.query.test_samba_c1 === '1' || req.body?.test_samba_c1 === true;
 
-    // Diagnostik Hermes 3 405B (lihat HERMES_MODEL di atas) — isolasi TOTAL dari
-    // SambaNova: kalau flag ini aktif, dua tier SambaNova di bawah di-skip sama sekali
-    // (bukan cuma primary seperti test_samba_c1), supaya hasil yang dikembalikan ke
-    // client murni dari Hermes, bukan tersamar fallback lain kalau Hermes gagal.
-    const testHermesOnly = req.query.test_hermes === '1' || req.body?.test_hermes === true;
-    // Dikembalikan di response (bukan cuma console.warn) — tujuan diagnostik ini supaya
-    // user bisa lihat langsung alasan gagal/lambat tanpa akses server log.
-    let hermesError = null, hermesElapsedMs = null;
-
-    if (testHermesOnly) {
-      const OPENROUTER_KEY = process.env.OPENROUTER_API_KEY;
-      if (OPENROUTER_KEY && await cb.canCall(CB_OPENROUTER_HERMES)) {
-        const t0h = Date.now();
-        try {
-          if (!await allowAiCall('openrouter')) throw new Error('AI daily budget exceeded');
-          console.log('ohlcv_analyze: trying Hermes 3 405B (OpenRouter) — diagnostik test_hermes=1');
-          const r = await fetch(OPENROUTER_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${OPENROUTER_KEY}`, ...OPENROUTER_HEADERS },
-            body: JSON.stringify({ model: HERMES_MODEL, messages, max_tokens: 1500, temperature: 0 }),
-            signal: AbortSignal.timeout(30000),
-          });
-          if (r.ok) {
-            const j = await r.json(); rawText = j.choices?.[0]?.message?.content?.trim() || null; model = 'hermes-3-405b';
-            if (rawText) await cb.onSuccess(CB_OPENROUTER_HERMES);
-            else throw new Error('Empty response');
-          } else { throw new Error(`HTTP ${r.status}`); }
-          hermesElapsedMs = Date.now() - t0h;
-          console.log('ohlcv_analyze: Hermes 3 405B OK,', hermesElapsedMs, 'ms');
-        } catch(e) {
-          hermesElapsedMs = Date.now() - t0h;
-          hermesError = e.message;
-          console.warn('ohlcv_analyze Hermes 3 405B failed:', e.message);
-          await cb.onFailure(CB_OPENROUTER_HERMES);
-        }
-      } else if (OPENROUTER_KEY) {
-        hermesError = 'circuit_open';
-        console.log('ohlcv_analyze: test_hermes=1 — circuit OPEN');
-      } else {
-        hermesError = 'no_key';
-        console.log('ohlcv_analyze: test_hermes=1 — OPENROUTER_API_KEY belum diset');
-      }
-    }
-
-    // Diagnostik konektivitas Ollama Cloud (?test_ollama=1) — TIDAK berhubungan dengan
-    // testHermesOnly (provider beda, tidak saling exclude — bisa dites terpisah). Isolasi
-    // total dari SambaNova sama seperti Hermes. Tujuan murni "apakah akun/API-nya
-    // reachable", bukan kandidat kualitas — pakai model terkecil/tercepat (OLLAMA_NANO_MODEL).
-    const testOllamaOnly = req.query.test_ollama === '1' || req.body?.test_ollama === true;
-    let ollamaError = null, ollamaElapsedMs = null;
-
-    if (testOllamaOnly) {
-      const OLLAMA_KEY = process.env.OLLAMA_API_KEY;
-      if (OLLAMA_KEY && await cb.canCall(CB_OLLAMA_NANO)) {
-        const t0o = Date.now();
-        try {
-          if (!await allowAiCall('ollama')) throw new Error('AI daily budget exceeded');
-          console.log('ohlcv_analyze: trying Ollama Cloud nemotron-3-nano (think:false) — diagnostik test_ollama=1');
-          const r = await fetch(OLLAMA_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${OLLAMA_KEY}` },
-            body: JSON.stringify({ model: OLLAMA_NANO_MODEL, messages, stream: false, think: false, options: { temperature: 0, num_predict: 1500 } }),
-            signal: AbortSignal.timeout(20000),
-          });
-          if (r.ok) {
-            const j = await r.json(); rawText = j?.message?.content?.trim() || null; model = 'nemotron-3-nano';
-            if (rawText) await cb.onSuccess(CB_OLLAMA_NANO);
-            else throw new Error('Empty response');
-          } else { throw new Error(`HTTP ${r.status}`); }
-          ollamaElapsedMs = Date.now() - t0o;
-          console.log('ohlcv_analyze: Ollama nemotron-3-nano OK,', ollamaElapsedMs, 'ms');
-        } catch(e) {
-          ollamaElapsedMs = Date.now() - t0o;
-          ollamaError = e.message;
-          console.warn('ohlcv_analyze Ollama nemotron-3-nano failed:', e.message);
-          await cb.onFailure(CB_OLLAMA_NANO);
-        }
-      } else if (OLLAMA_KEY) {
-        ollamaError = 'circuit_open';
-        console.log('ohlcv_analyze: test_ollama=1 — circuit OPEN');
-      } else {
-        ollamaError = 'no_key';
-        console.log('ohlcv_analyze: test_ollama=1 — OLLAMA_API_KEY belum diset');
-      }
-    }
-
     // Diagnostik DeepSeek v4-flash API resmi (Plan O-6, 2026-07-18) — gate SEBELUM
     // promosi jadi primary Analisa per Pair (beda dari Ringkasan yang sudah dipromosikan
     // langsung di Plan O-3/market-digest.js: di sini kualitas belum divalidasi live untuk
     // tugas Entry/SL/TP numerik, jadi TETAP terisolasi total dari cache produksi sampai
-    // dinilai — pola sama seperti Hermes/Ollama di atas). response_format json_object
+    // dinilai). response_format json_object
     // TIDAK dipakai (beda dari Call 2/3 market-digest.js) karena skema jawaban di sini
     // dua-bagian (JSON + "===COMMENTARY===" + prosa), bukan JSON murni.
     const testDeepseekOnly = req.query.test_deepseek === '1' || req.body?.test_deepseek === true;
@@ -4200,9 +4010,9 @@ async function ohlcvAnalyzeHandler(req, res) {
     }
 
     // Dipakai untuk menggerbang dua tier SambaNova + cache produksi — SATU flag untuk
-    // SEMUA diagnostik terisolasi (Hermes/Ollama/DeepSeek), supaya nambah kandidat baru
+    // SEMUA diagnostik terisolasi (DeepSeek dkk), supaya nambah kandidat baru
     // nanti tinggal OR ke sini, bukan cari-cari tiap titik guard satu-satu.
-    const isDiagnosticOnly = testHermesOnly || testOllamaOnly || testDeepseekOnly;
+    const isDiagnosticOnly = testDeepseekOnly;
     // Scope terpisah dari DEEPSEEK_KEY di blok testDeepseekOnly di atas (itu lokal ke
     // if-block-nya sendiri) — dibutuhkan lagi di sini untuk tier primary produksi.
     const DEEPSEEK_KEY = process.env.DEEPSEEK_API_KEY;
@@ -4277,7 +4087,7 @@ async function ohlcvAnalyzeHandler(req, res) {
           else throw new Error('Empty response');
         } else { throw new Error(`HTTP ${r.status}`); }
       } catch(e) { console.warn('ohlcv_analyze SambaNova failed:', e.message); await cb.onFailure(CB_SAMBA_MAIN_KEY); }
-    } else if (isDiagnosticOnly) { /* sudah di-log di blok Hermes/Ollama/DeepSeek di atas */ }
+    } else if (isDiagnosticOnly) { /* sudah di-log di blok DeepSeek di atas */ }
     else if (!rawText && testC1Only) { console.log('ohlcv_analyze: test_samba_c1=1 — bypassing primary'); }
     else if (!rawText && SAMBANOVA_KEY) { console.log('ohlcv_analyze: SambaNova circuit OPEN/budget mepet — skipping to akun 2'); }
 
@@ -4603,12 +4413,6 @@ async function ohlcvAnalyzeHandler(req, res) {
     }
     return res.status(200).json({
       ...resultPayload,
-      test_hermes: testHermesOnly || undefined,
-      hermes_error: testHermesOnly ? hermesError : undefined,
-      hermes_elapsed_ms: testHermesOnly ? hermesElapsedMs : undefined,
-      test_ollama: testOllamaOnly || undefined,
-      ollama_error: testOllamaOnly ? ollamaError : undefined,
-      ollama_elapsed_ms: testOllamaOnly ? ollamaElapsedMs : undefined,
       test_deepseek: testDeepseekOnly || undefined,
       deepseek_error: testDeepseekOnly ? deepseekError : undefined,
       deepseek_elapsed_ms: testDeepseekOnly ? deepseekElapsedMs : undefined,
@@ -4624,7 +4428,7 @@ async function ohlcvAnalyzeHandler(req, res) {
 // (?action=ohlcv_critic), BUKAN function baru (Vercel Hobby 12/12 penuh).
 // Fact sheet 100% deterministik dari Redis yang sudah ada (cb_bias, cot_cache_v2,
 // risk_regime, retail_sentiment_cache, rr_cache_v2, calendar_v1, setup_log:v1) —
-// TIDAK ada fetch eksternal baru, cuma 1 AI call (SambaNova → Groq fallback).
+// TIDAK ada fetch eksternal baru, cuma 1 AI call (SambaNova, Groq diputus 2026-07-25).
 async function ohlcvCriticHandler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Cache-Control', 'no-cache');
@@ -4722,12 +4526,12 @@ async function ohlcvCriticHandler(req, res) {
   ];
 
   const SAMBANOVA_KEY = process.env.SAMBANOVA_API_KEY;
-  const GROQ_KEY       = process.env.GROQ_API_KEY;
   let rawText = null, model = null;
 
   // Primary: SambaNova akun 1 — SAMA account/circuit dengan ohlcv_analyze primary
   // (memang endpoint fisik yang sama, circuit breaker WAJIB dibagi supaya outage
-  // di satu tempat langsung terdeteksi di keduanya, bukan dites dobel).
+  // di satu tempat langsung terdeteksi di keduanya, bukan dites dobel). Groq
+  // (fallback lama) diputus kontraknya 2026-07-25 — tanpa fallback lagi di sini.
   if (SAMBANOVA_KEY && await cb.canCall('ai:sambanova:main')) {
     try {
       if (!await allowAiCall('sambanova_main')) throw new Error('AI daily budget exceeded');
@@ -4743,28 +4547,10 @@ async function ohlcvCriticHandler(req, res) {
         else throw new Error('Empty response');
       } else { throw new Error(`HTTP ${r.status}`); }
     } catch(e) { console.warn('ohlcv_critic SambaNova failed:', e.message); await cb.onFailure('ai:sambanova:main'); }
-  } else if (SAMBANOVA_KEY) { console.log('ohlcv_critic: SambaNova circuit OPEN — skipping to Groq'); }
-
-  // Fallback: Groq (last resort, tanpa circuit breaker — pola sama dengan
-  // fundamentalAnalysisHandler fallback 2, lihat daun_merah_plan.md Session 145).
-  if (!rawText && GROQ_KEY) {
-    try {
-      if (!await allowAiCall('groq')) throw new Error('AI daily budget exceeded');
-      const r = await fetch(GROQ_URL_FUND, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${GROQ_KEY}` },
-        body: JSON.stringify({ model: GROQ_MODEL_FUND, messages, max_tokens: 600, temperature: 0 }),
-        signal: AbortSignal.timeout(25000),
-      });
-      if (r.ok) {
-        const j = await r.json(); rawText = j.choices?.[0]?.message?.content?.trim() || null; model = GROQ_MODEL_FUND;
-        if (!rawText) throw new Error('Empty response');
-      } else { throw new Error(`HTTP ${r.status}`); }
-    } catch(e) { console.warn('ohlcv_critic Groq fallback failed:', e.message); }
-  }
+  } else if (SAMBANOVA_KEY) { console.log('ohlcv_critic: SambaNova circuit OPEN'); }
 
   if (!rawText) {
-    return res.status(200).json({ error: 'AI Kritikus tidak tersedia (SambaNova & Groq offline/limit habis) — coba lagi nanti.' });
+    return res.status(200).json({ error: 'AI Kritikus tidak tersedia (SambaNova offline/limit habis) — coba lagi nanti.' });
   }
 
   let objections = null, verdict = null;
