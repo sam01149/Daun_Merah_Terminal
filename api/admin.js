@@ -3135,9 +3135,20 @@ async function positionReviewHandler(req, res) {
       calendarEvents = [...ev1, ...ev2];
     } catch (e) { /* opsional — deteksi fundamental_shock ghost diskip, bukan crash */ }
 
+    // BUG DITEMUKAN & DIFIX (2026-07-25, diskusi user — lihat komentar _buildAutoScopeStats
+    // soal race condition evaluate-vs-refine): tick evaluasi pasif di sini JUGA menulis
+    // setup_log_auto:v1 tanpa lock — sumber race yang sama, TERBUKTI nyata (koreksi manual
+    // GC=F sempat ketiban balik oleh handler ini). persistTick sekarang pakai lock yang sama.
     const before = JSON.stringify(log);
     _evaluateSetups(log, { [symbol]: candles }, Date.now(), calendarEvents);
-    const persistTick = async () => { if (JSON.stringify(log) !== before) await redisCmd('SET', 'setup_log_auto:v1', JSON.stringify(log)); };
+    const persistTick = async () => {
+      if (JSON.stringify(log) === before) return;
+      const lk = 'lock:setuplog_write:setup_log_auto:v1';
+      const got = await redisCmd('SET', lk, '1', 'NX', 'EX', '10').catch(() => null);
+      if (got !== 'OK') return; // fail-open: skip tick ini, dicoba lagi request berikutnya
+      try { await redisCmd('SET', 'setup_log_auto:v1', JSON.stringify(log)); }
+      finally { redisCmd('DEL', lk).catch(() => {}); }
+    };
     const st = log[idx];
 
     if (st.status !== 'open') {
@@ -3274,16 +3285,40 @@ async function positionReviewHandler(req, res) {
     }
 
     // Langkah 2e: terapkan HANYA field manajemen — data mentah/status TIDAK disentuh.
-    st.review_count = (st.review_count || 0) + 1;
-    if (decision === 'TIGHTEN_SL') {
-      st.intervention = { type: 'tighten_sl', t: Date.now(), price: null, new_sl: newSlRaw, reason, trigger_guid: trigger.guid };
-    } else if (decision === 'CLOSE_EARLY') {
-      st.intervention = { type: 'close_early', t: Date.now(), price: closeLast, new_sl: null, reason, trigger_guid: trigger.guid };
-      st.managed_status = 'closed_early';
-      st.managed_closed_t = Math.floor(Date.now() / 1000);
+    // BUG DITEMUKAN & DIFIX (2026-07-25): `log`/`st` di sini adalah snapshot dari SEBELUM
+    // call AI (bisa puluhan detik lalu, lihat langkah 2c) — menulisnya langsung berisiko
+    // menimpa balik perubahan lain yang terjadi SELAMA AI mikir (persis race condition yang
+    // ditemukan di _buildAutoScopeStats). Lock TIDAK dipegang selama call AI (lock TTL 10s,
+    // AI call bisa puluhan detik) — sebagai gantinya, baca ULANG state TERBARU di bawah lock
+    // tepat sebelum menulis, dan batalkan kalau posisi sudah berubah (sudah dikelola pihak
+    // lain / bukan 'open' lagi) daripada menimpa buta.
+    const lockKey2 = 'lock:setuplog_write:setup_log_auto:v1';
+    const gotLock2 = await redisCmd('SET', lockKey2, '1', 'NX', 'EX', '10').catch(() => null);
+    if (gotLock2 !== 'OK') {
+      return res.status(409).json({ error: 'setup_log_auto sedang ditulis proses lain, keputusan AI dibuang, coba lagi' });
     }
-    log[idx] = st;
-    await redisCmd('SET', 'setup_log_auto:v1', JSON.stringify(log));
+    try {
+      const rawFresh = await redisCmd('GET', 'setup_log_auto:v1');
+      let logFresh = rawFresh ? JSON.parse(rawFresh) : [];
+      if (!Array.isArray(logFresh)) logFresh = [];
+      const idxFresh = logFresh.findIndex(x => x && x.id === id);
+      if (idxFresh === -1) return res.status(404).json({ error: 'setup id hilang saat AI memproses' });
+      const stFresh = logFresh[idxFresh];
+      if (stFresh.status !== 'open' || stFresh.intervention) {
+        return res.status(200).json({ skipped: 'race_detected', status: stFresh.status, note: 'posisi sudah berubah selama AI memproses, keputusan dibuang' });
+      }
+      stFresh.review_count = (stFresh.review_count || 0) + 1;
+      if (decision === 'TIGHTEN_SL') {
+        stFresh.intervention = { type: 'tighten_sl', t: Date.now(), price: null, new_sl: newSlRaw, reason, trigger_guid: trigger.guid };
+      } else if (decision === 'CLOSE_EARLY') {
+        stFresh.intervention = { type: 'close_early', t: Date.now(), price: closeLast, new_sl: null, reason, trigger_guid: trigger.guid };
+        stFresh.managed_status = 'closed_early';
+        stFresh.managed_closed_t = Math.floor(Date.now() / 1000);
+      }
+      await redisCmd('SET', 'setup_log_auto:v1', JSON.stringify(logFresh));
+      st.review_count = stFresh.review_count; st.intervention = stFresh.intervention;
+      st.managed_status = stFresh.managed_status; st.managed_closed_t = stFresh.managed_closed_t;
+    } finally { redisCmd('DEL', lockKey2).catch(() => {}); }
     await redisCmd('LPUSH', 'position_review_log:v1', JSON.stringify({
       id, t: Date.now(), trigger: { guid: trigger.guid, title: trigger.title }, decision, confidence, downgraded,
     }));
@@ -3309,6 +3344,15 @@ async function fridayTightenHandler(req, res) {
   const cronSecret   = req.headers['x-cron-secret'];
   if (!isVercelCron && (!cronSecret || cronSecret !== process.env.CRON_SECRET)) {
     return res.status(401).json({ error: 'Unauthorized' });
+  }
+  // BUG DITEMUKAN & DIFIX (2026-07-25): GET->mutate->SET di sini dulu TANPA lock, sumber
+  // race yang sama dengan _buildAutoScopeStats/positionReviewHandler (lihat komentar di
+  // situ). Tidak ada call AI di handler ini (murni kode) jadi seluruh siklus aman dibungkus
+  // SATU lock, sama seperti _buildAutoScopeStats.
+  const lockKey = 'lock:setuplog_write:setup_log_auto:v1';
+  const gotLock = await redisCmd('SET', lockKey, '1', 'NX', 'EX', '10').catch(() => null);
+  if (gotLock !== 'OK') {
+    return res.status(409).json({ error: 'setup_log_auto sedang ditulis proses lain, coba lagi' });
   }
   try {
     const raw = await redisCmd('GET', 'setup_log_auto:v1');
@@ -3352,7 +3396,7 @@ async function fridayTightenHandler(req, res) {
     return res.status(200).json({ ok: true, checked: candidates.length, tightened, results });
   } catch (e) {
     return res.status(500).json({ error: e.message });
-  }
+  } finally { redisCmd('DEL', lockKey).catch(() => {}); }
 }
 
 // Render blok [ZONA KONFLUENSI] untuk prompt AI. Zona diberi ID stabil (A1/B1 dst,
