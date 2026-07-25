@@ -2792,8 +2792,40 @@ function _summarizeLatency(entries) {
 // PLAN U-7: payload developer-only scope=auto — agregat `setup_log_auto:v1`
 // dievaluasi TERPISAH dari `setup_log:v1` (tidak pernah digabung satu array, aturan
 // satu-array-satu-sumber), + blok `management` (U-5a) + ringkasan konsistensi (U-3).
+function _statsPayloadFromLog(log) {
+  const bySymbol = {};
+  for (const s of log) { (bySymbol[s.symbol] = bySymbol[s.symbol] || []).push(s); }
+  const symbols = {};
+  for (const k of Object.keys(bySymbol)) { symbols[k] = _aggSetupStats(bySymbol[k]); symbols[k].history = bySymbol[k]; }
+  return { symbols, global: _aggSetupStats(log), recent: log.slice(0, 10) };
+}
+
+// BUG DITEMUKAN & DIFIX (2026-07-25, diskusi user — status 'tp' palsu tersimpan di
+// GC=F ts 1784708110704 padahal harga riil belum kena TP): siklus GET->evaluate->SET
+// pasif di sini dulu TANPA lock, sementara jalur refine (ohlcv_analyze?auto=1, lihat
+// `stalePending`) menulis array yang SAMA pakai lock `lock:setuplog_write:*`. Kalau
+// keduanya jalan berdekatan waktu, yang menang timpa-menimpa (last-write-wins di
+// seluruh array) — bisa membekukan hasil evaluasi basi (dihitung dari level SEBELUM
+// refine) sambil field lain (entry/sl/tp/ts) sudah keburu ter-refine. Sekarang seluruh
+// siklus GET->evaluate->SET di sini dibungkus lock YANG SAMA supaya saling eksklusif
+// dengan refine. Kalau lock sedang dipegang pihak lain, skip evaluasi pasif tick ini
+// (fail-open — baca snapshot mentah apa adanya, dicoba lagi tick berikutnya) daripada
+// ikut menulis dan berpotensi menimpa balik perubahan yang sedang berlangsung.
 async function _buildAutoScopeStats() {
-  const raw = await redisCmd('GET', 'setup_log_auto:v1');
+  const setupLogKey = 'setup_log_auto:v1';
+  const lockKey = `lock:setuplog_write:${setupLogKey}`;
+  const gotLock = await redisCmd('SET', lockKey, '1', 'NX', 'EX', '10').catch(() => null);
+  if (gotLock !== 'OK') {
+    const rawFallback = await redisCmd('GET', setupLogKey);
+    let logFallback = rawFallback ? JSON.parse(rawFallback) : [];
+    if (!Array.isArray(logFallback)) logFallback = [];
+    return {
+      scope: 'auto', ..._statsPayloadFromLog(logFallback),
+      consistency: await _consistencySummary(), pipeline_latency: await _pipelineLatencySummary(),
+    };
+  }
+  try {
+  const raw = await redisCmd('GET', setupLogKey);
   if (!raw) {
     return {
       scope: 'auto', symbols: {}, global: _aggSetupStats([]), recent: [],
@@ -2853,15 +2885,12 @@ async function _buildAutoScopeStats() {
     log = _evaluateCanceledGhost(log, candlesBySymbol, Date.now());
   }
   const after = JSON.stringify(log);
-  if (after !== before) await redisCmd('SET', 'setup_log_auto:v1', after);
-  const bySymbol = {};
-  for (const s of log) { (bySymbol[s.symbol] = bySymbol[s.symbol] || []).push(s); }
-  const symbols = {};
-  for (const k of Object.keys(bySymbol)) { symbols[k] = _aggSetupStats(bySymbol[k]); symbols[k].history = bySymbol[k]; }
+  if (after !== before) await redisCmd('SET', setupLogKey, after);
   return {
-    scope: 'auto', symbols, global: _aggSetupStats(log), recent: log.slice(0, 10),
+    scope: 'auto', ..._statsPayloadFromLog(log),
     consistency: await _consistencySummary(), pipeline_latency: await _pipelineLatencySummary(),
   };
+  } finally { redisCmd('DEL', lockKey).catch(() => {}); }
 }
 
 async function setupStatsHandler(req, res) {
@@ -2950,12 +2979,21 @@ async function setupStatsHandler(req, res) {
 }
 
 const LOSS_LABELS = new Set(['fundamental_shock', 'fakeout_sl', 'invalid_manual']);
+const SETUP_STATUSES = new Set(['pending', 'open', 'tp', 'sl', 'ambiguous', 'expired', 'stale', 'canceled', 'invalid']);
 
 // PLAN U-1 Lapis 4: override admin — set/hapus loss_label + label_reason per id setup.
 // Sama seperti fundamentalSeedHandler/journalImportHandler: header x-admin-secret ATAU
-// x-cron-secret sama dengan CRON_SECRET. Data mentah (status, harga, entry/sl/tp)
-// TIDAK PERNAH disentuh — override HANYA mengubah label, jejak keputusan admin
-// (label_by:'admin') dibedakan dari deteksi otomatis (label_by:'auto').
+// x-cron-secret sama dengan CRON_SECRET.
+//
+// EXTENSION (2026-07-25, diskusi user — status 'tp' palsu di GC=F ts 1784708110704
+// akibat race condition evaluate-vs-refine, lihat komentar _buildAutoScopeStats):
+// selain loss_label, endpoint ini sekarang juga menerima `data_fix` opsional untuk
+// mengoreksi status/filled_t/closed_t yang TERBUKTI korup oleh bug — BUKAN untuk
+// mengubah hasil trade sesuka hati. `reason` WAJIB diisi (jejak audit), tersimpan di
+// `data_fix_reason`/`data_fix_by:'admin'`/`data_fix_at`, terpisah dari `label_by`
+// (auto/manual detection biasa) supaya jelas mana koreksi manual atas bug. Read-modify-
+// write dibungkus lock yang SAMA dengan _buildAutoScopeStats/refine supaya endpoint ini
+// sendiri tidak menambah race condition baru.
 async function setupOverrideHandler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   if (req.method === 'OPTIONS') return res.status(204).end();
@@ -2972,6 +3010,7 @@ async function setupOverrideHandler(req, res) {
     const { id } = parsed || {};
     const lossLabel = parsed?.loss_label ?? null;
     const labelReason = parsed?.label_reason;
+    const dataFix = parsed?.data_fix ?? null;
     if (!id) return res.status(400).json({ error: 'id required' });
     if (lossLabel !== null && !LOSS_LABELS.has(lossLabel)) {
       return res.status(400).json({ error: 'loss_label harus salah satu: fundamental_shock, fakeout_sl, invalid_manual, atau null' });
@@ -2979,22 +3018,54 @@ async function setupOverrideHandler(req, res) {
     if (lossLabel !== null && (!labelReason || !String(labelReason).trim())) {
       return res.status(400).json({ error: 'label_reason wajib saat mengisi loss_label' });
     }
+    if (dataFix) {
+      if (!dataFix.reason || !String(dataFix.reason).trim()) {
+        return res.status(400).json({ error: 'data_fix.reason wajib diisi' });
+      }
+      if (dataFix.status != null && !SETUP_STATUSES.has(dataFix.status)) {
+        return res.status(400).json({ error: `data_fix.status harus salah satu: ${[...SETUP_STATUSES].join(', ')}` });
+      }
+      for (const k of ['filled_t', 'closed_t']) {
+        if (dataFix[k] !== undefined && dataFix[k] !== null && !(Number.isFinite(dataFix[k]) && dataFix[k] > 0)) {
+          return res.status(400).json({ error: `data_fix.${k} harus unix timestamp detik (angka > 0) atau null` });
+        }
+      }
+    }
 
     // PLAN U-7: scope=auto melabel setup EKSPERIMEN (setup_log_auto:v1), default
     // (tanpa scope) tetap setup_log:v1 (manual) seperti semula U-1.
     const logKey = parsed?.scope === 'auto' ? 'setup_log_auto:v1' : 'setup_log:v1';
-    const raw = await redisCmd('GET', logKey);
-    let log = raw ? JSON.parse(raw) : [];
-    if (!Array.isArray(log)) log = [];
-    const idx = log.findIndex(x => x && x.id === id);
-    if (idx === -1) return res.status(404).json({ error: 'setup id tidak ditemukan' });
+    const lockKey = `lock:setuplog_write:${logKey}`;
+    const gotLock = await redisCmd('SET', lockKey, '1', 'NX', 'EX', '10').catch(() => null);
+    if (gotLock !== 'OK') {
+      return res.status(409).json({ error: 'setup_log sedang ditulis proses lain, coba lagi sesaat lagi' });
+    }
+    try {
+      const raw = await redisCmd('GET', logKey);
+      let log = raw ? JSON.parse(raw) : [];
+      if (!Array.isArray(log)) log = [];
+      const idx = log.findIndex(x => x && x.id === id);
+      if (idx === -1) return res.status(404).json({ error: 'setup id tidak ditemukan' });
 
-    log[idx].loss_label = lossLabel;
-    log[idx].label_reason = lossLabel !== null ? String(labelReason).trim() : null;
-    log[idx].label_by = lossLabel !== null ? 'admin' : null;
+      if (parsed?.loss_label !== undefined) {
+        log[idx].loss_label = lossLabel;
+        log[idx].label_reason = lossLabel !== null ? String(labelReason).trim() : null;
+        log[idx].label_by = lossLabel !== null ? 'admin' : null;
+      }
+      if (dataFix) {
+        if (dataFix.status != null) log[idx].status = dataFix.status;
+        for (const k of ['filled_t', 'closed_t']) {
+          if (dataFix[k] === undefined) continue;
+          if (dataFix[k] === null) delete log[idx][k]; else log[idx][k] = dataFix[k];
+        }
+        log[idx].data_fix_reason = String(dataFix.reason).trim();
+        log[idx].data_fix_by = 'admin';
+        log[idx].data_fix_at = Date.now();
+      }
 
-    await redisCmd('SET', logKey, JSON.stringify(log));
-    return res.status(200).json({ ok: true, setup: log[idx] });
+      await redisCmd('SET', logKey, JSON.stringify(log));
+      return res.status(200).json({ ok: true, setup: log[idx] });
+    } finally { redisCmd('DEL', lockKey).catch(() => {}); }
   } catch (e) {
     return res.status(500).json({ error: e.message });
   }
@@ -4369,7 +4440,16 @@ async function ohlcvAnalyzeHandler(req, res) {
                 stalePending.makro_alignment = structured.makro_alignment ?? null;
                 stalePending.makro_alignment_reason = structured.makro_alignment_reason ?? null;
                 stalePending.model = model;
-                stalePending.ts = Date.now();
+                // BUG DITEMUKAN & DIFIX (2026-07-25, diskusi user soal filled_t < closed_t):
+                // `ts` di sini SEMPAT di-reset ke Date.now() supaya horizon_days terasa
+                // "fresh" pasca-refine. Efek sampingnya fatal — `_evaluateSetups` memakai
+                // `st.ts` sebagai satu-satunya titik mulai scan candle (line ~2490); reset
+                // ini membuat evaluator "buta" terhadap histori harga sebelum saat refine,
+                // dan (kalau refine terjadi setelah closed_t versi lama sempat kehitung di
+                // pass evaluasi lain) bisa membuat closed_t tersimpan LEBIH AWAL dari
+                // filled_t yang baru — urutan yang mustahil. `ts` SENGAJA TIDAK di-reset lagi;
+                // `horizon_days` tetap ter-update ke nilai baru (baris di atas) dan dihitung
+                // dari `ts` ASLI (waktu ide trade ini lahir), bukan waktu refine terakhir.
                 stalePending.refined_count = (stalePending.refined_count || 0) + 1;
                 blockedByOpenPosition = true;
                 shouldSaveLog = true;

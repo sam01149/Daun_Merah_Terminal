@@ -51,11 +51,23 @@ async function withFetch(stub, fn) {
   try { return await fn(); } finally { global.fetch = orig; }
 }
 
+// PLAN (2026-07-25): setupOverrideHandler sekarang membungkus read-modify-write
+// dengan lock (`lock:setuplog_write:*`, key TERPISAH dari log itu sendiri) — stub ini
+// harus membedakan SET/GET/DEL untuk key lock (selalu sukses, test ini tidak menguji
+// kontensi) dari SET/GET untuk log setup yang sebenarnya.
 function upstashStub(log) {
   return async (url, opts) => {
     const args = JSON.parse(opts.body);
-    if (args[0] === 'GET') return { ok: true, json: async () => ({ result: JSON.stringify(log) }) };
-    if (args[0] === 'SET') { log.length = 0; log.push(...JSON.parse(args[2])); return { ok: true, json: async () => ({ result: 'OK' }) }; }
+    const isLockKey = typeof args[1] === 'string' && args[1].startsWith('lock:');
+    if (args[0] === 'GET') {
+      if (isLockKey) return { ok: true, json: async () => ({ result: null }) };
+      return { ok: true, json: async () => ({ result: JSON.stringify(log) }) };
+    }
+    if (args[0] === 'SET') {
+      if (isLockKey) return { ok: true, json: async () => ({ result: 'OK' }) };
+      log.length = 0; log.push(...JSON.parse(args[2])); return { ok: true, json: async () => ({ result: 'OK' }) };
+    }
+    if (args[0] === 'DEL') return { ok: true, json: async () => ({ result: 1 }) };
     throw new Error('unexpected redis command ' + args[0]);
   };
 }
@@ -146,5 +158,81 @@ test('setup_override: loss_label null menghapus label_reason & label_by tanpa pe
     assert.strictEqual(res.body.setup.label_reason, null);
     assert.strictEqual(res.body.setup.label_by, null);
     assert.strictEqual(res.body.setup.status, 'sl'); // status tetap
+  });
+});
+
+// ── data_fix: koreksi status/filled_t/closed_t untuk rekaman TERBUKTI korup ───
+// (2026-07-25, diskusi user — status 'tp' palsu di GC=F akibat race condition)
+
+test('setup_override: data_fix tanpa reason -> 400', async () => {
+  await withEnv({ CRON_SECRET: 'rahasia' }, async () => {
+    const { req, res } = fakeReqRes({
+      headers: { 'x-admin-secret': 'rahasia' },
+      body: JSON.stringify({ id: 'GC=F:123', data_fix: { status: 'open' } }),
+    });
+    await handler(req, res);
+    assert.strictEqual(res.statusCode, 400);
+  });
+});
+
+test('setup_override: data_fix.status bukan whitelist -> 400', async () => {
+  await withEnv({ CRON_SECRET: 'rahasia' }, async () => {
+    const { req, res } = fakeReqRes({
+      headers: { 'x-admin-secret': 'rahasia' },
+      body: JSON.stringify({ id: 'GC=F:123', data_fix: { status: 'menang', reason: 'x' } }),
+    });
+    await handler(req, res);
+    assert.strictEqual(res.statusCode, 400);
+  });
+});
+
+test('setup_override: data_fix.filled_t bukan angka positif -> 400', async () => {
+  await withEnv({ CRON_SECRET: 'rahasia' }, async () => {
+    const { req, res } = fakeReqRes({
+      headers: { 'x-admin-secret': 'rahasia' },
+      body: JSON.stringify({ id: 'GC=F:123', data_fix: { filled_t: -5, reason: 'x' } }),
+    });
+    await handler(req, res);
+    assert.strictEqual(res.statusCode, 400);
+  });
+});
+
+test('setup_override: data_fix sukses -> status/filled_t diubah, closed_t:null dihapus, jejak audit tersimpan', async () => {
+  await withEnv({ CRON_SECRET: 'rahasia' }, async () => {
+    const log = [{ ...baseSetup, status: 'tp', filled_t: 5000, closed_t: 2000 }];
+    const { req, res } = fakeReqRes({
+      headers: { 'x-admin-secret': 'rahasia' },
+      body: JSON.stringify({
+        id: 'GC=F:123',
+        data_fix: { status: 'open', filled_t: 4000, closed_t: null, reason: 'race condition, harga belum kena TP' },
+      }),
+    });
+    await withFetch(upstashStub(log), async () => { await handler(req, res); });
+    assert.strictEqual(res.statusCode, 200);
+    assert.strictEqual(res.body.setup.status, 'open');
+    assert.strictEqual(res.body.setup.filled_t, 4000);
+    assert.strictEqual(res.body.setup.closed_t, undefined, 'closed_t:null harus menghapus field, bukan menyimpan null');
+    assert.strictEqual(res.body.setup.data_fix_reason, 'race condition, harga belum kena TP');
+    assert.strictEqual(res.body.setup.data_fix_by, 'admin');
+    assert.strictEqual(typeof res.body.setup.data_fix_at, 'number');
+    // loss_label tidak ikut disentuh karena tidak dikirim
+    assert.strictEqual(res.body.setup.loss_label, null);
+  });
+});
+
+test('setup_override: data_fix bisa dipakai bersamaan loss_label dalam satu request', async () => {
+  await withEnv({ CRON_SECRET: 'rahasia' }, async () => {
+    const log = [{ ...baseSetup, status: 'sl' }];
+    const { req, res } = fakeReqRes({
+      headers: { 'x-admin-secret': 'rahasia' },
+      body: JSON.stringify({
+        id: 'GC=F:123', loss_label: 'fakeout_sl', label_reason: 'wick tipis',
+        data_fix: { status: 'ambiguous', reason: 'evaluator salah baca candle' },
+      }),
+    });
+    await withFetch(upstashStub(log), async () => { await handler(req, res); });
+    assert.strictEqual(res.statusCode, 200);
+    assert.strictEqual(res.body.setup.status, 'ambiguous');
+    assert.strictEqual(res.body.setup.loss_label, 'fakeout_sl');
   });
 });

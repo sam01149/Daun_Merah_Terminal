@@ -11,6 +11,7 @@ process.env.UPSTASH_REDIS_REST_URL   = 'https://fake-upstash.test';
 process.env.UPSTASH_REDIS_REST_TOKEN = 'fake-token';
 
 const admin = require('../../api/admin.js');
+const marketHours = require('../../api/_market_hours');
 const { _costAdjustedR, _aggCostExpectancy, _confidenceCalibration, _summarizeLatency } = admin;
 
 // ── _costAdjustedR / _aggCostExpectancy ─────────────────────────────────────
@@ -140,11 +141,21 @@ function redisFetchStub(store) {
   };
 }
 
+// BUG DITEMUKAN & DIFIX (2026-07-25): tes integrasi ohlcv_analyze di bawah tidak
+// pernah stub `marketHours.isFxMarketOpen()` — di akhir pekan (Sabtu/Minggu) handler
+// short-circuit "pasar tutup" (lihat api/admin.js dekat `!marketHours.isFxMarketOpen()`)
+// dan balas `structured: null` SEBELUM sempat memanggil AI mock, membuat 2 test di
+// bawah selalu gagal tiap weekend. Pola stub sama seperti test/admin/isolation_auto.test.js.
 async function withEnv(vars, fn) {
   const prev = { DEEPSEEK_API_KEY: process.env.DEEPSEEK_API_KEY };
   Object.assign(process.env, vars);
+  const origIsOpen = marketHours.isFxMarketOpen;
+  marketHours.isFxMarketOpen = () => true;
   try { return await fn(); }
-  finally { delete process.env.DEEPSEEK_API_KEY; if (prev.DEEPSEEK_API_KEY !== undefined) process.env.DEEPSEEK_API_KEY = prev.DEEPSEEK_API_KEY; }
+  finally {
+    marketHours.isFxMarketOpen = origIsOpen;
+    delete process.env.DEEPSEEK_API_KEY; if (prev.DEEPSEEK_API_KEY !== undefined) process.env.DEEPSEEK_API_KEY = prev.DEEPSEEK_API_KEY;
+  }
 }
 
 test('ohlcv_analyze: confidence "tinggi" dari AI -> masuk setup_log apa adanya', async () => {
