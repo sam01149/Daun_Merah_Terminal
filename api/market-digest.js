@@ -59,98 +59,10 @@ const SAMBANOVA_MODEL_CALL1 = 'DeepSeek-V3.2';            // Call 1: prose (akun
 // Circuit breaker source names — pisahkan per-akun agar kegagalan akun 1 tak menjatuhkan akun 2
 const CB_SAMBA_C1   = 'ai:sambanova:c1';   // Call 1 prosa, akun 2 (SAMBANOVA_KEY_CALL1)
 const CB_SAMBA_MAIN = 'ai:sambanova:main'; // Call 2/3/4 JSON, akun 1 (SAMBANOVA_KEY)
-const GROQ_URL        = 'https://api.groq.com/openai/v1/chat/completions';
-const GROQ_MODEL      = 'llama-3.3-70b-versatile';        // Call 2, 3, 4: JSON + thesis
-const GROQ_MODEL_PROSE = 'llama-3.3-70b-versatile';        // Call 1 fallback 3: prose. Diganti dari qwen/qwen3-32b (2026-06)
-                                                            // — terkonfirmasi via console.groq.com/docs/models statusnya
-                                                            // "Preview/Evaluation" (bukan production), kemungkinan besar
-                                                            // sumber HTTP 413 saat jadi fallback terakhir. llama-3.3-70b-versatile
-                                                            // production-tier, context sama 131K, sudah proven reliable di
-                                                            // codebase ini buat Call 2/4, dan didokumentasikan resmi cocok
-                                                            // untuk "long-form content".
-const OPENROUTER_URL     = 'https://openrouter.ai/api/v1/chat/completions';
-const OPENROUTER_HEADERS = { 'HTTP-Referer': 'https://financial-feed-app.vercel.app', 'X-Title': 'Daun Merah' };
-// Nemotron 3 Ultra (session 145) — primary baru Call 1/2/3: 550B/55B-active MoE hybrid
-// Mamba-Transformer, context 1M, GPQA Diamond 86.7%. Circuit breaker terpisah dari
-// OpenRouter fallback 2 di atas karena sekarang dipanggil TIAP request sebagai primary
-// (bukan fallback jarang) — lihat CB_OPENROUTER_NEMOTRON. providerOverride tetap reuse
-// counter 'openrouter' yang sudah ada (account-wide, jangan pecah per-model — lihat _ai_guard.js).
-const NEMOTRON_MODEL           = 'nvidia/nemotron-3-ultra-550b-a55b:free';
-const CB_OPENROUTER_NEMOTRON   = 'ai:openrouter:nemotron';
-
-// Ollama Cloud sebagai sumber Nemotron 3 Ultra alternatif (session 145 lanjutan) —
-// dicoba SEBELUM OpenRouter setelah 2 ronde tes live OpenRouter menunjukkan 0/3 bersih
-// (respons kosong + timeout, meski TIDAK 403). API-nya native Ollama (/api/chat, BUKAN
-// /v1/chat/completions), jadi butuh helper terpisah — lihat callOllama() di bawah,
-// pola sama seperti _callOllama() di admin.js (ohlcv_analyze, session 144 lanjutan 5).
-// Reuse counter budget 'ollama' yang sudah ada (satu akun Ollama Cloud dipakai bersama
-// dengan ohlcv_analyze di admin.js) — circuit breaker terpisah karena beda model/fitur.
-const OLLAMA_URL             = 'https://ollama.com/api/chat';
-// PENTING: TANPA suffix ':cloud' — itu konvensi Ollama LOKAL (ollama run <model>:cloud
-// di mesin sendiri), BUKAN nama model yang valid untuk direct server-to-server API call
-// (lihat root-cause bug GLM-5.2 di daun_merah.md Session 144 lanjutan 5 — pelajaran yang
-// sama berlaku di sini, bukan diasumsikan ulang).
-const OLLAMA_NEMOTRON_MODEL  = 'nemotron-3-ultra';
-const CB_OLLAMA_NEMOTRON     = 'ai:ollama:nemotron';
-
-// Nemotron 3 SUPER (session 145 lanjutan 5) — kandidat berbeda dari Ultra di
-// atas: 120B total/12B active (jauh lebih ringan), via OpenRouter. Dipersiapkan untuk
-// dites live (belum dijalankan — nunggu konfirmasi user) KHUSUS Call 1 (prosa, bukan
-// Call 2/3 yang butuh JSON ketat): OpenRouter sendiri melaporkan statistik produksi
-// nyata yang jauh lebih sehat dari Ultra (p50 latency 1.82s, E2E rata-rata 11.2s,
-// uptime 97.85%), TAPI Structured Output Error Rate 17.76% — terlalu berisiko untuk
-// Call 2/3 (JSON), jadi sengaja dibatasi ke Call 1 saja. Reuse counter 'openrouter'
-// (account-wide, sama seperti Nemotron Ultra) dan withNoThink() (satu keluarga model,
-// kemungkinan konvensi /think /no_think yang sama berlaku).
-const NEMOTRON_SUPER_MODEL         = 'nvidia/nemotron-3-super-120b-a12b:free';
-const CB_OPENROUTER_NEMOTRON_SUPER = 'ai:openrouter:nemotron-super';
-
-// Hermes 3 405B Instruct (diagnostik, belum pernah dites live) — kandidat dari riset
-// user via OpenRouter free tier. Uptime dilaporkan OpenRouter cuma ~55.79% (jauh di
-// bawah Nemotron Super yang 97.85%), jadi TIDAK dipasang di rantai fallback produksi
-// sama sekali (beda dari Nemotron Ultra/Super yang sempat jadi primary/fallback nyata)
-// — satu-satunya jalur panggil adalah ?test_hermes=1, terisolasi total dari Call 1
-// normal (lihat testHermesOnly), supaya kegagalan/lambatnya tidak pernah dirasakan user
-// nyata di Ringkasan. Reuse counter budget 'openrouter' (account-wide, sama seperti
-// Nemotron) via providerOverride di aiCall().
-const HERMES_MODEL           = 'nousresearch/hermes-3-llama-3.1-405b:free';
-const CB_OPENROUTER_HERMES   = 'ai:openrouter:hermes';
-
-// Z.ai GLM 4.7 via Cerebras (diagnostik, session 163) — DITOLAK setelah dites live
-// (2026-07-13): HTTP 400 "Please reduce the length of the messages or completion.
-// Current length is 13029 while limit is 8192" — context window model ini di tier
-// Preview Cerebras cuma 8192 token, jauh di bawah prompt Call 1 (~13K token dengan
-// headline+kalender+OHLCV). Bukan bug kode (root-caused via perbaikan error-shape di
-// aiCall(), lihat komentar di sana) — model-nya sendiri yang terlalu kecil context-nya
-// untuk use case ini. Endpoint/API-key SAMA dengan CEREBRAS_URL/CEREBRAS_KEY yang sudah
-// dipakai admin.js (fundamental_analysis) & journal.js (AI Coach) untuk gpt-oss-120b.
-// Model id dikonfirmasi dari blog resmi Cerebras ("GLM-4.7: Frontier intelligence at
-// record speed — now available on Cerebras", 8 Jan 2026): 355B params, tier "Preview"
-// ("should not be used in production, as they may be discontinued on short notice").
-// Jalur ?test_glm=1 TETAP ada (tidak dihapus, pola sama seperti kandidat lain yang
-// ditolak) untuk jaga-jaga kalau Cerebras menaikkan context cap Preview-nya di masa
-// depan — tapi TIDAK direkomendasikan lagi jadi kandidat primary/fallback Call 1.
-const CEREBRAS_URL           = 'https://api.cerebras.ai/v1/chat/completions';
-const CEREBRAS_MODEL_GLM     = 'zai-glm-4.7';
-const CB_CEREBRAS_GLM        = 'ai:cerebras:glm';
-
-// gpt-oss-120b via Cerebras (session 164) — GANTI primary Call 1 dari OpenRouter
-// (openai/gpt-oss-120b:free) ke Cerebras native: OpenRouter free tier terbukti sering
-// timeout di produksi (contoh nyata: 15010ms, tepat kelewat batas timeout 15000ms),
-// sementara Cerebras native mengklaim ~3000 tok/s untuk model ini dan full context
-// 128K (jauh di atas prompt Call 1 ~13K token — tidak kena masalah context-cap seperti
-// GLM 4.7 di atas). Model id + endpoint dikonfirmasi sama dengan yang sudah dipakai
-// admin.js (fundamental_analysis) & journal.js (AI Coach) sejak session 145. Pool
-// token/hari Cerebras terpisah dari OpenRouter (counter 'cerebras', lihat _ai_guard.js)
-// — jadi tidak berebut kuota dengan Nemotron Ultra/Super yang masih pakai OpenRouter.
-const CEREBRAS_MODEL_GPTOSS  = 'gpt-oss-120b';
-const CB_CEREBRAS_GPTOSS     = 'ai:cerebras:gptoss';
-
 // Riset provider baru (Plan N, session 182, 2026-07-18) — 3 kandidat BELUM PERNAH dites
-// live, terisolasi total via ?test_gemini=1 / ?test_mistral=1 / ?test_nvidia=1 (pola
-// persis testGlmOnly/testHermesOnly di atas — hasil TIDAK ditulis ke digest_history/
-// latest_article, lihat isIsolatedTest). Env var Vercel dikonfirmasi (BUKAN nama tebakan
-// awal plan): GEMINI_API_KEY, MISTRAL_API_KEY, NVIDIA_API_KEY.
+// live, terisolasi total via ?test_gemini=1 / ?test_mistral=1 / ?test_nvidia=1 (hasil
+// TIDAK ditulis ke digest_history/latest_article, lihat isIsolatedTest). Env var Vercel
+// dikonfirmasi (BUKAN nama tebakan awal plan): GEMINI_API_KEY, MISTRAL_API_KEY, NVIDIA_API_KEY.
 // Gemini: endpoint OpenAI-compat resmi Google AI Studio. Model non-preview termurah/
 // tercepat free tier (10 RPM/1.500 RPD per project, ai.google.dev/gemini-api/docs/rate-limits).
 const GEMINI_URL   = 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions';
@@ -492,25 +404,6 @@ function stripThinking(text) {
   return text.trim();
 }
 
-// Nemotron 3 (session 145 lanjutan 3) toggles its reasoning trace via a literal
-// "/think" / "/no_think" directive in the system prompt (NVIDIA's documented
-// convention, same family as Qwen3's steering tokens) — not a separate API field like
-// Ollama's `think` param used for GLM-5.2. Suspected root cause of the timeouts seen in
-// live tests (both OpenRouter 25s and Ollama Cloud 18s): the model may default to
-// generating a full reasoning trace before the real answer, which our use case (write a
-// briefing, not solve a puzzle) doesn't need. Force /no_think for Nemotron calls only —
-// other providers (SambaNova/Groq/gpt-oss) don't use this convention and must NOT get it
-// injected into their prompt.
-function withNoThink(messages) {
-  const sysIdx = messages.findIndex(m => m.role === 'system');
-  if (sysIdx !== -1) {
-    const copy = messages.map(m => ({ ...m }));
-    copy[sysIdx] = { ...copy[sysIdx], content: copy[sysIdx].content + '\n/no_think' };
-    return copy;
-  }
-  return [{ role: 'system', content: '/no_think' }, ...messages];
-}
-
 // Shared low-level fetch for any OpenAI-compatible provider.
 // providerOverride: SAMBANOVA_URL dan SAMBANOVA_URL_CALL1 (2 akun berbeda) identik
 // string-nya, jadi providerFromUrl(url) tidak bisa membedakan akun — call site WAJIB
@@ -548,37 +441,6 @@ async function aiCall(url, apiKey, model, messages, maxTokens, temperature, time
   return stripThinking(content).trim();
 }
 
-// Ollama Cloud — API native (BUKAN OpenAI-compatible), dipakai khusus untuk Nemotron 3
-// Ultra (session 145 lanjutan). Pola & guard budget/error identik dengan _callOllama()
-// di admin.js (dua file duplikasi sengaja per konvensi project ini — lihat komentar
-// OPENROUTER_URL/MODEL di file lain untuk rasionalnya).
-async function callOllama(apiKey, model, messages, maxTokens, temperature, timeoutMs, providerOverride, think = null) {
-  if (!await allowAiCall(providerOverride)) {
-    const e = new Error('AI_BUDGET_EXCEEDED');
-    e.status = 429;
-    throw e;
-  }
-  const body = { model, messages, stream: false, options: { temperature, num_predict: maxTokens } };
-  if (think !== null) body.think = think;
-  const t0 = Date.now();
-  const r = await fetch(OLLAMA_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-    body: JSON.stringify(body),
-    signal: AbortSignal.timeout(timeoutMs),
-  });
-  if (!r.ok) { const e = new Error(`HTTP ${r.status}`); e.status = r.status; throw e; }
-  const j = await r.json();
-  const wallMs = Date.now() - t0;
-  const serverMs = j?.total_duration != null ? Math.round(j.total_duration / 1e6) : null;
-  console.log(`callOllama: model=${model} wall=${wallMs}ms server=${serverMs}ms eval_count=${j?.eval_count ?? '?'} prompt_eval_count=${j?.prompt_eval_count ?? '?'} done_reason=${j?.done_reason ?? '?'}`);
-  if (j?.done_reason === 'length') {
-    console.warn(`callOllama truncated (done_reason=length, model=${model}, num_predict=${maxTokens})`);
-  }
-  const content = j?.message?.content?.trim() || null;
-  if (!content) throw new Error('Empty response');
-  return stripThinking(content).trim();
-}
 
 
 // Read 1H OHLCV from Redis (written by ohlcv_sync cron) and format for AI context.
@@ -740,7 +602,7 @@ async function fetchOpenThesisEntries(deviceId) {
 // Call 4 — "does any recent headline contradict this trader's open thesis?".
 // Extracted so it can run for one device inline (live request) or looped over
 // every device with journal data (cron run — see thesis-monitor sweep below).
-async function checkThesisContradictions(openEntries, recentItems, SAMBANOVA_KEY, GROQ_KEY) {
+async function checkThesisContradictions(openEntries, recentItems, SAMBANOVA_KEY) {
   const thesesBlock = openEntries.map((e, i) => `${i+1}. [ID:${e.id}] ${e.pair} ${(e.direction||'').toUpperCase()}: ${e.thesis_text}`).join('\n');
   const headlineTitles = recentItems.slice(0, 30).map(h => h.title);
   // Plan G3 (sign effect): tag severitas dihitung di kode dari actual vs forecast,
@@ -778,14 +640,6 @@ async function checkThesisContradictions(openEntries, recentItems, SAMBANOVA_KEY
       console.warn('Call 4 SambaNova failed:', e.status || e.message);
       await cb.onFailure(CB_SAMBA_MAIN, AI_CB_THRESHOLD);
     }
-  }
-  // Fallback: Groq llama-3.3-70b
-  if (!raw4 && GROQ_KEY) {
-    try {
-      console.log('Call 4: falling back to Groq');
-      raw4 = await aiCall(GROQ_URL, GROQ_KEY, GROQ_MODEL, call4Messages, 700, 0.1, 8000);
-      console.log('Call 4: Groq fallback OK');
-    } catch(e) { console.warn('Call 4 Groq fallback failed:', e.status || e.message); }
   }
   if (!raw4) return null;
   const parsed4 = JSON.parse(raw4.replace(/```json|```/g, '').trim());
@@ -857,7 +711,7 @@ async function loadPushSubsByDevice() {
 // (article/bias/thesis) just to finish a side-effect. Devices within the sweep
 // still run concurrently (Promise.allSettled, not a sequential loop) so a
 // slow/failing provider for one device doesn't multiply into the others.
-async function runCronThesisSweep(recentItems, SAMBANOVA_KEY, GROQ_KEY) {
+async function runCronThesisSweep(recentItems, SAMBANOVA_KEY) {
   const CRON_THESIS_TTL = 8 * 60 * 60; // 8h — spans the ~5-7h gap between the 3 daily runs
   const deviceIds = (await redisCmd('SMEMBERS', 'journal_devices') || []).slice(0, 10);
   if (deviceIds.length === 0) return;
@@ -872,7 +726,7 @@ async function runCronThesisSweep(recentItems, SAMBANOVA_KEY, GROQ_KEY) {
         if (prevRaw) prevAlerts = JSON.parse(prevRaw);
       } catch(e) {}
       const prevKeys = new Set((Array.isArray(prevAlerts) ? prevAlerts : []).map(a => `${a.entry_id}|${a.headline}`));
-      const validated = await checkThesisContradictions(openEntries, recentItems, SAMBANOVA_KEY, GROQ_KEY);
+      const validated = await checkThesisContradictions(openEntries, recentItems, SAMBANOVA_KEY);
       if (validated === null) return;
       if (validated.length > 0) {
         await redisCmd('SET', `thesis_alerts:${devId}`, JSON.stringify(validated), 'EX', CRON_THESIS_TTL);
@@ -997,45 +851,17 @@ module.exports = async function handler(req, res) {
     }
   }
 
-  const OPENROUTER_KEY = process.env.OPENROUTER_API_KEY;
   const SAMBANOVA_KEY  = process.env.SAMBANOVA_API_KEY;
   const SAMBANOVA_KEY_CALL1 = process.env.SAMBANOVA_API_KEY_CALL1;
-  const GROQ_KEY       = process.env.GROQ_API_KEY;
-  const OLLAMA_KEY     = process.env.OLLAMA_API_KEY;
-  const CEREBRAS_KEY   = process.env.CEREBRAS_API_KEY;
   const GEMINI_KEY     = process.env.GEMINI_API_KEY;
   const MISTRAL_KEY    = process.env.MISTRAL_API_KEY;
   const NVIDIA_KEY     = process.env.NVIDIA_API_KEY;
   const DEEPSEEK_KEY   = process.env.DEEPSEEK_API_KEY;
 
-  // Diagnostik sementara (session 145, pola sama seperti ?test_ollama=1 di admin.js
-  // session 144): paksa Call 1/2/3 lewat Nemotron 3 Ultra saja, skip tier lain, supaya
-  // bisa diverifikasi live sebelum jadi primary permanen (precedent: GLM-5.2/Kimi K2.6
-  // "katanya gratis" ternyata 403 subscription-required saat dites nyata).
-  const testNemotronOnly = req.query.test_nemotron === '1';
-
-  // Diagnostik terpisah (session 145 lanjutan 5) untuk kandidat BERBEDA: Nemotron 3
-  // SUPER (120B/12B active, lebih ringan dari Ultra) — cuma dites di Call 1 (prosa),
-  // TIDAK di Call 2/3 (JSON, lihat Structured Output Error Rate 17.76% yang jadi alasan
-  // pembatasan ini). Belum pernah dites live — disiapkan dulu, dijalankan setelah
-  // konfirmasi user.
-  const testNemotronSuperOnly = req.query.test_nemotron_super === '1';
-
-  // Diagnostik Hermes 3 405B (lihat HERMES_MODEL) — sama pola isolasi seperti dua di
-  // atas: skip semua tier lain di Call 1, dan (beda dari test_nemotron*) HASILNYA JUGA
-  // tidak pernah ditulis ke digest_history/latest_article sama sekali — lihat
-  // isIsolatedTest di bawah. Uptime rendah model ini membuat isolasi ekstra ini lebih
-  // penting dibanding Nemotron yang sudah proven cukup sehat untuk diuji "semi-live".
-  const testHermesOnly = req.query.test_hermes === '1';
-
-  // Diagnostik Z.ai GLM 4.7 via Cerebras (lihat CEREBRAS_MODEL_GLM) — pola isolasi sama
-  // seperti Hermes: skip semua tier lain di Call 1, hasil TIDAK ditulis ke
-  // digest_history/latest_article (lihat isIsolatedTest di bawah).
-  const testGlmOnly = req.query.test_glm === '1';
-
   // Diagnostik provider baru (Plan N, session 182) — Gemini/Mistral/NVIDIA NIM, pola
-  // isolasi sama seperti Hermes/GLM di atas (lihat konstanta GEMINI_URL dkk untuk konteks
-  // lengkap termasuk kenapa NVIDIA tidak akan pernah dipromosikan ke chain produksi).
+  // isolasi: skip semua tier lain di Call 1, hasil TIDAK ditulis ke digest_history/
+  // latest_article (lihat isIsolatedTest di bawah). Konteks lengkap termasuk kenapa
+  // NVIDIA tidak akan pernah dipromosikan ke chain produksi ada di konstanta GEMINI_URL dkk.
   const testGeminiOnly  = req.query.test_gemini === '1';
   const testMistralOnly = req.query.test_mistral === '1';
   const testNvidiaOnly  = req.query.test_nvidia === '1';
@@ -1045,8 +871,7 @@ module.exports = async function handler(req, res) {
   // semua ke DeepSeek, hasil TIDAK ditulis ke latest_article.
   const testDeepseekOnly = req.query.test_deepseek === '1';
 
-  const isIsolatedTest = testHermesOnly || testNemotronOnly || testNemotronSuperOnly || testGlmOnly ||
-    testGeminiOnly || testMistralOnly || testNvidiaOnly || testDeepseekOnly;
+  const isIsolatedTest = testGeminiOnly || testMistralOnly || testNvidiaOnly || testDeepseekOnly;
 
   const host  = req.headers.host || 'financial-feed-app.vercel.app';
   const proto = host.includes('localhost') ? 'http' : 'https';
@@ -1609,31 +1434,9 @@ module.exports = async function handler(req, res) {
       ].join('\n');
       const call2Messages = [{ role: 'user', content: biasPrompt }];
       let biasRaw = null;
-      // Nemotron 3 Ultra — DIDEMOTE dari primary (session 145 lanjutan 4, lihat catatan
-      // lengkap di Call 1). Hanya dicoba saat ?test_nemotron=1, tidak di jalur produksi.
-      if (testNemotronOnly) {
-        if (OLLAMA_KEY && await cb.canCall(CB_OLLAMA_NEMOTRON)) {
-          try {
-            console.log('Call 2: trying Nemotron 3 Ultra (Ollama Cloud)');
-            biasRaw = await callOllama(OLLAMA_KEY, OLLAMA_NEMOTRON_MODEL, withNoThink(call2Messages), 700, 0.1, 15000, 'ollama');
-            console.log('Call 2: Ollama Nemotron OK');
-            await cb.onSuccess(CB_OLLAMA_NEMOTRON);
-          } catch(e) { console.warn('Call 2 Ollama Nemotron failed:', e.status || e.message); await cb.onFailure(CB_OLLAMA_NEMOTRON, AI_CB_THRESHOLD); }
-        }
-        if (!biasRaw && OPENROUTER_KEY && await cb.canCall(CB_OPENROUTER_NEMOTRON)) {
-          try {
-            console.log('Call 2: trying Nemotron 3 Ultra (OpenRouter)');
-            biasRaw = await aiCall(OPENROUTER_URL, OPENROUTER_KEY, NEMOTRON_MODEL, withNoThink(call2Messages), 700, 0.1, 10000, OPENROUTER_HEADERS, {}, 'openrouter');
-            console.log('Call 2: OpenRouter Nemotron OK');
-            await cb.onSuccess(CB_OPENROUTER_NEMOTRON);
-          } catch(e) { console.warn('Call 2 OpenRouter Nemotron failed:', e.status || e.message); await cb.onFailure(CB_OPENROUTER_NEMOTRON, AI_CB_THRESHOLD); }
-        }
-      }
       // Fallback (Plan O-3, 2026-07-18): SambaNova DeepSeek-V3.2 (akun 1) — DIGESER dari
       // primary setelah DeepSeek v4-flash API resmi promosi di atas. Riwayat: sempat
-      // primary lagi session 165 (2026-07-13) setelah API key SambaNova diperbarui;
-      // Z.ai GLM 4.7 (Cerebras) sempat jadi primary session 164 tapi digeser — reuse
-      // CB_CEREBRAS_GLM tetap ada untuk jalur diagnostik ?test_glm=1 di Call 1.
+      // primary lagi session 165 (2026-07-13) setelah API key SambaNova diperbarui.
       if (!biasRaw && testGeminiOnly && GEMINI_KEY && await cb.canCall(CB_GEMINI)) {
         try {
           console.log('Call 2: trying Gemini (flash-latest) — diagnostik test_gemini=1');
@@ -1665,7 +1468,7 @@ module.exports = async function handler(req, res) {
       // diagnostik ke tier produksi. SambaNova/Gemini/Groq di bawah TURUN jadi fallback
       // berurutan, TIDAK dihapus. HTTP 402 (saldo habis) ditangkap sebagai error biasa
       // oleh aiCall() → catch di bawah → fallback lanjut (Plan O-4), bukan hang.
-      if (!biasRaw && !testNemotronOnly && !testGeminiOnly && !testMistralOnly && !testDeepseekOnly && DEEPSEEK_KEY && await cb.canCall(CB_DEEPSEEK)) {
+      if (!biasRaw && !testGeminiOnly && !testMistralOnly && !testDeepseekOnly && DEEPSEEK_KEY && await cb.canCall(CB_DEEPSEEK)) {
         try {
           console.log('Call 2: trying DeepSeek v4-flash (primary)');
           biasRaw = await aiCall(DEEPSEEK_URL, DEEPSEEK_KEY, DEEPSEEK_MODEL, call2Messages, 700, 0.1, 15000, {}, { response_format: { type: 'json_object' }, thinking: { type: 'disabled' } }, 'deepseek');
@@ -1676,35 +1479,27 @@ module.exports = async function handler(req, res) {
           console.warn('Call 2 DeepSeek v4-flash (primary) failed:', errTag);
           await cb.onFailure(CB_DEEPSEEK, AI_CB_THRESHOLD);
         }
-      } else if (!biasRaw && DEEPSEEK_KEY && !testNemotronOnly && !testGeminiOnly && !testMistralOnly && !testDeepseekOnly) { console.log('Call 2: DeepSeek circuit OPEN — skipping to SambaNova'); }
-      if (!biasRaw && !testNemotronOnly && !testGeminiOnly && !testMistralOnly && !testDeepseekOnly && SAMBANOVA_KEY && await cb.canCall(CB_SAMBA_MAIN)) {
+      } else if (!biasRaw && DEEPSEEK_KEY && !testGeminiOnly && !testMistralOnly && !testDeepseekOnly) { console.log('Call 2: DeepSeek circuit OPEN — skipping to SambaNova'); }
+      if (!biasRaw && !testGeminiOnly && !testMistralOnly && !testDeepseekOnly && SAMBANOVA_KEY && await cb.canCall(CB_SAMBA_MAIN)) {
         try {
           console.log('Call 2: trying SambaNova');
           biasRaw = await aiCall(SAMBANOVA_URL, SAMBANOVA_KEY, SAMBANOVA_MODEL, call2Messages, 700, 0.1, 8000, {}, {}, 'sambanova_main');
           console.log('Call 2: SambaNova OK');
           await cb.onSuccess(CB_SAMBA_MAIN);
         } catch(e) { console.warn('Call 2 SambaNova failed:', e.status || e.message); await cb.onFailure(CB_SAMBA_MAIN, AI_CB_THRESHOLD); }
-      } else if (!biasRaw && SAMBANOVA_KEY && !testNemotronOnly && !testGeminiOnly && !testMistralOnly && !testDeepseekOnly) { console.log('Call 2: SambaNova circuit OPEN — skipping to Gemini'); }
+      } else if (!biasRaw && SAMBANOVA_KEY && !testGeminiOnly && !testMistralOnly && !testDeepseekOnly) { console.log('Call 2: SambaNova circuit OPEN — skipping to Gemini'); }
 
       // Fallback 1: Gemini (Google AI Studio) — dipromosikan dari riset Plan N (2026-07-18).
       // key dari GEMINI_API_KEY. max_tokens diset 3000 untuk reasoning headroom Gemini 3.x.
-      if (!biasRaw && !testNemotronOnly && !testGeminiOnly && !testMistralOnly && !testDeepseekOnly && GEMINI_KEY && await cb.canCall(CB_GEMINI)) {
+      if (!biasRaw && !testGeminiOnly && !testMistralOnly && !testDeepseekOnly && GEMINI_KEY && await cb.canCall(CB_GEMINI)) {
         try {
           console.log('Call 2: trying Gemini (flash-latest)');
           biasRaw = await aiCall(GEMINI_URL, GEMINI_KEY, GEMINI_MODEL, call2Messages, 3000, 0.1, 15000, {}, { response_format: { type: 'json_object' }, reasoning_effort: 'low' }, 'gemini');
           console.log('Call 2: Gemini OK');
           await cb.onSuccess(CB_GEMINI);
         } catch(e) { console.warn('Call 2 Gemini failed:', e.status || e.message); await cb.onFailure(CB_GEMINI, AI_CB_THRESHOLD); }
-      } else if (!biasRaw && GEMINI_KEY && !testNemotronOnly && !testGeminiOnly && !testMistralOnly && !testDeepseekOnly) { console.log('Call 2: Gemini circuit OPEN — skipping to Groq'); }
+      } else if (!biasRaw && GEMINI_KEY && !testGeminiOnly && !testMistralOnly && !testDeepseekOnly) { console.log('Call 2: Gemini circuit OPEN'); }
 
-      // Fallback 2: Groq
-      if (!biasRaw && !testNemotronOnly && !testGeminiOnly && !testMistralOnly && !testDeepseekOnly && GROQ_KEY) {
-        try {
-          console.log('Call 2: falling back to Groq');
-          biasRaw = await aiCall(GROQ_URL, GROQ_KEY, GROQ_MODEL, call2Messages, 700, 0.1, 12000);
-          console.log('Call 2: Groq fallback OK');
-        } catch(e) { console.warn('Call 2 Groq fallback failed:', e.status || e.message); }
-      }
       if (biasRaw) {
         try {
           const clean = biasRaw.replace(/```json|```/g, '').trim();
@@ -1781,12 +1576,12 @@ module.exports = async function handler(req, res) {
     return _biasUpdated;
   })() : Promise.resolve([]);
 
-  const _call4Promise = ((SAMBANOVA_KEY || GROQ_KEY) && deviceId && recentItems.length > 0) ? (async () => {
+  const _call4Promise = (SAMBANOVA_KEY && deviceId && recentItems.length > 0) ? (async () => {
     try {
       const openEntries = await fetchOpenThesisEntries(deviceId);
       if (openEntries.length === 0) { console.log('Call 4: no open entries, skipping'); return null; }
       console.log('Call 4: checking', openEntries.length, 'open entries against headlines');
-      const validated = await checkThesisContradictions(openEntries, recentItems, SAMBANOVA_KEY, GROQ_KEY);
+      const validated = await checkThesisContradictions(openEntries, recentItems, SAMBANOVA_KEY);
       if (validated === null) return null;
       if (validated.length > 0) {
         redisCmd('SET', `thesis_alerts:${deviceId}`, JSON.stringify(validated), 'EX', 1800).catch(() => {});
@@ -1797,8 +1592,7 @@ module.exports = async function handler(req, res) {
     } catch(e) { console.warn('Call 4 Thesis Monitor failed:', e.message); return null; }
   })() : Promise.resolve(null);
 
-  // ── 4. Call 1: Market Briefing — SambaNova primary → OpenRouter fallback 1 →
-  // Groq fallback 2 (Nemotron non-aktif di produksi, diagnostik saja — lihat lanjutan 7) ──
+  // ── 4. Call 1: Market Briefing — DeepSeek primary → SambaNova fallback → Gemini fallback ──
   let article = null, method = 'fallback';
   const providerLog = [];
   if (recentItems.length > 0) {
@@ -1940,73 +1734,6 @@ ${xauHistoryBlock}`;
       { role: 'system', content: digestSystemMsg },
       { role: 'user', content: digestUserMsg },
     ];
-
-    // Hermes 3 405B — diagnostik terisolasi via ?test_hermes=1 (lihat HERMES_MODEL).
-    // Dicek PALING ATAS (sebelum Nemotron Super/Ultra) supaya skip semua tier lain,
-    // sama seperti dua diagnostik test_nemotron* di bawah.
-    if (testHermesOnly) {
-      const hermesTimeout1 = 30000;
-      if (OPENROUTER_KEY && await cb.canCall(CB_OPENROUTER_HERMES)) {
-        const t0h = Date.now();
-        try {
-          console.log('Call 1: trying Hermes 3 405B (OpenRouter) — diagnostik test_hermes=1');
-          const raw = await aiCall(OPENROUTER_URL, OPENROUTER_KEY, HERMES_MODEL, call1Messages, 1300, 0.25, hermesTimeout1, OPENROUTER_HEADERS, {}, 'openrouter');
-          const elapsed = Date.now() - t0h;
-          if (raw.trim()) {
-            article = raw.trim(); method = 'hermes-3-405b';
-            providerLog.push(`hermes:ok(${elapsed}ms,${article.length}c)`);
-          } else {
-            providerLog.push(`hermes:empty(${elapsed}ms)`);
-          }
-          console.log('Call 1: Hermes 3 405B OK, length', article?.length);
-          await cb.onSuccess(CB_OPENROUTER_HERMES);
-        } catch(e) {
-          const elapsed = Date.now() - t0h;
-          const errMsg = e.status ? `HTTP${e.status}` : (e.message || 'err').slice(0, 40);
-          providerLog.push(`hermes:${errMsg}(${elapsed}ms)`);
-          console.warn('Call 1 Hermes 3 405B failed:', e.status || e.message);
-          await cb.onFailure(CB_OPENROUTER_HERMES, AI_CB_THRESHOLD);
-        }
-      } else if (OPENROUTER_KEY) {
-        providerLog.push('hermes:circuit_open');
-      } else {
-        providerLog.push('hermes:no_key');
-      }
-    }
-
-    // Z.ai GLM 4.7 (Cerebras) — diagnostik terisolasi via ?test_glm=1 (lihat
-    // CEREBRAS_MODEL_GLM). Timeout dipasang moderat (20s) meski Cerebras mengklaim
-    // ~1000 tok/s untuk model ini — tier "Preview" belum ada data latency nyata sama
-    // sekali, jadi tidak diasumsikan langsung secepat klaim marketing.
-    if (testGlmOnly) {
-      const glmTimeout1 = 20000;
-      if (CEREBRAS_KEY && await cb.canCall(CB_CEREBRAS_GLM)) {
-        const t0g = Date.now();
-        try {
-          console.log('Call 1: trying Z.ai GLM 4.7 (Cerebras) — diagnostik test_glm=1');
-          const raw = await aiCall(CEREBRAS_URL, CEREBRAS_KEY, CEREBRAS_MODEL_GLM, call1Messages, 1300, 0.25, glmTimeout1, {}, {}, 'cerebras');
-          const elapsed = Date.now() - t0g;
-          if (raw.trim()) {
-            article = raw.trim(); method = 'glm-4.7';
-            providerLog.push(`glm:ok(${elapsed}ms,${article.length}c)`);
-          } else {
-            providerLog.push(`glm:empty(${elapsed}ms)`);
-          }
-          console.log('Call 1: GLM 4.7 OK, length', article?.length);
-          await cb.onSuccess(CB_CEREBRAS_GLM);
-        } catch(e) {
-          const elapsed = Date.now() - t0g;
-          const errMsg = e.status ? `HTTP${e.status}` : (e.message || 'err').slice(0, 40);
-          providerLog.push(`glm:${errMsg}(${elapsed}ms)`);
-          console.warn('Call 1 GLM 4.7 failed:', e.status, e.message);
-          await cb.onFailure(CB_CEREBRAS_GLM, AI_CB_THRESHOLD);
-        }
-      } else if (CEREBRAS_KEY) {
-        providerLog.push('glm:circuit_open');
-      } else {
-        providerLog.push('glm:no_key');
-      }
-    }
 
     // Gemini 2.5 Flash (Google AI Studio) — diagnostik terisolasi Plan N, belum pernah
     // dites live. Endpoint OpenAI-compat resmi, lihat GEMINI_URL/GEMINI_MODEL untuk konteks.
@@ -2204,175 +1931,10 @@ ${xauHistoryBlock}`;
       providerLog.push('deepseek:no_key');
     }
 
-    // Nemotron 3 Ultra — PRIMARY Call 1 (session 162 lanjutan 3, naik dari idle setelah
-    // 7/7 percobaan live sukses pakai parameter native think:false, ganti trik prompt
-    // /no_think lama yang selalu gagal 4/4 di session 145. Timeout awalnya 20s tapi
-    // session 162 lanjutan 4 (5 sampel completion time nyata di production: 7s, 17.5s,
-    // 23.9s, 29.5s, 41.2s) membuktikan 20s terlalu ketat — mayoritas percobaan nyata
-    // butuh >20s, bikin Nemotron nyaris tidak pernah kepakai (circuit breaker keburu OPEN
-    // dari timeout beruntun) padahal kualitas outputnya nyata lebih patuh prompt (0
-    // pelanggaran frasa terlarang di 3 sampel vs SambaNova yang kedapatan leak "dapat
-    // memberikan"/"di tengah" di production hari yang sama) — dinaikkan ke 35s atas
-    // keputusan eksplisit user (worth it demi kualitas, terima risiko Call 3 kadang skip
-    // di elapsedBeforeCall3 > CALL3_BUDGET_MS kalau kebetulan Nemotron lambat DAN masih
-    // jatuh ke fallback). Cakupan cuma Call 1 (prosa bebas) — SENGAJA TIDAK dipakai
-    // di Call 2/3 (JSON ketat) karena keluarga model ini (varian Super) dilaporkan
-    // OpenRouter 17,76% structured-output error rate, belum divalidasi untuk Ultra.
-    // Nemotron 3 SUPER (session 145 lanjutan 5) — kandidat berbeda, belum pernah dites
-    // live. Dites TERISOLASI (skip semua tier lain termasuk Ultra) via ?test_nemotron_super=1.
-    if (testNemotronSuperOnly) {
-      const superTimeout1 = 30000; // dinaikkan dari 20s (Ronde 3) — kasih ruang wall-clock penuh, stream:false berarti nol konten balik sampai model benar-benar selesai
-      if (OPENROUTER_KEY && await cb.canCall(CB_OPENROUTER_NEMOTRON_SUPER)) {
-        const t0s = Date.now();
-        try {
-          console.log('Call 1: trying Nemotron 3 Super (OpenRouter)');
-          // Ronde 1 (/no_think directive teks): 0/3 (1 timeout, 2 reasoning trace mentah).
-          // Ronde 2 (reasoning:{effort:'none'}, param OpenRouter sendiri): 0/2, timeout PENUH
-          // di batas 20s kedua kali — tidak bisa dibedakan dari resource contention murni
-          // KARENA stream:false (kalau model masih mikir penuh, kita nol lihat sampai selesai).
-          // Ronde 3 (sekarang): pakai chat_template_kwargs:{enable_thinking:false} — parameter
-          // NATIVE model/vLLM sendiri (dikonfirmasi dari dokumentasi resmi NVIDIA/build.nvidia.com),
-          // BUKAN lapisan abstraksi reasoning milik OpenRouter yang mungkin belum benar
-          // diterjemahkan untuk model hybrid Mamba-Transformer yang masih sangat baru ini.
-          // Sengaja TIDAK dicampur dengan /no_think atau reasoning.effort lagi — satu variabel
-          // per eksperimen. max_tokens & timeout juga dilonggarkan supaya bukan constraint kita
-          // sendiri yang jadi penyebab kalau gagal lagi.
-          const raw = await aiCall(OPENROUTER_URL, OPENROUTER_KEY, NEMOTRON_SUPER_MODEL, call1Messages, 4096, 0.25, superTimeout1, OPENROUTER_HEADERS, { chat_template_kwargs: { enable_thinking: false } }, 'openrouter');
-          const elapsed = Date.now() - t0s;
-          if (raw.trim()) {
-            article = raw.trim(); method = 'nemotron-3-super';
-            providerLog.push(`nemotron_super:ok(${elapsed}ms,${article.length}c)`);
-          } else {
-            providerLog.push(`nemotron_super:empty(${elapsed}ms)`);
-          }
-          console.log('Call 1: Nemotron Super OK, length', article?.length);
-          await cb.onSuccess(CB_OPENROUTER_NEMOTRON_SUPER);
-        } catch(e) {
-          const elapsed = Date.now() - t0s;
-          const errMsg = e.status ? `HTTP${e.status}` : (e.message || 'err').slice(0, 40);
-          providerLog.push(`nemotron_super:${errMsg}(${elapsed}ms)`);
-          console.warn('Call 1 Nemotron Super failed:', e.status || e.message);
-          await cb.onFailure(CB_OPENROUTER_NEMOTRON_SUPER, AI_CB_THRESHOLD);
-        }
-      } else if (OPENROUTER_KEY) {
-        providerLog.push('nemotron_super:circuit_open');
-      } else {
-        providerLog.push('nemotron_super:no_key');
-      }
-    } else if (testNemotronOnly) {
-      // Session 162 lanjutan 6: eksperimen think:true (reasoning dinyalakan) + timeout 60s +
-      // num_predict 3500 sudah dicoba — hasilnya LEBIH BURUK (1 sukses 17.6s, 1 gagal TOTAL
-      // 44.9s dengan Empty response karena seluruh budget token habis di reasoning tanpa pernah
-      // sampai jawaban). Dikembalikan ke think:false/45s/1300 (baseline sebelum eksperimen).
-      const ollamaNemotronTimeout1 = 45000;
-      if (OLLAMA_KEY && await cb.canCall(CB_OLLAMA_NEMOTRON)) {
-        const t0s = Date.now();
-        try {
-          console.log('Call 1: trying Nemotron 3 Ultra (Ollama Cloud, think:false native), timeout', ollamaNemotronTimeout1);
-          const raw = await callOllama(OLLAMA_KEY, OLLAMA_NEMOTRON_MODEL, call1Messages, 1300, 0.25, ollamaNemotronTimeout1, 'ollama', false);
-          const elapsed = Date.now() - t0s;
-          article = raw.trim(); method = 'nemotron-3-ultra';
-          providerLog.push(`ollama_nemotron:ok(${elapsed}ms,${article.length}c)`);
-          console.log('Call 1: Ollama Nemotron OK, length', article.length);
-          await cb.onSuccess(CB_OLLAMA_NEMOTRON);
-        } catch(e) {
-          const elapsed = Date.now() - t0s;
-          const errMsg = e.status ? `HTTP${e.status}` : (e.message || 'err').slice(0, 40);
-          providerLog.push(`ollama_nemotron:${errMsg}(${elapsed}ms)`);
-          console.warn('Call 1 Ollama Nemotron failed:', e.status || e.message);
-          await cb.onFailure(CB_OLLAMA_NEMOTRON, AI_CB_THRESHOLD);
-        }
-      } else if (OLLAMA_KEY) {
-        providerLog.push('ollama_nemotron:circuit_open');
-      } else {
-        providerLog.push('ollama_nemotron:no_key');
-      }
-
-      const openrouterNemotronTimeout1 = 12000;
-      if (!article && OPENROUTER_KEY && await cb.canCall(CB_OPENROUTER_NEMOTRON)) {
-        const t0s = Date.now();
-        try {
-          console.log('Call 1: trying Nemotron 3 Ultra (OpenRouter)');
-          const raw = await aiCall(OPENROUTER_URL, OPENROUTER_KEY, NEMOTRON_MODEL, withNoThink(call1Messages), 1300, 0.25, openrouterNemotronTimeout1, OPENROUTER_HEADERS, {}, 'openrouter');
-          const elapsed = Date.now() - t0s;
-          if (raw.trim()) {
-            article = raw.trim(); method = 'nemotron-3-ultra';
-            providerLog.push(`openrouter_nemotron:ok(${elapsed}ms,${article.length}c)`);
-          } else {
-            providerLog.push(`openrouter_nemotron:empty(${elapsed}ms)`);
-          }
-          console.log('Call 1: OpenRouter Nemotron OK, length', article?.length);
-          await cb.onSuccess(CB_OPENROUTER_NEMOTRON);
-        } catch(e) {
-          const elapsed = Date.now() - t0s;
-          const errMsg = e.status ? `HTTP${e.status}` : (e.message || 'err').slice(0, 40);
-          providerLog.push(`openrouter_nemotron:${errMsg}(${elapsed}ms)`);
-          console.warn('Call 1 OpenRouter Nemotron failed:', e.status || e.message);
-          await cb.onFailure(CB_OPENROUTER_NEMOTRON, AI_CB_THRESHOLD);
-        }
-      } else if (!article && OPENROUTER_KEY) {
-        providerLog.push('openrouter_nemotron:circuit_open');
-      } else if (!article) {
-        providerLog.push('openrouter_nemotron:no_key');
-      }
-    } else if (isCronCall && !isIsolatedTest) {
-      // Session 163 (2026-07-13): Nemotron Ultra (Ollama) dicoba lagi, KHUSUS untuk 3
-      // jadwal cron session-open (GitHub Actions market-digest.yml — Asia/Eropa/NY),
-      // bukan tiap live request. Root cause demote sebelumnya (session 162 lanjutan 7)
-      // adalah latency 100% tidak terprediksi (5 sampel 7s/17.5s/23.9s/29.5s/41.2s) yang
-      // fatal untuk live user menunggu di layar — tapi TIDAK masalah untuk cron: hasil
-      // cron ditulis ke latest_article/cache dan dibaca semua user lewat mode=cached,
-      // jadi tidak ada satupun live request yang ikut menunggu Nemotron secara sinkron.
-      // Budget waktu cron (GH Actions --max-time 55s, Vercel maxDuration 60s) masih
-      // cukup untuk timeout 45s ini; CALL3_BUDGET_MS (50s, lihat di bawah) tetap jadi
-      // jaring pengaman kalau kebetulan lambat — thesis cukup skip sekali, dicoba lagi
-      // cron berikutnya 5-7 jam kemudian, bukan tiap request seperti live traffic.
-      // Live/on-demand request (!isCronCall) TETAP pakai gpt-oss-120b primary di bawah
-      // — kualitasnya lebih rendah tapi latency-nya predictable, cocok untuk user yang
-      // menunggu sinkron.
-      // !article (Plan O-3): DeepSeek primary di atas sudah SET article kalau sukses —
-      // jangan panggil Ollama lagi kalau sudah ada hasil. cronOllamaTimeout1 ADAPTIF
-      // (Plan O-2) terhadap sisa CALL1_HARD_BUDGET_MS: kalau DeepSeek gagal CEPAT masih
-      // dapat ~timeout penuh 45s; kalau DeepSeek sempat menghabiskan banyak waktu sebelum
-      // gagal, jendela Nemotron menyempit — mencegah worst-case 30s (DeepSeek) + 45s
-      // (Nemotron) = 75s yang bisa membunuh SELURUH function sebelum sempat balas
-      // (Vercel maxDuration 60s). Floor 15s: di bawah itu tidak worth dicoba, skip total.
-      const cronOllamaTimeout1 = Math.max(0, Math.min(45000, CALL1_HARD_BUDGET_MS - (Date.now() - handlerStart) - 3000));
-      if (!article && cronOllamaTimeout1 >= 15000 && OLLAMA_KEY && await cb.canCall(CB_OLLAMA_NEMOTRON)) {
-        const t0c = Date.now();
-        try {
-          console.log('Call 1: trying Nemotron 3 Ultra (Ollama Cloud) — cron session-open run, timeout', cronOllamaTimeout1);
-          const raw = await callOllama(OLLAMA_KEY, OLLAMA_NEMOTRON_MODEL, call1Messages, 1300, 0.25, cronOllamaTimeout1, 'ollama', false);
-          const elapsed = Date.now() - t0c;
-          article = raw.trim(); method = 'nemotron-3-ultra';
-          providerLog.push(`ollama_nemotron:ok(${elapsed}ms,${article.length}c)`);
-          console.log('Call 1: Ollama Nemotron OK (cron), length', article.length);
-          await cb.onSuccess(CB_OLLAMA_NEMOTRON);
-        } catch(e) {
-          const elapsed = Date.now() - t0c;
-          const errMsg = e.status ? `HTTP${e.status}` : (e.message || 'err').slice(0, 40);
-          providerLog.push(`ollama_nemotron:${errMsg}(${elapsed}ms)`);
-          console.warn('Call 1 Ollama Nemotron failed (cron):', e.status || e.message);
-          await cb.onFailure(CB_OLLAMA_NEMOTRON, AI_CB_THRESHOLD);
-        }
-      } else if (OLLAMA_KEY) {
-        providerLog.push('ollama_nemotron:circuit_open');
-      } else {
-        providerLog.push('ollama_nemotron:no_key');
-      }
-      providerLog.push('nemotron_super:skipped_not_primary', 'openrouter_nemotron:skipped_not_primary');
-    } else {
-      // Nemotron didemote dari primary LIVE (session 162 lanjutan 7) — root cause bukan
-      // kualitas (0 pelanggaran frasa terlarang di semua sampel live, malah lebih patuh
-      // prompt daripada SambaNova) tapi latency 100% tidak terprediksi: 5 sampel
-      // completion time nyata 7s/17.5s/23.9s/29.5s/41.2s, pola naik bukan stabil
-      // (resource contention tier gratis model 550B). Timeout berapa pun (20s → 35s
-      // sudah dicoba, masih miss kasus lambat) tidak menyelesaikan akar masalah karena
-      // variannya sendiri yang liar, bukan sekadar kurang longgar — fatal untuk live
-      // request tapi TIDAK untuk cron (lihat cabang isCronCall di atas, session 163).
-      // Jalur diagnostik ?test_nemotron=1/?test_nemotron_super=1 tetap aktif di luar cabang ini.
-      providerLog.push('nemotron_super:skipped_not_primary', 'openrouter_nemotron:skipped_not_primary', 'ollama_nemotron:skipped_not_primary');
-    }
+    // Nemotron 3 Ultra/Super (via Ollama Cloud/OpenRouter) — DIHAPUS 2026-07-25, kontrak
+    // kedua vendor diputus. Riwayat lengkap eksperimen ada di git history kalau perlu
+    // rujukan (pernah sempat jadi primary Call 1 session 162-163, didemote ke cron-only
+    // session 163 karena latency liar 7-41s, akhirnya dihapus total bersama vendor-nya).
 
     // (CALL1_HARD_BUDGET_MS/call1BudgetLeft dipindah ke atas DeepSeek primary — Plan
     // O-3 — supaya sudah bisa menggerbang tier sebelum sini juga. Guard di bawah ini
@@ -2413,47 +1975,12 @@ ${xauHistoryBlock}`;
       }
     } else if (!article && SAMBANOVA_KEY_CALL1) {
       providerLog.push('sambanova:circuit_open');
-      console.log('Call 1: SambaNova circuit OPEN — skipping to Cerebras gpt-oss-120b');
+      console.log('Call 1: SambaNova circuit OPEN — skipping to Gemini');
     } else if (!article) {
       providerLog.push('sambanova:no_key');
     }
 
-    // Fallback 1: Cerebras gpt-oss-120b — digeser dari primary (session 165, lihat
-    // catatan SambaNova di atas: key baru bikin SambaNova reliable lagi sebagai
-    // primary). Pool token/hari terpisah dari SambaNova/Groq (counter 'cerebras').
-    if (isIsolatedTest) {
-      if (!article) providerLog.push('cerebras_gptoss:skipped_test');
-    } else if (!article && !call1BudgetLeft()) {
-      providerLog.push('cerebras_gptoss:skipped_budget');
-    } else if (!article && CEREBRAS_KEY && await cb.canCall(CB_CEREBRAS_GPTOSS)) {
-      const t2s = Date.now();
-      try {
-        console.log('Call 1: fallback 1 to Cerebras gpt-oss-120b');
-        const raw = await aiCall(CEREBRAS_URL, CEREBRAS_KEY, CEREBRAS_MODEL_GPTOSS, call1Messages, 1300, 0.25, 15000, {}, { reasoning_effort: 'low' }, 'cerebras');
-        const elapsed = Date.now() - t2s;
-        if (raw.trim()) {
-          article = raw.trim(); method = 'gpt-oss-120b';
-          providerLog.push(`cerebras_gptoss:ok(${elapsed}ms,${article.length}c)`);
-        } else {
-          providerLog.push(`cerebras_gptoss:empty(${elapsed}ms)`);
-        }
-        console.log('Call 1: Cerebras gpt-oss-120b OK, length', article?.length);
-        await cb.onSuccess(CB_CEREBRAS_GPTOSS);
-      } catch(e) {
-        const elapsed = Date.now() - t2s;
-        const errMsg = e.status ? `HTTP${e.status}` : (e.message || 'err').slice(0, 40);
-        providerLog.push(`cerebras_gptoss:${errMsg}(${elapsed}ms)`);
-        console.warn('Call 1 Cerebras gpt-oss-120b fallback failed:', e.status || e.message);
-        await cb.onFailure(CB_CEREBRAS_GPTOSS, AI_CB_THRESHOLD);
-      }
-    } else if (!article && CEREBRAS_KEY) {
-      providerLog.push('cerebras_gptoss:circuit_open');
-      console.log('Call 1: Cerebras circuit OPEN — skipping to Gemini');
-    } else if (!article) {
-      providerLog.push('cerebras_gptoss:no_key');
-    }
-
-    // Fallback 2: Gemini (Google AI Studio) — dipromosikan dari riset Plan N (2026-07-18).
+    // Fallback: Gemini (Google AI Studio) — dipromosikan dari riset Plan N (2026-07-18).
     // key dari GEMINI_API_KEY. max_tokens diset 3000 untuk reasoning headroom Gemini 3.x.
     if (isIsolatedTest) {
       if (!article) providerLog.push('gemini:skipped_test');
@@ -2482,40 +2009,9 @@ ${xauHistoryBlock}`;
       }
     } else if (!article && GEMINI_KEY) {
       providerLog.push('gemini:circuit_open');
-      console.log('Call 1: Gemini circuit OPEN — skipping to Groq');
+      console.log('Call 1: Gemini circuit OPEN');
     } else if (!article) {
       providerLog.push('gemini:no_key');
-    }
-
-    // Fallback 3: Groq qwen3-32b (if OpenRouter failed/empty)
-    if (isIsolatedTest) {
-      if (!article) providerLog.push('groq_qwen3:skipped_test');
-    } else if (!article && !call1BudgetLeft()) {
-      providerLog.push('groq_qwen3:skipped_budget');
-    } else if (!article && GROQ_KEY) {
-      const t3s = Date.now();
-      try {
-        // TODO: (Cosmetic) Teks log di bawah (beserta providerLog) masih hardcoded 'qwen3-32b',
-        // padahal model aktual yang dipanggil adalah llama-3.3-70b-versatile (GROQ_MODEL_PROSE).
-        // Jangan hapus/ubah dulu sesuai instruksi, cukup ingat ini agar tidak bingung saat baca log Vercel.
-        console.log('Call 1: fallback 3 to Groq qwen3-32b');
-        const raw = await aiCall(GROQ_URL, GROQ_KEY, GROQ_MODEL_PROSE, call1Messages, 1300, 0.25, 15000);
-        const elapsed = Date.now() - t3s;
-        if (raw.trim()) {
-          article = raw.trim(); method = 'qwen3-32b';
-          providerLog.push(`groq_qwen3:ok(${elapsed}ms,${article.length}c)`);
-        } else {
-          providerLog.push(`groq_qwen3:empty(${elapsed}ms)`);
-        }
-        console.log('Call 1: Groq qwen3 OK, length', article?.length);
-      } catch(e) {
-        const elapsed = Date.now() - t3s;
-        const errMsg = e.status ? `HTTP${e.status}` : (e.message || 'err').slice(0, 40);
-        providerLog.push(`groq_qwen3:${errMsg}(${elapsed}ms)`);
-        console.warn('Call 1 Groq qwen3 fallback failed:', e.status || e.message);
-      }
-    } else if (!article) {
-      providerLog.push('groq_qwen3:no_key');
     }
 
     if (!article) method = 'fallback';
@@ -2626,7 +2122,7 @@ ${xauHistoryBlock}`;
   // ── 6. Await Call 2 (ran concurrently with Call 1) ───────────────────────────
   const biasUpdated = await _biasPromise;
 
-  // ── 7. Call 3: Structured Trade Thesis — SambaNova → Groq fallback ───────────
+  // ── 7. Call 3: Structured Trade Thesis — DeepSeek → SambaNova fallback ───────────
   let thesis = null;
   const elapsedBeforeCall3 = Date.now() - handlerStart;
   const CALL3_BUDGET_MS = 50000; // sisakan ~10s headroom dari maxDuration 60s
@@ -2710,24 +2206,11 @@ ${xauHistoryBlock}`;
 
     const call3Messages = [{ role: 'user', content: thesisPrompt }];
 
-    // Nemotron 3 Ultra — DIDEMOTE dari primary (session 145 lanjutan 4, lihat catatan
-    // lengkap di Call 1): 4/4 tes live gagal across 2 sumber, tidak dipanggil lagi di
-    // jalur produksi. Hanya masuk array saat ?test_nemotron=1 (SambaNova/Groq lalu
-    // menggantikannya sebagai primary/fallback asli di jalur produksi normal).
-    // Nemotron 3 Super (session 145 lanjutan 5) sengaja TIDAK masuk sini — dibatasi ke
-    // Call 1 saja (lihat catatan di Call 1). Saat ?test_nemotron_super=1, Call 3 berjalan
-    // NORMAL (SambaNova/Groq seperti biasa) karena yang sedang didiagnosis cuma Call 1.
-    // Z.ai GLM 4.7 (Cerebras) sempat jadi primary di sini (session 164) tapi digeser
-    // lagi — session 165 (2026-07-13): SambaNova dikembalikan jadi primary karena
-    // user memperbarui API key-nya. CB_CEREBRAS_GLM tetap ada untuk jalur diagnostik
-    // ?test_glm=1 di Call 1. Plan O-3 (2026-07-18): DeepSeek v4-flash API resmi
-    // sekarang primary di jalur produksi (cabang `else` di bawah), SambaNova/Groq
-    // turun jadi fallback berurutan — TIDAK dihapus.
+    // Plan O-3 (2026-07-18): DeepSeek v4-flash API resmi primary di jalur produksi
+    // (cabang `else` di bawah), SambaNova fallback berurutan. Cerebras/Groq/OpenRouter/
+    // Ollama diputus kontraknya 2026-07-25 (dulu ada di sini sebagai diagnostik/fallback).
     const call3Providers = [];
-    if (testNemotronOnly) {
-      if (OLLAMA_KEY)     call3Providers.push({ ollama: true, key: OLLAMA_KEY, model: OLLAMA_NEMOTRON_MODEL, label: 'Ollama Nemotron', timeout: 15000, provider: 'ollama', circuit: CB_OLLAMA_NEMOTRON, noThink: true });
-      if (OPENROUTER_KEY) call3Providers.push({ url: OPENROUTER_URL, key: OPENROUTER_KEY, model: NEMOTRON_MODEL, label: 'OpenRouter Nemotron', timeout: 10000, provider: 'openrouter', circuit: CB_OPENROUTER_NEMOTRON, headers: OPENROUTER_HEADERS, noThink: true });
-    } else if (testGeminiOnly) {
+    if (testGeminiOnly) {
       if (GEMINI_KEY)     call3Providers.push({ url: GEMINI_URL, key: GEMINI_KEY, model: GEMINI_MODEL, label: 'Gemini (flash-latest)', timeout: 15000, provider: 'gemini', circuit: CB_GEMINI, maxTokens: 3000, extraBody: { response_format: { type: 'json_object' }, reasoning_effort: 'low' } });
     } else if (testMistralOnly) {
       if (MISTRAL_KEY)    call3Providers.push({ url: MISTRAL_URL, key: MISTRAL_KEY, model: MISTRAL_MODEL, label: 'Mistral', timeout: 15000, provider: 'mistral', circuit: CB_MISTRAL, maxTokens: 3000, extraBody: { response_format: { type: 'json_object' }, reasoning_effort: 'low' } });
@@ -2740,11 +2223,10 @@ ${xauHistoryBlock}`;
       if (DEEPSEEK_KEY)   call3Providers.push({ url: DEEPSEEK_URL, key: DEEPSEEK_KEY, model: DEEPSEEK_MODEL, label: 'DeepSeek v4-flash', timeout: 15000, provider: 'deepseek', circuit: CB_DEEPSEEK, maxTokens: 1200, extraBody: { response_format: { type: 'json_object' }, thinking: { type: 'disabled' } } });
     } else {
       // Primary (Plan O-3, 2026-07-18): DeepSeek v4-flash API resmi — promosi dari
-      // diagnostik. SambaNova/Groq TURUN jadi fallback berurutan, TIDAK dihapus. maxTokens
+      // diagnostik. SambaNova TURUN jadi fallback, TIDAK dihapus. maxTokens
       // 1200 (naik dari 800, lihat Plan O-1 di atas) mencegah truncation JSON thesis.
       if (DEEPSEEK_KEY)  call3Providers.push({ url: DEEPSEEK_URL, key: DEEPSEEK_KEY, model: DEEPSEEK_MODEL, label: 'DeepSeek v4-flash', timeout: 15000, provider: 'deepseek', circuit: CB_DEEPSEEK, maxTokens: 1200, extraBody: { response_format: { type: 'json_object' }, thinking: { type: 'disabled' } } });
       if (SAMBANOVA_KEY) call3Providers.push({ url: SAMBANOVA_URL, key: SAMBANOVA_KEY, model: SAMBANOVA_MODEL, label: 'SambaNova', timeout: 8000, provider: 'sambanova_main', circuit: CB_SAMBA_MAIN });
-      if (GROQ_KEY)      call3Providers.push({ url: GROQ_URL,      key: GROQ_KEY,      model: GROQ_MODEL,      label: 'Groq fallback', timeout: 12000, provider: 'groq', circuit: null });
     }
 
     for (const provider of call3Providers) {
@@ -2756,10 +2238,7 @@ ${xauHistoryBlock}`;
       }
       try {
         console.log('Call 3: trying', provider.label);
-        const messages3 = provider.noThink ? withNoThink(call3Messages) : call3Messages;
-        const raw = provider.ollama
-          ? await callOllama(provider.key, provider.model, messages3, provider.maxTokens || 800, 0.1, provider.timeout, provider.provider)
-          : await aiCall(provider.url, provider.key, provider.model, messages3, provider.maxTokens || 800, 0.1, provider.timeout, provider.headers || {}, provider.extraBody || {}, provider.provider);
+        const raw = await aiCall(provider.url, provider.key, provider.model, call3Messages, provider.maxTokens || 800, 0.1, provider.timeout, provider.headers || {}, provider.extraBody || {}, provider.provider);
         const clean = raw.replace(/```json|```/g, '').trim();
         const parsed = JSON.parse(clean);
         if (validateThesis(parsed)) {
@@ -2842,8 +2321,8 @@ ${xauHistoryBlock}`;
   // Fire-and-forget (see runCronThesisSweep's own comment for why) — doesn't
   // depend on Call 1's article succeeding, only on there being headlines to
   // check theses against.
-  if (isCronCall && (SAMBANOVA_KEY || GROQ_KEY) && recentItems.length > 0) {
-    runCronThesisSweep(recentItems, SAMBANOVA_KEY, GROQ_KEY).catch(e => console.warn('Cron thesis sweep failed:', e.message));
+  if (isCronCall && SAMBANOVA_KEY && recentItems.length > 0) {
+    runCronThesisSweep(recentItems, SAMBANOVA_KEY).catch(e => console.warn('Cron thesis sweep failed:', e.message));
   }
 
   return res.status(200).json(payload);
@@ -2942,16 +2421,6 @@ function convertToWIB(timeStr) {
 // Ekspor helper murni untuk unit test (module.exports = handler function; properti
 // tambahan tidak mengganggu Vercel yang cuma memanggilnya sebagai function biasa)
 module.exports.aiCall = aiCall;
-module.exports.NEMOTRON_MODEL = NEMOTRON_MODEL;
-module.exports.CB_OPENROUTER_NEMOTRON = CB_OPENROUTER_NEMOTRON;
-module.exports.OPENROUTER_URL = OPENROUTER_URL;
-module.exports.OPENROUTER_HEADERS = OPENROUTER_HEADERS;
-module.exports.callOllama = callOllama;
-module.exports.OLLAMA_URL = OLLAMA_URL;
-module.exports.OLLAMA_NEMOTRON_MODEL = OLLAMA_NEMOTRON_MODEL;
-module.exports.CB_OLLAMA_NEMOTRON = CB_OLLAMA_NEMOTRON;
-module.exports.withNoThink = withNoThink;
-module.exports.NEMOTRON_SUPER_MODEL = NEMOTRON_SUPER_MODEL;
 module.exports.validateThesis = validateThesis;
 module.exports.applyRegimeConfidenceGuard = applyRegimeConfidenceGuard;
 module.exports.classifyDataSurpriseSeverity = classifyDataSurpriseSeverity;
@@ -2960,7 +2429,4 @@ module.exports.annotateHeadlineSeverity = annotateHeadlineSeverity;
 module.exports.parseEconNumber = parseEconNumber;
 module.exports.thesisPairCurrencies = thesisPairCurrencies;
 module.exports.thesisInvalidationCurrencyConsistent = thesisInvalidationCurrencyConsistent;
-module.exports.CB_OPENROUTER_NEMOTRON_SUPER = CB_OPENROUTER_NEMOTRON_SUPER;
-module.exports.HERMES_MODEL = HERMES_MODEL;
-module.exports.CB_OPENROUTER_HERMES = CB_OPENROUTER_HERMES;
 module.exports.mergeSourceHeadlines = mergeSourceHeadlines;
