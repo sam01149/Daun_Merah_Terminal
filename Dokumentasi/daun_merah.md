@@ -42,6 +42,10 @@ Prefix generik itu cuma benar untuk skenario #3, tapi selalu ditempel ke ketigan
 
 **Verifikasi:** `npm test` 608/608 hijau, tidak ada test yang assert teks pesan persis. `APP_VERSION` naik `2026.07.26.2` → `2026.07.26.3`.
 
+**Addendum ketiga (lanjutan sesi sama) — emoji 📊 di empty-state Analisa dihapus:** User ketemu emoji `📊` di state-box "Belum ada pair dipilih" tab Analisa (`#analisaEmpty`, index.html baris ~3312) sambil ngecek tampilan buat demo. Ini salah satu dari item yang sengaja diparkir di S243 ("emoji piktografik dipakai sebagai SATU-SATUNYA ikon di empty-state, tidak bisa dihapus polos tanpa diganti ikon SVG"). Diganti ikon bar-chart SVG stroke-based (`var(--muted)`, pola sama `state-box` lain yang sudah pakai SVG asli, mis. baris ~4936) — bukan sekadar dihapus, biar makna visual "belum ada data chart" tetap ada. Empty-state emoji lain (`📡`/`📄`/`📋`/`🔍`/`⏳` di state-box lain) BELUM disentuh, masih diparkir di `daun_merah_progress.md` sampai ada keputusan sweep menyeluruh.
+
+**Verifikasi:** `npm test` 608/608 hijau. `APP_VERSION` naik `2026.07.26.3` → `2026.07.26.4`.
+
 ## Changelog Session 244 (2026-07-25) — Audit Billing Vendor + Putus Kontrak OpenRouter/Cerebras/Groq/Ollama
 
 **Konteks:** User minta cek billing semua vendor yang terhubung ke app. Audit langsung ke API/dashboard tiap vendor (bukan cuma baca dokumentasi lama) menghasilkan beberapa temuan dan satu keputusan besar: user putuskan diputus kontrak 4 provider AI (OpenRouter, Cerebras, Groq, Ollama Cloud) — semua gratis tapi tidak dipakai lagi, dan DeepSeek (satu-satunya provider berbayar) tetap dipertahankan.
