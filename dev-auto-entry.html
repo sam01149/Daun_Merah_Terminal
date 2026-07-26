@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<!--
+  dev-auto-entry.html — konsol developer-only untuk eksperimen Plan U (auto-entry).
+  SENGAJA halaman terpisah, TIDAK dilink dari index.html/nav manapun (isolasi
+  senyap U-7 — lihat test/admin/isolation_auto.test.js yang grep index.html).
+  Semua endpoint yang dipanggil di sini tetap digate server-side oleh CRON_SECRET
+  (header x-admin-secret) — input di halaman ini cuma kemudahan lokal, bukan
+  mekanisme keamanan baru.
+-->
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
+<title>Auto-Entry Dev Console</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;700;800&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#070a08; --panel:#0e1310; --border:#1c2420; --fg:#e8e4d9; --muted:#7a8079;
+  --accent:#a83226; --accent-dim:#6b1f16; --green:#3ea86b; --yellow:#c9a13b; --blue:#38bdf8;
+  --fg-rgb:232,228,217; --accent-rgb:168,50,38;
+}
+*{box-sizing:border-box;}
+body{background:var(--bg);color:var(--fg);font-family:'DM Mono',monospace;font-size:12px;margin:0;padding:0;line-height:1.5;}
+h1,h2,h3{font-family:'Syne',sans-serif;font-weight:800;margin:0 0 8px;}
+h1{font-size:18px;color:var(--accent);}
+h2{font-size:13px;color:var(--fg);letter-spacing:.02em;margin-top:0;}
+a{color:var(--blue);}
+.wrap{max-width:1180px;margin:0 auto;padding:16px;}
+header{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border);padding-bottom:12px;margin-bottom:16px;flex-wrap:wrap;gap:8px;}
+header .sub{font-size:9px;color:var(--muted);letter-spacing:.1em;text-transform:uppercase;margin-top:2px;}
+.secret-status{font-size:10px;color:var(--muted);display:flex;align-items:center;gap:8px;}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--muted);display:inline-block;}
+.dot.ok{background:var(--green);}
+.dot.bad{background:var(--accent);}
+button,input,select,textarea{font-family:'DM Mono',monospace;font-size:11px;background:var(--panel);color:var(--fg);border:1px solid var(--border);border-radius:3px;padding:6px 8px;}
+button{cursor:pointer;color:var(--fg);background:rgba(var(--fg-rgb),.04);}
+button:hover{border-color:var(--accent);color:var(--accent);}
+button:disabled{opacity:.4;cursor:not-allowed;}
+button.primary{background:var(--accent-dim);border-color:var(--accent);color:#fff;}
+button.primary:hover{background:var(--accent);color:#fff;}
+input,select,textarea{width:100%;}
+label{display:block;font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px;margin-top:8px;}
+.card{background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:12px 14px;margin-bottom:14px;}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;}
+.stat{background:rgba(var(--fg-rgb),.02);border:1px solid var(--border);border-radius:4px;padding:8px 10px;}
+.stat .v{font-size:17px;font-weight:500;color:var(--fg);}
+.stat .l{font-size:8.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-top:2px;}
+.stat .v.green{color:var(--green);} .stat .v.red{color:var(--accent);} .stat .v.yellow{color:var(--yellow);}
+.symbols{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px;}
+.symcard{background:rgba(var(--fg-rgb),.02);border:1px solid var(--border);border-radius:5px;padding:10px;}
+.symcard h3{font-size:11px;color:var(--accent);margin-bottom:6px;}
+.symcard .row{display:flex;justify-content:space-between;font-size:10.5px;padding:2px 0;color:var(--muted);}
+.symcard .row b{color:var(--fg);font-weight:500;}
+table{width:100%;border-collapse:collapse;font-size:10.5px;}
+th,td{text-align:left;padding:5px 6px;border-bottom:1px solid var(--border);white-space:nowrap;}
+th{color:var(--muted);text-transform:uppercase;font-size:8.5px;letter-spacing:.05em;}
+tr:hover td{background:rgba(var(--fg-rgb),.02);}
+.badge{display:inline-block;padding:1px 6px;border-radius:3px;font-size:9px;font-weight:500;}
+.badge.pending{background:rgba(201,161,59,.15);color:var(--yellow);}
+.badge.open{background:rgba(56,189,248,.15);color:var(--blue);}
+.badge.tp{background:rgba(62,168,107,.15);color:var(--green);}
+.badge.sl,.badge.invalid{background:rgba(var(--accent-rgb),.18);color:var(--accent);}
+.badge.canceled,.badge.expired,.badge.stale,.badge.ambiguous{background:rgba(var(--fg-rgb),.08);color:var(--muted);}
+.tabs{display:flex;gap:4px;border-bottom:1px solid var(--border);margin-bottom:12px;flex-wrap:wrap;}
+.tab{padding:7px 12px;font-size:10.5px;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent;}
+.tab.active{color:var(--accent);border-bottom-color:var(--accent);}
+.pane{display:none;}
+.pane.active{display:block;}
+.pairbtns{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;}
+.formrow{display:flex;gap:10px;flex-wrap:wrap;}
+.formrow > div{flex:1;min-width:140px;}
+.hint{font-size:9.5px;color:var(--muted);margin-top:4px;}
+#respPanel{position:sticky;bottom:0;background:var(--panel);border-top:1px solid var(--border);max-height:38vh;display:flex;flex-direction:column;}
+#respHead{display:flex;justify-content:space-between;align-items:center;padding:6px 14px;border-bottom:1px solid var(--border);cursor:pointer;}
+#respHead .tag{font-size:9px;padding:1px 6px;border-radius:3px;background:rgba(var(--fg-rgb),.08);color:var(--muted);}
+#respHead .tag.ok{background:rgba(62,168,107,.15);color:var(--green);}
+#respHead .tag.err{background:rgba(var(--accent-rgb),.18);color:var(--accent);}
+#respBody{overflow:auto;padding:10px 14px;margin:0;white-space:pre-wrap;word-break:break-all;font-size:10.5px;color:var(--muted);}
+#respBody.collapsed{display:none;}
+#gate{position:fixed;inset:0;background:rgba(0,0,0,.85);display:flex;align-items:center;justify-content:center;z-index:100;}
+#gate .box{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:24px;width:340px;}
+.empty{color:var(--muted);font-size:11px;padding:10px 0;}
+.small{font-size:9.5px;color:var(--muted);}
+</style>
+</head>
+<body>
+
+<div id="gate">
+  <div class="box">
+    <h1>Auto-Entry Dev Console</h1>
+    <p class="small">Masukkan CRON_SECRET (sama dengan env var server) untuk akses data eksperimen Plan U. Tersimpan lokal di browser ini saja.</p>
+    <label>x-admin-secret</label>
+    <input type="password" id="secretInput" placeholder="CRON_SECRET">
+    <button class="primary" id="secretSubmit" style="margin-top:10px;width:100%;">Masuk</button>
+  </div>
+</div>
+
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Auto-Entry Dev Console</h1>
+      <div class="sub">Plan U — Eksperimen Paper-Trading (developer-only)</div>
+    </div>
+    <div class="secret-status">
+      <span class="dot" id="secretDot"></span>
+      <span id="secretLabel">belum login</span>
+      <button id="btnChangeSecret">ganti secret</button>
+    </div>
+  </header>
+
+  <div class="tabs">
+    <div class="tab active" data-pane="dash">Dashboard</div>
+    <div class="tab" data-pane="trigger">Trigger Analisa</div>
+    <div class="tab" data-pane="override">Setup Override</div>
+    <div class="tab" data-pane="review">Position Review</div>
+    <div class="tab" data-pane="friday">Friday Tighten</div>
+  </div>
+
+  <!-- ── DASHBOARD ── -->
+  <div class="pane active" id="pane-dash">
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <h2>Ringkasan Global (setup_log_auto:v1)</h2>
+        <button id="btnRefresh">Refresh</button>
+      </div>
+      <div class="grid" id="globalStats"><div class="empty">Belum dimuat — klik Refresh.</div></div>
+    </div>
+
+    <div class="card">
+      <h2>Manajemen Posisi (U-5a) &amp; Cancel-Flip Ghost (U-3 lanjutan)</h2>
+      <div class="grid" id="mgmtStats"><div class="empty">—</div></div>
+    </div>
+
+    <div class="card">
+      <h2>Konsistensi AI &amp; Latensi Pipeline</h2>
+      <div class="grid" id="metaStats"><div class="empty">—</div></div>
+    </div>
+
+    <div class="card">
+      <h2>Per Pair</h2>
+      <div class="symbols" id="symbolCards"><div class="empty">—</div></div>
+    </div>
+
+    <div class="card">
+      <h2>10 Setup Terbaru</h2>
+      <div style="overflow-x:auto;">
+        <table id="recentTable">
+          <thead><tr><th>ID</th><th>Pair</th><th>Bias</th><th>Status</th><th>Entry</th><th>SL</th><th>TP</th><th>Conf</th><th>Sumber</th><th>TS</th></tr></thead>
+          <tbody><tr><td class="empty" colspan="10">—</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── TRIGGER ANALISA ── -->
+  <div class="pane" id="pane-trigger">
+    <div class="card">
+      <h2>Trigger Analisa Manual (auto=1)</h2>
+      <p class="hint">Sama seperti daemon VPS memanggil ohlcv_analyze&amp;auto=1 — hasil masuk setup_log_auto:v1 dengan source:'auto'. Dedup 30 menit tetap berlaku (klik 2x cepat = cached).</p>
+      <div class="pairbtns" id="pairBtns"></div>
+    </div>
+  </div>
+
+  <!-- ── SETUP OVERRIDE ── -->
+  <div class="pane" id="pane-override">
+    <div class="card">
+      <h2>Setup Override</h2>
+      <p class="hint">Koreksi label kerugian atau perbaikan data korup (status/filled_t/closed_t) untuk 1 id setup eksperimen.</p>
+      <label>Setup ID</label>
+      <input id="ovId" placeholder="mis. GBPUSD=X:1784708110704">
+      <div class="formrow">
+        <div>
+          <label>Loss Label (opsional)</label>
+          <select id="ovLossLabel">
+            <option value="">(tidak diubah)</option>
+            <option value="fundamental_shock">fundamental_shock</option>
+            <option value="fakeout_sl">fakeout_sl</option>
+            <option value="invalid_manual">invalid_manual</option>
+          </select>
+        </div>
+        <div>
+          <label>Label Reason</label>
+          <input id="ovLabelReason" placeholder="alasan singkat">
+        </div>
+      </div>
+      <label style="margin-top:14px;"><input type="checkbox" id="ovDataFixToggle" style="width:auto;vertical-align:middle;"> Sertakan data_fix (koreksi bug, wajib isi reason)</label>
+      <div id="ovDataFixBlock" style="display:none;margin-top:6px;">
+        <label>Reason (wajib)</label>
+        <input id="ovFixReason" placeholder="jelaskan bug/kondisi yang dikoreksi">
+        <div class="formrow">
+          <div>
+            <label>Status baru (opsional)</label>
+            <select id="ovFixStatus">
+              <option value="">(tidak diubah)</option>
+              <option>pending</option><option>open</option><option>tp</option><option>sl</option>
+              <option>ambiguous</option><option>expired</option><option>stale</option>
+              <option>canceled</option><option>invalid</option>
+            </select>
+          </div>
+          <div>
+            <label>filled_t (unix, opsional)</label>
+            <input id="ovFixFilledT" type="number">
+          </div>
+          <div>
+            <label>closed_t (unix, opsional)</label>
+            <input id="ovFixClosedT" type="number">
+          </div>
+        </div>
+      </div>
+      <button class="primary" id="btnOverride" style="margin-top:14px;">Kirim Override</button>
+    </div>
+  </div>
+
+  <!-- ── POSITION REVIEW ── -->
+  <div class="pane" id="pane-review">
+    <div class="card">
+      <h2>Position Review (simulasi trigger berita)</h2>
+      <p class="hint">Hanya berlaku untuk posisi status 'open' di setup_log_auto:v1, tanpa intervention sebelumnya. ID yang cuma ada di setup_log:v1 (manual) akan ditolak tanpa call AI.</p>
+      <label>Setup ID</label>
+      <input id="prId" placeholder="mis. GC=F:1784708110704">
+      <div class="formrow">
+        <div><label>trigger.guid</label><input id="prGuid" placeholder="guid berita"></div>
+        <div><label>trigger.title</label><input id="prTitle" placeholder="judul berita"></div>
+      </div>
+      <button class="primary" id="btnReview" style="margin-top:14px;">Kirim Review</button>
+    </div>
+  </div>
+
+  <!-- ── FRIDAY TIGHTEN ── -->
+  <div class="pane" id="pane-friday">
+    <div class="card">
+      <h2>Friday Tighten (preventif weekend)</h2>
+      <p class="hint">Tighten SL semua posisi open di setup_log_auto:v1 yang belum punya intervention — murni kode, tanpa AI.</p>
+      <button class="primary" id="btnFriday">Jalankan Friday Tighten</button>
+    </div>
+  </div>
+</div>
+
+<div id="respPanel">
+  <div id="respHead">
+    <span><b id="respAction">respons</b> <span class="tag" id="respTag">—</span></span>
+    <span class="small" id="respToggleHint">klik untuk tutup/buka</span>
+  </div>
+  <pre id="respBody">Belum ada aksi dijalankan.</pre>
+</div>
+
+<script>
+(function(){
+  const SECRET_LS = 'dm_dev_admin_secret';
+  const PAIRS = [
+    { symbol: 'GC=F',      label: 'XAU/USD' },
+    { symbol: 'EURUSD=X',  label: 'EUR/USD' },
+    { symbol: 'GBPUSD=X',  label: 'GBP/USD' },
+    { symbol: 'USDJPY=X',  label: 'USD/JPY' },
+    { symbol: 'AUDUSD=X',  label: 'AUD/USD' },
+    { symbol: 'USDCAD=X',  label: 'USD/CAD' },
+    { symbol: 'USDCHF=X',  label: 'USD/CHF' },
+    { symbol: 'NZDUSD=X',  label: 'NZD/USD' },
+  ];
+
+  function getSecret(){ return localStorage.getItem(SECRET_LS) || ''; }
+  function setSecret(v){ if (v) localStorage.setItem(SECRET_LS, v); else localStorage.removeItem(SECRET_LS); }
+  function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+  function fmtTs(t){ if (!t) return '—'; try { return new Date(t).toLocaleString('id-ID', { hour12:false }); } catch(e){ return String(t); } }
+
+  async function api(action, { method = 'GET', query = {}, body = null, silent = false } = {}) {
+    const qs = new URLSearchParams({ action, ...query }).toString();
+    const opts = {
+      method,
+      headers: { 'x-admin-secret': getSecret(), 'x-cron-secret': getSecret() },
+    };
+    if (body != null) { opts.headers['Content-Type'] = 'application/json'; opts.body = JSON.stringify(body); }
+    let status = 0, json = null, errMsg = null;
+    try {
+      const r = await fetch(`/api/admin?${qs}`, opts);
+      status = r.status;
+      json = await r.json().catch(() => null);
+    } catch (e) { errMsg = e.message; }
+    // Refresh dashboard (setup_stats) dipanggil silent supaya TIDAK menimpa panel
+    // respons aksi (override/review/trigger/friday_tighten) yang baru saja user lihat —
+    // data setup_stats sendiri sudah divisualisasikan penuh di kartu dashboard.
+    if (!silent) showResp(action, status, json, errMsg);
+    return { status, json, errMsg };
+  }
+
+  function showResp(action, status, json, errMsg){
+    document.getElementById('respAction').textContent = action;
+    const tag = document.getElementById('respTag');
+    const ok = !errMsg && status >= 200 && status < 300 && !(json && json.error);
+    tag.textContent = errMsg ? 'network error' : `HTTP ${status}`;
+    tag.className = 'tag ' + (ok ? 'ok' : 'err');
+    document.getElementById('respBody').textContent = errMsg || JSON.stringify(json, null, 2);
+    document.getElementById('respBody').classList.remove('collapsed');
+  }
+
+  // ── Secret gate ──
+  function refreshSecretStatus(){
+    const has = !!getSecret();
+    document.getElementById('gate').style.display = has ? 'none' : 'flex';
+    document.getElementById('secretDot').className = 'dot ' + (has ? 'ok' : 'bad');
+    document.getElementById('secretLabel').textContent = has ? 'secret tersimpan' : 'belum login';
+  }
+  document.getElementById('secretSubmit').addEventListener('click', () => {
+    const v = document.getElementById('secretInput').value.trim();
+    if (!v) return;
+    setSecret(v);
+    refreshSecretStatus();
+    loadDashboard();
+  });
+  document.getElementById('secretInput').addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('secretSubmit').click(); });
+  document.getElementById('btnChangeSecret').addEventListener('click', () => {
+    setSecret('');
+    refreshSecretStatus();
+  });
+  refreshSecretStatus();
+
+  // ── Tabs ──
+  document.querySelectorAll('.tab').forEach(t => {
+    t.addEventListener('click', () => {
+      document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+      document.querySelectorAll('.pane').forEach(x => x.classList.remove('active'));
+      t.classList.add('active');
+      document.getElementById('pane-' + t.dataset.pane).classList.add('active');
+    });
+  });
+
+  // ── Response panel collapse ──
+  document.getElementById('respHead').addEventListener('click', () => {
+    document.getElementById('respBody').classList.toggle('collapsed');
+  });
+
+  // ── Dashboard render ──
+  function statBlock(label, value, cls){
+    return `<div class="stat"><div class="v${cls ? ' ' + cls : ''}">${esc(value)}</div><div class="l">${esc(label)}</div></div>`;
+  }
+
+  function renderGlobal(g){
+    if (!g) { document.getElementById('globalStats').innerHTML = '<div class="empty">Tidak ada data.</div>'; return; }
+    const html = [
+      statBlock('Total', g.total),
+      statBlock('Pending', g.pending, 'yellow'),
+      statBlock('Open', g.open),
+      statBlock('TP', g.tp, 'green'),
+      statBlock('SL', g.sl, 'red'),
+      statBlock('Canceled', g.canceled),
+      statBlock('Win Rate Raw', g.win_rate_raw != null ? g.win_rate_raw + '%' : '—'),
+      statBlock('Win Rate Adj.', g.win_rate_adjusted != null ? g.win_rate_adjusted + '%' : '—', 'green'),
+      statBlock('Loss: Teknikal', g.loss_causes ? g.loss_causes.teknikal : 0),
+      statBlock('Loss: Fund. Shock', g.loss_causes ? g.loss_causes.fundamental_shock : 0),
+      statBlock('Loss: Fakeout SL', g.loss_causes ? g.loss_causes.fakeout_sl : 0),
+      statBlock('Avg R Gross', g.cost_expectancy ? (g.cost_expectancy.avg_r_gross ?? '—') : '—'),
+      statBlock('Avg R Net', g.cost_expectancy ? (g.cost_expectancy.avg_r_net ?? '—') : '—'),
+      statBlock('n (R)', g.cost_expectancy ? g.cost_expectancy.n : 0),
+    ].join('');
+    document.getElementById('globalStats').innerHTML = html;
+  }
+
+  function renderMgmt(g){
+    const m = g && g.management, cf = g && g.cancel_flip_ghost;
+    if (!m && !cf) { document.getElementById('mgmtStats').innerHTML = '<div class="empty">Tidak ada data (mungkin secret salah / belum ada posisi dikelola).</div>'; return; }
+    let html = '';
+    if (m) html += [
+      statBlock('Reviews', m.reviews),
+      statBlock('Hold', m.hold),
+      statBlock('Tighten SL', m.tighten_sl),
+      statBlock('Tighten Saved', m.tighten_saved, 'green'),
+      statBlock('Tighten Cost', m.tighten_cost, 'red'),
+      statBlock('Close Early', m.close_early),
+      statBlock('Close Saved', m.close_early_saved, 'green'),
+      statBlock('Close Cost', m.close_early_cost, 'red'),
+      statBlock('Tighten Preventif', m.tighten_preventive ? m.tighten_preventive.count : 0),
+      statBlock('Preventif Saved', m.tighten_preventive ? m.tighten_preventive.saved : 0, 'green'),
+      statBlock('Preventif Cost', m.tighten_preventive ? m.tighten_preventive.cost : 0, 'red'),
+    ].join('');
+    if (cf) html += [
+      statBlock('Cancel-Flip Total', cf.total),
+      statBlock('Ghost Saved', cf.saved, 'green'),
+      statBlock('Ghost Cost', cf.cost, 'red'),
+      statBlock('Ghost Ambiguous', cf.ambiguous),
+      statBlock('Ghost Pending', cf.pending),
+    ].join('');
+    document.getElementById('mgmtStats').innerHTML = html;
+  }
+
+  function renderMeta(consistency, latency){
+    const html = [
+      statBlock('Konsistensi: Total', consistency ? consistency.total : 0),
+      statBlock('Bias Identik', consistency ? consistency.bias_identical : 0),
+      statBlock('Bias Identik %', consistency && consistency.bias_identical_pct != null ? consistency.bias_identical_pct + '%' : '—', 'green'),
+      statBlock('Latency n', latency ? latency.n : 0),
+      statBlock('Latency Avg (min)', latency ? (latency.avg_min ?? '—') : '—'),
+      statBlock('Latency Median (min)', latency ? (latency.median_min ?? '—') : '—'),
+    ].join('');
+    document.getElementById('metaStats').innerHTML = html;
+  }
+
+  function renderSymbols(symbols){
+    const keys = Object.keys(symbols || {});
+    if (!keys.length) { document.getElementById('symbolCards').innerHTML = '<div class="empty">Belum ada setup per pair.</div>'; return; }
+    document.getElementById('symbolCards').innerHTML = keys.map(k => {
+      const s = symbols[k];
+      return `<div class="symcard">
+        <h3>${esc(k)}</h3>
+        <div class="row"><span>Total</span><b>${s.total}</b></div>
+        <div class="row"><span>Pending / Open</span><b>${s.pending} / ${s.open}</b></div>
+        <div class="row"><span>TP / SL</span><b>${s.tp} / ${s.sl}</b></div>
+        <div class="row"><span>Win Rate Raw</span><b>${s.win_rate_raw != null ? s.win_rate_raw + '%' : '—'}</b></div>
+        <div class="row"><span>Win Rate Adj.</span><b>${s.win_rate_adjusted != null ? s.win_rate_adjusted + '%' : '—'}</b></div>
+      </div>`;
+    }).join('');
+  }
+
+  function renderRecent(recent){
+    const tbody = document.querySelector('#recentTable tbody');
+    if (!recent || !recent.length) { tbody.innerHTML = '<tr><td class="empty" colspan="10">Belum ada setup.</td></tr>'; return; }
+    tbody.innerHTML = recent.map(s => `<tr>
+      <td class="small">${esc(s.id)}</td>
+      <td>${esc(s.symbol)}</td>
+      <td>${esc(s.bias)}</td>
+      <td><span class="badge ${esc(s.status)}">${esc(s.status)}</span></td>
+      <td>${esc(s.entry_zone)}</td>
+      <td>${esc(s.sl)}</td>
+      <td>${esc(s.tp)}</td>
+      <td>${esc(s.confidence)}</td>
+      <td>${esc(s.source)}</td>
+      <td class="small">${fmtTs(s.ts)}</td>
+    </tr>`).join('');
+  }
+
+  async function loadDashboard(){
+    if (!getSecret()) return;
+    const { json } = await api('setup_stats', { query: { scope: 'auto' }, silent: true });
+    if (!json || json.scope !== 'auto') {
+      document.getElementById('globalStats').innerHTML = '<div class="empty">Secret salah atau tidak ada akses — server membalas payload publik biasa (byte-identical, sengaja tidak membocorkan scope).</div>';
+      document.getElementById('mgmtStats').innerHTML = '';
+      document.getElementById('metaStats').innerHTML = '';
+      document.getElementById('symbolCards').innerHTML = '';
+      renderRecent([]);
+      return;
+    }
+    renderGlobal(json.global);
+    renderMgmt(json.global);
+    renderMeta(json.consistency, json.pipeline_latency);
+    renderSymbols(json.symbols);
+    renderRecent(json.recent);
+  }
+  document.getElementById('btnRefresh').addEventListener('click', loadDashboard);
+
+  // ── Trigger analisa ──
+  document.getElementById('pairBtns').innerHTML = PAIRS.map(p =>
+    `<button data-symbol="${esc(p.symbol)}" data-label="${esc(p.label)}">${esc(p.label)}</button>`
+  ).join('');
+  document.getElementById('pairBtns').addEventListener('click', async e => {
+    const btn = e.target.closest('button[data-symbol]');
+    if (!btn) return;
+    btn.disabled = true;
+    const orig = btn.textContent;
+    btn.textContent = '...';
+    try {
+      await api('ohlcv_analyze', { query: { symbol: btn.dataset.symbol, label: btn.dataset.label, auto: '1' } });
+      await loadDashboard();
+    } finally { btn.disabled = false; btn.textContent = orig; }
+  });
+
+  // ── Setup override ──
+  document.getElementById('ovDataFixToggle').addEventListener('change', e => {
+    document.getElementById('ovDataFixBlock').style.display = e.target.checked ? 'block' : 'none';
+  });
+  document.getElementById('btnOverride').addEventListener('click', async () => {
+    const id = document.getElementById('ovId').value.trim();
+    if (!id) { alert('Setup ID wajib diisi'); return; }
+    const body = { id, scope: 'auto' };
+    const lossLabel = document.getElementById('ovLossLabel').value;
+    const labelReason = document.getElementById('ovLabelReason').value.trim();
+    if (lossLabel) body.loss_label = lossLabel;
+    if (labelReason) body.label_reason = labelReason;
+    if (document.getElementById('ovDataFixToggle').checked) {
+      const reason = document.getElementById('ovFixReason').value.trim();
+      if (!reason) { alert('data_fix.reason wajib diisi kalau data_fix diaktifkan'); return; }
+      const fix = { reason };
+      const status = document.getElementById('ovFixStatus').value;
+      const filledT = document.getElementById('ovFixFilledT').value;
+      const closedT = document.getElementById('ovFixClosedT').value;
+      if (status) fix.status = status;
+      if (filledT) fix.filled_t = Number(filledT);
+      if (closedT) fix.closed_t = Number(closedT);
+      body.data_fix = fix;
+    }
+    await api('setup_override', { method: 'POST', body });
+    await loadDashboard();
+  });
+
+  // ── Position review ──
+  document.getElementById('btnReview').addEventListener('click', async () => {
+    const id = document.getElementById('prId').value.trim();
+    const guid = document.getElementById('prGuid').value.trim();
+    const title = document.getElementById('prTitle').value.trim();
+    if (!id || !guid || !title) { alert('id, trigger.guid, trigger.title wajib diisi'); return; }
+    await api('position_review', { method: 'POST', body: { id, trigger: { guid, title } } });
+    await loadDashboard();
+  });
+
+  // ── Friday tighten ──
+  document.getElementById('btnFriday').addEventListener('click', async () => {
+    await api('friday_tighten', { method: 'POST' });
+    await loadDashboard();
+  });
+
+  if (getSecret()) loadDashboard();
+})();
+</script>
+</body>
+</html>

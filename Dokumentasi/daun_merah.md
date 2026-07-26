@@ -11,11 +11,30 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-07-26 (Session 245 — Fix Pesan Error Analisa AI + Cooldown 90 Detik Salah Trigger saat Market Tutup)
+> **Last updated:** 2026-07-26 (Session 246 — UI Dev Console untuk Auto-Entry (Plan U), Ganti Postman)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 246 (2026-07-26) — UI Dev Console untuk Auto-Entry (Plan U), Ganti Postman
+
+**Konteks:** Selama ini user mengetes/mengelola endpoint eksperimen auto-entry (Plan U: `ohlcv_analyze&auto=1`, `setup_stats&scope=auto`, `setup_override`, `position_review`, `friday_tighten`) secara manual lewat Postman — repetitif dan tidak ada visualisasi. Diminta dibuatkan UI.
+
+**Constraint penting (U-7 REVISI VISIBILITAS, sudah dikunci `test/admin/isolation_auto.test.js` poin e):** `index.html` (publik) TIDAK BOLEH menyebut string `setup_log_auto` sama sekali. Jadi UI baru **wajib** file terpisah, bukan tab baru di `index.html`.
+
+**Solusi:** File baru `dev-auto-entry.html` di root repo — HTML/CSS/JS vanilla satu file (self-contained, tanpa build step, mengikuti pola stack yang sudah ada), **sengaja tidak dilink dari `index.html`/nav manapun** (akses via URL langsung saja). Fitur:
+- Gate secret lokal (localStorage `dm_dev_admin_secret`) → dikirim sebagai header `x-admin-secret` (+ `x-cron-secret`, keduanya diterima `_isCronCallReq`) di setiap fetch ke `/api/admin`. Keamanan sesungguhnya tetap di server (`CRON_SECRET`) — input di halaman ini cuma kemudahan, bukan mekanisme baru.
+- Dashboard: render `setup_stats&scope=auto` — kartu global (win rate raw/adjusted, loss causes, cost expectancy R), blok manajemen posisi U-5a + cancel-flip ghost U-3 lanjutan, konsistensi AI & latensi pipeline, kartu per-pair, tabel 10 setup terbaru dengan badge status berwarna.
+- Tab Trigger Analisa: 8 tombol pair (sesuai `AUTO_ENTRY_SYMBOL_MAP` di `vps/daemon.js`) memicu `ohlcv_analyze&auto=1` manual.
+- Tab Setup Override: form `loss_label`/`label_reason` + blok opsional `data_fix` (reason wajib, status/filled_t/closed_t).
+- Tab Position Review: form id + trigger.guid/title untuk simulasi reaksi berita pada posisi open.
+- Tab Friday Tighten: tombol trigger tighten SL preventif manual.
+- Panel respons JSON mentah (mirip Postman) di bawah, menampilkan hasil tiap aksi.
+
+**Bug ditemukan & difix saat verifikasi sendiri:** draft awal memanggil `loadDashboard()` (refresh `setup_stats`) setelah setiap aksi (override/review/friday_tighten) TANPA membedakan dari klik Refresh biasa — akibatnya response JSON aksi yang baru saja dikirim langsung tertimpa oleh response `setup_stats` dari refresh, jadi user tidak pernah benar-benar melihat hasil aksinya (persis masalah yang mau dihindari dari Postman). Fix: parameter `silent` di helper `api()`, dashboard-refresh selalu silent (datanya sudah divisualisasikan penuh di kartu), panel respons mentah eksklusif untuk aksi yang dipicu user.
+
+**Verifikasi:** Playwright headless — smoke test navigasi/tab/validasi form dari `file://` (pastikan nol JS exception), lalu full-flow test lewat local mock HTTP server yang meniru bentuk respons `setup_stats`/`ohlcv_analyze`/`setup_override`/`position_review`/`friday_tighten` sesuai kode `api/admin.js` — semua kartu dashboard terisi benar, semua 4 form aksi berhasil kirim & tampil di panel respons, jalur secret salah menampilkan fallback publik (tidak membocorkan scope). Screenshot dashboard & form override dicek visual, konsisten dengan tema dark/DM Mono `index.html`. `npm test` tidak terpengaruh (file baru, tidak menyentuh kode produksi).
 
 ## Changelog Session 245 (2026-07-26) — Fix Pesan Error Analisa AI + Cooldown 90 Detik Salah Trigger saat Market Tutup
 
