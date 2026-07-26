@@ -139,6 +139,12 @@ tr:hover td{background:rgba(var(--fg-rgb),.02);}
     </div>
 
     <div class="card">
+      <h2>Kalibrasi Confidence AI</h2>
+      <p class="hint">Confidence (tinggi/sedang/rendah) BUKAN hasil rumus — itu penilaian AI sendiri atas setup yang dibuatnya. Tabel ini yang jadi rumus pengecekannya: kalau win rate tidak turun berurutan tinggi &gt; sedang &gt; rendah, confidence AI belum kalibrasi bagus (jangan dipakai untuk sizing).</p>
+      <div class="grid" id="calibStats"><div class="empty">—</div></div>
+    </div>
+
+    <div class="card">
       <h2>Per Pair</h2>
       <div class="symbols" id="symbolCards"><div class="empty">—</div></div>
     </div>
@@ -396,6 +402,23 @@ tr:hover td{background:rgba(var(--fg-rgb),.02);}
     document.getElementById('metaStats').innerHTML = html;
   }
 
+  function renderCalibration(cal){
+    const levels = ['tinggi', 'sedang', 'rendah'];
+    if (!cal || !levels.some(l => cal[l] && cal[l].n)) {
+      document.getElementById('calibStats').innerHTML = '<div class="empty">Belum ada setup closed (tp/sl) yang bisa dikalibrasi.</div>';
+      return;
+    }
+    const rates = levels.map(l => cal[l] && cal[l].win_rate != null ? cal[l].win_rate : null);
+    const monotonic = rates.every(r => r != null) && rates[0] >= rates[1] && rates[1] >= rates[2];
+    const cls = { tinggi: 'green', sedang: 'yellow', rendah: 'red' };
+    let html = levels.map(l => {
+      const d = cal[l] || { n: 0, win_rate: null };
+      return statBlock(`Confidence: ${l} (n=${d.n})`, d.win_rate != null ? d.win_rate + '%' : '—', cls[l]);
+    }).join('');
+    html += `<div class="stat"><div class="v ${monotonic ? 'green' : 'red'}">${monotonic ? 'Terkalibrasi' : 'Belum Terkalibrasi'}</div><div class="l">tinggi ≥ sedang ≥ rendah?</div></div>`;
+    document.getElementById('calibStats').innerHTML = html;
+  }
+
   function renderSymbols(symbols){
     const keys = Object.keys(symbols || {});
     if (!keys.length) { document.getElementById('symbolCards').innerHTML = '<div class="empty">Belum ada setup per pair.</div>'; return; }
@@ -437,6 +460,7 @@ tr:hover td{background:rgba(var(--fg-rgb),.02);}
       document.getElementById('globalStats').innerHTML = '<div class="empty">Secret salah atau tidak ada akses — server membalas payload publik biasa (byte-identical, sengaja tidak membocorkan scope).</div>';
       document.getElementById('mgmtStats').innerHTML = '';
       document.getElementById('metaStats').innerHTML = '';
+      document.getElementById('calibStats').innerHTML = '';
       document.getElementById('symbolCards').innerHTML = '';
       renderRecent([]);
       return;
@@ -444,6 +468,7 @@ tr:hover td{background:rgba(var(--fg-rgb),.02);}
     renderGlobal(json.global);
     renderMgmt(json.global);
     renderMeta(json.consistency, json.pipeline_latency);
+    renderCalibration(json.global && json.global.confidence_calibration);
     renderSymbols(json.symbols);
     renderRecent(json.recent);
   }
