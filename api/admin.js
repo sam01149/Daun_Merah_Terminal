@@ -3647,7 +3647,7 @@ async function ohlcvAnalyzeHandler(req, res) {
     } catch(e) { console.warn('ohlcv_analyze: market_closed cache read gagal:', e.message); }
     return res.status(200).json({
       commentary: null, structured: null, cached: false, market_closed: true, ai_skipped: true,
-      error: 'Pasar forex sedang tutup — belum ada analisa tersimpan untuk pair ini.',
+      error: 'Pasar forex sedang tutup (Sabtu/Minggu) — belum ada analisa tersimpan untuk pair ini.',
     });
   }
 

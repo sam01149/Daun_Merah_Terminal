@@ -38,6 +38,10 @@ Prefix generik itu cuma benar untuk skenario #3, tapi selalu ditempel ke ketigan
 
 **Verifikasi:** `npm test` 608/608 hijau (test `ohlcv_analyze_market_closed.test.js` tidak assert field `ai_skipped`, jadi tidak break). `APP_VERSION` naik `2026.07.26.1` → `2026.07.26.2`.
 
+**Addendum kedua (lanjutan sesi sama) — tambah keterangan "(Sabtu/Minggu)":** User minta perjelas kedua pesan pasar-tutup dengan keterangan hari, biar jelas ke audiens awam (demo LinkedIn) kenapa pasar tutup. Diedit di 2 titik: banner client `Pasar forex tutup — menampilkan analisa terakhir.` (`index.html`) dan pesan error server `Pasar forex sedang tutup — belum ada analisa tersimpan untuk pair ini.` (`api/admin.js`) — keduanya jadi `Pasar forex tutup (Sabtu/Minggu) — ...`. Cuma teks tampilan, tidak mengubah gate logic (`marketHours.isFxMarketOpen()` tetap berbasis jam UTC Jumat 21:00–Minggu ~22:00, "Sabtu/Minggu" di sini simplifikasi awam bukan definisi teknis presisi).
+
+**Verifikasi:** `npm test` 608/608 hijau, tidak ada test yang assert teks pesan persis. `APP_VERSION` naik `2026.07.26.2` → `2026.07.26.3`.
+
 ## Changelog Session 244 (2026-07-25) — Audit Billing Vendor + Putus Kontrak OpenRouter/Cerebras/Groq/Ollama
 
 **Konteks:** User minta cek billing semua vendor yang terhubung ke app. Audit langsung ke API/dashboard tiap vendor (bukan cuma baca dokumentasi lama) menghasilkan beberapa temuan dan satu keputusan besar: user putuskan diputus kontrak 4 provider AI (OpenRouter, Cerebras, Groq, Ollama Cloud) — semua gratis tapi tidak dipakai lagi, dan DeepSeek (satu-satunya provider berbayar) tetap dipertahankan.

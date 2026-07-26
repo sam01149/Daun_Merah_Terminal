@@ -4335,7 +4335,7 @@ window.addEventListener('DOMContentLoaded', updateThemeIcon);
 
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.07.26.2';
+const APP_VERSION = '2026.07.26.3';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
@@ -6914,7 +6914,7 @@ async function analyzeOhlcvAi(force) {
       if (!data.market_closed) analisaFreshUntil[reqSymbol] = Date.now() + ANALISA_FRESH_MS;
       if (analisaActive.symbol === reqSymbol) {
         const marketClosedBanner = data.market_closed
-          ? `<div style="font-size:10px;color:var(--muted);font-family:'DM Mono',monospace;padding:4px 0 8px">Pasar forex tutup — menampilkan analisa terakhir.</div>`
+          ? `<div style="font-size:10px;color:var(--muted);font-family:'DM Mono',monospace;padding:4px 0 8px">Pasar forex tutup (Sabtu/Minggu) — menampilkan analisa terakhir.</div>`
           : '';
         _updateAnalisaDisclaimer(data.model);
         resultEl.innerHTML = marketClosedBanner + _renderStructuredAi(data.structured || null, data.commentary, data.model, hasMakro, false, hasFund, makroAt, data.loaded_at || null);
