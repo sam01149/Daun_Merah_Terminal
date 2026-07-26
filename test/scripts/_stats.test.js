@@ -2,7 +2,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const {
   mean, bootstrapCI, permutationTest, wilcoxonRankSum, normalCdf,
-  brierScore, expectedCalibrationError,
+  brierScore, expectedCalibrationError, pearsonCorrelation,
 } = require('../../scripts/_stats.js');
 
 // ── mean ──────────────────────────────────────────────────────────────────
@@ -134,4 +134,30 @@ test('expectedCalibrationError: array kosong -> ece NaN, buckets kosong', () => 
   const r = expectedCalibrationError([]);
   assert.ok(Number.isNaN(r.ece));
   assert.deepEqual(r.buckets, []);
+});
+
+// ── pearsonCorrelation ───────────────────────────────────────────────────────
+
+test('pearsonCorrelation: dua deret identik -> r = 1', () => {
+  const a = [1, 2, 3, 4, 5];
+  assert.ok(Math.abs(pearsonCorrelation(a, a) - 1) < 1e-9);
+});
+
+test('pearsonCorrelation: hubungan linear terbalik -> r = -1', () => {
+  const a = [1, 2, 3, 4, 5];
+  const b = [5, 4, 3, 2, 1];
+  assert.ok(Math.abs(pearsonCorrelation(a, b) - (-1)) < 1e-9);
+});
+
+test('pearsonCorrelation: deret tanpa hubungan linear (simetris di sekitar mean) -> r ~ 0', () => {
+  const a = [1, 2, 3, 4, 5];
+  const b = [3, 1, 4, 5, 2]; // permutasi acak, tidak monoton terhadap a
+  const r = pearsonCorrelation(a, b);
+  assert.ok(Math.abs(r) < 0.6, `r harus jauh dari +-1 untuk deret tak berhubungan, dapat ${r}`);
+});
+
+test('pearsonCorrelation: n<2 atau varians nol -> NaN, tidak throw', () => {
+  assert.ok(Number.isNaN(pearsonCorrelation([1], [2])));
+  assert.ok(Number.isNaN(pearsonCorrelation([], [])));
+  assert.ok(Number.isNaN(pearsonCorrelation([5, 5, 5], [1, 2, 3])), 'varians nol di salah satu sisi -> NaN');
 });

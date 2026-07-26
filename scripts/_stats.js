@@ -139,6 +139,24 @@ function expectedCalibrationError(pairs, { bins = 10 } = {}) {
   return { ece, buckets: detail };
 }
 
+// Korelasi Pearson dua deret angka sama panjang (mis. return per-bar dua pair)
+// — dipakai analyze_pair_correlation.js untuk cek independensi antar-pair
+// Golden Trio Plan U (2026-07-26, diskusi user). |r| dekat 1 = bergerak
+// bersamaan (melanggar asumsi sampel independen CLT), dekat 0 = independen.
+function pearsonCorrelation(a, b) {
+  const n = Math.min(a.length, b.length);
+  if (n < 2) return NaN;
+  const ma = mean(a.slice(0, n)), mb = mean(b.slice(0, n));
+  let num = 0, denA = 0, denB = 0;
+  for (let i = 0; i < n; i++) {
+    const da = a[i] - ma, db = b[i] - mb;
+    num += da * db; denA += da * da; denB += db * db;
+  }
+  if (denA === 0 || denB === 0) return NaN;
+  return num / Math.sqrt(denA * denB);
+}
+
 module.exports = {
   mean, bootstrapCI, permutationTest, wilcoxonRankSum, normalCdf, brierScore, expectedCalibrationError,
+  pearsonCorrelation,
 };
