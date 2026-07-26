@@ -3642,11 +3642,11 @@ async function ohlcvAnalyzeHandler(req, res) {
     try {
       const raw = await redisCmd('GET', `ohlcv_analysis:${symbol}`);
       if (raw) {
-        return res.status(200).json({ ...JSON.parse(raw), cached: true, market_closed: true });
+        return res.status(200).json({ ...JSON.parse(raw), cached: true, market_closed: true, ai_skipped: true });
       }
     } catch(e) { console.warn('ohlcv_analyze: market_closed cache read gagal:', e.message); }
     return res.status(200).json({
-      commentary: null, structured: null, cached: false, market_closed: true,
+      commentary: null, structured: null, cached: false, market_closed: true, ai_skipped: true,
       error: 'Pasar forex sedang tutup — belum ada analisa tersimpan untuk pair ini.',
     });
   }
@@ -3720,7 +3720,7 @@ async function ohlcvAnalyzeHandler(req, res) {
     if (!data.h1.available && clientOhlcv?.h1?.available) {
       data = clientOhlcv;
     }
-    if (!data.h1.available) return res.status(200).json({ commentary: null, error: 'OHLCV belum tersedia — tunggu GitHub Actions sync pertama.' });
+    if (!data.h1.available) return res.status(200).json({ commentary: null, ai_skipped: true, error: 'OHLCV belum tersedia — tunggu GitHub Actions sync pertama.' });
 
     const textBlock = buildOhlcvText(data);
     const nowPrice = data.h1?.current;

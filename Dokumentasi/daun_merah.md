@@ -11,13 +11,13 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-07-26 (Session 245 — Fix Pesan Error Analisa AI: Prefix "AI tidak tersedia" Menyesatkan)
+> **Last updated:** 2026-07-26 (Session 245 — Fix Pesan Error Analisa AI + Cooldown 90 Detik Salah Trigger saat Market Tutup)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
 
-## Changelog Session 245 (2026-07-26) — Fix Pesan Error Analisa AI: Prefix "AI tidak tersedia" Menyesatkan
+## Changelog Session 245 (2026-07-26) — Fix Pesan Error Analisa AI + Cooldown 90 Detik Salah Trigger saat Market Tutup
 
 **Konteks:** User sedang menyiapkan demo screen-recording untuk showcase LinkedIn, klik tab Analisa saat pasar forex tutup untuk pair yang belum punya cache — pesan yang tampil: "AI tidak tersedia — Pasar forex sedang tutup — belum ada analisa tersimpan untuk pair ini..\" (perhatikan titik dobel di akhir). Diminta hapus prefix "AI tidak tersedia" karena menyesatkan (bukan AI yang mati, cuma market tutup & belum ada cache).
 
@@ -31,6 +31,12 @@ Prefix generik itu cuma benar untuk skenario #3, tapi selalu ditempel ke ketigan
 **Fix:** Hapus prefix hardcode, tampilkan `data.error` apa adanya; titik ekor cuma ditambah kalau string belum diakhiri tanda baca (`.`/`!`/`?`), fallback default (`data.error` kosong) tetap pakai teks "AI tidak tersedia, coba beberapa saat lagi." biar tidak kehilangan makna kalau server suatu saat kirim response tanpa field `error`.
 
 **Verifikasi:** `npm test` 608/608 hijau (tidak ada test yang assert ke string lama). `APP_VERSION` naik `2026.07.25.6` → `2026.07.26.1`.
+
+**Addendum (lanjutan sesi sama) — tombol Analisa ke-cooldown 90 detik padahal nol AI call:** User lapor sambil siapan demo: klik pair lain di tab Analisa saat market tutup, tombol langsung terkunci 90 detik walau tidak ada AI yang dipanggil. Root cause: `analyzeOhlcvAi()` (`index.html`) selalu panggil `_startAnalisaCooldown()` di blok `finally` — tidak peduli apakah request beneran sampai ke AI provider atau berhenti duluan di gate server (`market tutup` § 3641 atau `OHLCV belum sync` § 3723 di `ohlcvAnalyzeHandler`, `api/admin.js`), yang keduanya sengaja didesain nol AI call (komentar kode sendiri: "nol AI call selama pasar tutup"). Akibatnya, tiap klik Analisa selagi market tutup — baik ada cache maupun tidak — mengunci tombol global 90 detik tanpa alasan nyata, bikin tab Analisa nyaris tidak bisa dipakai gonta-ganti pair pas weekend.
+
+**Fix:** `api/admin.js` — tandai ketiga jalur gate (`market_closed` dengan cache, `market_closed` tanpa cache, `OHLCV belum sync`) dengan flag baru `ai_skipped: true`. `index.html` — `analyzeOhlcvAi()` simpan flag ini ke variabel lokal `aiSkipped` setelah response diterima, `finally` cuma panggil `_startAnalisaCooldown()` kalau `!aiSkipped`. Jalur AI beneran jalan (sukses generate maupun kedua provider gagal) tidak berubah — cooldown tetap berlaku di situ.
+
+**Verifikasi:** `npm test` 608/608 hijau (test `ohlcv_analyze_market_closed.test.js` tidak assert field `ai_skipped`, jadi tidak break). `APP_VERSION` naik `2026.07.26.1` → `2026.07.26.2`.
 
 ## Changelog Session 244 (2026-07-25) — Audit Billing Vendor + Putus Kontrak OpenRouter/Cerebras/Groq/Ollama
 
