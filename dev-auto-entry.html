@@ -147,8 +147,8 @@ tr:hover td{background:rgba(var(--fg-rgb),.02);}
       <h2>10 Setup Terbaru</h2>
       <div style="overflow-x:auto;">
         <table id="recentTable">
-          <thead><tr><th>ID</th><th>Pair</th><th>Bias</th><th>Status</th><th>Entry</th><th>SL</th><th>TP</th><th>Conf</th><th>Sumber</th><th>TS</th></tr></thead>
-          <tbody><tr><td class="empty" colspan="10">—</td></tr></tbody>
+          <thead><tr><th>ID</th><th>Pair</th><th>Bias</th><th>Status</th><th>Entry</th><th>SL</th><th>TP</th><th>Conf</th><th>Sumber</th><th>Dibuat</th><th>Filled</th></tr></thead>
+          <tbody><tr><td class="empty" colspan="11">—</td></tr></tbody>
         </table>
       </div>
     </div>
@@ -414,7 +414,7 @@ tr:hover td{background:rgba(var(--fg-rgb),.02);}
 
   function renderRecent(recent){
     const tbody = document.querySelector('#recentTable tbody');
-    if (!recent || !recent.length) { tbody.innerHTML = '<tr><td class="empty" colspan="10">Belum ada setup.</td></tr>'; return; }
+    if (!recent || !recent.length) { tbody.innerHTML = '<tr><td class="empty" colspan="11">Belum ada setup.</td></tr>'; return; }
     tbody.innerHTML = recent.map(s => `<tr>
       <td class="small">${esc(s.id)}</td>
       <td>${esc(s.symbol)}</td>
@@ -426,6 +426,7 @@ tr:hover td{background:rgba(var(--fg-rgb),.02);}
       <td>${esc(s.confidence)}</td>
       <td>${esc(s.source)}</td>
       <td class="small">${fmtTs(s.ts)}</td>
+      <td class="small">${s.filled_t ? fmtTs(s.filled_t * 1000) : '—'}</td>
     </tr>`).join('');
   }
 
