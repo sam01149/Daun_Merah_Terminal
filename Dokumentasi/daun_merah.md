@@ -11,13 +11,36 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-07-25 (Session 243 — Revamp Skema Warna: Dual-Tone Rust & Forest "Lebih Tua")
+> **Last updated:** 2026-07-25 (Session 244 — Audit Billing Vendor + Putus Kontrak OpenRouter/Cerebras/Groq/Ollama)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
 
-## Changelog Session 243 (2026-07-25) — Revamp Skema Warna: Dual-Tone Rust & Forest "Lebih Tua"
+## Changelog Session 244 (2026-07-25) — Audit Billing Vendor + Putus Kontrak OpenRouter/Cerebras/Groq/Ollama
+
+**Konteks:** User minta cek billing semua vendor yang terhubung ke app. Audit langsung ke API/dashboard tiap vendor (bukan cuma baca dokumentasi lama) menghasilkan beberapa temuan dan satu keputusan besar: user putuskan diputus kontrak 4 provider AI (OpenRouter, Cerebras, Groq, Ollama Cloud) — semua gratis tapi tidak dipakai lagi, dan DeepSeek (satu-satunya provider berbayar) tetap dipertahankan.
+
+**Temuan audit (tidak perlu tindakan kode):**
+- **ScraperAPI:** fix batching CVOL + hapus dead CME endpoint (commit `7623e2a`, `d3ad74c`, sebelumnya) sudah live — konsumsi 817/1000 credit di hari ke-20 siklus, laju ~26/hari sesuai ekspektasi pasca-fix, `payAsYouGoEnabled:false` jadi tidak ada risiko biaya kalau limit kena.
+- **Deriv InvalidSymbol burst** di Railway daemon log (~19:57 tgl 25 Jul, semua 14 pair FX) — dites ulang live via WebSocket langsung, `frxEURUSD` normal kembali; live dashboard `?action=ohlcv_dashboard` juga sehat semua pair. Kesimpulan: transient (kemungkinan hiccup sisi Deriv), self-healing (Plan P/cron GitHub Actions independen dari WS daemon) menutup gap tanpa dampak user-facing — tidak ada fix kode.
+- **Railway:** bill $0,08 current/$0,09 estimated — negligible.
+- **Higgsfield:** trial 3 hari mau berakhir besok paginya — user sudah membatalkan auto-renewal sendiri sebelum sesi ini berlanjut.
+
+**Keputusan user:** DeepSeek (berbayar, saldo top-up $1,75 terpakai aktif) & SambaNova & Gemini **dipertahankan**. OpenRouter ("hapus kontraknya"), Cerebras/Groq/Ollama Cloud ("putus kontraknya") — **dihapus total** dari kode, bukan cuma di-nonaktifkan via env var kosong.
+
+**Eksekusi (terinterupsi sekali oleh tabrakan sesi — lihat catatan di bawah):**
+- `api/_ai_guard.js`: 4 entri `DEFAULT_LIMITS` + cabang `providerFromUrl` dihapus.
+- `api/journal.js`: AI Coach chain 4-tier (Cerebras→SambaNova→Groq→Gemini) jadi 2-tier (SambaNova akun2→Gemini).
+- `api/admin.js`: `fundamental_analysis` (Cerebras primary→SambaNova→Groq→Gemini jadi SambaNova→Gemini), `position_review` (Groq fallback dihapus, SambaNova-only + downgrade HOLD fail-safe), `ohlcv_analyze` diagnostik `?test_hermes=1`/`?test_ollama=1` dihapus total (blok Hermes-via-OpenRouter & Ollama-nano dihapus, bukan cuma di-skip), `ohlcv_critic` (Groq fallback dihapus, SambaNova-only). `KNOWN_CIRCUITS` dibersihkan dari circuit OpenRouter/Cerebras/Ollama.
+- `api/market-digest.js` (perubahan terbesar, ~570 baris terhapus): Call 1 kehilangan seluruh blok Nemotron Ultra/Super (via Ollama Cloud & OpenRouter, dulu primary session 162-163 lalu didemote ke cron-only), diagnostik Hermes/GLM (`?test_hermes=1`/`?test_glm=1`), fallback Cerebras gpt-oss-120b, fallback Groq qwen3. Call 2 kehilangan diagnostik Nemotron + fallback Groq. Call 3 kehilangan array provider Nemotron (`?test_nemotron=1`) + fallback Groq. Call 4 (`checkThesisContradictions`/`runCronThesisSweep`) kehilangan parameter & fallback Groq. Fungsi `callOllama()` dan `withNoThink()` dihapus total (tidak ada pemanggil tersisa). Chain sekarang murni **DeepSeek primary → SambaNova → Gemini fallback** (Call 1/2), **DeepSeek → SambaNova** (Call 3, tanpa Gemini — memang begitu dari awal), **SambaNova saja** (Call 4).
+- Test disesuaikan: `admin_fundamental.test.js` & `journal_ai.test.js` (chain 4-tier→2-tier lama dihapus, ditulis ulang untuk chain baru), `guards.test.js` (`providerFromUrl`/`DEFAULT_LIMITS` disesuaikan), `market_digest_nemotron.test.js` **dihapus total** (100% spesifik Nemotron/Hermes/OpenRouter/Ollama) diganti `market_digest_aicall.test.js` (test generik buat `aiCall()` yang masih dipakai DeepSeek/SambaNova/Gemini/Mistral). Full suite 608/608 hijau.
+- Env var `OPENROUTER_API_KEY`/`CEREBRAS_API_KEY`/`GROQ_API_KEY`/`OLLAMA_API_KEY` dihapus dari Vercel (semua environment) via `vercel env rm`.
+- Dokumentasi: `daun_merah_vendor.md` §2/§8 & `daun_merah_ai.md` (rewrite besar — semua tabel chain fallback, §4 jatah harian, §7 model/endpoint) diupdate ke kondisi baru.
+
+**Tabrakan multi-sesi (insiden, bukan bug produk):** di tengah pengerjaan, sesi lain yang aktif bersamaan membuat commit lalu menjalankan `git reset --hard` — menghapus SEMUA perubahan uncommitted sesi ini (`_ai_guard.js`/`journal.js` hilang total, `admin.js` cuma 1 dari ~8 potongan edit yang selamat, sempat jadi bug setengah-jadi). User dikonfirmasi ada sesi lain aktif, pilih tunggu sampai sesi itu push. Setelah aman (local sync dengan `origin/main`), seluruh pekerjaan diulang dari nol dengan strategi commit per-file supaya jendela rawan kecil. Detail teknis di memori/`[[project-plan-v-concurrent-session-collision]]` kalau perlu rujukan pola serupa di masa depan.
+
+**Verifikasi:** `npm test` 608/608 hijau sebelum & sesudah tiap commit; `node -c` + `node -e "require(...)"` dipakai untuk cek tidak ada `ReferenceError` tersembunyi di kode yang jarang dieksekusi (fallback tier, jalur diagnostik) sebelum test suite sempat menyentuhnya.
 
 **Konteks:** User konsultasi dengan Gemini soal revamp warna karena sadar palet lama (bg `#0a0a08`, accent crimson `#c0392b`, green `#27ae60`) nyaris identik dengan war-watch.com (dikonfirmasi tabel perbandingan hex Gemini: bg/surface/text/muted/green semua overlap, bukan cuma merahnya). Setelah eksplorasi beberapa preset (Institutional Gold, Emerald, Burgundy dari Gemini, lalu ide sendiri "Rust & Moss" berbasis pigmen alami), user pilih arah **dual-tone filosofis** (hijau=bullish/tumbuh, merah=bearish/alami — selaras nama & logo daun dua-warna) lalu minta versi **"lebih tua"** (warna diredam/didalamkan, bukan cerah).
 

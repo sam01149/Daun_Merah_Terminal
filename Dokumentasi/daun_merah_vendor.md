@@ -46,12 +46,11 @@ Semua workflow di atas autentikasi ke `api/*.js` lewat header `x-cron-secret`, d
 
 | Provider | Env var | Tier |
 |---|---|---|
-| OpenRouter | `OPENROUTER_API_KEY` | Free (persisten) |
-| Cerebras | `CEREBRAS_API_KEY` | Free (persisten) |
 | SambaNova (2 akun terpisah) | `SAMBANOVA_API_KEY`, `SAMBANOVA_API_KEY_CALL1` | Free (persisten) |
-| Groq | `GROQ_API_KEY` | Free (persisten) |
-| Ollama Cloud | `OLLAMA_API_KEY` | Free |
 | Google AI Studio (Gemini) | `GEMINI_API_KEY` | Free (1.500 RPD) — dipromosikan Plan N (2026-07-18) |
+| DeepSeek (API resmi) | `DEEPSEEK_API_KEY` | Berbayar dari saldo top-up user (bukan free tier) |
+
+**DITOLAK/DIPUTUS:** OpenRouter, Cerebras, Groq, Ollama Cloud — semua **kontrak diputus user 2026-07-25**, env var dihapus dari Vercel, kode chain/diagnostik-nya dihapus total dari `api/market-digest.js`, `api/admin.js`, `api/journal.js`, `api/_ai_guard.js`. Sebelumnya berstatus "Free (persisten)".
 
 ---
 
@@ -119,14 +118,11 @@ Semua workflow di atas autentikasi ke `api/*.js` lewat header `x-cron-secret`, d
 
 ```
 # AI Providers
-OPENROUTER_API_KEY
-CEREBRAS_API_KEY
 SAMBANOVA_API_KEY
 SAMBANOVA_API_KEY_CALL1
-GROQ_API_KEY
-OLLAMA_API_KEY
 GEMINI_API_KEY       # Dipromosikan Plan N (2026-07-18) — Google AI Studio (Gemini)
 DEEPSEEK_API_KEY     # Plan O (2026-07-18) — DeepSeek API resmi, PRIMARY Ringkasan/Analisa/Pre-Entry Check, berbayar dari saldo top-up user
+# OPENROUTER_API_KEY / CEREBRAS_API_KEY / GROQ_API_KEY / OLLAMA_API_KEY — DIHAPUS dari Vercel 2026-07-25 (kontrak diputus user)
 
 # Data
 FRED_API_KEY
