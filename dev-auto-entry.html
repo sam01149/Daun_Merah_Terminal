@@ -72,6 +72,8 @@ tr:hover td{background:rgba(var(--fg-rgb),.02);}
 .formrow{display:flex;gap:10px;flex-wrap:wrap;}
 .formrow > div{flex:1;min-width:140px;}
 .hint{font-size:9.5px;color:var(--muted);margin-top:4px;}
+.warnbox{background:rgba(var(--accent-rgb),.1);border:1px solid var(--accent-dim);border-left:3px solid var(--accent);border-radius:4px;padding:9px 11px;font-size:10.5px;color:var(--fg);line-height:1.6;}
+.pairbtns button:disabled{opacity:.35;}
 #respPanel{position:sticky;bottom:0;background:var(--panel);border-top:1px solid var(--border);max-height:38vh;display:flex;flex-direction:column;}
 #respHead{display:flex;justify-content:space-between;align-items:center;padding:6px 14px;border-bottom:1px solid var(--border);cursor:pointer;}
 #respHead .tag{font-size:9px;padding:1px 6px;border-radius:3px;background:rgba(var(--fg-rgb),.08);color:var(--muted);}
@@ -164,8 +166,11 @@ tr:hover td{background:rgba(var(--fg-rgb),.02);}
   <div class="pane" id="pane-trigger">
     <div class="card">
       <h2>Trigger Analisa Manual (auto=1)</h2>
-      <p class="hint">Sama seperti daemon VPS memanggil ohlcv_analyze&amp;auto=1 — hasil masuk setup_log_auto:v1 dengan source:'auto'. Dedup 30 menit tetap berlaku (klik 2x cepat = cached).</p>
-      <div class="pairbtns" id="pairBtns"></div>
+      <div class="warnbox">
+        <b>PERINGATAN:</b> tombol di bawah IDENTIK dengan cron terjadwal daemon VPS — hasilnya nulis entry SUNGGUHAN ke setup_log_auto:v1 dengan source:'auto', ikut kehitung di statistik eksperimen (gate n≥100). Klik manual = intervensi ke sample yang seharusnya murni otomatis tanpa campur tangan. Jangan dipakai kecuali BENAR-BENAR sengaja (misal setelah perbaikan bug, butuh 1 sample tambahan) — terkunci ganda di bawah supaya tidak ke-pencet.
+      </div>
+      <label style="margin-top:12px;"><input type="checkbox" id="triggerUnlock" style="width:auto;vertical-align:middle;"> Saya sengaja mau trigger manual dan paham ini akan tercatat sebagai source:'auto'</label>
+      <div class="pairbtns" id="pairBtns" style="margin-top:10px;"></div>
     </div>
   </div>
 
@@ -325,6 +330,13 @@ tr:hover td{background:rgba(var(--fg-rgb),.02);}
   // ── Tabs ──
   document.querySelectorAll('.tab').forEach(t => {
     t.addEventListener('click', () => {
+      // Re-lock trigger manual setiap kali pindah tab (termasuk balik lagi ke tab ini) —
+      // supaya "unlock" tidak nyangkut dari kunjungan sebelumnya lalu kepencet tanpa sadar.
+      if (t.dataset.pane !== 'trigger') {
+        const unlock = document.getElementById('triggerUnlock');
+        unlock.checked = false;
+        document.querySelectorAll('#pairBtns button').forEach(b => { b.disabled = true; });
+      }
       document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
       document.querySelectorAll('.pane').forEach(x => x.classList.remove('active'));
       t.classList.add('active');
@@ -474,20 +486,33 @@ tr:hover td{background:rgba(var(--fg-rgb),.02);}
   }
   document.getElementById('btnRefresh').addEventListener('click', loadDashboard);
 
-  // ── Trigger analisa ──
+  // ── Trigger analisa ── SENGAJA terkunci ganda (checkbox + confirm) — tombol
+  // ini mengirim auto=1 yang server anggap IDENTIK dengan cron terjadwal, nulis
+  // entry sungguhan ke setup_log_auto:v1 yang ikut dihitung statistik eksperimen.
+  // Klik tidak sengaja = intervensi ke sample yang harus murni otomatis.
   document.getElementById('pairBtns').innerHTML = PAIRS.map(p =>
-    `<button data-symbol="${esc(p.symbol)}" data-label="${esc(p.label)}">${esc(p.label)}</button>`
+    `<button data-symbol="${esc(p.symbol)}" data-label="${esc(p.label)}" disabled>${esc(p.label)}</button>`
   ).join('');
+  document.getElementById('triggerUnlock').addEventListener('change', e => {
+    document.querySelectorAll('#pairBtns button').forEach(b => { b.disabled = !e.target.checked; });
+  });
   document.getElementById('pairBtns').addEventListener('click', async e => {
     const btn = e.target.closest('button[data-symbol]');
-    if (!btn) return;
+    if (!btn || btn.disabled) return;
+    const ok = confirm(
+      `Trigger analisa auto=1 untuk ${btn.dataset.label}?\n\n` +
+      `Ini akan tercatat sebagai source:'auto' di setup_log_auto:v1 — SAMA seperti cron ` +
+      `terjadwal, ikut masuk statistik eksperimen (gate n>=100). Lanjutkan hanya kalau ` +
+      `memang sengaja.`
+    );
+    if (!ok) return;
     btn.disabled = true;
     const orig = btn.textContent;
     btn.textContent = '...';
     try {
       await api('ohlcv_analyze', { query: { symbol: btn.dataset.symbol, label: btn.dataset.label, auto: '1' } });
       await loadDashboard();
-    } finally { btn.disabled = false; btn.textContent = orig; }
+    } finally { btn.disabled = !document.getElementById('triggerUnlock').checked; btn.textContent = orig; }
   });
 
   // ── Setup override ──
