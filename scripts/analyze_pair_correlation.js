@@ -26,7 +26,10 @@ const PAIRS = [
   { symbol: 'GC=F',     label: 'XAU/USD' },
   { symbol: 'EURUSD=X', label: 'EUR/USD' },
   { symbol: 'GBPUSD=X', label: 'GBP/USD' },
-  { symbol: 'EURGBP=X', label: 'EUR/GBP (kontrol, tidak share USD)' },
+  { symbol: 'EURGBP=X', label: 'EUR/GBP (kandidat)' },
+  { symbol: 'AUDJPY=X', label: 'AUD/JPY (kandidat)' },
+  { symbol: 'AUDNZD=X', label: 'AUD/NZD (kandidat)' },
+  { symbol: 'CHFJPY=X', label: 'CHF/JPY (kandidat)' },
 ];
 
 async function fetchYahoo(symbol, interval, range) {
