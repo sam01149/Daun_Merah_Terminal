@@ -4335,7 +4335,7 @@ window.addEventListener('DOMContentLoaded', updateThemeIcon);
 
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.07.26.4';
+const APP_VERSION = '2026.07.26.5';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
@@ -4508,7 +4508,7 @@ function tickCooldown() {
     if (!btn) { clearInterval(ringkasanCooldownInterval); return; }
     if (remaining > 0) {
       btn.classList.add('loading');
-      btn.querySelector('span').textContent = 'Tunggu ' + remaining + 's';
+      btn.querySelector('span').textContent = 'Cooldown ' + remaining + 's';
     } else {
       clearInterval(ringkasanCooldownInterval);
       btn.classList.remove('loading');
@@ -6102,7 +6102,7 @@ function _tickAnalisaCooldown() {
     if (!btn) { clearInterval(analisaAiCooldownInterval); return; }
     if (remaining > 0) {
       btn.disabled = true;
-      btn.querySelector('span').textContent = `Tunggu ${remaining}s`;
+      btn.querySelector('span').textContent = `Cooldown ${remaining}s`;
     } else {
       clearInterval(analisaAiCooldownInterval);
       btn.disabled = false;
@@ -6123,7 +6123,7 @@ function _tickCriticCooldown() {
     if (!btn) { clearInterval(analisaCriticCooldownInterval); return; }
     if (remaining > 0) {
       btn.disabled = true;
-      btn.textContent = `Tunggu ${remaining}s`;
+      btn.textContent = `Cooldown ${remaining}s`;
     } else {
       clearInterval(analisaCriticCooldownInterval);
       btn.disabled = false;
@@ -9335,7 +9335,7 @@ function _startAiBtnCooldown(btnId, restoreHtml) {
     if (!btn) { clearInterval(state.interval); return; }
     if (remaining > 0) {
       btn.disabled = true;
-      btn.textContent = `Tunggu ${remaining}s`;
+      btn.textContent = `Cooldown ${remaining}s`;
     } else {
       clearInterval(state.interval);
       btn.disabled = false;
@@ -13352,7 +13352,7 @@ function _tickPecCooldown() {
     if (!btn) { clearInterval(ckPecCooldownInterval); return; }
     if (remaining > 0) {
       btn.disabled = true;
-      btn.textContent = `Tunggu ${remaining}s`;
+      btn.textContent = `Cooldown ${remaining}s`;
     } else {
       clearInterval(ckPecCooldownInterval);
       btn.disabled = false;

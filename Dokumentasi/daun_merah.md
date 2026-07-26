@@ -46,6 +46,10 @@ Prefix generik itu cuma benar untuk skenario #3, tapi selalu ditempel ke ketigan
 
 **Verifikasi:** `npm test` 608/608 hijau. `APP_VERSION` naik `2026.07.26.3` → `2026.07.26.4`.
 
+**Addendum keempat (lanjutan sesi sama) — teks cooldown "Tunggu {n}s" → "Cooldown {n}s":** User minta ganti wording tombol cooldown Ringkasan karena kesannya kurang pas ("Tunggu" berkesan nyuruh/error). Setelah dicek, pola yang sama identik dipakai di 5 titik kode buat total 6+ tombol AI (Ringkasan `startCooldown`/`tickCooldown` baris ~4497, Analisa AI `_tickAnalisaCooldown` baris ~6097, AI Kritikus `_tickCriticCooldown` baris ~6118, Pre-Entry Check `_tickPecCooldown` baris ~13347, dan fungsi generik `_startAiBtnCooldown` baris ~9325 yang dipakai bersama Fundamental/Ringkas Jurnal/Diagnosa Perilaku) — user pilih ganti semua sekaligus biar konsisten antar tombol, bukan cuma Ringkasan. Diganti ke "Cooldown {n}s" di kelimanya. **Sengaja TIDAK disentuh:** 3 pesan "Tunggu ...s sebelum centang ulang" (baris ~4150, ~11697, ~11785) — itu fitur beda (anti-gaming checklist re-tick lock, bukan cooldown tombol AI), makna "tunggu" di situ memang pas (instruksi ke user, bukan status sistem).
+
+**Verifikasi:** `npm test` 608/608 hijau. `APP_VERSION` naik `2026.07.26.4` → `2026.07.26.5`.
+
 ## Changelog Session 244 (2026-07-25) — Audit Billing Vendor + Putus Kontrak OpenRouter/Cerebras/Groq/Ollama
 
 **Konteks:** User minta cek billing semua vendor yang terhubung ke app. Audit langsung ke API/dashboard tiap vendor (bukan cuma baca dokumentasi lama) menghasilkan beberapa temuan dan satu keputusan besar: user putuskan diputus kontrak 4 provider AI (OpenRouter, Cerebras, Groq, Ollama Cloud) — semua gratis tapi tidak dipakai lagi, dan DeepSeek (satu-satunya provider berbayar) tetap dipertahankan.
