@@ -81,6 +81,9 @@ const YAHOO_TO_TWELVEDATA_SYMBOL = {
   'NZDUSD=X': 'NZD/USD', 'EURJPY=X': 'EUR/JPY', 'GBPJPY=X': 'GBP/JPY',
   'EURGBP=X': 'EUR/GBP', 'AUDJPY=X': 'AUD/JPY', 'EURAUD=X': 'EUR/AUD',
   'GBPAUD=X': 'GBP/AUD', 'GBPCAD=X': 'GBP/CAD',
+  // Plan U redesain independensi (2026-07-26) — AUD/NZD masuk OHLCV_FIXED_PAIRS
+  // (api/admin.js), butuh fallback sama seperti pair lain kalau Yahoo down.
+  'AUDNZD=X': 'AUD/NZD',
 };
 
 function mapYahooSymbolToTwelveData(yahooSymbol) {

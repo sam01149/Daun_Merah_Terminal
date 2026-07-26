@@ -124,9 +124,15 @@ tr:hover td{background:rgba(var(--fg-rgb),.02);}
   <div class="pane active" id="pane-dash">
     <div class="card">
       <div style="display:flex;justify-content:space-between;align-items:center;">
-        <h2>Ringkasan Global (setup_log_auto:v1)</h2>
+        <h2>Gate Plan U — Cukup Data?</h2>
         <button id="btnRefresh">Refresh</button>
       </div>
+      <p class="hint">Kriteria SELESAI (2026-07-26, redesain independensi — lihat daun_merah_riset.md): BUKAN cuma total gabungan ≥100, tapi n global ≥100 <b>DAN</b> SETIAP pair individual ≥30 (ambang CLT). Kalau ada pair di bawah 30 walau total sudah ≥100, gate BELUM terpenuhi — jangan tarik kesimpulan win-rate dulu.</p>
+      <div class="grid" id="gateStats"><div class="empty">Belum dimuat — klik Refresh.</div></div>
+    </div>
+
+    <div class="card">
+      <h2>Ringkasan Global (setup_log_auto:v1)</h2>
       <div class="grid" id="globalStats"><div class="empty">Belum dimuat — klik Refresh.</div></div>
     </div>
 
@@ -354,6 +360,28 @@ tr:hover td{background:rgba(var(--fg-rgb),.02);}
     return `<div class="stat"><div class="v${cls ? ' ' + cls : ''}">${esc(value)}</div><div class="l">${esc(label)}</div></div>`;
   }
 
+  const GATE_GLOBAL_N = 100, GATE_PER_PAIR_N = 30;
+
+  function renderGate(global, symbols){
+    const keys = Object.keys(symbols || {});
+    if (!global || !keys.length) { document.getElementById('gateStats').innerHTML = '<div class="empty">Belum ada data.</div>'; return; }
+    const globalTotal = global.total || 0;
+    const globalOk = globalTotal >= GATE_GLOBAL_N;
+    const perPairFails = keys.filter(k => (symbols[k].total || 0) < GATE_PER_PAIR_N);
+    const allPairsOk = perPairFails.length === 0;
+    const gateOk = globalOk && allPairsOk;
+    let html = `<div class="stat"><div class="v ${gateOk ? 'green' : 'red'}">${gateOk ? 'TERPENUHI' : 'BELUM CUKUP'}</div><div class="l">Status Gate</div></div>`;
+    html += statBlock('Global vs Target', `${globalTotal} / ${GATE_GLOBAL_N}`, globalOk ? 'green' : 'yellow');
+    for (const k of keys) {
+      const t = symbols[k].total || 0;
+      html += statBlock(k, `${t} / ${GATE_PER_PAIR_N}`, t >= GATE_PER_PAIR_N ? 'green' : 'red');
+    }
+    if (!allPairsOk) {
+      html += `<div class="stat" style="grid-column:1/-1;"><div class="l" style="text-transform:none;font-size:9.5px;color:var(--accent);">Belum lolos: ${perPairFails.map(esc).join(', ')} — jangan simpulkan win-rate dulu walau total global sudah tinggi.</div></div>`;
+    }
+    document.getElementById('gateStats').innerHTML = html;
+  }
+
   function renderGlobal(g){
     if (!g) { document.getElementById('globalStats').innerHTML = '<div class="empty">Tidak ada data.</div>'; return; }
     const html = [
@@ -469,6 +497,7 @@ tr:hover td{background:rgba(var(--fg-rgb),.02);}
     if (!getSecret()) return;
     const { json } = await api('setup_stats', { query: { scope: 'auto' }, silent: true });
     if (!json || json.scope !== 'auto') {
+      document.getElementById('gateStats').innerHTML = '';
       document.getElementById('globalStats').innerHTML = '<div class="empty">Secret salah atau tidak ada akses — server membalas payload publik biasa (byte-identical, sengaja tidak membocorkan scope).</div>';
       document.getElementById('mgmtStats').innerHTML = '';
       document.getElementById('metaStats').innerHTML = '';
@@ -477,6 +506,7 @@ tr:hover td{background:rgba(var(--fg-rgb),.02);}
       renderRecent([]);
       return;
     }
+    renderGate(json.global, json.symbols);
     renderGlobal(json.global);
     renderMgmt(json.global);
     renderMeta(json.consistency, json.pipeline_latency);

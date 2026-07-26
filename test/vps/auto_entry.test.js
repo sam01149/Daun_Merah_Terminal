@@ -141,9 +141,14 @@ test('AUTO_ENTRY_SYMBOL_MAP: default pairs (frxXAUUSD, frxEURUSD) terpetakan', (
   assert.deepEqual(AUTO_ENTRY_SYMBOL_MAP.frxEURUSD, { symbol: 'EURUSD=X', label: 'EUR/USD' });
 });
 
-test('AUTO_ENTRY_PAIRS: default Golden Trio 3 pair (tanpa env var override)', () => {
-  assert.deepEqual(AUTO_ENTRY_PAIRS, ['frxXAUUSD', 'frxEURUSD', 'frxGBPUSD']);
+test('AUTO_ENTRY_PAIRS: default redesain independensi 4 pair (tanpa env var override)', () => {
+  assert.deepEqual(AUTO_ENTRY_PAIRS, ['frxXAUUSD', 'frxEURUSD', 'frxAUDNZD', 'frxEURGBP']);
   for (const pair of AUTO_ENTRY_PAIRS) {
     assert.ok(AUTO_ENTRY_SYMBOL_MAP[pair], `${pair} harus terpetakan di AUTO_ENTRY_SYMBOL_MAP`);
   }
+});
+
+test('AUTO_ENTRY_SYMBOL_MAP: AUD/NZD & EUR/GBP (pengganti GBP/USD) terpetakan', () => {
+  assert.deepEqual(AUTO_ENTRY_SYMBOL_MAP.frxAUDNZD, { symbol: 'AUDNZD=X', label: 'AUD/NZD' });
+  assert.deepEqual(AUTO_ENTRY_SYMBOL_MAP.frxEURGBP, { symbol: 'EURGBP=X', label: 'EUR/GBP' });
 });

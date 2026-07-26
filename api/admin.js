@@ -1425,6 +1425,14 @@ const OHLCV_FIXED_PAIRS = [
   { symbol: 'USDCAD=X', label: 'USD/CAD' },
   { symbol: 'USDCHF=X', label: 'USD/CHF' },
   { symbol: 'NZDUSD=X', label: 'NZD/USD' },
+  // Plan U (2026-07-26, redesain independensi Golden Trio — lihat
+  // daun_merah_riset.md): AUD/NZD & EUR/GBP masuk pair auto-entry baru,
+  // butuh cache ohlcv:*:1h/4h/1d terjaga sama seperti 8 pair di atas.
+  // EUR/GBP juga sudah di YAHOO_TO_DERIV_SYMBOL (vps/daemon.js) — dobel
+  // sumber (Deriv stream + fallback cron ini) sama seperti EUR/USD/GBP/USD.
+  // AUD/NZD TIDAK ada di Deriv map, Yahoo-only sama seperti GC=F.
+  { symbol: 'AUDNZD=X', label: 'AUD/NZD' },
+  { symbol: 'EURGBP=X', label: 'EUR/GBP' },
 ];
 
 const OHLCV_PAIR_SYMBOL_MAP = {

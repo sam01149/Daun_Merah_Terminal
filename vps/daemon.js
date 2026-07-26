@@ -972,12 +972,26 @@ const AUTO_ENTRY_SYMBOL_MAP = {
   frxUSDCAD: { symbol: 'USDCAD=X', label: 'USD/CAD' },
   frxUSDCHF: { symbol: 'USDCHF=X', label: 'USD/CHF' },
   frxNZDUSD: { symbol: 'NZDUSD=X', label: 'NZD/USD' },
+  // Redesain independensi Golden Trio (2026-07-26, lihat daun_merah_riset.md):
+  // AUD/NZD & EUR/GBP diukur (korelasi + proxy peluang setup) sebagai pengganti
+  // GBP/USD yang paling redundan (r=0.827 ke EUR/USD). frxAUDNZD bukan simbol
+  // Deriv asli di YAHOO_TO_DERIV_SYMBOL (AUD/NZD Yahoo-only, sama pola GC=F) —
+  // key ini murni penamaan konsisten dgn AUTO_ENTRY_PAIRS, bukan reuse map Q-3.
+  frxAUDNZD: { symbol: 'AUDNZD=X', label: 'AUD/NZD' },
+  frxEURGBP: { symbol: 'EURGBP=X', label: 'EUR/GBP' },
 };
 
-// Golden Trio (2026-07-22, diskusi user — percepat akumulasi sampel Plan U dari
-// ~50 hari ke ~16 hari, n≈33/pair tetap lolos ambang CLT n≥30, lihat
-// daun_merah_riset.md): default 2 pair -> 3 pair (tambah GBP/USD).
-const AUTO_ENTRY_PAIRS = (process.env.AUTO_ENTRY_PAIRS || 'frxXAUUSD,frxEURUSD,frxGBPUSD')
+// Redesain independensi Golden Trio (2026-07-26, diskusi user — audit korelasi
+// membuktikan XAU/EUR/GBP saling korelatif r=0.53-0.83 krn share kaki USD, n>=100
+// gabungan BUKAN sampel independen; lihat daun_merah_riset.md untuk data lengkap):
+// GBP/USD dibuang (paling redundan ke EUR/USD), AUD/NZD + EUR/GBP masuk (korelasi
+// rata-rata r=0.10 & r=0.19 ke pair lain, PALING RENDAH dari semua kandidat dites).
+// 4 pair @ 2 slot/hari = 8 call/hari (naik dari 6) — MASIH jauh di bawah pagar
+// deepseek_experimental 15/hari. PENTING: kriteria "cukup data" Plan U harus baca
+// n>=30 di STIAP pair (bukan cuma total gabungan >=100) — dengan 4 pair butuh
+// 4x30=120 total (~15 hari di 8 call/hari), hampir sama dgn skema 3-pair lama
+// (~16-17 hari) kalau kriteria per-pair ini diikutkan, TIDAK lebih lambat.
+const AUTO_ENTRY_PAIRS = (process.env.AUTO_ENTRY_PAIRS || 'frxXAUUSD,frxEURUSD,frxAUDNZD,frxEURGBP')
   .split(',').map(s => s.trim()).filter(Boolean);
 const AUTO_ENTRY_HOURS_UTC = (process.env.AUTO_ENTRY_HOURS_UTC || '8,13')
   .split(',').map(s => parseInt(s.trim(), 10)).filter(Number.isFinite);

@@ -11,11 +11,26 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-07-26 (Session 246 — UI Dev Console untuk Auto-Entry (Plan U), Ganti Postman)
+> **Last updated:** 2026-07-26 (Session 247 — Eksekusi Redesain Independensi Pair Auto-Entry Plan U)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 247 (2026-07-26) — Eksekusi Redesain Independensi Pair Auto-Entry Plan U
+
+**Konteks:** Lanjutan riset Session 246 (`daun_merah_riset.md`) — audit korelasi membuktikan Golden Trio (XAU/USD, EUR/USD, GBP/USD) saling korelatif (r=0,53-0,83, share kaki USD), jadi n≥100 gabungan BUKAN sampel independen. Setelah diskusi & analisis kandidat (4 pair diuji: EUR/GBP, AUD/JPY, AUD/NZD, CHF/JPY di dua dimensi — kecepatan & independensi), user putuskan eksekusi: **GBP/USD dibuang, AUD/NZD + EUR/GBP masuk** — pair final EUR/USD, XAU/USD, AUD/NZD, EUR/GBP.
+
+**Perubahan kode:**
+1. `vps/daemon.js` — `AUTO_ENTRY_SYMBOL_MAP` tambah `frxAUDNZD`/`frxEURGBP`; default `AUTO_ENTRY_PAIRS` diganti `frxXAUUSD,frxEURUSD,frxAUDNZD,frxEURGBP` (4 pair, 8 call/hari, naik dari 6 — masih jauh di bawah pagar `deepseek_experimental` 15/hari). `frxGBPUSD` tetap ada di map (tidak dihapus, cuma tidak lagi di daftar aktif) supaya tidak breaking kalau ada yang override env var lama.
+2. `api/admin.js` — `OHLCV_FIXED_PAIRS` tambah `AUDNZD=X`/`EURGBP=X` supaya cache `ohlcv:*:1h/4h/1d` selalu terjaga cron `ohlcv_sync` (EUR/GBP dobel sumber — sudah ada di `YAHOO_TO_DERIV_SYMBOL` daemon.js sejak Q-3, jadi dapat Deriv stream + fallback cron ini; AUD/NZD Yahoo-only sama pola GC=F, tidak ada mapping Deriv).
+3. `api/_ohlcv_fetch.js` — **bug ditemukan & difix saat testing**: `AUDNZD=X` belum ada di `YAHOO_TO_TWELVEDATA_SYMBOL`, jadi kalau Yahoo down, AUD/NZD tidak punya fallback (test `ohlcv_sync_fallback_integration.test.js` gagal 9/10 synced sebelum fix). Ditambahkan `'AUDNZD=X': 'AUD/NZD'`.
+4. `dev-auto-entry.html` — kartu baru **"Gate Plan U — Cukup Data?"** di puncak dashboard: cek eksplisit n global ≥100 **DAN** SETIAP pair individual ≥30 (bukan cuma global saja) — kalau ada pair di bawah ambang walau total sudah ≥100, status tampil "BELUM CUKUP" + pair mana yang belum lolos. Ini fix konseptual penting yang muncul dari diskusi: skema lama (3 pair) kebetulan bikin dua ambang nyampe bareng, tapi begitu jumlah pair berubah, dua ambang itu bisa tidak sinkron lagi kalau tidak dicek eksplisit.
+5. `test/vps/auto_entry.test.js` — update ekspektasi default `AUTO_ENTRY_PAIRS` + tambah test mapping AUD/NZD & EUR/GBP.
+
+**Keputusan yang SENGAJA tidak dieksekusi:** 10 entri lama `setup_log_auto:v1` (dari regime Golden Trio lama) DIBIARKAN apa adanya, tidak dihapus/diarsipkan — non-destruktif, dan entri GC=F/EURUSD=X yang masih relevan tetap terus terakumulasi normal; entri GBP/USD lama cuma berhenti bertambah (tidak di-generate baru), tapi tetap valid dievaluasi TP/SL seperti biasa.
+
+**Verifikasi:** `npm test` 613/613 hijau (612 sebelumnya + 1 test baru, minus 1 kegagalan sementara saat fix TwelveData fallback). Dashboard Gate card diverifikasi Playwright + mock server untuk 2 skenario (lolos semua & ada pair belum ≥30) — render benar, nol JS error. Ketersediaan data Yahoo untuk AUDNZD=X/EURGBP=X sudah diverifikasi Session 246 (backtest korelasi & opportunity-rate). Deriv streaming utk AUD/NZD TIDAK diverifikasi (di luar scope — pair ini didesain Yahoo-only, sama seperti XAU/USD yang sudah production-proven tanpa Deriv).
 
 ## Changelog Session 246 (2026-07-26) — UI Dev Console untuk Auto-Entry (Plan U), Ganti Postman
 
