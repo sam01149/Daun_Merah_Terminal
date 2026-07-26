@@ -4335,7 +4335,7 @@ window.addEventListener('DOMContentLoaded', updateThemeIcon);
 
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.07.25.6';
+const APP_VERSION = '2026.07.26.1';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
@@ -5438,7 +5438,7 @@ function renderRingkasan() {
     ${d.thesis_alerts && d.thesis_alerts.length > 0 ? renderThesisAlerts(d.thesis_alerts) : ''}
 
     ${(d.method === 'fallback' || d.method === 'fallback_quota') && d.provider_log && d.provider_log.length > 0
-      ? `<div class="ringkasan-provider-log">AI tidak tersedia. Provider log: ${d.provider_log.map(s => escHtml(s)).join(' → ')}</div>`
+      ? `<div class="ringkasan-provider-log">Provider log: ${d.provider_log.map(s => escHtml(s)).join(' → ')}</div>`
       : ''}
 
     ${renderArticleSections(d.article)}
@@ -6929,7 +6929,12 @@ async function analyzeOhlcvAi(force) {
       }
     } else {
       if (analisaActive.symbol === reqSymbol) {
-        resultEl.innerHTML = `<div class="analisa-ai-result" style="color:var(--muted)">AI tidak tersedia — ${escHtml(data.error || 'coba beberapa saat lagi')}.</div>`;
+        // Pesan server (market tutup / OHLCV belum sync / AI provider gagal) sudah
+        // self-explanatory masing-masing — jangan tempel prefix generik "AI tidak
+        // tersedia" yang cuma benar untuk sebagian kasus (bukan market/data issue).
+        const errMsg = data.error || 'AI tidak tersedia, coba beberapa saat lagi.';
+        const errText = /[.!?]$/.test(errMsg) ? errMsg : errMsg + '.';
+        resultEl.innerHTML = `<div class="analisa-ai-result" style="color:var(--muted)">${escHtml(errText)}</div>`;
         resultEl.style.display = 'block';
       }
     }

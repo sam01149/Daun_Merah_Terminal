@@ -11,11 +11,26 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-07-25 (Session 244 — Audit Billing Vendor + Putus Kontrak OpenRouter/Cerebras/Groq/Ollama)
+> **Last updated:** 2026-07-26 (Session 245 — Fix Pesan Error Analisa AI: Prefix "AI tidak tersedia" Menyesatkan)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 245 (2026-07-26) — Fix Pesan Error Analisa AI: Prefix "AI tidak tersedia" Menyesatkan
+
+**Konteks:** User sedang menyiapkan demo screen-recording untuk showcase LinkedIn, klik tab Analisa saat pasar forex tutup untuk pair yang belum punya cache — pesan yang tampil: "AI tidak tersedia — Pasar forex sedang tutup — belum ada analisa tersimpan untuk pair ini..\" (perhatikan titik dobel di akhir). Diminta hapus prefix "AI tidak tersedia" karena menyesatkan (bukan AI yang mati, cuma market tutup & belum ada cache).
+
+**Root cause:** `index.html` (`analyzeOhlcvAi`, sekitar baris 6930) render `else` branch (dipakai kapan pun `data.commentary`/`data.structured` sama-sama null) selalu tempel prefix hardcode `"AI tidak tersedia — "` di depan `data.error`, padahal branch yang sama menampung 3 skenario dari `api/admin.js` (`ohlcvAnalyzeHandler`) yang beda sifat:
+1. Market tutup + belum ada cache (baris ~3650): `error: 'Pasar forex sedang tutup — belum ada analisa tersimpan untuk pair ini.'` — bukan soal AI.
+2. OHLCV belum sync (baris ~3723): `error: 'OHLCV belum tersedia — tunggu GitHub Actions sync pertama.'` — bukan soal AI.
+3. AI provider benar-benar gagal (baris ~4257): `error: 'SambaNova (Utama & Cadangan) sedang offline, timeout, atau limit harian habis'` — ini baru genuinely soal AI.
+
+Prefix generik itu cuma benar untuk skenario #3, tapi selalu ditempel ke ketiganya — pesan server sendiri sebenarnya sudah self-explanatory tanpa prefix apa pun. Titik dobel muncul karena template lama selalu nambah `.` di akhir walau `data.error` sudah diakhiri titik.
+
+**Fix:** Hapus prefix hardcode, tampilkan `data.error` apa adanya; titik ekor cuma ditambah kalau string belum diakhiri tanda baca (`.`/`!`/`?`), fallback default (`data.error` kosong) tetap pakai teks "AI tidak tersedia, coba beberapa saat lagi." biar tidak kehilangan makna kalau server suatu saat kirim response tanpa field `error`.
+
+**Verifikasi:** `npm test` 608/608 hijau (tidak ada test yang assert ke string lama). `APP_VERSION` naik `2026.07.25.6` → `2026.07.26.1`.
 
 ## Changelog Session 244 (2026-07-25) — Audit Billing Vendor + Putus Kontrak OpenRouter/Cerebras/Groq/Ollama
 
