@@ -11,11 +11,21 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-07-26 (Session 247 — Eksekusi Redesain Independensi Pair Auto-Entry Plan U)
+> **Last updated:** 2026-07-27 (Session 248 — Koreksi Data Race Condition GC=F Tumpang Tindih)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 248 (2026-07-27) — Koreksi Data Race Condition GC=F Tumpang Tindih
+
+**Konteks:** User cek dashboard "10 Setup Terbaru" di dev console (Session 247), sadar ada 2 entri GC=F berstatus `open` sekaligus dengan bias berlawanan (bullish `GC=F:1784708110704` vs bearish `GC=F:1784880912664`) — padahal `api/admin.js` punya guard eksplisit "1 ide aktif per symbol" (dari Plan U-3 lanjutan, 2026-07-20) yang seharusnya memblokir sinyal baru selama pair itu masih ada posisi open.
+
+**Root cause (ditelusuri dari kode + changelog Session 242):** Bukan guard gagal — ini residu dari bug race condition ts-reset-refine yang sudah difix Session 242 (2026-07-25). Kronologi: `GC=F:1784708110704` (bullish) sempat salah ter-mark status `tp` (closed) lebih awal akibat bug tersebut; karena guard hanya cek `status === 'open'`, saat `GC=F:1784880912664` (bearish) dibuat 24/7 15:15 UTC, pair GC=F *terlihat* kosong (tidak ada yang open) sehingga entri baru lolos dibuat. Sehari kemudian (25/7), status entri pertama dikoreksi manual balik ke `open` (fix Session 242) — efek sampingnya, baru sekarang kelihatan 2 posisi tumpang tindih berkorelasi (1 pergerakan harga XAU/USD terhitung sebagai 2 event independen), persis risiko yang disebut di komentar guard itu sendiri.
+
+**Perbaikan:** Entri `GC=F:1784880912664` (bearish, lahir dari kondisi race) dibatalkan retroaktif via `setup_override` (`scope:auto`, `data_fix.status:'canceled'`) — bukan mengubah hasil trade, murni pelabelan status sesuai kebijakan guard yang seharusnya berlaku sejak awal. Jejak audit lengkap tersimpan di `data_fix_reason`/`data_fix_by:'admin'`/`data_fix_at`. Entri `GC=F:1784708110704` (bullish, korban asli bug Session 242) TIDAK disentuh — tetap `open`, itu posisi yang sah.
+
+**Catatan untuk data n≥30 per-pair (gate Plan U):** total historis GC=F masih terhitung 5 termasuk entri yang baru dibatalkan ini (dibatalkan ≠ dihapus), tapi tidak lagi ikut win-rate/expectancy TP-SL. Dampak ke statistik saat ini kecil (masih fase awal, jauh dari n≥30), dicatat sekarang supaya tidak terulang jadi kebingungan nanti saat n sudah besar.
 
 ## Changelog Session 247 (2026-07-26) — Eksekusi Redesain Independensi Pair Auto-Entry Plan U
 
