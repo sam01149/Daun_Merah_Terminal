@@ -33,6 +33,22 @@ Entri yang melanggar = salah tempat, wajib dipindah.
     - Total Skenario Hybrid = **~$1.22 USD / bulan (± Rp 19.680 / bulan)**.
     - *Penemuan Utama:* Skenario Hybrid **TIDAK lebih murah secara nominal (+Rp 11.550/bulan dibanding Full DeepSeek Rp 8.130/bulan)**. Namun secara *Value-for-Money*, Skenario Hybrid adalah kandidat *upgrade* arsitektur paling ideal: memberikan kualitas narasi briefing terbaik dari GLM 5.2 tanpa mengorbankan kepatuhan JSON & kecepatan Auto-Entry dari DeepSeek v4-flash, dengan total biaya yang tetap sangat murah (< Rp 20.000/bulan).
 
+- **[2026-07-27] Caveat independensi statistik: XAU/USD-EUR/USD tetap korelatif di skema 4-pair baru.**
+  Redesain Session 247 (`daun_merah.md`) buang GBP/USD (paling redundan, r=0,827 ke EUR/USD) dan tambah
+  AUD/NZD + EUR/GBP, tapi pasangan **XAU/USD-EUR/USD sendiri dipertahankan apa adanya (r=0,585, tidak
+  berubah)** — keduanya sengaja tetap masuk set final sebagai "anchor major + kelas aset beda". Angka
+  "korelasi rata-rata turun ke r=0,10-0,19" di changelog itu rata-rata SELURUH 4 pair (didilusi oleh
+  AUD/NZD & EUR/GBP yang nyaris nol), bukan bukti pasangan XAU/USD-EUR/USD ikut membaik.
+  - **Implikasi gate n≥100/n≥30:** kalau XAU/USD dan EUR/USD kebetulan sama-sama open bersamaan (seperti
+    setup 24-27/7/2026), CI/p-value hasil gabungan dua pair itu tetap "lebih presisi dari yang sebenarnya
+    dijamin data" — temuan lama (`analyze_pair_correlation.js`) berlaku penuh untuk pasangan ini, TIDAK
+    tereliminasi oleh redesain 4-pair.
+  - **Implikasi risiko portofolio:** posisi long XAU/USD + short EUR/USD (atau kombinasi searah lain)
+    secara efektif adalah satu taruhan arah USD yang dobel ukurannya, bukan dua taruhan independen — SL
+    kedua sisi cenderung ke-trigger bersamaan saat rally USD kuat, TP bersamaan saat USD lemah (r=0,585,
+    bukan jaminan 1:1, ~34% variance share).
+  - **Belum ada tindak lanjut kode** — dicatat sebagai caveat interpretasi, bukan action item.
+
 - **Kalibrasi keyakinan berbasis outcome** (eks "Tier 2", session 166): ikat badge keyakinan
   Analisa AI ke win-rate historis segmen serupa (pair + bias + rentang skor konfluensi) dari
   `setup_log:v1`, bukan self-assessment LLM. Prasyarat: sampel setup selesai cukup (indikatif
