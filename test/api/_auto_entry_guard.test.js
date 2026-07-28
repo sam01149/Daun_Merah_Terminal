@@ -32,18 +32,36 @@ test('computeRollingR: status selain tp/sl (pending/open/canceled) diabaikan', (
   assert.equal(computeRollingR(closed), 1.5);
 });
 
-test('isDrawdownHalted: risk_off ambang paling ketat (-2R)', () => {
-  const closed = [{ status: 'sl' }, { status: 'sl' }];
+test('isDrawdownHalted: risk_off ambang paling ketat (-2R), sampel cukup (>=5)', () => {
+  const closed = [{ status: 'tp', rr: 1 }, { status: 'tp', rr: 1 }, { status: 'sl' }, { status: 'sl' }, { status: 'sl' }];
   const r = isDrawdownHalted({ closedSetups: closed, regime: 'risk_off' });
-  assert.equal(r.rollingR, -2);
+  assert.equal(r.rollingR, -1);
   assert.equal(r.threshold, -2);
-  assert.equal(r.halted, true);
+  assert.equal(r.halted, false); // -1 > -2, belum ketat cukup
 });
 
 test('isDrawdownHalted: risk_on ambang paling longgar (-6R), -2R belum halt', () => {
-  const closed = [{ status: 'sl' }, { status: 'sl' }];
+  const closed = Array.from({ length: 5 }, () => ({ status: 'sl' })); // -5R, sampel cukup
   const r = isDrawdownHalted({ closedSetups: closed, regime: 'risk_on' });
-  assert.equal(r.halted, false);
+  assert.equal(r.halted, false); // threshold risk_on -6R, -5R belum sekeras itu
+});
+
+// [2026-07-28, audit lanjutan] Ambang minimum sampel — tanpa ini, di awal umur sistem
+// (rolling window 10 = seluruh riwayat yang ada) 2 SL beruntun saat risk_off bisa
+// membekukan semua pair, padahal itu cuma variance dari sampel kecil.
+test('isDrawdownHalted: sampel < 5 -> TIDAK PERNAH halted walau rollingR sudah lewat ambang', () => {
+  const closed2loss = [{ status: 'sl' }, { status: 'sl' }]; // -2R, persis ambang risk_off
+  const r = isDrawdownHalted({ closedSetups: closed2loss, regime: 'risk_off' });
+  assert.equal(r.rollingR, -2);
+  assert.equal(r.sampleSize, 2);
+  assert.equal(r.halted, false); // sampel belum cukup (< DRAWDOWN_MIN_SAMPLE)
+});
+
+test('isDrawdownHalted: sampel PERSIS 5 -> ambang minimum terpenuhi, boleh halted', () => {
+  const closed5loss = Array.from({ length: 5 }, () => ({ status: 'sl' })); // -5R
+  const r = isDrawdownHalted({ closedSetups: closed5loss, regime: 'neutral' });
+  assert.equal(r.sampleSize, 5);
+  assert.equal(r.halted, true); // -5R <= ambang neutral -5R, sampel cukup
 });
 
 test('isDrawdownHalted: regime null/tak dikenal -> perlakukan seketat neutral (-5R)', () => {

@@ -35,6 +35,16 @@ const DRAWDOWN_HALT_THRESHOLD_R = {
 };
 const DEFAULT_DRAWDOWN_THRESHOLD_R = -5; // regime null/tak dikenal -> perlakukan seketat 'neutral'
 
+// [2026-07-28, audit lanjutan] Ambang minimum sampel SEBELUM circuit breaker boleh
+// menyala — tanpa ini, di awal umur sistem (rolling window 10 = SELURUH riwayat yang
+// ada, bukan window "recent" dari sampel besar) cukup 2 SL beruntun saat risk_off
+// (ambang -2R) buat membekukan SEMUA pair, padahal 2 kekalahan dari sampel sekecil itu
+// tidak beda dari variance biasa. Angka 5 dipilih konsisten dengan preseden ambang
+// minimum yang sudah dipakai di tempat lain (`_formatTrackRecordBlock` butuh >=5 setup
+// selesai sebelum dipercaya, lihat komentar sekitar baris "butuh >=5 setup selesai" di
+// admin.js) — bukan angka baru yang diarang.
+const DRAWDOWN_MIN_SAMPLE = 5;
+
 // `closedSetups` = array setup_log_auto:v1 TERURUT ts naik, status 'tp' atau 'sl' saja
 // (caller wajib filter+sort sebelum panggil — fungsi ini tidak mengurutkan ulang).
 // Outcome R: 'tp' -> +rr (fallback +1 kalau rr tidak valid), 'sl' -> -1 tetap (risiko
@@ -55,10 +65,14 @@ function computeRollingR(closedSetups) {
 }
 
 // closedSetups: lihat computeRollingR. regime: 'risk_on'|'neutral'|'elevated'|'risk_off'|null.
+// Sampel < DRAWDOWN_MIN_SAMPLE -> tidak pernah halted, apapun rollingR-nya (belum cukup
+// data buat bedakan "lagi apes" dari "cuma variance normal").
 function isDrawdownHalted({ closedSetups, regime }) {
+  const sampleSize = (closedSetups || []).length;
   const rollingR = computeRollingR(closedSetups);
   const threshold = DRAWDOWN_HALT_THRESHOLD_R[regime] ?? DEFAULT_DRAWDOWN_THRESHOLD_R;
-  return { halted: rollingR <= threshold, rollingR, threshold };
+  const halted = sampleSize >= DRAWDOWN_MIN_SAMPLE && rollingR <= threshold;
+  return { halted, rollingR, threshold, sampleSize };
 }
 
 // ── Gate D: Correlation cap (heuristik sederhana, 1 pasangan terbukti korelatif) ──
