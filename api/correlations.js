@@ -504,7 +504,7 @@ const handler = async function handler(req, res) {
       'Referer': 'https://www.cmegroup.com/markets/fx/g10/euro-fx.html',
     };
 
-    let pairs = {}, source = null, cmeFailedReasons = [];
+    let pairs = {}, source = null, cmeFailedReasons = [], cmeDiag = null;
     const scraperKey = process.env.SCRAPER_API_KEY;
 
     // Attempt 1: CME CVOL /services endpoint — via ScraperAPI proxy if key set, else direct.
@@ -524,8 +524,11 @@ const handler = async function handler(req, res) {
         : targetUrl;
       const fetchHeaders = scraperKey ? { 'Accept': 'application/json' } : CME_HDR;
       const r = await fetch(fetchUrl, { headers: fetchHeaders, signal: AbortSignal.timeout(15000) });
-      if (!r.ok) throw new Error(`CME CVOL batch HTTP ${r.status}`);
-      const json = await r.json();
+      const bodyText = await r.text();
+      if (!r.ok) throw new Error(`CME CVOL batch HTTP ${r.status}: ${bodyText.slice(0, 200)}`);
+      let json;
+      try { json = JSON.parse(bodyText); }
+      catch (e) { throw new Error(`CME CVOL batch non-JSON response (status ${r.status}): ${bodyText.slice(0, 200)}`); }
       // Response: array of entries, satu per symbol — urutan tidak dijamin sama dengan query,
       // jadi mapping balik ke pair lewat field `symbol` di tiap entry, bukan posisi array.
       const entries = Array.isArray(json) ? json : [json];
@@ -579,6 +582,7 @@ const handler = async function handler(req, res) {
         throw new Error(`Only ${ok.length}/6 CME CVOL pairs returned data`);
       }
     } catch(e) {
+      cmeDiag = e.message;
       console.warn('risk-reversal: CME CVOL failed:', e.message);
     }
 
@@ -625,7 +629,7 @@ const handler = async function handler(req, res) {
         : scraperKey
           ? 'ScraperAPI active but CME CVOL returned no parseable data.'
           : 'CME CVOL blocked from Vercel IPs. Add SCRAPER_API_KEY env var to enable proxy bypass.';
-      return res.status(200).json({ available: false, reason: hint, computed_at: new Date().toISOString() });
+      return res.status(200).json({ available: false, reason: hint, debug: cmeDiag, computed_at: new Date().toISOString() });
     }
 
     const payload = { available: true, pairs, source, computed_at: new Date().toISOString() };
