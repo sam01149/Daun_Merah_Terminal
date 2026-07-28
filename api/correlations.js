@@ -515,10 +515,8 @@ const handler = async function handler(req, res) {
     // hemat) — itu sebabnya RR_CACHE_TTL di atas bisa balik ke 1 jam (bukan 6 jam) tanpa risiko
     // kuota bulanan habis lagi: 24 refresh/hari × 1 credit = 24 credit/hari, di bawah rata-rata
     // ~33/hari yang aman untuk jatah 1.000/bulan.
-    try {
-      const codeToPair = Object.fromEntries(Object.entries(CME_CVOL_PAIRS).map(([pair, code]) => [code, pair]));
-      const symbolList = Object.values(CME_CVOL_PAIRS).join(',');
-      const targetUrl = `https://www.cmegroup.com/services/cvol?symbol=${symbolList}&isProtected&_t=${Date.now()}`;
+    // Sub-fetcher: ScraperAPI proxy jika ada key, else direct (biasanya diblokir WAF Akamai dari IP Vercel).
+    async function fetchScraperOrDirect(targetUrl) {
       const fetchUrl = scraperKey
         ? `https://api.scraperapi.com?api_key=${scraperKey}&url=${encodeURIComponent(targetUrl)}`
         : targetUrl;
@@ -528,13 +526,51 @@ const handler = async function handler(req, res) {
         r = await fetch(fetchUrl, { headers: fetchHeaders, signal: AbortSignal.timeout(15000) });
       } catch (e) {
         const causeMsg = e?.cause ? ` (cause: ${e.cause.code || e.cause.message || e.cause})` : '';
-        throw new Error(`CME CVOL batch fetch threw: ${e.name}: ${e.message}${causeMsg}`);
+        throw new Error(`ScraperAPI/direct fetch threw: ${e.name}: ${e.message}${causeMsg}`);
       }
       const bodyText = await r.text();
-      if (!r.ok) throw new Error(`CME CVOL batch HTTP ${r.status}: ${bodyText.slice(0, 200)}`);
+      if (!r.ok) throw new Error(`ScraperAPI/direct HTTP ${r.status}: ${bodyText.slice(0, 200)}`);
+      return bodyText;
+    }
+
+    // Sub-fetcher fallback: r.jina.ai (Reader API gratis, tanpa key) — dipakai kalau ScraperAPI
+    // lagi outage (session 249, 2026-07-28: insiden resmi status.scraperapi.com "Akamai protected
+    // domains" — lihat daun_merah_vendor.md). Jina fetch dari IP mereka sendiri (bukan datacenter
+    // Vercel yang diblokir WAF CME), balikin body asli dibungkus header "Markdown Content:" —
+    // untuk endpoint JSON murni, isinya cuma di-passthrough apa adanya di bawah marker itu.
+    async function fetchViaJinaReader(targetUrl) {
+      let r;
+      try {
+        r = await fetch(`https://r.jina.ai/${targetUrl}`, { signal: AbortSignal.timeout(15000) });
+      } catch (e) {
+        const causeMsg = e?.cause ? ` (cause: ${e.cause.code || e.cause.message || e.cause})` : '';
+        throw new Error(`Jina Reader fetch threw: ${e.name}: ${e.message}${causeMsg}`);
+      }
+      const bodyText = await r.text();
+      if (!r.ok) throw new Error(`Jina Reader HTTP ${r.status}: ${bodyText.slice(0, 200)}`);
+      const marker = 'Markdown Content:';
+      const idx = bodyText.indexOf(marker);
+      if (idx === -1) throw new Error(`Jina Reader: no "${marker}" marker in response: ${bodyText.slice(0, 200)}`);
+      return bodyText.slice(idx + marker.length).trim();
+    }
+
+    try {
+      const codeToPair = Object.fromEntries(Object.entries(CME_CVOL_PAIRS).map(([pair, code]) => [code, pair]));
+      const symbolList = Object.values(CME_CVOL_PAIRS).join(',');
+      const targetUrl = `https://www.cmegroup.com/services/cvol?symbol=${symbolList}&isProtected&_t=${Date.now()}`;
+      let bodyText;
+      try {
+        bodyText = await fetchScraperOrDirect(targetUrl);
+      } catch (e1) {
+        try {
+          bodyText = await fetchViaJinaReader(targetUrl);
+        } catch (e2) {
+          throw new Error(`both fetch paths failed — ScraperAPI/direct: ${e1.message} | Jina Reader: ${e2.message}`);
+        }
+      }
       let json;
       try { json = JSON.parse(bodyText); }
-      catch (e) { throw new Error(`CME CVOL batch non-JSON response (status ${r.status}): ${bodyText.slice(0, 200)}`); }
+      catch (e) { throw new Error(`CME CVOL batch non-JSON response: ${bodyText.slice(0, 200)}`); }
       // Response: array of entries, satu per symbol — urutan tidak dijamin sama dengan query,
       // jadi mapping balik ke pair lewat field `symbol` di tiap entry, bukan posisi array.
       const entries = Array.isArray(json) ? json : [json];
