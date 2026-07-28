@@ -150,9 +150,11 @@ Pencarian literatur akademik (bukan blog trading) untuk "retail positioning ekst
 
 **Implikasi untuk Daun Merah:** kalau ke-4 gate dari audit (`daun_merah_progress.md` — audit celah kesalahan trader) jadi dieksekusi, benang merah dari SEMUA topik adalah sama: **pilih ambang dinamis/adaptif, hindari cutoff statis/biner** — bukan batalkan gate-nya. Belum diputuskan eksekusi kode apa pun; nunggu keputusan user pasca-riset ini.
 
-## 11. Noise vs sinyal dari stacking 4 gate audit-guard existing (relevan: `api/_auto_entry_guard.js`, sudah LIVE sejak commit `f2ae9f0`/`062fc16`/`ade1b61`, 2026-07-28)
+**Update Session 251 (2026-07-28, sesi sama):** Gate C (regime confidence bar) DIHAPUS — celah yang ditemukan user: fungsi ini buta arah (blok confidence rendah saat regime stres TANPA cek align bias vs regime), jadi XAU/USD bullish saat risk_off (selaras teori safe-haven) tetap diblokir walau arahnya sendiri benar. Keputusan: skeptisisme regime seharusnya bagian penalaran AI thesis (yang sudah baca `risk_regime` di prompt Analisa/pre-entry check), bukan filter buta terpisah. Sisa aktif: Gate A, B, D — analisis Moreira & Muir (2017) di atas ("reduce size" > "skip total") jadi TIDAK diterapkan sebagai gate kode terpisah, dikembalikan ke penalaran AI di prompt.
 
-Riset lanjutan atas §10 — TUJUANNYA BUKAN cari gate baru, tapi cek apakah menumpuk Gate A (AI Kritikus) + B (drawdown circuit breaker) + C (regime confidence bar) + D (correlation cap) sekaligus berisiko jadi over-filtering/noise (mengeblok setup yang sebenarnya profitable) dibanding manfaat nyata.
+## 11. Noise vs sinyal dari stacking gate audit-guard existing (relevan: `api/_auto_entry_guard.js`, 2026-07-28)
+
+Riset lanjutan atas §10 — TUJUANNYA BUKAN cari gate baru, tapi cek apakah menumpuk Gate A (AI Kritikus) + B (drawdown circuit breaker) + D (correlation cap) sekaligus berisiko jadi over-filtering/noise (mengeblok setup yang sebenarnya profitable) dibanding manfaat nyata. **(Ditulis saat masih 4 gate — Gate C dihapus sesi yang sama, lihat update di §10 di atas; analisis di bawah ini tentang prinsip stacking filter secara umum, tetap berlaku untuk 3 gate sisa.)**
 
 | Paper | Tipe | Temuan inti |
 |---|---|---|

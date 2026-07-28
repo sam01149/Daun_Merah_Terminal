@@ -5,15 +5,20 @@
 // Riset dasar (daun_merah_referensi_riset.md §10, 4 Scopus AI report + 4 sitasi
 // diverifikasi manual, 2026-07-28): benang merah SEMUA temuan adalah "pakai ambang
 // ADAPTIF/dinamis, hindari cutoff statis/biner" — bukan "jangan pasang gate sama
-// sekali". Tiga gate di file ini menerapkan itu:
+// sekali". Dua gate di file ini menerapkan itu:
 // - Gate B (drawdown circuit breaker): ambang berbeda per risk_regime, BUKAN hitung
 //   N-loss-beruntun statis (consecutive-loss rawan "magnet effect", Subrahmanyam 1994).
-// - Gate C (regime confidence bar): sistem ini virtual/1-unit-R (tidak ada position
-//   sizing kontinu), jadi "reduce size" (Moreira & Muir 2017) diterjemahkan jadi
-//   "naikkan bar keyakinan" saat regime memburuk — bukan skip total.
 // - Gate D (correlation cap): heuristik sederhana (gross-exposure constraint ala
 //   riset), BUKAN covariance-matrix penuh — cuma cover SATU pasangan yang terbukti
 //   korelatif di set 4-pair saat ini (XAU/USD-EUR/USD r=0,585, lihat riset.md).
+//
+// Gate C (regime confidence bar) DIHAPUS 2026-07-28 (sesi sama dengan pembuatannya) —
+// keputusan user: gate ini buta arah (blok confidence rendah saat regime stres TANPA
+// peduli bias align atau tidak dengan regime), dan skeptisisme "risk_off -> hati-hati"
+// itu SUDAH seharusnya jadi bagian penalaran AI thesis (Analisa/pre-entry check yang
+// baca risk_regime langsung), bukan filter buta terpisah di atasnya. Kasus konkret yang
+// membongkar ini: XAU/USD bullish saat risk_off (justru selaras teori safe-haven) tetap
+// diblokir gate ini kalau confidence rendah — padahal arahnya sendiri sudah "benar".
 
 // ── Gate B: Drawdown circuit breaker (adaptif per regime) ───────────────────────
 // Ambang HEURISTIK AWAL (belum dikalibrasi dari data live — pola sama NOISE_BAND_PCT
@@ -56,25 +61,6 @@ function isDrawdownHalted({ closedSetups, regime }) {
   return { halted: rollingR <= threshold, rollingR, threshold };
 }
 
-// ── Gate C: Regime confidence bar (pengganti "reduce size" utk sistem 1-unit-R) ──
-// Blok entry confidence 'rendah' saat regime sedang stres (elevated/risk_off) —
-// entry confidence 'sedang'/'tinggi' tetap lolos (bukan skip total, cuma naikkan
-// bar kualitas sinyal saat kondisi makro sedang tidak mendukung).
-//
-// [2026-07-28, diskusi user] Gate ini HANYA relevan untuk pair dengan kaki USD
-// langsung — risk_regime murni proxy VIX/MOVE/HY (risiko global/USD). AUD/NZD &
-// EUR/GBP SENGAJA tidak dimasukkan: keduanya dipilih di redesain 4-pair justru
-// karena independen dari faktor risiko global itu (r=0,10-0,19, daun_merah_riset.md)
-// — edge-nya datang dari fundamental relatif (RBA/RBNZ, ECB/BOE), bukan VIX/MOVE.
-// Menggate pair itu pakai regime global akan salah sasaran.
-const REGIME_RELEVANT_SYMBOLS = new Set(['GC=F', 'EURUSD=X']);
-
-function isRegimeConfidenceBlocked({ symbol, regime, confidence }) {
-  if (!REGIME_RELEVANT_SYMBOLS.has(symbol)) return false;
-  if (confidence !== 'rendah') return false;
-  return regime === 'risk_off' || regime === 'elevated';
-}
-
 // ── Gate D: Correlation cap (heuristik sederhana, 1 pasangan terbukti korelatif) ──
 // Peta symbol Yahoo -> pandangan USD tersirat dari bias. XAU/USD & EUR/USD naik
 // BERSAMAAN (r=0,585, riset 2026-07-26) -> keduanya proxy "USD melemah" saat bullish.
@@ -105,7 +91,6 @@ function isCorrelatedExposureBlocked({ symbol, bias, openPositions }) {
 module.exports = {
   computeRollingR,
   isDrawdownHalted,
-  isRegimeConfidenceBlocked,
   isCorrelatedExposureBlocked,
   DRAWDOWN_WINDOW,
   DRAWDOWN_HALT_THRESHOLD_R,

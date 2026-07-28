@@ -11,13 +11,25 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-07-28 (Session 250 — Eksekusi 4 Gate Audit "Kesalahan Trader" Auto-Entry)
+> **Last updated:** 2026-07-28 (Session 251 — Hapus Gate C, Riset Scopus AI Lanjutan Audit-Guard)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
 
-## Changelog Session 250 (2026-07-28) — Eksekusi 4 Gate Audit "Kesalahan Trader" Auto-Entry
+## Changelog Session 251 (2026-07-28) — Hapus Gate C, Riset Scopus AI Lanjutan Audit-Guard
+
+**Konteks:** Lanjutan sesi 250 (4 gate audit-guard). Diminta riset Scopus AI lanjutan (§11/§12 `daun_merah_referensi_riset.md`) khusus soal noise-vs-sinyal stacking 4 gate — tidak ditemukan paper langsung yang uji topik itu (beda konsep dari data-snooping/White 2000 & Bajgrowicz-Scaillet 2012 yang disitasi), jadi jawaban empiris disarankan lewat counter `auto_guard_stats` + counterfactual (`_evaluateCanceledGhost`-style), bukan literatur tambahan. Riset kedua (percepatan proses riset sendiri) menghasilkan Cao 2025/Khraisha 2024/Pham 2016 — memvalidasi kewajiban verifikasi manual existing, bukan rekomendasi baru.
+
+**Diskusi Gate C:** user menunjukkan celah nyata di `isRegimeConfidenceBlocked()` — fungsi ini BUTA ARAH (cuma cek `symbol/regime/confidence`, tidak menerima `bias`), jadi XAU/USD **bullish** (selaras teori safe-haven) saat `risk_off` tetap diblokir kalau confidence rendah, walau arahnya sendiri sudah benar. Argumen user: skeptisisme "risk_off → hati-hati" seharusnya sudah jadi bagian penalaran AI thesis (Analisa/pre-entry check yang baca `risk_regime` langsung), bukan filter buta terpisah di atasnya. **Keputusan: Gate C dihapus**, sesi yang sama dengan pembuatannya (Session 250).
+
+**Eksekusi:**
+- `api/_auto_entry_guard.js`: hapus `REGIME_RELEVANT_SYMBOLS` + `isRegimeConfidenceBlocked()`, update header comment ("Tiga gate" → "Dua gate": B drawdown circuit breaker, D correlation cap).
+- `api/admin.js`: hapus pemanggilan Gate C di persist block `ohlcvAnalyzeHandler`, hapus import, hapus entri `auto_guard_stats:regime_confidence` dari `KEY_REGISTRY`, pindah ke `DEPRECATED_KEYS` (key belum pernah tertulis live — dicek `exists:false` semua counter `auto_guard_stats:*` di production, auto-entry belum sempat jalan sejak deploy S250).
+- `test/api/_auto_entry_guard.test.js`: hapus 5 test Gate C.
+- `npm test` 627/627 hijau (632 - 5 test Gate C yang dihapus).
+
+**Sisa aktif:** Gate A (AI Kritikus), Gate B (drawdown circuit breaker), Gate D (correlation cap) — semua HANYA jalur `isAutoCall`, isolasi U-7 tetap terjaga.
 
 **Konteks:** Lanjutan diskusi user soal tujuan akhir Plan U (AI jadi pengelola dana riil, bukan sekadar eksperimen) — diminta audit celah "kesalahan trader" di pipeline auto-entry. Audit kode (langsung ke file, bukan checklist generik) menemukan 4 celah nyata di `vps/daemon.js` → `api/admin.js` → `setup_log_auto:v1`: (1) AI Kritikus (`ohlcv_critic`, alat anti-confirmation-bias yang sudah ada) tidak pernah dipanggil untuk auto-entry, cuma tombol manual; (2) tidak ada circuit breaker kerugian beruntun; (3) `risk_regime` (VIX/MOVE/HY) cuma teks informatif di prompt AI, tidak ada gate kode; (4) tidak ada batas eksposur portofolio lintas-pair (relevan ke caveat XAU/USD-EUR/USD r=0,585 yang sudah dicatat sesi ini juga). User khawatir menerapkan ke-4 gate sekaligus akan membuat sistem terlalu ketat (sinyal makin jarang, mengancam kecepatan akumulasi n≥30/pair Plan U) — diminta riset Scopus AI dulu sebelum eksekusi.
 

@@ -24,7 +24,7 @@ const { requireAppKey } = require('./_app_key');
 const { fetchYahooOhlcv1h, fetchFallbackCandles, shouldSendYahooAlert, mapYahooSymbolToDeriv, fetchDerivCandles } = require('./_ohlcv_fetch');
 const { buildPairContext, computeCurrencyStrength } = require('./_pair_context');
 const { validateTightenSl, computePreventiveTightenSl, _evaluateManaged, _aggManagementStats } = require('./_position_review');
-const { isDrawdownHalted, isRegimeConfidenceBlocked, isCorrelatedExposureBlocked } = require('./_auto_entry_guard');
+const { isDrawdownHalted, isCorrelatedExposureBlocked } = require('./_auto_entry_guard');
 
 // Actions callable from the frontend without a secret → rate-limited per IP.
 // AI-triggering actions get a tighter budget than cache reads.
@@ -508,12 +508,12 @@ const KEY_REGISTRY = [
   // Audit celah "kesalahan trader" auto-entry (Session 250, 2026-07-28) — counter
   // INCR polos, TTL none (akumulasi permanen, reset manual via DEL kalau perlu histori
   // baru). 'considered' = penyebut (kandidat yang lolos guard dup/blockedByOpenPosition
-  // lama, dievaluasi ke-4 gate baru); 'saved' = lolos semua gate; 4 sisanya = alasan
-  // ditahan. considered = saved + regime_confidence + correlation_cap +
-  // drawdown_circuit_breaker + critic_veto (invarian, boleh dicek manual).
-  { key: 'auto_guard_stats:considered',              owner: 'api/admin.js', ttl_expected: null, note: 'Audit-guard: total kandidat auto-entry yang dievaluasi ke-4 gate baru' },
+  // lama, dievaluasi ke-3 gate sisa); 'saved' = lolos semua gate; 3 sisanya = alasan
+  // ditahan. considered = saved + correlation_cap + drawdown_circuit_breaker +
+  // critic_veto (invarian, boleh dicek manual). Gate C (regime_confidence) DIHAPUS
+  // sesi sama (2026-07-28) — lihat DEPRECATED_KEYS + api/_auto_entry_guard.js.
+  { key: 'auto_guard_stats:considered',              owner: 'api/admin.js', ttl_expected: null, note: 'Audit-guard: total kandidat auto-entry yang dievaluasi ke-3 gate sisa' },
   { key: 'auto_guard_stats:saved',                   owner: 'api/admin.js', ttl_expected: null, note: 'Audit-guard: kandidat lolos semua gate, tersimpan ke setup_log_auto:v1' },
-  { key: 'auto_guard_stats:regime_confidence',       owner: 'api/admin.js', ttl_expected: null, note: 'Audit-guard Gate C: ditahan (confidence rendah + regime elevated/risk_off)' },
   { key: 'auto_guard_stats:correlation_cap',         owner: 'api/admin.js', ttl_expected: null, note: 'Audit-guard Gate D: ditahan (correlated exposure XAU/USD-EUR/USD)' },
   { key: 'auto_guard_stats:drawdown_circuit_breaker', owner: 'api/admin.js', ttl_expected: null, note: 'Audit-guard Gate B: ditahan (rolling R melewati ambang regime)' },
   { key: 'auto_guard_stats:critic_veto',              owner: 'api/admin.js', ttl_expected: null, note: 'Audit-guard Gate A: AI Kritikus verdict "batalkan"' },
@@ -523,6 +523,7 @@ const DEPRECATED_KEYS = [
   { key: 'cot_cache',          replaced_by: 'cot_cache_v2',    note: 'Old COT format, superseded in Task 10b' },
   { key: 'fundamentals_cache', replaced_by: null,              note: 'Fundamentals tab removed from UI' },
   { key: 'seen_guids',         replaced_by: 'seen_guids_set',  note: 'JSON array replaced by Redis native SET for atomic dedup' },
+  { key: 'auto_guard_stats:regime_confidence', replaced_by: null, note: 'Gate C dihapus (2026-07-28, sesi sama dengan pembuatannya) - buta arah, keputusan user' },
 ];
 
 async function getKeyInfo(key) {
@@ -3778,9 +3779,9 @@ async function ohlcvAnalyzeHandler(req, res) {
     // Blok fundamental terstruktur per pair — langsung dari cache Redis (cb_bias, COT,
     // risk regime), bukan turunan artikel. Best-effort: gagal baca = blok kosong.
     let fundBlock = '';
-    // Gate C auto-entry (audit celah kesalahan trader, 2026-07-28) butuh label regime
-    // MENTAH terpisah dari fundBlock (yang cuma teks prompt) — diisi di try yang sama
-    // supaya tidak fetch 'risk_regime' dua kali.
+    // Gate B auto-entry (drawdown circuit breaker adaptif, audit celah kesalahan
+    // trader 2026-07-28) butuh label regime MENTAH terpisah dari fundBlock (yang cuma
+    // teks prompt) — diisi di try yang sama supaya tidak fetch 'risk_regime' dua kali.
     let autoGuardRegime = null;
     try {
       const [rawBias, rawCot, rawRisk, rawRetail, rawSnap, rawRY] = await Promise.all([
@@ -4414,13 +4415,15 @@ async function ohlcvAnalyzeHandler(req, res) {
             }
           }
         }
-        // Gate B/C/D (audit celah "kesalahan trader", 2026-07-28, daun_merah_progress.md)
+        // Gate B/D (audit celah "kesalahan trader", 2026-07-28, daun_merah_progress.md)
         // — HANYA auto-entry, HANYA kalau lolos guard existing di atas (bukan dup/
         // blockedByOpenPosition). Dicek SEBELUM Gate A (AI Kritikus, 1 AI call) supaya
         // kandidat yang memang bakal ditahan gate murah tidak buang budget AI sia-sia.
         // Semua ambang di sini ADAPTIF per risk_regime (autoGuardRegime) — bukan cutoff
         // statis — sesuai temuan riset (daun_merah_referensi_riset.md §10): filter yang
         // kaku mengurangi frekuensi trade & bisa merusak performa, filter adaptif tidak.
+        // (Gate C/regime confidence bar SEMPAT ada, DIHAPUS sesi yang sama — buta arah,
+        // lihat api/_auto_entry_guard.js.)
         // Pencatatan ringan (2026-07-28, diminta user pasca-eksekusi gate): counter
         // Redis INCR polos per alasan — cuma FREKUENSI tiap gate nyala, BUKAN apakah
         // gate itu "benar" (kandidat yang ditahan memang bakal SL) atau "noise" (kandidat
@@ -4433,9 +4436,7 @@ async function ohlcvAnalyzeHandler(req, res) {
         if (autoGuardConsidered) redisCmd('INCR', 'auto_guard_stats:considered').catch(() => {});
         let autoGuardReason = null;
         if (autoGuardConsidered) {
-          if (isRegimeConfidenceBlocked({ symbol, regime: autoGuardRegime, confidence: structured.confidence })) {
-            autoGuardReason = `regime_confidence(${autoGuardRegime}/${structured.confidence})`;
-          } else if (isCorrelatedExposureBlocked({ symbol, bias: structured.bias, openPositions: log })) {
+          if (isCorrelatedExposureBlocked({ symbol, bias: structured.bias, openPositions: log })) {
             autoGuardReason = 'correlation_cap';
           } else {
             const closedSetups = log
@@ -4444,7 +4445,7 @@ async function ohlcvAnalyzeHandler(req, res) {
             const dd = isDrawdownHalted({ closedSetups, regime: autoGuardRegime });
             if (dd.halted) autoGuardReason = `drawdown_circuit_breaker(R=${dd.rollingR})`;
           }
-          // Gate A: AI Kritikus — 1 AI call ekstra, cuma jalan kalau lolos 3 gate murah
+          // Gate A: AI Kritikus — 1 AI call ekstra, cuma jalan kalau lolos 2 gate murah
           // di atas. Fact sheet numpang blok yang SUDAH dibangun di atas untuk prompt
           // Analisa (fundBlock/rrBlock/trackBlock/calAnalyzeBlock) — TIDAK fetch Redis
           // baru. verdict "batalkan" -> setup tidak disimpan (sama efeknya seperti
@@ -4473,7 +4474,7 @@ async function ohlcvAnalyzeHandler(req, res) {
         if (autoGuardReason) {
           blockedByOpenPosition = true; // reuse flag skip existing — setup baru TIDAK disimpan
           console.log(`auto-entry ${symbol} ditahan oleh audit-guard: ${autoGuardReason}`);
-          // gateKey = token pertama sebelum '(' atau ':' — 'regime_confidence(risk_off/rendah)' -> 'regime_confidence'
+          // gateKey = token pertama sebelum '(' atau ':' — 'drawdown_circuit_breaker(R=-3)' -> 'drawdown_circuit_breaker'
           const gateKey = autoGuardReason.split(/[(:]/)[0];
           redisCmd('INCR', `auto_guard_stats:${gateKey}`).catch(() => {});
         } else if (autoGuardConsidered) {
