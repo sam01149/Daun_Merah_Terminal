@@ -324,6 +324,12 @@ tr:hover td{background:rgba(var(--fg-rgb),.02);}
       alert('Gagal aktifkan notifikasi: ' + e.message);
     }
   }
+  // CATATAN: sengaja TIDAK memanggil sub.unsubscribe() di sini. PushManager
+  // subscription itu 1 per (browser, origin, service worker) — kalau device
+  // yang sama JUGA subscribe notif berita publik lewat index.html (subscription
+  // browser-level yang SAMA), unsubscribe() di sini akan ikut mematikan notif
+  // berita tanpa sepengetahuan user. Cukup hapus sisi server (push_subs_dev) —
+  // channel TP/SL dev berhenti, subscription browser & channel lain tidak disentuh.
   async function disableNotif(){
     try {
       if ('serviceWorker' in navigator && 'PushManager' in window) {
@@ -335,7 +341,6 @@ tr:hover td{background:rgba(var(--fg-rgb),.02);}
             headers: { 'Content-Type': 'application/json', 'x-admin-secret': getSecret() },
             body: JSON.stringify({ endpoint: sub.endpoint }),
           }).catch(() => {});
-          await sub.unsubscribe();
         }
       }
     } catch(e) { console.warn('disableNotif gagal:', e.message); }
