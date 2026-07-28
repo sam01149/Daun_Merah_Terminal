@@ -11,7 +11,7 @@ const path = require('path');
 
 const {
   mergeClosedCandle, normalizeDerivCandle, isHighImpactCategory, priceInZone,
-  YAHOO_TO_DERIV_SYMBOL,
+  YAHOO_TO_DERIV_SYMBOL, priceCrossesLevel, XAU_YAHOO_SYMBOL, XAU_DERIV_SYMBOL,
 } = require('../../vps/daemon.js');
 const { mapYahooSymbolToDeriv } = require('../../api/_ohlcv_fetch.js');
 
@@ -99,4 +99,35 @@ test('priceInZone: input non-finite -> false, bukan crash', () => {
   assert.equal(priceInZone(NaN, 1.085, 0.001), false);
   assert.equal(priceInZone(1.085, null, 0.001), false);
   assert.equal(priceInZone(1.085, 1.085, undefined), false);
+});
+
+// ── Q-7: priceCrossesLevel (watcher event-driven TP/SL setup_log_auto:v1) ───
+
+test('priceCrossesLevel: bearish — hit SL (harga naik ke atas sl) atau hit TP (harga turun ke bawah tp)', () => {
+  // entry 100 bearish, sl 105, tp 95
+  assert.equal(priceCrossesLevel('bearish', 106, 105, 95), true);  // SL
+  assert.equal(priceCrossesLevel('bearish', 105, 105, 95), true);  // SL tepat di level (>=)
+  assert.equal(priceCrossesLevel('bearish', 94,  105, 95), true);  // TP
+  assert.equal(priceCrossesLevel('bearish', 95,  105, 95), true);  // TP tepat di level (<=)
+  assert.equal(priceCrossesLevel('bearish', 100, 105, 95), false); // masih di antara, belum crossing
+});
+
+test('priceCrossesLevel: bullish — hit SL (harga turun ke bawah sl) atau hit TP (harga naik ke atas tp)', () => {
+  // entry 100 bullish, sl 95, tp 105
+  assert.equal(priceCrossesLevel('bullish', 94,  95, 105), true);  // SL
+  assert.equal(priceCrossesLevel('bullish', 106, 95, 105), true);  // TP
+  assert.equal(priceCrossesLevel('bullish', 100, 95, 105), false); // masih di antara
+});
+
+test('priceCrossesLevel: input non-finite -> false, bukan crash', () => {
+  assert.equal(priceCrossesLevel('bearish', NaN, 105, 95), false);
+  assert.equal(priceCrossesLevel('bearish', 100, null, 95), false);
+  assert.equal(priceCrossesLevel('bullish', 100, 95, undefined), false);
+});
+
+test('Q-7: XAU_YAHOO_SYMBOL/XAU_DERIV_SYMBOL TIDAK ikut YAHOO_TO_DERIV_SYMBOL (sengaja terpisah — lihat catatan multi-provider di daemon.js)', () => {
+  assert.equal(XAU_YAHOO_SYMBOL, 'GC=F');
+  assert.equal(XAU_DERIV_SYMBOL, 'frxXAUUSD');
+  assert.equal(YAHOO_TO_DERIV_SYMBOL[XAU_YAHOO_SYMBOL], undefined,
+    'GC=F sengaja TIDAK ada di YAHOO_TO_DERIV_SYMBOL — kalau ikut, candle emas (dengan volume Yahoo) akan tertimpa tick Deriv (tanpa volume)');
 });

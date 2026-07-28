@@ -14,7 +14,7 @@ const PUSH_KW  = require('./_push_keywords');
 const newscat  = require('../newscat');
 const { autoUpdateFundamentals } = require('./_fundamental_parser');
 const { getLiveCbRates } = require('./_cb_rates');
-const { configureVapid, sendWebPush } = require('./_webpush');
+const { configureVapid, sendWebPush, subKey } = require('./_webpush');
 const { isCronCall: _isCronCallReq, isCronDedupFresh } = require('./_cron_dedup');
 const marketHours = require('./_market_hours');
 const cb = require('./_circuit_breaker');
@@ -77,7 +77,8 @@ module.exports = async function handler(req, res) {
   if (action === 'position_review')    return positionReviewHandler(req, res);
   if (action === 'friday_tighten')     return fridayTightenHandler(req, res);
   if (action === 'polymarket')         return polymarketHandler(req, res);
-  return res.status(400).json({ error: 'Missing ?action= — use health, redis-keys, admin-prompts, push, fundamental_get, fundamental_seed, fundamental_refresh, fundamental_analysis, journal_import, circuit-reset, circuit-status, gdpnow, ohlcv_sync, ohlcv_read, ohlcv_analyze, ohlcv_critic, pre_entry_check, ohlcv_dashboard, setup_stats, setup_override, position_review, friday_tighten, or polymarket' });
+  if (action === 'push_subscribe_dev') return pushSubscribeDevHandler(req, res);
+  return res.status(400).json({ error: 'Missing ?action= — use health, redis-keys, admin-prompts, push, fundamental_get, fundamental_seed, fundamental_refresh, fundamental_analysis, journal_import, circuit-reset, circuit-status, gdpnow, ohlcv_sync, ohlcv_read, ohlcv_analyze, ohlcv_critic, pre_entry_check, ohlcv_dashboard, setup_stats, setup_override, position_review, friday_tighten, polymarket, or push_subscribe_dev' });
 };
 
 // ── Shared Redis helper ────────────────────────────────────────────────────────
@@ -492,6 +493,7 @@ const KEY_REGISTRY = [
   { key: 'prompt_digest',      owner: 'api/admin.js',          ttl_expected: null,   note: 'AI prompt for market briefing (fallback: hardcoded)' },
   { key: 'health_last_ok',     owner: 'api/admin.js',          ttl_expected: null,   note: 'HSET: source → last OK timestamp for alerting' },
   { key: 'push_subs',          owner: 'api/admin.js',          ttl_expected: null,   note: 'HSET push subscriptions endpoint → JSON' },
+  { key: 'push_subs_dev',      owner: 'api/admin.js',          ttl_expected: null,   note: 'HSET push subscriptions dev-only (alert TP/SL setup_log_auto:v1) endpoint → JSON, terpisah dari push_subs publik' },
   { key: 'seen_guids_set',     owner: 'api/admin.js',          ttl_expected: 86400,  note: 'Redis SET of seen RSS GUIDs for push dedup (SADD/SMEMBERS, atomic)' },
   { key: 'push_lock',          owner: 'api/admin.js',          ttl_expected: 55,     note: 'Distributed lock to prevent concurrent push cron runs' },
   { key: 'sizing_history:*',   owner: 'api/sizing-history.js', ttl_expected: null,   note: 'Sorted set: sizing calculations per device (max 10 entries)' },
@@ -790,6 +792,87 @@ async function pushHandler(req, res) {
   }
 
   return res.status(200).json({ status: 'OK', new_items: newItems.length, pushed_items: pushItems.length, subscribers: subs.length });
+}
+
+// ── Push Subscribe (dev-only, alert TP/SL setup_log_auto:v1) ────────────────
+// TERPISAH TOTAL dari `push_subs` publik (api/subscribe.js, dipakai berita/
+// digest) — auto-entry tetap scope developer-only (Plan U-7 REVISI
+// VISIBILITAS, lihat dev-auto-entry.html). Kalau numpang hash publik, siapa
+// pun user biasa yang subscribe notif berita bisa kebagian alert TP/SL
+// eksperimen ini — bocor eksistensi fitur yang sengaja disembunyikan. Auth
+// SAMA seperti aksi dev lain di file ini (x-admin-secret/x-cron-secret ==
+// CRON_SECRET), BUKAN requireAppKey publik dari api/subscribe.js.
+function _validDevPushSub(sub) {
+  if (!sub || typeof sub !== 'object') return false;
+  if (typeof sub.endpoint !== 'string' || !sub.endpoint.startsWith('https://') || sub.endpoint.length > 1024) return false;
+  if (!sub.keys || typeof sub.keys.p256dh !== 'string' || typeof sub.keys.auth !== 'string') return false;
+  if (sub.keys.p256dh.length > 256 || sub.keys.auth.length > 64) return false;
+  return true;
+}
+
+async function pushSubscribeDevHandler(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  if (req.method === 'OPTIONS') return res.status(204).end();
+  const CRON_SECRET = process.env.CRON_SECRET;
+  const secret = req.headers['x-admin-secret'] || req.headers['x-cron-secret'];
+  if (!CRON_SECRET || secret !== CRON_SECRET) return res.status(401).json({ error: 'Unauthorized' });
+
+  try {
+    let body = '';
+    await new Promise(r => { req.on('data', c => body += c); req.on('end', r); });
+    if (req.method === 'DELETE') {
+      const { endpoint } = body ? JSON.parse(body) : {};
+      if (!endpoint || typeof endpoint !== 'string' || endpoint.length > 1024) {
+        return res.status(400).json({ error: 'endpoint required' });
+      }
+      await redisCmd('HDEL', 'push_subs_dev', subKey(endpoint));
+      return res.status(200).json({ ok: true });
+    }
+    if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
+    let parsed;
+    try { parsed = JSON.parse(body); } catch (e) { return res.status(400).json({ error: 'Invalid JSON' }); }
+    const sub = parsed?.subscription;
+    if (!_validDevPushSub(sub)) return res.status(400).json({ error: 'Invalid subscription' });
+    const subData = {
+      endpoint: sub.endpoint,
+      expirationTime: sub.expirationTime ?? null,
+      keys: { p256dh: sub.keys.p256dh, auth: sub.keys.auth },
+    };
+    await redisCmd('HSET', 'push_subs_dev', subKey(sub.endpoint), JSON.stringify(subData));
+    return res.status(201).json({ ok: true });
+  } catch (e) {
+    return res.status(500).json({ error: e.message });
+  }
+}
+
+// Kirim push (subscriber dev SAJA, lihat pushSubscribeDevHandler) saat setup
+// setup_log_auto:v1 baru transisi ke tp/sl/ambiguous — dipanggil dari
+// _buildAutoScopeStats setiap kali _evaluateSetups jalan (manual dev-console,
+// trigger event-driven daemon.js Q-7, atau slot auto-entry 2x/hari), supaya
+// TIDAK bergantung user membuka dev-auto-entry.html manual untuk tahu hasil.
+async function _notifySetupOutcome(setup) {
+  if (!configureVapid()) return;
+  let subs = [];
+  try {
+    const raw = await redisCmd('HGETALL', 'push_subs_dev');
+    if (Array.isArray(raw)) {
+      for (let i = 0; i < raw.length; i += 2) { try { subs.push(JSON.parse(raw[i + 1])); } catch (e) {} }
+    }
+  } catch (e) {}
+  if (!subs.length) return;
+  const label = setup.label || setup.symbol;
+  const outcomeText = setup.status === 'tp' ? 'kena TP' : setup.status === 'sl' ? 'kena SL' : 'ambigu (SL & TP di candle sama)';
+  const level = setup.status === 'tp' ? setup.tp : setup.status === 'sl' ? setup.sl : `${setup.sl} / ${setup.tp}`;
+  const payload = {
+    title: `${label} ${outcomeText}`,
+    body: `${setup.bias === 'bearish' ? 'Bearish' : 'Bullish'} entry ${setup.entry_zone} — level ${level}`,
+    url: '/dev-auto-entry.html',
+    icon: '/icon.svg',
+  };
+  try {
+    const staleKeys = await sendWebPush(subs, payload);
+    if (staleKeys.length) await redisCmd('HDEL', 'push_subs_dev', ...staleKeys).catch(() => {});
+  } catch (e) { console.warn('_notifySetupOutcome: sendWebPush gagal:', e.message); }
 }
 
 async function sendPushTelegram(newItems, TG_TOKEN, TG_CHAT_ID) {
@@ -2839,6 +2922,13 @@ async function _buildAutoScopeStats() {
     })(),
   ]);
   const before = JSON.stringify(log);
+  // Q-7 (2026-07-28, diskusi user — TP/SL telat diketahui karena satu-satunya
+  // trigger evaluasi sebelumnya cuma buka dev-auto-entry.html manual/slot
+  // auto-entry 2x/hari): snapshot status SEBELUM _evaluateSetups mutasi objek
+  // in-place, supaya transisi ke tp/sl/ambiguous di bawah bisa dideteksi lalu
+  // di-push ke dev (lihat _notifySetupOutcome) — bukan diam-diam ketinggalan
+  // sampai request berikutnya.
+  const statusBeforeById = new Map(JSON.parse(before).map(s => [s.id, s.status]));
   log = _evaluateSetups(log, candlesBySymbol, Date.now(), calendarEvents);
   const managedPending = log.filter(s => s && s.intervention?.type === 'tighten_sl' && !s.managed_status);
   if (managedPending.length) {
@@ -2867,6 +2957,9 @@ async function _buildAutoScopeStats() {
   }
   const after = JSON.stringify(log);
   if (after !== before) await redisCmd('SET', setupLogKey, after);
+  const transitioned = log.filter(s => s && statusBeforeById.has(s.id) &&
+    statusBeforeById.get(s.id) !== s.status && (s.status === 'tp' || s.status === 'sl' || s.status === 'ambiguous'));
+  if (transitioned.length) await Promise.allSettled(transitioned.map(s => _notifySetupOutcome(s)));
   return {
     scope: 'auto', ..._statsPayloadFromLog(log),
     consistency: await _consistencySummary(), pipeline_latency: await _pipelineLatencySummary(),

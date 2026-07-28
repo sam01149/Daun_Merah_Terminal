@@ -11,31 +11,68 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-07-28 (Session 252 — Riset Akurasi & Kualitas Auto-Entry)
+> **Last updated:** 2026-07-28 (Session 253 — Watcher TP/SL Real-Time (Q-7) + Multi-Provider Emas + Push Notif Dev)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
 
+## Changelog Session 253 (2026-07-28) — Watcher TP/SL Real-Time (Q-7) + Multi-Provider Emas + Push Notif Dev
+
+**Konteks:** user lapor 2 kasus terpisah di dev-auto-entry.html: (1) EURUSD=X sudah kena TP di MT5/TradingView tapi status di dev console masih `open` — investigasi menemukan root cause SEBENARNYA adalah `_evaluateSetups` (api/admin.js) cuma dievaluasi ulang kalau ada yang buka dev-auto-entry.html manual atau saat slot auto-entry 2x/hari — TIDAK ADA re-evaluasi berkala, jadi status bisa basi berjam-jam walau harga riil sudah tembus level; (2) GC=F (XAU/USD) diduga kena SL di MT5 tapi tidak di sistem — ternyata BUKAN bug, `GC=F` = kontrak futures COMEX (Yahoo), bukan spot XAU/USD broker, jadi ada basis (selisih harga wajar futures-vs-spot) yang membuat level SL/TP tidak selalu sinkron dengan broker riil.
+
+**Keputusan user:** (a) tambahkan push notification ke HP saat setup kena TP/SL (bukan Telegram), (b) untuk emas, pakai MULTI-PROVIDER — Yahoo tetap untuk volume, Deriv ditambahkan untuk live streaming — bukan pilih salah satu.
+
+**Implementasi Q-7 (`vps/daemon.js`):**
+- Watcher event-driven baru (`maybeTriggerSetupWatch`/`getOpenSetupsWatchlist`/`priceCrossesLevel`) — di-hook ke `handleOhlcvUpdate` (pair FX yang sudah streaming Deriv Q-3) DAN ke tick baru `frxXAUUSD` (lihat poin multi-provider di bawah). Watchlist setup open (`setup_log_auto:v1`) di-cache in-memory 2 menit (pola sama `ZONE_DATA_CACHE_TTL_MS` Q-5) supaya tidak nge-GET Redis tiap tick. Saat harga live melewati sl/tp, daemon TIDAK menulis Redis sendiri (sengaja tidak menduplikasi `_detectLossLabel`/logika `_evaluateSetups` yang butuh candle+kalender penuh) — cuma trigger HTTP debounced 20 detik ke `setup_stats&scope=auto` yang sudah teruji.
+- Baseline cron tambahan tiap 5 menit (jaring pengaman untuk symbol tanpa live stream, mis. `AUDNZD=X`) memanggil endpoint yang sama.
+- **Multi-provider emas:** `frxXAUUSD` di-subscribe TERPISAH lewat `ticks` polos (BUKAN `ticks_history style:candles` seperti 14 pair `YAHOO_TO_DERIV_SYMBOL`) — supaya TIDAK ikut `mergeClosedCandle`/`writeClosedCandle` yang akan menimpa `ohlcv:GC=F:1h` dengan candle `v:0` (Deriv XAU spot tanpa volume). Live tick dipakai SEMATA untuk deteksi dini TP/SL; candle + volume `GC=F` tetap 100% dari Yahoo (`ohlcv_sync`/`ohlcv_analyze`) — dua provider jalan bersamaan tanpa saling menimpa.
+
+**Implementasi notifikasi (`api/admin.js`):**
+- `_buildAutoScopeStats` sekarang snapshot status SEBELUM `_evaluateSetups` (`statusBeforeById`), lalu setelah evaluasi + write Redis, deteksi setup yang baru transisi ke `tp`/`sl`/`ambiguous` dan panggil `_notifySetupOutcome` (push web-push) untuk tiap transisi — jadi berlaku dari SEMUA jalur trigger (event-driven daemon, baseline 5 menit, buka dev-auto-entry.html manual, atau slot auto-entry 2x/hari), bukan cuma satu.
+- Push dikirim ke hash Redis BARU `push_subs_dev` — **TERPISAH TOTAL** dari `push_subs` publik (dipakai notifikasi berita `api/subscribe.js`). Auto-entry tetap developer-only (Plan U-7 REVISI VISIBILITAS) — kalau numpang `push_subs`, user biasa yang subscribe notif berita bisa kebagian alert eksperimen ini, bocor eksistensi fitur yang sengaja disembunyikan.
+- Endpoint baru `action=push_subscribe_dev` (POST subscribe / DELETE unsubscribe), auth sama seperti aksi dev lain (`x-admin-secret`/`x-cron-secret` == `CRON_SECRET`), BUKAN `requireAppKey` publik.
+- `dev-auto-entry.html`: tombol "Notif TP/SL: on/off" di header (reuse VAPID public key yang sama dengan index.html, tapi subscribe ke endpoint & hash Redis terpisah). Registrasi service worker `./sw.js` (payload-agnostic, tidak perlu ubah `sw.js`).
+
+**Kenapa desain ini (bukan alternatif lain):** sempat dipertimbangkan daemon.js langsung menulis status + label loss sendiri saat live-tick match, ditolak karena akan menduplikasi logika `_detectLossLabel` (fundamental_shock/fakeout_sl butuh candle penuh + kalender events) di 2 bahasa/file — risiko divergensi untuk sistem yang arahnya AI pegang dana riil (lihat prioritas rigor [[project-plan-u-end-goal-ai-fund-manager]]). Trigger-only (daemon relay, admin.js authoritative) menjaga SATU sumber kebenaran untuk state-transition, sekaligus tetap dapat manfaat latensi deteksi (detik, bukan jam).
+
+**Test:** `priceCrossesLevel` + drift-guard `XAU_YAHOO_SYMBOL`/`XAU_DERIV_SYMBOL` tidak ikut `YAHOO_TO_DERIV_SYMBOL` (`test/vps/vps_daemon.test.js`, +4). `pushSubscribeDevHandler` (auth/validasi/isolasi dari `push_subs`) + notifikasi terkirim HANYA saat transisi status baru, tidak terkirim ulang untuk status yang sudah tp/sl sebelumnya, tidak crash tanpa subscriber (`test/admin/push_subscribe_dev.test.js`, baru, 7 test — pakai kunci VAPID asli via `web-push.generateVAPIDKeys()` karena `web-push` throw kalau format kunci sembarangan). `npm test` 640/640 hijau (629 lama + 11 baru).
+
+**File diubah:** `vps/daemon.js` (Q-7 watcher + subscribe tick XAU + cron baseline 5 menit), `api/admin.js` (`pushSubscribeDevHandler`, `_notifySetupOutcome`, hook transisi di `_buildAutoScopeStats`, entri `KEY_REGISTRY`), `dev-auto-entry.html` (tombol + subscribe flow push dev-only), `test/vps/vps_daemon.test.js`, `test/admin/push_subscribe_dev.test.js` (baru).
+
 ## Changelog Session 252 (2026-07-28) — Riset Akurasi & Kualitas Auto-Entry (8 sitasi baru) + Fix Celah Spread AUD/NZD
 
-**Konteks:** user minta riset hal-hal yang bisa membuat auto-entry lebih akurat & berkualitas. Riset murni (bukan eksekusi fitur) — beda dari Session 250/251 yang membangun & memangkas gate. Kriteria inklusi ditulis SEBELUM search (mengikuti temuan §12 Cao 2025 soal triase terstruktur), 6 query `search_scopus` (~90 hasil mentah), 8 paper lolos verifikasi web ke sumber primer.
+**Konteks:** user minta riset hal-hal yang bisa membuat auto-entry lebih akurat & berkualitas. Riset murni (bukan eksekusi fitur) — beda dari Session 250/251 yang membangun & memangkas gate.
 
-**Hasil riset:** `daun_merah_referensi_riset.md` §13 (5 sub-bagian: efikasi stop-loss, periodisitas intraday FX, biaya transaksi, meta-labeling, ensemble LLM) + terjemahan ke kode aktual di `daun_merah_riset.md` (4 celah terukur, diurut manfaat-per-usaha). Sitasi baru terverifikasi: Kaminski & Lo (2014 JFM), Lo & Remorov (2017 JFM), Arratia & Dorador (2019 QF), Andersen & Bollerslev (1997 JEF), Ito & Hashimoto (2006 JJIE), Filippou dkk. (2024 JFE), Hsu-Taylor-Wang (2016 JIE), Schoenegger dkk. (2024 Science Advances).
+Kriteria inklusi ditulis SEBELUM search (mengikuti temuan §12 Cao 2025 soal triase terstruktur), 6 query `search_scopus` (~90 hasil mentah), 8 paper lolos verifikasi web ke sumber primer.
 
-**Kesimpulan utama (tidak ada gate/mekanisme baru direkomendasikan):** 3 dari 4 celah bisa dijawab dengan menganalisis data yang SUDAH terkumpul. Yang paling penting — spread sudah dihitung di NILAI hasil (`_costAdjustedR`, item #1 rigor Plan U 2026-07-20) tapi belum di PENENTUAN hasil: `_evaluateSetups` memutuskan `tp` vs `sl` dari wick candle H1 di harga mid tanpa spread, jadi expectancy net konservatif TAPI `win_rate_raw`/`win_rate_adjusted` (kriteria gate n≥100) masih optimis. Dua temuan yang sifatnya VALIDASI, bukan masalah: slot 08:15 & 13:15 UTC sudah jatuh di jendela aktivitas tinggi/spread tersempit (Ito & Hashimoto 2006), dan tighten preventif Jumat tetap didukung walau overnight gap dimodelkan (Arratia & Dorador 2019).
+**Hasil riset:** `daun_merah_referensi_riset.md` §13 (5 sub-bagian: efikasi stop-loss, periodisitas intraday FX, biaya transaksi, meta-labeling, ensemble LLM) + terjemahan ke kode aktual di `daun_merah_riset.md` (4 celah terukur, diurut manfaat-per-usaha).
+
+Sitasi baru terverifikasi: Kaminski & Lo (2014 JFM), Lo & Remorov (2017 JFM), Arratia & Dorador (2019 QF), Andersen & Bollerslev (1997 JEF), Ito & Hashimoto (2006 JJIE), Filippou dkk. (2024 JFE), Hsu-Taylor-Wang (2016 JIE), Schoenegger dkk. (2024 Science Advances).
+
+**Kesimpulan utama (tidak ada gate/mekanisme baru direkomendasikan):** 3 dari 4 celah bisa dijawab dengan menganalisis data yang SUDAH terkumpul.
+
+Yang paling penting — spread sudah dihitung di NILAI hasil (`_costAdjustedR`, item #1 rigor Plan U 2026-07-20) tapi belum di PENENTUAN hasil: `_evaluateSetups` memutuskan `tp` vs `sl` dari wick candle H1 di harga mid tanpa spread, jadi expectancy net konservatif TAPI `win_rate_raw`/`win_rate_adjusted` (kriteria gate n≥100) masih optimis.
+
+Dua temuan yang sifatnya VALIDASI, bukan masalah: slot 08:15 & 13:15 UTC sudah jatuh di jendela aktivitas tinggi/spread tersempit (Ito & Hashimoto 2006), dan tighten preventif Jumat tetap didukung walau overnight gap dimodelkan (Arratia & Dorador 2019).
 
 **Fix yang langsung dikerjakan (celah data, ditemukan saat verifikasi klaim riset ke kode):** `SPREAD_PRICE_ESTIMATE` (`api/admin.js`) tidak punya entri `AUD/NZD` padahal pair itu masuk `AUTO_ENTRY_PAIRS` sejak redesain 4-pair Session 247 — akibatnya SELURUH setup AUD/NZD di-skip diam-diam dari `cost_expectancy` (fallback `null` per-entri di `_costAdjustedR`), jadi angka expectancy net selama ini cuma mewakili 3 dari 4 pair tanpa tanda apa pun di payload. Ditambahkan `'AUD/NZD': 0.00030` (ballpark konsisten tabel: NZD/USD 0,00025, EUR/AUD 0,00035).
 
 **Koreksi klaim sesi ini sendiri:** dugaan awal "biaya spread tidak dimodelkan sama sekali" SALAH — dicek ke kode, `SPREAD_PRICE_ESTIMATE`/`_costAdjustedR`/`_aggCostExpectancy` sudah ada sejak 2026-07-20. Yang benar adalah pembedaan nilai-vs-penentuan di atas.
 
-**File diubah:** `api/admin.js` (1 entri tabel spread + komentar), `Dokumentasi/daun_merah_referensi_riset.md` (§13 baru), `Dokumentasi/daun_merah_riset.md` (entri riset aktif). `npm test` 629/629 hijau. Tidak ada perubahan runtime auto-entry, tidak ada perubahan UI/payload publik — isolasi senyap U-7 tidak tersentuh.
+**File diubah:** `api/admin.js` (1 entri tabel spread + komentar), `Dokumentasi/daun_merah_referensi_riset.md` (§13 baru), `Dokumentasi/daun_merah_riset.md` (entri riset aktif).
+
+`npm test` 629/629 hijau. Tidak ada perubahan runtime auto-entry, tidak ada perubahan UI/payload publik — isolasi senyap U-7 tidak tersentuh.
 
 ## Changelog Session 251 (2026-07-28) — Hapus Gate C, Riset Scopus AI Lanjutan Audit-Guard
 
-**Konteks:** Lanjutan sesi 250 (4 gate audit-guard). Diminta riset Scopus AI lanjutan (§11/§12 `daun_merah_referensi_riset.md`) khusus soal noise-vs-sinyal stacking 4 gate — tidak ditemukan paper langsung yang uji topik itu (beda konsep dari data-snooping/White 2000 & Bajgrowicz-Scaillet 2012 yang disitasi), jadi jawaban empiris disarankan lewat counter `auto_guard_stats` + counterfactual (`_evaluateCanceledGhost`-style), bukan literatur tambahan. Riset kedua (percepatan proses riset sendiri) menghasilkan Cao 2025/Khraisha 2024/Pham 2016 — memvalidasi kewajiban verifikasi manual existing, bukan rekomendasi baru.
+**Konteks:** Lanjutan sesi 250 (4 gate audit-guard). Diminta riset Scopus AI lanjutan (§11/§12 `daun_merah_referensi_riset.md`) khusus soal noise-vs-sinyal stacking 4 gate — tidak ditemukan paper langsung yang uji topik itu (beda konsep dari data-snooping/White 2000 & Bajgrowicz-Scaillet 2012 yang disitasi), jadi jawaban empiris disarankan lewat counter `auto_guard_stats` + counterfactual (`_evaluateCanceledGhost`-style), bukan literatur tambahan.
 
-**Diskusi Gate C:** user menunjukkan celah nyata di `isRegimeConfidenceBlocked()` — fungsi ini BUTA ARAH (cuma cek `symbol/regime/confidence`, tidak menerima `bias`), jadi XAU/USD **bullish** (selaras teori safe-haven) saat `risk_off` tetap diblokir kalau confidence rendah, walau arahnya sendiri sudah benar. Argumen user: skeptisisme "risk_off → hati-hati" seharusnya sudah jadi bagian penalaran AI thesis (Analisa/pre-entry check yang baca `risk_regime` langsung), bukan filter buta terpisah di atasnya. **Keputusan: Gate C dihapus**, sesi yang sama dengan pembuatannya (Session 250).
+Riset kedua (percepatan proses riset sendiri) menghasilkan Cao 2025/Khraisha 2024/Pham 2016 — memvalidasi kewajiban verifikasi manual existing, bukan rekomendasi baru.
+
+**Diskusi Gate C:** user menunjukkan celah nyata di `isRegimeConfidenceBlocked()` — fungsi ini BUTA ARAH (cuma cek `symbol/regime/confidence`, tidak menerima `bias`), jadi XAU/USD **bullish** (selaras teori safe-haven) saat `risk_off` tetap diblokir kalau confidence rendah, walau arahnya sendiri sudah benar.
+
+Argumen user: skeptisisme "risk_off → hati-hati" seharusnya sudah jadi bagian penalaran AI thesis (Analisa/pre-entry check yang baca `risk_regime` langsung), bukan filter buta terpisah di atasnya. **Keputusan: Gate C dihapus**, sesi yang sama dengan pembuatannya (Session 250).
 
 **Eksekusi:**
 - `api/_auto_entry_guard.js`: hapus `REGIME_RELEVANT_SYMBOLS` + `isRegimeConfidenceBlocked()`, update header comment ("Tiga gate" → "Dua gate": B drawdown circuit breaker, D correlation cap).
@@ -46,6 +83,7 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 **Sisa aktif:** Gate A (AI Kritikus), Gate B (drawdown circuit breaker), Gate D (correlation cap) — semua HANYA jalur `isAutoCall`, isolasi U-7 tetap terjaga.
 
 **Lanjutan audit kritis Gate A/B (sama sesi):** diminta cari kelemahan nyata lain (bukan dipaksakan) di gate sisa.
+
 - **Gate A:** klaim awal "model+temperature PERSIS SAMA dengan call thesis" **DIKOREKSI** (user menunjukkan salah baca kode) — PRIMARY call thesis (termasuk auto-entry) sebenarnya **DeepSeek v4-flash via API resmi (berbayar, saldo top-up)**, `admin.js:4086`, BUKAN SambaNova; SambaNova V3.2 cuma fallback kalau v4-flash gagal. Gate A (`_runCriticVerdict`) SambaNova-only, tidak pernah pakai v4-flash. Jadi di kondisi normal (v4-flash primary berhasil): thesis & kritikus itu DUA MODEL BEDA (v4-flash vs V3.2), bukan self-review — klaim "sama persis" cuma benar di skenario fallback (v4-flash gagal DAN thesis juga jatuh ke SambaNova). Kritikus sendiri tetap free tier (pool terpisah 30/hari, tidak menyentuh saldo berbayar). **Keputusan: TIDAK dihapus** (beda dari Gate C yang punya bug logika jelas, dan alasan "self-review" ternyata lebih lemah dari klaim awal) — pantau rasio `critic_veto`/`considered` begitu ada data live.
 - **Gate B:** ditemukan tidak ada ambang sampel minimum sebelum circuit breaker aktif — di awal umur sistem (rolling window 10 = seluruh riwayat yang ada saat ini), 2 SL beruntun saat `risk_off` (ambang -2R) sudah cukup membekukan SEMUA pair, padahal itu cuma variance dari sampel kecil, bertentangan dengan prinsip "tunggu n cukup" yang dipegang di tempat lain Plan U. **Diperbaiki:** tambah `DRAWDOWN_MIN_SAMPLE = 5` (konsisten dengan preseden ambang `_formatTrackRecordBlock` yang juga butuh >=5 setup selesai) — `isDrawdownHalted()` sekarang selalu `halted:false` kalau `closedSetups.length < 5`, apapun rollingR-nya. Field `sampleSize` ditambahkan ke return value.
 - **Gate D:** dicek ulang (sudah sadar arah lewat `usdView`, dan `vps/daemon.js` loop 4 pair SEQUENTIAL bukan paralel jadi tidak ada race kondisi) — tidak ditemukan cacat, dibiarkan apa adanya.
@@ -54,12 +92,21 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 
 ## Changelog Session 250 (2026-07-28) — Eksekusi 4 Gate Audit "Kesalahan Trader" Auto-Entry
 
-**Konteks:** Lanjutan diskusi user soal tujuan akhir Plan U (AI jadi pengelola dana riil, bukan sekadar eksperimen) — diminta audit celah "kesalahan trader" di pipeline auto-entry. Audit kode (langsung ke file, bukan checklist generik) menemukan 4 celah nyata di `vps/daemon.js` → `api/admin.js` → `setup_log_auto:v1`: (1) AI Kritikus (`ohlcv_critic`, alat anti-confirmation-bias yang sudah ada) tidak pernah dipanggil untuk auto-entry, cuma tombol manual; (2) tidak ada circuit breaker kerugian beruntun; (3) `risk_regime` (VIX/MOVE/HY) cuma teks informatif di prompt AI, tidak ada gate kode; (4) tidak ada batas eksposur portofolio lintas-pair (relevan ke caveat XAU/USD-EUR/USD r=0,585 yang sudah dicatat sesi ini juga). User khawatir menerapkan ke-4 gate sekaligus akan membuat sistem terlalu ketat (sinyal makin jarang, mengancam kecepatan akumulasi n≥30/pair Plan U) — diminta riset Scopus AI dulu sebelum eksekusi.
+**Konteks:** Lanjutan diskusi user soal tujuan akhir Plan U (AI jadi pengelola dana riil, bukan sekadar eksperimen) — diminta audit celah "kesalahan trader" di pipeline auto-entry. Audit kode (langsung ke file, bukan checklist generik) menemukan 4 celah nyata di `vps/daemon.js` → `api/admin.js` → `setup_log_auto:v1`:
+
+1. AI Kritikus (`ohlcv_critic`, alat anti-confirmation-bias yang sudah ada) tidak pernah dipanggil untuk auto-entry, cuma tombol manual.
+2. Tidak ada circuit breaker kerugian beruntun.
+3. `risk_regime` (VIX/MOVE/HY) cuma teks informatif di prompt AI, tidak ada gate kode.
+4. Tidak ada batas eksposur portofolio lintas-pair (relevan ke caveat XAU/USD-EUR/USD r=0,585 yang sudah dicatat sesi ini juga).
+
+User khawatir menerapkan ke-4 gate sekaligus akan membuat sistem terlalu ketat (sinyal makin jarang, mengancam kecepatan akumulasi n≥30/pair Plan U) — diminta riset Scopus AI dulu sebelum eksekusi.
 
 **Riset (`daun_merah_referensi_riset.md` §10, 4 sitasi diverifikasi manual — Varma 2025, Moreira & Muir 2017, Zhao/Ledoit/Jiang 2023, Subrahmanyam 1994):** kekhawatiran user beralasan tapi solusinya ambang ADAPTIF per kondisi pasar, bukan batalkan gate-nya. Benang merah 4 topik: drawdown-based circuit breaker > consecutive-loss (yang terakhir rawan "magnet effect" — trader/algo malah mempercepat aksi mendekati ambang); "reduce size/bar" > "skip entirely" untuk gate volatilitas; HRP/gross-exposure constraint sederhana cukup untuk correlation cap skala retail.
 
 **Eksekusi — 4 gate, HANYA jalur `isAutoCall` (manual TIDAK disentuh, isolasi U-7 tetap):**
-1. **Gate A (AI Kritikus otomatis):** logika AI-call `ohlcv_critic` diekstrak jadi `_runCriticVerdict()` reusable (dipakai tombol manual DAN Gate A auto-entry — fact sheet Gate A numpang blok yang sudah dibangun untuk prompt Analisa, TIDAK fetch Redis tambahan). verdict `"batalkan"` → setup tidak disimpan. **Bug ditemukan & difix saat implementasi:** draft awal Gate A memanggil pool AI `ai:sambanova:main`/`sambanova_main` yang sama dengan tombol manual publik — pola bug PERSIS yang pernah ditemukan S218 untuk `deepseek_experimental` (auto-entry & manual rebutan kuota harian yang sama). Diperbaiki: `_runCriticVerdict` sekarang terima `cbKey`/`budgetKey` opsional, Gate A pakai `ai:sambanova:main:experimental`/`sambanova_main_experimental` (key yang SUDAH ada di `KNOWN_CIRCUITS`, dipakai call auto-entry utama — konsisten).
+
+1. **Gate A (AI Kritikus otomatis):** logika AI-call `ohlcv_critic` diekstrak jadi `_runCriticVerdict()` reusable (dipakai tombol manual DAN Gate A auto-entry — fact sheet Gate A numpang blok yang sudah dibangun untuk prompt Analisa, TIDAK fetch Redis tambahan). Verdict `"batalkan"` → setup tidak disimpan.
+   **Bug ditemukan & difix saat implementasi:** draft awal Gate A memanggil pool AI `ai:sambanova:main`/`sambanova_main` yang sama dengan tombol manual publik — pola bug PERSIS yang pernah ditemukan S218 untuk `deepseek_experimental` (auto-entry & manual rebutan kuota harian yang sama). Diperbaiki: `_runCriticVerdict` sekarang terima `cbKey`/`budgetKey` opsional, Gate A pakai `ai:sambanova:main:experimental`/`sambanova_main_experimental` (key yang SUDAH ada di `KNOWN_CIRCUITS`, dipakai call auto-entry utama — konsisten).
 2. **Gate B (drawdown circuit breaker adaptif):** `isDrawdownHalted()` di `api/_auto_entry_guard.js` baru — rolling 10 setup tertutup terakhir (lintas semua pair), ambang R berbeda per `risk_regime` (risk_on -6R, neutral -5R, elevated -3R, risk_off -2R, heuristik awal belum dikalibrasi live).
 3. **Gate C (regime confidence bar):** `isRegimeConfidenceBlocked()` — tolak entry `confidence:"rendah"` saat regime `elevated`/`risk_off`; confidence sedang/tinggi tidak pernah diblokir. Terjemahan "reduce size" (Moreira & Muir) ke sistem virtual 1-unit-R yang tidak punya position sizing kontinu.
 4. **Gate D (correlation cap):** `isCorrelatedExposureBlocked()` — cuma cover SATU pasangan yang terbukti korelatif di set 4-pair saat ini (XAU/USD-EUR/USD r=0,585), blokir entry baru kalau pandangan USD-nya sama dengan posisi open pasangannya.
@@ -70,11 +117,21 @@ Ke-4 gate dicek berurutan (murah dulu: regime→correlation→drawdown, baru AI 
 
 **Verifikasi:** `npm test` 631/631 hijau (613 lama + 18 baru), termasuk `test/admin/position_review.test.js` yang meng-`require('../../api/admin.js')` langsung (memastikan refactor `ohlcvCriticHandler` tidak merusak module load). Response JSON tombol manual "UJI KELEMAHAN" dijaga identik (field `objections/verdict/model/raw/symbol/label/generated_at` sama persis). Belum ada verifikasi live cron (gate baru jalan di panggilan `auto=1` scheduler berikutnya) — dipantau via log `auto-entry <symbol> ditahan oleh audit-guard: <alasan>`.
 
-**Addendum (sama sesi) — dampak ke kecepatan n≥30/pair + pencatatan ringan:** user tanya apakah gate baru bikin akumulasi sampel Plan U lebih lambat — jawaban jujur: **iya**, karena kandidat yang ditahan gate TIDAK tersimpan sama sekali (beda dari dup/refine lama yang tetap punya jejak), jadi rate sampel/hari pasti turun; besarannya belum bisa dihitung pasti tanpa data live. User juga tanya apakah menumpuk 4 gate ini berisiko jadi "noise" — jawaban jujur: ada risiko nyata, karena SEMUA ambang di ke-4 gate masih heuristik awal (belum dikalibrasi dari data Daun Merah sendiri), dan riset Scopus AI kemarin sendiri bilang "empirical quantification of combined filter pipelines is limited" — interaksi ke-4 gate SEKALIGUS belum pernah diukur siapa pun di literatur.
+**Addendum (sama sesi) — dampak ke kecepatan n≥30/pair + pencatatan ringan:** user tanya apakah gate baru bikin akumulasi sampel Plan U lebih lambat — jawaban jujur: **iya**, karena kandidat yang ditahan gate TIDAK tersimpan sama sekali (beda dari dup/refine lama yang tetap punya jejak), jadi rate sampel/hari pasti turun; besarannya belum bisa dihitung pasti tanpa data live.
 
-Untuk mulai menjawab ini secara empiris (bukan tebak-tebak lagi), ditambahkan **pencatatan ringan**: counter Redis `INCR` polos `auto_guard_stats:{considered,saved,regime_confidence,correlation_cap,drawdown_circuit_breaker,critic_veto}` (invarian: `considered = saved + 4 alasan lainnya`), dibaca via `redis-keys?key=auto_guard_stats:<nama>&x-admin-secret=...` (field `value` baru ditambahkan ke `getKeyInfo()` KHUSUS prefix ini — key lain di registry tidak terpengaruh). **Batasan disadari & dicatat eksplisit:** ini cuma jawab "seberapa sering tiap gate nyala", BUKAN "apakah gate itu benar" (kandidat yang ditahan memang akan SL, vs noise — sebenarnya akan TP kalau tidak ditahan). Untuk itu perlu pola counterfactual seperti `_evaluateCanceledGhost` (bias_flip) — sengaja belum dibuat (lebih besar dari "pencatatan ringan" yang diminta), jadi kandidat untuk lanjutan kalau user mau benar-benar menguji tiap gate itu menyelamatkan atau cuma sok tahu.
+User juga tanya apakah menumpuk 4 gate ini berisiko jadi "noise" — jawaban jujur: ada risiko nyata, karena SEMUA ambang di ke-4 gate masih heuristik awal (belum dikalibrasi dari data Daun Merah sendiri), dan riset Scopus AI kemarin sendiri bilang "empirical quantification of combined filter pipelines is limited" — interaksi ke-4 gate SEKALIGUS belum pernah diukur siapa pun di literatur.
 
-**Addendum kedua (sama sesi) — persempit Gate C, TOLAK tambahan sample-log Gate A (user tegas: "gasuka noise"):** user tanya apakah Gate C bisa "menyesuaikan" untuk XAU/USD (yang secara klasik bisa bull/bear beda arah saat risk_off) dan kenapa AUD/NZD/EUR/GBP ikut kena regime global padahal fundamentalnya beda. Jawaban: Gate C dipersempit HANYA ke `GC=F`/`EURUSD=X` (`REGIME_RELEVANT_SYMBOLS` di `_auto_entry_guard.js`) — AUD/NZD & EUR/GBP di-skip total, karena keduanya SENGAJA dipilih di redesain 4-pair karena independen dari faktor risiko global (r=0,10-0,19), jadi `risk_regime` memang tidak relevan buat pair itu. **Sengaja TIDAK** menambah aturan arah bull/bear XAU/USD berdasar risk_off — itu akan kontradiksi temuan korelasi kita sendiri (XAU/USD-EUR/USD bergerak BERSAMAAN r=0,585, bukan berlawanan seperti cerita "gold safe-haven vs dollar") dan berarti nambah asumsi baru yang belum terbukti. User juga eksplisit MENOLAK usul menambah sample-log 5 alasan "batalkan" terakhir Gate A — instruksi tegas: prioritaskan kurangi permukaan noise, bukan tambah observabilitas baru kalau tidak diminta.
+Untuk mulai menjawab ini secara empiris (bukan tebak-tebak lagi), ditambahkan **pencatatan ringan**: counter Redis `INCR` polos `auto_guard_stats:{considered,saved,regime_confidence,correlation_cap,drawdown_circuit_breaker,critic_veto}` (invarian: `considered = saved + 4 alasan lainnya`), dibaca via `redis-keys?key=auto_guard_stats:<nama>&x-admin-secret=...` (field `value` baru ditambahkan ke `getKeyInfo()` KHUSUS prefix ini — key lain di registry tidak terpengaruh).
+
+**Batasan disadari & dicatat eksplisit:** ini cuma jawab "seberapa sering tiap gate nyala", BUKAN "apakah gate itu benar" (kandidat yang ditahan memang akan SL, vs noise — sebenarnya akan TP kalau tidak ditahan). Untuk itu perlu pola counterfactual seperti `_evaluateCanceledGhost` (bias_flip) — sengaja belum dibuat (lebih besar dari "pencatatan ringan" yang diminta), jadi kandidat untuk lanjutan kalau user mau benar-benar menguji tiap gate itu menyelamatkan atau cuma sok tahu.
+
+**Addendum kedua (sama sesi) — persempit Gate C, TOLAK tambahan sample-log Gate A (user tegas: "gasuka noise"):** user tanya apakah Gate C bisa "menyesuaikan" untuk XAU/USD (yang secara klasik bisa bull/bear beda arah saat risk_off) dan kenapa AUD/NZD/EUR/GBP ikut kena regime global padahal fundamentalnya beda.
+
+Jawaban: Gate C dipersempit HANYA ke `GC=F`/`EURUSD=X` (`REGIME_RELEVANT_SYMBOLS` di `_auto_entry_guard.js`) — AUD/NZD & EUR/GBP di-skip total, karena keduanya SENGAJA dipilih di redesain 4-pair karena independen dari faktor risiko global (r=0,10-0,19), jadi `risk_regime` memang tidak relevan buat pair itu.
+
+**Sengaja TIDAK** menambah aturan arah bull/bear XAU/USD berdasar risk_off — itu akan kontradiksi temuan korelasi kita sendiri (XAU/USD-EUR/USD bergerak BERSAMAAN r=0,585, bukan berlawanan seperti cerita "gold safe-haven vs dollar") dan berarti nambah asumsi baru yang belum terbukti.
+
+User juga eksplisit MENOLAK usul menambah sample-log 5 alasan "batalkan" terakhir Gate A — instruksi tegas: prioritaskan kurangi permukaan noise, bukan tambah observabilitas baru kalau tidak diminta.
 
 ## Changelog Session 249 (2026-07-28) — Diagnosis Risk Reversal 25D Kosong: Outage TLS ScraperAPI
 
@@ -82,9 +139,13 @@ Untuk mulai menjawab ini secara empiris (bukan tebak-tebak lagi), ditambahkan **
 
 **Diagnosis:** Pesan error generik tidak cukup, dan tidak ada akses ke Vercel function logs dari CLI tanpa setup tambahan. `api/correlations.js` di-instrumentasi 2 iterasi (commit `53ada32`, `93dc285`): (1) baca body sebagai text dulu sebelum `JSON.parse` supaya body non-JSON ikut ke pesan error, (2) bungkus `fetch()` sendiri supaya `error.cause` (kode error Node/undici level TLS/DNS) ikut tertangkap — keduanya dikirim balik lewat field baru `debug` di response `available:false`. Deploy via `git push`, dites langsung ke endpoint live.
 
-**Root cause:** `debug: "CME CVOL batch fetch threw: TypeError: fetch failed (cause: CERT_HAS_EXPIRED)"` — sertifikat TLS `api.scraperapi.com` expired (`notAfter=Jul 28 00:42:41 2026 GMT`, dikonfirmasi `openssl s_client -connect api.scraperapi.com:443`). **Outage murni di sisi vendor ScraperAPI**, bukan CME ubah format response (dicek juga: raw response CME `/services/cvol` via jalur baca lain masih format identik/valid, field `skew`/`upvarMetric`/`dnvarMetric` dst semua ada) dan bukan soal kuota/billing. Detail lengkap: [daun_merah_vendor.md](daun_merah_vendor.md).
+**Root cause:** `debug: "CME CVOL batch fetch threw: TypeError: fetch failed (cause: CERT_HAS_EXPIRED)"` — sertifikat TLS `api.scraperapi.com` expired (`notAfter=Jul 28 00:42:41 2026 GMT`, dikonfirmasi `openssl s_client -connect api.scraperapi.com:443`).
 
-**Perbaikan (revisi — user tanya "benar-benar tidak ada yang bisa dilakukan?"):** Awalnya dijawab "tunggu vendor" (TLS cert expired vendor lain memang tidak boleh dimitigasi dengan menonaktifkan verifikasi TLS — itu lubang keamanan MITM, tetap DILARANG). Tapi ditemukan jalur alternatif yang aman: **r.jina.ai Reader API** (gratis, tanpa key) fetch CME dari IP mereka sendiri, bukan dari IP datacenter Vercel yang diblokir WAF Akamai — dites live, parse 6/6 pair (termasuk XAU/USD) berhasil sempurna saat ScraperAPI masih down. `correlations.js` (commit `0f738a0`) direfactor: `fetchScraperOrDirect()` (jalur lama) dicoba dulu, kalau gagal fallback otomatis ke `fetchViaJinaReader()` (parse JSON dari balik marker `"Markdown Content:"` di response Reader) — bukan ganti vendor permanen, cuma fallback tambahan yang otomatis tidak terpakai lagi begitu ScraperAPI pulih normal. Field `debug` di response DIPERTAHANKAN permanen — cost 0 (cuma echo pesan error/snippet response publik CME, tidak ada secret), manfaatnya diagnosis insiden serupa ke depan tidak perlu ulang proses debugging manual dari nol.
+**Outage murni di sisi vendor ScraperAPI**, bukan CME ubah format response (dicek juga: raw response CME `/services/cvol` via jalur baca lain masih format identik/valid, field `skew`/`upvarMetric`/`dnvarMetric` dst semua ada) dan bukan soal kuota/billing. Detail lengkap: [daun_merah_vendor.md](daun_merah_vendor.md).
+
+**Perbaikan (revisi — user tanya "benar-benar tidak ada yang bisa dilakukan?"):** Awalnya dijawab "tunggu vendor" (TLS cert expired vendor lain memang tidak boleh dimitigasi dengan menonaktifkan verifikasi TLS — itu lubang keamanan MITM, tetap DILARANG). Tapi ditemukan jalur alternatif yang aman: **r.jina.ai Reader API** (gratis, tanpa key) fetch CME dari IP mereka sendiri, bukan dari IP datacenter Vercel yang diblokir WAF Akamai — dites live, parse 6/6 pair (termasuk XAU/USD) berhasil sempurna saat ScraperAPI masih down.
+
+`correlations.js` (commit `0f738a0`) direfactor: `fetchScraperOrDirect()` (jalur lama) dicoba dulu, kalau gagal fallback otomatis ke `fetchViaJinaReader()` (parse JSON dari balik marker `"Markdown Content:"` di response Reader) — bukan ganti vendor permanen, cuma fallback tambahan yang otomatis tidak terpakai lagi begitu ScraperAPI pulih normal. Field `debug` di response DIPERTAHANKAN permanen — cost 0 (cuma echo pesan error/snippet response publik CME, tidak ada secret), manfaatnya diagnosis insiden serupa ke depan tidak perlu ulang proses debugging manual dari nol.
 
 **Verifikasi:** `npm test` 613/613 hijau tiap commit. Endpoint live dites ulang pasca tiap deploy (`curl` ke `financial-feed-app.vercel.app/api/correlations?action=risk-reversal`) — setelah fallback Jina Reader dipasang, response balik jadi `available:true` dengan 6/6 pair terisi (termasuk XAU/USD), diverifikasi juga tampilan UI tab Analisa. Tidak ada perubahan UI (`index.html` tidak disentuh, tidak perlu bump `?v=`) — murni perbaikan API.
 
@@ -120,6 +181,7 @@ Untuk mulai menjawab ini secara empiris (bukan tebak-tebak lagi), ditambahkan **
 **Constraint penting (U-7 REVISI VISIBILITAS, sudah dikunci `test/admin/isolation_auto.test.js` poin e):** `index.html` (publik) TIDAK BOLEH menyebut string `setup_log_auto` sama sekali. Jadi UI baru **wajib** file terpisah, bukan tab baru di `index.html`.
 
 **Solusi:** File baru `dev-auto-entry.html` di root repo — HTML/CSS/JS vanilla satu file (self-contained, tanpa build step, mengikuti pola stack yang sudah ada), **sengaja tidak dilink dari `index.html`/nav manapun** (akses via URL langsung saja). Fitur:
+
 - Gate secret lokal (localStorage `dm_dev_admin_secret`) → dikirim sebagai header `x-admin-secret` (+ `x-cron-secret`, keduanya diterima `_isCronCallReq`) di setiap fetch ke `/api/admin`. Keamanan sesungguhnya tetap di server (`CRON_SECRET`) — input di halaman ini cuma kemudahan, bukan mekanisme baru.
 - Dashboard: render `setup_stats&scope=auto` — kartu global (win rate raw/adjusted, loss causes, cost expectancy R), blok manajemen posisi U-5a + cancel-flip ghost U-3 lanjutan, konsistensi AI & latensi pipeline, kartu per-pair, tabel 10 setup terbaru dengan badge status berwarna.
 - Tab Trigger Analisa: 8 tombol pair (sesuai `AUTO_ENTRY_SYMBOL_MAP` di `vps/daemon.js`) memicu `ohlcv_analyze&auto=1` manual.
@@ -134,9 +196,10 @@ Untuk mulai menjawab ini secara empiris (bukan tebak-tebak lagi), ditambahkan **
 
 ## Changelog Session 245 (2026-07-26) — Fix Pesan Error Analisa AI + Cooldown 90 Detik Salah Trigger saat Market Tutup
 
-**Konteks:** User sedang menyiapkan demo screen-recording untuk showcase LinkedIn, klik tab Analisa saat pasar forex tutup untuk pair yang belum punya cache — pesan yang tampil: "AI tidak tersedia — Pasar forex sedang tutup — belum ada analisa tersimpan untuk pair ini..\" (perhatikan titik dobel di akhir). Diminta hapus prefix "AI tidak tersedia" karena menyesatkan (bukan AI yang mati, cuma market tutup & belum ada cache).
+**Konteks:** User sedang menyiapkan demo screen-recording untuk showcase LinkedIn, klik tab Analisa saat pasar forex tutup untuk pair yang belum punya cache — pesan yang tampil: "AI tidak tersedia — Pasar forex sedang tutup — belum ada analisa tersimpan untuk pair ini.." (perhatikan titik dobel di akhir). Diminta hapus prefix "AI tidak tersedia" karena menyesatkan (bukan AI yang mati, cuma market tutup & belum ada cache).
 
 **Root cause:** `index.html` (`analyzeOhlcvAi`, sekitar baris 6930) render `else` branch (dipakai kapan pun `data.commentary`/`data.structured` sama-sama null) selalu tempel prefix hardcode `"AI tidak tersedia — "` di depan `data.error`, padahal branch yang sama menampung 3 skenario dari `api/admin.js` (`ohlcvAnalyzeHandler`) yang beda sifat:
+
 1. Market tutup + belum ada cache (baris ~3650): `error: 'Pasar forex sedang tutup — belum ada analisa tersimpan untuk pair ini.'` — bukan soal AI.
 2. OHLCV belum sync (baris ~3723): `error: 'OHLCV belum tersedia — tunggu GitHub Actions sync pertama.'` — bukan soal AI.
 3. AI provider benar-benar gagal (baris ~4257): `error: 'SambaNova (Utama & Cadangan) sedang offline, timeout, atau limit harian habis'` — ini baru genuinely soal AI.
@@ -147,7 +210,9 @@ Prefix generik itu cuma benar untuk skenario #3, tapi selalu ditempel ke ketigan
 
 **Verifikasi:** `npm test` 608/608 hijau (tidak ada test yang assert ke string lama). `APP_VERSION` naik `2026.07.25.6` → `2026.07.26.1`.
 
-**Addendum (lanjutan sesi sama) — tombol Analisa ke-cooldown 90 detik padahal nol AI call:** User lapor sambil siapan demo: klik pair lain di tab Analisa saat market tutup, tombol langsung terkunci 90 detik walau tidak ada AI yang dipanggil. Root cause: `analyzeOhlcvAi()` (`index.html`) selalu panggil `_startAnalisaCooldown()` di blok `finally` — tidak peduli apakah request beneran sampai ke AI provider atau berhenti duluan di gate server (`market tutup` § 3641 atau `OHLCV belum sync` § 3723 di `ohlcvAnalyzeHandler`, `api/admin.js`), yang keduanya sengaja didesain nol AI call (komentar kode sendiri: "nol AI call selama pasar tutup"). Akibatnya, tiap klik Analisa selagi market tutup — baik ada cache maupun tidak — mengunci tombol global 90 detik tanpa alasan nyata, bikin tab Analisa nyaris tidak bisa dipakai gonta-ganti pair pas weekend.
+**Addendum (lanjutan sesi sama) — tombol Analisa ke-cooldown 90 detik padahal nol AI call:** User lapor sambil siapan demo: klik pair lain di tab Analisa saat market tutup, tombol langsung terkunci 90 detik walau tidak ada AI yang dipanggil.
+
+Root cause: `analyzeOhlcvAi()` (`index.html`) selalu panggil `_startAnalisaCooldown()` di blok `finally` — tidak peduli apakah request beneran sampai ke AI provider atau berhenti duluan di gate server (`market tutup` § 3641 atau `OHLCV belum sync` § 3723 di `ohlcvAnalyzeHandler`, `api/admin.js`), yang keduanya sengaja didesain nol AI call (komentar kode sendiri: "nol AI call selama pasar tutup"). Akibatnya, tiap klik Analisa selagi market tutup — baik ada cache maupun tidak — mengunci tombol global 90 detik tanpa alasan nyata, bikin tab Analisa nyaris tidak bisa dipakai gonta-ganti pair pas weekend.
 
 **Fix:** `api/admin.js` — tandai ketiga jalur gate (`market_closed` dengan cache, `market_closed` tanpa cache, `OHLCV belum sync`) dengan flag baru `ai_skipped: true`. `index.html` — `analyzeOhlcvAi()` simpan flag ini ke variabel lokal `aiSkipped` setelah response diterima, `finally` cuma panggil `_startAnalisaCooldown()` kalau `!aiSkipped`. Jalur AI beneran jalan (sukses generate maupun kedua provider gagal) tidak berubah — cooldown tetap berlaku di situ.
 
@@ -157,11 +222,15 @@ Prefix generik itu cuma benar untuk skenario #3, tapi selalu ditempel ke ketigan
 
 **Verifikasi:** `npm test` 608/608 hijau, tidak ada test yang assert teks pesan persis. `APP_VERSION` naik `2026.07.26.2` → `2026.07.26.3`.
 
-**Addendum ketiga (lanjutan sesi sama) — emoji 📊 di empty-state Analisa dihapus:** User ketemu emoji `📊` di state-box "Belum ada pair dipilih" tab Analisa (`#analisaEmpty`, index.html baris ~3312) sambil ngecek tampilan buat demo. Ini salah satu dari item yang sengaja diparkir di S243 ("emoji piktografik dipakai sebagai SATU-SATUNYA ikon di empty-state, tidak bisa dihapus polos tanpa diganti ikon SVG"). Diganti ikon bar-chart SVG stroke-based (`var(--muted)`, pola sama `state-box` lain yang sudah pakai SVG asli, mis. baris ~4936) — bukan sekadar dihapus, biar makna visual "belum ada data chart" tetap ada. Empty-state emoji lain (`📡`/`📄`/`📋`/`🔍`/`⏳` di state-box lain) BELUM disentuh, masih diparkir di `daun_merah_progress.md` sampai ada keputusan sweep menyeluruh.
+**Addendum ketiga (lanjutan sesi sama) — emoji 📊 di empty-state Analisa dihapus:** User ketemu emoji `📊` di state-box "Belum ada pair dipilih" tab Analisa (`#analisaEmpty`, index.html baris ~3312) sambil ngecek tampilan buat demo. Ini salah satu dari item yang sengaja diparkir di S243 ("emoji piktografik dipakai sebagai SATU-SATUNYA ikon di empty-state, tidak bisa dihapus polos tanpa diganti ikon SVG").
+
+Diganti ikon bar-chart SVG stroke-based (`var(--muted)`, pola sama `state-box` lain yang sudah pakai SVG asli, mis. baris ~4936) — bukan sekadar dihapus, biar makna visual "belum ada data chart" tetap ada. Empty-state emoji lain (`📡`/`📄`/`📋`/`🔍`/`⏳` di state-box lain) BELUM disentuh, masih diparkir di `daun_merah_progress.md` sampai ada keputusan sweep menyeluruh.
 
 **Verifikasi:** `npm test` 608/608 hijau. `APP_VERSION` naik `2026.07.26.3` → `2026.07.26.4`.
 
-**Addendum keempat (lanjutan sesi sama) — teks cooldown "Tunggu {n}s" → "Cooldown {n}s":** User minta ganti wording tombol cooldown Ringkasan karena kesannya kurang pas ("Tunggu" berkesan nyuruh/error). Setelah dicek, pola yang sama identik dipakai di 5 titik kode buat total 6+ tombol AI (Ringkasan `startCooldown`/`tickCooldown` baris ~4497, Analisa AI `_tickAnalisaCooldown` baris ~6097, AI Kritikus `_tickCriticCooldown` baris ~6118, Pre-Entry Check `_tickPecCooldown` baris ~13347, dan fungsi generik `_startAiBtnCooldown` baris ~9325 yang dipakai bersama Fundamental/Ringkas Jurnal/Diagnosa Perilaku) — user pilih ganti semua sekaligus biar konsisten antar tombol, bukan cuma Ringkasan. Diganti ke "Cooldown {n}s" di kelimanya. **Sengaja TIDAK disentuh:** 3 pesan "Tunggu ...s sebelum centang ulang" (baris ~4150, ~11697, ~11785) — itu fitur beda (anti-gaming checklist re-tick lock, bukan cooldown tombol AI), makna "tunggu" di situ memang pas (instruksi ke user, bukan status sistem).
+**Addendum keempat (lanjutan sesi sama) — teks cooldown "Tunggu {n}s" → "Cooldown {n}s":** User minta ganti wording tombol cooldown Ringkasan karena kesannya kurang pas ("Tunggu" berkesan nyuruh/error). Setelah dicek, pola yang sama identik dipakai di 5 titik kode buat total 6+ tombol AI (Ringkasan `startCooldown`/`tickCooldown` baris ~4497, Analisa AI `_tickAnalisaCooldown` baris ~6097, AI Kritikus `_tickCriticCooldown` baris ~6118, Pre-Entry Check `_tickPecCooldown` baris ~13347, dan fungsi generik `_startAiBtnCooldown` baris ~9325 yang dipakai bersama Fundamental/Ringkas Jurnal/Diagnosa Perilaku) — user pilih ganti semua sekaligus biar konsisten antar tombol, bukan cuma Ringkasan. Diganti ke "Cooldown {n}s" di kelimanya.
+
+**Sengaja TIDAK disentuh:** 3 pesan "Tunggu ...s sebelum centang ulang" (baris ~4150, ~11697, ~11785) — itu fitur beda (anti-gaming checklist re-tick lock, bukan cooldown tombol AI), makna "tunggu" di situ memang pas (instruksi ke user, bukan status sistem).
 
 **Verifikasi:** `npm test` 608/608 hijau. `APP_VERSION` naik `2026.07.26.4` → `2026.07.26.5`.
 
@@ -190,6 +259,8 @@ Prefix generik itu cuma benar untuk skenario #3, tapi selalu ditempel ke ketigan
 
 **Verifikasi:** `npm test` 608/608 hijau sebelum & sesudah tiap commit; `node -c` + `node -e "require(...)"` dipakai untuk cek tidak ada `ReferenceError` tersembunyi di kode yang jarang dieksekusi (fallback tier, jalur diagnostik) sebelum test suite sempat menyentuhnya.
 
+## Changelog Session 243 (2026-07-25) — Revamp Palet Warna Dual-Tone (Hindari Mirip War-Watch.com) + Sweep Emoji
+
 **Konteks:** User konsultasi dengan Gemini soal revamp warna karena sadar palet lama (bg `#0a0a08`, accent crimson `#c0392b`, green `#27ae60`) nyaris identik dengan war-watch.com (dikonfirmasi tabel perbandingan hex Gemini: bg/surface/text/muted/green semua overlap, bukan cuma merahnya). Setelah eksplorasi beberapa preset (Institutional Gold, Emerald, Burgundy dari Gemini, lalu ide sendiri "Rust & Moss" berbasis pigmen alami), user pilih arah **dual-tone filosofis** (hijau=bullish/tumbuh, merah=bearish/alami — selaras nama & logo daun dua-warna) lalu minta versi **"lebih tua"** (warna diredam/didalamkan, bukan cerah).
 
 **Token inti diubah** (`:root` di `index.html`):
@@ -208,6 +279,7 @@ Prefix generik itu cuma benar untuk skenario #3, tapi selalu ditempel ke ketigan
 `--text` (`#e8e4d9`), `--yellow`/`--orange`/`--purple`/`--pink` tidak diubah. `body.light-theme` & palet cetak monokrom (`@media print`) **sengaja tidak disentuh** — di luar lingkup permintaan.
 
 **Bug ditemukan & difix di tengah kerja (bukan cuma ganti warna):**
+
 1. **`--fg-rgb`/`--bg-rgb` tidak pernah didefinisikan di tema gelap (default) sejak lama** — 104 pemakaian `rgba(var(--fg-rgb),X)`/`rgba(var(--bg-rgb),X)` (hover state, divider, grid chart SVG) di seluruh app SELAMA INI invalid/silent-fail di mode gelap (browser mengabaikan properti dengan var() yang unresolved), hanya bekerja benar di `body.light-theme` yang punya definisinya. Ditambahkan ke `:root` dark.
 2. **Override tersembunyi `body:not(.light-theme) { --bg/--surface/--border }`** (baris ~3052, spesifisitas CSS lebih tinggi dari `:root`) diam-diam MENIMPA token yang baru diubah — sempat bikin edit `:root` pertama seolah tidak berefek. Disamakan nilainya dengan `:root` (komentar lama soal "meredupkan dari hitam murni" sudah terpenuhi oleh nilai baru, jadi tidak perlu lapisan peredupan kedua).
 3. **Warna tombol CTA hardcode terpisah** (`body:not(.light-theme) .sizing-form button, .jn-btn, .ringkasan-gen-btn { background:#b23c30 }`, komentar "dusty/editorial alih-alih merah alarm") — ternyata nyaris identik dengan `--accent` baru (`#a83226`), jadi disederhanakan jadi `var(--accent)` (satu sumber kebenaran, bukan warna independen yang kebetulan mirip).
@@ -222,11 +294,19 @@ Prefix generik itu cuma benar untuk skenario #3, tapi selalu ditempel ke ketigan
 
 **Preview interaktif** (artifact, bukan bagian repo): dipakai selama sesi untuk membandingkan opsi sebelum keputusan — mockup shell app dengan toggle Sekarang/Dual-Tone/Dual-Tone Lebih Tua/Rust & Moss + tabel diff token.
 
-**Addendum (lanjutan sesi sama) — redam glow kategori market-moving:** User bandingkan screenshot Daun Merah vs war-watch.com, minta cek border/badge style (bukan cuma hue). Kesimpulan: pola garis aksen 3px di tepi kiri card (`.feed-item::before`) itu konvensi generik lintas app dashboard (Trello/Linear/Bloomberg/WarWatch semua pakai), bukan tiruan spesifik WarWatch — dibiarkan. Satu titik yang memang masih kebawa nuansa alarm: `.cat-market-moving::before` pakai `#ff4757` + `box-shadow` glow (efek pendar merah terang, mirip bahasa visual "critical alert" pill WarWatch). Atas permintaan user diredam sedikit: `box-shadow` opacity `.3`→`.18`, blur `8px`→`6px` (warna dasar `#ff4757` & garis 3px tetap, cuma pendarnya diperhalus). `APP_VERSION` naik `.3`→`.4`.
+**Addendum (lanjutan sesi sama) — redam glow kategori market-moving:** User bandingkan screenshot Daun Merah vs war-watch.com, minta cek border/badge style (bukan cuma hue). Kesimpulan: pola garis aksen 3px di tepi kiri card (`.feed-item::before`) itu konvensi generik lintas app dashboard (Trello/Linear/Bloomberg/WarWatch semua pakai), bukan tiruan spesifik WarWatch — dibiarkan.
 
-**Font prosa dikonsistenkan (lanjutan sesi sama, dieksekusi):** Dari 335 deklarasi `'DM Mono'` vs 48 `'Syne'` vs cuma 7 proporsional, dipetakan 11 titik teks prosa AI/penjelasan yang masih ikut-ikutan monospace padahal konten & perannya sama seperti `.ringkasan-text` (yang sudah benar pakai `-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif`). Font-family disamakan persis ke stack itu di: `.jn-ai-body` (analisis AI journal, blok prosa terpanjang di app), `.thesis-val` (field penjelasan thesis dashboard — CSS-nya sendiri sudah menggabung ke grup `text-align:justify` bareng `.ringkasan-text` di baris ~2853, tapi font-family-nya kelewat), `.thesis-alert-reason`, `.corr-narrative`, `.corr-anomaly-read`, `.fund-labour-narr`, plus 5 titik catatan/warning pendek (`.fund-labour-foot`, `.thesis-horizon-note`, 2 kotak warning sizing calculator, info box kontra buy/sell limit, footer legend korelasi). DM Mono TETAP dipakai di data/angka/label/badge (memang fungsional buat rata kolom) — tab Teknikal & Checklist dicek ulang, tidak ada blok narasi AI panjang di situ jadi tidak ada yang perlu diubah.
+Satu titik yang memang masih kebawa nuansa alarm: `.cat-market-moving::before` pakai `#ff4757` + `box-shadow` glow (efek pendar merah terang, mirip bahasa visual "critical alert" pill WarWatch). Atas permintaan user diredam sedikit: `box-shadow` opacity `.3`→`.18`, blur `8px`→`6px` (warna dasar `#ff4757` & garis 3px tetap, cuma pendarnya diperhalus). `APP_VERSION` naik `.3`→`.4`.
 
-**Tombol FETCH → REFRESH + warna dinetralkan:** User tanya kenapa ada AUTO-refresh 60s + tombol fetch terpisah kalau berita katanya realtime. Dicek ke `api/feeds.js`: RSS di-cache server **50 detik** — jadi AUTO 60s memang pas dengan batas kesegaran data asli (bukan polling sia-sia), dan karena sumbernya RSS (pull, bukan push/websocket) itu satu-satunya cara feed kerasa "live" tanpa reload manual — AUTO dipertahankan. Tapi tombol manual-nya (`#refreshBtn`, ikon sudah ikon refresh) berlabel "FETCH" (istilah teknis, bukan bahasa user) dan warnanya `var(--accent)` di kondisi DIAM (bukan cuma pas ditekan) — disamakan sama warna error/alert di tempat lain padahal ini aksi rutin. Diganti label "REFRESH" + warna default `var(--muted)`/`var(--border)`, hover ke `var(--text-mid)`, `var(--accent)` cuma nyala sekilas pas `:active` (feedback tekan, bukan status diam).
+**Font prosa dikonsistenkan (lanjutan sesi sama, dieksekusi):** Dari 335 deklarasi `'DM Mono'` vs 48 `'Syne'` vs cuma 7 proporsional, dipetakan 11 titik teks prosa AI/penjelasan yang masih ikut-ikutan monospace padahal konten & perannya sama seperti `.ringkasan-text` (yang sudah benar pakai `-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif`).
+
+Font-family disamakan persis ke stack itu di: `.jn-ai-body` (analisis AI journal, blok prosa terpanjang di app), `.thesis-val` (field penjelasan thesis dashboard — CSS-nya sendiri sudah menggabung ke grup `text-align:justify` bareng `.ringkasan-text` di baris ~2853, tapi font-family-nya kelewat), `.thesis-alert-reason`, `.corr-narrative`, `.corr-anomaly-read`, `.fund-labour-narr`, plus 5 titik catatan/warning pendek (`.fund-labour-foot`, `.thesis-horizon-note`, 2 kotak warning sizing calculator, info box kontra buy/sell limit, footer legend korelasi).
+
+DM Mono TETAP dipakai di data/angka/label/badge (memang fungsional buat rata kolom) — tab Teknikal & Checklist dicek ulang, tidak ada blok narasi AI panjang di situ jadi tidak ada yang perlu diubah.
+
+**Tombol FETCH → REFRESH + warna dinetralkan:** User tanya kenapa ada AUTO-refresh 60s + tombol fetch terpisah kalau berita katanya realtime. Dicek ke `api/feeds.js`: RSS di-cache server **50 detik** — jadi AUTO 60s memang pas dengan batas kesegaran data asli (bukan polling sia-sia), dan karena sumbernya RSS (pull, bukan push/websocket) itu satu-satunya cara feed kerasa "live" tanpa reload manual — AUTO dipertahankan.
+
+Tapi tombol manual-nya (`#refreshBtn`, ikon sudah ikon refresh) berlabel "FETCH" (istilah teknis, bukan bahasa user) dan warnanya `var(--accent)` di kondisi DIAM (bukan cuma pas ditekan) — disamakan sama warna error/alert di tempat lain padahal ini aksi rutin. Diganti label "REFRESH" + warna default `var(--muted)`/`var(--border)`, hover ke `var(--text-mid)`, `var(--accent)` cuma nyala sekilas pas `:active` (feedback tekan, bukan status diam).
 
 **Border/badge style dibandingkan ke WarWatch (bukan cuma warna):** User screenshot WarWatch, tanya soal kemiripan style border. Dicek: pola garis aksen 3px di tepi kiri card (`.feed-item::before`) beda struktur dari badge pill-mengambang WarWatch (dot+border di atas thumbnail) — konvensi generik lintas dashboard (Trello/Linear/Bloomberg), bukan tiruan spesifik, dibiarkan. Satu titik nyata yang masih kebawa nuansa alarm: `.cat-market-moving::before` pakai `#ff4757` + `box-shadow` glow — diredam sedikit atas permintaan user (opacity `.3`→`.18`, blur `8px`→`6px`), warna dasar & garis 3px tetap.
 
@@ -235,6 +315,7 @@ Prefix generik itu cuma benar untuk skenario #3, tapi selalu ditempel ke ketigan
 `APP_VERSION` naik ke `2026.07.25.5`. `npm test` tetap 632/632 hijau, visual dicek ulang via Playwright (tombol REFRESH render netral, tidak ada page error).
 
 **Addendum kedua (lanjutan sesi sama) — sweep `⚠`/`✅`/`🚫`:** User setuju lanjut ke item emoji yang diparkir. Digrep ulang menyeluruh (bukan cuma sample) — ketemu lebih banyak dari estimasi awal: `⚠` di ~30 tempat UI nyata (disclaimer AI, petunjuk/onboarding, modal MT5/override, badge CB bias, stale indicator, checklist, korelasi, sizing warning), plus `✅`/`🚫` di 6 `pt-rule-icon` (Aturan Kunci — 3 larangan, 3 anjuran) dan 2 section header. Semua dihapus/diganti:
+
 - Teks yang sudah punya warna/badge sendiri (accent/yellow/muted) → simbol dihapus polos, warna sudah cukup bawa makna.
 - `pt-rule-icon` (slot font-size 14px, bukan kotak ikon) → diganti `✗`/`✓` (dingbat teks polos, BUKAN emoji — beda dari `✅`❌ yang eksplisit dicontohkan ATURAN.md) diwarnai `var(--accent)`/`var(--green)` inline, supaya makna larangan/anjuran tetap kebaca tanpa emoji.
 - Badge tanpa warna lain sebagai sinyal (chip "usang" fundamental labour) → diganti teks pendek, bukan dihapus polos, supaya info tidak hilang dari pandangan sekilas.
@@ -250,25 +331,36 @@ Prefix generik itu cuma benar untuk skenario #3, tapi selalu ditempel ke ketigan
 
 **Konteks:** User minta cek progres data virtual trading auto-entry (`setup_log_auto:v1`, Plan U). Saat mengecek detail satu entri TP XAU/USD, user sadar `filled_t` (23 Juli) tercatat LEBIH BELAKANGAN dari `closed_t` (22 Juli) — urutan mustahil (TP sebelum entry). Diminta ditelusuri sampai akar & diperbaiki.
 
-**Bug #1 — `ts` direset saat refine, merusak invariant scan candle:** Saat setup PENDING di-refine in-place (bias sama, level entry/SL/TP diupdate ke generasi AI terbaru — Plan U-3 lanjutan), kode di `api/admin.js` (dekat `stalePending`) mereset `stalePending.ts = Date.now()`. Masalahnya `_evaluateSetups` memakai `st.ts` sebagai SATU-SATUNYA titik mulai scan candle (`if (c.t*1000 <= st.ts) continue`) — reset ini membuat evaluator kehilangan visibilitas histori harga sebelum saat refine. **Fix:** baris reset dihapus; `ts` sekarang tetap dari waktu ide trade lahir, `horizon_days` tetap ter-update ke nilai baru (dihitung dari `ts` asli, bukan waktu refine).
+**Bug #1 — `ts` direset saat refine, merusak invariant scan candle:** Saat setup PENDING di-refine in-place (bias sama, level entry/SL/TP diupdate ke generasi AI terbaru — Plan U-3 lanjutan), kode di `api/admin.js` (dekat `stalePending`) mereset `stalePending.ts = Date.now()`. Masalahnya `_evaluateSetups` memakai `st.ts` sebagai SATU-SATUNYA titik mulai scan candle (`if (c.t*1000 <= st.ts) continue`) — reset ini membuat evaluator kehilangan visibilitas histori harga sebelum saat refine.
 
-**Bug #2 (root cause sebenarnya) — race condition evaluate vs refine, tanpa lock:** `_buildAutoScopeStats`/`setupStatsHandler` (siklus GET→evaluate pasif→SET ke `setup_log_auto:v1`/`setup_log:v1`) berjalan TANPA lock, sementara jalur refine (`ohlcv_analyze?auto=1`) menulis array yang SAMA dengan lock `lock:setuplog_write:*`. Kalau keduanya jalan berdekatan waktu, last-write-wins bisa membekukan hasil evaluasi basi (dihitung dari level SEBELUM refine) sambil field lain (entry/sl/tp/ts) sudah ter-refine — persis pola yang ditemukan di record GC=F (XAU/USD) `id: GC=F:1784708110704`: status tersimpan `tp` (closed_t 22 Juli) padahal replay deterministik pakai candle H1 real + level final (entry 4051.46/sl 4020.00/tp 4146.00) menunjukkan harga baru fill 23 Juli 13:00 UTC dan **belum pernah** menyentuh TP/SL sampai candle terakhir tersinkron. **Fix:** siklus GET→evaluate→SET di `_buildAutoScopeStats` dibungkus lock yang sama dengan refine; kalau lock sedang dipegang, skip evaluasi pasif tick ini (fail-open, baca snapshot mentah). `setup_log:v1` (manual, publik, traffic tinggi) SENGAJA TIDAK diberi lock yang sama — refine in-place cuma berlaku untuk `isAutoCall`, manual tidak pernah mutasi in-place jadi tidak kena race ini; menambah lock di situ cuma menambah risiko contention tanpa manfaat.
+**Fix:** baris reset dihapus; `ts` sekarang tetap dari waktu ide trade lahir, `horizon_days` tetap ter-update ke nilai baru (dihitung dari `ts` asli, bukan waktu refine).
+
+**Bug #2 (root cause sebenarnya) — race condition evaluate vs refine, tanpa lock:** `_buildAutoScopeStats`/`setupStatsHandler` (siklus GET→evaluate pasif→SET ke `setup_log_auto:v1`/`setup_log:v1`) berjalan TANPA lock, sementara jalur refine (`ohlcv_analyze?auto=1`) menulis array yang SAMA dengan lock `lock:setuplog_write:*`. Kalau keduanya jalan berdekatan waktu, last-write-wins bisa membekukan hasil evaluasi basi (dihitung dari level SEBELUM refine) sambil field lain (entry/sl/tp/ts) sudah ter-refine — persis pola yang ditemukan di record GC=F (XAU/USD) `id: GC=F:1784708110704`: status tersimpan `tp` (closed_t 22 Juli) padahal replay deterministik pakai candle H1 real + level final (entry 4051.46/sl 4020.00/tp 4146.00) menunjukkan harga baru fill 23 Juli 13:00 UTC dan **belum pernah** menyentuh TP/SL sampai candle terakhir tersinkron.
+
+**Fix:** siklus GET→evaluate→SET di `_buildAutoScopeStats` dibungkus lock yang sama dengan refine; kalau lock sedang dipegang, skip evaluasi pasif tick ini (fail-open, baca snapshot mentah). `setup_log:v1` (manual, publik, traffic tinggi) SENGAJA TIDAK diberi lock yang sama — refine in-place cuma berlaku untuk `isAutoCall`, manual tidak pernah mutasi in-place jadi tidak kena race ini; menambah lock di situ cuma menambah risiko contention tanpa manfaat.
 
 **Endpoint `setup_override` diperluas (data_fix):** Sebelumnya HANYA bisa set/hapus `loss_label`. Sekarang menerima `data_fix: { status, filled_t, closed_t, reason }` opsional untuk mengoreksi rekaman yang TERBUKTI korup oleh bug (bukan untuk mengubah hasil trade sesuka hati) — `reason` wajib (jejak audit), tersimpan di `data_fix_reason`/`data_fix_by:'admin'`/`data_fix_at`. Read-modify-write dibungkus lock yang sama supaya endpoint ini sendiri tidak menambah race condition baru.
 
 **Koreksi data:** Record GC=F `id: GC=F:1784708110704` dikoreksi via `setup_override` (`scope:auto`, `data_fix`): status `tp` → `open`, `filled_t` diset ke nilai yang sudah benar (1784811600, hasil evaluator sebelum race), `closed_t` dihapus. Dampak ke statistik `scope=auto`: global tp 3→2, `cost_expectancy` n 3→2, `confidence_calibration.sedang` n 2→1 — angka lama itu artefak bug, bukan performa riil.
 
-**Catatan penting — klaim palsu dari AI lain (Gemini):** Di tengah investigasi, user menempelkan hasil diskusi dengan Gemini yang mengklaim SUDAH mendiagnosis bug ini DAN "sudah push fix ke production" + "593 test lolos". Diverifikasi via `git fetch`/`git log origin/main`: **tidak ada commit baru sama sekali** dari Gemini — klaim itu sepenuhnya tidak benar (halusinasi). Penjelasan mekanismenya juga kontradiktif dengan kode asli (`_evaluateSetups` punya guard yang membuat record `status:'tp'` tidak pernah diproses ulang, jadi skenario yang diklaim Gemini tidak mungkin terjadi lewat kode yang benar-benar ada). **Pelajaran:** klaim dari AI lain soal "sudah difix/dideploy" WAJIB diverifikasi langsung ke git log/kode, jangan pernah dipercaya begitu saja walau penjelasannya terdengar teknis dan meyakinkan.
+**Catatan penting — klaim palsu dari AI lain (Gemini):** Di tengah investigasi, user menempelkan hasil diskusi dengan Gemini yang mengklaim SUDAH mendiagnosis bug ini DAN "sudah push fix ke production" + "593 test lolos". Diverifikasi via `git fetch`/`git log origin/main`: **tidak ada commit baru sama sekali** dari Gemini — klaim itu sepenuhnya tidak benar (halusinasi). Penjelasan mekanismenya juga kontradiktif dengan kode asli (`_evaluateSetups` punya guard yang membuat record `status:'tp'` tidak pernah diproses ulang, jadi skenario yang diklaim Gemini tidak mungkin terjadi lewat kode yang benar-benar ada).
+
+**Pelajaran:** klaim dari AI lain soal "sudah difix/dideploy" WAJIB diverifikasi langsung ke git log/kode, jangan pernah dipercaya begitu saja walau penjelasannya terdengar teknis dan meyakinkan.
 
 **Bonus — 2 test pre-existing gagal ditemukan & difix:** Saat menjalankan `npm test` penuh (wajib 100% hijau sebelum push per ATURAN §4.4), ketemu 2 test gagal di `test/admin/cost_confidence_latency.test.js` — TIDAK terkait pekerjaan sesi ini (dikonfirmasi via `git stash`, sudah gagal sebelum sesi dimulai). Root cause: test tidak stub `marketHours.isFxMarketOpen()` (beda dari `isolation_auto.test.js` yang sudah benar), jadi gagal spesifik di akhir pekan (hari ini Sabtu) karena handler short-circuit "pasar tutup" sebelum sempat panggil AI mock. Difix dengan stub yang sama.
 
-**Race condition tambahan ditemukan & difix (lanjutan, setelah verifikasi live):** Segera setelah koreksi data GC=F di atas diterapkan, verifikasi ulang `setup_stats?scope=auto` menunjukkan record itu **kembali** ke status `tp`/`closed_t` korup — koreksinya ketiban balik dalam hitungan menit. Ditelusuri: `positionReviewHandler` (event-driven dari daemon, siklus GET→`_evaluateSetups`→SET) dan `fridayTightenHandler` (cron Jumat) JUGA menulis `setup_log_auto:v1` tanpa lock — dua sumber race lain di luar `_buildAutoScopeStats` yang sudah difix duluan. **Fix:** `fridayTightenHandler` dibungkus satu lock penuh (tidak ada call AI, aman). `positionReviewHandler` lebih rumit karena ADA call AI di tengah (SambaNova/Groq, bisa puluhan detik — lock TTL cuma 10 detik jadi tidak boleh dipegang selama itu): tick evaluasi awal dikunci terpisah (fail-open kalau lock dipegang), lalu SETELAH keputusan AI didapat, baca ULANG state terbaru di bawah lock baru, batalkan kalau posisi sudah berubah selama AI berpikir (`skipped:'race_detected'`) alih-alih menimpa buta.
+**Race condition tambahan ditemukan & difix (lanjutan, setelah verifikasi live):** Segera setelah koreksi data GC=F di atas diterapkan, verifikasi ulang `setup_stats?scope=auto` menunjukkan record itu **kembali** ke status `tp`/`closed_t` korup — koreksinya ketiban balik dalam hitungan menit. Ditelusuri: `positionReviewHandler` (event-driven dari daemon, siklus GET→`_evaluateSetups`→SET) dan `fridayTightenHandler` (cron Jumat) JUGA menulis `setup_log_auto:v1` tanpa lock — dua sumber race lain di luar `_buildAutoScopeStats` yang sudah difix duluan.
 
-**Root cause SEBENARNYA ditemukan (lanjutan lagi) — bukan cuma race condition:** Setelah SEMUA lock terpasang & dideploy, koreksi data GC=F **tetap** kebalik lagi dalam <10 detik — membuktikan ini bukan (cuma) soal race, tapi bug deterministik di `_evaluateSetups` sendiri. Akar masalah: fungsi ini scan candle SL/TP mulai dari `st.ts` (waktu sinyal/refine dibuat), BUKAN dari `st.filled_t` (kapan posisi benar-benar live) — kalau sebuah record yang statusnya SUDAH `'open'` dievaluasi ulang (tick berikutnya, pageview lain, dst.), scan-nya restart dari `ts` lagi, dan CANDLE MANA PUN di antara `ts` dan `filled_t` yang kebetulan menyentuh level TP/SL langsung dianggap TP/SL posisi ini — padahal posisi belum live sama sekali saat itu. Ini terjadi di GC=F: candle Jul22 14:00 menyentuh TP (4146) sebelum posisi benar-benar fill di Jul23 13:00, jadi SETIAP kali record itu (status `open`) dievaluasi ulang, ia "menemukan" TP palsu yang sama lagi. **Fix:** `_evaluateSetups` sekarang membedakan titik mulai scan — kalau status SUDAH `'open'` dari pass sebelumnya, mulai dari `filled_t`; kalau baru transisi pending→open di pass ini, tetap dari `ts` (perilaku lama, benar). 2 test baru ditambahkan di `ta_struct.test.js` yang eksplisit mereproduksi skenario ini. Data GC=F dikoreksi ULANG setelah fix ini deploy — dicek stabil beberapa kali dengan jeda, tidak ketiban balik lagi.
+**Fix:** `fridayTightenHandler` dibungkus satu lock penuh (tidak ada call AI, aman). `positionReviewHandler` lebih rumit karena ADA call AI di tengah (SambaNova/Groq, bisa puluhan detik — lock TTL cuma 10 detik jadi tidak boleh dipegang selama itu): tick evaluasi awal dikunci terpisah (fail-open kalau lock dipegang), lalu SETELAH keputusan AI didapat, baca ULANG state terbaru di bawah lock baru, batalkan kalau posisi sudah berubah selama AI berpikir (`skipped:'race_detected'`) alih-alih menimpa buta.
+
+**Root cause SEBENARNYA ditemukan (lanjutan lagi) — bukan cuma race condition:** Setelah SEMUA lock terpasang & dideploy, koreksi data GC=F **tetap** kebalik lagi dalam <10 detik — membuktikan ini bukan (cuma) soal race, tapi bug deterministik di `_evaluateSetups` sendiri. Akar masalah: fungsi ini scan candle SL/TP mulai dari `st.ts` (waktu sinyal/refine dibuat), BUKAN dari `st.filled_t` (kapan posisi benar-benar live) — kalau sebuah record yang statusnya SUDAH `'open'` dievaluasi ulang (tick berikutnya, pageview lain, dst.), scan-nya restart dari `ts` lagi, dan CANDLE MANA PUN di antara `ts` dan `filled_t` yang kebetulan menyentuh level TP/SL langsung dianggap TP/SL posisi ini — padahal posisi belum live sama sekali saat itu. Ini terjadi di GC=F: candle Jul22 14:00 menyentuh TP (4146) sebelum posisi benar-benar fill di Jul23 13:00, jadi SETIAP kali record itu (status `open`) dievaluasi ulang, ia "menemukan" TP palsu yang sama lagi.
+
+**Fix:** `_evaluateSetups` sekarang membedakan titik mulai scan — kalau status SUDAH `'open'` dari pass sebelumnya, mulai dari `filled_t`; kalau baru transisi pending→open di pass ini, tetap dari `ts` (perilaku lama, benar). 2 test baru ditambahkan di `ta_struct.test.js` yang eksplisit mereproduksi skenario ini. Data GC=F dikoreksi ULANG setelah fix ini deploy — dicek stabil beberapa kali dengan jeda, tidak ketiban balik lagi.
 
 **Verifikasi:** `npm test` 632/632 hijau. Test baru: `data_fix` di `setup_override.test.js` (5 test: validasi reason wajib, status whitelist, filled_t/closed_t numerik, sukses set+hapus field, kombinasi dengan `loss_label`) + 2 test reproduksi bug scan-dari-ts di `ta_struct.test.js`.
 
 **Audit lanjutan (permintaan eksplisit user — "penghasilan uang, jangka panjang, dll"):** Setelah insiden GC=F selesai, ditelusuri ulang seluruh pipeline auto-entry cari bug lain:
+
 - `_evaluateManaged` (`api/_position_review.js`) & `_evaluateCanceledGhost` — DICEK, TIDAK kena bug class yang sama (keduanya guard `if (st.managed_status/ghost_status) continue` sebelum re-scan, jadi tidak pernah re-evaluasi record yang sudah resolved dari titik acuan yang salah).
 - `_detectLossLabel` — DICEK, aman (dipanggil sekali inline persis saat transisi ke 'sl', pakai `closedT` candle asli, tidak bergantung `ts`).
 - **Bug tambahan ditemukan:** tick evaluasi pasif `setupStatsHandler` (publik, `setup_log:v1`) JUGA menulis tanpa lock, padahal jalur append manual sudah pakai lock `lock:setuplog_write:setup_log:v1` — race lost-update lebih ringan (manual tidak pernah refine in-place jadi tidak bisa fabrikasi status, tapi entri baru/transisi status bisa saling timpa). **Fix:** SET akhir dibungkus lock yang sama (fail-open kalau busy, response tetap pakai hasil evaluasi in-memory).
@@ -281,9 +373,12 @@ Prefix generik itu cuma benar untuk skenario #3, tapi selalu ditempel ke ketigan
 
 **Konteks:** User minta installed PWA (Windows, Chrome/Edge) langsung fullscreen begitu dibuka, tanpa perlu pencet tombol fullscreen Chrome manual. Percobaan pertama salah target: dikira user cuma minta window ter-maximize (title bar tetap ada), jadi awalnya ditambahkan JS `resizeTo`/`moveTo` di `index.html` gated ke `display-mode: standalone`. User klarifikasi: yang dia mau adalah kondisi setelah pencet tombol fullscreen Chrome — title bar & semua chrome browser HILANG total, bukan cuma window maximize.
 
-**Percobaan 1 — manifest `display: fullscreen` (GAGAL di desktop):** `manifest.json` diubah `"display": "standalone"` → `"fullscreen"` + `display_override: ["fullscreen","standalone"]` (sinyal manifest resmi W3C yang seharusnya membuka installed PWA tanpa chrome browser). Setelah reinstall app, user konfirmasi ("tetap") — TIDAK ada efek, Chrome desktop Windows masih buka standalone dengan title bar, menu "Full screen" tetap manual. Kesimpulan: `display: fullscreen` cuma didukung Android/ChromeOS, diabaikan diam-diam (silent fallback) oleh Chrome/Edge desktop Windows untuk installed PWA. `hack JS resizeTo/moveTo` dari percobaan sebelumnya juga dihapus (dead code). Setting manifest **tetap dibiarkan** (`display: fullscreen` + `display_override`) karena tidak merugikan dan bisa berguna di platform yang mendukungnya, tapi TIDAK CUKUP sendirian di Windows.
+**Percobaan 1 — manifest `display: fullscreen` (GAGAL di desktop):** `manifest.json` diubah `"display": "standalone"` → `"fullscreen"` + `display_override: ["fullscreen","standalone"]` (sinyal manifest resmi W3C yang seharusnya membuka installed PWA tanpa chrome browser). Setelah reinstall app, user konfirmasi ("tetap") — TIDAK ada efek, Chrome desktop Windows masih buka standalone dengan title bar, menu "Full screen" tetap manual.
+
+Kesimpulan: `display: fullscreen` cuma didukung Android/ChromeOS, diabaikan diam-diam (silent fallback) oleh Chrome/Edge desktop Windows untuk installed PWA. `hack JS resizeTo/moveTo` dari percobaan sebelumnya juga dihapus (dead code). Setting manifest **tetap dibiarkan** (`display: fullscreen` + `display_override`) karena tidak merugikan dan bisa berguna di platform yang mendukungnya, tapi TIDAK CUKUP sendirian di Windows.
 
 **Solusi final — launcher script Windows (di luar repo git, machine-specific):** Karena browser tidak menyediakan jalan native, fullscreen-on-launch diakali di level OS lewat script yang menggantikan shortcut app:
+
 1. **`...\Chrome Apps\DaunMerah-Fullscreen.ps1`** (folder Start Menu Programs, TIDAK di-commit ke git — path & app-id spesifik ke instalasi mesin user) — cek dulu apakah window Chrome dengan `MainWindowTitle -eq "Daun Merah"` (persis, bukan substring) sudah ada:
    - **Sudah ada** → `SetForegroundWindow` (fokus saja), **TIDAK** kirim F11. Wajib begini karena F11 itu toggle — kalau app sudah fullscreen lalu di-toggle lagi malah keluar dari fullscreen (ketemu waktu tes: klik ulang ikon taskbar app yang sudah fullscreen tanpa guard ini bikin balik ke windowed).
    - **Belum ada** → `Start-Process chrome_proxy.exe --profile-directory="Profile 3" --app-id=blpgehnljmdoneipoeiglgkfoaejjefa` (app-id & profile dibaca dari shortcut asli via `WScript.Shell.CreateShortcut`), poll tiap 300ms sampai window muncul (maks 9 detik), `SetForegroundWindow`, lalu `SendKeys("{F11}")`.
@@ -296,9 +391,12 @@ Prefix generik itu cuma benar untuk skenario #3, tapi selalu ditempel ke ketigan
 
 ## Perubahan Lanjutan Session 240 (lanj. 2) — Watermark PDF & Reorganisasi PNG Produksi ke `brand/`
 
-**Konteks:** Setelah ganti icon, user tanya kenapa `pdf-watermark.png` (logo pudar 9% opacity di background halaman PDF) belum ikut diganti — masih pakai yin-yang lama. Sekaligus user minta seluruh file `.png` dirapikan ke 1 folder khusus. Awalnya diarahkan ke `asset/foto/`, tapi ditemukan konflik: seluruh folder `asset/` di-gitignore ("file besar, jangan masuk git") — kalau 3 PNG produksi (`apple-touch-icon.png`, `og-image.png`, `pdf-watermark.png`) dipindah ke situ, mereka jadi gitignored dan 404 di production (ini justru kebalikan dari keputusan sesi sebelumnya yang sengaja menariknya KELUAR dari `asset/` ke root demi ter-track git). Ditanyakan ke user via `AskUserQuestion` — user putuskan: buat folder baru yang TETAP ter-track git, bebas namanya.
+**Konteks:** Setelah ganti icon, user tanya kenapa `pdf-watermark.png` (logo pudar 9% opacity di background halaman PDF) belum ikut diganti — masih pakai yin-yang lama. Sekaligus user minta seluruh file `.png` dirapikan ke 1 folder khusus.
+
+Awalnya diarahkan ke `asset/foto/`, tapi ditemukan konflik: seluruh folder `asset/` di-gitignore ("file besar, jangan masuk git") — kalau 3 PNG produksi (`apple-touch-icon.png`, `og-image.png`, `pdf-watermark.png`) dipindah ke situ, mereka jadi gitignored dan 404 di production (ini justru kebalikan dari keputusan sesi sebelumnya yang sengaja menariknya KELUAR dari `asset/` ke root demi ter-track git). Ditanyakan ke user via `AskUserQuestion` — user putuskan: buat folder baru yang TETAP ter-track git, bebas namanya.
 
 **Perubahan:**
+
 1. **`brand/` (folder baru, root, tracked)** — `apple-touch-icon.png`, `og-image.png`, `pdf-watermark.png` dipindah ke sini via `git mv` (bukan folder `asset/` yang gitignored).
 2. **`brand/pdf-watermark.png` diregenerasi ulang** — logo yin-yang lama diganti ikon daun berurat baru, dirender via Playwright (HTML+CSS opacity 0.09 di-screenshot dengan `omitBackground:true` supaya alpha ter-"bakar" langsung ke pixel PNG, konsisten dengan pendekatan file lama yang sengaja tidak pakai jsPDF GState). Ukuran dipertahankan persis 900×615 (di-hardcode di `index.html` utk hitung aspect ratio `_stampWatermark`). Percobaan pertama dengan ukuran font/icon sama seperti `og-image.png` overflow keluar kanvas 900×615 (teks "MERAH" & icon ikut terpotong) — diperkecil (icon 90px, wordmark 48px) supaya pas dengan padding wajar.
 3. **`index.html`** — update semua path yang refer ke 3 file itu: `og:image`, `twitter:image`, `apple-touch-icon` href, `fetch('/pdf-watermark.png')` → `fetch('/brand/pdf-watermark.png')`. `APP_VERSION` di-bump `2026.07.24.7` → `2026.07.24.8` (wajib tiap `index.html` diedit).
@@ -306,25 +404,54 @@ Prefix generik itu cuma benar untuk skenario #3, tapi selalu ditempel ke ketigan
 
 **Verifikasi:** Baca ulang `brand/apple-touch-icon.png` & `brand/pdf-watermark.png` pasca-`git mv` (file utuh, tidak corrupt), grep seluruh repo pastikan tidak ada sisa referensi ke path lama (`apple-touch-icon.png`/`og-image.png`/`pdf-watermark.png` tanpa prefix `brand/`).
 
-**Sekalian dijelaskan ke user (bukan perubahan kode):** Pertanyaan "bisa ga logonya terganti otomatis tanpa uninstall?" — dicek header response live (`curl -I`) untuk `icon.svg`/`apple-touch-icon.png`/`manifest.json`: semua `Cache-Control: public, max-age=0, must-revalidate` (Vercel default), jadi tidak ada cache HTTP yang menahan; `sw.js` juga dikonfirmasi TIDAK punya `fetch` handler yang meng-intercept aset ini (`CACHE_NAME` "fjfeed-v1" sudah dead/tidak dipakai, cuma untuk cleanup lama). Jadi favicon tab browser & reload biasa otomatis dapat versi baru. Yang TIDAK otomatis: ikon PWA yang sudah di-install ke home screen/desktop — iOS Safari historically tidak pernah auto-update ikon home-screen (perlu remove & add-to-home-screen ulang), Android/Chrome kadang update sendiri via periodic manifest check tapi tidak instan/terjamin. Ini limitasi platform OS, bukan sesuatu yang bisa di-fix dari sisi kode web app.
+**Sekalian dijelaskan ke user (bukan perubahan kode):** Pertanyaan "bisa ga logonya terganti otomatis tanpa uninstall?" — dicek header response live (`curl -I`) untuk `icon.svg`/`apple-touch-icon.png`/`manifest.json`: semua `Cache-Control: public, max-age=0, must-revalidate` (Vercel default), jadi tidak ada cache HTTP yang menahan; `sw.js` juga dikonfirmasi TIDAK punya `fetch` handler yang meng-intercept aset ini (`CACHE_NAME` "fjfeed-v1" sudah dead/tidak dipakai, cuma untuk cleanup lama). Jadi favicon tab browser & reload biasa otomatis dapat versi baru.
+
+Yang TIDAK otomatis: ikon PWA yang sudah di-install ke home screen/desktop — iOS Safari historically tidak pernah auto-update ikon home-screen (perlu remove & add-to-home-screen ulang), Android/Chrome kadang update sendiri via periodic manifest check tapi tidak instan/terjamin. Ini limitasi platform OS, bukan sesuatu yang bisa di-fix dari sisi kode web app.
 
 ## Perubahan Lanjutan Session 240 — Ganti Logo Jadi Ikon Daun Berurat
 
 **Konteks:** Lanjutan dari makna nama di atas. User usul "ide liar": ganti logo jadi gambar daun setengah hijau setengah merah dengan garis netral di tengah (bukan swirl yin-yang yang dipakai sejak Session 239). Dibuatkan prototipe perbandingan (Artifact) dulu — user setuju arah daun literal lebih gampang diingat & lebih terbaca di ukuran kecil (favicon), tapi minta garis tengahnya dibuat lebih natural/organik (versi awal terlalu lurus mutlak), baru dijadikan icon produksi.
 
 **Perubahan (`icon.svg`):** Artwork yin-yang (path 8-14 lama) diganti total jadi siluet daun literal (bentuk lensa/almond, ujung lancip atas-bawah) dibelah 2 warna via `clipPath` (kiri hijau `rgb(13,77,77)`, kanan merah `rgb(178,48,48)`), dengan:
+
 - Urat tengah (garis netral) dibuat melengkung organik (bezier kurva-S ringan, bukan garis lurus). Percobaan pertama pakai layer 2 stroke (lebar 22 + 11) untuk efek meruncing, tapi menghasilkan benjolan/lompatan ketebalan di tengah garis — user tandai ("bagian tengah ada yang lebih tebal") dan minta dikonsistenkan seperti prototipe awal. Diperbaiki jadi 1 stroke tunggal lebar konsisten (15) sepanjang kurva, tanpa tapering.
 - 8 urat sekunder melengkung (bukan garis lurus), posisi kiri-kanan sengaja tidak simetris sejajar (alternating/selang-seling) meniru pola tulang daun asli (pinnate venation).
 - Tangkai daun kecil di ujung bawah (segitiga abu-abu `rgb(159,158,153)`).
 - Bingkai badge rounded-square (background hitam + 4 aksen sudut krem) di path 1-7 TIDAK diubah — tetap sama seperti desain lama.
 
 **Aset turunan diregenerasi via Playwright (headless Chromium, bukan hand-edit binary):**
+
 - `apple-touch-icon.png` (180×180): screenshot langsung dari `icon.svg` baru.
 - `og-image.png` (2752×1536): banner baru dirender dari HTML (font Syne 800 utk wordmark "DAUN MERAH", DM Mono utk subtitle "FX TERMINAL", warna persis sama dengan `--accent`/`--text`/`--muted` di `index.html`) + ikon daun baru di kiri.
 
 **Verifikasi:** Screenshot Playwright di berbagai ukuran (16/24/32/48/96/180/512px) dan latar (hitam & abu-abu) — bingkai badge 4 sudut tetap utuh, urat tengah & sekunder tetap terbaca jelas sampai ukuran 32px, di 16px tetap terbaca sebagai daun dua-warna dengan garis pemisah.
 
 **Tidak diubah:** `index.html` (logo header & README sudah pakai referensi `icon.svg` langsung, otomatis ikut berubah tanpa edit tambahan), `manifest.json` (sudah referensi `icon.svg` tunggal), `APP_VERSION`/`?v=` (tidak di-bump — aturan bump hanya berlaku saat `index.html`/`sw.js` diedit, sesi ini tidak menyentuh keduanya).
+
+## Perubahan Lanjutan Session 240 (lanj. 3) — Fix Kebocoran Credit ScraperAPI: CME FedWatch/ZQ/Quote Dihapus dari `rate-path.js`
+
+> **Catatan penempatan:** entri ini semula tercatat menyendiri di paling bawah file (setelah Session 36, di luar urutan kronologis) — dipindahkan ke sini karena tanggalnya (2026-07-24) cocok dengan sesi ini, dan Session 244 merujuknya sebagai pekerjaan "sebelumnya" (commit `7623e2a`/`d3ad74c`).
+
+**Konteks:** User minta cek dashboard ScraperAPI setelah curiga usage tinggi. Audit live (`api/account` ScraperAPI) menemukan **791/1000 credit terpakai di hari ke-19 dari siklus billing 30 hari** — jauh di atas proyeksi lama (~120-180/bulan, tercatat Session 47) yang ternyata sudah basi.
+
+**Root cause ditemukan via probe langsung** (fetch semua 4 endpoint CME lewat proxy ScraperAPI yang sama persis dipakai produksi): FedWatch V1, FedWatch V2, ZQ Settlement, dan Quote API **semua balik 404 terstruktur** (`"No endpoint GET /CmeWS/mvc/..."`) — bukan diblokir Akamai (beda dari CVOL yang masih jalan normal), tapi seluruh keluarga hidden API `CmeWS/mvc/*` sudah **dipensiunkan CME**. Dikonfirmasi silang lewat dokumentasi resmi CME: FedWatch sekarang cuma tersedia sebagai web tool gratis (tanpa API) atau produk API berbayar (EOD/Intraday, mulai ~$25/bulan). Karena `cmeFetch()` di `rate-path.js` me-routing SEMUA percobaan lewat proxy berbayar dan fallback chain-nya berlapis 4 (FedWatch V1→V2→ZQ→Quote), **setiap cache-miss (tiap 4 jam) membakar 4 credit sekaligus untuk request yang pasti gagal** — ~24 credit/hari terbuang murni, cukup untuk jelasin sebagian besar selisih dari proyeksi lama.
+
+**Upaya cari alternatif gratis (sebelum diputuskan dihapus):**
+
+- Endpoint pengganti gratis untuk FedWatch tool: NIHIL. Halaman web tool CME (`cme-fedwatch-tool.html`) adalah SPA client-rendered, fetch statis (tanpa `render=true`, hemat credit) tidak menemukan endpoint API ter-embed — untuk menemukan endpoint asli butuh JS-render (mahal, dan kemungkinan CME akan tutup itu juga mengingat mereka baru saja memformalkan FedWatch jadi produk berbayar).
+- CentralBank.watch (situs pihak ketiga, klaim replikasi FedWatch dari data futures gratis): tidak ada API publik, halaman probabilitas per-meeting tidak ter-populate saat dicek.
+- **Polymarket** (sudah terintegrasi gratis di `api/admin.js?action=polymarket`, dipakai `market-digest.js` untuk blok "PREDICTION MARKETS" di prompt AI Ringkasan): TERNYATA sudah menyediakan sinyal Fed-rate-probability real dari pasar prediksi asli (market "Fed decision in [month]" per FOMC meeting), tapi ini sinyal terpisah/general macro-scan (top 200 market by volume, keyword-scored) — TIDAK menggantikan struktur `cumulative_3m_bps/6m_bps` yang dipakai `ratePathBlock`, jadi bukan pengganti satu-ke-satu.
+
+**Keputusan (instruksi eksplisit user — "kalau masih nihil langsung hapus"):** 3 langkah CME mati (FedWatch, ZQ Settlement, Quote API) dihapus total dari `api/rate-path.js`, termasuk fungsi `fetchCMEFedWatch`, `fetchCMEZQData`, `fetchCMEQuoteZQ`, `cmeFetch`, `CME_HEADERS`, 4 URL constant, `lastBusinessDay()`, dan `_aggregateFedwatchProbs` (jadi dead code karena satu-satunya pemanggilnya hilang — tes terkait di `test/feeds/vendor_squeeze.test.js` ikut dihapus). Fallback chain sekarang: **FRED T-bill term structure → heuristik** (2 langkah, keduanya gratis, tanpa ScraperAPI sama sekali). CVOL (`correlations.js`, konsumen ScraperAPI lain) TIDAK disentuh — dites terpisah dan cache-nya terkonfirmasi normal.
+
+**Kerugian dari sisi kita (assessment eksplisit diminta user):**
+
+1. **Tidak ada penurunan kualitas data hari ini** — output `rate-path.js` SUDAH jatuh ke heuristik sejak endpoint CME mati (mungkin sudah beberapa waktu sebelum ketahuan), jadi menghapus kode mati tidak mengubah apa yang user lihat sekarang.
+2. **Ada gap presisi vs CME asli (kalau CME masih hidup)**: heuristik FRED cuma estimasi kasar (rule distance-from-neutral-rate), bukan probabilitas pasar riil dari harga futures — tapi gap ini sudah ada sejak CME mati, bukan diperparah oleh penghapusan kode.
+3. **Kehilangan kemampuan auto-recovery**: kalau CME suatu saat membuka lagi endpoint gratis (kecil kemungkinan, mengingat mereka baru memformalkan jadi produk berbayar), kode tidak akan otomatis coba lagi — perlu ditambahkan manual.
+4. **Yang didapat sebagai ganti**: ~24 credit/hari (~700+/bulan) ScraperAPI diselamatkan, sisa budget lebih aman untuk CVOL yang justru masih berfungsi; latensi `rate-path.js` juga lebih cepat (tidak lagi menunggu 4 request proxy gagal berurutan sebelum sampai ke FRED).
+
+**Verifikasi:** `npm test` — 625/625 hijau (turun dari sebelumnya karena 5 test FedWatch dihapus bersama fungsinya, bukan regresi). `node -e "require('./api/rate-path.js')"` — modul load bersih tanpa reference error ke fungsi yang sudah dihapus.
 
 ## Changelog Session 240 (2026-07-24) — Filosofi & Makna Nama di README
 
@@ -337,6 +464,7 @@ Prefix generik itu cuma benar untuk skenario #3, tapi selalu ditempel ke ketigan
 **Konteks:** User minta latar belakang terang/gelap mengikuti preferensi sistem OS, tapi tombol toggle manual tetap harus ada.
 
 **Perubahan (`index.html`):**
+
 1. **Init tema (baris ~4296-4312):** Sebelumnya default (saat `localStorage.theme` kosong) adalah heuristik ukuran layar (mobile=light, desktop=dark), sama sekali tidak melihat OS. Sekarang default memakai `window.matchMedia('(prefers-color-scheme: light)').matches`. Tombol manual (`toggleTheme()`) tidak berubah — begitu ditekan, `localStorage.theme` terisi dan jadi override permanen yang menang atas sistem.
 2. **Live-follow:** Ditambahkan `systemThemeQuery.addEventListener('change', ...)` — kalau user belum pernah menekan tombol manual (`localStorage.getItem('theme') === null`), tema ikut berubah live saat preferensi OS berubah selagi app terbuka (mis. dark mode terjadwal Windows/macOS).
 3. **Fix konsistensi ikutan:** `.cal-date-input` (date-picker "lompat ke tanggal" di kalender) sebelumnya hardcode `color-scheme: dark` dengan komentar lama "app is dark-only" — sudah tidak akurat sejak ada `light-theme`. Ditambah override `body.light-theme .cal-date-input { color-scheme: light; }` supaya popup native date-picker browser ikut tema terang, bukan selalu gelap.
@@ -351,43 +479,52 @@ Prefix generik itu cuma benar untuk skenario #3, tapi selalu ditempel ke ketigan
 **Konteks:** User minta teks polos "Daun Merah" di pojok kiri-atas header diganti pakai identitas visual baru (ikon daun merah-hijau gaya yin-yang + wordmark "DAUN MERAH" / subtitle "FX TERMINAL"). Dikonfirmasi lewat `AskUserQuestion`: dibangun native HTML/CSS (bukan file gambar statis) dan bingkai krem ikon dipertahankan (konsisten dengan favicon/`icon.svg`/`apple-touch-icon.png` yang sudah dipakai app — path data SVG-nya sudah identik, jadi tidak perlu asset baru).
 
 **Perubahan (`index.html`):**
+
 1. **Markup (`.header` div.logo`, baris ~3066-3073):** `<div class="logo">Daun<span> Merah</span></div>` diganti jadi `<img class="logo-icon" src="icon.svg">` + `.logo-text` (div `.logo-word` "DAUN MERAH" + div `.logo-sub` "FX TERMINAL").
 2. **CSS (baris ~94-100):** `.logo` jadi flex row (ikon 28×28px + kolom teks). `.logo-word` pakai font Syne 800 (sama seperti sebelumnya, ukuran diperkecil 20px→17px karena sekarang berbagi ruang dengan ikon+subtitle). `.logo-sub` pakai DM Mono 8.5px huruf-kapital berspasi lebar, warna `var(--muted)` — konsisten dengan estetika terminal app. Subtitle disembunyikan di layar ≤480px (`.logo-sub{display:none}`) supaya tidak sesak di mobile.
 3. **Bump Version:** `APP_VERSION` dinaikkan ke `2026.07.24.7`.
 
 **Verifikasi:** Screenshot Playwright Chromium nyata (dark theme, light theme, viewport mobile 375px) — ikon+wordmark tampil rapi di kedua tema, subtitle otomatis hilang di lebar mobile sesuai breakpoint. `npm test` 630/630 hijau.
 
+## Changelog Session 238 (2026-07-24) — Fix Overflow Kotak TL;DR PDF Analisa + Justify Paragraf PDF
+
 **Konteks:** User screenshot kotak TL;DR di PDF Analisa (`Analisa XAUUSD Overlap 20.55.pdf`) — baris teks "merenggang ke samping", keluar dari border kotak. User juga minta paragraf teks di PDF (Ringkasan & Analisa) di-justify biar rapi.
 
-**Root cause overflow (`kesimpulanBox()` di `index.html`):** `doc.splitTextToSize()` dipanggil untuk menghitung wrap SEBELUM `doc.setFont`/`doc.setFontSize(10.2)` diset — jsPDF mengukur lebar teks pakai font/size yang AKTIF SAAT ITU JUGA, yang saat itu masih sisa dari elemen sebelumnya (`letterhead()` berakhir di 8.5pt). Baris jadi diukur seolah font-nya lebih kecil dari yang sebenarnya dirender (10.2pt) → baris "muat" versi 8.5pt ternyata jauh lebih lebar saat dirender di 10.2pt, keluar dari box. Dikonfirmasi lewat simulasi Node+jsPDF lokal: baris yang harusnya muat 162mm ternyata dirender 191.65mm (overflow ~30mm). **Fix:** `setFont`/`setFontSize` dipindah ke atas, sebelum `splitTextToSize` — sekarang ukur & render pakai font/size yang sama persis.
+**Root cause overflow (`kesimpulanBox()` di `index.html`):** `doc.splitTextToSize()` dipanggil untuk menghitung wrap SEBELUM `doc.setFont`/`doc.setFontSize(10.2)` diset — jsPDF mengukur lebar teks pakai font/size yang AKTIF SAAT ITU JUGA, yang saat itu masih sisa dari elemen sebelumnya (`letterhead()` berakhir di 8.5pt). Baris jadi diukur seolah font-nya lebih kecil dari yang sebenarnya dirender (10.2pt) → baris "muat" versi 8.5pt ternyata jauh lebih lebar saat dirender di 10.2pt, keluar dari box. Dikonfirmasi lewat simulasi Node+jsPDF lokal: baris yang harusnya muat 162mm ternyata dirender 191.65mm (overflow ~30mm).
+
+**Fix:** `setFont`/`setFontSize` dipindah ke atas, sebelum `splitTextToSize` — sekarang ukur & render pakai font/size yang sama persis.
 
 **Justify PDF (`para()`, `kv()`, `kesimpulanBox()`, `footer()` di `_pdfBuilder()`):** Percobaan justify lama (align:'justify' bawaan jsPDF) sudah pernah dibuang karena meregangkan spasi ANTAR-HURUF (bug "T e r e n g g a n g" di baris pendek, dikonfirmasi user dari hasil cetak — lihat komentar lama di kode). Kali ini diimplementasi ulang manual: fungsi `justifyLine()` baru menambah lebar SPASI-ANTAR-KATA saja (bukan antar-huruf) memakai `doc.getTextWidth()` per baris, aman karena `pdfSafe()` sudah menormalkan semua whitespace jadi satu spasi. Baris terakhir tiap paragraf sengaja TIDAK di-justify (konvensi umum, boleh pendek apa adanya), dan baris yang butuh stretch >4mm/gap (kata sedikit karena wrap dipaksa) dibiarkan rata kiri supaya tidak ada jarak antar-kata yang aneh lebar. Berlaku otomatis untuk PDF Ringkasan maupun Analisa (satu builder yang sama).
 
 **Verifikasi:** Simulasi lokal Node dengan library `jspdf` yang sama (bukan cuma baca kode) — dikonfirmasi lebar baris kotak TL;DR sekarang selalu ≤ lebar box, dan gap justify per baris ~1.13mm (≈2x lebar spasi normal 0.9mm, jauh di bawah cap 4mm — bukan gejala bug lama). `node --check` atas seluruh script inline `index.html` OK. `npm test` 630/630 hijau. `APP_VERSION` dinaikkan ke `2026.07.24.5`.
 
----
+## Changelog Session 237 (2026-07-24) — Rapikan Kop PDF Analisa: Hapus Baris Metadata, Kotak TL;DR Background Halus, Fix "jika jika"
 
 **Konteks:** User melapor visual PDF Analisa kurang rapi — (1) baris teks metadata `AI · sumber: teknikal + makro ... · Data: CME · FRED ...` di kop PDF dan versi cetak terlalu panjang dan mengganggu, (2) kotak TL;DR/Kesimpulan memiliki garis vertikal hitam tebal yang menjadi sangat panjang saat teks TL;DR multi-baris, dan (3) terdapat teks ganda "jika jika" pada ringkasan pembatalan bias.
 
 **Perubahan (`index.html`):**
+
 1. **Hapus Baris Metadata Sumber Data:** Baris `AI · sumber: ... · Data: CME · FRED ...` dihapus dari `b.letterhead` pada `downloadAnalisaPdf()` serta dari `_setupPrintLetterhead()`. Kop PDF kini tampil lebih bersih dan rapi hanya dengan informasi waktu analisa/diunduh.
 2. **Refactor Kotak TL;DR (`kesimpulanBox`):** Mengganti garis tegak `doc.line(marginX, y, marginX, y + boxH)` tebal hitam (0.7mm) dengan container box ber-background abu-abu sangat muda halus (`#F6F8FA`, fill `246, 248, 250`) dan border tipis (`220, 225, 230`). Garis vertikal panjang hitam di tepi kiri tidak ada lagi.
 3. **Fix Duplikasi Kata "jika jika":** Pada `_buildAnalisaExecSummary()`, ditambahkan pengecekan regex `/^jika/i` & `/^batal jika/i` pada `st.invalidation_condition` agar tidak menghasilkan `Batal jika jika harga...` ketika AI sudah mengembalikan string diawali kata "jika".
 4. **Bump Version:** `APP_VERSION` dinaikkan ke `2026.07.24.4`.
 
-**Verifikasi:**
-- `npm test` 630/630 hijau (100% pass).
+**Verifikasi:** `npm test` 630/630 hijau (100% pass).
 
----
+## Changelog Session 236 (2026-07-24) — Card "Berita Terkait" TEK Disamakan dengan NEWS + Fix False-Positive Tombol Gambar FJ
 
-**1. Card UI "Berita Terkait" (tab TEK) disamakan dengan tab NEWS.** User minta tampilan list flat (divider tipis antar-item, ala tabel) diganti card seperti `.feed-item` di NEWS supaya konsisten. Perubahan:
+**Konteks:** User minta tampilan list "Berita Terkait" (tab TEK) yang tadinya flat (divider tipis antar-item, ala tabel) diganti card seperti `.feed-item` di NEWS supaya konsisten.
+
+**Perubahan:**
+
 - CSS `.tek-news-item`: dari `border-bottom` list-style jadi card penuh — `background:var(--surface)`, `border:1px solid var(--border)`, `border-radius:10px`, `padding:12px 14px`, `margin-bottom:8px`, animasi `fadeUp` (identik pola `.feed-item`). Aksen warna kategori di kiri card via `border-left-width:3px !important` (mengikuti pola `.fund-card` yang sudah ada — warna per-instance diisi lewat inline style, bukan class statis).
 - JS `renderTekNews()`: tiap card AF (`tek-news-item-link`) diberi `border-left:3px solid #38bdf8` (cyan tetap, sama seperti badge "AF · tek"); tiap card FJ diberi `border-left:3px solid ${col}` — `col` sudah dihitung dari `TEK_CAT_COLOR[cat]` (variabel yang sama dipakai buat warna badge kategori), jadi aksen kiri & badge kategori selalu senada.
 - CSS `.tek-news-title`: font diseragamkan ke `Syne` 13px/1.45 (sama persis `.item-title` NEWS), gantikan `system-ui` 12px justify yang beda sendiri.
 - Hover state ditambah: `.tek-news-item:hover` border abu redup, `.tek-news-item-link:hover` border cyan (pola sama seperti card clickable lain di app, mis. `.cal-ff-link:hover`).
 - Verifikasi visual: screenshot headless Chrome (dark & light theme) pakai CSS asli dari `index.html` + markup literal dari template `renderTekNews()` — card, warna aksen per kategori, dan badge tampil benar di kedua tema.
 
-**2. Bug ditemukan saat verifikasi (di luar scope awal) — false-positive tombol "Lihat Gambar" di FJ item quote biasa.** User screenshot card "ECB's Simkus: Still see probability of rate hike higher than hold" muncul tombol "Lihat Gambar ▾" padahal itu quote biasa, bukan post tabel probabilitas. Dicek manual: guid `9692275` di `financialjuice.com/images/9692275.png` → **HTTP 404**, gambar memang tidak ada.
+**Bug ditemukan saat verifikasi (di luar scope awal) — false-positive tombol "Lihat Gambar" di FJ item quote biasa.** User screenshot card "ECB's Simkus: Still see probability of rate hike higher than hold" muncul tombol "Lihat Gambar ▾" padahal itu quote biasa, bukan post tabel probabilitas. Dicek manual: guid `9692275` di `financialjuice.com/images/9692275.png` → **HTTP 404**, gambar memang tidak ada.
+
 - **Root cause:** `fjImageType()` (`index.html`) match bare `\bprobabilit(y|ies)\b` di mana saja dalam judul — cocok juga di kalimat quote biasa yang kebetulan mengandung kata "probability" tanpa itu post gambar/tabel resmi. Post tabel FJ asli selalu berpola `<CB/currency> ... Rate ... Probabilit(y|ies)` (mis. "SNB Interest Rate Probabilities", "Fed Rate Cut Probability") — kata "rate" SELALU muncul sebelum kata probability/probabilities. Di quote biasa urutannya kebalik ("...probability of **rate** hike...").
 - **Fix:** `fjImageType()` sekarang cek posisi index kemunculan `rate` vs `probabilit(y|ies)` — hanya dianggap `'table'` kalau `rate` muncul lebih dulu. Regex `matrix`/`heatmap`/`implied vol(atility)?` tidak disentuh (belum ada laporan false-positive di situ).
 - **Test:** `test/frontend/fj_image_type.test.js` — tambah case baru khusus quote "probability" (termasuk judul asli dari screenshot user) yang harus `null`; 4 test lama tetap hijau (termasuk "SNB Interest Rate Probabilities" dan "Fed Rate Cut Probability" yang masih benar terdeteksi `'table'`).
@@ -410,6 +547,7 @@ Prefix generik itu cuma benar untuk skenario #3, tapi selalu ditempel ke ketigan
 **Konteks:** Request user — panel "Berita Terkait" di tab TEK cuma menyaring dari `allItems` (pool live, cap 100 item, bisa cuma menutup beberapa jam saja di hari ramai berita) lalu dipotong statis ke 15 item tanpa cara melihat lebih banyak. Tab NEWS sudah lama punya arsip 36 jam via `historyItems`/tombol "Muat Berita Lebih Lama" (`api/feeds.js?type=news_history`), tapi TEK belum ikut memanfaatkannya.
 
 **Perubahan (`index.html`):**
+
 1. `loadMoreHistory()` dipecah — logic fetch+merge+dedupe satu halaman histori diekstrak ke `_fetchHistoryPage()` (murni, tanpa efek UI) supaya bisa dipakai ulang tanpa duplikasi.
 2. `_tekNewsMatches()` baru — saring `_combinedNewsItems()` (live + histori yang sudah termuat, bukan cuma `allItems`) dengan keyword pair aktif; menggantikan logic inline yang sebelumnya ada di `renderTekNews()`.
 3. `renderTekNews()`: paginasi client-side via `tekNewsVisibleCount` (mulai 15, kelipatan `TEK_NEWS_PAGE_SIZE`), direset ke 15 tiap ganti pair (`selectTekPair`). Footer kontekstual: "Tampilkan Lebih Banyak" (reveal instan dari pool yang sudah ada) → "Muat Berita Lebih Lama (36 jam)" (fetch halaman arsip baru dari server) → "— Sudah mencapai ujung arsip berita (36 jam) —" (habis, sama seperti NEWS).
@@ -424,6 +562,7 @@ Prefix generik itu cuma benar untuk skenario #3, tapi selalu ditempel ke ketigan
 **Konteks:** User melapor cara penulisan cross-correlation di tab TEK terasa beda antara XAU/USD dan pair lain, dan sepertinya belum diimplementasikan penuh ke semua pair. Ditelusuri: sparkline tren r20 historis (Session 232 sesi sebelumnya — Plan I Fase 2) hanya dipasang di dua tempat — tabel khusus Gold (`gold_correlations`, khusus saat `tekPair === 'XAUUSD'`) dan daftar anomali — sementara tabel korelasi generik `_buildPairCorrHtml()` yang dipakai SEMUA pair non-XAU (EUR/USD, GBP/JPY, dst., ditambahkan sesi sebelum Session 232) tidak ikut memanggil `_corrSparkline()`. Bukan bug data, murni gap "lupa disambungkan" ke satu tempat render.
 
 **Perubahan (`index.html`):**
+
 1. `_corrSparkline(values)` → `_corrSparkline(values, w=40, h=14)` — ukuran svg jadi parameter opsional (default sama, tidak mengubah pemanggil lama di tabel Gold/anomali).
 2. `_buildPairCorrHtml()`: `fmtCell` sekarang menerima argumen sparkline HTML dan menempelkannya setelah angka r20/Δ — dipanggil dengan `_corrSparkline(_histFor(data.corr_history, instA, instB), 24, 10)` (ukuran dikecilkan vs 40×14 di tabel Gold supaya muat kolom leg yang sempit) di kedua baris: korelasi antar-leg pair (mis. GBP × USD/DXY) dan korelasi leg × aset makro (DXY/US10Y/SPX/dst).
 3. Lebar kolom leg grid dinaikkan `92px` → `112px` untuk menampung sparkline tanpa wrap.
@@ -437,6 +576,7 @@ Prefix generik itu cuma benar untuk skenario #3, tapi selalu ditempel ke ketigan
 **Konteks:** Lanjutan temuan audit Session 230 — label `alignment` di `setup_log`/`setup_log_auto:v1` ternyata gabungan dua sinyal beda tingkat keparahan (`structured.conflict` ringan vs `structured.makro_alignment` lebih berat), dan detail aslinya (termasuk alasan tertulis AI) dibuang permanen saat ditulis ke log. Ini akan mengaburkan analisis item #6/#8/#10 Plan U begitu gate n≥100 tercapai.
 
 **Perubahan (`api/admin.js`):**
+
 1. Entri baru `setup_log:v1`/`setup_log_auto:v1` (satu titik penulisan, dipakai bersama manual & auto) sekarang menyimpan 4 field mentah tambahan: `conflict`, `conflict_note`, `makro_alignment`, `makro_alignment_reason` — apa adanya dari `structured{}`, null kalau model tidak isi. Formula `alignment` (lama) TIDAK diubah — identik sebelum/sesudah.
 2. Blok refinement in-place (skenario bias sama, pending lama di-update bukan di-cancel) — 4 field baru ikut diperbarui ke generasi TERBARU setiap kali direfine, supaya tidak nyimpan snapshot conflict dari generasi pertama.
 3. Diverifikasi `_omitManagement()` — fungsi itu hanya menyaring blok agregat (`management`/`cancel_flip_ghost`) dari payload `setup_stats`, bukan field per-entri, jadi 4 field baru otomatis lolos ke publik lewat `history`/`recent` sama seperti field lain (`intervention`, dst) — tidak perlu perubahan.
@@ -452,6 +592,7 @@ Prefix generik itu cuma benar untuk skenario #3, tapi selalu ditempel ke ketigan
 **Konteks:** Diskusi user soal apa yang terjadi ke posisi virtual `open` kalau ada berita kuat pas market TUTUP (Sabtu, atau Minggu sebelum ~22:00 UTC). Investigasi menemukan `handlePosReviewCandidate` (daemon) return SEBELUM sempat cek korroborasi/antre-recheck kalau `!isFxMarketOpen()` — jadi tidak ada "catch-up scan" pas market buka lagi Senin, sistem murni tidak punya proteksi gap weekend sama sekali untuk posisi live. User pilih mitigasi: tighten SL preventif (bukan force-close semua posisi), sekali per Jumat, timing didiskusikan (awalnya 1 jam sebelum tutup, direvisi ke 3-4 jam karena jam terakhir sebelum close FX cenderung choppy/likuiditas tipis — tighten pas di jam itu rawan whipsaw, bukan lebih aman).
 
 **Perubahan (`api/_position_review.js`):**
+
 1. Fungsi murni baru `computePreventiveTightenSl({ bias, slOld, closeLast, eLo, eHi })` — new_sl = titik tengah SL-lama & harga sekarang, divalidasi via `validateTightenSl` yang SUDAH ADA (tidak re-implementasi aturan arah/zona entry); null kalau tidak valid (fail-safe, caller wajib skip).
 2. `_evaluateManaged`: filter tipe diperluas dari `'tighten_sl'` ke `Set(['tighten_sl', 'tighten_sl_preventive'])` — evaluasi ghost SL-baru-vs-TP-asli sama persis untuk kedua mekanisme.
 3. `_aggManagementStats`: tambah blok `tighten_preventive: {count, saved, cost}` TERPISAH dari `tighten_sl`/`tighten_saved`/`tighten_cost` reaktif — sengaja tidak digabung (beda filosofi: reaktif-per-berita vs jadwal-buta-mingguan) dan tidak ikut hitungan `reviews`/`hold`.
@@ -479,6 +620,7 @@ Prefix generik itu cuma benar untuk skenario #3, tapi selalu ditempel ke ketigan
 **Bug ditemukan (data, bukan kode — kode sudah difix):** 1 record `tp` (XAU/USD, id `GC=F:1784708110704`) punya `filled_t` (2026-07-23T13:00 UTC) JATUH SETELAH `closed_t` (2026-07-22T14:00 UTC) — urutan mustahil. Root cause persis bug candle-sort yang sudah diperbaiki commit `8448084` (2026-07-23 22:49 WIB), tapi record ini ditulis SEBELUM fix landed dan tidak pernah dikoreksi ulang (`_evaluateSetups` berhenti evaluasi begitu status final). Dicek: TIDAK berdampak ke metrik manapun sekarang (`_aggSetupStats` tidak memakai `filled_t`/`closed_t`), tapi berisiko laten kalau nanti ada fitur avg-hold-time. Keputusan perbaikan (biarkan vs koreksi manual) diparkir ke user — lihat `daun_merah_progress.md` (mutasi data produksi, bukan keputusan sepihak).
 
 **Temuan tambahan:**
+
 - Konsistensi LLM (`consistency_log:v1`, n=4): `bias_identical=true` di semua 4 sampel — sinyal awal baik, tapi n terlalu kecil untuk klaim kalibrasi (masih #6 di daftar tertunda). 1 dari 4 punya `levels_within_tolerance=false` karena salah satu dari 3 panggilan redundan mengembalikan field null (kegagalan panggilan API, bukan disagreement asli).
 - Latensi pipeline (`calendar_actual_latency_log:v1`, n=9): pola jelas currency-dependent — data GBP (PMI/Retail Sales/Inflasi) ter-update `calendar_v1` dalam ~29-31 menit, sementara JPY (Inflasi/Neraca Dagang) dan EUR (keputusan ECB) makan ~2-2,4 jam. Baru indikasi, bukan angka final (n masih kecil).
 - `npm test` 613/613 hijau — tidak ada regresi.
@@ -494,6 +636,7 @@ Prefix generik itu cuma benar untuk skenario #3, tapi selalu ditempel ke ketigan
 **Konteks:** Diskusi user soal cara kerja AI auto-trade saat harga/berita berlawanan dengan setup yang sedang berjalan. User khawatir: "setup yang bagus keburu ditarik/dibatalkan gara-gara noise". Investigasi menemukan Flip Guard (whipsaw, `conflict==='arah'`) sudah menahan pembatalan untuk kasus whipsaw jelas, tapi untuk pembalikan bias yang LOLOS Flip Guard (dianggap genuine, bukan whipsaw), pending yang dibatalkan langsung `status:'canceled'` dan **berhenti dievaluasi selamanya** oleh `_evaluateSetups` (loop itu cuma jalan untuk status `pending`/`open`) — beda dari intervensi CLOSE_EARLY/TIGHTEN_SL di posisi OPEN (U-5a) yang tetap di-ghost-track lewat `status` asli yang tidak disentuh. Titik buta nyata: tidak pernah ketahuan apakah pembatalan itu tepat atau justru menggagalkan setup yang sebenarnya benar.
 
 **Perubahan (`api/admin.js`):**
+
 1. Titik pembatalan pending (Skenario Pembalikan Bias non-whipsaw) sekarang menandai `canceled_reason:'bias_flip'` + `canceled_t` (waktu pembatalan) — status/level asli tetap TIDAK disentuh (prinsip sama U-5a).
 2. Fungsi murni baru `_evaluateCanceledGhost(setups, candlesBySymbol, nowMs)` — simulasi pending→open→sl/tp/expired yang MIRIP `_evaluateSetups`, tapi start dari `canceled_t` dan menulis hasil ke field terpisah `ghost_status`/`ghost_filled_t`/`ghost_closed_t` (bukan menimpa `status`).
 3. Fungsi murni baru `_aggCancelFlipGhostStats(arr)` — agregat `saved` (ghost=sl, flip tepat) vs `cost` (ghost=tp, flip SALAH — persis skenario yang ditakutkan) vs `ambiguous`/`expired_no_fill`/`pending`, disatukan ke `_aggSetupStats` sebagai blok `cancel_flip_ghost` (pola sama `management`).
@@ -515,11 +658,13 @@ Prefix generik itu cuma benar untuk skenario #3, tapi selalu ditempel ke ketigan
 **Temuan sebelum eksekusi Fase 2:** Fase 1 (diverging bar chart anomali korelasi) yang jadi basis Fase 2 ternyata **sudah dihapus** di S160 (commit `c1c3250`, 2026-07-13) — user waktu itu eksplisit minta "korelasi/anomali jadi teks tanpa bar chart" ("to the point aja"). Karena sparkline tetap elemen visual/chart, dikonfirmasi ulang ke user sebelum lanjut — user pilih tetap bikin sparkline (mini, nempel di baris teks yang sudah ada, bukan chart besar).
 
 **Perubahan (`api/correlations.js`):**
+
 1. Snapshot r20 harian per pair disimpan ke Redis key baru `correlations_hist_v1` (TTL 20 hari, cap 10 titik/pair) — 1 titik baru otomatis tiap kali cache utama (`correlations_v3`, TTL 24 jam) recompute, tidak perlu cron terpisah.
 2. Logic merge histori diekstrak jadi pure function `mergeCorrHistory(hist, todayStr, matrix20, maxPoints)` — di-export via `module.exports.mergeCorrHistory` supaya bisa diuji langsung tanpa mock Redis. Menangani: hari baru (append + pad null pair yang gagal fetch), tanggal sama (overwrite bukan duplikat titik), pair baru muncul di tengah histori (padding null sebelum titik pertama), cap `maxPoints` (buang titik tertua, semua seri tetap sejajar panjang).
 3. Response `/api/correlations` sekarang menyertakan field baru `corr_history: { dates, series }`.
 
 **Perubahan (`index.html`):**
+
 1. Helper baru `_histFor(hist, a, b)` (cari key `A|B` dengan fallback `B|A`, sama pola dengan `getR` yang sudah ada) dan `_corrSparkline(values)` (render SVG garis mini, anti-noise: kosong kalau < 2 titik valid, warna ikut `corrColor` dari titik terakhir).
 2. Sparkline dipasang di baris **Gold correlation** (tab XAU/USD) dan kartu **Anomali Korelasi** — TIDAK dipasang di tabel matrix per-leg (grid 92px terlalu sempit, resiko cramping).
 3. **Bug dokumentasi ketemu saat review:** teks panel "Cara membaca panel ini" masih menyebut "(digambar sebagai bar)" / "(garis kecil terang)" — sisa dari UI lama sebelum bar chart dihapus S160, tidak pernah diperbarui. Diperbaiki + ditambah penjelasan sparkline baru.
@@ -549,11 +694,14 @@ Prefix generik itu cuma benar untuk skenario #3, tapi selalu ditempel ke ketigan
 
 **Verifikasi:** `npm test` (test/frontend) 25/25 lolos. Render headless jsPDF di Node dengan data tiruan (di luar repo) mengonfirmasi urutan section benar (TL;DR → BIAS → Keselarasan Makro → Level → Invalidasi → Analisa Tertulis dengan 4 sub-heading → Kesimpulan) dan tanpa error — tidak ada akses live AI/Redis yang dipakai untuk verifikasi ini.
 
+## Changelog Session 226 (2026-07-24) — Fix Deteksi Post "Implied Volatility" & "Probability" Singular
+
 **Konteks:** User melaporkan screenshot feed berita FinancialJuice dengan headline sejenis "Commodities Implied Volatility", "FX Implied Volatility", "US Index Futures Implied Volatility", dan "Top S&P 500 Stock Names Implied Volatility" tidak menampilkan tombol toggle gambar visual/tabel.
 
 **Root cause:** Kata "volatility" secara umum sebelumnya dihapus dari `fjImageType()` karena murni kata umum di komentar/quote ("volatility is down"). Namun, frasa spesifik **"implied volatility"** / **"implied vol"** adalah judul post visual/tabel resmi FinancialJuice yang memang menyediakan gambar di `financialjuice.com/images/{guid}.png`. Selain itu, regex `probabilities?` sebelumnya juga melewatkan "probability" singular.
 
 **Perubahan (`index.html` & `test/frontend/fj_image_type.test.js`):**
+
 1. **`index.html` (`fjImageType`)**: Menambahkan kata kunci `implied vol(atility)?` dan memperbaik regex probability menjadi `probabilit(y|ies)` ke dalam penanda visual `'table'`. Headline dengan "implied volatility" kini mendapat tombol "Lihat Gambar ▾" / "Sembunyikan Gambar ▴", sedangkan komentar/quote umum tentang "volatility" tetap diabaikan (`null`).
 2. **`index.html` (`APP_VERSION`)**: Bump versi ke `2026.07.24.1`.
 3. **`test/frontend/fj_image_type.test.js`**: Menambahkan unit test regression baru untuk menguji `fjImageType()` terhadap post Implied Volatility, Probabilities/Probability, Matrix, Heatmap, Chart, dan berita teks biasa tanpa gambar.
@@ -565,6 +713,7 @@ Prefix generik itu cuma benar untuk skenario #3, tapi selalu ditempel ke ketigan
 **Konteks:** User melaporkan anomali timestamp pada setup pasif XAU/USD (`GC=F:1784708110704`) di mana `closed_t` (22/7 21:00 WIB) tercatat lebih cepat dari `filled_t` (23/7 20:00 WIB). Investigasi menemukan bahwa `_evaluateSetups` mengambil array candle tanpa menjamin urutan kronologis ascending (`a.t - b.t`). Jika data candle dalam kondisi terbalik (descending), candle terbaru menyulut status `open` terlebih dahulu, lalu iterasi mundur menyulut status `tp` pada candle lama, menghasilkan `filled_t` yang lebih baru dari `closed_t`.
 
 **Perubahan (`api/admin.js` & `test/admin/ta_struct.test.js`):**
+
 1. **`api/admin.js` (`_evaluateSetups`)**: Menambahkan pengurutan eksplisit `[...rawCandles].sort((a, b) => a.t - b.t)` sebelum iterasi candle diproses. Ini menjamin candle selalu dievaluasi secara kronologis dari paling lama ke paling baru, sehingga `filled_t <= closed_t` selalu terpenuhi.
 2. **`test/admin/ta_struct.test.js`**: Menambahkan unit test baru `_evaluateSetups: candle terbalik (descending) diurutkan otomatis sehingga filled_t <= closed_t` untuk mencegah kembalinya bug ini.
 
@@ -575,6 +724,7 @@ Prefix generik itu cuma benar untuk skenario #3, tapi selalu ditempel ke ketigan
 **Konteks:** User konsultasi tampilan PDF Ringkasan ke ChatGPT (skor 8.7/10, saran: kurangi kepadatan teks, tambah whitespace, tambah ringkasan 1-kalimat di atas, ganti confidence jadi bintang/kotak). User setuju sebagian besar saran TAPI menolak eksplisit saran bintang/kotak untuk confidence — dikonfirmasi tetap pakai label teks+angka (Tinggi/Sedang/Rendah + X/5), bukan `★★★☆☆`, karena bintang berkonotasi rating konsumen (Yelp/App Store) bukan keyakinan statistik, dan institutional research (Bloomberg/GS) tidak pakai itu.
 
 **Perubahan (`index.html`):**
+
 1. **Rename "AI Thesis" -> "Thesis"** di semua tempat user-facing yang bersumber dari thesis Ringkasan (demi konsistensi UI, bukan cuma satu tempat): kartu Ringkasan tab (`renderThesisCard`/`renderXauThesisCard`), mirror-nya di Dashboard (`dash-col-title` + kartu mini FX/XAU), PDF (`b.heading(...)`), dan teks clipboard Pre-Entry Check.
 2. **PDF Ringkasan — hapus baris metadata** `"{news_count} berita · {cal_count} event kalender · {gold_count} XAU"` dan `"Sumber: CME · FRED · FinancialJuice · Yahoo Finance"` dari letterhead (permintaan user, dianggap kurang perlu di badan dokumen). Fallback `window.print()` & PDF Analisa TIDAK disentuh (di luar scope, beda baris/kondisi).
 3. **Kotak "Intisari" 1-kalimat** (`_buildRingkasanExecSummary`) — dirakit deterministik dari field thesis yang SUDAH ada (`pair_recommendation`, `direction`, `confidence_1_to_5`, `xau_bias`, `xau_dominant_driver`), BUKAN panggilan AI baru; tampil di PDF lewat `kesimpulanBox()` yang sekarang terima parameter `label` (reuse box "KESIMPULAN" yang sudah ada, cuma ganti judul jadi "INTISARI"). Null-safe: kalau tidak ada thesis sama sekali, box tidak dirender (tidak mengarang isi).
@@ -590,6 +740,7 @@ Prefix generik itu cuma benar untuk skenario #3, tapi selalu ditempel ke ketigan
 **Konteks:** Lanjutan S221/S222 — user edit sendiri 2 gambar tambahan di `asset/` (di luar `foto/icon/ppt/video`): satu lockup opaque ("Untitled design (1).png", dari Canva), satu lockup transparan hasil ChatGPT image gen ("ChatGPT Image...png", 95% alpha=0 — dicek programatis, bukan cuma diasumsikan dari nama file). Yang transparan dipakai jadi sumber watermark karena bisa di-overlay bersih ke halaman PDF putih; yang opaque tidak dipakai.
 
 **Perubahan:**
+
 1. **`pdf-watermark.png` (baru, root, tracked)** — diproses dari `asset/ChatGPT Image...png`: crop ke bounding-box alpha (buang margin transparan kosong), resize ke 900×615px, alpha semua pixel dikalikan 0.09 (opacity ~9%, "dibakar" ke file-nya sendiri, bukan lewat jsPDF GState yang versi-sensitif).
 2. **`index.html`** — helper baru: `_getPdfWatermarkDataUrl()` (fetch+cache lazy, cuma jalan pas user download PDF, gagal fetch = skip watermark diam-diam bukan error), `_stampWatermark(doc, dataUrl)` (loop semua halaman via `doc.setPage()`, taruh watermark 62% lebar halaman di tengah), `_pdfSessionLabel()` (reuse `getFxSession()` yang sudah ada, dipetakan ke label rapi lewat `_FX_SESSION_FILE_LABEL`), `_pdfClockLabel()` (jam WIB format `HH.mm`), `_pdfSanitizeFilePart()` (buang karakter invalid Windows filename termasuk "/" di label pair mis. "EUR/USD" -> "EURUSD").
 3. **Nama file PDF diganti** (permintaan user, format eksplisit tanpa tanggal): `downloadRingkasanPdf()` -> `Ringkasan Sesi {SESI} {jam}.pdf` (mis. "Ringkasan Sesi London 16.16.pdf"); `downloadAnalisaPdf()` -> `Analisa {PAIR} {SESI} {jam}.pdf` (mis. "Analisa EURUSD Overlap 16.16.pdf"). Kedua fungsi jadi `async` (perlu `await` fetch watermark sebelum `doc.save()`).
@@ -604,6 +755,7 @@ Prefix generik itu cuma benar untuk skenario #3, tapi selalu ditempel ke ketigan
 **Konteks:** Lanjutan S221 — dari 4 varian app-icon hasil Higgsfield (`asset/icon/icon_variant_A/B/C/D.svg`), user pilih `variant_A` (dua daun merah/teal bentuk lebih dinamis, mengisi frame lebih penuh) dibanding `icon.svg` lama (urat daun lebih halus, negative space boros) setelah dibandingkan langsung via render PNG headless Edge.
 
 **Perubahan:**
+
 1. **`icon.svg` (root)** — ditimpa dengan artwork `variant_A` (path sama persis, cuma dibersihkan: hapus `<metadata>` recraft signature & `transform="translate(0,0)"` no-op, tambah `<title>`+`role="img"` untuk aksesibilitas, drop `width`/`height`/`preserveAspectRatio="none"` biar scaling konsisten dengan gaya file lama). Palet warna tidak berubah (`#b23030` merah, `#0d4d4d` teal, `#f5e6c8` krem) — masih belum sinkron dengan CSS var `--accent`/`--green` app (dicatat sebagai temuan, tidak difix karena di luar scope diskusi ini).
 2. **`apple-touch-icon.png` (baru, root, 180×180)** — di-generate dari `icon.svg` baru (render headless Edge 1024px -> resize Pillow). Sebelumnya `<link rel="apple-touch-icon">` menunjuk ke `icon.svg` langsung, padahal Safari/iOS historically tidak reliable rasterize SVG untuk home-screen icon.
 3. **`og-image.png` (baru, root)** — salinan `asset/icon/wordmark_lockup_A.png` (lockup ikon+"DAUN MERAH"+"FX TERMINAL"). **Sengaja disalin keluar dari `asset/` yang gitignored** ke root yang tracked, karena file ini sekarang benar-benar dipakai production (og:image/twitter:image), beda dari varian lain di `asset/` yang cuma referensi lokal.
@@ -620,6 +772,7 @@ Prefix generik itu cuma benar untuk skenario #3, tapi selalu ditempel ke ketigan
 **Konteks:** User minta manfaatkan trial gratis Higgsfield (dikira "gratis 1 hari", ternyata trial 3 hari 100 credit MCP, berakhir 2026-07-26, kartu auto-charge kalau tidak dibatalkan — lihat `daun_merah_vendor.md` §11) untuk kuras semua model: identitas visual, video promo, reels sosmed, dan asset fitur. Kredit habis di tengah jalan (2K resolution jauh lebih mahal dari estimasi preflight 1K yang dicek awal) sebelum sempat menyentuh video sama sekali. User memilih berhenti di icon+foto saja, bukan top-up.
 
 **Dihasilkan** (folder `asset/` — gitignored, TIDAK di-push, cuma lokal):
+
 - `asset/icon/`: 4 varian app-icon (SVG vector, leaf yin-yang merah #b23030 & teal #0d4d4d dari `icon.svg` existing, versi lebih tajam/premium), 2 varian monoline/favicon, 2 wordmark lockup "DAUN MERAH · FX TERMINAL" (PNG 2K).
 - `asset/foto/`: 2 ilustrasi onboarding "Ringkasan" (trader malam di terminal), 1 ilustrasi onboarding "Analisa" (candlestick merah-teal balance), 1 OG/share-card untuk link preview sosmed.
 
@@ -632,6 +785,7 @@ Prefix generik itu cuma benar untuk skenario #3, tapi selalu ditempel ke ketigan
 **Konteks:** Lanjutan S219 — `posReviewNewsBuffer` (in-memory, dipakai `isCorroborated`/Lapis 1b `findBreakingNewsMatch`) hilang tiap daemon restart, menciptakan jendela "amnesia" korroborasi tepat saat krisis sedang berlangsung (dibahas eksplisit dengan user, relevan karena fase development ini restart beberapa kali sehari tiap push). Diminta user setelah menimbang untung: menghilangkan gap yang nyata terjadi hari ini juga (3 deploy = 3 restart), biaya Redis kecil.
 
 **Perubahan (`vps/daemon.js`):**
+
 1. `POSREVIEW_NEWS_BUFFER_REDIS_KEY`/`_CAP`(150)/`_CATS` — cuma kategori `geopolitical`/`energy`/`market-moving` yang di-persist (kategori yang benar-benar dipakai `isCorroborated`; mayoritas volume berita lain tidak relevan korroborasi krisis, buang budget Redis tanpa manfaat kalau ikut disimpan).
 2. `shouldPersistNewsBufferItem`/`filterFreshBufferItems` — pure, testable, dipisah dari I/O (pola sama `findHardNewsEvent`/`findBreakingNewsMatch`).
 3. `persistNewsBufferItem` (fire-and-forget LPUSH+LTRIM, dipanggil dari `handlePosReviewCandidate`) + `loadNewsBufferFromRedis` (LRANGE saat boot, filter umur, prepend ke buffer in-memory) — dipanggil `main()` (sekarang `async`) SEBELUM `pollNews` mulai jalan.
@@ -646,6 +800,7 @@ Prefix generik itu cuma benar untuk skenario #3, tapi selalu ditempel ke ketigan
 **Konteks:** Lanjutan audit auto-entry S218 — temuan #2 (filter pre-entry `checkHardNewsSkip` cuma baca kalender ekonomi TERJADWAL, buta terhadap breaking news geopolitik mendadak). Dipicu skenario nyata: eskalasi Iran-AS di Selat Hormuz (dua headline "Iran's Top Joint Military Command" 1 menit berbeda, 23 Jul 2026, mengancam menutup arus minyak Gulf). Trade-off (jeda korroborasi 30 menit, laju sampel Golden Trio) dan celah tambahan (headline oil-shock ke-skor `energy` bukan `geopolitical`, currency-leg keyword literal tidak menangkap relevansi kausal minyak→emas) didiskusikan & disepakati user sebelum eksekusi.
 
 **Perubahan:**
+
 1. **`isCorroborated` (`api/_position_review.js` + `vps/daemon.js`, disinkronkan)** — kategori `energy` sekarang ikut disyaratkan korroborasi (≥2 sumber beda, overlap ≥2 token, ±30 menit), sama seperti `geopolitical`. Sebelumnya kategori apa pun selain `market-moving`/`geopolitical` lolos tanpa korroborasi sama sekali — celah laten yang juga mempengaruhi U-5b (review posisi).
 2. **`POSREVIEW_CURRENCY_KEYWORDS.XAU` (`vps/daemon.js`)** — ditambah kata kunci guncangan pasokan energi (`hormuz`, `opec`, `gulf oil`, `oil supply`), bukan cuma `gold`/`xau`/`bullion` literal. Headline nyata "Iran will stop all Gulf oil flow..." sekarang terdeteksi relevan XAU tanpa perlu menyebut emas sama sekali.
 3. **`handlePosReviewCandidate`** — kondisi antre-recheck-kalau-unconfirmed diperluas mencakup `energy` (konsisten dengan #1).
@@ -660,6 +815,7 @@ Prefix generik itu cuma benar untuk skenario #3, tapi selalu ditempel ke ketigan
 **Konteks:** User minta audit mandiri jalur auto-entry (Plan U) karena "kurang tenang" soal kualitasnya. Ditemukan dua celah lewat penelusuran kode + cross-check berita live (Iran-AS/real yield/gold, diverifikasi akurat via web search): (1) counter kuota harian AI TIDAK ikut terisolasi dari produksi walau circuit breaker-nya sudah (Plan V-3) — **diperbaiki sesi ini**; (2) filter berita keras pre-entry (`checkHardNewsSkip`) cuma baca kalender ekonomi terjadwal, buta terhadap breaking news geopolitik mendadak — **BELUM diperbaiki, opsi masih didiskusikan dengan user** (lihat `daun_merah_progress.md`).
 
 **Perbaikan (temuan #1):**
+
 1. `api/_ai_guard.js`: tambah counter kuota harian terpisah `deepseek_experimental` (15/hari), `sambanova_main_experimental` (30/hari), `sambanova_c1_experimental` (30/hari) — mendampingi circuit breaker `:experimental` yang sudah ada sejak Plan V-3. Sebelum ini, `allowAiCall('deepseek')` dkk dipanggil dengan key produksi yang SAMA baik dari call manual publik maupun call `isAutoCall`/`test_deepseek=1`, walau breaker gagalnya sudah dipisah — auto-entry & manual rebutan pagar biaya 50/hari BERBAYAR yang sama. Golden Trio (S217) menaikkan volume auto-entry+uji konsistensi jadi sampai 9 call/hari (~18% pagar produksi) sebelum gap ini ketahuan.
 2. `api/admin.js`: 4 titik `allowAiCall(...)` di `ohlcvAnalyzeHandler` (blok `test_deepseek=1` + 3 tier chain produksi DeepSeek/SambaNova akun1/akun2) sekarang branch ke counter experimental kalau `isAutoCall || testDeepseekOnly`, pola sama seperti `CB_DEEPSEEK_KEY` dkk yang sudah ada.
 3. Test baru: `test/lib/guards.test.js` (+2, DEFAULT_LIMITS & fail-open counter baru), `test/admin/isolation_auto.test.js` (+2, end-to-end call auto=1 vs manual — verifikasi `ai_budget:deepseek_experimental:<tanggal>` naik tanpa menyentuh `ai_budget:deepseek:<tanggal>` produksi, dan sebaliknya).
@@ -667,9 +823,12 @@ Prefix generik itu cuma benar untuk skenario #3, tapi selalu ditempel ke ketigan
 
 **Temuan #2 (belum dieksekusi):** dicatat di `daun_merah_progress.md` sebagai item tertunda dengan breakdown opsi — butuh keputusan user sebelum eksekusi (bukan bug sederhana, melibatkan trade-off deteksi breaking-news).
 
+## Changelog Session 217 (2026-07-23) — Golden Trio (3 Pair Auto-Entry) + Modul Statistik Rigor (Bootstrap/Permutation/Wilcoxon)
+
 **Konteks:** Diskusi user pasca-riset Scopus AI ("Sample size and methodology for AI trading signals"): dua ide diadopsi (Golden Trio, cepat), satu ditunda (Dynamic Pair Selector — dinilai mencemari eksperimen Plan U karena mencampur variabel strategi-seleksi-pair dengan pengujian reliabilitas engine AI, ditahan sampai gate fixed-pair lolos). Ketiga ide awalnya diusulkan sesi lain (belum di-commit) di `daun_merah_riset.md`; catatan sitasi PDF Scopus AI di entri itu (#8/#21/#22) TERBUKTI salah tempel saat diverifikasi ulang — section "Cross-Domain Validation" PDF sebenarnya bersitasi #1/#16/#40/#41, belum diperbaiki (housekeeping tertunda, keputusan user).
 
 **Perubahan:**
+
 1. **Golden Trio** — `vps/daemon.js`: default `AUTO_ENTRY_PAIRS` diperluas dari 2 pair (`frxXAUUSD,frxEURUSD`) ke 3 pair (+ `frxGBPUSD`). 2 slot/hari/pair = 6 setup/hari → estimasi gate Plan U n≥100 dipangkas dari ~50 hari ke ~16 hari, kedalaman n≈33/pair tetap lolos ambang CLT n≥30. Test baru (`test/vps/auto_entry.test.js`) memverifikasi default array + semua pair terpetakan di `AUTO_ENTRY_SYMBOL_MAP`. `vps/README-deploy.md` §8 & `daun_merah_plan.md` §PLAN U diupdate mengikuti (termasuk perbaikan teks stale "1 pair XAU/USD" yang sebenarnya sudah 2 pair sejak awal).
 2. **Modul statistik generik baru** — `scripts/_stats.js`: bootstrap CI (percentile, seeded PRNG deterministik), permutation test dua-sampel, Wilcoxon rank-sum (Mann-Whitney U, aproksimasi normal), Brier score & Expected Calibration Error. Reusable, tidak ada dependency eksternal. Test lengkap di `test/scripts/_stats.test.js` (18 test, termasuk kasus tepi array kosong & determinisme seed).
 3. **Rigor statistik `scripts/backtest_confluence.js`** — perbandingan bounce-rate zona skor TINGGI vs RENDAH yang sebelumnya cuma dua persentase mentah sekarang dilengkapi bootstrap CI per bucket + permutation test + Wilcoxon rank-sum (agregat & per rezim volatilitas). **Hasil run verifikasi (data live Yahoo, n=369 tersentuh skor tinggi vs n=7 skor rendah): p=1,000 (permutation) / p=0,891 (Wilcoxon) — beda bounce-rate BELUM signifikan secara statistik**, CI kedua bucket tumpang tindih total (55% [49,9%-59,9%] vs 57% [28,6%-85,7%]). Ini temuan baru yang mengoreksi kesan sebelumnya ("kontrol kecil, tapi kelihatan konsisten") menjadi kuantitatif: confluence zone BELUM terbukti prediktif secara statistik, root cause kemungkinan n kontrol (RENDAH) yang kronis kecil. Detail penuh + rekomendasi lanjut: `daun_merah_riset.md`.
@@ -757,9 +916,14 @@ Prefix generik itu cuma benar untuk skenario #3, tapi selalu ditempel ke ketigan
 
 ## Changelog Session 210 (2026-07-21) — Driver makro DXY/WTI/real yield breakdown untuk grounding reasoning AI Analisa/Kritikus
 
-**Konteks:** Diskusi user memicu dari contoh output Analisa XAU/USD nyata: baris MAKRO cuma menempel dua fakta lepas ("eskalasi geopolitik AS-Iran seharusnya bullish gold, tapi harga turun karena real yield tinggi & positioning bearish") tanpa angka yang menelusuri mekanismenya. Root cause: prompt `ohlcv_analyze`/`ohlcv_critic` sebelumnya cuma dikasih real yield sebagai angka jadi (`_formatFundamentalBlock`, sumber `real_yields` cache) dan excerpt teks Ringkasan — tidak ada DXY (dolar broad) atau WTI (barometer oil-driven inflation), padahal keduanya sudah difetch di `correlations.js` (`GOLD_CORR_ASSETS`) untuk keperluan lain (matriks korelasi), tidak pernah disuntik ke prompt AI. Kesepakatan desain: bukan hardcode rule "kalau Iran maka cek Hormuz" (rapuh, tidak generalisasi ke skenario lain) — kasih data mentah convergence point (DXY/VIX/real yield selalu relevan lintas skenario) + instruksi eksplisit menelusuri mekanisme pakai angka, biarkan model sendiri yang reasoning.
+**Konteks:** Diskusi user memicu dari contoh output Analisa XAU/USD nyata: baris MAKRO cuma menempel dua fakta lepas ("eskalasi geopolitik AS-Iran seharusnya bullish gold, tapi harga turun karena real yield tinggi & positioning bearish") tanpa angka yang menelusuri mekanismenya.
+
+Root cause: prompt `ohlcv_analyze`/`ohlcv_critic` sebelumnya cuma dikasih real yield sebagai angka jadi (`_formatFundamentalBlock`, sumber `real_yields` cache) dan excerpt teks Ringkasan — tidak ada DXY (dolar broad) atau WTI (barometer oil-driven inflation), padahal keduanya sudah difetch di `correlations.js` (`GOLD_CORR_ASSETS`) untuk keperluan lain (matriks korelasi), tidak pernah disuntik ke prompt AI.
+
+Kesepakatan desain: bukan hardcode rule "kalau Iran maka cek Hormuz" (rapuh, tidak generalisasi ke skenario lain) — kasih data mentah convergence point (DXY/VIX/real yield selalu relevan lintas skenario) + instruksi eksplisit menelusuri mekanisme pakai angka, biarkan model sendiri yang reasoning.
 
 **Perubahan:**
+
 1. `api/correlations.js` `action=daily-snapshot` — tambah `DRIVERS_MAP` (DXY `DX-Y.NYB`, WTI `CL=F`), payload sekarang punya field `drivers: {DXY:{level,pct}, WTI:{level,pct}}` di samping `fx`/`yields` yang sudah ada. VIX tidak perlu ditambah — sudah ada di `_formatFundamentalBlock` lewat `risk_regime` cache (`RISK REGIME: ... VIX ...`).
 2. `api/admin.js` `_formatFundamentalBlock` — param baru `drivers`. Baris `DOLLAR & KOMODITAS: DXY x.xx (+x.xx% hari ini) | WTI $x.xx (+x.xx% hari ini)` selalu tampil kalau data ada (barometer global, relevan lintas pair); baris `REAL YIELD USD: nominal x% − ekspektasi inflasi x% = real yield x%` HANYA kalau `USD` termasuk leg pair (breakdown nominal-vs-inflasi dari `real_yields` cache, bukan cuma angka real yield akhir).
 3. `_extractMacroDrivers(rawSnap, rawRY)` — helper baru, parse `daily_snapshot.drivers` + `real_yields.currencies.USD`, fail-open per sumber. Dipanggil di kedua caller `_formatFundamentalBlock` (`ohlcvAnalyzeHandler` + `ohlcv_critic`) yang sekarang ikut fetch `daily_snapshot`+`real_yields` di `Promise.all` yang sudah ada (tidak nambah round-trip baru).
@@ -770,7 +934,9 @@ Prefix generik itu cuma benar untuk skenario #3, tapi selalu ditempel ke ketigan
 
 ## Changelog Session 209 (2026-07-20) — Rigor tambahan Plan U: cost expectancy, kalibrasi confidence, latensi pipeline, backtest lintas rezim + carry
 
-**Konteks:** Diskusi user pasca-Plan U soal apakah virtual trading realistis bisa "menang" (EMH/Meese-Rogoff/Klein sudah tercatat di `daun_merah_referensi_riset.md` sebagai constraint). Disepakati 10 arah kerja untuk memperbaiki KUALITAS evaluasi (bukan mencari alpha baru) — sesi ini eksekusi 5 yang bisa jalan sekarang tanpa menunggu data: cost modeling, kalibrasi confidence, ukur latensi, backtest lintas rezim, backtest carry.
+**Konteks:** Diskusi user pasca-Plan U soal apakah virtual trading realistis bisa "menang" (EMH/Meese-Rogoff/Klein sudah tercatat di `daun_merah_referensi_riset.md` sebagai constraint).
+
+Disepakati 10 arah kerja untuk memperbaiki KUALITAS evaluasi (bukan mencari alpha baru) — sesi ini eksekusi 5 yang bisa jalan sekarang tanpa menunggu data: cost modeling, kalibrasi confidence, ukur latensi, backtest lintas rezim, backtest carry.
 
 **1. Transaction cost modeling (`api/admin.js`):**
 - `SPREAD_PRICE_ESTIMATE`: tabel spread retail ESTIMASI (bukan kutipan broker riil, bukan diverifikasi live) per 14 pair FX + XAU/USD, satuan harga.
@@ -1232,6 +1398,120 @@ Setelah Q-5 diubah dari polling 60 detik jadi event-driven (dipicu tiap ada harg
 
 ---
 
+> **Catatan penempatan:** blok Session 186/187 di bawah ini semula tercatat menyendiri di paling bawah file (setelah Session 36, di luar urutan kronologis) — dipindahkan ke sini karena "Session 187 lanjutan 3/4" (di atas) secara eksplisit melanjutkan dari sini.
+
+## Changelog Session 187 lanjutan 2 (2026-07-18) — Plan Q-1: Deploy Railway Berhasil, Koreksi Pinger Tidak Diperlukan
+
+**Konteks:** User eksekusi deploy manual ke Railway mengikuti `vps/README-deploy.md`. Build pertama gagal (Railway coba build dari root repo, bukan folder `vps/`, karena Root Directory belum diisi — persis dugaan awal, dikonfirmasi oleh fitur auto-diagnosis Railway sendiri "Set the root directory to 'vps'..."). Setelah Root Directory diisi `/vps` + 2 env var Redis ditambahkan di tab Variables, deploy sukses. Domain publik ter-generate: `daunmerahterminal-production.up.railway.app`, verifikasi manual browser mengembalikan `last_beat_epoch` terisi (heartbeat sudah menulis ke Redis).
+
+**Godaan yang DITOLAK:** Vercel Marketplace menawarkan integrasi resmi "Add Integration" untuk Railway yang minta izin luas ("managing deployments or managing environment variables" ke seluruh project Vercel). User sempat menemukan halaman ini tapi BELUM mengklik — dikonfirmasi ke user untuk TIDAK diklik, karena bertentangan langsung dengan prinsip keamanan Plan Q (host eksternal cuma boleh pegang token Redis+Telegram+Deriv, bukan akses ke semua secret Vercel termasuk kunci AI berbayar). Env var Redis tetap diisi manual copy-paste, bukan lewat integrasi.
+
+**Koreksi dokumentasi — pinger cron-job.org TERNYATA TIDAK diperlukan untuk Railway:** Entri sebelumnya (S187 lanjutan) masih mewarisi asumsi dari Render bahwa pinger wajib melawan spin-down. Dicek live ke `docs.railway.com/reference/app-sleeping`: fitur sleep Railway ("Serverless") bersifat **opt-in** (tidak nyala otomatis untuk service baru) dan pemicunya beda dari Render — Railway melihat **outbound traffic** (bukan inbound/request masuk), sleep baru terjadi kalau tidak ada outbound packet >10 menit. `heartbeat.js` sendiri sudah mengirim outbound request ke Upstash tiap 60 detik, jauh di bawah ambang itu — daemon mencegah dirinya sendiri tertidur tanpa bantuan eksternal apa pun. `vps/README-deploy.md` §2 ditulis ulang: pinger dihapus dari langkah wajib, diganti catatan cek manual toggle "Serverless" harus OFF. Ini koreksi murni dokumentasi (bukan bug kode) yang ditemukan SEBELUM sempat jadi masalah nyata di gate Q-1.
+
+**Status Q-1 — MASIH BERJALAN (gate 7-14 hari baru mulai):** Service Railway sudah live & menulis heartbeat. Yang tersisa: biarkan berjalan 7-14 hari, pantau `admin?action=health` source `vps_heartbeat` + Usage Railway sesekali. Belum ada gap tercatat sejak deploy sukses hari ini.
+
+## Changelog Session 187 lanjutan (2026-07-18) — Plan Q-1: Render & Oracle GAGAL Verifikasi Kartu, Pivot ke Railway
+
+**Konteks:** User mulai deploy manual ke Render mengikuti `vps/README-deploy.md` dari entri sebelumnya. Ditemukan dua masalah berurutan yang mengoreksi asumsi plan.
+
+**Temuan 1 — Render TETAP minta kartu (klaim "tanpa kartu" di dokumentasi resmi terbukti tidak berlaku untuk akun user):** User sempat salah pilih tipe service (Private Service, `dashboard.render.com/pserv/new`) yang memang tidak punya tier Free sama sekali (mulai $7/bulan) — dikoreksi ke Web Service (`dashboard.render.com/web/new`) yang benar punya opsi Free $0/bulan. Tapi begitu lanjut ke step deploy, muncul modal Add Card yang mewajibkan kartu untuk hold verifikasi $1 USD (dikonfirmasi lewat screenshot langsung — form Stripe eksplisit menyebut "To verify your card, Render will perform a temporary authorization for $1 USD"). Ini bertentangan dengan riset awal S186 ("Render free tier ... tanpa kartu") dan bahkan dengan dokumentasi resmi Render yang diverifikasi ulang hari ini (`render.com/pricing` bilang tidak perlu kartu) — kemungkinan kebijakan anti-fraud khusus akun/region tertentu. **Kartu debit BNI user DITOLAK** di titik verifikasi ini.
+
+**Temuan 2 — Oracle Always Free juga gagal dengan kartu yang sama:** User mencoba Oracle Always Free sebagai alternatif (kandidat berikutnya di urutan plan) — kartu BNI yang SAMA ditolak juga di sana. Karena gagal konsisten di 2 platform independen, disimpulkan akar masalah kemungkinan besar di kartu/bank (transaksi luar negeri BNI belum aktif, atau kartu GPN-only tanpa jaringan Visa/Mastercard) — bukan bug platform. Menelusuri ini butuh kontak BNI terpisah dan TIDAK dijadikan blocker Plan Q lebih lama.
+
+**Keputusan — pivot ke Railway:** Dicek live ke `docs.railway.com` (free-trial & FAQ): signup Railway **tidak minta kartu sama sekali**. Trade-off yang disadari dan didokumentasikan eksplisit (beda dari Render): Railway bukan "jam gratis" tapi **kredit terpakai** — trial $5 sekali habis 30 hari, lanjut Free plan $1 kredit/bulan (tidak akumulasi), kalau kredit habis service **berhenti otomatis** (bukan minta kartu paksa). Karena Railway tidak publikasikan tarif per-resource, estimasi biaya `heartbeat.js` (proses sangat ringan) di bawah $1/bulan adalah ASUMSI yang perlu dikonfirmasi dari data Usage riil selama masa uji — bukan dianggap pasti aman.
+
+**Kode disesuaikan jadi platform-agnostic:**
+
+- **`vps/heartbeat.js`**: HTTP server sekarang eksplisit bind ke `0.0.0.0` (syarat Railway — dikonfirmasi dari `docs.railway.com/guides/fixing-common-errors`, tanpa ini request Railway Edge Proxy gagal 502). Tetap baca `$PORT` dari env, jadi kode yang sama persis bisa dipakai di Render/platform lain kapan pun blocker kartu di atas selesai ditelusuri — tidak perlu ubah kode, cuma pindah platform deploy.
+- **`vps/README-deploy.md`**: ditulis ulang total — riwayat percobaan Render/Oracle didokumentasikan sebagai referensi (supaya sesi depan tidak mengulang dari nol), langkah deploy Railway lengkap (Root Directory `vps`, Generate Domain manual — beda dari Render yang otomatis expose, Variables, pinger cron-job.org), plus catatan eksplisit soal pantau Usage Railway supaya gap akibat kredit habis tidak disalahartikan sebagai gagal infra saat membaca gate Q-1.
+- **`daun_merah_plan.md`** §Plan Q: status & urutan kandidat diperbarui (CepatCloud → ~~Render~~ GAGAL kartu → ~~Oracle~~ GAGAL kartu → **Railway SEDANG DICOBA**), termasuk kandidat yang sudah lama didaftar tapi belum sempat ditulis alasan tolaknya (Zeabur — risiko kredit habis sama seperti Railway tanpa keunggulan lain, Glitch — ToS melarang pinger 24/7).
+
+**Verifikasi:** `npm test`: **334/334 hijau**. `heartbeat.js` dijalankan ulang lokal setelah perubahan bind `0.0.0.0` — HTTP server terkonfirmasi listening & reachable (`0.0.0.0:PORT`), beat baru sukses tertulis ke Upstash Redis production (bukan mock). Key test dihapus setelah verifikasi.
+
+**Status Q-1 — MASIH BELUM SELESAI (menunggu aksi user):** Deploy ke Railway (ikuti `vps/README-deploy.md` versi baru) + pasang pinger cron-job.org + jalani gate uptime 7-14 hari, sambil pantau Usage Railway. Tidak ada bagian ini yang bisa dieksekusi dari sisi kode.
+
+## Changelog Session 187 (2026-07-18) — Plan Q-1: Pivot ke Render Free Tier, Kode Heartbeat Selesai & Live-Verified
+
+**Konteks:** Melanjutkan Plan Q setelah Plan P selesai (entri sebelumnya). VPS CepatCloud user masih belum aktif — ditanya langsung, user memilih pivot ke **Plan B: Render free tier** (kandidat kedua yang sudah tercatat di `daun_merah_plan.md`) daripada menunggu lebih lama.
+
+**Kode:**
+
+1. **`vps/heartbeat.js`** (BARU) — daemon Node tunggal: tiap 60 detik `SET vps:heartbeat <epoch> EX 300` ke Upstash Redis via REST API, TANPA token AI/Deriv/Telegram apa pun (kalau host gratis kompromi, tidak ada kunci berbayar ikut bocor). Karena Render free tier adalah Web Service (bukan background worker polos), proses juga membuka HTTP server minimal (`node:http`, tanpa dependency) di `$PORT` yang membalas status JSON — dipakai ganda sebagai target health check Render DAN target pinger `cron-job.org`.
+2. **`vps/package.json`** + **`vps/Dockerfile`** (BARU) — image `node:22-alpine` (selaras versi Node GH Actions lain di repo), tanpa dependency eksternal.
+3. **`vps/README-deploy.md`** (BARU) — langkah deploy Render (Root Directory `vps`, runtime Docker, env `UPSTASH_REDIS_REST_URL`/`UPSTASH_REDIS_REST_TOKEN` saja) + setup pinger `cron-job.org` tiap 10 menit melawan spin-down 15 menit + kriteria gate Q-1. **Tidak ada langkah SSH** — beda dari asumsi awal plan (VPS tradisional), Render sepenuhnya Git + dashboard.
+4. **`api/admin.js`** — probe baru `vps_heartbeat` di `action=health` (mengikuti pola `PROBES`/`SOURCE_CACHE_KEYS` yang sudah ada, bukan endpoint terpisah — hemat jatah 12/12 function Vercel Hobby): `GET vps:heartbeat`, DOWN kalau key tidak ada atau umur >5 menit, detail `age_seconds` kalau OK. Otomatis dapat alert Telegram existing (`toAlert`/`HEALTH_ALERT_THRESHOLD` 2 jam) dan `down_since_mins` di response JSON untuk memantau gap harian. Key didaftarkan di `KEY_REGISTRY` (`redis-keys` handler) untuk konsistensi dokumentasi internal.
+
+**Verifikasi (live, bukan hanya unit test — pelajaran S154/S180):** `npm test`: **334/334 hijau**. `heartbeat.js` dijalankan lokal melawan Upstash Redis PRODUCTION sungguhan (bukan mock): `SET vps:heartbeat` sukses, `GET` balik epoch benar, `TTL` terkonfirmasi 297s (dekat `EX 300`), endpoint HTTP `:PORT/` melaporkan `last_beat_epoch` yang sama. Logika `age_seconds` di `probeVpsHeartbeat` (`admin.js`) diverifikasi terpisah menghasilkan angka identik dengan kalkulasi manual atas data live yang sama. Key test dihapus (`DEL`) setelah verifikasi, proses lokal dihentikan — tidak ada proses/queue tersisa.
+
+**Bug ditemukan & diperbaiki saat evaluasi mandiri (sebelum sempat live di production):** `probeVpsHeartbeat` awalnya throw DOWN kapan pun `vps:heartbeat` tidak ada — termasuk kondisi normal "Render belum pernah di-deploy", yang berarti alert Telegram akan spam terus-menerus tiap kali pinger eksternal memanggil `admin?action=health`, dari detik commit ini live sampai user sempat deploy manual. Fix: marker permanen baru `vps:heartbeat:configured` (SET sekali oleh `heartbeat.js` saat beat pertama, tanpa TTL) membedakan "belum pernah deploy" (status `UNCONFIGURED`, diam — pola sama `probeFred` saat `FRED_API_KEY` kosong) dari "sempat aktif, sekarang mati" (DOWN asli, alert). Ketiga state (`UNCONFIGURED`/`OK`/`DOWN` pasca-mati) diverifikasi live terhadap Upstash Redis production.
+
+**Status Q-1 — BELUM SELESAI (menunggu aksi user):** Kode siap, tapi gate Q-1 ("tidak ada gap heartbeat >5 menit selama minimal 7 hari berturut") baru bisa mulai berjalan setelah **user** (1) push branch ini agar Render bisa connect ke GitHub, (2) deploy service di dashboard Render mengikuti `vps/README-deploy.md`, (3) pasang pinger `cron-job.org`. Tidak ada langkah ini yang bisa dieksekusi dari sisi kode — perlu akun pihak ketiga milik user. Setelah deploy, pantau via `GET /api/admin?action=health` (header `x-admin-secret`) source `vps_heartbeat` selama 7-14 hari sebelum lanjut Q-2 (streaming). Perubahan API-only (`admin.js`) + folder baru `vps/` yang tidak disentuh `index.html`/`sw.js` — sesuai aturan plan, `?v=` TIDAK dinaikkan. Mendapatkan `app_id` Deriv dedicated yang kompatibel dengan `ws.derivws.com` masih perlu tindak lanjut user (kontak `api-support@deriv.com` atau proses Partner), TIDAK memblokir Plan P (sudah jalan pakai `1089`).
+
+## Changelog Session 186 lanjutan malam 2 (2026-07-18) — Plan P (Deriv Primary Candle FX) DIEKSEKUSI, Temuan Migrasi API Deriv
+
+**Konteks:** Lanjutan langsung setelah entri di atas — user mendaftarkan `app_id` di Deriv untuk Plan P. Proses pendaftaran ternyata jauh lebih rumit dari perkiraan riset S186 pagi karena Deriv sedang migrasi platform developer.
+
+**Temuan kunci — dua sistem developer Deriv tidak saling kompatibel:** Deriv sekarang punya **dua portal developer terpisah**: portal BARU (`developers.deriv.com`, ada fitur "AI Hub"/"App builder Beta") dan sistem LAMA (`api.deriv.com` — sekarang redirect otomatis ke `legacy-api.deriv.com`, eksplisit dilabeli "Legacy"). User mendaftarkan aplikasi "Daun Merah" di portal BARU, dapat `app_id` alfanumerik (`33RyBFgARobk7a2y4UuUc`) — **diverifikasi live TIDAK KOMPATIBEL** dengan endpoint `wss://ws.derivws.com` yang jadi basis riset S186 pagi: server balas `{"error":"InvalidAppID"}` secara konsisten di 3 titik server berbeda (ws/green/blue.derivws.com), sementara app_id publik `1089` (kontrol) tetap berfungsi normal di endpoint yang sama. Ditelusuri lebih jauh: semua jalur "API developer" dari akun Deriv user (termasuk menu "Partnership programme" di dashboard utama) mengarah balik ke portal baru — jalur self-service untuk app_id gaya lama yang kompatibel dengan `ws.derivws.com` **tidak ditemukan** dalam sesi ini. Kemungkinan perlu kontak `api-support@deriv.com` langsung atau proses "Partner" terpisah.
+
+**Keputusan:** eksekusi Plan P TETAP JALAN memakai app_id publik `1089` sebagai solusi interim (gratis, terverifikasi live, tanpa akun) — sesuai instruksi user "kerjakan yang bisa dikerjakan dulu". Risiko didokumentasikan eksplisit di kode & `daun_merah_vendor.md` §4: rate limit dibagi semua developer dunia, Deriv bisa membatasi/mematikan `1089` sepihak kapan saja karena bukan untuk trafik produksi. Ganti via env var `DERIV_APP_ID` begitu dapat app_id dedicated yang kompatibel — **tidak perlu ubah kode apa pun**.
+
+**Implementasi:**
+
+1. **P-1:** Runtime Node 24.x dikonfirmasi di Vercel (dari project settings) — di atas syarat ≥22 untuk WebSocket native, tidak perlu dependency `ws`.
+2. **P-2:** `fetchDerivCandles(yahooSymbol, interval, count)` baru di `api/_ohlcv_fetch.js` — WebSocket ke `wss://ws.derivws.com`, timeout 8s, normalisasi ke shape `{t,o,h,l,c,v}` identik Yahoo/Twelve Data (`v:0`, Deriv tanpa volume). Map `YAHOO_TO_DERIV_SYMBOL` untuk 14 pair FX (pola persis `YAHOO_TO_TWELVEDATA_SYMBOL`) — `GC=F` SENGAJA tidak dipetakan (futures vs spot, volume dipakai analisis).
+3. **P-3:** Terintegrasi ke 2 jalur pemanggil: `refreshOhlcvFromYahoo` (on-demand, Deriv dicoba paralel untuk 1h+1d SATU pair) dan `ohlcvSyncHandler` (cron, Deriv dicoba **SEKUENSIAL** — bukan 14 pair paralel — sesuai edge case rate limit Plan P, dengan budget guard 20s supaya kalau Deriv down total tidak menghabiskan seluruh jatah waktu function sebelum sempat fallback ke Yahoo). Aturan satu-array-satu-sumber dijaga di kedua jalur.
+4. **P-4 (verifikasi live):** Trigger `?action=ohlcv_read` untuk 7 pair FX tetap (`OHLCV_FIXED_PAIRS`) di production — SEMUA menunjukkan `source: "deriv"` di `?action=ohlcv_dashboard`, XAU/USD tetap `"yahoo"` (scope terjaga). Perbandingan harga close Deriv vs Yahoo langsung: EUR/USD selisih ~4,6 pip, GBP/USD ~6,2 pip, AUD/USD ~0,2 pip — semua dalam toleransi wajar broker berbeda.
+5. **P-5 (uji fallback):** Diverifikasi dengan memanggil `fetchDerivCandles()` langsung memakai `app_id` salah (`99999999`) secara terisolasi (bukan ubah env var production) — melempar Error bersih (`InvalidAppID`) yang tertangkap try/catch fallback, pola identik dengan jalur `GC=F` yang sudah lama berjalan aman di production. `npm test` 334/334 hijau.
+6. **P-6 (dokumentasi):** `daun_merah_vendor.md` §4 — entri Deriv API baru + update entri Twelve Data (temuan tambahan: `TWELVEDATA_API_KEY` masih belum di-set di Vercel production sama sekali — action item lama masih terbuka; `.env.local` sempat punya key salah nama `TWELVE_DATA_API_KEY` yang tidak akan pernah terbaca kode).
+
+**Verifikasi:** 334/334 unit test; live production via `curl` langsung (bukan preview) untuk semua 7 pair FX tetap + perbandingan harga 3 pair vs Yahoo. Plan Q (daemon VPS) masih terkunci prasyarat: VPS CepatCloud belum aktif DAN baru boleh mulai setelah Plan P (sudah selesai sekarang, jadi tinggal menunggu VPS aktif).
+
+## Changelog Session 186 lanjutan (2026-07-18) — Roadmap Data Feed & Infra + Plan O/P/Q Ditulis
+
+**Konteks:** Diskusi strategis lanjutan setelah tes flash (entri sebelumnya): user ingin arsitektur event-driven (data update otomatis tanpa cron, push notification saat ada rilis), meninjau chat riset Gemini (VPS gratis + percepat cron GH Actions), dan menyiapkan infrastruktur.
+
+**Keputusan & Temuan (verifikasi live, bukan asumsi):**
+
+1. **OANDA DITUTUP sebagai kandidat data feed.** Akun demo user ternyata entitas "OANDA Global Markets" (MT5-only, server `OANDA_Global-Demo-1`); login portal ditolak; API v20 hanya untuk akun fxTrade yang tidak tersedia untuk pendaftar Indonesia.
+2. **Deriv API TERVERIFIKASI LIVE tanpa akun** (`wss://ws.derivws.com`, app_id publik): `active_symbols` = 15/15 pair Daun Merah tersedia (termasuk frxGBPAUD, frxGBPCAD, frxXAUUSD), `ticks_history style:candles` mengembalikan OHLC H1 EUR/USD nyata. Menggantikan slot OANDA untuk Fase A (on-demand Vercel) DAN Fase B (streaming daemon).
+3. **Saran Gemini "percepat cron GH Actions ke 15 menit" DITOLAK** dengan bukti: repo PRIVATE (menit terbatas, tiap job dibulatkan 1 menit — jadwal existing saja ±4.000 menit terbilling/bulan) dan cron GH tidak presisi (run digest terjadwal 00:00 UTC tercatat jalan 03:16 dan gagal, hari yang sama). Arah yang dipilih: on-demand + daemon, bukan cron lebih rapat.
+4. **VPS:** user daftar + pesan VPS gratis CepatCloud.id (menunggu aktivasi; halaman program diverifikasi masih hidup; review forum: pendaftaran kadang tak diproses, no technical support, IPv4 private — cukup karena daemon hanya butuh koneksi keluar). HF Spaces = plan B (RAM besar tapi auto-sleep + pinger area abu-abu ToS). Prinsip dikunci: **VPS penambah, bukan tulang punggung** (heartbeat + auto-fallback).
+5. **Ditemukan saat riset plan:** Plan M (dieksekusi paralel hari ini) sudah memasang fallback Twelve Data + alert Telegram Yahoo-down di `_ohlcv_fetch.js`/`admin.js` — Plan P/Q dirancang MENYAMBUNG fondasi ini (bukan duplikasi), dan scope P dikoreksi: XAU/USD (GC=F futures, punya volume) TIDAK ikut migrasi Deriv (spot, tanpa volume).
+
+**Dokumen:** `daun_merah_plan.md` DITULIS ULANG: plan selesai dihapus, backlog lama dipadatkan, 3 plan baru lengkap — **Plan O** (promosi DeepSeek flash primary + gate Analisa per Pair), **Plan P** (Fase A: Deriv primary candle 14 pair FX, Yahoo/Twelve Data fallback), **Plan Q** (Fase B: daemon VPS — gate heartbeat 7-14 hari, streaming, alert berita <1 menit, alert level harga, migrasi jadwal dari GH Actions). `daun_merah_riset.md`: entri roadmap menggantikan ide MT5/VPS lama (entri sebelumnya hari ini). Belum ada eksekusi kode fitur — sesuai instruksi user (plan-first, menunggu konfirmasi).
+
+**Tambahan (malam):** Plan R ditulis di `daun_merah_plan.md` — "Pre-Entry Check": auto-tick checklist deterministik diperluas (menyerap audit S179 item 6b) + satu call flash sebagai penilai item discretionary/kontradiksi, output verdict LAYAK/TIDAK per pair. Keputusan desain: BUKAN AI lokal di VPS (ide awal user — model lemah paling buruk justru di tugas penilaian; VPS tetap I/O ringan saja) dan BUKAN auto-entry (verdict = konteks, eksekusi tetap discretionary user). Tidak tergantung VPS — kandidat pengisi waktu tunggu aktivasi CepatCloud (belum ada respons per malam ini, patokan: follow-up hari ke-2-3, plan B HF Spaces di hari ke-7).
+
+## Changelog Session 186 (2026-07-18) — Tes Live DeepSeek v4-flash (API Resmi) vs DeepSeek-V3.2 (SambaNova)
+
+**Konteks:** User top-up saldo DeepSeek API resmi US$2 (saldo top-up tidak expire) dan minta tes perbandingan `deepseek-v4-flash` vs `DeepSeek-V3.2` yang sekarang jadi primary produksi via SambaNova. Latar: riset Sesi 185 mengusulkan DeepSeek API resmi sebagai kandidat "primary tunggal untuk semua call".
+
+**Perubahan Kode:**
+
+1. **`api/market-digest.js`** — jalur diagnostik terisolasi baru `?test_deepseek=1` (pola persis Plan N `?test_gemini=1`): Call 1/2/3 dialihkan semua ke DeepSeek API resmi (`api.deepseek.com/chat/completions`, model `deepseek-v4-flash`), hasil TIDAK ditulis ke `latest_article`. Parameter hemat: `max_tokens` disamakan SambaNova (1300/700/800), `thinking: {type:'disabled'}` (parameter native DeepSeek v4 — tanpa reasoning trace, lebih cepat & murah), `response_format json_object` untuk Call 2/3.
+2. **`api/_ai_guard.js`** — provider `deepseek` limit harian **50 request** sebagai PAGAR BIAYA (provider berbayar pertama di guard ini): maksimal ~US$0.25/hari sekalipun ada loop/abuse. `providerFromUrl` kenal `deepseek.com`.
+3. Env var `DEEPSEEK_API_KEY` production (sudah ada di Vercel, redeploy untuk membacanya).
+
+**Hasil Tes Live (3 sampel flash + 2 sampel V3.2, data berita sama, selang-seling 65 detik):**
+
+| Sampel | Call 1 latency | Panjang | Frasa terlarang | FX lengkap | Thesis (Call 3) | Bias (Call 2) |
+|---|---|---|---|---|---|---|
+| flash #1 | 8.5s | 2.667c | 1 ("sejalan dengan") | Ya | Valid (USD/JPY long conf 4) | USD, GBP |
+| flash #2 | 7.5s | 2.420c | 2 ("sejalan dengan", "di tengah") | Ya | **null** (gagal parse/skema) | USD, GBP |
+| flash #3 | 23.1s | 3.375c | 1 ("sejalan dengan") | Ya | Valid (conf 3) | (kosong) |
+| V3.2 #1 | 21.4s | 1.677c | 1 ("memberikan tekanan") | **Tidak (FX di-skip, hanya GBP umum + XAU)** | Valid (conf 3) | USD, GBP |
+| V3.2 #2 | 6.3s | 2.314c | 1 ("memberikan tekanan") | Ya | Valid (conf 3) | USD, GBP |
+
+**Kualitas prosa:** flash lebih padat data (level harga, skew 25-delta, CFTC contracts per pair, EUR/USD+GBP/USD+USD/JPY semua diulas) di ketiga sampel; V3.2 sekali kedapatan menipiskan bagian FX (sampel #1). Leak frasa terlarang setara (keduanya bocor di semua sampel, frasa beda). Latency sebanding dan sama-sama bervariasi (flash rata-rata 13.0s, V3.2 13.9s; keduanya punya outlier >20s).
+
+**Biaya terverifikasi dari saldo:** 3 generate penuh (Call 1+2+3) = **US$0.01** (saldo $2.00 → $1.99, dicek via `GET api.deepseek.com/user/balance`). Proyeksi: cron 3x/hari selama 3 bulan ≈ **US$0.90** — saldo $2 CUKUP untuk flash sebagai primary market-digest 3 bulan, dengan headroom klik manual.
+
+**Status:** DeepSeek v4-flash BELUM dipromosikan ke chain produksi — menunggu keputusan user. Catatan sebelum promosi: (1) thesis null 1/3 sampel perlu diselidiki (kemungkinan parse JSON — cek log Vercel saat kejadian berikutnya), (2) outlier latency 23.1s dekat timeout 25s, pertimbangkan naikkan timeout Call 1 flash ke 25s+buffer bila jadi primary.
+
+**Verifikasi:** 334/334 unit test lolos; isolasi test terverifikasi live (provider lain `skipped_test`, `latest_article` tidak tersentuh).
+
+---
+
 ## Changelog Session 184 (2026-07-18) — Eksekusi Plan M & N (SELESAI SEMUA)
 
 **Konteks:** Melanjutkan dan menyelesaikan Plan M (Mitigasi Bom Waktu) dan Plan N (Riset Provider AI Baru) yang belum tuntas.
@@ -1511,6 +1791,33 @@ Node harness (bukan browser, lingkungan tidak ada UI) menguji 4 jenis entri (leg
 - Mengupdate unit test `test/esc_html.test.js` dan `test/cal_scenario_sim.test.js` agar menyertakan evaluasi `decodeHtmlEntities` ke context test, sehingga suite 301/301 tes berhasil lolos sepenuhnya.
 
 ---
+
+## Perubahan Lanjutan Session 175 (2026-07-17) — Visual Polish, Anti-Noise (Hapus Emoji UI), & Penyelarasan Layout Premium
+
+> **Catatan penempatan:** entri ini semula tercatat menyendiri di paling bawah file, di luar urutan kronologis — dipindahkan ke sini karena isinya adalah polishing lanjutan atas 3 fitur (Divergensi COT, Volatilitas Opsi CME, Surprise Index) yang dibangun di Session 175 di bawah, satu hari setelahnya.
+
+**Konteks:** Perapian visual UI secara top-down berfokus pada visual psychology, profesionalisme, peniadaan emoji pada teks antarmuka UI (sesuai aturan CLAUDE.md), peningkatan responsiveness, dan verifikasi kualitas unit test.
+
+**1. Penyelarasan Text Alignment (`index.html`):** Menambahkan `text-align: justify` pada `.ringkasan-text` dan `.dash-digest-text` di stylesheet agar tata letak pembacaan berita dan analisis AI terasa profesional dan tidak melebar berantakan di desktop/mobile.
+
+**2. Pembersihan Total Emoji dari Teks UI (`index.html`):** Sesuai dengan batasan di `CLAUDE.md`, semua emoji unicode yang digunakan untuk status atau feedback antarmuka dihapus dan digantikan oleh deskripsi profesional atau ikon SVG:
+
+- `showToast` online/offline: `🔴 Offline` → `Offline`, `🟢 Kembali online` → `Kembali online`.
+- `showToast` order & jurnal: `Order Masuk ✓` → `Order Masuk`, `⚠ Jurnal Gagal Tersimpan` → `Jurnal Gagal Tersimpan`.
+- Status AI Provider: `⚡ Cerebras` → `Cerebras`, `🧠 SambaNova` → `SambaNova`, `✨ Gemini` → `Gemini`, dll.
+- Status cache/stale data: mengganti emoji warning `⚠` pada `calStaleBadge`, `cotStaleBadge`, dan retail sentiment metadata dengan ikon SVG warning yang bersih dan premium.
+- Navigasi Kalender: mengganti emoji unicode `📅` pada tombol `calDateJumpToggle` dengan SVG icon stroke kalender yang rapi.
+- Tampilan persentase COT: mengubah penanda ekstrem `P${pctile} ⚠` menjadi `P${pctile} *` dengan highlight visual kuning dari class `.cot-poi.ext` yang sudah ada.
+
+**3. Peningkatan Desain Premium Fitur Baru (`index.html`):**
+
+- **Smart Money Divergence Matrix (Tab COT)**: penambahan efek transisi pada baris tabel (`tr:hover`) dan dynamic badge `.div-badge` (`transition: all 0.2s ease`). Penggunaan `table-layout: fixed` untuk kestabilan lebar kolom.
+- **CME Volatility Profile (Tab Teknikal)**: mengubah grid system dari 2 kolom menjadi auto-responsive CSS Grid (`repeat(auto-fit, minmax(100px, 1fr))`) agar visualisasi optimal di berbagai breakpoint layar. Penambahan efek hover interaktif pada card dan item.
+- **US Economic Surprise Index (Tab Kalender)**: penambahan garis putus-putus vertikal (`::after` border-left dashed) di titik tengah (50% netral) track gauge agar trader mengetahui batas netralitas secara visual dengan cepat. Transition width diubah menjadi cubic-bezier (`.4s cubic-bezier(0.4, 0, 0.2, 1)`) untuk animasi bar pengukur yang mulus.
+
+**Verifikasi:** Menjalankan suite pengujian otomatis (`npm test`). Hasil: **301/301 unit test lulus tanpa kegagalan (100% PASS)**, mengonfirmasi tidak ada regresi pada parser data utama, kalkulasi pivot, maupun logika analitik PWA. File diperiksa dari sisi sintaks dasar JS (`node --check`) dan HTML — bersih tanpa masalah.
+
+**Versi:** Cache-buster dinaikkan secara lockstep serempak ke `2026.07.17.1`.
 
 ## Changelog Session 175 (2026-07-16) — Fitur Data Kuantitatif Baru: Peta Divergensi, Profil Volatilitas Opsi, dan Skor Kejutan Ekonomi
 
@@ -6633,233 +6940,3 @@ Mistral:     https://api.mistral.ai/v1
 ## Backlog — Data Source Upgrades
 
 ✅ Semua item di backlog asli ini sudah selesai — detail lengkap (root cause, implementasi, symbol mapping CME CVOL, status per endpoint) ada di entry changelog masing-masing: **Session 44-46** (GDPNow, TGA/Fed Balance Sheet, Cleveland Fed Inflation Nowcast, CME FedWatch fix, Portfolio VaR, FX Risk Reversals) dan **Session 47** (ScraperAPI Proxy + CME CVOL endpoint baru, 6 pair live).
-
----
-
-## Changelog Session 175 (2026-07-17) — Visual Polish, Anti-Noise (Hapus Emoji UI), & Penyelarasan Layout Premium
-
-**Konteks:** Perapian visual UI secara top-down berfokus pada visual psychology, profesionalisme, peniadaan emoji pada teks antarmuka UI (sesuai aturan CLAUDE.md), peningkatan responsiveness, dan verifikasi kualitas unit test.
-
-### Perubahan Utama:
-1. **Penyelarasan Text Alignment (`index.html`)**:
-   - Menambahkan `text-align: justify` pada `.ringkasan-text` dan `.dash-digest-text` di stylesheet agar tata letak pembacaan berita dan analisis AI terasa profesional dan tidak melebar berantakan di desktop/mobile.
-
-2. **Pembersihan Total Emoji dari Teks UI (`index.html`)**:
-   - Sesuai dengan batasan di `CLAUDE.md`, semua emoji unicode yang digunakan untuk status atau feedback antarmuka dihapus dan digantikan oleh deskripsi profesional atau ikon SVG:
-     - `showToast` online/offline: `🔴 Offline` -> `Offline`, `🟢 Kembali online` -> `Kembali online`.
-     - `showToast` order & jurnal: `Order Masuk ✓` -> `Order Masuk`, `⚠ Jurnal Gagal Tersimpan` -> `Jurnal Gagal Tersimpan`.
-     - Status AI Provider: `⚡ Cerebras` -> `Cerebras`, `🧠 SambaNova` -> `SambaNova`, `✨ Gemini` -> `Gemini`, dll.
-     - Status cache/stale data: Mengganti emoji warning `⚠` pada `calStaleBadge`, `cotStaleBadge`, dan retail sentiment metadata dengan ikon SVG warning yang bersih dan premium.
-     - Navigasi Kalender: Mengganti emoji unicode `📅` pada tombol `calDateJumpToggle` dengan SVG icon stroke kalender yang rapi.
-     - Tampilan persentase COT: Mengubah penanda ekstrem `P${pctile} ⚠` menjadi `P${pctile} *` dengan highlight visual kuning dari class `.cot-poi.ext` yang sudah ada.
-
-3. **Peningkatan Desain Premium Fitur Baru (`index.html`)**:
-   - **Smart Money Divergence Matrix (Tab COT)**: Penambahan efek transisi pada baris tabel (`tr:hover`) dan dynamic badge `.div-badge` (`transition: all 0.2s ease`). Penggunaan `table-layout: fixed` untuk kestabilan lebar kolom.
-   - **CME Volatility Profile (Tab Teknikal)**: Mengubah grid system dari 2 kolom menjadi auto-responsive CSS Grid (`repeat(auto-fit, minmax(100px, 1fr))`) agar visualisasi optimal di berbagai breakpoint layar. Penambahan efek hover interaktif pada card dan item.
-   - **US Economic Surprise Index (Tab Kalender)**: Penambahan garis putus-putus vertikal (`::after` border-left dashed) di titik tengah (50% netral) track gauge agar trader mengetahui batas netralitas secara visual dengan cepat. Transition width diubah menjadi cubic-bezier (`.4s cubic-bezier(0.4, 0, 0.2, 1)`) untuk animasi bar pengukur yang mulus.
-
-### Verifikasi:
-- Menjalankan suite pengujian otomatis (`npm test`). Hasil: **301/301 unit test lulus tanpa kegagalan (100% PASS)**, mengonfirmasi tidak ada regresi pada parser data utama, kalkulasi pivot, maupun logika analitik PWA.
-- File diperiksa dari sisi sintaks dasar JS (`node --check`) dan HTML - bersih tanpa masalah.
-
-### Versi:
-- Cache-buster dinaikkan secara lockstep serempak ke `2026.07.17.1`.
-
----
-
-## Changelog Session 186 (2026-07-18) — Tes Live DeepSeek v4-flash (API Resmi) vs DeepSeek-V3.2 (SambaNova)
-
-**Konteks:** User top-up saldo DeepSeek API resmi US$2 (saldo top-up tidak expire) dan minta tes perbandingan `deepseek-v4-flash` vs `DeepSeek-V3.2` yang sekarang jadi primary produksi via SambaNova. Latar: riset Sesi 185 mengusulkan DeepSeek API resmi sebagai kandidat "primary tunggal untuk semua call".
-
-### Perubahan Kode:
-1. **`api/market-digest.js`** — jalur diagnostik terisolasi baru `?test_deepseek=1` (pola persis Plan N `?test_gemini=1`): Call 1/2/3 dialihkan semua ke DeepSeek API resmi (`api.deepseek.com/chat/completions`, model `deepseek-v4-flash`), hasil TIDAK ditulis ke `latest_article`. Parameter hemat: `max_tokens` disamakan SambaNova (1300/700/800), `thinking: {type:'disabled'}` (parameter native DeepSeek v4 — tanpa reasoning trace, lebih cepat & murah), `response_format json_object` untuk Call 2/3.
-2. **`api/_ai_guard.js`** — provider `deepseek` limit harian **50 request** sebagai PAGAR BIAYA (provider berbayar pertama di guard ini): maksimal ~US$0.25/hari sekalipun ada loop/abuse. `providerFromUrl` kenal `deepseek.com`.
-3. Env var `DEEPSEEK_API_KEY` production (sudah ada di Vercel, redeploy untuk membacanya).
-
-### Hasil Tes Live (3 sampel flash + 2 sampel V3.2, data berita sama, selang-seling 65 detik):
-
-| Sampel | Call 1 latency | Panjang | Frasa terlarang | FX lengkap | Thesis (Call 3) | Bias (Call 2) |
-|---|---|---|---|---|---|---|
-| flash #1 | 8.5s | 2.667c | 1 ("sejalan dengan") | Ya | Valid (USD/JPY long conf 4) | USD, GBP |
-| flash #2 | 7.5s | 2.420c | 2 ("sejalan dengan", "di tengah") | Ya | **null** (gagal parse/skema) | USD, GBP |
-| flash #3 | 23.1s | 3.375c | 1 ("sejalan dengan") | Ya | Valid (conf 3) | (kosong) |
-| V3.2 #1 | 21.4s | 1.677c | 1 ("memberikan tekanan") | **Tidak (FX di-skip, hanya GBP umum + XAU)** | Valid (conf 3) | USD, GBP |
-| V3.2 #2 | 6.3s | 2.314c | 1 ("memberikan tekanan") | Ya | Valid (conf 3) | USD, GBP |
-
-**Kualitas prosa:** flash lebih padat data (level harga, skew 25-delta, CFTC contracts per pair, EUR/USD+GBP/USD+USD/JPY semua diulas) di ketiga sampel; V3.2 sekali kedapatan menipiskan bagian FX (sampel #1). Leak frasa terlarang setara (keduanya bocor di semua sampel, frasa beda). Latency sebanding dan sama-sama bervariasi (flash rata-rata 13.0s, V3.2 13.9s; keduanya punya outlier >20s).
-
-**Biaya terverifikasi dari saldo:** 3 generate penuh (Call 1+2+3) = **US$0.01** (saldo $2.00 → $1.99, dicek via `GET api.deepseek.com/user/balance`). Proyeksi: cron 3x/hari selama 3 bulan ≈ **US$0.90** — saldo $2 CUKUP untuk flash sebagai primary market-digest 3 bulan, dengan headroom klik manual.
-
-**Status:** DeepSeek v4-flash BELUM dipromosikan ke chain produksi — menunggu keputusan user. Catatan sebelum promosi: (1) thesis null 1/3 sampel perlu diselidiki (kemungkinan parse JSON — cek log Vercel saat kejadian berikutnya), (2) outlier latency 23.1s dekat timeout 25s, pertimbangkan naikkan timeout Call 1 flash ke 25s+buffer bila jadi primary.
-
-**Verifikasi:** 334/334 unit test lolos; isolasi test terverifikasi live (provider lain `skipped_test`, `latest_article` tidak tersentuh).
-
----
-
-## Changelog Session 186 lanjutan (2026-07-18) — Roadmap Data Feed & Infra + Plan O/P/Q Ditulis
-
-**Konteks:** Diskusi strategis lanjutan setelah tes flash (entri sebelumnya): user ingin arsitektur event-driven (data update otomatis tanpa cron, push notification saat ada rilis), meninjau chat riset Gemini (VPS gratis + percepat cron GH Actions), dan menyiapkan infrastruktur.
-
-### Keputusan & Temuan (verifikasi live, bukan asumsi):
-1. **OANDA DITUTUP sebagai kandidat data feed.** Akun demo user ternyata entitas "OANDA Global Markets" (MT5-only, server `OANDA_Global-Demo-1`); login portal ditolak; API v20 hanya untuk akun fxTrade yang tidak tersedia untuk pendaftar Indonesia.
-2. **Deriv API TERVERIFIKASI LIVE tanpa akun** (`wss://ws.derivws.com`, app_id publik): `active_symbols` = 15/15 pair Daun Merah tersedia (termasuk frxGBPAUD, frxGBPCAD, frxXAUUSD), `ticks_history style:candles` mengembalikan OHLC H1 EUR/USD nyata. Menggantikan slot OANDA untuk Fase A (on-demand Vercel) DAN Fase B (streaming daemon).
-3. **Saran Gemini "percepat cron GH Actions ke 15 menit" DITOLAK** dengan bukti: repo PRIVATE (menit terbatas, tiap job dibulatkan 1 menit — jadwal existing saja ±4.000 menit terbilling/bulan) dan cron GH tidak presisi (run digest terjadwal 00:00 UTC tercatat jalan 03:16 dan gagal, hari yang sama). Arah yang dipilih: on-demand + daemon, bukan cron lebih rapat.
-4. **VPS:** user daftar + pesan VPS gratis CepatCloud.id (menunggu aktivasi; halaman program diverifikasi masih hidup; review forum: pendaftaran kadang tak diproses, no technical support, IPv4 private — cukup karena daemon hanya butuh koneksi keluar). HF Spaces = plan B (RAM besar tapi auto-sleep + pinger area abu-abu ToS). Prinsip dikunci: **VPS penambah, bukan tulang punggung** (heartbeat + auto-fallback).
-5. **Ditemukan saat riset plan:** Plan M (dieksekusi paralel hari ini) sudah memasang fallback Twelve Data + alert Telegram Yahoo-down di `_ohlcv_fetch.js`/`admin.js` — Plan P/Q dirancang MENYAMBUNG fondasi ini (bukan duplikasi), dan scope P dikoreksi: XAU/USD (GC=F futures, punya volume) TIDAK ikut migrasi Deriv (spot, tanpa volume).
-
-### Dokumen:
-- `daun_merah_plan.md` DITULIS ULANG: plan selesai dihapus, backlog lama dipadatkan, 3 plan baru lengkap — **Plan O** (promosi DeepSeek flash primary + gate Analisa per Pair), **Plan P** (Fase A: Deriv primary candle 14 pair FX, Yahoo/Twelve Data fallback), **Plan Q** (Fase B: daemon VPS — gate heartbeat 7-14 hari, streaming, alert berita <1 menit, alert level harga, migrasi jadwal dari GH Actions).
-- `daun_merah_riset.md`: entri roadmap menggantikan ide MT5/VPS lama (entri sebelumnya hari ini).
-- Belum ada eksekusi kode fitur — sesuai instruksi user (plan-first, menunggu konfirmasi).
-
-**Tambahan (malam):** Plan R ditulis di `daun_merah_plan.md` — "Pre-Entry Check": auto-tick checklist deterministik diperluas (menyerap audit S179 item 6b) + satu call flash sebagai penilai item discretionary/kontradiksi, output verdict LAYAK/TIDAK per pair. Keputusan desain: BUKAN AI lokal di VPS (ide awal user — model lemah paling buruk justru di tugas penilaian; VPS tetap I/O ringan saja) dan BUKAN auto-entry (verdict = konteks, eksekusi tetap discretionary user). Tidak tergantung VPS — kandidat pengisi waktu tunggu aktivasi CepatCloud (belum ada respons per malam ini, patokan: follow-up hari ke-2-3, plan B HF Spaces di hari ke-7).
-
----
-
-## Changelog Session 186 lanjutan malam (2026-07-18) — Plan O (DeepSeek Primary) & Plan R (Pre-Entry Check) DIEKSEKUSI PENUH
-
-**Konteks:** Eksekusi langsung Plan O dan Plan R yang ditulis di entri sebelumnya (Plan P/Q ditunda — Plan P butuh `DERIV_APP_ID` yang harus didaftarkan user sendiri di api.deriv.com, Plan Q terkunci prasyarat VPS belum aktif; user mengonfirmasi lanjut O+R saja sesi ini). Semua langkah diverifikasi live di production (curl langsung ke `financial-feed-app.vercel.app`, bukan cuma unit test), termasuk verifikasi UI browser via Playwright.
-
-### Plan O — Promosi DeepSeek v4-flash ke Primary
-
-1. **O-1 (diagnosa thesis null):** 6/6 sampel `?test_deepseek=1` baru sukses tanpa null (berbeda dari 1/3 gagal di tes S186 pagi). Sebagai mitigasi preventif tetap dilakukan: `maxTokens` Call 3 dinaikkan 800→1200 (kandidat akar: truncation JSON skema 13 field) di `api/market-digest.js`.
-2. **O-2 (buffer timeout):** Timeout Call 1 DeepSeek 25s→30s. `CALL1_HARD_BUDGET_MS`/`call1BudgetLeft()` dipindah ke awal cascade Call 1 supaya bisa menggerbang tier DeepSeek baru DAN cabang Nemotron cron-only — timeout Nemotron cron dibuat ADAPTIF (sisa budget − 3s, floor 15s) supaya tidak dobel-timeout dengan DeepSeek (worst-case lama: 30s+45s=75s bisa membunuh seluruh function sebelum sempat balas; sekarang dijaga tetap di bawah `CALL1_HARD_BUDGET_MS` 48s).
-3. **O-3 (promosi produksi):** DeepSeek v4-flash jadi PRIMARY Call 1/2/3 `market-digest.js` (SambaNova/Cerebras/Gemini/Groq turun jadi fallback berurutan, tidak dihapus). Terverifikasi live: 3/3 generate manual non-test menghasilkan `method: "deepseek-v4-flash"` dengan thesis terisi.
-4. **O-4 (edge case saldo habis):** Dikonfirmasi `aiCall()` melempar HTTP 402 sebagai error status biasa (single fetch, tanpa retry loop) → tertangkap catch di tiap tier → fallback lanjut otomatis, TIDAK hang. Log eksplisit `deepseek:HTTP402_insufficient_balance` ditambahkan di Call 1/2/3.
-5. **O-5 (verifikasi live Ringkasan):** 3/3 generate manual produksi (bukan endpoint diagnostik) via `curl` langsung ke `financial-feed-app.vercel.app/api/market-digest` — semua `method: deepseek-v4-flash`, thesis present. Cron nyata (07:00/14:00/19:30 WIB) akan otomatis memakai jalur yang sama pada jadwal berikutnya.
-6. **O-6 (gate Analisa per Pair):** Diagnostik `?test_deepseek=1` ditambahkan di `ohlcv_analyze` (`api/admin.js`), pola sama dengan `?test_ollama=1`/`?test_hermes=1` — TERISOLASI, hasil tidak ditulis ke cache 6 jam. 3/3 sampel live (XAU/USD, EUR/USD, GBP/JPY) lolos: JSON valid, entry/SL/TP konsisten arah, RR positif, **tidak ada kontaminasi angka antar-pair** (kekhawatiran utama sebelum promosi, per catatan S186 pagi). Gate LOLOS → DIPROMOSIKAN jadi primary produksi. Karena sekarang ada 3 tier AI (DeepSeek+2×SambaNova) yang total timeout fixed aslinya (15+30+25=70s) tembus batas 60s Vercel, timeout 2 tier SambaNova dibuat ADAPTIF terhadap sisa budget (`AI_HARD_BUDGET_MS` 48s), bukan fixed lagi.
-7. **O-7 (dokumentasi):** `daun_merah_ai.md` diperbarui total — diagram chain §3.1 (Call 1/2/3 + catatan HTTP 402), §3.2 (Analisa AI per Pair 3-tier), §3.5 baru (Pre-Entry Check), §4 tabel jatah harian, §2 peta jadi "5 Fitur AI".
-
-**Fix tambahan ditemukan saat kerja (di luar scope asli, diperbaiki karena berada tepat di area kode yang disentuh):** emoji (`⚠`/`✅`/`⬜`) di teks prefill Jurnal (`ckPrefillJurnalAction`, dua salinan duplikat) dihapus sesuai aturan UI tanpa emoji (`CLAUDE.md`). **Catatan untuk sesi depan:** audit emoji cepat (`grep` `⚠|✅|⬜|🔴|🟢|⚡` dkk) menunjukkan emoji MASIH tersebar luas di banyak fitur lain (Ringkasan, Kalender, Sizing, COT, dst — 50+ kemunculan) yang TIDAK disentuh sesi ini karena di luar scope Plan O/R; audit S175 "Pembersihan Total Emoji" ternyata tidak tuntas. Perlu sesi dedicated terpisah kalau mau dituntaskan.
-
-### Plan R — Pre-Entry Check
-
-1. **R-0 (pemetaan):** Investigasi lengkap `index.html` (struktur `PLAYBOOKS`/`PB_REGIME_CHECK`, fungsi `_ckAutoSMC`/`_ckAutoMacro`/`_ckAutoEvent`/`_ckAutoMeanRev`/`ckAutoTickFromAnalisa`) membuktikan cakupan auto-tick existing (audit S166/S179) sudah SANGAT luas — SMC/ICT dan Mean Reversion nyaris maksimal. Gap nyata yang ditemukan (reuse data yang SUDAH ada, bukan sumber baru): `mm_e3` (pola candle, sama seperti trigger `t1` SMC), `mm_r4` (risk ≤1% dari Sizing Calculator, pola sama `r4` SMC ambang lebih ketat), `ed_ev2`/`ed_ev4` (jenis event & forecast tersedia, dari `calData`), `mr_ra3` (tidak ada catalyst besar <24 jam, inverse dari cek `ed_ev1`), `mr_lv3` (level ekstrem bertepatan cluster S/R, reuse `d.sr_levels`). Item genuinely discretionary/behavioral (psikologi, komitmen perilaku) SENGAJA dibiarkan manual.
-2. **R-1 (implementasi):** 6 auto-tick baru di atas diimplementasikan di `index.html`, semua reuse data Redis/OHLCV yang sudah di-fetch (tanpa API call baru).
-3. **R-2 (endpoint verdict):** `api/admin.js` action baru `pre_entry_check` — fact sheet dibangun 100% CLIENT-SIDE (checklist state cuma hidup di localStorage per-device), server TIDAK fetch Redis apa pun untuk fitur ini. DeepSeek v4-flash primary → SambaNova akun-1 fallback, pola sama `ohlcv_critic` (AI Kritikus). Prompt eksplisit melarang AI meragukan item `[FAKTA-*]` (auto-tick), hanya menilai `[MANUAL-KOSONG]` + kontradiksi antar fakta.
-4. **R-3 (UI):** Tombol "Pre-Entry Check" + kartu verdict di `ck-sidebar`, cooldown 90 detik + cache 45 menit per pair (fingerprint = playbook+skor+item tercentang), pola persis `_startCriticCooldown`. Fallback deterministik-only ("penilaian AI tidak tersedia") kalau kedua provider AI gagal.
-5. **R-4 (verifikasi live):** 3 skenario diuji langsung via `curl` ke endpoint: (a) setup kuat, semua fakta selaras → `LAYAK`; (b) setup sengaja jelek/kontra-bias (CB bias konflik, RR<1:2, overleverage, teknikal vs fundamental bertentangan) → `TIDAK_LAYAK` dengan alasan konkret merujuk angka nyata — **bukan yes-man**; (c) setup campuran dengan item manual genuinely kosong → `TIDAK_LAYAK`, AI bahkan menangkap detail halus (CB divergence "Cautious Hawkish vs Neutral" cuma 1 level, bukan 2 level yang disyaratkan). Verifikasi UI browser via Playwright (headless Chromium, `chromium-cli` tidak tersedia di environment ini — pakai `playwright` npm package langsung): tombol muncul benar di tab CHECKLIST, klik memicu loading state lalu kartu verdict ter-render bersih (skor, badge verdict, failed items, disclaimer "bukan sinyal eksekusi"), cooldown countdown jalan. `npm test` 334/334 hijau di setiap tahap.
-
-**Bug ditemukan & diperbaiki saat verifikasi UI (di luar scope, pre-existing sejak commit `9500c3b` 2026-07-15):** `updateThemeIcon()` melempar `ReferenceError: currentView is not defined` setiap toggle theme — variabel yang benar adalah `activeView` (global, baris 4377). Confirmed via Playwright: console error hilang total setelah fix di-deploy.
-
-### Versi & Deploy
-- `APP_VERSION` dinaikkan `2026.07.18.2` → `2026.07.18.3`.
-- 3 commit terpisah di-push ke `main` (Vercel auto-deploy per commit): (1) kode Plan O Call1/2/3 + Plan R lengkap + fix emoji jurnal, (2) promosi O-6 setelah gate lolos, (3) fix bug `currentView`. Semua diverifikasi live di production URL setelah tiap deploy, bukan cuma preview.
-
-### Ditunda saat itu (bukan bagian entri di atas):
-- **Plan P** (Deriv primary candle FX) — butuh `DERIV_APP_ID`, pendaftaran akun oleh user di api.deriv.com belum dilakukan.
-- **Plan Q** (daemon VPS) — prasyarat keras VPS CepatCloud belum aktif, TIDAK bisa dimulai (sesuai catatan plan sendiri).
-
----
-
-## Changelog Session 186 lanjutan malam 2 (2026-07-18) — Plan P (Deriv Primary Candle FX) DIEKSEKUSI, Temuan Migrasi API Deriv
-
-**Konteks:** Lanjutan langsung setelah entri di atas — user mendaftarkan `app_id` di Deriv untuk Plan P. Proses pendaftaran ternyata jauh lebih rumit dari perkiraan riset S186 pagi karena Deriv sedang migrasi platform developer.
-
-### Temuan kunci — dua sistem developer Deriv tidak saling kompatibel:
-Deriv sekarang punya **dua portal developer terpisah**: portal BARU (`developers.deriv.com`, ada fitur "AI Hub"/"App builder Beta") dan sistem LAMA (`api.deriv.com` — sekarang redirect otomatis ke `legacy-api.deriv.com`, eksplisit dilabeli "Legacy"). User mendaftarkan aplikasi "Daun Merah" di portal BARU, dapat `app_id` alfanumerik (`33RyBFgARobk7a2y4UuUc`) — **diverifikasi live TIDAK KOMPATIBEL** dengan endpoint `wss://ws.derivws.com` yang jadi basis riset S186 pagi: server balas `{"error":"InvalidAppID"}` secara konsisten di 3 titik server berbeda (ws/green/blue.derivws.com), sementara app_id publik `1089` (kontrol) tetap berfungsi normal di endpoint yang sama. Ditelusuri lebih jauh: semua jalur "API developer" dari akun Deriv user (termasuk menu "Partnership programme" di dashboard utama) mengarah balik ke portal baru — jalur self-service untuk app_id gaya lama yang kompatibel dengan `ws.derivws.com` **tidak ditemukan** dalam sesi ini. Kemungkinan perlu kontak `api-support@deriv.com` langsung atau proses "Partner" terpisah.
-
-**Keputusan:** eksekusi Plan P TETAP JALAN memakai app_id publik `1089` sebagai solusi interim (gratis, terverifikasi live, tanpa akun) — sesuai instruksi user "kerjakan yang bisa dikerjakan dulu". Risiko didokumentasikan eksplisit di kode & `daun_merah_vendor.md` §4: rate limit dibagi semua developer dunia, Deriv bisa membatasi/mematikan `1089` sepihak kapan saja karena bukan untuk trafik produksi. Ganti via env var `DERIV_APP_ID` begitu dapat app_id dedicated yang kompatibel — **tidak perlu ubah kode apa pun**.
-
-### Implementasi:
-1. **P-1:** Runtime Node 24.x dikonfirmasi di Vercel (dari project settings) — di atas syarat ≥22 untuk WebSocket native, tidak perlu dependency `ws`.
-2. **P-2:** `fetchDerivCandles(yahooSymbol, interval, count)` baru di `api/_ohlcv_fetch.js` — WebSocket ke `wss://ws.derivws.com`, timeout 8s, normalisasi ke shape `{t,o,h,l,c,v}` identik Yahoo/Twelve Data (`v:0`, Deriv tanpa volume). Map `YAHOO_TO_DERIV_SYMBOL` untuk 14 pair FX (pola persis `YAHOO_TO_TWELVEDATA_SYMBOL`) — `GC=F` SENGAJA tidak dipetakan (futures vs spot, volume dipakai analisis).
-3. **P-3:** Terintegrasi ke 2 jalur pemanggil: `refreshOhlcvFromYahoo` (on-demand, Deriv dicoba paralel untuk 1h+1d SATU pair) dan `ohlcvSyncHandler` (cron, Deriv dicoba **SEKUENSIAL** — bukan 14 pair paralel — sesuai edge case rate limit Plan P, dengan budget guard 20s supaya kalau Deriv down total tidak menghabiskan seluruh jatah waktu function sebelum sempat fallback ke Yahoo). Aturan satu-array-satu-sumber dijaga di kedua jalur.
-4. **P-4 (verifikasi live):** Trigger `?action=ohlcv_read` untuk 7 pair FX tetap (`OHLCV_FIXED_PAIRS`) di production — SEMUA menunjukkan `source: "deriv"` di `?action=ohlcv_dashboard`, XAU/USD tetap `"yahoo"` (scope terjaga). Perbandingan harga close Deriv vs Yahoo langsung: EUR/USD selisih ~4,6 pip, GBP/USD ~6,2 pip, AUD/USD ~0,2 pip — semua dalam toleransi wajar broker berbeda.
-5. **P-5 (uji fallback):** Diverifikasi dengan memanggil `fetchDerivCandles()` langsung memakai `app_id` salah (`99999999`) secara terisolasi (bukan ubah env var production) — melempar Error bersih (`InvalidAppID`) yang tertangkap try/catch fallback, pola identik dengan jalur `GC=F` yang sudah lama berjalan aman di production. `npm test` 334/334 hijau.
-6. **P-6 (dokumentasi):** `daun_merah_vendor.md` §4 — entri Deriv API baru + update entri Twelve Data (temuan tambahan: `TWELVEDATA_API_KEY` masih belum di-set di Vercel production sama sekali — action item lama masih terbuka; `.env.local` sempat punya key salah nama `TWELVE_DATA_API_KEY` yang tidak akan pernah terbaca kode).
-
-**Verifikasi:** 334/334 unit test; live production via `curl` langsung (bukan preview) untuk semua 7 pair FX tetap + perbandingan harga 3 pair vs Yahoo.
-
-### Ditunda (belum bagian sesi ini):
-- **Plan Q** (daemon VPS) — masih terkunci prasyarat: VPS CepatCloud belum aktif DAN baru boleh mulai setelah Plan P (sudah selesai sekarang, jadi tinggal menunggu VPS aktif).
-
----
-
-## Changelog Session 187 (2026-07-18) — Plan Q-1: Pivot ke Render Free Tier, Kode Heartbeat Selesai & Live-Verified
-
-**Konteks:** Melanjutkan Plan Q setelah Plan P selesai (entri sebelumnya). VPS CepatCloud user masih belum aktif — ditanya langsung, user memilih pivot ke **Plan B: Render free tier** (kandidat kedua yang sudah tercatat di `daun_merah_plan.md`) daripada menunggu lebih lama.
-
-### Kode:
-1. **`vps/heartbeat.js`** (BARU) — daemon Node tunggal: tiap 60 detik `SET vps:heartbeat <epoch> EX 300` ke Upstash Redis via REST API, TANPA token AI/Deriv/Telegram apa pun (kalau host gratis kompromi, tidak ada kunci berbayar ikut bocor). Karena Render free tier adalah Web Service (bukan background worker polos), proses juga membuka HTTP server minimal (`node:http`, tanpa dependency) di `$PORT` yang membalas status JSON — dipakai ganda sebagai target health check Render DAN target pinger `cron-job.org`.
-2. **`vps/package.json`** + **`vps/Dockerfile`** (BARU) — image `node:22-alpine` (selaras versi Node GH Actions lain di repo), tanpa dependency eksternal.
-3. **`vps/README-deploy.md`** (BARU) — langkah deploy Render (Root Directory `vps`, runtime Docker, env `UPSTASH_REDIS_REST_URL`/`UPSTASH_REDIS_REST_TOKEN` saja) + setup pinger `cron-job.org` tiap 10 menit melawan spin-down 15 menit + kriteria gate Q-1. **Tidak ada langkah SSH** — beda dari asumsi awal plan (VPS tradisional), Render sepenuhnya Git + dashboard.
-4. **`api/admin.js`** — probe baru `vps_heartbeat` di `action=health` (mengikuti pola `PROBES`/`SOURCE_CACHE_KEYS` yang sudah ada, bukan endpoint terpisah — hemat jatah 12/12 function Vercel Hobby): `GET vps:heartbeat`, DOWN kalau key tidak ada atau umur >5 menit, detail `age_seconds` kalau OK. Otomatis dapat alert Telegram existing (`toAlert`/`HEALTH_ALERT_THRESHOLD` 2 jam) dan `down_since_mins` di response JSON untuk memantau gap harian. Key didaftarkan di `KEY_REGISTRY` (`redis-keys` handler) untuk konsistensi dokumentasi internal.
-
-### Verifikasi (live, bukan hanya unit test — pelajaran S154/S180):
-- `npm test`: **334/334 hijau**.
-- `heartbeat.js` dijalankan lokal melawan Upstash Redis PRODUCTION sungguhan (bukan mock): `SET vps:heartbeat` sukses, `GET` balik epoch benar, `TTL` terkonfirmasi 297s (dekat `EX 300`), endpoint HTTP `:PORT/` melaporkan `last_beat_epoch` yang sama. Logika `age_seconds` di `probeVpsHeartbeat` (`admin.js`) diverifikasi terpisah menghasilkan angka identik dengan kalkulasi manual atas data live yang sama. Key test dihapus (`DEL`) setelah verifikasi, proses lokal dihentikan — tidak ada proses/queue tersisa.
-
-**Bug ditemukan & diperbaiki saat evaluasi mandiri (sebelum sempat live di production):** `probeVpsHeartbeat` awalnya throw DOWN kapan pun `vps:heartbeat` tidak ada — termasuk kondisi normal "Render belum pernah di-deploy", yang berarti alert Telegram akan spam terus-menerus tiap kali pinger eksternal memanggil `admin?action=health`, dari detik commit ini live sampai user sempat deploy manual. Fix: marker permanen baru `vps:heartbeat:configured` (SET sekali oleh `heartbeat.js` saat beat pertama, tanpa TTL) membedakan "belum pernah deploy" (status `UNCONFIGURED`, diam — pola sama `probeFred` saat `FRED_API_KEY` kosong) dari "sempat aktif, sekarang mati" (DOWN asli, alert). Ketiga state (`UNCONFIGURED`/`OK`/`DOWN` pasca-mati) diverifikasi live terhadap Upstash Redis production.
-
-### Status Q-1 — BELUM SELESAI (menunggu aksi user):
-Kode siap, tapi gate Q-1 ("tidak ada gap heartbeat >5 menit selama minimal 7 hari berturut") baru bisa mulai berjalan setelah **user** (1) push branch ini agar Render bisa connect ke GitHub, (2) deploy service di dashboard Render mengikuti `vps/README-deploy.md`, (3) pasang pinger `cron-job.org`. Tidak ada langkah ini yang bisa dieksekusi dari sisi kode — perlu akun pihak ketiga milik user. Setelah deploy, pantau via `GET /api/admin?action=health` (header `x-admin-secret`) source `vps_heartbeat` selama 7-14 hari sebelum lanjut Q-2 (streaming).
-
-### Versi:
-Perubahan API-only (`admin.js`) + folder baru `vps/` yang tidak disentuh `index.html`/`sw.js` — sesuai aturan plan, **`?v=` TIDAK dinaikkan**.
-- Mendapatkan `app_id` Deriv dedicated yang kompatibel dengan `ws.derivws.com` — perlu tindak lanjut user (kontak `api-support@deriv.com` atau proses Partner), TIDAK memblokir Plan P (sudah jalan pakai `1089`).
-
----
-
-## Changelog Session 187 lanjutan (2026-07-18) — Plan Q-1: Render & Oracle GAGAL Verifikasi Kartu, Pivot ke Railway
-
-**Konteks:** User mulai deploy manual ke Render mengikuti `vps/README-deploy.md` dari entri sebelumnya. Ditemukan dua masalah berurutan yang mengoreksi asumsi plan.
-
-### Temuan 1 — Render TETAP minta kartu (klaim "tanpa kartu" di dokumentasi resmi terbukti tidak berlaku untuk akun user):
-User sempat salah pilih tipe service (**Private Service**, `dashboard.render.com/pserv/new`) yang memang tidak punya tier Free sama sekali (mulai $7/bulan) — dikoreksi ke **Web Service** (`dashboard.render.com/web/new`) yang benar punya opsi Free $0/bulan. Tapi begitu lanjut ke step deploy, muncul modal **Add Card** yang mewajibkan kartu untuk hold verifikasi $1 USD (dikonfirmasi lewat screenshot langsung — form Stripe eksplisit menyebut "To verify your card, Render will perform a temporary authorization for $1 USD"). Ini bertentangan dengan riset awal S186 ("Render free tier ... tanpa kartu") dan bahkan dengan dokumentasi resmi Render yang diverifikasi ulang hari ini (`render.com/pricing` bilang tidak perlu kartu) — kemungkinan kebijakan anti-fraud khusus akun/region tertentu. **Kartu debit BNI user DITOLAK** di titik verifikasi ini.
-
-### Temuan 2 — Oracle Always Free juga gagal dengan kartu yang sama:
-User mencoba Oracle Always Free sebagai alternatif (kandidat berikutnya di urutan plan) — kartu BNI yang SAMA ditolak juga di sana. Karena gagal konsisten di 2 platform independen, disimpulkan akar masalah kemungkinan besar di kartu/bank (transaksi luar negeri BNI belum aktif, atau kartu GPN-only tanpa jaringan Visa/Mastercard) — bukan bug platform. Menelusuri ini butuh kontak BNI terpisah dan TIDAK dijadikan blocker Plan Q lebih lama.
-
-### Keputusan — pivot ke Railway:
-Dicek live ke `docs.railway.com` (free-trial & FAQ): signup Railway **tidak minta kartu sama sekali**. Trade-off yang disadari dan didokumentasikan eksplisit (beda dari Render): Railway bukan "jam gratis" tapi **kredit terpakai** — trial $5 sekali habis 30 hari, lanjut Free plan $1 kredit/bulan (tidak akumulasi), kalau kredit habis service **berhenti otomatis** (bukan minta kartu paksa). Karena Railway tidak publikasikan tarif per-resource, estimasi biaya `heartbeat.js` (proses sangat ringan) di bawah $1/bulan adalah ASUMSI yang perlu dikonfirmasi dari data Usage riil selama masa uji — bukan dianggap pasti aman.
-
-### Kode disesuaikan jadi platform-agnostic:
-- **`vps/heartbeat.js`**: HTTP server sekarang eksplisit bind ke `0.0.0.0` (syarat Railway — dikonfirmasi dari `docs.railway.com/guides/fixing-common-errors`, tanpa ini request Railway Edge Proxy gagal 502). Tetap baca `$PORT` dari env, jadi kode yang sama persis bisa dipakai di Render/platform lain kapan pun blocker kartu di atas selesai ditelusuri — tidak perlu ubah kode, cuma pindah platform deploy.
-- **`vps/README-deploy.md`**: ditulis ulang total — riwayat percobaan Render/Oracle didokumentasikan sebagai referensi (supaya sesi depan tidak mengulang dari nol), langkah deploy Railway lengkap (Root Directory `vps`, Generate Domain manual — beda dari Render yang otomatis expose, Variables, pinger cron-job.org), plus catatan eksplisit soal pantau Usage Railway supaya gap akibat kredit habis tidak disalahartikan sebagai gagal infra saat membaca gate Q-1.
-- **`daun_merah_plan.md`** §Plan Q: status & urutan kandidat diperbarui (CepatCloud → ~~Render~~ GAGAL kartu → ~~Oracle~~ GAGAL kartu → **Railway SEDANG DICOBA**), termasuk kandidat yang sudah lama didaftar tapi belum sempat ditulis alasan tolaknya (Zeabur — risiko kredit habis sama seperti Railway tanpa keunggulan lain, Glitch — ToS melarang pinger 24/7).
-
-### Verifikasi:
-- `npm test`: **334/334 hijau**.
-- `heartbeat.js` dijalankan ulang lokal setelah perubahan bind `0.0.0.0` — HTTP server terkonfirmasi listening & reachable (`0.0.0.0:PORT`), beat baru sukses tertulis ke Upstash Redis production (bukan mock). Key test dihapus setelah verifikasi.
-
-### Status Q-1 — MASIH BELUM SELESAI (menunggu aksi user):
-Deploy ke Railway (ikuti `vps/README-deploy.md` versi baru) + pasang pinger cron-job.org + jalani gate uptime 7-14 hari, sambil pantau Usage Railway. Tidak ada bagian ini yang bisa dieksekusi dari sisi kode.
-
----
-
-## Changelog Session 187 lanjutan 2 (2026-07-18) — Plan Q-1: Deploy Railway Berhasil, Koreksi Pinger Tidak Diperlukan
-
-**Konteks:** User eksekusi deploy manual ke Railway mengikuti `vps/README-deploy.md`. Build pertama gagal (Railway coba build dari root repo, bukan folder `vps/`, karena Root Directory belum diisi — persis dugaan awal, dikonfirmasi oleh fitur auto-diagnosis Railway sendiri "Set the root directory to 'vps'..."). Setelah Root Directory diisi `/vps` + 2 env var Redis ditambahkan di tab Variables, deploy sukses. Domain publik ter-generate: `daunmerahterminal-production.up.railway.app`, verifikasi manual browser mengembalikan `last_beat_epoch` terisi (heartbeat sudah menulis ke Redis).
-
-**Godaan yang DITOLAK:** Vercel Marketplace menawarkan integrasi resmi "Add Integration" untuk Railway yang minta izin luas ("managing deployments or managing environment variables" ke seluruh project Vercel). User sempat menemukan halaman ini tapi BELUM mengklik — dikonfirmasi ke user untuk TIDAK diklik, karena bertentangan langsung dengan prinsip keamanan Plan Q (host eksternal cuma boleh pegang token Redis+Telegram+Deriv, bukan akses ke semua secret Vercel termasuk kunci AI berbayar). Env var Redis tetap diisi manual copy-paste, bukan lewat integrasi.
-
-**Koreksi dokumentasi — pinger cron-job.org TERNYATA TIDAK diperlukan untuk Railway:** Entri sebelumnya (S187 lanjutan) masih mewarisi asumsi dari Render bahwa pinger wajib melawan spin-down. Dicek live ke `docs.railway.com/reference/app-sleeping`: fitur sleep Railway ("Serverless") bersifat **opt-in** (tidak nyala otomatis untuk service baru) dan pemicunya beda dari Render — Railway melihat **outbound traffic** (bukan inbound/request masuk), sleep baru terjadi kalau tidak ada outbound packet >10 menit. `heartbeat.js` sendiri sudah mengirim outbound request ke Upstash tiap 60 detik, jauh di bawah ambang itu — daemon mencegah dirinya sendiri tertidur tanpa bantuan eksternal apa pun. `vps/README-deploy.md` §2 ditulis ulang: pinger dihapus dari langkah wajib, diganti catatan cek manual toggle "Serverless" harus OFF. Ini koreksi murni dokumentasi (bukan bug kode) yang ditemukan SEBELUM sempat jadi masalah nyata di gate Q-1.
-
-### Status Q-1 — MASIH BERJALAN (gate 7-14 hari baru mulai):
-Service Railway sudah live & menulis heartbeat. Yang tersisa: biarkan berjalan 7-14 hari, pantau `admin?action=health` source `vps_heartbeat` + Usage Railway sesekali. Belum ada gap tercatat sejak deploy sukses hari ini.
-
----
-
-## Changelog Session 241 (2026-07-24) — Fix Kebocoran Credit ScraperAPI: CME FedWatch/ZQ/Quote Dihapus dari `rate-path.js`
-
-**Konteks:** User minta cek dashboard ScraperAPI setelah curiga usage tinggi. Audit live (`api/account` ScraperAPI) menemukan **791/1000 credit terpakai di hari ke-19 dari siklus billing 30 hari** — jauh di atas proyeksi lama (~120-180/bulan, tercatat Session 47) yang ternyata sudah basi.
-
-**Root cause ditemukan via probe langsung** (fetch semua 4 endpoint CME lewat proxy ScraperAPI yang sama persis dipakai produksi): FedWatch V1, FedWatch V2, ZQ Settlement, dan Quote API **semua balik 404 terstruktur** (`"No endpoint GET /CmeWS/mvc/..."`) — bukan diblokir Akamai (beda dari CVOL yang masih jalan normal), tapi seluruh keluarga hidden API `CmeWS/mvc/*` sudah **dipensiunkan CME**. Dikonfirmasi silang lewat dokumentasi resmi CME: FedWatch sekarang cuma tersedia sebagai web tool gratis (tanpa API) atau produk API berbayar (EOD/Intraday, mulai ~$25/bulan). Karena `cmeFetch()` di `rate-path.js` me-routing SEMUA percobaan lewat proxy berbayar dan fallback chain-nya berlapis 4 (FedWatch V1→V2→ZQ→Quote), **setiap cache-miss (tiap 4 jam) membakar 4 credit sekaligus untuk request yang pasti gagal** — ~24 credit/hari terbuang murni, cukup untuk jelasin sebagian besar selisih dari proyeksi lama.
-
-**Upaya cari alternatif gratis (sebelum diputuskan dihapus):**
-- Endpoint pengganti gratis untuk FedWatch tool: NIHIL. Halaman web tool CME (`cme-fedwatch-tool.html`) adalah SPA client-rendered, fetch statis (tanpa `render=true`, hemat credit) tidak menemukan endpoint API ter-embed — untuk menemukan endpoint asli butuh JS-render (mahal, dan kemungkinan CME akan tutup itu juga mengingat mereka baru saja memformalkan FedWatch jadi produk berbayar).
-- CentralBank.watch (situs pihak ketiga, klaim replikasi FedWatch dari data futures gratis): tidak ada API publik, halaman probabilitas per-meeting tidak ter-populate saat dicek.
-- **Polymarket** (sudah terintegrasi gratis di `api/admin.js?action=polymarket`, dipakai `market-digest.js` untuk blok "PREDICTION MARKETS" di prompt AI Ringkasan): TERNYATA sudah menyediakan sinyal Fed-rate-probability real dari pasar prediksi asli (market "Fed decision in [month]" per FOMC meeting), tapi ini sinyal terpisah/general macro-scan (top 200 market by volume, keyword-scored) — TIDAK menggantikan struktur `cumulative_3m_bps/6m_bps` yang dipakai `ratePathBlock`, jadi bukan pengganti satu-ke-satu.
-
-**Keputusan (instruksi eksplisit user — "kalau masih nihil langsung hapus"):** 3 langkah CME mati (FedWatch, ZQ Settlement, Quote API) dihapus total dari `api/rate-path.js`, termasuk fungsi `fetchCMEFedWatch`, `fetchCMEZQData`, `fetchCMEQuoteZQ`, `cmeFetch`, `CME_HEADERS`, 4 URL constant, `lastBusinessDay()`, dan `_aggregateFedwatchProbs` (jadi dead code karena satu-satunya pemanggilnya hilang — tes terkait di `test/feeds/vendor_squeeze.test.js` ikut dihapus). Fallback chain sekarang: **FRED T-bill term structure → heuristik** (2 langkah, keduanya gratis, tanpa ScraperAPI sama sekali). CVOL (`correlations.js`, konsumen ScraperAPI lain) TIDAK disentuh — dites terpisah dan cache-nya terkonfirmasi normal.
-
-**Kerugian dari sisi kita (assessment eksplisit diminta user):**
-1. **Tidak ada penurunan kualitas data hari ini** — output `rate-path.js` SUDAH jatuh ke heuristik sejak endpoint CME mati (mungkin sudah beberapa waktu sebelum ketahuan), jadi menghapus kode mati tidak mengubah apa yang user lihat sekarang.
-2. **Ada gap presisi vs CME asli (kalau CME masih hidup)**: heuristik FRED cuma estimasi kasar (rule distance-from-neutral-rate), bukan probabilitas pasar riil dari harga futures — tapi gap ini sudah ada sejak CME mati, bukan diperparah oleh penghapusan kode.
-3. **Kehilangan kemampuan auto-recovery**: kalau CME suatu saat membuka lagi endpoint gratis (kecil kemungkinan, mengingat mereka baru memformalkan jadi produk berbayar), kode tidak akan otomatis coba lagi — perlu ditambahkan manual.
-4. **Yang didapat sebagai ganti**: ~24 credit/hari (~700+/bulan) ScraperAPI diselamatkan, sisa budget lebih aman untuk CVOL yang justru masih berfungsi; latensi `rate-path.js` juga lebih cepat (tidak lagi menunggu 4 request proxy gagal berurutan sebelum sampai ke FRED).
-
-**Verifikasi:** `npm test` — 625/625 hijau (turun dari sebelumnya karena 5 test FedWatch dihapus bersama fungsinya, bukan regresi). `node -e "require('./api/rate-path.js')"` — modul load bersih tanpa reference error ke fungsi yang sudah dihapus.
-
-**Belum di-deploy** — perubahan ini baru di working tree lokal, menunggu konfirmasi user untuk commit + push.

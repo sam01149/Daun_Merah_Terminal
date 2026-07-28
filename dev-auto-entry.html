@@ -106,6 +106,8 @@ tr:hover td{background:rgba(var(--fg-rgb),.02);}
       <div class="sub">Plan U — Eksperimen Paper-Trading (developer-only)</div>
     </div>
     <div class="secret-status">
+      <span class="dot" id="notifDot"></span>
+      <button id="btnNotifToggle">Notif TP/SL: off</button>
       <span class="dot" id="secretDot"></span>
       <span id="secretLabel">belum login</span>
       <button id="btnChangeSecret">ganti secret</button>
@@ -281,6 +283,70 @@ tr:hover td{background:rgba(var(--fg-rgb),.02);}
   function setSecret(v){ if (v) localStorage.setItem(SECRET_LS, v); else localStorage.removeItem(SECRET_LS); }
   function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
   function fmtTs(t){ if (!t) return '—'; try { return new Date(t).toLocaleString('id-ID', { hour12:false }); } catch(e){ return String(t); } }
+
+  // Q-7 (2026-07-28): notifikasi push TP/SL setup_log_auto:v1 — subscription
+  // TERPISAH dari push berita index.html (endpoint push_subscribe_dev, hash
+  // Redis push_subs_dev, lihat api/admin.js). Sengaja pakai VAPID public key
+  // YANG SAMA dengan index.html (satu pasang kunci untuk seluruh app), tapi
+  // endpoint subscribe & penyimpanan sisi server 100% terpisah dari push_subs
+  // publik — supaya alert eksperimen ini tidak numpang subscriber berita biasa.
+  const VAPID_PUBLIC_KEY = 'BOL8h0Ial1AMKNRmKeZxgQ69Fsj-Q87Sg-K-Odit2F7fvuSdlYc9tZiUFjQyGagBTS0n1fLxALBKX7TlhZgarRA';
+  function urlBase64ToUint8Array(base64String) {
+    const padding = '='.repeat((4 - base64String.length % 4) % 4);
+    const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+    const raw = atob(base64);
+    return Uint8Array.from([...raw].map(c => c.charCodeAt(0)));
+  }
+  const NOTIF_LS = 'dm_dev_notif_subscribed';
+  function refreshNotifStatus(on){
+    document.getElementById('notifDot').className = 'dot ' + (on ? 'ok' : 'bad');
+    document.getElementById('btnNotifToggle').textContent = 'Notif TP/SL: ' + (on ? 'on' : 'off');
+  }
+  async function enableNotif(){
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) { alert('Browser ini tidak mendukung push notification.'); return; }
+    try {
+      const reg = await navigator.serviceWorker.register('./sw.js');
+      await navigator.serviceWorker.ready;
+      let sub = await reg.pushManager.getSubscription();
+      if (!sub) {
+        sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY) });
+      }
+      const r = await fetch('/api/admin?action=push_subscribe_dev', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-admin-secret': getSecret() },
+        body: JSON.stringify({ subscription: sub.toJSON() }),
+      });
+      if (!r.ok) throw new Error('Server tolak subscription: HTTP ' + r.status);
+      localStorage.setItem(NOTIF_LS, '1');
+      refreshNotifStatus(true);
+    } catch(e) {
+      console.warn('enableNotif gagal:', e.message);
+      alert('Gagal aktifkan notifikasi: ' + e.message);
+    }
+  }
+  async function disableNotif(){
+    try {
+      if ('serviceWorker' in navigator && 'PushManager' in window) {
+        const reg = await navigator.serviceWorker.getRegistration();
+        const sub = reg && await reg.pushManager.getSubscription();
+        if (sub) {
+          await fetch('/api/admin?action=push_subscribe_dev', {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json', 'x-admin-secret': getSecret() },
+            body: JSON.stringify({ endpoint: sub.endpoint }),
+          }).catch(() => {});
+          await sub.unsubscribe();
+        }
+      }
+    } catch(e) { console.warn('disableNotif gagal:', e.message); }
+    localStorage.removeItem(NOTIF_LS);
+    refreshNotifStatus(false);
+  }
+  document.getElementById('btnNotifToggle').addEventListener('click', () => {
+    const on = localStorage.getItem(NOTIF_LS) === '1';
+    if (on) disableNotif(); else enableNotif();
+  });
+  refreshNotifStatus(localStorage.getItem(NOTIF_LS) === '1');
 
   async function api(action, { method = 'GET', query = {}, body = null, silent = false } = {}) {
     const qs = new URLSearchParams({ action, ...query }).toString();
