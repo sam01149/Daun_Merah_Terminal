@@ -11,11 +11,23 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-07-27 (Session 248 — Koreksi Data Race Condition GC=F Tumpang Tindih)
+> **Last updated:** 2026-07-28 (Session 249 — Diagnosis Risk Reversal 25D Kosong: Outage TLS ScraperAPI)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 249 (2026-07-28) — Diagnosis Risk Reversal 25D Kosong: Outage TLS ScraperAPI
+
+**Konteks:** User tanya lokasi indikator skew/call-put di app (jawaban: card "INDIKATOR — RSI/SMA/MACD/ATR/RR" di tab Analisa, baris RISK REVERSAL 25D). Screenshot user (XAU/USD) tidak menampilkan baris RR sama sekali — dicek langsung endpoint live, `action=risk-reversal` balikin `{"available":false,"reason":"ScraperAPI active but CME CVOL returned no parseable data."}` untuk SEMUA pair, bukan cuma XAU/USD.
+
+**Diagnosis:** Pesan error generik tidak cukup, dan tidak ada akses ke Vercel function logs dari CLI tanpa setup tambahan. `api/correlations.js` di-instrumentasi 2 iterasi (commit `53ada32`, `93dc285`): (1) baca body sebagai text dulu sebelum `JSON.parse` supaya body non-JSON ikut ke pesan error, (2) bungkus `fetch()` sendiri supaya `error.cause` (kode error Node/undici level TLS/DNS) ikut tertangkap — keduanya dikirim balik lewat field baru `debug` di response `available:false`. Deploy via `git push`, dites langsung ke endpoint live.
+
+**Root cause:** `debug: "CME CVOL batch fetch threw: TypeError: fetch failed (cause: CERT_HAS_EXPIRED)"` — sertifikat TLS `api.scraperapi.com` expired (`notAfter=Jul 28 00:42:41 2026 GMT`, dikonfirmasi `openssl s_client -connect api.scraperapi.com:443`). **Outage murni di sisi vendor ScraperAPI**, bukan CME ubah format response (dicek juga: raw response CME `/services/cvol` via jalur baca lain masih format identik/valid, field `skew`/`upvarMetric`/`dnvarMetric` dst semua ada) dan bukan soal kuota/billing. Detail lengkap: [daun_merah_vendor.md](daun_merah_vendor.md).
+
+**Perbaikan:** Tidak ada mitigasi di sisi kode — TLS cert expired vendor lain WAJIB ditunggu sampai mereka perbarui sendiri (mem-nonaktifkan verifikasi TLS demi "fix cepat" DILARANG, itu lubang keamanan MITM). Field `debug` di response DIPERTAHANKAN permanen (bukan dicabut lagi setelah insiden selesai) — cost 0 (cuma echo pesan error/snippet response publik CME, tidak ada secret), manfaatnya diagnosis insiden serupa ke depan tidak perlu ulang proses debugging manual dari nol.
+
+**Verifikasi:** `npm test` 613/613 hijau tiap commit. Endpoint live dites ulang pasca tiap deploy (`curl` ke `financial-feed-app.vercel.app/api/correlations?action=risk-reversal`) sampai dapat pesan `debug` yang actionable. Tidak ada perubahan UI (`index.html` tidak disentuh, tidak perlu bump `?v=`) — murni observability API.
 
 ## Changelog Session 248 (2026-07-27) — Koreksi Data Race Condition GC=F Tumpang Tindih
 
