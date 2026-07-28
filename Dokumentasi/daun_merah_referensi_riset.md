@@ -150,6 +150,39 @@ Pencarian literatur akademik (bukan blog trading) untuk "retail positioning ekst
 
 **Implikasi untuk Daun Merah:** kalau ke-4 gate dari audit (`daun_merah_progress.md` — audit celah kesalahan trader) jadi dieksekusi, benang merah dari SEMUA topik adalah sama: **pilih ambang dinamis/adaptif, hindari cutoff statis/biner** — bukan batalkan gate-nya. Belum diputuskan eksekusi kode apa pun; nunggu keputusan user pasca-riset ini.
 
+## 11. Noise vs sinyal dari stacking 4 gate audit-guard existing (relevan: `api/_auto_entry_guard.js`, sudah LIVE sejak commit `f2ae9f0`/`062fc16`/`ade1b61`, 2026-07-28)
+
+Riset lanjutan atas §10 — TUJUANNYA BUKAN cari gate baru, tapi cek apakah menumpuk Gate A (AI Kritikus) + B (drawdown circuit breaker) + C (regime confidence bar) + D (correlation cap) sekaligus berisiko jadi over-filtering/noise (mengeblok setup yang sebenarnya profitable) dibanding manfaat nyata.
+
+| Paper | Tipe | Temuan inti |
+|---|---|---|
+| White (2000), *Econometrica* 68(5), "A Reality Check for Data Snooping" | Constraint | Menguji banyak aturan/kondisi pada data yang sama membuat performa "terbaik" yang ditemukan rentan bias seleksi (data snooping) — perlu test formal (Reality Check/bootstrap), bukan asumsi bahwa aturan yang lolos backtest otomatis genuinely superior. |
+| Bajgrowicz & Scaillet (2012), *Journal of Financial Economics* 106(3), 473-491, "Technical Trading Revisited: False Discoveries, Persistence Tests, and Transaction Costs" | Constraint | Dari 7.846 aturan trading di DJIA 1897-2011: false discovery rate test menyaring lebih ketat dari metode lama, TAPI bahkan aturan yang lolos persistence test tidak bisa dipilih ex-ante sebagai pemenang masa depan, dan performa in-sample sekalipun HABIS oleh biaya transaksi kecil sekalipun. |
+
+**Verdict jujur, bukan dipaksakan:** TIDAK ditemukan paper yang langsung menguji "stacking N filter risiko independen yang masing-masing sudah bukti-basis (bukan hasil data-mining) menyebabkan over-filtering di sistem trading real" — pola yang sama seperti §7 (retail positioning): literatur akademik finance banyak bicara soal bahaya MENAMBAH/MENGOPTIMASI aturan cari sinyal terbaik (data snooping, disitasi di atas), bukan soal MENUMPUK kontrol risiko yang tiap komponennya sudah divalidasi terpisah dari literatur berbeda (Subrahmanyam 1994, Moreira & Muir 2017, Zhao-Ledoit-Jiang 2023 — lihat §10). Dua hal ini secara konsep berbeda: data-snooping soal mencari-cari SINYAL entry terbaik dari banyak kombinasi; ke-4 gate Daun Merah adalah FILTER PENOLAK yang sudah pre-registered sebelum data dikumpulkan, bukan hasil pencarian kombinasi terbaik.
+
+**Implikasi untuk Daun Merah:** karena tidak ada dasar akademis langsung untuk mengklaim ke-4 gate ini "terlalu banyak" ATAU "aman ditumpuk", **jangan tambah/kurangi gate berdasar riset ini** — pertanyaan "apakah gate ini terlalu sering menahan setup yang sebenarnya TP" adalah pertanyaan EMPIRIS, dan instrumentasinya SUDAH ADA: counter `auto_guard_stats:*` (commit `062fc16`) mencatat frekuensi tiap gate nyala. Yang belum ada — dan SENGAJA belum dibuat karena "lebih besar dari pencatatan ringan yang diminta" (catatan commit `062fc16` sendiri) — adalah pola counterfactual (`_evaluateCanceledGhost`-style) untuk tahu apakah setup yang digagalkan gate itu SEBENARNYA akan TP atau SL kalau tetap dieksekusi. Itu satu-satunya cara valid menjawab noise-vs-sinyal di sini, bukan riset literatur tambahan — cek berkala `setup_stats`/`auto_guard_stats` begitu sampel cukup, bukan sebelum itu.
+
+---
+
+## 12. Mempercepat proses riset kami sendiri (Scopus AI + verifikasi) tanpa mengorbankan rigor (relevan: metodologi file ini sendiri, §"Cara pakai file ini" di bawah)
+
+Dipicu permintaan user 2026-07-28: cari cara mempercepat riset TANPA merusak kualitas (atau kalau bisa meningkatkan) — kalau tidak ada, tidak apa. Ada temuan konkret dan relevan langsung ke workflow verifikasi yang sudah jadi SOT file ini ("semua sitasi dicek via web search terhadap sumber primer, bukan disalin mentah dari klaim LLM").
+
+| Paper | Tipe | Temuan inti |
+|---|---|---|
+| Khraisha et al. (2024), *Research Synthesis Methods* 15(4), 616-626, "Can large language models replace humans in systematic reviews?" | Constraint | Evaluasi GPT-4 "human-out-of-the-loop" (LLM murni tanpa verifikasi manusia) untuk screening/ekstraksi data: akurasi mentah terlihat setara manusia, TAPI setelah dikoreksi untuk chance agreement + ketidakseimbangan dataset, performa turun jadi tanpa-agreement s/d moderat tergantung rasio data. LLM sendirian BELUM cukup andal untuk sepenuhnya menggantikan verifikasi manusia. |
+| Cao et al. (2025), *Annals of Internal Medicine* 178, 389-401, "Development of Prompt Templates for Large Language Model–Driven Screening in Systematic Reviews" | Method | Template prompt generik yang terstruktur dengan baik, diuji ke 48.425 sitasi lintas 10 systematic review: sensitivitas screening abstrak rata-rata **97,7%**, spesifisitas **85,2%** — jauh lebih baik dari pendekatan ad-hoc, membuktikan LLM-assisted screening BISA cepat dan cukup andal KALAU prompt/kriterianya terstruktur jelas, bukan sekadar "baca lalu putuskan". |
+| Pham et al. (2016), *Research Synthesis Methods*, "Implications of applying methodological shortcuts to expedite systematic reviews" | Constraint | 3 studi kasus: memotong langkah metodologis (search dipersempit, single-reviewer tanpa cross-check, dst.) membuat rata-rata studi relevan TERLEWAT di 39 dari 143 kemungkinan meta-analisis (14 di antaranya jadi tidak bisa dilakukan sama sekali karena studi tersisa <2) — arah kesimpulan biasanya tidak berubah, tapi presisi estimasi (confidence interval) melebar/kesimpulan jadi lebih lemah. |
+| Tricco et al. (2022), *JBI Evidence Synthesis*, "Rapid reviews and the methodological rigor of evidence synthesis: A JBI position statement" | Method | Rapid review yang SAH secara metodologis tetap mempertahankan elemen inti (kriteria eligibilitas jelas di awal, pencarian yang cukup komprehensif untuk pertanyaan spesifik, minimal spot-check kualitas) — "cepat" berarti mempersempit SCOPE pertanyaan (bukan jumlah pertanyaan sekaligus) dan bukan menghapus langkah verifikasi, bukan berarti melonggarkan standar bukti. |
+
+**Sintesis (bukan dipaksakan — langsung actionable ke workflow file ini):**
+1. **Konfirmasi validasi arsitektur existing:** kewajiban file ini (WebSearch verifikasi tiap sitasi ke sumber primer sebelum ditulis, bukan salin mentah dari respons LLM/Scopus abstract metadata) itu TEPAT dan punya dasar — Khraisha (2024) membuktikan LLM murni tanpa verifikasi manusia performanya turun signifikan setelah dikoreksi bias. **Jangan pernah dilonggarkan** jadi "percaya judul+abstrak Scopus AI langsung tanpa cek" — itu persis "methodological shortcut" yang Pham (2016) buktikan berisiko melewatkan temuan relevan.
+2. **Peluang percepatan nyata yang AMAN (dari Cao 2025):** triase awal (dari puluhan hasil `search_scopus` mentah, pilih mana yang layak dibaca detail/verifikasi) bisa dipercepat dengan kriteria inklusi yang DITULIS EKSPLISIT di awal sebelum search (jenis topik, rentang tahun, jurnal/sumber primer vs predatori, jumlah sitasi minimum) — bukan menilai satu-satu tanpa kriteria. Ini murni mempercepat tahap TRIASE, bukan menggantikan verifikasi akhir yang tetap wajib manual per sitasi yang benar-benar dikutip ke file ini.
+3. **Tidak ada rekomendasi mengurangi verifikasi manual** — satu-satunya cara aman mempercepat (triase terstruktur di awal) sudah konsisten dengan cara kerja sesi ini sendiri (2026-07-28: dari ~15 query pencarian, hanya sitasi yang lolos verifikasi web search primer yang masuk §11/§12 di atas).
+
+---
+
 ## Cara pakai file ini
 
 Sebelum memulai riset/fitur makro baru di Daun Merah:
