@@ -131,6 +131,25 @@ Pencarian literatur akademik (bukan blog trading) untuk "retail positioning ekst
 
 ---
 
+## 10. Manajemen risiko sistem trading otomatis — filter stacking, circuit breaker, regime gate, correlation cap (relevan: audit celah "kesalahan trader" Plan U, 2026-07-28)
+
+4 Scopus AI Synthesis Report (2026-07-28) merespons audit kode yang menemukan 4 celah di pipeline auto-entry (AI Kritikus tidak terpasang, tidak ada circuit breaker loss beruntun, `risk_regime` cuma teks di prompt, tidak ada cap eksposur lintas-pair) — dan kekhawatiran user bahwa menambahkan ke-4 gate sekaligus akan membuat sistem terlalu ketat. Sitasi inti (4 dari puluhan yang dikutip tiap report) **diverifikasi manual via web search terhadap sumber primer** sesuai aturan file ini:
+
+| Paper | Tipe | Temuan inti |
+|---|---|---|
+| Varma (2025), *"The False Promise of Drawdown Rules: New Evidence and a Better Framework"*, Journal of Portfolio Management 52(1), 145-161, DOI 10.3905/jpm.2025.1.765 | Constraint | Ambang drawdown TETAP (fixed) bisa memperkuat kerugian alih-alih menahannya (data ETF & long-short 1993-2022); metrik CDAP (coherent drawdown-adjusted performance) dan kerangka adaptif berbasis rezim pasar + sinyal risiko sistematik jauh lebih robust dari aturan biner. |
+| Moreira & Muir (2017), *"Volatility-Managed Portfolios"*, Journal of Finance 72(4), 1611-1644 | Method | Portofolio yang menurunkan UKURAN posisi (bukan berhenti total) saat volatilitas naik menghasilkan alpha & Sharpe ratio jauh lebih tinggi — berlaku lintas banyak faktor termasuk **currency carry trade**. Bukti landasan kenapa "reduce size" > "skip entirely" untuk gate volatilitas. |
+| Zhao, Ledoit & Jiang (2023), *"Risk Reduction and Efficiency Increase in Large Portfolios: Gross-Exposure Constraints and Shrinkage of the Covariance Matrix"*, Journal of Financial Econometrics 21(1), 73-105 | Method | Shrinkage estimator korelasi/kovarians yang dipilih tepat SELALU mengalahkan batas gross-exposure sembarangan — tapi studi ini berbasis portofolio besar (institusional), penerapan ke skala retail 4-pair Daun Merah bersifat heuristik, bukan literal. |
+| Subrahmanyam (1994), *"Circuit Breakers and Market Volatility: A Theoretical Perspective"*, Journal of Finance 49, 237-254 | Constraint | Paper fondasi "magnet effect": circuit breaker (termasuk halt berbasis N-loss-beruntun) bisa PARADOKS memperbesar volatilitas — trader/algo mempercepat aksi mendekati ambang batas untuk menghindari terkunci, ambang kaku (bukan dinamis) berisiko menciptakan halt palsu. |
+
+**Ringkasan sintesis 4 report (tidak semua ~90 sitasi lain diverifikasi satu-satu — hanya 4 di atas + pola konsisten across 4 report independen):**
+- **Filter-stacking:** kekhawatiran user TERBUKTI BERALASAN secara literatur — menumpuk filter konservatif memang mengurangi frekuensi trade & bisa menurunkan performa kalau ambangnya STATIS/kaku. TAPI solusinya bukan batalkan filter, melainkan pakai ambang ADAPTIF (regime-switching, Kalman filter, ML) — tidak ada studi yang menguji ke-4 filter bersamaan persis, tapi bukti komponen konsisten mendukung kombinasi asal adaptif.
+- **Circuit breaker:** drawdown-based (persentase kerugian) lebih didukung bukti empiris daripada consecutive-loss (hitung kekalahan beruntun) — yang terakhir rawan "magnet effect" (Subrahmanyam 1994, dikonfirmasi ulang di pasar China modern). Kalau mau circuit breaker, prioritaskan berbasis drawdown/volatilitas yang adaptif, bukan sekadar hitung N-loss-beruntun statis.
+- **Gate regime volatilitas (VIX):** TIDAK ADA studi head-to-head langsung "skip entry" vs "reduce size" khusus FX — tapi bukti tidak langsung + Moreira & Muir (2017) condong ke "reduce size" (position sizing dinamis) lebih superior untuk drawdown/tail-risk daripada skip total (dianggap "blunt instrument"). Tidak ada ambang VIX universal (rentang 15-59 disitasi, tidak standar) — model dinamis/regime-switching lebih disarankan dari cutoff tetap.
+- **Correlation cap:** HRP (Hierarchical Risk Parity), shrinkage estimator, dan gross-exposure constraint sederhana adalah heuristik yang cocok untuk portofolio skala retail 20-50 instrumen TANPA perlu optimasi covariance-matrix penuh — tapi bukti lebih kuat di ekuitas/multi-aset dibanding FX murni, dan portofolio retail justru LEBIH rentan ke lonjakan korelasi saat event makro (bias perilaku + posisi terkonsentrasi) — bukan alasan untuk mengabaikan gate ini di sistem kecil, justru sebaliknya.
+
+**Implikasi untuk Daun Merah:** kalau ke-4 gate dari audit (`daun_merah_progress.md` — audit celah kesalahan trader) jadi dieksekusi, benang merah dari SEMUA topik adalah sama: **pilih ambang dinamis/adaptif, hindari cutoff statis/biner** — bukan batalkan gate-nya. Belum diputuskan eksekusi kode apa pun; nunggu keputusan user pasca-riset ini.
+
 ## Cara pakai file ini
 
 Sebelum memulai riset/fitur makro baru di Daun Merah:
