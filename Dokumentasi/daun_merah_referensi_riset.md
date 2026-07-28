@@ -185,6 +185,58 @@ Dipicu permintaan user 2026-07-28: cari cara mempercepat riset TANPA merusak kua
 
 ---
 
+## 13. Kualitas & akurasi eksekusi auto-entry — penempatan SL, jam eksekusi, biaya transaksi, lapis filter sekunder, ensemble LLM (relevan: pipeline auto-entry `api/admin.js` + `vps/daemon.js`, 2026-07-28)
+
+Riset baru atas permintaan user ("apa yang bisa membuat auto-entry lebih akurat & berkualitas"). **Kriteria inklusi ditulis SEBELUM search** (metode §12 poin 2, mempercepat triase tanpa mengurangi verifikasi): (a) topik harus menyentuh komponen pipeline auto-entry yang SUDAH ADA — penempatan SL/TP, waktu eksekusi, biaya transaksi, lapis filter sekunder, keandalan keputusan LLM — bukan ide fitur baru; (b) jurnal peer-review terindeks Scopus / NBER / working paper bank sentral, tolak blog praktisi; (c) empiris diutamakan ≥2005, seminal boleh lebih tua; (d) tiap sitasi yang dikutip ke file ini WAJIB lolos verifikasi web ke sumber primer (judul/penulis/jurnal/volume/halaman). Dari ~90 hasil `search_scopus` mentah lintas 6 query, 8 paper di bawah yang lolos.
+
+### 13a. Kapan aturan stop-loss benar-benar menolong
+
+| Paper | Tipe | Temuan inti |
+|---|---|---|
+| Kaminski & Lo (2014), *Journal of Financial Markets* 18, 234-254, "When do stop-loss rules stop losses?" | Constraint/Method | Di bawah random walk, aturan stop-loss sederhana SELALU menurunkan expected return. Stop-loss baru menghasilkan "stopping premium" positif di proses return yang lebih realistis: **momentum atau regime-switching**. Empiris ekuitas AS 1950-2004: aturan tertentu menambah 50-100 bp/bulan selama periode stop-out. |
+| Lo & Remorov (2017), *Journal of Financial Markets* 34, 1-15, "Stop-loss strategies with serial correlation, regime switching, and transaction costs" | Constraint | Diuji ke sampel besar saham individual AS: **stop-loss yang KETAT cenderung kalah dari buy-and-hold** dalam kerangka mean-variance karena biaya trading berlebih. Outperformance hanya mungkin untuk aset dengan korelasi serial return cukup tinggi; sebagian strategi berhasil menekan downside risk, tapi tidak substansial. |
+| Arratia & Dorador (2019), *Quantitative Finance* 19(11), 1857-1873, "On the efficacy of stop-loss rules in the presence of overnight gaps" | Method | 4 implementasi stop-loss populer diuji pada model return yang MEMASUKKAN overnight gap (loncat harga close→open) dan flash crash, lintas model random walk/autoregressive/regime-switching. Kesimpulan umum: **stop-loss tetap memperbaiki expected risk-adjusted return di pasar naik dan expected return absolut di pasar turun, walau gap dimodelkan** — gap bukan alasan meninggalkan aturan stop. |
+
+**Implikasi untuk Daun Merah:**
+1. **Lever yang relevan bukan "pakai SL atau tidak" (SL wajib, sudah benar), tapi JARAK SL relatif volatilitas.** Kaminski-Lo + Lo-Remorov sama-sama menunjuk arah yang sama: stop terlalu ketat merusak. Pipeline saat ini membiarkan LLM memilih SL dari zona konfluensi tanpa lantai jarak minimum berbasis ATR — padahal ATR14 H1 SUDAH dihitung deterministik di `api/_pair_context.js`. Ini bisa DIUKUR dari data yang sudah terkumpul (bandingkan `sl` distance/ATR vs tingkat kena SL di `setup_log_auto:v1`) sebelum satu baris kode pun diubah.
+2. **Caveat kejujuran:** ketiga paper menguji aturan EXIT atas posisi yang sudah dipegang (mayoritas ekuitas), bukan setup entry ber-R tetap seperti Daun Merah. Analoginya parsial — jangan dikutip seolah membuktikan aturan SL Daun Merah unggul.
+3. **Tighten preventif Jumat (`runFridayTightenCycle`) dapat dukungan tidak langsung** dari Arratia & Dorador: aturan stop tetap efektif walau gap akhir pekan diperhitungkan. Tidak ada bukti yang menuntut perubahan perilaku ini.
+
+### 13b. Periodisitas intraday FX — apakah jam eksekusi penting
+
+| Paper | Tipe | Temuan inti |
+|---|---|---|
+| Andersen & Bollerslev (1997), *Journal of Empirical Finance* 4(2-3), 115-158, "Intraday periodicity and volatility persistence in financial markets" | Method | Kerja seminal (>750 sitasi Scopus): volatilitas intraday FX (sampel DM-dolar 5 menit) punya **pola periodik deterministik yang kuat**, terikat pembukaan/tumpang-tindih sesi dan rilis makro terjadwal; pola ini harus dipisahkan dulu sebelum menyimpulkan apa pun soal persistensi volatilitas. |
+| Ito & Hashimoto (2006), *Journal of the Japanese and International Economies* 20(4), 637-664, "Intraday seasonality in activities of the foreign exchange markets: Evidence from the electronic broking system" | Application | Data EBS (quote & transaksi riil USD/JPY & EUR/USD): pola U intraday terkonfirmasi untuk sesi Tokyo & London (tidak untuk New York). **Korelasi volatilitas-aktivitas positif tinggi, korelasi volatilitas-bid/ask spread NEGATIF** (spread paling lebar justru saat aktivitas paling sepi). Volume & volatilitas naik signifikan di sekitar rilis AS, tidak di rilis Jepang. |
+
+**Implikasi untuk Daun Merah:** ini VALIDASI, bukan temuan yang menuntut perubahan. Slot auto-entry saat ini (08:15 & 13:15 UTC, `AUTO_ENTRY_HOURS_UTC` default `8,13` di `vps/daemon.js`) jatuh di pagi London dan menjelang/awal tumpang-tindih London-New York — persis jendela aktivitas tinggi & spread tersempit menurut Ito-Hashimoto. Yang perlu disadari: karena volatilitas per jam berbeda besar secara deterministik, **jarak SL struktural yang sama punya arti risiko berbeda tergantung jam setup lahir**, dan `_evaluateSetups` yang mengevaluasi sentuhan SL/TP dari wick candle H1 paling rawan menghasilkan "SL kena" palsu di jam sepi (spread lebar). Tidak ada rekomendasi menambah jam atau gate jam baru.
+
+### 13c. Biaya transaksi — seberapa besar bias evaluasi tanpa spread
+
+| Paper | Tipe | Temuan inti |
+|---|---|---|
+| Filippou, Maurer, Pezzo & Taylor (2024), *Journal of Financial Economics* 159, 103886, "Importance of transaction costs for asset allocation in foreign exchange markets" | Constraint | Biaya transaksi punya efek **first-order** pada kinerja portofolio mata uang. Nuansanya penting: biaya proporsional dari quoted bid-ask spread **relatif kecil**; yang menggerus sampai banyak strategi populer jadi tidak profitable adalah **price impact karena volume besar** (dana besar). |
+| Hsu, Taylor & Wang (2016), *Journal of International Economics* 102, 188-208, "Technical trading: Is it still beating the foreign exchange market?" | Application | 21.000+ aturan teknikal, 30 mata uang maju & berkembang, 45 tahun data harian, dengan **stepwise test anti data-snooping** dan validasi out-of-sample: masih ditemukan prediktabilitas & excess profitability yang substansial di kedua kelompok mata uang. Biaya transaksi yang dipakai 2 bp (mata uang maju) / 6 bp (berkembang) — **biaya sebesar itu tidak otomatis menghapus profitabilitas**, tapi profitabilitas menurun sepanjang waktu dan lebih kuat di mata uang yang lebih volatil/pasar kurang matang. |
+
+**Implikasi untuk Daun Merah:**
+1. **Pembanding sehat untuk nada skeptis §7/§11.** Hsu-Taylor-Wang adalah bukti terkuat yang ditemukan sejauh ini bahwa aturan teknikal di FX BELUM mati setelah dikoreksi data-snooping — sekaligus mengingatkan bahwa edge-nya tipis (ordo basis point) dan meluruh seiring waktu.
+2. **Ukuran retail = price impact tidak relevan, spread relevan.** Filippou dkk. memberi dasar kenapa Daun Merah tidak perlu memodelkan price impact sama sekali, TAPI juga kenapa spread nol bukan asumsi netral: `_evaluateSetups` (`api/admin.js`) mengisi entry di harga limit persis dan menilai sentuhan SL/TP dari wick candle H1 **tanpa spread/slippage sama sekali**. Biasnya berarah satu sisi (SL kena lebih cepat, TP kena lebih lambat di dunia nyata), jadi win-rate terukur condong optimis — relevan langsung ke kredibilitas gate n≥100.
+
+### 13d. Lapis filter sekunder & keandalan keputusan LLM
+
+| Paper | Tipe | Temuan inti |
+|---|---|---|
+| Joubert (2022), *Journal of Financial Data Science* 4(3), hal. 31 dst., "Meta-Labeling: Theory and Framework" | Method | Meta-labeling = lapisan ML sekunder di atas strategi primer, tugasnya **menyaring false positive DAN menentukan ukuran posisi** — bukan cuma veto biner. Kerangka evaluasinya eksplisit: hubungkan metrik klasifikasi biner (precision/recall) dengan metrik strategi (Sharpe, max drawdown); komponen meta-labeling diurai jadi 3 bagian yang efeknya diuji terkontrol. |
+| Schoenegger, Tuminauskaite, Park, Bastos & Tetlock (2024), *Science Advances* 10(45), eadp1528, "Wisdom of the silicon crowd: LLM ensemble prediction capabilities rival human crowd accuracy" | Method | Ensemble 12 LLM memprediksi 31 pertanyaan biner vs 925 peramal manusia dalam turnamen 3 bulan: **agregat LLM mengalahkan benchmark tanpa-informasi dan secara statistik tidak bisa dibedakan dari agregat manusia** — padahal riset sebelumnya menunjukkan LLM TUNGGAL (termasuk model frontier) sering gagal mengalahkan benchmark 50%. Temuan sekunder: prediksi LLM membaik 17-28% ketika diberi median prediksi manusia. |
+
+**Implikasi untuk Daun Merah:**
+1. **Gate A (AI Kritikus) ternyata punya nama di literatur: meta-labeling.** Konsekuensi yang berguna: cara mengevaluasinya BUKAN "berapa sering ia memveto" (frekuensi `auto_guard_stats:critic_veto` saja), melainkan precision/recall atas kandidat yang diveto vs yang lolos — yang butuh persis data counterfactual yang sudah ditandai belum ada di §11 dan `daun_merah_progress.md` (pola `_evaluateCanceledGhost`). Joubert juga menempatkan **sizing** sebagai bagian sah lapisan ini, menyambung Moreira & Muir (§10, "reduce size" > "skip total") yang sengaja tidak dijadikan gate terpisah.
+2. **Titik lemah paling mendasar bukan filternya, tapi bahwa keputusannya dari SATU model.** Schoenegger dkk. adalah bukti peer-review terkuat yang ditemukan bahwa nilai tambah datang dari AGREGASI beberapa model independen, bukan dari rantai veto. Daun Merah sudah punya rantai multi-provider (fallback berurutan, bukan agregasi) + uji konsistensi harian (`runConsistencyCheck`) — instrumen untuk mengetahui apakah ensemble akan mengubah apa pun sebenarnya sudah ada. **Biaya nyata:** agregasi berarti N× call AI per slot; konsisten dengan §4 (forecast combination puzzle) bentuknya harus rata-rata/mayoritas sederhana, BUKAN pembobotan optimal.
+
+**Verdict jujur:** tidak ada satu pun paper di §13 yang menuntut penambahan gate/mekanisme baru. Tiga dari lima arah (SL vs ATR, bias spread, ensemble vs model tunggal) bisa dijawab dengan MENGANALISIS data yang sudah terkumpul, bukan dengan menambah lapisan — konsisten dengan penutup §11. Tidak ditemukan paper peer-review tentang bias resolusi bar (SL & TP tersentuh di candle H1 yang sama, sekarang dilabeli `ambiguous`); itu isu pengukuran internal, dicatat di `daun_merah_riset.md`, bukan di sini.
+
+---
+
 ## Cara pakai file ini
 
 Sebelum memulai riset/fitur makro baru di Daun Merah:

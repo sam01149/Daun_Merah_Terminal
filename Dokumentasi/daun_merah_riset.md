@@ -22,6 +22,57 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 
 ---
 
+- **[2026-07-28] Riset "auto-entry lebih akurat & berkualitas" — 4 celah terukur di pipeline yang sudah ada (BELUM ada kode diubah).**
+  Landasan akademis lengkap + 8 sitasi terverifikasi: `daun_merah_referensi_riset.md` §13 (SL vs volatilitas, periodisitas
+  intraday FX, biaya transaksi, meta-labeling, ensemble LLM). Bagian ini khusus terjemahan temuan itu ke kode Daun Merah
+  aktual — semuanya bisa dijawab dengan MENGANALISIS data yang sudah terkumpul, **tanpa menambah gate/mekanisme baru**
+  (konsisten penutup §11 dan keputusan user 2026-07-28 soal Gate C).
+  Diurutkan dari rasio manfaat-per-usaha tertinggi:
+  1. **Spread sudah dihitung di NILAI hasil, belum di PENENTUAN hasil.** Koreksi penting atas dugaan awal sesi ini (dicek
+     langsung ke kode, bukan diasumsikan): biaya spread SUDAH dimodelkan — `SPREAD_PRICE_ESTIMATE` + `_costAdjustedR`
+     (`api/admin.js`, dibuat 2026-07-20 sebagai item #1 rigor Plan U) mengurangkan `spread/risk` dari R tiap setup closed,
+     jadi `cost_expectancy` gross vs net sudah ada. Yang BELUM: `_evaluateSetups` (~baris 2460-2485) menentukan setup itu
+     `tp` atau `sl` murni dari wick candle H1 di harga mid, **tanpa spread sama sekali**. Konsekuensinya spesifik — koreksi
+     biaya hanya memperbaiki BESARAN R, tidak pernah bisa memperbaiki KLASIFIKASI: setup yang di dunia nyata kena SL dulu
+     (karena SL adalah stop order yang tersentuh lebih cepat, TP limit order yang tersentuh lebih lambat) tetap tercatat `tp`
+     dan tetap menaikkan `win_rate_raw`/`win_rate_adjusted`. Jadi expectancy-nya konservatif, tapi **win-rate-nya masih
+     optimis** — dan win-rate itulah yang jadi kriteria gate n≥100. XAU/USD paling terdampak (spread estimasi 0,30 vs
+     EUR/USD 0,00012). Filippou dkk. (2024): untuk ukuran retail price impact tidak relevan tapi biaya proporsional spread
+     tetap first-order; Hsu dkk. (2016) tetap menemukan profitabilitas pada biaya 2 bp — jadi ini bukan pembunuh, cuma bias
+     berarah yang wajib dikuantifikasi. *Cara ukur (offline, 0 AI call, 0 perubahan runtime):* re-evaluasi entri
+     `setup_log_auto:v1` yang sudah `tp`/`sl` dengan SL/TP digeser sebesar spread berjenjang (0,5x / 1x / 2x nilai
+     `SPREAD_PRICE_ESTIMATE`) — laporkan berapa `tp` berbalik jadi `sl`/`ambiguous`. Kalau stabil di semua tingkat,
+     kekhawatiran ini gugur dengan angka, bukan dengan asumsi.
+     **Celah data ditemukan & LANGSUNG DIPERBAIKI sesi ini:** `SPREAD_PRICE_ESTIMATE` tidak punya entri `AUD/NZD`, padahal
+     pair itu masuk `AUTO_ENTRY_PAIRS` sejak redesain 4-pair Session 247 — akibatnya SELURUH setup AUD/NZD diam-diam
+     di-skip dari `cost_expectancy` (fail-open per-entri), jadi angka expectancy net selama ini cuma mewakili 3 dari 4 pair
+     tanpa ada tanda apa pun di payload. Ditambahkan (0,00030, ballpark konsisten tabel: NZD/USD 0,00025, EUR/AUD 0,00035).
+  2. **Jarak SL tidak pernah dibandingkan ke ATR.** ATR14 H1 SUDAH dihitung deterministik (`api/_pair_context.js`, dikirim ke
+     prompt lewat `pairCtx.block`), tapi tidak ada satu pun titik di pipeline yang mengecek "SL ini berapa ATR dari entry" —
+     LLM bebas memilih level dari zona konfluensi, sanity-check di `admin.js` cuma memeriksa arah dan RR≥1. Kaminski & Lo (2014)
+     + Lo & Remorov (2017): stop yang terlalu KETAT merusak expected return secara sistematis, dan manfaat stop bergantung pada
+     ada tidaknya momentum/serial correlation. *Cara ukur:* hitung rasio jarak-SL/ATR14 tiap entri `setup_log_auto:v1` lalu
+     bandingkan tingkat kena-SL antar-kuartil rasio. Kalau kuartil terketat SL-nya jauh lebih sering kena tanpa imbalan RR yang
+     sepadan, barulah bicara lantai jarak minimum — jangan pasang ambang lebih dulu.
+  3. **Label `ambiguous` = lubang informasi, bukan sekadar status netral.** Kalau satu candle H1 menyentuh SL DAN TP,
+     `_evaluateSetups` menyerah dan menandai `ambiguous` (jujur, dan itu benar) — tapi entri itu lalu tidak masuk hitungan
+     win-rate manapun, sementara justru kejadian volatil seperti inilah yang paling sering terjadi di jam rilis makro.
+     TIDAK ditemukan paper peer-review soal bias resolusi bar ini (dicari eksplisit, nihil) — jadi ini murni isu pengukuran
+     internal. *Cara ukur dulu:* hitung berapa persen entri berakhir `ambiguous`; kalau <5% abaikan permanen, kalau besar baru
+     pertimbangkan resolusi lebih halus untuk pair itu (data M15/M5 Deriv tersedia, tapi itu kerja baru — jangan sebelum
+     angkanya membenarkan).
+  4. **Keputusan auto-entry berasal dari SATU model, bukan agregasi.** Rantai provider yang ada bersifat FALLBACK berurutan
+     (dipakai kalau yang di atas gagal), bukan ensemble; Gate A (AI Kritikus) adalah lapisan veto, bukan agregator.
+     Schoenegger dkk. (2024, *Science Advances*) menunjukkan LLM tunggal sering gagal mengalahkan benchmark tanpa-informasi
+     sementara agregat 12 LLM setara agregat manusia — arah perbaikan yang didukung bukti ada di AGREGASI, bukan di
+     penambahan filter. Biaya: N× call AI per slot. *Prasyarat sebelum ini layak dibahas serius:* hasil `runConsistencyCheck`
+     yang sudah berjalan harian (target ≥80% bias identik, `daun_merah_plan.md` §PLAN U) — kalau satu model saja sudah tidak
+     konsisten dengan DIRINYA sendiri, ensemble antar-model tidak akan menolong sebelum itu dibereskan.
+  **Yang SENGAJA tidak direkomendasikan:** menambah gate/filter baru (tidak ada satu pun paper §13 yang menuntutnya),
+  mengubah jam slot auto-entry (08:15 & 13:15 UTC justru sudah jatuh di jendela aktivitas tinggi/spread tersempit menurut
+  Ito & Hashimoto 2006 — validasi, bukan masalah), dan mengubah perilaku tighten Jumat (Arratia & Dorador 2019: aturan stop
+  tetap efektif walau overnight gap & flash crash dimodelkan).
+
 - **[2026-07-23] Evaluasi & Perbandingan Biaya Model AI Kandidat (DeepSeek v4-flash vs GLM 5.2 vs Kimi K3)**:
   Evaluasi komparatif 3 kandidat model AI berbasis kalkulasi penggunaan paling boros Daun Merah (32 call/hari = 704 call/bulan; 22 otomatis + 10 manual):
   - **DeepSeek v4-flash (Produksi Saat Ini)**: Input $0.14 / Output $0.28 per 1M token. Biaya bulanan: **~$0.50 USD (± Rp 8.150 / bulan)**. Keunggulan: Kecepatan kilat (10–15s, bebas Vercel 60s timeout), presisi JSON 13-field native 100%. Kekurangan: Narasi prosa makro terasa lebih kaku.

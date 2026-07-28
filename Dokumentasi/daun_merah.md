@@ -11,11 +11,25 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-07-28 (Session 251 — Hapus Gate C, Riset Scopus AI Lanjutan Audit-Guard)
+> **Last updated:** 2026-07-28 (Session 252 — Riset Akurasi & Kualitas Auto-Entry)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 252 (2026-07-28) — Riset Akurasi & Kualitas Auto-Entry (8 sitasi baru) + Fix Celah Spread AUD/NZD
+
+**Konteks:** user minta riset hal-hal yang bisa membuat auto-entry lebih akurat & berkualitas. Riset murni (bukan eksekusi fitur) — beda dari Session 250/251 yang membangun & memangkas gate. Kriteria inklusi ditulis SEBELUM search (mengikuti temuan §12 Cao 2025 soal triase terstruktur), 6 query `search_scopus` (~90 hasil mentah), 8 paper lolos verifikasi web ke sumber primer.
+
+**Hasil riset:** `daun_merah_referensi_riset.md` §13 (5 sub-bagian: efikasi stop-loss, periodisitas intraday FX, biaya transaksi, meta-labeling, ensemble LLM) + terjemahan ke kode aktual di `daun_merah_riset.md` (4 celah terukur, diurut manfaat-per-usaha). Sitasi baru terverifikasi: Kaminski & Lo (2014 JFM), Lo & Remorov (2017 JFM), Arratia & Dorador (2019 QF), Andersen & Bollerslev (1997 JEF), Ito & Hashimoto (2006 JJIE), Filippou dkk. (2024 JFE), Hsu-Taylor-Wang (2016 JIE), Schoenegger dkk. (2024 Science Advances).
+
+**Kesimpulan utama (tidak ada gate/mekanisme baru direkomendasikan):** 3 dari 4 celah bisa dijawab dengan menganalisis data yang SUDAH terkumpul. Yang paling penting — spread sudah dihitung di NILAI hasil (`_costAdjustedR`, item #1 rigor Plan U 2026-07-20) tapi belum di PENENTUAN hasil: `_evaluateSetups` memutuskan `tp` vs `sl` dari wick candle H1 di harga mid tanpa spread, jadi expectancy net konservatif TAPI `win_rate_raw`/`win_rate_adjusted` (kriteria gate n≥100) masih optimis. Dua temuan yang sifatnya VALIDASI, bukan masalah: slot 08:15 & 13:15 UTC sudah jatuh di jendela aktivitas tinggi/spread tersempit (Ito & Hashimoto 2006), dan tighten preventif Jumat tetap didukung walau overnight gap dimodelkan (Arratia & Dorador 2019).
+
+**Fix yang langsung dikerjakan (celah data, ditemukan saat verifikasi klaim riset ke kode):** `SPREAD_PRICE_ESTIMATE` (`api/admin.js`) tidak punya entri `AUD/NZD` padahal pair itu masuk `AUTO_ENTRY_PAIRS` sejak redesain 4-pair Session 247 — akibatnya SELURUH setup AUD/NZD di-skip diam-diam dari `cost_expectancy` (fallback `null` per-entri di `_costAdjustedR`), jadi angka expectancy net selama ini cuma mewakili 3 dari 4 pair tanpa tanda apa pun di payload. Ditambahkan `'AUD/NZD': 0.00030` (ballpark konsisten tabel: NZD/USD 0,00025, EUR/AUD 0,00035).
+
+**Koreksi klaim sesi ini sendiri:** dugaan awal "biaya spread tidak dimodelkan sama sekali" SALAH — dicek ke kode, `SPREAD_PRICE_ESTIMATE`/`_costAdjustedR`/`_aggCostExpectancy` sudah ada sejak 2026-07-20. Yang benar adalah pembedaan nilai-vs-penentuan di atas.
+
+**File diubah:** `api/admin.js` (1 entri tabel spread + komentar), `Dokumentasi/daun_merah_referensi_riset.md` (§13 baru), `Dokumentasi/daun_merah_riset.md` (entri riset aktif). `npm test` 629/629 hijau. Tidak ada perubahan runtime auto-entry, tidak ada perubahan UI/payload publik — isolasi senyap U-7 tidak tersentuh.
 
 ## Changelog Session 251 (2026-07-28) — Hapus Gate C, Riset Scopus AI Lanjutan Audit-Guard
 

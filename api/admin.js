@@ -2604,6 +2604,13 @@ const SPREAD_PRICE_ESTIMATE = {
   'USD/CAD': 0.00020, 'USD/CHF': 0.00020, 'USD/JPY': 0.017,
   'EUR/JPY': 0.025, 'GBP/JPY': 0.035, 'AUD/JPY': 0.025,
   'EUR/GBP': 0.00020, 'EUR/AUD': 0.00035, 'GBP/AUD': 0.00045, 'GBP/CAD': 0.00040,
+  // AUD/NZD ditambahkan 2026-07-28 (riset akurasi auto-entry, daun_merah_riset.md):
+  // pair ini masuk AUTO_ENTRY_PAIRS sejak redesain 4-pair Session 247 tapi tidak pernah
+  // ada di tabel ini, jadi SEMUA setup AUD/NZD diam-diam di-skip dari cost_expectancy
+  // (fallback null di _costAdjustedR) — angka expectancy net cuma mewakili 3 dari 4 pair
+  // tanpa tanda apa pun di payload. Ballpark konsisten tabel (NZD/USD 0.00025, EUR/AUD
+  // 0.00035); cross AUD-NZD likuiditasnya di antara keduanya.
+  'AUD/NZD': 0.00030,
 };
 
 // R-multiple realized SEBELUM vs SESUDAH biaya spread, per setup closed (tp/sl).
