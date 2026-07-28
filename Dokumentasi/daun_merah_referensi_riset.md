@@ -17,6 +17,7 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 > **Metodologi verifikasi:** semua sitasi di bawah dicek via web search terhadap sumber primer (NBER/JSTOR/jurnal/RePEc) sebelum dimasukkan — bukan disalin mentah dari konsultasi LLM lain. Kalau ada sitasi baru mau ditambahkan ke file ini, verifikasi dulu (author/tahun/jurnal), jangan percaya nama paper dari LLM tanpa cek.
 
 Tiga kategori per paper:
+
 - **Constraint** — batas teoritis/empiris: apa yang KEMUNGKINAN tidak bisa dilakukan
 - **Method** — pendekatan yang valid untuk domain yang batasnya sudah diketahui
 - **Application** — implementasi nyata di trading/kebijakan
@@ -111,6 +112,7 @@ Pencarian literatur akademik (bukan blog trading) untuk "retail positioning ekst
 | Scopus AI Synthesis Report (2026) *"Technical analysis indicators for forex trading"* | Method / Constraint | Meta-analisis literatur 2010–2024: Tidak ada indikator tunggal yang mendominasi secara konsisten. Sistem hibrida/multi-indicator yang menggabungkan price-derived levels dengan machine learning/adaptasi dinamik terhadap volatility regime memiliki performa terbaik. Bahaya utama adalah multikolinieritas dan overfitting. |
 
 **Implikasi untuk Daun Merah:**
+
 1. **Validasi Arsitektur:** Desain *Confluence Zones* (penggabungan S/R, Fibonacci, Pivot, SMA, Expiry) yang dihitung deterministik di backend sebelum masuk ke prompt Analisa AI sudah 100% sejalan dengan rekomendasi riset ini untuk menggunakan sistem hibrida/multi-indikator guna mengurangi *overfitting* LLM.
 2. **Potensi Upgrade (Adaptasi Regim):** Kita bisa membuat toleransi/bobot di `_confluenceZones` dinamis terhadap regim volatilitas (misal: saat volatilitas tinggi/risk-off, kurangi bobot SMA trend-following, naikkan bobot S/R horizontal).
 3. **Potensi Noise (Dihindari):** Penambahan model ML optimisasi kompleks (Genetic Algorithm/PSO) atau penambahan indikator momentum redundan (seperti Stochastic/CCI) adalah *noise* yang harus dihindari karena batasan komputasi serverless Vercel Hobby dan risiko multikolinieritas.
@@ -121,9 +123,10 @@ Pencarian literatur akademik (bukan blog trading) untuk "retail positioning ekst
 
 | Paper | Tipe | Temuan inti |
 |---|---|---|
-| Scopus AI Synthesis Report (2026-07-22), *"Evaluating AI/LLM-Generated Financial Trading Signals: Sample Size, Statistical Methodology, and Overfitting Mitigation in Backtesting and Paper Trading"* | Method | Meta-analisis: n ≥ 100 direkomendasikan untuk evaluasi out-of-sample robust (n ≥ 30 cuma batas bawah CLT, sering tidak cukup di praktik); metodologi wajib campuran Monte Carlo, bootstrap/permutation test, t-test/Wilcoxon, dan walk-forward expanding-window; kalibrasi pakai MAE/RMSE/MAPE/R² + metrik kalibrasi (Brier score, expected calibration error); mitigasi overfitting via sampel besar + cross-validation + regularisasi. §5.1 *"Multi-Asset, Multi-Market Testing"*: validasi lintas aset/pasar wajib untuk memastikan generalisasi — **sitasi [1][16][40][41]** (dikoreksi 2026-07-23 dari nomor #8/#21/#22 yang salah alamat di draf pertama; #22 lama bahkan bukan paper trading — soal bias geografis rekomendasi LLM). Rujukan primer §5.1: [1] Li et al. (2026, *Proc. ACM SIGKDD*) — LLM-based investing strategies; [16] Umadevi et al. (2023, *I-SMAC*) — neural network forex forecasting; [40] Friday et al. (2024, *LNEE*) — ML untuk forex decision-making; [41] Mishra et al. (2025, *AIP Conf. Proc.*) — survei ML algorithmic trading. |
+| Scopus AI Synthesis Report (2026-07-22), *"Evaluating AI/LLM-Generated Financial Trading Signals: Sample Size, Statistical Methodology, and Overfitting Mitigation in Backtesting and Paper Trading"* | Method | Meta-analisis: n ≥ 100 direkomendasikan untuk evaluasi out-of-sample robust (n ≥ 30 cuma batas bawah CLT, sering tidak cukup di praktik); metodologi wajib campuran Monte Carlo, bootstrap/permutation test, t-test/Wilcoxon, dan walk-forward expanding-window; kalibrasi pakai MAE/RMSE/MAPE/R² + metrik kalibrasi (Brier score, expected calibration error); mitigasi overfitting via sampel besar + cross-validation + regularisasi. §5.1 *"Multi-Asset, Multi-Market Testing"*: validasi lintas aset/pasar wajib untuk memastikan generalisasi — sitasi [1][16][40][41] (dikoreksi 2026-07-23 dari nomor #8/#21/#22 yang salah alamat di draf pertama; #22 lama bahkan bukan paper trading — soal bias geografis rekomendasi LLM). Rujukan primer §5.1: [1] Li et al. (2026, *Proc. ACM SIGKDD*) — LLM-based investing strategies; [16] Umadevi et al. (2023, *I-SMAC*) — neural network forex forecasting; [40] Friday et al. (2024, *LNEE*) — ML untuk forex decision-making; [41] Mishra et al. (2025, *AIP Conf. Proc.*) — survei ML algorithmic trading. |
 
 **Implikasi untuk Daun Merah:**
+
 1. **Sudah diimplementasi & dipakai (2026-07-22, `scripts/_stats.js`):** bootstrap 95% CI, permutation test, dan Wilcoxon rank-sum sekarang dipakai di `backtest_confluence.js` — respons langsung terhadap rekomendasi §2.2 report ini. Contoh hasil: beda bounce-rate skor tinggi vs rendah **p=1,000** (permutation) / **p=0,891** (Wilcoxon) — belum signifikan secara statistik pada n saat ini (lihat entri riset aktif di `daun_merah_riset.md`).
 2. **Sudah diimplementasi tapi BELUM diterapkan (2026-07-22, `scripts/_stats.js`):** fungsi Brier score & Expected Calibration Error sudah dibuat reusable di modul yang sama (bukan dari nol) — tinggal dipakai untuk item #6 Plan U (kalibrasi antar-provider AI) begitu sampel `confidence_calibration` per provider di `setup_log_auto:v1` cukup (gate n≥100, lihat `daun_merah_progress.md`).
 3. **Landasan Plan U Cross-Domain Validation Tahap 2:** §5.1 (sitasi di atas) jadi dasar akademis kenapa validasi Non-USD Cross Pairs harus jadi protokol terpisah (out-of-domain), bukan diasumsikan otomatis berhasil dari hasil in-domain Major USD Pairs — lihat entri riset aktif terkait di `daun_merah_riset.md`.
@@ -142,7 +145,8 @@ Pencarian literatur akademik (bukan blog trading) untuk "retail positioning ekst
 | Zhao, Ledoit & Jiang (2023), *"Risk Reduction and Efficiency Increase in Large Portfolios: Gross-Exposure Constraints and Shrinkage of the Covariance Matrix"*, Journal of Financial Econometrics 21(1), 73-105 | Method | Shrinkage estimator korelasi/kovarians yang dipilih tepat SELALU mengalahkan batas gross-exposure sembarangan — tapi studi ini berbasis portofolio besar (institusional), penerapan ke skala retail 4-pair Daun Merah bersifat heuristik, bukan literal. |
 | Subrahmanyam (1994), *"Circuit Breakers and Market Volatility: A Theoretical Perspective"*, Journal of Finance 49, 237-254 | Constraint | Paper fondasi "magnet effect": circuit breaker (termasuk halt berbasis N-loss-beruntun) bisa PARADOKS memperbesar volatilitas — trader/algo mempercepat aksi mendekati ambang batas untuk menghindari terkunci, ambang kaku (bukan dinamis) berisiko menciptakan halt palsu. |
 
-**Ringkasan sintesis 4 report (tidak semua ~90 sitasi lain diverifikasi satu-satu — hanya 4 di atas + pola konsisten across 4 report independen):**
+**Ringkasan sintesis 4 report** (tidak semua ~90 sitasi lain diverifikasi satu-satu — hanya 4 di atas + pola konsisten across 4 report independen):
+
 - **Filter-stacking:** kekhawatiran user TERBUKTI BERALASAN secara literatur — menumpuk filter konservatif memang mengurangi frekuensi trade & bisa menurunkan performa kalau ambangnya STATIS/kaku. TAPI solusinya bukan batalkan filter, melainkan pakai ambang ADAPTIF (regime-switching, Kalman filter, ML) — tidak ada studi yang menguji ke-4 filter bersamaan persis, tapi bukti komponen konsisten mendukung kombinasi asal adaptif.
 - **Circuit breaker:** drawdown-based (persentase kerugian) lebih didukung bukti empiris daripada consecutive-loss (hitung kekalahan beruntun) — yang terakhir rawan "magnet effect" (Subrahmanyam 1994, dikonfirmasi ulang di pasar China modern). Kalau mau circuit breaker, prioritaskan berbasis drawdown/volatilitas yang adaptif, bukan sekadar hitung N-loss-beruntun statis.
 - **Gate regime volatilitas (VIX):** TIDAK ADA studi head-to-head langsung "skip entry" vs "reduce size" khusus FX — tapi bukti tidak langsung + Moreira & Muir (2017) condong ke "reduce size" (position sizing dinamis) lebih superior untuk drawdown/tail-risk daripada skip total (dianggap "blunt instrument"). Tidak ada ambang VIX universal (rentang 15-59 disitasi, tidak standar) — model dinamis/regime-switching lebih disarankan dari cutoff tetap.
@@ -152,9 +156,11 @@ Pencarian literatur akademik (bukan blog trading) untuk "retail positioning ekst
 
 **Update Session 251 (2026-07-28, sesi sama):** Gate C (regime confidence bar) DIHAPUS — celah yang ditemukan user: fungsi ini buta arah (blok confidence rendah saat regime stres TANPA cek align bias vs regime), jadi XAU/USD bullish saat risk_off (selaras teori safe-haven) tetap diblokir walau arahnya sendiri benar. Keputusan: skeptisisme regime seharusnya bagian penalaran AI thesis (yang sudah baca `risk_regime` di prompt Analisa/pre-entry check), bukan filter buta terpisah. Sisa aktif: Gate A, B, D — analisis Moreira & Muir (2017) di atas ("reduce size" > "skip total") jadi TIDAK diterapkan sebagai gate kode terpisah, dikembalikan ke penalaran AI di prompt.
 
+---
+
 ## 11. Noise vs sinyal dari stacking gate audit-guard existing (relevan: `api/_auto_entry_guard.js`, 2026-07-28)
 
-Riset lanjutan atas §10 — TUJUANNYA BUKAN cari gate baru, tapi cek apakah menumpuk Gate A (AI Kritikus) + B (drawdown circuit breaker) + D (correlation cap) sekaligus berisiko jadi over-filtering/noise (mengeblok setup yang sebenarnya profitable) dibanding manfaat nyata. **(Ditulis saat masih 4 gate — Gate C dihapus sesi yang sama, lihat update di §10 di atas; analisis di bawah ini tentang prinsip stacking filter secara umum, tetap berlaku untuk 3 gate sisa.)**
+Riset lanjutan atas §10 — TUJUANNYA BUKAN cari gate baru, tapi cek apakah menumpuk Gate A (AI Kritikus) + B (drawdown circuit breaker) + D (correlation cap) sekaligus berisiko jadi over-filtering/noise (mengeblok setup yang sebenarnya profitable) dibanding manfaat nyata. (Ditulis saat masih 4 gate — Gate C dihapus sesi yang sama, lihat update di §10 di atas; analisis di bawah ini tentang prinsip stacking filter secara umum, tetap berlaku untuk 3 gate sisa.)
 
 | Paper | Tipe | Temuan inti |
 |---|---|---|
@@ -178,7 +184,8 @@ Dipicu permintaan user 2026-07-28: cari cara mempercepat riset TANPA merusak kua
 | Pham et al. (2016), *Research Synthesis Methods*, "Implications of applying methodological shortcuts to expedite systematic reviews" | Constraint | 3 studi kasus: memotong langkah metodologis (search dipersempit, single-reviewer tanpa cross-check, dst.) membuat rata-rata studi relevan TERLEWAT di 39 dari 143 kemungkinan meta-analisis (14 di antaranya jadi tidak bisa dilakukan sama sekali karena studi tersisa <2) — arah kesimpulan biasanya tidak berubah, tapi presisi estimasi (confidence interval) melebar/kesimpulan jadi lebih lemah. |
 | Tricco et al. (2022), *JBI Evidence Synthesis*, "Rapid reviews and the methodological rigor of evidence synthesis: A JBI position statement" | Method | Rapid review yang SAH secara metodologis tetap mempertahankan elemen inti (kriteria eligibilitas jelas di awal, pencarian yang cukup komprehensif untuk pertanyaan spesifik, minimal spot-check kualitas) — "cepat" berarti mempersempit SCOPE pertanyaan (bukan jumlah pertanyaan sekaligus) dan bukan menghapus langkah verifikasi, bukan berarti melonggarkan standar bukti. |
 
-**Sintesis (bukan dipaksakan — langsung actionable ke workflow file ini):**
+**Sintesis** (bukan dipaksakan — langsung actionable ke workflow file ini):
+
 1. **Konfirmasi validasi arsitektur existing:** kewajiban file ini (WebSearch verifikasi tiap sitasi ke sumber primer sebelum ditulis, bukan salin mentah dari respons LLM/Scopus abstract metadata) itu TEPAT dan punya dasar — Khraisha (2024) membuktikan LLM murni tanpa verifikasi manusia performanya turun signifikan setelah dikoreksi bias. **Jangan pernah dilonggarkan** jadi "percaya judul+abstrak Scopus AI langsung tanpa cek" — itu persis "methodological shortcut" yang Pham (2016) buktikan berisiko melewatkan temuan relevan.
 2. **Peluang percepatan nyata yang AMAN (dari Cao 2025):** triase awal (dari puluhan hasil `search_scopus` mentah, pilih mana yang layak dibaca detail/verifikasi) bisa dipercepat dengan kriteria inklusi yang DITULIS EKSPLISIT di awal sebelum search (jenis topik, rentang tahun, jurnal/sumber primer vs predatori, jumlah sitasi minimum) — bukan menilai satu-satu tanpa kriteria. Ini murni mempercepat tahap TRIASE, bukan menggantikan verifikasi akhir yang tetap wajib manual per sitasi yang benar-benar dikutip ke file ini.
 3. **Tidak ada rekomendasi mengurangi verifikasi manual** — satu-satunya cara aman mempercepat (triase terstruktur di awal) sudah konsisten dengan cara kerja sesi ini sendiri (2026-07-28: dari ~15 query pencarian, hanya sitasi yang lolos verifikasi web search primer yang masuk §11/§12 di atas).
@@ -187,7 +194,14 @@ Dipicu permintaan user 2026-07-28: cari cara mempercepat riset TANPA merusak kua
 
 ## 13. Kualitas & akurasi eksekusi auto-entry — penempatan SL, jam eksekusi, biaya transaksi, lapis filter sekunder, ensemble LLM (relevan: pipeline auto-entry `api/admin.js` + `vps/daemon.js`, 2026-07-28)
 
-Riset baru atas permintaan user ("apa yang bisa membuat auto-entry lebih akurat & berkualitas"). **Kriteria inklusi ditulis SEBELUM search** (metode §12 poin 2, mempercepat triase tanpa mengurangi verifikasi): (a) topik harus menyentuh komponen pipeline auto-entry yang SUDAH ADA — penempatan SL/TP, waktu eksekusi, biaya transaksi, lapis filter sekunder, keandalan keputusan LLM — bukan ide fitur baru; (b) jurnal peer-review terindeks Scopus / NBER / working paper bank sentral, tolak blog praktisi; (c) empiris diutamakan ≥2005, seminal boleh lebih tua; (d) tiap sitasi yang dikutip ke file ini WAJIB lolos verifikasi web ke sumber primer (judul/penulis/jurnal/volume/halaman). Dari ~90 hasil `search_scopus` mentah lintas 6 query, 8 paper di bawah yang lolos.
+Riset baru atas permintaan user ("apa yang bisa membuat auto-entry lebih akurat & berkualitas"). **Kriteria inklusi ditulis SEBELUM search** (metode §12 poin 2, mempercepat triase tanpa mengurangi verifikasi):
+
+- (a) topik harus menyentuh komponen pipeline auto-entry yang SUDAH ADA — penempatan SL/TP, waktu eksekusi, biaya transaksi, lapis filter sekunder, keandalan keputusan LLM — bukan ide fitur baru;
+- (b) jurnal peer-review terindeks Scopus / NBER / working paper bank sentral, tolak blog praktisi;
+- (c) empiris diutamakan ≥2005, seminal boleh lebih tua;
+- (d) tiap sitasi yang dikutip ke file ini WAJIB lolos verifikasi web ke sumber primer (judul/penulis/jurnal/volume/halaman).
+
+Dari ~90 hasil `search_scopus` mentah lintas 6 query, 8 paper di bawah yang lolos.
 
 ### 13a. Kapan aturan stop-loss benar-benar menolong
 
@@ -198,6 +212,7 @@ Riset baru atas permintaan user ("apa yang bisa membuat auto-entry lebih akurat 
 | Arratia & Dorador (2019), *Quantitative Finance* 19(11), 1857-1873, "On the efficacy of stop-loss rules in the presence of overnight gaps" | Method | 4 implementasi stop-loss populer diuji pada model return yang MEMASUKKAN overnight gap (loncat harga close→open) dan flash crash, lintas model random walk/autoregressive/regime-switching. Kesimpulan umum: **stop-loss tetap memperbaiki expected risk-adjusted return di pasar naik dan expected return absolut di pasar turun, walau gap dimodelkan** — gap bukan alasan meninggalkan aturan stop. |
 
 **Implikasi untuk Daun Merah:**
+
 1. **Lever yang relevan bukan "pakai SL atau tidak" (SL wajib, sudah benar), tapi JARAK SL relatif volatilitas.** Kaminski-Lo + Lo-Remorov sama-sama menunjuk arah yang sama: stop terlalu ketat merusak. Pipeline saat ini membiarkan LLM memilih SL dari zona konfluensi tanpa lantai jarak minimum berbasis ATR — padahal ATR14 H1 SUDAH dihitung deterministik di `api/_pair_context.js`. Ini bisa DIUKUR dari data yang sudah terkumpul (bandingkan `sl` distance/ATR vs tingkat kena SL di `setup_log_auto:v1`) sebelum satu baris kode pun diubah.
 2. **Caveat kejujuran:** ketiga paper menguji aturan EXIT atas posisi yang sudah dipegang (mayoritas ekuitas), bukan setup entry ber-R tetap seperti Daun Merah. Analoginya parsial — jangan dikutip seolah membuktikan aturan SL Daun Merah unggul.
 3. **Tighten preventif Jumat (`runFridayTightenCycle`) dapat dukungan tidak langsung** dari Arratia & Dorador: aturan stop tetap efektif walau gap akhir pekan diperhitungkan. Tidak ada bukti yang menuntut perubahan perilaku ini.
@@ -219,6 +234,7 @@ Riset baru atas permintaan user ("apa yang bisa membuat auto-entry lebih akurat 
 | Hsu, Taylor & Wang (2016), *Journal of International Economics* 102, 188-208, "Technical trading: Is it still beating the foreign exchange market?" | Application | 21.000+ aturan teknikal, 30 mata uang maju & berkembang, 45 tahun data harian, dengan **stepwise test anti data-snooping** dan validasi out-of-sample: masih ditemukan prediktabilitas & excess profitability yang substansial di kedua kelompok mata uang. Biaya transaksi yang dipakai 2 bp (mata uang maju) / 6 bp (berkembang) — **biaya sebesar itu tidak otomatis menghapus profitabilitas**, tapi profitabilitas menurun sepanjang waktu dan lebih kuat di mata uang yang lebih volatil/pasar kurang matang. |
 
 **Implikasi untuk Daun Merah:**
+
 1. **Pembanding sehat untuk nada skeptis §7/§11.** Hsu-Taylor-Wang adalah bukti terkuat yang ditemukan sejauh ini bahwa aturan teknikal di FX BELUM mati setelah dikoreksi data-snooping — sekaligus mengingatkan bahwa edge-nya tipis (ordo basis point) dan meluruh seiring waktu.
 2. **Ukuran retail = price impact tidak relevan, spread relevan.** Filippou dkk. memberi dasar kenapa Daun Merah tidak perlu memodelkan price impact sama sekali, TAPI juga kenapa spread nol bukan asumsi netral: `_evaluateSetups` (`api/admin.js`) mengisi entry di harga limit persis dan menilai sentuhan SL/TP dari wick candle H1 **tanpa spread/slippage sama sekali**. Biasnya berarah satu sisi (SL kena lebih cepat, TP kena lebih lambat di dunia nyata), jadi win-rate terukur condong optimis — relevan langsung ke kredibilitas gate n≥100.
 
@@ -230,6 +246,7 @@ Riset baru atas permintaan user ("apa yang bisa membuat auto-entry lebih akurat 
 | Schoenegger, Tuminauskaite, Park, Bastos & Tetlock (2024), *Science Advances* 10(45), eadp1528, "Wisdom of the silicon crowd: LLM ensemble prediction capabilities rival human crowd accuracy" | Method | Ensemble 12 LLM memprediksi 31 pertanyaan biner vs 925 peramal manusia dalam turnamen 3 bulan: **agregat LLM mengalahkan benchmark tanpa-informasi dan secara statistik tidak bisa dibedakan dari agregat manusia** — padahal riset sebelumnya menunjukkan LLM TUNGGAL (termasuk model frontier) sering gagal mengalahkan benchmark 50%. Temuan sekunder: prediksi LLM membaik 17-28% ketika diberi median prediksi manusia. |
 
 **Implikasi untuk Daun Merah:**
+
 1. **Gate A (AI Kritikus) ternyata punya nama di literatur: meta-labeling.** Konsekuensi yang berguna: cara mengevaluasinya BUKAN "berapa sering ia memveto" (frekuensi `auto_guard_stats:critic_veto` saja), melainkan precision/recall atas kandidat yang diveto vs yang lolos — yang butuh persis data counterfactual yang sudah ditandai belum ada di §11 dan `daun_merah_progress.md` (pola `_evaluateCanceledGhost`). Joubert juga menempatkan **sizing** sebagai bagian sah lapisan ini, menyambung Moreira & Muir (§10, "reduce size" > "skip total") yang sengaja tidak dijadikan gate terpisah.
 2. **Titik lemah paling mendasar bukan filternya, tapi bahwa keputusannya dari SATU model.** Schoenegger dkk. adalah bukti peer-review terkuat yang ditemukan bahwa nilai tambah datang dari AGREGASI beberapa model independen, bukan dari rantai veto. Daun Merah sudah punya rantai multi-provider (fallback berurutan, bukan agregasi) + uji konsistensi harian (`runConsistencyCheck`) — instrumen untuk mengetahui apakah ensemble akan mengubah apa pun sebenarnya sudah ada. **Biaya nyata:** agregasi berarti N× call AI per slot; konsisten dengan §4 (forecast combination puzzle) bentuknya harus rata-rata/mayoritas sederhana, BUKAN pembobotan optimal.
 
@@ -240,6 +257,7 @@ Riset baru atas permintaan user ("apa yang bisa membuat auto-entry lebih akurat 
 ## Cara pakai file ini
 
 Sebelum memulai riset/fitur makro baru di Daun Merah:
+
 1. Cek tabel di atas — apakah topiknya sudah ada constraint paper yang relevan?
 2. Kalau ada dan constraint-nya negatif (seperti Klein untuk NFP), pertimbangkan pivot tujuan dari "prediksi/edge" ke "assessment kontekstual" (pola nowcasting §3) SEBELUM investasi waktu riset besar.
 3. Kalau menambah paper baru ke file ini: verifikasi dulu via web search terhadap sumber primer, jangan salin mentah dari LLM lain tanpa cek.

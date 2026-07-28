@@ -64,10 +64,13 @@ Satu kali "generate" sebenarnya adalah **3-4 panggilan AI sekaligus**, bukan 1:
 | **Call 4** | Cek headline baru vs thesis terbuka user (thesis alert) | **Hanya** kalau ada `device_id` DAN device itu punya posisi terbuka — jadi otomatis dilewati saat cron jalan (cron tidak bawa device_id) |
 
 **Kapan generate penuh terjadi:**
-- **Otomatis (cron):** 3×/hari via GitHub Actions — 07:00, 14:00, 19:30 WIB (jam buka sesi Asia/Eropa/New York). Cron ini TIDAK kena rate limit apapun (diautentikasi lewat secret) dan TIDAK kena gate di bawah — selalu generate fresh.
-- **Manual:** tombol "Ringkas Berita"/"Ringkas Ulang" — siapa pun bisa klik kapan saja, dibatasi cooldown 90 detik/device + rate limit server 4x/menit/IP + **single-flight lock global (session 157 lanjutan)**.
 
-**Single-flight lock (`lock:market_digest_generate`, TTL 55 detik) — cegah burst request bersamaan boros AI:** Call 1/2/3 hasilnya SAMA untuk semua orang (ditulis ke `latest_article`, satu key Redis global), jadi kalau banyak device klik "Ringkas Ulang" hampir bersamaan, generate ulang berkali-kali cuma menghasilkan kalimat beda-beda dari data yang sama — bukan informasi baru. Sekarang: request PERTAMA yang lolos rate limit mengunci `lock:market_digest_generate` lalu generate seperti biasa. Request LAIN yang datang selagi lock masih hidup (baik karena generate lagi berlangsung ATAU baru saja selesai — lock TIDAK di-release manual, TTL 55 detik dibiarkan jadi cooldown alami) langsung disajikan `latest_article` apa adanya, **tanpa** ikut generate — nol tambahan panggilan AI. Pengecualian: kalau `latest_article` benar-benar kosong (cold start, belum pernah ada cache sama sekali), request tetap lanjut generate walau lock dipegang, supaya user tidak dapat respons kosong. `thesis_alerts` di-null-kan pada respons short-circuit ini karena itu data personal (Call 4) — device yang "kalah" lock tidak ikut menampilkan alert milik device lain.
+- **Otomatis (cron):** 3×/hari via GitHub Actions — 07:00, 14:00, 19:30 WIB (jam buka sesi Asia/Eropa/New York). Cron ini TIDAK kena rate limit apapun (diautentikasi lewat secret) dan TIDAK kena gate di bawah — selalu generate fresh.
+- **Manual:** tombol "Ringkas Berita"/"Ringkas Ulang" — siapa pun bisa klik kapan saja, dibatasi cooldown 90 detik/device + rate limit server 4x/menit/IP + single-flight lock global (session 157 lanjutan, lihat di bawah).
+
+**Single-flight lock (`lock:market_digest_generate`, TTL 55 detik) — cegah burst request bersamaan boros AI:**
+
+Call 1/2/3 hasilnya SAMA untuk semua orang (ditulis ke `latest_article`, satu key Redis global), jadi kalau banyak device klik "Ringkas Ulang" hampir bersamaan, generate ulang berkali-kali cuma menghasilkan kalimat beda-beda dari data yang sama — bukan informasi baru. Sekarang: request PERTAMA yang lolos rate limit mengunci `lock:market_digest_generate` lalu generate seperti biasa. Request LAIN yang datang selagi lock masih hidup (baik karena generate lagi berlangsung ATAU baru saja selesai — lock TIDAK di-release manual, TTL 55 detik dibiarkan jadi cooldown alami) langsung disajikan `latest_article` apa adanya, **tanpa** ikut generate — nol tambahan panggilan AI. Pengecualian: kalau `latest_article` benar-benar kosong (cold start, belum pernah ada cache sama sekali), request tetap lanjut generate walau lock dipegang, supaya user tidak dapat respons kosong. `thesis_alerts` di-null-kan pada respons short-circuit ini karena itu data personal (Call 4) — device yang "kalah" lock tidak ikut menampilkan alert milik device lain.
 
 **Rantai fallback provider (2026-07-25 — OpenRouter/Cerebras/Groq/Ollama sudah dihapus total dari kode):**
 
@@ -103,22 +106,23 @@ Call 4 (cek kontradiksi thesis terbuka):
 15 pasangan yang dilacak: EUR/USD, GBP/USD, USD/JPY, AUD/USD, USD/CAD, USD/CHF, NZD/USD, EUR/JPY, GBP/JPY, EUR/GBP, AUD/JPY, EUR/AUD, GBP/AUD, GBP/CAD, XAU/USD.
 
 **Penting:** tombol "Analisa Pair Ini" **selalu memanggil AI baru setiap diklik** — tidak dicek dulu apakah sudah ada hasil baru-baru ini (beda dengan Analisa Fundamental di §3.3 yang pakai cache global). Yang menahan laju supaya tidak boros adalah:
-- Cooldown 90 detik/device di UI
+
+- Cooldown 90 detik/device di UI.
 - **Jendela kesegaran 10 menit (Plan T-5, Session 198 SESI-C):** `analisaFreshUntil[symbol]` — begitu satu pair berhasil dianalisa segar (manual atau via auto-chain di bawah), klik manual ulang pair yang sama dalam 10 menit **tidak mengirim request sama sekali**, cukup toast "tunggu X menit lagi". Reset per-symbol (in-memory, hilang saat reload), tidak berlaku kalau respons `market_closed` (lihat gate di bawah).
 - **Gate pasar tutup (Plan T-1, Session 198 SESI-A):** di luar jam FX buka, endpoint tidak memanggil AI sama sekali — menyajikan `ohlcv_analysis:<symbol>` apa adanya (`market_closed:true`, nol AI call) atau pesan error kalau belum pernah ada cache untuk pair itu.
 - **Auto-chain (Plan T-5, Session 198 SESI-C):** setiap klik manual "Ringkas Berita"/"Ringkas Ulang" yang sukses otomatis memicu **satu** panggilan tambahan ke fitur ini untuk pair yang sedang aktif di tab Analisa (default XAU/USD kalau tab belum pernah dibuka) — chain ini menembus cooldown 90 detik & jendela kesegaran (input baru = analisa baru), tapi tetap dibatasi oleh lock generate Ringkasan sendiri (§3.1) jadi tidak bisa spam. Kalau sedang gate pasar tutup, chain otomatis dilayani cache tanpa AI call (sama seperti klik manual).
-- Rate limit server 5 request/menit/IP
-- Jatah harian provider bersama (lihat §4)
+- Rate limit server 5 request/menit/IP.
+- Jatah harian provider bersama (lihat §4).
 
 Hasil tiap analisa disimpan 6 jam supaya kalau tab ditutup-buka lagi, versi terakhir bisa langsung tampil tanpa panggil AI ulang (mode baca cepat, `mode=cached`).
 
 **Otomatis:** hanya XAU/USD, 3×/hari, nempel di jadwal cron Ringkasan Berita (workflow yang sama, langkah kedua).
 
-**Rantai fallback (Plan O-6, 2026-07-18): DeepSeek v4-flash → SambaNova akun-1 (DeepSeek-V3.2) → SambaNova akun-2 (DeepSeek-V3.2) — 3 tingkat, tanpa Groq/Cerebras (sudah tidak ada sejak dulu di rantai ini, dan sekarang benar-benar terhapus dari kode).** DeepSeek dipromosikan jadi primary setelah gate diagnostik `?test_deepseek=1` lolos 3/3 sampel live (XAU/USD, EUR/USD, GBP/JPY): JSON valid, entry/SL/TP konsisten arah & RR positif, tidak ada kontaminasi angka antar-pair (kekhawatiran utama sebelum promosi). Timeout SambaNova akun-1/akun-2 dibuat ADAPTIF terhadap sisa budget (bukan fixed 30s/25s lagi) supaya cascade 3-tier tetap di bawah 60s Vercel. Kalau ketiga tier gagal sekaligus, fitur ini **langsung menampilkan "AI tidak tersedia"**, tidak ada jaring pengaman lain.
+**Rantai fallback (Plan O-6, 2026-07-18):** DeepSeek v4-flash → SambaNova akun-1 (DeepSeek-V3.2) → SambaNova akun-2 (DeepSeek-V3.2) — 3 tingkat, tanpa Groq/Cerebras (sudah tidak ada sejak dulu di rantai ini, dan sekarang benar-benar terhapus dari kode). DeepSeek dipromosikan jadi primary setelah gate diagnostik `?test_deepseek=1` lolos 3/3 sampel live (XAU/USD, EUR/USD, GBP/JPY): JSON valid, entry/SL/TP konsisten arah & RR positif, tidak ada kontaminasi angka antar-pair (kekhawatiran utama sebelum promosi). Timeout SambaNova akun-1/akun-2 dibuat ADAPTIF terhadap sisa budget (bukan fixed 30s/25s lagi) supaya cascade 3-tier tetap di bawah 60s Vercel. Kalau ketiga tier gagal sekaligus, fitur ini **langsung menampilkan "AI tidak tersedia"**, tidak ada jaring pengaman lain.
 
 ### 3.3 Analisa Fundamental — `api/admin.js` (`action=fundamental_analysis`)
 
-Ini fitur AI yang **paling hemat** secara desain: hasilnya di-cache **6 jam untuk SEMUA orang** (satu key Redis global, bukan per-user/per-device), dan frontend tidak pernah minta "paksa refresh". Artinya:
+Ini fitur AI yang **paling hemat** secara desain: hasilnya di-cache **6 jam untuk SEMUA orang** (satu key Redis global, bukan per-user/per-device), dan frontend tidak pernah minta "paksa refresh".
 
 > **Berapa pun banyak orang yang klik tombol ini, AI-nya paling banyak benar-benar jalan 4 kali sehari** (24 jam ÷ 6 jam cache) — sisanya semua orang cuma baca hasil yang sama dari cache.
 
@@ -144,7 +148,11 @@ Berbeda dari 4 fitur di atas: **fact sheet dibangun 100% client-side** (checklis
 
 **Volume tambahan ke pool DeepSeek/SambaNova akun-1:** +2 call/hari (auto-entry, 2 slot) + 1 call/hari (uji konsistensi ×3 panggilan = +3 request) = **+5 request/hari**. Kecil dibanding pool 200/hari SambaNova, tapi tetap masuk hitungan headroom §5 kalau Analisa AI per Pair manual sedang ramai.
 
-**[2026-07-28] Gate A "AI Kritikus" otomatis (audit celah kesalahan trader, `daun_merah.md` Session 250):** setiap kandidat setup auto-entry yang lolos 3 gate murah (regime-confidence/correlation-cap/drawdown, §_auto_entry_guard.js, murni kode — 0 AI call) sekarang direview 1x lagi oleh AI Kritikus (verdict "batalkan" → setup tidak disimpan) sebelum masuk `setup_log_auto:v1`. **Pool TERPISAH** dari §3.6 di atas — `ai:sambanova:main:experimental` / `sambanova_main_experimental` (limit 30/hari), BUKAN `ai:sambanova:main`/`sambanova_main` yang dipakai tombol manual "UJI KELEMAHAN" publik (isolasi U-7 tetap terjaga — tidak rebutan kuota). SambaNova-only, tanpa fallback provider lain (sama seperti tombol manualnya). Volume: maksimal +2 call/hari (1 per slot auto-entry berhasil, hanya kalau setup itu genuinely baru — tidak jalan untuk kandidat yang sudah ditahan gate lain atau dup/blocked existing).
+**[2026-07-28] Gate A "AI Kritikus" otomatis (audit celah kesalahan trader, `daun_merah.md` Session 250):** setiap kandidat setup auto-entry yang lolos 3 gate murah (regime-confidence/correlation-cap/drawdown, `_auto_entry_guard.js`, murni kode — 0 AI call) sekarang direview 1x lagi oleh AI Kritikus (verdict "batalkan" → setup tidak disimpan) sebelum masuk `setup_log_auto:v1`.
+
+- **Pool TERPISAH** dari §3.6 di atas — `ai:sambanova:main:experimental` / `sambanova_main_experimental` (limit 30/hari), BUKAN `ai:sambanova:main`/`sambanova_main` yang dipakai tombol manual "UJI KELEMAHAN" publik (isolasi U-7 tetap terjaga — tidak rebutan kuota).
+- SambaNova-only, tanpa fallback provider lain (sama seperti tombol manualnya).
+- Volume: maksimal +2 call/hari (1 per slot auto-entry berhasil, hanya kalau setup itu genuinely baru — tidak jalan untuk kandidat yang sudah ditahan gate lain atau dup/blocked existing).
 
 ### 3.7 Review Posisi Virtual — `api/admin.js` (`action=position_review`, Plan U-5a/U-5b)
 
@@ -179,21 +187,26 @@ Ini lapisan pembatas paling penting untuk dipahami. **Jatah ini dibagi rata ke s
 Ini jawaban langsung untuk pertanyaan "penggunaan paling banyak fitur AI itu berapa kali", dipecah per fitur:
 
 ### Ringkasan Berita
+
 - **Otomatis:** pasti 3× sehari, tidak bisa lebih, tidak bisa kurang (jadwal tetap). Tiap generate normal = 1 request akun-2 (Call 1, fallback saat DeepSeek gagal) + 2 request ke SambaNova akun-1 (Call 2 & Call 3, fallback) — dalam skenario normal (DeepSeek sehat) request SambaNova malah nol.
 - **Manual:** setiap 1× klik "Ringkas Ulang" bisa menambah beban SambaNova/Gemini KALAU DeepSeek gagal — dalam kondisi normal, DeepSeek primary yang menyerap sebagian besar beban (dibatasi pagar biaya 50/hari).
 - **Kesimpulan sederhana:** DeepSeek (pagar 50/hari BERBAYAR) sekarang jadi bottleneck utama, bukan SambaNova — begitu DeepSeek habis/gagal, otomatis pindah ke SambaNova akun-1/akun-2 (200/hari masing-masing, jauh lebih longgar).
 
 ### Analisa AI per Pair
+
 - **Otomatis:** 3× sehari, khusus XAU/USD saja (juga lewat DeepSeek/SambaNova akun-1, ikut cron Ringkasan Berita).
 - **Manual:** dibatasi 5 klik/menit/IP oleh server dan 90 detik cooldown/device oleh UI. **Setiap klik = 1 request** (DeepSeek primary, fallback ke SambaNova akun-1 lalu akun-2). Tidak ada cache-gate sebelum generate (beda dari Analisa Fundamental), jadi tiap klik selalu makan jatah.
 
 ### Analisa Fundamental
+
 - **Maksimal mutlak: 4 kali sehari**, apapun yang terjadi (cache global 6 jam, tidak ada tombol paksa refresh di UI). Fitur paling "aman" dari sisi jatah AI.
 
 ### AI Coach Jurnal
+
 - Terikat pada aktivitas trading nyata user (butuh ≥3 trade closed) — secara alami jarang dipanggil. Ada tombol paksa ulang, jadi 1 device yang aktif bisa memicu beberapa kali sehari kalau memang lagi banyak menutup/mengevaluasi trade, tapi cache 1 jam/device tetap membatasi ini secara wajar.
 
 ### Total gabungan (skenario ramai realistis dalam 1 hari)
+
 | Fitur | Perkiraan maksimal wajar/hari | Pool yang dipakai |
 |---|---|---|
 | Ringkasan Berita (otomatis, 3× cron) | 3 request DeepSeek (fallback: SambaNova akun-1/akun-2) | DeepSeek → SambaNova |
@@ -210,7 +223,8 @@ Ini jawaban langsung untuk pertanyaan "penggunaan paling banyak fitur AI itu ber
 
 ## 6. Kalau Semua Fallback di Satu Rantai Habis/Gagal
 
-Sejak Cerebras/Groq/OpenRouter/Ollama dihapus (2026-07-25), rantai fallback jadi lebih pendek (2-4 tingkat tergantung fitur, lihat §3). Kalau semua tingkat di satu rantai gagal:
+Sejak Cerebras/Groq/OpenRouter/Ollama dihapus (2026-07-25), rantai fallback jadi lebih pendek (2-4 tingkat tergantung fitur, lihat §3). Kalau semua tingkat di satu rantai gagal, itu berarti salah satu dari dua hal:
+
 1. Semua provider di rantai itu gagal di hari yang sama (jarang, beda infrastruktur), atau
 2. Jatah harian kita sendiri (§4) sudah habis di SEMUA provider dalam rantai tersebut.
 
