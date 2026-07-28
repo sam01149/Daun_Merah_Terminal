@@ -24,6 +24,7 @@ const { requireAppKey } = require('./_app_key');
 const { fetchYahooOhlcv1h, fetchFallbackCandles, shouldSendYahooAlert, mapYahooSymbolToDeriv, fetchDerivCandles } = require('./_ohlcv_fetch');
 const { buildPairContext, computeCurrencyStrength } = require('./_pair_context');
 const { validateTightenSl, computePreventiveTightenSl, _evaluateManaged, _aggManagementStats } = require('./_position_review');
+const { isDrawdownHalted, isRegimeConfidenceBlocked, isCorrelatedExposureBlocked } = require('./_auto_entry_guard');
 
 // Actions callable from the frontend without a secret → rate-limited per IP.
 // AI-triggering actions get a tighter budget than cache reads.
@@ -3757,6 +3758,10 @@ async function ohlcvAnalyzeHandler(req, res) {
     // Blok fundamental terstruktur per pair — langsung dari cache Redis (cb_bias, COT,
     // risk regime), bukan turunan artikel. Best-effort: gagal baca = blok kosong.
     let fundBlock = '';
+    // Gate C auto-entry (audit celah kesalahan trader, 2026-07-28) butuh label regime
+    // MENTAH terpisah dari fundBlock (yang cuma teks prompt) — diisi di try yang sama
+    // supaya tidak fetch 'risk_regime' dua kali.
+    let autoGuardRegime = null;
     try {
       const [rawBias, rawCot, rawRisk, rawRetail, rawSnap, rawRY] = await Promise.all([
         redisCmd('GET', 'cb_bias'),
@@ -3766,11 +3771,13 @@ async function ohlcvAnalyzeHandler(req, res) {
         redisCmd('GET', 'daily_snapshot'),
         redisCmd('GET', 'real_yields'),
       ]);
+      const parsedRisk = rawRisk ? JSON.parse(rawRisk) : null;
+      autoGuardRegime = parsedRisk?.regime || null;
       fundBlock = _formatFundamentalBlock({
         label: data.label, isXau: data.is_xau,
         cbBias: rawBias ? JSON.parse(rawBias) : null,
         cot:    rawCot  ? JSON.parse(rawCot)  : null,
-        risk:   rawRisk ? JSON.parse(rawRisk) : null,
+        risk:   parsedRisk,
         retail: rawRetail ? JSON.parse(rawRetail) : null,
         drivers: _extractMacroDrivers(rawSnap, rawRY),
         nowMs:  Date.now(),
@@ -4387,6 +4394,56 @@ async function ohlcvAnalyzeHandler(req, res) {
             }
           }
         }
+        // Gate B/C/D (audit celah "kesalahan trader", 2026-07-28, daun_merah_progress.md)
+        // — HANYA auto-entry, HANYA kalau lolos guard existing di atas (bukan dup/
+        // blockedByOpenPosition). Dicek SEBELUM Gate A (AI Kritikus, 1 AI call) supaya
+        // kandidat yang memang bakal ditahan gate murah tidak buang budget AI sia-sia.
+        // Semua ambang di sini ADAPTIF per risk_regime (autoGuardRegime) — bukan cutoff
+        // statis — sesuai temuan riset (daun_merah_referensi_riset.md §10): filter yang
+        // kaku mengurangi frekuensi trade & bisa merusak performa, filter adaptif tidak.
+        let autoGuardReason = null;
+        if (isAutoCall && !dup && !blockedByOpenPosition) {
+          if (isRegimeConfidenceBlocked({ regime: autoGuardRegime, confidence: structured.confidence })) {
+            autoGuardReason = `regime_confidence(${autoGuardRegime}/${structured.confidence})`;
+          } else if (isCorrelatedExposureBlocked({ symbol, bias: structured.bias, openPositions: log })) {
+            autoGuardReason = 'correlation_cap';
+          } else {
+            const closedSetups = log
+              .filter(x => x && (x.status === 'tp' || x.status === 'sl'))
+              .sort((a, b) => (a.ts || 0) - (b.ts || 0));
+            const dd = isDrawdownHalted({ closedSetups, regime: autoGuardRegime });
+            if (dd.halted) autoGuardReason = `drawdown_circuit_breaker(R=${dd.rollingR})`;
+          }
+          // Gate A: AI Kritikus — 1 AI call ekstra, cuma jalan kalau lolos 3 gate murah
+          // di atas. Fact sheet numpang blok yang SUDAH dibangun di atas untuk prompt
+          // Analisa (fundBlock/rrBlock/trackBlock/calAnalyzeBlock) — TIDAK fetch Redis
+          // baru. verdict "batalkan" -> setup tidak disimpan (sama efeknya seperti
+          // blockedByOpenPosition); "tunda"/"lanjut" -> tetap disimpan (AI Kritikus
+          // dirancang skeptis-tapi-tidak-memblokir kecuali keberatan fundamental).
+          if (!autoGuardReason) {
+            try {
+              const criticSetupBlock = [
+                `[SETUP YANG DIUSULKAN]`,
+                `Pair: ${data.label} | Bias: ${structured.bias || '—'} | Entry: ${structured.entry_zone} | SL: ${structured.sl} | TP: ${structured.tp}${structured.risk_reward ? ` | RR: ${structured.risk_reward}` : ''}`,
+                structured.invalidation_condition ? `Invalidation: ${structured.invalidation_condition}` : null,
+                structured.makro_alignment ? `Makro alignment: ${structured.makro_alignment}${structured.makro_alignment_reason ? ` (${structured.makro_alignment_reason})` : ''}` : null,
+              ].filter(Boolean).join('\n');
+              const criticFactParts = [criticSetupBlock, fundBlock, rrBlock, trackBlock, calAnalyzeBlock].filter(Boolean);
+              // Pool eksperimental (BUKAN 'ai:sambanova:main'/'sambanova_main' milik tombol
+              // manual publik) — isolasi U-7, sama pola dengan AI_BUDGET_SAMBA_MAIN_KEY di atas.
+              const critic = await _runCriticVerdict(criticFactParts.join('\n\n') + CRITIC_JSON_INSTRUCTION, {
+                cbKey: 'ai:sambanova:main:experimental', budgetKey: 'sambanova_main_experimental',
+              });
+              if (critic.verdict === 'batalkan') {
+                autoGuardReason = `critic_veto${critic.objections?.[0]?.reason ? ':' + critic.objections[0].reason.slice(0, 80) : ''}`;
+              }
+            } catch (e) { console.warn('auto-entry Gate A (AI Kritikus) gagal, fail-open (tetap simpan setup):', e.message); }
+          }
+        }
+        if (autoGuardReason) {
+          blockedByOpenPosition = true; // reuse flag skip existing — setup baru TIDAK disimpan
+          console.log(`auto-entry ${symbol} ditahan oleh audit-guard: ${autoGuardReason}`);
+        }
         if (!dup && !blockedByOpenPosition) {
           const alignment = (structured.conflict && structured.conflict !== 'none')
             ? 'konflik'
@@ -4437,6 +4494,75 @@ async function ohlcvAnalyzeHandler(req, res) {
 // Fact sheet 100% deterministik dari Redis yang sudah ada (cb_bias, cot_cache_v2,
 // risk_regime, retail_sentiment_cache, rr_cache_v2, calendar_v1, setup_log:v1) —
 // TIDAK ada fetch eksternal baru, cuma 1 AI call (SambaNova, Groq diputus 2026-07-25).
+//
+// [2026-07-28] Diekstrak jadi _runCriticVerdict (audit celah "kesalahan trader"
+// Plan U — daun_merah_progress.md): sebelumnya AI Kritikus HANYA dipanggil manual
+// via tombol ini, TIDAK PERNAH menyentuh jalur auto-entry (`isAutoCall`) — padahal
+// ini satu-satunya alat anti-confirmation-bias yang sudah ada. Fungsi ini sekarang
+// dipakai DUA jalur: handler manual di bawah (fact sheet dari Redis) DAN Gate A
+// auto-entry di ohlcvAnalyzeHandler (fact sheet dari data yang SUDAH ada di memori
+// saat itu, tanpa fetch Redis tambahan — lihat pemanggilnya).
+const CRITIC_SYSTEM_PROMPT = 'Kamu auditor risiko trading yang skeptis. Setup yang diusulkan Senior Trader + fakta pasar terlampir adalah FAKTA, bukan tebakan. Tugasmu SATU-SATUNYA: cari alasan kenapa trade ini TIDAK layak diambil SEKARANG — fokus konflik makro, ancaman rilis kalender terdekat, crowded positioning (retail/COT), dan win-rate historis kalau tersedia. Maksimal 3 keberatan, masing-masing WAJIB mengutip angka/fakta KONKRET dari data terlampir — keberatan generik tanpa angka DILARANG. Kalau memang tidak ada keberatan berarti (data mendukung, tidak ada event dekat, positioning tidak ekstrem), verdict WAJIB "lanjut" dengan objections kosong — JANGAN mengarang risiko yang tidak ada di data. verdict: "lanjut" (tidak ada keberatan berarti) / "tunda" (ada keberatan tapi bisa dilewati dengan menunggu) / "batalkan" (keberatan fundamental terhadap tesis itu sendiri). Bahasa Indonesia.';
+const CRITIC_JSON_INSTRUCTION = '\n\nBalas HANYA satu objek JSON valid (tanpa markdown fence, tanpa teks lain) persis format ini: {"objections":[{"severity":"tinggi","reason":"..."}],"verdict":"lanjut"}. Maksimal 3 objections. Kalau tidak ada keberatan berarti, objections HARUS array kosong [] dan verdict "lanjut".';
+
+// cbKey/budgetKey berbeda untuk pemanggil auto-entry (Gate A, isExperimental) vs
+// manual (tombol "UJI KELEMAHAN") — BUG POLA SAMA yang sudah pernah ditemukan &
+// difix untuk deepseek_experimental (S218 audit, lihat komentar DEFAULT_LIMITS
+// _ai_guard.js): kalau dua pool dibiarkan sama, auto-entry & manual rebutan kuota
+// harian yang sama, dan outage/limit salah satu bisa mentrip circuit yang satunya.
+async function _runCriticVerdict(userMsg, { cbKey = 'ai:sambanova:main', budgetKey = 'sambanova_main' } = {}) {
+  const messages = [
+    { role: 'system', content: CRITIC_SYSTEM_PROMPT },
+    { role: 'user', content: userMsg },
+  ];
+  const SAMBANOVA_KEY = process.env.SAMBANOVA_API_KEY;
+  let rawText = null, model = null;
+
+  // Primary: SambaNova akun 1 — SAMA account/circuit dengan ohlcv_analyze primary
+  // (memang endpoint fisik yang sama, circuit breaker WAJIB dibagi supaya outage
+  // di satu tempat langsung terdeteksi di keduanya, bukan dites dobel). Groq
+  // (fallback lama) diputus kontraknya 2026-07-25 — tanpa fallback lagi di sini.
+  if (SAMBANOVA_KEY && await cb.canCall(cbKey)) {
+    try {
+      if (!await allowAiCall(budgetKey)) throw new Error('AI daily budget exceeded');
+      const r = await fetch('https://api.sambanova.ai/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SAMBANOVA_KEY}` },
+        body: JSON.stringify({ model: 'DeepSeek-V3.2', messages, max_tokens: 600, temperature: 0 }),
+        signal: AbortSignal.timeout(25000),
+      });
+      if (r.ok) {
+        const j = await r.json(); rawText = j.choices?.[0]?.message?.content?.trim() || null; model = 'deepseek-v3.2';
+        if (rawText) await cb.onSuccess(cbKey);
+        else throw new Error('Empty response');
+      } else { throw new Error(`HTTP ${r.status}`); }
+    } catch(e) { console.warn('_runCriticVerdict SambaNova failed:', e.message); await cb.onFailure(cbKey); }
+  } else if (SAMBANOVA_KEY) { console.log('_runCriticVerdict: SambaNova circuit OPEN'); }
+
+  if (!rawText) {
+    return { verdict: null, objections: null, model: null, raw: null, error: 'AI Kritikus tidak tersedia (SambaNova offline/limit habis) — coba lagi nanti.' };
+  }
+
+  let objections = null, verdict = null;
+  try {
+    const jsonStart = rawText.indexOf('{');
+    const jsonEnd   = rawText.lastIndexOf('}');
+    const cleaned   = jsonStart !== -1 && jsonEnd !== -1 ? rawText.slice(jsonStart, jsonEnd + 1) : rawText;
+    const parsed = JSON.parse(cleaned);
+    if (Array.isArray(parsed.objections)) {
+      objections = parsed.objections
+        .filter(o => o && typeof o.reason === 'string' && o.reason.trim())
+        .slice(0, 3)
+        .map(o => ({ severity: o.severity === 'tinggi' ? 'tinggi' : 'sedang', reason: o.reason.trim() }));
+    }
+    verdict = ['lanjut', 'tunda', 'batalkan'].includes(parsed.verdict) ? parsed.verdict : (objections?.length ? 'tunda' : 'lanjut');
+  } catch (e) {
+    console.warn('_runCriticVerdict: JSON parse gagal, fallback raw text:', e.message);
+  }
+
+  return { verdict, objections, model, raw: objections === null ? rawText : undefined, error: null };
+}
+
 async function ohlcvCriticHandler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Cache-Control', 'no-cache');
@@ -4526,61 +4652,14 @@ async function ohlcvCriticHandler(req, res) {
   ].filter(Boolean).join('\n');
 
   const factParts = [setupBlock, fundBlock, rrBlock, trackBlock, calBlock].filter(Boolean);
-  const userMsg = factParts.join('\n\n') + '\n\nBalas HANYA satu objek JSON valid (tanpa markdown fence, tanpa teks lain) persis format ini: {"objections":[{"severity":"tinggi","reason":"..."}],"verdict":"lanjut"}. Maksimal 3 objections. Kalau tidak ada keberatan berarti, objections HARUS array kosong [] dan verdict "lanjut".';
+  const userMsg = factParts.join('\n\n') + CRITIC_JSON_INSTRUCTION;
 
-  const messages = [
-    { role: 'system', content: 'Kamu auditor risiko trading yang skeptis. Setup yang diusulkan Senior Trader + fakta pasar terlampir adalah FAKTA, bukan tebakan. Tugasmu SATU-SATUNYA: cari alasan kenapa trade ini TIDAK layak diambil SEKARANG — fokus konflik makro, ancaman rilis kalender terdekat, crowded positioning (retail/COT), dan win-rate historis kalau tersedia. Maksimal 3 keberatan, masing-masing WAJIB mengutip angka/fakta KONKRET dari data terlampir — keberatan generik tanpa angka DILARANG. Kalau memang tidak ada keberatan berarti (data mendukung, tidak ada event dekat, positioning tidak ekstrem), verdict WAJIB "lanjut" dengan objections kosong — JANGAN mengarang risiko yang tidak ada di data. verdict: "lanjut" (tidak ada keberatan berarti) / "tunda" (ada keberatan tapi bisa dilewati dengan menunggu) / "batalkan" (keberatan fundamental terhadap tesis itu sendiri). Bahasa Indonesia.' },
-    { role: 'user', content: userMsg },
-  ];
-
-  const SAMBANOVA_KEY = process.env.SAMBANOVA_API_KEY;
-  let rawText = null, model = null;
-
-  // Primary: SambaNova akun 1 — SAMA account/circuit dengan ohlcv_analyze primary
-  // (memang endpoint fisik yang sama, circuit breaker WAJIB dibagi supaya outage
-  // di satu tempat langsung terdeteksi di keduanya, bukan dites dobel). Groq
-  // (fallback lama) diputus kontraknya 2026-07-25 — tanpa fallback lagi di sini.
-  if (SAMBANOVA_KEY && await cb.canCall('ai:sambanova:main')) {
-    try {
-      if (!await allowAiCall('sambanova_main')) throw new Error('AI daily budget exceeded');
-      const r = await fetch('https://api.sambanova.ai/v1/chat/completions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SAMBANOVA_KEY}` },
-        body: JSON.stringify({ model: 'DeepSeek-V3.2', messages, max_tokens: 600, temperature: 0 }),
-        signal: AbortSignal.timeout(25000),
-      });
-      if (r.ok) {
-        const j = await r.json(); rawText = j.choices?.[0]?.message?.content?.trim() || null; model = 'deepseek-v3.2';
-        if (rawText) await cb.onSuccess('ai:sambanova:main');
-        else throw new Error('Empty response');
-      } else { throw new Error(`HTTP ${r.status}`); }
-    } catch(e) { console.warn('ohlcv_critic SambaNova failed:', e.message); await cb.onFailure('ai:sambanova:main'); }
-  } else if (SAMBANOVA_KEY) { console.log('ohlcv_critic: SambaNova circuit OPEN'); }
-
-  if (!rawText) {
-    return res.status(200).json({ error: 'AI Kritikus tidak tersedia (SambaNova offline/limit habis) — coba lagi nanti.' });
-  }
-
-  let objections = null, verdict = null;
-  try {
-    const jsonStart = rawText.indexOf('{');
-    const jsonEnd   = rawText.lastIndexOf('}');
-    const cleaned   = jsonStart !== -1 && jsonEnd !== -1 ? rawText.slice(jsonStart, jsonEnd + 1) : rawText;
-    const parsed = JSON.parse(cleaned);
-    if (Array.isArray(parsed.objections)) {
-      objections = parsed.objections
-        .filter(o => o && typeof o.reason === 'string' && o.reason.trim())
-        .slice(0, 3)
-        .map(o => ({ severity: o.severity === 'tinggi' ? 'tinggi' : 'sedang', reason: o.reason.trim() }));
-    }
-    verdict = ['lanjut', 'tunda', 'batalkan'].includes(parsed.verdict) ? parsed.verdict : (objections?.length ? 'tunda' : 'lanjut');
-  } catch (e) {
-    console.warn('ohlcv_critic: JSON parse gagal, fallback raw text:', e.message);
-  }
+  const { verdict, objections, model, raw, error } = await _runCriticVerdict(userMsg);
+  if (error) return res.status(200).json({ error });
 
   return res.status(200).json({
     objections, verdict, model,
-    raw: objections === null ? rawText : undefined, // fallback tampilan mentah kalau parse gagal
+    raw, // fallback tampilan mentah kalau parse gagal
     symbol, label,
     generated_at: new Date().toISOString(),
   });

@@ -11,11 +11,29 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-07-28 (Session 249 — Diagnosis Risk Reversal 25D Kosong: Outage TLS ScraperAPI)
+> **Last updated:** 2026-07-28 (Session 250 — Eksekusi 4 Gate Audit "Kesalahan Trader" Auto-Entry)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 250 (2026-07-28) — Eksekusi 4 Gate Audit "Kesalahan Trader" Auto-Entry
+
+**Konteks:** Lanjutan diskusi user soal tujuan akhir Plan U (AI jadi pengelola dana riil, bukan sekadar eksperimen) — diminta audit celah "kesalahan trader" di pipeline auto-entry. Audit kode (langsung ke file, bukan checklist generik) menemukan 4 celah nyata di `vps/daemon.js` → `api/admin.js` → `setup_log_auto:v1`: (1) AI Kritikus (`ohlcv_critic`, alat anti-confirmation-bias yang sudah ada) tidak pernah dipanggil untuk auto-entry, cuma tombol manual; (2) tidak ada circuit breaker kerugian beruntun; (3) `risk_regime` (VIX/MOVE/HY) cuma teks informatif di prompt AI, tidak ada gate kode; (4) tidak ada batas eksposur portofolio lintas-pair (relevan ke caveat XAU/USD-EUR/USD r=0,585 yang sudah dicatat sesi ini juga). User khawatir menerapkan ke-4 gate sekaligus akan membuat sistem terlalu ketat (sinyal makin jarang, mengancam kecepatan akumulasi n≥30/pair Plan U) — diminta riset Scopus AI dulu sebelum eksekusi.
+
+**Riset (`daun_merah_referensi_riset.md` §10, 4 sitasi diverifikasi manual — Varma 2025, Moreira & Muir 2017, Zhao/Ledoit/Jiang 2023, Subrahmanyam 1994):** kekhawatiran user beralasan tapi solusinya ambang ADAPTIF per kondisi pasar, bukan batalkan gate-nya. Benang merah 4 topik: drawdown-based circuit breaker > consecutive-loss (yang terakhir rawan "magnet effect" — trader/algo malah mempercepat aksi mendekati ambang); "reduce size/bar" > "skip entirely" untuk gate volatilitas; HRP/gross-exposure constraint sederhana cukup untuk correlation cap skala retail.
+
+**Eksekusi — 4 gate, HANYA jalur `isAutoCall` (manual TIDAK disentuh, isolasi U-7 tetap):**
+1. **Gate A (AI Kritikus otomatis):** logika AI-call `ohlcv_critic` diekstrak jadi `_runCriticVerdict()` reusable (dipakai tombol manual DAN Gate A auto-entry — fact sheet Gate A numpang blok yang sudah dibangun untuk prompt Analisa, TIDAK fetch Redis tambahan). verdict `"batalkan"` → setup tidak disimpan. **Bug ditemukan & difix saat implementasi:** draft awal Gate A memanggil pool AI `ai:sambanova:main`/`sambanova_main` yang sama dengan tombol manual publik — pola bug PERSIS yang pernah ditemukan S218 untuk `deepseek_experimental` (auto-entry & manual rebutan kuota harian yang sama). Diperbaiki: `_runCriticVerdict` sekarang terima `cbKey`/`budgetKey` opsional, Gate A pakai `ai:sambanova:main:experimental`/`sambanova_main_experimental` (key yang SUDAH ada di `KNOWN_CIRCUITS`, dipakai call auto-entry utama — konsisten).
+2. **Gate B (drawdown circuit breaker adaptif):** `isDrawdownHalted()` di `api/_auto_entry_guard.js` baru — rolling 10 setup tertutup terakhir (lintas semua pair), ambang R berbeda per `risk_regime` (risk_on -6R, neutral -5R, elevated -3R, risk_off -2R, heuristik awal belum dikalibrasi live).
+3. **Gate C (regime confidence bar):** `isRegimeConfidenceBlocked()` — tolak entry `confidence:"rendah"` saat regime `elevated`/`risk_off`; confidence sedang/tinggi tidak pernah diblokir. Terjemahan "reduce size" (Moreira & Muir) ke sistem virtual 1-unit-R yang tidak punya position sizing kontinu.
+4. **Gate D (correlation cap):** `isCorrelatedExposureBlocked()` — cuma cover SATU pasangan yang terbukti korelatif di set 4-pair saat ini (XAU/USD-EUR/USD r=0,585), blokir entry baru kalau pandangan USD-nya sama dengan posisi open pasangannya.
+
+Ke-4 gate dicek berurutan (murah dulu: regime→correlation→drawdown, baru AI Kritikus di akhir supaya kandidat yang bakal ditahan gate murah tidak buang budget AI).
+
+**File diubah:** `api/_auto_entry_guard.js` (baru, pure function), `api/admin.js` (`_runCriticVerdict` diekstrak dari `ohlcvCriticHandler`, gate dipasang di persist block `ohlcvAnalyzeHandler`), `test/api/_auto_entry_guard.test.js` (baru, 18 test).
+
+**Verifikasi:** `npm test` 631/631 hijau (613 lama + 18 baru), termasuk `test/admin/position_review.test.js` yang meng-`require('../../api/admin.js')` langsung (memastikan refactor `ohlcvCriticHandler` tidak merusak module load). Response JSON tombol manual "UJI KELEMAHAN" dijaga identik (field `objections/verdict/model/raw/symbol/label/generated_at` sama persis). Belum ada verifikasi live cron (gate baru jalan di panggilan `auto=1` scheduler berikutnya) — dipantau via log `auto-entry <symbol> ditahan oleh audit-guard: <alasan>`.
 
 ## Changelog Session 249 (2026-07-28) — Diagnosis Risk Reversal 25D Kosong: Outage TLS ScraperAPI
 
