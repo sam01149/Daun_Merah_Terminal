@@ -1,0 +1,30 @@
+name: Setup TP/SL Watch (Q-7 fallback)
+
+# Q-7 (2026-07-28): watcher event-driven TP/SL setup_log_auto:v1 hidup di
+# vps/daemon.js (trigger per-tick + cron internal tiap 5 menit) — TIDAK punya
+# fallback GH Actions seperti ohlcv_sync/retail-sentiment, jadi kalau VPS
+# Railway down, deteksi TP/SL balik ke kondisi lama (nunggu buka dev console
+# manual atau slot auto-entry 2x/hari). Workflow ini jalan PARALEL dengan
+# daemon.js (pola sama ohlcv-sync.yml) supaya evaluasi tetap jalan tiap 5
+# menit walau VPS mati — endpoint sudah aman dipanggil ganda (lock
+# lock:setuplog_write:setup_log_auto:v1 di api/admin.js mencegah race).
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger re-evaluasi setup_log_auto:v1 (scope=auto)
+        run: |
+          STATUS=$(curl -s -o /tmp/resp.json -w "%{http_code}" \
+            -H "x-cron-secret: ${{ secrets.CRON_SECRET }}" \
+            --max-time 20 \
+            "https://financial-feed-app.vercel.app/api/admin?action=setup_stats&scope=auto")
+          cat /tmp/resp.json
+          if [ "$STATUS" -ne 200 ]; then
+            echo "setup_stats scope=auto gagal dengan HTTP $STATUS"
+            exit 1
+          fi
