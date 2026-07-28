@@ -505,6 +505,18 @@ const KEY_REGISTRY = [
   { key: 'selfheal:ohlcv_sync',      owner: 'api/admin.js + vps/daemon.js', ttl_expected: 3600,  note: 'NX lock self-heal: candle basi → trigger ohlcv_sync otomatis, maks 1x/jam lintas dua lapisan' },
   { key: 'selfheal:ohlcv_alert_ts',  owner: 'vps/daemon.js',     ttl_expected: 86400,  note: 'Dedup 6 jam alert Telegram "self-heal gagal, candle masih basi setelah trigger otomatis"' },
   { key: 'ohlcv_sync:last_run_at',   owner: 'api/admin.js',      ttl_expected: 5400,   note: 'Plan V-2: marker ISO timestamp cron dedup — GH Actions & Railway daemon Q-6 memicu ohlcv_sync 2x/jam, pemicu kedua dalam window 45 menit di-skip' },
+  // Audit celah "kesalahan trader" auto-entry (Session 250, 2026-07-28) — counter
+  // INCR polos, TTL none (akumulasi permanen, reset manual via DEL kalau perlu histori
+  // baru). 'considered' = penyebut (kandidat yang lolos guard dup/blockedByOpenPosition
+  // lama, dievaluasi ke-4 gate baru); 'saved' = lolos semua gate; 4 sisanya = alasan
+  // ditahan. considered = saved + regime_confidence + correlation_cap +
+  // drawdown_circuit_breaker + critic_veto (invarian, boleh dicek manual).
+  { key: 'auto_guard_stats:considered',              owner: 'api/admin.js', ttl_expected: null, note: 'Audit-guard: total kandidat auto-entry yang dievaluasi ke-4 gate baru' },
+  { key: 'auto_guard_stats:saved',                   owner: 'api/admin.js', ttl_expected: null, note: 'Audit-guard: kandidat lolos semua gate, tersimpan ke setup_log_auto:v1' },
+  { key: 'auto_guard_stats:regime_confidence',       owner: 'api/admin.js', ttl_expected: null, note: 'Audit-guard Gate C: ditahan (confidence rendah + regime elevated/risk_off)' },
+  { key: 'auto_guard_stats:correlation_cap',         owner: 'api/admin.js', ttl_expected: null, note: 'Audit-guard Gate D: ditahan (correlated exposure XAU/USD-EUR/USD)' },
+  { key: 'auto_guard_stats:drawdown_circuit_breaker', owner: 'api/admin.js', ttl_expected: null, note: 'Audit-guard Gate B: ditahan (rolling R melewati ambang regime)' },
+  { key: 'auto_guard_stats:critic_veto',              owner: 'api/admin.js', ttl_expected: null, note: 'Audit-guard Gate A: AI Kritikus verdict "batalkan"' },
 ];
 
 const DEPRECATED_KEYS = [
@@ -517,6 +529,14 @@ async function getKeyInfo(key) {
   if (key.includes('*')) return { exists: 'wildcard_pattern', ttl_actual: null };
   const [exists, ttl] = await Promise.all([redisCmd('EXISTS', key), redisCmd('TTL', key)]);
   const ttl_actual = ttl === -1 ? 'no_ttl' : ttl === -2 ? 'not_set' : ttl;
+  // auto_guard_stats:* (Session 250) — counter INCR polos, nilainya sendiri yang
+  // ingin dilihat (bukan cuma exists/ttl kayak key lain di registry). Dibatasi
+  // prefix ini saja supaya tidak GET key non-string lain (hash/set/sorted-set)
+  // yang bisa error/salah baca via GET biasa.
+  if (key.startsWith('auto_guard_stats:')) {
+    const raw = await redisCmd('GET', key);
+    return { exists: exists === 1, ttl_actual, value: raw ? parseInt(raw, 10) : 0 };
+  }
   return { exists: exists === 1, ttl_actual };
 }
 
@@ -4401,8 +4421,18 @@ async function ohlcvAnalyzeHandler(req, res) {
         // Semua ambang di sini ADAPTIF per risk_regime (autoGuardRegime) — bukan cutoff
         // statis — sesuai temuan riset (daun_merah_referensi_riset.md §10): filter yang
         // kaku mengurangi frekuensi trade & bisa merusak performa, filter adaptif tidak.
+        // Pencatatan ringan (2026-07-28, diminta user pasca-eksekusi gate): counter
+        // Redis INCR polos per alasan — cuma FREKUENSI tiap gate nyala, BUKAN apakah
+        // gate itu "benar" (kandidat yang ditahan memang bakal SL) atau "noise" (kandidat
+        // yang ditahan sebenarnya bakal TP). Untuk itu butuh pola counterfactual seperti
+        // `_evaluateCanceledGhost` (bias_flip) — sengaja belum dibuat di sini, itu kerja
+        // lebih besar dari "pencatatan ringan". Baca via `redis-keys?key=auto_guard_stats:*`
+        // (sudah didaftarkan di KEY_REGISTRY di bawah). Fire-and-forget, gagal tidak pernah
+        // menggagalkan alur auto-entry.
+        const autoGuardConsidered = isAutoCall && !dup && !blockedByOpenPosition;
+        if (autoGuardConsidered) redisCmd('INCR', 'auto_guard_stats:considered').catch(() => {});
         let autoGuardReason = null;
-        if (isAutoCall && !dup && !blockedByOpenPosition) {
+        if (autoGuardConsidered) {
           if (isRegimeConfidenceBlocked({ regime: autoGuardRegime, confidence: structured.confidence })) {
             autoGuardReason = `regime_confidence(${autoGuardRegime}/${structured.confidence})`;
           } else if (isCorrelatedExposureBlocked({ symbol, bias: structured.bias, openPositions: log })) {
@@ -4443,6 +4473,11 @@ async function ohlcvAnalyzeHandler(req, res) {
         if (autoGuardReason) {
           blockedByOpenPosition = true; // reuse flag skip existing — setup baru TIDAK disimpan
           console.log(`auto-entry ${symbol} ditahan oleh audit-guard: ${autoGuardReason}`);
+          // gateKey = token pertama sebelum '(' atau ':' — 'regime_confidence(risk_off/rendah)' -> 'regime_confidence'
+          const gateKey = autoGuardReason.split(/[(:]/)[0];
+          redisCmd('INCR', `auto_guard_stats:${gateKey}`).catch(() => {});
+        } else if (autoGuardConsidered) {
+          redisCmd('INCR', 'auto_guard_stats:saved').catch(() => {});
         }
         if (!dup && !blockedByOpenPosition) {
           const alignment = (structured.conflict && structured.conflict !== 'none')
