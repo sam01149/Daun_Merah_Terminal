@@ -523,7 +523,13 @@ const handler = async function handler(req, res) {
         ? `https://api.scraperapi.com?api_key=${scraperKey}&url=${encodeURIComponent(targetUrl)}`
         : targetUrl;
       const fetchHeaders = scraperKey ? { 'Accept': 'application/json' } : CME_HDR;
-      const r = await fetch(fetchUrl, { headers: fetchHeaders, signal: AbortSignal.timeout(15000) });
+      let r;
+      try {
+        r = await fetch(fetchUrl, { headers: fetchHeaders, signal: AbortSignal.timeout(15000) });
+      } catch (e) {
+        const causeMsg = e?.cause ? ` (cause: ${e.cause.code || e.cause.message || e.cause})` : '';
+        throw new Error(`CME CVOL batch fetch threw: ${e.name}: ${e.message}${causeMsg}`);
+      }
       const bodyText = await r.text();
       if (!r.ok) throw new Error(`CME CVOL batch HTTP ${r.status}: ${bodyText.slice(0, 200)}`);
       let json;
