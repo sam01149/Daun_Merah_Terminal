@@ -34,3 +34,6 @@ scratch/
 
 # Asset kreatif (icon/foto/video/ppt hasil Higgsfield) — file besar, jangan masuk git
 asset/
+
+# Cache lokal query/abstrak Scopus MCP — hapus setelah temuan ditulis ke daun_merah_riset.md (ATURAN.md §3.6)
+.cache/
