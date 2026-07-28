@@ -4433,7 +4433,7 @@ async function ohlcvAnalyzeHandler(req, res) {
         if (autoGuardConsidered) redisCmd('INCR', 'auto_guard_stats:considered').catch(() => {});
         let autoGuardReason = null;
         if (autoGuardConsidered) {
-          if (isRegimeConfidenceBlocked({ regime: autoGuardRegime, confidence: structured.confidence })) {
+          if (isRegimeConfidenceBlocked({ symbol, regime: autoGuardRegime, confidence: structured.confidence })) {
             autoGuardReason = `regime_confidence(${autoGuardRegime}/${structured.confidence})`;
           } else if (isCorrelatedExposureBlocked({ symbol, bias: structured.bias, openPositions: log })) {
             autoGuardReason = 'correlation_cap';

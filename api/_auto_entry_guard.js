@@ -60,7 +60,17 @@ function isDrawdownHalted({ closedSetups, regime }) {
 // Blok entry confidence 'rendah' saat regime sedang stres (elevated/risk_off) —
 // entry confidence 'sedang'/'tinggi' tetap lolos (bukan skip total, cuma naikkan
 // bar kualitas sinyal saat kondisi makro sedang tidak mendukung).
-function isRegimeConfidenceBlocked({ regime, confidence }) {
+//
+// [2026-07-28, diskusi user] Gate ini HANYA relevan untuk pair dengan kaki USD
+// langsung — risk_regime murni proxy VIX/MOVE/HY (risiko global/USD). AUD/NZD &
+// EUR/GBP SENGAJA tidak dimasukkan: keduanya dipilih di redesain 4-pair justru
+// karena independen dari faktor risiko global itu (r=0,10-0,19, daun_merah_riset.md)
+// — edge-nya datang dari fundamental relatif (RBA/RBNZ, ECB/BOE), bukan VIX/MOVE.
+// Menggate pair itu pakai regime global akan salah sasaran.
+const REGIME_RELEVANT_SYMBOLS = new Set(['GC=F', 'EURUSD=X']);
+
+function isRegimeConfidenceBlocked({ symbol, regime, confidence }) {
+  if (!REGIME_RELEVANT_SYMBOLS.has(symbol)) return false;
   if (confidence !== 'rendah') return false;
   return regime === 'risk_off' || regime === 'elevated';
 }

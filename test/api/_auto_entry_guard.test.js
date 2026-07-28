@@ -61,24 +61,31 @@ test('isDrawdownHalted: array kosong -> rollingR 0, tidak pernah halted', () => 
 });
 
 // ── isRegimeConfidenceBlocked (Gate C) ──────────────────────────────────────
+// Gate C HANYA relevan untuk pair berkaki USD langsung (GC=F, EURUSD=X) — lihat
+// komentar REGIME_RELEVANT_SYMBOLS di _auto_entry_guard.js.
 
-test('isRegimeConfidenceBlocked: confidence rendah + risk_off -> blocked', () => {
-  assert.equal(isRegimeConfidenceBlocked({ regime: 'risk_off', confidence: 'rendah' }), true);
+test('isRegimeConfidenceBlocked: GC=F confidence rendah + risk_off -> blocked', () => {
+  assert.equal(isRegimeConfidenceBlocked({ symbol: 'GC=F', regime: 'risk_off', confidence: 'rendah' }), true);
 });
 
-test('isRegimeConfidenceBlocked: confidence rendah + elevated -> blocked', () => {
-  assert.equal(isRegimeConfidenceBlocked({ regime: 'elevated', confidence: 'rendah' }), true);
+test('isRegimeConfidenceBlocked: EURUSD=X confidence rendah + elevated -> blocked', () => {
+  assert.equal(isRegimeConfidenceBlocked({ symbol: 'EURUSD=X', regime: 'elevated', confidence: 'rendah' }), true);
 });
 
 test('isRegimeConfidenceBlocked: confidence rendah + risk_on/neutral -> TIDAK blocked', () => {
-  assert.equal(isRegimeConfidenceBlocked({ regime: 'risk_on', confidence: 'rendah' }), false);
-  assert.equal(isRegimeConfidenceBlocked({ regime: 'neutral', confidence: 'rendah' }), false);
-  assert.equal(isRegimeConfidenceBlocked({ regime: null, confidence: 'rendah' }), false);
+  assert.equal(isRegimeConfidenceBlocked({ symbol: 'GC=F', regime: 'risk_on', confidence: 'rendah' }), false);
+  assert.equal(isRegimeConfidenceBlocked({ symbol: 'GC=F', regime: 'neutral', confidence: 'rendah' }), false);
+  assert.equal(isRegimeConfidenceBlocked({ symbol: 'GC=F', regime: null, confidence: 'rendah' }), false);
 });
 
 test('isRegimeConfidenceBlocked: confidence sedang/tinggi TIDAK PERNAH blocked walau risk_off', () => {
-  assert.equal(isRegimeConfidenceBlocked({ regime: 'risk_off', confidence: 'sedang' }), false);
-  assert.equal(isRegimeConfidenceBlocked({ regime: 'risk_off', confidence: 'tinggi' }), false);
+  assert.equal(isRegimeConfidenceBlocked({ symbol: 'GC=F', regime: 'risk_off', confidence: 'sedang' }), false);
+  assert.equal(isRegimeConfidenceBlocked({ symbol: 'GC=F', regime: 'risk_off', confidence: 'tinggi' }), false);
+});
+
+test('isRegimeConfidenceBlocked: AUD/NZD & EUR/GBP TIDAK PERNAH blocked (independen dari regime USD/global)', () => {
+  assert.equal(isRegimeConfidenceBlocked({ symbol: 'AUDNZD=X', regime: 'risk_off', confidence: 'rendah' }), false);
+  assert.equal(isRegimeConfidenceBlocked({ symbol: 'EURGBP=X', regime: 'risk_off', confidence: 'rendah' }), false);
 });
 
 // ── isCorrelatedExposureBlocked (Gate D) ────────────────────────────────────
