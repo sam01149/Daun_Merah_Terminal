@@ -159,7 +159,7 @@ async function scrapeAllRates() {
   return rates;
 }
 
-// Returns array of { currency, bank, short, rate, last_meeting, last_decision, last_bps, rate_source, rate_stale }
+// Returns array of { currency, bank, short, rate, last_meeting, last_decision, last_bps, rate_source }
 // rate_source: 'live_cached' | 'live_fresh' | 'fallback'
 async function getLiveCbRates() {
   const now = Date.now();
@@ -214,25 +214,37 @@ async function getLiveCbRates() {
     }
   } catch(e) { console.warn('cb_decisions load failed:', e.message); }
 
-  return Object.entries(CB_FALLBACK).map(([cur, fb]) => {
-    const live = liveRates[cur];
-    const rate = live?.rate ?? fb.rate;
-    const dec  = cbDecisions[cur];
-    const diff = live?.rate != null ? Math.round((live.rate - fb.rate) * 100) : 0;
-    const rateChanged = Math.abs(diff) >= 5;
-
-    return {
-      currency:      cur,
-      bank:          fb.bank,
-      short:         fb.short,
-      rate,
-      last_meeting:  dec?.last_meeting  || fb.last_meeting,
-      last_decision: rateChanged ? (diff > 0 ? 'hike' : 'cut') : (dec?.last_decision || fb.last_decision),
-      last_bps:      rateChanged ? diff : (dec?.last_bps ?? fb.last_bps),
-      rate_source:   live ? rateSource : 'fallback',
-      rate_stale:    rateChanged,
-    };
-  });
+  return Object.entries(CB_FALLBACK).map(([cur, fb]) =>
+    mergeCbRate(cur, fb, liveRates[cur], cbDecisions[cur], liveRates[cur] ? rateSource : 'fallback')
+  );
 }
 
-module.exports = { CB_FALLBACK, getLiveCbRates, RATES_CACHE_KEY, RATES_TTL_MS };
+// Pure merge logic — diekstrak (2026-07-29) supaya bisa ditest langsung tanpa
+// mock network scrape/Redis. `live`/`dec` boleh undefined.
+//
+// Diff vs CB_FALLBACK (baseline statis di source code) HANYA dipakai sebagai
+// tebakan darurat kalau belum pernah ada keputusan tercatat dari headline
+// (dec undefined) — mis. parser belum pernah nangkep rilis CB currency ini.
+// `dec` (hasil parse headline resmi via cb_decisions) selalu menang kalau ada,
+// karena itu sumber paling akurat (bukan cuma selisih angka vs baseline yang
+// bisa basi kapan saja). Bug lama (2026-07-29): heuristik diff ini dulu SELALU
+// menang kalau selisih >=5bps, walau dec sudah ada dan valid.
+function mergeCbRate(cur, fb, live, dec, rateSource) {
+  const rate = live?.rate ?? fb.rate;
+  const diff = live?.rate != null ? Math.round((live.rate - fb.rate) * 100) : 0;
+  const rateChanged = Math.abs(diff) >= 5;
+  const useHeuristic = !dec && rateChanged;
+
+  return {
+    currency:      cur,
+    bank:          fb.bank,
+    short:         fb.short,
+    rate,
+    last_meeting:  dec?.last_meeting  || fb.last_meeting,
+    last_decision: dec?.last_decision || (useHeuristic ? (diff > 0 ? 'hike' : 'cut') : fb.last_decision),
+    last_bps:      dec?.last_bps ?? (useHeuristic ? diff : fb.last_bps),
+    rate_source:   rateSource,
+  };
+}
+
+module.exports = { CB_FALLBACK, getLiveCbRates, mergeCbRate, RATES_CACHE_KEY, RATES_TTL_MS };

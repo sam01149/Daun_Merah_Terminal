@@ -11,11 +11,32 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-07-29 (Session 255 — Audit Fairness Skor Fundamental Lintas Currency + Fix)
+> **Last updated:** 2026-07-29 (Session 256 — Fix Bug KRITIS Prioritas CB Rate + Badge Data Seed + Ganti Simbol UI)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 256 (2026-07-29) — Fix Bug KRITIS Prioritas CB Rate + Badge Data Seed + Ganti Simbol UI
+
+**Konteks:** Lanjutan rapat audit fitur fundamental (Session 255) — user minta mitigasi untuk sisa temuan yang belum dieksekusi: bug KRITIS prioritas data CB rate, badge umur data seed yang hilang total, dan simbol non-arrow (⚡/⚖) di panel Skenario Kalender yang tidak konsisten dengan larangan emoji ATURAN §4.1.
+
+**1. Fix KRITIS — prioritas CB rate terbalik (`api/_cb_rates.js`):**
+- Root cause: heuristik diff (`live.rate - CB_FALLBACK.rate`, ≥5bps dianggap "berubah") dulu SELALU menang atas `dec` (hasil parse headline resmi via `cb_decisions`, sumber paling akurat) — walau `dec` sudah ada dan valid. Bisa bikin UI tampilkan bps salah kalau `CB_FALLBACK` (baseline statis di source code) sudah lama tidak diupdate manual dan ada >1 keputusan CB sejak itu.
+- Fix: `dec` sekarang SELALU menang kalau ada; heuristik diff cuma fallback darurat saat `dec` benar-benar belum pernah tercatat untuk currency itu.
+- Refactor kecil: logika merge diekstrak jadi fungsi pure `mergeCbRate(cur, fb, live, dec, rateSource)` (diekspor) supaya bisa ditest langsung tanpa mock network scrape/Redis — `getLiveCbRates()` sekarang cuma manggil fungsi ini per currency.
+- Field `rate_stale` dihapus (dead code — tidak pernah dipakai `index.html`/`cb-status.js`, dan setelah fix ini kehilangan makna lamanya).
+- Test baru: `test/lib/cb_rates.test.js` (7 test) — regression guard eksplisit untuk bug ini, termasuk kasus "dec dengan angka beda dari heuristik diff tetap menang" dan "dec.last_bps 0 (hold) tidak keliru fallback ke heuristik (`??` vs `||`)".
+
+**2. Badge "belum diverifikasi" untuk data seed (`index.html`):** Entri `FUND_SEED` (`api/admin.js`) yang belum pernah ketiban headline (`date:'—'`) dulu tidak dapat badge umur sama sekali (`fundAgeLabel(null)` = string kosong) — data paling tak-terverifikasi (bisa berbulan-bulan) justru terlihat paling "bersih" di mata user. Sekarang `fundAgeLabel(null)` return `'blm diverifikasi'`, badge kelas `.fund-age.seed` (warna kuning, italic, border dashed) dipasang di kedua lokasi render: fund-card grid (`fund-td-per`) DAN detail overlay (`fd-row-age`, sebelumnya tidak ada info umur sama sekali di sana).
+
+**3. Ganti simbol ⚡/⚖ ke ikon SVG (`index.html`, panel Skenario Kalender):** `⚡ reaksi langsung` (tag pair mayor event) dan `⚖ Hitung Lot · SIZING` (tombol) diganti ikon SVG stroke/fill inline konsisten gaya ikon nav yang sudah ada (viewBox 24x24, `stroke="currentColor"`). Simbol ✓/✕ (checklist/verdict) TIDAK disentuh — di luar scope yang dibahas (beda dari ⚡/⚖ yang jelas ikon emoji, ✓/✕ dianggap dingbat form sederhana mirip panah ↑↓→▲▼ yang sudah diterima). Catatan sampingan (BELUM dikerjakan, di luar scope panel Skenario Kalender): ★/☆ untuk rating confidence AI di kartu THESIS (dashboard Ringkasan, `index.html` sekitar baris 7036/7061/17306/17326) pakai simbol yang sama, belum dibahas; juga ditemukan emoji 🔒 literal di modal MT5/Sizing (`index.html` sekitar baris 4213/4217) — sama sekali di luar scope hari ini, dicatat sebagai temuan baru untuk rapat berikutnya.
+
+**Verifikasi:** `npm test` 647/647 hijau (640 sebelumnya + 7 test baru `cb_rates.test.js`). `?v=`/`APP_VERSION` naik ke `2026.07.29.2`.
+
+**File diubah:** `api/_cb_rates.js`, `test/lib/cb_rates.test.js` (baru), `index.html`.
+
+**Belum dikerjakan (di luar scope rapat hari ini, dicatat untuk lanjutan):** simbol ★/☆ di kartu THESIS dashboard, emoji 🔒 di modal MT5/Sizing Calculator.
 
 ## Changelog Session 255 (2026-07-29) — Audit Fairness Skor Fundamental Lintas Currency + Fix
 

@@ -1092,6 +1092,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .fund-td-per { display: none; }
 .fund-age { display: block; opacity: .7; }
 .fund-age.recent { color: var(--muted); opacity: 1; font-weight: 700; }
+.fund-age.seed { color: var(--yellow); opacity: .85; font-style: italic; border-bottom: 1px dashed currentColor; }
 .fund-more-link {
   margin-top: 4px; padding-top: 4px; border-top: 1px dashed rgba(var(--fg-rgb),.08);
   font-size: 8px; font-family: 'DM Mono', monospace; letter-spacing: .3px;
@@ -1278,6 +1279,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   font: 9px 'DM Mono',monospace; color: var(--muted);
   margin-top: 1px; opacity: .4;
 }
+.fd-row-age { font: 9px 'DM Mono',monospace; margin-top: 1px; opacity: .6; }
+.fd-row-age.seed { color: var(--yellow); opacity: .85; font-style: italic; }
 .fd-extra-block {
   margin: 14px 0; padding: 14px;
   background: var(--surface); border-radius: 8px;
@@ -4335,7 +4338,7 @@ window.addEventListener('DOMContentLoaded', updateThemeIcon);
 
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.07.29.1';
+const APP_VERSION = '2026.07.29.2';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
@@ -8556,8 +8559,12 @@ function fundRecencyWeight(ageDays) {
   if (ageDays <= 45) return 0.5;
   return 0.25;
 }
+// ageDays null = seed awal (belum pernah ketiban headline sejak fitur ini dibuat,
+// bisa berbulan-bulan) — 2026-07-29: dulu badge dikosongkan total untuk kasus ini,
+// jadi data paling tak-terverifikasi justru terlihat paling "bersih" (tanpa tanda
+// apa pun), padahal seharusnya paling dicurigai. Sekarang ditandai eksplisit.
 function fundAgeLabel(ageDays) {
-  if (ageDays === null) return '';
+  if (ageDays === null) return 'blm diverifikasi';
   if (ageDays === 0) return 'hari ini';
   if (ageDays < 7)  return `${ageDays}h lalu`;
   if (ageDays < 30) return `${Math.floor(ageDays / 7)}mgg lalu`;
@@ -9010,7 +9017,8 @@ function renderFundamental() {
         const prevHtml = v.previous ? `<span class="fund-prev">${escHtml(v.previous)}</span>` : '';
         const ageDays  = fundAgeDays(v.date);
         const ageLabel = fundAgeLabel(ageDays);
-        const ageHtml  = ageLabel ? `<span class="fund-age${ageDays !== null && ageDays <= 14 ? ' recent' : ''}">${ageLabel}</span>` : '';
+        const ageCls   = ageDays === null ? ' seed' : ageDays <= 14 ? ' recent' : '';
+        const ageHtml  = ageLabel ? `<span class="fund-age${ageCls}">${ageLabel}</span>` : '';
         return `<tr>
           <td class="fund-td-ind" title="${escHtml(k)}">${escHtml(k)}</td>
           <td class="fund-td-val${v.actual ? sigCls : ' no-data'}">${escHtml(v.actual || '—')}${arrow ? `<span class="fund-arrow">${arrow}</span>` : ''}${prevHtml}</td>
@@ -9284,13 +9292,16 @@ function _renderFundDetail() {
       const sig    = scoreInd(k, v.actual, v.previous);
       const sigCol = sig === 1 ? 'var(--green)' : sig === -1 ? 'var(--red)' : 'var(--text)';
       const arrow  = sig === 1 ? '↑' : sig === -1 ? '↓' : '';
-      const period = v.period && v.period !== '—' ? v.period : '';
+      const period  = v.period && v.period !== '—' ? v.period : '';
+      const ageDays = fundAgeDays(v.date);
+      const ageCls  = ageDays === null ? ' seed' : '';
       rowsHtml += `<div class="fd-row">
         <div class="fd-row-name">${escHtml(k)}</div>
         <div class="fd-row-right">
           <div class="fd-row-val" style="color:${sigCol}">${escHtml(v.actual || '—')}${arrow ? `<span class="fd-val-arrow">${arrow}</span>` : ''}</div>
           ${v.previous ? `<div class="fd-row-prev">prev: ${escHtml(v.previous)}</div>` : ''}
           ${period ? `<div class="fd-row-period">${escHtml(period)}</div>` : ''}
+          <div class="fd-row-age${ageCls}">${fundAgeLabel(ageDays)}</div>
         </div>
       </div>`;
     });
@@ -10468,12 +10479,12 @@ function scenarioRenderResults(pairs, eventCur, direction, eventName, evId) {
     <div class="cal-scenario-pair">
       <div class="cal-scenario-rank">#${i+1}</div>
       <div class="cal-scenario-pair-body">
-        <div class="cal-scenario-pair-name">${p.dir === 'long' ? 'LONG' : 'SHORT'} <span style="color:var(--text)">${p.pair}</span>${scenarioVerdictBadge(evId, key, conf.plus, conf.minus)}${p.pair === directPair ? `<span class="scen-direct-tag" title="Pair mayor ${eventCur} vs USD — reaksi awal kejutan data biasanya paling cepat dan likuid di sini, meski ranking dasar-bertumpu bisa menempatkannya lebih rendah">⚡ reaksi langsung</span>` : ''}</div>
+        <div class="cal-scenario-pair-name">${p.dir === 'long' ? 'LONG' : 'SHORT'} <span style="color:var(--text)">${p.pair}</span>${scenarioVerdictBadge(evId, key, conf.plus, conf.minus)}${p.pair === directPair ? `<span class="scen-direct-tag" title="Pair mayor ${eventCur} vs USD — reaksi awal kejutan data biasanya paling cepat dan likuid di sini, meski ranking dasar-bertumpu bisa menempatkannya lebih rendah"><svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor" style="vertical-align:-1px;margin-right:2px"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>reaksi langsung</span>` : ''}</div>
         <div class="cal-scenario-pair-dir ${p.dir}">${p.dir.toUpperCase()}</div>
         <div class="scen-conf">${conf.rows.join('')}${taRow}</div>
         <div class="scen-pair-actions">
           <button class="cal-scenario-ck-btn" onclick="scenarioGoToChecklist('${p.pair}')">✓ Validasi CHECKLIST</button>
-          <button class="cal-scenario-ck-btn" onclick="scenarioGoToSizing('${p.pair}','${p.dir}')">⚖ Hitung Lot · SIZING</button>
+          <button class="cal-scenario-ck-btn" onclick="scenarioGoToSizing('${p.pair}','${p.dir}')"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" style="vertical-align:-1px;margin-right:2px"><path d="M12 3v18M5 7l-3 6a4 4 0 0 0 6 0Z"/><path d="M19 7l-3 6a4 4 0 0 0 6 0Z"/><path d="M5 7h14M5 21h14"/></svg>Hitung Lot · SIZING</button>
         </div>
       </div>
     </div>`;
