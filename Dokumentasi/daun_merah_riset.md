@@ -24,6 +24,27 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 
 ## Riset Aktif
 
+### [2026-07-29] High-Frequency Trading (HFT) — genuine HFT BLOCKER kategorikal, bukan gap usaha
+
+Riset atas permintaan user: "riset HFT dan data yang diperlukan, yang bisa diimplementasikan." Dicek silang ke web (sumber di bawah) DAN ke kode aktual Daun Merah, bukan cuma teori umum.
+
+**HFT institusional asli (market making/latency arbitrage/stat-arb order-book) — TIDAK BISA diimplementasikan, blocker infra+biaya kategorikal:**
+- Butuh order book L2/L3 (depth-of-market), bukan cuma harga bid/ask — Deriv (broker Daun Merah) hanya expose `ticks`/`ticks_history` (harga, bukan depth) dan `active_symbols`; tidak ada endpoint DOM publik untuk symbol FX/synthetic.
+- Butuh colocation di data center matching-engine broker/exchange + FIX API direct market access. Biaya nyata: setup infra sendiri US$1jt-5jt + opex US$50rb-200rb/bulan; jalur retail FIX access tetap perlu deposit minimum US$10rb-50rb + biaya konektivitas US$300-1.500/bulan. Stack Daun Merah = Railway/Vercel cloud generik (bukan colo), Node.js WebSocket (RTT retail wajar puluhan-ratusan ms, bukan sub-milidetik), budget proyek Rp0 by design ([[project-definisi-selesai-plan-u]]).
+- Spread/slippage retail CFD/synthetic (`SPREAD_PRICE_ESTIMATE`, `api/admin.js`) menghapus habis edge di skala sub-detik — edge HFT institusional bergantung pada spread mendekati nol + rebate maker, tidak tersedia di broker retail manapun.
+- Deriv ToS TIDAK melarang algo/scalping secara umum (dicek eksplisit — cuma melarang abuse sistem error/swap-arbitrage), jadi ini murni blocker infra & ekonomi, bukan legal.
+- **Kesimpulan: sama kelasnya dengan blocker [[project-glm-zai-tos-blocker]] — jangan diusulkan ulang tanpa perubahan infra/modal fundamental (mis. user benar-benar sewa colo+FIX, di luar cakupan proyek gratis ini).**
+
+**Yang SUDAH diimplementasikan & jadi bukti batas atas yang realistis (bukan usulan baru — Q-7, Session 253):** `vps/daemon.js` sudah subscribe `ticks` mentah (streaming tick-level, bukan candle) untuk XAU/USD guna watcher TP/SL real-time; 14 pair FX lain masih di granularity candle 1H (`ticks_history style:candles subscribe:1`). Ini membuktikan daemon Railway TEKNIS sanggup pegang tick stream — jalur ini yang jadi acuan kalau mau naik frekuensi, BUKAN membangun infra HFT baru.
+
+**Ide "HFT-adjacent" yang implementable dalam batas stack sekarang (diparkir, BUKAN untuk dieksekusi tanpa persetujuan eksplisit — [[feedback-minimize-noise-plan-u]] user 2x tolak tambahan mekanisme):**
+1. Perluas pola tick-stream Q-7 (yang sudah terbukti jalan di XAU/USD) ke pair lain KALAU ada kebutuhan nyata (mis. watcher TP/SL lebih presisi) — extend pola existing, bukan mekanisme baru.
+2. Proxy microstructure dari tick yang sudah mengalir (uptick/downtick ratio, tick velocity per menit) sebagai indikator momentum/volatilitas kasar — tanpa order book asli tidak bisa hitung order-flow imbalance sungguhan, ini cuma aproksimasi kasar dari arah tick.
+3. Reaksi event-driven lebih cepat (kalender/berita) — sudah jadi kekuatan inti Daun Merah (`calendar_v1`, `pollCalendarLatency`); mempertajam latensi rilis→sinyal ke skala detik adalah "edge kecepatan" yang realistis tanpa infra mikrodetik, beda dengan HFT sungguhan yang butuh sub-milidetik.
+4. Stat-arb/pairs jangka pendek pakai `correlations.js` existing di window lebih pendek — reuse kode, bukan provider data baru.
+
+**Sumber:** [Best Brokers for High-Frequency Trading 2026](https://newyorkcityservers.com/blog/best-hft-brokers-2026), [High-Frequency Trading Platforms: Architecture, Speed & Infrastructure (2026)](https://www.quantvps.com/blog/high-frequency-trading-platform), [Infrastructure Requirements for High-Frequency Trading](https://bluechipalgos.com/blog/infrastructure-requirements-for-high-frequency-trading/), [Deriv API — Ticks Stream](https://developers.deriv.com/docs/data/ticks/), [Deriv Trading Terms & Conditions](https://deriv.com/terms-and-conditions/trading-terms).
+
 ### [2026-07-28] Riset "auto-entry lebih akurat & berkualitas" — 4 celah terukur di pipeline yang sudah ada (BELUM ada kode diubah)
 
 Landasan akademis lengkap + 8 sitasi terverifikasi: `daun_merah_referensi_riset.md` §13 (SL vs volatilitas, periodisitas intraday FX, biaya transaksi, meta-labeling, ensemble LLM). Bagian ini khusus terjemahan temuan itu ke kode Daun Merah aktual — semuanya bisa dijawab dengan MENGANALISIS data yang sudah terkumpul, **tanpa menambah gate/mekanisme baru** (konsisten penutup §11 dan keputusan user 2026-07-28 soal Gate C). Diurutkan dari rasio manfaat-per-usaha tertinggi:

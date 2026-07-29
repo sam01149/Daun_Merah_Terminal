@@ -52,6 +52,8 @@ Semua workflow di atas autentikasi ke `api/*.js` lewat header `x-cron-secret`, d
 
 **DITOLAK/DIPUTUS:** OpenRouter, Cerebras, Groq, Ollama Cloud — semua **kontrak diputus user 2026-07-25**, env var dihapus dari Vercel, kode chain/diagnostik-nya dihapus total dari `api/market-digest.js`, `api/admin.js`, `api/journal.js`, `api/_ai_guard.js`. Sebelumnya berstatus "Free (persisten)".
 
+**GLM 5.2 — DITOLAK 2 KALI, dua alasan beda:** (1) via NVIDIA NIM trial (S190/S191) — ToS trial melarang "not in production", BUKAN soal kualitas (malah dicatat "lebih natural" dari model lain saat itu). (2) via API resmi z.ai (dicek 2026-07-29) — ToS resmi (`docs.z.ai/legal-agreement/terms-of-use`) SECARA EKSPLISIT DAN KATEGORIS melarang penggunaan untuk "investment and financial management", "finance, investments", dan "decision-making activities" (Section III.6.a/b, Additional Terms 1.f.iii/iv) — TANPA pengecualian disclaimer/human-oversight. Ini blocker kategoris untuk SELURUH use case Daun Merah (analisa finansial + auto-entry trading decision), bukan cuma satu fitur — jangan evaluasi ulang tanpa z.ai mengubah ToS-nya secara eksplisit.
+
 ---
 
 ## 3. Data Makro & Bank Sentral
