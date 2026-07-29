@@ -519,6 +519,14 @@ const KEY_REGISTRY = [
   { key: 'auto_guard_stats:correlation_cap',         owner: 'api/admin.js', ttl_expected: null, note: 'Audit-guard Gate D: ditahan (correlated exposure XAU/USD-EUR/USD)' },
   { key: 'auto_guard_stats:drawdown_circuit_breaker', owner: 'api/admin.js', ttl_expected: null, note: 'Audit-guard Gate B: ditahan (rolling R melewati ambang regime)' },
   { key: 'auto_guard_stats:critic_veto',              owner: 'api/admin.js', ttl_expected: null, note: 'Audit-guard Gate A: AI Kritikus verdict "batalkan"' },
+  // [SISTEM HAKIM] aktivasi jalur cron (2026-07-29) — counter INCR polos terpisah dari
+  // auto_guard_stats:* karena BUKAN gate (tidak pernah membatalkan penyimpanan sendiri).
+  // 'considered' = setup auto-entry di mana cbDir tersedia (client/manual atau fallback
+  // server _computeCbDirServerSide) & dicek terhadap bias; 'fired' = subset yang
+  // konflik, forced conflict='arah'. Ukuran dampaknya yang sebenarnya (menang/kalah,
+  // bukan cuma frekuensi) ada di setup_stats?scope=auto -> global.sistem_hakim_calibration.
+  { key: 'sistem_hakim_stats:considered', owner: 'api/admin.js', ttl_expected: null, note: '[SISTEM HAKIM] auto-entry: cbDir tersedia & dicek vs bias teknikal' },
+  { key: 'sistem_hakim_stats:fired',      owner: 'api/admin.js', ttl_expected: null, note: '[SISTEM HAKIM] auto-entry: konflik terdeteksi, conflict dipaksa "arah"' },
 ];
 
 const DEPRECATED_KEYS = [
@@ -536,7 +544,7 @@ async function getKeyInfo(key) {
   // ingin dilihat (bukan cuma exists/ttl kayak key lain di registry). Dibatasi
   // prefix ini saja supaya tidak GET key non-string lain (hash/set/sorted-set)
   // yang bisa error/salah baca via GET biasa.
-  if (key.startsWith('auto_guard_stats:')) {
+  if (key.startsWith('auto_guard_stats:') || key.startsWith('sistem_hakim_stats:')) {
     const raw = await redisCmd('GET', key);
     return { exists: exists === 1, ttl_actual, value: raw ? parseInt(raw, 10) : 0 };
   }
@@ -2761,6 +2769,25 @@ function _confidenceCalibration(arr) {
   return out;
 }
 
+// [SISTEM HAKIM] kalibrasi (2026-07-29, diskusi user — "cari cara mengukurnya tanpa
+// merusak statistika kita"): pola PERSIS _confidenceCalibration di atas, field BARU
+// murni aditif (`sistem_hakim`, ditulis saat setup dibuat/di-refine — lihat penulisan
+// setup_log_auto), TIDAK menyentuh field/kalibrasi yang sudah ada. Tujuannya membedakan
+// win-rate setup yang "fired" (Sistem Hakim memaksa conflict='arah', biasanya lalu
+// ditahan Flip Guard sebagai whipsaw) vs "clear" (cbDir tersedia & dicek, tidak ada
+// konflik) — kalau "fired" TIDAK kalah dari "clear" dalam sampel yang cukup, itu sinyal
+// Sistem Hakim mungkin cuma menahan sinyal yang sebenarnya sah (noise, bukan filter
+// berguna). n kecil di awal (fitur baru) — jangan disimpulkan apa pun sebelum n memadai.
+function _sistemHakimCalibration(arr) {
+  const out = {};
+  for (const tag of ['fired', 'clear']) {
+    const sub = arr.filter(x => x.sistem_hakim === tag && (x.status === 'tp' || x.status === 'sl'));
+    const tp = sub.filter(x => x.status === 'tp').length;
+    out[tag] = { n: sub.length, win_rate: sub.length ? Math.round(tp / sub.length * 100) : null };
+  }
+  return out;
+}
+
 // Agregat statistik dari log setup. Ambiguous TIDAK masuk pembagi win-rate manapun.
 // PLAN U-1: dua metrik — win_rate_raw (semua tp/sl apa adanya, TIDAK PERNAH disensor)
 // dan win_rate_adjusted (sl berlabel loss_label dikeluarkan dari pembagi). `win_rate`
@@ -2792,6 +2819,8 @@ function _aggSetupStats(arr) {
     cost_expectancy: _aggCostExpectancy(arr),
     // Kalibrasi confidence AI (win-rate per level tinggi/sedang/rendah).
     confidence_calibration: _confidenceCalibration(arr),
+    // [SISTEM HAKIM] kalibrasi win-rate fired vs clear — lihat _sistemHakimCalibration.
+    sistem_hakim_calibration: _sistemHakimCalibration(arr),
     // PLAN U-5a: manajemen posisi VIRTUAL dilaporkan TERPISAH — makna win_rate di
     // atas TIDAK berubah (tetap kinerja ghost/pasif apa adanya).
     management: _aggManagementStats(arr),
@@ -3546,6 +3575,48 @@ function _extractRingkasanExcerpt(article, label, isXau) {
   return cap(picked.join('\n\n'), 2500);
 }
 
+// Duplikasi SADAR dari CB_BIAS_LEVEL/_ckInferDirFromCbBias di index.html — pola sama
+// dengan duplikasi vps/daemon.js<->api/*.js (lihat catatan drift di sana): kalau label
+// bank sentral baru ditambah di index.html, ingat replikasi mapping ini juga.
+const CB_BIAS_LEVEL = {
+  'hawkish': 6, 'cautious hawkish': 5,
+  'neutral': 4, 'data dependent': 4, 'on hold': 4, 'split': 4,
+  'cautious dovish': 3, 'dovish': 2,
+};
+const CB_BIAS_NEUTRAL_LVL = 4;
+
+// [SISTEM HAKIM] cbDir server-side (2026-07-29, diskusi user) — dulu HANYA dihitung
+// client (index.html, _ckInferDirFromCbBias) dan dikirim lewat body POST manual;
+// trigger cron auto-entry (vps/daemon.js) adalah GET tanpa body, jadi guard "Sistem
+// Hakim" di ohlcvAnalyzeHandler diam-diam TIDAK PERNAH menyala di jalur otomatis.
+// Dipanggil HANYA sebagai fallback saat body tidak mengirim cbDir (lihat pemanggil) —
+// perilaku manual yang sudah ada tidak disentuh.
+// Syarat kekuatan bukti SENGAJA lebih ketat dari versi client: client memaksa veto
+// dari bias apa pun (termasuk confidence Medium/Low). User eksplisit tidak mau "Sistem
+// Hakim" jadi pembuat keputusan di jalur otomatis — hanya aktif kalau confidence KEDUA
+// leg 'High' (bukan Medium/Low) dan tidak sedang di-flag divergence_warning (Call 2
+// digest menahan bias lama karena sinyal baru belum cukup kuat — jangan dipakai
+// memaksa apa pun selama masih disputed). Untuk XAU, xau_confidence (skala 1-5) harus
+// >=4. Fail-closed: data kurang/lemah -> null (Sistem Hakim diam, bukan menebak).
+function _computeCbDirServerSide({ label, isXau, cbBiasObj, xauThesis }) {
+  if (isXau) {
+    if (!xauThesis || typeof xauThesis.xau_confidence !== 'number' || xauThesis.xau_confidence < 4) return null;
+    if (xauThesis.xau_bias === 'bullish') return 'long';
+    if (xauThesis.xau_bias === 'bearish') return 'short';
+    return null;
+  }
+  const legs = String(label || '').toUpperCase().split('/').map(s => s.trim()).filter(Boolean);
+  if (legs.length !== 2) return null;
+  const [base, quote] = legs;
+  const bCb = cbBiasObj?.[base], qCb = cbBiasObj?.[quote];
+  if (!bCb?.bias || !qCb?.bias) return null;
+  if (bCb.confidence !== 'High' || qCb.confidence !== 'High') return null;
+  if (bCb.divergence_warning || qCb.divergence_warning) return null;
+  const bL = CB_BIAS_LEVEL[String(bCb.bias).toLowerCase()] ?? CB_BIAS_NEUTRAL_LVL;
+  const qL = CB_BIAS_LEVEL[String(qCb.bias).toLowerCase()] ?? CB_BIAS_NEUTRAL_LVL;
+  return bL === qL ? null : (bL > qL ? 'long' : 'short');
+}
+
 // Format blok fundamental terstruktur per pair untuk prompt Analisa (pure — dites unit).
 // Sumber: cb_bias (dirawat Call 2 digest), cot_cache_v2 (CFTC; USD = Dollar Index),
 // risk_regime — data langsung dari cache server, BUKAN turunan prosa artikel, jadi
@@ -3829,7 +3900,12 @@ async function ohlcvAnalyzeHandler(req, res) {
   else if (ringkasanContext.length > 3000) ringkasanContext = ringkasanContext.slice(0, 2997) + '...';
   let ringkasanAt      = req.body?.ringkasanGeneratedAt || null;
   const clientOhlcv    = req.body?.ohlcvData       || null;
-  const cbDir          = req.body?.cbDir           || null;
+  // cbDir dari body: manual (index.html) selalu mengirim ini. Cron/auto tidak pernah
+  // (GET tanpa body) — fallback server-side dihitung di bawah (_computeCbDirServerSide)
+  // setelah cbBiasParsed/xauThesis siap, HANYA untuk isAutoCall (lihat di bawah), supaya
+  // perilaku manual yang sudah ada persis sama seperti sebelumnya.
+  let cbDir            = req.body?.cbDir           || null;
+  let xauThesis        = null;
 
   // Fallback server-side untuk SEMUA pair (dulu GC=F saja): cron tidak punya browser,
   // dan user yang belum pernah buka tab Ringkasan tetap dapat konteks makro selama
@@ -3842,6 +3918,7 @@ async function ohlcvAnalyzeHandler(req, res) {
         const artObj = JSON.parse(rawArticle);
         ringkasanContext = _extractRingkasanExcerpt(artObj.article || '', label || symbol, symbol === 'GC=F');
         if (ringkasanContext) ringkasanAt = artObj.generated_at || null;
+        xauThesis = artObj.thesis || null;
       }
     } catch(e) { /* opsional — analisa tetap jalan tanpa konteks makro */ }
   }
@@ -3893,6 +3970,9 @@ async function ohlcvAnalyzeHandler(req, res) {
     // trader 2026-07-28) butuh label regime MENTAH terpisah dari fundBlock (yang cuma
     // teks prompt) — diisi di try yang sama supaya tidak fetch 'risk_regime' dua kali.
     let autoGuardRegime = null;
+    // [SISTEM HAKIM] butuh objek cb_bias mentah (bukan fundBlock yang cuma teks prompt)
+    // untuk _computeCbDirServerSide di bawah — diisi di try yang sama, tidak fetch dobel.
+    let cbBiasParsed = null;
     try {
       const [rawBias, rawCot, rawRisk, rawRetail, rawSnap, rawRY] = await Promise.all([
         redisCmd('GET', 'cb_bias'),
@@ -3904,9 +3984,10 @@ async function ohlcvAnalyzeHandler(req, res) {
       ]);
       const parsedRisk = rawRisk ? JSON.parse(rawRisk) : null;
       autoGuardRegime = parsedRisk?.regime || null;
+      cbBiasParsed = rawBias ? JSON.parse(rawBias) : null;
       fundBlock = _formatFundamentalBlock({
         label: data.label, isXau: data.is_xau,
-        cbBias: rawBias ? JSON.parse(rawBias) : null,
+        cbBias: cbBiasParsed,
         cot:    rawCot  ? JSON.parse(rawCot)  : null,
         risk:   parsedRisk,
         retail: rawRetail ? JSON.parse(rawRetail) : null,
@@ -3914,6 +3995,11 @@ async function ohlcvAnalyzeHandler(req, res) {
         nowMs:  Date.now(),
       });
     } catch (e) { /* opsional — jangan gagalkan analisa kalau cache fundamental kosong */ }
+    // Fallback HANYA untuk isAutoCall (cron auto-entry) — manual selalu sudah kirim
+    // cbDir sendiri (atau sengaja null), perilakunya tidak disentuh sama sekali.
+    if (!cbDir && isAutoCall) {
+      cbDir = _computeCbDirServerSide({ label: data.label, isXau: data.is_xau, cbBiasObj: cbBiasParsed, xauThesis });
+    }
 
     // Sentimen pasar options (CME CVOL) per pair — session 157 lanjutan 7. Cache
     // ditulis correlations.js (rr_cache_v2, TTL 1h), dibaca read-only di sini (tidak
@@ -4264,6 +4350,11 @@ async function ohlcvAnalyzeHandler(req, res) {
     } else if (!isDiagnosticOnly && !rawText && SAMBANOVA_KEY_CALL1) { console.log('ohlcv_analyze: SambaNova akun2 circuit OPEN/budget mepet'); }
 
     let structured = null, commentary = rawText;
+    // [SISTEM HAKIM] tag pengukuran (2026-07-29) — TIDAK dipakai gate/keputusan apa pun,
+    // murni observasi ditulis ke setup_log_auto untuk analisis kalibrasi terpisah (lihat
+    // _sistemHakimCalibration). evaluated=false berarti cbDir tidak tersedia sama sekali
+    // (beda dari "dicek, ternyata selaras" — sama filosofi confidence:null vs 'rendah').
+    let sistemHakimEvaluated = false, sistemHakimFired = false, conflictForcedBySistemHakim = false;
     if (rawText) {
       try {
         // Split on the delimiter BEFORE touching JSON — commentary lives as plain text after it,
@@ -4365,20 +4456,32 @@ async function ohlcvAnalyzeHandler(req, res) {
 
         // [SISTEM HAKIM] Soft Block (Hak Veto User) - Mencegat halusinasi makro_alignment
         if (cbDir && structured.bias) {
+          sistemHakimEvaluated = true;
           const techBias = structured.bias.toLowerCase();
           const isTechLong = techBias.includes('bullish') || techBias === 'long';
           const isTechShort = techBias.includes('bearish') || techBias === 'short';
 
           if ((cbDir === 'long' && isTechShort) || (cbDir === 'short' && isTechLong)) {
+            sistemHakimFired = true;
             structured.makro_alignment = 'konflik';
             structured.makro_alignment_reason = '[SISTEM HAKIM] Terdeteksi konflik nyata antara arah Makro/Fundamental dan Teknikal. Setup ini melanggar aturan konfluensi makro.';
             // Veto sistem = konflik arah nyata terverifikasi kode, bukan cuma klaim model —
             // paksa conflict='arah' kecuali model sudah lapor 'waktu' (lebih serius, jangan ditimpa turun).
             if (structured.conflict !== 'waktu') {
+              conflictForcedBySistemHakim = structured.conflict !== 'arah';
               structured.conflict = 'arah';
               structured.conflict_note = structured.makro_alignment_reason;
             }
           }
+        }
+        // Telemetri frekuensi murni (2026-07-29) — HANYA jalur auto-entry (baru
+        // diaktifkan di sini), supaya tidak bercampur dengan manual yang sudah lama
+        // jalan. Beda family dari `auto_guard_stats:*` SENGAJA: Sistem Hakim bukan
+        // gate (tidak pernah membatalkan penyimpanan sendiri), jadi jangan disalahpahami
+        // sebagai gate ke-4. Baca via redis-keys?key=sistem_hakim_stats:*.
+        if (isAutoCall && sistemHakimEvaluated) {
+          redisCmd('INCR', 'sistem_hakim_stats:considered').catch(() => {});
+          if (sistemHakimFired) redisCmd('INCR', 'sistem_hakim_stats:fired').catch(() => {});
         }
       } catch(e) {
         // Keep rawText as commentary, structured stays null
@@ -4486,6 +4589,10 @@ async function ohlcvAnalyzeHandler(req, res) {
                 stalePending.conflict_note = structured.conflict_note ?? null;
                 stalePending.makro_alignment = structured.makro_alignment ?? null;
                 stalePending.makro_alignment_reason = structured.makro_alignment_reason ?? null;
+                // [SISTEM HAKIM] tag pengukuran ikut diperbarui ke generasi terbaru — pola
+                // sama PLAN W di atas, jangan nyimpen snapshot dari generasi pertama.
+                stalePending.sistem_hakim = sistemHakimEvaluated ? (sistemHakimFired ? 'fired' : 'clear') : null;
+                stalePending.conflict_source = structured.conflict === 'arah' ? (conflictForcedBySistemHakim ? 'sistem_hakim' : 'ai') : null;
                 stalePending.model = model;
                 // BUG DITEMUKAN & DIFIX (2026-07-25, diskusi user soal filled_t < closed_t):
                 // `ts` di sini SEMPAT di-reset ke Date.now() supaya horizon_days terasa
@@ -4610,6 +4717,12 @@ async function ohlcvAnalyzeHandler(req, res) {
             conflict_note: structured.conflict_note ?? null,
             makro_alignment: structured.makro_alignment ?? null,
             makro_alignment_reason: structured.makro_alignment_reason ?? null,
+            // [SISTEM HAKIM] tag pengukuran (2026-07-29) — murni observasi, TIDAK dibaca
+            // gate/Flip Guard/kalibrasi manapun yang sudah ada (lihat _sistemHakimCalibration
+            // untuk agregat terpisah yang MEMBACA field ini). null = cbDir tidak tersedia
+            // saat itu (fail-closed _computeCbDirServerSide, atau manual tanpa cbDir).
+            sistem_hakim: sistemHakimEvaluated ? (sistemHakimFired ? 'fired' : 'clear') : null,
+            conflict_source: structured.conflict === 'arah' ? (conflictForcedBySistemHakim ? 'sistem_hakim' : 'ai') : null,
             loss_label: null, label_reason: null, label_by: null,
             // PLAN U-5a: manajemen posisi VIRTUAL — null/0 = belum pernah direview.
             intervention: null, managed_status: null, managed_closed_t: null, review_count: 0,
@@ -5110,6 +5223,8 @@ module.exports._aggSetupStats = _aggSetupStats;
 module.exports._costAdjustedR = _costAdjustedR;
 module.exports._aggCostExpectancy = _aggCostExpectancy;
 module.exports._confidenceCalibration = _confidenceCalibration;
+module.exports._sistemHakimCalibration = _sistemHakimCalibration;
+module.exports._computeCbDirServerSide = _computeCbDirServerSide;
 module.exports._summarizeLatency = _summarizeLatency;
 module.exports.SPREAD_PRICE_ESTIMATE = SPREAD_PRICE_ESTIMATE;
 module.exports.probeCalendarCache = probeCalendarCache;

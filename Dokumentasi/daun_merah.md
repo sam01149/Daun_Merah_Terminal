@@ -11,11 +11,26 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-07-29 (Session 258 — Fix Lanjutan Hallucination FOMC: Instruksi Prompt Saja Tidak Cukup)
+> **Last updated:** 2026-07-29 (Session 259 — Aktivasi "Sistem Hakim" di Jalur Cron Auto-Entry + Pengukuran Terpisah)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 259 (2026-07-29) — Aktivasi "Sistem Hakim" di Jalur Cron Auto-Entry + Pengukuran Terpisah
+
+**Konteks:** Lanjutan diskusi audit alur auto-entry (Plan U, `setup_log_auto:v1`) — user diberi peta workflow lengkap (diagram if/else per gerbang, dibuat sebagai artifact) untuk menelusuri celah sendiri, lalu spesifik menanyakan mekanisme konsistensi bias AI antar-slot 08:15/13:15 UTC. Audit menemukan: guard `[SISTEM HAKIM]` (veto soft yang memaksa `conflict='arah'` kalau bias teknikal AI berlawanan dengan arah bank sentral tersimpan, `cbDir`) sudah lama ada di kode tapi **tidak pernah aktif di jalur cron otomatis** — `cbDir` cuma dikirim lewat body POST manual (`index.html`), sementara trigger cron (`vps/daemon.js`) adalah GET tanpa body. User minta 3 hal: (1) aktifkan di jalur cron, (2) JANGAN jadikan Sistem Hakim pembuat keputusan — bukan gate baru yang bisa veto sendiri, sesuaikan syarat kekuatan buktinya dengan kelemahan sinyal, (3) cari cara mengukur dampaknya tanpa merusak statistik existing (drawdown/cost-expectancy/confidence-calibration).
+
+**Fix (`api/admin.js`):**
+- `_computeCbDirServerSide(...)` — replikasi server-side dari `_ckInferDirFromCbBias` (index.html), pakai cache `cb_bias`/`thesis` XAU yang SUDAH difetch untuk blok fundamental (tidak fetch dobel). Syarat SENGAJA lebih ketat dari versi client (yang tidak cek confidence sama sekali): confidence KEDUA leg harus `'High'` (bukan Medium/Low) dan tidak sedang di-flag `divergence_warning` (Call 2 digest menahan bias lama karena sinyal baru belum cukup kuat); XAU butuh `xau_confidence>=4` (skala 1-5). Evidence lemah → `null` (Sistem Hakim diam-diam tidak nyala), bukan menebak.
+- Dipanggil HANYA sebagai fallback saat `isAutoCall && !cbDir` — perilaku manual (index.html, selalu kirim `cbDir` sendiri di body, termasuk kalau nilainya sengaja `null`) tidak disentuh sama sekali.
+- Pengukuran murni aditif, TIDAK mengubah field/kalibrasi yang sudah ada (confidence, conflict, makro_alignment, drawdown, cost_expectancy tetap identik): 2 field baru per entri `setup_log_auto` (`sistem_hakim: 'fired'|'clear'|null`, `conflict_source: 'ai'|'sistem_hakim'|null` — diperbarui juga di jalur refine in-place, pola sama field mentah lain), 1 agregat baru `sistem_hakim_calibration` (win-rate fired vs clear, hanya closed tp/sl, pola persis `_confidenceCalibration`) masuk `_aggSetupStats` (otomatis muncul di `setup_stats?scope=auto`), dan 2 counter Redis `sistem_hakim_stats:considered`/`fired` (family terpisah dari `auto_guard_stats:*` — Sistem Hakim bukan gate, tidak pernah membatalkan penyimpanan setup sendiri, cuma melabeli `conflict` yang lalu dibaca Flip Guard existing).
+
+**Verifikasi:** `npm test` 666/666 hijau (652 sebelumnya + 14 test baru `test/admin/sistem_hakim.test.js` — pure function `_computeCbDirServerSide`/`_sistemHakimCalibration`, plus 3 test integrasi end-to-end: fired saat cb_bias High/High divergen, TIDAK fire saat confidence Medium, manual tidak terpengaruh sama sekali).
+
+**File diubah:** `api/admin.js`, `test/admin/sistem_hakim.test.js` (baru).
+
+**Belum dikerjakan (ditahan sampai konfirmasi akhir, sesuai permintaan user "itu dibagian akhir saja konfirmasinya"):** demote COT/retail sentiment jadi elemen sekunder di artifact audit workflow (COT tidak punya age-label di prompt, walau bisa basi 3-8 hari — retail sudah ada age-label, risikonya lebih kecil); keputusan "jangan tambah sumber data fundamental baru" sudah disetujui user, tidak perlu perubahan kode.
 
 ## Changelog Session 258 (2026-07-29) — Fix Lanjutan Hallucination FOMC: Bug Tanggal di Konversi WIB (Root Cause Sebenarnya)
 
