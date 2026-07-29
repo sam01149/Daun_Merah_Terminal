@@ -11,11 +11,33 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-07-29 (Session 263 — Buang Tick Deriv untuk XAU: Konsistensi Penuh Yahoo di Atas Kecepatan Deteksi)
+> **Last updated:** 2026-07-29 (Session 264 — Revert Session 257: Berita NEWS + Dashboard Dikembalikan Tidak Bisa Diklik)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 264 (2026-07-29) — Revert Session 257: Berita NEWS + Dashboard Dikembalikan Tidak Bisa Diklik
+
+**Konteks:** Session 257 (hari yang sama) menambahkan `onclick="openLink(...)"` ke kartu berita tab NEWS (`_feedItemHtml`) dan kluster berita Dashboard (`renderDashNews`). User menegur: ini bertentangan langsung dengan keputusan eksplisit Session 129 (2026-06-30) — link FinancialJuice sengaja dibuat **tidak** bisa diklik karena isinya cuma buka ulang headline tanpa artikel/detail; hanya ActionForex (tab TEK, `.tek-news-item-link`) yang boleh diklik karena punya artikel lengkap. Session 257 melewatkan riwayat ini dan menambahkan klik ke sumber yang sama (FinancialJuice) yang sudah pernah sengaja dicabut.
+
+**Fix (`index.html`):** Revert perubahan Session 257 secara utuh:
+- `_feedItemHtml`: hapus `safeLink`/`linkClass`/`clickAttr` + `onclick` dari `.feed-item`, kembali ke kartu polos non-klik.
+- `renderDashNews`: hapus `safeLink`/`linkClass`/`clickAttr` + `onclick` dari `.dash-news-item`.
+- CSS: hapus `.feed-item-link` dan `.dash-news-item-link` (beserta hover state) — sudah tidak dipakai.
+- `APP_VERSION` naik ke `2026.07.29.4`.
+
+**State akhir (konsisten dengan Session 129):**
+| Area | Bisa diklik? |
+|------|-------------|
+| Tab NEWS — semua headline | tidak |
+| Dashboard — kluster berita per kategori | tidak |
+| TEK — FinancialJuice per-pair | tidak |
+| TEK — ActionForex (AF · tek) | ya, buka artikel di tab baru |
+
+**Verifikasi:** syntax-check semua blok `<script>` inline OK, `npm test` 684/684 hijau (tidak ada test yang bergantung pada class/onclick yang dihapus).
+
+**File diubah:** `index.html`.
 
 ## Changelog Session 263 (2026-07-29) — Buang Tick Deriv untuk XAU: Konsistensi Penuh Yahoo di Atas Kecepatan Deteksi
 

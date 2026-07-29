@@ -484,9 +484,6 @@ body {
   overflow:hidden; animation:fadeUp .25s ease-out both;
 }
 .feed-item:active { transform:none; }
-.feed-item-link { cursor:pointer; }
-.feed-item-link:hover { border-color:var(--accent); }
-.feed-item-link:hover .item-title { color:var(--accent); }
 @keyframes fadeUp { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:translateY(0)} }
 
 .feed-item::before {
@@ -2400,9 +2397,6 @@ body.light-theme .cal-date-input { color-scheme: light; }
   padding: 6px 10px; border-bottom: 1px solid rgba(var(--fg-rgb),.03);
   cursor: default;
 }
-.dash-news-item-link { cursor: pointer; }
-.dash-news-item-link:hover { background: rgba(var(--fg-rgb),.03); }
-.dash-news-item-link:hover .dash-news-text { color: var(--accent); }
 .dash-news-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--accent); flex-shrink: 0; margin-top: 4px; }
 .dash-news-text { font-size: 10px; color: var(--text-mid); line-height: 1.5; }
 .dash-news-time { font-size: 8px; color: var(--muted); font-family: 'DM Mono', monospace; white-space: nowrap; margin-left: auto; flex-shrink: 0; padding-left: 4px; }
@@ -4344,7 +4338,7 @@ window.addEventListener('DOMContentLoaded', updateThemeIcon);
 
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.07.29.3';
+const APP_VERSION = '2026.07.29.4';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
@@ -5084,11 +5078,8 @@ function _feedItemHtml(item, isNew, idx) {
        </div>`
     : '';
   const newBadge = isNew ? `<span class="new-badge">NEW</span>` : '';
-  const safeLink = (item.link || '').replace(/'/g, "\\'");
-  const linkClass = safeLink ? ' feed-item-link' : '';
-  const clickAttr = safeLink ? ` onclick="openLink('${safeLink}')"` : '';
   return `
-    <div class="feed-item cat-${cat}${linkClass}" style="animation-delay:${Math.min(idx,15)*0.025}s"${clickAttr}>
+    <div class="feed-item cat-${cat}" style="animation-delay:${Math.min(idx,15)*0.025}s">
       <div class="item-meta">
         <span class="item-time">${fmtTime(item.pubDate)}</span>
         <span class="item-tag tag-${cat}">${cat.replace('-',' ')}</span>
@@ -17267,16 +17258,11 @@ function renderDashNews() {
         <div class="dash-cluster-chevron${isExpanded ? ' open' : ''}">&#9658;</div>
       </div>
       <div class="dash-cluster-items" id="cluster-items-${cat}" style="display:${isExpanded ? 'block' : 'none'}">
-        ${catItems.slice(0, 15).map(it => {
-          const safeLink = (it.link || '').replace(/'/g, "\\'");
-          const linkClass = safeLink ? ' dash-news-item-link' : '';
-          const clickAttr = safeLink ? ` onclick="openLink('${safeLink}')"` : '';
-          return `<div class="dash-news-item${linkClass}"${clickAttr}>
+        ${catItems.slice(0, 15).map(it => `<div class="dash-news-item">
           <div class="dash-news-dot"></div>
           <div class="dash-news-text">${escHtml(it.title || '')}</div>
           <div class="dash-news-time">${fmtAge(it.pubDate)}</div>
-        </div>`;
-        }).join('')}
+        </div>`).join('')}
       </div>
     </div>`;
   }
