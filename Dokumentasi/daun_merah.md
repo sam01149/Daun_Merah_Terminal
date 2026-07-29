@@ -11,11 +11,23 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-07-29 (Session 262 — Insiden SL Palsu GC=F: Investigasi Salah Arah, Root Cause Basis Blowout Expiry, Guard Korroborasi Baru)
+> **Last updated:** 2026-07-29 (Session 263 — Buang Tick Deriv untuk XAU: Konsistensi Penuh Yahoo di Atas Kecepatan Deteksi)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 263 (2026-07-29) — Buang Tick Deriv untuk XAU: Konsistensi Penuh Yahoo di Atas Kecepatan Deteksi
+
+**Konteks:** Lanjutan langsung dari insiden Session 262 — user tanya kenapa notifikasi alert zona harga XAU/USD bisa beda dari dashboard utama. Ditemukan: mekanisme "Multi-provider emas" (Q-7, diperkenalkan 2026-07-28, lihat entri changelog lama) subscribe tick polos `frxXAUUSD` (Deriv spot) TERPISAH dari candle Yahoo, dipakai untuk deteksi dini TP/SL — tapi variabel `lastLivePrice['GC=F']` yang sama juga dipakai teks notifikasi alert zona harga, jadi notifikasi itu diam-diam bersumber Deriv spot sementara dashboard utama & evaluasi TP/SL 100% Yahoo futures. User tanya: manfaat sebenarnya apa? Jawaban: cuma memangkas jeda deteksi TP/SL dari maks ~5 menit (baseline re-evaluasi Q-7 yang tetap jalan independen) jadi nyaris instan. User memutuskan: buang mekanisme tick Deriv itu, cukup andalkan baseline 5 menit — konsistensi sumber harga lebih penting daripada beberapa menit kecepatan untuk trading dengan horizon hari (bukan scalping).
+
+**Fix (`vps/daemon.js`):** Hapus subscribe `ticks: frxXAUUSD` di `connectDerivStream`, hapus handler `msg_type === 'tick'` + fungsi `handleXauTick`, hapus konstanta `XAU_YAHOO_SYMBOL`/`XAU_DERIV_SYMBOL` (tidak dipakai lagi di tempat lain). `maybeTriggerSetupWatch`/`priceCrossesLevel`/`checkPriceZonesFor` TIDAK disentuh (tetap dipakai untuk 14 pair FX yang memang Deriv-primary via `handleOhlcvUpdate`) — `lastLivePrice['GC=F']` sekarang tidak pernah terisi sama sekali, semua consumer-nya sudah fail-open (cek `== null`) jadi otomatis skip tanpa error. Baseline re-evaluasi `setup_log_auto:v1` tiap 5 menit (Q-7 lama) tetap jalan tanpa perubahan — itu yang sekarang jadi SATU-SATUNYA jalur deteksi TP/SL untuk XAU/USD, sepenuhnya dari Yahoo.
+
+**Dampak:** Notifikasi alert zona harga XAU/USD sekarang otomatis tidak pernah terkirim lagi (karena `lastLivePrice['GC=F']` tidak pernah terisi) — bukan bug, konsekuensi langsung dari keputusan di atas (deteksi dini XAU murni mengandalkan baseline). 14 pair FX lain TIDAK terpengaruh sama sekali (mekanisme mereka terpisah total, tidak pernah menyentuh kode yang dihapus).
+
+**Verifikasi:** `npm test` 684/684 hijau (685 sebelumnya - 1 test lama yang mengasersi keberadaan `XAU_YAHOO_SYMBOL`/`XAU_DERIV_SYMBOL`, dihapus karena mekanismenya sendiri sudah dibuang, bukan di-skip). `require('./vps/daemon.js')` dicek manual tidak error setelah pembersihan.
+
+**File diubah:** `vps/daemon.js`, `test/vps/vps_daemon.test.js`.
 
 ## Changelog Session 262 (2026-07-29) — Insiden SL Palsu GC=F: Investigasi Salah Arah, Root Cause Basis Blowout Expiry, Guard Korroborasi Baru
 

@@ -11,7 +11,7 @@ const path = require('path');
 
 const {
   mergeClosedCandle, normalizeDerivCandle, isHighImpactCategory, priceInZone,
-  YAHOO_TO_DERIV_SYMBOL, priceCrossesLevel, XAU_YAHOO_SYMBOL, XAU_DERIV_SYMBOL,
+  YAHOO_TO_DERIV_SYMBOL, priceCrossesLevel,
 } = require('../../vps/daemon.js');
 const { mapYahooSymbolToDeriv } = require('../../api/_ohlcv_fetch.js');
 
@@ -123,11 +123,4 @@ test('priceCrossesLevel: input non-finite -> false, bukan crash', () => {
   assert.equal(priceCrossesLevel('bearish', NaN, 105, 95), false);
   assert.equal(priceCrossesLevel('bearish', 100, null, 95), false);
   assert.equal(priceCrossesLevel('bullish', 100, 95, undefined), false);
-});
-
-test('Q-7: XAU_YAHOO_SYMBOL/XAU_DERIV_SYMBOL TIDAK ikut YAHOO_TO_DERIV_SYMBOL (sengaja terpisah — lihat catatan multi-provider di daemon.js)', () => {
-  assert.equal(XAU_YAHOO_SYMBOL, 'GC=F');
-  assert.equal(XAU_DERIV_SYMBOL, 'frxXAUUSD');
-  assert.equal(YAHOO_TO_DERIV_SYMBOL[XAU_YAHOO_SYMBOL], undefined,
-    'GC=F sengaja TIDAK ada di YAHOO_TO_DERIV_SYMBOL — kalau ikut, candle emas (dengan volume Yahoo) akan tertimpa tick Deriv (tanpa volume)');
 });

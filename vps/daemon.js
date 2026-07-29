@@ -386,12 +386,6 @@ function connectDerivStream() {
       }, i * 300);
       i++;
     }
-    // Q-7 multi-provider emas: subscribe tick polos frxXAUUSD TERPISAH dari loop
-    // candle di atas (lihat catatan Q-7 kenapa tidak boleh ikut YAHOO_TO_DERIV_SYMBOL).
-    setTimeout(() => {
-      try { ws.send(JSON.stringify({ ticks: XAU_DERIV_SYMBOL, subscribe: 1 })); }
-      catch (e) { /* koneksi mungkin sudah tertutup di antara stagger */ }
-    }, i * 300);
   });
 
   ws.addEventListener('message', (ev) => {
@@ -405,9 +399,6 @@ function connectDerivStream() {
     }
     if (data.msg_type === 'ohlcv' && data.ohlcv) {
       handleOhlcvUpdate(data.ohlcv).catch(e => console.warn('daemon: handleOhlcvUpdate gagal:', e.message));
-    }
-    if (data.msg_type === 'tick' && data.tick) {
-      handleXauTick(data.tick);
     }
   });
 
@@ -876,21 +867,19 @@ async function maybeCheckPriceZone(yahooSymbol) {
 // (_notifySetupOutcome, subscriber push_subs_dev) dikirim dari SISI admin.js
 // begitu transisi status terdeteksi, bukan dari sini.
 //
-// MULTI-PROVIDER EMAS (permintaan eksplisit user, 2026-07-28): frxXAUUSD
-// di-subscribe TERPISAH lewat `ticks` polos (BUKAN `ticks_history
-// style:candles` seperti YAHOO_TO_DERIV_SYMBOL Q-3 di atas) — supaya TIDAK
-// ikut mekanisme mergeClosedCandle/writeClosedCandle yang overwrite
-// `ohlcv:GC=F:1h`. Kalau ikut, candle GC=F bakal tertimpa v:0 (Deriv XAU spot
-// TANPA volume), padahal analisa emas (`isXau` vol_avg, api/admin.js
-// loadOhlcvData) butuh volume ASLI dari Yahoo futures — itu justru alasan
-// XAU sengaja dikeluarkan dari migrasi Deriv Plan P (lihat daun_merah.md, catatan
-// "XAU/USD (GC=F futures, punya volume) TIDAK ikut migrasi Deriv (spot, tanpa volume)").
-// Live price dari tick di sini SEMATA dipakai deteksi dini TP/SL, candle +
-// volume GC=F tetap sepenuhnya dari Yahoo (ohlcv_sync/ohlcv_analyze) —
-// dua provider jalan bersamaan, tidak saling menimpa.
+// MULTI-PROVIDER EMAS — DIBUANG (2026-07-29, diskusi user, insiden GC=F:
+// 1785244513683, lihat daun_merah.md Session 262): sempat ada tick polos
+// frxXAUUSD (Deriv spot) TERPISAH dari candle Yahoo, dipakai SEMATA untuk
+// deteksi dini TP/SL supaya lebih cepat dari baseline re-evaluasi 5 menit di
+// bawah. Dibuang setelah audit: manfaatnya cuma memangkas jeda deteksi dari
+// maks ~5 menit (baseline Q-7 di bawah, tetap jalan) jadi nyaris instan — tapi
+// efek sampingnya variabel `lastLivePrice['GC=F']` (juga dipakai teks alert
+// zona harga) jadi bersumber Deriv spot, BUKAN Yahoo futures yang jadi acuan
+// dashboard utama & evaluasi TP/SL — inkonsistensi sumber harga yang sama
+// persis dengan insiden basis-blowout kemarin. User pilih konsistensi Yahoo
+// penuh untuk XAU di atas kecepatan beberapa menit. `lastLivePrice['GC=F']`
+// sekarang tidak pernah terisi (fail-open, consumer-nya sudah cek `== null`).
 // ══════════════════════════════════════════════════════════════════════════
-const XAU_YAHOO_SYMBOL = 'GC=F';
-const XAU_DERIV_SYMBOL = 'frxXAUUSD';
 const SETUP_WATCH_CACHE_TTL_MS = 2 * 60 * 1000; // sama semangat ZONE_DATA_CACHE_TTL_MS — GET setup_log_auto:v1 murah, tak perlu tiap tick
 const SETUP_TRIGGER_DEBOUNCE_MS = 20 * 1000; // sanity debounce trigger HTTP per symbol, BUKAN pembatas budget (endpoint tujuan murni baca/tulis Redis, tanpa call AI)
 let openSetupsCache = { data: [], fetchedAt: 0 };
@@ -937,15 +926,6 @@ async function maybeTriggerSetupWatch(yahooSymbol, price) {
   if (now - (lastSetupTriggerAt[yahooSymbol] || 0) < SETUP_TRIGGER_DEBOUNCE_MS) return;
   lastSetupTriggerAt[yahooSymbol] = now;
   triggerEndpoint('/api/admin?action=setup_stats&scope=auto').catch(() => {});
-}
-
-// Tick polos frxXAUUSD (msg_type 'tick', BUKAN 'ohlcv' seperti Q-3) — lihat
-// catatan multi-provider di atas kenapa ini terpisah dari handleOhlcvUpdate.
-function handleXauTick(tick) {
-  const price = parseFloat(tick?.quote);
-  if (!Number.isFinite(price)) return;
-  lastLivePrice[XAU_YAHOO_SYMBOL] = price;
-  maybeTriggerSetupWatch(XAU_YAHOO_SYMBOL, price).catch(e => console.warn('daemon: cek setup watch XAU gagal:', e.message));
 }
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -1476,7 +1456,7 @@ module.exports = {
   mergeClosedCandle, normalizeDerivCandle, isHighImpactCategory, priceInZone,
   YAHOO_TO_DERIV_SYMBOL, DERIV_TO_YAHOO_SYMBOL,
   // Q-7 (pure/testable):
-  priceCrossesLevel, XAU_YAHOO_SYMBOL, XAU_DERIV_SYMBOL,
+  priceCrossesLevel,
   // Self-healing (pure/testable):
   createRedisGuard, shouldForceReconnect, isFxMarketOpen, newestCandleEpoch, isCandleStale,
   // U-3 (pure/testable):
