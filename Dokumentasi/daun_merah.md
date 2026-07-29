@@ -17,6 +17,24 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
 
+## Changelog Session 258 (2026-07-29) — Ganti Emoji 🔒 + Simbol Bintang ★/☆ ke Ikon SVG
+
+**Konteks:** Lanjutan langsung dari Session 256 — dua temuan sampingan yang dicatat "di luar scope hari ini" waktu itu: emoji 🔒 literal di modal MT5/Sizing Calculator + section Kunci Akses (APP_KEY), dan simbol ★/☆ untuk rating keyakinan AI di kartu THESIS (Ringkasan + Dashboard). User minta lanjut kerjakan.
+
+**Catatan koordinasi multi-sesi:** Sesi ini berjalan BERSAMAAN dengan sesi lain yang sedang mengerjakan fitur "Link Sumber di Item Berita NEWS + Dashboard" (lihat entri Session 257 di atas) — sama-sama mengedit `index.html`. Terdeteksi lewat `git status` sebelum commit (perubahan CSS `.feed-item-link`/`.dash-news-item-link` + `_feedItemHtml`/`renderDashNews` yang bukan dari sesi ini). User diberitahu, sesi lain diminta berhenti sementara. Commit sesi ini dipisah dari punya sesi 257 via `git apply --cached` per-hunk (bukan `git add` biasa) supaya tidak menelan pekerjaan sesi lain yang belum selesai/committed. `APP_VERSION` dibump ke nilai yang sama (`2026.07.29.3`) yang sudah dipakai sesi 257 di working tree — begitu sesi itu lanjut commit, tidak ada diff baris versi lagi (sudah sama), tidak ada konflik.
+
+**Fix (`index.html`):**
+- 6 lokasi emoji 🔒 literal → ikon SVG lock (stroke, viewBox 24x24 konsisten gaya ikon nav yang sudah ada): section "Kunci Akses (APP_KEY)", modal gate `showAppKeyGate()`, 4 label field readonly di modal MT5 (Entry Price, Lot Size, Stop Loss, Take Profit — semua "🔒 dari Sizing Calculator"/"🔒" polos).
+- Rating bintang keyakinan AI (`t.confidence_1_to_5`, `t.xau_confidence`, skala 1-5) di 4 lokasi (`renderThesisCard`, `renderXauThesisCard` di tab Ringkasan; 2 fungsi setara di `renderDashDigest` untuk panel Dashboard) — dulu pakai `'★'.repeat(n) + '☆'.repeat(5-n)` (karakter literal). Diganti helper baru `fundStarsRating(n, max=5)` + `_fundStarSvg(filled)` yang generate SVG polygon bintang (filled utk terisi, outline pudar utk kosong) — satu sumber, dipakai 4 tempat sekaligus (bukan 4 implementasi terpisah).
+- Pasangan CSS print `.conf-stars`/`.conf-text` (sudah ada sejak sebelumnya, dipakai `renderThesisCard`/`renderXauThesisCard` untuk sembunyikan bintang & tampilkan teks resmi "Keyakinan: Tinggi (4/5)" saat cetak PDF) TIDAK terpengaruh — cuma isi `.conf-stars` yang berubah dari teks jadi SVG, class wrapper & CSS `@media print` tetap sama.
+- `_PDF_SYMBOL_MAP` (sanitizer teks AI sebelum masuk PDF via jsPDF, `index.html` sekitar baris 5637) SENGAJA tidak disentuh — bukan teks UI yang dirender, itu utility defensif buat teks yang mungkin di-generate AI, entry `★`/`☆` di situ tetap relevan sebagai guard.
+
+**Verifikasi:** `npm test` 647/647 hijau (test suite jalan atas working tree gabungan sesi ini + sesi 257, tidak ada regresi dari keduanya). Dicek manual: tidak ada lagi `🔒` atau `'★'`/`'☆'` literal di `index.html` di luar `_PDF_SYMBOL_MAP`.
+
+**File diubah:** `index.html` (commit terpisah dari perubahan sesi 257, lihat catatan koordinasi di atas).
+
+---
+
 ## Changelog Session 256 (2026-07-29) — Fix Bug KRITIS Prioritas CB Rate + Badge Data Seed + Ganti Simbol UI
 
 **Konteks:** Lanjutan rapat audit fitur fundamental (Session 255) — user minta mitigasi untuk sisa temuan yang belum dieksekusi: bug KRITIS prioritas data CB rate, badge umur data seed yang hilang total, dan simbol non-arrow (⚡/⚖) di panel Skenario Kalender yang tidak konsisten dengan larangan emoji ATURAN §4.1.
