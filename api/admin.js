@@ -883,6 +883,34 @@ async function _notifySetupOutcome(setup) {
   } catch (e) { console.warn('_notifySetupOutcome: sendWebPush gagal:', e.message); }
 }
 
+// Push terpisah untuk transisi tp/sl yang DITAHAN oleh _corroborateGoldTransitions
+// (lihat komentar di sana) — supaya user tahu ada breach yang ditunda verifikasi,
+// bukan diam-diam ketinggalan sampai ada yang curiga manual (insiden GC=F:1785244513683,
+// Session 260-261 daun_merah.md).
+async function _notifyDivergenceHold(setup) {
+  if (!configureVapid()) return;
+  let subs = [];
+  try {
+    const raw = await redisCmd('HGETALL', 'push_subs_dev');
+    if (Array.isArray(raw)) {
+      for (let i = 0; i < raw.length; i += 2) { try { subs.push(JSON.parse(raw[i + 1])); } catch (e) {} }
+    }
+  } catch (e) {}
+  if (!subs.length) return;
+  const label = setup.label || setup.symbol;
+  const wouldBe = setup.divergence_hold?.would_be_status === 'tp' ? 'TP' : 'SL';
+  const payload = {
+    title: `${label}: kena ${wouldBe} ditahan — perlu verifikasi`,
+    body: `Candle ${setup.symbol} tembus level tapi sumber kedua (spot) tidak konfirmasi — kemungkinan divergensi futures/expiry, bukan pasar riil. Status tetap open, cek manual.`,
+    url: '/dev-auto-entry.html',
+    icon: '/icon.svg',
+  };
+  try {
+    const staleKeys = await sendWebPush(subs, payload);
+    if (staleKeys.length) await redisCmd('HDEL', 'push_subs_dev', ...staleKeys).catch(() => {});
+  } catch (e) { console.warn('_notifyDivergenceHold: sendWebPush gagal:', e.message); }
+}
+
 async function sendPushTelegram(newItems, TG_TOKEN, TG_CHAT_ID) {
   if (!TG_TOKEN || !TG_CHAT_ID) return;
   const EMOJI = { 'market-moving': '🔴', 'forex': '💱', 'energy': '⚡', 'macro': '🏦', 'geopolitical': '🌐', 'econ-data': '📋', 'news': '📰' };
@@ -2692,6 +2720,132 @@ function _detectLossLabel({ closedT, eLo, eHi, tp, bias, pairLabel }, allCandles
   return null;
 }
 
+// ══════════════════════════════════════════════════════════════════════════
+// Korroborasi sumber kedua untuk simbol proxy futures (PLAN U, 2026-07-29,
+// insiden GC=F:1785244513683 — lihat daun_merah.md Session 260-261): GC=F
+// (COMEX gold futures) dipakai sebagai harga acuan "XAU/USD" karena punya
+// volume asli (dipakai analisis, lihat catatan _ohlcv_fetch.js), tapi rawan
+// basis blowout vs spot beberapa hari menjelang kontrak aktif expiry (likuiditas
+// menipis, thin trading — fenomena pasar riil, BUKAN cuma bad print/glitch).
+// Kejadian nyata: candle GC=F 2026-07-29T07:00Z H 4106.70 dengan volume riil
+// 12607 (dikonfirmasi Yahoo regularMarketDayHigh resmi + candle 1m volume
+// berkelanjutan) padahal Twelve Data XAU/USD spot cuma H 4047.76 jam yang sama
+// — kalau dipercaya mentah-mentah, SL/TP GC=F bisa "benar" secara harga futures
+// tapi TIDAK merepresentasikan apa yang benar-benar bisa ditradingkan user di
+// broker spot (persis yang bikin user curiga lewat chart MT5-nya).
+//
+// Guard ini TIDAK mencoba membedakan "bad print" vs "basis blowout riil" (dua-
+// duanya sama-sama harus tidak dipercaya mentah untuk finalisasi tp/sl) — cukup
+// cross-check candle jam yang sama dari Twelve Data XAU/USD (sumber independen,
+// SUDAH ada di codebase sbg fallback Yahoo, tidak ada integrasi vendor baru).
+// Toleransi 15 USD basis normal futures-vs-spot (lihat catatan "beda beberapa
+// dolar" _ohlcv_fetch.js) — cukup longgar untuk spread wajar, cukup ketat
+// menangkap divergensi >$50 seperti insiden ini.
+const GOLD_BASIS_TOLERANCE_USD = 15;
+const CORROBORATION_SYMBOLS = new Set(['GC=F']);
+
+// Pure function, dites unit terpisah dari network. direction: 'above' kalau
+// breach dari bawah ke atas (level perlu dikonfirmasi candle spot h >= level -
+// toleransi), 'below' sebaliknya. Return null (BUKAN false) kalau tidak bisa
+// diverifikasi (candle spot jam itu tidak ketemu) — caller WAJIB fail-open pada
+// null, beda dari false (gagal konfirmasi tegas).
+function _corroborateLevel(level, direction, spotCandles, breachTMs) {
+  if (!Array.isArray(spotCandles) || !spotCandles.length) return null;
+  const HOUR_MS = 3600000;
+  const match = spotCandles.find(c => Math.abs(c.t * 1000 - breachTMs) < HOUR_MS);
+  if (!match) return null;
+  return direction === 'above'
+    ? match.h >= (level - GOLD_BASIS_TOLERANCE_USD)
+    : match.l <= (level + GOLD_BASIS_TOLERANCE_USD);
+}
+
+function _breachDirection(bias, status) {
+  if (status === 'sl') return bias === 'bearish' ? 'above' : 'below';
+  if (status === 'tp') return bias === 'bearish' ? 'below' : 'above';
+  return null; // 'ambiguous' sengaja tidak ditangani — kasus langka, di luar scope guard ini
+}
+
+// Dipanggil SETELAH _evaluateSetups mendeteksi transisi baru ke tp/sl untuk
+// simbol di CORROBORATION_SYMBOLS. Kalau spot TIDAK mengkonfirmasi breach,
+// revert status -> 'open' + catat `divergence_hold` (audit trail, pola sama
+// seperti `data_fix_*` — data mentah lain TIDAK disentuh) supaya evaluasi tick
+// berikutnya tetap jalan normal (kalau breach berlanjut & kali ini terkonfirmasi,
+// akan closed dengan benar; kalau divergensi mereda, tidak pernah ke-tp/sl-kan).
+//
+// Fetch Twelve Data dilakukan DI LUAR lock utama pemanggil (bisa sampai ~10
+// detik, hampir sama dengan TTL lock `lock:setuplog_write:*` — kalau ikut
+// ditahan di dalam lock yang sama berisiko race lock kadaluarsa saat masih
+// dipegang). Revert (kalau ada) pakai siklus lock SENDIRI yang pendek, re-read
+// Redis fresh dan cek status/closed_t belum berubah lagi sebelum menimpa —
+// fail-open (skip, dicoba tick berikutnya) kalau lock gagal diambil atau entri
+// sudah keburu berubah oleh proses lain sejak snapshot awal.
+async function _corroborateGoldTransitions(log, transitioned) {
+  const candidates = transitioned.filter(s => s && CORROBORATION_SYMBOLS.has(s.symbol) && s.status !== 'ambiguous');
+  if (!candidates.length) return [];
+  const toRevert = [];
+  for (const st of candidates) {
+    const direction = _breachDirection(st.bias, st.status);
+    const level = parseFloat(st.status === 'tp' ? st.tp : st.sl);
+    if (direction == null || isNaN(level) || !st.closed_t) continue;
+    let spotCandles;
+    try { spotCandles = await fetchFallbackCandles(st.symbol, '1h'); }
+    catch (e) { continue; } // fail-open: Twelve Data gagal/limit habis -> percaya _evaluateSetups apa adanya
+    const ok = _corroborateLevel(level, direction, spotCandles, st.closed_t * 1000);
+    if (ok === false) toRevert.push({ id: st.id, status: st.status, closed_t: st.closed_t, level, direction });
+  }
+  if (!toRevert.length) return [];
+
+  const lockKey = 'lock:setuplog_write:setup_log_auto:v1';
+  const got = await _acquireLockWithRetry(lockKey);
+  if (!got) return []; // fail-open: dicoba lagi tick berikutnya
+  const flagged = [];
+  try {
+    const raw = await redisCmd('GET', 'setup_log_auto:v1');
+    let fresh = raw ? JSON.parse(raw) : [];
+    if (!Array.isArray(fresh)) fresh = [];
+    for (const r of toRevert) {
+      const idx = fresh.findIndex(x => x && x.id === r.id);
+      if (idx === -1) continue;
+      const cur = fresh[idx];
+      // Entri sudah berubah lagi sejak snapshot (proses lain sempat proses) -> skip,
+      // jangan timpa perubahan yang lebih baru.
+      if (cur.status !== r.status || cur.closed_t !== r.closed_t) continue;
+      cur.status = 'open';
+      delete cur.closed_t;
+      cur.loss_label = null; cur.label_reason = null; cur.label_by = null;
+      cur.divergence_hold = {
+        would_be_status: r.status, level: r.level, direction: r.direction,
+        reason: 'gc_f_vs_spot_divergence', flagged_at: Date.now(),
+      };
+      // Sinkronkan objek in-memory `log` (referensi sama dengan `st`/`transitioned`)
+      // supaya payload response tick ini konsisten, bukan cuma Redis. Object.assign
+      // TIDAK menghapus properti yang sudah tidak ada di `cur` (closed_t dihapus di
+      // atas) — delete eksplisit dulu sebelum assign supaya in-memory match persis.
+      const inMemory = log.find(x => x && x.id === r.id);
+      if (inMemory) { delete inMemory.closed_t; Object.assign(inMemory, cur); }
+      flagged.push(cur);
+    }
+    if (flagged.length) await redisCmd('SET', 'setup_log_auto:v1', JSON.stringify(fresh));
+  } finally { redisCmd('DEL', lockKey).catch(() => {}); }
+  return flagged;
+}
+
+// Wrapper bersama dipakai _buildAutoScopeStats & positionReviewHandler supaya
+// kedua jalur yang bisa memfinalisasi transisi tp/sl konsisten — sama-sama lewat
+// korroborasi sebelum notifikasi, tidak ada jalur yang lolos tanpa guard ini.
+async function _finalizeSetupTransitions(log, statusBeforeById) {
+  const transitioned = log.filter(s => s && statusBeforeById.has(s.id) &&
+    statusBeforeById.get(s.id) !== s.status && (s.status === 'tp' || s.status === 'sl' || s.status === 'ambiguous'));
+  if (!transitioned.length) return;
+  const divergenceFlagged = await _corroborateGoldTransitions(log, transitioned);
+  const divergenceIds = new Set(divergenceFlagged.map(s => s.id));
+  const confirmed = transitioned.filter(s => !divergenceIds.has(s.id));
+  await Promise.allSettled([
+    ...confirmed.map(s => _notifySetupOutcome(s)),
+    ...divergenceFlagged.map(s => _notifyDivergenceHold(s)),
+  ]);
+}
+
 // Riset tambahan (2026-07-20, diskusi user pasca-Plan U): estimasi spread retail
 // standar per pair, dalam satuan HARGA (bukan pip) — dipakai HANYA untuk expectancy
 // biaya transaksi di _costAdjustedR di bawah. Angka ESTIMASI ballpark broker retail
@@ -3012,9 +3166,7 @@ async function _buildAutoScopeStats() {
   }
   const after = JSON.stringify(log);
   if (after !== before) await redisCmd('SET', setupLogKey, after);
-  const transitioned = log.filter(s => s && statusBeforeById.has(s.id) &&
-    statusBeforeById.get(s.id) !== s.status && (s.status === 'tp' || s.status === 'sl' || s.status === 'ambiguous'));
-  if (transitioned.length) await Promise.allSettled(transitioned.map(s => _notifySetupOutcome(s)));
+  await _finalizeSetupTransitions(log, statusBeforeById);
   return {
     scope: 'auto', ..._statsPayloadFromLog(log),
     consistency: await _consistencySummary(), pipeline_latency: await _pipelineLatencySummary(),
@@ -3285,7 +3437,9 @@ async function positionReviewHandler(req, res) {
     // setup_log_auto:v1 tanpa lock — sumber race yang sama, TERBUKTI nyata (koreksi manual
     // GC=F sempat ketiban balik oleh handler ini). persistTick sekarang pakai lock yang sama.
     const before = JSON.stringify(log);
+    const statusBeforeById = new Map([[log[idx].id, log[idx].status]]);
     _evaluateSetups(log, { [symbol]: candles }, Date.now(), calendarEvents);
+    await _finalizeSetupTransitions(log, statusBeforeById);
     const persistTick = async () => {
       if (JSON.stringify(log) === before) return;
       const lk = 'lock:setuplog_write:setup_log_auto:v1';
@@ -5304,6 +5458,11 @@ module.exports._summarizeLatency = _summarizeLatency;
 module.exports.SPREAD_PRICE_ESTIMATE = SPREAD_PRICE_ESTIMATE;
 module.exports.probeCalendarCache = probeCalendarCache;
 module.exports._detectLossLabel = _detectLossLabel;
+module.exports._corroborateLevel = _corroborateLevel;
+module.exports._breachDirection = _breachDirection;
+module.exports._corroborateGoldTransitions = _corroborateGoldTransitions;
+module.exports._finalizeSetupTransitions = _finalizeSetupTransitions;
+module.exports.GOLD_BASIS_TOLERANCE_USD = GOLD_BASIS_TOLERANCE_USD;
 module.exports._findSwings = _findSwings;
 module.exports._classifyStructure = _classifyStructure;
 module.exports._clusterSrLevels = _clusterSrLevels;
