@@ -2422,17 +2422,39 @@ function parseFFXML(xml) {
     const forecast=get('forecast'), previous=get('previous');
     if (!title||!country) continue;
     const dp=date.match(/(\d{2})-(\d{2})-(\d{4})/); if(!dp) continue;
-    events.push({ date:`${dp[3]}-${dp[1]}-${dp[2]}`, time_wib:convertToWIB(time), currency:country, event:title, impact, forecast:forecast||null, previous:previous||null });
+    const wib = toWIB(dp[3], dp[1], dp[2], time);
+    events.push({ date:wib.date, time_wib:wib.time_wib, currency:country, event:title, impact, forecast:forecast||null, previous:previous||null });
   }
   return events;
 }
 
-function convertToWIB(timeStr) {
-  if (!timeStr||timeStr==='All Day'||timeStr==='Tentative') return 'Tentative';
-  const m=timeStr.match(/(\d{1,2}):(\d{2})(am|pm)/i); if(!m) return timeStr;
-  let hour=parseInt(m[1]); const min=parseInt(m[2]), ampm=m[3].toLowerCase();
-  if(ampm==='pm'&&hour!==12)hour+=12; if(ampm==='am'&&hour===12)hour=0;
-  return `${String((hour+7)%24).padStart(2,'0')}:${String(min).padStart(2,'0')} WIB`;
+// S255 (2026-07-29): dulu tanggal (dari XML, apa adanya) dan jam (dikonversi ke WIB
+// terpisah via convertToWIB) disimpan sebagai dua field independen. Untuk event yang
+// jam UTC-nya >=17:00 (mis. FOMC rilis 18:00 UTC = 01:00 WIB HARI BERIKUTNYA), jam
+// hasil konversi menyeberang tengah malam tapi tanggalnya TIDAK ikut maju — bikin
+// `date` dan `time_wib` merujuk ke dua hari WIB yang berbeda. _calEventStatusTag()
+// lalu merekonstruksi timestamp dari date+time_wib itu dan salah hitung event yang
+// SEBENARNYA belum terjadi sebagai "sudah rilis ~14 jam lalu" (selisih persis 1 hari) —
+// ketahuan lewat live-test FOMC 30 Juli yang dinarasikan AI seolah "tadi malam" padahal
+// baru dijadwalkan besok. Fix: hitung SATU epoch WIB dari date+time asli (raw feed
+// diverifikasi UTC-equivalent — FOMC 2pm ET textbook = 18:00 raw = 18:00 UTC), lalu
+// turunkan date DAN time_wib dari epoch yang sama itu supaya keduanya selalu konsisten.
+function toWIB(yyyy, mm, dd, timeStr) {
+  if (!timeStr || timeStr === 'All Day' || timeStr === 'Tentative') {
+    return { date: `${yyyy}-${mm}-${dd}`, time_wib: 'Tentative' };
+  }
+  const m = timeStr.match(/(\d{1,2}):(\d{2})(am|pm)/i);
+  if (!m) return { date: `${yyyy}-${mm}-${dd}`, time_wib: timeStr };
+  let hour = parseInt(m[1], 10);
+  const min = parseInt(m[2], 10), ampm = m[3].toLowerCase();
+  if (ampm === 'pm' && hour !== 12) hour += 12;
+  if (ampm === 'am' && hour === 12) hour = 0;
+  const wibMs = Date.UTC(Number(yyyy), Number(mm) - 1, Number(dd), hour, min) + 7 * 3600000;
+  const w = new Date(wibMs);
+  return {
+    date: `${w.getUTCFullYear()}-${String(w.getUTCMonth() + 1).padStart(2, '0')}-${String(w.getUTCDate()).padStart(2, '0')}`,
+    time_wib: `${String(w.getUTCHours()).padStart(2, '0')}:${String(w.getUTCMinutes()).padStart(2, '0')} WIB`,
+  };
 }
 
 
@@ -2448,3 +2470,5 @@ module.exports.parseEconNumber = parseEconNumber;
 module.exports.thesisPairCurrencies = thesisPairCurrencies;
 module.exports.thesisInvalidationCurrencyConsistent = thesisInvalidationCurrencyConsistent;
 module.exports.mergeSourceHeadlines = mergeSourceHeadlines;
+module.exports.toWIB = toWIB;
+module.exports.parseFFXML = parseFFXML;
