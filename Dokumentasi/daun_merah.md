@@ -11,11 +11,23 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-07-28 (Session 253 — Watcher TP/SL Real-Time (Q-7) + Multi-Provider Emas + Push Notif Dev)
+> **Last updated:** 2026-07-29 (Session 254 — Fix Hallucination Ringkasan: Keputusan CB Dinarasikan Sudah Terjadi Padahal Belum)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 254 (2026-07-29) — Fix Hallucination Ringkasan: Keputusan CB Dinarasikan Sudah Terjadi Padahal Belum
+
+**Konteks:** User cek output fitur Ringkasan live, curiga satu kalimat pembuka bagian FX salah: *"FOMC tadi malam mempertahankan suku bunga di 3,75% tanpa perubahan..."* — padahal keputusan Fed Interest Rate Decision baru dijadwalkan 30 Juli 2026 01:00 WIB (`actual:null` di `calendar_v1`, masih besok dari waktu generate).
+
+**Investigasi:** Ditelusuri ke `latest_article` (cache Ringkasan, `api/market-digest.js`, model `deepseek-v4-flash`, generate `2026-07-29T02:58:09Z`). Prompt-nya SUDAH punya guard `_calEventStatusTag()` yang menempel tag `[AKAN RILIS dalam X jam]`/`[SUDAH RILIS X lalu]` ke tiap event kalender berbasis waktu riil — untuk event FOMC ini seharusnya AI menerima tag `[AKAN RILIS]`, tapi diabaikan. Root cause: AI menggabungkan dua data yang SAH tapi disalahartikan — `fundamental:USD.Fed Rate` (level rate SAAT INI, seed lama, field `date` kosong `"—"`) + `ratePathBlock` ("5bps CUT priced dalam 3m", ekspektasi pasar forward-looking) — jadi satu klaim seolah keputusan baru saja keluar semalam. Instruksi anti-hallucination kalender yang sudah ada (`DIGEST_SYSTEM_DEFAULT`, aturan "Kalender:") cuma cover format event terformat `[EVENT] ([CURRENCY]) [TIME]`, tidak cover klaim bebas di kalimat jangkar/pembuka yang menyebut CB secara umum.
+
+**Fix:** `api/market-digest.js` (`DIGEST_SYSTEM_DEFAULT`) — (1) tambah paragraf ANTI-HALLUCINATION KEPUTUSAN CB baru di ATURAN FX: larang eksplisit menulis keputusan bank sentral manapun (FOMC/Fed, ECB, BOE, BOJ, RBA, dll) sebagai sudah terjadi kecuali ada headline eksplisit atau tag `[SUDAH RILIS]`; tegaskan `Fed Rate: X%` di FUNDAMENTALS = level SEBELUM keputusan, dan RATE PATH = ekspektasi forward-looking, dua-duanya BUKAN konfirmasi hasil. (2) Tambah item ke-3 di `CEK AKHIR SEBELUM KIRIM`: scan ulang tiap klaim "keputusan CB sudah terjadi" sebelum kirim, hapus/tulis ulang jadi forward-looking kalau tidak ada bukti pendukung.
+
+**Verifikasi:** Dicek `prompt_digest` (override Redis) — `type:none`, tidak ada override aktif, jadi `DIGEST_SYSTEM_DEFAULT` yang dipakai production. `npm test` 640/640 hijau (tidak ada test yang assert isi persis prompt, cuma `isValidDigestPrompt` cek panjang & marker string yang tidak berubah). Efeknya baru kelihatan di generate Ringkasan BERIKUTNYA (tidak retroaktif — `latest_article` lama di cache TTL 6 jam tetap berisi kalimat salah sampai siklus generate berikutnya jalan/TTL habis).
+
+**File diubah:** `api/market-digest.js`.
 
 ## Changelog Session 253 (2026-07-28) — Watcher TP/SL Real-Time (Q-7) + Multi-Provider Emas + Push Notif Dev
 
