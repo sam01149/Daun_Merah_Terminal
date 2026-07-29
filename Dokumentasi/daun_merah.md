@@ -11,13 +11,25 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-07-29 (Session 259 — Aktivasi "Sistem Hakim" di Jalur Cron Auto-Entry + Pengukuran Terpisah)
+> **Last updated:** 2026-07-29 (Session 260 — Koreksi Data Bad Print Yahoo GC=F yang Memicu SL Palsu)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
 
-## Changelog Session 259 (2026-07-29) — Aktivasi "Sistem Hakim" di Jalur Cron Auto-Entry + Pengukuran Terpisah
+## Changelog Session 260 (2026-07-29) — Koreksi Data Bad Print Yahoo GC=F yang Memicu SL Palsu
+
+**Konteks:** User curiga saat setup auto-entry GC=F (`GC=F:1785244513683`, bearish, entry 4044,35/SL 4065,00/TP 3968,97) berstatus `sl` padahal menurut chart MT5 live-nya harga belum pernah dekat 4065.
+
+**Investigasi:** Candle `ohlcv:GC=F:1h` jam 2026-07-29T07:00:00Z tercatat H 4106,70 (dicross-check via curl langsung ke Yahoo Finance chart API — angkanya identik, jadi bukan salah cache lokal). Tapi 3 sumber independen lain **semua membantah** lonjakan itu: Twelve Data XAU/USD spot (H cuma 4047,76 di jam sama), chart MT5 XAUUSD live user (~4038-4046), dan berita pasar riil (gold 4020-4043 hari itu). Kesimpulan: bad print spesifik di feed Yahoo GC=F futures (kemungkinan trade error/fat-finger di Globex sesi sepi yang tidak sempat di-bust di data historis Yahoo), bukan pergerakan pasar nyata — SL 4065 tidak pernah benar-benar tersentuh.
+
+**Perbaikan data (bukan perubahan kode):**
+- 2 candle `ohlcv:GC=F:1h` (07:00 & 08:00 UTC) yang kontaminasi diganti dengan estimasi dari Twelve Data XAU/USD + basis futures-vs-spot (~-2,14, diturunkan dari candle 06:00 UTC yang masih bersih).
+- Setup `GC=F:1785244513683` di `setup_log_auto:v1` dikembalikan `sl` → `open`, `closed_t` dihapus, `loss_label` direset, field audit `data_fix_reason`/`data_fix_by`/`data_fix_at` diisi (pola sama seperti fix status `tp` palsu Session sebelumnya, `daun_merah.md` histori 2026-07-25).
+
+**Celah yang BELUM ditutup (dicatat di `daun_merah_progress.md`):** tidak ada guard otomatis di `_evaluateSetups`/ingest OHLCV yang menolak candle dengan lonjakan harga tidak wajar (outlier single-candle) — kejadian serupa di simbol lain bisa lolos tanpa terdeteksi kalau user tidak kebetulan mengecek manual. Perlu keputusan desain (threshold, risiko false-positive terhadap flash-crash/gap riil) sebelum diimplementasikan, sengaja tidak diputuskan sepihak di sesi ini.
+
+**File diubah:** tidak ada perubahan kode — murni koreksi data Redis (`ohlcv:GC=F:1h`, `setup_log_auto:v1`) via skrip sekali-pakai (tidak disimpan di repo).
 
 **Konteks:** Lanjutan diskusi audit alur auto-entry (Plan U, `setup_log_auto:v1`) — user diberi peta workflow lengkap (diagram if/else per gerbang, dibuat sebagai artifact) untuk menelusuri celah sendiri, lalu spesifik menanyakan mekanisme konsistensi bias AI antar-slot 08:15/13:15 UTC. Audit menemukan: guard `[SISTEM HAKIM]` (veto soft yang memaksa `conflict='arah'` kalau bias teknikal AI berlawanan dengan arah bank sentral tersimpan, `cbDir`) sudah lama ada di kode tapi **tidak pernah aktif di jalur cron otomatis** — `cbDir` cuma dikirim lewat body POST manual (`index.html`), sementara trigger cron (`vps/daemon.js`) adalah GET tanpa body. User minta 3 hal: (1) aktifkan di jalur cron, (2) JANGAN jadikan Sistem Hakim pembuat keputusan — bukan gate baru yang bisa veto sendiri, sesuaikan syarat kekuatan buktinya dengan kelemahan sinyal, (3) cari cara mengukur dampaknya tanpa merusak statistik existing (drawdown/cost-expectancy/confidence-calibration).
 
