@@ -86,7 +86,7 @@ Semua workflow di atas autentikasi ke `api/*.js` lewat header `x-cron-secret`, d
 
 **Catatan app_id Deriv:** app_id sementara pakai publik `1089` (lihat catatan risiko di `_ohlcv_fetch.js`) — app_id dedicated yang didaftarkan user via `developers.deriv.com` (portal baru) TERNYATA tidak kompatibel dengan endpoint `ws.derivws.com` (server balas `InvalidAppID`, diverifikasi live terhadap 3 titik server). Root cause: Deriv punya 2 sistem developer terpisah yang app_id-nya belum/tidak saling kompatibel; jalur self-service untuk app_id lama yang kompatibel belum ditemukan (semua link "API developer" di akun Deriv mengarah ke portal baru). **Action item user:** cari cara dapat app_id dedicated yang kompatibel dengan `ws.derivws.com` (kemungkinan perlu hubungi `api-support@deriv.com` langsung), lalu ganti env var `DERIV_APP_ID` — TIDAK perlu ubah kode.
 
-**Catatan credit Twelve Data:** Free tier 800 credit/hari, 8 request/menit (diverifikasi 2026-07-18 via docs.twelvedata.com — 1 credit/request). **Action item user MASIH TERBUKA, NAIK PRIORITAS (S262, 2026-07-29):** `TWELVEDATA_API_KEY` belum ada sama sekali di Vercel production — dulu cuma bikin fallback OHLCV no-op diam-diam (dampak kecil), TAPI sekarang juga jadi dependency guard korroborasi GC=F (`_corroborateGoldTransitions`, `api/admin.js`, insiden GC=F:1785244513683 — lihat `daun_merah.md` Session 262) yang mencegah status tp/sl palsu akibat basis blowout futures-vs-spot mendekati expiry kontrak. Tanpa key ini guard tsb selalu fail-open (tidak pernah aktif). Catatan tambahan: `.env.local` sempat berisi key dengan nama BEDA (`TWELVE_DATA_API_KEY`, ada underscore ekstra) yang tidak akan pernah terbaca kode — kalau didaftarkan, pastikan nama persis `TWELVEDATA_API_KEY`.
+**Catatan credit Twelve Data:** Free tier 800 credit/hari, 8 request/menit (diverifikasi 2026-07-18 via docs.twelvedata.com — 1 credit/request). **RESOLVED (S262, 2026-07-29):** `TWELVEDATA_API_KEY` akhirnya di-set di Vercel (Production + Preview) via `vercel env add` + redeploy manual (`vercel redeploy`) supaya langsung aktif — diverifikasi lewat `vercel env ls`. Sebelumnya sempat action item terbuka lama (sejak Session 186) karena bikin fallback OHLCV no-op diam-diam; sekarang juga jadi dependency guard korroborasi GC=F (`_corroborateGoldTransitions`, `api/admin.js`, insiden GC=F:1785244513683 — lihat `daun_merah.md` Session 262) yang mencegah status tp/sl palsu akibat basis blowout futures-vs-spot mendekati expiry kontrak — guard itu sekarang aktif. Catatan historis: `.env.local` sempat berisi key dengan nama BEDA (`TWELVE_DATA_API_KEY`, ada underscore ekstra) yang tidak akan pernah terbaca kode — value-nya yang dipakai untuk daftar ke Vercel, dengan nama yang benar.
 
 ---
 
@@ -137,7 +137,7 @@ DEEPSEEK_API_KEY     # Plan O (2026-07-18) — DeepSeek API resmi, PRIMARY Ringk
 FRED_API_KEY
 BARCHART_API_KEY
 SCRAPER_API_KEY
-TWELVEDATA_API_KEY   # M1 2026-07-18 — belum di-set user, fallback no-op sampai ada. NAIK PRIORITAS S262 (2026-07-29): juga dependency guard korroborasi GC=F, lihat §4
+TWELVEDATA_API_KEY   # RESOLVED S262 (2026-07-29) — di-set Production+Preview, dependency guard korroborasi GC=F, lihat §4
 DERIV_APP_ID         # Plan P (2026-07-18) — sementara app_id publik "1089", ganti begitu dapat app_id dedicated yang kompatibel (lihat §4)
 
 # Infra
