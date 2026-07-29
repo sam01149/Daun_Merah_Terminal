@@ -1222,6 +1222,20 @@ module.exports = async function handler(req, res) {
     ratePathBlock = parts.join(' | ');
   }
 
+  // S254 lanjutan (2026-07-29): larangan "narasikan keputusan CB sebagai sudah terjadi"
+  // sudah ditambah ke DIGEST_SYSTEM_DEFAULT tapi live-test masih tembus — LLM tetap nulis
+  // "FOMC tadi malam mempertahankan suku bunga" walau tag [AKAN RILIS] sudah ada di
+  // calBlock. Root cause: tag itu nempel di blok KALENDER yang jauh di bawah user message,
+  // sementara RATE PATH persis di atas ini kasih angka konkret yang kebaca LLM sebagai
+  // representasi hasil keputusan. Ulangi status di sini, tepat sebelah data pemicunya —
+  // sama prinsipnya dengan _calEventStatusTag: jangan andalkan LLM buat inferensi status
+  // rilis, hitung di kode dan taruh di titik yang paling mungkin dibaca duluan.
+  const CB_DECISION_EVENT_RE = /interest rate|fomc statement|fomc press conference|federal funds rate|cash rate|bank rate|overnight rate|monetary policy statement|rate decision/i;
+  const cbDecisionEvents = calEvents.filter(e => CB_DECISION_EVENT_RE.test(e.event));
+  const cbDecisionAlertBlock = cbDecisionEvents.length > 0
+    ? cbDecisionEvents.map(e => `${e.currency} — ${e.event} (${e.date} ${e.time_wib})${_calEventStatusTag(e) || ' [status waktu tidak diketahui]'}`).join('\n')
+    : '(Tidak ada event keputusan rate CB dalam 3 hari ke depan — kalau narasi menyebut keputusan CB manapun, itu HARUS berasal dari headline eksplisit, bukan diasumsikan.)';
+
   // Build cross-asset correlation block — anomalies (regime breaks) + gold's key correlations + FX grounding
   let correlationBlock = '(Data korelasi cross-asset tidak tersedia)';
   if (correlationsData) {
@@ -1699,6 +1713,9 @@ ${riskRegimeBlock}
 
 === RATE PATH USD (market-implied dari Fed Funds futures — angka konkret untuk mekanisme rate differential) ===
 ${ratePathBlock}
+
+=== STATUS KEPUTUSAN RATE CB TERDEKAT (WAJIB CEK sebelum menyebut hasil keputusan CB apapun — lihat ANTI-HALLUCINATION KEPUTUSAN CB di atas) ===
+${cbDecisionAlertBlock}
 
 === KORELASI CROSS-ASSET (anomali = sinyal regime berubah, gunakan sebagai cek silang) ===
 ${correlationBlock}

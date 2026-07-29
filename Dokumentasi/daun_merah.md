@@ -11,11 +11,23 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-07-29 (Session 257 — Link Sumber di Item Berita NEWS + Dashboard)
+> **Last updated:** 2026-07-29 (Session 258 — Fix Lanjutan Hallucination FOMC: Instruksi Prompt Saja Tidak Cukup)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 258 (2026-07-29) — Fix Lanjutan Hallucination FOMC: Instruksi Prompt Saja Tidak Cukup
+
+**Konteks:** User minta cek ulang fix Session 254 (larangan narasikan keputusan CB sebagai sudah terjadi). Live-test dengan hit langsung `api/market-digest` production menunjukkan fix S254 BELUM cukup — output baru (generate real-time saat verifikasi, bukan cache basi) MASIH menulis persis kalimat yang sama: *"FOMC tadi malam mempertahankan suku bunga di 3,75% tanpa perubahan..."*, padahal Federal Funds Rate (calendar ForexFactory) baru dijadwalkan 29 Juli 2026 18:00 WIB — beberapa jam LAGI dari waktu generate, bukan "tadi malam". Dicek juga headline RSS live: tidak ada satupun headline yang melaporkan hasil keputusan (cuma ada "Fed Interest Rate Probabilities", artikel probabilitas pra-keputusan) — jadi ini murni hallucination, bukan model membaca sumber yang salah.
+
+**Root cause fix S254 gagal:** Instruksi ANTI-HALLUCINATION KEPUTUSAN CB di `DIGEST_SYSTEM_DEFAULT` sudah benar, dan tag `[AKAN RILIS dalam X]` dari `_calEventStatusTag()` sudah nempel ke event yang tepat di `calBlock` — tapi `calBlock` posisinya di paling BAWAH user message (setelah ~10 blok data lain: TA, real yield, risk regime, RATE PATH, korelasi, skew opsi, COT, Polymarket, headlines x2). Section RATE PATH USD ("5bps CUT priced dalam 3m") ada jauh lebih awal dan berdekatan dengan FUNDAMENTALS (`Fed Rate: 3.75%`) — kombinasi dua angka ini yang dibaca LLM duluan dan disimpulkan jadi "keputusan sudah terjadi", sebelum sempat sampai ke tag status di kalender yang jauh di bawah. Prinsip yang sama seperti alasan `_calEventStatusTag` awalnya dibuat (LLM tidak reliable untuk aritmatika tanggal/status rilis) — instruksi teks saja tidak cukup kalau data pemicu-nya jauh secara posisional dari sinyal koreksinya.
+
+**Fix (`api/market-digest.js`):** Tambah blok baru `cbDecisionAlertBlock` (dihitung di kode, bukan LLM) yang mencari event kalender bertipe keputusan rate CB (regex `CB_DECISION_EVENT_RE`: interest rate/FOMC statement/FOMC press conference/federal funds rate/cash rate/bank rate/overnight rate/monetary policy statement/rate decision) dari `calEvents` yang sudah difilter (3 hari ke depan, impact High, major currency), lalu tempel status `_calEventStatusTag()` yang sama persis dipakai di `calBlock`. Section baru `=== STATUS KEPUTUSAN RATE CB TERDEKAT ===` disisipkan TEPAT setelah section RATE PATH USD di `digestUserMsg` — jadi sinyal koreksi ada langsung di sebelah data yang memicu kesalahan, bukan menunggu LLM baca sampai ke kalender di bawah.
+
+**Verifikasi:** `node --check` sintaks OK, `npm test` 647/647 hijau (tidak ada test yang break). Live re-verify setelah deploy: [ISI SETELAH PUSH — lihat hasil generate berikutnya, bandingkan kalimat FOMC].
+
+**File diubah:** `api/market-digest.js`.
 
 ## Changelog Session 257 (2026-07-29) — Link Sumber di Item Berita NEWS + Dashboard
 
