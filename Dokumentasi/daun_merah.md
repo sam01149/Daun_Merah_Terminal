@@ -11,11 +11,32 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-07-29 (Session 256 — Fix Bug KRITIS Prioritas CB Rate + Badge Data Seed + Ganti Simbol UI)
+> **Last updated:** 2026-07-29 (Session 257 — Link Sumber di Item Berita NEWS + Dashboard)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 257 (2026-07-29) — Link Sumber di Item Berita NEWS + Dashboard
+
+**Konteks:** User bertanya kenapa item berita di tab NEWS (contoh: kategori "macro", headline "FOMC Crib Sheet") cuma tampil sebagai teks polos tanpa cara buka sumber aslinya.
+
+**Root cause:** Data `link` sudah lengkap dari server (`api/feeds.js` parse `<link>` RSS untuk live items maupun histori) dan sudah ikut disimpan di objek item client (`parseRSS()` di `index.html`), tapi dua renderer HTML-nya tidak pernah memakainya:
+- `_feedItemHtml()` — kartu item di tab NEWS utama (`#feedScroll`).
+- `renderDashNews()` — kluster berita per kategori di panel Dashboard (termasuk kluster "MACRO" tempat "FOMC Crib Sheet" tadi muncul).
+
+Beda dengan dua tempat lain yang memang sudah pakai link (panel Riset/FJElite via `<a href>`, dan berita ActionForex di tab TEK via `onclick="openLink(...)"`) — dua renderer di atas murni belum pernah diimplementasikan buka-link-nya, bukan bug regresi.
+
+**Fix (`index.html`):**
+- `_feedItemHtml`: kartu `.feed-item` sekarang dapat class `.feed-item-link` + `onclick="openLink(item.link)"` kalau `item.link` ada (kartu tanpa link — kalau ada sumber yang kebetulan RSS-nya tak menyertakan `<link>` — tetap render polos seperti sebelumnya, tidak error). Hover state: border & judul berubah warna `--accent`, pola sama seperti `.tek-news-item-link` yang sudah ada.
+- `renderDashNews`: item `.dash-news-item` per kluster kategori (termasuk MACRO) dapat perlakuan sama via class baru `.dash-news-item-link`.
+- Reuse fungsi `openLink()` yang sudah ada (dipakai TEK), tidak menambah fungsi baru. Escaping URL untuk atribut `onclick` konsisten dengan pola existing di baris TEK (replace `'` saja — risiko URL berisi `"` literal sudah ada sejak awal di kode asli, tidak diperkenalkan baru).
+
+**Verifikasi:** `npm test` 647/647 hijau (tidak ada test unit untuk renderer HTML inline ini — dicek manual via syntax-check Node atas semua blok `<script>` di `index.html`, semua parse OK). `APP_VERSION` naik ke `2026.07.29.3`.
+
+**File diubah:** `index.html`.
+
+---
 
 ## Changelog Session 258 (2026-07-29) — Ganti Emoji 🔒 + Simbol Bintang ★/☆ ke Ikon SVG
 
