@@ -4335,7 +4335,7 @@ window.addEventListener('DOMContentLoaded', updateThemeIcon);
 
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.07.28.1';
+const APP_VERSION = '2026.07.29.1';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
@@ -8470,6 +8470,21 @@ const FUND_SCORE_RULES = {
   'Personal Income':  { dir: 1,  threshold: 0     },
   'Personal Spending':{ dir: 1,  threshold: 0     },
   'GfK Consumer Climate':{ dir: 1,threshold: 0    },
+  // Threshold fallback (2026-07-29): sebelumnya indikator ini HANYA bisa discore
+  // lewat perbandingan vs previous — kalau previous kosong (rilis pertama musim,
+  // parser gagal ekstrak), skor jadi null total. Currency yang paling sering
+  // pakai indikator ini (GBP/JPY/CAD/AUD/NZD) jadi paling rugi karena jumlah
+  // indikator mereka sudah lebih sedikit dari USD/EUR. Threshold 0/50 dipilih
+  // karena unit-agnostic (cek tanda/posisi relatif garis netral, bukan magnitude
+  // absolut) — aman dipakai lintas skala (K/M/B/%, beda per currency).
+  'Employment Change':{ dir: 1,  threshold: 0     },
+  'Claimant Count':   { dir: -1, threshold: 0     },
+  'Trade Balance':    { dir: 1,  threshold: 0     },
+  'Current Account':  { dir: 1,  threshold: 0     },
+  'Industrial Production':{ dir: 1,threshold: 0   },
+  'Tankan Mfg Index': { dir: 1,  threshold: 0     },
+  'Ivey PMI':         { dir: 1,  threshold: 50    },
+  'NAB Business Conf':{ dir: 1,  threshold: 0     },
 };
 
 // Direction map for all known indicators
@@ -8518,6 +8533,12 @@ const FUND_IND_IMPORTANCE = {
   'Housing Starts':0.5,'Building Permits':0.5,'Building Approvals':0.5,'Factory Orders':0.5,
   'Existing Home Sales':0.5,'New Home Sales':0.5,'Chicago PMI':0.5,'Capacity Utilization':0.5,
   'Personal Income':0.5,'Personal Spending':0.5,'GfK Consumer Climate':0.5,
+  // German CPI YoY diredam ke 0.5 (2026-07-29): EUR satu-satunya currency dengan
+  // 2 sinyal inflasi independen (CPI Flash YoY bobot 2 + German CPI YoY) padahal
+  // keduanya sangat berkorelasi (data Jerman kerap bocor duluan sebelum flash
+  // Eurozone) — tanpa redaman ini EUR dapat bobot inflasi total lebih besar
+  // (2+1=3) dibanding currency lain yang cuma 1 sinyal (bobot 2).
+  'German CPI YoY':0.5,
 };
 function fundIndImportance(key) { return FUND_IND_IMPORTANCE[key] ?? 1; }
 
@@ -8895,10 +8916,11 @@ function renderFundamental() {
     const rateVal = rateKey && data[rateKey] ? data[rateKey].actual : null;
     // Skor tertimbang (2026-07-19): tiap indikator ±1 dikali bobot kepentingan ×
     // bobot umur — rilis 2 minggu terakhir mendominasi, data basi/minor memudar.
-    // scoredCt (jumlah mentah) tetap dipakai untuk tier keyakinan.
-    let bullW = 0, totW = 0, scoredCt = 0;
+    // scoredCt (jumlah mentah) tetap dipakai untuk tampilan "N indikator".
+    let bullW = 0, totW = 0, scoredCt = 0, totalScorable = 0;
     Object.entries(data).forEach(([k, v]) => {
       if (k === rateKey) return;
+      totalScorable++;
       const s = scoreInd(k, v.actual, v.previous);
       if (s !== null) {
         scoredCt++;
@@ -8910,10 +8932,15 @@ function renderFundamental() {
     const score      = totW > 0 ? Math.round(bullW / totW * 100) : null;
     const scoreLabel = score === null ? 'N/A' : score >= 60 ? 'Bull' : score < 40 ? 'Bear' : 'Neut';
     const scoreColor = score === null ? 'var(--muted)' : score >= 60 ? 'var(--green)' : score < 40 ? 'var(--red)' : 'var(--yellow)';
-    const confTier   = scoredCt >= 7 ? 'high' : scoredCt >= 4 ? 'med' : scoredCt > 0 ? 'low' : null;
+    // Tier keyakinan (2026-07-29): dulu pakai ambang mutlak (scoredCt>=7 utk "High"),
+    // tapi jumlah indikator yang ter-seed beda jauh antar currency (USD ~11, CHF/NZD
+    // cuma ~4-5) — CHF/NZD jadi TAK MUNGKIN pernah capai "High" walau datanya lengkap
+    // & segar. Ganti ke rasio (scoredCt/totalScorable) supaya adil lintas currency.
+    const scoredRatio = totalScorable > 0 ? scoredCt / totalScorable : 0;
+    const confTier   = scoredRatio >= 0.7 ? 'high' : scoredRatio >= 0.4 ? 'med' : scoredCt > 0 ? 'low' : null;
     const confLabel  = confTier === 'high' ? 'High' : confTier === 'med' ? 'Med' : confTier === 'low' ? 'Low' : null;
     const col        = CUR_COLORS[cur] || '#888';
-    return { cur, data, rateKey, rateVal, score, scoreLabel, scoreColor, confTier, confLabel, scoredCt, col };
+    return { cur, data, rateKey, rateVal, score, scoreLabel, scoreColor, confTier, confLabel, scoredCt, totalScorable, col };
   });
 
   fdScores = scores; // expose to detail overlay

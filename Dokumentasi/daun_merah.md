@@ -11,11 +11,33 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-07-29 (Session 254 — Fix Hallucination Ringkasan: Keputusan CB Dinarasikan Sudah Terjadi Padahal Belum)
+> **Last updated:** 2026-07-29 (Session 255 — Audit Fairness Skor Fundamental Lintas Currency + Fix)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 255 (2026-07-29) — Audit Fairness Skor Fundamental Lintas Currency + Fix
+
+**Konteks:** User minta audit fitur fundamental terhadap framework CLAUDE.md/ATURAN.md. Ditemukan 1 bug KRITIS (prioritas data CB rate terbalik — heuristik diff vs `CB_FALLBACK` statis bisa menimpa `dec` hasil parse headline resmi di `api/_cb_rates.js:217-235`, BELUM DIFIX, perlu rapat lanjutan) + beberapa temuan SEDANG/RINGAN (badge umur data seed hilang total, simbol non-arrow ⚡/⚖/★ tidak konsisten dengan kebijakan larangan emoji, field `rate_stale` dead code, tidak ada test `cb_rates.test.js`). User lanjut tanya soal fairness perhitungan skor lintas currency (pair) — ditemukan cacat desain nyata, dibahas & disepakati fix-nya sekarang.
+
+**Temuan fairness (3 sumber ketimpangan):**
+1. Jumlah indikator per currency di `FUND_SEED` (`api/admin.js`) timpang jauh: USD 12, EUR 10, GBP/JPY/CAD/AUD 8, NZD 6, CHF 5 — bukan representasi ketersediaan data riil, tapi gap seeding (parser `api/_fundamental_parser.js` sudah generik, sudah kenal keyword Trade Balance/Retail Sales/Business Confidence untuk CHF/NZD tapi belum pernah diseed sebagai starting point).
+2. `confTier` (badge "High/Med/Low" di panel Fundamental) pakai ambang ANGKA MUTLAK (`scoredCt>=7` utk High) — CHF (maks 4-5 scorable lama) & NZD (maks 5-6) matematis TIDAK MUNGKIN pernah capai "High" walau datanya sempurna; GBP/JPY/CAD/AUD (pas 7) cuma bisa "High" kalau 100% indikatornya berhasil discore (nol toleransi), sementara USD/EUR punya slack besar.
+3. Beberapa indikator (Employment Change, Claimant Count, Trade Balance, Tankan Mfg Index, Industrial Production, Ivey PMI, NAB Business Conf) HANYA bisa discore via perbandingan `previous` — tanpa fallback threshold statis di `FUND_SCORE_RULES`, jadi `null` total kalau `previous` kosong (rilis pertama musim/parser gagal ekstrak). Currency yang paling sering pakai indikator ini (GBP/JPY/CAD/AUD/NZD) kebetulan yang jumlah indikatornya sudah paling sedikit — efek "rich get richer".
+4. (Bonus) EUR satu-satunya currency dengan 2 sinyal inflasi independen tapi sangat berkorelasi (CPI Flash YoY bobot 2 + German CPI YoY, data Jerman kerap bocor duluan sebelum flash Eurozone) — total bobot kategori inflasi EUR lebih besar dari currency lain yang cuma 1 sinyal.
+
+**Fix (disepakati user, scope A+B+C+D):**
+- **A — confTier jadi rasio** (`index.html`, blok `renderFundamental`): ganti `scoredCt>=7/>=4` (mutlak) jadi `scoredCt/totalScorable>=0.7/>=0.4` (rasio, self-normalizing lintas currency berapa pun jumlah indikatornya).
+- **B — perluas `FUND_SEED`** (`api/admin.js`): tambah CHF (Trade Balance, Retail Sales MoM) & NZD (Manufacturing PMI, Business Confidence) — indikator yang parsernya sudah siap tapi belum pernah diseed.
+- **C — tambah `FUND_SCORE_RULES` threshold fallback** (`index.html`): Employment Change (thr 0), Claimant Count (thr 0, dir -1), Trade Balance (thr 0), Current Account (thr 0), Industrial Production (thr 0), Tankan Mfg Index (thr 0), Ivey PMI (thr 50), NAB Business Conf (thr 0) — threshold 0/50 dipilih unit-agnostic (cek tanda/garis netral, bukan magnitude, karena unit beda-beda per currency: K/M/B/%).
+- **D — redam bobot German CPI YoY** (`index.html`, `FUND_IND_IMPORTANCE`): dari default 1 jadi eksplisit 0.5 (bukan dari 2 seperti draf awal ke user — dicek ulang, ternyata sudah default 1, bukan 2; dikoreksi saat implementasi).
+
+**Verifikasi:** `npm test` 640/640 hijau (sebelum & sesudah). Simulasi standalone (skrip Node ad-hoc, extract logika asli dari `index.html`+`api/admin.js` via `new Function`, dibuang setelah verifikasi) membuktikan: (1) semua 8 currency sekarang 100% punya threshold fallback (tidak ada lagi `null` silent walau `previous` kosong); (2) skenario realistis "2 indikator gagal discore" — GBP/JPY/CAD/AUD/NZD yang dulu jatuh ke tier "Med" (padahal USD dengan kegagalan sama tetap "High") sekarang tetap "High" karena proporsional terhadap ukuran pool masing-masing; CHF (pool terkecil, 6) tetap "Med" di skenario itu — wajar, bukan lagi mustahil capai "High" di kondisi data lengkap.
+
+**Belum dikerjakan (nunggu rapat terpisah):** bug KRITIS prioritas data CB rate (`_cb_rates.js:217-235`) dan temuan SEDANG/RINGAN lainnya dari audit awal (badge umur data seed, konsistensi simbol ⚡/⚖/★, `rate_stale` dead code, test coverage `_cb_rates.js`) — dicatat di sini sebagai jejak, BELUM dieksekusi, tunggu keputusan user.
+
+**File diubah:** `index.html` (FUND_SCORE_RULES, FUND_IND_IMPORTANCE, confTier logic, APP_VERSION bump ke `2026.07.29.1`), `api/admin.js` (FUND_SEED CHF/NZD).
 
 ## Changelog Session 254 (2026-07-29) — Fix Hallucination Ringkasan: Keputusan CB Dinarasikan Sudah Terjadi Padahal Belum
 

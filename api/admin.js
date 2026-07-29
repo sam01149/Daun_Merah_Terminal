@@ -1130,6 +1130,11 @@ const FUND_SEED = {
     'Employment Change': { actual:'0.2%',       period:'Q4 2025',     date:'—', source:'seed' },
     'Unemployment Rate': { actual:'5.3%',       period:'Q4 2025',     date:'—', source:'seed' },
     'Trade Balance':     { actual:'698M NZD',   period:'Mar 2026',    date:'—', source:'seed' },
+    // Ditambah 2026-07-29 — parser sudah kenal keyword ini (prefix 'nz pmi'/'new
+    // zealand pmi', 'new zealand business'), tapi belum pernah diseed sebagai
+    // starting point. Sebelumnya NZD cuma 6 indikator (mentok tier "Med").
+    'Manufacturing PMI': { actual:'48.5',       period:'Apr 2026',    date:'—', source:'seed' },
+    'Business Confidence':{ actual:'15',        period:'Apr 2026',    date:'—', source:'seed' },
   },
   CHF: {
     'GDP QoQ':           { actual:'0.2%',       period:'Q4 2025',     date:'—', source:'seed' },
@@ -1137,6 +1142,11 @@ const FUND_SEED = {
     'CPI YoY':           { actual:'0.6%',       period:'Apr 2026',    date:'—', source:'seed' },
     'KOF Barometer':     { actual:'97.9',       period:'Apr 2026',    date:'—', source:'seed' },
     'Unemployment Rate': { actual:'2.8%',       period:'Q1 2026',     date:'—', source:'seed' },
+    // Ditambah 2026-07-29 — parser sudah kenal keyword ini (prefix 'swiss trade'/
+    // 'switzerland trade', 'swiss retail'/'switzerland retail'), tapi belum pernah
+    // diseed. CHF sebelumnya cuma 5 indikator, currency paling sedikit datanya.
+    'Trade Balance':     { actual:'3200M CHF',  period:'Mar 2026',    date:'—', source:'seed' },
+    'Retail Sales MoM':  { actual:'0.3%',       period:'Mar 2026',    date:'—', source:'seed' },
   },
 };
 
