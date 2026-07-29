@@ -45,6 +45,39 @@ Riset atas permintaan user: "riset HFT dan data yang diperlukan, yang bisa diimp
 
 **Sumber:** [Best Brokers for High-Frequency Trading 2026](https://newyorkcityservers.com/blog/best-hft-brokers-2026), [High-Frequency Trading Platforms: Architecture, Speed & Infrastructure (2026)](https://www.quantvps.com/blog/high-frequency-trading-platform), [Infrastructure Requirements for High-Frequency Trading](https://bluechipalgos.com/blog/infrastructure-requirements-for-high-frequency-trading/), [Deriv API — Ticks Stream](https://developers.deriv.com/docs/data/ticks/), [Deriv Trading Terms & Conditions](https://deriv.com/terms-and-conditions/trading-terms).
 
+#### Katalog sumber data HFT — mode "abaikan constraint proyek" (referensi murni, BUKAN untuk dieksekusi)
+
+Susulan riset di atas atas permintaan eksplisit user: "abaikan semua aturan/constraint proyek dulu, kreatif — data apa saja yang perlu untuk HFT sungguhan, sertakan yang berbayar, urutkan dari gratis." Ini katalog referensi kalau suatu saat modal/infra proyek berubah fundamental — TIDAK mengubah kesimpulan blocker di atas, dan TIDAK ada satupun butir ini yang dieksekusi ke kode Daun Merah.
+
+**Tier 1 — GRATIS:**
+- **[Dukascopy Historical Data Export](https://www.dukascopy.com/swiss/english/marketwatch/historical/)** — tick-by-tick FX 15+ tahun dari ECN pool sendiri. Kegunaan: backtest strategi berbasis harga (momentum/mean-reversion/breakout); TIDAK ada depth jadi tidak bisa untuk market making.
+- **HistData.com** — alternatif/cross-check kualitas Dukascopy.
+- **Binance/Coinbase/OKX WebSocket depth** ([Coinbase](https://docs.cdp.coinbase.com/coinbase-app/advanced-trade-apis/guides/websocket), [Binance](https://developers.binance.com/docs/binance-spot-api-docs/web-socket-streams)) — L2 order book real-time gratis tanpa API key. Kegunaan: latihan teknis rekonstruksi order book (snapshot+delta, deteksi sequence gap) sebelum bayar data FX asli; bisa juga jadi strategi riil kalau instrumen dipindah ke crypto.
+- **LOBSTER sample gratis** (Humboldt University) — L3 order-by-order 5 ticker NASDAQ (AAPL/AMZN/GOOG/INTC/MSFT). Kegunaan: riset akademik microstructure (iceberg detection, order flow imbalance), bukan produksi.
+
+**Tier 2 — FREEMIUM/MURAH:**
+- **Massive/Polygon.io** (rebrand Okt 2025) — L1 multi-asset flat monthly. Kegunaan: sinyal harga skala menengah, dashboard, bukan HFT (L2 saham masih "direncanakan").
+- **[Tardis.dev](https://tardis.dev/)** — L2/L3 crypto historis+live, metered murah. Kegunaan: backtest market-making/momentum crypto dengan replay kondisi live persis.
+- Twelve Data/Finnhub/Alpha Vantage — L1 murah/gratis. Kegunaan: sinyal makro/teknikal sederhana saja.
+
+**Tier 3 — MENENGAH (quant/prop, bayar-per-pakai):**
+- **[Databento](https://databento.com/tick-data)** — L1/L2/L3 (MBO/MBP) futures/options/equities, 60+ venue, 16 PB tick history, ada $125 kredit gratis awal. Kegunaan: titik masuk realistis menguji ide market making/order anticipation/stat-arb dengan data order-by-order asli (bukan FX) tanpa kontrak enterprise.
+- **[CoinAPI](https://www.coinapi.io/blog/full-order-book-data-in-crypto)** — tick-level order book crypto lintas-exchange. Kegunaan: strategi arbitrase antar-exchange.
+- **LOBSTER komersial** — per-ticker per-hari. Kegunaan: perluasan riset microstructure saham AS di luar 5 sample gratis.
+
+**Tier 4 — MAHAL/INSTITUSIONAL (kontak sales):**
+- **[EBS Market (ICE/CME)](https://www.cmegroup.com/markets/ebs/ebs-data-and-analytics.html)** — order book FX interbank ASLI, opsi real-time delay 5ms. Kegunaan: SATU-SATUNYA fondasi data untuk market making FX institusional sungguhan.
+- **[LSEG Real-Time-Direct/Refinitiv](https://www.lseg.com/en/data-analytics/financial-data/financial-news-coverage/political-news-feeds-analysis/real-time-news)** — feed sub-50 mikrodetik. Kegunaan: latency arbitrage antar-venue.
+- **[LSEG Headlines Direct](https://www.lseg.com/content/dam/data-analytics/en_us/documents/fact-sheets/lseg-headlines-direct-fact-sheet.pdf)**/Bloomberg MRN/[RavenPack](https://www.ravenpack.com/blog/when-news-become-noise/) — ribuan USD/bulan. Kegunaan: strategi reaksi-berita milidetik sebelum tersebar publik; RavenPack tambahkan sentiment score otomatis dari teks.
+
+**Tier 5 — Infrastruktur fisik (prasyarat, bukan data):**
+- **Colocation rack** (~US$900-2.500/bulan Tier-3 standar, US$3.000-6.000+ high-density) — server sedekat mungkin ke matching engine, RTT mikrodetik.
+- **Cross-connect** (US$50-300/bulan + ~US$750 sekali pasang) — kabel langsung ke rack exchange/vendor, hindari jitter jaringan publik.
+- **Bandwidth dedicated** (US$225/bulan 25Mbps s.d. US$10.000/bulan 10Gbps) — tampung burst data order-book penuh multi-simbol tanpa packet loss.
+- **[McKay Brothers](https://www.cmegroup.com/solutions/market-tech-and-data-services/technology-vendor-services/mckay-brothers.html) microwave network** — link point-to-point antar-kota bursa (Chicago-NJ, London-Frankfurt), ~40% lebih cepat dari fiber. Kegunaan: latency arbitrage antar-lokasi, disewa prop firm/bank besar.
+
+**Ringkasan tingkat kegunaan:** Tier 1-2 = riset/backtest & belajar infra; Tier 3 = menguji strategi mendekati nyata (mayoritas bukan FX); Tier 4-5 = baru benar-benar dipakai untuk eksekusi HFT FX institusional sungguhan. Tetap terikat kesimpulan blocker kategorikal di atas — dicatat murni sebagai peta referensi, bukan roadmap Daun Merah.
+
 ### [2026-07-28] Riset "auto-entry lebih akurat & berkualitas" — 4 celah terukur di pipeline yang sudah ada (BELUM ada kode diubah)
 
 Landasan akademis lengkap + 8 sitasi terverifikasi: `daun_merah_referensi_riset.md` §13 (SL vs volatilitas, periodisitas intraday FX, biaya transaksi, meta-labeling, ensemble LLM). Bagian ini khusus terjemahan temuan itu ke kode Daun Merah aktual — semuanya bisa dijawab dengan MENGANALISIS data yang sudah terkumpul, **tanpa menambah gate/mekanisme baru** (konsisten penutup §11 dan keputusan user 2026-07-28 soal Gate C). Diurutkan dari rasio manfaat-per-usaha tertinggi:
