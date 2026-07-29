@@ -47,8 +47,22 @@ test('_costAdjustedR: rr kosong -> dihitung ulang dari tp/entry/sl', () => {
 });
 
 test('_aggCostExpectancy: array kosong / semua tak terhitung -> n 0, avg null', () => {
-  assert.deepEqual(_aggCostExpectancy([]), { n: 0, avg_r_gross: null, avg_r_net: null });
-  assert.deepEqual(_aggCostExpectancy([{ status: 'pending', label: 'EUR/USD' }]), { n: 0, avg_r_gross: null, avg_r_net: null });
+  assert.deepEqual(_aggCostExpectancy([]), { n: 0, avg_r_gross: null, avg_r_net: null, missing_spread_table: [] });
+  assert.deepEqual(_aggCostExpectancy([{ status: 'pending', label: 'EUR/USD' }]), { n: 0, avg_r_gross: null, avg_r_net: null, missing_spread_table: [] });
+});
+
+// BUG DITEMUKAN & DIFIX (2026-07-29, audit lanjutan): pair closed (tp/sl) yang tidak ada
+// di SPREAD_PRICE_ESTIMATE dulu diam-diam dikecualikan tanpa tanda apa pun (persis
+// insiden AUD/NZD 2026-07-28). missing_spread_table sekarang merekam label yang hilang.
+test('_aggCostExpectancy: pair closed tanpa entri spread -> masuk missing_spread_table, tidak ikut n', () => {
+  const arr = [
+    { status: 'tp', label: 'EUR/USD', entry_zone: '1.1000', sl: '1.0950', tp: '1.1100', rr: 2 },
+    { status: 'sl', label: 'PAIR/BARU', entry_zone: '1.10', sl: '1.09', tp: '1.12' },
+    { status: 'tp', label: 'PAIR/BARU', entry_zone: '1.10', sl: '1.09', tp: '1.12' }, // dedup label
+  ];
+  const agg = _aggCostExpectancy(arr);
+  assert.equal(agg.n, 1, 'hanya EUR/USD yang punya entri spread');
+  assert.deepEqual(agg.missing_spread_table, ['PAIR/BARU']);
 });
 
 test('_aggCostExpectancy: rata-rata gross vs net lintas beberapa setup closed', () => {

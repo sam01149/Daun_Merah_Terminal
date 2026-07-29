@@ -64,11 +64,30 @@ test('isDrawdownHalted: sampel PERSIS 5 -> ambang minimum terpenuhi, boleh halte
   assert.equal(r.halted, true); // -5R <= ambang neutral -5R, sampel cukup
 });
 
-test('isDrawdownHalted: regime null/tak dikenal -> perlakukan seketat neutral (-5R)', () => {
-  const closed4loss = Array.from({ length: 4 }, () => ({ status: 'sl' }));
-  assert.equal(isDrawdownHalted({ closedSetups: closed4loss, regime: null }).halted, false);
-  const closed5loss = Array.from({ length: 5 }, () => ({ status: 'sl' }));
-  assert.equal(isDrawdownHalted({ closedSetups: closed5loss, regime: 'regime_aneh' }).halted, true);
+// BUG DITEMUKAN & DIFIX (2026-07-29, audit lanjutan): dulu regime null/tak dikenal
+// diperlakukan seketat 'neutral' (-5R) — mencampur "regime memang netral" dgn "regime
+// tidak diketahui sama sekali" (data hilang, bukan sinyal tenang). Sekarang seketat
+// 'risk_off' (-2R, paling konservatif) + `regime_known:false` dilaporkan eksplisit.
+test('isDrawdownHalted: regime null/tak dikenal -> KETAT seperti risk_off (-2R), bukan neutral (-5R)', () => {
+  // 2 SL murni (rollingR = -2 persis) + 3 entri status lain (diabaikan computeRollingR,
+  // cuma buat memenuhi DRAWDOWN_MIN_SAMPLE=5).
+  const closed = [
+    { status: 'sl' }, { status: 'sl' }, { status: 'pending' }, { status: 'open' }, { status: 'canceled' },
+  ];
+  const rNull = isDrawdownHalted({ closedSetups: closed, regime: null });
+  assert.equal(rNull.rollingR, -2);
+  assert.equal(rNull.regime_known, false);
+  assert.equal(rNull.threshold, -2, 'threshold utk regime tidak diketahui HARUS -2 (risk_off), bukan -5 (neutral)');
+  assert.equal(rNull.halted, true, 'rollingR -2 <= -2 (risk_off) -> halted, walau -2 > -5 (neutral, TIDAK akan halted kalau salah pakai default lama)');
+
+  const rUnknownStr = isDrawdownHalted({ closedSetups: closed, regime: 'regime_aneh' });
+  assert.equal(rUnknownStr.regime_known, false);
+  assert.equal(rUnknownStr.threshold, -2);
+
+  const rNeutral = isDrawdownHalted({ closedSetups: closed, regime: 'neutral' });
+  assert.equal(rNeutral.regime_known, true);
+  assert.equal(rNeutral.threshold, -5, 'regime neutral ASLI tetap -5R, tidak ikut berubah');
+  assert.equal(rNeutral.halted, false, 'rollingR -2 > -5 (neutral asli) -> belum halted, beda dari kasus regime tidak diketahui di atas');
 });
 
 test('isDrawdownHalted: array kosong -> rollingR 0, tidak pernah halted', () => {

@@ -33,7 +33,14 @@ const DRAWDOWN_HALT_THRESHOLD_R = {
   elevated: -3,
   risk_off: -2,
 };
-const DEFAULT_DRAWDOWN_THRESHOLD_R = -5; // regime null/tak dikenal -> perlakukan seketat 'neutral'
+// BUG DITEMUKAN & DIFIX (2026-07-29, audit lanjutan celah kesalahan trader): regime
+// null/gagal-fetch/tak dikenal dulu diam-diam disamakan dengan 'neutral' (-5R) —
+// mencampur dua kondisi beda: "regime memang dinilai netral" vs "kita tidak tahu
+// regime-nya sama sekali" (data hilang bukan sinyal tenang). Sekarang diperlakukan
+// seketat 'risk_off' (paling konservatif) supaya ketidaktahuan tidak diam-diam
+// melonggarkan circuit breaker. Referensi ke DRAWDOWN_HALT_THRESHOLD_R.risk_off
+// (bukan angka -2 duplikat) supaya tidak drift kalau ambang risk_off direvisi nanti.
+const DEFAULT_DRAWDOWN_THRESHOLD_R = DRAWDOWN_HALT_THRESHOLD_R.risk_off;
 
 // [2026-07-28, audit lanjutan] Ambang minimum sampel SEBELUM circuit breaker boleh
 // menyala — tanpa ini, di awal umur sistem (rolling window 10 = SELURUH riwayat yang
@@ -45,18 +52,36 @@ const DEFAULT_DRAWDOWN_THRESHOLD_R = -5; // regime null/tak dikenal -> perlakuka
 // admin.js) — bukan angka baru yang diarang.
 const DRAWDOWN_MIN_SAMPLE = 5;
 
+// Realized-R dari geometri level yang BENAR-BENAR tersimpan (entry_zone/sl/tp), BUKAN
+// dari field `rr` (target saat setup dibuat/direfine — audit lanjutan 2026-07-29: bisa
+// meleset dari level FINAL kalau di-refine tapi `structured.risk_reward` kebetulan null
+// di generate itu). Prioritas: geometri riil > `rr` tersimpan > fallback 1 (data lama/
+// tak lengkap sama sekali). Pola sama _costAdjustedR (api/admin.js) — diduplikasi di
+// sini secara sadar (bukan di-share) supaya modul ini tetap pure/tanpa dependensi silang
+// dengan admin.js (lihat header file: "Pure functions saja... dites unit tanpa mock").
+function _realizedWinR(st) {
+  const nums = s => (String(s).match(/[\d.]+/g) || []).map(Number).filter(n => !isNaN(n));
+  const e = nums(st.entry_zone), slNum = nums(st.sl)[0], tpNum = nums(st.tp)[0];
+  if (e.length && slNum != null && tpNum != null) {
+    const entryMid = (Math.min(...e) + Math.max(...e)) / 2;
+    const risk = Math.abs(entryMid - slNum);
+    if (risk > 0) return Math.round((Math.abs(tpNum - entryMid) / risk) * 100) / 100;
+  }
+  const rr = Number(st.rr);
+  return Number.isFinite(rr) && rr > 0 ? rr : 1;
+}
+
 // `closedSetups` = array setup_log_auto:v1 TERURUT ts naik, status 'tp' atau 'sl' saja
 // (caller wajib filter+sort sebelum panggil — fungsi ini tidak mengurutkan ulang).
-// Outcome R: 'tp' -> +rr (fallback +1 kalau rr tidak valid), 'sl' -> -1 tetap (risiko
-// yang direalisasikan selalu 1R, terlepas rr yang ditarget).
+// Outcome R: 'tp' -> +realizedWinR (lihat _realizedWinR), 'sl' -> -1 tetap (risiko yang
+// direalisasikan selalu 1R, terlepas rr yang ditarget).
 function computeRollingR(closedSetups) {
   const window = (closedSetups || []).slice(-DRAWDOWN_WINDOW);
   let sum = 0;
   for (const st of window) {
     if (!st) continue;
     if (st.status === 'tp') {
-      const rr = Number(st.rr);
-      sum += Number.isFinite(rr) && rr > 0 ? rr : 1;
+      sum += _realizedWinR(st);
     } else if (st.status === 'sl') {
       sum -= 1;
     }
@@ -66,13 +91,17 @@ function computeRollingR(closedSetups) {
 
 // closedSetups: lihat computeRollingR. regime: 'risk_on'|'neutral'|'elevated'|'risk_off'|null.
 // Sampel < DRAWDOWN_MIN_SAMPLE -> tidak pernah halted, apapun rollingR-nya (belum cukup
-// data buat bedakan "lagi apes" dari "cuma variance normal").
+// data buat bedakan "lagi apes" dari "cuma variance normal"). `regime_known` dilaporkan
+// terpisah (2026-07-29) supaya "regime memang netral" vs "regime tidak diketahui" bisa
+// dibedakan belakangan di analisis, walau threshold efektifnya sekarang identik dgn
+// risk_off untuk kasus tak diketahui (lihat DEFAULT_DRAWDOWN_THRESHOLD_R).
 function isDrawdownHalted({ closedSetups, regime }) {
   const sampleSize = (closedSetups || []).length;
   const rollingR = computeRollingR(closedSetups);
-  const threshold = DRAWDOWN_HALT_THRESHOLD_R[regime] ?? DEFAULT_DRAWDOWN_THRESHOLD_R;
+  const regimeKnown = Object.prototype.hasOwnProperty.call(DRAWDOWN_HALT_THRESHOLD_R, regime);
+  const threshold = regimeKnown ? DRAWDOWN_HALT_THRESHOLD_R[regime] : DEFAULT_DRAWDOWN_THRESHOLD_R;
   const halted = sampleSize >= DRAWDOWN_MIN_SAMPLE && rollingR <= threshold;
-  return { halted, rollingR, threshold, sampleSize };
+  return { halted, rollingR, threshold, sampleSize, regime_known: regimeKnown };
 }
 
 // ── Gate D: Correlation cap (heuristik sederhana, 1 pasangan terbukti korelatif) ──
@@ -108,4 +137,5 @@ module.exports = {
   isCorrelatedExposureBlocked,
   DRAWDOWN_WINDOW,
   DRAWDOWN_HALT_THRESHOLD_R,
+  _realizedWinR,
 };

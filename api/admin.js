@@ -2735,8 +2735,14 @@ function _costAdjustedR(st) {
   if (st.status === 'sl') {
     grossR = -1;
   } else {
-    grossR = typeof st.rr === 'number' ? st.rr
-      : (tpNum != null ? Math.abs(tpNum - entryMid) / risk : null);
+    // BUG DITEMUKAN & DIFIX (2026-07-29, audit lanjutan celah kesalahan trader):
+    // prioritas dibalik — geometri RIIL (tp/entry_zone/sl yang benar-benar tersimpan)
+    // sekarang menang atas `rr` (target saat setup dibuat/direfine). `rr` cuma cache;
+    // kalau level di-refine tapi `structured.risk_reward` kebetulan null di generate
+    // itu, `rr` lama bisa meleset dari level FINAL yang sebenarnya dipakai. Fallback ke
+    // `rr` tersimpan HANYA kalau tp memang tidak ada (data lama/tak lengkap).
+    grossR = tpNum != null ? Math.round((Math.abs(tpNum - entryMid) / risk) * 100) / 100
+      : (typeof st.rr === 'number' ? st.rr : null);
     if (grossR == null) return null;
   }
   const costR = spread / risk;
@@ -2746,11 +2752,21 @@ function _costAdjustedR(st) {
 // Rata-rata expectancy R gross vs net-biaya lintas setup closed yang punya data
 // spread & level lengkap. n bisa < (tp+sl) kalau sebagian pair/level tidak
 // terhitung (fail-open per-entri, bukan all-or-nothing).
+// BUG DITEMUKAN & DIFIX (2026-07-29, audit lanjutan): pair yang tidak ada di
+// SPREAD_PRICE_ESTIMATE dulu diam-diam dikecualikan dari n tanpa tanda apa pun sama
+// sekali (persis insiden AUD/NZD 2026-07-28, baru ketahuan manual). `missing_spread_table`
+// sekarang merekam label pair closed (tp/sl) mana saja yang hilang dari tabel spread —
+// supaya gap serupa di pair baru langsung kelihatan di payload, bukan nunggu ketahuan lagi.
 function _aggCostExpectancy(arr) {
   const rs = arr.map(_costAdjustedR).filter(Boolean);
-  if (!rs.length) return { n: 0, avg_r_gross: null, avg_r_net: null };
+  const missingSpreadTable = [...new Set(
+    (arr || [])
+      .filter(x => x && (x.status === 'tp' || x.status === 'sl') && SPREAD_PRICE_ESTIMATE[x.label] == null)
+      .map(x => x.label)
+  )];
+  if (!rs.length) return { n: 0, avg_r_gross: null, avg_r_net: null, missing_spread_table: missingSpreadTable };
   const avg = key => +(rs.reduce((a, r) => a + r[key], 0) / rs.length).toFixed(2);
-  return { n: rs.length, avg_r_gross: avg('grossR'), avg_r_net: avg('netR') };
+  return { n: rs.length, avg_r_gross: avg('grossR'), avg_r_net: avg('netR'), missing_spread_table: missingSpreadTable };
 }
 
 // PLAN (2026-07-20, item #5 diskusi user): kalibrasi confidence AI — win-rate
@@ -4541,6 +4557,48 @@ async function ohlcvAnalyzeHandler(req, res) {
       // saja (best-effort — kegagalan logging TIDAK PERNAH boleh menggagalkan response
       // analisa, sama seperti sebelumnya).
       const lockKey = `lock:setuplog_write:${setupLogKey}`;
+      // BUG DITEMUKAN & DIFIX (2026-07-29, audit lanjutan celah kesalahan trader): lock
+      // ini TTL 10 detik, tapi Gate A (AI Kritikus, _runCriticVerdict) timeout 25 detik —
+      // sebelumnya seluruh Gate D/B/A + tulis akhir terjadi di BAWAH SATU lock yang sama,
+      // jadi TIAP KALI Gate A benar-benar terpanggil, lock itu sudah kedaluwarsa jauh
+      // sebelum selesai (window nyata utk proses lain menulis array yang sama -> lost
+      // update). positionReviewHandler SUDAH punya pola yang benar untuk masalah yang
+      // SAMA (lihat komentar `race_detected` di dekat lockKey2 di atas): lock dilepas
+      // SEBELUM AI call, state dibaca ULANG & divalidasi di bawah lock BARU tepat sebelum
+      // menulis. Pola itu direplikasi di sini via 2 fase: Fase 1 (di bawah) = semua
+      // keputusan CEPAT (dup/openSame/stalePending refine-atau-flip, Gate D/B) — kalau
+      // tidak perlu Gate A, selesai & tersimpan di sini juga (manual SELALU lewat sini,
+      // Gate A tidak pernah menyentuh manual). Fase 2 (di bawah, di luar lock) = Gate A
+      // (AI) TANPA lock, lalu re-acquire + baca ulang state segar sebelum tulis akhir.
+      const buildNewSetupEntry = () => ({
+        id: `${symbol}:${Date.now()}`,
+        symbol, label: data.label, bias: structured.bias,
+        entry_zone: structured.entry_zone, sl: structured.sl, tp: structured.tp,
+        rr: structured.risk_reward ?? null,
+        horizon_days: structured.time_horizon_days ?? null,
+        model, ts: Date.now(), status: 'pending',
+        source: isAutoCall ? 'auto' : 'manual',
+        alignment: (structured.conflict && structured.conflict !== 'none')
+          ? 'konflik'
+          : (structured.makro_alignment || null),
+        confidence: structured.confidence ?? null,
+        // PLAN W (2026-07-24): sinyal mentah sebelum digabung jadi `alignment`
+        // (lossy) — murni observasi, tidak dipakai keputusan apa pun di sini.
+        conflict: structured.conflict ?? null,
+        conflict_note: structured.conflict_note ?? null,
+        makro_alignment: structured.makro_alignment ?? null,
+        makro_alignment_reason: structured.makro_alignment_reason ?? null,
+        // [SISTEM HAKIM] tag pengukuran (2026-07-29) — murni observasi, TIDAK dibaca
+        // gate/Flip Guard/kalibrasi manapun yang sudah ada (lihat _sistemHakimCalibration
+        // untuk agregat terpisah yang MEMBACA field ini). null = cbDir tidak tersedia
+        // saat itu (fail-closed _computeCbDirServerSide, atau manual tanpa cbDir).
+        sistem_hakim: sistemHakimEvaluated ? (sistemHakimFired ? 'fired' : 'clear') : null,
+        conflict_source: structured.conflict === 'arah' ? (conflictForcedBySistemHakim ? 'sistem_hakim' : 'ai') : null,
+        loss_label: null, label_reason: null, label_by: null,
+        // PLAN U-5a: manajemen posisi VIRTUAL — null/0 = belum pernah direview.
+        intervention: null, managed_status: null, managed_closed_t: null, review_count: 0,
+      });
+      let needsGateA = false;
       const gotLock = await _acquireLockWithRetry(lockKey);
       if (!gotLock) {
         console.warn(`setup_log write GAGAL PERMANEN setelah retry: lock ${lockKey} sedang dipegang — sinyal AI hilang, tidak tersimpan`);
@@ -4627,6 +4685,12 @@ async function ohlcvAnalyzeHandler(req, res) {
                   // prinsip sama _evaluateManaged (U-5a).
                   stalePending.canceled_reason = 'bias_flip';
                   stalePending.canceled_t = Date.now();
+                  // BUG DITEMUKAN & DIFIX (2026-07-29): dulu `shouldSaveLog` TIDAK diset
+                  // true di sini — kalau Gate D/B/A di bawah lalu menahan kandidat BARU,
+                  // pembatalan stale pending ini (satu-satunya jejak bahwa AI sudah
+                  // membalik bias) ikut hilang tanpa pernah tersimpan (silent, tidak ada
+                  // warning). Sekarang disimpan segera, terlepas dari nasib kandidat baru.
+                  shouldSaveLog = true;
                 }
               }
             }
@@ -4662,78 +4726,89 @@ async function ohlcvAnalyzeHandler(req, res) {
             const dd = isDrawdownHalted({ closedSetups, regime: autoGuardRegime });
             if (dd.halted) autoGuardReason = `drawdown_circuit_breaker(R=${dd.rollingR})`;
           }
-          // Gate A: AI Kritikus — 1 AI call ekstra, cuma jalan kalau lolos 2 gate murah
-          // di atas. Fact sheet numpang blok yang SUDAH dibangun di atas untuk prompt
-          // Analisa (fundBlock/rrBlock/trackBlock/calAnalyzeBlock) — TIDAK fetch Redis
-          // baru. verdict "batalkan" -> setup tidak disimpan (sama efeknya seperti
-          // blockedByOpenPosition); "tunda"/"lanjut" -> tetap disimpan (AI Kritikus
-          // dirancang skeptis-tapi-tidak-memblokir kecuali keberatan fundamental).
-          if (!autoGuardReason) {
-            try {
-              const criticSetupBlock = [
-                `[SETUP YANG DIUSULKAN]`,
-                `Pair: ${data.label} | Bias: ${structured.bias || '—'} | Entry: ${structured.entry_zone} | SL: ${structured.sl} | TP: ${structured.tp}${structured.risk_reward ? ` | RR: ${structured.risk_reward}` : ''}`,
-                structured.invalidation_condition ? `Invalidation: ${structured.invalidation_condition}` : null,
-                structured.makro_alignment ? `Makro alignment: ${structured.makro_alignment}${structured.makro_alignment_reason ? ` (${structured.makro_alignment_reason})` : ''}` : null,
-              ].filter(Boolean).join('\n');
-              const criticFactParts = [criticSetupBlock, fundBlock, rrBlock, trackBlock, calAnalyzeBlock].filter(Boolean);
-              // Pool eksperimental (BUKAN 'ai:sambanova:main'/'sambanova_main' milik tombol
-              // manual publik) — isolasi U-7, sama pola dengan AI_BUDGET_SAMBA_MAIN_KEY di atas.
-              const critic = await _runCriticVerdict(criticFactParts.join('\n\n') + CRITIC_JSON_INSTRUCTION, {
-                cbKey: 'ai:sambanova:main:experimental', budgetKey: 'sambanova_main_experimental',
-              });
-              if (critic.verdict === 'batalkan') {
-                autoGuardReason = `critic_veto${critic.objections?.[0]?.reason ? ':' + critic.objections[0].reason.slice(0, 80) : ''}`;
-              }
-            } catch (e) { console.warn('auto-entry Gate A (AI Kritikus) gagal, fail-open (tetap simpan setup):', e.message); }
+        }
+        // Gate A (AI Kritikus) butuh Gate D/B lolos dulu. KALAU perlu, JANGAN panggil di
+        // sini (masih di bawah lock) — serahkan ke Fase 2 di luar lock (lihat komentar
+        // BUG DITEMUKAN & DIFIX dekat deklarasi lockKey di atas). Simpan dulu mutasi yang
+        // SUDAH pasti (refine/flip-cancel) sebelum lock dilepas, supaya tidak hilang kalau
+        // Fase 2 gagal total (mis. proses berhenti di tengah call AI).
+        needsGateA = autoGuardConsidered && !autoGuardReason;
+        if (needsGateA) {
+          if (shouldSaveLog) await redisCmd('SET', setupLogKey, JSON.stringify(log.slice(0, 200)));
+        } else {
+          if (autoGuardReason) {
+            blockedByOpenPosition = true; // reuse flag skip existing — setup baru TIDAK disimpan
+            console.log(`auto-entry ${symbol} ditahan oleh audit-guard: ${autoGuardReason}`);
+            // gateKey = token pertama sebelum '(' atau ':' — 'drawdown_circuit_breaker(R=-3)' -> 'drawdown_circuit_breaker'
+            const gateKey = autoGuardReason.split(/[(:]/)[0];
+            redisCmd('INCR', `auto_guard_stats:${gateKey}`).catch(() => {});
           }
+          // Jalur ini yang dieksekusi manual (isAutoCall false -> autoGuardConsidered
+          // selalu false -> needsGateA selalu false) — Gate A tidak pernah menyentuh
+          // manual, TIDAK ada perubahan perilaku/latensi untuk manual sama sekali.
+          if (!dup && !blockedByOpenPosition) {
+            log.unshift(buildNewSetupEntry());
+            shouldSaveLog = true;
+          }
+          if (shouldSaveLog) await redisCmd('SET', setupLogKey, JSON.stringify(log.slice(0, 200)));
         }
-        if (autoGuardReason) {
-          blockedByOpenPosition = true; // reuse flag skip existing — setup baru TIDAK disimpan
-          console.log(`auto-entry ${symbol} ditahan oleh audit-guard: ${autoGuardReason}`);
-          // gateKey = token pertama sebelum '(' atau ':' — 'drawdown_circuit_breaker(R=-3)' -> 'drawdown_circuit_breaker'
-          const gateKey = autoGuardReason.split(/[(:]/)[0];
-          redisCmd('INCR', `auto_guard_stats:${gateKey}`).catch(() => {});
-        } else if (autoGuardConsidered) {
-          redisCmd('INCR', 'auto_guard_stats:saved').catch(() => {});
-        }
-        if (!dup && !blockedByOpenPosition) {
-          const alignment = (structured.conflict && structured.conflict !== 'none')
-            ? 'konflik'
-            : (structured.makro_alignment || null);
-          log.unshift({
-            id: `${symbol}:${Date.now()}`,
-            symbol, label: data.label, bias: structured.bias,
-            entry_zone: structured.entry_zone, sl: structured.sl, tp: structured.tp,
-            rr: structured.risk_reward ?? null,
-            horizon_days: structured.time_horizon_days ?? null,
-            model, ts: Date.now(), status: 'pending',
-            source: isAutoCall ? 'auto' : 'manual',
-            alignment,
-            confidence: structured.confidence ?? null,
-            // PLAN W (2026-07-24): sinyal mentah sebelum digabung jadi `alignment`
-            // (lossy) — murni observasi, tidak dipakai keputusan apa pun di sini.
-            conflict: structured.conflict ?? null,
-            conflict_note: structured.conflict_note ?? null,
-            makro_alignment: structured.makro_alignment ?? null,
-            makro_alignment_reason: structured.makro_alignment_reason ?? null,
-            // [SISTEM HAKIM] tag pengukuran (2026-07-29) — murni observasi, TIDAK dibaca
-            // gate/Flip Guard/kalibrasi manapun yang sudah ada (lihat _sistemHakimCalibration
-            // untuk agregat terpisah yang MEMBACA field ini). null = cbDir tidak tersedia
-            // saat itu (fail-closed _computeCbDirServerSide, atau manual tanpa cbDir).
-            sistem_hakim: sistemHakimEvaluated ? (sistemHakimFired ? 'fired' : 'clear') : null,
-            conflict_source: structured.conflict === 'arah' ? (conflictForcedBySistemHakim ? 'sistem_hakim' : 'ai') : null,
-            loss_label: null, label_reason: null, label_by: null,
-            // PLAN U-5a: manajemen posisi VIRTUAL — null/0 = belum pernah direview.
-            intervention: null, managed_status: null, managed_closed_t: null, review_count: 0,
-          });
-          shouldSaveLog = true;
-        }
-        if (shouldSaveLog) {
-          await redisCmd('SET', setupLogKey, JSON.stringify(log.slice(0, 200)));
-        }
-      } catch (e) { console.warn('setup_log write failed:', e.message); }
+      } catch (e) { console.warn('setup_log write failed (fase 1):', e.message); }
       finally { redisCmd('DEL', lockKey).catch(() => {}); } }
+
+      // Fase 2: Gate A (AI Kritikus) TANPA lock — hanya kalau Fase 1 bilang perlu (selalu
+      // false untuk manual). Fact sheet numpang blok yang SUDAH dibangun sebelumnya
+      // (fundBlock/rrBlock/trackBlock/calAnalyzeBlock) — TIDAK fetch Redis baru. verdict
+      // "batalkan" -> setup tidak disimpan; "tunda"/"lanjut" -> disimpan (AI Kritikus
+      // dirancang skeptis-tapi-tidak-memblokir kecuali keberatan fundamental).
+      if (needsGateA) {
+        let autoGuardReason = null;
+        try {
+          const criticSetupBlock = [
+            `[SETUP YANG DIUSULKAN]`,
+            `Pair: ${data.label} | Bias: ${structured.bias || '—'} | Entry: ${structured.entry_zone} | SL: ${structured.sl} | TP: ${structured.tp}${structured.risk_reward ? ` | RR: ${structured.risk_reward}` : ''}`,
+            structured.invalidation_condition ? `Invalidation: ${structured.invalidation_condition}` : null,
+            structured.makro_alignment ? `Makro alignment: ${structured.makro_alignment}${structured.makro_alignment_reason ? ` (${structured.makro_alignment_reason})` : ''}` : null,
+          ].filter(Boolean).join('\n');
+          const criticFactParts = [criticSetupBlock, fundBlock, rrBlock, trackBlock, calAnalyzeBlock].filter(Boolean);
+          // Pool eksperimental (BUKAN 'ai:sambanova:main'/'sambanova_main' milik tombol
+          // manual publik) — isolasi U-7, sama pola dengan AI_BUDGET_SAMBA_MAIN_KEY di atas.
+          const critic = await _runCriticVerdict(criticFactParts.join('\n\n') + CRITIC_JSON_INSTRUCTION, {
+            cbKey: 'ai:sambanova:main:experimental', budgetKey: 'sambanova_main_experimental',
+          });
+          if (critic.verdict === 'batalkan') {
+            autoGuardReason = `critic_veto${critic.objections?.[0]?.reason ? ':' + critic.objections[0].reason.slice(0, 80) : ''}`;
+          }
+        } catch (e) { console.warn('auto-entry Gate A (AI Kritikus) gagal, fail-open (tetap simpan setup):', e.message); }
+
+        // Re-acquire lock BARU + baca ULANG state segar — state bisa berubah selama Gate A
+        // mikir (puluhan detik): symbol yang sama bisa sudah dapat posisi open/dup baru
+        // dari proses lain. Kalau begitu, buang keputusan ini daripada menimpa buta (pola
+        // sama persis positionReviewHandler, lihat komentar `race_detected`).
+        const gotLock2 = await _acquireLockWithRetry(lockKey);
+        if (!gotLock2) {
+          console.warn(`setup_log write (pasca Gate A) GAGAL PERMANEN: lock ${lockKey} sedang dipegang — sinyal AI hilang, tidak tersimpan`);
+        } else { try {
+          const rawLog2 = await redisCmd('GET', setupLogKey);
+          let log2 = rawLog2 ? JSON.parse(rawLog2) : [];
+          if (!Array.isArray(log2)) log2 = [];
+          const dup2 = log2.find(x => x && x.symbol === symbol
+            && (x.status === 'pending' || x.status === 'open')
+            && x.entry_zone === structured.entry_zone && x.sl === structured.sl && x.tp === structured.tp);
+          const openNow = log2.find(x => x && x.symbol === symbol && x.status === 'open');
+          if (dup2 || openNow) {
+            console.log(`auto-entry ${symbol}: state berubah selama Gate A berjalan (race_detected) — dibuang, tidak ditulis dobel`);
+          } else if (autoGuardReason) {
+            console.log(`auto-entry ${symbol} ditahan oleh audit-guard: ${autoGuardReason}`);
+            const gateKey = autoGuardReason.split(/[(:]/)[0];
+            redisCmd('INCR', `auto_guard_stats:${gateKey}`).catch(() => {});
+          } else {
+            redisCmd('INCR', 'auto_guard_stats:saved').catch(() => {});
+            log2.unshift(buildNewSetupEntry());
+            await redisCmd('SET', setupLogKey, JSON.stringify(log2.slice(0, 200)));
+          }
+        } catch (e) { console.warn('setup_log write failed (fase 2):', e.message); }
+        finally { redisCmd('DEL', lockKey).catch(() => {}); } }
+      }
     }
     return res.status(200).json({
       ...resultPayload,

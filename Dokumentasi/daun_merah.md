@@ -11,13 +11,29 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-07-29 (Session 260 — Koreksi Data Bad Print Yahoo GC=F yang Memicu SL Palsu)
+> **Last updated:** 2026-07-29 (Session 261 — Audit Lanjutan Celah Auto-Entry: Race Condition Gate A + 3 Perbaikan Statistik)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
 
-## Changelog Session 260 (2026-07-29) — Koreksi Data Bad Print Yahoo GC=F yang Memicu SL Palsu
+## Changelog Session 261 (2026-07-29) — Audit Lanjutan Celah Auto-Entry: Race Condition Gate A + 3 Perbaikan Statistik
+
+**Konteks:** Lanjutan audit Plan U pasca-Session 259 (aktivasi Sistem Hakim). User minta saya nilai mana dari 6 celah audit awal yang "layak dikerjakan" tanpa menambah noise — disepakati 4 item: race condition Gate A, cost expectancy diam-diam exclude pair, Gate B pakai rr bukan realized-R, dan ambiguitas fallback regime. Item lain (ghost-tracking Gate B/D, deteksi fail-open bertumpuk) ditahan sesuai rekomendasi (berisiko jadi observability tak diminta).
+
+**1. BUG KRITIS — race condition Gate A vs lock TTL (`api/admin.js`):** Ditemukan saat menelusuri lebih dalam: lock `lock:setuplog_write:setup_log_auto:v1` TTL 10 detik, tapi Gate A (AI Kritikus, `_runCriticVerdict`) timeout 25 detik — SELURUH Gate D/B/A + tulis akhir sebelumnya terjadi di bawah SATU lock yang sama, jadi TIAP KALI Gate A benar-benar terpanggil, lock itu kedaluwarsa jauh sebelum selesai (window nyata untuk proses lain menimpa array yang sama, lost update). `positionReviewHandler` sudah lama punya pola yang benar untuk masalah identik (lock dilepas sebelum AI call, state dibaca ulang & divalidasi di lock baru sebelum tulis) — direplikasi ke `ohlcvAnalyzeHandler` via 2 fase: Fase 1 (dup/openSame/stalePending refine-atau-flip, Gate D/B) di bawah lock singkat, selesai di situ juga kalau tidak perlu Gate A (manual SELALU lewat jalur ini, tidak ada perubahan perilaku/latensi untuk manual); Fase 2 (Gate A) tanpa lock, lalu re-acquire + baca ulang state segar sebelum tulis (kalau state berubah selama AI mikir, keputusan dibuang — `race_detected`, bukan menimpa buta). Bonus fix sekunder yang ikut ketemu: pembatalan stale pending via Flip Guard (`canceled_reason:'bias_flip'`) dulu bisa hilang tanpa jejak kalau kandidat barunya kemudian ditahan Gate D/B/A (shouldSaveLog tidak diset true di cabang itu) — sekarang selalu tersimpan.
+
+**2. Cost expectancy diam-diam exclude pair (`api/admin.js`, `_aggCostExpectancy`):** Pair closed (tp/sl) yang tidak ada di `SPREAD_PRICE_ESTIMATE` dulu dikecualikan dari `n` tanpa tanda apa pun (persis insiden AUD/NZD 2026-07-28, baru ketahuan manual). Field baru `missing_spread_table` (murni aditif) sekarang merekam label pair yang hilang, supaya gap serupa di pair baru langsung kelihatan di payload `setup_stats`.
+
+**3. Gate B pakai realized-R, bukan `rr` target tersimpan (`api/_auto_entry_guard.js` + `api/admin.js`):** `computeRollingR` (Gate B) dan `_costAdjustedR` (cost expectancy) dulu memprioritaskan field `rr` tersimpan (target saat setup dibuat/direfine) untuk outcome TP — bisa meleset dari level FINAL kalau di-refine tapi `structured.risk_reward` kebetulan null di generate itu. Prioritas dibalik: geometri riil (`entry_zone`/`sl`/`tp` yang benar-benar tersimpan) menang, `rr` cuma fallback kalau `tp` tidak ada. Dibulatkan 2 desimal (konsisten dengan cara `risk_reward` dihitung saat generate) supaya tidak ada noise floating-point.
+
+**4. Ambiguitas fallback regime di Gate B (`api/_auto_entry_guard.js`):** `isDrawdownHalted` dulu memperlakukan regime `null`/gagal-fetch/tak dikenal SAMA seperti `'neutral'` (-5R) — mencampur "regime memang dinilai netral" dengan "kita tidak tahu regime-nya sama sekali" (data hilang, bukan sinyal tenang). **Perubahan perilaku nyata:** sekarang diperlakukan seketat `'risk_off'` (-2R, paling konservatif) saat regime tidak diketahui — circuit breaker jadi lebih mudah menyala saat data regime hilang, bukan lebih longgar. Field baru `regime_known` (aditif) membedakan kasus ini dari regime `'neutral'` asli untuk analisis nanti.
+
+**Verifikasi:** `npm test` 671/671 hijau (666 sebelumnya + 4 test baru `test/admin/gate_a_race.test.js` — termasuk skenario race_detected & flip-cancel-lalu-divero persis yang dibongkar temuan #1 — + 1 test baru `missing_spread_table`). Test lama yang assert perilaku pra-fix (`isDrawdownHalted` fallback -5R, `_aggCostExpectancy` shape lama) diperbarui eksplisit ke perilaku baru, bukan dihapus.
+
+**File diubah:** `api/admin.js`, `api/_auto_entry_guard.js`, `test/admin/gate_a_race.test.js` (baru), `test/admin/cost_confidence_latency.test.js`, `test/api/_auto_entry_guard.test.js`.
+
+**Ditahan (sesuai rekomendasi, bukan dikerjakan sesi ini):** ghost-tracking utk Gate B/D (pola sama `_evaluateCanceledGhost`, worth dikerjakan kalau memang mau audit validitas kedua gate itu — bukan sekadar penasaran); deteksi fail-open bertumpuk (risiko jadi observability tak diminta kalau dibikin sistem alarm penuh — kalau tetap mau, cukup 1 angka pasif per entry, bukan sistem deteksi).
 
 **Konteks:** User curiga saat setup auto-entry GC=F (`GC=F:1785244513683`, bearish, entry 4044,35/SL 4065,00/TP 3968,97) berstatus `sl` padahal menurut chart MT5 live-nya harga belum pernah dekat 4065.
 
