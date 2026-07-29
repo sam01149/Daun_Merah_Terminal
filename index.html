@@ -3846,7 +3846,7 @@ body:not(.light-theme) .ringkasan-gen-btn {
   <!-- KUNCI AKSES (APP_KEY) -->
   <div class="pt-section">
     <div class="pt-section-hdr" style="color:#f5a623">
-      <span>🔒</span> Kunci Akses (APP_KEY)
+      <span><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span> Kunci Akses (APP_KEY)
     </div>
     <div style="padding:14px">
       <div style="font-size:10px;color:var(--text-mid);line-height:1.7;margin-bottom:14px">
@@ -4210,20 +4210,20 @@ body:not(.light-theme) .ringkasan-gen-btn {
         </select>
       </div>
       <div>
-        <div style="font-size:9px;color:var(--muted);letter-spacing:.8px;text-transform:uppercase;margin-bottom:5px">Entry Price <span style="color:var(--pink)">🔒 dari Sizing Calculator</span></div>
+        <div style="font-size:9px;color:var(--muted);letter-spacing:.8px;text-transform:uppercase;margin-bottom:5px">Entry Price <span style="color:var(--pink)"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" style="vertical-align:-1px;margin-right:2px"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>dari Sizing Calculator</span></div>
         <input id="mt5ModalEntry" type="number" step="0.00001" placeholder="0 = market order" readonly style="width:100%;background:var(--bg);color:var(--text);border:1px solid var(--border);padding:8px 10px;border-radius:6px;font-family:'DM Mono',monospace;font-size:11px;box-sizing:border-box;opacity:.75;cursor:not-allowed">
       </div>
       <div>
-        <div style="font-size:9px;color:var(--muted);letter-spacing:.8px;text-transform:uppercase;margin-bottom:5px">Lot Size <span style="color:var(--green)">🔒 dari Sizing Calculator</span></div>
+        <div style="font-size:9px;color:var(--muted);letter-spacing:.8px;text-transform:uppercase;margin-bottom:5px">Lot Size <span style="color:var(--green)"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" style="vertical-align:-1px;margin-right:2px"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>dari Sizing Calculator</span></div>
         <input id="mt5ModalLots" type="number" step="0.01" min="0.01" value="0.01" readonly style="width:100%;background:var(--bg);color:var(--text);border:1px solid var(--border);padding:8px 10px;border-radius:6px;font-family:'DM Mono',monospace;font-size:12px;box-sizing:border-box;opacity:.75;cursor:not-allowed">
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
         <div>
-          <div style="font-size:9px;color:var(--muted);letter-spacing:.8px;text-transform:uppercase;margin-bottom:5px">Stop Loss 🔒</div>
+          <div style="font-size:9px;color:var(--muted);letter-spacing:.8px;text-transform:uppercase;margin-bottom:5px">Stop Loss <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" style="vertical-align:-1px;margin-left:2px"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div>
           <input id="mt5ModalSL" type="number" step="0.00001" placeholder="0 = tanpa SL" readonly style="width:100%;background:var(--bg);color:var(--text);border:1px solid var(--border);padding:8px 10px;border-radius:6px;font-family:'DM Mono',monospace;font-size:11px;box-sizing:border-box;opacity:.75;cursor:not-allowed">
         </div>
         <div>
-          <div style="font-size:9px;color:var(--muted);letter-spacing:.8px;text-transform:uppercase;margin-bottom:5px">Take Profit 🔒</div>
+          <div style="font-size:9px;color:var(--muted);letter-spacing:.8px;text-transform:uppercase;margin-bottom:5px">Take Profit <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" style="vertical-align:-1px;margin-left:2px"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div>
           <input id="mt5ModalTP" type="number" step="0.00001" placeholder="0 = tanpa TP" readonly style="width:100%;background:var(--bg);color:var(--text);border:1px solid var(--border);padding:8px 10px;border-radius:6px;font-family:'DM Mono',monospace;font-size:11px;box-sizing:border-box;opacity:.75;cursor:not-allowed">
         </div>
       </div>
@@ -4338,7 +4338,7 @@ window.addEventListener('DOMContentLoaded', updateThemeIcon);
 
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.07.29.2';
+const APP_VERSION = '2026.07.29.3';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
@@ -4471,7 +4471,7 @@ function showAppKeyGate() {
   wrap.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(5,8,15,0.88);display:flex;align-items:center;justify-content:center;padding:20px';
   wrap.innerHTML = `
     <div style="max-width:340px;width:100%;background:var(--surface,#0d1420);border:1px solid var(--border,#1f2937);border-radius:8px;padding:20px">
-      <div style="font-family:'DM Mono',monospace;font-size:12px;color:var(--text,#e5e7eb);letter-spacing:.05em;margin-bottom:8px">🔒 KUNCI AKSES</div>
+      <div style="font-family:'DM Mono',monospace;font-size:12px;color:var(--text,#e5e7eb);letter-spacing:.05em;margin-bottom:8px"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" style="vertical-align:-1px;margin-right:3px"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>KUNCI AKSES</div>
       <div style="font-size:10px;color:var(--text-mid,#9ca3af);line-height:1.7;margin-bottom:14px">Aplikasi ini dikunci dengan <strong>APP_KEY</strong> supaya orang lain yang menemukan link tidak bisa menghabiskan kuota AI. Masukkan kunci akses (nilai env <code>APP_KEY</code> di Vercel). Kunci disimpan hanya di device ini.</div>
       <input type="password" id="appKeyInput" placeholder="Kunci akses..." autocomplete="off" style="width:100%;box-sizing:border-box;background:var(--bg,#05080f);border:1px solid var(--border,#1f2937);color:var(--text,#e5e7eb);padding:9px 10px;font-family:'DM Mono',monospace;font-size:11px;border-radius:4px;outline:none;margin-bottom:10px">
       <button onclick="_saveAppKey(document.getElementById('appKeyInput').value.trim())" style="width:100%;padding:9px 12px;background:rgba(var(--accent-rgb),0.15);border:1px solid var(--accent,#a83226);color:var(--accent,#e74c3c);font-family:'DM Mono',monospace;font-size:10px;letter-spacing:.06em;cursor:pointer;border-radius:4px">SIMPAN &amp; MUAT ULANG</button>
@@ -7030,10 +7030,25 @@ let _lastThesis = (() => {
   try { return JSON.parse(localStorage.getItem('daun_merah_thesis') || 'null'); } catch(_) { return null; }
 })();
 
+// Rating bintang keyakinan AI — ikon SVG (2026-07-29), ganti karakter ★/☆ literal
+// (ATURAN §4.1). filled/kosong pakai bentuk polygon sama, beda cuma fill vs outline.
+function _fundStarSvg(filled) {
+  const pts = '12 2 15 9 22 9.5 17 14.5 18.5 22 12 18 5.5 22 7 14.5 2 9.5 9 9';
+  return filled
+    ? `<svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" style="vertical-align:-2px"><polygon points="${pts}"/></svg>`
+    : `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" opacity=".35" style="vertical-align:-2px"><polygon points="${pts}"/></svg>`;
+}
+function fundStarsRating(n, max = 5) {
+  n = Math.max(0, Math.min(max, n || 0));
+  let html = '';
+  for (let i = 0; i < max; i++) html += _fundStarSvg(i < n);
+  return html;
+}
+
 function renderThesisCard(t) {
   _lastThesis = t;
   try { localStorage.setItem('daun_merah_thesis', JSON.stringify(t)); } catch(_) {}
-  const stars = '★'.repeat(t.confidence_1_to_5) + '☆'.repeat(5 - t.confidence_1_to_5);
+  const stars = fundStarsRating(t.confidence_1_to_5);
   // conf-stars tampil di layar, conf-text (teks resmi tanpa simbol) menggantikannya
   // di dokumen cetak — lihat pasangan CSS .conf-stars/.conf-text di @media print.
   const confText = `Keyakinan: ${t.confidence_1_to_5 >= 4 ? 'Tinggi' : t.confidence_1_to_5 >= 3 ? 'Sedang' : 'Rendah'} (${t.confidence_1_to_5}/5)`;
@@ -7058,7 +7073,7 @@ function renderThesisCard(t) {
 function renderXauThesisCard(t) {
   const xauColorMap = { bullish: 'var(--green)', bearish: 'var(--accent)', conflicting: 'var(--yellow)', neutral: 'var(--muted)' };
   const xauColor = xauColorMap[t.xau_bias] || 'var(--muted)';
-  const xauStars = t.xau_confidence ? '★'.repeat(t.xau_confidence) + '☆'.repeat(5 - t.xau_confidence) : '';
+  const xauStars = t.xau_confidence ? fundStarsRating(t.xau_confidence) : '';
   const xauConfText = t.xau_confidence ? `Keyakinan: ${t.xau_confidence >= 4 ? 'Tinggi' : t.xau_confidence >= 3 ? 'Sedang' : 'Rendah'} (${t.xau_confidence}/5)` : '';
   const driverLabel = (t.xau_dominant_driver || '').replace(/_/g, ' ').toUpperCase();
   return `<div class="thesis-card xau">
@@ -17303,7 +17318,7 @@ function renderDashDigest() {
     if (t && t.pair_recommendation) {
       const dirClass = t.direction === 'long' ? 'long' : t.direction === 'short' ? 'short' : '';
       const dirLabel = t.direction === 'no_trade' ? 'NO TRADE' : (t.direction || '').toUpperCase();
-      const stars = '★'.repeat(t.confidence_1_to_5 || 0) + '☆'.repeat(5 - (t.confidence_1_to_5 || 0));
+      const stars = fundStarsRating(t.confidence_1_to_5 || 0);
       html += `<div class="thesis-card" style="margin-bottom:10px">
         <div style="font-size:9px;color:var(--pink);font-family:'DM Mono',monospace;letter-spacing:.1em;margin-bottom:6px">THESIS · FX · CB BIAS + TA</div>
         <div style="display:flex;align-items:center;flex-wrap:wrap;gap:4px;margin-bottom:6px">
@@ -17323,7 +17338,7 @@ function renderDashDigest() {
     if (t && t.xau_bias && t.xau_bias !== 'insufficient_data') {
       const xauColorMap = { bullish: 'var(--green)', bearish: 'var(--accent)', conflicting: 'var(--yellow)', neutral: 'var(--muted)' };
       const xauColor = xauColorMap[t.xau_bias] || 'var(--muted)';
-      const xauStars = t.xau_confidence ? '★'.repeat(t.xau_confidence) + '☆'.repeat(5 - t.xau_confidence) : '';
+      const xauStars = t.xau_confidence ? fundStarsRating(t.xau_confidence) : '';
       const driverLabel = (t.xau_dominant_driver || '').replace(/_/g, ' ').toUpperCase();
       html += `<div class="thesis-card xau" style="margin-bottom:10px">
         <div style="font-size:9px;color:var(--yellow);font-family:'DM Mono',monospace;letter-spacing:.1em;margin-bottom:6px">THESIS · XAU/USD</div>
