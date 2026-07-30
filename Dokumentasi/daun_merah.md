@@ -11,7 +11,7 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-07-30 (Session 267 — Fix Label "n" Gate Plan U: Total → TP+SL)
+> **Last updated:** 2026-07-30 (Session 267 lanjutan — Keputusan final: SambaNova V3.2 tetap primary Kritikus/Position Review)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -50,6 +50,12 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 - Kartu baru "Saldo DeepSeek" di atas dashboard `dev-auto-entry.html` — tombol "Cek Saldo" on-demand (bukan auto-refresh), tampilkan `is_available`, `total_balance`/`topped_up_balance`/`granted_balance` per currency, warna merah/kuning/hijau berdasar ambang `total_balance` (<$1 merah, <$5 kuning).
 - Diverifikasi via script Playwright ad-hoc (mock response, 5 stat card render benar, tanpa JS error).
 - Belum dicek saldo REAL (perlu buka dashboard live dengan CRON_SECRET asli) — terakhir diketahui dari dokumen: top-up $2 pada 2026-07-18, burn rate ±$0.0033/generate (snapshot lama, sebelum fallback Kritikus/Position Review menambah trafik kecil ke pool ini).
+
+**Lanjutan sesi sama (S267 lanjutan, 2026-07-30) — Keputusan FINAL: SambaNova V3.2 TETAP primary di Kritikus/Position Review, TIDAK dipromosikan ke DeepSeek v4-flash:** item tertunda dari sesi ini sendiri (lihat entri di atas — v4-flash baru jadi fallback) dibahas tuntas dan diputuskan, bukan lagi terbuka.
+
+- Riset benchmark publik (Artificial Analysis, docs resmi DeepSeek): V3.2 bukan model lemah (MMLU 88.5, GPQA ~59, setara kelas GPT-4o/Claude 3.5 Sonnet). V4-Flash unggul di atas kertas (Intelligence Index 40 vs 25, MMLU 90.1 vs 87.8) TAPI angka itu untuk mode **reasoning/thinking AKTIF** — sementara panggilan `_runCriticVerdict`/`positionReviewHandler` ke v4-flash eksplisit set `thinking: {type:'disabled'}` (demi latensi, di dalam budget Gate A 25 detik). Tidak ada data publik bersih untuk "v4-flash non-thinking vs V3.2 non-thinking" — jadi gap kualitas riil di konfigurasi produksi kita kemungkinan lebih tipis dari yang benchmark reasoning-mode tunjukkan.
+- Opsi shadow-test (jalankan v4-flash paralel logging-only untuk bandingkan verdict vs SambaNova) diusulkan tapi **ditolak user** — dianggap menguras kuota/saldo tanpa manfaat cukup jelas.
+- **Keputusan:** biarkan SambaNova V3.2 tetap primary (independensi model thesis-vs-kritikus terjaga, gratis), v4-flash tetap fallback-only seperti yang sudah di-deploy. Tidak perlu dibuka lagi kecuali ada data baru (mis. sampel `auto_guard_stats:critic_veto` cukup besar untuk audit rasio veto, atau benchmark non-thinking v4-flash resmi dirilis).
 
 ## Changelog Session 266 (2026-07-30) — Fix Parser Fundamental: 3 Bug Salah Timpa Currency/Indikator
 
