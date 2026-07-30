@@ -505,7 +505,10 @@ test('PLAN U-3 lanjutan: call auto -> track record GABUNGAN manual+auto disuap k
       }, res);
 
       assert.equal(res.statusCode, 200);
-      assert.equal(captured.length, 1, 'harus ada tepat 1 call ke AI provider');
+      // 2 call DeepSeek: [0] ohlcv_analyze primary (thesis+track record), [1] Gate A
+      // Kritikus fallback (2026-07-30 — SambaNova di-stub "unexpected network call"
+      // jadi selalu gagal, Kritikus otomatis jatuh ke DeepSeek v4-flash fallback).
+      assert.equal(captured.length, 2, 'harus ada 2 call ke DeepSeek: ohlcv_analyze primary + Kritikus Gate A fallback');
       const promptBody = JSON.stringify(captured[0]);
       assert.ok(promptBody.includes('gabungan seluruh sumber'), 'label prompt harus menandai gabungan');
       assert.ok(promptBody.includes('6 setup selesai'), 'total harus 3 manual + 3 auto = 6, bukan cuma salah satu');
@@ -911,7 +914,10 @@ test('Audit S218: call auto=1 sukses -> ai_budget:deepseek_experimental naik, ai
       }, res);
       assert.equal(res.statusCode, 200);
       const day = new Date().toISOString().slice(0, 10);
-      assert.equal(store.strings[`ai_budget:deepseek_experimental:${day}`], '1');
+      // '2' (bukan '1'): ohlcv_analyze primary + Gate A Kritikus fallback (2026-07-30 —
+      // SambaNova di-stub selalu gagal di test ini, Kritikus jatuh ke DeepSeek v4-flash
+      // fallback yang berbagi pool 'deepseek_experimental' yang sama dengan primary).
+      assert.equal(store.strings[`ai_budget:deepseek_experimental:${day}`], '2');
       assert.equal(store.strings[`ai_budget:deepseek:${day}`], undefined, 'counter produksi TIDAK BOLEH tersentuh oleh call auto');
     } finally { global.fetch = origFetch; }
   });

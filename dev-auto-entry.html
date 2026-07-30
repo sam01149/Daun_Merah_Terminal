@@ -85,6 +85,12 @@ tr:hover td{background:rgba(var(--fg-rgb),.02);}
 #gate .box{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:24px;width:340px;}
 .empty{color:var(--muted);font-size:11px;padding:10px 0;}
 .small{font-size:9.5px;color:var(--muted);}
+.filterrow{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;}
+.filterrow > div{flex:0 1 160px;}
+.filterrow label{margin-top:0;}
+.pager{display:flex;gap:4px;align-items:center;justify-content:flex-end;margin-top:10px;flex-wrap:wrap;}
+.pagebtn{padding:4px 9px;font-size:10px;min-width:26px;}
+.pagebtn.active{background:var(--accent-dim);border-color:var(--accent);color:#fff;}
 </style>
 </head>
 <body>
@@ -126,6 +132,15 @@ tr:hover td{background:rgba(var(--fg-rgb),.02);}
   <div class="pane active" id="pane-dash">
     <div class="card">
       <div style="display:flex;justify-content:space-between;align-items:center;">
+        <h2>Saldo DeepSeek (API resmi, berbayar)</h2>
+        <button id="btnCheckBalance">Cek Saldo</button>
+      </div>
+      <p class="hint">On-demand saja (tidak auto-refresh) — query langsung ke DeepSeek, bukan generate call, tidak masuk pagar biaya 50/hari. Deteksi saldo habis di jalur produksi tetap reaktif (HTTP 402 saat generate, auto-fallback SambaNova) — cek manual di sini untuk tahu LEBIH AWAL sebelum itu terjadi.</p>
+      <div class="grid" id="balanceStats"><div class="empty">Belum dicek — klik "Cek Saldo".</div></div>
+    </div>
+
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
         <h2>Gate Plan U — Cukup Data?</h2>
         <button id="btnRefresh">Refresh</button>
       </div>
@@ -160,13 +175,37 @@ tr:hover td{background:rgba(var(--fg-rgb),.02);}
     </div>
 
     <div class="card">
-      <h2>10 Setup Terbaru</h2>
+      <h2>Riwayat Setup</h2>
+      <div class="filterrow">
+        <div>
+          <label>Filter Status</label>
+          <select id="filterStatus">
+            <option value="">Semua status</option>
+            <option value="pending">pending</option>
+            <option value="open">open</option>
+            <option value="tp">tp</option>
+            <option value="sl">sl</option>
+            <option value="canceled">canceled</option>
+            <option value="ambiguous">ambiguous</option>
+            <option value="expired">expired</option>
+            <option value="stale">stale</option>
+            <option value="invalid">invalid</option>
+          </select>
+        </div>
+        <div>
+          <label>Filter Pair</label>
+          <select id="filterSymbol">
+            <option value="">Semua pair</option>
+          </select>
+        </div>
+      </div>
       <div style="overflow-x:auto;">
         <table id="recentTable">
           <thead><tr><th>ID</th><th>Pair</th><th>Bias</th><th>Status</th><th>Entry</th><th>SL</th><th>TP</th><th>Conf</th><th>Sumber</th><th>Dibuat</th><th>Filled</th></tr></thead>
           <tbody><tr><td class="empty" colspan="11">—</td></tr></tbody>
         </table>
       </div>
+      <div class="pager" id="recentPager"></div>
     </div>
   </div>
 
@@ -548,10 +587,52 @@ tr:hover td{background:rgba(var(--fg-rgb),.02);}
     }).join('');
   }
 
-  function renderRecent(recent){
+  const RECENT_PAGE_SIZE = 10;
+  let allRecent = [];
+  let recentPage = 1;
+
+  function populateSymbolFilter(recent){
+    const sel = document.getElementById('filterSymbol');
+    const current = sel.value;
+    const known = PAIRS.map(p => p.symbol);
+    const extra = [...new Set((recent || []).map(s => s.symbol))].filter(sym => !known.includes(sym));
+    const all = [...known, ...extra];
+    sel.innerHTML = '<option value="">Semua pair</option>' + all.map(sym => `<option value="${esc(sym)}">${esc(sym)}</option>`).join('');
+    sel.value = all.includes(current) ? current : '';
+  }
+
+  function getFilteredRecent(){
+    const statusF = document.getElementById('filterStatus').value;
+    const symbolF = document.getElementById('filterSymbol').value;
+    return allRecent.filter(s => (!statusF || s.status === statusF) && (!symbolF || s.symbol === symbolF));
+  }
+
+  function renderRecentPager(page, totalPages){
+    const el = document.getElementById('recentPager');
+    if (totalPages <= 1) { el.innerHTML = ''; return; }
+    const btn = (label, target, opts) => `<button class="pagebtn${opts && opts.active ? ' active' : ''}" data-page="${target}"${opts && opts.disabled ? ' disabled' : ''}>${label}</button>`;
+    let html = btn('‹', page - 1, { disabled: page <= 1 });
+    for (let p = 1; p <= totalPages; p++) html += btn(p, p, { active: p === page });
+    html += btn('›', page + 1, { disabled: page >= totalPages });
+    el.innerHTML = html;
+    el.querySelectorAll('.pagebtn:not([disabled])').forEach(b => {
+      b.addEventListener('click', () => { recentPage = Number(b.dataset.page); renderRecentFiltered(); });
+    });
+  }
+
+  function renderRecentFiltered(){
     const tbody = document.querySelector('#recentTable tbody');
-    if (!recent || !recent.length) { tbody.innerHTML = '<tr><td class="empty" colspan="11">Belum ada setup.</td></tr>'; return; }
-    tbody.innerHTML = recent.map(s => `<tr>
+    const filtered = getFilteredRecent();
+    const totalPages = Math.max(1, Math.ceil(filtered.length / RECENT_PAGE_SIZE));
+    if (recentPage > totalPages) recentPage = totalPages;
+    if (recentPage < 1) recentPage = 1;
+    if (!filtered.length) {
+      tbody.innerHTML = `<tr><td class="empty" colspan="11">${allRecent.length ? 'Tidak ada setup yang cocok filter ini.' : 'Belum ada setup.'}</td></tr>`;
+      renderRecentPager(0, 0);
+      return;
+    }
+    const start = (recentPage - 1) * RECENT_PAGE_SIZE;
+    tbody.innerHTML = filtered.slice(start, start + RECENT_PAGE_SIZE).map(s => `<tr>
       <td class="small">${esc(s.id)}</td>
       <td>${esc(s.symbol)}</td>
       <td>${esc(s.bias)}</td>
@@ -564,7 +645,18 @@ tr:hover td{background:rgba(var(--fg-rgb),.02);}
       <td class="small">${fmtTs(s.ts)}</td>
       <td class="small">${s.filled_t ? fmtTs(s.filled_t * 1000) : '—'}</td>
     </tr>`).join('');
+    renderRecentPager(recentPage, totalPages);
   }
+
+  function renderRecent(recent){
+    allRecent = recent || [];
+    recentPage = 1;
+    populateSymbolFilter(allRecent);
+    renderRecentFiltered();
+  }
+
+  document.getElementById('filterStatus').addEventListener('change', () => { recentPage = 1; renderRecentFiltered(); });
+  document.getElementById('filterSymbol').addEventListener('change', () => { recentPage = 1; renderRecentFiltered(); });
 
   async function loadDashboard(){
     if (!getSecret()) return;
@@ -588,6 +680,29 @@ tr:hover td{background:rgba(var(--fg-rgb),.02);}
     renderRecent(json.recent);
   }
   document.getElementById('btnRefresh').addEventListener('click', loadDashboard);
+
+  function renderBalance(json, errMsg){
+    const el = document.getElementById('balanceStats');
+    if (errMsg || !json || json.error) {
+      el.innerHTML = `<div class="empty">Gagal cek saldo: ${esc(errMsg || (json && json.error) || 'tidak diketahui')}</div>`;
+      return;
+    }
+    const infos = json.balance_infos || [];
+    if (!infos.length) { el.innerHTML = '<div class="empty">Tidak ada data saldo dari DeepSeek.</div>'; return; }
+    el.innerHTML = [
+      statBlock('Tersedia untuk API?', json.is_available ? 'YA' : 'TIDAK', json.is_available ? 'green' : 'red'),
+      ...infos.map(b => statBlock(`Total Balance (${esc(b.currency)})`, b.total_balance, Number(b.total_balance) < 1 ? 'red' : (Number(b.total_balance) < 5 ? 'yellow' : 'green'))),
+      ...infos.map(b => statBlock(`Topped-up (${esc(b.currency)})`, b.topped_up_balance)),
+      ...infos.map(b => statBlock(`Granted (${esc(b.currency)})`, b.granted_balance)),
+      statBlock('Dicek pada', fmtTs(json.checked_at)),
+    ].join('');
+  }
+  document.getElementById('btnCheckBalance').addEventListener('click', async () => {
+    if (!getSecret()) return;
+    document.getElementById('balanceStats').innerHTML = '<div class="empty">Mengecek...</div>';
+    const { json, errMsg } = await api('deepseek_balance', { silent: true });
+    renderBalance(json, errMsg);
+  });
 
   // ── Trigger analisa ── SENGAJA terkunci ganda (checkbox + confirm) — tombol
   // ini mengirim auto=1 yang server anggap IDENTIK dengan cron terjadwal, nulis

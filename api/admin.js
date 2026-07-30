@@ -65,6 +65,7 @@ module.exports = async function handler(req, res) {
   if (action === 'journal_import')      return journalImportHandler(req, res);
   if (action === 'circuit-reset')       return circuitResetHandler(req, res);
   if (action === 'circuit-status')      return circuitStatusHandler(req, res);
+  if (action === 'deepseek_balance')    return deepseekBalanceHandler(req, res);
   if (action === 'gdpnow')             return gdpnowHandler(req, res);
   if (action === 'ohlcv_sync')         return ohlcvSyncHandler(req, res);
   if (action === 'ohlcv_read')         return ohlcvReadHandler(req, res);
@@ -78,7 +79,7 @@ module.exports = async function handler(req, res) {
   if (action === 'friday_tighten')     return fridayTightenHandler(req, res);
   if (action === 'polymarket')         return polymarketHandler(req, res);
   if (action === 'push_subscribe_dev') return pushSubscribeDevHandler(req, res);
-  return res.status(400).json({ error: 'Missing ?action= — use health, redis-keys, admin-prompts, push, fundamental_get, fundamental_seed, fundamental_refresh, fundamental_analysis, journal_import, circuit-reset, circuit-status, gdpnow, ohlcv_sync, ohlcv_read, ohlcv_analyze, ohlcv_critic, pre_entry_check, ohlcv_dashboard, setup_stats, setup_override, position_review, friday_tighten, polymarket, or push_subscribe_dev' });
+  return res.status(400).json({ error: 'Missing ?action= — use health, redis-keys, admin-prompts, push, fundamental_get, fundamental_seed, fundamental_refresh, fundamental_analysis, journal_import, circuit-reset, circuit-status, deepseek_balance, gdpnow, ohlcv_sync, ohlcv_read, ohlcv_analyze, ohlcv_critic, pre_entry_check, ohlcv_dashboard, setup_stats, setup_override, position_review, friday_tighten, polymarket, or push_subscribe_dev' });
 };
 
 // ── Shared Redis helper ────────────────────────────────────────────────────────
@@ -1502,6 +1503,34 @@ async function circuitStatusHandler(req, res) {
     }
   }
   return res.status(200).json({ circuits: results });
+}
+
+// Cek saldo DeepSeek (2026-07-30, diskusi user — "aku perlu tahu batas credit itu
+// kapan"): satu-satunya deteksi saldo habis sebelum ini murni REAKTIF (HTTP 402 saat
+// generate call sungguhan, baru ketahuan setelah kejadian, auto-fallback ke SambaNova
+// tanpa notifikasi apa pun). Endpoint ini query langsung `GET /user/balance` resmi
+// DeepSeek (read-only, TIDAK lewat allowAiCall/circuit breaker — bukan generate call,
+// tidak masuk hitungan pagar biaya 50/hari) supaya bisa dicek kapan saja on-demand.
+async function deepseekBalanceHandler(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Cache-Control', 'no-cache');
+  const secret = req.headers['x-admin-secret'] || req.headers['x-cron-secret'];
+  if (!secret || secret !== process.env.CRON_SECRET) return res.status(401).json({ error: 'Unauthorized' });
+
+  const DEEPSEEK_KEY = process.env.DEEPSEEK_API_KEY;
+  if (!DEEPSEEK_KEY) return res.status(200).json({ error: 'DEEPSEEK_API_KEY belum diset' });
+
+  try {
+    const r = await fetch('https://api.deepseek.com/user/balance', {
+      headers: { 'Authorization': `Bearer ${DEEPSEEK_KEY}` },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!r.ok) return res.status(200).json({ error: `HTTP ${r.status}` });
+    const j = await r.json();
+    return res.status(200).json({ is_available: j.is_available, balance_infos: j.balance_infos || [], checked_at: Date.now() });
+  } catch (e) {
+    return res.status(200).json({ error: e.message });
+  }
 }
 
 // ── GDPNow helper + handler (Atlanta Fed nowcast) ────────────────────────────
@@ -3070,7 +3099,11 @@ function _statsPayloadFromLog(log) {
   for (const s of log) { (bySymbol[s.symbol] = bySymbol[s.symbol] || []).push(s); }
   const symbols = {};
   for (const k of Object.keys(bySymbol)) { symbols[k] = _aggSetupStats(bySymbol[k]); symbols[k].history = bySymbol[k]; }
-  return { symbols, global: _aggSetupStats(log), recent: log.slice(0, 10) };
+  // `recent` dulu di-cap slice(0,10) di sini + dashboard sengaja bikin tabel selalu
+  // 10 baris tanpa filter/paginasi. Sekarang dikirim penuh (log sudah newest-first,
+  // ditulis via unshift) — dashboard yang paginasi client-side supaya bisa filter
+  // status/pair tanpa kehilangan baris lama di luar 10 teratas.
+  return { symbols, global: _aggSetupStats(log), recent: log };
 }
 
 // BUG DITEMUKAN & DIFIX (2026-07-25, diskusi user — status 'tp' palsu tersimpan di
@@ -3529,10 +3562,36 @@ async function positionReviewHandler(req, res) {
       } catch (e) { console.warn('position_review SambaNova failed:', e.message); await cb.onFailure('ai:sambanova:main'); }
     } else if (SAMBANOVA_KEY) { console.log('position_review: SambaNova circuit OPEN'); }
 
+    // Fallback (2026-07-30, diskusi user — pola sama _runCriticVerdict): DeepSeek
+    // v4-flash BERBAYAR, cuma dicoba kalau SambaNova gagal. Pool 'ai:deepseek:experimental'/
+    // 'deepseek_experimental' dipakai (BUKAN pool produksi publik) karena fitur ini
+    // developer-only, hanya melayani id dari setup_log_auto:v1 — sama isolasi dengan
+    // Gate A Kritikus & ohlcv_analyze auto-entry.
+    const DEEPSEEK_KEY = process.env.DEEPSEEK_API_KEY;
+    if (!rawText && DEEPSEEK_KEY && await cb.canCall('ai:deepseek:experimental')) {
+      try {
+        if (!await allowAiCall('deepseek_experimental')) throw new Error('AI daily budget exceeded');
+        const r = await fetch('https://api.deepseek.com/chat/completions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${DEEPSEEK_KEY}` },
+          body: JSON.stringify({ model: 'deepseek-v4-flash', messages, max_tokens: 400, temperature: 0, thinking: { type: 'disabled' } }),
+          signal: AbortSignal.timeout(20000),
+        });
+        if (r.ok) {
+          const j = await r.json(); rawText = j.choices?.[0]?.message?.content?.trim() || null; model = 'deepseek-v4-flash';
+          if (rawText) await cb.onSuccess('ai:deepseek:experimental');
+          else throw new Error('Empty response');
+        } else {
+          const errJ = await r.json().catch(() => ({}));
+          throw new Error(r.status === 402 ? 'HTTP402_insufficient_balance' : (errJ?.error?.message || `HTTP ${r.status}`));
+        }
+      } catch (e) { console.warn('position_review DeepSeek fallback failed:', e.message); await cb.onFailure('ai:deepseek:experimental'); }
+    } else if (!rawText && DEEPSEEK_KEY) { console.log('position_review: DeepSeek circuit OPEN/budget habis'); }
+
     // Langkah 2d: parse + validasi kode (fail-safe -> downgrade HOLD).
     let decision = 'HOLD', confidence = 'rendah', reason = null, newSlRaw = null, downgraded = false;
     if (!rawText) {
-      downgraded = true; reason = 'AI tidak tersedia (SambaNova offline/timeout/limit habis)';
+      downgraded = true; reason = 'AI tidak tersedia (SambaNova & DeepSeek offline/timeout/limit habis)';
     } else {
       try {
         const s = rawText.indexOf('{'), e = rawText.lastIndexOf('}');
@@ -4928,6 +4987,7 @@ async function ohlcvAnalyzeHandler(req, res) {
           // manual publik) — isolasi U-7, sama pola dengan AI_BUDGET_SAMBA_MAIN_KEY di atas.
           const critic = await _runCriticVerdict(criticFactParts.join('\n\n') + CRITIC_JSON_INSTRUCTION, {
             cbKey: 'ai:sambanova:main:experimental', budgetKey: 'sambanova_main_experimental',
+            deepseekCbKey: 'ai:deepseek:experimental', deepseekBudgetKey: 'deepseek_experimental',
           });
           if (critic.verdict === 'batalkan') {
             autoGuardReason = `critic_veto${critic.objections?.[0]?.reason ? ':' + critic.objections[0].reason.slice(0, 80) : ''}`;
@@ -4998,7 +5058,15 @@ const CRITIC_JSON_INSTRUCTION = '\n\nBalas HANYA satu objek JSON valid (tanpa ma
 // difix untuk deepseek_experimental (S218 audit, lihat komentar DEFAULT_LIMITS
 // _ai_guard.js): kalau dua pool dibiarkan sama, auto-entry & manual rebutan kuota
 // harian yang sama, dan outage/limit salah satu bisa mentrip circuit yang satunya.
-async function _runCriticVerdict(userMsg, { cbKey = 'ai:sambanova:main', budgetKey = 'sambanova_main' } = {}) {
+// deepseekCbKey/deepseekBudgetKey sama pola isolasinya (2026-07-30, diskusi user):
+// SambaNova TETAP primary (gratis) — DeepSeek v4-flash cuma fallback kalau SambaNova
+// gagal/limit habis, supaya Kritikus (satu-satunya gerbang anti-confirmation-bias
+// auto-entry) tidak diam-diam downgrade ke fail-open "lanjut" cuma karena SambaNova
+// down, tapi juga tidak boros saldo top-up karena baru dipakai saat benar perlu.
+async function _runCriticVerdict(userMsg, {
+  cbKey = 'ai:sambanova:main', budgetKey = 'sambanova_main',
+  deepseekCbKey = 'ai:deepseek', deepseekBudgetKey = 'deepseek',
+} = {}) {
   const messages = [
     { role: 'system', content: CRITIC_SYSTEM_PROMPT },
     { role: 'user', content: userMsg },
@@ -5009,7 +5077,7 @@ async function _runCriticVerdict(userMsg, { cbKey = 'ai:sambanova:main', budgetK
   // Primary: SambaNova akun 1 — SAMA account/circuit dengan ohlcv_analyze primary
   // (memang endpoint fisik yang sama, circuit breaker WAJIB dibagi supaya outage
   // di satu tempat langsung terdeteksi di keduanya, bukan dites dobel). Groq
-  // (fallback lama) diputus kontraknya 2026-07-25 — tanpa fallback lagi di sini.
+  // (fallback lama) diputus kontraknya 2026-07-25.
   if (SAMBANOVA_KEY && await cb.canCall(cbKey)) {
     try {
       if (!await allowAiCall(budgetKey)) throw new Error('AI daily budget exceeded');
@@ -5027,8 +5095,33 @@ async function _runCriticVerdict(userMsg, { cbKey = 'ai:sambanova:main', budgetK
     } catch(e) { console.warn('_runCriticVerdict SambaNova failed:', e.message); await cb.onFailure(cbKey); }
   } else if (SAMBANOVA_KEY) { console.log('_runCriticVerdict: SambaNova circuit OPEN'); }
 
+  // Fallback: DeepSeek v4-flash API resmi (BERBAYAR, saldo top-up) — HANYA dicoba
+  // kalau SambaNova gagal/circuit open di atas. Pagar biaya tetap berlaku lewat
+  // allowAiCall(deepseekBudgetKey), jadi kalaupun SambaNova sedang buruk terus-menerus,
+  // fallback ini otomatis berhenti begitu jatah harian poolnya habis (bukan tanpa batas).
+  const DEEPSEEK_KEY = process.env.DEEPSEEK_API_KEY;
+  if (!rawText && DEEPSEEK_KEY && await cb.canCall(deepseekCbKey)) {
+    try {
+      if (!await allowAiCall(deepseekBudgetKey)) throw new Error('AI daily budget exceeded');
+      const r = await fetch('https://api.deepseek.com/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${DEEPSEEK_KEY}` },
+        body: JSON.stringify({ model: 'deepseek-v4-flash', messages, max_tokens: 600, temperature: 0, thinking: { type: 'disabled' } }),
+        signal: AbortSignal.timeout(20000),
+      });
+      if (r.ok) {
+        const j = await r.json(); rawText = j.choices?.[0]?.message?.content?.trim() || null; model = 'deepseek-v4-flash';
+        if (rawText) await cb.onSuccess(deepseekCbKey);
+        else throw new Error('Empty response');
+      } else {
+        const errJ = await r.json().catch(() => ({}));
+        throw new Error(r.status === 402 ? 'HTTP402_insufficient_balance' : (errJ?.error?.message || `HTTP ${r.status}`));
+      }
+    } catch(e) { console.warn('_runCriticVerdict DeepSeek fallback failed:', e.message); await cb.onFailure(deepseekCbKey); }
+  } else if (!rawText && DEEPSEEK_KEY) { console.log('_runCriticVerdict: DeepSeek circuit OPEN/budget habis'); }
+
   if (!rawText) {
-    return { verdict: null, objections: null, model: null, raw: null, error: 'AI Kritikus tidak tersedia (SambaNova offline/limit habis) — coba lagi nanti.' };
+    return { verdict: null, objections: null, model: null, raw: null, error: 'AI Kritikus tidak tersedia (SambaNova & DeepSeek gagal/limit habis) — coba lagi nanti.' };
   }
 
   let objections = null, verdict = null;
