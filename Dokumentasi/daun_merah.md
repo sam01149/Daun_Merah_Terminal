@@ -11,11 +11,26 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-07-30 (Session 266 — Fix Parser Fundamental: 3 Bug Salah Timpa Currency/Indikator)
+> **Last updated:** 2026-07-30 (Session 267 — Fix Label "n" Gate Plan U: Total → TP+SL)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 267 (2026-07-30) — Fix Label "n" Gate Plan U: Total → TP+SL
+
+**Konteks:** User tanya apakah status `canceled` di auto-entry trade log (`setup_log_auto:v1`) jadi noise statistik — n total 19 sementara 7 di antaranya `canceled`. Audit kode `_aggSetupStats` (api/admin.js) konfirmasi `canceled` sudah dikecualikan dari kalkulasi win-rate/expectancy sejak Plan U-1/U-3 (bukan bug perhitungan). Tapi ditemukan bug tampilan nyata: dashboard internal `dev-auto-entry.html` (Gate Plan U — Cukup Data?) memberi label "n" pada field `total` (termasuk pending/canceled/ambiguous), bukan `tp+sl` (setup yang benar-benar closed dan bisa dipelajari) — beresiko menyesatkan (n terlihat lebih besar dari sample yang sesungguhnya dipakai untuk win-rate). Halaman publik `index.html` (Track Record) sudah benar sejak awal (pakai `decided = tp+sl`).
+
+**Root cause:** `renderGate()` di `dev-auto-entry.html` memakai `symbols[k].total`/`global.total` sebagai basis gate n≥100/n≥30, padahal field yang selaras dengan makna "sample yang bisa dijadikan pelajaran" adalah `tp+sl`. `renderGlobal()`/`renderSymbols()` juga tidak memberi anotasi n eksplisit di samping Win Rate Raw/Adj. (berbeda dari `renderCalibration()` yang sudah benar pakai `(n=X)`).
+
+**Fix (`dev-auto-entry.html`):**
+- `renderGate()`: gate global & per-pair sekarang dihitung dari `tp+sl`, bukan `total`; hint teks diperjelas ("n = closed TP+SL, bukan total baris log").
+- `renderGlobal()`: label `Total` → `Total (semua status)`, `Canceled` → `Canceled (bukan n, tak dipelajari)`, `Win Rate Raw/Adj.` diberi anotasi `(n=tp+sl)`.
+- `renderSymbols()` (kartu per pair): tambah `Canceled` ke baris status, `Win Rate Raw/Adj.` diberi anotasi `(n=tp+sl)`.
+
+**Data aktual saat audit (Redis `setup_log_auto:v1`, 2026-07-30):** total 19 (pending 3, sl 4, tp 5, canceled 7). n win-rate yang benar = 9 (tp+sl), bukan 19. 4/7 canceled berasal dari bug lama sebelum fix Session 216; 2/7 dari Flip Guard `bias_flip` normal (27 Juli); 1/7 koreksi manual retroaktif bug race condition Session 242. Baris `canceled` sengaja TIDAK dihapus dari log (nilai audit trail via `_evaluateCanceledGhost`), hanya perlu jelas tidak dihitung sebagai n.
+
+**Verifikasi:** cek sintaks JS (`new Function()` pada blok `<script>`) lolos tanpa error; belum diverifikasi visual live (perlu admin secret) — perubahan murni label/kalkulasi client-side dari field yang sudah ada di response API, tidak mengubah endpoint/backend.
 
 ## Changelog Session 266 (2026-07-30) — Fix Parser Fundamental: 3 Bug Salah Timpa Currency/Indikator
 
