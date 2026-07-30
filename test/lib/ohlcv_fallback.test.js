@@ -8,6 +8,8 @@ const {
   normalizeTwelveDataCandles,
   fetchFallbackCandles,
   shouldSendYahooAlert,
+  mapYahooSymbolToDeriv,
+  fetchDerivLatestPrice,
 } = require('../../api/_ohlcv_fetch.js');
 
 // ── mapYahooSymbolToTwelveData: mapping simbol ──────────────────────────────
@@ -129,6 +131,30 @@ test('fetchFallbackCandles: 0 candle valid -> throw (bukan array kosong diam-dia
   await assert.rejects(() => fetchFallbackCandles('EURUSD=X', '1h'), /0 candle valid/);
   global.fetch = origFetch;
   delete process.env.TWELVEDATA_API_KEY;
+});
+
+// ── mapYahooSymbolToDeriv: GC=F migrasi ke Deriv spot (2026-07-30) ──────────
+
+test('mapYahooSymbolToDeriv: GC=F terpetakan ke frxXAUUSD (migrasi basis blowout futures-vs-spot)', () => {
+  assert.equal(mapYahooSymbolToDeriv('GC=F'), 'frxXAUUSD');
+  assert.equal(mapYahooSymbolToDeriv('EURUSD=X'), 'frxEURUSD');
+});
+
+test('mapYahooSymbolToDeriv: AUD/NZD tetap tidak terpetakan (Yahoo-only)', () => {
+  assert.equal(mapYahooSymbolToDeriv('AUDNZD=X'), null);
+});
+
+// ── fetchDerivLatestPrice: guard clause sebelum connect WebSocket ───────────
+
+test('fetchDerivLatestPrice: simbol tanpa mapping -> throw sebelum connect', async () => {
+  await assert.rejects(() => fetchDerivLatestPrice('BTCUSD=X'), /tidak ada mapping/);
+});
+
+test('fetchDerivLatestPrice: DERIV_APP_ID belum diset -> throw sebelum connect', async () => {
+  const orig = process.env.DERIV_APP_ID;
+  delete process.env.DERIV_APP_ID;
+  await assert.rejects(() => fetchDerivLatestPrice('GC=F'), /DERIV_APP_ID belum diset/);
+  if (orig) process.env.DERIV_APP_ID = orig;
 });
 
 // ── shouldSendYahooAlert: counter + cooldown (pure) ─────────────────────────

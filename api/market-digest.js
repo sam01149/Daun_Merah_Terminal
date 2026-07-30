@@ -9,6 +9,7 @@ const { configureVapid, sendWebPush } = require('./_webpush');
 const { allowAiCall, providerFromUrl } = require('./_ai_guard');
 const { CB_KW, kwTest, isCbHeadline, stripHtml } = require('./_cb_keywords');
 const { isFxMarketOpen } = require('./_market_hours');
+const { fetchDerivLatestPrice, fetchDerivCandles } = require('./_ohlcv_fetch');
 // Session 158: detectCat pindah ke newscat.js (root repo) — single source of truth
 // bersama index.html & sw.js; word-boundary match + scoring, bukan substring polos.
 const { detectCat } = require('../newscat');
@@ -161,7 +162,13 @@ const GOLD_KEYWORDS = [
   'comex','silver price','silver rally','silver drop',
 ];
 
-// ── XAU/USD spot price fetch (Yahoo GC=F → Binance PAXG fallback) ─────────────
+// ── XAU/USD spot price fetch (Deriv frxXAUUSD → Yahoo GC=F → Binance PAXG) ────
+// REVISI 2026-07-30: primary dipindah dari Yahoo GC=F (futures) ke Deriv frxXAUUSD
+// (spot) — sama alasan dengan migrasi OHLCV di _ohlcv_fetch.js (basis blowout
+// futures-vs-spot menjelang expiry kontrak bikin harga acuan di Ringkasan AI beda
+// puluhan dolar dari yang user lihat di MT5/TradingView). Yahoo GC=F diturunkan jadi
+// fallback pertama (tetap dipakai apa adanya kalau Deriv down, sama pola fallback
+// OHLCV lain) — bukan dihapus total, PAXG Binance tetap fallback terakhir.
 async function fetchXauSpot() {
   try {
     const cached = await redisCmd('GET', 'xau_spot');
@@ -178,7 +185,28 @@ async function fetchXauSpot() {
   });
   if (!sf.gotLock && sf.fresh) return JSON.parse(sf.fresh);
 
-  // Primary: Yahoo Finance GC=F (COMEX gold front-month futures)
+  // Primary: Deriv frxXAUUSD (broker-grade spot) — tick real-time + candle 1d untuk
+  // basis prev_close (Deriv tidak punya field "previousClose" siap pakai seperti Yahoo).
+  try {
+    const [tick, daily] = await Promise.all([
+      fetchDerivLatestPrice('GC=F'),
+      fetchDerivCandles('GC=F', '1d', 2).catch(() => null),
+    ]);
+    const price = tick.price;
+    const prev  = Array.isArray(daily) && daily.length >= 2 ? daily[daily.length - 2].c : null;
+    if (price > 0) {
+      const changePct = prev ? +((price - prev) / prev * 100).toFixed(2) : null;
+      const wib = new Date(Date.now() + 7 * 3600000);
+      const asOf = `${String(wib.getUTCHours()).padStart(2,'0')}:${String(wib.getUTCMinutes()).padStart(2,'0')} WIB`;
+      const result = { price, prev_close: prev || null, change_pct: changePct, source: 'Deriv frxXAUUSD', fetched_at: new Date().toISOString(), as_of: asOf };
+      await redisCmd('SET', 'xau_spot', JSON.stringify(result), 'EX', 300);
+      if (sf.gotLock) sf.release();
+      return result;
+    }
+  } catch(e) { console.warn('fetchXauSpot Deriv failed:', e.message); }
+
+  // Fallback 1: Yahoo Finance GC=F (COMEX gold front-month futures) — basis futures,
+  // bisa beda dari spot menjelang expiry, tapi lebih baik dari tidak ada data sama sekali.
   try {
     const r = await fetch('https://query1.finance.yahoo.com/v8/finance/chart/GC=F?range=1d&interval=5m', {
       headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
@@ -193,7 +221,7 @@ async function fetchXauSpot() {
         const changePct = prev ? +((price - prev) / prev * 100).toFixed(2) : null;
         const wib = new Date(Date.now() + 7 * 3600000);
         const asOf = `${String(wib.getUTCHours()).padStart(2,'0')}:${String(wib.getUTCMinutes()).padStart(2,'0')} WIB`;
-        const result = { price, prev_close: prev || null, change_pct: changePct, source: 'Yahoo GC=F', fetched_at: new Date().toISOString(), as_of: asOf };
+        const result = { price, prev_close: prev || null, change_pct: changePct, source: 'Yahoo GC=F (fallback)', fetched_at: new Date().toISOString(), as_of: asOf };
         await redisCmd('SET', 'xau_spot', JSON.stringify(result), 'EX', 300);
         if (sf.gotLock) sf.release();
         return result;
@@ -201,7 +229,7 @@ async function fetchXauSpot() {
     }
   } catch(e) { console.warn('fetchXauSpot Yahoo failed:', e.message); }
 
-  // Fallback: Binance PAXGUSDT (24/7, no auth, tracks spot 1:1)
+  // Fallback 2: Binance PAXGUSDT (24/7, no auth, tracks spot 1:1)
   try {
     const r = await fetch('https://api.binance.com/api/v3/ticker/24hr?symbol=PAXGUSDT', {
       signal: AbortSignal.timeout(6000),

@@ -11,11 +11,34 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-07-30 (Session 267 lanjutan — Tampilkan dasar keputusan AI per setup di Riwayat Setup dev-auto-entry.html)
+> **Last updated:** 2026-07-30 (Session 268 — Migrasi harga acuan XAU/USD dari Yahoo GC=F (futures) ke Deriv frxXAUUSD (spot))
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 268 (2026-07-30) — Migrasi Harga Acuan XAU/USD: Yahoo GC=F (Futures) → Deriv frxXAUUSD (Spot)
+
+**Konteks:** User lapor gold "SL terus" — posisi yang menurut chart MT5/TradingView user seharusnya masih aman malah tercatat kena SL di sistem. Sesi 2026-07-29 (S262) sudah pernah menemukan insiden serupa (GC=F melonjak ke H4106 karena basis blowout futures-vs-spot menjelang expiry kontrak, sementara spot tetap ~4038-4046) dan menambahkan guard korroborasi (`_corroborateGoldTransitions`), tapi masalah TERULANG hari ini.
+
+**Investigasi live (2026-07-30 ~14:00 UTC):** dibandingkan candle 1 jam yang SAMA — Yahoo GC=F H4180.20/C4157.90 vs Deriv frxXAUUSD H4120.04/C4097.17 — divergensi ~$60-70, lebih besar dari insiden kemarin. Dikonfirmasi juga lewat data produksi (`setup_stats` publik): setup manual bearish `GC=F:1785394829223` (entry 4102.21, SL 4130.00) berstatus `sl`, padahal Deriv spot di jam yang sama cuma tembus H4120.04 — tidak pernah menyentuh 4130.
+
+**Root cause ganda:**
+1. GC=F (COMEX futures) tetap jadi harga acuan utama sistem untuk "XAU/USD" — basis blowout vs spot menjelang expiry kontrak aktif adalah fenomena pasar riil berulang (bukan sekali kejadian), bukan sesuatu yang cukup ditambal dengan guard toleransi.
+2. Guard korroborasi S262 (`_corroborateGoldTransitions`/`_finalizeSetupTransitions`) ternyata **hanya jalan di scope `setup_log_auto:v1`** (eksperimen developer-only, dipanggil dari `_buildAutoScopeStats`/`positionReviewHandler`) — `setupStatsHandler` yang melayani `setup_log:v1` (setup MANUAL yang user pantau di UI publik, termasuk contoh kasus di atas) **tidak pernah memanggil guard ini sama sekali**. Jadi perbaikan kemarin tidak melindungi apa yang benar-benar dilihat user.
+
+**Keputusan:** daripada menambal guard ke jalur ketiga, sumber masalahnya dihilangkan — GC=F dimigrasikan ke Deriv `frxXAUUSD` (spot, broker-grade, cocok dengan basis MT5/TradingView) sebagai PRIMARY di semua konsumen sekaligus (manual + auto + live quote Ringkasan AI). Ini membalik keputusan 2026-07-18 (Plan P) yang sengaja mengecualikan XAU dari migrasi Deriv (alasan lama: level futures-vs-spot beda + GC=F satu-satunya yang punya volume) — basis blowout berulang membuktikan trade-off itu tidak lagi berpihak ke konsistensi harga.
+
+**Fix:**
+- `api/_ohlcv_fetch.js`: `YAHOO_TO_DERIV_SYMBOL['GC=F'] = 'frxXAUUSD'` — otomatis membuat GC=F ikut jalur "Deriv primary → Yahoo fallback → Twelve Data fallback" yang sudah ada generik untuk 14 pair FX (tidak perlu bercabang di `refreshOhlcvFromYahoo`/`ohlcvSyncHandler`, keduanya sudah cek `mapYahooSymbolToDeriv(symbol)` secara generik). Fungsi baru `fetchDerivLatestPrice()` (Deriv `ticks_history` style `ticks`) untuk kebutuhan quote real-time (beda dari candle OHLCV).
+- `api/market-digest.js` (`fetchXauSpot`, harga acuan "XAU/USD LIVE" di prompt Ringkasan AI): primary diganti Deriv (tick + candle 1d untuk basis `prev_close`), Yahoo GC=F turun jadi fallback pertama, Binance PAXG tetap fallback terakhir.
+- `api/admin.js`: komentar-komentar lama yang menyatakan "GC=F sengaja tidak dipetakan ke Deriv" diperbarui (bukan bug, cuma dokumentasi basi) di 3 lokasi (`OHLCV_FIXED_PAIRS`, `ohlcvSyncHandler`, `refreshOhlcvFromYahoo`). Guard `_corroborateGoldTransitions` (scope=auto) DIPERTAHANKAN sebagai lapis kedua (sekarang cross-check Deriv vs Twelve Data, dua-duanya spot — menangkap anomali feed, bukan lagi mismatch futures-vs-spot yang sudah hilang di sumbernya).
+- **Trade-off diterima:** Deriv tidak punya volume (`v:0`) — anotasi "Volume avg/Today [HIGH/low]" gold di Ringkasan AI (`market-digest.js`, guard `v > 0` sudah ada) otomatis berhenti muncul, bukan regresi/crash.
+- **Sengaja TIDAK disentuh:** `api/correlations.js` (matriks korelasi cross-asset) punya `fetchYahoo` sendiri terpisah, dipakai untuk korelasi return harian (jauh lebih tahan terhadap basis blowout jam-an) — di luar scope masalah SL/TP; `vps/daemon.js` fast-tick Deriv untuk GC=F yang sengaja DIBUANG di S262 (waktu itu justru untuk MENGHINDARI campur sumber Yahoo+Deriv) — sekarang preseden itu berbalik karena Deriv sudah jadi primary tunggal di semua jalur, tapi restorasi fast-tick daemon tidak dilakukan sesi ini (di luar keluhan utama, VPS live perlu deploy terpisah — dicatat sebagai follow-up opsional, bukan gap).
+
+**Lanjutan sesi sama — buffer SL XAU dinaikkan (keluhan user: DeepSeek pasang SL terlalu sempit khusus untuk gold):** prompt `ohlcvAnalyzeHandler` (`api/admin.js`) menaikkan buffer minimum SL dari `0.5x ATR-14 H1` (default, tetap berlaku untuk FX) ke `1x ATR-14 H1` khusus saat `data.is_xau`, dengan kalimat penjelas ke AI ("XAU/USD historis lebih volatile per-jam dari FX major — buffer sempit gampang kena stop oleh noise, bukan invalidasi struktur asli"). Tidak bisa dikonfirmasi dari data produksi apakah SL sempit sebelumnya murni akibat basis GC=F yang salah (sudah diperbaiki di atas) atau AI memang longgar menafsirkan buffer 0.5x — perubahan ini pencegahan tambahan, bukan diagnosis pasti (butuh sampel produksi lanjutan untuk verifikasi, data `setup_log_auto:v1` di balik `scope=auto` tidak diakses sesi ini).
+
+**Verifikasi:** smoke-test langsung ke Deriv WS (`frxXAUUSD` candle + tick) dan Yahoo GC=F live via Node — konfirmasi mapping & fungsi baru bekerja terhadap API asli, bukan cuma mock. 2 test baru di `test/lib/ohlcv_fallback.test.js` (mapping GC=F→frxXAUUSD, guard clause `fetchDerivLatestPrice`). 695/695 test lulus (`npm test`). Verifikasi live production (setelah deploy) belum dilakukan sesi ini — cek `ohlcv:GC=F:source` di dashboard/Redis pasca-push untuk konfirmasi `source:"deriv"` benar-benar terpakai.
 
 ## Changelog Session 267 (2026-07-30) — Fix Label "n" Gate Plan U: Total → TP+SL
 

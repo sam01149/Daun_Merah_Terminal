@@ -1610,7 +1610,8 @@ const OHLCV_FIXED_PAIRS = [
   // butuh cache ohlcv:*:1h/4h/1d terjaga sama seperti 8 pair di atas.
   // EUR/GBP juga sudah di YAHOO_TO_DERIV_SYMBOL (vps/daemon.js) — dobel
   // sumber (Deriv stream + fallback cron ini) sama seperti EUR/USD/GBP/USD.
-  // AUD/NZD TIDAK ada di Deriv map, Yahoo-only sama seperti GC=F.
+  // AUD/NZD TIDAK ada di Deriv map, tetap Yahoo-only (beda dari GC=F yang sudah
+  // dimigrasi ke Deriv spot 2026-07-30 — lihat _ohlcv_fetch.js).
   { symbol: 'AUDNZD=X', label: 'AUD/NZD' },
   { symbol: 'EURGBP=X', label: 'EUR/GBP' },
 ];
@@ -1727,8 +1728,9 @@ async function ohlcvSyncHandler(req, res) {
 
   // Plan P (2026-07-18): Deriv primary untuk pair FX — dicoba BERURUTAN (bukan
   // paralel per pair, edge case Plan P: "jangan loop 15 pair paralel tanpa jeda dari
-  // satu function") sebelum masuk fan-out Yahoo di bawah. GC=F (XAU/USD) TIDAK
-  // dipetakan, otomatis lewat ke Yahoo seperti biasa. Hasil disimpan per symbol,
+  // satu function") sebelum masuk fan-out Yahoo di bawah. GC=F (XAU/USD) ikut Deriv
+  // sejak 2026-07-30 (lihat _ohlcv_fetch.js) — mapYahooSymbolToDeriv('GC=F') sekarang
+  // truthy, jadi otomatis masuk loop ini seperti pair FX lain. Hasil disimpan per symbol,
   // dikonsumsi loop paralel Yahoo/TwelveData di bawah — pair yang sudah dapat Deriv
   // skip Yahoo sepenuhnya (satu array satu sumber, tidak pernah gabung).
   // Guard budget (Plan P): kalau Deriv down TOTAL, loop sekuensial 7 pair x 2
@@ -2069,9 +2071,9 @@ async function refreshOhlcvFromYahoo(symbol) {
     if (await redisCmd('GET', `ohlcv_fresh:${symbol}`)) return false;
   } catch (e) { /* throttle check best-effort — fall through to fetch */ }
 
-  // Plan P (2026-07-18): Deriv primary untuk 14 pair FX — dicoba dulu SEBELUM Yahoo.
-  // GC=F (XAU/USD) TIDAK dipetakan (lihat catatan scope di _ohlcv_fetch.js), jadi
-  // otomatis lewat ke alur Yahoo→TwelveData di bawah, TIDAK berubah untuk emas.
+  // Plan P (2026-07-18): Deriv primary untuk pair FX — dicoba dulu SEBELUM Yahoo.
+  // GC=F (XAU/USD) ikut Deriv sejak 2026-07-30 (lihat catatan REVISI di _ohlcv_fetch.js) —
+  // gagal Deriv tetap fallback ke Yahoo→TwelveData di bawah, sama seperti pair FX lain.
   const derivEligible = !!mapYahooSymbolToDeriv(symbol);
   let candles1h = null, source1h = null, candles1d = null, source1d = null;
   if (derivEligible) {
@@ -2770,6 +2772,19 @@ function _detectLossLabel({ closedT, eLo, eHi, tp, bias, pairLabel }, allCandles
 // Toleransi 15 USD basis normal futures-vs-spot (lihat catatan "beda beberapa
 // dolar" _ohlcv_fetch.js) — cukup longgar untuk spread wajar, cukup ketat
 // menangkap divergensi >$50 seperti insiden ini.
+//
+// UPDATE 2026-07-30: insiden basis blowout TERULANG (divergensi ~$60, lihat
+// [[project-gcf-futures-spot-basis-blowout]]) — DAN ketahuan guard ini cuma jalan
+// di scope=auto (setup_log_auto:v1, lihat _buildAutoScopeStats/positionReviewHandler),
+// TIDAK PERNAH menyentuh setup_log:v1 (manual, yang user pantau di UI — lihat
+// setupStatsHandler yang tidak memanggil _finalizeSetupTransitions sama sekali).
+// Root cause sebenarnya diperbaiki di sumbernya: GC=F sekarang fetch dari Deriv
+// frxXAUUSD (spot) sebagai primary, bukan lagi futures (lihat _ohlcv_fetch.js) —
+// otomatis berlaku untuk SEMUA konsumen (manual + auto), tidak perlu menambal guard
+// ini ke jalur ketiga. Guard di bawah TETAP dipertahankan untuk scope=auto sebagai
+// lapis kedua (cross-check Deriv vs Twelve Data, dua-duanya spot) — sekarang
+// menangkap anomali/glitch feed, bukan lagi mismatch futures-vs-spot yang sudah
+// hilang di sumbernya.
 const GOLD_BASIS_TOLERANCE_USD = 15;
 const CORROBORATION_SYMBOLS = new Set(['GC=F']);
 
@@ -4365,9 +4380,14 @@ async function ohlcvAnalyzeHandler(req, res) {
     const entryBasisInstr = confBlock
       ? '- entry_basis: salin daftar struktur penyusun zona yang kamu pilih dari [ZONA KONFLUENSI] (bagian setelah tanda "=" di baris zona itu; boleh diringkas tapi minimal satu struktur bernama dengan angkanya). Kalau entry_zone null, field ini juga null.'
       : '- entry_basis: sebutkan struktur mana saja dari DATA TEKNIKAL yang jadi dasar entry_zone, dengan angkanya (contoh format: "fib 61.8% 1.1712 + cluster S/R 1.1709 (4x sentuh) + pivot S1 1.1705"). Minimal satu struktur bernama; makin banyak konfluensi makin baik. Kalau entry_zone null, field ini juga null.';
+    // Buffer XAU dinaikkan ke 1x ATR (dari 0.5x default FX) — diskusi user 2026-07-30:
+    // gold historically punya wick/fakeout jauh lebih agresif per-jam daripada FX
+    // major (rentang harian ratusan dolar bukan tak lazim), 0.5x ATR-14 H1 terlalu
+    // sempit dan kena stop dari noise normal, bukan invalidasi struktur asli.
+    const slBufferMult = data.is_xau ? '1x' : '0.5x';
     const slInstr = confBlock
-      ? '- sl: level stop loss konkret DI LUAR zona konfluensi yang melindungi entry — di balik zona [ZONA KONFLUENSI] atau struktur berikutnya setelah entry_zone, dengan buffer minimal ~0.5x ATR-14 H1 dari level itu (jangan tepat di level, rawan wick hunt). Untuk bearish, sl harus di atas entry_zone. Untuk bullish, sl harus di bawah entry_zone.'
-      : '- sl: level stop loss konkret DI LUAR struktur yang melindungi entry — di balik swing H4, cluster S/R, atau Prev Day H/L yang ADA di data, dengan buffer minimal ~0.5x ATR-14 H1 dari level itu (jangan tepat di level, rawan wick hunt). Untuk bearish, sl harus di atas entry_zone. Untuk bullish, sl harus di bawah entry_zone.';
+      ? `- sl: level stop loss konkret DI LUAR zona konfluensi yang melindungi entry — di balik zona [ZONA KONFLUENSI] atau struktur berikutnya setelah entry_zone, dengan buffer minimal ~${slBufferMult} ATR-14 H1 dari level itu (jangan tepat di level, rawan wick hunt)${data.is_xau ? '. XAU/USD historis lebih volatile per-jam dari FX major — buffer sempit gampang kena stop oleh noise, bukan invalidasi struktur asli' : ''}. Untuk bearish, sl harus di atas entry_zone. Untuk bullish, sl harus di bawah entry_zone.`
+      : `- sl: level stop loss konkret DI LUAR struktur yang melindungi entry — di balik swing H4, cluster S/R, atau Prev Day H/L yang ADA di data, dengan buffer minimal ~${slBufferMult} ATR-14 H1 dari level itu (jangan tepat di level, rawan wick hunt)${data.is_xau ? '. XAU/USD historis lebih volatile per-jam dari FX major — buffer sempit gampang kena stop oleh noise, bukan invalidasi struktur asli' : ''}. Untuk bearish, sl harus di atas entry_zone. Untuk bullish, sl harus di bawah entry_zone.`;
     const tpInstr = confBlock
       ? '- tp: zona konfluensi BERIKUTNYA searah bias dari daftar [ZONA KONFLUENSI] (atau struktur [LEVEL S/R] berikutnya kalau tidak ada zona lagi searah itu) — jangan mengarang. Untuk bearish, tp harus di bawah entry_zone. Untuk bullish, tp harus di atas entry_zone. WAJIB risk/reward (jarak entry→tp dibanding entry→sl) minimal 1:1 — kalau struktur data tidak memungkinkan RR ≥1, sebutkan itu di trigger/commentary alih-alih memaksakan level palsu.'
       : '- tp: level take profit konkret = struktur berikutnya searah bias yang ADA di data (cluster S/R, swing, pivot, fib) — jangan mengarang. Untuk bearish, tp harus di bawah entry_zone. Untuk bullish, tp harus di atas entry_zone. WAJIB risk/reward (jarak entry→tp dibanding entry→sl) minimal 1:1 — kalau struktur data tidak memungkinkan RR ≥1, sebutkan itu di trigger/commentary alih-alih memaksakan level palsu.';

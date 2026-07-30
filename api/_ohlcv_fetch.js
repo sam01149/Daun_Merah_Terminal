@@ -132,10 +132,25 @@ async function fetchFallbackCandles(yahooSymbol, interval) {
 
 // ── Primary provider FX: Deriv WebSocket API (Plan P, 2026-07-18) ──────────────
 // Broker-grade, streaming-capable, 15/15 pair Daun Merah tersedia via `frx*` symbol.
-// SENGAJA hanya 14 pair FX — XAU/USD (GC=F) TIDAK ikut migrasi: GC=F harga FUTURES,
-// frxXAUUSD SPOT (level absolut beda beberapa dolar, campur sumber = zona konfluensi
-// melompat) DAN GC=F volume dipakai analisis sedangkan Deriv tidak punya volume.
-// Emas tetap Yahoo → PAXG Binance → Twelve Data (lihat fetchYahooOhlcv1h di atas).
+//
+// REVISI 2026-07-30 (diskusi user pasca-insiden basis blowout berulang, lihat
+// [[project-gcf-futures-spot-basis-blowout]]): GC=F (COMEX futures) DIMIGRASIKAN ke
+// frxXAUUSD (Deriv spot) sebagai sumber PRIMARY. Keputusan 2026-07-18 di atas (emas
+// dikecualikan karena "level absolut beda + GC=F punya volume") DIBATALKAN — basis
+// blowout futures-vs-spot menjelang expiry kontrak TERULANG lagi 2026-07-30 (live-
+// verified: Yahoo GC=F H4180/C4157 vs Deriv frxXAUUSD H4120/C4097 di jam yang SAMA,
+// divergensi ~$60), dan guard korroborasi yang ditambahkan sehari sebelumnya
+// (_corroborateGoldTransitions, admin.js) TERNYATA hanya melindungi setup_log_auto:v1
+// (eksperimen developer-only) — setup MANUAL yang user pantau (setup_log:v1, via
+// setupStatsHandler) TIDAK PERNAH lewat guard itu, jadi SL/TP GC=F publik tetap bisa
+// salah dipicu oleh wick futures yang tidak pernah tersentuh di harga spot riil (MT5/
+// TradingView user). Menambal guard itu ke jalur ketiga dianggap tambal-sulam;
+// menghilangkan sumber masalah (pindah primary ke spot) lebih bersih dan otomatis
+// memperbaiki SEMUA konsumen (manual + auto) sekaligus.
+// Trade-off yang diterima: Deriv tidak punya volume (v:0, sama seperti pair FX lain)
+// — anotasi volume gold di market-digest.js (baris `isXau && c.v > 0`) otomatis no-op,
+// bukan regresi/crash. Yahoo GC=F tetap fallback (lihat refreshOhlcvFromYahoo) kalau
+// Deriv down — dipakai apa adanya meski basis-nya beda, sama seperti fallback pair FX.
 //
 // DERIV_APP_ID (2026-07-18): sementara pakai app_id PUBLIK 1089 — app_id dedicated
 // yang didaftarkan user via developers.deriv.com TERNYATA tidak kompatibel dengan
@@ -155,7 +170,7 @@ const YAHOO_TO_DERIV_SYMBOL = {
   'NZDUSD=X': 'frxNZDUSD', 'EURJPY=X': 'frxEURJPY', 'GBPJPY=X': 'frxGBPJPY',
   'EURGBP=X': 'frxEURGBP', 'AUDJPY=X': 'frxAUDJPY', 'EURAUD=X': 'frxEURAUD',
   'GBPAUD=X': 'frxGBPAUD', 'GBPCAD=X': 'frxGBPCAD',
-  // 'GC=F' SENGAJA TIDAK dipetakan — lihat catatan scope di atas.
+  'GC=F': 'frxXAUUSD', // Deriv spot — lihat catatan REVISI 2026-07-30 di atas.
 };
 
 function mapYahooSymbolToDeriv(yahooSymbol) {
@@ -221,6 +236,54 @@ async function fetchDerivCandles(yahooSymbol, interval, count) {
   });
 }
 
+// Live tick (bukan candle) — dipakai market-digest.js fetchXauSpot() (REVISI 2026-07-30,
+// migrasi harga acuan XAU/USD dari Yahoo GC=F ke Deriv spot, lihat catatan di atas).
+// style:'ticks' Deriv mengembalikan quote real-time (bukan OHLC candle jam berjalan),
+// paling dekat dengan "harga saat ini" yang ditampilkan Yahoo regularMarketPrice
+// sebelumnya. count:1 cukup — kita hanya butuh tick terakhir, bukan histori.
+async function fetchDerivLatestPrice(yahooSymbol) {
+  const derivSymbol = mapYahooSymbolToDeriv(yahooSymbol);
+  if (!derivSymbol) throw new Error(`fetchDerivLatestPrice: tidak ada mapping Deriv untuk ${yahooSymbol}`);
+  const appId = process.env.DERIV_APP_ID;
+  if (!appId) throw new Error('fetchDerivLatestPrice: DERIV_APP_ID belum diset');
+
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      try { ws.close(); } catch (e) {}
+      reject(new Error(`fetchDerivLatestPrice ${derivSymbol}: timeout 8s`));
+    }, 8000);
+    const ws = new WebSocket(`wss://ws.derivws.com/websockets/v3?app_id=${appId}`);
+    ws.addEventListener('open', () => {
+      ws.send(JSON.stringify({ ticks_history: derivSymbol, style: 'ticks', count: 1, end: 'latest' }));
+    });
+    ws.addEventListener('message', (ev) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      try { ws.close(); } catch (e) {}
+      let data;
+      try { data = JSON.parse(ev.data); } catch (e) { return reject(new Error(`fetchDerivLatestPrice ${derivSymbol}: response bukan JSON valid`)); }
+      if (data.error) return reject(new Error(`fetchDerivLatestPrice ${derivSymbol}: ${data.error.code || 'error'} — ${data.error.message || ''}`));
+      const prices = data.history?.prices;
+      const times = data.history?.times;
+      if (!Array.isArray(prices) || !prices.length) return reject(new Error(`fetchDerivLatestPrice ${derivSymbol}: 0 tick`));
+      const price = +prices[prices.length - 1];
+      const t = times?.[times.length - 1];
+      if (isNaN(price) || price <= 0) return reject(new Error(`fetchDerivLatestPrice ${derivSymbol}: harga tidak valid`));
+      resolve({ price, t: t || null });
+    });
+    ws.addEventListener('error', () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      reject(new Error(`fetchDerivLatestPrice ${derivSymbol}: WebSocket error`));
+    });
+  });
+}
+
 // Keputusan alert Telegram "Yahoo down" — pure function, dipanggil dari admin.js
 // setelah update counter yahoo_fail_streak di Redis. threshold/cooldown eksplisit
 // jadi param (bukan konstanta tersembunyi) supaya gampang diuji.
@@ -233,6 +296,6 @@ function shouldSendYahooAlert(streak, lastAlertTs, now, threshold = 3, cooldownM
 module.exports = {
   fetchYahooOhlcv1h, fetchBinancePaxg1h,
   mapYahooSymbolToTwelveData, normalizeTwelveDataCandles, fetchFallbackCandles,
-  mapYahooSymbolToDeriv, fetchDerivCandles,
+  mapYahooSymbolToDeriv, fetchDerivCandles, fetchDerivLatestPrice,
   shouldSendYahooAlert,
 };
