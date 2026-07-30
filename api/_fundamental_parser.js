@@ -174,17 +174,41 @@ const QUANTITY_INDICATORS = new Set([
 function parseFundamentalFromHeadline(title) {
   const t = title.toLowerCase();
 
+  // BUG DITEMUKAN & DIFIX (2026-07-30, laporan user — data fundamental salah di
+  // banyak currency): headline PROSA (artikel/kutipan, bukan cetakan rilis
+  // kalender) sempat lolos parse lewat fallback regex "angka pertama di judul" di
+  // bawah. 2 insiden nyata terkonfirmasi di produksi: artikel INSEE prosa "French
+  // June consumer spending rises 0.4% m/m vs forecast -0.1%, May revised up to
+  // 0.3%" (tanpa kata "Actual" sama sekali) ketimpa jadi 'Personal Spending' USD;
+  // "French Non-Farm Payrolls QoQ Actual -0.1..." (format rilis asli, tapi
+  // currency salah — lihat fix di bawah) ketimpa jadi NFP USD. Audit news_history
+  // produksi (2026-07-30): SEMUA cetakan rilis asli FinancialJuice selalu pakai
+  // kata "Actual" — gate ini aman, tidak menghapus rilis sah manapun.
+  if (!/\bactual\b/i.test(t)) return null;
+
+  // Rilis kalender ("... Actual X Forecast Y Previous Z") adalah sinyal kuat rilis
+  // data asli — dipakai di bawah supaya FUND_COUNTRY_ONLY tidak salah tangkap
+  // judul umum yang kebetulan menyebut nama negara tanpa forecast/previous.
+  const isCalendarFormat = /\bforecast\b/i.test(t) || /\bprevious\b/i.test(t);
+
   let currency = null;
-  for (const { kw, cur } of FUND_PREFIX_MAP) {
-    if (kw.some(k => t.includes(k))) { currency = cur; break; }
-  }
-  // Rilis kalender ("... Actual X Forecast Y Previous Z") adalah sinyal kuat —
-  // kalau format ini match tapi FUND_PREFIX_MAP tidak (karena kata sisipan seperti
-  // "Core"/"Flash" antara nama negara & indikator), coba fallback nama-negara saja.
-  const isCalendarFormat = !currency && /\bactual\b/i.test(t) && (/\bforecast\b/i.test(t) || /\bprevious\b/i.test(t));
+  // BUG DITEMUKAN & DIFIX (2026-07-30, laporan user — NFP muncul "rilis hari ini"
+  // di USD padahal tidak ada di kalender): root cause "French Non-Farm Payrolls QoQ
+  // Actual -0.1..." salah ditandai USD karena FUND_PREFIX_MAP cek keyword bare USD
+  // ('non-farm payroll' tanpa prefix "us ") DULUAN sebelum nama negara eksplisit
+  // "French" sempat dicek — array USD ada paling depan, loop berhenti di match
+  // pertama. Beberapa indikator "bare" lain (non-farm payroll: Prancis; new home
+  // sales: Australia HIA) dipakai >1 negara, jadi bug ini sistemik, bukan cuma NFP.
+  // Fix: kalau formatnya rilis kalender (gate di atas), cek nama negara EKSPLISIT
+  // dulu — sinyal lebih kuat & lebih spesifik daripada keyword indikator generik.
   if (isCalendarFormat) {
     for (const { re, cur } of FUND_COUNTRY_ONLY) {
       if (re.test(t)) { currency = cur; break; }
+    }
+  }
+  if (!currency) {
+    for (const { kw, cur } of FUND_PREFIX_MAP) {
+      if (kw.some(k => t.includes(k))) { currency = cur; break; }
     }
   }
   if (!currency) return null;
@@ -203,6 +227,24 @@ function parseFundamentalFromHeadline(title) {
   if (indicatorKey === 'Core CPI MoM') {
     if (/y\/y|yoy|annual|year.on.year/i.test(t)) indicatorKey = 'Core CPI YoY';
   }
+  // 'NFP' = terminologi rilis jobs report AS (skala K/M). Prancis juga publish
+  // "Non-Farm Payrolls QoQ" (skala % kuartalan) — beda satuan & sumber sama sekali,
+  // jangan disatukan ke key 'NFP' walau lolos currency-fix di atas, supaya tidak
+  // ketimpa/campur dengan NFP AS yang asli di kartu Fundamental USD.
+  if (indicatorKey === 'NFP' && currency !== 'USD') {
+    indicatorKey = 'Non-Farm Payrolls QoQ';
+  }
+  // BUG DITEMUKAN & DIFIX (2026-07-30, audit produksi): headline "GDP YoY" ikut
+  // ketimpa ke key 'GDP QoQ' karena keyword 'gdp prelim'/'gdp flash'/'gdp growth'
+  // di FUND_INDICATOR_MAP match duluan sebelum penanda y/y sempat dicek — tidak
+  // seperti Core PCE/Core CPI di atas yang sudah didisambiguasi. Kejadian nyata:
+  // "French GDP QoQ Prelim Actual 0.2%" & "French GDP YoY Prelim Actual 0.7%"
+  // sama-sama masuk key 'GDP QoQ' dalam satu batch HSET — siapa yang diproses
+  // terakhir menang, mengetimpa nilai QoQ yang benar dengan YoY (atau sebaliknya)
+  // tergantung urutan array, bukan berdasar isi headline. Pisah key seperti CPI.
+  if (indicatorKey === 'GDP QoQ' && /y\/y|yoy|year.on.year/i.test(t) && !/q\/q|qoq|quarter.on.quarter/i.test(t)) {
+    indicatorKey = 'GDP YoY';
+  }
   // Flash/preliminary qualifier — kata "flash" bisa muncul di posisi mana pun di judul
   // ("Flash CPI", "CPI Flash", "CPI YoY Flash" — feed FinancialJuice paling sering
   // pakai bentuk terakhir, indikator dulu baru "Flash" di akhir). Kata sisipan ini
@@ -213,6 +255,7 @@ function parseFundamentalFromHeadline(title) {
   if (/\bflash\b/i.test(t)) {
     if (indicatorKey === 'CPI YoY') indicatorKey = 'CPI Flash YoY';
     else if (indicatorKey === 'GDP QoQ') indicatorKey = 'GDP QoQ Flash';
+    else if (indicatorKey === 'GDP YoY') indicatorKey = 'GDP YoY Flash';
   }
 
   if (!indicatorKey) {
@@ -319,15 +362,28 @@ async function autoUpdateFundamentals(headlines, redisCmd) {
       const args = ['HSET', `fundamental:${currency}`];
       for (let i = 0; i < items.length; i++) {
         const { key, value, headlinePrev } = items[i];
-        const entry = { actual: value, period: '—', date: now, source: 'headline' };
-        // Headline "Previous X" takes priority; fall back to existing Redis value
+        let existingEntry = null;
+        if (existingRaw && existingRaw[i]) {
+          try { existingEntry = JSON.parse(existingRaw[i]); } catch(_) {}
+        }
+        // BUG DITEMUKAN & DIFIX (2026-07-30): headline yang sama masih muncul di
+        // recentItems lintas beberapa run digest (news_history 36h + cron ganda
+        // GH Actions/vps daemon, lihat komentar _cron_dedup.js) → sebelum fix ini,
+        // `date` SELALU di-set `now` walau actual tidak berubah, jadi indikator lama
+        // terus tampil "rilis hari ini" berhari-hari. Sekarang date cuma maju kalau
+        // actual benar-benar baru (headline release baru), bukan re-scan headline lama.
+        const isNewValue = !existingEntry || existingEntry.actual !== value;
+        const entry = { actual: value, period: '—', date: isNewValue ? now : (existingEntry.date || now), source: 'headline' };
+        // Headline "Previous X" takes priority; fall back to existing Redis value.
+        // Kalau actual TIDAK berubah (re-scan headline lama), pertahankan `previous`
+        // yang sudah tersimpan — sebelum fix ini field previous hilang begitu saja
+        // di scan kedua karena entry selalu dibangun dari objek kosong.
         if (headlinePrev && headlinePrev !== value) {
           entry.previous = headlinePrev;
-        } else if (existingRaw && existingRaw[i]) {
-          try {
-            const prev = JSON.parse(existingRaw[i]);
-            if (prev.actual && prev.actual !== value) entry.previous = prev.actual;
-          } catch(_) {}
+        } else if (existingEntry && existingEntry.actual && existingEntry.actual !== value) {
+          entry.previous = existingEntry.actual;
+        } else if (existingEntry && existingEntry.previous) {
+          entry.previous = existingEntry.previous;
         }
         args.push(key, JSON.stringify(entry));
       }

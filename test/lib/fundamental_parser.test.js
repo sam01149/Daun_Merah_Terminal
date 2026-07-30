@@ -2,7 +2,7 @@
 // Unit test parser murni — jalankan: npm test (node --test, tanpa network/Redis)
 const { test } = require('node:test');
 const assert = require('node:assert');
-const { parseFundamentalFromHeadline, parseCBDecision } = require('../../api/_fundamental_parser');
+const { parseFundamentalFromHeadline, parseCBDecision, autoUpdateFundamentals } = require('../../api/_fundamental_parser');
 
 // ── parseFundamentalFromHeadline ────────────────────────────────────────────
 
@@ -52,6 +52,104 @@ test('headline non-fundamental (tanpa currency match) → null', () => {
 
 test('headline tanpa angka → null', () => {
   assert.strictEqual(parseFundamentalFromHeadline('US CPI data due later today'), null);
+});
+
+// Regresi bug 2026-07-30: "French Non-Farm Payrolls QoQ" salah ditandai USD
+// karena FUND_PREFIX_MAP cek keyword bare 'non-farm payroll' (USD) duluan sebelum
+// nama negara eksplisit "French" sempat dicek — kejadian live di produksi (redis
+// fundamental:USD.NFP ketimpa "-0.1" tertanggal hari ini walau tak ada di kalender).
+test('French Non-Farm Payrolls tidak ketimpa ke NFP (USD) — currency EUR, key terpisah', () => {
+  const r = parseFundamentalFromHeadline('French Non-Farm Payrolls QoQ Actual -0.1 (Forecast -0.1, Previous -)');
+  assert.strictEqual(r.currency, 'EUR');
+  assert.strictEqual(r.key, 'Non-Farm Payrolls QoQ');
+  assert.strictEqual(r.value, '-0.1');
+});
+
+// Bug sama juga berpotensi kena indikator "bare" lain di FUND_PREFIX_MAP yang
+// tidak diprefix "us " (mis. 'personal spending') — kalau negara lain kebetulan
+// disebut eksplisit di headline yang sama, harus menang atas keyword bare USD.
+test('Japan Personal Spending tidak ketimpa ke USD', () => {
+  const r = parseFundamentalFromHeadline('Japan Personal Spending y/y Actual 1.2% Forecast 0.9% Previous 0.5%');
+  assert.strictEqual(r.currency, 'JPY');
+});
+
+test('US NFP tanpa prefix negara tetap default USD (tidak diregresi oleh fix di atas)', () => {
+  const r = parseFundamentalFromHeadline('Non-Farm Payrolls Actual 175K Forecast 180K Previous 227K');
+  assert.strictEqual(r.currency, 'USD');
+  assert.strictEqual(r.key, 'NFP');
+  assert.strictEqual(r.value, '175K');
+});
+
+test('judul umum yang cuma menyebut nama negara (bukan format rilis) tetap null', () => {
+  assert.strictEqual(parseFundamentalFromHeadline('UK stocks rally as BoE hints at cuts'), null);
+});
+
+// Regresi bug 2026-07-30 (kejadian live kedua): artikel PROSA (bukan cetakan rilis
+// kalender, tanpa kata "Actual") kebetulan menyebut frasa bare USD 'consumer
+// spending' → sebelum fix, lolos ke fallback angka-pertama-di-judul dan ketimpa
+// jadi 'Personal Spending' USD tertanggal hari ini, padahal ini data Prancis (INSEE).
+test('artikel prosa tanpa kata Actual (bukan rilis kalender) → null walau ada keyword bare', () => {
+  const r = parseFundamentalFromHeadline('French June consumer spending rises 0.4% m/m vs forecast -0.1%, May revised up to 0.3%: INSEE');
+  assert.strictEqual(r, null);
+});
+
+// ── autoUpdateFundamentals: previous & date tidak boleh hilang di re-scan ──────
+
+function makeMockRedis(initialHash) {
+  const store = { ...initialHash };
+  return async (...args) => {
+    const [cmd] = args;
+    if (cmd === 'HMGET') {
+      const [, , ...keys] = args;
+      return keys.map(k => store[k] ?? null);
+    }
+    if (cmd === 'HSET') {
+      const [, , ...kv] = args;
+      for (let i = 0; i < kv.length; i += 2) store[kv[i]] = kv[i + 1];
+      return kv.length / 2;
+    }
+    if (cmd === 'HGET') return null;
+    return null;
+  };
+}
+
+test('re-scan headline identik tidak menghapus previous & tidak memajukan date', async () => {
+  const seedDate = '2026-07-03';
+  const redis = makeMockRedis({
+    NFP: JSON.stringify({ actual: '206K', period: '—', date: seedDate, source: 'headline' }),
+  });
+  const headline = { title: 'US NFP: Actual 175K Forecast 180K Previous 206K' };
+
+  await autoUpdateFundamentals([headline], redis);
+  const afterFirst = JSON.parse((await redis('HMGET', 'fundamental:USD', 'NFP'))[0]);
+  assert.strictEqual(afterFirst.actual, '175K');
+  assert.strictEqual(afterFirst.previous, '206K');
+  const firstDate = afterFirst.date;
+
+  // Digest run kedua men-scan headline SAMA PERSIS lagi (masih di window 36h) —
+  // sebelum fix, previous hilang & date maju ke hari ini walau bukan rilis baru.
+  await autoUpdateFundamentals([headline], redis);
+  const afterSecond = JSON.parse((await redis('HMGET', 'fundamental:USD', 'NFP'))[0]);
+  assert.strictEqual(afterSecond.actual, '175K');
+  assert.strictEqual(afterSecond.previous, '206K');
+  assert.strictEqual(afterSecond.date, firstDate);
+});
+
+// Kasus persis kejadian produksi: headline TANPA angka "Previous" eksplisit
+// (mis. "Previous -" seperti kasus French NFP) — sebelum fix, previous hilang
+// total di scan kedua karena entry selalu dibangun dari objek kosong.
+test('re-scan headline tanpa Previous eksplisit tetap pertahankan previous lama', async () => {
+  const redis = makeMockRedis({
+    'Non-Farm Payrolls QoQ': JSON.stringify({ actual: '-0.1', period: '—', date: '2026-07-30', source: 'headline', previous: '0.2' }),
+  });
+  const headline = { title: 'French Non-Farm Payrolls QoQ Actual -0.1 (Forecast -0.1, Previous -)' };
+
+  // Nilai actual sama seperti seed → simulasikan digest run kedua men-scan
+  // headline yang sama tanpa angka "Previous" yang bisa diekstrak.
+  await autoUpdateFundamentals([headline], redis);
+  const fr = JSON.parse((await redis('HMGET', 'fundamental:EUR', 'Non-Farm Payrolls QoQ'))[0]);
+  assert.strictEqual(fr.actual, '-0.1');
+  assert.strictEqual(fr.previous, '0.2');
 });
 
 // ── parseCBDecision ─────────────────────────────────────────────────────────
