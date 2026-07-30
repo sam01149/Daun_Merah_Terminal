@@ -91,6 +91,12 @@ tr:hover td{background:rgba(var(--fg-rgb),.02);}
 .pager{display:flex;gap:4px;align-items:center;justify-content:flex-end;margin-top:10px;flex-wrap:wrap;}
 .pagebtn{padding:4px 9px;font-size:10px;min-width:26px;}
 .pagebtn.active{background:var(--accent-dim);border-color:var(--accent);color:#fff;}
+tr.rowmain{cursor:pointer;}
+tr.rowmain td.expander{width:14px;color:var(--muted);text-align:center;}
+tr.rowdetail td{background:rgba(var(--fg-rgb),.02);white-space:normal;padding:8px 10px;}
+tr.rowdetail .row{display:flex;gap:8px;font-size:10px;padding:2px 0;color:var(--muted);border-bottom:none;}
+tr.rowdetail .row span{min-width:170px;flex-shrink:0;}
+tr.rowdetail .row b{color:var(--fg);font-weight:500;white-space:normal;word-break:break-word;}
 </style>
 </head>
 <body>
@@ -199,10 +205,11 @@ tr:hover td{background:rgba(var(--fg-rgb),.02);}
           </select>
         </div>
       </div>
+      <p class="hint">Klik baris untuk lihat dasar keputusan AI (alignment makro, catatan konflik, tag Sistem Hakim, dll).</p>
       <div style="overflow-x:auto;">
         <table id="recentTable">
-          <thead><tr><th>ID</th><th>Pair</th><th>Bias</th><th>Status</th><th>Entry</th><th>SL</th><th>TP</th><th>Conf</th><th>Sumber</th><th>Dibuat</th><th>Filled</th></tr></thead>
-          <tbody><tr><td class="empty" colspan="11">—</td></tr></tbody>
+          <thead><tr><th></th><th>ID</th><th>Pair</th><th>Bias</th><th>Status</th><th>Entry</th><th>SL</th><th>TP</th><th>Conf</th><th>Sumber</th><th>Dibuat</th><th>Filled</th></tr></thead>
+          <tbody><tr><td class="empty" colspan="12">—</td></tr></tbody>
         </table>
       </div>
       <div class="pager" id="recentPager"></div>
@@ -620,6 +627,32 @@ tr:hover td{background:rgba(var(--fg-rgb),.02);}
     });
   }
 
+  // Dasar keputusan AI tersimpan di field ini sejak Plan U/W (alignment vs makro,
+  // catatan konflik, tag Sistem Hakim) — sudah ada di payload setup_stats?scope=auto,
+  // hanya belum pernah dirender di tabel ini. Baris klik-untuk-expand di bawah supaya
+  // pertanyaan "kenapa AI ambil entry ini" bisa dijawab langsung dari dashboard.
+  function fld(label, value){
+    if (value == null || value === '') return '';
+    return `<div class="row"><span>${esc(label)}</span><b>${esc(value)}</b></div>`;
+  }
+  function buildSetupDetail(s){
+    const rows = [
+      fld('Alignment', s.alignment),
+      fld('Makro Alignment (mentah)', s.makro_alignment),
+      fld('Alasan Makro Alignment', s.makro_alignment_reason),
+      fld('Conflict', s.conflict),
+      fld('Catatan Conflict', s.conflict_note),
+      fld('Sumber Conflict', s.conflict_source),
+      fld('Sistem Hakim', s.sistem_hakim),
+      fld('Risk/Reward', s.rr),
+      fld('Horizon (hari)', s.horizon_days),
+      fld('Model', s.model),
+      fld('Loss Label', s.loss_label),
+      fld('Alasan Loss Label', s.label_reason),
+    ].join('');
+    return rows || '<div class="empty">Tidak ada catatan tambahan tersimpan untuk setup ini.</div>';
+  }
+
   function renderRecentFiltered(){
     const tbody = document.querySelector('#recentTable tbody');
     const filtered = getFilteredRecent();
@@ -627,12 +660,13 @@ tr:hover td{background:rgba(var(--fg-rgb),.02);}
     if (recentPage > totalPages) recentPage = totalPages;
     if (recentPage < 1) recentPage = 1;
     if (!filtered.length) {
-      tbody.innerHTML = `<tr><td class="empty" colspan="11">${allRecent.length ? 'Tidak ada setup yang cocok filter ini.' : 'Belum ada setup.'}</td></tr>`;
+      tbody.innerHTML = `<tr><td class="empty" colspan="12">${allRecent.length ? 'Tidak ada setup yang cocok filter ini.' : 'Belum ada setup.'}</td></tr>`;
       renderRecentPager(0, 0);
       return;
     }
     const start = (recentPage - 1) * RECENT_PAGE_SIZE;
-    tbody.innerHTML = filtered.slice(start, start + RECENT_PAGE_SIZE).map(s => `<tr>
+    tbody.innerHTML = filtered.slice(start, start + RECENT_PAGE_SIZE).map((s, i) => `<tr class="rowmain" data-detail="detail-${start + i}">
+      <td class="expander">▸</td>
       <td class="small">${esc(s.id)}</td>
       <td>${esc(s.symbol)}</td>
       <td>${esc(s.bias)}</td>
@@ -644,7 +678,16 @@ tr:hover td{background:rgba(var(--fg-rgb),.02);}
       <td>${esc(s.source)}</td>
       <td class="small">${fmtTs(s.ts)}</td>
       <td class="small">${s.filled_t ? fmtTs(s.filled_t * 1000) : '—'}</td>
-    </tr>`).join('');
+    </tr>
+    <tr class="rowdetail" id="detail-${start + i}" style="display:none;"><td></td><td colspan="11">${buildSetupDetail(s)}</td></tr>`).join('');
+    tbody.querySelectorAll('tr.rowmain').forEach(tr => {
+      tr.addEventListener('click', () => {
+        const detail = document.getElementById(tr.dataset.detail);
+        const open = detail.style.display !== 'none';
+        detail.style.display = open ? 'none' : 'table-row';
+        tr.querySelector('.expander').textContent = open ? '▸' : '▾';
+      });
+    });
     renderRecentPager(recentPage, totalPages);
   }
 

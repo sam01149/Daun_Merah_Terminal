@@ -11,7 +11,7 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-07-30 (Session 267 lanjutan — Keputusan final: SambaNova V3.2 tetap primary Kritikus/Position Review)
+> **Last updated:** 2026-07-30 (Session 267 lanjutan — Tampilkan dasar keputusan AI per setup di Riwayat Setup dev-auto-entry.html)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -56,6 +56,12 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 - Riset benchmark publik (Artificial Analysis, docs resmi DeepSeek): V3.2 bukan model lemah (MMLU 88.5, GPQA ~59, setara kelas GPT-4o/Claude 3.5 Sonnet). V4-Flash unggul di atas kertas (Intelligence Index 40 vs 25, MMLU 90.1 vs 87.8) TAPI angka itu untuk mode **reasoning/thinking AKTIF** — sementara panggilan `_runCriticVerdict`/`positionReviewHandler` ke v4-flash eksplisit set `thinking: {type:'disabled'}` (demi latensi, di dalam budget Gate A 25 detik). Tidak ada data publik bersih untuk "v4-flash non-thinking vs V3.2 non-thinking" — jadi gap kualitas riil di konfigurasi produksi kita kemungkinan lebih tipis dari yang benchmark reasoning-mode tunjukkan.
 - Opsi shadow-test (jalankan v4-flash paralel logging-only untuk bandingkan verdict vs SambaNova) diusulkan tapi **ditolak user** — dianggap menguras kuota/saldo tanpa manfaat cukup jelas.
 - **Keputusan:** biarkan SambaNova V3.2 tetap primary (independensi model thesis-vs-kritikus terjaga, gratis), v4-flash tetap fallback-only seperti yang sudah di-deploy. Tidak perlu dibuka lagi kecuali ada data baru (mis. sampel `auto_guard_stats:critic_veto` cukup besar untuk audit rasio veto, atau benchmark non-thinking v4-flash resmi dirilis).
+
+**Lanjutan sesi sama — Tampilkan dasar keputusan AI per setup di "Riwayat Setup" (`dev-auto-entry.html`):** user tanya apakah ada keterangan alasan AI mengambil entry tertentu (contoh konkret: `EURUSD=X:1785417323600`, bullish, pending) atau murni otomatis tanpa penjelasan. Audit `api/admin.js` (`buildNewSetupEntry`) konfirmasi setiap entri `setup_log_auto:v1` **sudah** menyimpan dasar keputusan sejak Plan U-1/W (`alignment`, `makro_alignment`, `makro_alignment_reason`, `conflict`, `conflict_note`, `conflict_source`, `sistem_hakim`) dan field ini **sudah** ikut dikirim penuh via `setup_stats?scope=auto` (`recent`, lihat `_statsPayloadFromLog`) — gap-nya murni tampilan: tabel "Riwayat Setup" cuma render 11 kolom ringkas (bukan bug baru, cuma belum pernah dibangun).
+
+- Tambah kolom expander (▸/▾) di awal tiap baris — klik baris toggle baris detail di bawahnya (`buildSetupDetail`) menampilkan field alignment/makro_alignment_reason/conflict_note/conflict_source/sistem_hakim/rr/horizon_days/model/loss_label+alasan, field null disembunyikan otomatis.
+- Tidak ada perubahan backend/skema data — murni render dari field yang sudah ada di payload.
+- Diverifikasi via Playwright MCP (server statis lokal + mock `setup_stats` 2 entri: 1 dengan field konflik penuh mirip contoh user, 1 dengan sebagian besar field null) — expand/collapse independen per baris, field null tersembunyi, tanpa JS error.
 
 ## Changelog Session 266 (2026-07-30) — Fix Parser Fundamental: 3 Bug Salah Timpa Currency/Indikator
 
