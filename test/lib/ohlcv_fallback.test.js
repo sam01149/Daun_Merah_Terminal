@@ -10,6 +10,7 @@ const {
   shouldSendYahooAlert,
   mapYahooSymbolToDeriv,
   fetchDerivLatestPrice,
+  mergeVolumeByTimestamp,
 } = require('../../api/_ohlcv_fetch.js');
 
 // ── mapYahooSymbolToTwelveData: mapping simbol ──────────────────────────────
@@ -155,6 +156,40 @@ test('fetchDerivLatestPrice: DERIV_APP_ID belum diset -> throw sebelum connect',
   delete process.env.DERIV_APP_ID;
   await assert.rejects(() => fetchDerivLatestPrice('GC=F'), /DERIV_APP_ID belum diset/);
   if (orig) process.env.DERIV_APP_ID = orig;
+});
+
+// ── mergeVolumeByTimestamp: volume Yahoo digabung ke candle Deriv (harga tetap) ──
+
+test('mergeVolumeByTimestamp: v Yahoo diambil, o/h/l/c Deriv tidak tersentuh', () => {
+  const derivCandles = [
+    { t: 1000, o: 100, h: 101, l: 99, c: 100.5, v: 0 },
+    { t: 2000, o: 100.5, h: 102, l: 100, c: 101.5, v: 0 },
+  ];
+  const yahooCandles = [
+    { t: 1000, o: 999, h: 999, l: 999, c: 999, v: 500 },
+    { t: 2000, o: 999, h: 999, l: 999, c: 999, v: 700 },
+  ];
+  const out = mergeVolumeByTimestamp(derivCandles, yahooCandles);
+  assert.equal(out[0].v, 500);
+  assert.equal(out[1].v, 700);
+  // Harga tetap milik Deriv, bukan ketimpa angka Yahoo (999 di fixture)
+  assert.equal(out[0].o, 100);
+  assert.equal(out[0].c, 100.5);
+});
+
+test('mergeVolumeByTimestamp: t tanpa pasangan di volumeCandles tetap v:0 (graceful)', () => {
+  const derivCandles = [{ t: 1000, o: 1, h: 1, l: 1, c: 1, v: 0 }];
+  const yahooCandles = [{ t: 9999, o: 1, h: 1, l: 1, c: 1, v: 123 }];
+  const out = mergeVolumeByTimestamp(derivCandles, yahooCandles);
+  assert.equal(out[0].v, 0);
+});
+
+test('mergeVolumeByTimestamp: input kosong/bukan array -> dikembalikan apa adanya, bukan crash', () => {
+  const derivCandles = [{ t: 1000, o: 1, h: 1, l: 1, c: 1, v: 0 }];
+  assert.deepEqual(mergeVolumeByTimestamp(derivCandles, null), derivCandles);
+  assert.deepEqual(mergeVolumeByTimestamp(derivCandles, []), derivCandles);
+  assert.deepEqual(mergeVolumeByTimestamp(null, [{ t: 1, v: 1 }]), null);
+  assert.deepEqual(mergeVolumeByTimestamp([], [{ t: 1, v: 1 }]), []);
 });
 
 // ── shouldSendYahooAlert: counter + cooldown (pure) ─────────────────────────

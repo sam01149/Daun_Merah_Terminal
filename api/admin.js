@@ -21,7 +21,7 @@ const cb = require('./_circuit_breaker');
 const rateLimit = require('./_ratelimit');
 const { allowAiCall } = require('./_ai_guard');
 const { requireAppKey } = require('./_app_key');
-const { fetchYahooOhlcv1h, fetchFallbackCandles, shouldSendYahooAlert, mapYahooSymbolToDeriv, fetchDerivCandles } = require('./_ohlcv_fetch');
+const { fetchYahooOhlcv1h, fetchFallbackCandles, shouldSendYahooAlert, mapYahooSymbolToDeriv, fetchDerivCandles, mergeVolumeByTimestamp } = require('./_ohlcv_fetch');
 const { buildPairContext, computeCurrencyStrength } = require('./_pair_context');
 const { validateTightenSl, computePreventiveTightenSl, _evaluateManaged, _aggManagementStats } = require('./_position_review');
 const { isDrawdownHalted, isCorrelatedExposureBlocked } = require('./_auto_entry_guard');
@@ -1765,6 +1765,13 @@ async function ohlcvSyncHandler(req, res) {
       let candles1h, source1h = 'yahoo';
       if (deriv?.candles1h) {
         candles1h = deriv.candles1h; source1h = 'deriv';
+        // Volume XAU: Deriv tidak punya volume — tarik terpisah dari Yahoo GC=F dan
+        // gabung by-timestamp (field v saja, harga Deriv tidak tersentuh). Lihat
+        // catatan lengkap di refreshOhlcvFromYahoo. Sebelum resample ke 4H supaya
+        // agregat volume 4H ikut benar.
+        if (symbol === 'GC=F') {
+          try { candles1h = mergeVolumeByTimestamp(candles1h, await fetchYahooOhlcv1h(symbol)); } catch (e) {}
+        }
       } else {
         try {
           candles1h = await fetchYahooOhlcv1h(symbol);
@@ -1780,6 +1787,9 @@ async function ohlcvSyncHandler(req, res) {
       let candles1d, source1d = 'yahoo';
       if (deriv?.candles1d) {
         candles1d = deriv.candles1d; source1d = 'deriv';
+        if (symbol === 'GC=F') {
+          try { candles1d = mergeVolumeByTimestamp(candles1d, await fetchYahooOhlcvDaily(symbol)); } catch (e) {}
+        }
       } else {
         try {
           candles1d = await fetchYahooOhlcvDaily(symbol);
@@ -2085,6 +2095,25 @@ async function refreshOhlcvFromYahoo(symbol) {
     else console.warn(`refreshOhlcvFromYahoo: Deriv 1h ${symbol} gagal (${rd1h.reason?.message}), fallback Yahoo`);
     if (rd1d.status === 'fulfilled') { candles1d = rd1d.value; source1d = 'deriv'; }
     else console.warn(`refreshOhlcvFromYahoo: Deriv 1d ${symbol} gagal (${rd1d.reason?.message}), fallback Yahoo`);
+  }
+
+  // Volume XAU (diskusi user 2026-07-30, lanjutan migrasi Deriv di atas): Deriv
+  // frxXAUUSD tidak punya volume sama sekali (v:0) — satu-satunya sumber volume
+  // riil gold adalah Yahoo GC=F futures (dipakai `computeOhlcvMetrics`/market-digest.js
+  // untuk anotasi "Volume avg/Today [HIGH/low]"). Harga tetap dari Deriv (spot, alasan
+  // migrasi di atas) — HANYA field v yang ditarik dari Yahoo dan digabung by-timestamp
+  // (`mergeVolumeByTimestamp`), o/h/l/c Deriv tidak pernah tersentuh. Ini BUKAN
+  // pelanggaran aturan anti-campur-sumber Plan P-3 di bawah (itu soal harga candle,
+  // bukan volume — volume orthogonal, tidak dipakai untuk level SL/TP/zona apa pun).
+  // Best-effort: gagal = candle Deriv tetap v:0 (graceful, sama seperti FX yang memang
+  // tidak pernah punya volume — konsumen sudah guard `v > 0`).
+  if (symbol === 'GC=F') {
+    if (candles1h) {
+      try { candles1h = mergeVolumeByTimestamp(candles1h, await fetchYahooOhlcv1h(symbol)); } catch (e) {}
+    }
+    if (candles1d) {
+      try { candles1d = mergeVolumeByTimestamp(candles1d, await fetchYahooOhlcvDaily(symbol)); } catch (e) {}
+    }
   }
 
   // Aturan anti-campur-sumber (Plan P-3): hanya minta Yahoo untuk interval yang BELUM

@@ -177,6 +177,20 @@ function mapYahooSymbolToDeriv(yahooSymbol) {
   return YAHOO_TO_DERIV_SYMBOL[yahooSymbol] || null;
 }
 
+// Gabungkan volume dari candle sumber lain (Yahoo GC=F futures / Binance PAXG) ke
+// candle Deriv (spot, primary harga sejak migrasi 2026-07-30, lihat catatan di atas)
+// — MURNI field v, harga o/h/l/c candle Deriv TIDAK PERNAH tertimpa (bukan pelanggaran
+// aturan anti-campur-sumber Plan P-3 yang soal harga; volume di sini cuma metrik
+// tambahan orthogonal, tidak dipakai untuk level SL/TP/zona). Match by epoch t — kedua
+// sumber anchor ke jam UTC bulat yang sama (diverifikasi live 2026-07-30). Candle Deriv
+// tanpa pasangan di volumeCandles tetap v:0 (graceful, konsumen sudah guard `v > 0`).
+function mergeVolumeByTimestamp(baseCandles, volumeCandles) {
+  if (!Array.isArray(baseCandles) || !baseCandles.length) return baseCandles;
+  if (!Array.isArray(volumeCandles) || !volumeCandles.length) return baseCandles;
+  const volByT = new Map(volumeCandles.map(c => [c.t, c.v || 0]));
+  return baseCandles.map(c => (volByT.has(c.t) ? { ...c, v: volByT.get(c.t) } : c));
+}
+
 // interval: '1h' | '1d' (konvensi internal app, sama dengan fetchFallbackCandles).
 // count: jumlah candle diminta — 250 (1h, ~mendekati window Yahoo range=10d untuk
 // resampleTo4h) / 140 (1d, ~mendekati Yahoo range=6mo), sama dengan outputsize
@@ -297,5 +311,6 @@ module.exports = {
   fetchYahooOhlcv1h, fetchBinancePaxg1h,
   mapYahooSymbolToTwelveData, normalizeTwelveDataCandles, fetchFallbackCandles,
   mapYahooSymbolToDeriv, fetchDerivCandles, fetchDerivLatestPrice,
+  mergeVolumeByTimestamp,
   shouldSendYahooAlert,
 };
