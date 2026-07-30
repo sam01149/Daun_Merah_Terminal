@@ -11,11 +11,40 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-07-30 (Session 265 — Verifikasi SL EUR/USD + Evaluasi Objektif Deriv vs Yahoo vs Kandidat Baru untuk 14 Pair FX)
+> **Last updated:** 2026-07-30 (Session 266 — Fix Parser Fundamental: 3 Bug Salah Timpa Currency/Indikator)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 266 (2026-07-30) — Fix Parser Fundamental: 3 Bug Salah Timpa Currency/Indikator
+
+**Konteks:** User lapor kartu Fundamental USD tiba-tiba menampilkan "NFP rilis hari ini" padahal tidak ada event NFP di kalender ekonomi (rilis asli baru 1 Agustus). Diminta cek juga apakah masalah serupa terjadi di pair/indikator lain.
+
+**Penting untuk dipahami:** fitur kartu Fundamental (`fundamental:<CUR>` di Redis) **tidak bersumber dari kalender ekonomi** — datanya auto-update dari scan headline FinancialJuice RSS setiap digest jalan (`autoUpdateFundamentals`, `api/_fundamental_parser.js`), sistem yang sepenuhnya terpisah dari `calendar_v1` (dipakai fitur lain: `fundamental_shock` loss-label, kalender di tab Analisa). Jadi headline apa pun yang menyebut indikator + angka bisa masuk, terlepas dari kalender.
+
+**Root cause & 3 bug ditemukan (audit langsung ke Redis produksi + `news_history` 48 jam):**
+1. **Currency salah tangkap** — headline "French Non-Farm Payrolls QoQ Actual -0.1..." (indikator Prancis asli, kuartalan) salah ditandai USD karena `FUND_PREFIX_MAP` cek keyword bare USD (`'non-farm payroll'` tanpa perlu ada kata "US") DULUAN sebelum nama negara eksplisit "French" sempat dicek — array USD paling depan, loop berhenti di match pertama. Sistemik: keyword bare lain (`personal spending`, `new home sales`, dst) juga rawan sama untuk pair lain.
+2. **Artikel prosa ikut ke-parse sebagai rilis** — "French June consumer spending rises 0.4% m/m vs forecast -0.1%, May revised up to 0.3%: INSEE" (kutipan berita, bukan cetakan rilis kalender, TANPA kata "Actual") ketimpa jadi `Personal Spending` USD lewat fallback regex "angka pertama di judul". Audit `news_history` produksi membuktikan SEMUA cetakan rilis asli FinancialJuice selalu pakai kata "Actual" — jadi mensyaratkan kata ini aman, tidak menghapus rilis sah manapun.
+3. **GDP YoY ketimpa ke key GDP QoQ** — kata "Prelim"/"Flash"/"Growth" di headline match ke keyword `FUND_INDICATOR_MAP` untuk `GDP QoQ` sebelum penanda y/y sempat dicek (beda dari Core PCE/Core CPI yang sudah didisambiguasi). Akibat: "French GDP QoQ Prelim Actual 0.2%" & "French GDP YoY Prelim Actual 0.7%" sama-sama masuk key `GDP QoQ` dalam satu batch HSET — siapa diproses terakhir menang, bukan berdasar isi datanya.
+
+**Bug ke-4 (efek samping, bukan root cause tapi memperparah):** field `previous` & `date` di `autoUpdateFundamentals` selalu di-reset dari objek kosong tiap HSET, jadi kalau headline yang sama masih ada di window `news_history` 36 jam saat digest jalan lagi (GH Actions 3x/hari + vps/daemon.js paralel — lihat komentar `_cron_dedup.js`), `previous` lama hilang dan `date` maju ke hari ini terus-menerus walau bukan rilis baru. Ini yang bikin data lama nyangkut tampil "rilis hari ini" berhari-hari.
+
+**Fix (`api/_fundamental_parser.js`):**
+- Currency: nama negara eksplisit menang atas keyword indikator bare generik, KHUSUS saat format headline adalah rilis kalender (ada "Forecast"/"Previous")
+- Value: headline tanpa kata "Actual" ditolak total di awal fungsi
+- Indicator: `GDP YoY` dipisah dari `GDP QoQ` (+ `GDP YoY Flash` mirror `GDP QoQ Flash`)
+- `autoUpdateFundamentals`: `previous` di-carry-forward dari entry lama kalau actual tidak berubah; `date` cuma maju kalau actual benar-benar baru
+
+6 test regresi baru di `test/lib/fundamental_parser.test.js`, 691/691 test lulus. Deployed via `git push origin main` (commit `6392823`).
+
+**Koreksi data produksi (manual, sekali jalan — bukan mekanisme baru):** tidak ada data pengganti otomatis di sistem untuk nilai yang sudah tertimpa (field `previous` ikut hilang di bug #4), jadi direkonstruksi dari sumber resmi BLS/BEA via FRED public CSV (`fredgraph.csv`, series `PAYEMS` & `PCE`, tanpa API key):
+- `fundamental:USD.NFP`: `-0.1` (salah) → `actual: "57K"`, `previous: "129K"`, rilis `2026-07-03` (delta MoM level PAYEMS Jun vs Mei, vs Mei vs Apr)
+- `fundamental:USD.Personal Spending`: `0.4%` (data Prancis, salah) → `actual: "0.7%"`, `previous: "0.4%"`, rilis `2026-06-26` (delta MoM level PCE Mei vs Apr, vs Apr vs Mar) — rilis Juni belum ada di FRED saat audit (BEA belum publish)
+
+**Insiden operasional selama sesi:** fix Redis manual pertama untuk NFP sempat KETIMPA LAGI oleh cron digest berikutnya sebelum kode fix ter-deploy (headline Prancis masih ada di window 36 jam `news_history`, kode lama masih jalan di produksi). Pelajaran: patch data manual untuk root-cause di kode HARUS setelah `git push` sukses, bukan sebelum — kalau tidak, cron berikutnya menimpa ulang dengan bug yang sama. NFP di-reapply setelah deploy dikonfirmasi live.
+
+**Audit tambahan (tidak ada aksi, dicatat sebagai referensi):** scan seluruh 318 entri fundamental 8 currency untuk kata-negara yang tidak cocok bucket-nya — nihil, NFP & Personal Spending adalah satu-satunya insiden aktif. `EUR|Unemployment Rate` menampilkan Eurozone-aggregate vs rilis nasional Italia silih berganti — ini karakteristik desain lama (semua negara Eurozone digabung 1 bucket "EUR"), bukan bug baru, tidak diubah.
 
 ## Changelog Session 265 (2026-07-30) — Verifikasi SL EUR/USD + Evaluasi Objektif Deriv vs Yahoo vs Kandidat Baru untuk 14 Pair FX
 
