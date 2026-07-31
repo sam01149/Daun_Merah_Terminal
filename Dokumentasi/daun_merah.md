@@ -36,9 +36,9 @@ Entri yang melanggar = salah tempat, wajib dipindah.
   - CB Bias: pill per currency (reuse class `.cb-bias.*` + `CB_BIAS_CLASS` — di-hoist dari lokal `renderCBTracker` ke scope global supaya dipakai bersama tanpa duplikasi); XAU selalu "—" (Gold tidak punya bank sentral, permanen bukan bug).
   - Di-hook ke `initTeknikal()`, `selectTekPair()`, dan callback `fetchCOT()`/`renderRetailSentiment()`/`fetchCBStatus()` supaya section tetap sinkron kalau data di-refresh dari tab lain.
 - **Grid 2-kolom (desktop/tablet `min-width:720px` saja — mobile tetap 1 kolom, tidak ada perubahan tampilan HP):**
-  - `.tek-news-grid` (Berita Terkait): CSS grid 2 kolom, elemen non-kartu (tombol load-more, penanda arsip, pesan kosong) di-`grid-column:1/-1` supaya tetap full-width.
   - `.corr-anomaly-grid` (Anomali Korelasi): CSS grid 2 kolom.
   - `.corr-goldrows-grid` (tabel korelasi Gold di XAU/USD): `column-count:2` + `break-inside:avoid` per baris (list baris, bukan kartu — beda teknik dari grid supaya rating antar-baris tetap presisi, hanya mengisi ruang kosong horizontal).
+  - Berita Terkait sempat dicoba grid 2 kolom juga, tapi DIBATALKAN lanjutan sesi sama (lihat di bawah) — tetap vertikal 1 kolom seperti semula.
 
 **Test:** file baru `test/frontend/cot_retail_verdict.test.js` (9 test — `COT_RETAIL_PAIRS` 7 pair, null-guard, 3 skenario badge konfluensi, flip `usdBase` USDJPY, `computeCotOnlyLean` 3 arah). 707/707 test lulus (`npm test`).
 
@@ -47,6 +47,11 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 **Bump:** `APP_VERSION` `2026.07.29.4` → `2026.07.31.1`.
 
 **Ditunda (dicatat di `daun_merah_progress.md`):** COT Gold via laporan CFTC "Disaggregated Futures-Only" — butuh parser kedua + pemetaan kategori Managed Money≈Leveraged Funds, effort & risiko lebih besar dari estimasi awal.
+
+**Lanjutan sesi sama — 2 revisi setelah user cek hasil:**
+1. **Label retail-only XAU diperjelas.** User lapor `"Retail Lean Short (kontrarian)"` tidak jelas buat orang awam (istilah "lean"/"kontrarian" butuh pengetahuan trading dulu). Diganti eksplisit — persentase + implikasi arah langsung di teks badge (mis. `"Retail 68% Short — Rawan Naik"`), bukan lagi menaruh penjelasan di tooltip saja (tooltip gampang terlewat, apalagi di mobile/touch).
+2. **Berita Terkait dibatalkan dari grid, dikembalikan vertikal** — user cuma minta koreksi bagian ini, Anomali Korelasi & tabel korelasi Gold TETAP grid 2 kolom (tidak diminta diubah).
+3. **CB Bias (Hawkish/Dovish/dst) ditanya user apakah juga perlu diperjelas** — dijelaskan bahwa istilah itu BUKAN teks baru sesi ini, sudah dipakai konsisten di Dashboard/Ringkasan/Analisa/tab COT sejak lama; user pilih **biarkan apa adanya** (mengubah cuma di TEK akan bikin tidak konsisten antar-tab; kalau mau diperjelas, itu perubahan lingkup besar di semua tempat, bukan hari ini).
 
 ## Changelog Session 268 (2026-07-30) — Migrasi Harga Acuan XAU/USD: Yahoo GC=F (Futures) → Deriv frxXAUUSD (Spot)
 
