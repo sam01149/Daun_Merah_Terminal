@@ -2307,8 +2307,13 @@ body.light-theme .cal-date-input { color-scheme: light; }
 }
 .tek-pb-cb-cur { font: 700 10px 'Syne',sans-serif; color: var(--text-mid); }
 .tek-pb-empty { font: 10px 'DM Mono',monospace; color: var(--muted); font-style: italic; }
+/* Desktop/tablet: badge & CB Bias sejajar 2 kolom (isi ruang kosong horizontal) —
+   mobile tetap stacked vertikal (judul, badge, lalu pill CB), tidak berubah. */
 @media (min-width: 720px) {
-  .tek-pb-cb-row { max-width: 420px; }
+  .tek-pb-wrap { display: grid; grid-template-columns: 1fr 1fr; column-gap: 16px; grid-template-areas: "hdr hdr" "cot cb"; }
+  .tek-pb-hdr { grid-area: hdr; }
+  .tek-pb-cot-row { grid-area: cot; margin-bottom: 0; display: flex; align-items: center; }
+  .tek-pb-cb-row { grid-area: cb; }
 }
 
 .tek-note-wrap { padding: 4px 0 8px; }
