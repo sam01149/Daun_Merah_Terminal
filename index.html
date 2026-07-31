@@ -9789,8 +9789,8 @@ function renderTekPosisiBias() {
     const lean = computeCotOnlyLean(base, quote);
     if (lean) {
       const cls   = lean.dir === 'long' ? 'strong-up' : lean.dir === 'short' ? 'strong-down' : 'neutral';
-      const label = lean.dir === 'long' ? `COT: ${base} condong naik vs ${quote}` : lean.dir === 'short' ? `COT: ${base} condong turun vs ${quote}` : 'COT: Belum Jelas';
-      cotHtml = `<span class="div-badge ${cls}" title="Net posisi spekulan besar (Leveraged Funds) ${base} vs ${quote}. Retail sentiment tidak tersedia untuk pair silang.">${label}</span>`;
+      const label = lean.dir === 'long' ? `Institusional ${base} Naik vs ${quote}` : lean.dir === 'short' ? `Institusional ${base} Turun vs ${quote}` : 'Institusional Belum Jelas';
+      cotHtml = `<span class="div-badge ${cls}" title="Net posisi spekulan besar (Leveraged Funds, data COT CFTC) ${base} vs ${quote}. Retail sentiment tidak tersedia untuk pair silang.">${label}</span>`;
     } else {
       cotHtml = `<span class="tek-pb-empty">Memuat data COT...</span>`;
     }
