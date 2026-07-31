@@ -2326,16 +2326,6 @@ body.light-theme .cal-date-input { color-scheme: light; }
   font: 12px 'DM Mono',monospace; resize: vertical; outline: none; transition: border-color .15s;
 }
 .tek-note-wrap textarea:focus { border-color: #38bdf8; }
-/* Grid 2 kolom di layar lebar — di HP tetap stacked normal, tidak ada perubahan.
-   Elemen non-kartu (tombol load-more, penanda arsip, pesan kosong) sengaja
-   span 2 kolom supaya tidak ikut kepotong jadi setengah lebar. */
-@media (min-width: 720px) {
-  .tek-news-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 10px; align-items: start; }
-  .tek-news-grid .tek-news-item { margin-bottom: 0; }
-  .tek-news-grid > .feed-loadmore-btn,
-  .tek-news-grid > .feed-history-end,
-  .tek-news-grid > .tek-news-empty { grid-column: 1 / -1; }
-}
 /* ── TA Indicator Panel ── */
 .tek-ta-panel { padding: 8px 14px; border-bottom: 1px solid var(--border); flex-shrink: 0; background: var(--surface); }
 .tek-ta-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; }
@@ -9778,9 +9768,13 @@ function renderTekPosisiBias() {
     // laporan Financial Futures yang dipakai app ini) — retail FXSSI tetap ada.
     const ret = retailData?.positions?.XAUUSD;
     if (ret) {
+      // Label ditulis eksplisit (angka + implikasi arah) — hindari istilah "kontrarian/lean"
+      // yang tidak jelas buat user awam tanpa baca tooltip dulu.
       const cls   = ret.signal === 'CONTRARIAN_LONG' ? 'strong-up' : ret.signal === 'CONTRARIAN_SHORT' ? 'strong-down' : 'neutral';
-      const label = ret.signal === 'CONTRARIAN_LONG' ? 'Retail Lean Long (kontrarian)' : ret.signal === 'CONTRARIAN_SHORT' ? 'Retail Lean Short (kontrarian)' : 'Retail Netral';
-      cotHtml = `<span class="div-badge ${cls}" title="Retail ${ret.long_pct}% long / ${ret.short_pct}% short. Data COT Gold belum tersedia di app ini.">${label}</span>`;
+      const label = ret.signal === 'CONTRARIAN_LONG' ? `Retail ${ret.short_pct}% Short — Rawan Naik`
+                  : ret.signal === 'CONTRARIAN_SHORT' ? `Retail ${ret.long_pct}% Long — Rawan Turun`
+                  : `Retail Netral (${ret.long_pct}% Long / ${ret.short_pct}% Short)`;
+      cotHtml = `<span class="div-badge ${cls}" title="Mayoritas trader retail menumpuk di satu arah — pasar cenderung berbalik melawan mayoritas (mean reversion). Data COT Gold belum tersedia di app ini.">${label}</span>`;
     } else {
       cotHtml = `<span class="tek-pb-empty">Memuat data retail...</span>`;
     }
@@ -15933,8 +15927,7 @@ function renderTekNews() {
     + '<span class="tek-news-hdr-title">Berita Terkait</span>'
     + '<span class="tek-news-hdr-pair">' + pairLabel + '</span>'
     + '</div>'
-    + '<div style="font:9px \'DM Mono\',monospace;color:var(--muted);margin-bottom:4px;opacity:.7">Artikel AF · tek bisa diklik untuk detail teknikal lengkap</div>'
-    + '<div class="tek-news-grid">';
+    + '<div style="font:9px \'DM Mono\',monospace;color:var(--muted);margin-bottom:4px;opacity:.7">Artikel AF · tek bisa diklik untuk detail teknikal lengkap</div>';
 
   // ActionForex technical outlook — pinned at top
   const af = tekAFCache[tekPair];
@@ -16008,8 +16001,6 @@ function renderTekNews() {
   } else if (!af || !af.items.length) {
     html += '<div class="tek-news-empty">Fetch news terlebih dahulu di tab NEWS.</div>';
   }
-
-  html += '</div>'; // tutup .tek-news-grid
 
   sec.innerHTML = html;
 }
