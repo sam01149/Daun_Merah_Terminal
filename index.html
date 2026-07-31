@@ -9666,9 +9666,17 @@ function computeCotRetailVerdict(pairKey) {
   const cotNetPair = usdBase ? -(bNet - (qNet || 0)) : (bNet - (qNet || 0));
   const cotDir     = cotNetPair > 1000 ? 'long' : cotNetPair < -1000 ? 'short' : 'netral';
 
-  // Arah Retail (kontrarian): retail long > 60% → sinyal turun, short > 60% → sinyal naik
+  // Arah Retail (kontrarian): pakai signal resmi dari server (threshold 65%/35%,
+  // sama persis dgn panel retail & dashboard — lihat parseRetailPositions di
+  // api/feeds.js) — JANGAN hitung ulang pakai threshold sendiri di sini. Bug lama:
+  // recompute pakai cutoff 60% bikin badge ini "nyala" (Dorongan/Divergensi) untuk
+  // pair yang panel retailnya sendiri masih bilang NEUTRAL (mis. 62% dianggap
+  // sinyal di sini tapi di bawah 65% jadi netral di tempat lain) — dua bacaan
+  // beda untuk data yang sama, ketauan pas user lihat "kebanyakan retail ngesel".
   const { long_pct, short_pct } = ret;
-  const retDir = long_pct >= 60 ? 'short_signal' : short_pct >= 60 ? 'long_signal' : 'netral';
+  const retDir = ret.signal === 'CONTRARIAN_SHORT' ? 'short_signal'
+               : ret.signal === 'CONTRARIAN_LONG'  ? 'long_signal'
+               : 'netral';
 
   let badge = '', badgeCls = '', desc = '';
   if (cotDir === 'long' && retDir === 'long_signal') {
@@ -9768,13 +9776,11 @@ function renderTekPosisiBias() {
     // laporan Financial Futures yang dipakai app ini) — retail FXSSI tetap ada.
     const ret = retailData?.positions?.XAUUSD;
     if (ret) {
-      // Label ditulis eksplisit (angka + implikasi arah) — hindari istilah "kontrarian/lean"
-      // yang tidak jelas buat user awam tanpa baca tooltip dulu.
+      // Label singkat "Bias X" (selaras istilah "Posisi & Bias"/"CB Bias" yang sudah
+      // dipakai di judul section & pill sebelahnya) — detail persen & alasan cukup di tooltip.
       const cls   = ret.signal === 'CONTRARIAN_LONG' ? 'strong-up' : ret.signal === 'CONTRARIAN_SHORT' ? 'strong-down' : 'neutral';
-      const label = ret.signal === 'CONTRARIAN_LONG' ? `Retail ${ret.short_pct}% Short — Rawan Naik`
-                  : ret.signal === 'CONTRARIAN_SHORT' ? `Retail ${ret.long_pct}% Long — Rawan Turun`
-                  : `Retail Netral (${ret.long_pct}% Long / ${ret.short_pct}% Short)`;
-      cotHtml = `<span class="div-badge ${cls}" title="Mayoritas trader retail menumpuk di satu arah — pasar cenderung berbalik melawan mayoritas (mean reversion). Data COT Gold belum tersedia di app ini.">${label}</span>`;
+      const label = ret.signal === 'CONTRARIAN_LONG' ? 'Bias Naik' : ret.signal === 'CONTRARIAN_SHORT' ? 'Bias Turun' : 'Bias Netral';
+      cotHtml = `<span class="div-badge ${cls}" title="Retail ${ret.long_pct}% long / ${ret.short_pct}% short — mayoritas menumpuk di satu arah, pasar cenderung berbalik melawan mayoritas (mean reversion). Data COT Gold belum tersedia di app ini.">${label}</span>`;
     } else {
       cotHtml = `<span class="tek-pb-empty">Memuat data retail...</span>`;
     }

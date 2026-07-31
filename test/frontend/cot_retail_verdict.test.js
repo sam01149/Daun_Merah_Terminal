@@ -46,10 +46,22 @@ test('computeCotRetailVerdict: null kalau cotData/retailData belum ada', () => {
 test('computeCotRetailVerdict: null untuk pair yang tidak ada di COT_RETAIL_PAIRS (mis. cross/XAUUSD)', () => {
   api.set({
     cotData: { positions: { EUR: { lev_net: 5000 }, USD: { lev_net: -5000 } } },
-    retailData: { positions: { EURUSD: { long_pct: 40, short_pct: 60, signal: 'CONTRARIAN_LONG' } } },
+    retailData: { positions: { EURUSD: { long_pct: 40, short_pct: 60, signal: 'NEUTRAL' } } },
   });
   assert.strictEqual(api.computeCotRetailVerdict('EURGBP'), null);
   assert.strictEqual(api.computeCotRetailVerdict('XAUUSD'), null);
+});
+
+test('computeCotRetailVerdict: retDir HARUS ikut signal server (65%/35%), bukan hitung ulang threshold sendiri — bug S270 lanjutan (data live 2026-07-31: EURUSD/GBPUSD/USDJPY/USDCAD/AUDUSD semua 58-62% short, di bawah 65% jadi NEUTRAL di panel retail, tapi badge ini sempat salah menganggapnya sinyal karena pakai cutoff 60%)', () => {
+  api.set({
+    cotData: { positions: { EUR: { lev_net: 20000 }, USD: { lev_net: -5000 } } }, // cotDir 'long'
+    retailData: { positions: { EURUSD: { long_pct: 38, short_pct: 62, signal: 'NEUTRAL' } } }, // server: NEUTRAL (38 > 35)
+  });
+  const v = api.computeCotRetailVerdict('EURUSD');
+  // retDir harus 'netral' (ikut signal), BUKAN 'long_signal' (yang akan terjadi kalau masih pakai cutoff 60%
+  // lama: short_pct 62 >= 60 -> long_signal -> badge keliru jadi 'Divergensi Naik').
+  assert.strictEqual(v.badge, 'Belum Jelas');
+  assert.strictEqual(v.badgeCls, 'neutral');
 });
 
 test('computeCotRetailVerdict: Dorongan Naik Kuat — COT long + retail menumpuk short (kontrarian long)', () => {
