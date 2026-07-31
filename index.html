@@ -296,6 +296,14 @@ body {
 .corr-anomaly-more summary { font-size:9px; color:var(--muted); font-family:'DM Mono',monospace; cursor:pointer; padding:4px 0; list-style:none; }
 .corr-anomaly-more summary::before { content:'▸ '; }
 .corr-anomaly-more[open] summary::before { content:'▾ '; }
+/* Grid 2 kolom di layar lebar (mengisi ruang kosong horizontal) — di HP tetap
+   stacked normal 1 kolom seperti sebelumnya, tidak ada perubahan. */
+@media (min-width: 720px) {
+  .corr-anomaly-grid { display:grid; grid-template-columns:1fr 1fr; gap:5px 10px; align-items:start; }
+  .corr-anomaly-grid .corr-anomaly { margin-bottom:0; }
+  .corr-goldrows-grid { column-count:2; column-gap:0; }
+  .corr-goldrows-grid .corr-text-row { break-inside:avoid; }
+}
 
 /* US LABOUR MARKET (blok di dalam detail USD — fd overlay) */
 .fund-labour-hdr { display:flex; align-items:center; gap:6px 10px; flex-wrap:wrap; margin-bottom:10px; font-family:'DM Mono',monospace; }
@@ -2282,6 +2290,27 @@ body.light-theme .cal-date-input { color-scheme: light; }
 .tek-yield-lbl { font-size: 9px; color: var(--muted); letter-spacing: .04em; }
 .tek-yield-val { font-size: 11px; font-weight: 700; color: var(--text); }
 .tek-yield-hint { font-size: 9px; color: var(--muted); margin-left: 4px; }
+/* ── POSISI & BIAS (tab TEK) ── */
+.tek-pb-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; }
+.tek-pb-hdr { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.tek-pb-title { font: 700 9px 'Syne',sans-serif; color: var(--muted); letter-spacing: .1em; text-transform: uppercase; }
+.tek-pb-detail-btn {
+  background: none; border: 1px solid var(--border); color: var(--text-mid); cursor: pointer;
+  font: 9px 'DM Mono',monospace; padding: 3px 8px; border-radius: 4px; transition: color .15s, border-color .15s;
+}
+.tek-pb-detail-btn:hover { color: #38bdf8; border-color: #38bdf8; }
+.tek-pb-cot-row { margin-bottom: 8px; }
+.tek-pb-cb-row { display: flex; gap: 8px; }
+.tek-pb-cb-cell {
+  flex: 1; display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  background: rgba(var(--fg-rgb),.03); border-radius: 6px; padding: 6px 9px;
+}
+.tek-pb-cb-cur { font: 700 10px 'Syne',sans-serif; color: var(--text-mid); }
+.tek-pb-empty { font: 10px 'DM Mono',monospace; color: var(--muted); font-style: italic; }
+@media (min-width: 720px) {
+  .tek-pb-cb-row { max-width: 420px; }
+}
+
 .tek-note-wrap { padding: 4px 0 8px; }
 .tek-note-label { font: 9px 'DM Mono',monospace; color: var(--muted); margin-bottom: 5px; letter-spacing: .08em; text-transform: uppercase; }
 .tek-note-auto-btn {
@@ -2297,6 +2326,16 @@ body.light-theme .cal-date-input { color-scheme: light; }
   font: 12px 'DM Mono',monospace; resize: vertical; outline: none; transition: border-color .15s;
 }
 .tek-note-wrap textarea:focus { border-color: #38bdf8; }
+/* Grid 2 kolom di layar lebar — di HP tetap stacked normal, tidak ada perubahan.
+   Elemen non-kartu (tombol load-more, penanda arsip, pesan kosong) sengaja
+   span 2 kolom supaya tidak ikut kepotong jadi setengah lebar. */
+@media (min-width: 720px) {
+  .tek-news-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 10px; align-items: start; }
+  .tek-news-grid .tek-news-item { margin-bottom: 0; }
+  .tek-news-grid > .feed-loadmore-btn,
+  .tek-news-grid > .feed-history-end,
+  .tek-news-grid > .tek-news-empty { grid-column: 1 / -1; }
+}
 /* ── TA Indicator Panel ── */
 .tek-ta-panel { padding: 8px 14px; border-bottom: 1px solid var(--border); flex-shrink: 0; background: var(--surface); }
 .tek-ta-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; }
@@ -3948,6 +3987,7 @@ body:not(.light-theme) .ringkasan-gen-btn {
     <div class="tek-ta-grid" id="tekTaGrid" style="display:none"></div>
   </div>
   <div class="tek-mtf-section">
+    <div id="tekPosisiBiasSection" style="margin-bottom:12px"></div>
     <div class="tek-note-wrap">
       <div class="tek-note-label">Catatan analisa <button class="tek-note-auto-btn" id="tekNoteAutoBtn" onclick="autoFillTekNote()" title="Isi/ganti catatan dengan ringkasan otomatis dari data Makro/Swing/Entry">↻ Auto</button></div>
       <textarea id="tekNote" placeholder="Key levels, setup yang dipantau, atau catatan sesi..." oninput="saveTekNote()"></textarea>
@@ -4338,7 +4378,7 @@ window.addEventListener('DOMContentLoaded', updateThemeIcon);
 
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.07.29.4';
+const APP_VERSION = '2026.07.31.1';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
@@ -4429,6 +4469,16 @@ let fundFetchedAt = 0;
 // CB Tracker state
 let cbData        = null;
 let cbFetchedAt   = 0;
+const CB_BIAS_CLASS = {
+  'Hawkish':          'hawkish',
+  'Cautious Hawkish': 'cautious-hawkish',
+  'Neutral':          'neutral',
+  'Data Dependent':   'data-dependent',
+  'On Hold':          'on-hold',
+  'Cautious Dovish':  'cautious-dovish',
+  'Dovish':           'dovish',
+  'Split':            'split',
+};
 
 // ── Kunci Akses (APP_KEY) — pasangan gate server di api/_app_key.js ──────────
 // Semua fetch ke /api/* otomatis membawa header x-app-key dari localStorage.
@@ -7516,6 +7566,7 @@ async function fetchCBStatus() {
     cbFetchedAt = Date.now();
     renderCBTracker();
     fetchCbShock(); // fire-and-forget (plan G6) — re-render saat data shock tiba
+    renderTekPosisiBias();
     const _cbSel = document.getElementById('ckPairSelector');
     if (_cbSel && _cbSel.value) ckAutoTickRegimeCheck(_cbSel.value);
   } catch(e) {
@@ -7567,16 +7618,6 @@ function renderCBTracker() {
   const grid = document.getElementById('cbGrid');
   if (!cbData || cbData.length === 0) return;
 
-  const BIAS_CLASS = {
-    'Hawkish':          'hawkish',
-    'Cautious Hawkish': 'cautious-hawkish',
-    'Neutral':          'neutral',
-    'Data Dependent':   'data-dependent',
-    'On Hold':          'on-hold',
-    'Cautious Dovish':  'cautious-dovish',
-    'Dovish':           'dovish',
-    'Split':            'split',
-  };
   const CONF_COL = { 'High': 'var(--green)', 'Medium': '#e67e22', 'Low': 'var(--accent)' };
   const CUR_COL  = { USD:'#60a5fa', EUR:'#c0392b', GBP:'#a78bfa', JPY:'#ffd32a', CAD:'#ff6b35', AUD:'#00c896', NZD:'#34d399', CHF:'#ff4757' };
 
@@ -7584,7 +7625,7 @@ function renderCBTracker() {
     const decisionText  = cb.last_bps > 0 ? '+' + cb.last_bps + 'bps' : cb.last_bps < 0 ? cb.last_bps + 'bps' : 'Hold';
     const decisionClass = cb.last_bps > 0 ? 'hike' : cb.last_bps < 0 ? 'cut' : 'hold';
     const biasLabel     = cb.bias || '—';
-    const biasClass     = cb.bias ? (BIAS_CLASS[cb.bias] || 'unknown') : 'unknown';
+    const biasClass     = cb.bias ? (CB_BIAS_CLASS[cb.bias] || 'unknown') : 'unknown';
     const col           = CUR_COL[cb.currency] || '#888';
 
     const liveDot = cb.rate_source && cb.rate_source !== 'fallback'
@@ -8311,7 +8352,7 @@ function renderCorrelations() {
   // per aset: nama + kalimat awam (corrWord) + angka r20/r60 mentah untuk yang mau detail.
   if (tekPair === 'XAUUSD' && gold_correlations && Object.keys(gold_correlations).length > 0) {
     html += `<div style="font-size:9px;color:var(--muted);font-family:'DM Mono',monospace;letter-spacing:.08em;margin:8px 0 5px">XAU/USD · KORELASI CROSS-ASSET</div>`;
-    html += `<div style="background:var(--surface);border:1px solid var(--border);border-radius:3px;overflow:hidden;margin-bottom:10px">`;
+    html += `<div class="corr-goldrows-grid" style="background:var(--surface);border:1px solid var(--border);border-radius:3px;overflow:hidden;margin-bottom:10px">`;
     const goldOrder = ['DXY','US10Y','Silver','Copper','WTI','SPX','VIX','JPY','AUD','EUR'];
     for (const asset of goldOrder) {
       const g = gold_correlations[asset];
@@ -8342,9 +8383,9 @@ function renderCorrelations() {
         <div class="corr-anomaly-read">${_anomalyReadable(a)}</div>
       </div>`;
     };
-    html += anomalies.slice(0, 5).map(renderAnomaly).join('');
+    html += `<div class="corr-anomaly-grid">${anomalies.slice(0, 5).map(renderAnomaly).join('')}</div>`;
     if (anomalies.length > 5) {
-      html += `<details class="corr-anomaly-more"><summary>lihat semua (${anomalies.length})</summary>${anomalies.slice(5).map(renderAnomaly).join('')}</details>`;
+      html += `<details class="corr-anomaly-more"><summary>lihat semua (${anomalies.length})</summary><div class="corr-anomaly-grid">${anomalies.slice(5).map(renderAnomaly).join('')}</div></details>`;
     }
   }
 
@@ -9537,6 +9578,7 @@ function renderRetailSentiment() {
   }
   renderDashRetail();
   renderCotDivergenceMatrix(); // perbarui matriks divergensi saat retail data tiba
+  renderTekPosisiBias();
 }
 
 // Versi ringkas retail sentiment untuk kolom kanan dashboard — sort by
@@ -9589,6 +9631,7 @@ async function fetchCOT() {
     renderCotDivergenceMatrix();               // peta divergensi spekulan vs retail
     cotRenderTrendBadges();                    // badge tren 4W (async, fire-and-forget)
     if (retailData) renderRetailSentiment();   // refresh badge konfluensi retail×COT
+    renderTekPosisiBias();
     const _cotSel = document.getElementById('ckPairSelector');
     if (_cotSel && _cotSel.value) ckAutoTickRegimeCheck(_cotSel.value);
   } catch(e) {
@@ -9602,67 +9645,95 @@ async function fetchCOT() {
 // Membandingkan arah net posisi Leveraged Funds (COT CFTC) dengan sentimen
 // retail FXSSI untuk major pair. Secara kontrarian, sinyal terkuat muncul
 // ketika spekulan besar dan retail bergerak ke arah berlawanan.
+// Dipakai matriks tab COT (semua 7 pair) + section "Posisi & Bias" tab TEK
+// (1 pair aktif) — satu sumber logika, jangan duplikasi.
+const COT_RETAIL_PAIRS = {
+  EURUSD: { base: 'EUR', quote: 'USD', label: 'EUR/USD', color: '#c0392b' },
+  GBPUSD: { base: 'GBP', quote: 'USD', label: 'GBP/USD', color: '#a78bfa' },
+  USDJPY: { base: 'USD', quote: 'JPY', label: 'USD/JPY', color: '#ffd32a', usdBase: true },
+  USDCAD: { base: 'USD', quote: 'CAD', label: 'USD/CAD', color: '#ff6b35', usdBase: true },
+  AUDUSD: { base: 'AUD', quote: 'USD', label: 'AUD/USD', color: '#00c896' },
+  NZDUSD: { base: 'NZD', quote: 'USD', label: 'NZD/USD', color: '#34d399' },
+  USDCHF: { base: 'USD', quote: 'CHF', label: 'USD/CHF', color: '#ff4757', usdBase: true },
+};
+
+// Null kalau data COT/retail belum ada untuk pair ini (mis. XAUUSD — COT Gold
+// belum tersedia, lihat COT_SOCRATA_MARKETS di api/feeds.js).
+function computeCotRetailVerdict(pairKey) {
+  const cfg = COT_RETAIL_PAIRS[pairKey];
+  if (!cfg || !cotData?.positions || !retailData?.positions) return null;
+  const { base, quote, usdBase } = cfg;
+  const bPos = cotData.positions[base];
+  const qPos = cotData.positions[quote];
+  const ret  = retailData.positions?.[pairKey];
+  if (!bPos || !ret) return null;
+
+  const bNet = bPos.lev_net ?? bPos.net ?? null;
+  const qNet = qPos ? (qPos.lev_net ?? qPos.net ?? null) : 0;
+  if (bNet === null) return null;
+
+  // net positif = spekulan besar net long base vs quote
+  const cotNetPair = usdBase ? -(bNet - (qNet || 0)) : (bNet - (qNet || 0));
+  const cotDir     = cotNetPair > 1000 ? 'long' : cotNetPair < -1000 ? 'short' : 'netral';
+
+  // Arah Retail (kontrarian): retail long > 60% → sinyal turun, short > 60% → sinyal naik
+  const { long_pct, short_pct } = ret;
+  const retDir = long_pct >= 60 ? 'short_signal' : short_pct >= 60 ? 'long_signal' : 'netral';
+
+  let badge = '', badgeCls = '', desc = '';
+  if (cotDir === 'long' && retDir === 'long_signal') {
+    badge = 'Dorongan Naik Kuat'; badgeCls = 'strong-up';
+    desc = 'Spekulan besar beli, retail menumpuk short — arah naik terkonfirmasi dari dua sisi (institusi + kontrarian).';
+  } else if (cotDir === 'short' && retDir === 'short_signal') {
+    badge = 'Dorongan Turun Kuat'; badgeCls = 'strong-down';
+    desc = 'Spekulan besar jual, retail menumpuk long — arah turun terkonfirmasi dari dua sisi (institusi + kontrarian).';
+  } else if (cotDir === 'long' && retDir === 'short_signal') {
+    badge = 'Divergensi Naik'; badgeCls = 'strong-up';
+    desc = 'Spekulan besar beli, tetapi retail juga menumpuk long — sinyal kontrarian melemah.';
+  } else if (cotDir === 'short' && retDir === 'long_signal') {
+    badge = 'Divergensi Turun'; badgeCls = 'strong-down';
+    desc = 'Spekulan besar jual, tetapi retail juga menumpuk short — sinyal kontrarian melemah.';
+  } else {
+    badge = 'Belum Jelas'; badgeCls = 'neutral';
+    desc = 'Posisi belum terakumulasi ke satu arah yang jelas.';
+  }
+
+  return { badge, badgeCls, desc, cotNetPair, long_pct, short_pct };
+}
+
+// Fallback untuk pair silang (non-major) — retail FXSSI tidak menyediakan data
+// cross pair, tapi COT tetap bisa dibandingkan per-currency (base vs quote).
+function computeCotOnlyLean(base, quote) {
+  if (!cotData?.positions) return null;
+  const bPos = cotData.positions[base];
+  const qPos = cotData.positions[quote];
+  if (!bPos || !qPos) return null;
+  const bNet = bPos.lev_net ?? bPos.net ?? null;
+  const qNet = qPos.lev_net ?? qPos.net ?? null;
+  if (bNet == null || qNet == null) return null;
+  const net = bNet - qNet;
+  const dir = net > 1000 ? 'long' : net < -1000 ? 'short' : 'netral';
+  return { dir, net };
+}
+
 function renderCotDivergenceMatrix() {
   const el = document.getElementById('cotDivergenceSection');
   if (!el) return;
   if (!cotData?.positions || !retailData?.positions) { el.innerHTML = ''; return; }
 
-  // Pair yang dievaluasi: base → quote → pair key di retailData
-  const PAIRS = [
-    { base: 'EUR', quote: 'USD', retailKey: 'EURUSD', label: 'EUR/USD', color: '#c0392b' },
-    { base: 'GBP', quote: 'USD', retailKey: 'GBPUSD', label: 'GBP/USD', color: '#a78bfa' },
-    { base: 'USD', quote: 'JPY', retailKey: 'USDJPY', label: 'USD/JPY', color: '#ffd32a', usdBase: true },
-    { base: 'AUD', quote: 'USD', retailKey: 'AUDUSD', label: 'AUD/USD', color: '#00c896' },
-  ];
-
   let rows = '';
   let hasAny = false;
 
-  PAIRS.forEach(({ base, quote, retailKey, label, color, usdBase }) => {
-    const bPos = cotData.positions[base];
-    const qPos = cotData.positions[quote];
-    const ret  = retailData.positions?.[retailKey];
-    if (!bPos || !ret) return;
-
-    // Arah COT Lev Funds: hitung net posisi base vs quote
-    const bNet = bPos.lev_net ?? bPos.net ?? null;
-    const qNet = qPos ? (qPos.lev_net ?? qPos.net ?? null) : 0;
-    if (bNet === null) return;
-
-    // net positif = spekulan besar net long base vs quote
-    const cotNetPair = usdBase ? -(bNet - (qNet || 0)) : (bNet - (qNet || 0));
-    const cotDir     = cotNetPair > 1000 ? 'long' : cotNetPair < -1000 ? 'short' : 'netral';
-
-    // Arah Retail (kontrarian): retail long > 60% → sinyal turun, short > 60% → sinyal naik
-    const { long_pct, short_pct } = ret;
-    const retDir = long_pct >= 60 ? 'short_signal' : short_pct >= 60 ? 'long_signal' : 'netral';
-
-    // Keselarasan: COT long & retail net short signal = DORONGAN NAIK KUAT, dll.
-    let badge = '', badgeCls = '', desc = '';
-    if (cotDir === 'long' && retDir === 'long_signal') {
-      badge = 'Dorongan Naik Kuat'; badgeCls = 'strong-up';
-      desc = 'Spekulan besar beli, retail menumpuk short — arah naik terkonfirmasi dari dua sisi (institusi + kontrarian).';
-    } else if (cotDir === 'short' && retDir === 'short_signal') {
-      badge = 'Dorongan Turun Kuat'; badgeCls = 'strong-down';
-      desc = 'Spekulan besar jual, retail menumpuk long — arah turun terkonfirmasi dari dua sisi (institusi + kontrarian).';
-    } else if (cotDir === 'long' && retDir === 'short_signal') {
-      badge = 'Divergensi Naik'; badgeCls = 'strong-up';
-      desc = 'Spekulan besar beli, tetapi retail juga menumpuk long — sinyal kontrarian melemah.';
-    } else if (cotDir === 'short' && retDir === 'long_signal') {
-      badge = 'Divergensi Turun'; badgeCls = 'strong-down';
-      desc = 'Spekulan besar jual, tetapi retail juga menumpuk short — sinyal kontrarian melemah.';
-    } else {
-      badge = 'Belum Jelas'; badgeCls = 'neutral';
-      desc = 'Posisi belum terakumulasi ke satu arah yang jelas.';
-    }
-
+  Object.entries(COT_RETAIL_PAIRS).forEach(([pairKey, { label, color }]) => {
+    const v = computeCotRetailVerdict(pairKey);
+    if (!v) return;
     hasAny = true;
     const fmtNet = n => n >= 0 ? '+' + Math.round(n / 1000) + 'K' : Math.round(n / 1000) + 'K';
     rows += `<tr>
       <td><span style="color:${color};font-weight:700">${label}</span></td>
-      <td style="color:var(--text-mid);font-size:10px">${fmtNet(cotNetPair)}</td>
-      <td style="color:var(--text-mid);font-size:10px">${long_pct}% L / ${short_pct}% S</td>
-      <td><span class="div-badge ${badgeCls}" title="${desc}">${badge}</span></td>
+      <td style="color:var(--text-mid);font-size:10px">${fmtNet(v.cotNetPair)}</td>
+      <td style="color:var(--text-mid);font-size:10px">${v.long_pct}% L / ${v.short_pct}% S</td>
+      <td><span class="div-badge ${v.badgeCls}" title="${v.desc}">${v.badge}</span></td>
     </tr>`;
   });
 
@@ -9680,6 +9751,67 @@ function renderCotDivergenceMatrix() {
       <tbody>${rows}</tbody>
     </table>
     <div style="font-size:9px;color:var(--muted);margin-top:8px;line-height:1.5">Spekulan Besar = Leveraged Funds (CFTC COT). Trader Retail = sentimen real-time FXSSI.</div>
+  </div>`;
+}
+
+// ── POSISI & BIAS (tab TEK) ───────────────────────────────────────────────
+// Ringkasan cepat khusus pair yang lagi dibuka: penilaian COT+retail (kalau
+// tersedia) + bias bank sentral base/quote — supaya tidak perlu pindah tab
+// buat cek konteks positioning sebelum baca chart/indikator. "Lihat Detail"
+// lompat ke tab COT (yang juga memuat matriks divergensi + retail grid penuh).
+function renderTekPosisiBias() {
+  const el = document.getElementById('tekPosisiBiasSection');
+  if (!el) return;
+  if (TEK_YIELD_INSTRUMENTS.includes(tekPair)) { el.innerHTML = ''; return; } // bukan currency pair
+
+  const [base, quote] = tekPair === 'XAUUSD' ? ['XAU', 'USD'] : [tekPair.slice(0, 3), tekPair.slice(3)];
+
+  let cotHtml;
+  if (COT_RETAIL_PAIRS[tekPair]) {
+    // Major pair: COT + retail lengkap, verdict 5-kategori sama seperti matriks tab COT.
+    const v = computeCotRetailVerdict(tekPair);
+    cotHtml = v
+      ? `<span class="div-badge ${v.badgeCls}" title="${escHtml(v.desc)}">${v.badge}</span>`
+      : `<span class="tek-pb-empty">Memuat data COT &amp; retail...</span>`;
+  } else if (tekPair === 'XAUUSD') {
+    // Gold: COT belum tersedia (dilaporkan CFTC di laporan komoditas terpisah dari
+    // laporan Financial Futures yang dipakai app ini) — retail FXSSI tetap ada.
+    const ret = retailData?.positions?.XAUUSD;
+    if (ret) {
+      const cls   = ret.signal === 'CONTRARIAN_LONG' ? 'strong-up' : ret.signal === 'CONTRARIAN_SHORT' ? 'strong-down' : 'neutral';
+      const label = ret.signal === 'CONTRARIAN_LONG' ? 'Retail Lean Long (kontrarian)' : ret.signal === 'CONTRARIAN_SHORT' ? 'Retail Lean Short (kontrarian)' : 'Retail Netral';
+      cotHtml = `<span class="div-badge ${cls}" title="Retail ${ret.long_pct}% long / ${ret.short_pct}% short. Data COT Gold belum tersedia di app ini.">${label}</span>`;
+    } else {
+      cotHtml = `<span class="tek-pb-empty">Memuat data retail...</span>`;
+    }
+  } else {
+    // Pair silang: retail FXSSI tidak menyediakan data cross, tapi COT per-currency tetap bisa dibandingkan.
+    const lean = computeCotOnlyLean(base, quote);
+    if (lean) {
+      const cls   = lean.dir === 'long' ? 'strong-up' : lean.dir === 'short' ? 'strong-down' : 'neutral';
+      const label = lean.dir === 'long' ? `COT: ${base} condong naik vs ${quote}` : lean.dir === 'short' ? `COT: ${base} condong turun vs ${quote}` : 'COT: Belum Jelas';
+      cotHtml = `<span class="div-badge ${cls}" title="Net posisi spekulan besar (Leveraged Funds) ${base} vs ${quote}. Retail sentiment tidak tersedia untuk pair silang.">${label}</span>`;
+    } else {
+      cotHtml = `<span class="tek-pb-empty">Memuat data COT...</span>`;
+    }
+  }
+
+  const cbCell = cur => {
+    if (cur === 'XAU') return `<div class="tek-pb-cb-cell"><span class="tek-pb-cb-cur">XAU</span><span class="cb-bias unknown" title="Gold bukan currency, tidak ada bank sentral">—</span></div>`;
+    if (!cbData) return `<div class="tek-pb-cb-cell"><span class="tek-pb-cb-cur">${cur}</span><span class="tek-pb-empty">Memuat...</span></div>`;
+    const cb    = cbData.find(d => d.currency === cur);
+    const bias  = cb?.bias || null;
+    const cls   = bias ? (CB_BIAS_CLASS[bias] || 'unknown') : 'unknown';
+    return `<div class="tek-pb-cb-cell"><span class="tek-pb-cb-cur">${cur}</span><span class="cb-bias ${cls}">${bias || '—'}</span></div>`;
+  };
+
+  el.innerHTML = `<div class="tek-pb-wrap">
+    <div class="tek-pb-hdr">
+      <span class="tek-pb-title">POSISI &amp; BIAS</span>
+      <button type="button" class="tek-pb-detail-btn" onclick="document.querySelector('#navViews .nvtab[data-view=cot]').click()">Lihat Detail →</button>
+    </div>
+    <div class="tek-pb-cot-row">${cotHtml}</div>
+    <div class="tek-pb-cb-row">${cbCell(base)}${cbCell(quote)}</div>
   </div>`;
 }
 
@@ -15801,7 +15933,8 @@ function renderTekNews() {
     + '<span class="tek-news-hdr-title">Berita Terkait</span>'
     + '<span class="tek-news-hdr-pair">' + pairLabel + '</span>'
     + '</div>'
-    + '<div style="font:9px \'DM Mono\',monospace;color:var(--muted);margin-bottom:4px;opacity:.7">Artikel AF · tek bisa diklik untuk detail teknikal lengkap</div>';
+    + '<div style="font:9px \'DM Mono\',monospace;color:var(--muted);margin-bottom:4px;opacity:.7">Artikel AF · tek bisa diklik untuk detail teknikal lengkap</div>'
+    + '<div class="tek-news-grid">';
 
   // ActionForex technical outlook — pinned at top
   const af = tekAFCache[tekPair];
@@ -15875,6 +16008,8 @@ function renderTekNews() {
   } else if (!af || !af.items.length) {
     html += '<div class="tek-news-empty">Fetch news terlebih dahulu di tab NEWS.</div>';
   }
+
+  html += '</div>'; // tutup .tek-news-grid
 
   sec.innerHTML = html;
 }
@@ -16240,6 +16375,7 @@ function selectTekPair(p) {
   renderTekVolProfile(); // profil volatilitas opsi ikut pair aktif
   if (corrData) renderCorrelations(); // tabel korelasi kontekstual ikut pair aktif
   fetchTekRange();
+  renderTekPosisiBias();
 }
 
 // ── ANALISA pair list — dikelola user (tambah "+" / hapus "-"), persist ke ────
@@ -16738,6 +16874,8 @@ function initTeknikal() {
   else renderTekYield();
   if (rrData) renderTekVolProfile(); // tampilkan profil vol jika data sudah ada
   fetchTekRange();
+  renderTekPosisiBias(); // render dulu pakai cache yang ada, lalu refresh kalau data COT/retail/CB stale
+  ckFetchDataIfNeeded().then(renderTekPosisiBias);
 }
 
 // US10Y nominal + real yield — driver utama Gold (inverse correlation), konteks makro untuk pair USD lain.

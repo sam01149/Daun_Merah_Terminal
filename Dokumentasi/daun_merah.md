@@ -11,11 +11,42 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-07-30 (Session 268 — Migrasi harga acuan XAU/USD dari Yahoo GC=F (futures) ke Deriv frxXAUUSD (spot))
+> **Last updated:** 2026-07-31 (Session 270 — Section "Posisi & Bias" tab TEK (COT+retail per-pair + CB Bias) + grid 2-kolom Berita Terkait/Anomali Korelasi/Korelasi Gold)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 270 (2026-07-31) — Section "Posisi & Bias" Tab TEK + Grid 2-Kolom Berita/Anomali/Korelasi Gold
+
+**Konteks:** user membandingkan screenshot aplikasi trading kompetitor ("Prime Terminal" — widget dashboard COT, interest rate probability, dll.) dan bertanya apakah menggabungkan elemen serupa ke tab TEKNIKAL (TEK) "maksa" atau tidak. Rapat objektif (bukan eksekusi langsung) menyimpulkan: COT/retail sudah punya tab sendiri (tab COT) — jadi solusinya numpang RINGKASAN pair-spesifik + link "Lihat Detail" ke tab COT, bukan duplikasi widget penuh; Interest Rate Probability (gaya CME FedWatch) ditolak karena butuh sumber data baru yang tidak ada, diganti CB Bias yang sudah ada.
+
+**Keputusan desain (hasil rapat):**
+1. Section baru **"POSISI & BIAS"** di tab TEK, diposisikan di atas Catatan Analisa (dikelompokkan dengan info sistem lain — chart/indikator/MTF — sebelum input manual user), khusus 2 currency pair yang lagi dibuka.
+2. Verdict COT+retail level PAIR (bukan per-currency — data konfluensi kontrarian secara struktural memang perbandingan base-vs-quote, tidak bisa didekomposisi per currency tunggal), CB Bias level CURRENCY (2 pill terpisah, base & quote).
+3. **Temuan penting yang mengubah rencana awal:** Gold (XAU) TIDAK bisa masuk skema COT yang sama — kode `cotHandler` (`api/feeds.js`) parsing teks laporan CFTC "Financial Futures" (`financial_lof.htm`, hanya 8 currency FX), sedangkan Gold dilaporkan CFTC di laporan "Disaggregated Futures-Only" terpisah dengan kategori trader berbeda (Producer/Merchant/Managed Money vs Asset Manager/Leveraged Funds). User memutuskan **fallback graceful** (opsi a) — bukan bangun parser laporan kedua (opsi b, terlalu berisiko/besar untuk sesi ini, dicatat di `daun_merah_progress.md`).
+
+**Implementasi (`index.html`):**
+- **Refactor + bugfix tersembunyi:** logika verdict 5-kategori (`Dorongan Naik/Turun Kuat`, `Divergensi Naik/Turun`, `Belum Jelas`) yang sebelumnya inline & hardcode cuma 4 pair (`EURUSD/GBPUSD/USDJPY/AUDUSD`) di `renderCotDivergenceMatrix` (matriks tab COT) diekstrak jadi `computeCotRetailVerdict(pairKey)` + config `COT_RETAIL_PAIRS` (7 pair — nambah `NZDUSD/USDCAD/USDCHF` yang tadinya kelewat, dipakai bersama tab COT & TEK). Fungsi baru `computeCotOnlyLean(base, quote)` untuk fallback pair silang (retail FXSSI tidak menyediakan data cross, tapi COT per-currency tetap bisa dibandingkan).
+- `renderTekPosisiBias()` (baru): 4 skenario per tipe pair —
+  - 7 major pair (`COT_RETAIL_PAIRS`): badge konfluensi 5-kategori penuh + "Lihat Detail" (`document.querySelector('#navViews .nvtab[data-view=cot]').click()`, reuse pola navigasi existing).
+  - `XAUUSD`: COT Gold belum tersedia (lihat temuan di atas) → retail-only lean (data FXSSI XAUUSD tetap ada) + catatan jelas kenapa COT kosong.
+  - 21 pair silang: `computeCotOnlyLean` + catatan "retail tidak tersedia untuk pair silang".
+  - `US10Y`/`US02Y` (yield instrument, bukan currency pair): section disembunyikan total.
+  - CB Bias: pill per currency (reuse class `.cb-bias.*` + `CB_BIAS_CLASS` — di-hoist dari lokal `renderCBTracker` ke scope global supaya dipakai bersama tanpa duplikasi); XAU selalu "—" (Gold tidak punya bank sentral, permanen bukan bug).
+  - Di-hook ke `initTeknikal()`, `selectTekPair()`, dan callback `fetchCOT()`/`renderRetailSentiment()`/`fetchCBStatus()` supaya section tetap sinkron kalau data di-refresh dari tab lain.
+- **Grid 2-kolom (desktop/tablet `min-width:720px` saja — mobile tetap 1 kolom, tidak ada perubahan tampilan HP):**
+  - `.tek-news-grid` (Berita Terkait): CSS grid 2 kolom, elemen non-kartu (tombol load-more, penanda arsip, pesan kosong) di-`grid-column:1/-1` supaya tetap full-width.
+  - `.corr-anomaly-grid` (Anomali Korelasi): CSS grid 2 kolom.
+  - `.corr-goldrows-grid` (tabel korelasi Gold di XAU/USD): `column-count:2` + `break-inside:avoid` per baris (list baris, bukan kartu — beda teknik dari grid supaya rating antar-baris tetap presisi, hanya mengisi ruang kosong horizontal).
+
+**Test:** file baru `test/frontend/cot_retail_verdict.test.js` (9 test — `COT_RETAIL_PAIRS` 7 pair, null-guard, 3 skenario badge konfluensi, flip `usdBase` USDJPY, `computeCotOnlyLean` 3 arah). 707/707 test lulus (`npm test`).
+
+**Verifikasi live:** static server lokal (`python -m http.server`) + Playwright — dicek visual: XAUUSD (retail-only fallback + CB dash), EURUSD (badge konfluensi penuh + 2 CB pill), EURGBP (COT-only fallback pair silang), US10Y (section kosong/hidden). Grid dicek di 2 breakpoint (390px mobile = tetap stacked 1 kolom identik sebelum-sesudah; 1200px desktop = grid 2 kolom aktif, tombol load-more & anomali cards full-width span benar). Tidak ada error JS baru di console (404 API expected — server statis tanpa backend).
+
+**Bump:** `APP_VERSION` `2026.07.29.4` → `2026.07.31.1`.
+
+**Ditunda (dicatat di `daun_merah_progress.md`):** COT Gold via laporan CFTC "Disaggregated Futures-Only" — butuh parser kedua + pemetaan kategori Managed Money≈Leveraged Funds, effort & risiko lebih besar dari estimasi awal.
 
 ## Changelog Session 268 (2026-07-30) — Migrasi Harga Acuan XAU/USD: Yahoo GC=F (Futures) → Deriv frxXAUUSD (Spot)
 
