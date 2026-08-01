@@ -4373,7 +4373,7 @@ window.addEventListener('DOMContentLoaded', updateThemeIcon);
 
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.08.01.1';
+const APP_VERSION = '2026.08.01.2';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
@@ -6925,7 +6925,7 @@ async function analyzeOhlcvAi(force) {
   }
   const btn = document.getElementById('analisaAiBtn');
   btn.classList.add('loading');
-  btn.querySelector('span').textContent = 'Meminta AI...';
+  btn.querySelector('span').textContent = 'Analisa Pair...';
   const resultEl = document.getElementById('analisaAiResult');
   resultEl.style.display = 'none';
   const reqSymbol = symbol;
@@ -7003,7 +7003,12 @@ async function analyzeOhlcvAi(force) {
     }
   } finally {
     btn.classList.remove('loading');
+    // aiSkipped: server gate duluan (market tutup/data belum sync), nol AI call jadi
+    // sengaja TIDAK kena cooldown — tapi itu berarti _startAnalisaCooldown (yang biasanya
+    // mengembalikan label tombol ke idle) juga tidak jalan, jadi label sempat nyangkut di
+    // "Analisa Pair..." selamanya kalau tidak direset manual di sini.
     if (!aiSkipped) _startAnalisaCooldown();
+    else btn.querySelector('span').textContent = 'Analisa Pair Ini';
   }
 }
 
