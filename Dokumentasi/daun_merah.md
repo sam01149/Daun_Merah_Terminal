@@ -11,11 +11,27 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-07-31 (Session 270 — Section "Posisi & Bias" tab TEK (COT+retail per-pair + CB Bias) + grid 2-kolom Berita Terkait/Anomali Korelasi/Korelasi Gold)
+> **Last updated:** 2026-08-01 (Session 271 — Fix: analisa terakhir Jumat hilang saat weekend karena TTL Redis 6 jam)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 271 (2026-08-01) — Fix: Analisa Terakhir Jumat Hilang Saat Weekend (Root Cause TTL Redis)
+
+**Masalah dilaporkan user:** Sabtu/Minggu (pasar FX tutup), tab Analisa tidak menampilkan catatan analisa terakhir hari Jumat sebagai bekal trader menghadapi pembukaan Senin.
+
+**Root cause:** gate `market_closed` di `ohlcvAnalyzeHandler` (`api/admin.js`, dibangun Plan T-1 session 209-an) sudah didesain untuk menyajikan cache `ohlcv_analysis:<symbol>` dari Redis saat pasar tutup — tapi key itu di-`SET` dengan `EX 21600` (6 jam). Analisa terakhir sebelum market tutup Jumat 21:00 UTC jadi hangus dari Redis sekitar dini hari Sabtu (WIB), jauh sebelum market buka lagi Minggu malam/Senin pagi — gate jatuh ke cabang "belum ada analisa tersimpan" sepanjang sisa weekend. Bug lama, baru ketahuan sekarang karena selama ini analisa selalu di-generate ulang tiap kali pasar buka sebelum ada yang sempat coba lihat weekend gap-nya.
+
+**Fix (`api/admin.js`):**
+- TTL `ohlcv_analysis:<symbol>` dinaikkan `21600` → `345600` (4 hari) — cukup menutupi weekend penuh (Jumat tutup s/d Senin buka).
+- `mode=cached` (dipakai auto-load XAU/USD) sekarang ikut menyertakan flag `market_closed` (sebelumnya cuma dihitung di jalur generate/manual) — supaya auto-load juga tahu kapan harus menampilkan banner pasar tutup, bukan cuma jalur klik manual.
+
+**Fix (`index.html`):**
+- Banner baru `_analisaMarketClosedBanner(analyzedAt)` — teks final: *"Pasar forex sedang tutup (Sabtu/Minggu) — berikut catatan analisa terakhir yang dianalisa pada {tgl, jam WIB}."* (pakai `fmtCBTime` yang sudah otomatis include tanggal kalau >12 jam basi). Dipakai di 3 tempat: klik manual "Analisa AI" (`analyzeOhlcvAi`), auto-load XAU/USD (`_autoLoadXauAnalysis`), dan restore dari cache lokal saat pindah-pindah tab (`_restoreAiResult` — sebelumnya banner cuma nempel sekali di `innerHTML`, hilang lagi begitu tab di-switch lalu balik karena tidak ikut tersimpan di `analisaAiCache`; sekarang field `marketClosed` disimpan di cache object jadi persisten).
+- `APP_VERSION` → `2026.08.01.1`.
+
+**Verifikasi:** `npm test` 708/708 hijau (termasuk `test/admin/ohlcv_analyze_market_closed.test.js` yang sudah cover gate ini). Syntax-check inline script index.html lolos (`new Function()`). Verifikasi visual live belum dilakukan (butuh window weekend nyata atau mock jam server) — cek manual disarankan Sabtu/Minggu berikutnya.
 
 ## Changelog Session 270 (2026-07-31) — Section "Posisi & Bias" Tab TEK + Grid 2-Kolom Berita/Anomali/Korelasi Gold
 

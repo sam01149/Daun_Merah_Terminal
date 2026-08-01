@@ -4111,7 +4111,10 @@ async function ohlcvAnalyzeHandler(req, res) {
     try {
       const raw = await redisCmd('GET', `ohlcv_analysis:${symbol}`);
       if (!raw) return res.status(200).json({ commentary: null, structured: null, cached: false });
-      return res.status(200).json({ ...JSON.parse(raw), cached: true });
+      // market_closed disertakan (bukan cuma di jalur generate) supaya auto-load XAU/USD
+      // (frontend: _autoLoadXauAnalysis) juga bisa menampilkan banner "pasar tutup" saat
+      // Sabtu/Minggu menyajikan analisa terakhir Jumat, bukan diam-diam tanpa keterangan.
+      return res.status(200).json({ ...JSON.parse(raw), cached: true, market_closed: !marketHours.isFxMarketOpen() });
     } catch(e) {
       return res.status(200).json({ commentary: null, structured: null, cached: false });
     }
@@ -4791,7 +4794,12 @@ async function ohlcvAnalyzeHandler(req, res) {
     // checklist dari call daemon. Response HTTP ke daemon tetap payload penuh (di bawah),
     // hanya cache yang dibaca `mode=cached`/tab Analisa publik yang senyap.
     if ((commentary || structured) && !isDiagnosticOnly && !isAutoCall) {
-      redisCmd('SET', `ohlcv_analysis:${symbol}`, JSON.stringify(resultPayload), 'EX', 21600).catch(() => {});
+      // TTL 4 hari (bukan cuma beberapa jam): analisa terakhir sebelum market tutup Jumat
+      // 21:00 UTC harus tetap hidup di Redis sampai market buka lagi Minggu malam/Senin
+      // pagi WIB — gate market_closed di atas (baris ~4125) numpang key yang sama untuk
+      // menyajikan "analisa terakhir Jumat" sepanjang weekend; TTL pendek bikin key ini
+      // hangus sebelum weekend berakhir dan gate jatuh ke pesan "belum ada analisa".
+      redisCmd('SET', `ohlcv_analysis:${symbol}`, JSON.stringify(resultPayload), 'EX', 345600).catch(() => {});
     }
     // Outcome logging (Tier 1 riset, session 166): catat setiap setup lengkap supaya
     // win-rate NYATA bisa dihitung via ?action=setup_stats. Best-effort — kegagalan

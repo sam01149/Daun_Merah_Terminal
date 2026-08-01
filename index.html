@@ -4373,7 +4373,7 @@ window.addEventListener('DOMContentLoaded', updateThemeIcon);
 
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.07.31.1';
+const APP_VERSION = '2026.08.01.1';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
@@ -6359,7 +6359,7 @@ async function _autoLoadXauAnalysis(symbol) {
     const data = await res.json();
     if (!data.cached || (!data.commentary && !data.structured)) return;
     if (analisaAiCache[symbol]) return; // user already ran a manual analyze while this was in flight
-    analisaAiCache[symbol] = { commentary: data.commentary, structured: data.structured || null, model: data.model, hasMakro: !!data.hasMakro, hasFund: !!data.hasFund, makroAt: data.makro_generated_at || null, analyzedAt: data.loaded_at || null, saved_at: Date.now() };
+    analisaAiCache[symbol] = { commentary: data.commentary, structured: data.structured || null, model: data.model, hasMakro: !!data.hasMakro, hasFund: !!data.hasFund, makroAt: data.makro_generated_at || null, analyzedAt: data.loaded_at || null, saved_at: Date.now(), marketClosed: !!data.market_closed };
     _analisaSaveAi(symbol);
     if (analisaActive.symbol === symbol) _restoreAiResult(symbol);
     // Checklist teknikal XAU/USD ikut ter-update dari hasil cron yang baru dimuat
@@ -6377,6 +6377,15 @@ function _updateAnalisaDisclaimer(model) {
   disclaimerEl.innerHTML = model
     ? `Level &amp; bias di atas dihasilkan AI (${escHtml(model)}) dan bisa keliru — bukan nasihat keuangan. Verifikasi ke chart sebelum dipakai.`
     : `Level &amp; bias di atas dihasilkan AI dan bisa keliru — bukan nasihat keuangan. Verifikasi ke chart sebelum dipakai.`;
+}
+
+// Banner "pasar tutup" — dipakai baik jalur klik manual (analyzeOhlcvAi) maupun
+// auto-load XAU/USD (_autoLoadXauAnalysis) dan restore dari cache lokal
+// (_restoreAiResult), supaya trader yang buka app Sabtu/Minggu selalu tahu
+// analisa yang tampil adalah catatan terakhir sebelum market tutup, bukan real-time.
+function _analisaMarketClosedBanner(analyzedAt) {
+  const when = analyzedAt ? ` pada ${fmtCBTime(analyzedAt)}` : '';
+  return `<div style="font-size:10px;color:var(--muted);font-family:'DM Mono',monospace;padding:4px 0 8px">Pasar forex sedang tutup (Sabtu/Minggu) — berikut catatan analisa terakhir yang dianalisa${when}.</div>`;
 }
 
 function _renderStructuredAi(structured, commentary, model, hasMakro, isCached, hasFund, makroAt, analyzedAt) {
@@ -6513,7 +6522,8 @@ function _restoreAiResult(symbol) {
   if (!cached) return;
   const resultEl = document.getElementById('analisaAiResult');
   _updateAnalisaDisclaimer(cached.model);
-  resultEl.innerHTML = _renderStructuredAi(cached.structured || null, cached.commentary, cached.model, !!cached.hasMakro, true, !!cached.hasFund, cached.makroAt || null, cached.analyzedAt || null);
+  const banner = cached.marketClosed ? _analisaMarketClosedBanner(cached.analyzedAt || null) : '';
+  resultEl.innerHTML = banner + _renderStructuredAi(cached.structured || null, cached.commentary, cached.model, !!cached.hasMakro, true, !!cached.hasFund, cached.makroAt || null, cached.analyzedAt || null);
   resultEl.style.display = 'block';
   analisaLoadTrackRecord(symbol);
 }
@@ -6956,14 +6966,12 @@ async function analyzeOhlcvAi(force) {
       const hasMakro = data.hasMakro != null ? !!data.hasMakro : !!ringkasanContext;
       const hasFund  = !!data.hasFund;
       const makroAt  = data.makro_generated_at || (hasMakro ? ringkasanGeneratedAt : null);
-      analisaAiCache[reqSymbol] = { commentary: data.commentary, structured: data.structured || null, model: data.model, hasMakro, hasFund, makroAt, analyzedAt: data.loaded_at || null, saved_at: Date.now() };
+      analisaAiCache[reqSymbol] = { commentary: data.commentary, structured: data.structured || null, model: data.model, hasMakro, hasFund, makroAt, analyzedAt: data.loaded_at || null, saved_at: Date.now(), marketClosed: !!data.market_closed };
       _analisaSaveAi(reqSymbol);
       // Jendela kesegaran T-5: hanya di-set untuk generate segar (bukan cache pasar-tutup/error).
       if (!data.market_closed) analisaFreshUntil[reqSymbol] = Date.now() + ANALISA_FRESH_MS;
       if (analisaActive.symbol === reqSymbol) {
-        const marketClosedBanner = data.market_closed
-          ? `<div style="font-size:10px;color:var(--muted);font-family:'DM Mono',monospace;padding:4px 0 8px">Pasar forex tutup (Sabtu/Minggu) — menampilkan analisa terakhir.</div>`
-          : '';
+        const marketClosedBanner = data.market_closed ? _analisaMarketClosedBanner(data.loaded_at || null) : '';
         _updateAnalisaDisclaimer(data.model);
         resultEl.innerHTML = marketClosedBanner + _renderStructuredAi(data.structured || null, data.commentary, data.model, hasMakro, false, hasFund, makroAt, data.loaded_at || null);
         resultEl.style.display = 'block';
