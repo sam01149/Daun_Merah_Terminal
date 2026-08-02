@@ -1,12 +1,15 @@
 // test/lib/news_translate.test.js
 // Translate NEWS ke Bahasa Indonesia (S272, 2026-08-02, api/_news_translate.js;
-// provider diganti dari Gemini ke SambaNova akun 2 sesi sama hari itu).
-// Cakupan: parsing respons SambaNova (format ketat), pengecualian kategori econ-data,
-// skip item yang sudah pernah diterjemahkan, dan fail-open tanpa SAMBANOVA_API_KEY_CALL1/Redis.
+// redesign batch 2026-08-02 lanj. — balik ke Gemini, satu panggilan API menerjemahkan
+// sampai BATCH_SIZE headline sekaligus, bukan satu-satu — lihat catatan BATCH
+// REDESIGN di api/_news_translate.js untuk kronologi lengkap).
+// Cakupan: parsing respons Gemini (format single-item & batch), pengecualian
+// kategori econ-data, skip item yang sudah pernah diterjemahkan, anti-starvation
+// batch kedua = tertua, dan fail-open tanpa GEMINI_API_KEY/Redis.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 
-const { translateNewItems, getTranslations, parseResponse, buildPrompt } = require('../../api/_news_translate');
+const { translateNewItems, getTranslations, parseResponse, buildPrompt, buildBatchPrompt, parseBatchResponse } = require('../../api/_news_translate');
 
 // ── parseResponse (pure, no I/O) ────────────────────────────────────────────
 
@@ -48,40 +51,41 @@ test('buildPrompt: instruksi ketat "hanya terjemahan" selalu ada, ISI cuma diser
   assert.doesNotMatch(withoutDesc, /ISI_ID:/);
 });
 
+// ── buildBatchPrompt / parseBatchResponse (pure, no I/O) ────────────────────
+
+test('buildBatchPrompt: tiap item diberi label [N], ISI cuma muncul kalau desc tidak kosong', () => {
+  const p = buildBatchPrompt([
+    { title: 'Fed holds rates', description: 'Powell speaks' },
+    { title: 'Gold rises', description: '' },
+  ]);
+  assert.match(p, /\[1\]\nJUDUL: Fed holds rates\nISI: Powell speaks/);
+  assert.match(p, /\[2\]\nJUDUL: Gold rises/);
+  assert.doesNotMatch(p, /\[2\][^[]*ISI:/);
+  assert.match(p, /SEMUA 2 nomor|2 headline/);
+});
+
+test('parseBatchResponse: batch lengkap, urutan sesuai, ISI ikut kepetakan', () => {
+  const raw = '[1]\nJUDUL_ID: Fed pertahankan suku bunga\n\n[2]\nJUDUL_ID: Emas naik\nISI_ID: Didorong dolar lemah';
+  const out = parseBatchResponse(raw, 2);
+  assert.deepEqual(out[0], { title_id: 'Fed pertahankan suku bunga', desc_id: '' });
+  assert.deepEqual(out[1], { title_id: 'Emas naik', desc_id: 'Didorong dolar lemah' });
+});
+
+test('parseBatchResponse: nomor yang dilewati model tetap null (bukan crash, bukan salah petak)', () => {
+  const raw = '[1]\nJUDUL_ID: Item satu\n\n[3]\nJUDUL_ID: Item tiga';
+  const out = parseBatchResponse(raw, 3);
+  assert.equal(out[0].title_id, 'Item satu');
+  assert.equal(out[1], null, 'nomor 2 dilewati model, harus null bukan ketiban isi nomor lain');
+  assert.equal(out[2].title_id, 'Item tiga');
+});
+
+test('parseBatchResponse: respons kosong/tanpa marker sama sekali → semua null', () => {
+  assert.deepEqual(parseBatchResponse('', 3), [null, null, null]);
+  assert.deepEqual(parseBatchResponse('cuma teks acak', 2), [null, null]);
+});
+
 // ── translateNewItems / getTranslations (mock Redis + mock Gemini fetch) ────
 
-function mockRedis() {
-  const kv = new Map();
-  return {
-    kv,
-    fetch: async (url, opts) => {
-      const args = JSON.parse(opts.body);
-      const [cmd, ...rest] = args;
-      let result = null;
-      if (cmd === 'SET') {
-        const key = rest[0], val = rest[1];
-        kv.set(key, val);
-        result = 'OK';
-      } else if (cmd === 'GET') {
-        result = kv.has(rest[0]) ? kv.get(rest[0]) : null;
-      } else if (cmd === 'MGET') {
-        result = rest.map(k => (kv.has(k) ? kv.get(k) : null));
-      } else if (cmd === 'INCR') {
-        const key = rest[0];
-        const n = (parseInt(kv.get(key), 10) || 0) + 1;
-        kv.set(key, String(n));
-        result = n;
-      } else if (cmd === 'EXPIRE' || cmd === 'DEL') {
-        result = 1;
-      }
-      return { json: async () => ({ result }) };
-    },
-  };
-}
-
-// redisCmd sederhana yang langsung dipakai module (bukan lewat fetch) — translateNewItems/
-// getTranslations menerima redisCmd sebagai parameter (DI, sama seperti autoUpdateFundamentals
-// di api/feeds.js), jadi cukup mock fungsinya langsung tanpa perlu env Upstash.
 function makeRedisCmd(store) {
   return async (...args) => {
     const [cmd, ...rest] = args;
@@ -102,8 +106,27 @@ function withEnv(vars, fn) {
   };
 }
 
-test('translateNewItems: tanpa SAMBANOVA_API_KEY_CALL1 → no-op, tidak crash, tidak ada yang tersimpan', withEnv({}, async () => {
-  delete process.env.SAMBANOVA_API_KEY_CALL1;
+// Mock Gemini yang membaca ulang [N]\nJUDUL: <title> dari prompt batch dan membalas
+// format [N]\nJUDUL_ID: <title> yang sama persis (echo) — cukup untuk verifikasi
+// item mana yang benar-benar ditembak & tersimpan, tanpa perlu terjemahan asli.
+function mockGeminiEchoWithBody(calledBatches) {
+  return async (url, opts) => {
+    if (String(url).includes('generativelanguage.googleapis.com')) {
+      const body = JSON.parse(opts.body);
+      const prompt = body.messages[0].content;
+      const matches = [...prompt.matchAll(/\[(\d+)\]\nJUDUL: (.*)/g)];
+      calledBatches.push(matches.map(mm => mm[2]));
+      const content = matches.map(mm => `[${mm[1]}]\nJUDUL_ID: ${mm[2]}`).join('\n');
+      return { ok: true, json: async () => ({ choices: [{ message: { content } }] }) };
+    }
+    // Circuit breaker & ai_guard sama-sama fetch ke Upstash REST langsung —
+    // fail-open (return no-result) supaya tidak memblokir alur test ini.
+    return { ok: true, json: async () => ({ result: null }) };
+  };
+}
+
+test('translateNewItems: tanpa GEMINI_API_KEY → no-op, tidak crash, tidak ada yang tersimpan', withEnv({}, async () => {
+  delete process.env.GEMINI_API_KEY;
   delete process.env.UPSTASH_REDIS_REST_URL;
   delete process.env.UPSTASH_REDIS_REST_TOKEN;
   const store = new Map();
@@ -118,21 +141,13 @@ test('translateNewItems: array kosong/invalid → no-op', async () => {
 });
 
 test('translateNewItems: kategori econ-data DIKECUALIKAN dari translate (permintaan user S272)', withEnv({
-  SAMBANOVA_API_KEY_CALL1: 'fake-key',
+  GEMINI_API_KEY: 'fake-key',
   UPSTASH_REDIS_REST_URL: 'https://mock-redis.test',
   UPSTASH_REDIS_REST_TOKEN: 'mock-token',
 }, async () => {
   const realFetch = global.fetch;
-  let sambaCalls = 0;
-  global.fetch = async (url) => {
-    if (String(url).includes('api.sambanova.ai')) {
-      sambaCalls++;
-      return { ok: true, json: async () => ({ choices: [{ message: { content: 'JUDUL_ID: Terjemahan\nISI_ID: Isi' } }] }) };
-    }
-    // Circuit breaker & ai_guard sama-sama fetch ke Upstash REST langsung —
-    // fail-open (return no-result) supaya tidak memblokir alur test ini.
-    return { ok: true, json: async () => ({ result: null }) };
-  };
+  const calledBatches = [];
+  global.fetch = mockGeminiEchoWithBody(calledBatches);
   try {
     const store = new Map();
     const items = [
@@ -141,86 +156,93 @@ test('translateNewItems: kategori econ-data DIKECUALIKAN dari translate (permint
       { title: 'Trump says trade deal with China is close', guid: 'geo-1', description: '' },
     ];
     await translateNewItems(items, makeRedisCmd(store));
-    assert.equal(sambaCalls, 1, 'cuma item non-econ-data yang boleh manggil SambaNova');
+    assert.equal(calledBatches.length, 1, 'satu batch call untuk semua item non-econ-data');
+    assert.equal(calledBatches[0].length, 1, 'cuma item non-econ-data yang boleh masuk batch ke Gemini');
     assert.equal(store.has('news_tr:econ-1'), false, 'econ-data TIDAK PERNAH punya entri terjemahan');
     assert.equal(store.has('news_tr:geo-1'), true);
   } finally { global.fetch = realFetch; }
 }));
 
-test('translateNewItems: item yang sudah ada news_tr:<guid> di-skip, tidak manggil SambaNova lagi', withEnv({
-  SAMBANOVA_API_KEY_CALL1: 'fake-key',
+test('translateNewItems: item yang sudah ada news_tr:<guid> di-skip, tidak manggil Gemini lagi', withEnv({
+  GEMINI_API_KEY: 'fake-key',
   UPSTASH_REDIS_REST_URL: 'https://mock-redis.test',
   UPSTASH_REDIS_REST_TOKEN: 'mock-token',
 }, async () => {
   const realFetch = global.fetch;
-  let sambaCalls = 0;
-  global.fetch = async (url) => {
-    if (String(url).includes('api.sambanova.ai')) {
-      sambaCalls++;
-      return { ok: true, json: async () => ({ choices: [{ message: { content: 'JUDUL_ID: X' } }] }) };
-    }
-    return { ok: true, json: async () => ({ result: null }) };
-  };
+  const calledBatches = [];
+  global.fetch = mockGeminiEchoWithBody(calledBatches);
   try {
     const store = new Map();
     store.set('news_tr:already-1', JSON.stringify({ title_id: 'Sudah diterjemahkan', desc_id: '' }));
     await translateNewItems([{ title: 'Some ordinary headline', guid: 'already-1', description: '' }], makeRedisCmd(store));
-    assert.equal(sambaCalls, 0, 'item yang sudah punya cache tidak boleh ditembak ulang ke SambaNova');
+    assert.equal(calledBatches.length, 0, 'item yang sudah punya cache tidak boleh ditembak ulang ke Gemini');
   } finally { global.fetch = realFetch; }
 }));
 
-test('translateNewItems: todo <= MAX_CONCURRENT (15) -> SEMUA diproses satu gelombang, tidak ada yang menunggu', withEnv({
-  SAMBANOVA_API_KEY_CALL1: 'fake-key',
+test('translateNewItems: todo <= BATCH_SIZE (20) -> SATU panggilan API untuk semua item', withEnv({
+  GEMINI_API_KEY: 'fake-key',
   UPSTASH_REDIS_REST_URL: 'https://mock-redis.test',
   UPSTASH_REDIS_REST_TOKEN: 'mock-token',
 }, async () => {
   const realFetch = global.fetch;
-  const calledGuids = [];
-  global.fetch = async (url, opts) => {
-    if (String(url).includes('api.sambanova.ai')) {
-      const body = JSON.parse(opts.body);
-      const m = body.messages[0].content.match(/JUDUL:\n(.*)/);
-      calledGuids.push(m[1]);
-      return { ok: true, json: async () => ({ choices: [{ message: { content: `JUDUL_ID: ${m[1]}` } }] }) };
-    }
-    return { ok: true, json: async () => ({ result: null }) };
-  };
+  const calledBatches = [];
+  global.fetch = mockGeminiEchoWithBody(calledBatches);
   try {
     const store = new Map();
     const items = Array.from({ length: 12 }, (_, i) => ({ title: `t${i}`, guid: `g${i}`, description: '' }));
     await translateNewItems(items, makeRedisCmd(store));
-    assert.equal(calledGuids.length, 12, 'semua 12 item (di bawah MAX_CONCURRENT 15) harus ditembak dalam satu gelombang');
+    assert.equal(calledBatches.length, 1, '12 headline (di bawah BATCH_SIZE 20) harus jadi 1 panggilan API, bukan 12');
+    assert.equal(calledBatches[0].length, 12);
     for (let i = 0; i < 12; i++) assert.equal(store.has(`news_tr:g${i}`), true, `g${i} seharusnya sudah diterjemahkan`);
   } finally { global.fetch = realFetch; }
 }));
 
-test('translateNewItems: backlog terlama tetap dapat slot walau todo > MAX_CONCURRENT (S273, anti-starvation; S274 diturunkan lagi ke 15 setelah 100 terbukti mentrip circuit breaker)', withEnv({
-  SAMBANOVA_API_KEY_CALL1: 'fake-key',
+test('translateNewItems: todo > BATCH_SIZE -> dipecah jadi beberapa panggilan, batch kedua ambil dari ujung tertua (anti-starvation)', withEnv({
+  GEMINI_API_KEY: 'fake-key',
   UPSTASH_REDIS_REST_URL: 'https://mock-redis.test',
   UPSTASH_REDIS_REST_TOKEN: 'mock-token',
 }, async () => {
   const realFetch = global.fetch;
-  const calledGuids = [];
+  const calledBatches = [];
+  global.fetch = mockGeminiEchoWithBody(calledBatches);
+  try {
+    const store = new Map();
+    // urutan feed asli: index 0 = headline TERBARU ... index 44 = TERTUA (45 item, > 2x BATCH_SIZE 20)
+    const items = Array.from({ length: 45 }, (_, i) => ({ title: `t${i}`, guid: `g${i}`, description: '' }));
+    await translateNewItems(items, makeRedisCmd(store), 60000); // budget besar supaya semua batch kebagian giliran
+    assert.equal(calledBatches.length, 3, '45 item / 20 per batch = 3 panggilan');
+    assert.deepEqual(calledBatches[0], Array.from({ length: 20 }, (_, i) => `t${i}`), 'batch pertama = 20 headline terbaru');
+    assert.deepEqual(calledBatches[1], Array.from({ length: 5 }, (_, i) => `t${40 + i}`), 'batch KEDUA = ujung tertua (anti-starvation), bukan batch tengah');
+    assert.deepEqual(calledBatches[2], Array.from({ length: 20 }, (_, i) => `t${20 + i}`), 'batch ketiga = sisa tengah');
+    for (let i = 0; i < 45; i++) assert.equal(store.has(`news_tr:g${i}`), true, `g${i} seharusnya sudah diterjemahkan`);
+  } finally { global.fetch = realFetch; }
+}));
+
+test('translateNewItems: budget habis -> batch berikutnya tidak dipaksa jalan, nyusul siklus berikutnya', withEnv({
+  GEMINI_API_KEY: 'fake-key',
+  UPSTASH_REDIS_REST_URL: 'https://mock-redis.test',
+  UPSTASH_REDIS_REST_TOKEN: 'mock-token',
+}, async () => {
+  const realFetch = global.fetch;
+  const calledBatches = [];
   global.fetch = async (url, opts) => {
-    if (String(url).includes('api.sambanova.ai')) {
+    if (String(url).includes('generativelanguage.googleapis.com')) {
+      // Simulasikan panggilan lambat (200ms) — budget di bawah cukup untuk 1 batch saja.
+      await new Promise(r => setTimeout(r, 200));
       const body = JSON.parse(opts.body);
-      const m = body.messages[0].content.match(/JUDUL:\n(.*)/);
-      calledGuids.push(m[1]);
-      return { ok: true, json: async () => ({ choices: [{ message: { content: `JUDUL_ID: ${m[1]}` } }] }) };
+      const matches = [...body.messages[0].content.matchAll(/\[(\d+)\]\nJUDUL: (.*)/g)];
+      calledBatches.push(matches.map(mm => mm[2]));
+      const content = matches.map(mm => `[${mm[1]}]\nJUDUL_ID: ${mm[2]}`).join('\n');
+      return { ok: true, json: async () => ({ choices: [{ message: { content } }] }) };
     }
     return { ok: true, json: async () => ({ result: null }) };
   };
   try {
     const store = new Map();
-    // urutan feed asli: index 0 = headline TERBARU ... index 17 = TERTUA (18 item, > MAX_CONCURRENT 15)
-    const items = Array.from({ length: 18 }, (_, i) => ({ title: `t${i}`, guid: `g${i}`, description: '' }));
-    await translateNewItems(items, makeRedisCmd(store));
-    // 13 terbaru (t0-t12) + 2 terlama (t16-t17) = 15 total; t13-t15 (backlog tengah) menunggu siklus berikutnya
-    const expected = [...Array.from({ length: 13 }, (_, i) => `t${i}`), 't16', 't17'];
-    assert.deepEqual(calledGuids.sort(), expected.sort());
-    for (const skipped of ['g13', 'g14', 'g15']) {
-      assert.equal(store.has(`news_tr:${skipped}`), false, `${skipped} seharusnya belum diterjemahkan gelombang ini`);
-    }
+    const items = Array.from({ length: 45 }, (_, i) => ({ title: `t${i}`, guid: `g${i}`, description: '' }));
+    await translateNewItems(items, makeRedisCmd(store), 250); // cuma cukup ~1 batch (200ms tiap panggilan)
+    assert.equal(calledBatches.length, 1, 'budget ketat cuma cukup 1 panggilan, sisa nyusul siklus berikutnya');
+    for (let i = 20; i < 45; i++) assert.equal(store.has(`news_tr:g${i}`), false, `g${i} belum diterjemahkan gelombang ini`);
   } finally { global.fetch = realFetch; }
 }));
 

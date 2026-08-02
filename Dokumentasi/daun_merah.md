@@ -11,7 +11,7 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-02 (Session 272 lanj. — Anti-starvation backlog translate NEWS)
+> **Last updated:** 2026-08-02 (Session 272 lanj. — Translate NEWS balik ke Gemini + redesign batch)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -190,6 +190,29 @@ Konteks: user tanya apakah translate NEWS bisa tetap jalan walau aplikasi ditutu
 **Fix (`api/_news_translate.js`):** `MAX_CONCURRENT` 100 → **15** — tetap lebih agresif dari nilai asal 8 (yang dikunci khusus buat RPM 10 Gemini, provider beda), tapi di bawah batas bawah estimasi RPM SambaNova supaya ada margin aman dari circuit trip. Pelajaran: "gas tapi tidak membabi buta" yang diminta user artinya menghormati RPM real provider tujuan — menembus itu bukan bikin lebih cepat, malah lebih lambat (circuit blackout 5 menit > menunggu siklus cache-refill 50-60 detik berikutnya).
 
 **Verifikasi:** `npm test` 732/732 hijau (2 test `MAX_CONCURRENT` diskalakan ulang dari asumsi 100 balik ke asumsi 15 — 12 item habis satu gelombang, 18 item split 13 terbaru + 2 terlama sisa 3 tertunda). **Belum diverifikasi live** — sandbox sesi ini diblokir network policy ke `financial-feed-app.vercel.app`, jadi diagnosis murni dari review kode (circuit breaker threshold) yang match persis dengan gejala user, bukan dari log produksi langsung. User perlu konfirmasi manual setelah deploy berikutnya apakah backlog translate sekarang jalan mulus tanpa macet bergelombang.
+
+**Revisi lanjutan (sesi terpisah, 2026-08-02): live diverifikasi — `MAX_CONCURRENT=15` TERBUKTI TETAP TIDAK CUKUP. Balik total ke Gemini + redesign BATCH (usulan user).**
+
+**Diagnosis (diverifikasi live, bukan tebak-tebakan):** Playwright buka tab NEWS produksi — headline 1-2 jam terakhir masih Inggris semua, headline lebih lama (berjam-jam) sudah Indonesia, pola ACAK bukan sekadar starvation biasa. Query langsung Redis produksi (`circuit:ai:sambanova:c1:newstranslate`) via `api/_ai_guard.js`/`api/_circuit_breaker.js` lokal + kredensial `.env.local` → circuit **OPEN, 22 kegagalan beruntun**. Tes isolasi 1 panggilan (tanpa concurrency apa pun dari sisi kita) ke `api.sambanova.ai` pakai kunci lokal → salah satu kunci sukses 2 detik (di bawah timeout 4 detik), kunci lainnya langsung **HTTP 429 dalam 709ms**. Kesimpulan: akun SambaNova 2 sudah dekat/lewat batas RPM riilnya dari kombinasi trafik fitur lain (fallback Journal/Fundamental, kadang Call 1 Ringkasan kalau primary DeepSeek gagal) + beban baru translate — 15 konkuren tetap gampang memicu 429 beruntun → circuit trip → blackout 5 menit berulang. Cuma ada 2 akun SambaNova total (`daun_merah_vendor.md`), keduanya sudah terisi tugas lain — tidak ada akun cadangan kosong untuk translate numpang tanpa risiko rebutan.
+
+**Root cause sesungguhnya (usulan user):** desain SEJAK AWAL (S272, sebelum eksperimen SambaNova) kirim **1 panggilan API PER HEADLINE** — itu yang bikin gampang mepet RPM provider manapun, bukan volume beritanya yang tinggi (headline NEWS nyatanya tidak pernah sampai 8-10/menit). 15 headline baru = 15 panggilan terpisah, padahal bisa digabung jadi 1.
+
+**Fix (`api/_news_translate.js`, redesign BATCH):**
+- Balik provider ke Gemini (`GEMINI_URL`/`GEMINI_MODEL` AI Studio, proven stabil sebelum eksperimen SambaNova) — SambaNova akun 2 dilepas total dari translate NEWS.
+- `buildBatchPrompt(items)` (baru): gabung sampai `BATCH_SIZE=20` headline jadi SATU prompt bernomor `[1]..[N]`, satu panggilan API menerjemahkan semuanya sekaligus. `buildPrompt()` 1-headline lama tetap ada (dipakai internal, tidak dihapus).
+- `parseBatchResponse(raw, count)` (baru): potong respons jadi blok per marker `[N]`, lalu PAKAI ULANG `parseResponse()` yang sudah proven per blok — bukan regex parsing baru yang berisiko. Nomor yang dilewati/rusak model tetap `null` (bukan crash, bukan salah petak ke headline lain), otomatis nyusul siklus berikutnya.
+- `translateNewItems()`: `todo[]` dipecah jadi chunk `BATCH_SIZE`, diproses SEKUENSIAL (bukan concurrent) sampai budget waktu habis — anti-starvation S273 dipertahankan (kalau >2 chunk, chunk KEDUA yang diproses selalu ambil dari ujung tertua, bukan urutan asli).
+- `MAX_CONCURRENT`/`BACKLOG_RESERVE_SLOTS`/isolasi circuit breaker `ai:sambanova:c1:newstranslate` dihapus total (tidak relevan lagi, tidak ada concurrency).
+- `api/_ai_guard.js`: bucket kuota balik `gemini_newstranslate: 1000/hari` (dihapus `sambanova_c1_newstranslate`) — 1000 PANGGILAN (bukan 1000 headline; 1 panggilan = sampai 20 headline), gabung `gemini: 200/hari` = 1200, tetap di bawah plafon 1.500 RPD resmi Gemini.
+- Bug kecil ketahuan dari runtime unit test yang harusnya instan malah nunggu puluhan detik: `Promise.race([translateBatch, timeout])` tidak `clearTimeout` timer yang kalah race — dibenerin (tidak berdampak user di produksi karena eksekusi Vercel keburu berhenti, murni kebersihan kode).
+
+**Kenapa aman dari RPM tanpa perlu concurrency limit lagi:** N headline baru sekarang cuma butuh `ceil(N/20)` panggilan API, bukan N panggilan — bahkan breaking news deras (mis. 40-60 headline baru dalam satu siklus cache-refill) cuma jadi 2-3 panggilan, jauh dari limit 10 RPM Gemini. Backlog arsip 36 jam yang sudah lanjur besar (warisan blackout SambaNova) ikut terkuras cepat lewat jalur yang sama (`rssHandler` tiap cache-miss ~50-60 detik DAN `newsHistoryHandler` tiap klik "Muat Berita Lebih Lama") karena kapasitas per-siklus naik drastis (sampai puluhan headline/panggilan vs 15 individual sebelumnya) — tidak perlu cron/endpoint backfill terpisah.
+
+**Verifikasi akurasi terjemahan (permintaan eksplisit user):** tes langsung ke Gemini API sungguhan (bukan mock) dengan 6 headline finansial riil dalam SATU batch call — semua istilah/ticker dipertahankan benar (`Fed`, `Federal Reserve`, `S&P 500`, `Nasdaq 100`, `Dow 30`, `Mag 7`, `XAU/USD`, `CPI`, `Trump`, `OPEC+`), angka & satuan diterjemahkan benar (`188,000 bpd`→`188.000 bpd`, `mln`→`juta`), terjemahan natural tanpa penjelasan tambahan, parsing per nomor benar (tidak ada yang tertukar/tercampur antar item), item tanpa deskripsi tetap terbaca `desc_id: ''` dengan benar.
+
+**Verifikasi:** `npm test` 737/737 hijau (test lama SambaNova di `test/lib/news_translate.test.js`/`test/feeds/news_translate_handler.test.js` ditulis ulang total untuk desain batch + provider Gemini). Dokumentasi `daun_merah_ai.md` §2 baris #10 dan §4 tabel jatah harian diupdate in-place (provider & bucket kuota balik ke Gemini, catatan kronologi eksperimen SambaNova yang gagal).
+
+**Catatan proses (bukan soal teknis):** 3 komit sesi HP sebelumnya (`fc4b086`/`5f19b5c`/`38ff271`) memakai commit author `Claude <noreply@anthropic.com>` — melanggar aturan larangan atribusi AI di commit (`ATURAN.md` §4 poin 7, ditegaskan ulang CLAUDE.md). Tidak di-rewrite retroaktif (sudah dideploy, riwayat sudah publik) — dicatat di sini sebagai pengingat untuk sesi Claude Code manapun (termasuk dari HP) supaya tidak terulang.
 
 ## Changelog Session 271 (2026-08-01) — Fix: Analisa Terakhir Jumat Hilang Saat Weekend (Root Cause TTL Redis)
 

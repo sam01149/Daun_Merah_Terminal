@@ -11,66 +11,52 @@
 //   ekonomi rawan salah interpretasi LLM, biarkan bahasa Inggris asli.
 // - 1x translate per headline (guid), hasil di-cache 36 jam (news_tr:<guid>),
 //   dishare SEMUA user/device — bukan per-request, bukan per-user.
-// - Di-AWAIT oleh api/feeds.js (rssHandler, cache-miss path saja), dengan
-//   anggaran waktu ADAPTIF (bukan fire-and-forget murni — percobaan pertama
-//   fire-and-forget TERBUKTI tidak pernah selesai di produksi, Vercel
-//   membekukan eksekusi begitu respons dikirim sebelum panggilan AI
-//   jaringan sempat jalan; beda dari storeNewsHistory di file yang sama yang
-//   cukup cepat, regex+Redis doang, lolos sebelum dibekukan). Endpoint RSS
-//   pernah kena bug timeout terpisah (lihat catatan di index.html fetchRSS()),
-//   jadi anggaran waktu translate SENGAJA dibatasi ketat & adaptif terhadap
-//   sisa waktu RSS fetch, bukan menambah delay tak terbatas. Item yang belum
-//   sempat/gagal diterjemahkan cuma tetap bahasa Inggris sampai siklus
-//   cache-refill berikutnya (~50-60 detik) mencoba lagi — self-healing.
+// - Di-AWAIT oleh caller (rssHandler cache-miss & newsHistoryHandler), BUKAN
+//   fire-and-forget murni — percobaan pertama fire-and-forget TERBUKTI tidak
+//   pernah selesai di produksi, Vercel membekukan eksekusi begitu respons
+//   dikirim sebelum panggilan AI jaringan sempat jalan. Anggaran waktu ADAPTIF
+//   terhadap sisa waktu handler pemanggil, bukan menambah delay tak terbatas.
+//   Item yang belum sempat/gagal diterjemahkan cuma tetap bahasa Inggris sampai
+//   siklus cache-refill berikutnya (~50-60 detik) mencoba lagi — self-healing.
 // - Prompt STRICT (permintaan user): HANYA hasil terjemahan, tanpa penjelasan
 //   tambahan apa pun.
+//
+// BATCH REDESIGN (2026-08-02, usulan user): desain awal kirim 1 panggilan API PER
+// HEADLINE — itu biang keladi gampang mepet limit RPM, BUKAN volume beritanya yang
+// tinggi (15 headline baru dalam satu siklus = 15 panggilan terpisah). Sempat dicoba
+// ganti provider ke SambaNova akun 2 (lihat git history, commit sesi HP 2026-08-02)
+// supaya lolos limit 10 RPM Gemini — TERBUKTI SALAH lewat verifikasi live: akun 2
+// dipakai bersama 3 fitur lain (fallback Journal/Fundamental, Call 1 Ringkasan) dan
+// circuit breaker-nya trip berulang (22 kegagalan beruntun ketahuan saat diagnosis
+// langsung ke Redis produksi), headline malah sering TIDAK diterjemahkan sama sekali
+// berjam-jam — lebih buruk dari kondisi sebelumnya. Perbaikan sebenarnya: BATCH —
+// SATU panggilan API menerjemahkan sampai BATCH_SIZE headline sekaligus. N headline
+// baru sekarang cuma butuh ceil(N/BATCH_SIZE) panggilan, bukan N panggilan — jumlah
+// PANGGILAN per menit nyaris tidak pernah dekat limit 10 RPM Gemini walau breaking
+// news deras. Balik ke Gemini (gratis, terbukti stabil sebelum eksperimen SambaNova).
 
 const cb = require('./_circuit_breaker');
 const { allowAiCall } = require('./_ai_guard');
 const { detectCat } = require('../newscat');
 
-// SambaNova akun 2 (SAMBANOVA_API_KEY_CALL1) — akun sama yang dipakai fallback Ringkasan
-// Berita Call 1/Analisa Fundamental/AI Coach (lihat market-digest.js/admin.js/journal.js),
-// diganti dari Gemini (permintaan user, 2026-08-02) supaya translate lebih cepat — Gemini
-// dibatasi 10 RPM (keras, provider AI Studio free tier), sedangkan SambaNova ~10-20 RPM
-// DAN tidak numpang kuota gabungan dengan fitur lain yang juga rebutan RPM Gemini yang
-// sama. SENGAJA SEMENTARA (keputusan user): begitu backlog translate NEWS sudah habis dan
-// arus headline balik normal (tidak deras lagi), rencananya balik ke Gemini lagi — SambaNova
-// akun 2 cuma dipinjam untuk mengejar kecepatan selagi backlog besar. Kalau nanti diminta
-// balik, tinggal reverse konstanta di bawah + 'sambanova_c1_newstranslate' balik ke
-// 'gemini_newstranslate' di _ai_guard.js (lihat git history commit sesi ini).
-// Circuit breaker key TERPISAH dari 'ai:sambanova:c1' yang dipakai file-file itu — supaya
-// bug spesifik parsing/prompt translate ini tidak ikut men-trip circuit fitur lain.
-const CB_SAMBANOVA = 'ai:sambanova:c1:newstranslate';
-const SAMBANOVA_URL   = 'https://api.sambanova.ai/v1/chat/completions';
-const SAMBANOVA_MODEL = 'DeepSeek-V3.2';
+// Circuit breaker key TERPISAH dari 'ai:gemini' yang dipakai admin.js/market-digest.js/
+// journal.js — supaya bug spesifik parsing/prompt translate ini tidak ikut men-trip
+// circuit fitur lain (Analisa Fundamental/AI Coach) yang juga fallback ke Gemini.
+const CB_GEMINI = 'ai:gemini:newstranslate';
+const GEMINI_URL   = 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions';
+const GEMINI_MODEL = 'gemini-flash-latest';
 
 const TR_KEY_TTL = 36 * 3600; // detik — samakan retensi 36 jam dengan news_history
-// MAX_CONCURRENT sempat dinaikkan ke 100 (S274 awal, permintaan user "gas aja") dengan
-// asumsi SambaNova tidak sekhawatir Gemini soal RPM — TERBUKTI SALAH lewat verifikasi live
-// pasca-deploy hari sama: user lapor "ga semua jadi Indonesia". Root cause: SambaNova akun 2
-// real-nya tetap ada batas RPM (estimasi ~10-20 RPM, daun_merah_ai.md §4, TIDAK dikonfirmasi
-// resmi provider) — gelombang 100 konkuren langsung menembak jauh di atas itu, sebagian besar
-// gagal (429/timeout) SEKALIGUS, dan `_circuit_breaker.js` trip circuit setelah HANYA 3
-// kegagalan (`FAILURE_THRESHOLD`) → translate MATI TOTAL 5 menit (`OPEN_DURATION_MS`) tiap kali
-// kejadian, bukan cuma sebagian item gagal. Diturunkan ke 15 — tetap lebih agresif dari nilai
-// asal 8 (yang dikunci khusus buat RPM 10 Gemini, kasus provider berbeda), tapi di bawah batas
-// bawah estimasi SambaNova supaya margin aman dari circuit trip. "Gas tapi tidak membabi buta"
-// di sini berarti: gas melewati batas RPM provider ASLI itulah yang justru bikin backlog makin
-// lambat (circuit blackout), bukan lebih cepat — pagar realistis > pagar sembarangan besar.
-const MAX_CONCURRENT      = 15;
-// Anti-starvation (S273, 2026-08-02): tanpa ini, wave SELALU mengambil todo[0..N)
-// yang berarti headline TERBARU (urutan feed = terbaru dulu) — saat breaking news deras
-// (todo.length > MAX_CONCURRENT di atas), headline yang agak lama tapi belum sempat
-// diterjemahkan terus digeser ke belakang antrean oleh headline yang lebih baru lagi, dan
-// bisa nyangkut bahasa Inggris selama arus berita belum mereda. Reserve sebagian slot tiap
-// gelombang khusus headline TERTUA di antrean (ujung belakang todo[], bukan array terbaru)
-// supaya backlog dijamin habis bertahap, sisa slot tetap prioritas headline terbaru.
-const BACKLOG_RESERVE_SLOTS = 2;
-const PER_CALL_TIMEOUT_MS = 4000;
+// Berapa headline digabung dalam SATU panggilan API (lihat catatan BATCH REDESIGN di
+// atas). Makin besar makin hemat panggilan, tapi makin besar juga risiko model salah
+// urut/lewat nomor di respons yang panjang. 20 titik keseimbangan: prompt & respons
+// masih ringkas + gampang di-parse per blok, tapi tetap >10x lebih hemat panggilan
+// API dibanding desain lama (1 headline/panggilan).
+const BATCH_SIZE = 20;
+const PER_CALL_TIMEOUT_MS = 9000; // batch butuh lebih banyak token/waktu daripada 1 headline
 // Default anggaran waktu translate kalau caller tidak kasih budgetMs eksplisit —
-// caller SEHARUSNYA selalu kasih (lihat rssHandler di api/feeds.js, adaptif
-// terhadap sisa waktu RSS fetch), ini cuma fallback aman.
+// caller SEHARUSNYA selalu kasih (lihat rssHandler/newsHistoryHandler di api/feeds.js,
+// adaptif terhadap sisa waktu masing-masing), ini cuma fallback aman.
 const DEFAULT_BUDGET_MS = 6000;
 
 function buildPrompt(title, desc) {
@@ -106,50 +92,98 @@ function parseResponse(raw, hasDesc) {
   return { title_id, desc_id };
 }
 
-async function translateOne(item, redisCmd) {
-  if (!await allowAiCall('sambanova_c1_newstranslate')) return; // pagar kuota — nyusul siklus berikutnya
-  const SAMBANOVA_KEY = process.env.SAMBANOVA_API_KEY_CALL1;
-  if (!SAMBANOVA_KEY) return;
+// Gabung sampai BATCH_SIZE headline jadi SATU prompt bernomor [1]..[N] — lihat catatan
+// BATCH REDESIGN di atas. Tiap nomor dipetakan balik ke headline aslinya lewat
+// parseBatchResponse().
+function buildBatchPrompt(items) {
+  const blocks = items.map((it, i) => {
+    let s = `[${i + 1}]\nJUDUL: ${it.title}`;
+    if (it.description && it.description.trim()) s += `\nISI: ${it.description.trim()}`;
+    return s;
+  }).join('\n\n');
+  return `Terjemahkan ${items.length} headline berita finansial berikut dari Bahasa Inggris ke Bahasa Indonesia, satu per satu sesuai nomornya masing-masing. ATURAN KETAT:
+- HANYA keluarkan hasil terjemahan sesuai format jawaban di bawah, untuk SEMUA ${items.length} nomor tanpa terkecuali — JANGAN ada nomor yang dilewati, digabung, atau ditukar urutannya.
+- JANGAN tambahkan penjelasan, catatan, opini, disclaimer, atau komentar apa pun di luar format jawaban.
+- Pertahankan istilah/singkatan finansial standar, nama orang, nama tempat, dan ticker APA ADANYA (contoh: Fed, FOMC, CPI, GDP, ECB, Powell, Trump, S&P 500, WTI) — JANGAN diterjemahkan atau diberi padanan.
+- Tiap nomor berdiri sendiri (headline berbeda-beda) — JANGAN campur konteks antar nomor.
+
+${blocks}
+
+Jawab PERSIS format berikut per nomor, urutan nomor SAMA seperti input, tanpa teks lain apa pun di luar format ini:
+[1]
+JUDUL_ID: <hasil terjemahan judul nomor 1>
+ISI_ID: <hasil terjemahan isi nomor 1, kosongkan baris ini kalau nomor 1 tidak punya ISI>
+[2]
+JUDUL_ID: <hasil terjemahan judul nomor 2>
+...dst sampai [${items.length}]`;
+}
+
+// Pecah respons batch jadi per-blok [N], lalu pakai ULANG parseResponse() (proven,
+// sudah teruji sejak desain 1-headline/panggilan) untuk masing-masing blok — tidak
+// perlu regex parsing baru yang berisiko, cukup potong per marker dulu.
+function parseBatchResponse(raw, count) {
+  const out = new Array(count).fill(null);
+  if (!raw) return out;
+  const markerRe = /\[(\d+)\]\s*/g;
+  const markers = [];
+  let m;
+  while ((m = markerRe.exec(raw)) !== null) {
+    markers.push({ idx: parseInt(m[1], 10), matchStart: m.index, contentStart: markerRe.lastIndex });
+  }
+  for (let i = 0; i < markers.length; i++) {
+    const { idx, contentStart } = markers[i];
+    const contentEnd = i + 1 < markers.length ? markers[i + 1].matchStart : raw.length;
+    const arrIdx = idx - 1;
+    if (arrIdx < 0 || arrIdx >= count) continue;
+    const parsed = parseResponse(raw.slice(contentStart, contentEnd), true);
+    if (parsed) out[arrIdx] = parsed;
+  }
+  return out;
+}
+
+async function translateBatch(items, redisCmd) {
+  if (!await allowAiCall('gemini_newstranslate')) return; // pagar kuota — nyusul siklus berikutnya
+  const GEMINI_KEY = process.env.GEMINI_API_KEY;
+  if (!GEMINI_KEY) return;
   try {
-    const hasDesc = !!(item.description && item.description.trim());
-    const r = await fetch(SAMBANOVA_URL, {
+    const r = await fetch(GEMINI_URL, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SAMBANOVA_KEY}` },
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${GEMINI_KEY}` },
       body: JSON.stringify({
-        model: SAMBANOVA_MODEL,
-        messages: [{ role: 'user', content: buildPrompt(item.title, item.description) }],
-        max_tokens: 800,
+        model: GEMINI_MODEL,
+        messages: [{ role: 'user', content: buildBatchPrompt(items) }],
+        max_tokens: 6000,
         temperature: 0.2,
+        reasoning_effort: 'low',
       }),
       signal: AbortSignal.timeout(PER_CALL_TIMEOUT_MS),
     });
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     const data = await r.json();
     const raw = data?.choices?.[0]?.message?.content?.trim() || '';
-    const parsed = parseResponse(raw, hasDesc);
-    if (!parsed) throw new Error('Unparseable response');
-    await redisCmd('SET', `news_tr:${item.guid}`, JSON.stringify(parsed), 'EX', TR_KEY_TTL);
-    await cb.onSuccess(CB_SAMBANOVA);
+    const parsed = parseBatchResponse(raw, items.length);
+    if (!parsed.some(Boolean)) throw new Error('Unparseable batch response');
+    await Promise.all(parsed.map((p, i) => (p ? redisCmd('SET', `news_tr:${items[i].guid}`, JSON.stringify(p), 'EX', TR_KEY_TTL) : null)));
+    await cb.onSuccess(CB_GEMINI);
   } catch(e) {
-    await cb.onFailure(CB_SAMBANOVA);
-    console.warn('news_translate item failed:', item.guid, e.message);
+    await cb.onFailure(CB_GEMINI);
+    console.warn('news_translate batch failed:', items.map(it => it.guid).join(','), e.message);
   }
 }
 
 /**
- * Terjemahkan item baru yang belum pernah diterjemahkan. HARUS di-await oleh
- * caller (lihat rssHandler api/feeds.js) — fire-and-forget murni TERBUKTI tidak
- * selesai di produksi karena Vercel membekukan eksekusi begitu respons dikirim,
- * sebelum panggilan SambaNova (jaringan) sempat jalan (bug S272, ditemukan lewat
- * verifikasi live setelah deploy, bukan cuma unit test).
+ * Terjemahkan item baru yang belum pernah diterjemahkan, dalam batch sampai
+ * BATCH_SIZE headline per panggilan API. HARUS di-await oleh caller (lihat
+ * rssHandler/newsHistoryHandler api/feeds.js) — lihat catatan fire-and-forget
+ * di atas.
  * @param {Array} items - hasil parseRSSItems() (title, guid, pubDate, link, description)
  * @param {Function} redisCmd - helper Redis (shared dengan caller)
  * @param {number} budgetMs - anggaran waktu total (adaptif, lihat caller)
  */
 async function translateNewItems(items, redisCmd, budgetMs = DEFAULT_BUDGET_MS) {
   if (!Array.isArray(items) || items.length === 0) return;
-  if (!process.env.SAMBANOVA_API_KEY_CALL1) return;
-  if (!await cb.canCall(CB_SAMBANOVA)) return; // circuit open — coba lagi siklus berikutnya
+  if (!process.env.GEMINI_API_KEY) return;
+  if (!await cb.canCall(CB_GEMINI)) return; // circuit open — coba lagi siklus berikutnya
 
   // ECON DATA dikecualikan (permintaan user 2026-08-02): angka/rilis kalender
   // rawan salah interpretasi kalau diterjemahkan LLM — biarkan bahasa Inggris asli.
@@ -162,24 +196,29 @@ async function translateNewItems(items, redisCmd, budgetMs = DEFAULT_BUDGET_MS) 
   const todo = candidates.filter((_, i) => !existing || existing[i] == null);
   if (todo.length === 0) return;
 
-  // SATU gelombang saja per pemanggilan (bukan loop multi-gelombang) — lihat catatan
-  // MAX_CONCURRENT di atas soal alasan RPM. budgetMs tetap dipakai sebagai timeout
-  // keseluruhan gelombang ini (jaga-jaga kalau Promise.all lebih lambat dari perkiraan),
-  // bukan buat looping banyak gelombang. Backlog besar nyusul siklus cache-refill
-  // berikutnya (~50-60 detik), bukan dipaksa habis sekali jalan.
-  let wave;
-  if (todo.length <= MAX_CONCURRENT) {
-    wave = todo;
-  } else {
-    // Lihat catatan BACKLOG_RESERVE_SLOTS di atas — pisah slot terbaru vs tertua,
-    // todo.length > MAX_CONCURRENT di sini jadi kedua potongan dijamin tidak tumpang tindih.
-    const newestSlots = MAX_CONCURRENT - BACKLOG_RESERVE_SLOTS;
-    wave = todo.slice(0, newestSlots).concat(todo.slice(-BACKLOG_RESERVE_SLOTS));
+  // Pecah jadi batch BATCH_SIZE. Anti-starvation (S273, dipertahankan di desain batch):
+  // kalau lebih dari 2 batch, batch KEDUA yang diproses selalu ambil dari ujung PALING
+  // LAMA (ekor todo[]) dulu — supaya headline lama tetap kebagian slot walau budget
+  // cuma cukup untuk 2 batch, bukan terus digeser headline baru yang lebih deras.
+  const chunks = [];
+  for (let i = 0; i < todo.length; i += BATCH_SIZE) chunks.push(todo.slice(i, i + BATCH_SIZE));
+  if (chunks.length > 2) chunks.splice(1, 0, chunks.pop());
+
+  const deadline = Date.now() + budgetMs;
+  for (const chunk of chunks) {
+    if (Date.now() >= deadline) break;
+    // clearTimeout di finally — tanpa ini, timer sisa budget yang KALAH race (batch
+    // selesai duluan) tetap hidup sampai durasi penuhnya habis sendiri, cuma diam-diam
+    // menahan proses Node tetap berjalan (ketahuan dari runtime unit test yang harusnya
+    // instan malah ikut nunggu puluhan detik).
+    let timer;
+    const timeout = new Promise(resolve => { timer = setTimeout(resolve, Math.max(0, deadline - Date.now())); });
+    try {
+      await Promise.race([translateBatch(chunk, redisCmd), timeout]);
+    } finally {
+      clearTimeout(timer);
+    }
   }
-  await Promise.race([
-    Promise.all(wave.map(it => translateOne(it, redisCmd))),
-    new Promise(resolve => setTimeout(resolve, budgetMs)),
-  ]);
 }
 
 /**
@@ -201,4 +240,4 @@ async function getTranslations(guids, redisCmd) {
   return out;
 }
 
-module.exports = { translateNewItems, getTranslations, parseResponse, buildPrompt };
+module.exports = { translateNewItems, getTranslations, parseResponse, buildPrompt, buildBatchPrompt, parseBatchResponse };

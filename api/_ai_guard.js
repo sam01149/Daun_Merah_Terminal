@@ -61,15 +61,20 @@ const DEFAULT_LIMITS = {
   sambanova_main_experimental:  30,
   sambanova_c1_experimental:    30,
 
-  // Translate headline NEWS ke Bahasa Indonesia (S272, 2026-08-02; diganti dari Gemini
-  // ke SambaNova akun 2 sesi sama hari itu, permintaan user — lebih cepat) — pool
-  // TERPISAH dari 'sambanova_c1' (200/hari) di atas SENGAJA, supaya volume translate
-  // (bisa ratusan/hari) tidak rebutan kuota sama fallback1 journal_analysis/
-  // fundamental_analysis/primary Call 1 digest yang berbagi akun SambaNova yang sama.
-  // Limit resmi provider "free persisten" tanpa RPD tertulis (~10-20 RPM, lihat
-  // daun_merah_ai.md §4) — 1000/hari tetap konservatif di bawah itu (1000/1440 menit
-  // ≈ <1 req/menit rata-rata), headroom besar untuk burst breaking news.
-  sambanova_c1_newstranslate: 1000,
+  // Translate headline NEWS ke Bahasa Indonesia (S272, 2026-08-02) — pool TERPISAH
+  // dari 'gemini' (200/hari) di atas SENGAJA, supaya volume translate (bisa
+  // ratusan/hari, sekarang dalam BATCH sampai 20 headline/panggilan — lihat
+  // api/_news_translate.js) tidak rebutan kuota sama Analisa Fundamental/AI Coach
+  // yang fallback ke Gemini juga. Sempat dicoba SambaNova akun 2 (2026-08-02, sesi
+  // sama hari) supaya lolos limit 10 RPM Gemini — TERBUKTI SALAH: akun itu dipakai
+  // bersama 3 fitur lain dan circuit breaker-nya trip berulang (22 kegagalan
+  // beruntun di produksi), headline sering tidak diterjemahkan sama sekali. Balik
+  // ke Gemini + desain batch (bukan 1 panggilan/headline) — jumlah PANGGILAN nyaris
+  // tidak pernah dekat limit 10 RPM walau breaking news deras. Provider Google-side
+  // sama (1 API key/project, real ceiling ~1.500 RPD) — 1000 + 200 ('gemini' di
+  // atas) = 1200, masih di bawah 1.500, sisa headroom buat provider lain yang
+  // numpang key sama.
+  gemini_newstranslate: 1000,
 };
 
 function dailyLimit(provider) {
