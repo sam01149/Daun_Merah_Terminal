@@ -61,20 +61,22 @@ const DEFAULT_LIMITS = {
   sambanova_main_experimental:  30,
   sambanova_c1_experimental:    30,
 
-  // Translate headline NEWS ke Bahasa Indonesia (S272, 2026-08-02) — pool TERPISAH
-  // dari 'gemini' (200/hari) di atas SENGAJA, supaya volume translate (bisa
+  // Translate headline NEWS ke Bahasa Indonesia (S272, 2026-08-02) — bucket TERPISAH
+  // dari 'sambanova_c1' (200/hari) di atas SENGAJA, supaya volume translate (bisa
   // ratusan/hari, sekarang dalam BATCH sampai 20 headline/panggilan — lihat
-  // api/_news_translate.js) tidak rebutan kuota sama Analisa Fundamental/AI Coach
-  // yang fallback ke Gemini juga. Sempat dicoba SambaNova akun 2 (2026-08-02, sesi
-  // sama hari) supaya lolos limit 10 RPM Gemini — TERBUKTI SALAH: akun itu dipakai
-  // bersama 3 fitur lain dan circuit breaker-nya trip berulang (22 kegagalan
-  // beruntun di produksi), headline sering tidak diterjemahkan sama sekali. Balik
-  // ke Gemini + desain batch (bukan 1 panggilan/headline) — jumlah PANGGILAN nyaris
-  // tidak pernah dekat limit 10 RPM walau breaking news deras. Provider Google-side
-  // sama (1 API key/project, real ceiling ~1.500 RPD) — 1000 + 200 ('gemini' di
-  // atas) = 1200, masih di bawah 1.500, sisa headroom buat provider lain yang
-  // numpang key sama.
-  gemini_newstranslate: 1000,
+  // api/_news_translate.js, jadi jauh lebih sedikit PANGGILAN aktual daripada
+  // volume headline-nya) tidak rebutan kuota sama fallback Journal/Fundamental/
+  // Call 1 Ringkasan yang berbagi akun SambaNova sama. Riwayat hari yang sama
+  // (2026-08-02): sempat balik ke Gemini + batch (mengira solusinya cukup ganti
+  // provider) — TERBUKTI SALAH JUGA: Gemini `gemini-flash-latest` cuma 20
+  // request/HARI (429 RESOURCE_EXHAUSTED terverifikasi live), bukan 1.500 RPD
+  // seperti asumsi lama (kuota Google mengetat tiap alias `-latest` bergeser
+  // generasi model). Balik ke SambaNova akun 2 (keputusan user) TAPI tetap pakai
+  // desain batch — beban RPM akun 2 sekarang jauh lebih ringan (1-2 panggilan per
+  // siklus, bukan sampai 15 konkuren seperti desain lama), limit 1000/hari di sini
+  // murni pagar kita sendiri (provider tidak publikasikan RPD eksplisit, cuma
+  // ~10-20 RPM diamati — lihat daun_merah_ai.md §4).
+  sambanova_c1_newstranslate: 1000,
 };
 
 function dailyLimit(provider) {

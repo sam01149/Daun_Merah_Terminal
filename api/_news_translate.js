@@ -22,29 +22,44 @@
 //   tambahan apa pun.
 //
 // BATCH REDESIGN (2026-08-02, usulan user): desain awal kirim 1 panggilan API PER
-// HEADLINE — itu biang keladi gampang mepet limit RPM, BUKAN volume beritanya yang
-// tinggi (15 headline baru dalam satu siklus = 15 panggilan terpisah). Sempat dicoba
-// ganti provider ke SambaNova akun 2 (lihat git history, commit sesi HP 2026-08-02)
-// supaya lolos limit 10 RPM Gemini — TERBUKTI SALAH lewat verifikasi live: akun 2
-// dipakai bersama 3 fitur lain (fallback Journal/Fundamental, Call 1 Ringkasan) dan
-// circuit breaker-nya trip berulang (22 kegagalan beruntun ketahuan saat diagnosis
-// langsung ke Redis produksi), headline malah sering TIDAK diterjemahkan sama sekali
-// berjam-jam — lebih buruk dari kondisi sebelumnya. Perbaikan sebenarnya: BATCH —
-// SATU panggilan API menerjemahkan sampai BATCH_SIZE headline sekaligus. N headline
-// baru sekarang cuma butuh ceil(N/BATCH_SIZE) panggilan, bukan N panggilan — jumlah
-// PANGGILAN per menit nyaris tidak pernah dekat limit 10 RPM Gemini walau breaking
-// news deras. Balik ke Gemini (gratis, terbukti stabil sebelum eksperimen SambaNova).
+// HEADLINE — itu biang keladi gampang mepet limit RPM/RPD provider, BUKAN volume
+// beritanya yang tinggi (15 headline baru dalam satu siklus = 15 panggilan terpisah).
+// Perbaikan sebenarnya: BATCH — SATU panggilan API menerjemahkan sampai BATCH_SIZE
+// headline sekaligus. N headline baru sekarang cuma butuh ceil(N/BATCH_SIZE)
+// panggilan, bukan N panggilan.
+//
+// Riwayat provider hari yang sama (2026-08-02), keduanya diverifikasi LIVE bukan
+// tebak-tebakan:
+// 1) Gemini (`gemini-flash-latest`) → SambaNova akun 2 (supaya lolos limit RPM
+//    Gemini) → TERBUKTI SALAH: akun 2 dipakai bersama 3 fitur lain (fallback
+//    Journal/Fundamental, Call 1 Ringkasan), circuit breaker trip berulang (22
+//    kegagalan beruntun ketahuan dari Redis produksi), headline sering TIDAK
+//    diterjemahkan berjam-jam.
+// 2) Balik ke Gemini + desain BATCH ini → TERBUKTI SALAH JUGA, alasan BEDA: bukan
+//    RPM, tapi kuota HARIAN — 429 `RESOURCE_EXHAUSTED`, limit CUMA 20
+//    request/hari untuk model yang di-resolve alias `gemini-flash-latest` saat ini
+//    (`gemini-3.6-flash`), jauh di bawah asumsi lama "1.500 RPD" (kuota Google makin
+//    ketat tiap alias `-latest` bergeser generasi — lihat komentar model drift di
+//    market-digest.js/admin.js/journal.js, sudah 3x bergeser: 2.5→3.5→3.6). Fallback
+//    Gemini fitur LAIN di codebase ini (Fundamental/AI Coach/Call1-3) berbagi masalah
+//    yang sama, cuma jarang ketahuan karena jarang jadi fallback aktif.
+// 3) KEPUTUSAN USER (setelah 2 percobaan gagal): balik ke SambaNova akun 2, TAPI
+//    tetap pakai desain BATCH — beban RPM akun 2 sekarang jauh lebih ringan (1-2
+//    panggilan per siklus cache-refill ~50-60 detik, bukan sampai 15 panggilan
+//    konkuren seperti desain lama), jadi risiko trip circuit breaker jauh berkurang
+//    tanpa perlu ganti provider lagi.
 
 const cb = require('./_circuit_breaker');
 const { allowAiCall } = require('./_ai_guard');
 const { detectCat } = require('../newscat');
 
-// Circuit breaker key TERPISAH dari 'ai:gemini' yang dipakai admin.js/market-digest.js/
-// journal.js — supaya bug spesifik parsing/prompt translate ini tidak ikut men-trip
-// circuit fitur lain (Analisa Fundamental/AI Coach) yang juga fallback ke Gemini.
-const CB_GEMINI = 'ai:gemini:newstranslate';
-const GEMINI_URL   = 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions';
-const GEMINI_MODEL = 'gemini-flash-latest';
+// Circuit breaker key TERPISAH dari 'ai:sambanova:c1' yang dipakai market-digest.js/
+// admin.js/journal.js — supaya bug spesifik parsing/prompt translate ini tidak ikut
+// men-trip circuit fitur lain (fallback Journal/Fundamental/Call 1 Ringkasan) yang
+// berbagi akun SambaNova yang sama.
+const CB_SAMBANOVA = 'ai:sambanova:c1:newstranslate';
+const SAMBANOVA_URL   = 'https://api.sambanova.ai/v1/chat/completions';
+const SAMBANOVA_MODEL = 'DeepSeek-V3.2';
 
 const TR_KEY_TTL = 36 * 3600; // detik — samakan retensi 36 jam dengan news_history
 // Berapa headline digabung dalam SATU panggilan API (lihat catatan BATCH REDESIGN di
@@ -53,7 +68,13 @@ const TR_KEY_TTL = 36 * 3600; // detik — samakan retensi 36 jam dengan news_hi
 // masih ringkas + gampang di-parse per blok, tapi tetap >10x lebih hemat panggilan
 // API dibanding desain lama (1 headline/panggilan).
 const BATCH_SIZE = 20;
-const PER_CALL_TIMEOUT_MS = 9000; // batch butuh lebih banyak token/waktu daripada 1 headline
+// SambaNova akun 2 dipakai fitur lain (market-digest.js Call1/journal.js/admin.js
+// fundamental fallback) dengan timeout 22-30 detik untuk model yang SAMA (DeepSeek-V3.2)
+// — batch translate menerjemahkan LEBIH BANYAK teks sekaligus daripada 1 headline,
+// jadi timeout digenerouskan ke 15 detik (bukan 4 detik seperti versi lama 1-headline),
+// tetap di bawah pola 22-30s tempat lain supaya tidak menahan Vercel/client lebih lama
+// dari yang perlu.
+const PER_CALL_TIMEOUT_MS = 15000;
 // Default anggaran waktu translate kalau caller tidak kasih budgetMs eksplisit —
 // caller SEHARUSNYA selalu kasih (lihat rssHandler/newsHistoryHandler di api/feeds.js,
 // adaptif terhadap sisa waktu masing-masing), ini cuma fallback aman.
@@ -141,22 +162,25 @@ function parseBatchResponse(raw, count) {
   return out;
 }
 
-async function translateBatch(items, redisCmd) {
-  if (!await allowAiCall('gemini_newstranslate')) return; // pagar kuota — nyusul siklus berikutnya
-  const GEMINI_KEY = process.env.GEMINI_API_KEY;
-  if (!GEMINI_KEY) return;
+async function translateBatch(items, redisCmd, timeoutMs) {
+  if (!await allowAiCall('sambanova_c1_newstranslate')) return; // pagar kuota — nyusul siklus berikutnya
+  const SAMBANOVA_KEY = process.env.SAMBANOVA_API_KEY_CALL1;
+  if (!SAMBANOVA_KEY) return;
   try {
-    const r = await fetch(GEMINI_URL, {
+    const r = await fetch(SAMBANOVA_URL, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${GEMINI_KEY}` },
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SAMBANOVA_KEY}` },
       body: JSON.stringify({
-        model: GEMINI_MODEL,
+        model: SAMBANOVA_MODEL,
         messages: [{ role: 'user', content: buildBatchPrompt(items) }],
         max_tokens: 6000,
         temperature: 0.2,
-        reasoning_effort: 'low',
       }),
-      signal: AbortSignal.timeout(PER_CALL_TIMEOUT_MS),
+      // signal pakai timeoutMs dari CALLER (sisa budget siklus ini), BUKAN konstanta
+      // tetap — lihat catatan di translateNewItems soal kenapa ini penting (mencegah
+      // panggilan lambat jadi orphaned/fire-and-forget diam-diam kalau dibiarkan
+      // jalan lebih lama dari budget yang tersisa).
+      signal: AbortSignal.timeout(timeoutMs),
     });
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     const data = await r.json();
@@ -164,9 +188,9 @@ async function translateBatch(items, redisCmd) {
     const parsed = parseBatchResponse(raw, items.length);
     if (!parsed.some(Boolean)) throw new Error('Unparseable batch response');
     await Promise.all(parsed.map((p, i) => (p ? redisCmd('SET', `news_tr:${items[i].guid}`, JSON.stringify(p), 'EX', TR_KEY_TTL) : null)));
-    await cb.onSuccess(CB_GEMINI);
+    await cb.onSuccess(CB_SAMBANOVA);
   } catch(e) {
-    await cb.onFailure(CB_GEMINI);
+    await cb.onFailure(CB_SAMBANOVA);
     console.warn('news_translate batch failed:', items.map(it => it.guid).join(','), e.message);
   }
 }
@@ -182,8 +206,8 @@ async function translateBatch(items, redisCmd) {
  */
 async function translateNewItems(items, redisCmd, budgetMs = DEFAULT_BUDGET_MS) {
   if (!Array.isArray(items) || items.length === 0) return;
-  if (!process.env.GEMINI_API_KEY) return;
-  if (!await cb.canCall(CB_GEMINI)) return; // circuit open — coba lagi siklus berikutnya
+  if (!process.env.SAMBANOVA_API_KEY_CALL1) return;
+  if (!await cb.canCall(CB_SAMBANOVA)) return; // circuit open — coba lagi siklus berikutnya
 
   // ECON DATA dikecualikan (permintaan user 2026-08-02): angka/rilis kalender
   // rawan salah interpretasi kalau diterjemahkan LLM — biarkan bahasa Inggris asli.
@@ -204,20 +228,22 @@ async function translateNewItems(items, redisCmd, budgetMs = DEFAULT_BUDGET_MS) 
   for (let i = 0; i < todo.length; i += BATCH_SIZE) chunks.push(todo.slice(i, i + BATCH_SIZE));
   if (chunks.length > 2) chunks.splice(1, 0, chunks.pop());
 
+  // Deadline per-chunk pakai AbortSignal SUNGGUHAN di translateBatch (sisa budget,
+  // dibatasi juga oleh PER_CALL_TIMEOUT_MS) — BUKAN Promise.race melawan timer
+  // terpisah. Bedanya penting: kalau cuma di-race, panggilan yang lebih lambat dari
+  // sisa budget tetap JALAN di background sampai selesai sendiri (fetch tidak
+  // benar-benar dibatalkan) — begitu handler pemanggil sudah kirim respons, proses
+  // itu jadi orphaned dan berisiko dibekukan Vercel sebelum sempat cb.onSuccess/
+  // redisCmd('SET', ...) — persis bug fire-and-forget yang sudah pernah ditemukan &
+  // difix sebelumnya (lihat catatan di atas), cuma muncul lagi dalam bentuk baru.
+  // AbortSignal dari fetch() ITU SENDIRI yang mengunci deadline supaya translateBatch
+  // SELALU selesai (sukses atau gagal tercatat) sebelum sisa budget habis — tidak ada
+  // eksekusi yang bisa lolos tanpa ke-await penuh.
   const deadline = Date.now() + budgetMs;
   for (const chunk of chunks) {
-    if (Date.now() >= deadline) break;
-    // clearTimeout di finally — tanpa ini, timer sisa budget yang KALAH race (batch
-    // selesai duluan) tetap hidup sampai durasi penuhnya habis sendiri, cuma diam-diam
-    // menahan proses Node tetap berjalan (ketahuan dari runtime unit test yang harusnya
-    // instan malah ikut nunggu puluhan detik).
-    let timer;
-    const timeout = new Promise(resolve => { timer = setTimeout(resolve, Math.max(0, deadline - Date.now())); });
-    try {
-      await Promise.race([translateBatch(chunk, redisCmd), timeout]);
-    } finally {
-      clearTimeout(timer);
-    }
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) break;
+    await translateBatch(chunk, redisCmd, Math.min(PER_CALL_TIMEOUT_MS, remaining));
   }
 }
 

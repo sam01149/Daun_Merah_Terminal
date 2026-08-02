@@ -105,18 +105,18 @@ test('newsTranslateHandler: guids dibatasi 100 meski diminta lebih banyak (konsi
 // Item yang sudah lewat dari jendela live RSS tidak pernah sempat diterjemahkan
 // (lihat api/_news_translate.js) — "Muat Berita Lebih Lama" sekarang jadi
 // kesempatan kedua supaya arsip 36 jam juga ikut tercover, bukan cuma live feed.
-test('newsHistoryHandler: item arsip yang belum diterjemahkan ikut ditembak ke Gemini', withMockRedis(async (redis) => {
+test('newsHistoryHandler: item arsip yang belum diterjemahkan ikut ditembak ke SambaNova', withMockRedis(async (redis) => {
   const realFetch = global.fetch;
-  let geminiCalls = 0;
+  let sambaCalls = 0;
   global.fetch = async (url, opts) => {
-    if (String(url).includes('generativelanguage.googleapis.com')) {
-      geminiCalls++;
+    if (String(url).includes('api.sambanova.ai')) {
+      sambaCalls++;
       return { ok: true, json: async () => ({ choices: [{ message: { content: '[1]\nJUDUL_ID: Terjemahan arsip' } }] }) };
     }
     return redis.fetch(url, opts);
   };
-  const prevKey = process.env.GEMINI_API_KEY;
-  process.env.GEMINI_API_KEY = 'fake-key';
+  const prevKey = process.env.SAMBANOVA_API_KEY_CALL1;
+  process.env.SAMBANOVA_API_KEY_CALL1 = 'fake-key';
   try {
     const now = new Date('2026-08-02T09:00:00Z').getTime();
     const xml = `<rss><channel><item><title>Old archived headline about trade talks</title><guid>hist-1</guid><pubDate>${new Date(now).toUTCString()}</pubDate><link>https://example.com/hist-1</link></item></channel></rss>`;
@@ -126,23 +126,23 @@ test('newsHistoryHandler: item arsip yang belum diterjemahkan ikut ditembak ke G
     await newsHistoryHandler({ query: { before: String(now + 1), limit: '10' } }, res);
     assert.equal(res.statusCode, 200);
     assert.equal(res.body.items[0].guid, 'hist-1');
-    assert.equal(geminiCalls, 1, 'item arsip yang belum punya news_tr:<guid> harus ditembak ke Gemini');
+    assert.equal(sambaCalls, 1, 'item arsip yang belum punya news_tr:<guid> harus ditembak ke SambaNova');
     assert.equal(redis.kv.has('news_tr:hist-1'), true, 'hasil translate arsip harus tersimpan sama seperti live feed');
   } finally {
     global.fetch = realFetch;
-    if (prevKey === undefined) delete process.env.GEMINI_API_KEY; else process.env.GEMINI_API_KEY = prevKey;
+    if (prevKey === undefined) delete process.env.SAMBANOVA_API_KEY_CALL1; else process.env.SAMBANOVA_API_KEY_CALL1 = prevKey;
   }
 }));
 
 test('newsHistoryHandler: item arsip yang SUDAH punya terjemahan tidak ditembak ulang', withMockRedis(async (redis) => {
   const realFetch = global.fetch;
-  let geminiCalls = 0;
+  let sambaCalls = 0;
   global.fetch = async (url, opts) => {
-    if (String(url).includes('generativelanguage.googleapis.com')) { geminiCalls++; return { ok: true, json: async () => ({ choices: [{ message: { content: '[1]\nJUDUL_ID: X' } }] }) }; }
+    if (String(url).includes('api.sambanova.ai')) { sambaCalls++; return { ok: true, json: async () => ({ choices: [{ message: { content: '[1]\nJUDUL_ID: X' } }] }) }; }
     return redis.fetch(url, opts);
   };
-  const prevKey = process.env.GEMINI_API_KEY;
-  process.env.GEMINI_API_KEY = 'fake-key';
+  const prevKey = process.env.SAMBANOVA_API_KEY_CALL1;
+  process.env.SAMBANOVA_API_KEY_CALL1 = 'fake-key';
   try {
     const now = new Date('2026-08-02T09:00:00Z').getTime();
     const xml = `<rss><channel><item><title>Already translated archived headline</title><guid>hist-2</guid><pubDate>${new Date(now).toUTCString()}</pubDate><link>https://example.com/hist-2</link></item></channel></rss>`;
@@ -151,9 +151,9 @@ test('newsHistoryHandler: item arsip yang SUDAH punya terjemahan tidak ditembak 
 
     const res = mockRes();
     await newsHistoryHandler({ query: { before: String(now + 1), limit: '10' } }, res);
-    assert.equal(geminiCalls, 0);
+    assert.equal(sambaCalls, 0);
   } finally {
     global.fetch = realFetch;
-    if (prevKey === undefined) delete process.env.GEMINI_API_KEY; else process.env.GEMINI_API_KEY = prevKey;
+    if (prevKey === undefined) delete process.env.SAMBANOVA_API_KEY_CALL1; else process.env.SAMBANOVA_API_KEY_CALL1 = prevKey;
   }
 }));
