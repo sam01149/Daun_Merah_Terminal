@@ -11,7 +11,7 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-02 (Session 272 lanj. — Cron GitHub Actions jaga translate NEWS tetap fresh walau app ditutup)
+> **Last updated:** 2026-08-02 (Session 272 lanj. — Anti-starvation backlog translate NEWS)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -148,6 +148,20 @@ Konteks: user tanya apakah translate NEWS bisa tetap jalan walau aplikasi ditutu
 **Cakupan disengaja terbatas:** cron ini cuma menjaga jendela LIVE feed (headline beberapa jam terakhir, sama seperti traffic client biasa) — TIDAK backfill arsip 36 jam penuh sekaligus (itu tetap lazy, tercover terpisah saat user klik "Muat Berita Lebih Lama", lihat entri di atas). Item TERTUNDA di `daun_merah_progress.md` untuk topik ini dihapus (sudah dieksekusi, bukan lagi tertunda).
 
 **Verifikasi:** `npm test` 730/730 hijau (workflow YAML tidak ada unit test — konsisten dengan workflow lain di repo ini, verifikasi kebenaran cuma lewat run manual/`workflow_dispatch` setelah merge, bukan test harness).
+
+**Revisi lanjutan (sesi terpisah, hari sama): user tanya lagi "kenapa masih sebagian yang diterjemahkan" — ternyata gap berbeda dari fix `MAX_CONCURRENT` di atas, bukan berulang.**
+
+**Diagnosis (diverifikasi live ke produksi, bukan tebak-tebakan):** curl `type=rss` produksi → ambil 30 guid terbaru → cek `type=news_translate` → 9/30 belum diterjemahkan. Tunggu 65 detik (lewat 1 siklus cache-refill penuh) → cek ulang guid yang sama → tetap 0/9 (tidak ada progres sama sekali, bukan cuma lambat). Diperluas ke seluruh jendela live (100 item) → **79/100 masih Inggris**.
+
+**Root cause #1 — starvation urutan (bug baru, beda dari fix `MAX_CONCURRENT` sebelumnya):** `wave = todo.slice(0, MAX_CONCURRENT)` di `translateNewItems` selalu mengambil elemen AWAL `todo[]`, dan `todo[]` warisan urutan `parseRSSItems()` = urutan asli feed FinancialJuice (headline TERBARU duluan). Saat headline baru datang deras (breaking news), 8 slot per gelombang SELALU direbut headline paling baru — headline yang agak lama tapi belum sempat diterjemahkan terus digeser ke belakang antrean oleh headline lebih baru lagi, berpotensi macet Inggris selama arus berita belum mereda (bukan "self-healing" seperti asumsi desain awal, karena antrean tidak pernah FIFO).
+
+**Root cause #2 — backlog raksasa warisan pra-cron:** 79/100 jauh lebih besar dari yang starvation semata bisa jelaskan dalam waktu singkat. Kemungkinan besar backlog ini terakumulasi SEBELUM cron `news-translate-warm.yml` (entri di atas, di-deploy hari sama beberapa jam sebelumnya) sempat aktif penuh — saat translate cuma jalan tergantung trafik client, ditambah gelombang berita geopolitik Iran/Kuwait/Ukraina yang sangat deras di jendela waktu itu. Bukan bug baru, tinggal menunggu beberapa siklus cron (~5 menit/siklus × 8 item = kapasitas ~96/jam) untuk terkuras habis.
+
+**Fix (`api/_news_translate.js`), untuk root cause #1 saja (`BACKLOG_RESERVE_SLOTS = 2`):** dari 8 slot per gelombang, 2 slot direservasi khusus untuk headline TERTUA yang masih belum diterjemahkan (`todo.slice(-2)`, ujung belakang array), 6 slot sisanya tetap prioritas headline terbaru (`todo.slice(0, 6)`) — kombinasi keduanya dijamin tidak tumpang tindih selama `todo.length > MAX_CONCURRENT` (baru masuk cabang ini). Kalau `todo.length <= MAX_CONCURRENT`, semua diproses langsung tanpa perlu split. Efeknya: headline lama TIDAK PERNAH lagi macet permanen — pasti dapat giliran bertahap tiap gelombang, walau arus berita baru terus deras.
+
+**Root cause #2 sengaja TIDAK diutak-atik lebih jauh (keputusan user):** ditawarkan naikkan `MAX_CONCURRENT` 8→9 (aman secara RPM karena tiap pemanggilan cron berjarak 5 menit — jauh di atas jendela RPM 1 menit Gemini, jadi kuota selalu segar tiap panggilan), user pilih **biarkan 8** — margin aman 2 unit dari limit RPM 10/menit lebih diprioritaskan daripada percepatan ~12%, karena backlog toh pasti habis sendiri lewat cron + fix starvation di atas.
+
+**Verifikasi:** `npm test` 731/731 hijau (1 test baru: 12 item nyaris 2x lipat `MAX_CONCURRENT`, verifikasi wave yang diproses persis 6 terbaru + 2 tertua, 4 item tengah sengaja menunggu siklus berikutnya). Diverifikasi live pasca-deploy: backlog 79/100 dikonfirmasi masih ada beberapa siklus setelah fix (belum habis, sesuai ekspektasi kapasitas ~96/jam vs backlog besar warisan) — fix ini menjamin ARAH (backlog pasti mengecil, headline lama tidak pernah "hilang" dari antrean selamanya), bukan solusi instan buat backlog yang sudah terlanjur besar.
 
 ## Changelog Session 271 (2026-08-01) — Fix: Analisa Terakhir Jumat Hilang Saat Weekend (Root Cause TTL Redis)
 
