@@ -177,12 +177,23 @@ async function rssHandler(req, res) {
   // Fire-and-forget: persist items to 36h rolling history for market-digest
   storeNewsHistory(xml, now).catch(() => {});
 
-  // Fire-and-forget: translate item baru ke Bahasa Indonesia (S272, 2026-08-02).
-  // TIDAK di-throttle 5 menit seperti storeNewsHistory di atas — sengaja jalan
-  // tiap kali cache RSS di-refill (~50-60 detik) supaya headline baru nyusul
-  // versi Indonesia secepat mungkin. translateNewItems() sendiri sudah skip
-  // item yang sudah pernah diterjemahkan, jadi aman dipanggil tiap siklus.
-  translateNewItems(parseRSSItems(xml), redisCmd).catch(() => {});
+  // Translate item baru ke Bahasa Indonesia (S272, 2026-08-02) — DI-AWAIT, BUKAN
+  // fire-and-forget murni. Percobaan awal pakai fire-and-forget (seperti
+  // storeNewsHistory di atas) ternyata TIDAK PERNAH selesai di produksi: Vercel
+  // membekukan eksekusi begitu respons dikirim, dan panggilan Gemini (jaringan,
+  // 1-4 detik) tidak sempat jalan sama sekali — beda dari storeNewsHistory yang
+  // cuma regex+beberapa SET Redis (selesai dalam hitungan puluhan ms, aman lolos
+  // sebelum dibekukan). Anggaran waktu translate ADAPTIF terhadap sisa waktu RSS
+  // fetch di atas (bisa makan sampai 12s dari 20s maxDuration api/feeds.js) supaya
+  // total tidak pernah mepet maxDuration ATAU timeout client (22s, lihat fetchRSS()
+  // di index.html) — kalau RSS fetch lambat, translate otomatis dapat jatah lebih
+  // sedikit (bahkan nol), item yang kelewat nyusul siklus refill berikutnya.
+  const translateBudgetMs = Math.max(0, Math.min(6000, 16000 - (Date.now() - now)));
+  if (translateBudgetMs > 500) {
+    try { await translateNewItems(parseRSSItems(xml), redisCmd, translateBudgetMs); } catch(e4) {
+      console.warn('translateNewItems failed:', e4.message);
+    }
+  }
 
   res.setHeader('X-Cache-Source', 'UPSTREAM');
   res.setHeader('X-News-Source', 'financialjuice');

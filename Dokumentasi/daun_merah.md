@@ -11,7 +11,7 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-02 (Session 272 lanj. — Translate NEWS ke Bahasa Indonesia via Gemini, field tambahan title_id/desc_id)
+> **Last updated:** 2026-08-02 (Session 272 lanj. — Fix kritis: translate NEWS tidak jalan di produksi, fire-and-forget diganti await+budget adaptif)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -89,6 +89,22 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 - `APP_VERSION` → `2026.08.02.4`.
 
 **Verifikasi:** `npm test` 728/728 hijau (14 test baru: `test/lib/news_translate.test.js` — parsing prompt/respons, pengecualian econ-data, skip item sudah-diterjemahkan, fail-open tanpa `GEMINI_API_KEY`/Redis; `test/feeds/news_translate_handler.test.js` — endpoint lookup). Verifikasi visual Playwright (data tiruan, tanpa backend live): mode ID menampilkan judul terjemahan untuk item yang sudah selesai, fallback Inggris otomatis untuk item yang belum sempat diterjemahkan, item ECON DATA tetap Inggris permanen di kedua mode; toggle EN/ID bekerja dua arah; simulasi lookup susulan (`_fetchNewsTranslations` dengan fetch di-mock) berhasil meng-update item yang tadinya fallback Inggris jadi terjemahan begitu server "selesai" — re-render otomatis tanpa reload.
+
+**Bug kritis ditemukan pasca-deploy (hari sama, user cek langsung di app produksi): semua berita tetap tampil bahasa Inggris walau toggle di posisi ID.**
+
+**Diagnosis (bukan tebak-tebakan — diverifikasi langsung ke produksi):**
+1. `curl` endpoint produksi `type=news_translate` untuk guid headline yang lagi tampil di screenshot user → `{"translations":{}}` kosong, walau sudah dipastikan minimal 1 siklus cache-refill (`X-Cache-Source: UPSTREAM`) terjadi + jeda tunggu di atas anggaran waktu translate.
+2. Uji langsung ke API Gemini asli (pakai `GEMINI_API_KEY` dari `.env.local`, prompt/model/parsing PERSIS kode `_news_translate.js`) → **sukses sempurna**, hasil terjemahan akurat sesuai format ketat. Ini membuktikan logika translate (prompt, parsing, model, endpoint) sama sekali TIDAK bermasalah.
+3. Kesimpulan: bug ada di CARA MEMANGGIL-nya, bukan logikanya. `translateNewItems(...).catch(() => {})` dipanggil **fire-and-forget** (tanpa `await`) di `rssHandler` — pola yang sama seperti `storeNewsHistory` yang sudah lama terbukti jalan. Tapi `storeNewsHistory` cuma regex+beberapa Redis SET (selesai puluhan ms), sedangkan `translateNewItems` melakukan panggilan JARINGAN ke Gemini (1-4 detik) — cukup lambat untuk kena bekukan eksekusi Vercel yang terjadi begitu respons dikirim ke client. Promise fire-and-forget itu literally tidak pernah sempat jalan sama sekali di produksi.
+
+**Fix (`api/feeds.js` + `api/_news_translate.js`):**
+- `translateNewItems(...)` sekarang **di-`await`**, BUKAN fire-and-forget — respons RSS ke client baru dikirim SETELAH translate selesai/habis anggaran waktunya.
+- Anggaran waktu translate dibuat **ADAPTIF**, bukan angka tetap: `Math.min(6000, 16000 - elapsedSinceRequestStart)`, jadi kalau RSS fetch ke FinancialJuice di atas kebetulan lambat (bisa sampai 12 detik dari limitnya sendiri), translate otomatis dapat jatah lebih kecil (bahkan nol) — total waktu tidak pernah mepet `maxDuration` 20 detik `api/feeds.js` ATAU timeout client 22 detik (`fetchRSS()` di index.html). Item yang kelewat jatah tetap nyusul siklus cache-refill berikutnya (self-healing, sama seperti desain semula).
+- `translateNewItems(items, redisCmd, budgetMs)` sekarang terima parameter budget eksplisit dari caller, bukan konstanta hardcode di dalam modul.
+
+**Pelajaran:** fire-and-forget setelah `res.send()` di Vercel Serverless Functions TIDAK bisa diasumsikan selalu selesai — aman untuk kerja cepat non-jaringan (regex, beberapa Redis command), TAPI TIDAK aman untuk panggilan jaringan (AI API dkk). Unit test (mock Redis/fetch di Node test runner) tidak menangkap kelas bug ini sama sekali karena tidak mensimulasikan pembekuan proses Vercel — cuma verifikasi live ke endpoint produksi yang berhasil mengungkapnya.
+
+**Verifikasi:** `npm test` 728/728 hijau (test lama tetap kompatibel, `translateNewItems` punya default param). Diagnosis & fix ini belum diverifikasi ulang live pasca-deploy pada saat entri ini ditulis — cek lagi setelah push (curl `type=news_translate` untuk guid yang sama, harus tidak kosong lagi setelah minimal 1 siklus cache-refill).
 
 ## Changelog Session 271 (2026-08-01) — Fix: Analisa Terakhir Jumat Hilang Saat Weekend (Root Cause TTL Redis)
 

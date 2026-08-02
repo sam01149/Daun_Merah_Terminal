@@ -11,11 +11,17 @@
 //   ekonomi rawan salah interpretasi LLM, biarkan bahasa Inggris asli.
 // - 1x translate per headline (guid), hasil di-cache 36 jam (news_tr:<guid>),
 //   dishare SEMUA user/device — bukan per-request, bukan per-user.
-// - Fire-and-forget dari api/feeds.js (rssHandler, cache-miss path saja) —
-//   TIDAK PERNAH blocking respons RSS (endpoint ini pernah kena bug timeout,
-//   lihat catatan di index.html fetchRSS()). Item yang belum sempat/gagal
-//   diterjemahkan cuma tetap bahasa Inggris sampai siklus cache-refill
-//   berikutnya (~50-60 detik) mencoba lagi — self-healing, bukan retry eksplisit.
+// - Di-AWAIT oleh api/feeds.js (rssHandler, cache-miss path saja), dengan
+//   anggaran waktu ADAPTIF (bukan fire-and-forget murni — percobaan pertama
+//   fire-and-forget TERBUKTI tidak pernah selesai di produksi, Vercel
+//   membekukan eksekusi begitu respons dikirim sebelum panggilan Gemini
+//   jaringan sempat jalan; beda dari storeNewsHistory di file yang sama yang
+//   cukup cepat, regex+Redis doang, lolos sebelum dibekukan). Endpoint RSS
+//   pernah kena bug timeout terpisah (lihat catatan di index.html fetchRSS()),
+//   jadi anggaran waktu translate SENGAJA dibatasi ketat & adaptif terhadap
+//   sisa waktu RSS fetch, bukan menambah delay tak terbatas. Item yang belum
+//   sempat/gagal diterjemahkan cuma tetap bahasa Inggris sampai siklus
+//   cache-refill berikutnya (~50-60 detik) mencoba lagi — self-healing.
 // - Prompt STRICT (permintaan user): HANYA hasil terjemahan, tanpa penjelasan
 //   tambahan apa pun.
 
@@ -33,10 +39,10 @@ const GEMINI_MODEL = 'gemini-flash-latest';
 const TR_KEY_TTL = 36 * 3600; // detik — samakan retensi 36 jam dengan news_history
 const MAX_CONCURRENT      = 10;   // panggilan paralel per gelombang
 const PER_CALL_TIMEOUT_MS = 4000;
-// Total anggaran waktu translate dalam 1 siklus — api/feeds.js maxDuration 20s
-// dan fetch RSS FinancialJuice sendiri bisa makan sampai 12s, jadi translate
-// HARUS berhenti jauh sebelum itu supaya tidak mati di tengah & korupsi state.
-const OVERALL_BUDGET_MS = 6000;
+// Default anggaran waktu translate kalau caller tidak kasih budgetMs eksplisit —
+// caller SEHARUSNYA selalu kasih (lihat rssHandler di api/feeds.js, adaptif
+// terhadap sisa waktu RSS fetch), ini cuma fallback aman.
+const DEFAULT_BUDGET_MS = 6000;
 
 function buildPrompt(title, desc) {
   const hasDesc = !!(desc && desc.trim());
@@ -103,12 +109,16 @@ async function translateOne(item, redisCmd) {
 }
 
 /**
- * Terjemahkan item baru yang belum pernah diterjemahkan. Fire-and-forget —
- * caller TIDAK boleh menunggu promise ini sebelum mengirim respons.
+ * Terjemahkan item baru yang belum pernah diterjemahkan. HARUS di-await oleh
+ * caller (lihat rssHandler api/feeds.js) — fire-and-forget murni TERBUKTI tidak
+ * selesai di produksi karena Vercel membekukan eksekusi begitu respons dikirim,
+ * sebelum panggilan Gemini (jaringan) sempat jalan (bug S272, ditemukan lewat
+ * verifikasi live setelah deploy, bukan cuma unit test).
  * @param {Array} items - hasil parseRSSItems() (title, guid, pubDate, link, description)
  * @param {Function} redisCmd - helper Redis (shared dengan caller)
+ * @param {number} budgetMs - anggaran waktu total (adaptif, lihat caller)
  */
-async function translateNewItems(items, redisCmd) {
+async function translateNewItems(items, redisCmd, budgetMs = DEFAULT_BUDGET_MS) {
   if (!Array.isArray(items) || items.length === 0) return;
   if (!process.env.GEMINI_API_KEY) return;
   if (!await cb.canCall(CB_GEMINI)) return; // circuit open — coba lagi siklus berikutnya
@@ -126,7 +136,7 @@ async function translateNewItems(items, redisCmd) {
 
   const start = Date.now();
   for (let i = 0; i < todo.length; i += MAX_CONCURRENT) {
-    if (Date.now() - start > OVERALL_BUDGET_MS) break; // sisa item nyusul siklus berikutnya
+    if (Date.now() - start > budgetMs) break; // sisa item nyusul siklus berikutnya
     const chunk = todo.slice(i, i + MAX_CONCURRENT);
     await Promise.all(chunk.map(it => translateOne(it, redisCmd)));
   }
