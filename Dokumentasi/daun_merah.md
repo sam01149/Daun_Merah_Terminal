@@ -11,7 +11,7 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-02 (Session 272 — Tambah pair BTC/USD di tab TEK)
+> **Last updated:** 2026-08-02 (Session 272 lanj. — Shortcut "/" buka pair selector tab TEK)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -37,6 +37,14 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 **Section yang sengaja TIDAK menampilkan data BTC (bukan bug):** Retail Sentiment grid terpisah (`RETAIL_PAIR_ORDER`) — FXSSI tidak menyediakan sentimen retail crypto, jadi BTC tetap di luar list itu, konsisten dengan pair lain yang bukan major.
 
 **Verifikasi:** `npm test` 714/714 hijau. Verifikasi visual via Playwright (static server lokal, tanpa backend live) — pair selector menampilkan "BTC/USD" tepat setelah 28 pair FX dan sebelum "US 10Y/2Y Yield"; chart TradingView live-load `COINBASE:BTCUSD` dengan harga real; section Posisi & Bias menampilkan pesan statis yang benar (bukan spinner macet); network request candle terkonfirmasi memakai `symbol=BTC-USD&label=BTC%2FUSD` yang benar; tidak ada JS error di console (hanya 404 API yang memang tidak ada backend berjalan).
+
+**Revisi lanjutan (hari sama, permintaan user):** malas klik tombol pair tiap kali mau ganti pair — minta shortcut keyboard.
+
+- Ditambahkan ke sistem keyboard shortcut yang sudah ada (`document.addEventListener('keydown', ...)`, prefix `G`+huruf untuk navigasi tab, `?` untuk bantuan): tombol **`/`** khusus saat `activeView === 'teknikal'` langsung membuka `tekPairCombo` dan fokus ke kotak cari (`tekPairSearch`) — replikasi pola shortcut pencarian umum (mis. GitHub). Guard `isInputActive()` yang sudah ada otomatis membuat `/` tidak ke-trigger saat user sedang mengetik di textarea/input manapun (termasuk saat search box pair sendiri sudah fokus — `/` di situ ketik biasa, bukan re-toggle).
+- Didokumentasikan di 2 tempat referensi shortcut yang sudah ada (section baru "Di tab Teknikal", pola sama seperti "Di tab News"): panel Petunjuk (`#tekPairCombo`... area SOP laptop) dan overlay `#kbOverlay` (buka via `?`).
+- `APP_VERSION` → `2026.08.02.2`.
+
+**Verifikasi:** `npm test` 714/714 hijau. Playwright live-flow: tab Teknikal aktif → tekan `/` → dropdown terbuka & search box fokus otomatis → ketik "btc" → list terfilter ke "BTC/USD" saja → Enter → pair aktif berpindah ke BTC/USD (chart, label, Posisi & Bias semua update benar). Konfirmasi juga `/` di tab lain (News) tidak memicu apa pun (tidak ada error, tidak ada efek samping).
 
 ## Changelog Session 271 (2026-08-01) — Fix: Analisa Terakhir Jumat Hilang Saat Weekend (Root Cause TTL Redis)
 

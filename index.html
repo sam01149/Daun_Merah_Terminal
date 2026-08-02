@@ -3859,6 +3859,10 @@ body:not(.light-theme) .ringkasan-gen-btn {
         <div class="kb-row"><div class="kb-keys"><span class="kb-key">1</span>–<span class="kb-key">7</span></div><span class="kb-desc">Ganti filter kategori (All → Geopolitical)</span></div>
       </div>
       <div class="kb-sec">
+        <div class="kb-sec-title">Di tab Teknikal</div>
+        <div class="kb-row"><div class="kb-keys"><span class="kb-key">/</span></div><span class="kb-desc">Buka pair selector, langsung fokus ke kotak cari</span></div>
+      </div>
+      <div class="kb-sec">
         <div class="kb-sec-title">Di Checklist</div>
         <div class="kb-row"><div class="kb-keys"><span class="kb-key">↑</span><span class="kb-key">↓</span></div><span class="kb-desc">Navigasi item</span></div>
         <div class="kb-row"><div class="kb-keys"><span class="kb-key">Space</span></div><span class="kb-desc">Centang / uncentang</span></div>
@@ -4373,7 +4377,7 @@ window.addEventListener('DOMContentLoaded', updateThemeIcon);
 
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.08.02.1';
+const APP_VERSION = '2026.08.02.2';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
@@ -17779,6 +17783,15 @@ document.addEventListener('keydown', function(e) {
   // ? = help
   if (e.key === '?') { e.preventDefault(); toggleKbHelp(); return; }
 
+  // / = buka pair selector (khusus tab Teknikal) — langsung fokus ke search,
+  // tanpa perlu klik tombol pair dulu (request user, malas klik tiap ganti pair)
+  if (e.key === '/' && activeView === 'teknikal') {
+    e.preventDefault();
+    const combo = document.getElementById('tekPairCombo');
+    if (combo && !combo.classList.contains('open')) toggleTekPairDropdown();
+    return;
+  }
+
   // G sequence start
   if (key === 'g' && !kbGSeq) {
     kbGSeq = true;
@@ -17946,6 +17959,10 @@ document.addEventListener('keydown', function(e) {
       <div class="kb-row"><div class="kb-keys"><span class="kb-key">5</span></div><span class="kb-desc">Econ Data</span></div>
       <div class="kb-row"><div class="kb-keys"><span class="kb-key">6</span></div><span class="kb-desc">Energy</span></div>
       <div class="kb-row"><div class="kb-keys"><span class="kb-key">7</span></div><span class="kb-desc">Geopolitical</span></div>
+    </div>
+    <div class="kb-sec">
+      <div class="kb-sec-title">Di tab Teknikal</div>
+      <div class="kb-row"><div class="kb-keys"><span class="kb-key">/</span></div><span class="kb-desc">Buka pair selector, langsung fokus ke kotak cari</span></div>
     </div>
     <div class="kb-sec">
       <div class="kb-sec-title">Di Checklist</div>
