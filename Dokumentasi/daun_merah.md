@@ -11,11 +11,32 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-01 (Session 271 — Fix: analisa terakhir Jumat hilang saat weekend karena TTL Redis 6 jam)
+> **Last updated:** 2026-08-02 (Session 272 — Tambah pair BTC/USD di tab TEK)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 272 (2026-08-02) — Tambah Pair BTC/USD di Tab TEK
+
+**Permintaan user:** tambah pair BTC/USD di fitur TEK, posisinya setelah grup FX dan sebelum grup Yield.
+
+**Implementasi (`index.html`), semua di scope tab TEKNIKAL (yang otomatis ikut dipakai ulang tab Analisa via `TEK_ALL_PAIRS`):**
+- `TEK_ALL_PAIRS`: sisip `'BTCUSD'` sebelum `...TEK_YIELD_INSTRUMENTS` — pola grouping array ini murni posisi urutan (bukan field kategori eksplisit), sama seperti Yield (`US10Y`/`US02Y`) ditambahkan sebelumnya.
+- `TEK_TV_SYM.BTCUSD = 'COINBASE:BTCUSD'` — override manual karena loop default `TEK_ALL_PAIRS.forEach` menghasilkan `'FX:BTCUSD'` (salah, BTC bukan symbol FX di TradingView).
+- `TEK_YAHOO_SYM.BTCUSD = 'BTC-USD'` — override manual karena default loop menghasilkan `'BTCUSD=X'` (format currency pair, sudah dikonfirmasi TIDAK punya mapping fallback di `test/lib/ohlcv_fallback.test.js`). Ticker Yahoo crypto yang benar `'BTC-USD'`, sudah lama dipakai & terverifikasi jalan di `api/correlations.js` (korelasi BTC vs Gold/aset lain).
+- `TEK_CORR_LEG.BTC = 'BTC'` — tanpa ini kolom leg BTC di tabel Cross-Asset Correlations pair BTC/USD sendiri tidak muncul (server `api/correlations.js` sudah lama menghitung korelasi BTC, cuma belum ada mapping leg-nya).
+- `PAIR_CURS.BTCUSD = ['USD']` — BTC bukan currency fiat dengan event kalender ekonomi (default slice akan hasilkan `['BTC','USD']`, harmless tapi tidak semantis).
+- `TEK_CUR_KEYWORDS.BTC` (baru): keyword spesifik crypto (`bitcoin`, `spot bitcoin etf`, `halving`, `hash rate`, `sec crypto`, dst) supaya filter "Berita Terkait" BTC/USD tidak cuma mengandalkan keyword `USD` generik.
+- `renderTekPosisiBias()`: cabang baru untuk `tekPair === 'BTCUSD'` — tampilkan pesan statis "COT/retail tidak tersedia untuk BTC" (data COT CFTC Financial Futures & retail FXSSI sama-sama tidak mencakup Bitcoin). Tanpa ini badge akan macet permanen di "Memuat data COT..." karena `computeCotOnlyLean('BTC','USD')` butuh `cotData.positions.BTC` yang memang tidak pernah ada — bug yang sama polanya dengan yang difix session 271 untuk kasus lain.
+- `cbCell()` (di fungsi yang sama): tambah case `cur === 'BTC'` → tampilkan `—` dengan tooltip "Bitcoin bukan currency, tidak ada bank sentral" (pola sama seperti `XAU`), bukan spinner "Memuat..." tak berujung.
+- `tekPairLabel()`, `TEK_PAIR_KEYWORDS`, `TEK_PAIR_NEGATIVE`: tidak perlu override — default slice `p.slice(0,3)+'/'+p.slice(3)` kebetulan sudah benar untuk `BTCUSD` (6 karakter seperti pair FX biasa), dan `_CUR_CB` sengaja tidak punya entri BTC (sama seperti XAU — tidak ada bank sentral yang perlu diblokir).
+- Backend (`api/admin.js`, `api/_ohlcv_fetch.js`) TIDAK disentuh — `ohlcv_read` sudah generic, fetch on-demand dari Yahoo untuk symbol apa pun.
+- `APP_VERSION` → `2026.08.02.1`.
+
+**Section yang sengaja TIDAK menampilkan data BTC (bukan bug):** Retail Sentiment grid terpisah (`RETAIL_PAIR_ORDER`) — FXSSI tidak menyediakan sentimen retail crypto, jadi BTC tetap di luar list itu, konsisten dengan pair lain yang bukan major.
+
+**Verifikasi:** `npm test` 714/714 hijau. Verifikasi visual via Playwright (static server lokal, tanpa backend live) — pair selector menampilkan "BTC/USD" tepat setelah 28 pair FX dan sebelum "US 10Y/2Y Yield"; chart TradingView live-load `COINBASE:BTCUSD` dengan harga real; section Posisi & Bias menampilkan pesan statis yang benar (bukan spinner macet); network request candle terkonfirmasi memakai `symbol=BTC-USD&label=BTC%2FUSD` yang benar; tidak ada JS error di console (hanya 404 API yang memang tidak ada backend berjalan).
 
 ## Changelog Session 271 (2026-08-01) — Fix: Analisa Terakhir Jumat Hilang Saat Weekend (Root Cause TTL Redis)
 

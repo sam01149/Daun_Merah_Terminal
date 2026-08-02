@@ -4373,7 +4373,7 @@ window.addEventListener('DOMContentLoaded', updateThemeIcon);
 
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.08.01.2';
+const APP_VERSION = '2026.08.02.1';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
@@ -8246,7 +8246,7 @@ function _buildAnomalyNarrative(anomalies) {
 // + DXY/Gold/US10Y/RealYield/SPX/VIX/WTI/Copper/BTC — tapi UI cuma menampilkan
 // tabel khusus Gold. Ini membangun tabel yang sama untuk PAIR AKTIF di TEK:
 // tiap leg pair jadi kolom, aset makro jadi baris. USD diwakili DXY, XAU = Gold.
-const TEK_CORR_LEG = { USD:'DXY', XAU:'Gold', EUR:'EUR', GBP:'GBP', JPY:'JPY', AUD:'AUD', NZD:'NZD', CAD:'CAD', CHF:'CHF', US10Y:'US10Y' };
+const TEK_CORR_LEG = { USD:'DXY', XAU:'Gold', BTC:'BTC', EUR:'EUR', GBP:'GBP', JPY:'JPY', AUD:'AUD', NZD:'NZD', CAD:'CAD', CHF:'CHF', US10Y:'US10Y' };
 const TEK_CORR_ASSETS = [
   { key:'DXY',       label:'DXY (USD)',  hint:'Arah dolar' },
   { key:'US10Y',     label:'US 10Y',     hint:'Yield nominal' },
@@ -9802,6 +9802,12 @@ function renderTekPosisiBias() {
     } else {
       cotHtml = `<span class="tek-pb-empty">Memuat data retail...</span>`;
     }
+  } else if (tekPair === 'BTCUSD') {
+    // Bitcoin: bukan currency pair — COT CFTC (Financial Futures) dan retail FXSSI
+    // sama-sama tidak mencakup BTC, jadi tampilkan pesan statis alih-alih spinner
+    // "Memuat..." yang gak akan pernah kelar (computeCotOnlyLean butuh cotData.positions.BTC
+    // yang memang tidak ada).
+    cotHtml = `<span class="tek-pb-empty" title="Data COT (CFTC) dan retail sentiment (FXSSI) tidak mencakup Bitcoin">COT/retail tidak tersedia untuk BTC</span>`;
   } else {
     // Pair silang: retail FXSSI tidak menyediakan data cross, tapi COT per-currency tetap bisa dibandingkan.
     const lean = computeCotOnlyLean(base, quote);
@@ -9816,6 +9822,7 @@ function renderTekPosisiBias() {
 
   const cbCell = cur => {
     if (cur === 'XAU') return `<div class="tek-pb-cb-cell"><span class="tek-pb-cb-cur">XAU</span><span class="cb-bias unknown" title="Gold bukan currency, tidak ada bank sentral">—</span></div>`;
+    if (cur === 'BTC') return `<div class="tek-pb-cb-cell"><span class="tek-pb-cb-cur">BTC</span><span class="cb-bias unknown" title="Bitcoin bukan currency, tidak ada bank sentral">—</span></div>`;
     if (!cbData) return `<div class="tek-pb-cb-cell"><span class="tek-pb-cb-cur">${cur}</span><span class="tek-pb-empty">Memuat...</span></div>`;
     const cb    = cbData.find(d => d.currency === cur);
     const bias  = cb?.bias || null;
@@ -15648,6 +15655,7 @@ const TEK_YIELD_INSTRUMENTS = ['US10Y', 'US02Y'];
 const TEK_ALL_PAIRS = [
   'XAUUSD','EURUSD','GBPUSD','USDJPY','AUDUSD','NZDUSD','USDCAD','USDCHF',
   ...TEK_FX_PAIRS.filter(p => !['EURUSD','GBPUSD','USDJPY','AUDUSD','NZDUSD','USDCAD','USDCHF'].includes(p)).sort(),
+  'BTCUSD',
   ...TEK_YIELD_INSTRUMENTS,
 ];
 
@@ -15681,6 +15689,19 @@ const TEK_CUR_KEYWORDS = {
     'precious','bullion','silver','platinum','palladium',
     // Sentiment
     'flight to safety','risk aversion','haven demand','fear',
+  ],
+  BTC: [
+    // Core identifiers
+    'bitcoin','btc','btcusd','crypto','cryptocurrency',
+    // Key drivers
+    'spot bitcoin etf','bitcoin etf','etf inflow','etf outflow','blackrock ibit',
+    'halving','hash rate','mining difficulty',
+    // Regulatory / institutional
+    'sec crypto','crypto regulation','stablecoin','coinbase','binance',
+    // Macro-liquidity linkage
+    'risk asset','liquidity','digital asset','institutional adoption',
+    // Sentiment
+    'fear and greed','whale','on-chain','liquidation',
   ],
   USD: [
     // Fed / monetary policy — paling krusial buat USD
@@ -16060,6 +16081,7 @@ TEK_ALL_PAIRS.forEach(p => { TEK_TV_SYM[p] = p === 'XAUUSD' ? 'FOREXCOM:XAUUSD' 
 // candle di timeframe intraday (H4/H1/M15) gak akan se-granular pair FX biasa.
 TEK_TV_SYM.US10Y = 'FRED:DGS10';
 TEK_TV_SYM.US02Y = 'FRED:DGS2';
+TEK_TV_SYM.BTCUSD = 'COINBASE:BTCUSD'; // bukan currency pair FX — default loop di atas salah kasih 'FX:BTCUSD'
 
 const TEK_YIELD_LABELS = { US10Y: 'US 10Y Yield', US02Y: 'US 2Y Yield' };
 function tekPairLabel(p) { return TEK_YIELD_LABELS[p] || (p.slice(0, 3) + '/' + p.slice(3)); }
@@ -16741,6 +16763,7 @@ const TEK_YAHOO_SYM = {};
 TEK_ALL_PAIRS.forEach(p => { TEK_YAHOO_SYM[p] = p === 'XAUUSD' ? 'GC=F' : (p + '=X'); });
 TEK_YAHOO_SYM.US10Y = '^TNX'; // CBOE 10Y T-Note yield index — value already in % (e.g. 45.0 = 4.50%, lihat note di renderTaPanel/scaling kalau perlu)
 delete TEK_YAHOO_SYM.US02Y; // Gak ada index Yahoo yang bersih buat 2Y — fetchTaData() skip otomatis kalau symbol gak ketemu
+TEK_YAHOO_SYM.BTCUSD = 'BTC-USD'; // default loop di atas salah kasih 'BTCUSD=X' (format currency pair) — ticker Yahoo crypto formatnya 'BTC-USD', sama seperti dipakai api/correlations.js
 
 // TradingView interval codes → Yahoo Finance interval param
 const TEK_TV_TO_API_TF = { 'D':'1d', '240':'4h', '60':'1h', '15':'15m' };
@@ -16827,7 +16850,7 @@ function renderTaPanel(d) {
 }
 
 const PAIR_CURS = {};
-TEK_ALL_PAIRS.forEach(p => { PAIR_CURS[p] = p === 'XAUUSD' ? ['USD'] : [p.slice(0,3), p.slice(3)]; });
+TEK_ALL_PAIRS.forEach(p => { PAIR_CURS[p] = (p === 'XAUUSD' || p === 'BTCUSD') ? ['USD'] : [p.slice(0,3), p.slice(3)]; });
 
 function renderTekEventStrip() {
   const el = document.getElementById('tekEventStrip');
