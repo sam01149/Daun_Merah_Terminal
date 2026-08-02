@@ -11,7 +11,7 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-02 (Session 272 lanj. — Bendera emoji diganti SVG (tidak render di Windows) + kurangi paralelisme translate biar tidak kena rate limit RPM Gemini)
+> **Last updated:** 2026-08-02 (Session 272 lanj. — "Muat Berita Lebih Lama" ikut translate arsip 36 jam)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -113,6 +113,31 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 - `APP_VERSION` → `2026.08.02.5`.
 
 **Verifikasi:** `npm test` 728/728 hijau. Playwright screenshot toolbar NEWS — bendera Indonesia (merah-putih) dan Amerika (garis-garis+kanton biru) sama-sama render sempurna sebagai gambar, bukan teks, di kedua state toggle.
+
+**Revisi lanjutan (hari sama, pertanyaan tajam dari user): "Muat Berita Lebih Lama" (arsip 36 jam) ternyata TIDAK ikut translate — gap arsitektur, bukan cuma soal kecepatan.**
+
+**Temuan (dijelaskan ke user sebelum eksekusi):** translate cuma pernah dipicu di satu tempat — `rssHandler` (`type=rss`), yang cuma memuat jendela live FinancialJuice (perkiraan beberapa jam terakhir, BUKAN 36 jam penuh — itulah kenapa `news_history` ada sebagai arsip terpisah yang lebih panjang). Begitu item "keluar" dari jendela live (tergantikan berita lebih baru), dia tidak pernah lagi lewat `translateNewItems` — walau masih ada di arsip `news_history` 36 jam. Akibatnya: item yang cukup baru (masih sempat lewat jendela live) kemungkinan besar sudah punya terjemahan, tapi item yang lebih tua (mendekati batas 36 jam) akan SELAMANYA bahasa Inggris tanpa perbaikan ini.
+
+**Fix (`api/feeds.js`, `newsHistoryHandler`):** tambah hook `await translateNewItems(items, redisCmd, 8000)` persis sebelum response — item arsip yang di-load lewat "Muat Berita Lebih Lama" dan belum punya `news_tr:<guid>` sekarang ikut ditembak ke Gemini (pola sama seperti `rssHandler`: await eksplisit, budget dibatasi 8 detik, jauh di bawah timeout client `_fetchHistoryPage()` 12 detik & `maxDuration` 20 detik). Item yang sudah punya terjemahan (dari sempat lewat jendela live sebelumnya) di-skip seperti biasa (MGET check yang sudah ada di `translateNewItems`, tidak perlu logic baru).
+
+**Tabrakan multi-sesi ketahuan di tengah kerjaan (pelajaran ATURAN.md §5, bukan bug produksi):** beberapa edit sempat "hilang" tanpa error jelas (perubahan `MAX_CONCURRENT`/`api/feeds.js` newsHistoryHandler hook sempat tidak tersimpan padahal tool melaporkan sukses), ketahuan lewat `npm test` yang gagal dengan pesan tidak masuk akal + `grep` konfirmasi ke file. Awalnya dikira snapshot internal tool (2 file sisa `scratch_head_test.js`/`scratch_stash_test.js` muncul di root, isinya versi lama file test — dihapus setelah dicek), tapi user konfirmasi ADA SESI LAIN yang hidup & mengedit `index.html` bersamaan — cocok dengan pola "Tabrakan Multi-Sesi Git" yang sudah pernah terjadi sebelumnya (lihat memory/riwayat sesi terkait Plan L/M/N). **Tindakan begitu terkonfirmasi:** berhenti total menyentuh `index.html` (ada perubahan signifikan di sana — fungsi `_patchTranslatedItems` untuk patch DOM in-place alih-alih `renderFeed()` penuh saat terjemahan susulan datang, plus `data-guid` attribute — bukan ditulis sesi ini, milik sesi lain), commit HANYA perubahan backend (`api/feeds.js` + test) yang tidak bersinggungan dengan file itu. `index.html` dibiarkan apa adanya (tidak di-revert, tidak di-commit) supaya sesi lain bisa lanjut & commit sendiri tanpa kehilangan kerjaannya.
+
+**Verifikasi:** `npm test` 730/730 hijau (2 test baru: item arsip belum-diterjemahkan ikut ditembak ke Gemini; item arsip yang sudah punya terjemahan tidak ditembak ulang).
+
+**Konteks tambahan yang didiskusikan (belum diimplementasi, murni Q&A):** user juga menanyakan apakah translate bisa tetap jalan di background saat aplikasi ditutup, supaya begitu dibuka lagi berita sudah dalam Bahasa Indonesia. Dijelaskan: `sw.js` SUDAH punya `periodicsync` (tag `fjfeed-sync`, `minInterval: 60000`) yang otomatis ikut memicu hook translate karena hit endpoint yang sama (`type=rss`) — TAPI Periodic Background Sync browser TIDAK menjamin interval itu ditepati (Chrome pakai budget/engagement-score internal, bisa jadi jarang-jarang/berjam-jam terutama kalau PWA tidak "aktif" dipakai), dan cuma didukung browser Chromium (Edge/Chrome), tidak Safari/iOS. Solusi lebih andal (belum dikerjakan): cron GitHub Actions ping `type=rss` tiap beberapa menit, independen dari client — sesuai pola cron yang sudah dipakai proyek ini (`.github/workflows/`).
+
+**Revisi lanjutan (hari sama, sesi terpisah): fix daftar NEWS "flash"/lompat 2x tiap kali terjemahan datang susulan.**
+
+**Masalah dilaporkan user:** tiap buka app lagi (mis. habis pindah ke app lain) dan masuk tab NEWS, daftar berita kelihatan refresh/flash dua kali berturutan.
+
+**Root cause:** `fetchFeed()` sudah benar cuma render sekali untuk data RSS baru (`renderFeed(...)` di titik merge), TAPI baris berikutnya — `_fetchNewsTranslations(allItems).then(any => { if (any) renderFeed(); })` — memanggil `renderFeed()` PENUH lagi begitu terjemahan Indonesia dari `_fetchNewsTranslations` (fitur baru sesi ini juga, lihat entri translate di atas) selesai diambil, walau cuma untuk menempelkan `title_id`/`desc_id` ke item yang sudah tampil. `renderFeed()` me-replace `innerHTML` seluruh `#feedScroll` — tiap panggilan mereset animasi fade-in tiap item dan berpotensi menggeser posisi scroll, terlihat sebagai "flash" kedua. Sama persis di `_fetchHistoryPage()` (tombol "Muat Berita Lebih Lama") — pola pemanggilan identik.
+
+**Fix (`index.html`):**
+- `_fetchNewsTranslations(items)` sekarang me-return **array item yang baru dapat terjemahan** (bukan `boolean`), supaya caller tahu persis item mana yang berubah.
+- Fungsi baru `_patchTranslatedItems(items)`: cari elemen tiap item lewat `data-guid` (atribut baru di wrapper `.feed-item`, ditambahkan di `_feedItemHtml`), lalu update `textContent` `.item-title`/`.item-desc` in-place — tanpa `renderFeed()` penuh. No-op kalau toggle bahasa sedang di mode EN (field `_id` memang tidak ditampilkan, jadi tidak ada yang perlu ditempel).
+- Kedua caller (`fetchFeed()` dan `_fetchHistoryPage()`) diganti dari `.then(any => { if (any) renderFeed(); })` jadi `.then(translated => _patchTranslatedItems(translated))`.
+
+**Verifikasi:** `npm test` 730/730 hijau (tidak ada test unit sisi client untuk file ini — index.html satu file besar tanpa test harness). Diverifikasi manual dengan skrip Playwright ad-hoc: serve `index.html` via HTTP lokal, mock endpoint `type=rss`/`type=news_translate`, hitung pemanggilan `renderFeed()` selama satu siklus `fetchFeed()`. **Sebelum fix:** 2 pemanggilan `renderFeed()` (kode lama, dites via `git stash` sementara). **Sesudah fix:** 1 pemanggilan `renderFeed()`, dan judul/deskripsi tetap berhasil berganti ke Bahasa Indonesia begitu terjemahan siap (headline real-time tidak hilang, cuma cara update-nya jadi diam-diam).
 
 ## Changelog Session 271 (2026-08-01) — Fix: Analisa Terakhir Jumat Hilang Saat Weekend (Root Cause TTL Redis)
 

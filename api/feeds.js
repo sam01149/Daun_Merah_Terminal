@@ -251,6 +251,18 @@ async function newsHistoryHandler(req, res) {
     : [];
   const oldestTs = items.length ? new Date(items[items.length - 1].pubDate).getTime() : null;
 
+  // Translate item arsip yang belum sempat diterjemahkan (S272 lanj., 2026-08-02) —
+  // item yang sudah lewat dari jendela live RSS (lihat rssHandler) tidak pernah
+  // punya kesempatan diterjemahkan sama sekali sebelum ini. Di-await (bukan
+  // fire-and-forget, pelajaran bug sebelumnya) — budget generous karena handler
+  // ini murni baca Redis dulu (cepat), TAPI tetap dibatasi jauh di bawah timeout
+  // client 12s (_fetchHistoryPage() di index.html) & maxDuration 20s api/feeds.js.
+  if (items.length > 0) {
+    try { await translateNewItems(items, redisCmd, 8000); } catch(e5) {
+      console.warn('translateNewItems (history) failed:', e5.message);
+    }
+  }
+
   return res.status(200).json({
     items,
     count: items.length,
