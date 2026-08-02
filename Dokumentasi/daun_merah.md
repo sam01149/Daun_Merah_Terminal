@@ -11,7 +11,7 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-02 (Session 272 lanj. — Translate NEWS: redesign batch, final settle SambaNova + fix orphaned-fetch AbortSignal)
+> **Last updated:** 2026-08-02 (Session 272 lanj. — Translate NEWS: redesign batch, provider final Mistral setelah 3 percobaan gagal)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -210,6 +210,21 @@ Konteks: user tanya apakah translate NEWS bisa tetap jalan walau aplikasi ditutu
 **Verifikasi akurasi terjemahan (permintaan eksplisit user):** tes langsung ke API sungguhan (bukan mock, baik Gemini maupun SambaNova) dengan headline finansial riil dalam SATU batch call — semua istilah/ticker dipertahankan benar (`Fed`, `Federal Reserve`, `S&P 500`, `Nasdaq 100`, `Dow 30`, `Mag 7`, `XAU/USD`, `CPI`, `Trump`, `OPEC+`), angka & satuan diterjemahkan benar (`188,000 bpd`→`188.000 bpd`, `mln`→`juta`), terjemahan natural tanpa penjelasan tambahan, parsing per nomor benar (tidak ada yang tertukar/tercampur antar item, termasuk batch 10 item ke SambaNova).
 
 **Verifikasi:** `npm test` 737/737 hijau (test `news_translate.test.js`/`news_translate_handler.test.js` ditulis ulang 2x mengikuti 2 pergantian provider; test "budget habis" ditulis ulang supaya mock fetch benar-benar menghormati `AbortSignal`, bukan cuma delay buta, supaya menguji fix orphaned-fetch di atas dengan jujur). Dokumentasi `daun_merah_ai.md` §2 baris #10 dan §4 tabel jatah harian diupdate in-place (provider final SambaNova, catatan kronologi 2 percobaan gagal + temuan kuota Gemini 20/hari yang berlaku lintas-fitur).
+
+**Revisi lanjutan (sesi terpisah, sama hari): live diverifikasi ULANG — SambaNova akun 2 TETAP trip circuit breaker (72 kegagalan beruntun, ~1 jam pasca-deploy) meski sudah batch + fix `AbortSignal`. Evaluasi 3 provider baru, settle di Mistral.**
+
+**Diagnosis:** user tanya soal "Muat Berita Lebih Lama" — dicek langsung ke Redis produksi, circuit `ai:sambanova:c1:newstranslate` **OPEN, 72 kegagalan**. Ini membuktikan fix `AbortSignal` sebelumnya BENAR (tidak ada lagi eksekusi orphaned) tapi TIDAK cukup — akun SambaNova 2 itu sendiri secara nyata tidak stabil, bukan lagi soal desain concurrency/batching. Root cause bukan lagi di kode kita.
+
+**Evaluasi 3 kandidat provider baru (permintaan user "kembali evaluasi provider lain"), tes empiris 3 ronde @ batch 10 headline realistis, bukan asumsi:**
+- **SambaNova akun 1** (`SAMBANOVA_API_KEY`, akun BEDA dari akun 2): 3,3s / 3,3s / 9,7s — ada lonjakan, dan berbagi akun dengan OHLCV Analyze + Call2-4 market-digest (kontensi lebih rendah dari akun 2 tapi bukan nol).
+- **Gemini flash-lite** (`gemini-flash-lite-latest`): 2,6s / 9,1s / 2,1s — tercepat rata-rata TAPI kuota harian resminya TIDAK dikonfirmasi (risiko sama seperti insiden Gemini flash 20/hari sebelumnya, cuma beda model).
+- **Mistral** (`mistral-small-latest`): 5,5s / 5,5s / 5,7s — SANGAT konsisten, tanpa satu pun lonjakan di 3 ronde.
+
+**Keputusan (dikonfirmasi user "akurat ga? terjemahannya" → verifikasi ulang → "oke gas"): Mistral.** Alasan utama BUKAN cuma latensi — Mistral **satu-satunya kandidat tanpa kontensi fitur produksi lain sama sekali** (sebelum ini cuma dipakai jalur diagnostik manual `?test_mistral=1`, `api/_ai_guard.js` sudah lama mencatat "BUKAN chain produksi"), kuota bulanan sudah terdokumentasi generous (±1M token/bulan) sejak lama, dan akurasi terjemahan diverifikasi ulang secara menyeluruh (10/10 item, bukan sampel) — konversi format angka desimal/ribuan EN→ID malah lebih presisi dari SambaNova/Gemini ("1.971 million" → "1,971 juta", pertukaran konvensi titik/koma yang benar), semua istilah/ticker dipertahankan sesuai aturan prompt, tanpa halusinasi/komentar tambahan.
+
+**Fix (`api/_news_translate.js`, `api/_ai_guard.js`):** konstanta provider (`CB_SAMBANOVA`/`SAMBANOVA_URL`/`SAMBANOVA_MODEL`) diganti Mistral (`CB_MISTRAL = 'ai:mistral:newstranslate'`, `MISTRAL_URL`, model `mistral-small-latest`); `translateBatch`/`translateNewItems` pakai `MISTRAL_API_KEY` (env sudah ada, dipakai jalur diagnostik lama). `_ai_guard.js`: bucket kuota `sambanova_c1_newstranslate` diganti `mistral_newstranslate: 1000/hari` (TERPISAH dari bucket `mistral: 200/hari` diagnostik manual, supaya tidak rebutan kuota). `BATCH_SIZE` (20) dan struktur anti-starvation/`AbortSignal` deadline TIDAK berubah — cuma provider yang diganti, desain batch dari revisi sebelumnya tetap dipertahankan penuh.
+
+**Verifikasi:** `npm test` 737/737 hijau (test `news_translate.test.js`/`news_translate_handler.test.js` ditulis ulang ke-3 kalinya mengikuti pergantian provider — mock fetch `api.mistral.ai`, env `MISTRAL_API_KEY`). Dokumentasi `daun_merah_ai.md` §2 baris #10 dan §4 tabel jatah harian diupdate in-place (provider final Mistral, kronologi lengkap 3 percobaan gagal + 2 temuan penting: kuota Gemini 20/hari dan instabilitas SambaNova akun 2, keduanya berlaku lintas-fitur bukan cuma translate).
 
 **Catatan proses (bukan soal teknis):** 3 komit sesi HP sebelumnya (`fc4b086`/`5f19b5c`/`38ff271`) memakai commit author `Claude <noreply@anthropic.com>` — melanggar aturan larangan atribusi AI di commit (`ATURAN.md` §4 poin 7, ditegaskan ulang CLAUDE.md). Tidak di-rewrite retroaktif (sudah dideploy, riwayat sudah publik) — dicatat di sini sebagai pengingat untuk sesi Claude Code manapun (termasuk dari HP) supaya tidak terulang.
 

@@ -61,22 +61,20 @@ const DEFAULT_LIMITS = {
   sambanova_main_experimental:  30,
   sambanova_c1_experimental:    30,
 
-  // Translate headline NEWS ke Bahasa Indonesia (S272, 2026-08-02) — bucket TERPISAH
-  // dari 'sambanova_c1' (200/hari) di atas SENGAJA, supaya volume translate (bisa
-  // ratusan/hari, sekarang dalam BATCH sampai 20 headline/panggilan — lihat
-  // api/_news_translate.js, jadi jauh lebih sedikit PANGGILAN aktual daripada
-  // volume headline-nya) tidak rebutan kuota sama fallback Journal/Fundamental/
-  // Call 1 Ringkasan yang berbagi akun SambaNova sama. Riwayat hari yang sama
-  // (2026-08-02): sempat balik ke Gemini + batch (mengira solusinya cukup ganti
-  // provider) — TERBUKTI SALAH JUGA: Gemini `gemini-flash-latest` cuma 20
-  // request/HARI (429 RESOURCE_EXHAUSTED terverifikasi live), bukan 1.500 RPD
-  // seperti asumsi lama (kuota Google mengetat tiap alias `-latest` bergeser
-  // generasi model). Balik ke SambaNova akun 2 (keputusan user) TAPI tetap pakai
-  // desain batch — beban RPM akun 2 sekarang jauh lebih ringan (1-2 panggilan per
-  // siklus, bukan sampai 15 konkuren seperti desain lama), limit 1000/hari di sini
-  // murni pagar kita sendiri (provider tidak publikasikan RPD eksplisit, cuma
-  // ~10-20 RPM diamati — lihat daun_merah_ai.md §4).
-  sambanova_c1_newstranslate: 1000,
+  // Translate headline NEWS ke Bahasa Indonesia (S272, 2026-08-02, redesign BATCH
+  // — 1 panggilan sampai 20 headline, lihat api/_news_translate.js). Riwayat provider
+  // hari yang sama, SEMUA gagal sebelum settle: (1) SambaNova akun 2 — 3 fitur lain
+  // berbagi akun, circuit trip 22x; (2) Gemini `gemini-flash-latest` — TERNYATA cuma
+  // 20 request/HARI (429 RESOURCE_EXHAUSTED live, bukan 1.500 RPD seperti asumsi
+  // lama, kuota Google mengetat tiap alias `-latest` bergeser generasi); (3) balik
+  // SambaNova akun 2 + batch — TETAP trip lagi (72 kegagalan ~1 jam pasca-deploy),
+  // akun itu sendiri memang tidak stabil terlepas dari desain kode. **FINAL: Mistral**
+  // — bucket TERPISAH dari 'mistral' (200/hari, diagnostik manual) di atas SENGAJA,
+  // supaya volume translate tidak rebutan kuota sama jalur test manual. Satu-satunya
+  // kandidat TANPA kontensi fitur produksi lain sama sekali (SambaNova akun1/akun2
+  // dipakai fitur aktif, Gemini flash kuotanya sudah kebukti kecil) — 1000/hari
+  // konservatif di bawah kuota resmi ±1M token/bulan (lihat catatan 'mistral' di atas).
+  mistral_newstranslate: 1000,
 };
 
 function dailyLimit(provider) {

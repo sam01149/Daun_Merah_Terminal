@@ -28,7 +28,7 @@
 // headline sekaligus. N headline baru sekarang cuma butuh ceil(N/BATCH_SIZE)
 // panggilan, bukan N panggilan.
 //
-// Riwayat provider hari yang sama (2026-08-02), keduanya diverifikasi LIVE bukan
+// Riwayat provider hari yang sama (2026-08-02), SEMUA diverifikasi LIVE bukan
 // tebak-tebakan:
 // 1) Gemini (`gemini-flash-latest`) → SambaNova akun 2 (supaya lolos limit RPM
 //    Gemini) → TERBUKTI SALAH: akun 2 dipakai bersama 3 fitur lain (fallback
@@ -40,26 +40,35 @@
 //    request/hari untuk model yang di-resolve alias `gemini-flash-latest` saat ini
 //    (`gemini-3.6-flash`), jauh di bawah asumsi lama "1.500 RPD" (kuota Google makin
 //    ketat tiap alias `-latest` bergeser generasi — lihat komentar model drift di
-//    market-digest.js/admin.js/journal.js, sudah 3x bergeser: 2.5→3.5→3.6). Fallback
-//    Gemini fitur LAIN di codebase ini (Fundamental/AI Coach/Call1-3) berbagi masalah
-//    yang sama, cuma jarang ketahuan karena jarang jadi fallback aktif.
-// 3) KEPUTUSAN USER (setelah 2 percobaan gagal): balik ke SambaNova akun 2, TAPI
-//    tetap pakai desain BATCH — beban RPM akun 2 sekarang jauh lebih ringan (1-2
-//    panggilan per siklus cache-refill ~50-60 detik, bukan sampai 15 panggilan
-//    konkuren seperti desain lama), jadi risiko trip circuit breaker jauh berkurang
-//    tanpa perlu ganti provider lagi.
+//    market-digest.js/admin.js/journal.js, sudah 3x bergeser: 2.5→3.5→3.6).
+// 3) Balik ke SambaNova akun 2 + desain BATCH (keputusan user) + fix AbortSignal
+//    deadline (translateBatch dulu di-race lawan timer terpisah — panggilan lambat
+//    tetap JALAN di background walau sudah "dianggap gagal" di sisi kita, berisiko
+//    orphaned/dibekukan Vercel). TERBUKTI TETAP TIDAK CUKUP — walau sudah batch +
+//    fix orphaned-fetch, circuit breaker translate trip lagi (72 kegagalan beruntun
+//    ketahuan ~1 jam pasca-deploy). Root cause murni akun SambaNova 2 itu sendiri
+//    memang tidak stabil (tes isolasi 3 headline kecil pun timeout 20+ detik di lain
+//    waktu, padahal batch 10 headline pernah sukses 8,8 detik sebelumnya) — bukan lagi
+//    soal desain kode, tapi kesehatan akun itu sendiri.
+// 4) Evaluasi ulang 3 kandidat lain (permintaan user), tes empiris 3 ronde @ 10
+//    headline: SambaNova akun 1 (3,3-9,7 detik, ada lonjakan), Gemini flash-lite
+//    (2,1-9,1 detik, kuota harian TIDAK terkonfirmasi — risiko sama seperti #2),
+//    Mistral (5,5-5,7 detik, SANGAT konsisten). **FINAL: Mistral** — satu-satunya
+//    kandidat TANPA kontensi fitur produksi lain sama sekali (sebelum ini cuma
+//    dipakai jalur diagnostik manual `?test_mistral=1`), kuota bulanan generous
+//    sudah terdokumentasi (lihat DEFAULT_LIMITS di _ai_guard.js), akurasi
+//    terjemahan diverifikasi setara/lebih baik (konversi format angka
+//    desimal/ribuan EN→ID malah lebih presisi).
 
 const cb = require('./_circuit_breaker');
 const { allowAiCall } = require('./_ai_guard');
 const { detectCat } = require('../newscat');
 
-// Circuit breaker key TERPISAH dari 'ai:sambanova:c1' yang dipakai market-digest.js/
-// admin.js/journal.js — supaya bug spesifik parsing/prompt translate ini tidak ikut
-// men-trip circuit fitur lain (fallback Journal/Fundamental/Call 1 Ringkasan) yang
-// berbagi akun SambaNova yang sama.
-const CB_SAMBANOVA = 'ai:sambanova:c1:newstranslate';
-const SAMBANOVA_URL   = 'https://api.sambanova.ai/v1/chat/completions';
-const SAMBANOVA_MODEL = 'DeepSeek-V3.2';
+// Circuit breaker key TERPISAH dari circuit Mistral lain (kalau ada di masa depan)
+// — konvensi sama seperti isolasi provider lain di file ini sejak awal (S272).
+const CB_MISTRAL = 'ai:mistral:newstranslate';
+const MISTRAL_URL   = 'https://api.mistral.ai/v1/chat/completions';
+const MISTRAL_MODEL = 'mistral-small-latest';
 
 const TR_KEY_TTL = 36 * 3600; // detik — samakan retensi 36 jam dengan news_history
 // Berapa headline digabung dalam SATU panggilan API (lihat catatan BATCH REDESIGN di
@@ -68,12 +77,10 @@ const TR_KEY_TTL = 36 * 3600; // detik — samakan retensi 36 jam dengan news_hi
 // masih ringkas + gampang di-parse per blok, tapi tetap >10x lebih hemat panggilan
 // API dibanding desain lama (1 headline/panggilan).
 const BATCH_SIZE = 20;
-// SambaNova akun 2 dipakai fitur lain (market-digest.js Call1/journal.js/admin.js
-// fundamental fallback) dengan timeout 22-30 detik untuk model yang SAMA (DeepSeek-V3.2)
-// — batch translate menerjemahkan LEBIH BANYAK teks sekaligus daripada 1 headline,
-// jadi timeout digenerouskan ke 15 detik (bukan 4 detik seperti versi lama 1-headline),
-// tetap di bawah pola 22-30s tempat lain supaya tidak menahan Vercel/client lebih lama
-// dari yang perlu.
+// Mistral diverifikasi live (2026-08-02): batch 10 headline konsisten ~5,5-5,7 detik
+// di 3 ronde tes berturut. 15 detik kasih headroom >2x dari observasi nyata untuk
+// batch penuh 20 headline, tanpa terlalu longgar menahan Vercel/client kalau memang
+// benar-benar macet.
 const PER_CALL_TIMEOUT_MS = 15000;
 // Default anggaran waktu translate kalau caller tidak kasih budgetMs eksplisit —
 // caller SEHARUSNYA selalu kasih (lihat rssHandler/newsHistoryHandler di api/feeds.js,
@@ -163,15 +170,15 @@ function parseBatchResponse(raw, count) {
 }
 
 async function translateBatch(items, redisCmd, timeoutMs) {
-  if (!await allowAiCall('sambanova_c1_newstranslate')) return; // pagar kuota — nyusul siklus berikutnya
-  const SAMBANOVA_KEY = process.env.SAMBANOVA_API_KEY_CALL1;
-  if (!SAMBANOVA_KEY) return;
+  if (!await allowAiCall('mistral_newstranslate')) return; // pagar kuota — nyusul siklus berikutnya
+  const MISTRAL_KEY = process.env.MISTRAL_API_KEY;
+  if (!MISTRAL_KEY) return;
   try {
-    const r = await fetch(SAMBANOVA_URL, {
+    const r = await fetch(MISTRAL_URL, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SAMBANOVA_KEY}` },
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${MISTRAL_KEY}` },
       body: JSON.stringify({
-        model: SAMBANOVA_MODEL,
+        model: MISTRAL_MODEL,
         messages: [{ role: 'user', content: buildBatchPrompt(items) }],
         max_tokens: 6000,
         temperature: 0.2,
@@ -188,9 +195,9 @@ async function translateBatch(items, redisCmd, timeoutMs) {
     const parsed = parseBatchResponse(raw, items.length);
     if (!parsed.some(Boolean)) throw new Error('Unparseable batch response');
     await Promise.all(parsed.map((p, i) => (p ? redisCmd('SET', `news_tr:${items[i].guid}`, JSON.stringify(p), 'EX', TR_KEY_TTL) : null)));
-    await cb.onSuccess(CB_SAMBANOVA);
+    await cb.onSuccess(CB_MISTRAL);
   } catch(e) {
-    await cb.onFailure(CB_SAMBANOVA);
+    await cb.onFailure(CB_MISTRAL);
     console.warn('news_translate batch failed:', items.map(it => it.guid).join(','), e.message);
   }
 }
@@ -206,8 +213,8 @@ async function translateBatch(items, redisCmd, timeoutMs) {
  */
 async function translateNewItems(items, redisCmd, budgetMs = DEFAULT_BUDGET_MS) {
   if (!Array.isArray(items) || items.length === 0) return;
-  if (!process.env.SAMBANOVA_API_KEY_CALL1) return;
-  if (!await cb.canCall(CB_SAMBANOVA)) return; // circuit open — coba lagi siklus berikutnya
+  if (!process.env.MISTRAL_API_KEY) return;
+  if (!await cb.canCall(CB_MISTRAL)) return; // circuit open — coba lagi siklus berikutnya
 
   // ECON DATA dikecualikan (permintaan user 2026-08-02): angka/rilis kalender
   // rawan salah interpretasi kalau diterjemahkan LLM — biarkan bahasa Inggris asli.
