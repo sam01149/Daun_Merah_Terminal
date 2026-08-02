@@ -169,7 +169,7 @@ test('translateNewItems: item yang sudah ada news_tr:<guid> di-skip, tidak mangg
   } finally { global.fetch = realFetch; }
 }));
 
-test('translateNewItems: todo <= MAX_CONCURRENT (100) -> SEMUA diproses satu gelombang, tidak ada yang menunggu (S274, gas mode SambaNova)', withEnv({
+test('translateNewItems: todo <= MAX_CONCURRENT (15) -> SEMUA diproses satu gelombang, tidak ada yang menunggu', withEnv({
   SAMBANOVA_API_KEY_CALL1: 'fake-key',
   UPSTASH_REDIS_REST_URL: 'https://mock-redis.test',
   UPSTASH_REDIS_REST_TOKEN: 'mock-token',
@@ -187,16 +187,14 @@ test('translateNewItems: todo <= MAX_CONCURRENT (100) -> SEMUA diproses satu gel
   };
   try {
     const store = new Map();
-    // 40 item < MAX_CONCURRENT 100 — backlog realistis, dulu (MAX_CONCURRENT=8) ini akan
-    // kepotong beberapa gelombang, sekarang harus langsung habis sekali jalan (S274).
-    const items = Array.from({ length: 40 }, (_, i) => ({ title: `t${i}`, guid: `g${i}`, description: '' }));
+    const items = Array.from({ length: 12 }, (_, i) => ({ title: `t${i}`, guid: `g${i}`, description: '' }));
     await translateNewItems(items, makeRedisCmd(store));
-    assert.equal(calledGuids.length, 40, 'semua 40 item harus ditembak dalam satu gelombang, tidak ada yang ditunda');
-    for (let i = 0; i < 40; i++) assert.equal(store.has(`news_tr:g${i}`), true, `g${i} seharusnya sudah diterjemahkan`);
+    assert.equal(calledGuids.length, 12, 'semua 12 item (di bawah MAX_CONCURRENT 15) harus ditembak dalam satu gelombang');
+    for (let i = 0; i < 12; i++) assert.equal(store.has(`news_tr:g${i}`), true, `g${i} seharusnya sudah diterjemahkan`);
   } finally { global.fetch = realFetch; }
 }));
 
-test('translateNewItems: backlog terlama tetap dapat slot walau todo > MAX_CONCURRENT (S273, anti-starvation — pagar kasus pathologis)', withEnv({
+test('translateNewItems: backlog terlama tetap dapat slot walau todo > MAX_CONCURRENT (S273, anti-starvation; S274 diturunkan lagi ke 15 setelah 100 terbukti mentrip circuit breaker)', withEnv({
   SAMBANOVA_API_KEY_CALL1: 'fake-key',
   UPSTASH_REDIS_REST_URL: 'https://mock-redis.test',
   UPSTASH_REDIS_REST_TOKEN: 'mock-token',
@@ -214,14 +212,13 @@ test('translateNewItems: backlog terlama tetap dapat slot walau todo > MAX_CONCU
   };
   try {
     const store = new Map();
-    // urutan feed asli: index 0 = headline TERBARU ... index 101 = TERTUA
-    // (102 item, > MAX_CONCURRENT 100 — skenario pathologis, mis. XML rusak/backfill raksasa)
-    const items = Array.from({ length: 102 }, (_, i) => ({ title: `t${i}`, guid: `g${i}`, description: '' }));
+    // urutan feed asli: index 0 = headline TERBARU ... index 17 = TERTUA (18 item, > MAX_CONCURRENT 15)
+    const items = Array.from({ length: 18 }, (_, i) => ({ title: `t${i}`, guid: `g${i}`, description: '' }));
     await translateNewItems(items, makeRedisCmd(store));
-    // 98 terbaru (t0-t97) + 2 terlama (t100-t101) = 100 total; t98-t99 (backlog tengah) menunggu siklus berikutnya
-    const expected = [...Array.from({ length: 98 }, (_, i) => `t${i}`), 't100', 't101'];
+    // 13 terbaru (t0-t12) + 2 terlama (t16-t17) = 15 total; t13-t15 (backlog tengah) menunggu siklus berikutnya
+    const expected = [...Array.from({ length: 13 }, (_, i) => `t${i}`), 't16', 't17'];
     assert.deepEqual(calledGuids.sort(), expected.sort());
-    for (const skipped of ['g98', 'g99']) {
+    for (const skipped of ['g13', 'g14', 'g15']) {
       assert.equal(store.has(`news_tr:${skipped}`), false, `${skipped} seharusnya belum diterjemahkan gelombang ini`);
     }
   } finally { global.fetch = realFetch; }

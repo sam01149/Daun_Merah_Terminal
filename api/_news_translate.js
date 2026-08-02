@@ -46,25 +46,26 @@ const SAMBANOVA_URL   = 'https://api.sambanova.ai/v1/chat/completions';
 const SAMBANOVA_MODEL = 'DeepSeek-V3.2';
 
 const TR_KEY_TTL = 36 * 3600; // detik — samakan retensi 36 jam dengan news_history
-// MAX_CONCURRENT sebelumnya dikunci ketat (8) khusus supaya aman di bawah RPM 10 milik
-// Gemini free tier. SambaNova TIDAK punya kekhawatiran RPM keras yang sama (permintaan
-// user, 2026-08-02: "gas aja, gausah batasin RPM-nya") — jadi nilainya dinaikkan jauh
-// supaya SATU gelombang bisa langsung melahap SEMUA todo[] dalam kondisi normal (backlog
-// realistis per pemanggilan cuma puluhan item, jauh di bawah angka ini). Tetap ADA angka
-// (bukan literally Infinity) sebagai pagar "tidak membabi buta" murni untuk skenario
-// pathologis (mis. XML rusak menghasilkan ratusan item) — 100 disamakan dengan cap
-// `limit` maksimum newsHistoryHandler (api/feeds.js), backlog realistis manapun tidak
-// akan pernah kena split ini.
-const MAX_CONCURRENT      = 100;
+// MAX_CONCURRENT sempat dinaikkan ke 100 (S274 awal, permintaan user "gas aja") dengan
+// asumsi SambaNova tidak sekhawatir Gemini soal RPM — TERBUKTI SALAH lewat verifikasi live
+// pasca-deploy hari sama: user lapor "ga semua jadi Indonesia". Root cause: SambaNova akun 2
+// real-nya tetap ada batas RPM (estimasi ~10-20 RPM, daun_merah_ai.md §4, TIDAK dikonfirmasi
+// resmi provider) — gelombang 100 konkuren langsung menembak jauh di atas itu, sebagian besar
+// gagal (429/timeout) SEKALIGUS, dan `_circuit_breaker.js` trip circuit setelah HANYA 3
+// kegagalan (`FAILURE_THRESHOLD`) → translate MATI TOTAL 5 menit (`OPEN_DURATION_MS`) tiap kali
+// kejadian, bukan cuma sebagian item gagal. Diturunkan ke 15 — tetap lebih agresif dari nilai
+// asal 8 (yang dikunci khusus buat RPM 10 Gemini, kasus provider berbeda), tapi di bawah batas
+// bawah estimasi SambaNova supaya margin aman dari circuit trip. "Gas tapi tidak membabi buta"
+// di sini berarti: gas melewati batas RPM provider ASLI itulah yang justru bikin backlog makin
+// lambat (circuit blackout), bukan lebih cepat — pagar realistis > pagar sembarangan besar.
+const MAX_CONCURRENT      = 15;
 // Anti-starvation (S273, 2026-08-02): tanpa ini, wave SELALU mengambil todo[0..N)
-// yang berarti headline TERBARU (urutan feed = terbaru dulu) — saat backlog pathologis
+// yang berarti headline TERBARU (urutan feed = terbaru dulu) — saat breaking news deras
 // (todo.length > MAX_CONCURRENT di atas), headline yang agak lama tapi belum sempat
-// diterjemahkan terus digeser ke belakang antrean oleh headline yang lebih baru lagi.
-// Reserve sebagian slot tiap gelombang khusus headline TERTUA di antrean (ujung
-// belakang todo[], bukan array terbaru) supaya backlog dijamin habis bertahap,
-// sisa slot tetap prioritas headline terbaru (paling relevan buat pembaca). Praktis
-// tidak pernah kepakai lagi sejak MAX_CONCURRENT dinaikkan (lihat komentar di atas),
-// dibiarkan sebagai pagar untuk kasus ekstrem yang sama.
+// diterjemahkan terus digeser ke belakang antrean oleh headline yang lebih baru lagi, dan
+// bisa nyangkut bahasa Inggris selama arus berita belum mereda. Reserve sebagian slot tiap
+// gelombang khusus headline TERTUA di antrean (ujung belakang todo[], bukan array terbaru)
+// supaya backlog dijamin habis bertahap, sisa slot tetap prioritas headline terbaru.
 const BACKLOG_RESERVE_SLOTS = 2;
 const PER_CALL_TIMEOUT_MS = 4000;
 // Default anggaran waktu translate kalau caller tidak kasih budgetMs eksplisit —
@@ -161,11 +162,11 @@ async function translateNewItems(items, redisCmd, budgetMs = DEFAULT_BUDGET_MS) 
   const todo = candidates.filter((_, i) => !existing || existing[i] == null);
   if (todo.length === 0) return;
 
-  // SATU gelombang saja per pemanggilan (bukan loop multi-gelombang) — lihat
-  // catatan MAX_CONCURRENT di atas (praktis selalu cukup buat lahap semua todo[]
-  // sekali jalan). budgetMs tetap dipakai sebagai timeout keseluruhan gelombang ini
-  // (jaga-jaga kalau Promise.all lebih lambat dari perkiraan), bukan buat looping
-  // banyak gelombang.
+  // SATU gelombang saja per pemanggilan (bukan loop multi-gelombang) — lihat catatan
+  // MAX_CONCURRENT di atas soal alasan RPM. budgetMs tetap dipakai sebagai timeout
+  // keseluruhan gelombang ini (jaga-jaga kalau Promise.all lebih lambat dari perkiraan),
+  // bukan buat looping banyak gelombang. Backlog besar nyusul siklus cache-refill
+  // berikutnya (~50-60 detik), bukan dipaksa habis sekali jalan.
   let wave;
   if (todo.length <= MAX_CONCURRENT) {
     wave = todo;

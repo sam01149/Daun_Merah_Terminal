@@ -183,6 +183,14 @@ Konteks: user tanya apakah translate NEWS bisa tetap jalan walau aplikasi ditutu
 
 **Verifikasi:** `npm test` 732/732 hijau. Test lama `S273 anti-starvation` (12 item, asumsi `MAX_CONCURRENT=8`) diskalakan ke 102 item (> 100) supaya tetap menguji jalur pathologis yang benar setelah konstanta naik; test baru (40 item < 100) menegaskan backlog realistis sekarang selalu habis satu gelombang, tidak ada lagi yang tertunda.
 
+**Setelah di-merge ke `main` & deploy: user lapor live "ga semua jadi Indonesia" — `MAX_CONCURRENT=100` TERBUKTI SALAH, diturunkan lagi ke 15.**
+
+**Root cause (ditemukan dari review kode `api/_circuit_breaker.js`, bukan akses live — sandbox sesi ini diblokir network policy ke domain production):** SambaNova akun 2 tetap punya batas RPM real (estimasi ~10-20 RPM, `daun_merah_ai.md` §4, TIDAK dikonfirmasi resmi provider) — beda dari asumsi "SambaNova gak sekhawatir Gemini soal RPM" yang dipakai buat menaikkan `MAX_CONCURRENT` ke 100 sebelumnya. Gelombang 100 konkuren menembak jauh di atas kapasitas real itu, banyak yang gagal (429/timeout) SEKALIGUS dalam satu wave — dan `_circuit_breaker.js` trip circuit setelah HANYA 3 kegagalan (`FAILURE_THRESHOLD`), membekukan translate TOTAL selama 5 menit (`OPEN_DURATION_MS`) tiap kali kejadian. Efeknya bukan "sebagian item gagal, sisanya sukses" seperti dugaan awal, tapi "seluruh fitur translate mati bergantian 5 menitan" — persis simtom yang dilaporkan user.
+
+**Fix (`api/_news_translate.js`):** `MAX_CONCURRENT` 100 → **15** — tetap lebih agresif dari nilai asal 8 (yang dikunci khusus buat RPM 10 Gemini, provider beda), tapi di bawah batas bawah estimasi RPM SambaNova supaya ada margin aman dari circuit trip. Pelajaran: "gas tapi tidak membabi buta" yang diminta user artinya menghormati RPM real provider tujuan — menembus itu bukan bikin lebih cepat, malah lebih lambat (circuit blackout 5 menit > menunggu siklus cache-refill 50-60 detik berikutnya).
+
+**Verifikasi:** `npm test` 732/732 hijau (2 test `MAX_CONCURRENT` diskalakan ulang dari asumsi 100 balik ke asumsi 15 — 12 item habis satu gelombang, 18 item split 13 terbaru + 2 terlama sisa 3 tertunda). **Belum diverifikasi live** — sandbox sesi ini diblokir network policy ke `financial-feed-app.vercel.app`, jadi diagnosis murni dari review kode (circuit breaker threshold) yang match persis dengan gejala user, bukan dari log produksi langsung. User perlu konfirmasi manual setelah deploy berikutnya apakah backlog translate sekarang jalan mulus tanpa macet bergelombang.
+
 ## Changelog Session 271 (2026-08-01) — Fix: Analisa Terakhir Jumat Hilang Saat Weekend (Root Cause TTL Redis)
 
 **Masalah dilaporkan user:** Sabtu/Minggu (pasar FX tutup), tab Analisa tidak menampilkan catatan analisa terakhir hari Jumat sebagai bekal trader menghadapi pembukaan Senin.
