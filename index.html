@@ -296,14 +296,6 @@ body {
 .corr-anomaly-more summary { font-size:9px; color:var(--muted); font-family:'DM Mono',monospace; cursor:pointer; padding:4px 0; list-style:none; }
 .corr-anomaly-more summary::before { content:'▸ '; }
 .corr-anomaly-more[open] summary::before { content:'▾ '; }
-/* Grid 2 kolom di layar lebar (mengisi ruang kosong horizontal) — di HP tetap
-   stacked normal 1 kolom seperti sebelumnya, tidak ada perubahan. */
-@media (min-width: 720px) {
-  .corr-anomaly-grid { display:grid; grid-template-columns:1fr 1fr; gap:5px 10px; align-items:start; }
-  .corr-anomaly-grid .corr-anomaly { margin-bottom:0; }
-  .corr-goldrows-grid { column-count:2; column-gap:0; }
-  .corr-goldrows-grid .corr-text-row { break-inside:avoid; }
-}
 
 /* US LABOUR MARKET (blok di dalam detail USD — fd overlay) */
 .fund-labour-hdr { display:flex; align-items:center; gap:6px 10px; flex-wrap:wrap; margin-bottom:10px; font-family:'DM Mono',monospace; }
@@ -4377,7 +4369,7 @@ window.addEventListener('DOMContentLoaded', updateThemeIcon);
 
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.08.02.2';
+const APP_VERSION = '2026.08.02.3';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js

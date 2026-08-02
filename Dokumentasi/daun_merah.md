@@ -11,7 +11,7 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-02 (Session 272 lanj. — Shortcut "/" buka pair selector tab TEK)
+> **Last updated:** 2026-08-02 (Session 272 lanj. — Cross-Asset Correlations & Anomali Korelasi dibalik ke 1 kolom vertikal)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -45,6 +45,17 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 - `APP_VERSION` → `2026.08.02.2`.
 
 **Verifikasi:** `npm test` 714/714 hijau. Playwright live-flow: tab Teknikal aktif → tekan `/` → dropdown terbuka & search box fokus otomatis → ketik "btc" → list terfilter ke "BTC/USD" saja → Enter → pair aktif berpindah ke BTC/USD (chart, label, Posisi & Bias semua update benar). Konfirmasi juga `/` di tab lain (News) tidak memicu apa pun (tidak ada error, tidak ada efek samping).
+
+**Revisi lanjutan (hari sama, permintaan user):** minta cek keterbacaan grid 2-kolom di section CROSS-ASSET CORRELATIONS (layar lebar ≥720px, ditambahkan session 270) — apakah lebih enak dibaca sebagai 1 kolom vertikal.
+
+- **Riset dulu (bukan langsung eksekusi):** render section itu dengan data tiruan via `browser_evaluate` (isi `corrData` manual + panggil `renderCorrelations()`), screenshot lebar desktop 1280px vs mobile 390px untuk bandingkan langsung, bukan cuma baca kode. Temuan: dua blok yang sama-sama "2 kolom" ternyata pakai teknik CSS berbeda dan readability-nya beda:
+  - `.corr-goldrows-grid` (baris "XAU/USD · KORELASI CROSS-ASSET", cuma XAUUSD) pakai `column-count:2` (gaya koran) — CSS ini membagi kolom berdasar TINGGI konten bukan jumlah item, jadi 10 baris terurut-kepentingan (DXY paling relevan ke Gold → EUR paling kurang) kepotong tidak rata (4 baris kiri / 6 kanan di contoh), memaksa mata loncat dari bawah-kiri ke atas-kanan buat lanjut baca — order-prioritas jadi tidak jelas kebaca.
+  - `.corr-anomaly-grid` (kartu "ANOMALI KORELASI", semua pair) pakai CSS Grid biasa (`grid-template-columns:1fr 1fr`) — order baca tetap linear baris-per-baris (kiri-kanan lalu turun), jadi sebenarnya cukup terbaca. Rekomendasi awal: cuma baliknya `.corr-goldrows-grid`.
+- **Keputusan user:** balik SEMUA (bukan cuma goldrows) ke 1 kolom vertikal, berlaku di semua pair.
+- **Fix (`index.html`):** hapus blok `@media (min-width: 720px)` yang berisi override `.corr-anomaly-grid`/`.corr-goldrows-grid` — sekarang kedua section stacked 1 kolom di semua lebar layar (sama seperti tampilan mobile yang sudah dari dulu 1 kolom, tidak ada perubahan di HP).
+- `APP_VERSION` → `2026.08.02.3`.
+
+**Verifikasi:** `npm test` 714/714 hijau. Playwright screenshot ulang di 1280px (setelah fix) — baris Gold correlation & kartu anomali sama-sama 1 kolom vertikal, dicek juga pair non-XAU (EURUSD) untuk pastikan berlaku ke semua pair, bukan cuma Gold.
 
 ## Changelog Session 271 (2026-08-01) — Fix: Analisa Terakhir Jumat Hilang Saat Weekend (Root Cause TTL Redis)
 
