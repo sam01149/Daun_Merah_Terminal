@@ -169,7 +169,7 @@ test('translateNewItems: item yang sudah ada news_tr:<guid> di-skip, tidak mangg
   } finally { global.fetch = realFetch; }
 }));
 
-test('translateNewItems: backlog terlama tetap dapat slot walau todo > MAX_CONCURRENT (S273, anti-starvation)', withEnv({
+test('translateNewItems: todo <= MAX_CONCURRENT (100) -> SEMUA diproses satu gelombang, tidak ada yang menunggu (S274, gas mode SambaNova)', withEnv({
   SAMBANOVA_API_KEY_CALL1: 'fake-key',
   UPSTASH_REDIS_REST_URL: 'https://mock-redis.test',
   UPSTASH_REDIS_REST_TOKEN: 'mock-token',
@@ -187,12 +187,41 @@ test('translateNewItems: backlog terlama tetap dapat slot walau todo > MAX_CONCU
   };
   try {
     const store = new Map();
-    // urutan feed asli: index 0 = headline TERBARU ... index 11 = TERTUA (12 item, > MAX_CONCURRENT 8)
-    const items = Array.from({ length: 12 }, (_, i) => ({ title: `t${i}`, guid: `g${i}`, description: '' }));
+    // 40 item < MAX_CONCURRENT 100 — backlog realistis, dulu (MAX_CONCURRENT=8) ini akan
+    // kepotong beberapa gelombang, sekarang harus langsung habis sekali jalan (S274).
+    const items = Array.from({ length: 40 }, (_, i) => ({ title: `t${i}`, guid: `g${i}`, description: '' }));
     await translateNewItems(items, makeRedisCmd(store));
-    // 6 terbaru (t0-t5) + 2 terlama (t10-t11) = 8 total; t6-t9 (backlog tengah) menunggu siklus berikutnya
-    assert.deepEqual(calledGuids.sort(), ['t0', 't1', 't2', 't3', 't4', 't5', 't10', 't11'].sort());
-    for (const skipped of ['g6', 'g7', 'g8', 'g9']) {
+    assert.equal(calledGuids.length, 40, 'semua 40 item harus ditembak dalam satu gelombang, tidak ada yang ditunda');
+    for (let i = 0; i < 40; i++) assert.equal(store.has(`news_tr:g${i}`), true, `g${i} seharusnya sudah diterjemahkan`);
+  } finally { global.fetch = realFetch; }
+}));
+
+test('translateNewItems: backlog terlama tetap dapat slot walau todo > MAX_CONCURRENT (S273, anti-starvation — pagar kasus pathologis)', withEnv({
+  SAMBANOVA_API_KEY_CALL1: 'fake-key',
+  UPSTASH_REDIS_REST_URL: 'https://mock-redis.test',
+  UPSTASH_REDIS_REST_TOKEN: 'mock-token',
+}, async () => {
+  const realFetch = global.fetch;
+  const calledGuids = [];
+  global.fetch = async (url, opts) => {
+    if (String(url).includes('api.sambanova.ai')) {
+      const body = JSON.parse(opts.body);
+      const m = body.messages[0].content.match(/JUDUL:\n(.*)/);
+      calledGuids.push(m[1]);
+      return { ok: true, json: async () => ({ choices: [{ message: { content: `JUDUL_ID: ${m[1]}` } }] }) };
+    }
+    return { ok: true, json: async () => ({ result: null }) };
+  };
+  try {
+    const store = new Map();
+    // urutan feed asli: index 0 = headline TERBARU ... index 101 = TERTUA
+    // (102 item, > MAX_CONCURRENT 100 — skenario pathologis, mis. XML rusak/backfill raksasa)
+    const items = Array.from({ length: 102 }, (_, i) => ({ title: `t${i}`, guid: `g${i}`, description: '' }));
+    await translateNewItems(items, makeRedisCmd(store));
+    // 98 terbaru (t0-t97) + 2 terlama (t100-t101) = 100 total; t98-t99 (backlog tengah) menunggu siklus berikutnya
+    const expected = [...Array.from({ length: 98 }, (_, i) => `t${i}`), 't100', 't101'];
+    assert.deepEqual(calledGuids.sort(), expected.sort());
+    for (const skipped of ['g98', 'g99']) {
       assert.equal(store.has(`news_tr:${skipped}`), false, `${skipped} seharusnya belum diterjemahkan gelombang ini`);
     }
   } finally { global.fetch = realFetch; }

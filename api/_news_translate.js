@@ -46,21 +46,25 @@ const SAMBANOVA_URL   = 'https://api.sambanova.ai/v1/chat/completions';
 const SAMBANOVA_MODEL = 'DeepSeek-V3.2';
 
 const TR_KEY_TTL = 36 * 3600; // detik — samakan retensi 36 jam dengan news_history
-// SambaNova free tier ~10-20 RPM (lihat daun_merah_ai.md §4) — SATU gelombang per
-// pemanggilan (bukan loop multi-gelombang) dijaga di bawah itu, supaya backlog besar
-// (mis. pasca-deploy) tidak menembak >10 request dalam jendela <60 detik dan memicu
-// 429/circuit trip. Sisa backlog nyusul siklus cache-refill berikutnya (~50-60 detik
-// kemudian, RPM window sudah reset).
-const MAX_CONCURRENT      = 8;
-// Anti-starvation (S273, 2026-08-02): tanpa ini, wave SELALU mengambil todo[0..8)
-// yang berarti headline TERBARU (urutan feed = terbaru dulu) — saat breaking news
-// deras (>8 headline baru per siklus refresh), headline yang agak lama tapi belum
-// sempat diterjemahkan terus digeser ke belakang antrean oleh headline yang lebih
-// baru lagi, dan bisa nyangkut bahasa Inggris selama arus berita belum mereda
-// (ditemukan lewat verifikasi live: 9/30 headline tetap Inggris 2 siklus berturut).
+// MAX_CONCURRENT sebelumnya dikunci ketat (8) khusus supaya aman di bawah RPM 10 milik
+// Gemini free tier. SambaNova TIDAK punya kekhawatiran RPM keras yang sama (permintaan
+// user, 2026-08-02: "gas aja, gausah batasin RPM-nya") — jadi nilainya dinaikkan jauh
+// supaya SATU gelombang bisa langsung melahap SEMUA todo[] dalam kondisi normal (backlog
+// realistis per pemanggilan cuma puluhan item, jauh di bawah angka ini). Tetap ADA angka
+// (bukan literally Infinity) sebagai pagar "tidak membabi buta" murni untuk skenario
+// pathologis (mis. XML rusak menghasilkan ratusan item) — 100 disamakan dengan cap
+// `limit` maksimum newsHistoryHandler (api/feeds.js), backlog realistis manapun tidak
+// akan pernah kena split ini.
+const MAX_CONCURRENT      = 100;
+// Anti-starvation (S273, 2026-08-02): tanpa ini, wave SELALU mengambil todo[0..N)
+// yang berarti headline TERBARU (urutan feed = terbaru dulu) — saat backlog pathologis
+// (todo.length > MAX_CONCURRENT di atas), headline yang agak lama tapi belum sempat
+// diterjemahkan terus digeser ke belakang antrean oleh headline yang lebih baru lagi.
 // Reserve sebagian slot tiap gelombang khusus headline TERTUA di antrean (ujung
 // belakang todo[], bukan array terbaru) supaya backlog dijamin habis bertahap,
-// sisa slot tetap prioritas headline terbaru (paling relevan buat pembaca).
+// sisa slot tetap prioritas headline terbaru (paling relevan buat pembaca). Praktis
+// tidak pernah kepakai lagi sejak MAX_CONCURRENT dinaikkan (lihat komentar di atas),
+// dibiarkan sebagai pagar untuk kasus ekstrem yang sama.
 const BACKLOG_RESERVE_SLOTS = 2;
 const PER_CALL_TIMEOUT_MS = 4000;
 // Default anggaran waktu translate kalau caller tidak kasih budgetMs eksplisit —
@@ -158,9 +162,10 @@ async function translateNewItems(items, redisCmd, budgetMs = DEFAULT_BUDGET_MS) 
   if (todo.length === 0) return;
 
   // SATU gelombang saja per pemanggilan (bukan loop multi-gelombang) — lihat
-  // catatan MAX_CONCURRENT di atas soal alasan RPM. budgetMs tetap dipakai
-  // sebagai timeout keseluruhan gelombang ini (jaga-jaga kalau Promise.all
-  // lebih lambat dari perkiraan), bukan buat looping banyak gelombang.
+  // catatan MAX_CONCURRENT di atas (praktis selalu cukup buat lahap semua todo[]
+  // sekali jalan). budgetMs tetap dipakai sebagai timeout keseluruhan gelombang ini
+  // (jaga-jaga kalau Promise.all lebih lambat dari perkiraan), bukan buat looping
+  // banyak gelombang.
   let wave;
   if (todo.length <= MAX_CONCURRENT) {
     wave = todo;
