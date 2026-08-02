@@ -11,7 +11,7 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-02 (Session 272 lanj. — Cross-Asset Correlations & Anomali Korelasi dibalik ke 1 kolom vertikal)
+> **Last updated:** 2026-08-02 (Session 272 lanj. — Translate NEWS ke Bahasa Indonesia via Gemini, field tambahan title_id/desc_id)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -56,6 +56,39 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 - `APP_VERSION` → `2026.08.02.3`.
 
 **Verifikasi:** `npm test` 714/714 hijau. Playwright screenshot ulang di 1280px (setelah fix) — baris Gold correlation & kartu anomali sama-sama 1 kolom vertikal, dicek juga pair non-XAU (EURUSD) untuk pastikan berlaku ke semua pair, bukan cuma Gold.
+
+**Revisi lanjutan (hari sama, permintaan user): fitur baru — translate NEWS ke Bahasa Indonesia otomatis.**
+
+**Keputusan final (hasil diskusi bertahap sepanjang sesi, ringkas):**
+1. **Mesin: Gemini** (chain AI yang sudah ada di app ini), BUKAN DeepL/Google Translate. Dua MT khusus itu dicek dulu (ToS DeepL aman untuk finance, tapi tier gratisnya sekarang cuma 1 juta karakter SEKALI PAKAI seumur hidup per kebijakan DeepL 2026 — habis ±5-6 hari di volume berita app ini; Google Translate API 500rb karakter/bulan recurring tapi studi 2026 nunjukin "Literal Translation Syndrome" — rawan ambigu, persis yang mau dihindari user). Gemini dipilih karena genuinely $0 (dibatasi jumlah PANGGILAN/hari, bukan karakter) dan sebagai LLM tidak mewarisi kelemahan literal Google Translate.
+2. **Biaya nyata dikoreksi di tengah diskusi:** klaim awal "genuinely $0" kurang presisi — DeepSeek (provider LAIN di chain yang sama) genuinely berbayar per-panggilan (~$0.0033/call dari saldo top-up), tapi translate ini didesain HANYA lewat Gemini (skip DeepSeek sama sekali) sehingga tetap $0 murni.
+3. **Real-time tanpa jeda batching:** bukan translate-per-batch-tertunda, tapi per-item PARALEL (`Promise.all`) begitu headline baru terdeteksi — jeda cuma beberapa detik (bukan menit), dibatasi anggaran waktu supaya tidak mengulang bug timeout NEWS lama.
+4. **Cache 36 jam per-headline (guid), dishare SEMUA user** — 1x translate seumur hidup cache, bukan per-device/per-buka.
+5. **ECON DATA dikecualikan** (permintaan user) — angka/rilis kalender ekonomi rawan salah interpretasi LLM, biarkan Inggris asli selamanya.
+6. **Toggle 🇮🇩/🇬🇧 manual** di tab NEWS (permintaan user, jaga-jaga verifikasi) — user bisa lihat versi Inggris asli kapan saja kalau terjemahan kelihatan aneh.
+7. **Prompt STRICT** (permintaan user eksplisit "HARUS PURE TERJEMAHAN SAJA") — instruksi tegas: hanya keluarkan hasil terjemahan, tanpa penjelasan/opini/catatan tambahan apa pun, istilah finansial standar & nama orang/tempat dipertahankan apa adanya.
+
+**Temuan arsitektur penting (menentukan desain):** endpoint `/api/feeds?type=rss` mengembalikan **raw XML** (bukan JSON) yang di-parse LANGSUNG di client (`parseRSS()` di index.html) — live ticker NEWS (`allItems`, yang tampil default) sama sekali TIDAK lewat `news_history` (JSON store yang cuma dipakai "Muat Berita Lebih Lama"). Field `title_id`/`desc_id` karena itu didesain sebagai lookup TERPISAH (endpoint baru `type=news_translate`, baca-saja dari cache Redis), bukan disisipkan ke XML — supaya endpoint RSS yang sudah pernah kena bug timeout (lihat catatan `fetchRSS()`) sama sekali tidak tersentuh/diperlambat.
+
+**Implementasi (baru, `api/_news_translate.js`, underscore module — tidak makan slot Vercel 12/12):**
+- `translateNewItems(items, redisCmd)` — fire-and-forget, dipanggil dari `rssHandler` (`api/feeds.js`) tiap kali cache RSS di-refill (~50-60 detik, TIDAK di-throttle 5 menit seperti `storeNewsHistory`). Alur: filter kategori `econ-data` (pakai `detectCat()` dari `newscat.js`, require langsung server-side) → MGET cek item yang sudah pernah diterjemahkan (skip) → sisanya ditembak paralel ke Gemini (`gemini-flash-latest`, chunk 10 per gelombang, timeout 4 detik/call, anggaran total 6 detik supaya aman di bawah `maxDuration` 20 detik `api/feeds.js` yang RSS fetch-nya sendiri bisa makan sampai 12 detik) → hasil disimpan `news_tr:<guid>` (Redis, `EX` 36 jam).
+- Prompt (`buildPrompt`) format ketat `JUDUL_ID: .../ISI_ID: ...`, parser (`parseResponse`) pakai lookahead regex (bukan consuming group) untuk batas field — **bug regex ketahuan dari unit test yang saya tulis sendiri**: `\s*` di kedua sisi capture group bikin newline pembatas "dicuri" duluan, capture lazy meluber sampai akhir string dan ikut menelan `ISI_ID: ...` sebagai bagian judul. Fix: `[ \t]*` (bukan `\s*`) setelah `JUDUL_ID:` + lookahead `(?=\r?\n\s*ISI_ID:|$)` untuk cari batas tanpa mengonsumsinya.
+- `getTranslations(guids, redisCmd)` — MGET baca-saja, dipakai endpoint lookup.
+- Circuit breaker `ai:gemini:newstranslate` **SENGAJA TERPISAH** dari `ai:gemini` yang dipakai admin.js/market-digest.js/journal.js — supaya bug spesifik parsing/prompt translate ini tidak ikut men-trip circuit fitur lain (Analisa Fundamental/AI Coach) yang juga fallback ke Gemini.
+- Jatah harian `gemini_newstranslate: 1000/hari` (`api/_ai_guard.js`) — bucket TERPISAH dari `gemini: 200/hari` yang sudah ada (provider Google-side sama, real ceiling 1.500 RPD; 1000+200=1200 masih aman di bawah itu).
+
+**Implementasi (`api/feeds.js`):**
+- `type=news_translate&guids=g1,g2,...` (baru) — endpoint baca-saja, MGET `news_tr:<guid>` untuk daftar guid yang diminta client, dibatasi 100 guid/request. Tidak pernah memanggil AI inline, jadi selalu cepat & aman dipanggil tiap siklus poll client (kena rate limit generic 30/60s seperti type lain).
+- Hook `translateNewItems(parseRSSItems(xml), redisCmd).catch(() => {})` ditambah persis di sebelah `storeNewsHistory(...)` yang sudah ada, di jalur cache-miss/upstream-fetch `rssHandler` — respons RSS ke client TIDAK PERNAH menunggu translate (dikirim duluan, translate jalan setelahnya di background).
+
+**Implementasi (`index.html`):**
+- Field `title_id`/`desc_id` TAMBAHAN — `title`/`desc` Inggris asli tidak pernah diubah (dipakai `detectCat()`/`newscat.js`, filter "Berita Terkait" TEK, prompt AI Ringkasan, push notif — kalau ditimpa, semua itu rusak diam-diam, pelajaran dari audit arsitektur sebelum implementasi).
+- Toggle `#newsLangBtn` (flag 🇮🇩/🇬🇧) di toolbar NEWS, sebelah AUTO/REFRESH — state `newsLangPref` persist di localStorage (`news_lang_pref_v1`), default `'id'`.
+- `_fetchNewsTranslations(items)` — lookup fire-and-forget ke `type=news_translate`, dipanggil tiap `fetchFeed()` (live poll) dan tiap `_fetchHistoryPage()` (load-more) untuk item yang belum punya `title_id`; skip item kategori `econ-data` di sisi client juga (`detectCat`) supaya tidak query sia-sia selamanya untuk item yang memang sengaja tidak pernah diterjemahkan server-side.
+- `_feedItemHtml()`: render `item.title_id || item.title` (fallback otomatis ke Inggris kalau belum/gagal diterjemahkan) saat `newsLangPref==='id'`, tapi `detectCat(item.title)` — klasifikasi kategori — **SELALU** pakai `item.title` Inggris asli, tidak pernah `title_id`.
+- `APP_VERSION` → `2026.08.02.4`.
+
+**Verifikasi:** `npm test` 728/728 hijau (14 test baru: `test/lib/news_translate.test.js` — parsing prompt/respons, pengecualian econ-data, skip item sudah-diterjemahkan, fail-open tanpa `GEMINI_API_KEY`/Redis; `test/feeds/news_translate_handler.test.js` — endpoint lookup). Verifikasi visual Playwright (data tiruan, tanpa backend live): mode ID menampilkan judul terjemahan untuk item yang sudah selesai, fallback Inggris otomatis untuk item yang belum sempat diterjemahkan, item ECON DATA tetap Inggris permanen di kedua mode; toggle EN/ID bekerja dua arah; simulasi lookup susulan (`_fetchNewsTranslations` dengan fetch di-mock) berhasil meng-update item yang tadinya fallback Inggris jadi terjemahan begitu server "selesai" — re-render otomatis tanpa reload.
 
 ## Changelog Session 271 (2026-08-01) — Fix: Analisa Terakhir Jumat Hilang Saat Weekend (Root Cause TTL Redis)
 

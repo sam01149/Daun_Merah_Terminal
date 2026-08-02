@@ -14,6 +14,7 @@ const { autoUpdateFundamentals } = require('./_fundamental_parser');
 const rateLimit = require('./_ratelimit');
 const cbk = require('./_circuit_breaker');
 const { requireAppKey } = require('./_app_key');
+const { translateNewItems, getTranslations } = require('./_news_translate');
 
 module.exports = async function handler(req, res) {
   const type = req.query.type;
@@ -31,7 +32,8 @@ module.exports = async function handler(req, res) {
   if (type === 'retail')      return retailHandler(req, res);
   if (type === 'retail_history') return retailHistoryHandler(req, res);
   if (type === 'news_history') return newsHistoryHandler(req, res);
-  return res.status(400).json({ error: 'Missing ?type= — use rss, cot, cot_history, research, options, aftek, retail, retail_history, or news_history' });
+  if (type === 'news_translate') return newsTranslateHandler(req, res);
+  return res.status(400).json({ error: 'Missing ?type= — use rss, cot, cot_history, research, options, aftek, retail, retail_history, news_history, or news_translate' });
 };
 
 // ── Shared Redis helper ────────────────────────────────────────────────────────
@@ -175,9 +177,28 @@ async function rssHandler(req, res) {
   // Fire-and-forget: persist items to 36h rolling history for market-digest
   storeNewsHistory(xml, now).catch(() => {});
 
+  // Fire-and-forget: translate item baru ke Bahasa Indonesia (S272, 2026-08-02).
+  // TIDAK di-throttle 5 menit seperti storeNewsHistory di atas — sengaja jalan
+  // tiap kali cache RSS di-refill (~50-60 detik) supaya headline baru nyusul
+  // versi Indonesia secepat mungkin. translateNewItems() sendiri sudah skip
+  // item yang sudah pernah diterjemahkan, jadi aman dipanggil tiap siklus.
+  translateNewItems(parseRSSItems(xml), redisCmd).catch(() => {});
+
   res.setHeader('X-Cache-Source', 'UPSTREAM');
   res.setHeader('X-News-Source', 'financialjuice');
   return res.status(200).send(xml);
+}
+
+// ── News translate lookup handler (S272, 2026-08-02) ─────────────────────────
+// Baca-saja: MGET hasil translate yang sudah siap untuk daftar guid yang diminta
+// client (item yang lagi ditampilkan). Tidak pernah memanggil AI inline — translate
+// aslinya jalan fire-and-forget di rssHandler di atas, endpoint ini cuma polling
+// cache-nya, jadi selalu cepat & aman dipanggil tiap siklus poll client.
+async function newsTranslateHandler(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  const guids = String(req.query.guids || '').split(',').map(s => s.trim()).filter(Boolean).slice(0, 100);
+  const map = await getTranslations(guids, redisCmd);
+  return res.status(200).json({ translations: map });
 }
 
 async function storeNewsHistory(xml, now) {
@@ -1417,6 +1438,7 @@ module.exports.retailHistoryHandler = retailHistoryHandler;
 module.exports.newsHistoryHandler = newsHistoryHandler;
 module.exports.storeNewsHistory = storeNewsHistory;
 module.exports.parseRSSItems = parseRSSItems;
+module.exports.newsTranslateHandler = newsTranslateHandler;
 module.exports._pctileRank = _pctileRank;
 module.exports._parseOpenInterest = _parseOpenInterest;
 module.exports._parseCotPercentLine = _parseCotPercentLine;

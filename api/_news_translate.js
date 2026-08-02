@@ -1,0 +1,154 @@
+// api/_news_translate.js
+// Terjemahan headline NEWS ke Bahasa Indonesia (S272, 2026-08-02) — underscore
+// prefix = bukan endpoint, tidak makan slot Vercel function.
+//
+// Desain (keputusan user, sesi ini):
+// - Field TAMBAHAN (title_id/desc_id), title/description Inggris asli TETAP
+//   dipertahankan utuh — dipakai newscat.js (detectCat), filter TEK per-pair,
+//   push notification, prompt AI Ringkasan. Menimpa field asli akan merusak
+//   semua konsumen itu diam-diam (lihat audit S272 di daun_merah.md).
+// - Kategori 'econ-data' DIKECUALIKAN dari translate — angka/rilis kalender
+//   ekonomi rawan salah interpretasi LLM, biarkan bahasa Inggris asli.
+// - 1x translate per headline (guid), hasil di-cache 36 jam (news_tr:<guid>),
+//   dishare SEMUA user/device — bukan per-request, bukan per-user.
+// - Fire-and-forget dari api/feeds.js (rssHandler, cache-miss path saja) —
+//   TIDAK PERNAH blocking respons RSS (endpoint ini pernah kena bug timeout,
+//   lihat catatan di index.html fetchRSS()). Item yang belum sempat/gagal
+//   diterjemahkan cuma tetap bahasa Inggris sampai siklus cache-refill
+//   berikutnya (~50-60 detik) mencoba lagi — self-healing, bukan retry eksplisit.
+// - Prompt STRICT (permintaan user): HANYA hasil terjemahan, tanpa penjelasan
+//   tambahan apa pun.
+
+const cb = require('./_circuit_breaker');
+const { allowAiCall } = require('./_ai_guard');
+const { detectCat } = require('../newscat');
+
+// Circuit breaker key TERPISAH dari 'ai:gemini' yang dipakai admin.js/market-digest.js/
+// journal.js — supaya bug spesifik parsing/prompt translate ini tidak ikut men-trip
+// circuit fitur lain (Analisa Fundamental/AI Coach) yang juga fallback ke Gemini.
+const CB_GEMINI = 'ai:gemini:newstranslate';
+const GEMINI_URL   = 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions';
+const GEMINI_MODEL = 'gemini-flash-latest';
+
+const TR_KEY_TTL = 36 * 3600; // detik — samakan retensi 36 jam dengan news_history
+const MAX_CONCURRENT      = 10;   // panggilan paralel per gelombang
+const PER_CALL_TIMEOUT_MS = 4000;
+// Total anggaran waktu translate dalam 1 siklus — api/feeds.js maxDuration 20s
+// dan fetch RSS FinancialJuice sendiri bisa makan sampai 12s, jadi translate
+// HARUS berhenti jauh sebelum itu supaya tidak mati di tengah & korupsi state.
+const OVERALL_BUDGET_MS = 6000;
+
+function buildPrompt(title, desc) {
+  const hasDesc = !!(desc && desc.trim());
+  let body = `JUDUL:\n${title}`;
+  if (hasDesc) body += `\n\nISI:\n${desc}`;
+  return `Terjemahkan teks berita finansial berikut dari Bahasa Inggris ke Bahasa Indonesia. ATURAN KETAT:
+- HANYA keluarkan hasil terjemahan. JANGAN tambahkan penjelasan, catatan, opini, disclaimer, atau komentar apa pun di luar terjemahan itu sendiri.
+- Pertahankan istilah/singkatan finansial standar, nama orang, nama tempat, dan ticker APA ADANYA (contoh: Fed, FOMC, CPI, GDP, ECB, Powell, Trump, S&P 500, WTI) — JANGAN diterjemahkan atau diberi padanan.
+- Terjemahan harus akurat dan tidak ambigu — kalau kalimat sumber bermakna ganda, pilih makna yang paling masuk akal dalam konteks berita finansial/pasar.
+- Jangan menambah informasi apa pun yang tidak ada di teks sumber.
+
+${body}
+
+Jawab PERSIS format berikut, tanpa teks lain apa pun di luar format ini:
+JUDUL_ID: <hasil terjemahan judul>${hasDesc ? '\nISI_ID: <hasil terjemahan isi>' : ''}`;
+}
+
+function parseResponse(raw, hasDesc) {
+  if (!raw) return null;
+  // Lookahead (bukan consuming group) untuk batas ISI_ID — kalau pakai \s* biasa di kedua
+  // sisi, \s* di sisi kiri capture group bisa "mencuri" newline pembatas sebelum ISI_ID
+  // duluan (greedy), bikin capture lazy meluber sampai akhir string dan ikut menelan
+  // "ISI_ID: ..." sebagai bagian dari judul (bug ketahuan dari test unit ini sendiri).
+  const titleM = raw.match(/JUDUL_ID:[ \t]*([\s\S]*?)(?=\r?\n\s*ISI_ID:|$)/i);
+  const title_id = titleM ? titleM[1].trim() : '';
+  if (!title_id) return null;
+  let desc_id = '';
+  if (hasDesc) {
+    const descM = raw.match(/ISI_ID:\s*([\s\S]*)$/i);
+    desc_id = descM ? descM[1].trim() : '';
+  }
+  return { title_id, desc_id };
+}
+
+async function translateOne(item, redisCmd) {
+  if (!await allowAiCall('gemini_newstranslate')) return; // pagar kuota — nyusul siklus berikutnya
+  const GEMINI_KEY = process.env.GEMINI_API_KEY;
+  if (!GEMINI_KEY) return;
+  try {
+    const hasDesc = !!(item.description && item.description.trim());
+    const r = await fetch(GEMINI_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${GEMINI_KEY}` },
+      body: JSON.stringify({
+        model: GEMINI_MODEL,
+        messages: [{ role: 'user', content: buildPrompt(item.title, item.description) }],
+        max_tokens: 800,
+        temperature: 0.2,
+        reasoning_effort: 'low',
+      }),
+      signal: AbortSignal.timeout(PER_CALL_TIMEOUT_MS),
+    });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const data = await r.json();
+    const raw = data?.choices?.[0]?.message?.content?.trim() || '';
+    const parsed = parseResponse(raw, hasDesc);
+    if (!parsed) throw new Error('Unparseable response');
+    await redisCmd('SET', `news_tr:${item.guid}`, JSON.stringify(parsed), 'EX', TR_KEY_TTL);
+    await cb.onSuccess(CB_GEMINI);
+  } catch(e) {
+    await cb.onFailure(CB_GEMINI);
+    console.warn('news_translate item failed:', item.guid, e.message);
+  }
+}
+
+/**
+ * Terjemahkan item baru yang belum pernah diterjemahkan. Fire-and-forget —
+ * caller TIDAK boleh menunggu promise ini sebelum mengirim respons.
+ * @param {Array} items - hasil parseRSSItems() (title, guid, pubDate, link, description)
+ * @param {Function} redisCmd - helper Redis (shared dengan caller)
+ */
+async function translateNewItems(items, redisCmd) {
+  if (!Array.isArray(items) || items.length === 0) return;
+  if (!process.env.GEMINI_API_KEY) return;
+  if (!await cb.canCall(CB_GEMINI)) return; // circuit open — coba lagi siklus berikutnya
+
+  // ECON DATA dikecualikan (permintaan user 2026-08-02): angka/rilis kalender
+  // rawan salah interpretasi kalau diterjemahkan LLM — biarkan bahasa Inggris asli.
+  const candidates = items.filter(it => it.guid && it.title && detectCat(it.title) !== 'econ-data');
+  if (candidates.length === 0) return;
+
+  // Skip item yang sudah pernah diterjemahkan (1x per guid, dishare semua user)
+  const keys = candidates.map(it => `news_tr:${it.guid}`);
+  const existing = await redisCmd('MGET', ...keys);
+  const todo = candidates.filter((_, i) => !existing || existing[i] == null);
+  if (todo.length === 0) return;
+
+  const start = Date.now();
+  for (let i = 0; i < todo.length; i += MAX_CONCURRENT) {
+    if (Date.now() - start > OVERALL_BUDGET_MS) break; // sisa item nyusul siklus berikutnya
+    const chunk = todo.slice(i, i + MAX_CONCURRENT);
+    await Promise.all(chunk.map(it => translateOne(it, redisCmd)));
+  }
+}
+
+/**
+ * Baca hasil translate yang sudah siap untuk daftar guid tertentu.
+ * @returns {Object} map guid -> {title_id, desc_id} (cuma yang ketemu)
+ */
+async function getTranslations(guids, redisCmd) {
+  const list = Array.isArray(guids) ? guids.filter(Boolean) : [];
+  if (list.length === 0) return {};
+  const keys = list.map(g => `news_tr:${g}`);
+  const raw = await redisCmd('MGET', ...keys);
+  const out = {};
+  if (Array.isArray(raw)) {
+    raw.forEach((v, i) => {
+      if (!v) return;
+      try { out[list[i]] = JSON.parse(v); } catch(e) {}
+    });
+  }
+  return out;
+}
+
+module.exports = { translateNewItems, getTranslations, parseResponse, buildPrompt };

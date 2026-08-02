@@ -60,6 +60,14 @@ const DEFAULT_LIMITS = {
   deepseek_experimental:        15,
   sambanova_main_experimental:  30,
   sambanova_c1_experimental:    30,
+
+  // Translate headline NEWS ke Bahasa Indonesia (S272, 2026-08-02) — pool
+  // TERPISAH dari 'gemini' (200/hari) di atas SENGAJA, supaya volume translate
+  // (bisa ratusan/hari) tidak rebutan kuota sama Analisa Fundamental/AI Coach
+  // yang fallback ke Gemini juga. Provider Google-side sama (1 API key/project,
+  // real ceiling 1.500 RPD) — 1000 + 200(gemini) = 1200, masih di bawah 1.500,
+  // sisa headroom buat provider lain yang numpang key sama.
+  gemini_newstranslate: 1000,
 };
 
 function dailyLimit(provider) {

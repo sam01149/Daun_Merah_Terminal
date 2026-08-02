@@ -3238,6 +3238,9 @@ body:not(.light-theme) .ringkasan-gen-btn {
 <div class="toolbar" id="toolbar">
   <span class="last-update" id="lastUpdate">Never fetched</span>
   <div class="right-tools">
+    <button class="refresh-btn" id="newsLangBtn" onclick="toggleNewsLang()" title="Ganti bahasa tampilan berita (judul asli Inggris selalu tersedia di sisi EN)">
+      <span id="newsLangFlag">🇮🇩</span><span id="newsLangCode">ID</span>
+    </button>
     <span class="auto-label">AUTO</span>
     <label class="toggle">
       <input type="checkbox" id="autoToggle" onchange="toggleAuto()">
@@ -4366,10 +4369,11 @@ if (systemThemeQuery) {
   });
 }
 window.addEventListener('DOMContentLoaded', updateThemeIcon);
+window.addEventListener('DOMContentLoaded', () => _updateNewsLangBtn());
 
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.08.02.3';
+const APP_VERSION = '2026.08.02.4';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
@@ -4436,6 +4440,55 @@ let historyItems     = [];
 let historyBefore    = null;
 let historyExhausted = false;
 let historyLoading   = false;
+
+// ── Translate NEWS ke Bahasa Indonesia (S272, 2026-08-02) ──────────────────
+// Field TAMBAHAN (title_id/desc_id) di tiap item — title/desc Inggris asli
+// TIDAK PERNAH diubah (dipakai detectCat/newscat.js, filter TEK per-pair, dll,
+// lihat api/_news_translate.js). Toggle EN/ID cuma soal field mana yang dirender.
+const LS_NEWS_LANG = 'news_lang_pref_v1';
+let newsLangPref = (() => {
+  try { const v = localStorage.getItem(LS_NEWS_LANG); return v === 'en' ? 'en' : 'id'; } catch(e) { return 'id'; }
+})();
+
+function toggleNewsLang() {
+  newsLangPref = newsLangPref === 'id' ? 'en' : 'id';
+  try { localStorage.setItem(LS_NEWS_LANG, newsLangPref); } catch(e) {}
+  _updateNewsLangBtn();
+  renderFeed();
+}
+
+function _updateNewsLangBtn() {
+  const flag = document.getElementById('newsLangFlag');
+  const code = document.getElementById('newsLangCode');
+  if (!flag || !code) return;
+  if (newsLangPref === 'id') { flag.textContent = '🇮🇩'; code.textContent = 'ID'; }
+  else                       { flag.textContent = '🇬🇧'; code.textContent = 'EN'; }
+}
+
+// Ambil terjemahan yang sudah siap di server untuk item yang belum punya title_id
+// (fire-and-forget dari sisi caller — translate aslinya jalan di background server,
+// endpoint ini cuma baca cache-nya, murah & aman dipanggil tiap siklus poll).
+// Return true kalau ada item yang baru dapat terjemahan (caller perlu re-render).
+async function _fetchNewsTranslations(items) {
+  // detectCat(...) === 'econ-data' dikecualikan server-side (news_tr:<guid> tidak
+  // akan PERNAH ada untuk item itu) — skip juga di sini, supaya tidak query sia-sia
+  // tiap siklus poll selamanya untuk item yang memang sengaja tidak diterjemahkan.
+  const pending = (items || []).filter(i => i.guid && i.title_id == null && detectCat(i.title) !== 'econ-data');
+  if (pending.length === 0) return false;
+  try {
+    const guids = pending.slice(0, 100).map(i => i.guid).join(',');
+    const r = await fetch(`/api/feeds?type=news_translate&guids=${encodeURIComponent(guids)}`, { signal: AbortSignal.timeout(8000) });
+    if (!r.ok) return false;
+    const data = await r.json();
+    const map = data.translations || {};
+    let any = false;
+    for (const it of pending) {
+      const tr = map[it.guid];
+      if (tr) { it.title_id = tr.title_id || ''; it.desc_id = tr.desc_id || ''; any = true; }
+    }
+    return any;
+  } catch(e) { return false; }
+}
 
 let deferredInstall = null;
 let activeView   = 'feed';
@@ -5039,6 +5092,11 @@ async function fetchFeed() {
     `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')} WIB`;
   renderFeed(!isFirstLoad && newItems.length > 0);
 
+  // Fire-and-forget: susulkan terjemahan Indonesia untuk item yang belum ada
+  // title_id (translate aslinya jalan di background server, ini cuma polling
+  // cache-nya) — re-render kalau ada yang baru siap.
+  _fetchNewsTranslations(allItems).then(any => { if (any) renderFeed(); });
+
   if (!isFirstLoad && newItems.length === 1) {
     showToast(`BERITA: ${detectCat(newItems[0].title).replace('-',' ').toUpperCase()}`, newItems[0].title, 4000);
   } else if (!isFirstLoad && newItems.length > 1) {
@@ -5102,8 +5160,11 @@ function toggleFJImg(btn, id) {
 }
 
 function _feedItemHtml(item, isNew, idx) {
-  const cat = detectCat(item.title);
-  const rawDesc = sanitizeDesc(item.desc);
+  const cat = detectCat(item.title); // SELALU teks Inggris asli — item.title_id BUKAN input klasifikasi
+  const useId = newsLangPref === 'id';
+  const dispTitle = useId ? (item.title_id || item.title) : item.title;
+  const dispDesc  = useId ? (item.desc_id != null && item.desc_id !== '' ? item.desc_id : item.desc) : item.desc;
+  const rawDesc = sanitizeDesc(dispDesc);
   const descHtml = rawDesc.length > 10 ? `<div class="item-desc">${rawDesc}</div>` : '';
   const fjImgId = `fjImg-${item.guid}`;
   const fjType = /^\d+$/.test(item.guid) ? fjImageType(item.title) : null;
@@ -5126,7 +5187,7 @@ function _feedItemHtml(item, isNew, idx) {
         <span class="item-tag tag-${cat}">${cat.replace('-',' ')}</span>
         ${newBadge}
       </div>
-      <div class="item-title">${escHtml(item.title)}</div>
+      <div class="item-title">${escHtml(dispTitle)}</div>
       ${chartHtml}
       ${descHtml}
     </div>`;
@@ -5176,6 +5237,10 @@ async function _fetchHistoryPage() {
   historyItems = historyItems.concat(fresh);
   historyBefore = data.next_before != null ? data.next_before : cursor;
   historyExhausted = fetched.length === 0 || !data.has_more;
+
+  // Fire-and-forget: item history lama juga bisa sudah punya terjemahan siap
+  // (diterjemahkan waktu masih live, tersimpan 36 jam) — susulkan kalau ada.
+  _fetchNewsTranslations(fresh).then(any => { if (any) renderFeed(); });
 }
 
 async function loadMoreHistory() {
