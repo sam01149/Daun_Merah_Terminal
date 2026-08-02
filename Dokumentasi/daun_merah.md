@@ -65,7 +65,7 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 3. **Real-time tanpa jeda batching:** bukan translate-per-batch-tertunda, tapi per-item PARALEL (`Promise.all`) begitu headline baru terdeteksi — jeda cuma beberapa detik (bukan menit), dibatasi anggaran waktu supaya tidak mengulang bug timeout NEWS lama.
 4. **Cache 36 jam per-headline (guid), dishare SEMUA user** — 1x translate seumur hidup cache, bukan per-device/per-buka.
 5. **ECON DATA dikecualikan** (permintaan user) — angka/rilis kalender ekonomi rawan salah interpretasi LLM, biarkan Inggris asli selamanya.
-6. **Toggle 🇮🇩/🇬🇧 manual** di tab NEWS (permintaan user, jaga-jaga verifikasi) — user bisa lihat versi Inggris asli kapan saja kalau terjemahan kelihatan aneh.
+6. **Toggle 🇮🇩/🇺🇸 manual** di tab NEWS (permintaan user, jaga-jaga verifikasi) — user bisa lihat versi Inggris asli kapan saja kalau terjemahan kelihatan aneh.
 7. **Prompt STRICT** (permintaan user eksplisit "HARUS PURE TERJEMAHAN SAJA") — instruksi tegas: hanya keluarkan hasil terjemahan, tanpa penjelasan/opini/catatan tambahan apa pun, istilah finansial standar & nama orang/tempat dipertahankan apa adanya.
 
 **Temuan arsitektur penting (menentukan desain):** endpoint `/api/feeds?type=rss` mengembalikan **raw XML** (bukan JSON) yang di-parse LANGSUNG di client (`parseRSS()` di index.html) — live ticker NEWS (`allItems`, yang tampil default) sama sekali TIDAK lewat `news_history` (JSON store yang cuma dipakai "Muat Berita Lebih Lama"). Field `title_id`/`desc_id` karena itu didesain sebagai lookup TERPISAH (endpoint baru `type=news_translate`, baca-saja dari cache Redis), bukan disisipkan ke XML — supaya endpoint RSS yang sudah pernah kena bug timeout (lihat catatan `fetchRSS()`) sama sekali tidak tersentuh/diperlambat.
@@ -83,7 +83,7 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 
 **Implementasi (`index.html`):**
 - Field `title_id`/`desc_id` TAMBAHAN — `title`/`desc` Inggris asli tidak pernah diubah (dipakai `detectCat()`/`newscat.js`, filter "Berita Terkait" TEK, prompt AI Ringkasan, push notif — kalau ditimpa, semua itu rusak diam-diam, pelajaran dari audit arsitektur sebelum implementasi).
-- Toggle `#newsLangBtn` (flag 🇮🇩/🇬🇧) di toolbar NEWS, sebelah AUTO/REFRESH — state `newsLangPref` persist di localStorage (`news_lang_pref_v1`), default `'id'`.
+- Toggle `#newsLangBtn` (flag 🇮🇩/🇺🇸) di toolbar NEWS, sebelah AUTO/REFRESH — state `newsLangPref` persist di localStorage (`news_lang_pref_v1`), default `'id'`.
 - `_fetchNewsTranslations(items)` — lookup fire-and-forget ke `type=news_translate`, dipanggil tiap `fetchFeed()` (live poll) dan tiap `_fetchHistoryPage()` (load-more) untuk item yang belum punya `title_id`; skip item kategori `econ-data` di sisi client juga (`detectCat`) supaya tidak query sia-sia selamanya untuk item yang memang sengaja tidak pernah diterjemahkan server-side.
 - `_feedItemHtml()`: render `item.title_id || item.title` (fallback otomatis ke Inggris kalau belum/gagal diterjemahkan) saat `newsLangPref==='id'`, tapi `detectCat(item.title)` — klasifikasi kategori — **SELALU** pakai `item.title` Inggris asli, tidak pernah `title_id`.
 - `APP_VERSION` → `2026.08.02.4`.
