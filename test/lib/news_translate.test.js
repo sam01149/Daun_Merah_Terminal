@@ -1,7 +1,8 @@
 // test/lib/news_translate.test.js
-// Translate NEWS ke Bahasa Indonesia (S272, 2026-08-02, api/_news_translate.js).
-// Cakupan: parsing respons Gemini (format ketat), pengecualian kategori econ-data,
-// skip item yang sudah pernah diterjemahkan, dan fail-open tanpa GEMINI_API_KEY/Redis.
+// Translate NEWS ke Bahasa Indonesia (S272, 2026-08-02, api/_news_translate.js;
+// provider diganti dari Gemini ke SambaNova akun 2 sesi sama hari itu).
+// Cakupan: parsing respons SambaNova (format ketat), pengecualian kategori econ-data,
+// skip item yang sudah pernah diterjemahkan, dan fail-open tanpa SAMBANOVA_API_KEY_CALL1/Redis.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 
@@ -101,8 +102,8 @@ function withEnv(vars, fn) {
   };
 }
 
-test('translateNewItems: tanpa GEMINI_API_KEY → no-op, tidak crash, tidak ada yang tersimpan', withEnv({}, async () => {
-  delete process.env.GEMINI_API_KEY;
+test('translateNewItems: tanpa SAMBANOVA_API_KEY_CALL1 → no-op, tidak crash, tidak ada yang tersimpan', withEnv({}, async () => {
+  delete process.env.SAMBANOVA_API_KEY_CALL1;
   delete process.env.UPSTASH_REDIS_REST_URL;
   delete process.env.UPSTASH_REDIS_REST_TOKEN;
   const store = new Map();
@@ -117,15 +118,15 @@ test('translateNewItems: array kosong/invalid → no-op', async () => {
 });
 
 test('translateNewItems: kategori econ-data DIKECUALIKAN dari translate (permintaan user S272)', withEnv({
-  GEMINI_API_KEY: 'fake-key',
+  SAMBANOVA_API_KEY_CALL1: 'fake-key',
   UPSTASH_REDIS_REST_URL: 'https://mock-redis.test',
   UPSTASH_REDIS_REST_TOKEN: 'mock-token',
 }, async () => {
   const realFetch = global.fetch;
-  let geminiCalls = 0;
+  let sambaCalls = 0;
   global.fetch = async (url) => {
-    if (String(url).includes('generativelanguage.googleapis.com')) {
-      geminiCalls++;
+    if (String(url).includes('api.sambanova.ai')) {
+      sambaCalls++;
       return { ok: true, json: async () => ({ choices: [{ message: { content: 'JUDUL_ID: Terjemahan\nISI_ID: Isi' } }] }) };
     }
     // Circuit breaker & ai_guard sama-sama fetch ke Upstash REST langsung —
@@ -140,22 +141,22 @@ test('translateNewItems: kategori econ-data DIKECUALIKAN dari translate (permint
       { title: 'Trump says trade deal with China is close', guid: 'geo-1', description: '' },
     ];
     await translateNewItems(items, makeRedisCmd(store));
-    assert.equal(geminiCalls, 1, 'cuma item non-econ-data yang boleh manggil Gemini');
+    assert.equal(sambaCalls, 1, 'cuma item non-econ-data yang boleh manggil SambaNova');
     assert.equal(store.has('news_tr:econ-1'), false, 'econ-data TIDAK PERNAH punya entri terjemahan');
     assert.equal(store.has('news_tr:geo-1'), true);
   } finally { global.fetch = realFetch; }
 }));
 
-test('translateNewItems: item yang sudah ada news_tr:<guid> di-skip, tidak manggil Gemini lagi', withEnv({
-  GEMINI_API_KEY: 'fake-key',
+test('translateNewItems: item yang sudah ada news_tr:<guid> di-skip, tidak manggil SambaNova lagi', withEnv({
+  SAMBANOVA_API_KEY_CALL1: 'fake-key',
   UPSTASH_REDIS_REST_URL: 'https://mock-redis.test',
   UPSTASH_REDIS_REST_TOKEN: 'mock-token',
 }, async () => {
   const realFetch = global.fetch;
-  let geminiCalls = 0;
+  let sambaCalls = 0;
   global.fetch = async (url) => {
-    if (String(url).includes('generativelanguage.googleapis.com')) {
-      geminiCalls++;
+    if (String(url).includes('api.sambanova.ai')) {
+      sambaCalls++;
       return { ok: true, json: async () => ({ choices: [{ message: { content: 'JUDUL_ID: X' } }] }) };
     }
     return { ok: true, json: async () => ({ result: null }) };
@@ -164,19 +165,19 @@ test('translateNewItems: item yang sudah ada news_tr:<guid> di-skip, tidak mangg
     const store = new Map();
     store.set('news_tr:already-1', JSON.stringify({ title_id: 'Sudah diterjemahkan', desc_id: '' }));
     await translateNewItems([{ title: 'Some ordinary headline', guid: 'already-1', description: '' }], makeRedisCmd(store));
-    assert.equal(geminiCalls, 0, 'item yang sudah punya cache tidak boleh ditembak ulang ke Gemini');
+    assert.equal(sambaCalls, 0, 'item yang sudah punya cache tidak boleh ditembak ulang ke SambaNova');
   } finally { global.fetch = realFetch; }
 }));
 
 test('translateNewItems: backlog terlama tetap dapat slot walau todo > MAX_CONCURRENT (S273, anti-starvation)', withEnv({
-  GEMINI_API_KEY: 'fake-key',
+  SAMBANOVA_API_KEY_CALL1: 'fake-key',
   UPSTASH_REDIS_REST_URL: 'https://mock-redis.test',
   UPSTASH_REDIS_REST_TOKEN: 'mock-token',
 }, async () => {
   const realFetch = global.fetch;
   const calledGuids = [];
   global.fetch = async (url, opts) => {
-    if (String(url).includes('generativelanguage.googleapis.com')) {
+    if (String(url).includes('api.sambanova.ai')) {
       const body = JSON.parse(opts.body);
       const m = body.messages[0].content.match(/JUDUL:\n(.*)/);
       calledGuids.push(m[1]);

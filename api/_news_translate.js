@@ -14,7 +14,7 @@
 // - Di-AWAIT oleh api/feeds.js (rssHandler, cache-miss path saja), dengan
 //   anggaran waktu ADAPTIF (bukan fire-and-forget murni — percobaan pertama
 //   fire-and-forget TERBUKTI tidak pernah selesai di produksi, Vercel
-//   membekukan eksekusi begitu respons dikirim sebelum panggilan Gemini
+//   membekukan eksekusi begitu respons dikirim sebelum panggilan AI
 //   jaringan sempat jalan; beda dari storeNewsHistory di file yang sama yang
 //   cukup cepat, regex+Redis doang, lolos sebelum dibekukan). Endpoint RSS
 //   pernah kena bug timeout terpisah (lihat catatan di index.html fetchRSS()),
@@ -29,19 +29,28 @@ const cb = require('./_circuit_breaker');
 const { allowAiCall } = require('./_ai_guard');
 const { detectCat } = require('../newscat');
 
-// Circuit breaker key TERPISAH dari 'ai:gemini' yang dipakai admin.js/market-digest.js/
-// journal.js — supaya bug spesifik parsing/prompt translate ini tidak ikut men-trip
-// circuit fitur lain (Analisa Fundamental/AI Coach) yang juga fallback ke Gemini.
-const CB_GEMINI = 'ai:gemini:newstranslate';
-const GEMINI_URL   = 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions';
-const GEMINI_MODEL = 'gemini-flash-latest';
+// SambaNova akun 2 (SAMBANOVA_API_KEY_CALL1) — akun sama yang dipakai fallback Ringkasan
+// Berita Call 1/Analisa Fundamental/AI Coach (lihat market-digest.js/admin.js/journal.js),
+// diganti dari Gemini (permintaan user, 2026-08-02) supaya translate lebih cepat — Gemini
+// dibatasi 10 RPM (keras, provider AI Studio free tier), sedangkan SambaNova ~10-20 RPM
+// DAN tidak numpang kuota gabungan dengan fitur lain yang juga rebutan RPM Gemini yang
+// sama. SENGAJA SEMENTARA (keputusan user): begitu backlog translate NEWS sudah habis dan
+// arus headline balik normal (tidak deras lagi), rencananya balik ke Gemini lagi — SambaNova
+// akun 2 cuma dipinjam untuk mengejar kecepatan selagi backlog besar. Kalau nanti diminta
+// balik, tinggal reverse konstanta di bawah + 'sambanova_c1_newstranslate' balik ke
+// 'gemini_newstranslate' di _ai_guard.js (lihat git history commit sesi ini).
+// Circuit breaker key TERPISAH dari 'ai:sambanova:c1' yang dipakai file-file itu — supaya
+// bug spesifik parsing/prompt translate ini tidak ikut men-trip circuit fitur lain.
+const CB_SAMBANOVA = 'ai:sambanova:c1:newstranslate';
+const SAMBANOVA_URL   = 'https://api.sambanova.ai/v1/chat/completions';
+const SAMBANOVA_MODEL = 'DeepSeek-V3.2';
 
 const TR_KEY_TTL = 36 * 3600; // detik — samakan retensi 36 jam dengan news_history
-// Google AI Studio free tier Gemini: 10 RPM (lihat daun_merah_ai.md §4) — SATU
-// gelombang per pemanggilan (bukan loop multi-gelombang) dijaga di bawah itu,
-// supaya backlog besar (mis. pasca-deploy) tidak menembak >10 request dalam
-// jendela <60 detik dan memicu 429/circuit trip. Sisa backlog nyusul siklus
-// cache-refill berikutnya (~50-60 detik kemudian, RPM window sudah reset).
+// SambaNova free tier ~10-20 RPM (lihat daun_merah_ai.md §4) — SATU gelombang per
+// pemanggilan (bukan loop multi-gelombang) dijaga di bawah itu, supaya backlog besar
+// (mis. pasca-deploy) tidak menembak >10 request dalam jendela <60 detik dan memicu
+// 429/circuit trip. Sisa backlog nyusul siklus cache-refill berikutnya (~50-60 detik
+// kemudian, RPM window sudah reset).
 const MAX_CONCURRENT      = 8;
 // Anti-starvation (S273, 2026-08-02): tanpa ini, wave SELALU mengambil todo[0..8)
 // yang berarti headline TERBARU (urutan feed = terbaru dulu) — saat breaking news
@@ -93,20 +102,19 @@ function parseResponse(raw, hasDesc) {
 }
 
 async function translateOne(item, redisCmd) {
-  if (!await allowAiCall('gemini_newstranslate')) return; // pagar kuota — nyusul siklus berikutnya
-  const GEMINI_KEY = process.env.GEMINI_API_KEY;
-  if (!GEMINI_KEY) return;
+  if (!await allowAiCall('sambanova_c1_newstranslate')) return; // pagar kuota — nyusul siklus berikutnya
+  const SAMBANOVA_KEY = process.env.SAMBANOVA_API_KEY_CALL1;
+  if (!SAMBANOVA_KEY) return;
   try {
     const hasDesc = !!(item.description && item.description.trim());
-    const r = await fetch(GEMINI_URL, {
+    const r = await fetch(SAMBANOVA_URL, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${GEMINI_KEY}` },
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SAMBANOVA_KEY}` },
       body: JSON.stringify({
-        model: GEMINI_MODEL,
+        model: SAMBANOVA_MODEL,
         messages: [{ role: 'user', content: buildPrompt(item.title, item.description) }],
         max_tokens: 800,
         temperature: 0.2,
-        reasoning_effort: 'low',
       }),
       signal: AbortSignal.timeout(PER_CALL_TIMEOUT_MS),
     });
@@ -116,9 +124,9 @@ async function translateOne(item, redisCmd) {
     const parsed = parseResponse(raw, hasDesc);
     if (!parsed) throw new Error('Unparseable response');
     await redisCmd('SET', `news_tr:${item.guid}`, JSON.stringify(parsed), 'EX', TR_KEY_TTL);
-    await cb.onSuccess(CB_GEMINI);
+    await cb.onSuccess(CB_SAMBANOVA);
   } catch(e) {
-    await cb.onFailure(CB_GEMINI);
+    await cb.onFailure(CB_SAMBANOVA);
     console.warn('news_translate item failed:', item.guid, e.message);
   }
 }
@@ -127,7 +135,7 @@ async function translateOne(item, redisCmd) {
  * Terjemahkan item baru yang belum pernah diterjemahkan. HARUS di-await oleh
  * caller (lihat rssHandler api/feeds.js) — fire-and-forget murni TERBUKTI tidak
  * selesai di produksi karena Vercel membekukan eksekusi begitu respons dikirim,
- * sebelum panggilan Gemini (jaringan) sempat jalan (bug S272, ditemukan lewat
+ * sebelum panggilan SambaNova (jaringan) sempat jalan (bug S272, ditemukan lewat
  * verifikasi live setelah deploy, bukan cuma unit test).
  * @param {Array} items - hasil parseRSSItems() (title, guid, pubDate, link, description)
  * @param {Function} redisCmd - helper Redis (shared dengan caller)
@@ -135,8 +143,8 @@ async function translateOne(item, redisCmd) {
  */
 async function translateNewItems(items, redisCmd, budgetMs = DEFAULT_BUDGET_MS) {
   if (!Array.isArray(items) || items.length === 0) return;
-  if (!process.env.GEMINI_API_KEY) return;
-  if (!await cb.canCall(CB_GEMINI)) return; // circuit open — coba lagi siklus berikutnya
+  if (!process.env.SAMBANOVA_API_KEY_CALL1) return;
+  if (!await cb.canCall(CB_SAMBANOVA)) return; // circuit open — coba lagi siklus berikutnya
 
   // ECON DATA dikecualikan (permintaan user 2026-08-02): angka/rilis kalender
   // rawan salah interpretasi kalau diterjemahkan LLM — biarkan bahasa Inggris asli.
