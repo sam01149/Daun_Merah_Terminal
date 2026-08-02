@@ -1,0 +1,36 @@
+name: News Translate Warm
+
+# Tujuan (S272, 2026-08-02): translate NEWS ke Bahasa Indonesia (api/_news_translate.js)
+# cuma jalan kalau ADA request masuk ke /api/feeds?type=rss (rssHandler, cache-miss
+# path) — sebelum ini, refresh+translate 100% bergantung traffic client aktif. Kalau
+# aplikasi ditutup lama, headline baru tidak pernah diterjemahkan sampai ada yang buka
+# lagi. sw.js SUDAH punya periodicsync (tag fjfeed-sync) yang ikut memicu hal yang
+# sama, TAPI browser tidak menjamin intervalnya (Chrome pakai budget/engagement-score
+# internal, bisa jarang-jarang/berjam-jam terutama kalau app jarang dibuka), dan cuma
+# didukung Chromium. Workflow ini ping endpoint yang sama tiap 5 menit, independen
+# dari client mana pun — server selalu fresh + translate selalu tergerus teratur,
+# terlepas dari kapan/seberapa sering user buka aplikasi.
+#
+# Cakupan: cuma jendela LIVE feed (headline beberapa jam terakhir) — sama seperti
+# traffic client biasa. TIDAK backfill arsip 36 jam penuh (itu tercover terpisah,
+# lazy, saat user klik "Muat Berita Lebih Lama" — lihat newsHistoryHandler).
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+jobs:
+  warm:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping /api/feeds?type=rss (trigger cache-refill + translate)
+        run: |
+          STATUS=$(curl -s -o /tmp/resp.xml -w "%{http_code}" \
+            --max-time 25 \
+            "https://financial-feed-app.vercel.app/api/feeds?type=rss")
+          echo "HTTP $STATUS"
+          if [ "$STATUS" -ne 200 ]; then
+            echo "RSS warm gagal dengan HTTP $STATUS"
+            cat /tmp/resp.xml
+            exit 1
+          fi

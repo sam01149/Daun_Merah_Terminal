@@ -11,7 +11,7 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-02 (Session 272 lanj. — "Muat Berita Lebih Lama" ikut translate arsip 36 jam)
+> **Last updated:** 2026-08-02 (Session 272 lanj. — Cron GitHub Actions jaga translate NEWS tetap fresh walau app ditutup)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -138,6 +138,16 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 - Kedua caller (`fetchFeed()` dan `_fetchHistoryPage()`) diganti dari `.then(any => { if (any) renderFeed(); })` jadi `.then(translated => _patchTranslatedItems(translated))`.
 
 **Verifikasi:** `npm test` 730/730 hijau (tidak ada test unit sisi client untuk file ini — index.html satu file besar tanpa test harness). Diverifikasi manual dengan skrip Playwright ad-hoc: serve `index.html` via HTTP lokal, mock endpoint `type=rss`/`type=news_translate`, hitung pemanggilan `renderFeed()` selama satu siklus `fetchFeed()`. **Sebelum fix:** 2 pemanggilan `renderFeed()` (kode lama, dites via `git stash` sementara). **Sesudah fix:** 1 pemanggilan `renderFeed()`, dan judul/deskripsi tetap berhasil berganti ke Bahasa Indonesia begitu terjemahan siap (headline real-time tidak hilang, cuma cara update-nya jadi diam-diam).
+
+**Revisi lanjutan (hari sama): eksekusi opsi cron yang tadinya diparkir di `daun_merah_progress.md` — user bilang "lanjutkan" setelah tabrakan sesi di atas selesai.**
+
+Konteks: user tanya apakah translate NEWS bisa tetap jalan walau aplikasi ditutup, supaya begitu dibuka lagi berita sudah dalam Bahasa Indonesia tanpa nunggu. `sw.js` sudah punya `periodicsync` (tag `fjfeed-sync`) yang ikut memicu translate karena hit endpoint yang sama (`type=rss`), tapi Periodic Background Sync browser tidak menjamin intervalnya (Chrome pakai budget/engagement-score internal, bisa jarang-jarang; cuma Chromium, tidak Safari/iOS) — sempat diparkir di `daun_merah_progress.md` menunggu keputusan user.
+
+**Fix (`.github/workflows/news-translate-warm.yml`, baru):** cron GitHub Actions ping `GET /api/feeds?type=rss` tiap 5 menit (`*/5 * * * *`, interval sama dengan `setup-tp-sl-watch.yml` yang sudah ada — pola/style workflow disamakan persis, termasuk `--max-time 25` dan exit-1 kalau bukan HTTP 200). Tidak perlu `x-cron-secret` — `type=rss` sudah dikecualikan dari gate APP_KEY (lihat komentar di `api/feeds.js`, alasan sama dengan kenapa `sw.js` bisa akses tanpa key). Efeknya: server selalu fresh + backlog translate selalu tergerus teratur (via hook `translateNewItems` yang sudah ada di `rssHandler`, tidak ada logic baru di aplikasi), independen dari client mana pun atau dukungan periodic sync browser.
+
+**Cakupan disengaja terbatas:** cron ini cuma menjaga jendela LIVE feed (headline beberapa jam terakhir, sama seperti traffic client biasa) — TIDAK backfill arsip 36 jam penuh sekaligus (itu tetap lazy, tercover terpisah saat user klik "Muat Berita Lebih Lama", lihat entri di atas). Item TERTUNDA di `daun_merah_progress.md` untuk topik ini dihapus (sudah dieksekusi, bukan lagi tertunda).
+
+**Verifikasi:** `npm test` 730/730 hijau (workflow YAML tidak ada unit test — konsisten dengan workflow lain di repo ini, verifikasi kebenaran cuma lewat run manual/`workflow_dispatch` setelah merge, bukan test harness).
 
 ## Changelog Session 271 (2026-08-01) — Fix: Analisa Terakhir Jumat Hilang Saat Weekend (Root Cause TTL Redis)
 
