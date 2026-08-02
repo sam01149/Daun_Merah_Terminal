@@ -180,7 +180,7 @@ async function rssHandler(req, res) {
   // Translate item baru ke Bahasa Indonesia (S272, 2026-08-02) — DI-AWAIT, BUKAN
   // fire-and-forget murni. Percobaan awal pakai fire-and-forget (seperti
   // storeNewsHistory di atas) ternyata TIDAK PERNAH selesai di produksi: Vercel
-  // membekukan eksekusi begitu respons dikirim, dan panggilan Gemini (jaringan,
+  // membekukan eksekusi begitu respons dikirim, dan panggilan AI (jaringan,
   // 1-4 detik) tidak sempat jalan sama sekali — beda dari storeNewsHistory yang
   // cuma regex+beberapa SET Redis (selesai dalam hitungan puluhan ms, aman lolos
   // sebelum dibekukan). Anggaran waktu translate ADAPTIF terhadap sisa waktu RSS

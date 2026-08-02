@@ -163,6 +163,20 @@ Konteks: user tanya apakah translate NEWS bisa tetap jalan walau aplikasi ditutu
 
 **Verifikasi:** `npm test` 731/731 hijau (1 test baru: 12 item nyaris 2x lipat `MAX_CONCURRENT`, verifikasi wave yang diproses persis 6 terbaru + 2 tertua, 4 item tengah sengaja menunggu siklus berikutnya). Diverifikasi live pasca-deploy: backlog 79/100 dikonfirmasi masih ada beberapa siklus setelah fix (belum habis, sesuai ekspektasi kapasitas ~96/jam vs backlog besar warisan) — fix ini menjamin ARAH (backlog pasti mengecil, headline lama tidak pernah "hilang" dari antrean selamanya), bukan solusi instan buat backlog yang sudah terlanjur besar.
 
+**Revisi lanjutan (hari sama, permintaan user): ganti provider translate NEWS dari Gemini ke SambaNova akun 2 — biar lebih cepat.**
+
+**Implementasi (`api/_news_translate.js`):** konstanta Gemini (`GEMINI_URL`/`GEMINI_MODEL`, endpoint AI Studio) diganti SambaNova akun 2 (`SAMBANOVA_API_KEY_CALL1`, endpoint `api.sambanova.ai/v1/chat/completions`, model `DeepSeek-V3.2`) — akun yang sama dipakai fallback Call 1 Ringkasan Berita/Analisa Fundamental/AI Coach Jurnal (lihat `market-digest.js`/`admin.js`/`journal.js`). Parameter `reasoning_effort: 'low'` (khusus OpenAI-compat Gemini) dihapus dari body request karena tidak dipakai panggilan SambaNova lain di codebase ini.
+
+**Isolasi kuota & circuit breaker (supaya tidak starve 3 fitur lain yang berbagi akun SambaNova 2 sama):**
+- Circuit breaker `ai:sambanova:c1:newstranslate` (baru) — TERPISAH dari `ai:sambanova:c1` yang dipakai `market-digest.js`/`admin.js`/`journal.js`, pola sama seperti isolasi `ai:gemini:newstranslate` sebelumnya.
+- Jatah harian `sambanova_c1_newstranslate: 1000/hari` (`api/_ai_guard.js`) — bucket BARU, menggantikan `gemini_newstranslate` (dihapus). TERPISAH dari `sambanova_c1: 200/hari` yang sudah ada supaya volume translate (bisa ratusan/hari) tidak rebutan kuota fallback1 journal_analysis/fundamental_analysis/primary Call 1 digest yang berbagi counter itu.
+
+**Kenapa aman menaikkan volume ke akun SambaNova 2 padahal limit resminya cuma "~10-20 RPM, free persisten" (bukan RPD eksplisit seperti Gemini 1.500 RPD):** desain `MAX_CONCURRENT=8` per gelombang + SATU gelombang per pemanggilan (fix starvation sebelumnya di sesi ini) sudah menjaga laju panggilan tetap di bawah RPM asli provider — jadi ganti provider tidak mengubah pola beban, cuma mengganti endpoint/kredensial tujuan.
+
+**Dokumentasi:** `Dokumentasi/daun_merah_ai.md` §2 (baris fitur #10) dan §4 (tabel jatah harian) diupdate in-place mengikuti aturan file itu (kondisi-sekarang, bukan changelog) — provider & bucket kuota translate NEWS sekarang tercatat SambaNova, bukan Gemini lagi.
+
+**Verifikasi:** `npm test` 731/731 hijau (test `test/lib/news_translate.test.js` & `test/feeds/news_translate_handler.test.js` diupdate mengikuti provider baru — mock fetch URL `api.sambanova.ai`, env var `SAMBANOVA_API_KEY_CALL1`, tidak ada perubahan assertion logic karena `translateOne`/`translateNewItems` tetap provider-agnostic di level parsing/caching).
+
 ## Changelog Session 271 (2026-08-01) — Fix: Analisa Terakhir Jumat Hilang Saat Weekend (Root Cause TTL Redis)
 
 **Masalah dilaporkan user:** Sabtu/Minggu (pasar FX tutup), tab Analisa tidak menampilkan catatan analisa terakhir hari Jumat sebagai bekal trader menghadapi pembukaan Senin.
