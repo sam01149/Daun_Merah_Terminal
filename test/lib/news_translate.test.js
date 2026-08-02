@@ -168,6 +168,35 @@ test('translateNewItems: item yang sudah ada news_tr:<guid> di-skip, tidak mangg
   } finally { global.fetch = realFetch; }
 }));
 
+test('translateNewItems: backlog terlama tetap dapat slot walau todo > MAX_CONCURRENT (S273, anti-starvation)', withEnv({
+  GEMINI_API_KEY: 'fake-key',
+  UPSTASH_REDIS_REST_URL: 'https://mock-redis.test',
+  UPSTASH_REDIS_REST_TOKEN: 'mock-token',
+}, async () => {
+  const realFetch = global.fetch;
+  const calledGuids = [];
+  global.fetch = async (url, opts) => {
+    if (String(url).includes('generativelanguage.googleapis.com')) {
+      const body = JSON.parse(opts.body);
+      const m = body.messages[0].content.match(/JUDUL:\n(.*)/);
+      calledGuids.push(m[1]);
+      return { ok: true, json: async () => ({ choices: [{ message: { content: `JUDUL_ID: ${m[1]}` } }] }) };
+    }
+    return { ok: true, json: async () => ({ result: null }) };
+  };
+  try {
+    const store = new Map();
+    // urutan feed asli: index 0 = headline TERBARU ... index 11 = TERTUA (12 item, > MAX_CONCURRENT 8)
+    const items = Array.from({ length: 12 }, (_, i) => ({ title: `t${i}`, guid: `g${i}`, description: '' }));
+    await translateNewItems(items, makeRedisCmd(store));
+    // 6 terbaru (t0-t5) + 2 terlama (t10-t11) = 8 total; t6-t9 (backlog tengah) menunggu siklus berikutnya
+    assert.deepEqual(calledGuids.sort(), ['t0', 't1', 't2', 't3', 't4', 't5', 't10', 't11'].sort());
+    for (const skipped of ['g6', 'g7', 'g8', 'g9']) {
+      assert.equal(store.has(`news_tr:${skipped}`), false, `${skipped} seharusnya belum diterjemahkan gelombang ini`);
+    }
+  } finally { global.fetch = realFetch; }
+}));
+
 // ── getTranslations (lookup read-only) ──────────────────────────────────────
 
 test('getTranslations: baca cuma guid yang diminta & yang tersedia, abaikan yang kosong', async () => {

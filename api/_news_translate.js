@@ -43,6 +43,16 @@ const TR_KEY_TTL = 36 * 3600; // detik — samakan retensi 36 jam dengan news_hi
 // jendela <60 detik dan memicu 429/circuit trip. Sisa backlog nyusul siklus
 // cache-refill berikutnya (~50-60 detik kemudian, RPM window sudah reset).
 const MAX_CONCURRENT      = 8;
+// Anti-starvation (S273, 2026-08-02): tanpa ini, wave SELALU mengambil todo[0..8)
+// yang berarti headline TERBARU (urutan feed = terbaru dulu) — saat breaking news
+// deras (>8 headline baru per siklus refresh), headline yang agak lama tapi belum
+// sempat diterjemahkan terus digeser ke belakang antrean oleh headline yang lebih
+// baru lagi, dan bisa nyangkut bahasa Inggris selama arus berita belum mereda
+// (ditemukan lewat verifikasi live: 9/30 headline tetap Inggris 2 siklus berturut).
+// Reserve sebagian slot tiap gelombang khusus headline TERTUA di antrean (ujung
+// belakang todo[], bukan array terbaru) supaya backlog dijamin habis bertahap,
+// sisa slot tetap prioritas headline terbaru (paling relevan buat pembaca).
+const BACKLOG_RESERVE_SLOTS = 2;
 const PER_CALL_TIMEOUT_MS = 4000;
 // Default anggaran waktu translate kalau caller tidak kasih budgetMs eksplisit —
 // caller SEHARUSNYA selalu kasih (lihat rssHandler di api/feeds.js, adaptif
@@ -143,7 +153,15 @@ async function translateNewItems(items, redisCmd, budgetMs = DEFAULT_BUDGET_MS) 
   // catatan MAX_CONCURRENT di atas soal alasan RPM. budgetMs tetap dipakai
   // sebagai timeout keseluruhan gelombang ini (jaga-jaga kalau Promise.all
   // lebih lambat dari perkiraan), bukan buat looping banyak gelombang.
-  const wave = todo.slice(0, MAX_CONCURRENT);
+  let wave;
+  if (todo.length <= MAX_CONCURRENT) {
+    wave = todo;
+  } else {
+    // Lihat catatan BACKLOG_RESERVE_SLOTS di atas — pisah slot terbaru vs tertua,
+    // todo.length > MAX_CONCURRENT di sini jadi kedua potongan dijamin tidak tumpang tindih.
+    const newestSlots = MAX_CONCURRENT - BACKLOG_RESERVE_SLOTS;
+    wave = todo.slice(0, newestSlots).concat(todo.slice(-BACKLOG_RESERVE_SLOTS));
+  }
   await Promise.race([
     Promise.all(wave.map(it => translateOne(it, redisCmd))),
     new Promise(resolve => setTimeout(resolve, budgetMs)),
