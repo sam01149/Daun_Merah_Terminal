@@ -11,7 +11,7 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-02 (Session 272 lanj. — Fix kritis: translate NEWS tidak jalan di produksi, fire-and-forget diganti await+budget adaptif)
+> **Last updated:** 2026-08-02 (Session 272 lanj. — Bendera emoji diganti SVG (tidak render di Windows) + kurangi paralelisme translate biar tidak kena rate limit RPM Gemini)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -104,7 +104,15 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 
 **Pelajaran:** fire-and-forget setelah `res.send()` di Vercel Serverless Functions TIDAK bisa diasumsikan selalu selesai — aman untuk kerja cepat non-jaringan (regex, beberapa Redis command), TAPI TIDAK aman untuk panggilan jaringan (AI API dkk). Unit test (mock Redis/fetch di Node test runner) tidak menangkap kelas bug ini sama sekali karena tidak mensimulasikan pembekuan proses Vercel — cuma verifikasi live ke endpoint produksi yang berhasil mengungkapnya.
 
-**Verifikasi:** `npm test` 728/728 hijau (test lama tetap kompatibel, `translateNewItems` punya default param). Diagnosis & fix ini belum diverifikasi ulang live pasca-deploy pada saat entri ini ditulis — cek lagi setelah push (curl `type=news_translate` untuk guid yang sama, harus tidak kosong lagi setelah minimal 1 siklus cache-refill).
+**Verifikasi:** `npm test` 728/728 hijau (test lama tetap kompatibel, `translateNewItems` punya default param). **Diverifikasi live pasca-deploy** — curl `type=news_translate` untuk guid yang sama persis dengan screenshot user, hasilnya sekarang terisi 5 terjemahan akurat & sesuai format ketat (mis. "Trump: pembatalan serangan yang direncanakan bergantung pada tercapainya kesepakatan dengan cepat"). Sempat kena `502 CIRCUIT_OPEN` di tengah verifikasi (circuit breaker `fj`/FinancialJuice trip, keteledoran sendiri — polling diagnostik terlalu agresif kelihatan seperti burst request oleh anti-bot mereka) — tunggu recovery 5 menit alami lalu cek ulang, bukan bug kode.
+
+**Revisi lanjutan (hari sama, 2 laporan user pasca-fix di atas):**
+
+1. **"masih tidak ada bendera"** — screenshot user nunjukin toggle EN/ID tampil sebagai teks "ID ID" (dobel), bukan bendera. Root cause: emoji bendera (🇮🇩/🇺🇸) adalah komposisi 2 karakter Unicode "Regional Indicator Symbol" yang Windows secara historis TIDAK render sebagai gambar bendera (kebijakan Microsoft) — fallback-nya tampil sebagai huruf "ID"/"US" mentah dalam kotak kecil, menumpuk dengan teks label "ID"/"EN" yang memang sengaja ada di sebelahnya. Ini juga ketahuan melanggar ATURAN.md §4.1 (larangan emoji di UI) yang lolos tanpa sadar. **Fix:** ganti emoji dengan SVG inline (2 kotak warna merah-putih untuk Indonesia, garis-garis merah-putih + kanton biru untuk US) — render konsisten di semua platform karena vector, bukan bergantung dukungan emoji font.
+2. **"masih sebagian gitu yang translate"** — backlog besar (banyak item lama yang belum diterjemahkan sekaligus pasca-deploy) diterjemahkan bertahap per siklus, tapi beberapa item macet lama. Root cause dugaan: `MAX_CONCURRENT=10` per gelombang + loop BISA melakukan beberapa gelombang sekaligus dalam 1 pemanggilan (`for` loop) — Gemini free tier dibatasi **10 RPM** (lihat `daun_merah_ai.md` §4), jadi backlog besar bisa menembak >10 request dalam <60 detik dan memicu 429/circuit trip diam-diam, bikin sisa backlog macet total sampai circuit pulih 5 menit. **Fix (`api/_news_translate.js`):** `MAX_CONCURRENT` diturunkan ke 8 (di bawah 10 RPM), dan loop multi-gelombang DIHAPUS — sekarang cuma 1 gelombang per pemanggilan (per siklus cache-refill ~50-60 detik), jadi request per menit selalu aman di bawah limit asli. Konsekuensi: backlog besar makan beberapa menit lebih lama buat kelar total, tapi headline BARU (bukan backlog) tetap secepat sebelumnya.
+- `APP_VERSION` → `2026.08.02.5`.
+
+**Verifikasi:** `npm test` 728/728 hijau. Playwright screenshot toolbar NEWS — bendera Indonesia (merah-putih) dan Amerika (garis-garis+kanton biru) sama-sama render sempurna sebagai gambar, bukan teks, di kedua state toggle.
 
 ## Changelog Session 271 (2026-08-01) — Fix: Analisa Terakhir Jumat Hilang Saat Weekend (Root Cause TTL Redis)
 

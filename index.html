@@ -3239,7 +3239,7 @@ body:not(.light-theme) .ringkasan-gen-btn {
   <span class="last-update" id="lastUpdate">Never fetched</span>
   <div class="right-tools">
     <button class="refresh-btn" id="newsLangBtn" onclick="toggleNewsLang()" title="Ganti bahasa tampilan berita (judul asli Inggris selalu tersedia di sisi EN)">
-      <span id="newsLangFlag">🇮🇩</span><span id="newsLangCode">ID</span>
+      <span id="newsLangFlag" style="display:inline-flex;line-height:0"><svg width="16" height="12" viewBox="0 0 16 12"><rect width="16" height="6" fill="#e4363f"/><rect y="6" width="16" height="6" fill="#fff"/><rect width="16" height="12" fill="none" stroke="var(--border)" stroke-width="1"/></svg></span><span id="newsLangCode">ID</span>
     </button>
     <span class="auto-label">AUTO</span>
     <label class="toggle">
@@ -4373,7 +4373,7 @@ window.addEventListener('DOMContentLoaded', () => _updateNewsLangBtn());
 
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.08.02.4';
+const APP_VERSION = '2026.08.02.5';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
@@ -4457,12 +4457,18 @@ function toggleNewsLang() {
   renderFeed();
 }
 
+// SVG bendera inline (BUKAN emoji — ATURAN.md §4.1 melarang emoji di UI, dan
+// terbukti emoji bendera tidak konsisten render di Windows/Electron: regional
+// indicator letter "ID"/"US" muncul apa adanya alih-alih gambar bendera).
+const _FLAG_ID_SVG = `<svg width="16" height="12" viewBox="0 0 16 12"><rect width="16" height="6" fill="#e4363f"/><rect y="6" width="16" height="6" fill="#fff"/><rect width="16" height="12" fill="none" stroke="var(--border)" stroke-width="1"/></svg>`;
+const _FLAG_US_SVG = `<svg width="16" height="12" viewBox="0 0 16 12"><rect width="16" height="12" fill="#fff"/><rect y="0" width="16" height="0.923" fill="#b22234"/><rect y="1.846" width="16" height="0.923" fill="#b22234"/><rect y="3.692" width="16" height="0.923" fill="#b22234"/><rect y="5.538" width="16" height="0.923" fill="#b22234"/><rect y="7.385" width="16" height="0.923" fill="#b22234"/><rect y="9.231" width="16" height="0.923" fill="#b22234"/><rect y="11.077" width="16" height="0.923" fill="#b22234"/><rect width="7" height="6.46" fill="#3c3b6e"/><rect width="16" height="12" fill="none" stroke="var(--border)" stroke-width="1"/></svg>`;
+
 function _updateNewsLangBtn() {
   const flag = document.getElementById('newsLangFlag');
   const code = document.getElementById('newsLangCode');
   if (!flag || !code) return;
-  if (newsLangPref === 'id') { flag.textContent = '🇮🇩'; code.textContent = 'ID'; }
-  else                       { flag.textContent = '🇺🇸'; code.textContent = 'EN'; }
+  if (newsLangPref === 'id') { flag.innerHTML = _FLAG_ID_SVG; code.textContent = 'ID'; }
+  else                       { flag.innerHTML = _FLAG_US_SVG; code.textContent = 'EN'; }
 }
 
 // Ambil terjemahan yang sudah siap di server untuk item yang belum punya title_id

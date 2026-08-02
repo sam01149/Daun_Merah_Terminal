@@ -37,7 +37,12 @@ const GEMINI_URL   = 'https://generativelanguage.googleapis.com/v1beta/openai/ch
 const GEMINI_MODEL = 'gemini-flash-latest';
 
 const TR_KEY_TTL = 36 * 3600; // detik — samakan retensi 36 jam dengan news_history
-const MAX_CONCURRENT      = 10;   // panggilan paralel per gelombang
+// Google AI Studio free tier Gemini: 10 RPM (lihat daun_merah_ai.md §4) — SATU
+// gelombang per pemanggilan (bukan loop multi-gelombang) dijaga di bawah itu,
+// supaya backlog besar (mis. pasca-deploy) tidak menembak >10 request dalam
+// jendela <60 detik dan memicu 429/circuit trip. Sisa backlog nyusul siklus
+// cache-refill berikutnya (~50-60 detik kemudian, RPM window sudah reset).
+const MAX_CONCURRENT      = 8;
 const PER_CALL_TIMEOUT_MS = 4000;
 // Default anggaran waktu translate kalau caller tidak kasih budgetMs eksplisit —
 // caller SEHARUSNYA selalu kasih (lihat rssHandler di api/feeds.js, adaptif
@@ -134,12 +139,15 @@ async function translateNewItems(items, redisCmd, budgetMs = DEFAULT_BUDGET_MS) 
   const todo = candidates.filter((_, i) => !existing || existing[i] == null);
   if (todo.length === 0) return;
 
-  const start = Date.now();
-  for (let i = 0; i < todo.length; i += MAX_CONCURRENT) {
-    if (Date.now() - start > budgetMs) break; // sisa item nyusul siklus berikutnya
-    const chunk = todo.slice(i, i + MAX_CONCURRENT);
-    await Promise.all(chunk.map(it => translateOne(it, redisCmd)));
-  }
+  // SATU gelombang saja per pemanggilan (bukan loop multi-gelombang) — lihat
+  // catatan MAX_CONCURRENT di atas soal alasan RPM. budgetMs tetap dipakai
+  // sebagai timeout keseluruhan gelombang ini (jaga-jaga kalau Promise.all
+  // lebih lambat dari perkiraan), bukan buat looping banyak gelombang.
+  const wave = todo.slice(0, MAX_CONCURRENT);
+  await Promise.race([
+    Promise.all(wave.map(it => translateOne(it, redisCmd))),
+    new Promise(resolve => setTimeout(resolve, budgetMs)),
+  ]);
 }
 
 /**
