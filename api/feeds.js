@@ -9,6 +9,10 @@
 // GET /api/feeds?type=news_history&before=<ms>&limit=100 → halaman berita lama dari archive
 //   36 jam untuk tombol "Muat Berita Lebih Lama" di tab NEWS (read-only, UI-only — window
 //   baca dan retensi PERSIS sama dengan yang dipakai market-digest.js Call 2 CB bias).
+// GET /api/feeds?type=news_translate_backfill → cron-only (x-cron-secret), sapu SELURUH
+//   arsip 36 jam news_history dan terjemahkan yang belum, bukan cuma jendela live RSS
+//   ~100 item — supaya "Muat Berita Lebih Lama" sudah Indonesia duluan tanpa jeda saat
+//   diklik (S276, 2026-08-02, permintaan user).
 
 const { autoUpdateFundamentals } = require('./_fundamental_parser');
 const rateLimit = require('./_ratelimit');
@@ -20,8 +24,10 @@ module.exports = async function handler(req, res) {
   const type = req.query.type;
   // type=rss DIKECUALIKAN dari gate APP_KEY: service worker (sw.js) polling notifikasi
   // via periodicsync di background — tidak punya akses localStorage/key. Endpoint ini
-  // cache-first (50s), tanpa AI, jadi residual abuse-nya murah. Type lain tetap digate.
-  if (type !== 'rss' && requireAppKey(req, res)) return;
+  // cache-first (50s), tanpa AI, jadi residual abuse-nya murah. type=news_translate_backfill
+  // JUGA dikecualikan — cron-only, auth-nya sendiri pakai x-cron-secret (lihat handler),
+  // bukan APP_KEY publik. Type lain tetap digate.
+  if (type !== 'rss' && type !== 'news_translate_backfill' && requireAppKey(req, res)) return;
   if (await rateLimit(req, res, { limit: 30, windowSecs: 60, endpoint: `feeds_${type || 'none'}` })) return;
   if (type === 'rss')         return rssHandler(req, res);
   if (type === 'cot')         return cotHandler(req, res);
@@ -33,7 +39,8 @@ module.exports = async function handler(req, res) {
   if (type === 'retail_history') return retailHistoryHandler(req, res);
   if (type === 'news_history') return newsHistoryHandler(req, res);
   if (type === 'news_translate') return newsTranslateHandler(req, res);
-  return res.status(400).json({ error: 'Missing ?type= — use rss, cot, cot_history, research, options, aftek, retail, retail_history, news_history, or news_translate' });
+  if (type === 'news_translate_backfill') return newsTranslateBackfillHandler(req, res);
+  return res.status(400).json({ error: 'Missing ?type= — use rss, cot, cot_history, research, options, aftek, retail, retail_history, news_history, news_translate, or news_translate_backfill' });
 };
 
 // ── Shared Redis helper ────────────────────────────────────────────────────────
@@ -277,6 +284,36 @@ async function newsHistoryHandler(req, res) {
     next_before: oldestTs,
     has_more: items.length === limit,
   });
+}
+
+// ── News translate backfill (cron-only, S276 2026-08-02) ─────────────────────
+// Sapu SELURUH arsip 36 jam 'news_history' secara proaktif, bukan cuma jendela live
+// RSS ~100 item (rssHandler) atau menunggu user klik "Muat Berita Lebih Lama"
+// (newsHistoryHandler) — permintaan user: arsip harus sudah Indonesia duluan
+// sebelum diklik, bukan translate-on-demand. Dipanggil GitHub Actions cron tiap
+// 5 menit (bersamaan dengan ping type=rss di workflow yang sama) — beberapa siklus
+// cukup untuk mengejar backlog, sama seperti mekanisme self-healing translate lain
+// di file ini, TIDAK butuh backlog langsung habis sekali panggil.
+async function newsTranslateBackfillHandler(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  const CRON_SECRET = process.env.CRON_SECRET;
+  if (!CRON_SECRET || req.headers['x-cron-secret'] !== CRON_SECRET) {
+    return res.status(401).json({ error: 'Unauthorized — set x-cron-secret header' });
+  }
+
+  // Ambil SEMUA item dalam window 36 jam (bukan dipaginasi 100 seperti
+  // newsHistoryHandler yang user-facing) — cap 500 murni pagar pathologis, arsip
+  // 36 jam realistis FinancialJuice tidak pernah sedekat itu.
+  const raw = await redisCmd('ZREVRANGEBYSCORE', 'news_history', '+inf', '-inf', 'LIMIT', '0', '500');
+  const items = Array.isArray(raw)
+    ? raw.map(s => { try { return JSON.parse(s); } catch(e) { return null; } }).filter(Boolean)
+    : [];
+  if (items.length === 0) return res.status(200).json({ swept: 0 });
+
+  try { await translateNewItems(items, redisCmd, 15000); } catch(e6) {
+    console.warn('newsTranslateBackfillHandler failed:', e6.message);
+  }
+  return res.status(200).json({ swept: items.length });
 }
 
 // RSS titles are XML-escaped in the feed (e.g. literal "&" arrives as "&amp;") —
@@ -1470,6 +1507,7 @@ module.exports.newsHistoryHandler = newsHistoryHandler;
 module.exports.storeNewsHistory = storeNewsHistory;
 module.exports.parseRSSItems = parseRSSItems;
 module.exports.newsTranslateHandler = newsTranslateHandler;
+module.exports.newsTranslateBackfillHandler = newsTranslateBackfillHandler;
 module.exports._pctileRank = _pctileRank;
 module.exports._parseOpenInterest = _parseOpenInterest;
 module.exports._parseCotPercentLine = _parseCotPercentLine;

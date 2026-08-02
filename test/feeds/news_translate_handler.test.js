@@ -4,7 +4,7 @@
 // sendiri, yang jalan fire-and-forget dari rssHandler, bukan endpoint ini).
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { newsTranslateHandler, newsHistoryHandler, storeNewsHistory } = require('../../api/feeds.js');
+const { newsTranslateHandler, newsHistoryHandler, newsTranslateBackfillHandler, storeNewsHistory } = require('../../api/feeds.js');
 
 function mockRedis() {
   const kv = new Map();
@@ -155,5 +155,75 @@ test('newsHistoryHandler: item arsip yang SUDAH punya terjemahan tidak ditembak 
   } finally {
     global.fetch = realFetch;
     if (prevKey === undefined) delete process.env.MISTRAL_API_KEY; else process.env.MISTRAL_API_KEY = prevKey;
+  }
+}));
+
+// ── newsTranslateBackfillHandler (cron-only, S276 2026-08-02) ───────────────
+// Sapu SELURUH arsip 36 jam secara proaktif — user tidak perlu klik "Muat Berita
+// Lebih Lama" dulu supaya arsip sudah Indonesia.
+test('newsTranslateBackfillHandler: tanpa x-cron-secret yang benar → 401, tidak menyentuh Redis', withMockRedis(async (redis) => {
+  const prevSecret = process.env.CRON_SECRET;
+  process.env.CRON_SECRET = 'real-secret';
+  try {
+    const res = mockRes();
+    await newsTranslateBackfillHandler({ headers: {} }, res);
+    assert.equal(res.statusCode, 401);
+
+    const res2 = mockRes();
+    await newsTranslateBackfillHandler({ headers: { 'x-cron-secret': 'salah' } }, res2);
+    assert.equal(res2.statusCode, 401);
+  } finally {
+    if (prevSecret === undefined) delete process.env.CRON_SECRET; else process.env.CRON_SECRET = prevSecret;
+  }
+}));
+
+test('newsTranslateBackfillHandler: x-cron-secret benar → sapu SEMUA item arsip (bukan dipaginasi 100), terjemahkan yang belum', withMockRedis(async (redis) => {
+  const realFetch = global.fetch;
+  const translatedGuids = [];
+  global.fetch = async (url, opts) => {
+    if (String(url).includes('api.mistral.ai')) {
+      const body = JSON.parse(opts.body);
+      const matches = [...body.messages[0].content.matchAll(/\[(\d+)\]\nJUDUL: (.*)/g)];
+      translatedGuids.push(...matches.map(mm => mm[2]));
+      const content = matches.map(mm => `[${mm[1]}]\nJUDUL_ID: ${mm[2]}`).join('\n');
+      return { ok: true, json: async () => ({ choices: [{ message: { content } }] }) };
+    }
+    return redis.fetch(url, opts);
+  };
+  const prevKey = process.env.MISTRAL_API_KEY;
+  const prevSecret = process.env.CRON_SECRET;
+  process.env.MISTRAL_API_KEY = 'fake-key';
+  process.env.CRON_SECRET = 'real-secret';
+  try {
+    const now = new Date('2026-08-02T09:00:00Z').getTime();
+    const items = Array.from({ length: 5 }, (_, i) => `<item><title>Backfill headline ${i}</title><guid>bf-${i}</guid><pubDate>${new Date(now - i * 1000).toUTCString()}</pubDate><link>https://example.com/bf-${i}</link></item>`).join('');
+    const xml = `<rss><channel>${items}</channel></rss>`;
+    await storeNewsHistory(xml, now);
+    // Satu item sudah pernah diterjemahkan sebelumnya — tidak boleh ditembak ulang.
+    redis.kv.set('news_tr:bf-2', JSON.stringify({ title_id: 'Sudah diterjemahkan', desc_id: '' }));
+
+    const res = mockRes();
+    await newsTranslateBackfillHandler({ headers: { 'x-cron-secret': 'real-secret' } }, res);
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.body.swept, 5, 'baca SEMUA item arsip, bukan dipotong limit 100 seperti newsHistoryHandler');
+    assert.deepEqual(translatedGuids.sort(), ['Backfill headline 0', 'Backfill headline 1', 'Backfill headline 3', 'Backfill headline 4'].sort(), 'bf-2 di-skip karena sudah punya cache');
+    for (const g of ['bf-0', 'bf-1', 'bf-3', 'bf-4']) assert.equal(redis.kv.has(`news_tr:${g}`), true, `${g} seharusnya sudah diterjemahkan`);
+  } finally {
+    global.fetch = realFetch;
+    if (prevKey === undefined) delete process.env.MISTRAL_API_KEY; else process.env.MISTRAL_API_KEY = prevKey;
+    if (prevSecret === undefined) delete process.env.CRON_SECRET; else process.env.CRON_SECRET = prevSecret;
+  }
+}));
+
+test('newsTranslateBackfillHandler: news_history kosong → swept 0, tidak crash', withMockRedis(async () => {
+  const prevSecret = process.env.CRON_SECRET;
+  process.env.CRON_SECRET = 'real-secret';
+  try {
+    const res = mockRes();
+    await newsTranslateBackfillHandler({ headers: { 'x-cron-secret': 'real-secret' } }, res);
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.body.swept, 0);
+  } finally {
+    if (prevSecret === undefined) delete process.env.CRON_SECRET; else process.env.CRON_SECRET = prevSecret;
   }
 }));

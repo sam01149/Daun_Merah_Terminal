@@ -11,7 +11,7 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-02 (Session 272 lanj. — Translate NEWS: redesign batch, provider final Mistral setelah 3 percobaan gagal)
+> **Last updated:** 2026-08-02 (Session 272 lanj. — Translate NEWS: provider final Mistral, fix budget mepet, backfill proaktif arsip 36 jam)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -225,6 +225,20 @@ Konteks: user tanya apakah translate NEWS bisa tetap jalan walau aplikasi ditutu
 **Fix (`api/_news_translate.js`, `api/_ai_guard.js`):** konstanta provider (`CB_SAMBANOVA`/`SAMBANOVA_URL`/`SAMBANOVA_MODEL`) diganti Mistral (`CB_MISTRAL = 'ai:mistral:newstranslate'`, `MISTRAL_URL`, model `mistral-small-latest`); `translateBatch`/`translateNewItems` pakai `MISTRAL_API_KEY` (env sudah ada, dipakai jalur diagnostik lama). `_ai_guard.js`: bucket kuota `sambanova_c1_newstranslate` diganti `mistral_newstranslate: 1000/hari` (TERPISAH dari bucket `mistral: 200/hari` diagnostik manual, supaya tidak rebutan kuota). `BATCH_SIZE` (20) dan struktur anti-starvation/`AbortSignal` deadline TIDAK berubah — cuma provider yang diganti, desain batch dari revisi sebelumnya tetap dipertahankan penuh.
 
 **Verifikasi:** `npm test` 737/737 hijau (test `news_translate.test.js`/`news_translate_handler.test.js` ditulis ulang ke-3 kalinya mengikuti pergantian provider — mock fetch `api.mistral.ai`, env `MISTRAL_API_KEY`). Dokumentasi `daun_merah_ai.md` §2 baris #10 dan §4 tabel jatah harian diupdate in-place (provider final Mistral, kronologi lengkap 3 percobaan gagal + 2 temuan penting: kuota Gemini 20/hari dan instabilitas SambaNova akun 2, keduanya berlaku lintas-fitur bukan cuma translate).
+
+**Bug tambahan ketahuan pasca-deploy Mistral: batch 20 headline mepet budget lama, langsung trip circuit breaker (3 kegagalan beruntun).** Tes langsung ke Mistral: batch 10 item ~5,5-5,7 detik, batch 20 item **6,2 detik** — nyaris tidak ada margin di cap `translateBudgetMs` lama (6000ms di `rssHandler`, dikalibrasi untuk Gemini yang sub-2 detik). **Fix (`api/feeds.js`):** cap dinaikkan 6000→9000 (`rssHandler`) dan 8000→10000 (`newsHistoryHandler`) — tetap jauh di bawah batas gabungan 16000/maxDuration 20000/timeout client 22000. Circuit di-reset manual via `action=circuit-reset`, live diverifikasi ulang: circuit CLOSED 0 kegagalan, cakupan translate jendela live naik ke 97/100 (dari 45/100 sebelum semua fix hari ini).
+
+**Insiden deploy terpisah (bukan soal kode):** satu push (commit provider Mistral) TIDAK memicu build Vercel sama sekali selama 15+ menit — dicek user langsung via dashboard Vercel (Deployments tab), commit itu tidak muncul sama sekali (bukan gagal, benar-benar tidak ter-trigger). Root cause tidak diketahui pasti (kemungkinan webhook delivery GitHub→Vercel gagal sesaat). Fix: commit kosong (`git commit --allow-empty`) untuk memicu ulang push event — berhasil, deploy berikutnya normal (~10 detik seperti biasa). Pelajaran: kalau deploy tidak muncul di `vercel ls`/dashboard dalam waktu wajar (>2-3 menit) setelah push, jangan asumsikan cuma "lagi lambat" — cek `gh api repos/.../deployments` utk commit SHA spesifik, dan commit kosong adalah fix murah kalau webhook macet.
+
+**Revisi lanjutan (sesi sama, permintaan user): backfill proaktif arsip 36 jam penuh — "Muat Berita Lebih Lama" jangan translate-on-demand, harus sudah Indonesia duluan.**
+
+**Sebelumnya:** `newsHistoryHandler` cuma menerjemahkan item arsip SAAT user benar-benar klik "Muat Berita Lebih Lama" (translate-on-demand per klik, walau cepat). Backlog arsip di LUAR jendela live RSS ~100 item tidak pernah tersentuh proaktif oleh cron manapun.
+
+**Fix (`api/feeds.js`):** endpoint baru `type=news_translate_backfill` (cron-only, auth `x-cron-secret` === `CRON_SECRET`, dikecualikan dari gate `requireAppKey` publik — pola sama seperti `type=rss` untuk sw.js) — baca SELURUH `news_history` (ZREVRANGEBYSCORE `+inf`/`-inf`, cap 500 pagar pathologis, BUKAN dipaginasi 100 seperti `newsHistoryHandler` yang user-facing), terjemahkan yang belum via `translateNewItems` (budget 15000ms). `.github/workflows/news-translate-warm.yml`: step kedua ping endpoint ini tiap 5 menit (bersamaan dengan ping `type=rss` yang sudah ada) — beberapa siklus cukup mengejar backlog, self-healing sama seperti mekanisme translate lain.
+
+**Batasan yang dijelaskan ke user (bukan bug, keterbatasan arsitektur):** permintaan "instan tanpa jeda, walau app ditutup" TIDAK bisa dipenuhi penuh dalam batasan saat ini — (1) cron GitHub Actions minimal interval 5 menit (batasan resmi GitHub, bukan pilihan kita) untuk skenario app benar-benar tertutup; (2) jendela live (~50-60 detik, cache RSS 50s + client refresh 60s) SENGAJA dipertahankan sebagai pagar anti-thundering-herd ke FinancialJuice (memperketat cache berisiko diblokir sumbernya). Instan penuh butuh infrastruktur tambahan (server selalu nyala) yang berarti biaya — di luar prinsip "gratis" proyek ini.
+
+**Verifikasi:** `npm test` 740/740 hijau (3 test baru `newsTranslateBackfillHandler`: auth 401 tanpa/salah secret, sapu SEMUA item arsip termasuk yang di luar cap 100, skip item yang sudah ada cache).
 
 **Catatan proses (bukan soal teknis):** 3 komit sesi HP sebelumnya (`fc4b086`/`5f19b5c`/`38ff271`) memakai commit author `Claude <noreply@anthropic.com>` — melanggar aturan larangan atribusi AI di commit (`ATURAN.md` §4 poin 7, ditegaskan ulang CLAUDE.md). Tidak di-rewrite retroaktif (sudah dideploy, riwayat sudah publik) — dicatat di sini sebagai pengingat untuk sesi Claude Code manapun (termasuk dari HP) supaya tidak terulang.
 

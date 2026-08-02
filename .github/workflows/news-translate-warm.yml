@@ -11,9 +11,10 @@ name: News Translate Warm
 # dari client mana pun — server selalu fresh + translate selalu tergerus teratur,
 # terlepas dari kapan/seberapa sering user buka aplikasi.
 #
-# Cakupan: cuma jendela LIVE feed (headline beberapa jam terakhir) — sama seperti
-# traffic client biasa. TIDAK backfill arsip 36 jam penuh (itu tercover terpisah,
-# lazy, saat user klik "Muat Berita Lebih Lama" — lihat newsHistoryHandler).
+# Cakupan: jendela LIVE feed (headline beberapa jam terakhir, step pertama) DAN
+# (S276, 2026-08-02, permintaan user) arsip 36 jam PENUH via step kedua
+# (type=news_translate_backfill) — supaya "Muat Berita Lebih Lama" sudah Indonesia
+# duluan begitu diklik, bukan translate-on-demand yang bikin jeda.
 on:
   schedule:
     - cron: '*/5 * * * *'
@@ -23,7 +24,7 @@ jobs:
   warm:
     runs-on: ubuntu-latest
     steps:
-      - name: Ping /api/feeds?type=rss (trigger cache-refill + translate)
+      - name: Ping /api/feeds?type=rss (trigger cache-refill + translate jendela live)
         run: |
           STATUS=$(curl -s -o /tmp/resp.xml -w "%{http_code}" \
             --max-time 25 \
@@ -32,5 +33,17 @@ jobs:
           if [ "$STATUS" -ne 200 ]; then
             echo "RSS warm gagal dengan HTTP $STATUS"
             cat /tmp/resp.xml
+            exit 1
+          fi
+      - name: Ping /api/feeds?type=news_translate_backfill (sapu arsip 36 jam penuh)
+        run: |
+          STATUS=$(curl -s -o /tmp/resp2.json -w "%{http_code}" \
+            -H "x-cron-secret: ${{ secrets.CRON_SECRET }}" \
+            --max-time 25 \
+            "https://financial-feed-app.vercel.app/api/feeds?type=news_translate_backfill")
+          cat /tmp/resp2.json
+          echo "HTTP $STATUS"
+          if [ "$STATUS" -ne 200 ]; then
+            echo "Translate backfill gagal dengan HTTP $STATUS"
             exit 1
           fi
