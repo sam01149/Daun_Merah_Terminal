@@ -177,6 +177,12 @@ Konteks: user tanya apakah translate NEWS bisa tetap jalan walau aplikasi ditutu
 
 **Verifikasi:** `npm test` 731/731 hijau (test `test/lib/news_translate.test.js` & `test/feeds/news_translate_handler.test.js` diupdate mengikuti provider baru — mock fetch URL `api.sambanova.ai`, env var `SAMBANOVA_API_KEY_CALL1`, tidak ada perubahan assertion logic karena `translateOne`/`translateNewItems` tetap provider-agnostic di level parsing/caching).
 
+**Revisi lanjutan (hari sama, permintaan user): `MAX_CONCURRENT` (dulu 8, dikunci ketat khusus supaya aman di bawah RPM 10 Gemini) dinaikkan jauh — "gas aja, gausah batasin RPM-nya, tapi tetap tidak membabi buta".**
+
+**Implementasi (`api/_news_translate.js`):** `MAX_CONCURRENT` 8 → **100** (disamakan dengan cap `limit` maksimum `newsHistoryHandler`, api/feeds.js — backlog realistis manapun tidak akan pernah melebihi ini, jadi satu gelombang selalu langsung melahap SEMUA `todo[]` sekali jalan, tidak ada lagi item yang sengaja ditunda ke siklus berikutnya). Bukan literally tanpa batas — angka 100 tetap ada sebagai pagar "tidak membabi buta" murni untuk skenario pathologis (mis. XML rusak menghasilkan ratusan item), bukan throttle RPM seperti sebelumnya. Logika anti-starvation `BACKLOG_RESERVE_SLOTS` (S273) dibiarkan apa adanya sebagai pagar kasus ekstrem yang sama — praktis tidak pernah lagi kepakai di traffic normal. Kuota harian (`sambanova_c1_newstranslate: 1000/hari`) dan pagar lain (circuit breaker, `PER_CALL_TIMEOUT_MS` per-request 4 detik, `budgetMs` per-gelombang) TIDAK diubah — tetap jadi jaring pengaman non-RPM.
+
+**Verifikasi:** `npm test` 732/732 hijau. Test lama `S273 anti-starvation` (12 item, asumsi `MAX_CONCURRENT=8`) diskalakan ke 102 item (> 100) supaya tetap menguji jalur pathologis yang benar setelah konstanta naik; test baru (40 item < 100) menegaskan backlog realistis sekarang selalu habis satu gelombang, tidak ada lagi yang tertunda.
+
 ## Changelog Session 271 (2026-08-01) — Fix: Analisa Terakhir Jumat Hilang Saat Weekend (Root Cause TTL Redis)
 
 **Masalah dilaporkan user:** Sabtu/Minggu (pasar FX tutup), tab Analisa tidak menampilkan catatan analisa terakhir hari Jumat sebagai bekal trader menghadapi pembukaan Senin.
