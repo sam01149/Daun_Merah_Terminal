@@ -188,7 +188,12 @@ async function rssHandler(req, res) {
   // total tidak pernah mepet maxDuration ATAU timeout client (22s, lihat fetchRSS()
   // di index.html) — kalau RSS fetch lambat, translate otomatis dapat jatah lebih
   // sedikit (bahkan nol), item yang kelewat nyusul siklus refill berikutnya.
-  const translateBudgetMs = Math.max(0, Math.min(6000, 16000 - (Date.now() - now)));
+  // Cap 6000 (nilai lama, dikalibrasi untuk Gemini yang sub-2 detik) dinaikkan ke
+  // 9000 (2026-08-02, provider final Mistral) — batch 20 headline diverifikasi live
+  // butuh ~6,2 detik, nyaris tidak ada margin di cap lama (3 kegagalan beruntun
+  // langsung trip circuit breaker begitu deploy). 9000 kasih headroom sehat tanpa
+  // mendekati batas 16000 gabungan/20000 maxDuration/22000 timeout client.
+  const translateBudgetMs = Math.max(0, Math.min(9000, 16000 - (Date.now() - now)));
   if (translateBudgetMs > 500) {
     try { await translateNewItems(parseRSSItems(xml), redisCmd, translateBudgetMs); } catch(e4) {
       console.warn('translateNewItems failed:', e4.message);
@@ -257,8 +262,11 @@ async function newsHistoryHandler(req, res) {
   // fire-and-forget, pelajaran bug sebelumnya) — budget generous karena handler
   // ini murni baca Redis dulu (cepat), TAPI tetap dibatasi jauh di bawah timeout
   // client 12s (_fetchHistoryPage() di index.html) & maxDuration 20s api/feeds.js.
+  // 8000 → 10000 (2026-08-02, provider final Mistral): batch 20 headline live
+  // butuh ~6,2 detik, 8000 nyaris tidak ada margin. 10000 tetap jauh di bawah
+  // timeout client 12000.
   if (items.length > 0) {
-    try { await translateNewItems(items, redisCmd, 8000); } catch(e5) {
+    try { await translateNewItems(items, redisCmd, 10000); } catch(e5) {
       console.warn('translateNewItems (history) failed:', e5.message);
     }
   }
