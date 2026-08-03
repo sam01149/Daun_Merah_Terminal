@@ -108,7 +108,7 @@ test('fundamental_analysis: semua provider gagal -> 500 "All providers failed"',
 });
 
 // ── Helper murni prompt fundamental (2026-07-19): umur rilis + previous ────────
-const { _fundAgeDays, _formatFundDataLine } = require('../../api/admin.js');
+const { _fundAgeDays, _fundSeedAgeDays, _formatFundDataLine } = require('../../api/admin.js');
 const NOW_MS = new Date('2026-07-19T12:00:00Z').getTime();
 
 test('_fundAgeDays: YYYY-MM-DD valid -> selisih hari; hari sama -> 0', () => {
@@ -138,6 +138,31 @@ test('_formatFundDataLine: previous sama dengan actual atau "—" -> tidak ditul
   assert.strictEqual(a, '  GDP QoQ: 0.8% (Q1) [rilis hari ini]');
   const b = _formatFundDataLine('GDP QoQ', { actual: '0.8%', period: 'Q1', date: '—', previous: '—' }, NOW_MS);
   assert.strictEqual(b, '  GDP QoQ: 0.8% (Q1)');
+});
+
+// ── Plan W-3 (2026-08-03): hint umur SEJAK SEED saat `date` masih '—' ──────────
+
+test('_fundSeedAgeDays: seededAt valid -> selisih hari; hari sama -> 0; kosong/rusak -> null', () => {
+  assert.strictEqual(_fundSeedAgeDays('2026-07-16T00:00:00.000Z', NOW_MS), 3);
+  assert.strictEqual(_fundSeedAgeDays('2026-07-19T12:00:00.000Z', NOW_MS), 0);
+  assert.strictEqual(_fundSeedAgeDays(null, NOW_MS), null);
+  assert.strictEqual(_fundSeedAgeDays(undefined, NOW_MS), null);
+  assert.strictEqual(_fundSeedAgeDays('not-a-date', NOW_MS), null);
+});
+
+test('_formatFundDataLine: date "—" TAPI seeded_at ada -> hint umur sejak seed (bukan silently kosong)', () => {
+  const line = _formatFundDataLine('GDP QoQ', { actual: '0.3%', period: 'Q1 2026', date: '—', source: 'seed', seeded_at: '2026-07-16T00:00:00.000Z' }, NOW_MS);
+  assert.strictEqual(line, '  GDP QoQ: 0.3% (Q1 2026) [berdasar data seed, belum terkonfirmasi update — sejak 3 hari lalu]');
+});
+
+test('_formatFundDataLine: date "—" DAN seeded_at TIDAK ada (data lama pra-fix) -> tetap format lama, tanpa hint (regresi)', () => {
+  const line = _formatFundDataLine('NFP', { actual: '178K', period: 'Apr 2026', date: '—', source: 'seed' }, NOW_MS);
+  assert.strictEqual(line, '  NFP: 178K (Apr 2026)');
+});
+
+test('_formatFundDataLine: date valid (bukan seed) menang atas seeded_at (age rilis dipakai, bukan age seed)', () => {
+  const line = _formatFundDataLine('CPI YoY', { actual: '3.3%', period: 'Jun 2026', date: '2026-07-16', seeded_at: '2020-01-01T00:00:00.000Z' }, NOW_MS);
+  assert.strictEqual(line, '  CPI YoY: 3.3% (Jun 2026) [rilis 3 hari lalu]');
 });
 
 test('fundamental_analysis: tanpa API key sama sekali -> 500 tanpa network call', async () => {

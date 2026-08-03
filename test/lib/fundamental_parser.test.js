@@ -93,6 +93,40 @@ test('artikel prosa tanpa kata Actual (bukan rilis kalender) → null walau ada 
   assert.strictEqual(r, null);
 });
 
+// Regresi Plan W-4 bug 1 (2026-08-03): keyword generic 'retail sales' (→ Retail
+// Sales MoM) ada SEBELUM keyword spesifik 'retail sales yoy' di FUND_INDICATOR_MAP
+// — loop match berhenti di entry pertama, jadi headline YoY apa pun (currency mana
+// pun) selalu salah ke-tangkep sebagai MoM. Dites lewat JPY (kasus nyata yang
+// ditemukan stuck permanen di produksi).
+test('Retail Sales YoY tidak ketimpa jadi Retail Sales MoM (Plan W-4 bug 1)', () => {
+  const r = parseFundamentalFromHeadline('Japan Retail Sales YoY Actual 2.0% Forecast 1.8% Previous 1.7%');
+  assert.strictEqual(r.currency, 'JPY');
+  assert.strictEqual(r.key, 'Retail Sales YoY');
+});
+
+test('Retail Sales MoM (tanpa YoY) tetap ke key MoM (regresi tidak boleh berubah)', () => {
+  const r = parseFundamentalFromHeadline('UK Retail Sales Actual 0.7% Forecast 0.3% Previous -0.2%');
+  assert.strictEqual(r.currency, 'GBP');
+  assert.strictEqual(r.key, 'Retail Sales MoM');
+});
+
+// Pola bug yang sama ditemukan kedua kalinya di FUND_INDICATOR_MAP saat audit
+// menyeluruh Plan W-4: keyword 'gdp advance'/'flash gdp' (→ GDP QoQ Flash) berada
+// SETELAH catch-all bare 'gdp' — headline "GDP Advance" selalu ke-tangkep bare
+// 'gdp' duluan, entry spesifik tidak pernah tercapai (dead code).
+test('GDP Advance tidak ketimpa GDP QoQ biasa, masuk key GDP QoQ Flash (Plan W-4 audit)', () => {
+  const r = parseFundamentalFromHeadline('US GDP Advance Actual 2.1% Forecast 1.9% Previous 2.0%');
+  assert.strictEqual(r.key, 'GDP QoQ Flash');
+});
+
+// Regresi Plan W-4 bug 2 (2026-08-03): kode currency literal ("GBP") tidak dikenal
+// FUND_COUNTRY_ONLY/FUND_PREFIX_MAP — cuma nama negara ("United Kingdom"/"British").
+test('kode currency literal GBP dikenali (Plan W-4 bug 2)', () => {
+  const r = parseFundamentalFromHeadline('GBP GDP MoM Actual 0.2% Forecast 0.1% Previous -0.1%');
+  assert.strictEqual(r?.currency, 'GBP');
+  assert.strictEqual(r?.key, 'GDP MoM');
+});
+
 // ── autoUpdateFundamentals: previous & date tidak boleh hilang di re-scan ──────
 
 function makeMockRedis(initialHash) {

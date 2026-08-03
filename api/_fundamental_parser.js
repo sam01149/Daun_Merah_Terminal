@@ -82,7 +82,7 @@ const COUNTRY_STRIP = {
 const FUND_COUNTRY_ONLY = [
   { re: /\b(united states|u\.s\.|us)\b/,                                  cur: 'USD' },
   { re: /\b(eurozone|euro area|euro zone|germany|german|france|french|italy|italian)\b/, cur: 'EUR' },
-  { re: /\b(united kingdom|u\.k\.|uk|britain|british)\b/,                 cur: 'GBP' },
+  { re: /\b(united kingdom|u\.k\.|uk|britain|british|gbp)\b/,             cur: 'GBP' },
   { re: /\b(japan|japanese)\b/,                                           cur: 'JPY' },
   { re: /\b(canada|canadian)\b/,                                          cur: 'CAD' },
   { re: /\b(australia|australian)\b/,                                     cur: 'AUD' },
@@ -125,6 +125,7 @@ const FUND_INDICATOR_MAP = [
   { kw: ['unemployment rate'],                                                    key: 'Unemployment Rate' },
   { kw: ['participation rate'],                                                   key: 'Participation Rate' },
   { kw: ['average earnings','average hourly earnings','wage growth'],             key: 'Wage Growth' },
+  { kw: ['retail sales yoy','retail sales y/y','retail sales annual'],           key: 'Retail Sales YoY' },
   { kw: ['retail sales'],                                                         key: 'Retail Sales MoM' },
   { kw: ['producer price',' ppi ','ppi m/m'],                                    key: 'PPI MoM' },
   { kw: ['flash cpi','cpi flash'],                                                key: 'CPI Flash YoY' },
@@ -135,15 +136,14 @@ const FUND_INDICATOR_MAP = [
   { kw: ['consumer price index','consumer prices'],                               key: 'CPI YoY' },
   { kw: ['gdp q/q','gdp qq','gdp quarter','gdp prelim','gdp flash','gdp growth'],key: 'GDP QoQ' },
   { kw: ['gdp m/m','gdp mom','gdp monthly'],                                     key: 'GDP MoM' },
+  { kw: ['flash gdp','gdp advance'],                                              key: 'GDP QoQ Flash' },
   { kw: ['gdp'],                                                                  key: 'GDP QoQ' },
-  { kw: ['retail sales yoy','retail sales y/y','retail sales annual'],           key: 'Retail Sales YoY' },
   { kw: ['building approval','construction approval'],                            key: 'Building Approvals' },
   { kw: ['building permit'],                                                      key: 'Building Permits' },
   { kw: ['consumer confidence','consumer sentiment','consumer morale','michigan sentiment'], key: 'Consumer Confidence' },
   { kw: ['business confidence','business sentiment','business climate'],          key: 'Business Confidence' },
   { kw: ['housing start','home start'],                                           key: 'Housing Starts' },
   { kw: ['durable goods'],                                                        key: 'Durable Goods Orders' },
-  { kw: ['flash gdp','gdp advance'],                                              key: 'GDP QoQ Flash' },
   { kw: ['inflation rate','inflation data'],                                      key: 'CPI YoY' },
 ];
 

@@ -1228,6 +1228,14 @@ async function fundamentalGetHandler(req, res) {
   }
 }
 
+// Query opsional (2026-08-03, Plan W-3/W-4 temuan 3): `?currency=AUD&key=GDP%20QoQ`
+// men-scope seed HANYA ke 1 currency/indikator, dipakai buat tambal seed drift
+// (kode FUND_SEED sudah diupdate manual tapi endpoint ini belum pernah dipicu ulang
+// untuk field itu) TANPA nge-overwrite indikator lain di currency yang sama yang
+// sudah ter-update live dari berita asli (lihat AUD contoh nyata: Employment
+// Change/Unemployment Rate/Trade Balance/NAB Business Conf sudah source:'headline',
+// full reseed AUD akan menimpa balik ke nilai seed lama — HARUS scoped per-field).
+// Tanpa param = perilaku lama (full reseed semua currency), backward-compatible.
 async function fundamentalSeedHandler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   if (req.method === 'OPTIONS') return res.status(204).end();
@@ -1236,15 +1244,26 @@ async function fundamentalSeedHandler(req, res) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
   if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
+  const onlyCurrency = req.query.currency ? String(req.query.currency).toUpperCase() : null;
+  const onlyKey = req.query.key || null;
+  const seededAt = new Date().toISOString();
   try {
     const written = [];
     for (const [cur, indicators] of Object.entries(FUND_SEED)) {
+      if (onlyCurrency && cur !== onlyCurrency) continue;
       const args = ['HSET', `fundamental:${cur}`];
-      for (const [key, val] of Object.entries(indicators)) args.push(key, JSON.stringify(val));
-      await redisCmd(...args);
-      written.push(cur);
+      let any = false;
+      for (const [key, val] of Object.entries(indicators)) {
+        if (onlyKey && key !== onlyKey) continue;
+        args.push(key, JSON.stringify({ ...val, seeded_at: seededAt }));
+        any = true;
+      }
+      if (any) {
+        await redisCmd(...args);
+        written.push(cur);
+      }
     }
-    return res.status(200).json({ ok: true, seeded: written });
+    return res.status(200).json({ ok: true, seeded: written, scoped: !!(onlyCurrency || onlyKey) });
   } catch(e) {
     return res.status(500).json({ error: e.message });
   }
@@ -1259,6 +1278,17 @@ function _fundAgeDays(dateStr, nowMs = Date.now()) {
   return Math.floor(ms / 86400000);
 }
 
+// Umur SEJAK SEED (bukan sejak rilis data asli — itu tidak diketahui untuk entri
+// seed, lihat _fundAgeDays). Dipakai HANYA saat `date` masih '—' (Plan W-3,
+// 2026-08-03): entri seed sebelumnya lolos tanpa peringatan umur sama sekali,
+// beda dari real-yields.js yang punya flag stale eksplisit setelah 90 hari.
+function _fundSeedAgeDays(seededAt, nowMs = Date.now()) {
+  if (!seededAt) return null;
+  const ms = nowMs - new Date(seededAt).getTime();
+  if (isNaN(ms) || ms < 0) return null;
+  return Math.floor(ms / 86400000);
+}
+
 // Satu baris data untuk prompt AI fundamental. Dulu cuma "key: actual (period)" —
 // previous & date yang SUDAH tersimpan di Redis dibuang, jadi AI menilai level statis
 // tanpa arah perubahan dan tanpa tahu datanya segar atau basi (audit 2026-07-19).
@@ -1266,7 +1296,12 @@ function _formatFundDataLine(key, v, nowMs = Date.now()) {
   const parts = [`  ${key}: ${v.actual || '—'} (${v.period || '—'})`];
   const extras = [];
   const age = _fundAgeDays(v.date, nowMs);
-  if (age !== null) extras.push(age === 0 ? 'rilis hari ini' : `rilis ${age} hari lalu`);
+  if (age !== null) {
+    extras.push(age === 0 ? 'rilis hari ini' : `rilis ${age} hari lalu`);
+  } else {
+    const seedAge = _fundSeedAgeDays(v.seeded_at, nowMs);
+    if (seedAge !== null) extras.push(seedAge === 0 ? 'berdasar data seed, belum terkonfirmasi update — diseed hari ini' : `berdasar data seed, belum terkonfirmasi update — sejak ${seedAge} hari lalu`);
+  }
   if (v.previous && v.previous !== '—' && v.previous !== v.actual) extras.push(`sebelumnya ${v.previous}`);
   if (extras.length > 0) parts.push(` [${extras.join('; ')}]`);
   return parts.join('');
@@ -5671,6 +5706,7 @@ async function polymarketHandler(req, res) {
 // tambahan tidak mengganggu Vercel yang hanya memanggil function-nya).
 module.exports.detectPushCat = detectPushCat;
 module.exports._fundAgeDays = _fundAgeDays;
+module.exports._fundSeedAgeDays = _fundSeedAgeDays;
 module.exports._formatFundDataLine = _formatFundDataLine;
 module.exports._pickExpiryLevels = _pickExpiryLevels;
 module.exports._confluenceZones = _confluenceZones;
