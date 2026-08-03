@@ -14,7 +14,7 @@
 //   ~100 item — supaya "Muat Berita Lebih Lama" sudah Indonesia duluan tanpa jeda saat
 //   diklik (S276, 2026-08-02, permintaan user).
 
-const { autoUpdateFundamentals } = require('./_fundamental_parser');
+const { autoUpdateFundamentals, autoUpdateFundamentalsFromCalendar, _fetchCalendarEventsForFund } = require('./_fundamental_parser');
 const rateLimit = require('./_ratelimit');
 const cbk = require('./_circuit_breaker');
 const { requireAppKey } = require('./_app_key');
@@ -239,6 +239,13 @@ async function storeNewsHistory(xml, now) {
   }
   if (args.length > 3) await redisCmd(...args);
   await redisCmd('ZREMRANGEBYSCORE', 'news_history', '-inf', cutoff);
+
+  // Plan W-5 (2026-08-03): calendar_v1.actual (TradingView, terstruktur) dicoba
+  // DULU sebagai lapis tambahan, headline FinancialJuice tetap jalan sebagai
+  // pelengkap/fallback — keduanya fire-and-forget, tidak menunda respons news feed.
+  _fetchCalendarEventsForFund(redisCmd)
+    .then(events => events.length > 0 ? autoUpdateFundamentalsFromCalendar(events, redisCmd) : null)
+    .catch(() => {});
 
   // Update fundamental data from latest headlines (fire-and-forget)
   autoUpdateFundamentals(items.slice(0, 50), redisCmd).catch(() => {});

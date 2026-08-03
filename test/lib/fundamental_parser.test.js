@@ -2,7 +2,10 @@
 // Unit test parser murni — jalankan: npm test (node --test, tanpa network/Redis)
 const { test } = require('node:test');
 const assert = require('node:assert');
-const { parseFundamentalFromHeadline, parseCBDecision, autoUpdateFundamentals } = require('../../api/_fundamental_parser');
+const {
+  parseFundamentalFromHeadline, parseCBDecision, autoUpdateFundamentals,
+  extractFundamentalFromCalendarEvent, autoUpdateFundamentalsFromCalendar,
+} = require('../../api/_fundamental_parser');
 
 // ── parseFundamentalFromHeadline ────────────────────────────────────────────
 
@@ -184,6 +187,86 @@ test('re-scan headline tanpa Previous eksplisit tetap pertahankan previous lama'
   const fr = JSON.parse((await redis('HMGET', 'fundamental:EUR', 'Non-Farm Payrolls QoQ'))[0]);
   assert.strictEqual(fr.actual, '-0.1');
   assert.strictEqual(fr.previous, '0.2');
+});
+
+// ── extractFundamentalFromCalendarEvent / autoUpdateFundamentalsFromCalendar ──
+// Plan W-5 (2026-08-03): calendar_v1/calendar_next_v1 (TradingView) sebagai
+// lapis tambahan yang dicoba DULU sebelum parsing headline FinancialJuice.
+
+function calEvent(overrides) {
+  return {
+    date: '2026-08-03', time_wib: '14:00 WIB', currency: 'JPY',
+    event: 'Retail Sales YoY', impact: 'High',
+    forecast: '1.8%', previous: '1.7%', actual: '1.9%',
+    ...overrides,
+  };
+}
+
+test('extractFundamentalFromCalendarEvent: event terstruktur -> {currency,key,value,previous,date}', () => {
+  const r = extractFundamentalFromCalendarEvent(calEvent());
+  assert.deepStrictEqual(r, { currency: 'JPY', key: 'Retail Sales YoY', value: '1.9%', previous: '1.7%', date: '2026-08-03' });
+});
+
+test('extractFundamentalFromCalendarEvent: currency sudah kode ISO eksplisit, tidak perlu tebak dari nama negara', () => {
+  const r = extractFundamentalFromCalendarEvent(calEvent({ currency: 'USD', event: 'Non Farm Payrolls', actual: '180K', previous: '175K' }));
+  assert.strictEqual(r.currency, 'USD');
+  assert.strictEqual(r.key, 'NFP');
+});
+
+test('extractFundamentalFromCalendarEvent: judul tidak dikenal FUND_INDICATOR_MAP -> null (TIDAK menebak key baru)', () => {
+  const r = extractFundamentalFromCalendarEvent(calEvent({ event: 'Some Totally Unknown Indicator XYZ', actual: '1.0%' }));
+  assert.strictEqual(r, null);
+});
+
+test('extractFundamentalFromCalendarEvent: currency di luar 8 yang dicover -> null', () => {
+  const r = extractFundamentalFromCalendarEvent(calEvent({ currency: 'CNY' }));
+  assert.strictEqual(r, null);
+});
+
+test('extractFundamentalFromCalendarEvent: actual belum keluar (null) -> null (rilis belum terjadi)', () => {
+  const r = extractFundamentalFromCalendarEvent(calEvent({ actual: null }));
+  assert.strictEqual(r, null);
+});
+
+test('extractFundamentalFromCalendarEvent: date tidak valid -> null', () => {
+  const r = extractFundamentalFromCalendarEvent(calEvent({ date: 'Tentative' }));
+  assert.strictEqual(r, null);
+});
+
+test('extractFundamentalFromCalendarEvent: NFP dengan actual % (bukan K/M) ditolak (QUANTITY_INDICATORS guard)', () => {
+  const r = extractFundamentalFromCalendarEvent(calEvent({ currency: 'USD', event: 'Non Farm Payrolls', actual: '0.0%' }));
+  assert.strictEqual(r, null);
+});
+
+test('extractFundamentalFromCalendarEvent: input null/rusak -> null, tidak crash', () => {
+  assert.strictEqual(extractFundamentalFromCalendarEvent(null), null);
+  assert.strictEqual(extractFundamentalFromCalendarEvent({}), null);
+});
+
+test('autoUpdateFundamentalsFromCalendar: HSET dengan source calendar, group per currency', async () => {
+  const redis = makeMockRedis({});
+  const events = [calEvent(), calEvent({ currency: 'USD', event: 'Non Farm Payrolls', actual: '180K', previous: '175K' })];
+  const updated = await autoUpdateFundamentalsFromCalendar(events, redis);
+  assert.deepStrictEqual(updated, { JPY: ['Retail Sales YoY'], USD: ['NFP'] });
+  const jpy = JSON.parse((await redis('HMGET', 'fundamental:JPY', 'Retail Sales YoY'))[0]);
+  assert.deepStrictEqual(jpy, { actual: '1.9%', period: '—', date: '2026-08-03', source: 'calendar', previous: '1.7%' });
+});
+
+test('autoUpdateFundamentalsFromCalendar: TIDAK mundur kalau entry existing sudah dari tanggal lebih baru', async () => {
+  const redis = makeMockRedis({
+    'Retail Sales YoY': JSON.stringify({ actual: '2.5%', period: '—', date: '2026-08-10', source: 'headline' }),
+  });
+  // calendar_v1 kebetulan serve cache basi minggu lalu (date 2026-08-03, lebih lama).
+  const updated = await autoUpdateFundamentalsFromCalendar([calEvent({ date: '2026-08-03' })], redis);
+  assert.deepStrictEqual(updated, {});
+  const jpy = JSON.parse((await redis('HMGET', 'fundamental:JPY', 'Retail Sales YoY'))[0]);
+  assert.strictEqual(jpy.actual, '2.5%', 'tidak boleh mundur ke nilai calendar yang lebih lama');
+});
+
+test('autoUpdateFundamentalsFromCalendar: array kosong/invalid -> {} tanpa crash', async () => {
+  const redis = makeMockRedis({});
+  assert.deepStrictEqual(await autoUpdateFundamentalsFromCalendar([], redis), {});
+  assert.deepStrictEqual(await autoUpdateFundamentalsFromCalendar(null, redis), {});
 });
 
 // ── parseCBDecision ─────────────────────────────────────────────────────────

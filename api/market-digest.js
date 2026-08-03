@@ -1,7 +1,7 @@
 // api/unified-digest.js
 const rateLimit    = require('./_ratelimit');
 const cb           = require('./_circuit_breaker');
-const { autoUpdateFundamentals } = require('./_fundamental_parser');
+const { autoUpdateFundamentals, autoUpdateFundamentalsFromCalendar, _fetchCalendarEventsForFund } = require('./_fundamental_parser');
 const { withSingleFlight } = require('./_fetch_lock');
 const { getLiveCbRates } = require('./_cb_rates');
 const { isCronCall: _isCronCallReq, isCronDedupFresh } = require('./_cron_dedup');
@@ -2331,6 +2331,15 @@ ${xauHistoryBlock}`;
   const thesisAlerts = await _call4Promise;
 
   // ── Auto-update fundamental data + CB decisions from headlines ───────────────
+  // Plan W-5 (2026-08-03): calendar_v1.actual (TradingView, terstruktur) dicoba
+  // DULU sebagai lapis tambahan, headline FinancialJuice tetap jalan sesudahnya
+  // sebagai pelengkap/fallback untuk indikator yang tidak tercover kalender.
+  try {
+    const calendarEvents = await _fetchCalendarEventsForFund(redisCmd);
+    if (calendarEvents.length > 0) await autoUpdateFundamentalsFromCalendar(calendarEvents, redisCmd);
+  } catch(e) {
+    console.warn('autoUpdateFundamentalsFromCalendar failed:', e.message);
+  }
   try {
     await autoUpdateFundamentals(recentItems.slice(0, 100), redisCmd);
   } catch(e) {

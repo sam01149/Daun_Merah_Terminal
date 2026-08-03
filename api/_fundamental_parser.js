@@ -171,48 +171,12 @@ const QUANTITY_INDICATORS = new Set([
   'JOLTS Job Openings', 'ADP Employment', 'Existing Home Sales', 'New Home Sales',
 ]);
 
-function parseFundamentalFromHeadline(title) {
-  const t = title.toLowerCase();
-
-  // BUG DITEMUKAN & DIFIX (2026-07-30, laporan user — data fundamental salah di
-  // banyak currency): headline PROSA (artikel/kutipan, bukan cetakan rilis
-  // kalender) sempat lolos parse lewat fallback regex "angka pertama di judul" di
-  // bawah. 2 insiden nyata terkonfirmasi di produksi: artikel INSEE prosa "French
-  // June consumer spending rises 0.4% m/m vs forecast -0.1%, May revised up to
-  // 0.3%" (tanpa kata "Actual" sama sekali) ketimpa jadi 'Personal Spending' USD;
-  // "French Non-Farm Payrolls QoQ Actual -0.1..." (format rilis asli, tapi
-  // currency salah — lihat fix di bawah) ketimpa jadi NFP USD. Audit news_history
-  // produksi (2026-07-30): SEMUA cetakan rilis asli FinancialJuice selalu pakai
-  // kata "Actual" — gate ini aman, tidak menghapus rilis sah manapun.
-  if (!/\bactual\b/i.test(t)) return null;
-
-  // Rilis kalender ("... Actual X Forecast Y Previous Z") adalah sinyal kuat rilis
-  // data asli — dipakai di bawah supaya FUND_COUNTRY_ONLY tidak salah tangkap
-  // judul umum yang kebetulan menyebut nama negara tanpa forecast/previous.
-  const isCalendarFormat = /\bforecast\b/i.test(t) || /\bprevious\b/i.test(t);
-
-  let currency = null;
-  // BUG DITEMUKAN & DIFIX (2026-07-30, laporan user — NFP muncul "rilis hari ini"
-  // di USD padahal tidak ada di kalender): root cause "French Non-Farm Payrolls QoQ
-  // Actual -0.1..." salah ditandai USD karena FUND_PREFIX_MAP cek keyword bare USD
-  // ('non-farm payroll' tanpa prefix "us ") DULUAN sebelum nama negara eksplisit
-  // "French" sempat dicek — array USD ada paling depan, loop berhenti di match
-  // pertama. Beberapa indikator "bare" lain (non-farm payroll: Prancis; new home
-  // sales: Australia HIA) dipakai >1 negara, jadi bug ini sistemik, bukan cuma NFP.
-  // Fix: kalau formatnya rilis kalender (gate di atas), cek nama negara EKSPLISIT
-  // dulu — sinyal lebih kuat & lebih spesifik daripada keyword indikator generik.
-  if (isCalendarFormat) {
-    for (const { re, cur } of FUND_COUNTRY_ONLY) {
-      if (re.test(t)) { currency = cur; break; }
-    }
-  }
-  if (!currency) {
-    for (const { kw, cur } of FUND_PREFIX_MAP) {
-      if (kw.some(k => t.includes(k))) { currency = cur; break; }
-    }
-  }
-  if (!currency) return null;
-
+// Text (headline ATAU judul event calendar_v1) -> key FUND_INDICATOR_MAP, plus
+// disambiguasi yang sama untuk kedua sumber (Plan W-5, 2026-08-03 — diekstrak
+// dari parseFundamentalFromHeadline supaya autoUpdateFundamentalsFromCalendar
+// di bawah pakai logic yang SAMA PERSIS, bukan duplikat yang bisa drift kayak
+// bug urutan keyword W-4).
+function _matchIndicatorKey(t, currency) {
   let indicatorKey = null;
   for (const { kw, key } of FUND_INDICATOR_MAP) {
     if (kw.some(k => t.includes(k))) { indicatorKey = key; break; }
@@ -258,6 +222,53 @@ function parseFundamentalFromHeadline(title) {
     else if (indicatorKey === 'GDP YoY') indicatorKey = 'GDP YoY Flash';
   }
 
+  return indicatorKey;
+}
+
+function parseFundamentalFromHeadline(title) {
+  const t = title.toLowerCase();
+
+  // BUG DITEMUKAN & DIFIX (2026-07-30, laporan user — data fundamental salah di
+  // banyak currency): headline PROSA (artikel/kutipan, bukan cetakan rilis
+  // kalender) sempat lolos parse lewat fallback regex "angka pertama di judul" di
+  // bawah. 2 insiden nyata terkonfirmasi di produksi: artikel INSEE prosa "French
+  // June consumer spending rises 0.4% m/m vs forecast -0.1%, May revised up to
+  // 0.3%" (tanpa kata "Actual" sama sekali) ketimpa jadi 'Personal Spending' USD;
+  // "French Non-Farm Payrolls QoQ Actual -0.1..." (format rilis asli, tapi
+  // currency salah — lihat fix di bawah) ketimpa jadi NFP USD. Audit news_history
+  // produksi (2026-07-30): SEMUA cetakan rilis asli FinancialJuice selalu pakai
+  // kata "Actual" — gate ini aman, tidak menghapus rilis sah manapun.
+  if (!/\bactual\b/i.test(t)) return null;
+
+  // Rilis kalender ("... Actual X Forecast Y Previous Z") adalah sinyal kuat rilis
+  // data asli — dipakai di bawah supaya FUND_COUNTRY_ONLY tidak salah tangkap
+  // judul umum yang kebetulan menyebut nama negara tanpa forecast/previous.
+  const isCalendarFormat = /\bforecast\b/i.test(t) || /\bprevious\b/i.test(t);
+
+  let currency = null;
+  // BUG DITEMUKAN & DIFIX (2026-07-30, laporan user — NFP muncul "rilis hari ini"
+  // di USD padahal tidak ada di kalender): root cause "French Non-Farm Payrolls QoQ
+  // Actual -0.1..." salah ditandai USD karena FUND_PREFIX_MAP cek keyword bare USD
+  // ('non-farm payroll' tanpa prefix "us ") DULUAN sebelum nama negara eksplisit
+  // "French" sempat dicek — array USD ada paling depan, loop berhenti di match
+  // pertama. Beberapa indikator "bare" lain (non-farm payroll: Prancis; new home
+  // sales: Australia HIA) dipakai >1 negara, jadi bug ini sistemik, bukan cuma NFP.
+  // Fix: kalau formatnya rilis kalender (gate di atas), cek nama negara EKSPLISIT
+  // dulu — sinyal lebih kuat & lebih spesifik daripada keyword indikator generik.
+  if (isCalendarFormat) {
+    for (const { re, cur } of FUND_COUNTRY_ONLY) {
+      if (re.test(t)) { currency = cur; break; }
+    }
+  }
+  if (!currency) {
+    for (const { kw, cur } of FUND_PREFIX_MAP) {
+      if (kw.some(k => t.includes(k))) { currency = cur; break; }
+    }
+  }
+  if (!currency) return null;
+
+  let indicatorKey = _matchIndicatorKey(t, currency);
+
   if (!indicatorKey) {
     let stripped = title.trim();
     const strips = (COUNTRY_STRIP[currency] || []).sort((a, b) => b.length - a.length);
@@ -295,6 +306,121 @@ function parseFundamentalFromHeadline(title) {
   if (fjPrev) previous = fjPrev[1] + (fjPrev[2] || '');
 
   return { currency, key: indicatorKey, value, previous };
+}
+
+// 8 currency yang punya kartu Fundamental (sama persis FUND_CURRENCIES di
+// admin.js — didefinisikan lokal di sini karena modul ini sengaja tanpa
+// dependensi ke admin.js, lihat header file).
+const FUND_CALENDAR_CURRENCIES = new Set(['USD','EUR','GBP','JPY','CAD','AUD','NZD','CHF']);
+
+// Plan W-5 (2026-08-03, keputusan desain: calendar_v1.actual sebagai LAPIS
+// TAMBAHAN yang dicoba DULU, FinancialJuice parsing tetap jalan sebagai
+// pelengkap/fallback — lihat api/calendar.js untuk shape event & catatan
+// "Audit vendor 2026-07-12" soal field *Raw).
+//
+// Event calendar_v1/calendar_next_v1 (TradingView) SUDAH terstruktur: currency
+// eksplisit (kode ISO, bukan perlu ditebak dari nama negara seperti headline
+// FinancialJuice) dan actual/previous SUDAH diformat string siap pakai
+// ("2.0%"/"175K", lihat formatTVValue di calendar.js) — value TIDAK perlu regex
+// ekstraksi angka seperti parseFundamentalFromHeadline, cukup pakai apa adanya.
+//
+// Judul event (`e.event`, mis. "Retail Sales YoY") dicocokkan ke KEY YANG SUDAH
+// ADA lewat _matchIndicatorKey (fungsi SAMA yang dipakai parseFundamentalFromHeadline
+// di atas) — sengaja TIDAK ada fallback "tebak key dari judul" seperti headline
+// parser: TradingView punya puluhan indikator per negara yang FUND_INDICATOR_MAP
+// belum tentu cover, dan menebak key baru berisiko bikin key/skema baru yang
+// tidak konsisten dengan FUND_SEED/UI (dilarang di plan W-5) — event yang key-nya
+// tidak dikenal cukup DILEWATI (return null), bukan salah.
+function extractFundamentalFromCalendarEvent(e) {
+  if (!e) return null;
+  const currency = String(e.currency || '').toUpperCase();
+  if (!FUND_CALENDAR_CURRENCIES.has(currency)) return null;
+  if (e.actual == null || e.actual === '') return null; // rilis belum keluar
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(e.date || ''))) return null;
+
+  const t = String(e.event || '').toLowerCase();
+  const indicatorKey = _matchIndicatorKey(t, currency);
+  if (!indicatorKey) return null;
+
+  const value = String(e.actual);
+  // Reject % values for count-based indicators (sama guard parseFundamentalFromHeadline).
+  if (QUANTITY_INDICATORS.has(indicatorKey) && value.endsWith('%')) return null;
+
+  const previous = (e.previous != null && e.previous !== '') ? String(e.previous) : null;
+  return { currency, key: indicatorKey, value, previous, date: e.date };
+}
+
+// Ambil event calendar_v1 (minggu berjalan) + calendar_next_v1 (minggu depan) —
+// helper dipakai bersama oleh SEMUA caller autoUpdateFundamentalsFromCalendar
+// (admin.js/feeds.js/market-digest.js) supaya fetch-nya tidak diduplikasi 3x
+// (pola sama _fetchCalendarEventsForFomc di api/rate-path.js). Fail-open: gagal
+// fetch/parse → array kosong, caller cukup skip lapis calendar untuk tick itu.
+async function _fetchCalendarEventsForFund(redisCmd) {
+  try {
+    const [raw1, raw2] = await Promise.all([
+      redisCmd('GET', 'calendar_v1'),
+      redisCmd('GET', 'calendar_next_v1'),
+    ]);
+    const events = [];
+    for (const raw of [raw1, raw2]) {
+      if (!raw) continue;
+      try {
+        const c = JSON.parse(raw);
+        if (Array.isArray(c?.events)) events.push(...c.events);
+      } catch(_) { /* fail-open, skip batch yang rusak */ }
+    }
+    return events;
+  } catch(e) {
+    console.warn('fundamental: fetch calendar_v1/calendar_next_v1 gagal:', e.message);
+    return [];
+  }
+}
+
+// redisCmd dilewatkan sebagai parameter (pola sama autoUpdateFundamentals).
+// Ditulis sejajar (bukan menggantikan) autoUpdateFundamentals — caller yang
+// memanggil KEDUANYA harus panggil fungsi ini DULU (calendar = lapis tambahan
+// yang dicoba lebih dulu, keputusan desain Plan W-5), supaya kalau headline
+// FinancialJuice untuk rilis yang sama menyusul, nilainya konsisten (real-world
+// sama) dan bukan berebut siapa yang menang secara kebetulan urutan async.
+async function autoUpdateFundamentalsFromCalendar(calendarEvents, redisCmd) {
+  if (!Array.isArray(calendarEvents)) return {};
+  const byCurrency = {};
+  for (const e of calendarEvents) {
+    const fund = extractFundamentalFromCalendarEvent(e);
+    if (!fund) continue;
+    if (!byCurrency[fund.currency]) byCurrency[fund.currency] = [];
+    byCurrency[fund.currency].push(fund);
+  }
+
+  const updated = {};
+  for (const [currency, items] of Object.entries(byCurrency)) {
+    try {
+      const existingRaw = await redisCmd('HMGET', `fundamental:${currency}`, ...items.map(i => i.key));
+      const args = ['HSET', `fundamental:${currency}`];
+      const writtenKeys = [];
+      for (let i = 0; i < items.length; i++) {
+        const { key, value, previous, date } = items[i];
+        let existingEntry = null;
+        if (existingRaw && existingRaw[i]) {
+          try { existingEntry = JSON.parse(existingRaw[i]); } catch(_) {}
+        }
+        // calendar_v1 `date` SUDAH tanggal rilis pasti (bukan "now" seperti
+        // headline parser) — tidak butuh logic isNewValue re-scan, tapi tetap
+        // jangan MUNDUR kalau entry existing sudah dari rilis yang lebih baru
+        // (mis. calendar_v1 sempat serve cache basi minggu lalu).
+        if (existingEntry && existingEntry.date && existingEntry.date > date) continue;
+        const entry = { actual: value, period: '—', date, source: 'calendar' };
+        if (previous) entry.previous = previous;
+        else if (existingEntry && existingEntry.previous) entry.previous = existingEntry.previous;
+        args.push(key, JSON.stringify(entry));
+        writtenKeys.push(key);
+      }
+      if (writtenKeys.length === 0) continue;
+      await redisCmd(...args);
+      updated[currency] = writtenKeys;
+    } catch(e) { console.warn(`fundamental HSET (calendar) failed for ${currency}:`, e.message); }
+  }
+  return updated;
 }
 
 function parseCBDecision(title) {
@@ -395,4 +521,11 @@ async function autoUpdateFundamentals(headlines, redisCmd) {
   return updated;
 }
 
-module.exports = { parseFundamentalFromHeadline, parseCBDecision, autoUpdateFundamentals };
+module.exports = {
+  parseFundamentalFromHeadline,
+  parseCBDecision,
+  autoUpdateFundamentals,
+  extractFundamentalFromCalendarEvent,
+  autoUpdateFundamentalsFromCalendar,
+  _fetchCalendarEventsForFund,
+};

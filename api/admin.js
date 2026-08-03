@@ -12,7 +12,7 @@
 
 const PUSH_KW  = require('./_push_keywords');
 const newscat  = require('../newscat');
-const { autoUpdateFundamentals } = require('./_fundamental_parser');
+const { autoUpdateFundamentals, autoUpdateFundamentalsFromCalendar, _fetchCalendarEventsForFund } = require('./_fundamental_parser');
 const { getLiveCbRates } = require('./_cb_rates');
 const { configureVapid, sendWebPush, subKey } = require('./_webpush');
 const { isCronCall: _isCronCallReq, isCronDedupFresh } = require('./_cron_dedup');
@@ -1011,7 +1011,16 @@ async function fundamentalRefreshHandler(req, res) {
       }
     }
 
-    if (headlines.length === 0) return res.status(200).json({ updated: {}, headlines: 0 });
+    // Plan W-5 (2026-08-03): calendar_v1.actual (TradingView, terstruktur) dicoba
+    // DULU sebagai lapis tambahan sebelum parsing headline FinancialJuice — kalau
+    // rilis yang sama juga muncul di headline, nilainya konsisten (real-world sama).
+    let calendarUpdated = {};
+    try {
+      const calendarEvents = await _fetchCalendarEventsForFund(redisCmd);
+      if (calendarEvents.length > 0) calendarUpdated = await autoUpdateFundamentalsFromCalendar(calendarEvents, redisCmd);
+    } catch(e) { console.warn('fundamental_refresh: calendar layer gagal:', e.message); }
+
+    if (headlines.length === 0) return res.status(200).json({ updated: calendarUpdated, headlines: 0 });
 
     const updated = await autoUpdateFundamentals(headlines, redisCmd);
 
@@ -1074,7 +1083,7 @@ async function fundamentalRefreshHandler(req, res) {
       }
     } catch(e) { console.warn('gdpnow in fundamental_refresh failed:', e.message); }
 
-    return res.status(200).json({ updated, headlines: headlines.length, gdp_nowcast_refreshed: gdpUpdated });
+    return res.status(200).json({ updated, calendar_updated: calendarUpdated, headlines: headlines.length, gdp_nowcast_refreshed: gdpUpdated });
   } catch(e) {
     return res.status(500).json({ error: e.message });
   }
