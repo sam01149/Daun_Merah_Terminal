@@ -11,11 +11,71 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-03 (Session 274 lanjutan 2 — position_review call SambaNova utama dipindah dari pool produksi ke pool eksperimen, isolasi Plan V-3 yang kelewat sejak fitur ini dibuat)
+> **Last updated:** 2026-08-03 (Session 275 — Plan W selesai penuh: FOMC live+seed drift+parser bug+ekspektasi inflasi+lapis calendar_v1 fundamental)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 275 (2026-08-03) — Plan W: Tutup Nilai Hardcode Manual yang Punya/Butuh Sumber Live
+
+**Konteks:** kelanjutan pola Session 274 (CB Shock Detector pakai `calendar_v1` live) — audit lanjutan menemukan 4 celah serupa lain (nilai hardcode manual yang basi diam-diam) + 1 ide arsitektur dari user. Plan W-1 s/d W-5 dieksekusi penuh sesi ini, `npm test` 791/791 hijau di setiap tahap.
+
+### W-1 — `api/rate-path.js`: Tanggal Rapat FOMC Live dari `calendar_v1`/`calendar_next_v1`
+
+**Root cause:** `getNextFOMCMeetings(from, count)` return tanggal dari array literal hardcode yang berakhir di `2027-04-29` — setelah tanggal itu fungsi diam-diam mengembalikan array lebih pendek tanpa error (fitur "next meetings" berhenti berfungsi tanpa peringatan).
+
+**Implementasi:** `getNextFOMCMeetings` dapat parameter ke-3 opsional `calendarEvents` (backward-compatible) — `_liveFomcMeetingDates` filter event `currency:'USD'`, `impact:'High'`, judul cocok `/interest rate decision|rate decision|fomc/i`, dinormalisasi balik dari tanggal WIB ke konvensi tanggal rapat (kalau `time_wib` dini hari <07:00, mundur 1 hari — pola sama `_nextDateStr` di `_cb_shock.js`, FOMC 19:00 UTC = 02:00 WIB hari berikutnya). Hasil live digabung+dedup dengan tabel manual (tetap ada sebagai fallback), diurutkan, live TIDAK menggantikan slot yang sudah terisi tanggal manual berbeda. `computeRatePath()` fetch `calendar_v1`+`calendar_next_v1` paralel dengan 5 seri FRED yang sudah ada (nol tambahan request sequential).
+
+**Verifikasi:** 9 test baru (`test/lib/rate_path_fomc.test.js`) — live penuh/sebagian/WIB-shift/kosong/tanggal lampau/tanggal baru di luar tabel manual. Live: `GET /api/rate-path?force=1` — fallback ke tabel manual jalan normal (tidak ada rapat FOMC di cache minggu berjalan saat ini, expected).
+
+### W-2 — `api/real-yields.js`: Refresh 7 Nilai Ekspektasi Inflasi ke Publikasi Resmi Terbaru
+
+**Root cause:** 5/7 currency (EUR/GBP/JPY/CAD/CHF) sudah lewat ambang stale 90 hari di production per 2026-08-03. Audit lanjutan (bukan cuma ambil sumber live — sudah dicek, tidak ada API publik untuk ekspektasi inflasi survei per bank sentral) → target realistis: update manual ke angka terbaru dari sumber PRIMER.
+
+**Implementasi (diverifikasi ke situs resmi masing-masing, bukan agregator berita):**
+- GBP 3.2→**4.0** (BoE/Ipsos Inflation Attitudes Survey Mei 2026, median 1-year-ahead, fielded 30 Apr–5 Mei)
+- JPY 2.6→**2.7** (BoJ Tankan Jun 2026, firms' 1-year-ahead outlook, rilis 1 Jul 2026)
+- CAD 2.2→**2.5** (BoC Monetary Policy Report Jul 2026, proyeksi H2 2026, rilis 15 Jul 2026)
+- CHF 0.4→**0.6** (SNB Monetary Policy Assessment 18 Jun 2026, conditional forecast 2026)
+- EUR tetap **2.0** (longer-term/2031 HICP tidak berubah) tapi source/as_of di-refresh ke SPF Q3 2026 (rilis 24 Jul 2026) — EUR sebenarnya sudah ada jalur live terpisah (`ECB SPF (auto)`, fitur existing), hardcode ini cuma fallback-nya.
+- AUD & NZD **SENGAJA tidak diubah** — RBA SoMP Agustus 2026 belum terbit (jadwal resmi 11 Agu 2026), keputusan OCR RBNZ 8 Jul 2026 cuma *Monetary Policy Review* (bukan MPS kuartalan penuh dengan tabel proyeksi baru — MPS berikutnya 2 Sep 2026). Nilai lama tetap dipakai, bukan tebakan.
+
+**Verifikasi live:** `GET /api/real-yields` — 6/7 currency `stale:false`. GBP tetap menunjukkan `stale:true` walau baru diupdate ke publikasi TERBARU — ini **bukan bug**: siklus BoE/Ipsos ~90 hari pas bertepatan dengan ambang stale 90 hari sistem (survei berikutnya belum terbit), akan otomatis `false` begitu survei Agustus keluar.
+
+### W-3 — `api/admin.js`: Hint Umur Data Seed (12/334 Indikator Tanpa Peringatan Basi)
+
+**Root cause:** entri `FUND_SEED` yang belum pernah ter-update dari berita asli (`date:'—'`) lolos TANPA sinyal umur apa pun ke prompt AI Fundamental — beda dari `real-yields.js` yang punya flag `stale` eksplisit setelah 90 hari. Diverifikasi live: 12/334 indikator masih persis nilai seed (JPY/GBP/AUD/NZD/CHF).
+
+**Implementasi:** `fundamentalSeedHandler` sekarang suntik `seeded_at` (timestamp saat endpoint dipanggil) ke tiap entri yang ditulis; `_fundSeedAgeDays`/`_formatFundDataLine` tampilkan hint baru "berdasar data seed, belum terkonfirmasi update — sejak N hari lalu" kalau `date` masih `'—'` TAPI `seeded_at` ada (data lama pra-fix tanpa `seeded_at` tetap format lama, tidak crash/tidak reka tanggal). Endpoint juga dapat `?currency=&key=` opsional untuk reseed ter-scope ke 1 field (dibutuhkan W-4 di bawah).
+
+**Verifikasi live:** ke-12 indikator seed dipicu ulang (scoped, lihat W-4) — semua sekarang punya `seeded_at`, dikonfirmasi via `GET /api/admin?action=fundamental_get`.
+
+### W-4 — Bug Nyata di `api/_fundamental_parser.js` (Ditemukan via Uji Langsung, Bukan Cuma Baca Kode)
+
+**Bug 1 (root cause `JPY.Retail Sales YoY` permanen stuck):** keyword generic `'retail sales'` (→ `Retail Sales MoM`) ada SEBELUM keyword spesifik `'retail sales yoy'` di `FUND_INDICATOR_MAP` — loop match-pertama-menang bikin headline YoY (currency mana pun) SELALU salah rute ke MoM. Urutan dibalik.
+
+**Bug 1b (ditemukan saat audit menyeluruh, pola sama):** `'flash gdp'/'gdp advance'` (→ `GDP QoQ Flash`) ternyata **dead code** — diletakkan SETELAH catch-all bare `'gdp'` yang selalu match duluan untuk "GDP Advance". Dipindah ke depan bare `'gdp'`.
+
+**Bug 2 (minor):** kode currency literal `'GBP'` tidak dikenal (`FUND_COUNTRY_ONLY` cuma kenal nama negara) — ditambahkan word-boundary.
+
+**Temuan 3 (data-drift, bukan bug parser):** `AUD.GDP QoQ` — kode `FUND_SEED` sudah diupdate manual (`actual:'0.3%', period:'Q1 2026'`) tapi endpoint `fundamental_seed` tidak pernah dipicu ulang, production masih serve versi lama (`actual:'0.8%', period:'Q4 2025'`). 11 indikator seed lain kode vs live SAMA PERSIS (cuma AUD yang drift). Diperbaiki via `fundamentalSeedHandler` scoped reseed (`?currency=AUD&key=GDP QoQ`) — **bukan full-currency reseed**, yang akan menimpa balik 4 indikator AUD lain (`Employment Change`/`Unemployment Rate`/`Trade Balance`/`NAB Business Conf`) yang sudah ter-update live dari berita asli.
+
+**Verifikasi:** 8 test baru (`test/lib/fundamental_parser.test.js`) + 4 test baru (`test/admin/fundamental_seed.test.js`, scoped write tidak sentuh currency/field lain). Live: `AUD.GDP QoQ` sekarang `actual:'0.3%'` cocok kode, 4 indikator AUD lain dikonfirmasi TIDAK tersentuh.
+
+### W-5 — `calendar_v1.actual` (TradingView) sebagai Lapis Tambahan Sumber Fundamental
+
+**Ide dari user:** `autoUpdateFundamentals` 100% bergantung parsing regex teks bebas FinancialJuice (rawan bug format, lihat W-4 bug 1). `calendar_v1`/`calendar_next_v1` sudah punya field `actual`/`previous` TERSTRUKTUR (via `formatTVValue`) yang belum pernah dipakai isi `fundamental:<currency>`.
+
+**Keputusan desain (dikonfirmasi user sebelum kode ditulis):** "Lapis tambahan" — `calendar_v1.actual` dicoba DULU, parsing FinancialJuice tetap jalan sesudahnya sebagai pelengkap/fallback untuk indikator yang tidak tercover kalender.
+
+**Implementasi:**
+- `_matchIndicatorKey(t, currency)` diekstrak jadi helper bersama dari `parseFundamentalFromHeadline` (disambiguasi Core PCE/CPI YoY-MoM, NFP non-USD, GDP QoQ/YoY, qualifier Flash) — dipakai KEDUA jalur, mencegah drift seperti bug W-4.
+- `extractFundamentalFromCalendarEvent(e)` — pure function: currency dari `e.currency` (kode ISO eksplisit, TIDAK perlu ditebak seperti headline), key dari `_matchIndicatorKey(e.event)`. **Sengaja TIDAK ada fallback tebak-key** seperti headline parser — event yang key-nya tidak dikenal `FUND_INDICATOR_MAP` DILEWATI, bukan bikin key baru yang tidak konsisten dengan `FUND_SEED`/UI.
+- `autoUpdateFundamentalsFromCalendar(calendarEvents, redisCmd)` — tulis `source:'calendar'`, tidak mundur kalau entry existing sudah dari tanggal lebih baru (calendar_v1 sempat serve cache basi).
+- Disambung ke 3 titik pipeline yang sudah ada: `feeds.js` (`storeNewsHistory`, fire-and-forget), `admin.js` (`fundamentalRefreshHandler`), `market-digest.js` — semua fail-open kalau fetch calendar gagal.
+
+**Verifikasi:** 11 test baru. Live: `POST fundamental_refresh` jalan tanpa error, `calendar_updated: {}` — dikonfirmasi BENAR (bukan bug): seluruh 47 event `calendar_v1` saat ini `actual:null` (rilis belum terjadi hari ini). Konfirmasi "≥1 indikator per currency ter-update dari calendar_v1.actual" menunggu rilis riil (siklus `fundamental_refresh`/`market-digest` yang sudah jalan otomatis tiap beberapa menit/jam) — dicatat di `daun_merah_progress.md`.
 
 ## Changelog Session 274 (2026-08-03) — CB Shock Detector: Jam Pengumuman Live TradingView (Bukan Cuma Tabel Manual)
 
