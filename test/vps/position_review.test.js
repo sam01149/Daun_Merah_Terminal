@@ -98,6 +98,22 @@ test('isCorroborated: energy + item lain guid beda, overlap >=2 token dalam 30 m
   assert.equal(isCorroborated(item, [item, other]), true);
 });
 
+// Audit S274 (2026-08-03): 'macro' (pidato bank sentral, Powell/Lagarde/dst) sekarang
+// ikut disyaratkan korroborasi, sama seperti geopolitical/energy — sebelum ini BUG
+// (bukan cuma "belum disyaratkan"): tryTriggerPosReview (vps/daemon.js) memanggil
+// isCorroborated tapi gate-nya cuma cek geopolitical/energy, jadi 'macro' lolos
+// TANPA korroborasi sama sekali padahal isCorroborated sendiri sudah return false.
+test('isCorroborated: macro satu item sendirian -> false (unconfirmed, sama seperti geopolitical/energy)', () => {
+  const item = { cat: 'macro', title: 'Powell signals surprise emergency policy shift ahead', pubDate: '2026-08-03T01:45:00Z', guid: 'a' };
+  assert.equal(isCorroborated(item, [item]), false);
+});
+
+test('isCorroborated: macro + item lain guid beda, overlap >=2 token dalam 30 menit -> true', () => {
+  const item = { cat: 'macro', title: 'Powell signals surprise emergency policy shift ahead', pubDate: '2026-08-03T01:45:00Z', guid: 'a' };
+  const other = { title: 'Fed chair Powell hints emergency policy shift coming soon', pubDate: '2026-08-03T01:50:00Z', guid: 'b' };
+  assert.equal(isCorroborated(item, [item, other]), true);
+});
+
 // ── Behavioral drift-guard: isCorroborated daemon.js vs api/_position_review.js ──
 // Duplikasi SADAR (Docker vps/ terisolasi, lihat catatan kepala vps/daemon.js) —
 // byte-diff seperti newscat.js tidak praktis karena function ini menyatu di file
@@ -114,6 +130,9 @@ test('drift-guard: isCorroborated daemon.js vs api/_position_review.js berperila
     [{ cat: 'lainnya', title: 'x', pubDate: '2026-07-20T10:00:00Z' }, []],
     [{ cat: 'energy', title: 'Oil surges after Iran strikes tanker near Hormuz', pubDate: '2026-07-23T01:45:00Z', guid: 'a' },
       [{ title: "Iran's military strikes tanker in Hormuz, oil jumps", pubDate: '2026-07-23T01:46:00Z', guid: 'b' }]],
+    [{ cat: 'macro', title: 'Powell signals surprise emergency policy shift ahead', pubDate: '2026-08-03T01:45:00Z', guid: 'a' }, []],
+    [{ cat: 'macro', title: 'Powell signals surprise emergency policy shift ahead', pubDate: '2026-08-03T01:45:00Z', guid: 'a' },
+      [{ title: 'Fed chair Powell hints emergency policy shift coming soon', pubDate: '2026-08-03T01:50:00Z', guid: 'b' }]],
   ];
   for (const [item, recent] of cases) {
     assert.equal(isCorroborated(item, recent), apiPositionReview.isCorroborated(item, recent),
@@ -158,11 +177,30 @@ test('findBreakingNewsMatch: pair tidak relevan (GBP/USD, tidak ada leg XAU) -> 
   assert.equal(findBreakingNewsMatch(pairLegs, buffer), null);
 });
 
-test('findBreakingNewsMatch: kategori di luar geopolitical/energy/market-moving -> diabaikan', () => {
+test('findBreakingNewsMatch: kategori di luar geopolitical/energy/macro/market-moving -> diabaikan', () => {
   const pairLegs = legsFromLabel('XAU/USD');
   const item = { cat: 'commodities', guid: 'c1', title: 'Gold demand rises in India festival season', pubDate: '2026-07-23T01:45:00Z' };
   const other = { cat: 'commodities', guid: 'c2', title: 'Gold jewelry demand strong in India festival', pubDate: '2026-07-23T01:46:00Z' };
   assert.equal(findBreakingNewsMatch(pairLegs, [item, other]), null);
+});
+
+// Audit S274 (2026-08-03): 'macro' (pidato bank sentral) sekarang ikut dicek Lapis 1b —
+// sebelumnya headline sekelas ini TIDAK PERNAH bikin skip entry baru sama sekali.
+test('findBreakingNewsMatch: macro terkorroborasi (pidato bank sentral, 2 headline berdekatan) -> match', () => {
+  const pairLegs = legsFromLabel('EUR/USD');
+  const buffer = [
+    { cat: 'macro', guid: 'p1', title: 'Powell signals surprise emergency policy shift ahead', pubDate: '2026-08-03T01:45:00Z' },
+    { cat: 'macro', guid: 'p2', title: 'Fed chair Powell hints emergency policy shift coming soon', pubDate: '2026-08-03T01:50:00Z' },
+  ];
+  const match = findBreakingNewsMatch(pairLegs, buffer);
+  assert.ok(match, 'harus ketemu match — pidato Fed terkorroborasi 2 headline');
+  assert.equal(match.guid, 'p1');
+});
+
+test('findBreakingNewsMatch: macro sendirian tanpa korroborasi -> tidak match', () => {
+  const pairLegs = legsFromLabel('EUR/USD');
+  const item = { cat: 'macro', guid: 'p1', title: 'Powell signals surprise emergency policy shift ahead', pubDate: '2026-08-03T01:45:00Z' };
+  assert.equal(findBreakingNewsMatch(pairLegs, [item]), null);
 });
 
 test('findBreakingNewsMatch: buffer/legs kosong -> null, tidak throw', () => {
@@ -175,15 +213,19 @@ test('findBreakingNewsMatch: buffer/legs kosong -> null, tidak throw', () => {
 // Menutup celah "amnesia" korroborasi tiap daemon restart — cuma kategori yang
 // benar-benar dipakai isCorroborated/gate yang di-persist (budget Redis).
 
-test('shouldPersistNewsBufferItem: geopolitical/energy/market-moving -> true', () => {
+test('shouldPersistNewsBufferItem: geopolitical/energy/macro/market-moving -> true', () => {
   assert.equal(shouldPersistNewsBufferItem({ cat: 'geopolitical' }), true);
   assert.equal(shouldPersistNewsBufferItem({ cat: 'energy' }), true);
+  // 'macro' ditambah audit S274 (2026-08-03) — sekarang ikut disyaratkan korroborasi
+  // (isCorroborated), jadi butuh persist buffer juga (survive restart), sama seperti
+  // geopolitical/energy.
+  assert.equal(shouldPersistNewsBufferItem({ cat: 'macro' }), true);
   assert.equal(shouldPersistNewsBufferItem({ cat: 'market-moving' }), true);
 });
 
 test('shouldPersistNewsBufferItem: kategori lain/null -> false', () => {
-  assert.equal(shouldPersistNewsBufferItem({ cat: 'macro' }), false);
   assert.equal(shouldPersistNewsBufferItem({ cat: 'econ-data' }), false);
+  assert.equal(shouldPersistNewsBufferItem({ cat: 'forex' }), false);
   assert.equal(shouldPersistNewsBufferItem(null), false);
 });
 

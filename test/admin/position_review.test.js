@@ -232,7 +232,21 @@ test('isCorroborated: item lain overlap token <2 -> false', () => {
   assert.equal(isCorroborated(item, [item, other]), false);
 });
 
-test('isCorroborated: kategori lain (bukan market-moving/geopolitical) -> false', () => {
+// Audit S274 (2026-08-03): 'macro' (pidato bank sentral) sekarang ikut disyaratkan
+// korroborasi, sama seperti geopolitical/energy — lihat catatan sama di
+// test/vps/position_review.test.js.
+test('isCorroborated: macro satu item sendirian -> false (unconfirmed)', () => {
+  const item = { cat: 'macro', title: 'Powell signals surprise emergency policy shift ahead', pubDate: '2026-08-03T01:45:00Z', guid: 'a' };
+  assert.equal(isCorroborated(item, [item]), false);
+});
+
+test('isCorroborated: macro + item lain guid beda, overlap >=2 token, dalam 30 menit -> true', () => {
+  const item = { cat: 'macro', title: 'Powell signals surprise emergency policy shift ahead', pubDate: '2026-08-03T01:45:00Z', guid: 'a' };
+  const other = { title: 'Fed chair Powell hints emergency policy shift coming soon', pubDate: '2026-08-03T01:50:00Z', guid: 'b' };
+  assert.equal(isCorroborated(item, [item, other]), true);
+});
+
+test('isCorroborated: kategori lain (bukan market-moving/geopolitical/energy/macro) -> false', () => {
   assert.equal(isCorroborated({ cat: 'lainnya', title: 'x', pubDate: '2026-07-20T10:00:00Z' }, []), false);
 });
 

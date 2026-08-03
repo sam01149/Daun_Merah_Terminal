@@ -119,14 +119,17 @@ function _aggManagementStats(arr) {
 // vps/daemon.js (Docker terisolasi) tetap duplikasi pure function ini secara
 // SADAR persis seperti pola isFxMarketOpen/calEventMsWib (lihat catatan kepala
 // vps/daemon.js) — dijaga sinkron oleh test drift-guard.
-// - kategori 'geopolitical' ATAU 'energy': butuh >=1 item LAIN (guid beda) dalam
-//   +-30 menit dengan overlap >=2 token signifikan (lowercase, buang stopword,
-//   token >3 huruf). 'energy' ikut disyaratkan korroborasi sejak audit S218
-//   (2026-07-23) — headline guncangan energi/geopolitik (mis. "Oil surges after
-//   Iran strikes tanker in Hormuz") sering ke-skor newscat.js sebagai 'energy'
-//   bukan 'geopolitical' (kata energy menang skor), padahal substansinya sama-sama
-//   butuh konfirmasi sebelum dipercaya — sebelum ini category lain di luar
-//   geopolitical/market-moving lolos TANPA korroborasi sama sekali (celah).
+// - kategori 'geopolitical'/'energy'/'macro': butuh >=1 item LAIN (guid beda)
+//   dalam +-30 menit dengan overlap >=2 token signifikan (lowercase, buang
+//   stopword, token >3 huruf). 'energy' ikut disyaratkan korroborasi sejak audit
+//   S218 (2026-07-23) — headline guncangan energi/geopolitik (mis. "Oil surges
+//   after Iran strikes tanker in Hormuz") sering ke-skor newscat.js sebagai
+//   'energy' bukan 'geopolitical' (kata energy menang skor), padahal substansinya
+//   sama-sama butuh konfirmasi sebelum dipercaya. 'macro' ditambah audit S274
+//   (2026-08-03) — BUG DITEMUKAN: pidato bank sentral (Powell/Lagarde/dst,
+//   kategori 'macro' di newscat.js) sebelumnya lolos ke tryTriggerPosReview
+//   (vps/daemon.js) TANPA korroborasi SAMA SEKALI (celah yang sama persis yang
+//   diklaim sudah ditutup audit S218, ternyata cuma menutup 'energy').
 // - 'market-moving' (data/bank sentral terjadwal): corroborated by default.
 const STOPWORDS = new Set(['dengan','yang','untuk','dari','akan','pada','dalam','oleh',
   'atau','juga','masih','sudah','telah','saat','para','ini','itu','the','and','for',
@@ -139,10 +142,12 @@ function _significantTokens(title) {
     .filter(t => t.length > 3 && !STOPWORDS.has(t));
 }
 
+const POSREVIEW_CORROBORATION_ELIGIBLE_CATS = new Set(['geopolitical', 'energy', 'macro']);
+
 function isCorroborated(item, recentItems) {
   if (!item) return false;
   if (item.cat === 'market-moving') return true;
-  if (item.cat !== 'geopolitical' && item.cat !== 'energy') return false;
+  if (!POSREVIEW_CORROBORATION_ELIGIBLE_CATS.has(item.cat)) return false;
   const itemMs = Date.parse(item.pubDate);
   if (!Number.isFinite(itemMs)) return false;
   const itemTokens = new Set(_significantTokens(item.title));

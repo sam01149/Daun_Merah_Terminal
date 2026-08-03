@@ -23,7 +23,7 @@ const { allowAiCall } = require('./_ai_guard');
 const { requireAppKey } = require('./_app_key');
 const { fetchYahooOhlcv1h, fetchFallbackCandles, shouldSendYahooAlert, mapYahooSymbolToDeriv, fetchDerivCandles, mergeVolumeByTimestamp } = require('./_ohlcv_fetch');
 const { buildPairContext, computeCurrencyStrength } = require('./_pair_context');
-const { validateTightenSl, computePreventiveTightenSl, _evaluateManaged, _aggManagementStats } = require('./_position_review');
+const { validateTightenSl, computePreventiveTightenSl, _evaluateManaged, _aggManagementStats, isCorroborated } = require('./_position_review');
 const { isDrawdownHalted, isCorrelatedExposureBlocked } = require('./_auto_entry_guard');
 
 // Actions callable from the frontend without a secret → rate-limited per IP.
@@ -2619,7 +2619,9 @@ function _confluenceZones(data, expiryLvls) {
 // fitur ini ada — entri lama tetap tereevaluasi normal, cuma tidak dapat label
 // retroaktif). `calendarEvents` opsional (default []) = backward-compatible, caller
 // lama yang panggil dengan 3 argumen tetap jalan tanpa fundamental_shock.
-function _evaluateSetups(setups, candlesBySymbol, nowMs, calendarEvents) {
+// `newsItems` opsional (audit 2026-08-03, S274) = breaking news (news_history)
+// untuk deteksi fundamental_shock TIDAK terjadwal — lihat _detectLossLabel.
+function _evaluateSetups(setups, candlesBySymbol, nowMs, calendarEvents, newsItems) {
   const DAY = 86400000;
   const nums = s => (String(s).match(/[\d.]+/g) || []).map(Number).filter(n => !isNaN(n));
   for (const st of setups || []) {
@@ -2661,7 +2663,7 @@ function _evaluateSetups(setups, candlesBySymbol, nowMs, calendarEvents) {
         if (hitSl && hitTp) { st.status = 'ambiguous'; st.closed_t = c.t; break; }
         if (hitSl) {
           st.status = 'sl'; st.closed_t = c.t;
-          const label = _detectLossLabel({ closedT: c.t, eLo, eHi, tp, bias: st.bias, pairLabel: st.label }, all, calendarEvents);
+          const label = _detectLossLabel({ closedT: c.t, eLo, eHi, tp, bias: st.bias, pairLabel: st.label }, all, calendarEvents, newsItems);
           if (label) { st.loss_label = label.loss_label; st.label_reason = label.reason; st.label_by = 'auto'; }
           break;
         }
@@ -2739,16 +2741,63 @@ function _aggCancelFlipGhostStats(arr) {
   };
 }
 
-// Deteksi penyebab loss otomatis (PLAN U-1). Prioritas: fundamental_shock >
-// fakeout_sl — satu label saja, tidak menumpuk. Pure function, dites unit.
-// - fundamental_shock: ada event kalender impact 'High' untuk currency salah satu
-//   kaki pair (dari `pairLabel`, mis. "XAU/USD" -> legs ['XAU','USD']) dalam ±2 jam
-//   dari closedT. XAU otomatis lolos ke leg USD saja (calendar tidak pernah punya
-//   currency "XAU"), pola sama seperti _buildAnalyzeCalBlock.
+// Keyword currency-leg untuk breaking news (audit 2026-08-03: _detectLossLabel
+// sebelumnya CUMA cek kalender terjadwal, buta breaking news mendadak — SL
+// gara-gara headline geopolitical/energy jatuh ke bucket 'teknikal' yang salah).
+// DUPLIKASI SADAR dari POSREVIEW_CURRENCY_KEYWORDS/detectCurrencyLegs
+// (vps/daemon.js — Docker terisolasi dari build context Vercel ini), pola sama
+// newscat.js/isCorroborated yang sudah diduplikasi lintas file di proyek ini.
+// XAU ikut disertakan (bukan cuma 8 major FX) — pola sama _detectLossLabel
+// sendiri yang sudah memetakan XAU->leg USD untuk kalender.
+const LOSS_LABEL_CURRENCY_KEYWORDS = {
+  USD: ['fed', 'fomc', 'dollar', 'usd', 'powell', 'nonfarm', 'nfp', 'treasury'],
+  EUR: ['ecb', 'euro', 'eur', 'lagarde', 'eurozone'],
+  GBP: ['boe', 'pound', 'gbp', 'sterling', 'bailey'],
+  JPY: ['boj', 'yen', 'jpy', 'ueda'],
+  AUD: ['rba', 'aussie', 'aud', 'australia'],
+  CAD: ['boc', 'loonie', 'cad', 'canada'],
+  CHF: ['snb', 'franc', 'chf', 'swiss'],
+  NZD: ['rbnz', 'kiwi', 'nzd', 'zealand'],
+  XAU: ['gold', 'xau', 'bullion', 'hormuz', 'opec', 'gulf oil', 'oil supply'],
+};
+
+function _newsMatchesLegs(title, legs) {
+  const t = String(title || '').toLowerCase();
+  return (legs || []).some(leg => (LOSS_LABEL_CURRENCY_KEYWORDS[leg] || []).some(kw => t.includes(kw)));
+}
+
+// news_history (api/feeds.js) cuma retensi 36 jam (ZREMRANGEBYSCORE arsip) —
+// cukup karena _detectLossLabel breaking-news HANYA jalan pada transisi
+// open->sl SAAT tick evaluasi ini (bukan re-scan retroaktif, lihat komentar di
+// atas _evaluateSetups), jadi closedT selalu baru. Best-effort/fail-open ke
+// array kosong — Redis gagal TIDAK BOLEH menggagalkan evaluasi tp/sl utama.
+async function _fetchRecentNewsItems() {
+  try {
+    const cutoff = Date.now() - 36 * 3600000;
+    const raw = await redisCmd('ZRANGEBYSCORE', 'news_history', String(cutoff), '+inf');
+    if (!Array.isArray(raw)) return [];
+    return raw.map(s => { try { return JSON.parse(s); } catch (e) { return null; } }).filter(Boolean);
+  } catch (e) { return []; }
+}
+
+// Deteksi penyebab loss otomatis (PLAN U-1, diperluas 2026-08-03 audit S274).
+// Prioritas: fundamental_shock (kalender TERJADWAL) > fundamental_shock (breaking
+// news TIDAK terjadwal) > fakeout_sl — satu label saja, tidak menumpuk. Pure
+// function, dites unit.
+// - fundamental_shock (kalender): ada event kalender impact 'High' untuk currency
+//   salah satu kaki pair (dari `pairLabel`, mis. "XAU/USD" -> legs ['XAU','USD'])
+//   dalam ±2 jam dari closedT. XAU otomatis lolos ke leg USD saja (calendar tidak
+//   pernah punya currency "XAU"), pola sama seperti _buildAnalyzeCalBlock.
+// - fundamental_shock (breaking news): pola SAMA dengan isCorroborated yang dipakai
+//   review posisi terbuka (api/_position_review.js) — market-moving lolos otomatis,
+//   geopolitical/energy butuh >=2 sumber (guid beda, overlap >=2 token, dalam 30
+//   menit). Filter currency legs via LOSS_LABEL_CURRENCY_KEYWORDS di atas supaya
+//   tidak salah atribusi ke berita global yang tidak relevan pair ini. Window ±2
+//   jam dari closedT, sama seperti cek kalender.
 // - fakeout_sl (kriteria KETAT, jangan jadi mesin pemaaf): dalam <=4 jam setelah
 //   closedT, harga KEMBALI menembus zona entry DAN menyentuh TP asli — butuh KEDUA
 //   syarat, bukan salah satu.
-function _detectLossLabel({ closedT, eLo, eHi, tp, bias, pairLabel }, allCandles, calendarEvents) {
+function _detectLossLabel({ closedT, eLo, eHi, tp, bias, pairLabel }, allCandles, calendarEvents, newsItems) {
   const legs = String(pairLabel || '').toUpperCase().split('/').map(s => s.trim()).filter(Boolean);
   const closedMs = closedT * 1000;
   if (legs.length && Array.isArray(calendarEvents)) {
@@ -2760,6 +2809,17 @@ function _detectLossLabel({ closedT, eLo, eHi, tp, bias, pairLabel }, allCandles
       return evMs != null && Math.abs(evMs - closedMs) <= TWO_H;
     });
     if (shock) return { loss_label: 'fundamental_shock', reason: shock.event || 'event high-impact' };
+  }
+
+  if (legs.length && Array.isArray(newsItems)) {
+    const TWO_H = 2 * 3600000;
+    const relevant = newsItems.filter(n => n && _newsMatchesLegs(n.title, legs));
+    const nearby = relevant.filter(n => {
+      const t = Date.parse(n.pubDate);
+      return Number.isFinite(t) && Math.abs(t - closedMs) <= TWO_H;
+    });
+    const shock = nearby.find(n => isCorroborated(n, relevant));
+    if (shock) return { loss_label: 'fundamental_shock', reason: shock.title || 'breaking news' };
   }
 
   const FOUR_H = 4 * 3600000;
@@ -3187,6 +3247,7 @@ async function _buildAutoScopeStats() {
   const active = [...new Set(log.filter(s => s && (s.status === 'pending' || s.status === 'open')).map(s => s.symbol))];
   const candlesBySymbol = {};
   let calendarEvents = [];
+  let newsItems = [];
   await Promise.all([
     ...active.map(async sym => {
       try {
@@ -3206,6 +3267,10 @@ async function _buildAutoScopeStats() {
         calendarEvents = [...ev1, ...ev2];
       } catch (e) { /* kalender gagal -> deteksi fundamental_shock diskip */ }
     })(),
+    (async () => {
+      if (!active.length) return;
+      newsItems = await _fetchRecentNewsItems();
+    })(),
   ]);
   const before = JSON.stringify(log);
   // Q-7 (2026-07-28, diskusi user — TP/SL telat diketahui karena satu-satunya
@@ -3215,7 +3280,7 @@ async function _buildAutoScopeStats() {
   // di-push ke dev (lihat _notifySetupOutcome) — bukan diam-diam ketinggalan
   // sampai request berikutnya.
   const statusBeforeById = new Map(JSON.parse(before).map(s => [s.id, s.status]));
-  log = _evaluateSetups(log, candlesBySymbol, Date.now(), calendarEvents);
+  log = _evaluateSetups(log, candlesBySymbol, Date.now(), calendarEvents, newsItems);
   const managedPending = log.filter(s => s && s.intervention?.type === 'tighten_sl' && !s.managed_status);
   if (managedPending.length) {
     await Promise.all([...new Set(managedPending.map(s => s.symbol))].map(async sym => {
@@ -3276,6 +3341,7 @@ async function setupStatsHandler(req, res) {
     const strengthSymbols = [...new Set(FX_PAIRS_FOR_STRENGTH.map(p => p.symbol))];
     const candlesBySymbol = {};
     let calendarEvents = [];
+    let newsItems = [];
     await Promise.all([
       ...[...new Set([...active, ...strengthSymbols])].map(async sym => {
         try {
@@ -3298,9 +3364,13 @@ async function setupStatsHandler(req, res) {
           calendarEvents = [...ev1, ...ev2];
         } catch (e) { /* kalender gagal → deteksi fundamental_shock diskip, bukan crash */ }
       })(),
+      (async () => {
+        if (!active.length) return;
+        newsItems = await _fetchRecentNewsItems();
+      })(),
     ]);
     const before = JSON.stringify(log);
-    log = _evaluateSetups(log, candlesBySymbol, Date.now(), calendarEvents);
+    log = _evaluateSetups(log, candlesBySymbol, Date.now(), calendarEvents, newsItems);
     // PLAN U-5a: outcome manajemen (tighten_sl) dievaluasi SETELAH ghost pasif —
     // butuh candle symbol yang sudah punya intervention, mungkin di luar `active`
     // (posisi yang di-manage tapi status ghost-nya sudah tp/sl/dst) — fetch tambahan
@@ -3508,6 +3578,7 @@ async function positionReviewHandler(req, res) {
       const ev2 = nextWeek ? (JSON.parse(nextWeek).events || []) : [];
       calendarEvents = [...ev1, ...ev2];
     } catch (e) { /* opsional — deteksi fundamental_shock ghost diskip, bukan crash */ }
+    const newsItems = await _fetchRecentNewsItems();
 
     // BUG DITEMUKAN & DIFIX (2026-07-25, diskusi user — lihat komentar _buildAutoScopeStats
     // soal race condition evaluate-vs-refine): tick evaluasi pasif di sini JUGA menulis
@@ -3515,7 +3586,7 @@ async function positionReviewHandler(req, res) {
     // GC=F sempat ketiban balik oleh handler ini). persistTick sekarang pakai lock yang sama.
     const before = JSON.stringify(log);
     const statusBeforeById = new Map([[log[idx].id, log[idx].status]]);
-    _evaluateSetups(log, { [symbol]: candles }, Date.now(), calendarEvents);
+    _evaluateSetups(log, { [symbol]: candles }, Date.now(), calendarEvents, newsItems);
     await _finalizeSetupTransitions(log, statusBeforeById);
     const persistTick = async () => {
       if (JSON.stringify(log) === before) return;
@@ -5608,6 +5679,8 @@ module.exports._summarizeLatency = _summarizeLatency;
 module.exports.SPREAD_PRICE_ESTIMATE = SPREAD_PRICE_ESTIMATE;
 module.exports.probeCalendarCache = probeCalendarCache;
 module.exports._detectLossLabel = _detectLossLabel;
+module.exports._newsMatchesLegs = _newsMatchesLegs;
+module.exports.LOSS_LABEL_CURRENCY_KEYWORDS = LOSS_LABEL_CURRENCY_KEYWORDS;
 module.exports._corroborateLevel = _corroborateLevel;
 module.exports._breachDirection = _breachDirection;
 module.exports._corroborateGoldTransitions = _corroborateGoldTransitions;

@@ -11,7 +11,7 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-03 (Session 274 — jam pengumuman CB shock detector: fallback manual → prioritas live TradingView via calendar_v1)
+> **Last updated:** 2026-08-03 (Session 274 lanjutan — tutup 2 celah breaking news: `_detectLossLabel` buta berita mendadak + kategori `macro` lolos review posisi tanpa korroborasi)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -31,7 +31,37 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 
 **Verifikasi:** `npm test` 746/746 hijau (10 test baru di `test/lib/cb_shock.test.js`: `_nextDateStr` lintas bulan/tahun, `_findLiveAnnounceMs` match langsung/geser WIB/gagal-match currency-impact-judul-tanggal, `announceTsFromMeetingDate` prioritas live vs fallback manual tanpa regresi).
 
-**Tertunda (sengaja tidak dikerjakan sesi ini, lihat `daun_merah_progress.md`):** 2 gap serupa yang DITEMUKAN di sesi sama tapi beda dari ini — (1) `_detectLossLabel` (`api/admin.js`) cuma cek kalender terjadwal buat label `fundamental_shock`, breaking news mendadak (geopolitical/energy) jatuh ke bucket `teknikal` yang salah; (2) pidato bank sentral mendadak/di luar jadwal (kategori `macro`, bukan `market-moving`/`geopolitical`/`energy`) tidak memicu review posisi manapun. Dua-duanya LANGSUNG terhubung ke pipeline auto-entry (beda dari sesi ini yang murni dashboard) — user eksplisit minta "keep dulu".
+**Update lanjutan (sesi sama):** ternyata 2 gap serupa (breaking news → `_detectLossLabel`, pidato bank sentral mendadak → review posisi) TIDAK jadi ditunda — user minta "kerjakan" beberapa balasan kemudian. Detail lengkap di blok changelog di bawah ini.
+
+## Changelog Session 274 lanjutan (2026-08-03) — Breaking News & Pidato Bank Sentral Mendadak: Tutup 2 Celah `_detectLossLabel` + Review Posisi
+
+**Konteks:** kelanjutan langsung dari CB Shock Detector di atas (sesi sama) — 2 gap yang tadinya dicatat "TERTUNDA" di `daun_merah_progress.md` ternyata langsung diminta dikerjakan user ("kerjakan").
+
+### 1. `_detectLossLabel` (`api/admin.js`) — breaking news mendadak sekarang ikut dilabel `fundamental_shock`
+
+**Root cause:** fungsi ini cuma cek `calendarEvents` (rilis TERJADWAL — NFP/CPI/FOMC) untuk label `fundamental_shock`. SL yang sebenarnya dipicu breaking news mendadak (geopolitical/energy) jatuh ke bucket `teknikal` (default/residual) yang salah, mencemari `loss_causes` sebagai bahan evaluasi item #6-10 Plan U nantinya.
+
+**Implementasi:** `_detectLossLabel` dapat parameter ke-4 `newsItems` (array `news_history`, opsional/backward-compatible) — pengecekan BARU disisipkan di antara kalender & fakeout_sl: cari breaking news yang (a) cocok currency leg pair (`LOSS_LABEL_CURRENCY_KEYWORDS`, duplikasi sadar dari `POSREVIEW_CURRENCY_KEYWORDS` di `vps/daemon.js`), (b) dalam ±2 jam dari `closedT`, (c) terkonfirmasi via `isCorroborated` (reuse dari `api/_position_review.js`, BUKAN mekanisme baru — market-moving auto-lolos, geopolitical/energy butuh ≥2 sumber beda GUID overlap ≥2 token dalam 30 menit). `_evaluateSetups` diperluas terima `newsItems` dan meneruskannya; 3 call site (`setupStatsHandler` utama, varian `setup_log:v1`, re-cek tunggal sebelum AI call) masing-masing fetch `news_history` 36 jam terakhir (`_fetchRecentNewsItems`, best-effort/fail-open) paralel dengan fetch `calendarEvents` yang sudah ada.
+
+**Verifikasi:** 6 test baru di `test/admin/ta_struct.test.js` (market-moving auto-konfirmasi, geopolitical 1 sumber vs 2 sumber, currency tidak cocok, di luar jendela ±2 jam, prioritas atas fakeout_sl).
+
+### 2. Review posisi & Lapis 1b (`vps/daemon.js`) — BUG DITEMUKAN, bukan cuma "belum ada": kategori `macro` (pidato bank sentral) selama ini lolos trigger TANPA korroborasi sama sekali
+
+**Koreksi penting:** klaim awal ("kategori `macro` tidak pernah trigger apa pun") **SALAH** setelah dicek ulang baris-per-baris. Yang benar: `handlePosReviewCandidate` cuma menahan `geopolitical`/`energy` sampai terkonfirmasi ≥2 sumber (`isCorroborated`) — TAPI kategori lain (termasuk `macro`, dan sebenarnya SEMUA kategori di luar 2 itu) langsung lolos ke `tryTriggerPosReview` TANPA korroborasi apa pun selama cocok currency leg. Ironisnya komentar kode S218 (audit 2026-07-23) sendiri sudah menjelaskan pola bug persis ini saat 'energy' ditambahkan — cuma 'macro' (dan kategori lain) tidak ikut ditutup saat itu.
+
+**Implementasi (2 lapis, `vps/daemon.js` + `api/_position_review.js` drift-guard):**
+- `isCorroborated`: `POSREVIEW_CORROBORATION_ELIGIBLE_CATS` (Set `{geopolitical, energy, macro}`) menggantikan hardcode 2 kategori — `macro` sekarang bisa lolos lewat jalur ≥2 sumber, bukan auto-block permanen.
+- `handlePosReviewCandidate` (Lapis U-5b, review posisi terbuka): gate diganti dari allowlist `(cat === 'geopolitical' || cat === 'energy') && !corroborated` menjadi deny-by-default `cat !== 'market-moving' && !corroborated` — HANYA `market-moving` yang lolos otomatis, semua kategori lain (termasuk kategori baru di masa depan) wajib korroborasi tanpa perlu diingat ditambah manual ke allowlist.
+- `findBreakingNewsMatch` (Lapis 1b, skip entry BARU — bukan cuma review posisi terbuka): filter kategori ditambah `macro`, celah yang sama persis.
+- `POSREVIEW_NEWS_BUFFER_REDIS_CATS`: tambah `macro` — supaya buffer korroborasi `macro` survive restart daemon (sama seperti geopolitical/energy, S218/S219).
+
+**Verifikasi:** 6 test baru (`test/vps/position_review.test.js` + `test/admin/position_review.test.js`, termasuk drift-guard 2 kasus baru), 1 test lama diupdate (`shouldPersistNewsBufferItem` — 'macro' sekarang `true`, bukan `false`).
+
+**`npm test` 758/758 hijau** (gabungan kedua perbaikan di atas + CB Shock Detector sebelumnya).
+
+---
+
+## Changelog Session 273 (2026-08-03) — Judul NEWS di Dashboard & "Berita Terkait" TEK Ikut Preferensi Bahasa
 
 **Permintaan user:** awalnya minta toggle EN/ID gaya NEWS diterapkan ke semua fitur lewat menu titik-3 header. Setelah diskusi, scope dipersempit user sendiri: toggle bahasa TETAP di fitur NEWS saja (tombol toolbar `newsLangBtn`, tidak dipindah/diduplikasi ke menu titik-3 header global) — akar masalah sebenarnya cuma judul berita yang tampil ulang di Dashboard (`renderDashNews`) dan "Berita Terkait" tab TEK (`renderTekNews`) selalu Inggris walau NEWS sudah di-toggle ke Indonesia. Bikin toggle terpisah di tiap tempat dianggap tidak efisien (user: "gausah la... kalau di news itu ind, maka news yang ada di berita terkait fitur tek dan news di dashboard tolong agar disesuaikan").
 

@@ -533,10 +533,14 @@ function detectCurrencyLegs(title) {
 // sama newscat.js/YAHOO_TO_DERIV_SYMBOL). Behavioral test (bukan byte-diff,
 // karena function ini menyatu di file besar) menjaga dua sisi tetap sinkron —
 // lihat test/vps/position_review.test.js.
-// - kategori 'geopolitical' ATAU 'energy': butuh >=1 item LAIN (guid beda) dalam
-//   +-30 menit dengan overlap >=2 token signifikan (lowercase, buang stopword,
-//   token >3 huruf). 'energy' ikut disyaratkan korroborasi sejak audit S218
-//   (2026-07-23) — lihat catatan sama di api/_position_review.js.
+// - kategori 'geopolitical'/'energy'/'macro': butuh >=1 item LAIN (guid beda)
+//   dalam +-30 menit dengan overlap >=2 token signifikan (lowercase, buang
+//   stopword, token >3 huruf). 'energy' ikut disyaratkan korroborasi sejak
+//   audit S218 (2026-07-23); 'macro' ditambah audit S274 (2026-08-03) — BUG
+//   DITEMUKAN: pidato bank sentral (Powell/Lagarde/dst, kategori 'macro' di
+//   newscat.js) sebelumnya lolos ke tryTriggerPosReview TANPA korroborasi SAMA
+//   SEKALI (beda dari geopolitical/energy) — lihat catatan gate di
+//   handlePosReviewCandidate di bawah, itu yang jadi akar bug-nya.
 // - 'market-moving' (data/bank sentral terjadwal) = corroborated by default.
 const POSREVIEW_STOPWORDS = new Set(['dengan', 'yang', 'untuk', 'dari', 'akan', 'pada', 'dalam', 'oleh',
   'atau', 'juga', 'masih', 'sudah', 'telah', 'saat', 'para', 'ini', 'itu', 'the', 'and', 'for',
@@ -549,10 +553,12 @@ function posReviewSignificantTokens(title) {
     .filter(t => t.length > 3 && !POSREVIEW_STOPWORDS.has(t));
 }
 
+const POSREVIEW_CORROBORATION_ELIGIBLE_CATS = new Set(['geopolitical', 'energy', 'macro']);
+
 function isCorroborated(item, recentItems) {
   if (!item) return false;
   if (item.cat === 'market-moving') return true;
-  if (item.cat !== 'geopolitical' && item.cat !== 'energy') return false;
+  if (!POSREVIEW_CORROBORATION_ELIGIBLE_CATS.has(item.cat)) return false;
   const itemMs = Date.parse(item.pubDate);
   if (!Number.isFinite(itemMs)) return false;
   const itemTokens = new Set(posReviewSignificantTokens(item.title));
@@ -586,14 +592,17 @@ let posReviewNewsBuffer = [];
 // sebelum dipercaya lagi). Selama fase development ini restart terjadi beberapa kali
 // SEHARI (tiap push) — gap-nya nyata, bukan teoretis. Cuma kategori yang benar-benar
 // dipakai isCorroborated/gate (geopolitical/energy/market-moving) yang di-persist —
-// mayoritas volume berita (forex/equities/macro/econ-data dst) TIDAK relevan buat
+// mayoritas volume berita (forex/equities/econ-data dst) TIDAK relevan buat
 // korroborasi krisis, persist semuanya buang-buang budget Redis tanpa manfaat nyata.
+// 'macro' ikut di-persist sejak audit S274 (2026-08-03) — kategori ini sekarang ikut
+// disyaratkan korroborasi (lihat isCorroborated di atas), jadi butuh survive restart
+// sama seperti geopolitical/energy.
 // List + cap (pola sama auto_skip_log/posreview_skip_log), BUKAN ZSET presisi waktu —
 // isCorroborated tetap menyaring by pubDate sendiri, cap 150 jauh lebih dari cukup
 // menutup 35 menit untuk kategori sesempit ini.
 const POSREVIEW_NEWS_BUFFER_REDIS_KEY = 'posreview_news_buffer';
 const POSREVIEW_NEWS_BUFFER_REDIS_CAP = 150;
-const POSREVIEW_NEWS_BUFFER_REDIS_CATS = new Set(['geopolitical', 'energy', 'market-moving']);
+const POSREVIEW_NEWS_BUFFER_REDIS_CATS = new Set(['geopolitical', 'energy', 'macro', 'market-moving']);
 
 // Pure (testable) — dipisah dari I/O supaya keputusan "layak di-persist atau
 // tidak" bisa dites tanpa mock Redis, pola sama findHardNewsEvent/findBreakingNewsMatch.
@@ -732,10 +741,10 @@ async function triggerPositionReview(body) {
   }
 }
 
-// Entry point dipanggil per item news_history (market-moving/geopolitical saja,
-// lihat pollNews). Deteksi currency -> guard market/degraded -> korroborasi ->
-// trigger langsung (market-moving/corroborated) atau antre recheck (geopolitical
-// unconfirmed, langkah 4).
+// Entry point dipanggil per item news_history TIAP KATEGORI (lihat pollNews —
+// dipanggil sebelum filter isHighImpactCategory). Deteksi currency -> guard
+// market/degraded -> korroborasi -> trigger langsung (market-moving/corroborated)
+// atau antre recheck (kategori lain yang belum terkonfirmasi, langkah 4).
 async function handlePosReviewCandidate(newsItem) {
   const now = Date.now();
   posReviewNewsBuffer.push(newsItem);
@@ -749,10 +758,16 @@ async function handlePosReviewCandidate(newsItem) {
   if (!isFxMarketOpen()) return;
 
   const corroborated = isCorroborated(newsItem, posReviewNewsBuffer);
-  // Audit S218: 'energy' ikut antre-recheck-kalau-belum-terkonfirmasi, konsisten
-  // dengan 'geopolitical' (sebelum ini kategori selain geopolitical/market-moving
-  // lolos ke tryTriggerPosReview TANPA korroborasi sama sekali).
-  if ((newsItem.cat === 'geopolitical' || newsItem.cat === 'energy') && !corroborated) {
+  // Audit S218 (2026-07-23): 'energy' ditambah ke syarat korroborasi, konsisten
+  // dengan 'geopolitical'. Audit S274 (2026-08-03) — BUG DITEMUKAN: gate ini masih
+  // hardcode 2 kategori, jadi 'macro' (pidato bank sentral, Powell/Lagarde/dst) DAN
+  // kategori lain mana pun (forex/equities/econ-data dst — kalau kebetulan cocok
+  // currency leg) tetap lolos TANPA korroborasi sama sekali, persis pola bug yang
+  // sama yang audit S218 klaim sudah diperbaiki. Diganti jadi deny-by-default:
+  // HANYA 'market-moving' yang lolos otomatis (isCorroborated sudah return true
+  // untuknya) — SEMUA kategori lain wajib >=2 sumber dulu, bukan daftar allowlist
+  // yang harus diingat ditambah manual tiap ada kategori baru.
+  if (newsItem.cat !== 'market-moving' && !corroborated) {
     try {
       await redisCmd('LPUSH', 'posreview_skip_log', JSON.stringify({ ts: now, guid: newsItem.guid, title: newsItem.title, reason: 'unconfirmed' }));
       await redisCmd('LTRIM', 'posreview_skip_log', '0', '49');
@@ -1200,7 +1215,11 @@ async function checkHardNewsSkip(pair, label) {
 // isCorroborated) — SENGAJA tetap mensyaratkan korroborasi (>=2 sumber, pola sama
 // U-5b) supaya tidak terlalu waspada ke rumor tunggal/berita tidak relevan (lihat
 // diskusi user soal false-positive) — sudah 3 lapis saring: relevansi mata uang
-// (detectCurrencyLegs) -> kategori (geopolitical/energy/market-moving) -> korroborasi.
+// (detectCurrencyLegs) -> kategori (geopolitical/energy/macro/market-moving) ->
+// korroborasi. 'macro' ditambah audit S274 (2026-08-03) — celah yang sama persis
+// dengan bug tryTriggerPosReview (lihat catatan isCorroborated/
+// handlePosReviewCandidate): pidato bank sentral mendadak sebelumnya tidak pernah
+// bikin skip entry baru sama sekali, walau sudah ada infra korroborasi yang matang.
 //
 // Pure inti (testable) dipisah dari I/O logging, pola sama findHardNewsEvent/
 // checkHardNewsSkip di atas.
@@ -1208,7 +1227,7 @@ function findBreakingNewsMatch(pairLegs, buffer) {
   if (!Array.isArray(pairLegs) || !pairLegs.length || !Array.isArray(buffer)) return null;
   for (const item of buffer) {
     if (!item) continue;
-    if (item.cat !== 'geopolitical' && item.cat !== 'energy' && item.cat !== 'market-moving') continue;
+    if (item.cat !== 'geopolitical' && item.cat !== 'energy' && item.cat !== 'macro' && item.cat !== 'market-moving') continue;
     const newsLegs = detectCurrencyLegs(item.title);
     if (!newsLegs.some(l => pairLegs.includes(l))) continue;
     if (!isCorroborated(item, buffer)) continue;
