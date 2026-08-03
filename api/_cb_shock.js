@@ -133,9 +133,61 @@ function buildShockNarrative({ classification, bank, currency, rateChangeBps, cu
 
 const SHOCK_DISCLAIMER = `Resolusi data 1 jam (bukan jendela 30-60 menit presisi) — reaksi keputusan dan reaksi konferensi pers bisa tercampur. Ambang noise ±${NOISE_BAND_PCT}% adalah heuristik awal yang masih perlu kalibrasi dari observasi live. Konteks, bukan sinyal.`;
 
+// "YYYY-MM-DD" WIB kalender + "HH:MM WIB" → epoch ms. Duplikasi SADAR dari
+// _calEventMsWib (api/admin.js) — modul ini sengaja berdiri sendiri tanpa
+// dependensi ke admin.js (lihat header file: pure functions, dites unit tanpa
+// mock). null kalau time_wib "Tentative" (jam belum pasti) atau parse gagal.
+function _calEventMsWib(dateStr, timeWib) {
+  if (!dateStr || !timeWib || timeWib === 'Tentative') return null;
+  const m = /^(\d{2}):(\d{2})/.exec(timeWib);
+  if (!m) return null;
+  const t = new Date(`${dateStr}T${m[1]}:${m[2]}:00+07:00`).getTime();
+  return isNaN(t) ? null : t;
+}
+
+// meetingDate diasumsikan tanggal kalender NEGARA bank sentral (mis. FRED
+// melaporkan FOMC dengan tanggal AS) — sedangkan `date` di calendar_v1 sudah
+// digeser ke kalender WIB (api/calendar.js: `date: toDateStr(wib)`). Karena
+// WIB = UTC+7 (offset tetap < 24 jam), tanggal WIB suatu event HANYA bisa sama
+// dengan tanggal UTC-nya ATAU +1 hari (mis. FOMC 19:00 UTC = 02:00 WIB hari
+// berikutnya) — tidak pernah mundur/lebih dari +1. "+1 hari" dicek eksplisit
+// supaya FOMC (kasus paling sering kena geser) tidak selalu jatuh ke fallback.
+function _nextDateStr(dateStr) {
+  const d = new Date(`${dateStr}T00:00:00Z`);
+  if (isNaN(d.getTime())) return null;
+  d.setUTCDate(d.getUTCDate() + 1);
+  return d.toISOString().slice(0, 10);
+}
+
+// Cari jam pengumuman PRESISI dari kalender live (TradingView via calendar_v1,
+// lihat api/calendar.js) — dipicu audit 2026-08-03: CB_ANNOUNCE_HOUR_UTC di
+// bawah cuma perkiraan tetap (bisa basi kalau bank sentral ganti jam beneran,
+// bukan cuma DST). calendar_v1 cuma cache minggu BERJALAN (bukan arsip), jadi
+// ini best-effort — rapat yang sudah lewat dari cache minggu ini otomatis balik
+// ke fallback tabel manual di bawah (fail-open, tidak pernah lebih buruk dari
+// sebelumnya). Match: tanggal (+1 hari toleransi geser WIB) + currency + impact
+// High + judul mengandung "rate decision"/"interest rate" (hindari ke-match ke
+// rilis lain di hari sama).
+const _CB_EVENT_TITLE_RX = /interest rate decision|rate decision/i;
+function _findLiveAnnounceMs(meetingDate, currency, calendarEvents) {
+  if (!Array.isArray(calendarEvents) || !meetingDate || !currency) return null;
+  const candidateDates = new Set([meetingDate, _nextDateStr(meetingDate)].filter(Boolean));
+  const hit = calendarEvents.find(e => e
+    && candidateDates.has(e.date)
+    && String(e.currency || '').toUpperCase() === currency
+    && e.impact === 'High'
+    && _CB_EVENT_TITLE_RX.test(String(e.event || '')));
+  return hit ? _calEventMsWib(hit.date, hit.time_wib) : null;
+}
+
 // "YYYY-MM-DD" + jam pengumuman UTC → epoch detik. null kalau tanggal rusak.
-function announceTsFromMeetingDate(meetingDate, currency) {
+// calendarEvents opsional (array event calendar_v1/calendar_next_v1) — kalau
+// disuplai dan rapatnya ketemu di sana, jamnya PRESISI dari TradingView;
+// selain itu fallback ke tabel CB_ANNOUNCE_HOUR_UTC (perkiraan tetap).
+function announceTsFromMeetingDate(meetingDate, currency, calendarEvents) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(meetingDate || ''))) return null;
+  const liveMs = _findLiveAnnounceMs(meetingDate, currency, calendarEvents);
+  if (liveMs != null) return Math.floor(liveMs / 1000);
   const hour = CB_ANNOUNCE_HOUR_UTC[currency];
   if (hour == null) return null;
   const ts = Date.parse(`${meetingDate}T${String(hour).padStart(2, '0')}:00:00Z`);
@@ -152,4 +204,6 @@ module.exports = {
   classifyCbShock,
   buildShockNarrative,
   announceTsFromMeetingDate,
+  _nextDateStr,
+  _findLiveAnnounceMs,
 };

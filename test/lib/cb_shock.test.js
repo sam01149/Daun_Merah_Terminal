@@ -12,6 +12,8 @@ const {
   buildShockNarrative,
   announceTsFromMeetingDate,
   CB_SHOCK_PROXY,
+  _nextDateStr,
+  _findLiveAnnounceMs,
 } = require('../../api/_cb_shock.js');
 
 // ── classifyCbShock: 4 kelas ─────────────────────────────────────────────────
@@ -102,6 +104,60 @@ test('announceTsFromMeetingDate: FOMC (USD) = 19:00 UTC; tanggal rusak → null'
   assert.equal(announceTsFromMeetingDate('30/07/2026', 'USD'), null);
   assert.equal(announceTsFromMeetingDate(null, 'USD'), null);
   assert.equal(announceTsFromMeetingDate('2026-07-30', 'XXX'), null);
+});
+
+// ── announceTsFromMeetingDate + calendarEvents (jam live TradingView, audit 2026-08-03) ──
+
+test('_nextDateStr: +1 hari biasa, dan lintas bulan/tahun', () => {
+  assert.equal(_nextDateStr('2026-07-30'), '2026-07-31');
+  assert.equal(_nextDateStr('2026-07-31'), '2026-08-01');
+  assert.equal(_nextDateStr('2026-12-31'), '2027-01-01');
+  assert.equal(_nextDateStr('bukan-tanggal'), null);
+});
+
+test('_findLiveAnnounceMs: match langsung (tanggal sama, tanpa geser WIB) — mis. ECB 13:00 UTC = 20:00 WIB hari sama', () => {
+  const events = [
+    { date: '2026-04-30', time_wib: '20:00 WIB', currency: 'EUR', event: 'ECB Interest Rate Decision', impact: 'High' },
+  ];
+  const ms = _findLiveAnnounceMs('2026-04-30', 'EUR', events);
+  assert.equal(new Date(ms).toISOString(), '2026-04-30T13:00:00.000Z');
+});
+
+test('_findLiveAnnounceMs: match geser +1 hari WIB — FOMC 19:00 UTC = 02:00 WIB hari berikutnya', () => {
+  const events = [
+    { date: '2026-07-31', time_wib: '02:00 WIB', currency: 'USD', event: 'Fed Interest Rate Decision', impact: 'High' },
+  ];
+  const ms = _findLiveAnnounceMs('2026-07-30', 'USD', events);
+  assert.equal(new Date(ms).toISOString(), '2026-07-30T19:00:00.000Z');
+});
+
+test('_findLiveAnnounceMs: tidak ketemu (currency lain/impact bukan High/judul bukan rate decision/tanggal di luar +1 hari) → null', () => {
+  const base = { date: '2026-04-30', time_wib: '20:00 WIB', currency: 'EUR', event: 'ECB Interest Rate Decision', impact: 'High' };
+  assert.equal(_findLiveAnnounceMs('2026-04-30', 'GBP', [base]), null, 'currency beda');
+  assert.equal(_findLiveAnnounceMs('2026-04-30', 'EUR', [{ ...base, impact: 'Medium' }]), null, 'bukan impact High');
+  assert.equal(_findLiveAnnounceMs('2026-04-30', 'EUR', [{ ...base, event: 'Lagarde Speaks' }]), null, 'bukan judul rate decision (pidato biasa)');
+  assert.equal(_findLiveAnnounceMs('2026-04-28', 'EUR', [base]), null, 'tanggal lebih dari +1 hari toleransi');
+  assert.equal(_findLiveAnnounceMs('2026-04-30', 'EUR', []), null, 'kalender kosong');
+  assert.equal(_findLiveAnnounceMs('2026-04-30', 'EUR', null), null, 'kalender null');
+});
+
+test('announceTsFromMeetingDate: kalender live ketemu → PAKAI jam presisi TradingView, BUKAN tabel manual', () => {
+  // Tabel manual bilang ECB = 13:00 UTC; kalender live di sini sengaja beda (14:07 UTC =
+  // 21:07 WIB) supaya kelihatan jelas jam yang dipakai memang dari live, bukan kebetulan sama.
+  const events = [
+    { date: '2026-04-30', time_wib: '21:07 WIB', currency: 'EUR', event: 'ECB Interest Rate Decision', impact: 'High' },
+  ];
+  const ts = announceTsFromMeetingDate('2026-04-30', 'EUR', events);
+  assert.equal(new Date(ts * 1000).toISOString(), '2026-04-30T14:07:00.000Z');
+});
+
+test('announceTsFromMeetingDate: kalender live TIDAK ketemu (rapat sudah di luar cache minggu berjalan) → fallback tabel manual, TIDAK regresi', () => {
+  const ts1 = announceTsFromMeetingDate('2026-04-30', 'EUR', []); // kalender kosong
+  assert.equal(new Date(ts1 * 1000).toISOString(), '2026-04-30T13:00:00.000Z');
+  const ts2 = announceTsFromMeetingDate('2026-04-30', 'EUR'); // calendarEvents tidak disuplai sama sekali
+  assert.equal(new Date(ts2 * 1000).toISOString(), '2026-04-30T13:00:00.000Z');
+  const ts3 = announceTsFromMeetingDate('2026-04-30', 'EUR', [{ date: '2026-01-01', time_wib: '10:00 WIB', currency: 'EUR', event: 'ECB Interest Rate Decision', impact: 'High' }]); // event ada tapi tanggal tidak cocok
+  assert.equal(new Date(ts3 * 1000).toISOString(), '2026-04-30T13:00:00.000Z');
 });
 
 // ── Narasi deterministik ─────────────────────────────────────────────────────

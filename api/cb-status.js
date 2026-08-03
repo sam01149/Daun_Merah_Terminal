@@ -104,6 +104,16 @@ async function shockHandler(req, res) {
     return isFinite(t) && t >= cutoff && t <= Date.now() + 86400000;
   });
 
+  // Jam pengumuman presisi dari kalender live (TradingView, api/calendar.js)
+  // kalau rapatnya masih ada di cache minggu berjalan — fallback ke tabel
+  // manual CB_ANNOUNCE_HOUR_UTC di _cb_shock.js kalau tidak ketemu (rapat
+  // sudah di luar jendela minggu ini, atau calendar_v1 kosong/gagal fetch).
+  let calendarEvents = [];
+  try {
+    const raw = await redisCmd('GET', 'calendar_v1');
+    if (raw) { const c = JSON.parse(raw); calendarEvents = Array.isArray(c?.events) ? c.events : []; }
+  } catch(e) { /* fail-open ke fallback tabel manual */ }
+
   // Dedupe fetch candle per simbol (USD & EUR sama-sama pakai EURUSD=X)
   const symbols = [...new Set(recent.map(b => CB_SHOCK_PROXY[b.currency]?.symbol).filter(Boolean))];
   const candlesBySymbol = {};
@@ -113,7 +123,7 @@ async function shockHandler(req, res) {
   for (const b of recent) {
     const proxy = CB_SHOCK_PROXY[b.currency];
     if (!proxy) continue;
-    const announceTs = announceTsFromMeetingDate(b.last_meeting, b.currency);
+    const announceTs = announceTsFromMeetingDate(b.last_meeting, b.currency, calendarEvents);
     const pairMovePct = announceTs != null
       ? computeHourlyReaction(candlesBySymbol[proxy.symbol], announceTs)
       : null;

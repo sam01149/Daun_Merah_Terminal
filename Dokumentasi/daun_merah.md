@@ -11,13 +11,27 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-03 (Session 273 — judul NEWS yang tampil di Dashboard & "Berita Terkait" TEK ikut preferensi bahasa NEWS)
+> **Last updated:** 2026-08-03 (Session 274 — jam pengumuman CB shock detector: fallback manual → prioritas live TradingView via calendar_v1)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
 
-## Changelog Session 273 (2026-08-03) — Judul NEWS di Dashboard & "Berita Terkait" TEK Ikut Preferensi Bahasa
+## Changelog Session 274 (2026-08-03) — CB Shock Detector: Jam Pengumuman Live TradingView (Bukan Cuma Tabel Manual)
+
+**Konteks:** ditemukan lewat diskusi bebas soal "apakah auto-entry belajar dari kesalahan" — `api/_cb_shock.js` (Plan G6, dashboard `cb-status.js?section=shock`) menentukan jam pengumuman bank sentral dari tabel `CB_ANNOUNCE_HOUR_UTC` yang di-hardcode manual (mis. FOMC diasumsikan selalu 19:00 UTC). User khawatir: kalau bank sentral beneran ganti jam pengumuman (bukan cuma DST, yang sudah diakui toleransinya di komentar lama), tabel ini bisa basi diam-diam. **Catatan penting:** fitur ini murni dashboard analisis terpisah, TIDAK terbaca oleh pipeline auto-entry (gate/prompt/label loss) sama sekali — diverifikasi grep, nihil pemanggil di `admin.js`/`_auto_entry_guard.js` selain referensi nama pola di komentar.
+
+**Root cause:** jam pengumuman ditulis tetap di kode, tidak pernah dicek ulang ke sumber live — padahal `api/calendar.js` (`calendar_v1`) ternyata SUDAH bersumber dari TradingView (`economic-calendar.tradingview.com/events`, dipakai fitur kalender ekonomi lain seperti AI Kritikus/`_detectLossLabel`), lengkap dengan jam presisi per event (`time_wib`) — tinggal disambungkan, bukan integrasi baru.
+
+**Implementasi:**
+- `api/_cb_shock.js`: `announceTsFromMeetingDate(meetingDate, currency, calendarEvents)` — parameter ke-3 baru, opsional (backward compatible). Kalau disuplai, coba cari event rate-decision presisi dulu (`_findLiveAnnounceMs`: match tanggal + currency + `impact:'High'` + judul cocok `/interest rate decision|rate decision/i`) sebelum fallback ke tabel manual.
+- Penanganan geser tanggal WIB (`_nextDateStr`): `calendar_v1` menyimpan tanggal versi WIB (`api/calendar.js` konversi `date: toDateStr(wib)`), sementara `meetingDate` dari `_cb_rates.js` pakai tanggal sumber resmi (umumnya = tanggal UTC). Karena WIB = UTC+7 (offset tetap <24 jam), tanggal WIB suatu event cuma bisa sama ATAU +1 hari dari tanggal UTC — dicek eksplisit kedua kandidat. Tanpa ini, FOMC (19:00 UTC = 02:00 WIB hari berikutnya) — kasus PALING SERING butuh perbaikan ini — justru tidak akan pernah ketemu di kalender live, defeat the purpose.
+- `api/cb-status.js` (`shockHandler`): fetch `calendar_v1` (best-effort, fail-open ke array kosong kalau Redis gagal/kosong) sebelum loop event, teruskan ke `announceTsFromMeetingDate`.
+- **Fail-open by design:** `calendar_v1` cuma cache MINGGU BERJALAN (bukan arsip) — rapat yang sudah lewat dari cache minggu ini otomatis balik ke tabel manual lama, TIDAK PERNAH lebih buruk dari perilaku sebelumnya, cuma dapat manfaat live kalau datanya masih ada.
+
+**Verifikasi:** `npm test` 746/746 hijau (10 test baru di `test/lib/cb_shock.test.js`: `_nextDateStr` lintas bulan/tahun, `_findLiveAnnounceMs` match langsung/geser WIB/gagal-match currency-impact-judul-tanggal, `announceTsFromMeetingDate` prioritas live vs fallback manual tanpa regresi).
+
+**Tertunda (sengaja tidak dikerjakan sesi ini, lihat `daun_merah_progress.md`):** 2 gap serupa yang DITEMUKAN di sesi sama tapi beda dari ini — (1) `_detectLossLabel` (`api/admin.js`) cuma cek kalender terjadwal buat label `fundamental_shock`, breaking news mendadak (geopolitical/energy) jatuh ke bucket `teknikal` yang salah; (2) pidato bank sentral mendadak/di luar jadwal (kategori `macro`, bukan `market-moving`/`geopolitical`/`energy`) tidak memicu review posisi manapun. Dua-duanya LANGSUNG terhubung ke pipeline auto-entry (beda dari sesi ini yang murni dashboard) — user eksplisit minta "keep dulu".
 
 **Permintaan user:** awalnya minta toggle EN/ID gaya NEWS diterapkan ke semua fitur lewat menu titik-3 header. Setelah diskusi, scope dipersempit user sendiri: toggle bahasa TETAP di fitur NEWS saja (tombol toolbar `newsLangBtn`, tidak dipindah/diduplikasi ke menu titik-3 header global) — akar masalah sebenarnya cuma judul berita yang tampil ulang di Dashboard (`renderDashNews`) dan "Berita Terkait" tab TEK (`renderTekNews`) selalu Inggris walau NEWS sudah di-toggle ke Indonesia. Bikin toggle terpisah di tiap tempat dianggap tidak efisien (user: "gausah la... kalau di news itu ind, maka news yang ada di berita terkait fitur tek dan news di dashboard tolong agar disesuaikan").
 
