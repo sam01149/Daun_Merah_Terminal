@@ -11,7 +11,7 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-03 (Session 274 lanjutan — tutup 2 celah breaking news: `_detectLossLabel` buta berita mendadak + kategori `macro` lolos review posisi tanpa korroborasi)
+> **Last updated:** 2026-08-03 (Session 274 lanjutan 2 — position_review call SambaNova utama dipindah dari pool produksi ke pool eksperimen, isolasi Plan V-3 yang kelewat sejak fitur ini dibuat)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
@@ -58,6 +58,16 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 **Verifikasi:** 6 test baru (`test/vps/position_review.test.js` + `test/admin/position_review.test.js`, termasuk drift-guard 2 kasus baru), 1 test lama diupdate (`shouldPersistNewsBufferItem` — 'macro' sekarang `true`, bukan `false`).
 
 **`npm test` 758/758 hijau** (gabungan kedua perbaikan di atas + CB Shock Detector sebelumnya).
+
+## Changelog Session 274 lanjutan 2 (2026-08-03) — position_review: Call SambaNova Utama Pindah dari Pool Produksi ke Pool Eksperimen
+
+**Konteks:** ditemukan saat user tanya "apakah bug macro tadi menghabiskan AI call auto-entry saya" — jawabannya lebih serius dari sekadar "iya menghabiskan jatah auto-entry": call-nya ternyata memakai pool budget **PRODUKSI/PUBLIK**, bukan pool eksperimen auto-entry sama sekali.
+
+**Root cause:** `positionReviewHandler` (`api/admin.js` ~baris 3660) — call SambaNova UTAMA (dicoba pertama, sebelum fallback DeepSeek) pakai key `'ai:sambanova:main'` (circuit breaker) dan `'sambanova_main'` (budget harian) — **key produksi**, dibagi dengan traffic publik Ringkasan/Analisa manual/Pre-Entry Check. Padahal fitur ini developer-only (HANYA proses id dari `setup_log_auto:v1`, id manual ditolak sebelum sampai ke call AI — lihat langkah 2a/2b di handler yang sama). Fallback DeepSeek 15 baris di bawahnya justru SUDAH BENAR pakai pool eksperimen sejak awal — komentarnya sendiri eksplisit bilang "sama isolasi dengan Gate A Kritikus & ohlcv_analyze auto-entry" — cuma call SambaNova primer yang kelewatan tidak ikut diisolasi sejak fitur ini pertama dibuat (Plan U-5b, bukan disebabkan bug macro sebelumnya; bug macro cuma bikin call ini lebih sering ke-trigger).
+
+**Implementasi:** key diganti `'ai:sambanova:main'` → `'ai:sambanova:main:experimental'` (circuit breaker) dan `'sambanova_main'` → `'sambanova_main_experimental'` (budget harian, limit 30/hari — pool yang sama dipakai call generate sinyal auto-entry utama), konsisten dengan Plan V-3 (isolasi call developer-only dari traffic publik).
+
+**Verifikasi:** 1 test baru di `test/admin/isolation_auto.test.js` (pola sama test PLAN V-3 lain di file yang sama) — konfirmasi counter `ai_budget:sambanova_main_experimental:<hari>` naik, counter `ai_budget:sambanova_main:<hari>` (produksi) TIDAK tersentuh. `npm test` 759/759 hijau.
 
 ---
 

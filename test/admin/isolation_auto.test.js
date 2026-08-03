@@ -798,6 +798,43 @@ test('PLAN U-7(d): position_review tetap memproses id yang ADA di setup_log_auto
   });
 });
 
+// BUG DITEMUKAN & DIFIX (2026-08-03, audit S274 lanjutan): call SambaNova UTAMA di
+// position_review masih pakai key produksi ('ai:sambanova:main'/'sambanova_main'),
+// padahal fitur ini developer-only (HANYA proses id dari setup_log_auto:v1, lihat
+// test (d) di atas). Fallback DeepSeek di handler yang sama SUDAH benar pakai pool
+// eksperimen sejak awal — call SambaNova primer kelewatan. Pola test sama V-3 di
+// bawah: pastikan breaker/counter yang tersentuh eksperimen, produksi tidak disentuh.
+test('PLAN V-3 (audit S274 lanjutan): position_review call SambaNova pakai pool eksperimen, BUKAN produksi', async () => {
+  await withEnv({ CRON_SECRET: 'rahasia', SAMBANOVA_API_KEY: 'k' }, async () => {
+    const autoSetup = baseSetup({ id: 'GC=F:auto1', status: 'open', source: 'auto', filled_t: 500 });
+    const store = makeStore({ 'setup_log:v1': JSON.stringify([]), 'setup_log_auto:v1': JSON.stringify([autoSetup]) });
+    const { req, res } = fakeReqRes({
+      action: 'position_review', headers: { 'x-cron-secret': 'rahasia' },
+      body: JSON.stringify({ id: 'GC=F:auto1', trigger: { guid: 'g', title: 't', cat: 'market-moving' } }),
+    });
+    const origFetch = global.fetch;
+    global.fetch = async (url, opts) => {
+      if (String(url).includes('sambanova.ai')) {
+        return { ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify({ decision: 'HOLD', new_sl: null, reason: 'aman', confidence: 'sedang' }) } }] }) };
+      }
+      return redisFetchStub(store)(url, opts);
+    };
+    try {
+      const handler = loadHandler();
+      await handler(req, res);
+      assert.equal(res.statusCode, 200);
+      assert.equal(res.body.decision, 'HOLD');
+      // onSuccess circuit breaker TIDAK menulis apa pun kalau breaker sudah closed
+      // tanpa riwayat gagal (lihat api/_circuit_breaker.js — "circuit was already
+      // closed with no record, nothing to reset") — jadi cek counter budget harian
+      // (SELALU ditulis tiap call, pola sama test Audit S218 di atas), bukan circuit.
+      const day = new Date().toISOString().slice(0, 10);
+      assert.equal(store.strings[`ai_budget:sambanova_main_experimental:${day}`], '1', 'counter budget EKSPERIMEN harus naik');
+      assert.equal(store.strings[`ai_budget:sambanova_main:${day}`], undefined, 'counter budget PRODUKSI tidak boleh tersentuh oleh position_review');
+    } finally { global.fetch = origFetch; }
+  });
+});
+
 // ── (e) tidak ada string 'setup_log_auto' di index.html (publik) ───────────
 
 test('PLAN U-7(e): index.html tidak memuat string setup_log_auto (isolasi frontend)', () => {

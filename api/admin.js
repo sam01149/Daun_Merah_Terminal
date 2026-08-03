@@ -3610,6 +3610,15 @@ async function positionReviewHandler(req, res) {
 
     // Langkah 2c: fact sheet ringkas + 1 AI call (SambaNova akun 1, Groq diputus
     // kontraknya 2026-07-25 — fail-safe downgrade ke HOLD kalau offline/limit habis).
+    // BUG DITEMUKAN & DIFIX (2026-08-03, audit S274 lanjutan): call SambaNova utama di
+    // bawah ini masih pakai key PRODUKSI ('ai:sambanova:main'/'sambanova_main') — padahal
+    // fitur ini developer-only, HANYA melayani id dari setup_log_auto:v1 (lihat langkah
+    // 2a di atas: id manual ditolak sebelum sampai sini). Fallback DeepSeek 15 baris di
+    // bawah SUDAH benar pakai pool eksperimen (komentarnya sendiri bilang "sama isolasi
+    // dengan Gate A Kritikus & ohlcv_analyze auto-entry") — call SambaNova primer ini
+    // kelewatan tidak ikut diisolasi sejak awal fitur dibuat. Disamakan sekarang: pakai
+    // key eksperimen, konsisten dengan Plan V-3 (isolasi call developer-only dari traffic
+    // publik Ringkasan/Analisa/Pre-Entry Check).
     const closeLast = candles.length ? candles[candles.length - 1].c : null;
     const recentCandles = candles.slice(-12);
     const candleLines = recentCandles.length
@@ -3660,9 +3669,9 @@ async function positionReviewHandler(req, res) {
     const SAMBANOVA_KEY = process.env.SAMBANOVA_API_KEY;
     let rawText = null, model = null;
 
-    if (SAMBANOVA_KEY && await cb.canCall('ai:sambanova:main')) {
+    if (SAMBANOVA_KEY && await cb.canCall('ai:sambanova:main:experimental')) {
       try {
-        if (!await allowAiCall('sambanova_main')) throw new Error('AI daily budget exceeded');
+        if (!await allowAiCall('sambanova_main_experimental')) throw new Error('AI daily budget exceeded');
         const r = await fetch('https://api.sambanova.ai/v1/chat/completions', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SAMBANOVA_KEY}` },
@@ -3671,10 +3680,10 @@ async function positionReviewHandler(req, res) {
         });
         if (r.ok) {
           const j = await r.json(); rawText = j.choices?.[0]?.message?.content?.trim() || null; model = 'deepseek-v3.2';
-          if (rawText) await cb.onSuccess('ai:sambanova:main');
+          if (rawText) await cb.onSuccess('ai:sambanova:main:experimental');
           else throw new Error('Empty response');
         } else { throw new Error(`HTTP ${r.status}`); }
-      } catch (e) { console.warn('position_review SambaNova failed:', e.message); await cb.onFailure('ai:sambanova:main'); }
+      } catch (e) { console.warn('position_review SambaNova failed:', e.message); await cb.onFailure('ai:sambanova:main:experimental'); }
     } else if (SAMBANOVA_KEY) { console.log('position_review: SambaNova circuit OPEN'); }
 
     // Fallback (2026-07-30, diskusi user — pola sama _runCriticVerdict): DeepSeek
