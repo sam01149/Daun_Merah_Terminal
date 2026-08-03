@@ -22,21 +22,44 @@ const FRED_BASE = 'https://api.stlouisfed.org/fred/series/observations'
 
 // Hardcoded inflation expectations with mandatory source + refresh date.
 // Update each quarter. If as_of > 90 days old, UI shows stale indicator.
+// Audit 2026-08-03 (Plan W-2): 5/7 sudah lewat ambang stale 90 hari — semua
+// currency dicek ulang ke publikasi resmi TERBARU per tanggal ini (bukan
+// agregator berita). Metrik per currency TETAP jenis yang sama seperti seed
+// awal (lihat catatan di tiap baris) supaya perbandingan antar-kuartal konsisten.
 const INFLATION_EXPECTATIONS = {
-  // Source: ECB Survey of Professional Forecasters Q2 2026 — refresh Oct 2026
-  EUR: { value: 2.0,  source: 'ECB SPF Q2 2026',    as_of: '2026-04-10' },
-  // Source: BoE Inflation Attitudes Survey Feb 2026 — Q2 results published ~Aug 2026
-  GBP: { value: 3.2,  source: 'BoE IAS Feb 2026',   as_of: '2026-02-12' },
-  // Source: BoJ Tankan Q1 2026 — refresh Jul 2026 (Q2 Tankan published late Jun)
-  JPY: { value: 2.6,  source: 'BoJ Tankan Q1 2026', as_of: '2026-03-28' },
-  // Source: Bank of Canada MPR Apr 2026 — refresh Jul 2026
-  CAD: { value: 2.2,  source: 'BoC MPR Apr 2026',   as_of: '2026-04-16' },
-  // Source: RBA Statement on Monetary Policy May 2026 — refresh Aug 2026
+  // Metrik: longer-term (2031) HICP expectation — unchanged dari Q2, tetap 2.0%.
+  // Source: ECB Survey of Professional Forecasters Q3 2026 (rilis 2026-07-24,
+  // ecb.europa.eu/stats/ecb_surveys/survey_of_professional_forecasters) — refresh ~Oct 2026 (Q4 SPF)
+  EUR: { value: 2.0,  source: 'ECB SPF Q3 2026',    as_of: '2026-07-24' },
+  // Metrik: median 1-year-ahead inflation expectation (IAS "coming year").
+  // Source: BoE/Ipsos Inflation Attitudes Survey May 2026 (fielded 30 Apr-5 Mei
+  // 2026, bankofengland.co.uk/inflation-attitudes-survey/2026/may-2026), naik
+  // dari 3.2% (Feb) — refresh ~Aug 2026 (survei berikutnya kuartalan)
+  GBP: { value: 4.0,  source: 'BoE IAS May 2026',   as_of: '2026-05-05' },
+  // Metrik: firms' 1-year-ahead CPI outlook (Tankan "General Outlook for General
+  // Prices", all enterprises). Source: BoJ Tankan Jun 2026 (rilis 2026-07-01,
+  // boj.or.jp/en/statistics/tk/yoshi/tk2606.htm), naik dari 2.6% (Mar) — refresh ~Oct 2026
+  JPY: { value: 2.7,  source: 'BoJ Tankan Jun 2026', as_of: '2026-07-01' },
+  // Metrik: proyeksi CPI headline paruh kedua 2026 ("H2 2026 ~2.5%, kembali ke
+  // target 2% awal 2027"). Source: Bank of Canada Monetary Policy Report Jul
+  // 2026 (rilis 2026-07-15, bankofcanada.ca/publications/mpr/mpr-2026-07-15) — refresh ~Oct 2026
+  CAD: { value: 2.5,  source: 'BoC MPR Jul 2026 (H2 2026 avg)', as_of: '2026-07-15' },
+  // Audit 2026-08-03: SoMP Agustus 2026 BELUM terbit (jadwal resmi 2026-08-11) —
+  // nilai TETAP dari edisi Mei 2026 (masih publikasi terbaru yang tersedia),
+  // bukan tebakan. Metrik: underlying (trimmed mean) inflation, above 3% until mid-2027.
+  // Source: RBA Statement on Monetary Policy May 2026 — refresh setelah SoMP Aug 2026 terbit
   AUD: { value: 3.2,  source: 'RBA SoMP May 2026',  as_of: '2026-05-06' },
-  // Source: RBNZ Monetary Policy Statement May 2026 — refresh Aug 2026
+  // Audit 2026-08-03: keputusan OCR 2026-07-08 adalah "Monetary Policy Review"
+  // (bukan Monetary Policy Statement kuartalan penuh — MPS berikutnya baru
+  // 2026-09-02, rbnz.govt.nz) — belum ada tabel proyeksi resmi baru, nilai TETAP
+  // dari edisi Mei 2026. Metrik: proyeksi inflasi jangka menengah (~2% mid-2027).
+  // Source: RBNZ Monetary Policy Statement May 2026 — refresh setelah MPS Sep 2026 terbit
   NZD: { value: 2.1,  source: 'RBNZ MPS May 2026',  as_of: '2026-05-27' },
-  // Source: SNB Inflation Forecast Mar 2026 (held at 0.00%) — refresh Jun 2026 meeting
-  CHF: { value: 0.4,  source: 'SNB Mar 2026',       as_of: '2026-03-19' },
+  // Metrik: conditional inflation forecast tahun kalender 2026 (assumsi policy
+  // rate tetap 0%). Source: SNB Monetary Policy Assessment 18 Jun 2026 (rilis
+  // 2026-06-18, snb.ch/en/publications/communication/press-releases-restricted/pre_20260618),
+  // naik dari 0.4% (Mar) — refresh ~Sep 2026 (assessment berikutnya)
+  CHF: { value: 0.6,  source: 'SNB Jun 2026 (2026 forecast)', as_of: '2026-06-18' },
 }
 
 // FRED series IDs for 10Y government bond nominal yields (monthly for non-USD)
