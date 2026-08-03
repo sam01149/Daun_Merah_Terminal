@@ -1020,7 +1020,7 @@ async function fundamentalRefreshHandler(req, res) {
       if (calendarEvents.length > 0) calendarUpdated = await autoUpdateFundamentalsFromCalendar(calendarEvents, redisCmd);
     } catch(e) { console.warn('fundamental_refresh: calendar layer gagal:', e.message); }
 
-    if (headlines.length === 0) return res.status(200).json({ updated: calendarUpdated, headlines: 0 });
+    if (headlines.length === 0) return res.status(200).json({ updated: calendarUpdated, calendar_updated: calendarUpdated, headlines: 0 });
 
     const updated = await autoUpdateFundamentals(headlines, redisCmd);
 

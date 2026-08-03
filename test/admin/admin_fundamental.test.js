@@ -176,3 +176,66 @@ test('fundamental_analysis: tanpa API key sama sekali -> 500 tanpa network call'
     assert.strictEqual(fetchCalled, false);
   });
 });
+
+test('fundamental_refresh: calendar layer menulis update dan muncul di response', async () => {
+  const prevRedisUrl = process.env.UPSTASH_REDIS_REST_URL;
+  const prevRedisToken = process.env.UPSTASH_REDIS_REST_TOKEN;
+  process.env.UPSTASH_REDIS_REST_URL = 'https://redis.test';
+  process.env.UPSTASH_REDIS_REST_TOKEN = 'token';
+  try {
+    const req = {
+      method: 'GET',
+      query: { action: 'fundamental_refresh' },
+      headers: { 'x-vercel-cron': '1' },
+      url: '/api/admin?action=fundamental_refresh',
+    };
+    const res = {
+      setHeader: () => {},
+      status(code) { this.statusCode = code; return this; },
+      json(obj) { this.body = obj; return this; },
+      end() { return this; },
+    };
+
+    await withFetch(async (url, opts) => {
+      if (url === 'https://www.financialjuice.com/feed.ashx?xy=rss') {
+        return { ok: true, text: async () => '<rss><channel></channel></rss>' };
+      }
+      const args = JSON.parse(opts.body);
+      const [cmd, key] = args;
+      if (cmd === 'GET' && key === 'calendar_v1') {
+        return { json: async () => ({ result: JSON.stringify({ events: [{
+          date: '2026-08-03', time_wib: '14:00 WIB', currency: 'JPY', event: 'Retail Sales YoY', impact: 'High',
+          forecast: '1.8%', previous: '1.7%', actual: '1.9%',
+        }] }) }) };
+      }
+      if (cmd === 'GET' && key === 'calendar_next_v1') {
+        return { json: async () => ({ result: null }) };
+      }
+      if (cmd === 'ZREVRANGE') {
+        return { json: async () => ({ result: [] }) };
+      }
+      if (cmd === 'HMGET' && key === 'fundamental:JPY') {
+        return { json: async () => ({ result: [null] }) };
+      }
+      if (cmd === 'HGET') {
+        return { json: async () => ({ result: null }) };
+      }
+      if (cmd === 'HSET') {
+        return { json: async () => ({ result: 1 }) };
+      }
+      return { json: async () => ({ result: null }) };
+    }, async () => {
+      await handler(req, res);
+    });
+
+    assert.strictEqual(res.statusCode, 200);
+    assert.deepStrictEqual(res.body.updated, { JPY: ['Retail Sales YoY'] });
+    assert.deepStrictEqual(res.body.calendar_updated, { JPY: ['Retail Sales YoY'] });
+    assert.strictEqual(res.body.headlines, 0);
+  } finally {
+    if (prevRedisUrl === undefined) delete process.env.UPSTASH_REDIS_REST_URL;
+    else process.env.UPSTASH_REDIS_REST_URL = prevRedisUrl;
+    if (prevRedisToken === undefined) delete process.env.UPSTASH_REDIS_REST_TOKEN;
+    else process.env.UPSTASH_REDIS_REST_TOKEN = prevRedisToken;
+  }
+});

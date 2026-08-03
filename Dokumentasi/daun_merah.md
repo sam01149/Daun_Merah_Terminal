@@ -11,11 +11,19 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-03 (Session 275 — Plan W selesai penuh: FOMC live+seed drift+parser bug+ekspektasi inflasi+lapis calendar_v1 fundamental)
+> **Last updated:** 2026-08-03 (Session 276 — Plan W: konsistensi respons `fundamental_refresh` untuk data kalender)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 276 (2026-08-03) — Plan W: Konsistensi Respons `fundamental_refresh` untuk Calendar Update
+
+**Konteks:** kelanjutan validasi Plan W-5 pada jalur `fundamental_refresh` — regresi handler menunjukkan respons saat tidak ada headline mengembalikan `updated` tetapi tidak mengembalikan `calendar_updated`, sehingga payload tidak konsisten dengan jalur headline.
+
+**Perbaikan:** `api/admin.js` sekarang mengembalikan `calendar_updated` juga di cabang tanpa headline, sementara tetap mempertahankan payload `updated` untuk kompatibilitas. Nilai yang dikembalikan sama dengan hasil update kalender yang sudah diproses.
+
+**Verifikasi:** `npm test` 792/792 hijau.
 
 ## Changelog Session 275 (2026-08-03) — Plan W: Tutup Nilai Hardcode Manual yang Punya/Butuh Sumber Live
 
