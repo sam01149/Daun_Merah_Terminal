@@ -41,17 +41,43 @@ async function fetchFredCsv(seriesId) {
   return null;
 }
 
+// Ambil event calendar_v1 (minggu berjalan) + calendar_next_v1 (minggu depan) —
+// dua-duanya cache TradingView (api/calendar.js), dipakai getNextFOMCMeetings
+// buat cari tanggal rapat FOMC live (Plan W-1, 2026-08-03). Fail-open: gagal
+// fetch/parse → array kosong, caller fallback total ke tabel manual.
+async function _fetchCalendarEventsForFomc() {
+  try {
+    const [raw1, raw2] = await Promise.all([
+      redisCmd('GET', 'calendar_v1'),
+      redisCmd('GET', 'calendar_next_v1'),
+    ]);
+    const events = [];
+    for (const raw of [raw1, raw2]) {
+      if (!raw) continue;
+      try {
+        const c = JSON.parse(raw);
+        if (Array.isArray(c?.events)) events.push(...c.events);
+      } catch(_) { /* fail-open, skip batch yang rusak */ }
+    }
+    return events;
+  } catch(e) {
+    console.warn('rate-path: fetch calendar_v1/calendar_next_v1 gagal:', e.message);
+    return [];
+  }
+}
+
 async function computeRatePath() {
   // Fetch all FRED series via keyless CSV in one parallel batch.
   // DFEDTARU: upper bound of FF target range (daily, same as cb-status.js).
   // DGS1MO/DGS3MO: constant-maturity T-bill yields (daily, H.15 release ~4:15 PM ET).
   // DTB4WK/DTB3: weekly auction rates (published Mondays) — backup when DGS not yet updated.
-  const [effObs, dgs1mObs, dgs3mObs, dtb4wkObs, dtb3Obs] = await Promise.all([
+  const [effObs, dgs1mObs, dgs3mObs, dtb4wkObs, dtb3Obs, calendarEvents] = await Promise.all([
     fetchFredCsv('DFEDTARU').catch(() => null),
     fetchFredCsv('DGS1MO').catch(() => null),
     fetchFredCsv('DGS3MO').catch(() => null),
     fetchFredCsv('DTB4WK').catch(() => null),
     fetchFredCsv('DTB3').catch(() => null),
+    _fetchCalendarEventsForFomc(),
   ]);
 
   const currentRate = effObs ? parseFloat(effObs.value) : 3.75;
@@ -62,7 +88,7 @@ async function computeRatePath() {
                ?? (dtb3Obs ? parseFloat(dtb3Obs.value) : null);
 
   const now = new Date();
-  const nextMeetings = getNextFOMCMeetings(now, 3);
+  const nextMeetings = getNextFOMCMeetings(now, 3, calendarEvents);
 
   // Step 1: FRED T-bill term structure (pre-fetched above, zero extra network calls).
   // T-bills typically trade ~20bps ABOVE EFFR in hold regime (term premium).
@@ -126,15 +152,56 @@ async function computeRatePath() {
   };
 }
 
-function getNextFOMCMeetings(from, count) {
-  // Known 2026 FOMC meeting dates (update quarterly)
+// Filter event kalender live jadi tanggal rapat FOMC (pure function, testable
+// tanpa mock Redis — pola sama _findLiveAnnounceMs di api/_cb_shock.js). Judul
+// dijaga cukup ketat (rate decision/FOMC + currency USD + impact High) supaya
+// tidak salah ambil rilis lain di hari sama.
+//
+// calendar_v1/calendar_next_v1 menyimpan `date` yang SUDAH digeser ke kalender
+// WIB (api/calendar.js: date: toDateStr(wib)) — FOMC diumumkan siang ET (~19:00
+// UTC, lihat CB_ANNOUNCE_HOUR_UTC di _cb_shock.js) yang jatuh DINI HARI WIB hari
+// BERIKUTNYA. Dinormalisasi balik ke tanggal rapat (konvensi tabel manual `known`
+// di bawah, dipakai juga sebagai format `b.last_meeting` di cb_decisions) kalau
+// time_wib dini hari (<07:00) — supaya 1 rapat tidak muncul 2x dengan representasi
+// tanggal berbeda saat digabung dengan tabel manual.
+const _FOMC_EVENT_RX = /interest rate decision|rate decision|fomc/i;
+function _liveFomcMeetingDates(calendarEvents) {
+  if (!Array.isArray(calendarEvents)) return [];
+  const dates = new Set();
+  for (const e of calendarEvents) {
+    if (!e || !e.date) continue;
+    if (String(e.currency || '').toUpperCase() !== 'USD') continue;
+    if (e.impact !== 'High') continue;
+    if (!_FOMC_EVENT_RX.test(String(e.event || ''))) continue;
+    let d = e.date;
+    const hourM = /^(\d{2}):/.exec(e.time_wib || '');
+    if (hourM && parseInt(hourM[1], 10) < 7) {
+      const dt = new Date(`${d}T00:00:00Z`);
+      if (!isNaN(dt.getTime())) { dt.setUTCDate(dt.getUTCDate() - 1); d = dt.toISOString().slice(0, 10); }
+    }
+    dates.add(d);
+  }
+  return [...dates];
+}
+
+// calendarEvents opsional (array event calendar_v1/calendar_next_v1, Plan W-1
+// 2026-08-03) — kalau disuplai, tanggal rapat LIVE diutamakan; tabel manual
+// `known` tetap dipakai untuk mengisi slot yang tidak ketemu live (calendar_v1
+// cuma cache minggu berjalan, bukan arsip jauh ke depan — rapat 2+ bulan lagi
+// NORMAL tidak ada di sana). Backward-compatible: caller lama tanpa parameter
+// ke-3 tetap jalan murni dari tabel manual.
+function getNextFOMCMeetings(from, count, calendarEvents = []) {
+  // Known 2026 FOMC meeting dates (update quarterly) — fallback kalau live tidak ketemu.
   const known = [
     '2026-05-07','2026-06-18','2026-07-30','2026-09-17',
     '2026-11-05','2026-12-17',
     '2027-01-28','2027-03-18','2027-04-29',
   ];
   const fromStr = from.toISOString().slice(0, 10);
-  return known.filter(d => d > fromStr).slice(0, count);
+  const live = _liveFomcMeetingDates(calendarEvents).filter(d => d > fromStr);
+  const manual = known.filter(d => d > fromStr);
+  const merged = [...new Set([...live, ...manual])].sort();
+  return merged.slice(0, count);
 }
 
 // Logic inti cache→compute→stale, dipisah dari HTTP wrapper (plan G6 langkah
@@ -201,3 +268,4 @@ module.exports = async function handler(req, res) {
 // module.exports.parseRetailPositions di feeds.js).
 module.exports.getRatePathData = getRatePathData;
 module.exports.getNextFOMCMeetings = getNextFOMCMeetings;
+module.exports._liveFomcMeetingDates = _liveFomcMeetingDates;
