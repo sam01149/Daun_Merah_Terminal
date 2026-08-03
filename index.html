@@ -4373,7 +4373,7 @@ window.addEventListener('DOMContentLoaded', () => _updateNewsLangBtn());
 
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.08.02.5';
+const APP_VERSION = '2026.08.03.1';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
@@ -4525,6 +4525,12 @@ function _patchTranslatedItems(items) {
       descEl.remove();
     }
   }
+  // Susulkan ke render lain yang juga menampilkan judul NEWS (Berita Terkait TEK,
+  // kolom Dashboard) — keduanya baca title_id dari objek allItems yang sama, tapi
+  // tidak punya data-guid per-item untuk di-patch langsung seperti feedScroll di atas,
+  // jadi render ulang penuh (murah, cuma dari array in-memory, bukan fetch baru).
+  renderTekNews();
+  renderDashNews();
 }
 
 let deferredInstall = null;
@@ -16103,7 +16109,8 @@ function renderTekNews() {
       html += '<div class="tek-news-empty">Tidak ada berita relevan saat ini.</div>';
     } else {
       html += matches.map(item => {
-        const cat = detectCat(item.title);
+        const cat = detectCat(item.title); // SELALU teks Inggris asli — title_id BUKAN input klasifikasi
+        const dispTitle = (newsLangPref === 'id' && item.title_id) ? item.title_id : item.title;
         const col = TEK_CAT_COLOR[cat] || '#888';
         const bg = col + '22';
         const fjImgId = 'fjImg-tek-' + item.guid;
@@ -16124,7 +16131,7 @@ function renderTekNews() {
           + '<span class="tek-news-time">' + fmtTime(item.pubDate) + ' · ' + fmtTimeAgo(item.pubDate) + '</span>'
           + '<span class="tek-news-cat" style="background:' + bg + ';color:' + col + '">' + cat.replace('-',' ') + '</span>'
           + '</div>'
-          + '<div class="tek-news-title">' + escHtml(item.title) + '</div>'
+          + '<div class="tek-news-title">' + escHtml(dispTitle) + '</div>'
           + chartHtml
           + '</div>';
       }).join('');
@@ -17533,11 +17540,14 @@ function renderDashNews() {
         <div class="dash-cluster-chevron${isExpanded ? ' open' : ''}">&#9658;</div>
       </div>
       <div class="dash-cluster-items" id="cluster-items-${cat}" style="display:${isExpanded ? 'block' : 'none'}">
-        ${catItems.slice(0, 15).map(it => `<div class="dash-news-item">
+        ${catItems.slice(0, 15).map(it => {
+          const dispTitle = (newsLangPref === 'id' && it.title_id) ? it.title_id : (it.title || '');
+          return `<div class="dash-news-item">
           <div class="dash-news-dot"></div>
-          <div class="dash-news-text">${escHtml(it.title || '')}</div>
+          <div class="dash-news-text">${escHtml(dispTitle)}</div>
           <div class="dash-news-time">${fmtAge(it.pubDate)}</div>
-        </div>`).join('')}
+        </div>`;
+        }).join('')}
       </div>
     </div>`;
   }

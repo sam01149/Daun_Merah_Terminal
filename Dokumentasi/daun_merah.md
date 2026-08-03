@@ -11,13 +11,25 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-02 (Session 272 lanj. — Translate NEWS: provider final Mistral, fix budget mepet, backfill proaktif arsip 36 jam)
+> **Last updated:** 2026-08-03 (Session 273 — judul NEWS yang tampil di Dashboard & "Berita Terkait" TEK ikut preferensi bahasa NEWS)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
 
-## Changelog Session 272 (2026-08-02) — Tambah Pair BTC/USD di Tab TEK
+## Changelog Session 273 (2026-08-03) — Judul NEWS di Dashboard & "Berita Terkait" TEK Ikut Preferensi Bahasa
+
+**Permintaan user:** awalnya minta toggle EN/ID gaya NEWS diterapkan ke semua fitur lewat menu titik-3 header. Setelah diskusi, scope dipersempit user sendiri: toggle bahasa TETAP di fitur NEWS saja (tombol toolbar `newsLangBtn`, tidak dipindah/diduplikasi ke menu titik-3 header global) — akar masalah sebenarnya cuma judul berita yang tampil ulang di Dashboard (`renderDashNews`) dan "Berita Terkait" tab TEK (`renderTekNews`) selalu Inggris walau NEWS sudah di-toggle ke Indonesia. Bikin toggle terpisah di tiap tempat dianggap tidak efisien (user: "gausah la... kalau di news itu ind, maka news yang ada di berita terkait fitur tek dan news di dashboard tolong agar disesuaikan").
+
+**Root cause:** `renderDashNews()` dan `renderTekNews()` (`index.html`) selama ini selalu render `item.title` mentah, tidak pernah cek `newsLangPref`/`item.title_id` — padahal `title_id` sudah ada di objek yang sama persis (`allItems`, diisi background oleh `_fetchNewsTranslations()`/`_patchTranslatedItems()` di tab NEWS, lihat Session 272). Cukup baca field yang sudah ada, tidak perlu translate baru/provider baru.
+
+**Implementasi (`index.html`), pola disalin persis dari `_feedItemHtml()` (satu-satunya tempat translate sudah benar):**
+- `renderTekNews()`: item FinancialJuice hasil filter pair (bukan item ActionForex — itu sumber terpisah, tidak lewat pipeline translate) — `dispTitle = (newsLangPref === 'id' && item.title_id) ? item.title_id : item.title`, dipakai untuk `.tek-news-title` (deskripsi tidak dirender di sini, tidak perlu disentuh). `detectCat(item.title)` TETAP pakai judul Inggris asli (aturan sama seperti `_feedItemHtml`, `title_id` bukan input klasifikasi).
+- `renderDashNews()`: pola sama untuk `.dash-news-text` di tiap `catItems`.
+- `_patchTranslatedItems()`: tambah `renderTekNews()` + `renderDashNews()` di akhir (setelah patch DOM NEWS) — supaya terjemahan yang datang susulan dari polling background juga langsung kepakai di kedua tempat ini tanpa perlu pindah tab. Aman dipanggil kapan pun (kedua fungsi sudah null-check elemen DOM-nya sendiri, no-op kalau section tidak sedang di-render), dan hanya tereksekusi saat `newsLangPref === 'id'` (fungsi ini sudah early-return sebelum baris itu kalau mode EN).
+- `APP_VERSION` → `2026.08.03.1`.
+
+**Verifikasi:** `npm test` 741/741 hijau (1 failure pra-eksisting tidak terkait — `scripts/test-deribit.js`, `CERT_HAS_EXPIRED` jaringan eksternal). Verifikasi live logic via Playwright (static server lokal + `browser_evaluate` inject item dummy langsung ke `allItems`, tanpa perlu backend/API key): item dengan `title_id` terisi → tampil judul Indonesia di Dashboard & TEK; item tanpa `title_id` → fallback judul Inggris asli (bukan kosong/error); toggle `newsLangPref` ke `'en'` → kembali ke judul Inggris di kedua tempat; simulasi `_patchTranslatedItems()` datang susulan → Dashboard ikut ter-refresh otomatis tanpa reload.
 
 **Permintaan user:** tambah pair BTC/USD di fitur TEK, posisinya setelah grup FX dan sebelum grup Yield.
 
