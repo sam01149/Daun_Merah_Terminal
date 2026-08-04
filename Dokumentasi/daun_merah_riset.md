@@ -42,7 +42,27 @@ Audit atas permintaan user ("audit fitur auto entry trade, sesuaikan dengan tuju
 
 **Kesimpulan audit:** seluruh kriteria Plan U yang masih terbuka (n≥100, skor kalibrasi antar-provider ≥80% item #6, breakdown loss_causes item #7, validasi conviction sizing item #8, out-of-sample split item #9, gating rezim item #10, evaluasi U-5 n≥10) **TETAP BENAR tertunda menunggu data** — audit ini tidak menemukan alasan untuk membuka salah satu prematur, dan tidak menemukan bukti sistem menyimpang dari desain Plan U (silent/senyap terjaga, isolasi budget eksperimental masih intak per audit kode terpisah). Item #1-5 (selesai S209) tidak diaudit ulang — di luar scope, tidak ada perubahan kode di area itu sejak selesai.
 
-**Temuan terpisah yang BUTUH keputusan user** (bukan soal Plan U langsung, soal housekeeping git): ada perubahan kode uncommitted yang melonggarkan Gate E dari hard-block jadi flag observasi — sudah lulus 850/850 test, tapi belum di-commit/push/dicatat changelog. Detail & opsi: lihat entri terkait di `daun_merah_progress.md`.
+**Update:** perubahan Gate E (uncommitted saat audit ini ditulis) sudah di-commit+push sesi lain (`fbea3c5`, changelog Session 281) — tidak perlu tindakan lagi.
+
+### [2026-08-04] Audit lanjutan — skenario "professional trader" vs auto-entry, dan ketepatan jadwal cron
+
+Lanjutan audit di atas, sudut pandang berbeda: user minta dibayangkan sebagai "trader profesional yang agresif tapi defensif" untuk menilai apakah skenario yang di-cover auto-entry sudah merangkum program kerja trader sungguhan. Semua item di bawah **DIPARKIR atas keputusan eksplisit user ("keep itu semua" / "keep lagi semua") — TIDAK dieksekusi, cuma didokumentasikan supaya tidak hilang untuk sesi berikutnya.**
+
+**Celah manajemen posisi (fase "trade sedang berjalan", bukan seleksi/entry — itu sudah matang):**
+1. **Trailing stop** — tidak ada. Butuh kalibrasi (ATR multiple dsb) yang belum ada dasarnya di n=22.
+2. **Breakeven move** — tidak ada, SENGAJA (komentar kode `vps/daemon.js` baris ~41: hindari whipsaw). Keputusan sadar lama, bukan kelupaan.
+3. **Invalidasi tesis teknikal tidak ditegakkan** — AI menulis `invalidation_condition` (teks bebas) saat generate sinyal, tapi tidak pernah dicek ulang otomatis terhadap harga berjalan; satu-satunya jalan keluar dini masih lewat berita (`tighten_sl`/`close_early`), bukan lewat struktur harga. **Ini SATU-SATUNYA dari 4 celah yang direkomendasikan layak dikerjakan lebih dulu**: (a) tidak butuh kalibrasi angka baru (tinggal menegakkan apa yang AI sendiri sudah tulis), (b) punya efek ganda — kualitas (potong trade mati lebih cepat) DAN kecepatan n≥100 (lihat poin cron di bawah, `blockedByOpenPosition` menahan slot pair itu selama posisi masih OPEN), (c) **bisa dibangun TANPA tambahan biaya DeepSeek** kalau kondisi invalidasi diminta terstruktur (level harga/MA, bukan cuma kalimat) di call generate yang SAMA — pengecekan berikutnya jadi fungsi murni (pola sama Gate B/D/E), bukan tanya-AI-ulang.
+4. **Partial profit-taking/scaling** — tidak ada, sama seperti #1 butuh kalibrasi.
+
+**Koreksi diri:** sempat menyebut "Gate D correlation cap cuma 1 pasangan (XAU-EUR/USD)" sebagai celah — SALAH, sudah dicek riset lama (r=0,03-0,19 AUD/NZD & EUR/GBP ke pair lain) dan sengaja tidak di-cap karena memang tidak perlu. Bukan celah.
+
+**Mekanisme yang TERBUKTI memperlambat n≥100 (dicek ke kode, bukan kira-kira):** `blockedByOpenPosition` (`api/admin.js` ~5074) skip TOTAL pembuatan sampel baru untuk pair yang sedang OPEN, sampai posisi lama tutup. Kombinasi dengan celah #3 di atas (tidak ada exit dini berbasis struktur) berarti posisi yang "harusnya sudah mati" ikut menahan slot pair itu lebih lama dari perlu. Refine-in-place untuk PENDING searah (S230, sudah lama tercatat) tetap jadi penyebab dominan lain.
+
+**Gate risiko (A/B/D/E) TIDAK terlalu ketat** — considered=15, saved=10 (67% lolos), rasio wajar. Yang justru dominan menahan pertumbuhan n itu bukan gate risiko, tapi mekanisme kebersihan statistik (dup-check, `blockedByOpenPosition`, refine-in-place, flip guard) — sengaja ketat supaya n≥100 nanti tidak berisi sampel yang saling berkorelasi/dobel-hitung. Melonggarkan ini demi kecepatan akan membuat n=100 tercapai lebih cepat tapi jadi tidak berarti secara statistik — kontraproduktif terhadap tujuan Plan U sendiri.
+
+**Ketepatan jadwal cron (`AUTO_ENTRY_HOURS_UTC = '8,13'`, fire 08:15 & 13:15 UTC):** 08:00 UTC ≈ London buka, 13:00 UTC ≈ overlap London-New York (likuiditas tertinggi harian) — TEPAT untuk XAU/USD, EUR/USD, EUR/GBP. **Tapi AUD/NZD paling aktif di sesi Sydney-Tokyo (~22:00-08:00 UTC)** — jadwal sekarang cuma menangkap ekor sesi Asia + jam London/NY yang justru sepi untuk pair ini (selaras temuan lama "AUD/NZD range-bound" — riset di atas). **Temuan reliabilitas terpisah:** pembuatan sinyal (`runAutoEntryCycle`) TIDAK punya fallback GitHub Actions kalau daemon Railway down — beda dari watcher TP/SL yang punya cadangan `setup-tp-sl-watch.yml` tiap 5 menit. Kalau Railway down pas 08:15/13:15 UTC, jatah sinyal hari itu (semua 4 pair) hilang tanpa mekanisme susulan. Belum dicek log uptime Railway untuk konfirmasi seberapa sering ini benar-benar terjadi — kandidat pengecekan kalau dilanjutkan nanti.
+
+**Syarat lanjut kalau user mau eksekusi salah satu:** #3 (invalidasi teknikal terstruktur, nol biaya AI) adalah kandidat paling siap. Jadwal cron AUD/NZD/reliabilitas fallback perlu keputusan eksplisit (geser jam khusus AUD/NZD vs biarkan, tambah fallback GH Actions untuk `runAutoEntryCycle` vs terima risikonya) — belum ada arah dari user, jangan dieksekusi sepihak.
 
 ### [2026-08-04] Profil struktural AUD/NZD & EUR/GBP — dasar "kartu spesialis" per pair auto-entry
 
