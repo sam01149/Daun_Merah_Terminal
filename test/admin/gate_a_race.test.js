@@ -242,11 +242,12 @@ test('Flip-cancel lalu Gate A batalkan kandidat baru: pembatalan stalePending TE
 });
 
 // Audit S277 (2026-08-04): Gate E — AI menandai sendiri conflict:'waktu' (skema PLAN
-// U-2, none/arah/waktu) tapi sebelum ini murni observasi pasif, tidak pernah menahan
-// entry. Verifikasi Gate E menahan SEBELUM Gate A dipanggil sama sekali (dicek di
-// bawah lewat SambaNova TIDAK boleh di-fetch — kalau Gate E gagal menahan, stub fetch
-// akan throw "unexpected network call").
-test('Gate E conflict:"waktu" — entri TIDAK tersimpan, auto_guard_stats:conflict_waktu naik, Gate A tidak dipanggil', async () => {
+// U-2, none/arah/waktu). Sempat jadi hard block (auto-reject sebelum Gate A dipanggil),
+// DILONGGARKAN sesi yang sama (diskusi user): dasarnya cuma 4-5 sampel + sudah ada
+// tighten_sl reaktif berita untuk posisi open (api/_position_review.js) — lihat
+// api/_auto_entry_guard.js. Sekarang conflict:'waktu' cuma flag observasi non-blocking,
+// kandidatnya TETAP diteruskan ke Gate A (AI Kritikus) yang independen menilai.
+test('Gate E conflict:"waktu" — flag observasi naik TAPI Gate A tetap dipanggil, verdict "lanjut" -> entri tersimpan', async () => {
   await withEnv({ CRON_SECRET: 'topsecret', DEEPSEEK_API_KEY: 'k', SAMBANOVA_API_KEY: 'sk' }, async () => {
     const aiJsonConflictWaktu = { ...AI_JSON_BEARISH, conflict: 'waktu', conflict_note: 'FOMC dalam 18 jam, horizon 3 hari' };
     const aiRawText = `${JSON.stringify(aiJsonConflictWaktu)}\n===COMMENTARY===\nKomentar singkat untuk tes Gate E.`;
@@ -257,7 +258,8 @@ test('Gate E conflict:"waktu" — entri TIDAK tersimpan, auto_guard_stats:confli
       const u = String(url);
       if (u.includes('fake-upstash.test')) return redisStub(url, opts);
       if (u.includes('api.deepseek.com')) return { ok: true, json: async () => ({ choices: [{ message: { content: aiRawText } }] }) };
-      throw new Error('unexpected network call di test: ' + u); // Gate A (SambaNova) TIDAK boleh dipanggil kalau Gate E benar menahan
+      if (u.includes('api.sambanova.ai')) return { ok: true, json: async () => ({ choices: [{ message: { content: criticResponse('lanjut') } }] }) };
+      throw new Error('unexpected network call di test: ' + u);
     };
     try {
       const handler = loadHandler();
@@ -268,9 +270,41 @@ test('Gate E conflict:"waktu" — entri TIDAK tersimpan, auto_guard_stats:confli
       }, res);
       assert.equal(res.statusCode, 200);
       const log = JSON.parse(store.strings['setup_log_auto:v1']);
-      assert.equal(log.length, 0, 'conflict:"waktu" -> tidak ada entri baru tersimpan');
+      assert.equal(log.length, 1, 'conflict:"waktu" tidak lagi auto-reject -> entri tersimpan kalau Gate A lanjut');
+      assert.equal(log[0].conflict, 'waktu');
       assert.equal(store.strings['auto_guard_stats:considered'], '1');
-      assert.equal(store.strings['auto_guard_stats:conflict_waktu'], '1');
+      assert.equal(store.strings['auto_guard_stats:conflict_waktu_flagged'], '1', 'flag observasi tetap naik walau tidak menahan');
+      assert.equal(store.strings['auto_guard_stats:saved'], '1');
+    } finally { global.fetch = origFetch; }
+  });
+});
+
+test('Gate E conflict:"waktu" — Gate A tetap bisa veto (critic_veto), bukan lagi auto-reject buta oleh Gate E sendiri', async () => {
+  await withEnv({ CRON_SECRET: 'topsecret', DEEPSEEK_API_KEY: 'k', SAMBANOVA_API_KEY: 'sk' }, async () => {
+    const aiJsonConflictWaktu = { ...AI_JSON_BEARISH, conflict: 'waktu', conflict_note: 'FOMC dalam 18 jam, horizon 3 hari' };
+    const aiRawText = `${JSON.stringify(aiJsonConflictWaktu)}\n===COMMENTARY===\nKomentar singkat untuk tes Gate E.`;
+    const store = baseStore();
+    const origFetch = global.fetch;
+    const redisStub = redisFetchStub(store);
+    global.fetch = async (url, opts) => {
+      const u = String(url);
+      if (u.includes('fake-upstash.test')) return redisStub(url, opts);
+      if (u.includes('api.deepseek.com')) return { ok: true, json: async () => ({ choices: [{ message: { content: aiRawText } }] }) };
+      if (u.includes('api.sambanova.ai')) return { ok: true, json: async () => ({ choices: [{ message: { content: criticResponse('batalkan') } }] }) };
+      throw new Error('unexpected network call di test: ' + u);
+    };
+    try {
+      const handler = loadHandler();
+      const res = fakeRes();
+      await handler({
+        headers: { 'x-cron-secret': 'topsecret' }, method: 'GET',
+        query: { action: 'ohlcv_analyze', symbol: 'GBPUSD=X', label: 'GBP/USD', auto: '1' },
+      }, res);
+      assert.equal(res.statusCode, 200);
+      const log = JSON.parse(store.strings['setup_log_auto:v1']);
+      assert.equal(log.length, 0, 'Gate A veto -> tidak tersimpan (tapi lewat critic_veto, bukan conflict_waktu)');
+      assert.equal(store.strings['auto_guard_stats:conflict_waktu_flagged'], '1');
+      assert.equal(store.strings['auto_guard_stats:critic_veto'], '1');
       assert.equal(store.strings['auto_guard_stats:saved'], undefined);
     } finally { global.fetch = origFetch; }
   });

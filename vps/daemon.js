@@ -1365,14 +1365,28 @@ async function fetchMergedCalendarEvents() {
 // adalah lapisan tambahan di atas fungsi inti, sama semangatnya dengan
 // getZoneData/checkPriceZonesFor di atas yang skip diam-diam saat data
 // pendukung tidak tersedia.
+//
+// Audit S277 (2026-08-04) sempat menambah cek MAJU (findHardNewsEvent, event
+// akan rilis dalam beberapa jam) di sini, DILONGGARKAN sesi yang sama (diskusi
+// user): cek maju ini REDUNDAN dengan Gate E — AI yang bikin analisa toh sudah
+// dikasih daftar event high-impact 7 hari ke depan yang SAMA persis di dalam
+// prompt (lihat `[EVENT HIGH-IMPACT 7 HARI KE DEPAN]`, api/admin.js), dan kalau
+// dia menilai konflik waktu, itu sudah diteruskan ke Gate A (AI Kritikus) yang
+// juga independen menilai kalender yang sama (calAnalyzeBlock) — bukan lagi
+// auto-reject buta. Skip di SINI (sebelum AI bahkan dipanggil) cuma dobel-jaga
+// tanpa nambah kualitas keputusan, malah menghilangkan kesempatan AI menimbang
+// per-setup (mis. RR sangat besar bisa tetap layak walau ada event mendatang).
+// Cek MUNDUR (findRecentHardNewsEvent, event yang BARU SAJA rilis) TETAP
+// dipertahankan sebagai hard skip — beda karakter: itu soal data pasar yang
+// mungkin belum settle/tercermin penuh di candle yang dianalisa AI, berbasis
+// kasus SL nyata (AUD/NZD), bukan tebakan/self-report yang bisa diserahkan ke
+// judgment AI seperti conflict:'waktu'.
 async function checkHardNewsSkip(pair, label) {
   try {
     const events = await fetchMergedCalendarEvents();
     const legs = legsFromLabel(label);
     const nowMs = Date.now();
-    // Audit S277 (2026-08-04): cek ke depan (menjelang rilis) DAN ke belakang
-    // (baru saja rilis, masih settling) — lihat catatan findRecentHardNewsEvent.
-    const hit = findHardNewsEvent(events, legs, nowMs) || findRecentHardNewsEvent(events, legs, nowMs);
+    const hit = findRecentHardNewsEvent(events, legs, nowMs);
     if (!hit) return null;
     const entry = {
       ts: nowMs, pair, label, reason: 'hard_news',

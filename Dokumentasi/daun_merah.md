@@ -11,11 +11,28 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-04 (Session 280 — Plan X: Deteksi Kejutan Ekonomi Actual vs Forecast untuk Auto-Entry)
+> **Last updated:** 2026-08-04 (Session 281 — Gate E dilonggarkan: conflict:"waktu" tidak lagi auto-reject, diteruskan ke AI Kritikus; hard-news forward-check di daemon dihapus)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 281 (2026-08-04) — Gate E Dilonggarkan (Diskusi User Pasca-Audit Nol-Entry)
+
+**Konteks:** user tanya kenapa auto-entry nol entry/pending sepanjang hari (audit live ke Redis produksi via Upstash REST langsung — beberapa key seperti `auto_guard_stats:conflict_waktu` dan `ai_budget:*:{tanggal}` tidak terdaftar di `KEY_REGISTRY` `api/admin.js` redis-keys handler, jadi 404 walau valid). Ketemu: Gate E (`conflict:'waktu'`, dibuat pagi itu juga di Session 277 lanjutan) langsung menahan satu-satunya kandidat yang sampai tahap akhir gate hari itu — hari pertama gate baru ini aktif. Diskusi lanjutan membongkar 2 celah desain: (1) dasar pembuatan Gate E cuma 4-5 sampel SL — bertentangan dengan prinsip evaluasi n>=100 per-batch yang sudah dipegang untuk sistem ini ([[project-auto-entry-trainee-mental-model]]); (2) sudah ada lapis proteksi TERPISAH untuk risiko berita di posisi yang SUDAH open (tighten_sl reaktif berita, `api/_position_review.js`) — hard block pra-entry jadi dobel-guard, bukan satu-satunya pertahanan.
+
+**Perubahan (2 gate, keduanya soal "berita/waktu", dipilih SELEKTIF — gate berbasis data riil/kejadian nyata TIDAK disentuh):**
+
+1. **`api/admin.js` (Gate E, sekitar `ohlcvAnalyzeHandler`):** `conflict:'waktu'` dari self-assessment AI TIDAK lagi auto-reject sebelum Gate A dipanggil. Sekarang cuma jadi counter observasi non-blocking (`auto_guard_stats:conflict_waktu_flagged`, didaftarkan ke `KEY_REGISTRY`) — kandidatnya tetap diteruskan ke Gate A (AI Kritikus, `_runCriticVerdict`) yang independen menilai, dengan tambahan satu baris konteks di `criticSetupBlock` yang secara eksplisit menyebut catatan timing dari analisa awal dan mengingatkan bahwa posisi open tetap dilindungi tighten-SL reaktif berita. Gate A sendiri sudah menerima kalender event high-impact yang sama (`calAnalyzeBlock`) sejak awal, jadi tidak ada informasi baru yang hilang — cuma keputusan akhirnya dipindah dari self-report tunggal ke pengecekan independen kedua.
+2. **`vps/daemon.js` (`checkHardNewsSkip`):** cek MAJU (`findHardNewsEvent`, event high-impact yang akan rilis beberapa jam ke depan) dihapus dari kombinasi skip — dianggap REDUNDAN dengan Gate E (AI penganalisa sudah lihat kalender yang sama, dan sekarang hasil penilaiannya lolos ke Gate A, bukan dibuang). Cek MUNDUR (`findRecentHardNewsEvent`, event yang BARU SAJA rilis dalam 1 jam terakhir) TETAP dipertahankan — beda karakter, berbasis kasus SL nyata (AUD/NZD, lihat Session 277/280) dan soal data candle yang mungkin belum settle, bukan tebakan self-report yang bisa diserahkan ke AI. `findHardNewsEvent` sendiri TETAP ada sebagai pure function + unit test (tidak dihapus, cuma tidak lagi dipanggil sebagai gate).
+
+**Yang SENGAJA tidak disentuh** (beda karakter, berbasis data terukur bukan self-report subjektif — melonggarkannya menukar keamanan modal demi frekuensi tanpa dasar kualitas): Gate B (drawdown circuit breaker, ambang adaptif per `risk_regime`), Gate D (correlation cap, XAU/USD-EUR/USD r=0,585 empiris), Gate "kejutan ekonomi" Plan X (`checkSurpriseSkip`, baru dideploy sesi lain — ambangnya sendiri ditandai eksplisit "belum dikalibrasi dari data live", terlalu baru untuk dievaluasi).
+
+**Diskusi tambahan (belum dieksekusi, sengaja didokumentasikan):** user mempertanyakan apakah Gate A (AI Kritikus) sendiri bisa dipercaya untuk benar-benar menolak setup yang memang berisiko (bukan cuma rubber-stamp). Jawaban: tidak ada garansi mutlak, tapi 3 mitigasi struktural sudah ada — (a) AI call independen/terpisah dari yang membuat setup, (b) instruksi eksplisit melarang keberatan generik tanpa angka konkret, (c) 3 tingkat verdict (`lanjut`/`tunda`/`batalkan`) di mana cuma "batalkan" (keberatan fundamental) yang benar-benar menahan — "tunda" tetap tersimpan. Celah yang diakui terbuka: TIDAK ada pelacakan counterfactual/ghost untuk `critic_veto` (beda dari `bias_flip` yang sudah punya `_evaluateCanceledGhost`) — belum diketahui apakah 2 veto historis itu memang tepat atau salah tolak setup bagus. User belum minta ini dibangun — dicatat sebagai potensi kerja lanjutan, bukan item aktif.
+
+**Verifikasi:** `npm test` 850/850 hijau (2 test lama Gate E diganti jadi 2 test baru yang memverifikasi Gate A tetap dipanggil untuk `conflict:'waktu'`, baik verdict "lanjut" maupun "batalkan"). `test/api/_auto_entry_guard.test.js` (unit `isTimingConflictBlocked`) tidak berubah — fungsi predikatnya sendiri tetap sama, cuma tidak lagi dipakai sebagai gate yang menahan penyimpanan.
+
+**File diubah:** `api/_auto_entry_guard.js`, `api/admin.js`, `vps/daemon.js`, `test/admin/gate_a_race.test.js`.
 
 ## Changelog Session 280 (2026-08-04) — Plan X: Deteksi Kejutan Ekonomi (Actual vs Forecast) untuk Auto-Entry
 

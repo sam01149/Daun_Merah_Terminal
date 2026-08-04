@@ -520,6 +520,11 @@ const KEY_REGISTRY = [
   { key: 'auto_guard_stats:correlation_cap',         owner: 'api/admin.js', ttl_expected: null, note: 'Audit-guard Gate D: ditahan (correlated exposure XAU/USD-EUR/USD)' },
   { key: 'auto_guard_stats:drawdown_circuit_breaker', owner: 'api/admin.js', ttl_expected: null, note: 'Audit-guard Gate B: ditahan (rolling R melewati ambang regime)' },
   { key: 'auto_guard_stats:critic_veto',              owner: 'api/admin.js', ttl_expected: null, note: 'Audit-guard Gate A: AI Kritikus verdict "batalkan"' },
+  // Gate E DILONGGARKAN (2026-08-04, sesi sama dengan pembuatannya) dari hard block jadi
+  // flag observasi non-blocking + konteks tambahan ke Gate A — lihat api/_auto_entry_guard.js.
+  // TIDAK ikut invarian considered=saved+correlation_cap+drawdown+critic_veto di atas
+  // (kandidat conflict:'waktu' tetap lanjut ke gate lain, jadi bisa dobel-hitung di sini).
+  { key: 'auto_guard_stats:conflict_waktu_flagged',   owner: 'api/admin.js', ttl_expected: null, note: 'Audit-guard: kandidat bertanda conflict:"waktu" dari AI (observasi saja, TIDAK menahan — diteruskan ke Gate A dgn konteks tambahan)' },
   // [SISTEM HAKIM] aktivasi jalur cron (2026-07-29) — counter INCR polos terpisah dari
   // auto_guard_stats:* karena BUKAN gate (tidak pernah membatalkan penyimpanan sendiri).
   // 'considered' = setup auto-entry di mana cbDir tersedia (client/manual atau fallback
@@ -5169,6 +5174,16 @@ async function ohlcvAnalyzeHandler(req, res) {
         if (autoGuardConsidered) redisCmd('INCR', 'auto_guard_stats:considered').catch(() => {});
         let autoGuardReason = null;
         if (autoGuardConsidered) {
+          // Gate E DILONGGARKAN (diskusi user, 2026-08-04, sesi sama dengan audit S277
+          // yang membuatnya hard block) — lihat api/_auto_entry_guard.js untuk alasan
+          // lengkap (bukti awal cuma 4-5 sampel + sudah ada tighten_sl reaktif berita
+          // untuk posisi open). conflict:'waktu' sekarang cuma counter observasi
+          // non-blocking; kandidatnya tetap lanjut ke Gate A (AI Kritikus) di bawah,
+          // yang sudah lihat kalender event high-impact sama (calAnalyzeBlock) dan bisa
+          // veto sendiri lewat critic_veto kalau memang dianggap terlalu berisiko.
+          if (isTimingConflictBlocked(structured.conflict)) {
+            redisCmd('INCR', 'auto_guard_stats:conflict_waktu_flagged').catch(() => {});
+          }
           if (isCorrelatedExposureBlocked({ symbol, bias: structured.bias, openPositions: log })) {
             autoGuardReason = 'correlation_cap';
           } else {
@@ -5178,9 +5193,6 @@ async function ohlcvAnalyzeHandler(req, res) {
             const dd = isDrawdownHalted({ closedSetups, regime: autoGuardRegime });
             if (dd.halted) {
               autoGuardReason = `drawdown_circuit_breaker(R=${dd.rollingR})`;
-            } else if (isTimingConflictBlocked(structured.conflict)) {
-              // Gate E (audit S277, 2026-08-04) — lihat api/_auto_entry_guard.js.
-              autoGuardReason = 'conflict_waktu';
             }
           }
         }
@@ -5225,6 +5237,9 @@ async function ohlcvAnalyzeHandler(req, res) {
             `Pair: ${data.label} | Bias: ${structured.bias || '—'} | Entry: ${structured.entry_zone} | SL: ${structured.sl} | TP: ${structured.tp}${structured.risk_reward ? ` | RR: ${structured.risk_reward}` : ''}`,
             structured.invalidation_condition ? `Invalidation: ${structured.invalidation_condition}` : null,
             structured.makro_alignment ? `Makro alignment: ${structured.makro_alignment}${structured.makro_alignment_reason ? ` (${structured.makro_alignment_reason})` : ''}` : null,
+            structured.conflict === 'waktu'
+              ? `Catatan timing dari analisa awal: ${structured.conflict_note || 'ada event high-impact dekat, dalam rentang horizon skenario ini'} — nilai apakah risikonya cukup serius untuk verdict "batalkan", atau setup ini cukup kuat untuk tetap lanjut (posisi open tetap dilindungi tighten-SL reaktif berita kalau eventnya benar-benar bergerak melawan).`
+              : null,
           ].filter(Boolean).join('\n');
           const criticFactParts = [criticSetupBlock, fundBlock, rrBlock, trackBlock, calAnalyzeBlock].filter(Boolean);
           // Pool eksperimental (BUKAN 'ai:sambanova:main'/'sambanova_main' milik tombol
