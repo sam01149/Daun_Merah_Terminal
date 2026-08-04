@@ -2735,21 +2735,30 @@ function _evaluateSetups(setups, candlesBySymbol, nowMs, calendarEvents, newsIte
 // sinyal) sebagai exit dini DETERMINISTIK — nol biaya AI tambahan, reuse candle
 // H1 yang SAMA dengan _evaluateSetups di atas (dipanggil SETELAH-nya, supaya
 // `closed_t` yang baru saja di-set jadi boundary prioritas TP/SL — lihat komentar
-// isInvalidationTriggered, api/_auto_entry_guard.js). Field TERPISAH
-// (`intervention`/`managed_status`, pola sama close_early U-5a) — status/tp/sl
-// MENTAH tetap dievaluasi _evaluateSetups apa adanya (prinsip U-5a, ghost/
-// counterfactual tidak boleh ditimpa). `intervention.type: 'tech_invalidation'`
-// SENGAJA beda dari 'close_early' (AI menilai berita realtime) — dua mekanisme
-// beda filosofi (kode murni vs AI), statistik efektivitasnya tidak boleh tercampur
-// (lihat _aggManagementStats, api/_position_review.js).
+// isInvalidationTriggered, api/_auto_entry_guard.js). Status/tp/sl MENTAH tetap
+// dievaluasi _evaluateSetups apa adanya (prinsip U-5a, ghost/counterfactual tidak
+// boleh ditimpa).
 //
-// Guard `!st.intervention`: selaras "1 intervensi per posisi" (pola sama AI
-// position review) — kalau tighten_sl/close_early AI sudah lebih dulu turun
-// tangan, invalidasi teknikal tidak menimpa keputusan itu.
+// BUG DITEMUKAN & DIFIX (2026-08-04, sesi sama — user tanya "gimana kalau dia
+// ngasal batalkan trade"): versi pertama menulis hasil ke `intervention`/
+// `managed_status` (field bersama U-5a) — field itu JUGA dipakai guard "1
+// intervensi per posisi" di positionReviewHandler (~baris 3746, `if
+// (st.intervention) skip 'already_managed'`) dan runFridayTightenCycle (~baris
+// 3969, `candidates = ...filter(!s.intervention)`). Akibatnya kalau AI menulis
+// `invalidation_trigger` yang ASAL (level ngawur, gampang kesenggol noise
+// biasa) dan kode ini menyalakannya duluan, posisi itu jadi TIDAK PERNAH
+// kebagian giliran direview AI position-review yang MERESPONS BERITA ASLI —
+// mekanisme kode-murni yang belum terverifikasi kualitasnya jadi menghalangi
+// mekanisme AI yang jauh lebih penting. Field SEKARANG dipisah total
+// (`tech_invalidated`, BUKAN `intervention`) — murni observasional, TIDAK
+// pernah menghalangi AI position review atau tighten preventif Jumat menyentuh
+// posisi yang sama. Konsekuensinya: `tech_invalidated` bisa hidup BERDAMPINGAN
+// dengan `intervention` AI di posisi yang sama (dua catatan independen, bukan
+// satu slot rebutan) — ini yang diinginkan, bukan bug.
 function _evaluateTechInvalidation(setups, candlesBySymbol) {
   const ACTIVE_OR_JUST_RESOLVED = new Set(['pending', 'open', 'tp', 'sl', 'ambiguous']);
   for (const st of setups || []) {
-    if (!st || !st.invalidation_trigger || st.intervention) continue;
+    if (!st || !st.invalidation_trigger || st.tech_invalidated) continue;
     if (!ACTIVE_OR_JUST_RESOLVED.has(st.status)) continue;
     const candles = candlesBySymbol?.[st.symbol] || [];
     const boundaryMs = st.closed_t ? st.closed_t * 1000 : Infinity;
@@ -2757,14 +2766,12 @@ function _evaluateTechInvalidation(setups, candlesBySymbol) {
       invalidation_trigger: st.invalidation_trigger, candles, startMs: st.ts, boundaryMs,
     });
     if (result?.triggered) {
-      st.intervention = {
-        type: 'tech_invalidation', t: result.at * 1000, price: st.invalidation_trigger.level,
-        new_sl: null,
-        reason: `Invalidasi teknikal: close ${st.invalidation_trigger.direction === 'above' ? 'menembus ke atas' : 'balik ke bawah'} level ${st.invalidation_trigger.level} (${st.invalidation_trigger.type})`,
-        trigger_guid: null,
+      st.tech_invalidated = {
+        at: result.at,
+        level: st.invalidation_trigger.level,
+        type: st.invalidation_trigger.type,
+        direction: st.invalidation_trigger.direction,
       };
-      st.managed_status = 'tech_invalidated';
-      st.managed_closed_t = result.at;
     }
   }
   return setups;
@@ -5123,9 +5130,11 @@ async function ohlcvAnalyzeHandler(req, res) {
         intervention: null, managed_status: null, managed_closed_t: null, review_count: 0,
         // Track 1 (Road to Professional LLM Trader, 2026-08-04): trigger invalidasi
         // teknikal terstruktur (nullable) — dicek deterministik oleh _evaluateTechInvalidation,
-        // hasil deteksi ditulis ke `intervention`/`managed_status` (field TERPISAH,
-        // reuse pola U-5a) saat tersentuh.
+        // hasil deteksi ditulis ke `tech_invalidated` — field SENGAJA TERPISAH dari
+        // `intervention`/`managed_status` (mekanisme AI U-5a) supaya tidak menghalangi
+        // AI position review/tighten preventif Jumat menyentuh posisi yang sama.
         invalidation_trigger: structured.invalidation_trigger ?? null,
+        tech_invalidated: null,
       });
       let needsGateA = false;
       const gotLock = await _acquireLockWithRetry(lockKey);
@@ -5170,7 +5179,10 @@ async function ohlcvAnalyzeHandler(req, res) {
                 // Track 1 (2026-08-04): trigger invalidasi ikut diperbarui ke generasi
                 // terbaru, pola sama field lain di blok refine ini — jangan nyimpen
                 // trigger dari generasi pertama yang mungkin sudah tidak relevan.
+                // `tech_invalidated` di-reset (kalaupun sempat kesentuh sebelum refine
+                // ini, itu milik trigger LAMA — thesis baru butuh evaluasi fresh dari nol).
                 stalePending.invalidation_trigger = structured.invalidation_trigger ?? null;
+                stalePending.tech_invalidated = null;
                 stalePending.alignment = (structured.conflict && structured.conflict !== 'none')
                   ? 'konflik'
                   : (structured.makro_alignment || null);

@@ -92,11 +92,13 @@ function _aggManagementStats(arr) {
   const closeEntries   = list.filter(x => x && x.intervention && x.intervention.type === 'close_early');
   const tighten_sl  = tightenEntries.length;
   const close_early = closeEntries.length;
-  // Track 1 (Road to Professional LLM Trader, 2026-08-04): 'tech_invalidation'
-  // TIDAK ikut dikurangi dari `reviews`/`hold` — mekanisme kode murni (bukan hasil
-  // review AI atas berita), pola sama tighten_sl_preventive di bawah (dihitung
-  // terpisah supaya tidak mengaburkan efektivitas review AI reaktif vs deterministik).
-  const techInvalidationEntries = list.filter(x => x && x.intervention && x.intervention.type === 'tech_invalidation');
+  // Track 1 (Road to Professional LLM Trader, 2026-08-04): `tech_invalidated`
+  // (field TERPISAH dari `intervention` — lihat komentar _evaluateTechInvalidation,
+  // api/admin.js, soal kenapa dipisah: reuse `intervention` sempat menghalangi AI
+  // position review kebagian giliran) TIDAK ikut dikurangi dari `reviews`/`hold` —
+  // mekanisme kode murni (bukan hasil review AI atas berita), pola sama
+  // tighten_sl_preventive di bawah.
+  const techInvalidationEntries = list.filter(x => x && x.tech_invalidated);
   const hold = Math.max(0, reviews - tighten_sl - close_early);
   // Preventif (tighten_sl_preventive) SENGAJA dihitung TERPISAH dari tighten_sl reaktif
   // di atas — jangan digabung ke reviews/hold (bukan hasil review AI per berita, jadi

@@ -179,14 +179,15 @@ test('_aggManagementStats: reviews/hold/tighten/close_early + saved/cost dari gh
     { intervention: { type: 'tighten_sl_preventive' }, status: 'sl' }, // tighten_preventive.saved
     { intervention: { type: 'tighten_sl_preventive' }, status: 'tp' }, // tighten_preventive.cost
     { intervention: { type: 'tighten_sl_preventive' }, status: 'open' }, // belum resolve, tidak masuk saved/cost
-    // Track 1 (2026-08-04) — tech_invalidation JUGA TIDAK boleh ikut mempengaruhi
-    // reviews/hold (kode murni, bukan hasil review AI atas berita).
-    { intervention: { type: 'tech_invalidation' }, status: 'sl' }, // tech_invalidation.saved
-    { intervention: { type: 'tech_invalidation' }, status: 'tp' }, // tech_invalidation.cost
-    { intervention: { type: 'tech_invalidation' }, status: 'pending' }, // tech_invalidation.ghost_pending
+    // Track 1 (2026-08-04) — `tech_invalidated` (field TERPISAH dari `intervention`,
+    // lihat komentar _evaluateTechInvalidation api/admin.js) JUGA TIDAK boleh ikut
+    // mempengaruhi reviews/hold (kode murni, bukan hasil review AI atas berita).
+    { intervention: null, tech_invalidated: { at: 1 }, status: 'sl' }, // tech_invalidation.saved
+    { intervention: null, tech_invalidated: { at: 1 }, status: 'tp' }, // tech_invalidation.cost
+    { intervention: null, tech_invalidated: { at: 1 }, status: 'pending' }, // tech_invalidation.ghost_pending
   ];
   const m = _aggManagementStats(arr);
-  assert.equal(m.reviews, 6); // tidak berubah walau ada entri preventif+tech_invalidation tambahan
+  assert.equal(m.reviews, 6); // tidak berubah walau ada entri preventif+tech_invalidated tambahan
   assert.equal(m.tighten_sl, 2);
   assert.equal(m.close_early, 3);
   assert.equal(m.hold, 1);
@@ -380,6 +381,27 @@ test('position_review: sudah punya intervention -> skip already_managed, TANPA c
     await withFetch(combinedStub({ log }), async () => { await handler(req, res); });
     assert.equal(res.statusCode, 200);
     assert.equal(res.body.skipped, 'already_managed');
+  });
+});
+
+// Track 1 (Road to Professional LLM Trader, 2026-08-04) — BUG DITEMUKAN & DIFIX
+// sesi sama (user tanya "gimana kalau dia ngasal batalkan trade"): versi pertama
+// _evaluateTechInvalidation menulis ke field `intervention` yang SAMA dipakai guard
+// di atas ("sudah punya intervention -> skip already_managed") — akibatnya kalau
+// invalidasi teknikal (kode murni, kualitasnya belum diverifikasi) nyala duluan,
+// posisi itu TIDAK PERNAH kebagian review AI berbasis berita asli. Field sekarang
+// dipisah (`tech_invalidated`) — test ini memverifikasi posisi dengan
+// `tech_invalidated` terisi (TANPA `intervention`) TETAP diproses normal oleh AI.
+test('position_review: tech_invalidated terisi (TANPA intervention) -> TETAP diproses AI, bukan skip already_managed', async () => {
+  await withEnv({ CRON_SECRET: 'rahasia', SAMBANOVA_API_KEY: 'k' }, async () => {
+    const log = [{ ...openSetup, tech_invalidated: { at: 500, level: 4050, type: 'ma_break', direction: 'above' } }];
+    const { req, res } = fakeReqRes({ headers: { 'x-cron-secret': 'rahasia' }, body: JSON.stringify({ id: 'GC=F:1', trigger: { guid: 'g', title: 't', cat: 'market-moving' } }) });
+    await withFetch(combinedStub({ log, candles: [mkC(1, 4020, 4025, 4015, 4018)], aiJson: { decision: 'HOLD', new_sl: null, reason: 'aman', confidence: 'sedang' } }),
+      async () => { await handler(req, res); });
+    assert.equal(res.statusCode, 200);
+    assert.notEqual(res.body.skipped, 'already_managed');
+    assert.equal(res.body.decision, 'HOLD');
+    assert.equal(res.body.setup.review_count, 1, 'AI benar-benar diproses (review_count naik), bukan di-skip');
   });
 });
 

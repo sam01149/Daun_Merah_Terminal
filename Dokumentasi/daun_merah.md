@@ -11,11 +11,25 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-04 (Session 282 — Plan "Road to Professional LLM Trader" Track 1+2a: invalidasi teknikal deterministik + jam khusus AUD/NZD)
+> **Last updated:** 2026-08-04 (Session 282 lanjutan — fix celah tech_invalidation menghalangi AI position review, field dipisah jadi `tech_invalidated`)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 282 lanjutan (2026-08-04) — Fix: Invalidasi Teknikal Sempat Menghalangi AI Position Review
+
+**Konteks:** langsung setelah Track 1 di bawah di-push, user tanya "gimana kalau dia ngasal aja batalkan trade? ada ga kemungkinan gitu?" — pertanyaan itu membongkar celah desain nyata (bukan cuma teoretis) di implementasi pertama.
+
+**Celah yang ditemukan:** `_evaluateTechInvalidation` (kode murni, deteksi invalidasi teknikal deterministik) menulis hasilnya ke field `intervention`/`managed_status` — field yang SAMA dipakai guard "1 intervensi per posisi" di `positionReviewHandler` (~baris 3746, `if (st.intervention) skip 'already_managed'`) dan `runFridayTightenCycle` (~baris 3969, `candidates = ...filter(!s.intervention)`). Akibatnya: kalau AI menulis `invalidation_trigger` yang levelnya asal/gampang kesenggol noise candle biasa (validasi yang ada cuma cek "ini angka", TIDAK cek "ini masuk akal secara struktur" — celah kedua yang SENGAJA belum diperbaiki, lihat bawah), dan kode ini "menyala" duluan, posisi itu jadi **tidak pernah kebagian giliran direview AI position-review yang MERESPONS BERITA ASLI** — mekanisme kode-murni yang belum terverifikasi kualitasnya jadi menghalangi mekanisme AI yang jauh lebih penting.
+
+**Perbaikan:** field dipisah total — hasil deteksi sekarang ditulis ke `tech_invalidated: {at, level, type, direction}` (field BARU, independen), bukan lagi `intervention`/`managed_status`. Konsekuensinya: `tech_invalidated` bisa hidup berdampingan dengan `intervention` AI di posisi yang sama (dua catatan independen, bukan satu slot rebutan) — AI position review dan tighten preventif Jumat sekarang TIDAK PERNAH terhalang oleh mekanisme kode murni ini.
+
+**File diubah:** `api/admin.js` (`_evaluateTechInvalidation`, `buildNewSetupEntry`, blok refine-in-place), `api/_position_review.js` (`_aggManagementStats` baca dari `tech_invalidated`), `dev-auto-entry.html` (render field terpisah), `test/admin/tech_invalidation.test.js` (test baru: intervention AI existing tidak menghalangi/tidak ditimpa), `test/admin/position_review.test.js` (test baru level-handler: `tech_invalidated` terisi TIDAK men-skip review AI, dibuktikan `review_count` tetap naik).
+
+**Celah kedua (SENGAJA belum diperbaiki, keputusan user):** validasi `invalidation_trigger` cuma memastikan levelnya angka valid, tidak mengecek kewajaran (level terlalu dekat entry, dsb). Ditunda sampai ada data nyata (n cukup di `tech_invalidation` bucket `_aggManagementStats`) untuk kalibrasi ambang — pola sama alasan Track 3 ditunda (`daun_merah.md` Session 277→281, Gate E).
+
+**Verifikasi:** `npm test` 868/868 hijau (2 test baru + 8 test existing direvisi mengikuti field baru).
 
 ## Changelog Session 282 (2026-08-04) — Plan "Road to Professional LLM Trader": Track 1 (Invalidasi Teknikal) + Track 2a (Jam Khusus AUD/NZD)
 
@@ -27,8 +41,8 @@ Sebelumnya `invalidation_condition` (field `structured` dari AI) cuma teks bebas
 
 1. **`api/admin.js`** — prompt `ohlcvAnalyzeHandler` (~baris 4674) minta AI isi `invalidation_trigger` di samping `invalidation_condition`; hasilnya divalidasi ketat (`type`/`direction` harus dari set yang dikenal, `level` harus angka finite) sebelum disimpan ke `setup_log_auto:v1`/`setup_log:v1` (baru & refine-in-place).
 2. **`api/_auto_entry_guard.js`** — fungsi pure baru `isInvalidationTriggered({invalidation_trigger, candles, startMs, boundaryMs})`: cek CLOSE candle H1 (bukan wick, konsisten "Daily close balik di bawah SMA50" — beda dari SL/TP yang memang harus tahan noise intrabar) terhadap level, pakai candle yang SUDAH difetch untuk `_evaluateSetups` (nol fetch tambahan). `startMs` dari `st.ts` (bukan `filled_t`) — thesis bisa batal SEBELUM posisi sempat fill. `boundaryMs` = `closed_t` (kalau status sudah resolve ke tp/sl/ambiguous) — TP/SL asli MENANG kalau tersentuh di candle sama/lebih dulu, invalidasi cuma berlaku SEBELUM itu.
-3. **`api/admin.js`** — loop baru `_evaluateTechInvalidation` dipanggil SETELAH `_evaluateSetups` di kedua jalur evaluasi (`_buildAutoScopeStats` scope=auto & `setupStatsHandler` publik/manual). Hasil ditulis ke field TERPISAH `intervention`/`managed_status` (`type:'tech_invalidation'`, `managed_status:'tech_invalidated'`) — **status/tp/sl MENTAH tidak pernah ditimpa** (prinsip U-5a, ghost/counterfactual tetap jalan apa adanya). Sengaja beda `intervention.type` dari `close_early` (AI menilai berita) — dua mekanisme beda filosofi (kode murni vs AI), jangan campur statistiknya.
-4. **`api/_position_review.js`** — `_aggManagementStats` dapat bucket baru `tech_invalidation: {count, saved, cost, ghost_pending}`, TIDAK ikut mengurangi `reviews`/`hold` (bukan hasil review AI, pola sama `tighten_preventive`).
+3. **`api/admin.js`** — loop baru `_evaluateTechInvalidation` dipanggil SETELAH `_evaluateSetups` di kedua jalur evaluasi (`_buildAutoScopeStats` scope=auto & `setupStatsHandler` publik/manual). Hasil ditulis ke field `tech_invalidated: {at, level, type, direction}` — **status/tp/sl MENTAH tidak pernah ditimpa** (prinsip U-5a, ghost/counterfactual tetap jalan apa adanya). *(Revisi: versi awal sesi ini reuse field `intervention`/`managed_status` — TERNYATA menghalangi AI position review, diperbaiki sesi lanjutan langsung di bawah, `tech_invalidated` field independen sejak awal disebut di sini.)*
+4. **`api/_position_review.js`** — `_aggManagementStats` dapat bucket baru `tech_invalidation: {count, saved, cost, ghost_pending}` (baca dari `tech_invalidated`), TIDAK ikut mengurangi `reviews`/`hold` (bukan hasil review AI, pola sama `tighten_preventive`).
 5. **`dev-auto-entry.html`** — jurnal render trigger mentah (`Invalidasi Teknikal (trigger AI)`) + label intervensi/hasil baru di `INTERVENTION_LABEL`/`MANAGED_STATUS_LABEL`.
 
 **Track 2a — Jam Khusus AUD/NZD (sesi Sydney-Tokyo):**

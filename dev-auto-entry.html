@@ -651,12 +651,12 @@ tr.rowdetail .row b{color:var(--fg);font-weight:500;white-space:normal;word-brea
     tighten_sl: 'SL diperketat (reaktif berita)',
     tighten_sl_preventive: 'SL diperketat (preventif sebelum weekend)',
     close_early: 'Ditutup dini oleh sistem (bukan TP/SL alami)',
-    // Track 1 (Road to Professional LLM Trader, 2026-08-04): exit dini DETERMINISTIK
-    // (kode murni, bukan AI) saat invalidation_trigger tersentuh — lihat
-    // _evaluateTechInvalidation (api/admin.js).
-    tech_invalidation: 'Ditutup dini — invalidasi teknikal tersentuh (kode, bukan AI)',
   };
-  const MANAGED_STATUS_LABEL = { tp: 'kena TP', sl: 'kena SL', ambiguous: 'ambigu (SL & TP di candle sama)', closed_early: 'ditutup langsung saat intervensi', tech_invalidated: 'ditutup langsung saat invalidasi teknikal tersentuh' };
+  const MANAGED_STATUS_LABEL = { tp: 'kena TP', sl: 'kena SL', ambiguous: 'ambigu (SL & TP di candle sama)', closed_early: 'ditutup langsung saat intervensi' };
+  // Track 1 (Road to Professional LLM Trader, 2026-08-04): `tech_invalidated`
+  // SENGAJA field terpisah dari intervention/managed_status di atas (bukan reuse) —
+  // lihat komentar _evaluateTechInvalidation (api/admin.js) soal kenapa: reuse field
+  // itu sempat menghalangi AI position review kebagian giliran review posisi yang sama.
   const STATUS_EXPLAIN = {
     expired: 'Tidak pernah terisi (fill) sampai lewat batas horizon x1.5 — dianggap basi, bukan hasil trading.',
     stale: 'Ada celah data candle sejak setup dibuat sampai OHLCV tersedia lagi — kejadian di celah itu tidak diketahui, jadi tidak dipaksakan jadi status apa pun.',
@@ -683,6 +683,10 @@ tr.rowdetail .row b{color:var(--fg);font-weight:500;white-space:normal;word-brea
       fld('Invalidasi Teknikal (trigger AI)', s.invalidation_trigger
         ? `${s.invalidation_trigger.type} — close ${s.invalidation_trigger.direction} ${s.invalidation_trigger.level} (${s.invalidation_trigger.timeframe})`
         : ''),
+      fld('Invalidasi Teknikal Tersentuh', s.tech_invalidated
+        ? `close ${s.tech_invalidated.direction === 'above' ? 'menembus ke atas' : 'balik ke bawah'} level ${s.tech_invalidated.level} (${s.tech_invalidated.type}) — murni kode, TIDAK menghalangi review AI lain`
+        : ''),
+      fld('Waktu Invalidasi Teknikal Tersentuh', s.tech_invalidated?.at ? fmtTs(s.tech_invalidated.at * 1000) : ''),
       fld('Intervensi Sistem', s.intervention ? (INTERVENTION_LABEL[s.intervention.type] || s.intervention.type) : ''),
       fld('Alasan Intervensi', s.intervention?.reason),
       fld('SL Baru dari Intervensi', s.intervention?.new_sl),
