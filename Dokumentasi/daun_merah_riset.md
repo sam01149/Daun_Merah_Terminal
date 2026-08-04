@@ -24,6 +24,26 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 
 ## Riset Aktif
 
+### [2026-08-04] Audit total auto-entry vs kriteria Plan U — status & temuan
+
+Audit atas permintaan user ("audit fitur auto entry trade, sesuaikan dengan tujuan plan u... audit total"), diprioritaskan user ke pertanyaan inti: apakah kondisi sekarang sesuai Plan U. Data diambil LANGSUNG dari Redis production (Upstash REST, `.env.local`) via curl — bukan asumsi dari kode/dokumentasi saja.
+
+**Progres n≥100 (`setup_log_auto:v1`):** 22 entri total per 2026-08-04 (status: `open`1, `sl`5, `canceled`8, `tp`7, `expired`1; per pair: GC=F 7, EUR/USD 6, EUR/GBP 4, AUD/NZD 4, GBP/USD 1 legacy). 15 hari sejak deploy (2026-07-20). Laju 7 hari terakhir (S253: n=16 @28/7 → sekarang n=22 @4/8) ≈0,86/hari — jauh di bawah asumsi awal "2 slot/hari/pair". **ETA n≥100 di laju ini ≈90 hari lagi (pertengahan/akhir Oktober-November 2026)**, bukan "±2,5-3 bulan dari 20/7" (≈akhir September) seperti estimasi S209 — konsisten dengan revisi pesimis S230/S253 yang sudah mencatat pola sama, laju belum membaik.
+
+**Win rate mentah:** dari 12 setup closed relevan (tp+sl, exclude expired/canceled/open) — 7 tp, 5 sl = 58,3%. n masih jauh terlalu kecil untuk kesimpulan statistik apa pun, sekadar titik data.
+
+**Gate A (AI Kritikus) veto rate — UPDATE kekhawatiran S251/S277:** progress.md mencatat kekhawatiran "rasio veto nyaris nol terus-menerus = gate cuma stempel" (S277 pagi: considered=12, critic_veto=0). Dicek ulang sekarang: considered=15, critic_veto=**2** (13,3%) — antara S277 dan sekarang Gate A memveto 2 dari 3 kandidat baru. Sampel masih kecil (n=15), tapi arahnya membaik, TIDAK lagi 0% mutlak. Invarian counter (`considered = saved + correlation_cap + drawdown + critic_veto + conflict_waktu`) dicek: 15 = 10+2+0+2+1 — cocok, tidak ada drift/bug akunting.
+
+**Distribusi alignment (U-4 conviction sizing, item Plan U #8):** `konflik` 17/22 (77%), `searah` 3, `netral` 2 — mayoritas kandidat dapat `riskMultiplier` 0,5. Belum bisa disimpulkan ini kalibrasi benar atau bias sistematis AI menandai 'konflik' terlalu longgar — data untuk item #8 masih terlalu tipis untuk diputuskan, sekadar dicatat sebagai sinyal awal yang perlu diawasi begitu n cukup.
+
+**U-5 (manajemen posisi, syarat n≥10 review event):** baru **1** entri dengan field `intervention` terisi (tighten_sl_preventive, AUD/NZD, proteksi weekend gap) — jauh dari ambang n≥10 yang disyaratkan Plan U untuk evaluasi intervensi vs ghost (saved vs cost).
+
+**Plan X (`surprise_log:v1`, dideploy S280 di hari audit ini):** masih 0 entri — sesuai ekspektasi changelog S280 sendiri (perlu rilis riil pertama dengan forecast valid dalam window 1 jam saat `runAutoEntryCycle` jalan, 08:00/13:00 UTC), bukan bug, terlalu baru untuk dinilai.
+
+**Kesimpulan audit:** seluruh kriteria Plan U yang masih terbuka (n≥100, skor kalibrasi antar-provider ≥80% item #6, breakdown loss_causes item #7, validasi conviction sizing item #8, out-of-sample split item #9, gating rezim item #10, evaluasi U-5 n≥10) **TETAP BENAR tertunda menunggu data** — audit ini tidak menemukan alasan untuk membuka salah satu prematur, dan tidak menemukan bukti sistem menyimpang dari desain Plan U (silent/senyap terjaga, isolasi budget eksperimental masih intak per audit kode terpisah). Item #1-5 (selesai S209) tidak diaudit ulang — di luar scope, tidak ada perubahan kode di area itu sejak selesai.
+
+**Temuan terpisah yang BUTUH keputusan user** (bukan soal Plan U langsung, soal housekeeping git): ada perubahan kode uncommitted yang melonggarkan Gate E dari hard-block jadi flag observasi — sudah lulus 850/850 test, tapi belum di-commit/push/dicatat changelog. Detail & opsi: lihat entri terkait di `daun_merah_progress.md`.
+
 ### [2026-08-04] Profil struktural AUD/NZD & EUR/GBP — dasar "kartu spesialis" per pair auto-entry
 
 Riset atas permintaan user (rapat sesi ini): AI Analisa/auto-entry pakai cara baca yang sama untuk 4 pair (`vps/daemon.js` `AUTO_ENTRY_PAIRS`: XAU/USD, EUR/USD, AUD/NZD, EUR/GBP), padahal AUD/NZD & EUR/GBP secara struktural beda kelas dari 2 major itu — dua-duanya cross tanpa kaki USD, jadi modul fundamental USD-sentris (`_labour_market.js`, `rate-path.js`) otomatis tidak relevan buat mereka.
