@@ -1209,6 +1209,111 @@ function findRecentHardNewsEvent(events, legs, nowMs, windowMs = BREAKING_NEWS_S
   return null;
 }
 
+// Plan X (2026-08-04) — 5 currency dari union AUTO_ENTRY_PAIRS AKTIF (bukan
+// SELURUH AUTO_ENTRY_SYMBOL_MAP — map itu juga berisi entri lama tak terpakai
+// spt GBP/USD, USD/JPY, AUD/USD, USD/CAD, USD/CHF, NZD/USD dari sebelum redesain
+// Golden Trio, lihat komentar AUTO_ENTRY_PAIRS di atas). DITURUNKAN otomatis
+// (bukan hardcode) supaya kalau AUTO_ENTRY_PAIRS berubah di masa depan, currency
+// set ikut menyesuaikan tanpa perlu ubah 2 tempat. XAU dibuang (bukan currency
+// kalender, legsFromLabel('XAU/USD') -> ['XAU','USD']).
+const SURPRISE_CURRENCIES = new Set(
+  AUTO_ENTRY_PAIRS
+    .map(p => AUTO_ENTRY_SYMBOL_MAP[p])
+    .filter(Boolean)
+    .flatMap(m => legsFromLabel(m.label))
+    .filter(c => c !== 'XAU')
+);
+
+// Rasio sederhana |actual-forecast| / |basis| (Opsi A, keputusan user 2026-08-04) —
+// basis forecast_raw, fallback ke previous_raw kalau forecast 0/tidak ada. null =
+// tidak bisa dihitung (actual belum terisi, ATAU forecast+previous sama-sama
+// 0/tidak ada) — BUKAN "surprise=0", findSurpriseEvent harus skip null, bukan
+// meloloskannya sebagai "tidak surprise".
+const SURPRISE_RATIO_THRESHOLD = 1.0; // HEURISTIK AWAL, belum dikalibrasi dari data
+// live — direvisi setelah cukup sampel real (lihat surprise_log:v1, fondasi Opsi B
+// z-score per jenis event begitu sampel >=8-10/event terkumpul, pola sama
+// DRAWDOWN_HALT_THRESHOLD_R di api/_auto_entry_guard.js).
+function computeSurpriseRatio({ actualRaw, forecastRaw, previousRaw }) {
+  if (!Number.isFinite(actualRaw) || !Number.isFinite(forecastRaw)) return null;
+  const baseline = forecastRaw !== 0 ? Math.abs(forecastRaw)
+    : (Number.isFinite(previousRaw) && previousRaw !== 0 ? Math.abs(previousRaw) : null);
+  if (baseline == null) return null;
+  return Math.abs(actualRaw - forecastRaw) / baseline;
+}
+
+const SURPRISE_LOG_CAP = 300;
+
+async function fetchMergedSurpriseEvents() {
+  const [rawThis, rawNext] = await Promise.all([
+    redisCmd('GET', 'calendar_surprise_v1'),
+    redisCmd('GET', 'calendar_surprise_next_v1'),
+  ]);
+  let surThis = null, surNext = null;
+  try { surThis = rawThis ? JSON.parse(rawThis) : null; } catch (e) { /* biarkan null, jangan gagalkan pemanggil */ }
+  try { surNext = rawNext ? JSON.parse(rawNext) : null; } catch (e) { /* sama */ }
+  return [...((surThis && surThis.events) || []), ...((surNext && surNext.events) || [])];
+}
+
+// Companion findRecentHardNewsEvent, tapi surprise HANYA bisa dihitung SETELAH
+// actual terisi — tidak ada versi forward-looking (beda dari findHardNewsEvent).
+// Return event (+ ratio) pertama dalam window [nowMs-windowMs, nowMs] yang
+// currency-nya cocok legs DAN ratio-nya >= SURPRISE_RATIO_THRESHOLD.
+function findSurpriseEvent(events, legs, nowMs, windowMs = BREAKING_NEWS_SKIP_WINDOW_MS) {
+  if (!Array.isArray(events) || !Array.isArray(legs) || legs.length === 0) return null;
+  for (const e of events) {
+    if (!e || !legs.includes(e.currency)) continue;
+    const ms = calEventMsWib(e.date, e.time_wib);
+    if (ms == null) continue;
+    if (ms > nowMs || ms < nowMs - windowMs) continue;
+    const ratio = computeSurpriseRatio({ actualRaw: e.actual_raw, forecastRaw: e.forecast_raw, previousRaw: e.previous_raw });
+    if (ratio == null || ratio < SURPRISE_RATIO_THRESHOLD) continue;
+    return { ...e, ratio };
+  }
+  return null;
+}
+
+// Lapis 1c — kejutan ekonomi (actual vs forecast) yang divonis Low/Medium impact
+// oleh vendor TradingView tapi jauh meleset dari forecast (audit S277, kasus
+// AUD/NZD "Household Spending" beat 4x, importance:-1, tidak pernah masuk gate
+// manapun). Independen dari label impact vendor — findSurpriseEvent tidak
+// memfilter e.impact sama sekali, murni rasio numerik. Selain keputusan skip,
+// SETIAP event yang actual-nya sudah terisi dalam window dicatat ke
+// surprise_log:v1 (bukan cuma yang lolos ambang) — fondasi Opsi B (z-score per
+// jenis event) begitu sampel cukup, TIDAK diaktifkan sebagai gate di sini.
+async function checkSurpriseSkip(pair, label) {
+  try {
+    const events = await fetchMergedSurpriseEvents();
+    const legs = legsFromLabel(label);
+    const nowMs = Date.now();
+    for (const e of events) {
+      if (!e || !legs.includes(e.currency)) continue;
+      const ms = calEventMsWib(e.date, e.time_wib);
+      if (ms == null || ms > nowMs || ms < nowMs - BREAKING_NEWS_SKIP_WINDOW_MS) continue;
+      const ratio = computeSurpriseRatio({ actualRaw: e.actual_raw, forecastRaw: e.forecast_raw, previousRaw: e.previous_raw });
+      if (ratio == null) continue; // actual belum terisi — tidak ada yang bisa dicatat
+      const logEntry = {
+        ts: nowMs, event: String(e.event || '').toLowerCase().trim(), currency: e.currency,
+        date: e.date, ratio, actual_raw: e.actual_raw, forecast_raw: e.forecast_raw,
+      };
+      await redisCmd('LPUSH', 'surprise_log:v1', JSON.stringify(logEntry));
+      await redisCmd('LTRIM', 'surprise_log:v1', '0', String(SURPRISE_LOG_CAP - 1));
+    }
+    const hit = findSurpriseEvent(events, legs, nowMs);
+    if (!hit) return null;
+    const entry = {
+      ts: nowMs, pair, label, reason: 'surprise',
+      event: hit.event, currency: hit.currency, event_time_wib: `${hit.date} ${hit.time_wib}`,
+      ratio: hit.ratio, actual_raw: hit.actual_raw, forecast_raw: hit.forecast_raw,
+    };
+    await redisCmd('LPUSH', 'auto_skip_log', JSON.stringify(entry));
+    await redisCmd('LTRIM', 'auto_skip_log', '0', String(AUTO_SKIP_LOG_CAP - 1));
+    return entry;
+  } catch (e) {
+    console.warn(`daemon: checkSurpriseSkip ${pair} gagal (fail-open, tetap generate):`, e.message);
+    return null;
+  }
+}
+
 function firstNumber(str) {
   const m = String(str == null ? '' : str).match(/-?[\d.]+/);
   return m ? parseFloat(m[0]) : null;
@@ -1351,6 +1456,8 @@ async function runAutoEntryCycle() {
     if (skip) { console.log(`daemon: U-3 auto-entry ${pair} di-skip — hard news "${skip.event}" (${skip.event_time_wib})`); continue; }
     const breakingSkip = await checkBreakingNewsSkip(pair, map.label);
     if (breakingSkip) { console.log(`daemon: U-3 auto-entry ${pair} di-skip — breaking news "${breakingSkip.event}" (${breakingSkip.cat})`); continue; }
+    const surpriseSkip = await checkSurpriseSkip(pair, map.label);
+    if (surpriseSkip) { console.log(`daemon: U-3 auto-entry ${pair} di-skip — kejutan ekonomi "${surpriseSkip.event}" (rasio ${surpriseSkip.ratio.toFixed(2)})`); continue; }
     const path = `/api/admin?action=ohlcv_analyze&symbol=${encodeURIComponent(map.symbol)}&label=${encodeURIComponent(map.label)}&auto=1`;
     await triggerWithRetry(path);
   }
@@ -1567,8 +1674,12 @@ module.exports = {
   legsFromLabel, calEventMsWib, findHardNewsEvent, findRecentHardNewsEvent, firstNumber, levelsWithinTolerance,
   computeConsistency, AUTO_ENTRY_SYMBOL_MAP, AUTO_ENTRY_PAIRS, AUTO_ENTRY_HOURS_UTC,
   findBreakingNewsMatch, BREAKING_NEWS_SKIP_WINDOW_MS,
+  // Plan X (pure/testable):
+  computeSurpriseRatio, findSurpriseEvent, SURPRISE_RATIO_THRESHOLD, SURPRISE_CURRENCIES,
   // U-3 (async, di-export untuk simulasi lokal manual — bukan dipakai node:test):
   checkHardNewsSkip, runAutoEntryCycle, runConsistencyCheck, runFridayTightenCycle, pollCalendarLatency, checkBreakingNewsSkip,
+  // Plan X (async, di-export untuk simulasi lokal manual — bukan dipakai node:test):
+  checkSurpriseSkip, fetchMergedSurpriseEvents,
   // U-5b (pure/testable):
   detectCurrencyLegs, isCorroborated, posReviewSignificantTokens, POSREVIEW_CURRENCY_KEYWORDS,
   shouldPersistNewsBufferItem, filterFreshBufferItems, POSREVIEW_NEWS_BUFFER_MS,

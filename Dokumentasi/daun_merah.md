@@ -11,11 +11,23 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-04 (Session 279 — Konfirmasi upgrade model DeepSeek ke build V4-Flash-0731, tidak ada perubahan kode)
+> **Last updated:** 2026-08-04 (Session 280 — Plan X: Deteksi Kejutan Ekonomi Actual vs Forecast untuk Auto-Entry)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 280 (2026-08-04) — Plan X: Deteksi Kejutan Ekonomi (Actual vs Forecast) untuk Auto-Entry
+
+**Konteks:** lanjutan langsung audit SL Session 277 lanjutan — investigasi trade AUD/NZD kena SL menemukan rilis "Australia Household Spending" (actual 0,8% vs forecast 0,2%, beat 4x) ikut mendorong pembalikan yang berujung SL, tapi event ini divonis **Low impact** oleh vendor TradingView (`importance:-1`) sehingga tidak pernah masuk `calendar_v1`/`calendar_next_v1` dan tidak pernah dicek gate manapun (`checkHardNewsSkip`/`findRecentHardNewsEvent`, keduanya cuma cek `impact==='High'`). Detail plan lengkap sudah dihapus dari `daun_merah_plan.md` (Plan X selesai).
+
+**Implementasi — Opsi A (rasio sederhana, gate aktif) + fondasi Opsi B (logging, tidak aktif sebagai gate):**
+
+- `api/calendar.js`: cache KEDUA (`calendar_surprise_v1`/`calendar_surprise_next_v1`) dibangun dari `allEvents` yang SAMA dipakai payload `calendar_v1`/`calendar_next_v1` — NOL fetch tambahan ke TradingView. Scope 5 currency (`SURPRISE_CURRENCIES = {USD,EUR,GBP,AUD,NZD}`, union `AUTO_ENTRY_PAIRS` aktif, bukan 8 currency `MAJOR_CURRENCIES`), TANPA filter impact (beda dari payload utama yang cuma High/Medium). Logika filter/dedup/sort payload utama diekstrak jadi `dedupeCalendarEvents()` (perilaku IDENTIK, cuma dipindah supaya testable tanpa mock HTTP/Redis) — dites regresi 7 kasus (`test/api/calendar.test.js`), payload/kontrak UI existing dikonfirmasi tidak berubah.
+- `vps/daemon.js`: `computeSurpriseRatio({actualRaw,forecastRaw,previousRaw})` — rasio `|actual-forecast|/|basis|`, basis fallback ke `previousRaw` kalau `forecastRaw` 0 (BUKAN kalau `forecastRaw` null/tidak ada — forecast wajib ada sebagai sinyal "ada ekspektasi utk dibandingkan"), `null` kalau `actualRaw` belum terisi atau basis 0/tidak ada (bukan "surprise=0"). Ambang awal `SURPRISE_RATIO_THRESHOLD = 1.0` — HEURISTIK, belum dikalibrasi dari data live, direvisi setelah cukup sampel `surprise_log:v1`. `findSurpriseEvent` (pola `findRecentHardNewsEvent`, cek ke belakang saja — surprise cuma bisa dihitung setelah actual terisi) dan `checkSurpriseSkip` (Lapis 1c, wired ke `runAutoEntryCycle` sejajar `checkHardNewsSkip`/`checkBreakingNewsSkip`) — independen dari label impact vendor, murni rasio numerik. Setiap event yang actual-nya terisi dalam window 1 jam dicatat ke `surprise_log:v1` (LPUSH+LTRIM cap 300) terlepas lolos ambang atau tidak — fondasi Opsi B (z-score per jenis event begitu sampel >=8-10 terkumpul), TIDAK diimplementasikan sebagai gate di sesi ini.
+- `SURPRISE_CURRENCIES` diturunkan otomatis dari `AUTO_ENTRY_PAIRS` AKTIF (bukan seluruh `AUTO_ENTRY_SYMBOL_MAP`, yang masih menyimpan entri lama pra-redesain Golden Trio seperti GBP/USD, USD/JPY, dst) — kalau `AUTO_ENTRY_PAIRS` berubah, currency set ikut menyesuaikan tanpa ubah 2 tempat.
+
+**Verifikasi:** `npm test` 849/849 hijau (naik dari baseline 808 — 41 test baru). Volume live dicek langsung ke TradingView (5 currency, 7 hari ke depan): 114 event total, 107 di antaranya Low/Medium (7 High) — cache kedua ini ringan, tidak membengkak. Replay retroaktif kasus AUD/NZD (actual 0,8% vs forecast 0,2%, `impact:'Low'`) via `findSurpriseEvent` mengonfirmasi mekanisme ini AKAN menangkap kasus yang memicu plan ini (ratio 3,0 >> ambang 1,0), walau label impact vendor Low. Baseline production `calendar_v1` (43 event, shape tidak berubah) dan `calendar_surprise_v1` (belum ada sebelum deploy) dikonfirmasi via curl langsung ke Upstash.
 
 ## Changelog Session 279 (2026-08-04) — Konfirmasi Upgrade Model DeepSeek ke Build V4-Flash-0731
 

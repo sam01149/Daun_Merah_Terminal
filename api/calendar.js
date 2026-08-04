@@ -7,6 +7,12 @@
 // Dokumentasi/daun_merah_vendor.md.
 const TV_EVENTS_URL = 'https://economic-calendar.tradingview.com/events';
 const MAJOR_CURRENCIES = new Set(['USD','EUR','GBP','JPY','CAD','AUD','NZD','CHF']);
+// Plan X (2026-08-04) — cache kedua utk surprise detector auto-entry (vps/daemon.js
+// checkSurpriseSkip). HANYA 5 currency yang relevan ke 4 pair AUTO_ENTRY_PAIRS
+// (XAU/USD, EUR/USD, AUD/NZD, EUR/GBP), BUKAN 8 currency di MAJOR_CURRENCIES —
+// scope sengaja lebih sempit, event Low/Medium-impact currency di luar sini
+// (JPY/CAD/CHF) tidak relevan ke auto-entry saat ini.
+const SURPRISE_CURRENCIES = new Set(['USD','EUR','GBP','AUD','NZD']);
 // TradingView filters by country code, not currency — map the majors we track.
 const CCY_TO_TV_COUNTRY = { USD:'US', EUR:'EU', GBP:'GB', JPY:'JP', CAD:'CA', AUD:'AU', NZD:'NZ', CHF:'CH' };
 const CACHE_TTL = 6 * 3600; // Redis key TTL — long survival window for stale-serve fallback
@@ -95,23 +101,20 @@ module.exports = async function handler(req, res) {
     const allEvents = await fetchTradingViewEvents(rangeStartWib, rangeEndWib);
     const source = 'tradingview';
 
-    const seen = new Set();
-    const deduped = allEvents
-      .filter(e => dateRange.has(e.date) && (e.impact === 'High' || e.impact === 'Medium') && MAJOR_CURRENCIES.has(e.currency))
-      .filter(e => {
-        const k = `${e.date}|${e.time_wib}|${e.currency}|${e.event}`;
-        if (seen.has(k)) return false;
-        seen.add(k);
-        return true;
-      })
-      .sort((a, b) => {
-        const ka = a.date + (a.time_wib === 'Tentative' ? '99:99' : a.time_wib || '99:99');
-        const kb = b.date + (b.time_wib === 'Tentative' ? '99:99' : b.time_wib || '99:99');
-        return ka.localeCompare(kb);
-      });
+    const deduped = dedupeCalendarEvents(allEvents, dateRange);
 
     const payload = { events: deduped, count: deduped.length, source, fetched_at: new Date().toISOString() };
-    try { await redisCmd('SET', CACHE_KEY, JSON.stringify(payload), 'EX', CACHE_TTL); } catch(_) {}
+    const writes = [redisCmd('SET', CACHE_KEY, JSON.stringify(payload), 'EX', CACHE_TTL)];
+    // Cache kedua Plan X — dari `allEvents` yang SAMA, NOL fetch tambahan.
+    // Skip untuk isCustomDate: query tanggal-lompat tidak perlu ikut cache
+    // surprise (auto-entry cuma butuh minggu berjalan/depan).
+    if (!isCustomDate) {
+      const surpriseEvents = buildSurpriseEvents(allEvents, dateRange);
+      const surpriseKey = isNextWeek ? 'calendar_surprise_next_v1' : 'calendar_surprise_v1';
+      const surprisePayload = { events: surpriseEvents, count: surpriseEvents.length, fetched_at: payload.fetched_at };
+      writes.push(redisCmd('SET', surpriseKey, JSON.stringify(surprisePayload), 'EX', CACHE_TTL));
+    }
+    try { await Promise.all(writes); } catch(_) {}
     if (sf.gotLock) sf.release();
     res.setHeader('Cache-Control', 'max-age=300');
     return res.status(200).json({ ...payload, stale: false });
@@ -132,6 +135,48 @@ module.exports = async function handler(req, res) {
 
 function toDateStr(d) {
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}-${String(d.getUTCDate()).padStart(2,'0')}`;
+}
+
+// Filter+dedup+sort untuk payload calendar_v1/calendar_next_v1 (kontrak UI
+// existing) — diekstrak dari calendarHandler TANPA ubah logika (2026-08-04,
+// Plan X) supaya bisa dites regresi via node:test tanpa mock HTTP/Redis.
+function dedupeCalendarEvents(allEvents, dateRange) {
+  const seen = new Set();
+  return allEvents
+    .filter(e => dateRange.has(e.date) && (e.impact === 'High' || e.impact === 'Medium') && MAJOR_CURRENCIES.has(e.currency))
+    .filter(e => {
+      const k = `${e.date}|${e.time_wib}|${e.currency}|${e.event}`;
+      if (seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    })
+    .sort((a, b) => {
+      const ka = a.date + (a.time_wib === 'Tentative' ? '99:99' : a.time_wib || '99:99');
+      const kb = b.date + (b.time_wib === 'Tentative' ? '99:99' : b.time_wib || '99:99');
+      return ka.localeCompare(kb);
+    });
+}
+
+// Cache kedua Plan X (surprise detector, vps/daemon.js checkSurpriseSkip) —
+// dari `allEvents` yang SAMA dipakai dedupeCalendarEvents, TANPA filter impact,
+// scoped 5 currency (SURPRISE_CURRENCIES). Hanya field yang dibutuhkan rasio
+// surprise disimpan — buang field display (forecast/previous/actual string
+// berskala, comment, url) supaya cache ini ringkas.
+function buildSurpriseEvents(allEvents, dateRange) {
+  const seen = new Set();
+  return allEvents
+    .filter(e => dateRange.has(e.date) && SURPRISE_CURRENCIES.has(e.currency))
+    .filter(e => {
+      const k = `${e.date}|${e.time_wib}|${e.currency}|${e.event}`;
+      if (seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    })
+    .map(e => ({
+      currency: e.currency, event: e.event, date: e.date, time_wib: e.time_wib,
+      impact: e.impact, forecast_raw: e.forecast_raw, previous_raw: e.previous_raw,
+      actual_raw: e.actual_raw, period: e.period,
+    }));
 }
 
 // Monday (00:00 WIB wall-clock) of the ISO week (Mon-Sun) containing `wib`.
@@ -226,4 +271,8 @@ function formatTVValue(value, scale, unit) {
   if (unit && CURRENCY_SYMBOLS.has(unit)) return `${unit}${value}${scale || ''}`;
   return `${value}${scale || ''}${unit || ''}`;
 }
+
+module.exports.dedupeCalendarEvents = dedupeCalendarEvents;
+module.exports.buildSurpriseEvents = buildSurpriseEvents;
+module.exports.SURPRISE_CURRENCIES = SURPRISE_CURRENCIES;
 

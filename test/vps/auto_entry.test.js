@@ -9,6 +9,7 @@ const {
   legsFromLabel, calEventMsWib, findHardNewsEvent, findRecentHardNewsEvent, firstNumber,
   levelsWithinTolerance, computeConsistency, AUTO_ENTRY_SYMBOL_MAP,
   AUTO_ENTRY_PAIRS, BREAKING_NEWS_SKIP_WINDOW_MS,
+  computeSurpriseRatio, findSurpriseEvent, SURPRISE_RATIO_THRESHOLD, SURPRISE_CURRENCIES,
 } = require('../../vps/daemon.js');
 
 // ── legsFromLabel ────────────────────────────────────────────────────────────
@@ -204,4 +205,127 @@ test('AUTO_ENTRY_PAIRS: default redesain independensi 4 pair (tanpa env var over
 test('AUTO_ENTRY_SYMBOL_MAP: AUD/NZD & EUR/GBP (pengganti GBP/USD) terpetakan', () => {
   assert.deepEqual(AUTO_ENTRY_SYMBOL_MAP.frxAUDNZD, { symbol: 'AUDNZD=X', label: 'AUD/NZD' });
   assert.deepEqual(AUTO_ENTRY_SYMBOL_MAP.frxEURGBP, { symbol: 'EURGBP=X', label: 'EUR/GBP' });
+});
+
+// ── Plan X (2026-08-04): computeSurpriseRatio ────────────────────────────────
+
+test('computeSurpriseRatio: surprise normal (actual jauh dari forecast -> ratio tinggi)', () => {
+  // Kasus asli audit S277: AUD Household Spending actual 0.8 vs forecast 0.2 -> beat 4x
+  const ratio = computeSurpriseRatio({ actualRaw: 0.8, forecastRaw: 0.2, previousRaw: 0.1 });
+  assert.ok(ratio >= SURPRISE_RATIO_THRESHOLD, `ratio ${ratio} harusnya >= ambang ${SURPRISE_RATIO_THRESHOLD}`);
+  assert.ok(Math.abs(ratio - 3) < 1e-9);
+});
+
+test('computeSurpriseRatio: forecast_raw=0 fallback ke previous_raw sebagai basis', () => {
+  const ratio = computeSurpriseRatio({ actualRaw: 5, forecastRaw: 0, previousRaw: 2 });
+  assert.equal(ratio, 2.5); // |5-0| / |2|
+});
+
+test('computeSurpriseRatio: actual_raw belum ada -> null (bukan 0)', () => {
+  assert.equal(computeSurpriseRatio({ actualRaw: null, forecastRaw: 0.2, previousRaw: 0.1 }), null);
+  assert.equal(computeSurpriseRatio({ actualRaw: undefined, forecastRaw: 0.2, previousRaw: 0.1 }), null);
+});
+
+test('computeSurpriseRatio: forecast DAN previous sama-sama tidak ada -> null', () => {
+  assert.equal(computeSurpriseRatio({ actualRaw: 5, forecastRaw: 0, previousRaw: 0 }), null);
+  assert.equal(computeSurpriseRatio({ actualRaw: 5, forecastRaw: null, previousRaw: null }), null);
+});
+
+test('computeSurpriseRatio: forecast_raw null (bukan 0) TIDAK fallback ke previous -> null', () => {
+  assert.equal(computeSurpriseRatio({ actualRaw: 5, forecastRaw: null, previousRaw: 2 }), null);
+});
+
+// ── Plan X (2026-08-04): findSurpriseEvent ───────────────────────────────────
+
+test('findSurpriseEvent: event dalam window 1 jam & ratio >= ambang -> ditemukan', () => {
+  const nowMs = Date.parse('2026-08-04T01:30:00.000Z'); // 08:30 WIB
+  const events = [{
+    currency: 'AUD', event: 'Household Spending MoM', date: '2026-08-04', time_wib: '08:00 WIB',
+    forecast_raw: 0.2, previous_raw: 0.1, actual_raw: 0.8,
+  }];
+  const hit = findSurpriseEvent(events, ['AUD', 'NZD'], nowMs);
+  assert.equal(hit && hit.event, 'Household Spending MoM');
+  assert.ok(hit.ratio >= SURPRISE_RATIO_THRESHOLD);
+});
+
+test('findSurpriseEvent: event di luar window (>1 jam lalu) -> null', () => {
+  const nowMs = Date.parse('2026-08-04T02:30:00.000Z'); // 09:30 WIB, event 08:00 WIB = 1.5 jam lalu
+  const events = [{
+    currency: 'AUD', event: 'Household Spending MoM', date: '2026-08-04', time_wib: '08:00 WIB',
+    forecast_raw: 0.2, previous_raw: 0.1, actual_raw: 0.8,
+  }];
+  assert.equal(findSurpriseEvent(events, ['AUD'], nowMs), null);
+});
+
+test('findSurpriseEvent: event belum rilis (masih di masa depan) -> null', () => {
+  const nowMs = Date.parse('2026-08-04T00:30:00.000Z'); // 07:30 WIB, event 08:00 WIB belum terjadi
+  const events = [{
+    currency: 'AUD', event: 'Household Spending MoM', date: '2026-08-04', time_wib: '08:00 WIB',
+    forecast_raw: 0.2, previous_raw: 0.1, actual_raw: 0.8,
+  }];
+  assert.equal(findSurpriseEvent(events, ['AUD'], nowMs), null);
+});
+
+test('findSurpriseEvent: currency tidak cocok -> null', () => {
+  const nowMs = Date.parse('2026-08-04T01:30:00.000Z');
+  const events = [{
+    currency: 'AUD', event: 'Household Spending MoM', date: '2026-08-04', time_wib: '08:00 WIB',
+    forecast_raw: 0.2, previous_raw: 0.1, actual_raw: 0.8,
+  }];
+  assert.equal(findSurpriseEvent(events, ['USD', 'JPY'], nowMs), null);
+});
+
+test('findSurpriseEvent: ratio di bawah ambang -> null', () => {
+  const nowMs = Date.parse('2026-08-04T01:30:00.000Z');
+  const events = [{
+    currency: 'AUD', event: 'CPI QoQ', date: '2026-08-04', time_wib: '08:00 WIB',
+    forecast_raw: 1.0, previous_raw: 0.9, actual_raw: 1.05, // ratio 0.05, jauh di bawah 1.0
+  }];
+  assert.equal(findSurpriseEvent(events, ['AUD'], nowMs), null);
+});
+
+test('findSurpriseEvent: actual_raw belum terisi -> null (bukan dianggap tidak-surprise)', () => {
+  const nowMs = Date.parse('2026-08-04T01:30:00.000Z');
+  const events = [{
+    currency: 'AUD', event: 'Household Spending MoM', date: '2026-08-04', time_wib: '08:00 WIB',
+    forecast_raw: 0.2, previous_raw: 0.1, actual_raw: null,
+  }];
+  assert.equal(findSurpriseEvent(events, ['AUD'], nowMs), null);
+});
+
+test('findSurpriseEvent: array kosong/bukan array -> null, bukan crash', () => {
+  assert.equal(findSurpriseEvent([], ['AUD'], Date.now()), null);
+  assert.equal(findSurpriseEvent(null, ['AUD'], Date.now()), null);
+});
+
+test('findSurpriseEvent: default window = BREAKING_NEWS_SKIP_WINDOW_MS (1 jam)', () => {
+  const nowMs = Date.parse('2026-08-04T01:30:00.000Z');
+  const events = [{
+    currency: 'AUD', event: 'Household Spending MoM', date: '2026-08-04', time_wib: '08:00 WIB',
+    forecast_raw: 0.2, previous_raw: 0.1, actual_raw: 0.8,
+  }];
+  const hit = findSurpriseEvent(events, ['AUD'], nowMs); // windowMs tidak dipassing
+  assert.ok(hit);
+});
+
+// ── Plan X (2026-08-04): SURPRISE_CURRENCIES ─────────────────────────────────
+
+test('SURPRISE_CURRENCIES: persis {USD,EUR,GBP,AUD,NZD}, diturunkan dari AUTO_ENTRY_PAIRS aktif', () => {
+  assert.deepEqual([...SURPRISE_CURRENCIES].sort(), ['AUD', 'EUR', 'GBP', 'NZD', 'USD']);
+});
+
+// ── Plan X (2026-08-04): replay retroaktif kasus AUD/NZD (audit S277) ────────
+
+test('Plan X replay: Household Spending AUD beat 4x (actual 0.8 vs forecast 0.2) memicu surprise skip retroaktif', () => {
+  // Data historis: rilis 2026-08-04 01:30 UTC (08:30 WIB), importance:-1 (Low) di
+  // TradingView -> findSurpriseEvent TIDAK peduli impact, murni rasio numerik.
+  const events = [{
+    currency: 'AUD', event: 'Household Spending MoM', date: '2026-08-04', time_wib: '08:30 WIB',
+    impact: 'Low', forecast_raw: 0.2, previous_raw: 0.1, actual_raw: 0.8,
+  }];
+  const nowMs = Date.parse('2026-08-04T02:00:00.000Z'); // 30 menit setelah rilis
+  const legs = legsFromLabel('AUD/NZD');
+  const hit = findSurpriseEvent(events, legs, nowMs);
+  assert.ok(hit, 'seharusnya terdeteksi sebagai surprise walau impact Low di vendor');
+  assert.ok(hit.ratio >= SURPRISE_RATIO_THRESHOLD);
 });
