@@ -1070,6 +1070,18 @@ function startScheduler() {
   if (AUTO_ENTRY_HOURS_UTC.length) {
     console.log(`daemon: U-3 auto-entry aktif — pair ${AUTO_ENTRY_PAIRS.join(',')} @ jam ${AUTO_ENTRY_HOURS_UTC.join(',')} UTC`);
   }
+  // Track 2a (2026-08-04, keputusan user): jam ke-3 KHUSUS AUD/NZD, sesi
+  // Sydney-Tokyo — hanya dijadwalkan kalau AUD/NZD memang ada di AUTO_ENTRY_PAIRS
+  // (tidak masuk akal menjadwalkan pair yang tidak aktif). Menit :15 sama seperti
+  // slot utama (hindari tabrakan dedup 30 menit ohlcv_analyze dgn slot digest).
+  if (AUTO_ENTRY_PAIRS.includes(AUTO_ENTRY_AUDNZD_PAIR)) {
+    for (const hour of AUTO_ENTRY_HOURS_UTC_AUDNZD) {
+      cron.schedule(`15 ${hour} * * *`, () => runAutoEntryCycle([AUTO_ENTRY_AUDNZD_PAIR]).catch(e => console.warn('daemon: runAutoEntryCycle (jam khusus AUD/NZD) gagal:', e.message)));
+    }
+    if (AUTO_ENTRY_HOURS_UTC_AUDNZD.length) {
+      console.log(`daemon: jam khusus AUD/NZD aktif (sesi Sydney-Tokyo) @ jam ${AUTO_ENTRY_HOURS_UTC_AUDNZD.join(',')} UTC`);
+    }
+  }
   if (Number.isFinite(AUTO_CONSISTENCY_HOUR_UTC)) {
     cron.schedule(`45 ${AUTO_CONSISTENCY_HOUR_UTC} * * *`, () => runConsistencyCheck().catch(e => console.warn('daemon: runConsistencyCheck gagal:', e.message)));
     console.log(`daemon: U-3 uji konsistensi aktif — pair ${AUTO_ENTRY_PAIRS[0] || '(kosong)'} @ jam ${AUTO_CONSISTENCY_HOUR_UTC}:45 UTC`);
@@ -1146,6 +1158,15 @@ const AUTO_ENTRY_PAIRS = (process.env.AUTO_ENTRY_PAIRS || 'frxXAUUSD,frxEURUSD,f
   .split(',').map(s => s.trim()).filter(Boolean);
 const AUTO_ENTRY_HOURS_UTC = (process.env.AUTO_ENTRY_HOURS_UTC || '8,13')
   .split(',').map(s => parseInt(s.trim(), 10)).filter(Number.isFinite);
+// Track 2a (Road to Professional LLM Trader, 2026-08-04, keputusan user): jam
+// TAMBAHAN khusus AUD/NZD — AUTO_ENTRY_HOURS_UTC (8,13 UTC = 15:00/20:00 WIB) pas
+// untuk sesi London/NY (XAU/EUR/GBP), tapi AUD/NZD justru paling likuid di sesi
+// Sydney-Tokyo (~22:00-08:00 UTC / 05:00-15:00 WIB). Default 1 slot 00:00 UTC
+// (07:00 WIB). Loop TERPISAH di startScheduler (di bawah) memanggil
+// runAutoEntryCycle dengan SATU pair saja — pair lain TIDAK bertambah call/hari.
+const AUTO_ENTRY_HOURS_UTC_AUDNZD = (process.env.AUTO_ENTRY_HOURS_UTC_AUDNZD || '0')
+  .split(',').map(s => parseInt(s.trim(), 10)).filter(Number.isFinite);
+const AUTO_ENTRY_AUDNZD_PAIR = 'frxAUDNZD';
 const AUTO_CONSISTENCY_HOUR_UTC = parseInt(process.env.AUTO_CONSISTENCY_HOUR_UTC || '10', 10);
 // Tighten preventif weekend gap (diskusi user 2026-07-24) — default 17:00 UTC, 4 jam
 // sebelum tutup Jumat 21:00 UTC (isFxMarketOpen). SENGAJA tidak lebih mepet: 1 jam
@@ -1460,10 +1481,13 @@ async function checkBreakingNewsSkip(pair, label) {
   }
 }
 
-async function runAutoEntryCycle() {
+// `pairs` opsional (default AUTO_ENTRY_PAIRS, semua pair jadwal utama) — Track 2a
+// (2026-08-04) memanggil ini dengan array 1 pair ([AUTO_ENTRY_AUDNZD_PAIR]) di jam
+// tambahan khusus AUD/NZD, supaya pair lain TIDAK ikut bertambah call di jam itu.
+async function runAutoEntryCycle(pairs = AUTO_ENTRY_PAIRS) {
   if (!CRON_SECRET) { console.warn('daemon: CRON_SECRET kosong, U-3 auto-entry di-skip'); return; }
   if (!isFxMarketOpen()) return;
-  for (const pair of AUTO_ENTRY_PAIRS) {
+  for (const pair of pairs) {
     const map = AUTO_ENTRY_SYMBOL_MAP[pair];
     if (!map) { console.warn(`daemon: AUTO_ENTRY_PAIRS berisi pair tak dikenal "${pair}", di-skip`); continue; }
     const skip = await checkHardNewsSkip(pair, map.label);
@@ -1648,7 +1672,7 @@ function startHttpServer() {
       last_supervisor_heal_at: lastSupervisorHealAt,
       // U-3 observability — Lapis 2 (auto-cancel) SENGAJA tidak ada di sini,
       // di-descope (lihat komentar besar U-3 di atas).
-      auto_entry: { pairs: AUTO_ENTRY_PAIRS, hours_utc: AUTO_ENTRY_HOURS_UTC, consistency_hour_utc: AUTO_CONSISTENCY_HOUR_UTC, friday_tighten_hour_utc: FRIDAY_TIGHTEN_HOUR_UTC },
+      auto_entry: { pairs: AUTO_ENTRY_PAIRS, hours_utc: AUTO_ENTRY_HOURS_UTC, hours_utc_audnzd: AUTO_ENTRY_HOURS_UTC_AUDNZD, consistency_hour_utc: AUTO_CONSISTENCY_HOUR_UTC, friday_tighten_hour_utc: FRIDAY_TIGHTEN_HOUR_UTC },
     }));
   }).listen(PORT, '0.0.0.0', () => {
     console.log(`daemon: HTTP server listening on 0.0.0.0:${PORT}`);
@@ -1687,6 +1711,7 @@ module.exports = {
   // U-3 (pure/testable):
   legsFromLabel, calEventMsWib, findHardNewsEvent, findRecentHardNewsEvent, firstNumber, levelsWithinTolerance,
   computeConsistency, AUTO_ENTRY_SYMBOL_MAP, AUTO_ENTRY_PAIRS, AUTO_ENTRY_HOURS_UTC,
+  AUTO_ENTRY_HOURS_UTC_AUDNZD, AUTO_ENTRY_AUDNZD_PAIR,
   findBreakingNewsMatch, BREAKING_NEWS_SKIP_WINDOW_MS,
   // Plan X (pure/testable):
   computeSurpriseRatio, findSurpriseEvent, SURPRISE_RATIO_THRESHOLD, SURPRISE_CURRENCIES,

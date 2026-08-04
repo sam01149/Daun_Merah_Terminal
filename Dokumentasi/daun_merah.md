@@ -11,11 +11,33 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-04 (Session 281 — Gate E dilonggarkan: conflict:"waktu" tidak lagi auto-reject, diteruskan ke AI Kritikus; hard-news forward-check di daemon dihapus)
+> **Last updated:** 2026-08-04 (Session 282 — Plan "Road to Professional LLM Trader" Track 1+2a: invalidasi teknikal deterministik + jam khusus AUD/NZD)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 282 (2026-08-04) — Plan "Road to Professional LLM Trader": Track 1 (Invalidasi Teknikal) + Track 2a (Jam Khusus AUD/NZD)
+
+**Konteks:** eksekusi `daun_merah_plan.md` §"PLAN — Road to Professional LLM Trader" (dibuat sesi sebelumnya dari audit total auto-entry vs Plan U, 2026-08-04). Plan itu punya 3 track kesiapan beda: Track 1 siap eksekusi langsung, Track 2 butuh keputusan user per sub-item (2a/2b), Track 3 (trailing stop/breakeven/partial TP) DITUNDA sampai n≥100 tercapai — TIDAK disentuh sesi ini. User memilih Track 2a **Opsi B** (tambah jam khusus AUD/NZD) dan Track 2b **Opsi A** (terima risiko, tidak tambah fallback GH Actions) — 2b karena itu murni keputusan "tidak melakukan apa-apa", tidak ada kerja kode.
+
+**Track 1 — Tegakkan Invalidasi Teknikal (exit dini deterministik, NOL biaya AI tambahan):**
+
+Sebelumnya `invalidation_condition` (field `structured` dari AI) cuma teks bebas untuk jurnal — tidak pernah ditegakkan otomatis, beda dari SL/TP yang memang dicek tiap tick. Sekarang AI juga mengisi `invalidation_trigger` terstruktur paralel (`{type, level, timeframe, direction}`, nullable — fail-open kalau AI tidak bisa mengekspresikan sebagai satu level angka, TIDAK dipaksa mengarang).
+
+1. **`api/admin.js`** — prompt `ohlcvAnalyzeHandler` (~baris 4674) minta AI isi `invalidation_trigger` di samping `invalidation_condition`; hasilnya divalidasi ketat (`type`/`direction` harus dari set yang dikenal, `level` harus angka finite) sebelum disimpan ke `setup_log_auto:v1`/`setup_log:v1` (baru & refine-in-place).
+2. **`api/_auto_entry_guard.js`** — fungsi pure baru `isInvalidationTriggered({invalidation_trigger, candles, startMs, boundaryMs})`: cek CLOSE candle H1 (bukan wick, konsisten "Daily close balik di bawah SMA50" — beda dari SL/TP yang memang harus tahan noise intrabar) terhadap level, pakai candle yang SUDAH difetch untuk `_evaluateSetups` (nol fetch tambahan). `startMs` dari `st.ts` (bukan `filled_t`) — thesis bisa batal SEBELUM posisi sempat fill. `boundaryMs` = `closed_t` (kalau status sudah resolve ke tp/sl/ambiguous) — TP/SL asli MENANG kalau tersentuh di candle sama/lebih dulu, invalidasi cuma berlaku SEBELUM itu.
+3. **`api/admin.js`** — loop baru `_evaluateTechInvalidation` dipanggil SETELAH `_evaluateSetups` di kedua jalur evaluasi (`_buildAutoScopeStats` scope=auto & `setupStatsHandler` publik/manual). Hasil ditulis ke field TERPISAH `intervention`/`managed_status` (`type:'tech_invalidation'`, `managed_status:'tech_invalidated'`) — **status/tp/sl MENTAH tidak pernah ditimpa** (prinsip U-5a, ghost/counterfactual tetap jalan apa adanya). Sengaja beda `intervention.type` dari `close_early` (AI menilai berita) — dua mekanisme beda filosofi (kode murni vs AI), jangan campur statistiknya.
+4. **`api/_position_review.js`** — `_aggManagementStats` dapat bucket baru `tech_invalidation: {count, saved, cost, ghost_pending}`, TIDAK ikut mengurangi `reviews`/`hold` (bukan hasil review AI, pola sama `tighten_preventive`).
+5. **`dev-auto-entry.html`** — jurnal render trigger mentah (`Invalidasi Teknikal (trigger AI)`) + label intervensi/hasil baru di `INTERVENTION_LABEL`/`MANAGED_STATUS_LABEL`.
+
+**Track 2a — Jam Khusus AUD/NZD (sesi Sydney-Tokyo):**
+
+`AUTO_ENTRY_HOURS_UTC` (08:00/13:00 UTC = 15:00/20:00 WIB) pas untuk XAU/EUR/GBP (London/NY) tapi AUD/NZD justru sepi di jam itu — sesi puncaknya Sydney-Tokyo (~22:00-08:00 UTC / 05:00-15:00 WIB). `vps/daemon.js`: `runAutoEntryCycle` sekarang terima parameter `pairs` opsional (default `AUTO_ENTRY_PAIRS`); env var baru `AUTO_ENTRY_HOURS_UTC_AUDNZD` (default `'0'` = 00:00 UTC/07:00 WIB) menjadwalkan cron TERPISAH yang memanggil `runAutoEntryCycle(['frxAUDNZD'])` — **3 pair lain TIDAK bertambah call/hari**. Env var opsional/fail-open, tidak perlu aksi manual di Railway (didokumentasikan di `vps/README-deploy.md` §env var).
+
+**Verifikasi:** `npm test` 866/866 hijau (16 test baru: 8 `isInvalidationTriggered` termasuk kasus prioritas TP/SL-menang, 7 `_evaluateTechInvalidation` termasuk status pending/open/sudah-resolve, 1 update `_aggManagementStats`). Grep manual memastikan nol call SambaNova/DeepSeek baru ditambahkan di jalur Track 1 (sesuai syarat plan). **Verifikasi live BELUM dilakukan** (butuh siklus `runAutoEntryCycle` produksi nyata untuk konfirmasi AI benar-benar bisa mengisi `invalidation_trigger` non-null, dan sinyal AUD/NZD muncul di jam 07:00 WIB) — dicatat sebagai item pending, lihat `daun_merah_progress.md`.
+
+**File diubah:** `api/admin.js`, `api/_auto_entry_guard.js`, `api/_position_review.js`, `vps/daemon.js`, `dev-auto-entry.html`, `vps/README-deploy.md`, `test/api/_auto_entry_guard.test.js`, `test/admin/position_review.test.js`, `test/admin/tech_invalidation.test.js` (baru).
 
 ## Changelog Session 281 (2026-08-04) — Gate E Dilonggarkan (Diskusi User Pasca-Audit Nol-Entry)
 

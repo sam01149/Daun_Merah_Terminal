@@ -24,7 +24,7 @@ const { requireAppKey } = require('./_app_key');
 const { fetchYahooOhlcv1h, fetchFallbackCandles, shouldSendYahooAlert, mapYahooSymbolToDeriv, fetchDerivCandles, mergeVolumeByTimestamp } = require('./_ohlcv_fetch');
 const { buildPairContext, computeCurrencyStrength } = require('./_pair_context');
 const { validateTightenSl, computePreventiveTightenSl, _evaluateManaged, _aggManagementStats, isCorroborated } = require('./_position_review');
-const { isDrawdownHalted, isCorrelatedExposureBlocked, isTimingConflictBlocked } = require('./_auto_entry_guard');
+const { isDrawdownHalted, isCorrelatedExposureBlocked, isTimingConflictBlocked, isInvalidationTriggered, INVALIDATION_TRIGGER_TYPES, INVALIDATION_TRIGGER_DIRECTIONS, INVALIDATION_TRIGGER_TIMEFRAMES } = require('./_auto_entry_guard');
 
 // Actions callable from the frontend without a secret → rate-limited per IP.
 // AI-triggering actions get a tighter budget than cache reads.
@@ -2730,6 +2730,46 @@ function _evaluateSetups(setups, candlesBySymbol, nowMs, calendarEvents, newsIte
   return setups;
 }
 
+// Track 1 (Road to Professional LLM Trader, 2026-08-04): tegakkan invalidasi
+// teknikal terstruktur (`invalidation_trigger`, diisi AI sendiri saat generate
+// sinyal) sebagai exit dini DETERMINISTIK — nol biaya AI tambahan, reuse candle
+// H1 yang SAMA dengan _evaluateSetups di atas (dipanggil SETELAH-nya, supaya
+// `closed_t` yang baru saja di-set jadi boundary prioritas TP/SL — lihat komentar
+// isInvalidationTriggered, api/_auto_entry_guard.js). Field TERPISAH
+// (`intervention`/`managed_status`, pola sama close_early U-5a) — status/tp/sl
+// MENTAH tetap dievaluasi _evaluateSetups apa adanya (prinsip U-5a, ghost/
+// counterfactual tidak boleh ditimpa). `intervention.type: 'tech_invalidation'`
+// SENGAJA beda dari 'close_early' (AI menilai berita realtime) — dua mekanisme
+// beda filosofi (kode murni vs AI), statistik efektivitasnya tidak boleh tercampur
+// (lihat _aggManagementStats, api/_position_review.js).
+//
+// Guard `!st.intervention`: selaras "1 intervensi per posisi" (pola sama AI
+// position review) — kalau tighten_sl/close_early AI sudah lebih dulu turun
+// tangan, invalidasi teknikal tidak menimpa keputusan itu.
+function _evaluateTechInvalidation(setups, candlesBySymbol) {
+  const ACTIVE_OR_JUST_RESOLVED = new Set(['pending', 'open', 'tp', 'sl', 'ambiguous']);
+  for (const st of setups || []) {
+    if (!st || !st.invalidation_trigger || st.intervention) continue;
+    if (!ACTIVE_OR_JUST_RESOLVED.has(st.status)) continue;
+    const candles = candlesBySymbol?.[st.symbol] || [];
+    const boundaryMs = st.closed_t ? st.closed_t * 1000 : Infinity;
+    const result = isInvalidationTriggered({
+      invalidation_trigger: st.invalidation_trigger, candles, startMs: st.ts, boundaryMs,
+    });
+    if (result?.triggered) {
+      st.intervention = {
+        type: 'tech_invalidation', t: result.at * 1000, price: st.invalidation_trigger.level,
+        new_sl: null,
+        reason: `Invalidasi teknikal: close ${st.invalidation_trigger.direction === 'above' ? 'menembus ke atas' : 'balik ke bawah'} level ${st.invalidation_trigger.level} (${st.invalidation_trigger.type})`,
+        trigger_guid: null,
+      };
+      st.managed_status = 'tech_invalidated';
+      st.managed_closed_t = result.at;
+    }
+  }
+  return setups;
+}
+
 // PLAN U-3 lanjutan (2026-07-24, diskusi user soal "setup bagus keburu ditarik karena
 // noise"): counterfactual untuk pending yang DIBATALKAN via Flip Guard non-whipsaw
 // (canceled_reason:'bias_flip', lihat penulisan setup_log auto sekitar "Skenario
@@ -3373,6 +3413,10 @@ async function _buildAutoScopeStats() {
   // sampai request berikutnya.
   const statusBeforeById = new Map(JSON.parse(before).map(s => [s.id, s.status]));
   log = _evaluateSetups(log, candlesBySymbol, Date.now(), calendarEvents, newsItems);
+  // Track 1 (2026-08-04): invalidasi teknikal deterministik — SETELAH _evaluateSetups
+  // supaya `closed_t` (kalau ada) jadi boundary prioritas TP/SL asli. Candle SAMA
+  // (candlesBySymbol sudah difetch di atas untuk `active`), nol fetch tambahan.
+  log = _evaluateTechInvalidation(log, candlesBySymbol);
   const managedPending = log.filter(s => s && s.intervention?.type === 'tighten_sl' && !s.managed_status);
   if (managedPending.length) {
     await Promise.all([...new Set(managedPending.map(s => s.symbol))].map(async sym => {
@@ -3463,6 +3507,10 @@ async function setupStatsHandler(req, res) {
     ]);
     const before = JSON.stringify(log);
     log = _evaluateSetups(log, candlesBySymbol, Date.now(), calendarEvents, newsItems);
+    // Track 1 (2026-08-04): invalidasi teknikal deterministik — SETELAH _evaluateSetups
+    // supaya `closed_t` (kalau ada) jadi boundary prioritas TP/SL asli. Candle SAMA
+    // (candlesBySymbol sudah difetch di atas untuk `active`), nol fetch tambahan.
+    log = _evaluateTechInvalidation(log, candlesBySymbol);
     // PLAN U-5a: outcome manajemen (tighten_sl) dievaluasi SETELAH ghost pasif —
     // butuh candle symbol yang sudah punya intervention, mungkin di luar `active`
     // (posisi yang di-manage tapi status ghost-nya sudah tp/sl/dst) — fetch tambahan
@@ -4623,6 +4671,7 @@ async function ohlcvAnalyzeHandler(req, res) {
       tpInstr,
       '- trigger: SATU kondisi price action spesifik yang HARUS terpenuhi sebelum entry — utamakan konfirmasi berbasis candle/pola di level konkret (misal "tunggu candle H4 close di bawah 1.1710" atau "tunggu rejection/pin bar H1 di area 3340") daripada indikator murni. Jangan sebut dua kondisi alternatif yang saling kontradiksi relatif ke Now. Manfaatkan [POLA CANDLE terdeteksi] kalau relevan.',
       '- invalidation_condition: kondisi spesifik yang membatalkan skenario ini sepenuhnya (beda dari sl — ini soal struktur/tesis, misal "kalau Daily close balik di bawah SMA50 atau swing low H4 terakhir jebol, bias bullish batal")',
+      '- invalidation_trigger: versi TERSTRUKTUR dari invalidation_condition di atas, supaya KODE (bukan AI) bisa mendeteksi otomatis tanpa call AI tambahan — objek {"type":"ma_break"|"price_level"|"swing_break","level":<satu angka>,"timeframe":"1h"|"4h"|"1d","direction":"above"|"below"}. "level" WAJIB satu angka konkret yang ADA di data (nilai SMA/level struktur/swing yang kamu sebut di invalidation_condition), "direction" = arah CLOSE candle yang membatalkan skenario ("below" kalau close balik ke bawah level itu membatalkan, "above" kalau close balik ke atas). Kalau invalidation_condition-mu TIDAK BISA diringkas jadi satu level angka tunggal (butuh multi-kondisi atau deskripsi kualitatif), set invalidation_trigger ke null — JANGAN mengarang angka.',
       '- time_horizon_days: estimasi jumlah hari realistis skenario ini main out (angka, misal 3, 5, 10) berdasarkan jarak entry-tp dibanding rata-rata gerak harian (ATR/sigma) yang ada di data',
       '- makro_alignment: "searah" kalau KONTEKS MAKRO / FUNDAMENTAL TERSTRUKTUR mendukung arah bias teknikalmu, "konflik" kalau berlawanan, "netral" kalau sinyal makro tidak jelas/campuran. Kalau blok makro dan fundamental dua-duanya tidak tersedia di atas, isi null.',
       '- makro_alignment_reason: SATU kalimat pendek alasannya dengan menyebut data spesifik (misal "bias Fed Dovish + COT USD net short searah dengan bias bearish USD/JPY"). Kalau alasannya menyangkut mekanisme dolar/komoditas/yield (misal "safe-haven vs real yield", "geopolitik vs oil"), WAJIB pakai angka konkret dari baris DOLLAR & KOMODITAS / REAL YIELD USD di FUNDAMENTAL TERSTRUKTUR kalau tersedia (level DXY/WTI, atau breakdown nominal-vs-ekspektasi inflasi) — jangan cuma bilang "real yield tinggi" tanpa angka atau tanpa menjelaskan apakah itu didorong sisi nominal atau sisi inflasi. Kalau data itu tidak tersedia di atas, jangan mengarang angka — tetap boleh pakai bahasa umum. Null kalau makro_alignment null.',
@@ -4643,7 +4692,7 @@ async function ohlcvAnalyzeHandler(req, res) {
     // — prosa panjang 4-5 paragraf sebagai string JSON rawan gagal JSON.parse (kutip/newline
     // tak ter-escape), yang dulu bikin structured null dan bias/entry/sl/tp hilang total.
     const messages = [
-      { role: 'system', content: 'Kamu analis senior teknikal dan makro. WAJIB jawab dalam DUA bagian persis seperti diminta: (1) SATU objek JSON valid tanpa markdown fence berisi HANYA field {"bias":"...","entry_zone":"...","entry_basis":"...","sl":"...","tp":"...","trigger":"...","invalidation_condition":"...","time_horizon_days":0,"makro_alignment":"...","makro_alignment_reason":"...","conflict":"...","conflict_note":"...","confidence":"..."} — JANGAN sertakan field commentary di JSON ini; (2) setelah JSON, baris berisi PERSIS "===COMMENTARY===", lalu teks commentary biasa (bukan JSON, bebas tanda kutip/baris baru). Bahasa Indonesia.' },
+      { role: 'system', content: 'Kamu analis senior teknikal dan makro. WAJIB jawab dalam DUA bagian persis seperti diminta: (1) SATU objek JSON valid tanpa markdown fence berisi HANYA field {"bias":"...","entry_zone":"...","entry_basis":"...","sl":"...","tp":"...","trigger":"...","invalidation_condition":"...","invalidation_trigger":{"type":"...","level":0,"timeframe":"...","direction":"..."},"time_horizon_days":0,"makro_alignment":"...","makro_alignment_reason":"...","conflict":"...","conflict_note":"...","confidence":"..."} — invalidation_trigger boleh null kalau tidak bisa distrukturkan; JANGAN sertakan field commentary di JSON ini; (2) setelah JSON, baris berisi PERSIS "===COMMENTARY===", lalu teks commentary biasa (bukan JSON, bebas tanda kutip/baris baru). Bahasa Indonesia.' },
       { role: 'user',   content: userMsg },
     ];
 
@@ -4922,6 +4971,24 @@ async function ohlcvAnalyzeHandler(req, res) {
         const confidenceRaw = String(structured.confidence || '').toLowerCase().replace(/[^a-z]/g, '');
         structured.confidence = (structured.entry_zone && CONFIDENCE_CANON.has(confidenceRaw)) ? confidenceRaw : null;
 
+        // Track 1 (Road to Professional LLM Trader, 2026-08-04): invalidation_trigger
+        // terstruktur, PARALEL dengan invalidation_condition (teks bebas, tidak diubah
+        // di sini). Validasi ketat — fail-open ke null kalau AI tidak patuh skema atau
+        // level bukan angka valid (prinsip sama confidence di atas: JANGAN paksa AI
+        // mengarang angka, mending kosong daripada salah).
+        {
+          const t = structured.invalidation_trigger;
+          const level = Number(t?.level);
+          const validTrigger = t && INVALIDATION_TRIGGER_TYPES.has(t.type)
+            && INVALIDATION_TRIGGER_DIRECTIONS.has(t.direction)
+            && Number.isFinite(level);
+          structured.invalidation_trigger = validTrigger ? {
+            type: t.type, level,
+            timeframe: INVALIDATION_TRIGGER_TIMEFRAMES.has(t.timeframe) ? t.timeframe : '1h',
+            direction: t.direction,
+          } : null;
+        }
+
         // [SISTEM HAKIM] Soft Block (Hak Veto User) - Mencegat halusinasi makro_alignment
         if (cbDir && structured.bias) {
           sistemHakimEvaluated = true;
@@ -5054,6 +5121,11 @@ async function ohlcvAnalyzeHandler(req, res) {
         loss_label: null, label_reason: null, label_by: null,
         // PLAN U-5a: manajemen posisi VIRTUAL — null/0 = belum pernah direview.
         intervention: null, managed_status: null, managed_closed_t: null, review_count: 0,
+        // Track 1 (Road to Professional LLM Trader, 2026-08-04): trigger invalidasi
+        // teknikal terstruktur (nullable) — dicek deterministik oleh _evaluateTechInvalidation,
+        // hasil deteksi ditulis ke `intervention`/`managed_status` (field TERPISAH,
+        // reuse pola U-5a) saat tersentuh.
+        invalidation_trigger: structured.invalidation_trigger ?? null,
       });
       let needsGateA = false;
       const gotLock = await _acquireLockWithRetry(lockKey);
@@ -5095,6 +5167,10 @@ async function ohlcvAnalyzeHandler(req, res) {
                 if (structured.risk_reward != null) stalePending.rr = structured.risk_reward;
                 if (structured.time_horizon_days != null) stalePending.horizon_days = structured.time_horizon_days;
                 if (structured.confidence != null) stalePending.confidence = structured.confidence;
+                // Track 1 (2026-08-04): trigger invalidasi ikut diperbarui ke generasi
+                // terbaru, pola sama field lain di blok refine ini — jangan nyimpen
+                // trigger dari generasi pertama yang mungkin sudah tidak relevan.
+                stalePending.invalidation_trigger = structured.invalidation_trigger ?? null;
                 stalePending.alignment = (structured.conflict && structured.conflict !== 'none')
                   ? 'konflik'
                   : (structured.makro_alignment || null);
@@ -5799,6 +5875,7 @@ module.exports._pickExpiryLevels = _pickExpiryLevels;
 module.exports._confluenceZones = _confluenceZones;
 module.exports._formatConfluenceBlock = _formatConfluenceBlock;
 module.exports._evaluateSetups = _evaluateSetups;
+module.exports._evaluateTechInvalidation = _evaluateTechInvalidation;
 module.exports._evaluateCanceledGhost = _evaluateCanceledGhost;
 module.exports._aggCancelFlipGhostStats = _aggCancelFlipGhostStats;
 module.exports._aggSetupStats = _aggSetupStats;

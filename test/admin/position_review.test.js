@@ -179,9 +179,14 @@ test('_aggManagementStats: reviews/hold/tighten/close_early + saved/cost dari gh
     { intervention: { type: 'tighten_sl_preventive' }, status: 'sl' }, // tighten_preventive.saved
     { intervention: { type: 'tighten_sl_preventive' }, status: 'tp' }, // tighten_preventive.cost
     { intervention: { type: 'tighten_sl_preventive' }, status: 'open' }, // belum resolve, tidak masuk saved/cost
+    // Track 1 (2026-08-04) — tech_invalidation JUGA TIDAK boleh ikut mempengaruhi
+    // reviews/hold (kode murni, bukan hasil review AI atas berita).
+    { intervention: { type: 'tech_invalidation' }, status: 'sl' }, // tech_invalidation.saved
+    { intervention: { type: 'tech_invalidation' }, status: 'tp' }, // tech_invalidation.cost
+    { intervention: { type: 'tech_invalidation' }, status: 'pending' }, // tech_invalidation.ghost_pending
   ];
   const m = _aggManagementStats(arr);
-  assert.equal(m.reviews, 6); // tidak berubah walau ada 3 entri preventif tambahan
+  assert.equal(m.reviews, 6); // tidak berubah walau ada entri preventif+tech_invalidation tambahan
   assert.equal(m.tighten_sl, 2);
   assert.equal(m.close_early, 3);
   assert.equal(m.hold, 1);
@@ -191,6 +196,7 @@ test('_aggManagementStats: reviews/hold/tighten/close_early + saved/cost dari gh
   assert.equal(m.close_early_cost, 1);
   assert.equal(m.close_early_ghost_pending, 1);
   assert.deepEqual(m.tighten_preventive, { count: 3, saved: 1, cost: 1 });
+  assert.deepEqual(m.tech_invalidation, { count: 3, saved: 1, cost: 1, ghost_pending: 1 });
 });
 
 test('_aggManagementStats: array kosong -> semua nol, bukan crash', () => {
@@ -200,6 +206,7 @@ test('_aggManagementStats: array kosong -> semua nol, bukan crash', () => {
     close_early_saved: 0, close_early_cost: 0, close_early_ghost_pending: 0,
     tighten_saved: 0, tighten_cost: 0,
     tighten_preventive: { count: 0, saved: 0, cost: 0 },
+    tech_invalidation: { count: 0, saved: 0, cost: 0, ghost_pending: 0 },
   });
 });
 

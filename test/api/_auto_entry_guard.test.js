@@ -9,6 +9,7 @@ const {
   isDrawdownHalted,
   isCorrelatedExposureBlocked,
   isTimingConflictBlocked,
+  isInvalidationTriggered,
 } = require('../../api/_auto_entry_guard.js');
 
 // ── computeRollingR / isDrawdownHalted (Gate B) ─────────────────────────────
@@ -150,4 +151,71 @@ test('isTimingConflictBlocked: conflict "arah"/"none"/null/undefined -> tidak bl
   assert.equal(isTimingConflictBlocked('none'), false);
   assert.equal(isTimingConflictBlocked(null), false);
   assert.equal(isTimingConflictBlocked(undefined), false);
+});
+
+// ── isInvalidationTriggered (Track 1, Road to Professional LLM Trader, 2026-08-04) ──
+
+const mkC = (i, o, h, l, c) => ({ t: i * 3600, o, h, l, c, v: 0 });
+
+test('isInvalidationTriggered: direction "below" — close balik di bawah level -> triggered', () => {
+  const trig = { type: 'ma_break', level: 4000, timeframe: '1h', direction: 'below' };
+  const candles = [mkC(1, 4010, 4015, 4005, 4008), mkC(2, 4008, 4009, 3990, 3995)];
+  const r = isInvalidationTriggered({ invalidation_trigger: trig, candles, startMs: 0, boundaryMs: Infinity });
+  assert.equal(r.triggered, true);
+  assert.equal(r.at, 2 * 3600);
+});
+
+test('isInvalidationTriggered: direction "above" — close balik di atas level -> triggered', () => {
+  const trig = { type: 'price_level', level: 4000, timeframe: '1h', direction: 'above' };
+  const candles = [mkC(1, 3990, 3995, 3985, 3992), mkC(2, 3992, 4010, 3991, 4005)];
+  const r = isInvalidationTriggered({ invalidation_trigger: trig, candles, startMs: 0, boundaryMs: Infinity });
+  assert.equal(r.triggered, true);
+  assert.equal(r.at, 2 * 3600);
+});
+
+test('isInvalidationTriggered: level tidak pernah tersentuh -> triggered false, bukan crash', () => {
+  const trig = { type: 'swing_break', level: 3800, timeframe: '1h', direction: 'below' };
+  const candles = [mkC(1, 4010, 4015, 4005, 4008), mkC(2, 4008, 4009, 3990, 3995)];
+  const r = isInvalidationTriggered({ invalidation_trigger: trig, candles, startMs: 0, boundaryMs: Infinity });
+  assert.equal(r.triggered, false);
+});
+
+test('isInvalidationTriggered: candle sebelum startMs (mis. sebelum ts setup) diabaikan', () => {
+  const trig = { type: 'ma_break', level: 4000, timeframe: '1h', direction: 'below' };
+  const candles = [mkC(1, 4010, 4015, 4005, 3995)]; // close di bawah level, TAPI sebelum startMs
+  const r = isInvalidationTriggered({ invalidation_trigger: trig, candles, startMs: 1 * 3600 * 1000, boundaryMs: Infinity });
+  assert.equal(r.triggered, false);
+});
+
+// Prioritas TP/SL asli (diskusi user) — invalidasi hanya dihitung untuk candle SEBELUM
+// boundaryMs (closed_t asli). Candle yang menyentuh level SAMA/SETELAH boundary diabaikan.
+test('isInvalidationTriggered: boundaryMs (closed_t TP/SL asli) membatasi — candle setelah/sama boundary diabaikan', () => {
+  const trig = { type: 'ma_break', level: 4000, timeframe: '1h', direction: 'below' };
+  const candles = [mkC(2, 4008, 4009, 3990, 3995)]; // t = 2*3600, close di bawah level
+  const boundaryMs = 2 * 3600 * 1000; // TP/SL asli tersentuh PERSIS di candle yang sama
+  const r = isInvalidationTriggered({ invalidation_trigger: trig, candles, startMs: 0, boundaryMs });
+  assert.equal(r.triggered, false, 'TP/SL asli menang kalau tersentuh di candle sama/lebih dulu');
+});
+
+test('isInvalidationTriggered: candle invalidasi LEBIH AWAL dari boundaryMs -> tetap triggered (invalidasi menang)', () => {
+  const trig = { type: 'ma_break', level: 4000, timeframe: '1h', direction: 'below' };
+  const candles = [mkC(1, 4008, 4009, 3990, 3995), mkC(3, 3995, 3998, 3900, 3910)];
+  const boundaryMs = 3 * 3600 * 1000; // TP/SL asli baru tersentuh di candle ke-3
+  const r = isInvalidationTriggered({ invalidation_trigger: trig, candles, startMs: 0, boundaryMs });
+  assert.equal(r.triggered, true);
+  assert.equal(r.at, 1 * 3600);
+});
+
+test('isInvalidationTriggered: invalidation_trigger null/tipe tak dikenal/level bukan angka -> null (fail-open)', () => {
+  const candles = [mkC(1, 4010, 4015, 4005, 3995)];
+  assert.equal(isInvalidationTriggered({ invalidation_trigger: null, candles, startMs: 0 }), null);
+  assert.equal(isInvalidationTriggered({ invalidation_trigger: { type: 'aneh', level: 4000, direction: 'below' }, candles, startMs: 0 }), null);
+  assert.equal(isInvalidationTriggered({ invalidation_trigger: { type: 'ma_break', level: 'bukan-angka', direction: 'below' }, candles, startMs: 0 }), null);
+  assert.equal(isInvalidationTriggered({ invalidation_trigger: { type: 'ma_break', level: 4000, direction: 'sideways' }, candles, startMs: 0 }), null);
+});
+
+test('isInvalidationTriggered: candles kosong/bukan array -> triggered false, bukan crash', () => {
+  const trig = { type: 'ma_break', level: 4000, direction: 'below' };
+  assert.equal(isInvalidationTriggered({ invalidation_trigger: trig, candles: [], startMs: 0 }).triggered, false);
+  assert.equal(isInvalidationTriggered({ invalidation_trigger: trig, candles: null, startMs: 0 }).triggered, false);
 });

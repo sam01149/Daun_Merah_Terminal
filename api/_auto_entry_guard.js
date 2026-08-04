@@ -148,11 +148,55 @@ function isTimingConflictBlocked(conflict) {
   return conflict === 'waktu';
 }
 
+// ── Track 1 (Road to Professional LLM Trader, 2026-08-04): invalidasi teknikal ──
+// Cek MURNI level/MA/swing (`invalidation_trigger`, diisi AI sendiri saat generate
+// sinyal — lihat prompt api/admin.js) terhadap candle H1 yang SUDAH difetch untuk
+// evaluasi status (`_evaluateSetups`) — NOL fetch/call tambahan, deterministik
+// (bukan AI). Dicek via CLOSE candle (bukan wick H/L seperti SL/TP) — kondisi
+// struktural ("Daily close balik di bawah SMA50") secara wajar berbasis close,
+// beda dari SL/TP yang memang harus tahan noise intrabar.
+//
+// Prioritas TP/SL asli (diskusi user): kalau posisi sudah resolve ke tp/sl/
+// ambiguous, invalidasi HANYA dihitung untuk candle SEBELUM boundary yang
+// tersentuh itu (`boundaryMs`, caller kirim `closed_t` kalau ada) — TP/SL yang
+// tersentuh di candle sama/lebih dulu MENANG, konsisten prinsip "SL/TP asli
+// adalah kontrak trade, invalidasi teknikal cuma exit dini SEBELUM itu terjadi".
+//
+// `startMs`: WAJIB dari `st.ts` (bukan `filled_t`) — thesis bisa batal SEBELUM
+// posisi sempat fill (PENDING), jangan tunggu fill dulu baru dicek.
+const INVALIDATION_TRIGGER_TYPES = new Set(['ma_break', 'price_level', 'swing_break']);
+const INVALIDATION_TRIGGER_DIRECTIONS = new Set(['above', 'below']);
+const INVALIDATION_TRIGGER_TIMEFRAMES = new Set(['1h', '4h', '1d']);
+
+function isInvalidationTriggered({ invalidation_trigger, candles, startMs, boundaryMs }) {
+  const trig = invalidation_trigger;
+  if (!trig || !INVALIDATION_TRIGGER_TYPES.has(trig.type) || !INVALIDATION_TRIGGER_DIRECTIONS.has(trig.direction)) return null;
+  const level = Number(trig.level);
+  if (!Number.isFinite(level) || !Number.isFinite(startMs)) return null;
+  const bound = Number.isFinite(boundaryMs) ? boundaryMs : Infinity;
+  const all = Array.isArray(candles) ? [...candles].sort((a, b) => a.t - b.t) : [];
+  for (const c of all) {
+    if (!c) continue;
+    const tMs = c.t * 1000;
+    if (tMs <= startMs) continue;
+    if (tMs >= bound) break;
+    const close = Number(c.c);
+    if (!Number.isFinite(close)) continue;
+    const touched = trig.direction === 'above' ? close >= level : close <= level;
+    if (touched) return { triggered: true, at: c.t };
+  }
+  return { triggered: false, at: null };
+}
+
 module.exports = {
   computeRollingR,
   isDrawdownHalted,
   isCorrelatedExposureBlocked,
   isTimingConflictBlocked,
+  isInvalidationTriggered,
+  INVALIDATION_TRIGGER_TYPES,
+  INVALIDATION_TRIGGER_DIRECTIONS,
+  INVALIDATION_TRIGGER_TIMEFRAMES,
   DRAWDOWN_WINDOW,
   DRAWDOWN_HALT_THRESHOLD_R,
   _realizedWinR,

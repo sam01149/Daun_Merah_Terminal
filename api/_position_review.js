@@ -92,6 +92,11 @@ function _aggManagementStats(arr) {
   const closeEntries   = list.filter(x => x && x.intervention && x.intervention.type === 'close_early');
   const tighten_sl  = tightenEntries.length;
   const close_early = closeEntries.length;
+  // Track 1 (Road to Professional LLM Trader, 2026-08-04): 'tech_invalidation'
+  // TIDAK ikut dikurangi dari `reviews`/`hold` — mekanisme kode murni (bukan hasil
+  // review AI atas berita), pola sama tighten_sl_preventive di bawah (dihitung
+  // terpisah supaya tidak mengaburkan efektivitas review AI reaktif vs deterministik).
+  const techInvalidationEntries = list.filter(x => x && x.intervention && x.intervention.type === 'tech_invalidation');
   const hold = Math.max(0, reviews - tighten_sl - close_early);
   // Preventif (tighten_sl_preventive) SENGAJA dihitung TERPISAH dari tighten_sl reaktif
   // di atas — jangan digabung ke reviews/hold (bukan hasil review AI per berita, jadi
@@ -110,6 +115,16 @@ function _aggManagementStats(arr) {
       count: preventiveEntries.length,
       saved: preventiveEntries.filter(x => x.status === 'sl').length,
       cost:  preventiveEntries.filter(x => x.status === 'tp').length,
+    },
+    // Track 1 (2026-08-04): exit dini invalidasi teknikal — saved/cost dibandingkan
+    // terhadap `status` ghost/counterfactual (prinsip U-5a, sama seperti close_early
+    // di atas). ghost_pending = belum resolve (masih pending/open, ide masih "berjalan"
+    // di jalur pasif seandainya invalidasi tidak turun tangan).
+    tech_invalidation: {
+      count: techInvalidationEntries.length,
+      saved: techInvalidationEntries.filter(x => x.status === 'sl').length,
+      cost:  techInvalidationEntries.filter(x => x.status === 'tp').length,
+      ghost_pending: techInvalidationEntries.filter(x => x.status === 'pending' || x.status === 'open').length,
     },
   };
 }

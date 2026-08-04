@@ -149,6 +149,8 @@ Berbeda dari 4 fitur di atas: **fact sheet dibangun 100% client-side** (checklis
 
 **Volume tambahan ke pool DeepSeek/SambaNova akun-1:** +2 call/hari (auto-entry, 2 slot) + 1 call/hari (uji konsistensi ×3 panggilan = +3 request) = **+5 request/hari**. Kecil dibanding pool 200/hari SambaNova, tapi tetap masuk hitungan headroom §5 kalau Analisa AI per Pair manual sedang ramai.
 
+**[2026-08-04, Track 2a "Road to Professional LLM Trader"] +1 call/hari khusus AUD/NZD:** slot ke-3 (`AUTO_ENTRY_HOURS_UTC_AUDNZD`, default 00:00 UTC/07:00 WIB, sesi Sydney-Tokyo) menambah **+1 request/hari** ke pool yang sama, HANYA untuk pair `frxAUDNZD` — 3 pair lain (XAU/EUR/GBP) tidak bertambah call. Rantai fallback & pool provider TIDAK berubah (masih DeepSeek v4-flash → SambaNova akun-1 → akun-2).
+
 **[2026-07-28] Gate A "AI Kritikus" otomatis (audit celah kesalahan trader, `daun_merah.md` Session 250):** setiap kandidat setup auto-entry yang lolos 3 gate murah (regime-confidence/correlation-cap/drawdown, `_auto_entry_guard.js`, murni kode — 0 AI call) sekarang direview 1x lagi oleh AI Kritikus (verdict "batalkan" → setup tidak disimpan) sebelum masuk `setup_log_auto:v1`.
 
 - **Pool TERPISAH** dari §3.6 di atas — `ai:sambanova:main:experimental` / `sambanova_main_experimental` (limit 30/hari), BUKAN `ai:sambanova:main`/`sambanova_main` yang dipakai tombol manual "UJI KELEMAHAN" publik (isolasi U-7 tetap terjaga — tidak rebutan kuota).

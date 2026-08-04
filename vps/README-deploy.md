@@ -275,6 +275,7 @@ U-6 (fase final Plan U) push ke `main`.
 |---|---|---|
 | `AUTO_ENTRY_PAIRS` | `frxXAUUSD,frxEURUSD,frxGBPUSD` | Daftar pair (penamaan Deriv, dipetakan ke symbol/label Yahoo di `AUTO_ENTRY_SYMBOL_MAP`) yang ikut auto-entry + jadi pair uji konsistensi (elemen pertama). **Golden Trio (2026-07-22):** 3 pair mempercepat akumulasi sampel gate Plan U n≥100 dari ~50 hari ke ~16 hari (6 setup/hari), dengan kedalaman n≈33/pair tetap lolos ambang CLT n≥30 — lihat `daun_merah_riset.md`. |
 | `AUTO_ENTRY_HOURS_UTC` | `8,13` | Jam UTC slot auto-entry (perkiraan buka London/NY) — sengaja digeser dari jadwal digest Q-6 (00:00/07:00/12:30) supaya tidak tertelan dedup 30 menit `ohlcv_analyze`. |
+| `AUTO_ENTRY_HOURS_UTC_AUDNZD` | `0` | **Track 2a (Road to Professional LLM Trader, 2026-08-04, keputusan user).** Jam UTC TAMBAHAN khusus pair `frxAUDNZD` (sesi Sydney-Tokyo, default 00:00 UTC = 07:00 WIB) — `AUTO_ENTRY_HOURS_UTC` di atas pas untuk London/NY tapi AUD/NZD justru sepi di jam itu. Pair lain TIDAK bertambah call di jam ini. |
 | `AUTO_CONSISTENCY_HOUR_UTC` | `10` | Jam UTC uji konsistensi LLM (1x/hari). |
 | `FRIDAY_TIGHTEN_HOUR_UTC` | `17` | Jam UTC tighten preventif weekend gap, HANYA Jumat (4 jam sebelum tutup 21:00 UTC — lihat alasan choppy-hour di atas kalau mau menggeser lebih mepet). |
 
