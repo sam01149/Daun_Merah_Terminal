@@ -4413,13 +4413,32 @@ function saveNewsCache() {
 // Load persisted berita SEBELUM fetch pertama selesai, supaya tab NEWS langsung
 // terisi (bukan layar kosong/loading) begitu dibuka — lalu fetchFeed() tetap
 // jalan seperti biasa di belakang layar dan menimpa begitu data live datang.
+// FinancialJuice kadang mem-broadcast ulang headline yang PERSIS SAMA dengan guid
+// BARU (pubDate juga sama) — dedup by-guid saja tidak menangkap repost seperti ini,
+// jadi identitas dedup dipakaikan judul+pubDate ternormalisasi, bukan guid saja.
+function _newsDedupKey(item) {
+  const t = (item.title || '').toLowerCase().replace(/\s+/g, ' ').trim();
+  return t + '|' + (item.pubDate || '');
+}
+// Kolaps duplikat (guid beda, konten sama) dari sebuah array item, item pertama menang.
+function _dedupNewsItems(items) {
+  const seen = new Set(), out = [];
+  for (const it of items) {
+    const k = _newsDedupKey(it);
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(it);
+  }
+  return out;
+}
+
 function loadNewsCache() {
   try {
     const raw = localStorage.getItem(NEWS_CACHE_KEY);
     if (!raw) return false;
     const obj = JSON.parse(raw);
     if (!obj || !Array.isArray(obj.items) || obj.items.length === 0) return false;
-    allItems = obj.items;
+    allItems = _dedupNewsItems(obj.items);
     seenGuids = new Set(allItems.map(i => i.guid));
     newsCacheStaleAt = obj.savedAt || null;
     const lu = document.getElementById('lastUpdate');
@@ -5117,10 +5136,12 @@ async function fetchFeed() {
   const isFirstLoad = seenGuids.size === 0;
   const newItems = isFirstLoad ? [] : merged.filter(i => !seenGuids.has(i.guid));
 
-  // Full merge-dedup: start from existing items, override/add from fresh RSS
-  // This prevents accumulation when GUIDs rotate across background periods
-  const byGuid = new Map(allItems.map(i => [i.guid, i]));
-  for (const item of merged) byGuid.set(item.guid, item);
+  // Full merge-dedup: start from existing items, override/add from fresh RSS.
+  // Kunci dedup pakai _newsDedupKey (judul+pubDate), BUKAN guid saja — FinancialJuice
+  // kadang mem-broadcast ulang headline identik dengan guid baru (lihat _newsDedupKey),
+  // dan dedup-by-guid murni membiarkan repost seperti itu numpuk sebagai entri terpisah.
+  const byGuid = new Map(allItems.map(i => [_newsDedupKey(i), i]));
+  for (const item of merged) byGuid.set(_newsDedupKey(item), item);
   allItems = [...byGuid.values()]
     .sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate))
     .slice(0, 100);
@@ -5239,8 +5260,11 @@ function _feedItemHtml(item, isNew, idx) {
 
 // allItems (live, capped 100) + historyItems (load-more), dedupe by guid.
 function _combinedNewsItems() {
-  const liveGuids = new Set(allItems.map(i => i.guid));
-  return allItems.concat(historyItems.filter(i => !liveGuids.has(i.guid)));
+  // Filter overlap pakai _newsDedupKey (judul+pubDate), bukan guid saja — item yang
+  // sama bisa ada di allItems (live) dan historyItems (arsip) dengan guid berbeda
+  // kalau FinancialJuice sempat mem-broadcast ulang headline-nya (lihat _newsDedupKey).
+  const liveKeys = new Set(allItems.map(_newsDedupKey));
+  return allItems.concat(historyItems.filter(i => !liveKeys.has(_newsDedupKey(i))));
 }
 
 function renderFeed(markNew = false) {
@@ -5274,10 +5298,19 @@ async function _fetchHistoryPage() {
   const fetched = Array.isArray(data.items) ? data.items : [];
   // Server field 'description' → normalisasi ke 'desc' biar sama dengan bentuk
   // item live (parseRSS() client) yang dipakai _feedItemHtml/sanitizeDesc.
-  const known = new Set(allItems.map(i => i.guid).concat(historyItems.map(i => i.guid)));
-  const fresh = fetched
-    .filter(i => i.guid && i.title && !known.has(i.guid))
-    .map(i => ({ title: i.title, guid: i.guid, pubDate: i.pubDate, link: i.link, desc: i.description || '' }));
+  // Dedup by-guid saja tidak cukup: arsip news_history bisa berisi repost
+  // FinancialJuice (guid beda, judul+pubDate sama persis) — lihat _newsDedupKey.
+  // Kumpulkan key terpakai secara progresif supaya duplikat DI DALAM satu halaman
+  // fetched yang sama juga kekolaps, bukan cuma terhadap item yang sudah ada.
+  const seen = new Set(allItems.map(_newsDedupKey).concat(historyItems.map(_newsDedupKey)));
+  const fresh = [];
+  for (const i of fetched) {
+    if (!i.guid || !i.title) continue;
+    const key = _newsDedupKey(i);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    fresh.push({ title: i.title, guid: i.guid, pubDate: i.pubDate, link: i.link, desc: i.description || '' });
+  }
   historyItems = historyItems.concat(fresh);
   historyBefore = data.next_before != null ? data.next_before : cursor;
   historyExhausted = fetched.length === 0 || !data.has_more;

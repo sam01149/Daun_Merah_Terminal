@@ -11,11 +11,23 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-03 (Session 276 — Plan W: konsistensi respons `fundamental_refresh` untuk data kalender)
+> **Last updated:** 2026-08-04 (Session 277 — Fix duplikasi berita di tab NEWS/arsip)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 277 (2026-08-04) — Fix Duplikasi Berita di Tab NEWS/Arsip
+
+**Laporan user:** headline yang sama (sudah diterjemahkan ke Indonesia) muncul berulang 4-6x berturut-turut dengan timestamp identik di tab NEWS (contoh: "Williams dari Fed: kebijakan suku bunga masih sangat tepat...").
+
+**Root cause (dikonfirmasi via `curl` langsung ke `news_history` production):** `guid` item **sama persis** di tiap salinan duplikat — bukan guid yang berubah seperti dugaan awal. FinancialJuice merotasi query-string tracking di `<link>` (`?xy=rss` → `?xy=rs` → `?xy=economic` → `?xy=1` → tanpa query) tiap kali RSS yang sama di-serve ulang untuk item yang identik. `api/feeds.js` `storeNewsHistory()` memakai `JSON.stringify(item)` utuh sebagai *member* `ZADD news_history NX` — karena `link` goyang tiap poll, "item yang sama" tersimpan sebagai member Redis berbeda tiap kali, menumpuk duplikat permanen di arsip 36 jam yang lalu muncul dobel lewat "Muat Berita Lebih Lama" maupun tercampur ke render feed live.
+
+**Perbaikan:**
+- `api/feeds.js` `parseRSSItems()`: buang query string dari `link` sebelum dipakai membangun member Redis — item yang sama sekarang selalu serialize identik antar-poll sehingga `ZADD NX` bekerja seperti niatnya. `storeNewsHistory()` juga dapat dedup tambahan dalam satu batch by judul ternormalisasi+pubDate sebagai lapis kedua.
+- `index.html`: identitas dedup di tiga titik (merge live `fetchFeed()`, cache localStorage `loadNewsCache()`, arsip `_fetchHistoryPage()`, dan gabungan live+arsip `_combinedNewsItems()`) diganti dari guid-saja ke kunci `_newsDedupKey` (judul ternormalisasi + pubDate) — ini yang langsung membersihkan tampilan untuk semua data lama yang sudah kadung dobel di Redis (tidak perlu migrasi data, arsip lama juga akan habis sendiri lewat TTL 36 jam).
+
+**Verifikasi:** `npm test` 792/792 hijau. Simulasi dedup terhadap data `news_history` production real (100 item, 20 grup duplikat, 98 item duplikat) — key `_newsDedupKey` mengolapskan seluruhnya jadi 22 item unik.
 
 ## Changelog Session 276 (2026-08-03) — Plan W: Konsistensi Respons `fundamental_refresh` untuk Calendar Update
 

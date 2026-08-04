@@ -232,10 +232,20 @@ async function storeNewsHistory(xml, now) {
   const items = parseRSSItems(xml);
   if (items.length === 0) return;
   const cutoff = now - 36 * 60 * 60 * 1000;
+  // FinancialJuice kadang mem-broadcast ulang headline identik dalam satu payload RSS
+  // dengan guid BARU tiap kali (pubDate juga sama persis) — tanpa dedup ini, tiap repost
+  // masuk sebagai member ZADD terpisah (member = JSON per-item, guid beda = string beda),
+  // menumpuk duplikat permanen di arsip 36 jam yang lalu muncul dobel di "Muat Berita
+  // Lebih Lama". Dedup dalam satu batch pakai judul ternormalisasi+pubDate, bukan guid.
+  const seenKeys = new Set();
   const args = ['ZADD', 'news_history', 'NX'];
   for (const item of items) {
     const ts = new Date(item.pubDate).getTime();
-    if (!isNaN(ts) && ts > cutoff) args.push(ts, JSON.stringify(item));
+    if (isNaN(ts) || ts <= cutoff) continue;
+    const key = (item.title || '').toLowerCase().replace(/\s+/g, ' ').trim() + '|' + item.pubDate;
+    if (seenKeys.has(key)) continue;
+    seenKeys.add(key);
+    args.push(ts, JSON.stringify(item));
   }
   if (args.length > 3) await redisCmd(...args);
   await redisCmd('ZREMRANGEBYSCORE', 'news_history', '-inf', cutoff);
@@ -348,7 +358,15 @@ function parseRSSItems(xml) {
     const get = tag => { const r1 = new RegExp(`<${tag}[^>]*><!\\[CDATA\\[([\\s\\S]*?)\\]\\]><\\/${tag}>`).exec(b); const r2 = new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`).exec(b); return (r1||r2)?.[1]?.trim()||''; };
     const title = decodeXmlEntities(get('title')).replace(/^FinancialJuice:\s*/i,'').trim();
     const guid = get('guid'), pubDate = get('pubDate');
-    const link = b.match(/<link>(.*?)<\/link>/)?.[1] || '';
+    // FinancialJuice merotasi query-string tracking di <link> (?xy=rss / ?xy=rs /
+    // ?xy=economic / ?xy=1 / tanpa query) tiap kali RSS yang sama di-serve ulang
+    // untuk item yang sama — dibuktikan live: guid identik, title & pubDate identik,
+    // cuma query string ini yang beda antar-poll. Karena storeNewsHistory() memakai
+    // JSON.stringify(item) sebagai member ZADD NX, query string yang goyang bikin
+    // "item yang sama" keluar sebagai member Redis berbeda tiap poll → menumpuk
+    // duplikat permanen di arsip 36 jam (muncul dobel di "Muat Berita Lebih Lama").
+    // Buang query string supaya member deterministik per artikel, base URL tetap valid.
+    const link = (b.match(/<link>(.*?)<\/link>/)?.[1] || '').replace(/\?.*$/, '');
     if (guid && title) {
       // description disimpan untuk SEMUA item (bukan cuma option-expiry/CB seperti versi
       // lama) — dipakai tab NEWS "Muat Berita Lebih Lama" biar berita lama juga tampil
