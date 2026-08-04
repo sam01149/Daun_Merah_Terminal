@@ -10,6 +10,7 @@ const {
   computeCurrencyStrength,
   formatPairContextBlock,
   buildPairContext,
+  STRUCTURAL_PROFILES,
 } = require('../../api/_pair_context.js');
 
 // close flat 100, h/l simetris ±rangeFn(i)/2 di sekitar 100 — dengan close flat,
@@ -168,6 +169,44 @@ test('format: regime rezim ATR ditulis sebagai hitungan ordinal (X dari Y), buka
   const out = formatPairContextBlock({ regime, strength: null, pairLabel: 'EUR/USD' });
   assert.ok(/lebih tinggi dari \d+ dari \d+ titik historis/.test(out), out);
   assert.ok(!/\d+%/.test(out), 'baris rezim tidak boleh menampilkan angka persen mentah');
+});
+
+// ── Kartu spesialis struktural (2026-08-04) ───────────────────────────────────
+
+test('format: AUD/NZD rezim bergejolak -> catatan struktural AUD/NZD ikut muncul', () => {
+  const regime = computeVolatilityRegime(mkCandles(100, i => (i < 70 ? 0.2 : 2.0)));
+  const out = formatPairContextBlock({ regime, strength: null, pairLabel: 'AUD/NZD' });
+  assert.ok(out.includes('Catatan struktural AUD/NZD'), out);
+  assert.ok(out.includes('RBA-RBNZ'), out);
+});
+
+test('format: EUR/GBP rezim bergejolak -> catatan struktural EUR/GBP ikut muncul', () => {
+  const regime = computeVolatilityRegime(mkCandles(100, i => (i < 70 ? 0.2 : 2.0)));
+  const out = formatPairContextBlock({ regime, strength: null, pairLabel: 'EUR/GBP' });
+  assert.ok(out.includes('Catatan struktural EUR/GBP'), out);
+  assert.ok(out.includes('ECB-BOE'), out);
+});
+
+test('format: AUD/NZD rezim NORMAL/TENANG -> catatan struktural TIDAK muncul (fail-open, bukan always-on)', () => {
+  const regimeNormal = computeVolatilityRegime(mkCandles(100, i => 1.0 + Math.sin(i / 5) * 0.5));
+  assert.equal(regimeNormal.regime, 'normal');
+  const outNormal = formatPairContextBlock({ regime: regimeNormal, strength: null, pairLabel: 'AUD/NZD' });
+  assert.ok(!outNormal.includes('Catatan struktural'), outNormal);
+
+  const regimeTenang = computeVolatilityRegime(mkCandles(100, i => (i < 70 ? 2.0 : 0.2)));
+  assert.equal(regimeTenang.regime, 'tenang');
+  const outTenang = formatPairContextBlock({ regime: regimeTenang, strength: null, pairLabel: 'AUD/NZD' });
+  assert.ok(!outTenang.includes('Catatan struktural'), outTenang);
+});
+
+test('format: EUR/USD & XAU/USD rezim bergejolak -> TIDAK ada catatan struktural (sengaja tidak diprofilkan, trending bukan range-bound)', () => {
+  const regime = computeVolatilityRegime(mkCandles(100, i => (i < 70 ? 0.2 : 2.0)));
+  assert.ok(!('EUR/USD' in STRUCTURAL_PROFILES));
+  assert.ok(!('XAU/USD' in STRUCTURAL_PROFILES));
+  const outEurUsd = formatPairContextBlock({ regime, strength: null, pairLabel: 'EUR/USD' });
+  const outXau = formatPairContextBlock({ regime, strength: null, pairLabel: 'XAU/USD' });
+  assert.ok(!outEurUsd.includes('Catatan struktural'), outEurUsd);
+  assert.ok(!outXau.includes('Catatan struktural'), outXau);
 });
 
 // ── buildPairContext (glue murni, tanpa I/O) ──────────────────────────────────

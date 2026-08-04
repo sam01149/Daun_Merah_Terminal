@@ -2711,7 +2711,12 @@ function _evaluateSetups(setups, candlesBySymbol, nowMs, calendarEvents, newsIte
           if (label) { st.loss_label = label.loss_label; st.label_reason = label.reason; st.label_by = 'auto'; }
           break;
         }
-        if (hitTp) { st.status = 'tp'; st.closed_t = c.t; break; }
+        if (hitTp) {
+          st.status = 'tp'; st.closed_t = c.t;
+          const tpLabel = _detectTpLabel({ closedT: c.t, eLo, eHi, sl, bias: st.bias }, all);
+          if (tpLabel) { st.tp_label = tpLabel.tp_label; st.tp_label_reason = tpLabel.reason; }
+          break;
+        }
       }
     }
     const horizonMs = Math.max(2, st.horizon_days || 5) * 1.5 * DAY;
@@ -2891,6 +2896,33 @@ function _detectLossLabel({ closedT, eLo, eHi, tp, bias, pairLabel }, allCandles
   }
   if (reenteredEntry && touchedTp) {
     return { loss_label: 'fakeout_sl', reason: 'harga kembali ke zona entry dan mencapai TP asli dalam 4 jam setelah SL' };
+  }
+  return null;
+}
+
+// Deteksi nuansa TP (2026-08-04, "jurnal end-to-end" — mirror fakeout_sl di atas, TP
+// sebelum ini tidak punya klasifikasi sama sekali beda dari SL yang sudah 3 kategori).
+// Kriteria KETAT sama seperti fakeout_sl (butuh KEDUA syarat, bukan salah satu): dalam
+// <=4 jam setelah TP kena, harga kembali ke zona entry DAN sempat menyentuh SL asli —
+// artinya TP itu kemungkinan cuma "grazed" (nyentuh sekali lalu balik ke arah SL),
+// bukan gerakan bersih sesuai thesis. SENGAJA TIDAK meniru fundamental_shock: label itu
+// dibuat untuk MENGECUALIKAN SL dari win_rate_adjusted (SL akibat news bukan salah
+// teknikal) — TP tidak punya keperluan analog (menang tetap menang, terlepas sebabnya).
+// Default null (bukan 'clean') kalau tidak terdeteksi — konsisten dengan _detectLossLabel:
+// null = kategori teknikal/default implisit, bukan "belum pernah dicek".
+function _detectTpLabel({ closedT, eLo, eHi, sl, bias }, allCandles) {
+  const FOUR_H = 4 * 3600000;
+  const closedMs = closedT * 1000;
+  let reenteredEntry = false, touchedSl = false;
+  for (const c of allCandles || []) {
+    const cMs = c.t * 1000;
+    if (cMs <= closedMs) continue;
+    if (cMs - closedMs > FOUR_H) break;
+    if (c.h >= eLo && c.l <= eHi) reenteredEntry = true;
+    if (bias === 'bearish' ? c.h >= sl : c.l <= sl) touchedSl = true;
+  }
+  if (reenteredEntry && touchedSl) {
+    return { tp_label: 'grazed_tp', reason: 'harga kembali ke zona entry dan mencapai SL asli dalam 4 jam setelah TP' };
   }
   return null;
 }
@@ -4082,16 +4114,25 @@ function _formatFundamentalBlock({ label, isXau, cbBias, cot, risk, retail, driv
   // ("geopolitik eskalasi", "real yield tinggi") tanpa angka mentah untuk menelusuri
   // mekanismenya sendiri — DXY/WTI di sini + breakdown real yield di bawah supaya klaim
   // makro_alignment_reason bisa mengutip data konkret (level & %chg), bukan template
-  // generik. DXY/WTI selalu relevan (barometer dolar broad/risk-off berlaku lintas pair);
-  // breakdown real yield USD hanya kalau USD memang salah satu leg pair ini.
+  // generik. DXY/WTI selalu relevan (barometer dolar broad/risk-off berlaku lintas pair).
   const dxy = drivers?.dxy, wti = drivers?.wti;
   const dcParts = [];
   if (dxy?.pct != null) dcParts.push(`DXY ${dxy.level != null ? dxy.level.toFixed(2) : '?'} (${dxy.pct >= 0 ? '+' : ''}${dxy.pct.toFixed(2)}% hari ini)`);
   if (wti?.pct != null) dcParts.push(`WTI $${wti.level != null ? wti.level.toFixed(2) : '?'} (${wti.pct >= 0 ? '+' : ''}${wti.pct.toFixed(2)}% hari ini)`);
   if (dcParts.length > 0) lines.push(`DOLLAR & KOMODITAS: ${dcParts.join(' | ')}`);
-  const ry = drivers?.realYieldUsd;
-  if (legs.includes('USD') && ry && ry.nominal != null && ry.inflation_exp != null && ry.real != null) {
-    lines.push(`REAL YIELD USD: nominal ${ry.nominal}% − ekspektasi inflasi ${ry.inflation_exp}% = real yield ${ry.real}% (driver utama gold — kalau mau klaim "real yield naik/turun karena X", cek dulu apakah X ini sejalan dengan komponen nominal atau inflasi di atas, bukan cuma angka real yield akhir)`);
+  // Real yield per-leg (2026-08-04, rapat user): dulu cuma dicek untuk leg USD — real_yields
+  // cache sebenarnya sudah punya nominal/inflation_exp/real untuk EUR/GBP/JPY/CAD/AUD/NZD/CHF
+  // juga (lihat api/real-yields.js), jadi AUD/NZD & EUR/GBP (dua leg NON-USD) selama ini tidak
+  // pernah dapat baris ini walau datanya sudah ada di cache. Loop semua leg pair ini, bukan
+  // hardcode USD — cakupan otomatis ikut legs, tidak perlu daftar pair manual.
+  const realYields = drivers?.realYields || {};
+  for (const leg of legs) {
+    const ry = realYields[leg];
+    if (!ry || ry.nominal == null || ry.inflation_exp == null || ry.real == null) continue;
+    const goldNote = (isXau && leg === 'USD')
+      ? ' (driver utama gold — kalau mau klaim "real yield naik/turun karena X", cek dulu apakah X ini sejalan dengan komponen nominal atau inflasi di atas, bukan cuma angka real yield akhir)'
+      : '';
+    lines.push(`REAL YIELD ${leg}: nominal ${ry.nominal}% − ekspektasi inflasi ${ry.inflation_exp}% = real yield ${ry.real}%${goldNote}`);
   }
   if (lines.length === 0) return '';
   const note = isXau
@@ -4100,11 +4141,14 @@ function _formatFundamentalBlock({ label, isXau, cbBias, cot, risk, retail, driv
   return `FUNDAMENTAL TERSTRUKTUR (cache server, bukan dari artikel — ${note}):\n${lines.join('\n')}`;
 }
 
-// Ekstrak {dxy, wti, realYieldUsd} dari cache 'daily_snapshot' (correlations.js,
-// action=daily-snapshot) + 'real_yields' (real-yields.js) — dipakai kedua caller
-// _formatFundamentalBlock (ohlcvAnalyzeHandler & ohlcv_critic) supaya parsing tidak
-// dobel-tulis. Fail-open per sumber: cache kosong/korup di salah satu tidak menghapus
-// yang lain (pola sama dengan blok fundamental lain).
+// Ekstrak {dxy, wti, realYieldUsd, realYields} dari cache 'daily_snapshot'
+// (correlations.js, action=daily-snapshot) + 'real_yields' (real-yields.js) — dipakai
+// kedua caller _formatFundamentalBlock (ohlcvAnalyzeHandler & ohlcv_critic) supaya
+// parsing tidak dobel-tulis. Fail-open per sumber: cache kosong/korup di salah satu
+// tidak menghapus yang lain (pola sama dengan blok fundamental lain).
+// realYields = peta LENGKAP semua currency di cache (EUR/GBP/JPY/CAD/AUD/NZD/CHF/USD),
+// dipakai _formatFundamentalBlock untuk loop per-leg (2026-08-04). realYieldUsd tetap
+// diekspor terpisah — alias realYields.USD, kompatibilitas caller lama.
 function _extractMacroDrivers(rawSnap, rawRY) {
   let dxy = null, wti = null;
   try {
@@ -4114,11 +4158,14 @@ function _extractMacroDrivers(rawSnap, rawRY) {
       wti = snap?.drivers?.WTI || null;
     }
   } catch (e) { /* opsional */ }
-  let realYieldUsd = null;
+  let realYields = null, realYieldUsd = null;
   try {
-    if (rawRY) realYieldUsd = JSON.parse(rawRY)?.currencies?.USD || null;
+    if (rawRY) {
+      realYields = JSON.parse(rawRY)?.currencies || null;
+      realYieldUsd = realYields?.USD || null;
+    }
   } catch (e) { /* opsional */ }
-  return { dxy, wti, realYieldUsd };
+  return { dxy, wti, realYieldUsd, realYields };
 }
 
 // Session 157 lanjutan 7: konteks sentimen pasar options (CME CVOL) per pair, bahasa
@@ -5749,6 +5796,7 @@ module.exports._summarizeLatency = _summarizeLatency;
 module.exports.SPREAD_PRICE_ESTIMATE = SPREAD_PRICE_ESTIMATE;
 module.exports.probeCalendarCache = probeCalendarCache;
 module.exports._detectLossLabel = _detectLossLabel;
+module.exports._detectTpLabel = _detectTpLabel;
 module.exports._newsMatchesLegs = _newsMatchesLegs;
 module.exports.LOSS_LABEL_CURRENCY_KEYWORDS = LOSS_LABEL_CURRENCY_KEYWORDS;
 module.exports._corroborateLevel = _corroborateLevel;

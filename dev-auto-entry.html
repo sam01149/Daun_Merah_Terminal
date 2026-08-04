@@ -635,6 +635,30 @@ tr.rowdetail .row b{color:var(--fg);font-weight:500;white-space:normal;word-brea
     if (value == null || value === '') return '';
     return `<div class="row"><span>${esc(label)}</span><b>${esc(value)}</b></div>`;
   }
+
+  // 2026-08-04 (rapat user, "jurnal end-to-end"): tiga sumber "kenapa" tambahan yang
+  // SUDAH dihitung backend (api/admin.js, api/_position_review.js) tapi belum pernah
+  // sampai ke layar ini —
+  // 1. intervention/managed_status: AI position review (reaktif berita) atau tighten
+  //    preventif Jumat sempat turun tangan sebelum status pasif TP/SL kena — status
+  //    kolom tabel (s.status) TETAP menampilkan hasil pasif apa adanya (prinsip U-5a:
+  //    data mentah tidak pernah ditimpa), jadi tanpa blok ini "kenapa closed_early
+  //    padahal badge-nya open" tidak kejawab dari dashboard.
+  // 2. divergence_hold: khusus GC=F/XAU — breach TP/SL yang terdeteksi tapi TIDAK
+  //    dikonfirmasi harga spot (Twelve Data) direvert balik ke 'open', dicatat di sini.
+  // 3. Penjelasan status expired/stale/canceled/invalid: sebelumnya cuma badge polos.
+  const INTERVENTION_LABEL = {
+    tighten_sl: 'SL diperketat (reaktif berita)',
+    tighten_sl_preventive: 'SL diperketat (preventif sebelum weekend)',
+    close_early: 'Ditutup dini oleh sistem (bukan TP/SL alami)',
+  };
+  const MANAGED_STATUS_LABEL = { tp: 'kena TP', sl: 'kena SL', ambiguous: 'ambigu (SL & TP di candle sama)', closed_early: 'ditutup langsung saat intervensi' };
+  const STATUS_EXPLAIN = {
+    expired: 'Tidak pernah terisi (fill) sampai lewat batas horizon x1.5 — dianggap basi, bukan hasil trading.',
+    stale: 'Ada celah data candle sejak setup dibuat sampai OHLCV tersedia lagi — kejadian di celah itu tidak diketahui, jadi tidak dipaksakan jadi status apa pun.',
+    canceled: 'Order pending ini digantikan sinyal baru untuk pair yang sama, atau diblokir karena sudah ada posisi terbuka lain (auto-cancel virtual).',
+    invalid: 'Data setup saat dibuat cacat (zona entry/SL/TP tidak lengkap atau bias tidak valid) — tidak pernah dievaluasi sebagai trade.',
+  };
   function buildSetupDetail(s){
     const rows = [
       fld('Alignment', s.alignment),
@@ -649,6 +673,19 @@ tr.rowdetail .row b{color:var(--fg);font-weight:500;white-space:normal;word-brea
       fld('Model', s.model),
       fld('Loss Label', s.loss_label),
       fld('Alasan Loss Label', s.label_reason),
+      fld('TP Label', s.tp_label === 'grazed_tp' ? 'grazed_tp (TP cuma "kesenggol", harga balik ke arah SL dalam 4 jam)' : s.tp_label),
+      fld('Alasan TP Label', s.tp_label_reason),
+      fld('Penjelasan Status', STATUS_EXPLAIN[s.status]),
+      fld('Intervensi Sistem', s.intervention ? (INTERVENTION_LABEL[s.intervention.type] || s.intervention.type) : ''),
+      fld('Alasan Intervensi', s.intervention?.reason),
+      fld('SL Baru dari Intervensi', s.intervention?.new_sl),
+      fld('Waktu Intervensi', s.intervention?.t ? fmtTs(s.intervention.t) : ''),
+      fld('Hasil Setelah Intervensi', s.managed_status ? (MANAGED_STATUS_LABEL[s.managed_status] || s.managed_status) : ''),
+      fld('Waktu Hasil Setelah Intervensi', s.managed_closed_t ? fmtTs(s.managed_closed_t * 1000) : ''),
+      fld('Breach Tidak Terkonfirmasi (divergence hold)', s.divergence_hold
+        ? `sempat terdeteksi ${s.divergence_hold.would_be_status === 'tp' ? 'kena TP' : 'kena SL'}, dikembalikan ke OPEN karena harga spot tidak mengkonfirmasi`
+        : ''),
+      fld('Alasan Divergence Hold', s.divergence_hold?.reason),
     ].join('');
     return rows || '<div class="empty">Tidak ada catatan tambahan tersimpan untuk setup ini.</div>';
   }

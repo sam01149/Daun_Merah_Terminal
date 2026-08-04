@@ -11,11 +11,35 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-04 (Session 277 — Audit SL auto-entry: fix bug korroborasi berita + gate timing-risk baru)
+> **Last updated:** 2026-08-04 (Session 278 — Real yield generalisasi, kartu spesialis AUD/NZD & EUR/GBP, jurnal end-to-end auto-entry)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 278 (2026-08-04) — Real Yield Generalisasi, Kartu Spesialis AUD/NZD & EUR/GBP, Jurnal End-to-End Auto-Entry
+
+**Konteks:** rapat user soal 3 hal terpisah — (1) AUD/NZD & EUR/GBP di auto-entry diperlakukan sama dengan major pair walau struktural beda kelas, (2) sudah ada mekanisme "ambil yield" atau belum, (3) jurnal auto-entry belum end-to-end (kenapa TP/SL/close tiba-tiba). Riset lengkap ada di `daun_merah_riset.md` "[2026-08-04] Profil struktural AUD/NZD & EUR/GBP". Dikerjakan bareng sesi lain yang sedang aktif audit SL (`vps/daemon.js`) — commit ini HANYA menyentuh file yang jadi lingkup 3 paket di bawah.
+
+### Paket 1 — Real yield lepas dari gerbang USD-only
+
+`api/real-yields.js` sebenarnya SUDAH menghitung real yield (nominal − ekspektasi inflasi) untuk EUR/GBP/JPY/CAD/AUD/NZD/CHF, bukan cuma USD — tapi `_extractMacroDrivers`/`_formatFundamentalBlock` (`api/admin.js`) cuma pernah mengekstrak `currencies.USD` dan cuma menampilkan baris REAL YIELD `if (legs.includes('USD'))`. Akibatnya AUD/NZD & EUR/GBP (dua leg TANPA USD) tidak pernah dapat baris ini walau datanya sudah ada di cache. Digeneralisasi: `_extractMacroDrivers` sekarang mengembalikan `realYields` (peta lengkap semua currency, `realYieldUsd` tetap ada sebagai alias kompatibilitas), `_formatFundamentalBlock` loop per-leg pair yang dianalisa (bukan hardcode USD) — EUR/USD sekarang dapat 2 baris (EUR & USD), AUD/NZD & EUR/GBP dapat baris untuk currency mereka sendiri. Catatan "driver utama gold" tetap cuma nempel di leg USD pair XAU. Fail-open per-leg (data currency kosong -> baris itu saja yang skip). Test: `test/admin/makro_ctx.test.js` (+7 test baru/diperbarui).
+
+### Paket 2 — Kartu spesialis struktural AUD/NZD & EUR/GBP
+
+`api/_pair_context.js` dapat `STRUCTURAL_PROFILES` — narasi tetap per pair ("AUD/NZD & EUR/GBP historisnya range-bound/mean-reverting, breakout hanya kredibel kalau ada pemicu jelas: divergensi kebijakan RBA-RBNZ/ECB-BOE atau komoditas berlawanan arah") yang HANYA disuntik ke prompt saat `computeVolatilityRegime` mendeteksi rezim `bergejolak` (breakout dari kondisi normal) — fail-open, tidak always-on, supaya tidak jadi noise di kondisi tenang/normal (memang defaultnya pair ini diam). EUR/USD & XAU/USD SENGAJA tidak diprofilkan (macro-driven/trending, bukan range-bound — nempelin skeptisisme breakout di situ salah kalibrasi). Test: `test/lib/pair_context.test.js` (+4 test baru).
+
+### Paket 3 — Jurnal end-to-end `dev-auto-entry.html` "Riwayat Setup"
+
+Tiga celah "kenapa" yang sebelumnya sudah dihitung backend tapi belum sampai ke layar developer-only ini:
+1. **Intervensi sistem** (`intervention`/`managed_status`, dari `api/_position_review.js` — tighten SL reaktif berita, tighten preventif Jumat, atau close-early langsung) — sekarang dirender di `buildSetupDetail()`: jenis intervensi, alasan (teks AI/aturan), SL baru, waktu, dan hasil setelahnya (tp/sl/ambiguous/closed_early). Sebelumnya badge STATUS kolom tabel tetap menampilkan hasil pasif apa adanya (prinsip U-5a: data mentah tidak ditimpa) sehingga "kenapa closed_early padahal badge-nya open" tidak terjawab dari dashboard.
+2. **Divergence hold** (`divergence_hold`, khusus GC=F/XAU — breach TP/SL yang terdeteksi tapi TIDAK dikonfirmasi harga spot Twelve Data, direvert balik ke `open`) — sekarang dirender juga.
+3. **TP label baru** (`_detectTpLabel`, `api/admin.js`) — mirror `_detectLossLabel` yang sudah ada 3 kategori untuk SL (teknikal/fundamental_shock/fakeout_sl), TP sebelumnya tidak punya nuansa sama sekali. Kriteria ketat sama seperti `fakeout_sl`: TP kena TAPI dalam <=4 jam harga balik ke zona entry DAN sentuh SL asli -> label `grazed_tp` ("TP cuma kesenggol"). Default null (bukan label 'clean') kalau tidak terdeteksi, konsisten dengan pola `loss_label`. SENGAJA tidak meniru `fundamental_shock` untuk TP — label itu dibuat untuk mengecualikan SL dari `win_rate_adjusted`, TP tidak punya keperluan analog.
+4. **Penjelasan status** `expired`/`stale`/`canceled`/`invalid` — sebelumnya cuma badge polos, sekarang ada satu kalimat penjelas per status.
+
+File: `dev-auto-entry.html` (render), `api/admin.js` (`_detectTpLabel` + panggilan di `_evaluateSetups`, transisi `open`->`tp`). Test baru: `test/admin/tp_label.test.js` (file terpisah, sengaja tidak digabung ke `ta_struct.test.js` yang lagi disentuh sesi lain).
+
+**Verifikasi:** `npm test` 822/822 hijau (termasuk perubahan sesi lain yang sedang berjalan paralel).
 
 ## Changelog Session 277 lanjutan (2026-08-04) — Audit SL Auto-Entry: Fix Bug Korroborasi Berita + Gate Timing-Risk Baru
 

@@ -24,6 +24,18 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 
 ## Riset Aktif
 
+### [2026-08-04] Profil struktural AUD/NZD & EUR/GBP — dasar "kartu spesialis" per pair auto-entry
+
+Riset atas permintaan user (rapat sesi ini): AI Analisa/auto-entry pakai cara baca yang sama untuk 4 pair (`vps/daemon.js` `AUTO_ENTRY_PAIRS`: XAU/USD, EUR/USD, AUD/NZD, EUR/GBP), padahal AUD/NZD & EUR/GBP secara struktural beda kelas dari 2 major itu — dua-duanya cross tanpa kaki USD, jadi modul fundamental USD-sentris (`_labour_market.js`, `rate-path.js`) otomatis tidak relevan buat mereka.
+
+**AUD/NZD** — range-bound/mean-reverting secara struktural: rentang tipikal 400-800 pip (jauh lebih sempit dari major pair) karena ekonomi Australia & New Zealand sangat mirip (dua-duanya komoditas-driven, RBA & RBNZ historisnya sering bergerak searah). Breakout yang kredibel (bukan noise dalam range) biasanya butuh salah satu pemicu jelas: (1) RBA-RBNZ policy diverge tajam, atau (2) harga komoditas kunci berlawanan arah — iron ore (proxy Australia) naik sementara dairy/GDT auction (proxy NZ) turun, atau sebaliknya. Sumber: [Forex For Starters — AUD/NZD Trans-Tasman Pair](https://forexforstarters.com/markets/minors/aud-nzd/), [AvaTrade AUD-NZD](https://www.avatrade.com/trading-info/financial-instruments-index/fxoptions/aud-nzd).
+
+**EUR/GBP** — range-bound juga: rentang harian tipikal cuma 40-70 pip, ATR14 rendah, karena Eropa & Inggris berdekatan geografis dan menyerap shock eksternal (energi, resesi global) dengan cara mirip. Penggerak utama: divergensi kebijakan ECB-BOE + dinamika dagang/fiskal-politik relatif UK-EU (bukan cuma data makro standar). Implikasi biaya: range kecil bikin spread "memakan" porsi lebih besar dari target profit dibanding pair lain — nyambung ke temuan lama soal `SPREAD_PRICE_ESTIMATE` yang sempat bolong untuk AUD/NZD (baris di bawah, sudah diperbaiki). Sumber: [FxPro EUR/GBP Trading Guide 2026](https://www.fxpro.com/help-section/education/beginners/articles/mastering-eur-gbp-forex-trading-complete-guide-to-strategies-and-analysis-for-2026), [FXNX EUR/GBP Trading Guide](https://fxnx.com/en/blog/eur-gbp-trading-guide-mastering-institutional-anchor).
+
+**Sintesis dieksekusi:** kedua cross ini defaultnya range-bound/tenang, breakout hanya kredibel kalau ada pemicu spesifik — beda arah dengan EUR/USD & XAU/USD yang lebih macro-driven/trending (jadi catatan ini SENGAJA tidak ditempel ke 2 pair itu). Diimplementasikan sebagai `structural_profile` di `api/_pair_context.js`, disuntik ke prompt cuma pas rezim volatilitas terdeteksi ekstrem (persentil ATR >70, pola sama `REGIME_INSTRUCTION` existing) — fail-open, bukan always-on, supaya tidak jadi noise di kondisi normal.
+
+**Temuan sampingan (dieksekusi bareng, bukan riset baru — bug lama):** `api/real-yields.js` sebenarnya SUDAH menghitung real yield untuk EUR/GBP/JPY/CAD/AUD/NZD/CHF (bukan cuma USD), tapi `_extractMacroDrivers`/`_formatFundamentalBlock` di `api/admin.js` cuma pernah mengekstrak & menampilkan `currencies.USD`, digerbang `legs.includes('USD')` — jadi AUD/NZD & EUR/GBP tidak pernah dapat baris REAL YIELD walau datanya sudah ada di cache. Digeneralisasi jadi loop per-leg (lihat `daun_merah.md` untuk detail perubahan).
+
 ### [2026-07-29] High-Frequency Trading (HFT) — genuine HFT BLOCKER kategorikal, bukan gap usaha
 
 Riset atas permintaan user: "riset HFT dan data yang diperlukan, yang bisa diimplementasikan." Dicek silang ke web (sumber di bawah) DAN ke kode aktual Daun Merah, bukan cuma teori umum.

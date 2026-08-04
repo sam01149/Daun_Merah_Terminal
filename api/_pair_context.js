@@ -111,6 +111,18 @@ const REGIME_INSTRUCTION = {
   bergejolak: 'Rezim bergejolak: syarat konfirmasi entry WAJIB lebih ketat (tunggu konfirmasi price action lebih jelas sebelum masuk), SL WAJIB diberi buffer lebih lebar dari biasanya, dan berita negatif untuk pair ini diberi bobot lebih besar dari kondisi normal.',
 };
 
+// Profil struktural per pair (2026-08-04, rapat user — riset di daun_merah_riset.md
+// "[2026-08-04] Profil struktural AUD/NZD & EUR/GBP"). HANYA untuk pair yang secara
+// struktural range-bound/mean-reverting (dua ekonomi mirip, tanpa kaki USD) — EUR/USD
+// & XAU/USD SENGAJA tidak dikasih entri karena keduanya macro-driven/trending, bukan
+// range-bound; nempelin "skeptis ke breakout" di situ justru salah kalibrasi.
+// Dipakai HANYA saat rezim volatilitas 'bergejolak' terdeteksi (lihat formatPairContextBlock)
+// supaya tidak jadi noise di kondisi tenang/normal — pair ini memang defaultnya diam.
+const STRUCTURAL_PROFILES = {
+  'AUD/NZD': 'Catatan struktural AUD/NZD: pair ini secara historis range-bound/mean-reverting (ekonomi Australia & New Zealand mirip, RBA & RBNZ sering bergerak searah) — breakout dari rezim bergejolak di atas HANYA kredibel kalau dibarengi salah satu pemicu jelas: RBA-RBNZ policy diverge tajam, atau harga komoditas kunci berlawanan arah (iron ore vs dairy/GDT). Tanpa pemicu itu, anggap ini kemungkinan besar noise dalam range, bukan breakout asli.',
+  'EUR/GBP': 'Catatan struktural EUR/GBP: pair ini secara historis range-bound (ekonomi Eropa & Inggris berdekatan, menyerap shock eksternal dengan cara mirip, range harian tipikal cuma 40-70 pip) — breakout dari rezim bergejolak di atas HANYA kredibel kalau dibarengi divergensi kebijakan ECB-BOE yang jelas atau berita fiskal/politik relatif UK-EU. Tanpa pemicu itu, anggap ini kemungkinan besar noise dalam range. Perhatikan juga: range kecil pair ini bikin spread memakan porsi lebih besar dari target profit dibanding pair lain.',
+};
+
 // Format blok konteks untuk disuntik ke prompt AI Analisa. Fail-open murni: field
 // yang null di-skip (bukan ditulis kosong); kalau regime & strength dua-duanya
 // null, return '' supaya blok TIDAK MUNCUL sama sekali (plan U-2 kriteria selesai).
@@ -118,6 +130,11 @@ function formatPairContextBlock({ regime, strength, pairLabel }) {
   const lines = [];
   if (regime) {
     lines.push(`Rezim volatilitas ${pairLabel || 'pair ini'}: ${regime.regime.toUpperCase()} — ATR14 H1 sekarang lebih tinggi dari ${regime.rank_below} dari ${regime.sample_size} titik historis yang tersedia (rentang data ${regime.span_hours} jam terakhir). ${REGIME_INSTRUCTION[regime.regime]}`);
+    // Kartu spesialis per pair — cuma muncul pas rezim 'bergejolak' (breakout dari kondisi
+    // normal terdeteksi) DAN pair ini punya profil struktural. Fail-open: pair tanpa entri
+    // (EUR/USD, XAU/USD) atau rezim selain bergejolak -> baris ini tidak pernah muncul.
+    const profile = STRUCTURAL_PROFILES[pairLabel];
+    if (regime.regime === 'bergejolak' && profile) lines.push(profile);
   }
   if (strength && strength.ranked?.length) {
     const n = strength.ranked.length;
@@ -146,6 +163,7 @@ module.exports = {
   MIN_ATR_SAMPLES,
   MIN_STRENGTH_PAIRS,
   STRENGTH_LOOKBACK_H,
+  STRUCTURAL_PROFILES,
   computeVolatilityRegime,
   computeCurrencyStrength,
   formatPairContextBlock,

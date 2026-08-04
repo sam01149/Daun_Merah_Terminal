@@ -148,18 +148,41 @@ const DRIVERS = {
   dxy: { level: 104.32, pct: 0.42 },
   wti: { level: 68.2,   pct: 1.8 },
   realYieldUsd: { nominal: 4.2, inflation_exp: 2.35, real: 1.85 },
+  realYields: {
+    USD: { nominal: 4.2,  inflation_exp: 2.35, real: 1.85 },
+    EUR: { nominal: 2.6,  inflation_exp: 2.0,  real: 0.6  },
+    GBP: { nominal: 4.5,  inflation_exp: 4.0,  real: 0.5  },
+    AUD: { nominal: 4.4,  inflation_exp: 3.2,  real: 1.2  },
+    // NZD sengaja TANPA data (nominal null) — kasus fail-open per-leg (below).
+    NZD: { nominal: null, inflation_exp: 2.1,  real: null },
+  },
 };
 
-test('fund block XAU/USD: drivers lengkap -> baris DOLLAR & KOMODITAS + REAL YIELD USD (USD termasuk leg)', () => {
+test('fund block XAU/USD: drivers lengkap -> baris DOLLAR & KOMODITAS + REAL YIELD USD (dengan catatan gold)', () => {
   const out = _formatFundamentalBlock({ label: 'XAU/USD', isXau: true, cbBias: null, cot: null, risk: null, drivers: DRIVERS, nowMs: NOW });
   assert.ok(out.includes('DOLLAR & KOMODITAS: DXY 104.32 (+0.42% hari ini) | WTI $68.20 (+1.80% hari ini)'), out);
-  assert.ok(out.includes('REAL YIELD USD: nominal 4.2% − ekspektasi inflasi 2.35% = real yield 1.85%'), out);
+  assert.ok(out.includes('REAL YIELD USD: nominal 4.2% − ekspektasi inflasi 2.35% = real yield 1.85% (driver utama gold'), out);
 });
 
-test('fund block EUR/GBP: DXY/WTI tetap tampil (barometer global), REAL YIELD USD disembunyikan (USD bukan leg)', () => {
+test('fund block EUR/USD: REAL YIELD tampil untuk KEDUA leg (bukan cuma USD)', () => {
+  const out = _formatFundamentalBlock({ label: 'EUR/USD', isXau: false, cbBias: null, cot: null, risk: null, drivers: DRIVERS, nowMs: NOW });
+  assert.ok(out.includes('REAL YIELD EUR: nominal 2.6% − ekspektasi inflasi 2% = real yield 0.6%'), out);
+  assert.ok(out.includes('REAL YIELD USD: nominal 4.2% − ekspektasi inflasi 2.35% = real yield 1.85%'), out);
+  assert.ok(!out.includes('driver utama gold'), 'catatan gold cuma untuk isXau, bukan EUR/USD');
+});
+
+test('fund block EUR/GBP (2026-08-04, dulu REAL YIELD USD disembunyikan total): sekarang tampil REAL YIELD EUR & GBP walau USD bukan leg', () => {
   const out = _formatFundamentalBlock({ label: 'EUR/GBP', isXau: false, cbBias: null, cot: null, risk: null, drivers: DRIVERS, nowMs: NOW });
   assert.ok(out.includes('DOLLAR & KOMODITAS'), out);
-  assert.ok(!out.includes('REAL YIELD USD'), out);
+  assert.ok(!out.includes('REAL YIELD USD'), 'USD bukan leg EUR/GBP, tidak boleh ikut');
+  assert.ok(out.includes('REAL YIELD EUR: nominal 2.6% − ekspektasi inflasi 2% = real yield 0.6%'), out);
+  assert.ok(out.includes('REAL YIELD GBP: nominal 4.5% − ekspektasi inflasi 4% = real yield 0.5%'), out);
+});
+
+test('fund block AUD/NZD: REAL YIELD AUD tampil, NZD di-skip fail-open (data nominal/real null)', () => {
+  const out = _formatFundamentalBlock({ label: 'AUD/NZD', isXau: false, cbBias: null, cot: null, risk: null, drivers: DRIVERS, nowMs: NOW });
+  assert.ok(out.includes('REAL YIELD AUD: nominal 4.4% − ekspektasi inflasi 3.2% = real yield 1.2%'), out);
+  assert.ok(!out.includes('REAL YIELD NZD'), 'NZD data null -> baris tidak boleh muncul (fail-open)');
 });
 
 test('fund block: drivers kosong/null -> tidak menambah baris apapun (fail-open)', () => {
@@ -168,18 +191,19 @@ test('fund block: drivers kosong/null -> tidak menambah baris apapun (fail-open)
   assert.ok(!out.includes('REAL YIELD USD'));
 });
 
-test('_extractMacroDrivers: parse daily_snapshot.drivers + real_yields.currencies.USD', () => {
+test('_extractMacroDrivers: parse daily_snapshot.drivers + real_yields.currencies (semua currency, bukan cuma USD)', () => {
   const rawSnap = JSON.stringify({ drivers: { DXY: { level: 104.32, pct: 0.42 }, WTI: { level: 68.2, pct: 1.8 } } });
   const rawRY = JSON.stringify({ currencies: { USD: { nominal: 4.2, inflation_exp: 2.35, real: 1.85 }, EUR: { real: 0.1 } } });
   const out = _extractMacroDrivers(rawSnap, rawRY);
   assert.deepStrictEqual(out.dxy, { level: 104.32, pct: 0.42 });
   assert.deepStrictEqual(out.wti, { level: 68.2, pct: 1.8 });
   assert.deepStrictEqual(out.realYieldUsd, { nominal: 4.2, inflation_exp: 2.35, real: 1.85 });
+  assert.deepStrictEqual(out.realYields, { USD: { nominal: 4.2, inflation_exp: 2.35, real: 1.85 }, EUR: { real: 0.1 } });
 });
 
 test('_extractMacroDrivers: cache kosong/korup/null -> semua null, tidak throw', () => {
-  assert.deepStrictEqual(_extractMacroDrivers(null, null), { dxy: null, wti: null, realYieldUsd: null });
-  assert.deepStrictEqual(_extractMacroDrivers('not json', 'also not json'), { dxy: null, wti: null, realYieldUsd: null });
+  assert.deepStrictEqual(_extractMacroDrivers(null, null), { dxy: null, wti: null, realYieldUsd: null, realYields: null });
+  assert.deepStrictEqual(_extractMacroDrivers('not json', 'also not json'), { dxy: null, wti: null, realYieldUsd: null, realYields: null });
   const rawSnapNoDrivers = JSON.stringify({ fx: { EUR: { pct: 0.1 } } });
-  assert.deepStrictEqual(_extractMacroDrivers(rawSnapNoDrivers, null), { dxy: null, wti: null, realYieldUsd: null });
+  assert.deepStrictEqual(_extractMacroDrivers(rawSnapNoDrivers, null), { dxy: null, wti: null, realYieldUsd: null, realYields: null });
 });
