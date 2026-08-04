@@ -106,6 +106,11 @@ const CB_NVIDIA     = 'ai:nvidia';
 // (parameter native DeepSeek v4): padanan mode non-thinking deepseek-chat lama — lebih
 // cepat, dan tidak membakar token output untuk reasoning trace. Kuota harian dipagari
 // ketat di _ai_guard.js (50/hari) sebagai pagar biaya, bukan pagar free-tier.
+// 2026-08-04: DeepSeek merilis build V4-Flash-0731 (upgrade agentic/coding, harga sama).
+// String model ID di API resmi TETAP 'deepseek-v4-flash' — DeepSeek mengonfirmasi alias ini
+// auto-route ke build terbaru server-side, tidak ada ID bertanggal terpisah di platform
+// resmi (ID "-0731" eksplisit cuma dipakai reseller pihak ketiga: Fireworks/OpenRouter/
+// DeepInfra/HF). Jadi tidak perlu ganti string di sini — sudah otomatis jalan di 0731.
 const DEEPSEEK_URL   = 'https://api.deepseek.com/chat/completions';
 const DEEPSEEK_MODEL = 'deepseek-v4-flash';
 const CB_DEEPSEEK    = 'ai:deepseek';

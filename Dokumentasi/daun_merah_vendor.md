@@ -48,7 +48,7 @@ Semua workflow di atas autentikasi ke `api/*.js` lewat header `x-cron-secret`, d
 |---|---|---|
 | SambaNova (2 akun terpisah) | `SAMBANOVA_API_KEY`, `SAMBANOVA_API_KEY_CALL1` | Free (persisten) |
 | Google AI Studio (Gemini) | `GEMINI_API_KEY` | Free (1.500 RPD) — dipromosikan Plan N (2026-07-18) |
-| DeepSeek (API resmi) | `DEEPSEEK_API_KEY` | Berbayar dari saldo top-up user (bukan free tier) |
+| DeepSeek (API resmi) | `DEEPSEEK_API_KEY` | Berbayar dari saldo top-up user (bukan free tier); model `deepseek-v4-flash` auto-upgrade ke build V4-Flash-0731 (2026-07-31) server-side, harga tak berubah, tidak perlu ganti kode |
 
 **DITOLAK/DIPUTUS:** OpenRouter, Cerebras, Groq, Ollama Cloud — semua **kontrak diputus user 2026-07-25**, env var dihapus dari Vercel, kode chain/diagnostik-nya dihapus total dari `api/market-digest.js`, `api/admin.js`, `api/journal.js`, `api/_ai_guard.js`. Sebelumnya berstatus "Free (persisten)".
 

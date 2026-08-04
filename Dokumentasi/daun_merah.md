@@ -11,11 +11,19 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-04 (Session 278 — Real yield generalisasi, kartu spesialis AUD/NZD & EUR/GBP, jurnal end-to-end auto-entry)
+> **Last updated:** 2026-08-04 (Session 279 — Konfirmasi upgrade model DeepSeek ke build V4-Flash-0731, tidak ada perubahan kode)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 279 (2026-08-04) — Konfirmasi Upgrade Model DeepSeek ke Build V4-Flash-0731
+
+**Konteks:** user minta ganti model AI berbayar dari "DeepSeek V4 Flash" ke "DeepSeek V4 Flash 0731". Riset web dulu sebelum eksekusi (bukan langsung find-replace string, karena ini API berbayar produksi — salah ID model bisa langsung error/gagal tagih).
+
+**Temuan:** DeepSeek merilis build V4-Flash-0731 (agentic/coding upgrade, resmi public beta 2026-07-31). Tapi di API resmi `platform.deepseek.com`, cara panggilnya TIDAK berubah — alias model `deepseek-v4-flash` otomatis di-route DeepSeek ke build terbaru (0731) di sisi server mereka. ID eksplisit bertanggal "`-0731`" cuma dipakai reseller pihak ketiga (Fireworks, OpenRouter, DeepInfra, Hugging Face) yang mem-pin snapshot versi tertentu — bukan pola yang dipakai kode kita (kita hit API resmi DeepSeek langsung, bukan lewat reseller). Harga juga tidak berubah (`$0.14/M cache-miss, $0.0028/M cache-hit, $0.28/M output` — sudah persis sama dengan yang tertulis di komentar `api/market-digest.js`).
+
+**Kesimpulan:** tidak ada string model yang perlu diganti di `api/market-digest.js` maupun `api/admin.js` — 6 titik pemanggilan `model: 'deepseek-v4-flash'` sudah otomatis jalan di build 0731 begitu DeepSeek merilisnya server-side. Yang diupdate cuma komentar dokumentasi kode (`api/market-digest.js` dekat `DEEPSEEK_MODEL`) dan `daun_merah_vendor.md` supaya jejak riset ini tidak hilang dan sesi berikutnya tidak mengulang pertanyaan yang sama.
 
 ## Changelog Session 278 (2026-08-04) — Real Yield Generalisasi, Kartu Spesialis AUD/NZD & EUR/GBP, Jurnal End-to-End Auto-Entry
 
