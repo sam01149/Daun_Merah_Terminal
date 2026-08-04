@@ -723,6 +723,22 @@ test('_detectLossLabel: breaking news — currency tidak cocok dengan kaki pair 
   assert.strictEqual(_detectLossLabel({ closedT, eLo: 4030, eHi: 4040, tp: 3960, bias: 'bearish', pairLabel: 'XAU/USD' }, [], [], news), null);
 });
 
+// BUG DITEMUKAN & DIFIX (audit S277, 2026-08-04): _newsMatchesLegs dulu substring
+// polos — "Saudi official..." salah match leg AUD gara-gara kata "Saudi" mengandung
+// substring "aud" (pola sama yang difix di detectCurrencyLegs, vps/daemon.js).
+// Kalau tidak difix, headline ini keliru dianggap breaking-news shock utk AUD/NZD.
+test('_detectLossLabel: breaking news — "Saudi" TIDAK salah match leg AUD (word-boundary, bukan substring)', () => {
+  const closedT = T0 + 7200;
+  const t1 = new Date(closedT * 1000 + 3600000).toISOString();
+  const t2 = new Date(closedT * 1000 + 3600000 + 5 * 60000).toISOString();
+  const news = [
+    { title: "Iran's General Rezaei: Saudi official denies involvement", pubDate: t1, cat: 'geopolitical', guid: 'n1' },
+    { title: 'Saudi Arabia issues statement on regional tensions', pubDate: t2, cat: 'geopolitical', guid: 'n2' },
+  ];
+  // AUD/NZD tidak punya leg lain yang match ("Saudi" bukan "AUD" whole-word) -> null
+  assert.strictEqual(_detectLossLabel({ closedT, eLo: 1.19, eHi: 1.20, tp: 1.18, bias: 'bearish', pairLabel: 'AUD/NZD' }, [], [], news), null);
+});
+
 test('_detectLossLabel: breaking news di luar jendela ±2 jam dari closedT -> diabaikan', () => {
   const closedT = T0 + 7200;
   const news = [{ title: 'Fed emergency rate decision', pubDate: new Date(closedT * 1000 + 3 * 3600000).toISOString(), cat: 'market-moving', guid: 'n1' }];

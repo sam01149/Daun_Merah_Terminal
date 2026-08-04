@@ -24,7 +24,7 @@ const { requireAppKey } = require('./_app_key');
 const { fetchYahooOhlcv1h, fetchFallbackCandles, shouldSendYahooAlert, mapYahooSymbolToDeriv, fetchDerivCandles, mergeVolumeByTimestamp } = require('./_ohlcv_fetch');
 const { buildPairContext, computeCurrencyStrength } = require('./_pair_context');
 const { validateTightenSl, computePreventiveTightenSl, _evaluateManaged, _aggManagementStats, isCorroborated } = require('./_position_review');
-const { isDrawdownHalted, isCorrelatedExposureBlocked } = require('./_auto_entry_guard');
+const { isDrawdownHalted, isCorrelatedExposureBlocked, isTimingConflictBlocked } = require('./_auto_entry_guard');
 
 // Actions callable from the frontend without a secret → rate-limited per IP.
 // AI-triggering actions get a tighter budget than cache reads.
@@ -2805,9 +2805,20 @@ const LOSS_LABEL_CURRENCY_KEYWORDS = {
   XAU: ['gold', 'xau', 'bullion', 'hormuz', 'opec', 'gulf oil', 'oil supply'],
 };
 
+// Audit S277 (2026-08-04): dulu `t.includes(kw)` polos (substring) — "Saudi
+// official..." salah match leg AUD gara-gara "Saudi" mengandung "aud" (pola sama
+// yang sudah difix di detectCurrencyLegs, vps/daemon.js — duplikasi sadar, jaga
+// tetap sinkron). Word-boundary regex, precompiled sekali di module scope.
+const LOSS_LABEL_CURRENCY_KEYWORD_RE = Object.fromEntries(
+  Object.entries(LOSS_LABEL_CURRENCY_KEYWORDS).map(([ccy, kws]) => [
+    ccy,
+    kws.map(kw => new RegExp(`\\b${kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i')),
+  ])
+);
+
 function _newsMatchesLegs(title, legs) {
-  const t = String(title || '').toLowerCase();
-  return (legs || []).some(leg => (LOSS_LABEL_CURRENCY_KEYWORDS[leg] || []).some(kw => t.includes(kw)));
+  const t = String(title || '');
+  return (legs || []).some(leg => (LOSS_LABEL_CURRENCY_KEYWORD_RE[leg] || []).some(re => re.test(t)));
 }
 
 // news_history (api/feeds.js) cuma retensi 36 jam (ZREMRANGEBYSCORE arsip) —
@@ -5118,7 +5129,12 @@ async function ohlcvAnalyzeHandler(req, res) {
               .filter(x => x && (x.status === 'tp' || x.status === 'sl'))
               .sort((a, b) => (a.ts || 0) - (b.ts || 0));
             const dd = isDrawdownHalted({ closedSetups, regime: autoGuardRegime });
-            if (dd.halted) autoGuardReason = `drawdown_circuit_breaker(R=${dd.rollingR})`;
+            if (dd.halted) {
+              autoGuardReason = `drawdown_circuit_breaker(R=${dd.rollingR})`;
+            } else if (isTimingConflictBlocked(structured.conflict)) {
+              // Gate E (audit S277, 2026-08-04) — lihat api/_auto_entry_guard.js.
+              autoGuardReason = 'conflict_waktu';
+            }
           }
         }
         // Gate A (AI Kritikus) butuh Gate D/B lolos dulu. KALAU perlu, JANGAN panggil di

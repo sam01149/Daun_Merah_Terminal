@@ -8,6 +8,7 @@ const assert = require('node:assert/strict');
 const {
   detectCurrencyLegs, isCorroborated, posReviewSignificantTokens, POSREVIEW_CURRENCY_KEYWORDS,
   legsFromLabel, findBreakingNewsMatch, shouldPersistNewsBufferItem, filterFreshBufferItems,
+  POSREVIEW_NEWS_BUFFER_MS, BREAKING_NEWS_SKIP_WINDOW_MS,
 } = require('../../vps/daemon.js');
 const apiPositionReview = require('../../api/_position_review.js');
 
@@ -49,6 +50,23 @@ test('detectCurrencyLegs: headline guncangan pasokan minyak Teluk (tanpa kata "g
 test('detectCurrencyLegs: "hormuz"/"opec" bare juga match XAU', () => {
   assert.deepEqual(detectCurrencyLegs('Tensions rise near Strait of Hormuz'), ['XAU']);
   assert.deepEqual(detectCurrencyLegs('OPEC+ considers emergency production cut'), ['XAU']);
+});
+
+// BUG DITEMUKAN & DIFIX (audit S277, 2026-08-04): matching sebelumnya substring
+// polos (`t.includes(kw)`) — "Saudi official..." salah match leg AUD gara-gara
+// kata "Saudi" mengandung substring "aud". Ditemukan live saat audit trade AUD/NZD
+// (guid 9705618 salah match). Word-boundary regex sekarang mencegah ini.
+test('detectCurrencyLegs: "Saudi" TIDAK salah match leg AUD (substring "aud" di tengah kata)', () => {
+  assert.deepEqual(detectCurrencyLegs("Iran's General Rezaei: Saudi official denies involvement"), []);
+});
+
+test('detectCurrencyLegs: kata whole-word "aud"/"AUD" tetap match leg AUD seperti biasa', () => {
+  // "AUD/USD" mengandung dua whole-word currency sekaligus (dipisah "/") -> dua leg,
+  // beda dari kasus "Saudi" di atas (substring "aud" DI TENGAH kata, bukan whole-word).
+  assert.deepEqual(detectCurrencyLegs('AUD/USD rallies on strong retail sales'), ['USD', 'AUD']);
+  // "dollar" juga keyword USD yang sah (bukan bug) — "Aussie dollar" secara wajar
+  // relevan kedua leg, ganti contoh yang murni AUD saja.
+  assert.deepEqual(detectCurrencyLegs('RBA holds rates steady amid inflation concerns'), ['AUD']);
 });
 
 // ── isCorroborated ──────────────────────────────────────────────────────────
@@ -158,23 +176,35 @@ const IRAN_WAR_EXPANSION = {
   pubDate: '2026-07-23T01:46:00Z',
 };
 
+// nowMs dekat pubDate fixture (beberapa menit setelahnya) — findBreakingNewsMatch
+// sekarang punya window recency eksplisit (default 1 jam, audit S277), jadi harus
+// dites relatif terhadap waktu fixture, bukan Date.now() nyata saat test jalan.
+const IRAN_NOW_MS = Date.parse('2026-07-23T01:50:00Z');
+
 test('findBreakingNewsMatch: skenario nyata Iran-Gulf oil (2 headline berdekatan) -> match untuk pair XAU/USD', () => {
   const pairLegs = legsFromLabel('XAU/USD');
   const buffer = [IRAN_OIL_THREAT, IRAN_WAR_EXPANSION];
-  const match = findBreakingNewsMatch(pairLegs, buffer);
+  const match = findBreakingNewsMatch(pairLegs, buffer, IRAN_NOW_MS);
   assert.ok(match, 'harus ketemu match — headline oil-threat relevan XAU dan terkorroborasi headline kedua');
   assert.equal(match.guid, 'iran-1');
 });
 
 test('findBreakingNewsMatch: headline sendirian tanpa korroborasi -> tidak match (belum terkonfirmasi)', () => {
   const pairLegs = legsFromLabel('XAU/USD');
-  assert.equal(findBreakingNewsMatch(pairLegs, [IRAN_OIL_THREAT]), null);
+  assert.equal(findBreakingNewsMatch(pairLegs, [IRAN_OIL_THREAT], IRAN_NOW_MS), null);
 });
 
 test('findBreakingNewsMatch: pair tidak relevan (GBP/USD, tidak ada leg XAU) -> tidak match', () => {
   const pairLegs = legsFromLabel('GBP/USD');
   const buffer = [IRAN_OIL_THREAT, IRAN_WAR_EXPANSION];
-  assert.equal(findBreakingNewsMatch(pairLegs, buffer), null);
+  assert.equal(findBreakingNewsMatch(pairLegs, buffer, IRAN_NOW_MS), null);
+});
+
+test('findBreakingNewsMatch: item relevan tapi di luar window recency (>1 jam sejak pubDate) -> tidak match', () => {
+  const pairLegs = legsFromLabel('XAU/USD');
+  const buffer = [IRAN_OIL_THREAT, IRAN_WAR_EXPANSION];
+  const farFuture = IRAN_NOW_MS + BREAKING_NEWS_SKIP_WINDOW_MS + 60000; // 1 menit lewat window
+  assert.equal(findBreakingNewsMatch(pairLegs, buffer, farFuture), null);
 });
 
 test('findBreakingNewsMatch: kategori di luar geopolitical/energy/macro/market-moving -> diabaikan', () => {
@@ -192,7 +222,7 @@ test('findBreakingNewsMatch: macro terkorroborasi (pidato bank sentral, 2 headli
     { cat: 'macro', guid: 'p1', title: 'Powell signals surprise emergency policy shift ahead', pubDate: '2026-08-03T01:45:00Z' },
     { cat: 'macro', guid: 'p2', title: 'Fed chair Powell hints emergency policy shift coming soon', pubDate: '2026-08-03T01:50:00Z' },
   ];
-  const match = findBreakingNewsMatch(pairLegs, buffer);
+  const match = findBreakingNewsMatch(pairLegs, buffer, Date.parse('2026-08-03T01:55:00Z'));
   assert.ok(match, 'harus ketemu match — pidato Fed terkorroborasi 2 headline');
   assert.equal(match.guid, 'p1');
 });
@@ -229,15 +259,43 @@ test('shouldPersistNewsBufferItem: kategori lain/null -> false', () => {
   assert.equal(shouldPersistNewsBufferItem(null), false);
 });
 
-test('filterFreshBufferItems: item segar (dalam 35 menit) dipertahankan, item basi dibuang', () => {
+test('filterFreshBufferItems: item segar dipertahankan, item basi (lewat POSREVIEW_NEWS_BUFFER_MS) dibuang', () => {
   const now = Date.parse('2026-07-23T02:00:00Z');
   const raw = [
-    JSON.stringify({ title: 'fresh', pubDate: '2026-07-23T01:45:00Z' }),   // 15 menit lalu -> segar
-    JSON.stringify({ title: 'stale', pubDate: '2026-07-23T01:00:00Z' }),   // 60 menit lalu -> basi
+    JSON.stringify({ title: 'fresh', pubDate: new Date(now - 15 * 60000).toISOString() }),
+    JSON.stringify({ title: 'stale', pubDate: new Date(now - (POSREVIEW_NEWS_BUFFER_MS + 60000)).toISOString() }),
   ];
   const result = filterFreshBufferItems(raw, now);
   assert.equal(result.length, 1);
   assert.equal(result[0].title, 'fresh');
+});
+
+// Audit S277 (2026-08-04): bug fix inti — retensi sekarang berbasis `_seenAt`
+// (kapan daemon PERTAMA KALI memproses item), bukan `pubDate` (kapan berita
+// dipublikasikan). Kasus nyata yang jadi pemicu fix ini: backlog pemrosesan ~89
+// menit membuat item yang BARU SAJA tiba di sistem langsung dianggap basi dan
+// di-prune berdasarkan pubDate — walau baru diproses beberapa detik lalu.
+test('filterFreshBufferItems: item dengan pubDate LAMA tapi _seenAt BARU -> tetap dipertahankan (fix bug backlog)', () => {
+  const now = Date.parse('2026-08-04T02:59:07Z');
+  const raw = [
+    // pubDate 89 menit sebelum now (jauh lewat window kalau dihitung dari pubDate),
+    // tapi _seenAt persis "now" (baru saja diproses) -> harus tetap masuk.
+    JSON.stringify({ title: 'backlog-tapi-baru-diproses', pubDate: '2026-08-04T01:30:20Z', _seenAt: now }),
+  ];
+  const result = filterFreshBufferItems(raw, now);
+  assert.equal(result.length, 1, 'item harus dipertahankan berdasar _seenAt, bukan dibuang berdasar pubDate basi');
+  assert.equal(result[0].title, 'backlog-tapi-baru-diproses');
+});
+
+test('filterFreshBufferItems: item TANPA _seenAt (data lama pra-fix) -> fallback ke pubDate, tidak crash', () => {
+  const now = Date.parse('2026-07-23T02:00:00Z');
+  const raw = [
+    JSON.stringify({ title: 'legacy-fresh', pubDate: new Date(now - 15 * 60000).toISOString() }),
+    JSON.stringify({ title: 'legacy-stale', pubDate: new Date(now - (POSREVIEW_NEWS_BUFFER_MS + 60000)).toISOString() }),
+  ];
+  const result = filterFreshBufferItems(raw, now);
+  assert.equal(result.length, 1);
+  assert.equal(result[0].title, 'legacy-fresh');
 });
 
 test('filterFreshBufferItems: JSON korup dilewati diam-diam, tidak throw', () => {

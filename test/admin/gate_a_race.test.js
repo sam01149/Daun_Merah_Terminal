@@ -240,3 +240,38 @@ test('Flip-cancel lalu Gate A batalkan kandidat baru: pembatalan stalePending TE
     } finally { global.fetch = origFetch; }
   });
 });
+
+// Audit S277 (2026-08-04): Gate E — AI menandai sendiri conflict:'waktu' (skema PLAN
+// U-2, none/arah/waktu) tapi sebelum ini murni observasi pasif, tidak pernah menahan
+// entry. Verifikasi Gate E menahan SEBELUM Gate A dipanggil sama sekali (dicek di
+// bawah lewat SambaNova TIDAK boleh di-fetch — kalau Gate E gagal menahan, stub fetch
+// akan throw "unexpected network call").
+test('Gate E conflict:"waktu" — entri TIDAK tersimpan, auto_guard_stats:conflict_waktu naik, Gate A tidak dipanggil', async () => {
+  await withEnv({ CRON_SECRET: 'topsecret', DEEPSEEK_API_KEY: 'k', SAMBANOVA_API_KEY: 'sk' }, async () => {
+    const aiJsonConflictWaktu = { ...AI_JSON_BEARISH, conflict: 'waktu', conflict_note: 'FOMC dalam 18 jam, horizon 3 hari' };
+    const aiRawText = `${JSON.stringify(aiJsonConflictWaktu)}\n===COMMENTARY===\nKomentar singkat untuk tes Gate E.`;
+    const store = baseStore();
+    const origFetch = global.fetch;
+    const redisStub = redisFetchStub(store);
+    global.fetch = async (url, opts) => {
+      const u = String(url);
+      if (u.includes('fake-upstash.test')) return redisStub(url, opts);
+      if (u.includes('api.deepseek.com')) return { ok: true, json: async () => ({ choices: [{ message: { content: aiRawText } }] }) };
+      throw new Error('unexpected network call di test: ' + u); // Gate A (SambaNova) TIDAK boleh dipanggil kalau Gate E benar menahan
+    };
+    try {
+      const handler = loadHandler();
+      const res = fakeRes();
+      await handler({
+        headers: { 'x-cron-secret': 'topsecret' }, method: 'GET',
+        query: { action: 'ohlcv_analyze', symbol: 'GBPUSD=X', label: 'GBP/USD', auto: '1' },
+      }, res);
+      assert.equal(res.statusCode, 200);
+      const log = JSON.parse(store.strings['setup_log_auto:v1']);
+      assert.equal(log.length, 0, 'conflict:"waktu" -> tidak ada entri baru tersimpan');
+      assert.equal(store.strings['auto_guard_stats:considered'], '1');
+      assert.equal(store.strings['auto_guard_stats:conflict_waktu'], '1');
+      assert.equal(store.strings['auto_guard_stats:saved'], undefined);
+    } finally { global.fetch = origFetch; }
+  });
+});

@@ -519,11 +519,23 @@ const POSREVIEW_CURRENCY_KEYWORDS = {
   XAU: ['gold', 'xau', 'bullion', 'hormuz', 'opec', 'gulf oil', 'oil supply'],
 };
 
+// Audit S277 (2026-08-04): matching sebelumnya `t.includes(kw)` polos (substring)
+// — "Saudi official..." salah match ke leg AUD gara-gara "Saudi" mengandung "aud",
+// pola bug yang sama persis dengan "shipping"->"ppi" yang sudah difix di newscat.js.
+// Precompiled word-boundary regex (bukan lowercase+includes) — dibangun sekali saat
+// modul dimuat, bukan tiap panggilan.
+const POSREVIEW_CURRENCY_KEYWORD_RE = Object.fromEntries(
+  Object.entries(POSREVIEW_CURRENCY_KEYWORDS).map(([ccy, kws]) => [
+    ccy,
+    kws.map(kw => new RegExp(`\\b${kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i')),
+  ])
+);
+
 function detectCurrencyLegs(title) {
-  const t = String(title || '').toLowerCase();
+  const t = String(title || '');
   const legs = [];
-  for (const [ccy, kws] of Object.entries(POSREVIEW_CURRENCY_KEYWORDS)) {
-    if (kws.some(kw => t.includes(kw))) legs.push(ccy);
+  for (const [ccy, res] of Object.entries(POSREVIEW_CURRENCY_KEYWORD_RE)) {
+    if (res.some(re => re.test(t))) legs.push(ccy);
   }
   return legs;
 }
@@ -579,11 +591,20 @@ function isCorroborated(item, recentItems) {
   return false;
 }
 
+// Audit S277 (2026-08-04): window "seberapa lama pasca-shock masih dianggap
+// berisiko buat entry baru" — dipakai checkBreakingNewsSkip (breaking news) DAN
+// checkHardNewsSkip (kalender, cek ke belakang) supaya satu makna konsisten di
+// dua jalur. Keputusan user: 1 jam.
+const BREAKING_NEWS_SKIP_WINDOW_MS = 60 * 60 * 1000;
+
 // Buffer berita ringan di memori (bukan Redis — hemat budget) supaya isCorroborated
 // bisa membandingkan item baru dengan item lain yang baru lewat, TERMASUK yang
-// sudah lewat gate isHighImpactCategory (geopolitical). Window sedikit lebih
-// lebar dari window korroborasi 30 menit supaya tidak memotong tepi.
-const POSREVIEW_NEWS_BUFFER_MS = 35 * 60 * 1000;
+// sudah lewat gate isHighImpactCategory (geopolitical). Retensi = BREAKING_NEWS_
+// SKIP_WINDOW_MS (1 jam) + margin window korroborasi (30 menit) + sedikit slack —
+// dulu cuma 35 menit (window korroborasi + slack tipis), TIDAK cukup untuk
+// checkBreakingNewsSkip melihat berita yang pecah sampai 1 jam lalu (item sudah
+// keburu di-prune sebelum window skip-nya habis).
+const POSREVIEW_NEWS_BUFFER_MS = BREAKING_NEWS_SKIP_WINDOW_MS + 35 * 60 * 1000;
 let posReviewNewsBuffer = [];
 
 // Persist ke Redis (S218/S219 lanjutan, 2026-07-23) — buffer di atas MURNI memori,
@@ -622,13 +643,27 @@ function persistNewsBufferItem(item) {
 // Pure (testable) — filter umur + parse-safety, dipakai loadNewsBufferFromRedis.
 // String gagal parse dilewati diam-diam (data korup di Redis tidak boleh mandekkan
 // boot); item lebih tua dari jendela buffer dibuang (sudah tidak relevan korroborasi).
+// BUG DITEMUKAN & DIFIX (audit S277, 2026-08-04): dulu umur dihitung dari `pubDate`
+// (waktu publikasi ASLI berita) vs jam dinding sekarang — kalau daemon sempat lag/
+// restart dan berita telat diproses (terbukti live: gap ~89 menit), item yang BARU
+// SAJA tiba di sistem langsung dianggap basi dan di-prune SEBELUM sempat dibandingkan
+// dengan sibling-nya yang datang beberapa detik kemudian dalam batch backlog yang
+// sama — akibatnya isCorroborated gagal total walau overlap token-nya jelas tinggi
+// (kasus nyata: 3 headline "Australia household spending" gagal saling mengonfirmasi,
+// review posisi AUD/NZD yang seharusnya trigger jadi tidak pernah jalan). Sekarang
+// umur dihitung dari `_seenAt` (kapan daemon PERTAMA KALI melihat/memproses item ini),
+// bukan `pubDate` — retensi buffer jadi soal "berapa lama sejak kita proses", bukan
+// "berapa lama sejak dipublikasikan", sehingga backlog tidak lagi menghancurkan
+// korroborasi antar-item yang sama-sama telat. Fallback ke pubDate kalau `_seenAt`
+// tidak ada (data lama yang persisted SEBELUM fix ini) — tidak ada regresi untuk
+// item yang sudah kadung tersimpan di Redis.
 function filterFreshBufferItems(rawList, nowMs) {
   const restored = [];
   for (const s of rawList || []) {
     let item;
     try { item = typeof s === 'string' ? JSON.parse(s) : s; } catch (e) { continue; }
-    const ms = Date.parse(item?.pubDate);
-    if (Number.isFinite(ms) && nowMs - ms <= POSREVIEW_NEWS_BUFFER_MS) restored.push(item);
+    const seenAt = Number.isFinite(item?._seenAt) ? item._seenAt : Date.parse(item?.pubDate);
+    if (Number.isFinite(seenAt) && nowMs - seenAt <= POSREVIEW_NEWS_BUFFER_MS) restored.push(item);
   }
   return restored;
 }
@@ -647,17 +682,26 @@ async function loadNewsBufferFromRedis() {
   } catch (e) { console.warn('daemon: loadNewsBufferFromRedis gagal (fail-open, buffer mulai kosong):', e.message); }
 }
 
+// BUG DITEMUKAN & DIFIX (audit S277, 2026-08-04) — lihat catatan panjang di
+// filterFreshBufferItems: basis umur diganti dari `pubDate` ke `_seenAt`.
 function prunePosReviewNewsBuffer(nowMs) {
   posReviewNewsBuffer = posReviewNewsBuffer.filter(it => {
-    const ms = Date.parse(it.pubDate);
-    return Number.isFinite(ms) && nowMs - ms <= POSREVIEW_NEWS_BUFFER_MS;
+    const seenAt = Number.isFinite(it._seenAt) ? it._seenAt : Date.parse(it.pubDate);
+    return Number.isFinite(seenAt) && nowMs - seenAt <= POSREVIEW_NEWS_BUFFER_MS;
   });
 }
 
 // Antrian recheck geopolitical UNCONFIRMED (memori, restart daemon = hilang —
 // DITERIMA per Edge Case U-5: "paling apes satu review hilang, tidak pernah
-// dobel", cooldown tetap di Redis). >30 menit sejak pubDate item asal -> hangus
-// permanen (langkah 4 plan U-5b).
+// dobel", cooldown tetap di Redis). >30 menit sejak `_seenAt` item asal -> hangus
+// permanen (langkah 4 plan U-5b). BUG DITEMUKAN & DIFIX (audit S277, 2026-08-04):
+// dulu dihitung dari `pubDate` — item yang masuk antrian ini SUDAH pasti berumur
+// >POSREVIEW_NEWS_BUFFER_MS by pubDate (itu justru KENAPA dia masuk sini, gagal
+// korroborasi pertama kali), jadi begitu diukur ulang dari pubDate di tick
+// berikutnya, langsung hangus permanen SEBELUM sempat dicoba korroborasi lagi —
+// antrian recheck jadi tidak pernah benar-benar memberi kesempatan kedua. Sekarang
+// diukur dari `_seenAt` (kapan PERTAMA KALI masuk antrian recheck ini), konsisten
+// dengan filosofi retensi buffer di atas.
 const POSREVIEW_RECHECK_WINDOW_MS = 30 * 60 * 1000;
 let posReviewRecheckQueue = [];
 
@@ -666,7 +710,8 @@ async function processPosReviewRecheckQueue() {
   const now = Date.now();
   const stillQueued = [];
   for (const q of posReviewRecheckQueue) {
-    const ageMs = now - Date.parse(q.pubDate);
+    const seenAt = Number.isFinite(q._seenAt) ? q._seenAt : Date.parse(q.pubDate);
+    const ageMs = now - seenAt;
     if (!Number.isFinite(ageMs) || ageMs > POSREVIEW_RECHECK_WINDOW_MS) continue; // hangus, diskon permanen
     if (isCorroborated(q, posReviewNewsBuffer)) {
       await tryTriggerPosReview(q, q.legs, true);
@@ -747,6 +792,12 @@ async function triggerPositionReview(body) {
 // atau antre recheck (kategori lain yang belum terkonfirmasi, langkah 4).
 async function handlePosReviewCandidate(newsItem) {
   const now = Date.now();
+  // `_seenAt` = kapan daemon PERTAMA KALI melihat item ini (bukan pubDate asli) —
+  // dasar retensi buffer/recheck-queue sekarang, lihat catatan panjang di
+  // filterFreshBufferItems (audit S277, 2026-08-04). Set sekali, tidak pernah
+  // ditimpa ulang (item yang sama tidak lewat sini dua kali — guid dedup ada di
+  // level lain, pollNews).
+  if (!Number.isFinite(newsItem._seenAt)) newsItem._seenAt = now;
   posReviewNewsBuffer.push(newsItem);
   prunePosReviewNewsBuffer(now);
   persistNewsBufferItem(newsItem);
@@ -1137,6 +1188,27 @@ function findHardNewsEvent(events, legs, nowMs, windowMs = HARD_NEWS_WINDOW_MS) 
   return null;
 }
 
+// Companion ke findHardNewsEvent — cek ke BELAKANG, bukan ke depan: event
+// High-impact yang BARU SAJA rilis dalam windowMs terakhir. Audit S277
+// (2026-08-04, kasus AUD/NZD kena SL): rilis besar yang baru terjadi masih
+// menyisakan volatilitas settling, risikonya sama seperti menjelang rilis —
+// sebelum ini checkHardNewsSkip cuma waspada ke DEPAN, buta terhadap "baru saja
+// terjadi". `calendar_v1`/`calendar_next_v1` (api/calendar.js) menyimpan event
+// per HARI (bukan cuma jam ke depan), jadi event beberapa jam lalu di hari yang
+// sama tetap ada di cache — window ini valid dicek. Default window SAMA dengan
+// BREAKING_NEWS_SKIP_WINDOW_MS (1 jam, keputusan user) — satu makna konsisten
+// "seberapa lama pasca-shock masih dianggap berisiko" di kalender & breaking news.
+function findRecentHardNewsEvent(events, legs, nowMs, windowMs = BREAKING_NEWS_SKIP_WINDOW_MS) {
+  if (!Array.isArray(events) || !Array.isArray(legs) || legs.length === 0) return null;
+  for (const e of events) {
+    if (!e || e.impact !== 'High' || !legs.includes(e.currency)) continue;
+    const ms = calEventMsWib(e.date, e.time_wib);
+    if (ms == null) continue;
+    if (ms <= nowMs && ms >= nowMs - windowMs) return e;
+  }
+  return null;
+}
+
 function firstNumber(str) {
   const m = String(str == null ? '' : str).match(/-?[\d.]+/);
   return m ? parseFloat(m[0]) : null;
@@ -1192,10 +1264,13 @@ async function checkHardNewsSkip(pair, label) {
   try {
     const events = await fetchMergedCalendarEvents();
     const legs = legsFromLabel(label);
-    const hit = findHardNewsEvent(events, legs, Date.now());
+    const nowMs = Date.now();
+    // Audit S277 (2026-08-04): cek ke depan (menjelang rilis) DAN ke belakang
+    // (baru saja rilis, masih settling) — lihat catatan findRecentHardNewsEvent.
+    const hit = findHardNewsEvent(events, legs, nowMs) || findRecentHardNewsEvent(events, legs, nowMs);
     if (!hit) return null;
     const entry = {
-      ts: Date.now(), pair, label, reason: 'hard_news',
+      ts: nowMs, pair, label, reason: 'hard_news',
       event: hit.event, currency: hit.currency, event_time_wib: `${hit.date} ${hit.time_wib}`,
     };
     await redisCmd('LPUSH', 'auto_skip_log', JSON.stringify(entry));
@@ -1223,11 +1298,21 @@ async function checkHardNewsSkip(pair, label) {
 //
 // Pure inti (testable) dipisah dari I/O logging, pola sama findHardNewsEvent/
 // checkHardNewsSkip di atas.
-function findBreakingNewsMatch(pairLegs, buffer) {
+// Audit S277 (2026-08-04): window recency eksplisit ditambahkan (`nowMs`/`windowMs`,
+// default BREAKING_NEWS_SKIP_WINDOW_MS = 1 jam) — sebelum ini fungsi cuma menyisir
+// SELURUH buffer tanpa batas umur eksplisit, jadi jendela efektifnya diam-diam
+// terikat ke retensi buffer (dulu 35 menit, kebetulan/tidak jelas maknanya). Sekarang
+// eksplisit & independen dari retensi buffer (yang sekarang lebih lebar demi alasan
+// LAIN — toleransi backlog korroborasi, lihat POSREVIEW_NEWS_BUFFER_MS) — item yang
+// masih ada di buffer tapi sudah lebih tua dari windowMs TIDAK dianggap "baru saja
+// terjadi" lagi, walau masih tersimpan untuk keperluan korroborasi item lain.
+function findBreakingNewsMatch(pairLegs, buffer, nowMs = Date.now(), windowMs = BREAKING_NEWS_SKIP_WINDOW_MS) {
   if (!Array.isArray(pairLegs) || !pairLegs.length || !Array.isArray(buffer)) return null;
   for (const item of buffer) {
     if (!item) continue;
     if (item.cat !== 'geopolitical' && item.cat !== 'energy' && item.cat !== 'macro' && item.cat !== 'market-moving') continue;
+    const pubMs = Date.parse(item.pubDate);
+    if (!Number.isFinite(pubMs) || nowMs - pubMs > windowMs) continue;
     const newsLegs = detectCurrencyLegs(item.title);
     if (!newsLegs.some(l => pairLegs.includes(l))) continue;
     if (!isCorroborated(item, buffer)) continue;
@@ -1241,7 +1326,7 @@ async function checkBreakingNewsSkip(pair, label) {
     const pairLegs = legsFromLabel(label);
     const now = Date.now();
     prunePosReviewNewsBuffer(now);
-    const match = findBreakingNewsMatch(pairLegs, posReviewNewsBuffer);
+    const match = findBreakingNewsMatch(pairLegs, posReviewNewsBuffer, now);
     if (!match) return null;
     const entry = {
       ts: now, pair, label, reason: 'breaking_news',
@@ -1479,14 +1564,14 @@ module.exports = {
   // Self-healing (pure/testable):
   createRedisGuard, shouldForceReconnect, isFxMarketOpen, newestCandleEpoch, isCandleStale,
   // U-3 (pure/testable):
-  legsFromLabel, calEventMsWib, findHardNewsEvent, firstNumber, levelsWithinTolerance,
+  legsFromLabel, calEventMsWib, findHardNewsEvent, findRecentHardNewsEvent, firstNumber, levelsWithinTolerance,
   computeConsistency, AUTO_ENTRY_SYMBOL_MAP, AUTO_ENTRY_PAIRS, AUTO_ENTRY_HOURS_UTC,
-  findBreakingNewsMatch,
+  findBreakingNewsMatch, BREAKING_NEWS_SKIP_WINDOW_MS,
   // U-3 (async, di-export untuk simulasi lokal manual — bukan dipakai node:test):
   checkHardNewsSkip, runAutoEntryCycle, runConsistencyCheck, runFridayTightenCycle, pollCalendarLatency, checkBreakingNewsSkip,
   // U-5b (pure/testable):
   detectCurrencyLegs, isCorroborated, posReviewSignificantTokens, POSREVIEW_CURRENCY_KEYWORDS,
-  shouldPersistNewsBufferItem, filterFreshBufferItems,
+  shouldPersistNewsBufferItem, filterFreshBufferItems, POSREVIEW_NEWS_BUFFER_MS,
   // U-5b (async, di-export untuk simulasi lokal manual — bukan dipakai node:test):
   handlePosReviewCandidate, tryTriggerPosReview, triggerPositionReview, processPosReviewRecheckQueue,
   persistNewsBufferItem, loadNewsBufferFromRedis,

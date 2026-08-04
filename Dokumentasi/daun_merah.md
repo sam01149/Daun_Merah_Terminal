@@ -11,11 +11,33 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-04 (Session 277 — Fix duplikasi berita di tab NEWS/arsip)
+> **Last updated:** 2026-08-04 (Session 277 — Audit SL auto-entry: fix bug korroborasi berita + gate timing-risk baru)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 277 lanjutan (2026-08-04) — Audit SL Auto-Entry: Fix Bug Korroborasi Berita + Gate Timing-Risk Baru
+
+**Konteks:** user minta cek kenapa trade AUD/NZD auto-entry kena SL. Audit 5 SL terakhir `setup_log_auto:v1` menemukan pola: 3 dari 4 setup berlabel `conflict:"waktu"` (AI sendiri sudah menandai ada event high-impact dalam horizon trade) berakhir SL, tapi label ini cuma dicatat pasif, tidak pernah menahan entry. Investigasi lanjutan trade AUD/NZD spesifik menemukan: mekanisme in-trade review real-time (`vps/daemon.js` `tryTriggerPosReview`/`handlePosReviewCandidate`) SEHARUSNYA sempat trigger dari 3 headline "Australia household spending" yang saling terkorroborasi, tapi gagal total — root cause: bug prune buffer korroborasi.
+
+### Root cause utama — bug prune buffer korroborasi berbasis `pubDate` bukan waktu proses
+
+`prunePosReviewNewsBuffer`/`processPosReviewRecheckQueue` (`vps/daemon.js`) membuang item dari buffer berdasarkan `nowMs - pubDate` (waktu publikasi asli berita vs jam dinding sekarang) — kalau daemon sempat lag/restart dan berita telat diproses (terbukti live: backlog ~89 menit untuk kasus AUD/NZD), item yang BARU SAJA tiba di sistem langsung dianggap basi dan di-prune SEBELUM sempat dibandingkan dengan sibling-nya yang datang detik kemudian dalam batch backlog yang sama. Audit lintas semua pair (`posreview_skip_log`, 50 entri) menemukan 27 entri (54%) berpola backlog serupa, 18 di antaranya (67%) seharusnya lolos korroborasi kalau bug ini tidak ada — 1 kejadian (AUD/NZD) terbukti berkonsekuensi nyata (status `sl`).
+
+**Fix:** basis retensi buffer/recheck-queue diganti dari `pubDate` ke `_seenAt` (kapan daemon PERTAMA KALI memproses item, di-set sekali saat push, dipersist ke Redis `posreview_news_buffer` supaya survive restart) — fallback ke `pubDate` untuk data lama pra-fix (tidak ada regresi). `isCorroborated` sendiri (pubDate-to-pubDate ±30 menit) TIDAK diubah — itu sudah benar, cuma buffer lifecycle-nya yang salah.
+
+### Temuan sampingan — bug substring matching currency-leg
+
+`detectCurrencyLegs`/`POSREVIEW_CURRENCY_KEYWORDS` (`vps/daemon.js`) dan `_newsMatchesLegs`/`LOSS_LABEL_CURRENCY_KEYWORDS` (`api/admin.js`) dulu pakai `t.includes(kw)` (substring polos) — "Saudi official..." salah match leg AUD gara-gara "Saudi" mengandung substring "aud" (pola sama "shipping→ppi" yang sudah difix di `newscat.js`). Diganti word-boundary regex, precompiled di module scope, di kedua sisi (duplikasi sadar, konsisten pola existing).
+
+### 3 perbaikan disepakati user (AskUserQuestion, semua sekaligus)
+
+1. **Fix bug buffer di atas** — otomatis juga memperbaiki `checkBreakingNewsSkip` (Lapis 1b, filter pre-entry breaking-news yang SUDAH ADA di `runAutoEntryCycle`, sebelumnya diasumsikan tidak ada sama sekali sampai ditemukan saat baca kode — koreksi riset sebelumnya).
+2. **Gate E — `conflict:"waktu"`** (`api/_auto_entry_guard.js` `isTimingConflictBlocked`, dipanggil di rantai Gate B/D `api/admin.js`): AI sendiri menandai `conflict:"waktu"` sekarang menahan penyimpanan setup SIKLUS INI (bukan batalkan permanen — auto-entry re-evaluasi tiap jadwal cron berikutnya, jadi "tunda sampai window aman" adalah efek alami arsitektur, sesuai keputusan user).
+3. **Perluas window breaking-news-skip & tambah cek kalender ke belakang** (keputusan user: 1 jam): `findBreakingNewsMatch` dapat window recency eksplisit (`BREAKING_NEWS_SKIP_WINDOW_MS = 1 jam`, sebelumnya implisit terikat retensi buffer 35 menit tanpa makna jelas); `findRecentHardNewsEvent` (baru, companion `findHardNewsEvent`) menambah cek ke BELAKANG di `checkHardNewsSkip` — event kalender High-impact yang BARU SAJA rilis (bukan cuma yang akan datang) juga menahan entry baru. `POSREVIEW_NEWS_BUFFER_MS` dilebarkan (35 menit → ~95 menit: window skip 1 jam + margin korroborasi 30 menit) supaya breaking news masih "terlihat" buffer sampai window skip-nya habis.
+
+**Verifikasi:** `npm test` 808/808 hijau. Simulasi replay data produksi real (Redis `news_history`/`posreview_news_buffer`/`setup_log_auto:v1`) mengonfirmasi 18 entri backlog yang gagal korroborasi seharusnya lolos, dan kasus AUD/NZD (satu-satunya dengan konsekuensi `sl` terbukti dalam jendela data 34 jam yang tersisa).
 
 ## Changelog Session 277 (2026-08-04) — Fix Duplikasi Berita di Tab NEWS/Arsip
 

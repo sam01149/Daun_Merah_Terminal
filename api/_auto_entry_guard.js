@@ -131,10 +131,25 @@ function isCorrelatedExposureBlocked({ symbol, bias, openPositions }) {
   return usdView(partner, openPartner.bias) === newView;
 }
 
+// ── Gate E: Timing conflict (AI's own conflict:'waktu' self-assessment) ─────────
+// Audit S277 (2026-08-04): AI sudah menandai sendiri (skema `conflict` PLAN U-2 —
+// none/arah/waktu, lihat api/admin.js) kalau setup punya konflik WAKTU dengan event
+// mendatang (mis. horizon multi-hari tapi ada FOMC besok) — tapi sebelum ini murni
+// observasi pasif (disimpan ke setup_log_auto:v1, tidak pernah menahan entry).
+// Audit 5 SL terakhir: 3 dari 4 setup berlabel conflict:'waktu' saat dibuat berakhir
+// SL — sinyal yang AI SENDIRI sudah punya, cuma belum ditegakkan kode. TIDAK
+// membatalkan setup permanen — cuma menahan penyimpanan SIKLUS INI; auto-entry
+// re-evaluasi tiap jadwal cron berikutnya (AUTO_ENTRY_HOURS_UTC) dengan data segar,
+// jadi "tunda sampai window aman" adalah efek alami arsitektur ini.
+function isTimingConflictBlocked(conflict) {
+  return conflict === 'waktu';
+}
+
 module.exports = {
   computeRollingR,
   isDrawdownHalted,
   isCorrelatedExposureBlocked,
+  isTimingConflictBlocked,
   DRAWDOWN_WINDOW,
   DRAWDOWN_HALT_THRESHOLD_R,
   _realizedWinR,

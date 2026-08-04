@@ -8,6 +8,7 @@ const {
   computeRollingR,
   isDrawdownHalted,
   isCorrelatedExposureBlocked,
+  isTimingConflictBlocked,
 } = require('../../api/_auto_entry_guard.js');
 
 // ── computeRollingR / isDrawdownHalted (Gate B) ─────────────────────────────
@@ -136,4 +137,17 @@ test('isCorrelatedExposureBlocked: tidak ada posisi open sama sekali -> false', 
 test('isCorrelatedExposureBlocked: EUR/USD baru, GC=F open searah -> simetris (arah cek dari kedua sisi)', () => {
   const open = [{ symbol: 'GC=F', bias: 'bearish', status: 'open' }];
   assert.equal(isCorrelatedExposureBlocked({ symbol: 'EURUSD=X', bias: 'bearish', openPositions: open }), true);
+});
+
+// ── isTimingConflictBlocked (Gate E, audit S277 2026-08-04) ─────────────────
+
+test('isTimingConflictBlocked: conflict "waktu" -> blocked', () => {
+  assert.equal(isTimingConflictBlocked('waktu'), true);
+});
+
+test('isTimingConflictBlocked: conflict "arah"/"none"/null/undefined -> tidak blocked', () => {
+  assert.equal(isTimingConflictBlocked('arah'), false);
+  assert.equal(isTimingConflictBlocked('none'), false);
+  assert.equal(isTimingConflictBlocked(null), false);
+  assert.equal(isTimingConflictBlocked(undefined), false);
 });

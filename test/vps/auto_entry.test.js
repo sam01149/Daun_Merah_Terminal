@@ -6,9 +6,9 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 
 const {
-  legsFromLabel, calEventMsWib, findHardNewsEvent, firstNumber,
+  legsFromLabel, calEventMsWib, findHardNewsEvent, findRecentHardNewsEvent, firstNumber,
   levelsWithinTolerance, computeConsistency, AUTO_ENTRY_SYMBOL_MAP,
-  AUTO_ENTRY_PAIRS,
+  AUTO_ENTRY_PAIRS, BREAKING_NEWS_SKIP_WINDOW_MS,
 } = require('../../vps/daemon.js');
 
 // ── legsFromLabel ────────────────────────────────────────────────────────────
@@ -71,6 +71,59 @@ test('findHardNewsEvent: event di luar window (>4 jam ke depan atau sudah lewat)
 test('findHardNewsEvent: array events kosong/bukan array -> null, bukan crash', () => {
   assert.equal(findHardNewsEvent([], ['EUR'], Date.now()), null);
   assert.equal(findHardNewsEvent(null, ['EUR'], Date.now()), null);
+});
+
+// ── findRecentHardNewsEvent (audit S277, 2026-08-04 — companion ke findHardNewsEvent,
+// cek ke BELAKANG: event High-impact yang baru saja rilis masih dianggap berisiko) ──
+
+test('findRecentHardNewsEvent: event High-impact currency cocok, rilis 30 menit lalu -> ditemukan', () => {
+  const nowMs = Date.parse('2026-07-23T12:30:00.000Z');
+  const events = [
+    { impact: 'High', currency: 'EUR', event: 'ECB Rate', date: '2026-07-23', time_wib: '19:00 WIB' }, // 12:00Z, 30 menit lalu
+  ];
+  const hit = findRecentHardNewsEvent(events, ['EUR', 'USD'], nowMs, 60 * 60 * 1000);
+  assert.equal(hit && hit.event, 'ECB Rate');
+});
+
+test('findRecentHardNewsEvent: event rilis PERSIS di luar window (>1 jam lalu) -> null', () => {
+  const nowMs = Date.parse('2026-07-23T13:01:00.000Z');
+  const events = [
+    { impact: 'High', currency: 'EUR', event: 'ECB Rate', date: '2026-07-23', time_wib: '19:00 WIB' }, // 12:00Z, 1 jam 1 menit lalu
+  ];
+  assert.equal(findRecentHardNewsEvent(events, ['EUR'], nowMs, 60 * 60 * 1000), null);
+});
+
+test('findRecentHardNewsEvent: event BELUM rilis (masih di masa depan) -> null (bukan tugas fungsi ini)', () => {
+  const nowMs = Date.parse('2026-07-23T10:00:00.000Z');
+  const events = [
+    { impact: 'High', currency: 'EUR', event: 'ECB Rate', date: '2026-07-23', time_wib: '19:15 WIB' }, // 12:15Z, akan datang
+  ];
+  assert.equal(findRecentHardNewsEvent(events, ['EUR'], nowMs, 60 * 60 * 1000), null);
+});
+
+test('findRecentHardNewsEvent: currency tidak cocok -> null', () => {
+  const nowMs = Date.parse('2026-07-23T12:30:00.000Z');
+  const events = [{ impact: 'High', currency: 'JPY', event: 'BOJ', date: '2026-07-23', time_wib: '19:00 WIB' }];
+  assert.equal(findRecentHardNewsEvent(events, ['EUR', 'USD'], nowMs, 60 * 60 * 1000), null);
+});
+
+test('findRecentHardNewsEvent: impact Medium/Low diabaikan walau currency cocok & baru rilis', () => {
+  const nowMs = Date.parse('2026-07-23T12:30:00.000Z');
+  const events = [{ impact: 'Medium', currency: 'EUR', event: 'PMI', date: '2026-07-23', time_wib: '19:00 WIB' }];
+  assert.equal(findRecentHardNewsEvent(events, ['EUR'], nowMs, 60 * 60 * 1000), null);
+});
+
+test('findRecentHardNewsEvent: default window = BREAKING_NEWS_SKIP_WINDOW_MS (1 jam)', () => {
+  const nowMs = Date.parse('2026-07-23T12:30:00.000Z');
+  const events = [{ impact: 'High', currency: 'EUR', event: 'ECB Rate', date: '2026-07-23', time_wib: '19:00 WIB' }];
+  const hit = findRecentHardNewsEvent(events, ['EUR'], nowMs); // windowMs tidak dipassing
+  assert.equal(hit && hit.event, 'ECB Rate');
+  assert.equal(BREAKING_NEWS_SKIP_WINDOW_MS, 60 * 60 * 1000);
+});
+
+test('findRecentHardNewsEvent: array events kosong/bukan array -> null, bukan crash', () => {
+  assert.equal(findRecentHardNewsEvent([], ['EUR'], Date.now()), null);
+  assert.equal(findRecentHardNewsEvent(null, ['EUR'], Date.now()), null);
 });
 
 // ── firstNumber ───────────────────────────────────────────────────────────────
