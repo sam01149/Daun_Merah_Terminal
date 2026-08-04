@@ -5135,6 +5135,18 @@ async function ohlcvAnalyzeHandler(req, res) {
         // AI position review/tighten preventif Jumat menyentuh posisi yang sama.
         invalidation_trigger: structured.invalidation_trigger ?? null,
         tech_invalidated: null,
+        // Track 1b (Road to Professional LLM Trader, 2026-08-04, diskusi user):
+        // rekam risk_regime SAAT setup dibuat — `autoGuardRegime` sudah dihitung
+        // di atas untuk Gate B (nol fetch/panggilan tambahan), tapi cache
+        // `risk_regime` (api/risk-regime.js) TTL 5 menit & selalu ditimpa, TIDAK
+        // ada arsip historis. Kalau tidak direkam di sini, regime yang berlaku di
+        // tanggal setup ini dibuat SULIT direkonstruksi lagi nanti (VIX/MOVE/HY
+        // historis publik masih ada, tapi butuh backfill terpisah) — sementara
+        // merekamnya sekarang gratis. Dipakai nanti untuk Plan U item #10
+        // (`daun_merah_progress.md`, kondisional pada bukti confluence zone
+        // regime-dependent) DAN audit apakah bias yang dipilih AI benar-benar
+        // konsisten dengan regime (risk_off -> condong safe haven, dst).
+        regime: autoGuardRegime,
       });
       let needsGateA = false;
       const gotLock = await _acquireLockWithRetry(lockKey);
@@ -5183,6 +5195,10 @@ async function ohlcvAnalyzeHandler(req, res) {
                 // ini, itu milik trigger LAMA — thesis baru butuh evaluasi fresh dari nol).
                 stalePending.invalidation_trigger = structured.invalidation_trigger ?? null;
                 stalePending.tech_invalidated = null;
+                // Track 1b (2026-08-04): regime ikut diperbarui ke generasi TERBARU —
+                // pola sama field lain di blok refine ini, thesis baru dievaluasi
+                // dengan konteks rezim SAAT refine ini terjadi, bukan snapshot lama.
+                stalePending.regime = autoGuardRegime;
                 stalePending.alignment = (structured.conflict && structured.conflict !== 'none')
                   ? 'konflik'
                   : (structured.makro_alignment || null);

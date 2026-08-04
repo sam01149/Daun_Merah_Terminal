@@ -309,3 +309,50 @@ test('Gate E conflict:"waktu" — Gate A tetap bisa veto (critic_veto), bukan la
     } finally { global.fetch = origFetch; }
   });
 });
+
+// Track 1b (Road to Professional LLM Trader, 2026-08-04, diskusi user): rekam
+// risk_regime SAAT setup dibuat — cache `risk_regime` (api/risk-regime.js) TTL 5
+// menit & selalu ditimpa, TIDAK ada arsip historis, jadi kalau tidak direkam
+// per-setup, regime yang berlaku di tanggal itu sulit direkonstruksi lagi nanti.
+// Dipakai untuk Plan U item #10 (gating berbasis rezim, KONDISIONAL pada bukti
+// regime-dependency) + audit apakah bias yang dipilih AI konsisten dengan regime.
+test('Track 1b: field "regime" pada setup baru = risk_regime yang berlaku saat itu (nol fetch tambahan, sudah dipakai Gate B)', async () => {
+  await withEnv({ CRON_SECRET: 'topsecret', DEEPSEEK_API_KEY: 'k', SAMBANOVA_API_KEY: 'sk' }, async () => {
+    const store = baseStore();
+    store.strings['risk_regime'] = JSON.stringify({ regime: 'risk_off', computed_at: new Date().toISOString() });
+    const origFetch = global.fetch;
+    global.fetch = makeAnalyzeFetchStub(store, { criticVerdict: 'lanjut' });
+    try {
+      const handler = loadHandler();
+      const res = fakeRes();
+      await handler({
+        headers: { 'x-cron-secret': 'topsecret' }, method: 'GET',
+        query: { action: 'ohlcv_analyze', symbol: 'GBPUSD=X', label: 'GBP/USD', auto: '1' },
+      }, res);
+      assert.equal(res.statusCode, 200);
+      const log = JSON.parse(store.strings['setup_log_auto:v1']);
+      assert.equal(log.length, 1);
+      assert.equal(log[0].regime, 'risk_off');
+    } finally { global.fetch = origFetch; }
+  });
+});
+
+test('Track 1b: risk_regime cache kosong/gagal parse -> field "regime" null, TIDAK menggagalkan penyimpanan setup', async () => {
+  await withEnv({ CRON_SECRET: 'topsecret', DEEPSEEK_API_KEY: 'k', SAMBANOVA_API_KEY: 'sk' }, async () => {
+    const store = baseStore(); // tanpa key 'risk_regime' -> GET null
+    const origFetch = global.fetch;
+    global.fetch = makeAnalyzeFetchStub(store, { criticVerdict: 'lanjut' });
+    try {
+      const handler = loadHandler();
+      const res = fakeRes();
+      await handler({
+        headers: { 'x-cron-secret': 'topsecret' }, method: 'GET',
+        query: { action: 'ohlcv_analyze', symbol: 'GBPUSD=X', label: 'GBP/USD', auto: '1' },
+      }, res);
+      assert.equal(res.statusCode, 200);
+      const log = JSON.parse(store.strings['setup_log_auto:v1']);
+      assert.equal(log.length, 1);
+      assert.equal(log[0].regime, null);
+    } finally { global.fetch = origFetch; }
+  });
+});

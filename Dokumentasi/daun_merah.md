@@ -11,11 +11,23 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-04 (Session 282 lanjutan — fix celah tech_invalidation menghalangi AI position review, field dipisah jadi `tech_invalidated`)
+> **Last updated:** 2026-08-04 (Session 282 lanjutan 2 — Track 1b: rekam `risk_regime` per-setup saat dibuat, cegah kebocoran data untuk Plan U item #10)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 282 lanjutan 2 (2026-08-04) — Track 1b: Rekam `risk_regime` Per-Setup (Cegah Kebocoran Data untuk Plan U Item #10)
+
+**Konteks:** temuan dari audit lintas-sesi (chatroom lain, dikonfirmasi user) — `buildNewSetupEntry()` (`api/admin.js`) merekam banyak field per setup, tapi TIDAK ADA `risk_regime` (risk_on/neutral/elevated/risk_off) yang berlaku SAAT setup itu dibuat. Cache `risk_regime` (`api/risk-regime.js`) TTL cuma 5 menit dan SELALU ditimpa nilai terbaru — tidak ada arsip historis. Kalau tidak direkam sekarang, rezim yang berlaku di tiap tanggal historis makin sulit direkonstruksi begitu Plan U item #10 ("gating berbasis rezim" — `daun_merah_progress.md` §S209, KONDISIONAL pada bukti confluence zone regime-dependent) atau audit "apakah bias AI konsisten dengan rezim" mulai dikerjakan nanti (n≥100 gate, ~3 bulan lagi). Beda kelas dari Track 3 (trailing/breakeven) — bukan kalibrasi yang perlu ditunda, murni mencegah kebocoran data historis; biayanya nol (`autoGuardRegime` sudah dihitung untuk Gate B, tidak ada fetch/heuristik baru).
+
+**Diskusi tambahan sebelum eksekusi:** user tanya apakah rezim berarti sistem harus "tutup pair" tertentu — dikonfirmasi TIDAK: definisi asli item #10 (`daun_merah_progress.md`) adalah aturan GLOBAL (skip semua entry baru ATAU kecilkan size, bukan pair-specific), dan itu beda layer dari kemampuan AI memilih arah/pair sendiri berdasar rezim (`RISK REGIME:` sudah disuntik ke prompt sejak awal, `api/admin.js` ~4171) — sudah ada, bukan hal baru. Data awal (S209) belum menunjukkan bukti regime-dependency yang jelas, jadi item #10 sendiri masih murni kondisional/belum tentu dieksekusi.
+
+**Perubahan:** `regime: autoGuardRegime` ditambahkan ke `buildNewSetupEntry()` dan diperbarui ke generasi terbaru di blok refine-in-place (pola sama field lain di blok itu) — berlaku untuk setup manual maupun auto (nilai `autoGuardRegime` sudah dihitung untuk semua panggilan `ohlcv_analyze`, tidak dibatasi `isAutoCall`). Null kalau cache `risk_regime` kosong/gagal parse — fail-open, tidak menggagalkan penyimpanan setup.
+
+**Verifikasi:** `npm test` 870/870 hijau (2 test baru di `test/admin/gate_a_race.test.js`: field terisi dari cache `risk_regime`, dan fail-open ke null kalau cache kosong).
+
+**File diubah:** `api/admin.js`, `test/admin/gate_a_race.test.js`.
 
 ## Changelog Session 282 lanjutan (2026-08-04) — Fix: Invalidasi Teknikal Sempat Menghalangi AI Position Review
 
