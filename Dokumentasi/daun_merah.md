@@ -11,11 +11,25 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-04 (Session 282 lanjutan 2 — Track 1b: rekam `risk_regime` per-setup saat dibuat, cegah kebocoran data untuk Plan U item #10)
+> **Last updated:** 2026-08-05 (Session 283 — Sistem Hakim: koreksi arah sebaliknya, AI salah klaim konflik padahal cbDir searah)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 283 (2026-08-05) — Sistem Hakim: Koreksi Arah Sebaliknya (AI Salah Klaim Konflik Padahal cbDir Searah)
+
+**Konteks:** user tanya penjelasan end-to-end setup AUDNZD `1785849311337` (kena SL 2026-08-05) — dari situ ketahuan kalimat `makro_alignment_reason` yang ditulis AI sendiri kontradiktif secara logika: "Fundamental NZD Hawkish ... mendukung NZD, berlawanan dengan bias bearish AUD/NZD yang berarti NZD menguat". NZD menguat justru SEARAH dengan bearish AUD/NZD (bearish AUD/NZD = AUD melemah **terhadap** NZD = NZD menguat), bukan berlawanan — AI menandai `makro_alignment:'konflik'` & `conflict:'arah'` sendiri padahal argumennya sendiri menunjukkan searah. Dicek ke `conflict_source` setup itu: `'ai'`, bukan `'sistem_hakim'` — artinya pengecekan objektif kode (`cbDir` dari `_computeCbDirServerSide`, dibandingkan ke `structured.bias`) TIDAK mendeteksi konflik nyata di sini; yang keliru murni klaim teks bebas model.
+
+**Celah yang ditemukan:** veto "[SISTEM HAKIM]" (`ohlcvAnalyzeHandler`, `api/admin.js`, dibuat Session ~sekitar 2026-07-29) selama ini SEARAH SATU JALAN — hanya menangkap kasus AI **gagal melihat** konflik nyata (`cbDir` melawan bias teknikal → dipaksa `konflik`/`arah`). Tidak ada rem untuk kebalikannya: AI **salah mengklaim** konflik padahal `cbDir` (sudah lolos syarat confidence High kedua leg + tanpa `divergence_warning`) justru SEARAH. Klaim salah begini menyeret setup ke jalur "hati-hati" (Gate A/AI Kritikus, riwayat tighten-SL reaktif) tanpa dasar nyata.
+
+**Perbaikan:** tambah cabang `else if` di blok veto — kalau `cbDir` SEARAH dengan bias teknikal (`long`+bullish atau `short`+bearish) tapi `structured.makro_alignment==='konflik'`/`conflict==='arah'`, dikoreksi balik ke `'searah'`/`'none'`. Ditandai field baru `sistem_hakim:'corrected'` (state ketiga selain `'fired'`/`'clear'`) — dipisah dari `'clear'` supaya `_sistemHakimCalibration` (dan `setup_stats?scope=auto`) bisa mengukur terpisah apakah koreksi ini menyelamatkan setup yang sebenarnya valid. Telemetri baru `sistem_hakim_stats:corrected` (pola sama `:considered`/`:fired`, didaftarkan ke `KEY_REGISTRY`).
+
+**Catatan pembahasan lanjutan (tidak mengubah kode):** user juga menanyakan kenapa harga tetap bergerak melawan (AUD menguat jangka pendek, hit SL) walau NZD dilaporkan hawkish — dijelaskan itu bukan bukti klaim konflik AI benar; arah yang terjadi (AUD/NZD naik) sebenarnya berlawanan dengan KEDUA argumen (bearish teknikal maupun narasi NZD-kuat AI), dan pergerakannya sendiri kecil (~18 pip ke SL yang sudah diperketat) — sejalan dengan noise jangka pendek, bukan pembenaran retroaktif atas alasan yang secara logika tetap salah tulis.
+
+**Verifikasi:** `npm test` 871/871 hijau (2 test baru + 1 test existing direvisi di `test/admin/sistem_hakim.test.js`: kalibrasi 3-bucket, skenario integrasi cbDir-searah-tapi-AI-klaim-konflik → `conflict:'none'`, `makro_alignment:'searah'`, `sistem_hakim:'corrected'`, counter `sistem_hakim_stats:corrected` naik, `sistem_hakim_stats:fired` TIDAK naik).
+
+**File diubah:** `api/admin.js` (blok veto `[SISTEM HAKIM]`, `_sistemHakimCalibration`, `KEY_REGISTRY`), `test/admin/sistem_hakim.test.js`.
 
 ## Changelog Session 282 lanjutan 2 (2026-08-04) — Track 1b: Rekam `risk_regime` Per-Setup (Cegah Kebocoran Data untuk Plan U Item #10)
 

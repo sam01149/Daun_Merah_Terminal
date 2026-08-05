@@ -90,10 +90,11 @@ test('_computeCbDirServerSide FX: kedua leg High confidence + divergen -> arah s
 
 // ── _sistemHakimCalibration (pure) — pola sama _confidenceCalibration ───────
 
-test('_sistemHakimCalibration: win-rate dipecah fired vs clear, hanya closed dihitung', () => {
+test('_sistemHakimCalibration: win-rate dipecah fired vs clear vs corrected, hanya closed dihitung', () => {
   const arr = [
     { status: 'tp', sistem_hakim: 'fired' }, { status: 'sl', sistem_hakim: 'fired' }, { status: 'sl', sistem_hakim: 'fired' },
     { status: 'tp', sistem_hakim: 'clear' }, { status: 'tp', sistem_hakim: 'clear' },
+    { status: 'tp', sistem_hakim: 'corrected' }, { status: 'sl', sistem_hakim: 'corrected' },
     { status: 'pending', sistem_hakim: 'fired' }, // diskip, bukan closed
     { status: 'tp', sistem_hakim: null }, // diskip, tidak masuk bucket manapun
   ];
@@ -102,11 +103,13 @@ test('_sistemHakimCalibration: win-rate dipecah fired vs clear, hanya closed dih
   assert.equal(cal.fired.win_rate, 33);
   assert.equal(cal.clear.n, 2);
   assert.equal(cal.clear.win_rate, 100);
+  assert.equal(cal.corrected.n, 2);
+  assert.equal(cal.corrected.win_rate, 50);
 });
 
-test('_sistemHakimCalibration: array kosong -> n 0, win_rate null di kedua bucket', () => {
+test('_sistemHakimCalibration: array kosong -> n 0, win_rate null di semua bucket', () => {
   const cal = _sistemHakimCalibration([]);
-  assert.deepEqual(cal, { fired: { n: 0, win_rate: null }, clear: { n: 0, win_rate: null } });
+  assert.deepEqual(cal, { fired: { n: 0, win_rate: null }, clear: { n: 0, win_rate: null }, corrected: { n: 0, win_rate: null } });
 });
 
 // ── Integrasi ohlcv_analyze (auto-entry cron) ───────────────────────────────
@@ -169,12 +172,21 @@ const AI_JSON_BEARISH = {
 };
 const AI_RAW_TEXT = `${JSON.stringify(AI_JSON_BEARISH)}\n===COMMENTARY===\nKomentar singkat untuk tes Sistem Hakim.`;
 
-function makeAnalyzeFetchStub(store) {
+// AI mengklaim SENDIRI (teks bebas) makro_alignment='konflik'/conflict='arah' —
+// dipakai test koreksi arah sebaliknya (cbDir sebenarnya SEARAH dgn bias 'bearish' ini).
+const AI_JSON_BEARISH_FALSE_CONFLICT = {
+  ...AI_JSON_BEARISH,
+  makro_alignment: 'konflik', makro_alignment_reason: 'Klaim AI yang keliru (kontradiktif secara logika).',
+  conflict: 'arah', conflict_note: 'Klaim AI yang keliru.',
+};
+const AI_RAW_TEXT_FALSE_CONFLICT = `${JSON.stringify(AI_JSON_BEARISH_FALSE_CONFLICT)}\n===COMMENTARY===\nKomentar singkat untuk tes Sistem Hakim.`;
+
+function makeAnalyzeFetchStub(store, rawText = AI_RAW_TEXT) {
   const redisStub = redisFetchStub(store);
   return async (url, opts) => {
     const u = String(url);
     if (u.includes('fake-upstash.test')) return redisStub(url, opts);
-    if (u.includes('api.deepseek.com')) return { ok: true, json: async () => ({ choices: [{ message: { content: AI_RAW_TEXT } }] }) };
+    if (u.includes('api.deepseek.com')) return { ok: true, json: async () => ({ choices: [{ message: { content: rawText } }] }) };
     throw new Error('unexpected network call di test: ' + u);
   };
 }
@@ -225,6 +237,48 @@ test('SISTEM HAKIM cron: auto=1 tanpa body + cb_bias divergen kuat (High/High) -
 
       assert.equal(store.strings['sistem_hakim_stats:considered'], '1');
       assert.equal(store.strings['sistem_hakim_stats:fired'], '1');
+    } finally { global.fetch = origFetch; }
+  });
+});
+
+// cbDir 'short' (GBP dovish vs USD hawkish, High/High) SEARAH dengan bias teknikal
+// 'bearish' (short) — tapi AI sendiri (teks bebas) mengklaim makro_alignment='konflik'
+// & conflict='arah'. Kasus nyata yang memicu perbaikan ini (audit AUDNZD:1785849311337,
+// 2026-08-05): klaim begini kontradiktif secara logika (fundamental yang disebut AI
+// justru MENDUKUNG arah bias, bukan melawan) dan tidak pernah dikoreksi sebelumnya.
+const ALIGNED_CB_BIAS = JSON.stringify({
+  GBP: { bias: 'dovish', confidence: 'High', updated_at: new Date().toISOString() },
+  USD: { bias: 'hawkish', confidence: 'High', updated_at: new Date().toISOString() },
+});
+
+test('SISTEM HAKIM cron: cbDir SEARAH dgn bias tapi AI salah klaim konflik -> dikoreksi balik ke searah/none, ditandai corrected', async () => {
+  await withEnv({ CRON_SECRET: 'topsecret', DEEPSEEK_API_KEY: 'k' }, async () => {
+    const store = makeStore({
+      'ohlcv_fresh:GBPUSD=X': '1',
+      'ohlcv:GBPUSD=X:1h': JSON.stringify(mkTrendCandles(1.30, 1.28)),
+      'cb_bias': ALIGNED_CB_BIAS,
+    });
+    const origFetch = global.fetch;
+    global.fetch = makeAnalyzeFetchStub(store, AI_RAW_TEXT_FALSE_CONFLICT);
+    try {
+      const handler = loadHandler();
+      const res = fakeRes();
+      await handler({
+        headers: { 'x-cron-secret': 'topsecret' }, method: 'GET',
+        query: { action: 'ohlcv_analyze', symbol: 'GBPUSD=X', label: 'GBP/USD', auto: '1' },
+      }, res);
+
+      assert.equal(res.statusCode, 200);
+      assert.equal(res.body.structured.conflict, 'none', 'Sistem Hakim harus mengoreksi klaim konflik AI yang keliru');
+      assert.equal(res.body.structured.makro_alignment, 'searah');
+
+      const log = JSON.parse(store.strings['setup_log_auto:v1']);
+      assert.equal(log[0].sistem_hakim, 'corrected');
+      assert.equal(log[0].conflict_source, null, 'conflict sudah none, tidak ada sumber konflik lagi');
+
+      assert.equal(store.strings['sistem_hakim_stats:considered'], '1');
+      assert.equal(store.strings['sistem_hakim_stats:fired'], undefined, 'bukan kasus fired');
+      assert.equal(store.strings['sistem_hakim_stats:corrected'], '1');
     } finally { global.fetch = origFetch; }
   });
 });

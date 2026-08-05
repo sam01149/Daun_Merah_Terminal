@@ -533,6 +533,7 @@ const KEY_REGISTRY = [
   // bukan cuma frekuensi) ada di setup_stats?scope=auto -> global.sistem_hakim_calibration.
   { key: 'sistem_hakim_stats:considered', owner: 'api/admin.js', ttl_expected: null, note: '[SISTEM HAKIM] auto-entry: cbDir tersedia & dicek vs bias teknikal' },
   { key: 'sistem_hakim_stats:fired',      owner: 'api/admin.js', ttl_expected: null, note: '[SISTEM HAKIM] auto-entry: konflik terdeteksi, conflict dipaksa "arah"' },
+  { key: 'sistem_hakim_stats:corrected',   owner: 'api/admin.js', ttl_expected: null, note: '[SISTEM HAKIM] auto-entry (2026-08-05): cbDir SEARAH tapi AI salah klaim "konflik" — dikoreksi balik ke searah/none' },
 ];
 
 const DEPRECATED_KEYS = [
@@ -3220,9 +3221,13 @@ function _confidenceCalibration(arr) {
 // konflik) — kalau "fired" TIDAK kalah dari "clear" dalam sampel yang cukup, itu sinyal
 // Sistem Hakim mungkin cuma menahan sinyal yang sebenarnya sah (noise, bukan filter
 // berguna). n kecil di awal (fitur baru) — jangan disimpulkan apa pun sebelum n memadai.
+// Bucket ketiga "corrected" (2026-08-05, audit kasus AUDNZD:1785849311337): cbDir
+// SEARAH dgn bias teknikal tapi AI sendiri salah mengklaim 'konflik' — Sistem Hakim
+// mengoreksi balik ke 'searah'/'none'. Dipisah dari "clear" supaya kalibrasi bisa
+// melihat apakah koreksi ini justru menyelamatkan setup yang sebenarnya valid.
 function _sistemHakimCalibration(arr) {
   const out = {};
-  for (const tag of ['fired', 'clear']) {
+  for (const tag of ['fired', 'clear', 'corrected']) {
     const sub = arr.filter(x => x.sistem_hakim === tag && (x.status === 'tp' || x.status === 'sl'));
     const tp = sub.filter(x => x.status === 'tp').length;
     out[tag] = { n: sub.length, win_rate: sub.length ? Math.round(tp / sub.length * 100) : null };
@@ -4878,7 +4883,7 @@ async function ohlcvAnalyzeHandler(req, res) {
     // murni observasi ditulis ke setup_log_auto untuk analisis kalibrasi terpisah (lihat
     // _sistemHakimCalibration). evaluated=false berarti cbDir tidak tersedia sama sekali
     // (beda dari "dicek, ternyata selaras" — sama filosofi confidence:null vs 'rendah').
-    let sistemHakimEvaluated = false, sistemHakimFired = false, conflictForcedBySistemHakim = false;
+    let sistemHakimEvaluated = false, sistemHakimFired = false, conflictForcedBySistemHakim = false, sistemHakimCorrected = false;
     if (rawText) {
       try {
         // Split on the delimiter BEFORE touching JSON — commentary lives as plain text after it,
@@ -5014,6 +5019,26 @@ async function ohlcvAnalyzeHandler(req, res) {
               structured.conflict = 'arah';
               structured.conflict_note = structured.makro_alignment_reason;
             }
+          } else if ((cbDir === 'long' && isTechLong) || (cbDir === 'short' && isTechShort)) {
+            // Koreksi arah SEBALIKNYA (2026-08-05, ditemukan dari audit kasus nyata
+            // AUDNZD:1785849311337): veto di atas hanya menangkap AI yang GAGAL
+            // melihat konflik nyata. Tidak ada rem untuk kebalikannya — AI mengklaim
+            // 'konflik'/arah' sendiri (di makro_alignment/conflict, teks bebas) padahal
+            // cbDir (hitungan objektif dari cb_bias, sudah lolos syarat confidence
+            // High + tanpa divergence_warning) justru SEARAH dengan bias teknikalnya.
+            // Klaim salah begini menyeret setup ke jalur "hati-hati" (Gate A/Kritikus,
+            // rawan tighten_sl reaktif) tanpa alasan nyata. cbDir tetap sumber kebenaran
+            // terverifikasi kode di sini juga, jadi koreksi balik ke 'searah'/'none'.
+            if (structured.makro_alignment === 'konflik') {
+              sistemHakimCorrected = true;
+              structured.makro_alignment = 'searah';
+              structured.makro_alignment_reason = '[SISTEM HAKIM] Klaim konflik dari AI dikoreksi — arah Makro/Fundamental (cbDir) sebenarnya SEARAH dengan bias teknikal.';
+            }
+            if (structured.conflict === 'arah') {
+              sistemHakimCorrected = true;
+              structured.conflict = 'none';
+              structured.conflict_note = null;
+            }
           }
         }
         // Telemetri frekuensi murni (2026-07-29) — HANYA jalur auto-entry (baru
@@ -5024,6 +5049,7 @@ async function ohlcvAnalyzeHandler(req, res) {
         if (isAutoCall && sistemHakimEvaluated) {
           redisCmd('INCR', 'sistem_hakim_stats:considered').catch(() => {});
           if (sistemHakimFired) redisCmd('INCR', 'sistem_hakim_stats:fired').catch(() => {});
+          if (sistemHakimCorrected) redisCmd('INCR', 'sistem_hakim_stats:corrected').catch(() => {});
         }
       } catch(e) {
         // Keep rawText as commentary, structured stays null
@@ -5123,7 +5149,7 @@ async function ohlcvAnalyzeHandler(req, res) {
         // gate/Flip Guard/kalibrasi manapun yang sudah ada (lihat _sistemHakimCalibration
         // untuk agregat terpisah yang MEMBACA field ini). null = cbDir tidak tersedia
         // saat itu (fail-closed _computeCbDirServerSide, atau manual tanpa cbDir).
-        sistem_hakim: sistemHakimEvaluated ? (sistemHakimFired ? 'fired' : 'clear') : null,
+        sistem_hakim: sistemHakimEvaluated ? (sistemHakimFired ? 'fired' : (sistemHakimCorrected ? 'corrected' : 'clear')) : null,
         conflict_source: structured.conflict === 'arah' ? (conflictForcedBySistemHakim ? 'sistem_hakim' : 'ai') : null,
         loss_label: null, label_reason: null, label_by: null,
         // PLAN U-5a: manajemen posisi VIRTUAL — null/0 = belum pernah direview.
@@ -5210,7 +5236,7 @@ async function ohlcvAnalyzeHandler(req, res) {
                 stalePending.makro_alignment_reason = structured.makro_alignment_reason ?? null;
                 // [SISTEM HAKIM] tag pengukuran ikut diperbarui ke generasi terbaru — pola
                 // sama PLAN W di atas, jangan nyimpen snapshot dari generasi pertama.
-                stalePending.sistem_hakim = sistemHakimEvaluated ? (sistemHakimFired ? 'fired' : 'clear') : null;
+                stalePending.sistem_hakim = sistemHakimEvaluated ? (sistemHakimFired ? 'fired' : (sistemHakimCorrected ? 'corrected' : 'clear')) : null;
                 stalePending.conflict_source = structured.conflict === 'arah' ? (conflictForcedBySistemHakim ? 'sistem_hakim' : 'ai') : null;
                 stalePending.model = model;
                 // BUG DITEMUKAN & DIFIX (2026-07-25, diskusi user soal filled_t < closed_t):
