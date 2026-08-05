@@ -44,6 +44,8 @@ Audit atas permintaan user ("audit fitur auto entry trade, sesuaikan dengan tuju
 
 **Update:** perubahan Gate E (uncommitted saat audit ini ditulis) sudah di-commit+push sesi lain (`fbea3c5`, changelog Session 281) — tidak perlu tindakan lagi.
 
+**Re-cek 2026-08-05 (sesi lain, pertanyaan user "apakah ada fitur yang mengganggu pengumpulan data?"):** angka live konsisten, kesimpulan TIDAK berubah. `setup_log_auto:v1` total=23 (naik dari 22), closed n=13 (7 tp/6 sl, win-rate 54%). `auto_guard_stats`: considered=16, saved=11, correlation_cap=2, drawdown=0, critic_veto=2 (gap 1 dari invarian kemungkinan `race_detected` yang dibuang tanpa counter — lihat komentar `api/admin.js` dekat `gotLock2`, bukan bug baru). Konfirmasi ulang kesimpulan S283 lanjutan (baris di atas): Gate A/B/D/E **bukan** penghambat dominan (67-69% lolos, wajar); yang tetap paling menahan laju n adalah `blockedByOpenPosition` + ketiadaan fallback GH Actions untuk `runAutoEntryCycle` (beda dari watcher TP/SL yang sudah ada cadangan) — dua-duanya sudah tercatat di atas, belum ada perubahan arah.
+
 ### [2026-08-04] Audit lanjutan — skenario "professional trader" vs auto-entry, dan ketepatan jadwal cron
 
 Lanjutan audit di atas, sudut pandang berbeda: user minta dibayangkan sebagai "trader profesional yang agresif tapi defensif" untuk menilai apakah skenario yang di-cover auto-entry sudah merangkum program kerja trader sungguhan. Semua item di bawah **DIPARKIR atas keputusan eksplisit user ("keep itu semua" / "keep lagi semua") — TIDAK dieksekusi, cuma didokumentasikan supaya tidak hilang untuk sesi berikutnya.**
