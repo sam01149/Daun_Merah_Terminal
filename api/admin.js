@@ -534,7 +534,31 @@ const KEY_REGISTRY = [
   { key: 'sistem_hakim_stats:considered', owner: 'api/admin.js', ttl_expected: null, note: '[SISTEM HAKIM] auto-entry: cbDir tersedia & dicek vs bias teknikal' },
   { key: 'sistem_hakim_stats:fired',      owner: 'api/admin.js', ttl_expected: null, note: '[SISTEM HAKIM] auto-entry: konflik terdeteksi, conflict dipaksa "arah"' },
   { key: 'sistem_hakim_stats:corrected',   owner: 'api/admin.js', ttl_expected: null, note: '[SISTEM HAKIM] auto-entry (2026-08-05): cbDir SEARAH tapi AI salah klaim "konflik" — dikoreksi balik ke searah/none' },
+  // Sapuan celah observabilitas (2026-08-05, audit "apa yang mengganggu pengumpulan
+  // data" auto-entry): 9 key ini SUDAH lama ditulis (LPUSH/SET dari vps/daemon.js &
+  // api/admin.js) tapi tidak pernah didaftarkan di sini — satu-satunya jalan bacanya
+  // sebelum ini adalah akses Redis mentah langsung (di luar API resmi aplikasi).
+  // Murni tambahan visibilitas baca, TIDAK mengubah perilaku auto-entry apa pun.
+  { key: 'auto_skip_log',                  owner: 'vps/daemon.js', ttl_expected: null, note: 'List (cap 200): alasan auto-entry di-skip sebelum AI dipanggil (hard news/breaking news/kejutan ekonomi)' },
+  { key: 'posreview_skip_log',             owner: 'vps/daemon.js', ttl_expected: null, note: 'List (cap 50): alasan review posisi berbasis berita di-skip (berita belum terkonfirmasi/UNCONFIRMED)' },
+  { key: 'surprise_log:v1',                owner: 'vps/daemon.js', ttl_expected: null, note: 'List (cap 300): kejutan data ekonomi yang dievaluasi Gate "kejutan ekonomi" (Plan X, checkSurpriseSkip)' },
+  { key: 'calendar_actual_latency_log:v1', owner: 'vps/daemon.js', ttl_expected: null, note: 'List (cap 100): sampel keterlambatan calendar_v1.actual vs waktu rilis asli (pollCalendarLatency, Plan U-3 sub-riset)' },
+  { key: 'consistency_log:v1',             owner: 'vps/daemon.js', ttl_expected: null, note: 'List (cap 60): skor uji konsistensi jawaban AI (1 slot/hari, jalur diagnostik terpisah dari produksi)' },
+  { key: 'position_review_log:v1',         owner: 'api/admin.js',  ttl_expected: null, note: 'List (cap 100): log tiap kali AI mengevaluasi ulang posisi terbuka (tighten_sl/close_early/hold)' },
+  { key: 'xau_history',                    owner: 'api/market-digest.js', ttl_expected: null, note: 'List (cap 4): riwayat harga XAU untuk market-digest (beda fitur dari auto-entry)' },
+  { key: 'daemon_news_cursor',             owner: 'vps/daemon.js', ttl_expected: 172800, note: 'Epoch ms terakhir polling berita diproses — indikasi daemon masih aktif memproses feed' },
+  { key: 'daemon_degraded_alert_ts',       owner: 'vps/daemon.js', ttl_expected: null,   note: 'Epoch ms alert Telegram terakhir "Deriv WS reconnect gagal >10 menit" (dedup 6 jam, bukan indikator daemon mati total)' },
 ];
+
+// Key list-type (LPUSH) & timestamp-string yang bernilai dibaca isinya, bukan cuma
+// exists/ttl — dipisah dari auto_guard_stats:*/sistem_hakim_stats:* (integer INCR)
+// di getKeyInfo karena tipe Redis-nya beda (LIST vs STRING).
+const LIST_LOG_KEYS = new Set([
+  'auto_skip_log', 'posreview_skip_log', 'surprise_log:v1',
+  'calendar_actual_latency_log:v1', 'consistency_log:v1',
+  'position_review_log:v1', 'xau_history',
+]);
+const TIMESTAMP_KEYS = new Set(['daemon_news_cursor', 'daemon_degraded_alert_ts']);
 
 const DEPRECATED_KEYS = [
   { key: 'cot_cache',          replaced_by: 'cot_cache_v2',    note: 'Old COT format, superseded in Task 10b' },
@@ -554,6 +578,16 @@ async function getKeyInfo(key) {
   if (key.startsWith('auto_guard_stats:') || key.startsWith('sistem_hakim_stats:')) {
     const raw = await redisCmd('GET', key);
     return { exists: exists === 1, ttl_actual, value: raw ? parseInt(raw, 10) : 0 };
+  }
+  if (TIMESTAMP_KEYS.has(key)) {
+    const raw = await redisCmd('GET', key);
+    return { exists: exists === 1, ttl_actual, value: raw ? new Date(Number(raw)).toISOString() : null };
+  }
+  if (LIST_LOG_KEYS.has(key)) {
+    const raw = await redisCmd('LRANGE', key, '0', '19');
+    let entries = raw || [];
+    try { entries = entries.map(x => JSON.parse(x)); } catch (e) { /* biarkan mentah kalau bukan JSON */ }
+    return { exists: exists === 1, ttl_actual, shown: entries.length, note: 'menampilkan 20 entri terbaru saja', entries };
   }
   return { exists: exists === 1, ttl_actual };
 }
