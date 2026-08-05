@@ -11,11 +11,26 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-05 (Session 284 — fix bug korroborasi palsu snapshot "Interest Rate Probabilities" yang salah skip 4 pair auto-entry)
+> **Last updated:** 2026-08-05 (Session 285 — fix translate NEWS Mistral macet total: deskripsi outlier bikin batch selalu timeout, circuit breaker trip berulang tanpa henti)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 285 (2026-08-05) — Fix Translate NEWS Mistral Macet Total: Deskripsi Outlier Bikin Batch Selalu Timeout
+
+**Konteks:** user lapor "translate mistral di fitur news tidak berfungsi, limit apa gimana". Cek langsung Redis produksi (bukan tebak-tebakan): `circuit:ai:mistral:newstranslate` berstatus `open` (7 kegagalan beruntun), budget harian `mistral_newstranslate` baru terpakai 56/1000 (BUKAN soal limit/kuota), `MISTRAL_API_KEY` terkonfirmasi ada di Vercel Production (BUKAN soal env var hilang). `vercel logs` produksi menunjukkan pola berulang identik puluhan kali: batch guid `9708715,9708689,9708688,9708655,9708654,9708616,9708653` selalu "aborted due to timeout" → circuit OPEN 5 menit → HALF_OPEN probe → gagal lagi dengan batch SAMA PERSIS → OPEN lagi, tanpa henti.
+
+**Root cause:** item guid `9708616` ("MUFG FX Daily Snapshot - FJElite") punya `description` HTML mentah 5594 karakter (jauh di atas item lain ~700-1200 char) — `buildBatchPrompt` (`api/_news_translate.js`) tidak pernah memotong deskripsi sebelum dimasukkan ke prompt, jadi batch yang memuatnya selalu melebihi `PER_CALL_TIMEOUT_MS` (15 detik). Karena desain anti-starvation FIFO selalu memilih item TERLAMA yang belum diterjemahkan duluan tiap siklus, batch bermasalah ini SELALU jadi kepala antrean — begitu circuit trip, dia terus-menerus jadi satu-satunya batch yang dicoba (baik saat closed maupun saat HALF_OPEN probe), permanen memblokir SEMUA headline baru di belakangnya. "Self-healing" yang diklaim desain lama (item gagal tinggal nunggu siklus berikutnya) ternyata tidak berlaku untuk item yang gagal SECARA DETERMINISTIK — dia tidak pernah "sembuh sendiri" di siklus berikutnya karena penyebabnya bukan sesaat, tapi payload item itu sendiri.
+
+**Perbaikan (`api/_news_translate.js`):**
+1. `MAX_DESC_CHARS = 1200` — deskripsi tiap headline di batch prompt dipotong maks 1200 char (item earnings biasa ~700-1200 char tidak kepotong; item raksasa seperti MUFG snapshot terpotong ~78%).
+2. Poison-item guard: counter `news_tr_fail:<guid>` (INCR + EXPIRE 48 jam) naik tiap batch gagal; item yang sudah gagal >5x (`MAX_FAIL_ATTEMPTS`) di-skip permanen dari kandidat translate (biarkan bahasa Inggris) alih-alih terus jadi kepala antrean FIFO — mencegah SATU item bermasalah (sebab apa pun) memblokir translate selamanya.
+3. `api/admin.js`: tambah `ai:mistral:newstranslate` ke `KNOWN_CIRCUITS` — sebelumnya circuit ini ABSEN dari daftar yang dipantau `?action=circuit-status`/`circuit-reset`, jadi trip-nya tidak kelihatan sama sekali dari diagnostik admin (baru ketahuan lewat query Redis manual).
+
+**Verifikasi:** `npm test` 878/879 hijau (1 gagal pre-existing tak terkait — `scripts/test-deribit.js`, sertifikat SSL API Deribit kedaluwarsa, bukan test unit). 3 test baru di `test/lib/news_translate.test.js`: pemotongan deskripsi outlier vs deskripsi normal tidak kepotong, item poison (>5x gagal) dilewati tanpa memblokir item lain dalam batch yang sama, counter `news_tr_fail` naik saat batch gagal.
+
+**File diubah:** `api/_news_translate.js`, `api/admin.js`, `test/lib/news_translate.test.js`.
 
 ## Changelog Session 284 (2026-08-05) — Fix Bug Korroborasi Palsu: Snapshot "Interest Rate Probabilities" Salah Skip 4 Pair Auto-Entry Sekaligus
 

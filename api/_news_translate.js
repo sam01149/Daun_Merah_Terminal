@@ -87,6 +87,22 @@ const PER_CALL_TIMEOUT_MS = 15000;
 // adaptif terhadap sisa waktu masing-masing), ini cuma fallback aman.
 const DEFAULT_BUDGET_MS = 6000;
 
+// Batas panjang deskripsi per headline dalam batch prompt (bug live 2026-08-05):
+// item "MUFG FX Daily Snapshot" (deskripsi HTML mentah 5594 char) bikin SATU batch
+// selalu lewat PER_CALL_TIMEOUT_MS ("aborted due to timeout") — karena FIFO
+// anti-starvation selalu pilih item lama yang sama duluan tiap siklus, batch itu
+// macet PERMANEN (bukan cuma telat): circuit trip → HALF_OPEN → gagal lagi → OPEN,
+// berulang tanpa henti, translate berhenti total untuk SEMUA headline (termasuk yang
+// baru, karena chunk gagal ini menghabiskan budget sebelum chunk lain sempat jalan).
+// Item earnings biasa (~700-1200 char) tidak kepotong; cuma outlier sekelas snapshot
+// FX harian yang kena.
+const MAX_DESC_CHARS = 1200;
+// Poison-item guard: setelah gagal berkali-kali (kemungkinan bukan lagi transient),
+// MENYERAH pada item itu — biarkan bahasa Inggris permanen daripada terus jadi
+// kepala antrean FIFO yang memblokir headline baru di belakangnya selamanya.
+const MAX_FAIL_ATTEMPTS = 5;
+const FAIL_KEY_TTL = 48 * 3600; // detik
+
 function buildPrompt(title, desc) {
   const hasDesc = !!(desc && desc.trim());
   let body = `JUDUL:\n${title}`;
@@ -126,7 +142,8 @@ function parseResponse(raw, hasDesc) {
 function buildBatchPrompt(items) {
   const blocks = items.map((it, i) => {
     let s = `[${i + 1}]\nJUDUL: ${it.title}`;
-    if (it.description && it.description.trim()) s += `\nISI: ${it.description.trim()}`;
+    const desc = it.description && it.description.trim();
+    if (desc) s += `\nISI: ${desc.length > MAX_DESC_CHARS ? desc.slice(0, MAX_DESC_CHARS) : desc}`;
     return s;
   }).join('\n\n');
   return `Terjemahkan ${items.length} headline berita finansial berikut dari Bahasa Inggris ke Bahasa Indonesia, satu per satu sesuai nomornya masing-masing. ATURAN KETAT:
@@ -199,6 +216,13 @@ async function translateBatch(items, redisCmd, timeoutMs) {
   } catch(e) {
     await cb.onFailure(CB_MISTRAL);
     console.warn('news_translate batch failed:', items.map(it => it.guid).join(','), e.message);
+    // Catat kegagalan per-guid (poison-item guard, lihat MAX_FAIL_ATTEMPTS) — fire-and-forget,
+    // kegagalan mencatat ini sendiri tidak boleh ikut menjatuhkan alur (redisCmd tidak reject).
+    await Promise.all(items.map(async it => {
+      const fk = `news_tr_fail:${it.guid}`;
+      await redisCmd('INCR', fk);
+      await redisCmd('EXPIRE', fk, FAIL_KEY_TTL);
+    }));
   }
 }
 
@@ -224,7 +248,19 @@ async function translateNewItems(items, redisCmd, budgetMs = DEFAULT_BUDGET_MS) 
   // Skip item yang sudah pernah diterjemahkan (1x per guid, dishare semua user)
   const keys = candidates.map(it => `news_tr:${it.guid}`);
   const existing = await redisCmd('MGET', ...keys);
-  const todo = candidates.filter((_, i) => !existing || existing[i] == null);
+  const todoAll = candidates.filter((_, i) => !existing || existing[i] == null);
+  if (todoAll.length === 0) return;
+
+  // Poison-item guard (bug live 2026-08-05 — lihat catatan MAX_FAIL_ATTEMPTS di atas):
+  // item yang sudah gagal berkali-kali TIDAK BOLEH terus dipilih FIFO tiap siklus,
+  // karena kalau dibiarkan dia jadi kepala antrean permanen yang memblokir SEMUA
+  // headline baru di belakangnya — translate berhenti total, bukan cuma telat.
+  const failKeys = todoAll.map(it => `news_tr_fail:${it.guid}`);
+  const failCounts = await redisCmd('MGET', ...failKeys);
+  const todo = todoAll.filter((_, i) => !(failCounts && parseInt(failCounts[i], 10) >= MAX_FAIL_ATTEMPTS));
+  if (todoAll.length !== todo.length) {
+    console.warn(`news_translate: ${todoAll.length - todo.length} item menyerah (>${MAX_FAIL_ATTEMPTS}x gagal), dilewati permanen`);
+  }
   if (todo.length === 0) return;
 
   // Pecah jadi batch BATCH_SIZE. Anti-starvation (S273, dipertahankan di desain batch):

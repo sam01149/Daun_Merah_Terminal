@@ -92,6 +92,8 @@ function makeRedisCmd(store) {
     if (cmd === 'SET') { store.set(rest[0], rest[1]); return 'OK'; }
     if (cmd === 'GET') { return store.has(rest[0]) ? store.get(rest[0]) : null; }
     if (cmd === 'MGET') { return rest.map(k => (store.has(k) ? store.get(k) : null)); }
+    if (cmd === 'INCR') { const v = (parseInt(store.get(rest[0]), 10) || 0) + 1; store.set(rest[0], v); return v; }
+    if (cmd === 'EXPIRE') { return 1; }
     return null;
   };
 }
@@ -252,6 +254,57 @@ test('translateNewItems: budget habis -> panggilan berikutnya benar-benar DIBATA
     await translateNewItems(items, makeRedisCmd(store), 150);
     assert.equal(calledBatches.length, 1, 'batch kedua dibatalkan AbortSignal sebelum sempat selesai, tidak ikut tersimpan');
     for (let i = 20; i < 45; i++) assert.equal(store.has(`news_tr:g${i}`), false, `g${i} belum diterjemahkan gelombang ini`);
+  } finally { global.fetch = realFetch; }
+}));
+
+test('buildBatchPrompt: deskripsi outlier (>1200 char) dipotong, deskripsi normal tidak', () => {
+  const longDesc = 'x'.repeat(2000);
+  const shortDesc = 'y'.repeat(500);
+  const p = buildBatchPrompt([
+    { title: 'Snapshot raksasa', description: longDesc },
+    { title: 'Berita biasa', description: shortDesc },
+  ]);
+  assert.match(p, new RegExp(`ISI: x{1200}(?!x)`));
+  assert.match(p, new RegExp(`ISI: y{500}(?!y)`));
+});
+
+test('translateNewItems: item yang gagal >MAX_FAIL_ATTEMPTS(5) kali dilewati permanen, tidak terus memblokir antrean', withEnv({
+  MISTRAL_API_KEY: 'fake-key',
+  UPSTASH_REDIS_REST_URL: 'https://mock-redis.test',
+  UPSTASH_REDIS_REST_TOKEN: 'mock-token',
+}, async () => {
+  const realFetch = global.fetch;
+  const calledBatches = [];
+  global.fetch = mockMistralEchoWithBody(calledBatches);
+  try {
+    const store = new Map();
+    store.set('news_tr_fail:poison-1', '5'); // sudah gagal 5x sebelumnya
+    const items = [
+      { title: 'Item macet berkali-kali', guid: 'poison-1', description: '' },
+      { title: 'Headline baru normal', guid: 'ok-1', description: '' },
+    ];
+    await translateNewItems(items, makeRedisCmd(store));
+    assert.equal(calledBatches.length, 1);
+    assert.deepEqual(calledBatches[0], ['Headline baru normal'], 'item poison tidak ikut dikirim ke Mistral');
+    assert.equal(store.has('news_tr:poison-1'), false);
+    assert.equal(store.has('news_tr:ok-1'), true);
+  } finally { global.fetch = realFetch; }
+}));
+
+test('translateNewItems: kegagalan batch menaikkan counter news_tr_fail per guid', withEnv({
+  MISTRAL_API_KEY: 'fake-key',
+  UPSTASH_REDIS_REST_URL: 'https://mock-redis.test',
+  UPSTASH_REDIS_REST_TOKEN: 'mock-token',
+}, async () => {
+  const realFetch = global.fetch;
+  global.fetch = async (url) => {
+    if (String(url).includes('api.mistral.ai')) throw new Error('simulasi gagal');
+    return { ok: true, json: async () => ({ result: null }) };
+  };
+  try {
+    const store = new Map();
+    await translateNewItems([{ title: 'Gagal terus', guid: 'fail-1', description: '' }], makeRedisCmd(store));
+    assert.equal(store.get('news_tr_fail:fail-1'), 1);
   } finally { global.fetch = realFetch; }
 }));
 

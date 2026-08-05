@@ -1570,7 +1570,11 @@ async function journalImportHandler(req, res) {
 
 const KNOWN_CIRCUITS = ['ai:sambanova:c1', 'ai:sambanova:main', 'ai:deepseek', 'ai:gemini', 'fred', 'stooq', 'ff', 'fj', 'cftc', 'redis', 'fxssi', 'actionforex',
   // PLAN V-3 (2026-07-20): breaker terpisah untuk call isAutoCall/test_deepseek=1 (developer-only)
-  'ai:deepseek:experimental', 'ai:sambanova:main:experimental', 'ai:sambanova:c1:experimental'];
+  'ai:deepseek:experimental', 'ai:sambanova:main:experimental', 'ai:sambanova:c1:experimental',
+  // Translate NEWS (api/_news_translate.js) — TADINYA absen dari daftar ini, ketahuan
+  // 2026-08-05 saat circuit-nya trip berulang (macet total) TAPI tak kelihatan sama
+  // sekali di endpoint diagnostik ?action=circuit-status/circuit-reset ini.
+  'ai:mistral:newstranslate'];
 
 async function circuitStatusHandler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
