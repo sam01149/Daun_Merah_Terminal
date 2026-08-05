@@ -11,11 +11,27 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-05 (Session 283 — Sistem Hakim: koreksi arah sebaliknya, AI salah klaim konflik padahal cbDir searah)
+> **Last updated:** 2026-08-05 (Session 283 lanjutan — audit reasoning bebas-teks lintas-pair + fix root cause `risk_regime` null + backfill manual)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 283 lanjutan (2026-08-05) — Audit Reasoning Bebas-Teks Lintas-Pair + Fix Root Cause `risk_regime` Null + Backfill Manual
+
+**Konteks:** lanjutan sesi yang sama dengan entri di bawah (Sistem Hakim koreksi arah). User tanya lebih lanjut soal trade AUDNZD `1785849311337` — dari situ dikonfirmasi bug `makro_alignment_reason` bukan cuma salah tulis, tapi bug penalaran arah base/quote sungguhan (dibuktikan lewat perbandingan ke trade AUDNZD lain dengan fundamental serupa yang penalarannya BENAR). Audit lanjutan (agent, hasil sempat tercatat di `daun_merah_riset.md`, sekarang dihapus dari sana krn sudah dieksekusi — riwayat cukup di sini) menyapu semua 23 setup `setup_log_auto:v1`: EUR/GBP (cross pair lain, risiko sama) bersih, GC=F/EUR/USD/GBP/USD bersih, tapi bug yang sama ternyata bocor ke field kedua di trade AUDNZD yang sama — `intervention.reason` (alasan tighten_sl ghost/counterfactual pasca-entry) juga menyebut data NZD kuat sebagai "mengancam" bias bearish, padahal seharusnya "mendukung" (NZD menguat = searah dengan bearish AUD/NZD, bukan melawannya).
+
+**Perbaikan #1 — instruksi prompt (cegah bug arah berulang):** tambah aturan eksplisit base/quote di 2 titik: instruksi field `makro_alignment` blok Analisa (`api/admin.js` ~L4722) dan system prompt `position_review` (~L3851). Intinya: sebelum menilai searah/konflik atau mendukung/mengancam, model WAJIB tentukan dulu mata uang mana (base/quote) yang diuntungkan oleh bias, dengan contoh eksplisit AUD/NZD & EUR/GBP — supaya tidak lagi membalik logika di pair silang non-USD.
+
+**Perbaikan #2 — root cause `risk_regime` null:** cache `risk_regime` (`api/risk-regime.js`, TTL 5 menit) ternyata HANYA dipanaskan lewat kunjungan browser (`index.html`), tidak ada pemanasan server-side. `runAutoEntryCycle` jam `:15` membaca cache itu secara PASIF (`redisCmd GET` biasa, `api/admin.js:4537`, bukan lewat handler yang punya fallback fetch-on-miss) — kalau tidak ada user browsing dalam 5 menit terakhir, `regime` tercatat null diam-diam (persis kasus AUDNZD di atas: 0/1 sejak Track 1b live 2026-08-04). Fix: `vps/daemon.js` — cron baru menit `:10` (5 menit sebelum tiap slot auto-entry `:15`) memanggil `/api/risk-regime` server-side, di union jam `AUTO_ENTRY_HOURS_UTC` + `AUTO_ENTRY_HOURS_UTC_AUDNZD`.
+
+**Backfill data historis (manual, atas instruksi eksplisit user):** 22 setup lama (sebelum Track 1b live) diisi field `regime` retrospektif dari ingatan user (21 `neutral`, 1 `risk_off` untuk GC=F terakhir sebelum Track 1b) + tag `regime_source:'manual_backfill'` supaya bisa dibedakan dari nilai hasil hitungan otomatis sistem saat analisis nanti (dibahas eksplisit dengan user: backfill manual TIDAK setara secara metodologis dengan nilai terhitung kode — ditandai, bukan disamarkan). 1 setup yang sudah live (`regime:null`) sengaja TIDAK disentuh, akan terisi otomatis begitu fix #2 berjalan.
+
+**Insiden kecil saat backfill (terdeteksi & dipulihkan sesi yang sama):** percobaan tulis pertama ke Redis salah format (double-JSON-encode manual, tidak match pola `redisCmd` yang dipakai kode aplikasi) sempat merusak struktur tersimpan `setup_log_auto:v1`. Terdeteksi langsung lewat verifikasi baca-ulang, dipulihkan dari backup lokal yang diambil sebelum tulis-ulang kedua, diverifikasi byte-identik pasca-perbaikan. Tidak ada data hilang, tapi jadi pengingat: perubahan tulis-langsung ke Redis produksi wajib backup lokal dulu + verifikasi format persis sama dengan `redisCmd` aplikasi (command-array via POST ke base URL), bukan REST path style (`/set/key`).
+
+**Verifikasi:** `node --test` 871/871 hijau (tidak ada test baru — perubahan ini murni teks prompt + jadwal cron, tidak mengubah logika yang sudah dites). Data Redis diverifikasi ulang pasca-tulis (distribusi `regime` & kecocokan tiap field per-setup dicek manual, match backup).
+
+**File diubah:** `api/admin.js` (2 instruksi prompt), `vps/daemon.js` (cron pemanasan `risk_regime`), `Dokumentasi/daun_merah_riset.md` (entri audit dihapus, sudah dieksekusi), data `setup_log_auto:v1` di Redis produksi (bukan file kode, tidak ter-commit).
 
 ## Changelog Session 283 (2026-08-05) — Sistem Hakim: Koreksi Arah Sebaliknya (AI Salah Klaim Konflik Padahal cbDir Searah)
 

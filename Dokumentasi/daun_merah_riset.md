@@ -24,29 +24,6 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 
 ## Riset Aktif
 
-### [2026-08-05] Audit arah base/quote seluruh 23 setup `setup_log_auto:v1` — bug AUDNZD terkonfirmasi + bocor ke `intervention`, EUR/GBP bersih
-
-Audit read-only atas permintaan user, lanjutan temuan bug penalaran arah base/quote di `makro_alignment_reason` pada `AUDNZD=X:1785849311337`. Data diambil langsung dari Redis produksi (Upstash REST, `.env.local`) — seluruh 23 entri (AUD/NZD 5, EUR/GBP 4, EUR/USD 6, GC=F 7, GBP/USD 1), bukan sampel.
-
-**Bug asal dikonfirmasi ulang:** id `AUDNZD=X:1785849311337`, field `makro_alignment_reason`: *"Fundamental NZD Hawkish (real yield 2.36% vs AUD 1.63%) mendukung NZD, berlawanan dengan bias bearish AUD/NZD yang berarti NZD menguat"* — kontradiksi diri: kalimat sendiri mendefinisikan "bearish AUD/NZD = NZD menguat", lalu bilang "data yang mendukung NZD menguat" itu **berlawanan** dengan kesimpulan yang sama-sama berarti "NZD menguat". Secara matematis (base/quote), NZD hawkish yang mendukung NZD seharusnya **searah**, bukan berlawanan.
-
-**Temuan baru — bug yang sama bocor ke `intervention.reason`, id trade yang SAMA:** field `intervention` pada id ini (`type: tighten_sl`, dibuat AI position-review setelah entry): *"Data tenaga kerja NZ Q2 (terkonfirmasi) jauh lebih kuat dari ekspektasi (+0.5% vs +0.2%), mendukung NZD dan **mengancam** bias bearish AUD/NZD... Untuk melindungi modal dari potensi breakout bullish lebih lanjut, SL diperketat..."* — kesalahan arah yang identik: data NZD kuat (mendukung NZD menguat) mestinya justru **menguatkan** tesis bearish AUD/NZD (bukan mengancamnya). Ini bukan cuma cacat narasi — field ini adalah justifikasi tertulis di balik keputusan **tighten_sl** riil pada posisi virtual berjalan. Kode (`validateTightenSl`) memvalidasi ARAH ANGKA SL baru (harus lebih ketat, tidak melewati zona entry) tapi TIDAK memverifikasi apakah alasan tekstualnya logis — jadi keputusan bisa "benar secara angka, salah secara nalar" tanpa terdeteksi.
-
-**EUR/GBP=X (4 setup, prioritas audit karena cross pair sama seperti AUD/NZD) — SEMUA BERSIH, tidak ditemukan kontradiksi arah:** `1785744976162` (netral, penjelasan JPY-intervention/CB level konsisten), `1785312942388` (netral, COT squeeze EUR searah bullish dijelaskan benar), `1785244550821` (searah, "EUR tertekan + GBP stabil → EUR/GBP turun" — aritmetika benar), `1785140143104` (searah, "IFO kuat + ECB hawkish → EUR naik → EUR/GBP bullish" — benar). Tidak dipaksakan mencari masalah — memang tidak ada.
-
-**GC=F (7), EUR/USD (6), GBP/USD (1) — screening cepat, semua bersih juga:** pola safe-haven vs real yield (GC=F) dan USD vs EUR/GBP (EUR/USD, GBP/USD) konsisten secara arah di semua `makro_alignment_reason`/`conflict_note` yang terisi (7 dari 14 entri di 3 simbol ini punya field kosong/undefined — tak ada reasoning untuk dicek).
-
-**`sistem_hakim` null/undefined di 21 dari 23 setup** — terkonfirmasi sesuai desain (`_computeCbDirServerSide`, `api/admin.js` ~4140): hanya menyala kalau confidence CB **kedua** leg "High" DAN tanpa `divergence_warning`. Mayoritas konflik di data nyata (real yield differential, COT positioning, data ekonomi harian, pidato pejabat, geopolitik) **bukan** dari `cb_bias` level — jadi Sistem Hakim memang tidak pernah punya kesempatan mengecek kasus-kasus ini, termasuk bug AUDNZD di atas. Celah struktural ini sudah diketahui by design (lihat `[[project-sistem-hakim-corrected-branch]]`), audit ini cuma mengonfirmasi cakupannya kecil (2/23 = 9%) relatif ke total data.
-
-**Daftar field teks bebas LLM tanpa pengaman kode (celah struktural), diurut risiko tinggi→rendah:**
-1. `makro_alignment_reason` — risiko tertinggi, langsung membentuk keyakinan searah/konflik trader; hanya diverifikasi kode utk sub-kasus cbDir (9% data).
-2. `conflict_note` — pasangan `makro_alignment_reason`, sering mengulang klaim yang sama (termasuk mengulang bug di atas pada id yang sama); enum `conflict` divalidasi, isi teksnya tidak.
-3. `intervention.reason` (tighten_sl/tighten_sl_preventive/close_early) — risiko tinggi karena mendasari AKSI risk-management riil pasca-entry; kode cuma validasi angka SL baru, bukan logika naratifnya (bukti: bug di atas lolos meski SL numeriknya sah).
-4. `invalidation_condition` & `trigger` — tidak tervalidasi isi, dan ikut disuntik balik ke prompt AI berikutnya (`api/admin.js` ~5402/5652 "Invalidation: .../Trigger: ...") sehingga potensi salah nalar bisa merambat ke keputusan AI susulan (refine/position-review) tanpa penyaring.
-5. `entry_basis` — cuma dipaksa null kalau kosong/`entry_zone` null; isi (struktur yang diklaim) tidak diverifikasi cocok dengan data.
-6. Commentary 5-paragraf (termasuk "KESIMPULAN") — tak dipersist ke `setup_log_auto:v1`, murni tampilan; risiko informasional saja, tidak menggerakkan gate/keputusan kode apa pun.
-7. `label_reason`/`canceled_reason`/`data_fix_reason` — bookkeeping statistik pasca-fakta, tidak mempengaruhi entry/exit trade yang sedang berjalan.
-
 ### [2026-08-04] Audit total auto-entry vs kriteria Plan U — status & temuan
 
 Audit atas permintaan user ("audit fitur auto entry trade, sesuaikan dengan tujuan plan u... audit total"), diprioritaskan user ke pertanyaan inti: apakah kondisi sekarang sesuai Plan U. Data diambil LANGSUNG dari Redis production (Upstash REST, `.env.local`) via curl — bukan asumsi dari kode/dokumentasi saja.

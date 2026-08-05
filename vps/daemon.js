@@ -1070,6 +1070,22 @@ function startScheduler() {
   if (AUTO_ENTRY_HOURS_UTC.length) {
     console.log(`daemon: U-3 auto-entry aktif — pair ${AUTO_ENTRY_PAIRS.join(',')} @ jam ${AUTO_ENTRY_HOURS_UTC.join(',')} UTC`);
   }
+  // Track 1b lanjutan (2026-08-05, root cause audit field regime null): cache
+  // 'risk_regime' (api/risk-regime.js, TTL 5 menit) HANYA terisi lewat kunjungan
+  // browser (index.html fetchRegime/pollRegime) — tidak ada pemanasan server-side.
+  // runAutoEntryCycle jam :15 membaca cache itu secara PASIF (redisCmd GET biasa,
+  // api/admin.js:4537, bukan lewat handler risk-regime.js yang punya fallback
+  // fetch-on-miss), jadi kalau tidak ada user browsing dalam 5 menit terakhir,
+  // regime null diam-diam — persis kasus trade AUDNZD:1785849311337 (n=1 sampel
+  // sejak Track 1b live). Panaskan cache menit :10 (5 menit sebelum slot :15) di
+  // union jam AUTO_ENTRY_HOURS_UTC + AUTO_ENTRY_HOURS_UTC_AUDNZD.
+  const regimeWarmHours = [...new Set([...AUTO_ENTRY_HOURS_UTC, ...AUTO_ENTRY_HOURS_UTC_AUDNZD])];
+  for (const hour of regimeWarmHours) {
+    cron.schedule(`10 ${hour} * * *`, () => triggerEndpoint('/api/risk-regime').catch(() => {}));
+  }
+  if (regimeWarmHours.length) {
+    console.log(`daemon: pemanasan risk_regime aktif @ menit :10 jam ${regimeWarmHours.sort((a, b) => a - b).join(',')} UTC (5 menit sebelum slot auto-entry)`);
+  }
   // Track 2a (2026-08-04, keputusan user): jam ke-3 KHUSUS AUD/NZD, sesi
   // Sydney-Tokyo — hanya dijadwalkan kalau AUD/NZD memang ada di AUTO_ENTRY_PAIRS
   // (tidak masuk akal menjadwalkan pair yang tidak aktif). Menit :15 sama seperti
