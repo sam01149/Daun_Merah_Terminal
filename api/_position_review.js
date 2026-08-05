@@ -161,8 +161,23 @@ function _significantTokens(title) {
 
 const POSREVIEW_CORROBORATION_ELIGIBLE_CATS = new Set(['geopolitical', 'energy', 'macro']);
 
+// Bug nyata (2026-08-05): wire FinancialJuice rutin menerbitkan snapshot "<Bank>
+// Interest Rate Probabilities" (chart probabilitas gaya CME FedWatch, BUKAN berita
+// rilis/keputusan) untuk beberapa bank sentral berturut-turut dalam hitungan menit.
+// Token signifikan (>3 huruf) headline-nya ("interest","rate","probabilities")
+// SAMA persis lintas bank karena boilerplate template — nama bank sendiri (fed/ecb/
+// rba/boe, semua <=3 huruf) kebuang filter panjang token, jadi overlap>=2 lolos
+// walau keduanya soal bank yang BEDA TOTAL. Akibatnya 4 pair auto-entry sekaligus
+// di-skip (vps/daemon.js checkBreakingNewsSkip) padahal tidak ada rilis/kejutan
+// apa pun — sudah diakui di api/market-digest.js sebagai boilerplate "zero
+// directional signal on its own". Snapshot ini TIDAK PERNAH dianggap terkorroborasi
+// (baik sebagai subjek maupun sebagai "bukti" korroborasi item lain). Duplikasi
+// sadar dari vps/daemon.js (dijaga sinkron test drift-guard, lihat komentar di sana).
+const WIRE_SNAPSHOT_RE = /\binterest rate probabilit(y|ies)\b/i;
+
 function isCorroborated(item, recentItems) {
   if (!item) return false;
+  if (WIRE_SNAPSHOT_RE.test(item.title)) return false;
   if (item.cat === 'market-moving') return true;
   if (!POSREVIEW_CORROBORATION_ELIGIBLE_CATS.has(item.cat)) return false;
   const itemMs = Date.parse(item.pubDate);
@@ -172,6 +187,7 @@ function isCorroborated(item, recentItems) {
   const WINDOW_MS = 30 * 60 * 1000;
   for (const other of recentItems || []) {
     if (!other || other === item) continue;
+    if (WIRE_SNAPSHOT_RE.test(other.title)) continue; // snapshot boilerplate tidak sah jadi bukti korroborasi
     const otherGuid = other.guid || other.link;
     const itemGuid = item.guid || item.link;
     if (otherGuid && itemGuid && otherGuid === itemGuid) continue; // item sama, bukan korroborasi

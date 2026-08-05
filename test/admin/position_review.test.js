@@ -258,6 +258,19 @@ test('isCorroborated: kategori lain (bukan market-moving/geopolitical/energy/mac
   assert.equal(isCorroborated({ cat: 'lainnya', title: 'x', pubDate: '2026-07-20T10:00:00Z' }, []), false);
 });
 
+// Bug nyata (2026-08-05, auto_skip_log produksi) — lihat catatan lengkap di
+// test/vps/position_review.test.js (fixture identik, dua sisi dijaga sinkron
+// oleh test drift-guard di sana).
+test('isCorroborated: snapshot boilerplate "X Interest Rate Probabilities" lintas bank TIDAK terkorroborasi (bug 2026-08-05)', () => {
+  const fed = { cat: 'macro', title: 'Fed Interest Rate Probabilities', pubDate: '2026-08-05T07:30:02Z', guid: 'fed-1' };
+  const ecb = { cat: 'macro', title: 'ECB Interest Rate Probabilities', pubDate: '2026-08-05T07:30:14Z', guid: 'ecb-1' };
+  const rbaRbnz = { cat: 'macro', title: 'RBA & RBNZ Interest Rate Probabilities', pubDate: '2026-08-05T07:32:19Z', guid: 'rba-1' };
+  const buffer = [fed, ecb, rbaRbnz];
+  assert.equal(isCorroborated(fed, buffer), false);
+  assert.equal(isCorroborated(ecb, buffer), false);
+  assert.equal(isCorroborated(rbaRbnz, buffer), false);
+});
+
 // ── Handler position_review (api/admin.js) ──────────────────────────────────
 
 function fakeReqRes({ method = 'POST', headers = {}, body = '' } = {}) {

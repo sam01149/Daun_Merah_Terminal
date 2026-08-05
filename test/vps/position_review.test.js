@@ -132,6 +132,32 @@ test('isCorroborated: macro + item lain guid beda, overlap >=2 token dalam 30 me
   assert.equal(isCorroborated(item, [item, other]), true);
 });
 
+// Bug nyata (2026-08-05, auto_skip_log produksi): FinancialJuice menerbitkan
+// "Fed/ECB/RBA & RBNZ Interest Rate Probabilities" (snapshot boilerplate, BUKAN
+// rilis/keputusan) untuk 4 bank dalam ~2 menit — token signifikan sama persis
+// lintas bank ("interest","rate","probabilities") karena nama bank sendiri
+// (fed/ecb/rba, semua <=3 huruf) kebuang filter panjang token, jadi overlap>=2
+// tercatat "korroborasi" walau soal bank yang beda total. Akibatnya semua pair
+// auto-entry di-skip padahal tidak ada kalender rilis apa pun di jam itu.
+test('isCorroborated: snapshot boilerplate "X Interest Rate Probabilities" lintas bank TIDAK terkorroborasi (bug 2026-08-05)', () => {
+  const fed = { cat: 'macro', title: 'Fed Interest Rate Probabilities', pubDate: '2026-08-05T07:30:02Z', guid: 'fed-1' };
+  const ecb = { cat: 'macro', title: 'ECB Interest Rate Probabilities', pubDate: '2026-08-05T07:30:14Z', guid: 'ecb-1' };
+  const rbaRbnz = { cat: 'macro', title: 'RBA & RBNZ Interest Rate Probabilities', pubDate: '2026-08-05T07:32:19Z', guid: 'rba-1' };
+  const buffer = [fed, ecb, rbaRbnz];
+  assert.equal(isCorroborated(fed, buffer), false);
+  assert.equal(isCorroborated(ecb, buffer), false);
+  assert.equal(isCorroborated(rbaRbnz, buffer), false);
+});
+
+test('isCorroborated: snapshot boilerplate tidak sah jadi "bukti" korroborasi headline lain yang kebetulan berbagi kata generik ("interest"/"rate")', () => {
+  // Tanpa guard ini, overlap token generik ("interest","rate") saja >=2 sudah cukup
+  // meloloskan korroborasi — padahal snapshot BUKAN sumber independen kedua, cuma
+  // wire boilerplate yang kebetulan sama kata.
+  const item = { cat: 'macro', title: 'ECB officials debate interest rate outlook amid inflation', pubDate: '2026-08-05T07:30:00Z', guid: 'p1' };
+  const snapshot = { cat: 'macro', title: 'Fed Interest Rate Probabilities', pubDate: '2026-08-05T07:30:02Z', guid: 'fed-1' };
+  assert.equal(isCorroborated(item, [item, snapshot]), false);
+});
+
 // ── Behavioral drift-guard: isCorroborated daemon.js vs api/_position_review.js ──
 // Duplikasi SADAR (Docker vps/ terisolasi, lihat catatan kepala vps/daemon.js) —
 // byte-diff seperti newscat.js tidak praktis karena function ini menyatu di file
@@ -151,6 +177,11 @@ test('drift-guard: isCorroborated daemon.js vs api/_position_review.js berperila
     [{ cat: 'macro', title: 'Powell signals surprise emergency policy shift ahead', pubDate: '2026-08-03T01:45:00Z', guid: 'a' }, []],
     [{ cat: 'macro', title: 'Powell signals surprise emergency policy shift ahead', pubDate: '2026-08-03T01:45:00Z', guid: 'a' },
       [{ title: 'Fed chair Powell hints emergency policy shift coming soon', pubDate: '2026-08-03T01:50:00Z', guid: 'b' }]],
+    [{ cat: 'macro', title: 'Fed Interest Rate Probabilities', pubDate: '2026-08-05T07:30:02Z', guid: 'fed-1' },
+      [{ cat: 'macro', title: 'Fed Interest Rate Probabilities', pubDate: '2026-08-05T07:30:02Z', guid: 'fed-1' },
+        { cat: 'macro', title: 'ECB Interest Rate Probabilities', pubDate: '2026-08-05T07:30:14Z', guid: 'ecb-1' }]],
+    [{ cat: 'macro', title: 'ECB officials debate interest rate outlook amid inflation', pubDate: '2026-08-05T07:30:00Z', guid: 'p1' },
+      [{ cat: 'macro', title: 'Fed Interest Rate Probabilities', pubDate: '2026-08-05T07:30:02Z', guid: 'fed-1' }]],
   ];
   for (const [item, recent] of cases) {
     assert.equal(isCorroborated(item, recent), apiPositionReview.isCorroborated(item, recent),
@@ -225,6 +256,24 @@ test('findBreakingNewsMatch: macro terkorroborasi (pidato bank sentral, 2 headli
   const match = findBreakingNewsMatch(pairLegs, buffer, Date.parse('2026-08-03T01:55:00Z'));
   assert.ok(match, 'harus ketemu match — pidato Fed terkorroborasi 2 headline');
   assert.equal(match.guid, 'p1');
+});
+
+// Reproduksi bug nyata (2026-08-05, auto_skip_log produksi jam 08:15 UTC): 4 pair
+// auto-entry (XAU/USD, EUR/USD, AUD/NZD, EUR/GBP) SEMUA di-skip breaking_news gara-gara
+// snapshot boilerplate "X Interest Rate Probabilities" 4 bank berturut-turut dianggap
+// saling terkorroborasi — padahal tidak ada rilis/kejutan kalender sama sekali di jam
+// itu (diverifikasi manual, calendar_v1 kosong). DIFIX: snapshot ini sekarang tidak
+// pernah dianggap match/korroborasi (lihat WIRE_SNAPSHOT_RE).
+test('findBreakingNewsMatch: snapshot "Interest Rate Probabilities" 4 bank berturut-turut -> tidak match untuk pair mana pun (bug 2026-08-05)', () => {
+  const buffer = [
+    { cat: 'macro', guid: 'fed-1', title: 'Fed Interest Rate Probabilities', pubDate: 'Wed, 05 Aug 2026 07:30:02 GMT' },
+    { cat: 'macro', guid: 'ecb-1', title: 'ECB Interest Rate Probabilities', pubDate: 'Wed, 05 Aug 2026 07:30:14 GMT' },
+    { cat: 'macro', guid: 'rba-1', title: 'RBA & RBNZ Interest Rate Probabilities', pubDate: 'Wed, 05 Aug 2026 07:32:19 GMT' },
+  ];
+  const nowMs = Date.parse('Wed, 05 Aug 2026 08:15:01 GMT');
+  for (const label of ['XAU/USD', 'EUR/USD', 'AUD/NZD', 'EUR/GBP']) {
+    assert.equal(findBreakingNewsMatch(legsFromLabel(label), buffer, nowMs), null, `${label} seharusnya tidak di-skip`);
+  }
 });
 
 test('findBreakingNewsMatch: macro sendirian tanpa korroborasi -> tidak match', () => {

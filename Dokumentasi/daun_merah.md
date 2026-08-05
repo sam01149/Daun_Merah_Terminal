@@ -11,11 +11,23 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-05 (Session 283 lanjutan — audit reasoning bebas-teks lintas-pair + fix root cause `risk_regime` null + backfill manual)
+> **Last updated:** 2026-08-05 (Session 284 — fix bug korroborasi palsu snapshot "Interest Rate Probabilities" yang salah skip 4 pair auto-entry)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 284 (2026-08-05) — Fix Bug Korroborasi Palsu: Snapshot "Interest Rate Probabilities" Salah Skip 4 Pair Auto-Entry Sekaligus
+
+**Konteks:** user tanya apakah auto-entry sempat trigger call hari ini. Cek `auto_skip_log` produksi: slot 08:15 UTC (15:15 WIB) memang jalan, tapi ke-4 pair (XAU/USD, EUR/USD, AUD/NZD, EUR/GBP) SEMUA di-skip `breaking_news` gara-gara headline "Fed/ECB/RBA & RBNZ Interest Rate Probabilities". User curiga (screenshot kalender ekonomi Dashboard hari itu memang tidak ada rilis suku bunga apa pun di jam segitu) dan minta dicek ulang.
+
+**Root cause:** headline itu BUKAN kalender rilis (makanya tidak ada di Dashboard) — itu wire boilerplate FinancialJuice (snapshot probabilitas gaya CME FedWatch, sudah diakui di komentar `api/market-digest.js` sebagai "carries zero directional signal on its own"). Bug sungguhannya ada di `isCorroborated` (`vps/daemon.js` + duplikatnya `api/_position_review.js`, dipakai `checkBreakingNewsSkip` DAN `handlePosReviewCandidate`): token signifikan (>3 huruf) headline "Fed/ECB/RBA & RBNZ Interest Rate Probabilities" SAMA PERSIS lintas bank ("interest","rate","probabilities") karena boilerplate template — nama bank sendiri (fed/ecb/rba, semua <=3 huruf) kebuang filter panjang token. Akibatnya overlap>=2 token lolos sebagai "korroborasi 2 sumber independen" walau ke-4 headline itu soal 4 bank sentral yang beda total, bukan konfirmasi silang atas 1 peristiwa nyata — memicu skip serentak semua pair, tanpa ada rilis/kejutan apa pun.
+
+**Perbaikan:** tambah `WIRE_SNAPSHOT_RE` (regex `/interest rate probabilit(y|ies)/i`) di `isCorroborated` — headline yang match TIDAK PERNAH dianggap terkorroborasi (baik sebagai subjek yang mau di-skip, maupun sebagai "bukti" korroborasi headline lain). Diterapkan di KEDUA salinan (`vps/daemon.js` & `api/_position_review.js`, dijaga sinkron test drift-guard existing) — sama-sama relevan karena bug yang sama juga berisiko memicu review posisi terbuka yang tidak perlu (`handlePosReviewCandidate`), bukan cuma skip entry baru.
+
+**Verifikasi:** `npm test` 875/875 hijau (7 test baru: 5 di `test/vps/position_review.test.js` — 2 kasus `isCorroborated`, 1 kasus `findBreakingNewsMatch` reproduksi persis skenario produksi 2026-08-05 07:30-08:15 UTC, 2 kasus baru ditambah ke drift-guard existing; 2 di `test/admin/position_review.test.js` sisi `api/_position_review.js`).
+
+**File diubah:** `vps/daemon.js`, `api/_position_review.js`, `test/vps/position_review.test.js`, `test/admin/position_review.test.js`.
 
 ## Changelog Session 283 lanjutan (2026-08-05) — Audit Reasoning Bebas-Teks Lintas-Pair + Fix Root Cause `risk_regime` Null + Backfill Manual
 
