@@ -663,8 +663,30 @@ tr.rowdetail .row b{color:var(--fg);font-weight:500;white-space:normal;word-brea
     canceled: 'Order pending ini digantikan sinyal baru untuk pair yang sama, atau diblokir karena sudah ada posisi terbuka lain (auto-cancel virtual).',
     invalid: 'Data setup saat dibuat cacat (zona entry/SL/TP tidak lengkap atau bias tidak valid) — tidak pernah dievaluasi sebagai trade.',
   };
+  function buildSlReasonSummary(s){
+    if (!s || s.status !== 'sl') return '';
+    const slLevel = s.sl ? ` di level ${s.sl}` : '';
+    if (s.loss_label && s.label_reason) {
+      return `Status SL${slLevel}. Label loss: ${s.loss_label} — ${s.label_reason}`;
+    }
+    if (s.intervention?.type === 'tighten_sl' && s.managed_status === 'sl') {
+      const managedLevel = s.intervention.new_sl ? ` (SL hasil intervensi: ${s.intervention.new_sl})` : '';
+      const managedReason = s.intervention.reason ? ` Alasan intervensi: ${s.intervention.reason}.` : '';
+      return `Status SL${slLevel} setelah intervensi tighten-SL${managedLevel}.${managedReason}`;
+    }
+    const context = [];
+    if (s.makro_alignment === 'netral') context.push('makro netral (tidak memberi edge arah yang kuat)');
+    else if (s.makro_alignment) context.push(`makro ${s.makro_alignment}`);
+    if (s.conflict && s.conflict !== 'none') {
+      context.push(`conflict ${s.conflict}${s.conflict_note ? ` (${s.conflict_note})` : ''}`);
+    }
+    if (s.rr != null && s.rr !== '') context.push(`RR ${s.rr}`);
+    if (s.horizon_days != null && s.horizon_days !== '') context.push(`horizon ${s.horizon_days} hari`);
+    return `Status SL${slLevel} karena harga bergerak berlawanan dengan skenario setelah entry terisi.${context.length ? ` Konteks saat setup dibuat: ${context.join(', ')}.` : ''}`;
+  }
   function buildSetupDetail(s){
     const rows = [
+      fld('Kenapa Bisa SL', buildSlReasonSummary(s)),
       fld('Alignment', s.alignment),
       fld('Makro Alignment (mentah)', s.makro_alignment),
       fld('Alasan Makro Alignment', s.makro_alignment_reason),

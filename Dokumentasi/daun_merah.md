@@ -11,11 +11,26 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-06 (Session 286 — implement retry persisten untuk auto-entry yang di-skip karena hard/breaking/surprise news, agar kesempatan entry tidak hilang sampai slot cron berikutnya)
+> **Last updated:** 2026-08-06 (Session 287 — tambah ringkasan langsung "Kenapa Bisa SL" di detail setup auto-entry supaya alasan SL cepat terbaca)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 287 (2026-08-06) — Tambah Ringkasan "Kenapa Bisa SL" di Dev Auto-Entry
+
+**Konteks:** user meminta alasan kenapa sebuah setup bisa berakhir SL ditampilkan lebih jelas. Detail existing sudah menyimpan banyak field (alignment, conflict, loss label, intervensi), tapi belum ada satu ringkasan singkat yang langsung menjawab pertanyaan "kenapa kena SL".
+
+**Perubahan:** `dev-auto-entry.html` menambahkan field detail baru **Kenapa Bisa SL** pada baris expand tabel Riwayat Setup.
+
+**Logika ringkasan (prioritas):**
+1. Jika ada `loss_label` + `label_reason`, ringkasan memakai label tersebut (paling spesifik).
+2. Jika SL terjadi setelah intervensi `tighten_sl`, ringkasan menyebut SL hasil intervensi + alasan intervensi.
+3. Jika belum ada label/intervensi spesifik, ringkasan fallback: harga bergerak berlawanan dengan skenario, lalu menyertakan konteks setup (makro alignment, conflict, RR, horizon) bila tersedia.
+
+**Verifikasi:** `npm test` 878/878 hijau.
+
+**File diubah:** `dev-auto-entry.html`, `Dokumentasi/daun_merah.md`.
 
 ## Changelog Session 286 (2026-08-06) — Implement Retry Persisten untuk Auto-Entry yang Di-Skip Karena News
 
