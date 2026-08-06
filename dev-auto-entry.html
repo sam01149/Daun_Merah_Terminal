@@ -673,7 +673,7 @@ tr.rowdetail .row b{color:var(--fg);font-weight:500;white-space:normal;word-brea
     if (s.status === 'closed_early') return 'Posisi ditutup lebih cepat oleh mekanisme manajemen risiko sistem sebelum TP/SL pasif tercapai.';
     return STATUS_EXPLAIN[s.status] || '';
   }
-  function buildCeoSummary(s){
+  function buildExecutiveSummary(s){
     if (!s) return '';
     const base = `${s.symbol || '-'} ${s.bias || '-'}${s.entry_zone ? `, entry ${s.entry_zone}` : ''}${s.sl ? `, SL ${s.sl}` : ''}${s.tp ? `, TP ${s.tp}` : ''}.`;
     const risk = [];
@@ -689,7 +689,7 @@ tr.rowdetail .row b{color:var(--fg);font-weight:500;white-space:normal;word-brea
     const outcome = `Status saat ini: ${s.status}. ${buildStatusNarrative(s)}`;
     return `${base} ${risk.length ? `${risk.join(', ')}.` : ''} ${macro} ${conflict} ${outcome}`;
   }
-  function buildCeoAction(s){
+  function buildExecutiveAction(s){
     if (!s) return '';
     if (s.status === 'open' || s.status === 'pending') return 'Pertahankan disiplin eksekusi; tunggu trigger berikutnya dan hindari intervensi manual yang tidak perlu.';
     if (s.status === 'tp') return 'Pertahankan pendekatan pair serupa; fokus replikasi setup dengan karakteristik konfluensi yang sama.';
@@ -720,8 +720,8 @@ tr.rowdetail .row b{color:var(--fg);font-weight:500;white-space:normal;word-brea
   }
   function buildSetupDetail(s){
     const rows = [
-      fld('Ringkasan Eksekutif (CEO)', buildCeoSummary(s)),
-      fld('Aksi Disarankan (CEO)', buildCeoAction(s)),
+      fld('Ringkasan Eksekutif', buildExecutiveSummary(s)),
+      fld('Aksi Disarankan', buildExecutiveAction(s)),
       fld('Kenapa Status Ini Terjadi', buildStatusNarrative(s)),
       fld('Kenapa Bisa SL', buildSlReasonSummary(s)),
       fld('Alignment', s.alignment),

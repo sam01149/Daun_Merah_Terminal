@@ -11,11 +11,26 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-06 (Session 288 — tambah mode ringkasan eksekutif agar detail setup terbaca sebagai insight keputusan, bukan log mentah)
+> **Last updated:** 2026-08-06 (Session 289 — hapus penyebutan "CEO" dari UI ringkasan eksekutif agar netral)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 289 (2026-08-06) — Hapus Penyebutan "CEO" dari UI Ringkasan
+
+**Konteks:** user meminta agar penyebutan "CEO" di detail setup dihapus.
+
+**Perubahan:** di `dev-auto-entry.html`, label dan nama helper dirapikan:
+1. `Ringkasan Eksekutif (CEO)` → `Ringkasan Eksekutif`
+2. `Aksi Disarankan (CEO)` → `Aksi Disarankan`
+3. Helper internal `buildCeoSummary`/`buildCeoAction` diganti ke `buildExecutiveSummary`/`buildExecutiveAction` agar konsisten.
+
+**Catatan perilaku:** isi ringkasan/aksi tidak berubah (tetap hasil olahan logic frontend dari data setup), hanya penyebutan "CEO" yang dihapus.
+
+**Verifikasi:** `npm test` 878/878 hijau.
+
+**File diubah:** `dev-auto-entry.html`, `Dokumentasi/daun_merah.md`.
 
 ## Changelog Session 288 (2026-08-06) — Upgrade Detail Setup ke Ringkasan Eksekutif (CEO View)
 
