@@ -11,11 +11,26 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-06 (Session 289 — hapus penyebutan "CEO" dari UI ringkasan eksekutif agar netral)
+> **Last updated:** 2026-08-06 (Session 290 — transparansi tampilan loss_label di dev-auto-entry.html)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
-> **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 290 (2026-08-06) — Transparansi Tampilan Loss Label di Dev Console Auto-Entry
+
+**Konteks:** user minta agar `loss_label` ditampilkan secara eksplisit di antarmuka HTML (`dev-auto-entry.html`) agar jenis loss (misal `fundamental_shock`, `fakeout_sl`, atau murni teknikal) langsung terlihat jelas tanpa kebingungan.
+
+**Perubahan di `dev-auto-entry.html`:**
+1. **Badges di Kolom Status Tabel Utama**: Khusus baris berstatus `sl`, ditambahkan chip badge sekunder di sebelah badge `sl`:
+   - Jika `loss_label` terisi (mis. `fundamental_shock` / `fakeout_sl`): tampil badge kuning dengan nama label tersebut.
+   - Jika `loss_label` null: tampil badge abu-abu `teknikal`.
+2. **Aksi Disarankan (`buildExecutiveAction`)**: Mengganti teks instruksi generik lama ("Lakukan post-mortem singkat: cek apakah...") dengan **kesimpulan hasil post-mortem otomatis yang kontekstual** (`Hasil post-mortem otomatis: Loss murni teknikal / dipicu berita / intervensi`).
+3. **Field Detail Expand (`buildSetupDetail`)**: Field `Loss Label` dan `Alasan Loss Label` kini tidak lagi disembunyikan saat `null` untuk status SL. Menampilkan eksplisit `teknikal (default: murni teknikal, tidak ada berita ±2j)` dan alasannya.
+4. **Narasi "Kenapa Bisa SL"**: Diperjelas menyebut `murni teknikal: tidak ada rilis berita high-impact ±2 jam` jika SL terjadi tanpa pemicu berita.
+
+**Verifikasi:** `npm test` 878/878 hijau.
+
+**File diubah:** `dev-auto-entry.html`, `Dokumentasi/daun_merah.md`.
 
 ## Changelog Session 289 (2026-08-06) — Hapus Penyebutan "CEO" dari UI Ringkasan
 

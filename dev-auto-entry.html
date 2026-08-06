@@ -693,7 +693,15 @@ tr.rowdetail .row b{color:var(--fg);font-weight:500;white-space:normal;word-brea
     if (!s) return '';
     if (s.status === 'open' || s.status === 'pending') return 'Pertahankan disiplin eksekusi; tunggu trigger berikutnya dan hindari intervensi manual yang tidak perlu.';
     if (s.status === 'tp') return 'Pertahankan pendekatan pair serupa; fokus replikasi setup dengan karakteristik konfluensi yang sama.';
-    if (s.status === 'sl') return 'Lakukan post-mortem singkat: cek apakah loss murni teknikal, dampak berita, atau akibat intervensi manajemen posisi.';
+    if (s.status === 'sl') {
+      if (s.loss_label && s.label_reason) {
+        return `Hasil post-mortem otomatis: Loss dipicu oleh dampak berita (${s.loss_label} — ${s.label_reason}). Setup ini dikecualikan dari win-rate adjusted.`;
+      }
+      if (s.intervention?.type === 'tighten_sl' && s.managed_status === 'sl') {
+        return `Hasil post-mortem otomatis: Loss terjadi setelah intervensi pengetatan SL (${s.intervention.reason || 'tighten_sl'}).`;
+      }
+      return 'Hasil post-mortem otomatis: Loss murni teknikal (tidak terdeteksi rilis berita high-impact ±2 jam dan tidak ada intervensi). Evaluasi ulang zona konfluensi & buffer SL.';
+    }
     if (s.status === 'ambiguous') return 'Masukkan ke bucket ketidakpastian data; jangan dipakai sebagai bukti kuat menang/kalah strategi.';
     return 'Catat sebagai sinyal operasional (bukan performa strategi murni), lalu lanjutkan pengumpulan sample baru.';
   }
@@ -716,7 +724,7 @@ tr.rowdetail .row b{color:var(--fg);font-weight:500;white-space:normal;word-brea
     }
     if (s.rr != null && s.rr !== '') context.push(`RR ${s.rr}`);
     if (s.horizon_days != null && s.horizon_days !== '') context.push(`horizon ${s.horizon_days} hari`);
-    return `Status SL${slLevel} karena harga bergerak berlawanan dengan skenario setelah entry terisi.${context.length ? ` Konteks saat setup dibuat: ${context.join(', ')}.` : ''}`;
+    return `Status SL${slLevel} (murni teknikal: tidak ada rilis berita high-impact ±2 jam).${context.length ? ` Konteks saat setup dibuat: ${context.join(', ')}.` : ''}`;
   }
   function buildSetupDetail(s){
     const rows = [
@@ -734,8 +742,8 @@ tr.rowdetail .row b{color:var(--fg);font-weight:500;white-space:normal;word-brea
       fld('Risk/Reward', s.rr),
       fld('Horizon (hari)', s.horizon_days),
       fld('Model', s.model),
-      fld('Loss Label', s.loss_label),
-      fld('Alasan Loss Label', s.label_reason),
+      fld('Loss Label', s.status === 'sl' ? (s.loss_label || 'teknikal (default: murni teknikal, tidak ada berita ±2j)') : s.loss_label),
+      fld('Alasan Loss Label', s.status === 'sl' ? (s.label_reason || 'Tidak ada event kalender high-impact / breaking news dalam window ±2 jam dari hit SL') : s.label_reason),
       fld('TP Label', s.tp_label === 'grazed_tp' ? 'grazed_tp (TP cuma "kesenggol", harga balik ke arah SL dalam 4 jam)' : s.tp_label),
       fld('Alasan TP Label', s.tp_label_reason),
       fld('Penjelasan Status', STATUS_EXPLAIN[s.status]),
@@ -743,10 +751,10 @@ tr.rowdetail .row b{color:var(--fg);font-weight:500;white-space:normal;word-brea
         ? `${s.invalidation_trigger.type} — close ${s.invalidation_trigger.direction} ${s.invalidation_trigger.level} (${s.invalidation_trigger.timeframe})`
         : ''),
       fld('Invalidasi Teknikal Tersentuh', s.tech_invalidated
-        ? `close ${s.tech_invalidated.direction === 'above' ? 'menembus ke atas' : 'balik ke bawah'} level ${s.tech_invalidated.level} (${s.tech_invalidated.type}) — murni kode, TIDAK menghalangi review AI lain`
+        ? `tersentuh di candle ${fmtTs(s.tech_invalidated.t * 1000)} (${s.tech_invalidated.reason})`
         : ''),
-      fld('Waktu Invalidasi Teknikal Tersentuh', s.tech_invalidated?.at ? fmtTs(s.tech_invalidated.at * 1000) : ''),
-      fld('Intervensi Sistem', s.intervention ? (INTERVENTION_LABEL[s.intervention.type] || s.intervention.type) : ''),
+      fld('Rezim Risiko Saat Dibuat', s.risk_regime),
+      fld('Intervensi Posisi', s.intervention?.type ? (INTERVENTION_LABEL[s.intervention.type] || s.intervention.type) : ''),
       fld('Alasan Intervensi', s.intervention?.reason),
       fld('SL Baru dari Intervensi', s.intervention?.new_sl),
       fld('Waktu Intervensi', s.intervention?.t ? fmtTs(s.intervention.t) : ''),
@@ -777,7 +785,7 @@ tr.rowdetail .row b{color:var(--fg);font-weight:500;white-space:normal;word-brea
       <td class="small">${esc(s.id)}</td>
       <td>${esc(s.symbol)}</td>
       <td>${esc(s.bias)}</td>
-      <td><span class="badge ${esc(s.status)}">${esc(s.status)}</span></td>
+      <td><span class="badge ${esc(s.status)}">${esc(s.status)}</span>${s.status === 'sl' ? ` <span class="badge ${s.loss_label ? 'pending' : 'stale'}" style="font-size:8.5px">${esc(s.loss_label || 'teknikal')}</span>` : ''}</td>
       <td>${esc(s.entry_zone)}</td>
       <td>${esc(s.sl)}</td>
       <td>${esc(s.tp)}</td>
