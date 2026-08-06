@@ -612,6 +612,60 @@ function isCorroborated(item, recentItems) {
 // dua jalur. Keputusan user: 1 jam.
 const BREAKING_NEWS_SKIP_WINDOW_MS = 60 * 60 * 1000;
 
+// Pending retry infra (persisten) untuk auto-entry: ZSET index + per-pair data
+// key: auto_pending_retries_z (ZSET score = safeAtMs, member = pair)
+// per-pair data key: auto_pending_retry_data:{pair} -> JSON (meta, scheduledAt)
+const AUTO_PENDING_RETRY_ZKEY = 'auto_pending_retries_z';
+const AUTO_PENDING_RETRY_DATA_PREFIX = 'auto_pending_retry_data:';
+const AUTO_PENDING_RETRY_TTL = 7 * 24 * 3600; // simpan maksimal 7 hari
+
+// Schedule one pending retry for `pair` at `safeAtMs` (ms epoch). Dedup: keep
+// the latest safeAt (max). Best-effort: failure to persist tidak mengubah alur
+// utama (fail-open). Returns true if a schedule was created/updated.
+async function scheduleAutoPendingRetry(pair, safeAtMs, reason, meta = {}) {
+  try {
+    const now = Date.now();
+    if (!Number.isFinite(safeAtMs) || safeAtMs <= now) safeAtMs = now + 1000; // immediate-ish
+    const existing = await redisCmd('ZSCORE', AUTO_PENDING_RETRY_ZKEY, pair);
+    if (existing != null && Number(existing) >= safeAtMs) {
+      // existing schedule is earlier-or-equal to this safeAt — keep it
+      return false;
+    }
+    // update ZSET score + store payload
+    await redisCmd('ZADD', AUTO_PENDING_RETRY_ZKEY, String(safeAtMs), pair);
+    const payload = { pair, safeAtMs, reason, meta, scheduledAt: Date.now() };
+    await redisCmd('SET', AUTO_PENDING_RETRY_DATA_PREFIX + pair, JSON.stringify(payload), 'EX', String(AUTO_PENDING_RETRY_TTL));
+    console.log(`daemon: pending retry dijadwalkan untuk ${pair} @ ${new Date(safeAtMs).toISOString()} (reason=${reason})`);
+    return true;
+  } catch (e) {
+    console.warn(`daemon: gagal scheduleAutoPendingRetry ${pair}:`, e.message);
+    return false;
+  }
+}
+
+// Process due pending retries: pop all members with score <= now and trigger
+// runAutoEntryCycle for each pair (single-pair run). ZREM dilakukan before
+// executing to avoid dupes; we also DEL per-pair payload for hygiene.
+async function processPendingRetriesOnce() {
+  if (!CRON_SECRET) return; // scheduler disabled in this env
+  try {
+    const now = Date.now();
+    const pairs = await redisCmd('ZRANGEBYSCORE', AUTO_PENDING_RETRY_ZKEY, '-inf', String(now));
+    if (!Array.isArray(pairs) || pairs.length === 0) return;
+    for (const pair of pairs) {
+      try {
+        const removed = await redisCmd('ZREM', AUTO_PENDING_RETRY_ZKEY, pair);
+        await redisCmd('DEL', AUTO_PENDING_RETRY_DATA_PREFIX + pair).catch(() => {});
+        if (removed) {
+          console.log(`daemon: mengeksekusi pending retry untuk ${pair}`);
+          // runAutoEntryCycle akan memeriksa gate yang sama sebelum memicu
+          await runAutoEntryCycle([pair]);
+        }
+      } catch (e) { console.warn(`daemon: eksekusi pending retry ${pair} gagal:`, e.message); }
+    }
+  } catch (e) { console.warn('daemon: processPendingRetriesOnce gagal:', e.message); }
+}
+
 // Buffer berita ringan di memori (bukan Redis — hemat budget) supaya isCorroborated
 // bisa membandingkan item baru dengan item lain yang baru lewat, TERMASUK yang
 // sudah lewat gate isHighImpactCategory (geopolitical). Retensi = BREAKING_NEWS_
@@ -1440,9 +1494,10 @@ async function checkHardNewsSkip(pair, label) {
     const nowMs = Date.now();
     const hit = findRecentHardNewsEvent(events, legs, nowMs);
     if (!hit) return null;
+    const eventMs = calEventMsWib(hit.date, hit.time_wib);
     const entry = {
       ts: nowMs, pair, label, reason: 'hard_news',
-      event: hit.event, currency: hit.currency, event_time_wib: `${hit.date} ${hit.time_wib}`,
+      event: hit.event, currency: hit.currency, event_time_wib: `${hit.date} ${hit.time_wib}`, event_ms: eventMs,
     };
     await redisCmd('LPUSH', 'auto_skip_log', JSON.stringify(entry));
     await redisCmd('LTRIM', 'auto_skip_log', '0', String(AUTO_SKIP_LOG_CAP - 1));

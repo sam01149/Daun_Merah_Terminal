@@ -11,11 +11,27 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-05 (Session 285 — fix translate NEWS Mistral macet total: deskripsi outlier bikin batch selalu timeout, circuit breaker trip berulang tanpa henti)
+> **Last updated:** 2026-08-06 (Session 286 — implement retry persisten untuk auto-entry yang di-skip karena hard/breaking/surprise news, agar kesempatan entry tidak hilang sampai slot cron berikutnya)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 286 (2026-08-06) — Implement Retry Persisten untuk Auto-Entry yang Di-Skip Karena News
+
+**Konteks:** user menanyakan apakah auto-entry yang di-skip karena hard/breaking/surprise news seharusnya dicoba ulang setelah masa berisiko selesai, bukan menunggu slot cron berikutnya. Karena mekanisme saat ini hanya `continue` ke pair berikutnya, kesempatan entry bisa hilang sampai jam berikutnya meskipun berita sudah lewat.
+
+**Perubahan:** `vps/daemon.js` sekarang menambahkan mekanisme retry persisten satu kali untuk pair yang di-skip karena news. Saat skip terjadi, sistem menghitung waktu aman (`event time + 1 jam`) dan menjadwalkan retry pada waktu itu. Scheduler retry disimpan di Redis (ZSET + payload per-pair) supaya tidak hilang saat daemon restart. Saat waktu retry tiba, daemon menjalankan ulang siklus auto-entry untuk pair yang bersangkutan, lalu menghapus pending retry setelah dieksekusi.
+
+**Detail implementasi:**
+1. Tambah pending-retry infra di `vps/daemon.js` dengan key Redis `auto_pending_retries_z` dan `auto_pending_retry_data:{pair}`.
+2. `checkHardNewsSkip` sekarang menyimpan `event_ms` sehingga retry dapat menghitung safe time dari event berita kalender yang sebenarnya.
+3. `runAutoEntryCycle` saat skip hard/breaking/surprise news memanggil `scheduleAutoPendingRetry` jika safe time masih di masa depan, bukan cuma membiarkan pair menunggu slot berikutnya.
+4. `startScheduler` menambahkan ticker pemrosesan pending-retry tiap menit, sehingga retry jatuh tempo dieksekusi tanpa menunggu jam cron rutin.
+
+**Verifikasi:** `node --check vps/daemon.js` berhasil; `npm test` berhasil 100% hijau.
+
+**File diubah:** `vps/daemon.js`, `Dokumentasi/daun_merah.md`.
 
 ## Changelog Session 285 (2026-08-05) — Fix Translate NEWS Mistral Macet Total: Deskripsi Outlier Bikin Batch Selalu Timeout
 
