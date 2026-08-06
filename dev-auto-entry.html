@@ -663,6 +663,40 @@ tr.rowdetail .row b{color:var(--fg);font-weight:500;white-space:normal;word-brea
     canceled: 'Order pending ini digantikan sinyal baru untuk pair yang sama, atau diblokir karena sudah ada posisi terbuka lain (auto-cancel virtual).',
     invalid: 'Data setup saat dibuat cacat (zona entry/SL/TP tidak lengkap atau bias tidak valid) — tidak pernah dievaluasi sebagai trade.',
   };
+  function buildStatusNarrative(s){
+    if (!s) return '';
+    if (s.status === 'tp') return `Trade berakhir profit (TP)${s.tp ? ` di level ${s.tp}` : ''}.`;
+    if (s.status === 'sl') return buildSlReasonSummary(s);
+    if (s.status === 'open') return 'Order sudah terisi dan posisi masih berjalan; hasil akhir belum terkunci.';
+    if (s.status === 'pending') return 'Setup sudah dibuat, tapi harga belum masuk zona entry sehingga posisi belum aktif.';
+    if (s.status === 'ambiguous') return 'Dalam satu candle, level SL dan TP sama-sama tersentuh sehingga urutan kejadian tidak bisa dipastikan dari data yang ada.';
+    if (s.status === 'closed_early') return 'Posisi ditutup lebih cepat oleh mekanisme manajemen risiko sistem sebelum TP/SL pasif tercapai.';
+    return STATUS_EXPLAIN[s.status] || '';
+  }
+  function buildCeoSummary(s){
+    if (!s) return '';
+    const base = `${s.symbol || '-'} ${s.bias || '-'}${s.entry_zone ? `, entry ${s.entry_zone}` : ''}${s.sl ? `, SL ${s.sl}` : ''}${s.tp ? `, TP ${s.tp}` : ''}.`;
+    const risk = [];
+    if (s.rr != null && s.rr !== '') risk.push(`RR ${s.rr}`);
+    if (s.horizon_days != null && s.horizon_days !== '') risk.push(`horizon ${s.horizon_days} hari`);
+    if (s.confidence) risk.push(`confidence ${s.confidence}`);
+    const macro = s.makro_alignment
+      ? `Makro dinilai ${s.makro_alignment}${s.makro_alignment_reason ? `: ${s.makro_alignment_reason}` : ''}.`
+      : 'Makro tidak memberi sinyal kuat.';
+    const conflict = s.conflict && s.conflict !== 'none'
+      ? `Ada conflict ${s.conflict}${s.conflict_note ? ` (${s.conflict_note})` : ''}.`
+      : 'Tidak ada conflict utama yang tercatat.';
+    const outcome = `Status saat ini: ${s.status}. ${buildStatusNarrative(s)}`;
+    return `${base} ${risk.length ? `${risk.join(', ')}.` : ''} ${macro} ${conflict} ${outcome}`;
+  }
+  function buildCeoAction(s){
+    if (!s) return '';
+    if (s.status === 'open' || s.status === 'pending') return 'Pertahankan disiplin eksekusi; tunggu trigger berikutnya dan hindari intervensi manual yang tidak perlu.';
+    if (s.status === 'tp') return 'Pertahankan pendekatan pair serupa; fokus replikasi setup dengan karakteristik konfluensi yang sama.';
+    if (s.status === 'sl') return 'Lakukan post-mortem singkat: cek apakah loss murni teknikal, dampak berita, atau akibat intervensi manajemen posisi.';
+    if (s.status === 'ambiguous') return 'Masukkan ke bucket ketidakpastian data; jangan dipakai sebagai bukti kuat menang/kalah strategi.';
+    return 'Catat sebagai sinyal operasional (bukan performa strategi murni), lalu lanjutkan pengumpulan sample baru.';
+  }
   function buildSlReasonSummary(s){
     if (!s || s.status !== 'sl') return '';
     const slLevel = s.sl ? ` di level ${s.sl}` : '';
@@ -686,6 +720,9 @@ tr.rowdetail .row b{color:var(--fg);font-weight:500;white-space:normal;word-brea
   }
   function buildSetupDetail(s){
     const rows = [
+      fld('Ringkasan Eksekutif (CEO)', buildCeoSummary(s)),
+      fld('Aksi Disarankan (CEO)', buildCeoAction(s)),
+      fld('Kenapa Status Ini Terjadi', buildStatusNarrative(s)),
       fld('Kenapa Bisa SL', buildSlReasonSummary(s)),
       fld('Alignment', s.alignment),
       fld('Makro Alignment (mentah)', s.makro_alignment),

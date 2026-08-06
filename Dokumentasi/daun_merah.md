@@ -11,11 +11,25 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-06 (Session 287 — tambah ringkasan langsung "Kenapa Bisa SL" di detail setup auto-entry supaya alasan SL cepat terbaca)
+> **Last updated:** 2026-08-06 (Session 288 — tambah mode ringkasan eksekutif agar detail setup terbaca sebagai insight keputusan, bukan log mentah)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Production URL:** https://financial-feed-app.vercel.app
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 288 (2026-08-06) — Upgrade Detail Setup ke Ringkasan Eksekutif (CEO View)
+
+**Konteks:** user meminta agar tampilan tidak berhenti di log sistem mentah, tetapi menampilkan seluruh informasi penting dalam format yang langsung bisa dipakai pengambilan keputusan level eksekutif.
+
+**Perubahan di `dev-auto-entry.html` (detail expand Riwayat Setup):**
+1. Tambah **Ringkasan Eksekutif (CEO)**: satu paragraf kompak yang menggabungkan identitas setup, level entry/SL/TP, RR, horizon, confidence, konteks makro, conflict, dan outcome saat ini.
+2. Tambah **Aksi Disarankan (CEO)**: rekomendasi tindakan ringkas berbasis status setup (pending/open/tp/sl/ambiguous/dll).
+3. Tambah **Kenapa Status Ini Terjadi**: narasi status-aware untuk semua status (bukan hanya SL), termasuk TP/open/pending/ambiguous dan status non-trading.
+4. Tetap pertahankan **Kenapa Bisa SL** khusus status SL sebagai breakdown loss paling detail.
+
+**Verifikasi:** `npm test` 878/878 hijau.
+
+**File diubah:** `dev-auto-entry.html`, `Dokumentasi/daun_merah.md`.
 
 ## Changelog Session 287 (2026-08-06) — Tambah Ringkasan "Kenapa Bisa SL" di Dev Auto-Entry
 
