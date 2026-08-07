@@ -11,10 +11,33 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-06 (Session 290 — transparansi tampilan loss_label di dev-auto-entry.html)
+> **Last updated:** 2026-08-07 (Session 291 — Bugfix lag zoom TradingView chart)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 291 (2026-08-07) — Bugfix Lag Zoom Pinch di TradingView Chart
+
+**Gejala:** Zoom in/out (pinch gesture) di iframe TradingView tab TEKNIKAL terasa lag/tidak mulus.
+
+**Akar masalah:** `.tek-chart-wrap` tidak punya `touch-action` eksplisit → default `auto` → browser routing semua touch event ke scroll pipeline dulu sebelum meneruskan ke iframe. Frame delay ini yang dirasakan user sebagai lag.
+
+**Fix di `index.html` line ~2253:**
+```css
+.tek-chart-wrap {
+  /* ... */
+  touch-action: none;  /* bypass scroll pipeline → pinch-zoom langsung ke iframe */
+}
+```
+`touch-action: none` memerintahkan browser melewati sistem scroll/pan dan menyerahkan semua pointer events langsung ke elemen (iframe TradingView). Tidak konflik dengan swipe-nav karena touchstart handler sudah punya early-return `e.target.closest('#tekChartContainer, .tek-chart-wrap')`.
+
+**APP_VERSION:** `2026.08.03.1` → `2026.08.07.1`
+
+**Verifikasi:** `npm test` 878/878 hijau.
+
+**File diubah:** `index.html`, `Dokumentasi/daun_merah.md`.
+
+
 
 ## Changelog Session 290 (2026-08-06) — Transparansi Tampilan Loss Label di Dev Console Auto-Entry
 

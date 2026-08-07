@@ -2250,7 +2250,15 @@ body.light-theme .cal-date-input { color-scheme: light; }
 .tek-pair-opt:hover { background: rgba(56,189,248,.12); }
 .tek-pair-opt.active { color: #38bdf8; font-weight: 700; }
 .tek-pair-empty { padding: 10px 12px; font: 11px 'DM Mono',monospace; color: var(--muted); }
-.tek-chart-wrap { width: 100%; height: clamp(420px, 62vh, 780px); background: var(--surface); overflow: hidden; flex-shrink: 0; }
+.tek-chart-wrap {
+  width: 100%; height: clamp(420px, 62vh, 780px); background: var(--surface);
+  overflow: hidden; flex-shrink: 0;
+  /* Isolasi gesture chart agar tidak chaining ke scroll/gesture parent.
+     touch-action:none → browser bypass scroll pipeline, semua touch events
+     langsung masuk ke iframe TradingView — pinch-zoom jadi mulus tanpa lag. */
+  overscroll-behavior: contain;
+  touch-action: none;
+}
 #tekChartContainer { width: 100%; height: 100%; }
 .tek-chart-offline {
   height: 100%; display: flex; align-items: center; justify-content: center;
@@ -4373,7 +4381,7 @@ window.addEventListener('DOMContentLoaded', () => _updateNewsLangBtn());
 
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.08.03.1';
+const APP_VERSION = '2026.08.07.1';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
@@ -17258,6 +17266,9 @@ document.addEventListener('click', function(e) {
     const dp = document.getElementById('drawerPanel');
     if (dp && dp.classList.contains('open')) return;
     if (e.target.closest('#navViews, #navFilters, #botNav, input, select, textarea')) return;
+    // TradingView iframe butuh gesture touch penuh (drag/pinch). Kalau ikut
+    // kebaca sebagai swipe-nav aplikasi, interaksi chart terasa patah/lag.
+    if (e.target.closest('#tekChartContainer, .tek-chart-wrap')) return;
     if (isHScroll(e.target)) return;
     const t = e.touches[0];
     _sw = { sx: t.clientX, sy: t.clientY, dx: 0, dy: 0, locked: null, t0: Date.now(), cur: getPanel(activeView), nv: null, pv: null };
