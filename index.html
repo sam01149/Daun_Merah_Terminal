@@ -2253,23 +2253,19 @@ body.light-theme .cal-date-input { color-scheme: light; }
 .tek-chart-wrap {
   width: 100%; height: clamp(420px, 62vh, 780px); background: var(--surface);
   overflow: hidden; flex-shrink: 0;
-  /* Isolasi gesture chart agar tidak chaining ke scroll/gesture parent.
-     touch-action:none → browser bypass scroll pipeline, semua touch events
-     langsung masuk ke iframe TradingView — pinch-zoom jadi mulus tanpa lag. */
   overscroll-behavior: contain;
   touch-action: none;
-  /* GPU layer promotion: isolasi repaint chart dari sisa halaman.
-     will-change:transform → browser alokasikan layer compositor sendiri;
-     contain:strict → layout/style/paint di dalam tidak bocor ke parent —
-     hasilnya zoom/pan di iframe tidak menyeret composite seluruh halaman. */
-  will-change: transform;
-  contain: strict;
+  /* GPU layer compositor sendiri untuk wrapper — isolasi stacking context
+     dari sisa halaman tanpa contain:strict yang memaksa full re-rasterization
+     saat canvas TradingView berubah (kontraproduktif untuk horizontal stretch). */
+  transform: translateZ(0);
+  isolation: isolate;
 }
 #tekChartContainer {
   width: 100%; height: 100%;
-  /* Pastikan iframe TradingView juga dapat layer sendiri — mengurangi
-     tearing saat canvas chart direpaint oleh TradingView internal. */
-  will-change: transform;
+  /* Layer terpisah untuk container iframe — browser bisa incremental-rasterize
+     canvas TradingView tanpa invalidate layer parent. */
+  transform: translateZ(0);
 }
 .tek-chart-offline {
   height: 100%; display: flex; align-items: center; justify-content: center;
@@ -16487,14 +16483,29 @@ function createTVChart() {
       allow_symbol_change: false,
       save_image: false,
       container_id: id,
-      // FX: feed (semua pair non-XAU) tidak punya data volume nyata di
-      // TradingView — forex spot tidak tersentralisasi, jadi panel Volume
-      // selalu tampil kosong/nol. Daripada noise, sembunyikan sekalian
-      // (user request 2026-07-17): "kalau gabisa, hapus saja".
       hide_volume: true,
-      // Plot the same indicators the "INDIKATOR" stat cards below the chart
-      // already compute (RSI 14, SMA 50, SMA 200) — previously the chart was
-      // plain candles with no visual tie to those numbers.
+      // Nonaktifkan fitur animasi & UI overhead yang tidak dipakai — setiap
+      // animasi TradingView memakan frame budget GPU saat horizontal redraw.
+      // header_widget: tombol symbol search, dsb — tidak perlu karena
+      // pair-switching dihandle sendiri oleh UI aplikasi ini.
+      disabled_features: [
+        'header_widget',
+        'header_symbol_search',
+        'symbol_search_hot_key',
+        'border_around_the_chart',
+        'chart_crosshair_menu',
+        'context_menus',
+        'countdown_timer',
+        'show_chart_property_page',
+        'timeframes_toolbar',
+        'left_toolbar',
+        'control_bar',
+        'edit_buttons_in_legend',
+      ],
+      enabled_features: [
+        // Smooth rendering — gunakan canvas antialiasing ringan, bukan full MSAA
+        'move_logo_to_main_pane',
+      ],
       studies: [
         { id: 'MASimple@tv-basicstudies', version: 60, inputs: { length: 50 } },
         { id: 'MASimple@tv-basicstudies', version: 60, inputs: { length: 200 } },
