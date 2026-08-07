@@ -16,26 +16,38 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
 
-## Changelog Session 291 (2026-08-07) — Bugfix Lag Zoom Pinch di TradingView Chart
+## Changelog Session 291 (2026-08-07) — Bugfix Performa Rendering TradingView Chart
 
-**Gejala:** Zoom in/out (pinch gesture) di iframe TradingView tab TEKNIKAL terasa lag/tidak mulus.
+**Gejala:** Chart TradingView di tab TEKNIKAL terasa berat saat zoom in/out — tidak 60fps / tidak smooth.
 
-**Akar masalah:** `.tek-chart-wrap` tidak punya `touch-action` eksplisit → default `auto` → browser routing semua touch event ke scroll pipeline dulu sebelum meneruskan ke iframe. Frame delay ini yang dirasakan user sebagai lag.
+**Dua root cause, dua fix:**
 
-**Fix di `index.html` line ~2253:**
+**Fix 1 — touch-action** (`touch-action: none` di `.tek-chart-wrap`):
+Browser default `touch-action: auto` → routing semua touch event ke scroll pipeline dulu sebelum meneruskan ke iframe → input lag awal saat pinch dimulai.
+
+**Fix 2 — GPU layer promotion** (`will-change: transform` + `contain: strict`):
+`.tek-chart-wrap` dan `#tekChartContainer` tidak punya layer GPU compositor sendiri → saat TradingView merepaint canvas-nya, browser harus composite ulang seluruh halaman → terasa berat/choppy. Fix: `will-change:transform` meminta browser alokasikan layer GPU tersendiri; `contain:strict` memastikan layout/style/paint di dalam tidak bocor ke parent sehingga repaint chart terisolasi.
+
+**File diubah — `index.html` ~L2253:**
 ```css
 .tek-chart-wrap {
   /* ... */
-  touch-action: none;  /* bypass scroll pipeline → pinch-zoom langsung ke iframe */
+  touch-action: none;     /* bypass scroll pipeline */
+  will-change: transform; /* GPU layer sendiri */
+  contain: strict;        /* isolasi repaint dari parent */
+}
+#tekChartContainer {
+  will-change: transform; /* iframe TradingView juga dapat layer sendiri */
 }
 ```
-`touch-action: none` memerintahkan browser melewati sistem scroll/pan dan menyerahkan semua pointer events langsung ke elemen (iframe TradingView). Tidak konflik dengan swipe-nav karena touchstart handler sudah punya early-return `e.target.closest('#tekChartContainer, .tek-chart-wrap')`.
+`contain:strict` aman karena wrapper sudah punya `width:100%` + `height:clamp(...)` eksplisit — tidak akan collapse.
 
 **APP_VERSION:** `2026.08.03.1` → `2026.08.07.1`
 
-**Verifikasi:** `npm test` 878/878 hijau.
+**Verifikasi:** `npm test` 878/878 hijau (kedua commit).
 
 **File diubah:** `index.html`, `Dokumentasi/daun_merah.md`.
+
 
 
 
