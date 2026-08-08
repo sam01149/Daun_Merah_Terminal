@@ -72,6 +72,15 @@ tr:hover td{background:rgba(var(--fg-rgb),.02);}
 .badge.tp{background:rgba(62,168,107,.15);color:var(--green);}
 .badge.sl,.badge.invalid{background:rgba(var(--accent-rgb),.18);color:var(--accent);}
 .badge.canceled,.badge.expired,.badge.stale,.badge.ambiguous{background:rgba(var(--fg-rgb),.08);color:var(--muted);}
+/* Filter Riwayat Setup jadi badge diklik (2026-08-08, ganti dari dropdown teks) —
+   warnanya SAMA persis dengan badge status di tabel, jadi "ikon" visualnya konsisten
+   tanpa emoji (dilarang di UI aplikasi ini). */
+.filterbtns{display:flex;flex-wrap:wrap;gap:5px;}
+.badge-btn{cursor:pointer;border:1px solid transparent;user-select:none;}
+.badge-btn:hover{opacity:.8;}
+.badge-btn.active{border-color:currentColor;}
+.badge-btn.all{background:rgba(var(--fg-rgb),.07);color:var(--muted);}
+.badge-btn.all.active{border-color:var(--fg);color:var(--fg);}
 .tabs{display:flex;gap:4px;border-bottom:1px solid var(--border);margin-bottom:12px;flex-wrap:wrap;}
 .tab{padding:7px 12px;font-size:10.5px;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent;}
 .tab.active{color:var(--accent);border-bottom-color:var(--accent);}
@@ -215,24 +224,11 @@ tr.rowdetail .row b{color:var(--fg);font-weight:500;white-space:normal;word-brea
       <div class="filterrow">
         <div>
           <label>Filter Status</label>
-          <select id="filterStatus">
-            <option value="">Semua status</option>
-            <option value="pending">pending</option>
-            <option value="open">open</option>
-            <option value="tp">tp</option>
-            <option value="sl">sl</option>
-            <option value="canceled">canceled</option>
-            <option value="ambiguous">ambiguous</option>
-            <option value="expired">expired</option>
-            <option value="stale">stale</option>
-            <option value="invalid">invalid</option>
-          </select>
+          <div class="filterbtns" id="filterStatusBtns"></div>
         </div>
         <div>
           <label>Filter Pair</label>
-          <select id="filterSymbol">
-            <option value="">Semua pair</option>
-          </select>
+          <div class="filterbtns" id="filterSymbolBtns"></div>
         </div>
       </div>
       <p class="hint">Klik baris untuk lihat dasar keputusan AI (alignment makro, catatan konflik, tag Sistem Hakim, dll).</p>
@@ -656,21 +652,37 @@ tr.rowdetail .row b{color:var(--fg);font-weight:500;white-space:normal;word-brea
   const RECENT_PAGE_SIZE = 10;
   let allRecent = [];
   let recentPage = 1;
+  // (2026-08-08) State filter dipindah dari <select>.value ke variabel biasa — filter
+  // sekarang badge/pill diklik langsung (bukan dropdown teks), lebih cepat discan &
+  // konsisten warnanya dengan badge status di tabel.
+  let filterStatusVal = '';
+  let filterSymbolVal = '';
+  const STATUS_FILTER_OPTIONS = ['pending','open','tp','sl','canceled','ambiguous','expired','stale','invalid'];
+
+  function renderStatusFilterBtns(){
+    const el = document.getElementById('filterStatusBtns');
+    const mk = (v, cls) => `<span class="badge badge-btn ${cls}${filterStatusVal === v ? ' active' : ''}" data-v="${esc(v)}">${esc(v || 'semua')}</span>`;
+    el.innerHTML = mk('', 'all') + STATUS_FILTER_OPTIONS.map(v => mk(v, v)).join('');
+    el.querySelectorAll('[data-v]').forEach(b => b.addEventListener('click', () => {
+      filterStatusVal = b.dataset.v; recentPage = 1; renderStatusFilterBtns(); renderRecentFiltered();
+    }));
+  }
 
   function populateSymbolFilter(recent){
-    const sel = document.getElementById('filterSymbol');
-    const current = sel.value;
     const known = PAIRS.map(p => p.symbol);
     const extra = [...new Set((recent || []).map(s => s.symbol))].filter(sym => !known.includes(sym));
     const all = [...known, ...extra];
-    sel.innerHTML = '<option value="">Semua pair</option>' + all.map(sym => `<option value="${esc(sym)}">${esc(sym)}</option>`).join('');
-    sel.value = all.includes(current) ? current : '';
+    if (!all.includes(filterSymbolVal)) filterSymbolVal = '';
+    const el = document.getElementById('filterSymbolBtns');
+    const mk = v => `<button type="button" class="pagebtn${filterSymbolVal === v ? ' active' : ''}" data-v="${esc(v)}">${esc(v || 'Semua')}</button>`;
+    el.innerHTML = mk('') + all.map(mk).join('');
+    el.querySelectorAll('[data-v]').forEach(b => b.addEventListener('click', () => {
+      filterSymbolVal = b.dataset.v; recentPage = 1; populateSymbolFilter(allRecent); renderRecentFiltered();
+    }));
   }
 
   function getFilteredRecent(){
-    const statusF = document.getElementById('filterStatus').value;
-    const symbolF = document.getElementById('filterSymbol').value;
-    return allRecent.filter(s => (!statusF || s.status === statusF) && (!symbolF || s.symbol === symbolF));
+    return allRecent.filter(s => (!filterStatusVal || s.status === filterStatusVal) && (!filterSymbolVal || s.symbol === filterSymbolVal));
   }
 
   function renderRecentPager(page, totalPages){
@@ -693,6 +705,17 @@ tr.rowdetail .row b{color:var(--fg);font-weight:500;white-space:normal;word-brea
   function fld(label, value){
     if (value == null || value === '') return '';
     return `<div class="row"><span>${esc(label)}</span><b>${esc(value)}</b></div>`;
+  }
+  // (2026-08-08, user: baris detail setup masih berantakan — daftar datar 25+ field
+  // campur narasi panjang & tag pendek tanpa kelompok) — bungkus beberapa fld() jadi
+  // 1 kelompok berlabel. TIDAK ADA field yang dihilangkan, cuma dikelompokkan + label
+  // yang tadinya mengulang nama kelompok (mis. "Alasan Intervensi") dipersingkat jadi
+  // "Alasan" karena judul kelompok "Intervensi Posisi" sudah kasih konteksnya. Kelompok
+  // yang seluruh isinya kosong untuk setup ini otomatis tidak tampil sama sekali.
+  function fldGroup(title, rowsArr){
+    const rows = rowsArr.filter(Boolean).join('');
+    if (!rows) return '';
+    return `<div class="subhead">${esc(title)}</div>${rows}`;
   }
 
   // 2026-08-04 (rapat user, "jurnal end-to-end"): tiga sumber "kenapa" tambahan yang
@@ -786,45 +809,59 @@ tr.rowdetail .row b{color:var(--fg);font-weight:500;white-space:normal;word-brea
     return `Status SL${slLevel} (murni teknikal: tidak ada rilis berita high-impact ±2 jam).${context.length ? ` Konteks saat setup dibuat: ${context.join(', ')}.` : ''}`;
   }
   function buildSetupDetail(s){
-    const rows = [
-      fld('Ringkasan Eksekutif', buildExecutiveSummary(s)),
-      fld('Aksi Disarankan', buildExecutiveAction(s)),
-      fld('Kenapa Status Ini Terjadi', buildStatusNarrative(s)),
-      fld('Kenapa Bisa SL', buildSlReasonSummary(s)),
-      fld('Alignment', s.alignment),
-      fld('Makro Alignment (mentah)', s.makro_alignment),
-      fld('Alasan Makro Alignment', s.makro_alignment_reason),
-      fld('Conflict', s.conflict),
-      fld('Catatan Conflict', s.conflict_note),
-      fld('Sumber Conflict', s.conflict_source),
-      fld('Sistem Hakim', s.sistem_hakim),
-      fld('Risk/Reward', s.rr),
-      fld('Horizon (hari)', s.horizon_days),
-      fld('Model', s.model),
-      fld('Loss Label', s.status === 'sl' ? (s.loss_label || 'teknikal (default: murni teknikal, tidak ada berita ±2j)') : s.loss_label),
-      fld('Alasan Loss Label', s.status === 'sl' ? (s.label_reason || 'Tidak ada event kalender high-impact / breaking news dalam window ±2 jam dari hit SL') : s.label_reason),
-      fld('TP Label', s.tp_label === 'grazed_tp' ? 'grazed_tp (TP cuma "kesenggol", harga balik ke arah SL dalam 4 jam)' : s.tp_label),
-      fld('Alasan TP Label', s.tp_label_reason),
-      fld('Penjelasan Status', STATUS_EXPLAIN[s.status]),
-      fld('Invalidasi Teknikal (trigger AI)', s.invalidation_trigger
-        ? `${s.invalidation_trigger.type} — close ${s.invalidation_trigger.direction} ${s.invalidation_trigger.level} (${s.invalidation_trigger.timeframe})`
-        : ''),
-      fld('Invalidasi Teknikal Tersentuh', s.tech_invalidated
-        ? `tersentuh di candle ${fmtTs(s.tech_invalidated.t * 1000)} (${s.tech_invalidated.reason})`
-        : ''),
-      fld('Rezim Risiko Saat Dibuat', s.risk_regime),
-      fld('Intervensi Posisi', s.intervention?.type ? (INTERVENTION_LABEL[s.intervention.type] || s.intervention.type) : ''),
-      fld('Alasan Intervensi', s.intervention?.reason),
-      fld('SL Baru dari Intervensi', s.intervention?.new_sl),
-      fld('Waktu Intervensi', s.intervention?.t ? fmtTs(s.intervention.t) : ''),
-      fld('Hasil Setelah Intervensi', s.managed_status ? (MANAGED_STATUS_LABEL[s.managed_status] || s.managed_status) : ''),
-      fld('Waktu Hasil Setelah Intervensi', s.managed_closed_t ? fmtTs(s.managed_closed_t * 1000) : ''),
-      fld('Breach Tidak Terkonfirmasi (divergence hold)', s.divergence_hold
-        ? `sempat terdeteksi ${s.divergence_hold.would_be_status === 'tp' ? 'kena TP' : 'kena SL'}, dikembalikan ke OPEN karena harga spot tidak mengkonfirmasi`
-        : ''),
-      fld('Alasan Divergence Hold', s.divergence_hold?.reason),
+    const groups = [
+      fldGroup('Ringkasan', [
+        fld('Ringkasan Eksekutif', buildExecutiveSummary(s)),
+        fld('Aksi Disarankan', buildExecutiveAction(s)),
+        fld('Kenapa Status Ini Terjadi', buildStatusNarrative(s)),
+        fld('Kenapa Bisa SL', buildSlReasonSummary(s)),
+        fld('Penjelasan Status', STATUS_EXPLAIN[s.status]),
+      ]),
+      fldGroup('Makro & Konflik', [
+        fld('Alignment', s.alignment),
+        fld('Makro Alignment (mentah)', s.makro_alignment),
+        fld('Alasan Makro Alignment', s.makro_alignment_reason),
+        fld('Conflict', s.conflict),
+        fld('Catatan Conflict', s.conflict_note),
+        fld('Sumber Conflict', s.conflict_source),
+        fld('Sistem Hakim', s.sistem_hakim),
+        fld('Rezim Risiko Saat Dibuat', s.risk_regime),
+      ]),
+      fldGroup('Parameter Trade', [
+        fld('Risk/Reward', s.rr),
+        fld('Horizon (hari)', s.horizon_days),
+        fld('Model', s.model),
+      ]),
+      fldGroup('Label Hasil', [
+        fld('Loss Label', s.status === 'sl' ? (s.loss_label || 'teknikal (default: murni teknikal, tidak ada berita ±2j)') : s.loss_label),
+        fld('Alasan Loss Label', s.status === 'sl' ? (s.label_reason || 'Tidak ada event kalender high-impact / breaking news dalam window ±2 jam dari hit SL') : s.label_reason),
+        fld('TP Label', s.tp_label === 'grazed_tp' ? 'grazed_tp (TP cuma "kesenggol", harga balik ke arah SL dalam 4 jam)' : s.tp_label),
+        fld('Alasan TP Label', s.tp_label_reason),
+      ]),
+      fldGroup('Invalidasi Teknikal', [
+        fld('Trigger AI', s.invalidation_trigger
+          ? `${s.invalidation_trigger.type} — close ${s.invalidation_trigger.direction} ${s.invalidation_trigger.level} (${s.invalidation_trigger.timeframe})`
+          : ''),
+        fld('Tersentuh', s.tech_invalidated
+          ? `tersentuh di candle ${fmtTs(s.tech_invalidated.t * 1000)} (${s.tech_invalidated.reason})`
+          : ''),
+      ]),
+      fldGroup('Intervensi Posisi', [
+        fld('Jenis', s.intervention?.type ? (INTERVENTION_LABEL[s.intervention.type] || s.intervention.type) : ''),
+        fld('Alasan', s.intervention?.reason),
+        fld('SL Baru', s.intervention?.new_sl),
+        fld('Waktu', s.intervention?.t ? fmtTs(s.intervention.t) : ''),
+        fld('Hasil Setelahnya', s.managed_status ? (MANAGED_STATUS_LABEL[s.managed_status] || s.managed_status) : ''),
+        fld('Waktu Hasil', s.managed_closed_t ? fmtTs(s.managed_closed_t * 1000) : ''),
+      ]),
+      fldGroup('Anomali Data', [
+        fld('Breach Tidak Terkonfirmasi (divergence hold)', s.divergence_hold
+          ? `sempat terdeteksi ${s.divergence_hold.would_be_status === 'tp' ? 'kena TP' : 'kena SL'}, dikembalikan ke OPEN karena harga spot tidak mengkonfirmasi`
+          : ''),
+        fld('Alasan Divergence Hold', s.divergence_hold?.reason),
+      ]),
     ].join('');
-    return rows || '<div class="empty">Tidak ada catatan tambahan tersimpan untuk setup ini.</div>';
+    return groups || '<div class="empty">Tidak ada catatan tambahan tersimpan untuk setup ini.</div>';
   }
 
   function renderRecentFiltered(){
@@ -868,12 +905,11 @@ tr.rowdetail .row b{color:var(--fg);font-weight:500;white-space:normal;word-brea
   function renderRecent(recent){
     allRecent = recent || [];
     recentPage = 1;
+    renderStatusFilterBtns();
     populateSymbolFilter(allRecent);
     renderRecentFiltered();
   }
-
-  document.getElementById('filterStatus').addEventListener('change', () => { recentPage = 1; renderRecentFiltered(); });
-  document.getElementById('filterSymbol').addEventListener('change', () => { recentPage = 1; renderRecentFiltered(); });
+  renderStatusFilterBtns();
 
   async function loadDashboard(){
     if (!getSecret()) return;
