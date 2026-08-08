@@ -75,7 +75,10 @@ tr:hover td{background:rgba(var(--fg-rgb),.02);}
 /* Filter Riwayat Setup jadi badge diklik (2026-08-08, ganti dari dropdown teks) —
    warnanya SAMA persis dengan badge status di tabel, jadi "ikon" visualnya konsisten
    tanpa emoji (dilarang di UI aplikasi ini). */
-.filterbtns{display:flex;flex-wrap:wrap;gap:5px;}
+/* Grid (bukan flex-wrap) supaya badge yang lebar-lebar beda (mis. "ambiguous"
+   vs "tp") tetap berbaris rapi per kolom saat wrap ke bawah, bukan ragged
+   (2026-08-08, revisi setelah user coba versi 1-baris-lebar juga kurang pas). */
+.filterbtns{display:grid;grid-template-columns:repeat(3,max-content);gap:5px 10px;}
 .badge-btn{cursor:pointer;border:1px solid transparent;user-select:none;}
 .badge-btn:hover{opacity:.8;}
 .badge-btn.active{border-color:currentColor;}
@@ -104,7 +107,7 @@ tr:hover td{background:rgba(var(--fg-rgb),.02);}
 .empty{color:var(--muted);font-size:11px;padding:10px 0;}
 .small{font-size:9.5px;color:var(--muted);}
 .filterrow{display:flex;gap:24px;flex-wrap:wrap;margin-bottom:10px;}
-.filterrow > div{flex:0 0 auto;max-width:100%;}
+.filterrow > div{flex:0 0 auto;}
 .filterrow label{margin-top:0;}
 /* Filter dibungkus tombol ikon collapsible (2026-08-08) — sebelumnya filterrow
    selalu terbuka penuh (2 baris badge), makan tempat vertikal walau tabel di
