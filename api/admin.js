@@ -4203,7 +4203,7 @@ function _computeCbDirServerSide({ label, isXau, cbBiasObj, xauThesis }) {
 // Sumber: cb_bias (dirawat Call 2 digest), cot_cache_v2 (CFTC; USD = Dollar Index),
 // risk_regime — data langsung dari cache server, BUKAN turunan prosa artikel, jadi
 // Analisa tetap dapat fundamental kedua leg meski artikel hari itu tidak membahasnya.
-function _formatFundamentalBlock({ label, isXau, cbBias, cot, risk, retail, drivers, nowMs }) {
+function _formatFundamentalBlock({ label, isXau, cbBias, cot, risk, retail, drivers, nowMs, hasCmeData }) {
   const legs = String(label || '').toUpperCase().split('/').map(s => s.trim()).filter(Boolean);
   if (legs.length === 0) return '';
   const ageH = iso => {
@@ -4277,10 +4277,20 @@ function _formatFundamentalBlock({ label, isXau, cbBias, cot, risk, retail, driv
     lines.push(`REAL YIELD ${leg}: nominal ${ry.nominal}% − ekspektasi inflasi ${ry.inflation_exp}% = real yield ${ry.real}%${goldNote}`);
   }
   if (lines.length === 0) return '';
-  const note = isXau
+  const baseNote = isXau
     ? 'catatan: XAU tidak punya bank sentral — pakai bias Fed (USD) + risk regime sebagai proxy arah dolar/haven'
     : 'gunakan untuk menilai apakah setup teknikal searah atau melawan fundamental kedua leg';
-  return `FUNDAMENTAL TERSTRUKTUR (cache server, bukan dari artikel — ${note}):\n${lines.join('\n')}`;
+  // (2026-08-08, diskusi user — reordering prioritas COT vs CME, khusus pair yang
+  // punya data CME/hasCmeData true, lihat pemanggil di ohlcvAnalyzeHandler) COT CFTC
+  // TIDAK dihapus, tetap konteks positioning yang valid — cuma diturunkan bobotnya
+  // relatif terhadap CME options skew (real-time) untuk urusan MENENTUKAN ARAH,
+  // karena COT itu data mingguan yang bisa lag beberapa hari (vs horizon trading
+  // sistem ini yang cuma ~3 hari). Ini framing/penekanan kalimat, BUKAN aturan keras
+  // dengan angka ambang — AI tetap yang memutuskan, tidak ada auto-block di sini.
+  const cmeNote = hasCmeData
+    ? ' COT CFTC di atas itu data MINGGUAN (bisa lag beberapa hari) — kalau prompt ini juga berisi blok SENTIMEN PASAR OPTIONS CME untuk pair yang sama, itu real-time dan LEBIH DIPRIORITASKAN untuk menentukan arah dibanding COT.'
+    : '';
+  return `FUNDAMENTAL TERSTRUKTUR (cache server, bukan dari artikel — ${baseNote}.${cmeNote}):\n${lines.join('\n')}`;
 }
 
 // Snapshot numerik ringkas dari SEMUA input makro yang dilihat AI saat itu (cb_bias,
@@ -4410,7 +4420,13 @@ function _formatOptionsSentimentBlock(rr) {
       : `Tidak ada tanda pasar sedang mengantisipasi kejutan mendadak saat ini (indikator ini turun ${Math.abs(rr.convexity_change_pct).toFixed(1)}% dari kemarin).`);
   }
 
-  return `SENTIMEN PASAR OPTIONS (dari CME, sumber terpisah dari data teknikal chart — pakai sebagai cross-check tambahan, BUKAN sinyal utama; kalau bertentangan dengan bias teknikal, sebut sebagai catatan risiko di paragraf integrasi, jangan mengubah bias):\n${lines.join('\n')}`;
+  // (2026-08-08, diskusi user — reordering prioritas COT vs CME) Framing lama ("cuma
+  // cross-check tambahan, jangan mengubah bias") diganti: CME ini data real-time,
+  // DIPRIORITASKAN di atas COT (mingguan, lag) untuk konfirmasi arah. Tetap BUKAN
+  // aturan keras/auto-block — AI yang menimbang, bukan kode yang memaksa null. Kalau
+  // mau pasang ambang angka otomatis nanti, itu nunggu data macro_snapshot terkumpul
+  // dulu (lihat daun_merah_progress.md) — sesi ini cuma ubah framing kalimat prompt.
+  return `SENTIMEN PASAR OPTIONS (dari CME, real-time — DIPRIORITASKAN di atas data COT mingguan untuk konfirmasi ARAH karena lebih up-to-date; kalau searah dengan bias teknikal, jadikan penguat keyakinan; kalau BERLAWANAN dengan bias teknikal, pertimbangkan serius sebagai alasan menurunkan keyakinan atau meninjau ulang arah — tetap keputusanmu berdasarkan kekuatan bukti lain, bukan otomatis dibatalkan):\n${lines.join('\n')}`;
 }
 
 // Track record historis disuapkan ke prompt Analisa (Plan I item 2, session 180) —
@@ -4625,6 +4641,25 @@ async function ohlcvAnalyzeHandler(req, res) {
       }
     } catch (e) { /* opsional — jangan gagalkan analisa kalau cache options kosong */ }
 
+    // Sentimen pasar options (CME CVOL) per pair — session 157 lanjutan 7. Cache
+    // ditulis correlations.js (rr_cache_v2, TTL 1h), dibaca read-only di sini (tidak
+    // memicu fetch CME baru — kalau cache kosong/expired, blok ini kosong, tidak
+    // menunggu/gagalkan analisa). NZD/USD & USD/CHF tidak punya data (options CME
+    // terlalu illiquid) — blok otomatis kosong untuk keduanya, bukan bug.
+    // (2026-08-08) Diangkat ke SEBELUM blok fundamental (dulu sesudah) supaya
+    // rrPairSnapshot siap dipakai `hasCmeData` di _formatFundamentalBlock di bawah —
+    // reordering prioritas COT vs CME (diskusi user), bukan mengubah data yang ditarik.
+    let rrBlock = '';
+    let rrPairSnapshot = null;
+    try {
+      const rawRR = await redisCmd('GET', 'rr_cache_v2');
+      if (rawRR) {
+        const rrCache = JSON.parse(rawRR);
+        rrPairSnapshot = rrCache?.pairs?.[data.label] || null;
+        rrBlock = _formatOptionsSentimentBlock(rrPairSnapshot);
+      }
+    } catch (e) { /* opsional — jangan gagalkan analisa kalau cache RR kosong */ }
+
     // Blok fundamental terstruktur per pair — langsung dari cache Redis (cb_bias, COT,
     // risk regime), bukan turunan artikel. Best-effort: gagal baca = blok kosong.
     let fundBlock = '';
@@ -4668,6 +4703,13 @@ async function ohlcvAnalyzeHandler(req, res) {
         retail: retailParsed,
         drivers: macroDrivers,
         nowMs:  Date.now(),
+        // (2026-08-08, diskusi user, khusus XAU/USD & EUR/USD — satu-satunya pair
+        // auto-entry yang punya data CME) reordering prioritas: COT (mingguan, lag)
+        // diberi catatan eksplisit bahwa CME (real-time) lebih diutamakan untuk arah
+        // KALAU datanya tersedia untuk pair ini. AUD/NZD & EUR/GBP otomatis TIDAK
+        // kena (rrPairSnapshot selalu null buat mereka — bukan pair CVOL) — 0 baris
+        // kode berubah untuk 2 pair itu, sesuai batas scope Section 4 rapat CME.
+        hasCmeData: !!rrPairSnapshot,
       });
     } catch (e) { /* opsional — jangan gagalkan analisa kalau cache fundamental kosong */ }
     // Fallback HANYA untuk isAutoCall (cron auto-entry) — manual selalu sudah kirim
@@ -4675,24 +4717,6 @@ async function ohlcvAnalyzeHandler(req, res) {
     if (!cbDir && isAutoCall) {
       cbDir = _computeCbDirServerSide({ label: data.label, isXau: data.is_xau, cbBiasObj: cbBiasParsed, xauThesis });
     }
-
-    // Sentimen pasar options (CME CVOL) per pair — session 157 lanjutan 7. Cache
-    // ditulis correlations.js (rr_cache_v2, TTL 1h), dibaca read-only di sini (tidak
-    // memicu fetch CME baru — kalau cache kosong/expired, blok ini kosong, tidak
-    // menunggu/gagalkan analisa). NZD/USD & USD/CHF tidak punya data (options CME
-    // terlalu illiquid) — blok otomatis kosong untuk keduanya, bukan bug.
-    let rrBlock = '';
-    // Diangkat ke scope luar (2026-08-08) sama alasannya dengan cotParsed/dkk di atas —
-    // dipakai lagi oleh _buildMacroSnapshot di buildNewSetupEntry.
-    let rrPairSnapshot = null;
-    try {
-      const rawRR = await redisCmd('GET', 'rr_cache_v2');
-      if (rawRR) {
-        const rrCache = JSON.parse(rawRR);
-        rrPairSnapshot = rrCache?.pairs?.[data.label] || null;
-        rrBlock = _formatOptionsSentimentBlock(rrPairSnapshot);
-      }
-    } catch (e) { /* opsional — jangan gagalkan analisa kalau cache RR kosong */ }
 
     // Track record historis setup AI pair ini (Plan I item 2) — 1 GET Redis, 0 AI call.
     // BUG LAMA DITEMUKAN & DIFIX (2026-07-20, saat kerja Plan U-3 lanjutan): parameter
@@ -5751,6 +5775,11 @@ async function ohlcvCriticHandler(req, res) {
     redisCmd('GET', 'daily_snapshot').catch(() => null),
     redisCmd('GET', 'real_yields').catch(() => null),
   ]);
+  // (2026-08-08) rawRR sudah di-fetch paralel di atas — parse sekali di sini supaya
+  // hasCmeData siap dipakai _formatFundamentalBlock DAN _formatOptionsSentimentBlock,
+  // pola sama ohlcvAnalyzeHandler (reordering prioritas COT vs CME).
+  let rrPairForCritic = null;
+  try { rrPairForCritic = rawRR ? JSON.parse(rawRR)?.pairs?.[label] || null : null; } catch (e) { /* opsional */ }
   try {
     fundBlock = _formatFundamentalBlock({
       label, isXau,
@@ -5760,10 +5789,11 @@ async function ohlcvCriticHandler(req, res) {
       retail: rawRetail ? JSON.parse(rawRetail) : null,
       drivers: _extractMacroDrivers(rawSnap, rawRY),
       nowMs:  Date.now(),
+      hasCmeData: !!rrPairForCritic,
     });
   } catch (e) { /* opsional */ }
   try {
-    if (rawRR) rrBlock = _formatOptionsSentimentBlock(JSON.parse(rawRR)?.pairs?.[label]);
+    if (rrPairForCritic) rrBlock = _formatOptionsSentimentBlock(rrPairForCritic);
   } catch (e) { /* opsional */ }
   try {
     if (rawLog) {
@@ -6145,6 +6175,7 @@ module.exports._extractRingkasanExcerpt = _extractRingkasanExcerpt;
 module.exports._formatFundamentalBlock = _formatFundamentalBlock;
 module.exports._extractMacroDrivers = _extractMacroDrivers;
 module.exports._buildMacroSnapshot = _buildMacroSnapshot;
+module.exports._formatOptionsSentimentBlock = _formatOptionsSentimentBlock;
 module.exports._formatTrackRecordBlock = _formatTrackRecordBlock;
 module.exports._calEventMsWib = _calEventMsWib;
 module.exports._buildAnalyzeCalBlock = _buildAnalyzeCalBlock;

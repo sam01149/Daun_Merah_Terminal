@@ -138,6 +138,33 @@ test('fund block: data parsial tetap jalan, semua kosong → string kosong', () 
   assert.strictEqual(_formatFundamentalBlock({ label: '', isXau: false, cbBias: CB, cot: COT, risk: RISK, nowMs: NOW }), '');
 });
 
+// ── Reordering prioritas COT vs CME, khusus pair yang punya data CME (2026-08-08, diskusi user) ──
+
+test('fund block: hasCmeData=false (default, mis. AUD/NZD & EUR/GBP) → TIDAK ada catatan prioritas CME', () => {
+  const out = _formatFundamentalBlock({ label: 'EUR/USD', isXau: false, cbBias: CB, cot: COT, risk: RISK, nowMs: NOW });
+  assert.ok(!out.includes('LEBIH DIPRIORITASKAN'), out);
+  assert.ok(!out.includes('SENTIMEN PASAR OPTIONS'), out);
+});
+
+test('fund block: hasCmeData=true (XAU/USD & EUR/USD) → COT diberi catatan CME lebih diprioritaskan', () => {
+  const out = _formatFundamentalBlock({ label: 'EUR/USD', isXau: false, cbBias: CB, cot: COT, risk: RISK, nowMs: NOW, hasCmeData: true });
+  assert.ok(out.includes('COT CFTC di atas itu data MINGGUAN'), out);
+  assert.ok(out.includes('LEBIH DIPRIORITASKAN'), out);
+});
+
+const { _formatOptionsSentimentBlock } = require('../../api/admin.js');
+
+test('_formatOptionsSentimentBlock: framing baru — CME diprioritaskan di atas COT untuk arah, bukan lagi "cross-check tambahan"', () => {
+  const out = _formatOptionsSentimentBlock({ rr_value: 2.1 });
+  assert.ok(out.includes('DIPRIORITASKAN di atas data COT mingguan'), out);
+  assert.ok(!out.includes('cross-check tambahan'), 'framing pasif lama harus sudah diganti');
+  assert.ok(!out.includes('jangan mengubah bias'), 'instruksi "jangan mengubah bias" harus sudah diganti');
+});
+
+test('_formatOptionsSentimentBlock: rr null/kosong → string kosong (fail-open, tidak berubah)', () => {
+  assert.strictEqual(_formatOptionsSentimentBlock(null), '');
+});
+
 // ── Driver makro: DXY/WTI/real yield (2026-07-21) ────────────────────────────
 // Konteks: diskusi user soal AI Analisa yang cuma menempel label ("geopolitik naik,
 // tapi real yield tinggi") tanpa angka mentah untuk menelusuri mekanismenya. Blok ini

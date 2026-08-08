@@ -11,10 +11,25 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-08 (Session 292 — Macro snapshot per setup + ghost-tracking Gate D/B/A)
+> **Last updated:** 2026-08-08 (Session 293 — Reordering prioritas COT vs CME di prompt, khusus XAU/USD & EUR/USD)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 293 (2026-08-08) — Reordering Prioritas COT vs CME di Prompt (Khusus XAU/USD & EUR/USD)
+
+**Konteks:** Lanjutan Session 292. Dibedakan dua hal yang sempat tercampur di diskusi: (a) mekanisme **hard-block** dengan angka ambang skew spesifik (mis. `|rr_value| > 1.1` → paksa `entry_zone` null) — ini yang memang harus nunggu `macro_snapshot` terkumpul dulu untuk kalibrasi (masih TERTUNDA, lihat `daun_merah_progress.md`), vs (b) sekadar **mengubah framing/penekanan kalimat** di prompt (COT diberi catatan "data mingguan, lebih rendah prioritas" — CME diberi catatan "real-time, lebih diprioritaskan") — TIDAK butuh data apa pun untuk mulai, karena bukan aturan keras berangka, AI tetap yang memutuskan. Bagian (b) inilah yang dieksekusi sesi ini.
+
+**Perubahan (`api/admin.js`), khusus berlaku untuk XAU/USD & EUR/USD** (satu-satunya 2 dari 4 pair auto-entry yang punya data CME CVOL — AUD/NZD & EUR/GBP otomatis TIDAK tersentuh sama sekali karena `rrPairSnapshot` selalu null buat mereka, bukan pair CVOL):
+
+- **`_formatFundamentalBlock`**: parameter baru `hasCmeData` (boolean). Kalau true, catatan penutup blok fundamental menyertakan kalimat eksplisit: COT CFTC itu data mingguan (bisa lag beberapa hari) dan CME options skew (kalau ada di prompt yang sama) real-time serta LEBIH DIPRIORITASKAN untuk arah.
+- **`_formatOptionsSentimentBlock`**: framing lama diganti total — dulu "*pakai sebagai cross-check tambahan, BUKAN sinyal utama...jangan mengubah bias*" (inilah gap yang ditemukan di audit CME sebelumnya), sekarang "*real-time — DIPRIORITASKAN di atas data COT mingguan untuk konfirmasi ARAH...kalau berlawanan dengan bias teknikal, pertimbangkan serius sebagai alasan menurunkan keyakinan atau meninjau ulang arah*". Tetap BUKAN auto-block — kalimat terakhir eksplisit bilang "tetap keputusanmu, bukan otomatis dibatalkan".
+- **Reordering fetch di `ohlcvAnalyzeHandler`**: blok CME skew (`rr_cache_v2`) dipindah ke SEBELUM blok fundamental (dulu sesudah) supaya `rrPairSnapshot` siap dipakai untuk hitung `hasCmeData` — bukan fetch tambahan, cuma urutan baca cache yang sudah ada.
+- **`ohlcvCriticHandler`** (tombol manual "UJI KELEMAHAN", fact sheet Gate A AI Kritikus) — fix yang sama diterapkan (parse `rawRR` sekali, `hasCmeData` dipakai di kedua blok) supaya konsisten dengan jalur auto-entry, tidak ada 2 sumber kebenaran.
+
+**Test:** 4 test baru di `test/admin/makro_ctx.test.js` (hasCmeData true/false untuk `_formatFundamentalBlock`, framing baru + fail-open untuk `_formatOptionsSentimentBlock`, yang terakhir ini baru pertama kali diekspor/diuji langsung — sebelumnya nol test langsung). Full suite: **889/889 hijau**.
+
+**Belum berubah:** ambang angka skew (masih observasi, belum ada hard-block), dan `daun_merah_progress.md` entri S292 diupdate untuk reflect bahwa cuma bagian hard-block yang masih tertunda data.
 
 ## Changelog Session 292 (2026-08-08) — Macro Snapshot per Setup + Ghost-Tracking Gate D/B/A
 
