@@ -213,6 +213,18 @@ test('fund block EUR/USD: REAL YIELD tampil untuk KEDUA leg (bukan cuma USD)', (
   assert.ok(!out.includes('driver utama gold'), 'catatan gold cuma untuk isXau, bukan EUR/USD');
 });
 
+test('fund block EUR/USD (2026-08-08, pair_workflow.md): baris DIFFERENTIAL SUKU BUNGA EUR-USD muncul dari selisih nominal dua leg', () => {
+  const out = _formatFundamentalBlock({ label: 'EUR/USD', isXau: false, cbBias: null, cot: null, risk: null, drivers: DRIVERS, nowMs: NOW });
+  assert.ok(out.includes('DIFFERENTIAL SUKU BUNGA EUR-USD: -1.60pp (nominal, EUR minus USD)'), out);
+});
+
+test('fund block: baris DIFFERENTIAL SUKU BUNGA EUR-USD HANYA muncul untuk label EUR/USD, bukan pair lain', () => {
+  const outGbp = _formatFundamentalBlock({ label: 'EUR/GBP', isXau: false, cbBias: null, cot: null, risk: null, drivers: DRIVERS, nowMs: NOW });
+  assert.ok(!outGbp.includes('DIFFERENTIAL SUKU BUNGA'), 'EUR/GBP bukan EUR/USD, tidak boleh dapat baris ini');
+  const outAudNzd = _formatFundamentalBlock({ label: 'AUD/NZD', isXau: false, cbBias: null, cot: null, risk: null, drivers: DRIVERS, nowMs: NOW });
+  assert.ok(!outAudNzd.includes('DIFFERENTIAL SUKU BUNGA'));
+});
+
 test('fund block EUR/GBP (2026-08-04, dulu REAL YIELD USD disembunyikan total): sekarang tampil REAL YIELD EUR & GBP walau USD bukan leg', () => {
   const out = _formatFundamentalBlock({ label: 'EUR/GBP', isXau: false, cbBias: null, cot: null, risk: null, drivers: DRIVERS, nowMs: NOW });
   assert.ok(out.includes('DOLLAR & KOMODITAS'), out);

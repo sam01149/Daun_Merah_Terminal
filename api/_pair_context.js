@@ -111,24 +111,29 @@ const REGIME_INSTRUCTION = {
   bergejolak: 'Rezim bergejolak: syarat konfirmasi entry WAJIB lebih ketat (tunggu konfirmasi price action lebih jelas sebelum masuk), SL WAJIB diberi buffer lebih lebar dari biasanya, dan berita negatif untuk pair ini diberi bobot lebih besar dari kondisi normal.',
 };
 
-// Profil struktural per pair (2026-08-04, rapat user — riset di daun_merah_riset.md
-// "[2026-08-04] Profil struktural AUD/NZD & EUR/GBP"). HANYA untuk pair yang secara
-// struktural range-bound/mean-reverting (dua ekonomi mirip, tanpa kaki USD) — EUR/USD
-// & XAU/USD SENGAJA tidak dikasih entri karena keduanya macro-driven/trending, bukan
-// range-bound; nempelin "skeptis ke breakout" di situ justru salah kalibrasi.
-// Dipakai HANYA saat rezim volatilitas 'bergejolak' terdeteksi (lihat formatPairContextBlock)
-// supaya tidak jadi noise di kondisi tenang/normal — pair ini memang defaultnya diam.
-// CHF/JPY (pair ke-5, 2026-08-08) SENGAJA TIDAK dikasih entri di sini juga, walau
-// dua-duanya cross tanpa kaki USD — beda karakter dari AUD/NZD & EUR/GBP. Riset
-// korelasi (riset.md folder professional_llm_trader) menemukan hipotesis "dua
-// safe-haven saling menetralkan" (pola sama EUR/GBP) TIDAK terbukti untuk CHF/JPY:
-// SNB & BOJ punya pendorong kebijakan independen sendiri-sendiri (bukan searah
-// macam RBA-RBNZ), jadi pair ini kemungkinan lebih macro-driven/trending — nempelin
-// catatan "skeptis ke breakout, anggap noise" di sini justru salah kalibrasi, sama
-// alasannya kenapa EUR/USD & XAU/USD juga tidak dikasih entri.
+// Profil karakteristik per pair (2026-08-04, rapat user — riset di daun_merah_riset.md
+// "[2026-08-04] Profil struktural AUD/NZD & EUR/GBP"; diperluas 2026-08-08 saat CHF/JPY
+// ditambah — riset lengkap semua pair di pair_workflow.md folder professional_llm_trader
+// §"Faktor Kekuatan/Kelemahan per Pair"). Dipakai HANYA saat rezim volatilitas
+// 'bergejolak' terdeteksi (lihat formatPairContextBlock) — supaya tidak jadi noise di
+// kondisi tenang/normal, dan karena breakout/whipsaw ekstrem memang paling relevan
+// dicek ulang justru di momen itu.
+//
+// DUA JENIS FRAMING beda, JANGAN dipertukarkan:
+// - Range-bound/mean-reverting (AUD/NZD, EUR/GBP): "skeptis ke breakout, anggap noise
+//   kecuali ada pemicu jelas" — dua ekonomi mirip, silang saling menetralkan.
+// - Event-driven/intervention-risk (CHF/JPY): KEBALIKAN — jangan skeptis breakout,
+//   momentum bisa muncul tiba-tiba & valid (unwind carry trade / risk-off shock), TAPI
+//   waspada lonjakan sepihak akibat intervensi bank sentral yang BUKAN sinyal teknikal.
+//
+// EUR/USD & XAU/USD SENGAJA tidak di sini — driver utama mereka (differential suku
+// bunga Fed-ECB utk EUR/USD, real yield USD utk XAU/USD) sudah dapat catatan kausal
+// eksplisit LANGSUNG di data fundamental tiap call (api/admin.js `_formatFundamentalBlock`,
+// `goldNote`/rate-differential note) — nempel catatan generik lagi di sini redundan.
 const STRUCTURAL_PROFILES = {
   'AUD/NZD': 'Catatan struktural AUD/NZD: pair ini secara historis range-bound/mean-reverting (ekonomi Australia & New Zealand mirip, RBA & RBNZ sering bergerak searah) — breakout dari rezim bergejolak di atas HANYA kredibel kalau dibarengi salah satu pemicu jelas: RBA-RBNZ policy diverge tajam, atau harga komoditas kunci berlawanan arah (iron ore vs dairy/GDT). Tanpa pemicu itu, anggap ini kemungkinan besar noise dalam range, bukan breakout asli.',
   'EUR/GBP': 'Catatan struktural EUR/GBP: pair ini secara historis range-bound (ekonomi Eropa & Inggris berdekatan, menyerap shock eksternal dengan cara mirip, range harian tipikal cuma 40-70 pip) — breakout dari rezim bergejolak di atas HANYA kredibel kalau dibarengi divergensi kebijakan ECB-BOE yang jelas atau berita fiskal/politik relatif UK-EU. Tanpa pemicu itu, anggap ini kemungkinan besar noise dalam range. Perhatikan juga: range kecil pair ini bikin spread memakan porsi lebih besar dari target profit dibanding pair lain.',
+  'CHF/JPY': 'Catatan karakteristik CHF/JPY: dua-duanya safe-haven TAPI mekanismenya BEDA — CHF cenderung flight-to-quality asli (stabilitas politik/perbankan Swiss + intervensi SNB aktif sejak 2009 menahan penguatan franc), sedangkan penguatan JPY saat krisis terutama dari UNWIND CARRY TRADE (yen dipakai danai carry trade global karena suku bunga ultra-rendah, risk-off memicu penutupan posisi besar-besaran), bukan murni "safe haven inflow". Dua mekanisme beda ini bikin volatilitas pair ini cenderung DATANG TIBA-TIBA & arahnya sulit ditebak duluan (mana yang menang antara CHF vs JPY tergantung sumber ketakutan — kalau isunya stabilitas Eropa, CHF cenderung unggul bahkan atas JPY). JANGAN otomatis anggap breakout di rezim bergejolak sebagai noise — bisa jadi pergerakan riil dari unwind carry trade/risk-off shock. TAPI waspada RISIKO INTERVENSI SEPIHAK: BOJ intervensi langsung 2022 (¥2,8 triliun) & 2024 (7x intervensi total ¥24,5 triliun) memicu lonjakan tajam JPY dalam hitungan menit yang TIDAK berhubungan dengan struktur teknikal — kalau ada lonjakan vertikal tiba-tiba tanpa building momentum sebelumnya, curigai intervensi, bukan breakout organik. SNB historisnya juga aktif intervensi (floor EUR/CHF 2011-2015, pembelian aset asing sejak 2009).',
 };
 
 // Format blok konteks untuk disuntik ke prompt AI Analisa. Fail-open murni: field

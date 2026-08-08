@@ -209,6 +209,22 @@ test('format: EUR/USD & XAU/USD rezim bergejolak -> TIDAK ada catatan struktural
   assert.ok(!outXau.includes('Catatan struktural'), outXau);
 });
 
+test('format: CHF/JPY rezim bergejolak -> catatan karakteristik CHF/JPY ikut muncul (framing intervensi/carry-unwind, BEDA dari AUD/NZD/EUR/GBP)', () => {
+  const regime = computeVolatilityRegime(mkCandles(100, i => (i < 70 ? 0.2 : 2.0)));
+  const out = formatPairContextBlock({ regime, strength: null, pairLabel: 'CHF/JPY' });
+  assert.ok(out.includes('Catatan karakteristik CHF/JPY'), out);
+  assert.ok(out.includes('BOJ'), out);
+  assert.ok(out.includes('SNB'), out);
+  assert.ok(!out.includes('anggap ini kemungkinan besar noise'), 'CHF/JPY jangan pakai framing skeptis-breakout AUD/NZD/EUR/GBP');
+});
+
+test('format: CHF/JPY rezim NORMAL -> catatan karakteristik TIDAK muncul (fail-open sama seperti AUD/NZD/EUR/GBP)', () => {
+  const regimeNormal = computeVolatilityRegime(mkCandles(100, i => 1.0 + Math.sin(i / 5) * 0.5));
+  assert.equal(regimeNormal.regime, 'normal');
+  const out = formatPairContextBlock({ regime: regimeNormal, strength: null, pairLabel: 'CHF/JPY' });
+  assert.ok(!out.includes('Catatan karakteristik'), out);
+});
+
 // ── buildPairContext (glue murni, tanpa I/O) ──────────────────────────────────
 
 test('buildPairContext: data penuh -> regime+strength+block terisi', () => {

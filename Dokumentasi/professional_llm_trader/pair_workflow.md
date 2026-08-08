@@ -54,11 +54,15 @@ Kandidat pair HARUS lolos semua poin di bawah sebelum masuk Tahap 2. Ukur dengan
 
 Tujuan: AI (`ohlcvAnalyzeHandler`, prompt Analisa/auto-entry) membaca pair baru dengan pemahaman KHUSUS sifatnya, bukan generik. Pola yang sudah diimplementasikan untuk AUD/NZD & EUR/GBP (`riset.md` folder ini §"Profil struktural") jadi acuan, TAPI jangan copy-paste otomatis — tiap poin di bawah butuh keputusan sadar berbasis karakter pair itu sendiri.
 
-### 2a. Structural profile (`api/_pair_context.js`, `STRUCTURAL_PROFILES`)
+### 2a. Catatan karakteristik (`api/_pair_context.js`, `STRUCTURAL_PROFILES`) — WAJIB diriset, DUA jenis framing
 
-- **HANYA isi kalau pair TERBUKTI range-bound/mean-reverting** — dua ekonomi yang mirip/berdekatan, kebijakan bank sentral cenderung searah, tanpa kaki USD (pola AUD/NZD, EUR/GBP). Riset dulu sumber kredibel (bandingkan rentang pip tipikal ke major pair, driver kebijakan bank sentral) sebelum menulis catatan struktural — jangan menulis narasi tanpa dasar.
-- **JANGAN diisi kalau pair macro-driven/trending** (pola EUR/USD, XAU/USD, dan kemungkinan besar pair lintas-safe-haven macam CHF/JPY berdasar riset SNB-BOJ) — catatan struktural yang salah asumsi lebih berbahaya daripada tidak ada catatan sama sekali, karena bisa menyesatkan AI mengira breakout adalah noise.
-- Format entri: 1 paragraf — rentang pip tipikal, alasan struktural (kenapa range-bound), pemicu breakout kredibel yang spesifik (bukan generik "kalau ada berita besar").
+**Update 2026-08-08 (kasus CHF/JPY):** aturan lama di sini ("isi HANYA kalau range-bound, JANGAN kalau trending") ternyata bikin pair yang trending/macro-driven tapi TIDAK dapat data fundamental dalam (beda dari EUR/USD & XAU/USD) berakhir NOL konteks pair-spesifik sama sekali. Revisi: **setiap pair aktif WAJIB diriset & punya karakterisasi eksplisit** (sumber kredibel, bukan tebakan) — cuma mekanisme penyampaiannya yang beda tergantung apa pair itu sudah dapat konteks dari jalur lain atau belum:
+
+1. **Range-bound/mean-reverting** (dua ekonomi mirip, kebijakan bank sentral cenderung searah, tanpa kaki USD — pola AUD/NZD, EUR/GBP): isi `STRUCTURAL_PROFILES` dengan framing "skeptis ke breakout kecuali ada pemicu jelas". Riset: rentang pip tipikal, alasan struktural, pemicu breakout kredibel yang SPESIFIK.
+2. **Trending/macro-driven TAPI sudah dapat data fundamental dalam** (COT, CME options, labour market/rate-path — pola EUR/USD, XAU/USD): JANGAN isi `STRUCTURAL_PROFILES` — tapi WAJIB ada catatan kausal eksplisit LANGSUNG di `_formatFundamentalBlock`/`api/admin.js` (pola `goldNote` untuk XAU/USD, "DIFFERENTIAL SUKU BUNGA EUR-USD" untuk EUR/USD) supaya AI tidak cuma dapat angka mentah dua kaki terpisah, tapi juga arah kausal yang menghubungkannya.
+3. **Trending/event-driven TAPI TIDAK dapat data fundamental dalam** (bukan pair berkaki USD, tidak ada COT/CME — pola CHF/JPY): isi `STRUCTURAL_PROFILES` juga, TAPI dengan framing KEBALIKAN dari poin 1 — "jangan skeptis ke breakout, momentum bisa valid & tiba-tiba, TAPI waspada [risiko spesifik pair ini]" (untuk CHF/JPY: risiko intervensi bank sentral sepihak). Riset apa yang bikin pair ini bergerak DAN apa yang bisa menyesatkan (headline noise vs pergerakan riil).
+
+**Referensi lengkap hasil riset ke-5 pair aktif (sumber + framing dipakai): lihat §"Faktor Kekuatan/Kelemahan per Pair Aktif" di bawah.**
 
 ### 2b. Modul fundamental USD-sentris
 
@@ -87,23 +91,71 @@ Dulu ada langkah "putuskan REGIME_RELEVANT_SYMBOLS" di sini — sudah tidak rele
 
 ---
 
+## Faktor Kekuatan/Kelemahan per Pair Aktif (referensi hidup, WAJIB update tiap pair baru/ada temuan baru)
+
+Riset 2026-08-08 (web search, sumber dicantumkan) — apa yang bikin tiap currency/pair MENGUAT vs MELEMAH, dan bagaimana itu disalurkan ke AI (jalur data fundamental langsung vs catatan naratif `STRUCTURAL_PROFILES`, lihat Tahap 2a).
+
+### XAU/USD (Gold) — jalur: data fundamental langsung (`goldNote`, `_formatFundamentalBlock`)
+
+- **Menguat kalau:** real yield USD TURUN (ongkos oportunitas pegang aset non-yield berkurang), USD MELEMAH (gold dihargakan global dalam USD, lebih murah buat pembeli non-AS), pembelian bank sentral tinggi (rekor 1.237 ton 2025, tahun ke-3 berturut >1.000 ton), risiko geopolitik naik (kontribusi ~8-12% return gold 2025).
+- **Melemah kalau:** real yield USD NAIK, USD MENGUAT, Fed hawkish (suku bunga tinggi lebih lama).
+- **Sudah tersalur ke AI:** `goldNote` di `_formatFundamentalBlock` (`api/admin.js`) — baris REAL YIELD USD otomatis dapat catatan "driver utama gold" tiap call.
+- Sumber: [Gold Price Drivers — EBC Financial Group](https://www.ebc.com/forex/gold-price-drivers-rates-dollar-central-banks), [Gold 2026 Outlook — State Street](https://www.ssga.com/us/en/intermediary/insights/gold-2026-outlook-can-the-structural-bull-cycle-continue-to-5000), [ING THINK Gold 2026](https://think.ing.com/articles/golds-bull-run-to-continue-in-2026/).
+
+### EUR/USD — jalur: data fundamental langsung (differential note, `_formatFundamentalBlock`)
+
+- **Driver dominan (horizon 1-3 tahun):** DIFFERENTIAL suku bunga Fed-ECB — BUKAN level tiap kaki sendiri-sendiri. Riset pasar: tiap penyempitan 50bp differential ≈ 300-400 pip pergerakan EUR/USD, non-linear (dampak proporsional lebih besar makin rendah level suku bunga).
+- **EUR menguat relatif kalau:** ECB relatif lebih hawkish dari Fed (differential menyempit/negatif dari sisi USD).
+- **Driver jangka pendek tambahan:** feedback loop minyak/geopolitik — tiap headline gencatan senjata/eskalasi bisa gerakkan 50-100 pip.
+- **Sudah tersalur ke AI:** baris "DIFFERENTIAL SUKU BUNGA EUR-USD" (ditambahkan 2026-08-08, `_formatFundamentalBlock`) — dihitung otomatis dari selisih REAL YIELD EUR minus USD tiap call.
+- Sumber: [EURUSD 2026 Rate Differential — FXTM](https://www.fxtm.com/en/blog/eurusd-2026-rate-differential/), [EUR/USD Forecast — Central Bank Watch](https://centralbank.watch/compare/currency-pair-deep-dives/eur-usd/), [Why Fed & ECB Pull Different Directions — StoneX](https://www.stonex.com/en/insights/why-the-fed-and-the-ecb-keep-pulling-in-different-rate-directions-2026-07-08/).
+
+### AUD/NZD — jalur: catatan naratif `STRUCTURAL_PROFILES` (framing: skeptis breakout)
+
+- **AUD menguat/melemah ikut:** harga iron ore (proxy ekspor Australia), kebijakan RBA.
+- **NZD menguat/melemah ikut:** harga dairy/lelang GDT (proxy ekspor NZ), kebijakan RBNZ.
+- **Pair-nya sendiri:** range-bound/mean-reverting (400-800 pip tipikal) — RBA & RBNZ historisnya sering bergerak searah, jadi silang saling menetralkan faktor bersama. Breakout kredibel HANYA kalau RBA-RBNZ policy diverge tajam ATAU iron ore vs dairy berlawanan arah.
+- Sumber riset asli (2026-08-04): [Forex For Starters — AUD/NZD](https://forexforstarters.com/markets/minors/aud-nzd/), [AvaTrade AUD-NZD](https://www.avatrade.com/trading-info/financial-instruments-index/fxoptions/aud-nzd).
+
+### EUR/GBP — jalur: catatan naratif `STRUCTURAL_PROFILES` (framing: skeptis breakout)
+
+- **EUR menguat/melemah ikut:** kebijakan ECB, data makro Eurozone gabungan.
+- **GBP menguat/melemah ikut:** kebijakan BOE, data inflasi/tenaga kerja UK.
+- **Pair-nya sendiri:** range-bound (40-70 pip harian tipikal, ATR14 rendah) — Eropa & Inggris berdekatan geografis, menyerap shock eksternal dengan cara mirip. Breakout kredibel HANYA kalau ada divergensi kebijakan ECB-BOE jelas atau berita fiskal/politik relatif UK-EU. Range kecil bikin spread memakan porsi lebih besar dari target profit.
+- Sumber riset asli (2026-08-04): [FxPro EUR/GBP Trading Guide](https://www.fxpro.com/help-section/education/beginners/articles/mastering-eur-gbp-forex-trading-complete-guide-to-strategies-and-analysis-for-2026), [FXNX EUR/GBP Trading Guide](https://fxnx.com/en/blog/eur-gbp-trading-guide-mastering-institutional-anchor).
+
+### CHF/JPY — jalur: catatan naratif `STRUCTURAL_PROFILES` (framing KEBALIKAN: jangan skeptis breakout, waspada intervensi)
+
+- **CHF menguat kalau:** ketakutan pasar terpusat isu Eropa/stabilitas politik-perbankan (flight-to-quality ASLI ke sistem perbankan Swiss). SNB aktif intervensi menahan penguatan franc sejak 2009 (floor EUR/CHF 2011-2015, beli aset asing/jual CHF).
+- **JPY menguat kalau:** UNWIND CARRY TRADE global (yen didanai carry trade karena suku bunga ultra-rendah — risk-off memicu penutupan besar-besaran, BUKAN murni "safe haven inflow" murni). VIX > 18 mulai unwind carry trade; VIX 18-27 flight-to-safety yen kuat; VIX > 40 safe-haven umum (JPY/CHF/USD) dominan, sinyal individual pair tenggelam.
+- **Risiko KHUSUS pair ini:** intervensi bank sentral SEPIHAK bisa bikin lonjakan tajam dalam hitungan menit yang TIDAK berhubungan sama sekali dengan struktur teknikal. BOJ intervensi langsung 2022 (¥2,8 triliun, pertama sejak 1998) & 2024 (7x intervensi, total ¥24,5 triliun) — USD/JPY sempat surge ~10% dalam beberapa minggu sebelum intervensi 2024. Tanda peringatan: lonjakan vertikal tiba-tiba TANPA building momentum sebelumnya, order flow tidak wajar, komentar verbal pejabat Jepang/Swiss.
+- **Pair-nya sendiri:** volatilitas cenderung datang tiba-tiba & arahnya sulit ditebak duluan (dua mekanisme safe-haven yang BEDA, tidak selalu searah). JANGAN anggap breakout di rezim bergejolak sebagai noise — kemungkinan pergerakan riil dari unwind carry trade/risk-off shock, TAPI validasi dulu bukan lonjakan intervensi sepihak.
+- Sumber: [VT Markets — CHF vs JPY Safe-Haven 2026](https://www.vtmarkets.com/learn/chf-vs-jpy-identifying-the-superior-safe-haven-currency-in-2026-vt-markets/), [FXNX Safe Haven Currency Pairs](https://fxnx.com/en/blog/safe-haven-currency-pairs-your-forex-stability-guide), [Cross-Asset Risk Monitor — VIX thresholds](https://globalinvesting.github.io/guide-cross-asset-risk.html), [Risk Premiums & Yen Carry Trade — MDPI](https://www.mdpi.com/2227-9091/14/3/46), [Traders Union — BOJ Interventions](https://tradersunion.com/interesting-articles/currency-intervention/boj-interventions/), [BOJ Intervention 2022 vs 2024 — FXStreet](https://www.fxstreet.com/analysis/boj-intervention-2022-vs-2024-202404151139), [SNB Operational Framework Primer](https://gianlucabenigno.substack.com/p/the-snb-operational-framework-a-primer).
+
+---
+
 ## TAHAP 3 — Checklist Titik Kode (mekanis, setelah Tahap 1 & 2 diputuskan)
 
 Centang manual tiap kali eksekusi — urutan tidak wajib, tapi semua WAJIB disentuh atau disengaja dilewati dengan alasan:
 
+- [ ] **Riset karakteristik pair (Tahap 2a) sudah ditulis di §"Faktor Kekuatan/Kelemahan per Pair Aktif" di atas** — sumber kredibel dicantumkan, framing yang dipilih (range-bound / fundamental-langsung / event-driven) dijustifikasi. JANGAN lanjut ke titik kode di bawah sebelum ini ada.
 - [ ] `vps/daemon.js` — `AUTO_ENTRY_SYMBOL_MAP` (entri baru `frxXXX: {symbol, label}`), `AUTO_ENTRY_PAIRS` default env var
 - [ ] `vps/daemon.js` — `YAHOO_TO_DERIV_SYMBOL`: isi HANYA kalau pair itu genuinely simbol Deriv asli (lihat Tahap 1c); kalau Yahoo-only, JANGAN diisi
 - [ ] `api/admin.js` — `OHLCV_FIXED_PAIRS` (cache `ohlcv_sync`)
 - [ ] `api/admin.js` — `SPREAD_PRICE_ESTIMATE` (Tahap 2d, WAJIB — histori bug)
+- [ ] `api/admin.js` — `_formatFundamentalBlock`: kalau pair punya driver kausal terkuantifikasi (pola `goldNote` XAU/USD, "DIFFERENTIAL SUKU BUNGA" EUR/USD) DAN datanya sudah tersedia di `realYields`/`cbBias`/dst — tambahkan catatan kausal eksplisit, jangan biarkan AI cuma dapat angka mentah tanpa arah hubungan
 - [ ] `api/_ohlcv_fetch.js` — `YAHOO_TO_TWELVEDATA_SYMBOL` (fallback kalau Yahoo down)
-- [ ] `api/_auto_entry_guard.js` — Gate D `CORRELATED_PARTNER`/`USD_VIEW_BY_SYMBOL_BIAS` ATAU cabang baru (Tahap 2c) — HANYA kalau korelasi mengharuskan
-- [ ] `api/_pair_context.js` — `STRUCTURAL_PROFILES` — HANYA kalau Tahap 2a menyimpulkan range-bound
-- [ ] `api/calendar.js` — cek komentar `SURPRISE_CURRENCIES` (kode auto-derive, cuma perlu update komentar kalau menyebut currency spesifik yang jadi salah)
-- [ ] `dev-auto-entry.html` — `ACTIVE_FILTER_PAIRS` (filter dashboard Riwayat Setup)
-- [ ] `test/vps/auto_entry.test.js` — update assert `AUTO_ENTRY_PAIRS`/`AUTO_ENTRY_SYMBOL_MAP` (akan merah otomatis kalau kelewat, itu sinyal wajib)
+- [ ] `api/_auto_entry_guard.js` — Gate D `CORRELATED_PAIRS` (array `{a,b,sign}`) — HANYA kalau Tahap 2c menyimpulkan perlu di-cap; `sign` ditentukan dari ARAH korelasi (positif = bias sama dicap, negatif = bias berlawanan dicap), bukan dari abstraksi "USD view" (itu sudah di-generalisasi 2026-08-08, jangan bikin ulang model lama)
+- [ ] `api/_pair_context.js` — `STRUCTURAL_PROFILES` — isi untuk framing #1 (range-bound, skeptis breakout) ATAU #3 (event-driven, framing kebalikan) di Tahap 2a; SKIP hanya untuk framing #2 (sudah dapat catatan kausal langsung di admin.js)
+- [ ] `api/calendar.js` — **`SURPRISE_CURRENCIES` di sini HARDCODE, TERPISAH dari versi auto-derive di `vps/daemon.js`** (ditemukan 2026-08-08 — bug nyata, bukan cuma komentar basi) — WAJIB tambah currency baru manual ke set ini juga
+- [ ] `dev-auto-entry.html` — cek `ACTIVE_FILTER_PAIRS` (per 2026-08-08 sudah auto-derive live dari `setup_stats?scope=auto`, kemungkinan besar TIDAK perlu edit manual lagi — verifikasi masih begitu, jangan asumsikan tanpa cek)
+- [ ] `test/vps/auto_entry.test.js` — update assert `AUTO_ENTRY_PAIRS`/`AUTO_ENTRY_SYMBOL_MAP`/`SURPRISE_CURRENCIES` (akan merah otomatis kalau kelewat, itu sinyal wajib)
 - [ ] `test/api/_auto_entry_guard.test.js` — tambah test Gate D kalau ada perubahan di poin Gate D
+- [ ] `test/api/calendar.test.js` — update assert `SURPRISE_CURRENCIES`/`buildSurpriseEvents` kalau currency set berubah
+- [ ] `test/lib/pair_context.test.js` — tambah test `STRUCTURAL_PROFILES` baru (regime bergejolak → muncul, regime normal → tidak)
+- [ ] `test/admin/makro_ctx.test.js` — tambah test kalau ada catatan kausal baru di `_formatFundamentalBlock`
 - [ ] `npm test` 100% hijau
-- [ ] Dokumentasi: hasil pengukuran Tahap 1 → `riset.md` folder ini; implementasi → `changelog.md` folder ini; kalau ada yang ditunda → `progress.md` folder ini
+- [ ] Dokumentasi: hasil pengukuran Tahap 1 + riset karakteristik Tahap 2a → `riset.md` folder ini; implementasi → `changelog.md` folder ini; kalau ada yang ditunda → `progress.md` folder ini
 
 ---
 

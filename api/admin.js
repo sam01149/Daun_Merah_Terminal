@@ -4285,6 +4285,18 @@ function _formatFundamentalBlock({ label, isXau, cbBias, cot, risk, retail, driv
       : '';
     lines.push(`REAL YIELD ${leg}: nominal ${ry.nominal}% − ekspektasi inflasi ${ry.inflation_exp}% = real yield ${ry.real}%${goldNote}`);
   }
+  // Catatan kausal EUR/USD (2026-08-08, pair_workflow.md folder professional_llm_trader
+  // §"Faktor Kekuatan/Kelemahan per Pair"): driver dominan EUR/USD horizon 1-3 tahun
+  // adalah DIFFERENTIAL suku bunga Fed-ECB (bukan level tiap kaki sendiri-sendiri) —
+  // riset pasar: tiap penyempitan 50bp differential historisnya berasosiasi ~300-400
+  // pip pergerakan EUR/USD, non-linear (dampak proporsional lebih besar saat level suku
+  // bunga sudah rendah). Pola sama goldNote di atas — kasih arah kausal eksplisit,
+  // bukan cuma angka mentah dua kaki terpisah yang AI harus simpulkan sendiri.
+  if (label === 'EUR/USD' && realYields.EUR && realYields.USD
+    && realYields.EUR.nominal != null && realYields.USD.nominal != null) {
+    const diff = realYields.EUR.nominal - realYields.USD.nominal;
+    lines.push(`DIFFERENTIAL SUKU BUNGA EUR-USD: ${diff >= 0 ? '+' : ''}${diff.toFixed(2)}pp (nominal, EUR minus USD) — ini driver dominan EUR/USD horizon 1-3 tahun (lebih penting dari level tiap kaki sendiri-sendiri); differential MENYEMPIT (ECB relatif lebih hawkish / Fed relatif lebih dovish) historisnya EUR/USD-bullish, MELEBAR sebaliknya bearish.`);
+  }
   if (lines.length === 0) return '';
   const baseNote = isXau
     ? 'catatan: XAU tidak punya bank sentral — pakai bias Fed (USD) + risk regime sebagai proxy arah dolar/haven'
