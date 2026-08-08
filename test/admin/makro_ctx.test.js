@@ -154,11 +154,26 @@ test('fund block: hasCmeData=true (XAU/USD & EUR/USD) → COT diberi catatan CME
 
 const { _formatOptionsSentimentBlock } = require('../../api/admin.js');
 
-test('_formatOptionsSentimentBlock: framing baru — CME diprioritaskan di atas COT untuk arah, bukan lagi "cross-check tambahan"', () => {
-  const out = _formatOptionsSentimentBlock({ rr_value: 2.1 });
+// (2026-08-08, revisi sama hari — hasil diskusi "apakah ini masih selaras Plan U?")
+// Framing baru DIKARANTINA ke isAutoCall (eksperimen developer-only) lewat parameter
+// `prioritized` — jalur manual publik ("Analisa AI" + "UJI KELEMAHAN") tetap dapat
+// framing lama sampai tervalidasi data. Default (prioritized tidak diisi) HARUS tetap
+// framing lama, supaya pemanggil yang lupa mengisi parameter fail-safe ke versi aman.
+test('_formatOptionsSentimentBlock: prioritized=true (isAutoCall) → framing baru, CME diprioritaskan di atas COT', () => {
+  const out = _formatOptionsSentimentBlock({ rr_value: 2.1 }, true);
   assert.ok(out.includes('DIPRIORITASKAN di atas data COT mingguan'), out);
-  assert.ok(!out.includes('cross-check tambahan'), 'framing pasif lama harus sudah diganti');
-  assert.ok(!out.includes('jangan mengubah bias'), 'instruksi "jangan mengubah bias" harus sudah diganti');
+  assert.ok(!out.includes('cross-check tambahan'), out);
+  assert.ok(!out.includes('jangan mengubah bias'), out);
+});
+
+test('_formatOptionsSentimentBlock: prioritized=false/tidak diisi (manual publik) → tetap framing lama', () => {
+  const outFalse = _formatOptionsSentimentBlock({ rr_value: 2.1 }, false);
+  const outDefault = _formatOptionsSentimentBlock({ rr_value: 2.1 });
+  for (const out of [outFalse, outDefault]) {
+    assert.ok(out.includes('cross-check tambahan'), out);
+    assert.ok(out.includes('jangan mengubah bias'), out);
+    assert.ok(!out.includes('DIPRIORITASKAN'), out);
+  }
 });
 
 test('_formatOptionsSentimentBlock: rr null/kosong → string kosong (fail-open, tidak berubah)', () => {

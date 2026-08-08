@@ -11,10 +11,24 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-08 (Session 293 — Reordering prioritas COT vs CME di prompt, khusus XAU/USD & EUR/USD)
+> **Last updated:** 2026-08-08 (Session 294 — Karantina framing CME-priority ke isAutoCall saja + penanda versi prompt)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 294 (2026-08-08) — Karantina Framing CME-Priority ke isAutoCall + Penanda Versi Prompt
+
+**Konteks:** Koreksi diri langsung setelah Session 293 di-push. User tanya "apakah ini semua masih selaras dengan Plan U?" — audit ulang kode menemukan celah: `fundBlock`/`rrBlock` (tempat framing "CME diprioritaskan di atas COT" ditanam Session 293) dibangun SEBELUM percabangan `isAutoCall` di `ohlcvAnalyzeHandler`, dipakai bareng oleh jalur manual publik ("Analisa AI", tombol yang siapa saja bisa klik) DAN jalur auto-entry (eksperimen developer-only). Artinya framing baru — yang justifikasi awalnya sendiri sudah terbukti lemah (klaim "0% win rate" salah hitung, Session 292) — sudah ikut memengaruhi fitur PUBLIK sejak Session 293, bukan cuma dites diam-diam di eksperimen. Ini berlawanan dengan prinsip isolasi Plan U/U-7 ("auto-entry eksperimen senyap, publik cuma dapat fitur informasi").
+
+**Perbaikan (`api/admin.js`):**
+- `_formatOptionsSentimentBlock(rr, prioritized)` — parameter baru. `prioritized` falsy (default) = framing LAMA ("cross-check tambahan, jangan mengubah bias"); `prioritized: true` = framing BARU Session 293 ("DIPRIORITASKAN di atas COT"). Fail-safe: parameter tidak diisi jatuh ke versi lama/aman, bukan versi baru.
+- `ohlcvAnalyzeHandler`: `_formatOptionsSentimentBlock(rrPairSnapshot, isAutoCall)` — framing baru HANYA aktif kalau request ini benar cron auto-entry. `_formatFundamentalBlock`'s `hasCmeData` juga ditambah `&& isAutoCall`.
+- `ohlcvCriticHandler` (tombol manual publik "UJI KELEMAHAN") — 100% tidak pernah dipanggil dari pipeline auto-entry (Gate A auto-entry pakai `_runCriticVerdict` langsung di dalam `ohlcvAnalyzeHandler`, bukan lewat endpoint ini), jadi `hasCmeData`/`prioritized` di sini sengaja TIDAK PERNAH diaktifkan — dikembalikan ke framing lama sepenuhnya.
+- **Penanda versi prompt baru:** `COT_CME_PROMPT_VERSION` (const, saat ini `1`) + field `cme_priority_prompt_v` di tiap setup auto-entry (null = framing lama, angka = framing baru yang aktif saat setup itu dibuat). Beda dari `macro_snapshot.v` (itu versi skema DATA, ini versi LOGIC prompt) — mitigasi supaya nanti bisa dibedakan setup mana yang analisisnya dipengaruhi framing baru vs lama, tanpa nebak dari timestamp `ts`.
+
+**Test:** `test/admin/makro_ctx.test.js` — 2 test lama diupdate (signature `_formatOptionsSentimentBlock` berubah), 1 test baru memverifikasi default/false tetap framing lama. Full suite: **890/890 hijau**.
+
+**Catatan buat evaluasi nanti:** publik ("Analisa AI" + "UJI KELEMAHAN") untuk XAU/USD & EUR/USD sekarang KONSISTEN kembali dengan pair lain (framing netral, tidak ada prioritas CME eksplisit) — cuma jalur auto-entry developer-only yang dapat framing baru. Kalau nanti data `macro_snapshot`/`cme_priority_prompt_v` memvalidasi framing baru ini beneran membantu, baru layak dipertimbangkan dibuka ke publik juga.
 
 ## Changelog Session 293 (2026-08-08) — Reordering Prioritas COT vs CME di Prompt (Khusus XAU/USD & EUR/USD)
 

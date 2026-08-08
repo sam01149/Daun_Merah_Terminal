@@ -4390,7 +4390,14 @@ function _extractMacroDrivers(rawSnap, rawRY) {
 // 1. Arah + momentum sentimen (skew + skewPercentChange)
 // 2. Level volatilitas yang diharapkan pasar (cvolPrice + %chg)
 // 3. Antisipasi kejutan mendadak 2 arah sekaligus, independen dari arah (convexInd + %chg)
-function _formatOptionsSentimentBlock(rr) {
+// Versi framing prompt CME-vs-COT (2026-08-08) — dipakai `_formatOptionsSentimentBlock`
+// (implisit, lewat parameter `prioritized`) & direkam ke tiap setup auto-entry
+// (`cme_priority_prompt_v` di buildNewSetupEntry, ohlcvAnalyzeHandler) supaya generasi
+// data sebelum/sesudah perubahan framing bisa dibedakan tanpa nebak dari timestamp.
+// Naikkan angka ini setiap kali TEKS framing di bawah direvisi lagi.
+const COT_CME_PROMPT_VERSION = 1;
+
+function _formatOptionsSentimentBlock(rr, prioritized) {
   if (!rr) return '';
   const val = rr.rr_value;
   const abs = Math.abs(val);
@@ -4420,13 +4427,17 @@ function _formatOptionsSentimentBlock(rr) {
       : `Tidak ada tanda pasar sedang mengantisipasi kejutan mendadak saat ini (indikator ini turun ${Math.abs(rr.convexity_change_pct).toFixed(1)}% dari kemarin).`);
   }
 
-  // (2026-08-08, diskusi user — reordering prioritas COT vs CME) Framing lama ("cuma
-  // cross-check tambahan, jangan mengubah bias") diganti: CME ini data real-time,
-  // DIPRIORITASKAN di atas COT (mingguan, lag) untuk konfirmasi arah. Tetap BUKAN
-  // aturan keras/auto-block — AI yang menimbang, bukan kode yang memaksa null. Kalau
-  // mau pasang ambang angka otomatis nanti, itu nunggu data macro_snapshot terkumpul
-  // dulu (lihat daun_merah_progress.md) — sesi ini cuma ubah framing kalimat prompt.
-  return `SENTIMEN PASAR OPTIONS (dari CME, real-time — DIPRIORITASKAN di atas data COT mingguan untuk konfirmasi ARAH karena lebih up-to-date; kalau searah dengan bias teknikal, jadikan penguat keyakinan; kalau BERLAWANAN dengan bias teknikal, pertimbangkan serius sebagai alasan menurunkan keyakinan atau meninjau ulang arah — tetap keputusanmu berdasarkan kekuatan bukti lain, bukan otomatis dibatalkan):\n${lines.join('\n')}`;
+  // (2026-08-08, diskusi user — reordering prioritas COT vs CME) Framing baru ("CME
+  // DIPRIORITASKAN di atas COT untuk arah") HANYA dipakai kalau `prioritized` true
+  // (isAutoCall — eksperimen developer-only). Jalur manual publik ("Analisa AI" +
+  // tombol "UJI KELEMAHAN") TETAP pakai framing lama ("cross-check tambahan, jangan
+  // mengubah bias") — justifikasi reordering ini (klaim "0% win rate") sudah terbukti
+  // salah hitung, jadi dikarantina ke eksperimen dulu sampai tervalidasi data
+  // (macro_snapshot, lihat daun_merah_progress.md), tidak langsung memengaruhi apa
+  // yang dibaca publik hari ini (prinsip isolasi Plan U/U-7).
+  return prioritized
+    ? `SENTIMEN PASAR OPTIONS (dari CME, real-time — DIPRIORITASKAN di atas data COT mingguan untuk konfirmasi ARAH karena lebih up-to-date; kalau searah dengan bias teknikal, jadikan penguat keyakinan; kalau BERLAWANAN dengan bias teknikal, pertimbangkan serius sebagai alasan menurunkan keyakinan atau meninjau ulang arah — tetap keputusanmu berdasarkan kekuatan bukti lain, bukan otomatis dibatalkan):\n${lines.join('\n')}`
+    : `SENTIMEN PASAR OPTIONS (dari CME, sumber terpisah dari data teknikal chart — pakai sebagai cross-check tambahan, BUKAN sinyal utama; kalau bertentangan dengan bias teknikal, sebut sebagai catatan risiko di paragraf integrasi, jangan mengubah bias):\n${lines.join('\n')}`;
 }
 
 // Track record historis disuapkan ke prompt Analisa (Plan I item 2, session 180) —
@@ -4656,7 +4667,13 @@ async function ohlcvAnalyzeHandler(req, res) {
       if (rawRR) {
         const rrCache = JSON.parse(rawRR);
         rrPairSnapshot = rrCache?.pairs?.[data.label] || null;
-        rrBlock = _formatOptionsSentimentBlock(rrPairSnapshot);
+        // (2026-08-08, diskusi user) Framing "CME diprioritaskan" HANYA untuk
+        // isAutoCall (eksperimen developer-only) — bukan jalur manual publik ("Analisa
+        // AI" yang siapa saja bisa klik). Justifikasi awal reordering ini (klaim "0%
+        // win rate") sudah terbukti salah hitung; sampai ada data yang benar-benar
+        // memvalidasi, framing baru DIKARANTINA ke eksperimen dulu, tidak langsung
+        // memengaruhi apa yang dibaca publik (prinsip isolasi Plan U/U-7).
+        rrBlock = _formatOptionsSentimentBlock(rrPairSnapshot, isAutoCall);
       }
     } catch (e) { /* opsional — jangan gagalkan analisa kalau cache RR kosong */ }
 
@@ -4709,7 +4726,10 @@ async function ohlcvAnalyzeHandler(req, res) {
         // KALAU datanya tersedia untuk pair ini. AUD/NZD & EUR/GBP otomatis TIDAK
         // kena (rrPairSnapshot selalu null buat mereka — bukan pair CVOL) — 0 baris
         // kode berubah untuk 2 pair itu, sesuai batas scope Section 4 rapat CME.
-        hasCmeData: !!rrPairSnapshot,
+        // && isAutoCall (ditambah kemudian, sama hari): dikarantina ke eksperimen
+        // developer-only saja, lihat komentar rrBlock di atas — TIDAK bocor ke jalur
+        // manual publik sampai tervalidasi data.
+        hasCmeData: !!rrPairSnapshot && isAutoCall,
       });
     } catch (e) { /* opsional — jangan gagalkan analisa kalau cache fundamental kosong */ }
     // Fallback HANYA untuk isAutoCall (cron auto-entry) — manual selalu sudah kirim
@@ -5348,6 +5368,14 @@ async function ohlcvAnalyzeHandler(req, res) {
           cbBias: cbBiasParsed, cot: cotParsed, retail: retailParsed,
           risk: riskParsed, drivers: macroDrivers, rrPair: rrPairSnapshot,
         }),
+        // Penanda versi framing prompt CME-vs-COT (2026-08-08, diskusi user — mitigasi
+        // "gimana nanti bedain setup sebelum/sesudah reordering ini"). null = framing
+        // lama (manual, atau auto tapi pair tanpa data CME); angka = framing baru
+        // COT_CME_PROMPT_VERSION AKTIF saat setup ini dibuat. TIDAK sama dengan
+        // macro_snapshot.v (itu versi SKEMA data, ini versi LOGIC prompt) — kalau
+        // framing-nya direvisi lagi nanti, naikkan angka ini supaya generasi lama/baru
+        // tetap bisa dibedakan tanpa nebak dari tanggal `ts`.
+        cme_priority_prompt_v: (rrPairSnapshot && isAutoCall) ? COT_CME_PROMPT_VERSION : null,
         // Track 1b (Road to Professional LLM Trader, 2026-08-04, diskusi user):
         // rekam risk_regime SAAT setup dibuat — `autoGuardRegime` sudah dihitung
         // di atas untuk Gate B (nol fetch/panggilan tambahan), tapi cache
@@ -5775,9 +5803,12 @@ async function ohlcvCriticHandler(req, res) {
     redisCmd('GET', 'daily_snapshot').catch(() => null),
     redisCmd('GET', 'real_yields').catch(() => null),
   ]);
-  // (2026-08-08) rawRR sudah di-fetch paralel di atas — parse sekali di sini supaya
-  // hasCmeData siap dipakai _formatFundamentalBlock DAN _formatOptionsSentimentBlock,
-  // pola sama ohlcvAnalyzeHandler (reordering prioritas COT vs CME).
+  // (2026-08-08) rawRR sudah di-fetch paralel di atas — parse sekali di sini. Handler
+  // ini ("UJI KELEMAHAN") 100% manual/publik, TIDAK PERNAH dipanggil dari pipeline
+  // auto-entry (Gate A auto-entry pakai _runCriticVerdict langsung di dalam
+  // ohlcvAnalyzeHandler, bukan lewat endpoint ini) — jadi framing CME-diprioritaskan
+  // SENGAJA tidak diaktifkan di sini (hasCmeData/prioritized tidak di-set, default
+  // false), konsisten dengan karantina isolasi Plan U/U-7 di ohlcvAnalyzeHandler.
   let rrPairForCritic = null;
   try { rrPairForCritic = rawRR ? JSON.parse(rawRR)?.pairs?.[label] || null : null; } catch (e) { /* opsional */ }
   try {
@@ -5789,7 +5820,6 @@ async function ohlcvCriticHandler(req, res) {
       retail: rawRetail ? JSON.parse(rawRetail) : null,
       drivers: _extractMacroDrivers(rawSnap, rawRY),
       nowMs:  Date.now(),
-      hasCmeData: !!rrPairForCritic,
     });
   } catch (e) { /* opsional */ }
   try {
@@ -6176,6 +6206,7 @@ module.exports._formatFundamentalBlock = _formatFundamentalBlock;
 module.exports._extractMacroDrivers = _extractMacroDrivers;
 module.exports._buildMacroSnapshot = _buildMacroSnapshot;
 module.exports._formatOptionsSentimentBlock = _formatOptionsSentimentBlock;
+module.exports.COT_CME_PROMPT_VERSION = COT_CME_PROMPT_VERSION;
 module.exports._formatTrackRecordBlock = _formatTrackRecordBlock;
 module.exports._calEventMsWib = _calEventMsWib;
 module.exports._buildAnalyzeCalBlock = _buildAnalyzeCalBlock;
