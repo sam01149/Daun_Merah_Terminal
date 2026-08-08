@@ -4340,6 +4340,9 @@ body:not(.light-theme) .ringkasan-gen-btn {
      dipakai juga sw.js & api/). Query ?v= = cache-buster — naikkan tiap kali
      newscat.js berubah, samakan dengan NEWSCAT_VERSION di sw.js. -->
 <script src="/newscat.js?v=2026.07.15.2"></script>
+<!-- fx-sessions.js: batas jam sesi FX (single source of truth, dipakai juga
+     api/journal.js). Query ?v= = cache-buster — naikkan tiap kali file berubah. -->
+<script src="/fx-sessions.js?v=2026.08.08.1"></script>
 <script>
 
 // Theme Toggle Logic
@@ -4388,7 +4391,7 @@ window.addEventListener('DOMContentLoaded', () => _updateNewsLangBtn());
 
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.08.07.1';
+const APP_VERSION = '2026.08.08.1';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
@@ -8707,21 +8710,21 @@ const FUND_SCORE_RULES = {
   'NAB Business Conf':{ dir: 1,  threshold: 0     },
 };
 
-// Direction map for all known indicators
+// Direction map for all known indicators — diturunkan dari FUND_SCORE_RULES.dir
+// (2026-08-08, audit adaptivitas) supaya tidak ada 2 sumber arah yang bisa drift
+// diam-diam kalau salah satu diedit tanpa yang lain (49 key sebelumnya dobel-tulis
+// manual di sini, identik dengan FUND_SCORE_RULES). Sisanya (IND_DIR_EXTRA) memang
+// cuma butuh arah tanpa skor threshold tersendiri, jadi tetap didaftar eksplisit.
+const IND_DIR_EXTRA = {
+  'Continuing Claims': -1,
+  'JOLTS Job Openings': 1,
+  'ADP Employment': 1,
+  'Existing Home Sales': 1,
+  'New Home Sales': 1,
+};
 const IND_DIR = {
-  'NFP':1,'Employment Change':1,'Industrial Production':1,'Trade Balance':1,
-  'Current Account':1,'NAB Business Conf':1,'Ivey PMI':1,'Tankan Mfg Index':1,
-  'CPI YoY':1,'CPI MoM':1,'CPI QoQ':1,'Core CPI MoM':1,'Core CPI YoY':1,'Core PCE':1,'Core PCE YoY':1,
-  'CPI Flash YoY':1,'German CPI YoY':1,'PPI MoM':1,
-  'GDP QoQ':1,'GDP QoQ Flash':1,'GDP MoM':1,'GDP Nowcast':1,
-  'ISM Services':1,'ISM Manufacturing':1,'Manufacturing PMI':1,'Services PMI':1,'Composite PMI':1,'Chicago PMI':1,
-  'IFO Business':1,'ZEW Sentiment':1,'KOF Barometer':1,'GfK Consumer Climate':1,
-  'Retail Sales MoM':1,'Retail Sales YoY':1,'Participation Rate':1,
-  'Wage Growth':1,'Building Approvals':1,'Building Permits':1,'Consumer Confidence':1,
-  'Business Confidence':1,'Housing Starts':1,'Durable Goods Orders':1,
-  'Unemployment Rate':-1,'Jobless Claims':-1,'Claimant Count':-1,'Continuing Claims':-1,
-  'JOLTS Job Openings':1,'ADP Employment':1,'Existing Home Sales':1,'New Home Sales':1,
-  'Personal Income':1,'Personal Spending':1,'Capacity Utilization':1,'Factory Orders':1,
+  ...Object.fromEntries(Object.entries(FUND_SCORE_RULES).map(([k, v]) => [k, v.dir])),
+  ...IND_DIR_EXTRA,
 };
 
 // Keyword-based direction guess for dynamic indicators
@@ -13193,6 +13196,12 @@ function _ckInferDirFromCbBias(base, quote) {
   return bL === qL ? null : (bL > qL ? 'long' : 'short');
 }
 
+// Jendela "hindari entry dekat news high-impact" — dulu ditulis literal terpisah
+// di 3 tempat (rc4, tm3 "logika sama dengan rc4", ed_ev1) dengan rc4/tm3 kebetulan
+// sama (6 jam) tapi tidak ada yang menjaminnya (audit adaptivitas 2026-08-08).
+const NO_TRADE_WINDOW_MS = 6 * 3600 * 1000;
+const EVENT_LOOKAHEAD_MS = 24 * 3600 * 1000;
+
 function ckAutoTickRegimeCheck(pair) {
   if (!pair) return;
   const [base, quote] = pair.split('/');
@@ -13252,11 +13261,10 @@ function ckAutoTickRegimeCheck(pair) {
   }
 
   if (calData) {
-    const sixH = 6 * 3600 * 1000;
     const dangerous = calData.filter(ev => {
       if (ev.impact !== 'High') return false;
       const t = _ckEvTimestamp(ev);
-      return t && t > now && t < now + sixH && (ev.currency === base || ev.currency === quote);
+      return t && t > now && t < now + NO_TRADE_WINDOW_MS && (ev.currency === base || ev.currency === quote);
     });
     dangerous.length === 0
       ? ckAutoTick('rc4', 'Tidak ada event high-impact <6 jam')
@@ -13373,19 +13381,23 @@ function _ckAutoSMC(base, quote) {
     ckAutoTick('p4', `AI: arah ${_lastThesis.direction.toUpperCase()} dari Thesis Ringkasan + area entry ${_aiS.entry_zone} dari Analisa`);
   }
   // Session timing auto-tick — tick juga parent tm1 (subs hanya panduan, tidak dihitung skor)
+  // Batas jam diambil dari FxSessions (single source, lihat fx-sessions.js) supaya
+  // tidak ada salinan literal 8/13/16/21 kedua yang bisa drift (audit 2026-08-08).
+  const londonH = FxSessions.startHour('london'), overlapH = FxSessions.startHour('overlap');
+  const nyH = FxSessions.startHour('ny'), closedH = FxSessions.startHour('closed');
   const h = new Date().getUTCHours();
-  if (h >= 8 && h < 16)  ckAutoTick('tm1a', 'London session aktif');
-  if (h >= 13 && h < 21) ckAutoTick('tm1b', 'New York session aktif');
-  if (h >= 8 && h < 21)  ckAutoTick('tm1', h < 13 ? 'London session aktif' : h < 16 ? 'London + New York overlap' : 'New York session aktif');
-  if (h < 8) ckAutoBlock('tm2', `Sesi Tokyo aktif (${String(h).padStart(2,'0')}:xx UTC) — entry Tokyo hanya untuk setup sangat jelas`);
-  else if (h < 21) ckAutoTick('tm2', 'Di luar jam Tokyo-only');
-  // tm3 "tidak dekat news high impact" — logika sama dengan rc4 (<6 jam)
+  if (h >= londonH && h < nyH)  ckAutoTick('tm1a', 'London session aktif');
+  if (h >= overlapH && h < closedH) ckAutoTick('tm1b', 'New York session aktif');
+  if (h >= londonH && h < closedH)  ckAutoTick('tm1', h < overlapH ? 'London session aktif' : h < nyH ? 'London + New York overlap' : 'New York session aktif');
+  if (h < londonH) ckAutoBlock('tm2', `Sesi Tokyo aktif (${String(h).padStart(2,'0')}:xx UTC) — entry Tokyo hanya untuk setup sangat jelas`);
+  else if (h < closedH) ckAutoTick('tm2', 'Di luar jam Tokyo-only');
+  // tm3 "tidak dekat news high impact" — logika sama dengan rc4, NO_TRADE_WINDOW_MS bersama
   if (calData) {
     const now = Date.now();
     const soon6 = calData.some(ev => {
       if (ev.impact !== 'High' || (ev.currency !== base && ev.currency !== quote)) return false;
       const t = _ckEvTimestamp(ev);
-      return t && t > now && t < now + 6 * 3600 * 1000;
+      return t && t > now && t < now + NO_TRADE_WINDOW_MS;
     });
     if (soon6) ckAutoBlock('tm3', `Ada event high-impact <6 jam untuk ${base}/${quote}`);
     else ckAutoTick('tm3', 'Tidak ada event high-impact <6 jam');
@@ -13458,11 +13470,10 @@ function _ckAutoMacro(base, quote) {
 function _ckAutoEvent(base, quote) {
   if (!calData) return;
   const now = Date.now();
-  const h24 = 24 * 3600 * 1000;
   const soon = calData.filter(ev => {
     if (ev.impact !== 'High') return false;
     const t = _ckEvTimestamp(ev);
-    return t && t > now && t < now + h24 && (ev.currency === base || ev.currency === quote);
+    return t && t > now && t < now + EVENT_LOOKAHEAD_MS && (ev.currency === base || ev.currency === quote);
   });
   if (soon.length > 0) {
     ckAutoTick('ed_ev1', `${soon.length} high-impact event <24 jam untuk ${base}/${quote}`);
@@ -14185,11 +14196,10 @@ function _szCheckEventRisk(pair) {
   if (!calData || !pair || !pair.includes('/')) return [];
   const [base, quote] = pair.split('/');
   const now = Date.now();
-  const h24 = 24 * 3600 * 1000;
   return calData.filter(ev => {
     if (ev.impact !== 'High') return false;
     const t = _ckEvTimestamp(ev);
-    return t && t > now && t < now + h24 && (ev.currency === base || ev.currency === quote);
+    return t && t > now && t < now + EVENT_LOOKAHEAD_MS && (ev.currency === base || ev.currency === quote);
   });
 }
 
@@ -15040,15 +15050,10 @@ async function jnRenderVaR() {
     </div>`;
 }
 
-// Sesi FX entry (UTC) — HARUS identik dengan JOURNAL_BIAS_SESSIONS/sessionOf di
-// api/journal.js (_journalBiasStats). Jangan bikin definisi sesi kedua yang beda.
-const JN_CSV_SESSIONS = [
-  { key: 'tokyo',   label: 'Tokyo',              start: 0,       end: 8 * 60 },
-  { key: 'london',  label: 'London',             start: 8 * 60,  end: 13 * 60 },
-  { key: 'overlap', label: 'London+NY Overlap',  start: 13 * 60, end: 16 * 60 },
-  { key: 'ny',      label: 'New York',           start: 16 * 60, end: 21 * 60 },
-  { key: 'closed',  label: 'Market Closed',      start: 21 * 60, end: 24 * 60 },
-];
+// Sesi FX entry (UTC) — single source of truth di fx-sessions.js (audit
+// adaptivitas 2026-08-08), sama persis dengan JOURNAL_BIAS_SESSIONS di
+// api/journal.js. Jangan bikin definisi sesi kedua yang beda.
+const JN_CSV_SESSIONS = FxSessions.SESSIONS;
 
 // Peta id item checklist -> label, playbook-agnostic. Dibangun dari definisi
 // PLAYBOOKS (sections + subs) apa adanya — item baru di playbook manapun otomatis
@@ -15088,11 +15093,8 @@ function jnBuildCsvRows(entries) {
 
   function sessionOf(iso) {
     if (!iso) return '';
-    const d = new Date(iso);
-    if (isNaN(d.getTime())) return '';
-    const mins = d.getUTCHours() * 60 + d.getUTCMinutes();
-    const s = JN_CSV_SESSIONS.find(s => mins >= s.start && mins < s.end) || JN_CSV_SESSIONS[JN_CSV_SESSIONS.length - 1];
-    return s.label;
+    const s = FxSessions.sessionAtIso(iso);
+    return s ? s.label : '';
   }
 
   function durationHours(createdAt, closedAt) {

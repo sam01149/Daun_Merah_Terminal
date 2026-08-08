@@ -202,13 +202,9 @@ async function computeMfeMae(entry) {
 // (lihat biasDiagnosisHandler di bawah). Konsep dari referensi user (Vibe-Trading),
 // diadaptasi versi mini: bukan sinyal trading, cermin disiplin dari jurnal sendiri.
 const JOURNAL_BIAS_MIN_SAMPLE = 10;
-const JOURNAL_BIAS_SESSIONS = [
-  { key: 'tokyo',   label: 'Tokyo',              start: 0,      end: 8 * 60 },
-  { key: 'london',  label: 'London',             start: 8 * 60, end: 13 * 60 },
-  { key: 'overlap', label: 'London+NY Overlap',  start: 13 * 60, end: 16 * 60 },
-  { key: 'ny',      label: 'New York',           start: 16 * 60, end: 21 * 60 },
-  { key: 'closed',  label: 'Market Closed',      start: 21 * 60, end: 24 * 60 },
-];
+// Sesi FX (UTC) — single source of truth di fx-sessions.js (audit adaptivitas
+// 2026-08-08). Jangan bikin definisi sesi kedua yang beda, lihat komentar di sana.
+const { SESSIONS: JOURNAL_BIAS_SESSIONS } = require('../fx-sessions');
 
 function _journalBiasStats(entries) {
   const closed = (Array.isArray(entries) ? entries : [])

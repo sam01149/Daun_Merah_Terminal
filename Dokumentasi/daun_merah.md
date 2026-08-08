@@ -11,10 +11,26 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-08 (Session 294 — Filter Riwayat Setup dibungkus tombol ikon collapsible + dipersempit ke 4 pair aktif)
+> **Last updated:** 2026-08-08 (Session 295 — Audit adaptivitas: data fixed/manual yang seharusnya live, sesi FX/no-trade-window konsolidasi single-source)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 295 (2026-08-08) — Audit Adaptivitas: Data Fixed/Manual di Seluruh Codebase
+
+**Konteks:** User minta audit menyeluruh — cari semua data yang masih fixed/hardcoded/manual (bukan otomatisasi live) di seluruh aplikasi (frontend, `api/`, `vps/`, `scripts/`, `newscat.js`), tujuan supaya proyek adaptif di segala bidang.
+
+**Metode:** 2 agent Explore paralel (backend: `api/`+`vps/`+`scripts/`+`newscat.js`; frontend: `index.html`+`dev-auto-entry.html`), diinstruksikan eksplisit membedakan pola live-fetch-dengan-fallback yang SUDAH DISENGAJA (contoh rujukan: `api/_cb_rates.js` — scrape 8 bank sentral live, fallback konstan cuma dipakai kalau scrape gagal) dari data yang genuinely hardcoded tanpa jalur live sama sekali. Temuan: codebase ini SUDAH sangat disiplin soal live-fetch (CB rates, VIX/MOVE, yield curve, kalender, COT, BTC — semua live dengan fallback terdokumentasi + staleness gate), lebih disiplin dari dugaan awal.
+
+**Diperbaiki (konsolidasi sumber-tunggal, semua mekanis & rendah-risiko, bukan tambah live-fetch baru ke data yang sebelumnya memang tidak punya sumber live):**
+- **File baru `fx-sessions.js`** (pola UMD sama seperti `newscat.js`) — sesi FX (Tokyo/London/Overlap/NY/Closed, batas jam UTC) dulu ditulis manual 3x: `JN_CSV_SESSIONS` (index.html, CSV export jurnal), `JOURNAL_BIAS_SESSIONS` (`api/journal.js`, diagnosa bias), dan angka literal lepas 8/13/16/21 di auto-tick checklist (`_ckAutoSMC`). Sekarang 1 sumber, dipakai `index.html` (`<script src="/fx-sessions.js?v=2026.08.08.1">`) dan `api/journal.js` (`require('../fx-sessions')`).
+- **`NO_TRADE_WINDOW_MS`/`EVENT_LOOKAHEAD_MS`** (index.html) — jendela "hindari entry dekat news high-impact" (6 jam) dan "event mendekat" (24 jam) dulu ditulis literal terpisah di 4 tempat berbeda (checklist `rc4`, `tm3`, `ed_ev1`, Sizing Calculator `_szCheckEventRisk`) — 2 di antaranya kebetulan sama tapi tidak dijamin. Sekarang 2 konstanta bersama.
+- **`IND_DIR`** (index.html) — 49 dari ~54 entri arah indikator dobel-tulis manual, identik dengan `FUND_SCORE_RULES.dir` untuk key yang sama (dua sumber kebenaran yang bisa drift diam-diam kalau salah satu diedit). Sekarang diturunkan otomatis dari `FUND_SCORE_RULES`, sisa 5 key direction-only (`IND_DIR_EXTRA`) tetap eksplisit.
+- **`dev-auto-entry.html` `ACTIVE_FILTER_PAIRS`** — dulu snapshot manual 4 pair dengan komentar mengaku "sesuai default `AUTO_ENTRY_PAIRS` di `vps/daemon.js`" (env var terpisah, bisa berubah tanpa diff kode → filter dev tool ini diam-diam basi). Sekarang diturunkan LIVE dari `json.symbols` hasil `setup_stats?scope=auto` tiap `loadDashboard()` refresh — persis pair yang benar-benar sedang akumulasi data.
+
+**Sengaja TIDAK diubah malam ini (dianalisis, keputusan sadar bukan lupa) — detail + syarat lanjut di `daun_merah_progress.md`:** ekspektasi inflasi 6 currency non-EUR di `api/real-yields.js` (audit vendor 2026-07-12 sudah menyimpulkan tidak ada API live gratis, mekanisme staleness-gate 90 hari sudah benar), tabel tanggal FOMC manual di `api/rate-path.js` (sudah ada live-override dari `calendar_v1`, tabel manual cuma pengisi celah jauh ke depan), konsolidasi daftar nama pejabat bank sentral (`_cb_keywords.js` vs `_CAL_CUR_KEYS` vs `TEK_CUR_KEYWORDS` — 3 tujuan/struktur beda, risiko refactor tergesa lebih besar dari manfaatnya), duplikasi kecil non-data (pip-size ternary, `VAPID_PUBLIC_KEY`, `decodeXmlEntities`, peta simbol Yahoo).
+
+**Test:** `npm test` 890/890 hijau (termasuk `test/frontend/static_integrity.test.js`). Verifikasi live via Playwright (server statis lokal): `index.html` & `dev-auto-entry.html` load tanpa error JS baru (cuma 404 `/api/*` yang memang tidak ada server backend lokal); `FxSessions.SESSIONS`, `JN_CSV_SESSIONS`, `NO_TRADE_WINDOW_MS`, `EVENT_LOOKAHEAD_MS`, `IND_DIR` dicek nilainya langsung via `page.evaluate` — semua benar. `APP_VERSION` dinaikkan ke `2026.08.08.1` (index.html berubah, lockstep ATURAN.md §4 poin 7; `fx-sessions.js` tidak dipakai `sw.js` jadi tidak ikut aturan sinkron `NEWSCAT_VERSION`).
 
 ## Changelog Session 294 (2026-08-08) — Karantina Framing CME-Priority ke isAutoCall + Penanda Versi Prompt
 

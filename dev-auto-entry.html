@@ -692,12 +692,14 @@ tr.rowdetail .row b{color:var(--fg);font-weight:500;white-space:normal;word-brea
     updateFilterToggleState();
   }
 
-  // (2026-08-08) Filter pair dipersempit ke 4 pair yang benar-benar AKTIF sekarang
-  // (Golden Trio XAU/EUR + EURGBP, sesuai default AUTO_ENTRY_PAIRS di vps/daemon.js)
-  // — PAIRS di atas masih daftar 8 pair historis (dipakai Trigger Analisa manual,
-  // yang sengaja tetap luas untuk uji-coba pair lama). Pair non-aktif yang masih
-  // punya baris data lama tetap bisa difilter lewat fallback "extra" di bawah.
-  const ACTIVE_FILTER_PAIRS = ['GC=F', 'EURUSD=X', 'AUDNZD=X', 'EURGBP=X'];
+  // (2026-08-08, diadaptasi 2026-08-08 malam) Dulu snapshot manual 4 pair yang
+  // gampang basi kalau AUTO_ENTRY_PAIRS di vps/daemon.js berubah (env var bisa
+  // diganti tanpa diff kode). Sekarang diturunkan LIVE dari json.symbols hasil
+  // setup_stats?scope=auto (loadDashboard() di bawah mengisi ulang tiap refresh)
+  // — persis pair yang benar-benar sedang akumulasi data auto-entry, tanpa perlu
+  // diedit manual. PAIRS di atas tetap daftar 8 pair historis (Trigger Analisa
+  // manual). Kosong sebelum secret diisi / data pertama masuk — wajar.
+  let ACTIVE_FILTER_PAIRS = [];
   function populateSymbolFilter(recent){
     const known = ACTIVE_FILTER_PAIRS;
     const extra = [...new Set((recent || []).map(s => s.symbol))].filter(sym => !known.includes(sym));
@@ -977,6 +979,7 @@ tr.rowdetail .row b{color:var(--fg);font-weight:500;white-space:normal;word-brea
     renderMeta(json.consistency, json.pipeline_latency);
     renderCalibration(json.global && json.global.confidence_calibration);
     renderSymbols(json.symbols);
+    ACTIVE_FILTER_PAIRS = Object.keys(json.symbols || {});
     renderRecent(json.recent);
   }
   document.getElementById('btnRefresh').addEventListener('click', loadDashboard);
