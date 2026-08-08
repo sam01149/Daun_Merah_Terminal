@@ -140,6 +140,36 @@ test('isCorrelatedExposureBlocked: EUR/USD baru, GC=F open searah -> simetris (a
   assert.equal(isCorrelatedExposureBlocked({ symbol: 'EURUSD=X', bias: 'bearish', openPositions: open }), true);
 });
 
+// CHF/JPY ditambah 2026-08-08 — korelasi r=0,373 ke EUR/USD, TANPA kaki USD sama
+// sekali (jadi model "USD view" lama tidak bisa dipakai, dicek langsung via bias).
+test('isCorrelatedExposureBlocked: CHF/JPY bullish baru, EUR/USD bullish sudah open -> blocked (korelasi positif r=0,373)', () => {
+  const open = [{ symbol: 'EURUSD=X', bias: 'bullish', status: 'open' }];
+  assert.equal(isCorrelatedExposureBlocked({ symbol: 'CHFJPY=X', bias: 'bullish', openPositions: open }), true);
+});
+
+test('isCorrelatedExposureBlocked: CHF/JPY bearish baru, EUR/USD bullish sudah open -> TIDAK blocked (arah berlawanan)', () => {
+  const open = [{ symbol: 'EURUSD=X', bias: 'bullish', status: 'open' }];
+  assert.equal(isCorrelatedExposureBlocked({ symbol: 'CHFJPY=X', bias: 'bearish', openPositions: open }), false);
+});
+
+test('isCorrelatedExposureBlocked: EUR/USD baru, CHF/JPY open searah -> simetris', () => {
+  const open = [{ symbol: 'CHFJPY=X', bias: 'bearish', status: 'open' }];
+  assert.equal(isCorrelatedExposureBlocked({ symbol: 'EURUSD=X', bias: 'bearish', openPositions: open }), true);
+});
+
+test('isCorrelatedExposureBlocked: CHF/JPY tidak punya mapping korelasi ke GC=F -> false (cuma dicap ke EUR/USD)', () => {
+  const open = [{ symbol: 'GC=F', bias: 'bullish', status: 'open' }];
+  assert.equal(isCorrelatedExposureBlocked({ symbol: 'CHFJPY=X', bias: 'bullish', openPositions: open }), false);
+});
+
+test('isCorrelatedExposureBlocked: EUR/USD baru dengan GC=F DAN CHF/JPY open searah sekaligus -> blocked oleh salah satu partner', () => {
+  const open = [
+    { symbol: 'GC=F', bias: 'bearish', status: 'open' },
+    { symbol: 'CHFJPY=X', bias: 'bullish', status: 'open' }, // arah beda, tidak trigger sendirian
+  ];
+  assert.equal(isCorrelatedExposureBlocked({ symbol: 'EURUSD=X', bias: 'bearish', openPositions: open }), true);
+});
+
 // ── isTimingConflictBlocked (Gate E, audit S277 2026-08-04) ─────────────────
 
 test('isTimingConflictBlocked: conflict "waktu" -> blocked', () => {

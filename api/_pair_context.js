@@ -118,6 +118,14 @@ const REGIME_INSTRUCTION = {
 // range-bound; nempelin "skeptis ke breakout" di situ justru salah kalibrasi.
 // Dipakai HANYA saat rezim volatilitas 'bergejolak' terdeteksi (lihat formatPairContextBlock)
 // supaya tidak jadi noise di kondisi tenang/normal — pair ini memang defaultnya diam.
+// CHF/JPY (pair ke-5, 2026-08-08) SENGAJA TIDAK dikasih entri di sini juga, walau
+// dua-duanya cross tanpa kaki USD — beda karakter dari AUD/NZD & EUR/GBP. Riset
+// korelasi (riset.md folder professional_llm_trader) menemukan hipotesis "dua
+// safe-haven saling menetralkan" (pola sama EUR/GBP) TIDAK terbukti untuk CHF/JPY:
+// SNB & BOJ punya pendorong kebijakan independen sendiri-sendiri (bukan searah
+// macam RBA-RBNZ), jadi pair ini kemungkinan lebih macro-driven/trending — nempelin
+// catatan "skeptis ke breakout, anggap noise" di sini justru salah kalibrasi, sama
+// alasannya kenapa EUR/USD & XAU/USD juga tidak dikasih entri.
 const STRUCTURAL_PROFILES = {
   'AUD/NZD': 'Catatan struktural AUD/NZD: pair ini secara historis range-bound/mean-reverting (ekonomi Australia & New Zealand mirip, RBA & RBNZ sering bergerak searah) — breakout dari rezim bergejolak di atas HANYA kredibel kalau dibarengi salah satu pemicu jelas: RBA-RBNZ policy diverge tajam, atau harga komoditas kunci berlawanan arah (iron ore vs dairy/GDT). Tanpa pemicu itu, anggap ini kemungkinan besar noise dalam range, bukan breakout asli.',
   'EUR/GBP': 'Catatan struktural EUR/GBP: pair ini secara historis range-bound (ekonomi Eropa & Inggris berdekatan, menyerap shock eksternal dengan cara mirip, range harian tipikal cuma 40-70 pip) — breakout dari rezim bergejolak di atas HANYA kredibel kalau dibarengi divergensi kebijakan ECB-BOE yang jelas atau berita fiskal/politik relatif UK-EU. Tanpa pemicu itu, anggap ini kemungkinan besar noise dalam range. Perhatikan juga: range kecil pair ini bikin spread memakan porsi lebih besar dari target profit dibanding pair lain.',

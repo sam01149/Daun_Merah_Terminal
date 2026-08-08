@@ -195,8 +195,8 @@ test('AUTO_ENTRY_SYMBOL_MAP: default pairs (frxXAUUSD, frxEURUSD) terpetakan', (
   assert.deepEqual(AUTO_ENTRY_SYMBOL_MAP.frxEURUSD, { symbol: 'EURUSD=X', label: 'EUR/USD' });
 });
 
-test('AUTO_ENTRY_PAIRS: default redesain independensi 4 pair (tanpa env var override)', () => {
-  assert.deepEqual(AUTO_ENTRY_PAIRS, ['frxXAUUSD', 'frxEURUSD', 'frxAUDNZD', 'frxEURGBP']);
+test('AUTO_ENTRY_PAIRS: default 5 pair (4-pair redesain + CHF/JPY, tanpa env var override)', () => {
+  assert.deepEqual(AUTO_ENTRY_PAIRS, ['frxXAUUSD', 'frxEURUSD', 'frxAUDNZD', 'frxEURGBP', 'frxCHFJPY']);
   for (const pair of AUTO_ENTRY_PAIRS) {
     assert.ok(AUTO_ENTRY_SYMBOL_MAP[pair], `${pair} harus terpetakan di AUTO_ENTRY_SYMBOL_MAP`);
   }
@@ -205,6 +205,10 @@ test('AUTO_ENTRY_PAIRS: default redesain independensi 4 pair (tanpa env var over
 test('AUTO_ENTRY_SYMBOL_MAP: AUD/NZD & EUR/GBP (pengganti GBP/USD) terpetakan', () => {
   assert.deepEqual(AUTO_ENTRY_SYMBOL_MAP.frxAUDNZD, { symbol: 'AUDNZD=X', label: 'AUD/NZD' });
   assert.deepEqual(AUTO_ENTRY_SYMBOL_MAP.frxEURGBP, { symbol: 'EURGBP=X', label: 'EUR/GBP' });
+});
+
+test('AUTO_ENTRY_SYMBOL_MAP: CHF/JPY (pair ke-5, 2026-08-08) terpetakan', () => {
+  assert.deepEqual(AUTO_ENTRY_SYMBOL_MAP.frxCHFJPY, { symbol: 'CHFJPY=X', label: 'CHF/JPY' });
 });
 
 // ── Plan X (2026-08-04): computeSurpriseRatio ────────────────────────────────
@@ -310,8 +314,8 @@ test('findSurpriseEvent: default window = BREAKING_NEWS_SKIP_WINDOW_MS (1 jam)',
 
 // ── Plan X (2026-08-04): SURPRISE_CURRENCIES ─────────────────────────────────
 
-test('SURPRISE_CURRENCIES: persis {USD,EUR,GBP,AUD,NZD}, diturunkan dari AUTO_ENTRY_PAIRS aktif', () => {
-  assert.deepEqual([...SURPRISE_CURRENCIES].sort(), ['AUD', 'EUR', 'GBP', 'NZD', 'USD']);
+test('SURPRISE_CURRENCIES: persis {USD,EUR,GBP,AUD,NZD,CHF,JPY}, diturunkan dari AUTO_ENTRY_PAIRS aktif', () => {
+  assert.deepEqual([...SURPRISE_CURRENCIES].sort(), ['AUD', 'CHF', 'EUR', 'GBP', 'JPY', 'NZD', 'USD']);
 });
 
 // ── Plan X (2026-08-04): replay retroaktif kasus AUD/NZD (audit S277) ────────

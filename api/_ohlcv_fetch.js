@@ -84,6 +84,8 @@ const YAHOO_TO_TWELVEDATA_SYMBOL = {
   // Plan U redesain independensi (2026-07-26) — AUD/NZD masuk OHLCV_FIXED_PAIRS
   // (api/admin.js), butuh fallback sama seperti pair lain kalau Yahoo down.
   'AUDNZD=X': 'AUD/NZD',
+  // Pair ke-5 auto-entry (2026-08-08, pair_workflow.md folder professional_llm_trader).
+  'CHFJPY=X': 'CHF/JPY',
 };
 
 function mapYahooSymbolToTwelveData(yahooSymbol) {

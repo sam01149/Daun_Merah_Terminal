@@ -1702,6 +1702,9 @@ const OHLCV_FIXED_PAIRS = [
   // dimigrasi ke Deriv spot 2026-07-30 — lihat _ohlcv_fetch.js).
   { symbol: 'AUDNZD=X', label: 'AUD/NZD' },
   { symbol: 'EURGBP=X', label: 'EUR/GBP' },
+  // Pair ke-5 auto-entry (2026-08-08, pair_workflow.md folder professional_llm_trader) —
+  // Yahoo-only sama pola AUD/NZD, TIDAK ada di YAHOO_TO_DERIV_SYMBOL.
+  { symbol: 'CHFJPY=X', label: 'CHF/JPY' },
 ];
 
 const OHLCV_PAIR_SYMBOL_MAP = {
@@ -3212,6 +3215,12 @@ const SPREAD_PRICE_ESTIMATE = {
   // tanpa tanda apa pun di payload. Ballpark konsisten tabel (NZD/USD 0.00025, EUR/AUD
   // 0.00035); cross AUD-NZD likuiditasnya di antara keduanya.
   'AUD/NZD': 0.00030,
+  // CHF/JPY ditambahkan 2026-08-08 (pair_workflow.md folder professional_llm_trader,
+  // Tahap 2d) — WAJIB diisi sebelum pair ini live, pelajaran dari insiden AUD/NZD di
+  // atas (lupa isi = diam-diam ke-skip dari cost_expectancy tanpa tanda apa pun).
+  // Skala satuan sama seperti pair JPY-quoted lain (EUR/JPY 0.025, GBP/JPY 0.035,
+  // AUD/JPY 0.025) — CHF/JPY likuiditasnya di antara EUR/JPY & GBP/JPY.
+  'CHF/JPY': 0.030,
 };
 
 // R-multiple realized SEBELUM vs SESUDAH biaya spread, per setup closed (tp/sl).

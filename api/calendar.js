@@ -8,11 +8,14 @@
 const TV_EVENTS_URL = 'https://economic-calendar.tradingview.com/events';
 const MAJOR_CURRENCIES = new Set(['USD','EUR','GBP','JPY','CAD','AUD','NZD','CHF']);
 // Plan X (2026-08-04) — cache kedua utk surprise detector auto-entry (vps/daemon.js
-// checkSurpriseSkip). HANYA 5 currency yang relevan ke 4 pair AUTO_ENTRY_PAIRS
-// (XAU/USD, EUR/USD, AUD/NZD, EUR/GBP), BUKAN 8 currency di MAJOR_CURRENCIES —
-// scope sengaja lebih sempit, event Low/Medium-impact currency di luar sini
-// (JPY/CAD/CHF) tidak relevan ke auto-entry saat ini.
-const SURPRISE_CURRENCIES = new Set(['USD','EUR','GBP','AUD','NZD']);
+// checkSurpriseSkip). HANYA currency yang relevan ke pair AUTO_ENTRY_PAIRS AKTIF,
+// BUKAN 8 currency di MAJOR_CURRENCIES — scope sengaja lebih sempit.
+// PERHATIAN: konstanta ini HARDCODE, TIDAK auto-derive dari AUTO_ENTRY_PAIRS
+// seperti versi di vps/daemon.js (yang pakai legsFromLabel dinamis) — kalau
+// AUTO_ENTRY_PAIRS berubah lagi nanti, WAJIB update set ini manual juga (gap yang
+// sama ditemukan & diperbaiki 2026-08-08 saat CHF/JPY ditambah: CHF & JPY sempat
+// tertinggal dari daftar padahal sudah relevan sejak pair itu masuk).
+const SURPRISE_CURRENCIES = new Set(['USD','EUR','GBP','AUD','NZD','CHF','JPY']);
 // TradingView filters by country code, not currency — map the majors we track.
 const CCY_TO_TV_COUNTRY = { USD:'US', EUR:'EU', GBP:'GB', JPY:'JP', CAD:'CA', AUD:'AU', NZD:'NZ', CHF:'CH' };
 const CACHE_TTL = 6 * 3600; // Redis key TTL — long survival window for stale-serve fallback

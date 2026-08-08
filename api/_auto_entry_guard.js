@@ -9,8 +9,9 @@
 // - Gate B (drawdown circuit breaker): ambang berbeda per risk_regime, BUKAN hitung
 //   N-loss-beruntun statis (consecutive-loss rawan "magnet effect", Subrahmanyam 1994).
 // - Gate D (correlation cap): heuristik sederhana (gross-exposure constraint ala
-//   riset), BUKAN covariance-matrix penuh — cuma cover SATU pasangan yang terbukti
-//   korelatif di set 4-pair saat ini (XAU/USD-EUR/USD r=0,585, lihat riset.md).
+//   riset), BUKAN covariance-matrix penuh — cuma cover pasangan yang terbukti
+//   korelatif di set pair aktif (lihat CORRELATED_PAIRS di bawah + riset.md folder
+//   professional_llm_trader untuk data pengukuran tiap pasangan).
 //
 // Gate C (regime confidence bar) DIHAPUS 2026-07-28 (sesi sama dengan pembuatannya) —
 // keputusan user: gate ini buta arah (blok confidence rendah saat regime stres TANPA
@@ -104,31 +105,43 @@ function isDrawdownHalted({ closedSetups, regime }) {
   return { halted, rollingR, threshold, sampleSize, regime_known: regimeKnown };
 }
 
-// ── Gate D: Correlation cap (heuristik sederhana, 1 pasangan terbukti korelatif) ──
-// Peta symbol Yahoo -> pandangan USD tersirat dari bias. XAU/USD & EUR/USD naik
-// BERSAMAAN (r=0,585, riset 2026-07-26) -> keduanya proxy "USD melemah" saat bullish.
-// Pair lain di set 4-pair (AUD/NZD, EUR/GBP) SENGAJA tidak dipetakan (korelasi
-// nyaris nol ke anggota lain, r=0,03-0,19) — tidak perlu di-cap.
-const CORRELATED_PARTNER = { 'GC=F': 'EURUSD=X', 'EURUSD=X': 'GC=F' };
-const USD_VIEW_BY_SYMBOL_BIAS = {
-  'GC=F':      { bullish: 'weak', bearish: 'strong' },
-  'EURUSD=X':  { bullish: 'weak', bearish: 'strong' },
-};
+// ── Gate D: Correlation cap (heuristik sederhana, pasangan terbukti korelatif) ──
+// Daftar pasangan pair yang korelasinya cukup besar untuk di-cap (r absolut >= ~0,3
+// ke pair aktif lain — ambang & metode di pair_workflow.md folder professional_llm_trader,
+// Tahap 1a/2c). `sign:'positive'` (r>0, mis. XAU/USD-EUR/USD r=0,585, CHF/JPY-EUR/USD
+// r=0,373) -> exposure searah kalau BIAS SAMA; `sign:'negative'` (r<0, belum ada
+// kasus nyata sejauh ini) -> exposure searah kalau BIAS BERLAWANAN. Generalisasi
+// 2026-08-08 (redesain saat CHF/JPY ditambah) dari model lama "pandangan USD
+// bersama" yang cuma berlaku untuk pasangan yang dua-duanya punya kaki USD — CHF/JPY
+// tidak punya kaki USD sama sekali, jadi korelasinya ke EUR/USD dicek langsung lewat
+// arah bias, bukan lewat abstraksi USD. Perilaku pasangan GC=F/EURUSD=X TIDAK berubah
+// dari sebelumnya (dites eksplisit di test/api/_auto_entry_guard.test.js).
+// Pair lain di set (AUD/NZD, EUR/GBP) SENGAJA tidak dipetakan (korelasi nyaris nol
+// ke anggota lain, r=0,03-0,19) — tidak perlu di-cap.
+const CORRELATED_PAIRS = [
+  { a: 'GC=F', b: 'EURUSD=X', sign: 'positive' }, // r=0,585, riset 2026-07-26
+  { a: 'EURUSD=X', b: 'CHFJPY=X', sign: 'positive' }, // r=0,373, riset 2026-08-08
+];
 
-function usdView(symbol, bias) {
-  return USD_VIEW_BY_SYMBOL_BIAS[symbol]?.[bias] ?? null;
+function _correlationOf(symbol, partner) {
+  return CORRELATED_PAIRS.find(p => (p.a === symbol && p.b === partner) || (p.b === symbol && p.a === partner)) || null;
+}
+
+function _correlatedPartnersOf(symbol) {
+  return CORRELATED_PAIRS.filter(p => p.a === symbol || p.b === symbol).map(p => (p.a === symbol ? p.b : p.a));
 }
 
 // openPositions: array entri setup_log_auto:v1 (semua pair, status apa saja — fungsi
 // ini sendiri yang filter 'open').
 function isCorrelatedExposureBlocked({ symbol, bias, openPositions }) {
-  const partner = CORRELATED_PARTNER[symbol];
-  if (!partner) return false;
-  const newView = usdView(symbol, bias);
-  if (!newView) return false;
-  const openPartner = (openPositions || []).find(p => p && p.symbol === partner && p.status === 'open');
-  if (!openPartner) return false;
-  return usdView(partner, openPartner.bias) === newView;
+  for (const partner of _correlatedPartnersOf(symbol)) {
+    const openPartner = (openPositions || []).find(p => p && p.symbol === partner && p.status === 'open');
+    if (!openPartner) continue;
+    const corr = _correlationOf(symbol, partner);
+    const sameDirection = bias === openPartner.bias;
+    if (corr.sign === 'positive' ? sameDirection : !sameDirection) return true;
+  }
+  return false;
 }
 
 // ── Gate E: Timing conflict flag (AI's own conflict:'waktu' self-assessment) ────

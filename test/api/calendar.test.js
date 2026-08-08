@@ -82,14 +82,14 @@ test('dedupeCalendarEvents: payload item tidak dimutasi/dipangkas (kontrak UI ex
 
 // ── buildSurpriseEvents (cache BARU calendar_surprise_v1/next_v1, Plan X) ──────
 
-test('buildSurpriseEvents: HANYA 5 currency {USD,EUR,GBP,AUD,NZD} lolos, JPY/CAD/CHF dibuang', () => {
+test('buildSurpriseEvents: HANYA 7 currency {USD,EUR,GBP,AUD,NZD,CHF,JPY} lolos, CAD dibuang', () => {
   const dateRange = new Set(['2026-08-04']);
   const events = [
     ev({ event: 'A', currency: 'USD' }), ev({ event: 'B', currency: 'JPY' }),
     ev({ event: 'C', currency: 'CAD' }), ev({ event: 'D', currency: 'CHF' }),
   ];
   const out = buildSurpriseEvents(events, dateRange);
-  assert.deepEqual(out.map(e => e.event), ['A']);
+  assert.deepEqual(out.map(e => e.event), ['A', 'B', 'D']);
 });
 
 test('buildSurpriseEvents: impact Low TETAP lolos (beda dari dedupeCalendarEvents)', () => {
@@ -114,6 +114,6 @@ test('buildSurpriseEvents: dedup by date|time_wib|currency|event, sama pola dedu
   assert.equal(out.length, 1);
 });
 
-test('SURPRISE_CURRENCIES: persis {USD,EUR,GBP,AUD,NZD}', () => {
-  assert.deepEqual([...SURPRISE_CURRENCIES].sort(), ['AUD', 'EUR', 'GBP', 'NZD', 'USD']);
+test('SURPRISE_CURRENCIES: persis {USD,EUR,GBP,AUD,NZD,CHF,JPY}', () => {
+  assert.deepEqual([...SURPRISE_CURRENCIES].sort(), ['AUD', 'CHF', 'EUR', 'GBP', 'JPY', 'NZD', 'USD']);
 });

@@ -1227,8 +1227,17 @@ const AUTO_ENTRY_SYMBOL_MAP = {
   // key ini murni penamaan konsisten dgn AUTO_ENTRY_PAIRS, bukan reuse map Q-3.
   frxAUDNZD: { symbol: 'AUDNZD=X', label: 'AUD/NZD' },
   frxEURGBP: { symbol: 'EURGBP=X', label: 'EUR/GBP' },
+  // Pair ke-5 (2026-08-08, pair_workflow.md Tahap 1-2 lolos: korelasi rata-rata
+  // r=0,18 ke 4 pair aktif, terkuat 0,373 ke EUR/USD — masih di bawah XAU/USD-
+  // EUR/USD 0,585 yang sudah diterima; opportunity rate 66%, setara rata-rata set
+  // aktif). CHF/JPY juga Yahoo-only sama pola AUD/NZD, bukan simbol Deriv asli.
+  frxCHFJPY: { symbol: 'CHFJPY=X', label: 'CHF/JPY' },
 };
 
+// Mau menambah pair baru? Ikuti SOP di
+// Dokumentasi/professional_llm_trader/pair_workflow.md (indikator kelayakan +
+// checklist titik kode) — jangan tempel simbol baru di sini tanpa lewat itu dulu.
+//
 // Redesain independensi Golden Trio (2026-07-26, diskusi user — audit korelasi
 // membuktikan XAU/EUR/GBP saling korelatif r=0.53-0.83 krn share kaki USD, n>=100
 // gabungan BUKAN sampel independen; lihat daun_merah_riset.md untuk data lengkap):
@@ -1239,7 +1248,14 @@ const AUTO_ENTRY_SYMBOL_MAP = {
 // n>=30 di STIAP pair (bukan cuma total gabungan >=100) — dengan 4 pair butuh
 // 4x30=120 total (~15 hari di 8 call/hari), hampir sama dgn skema 3-pair lama
 // (~16-17 hari) kalau kriteria per-pair ini diikutkan, TIDAK lebih lambat.
-const AUTO_ENTRY_PAIRS = (process.env.AUTO_ENTRY_PAIRS || 'frxXAUUSD,frxEURUSD,frxAUDNZD,frxEURGBP')
+//
+// Pair ke-5, CHF/JPY (2026-08-08, pair_workflow.md folder professional_llm_trader
+// Tahap 1-2 lolos — detail pengukuran di riset.md folder yang sama): ikut jadwal
+// utama (bukan jam khusus, tidak ada bukti kuat sesi likuiditasnya di luar London/
+// NY) — 5 pair @ 2 slot/hari = 10 call/hari (+1 jam khusus AUD/NZD di bawah = 11
+// call/hari), MASIH jauh di bawah pagar deepseek_experimental 15/hari. Gate n>=30
+// per pair sekarang butuh 5x30=150 total (~15 hari di 10 call/hari utama).
+const AUTO_ENTRY_PAIRS = (process.env.AUTO_ENTRY_PAIRS || 'frxXAUUSD,frxEURUSD,frxAUDNZD,frxEURGBP,frxCHFJPY')
   .split(',').map(s => s.trim()).filter(Boolean);
 const AUTO_ENTRY_HOURS_UTC = (process.env.AUTO_ENTRY_HOURS_UTC || '8,13')
   .split(',').map(s => parseInt(s.trim(), 10)).filter(Number.isFinite);
