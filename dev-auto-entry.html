@@ -165,6 +165,12 @@ tr.rowdetail .row b{color:var(--fg);font-weight:500;white-space:normal;word-brea
     </div>
 
     <div class="card">
+      <h2>Ghost-Tracking Kandidat Ditahan Gate D/B/A (2026-08-08)</h2>
+      <p class="hint">Kandidat yang ditahan correlation_cap/drawdown/critic_veto SEKARANG dipantau counterfactual-nya (bukan cuma dibuang) — Ghost Saved = gate benar menahan (kandidat memang bakal SL), Ghost Cost = gate salah menahan (kandidat sebenarnya TP).</p>
+      <div class="grid" id="gateGhostStats"><div class="empty">—</div></div>
+    </div>
+
+    <div class="card">
       <h2>Konsistensi AI &amp; Latensi Pipeline</h2>
       <div class="grid" id="metaStats"><div class="empty">—</div></div>
     </div>
@@ -548,6 +554,31 @@ tr.rowdetail .row b{color:var(--fg);font-weight:500;white-space:normal;word-brea
     document.getElementById('mgmtStats').innerHTML = html;
   }
 
+  const GATE_GHOST_LABELS = {
+    gate_correlation_cap: 'Correlation Cap (Gate D)',
+    gate_drawdown_circuit_breaker: 'Drawdown Circuit Breaker (Gate B)',
+    gate_critic_veto: 'Critic Veto (Gate A)',
+  };
+  function renderGateGhost(g){
+    const gg = g && g.gate_reject_ghost;
+    const keys = Object.keys(gg || {});
+    if (!keys.length) { document.getElementById('gateGhostStats').innerHTML = '<div class="empty">Belum ada kandidat yang ditahan gate (atau belum ada yang resolve).</div>'; return; }
+    let html = '';
+    for (const k of keys) {
+      const s = gg[k];
+      html += `<div class="stat" style="grid-column:1/-1;"><div class="l" style="text-transform:none;font-size:9.5px;color:var(--accent);">${esc(GATE_GHOST_LABELS[k] || k)}</div></div>`;
+      html += [
+        statBlock('Total', s.total),
+        statBlock('Ghost Saved (gate benar)', s.saved, 'green'),
+        statBlock('Ghost Cost (gate salah)', s.cost, 'red'),
+        statBlock('Ambiguous', s.ambiguous),
+        statBlock('Expired (tak fill)', s.expired_no_fill),
+        statBlock('Pending', s.pending, 'yellow'),
+      ].join('');
+    }
+    document.getElementById('gateGhostStats').innerHTML = html;
+  }
+
   function renderMeta(consistency, latency){
     const html = [
       statBlock('Konsistensi: Total', consistency ? consistency.total : 0),
@@ -823,6 +854,7 @@ tr.rowdetail .row b{color:var(--fg);font-weight:500;white-space:normal;word-brea
       document.getElementById('gateStats').innerHTML = '';
       document.getElementById('globalStats').innerHTML = '<div class="empty">Secret salah atau tidak ada akses — server membalas payload publik biasa (byte-identical, sengaja tidak membocorkan scope).</div>';
       document.getElementById('mgmtStats').innerHTML = '';
+      document.getElementById('gateGhostStats').innerHTML = '';
       document.getElementById('metaStats').innerHTML = '';
       document.getElementById('calibStats').innerHTML = '';
       document.getElementById('symbolCards').innerHTML = '';
@@ -832,6 +864,7 @@ tr.rowdetail .row b{color:var(--fg);font-weight:500;white-space:normal;word-brea
     renderGate(json.global, json.symbols);
     renderGlobal(json.global);
     renderMgmt(json.global);
+    renderGateGhost(json.global);
     renderMeta(json.consistency, json.pipeline_latency);
     renderCalibration(json.global && json.global.confidence_calibration);
     renderSymbols(json.symbols);
