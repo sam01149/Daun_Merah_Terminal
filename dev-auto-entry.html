@@ -42,8 +42,17 @@ button.primary{background:var(--accent-dim);border-color:var(--accent);color:#ff
 button.primary:hover{background:var(--accent);color:#fff;}
 input,select,textarea{width:100%;}
 label{display:block;font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px;margin-top:8px;}
-.card{background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:12px 14px;margin-bottom:14px;}
+.card{background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:12px 14px;margin-bottom:14px;scroll-margin-top:10px;}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;}
+/* Label kelompok di dalam satu .grid (2026-08-08, rapikan dashboard dev) — beda dari
+   .stat (kotak angka): ini caption teks murni, dipakai buat misahin beberapa kelompok
+   angka yang ditumpuk di satu kartu (mis. Manajemen Posisi vs Cancel-Flip Ghost, atau
+   per-gate di Ghost-Tracking) supaya jelas kelompoknya tanpa menghilangkan satupun angka. */
+.subhead{grid-column:1/-1;font-size:9.5px;color:var(--accent);text-transform:uppercase;letter-spacing:.08em;font-weight:600;padding:8px 2px 0;}
+.subhead:first-child{padding-top:0;}
+.quicknav{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px;}
+.quicknav a{font-size:9.5px;color:var(--muted);text-decoration:none;padding:4px 9px;border:1px solid var(--border);border-radius:12px;background:rgba(var(--fg-rgb),.02);}
+.quicknav a:hover{color:var(--accent);border-color:var(--accent);}
 .stat{background:rgba(var(--fg-rgb),.02);border:1px solid var(--border);border-radius:4px;padding:8px 10px;}
 .stat .v{font-size:17px;font-weight:500;color:var(--fg);}
 .stat .l{font-size:8.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-top:2px;}
@@ -136,7 +145,22 @@ tr.rowdetail .row b{color:var(--fg);font-weight:500;white-space:normal;word-brea
 
   <!-- ── DASHBOARD ── -->
   <div class="pane active" id="pane-dash">
-    <div class="card">
+    <!-- Quick nav (2026-08-08, rapikan dashboard) — halaman ini 9 kartu ditumpuk,
+         semua tetap ditampilkan penuh (tidak ada yang disembunyikan/dihapus), cuma
+         dikasih jalan pintas lompat-ke-bagian supaya tidak perlu scroll manual terus. -->
+    <div class="quicknav">
+      <a href="#card-saldo">Saldo DeepSeek</a>
+      <a href="#card-gate">Gate Plan U</a>
+      <a href="#card-global">Ringkasan Global</a>
+      <a href="#card-mgmt">Manajemen &amp; Cancel-Flip</a>
+      <a href="#card-gateghost">Ghost-Tracking Gate</a>
+      <a href="#card-meta">Konsistensi &amp; Latensi</a>
+      <a href="#card-calib">Kalibrasi Confidence</a>
+      <a href="#card-symbols">Per Pair</a>
+      <a href="#card-recent">Riwayat Setup</a>
+    </div>
+
+    <div class="card" id="card-saldo">
       <div style="display:flex;justify-content:space-between;align-items:center;">
         <h2>Saldo DeepSeek (API resmi, berbayar)</h2>
         <button id="btnCheckBalance">Cek Saldo</button>
@@ -145,7 +169,7 @@ tr.rowdetail .row b{color:var(--fg);font-weight:500;white-space:normal;word-brea
       <div class="grid" id="balanceStats"><div class="empty">Belum dicek — klik "Cek Saldo".</div></div>
     </div>
 
-    <div class="card">
+    <div class="card" id="card-gate">
       <div style="display:flex;justify-content:space-between;align-items:center;">
         <h2>Gate Plan U — Cukup Data?</h2>
         <button id="btnRefresh">Refresh</button>
@@ -154,39 +178,39 @@ tr.rowdetail .row b{color:var(--fg);font-weight:500;white-space:normal;word-brea
       <div class="grid" id="gateStats"><div class="empty">Belum dimuat — klik Refresh.</div></div>
     </div>
 
-    <div class="card">
+    <div class="card" id="card-global">
       <h2>Ringkasan Global (setup_log_auto:v1)</h2>
       <div class="grid" id="globalStats"><div class="empty">Belum dimuat — klik Refresh.</div></div>
     </div>
 
-    <div class="card">
+    <div class="card" id="card-mgmt">
       <h2>Manajemen Posisi (U-5a) &amp; Cancel-Flip Ghost (U-3 lanjutan)</h2>
       <div class="grid" id="mgmtStats"><div class="empty">—</div></div>
     </div>
 
-    <div class="card">
+    <div class="card" id="card-gateghost">
       <h2>Ghost-Tracking Kandidat Ditahan Gate D/B/A (2026-08-08)</h2>
       <p class="hint">Kandidat yang ditahan correlation_cap/drawdown/critic_veto SEKARANG dipantau counterfactual-nya (bukan cuma dibuang) — Ghost Saved = gate benar menahan (kandidat memang bakal SL), Ghost Cost = gate salah menahan (kandidat sebenarnya TP).</p>
       <div class="grid" id="gateGhostStats"><div class="empty">—</div></div>
     </div>
 
-    <div class="card">
+    <div class="card" id="card-meta">
       <h2>Konsistensi AI &amp; Latensi Pipeline</h2>
       <div class="grid" id="metaStats"><div class="empty">—</div></div>
     </div>
 
-    <div class="card">
+    <div class="card" id="card-calib">
       <h2>Kalibrasi Confidence AI</h2>
       <p class="hint">Confidence (tinggi/sedang/rendah) BUKAN hasil rumus — itu penilaian AI sendiri atas setup yang dibuatnya. Tabel ini yang jadi rumus pengecekannya: kalau win rate tidak turun berurutan tinggi &gt; sedang &gt; rendah, confidence AI belum kalibrasi bagus (jangan dipakai untuk sizing).</p>
       <div class="grid" id="calibStats"><div class="empty">—</div></div>
     </div>
 
-    <div class="card">
+    <div class="card" id="card-symbols">
       <h2>Per Pair</h2>
       <div class="symbols" id="symbolCards"><div class="empty">—</div></div>
     </div>
 
-    <div class="card">
+    <div class="card" id="card-recent">
       <h2>Riwayat Setup</h2>
       <div class="filterrow">
         <div>
@@ -531,6 +555,9 @@ tr.rowdetail .row b{color:var(--fg);font-weight:500;white-space:normal;word-brea
     const m = g && g.management, cf = g && g.cancel_flip_ghost;
     if (!m && !cf) { document.getElementById('mgmtStats').innerHTML = '<div class="empty">Tidak ada data (mungkin secret salah / belum ada posisi dikelola).</div>'; return; }
     let html = '';
+    // (2026-08-08, rapikan dashboard) dulu dua kelompok angka ini nyambung tanpa
+    // pemisah sama sekali di satu grid — kelihatan kayak 1 daftar campur aduk.
+    if (m) html += '<div class="subhead">Manajemen Posisi (U-5a)</div>';
     if (m) html += [
       statBlock('Reviews', m.reviews),
       statBlock('Hold', m.hold),
@@ -544,6 +571,7 @@ tr.rowdetail .row b{color:var(--fg);font-weight:500;white-space:normal;word-brea
       statBlock('Preventif Saved', m.tighten_preventive ? m.tighten_preventive.saved : 0, 'green'),
       statBlock('Preventif Cost', m.tighten_preventive ? m.tighten_preventive.cost : 0, 'red'),
     ].join('');
+    if (cf) html += '<div class="subhead">Cancel-Flip Ghost (U-3 lanjutan)</div>';
     if (cf) html += [
       statBlock('Cancel-Flip Total', cf.total),
       statBlock('Ghost Saved', cf.saved, 'green'),
@@ -566,7 +594,7 @@ tr.rowdetail .row b{color:var(--fg);font-weight:500;white-space:normal;word-brea
     let html = '';
     for (const k of keys) {
       const s = gg[k];
-      html += `<div class="stat" style="grid-column:1/-1;"><div class="l" style="text-transform:none;font-size:9.5px;color:var(--accent);">${esc(GATE_GHOST_LABELS[k] || k)}</div></div>`;
+      html += `<div class="subhead">${esc(GATE_GHOST_LABELS[k] || k)}</div>`;
       html += [
         statBlock('Total', s.total),
         statBlock('Ghost Saved (gate benar)', s.saved, 'green'),
