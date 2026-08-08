@@ -11,7 +11,7 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-08 (Session 294 — Karantina framing CME-priority ke isAutoCall saja + penanda versi prompt)
+> **Last updated:** 2026-08-08 (Session 294 — Filter Riwayat Setup dibungkus tombol ikon collapsible + dipersempit ke 4 pair aktif)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
@@ -41,6 +41,12 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 - **Baris detail setup** (`buildSetupDetail`, expand klik baris tabel): dulu 25+ field (narasi panjang AI campur tag pendek campur angka) ditulis DATAR tanpa kelompok sama sekali — persis keluhan di screenshot user. Dikelompokkan jadi 7 bagian pakai `.subhead` yang sama (Ringkasan / Makro & Konflik / Parameter Trade / Label Hasil / Invalidasi Teknikal / Intervensi Posisi / Anomali Data) lewat helper baru `fldGroup()`. Kelompok yang seluruh isinya kosong untuk setup tertentu otomatis tidak tampil. **Nol field dihapus** — beberapa label yang tadinya mengulang nama kelompoknya sendiri (mis. "Alasan Intervensi" → "Alasan", karena sudah di bawah judul "Intervensi Posisi") dipersingkat, isinya sama persis.
 - **Filter Riwayat Setup**: `<select>` teks diganti badge/tombol yang bisa diklik langsung. Filter Status pakai warna `.badge` YANG SAMA dengan badge status di tabel (bukan emoji — dilarang ATURAN.md §4, badge warna adalah "ikon" yang sudah ada di sistem desain ini). Filter Pair pakai gaya `.pagebtn` yang sudah ada (dipakai pager tabel). State filter dipindah dari `<select>.value` ke variabel JS biasa (`filterStatusVal`/`filterSymbolVal`).
 - Diverifikasi fungsional via Playwright (bukan cuma visual): klik badge status `sl` benar-benar memfilter ke 1 baris yang sesuai, klik tombol pair `AUDNZD=X` benar-benar memfilter ke pair itu saja.
+
+**Addendum 4 (sama sesi, user kirim screenshot: baris Filter Status + Filter Pair di "Riwayat Setup" masih selalu terbuka, minta dibungkus ikon):**
+- Tombol ikon corong (SVG inline, bukan emoji — sesuai ATURAN.md §4) di samping judul "Riwayat Setup", klik untuk buka/tutup panel filter (`#filterRow`, default tertutup via `max-height:0`). Ada badge angka merah di tombol kalau ada filter aktif (status dan/atau pair), supaya tetap kelihatan walau panelnya sedang ditutup.
+- **Filter Pair dipersempit dari 8 pair ke 4 pair AKTIF** (`ACTIVE_FILTER_PAIRS`: GC=F, EURUSD=X, AUDNZD=X, EURGBP=X) — user tegur langsung ("kita kan cuma 4 pair, ngapain filternya banyak pair itu"). List lama (8 pair, termasuk GBPUSD/USDJPY/AUDUSD/USDCAD/USDCHF/NZDUSD yang sudah tidak aktif sejak narrowing ke Golden Trio+EURGBP) tetap dipakai apa adanya di `PAIRS` konstanta untuk Trigger Analisa manual (sengaja tetap luas, beda kebutuhan). Pair non-aktif yang masih punya baris data historis tetap muncul di filter lewat fallback "extra" (dihitung dari data asli, bukan daftar statis).
+- **Layout badge dirapikan** — `.filterrow > div` sebelumnya dibatasi lebar 160px (peninggalan desain `<select>` lama sebelum jadi badge, Addendum 3), bikin 9-10 badge numpuk jadi 3-4 baris pendek berantakan padahal ruang kartu di kanan kosong. Dilebarkan (`flex:0 0 auto`) supaya tiap kelompok filter mengalir jadi 1 baris sesuai lebar aslinya.
+- Diverifikasi via Playwright (server statis lokal): toggle buka/tutup fungsional, badge count nyala saat filter aktif, filter pair benar cuma tampilkan 4 pair aktif.
 
 ## Changelog Session 293 (2026-08-08) — Reordering Prioritas COT vs CME di Prompt (Khusus XAU/USD & EUR/USD)
 

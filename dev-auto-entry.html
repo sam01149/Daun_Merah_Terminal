@@ -103,9 +103,22 @@ tr:hover td{background:rgba(var(--fg-rgb),.02);}
 #gate .box{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:24px;width:340px;}
 .empty{color:var(--muted);font-size:11px;padding:10px 0;}
 .small{font-size:9.5px;color:var(--muted);}
-.filterrow{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;}
-.filterrow > div{flex:0 1 160px;}
+.filterrow{display:flex;gap:24px;flex-wrap:wrap;margin-bottom:10px;}
+.filterrow > div{flex:0 0 auto;max-width:100%;}
 .filterrow label{margin-top:0;}
+/* Filter dibungkus tombol ikon collapsible (2026-08-08) — sebelumnya filterrow
+   selalu terbuka penuh (2 baris badge), makan tempat vertikal walau tabel di
+   bawahnya cuma perlu diliat sesekali dengan filter. Default tertutup, klik
+   ikon corong untuk buka; ada titik indikator kalau ada filter aktif supaya
+   tidak "lupa" masih terfilter walau panelnya ditutup. */
+.filtertoggle{display:inline-flex;align-items:center;gap:5px;position:relative;padding:5px 9px;}
+.filtertoggle svg{width:12px;height:12px;stroke:var(--muted);fill:none;stroke-width:1.4;}
+.filtertoggle.active svg{stroke:var(--accent);}
+.filtertoggle.active{border-color:var(--accent);color:var(--accent);}
+.filtertoggle .fcount{display:none;background:var(--accent);color:#fff;border-radius:8px;font-size:8.5px;padding:0 5px;line-height:14px;}
+.filtertoggle.active .fcount{display:inline-block;}
+.filterrow{max-height:0;overflow:hidden;margin-bottom:0;transition:max-height .15s ease;}
+.filterrow.open{max-height:200px;overflow:visible;margin-bottom:10px;}
 .pager{display:flex;gap:4px;align-items:center;justify-content:flex-end;margin-top:10px;flex-wrap:wrap;}
 .pagebtn{padding:4px 9px;font-size:10px;min-width:26px;}
 .pagebtn.active{background:var(--accent-dim);border-color:var(--accent);color:#fff;}
@@ -220,8 +233,15 @@ tr.rowdetail .row b{color:var(--fg);font-weight:500;white-space:normal;word-brea
     </div>
 
     <div class="card" id="card-recent">
-      <h2>Riwayat Setup</h2>
-      <div class="filterrow">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <h2>Riwayat Setup</h2>
+        <button type="button" class="filtertoggle" id="btnToggleFilter" title="Filter">
+          <svg viewBox="0 0 16 16"><path d="M1.5 2h13l-5 6v5l-3 1.5V8z"/></svg>
+          Filter
+          <span class="fcount" id="filterCount"></span>
+        </button>
+      </div>
+      <div class="filterrow" id="filterRow">
         <div>
           <label>Filter Status</label>
           <div class="filterbtns" id="filterStatusBtns"></div>
@@ -664,12 +684,19 @@ tr.rowdetail .row b{color:var(--fg);font-weight:500;white-space:normal;word-brea
     const mk = (v, cls) => `<span class="badge badge-btn ${cls}${filterStatusVal === v ? ' active' : ''}" data-v="${esc(v)}">${esc(v || 'semua')}</span>`;
     el.innerHTML = mk('', 'all') + STATUS_FILTER_OPTIONS.map(v => mk(v, v)).join('');
     el.querySelectorAll('[data-v]').forEach(b => b.addEventListener('click', () => {
-      filterStatusVal = b.dataset.v; recentPage = 1; renderStatusFilterBtns(); renderRecentFiltered();
+      filterStatusVal = b.dataset.v; recentPage = 1; renderStatusFilterBtns(); renderRecentFiltered(); updateFilterToggleState();
     }));
+    updateFilterToggleState();
   }
 
+  // (2026-08-08) Filter pair dipersempit ke 4 pair yang benar-benar AKTIF sekarang
+  // (Golden Trio XAU/EUR + EURGBP, sesuai default AUTO_ENTRY_PAIRS di vps/daemon.js)
+  // — PAIRS di atas masih daftar 8 pair historis (dipakai Trigger Analisa manual,
+  // yang sengaja tetap luas untuk uji-coba pair lama). Pair non-aktif yang masih
+  // punya baris data lama tetap bisa difilter lewat fallback "extra" di bawah.
+  const ACTIVE_FILTER_PAIRS = ['GC=F', 'EURUSD=X', 'AUDNZD=X', 'EURGBP=X'];
   function populateSymbolFilter(recent){
-    const known = PAIRS.map(p => p.symbol);
+    const known = ACTIVE_FILTER_PAIRS;
     const extra = [...new Set((recent || []).map(s => s.symbol))].filter(sym => !known.includes(sym));
     const all = [...known, ...extra];
     if (!all.includes(filterSymbolVal)) filterSymbolVal = '';
@@ -677,9 +704,24 @@ tr.rowdetail .row b{color:var(--fg);font-weight:500;white-space:normal;word-brea
     const mk = v => `<button type="button" class="pagebtn${filterSymbolVal === v ? ' active' : ''}" data-v="${esc(v)}">${esc(v || 'Semua')}</button>`;
     el.innerHTML = mk('') + all.map(mk).join('');
     el.querySelectorAll('[data-v]').forEach(b => b.addEventListener('click', () => {
-      filterSymbolVal = b.dataset.v; recentPage = 1; populateSymbolFilter(allRecent); renderRecentFiltered();
+      filterSymbolVal = b.dataset.v; recentPage = 1; populateSymbolFilter(allRecent); renderRecentFiltered(); updateFilterToggleState();
     }));
+    updateFilterToggleState();
   }
+
+  // Tombol ikon filter (2026-08-08) — panel filterrow default tertutup, toggle
+  // buka/tutup di sini; badge angka nyala kalau ada filter aktif supaya tetap
+  // kelihatan walau panelnya sedang ditutup.
+  function updateFilterToggleState(){
+    const activeCount = (filterStatusVal ? 1 : 0) + (filterSymbolVal ? 1 : 0);
+    const btn = document.getElementById('btnToggleFilter');
+    const count = document.getElementById('filterCount');
+    btn.classList.toggle('active', activeCount > 0);
+    count.textContent = activeCount || '';
+  }
+  document.getElementById('btnToggleFilter').addEventListener('click', () => {
+    document.getElementById('filterRow').classList.toggle('open');
+  });
 
   function getFilteredRecent(){
     return allRecent.filter(s => (!filterStatusVal || s.status === filterStatusVal) && (!filterSymbolVal || s.symbol === filterSymbolVal));
