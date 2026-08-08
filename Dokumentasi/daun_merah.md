@@ -11,10 +11,30 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-07 (Session 291 — Bugfix lag zoom TradingView chart)
+> **Last updated:** 2026-08-08 (Session 292 — Macro snapshot per setup + ghost-tracking Gate D/B/A)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 292 (2026-08-08) — Macro Snapshot per Setup + Ghost-Tracking Gate D/B/A
+
+**Konteks:** Rapat user dengan Gemini soal CME Options Skew (`Dokumentasi/ringkasan_rapat_auto_entry_cme.md`) mengusulkan menaikkan prioritas CME CVOL skew di atas COT untuk XAU/USD & EUR/USD. Audit balik ke data mentah `setup_log_auto:v1` (bukan cuma percaya klaim dokumen) menemukan: (1) klaim "XAU/USD 0% WR (0 TP, 4 SL)" dan "EUR/GBP 0% WR" di dokumen SALAH HITUNG — win rate asli 25% dan 33% (1 TP masing-masing tertukar jadi SL); (2) akar masalah "AI melawan skew ekstrem" tidak bisa diverifikasi karena sistem TIDAK PERNAH menyimpan `rr_value`/skew ke record setup saat entry dibuat — cuma numpang lewat prompt lalu hilang, satu-satunya jejak kalau AI kebetulan menyebutnya di teks bebas `makro_alignment_reason` (cuma 1 dari 4 trade XAU lama begitu). Gap yang sama berlaku untuk SEMUA input makro lain (DXY, WTI, real yield per leg, COT per leg, retail sentiment, cb_bias) — tidak ada satupun yang direkam terstruktur.
+
+**Keputusan (diskusi user):** sebelum menaikkan prioritas CME beneran, bangun dulu infrastruktur pencatatannya — supaya audit serupa di masa depan tidak lagi buta. Sekalian dibangun juga ghost-tracking untuk kandidat yang ditahan Gate D/B/A (celah yang sebelumnya "sengaja belum dibuat" — lihat Session 277/283) karena analog persis dengan `_evaluateCanceledGhost` (bias_flip) yang sudah ada, dan levelnya (entry/sl/tp) sudah selesai dihitung SEBELUM gate mana pun jalan — jadi nol biaya AI call tambahan.
+
+**A. Macro snapshot per setup (`api/admin.js`):**
+- `_buildMacroSnapshot()` (pure function, dekat `_formatFundamentalBlock`) — merangkum cb_bias/COT/retail per leg pair ini, real yield per leg, DXY/WTI, VIX/MOVE, dan CME skew (`rr_value`/`call_iv`/`put_iv`/`skew_change_pct`/`vol_level`/`convexity`) jadi satu objek `{ v: 1, cb_bias, cot, retail, real_yields, dxy, wti, vix, move, rr }`. Null kalau semua sumber kosong (fail-open, konsisten pola blok lain).
+- Variabel `cotParsed`/`retailParsed`/`macroDrivers`/`riskParsed`/`rrPairSnapshot` diangkat dari scope try-block lokal ke scope `ohlcvAnalyzeHandler` (sebelumnya di-parse inline lalu hilang) — nol fetch Redis tambahan, tinggal reuse data yang sudah ditarik untuk prompt.
+- Field baru `macro_snapshot` ditambahkan ke `buildNewSetupEntry()` — field `v:1` di dalamnya jadi penanda skema eksplisit (setup lama tanpa field ini otomatis `macro_snapshot: undefined`, gampang difilter di analisis nanti tanpa nebak-nebak null per sub-field).
+
+**B. Ghost-tracking Gate D/B/A (`api/admin.js`):**
+- `_evaluateCanceledGhost` digeneralisasi: dulu cuma proses `canceled_reason === 'bias_flip'`, sekarang pakai `GHOST_TRACKED_CANCEL_REASONS` (Set: `bias_flip`, `gate_correlation_cap`, `gate_drawdown_circuit_breaker`, `gate_critic_veto`). Filter `ghostPending` di `_buildAutoScopeStats` ikut digeneralisasi.
+- Titik reject Gate D/B (Fase 1) dan Gate A/critic_veto (Fase 2) — sebelumnya kandidat yang ditahan cuma nambah counter `auto_guard_stats:*` lalu levelnya dibuang total. Sekarang direkam sebagai `status:'canceled'` + `canceled_reason:'gate_<gateKey>'` + `canceled_t`, memakai `buildNewSetupEntry()` yang sama (jadi otomatis dapat `macro_snapshot` juga) — status asli TIDAK pernah jadi `pending`/`open`, jadi tidak ikut win-rate/exposure manapun, prinsip sama U-5a.
+- `_aggGateRejectGhostStats()` — agregat ghost dipecah PER GATE (`gate_correlation_cap`/`gate_drawdown_circuit_breaker`/`gate_critic_veto` masing-masing `{total, saved, cost, ambiguous, expired_no_fill, pending}`), beda dari `_aggCancelFlipGhostStats` yang tetap khusus `bias_flip`. `saved` = gate benar menahan (ghost_status sl), `cost` = gate salah menahan (ghost_status tp — kandidat sebenarnya menang). Di-wire ke `_aggSetupStats` sebagai `gate_reject_ghost`, dan ditambahkan ke daftar strip `_omitManagement` (developer-only, scope=auto — tidak pernah bocor ke payload publik, sama seperti `management`/`cancel_flip_ghost`).
+
+**Test:** 2 test lama di `test/admin/gate_a_race.test.js` diupdate — asumsi lama "critic_veto -> log.length 0" sekarang jadi "critic_veto -> tersimpan sebagai ghost `canceled`, tapi tidak pernah live pending/open" (perilaku yang sebenarnya ingin dijaga test itu). Test baru ditambahkan di `test/admin/ta_struct.test.js` untuk `_buildMacroSnapshot`, `_aggGateRejectGhostStats`, dan `_evaluateCanceledGhost` versi generalisasi. Full suite: **885/885 hijau**.
+
+**Belum ada threshold/aturan baru yang berubah** — sesi ini murni infrastruktur pencatatan. Kalibrasi ambang skew (dibahas di rapat CME) dan keputusan reprioritas COT vs CME menunggu data ini terkumpul dulu, tidak dieksekusi sesi ini.
 
 ## Changelog Session 291 (2026-08-07) — Bugfix Performa Rendering TradingView Chart
 

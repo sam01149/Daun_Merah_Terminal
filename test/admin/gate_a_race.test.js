@@ -8,7 +8,9 @@
 // Fase 2 (Gate A) TANPA lock, lalu re-acquire + baca ulang state SEGAR sebelum tulis
 // akhir (pola sama positionReviewHandler). Test ini memverifikasi:
 // (a) Gate A verdict 'lanjut' -> entri tetap tersimpan seperti sebelumnya.
-// (b) Gate A verdict 'batalkan' -> entri TIDAK tersimpan (perilaku lama dipertahankan).
+// (b) Gate A verdict 'batalkan' -> TIDAK PERNAH jadi entri live (pending/open), tapi
+//     (2026-08-08, ghost-tracking) tersimpan sebagai 'canceled'/canceled_reason:
+//     'gate_critic_veto' supaya bisa diaudit nanti apakah Gate A benar menahan.
 // (c) State berubah SELAMA Gate A berjalan (posisi 'open' baru muncul untuk symbol yang
 //     sama) -> entri BARU dibuang (race_detected), tidak menimpa buta.
 // (d) Flip-cancel (stalePending dibatalkan bias_flip) yang KEMUDIAN kandidat barunya
@@ -148,7 +150,7 @@ test('Gate A lanjut: entri tetap tersimpan (lock dilepas sebelum AI, re-acquire 
   });
 });
 
-test('Gate A batalkan: entri TIDAK tersimpan, auto_guard_stats:critic_veto naik', async () => {
+test('Gate A batalkan: TIDAK ada entri live (pending/open), tapi tersimpan sebagai ghost canceled + auto_guard_stats:critic_veto naik', async () => {
   await withEnv({ CRON_SECRET: 'topsecret', DEEPSEEK_API_KEY: 'k', SAMBANOVA_API_KEY: 'sk' }, async () => {
     const store = baseStore();
     const origFetch = global.fetch;
@@ -162,7 +164,15 @@ test('Gate A batalkan: entri TIDAK tersimpan, auto_guard_stats:critic_veto naik'
       }, res);
       assert.equal(res.statusCode, 200);
       const log = JSON.parse(store.strings['setup_log_auto:v1']);
-      assert.equal(log.length, 0, 'critic_veto -> tidak ada entri baru tersimpan');
+      // (2026-08-08) Ghost-tracking: critic_veto sekarang DISIMPAN sebagai 'canceled'
+      // (supaya bisa diaudit apakah Gate A benar menahan atau kebetulan buang kandidat
+      // yang sebenarnya menang) — tapi TIDAK PERNAH sebagai live pending/open, jadi
+      // tidak ikut win-rate/exposure manapun. Itu invarian yang sebenarnya dijaga test
+      // ini, bukan "log.length === 0".
+      assert.equal(log.length, 1);
+      assert.equal(log[0].status, 'canceled');
+      assert.equal(log[0].canceled_reason, 'gate_critic_veto');
+      assert.ok(log.every(x => x.status !== 'pending' && x.status !== 'open'), 'critic_veto tidak pernah jadi entri live');
       assert.equal(store.strings['auto_guard_stats:critic_veto'], '1');
       assert.equal(store.strings['auto_guard_stats:saved'], undefined);
     } finally { global.fetch = origFetch; }
@@ -302,7 +312,11 @@ test('Gate E conflict:"waktu" — Gate A tetap bisa veto (critic_veto), bukan la
       }, res);
       assert.equal(res.statusCode, 200);
       const log = JSON.parse(store.strings['setup_log_auto:v1']);
-      assert.equal(log.length, 0, 'Gate A veto -> tidak tersimpan (tapi lewat critic_veto, bukan conflict_waktu)');
+      // (2026-08-08) sama seperti test critic_veto di atas — tersimpan sebagai ghost
+      // 'canceled', bukan 0 entri sama sekali; yang penting tidak pernah live.
+      assert.equal(log.length, 1, 'Gate A veto -> disimpan sbg ghost canceled (tapi lewat critic_veto, bukan conflict_waktu)');
+      assert.equal(log[0].status, 'canceled');
+      assert.equal(log[0].canceled_reason, 'gate_critic_veto');
       assert.equal(store.strings['auto_guard_stats:conflict_waktu_flagged'], '1');
       assert.equal(store.strings['auto_guard_stats:critic_veto'], '1');
       assert.equal(store.strings['auto_guard_stats:saved'], undefined);

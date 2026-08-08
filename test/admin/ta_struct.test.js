@@ -578,6 +578,109 @@ test('_aggCancelFlipGhostStats: hitung saved (sl)/cost (tp)/ambiguous/expired_no
   assert.strictEqual(empty.total, 0);
 });
 
+// ── Ghost-tracking Gate D/B/A + macro snapshot (2026-08-08, diskusi user) ─────────────
+// Generalisasi _evaluateCanceledGhost ke kandidat yang ditahan gate (bukan cuma
+// bias_flip), + _aggGateRejectGhostStats (per-gate), + _buildMacroSnapshot (snapshot
+// numerik makro/CME per setup).
+const { _aggGateRejectGhostStats, _buildMacroSnapshot, GHOST_TRACKED_CANCEL_REASONS } = require('../../api/admin.js');
+
+test('GHOST_TRACKED_CANCEL_REASONS: berisi bias_flip + 3 alasan gate', () => {
+  assert.ok(GHOST_TRACKED_CANCEL_REASONS.has('bias_flip'));
+  assert.ok(GHOST_TRACKED_CANCEL_REASONS.has('gate_correlation_cap'));
+  assert.ok(GHOST_TRACKED_CANCEL_REASONS.has('gate_drawdown_circuit_breaker'));
+  assert.ok(GHOST_TRACKED_CANCEL_REASONS.has('gate_critic_veto'));
+  assert.strictEqual(GHOST_TRACKED_CANCEL_REASONS.has('lain'), false);
+});
+
+test('_evaluateCanceledGhost: kandidat ditahan gate_correlation_cap ikut dievaluasi (dulu di-skip)', () => {
+  const setups = [mkSetup({ status: 'canceled', canceled_reason: 'gate_correlation_cap', canceled_t: MS0 })];
+  const candles = {
+    'GC=F': [
+      mkC(T0 + 3600, 4000, 4035, 3995, 4020),   // fill
+      mkC(T0 + 7200, 4020, 4030, 3955, 3960),   // TP — gate SALAH menahan (kandidat sebenarnya menang)
+    ],
+  };
+  _evaluateCanceledGhost(setups, candles, MS0 + 3 * 3600 * 1000);
+  assert.strictEqual(setups[0].status, 'canceled'); // status asli tidak disentuh
+  assert.strictEqual(setups[0].ghost_status, 'tp');
+});
+
+test('_evaluateCanceledGhost: kandidat ditahan gate_critic_veto ikut dievaluasi', () => {
+  const setups = [mkSetup({ status: 'canceled', canceled_reason: 'gate_critic_veto', canceled_t: MS0 })];
+  const candles = {
+    'GC=F': [
+      mkC(T0 + 3600, 4000, 4035, 3995, 4030),   // fill
+      mkC(T0 + 7200, 4030, 4070, 4025, 4060),   // SL — gate BENAR menahan
+    ],
+  };
+  _evaluateCanceledGhost(setups, candles, MS0 + 3 * 3600 * 1000);
+  assert.strictEqual(setups[0].ghost_status, 'sl');
+});
+
+test('_aggGateRejectGhostStats: dipecah per gate, abaikan bias_flip & non-gate_*', () => {
+  const arr = [
+    mkSetup({ status: 'canceled', canceled_reason: 'gate_correlation_cap', ghost_status: 'sl' }),
+    mkSetup({ status: 'canceled', canceled_reason: 'gate_correlation_cap', ghost_status: 'tp' }),
+    mkSetup({ status: 'canceled', canceled_reason: 'gate_critic_veto', ghost_status: 'sl' }),
+    mkSetup({ status: 'canceled', canceled_reason: 'gate_critic_veto' }), // belum resolve -> pending
+    mkCanceled({ ghost_status: 'sl' }), // bias_flip, harus diabaikan di sini
+    mkSetup({ status: 'pending' }),
+  ];
+  const a = _aggGateRejectGhostStats(arr);
+  assert.strictEqual(a.gate_correlation_cap.total, 2);
+  assert.strictEqual(a.gate_correlation_cap.saved, 1);
+  assert.strictEqual(a.gate_correlation_cap.cost, 1);
+  assert.strictEqual(a.gate_critic_veto.total, 2);
+  assert.strictEqual(a.gate_critic_veto.saved, 1);
+  assert.strictEqual(a.gate_critic_veto.pending, 1);
+  assert.strictEqual(a.bias_flip, undefined);
+  assert.deepStrictEqual(_aggGateRejectGhostStats([]), {});
+});
+
+// ── _buildMacroSnapshot (2026-08-08, diskusi user) ────────────────────────────────────
+test('_buildMacroSnapshot: rangkum cb_bias/COT/retail/real yield per leg + DXY/WTI/risk/rr, hanya legs pair ini', () => {
+  const snap = _buildMacroSnapshot({
+    label: 'EUR/USD', isXau: false,
+    cbBias: { EUR: { bias: 'bullish', confidence: 'sedang' }, USD: { bias: 'bearish', confidence: 'tinggi' }, GBP: { bias: 'netral' } },
+    cot: {
+      positions: { USD: { lev_net: -50000, lev_change_net: 2000, lev_net_pct_oi: -5.2 } },
+      percentiles: { USD: { lev_pctile: 12 } },
+    },
+    retail: { positions: { EURUSD: { long_pct: 65, short_pct: 35, signal: 'CONTRARIAN_SHORT' } } },
+    risk: { regime: 'risk_on', vix: 14.2, move: 88 },
+    drivers: {
+      dxy: { level: 104.5, pct: -0.3 }, wti: { level: 78.2, pct: 1.1 },
+      realYields: { USD: { nominal: 4.1, inflation_exp: 2.3, real: 1.8 } },
+    },
+    rrPair: { rr_value: -0.32, call_iv: 4.9, put_iv: 5.22, skew_change_pct: 12.5, vol_level: 5.0, convexity: 1.02 },
+  });
+  assert.strictEqual(snap.v, 1);
+  assert.deepStrictEqual(snap.cb_bias, { EUR: { bias: 'bullish', confidence: 'sedang' }, USD: { bias: 'bearish', confidence: 'tinggi' } });
+  assert.strictEqual(snap.cb_bias.GBP, undefined); // bukan leg EUR/USD
+  assert.deepStrictEqual(snap.cot, { USD: { lev_net: -50000, lev_change_net: 2000, lev_net_pct_oi: -5.2, lev_pctile: 12 } });
+  assert.deepStrictEqual(snap.retail, { long_pct: 65, short_pct: 35, signal: 'CONTRARIAN_SHORT' });
+  assert.deepStrictEqual(snap.real_yields, { USD: { nominal: 4.1, inflation_exp: 2.3, real: 1.8 } });
+  assert.deepStrictEqual(snap.dxy, { level: 104.5, pct: -0.3 });
+  assert.deepStrictEqual(snap.wti, { level: 78.2, pct: 1.1 });
+  assert.strictEqual(snap.vix, 14.2);
+  assert.strictEqual(snap.move, 88);
+  assert.strictEqual(snap.rr.rr_value, -0.32);
+});
+
+test('_buildMacroSnapshot: pair XAU pakai pairKey XAUUSD untuk retail, bukan gabungan legs', () => {
+  const snap = _buildMacroSnapshot({
+    label: 'XAU/USD', isXau: true,
+    cbBias: null, cot: null,
+    retail: { positions: { XAUUSD: { long_pct: 70, short_pct: 30, signal: 'CONTRARIAN_SHORT' } } },
+    risk: null, drivers: null, rrPair: null,
+  });
+  assert.deepStrictEqual(snap.retail, { long_pct: 70, short_pct: 30, signal: 'CONTRARIAN_SHORT' });
+});
+
+test('_buildMacroSnapshot: semua sumber kosong -> null (fail-open, tidak nulis objek kosong)', () => {
+  assert.strictEqual(_buildMacroSnapshot({ label: 'EUR/USD', isXau: false, cbBias: null, cot: null, retail: null, risk: null, drivers: null, rrPair: null }), null);
+});
+
 // ── PLAN U-1 (2026-07-20): loss_label, raw vs adjusted, _detectLossLabel ──────
 
 const { _detectLossLabel } = require('../../api/admin.js');

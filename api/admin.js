@@ -2827,11 +2827,20 @@ function _evaluateTechInvalidation(setups, candlesBySymbol) {
 // apa adanya. Logikanya sengaja MIRIP _evaluateSetups (pending->open->sl/tp/expired),
 // cuma start dari waktu pembatalan (canceled_t) memakai level entry_zone/sl/tp yang sudah
 // dibekukan sejak sebelum di-cancel.
+//
+// (2026-08-08, diskusi user) Digeneralisasi: awalnya cuma 'bias_flip', sekarang juga
+// menyertakan kandidat yang DITAHAN Gate D/B/A (correlation_cap/drawdown/critic_veto,
+// lihat penulisan ghost entry di ohlcvAnalyzeHandler) — pertanyaannya sama persis
+// ("apakah pembatalan/penahanan ini tepat atau kandidat yang dibuang sebenarnya
+// benar?"), cuma sumber pembatalannya beda. Satu fungsi, satu logic, filter diperluas.
+const GHOST_TRACKED_CANCEL_REASONS = new Set([
+  'bias_flip', 'gate_correlation_cap', 'gate_drawdown_circuit_breaker', 'gate_critic_veto',
+]);
 function _evaluateCanceledGhost(setups, candlesBySymbol, nowMs) {
   const DAY = 86400000;
   const nums = s => (String(s).match(/[\d.]+/g) || []).map(Number).filter(n => !isNaN(n));
   for (const st of setups || []) {
-    if (!st || st.status !== 'canceled' || st.canceled_reason !== 'bias_flip') continue;
+    if (!st || st.status !== 'canceled' || !GHOST_TRACKED_CANCEL_REASONS.has(st.canceled_reason)) continue;
     if (st.ghost_status) continue; // sudah resolved, jangan re-evaluasi
     const startTs = st.canceled_t || st.ts;
     if (!Number.isFinite(startTs)) continue;
@@ -2879,6 +2888,32 @@ function _aggCancelFlipGhostStats(arr) {
     expired_no_fill: list.filter(x => x.ghost_status === 'expired').length,
     pending: list.filter(x => !x.ghost_status).length,
   };
+}
+
+// Agregat ghost KHUSUS kandidat yang ditahan Gate D/B/A (2026-08-08, diskusi user —
+// gap yang sebelumnya "sengaja belum dibuat" karena dianggap kerja lebih besar dari
+// pencatatan ringan `auto_guard_stats:*`, lihat komentar di ohlcvAnalyzeHandler dekat
+// `autoGuardConsidered`). Dipecah PER GATE (bukan digabung 1 angka) — correlation_cap/
+// drawdown/critic_veto jawab pertanyaan berbeda (masing-masing "apakah gate ini
+// beneran nyaring yang jelek, atau kebetulan buang kandidat yang sebenarnya menang").
+// saved = gate BENAR menahan (ghost_status sl — kandidat itu memang bakal kalah kalau
+// diambil), cost = gate SALAH menahan (ghost_status tp — kandidat itu sebenarnya menang).
+function _aggGateRejectGhostStats(arr) {
+  const list = (Array.isArray(arr) ? arr : [])
+    .filter(x => x && typeof x.canceled_reason === 'string' && x.canceled_reason.startsWith('gate_'));
+  const byGate = {};
+  for (const x of list) {
+    const g = byGate[x.canceled_reason] || (byGate[x.canceled_reason] = {
+      total: 0, saved: 0, cost: 0, ambiguous: 0, expired_no_fill: 0, pending: 0,
+    });
+    g.total++;
+    if (x.ghost_status === 'sl') g.saved++;
+    else if (x.ghost_status === 'tp') g.cost++;
+    else if (x.ghost_status === 'ambiguous') g.ambiguous++;
+    else if (x.ghost_status === 'expired') g.expired_no_fill++;
+    else g.pending++;
+  }
+  return byGate;
 }
 
 // Keyword currency-leg untuk breaking news (audit 2026-08-03: _detectLossLabel
@@ -3312,15 +3347,19 @@ function _aggSetupStats(arr) {
     // PLAN U-3 lanjutan (2026-07-24): counterfactual pending yang dibatalkan via Flip
     // Guard non-whipsaw — lihat _evaluateCanceledGhost/_aggCancelFlipGhostStats di atas.
     cancel_flip_ghost: _aggCancelFlipGhostStats(arr),
+    // (2026-08-08) counterfactual kandidat yang ditahan Gate D/B/A — lihat
+    // _aggGateRejectGhostStats di atas.
+    gate_reject_ghost: _aggGateRejectGhostStats(arr),
   };
 }
 
-// PLAN U-7: hapus blok `management`/`cancel_flip_ghost` (U-5a/U-3 lanjutan) dari agregat
-// sebelum dikirim ke payload PUBLIK — diagnostik keputusan AI eksperimen HANYA boleh
-// terlihat lewat scope=auto (REVISI VISIBILITAS). Field informasi U-1 (win_rate_raw/
-// adjusted, loss_causes) tetap ikut apa adanya karena bukan bagian dua blok itu.
+// PLAN U-7: hapus blok `management`/`cancel_flip_ghost`/`gate_reject_ghost` (U-5a/U-3
+// lanjutan/2026-08-08) dari agregat sebelum dikirim ke payload PUBLIK — diagnostik
+// keputusan AI eksperimen HANYA boleh terlihat lewat scope=auto (REVISI VISIBILITAS).
+// Field informasi U-1 (win_rate_raw/adjusted, loss_causes) tetap ikut apa adanya karena
+// bukan bagian tiga blok itu.
 function _omitManagement(stats) {
-  const { management, cancel_flip_ghost, ...rest } = stats;
+  const { management, cancel_flip_ghost, gate_reject_ghost, ...rest } = stats;
   return rest;
 }
 
@@ -3481,7 +3520,7 @@ async function _buildAutoScopeStats() {
   // PLAN U-3 lanjutan (2026-07-24): sama pola managedPending di atas, tapi untuk ghost
   // cancel-flip (lihat _evaluateCanceledGhost) — symbol yang cuma dikenal lewat pending
   // yang sudah dibatalkan mungkin belum ada di `active`/candlesBySymbol sama sekali.
-  const ghostPending = log.filter(s => s && s.status === 'canceled' && s.canceled_reason === 'bias_flip' && !s.ghost_status);
+  const ghostPending = log.filter(s => s && s.status === 'canceled' && GHOST_TRACKED_CANCEL_REASONS.has(s.canceled_reason) && !s.ghost_status);
   if (ghostPending.length) {
     await Promise.all([...new Set(ghostPending.map(s => s.symbol))].map(async sym => {
       if (candlesBySymbol[sym]) return;
@@ -4244,6 +4283,68 @@ function _formatFundamentalBlock({ label, isXau, cbBias, cot, risk, retail, driv
   return `FUNDAMENTAL TERSTRUKTUR (cache server, bukan dari artikel — ${note}):\n${lines.join('\n')}`;
 }
 
+// Snapshot numerik ringkas dari SEMUA input makro yang dilihat AI saat itu (cb_bias,
+// COT per leg, retail sentiment, DXY/WTI, real yield per leg, risk regime, CME skew) —
+// disimpan ke tiap setup auto-entry (2026-08-08, diskusi user pasca-audit skew XAU/
+// EUR-GBP: dari 4 trade lama, cuma 1 yang kebetulan nyebut angka skew di teks bebas
+// `makro_alignment_reason`, 3 sisanya buta total karena tidak pernah direkam terpisah).
+// Sebelumnya HANYA `regime` yang direkam (Track 1b) — field lain numpang lewat prompt
+// lalu hilang, sama sekali tidak bisa direkonstruksi buat audit/kalibrasi nanti.
+// Pure function — irisan per-leg pair ini SAJA (bukan seluruh cache global currency),
+// biar ringan & relevan. Return null kalau semua sumber kosong (fail-open, konsisten
+// dengan blok prompt lain di fungsi ini).
+function _buildMacroSnapshot({ label, isXau, cbBias, cot, retail, risk, drivers, rrPair }) {
+  const legs = String(label || '').toUpperCase().split('/').map(s => s.trim()).filter(Boolean);
+  const cbByLeg = {}, cotByLeg = {}, realYieldByLeg = {};
+  for (const leg of legs) {
+    const cb = cbBias?.[leg];
+    if (cb?.bias) cbByLeg[leg] = { bias: cb.bias, confidence: cb.confidence ?? null };
+    const cp = cot?.positions?.[leg];
+    if (cp && typeof cp.lev_net === 'number') {
+      const pctile = cot?.percentiles?.[leg];
+      cotByLeg[leg] = {
+        lev_net: cp.lev_net,
+        lev_change_net: cp.lev_change_net ?? null,
+        lev_net_pct_oi: cp.lev_net_pct_oi ?? null,
+        lev_pctile: pctile?.lev_pctile ?? null,
+      };
+    }
+    const ry = drivers?.realYields?.[leg];
+    if (ry && ry.nominal != null && ry.inflation_exp != null && ry.real != null) {
+      realYieldByLeg[leg] = { nominal: ry.nominal, inflation_exp: ry.inflation_exp, real: ry.real };
+    }
+  }
+  const pairKey = isXau ? 'XAUUSD' : legs.join('');
+  const rt = retail?.positions?.[pairKey];
+  const retailSnap = (rt && rt.long_pct != null)
+    ? { long_pct: rt.long_pct, short_pct: rt.short_pct, signal: rt.signal ?? null }
+    : null;
+  const rrSnap = rrPair ? {
+    rr_value: rrPair.rr_value ?? null,
+    call_iv: rrPair.call_iv ?? null,
+    put_iv: rrPair.put_iv ?? null,
+    skew_change_pct: rrPair.skew_change_pct ?? null,
+    vol_level: rrPair.vol_level ?? null,
+    convexity: rrPair.convexity ?? null,
+  } : null;
+  const hasAny = Object.keys(cbByLeg).length || Object.keys(cotByLeg).length
+    || Object.keys(realYieldByLeg).length || retailSnap || rrSnap
+    || drivers?.dxy?.pct != null || drivers?.wti?.pct != null || risk?.regime;
+  if (!hasAny) return null;
+  return {
+    v: 1,
+    cb_bias: Object.keys(cbByLeg).length ? cbByLeg : null,
+    cot: Object.keys(cotByLeg).length ? cotByLeg : null,
+    retail: retailSnap,
+    real_yields: Object.keys(realYieldByLeg).length ? realYieldByLeg : null,
+    dxy: drivers?.dxy?.pct != null ? { level: drivers.dxy.level ?? null, pct: drivers.dxy.pct } : null,
+    wti: drivers?.wti?.pct != null ? { level: drivers.wti.level ?? null, pct: drivers.wti.pct } : null,
+    vix: risk?.vix ?? null,
+    move: risk?.move ?? null,
+    rr: rrSnap,
+  };
+}
+
 // Ekstrak {dxy, wti, realYieldUsd, realYields} dari cache 'daily_snapshot'
 // (correlations.js, action=daily-snapshot) + 'real_yields' (real-yields.js) — dipakai
 // kedua caller _formatFundamentalBlock (ohlcvAnalyzeHandler & ohlcv_critic) supaya
@@ -4534,6 +4635,16 @@ async function ohlcvAnalyzeHandler(req, res) {
     // [SISTEM HAKIM] butuh objek cb_bias mentah (bukan fundBlock yang cuma teks prompt)
     // untuk _computeCbDirServerSide di bawah — diisi di try yang sama, tidak fetch dobel.
     let cbBiasParsed = null;
+    // Snapshot makro (2026-08-08, diskusi user) — sebelumnya cot/retail/drivers/risk
+    // cuma di-parse INLINE di parameter _formatFundamentalBlock di bawah, tidak pernah
+    // disimpan ke variabel scope luar, jadi hilang begitu selesai dipakai buat prompt.
+    // Diangkat ke sini supaya bisa dipakai lagi oleh _buildMacroSnapshot di
+    // buildNewSetupEntry (~600 baris di bawah, fungsi yang sama, closure yang sama) —
+    // TANPA fetch Redis kedua.
+    let cotParsed = null;
+    let retailParsed = null;
+    let macroDrivers = null;
+    let riskParsed = null;
     try {
       const [rawBias, rawCot, rawRisk, rawRetail, rawSnap, rawRY] = await Promise.all([
         redisCmd('GET', 'cb_bias'),
@@ -4543,16 +4654,19 @@ async function ohlcvAnalyzeHandler(req, res) {
         redisCmd('GET', 'daily_snapshot'),
         redisCmd('GET', 'real_yields'),
       ]);
-      const parsedRisk = rawRisk ? JSON.parse(rawRisk) : null;
-      autoGuardRegime = parsedRisk?.regime || null;
+      riskParsed = rawRisk ? JSON.parse(rawRisk) : null;
+      autoGuardRegime = riskParsed?.regime || null;
       cbBiasParsed = rawBias ? JSON.parse(rawBias) : null;
+      cotParsed = rawCot ? JSON.parse(rawCot) : null;
+      retailParsed = rawRetail ? JSON.parse(rawRetail) : null;
+      macroDrivers = _extractMacroDrivers(rawSnap, rawRY);
       fundBlock = _formatFundamentalBlock({
         label: data.label, isXau: data.is_xau,
         cbBias: cbBiasParsed,
-        cot:    rawCot  ? JSON.parse(rawCot)  : null,
-        risk:   parsedRisk,
-        retail: rawRetail ? JSON.parse(rawRetail) : null,
-        drivers: _extractMacroDrivers(rawSnap, rawRY),
+        cot:    cotParsed,
+        risk:   riskParsed,
+        retail: retailParsed,
+        drivers: macroDrivers,
         nowMs:  Date.now(),
       });
     } catch (e) { /* opsional — jangan gagalkan analisa kalau cache fundamental kosong */ }
@@ -4568,11 +4682,15 @@ async function ohlcvAnalyzeHandler(req, res) {
     // menunggu/gagalkan analisa). NZD/USD & USD/CHF tidak punya data (options CME
     // terlalu illiquid) — blok otomatis kosong untuk keduanya, bukan bug.
     let rrBlock = '';
+    // Diangkat ke scope luar (2026-08-08) sama alasannya dengan cotParsed/dkk di atas —
+    // dipakai lagi oleh _buildMacroSnapshot di buildNewSetupEntry.
+    let rrPairSnapshot = null;
     try {
       const rawRR = await redisCmd('GET', 'rr_cache_v2');
       if (rawRR) {
         const rrCache = JSON.parse(rawRR);
-        rrBlock = _formatOptionsSentimentBlock(rrCache?.pairs?.[data.label]);
+        rrPairSnapshot = rrCache?.pairs?.[data.label] || null;
+        rrBlock = _formatOptionsSentimentBlock(rrPairSnapshot);
       }
     } catch (e) { /* opsional — jangan gagalkan analisa kalau cache RR kosong */ }
 
@@ -5199,6 +5317,13 @@ async function ohlcvAnalyzeHandler(req, res) {
         // AI position review/tighten preventif Jumat menyentuh posisi yang sama.
         invalidation_trigger: structured.invalidation_trigger ?? null,
         tech_invalidated: null,
+        // Snapshot makro (2026-08-08, diskusi user, lihat _buildMacroSnapshot) — nullable
+        // kalau semua sumber cache kosong saat itu, sama fail-open-nya dengan `regime`.
+        macro_snapshot: _buildMacroSnapshot({
+          label: data.label, isXau: data.is_xau,
+          cbBias: cbBiasParsed, cot: cotParsed, retail: retailParsed,
+          risk: riskParsed, drivers: macroDrivers, rrPair: rrPairSnapshot,
+        }),
         // Track 1b (Road to Professional LLM Trader, 2026-08-04, diskusi user):
         // rekam risk_regime SAAT setup dibuat — `autoGuardRegime` sudah dihitung
         // di atas untuk Gate B (nol fetch/panggilan tambahan), tapi cache
@@ -5374,11 +5499,21 @@ async function ohlcvAnalyzeHandler(req, res) {
           if (shouldSaveLog) await redisCmd('SET', setupLogKey, JSON.stringify(log.slice(0, 200)));
         } else {
           if (autoGuardReason) {
-            blockedByOpenPosition = true; // reuse flag skip existing — setup baru TIDAK disimpan
+            blockedByOpenPosition = true; // reuse flag skip existing — setup baru TIDAK disimpan sebagai live
             console.log(`auto-entry ${symbol} ditahan oleh audit-guard: ${autoGuardReason}`);
             // gateKey = token pertama sebelum '(' atau ':' — 'drawdown_circuit_breaker(R=-3)' -> 'drawdown_circuit_breaker'
             const gateKey = autoGuardReason.split(/[(:]/)[0];
             redisCmd('INCR', `auto_guard_stats:${gateKey}`).catch(() => {});
+            // Ghost-tracking (2026-08-08, diskusi user): dulu kandidat yang ditahan gate
+            // di sini cuma jadi angka counter, levelnya (entry/sl/tp) sudah dihitung penuh
+            // tapi langsung dibuang — tidak pernah ketahuan apakah gate-nya benar menahan
+            // atau kebetulan buang kandidat yang sebenarnya menang. Direkam sebagai
+            // 'canceled' (BUKAN 'pending'/'open' — tidak pernah live, tidak masuk win-rate
+            // manapun) dengan canceled_reason:'gate_<gateKey>' supaya _evaluateCanceledGhost
+            // (sekarang digeneralisasi, lihat GHOST_TRACKED_CANCEL_REASONS) bisa memantau
+            // counterfactual-nya lewat field ghost_* terpisah, pola sama persis bias_flip.
+            log.unshift({ ...buildNewSetupEntry(), status: 'canceled', canceled_reason: `gate_${gateKey}`, canceled_t: Date.now() });
+            shouldSaveLog = true;
           }
           // Jalur ini yang dieksekusi manual (isAutoCall false -> autoGuardConsidered
           // selalu false -> needsGateA selalu false) — Gate A tidak pernah menyentuh
@@ -5442,6 +5577,11 @@ async function ohlcvAnalyzeHandler(req, res) {
             console.log(`auto-entry ${symbol} ditahan oleh audit-guard: ${autoGuardReason}`);
             const gateKey = autoGuardReason.split(/[(:]/)[0];
             redisCmd('INCR', `auto_guard_stats:${gateKey}`).catch(() => {});
+            // Ghost-tracking critic_veto (2026-08-08) — pola sama Gate D/B di Fase 1 di
+            // atas, lihat komentar lengkap di sana. log2 di sini sudah dibaca ULANG segar
+            // pasca Gate A (bukan `log` Fase 1 yang mungkin sudah basi).
+            log2.unshift({ ...buildNewSetupEntry(), status: 'canceled', canceled_reason: `gate_${gateKey}`, canceled_t: Date.now() });
+            await redisCmd('SET', setupLogKey, JSON.stringify(log2.slice(0, 200)));
           } else {
             redisCmd('INCR', 'auto_guard_stats:saved').catch(() => {});
             log2.unshift(buildNewSetupEntry());
@@ -5970,6 +6110,8 @@ module.exports._evaluateSetups = _evaluateSetups;
 module.exports._evaluateTechInvalidation = _evaluateTechInvalidation;
 module.exports._evaluateCanceledGhost = _evaluateCanceledGhost;
 module.exports._aggCancelFlipGhostStats = _aggCancelFlipGhostStats;
+module.exports._aggGateRejectGhostStats = _aggGateRejectGhostStats;
+module.exports.GHOST_TRACKED_CANCEL_REASONS = GHOST_TRACKED_CANCEL_REASONS;
 module.exports._aggSetupStats = _aggSetupStats;
 module.exports._costAdjustedR = _costAdjustedR;
 module.exports._aggCostExpectancy = _aggCostExpectancy;
@@ -6002,6 +6144,7 @@ module.exports.resampleTo4h = resampleTo4h;
 module.exports._extractRingkasanExcerpt = _extractRingkasanExcerpt;
 module.exports._formatFundamentalBlock = _formatFundamentalBlock;
 module.exports._extractMacroDrivers = _extractMacroDrivers;
+module.exports._buildMacroSnapshot = _buildMacroSnapshot;
 module.exports._formatTrackRecordBlock = _formatTrackRecordBlock;
 module.exports._calEventMsWib = _calEventMsWib;
 module.exports._buildAnalyzeCalBlock = _buildAnalyzeCalBlock;
