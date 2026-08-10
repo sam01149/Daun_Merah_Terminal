@@ -372,18 +372,22 @@ tr.rowdetail .row b{color:var(--fg);font-weight:500;white-space:normal;word-brea
     { symbol: 'USDCAD=X',  label: 'USD/CAD' },
     { symbol: 'USDCHF=X',  label: 'USD/CHF' },
     { symbol: 'NZDUSD=X',  label: 'NZD/USD' },
+    // 3 pair ditambah setelah daftar 8 di atas dibuat (Golden Trio redesign 2026-07-26 +
+    // CHF/JPY 2026-08-08, lihat AUTO_ENTRY_SYMBOL_MAP di vps/daemon.js) — sebelumnya tidak
+    // bisa dipicu manual sama sekali dari sini, murni ketinggalan update daftar, bukan
+    // exclusion sengaja (2026-08-10, Session 301 lanjutan).
+    { symbol: 'AUDNZD=X',  label: 'AUD/NZD' },
+    { symbol: 'EURGBP=X',  label: 'EUR/GBP' },
+    { symbol: 'CHFJPY=X',  label: 'CHF/JPY' },
   ];
   // Label tampilan untuk SEMUA symbol yang bisa muncul di s.symbol (setup_stats
-  // ?scope=auto) — lebih luas dari PAIRS di atas (yang cuma dipakai tombol Trigger
-  // Analisa manual, 8 pair historis). symbol tetap key internal Yahoo-style apa
-  // adanya (GC=F dst, lihat AUTO_ENTRY_SYMBOL_MAP di vps/daemon.js — sengaja
-  // dipertahankan utk konsistensi lintas API meski sumber data sudah Deriv), map
-  // ini murni utk apa yang ditampilkan ke mata user supaya tidak lagi kelihatan
-  // "GC=F" mentah di tabel/filter.
-  const SYMBOL_LABEL = Object.assign(
-    { 'AUDNZD=X': 'AUD/NZD', 'EURGBP=X': 'EUR/GBP', 'CHFJPY=X': 'CHF/JPY' },
-    Object.fromEntries(PAIRS.map(p => [p.symbol, p.label]))
-  );
+  // ?scope=auto) — symbol tetap key internal Yahoo-style apa adanya (GC=F dst,
+  // lihat AUTO_ENTRY_SYMBOL_MAP di vps/daemon.js — sengaja dipertahankan utk
+  // konsistensi lintas API meski sumber data sudah Deriv), map ini murni utk apa
+  // yang ditampilkan ke mata user supaya tidak lagi kelihatan "GC=F" mentah di
+  // tabel/filter. Diturunkan dari PAIRS di atas (satu sumber, tidak ada map kedua
+  // yang bisa drift).
+  const SYMBOL_LABEL = Object.fromEntries(PAIRS.map(p => [p.symbol, p.label]));
   function symLabel(sym){ return SYMBOL_LABEL[sym] || sym; }
 
   function getSecret(){ return localStorage.getItem(SECRET_LS) || ''; }
@@ -709,8 +713,9 @@ tr.rowdetail .row b{color:var(--fg);font-weight:500;white-space:normal;word-brea
   // diganti tanpa diff kode). Sekarang diturunkan LIVE dari json.symbols hasil
   // setup_stats?scope=auto (loadDashboard() di bawah mengisi ulang tiap refresh)
   // — persis pair yang benar-benar sedang akumulasi data auto-entry, tanpa perlu
-  // diedit manual. PAIRS di atas tetap daftar 8 pair historis (Trigger Analisa
-  // manual). Kosong sebelum secret diisi / data pertama masuk — wajar.
+  // diedit manual. PAIRS di atas tetap daftar tetap (Trigger Analisa manual) —
+  // 8 pair historis + 3 pair yang menyusul (AUD/NZD, EUR/GBP, CHF/JPY). Kosong
+  // sebelum secret diisi / data pertama masuk — wajar.
   let ACTIVE_FILTER_PAIRS = [];
   function populateSymbolFilter(recent){
     const known = ACTIVE_FILTER_PAIRS;
