@@ -1207,7 +1207,12 @@ const FUND_SEED = {
     'GDP QoQ':           { actual:'0.3%',       period:'Q1 2026',     date:'—', source:'seed' },
     'RBA Rate':          { actual:'4.35%',      period:'May 2026',    date:'—', source:'seed' },
     'Unemployment Rate': { actual:'4.5%',       period:'Apr 2026',    date:'—', source:'seed' },
-    'Retail Sales MoM':  { actual:'0.2%',       period:'Mar 2026',    date:'—', source:'seed' },
+    // "Retail Sales MoM" DIHAPUS 2026-08-10 (permintaan user, riset web terverifikasi):
+    // ABS resmi menghentikan publikasi "Retail Trade, Australia" setelah rilis Juni
+    // 2025, digantikan indikator ini — seed lama tidak akan PERNAH bisa ke-update lagi
+    // lewat jalur otomatis apa pun karena rilis aslinya sudah tidak diterbitkan. Lihat
+    // daun_merah.md Session 298 lanjutan.
+    'Household Spending MoM': { actual:'0.8%',   period:'Jun 2026',    date:'—', source:'seed' },
     'Trade Balance':     { actual:'-1841M AUD', period:'Mar 2026',    date:'—', source:'seed' },
     'NAB Business Conf': { actual:'-29',        period:'Apr 2026',    date:'—', source:'seed' },
   },

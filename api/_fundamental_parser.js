@@ -127,6 +127,10 @@ const FUND_INDICATOR_MAP = [
   { kw: ['average earnings','average hourly earnings','wage growth'],             key: 'Wage Growth' },
   { kw: ['retail sales yoy','retail sales y/y','retail sales annual'],           key: 'Retail Sales YoY' },
   { kw: ['retail sales'],                                                         key: 'Retail Sales MoM' },
+  // AUD-only (2026-08-10) — pengganti resmi "Retail Trade, Australia" yang dihentikan
+  // ABS sejak rilis Juni 2025 (lihat FUND_SEED.AUD di admin.js). Frasa ini spesifik
+  // terminologi ABS, belum pernah bentrok dengan indikator currency lain.
+  { kw: ['household spending indicator','monthly household spending','household spending'], key: 'Household Spending MoM' },
   { kw: ['producer price',' ppi ','ppi m/m'],                                    key: 'PPI MoM' },
   { kw: ['flash cpi','cpi flash'],                                                key: 'CPI Flash YoY' },
   { kw: ['german cpi','germany cpi'],                                             key: 'German CPI YoY' },

@@ -8682,6 +8682,9 @@ const FUND_SCORE_RULES = {
   'KOF Barometer':    { dir: 1,  threshold: 100   },
   'Retail Sales MoM': { dir: 1,  threshold: 0     },
   'Retail Sales YoY': { dir: 1,  threshold: 0     },
+  // AUD-only (2026-08-10) — pengganti "Retail Sales MoM" AUD yang dihentikan ABS,
+  // lihat FUND_SEED.AUD di api/admin.js. Sama arah/threshold (% MoM naik = bullish).
+  'Household Spending MoM': { dir: 1, threshold: 0 },
   'Composite PMI':    { dir: 1,  threshold: 50    },
   'Participation Rate':{ dir: 1, threshold: 60    },
   'Wage Growth':      { dir: 1,  threshold: 3.0   },
@@ -9353,7 +9356,7 @@ const FUND_SECTIONS_MAP = {
   'Capacity Utilization':'Aktivitas','Factory Orders':'Aktivitas',
   'IFO Business':'Sentimen','ZEW Sentiment':'Sentimen','KOF Barometer':'Sentimen','GfK Consumer Climate':'Sentimen',
   'Consumer Confidence':'Sentimen','Business Confidence':'Sentimen','NAB Business Conf':'Sentimen',
-  'Retail Sales MoM':'Permintaan','Retail Sales YoY':'Permintaan',
+  'Retail Sales MoM':'Permintaan','Retail Sales YoY':'Permintaan','Household Spending MoM':'Permintaan',
   'Building Approvals':'Permintaan','Building Permits':'Permintaan','Housing Starts':'Permintaan','Durable Goods Orders':'Permintaan',
   'Existing Home Sales':'Permintaan','New Home Sales':'Permintaan','Personal Income':'Permintaan','Personal Spending':'Permintaan',
   'Trade Balance':'Eksternal','Current Account':'Eksternal',

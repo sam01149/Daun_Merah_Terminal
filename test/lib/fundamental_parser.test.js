@@ -68,6 +68,15 @@ test('fallback tebak-key: kalau tebakan title-case kebetulan cocok key kanonik (
   assert.strictEqual(r.key, 'Made Up Indicator');
 });
 
+// AUD "Retail Sales MoM" diganti "Household Spending MoM" 2026-08-10 (ABS
+// menghentikan Retail Trade sejak Juni 2025) — lihat daun_merah.md Session 298 lanjutan.
+test('Australia Household Spending MoM (pengganti Retail Sales yang dihentikan ABS) match key baru', () => {
+  const r = parseFundamentalFromHeadline('Australia Household Spending MoM: Actual 0.8% Forecast 0.4% Previous 1.2%');
+  assert.strictEqual(r.currency, 'AUD');
+  assert.strictEqual(r.key, 'Household Spending MoM');
+  assert.strictEqual(r.value, '0.8%');
+});
+
 test('headline non-fundamental (tanpa currency match) → null', () => {
   assert.strictEqual(parseFundamentalFromHeadline('Gold rises above 2700 as dollar weakens'), null);
 });
