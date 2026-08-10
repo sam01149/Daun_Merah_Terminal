@@ -106,8 +106,37 @@ test('fundamental_analysis: Gemini gagal -> 500 "Gemini failed"', async () => {
 });
 
 // ── Helper murni prompt fundamental (2026-07-19): umur rilis + previous ────────
-const { _fundAgeDays, _fundSeedAgeDays, _formatFundDataLine } = require('../../api/admin.js');
+const { _fundAgeDays, _fundSeedAgeDays, _formatFundDataLine, _stripMarkdown } = require('../../api/admin.js');
 const NOW_MS = new Date('2026-07-19T12:00:00Z').getTime();
+
+// ── _stripMarkdown (2026-08-10): Gemini tetap menulis markdown walau prompt sudah
+// eksplisit melarang — output ditampilkan via textContent (plain text), jadi asterisk
+// dkk harus dibuang di kode, bukan cuma diminta lewat instruksi prompt (temuan live). ──
+
+test('_stripMarkdown: bold/italic/kode inline dibuang, teks di dalamnya dipertahankan', () => {
+  assert.strictEqual(_stripMarkdown('**USD** kuat karena *inflasi* dan `Core PCE`'), 'USD kuat karena inflasi dan Core PCE');
+});
+
+test('_stripMarkdown: header "### Judul" -> "Judul"', () => {
+  assert.strictEqual(_stripMarkdown('### TEMA MAKRO\nIsi'), 'TEMA MAKRO\nIsi');
+});
+
+test('_stripMarkdown: baris pemisah "---"/"***" dibuang total, sisa baris kosong dirapikan', () => {
+  assert.strictEqual(_stripMarkdown('Baris A\n\n---\n\nBaris B'), 'Baris A\n\nBaris B');
+});
+
+test('_stripMarkdown: bullet "- "/"* " di awal baris dibuang, sisa teks tetap', () => {
+  assert.strictEqual(_stripMarkdown('- AUD kuat\n* CHF lemah'), 'AUD kuat\nCHF lemah');
+});
+
+test('_stripMarkdown: angka negatif/persen TIDAK ikut kepotong (bukan salah dikira bullet/italic)', () => {
+  assert.strictEqual(_stripMarkdown('NFP -23K, CPI -0.1%, RBA 4.35%'), 'NFP -23K, CPI -0.1%, RBA 4.35%');
+});
+
+test('_stripMarkdown: kosong/null -> dikembalikan apa adanya, tidak crash', () => {
+  assert.strictEqual(_stripMarkdown(''), '');
+  assert.strictEqual(_stripMarkdown(null), null);
+});
 
 test('_fundAgeDays: YYYY-MM-DD valid -> selisih hari; hari sama -> 0', () => {
   assert.strictEqual(_fundAgeDays('2026-07-16', NOW_MS), 3);

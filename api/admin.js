@@ -1358,6 +1358,26 @@ function _formatFundDataLine(key, v, nowMs = Date.now()) {
   return parts.join('');
 }
 
+// Backstop terhadap Gemini yang tetap menulis markdown (**tebal**, *miring*, ### header,
+// bullet "-"/"*", pemisah "---") walau prompt sudah eksplisit melarangnya (2026-08-10,
+// terbukti di produksi — instruksi prompt saja tidak cukup diandalkan). Output fitur ini
+// ditampilkan lewat textContent (plain text, bukan parser markdown), jadi karakter itu
+// harus dibuang di sisi kode, bukan cuma diminta lewat prompt.
+function _stripMarkdown(text) {
+  if (!text) return text;
+  return text
+    .replace(/^\s*[-*_]{3,}\s*$/gm, '')            // baris pemisah "---"/"***"/"___"
+    .replace(/^#{1,6}\s+/gm, '')                    // header "### Judul" -> "Judul"
+    .replace(/^([ \t]*)[-*]\s+/gm, '$1')            // bullet "- " / "* " di awal baris
+    .replace(/\*\*(.+?)\*\*/g, '$1')                // **tebal** -> tebal
+    .replace(/__(.+?)__/g, '$1')                    // __tebal__ -> tebal
+    .replace(/(?<![\w*])\*(?!\s)(.+?)(?<!\s)\*(?![\w*])/g, '$1') // *miring* -> miring
+    .replace(/(?<![\w_])_(?!\s)(.+?)(?<!\s)_(?![\w_])/g, '$1')   // _miring_ -> miring
+    .replace(/`([^`]+)`/g, '$1')                    // `kode` -> kode
+    .replace(/\n{3,}/g, '\n\n')                     // rapikan baris kosong beruntun bekas "---"
+    .trim();
+}
+
 async function fundamentalAnalysisHandler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Cache-Control', 'no-cache');
@@ -1482,7 +1502,7 @@ PERLU DIWASPADAI:
       const data = await r.json();
       const txt = data?.choices?.[0]?.message?.content?.trim() || '';
       if (!txt) throw new Error('Empty response');
-      analysis = txt;
+      analysis = _stripMarkdown(txt);
       await cb.onSuccess(CB_GEMINI_ADMIN);
       console.log('fundamental_analysis: Gemini OK');
     } catch(e) {
@@ -6182,6 +6202,7 @@ module.exports.detectPushCat = detectPushCat;
 module.exports._fundAgeDays = _fundAgeDays;
 module.exports._fundSeedAgeDays = _fundSeedAgeDays;
 module.exports._formatFundDataLine = _formatFundDataLine;
+module.exports._stripMarkdown = _stripMarkdown;
 module.exports._pickExpiryLevels = _pickExpiryLevels;
 module.exports._confluenceZones = _confluenceZones;
 module.exports._formatConfluenceBlock = _formatConfluenceBlock;
