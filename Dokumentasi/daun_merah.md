@@ -11,10 +11,24 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-10 (Session 300 — Dashboard Auto-Entry Masih Tampilkan Symbol Mentah "GC=F" dkk, Bukan Label Pair)
+> **Last updated:** 2026-08-10 (Session 301 — CHF/JPY: AI Klaim "Searah" Padahal Alasannya Sendiri Kontradiktif Arah)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 301 (2026-08-10) — CHF/JPY: AI Klaim "Searah" Padahal Alasannya Sendiri Kontradiktif Arah
+
+**Konteks:** User audit satu setup auto-entry CHF/JPY (bullish): `makro_alignment_reason` AI menulis "...Bias BoJ Hawkish... dan COT JPY net short... mendukung penguatan JPY vs CHF, searah dengan bias bullish CHF/JPY karena JPY adalah quote currency yang melemah." — JPY diklaim MENGUAT dan MELEMAH sekaligus di kalimat yang sama, jelas kontradiktif, tapi AI tetap men-declare `makro_alignment:"searah"`. Ditelusuri: instruksi base/quote yang benar SUDAH ada di prompt sejak fix sebelumnya (commit `4c9eada`, 2026-08-05, kasus AUD/NZD) — jadi ini BUKAN prompt yang kosong, tapi model (`deepseek-v4-flash`) tetap salah nalar meski instruksinya sudah eksplisit. `[SISTEM HAKIM]` (`_computeCbDirServerSide`) tidak menyala untuk setup ini karena butuh bias bank sentral KEDUA kaki confidence "High" — `makro_alignment_reason` AI hanya menyebut sisi JPY (BoJ), sisi CHF (SNB) sama sekali tidak disinggung, indikasi kuat data SNB waktu itu tidak memenuhi syarat, jadi Sistem Hakim diam total dan setup ini lolos tanpa penjaga apa pun.
+
+**Perubahan (`api/admin.js`, `ohlcvAnalyzeHandler`):**
+- **Prompt diperkuat** — instruksi field `makro_alignment` (yang sudah ada aturan base/quote sejak 2026-08-05) ditambah kalimat wajib cek-ulang eksplisit sebelum menjawab "searah", plus SATU contoh kesalahan nyata persis kasus CHF/JPY ini (BoJ hawkish + COT crowded short JPY = sinyal JPY MENGUAT, jadi searah dengan bias BEARISH CHF/JPY, bukan bullish) — supaya model punya template konkret, bukan cuma aturan abstrak.
+- **Guard kode baru, independen dari cbDir** — `_detectAlignmentReasonContradiction` (pure, diekspor untuk test): scan `makro_alignment_reason` untuk pola "mata uang yang SAMA disebut menguat DAN melemah". Tiap kata arah (menguat/melemah) dipasangkan ke currency code TERDEKAT secara jarak karakter (bukan window simetris — window simetris awal sempat salah tempel di kalimat pendek berdekatan, lihat riwayat commit test). Kalau kena DAN `makro_alignment` saat ini masih "searah", otomatis dikoreksi jadi "konflik" + `conflict:"arah"` (kecuali sudah "waktu"), dengan reason baru berprefix `[CEK KONTRADIKSI]` yang menyertakan teks asli AI untuk audit. Berlaku independen dari Sistem Hakim (jalan meski cbDir null) — jadi menutup persis celah yang bikin CHF/JPY lolos. Field baru `conflict_source` dapat nilai ketiga `'contradiction_guard'` (sebelumnya cuma `'sistem_hakim'`/`'ai'`); telemetri `contradiction_guard_stats:fired` (pola sama `sistem_hakim_stats:*`) — murni observasi, tidak dibaca gate/keputusan apa pun.
+- **Test baru** `test/admin/alignment_contradiction.test.js` (7 test: 5 unit pure-function termasuk kasus nyata CHF/JPY + 2 integrasi end-to-end lewat `ohlcvAnalyzeHandler` yang memverifikasi guard nyala saat cbDir null tapi diam saat reasoning bersih). `npm test` 921/921 hijau.
+
+**Tindak lanjut atas setup CHF/JPY yang sudah tercemar** (id `CHFJPY=X:1786349760061`, di luar cakupan `npm test`, dieksekusi manual via `curl` + `CRON_SECRET` ke production sesuai izin eksplisit user — lihat lanjutan sesi ini untuk trigger-ulang & tombol dashboard):
+- Setup pending lama ditandai `status:'invalid'` via `setup_override` (data_fix, dengan reason, BUKAN dihapus — audit trail dipertahankan, konsisten prinsip U-5a "data mentah tidak pernah ditimpa tanpa alasan tercatat"), jadi tidak ikut dihitung di statistik gate n>=30 per pair. Dikonfirmasi: `macro_snapshot.cb_bias.CHF` tersimpan `confidence:"Medium"` — bukti langsung kenapa Sistem Hakim diam (butuh "High" di kedua kaki).
+
+**Cakupan/limitasi:** Guard kontradiksi ini heuristik pola-teks, bukan pemahaman makna penuh — bisa saja ada kalimat yang salah nalar arah TANPA memakai kata "menguat"/"melemah" eksplisit (misal parafrase lain), itu tidak akan tertangkap. Ini lapis tambahan, BUKAN pengganti perbaikan prompt atau Sistem Hakim yang sudah ada.
 
 ## Changelog Session 300 (2026-08-10) — Dashboard Auto-Entry Masih Tampilkan Symbol Mentah "GC=F" dkk, Bukan Label Pair
 

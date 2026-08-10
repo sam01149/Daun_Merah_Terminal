@@ -4229,6 +4229,62 @@ function _computeCbDirServerSide({ label, isXau, cbBiasObj, xauThesis }) {
   return bL === qL ? null : (bL > qL ? 'long' : 'short');
 }
 
+// [CEK KONTRADIKSI] (2026-08-10) — independen dari Sistem Hakim di atas (yang butuh cbDir,
+// artinya bias bank sentral KEDUA kaki confidence High). Ditemukan dari kasus nyata CHF/JPY:
+// AI menulis "...mendukung penguatan JPY vs CHF, searah dengan bias bullish CHF/JPY karena
+// JPY... yang melemah" — JPY diklaim MENGUAT dan MELEMAH sekaligus di kalimat yang sama.
+// cbDir tidak menyala waktu itu (bias CHF/SNB kemungkinan tidak confidence High), jadi
+// setup ini lolos tanpa penjaga apa pun. Guard ini cek pola teksnya sendiri: kalau mata
+// uang yang SAMA disebut menguat DAN melemah dalam satu makro_alignment_reason, itu tanda
+// AI salah nalar arah (bukan halusinasi data — datanya bisa saja asli — tapi kesimpulan
+// arahnya kontradiktif). Tiap kata arah (menguat/melemah) dipasangkan ke currency code
+// TERDEKAT secara jarak karakter (bukan window simetris tetap) — kalimat pendek dengan
+// banyak currency berdekatan (mis. "penguatan CHF, ... JPY melemah") gampang salah tempel
+// kalau pakai window lebar, karena "melemah" milik JPY bisa ikut kebaca window CHF yang
+// jauh lebih dekat ke JPY. Nearest-match menghindari itu: tiap kata arah HANYA menyumbang
+// ke SATU currency (yang paling dekat), maks jarak 45 karakter (di luar itu dianggap tak
+// terkait).
+const ALIGNMENT_CCY_RE = /\b(USD|EUR|GBP|JPY|AUD|NZD|CAD|CHF)\b/g;
+const ALIGNMENT_STRENGTHEN_RE = /menguat|penguatan/gi;
+const ALIGNMENT_WEAKEN_RE = /melemah|pelemahan/gi;
+const ALIGNMENT_MAX_DIST = 45;
+function _detectAlignmentReasonContradiction(reason) {
+  if (!reason || typeof reason !== 'string') return false;
+  const ccyPositions = [];
+  {
+    const re = new RegExp(ALIGNMENT_CCY_RE.source, 'g');
+    let m;
+    while ((m = re.exec(reason))) ccyPositions.push({ ccy: m[1], index: m.index });
+  }
+  if (ccyPositions.length === 0) return false;
+
+  const dirWords = [];
+  {
+    const re = new RegExp(ALIGNMENT_STRENGTHEN_RE.source, 'gi');
+    let m;
+    while ((m = re.exec(reason))) dirWords.push({ dir: 'strengthen', index: m.index });
+  }
+  {
+    const re = new RegExp(ALIGNMENT_WEAKEN_RE.source, 'gi');
+    let m;
+    while ((m = re.exec(reason))) dirWords.push({ dir: 'weaken', index: m.index });
+  }
+
+  const dirByCcy = {};
+  for (const d of dirWords) {
+    let nearest = null, nearestDist = Infinity;
+    for (const c of ccyPositions) {
+      const dist = Math.abs(c.index - d.index);
+      if (dist < nearestDist) { nearestDist = dist; nearest = c; }
+    }
+    if (!nearest || nearestDist > ALIGNMENT_MAX_DIST) continue;
+    const prevDir = dirByCcy[nearest.ccy];
+    if (prevDir && prevDir !== d.dir) return true;
+    dirByCcy[nearest.ccy] = d.dir;
+  }
+  return false;
+}
+
 // Format blok fundamental terstruktur per pair untuk prompt Analisa (pure — dites unit).
 // Sumber: cb_bias (dirawat Call 2 digest), cot_cache_v2 (CFTC; USD = Dollar Index),
 // risk_regime — data langsung dari cache server, BUKAN turunan prosa artikel, jadi
@@ -4930,7 +4986,7 @@ async function ohlcvAnalyzeHandler(req, res) {
       '- invalidation_condition: kondisi spesifik yang membatalkan skenario ini sepenuhnya (beda dari sl — ini soal struktur/tesis, misal "kalau Daily close balik di bawah SMA50 atau swing low H4 terakhir jebol, bias bullish batal")',
       '- invalidation_trigger: versi TERSTRUKTUR dari invalidation_condition di atas, supaya KODE (bukan AI) bisa mendeteksi otomatis tanpa call AI tambahan — objek {"type":"ma_break"|"price_level"|"swing_break","level":<satu angka>,"timeframe":"1h"|"4h"|"1d","direction":"above"|"below"}. "level" WAJIB satu angka konkret yang ADA di data (nilai SMA/level struktur/swing yang kamu sebut di invalidation_condition), "direction" = arah CLOSE candle yang membatalkan skenario ("below" kalau close balik ke bawah level itu membatalkan, "above" kalau close balik ke atas). Kalau invalidation_condition-mu TIDAK BISA diringkas jadi satu level angka tunggal (butuh multi-kondisi atau deskripsi kualitatif), set invalidation_trigger ke null — JANGAN mengarang angka.',
       '- time_horizon_days: estimasi jumlah hari realistis skenario ini main out (angka, misal 3, 5, 10) berdasarkan jarak entry-tp dibanding rata-rata gerak harian (ATR/sigma) yang ada di data',
-      '- makro_alignment: "searah" kalau KONTEKS MAKRO / FUNDAMENTAL TERSTRUKTUR mendukung arah bias teknikalmu, "konflik" kalau berlawanan, "netral" kalau sinyal makro tidak jelas/campuran. Kalau blok makro dan fundamental dua-duanya tidak tersedia di atas, isi null. SEBELUM memutuskan searah/konflik, tentukan dulu mata uang mana yang diuntungkan oleh bias teknikalmu: bias bullish = mata uang BASE (kiri) menguat vs QUOTE (kanan); bias bearish = mata uang QUOTE menguat vs BASE — berlaku SAMA untuk pair mayor maupun pair silang non-USD (misal AUD/NZD bearish = NZD menguat vs AUD, EUR/GBP bearish = GBP menguat vs EUR, BUKAN sebaliknya). Baru bandingkan: kalau sinyal fundamental mendukung penguatan mata uang yang SAMA itu, itu "searah" — JANGAN dibalik jadi "konflik" hanya karena satu mata uang disebut "hawkish/kuat" tanpa mengecek dulu apakah itu mata uang yang diuntungkan atau dirugikan oleh biasmu.',
+      '- makro_alignment: "searah" kalau KONTEKS MAKRO / FUNDAMENTAL TERSTRUKTUR mendukung arah bias teknikalmu, "konflik" kalau berlawanan, "netral" kalau sinyal makro tidak jelas/campuran. Kalau blok makro dan fundamental dua-duanya tidak tersedia di atas, isi null. SEBELUM memutuskan searah/konflik, tentukan dulu mata uang mana yang diuntungkan oleh bias teknikalmu: bias bullish = mata uang BASE (kiri) menguat vs QUOTE (kanan); bias bearish = mata uang QUOTE menguat vs BASE — berlaku SAMA untuk pair mayor maupun pair silang non-USD (misal AUD/NZD bearish = NZD menguat vs AUD, EUR/GBP bearish = GBP menguat vs EUR, BUKAN sebaliknya). Baru bandingkan: kalau sinyal fundamental mendukung penguatan mata uang yang SAMA itu, itu "searah" — JANGAN dibalik jadi "konflik" hanya karena satu mata uang disebut "hawkish/kuat" tanpa mengecek dulu apakah itu mata uang yang diuntungkan atau dirugikan oleh biasmu. WAJIB cek ulang sebelum menjawab: kalau kesimpulanmu "searah", pastikan mata uang yang kamu anggap "diuntungkan" oleh biasmu itu SAMA dengan mata uang yang sinyal fundamentalnya (bias CB hawkish, COT crowded short berisiko short-squeeze, dsb) menunjukkan MENGUAT — jangan sampai makro_alignment_reason-mu menyebut mata uang yang SAMA "menguat" sekaligus "melemah" hanya karena kamu ingin memaksakan "searah". Contoh kesalahan nyata yang harus dihindari: bias BoJ hawkish + COT JPY net short crowded (persentil rendah, rawan short-squeeze naik) dua-duanya sinyal JPY MENGUAT — untuk pair CHF/JPY itu berarti QUOTE menguat, jadi sinyal itu searah dengan bias BEARISH CHF/JPY (bukan bullish); kalau biasmu justru bullish CHF/JPY, sinyal itu KONFLIK, bukan searah.',
       '- makro_alignment_reason: SATU kalimat pendek alasannya dengan menyebut data spesifik (misal "bias Fed Dovish + COT USD net short searah dengan bias bearish USD/JPY"). Kalau alasannya menyangkut mekanisme dolar/komoditas/yield (misal "safe-haven vs real yield", "geopolitik vs oil"), WAJIB pakai angka konkret dari baris DOLLAR & KOMODITAS / REAL YIELD USD di FUNDAMENTAL TERSTRUKTUR kalau tersedia (level DXY/WTI, atau breakdown nominal-vs-ekspektasi inflasi) — jangan cuma bilang "real yield tinggi" tanpa angka atau tanpa menjelaskan apakah itu didorong sisi nominal atau sisi inflasi. Kalau data itu tidak tersedia di atas, jangan mengarang angka — tetap boleh pakai bahasa umum. Null kalau makro_alignment null.',
       '- conflict: bandingkan bias TEKNIKALMU vs (a) arah yang tersirat KONTEKS MAKRO/FUNDAMENTAL TERSTRUKTUR di atas (kalau ada), DAN (b) [EVENT HIGH-IMPACT 7 HARI KE DEPAN] (kalau ada). Isi "arah" kalau makro/fundamental berlawanan jelas dengan bias teknikalmu — INI BUKAN alasan otomatis untuk tidak keluarkan setup, tapi WAJIB dilaporkan di sini. Isi "waktu" kalau ada event high-impact dalam beberapa jam ke depan (sebelum time_horizon_days-mu selesai) yang bisa membatalkan skenario mendadak — ini LEBIH SERIUS dari konflik arah, pilih "waktu" kalau dua-duanya terjadi sekaligus. Isi "none" kalau tidak ada konflik terdeteksi atau data pembanding tidak tersedia.',
       '- conflict_note: SATU kalimat pendek alasan konkret (sebut data/event spesifik) kalau conflict bukan "none"; null kalau conflict "none".',
@@ -5129,6 +5185,9 @@ async function ohlcvAnalyzeHandler(req, res) {
     // _sistemHakimCalibration). evaluated=false berarti cbDir tidak tersedia sama sekali
     // (beda dari "dicek, ternyata selaras" — sama filosofi confidence:null vs 'rendah').
     let sistemHakimEvaluated = false, sistemHakimFired = false, conflictForcedBySistemHakim = false, sistemHakimCorrected = false;
+    // [CEK KONTRADIKSI] lihat _detectAlignmentReasonContradiction — independen dari cbDir,
+    // bisa nyala walau Sistem Hakim di atas diam (data central-bank-bias tidak lengkap).
+    let contradictionGuardFired = false;
     if (rawText) {
       try {
         // Split on the delimiter BEFORE touching JSON — commentary lives as plain text after it,
@@ -5296,6 +5355,25 @@ async function ohlcvAnalyzeHandler(req, res) {
           if (sistemHakimFired) redisCmd('INCR', 'sistem_hakim_stats:fired').catch(() => {});
           if (sistemHakimCorrected) redisCmd('INCR', 'sistem_hakim_stats:corrected').catch(() => {});
         }
+
+        // [CEK KONTRADIKSI] jalan TERPISAH dari blok Sistem Hakim di atas — cek berapa pun
+        // status makro_alignment saat ini (termasuk hasil Sistem Hakim, tapi teksnya sendiri
+        // tidak pernah menyebut arah currency jadi tidak akan kena regex). Hanya perlu koreksi
+        // kalau saat ini masih 'searah' — 'konflik'/'netral' sudah aman.
+        if (structured.makro_alignment === 'searah'
+          && _detectAlignmentReasonContradiction(structured.makro_alignment_reason)) {
+          contradictionGuardFired = true;
+          const originalReason = structured.makro_alignment_reason;
+          structured.makro_alignment = 'konflik';
+          structured.makro_alignment_reason = `[CEK KONTRADIKSI] Reasoning asli AI menyebut arah berlawanan untuk mata uang yang sama (dugaan salah nalar arah), otomatis dikoreksi jadi konflik. Teks asli: "${originalReason}"`;
+          if (structured.conflict !== 'waktu') {
+            structured.conflict = 'arah';
+            structured.conflict_note = structured.makro_alignment_reason;
+          }
+        }
+        if (isAutoCall && contradictionGuardFired) {
+          redisCmd('INCR', 'contradiction_guard_stats:fired').catch(() => {});
+        }
       } catch(e) {
         // Keep rawText as commentary, structured stays null
       }
@@ -5395,7 +5473,9 @@ async function ohlcvAnalyzeHandler(req, res) {
         // untuk agregat terpisah yang MEMBACA field ini). null = cbDir tidak tersedia
         // saat itu (fail-closed _computeCbDirServerSide, atau manual tanpa cbDir).
         sistem_hakim: sistemHakimEvaluated ? (sistemHakimFired ? 'fired' : (sistemHakimCorrected ? 'corrected' : 'clear')) : null,
-        conflict_source: structured.conflict === 'arah' ? (conflictForcedBySistemHakim ? 'sistem_hakim' : 'ai') : null,
+        conflict_source: structured.conflict === 'arah'
+          ? (conflictForcedBySistemHakim ? 'sistem_hakim' : (contradictionGuardFired ? 'contradiction_guard' : 'ai'))
+          : null,
         loss_label: null, label_reason: null, label_by: null,
         // PLAN U-5a: manajemen posisi VIRTUAL — null/0 = belum pernah direview.
         intervention: null, managed_status: null, managed_closed_t: null, review_count: 0,
@@ -5497,7 +5577,9 @@ async function ohlcvAnalyzeHandler(req, res) {
                 // [SISTEM HAKIM] tag pengukuran ikut diperbarui ke generasi terbaru — pola
                 // sama PLAN W di atas, jangan nyimpen snapshot dari generasi pertama.
                 stalePending.sistem_hakim = sistemHakimEvaluated ? (sistemHakimFired ? 'fired' : (sistemHakimCorrected ? 'corrected' : 'clear')) : null;
-                stalePending.conflict_source = structured.conflict === 'arah' ? (conflictForcedBySistemHakim ? 'sistem_hakim' : 'ai') : null;
+                stalePending.conflict_source = structured.conflict === 'arah'
+                  ? (conflictForcedBySistemHakim ? 'sistem_hakim' : (contradictionGuardFired ? 'contradiction_guard' : 'ai'))
+                  : null;
                 stalePending.model = model;
                 // BUG DITEMUKAN & DIFIX (2026-07-25, diskusi user soal filled_t < closed_t):
                 // `ts` di sini SEMPAT di-reset ke Date.now() supaya horizon_days terasa
@@ -6224,6 +6306,7 @@ module.exports._aggCostExpectancy = _aggCostExpectancy;
 module.exports._confidenceCalibration = _confidenceCalibration;
 module.exports._sistemHakimCalibration = _sistemHakimCalibration;
 module.exports._computeCbDirServerSide = _computeCbDirServerSide;
+module.exports._detectAlignmentReasonContradiction = _detectAlignmentReasonContradiction;
 module.exports._summarizeLatency = _summarizeLatency;
 module.exports.SPREAD_PRICE_ESTIMATE = SPREAD_PRICE_ESTIMATE;
 module.exports.probeCalendarCache = probeCalendarCache;
