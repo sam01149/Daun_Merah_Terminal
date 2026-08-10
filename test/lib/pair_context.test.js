@@ -164,6 +164,15 @@ test('format: ordinal ranking tanpa persen/angka skor mentah di narasi currency 
   assert.ok(!/[-+]?\d+(\.\d+)?%/.test(out), 'narasi currency strength tidak boleh menampilkan angka skor/persen mentah per currency');
 });
 
+// (2026-08-10, diskusi user — kasus nyata EUR/GBP: AI memakai ranking currency strength
+// sebagai bukti makro_alignment "searah", padahal ini price-derived teknikal bukan
+// fundamental catalyst) blok harus eksplisit melarang dirinya sendiri dipakai untuk itu.
+test('format: currency strength block eksplisit melarang dipakai sebagai bukti makro_alignment/conflict', () => {
+  const strength = computeCurrencyStrength(USD_STRONG_PAIRS);
+  const out = formatPairContextBlock({ regime: null, strength, pairLabel: 'EUR/USD' });
+  assert.ok(out.includes('JANGAN dikutip sebagai bukti untuk field makro_alignment'), out);
+});
+
 test('format: regime rezim ATR ditulis sebagai hitungan ordinal (X dari Y), bukan persentase', () => {
   const regime = computeVolatilityRegime(mkCandles(100, i => (i < 70 ? 0.2 : 2.0)));
   const out = formatPairContextBlock({ regime, strength: null, pairLabel: 'EUR/USD' });

@@ -11,10 +11,24 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-10 (Session 301 — CHF/JPY: AI Klaim "Searah" Padahal Alasannya Sendiri Kontradiktif Arah)
+> **Last updated:** 2026-08-10 (Session 302 — Currency Strength Ranking Salah Dipakai sebagai Bukti Makro Alignment + COT Selalu Diberi Catatan Basi)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 302 (2026-08-10) — Currency Strength Ranking Salah Dipakai sebagai Bukti Makro Alignment + COT Selalu Diberi Catatan Basi
+
+**Konteks:** User audit setup EUR/GBP: `makro_alignment_reason` AI menulis "GBP sebagai currency terkuat #2 ... mendukung GBP menguat vs EUR, searah dengan bias bearish EUR/GBP" — mengutip ranking `[KONTEKS REZIM & KEKUATAN MATA UANG]` (`api/_pair_context.js`, %perubahan harga H1 72 jam) sebagai bukti fundamental. User curiga ini pola yang sama dengan bug lama Session 152 (`market-digest.js`): headline FinancialJuice "Currency Strength Chart" pernah salah dibaca AI sebagai bukti kontradiksi fundamental thesis, padahal itu price-derived teknikal — sudah difix waktu itu dengan instruksi eksplisit "abaikan, bukan fundamental catalyst", TAPI fix itu cuma diterapkan ke `checkThesisContradictions` (Call 4), tidak pernah ke prompt `ohlcvAnalyzeHandler` (Analisa AI/auto-entry). Dikonfirmasi: hipotesis benar — instruksi field `makro_alignment` (`api/admin.js`) cuma menyebut sumber sah "KONTEKS MAKRO / FUNDAMENTAL TERSTRUKTUR" tapi tidak pernah eksplisit MELARANG blok currency-strength (yang tetap ada di prompt yang sama untuk keperluan bias teknikal) dipakai sebagai bukti alignment — celah murni di instruksi, bukan di guard/gate manapun (Sistem Hakim & `_detectAlignmentReasonContradiction` Session 301 tidak didesain untuk menangkap kasus "sumber bukti salah kategori" ini). Dampak nyata: `makro_alignment:"konflik"` menghapus total `entry_zone/sl/tp` (lihat `entryZoneInstr`), jadi ranking harga yang salah ditafsirkan fundamental bisa menggagalkan/meloloskan setup secara keliru.
+
+**Perubahan (`api/admin.js`, `api/_pair_context.js`):**
+- Instruksi field `makro_alignment` (`api/admin.js`) ditambah larangan eksplisit: currency strength/rezim volatilitas tidak boleh dikutip sebagai bukti — HANYA KONTEKS MAKRO (Ringkasan) dan FUNDAMENTAL TERSTRUKTUR (cb_bias, COT, real yield, dsb) yang sah.
+- Blok `[KONTEKS REZIM & KEKUATAN MATA UANG]` sendiri (`formatPairContextBlock`, `_pair_context.js`) juga ditambah kalimat serupa sebagai lapis kedua, supaya larangan tetap berlaku di mana pun blok ini dipakai ke depannya.
+
+**Isu terkait, sama sesi (diskusi user): prioritas COT):** COT CFTC sudah punya catatan "data mingguan, kalah prioritas vs CME real-time" sejak Session 293 (2026-08-08) — TAPI catatan itu cuma muncul kalau `hasCmeData` true (pair yang juga punya blok CME, mis. XAU/USD & EUR/USD). Pair tanpa CME (CHF/JPY, AUD/NZD, EUR/GBP) — termasuk persis kasus CHF/JPY Session 301 yang mengutip "COT JPY net short crowded" sebagai alasan makro_alignment — sama sekali tidak dapat pengingat staleness ini walau COT-nya sama basinya. Fix: catatan dasar "COT data MINGGUAN, beri bobot lebih rendah untuk MENENTUKAN ARAH (lebih andal untuk crowding/persentil)" sekarang SELALU muncul kalau ada data COT, terlepas `hasCmeData`; kalimat tambahan "CME lebih diprioritaskan" tetap cuma nempel kalau CME memang ada. Baris COT per-leg juga ditambah umur laporan konkret dalam hari (dari `cot.report_date`, mis. "laporan 4 hari lalu") — sebelumnya cuma label generik "mingguan" tanpa angka.
+
+**Test:** 4 test baru (`test/admin/makro_ctx.test.js` ×3: catatan dasar tanpa CME, tanpa data COT tidak ada catatan, umur laporan dalam hari; `test/lib/pair_context.test.js` ×1: larangan eksplisit di blok currency strength) + 1 assertion baru di `test/admin/pair_context_prompt.test.js` (prompt harus memuat larangan). `npm test` 926/926 hijau.
+
+**Cakupan:** perbaikan murni prompt-level (framing/instruksi), bukan guard kode baru — konsisten pola fix Session 152. Tidak ada perubahan skema data/gate. Verifikasi live belum dilakukan (butuh setup baru yang benar-benar mengutip currency strength/COT basi untuk konfirmasi AI sekarang patuh instruksi baru).
 
 ## Changelog Session 301 (2026-08-10) — CHF/JPY: AI Klaim "Searah" Padahal Alasannya Sendiri Kontradiktif Arah
 

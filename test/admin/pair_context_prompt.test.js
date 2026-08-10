@@ -133,6 +133,14 @@ test('ohlcv_analyze manual: prompt memuat blok [KONTEKS REZIM & KEKUATAN MATA UA
       assert.ok(userMsg.includes('[KONTEKS REZIM & KEKUATAN MATA UANG]'), 'blok pair-context harus ada di prompt');
       assert.ok(userMsg.includes('Rezim volatilitas EUR/USD: BERGEJOLAK'), userMsg.slice(0, 400));
       assert.ok(userMsg.includes('Currency strength'), 'blok currency strength harus ada (6 pair valid tersedia)');
+      // (2026-08-10, diskusi user — bug ditemukan dari kasus nyata EUR/GBP: AI memakai
+      // ranking "currency terkuat" sebagai bukti makro_alignment "searah", padahal itu
+      // data price-derived teknikal, bukan fundamental catalyst — sama persis masalah
+      // yang pernah difix untuk headline "Currency Strength Chart" di market-digest.js
+      // Session 152, tapi belum pernah diterapkan ke jalur auto-entry ini) Prompt WAJIB
+      // secara eksplisit melarang currency strength dipakai sebagai bukti makro_alignment.
+      assert.ok(userMsg.includes('JANGAN pakai ranking currency strength'), 'instruksi makro_alignment harus eksplisit melarang currency strength sebagai bukti');
+      assert.ok(userMsg.includes('price-derived teknikal'), userMsg);
       // System prompt harus minta field conflict/conflict_note
       const sysMsg = captured.deepseekBody.messages.find(m => m.role === 'system').content;
       assert.ok(sysMsg.includes('"conflict"') && sysMsg.includes('"conflict_note"'));

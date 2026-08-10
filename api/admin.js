@@ -4307,6 +4307,7 @@ function _formatFundamentalBlock({ label, isXau, cbBias, cot, risk, retail, driv
     return (isNaN(ms) || ms < 0) ? null : Math.round(ms / 3600000);
   };
   const lines = [];
+  let hasCotData = false;
   for (const leg of legs) {
     const parts = [];
     const cb = cbBias?.[leg];
@@ -4320,12 +4321,19 @@ function _formatFundamentalBlock({ label, isXau, cbBias, cot, risk, retail, driv
       // %OI + percentile 3thn (audit vendor 2026-07-12): normalisasi + ekstremitas —
       // "net +50K" tanpa konteks OI/persentil tidak bisa dinilai crowded atau tidak.
       const pctile = cot?.percentiles?.[leg];
+      // Umur laporan (2026-08-10, diskusi user): report_date CFTC cuma tanggal (bukan
+      // timestamp) — tetap dipakai untuk kasih AI angka konkret seberapa basi data ini,
+      // bukan cuma label "mingguan" generik. Age dibulatkan ke hari (bukan jam) karena
+      // granularitas sumbernya memang harian.
+      const cotAgeD = cot?.report_date ? Math.floor((nowMs - new Date(cot.report_date).getTime()) / 86400000) : null;
       const extras = [
         typeof cp.lev_change_net === 'number' ? `${k(cp.lev_change_net)} w/w` : null,
         cp.lev_net_pct_oi != null ? `${cp.lev_net_pct_oi > 0 ? '+' : ''}${cp.lev_net_pct_oi}% dari OI` : null,
         pctile?.lev_pctile != null ? `persentil 3thn P${pctile.lev_pctile}${pctile.lev_pctile >= 90 ? ' — CROWDED LONG, rawan squeeze turun' : pctile.lev_pctile <= 10 ? ' — CROWDED SHORT, rawan squeeze naik' : ''}` : null,
+        (cotAgeD != null && cotAgeD >= 0) ? `laporan ${cotAgeD} hari lalu` : null,
       ].filter(Boolean).join(', ');
       parts.push(`COT leveraged net ${k(cp.lev_net)}${extras ? ` (${extras})` : ''}`);
+      hasCotData = true;
     }
     if (parts.length > 0) lines.push(`${leg}: ${parts.join(' | ')}`);
   }
@@ -4387,17 +4395,22 @@ function _formatFundamentalBlock({ label, isXau, cbBias, cot, risk, retail, driv
   const baseNote = isXau
     ? 'catatan: XAU tidak punya bank sentral — pakai bias Fed (USD) + risk regime sebagai proxy arah dolar/haven'
     : 'gunakan untuk menilai apakah setup teknikal searah atau melawan fundamental kedua leg';
-  // (2026-08-08, diskusi user — reordering prioritas COT vs CME, khusus pair yang
-  // punya data CME/hasCmeData true, lihat pemanggil di ohlcvAnalyzeHandler) COT CFTC
-  // TIDAK dihapus, tetap konteks positioning yang valid — cuma diturunkan bobotnya
-  // relatif terhadap CME options skew (real-time) untuk urusan MENENTUKAN ARAH,
-  // karena COT itu data mingguan yang bisa lag beberapa hari (vs horizon trading
-  // sistem ini yang cuma ~3 hari). Ini framing/penekanan kalimat, BUKAN aturan keras
-  // dengan angka ambang — AI tetap yang memutuskan, tidak ada auto-block di sini.
-  const cmeNote = hasCmeData
-    ? ' COT CFTC di atas itu data MINGGUAN (bisa lag beberapa hari) — kalau prompt ini juga berisi blok SENTIMEN PASAR OPTIONS CME untuk pair yang sama, itu real-time dan LEBIH DIPRIORITASKAN untuk menentukan arah dibanding COT.'
+  // (2026-08-08, diskusi user — reordering prioritas COT vs CME) COT CFTC TIDAK
+  // dihapus, tetap konteks positioning yang valid — cuma diturunkan bobotnya untuk
+  // urusan MENENTUKAN ARAH, karena COT itu data mingguan yang bisa lag beberapa hari
+  // (vs horizon trading sistem ini yang cuma ~3 hari). Ini framing/penekanan kalimat,
+  // BUKAN aturan keras dengan angka ambang — AI tetap yang memutuskan, tidak ada
+  // auto-block di sini.
+  // (2026-08-10, diskusi user — perluas cakupan) Sebelumnya catatan "data mingguan,
+  // bobot lebih rendah" HANYA muncul kalau hasCmeData true (pair itu juga punya blok
+  // CME real-time) — pair TANPA CME (mis. CHF/JPY) sama sekali tidak dapat pengingat
+  // staleness ini walau COT-nya sama basinya. Sekarang catatan dasar selalu muncul
+  // kalau ada data COT sama sekali; kalimat tambahan soal prioritas CME cuma nempel
+  // kalau hasCmeData true.
+  const cotNote = hasCotData
+    ? ` COT CFTC di atas itu data MINGGUAN (bisa lag beberapa hari dari tanggal laporan) — untuk MENENTUKAN ARAH beri bobot lebih rendah dibanding sinyal yang lebih real-time (bias CB terbaru, DXY/real yield, retail sentiment intraday${hasCmeData ? ', CME options skew' : ''}); COT lebih andal untuk mendeteksi CROWDING/ekstremitas positioning (lihat persentil) daripada arah harian.${hasCmeData ? ' Kalau prompt ini juga berisi blok SENTIMEN PASAR OPTIONS CME untuk pair yang sama, itu real-time dan LEBIH DIPRIORITASKAN untuk menentukan arah dibanding COT.' : ''}`
     : '';
-  return `FUNDAMENTAL TERSTRUKTUR (cache server, bukan dari artikel — ${baseNote}.${cmeNote}):\n${lines.join('\n')}`;
+  return `FUNDAMENTAL TERSTRUKTUR (cache server, bukan dari artikel — ${baseNote}.${cotNote}):\n${lines.join('\n')}`;
 }
 
 // Snapshot numerik ringkas dari SEMUA input makro yang dilihat AI saat itu (cb_bias,
@@ -4995,7 +5008,7 @@ async function ohlcvAnalyzeHandler(req, res) {
       '- invalidation_condition: kondisi spesifik yang membatalkan skenario ini sepenuhnya (beda dari sl — ini soal struktur/tesis, misal "kalau Daily close balik di bawah SMA50 atau swing low H4 terakhir jebol, bias bullish batal")',
       '- invalidation_trigger: versi TERSTRUKTUR dari invalidation_condition di atas, supaya KODE (bukan AI) bisa mendeteksi otomatis tanpa call AI tambahan — objek {"type":"ma_break"|"price_level"|"swing_break","level":<satu angka>,"timeframe":"1h"|"4h"|"1d","direction":"above"|"below"}. "level" WAJIB satu angka konkret yang ADA di data (nilai SMA/level struktur/swing yang kamu sebut di invalidation_condition), "direction" = arah CLOSE candle yang membatalkan skenario ("below" kalau close balik ke bawah level itu membatalkan, "above" kalau close balik ke atas). Kalau invalidation_condition-mu TIDAK BISA diringkas jadi satu level angka tunggal (butuh multi-kondisi atau deskripsi kualitatif), set invalidation_trigger ke null — JANGAN mengarang angka.',
       '- time_horizon_days: estimasi jumlah hari realistis skenario ini main out (angka, misal 3, 5, 10) berdasarkan jarak entry-tp dibanding rata-rata gerak harian (ATR/sigma) yang ada di data',
-      '- makro_alignment: "searah" kalau KONTEKS MAKRO / FUNDAMENTAL TERSTRUKTUR mendukung arah bias teknikalmu, "konflik" kalau berlawanan, "netral" kalau sinyal makro tidak jelas/campuran. Kalau blok makro dan fundamental dua-duanya tidak tersedia di atas, isi null. SEBELUM memutuskan searah/konflik, tentukan dulu mata uang mana yang diuntungkan oleh bias teknikalmu: bias bullish = mata uang BASE (kiri) menguat vs QUOTE (kanan); bias bearish = mata uang QUOTE menguat vs BASE — berlaku SAMA untuk pair mayor maupun pair silang non-USD (misal AUD/NZD bearish = NZD menguat vs AUD, EUR/GBP bearish = GBP menguat vs EUR, BUKAN sebaliknya). Baru bandingkan: kalau sinyal fundamental mendukung penguatan mata uang yang SAMA itu, itu "searah" — JANGAN dibalik jadi "konflik" hanya karena satu mata uang disebut "hawkish/kuat" tanpa mengecek dulu apakah itu mata uang yang diuntungkan atau dirugikan oleh biasmu. WAJIB cek ulang sebelum menjawab: kalau kesimpulanmu "searah", pastikan mata uang yang kamu anggap "diuntungkan" oleh biasmu itu SAMA dengan mata uang yang sinyal fundamentalnya (bias CB hawkish, COT crowded short berisiko short-squeeze, dsb) menunjukkan MENGUAT — jangan sampai makro_alignment_reason-mu menyebut mata uang yang SAMA "menguat" sekaligus "melemah" hanya karena kamu ingin memaksakan "searah". Contoh kesalahan nyata yang harus dihindari: bias BoJ hawkish + COT JPY net short crowded (persentil rendah, rawan short-squeeze naik) dua-duanya sinyal JPY MENGUAT — untuk pair CHF/JPY itu berarti QUOTE menguat, jadi sinyal itu searah dengan bias BEARISH CHF/JPY (bukan bullish); kalau biasmu justru bullish CHF/JPY, sinyal itu KONFLIK, bukan searah.',
+      '- makro_alignment: "searah" kalau KONTEKS MAKRO / FUNDAMENTAL TERSTRUKTUR mendukung arah bias teknikalmu, "konflik" kalau berlawanan, "netral" kalau sinyal makro tidak jelas/campuran. Kalau blok makro dan fundamental dua-duanya tidak tersedia di atas, isi null. JANGAN pakai ranking currency strength / rezim volatilitas (kalau ada di atas) sebagai bukti di sini — itu price-derived teknikal (turunan %perubahan harga H1), bukan fundamental catalyst, sama seperti headline "Currency Strength Chart" yang historisnya sering salah dibaca sebagai sinyal fundamental; field ini HANYA boleh berdasar KONTEKS MAKRO (Ringkasan) dan FUNDAMENTAL TERSTRUKTUR (cb_bias, COT, real yield, dsb) — kalau HANYA currency strength/rezim yang mendukung suatu arah tanpa dukungan fundamental sungguhan, itu BUKAN alasan valid untuk "searah". SEBELUM memutuskan searah/konflik, tentukan dulu mata uang mana yang diuntungkan oleh bias teknikalmu: bias bullish = mata uang BASE (kiri) menguat vs QUOTE (kanan); bias bearish = mata uang QUOTE menguat vs BASE — berlaku SAMA untuk pair mayor maupun pair silang non-USD (misal AUD/NZD bearish = NZD menguat vs AUD, EUR/GBP bearish = GBP menguat vs EUR, BUKAN sebaliknya). Baru bandingkan: kalau sinyal fundamental mendukung penguatan mata uang yang SAMA itu, itu "searah" — JANGAN dibalik jadi "konflik" hanya karena satu mata uang disebut "hawkish/kuat" tanpa mengecek dulu apakah itu mata uang yang diuntungkan atau dirugikan oleh biasmu. WAJIB cek ulang sebelum menjawab: kalau kesimpulanmu "searah", pastikan mata uang yang kamu anggap "diuntungkan" oleh biasmu itu SAMA dengan mata uang yang sinyal fundamentalnya (bias CB hawkish, COT crowded short berisiko short-squeeze, dsb) menunjukkan MENGUAT — jangan sampai makro_alignment_reason-mu menyebut mata uang yang SAMA "menguat" sekaligus "melemah" hanya karena kamu ingin memaksakan "searah". Contoh kesalahan nyata yang harus dihindari: bias BoJ hawkish + COT JPY net short crowded (persentil rendah, rawan short-squeeze naik) dua-duanya sinyal JPY MENGUAT — untuk pair CHF/JPY itu berarti QUOTE menguat, jadi sinyal itu searah dengan bias BEARISH CHF/JPY (bukan bullish); kalau biasmu justru bullish CHF/JPY, sinyal itu KONFLIK, bukan searah.',
       '- makro_alignment_reason: SATU kalimat pendek alasannya dengan menyebut data spesifik (misal "bias Fed Dovish + COT USD net short searah dengan bias bearish USD/JPY"). Kalau alasannya menyangkut mekanisme dolar/komoditas/yield (misal "safe-haven vs real yield", "geopolitik vs oil"), WAJIB pakai angka konkret dari baris DOLLAR & KOMODITAS / REAL YIELD USD di FUNDAMENTAL TERSTRUKTUR kalau tersedia (level DXY/WTI, atau breakdown nominal-vs-ekspektasi inflasi) — jangan cuma bilang "real yield tinggi" tanpa angka atau tanpa menjelaskan apakah itu didorong sisi nominal atau sisi inflasi. Kalau data itu tidak tersedia di atas, jangan mengarang angka — tetap boleh pakai bahasa umum. Null kalau makro_alignment null.',
       '- conflict: bandingkan bias TEKNIKALMU vs (a) arah yang tersirat KONTEKS MAKRO/FUNDAMENTAL TERSTRUKTUR di atas (kalau ada), DAN (b) [EVENT HIGH-IMPACT 7 HARI KE DEPAN] (kalau ada). Isi "arah" kalau makro/fundamental berlawanan jelas dengan bias teknikalmu — INI BUKAN alasan otomatis untuk tidak keluarkan setup, tapi WAJIB dilaporkan di sini. Isi "waktu" kalau ada event high-impact dalam beberapa jam ke depan (sebelum time_horizon_days-mu selesai) yang bisa membatalkan skenario mendadak — ini LEBIH SERIUS dari konflik arah, pilih "waktu" kalau dua-duanya terjadi sekaligus. Isi "none" kalau tidak ada konflik terdeteksi atau data pembanding tidak tersedia.',
       '- conflict_note: SATU kalimat pendek alasan konkret (sebut data/event spesifik) kalau conflict bukan "none"; null kalau conflict "none".',

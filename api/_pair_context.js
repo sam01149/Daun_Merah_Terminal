@@ -153,7 +153,7 @@ function formatPairContextBlock({ regime, strength, pairLabel }) {
     const n = strength.ranked.length;
     const rankText = strength.ranked.map((r, i) => `${r.currency} #${i + 1}`).join(', ');
     const days = Math.round(strength.span_hours / 24);
-    lines.push(`Currency strength (ordinal, dari %change H1 ~${days} hari terakhir lintas ${strength.sample_pairs} pair FX; #1 = terkuat, #${n} = terlemah): ${rankText}. Ini konteks tambahan, bukan sinyal arah tunggal — pertimbangkan bersama struktur teknikal pair ini, jangan jadikan satu-satunya alasan bias.`);
+    lines.push(`Currency strength (ordinal, dari %change H1 ~${days} hari terakhir lintas ${strength.sample_pairs} pair FX; #1 = terkuat, #${n} = terlemah): ${rankText}. Ini konteks tambahan, bukan sinyal arah tunggal — pertimbangkan bersama struktur teknikal pair ini, jangan jadikan satu-satunya alasan bias. PENTING: ini data price-derived (turunan %perubahan harga), BUKAN fundamental catalyst — JANGAN dikutip sebagai bukti untuk field makro_alignment/conflict (itu HARUS berdasar data makro/fundamental sungguhan, bukan ranking harga).`);
   }
   if (lines.length === 0) return '';
   return `[KONTEKS REZIM & KEKUATAN MATA UANG]\n${lines.join('\n')}`;

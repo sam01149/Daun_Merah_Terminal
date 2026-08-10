@@ -152,6 +152,27 @@ test('fund block: hasCmeData=true (XAU/USD & EUR/USD) → COT diberi catatan CME
   assert.ok(out.includes('LEBIH DIPRIORITASKAN'), out);
 });
 
+// (2026-08-10, diskusi user — celah ditemukan: pair TANPA CME mis. CHF/JPY sebelumnya
+// tidak dapat pengingat staleness COT sama sekali) Catatan dasar "data mingguan, bobot
+// lebih rendah untuk arah" sekarang selalu muncul kalau ada data COT, terlepas hasCmeData.
+test('fund block: hasCmeData=false TAPI COT ada → tetap dapat catatan dasar "bobot lebih rendah", TANPA kalimat spesifik CME', () => {
+  const out = _formatFundamentalBlock({ label: 'EUR/USD', isXau: false, cbBias: CB, cot: COT, risk: RISK, nowMs: NOW });
+  assert.ok(out.includes('COT CFTC di atas itu data MINGGUAN'), out);
+  assert.ok(out.includes('beri bobot lebih rendah'), out);
+  assert.ok(!out.includes('LEBIH DIPRIORITASKAN'), 'kalimat spesifik CME tidak boleh muncul tanpa hasCmeData');
+});
+
+test('fund block: tanpa data COT sama sekali → tidak ada catatan staleness COT', () => {
+  const out = _formatFundamentalBlock({ label: 'EUR/USD', isXau: false, cbBias: CB, cot: null, risk: RISK, nowMs: NOW });
+  assert.ok(!out.includes('data MINGGUAN'), out);
+});
+
+test('fund block: COT report_date tersedia → umur laporan dalam hari ditampilkan di baris COT', () => {
+  const cotWithDate = { positions: { EUR: { lev_net: -23400, lev_change_net: 5100 } }, report_date: '2026-07-01' };
+  const out = _formatFundamentalBlock({ label: 'EUR/USD', isXau: false, cbBias: CB, cot: cotWithDate, risk: RISK, nowMs: NOW });
+  assert.ok(out.includes('laporan 5 hari lalu'), out); // NOW = 2026-07-06T12:00Z, report_date 2026-07-01 -> 5 hari
+});
+
 const { _formatOptionsSentimentBlock } = require('../../api/admin.js');
 
 // (2026-08-08, revisi sama hari — hasil diskusi "apakah ini masih selaras Plan U?")
