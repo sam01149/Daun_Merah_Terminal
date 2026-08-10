@@ -6,6 +6,7 @@
 
 const rateLimit = require('./_ratelimit');
 const { withSingleFlight } = require('./_fetch_lock');
+const { mapYahooSymbolToDeriv, fetchDerivLatestPrice } = require('./_ohlcv_fetch');
 const CORS = { 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-cache' };
 const CACHE_KEY = 'correlations_v3';
 const CACHE_TTL = 86400;
@@ -309,15 +310,26 @@ const handler = async function handler(req, res) {
       });
       if (!sf.gotLock && sf.fresh) return res.status(200).json({ ...JSON.parse(sf.fresh), from_cache: true });
 
-      const prices  = await fetchYahoo(symbol, interval, range);
+      // current_price: Deriv (broker-grade spot) diutamakan bila ada mapping — hindari
+      // basis blowout futures-vs-spot yang pernah terjadi di GC=F Yahoo menjelang expiry
+      // kontrak (lihat [[project-gcf-futures-spot-basis-blowout]]). RSI/SMA tetap dari
+      // histori Yahoo (butuh seri panjang; tidak diambil dari Deriv di endpoint ini).
+      // Deriv & Yahoo dipanggil paralel supaya fallback tidak menambah latensi total.
+      const derivSymbol = mapYahooSymbolToDeriv(symbol);
+      const [prices, derivTick] = await Promise.all([
+        fetchYahoo(symbol, interval, range),
+        derivSymbol ? fetchDerivLatestPrice(symbol).catch(() => null) : Promise.resolve(null),
+      ]);
       const current = prices[prices.length - 1];
       const rsi14   = calcRSI(prices, 14);
       const sma50   = calcSMA(prices, 50,  'close');
       const sma200  = calcSMA(prices, 200, 'close');
+      const useDerivPrice = derivTick && derivTick.price > 0;
 
       const payload = {
         symbol, interval, range,
-        current_price:  +current.close.toFixed(5),
+        current_price:  useDerivPrice ? +derivTick.price.toFixed(5) : +current.close.toFixed(5),
+        price_source:   useDerivPrice ? 'deriv' : 'yahoo',
         rsi_14:         rsi14  != null ? Math.round(rsi14  * 100) / 100 : null,
         sma_50:         sma50  != null ? Math.round(sma50  * 100) / 100 : null,
         sma_200:        sma200 != null ? Math.round(sma200 * 100) / 100 : null,

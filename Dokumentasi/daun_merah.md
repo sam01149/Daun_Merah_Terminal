@@ -11,10 +11,20 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-10 (Session 296 — Analisa XAU/USD: hapus jadwal cron, hasil klik tidak pernah hilang otomatis)
+> **Last updated:** 2026-08-10 (Session 297 — Harga live jurnal posisi open: Deriv diutamakan, bukan Yahoo)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 297 (2026-08-10) — Harga Live Jurnal Posisi Open: Deriv Diutamakan, Bukan Yahoo
+
+**Konteks:** User tanya apakah harga live yang ditampilkan Jurnal untuk posisi yang masih open (`jnFetchLivePrices`, `index.html`) masih dari Yahoo. Ternyata iya — lewat `/api/correlations?action=ta&interval=5m`, yang mengambil `current_price` murni dari `fetchYahoo()`. Untuk XAU/USD simbolnya `GC=F` (futures COMEX), persis sumber yang pernah menyebabkan basis blowout futures-vs-spot $60-70 di Session 268 ([[project-gcf-futures-spot-basis-blowout]]) — waktu itu semua jalur harga penting (OHLCV, live quote, evaluasi SL/TP) sudah dipindah ke Deriv `frxXAUUSD` (spot), tapi endpoint `action=ta` di `api/correlations.js` sengaja dilewati karena biasa dipakai untuk matriks korelasi berbasis return harian (jauh lebih tahan blowout). Fitur harga live Jurnal ternyata menumpang endpoint yang sama dengan interval 5 menit (intraday), jadi ikut kena risiko yang sama — meski dampaknya terbatas karena harga ini cuma ditampilkan (tidak dipakai hitung P&L atau memicu SL/TP).
+
+**Perubahan — `api/correlations.js`, handler `action=ta`:** `current_price` sekarang diutamakan dari Deriv (`fetchDerivLatestPrice`, via `mapYahooSymbolToDeriv` dari `api/_ohlcv_fetch.js`) kalau pair-nya punya mapping Deriv (15 pair: 14 FX inti + XAU/USD sebagai `frxXAUUSD`), fallback ke Yahoo kalau tidak ada mapping atau Deriv gagal/timeout. Deriv & Yahoo dipanggil paralel (`Promise.all`) supaya fallback tidak menambah latensi. RSI/SMA tetap dihitung dari histori Yahoo seperti sebelumnya (Deriv candle history tidak dipanggil di endpoint ini, sengaja tetap ringan). Response payload nambah field `price_source: 'deriv'|'yahoo'` untuk observability.
+
+**Cakupan:** Perbaikan ini otomatis berlaku untuk semua pemakai endpoint `action=ta` (Jurnal live price, TEK grafik gravitasi "NOW", scenario planner) — bukan cuma Jurnal, karena satu sumber. 14 pair cross yang tidak ada mapping Deriv (mis. EUR/CHF, AUD/NZD, CHF/JPY — daftar lengkap di `SZ_PAIRS`, `index.html`) tetap Yahoo seperti sebelumnya, tidak ada regresi untuk pair-pair itu.
+
+**Test:** `npm test` 900/900 hijau (tidak ada test khusus `action=ta`, diverifikasi manual via `node -e "require('./api/correlations.js')"` + full suite tetap hijau).
 
 ## Changelog Session 296 (2026-08-10) — Analisa XAU/USD: Hapus Jadwal Cron, Hasil Klik Tidak Pernah Hilang Otomatis
 
