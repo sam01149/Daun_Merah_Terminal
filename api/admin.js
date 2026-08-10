@@ -1424,6 +1424,8 @@ KERANGKA ANALISIS per currency (pakai ini untuk menyusun OUTLOOK, bukan buat men
 
 JANGAN mengarang tanggal rilis, angka, atau event kalender yang tidak ada di data di atas.
 
+JANGAN pakai markdown sama sekali (tanpa **tebal**, *miring*, tanda pagar #, bullet "-"/"*", atau pemisah "---") — outputmu ditampilkan APA ADANYA sebagai teks polos, bukan lewat parser markdown, jadi karakter-karakter itu akan muncul literal dan merusak tampilan. Pakai HURUF KAPITAL untuk nama currency/header seperti contoh format di bawah, dan angka urut biasa (1. 2. 3.) untuk daftar.
+
 Format jawaban WAJIB (Bahasa Indonesia, padat tapi tersintesa — fokus pada MAKNA & keterkaitan antar indikator, bukan menyalin ulang angka mentah yang sudah ada di grid data):
 
 TEMA MAKRO LINTAS-CURRENCY:
