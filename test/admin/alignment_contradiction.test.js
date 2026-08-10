@@ -47,6 +47,19 @@ test('_detectAlignmentReasonContradiction: currency sama disebut ulang dengan ar
   assert.equal(_detectAlignmentReasonContradiction(reason), false);
 });
 
+// Regresi (2026-08-10, ditemukan user dari audit setup EUR/GBP nyata id
+// EURGBP=X:1785744976162): reasoning ini SAH & TIDAK kontradiktif — "Intervensi JPY
+// menguatkan JPY dan melemahkan USD" menyebut DUA currency beda (JPY & USD) dengan
+// arah masing-masing SEKALI, lalu "EUR dan GBP sama-sama menguat TERHADAP USD" — USD
+// di situ cuma pembanding (bukan subjek yang bergerak). Versi awal guard (index-to-index,
+// tanpa exclude "terhadap") salah nangkep ini sebagai kontradiksi karena JPY yang
+// disebut berulang ("Intervensi JPY menguatkan JPY") kebetulan lebih dekat secara index
+// mentah ke "melemahkan" dibanding USD yang jadi objek sebenarnya.
+test('_detectAlignmentReasonContradiction: kasus nyata EUR/GBP (reasoning SAH, bukan kontradiksi) -> false', () => {
+  const reason = 'Intervensi JPY menguatkan JPY dan melemahkan USD, tetapi dampak langsung ke EUR/GBP tidak jelas karena kedua leg (EUR dan GBP) sama-sama menguat terhadap USD; fundamental EUR Cautious Dovish vs GBP Data Dependent tidak memberikan arah dominan.';
+  assert.equal(_detectAlignmentReasonContradiction(reason), false);
+});
+
 // ── Integrasi ohlcv_analyze (auto-entry cron) — cbDir TIDAK tersedia (tanpa cb_bias),
 // jadi Sistem Hakim diam; guard kontradiksi harus tetap nyala dari teks reasoning saja ──
 

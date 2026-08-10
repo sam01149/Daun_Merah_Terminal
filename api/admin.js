@@ -4238,15 +4238,19 @@ function _computeCbDirServerSide({ label, isXau, cbBiasObj, xauThesis }) {
 // uang yang SAMA disebut menguat DAN melemah dalam satu makro_alignment_reason, itu tanda
 // AI salah nalar arah (bukan halusinasi data — datanya bisa saja asli — tapi kesimpulan
 // arahnya kontradiktif). Tiap kata arah (menguat/melemah) dipasangkan ke currency code
-// TERDEKAT secara jarak karakter (bukan window simetris tetap) — kalimat pendek dengan
-// banyak currency berdekatan (mis. "penguatan CHF, ... JPY melemah") gampang salah tempel
-// kalau pakai window lebar, karena "melemah" milik JPY bisa ikut kebaca window CHF yang
-// jauh lebih dekat ke JPY. Nearest-match menghindari itu: tiap kata arah HANYA menyumbang
-// ke SATU currency (yang paling dekat), maks jarak 45 karakter (di luar itu dianggap tak
-// terkait).
+// TERDEKAT — jarak dihitung antar TEPI kata (gap), bukan index-ke-index mentah, supaya
+// panjang kata arah sendiri tidak bikin currency yang sebenarnya nempel jadi kelihatan
+// "lebih jauh" dari currency lain yang cuma kebetulan berdekatan (lihat riwayat commit
+// test untuk kasus nyata yang menemukan ini: "menguatkan JPY dan melemahkan USD" — tanpa
+// gap-distance, "melemahkan" salah nempel ke JPY yang cuma numpang lewat di klausa
+// sebelumnya, bukan ke USD yang jadi objeknya). Currency yang didahului "terhadap"/"vs"
+// (pola umum "A menguat/melemah TERHADAP B") dikecualikan dari pencarian — B di situ
+// cuma pembanding, bukan subjek yang benar-benar bergerak, jadi tidak boleh ikut ditarik
+// jadi pasangan kata arah. Maks jarak 45 karakter (di luar itu dianggap tak terkait).
 const ALIGNMENT_CCY_RE = /\b(USD|EUR|GBP|JPY|AUD|NZD|CAD|CHF)\b/g;
 const ALIGNMENT_STRENGTHEN_RE = /menguat|penguatan/gi;
 const ALIGNMENT_WEAKEN_RE = /melemah|pelemahan/gi;
+const ALIGNMENT_REF_PREFIX_RE = /\b(terhadap|vs)\s*$/i;
 const ALIGNMENT_MAX_DIST = 45;
 function _detectAlignmentReasonContradiction(reason) {
   if (!reason || typeof reason !== 'string') return false;
@@ -4254,7 +4258,11 @@ function _detectAlignmentReasonContradiction(reason) {
   {
     const re = new RegExp(ALIGNMENT_CCY_RE.source, 'g');
     let m;
-    while ((m = re.exec(reason))) ccyPositions.push({ ccy: m[1], index: m.index });
+    while ((m = re.exec(reason))) {
+      const start = m.index, end = m.index + m[0].length;
+      const isReference = ALIGNMENT_REF_PREFIX_RE.test(reason.slice(Math.max(0, start - 15), start));
+      ccyPositions.push({ ccy: m[1], start, end, isReference });
+    }
   }
   if (ccyPositions.length === 0) return false;
 
@@ -4262,22 +4270,23 @@ function _detectAlignmentReasonContradiction(reason) {
   {
     const re = new RegExp(ALIGNMENT_STRENGTHEN_RE.source, 'gi');
     let m;
-    while ((m = re.exec(reason))) dirWords.push({ dir: 'strengthen', index: m.index });
+    while ((m = re.exec(reason))) dirWords.push({ dir: 'strengthen', start: m.index, end: m.index + m[0].length });
   }
   {
     const re = new RegExp(ALIGNMENT_WEAKEN_RE.source, 'gi');
     let m;
-    while ((m = re.exec(reason))) dirWords.push({ dir: 'weaken', index: m.index });
+    while ((m = re.exec(reason))) dirWords.push({ dir: 'weaken', start: m.index, end: m.index + m[0].length });
   }
 
   const dirByCcy = {};
   for (const d of dirWords) {
-    let nearest = null, nearestDist = Infinity;
+    let nearest = null, nearestGap = Infinity;
     for (const c of ccyPositions) {
-      const dist = Math.abs(c.index - d.index);
-      if (dist < nearestDist) { nearestDist = dist; nearest = c; }
+      if (c.isReference) continue;
+      const gap = c.start >= d.end ? c.start - d.end : (d.start >= c.end ? d.start - c.end : 0);
+      if (gap < nearestGap) { nearestGap = gap; nearest = c; }
     }
-    if (!nearest || nearestDist > ALIGNMENT_MAX_DIST) continue;
+    if (!nearest || nearestGap > ALIGNMENT_MAX_DIST) continue;
     const prevDir = dirByCcy[nearest.ccy];
     if (prevDir && prevDir !== d.dir) return true;
     dirByCcy[nearest.ccy] = d.dir;
