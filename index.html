@@ -6252,6 +6252,29 @@ function escJs(s) {
   return escHtml(String(s ?? '').replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'\\u0022'));
 }
 
+// Render prosa AI (Journal AI Coach, Diagnosa Perilaku, Analisa AI commentary) jadi
+// HTML aman — escHtml() DULU sebelum menyisipkan tag markdown sendiri, supaya kalau
+// teks AI kebetulan mengandung <, >, & literal, tidak ikut diinterpretasi jadi HTML
+// asli (2026-08-10, ditemukan saat audit bug asterisk: kode lama convert **bold**
+// TANPA escape teksnya dulu — celah XSS via output AI, bukan cuma kosmetik). Sekalian
+// tangani markdown selain bold (*italic*, ### header, bullet -/*, pemisah ---) yang
+// user laporkan muncul literal di panel Jurnal — akar masalah sama dengan
+// _stripMarkdown di api/admin.js (fundamental_analysis), tapi di sini hasilnya HTML
+// asli (bold/italic beneran), bukan dibuang total, karena konteksnya innerHTML bukan
+// textContent.
+function _renderAiMarkdownSafe(text) {
+  if (!text) return '';
+  return escHtml(text)
+    .replace(/^\s*[-*_]{3,}\s*$/gm, '')                          // baris pemisah "---"/"***"
+    .replace(/^#{1,6}\s+(.*)$/gm, '<strong>$1</strong>')          // header "### Judul" -> tebal
+    .replace(/^([ \t]*)[-*]\s+/gm, '$1• ')                        // bullet "- "/"* " -> "• "
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')             // **tebal**
+    .replace(/(?<![\w*])\*(?!\s)(.+?)(?<!\s)\*(?![\w*])/g, '<em>$1</em>') // *miring*
+    .replace(/`([^`]+)`/g, '<code>$1</code>')                     // `kode`
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 // ── ANALISA ──────────────────────────────────────────────
 const analisaDataCache = {};
 const analisaAiCache   = {};
@@ -6653,7 +6676,7 @@ function _renderStructuredAi(structured, commentary, model, hasMakro, isCached, 
         const labelText = labels[idx] || 'ANALISIS TAMBAHAN';
         narrativeHtml += `
           <div class="r-tag" style="margin-top: ${idx === 0 ? '4px' : '14px'} !important; margin-bottom: 6px !important;">${labelText}</div>
-          <p style="margin: 0 0 12px; line-height: 1.75;">${escHtml(p)}</p>
+          <p style="margin: 0 0 12px; line-height: 1.75;">${_renderAiMarkdownSafe(p)}</p>
         `;
       });
 
@@ -6670,7 +6693,7 @@ function _renderStructuredAi(structured, commentary, model, hasMakro, isCached, 
       html += `<div class="analisa-tf-card" style="border-left-color: var(--yellow); margin-bottom: 12px;">
         <div class="analisa-tf-label" style="color: var(--yellow) !important;">KESIMPULAN EKSEKUSI</div>
         <div class="ringkasan-text" style="line-height:1.75; color:var(--text)">
-          ${escHtml(conclusionText)}
+          ${_renderAiMarkdownSafe(conclusionText)}
         </div>
       </div>`;
     }
@@ -15611,9 +15634,7 @@ async function jnRunAnalysis(force = false) {
       </div>
     </div>`;
 
-    // Render markdown bold (**text**) as <strong>
-    const bodyHtml = (data.analysis || '')
-      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+    const bodyHtml = _renderAiMarkdownSafe(data.analysis || '');
 
     const genTime = data.generated_at ? new Date(data.generated_at).toLocaleString('id-ID', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' }) : '';
 
@@ -15758,7 +15779,7 @@ async function jnRunBiasDiagnosis(force = false) {
     const streakTxt = `${s.streak.current}x ${s.streak.current_type === 'win' ? 'MENANG' : 'KALAH'} beruntun saat ini · loss streak terpanjang historis: ${s.streak.longest_loss_streak}x`;
 
     const narrativeHtml = data.narrative
-      ? `<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);font-size:11px;line-height:1.7;color:var(--text);white-space:pre-wrap">${escHtml(data.narrative)}</div>`
+      ? `<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);font-size:11px;line-height:1.7;color:var(--text);white-space:pre-wrap">${_renderAiMarkdownSafe(data.narrative)}</div>`
       : `<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);font-size:10px;color:var(--muted)">Narasi AI tidak tersedia saat ini — statistik di atas tetap valid (dihitung kode, bukan AI).</div>`;
 
     panel.innerHTML = `

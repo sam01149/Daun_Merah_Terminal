@@ -27,6 +27,13 @@ assert.ok(mrStart !== -1, 'fungsi _makroAgeLabel harus ada di index.html');
 const mrEnd = html.indexOf('\n}', mrStart) + 2;
 const _makroAgeLabel = eval(`(${html.slice(mrStart, mrEnd).trim()})`);
 
+// _renderStructuredAi juga memanggil _renderAiMarkdownSafe (2026-08-10, fix bug
+// asterisk markdown mentah di panel AI) — sama alasan seperti _makroAgeLabel di atas.
+const mdStart = html.indexOf('function _renderAiMarkdownSafe(');
+assert.ok(mdStart !== -1, 'fungsi _renderAiMarkdownSafe harus ada di index.html');
+const mdEnd = html.indexOf('\n}', mdStart) + 2;
+const _renderAiMarkdownSafe = eval(`(${html.slice(mdStart, mdEnd).trim()})`);
+
 test('escHtml: tidak throw untuk number/boolean/array (bug asli)', () => {
   assert.strictEqual(escHtml(4155.5), '4155.5');
   assert.strictEqual(escHtml(0), '0');
@@ -43,6 +50,35 @@ test('escHtml: null/undefined/string kosong tetap jadi string kosong', () => {
 
 test('escHtml: escape & < > tetap benar untuk string normal', () => {
   assert.strictEqual(escHtml('a<b>&c'), 'a&lt;b&gt;&amp;c');
+});
+
+// ── _renderAiMarkdownSafe (2026-08-10) — Journal AI Coach & Diagnosa Perilaku sempat
+// tampilkan markdown mentah (**tebal**, ### header, dsb) dari Gemini/SambaNova; versi
+// lama juga escHtml teks SETELAH convert **bold** (celah XSS kalau teks AI kebetulan
+// mengandung <, >, & literal) — fix-nya escape DULU baru sisipkan tag markdown sendiri. ──
+
+test('_renderAiMarkdownSafe: escape HTML DULU sebelum sisip tag markdown (cegah XSS dari teks AI)', () => {
+  const out = _renderAiMarkdownSafe('R < 2 tapi **bagus**, bukan <script>alert(1)</script>');
+  assert.ok(!out.includes('<script>'), 'tidak boleh ada tag <script> asli lolos ke HTML');
+  assert.ok(out.includes('&lt;script&gt;'), 'tag berbahaya harus ke-escape jadi entity');
+  assert.ok(out.includes('<strong>bagus</strong>'), 'bold dari AI tetap dirender jadi <strong> asli');
+});
+
+test('_renderAiMarkdownSafe: bold/italic/kode-inline jadi tag HTML asli', () => {
+  assert.strictEqual(_renderAiMarkdownSafe('**USD** kuat karena *inflasi* dan `Core PCE`'), '<strong>USD</strong> kuat karena <em>inflasi</em> dan <code>Core PCE</code>');
+});
+
+test('_renderAiMarkdownSafe: header "### Judul" jadi <strong>, bullet "- " jadi bullet char', () => {
+  assert.strictEqual(_renderAiMarkdownSafe('### Ringkasan\n- Poin A\n- Poin B'), '<strong>Ringkasan</strong>\n• Poin A\n• Poin B');
+});
+
+test('_renderAiMarkdownSafe: baris pemisah "---" dibuang, angka negatif/persen tidak ikut rusak', () => {
+  assert.strictEqual(_renderAiMarkdownSafe('NFP -23K\n\n---\n\nCPI -0.1%'), 'NFP -23K\n\nCPI -0.1%');
+});
+
+test('_renderAiMarkdownSafe: kosong -> string kosong, tidak crash', () => {
+  assert.strictEqual(_renderAiMarkdownSafe(''), '');
+  assert.strictEqual(_renderAiMarkdownSafe(null), '');
 });
 
 // Reproduksi bug asli end-to-end: AI kadang balikin sl/tp/entry_zone sebagai number
