@@ -512,13 +512,11 @@ const KEY_REGISTRY = [
   // INCR polos, TTL none (akumulasi permanen, reset manual via DEL kalau perlu histori
   // baru). 'considered' = penyebut (kandidat yang lolos guard dup/blockedByOpenPosition
   // lama, dievaluasi ke-3 gate sisa); 'saved' = lolos semua gate; 3 sisanya = alasan
-  // ditahan. considered = saved + makro_conflict + correlation_cap +
-  // drawdown_circuit_breaker + critic_veto (invarian, boleh dicek manual). Gate C
-  // (regime_confidence) DIHAPUS sesi sama (2026-07-28) — lihat DEPRECATED_KEYS +
-  // api/_auto_entry_guard.js.
-  { key: 'auto_guard_stats:considered',              owner: 'api/admin.js', ttl_expected: null, note: 'Audit-guard: total kandidat auto-entry yang dievaluasi ke-4 gate sisa' },
+  // ditahan. considered = saved + correlation_cap + drawdown_circuit_breaker +
+  // critic_veto (invarian, boleh dicek manual). Gate C (regime_confidence) DIHAPUS
+  // sesi sama (2026-07-28) — lihat DEPRECATED_KEYS + api/_auto_entry_guard.js.
+  { key: 'auto_guard_stats:considered',              owner: 'api/admin.js', ttl_expected: null, note: 'Audit-guard: total kandidat auto-entry yang dievaluasi ke-3 gate sisa' },
   { key: 'auto_guard_stats:saved',                   owner: 'api/admin.js', ttl_expected: null, note: 'Audit-guard: kandidat lolos semua gate, tersimpan ke setup_log_auto:v1' },
-  { key: 'auto_guard_stats:makro_conflict',          owner: 'api/admin.js', ttl_expected: null, note: 'Audit-guard (2026-08-10): ditahan (makro_alignment akhir = "konflik" — instruksi prompt tidak pernah code-enforced sebelum ini)' },
   { key: 'auto_guard_stats:correlation_cap',         owner: 'api/admin.js', ttl_expected: null, note: 'Audit-guard Gate D: ditahan (correlated exposure XAU/USD-EUR/USD)' },
   { key: 'auto_guard_stats:drawdown_circuit_breaker', owner: 'api/admin.js', ttl_expected: null, note: 'Audit-guard Gate B: ditahan (rolling R melewati ambang regime)' },
   { key: 'auto_guard_stats:critic_veto',              owner: 'api/admin.js', ttl_expected: null, note: 'Audit-guard Gate A: AI Kritikus verdict "batalkan"' },
@@ -2861,7 +2859,6 @@ function _evaluateTechInvalidation(setups, candlesBySymbol) {
 // benar?"), cuma sumber pembatalannya beda. Satu fungsi, satu logic, filter diperluas.
 const GHOST_TRACKED_CANCEL_REASONS = new Set([
   'bias_flip', 'gate_correlation_cap', 'gate_drawdown_circuit_breaker', 'gate_critic_veto',
-  'gate_makro_conflict',
 ]);
 function _evaluateCanceledGhost(setups, candlesBySymbol, nowMs) {
   const DAY = 86400000;
@@ -5691,23 +5688,21 @@ async function ohlcvAnalyzeHandler(req, res) {
           if (isTimingConflictBlocked(structured.conflict)) {
             redisCmd('INCR', 'auto_guard_stats:conflict_waktu_flagged').catch(() => {});
           }
-          // Gate makro_conflict (2026-08-10, diskusi user — audit CHF/JPY & pola
-          // berulang di pair lain: setup dengan makro_alignment "konflik" tetap
-          // lolos jadi pending/live). Instruksi prompt ("kalau makro_alignment
-          // konflik, null-kan entry_zone/sl/tp") sudah ADA sejak awal tapi TIDAK
-          // PERNAH code-enforced — kemungkinan root cause: entry_zone/sl/tp
-          // diminta LEBIH DULU dari makro_alignment di skema JSON, jadi levelnya
-          // sudah ter-commit sebelum model "memutuskan" konflik di field
-          // belakangnya. Ditaruh sebagai GATE (bukan nulling `structured` langsung
-          // di titik parsing) supaya ikut pola ghost-tracking yang sama persis
-          // dengan correlation_cap/drawdown di bawah — kandidat yang ditahan
-          // tetap punya jejak (canceled + level asli) untuk dievaluasi counterfactual
-          // via `_evaluateCanceledGhost`, bukan hilang senyap. HANYA auto (pola sama
-          // semua gate D/B/A di sini) — manual TIDAK disentuh, `makro_alignment`
-          // tetap tampil apa adanya ke pembaca supaya keputusan tetap di tangan user.
-          if (structured.makro_alignment === 'konflik') {
-            autoGuardReason = 'makro_conflict';
-          } else if (isCorrelatedExposureBlocked({ symbol, bias: structured.bias, openPositions: log })) {
+          // (2026-08-10, dicoba lalu DIREVERT sesi sama — diskusi user) Gate keras
+          // "makro_conflict" (auto-reject begitu makro_alignment final = "konflik",
+          // sebelum Gate A dipanggil sama sekali) sempat ditambahkan di sini, tapi
+          // dibatalkan setelah disadari CRITIC_SYSTEM_PROMPT (Gate A/AI Kritikus, di
+          // bawah) SUDAH secara eksplisit diminta "fokus konflik makro" sebagai salah
+          // satu dari 4 hal yang WAJIB dia timbang, dan setiap makro_alignment/reason
+          // SUDAH dikirim ke Gate A sebagai fakta (lihat criticSetupBlock, Fase 2).
+          // Gate keras di sini akan MENIMPA keputusan Gate A yang sudah menimbang
+          // info yang sama (bukan mengisi kekosongan) — user khawatir ini memperlambat
+          // laju entry (preseden Gate E: hard block pernah bikin nol entry hari pertama,
+          // dilonggarkan). Kalau nanti mau data frekuensi nyata dulu sebelum
+          // keputusan hard-block, tambahkan counter OBSERVASI non-blocking di sini
+          // (pola sama conflict_waktu_flagged di atas) — JANGAN langsung set
+          // autoGuardReason tanpa data.
+          if (isCorrelatedExposureBlocked({ symbol, bias: structured.bias, openPositions: log })) {
             autoGuardReason = 'correlation_cap';
           } else {
             const closedSetups = log
