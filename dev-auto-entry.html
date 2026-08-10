@@ -131,6 +131,7 @@ tr.rowdetail td{background:rgba(var(--fg-rgb),.02);white-space:normal;padding:8p
 tr.rowdetail .row{display:flex;gap:8px;font-size:10px;padding:2px 0;color:var(--muted);border-bottom:none;}
 tr.rowdetail .row span{min-width:170px;flex-shrink:0;}
 tr.rowdetail .row b{color:var(--fg);font-weight:500;white-space:normal;word-break:break-word;}
+tr.rowdetail .longtext{white-space:pre-wrap;font-size:10.5px;line-height:1.55;color:var(--fg);padding:2px 0 6px;word-break:break-word;}
 </style>
 </head>
 <body>
@@ -214,8 +215,8 @@ tr.rowdetail .row b{color:var(--fg);font-weight:500;white-space:normal;word-brea
     </div>
 
     <div class="card" id="card-gateghost">
-      <h2>Ghost-Tracking Kandidat Ditahan Gate D/B/A (2026-08-08)</h2>
-      <p class="hint">Kandidat yang ditahan correlation_cap/drawdown/critic_veto SEKARANG dipantau counterfactual-nya (bukan cuma dibuang) — Ghost Saved = gate benar menahan (kandidat memang bakal SL), Ghost Cost = gate salah menahan (kandidat sebenarnya TP).</p>
+      <h2>Ghost-Tracking Kandidat Ditahan Gate (2026-08-08, +makro_conflict 2026-08-10)</h2>
+      <p class="hint">Kandidat yang ditahan makro_conflict/correlation_cap/drawdown/critic_veto SEKARANG dipantau counterfactual-nya (bukan cuma dibuang) — Ghost Saved = gate benar menahan (kandidat memang bakal SL), Ghost Cost = gate salah menahan (kandidat sebenarnya TP).</p>
       <div class="grid" id="gateGhostStats"><div class="empty">—</div></div>
     </div>
 
@@ -618,6 +619,7 @@ tr.rowdetail .row b{color:var(--fg);font-weight:500;white-space:normal;word-brea
   }
 
   const GATE_GHOST_LABELS = {
+    gate_makro_conflict: 'Makro Conflict',
     gate_correlation_cap: 'Correlation Cap (Gate D)',
     gate_drawdown_circuit_breaker: 'Drawdown Circuit Breaker (Gate B)',
     gate_critic_veto: 'Critic Veto (Gate A)',
@@ -770,6 +772,15 @@ tr.rowdetail .row b{color:var(--fg);font-weight:500;white-space:normal;word-brea
     if (value == null || value === '') return '';
     return `<div class="row"><span>${esc(label)}</span><b>${esc(value)}</b></div>`;
   }
+  // Narasi panjang (2026-08-10, audit CHF/JPY: "kenapa bias tetap bullish walau makro
+  // konflik" jawabannya ADA di commentary AI, tapi field ini sebelumnya tidak pernah
+  // disimpan sama sekali ke setup_log_auto:v1 — lihat buildNewSetupEntry, api/admin.js)
+  // — beda dari fld() (baris label:value pendek), ini full-width dengan paragraf
+  // (\n\n) dipertahankan via CSS white-space:pre-wrap, bukan dipadatkan jadi satu baris.
+  function fldLong(label, value){
+    if (value == null || value === '') return '';
+    return `<div class="row" style="flex-direction:column;align-items:flex-start;gap:2px"><span>${esc(label)}</span><div class="longtext">${esc(value)}</div></div>`;
+  }
   // (2026-08-08, user: baris detail setup masih berantakan — daftar datar 25+ field
   // campur narasi panjang & tag pendek tanpa kelompok) — bungkus beberapa fld() jadi
   // 1 kelompok berlabel. TIDAK ADA field yang dihilangkan, cuma dikelompokkan + label
@@ -880,6 +891,10 @@ tr.rowdetail .row b{color:var(--fg);font-weight:500;white-space:normal;word-brea
         fld('Kenapa Status Ini Terjadi', buildStatusNarrative(s)),
         fld('Kenapa Bisa SL', buildSlReasonSummary(s)),
         fld('Penjelasan Status', STATUS_EXPLAIN[s.status]),
+        // 2026-08-10, audit CHF/JPY: "kenapa bias tetap X walau makro konflik" jawabannya
+        // ada di narasi lengkap AI (5 paragraf, termasuk integrasi teknikal-vs-makro),
+        // sebelumnya tidak pernah disimpan/ditampilkan sama sekali untuk setup auto-entry.
+        fldLong('Analisa Lengkap (AI)', s.commentary),
       ]),
       fldGroup('Makro & Konflik', [
         fld('Alignment', s.alignment),

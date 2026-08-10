@@ -512,11 +512,13 @@ const KEY_REGISTRY = [
   // INCR polos, TTL none (akumulasi permanen, reset manual via DEL kalau perlu histori
   // baru). 'considered' = penyebut (kandidat yang lolos guard dup/blockedByOpenPosition
   // lama, dievaluasi ke-3 gate sisa); 'saved' = lolos semua gate; 3 sisanya = alasan
-  // ditahan. considered = saved + correlation_cap + drawdown_circuit_breaker +
-  // critic_veto (invarian, boleh dicek manual). Gate C (regime_confidence) DIHAPUS
-  // sesi sama (2026-07-28) — lihat DEPRECATED_KEYS + api/_auto_entry_guard.js.
-  { key: 'auto_guard_stats:considered',              owner: 'api/admin.js', ttl_expected: null, note: 'Audit-guard: total kandidat auto-entry yang dievaluasi ke-3 gate sisa' },
+  // ditahan. considered = saved + makro_conflict + correlation_cap +
+  // drawdown_circuit_breaker + critic_veto (invarian, boleh dicek manual). Gate C
+  // (regime_confidence) DIHAPUS sesi sama (2026-07-28) — lihat DEPRECATED_KEYS +
+  // api/_auto_entry_guard.js.
+  { key: 'auto_guard_stats:considered',              owner: 'api/admin.js', ttl_expected: null, note: 'Audit-guard: total kandidat auto-entry yang dievaluasi ke-4 gate sisa' },
   { key: 'auto_guard_stats:saved',                   owner: 'api/admin.js', ttl_expected: null, note: 'Audit-guard: kandidat lolos semua gate, tersimpan ke setup_log_auto:v1' },
+  { key: 'auto_guard_stats:makro_conflict',          owner: 'api/admin.js', ttl_expected: null, note: 'Audit-guard (2026-08-10): ditahan (makro_alignment akhir = "konflik" — instruksi prompt tidak pernah code-enforced sebelum ini)' },
   { key: 'auto_guard_stats:correlation_cap',         owner: 'api/admin.js', ttl_expected: null, note: 'Audit-guard Gate D: ditahan (correlated exposure XAU/USD-EUR/USD)' },
   { key: 'auto_guard_stats:drawdown_circuit_breaker', owner: 'api/admin.js', ttl_expected: null, note: 'Audit-guard Gate B: ditahan (rolling R melewati ambang regime)' },
   { key: 'auto_guard_stats:critic_veto',              owner: 'api/admin.js', ttl_expected: null, note: 'Audit-guard Gate A: AI Kritikus verdict "batalkan"' },
@@ -2859,6 +2861,7 @@ function _evaluateTechInvalidation(setups, candlesBySymbol) {
 // benar?"), cuma sumber pembatalannya beda. Satu fungsi, satu logic, filter diperluas.
 const GHOST_TRACKED_CANCEL_REASONS = new Set([
   'bias_flip', 'gate_correlation_cap', 'gate_drawdown_circuit_breaker', 'gate_critic_veto',
+  'gate_makro_conflict',
 ]);
 function _evaluateCanceledGhost(setups, candlesBySymbol, nowMs) {
   const DAY = 86400000;
@@ -5477,6 +5480,16 @@ async function ohlcvAnalyzeHandler(req, res) {
         symbol, label: data.label, bias: structured.bias,
         entry_zone: structured.entry_zone, sl: structured.sl, tp: structured.tp,
         rr: structured.risk_reward ?? null,
+        // Narasi lengkap AI (2026-08-10, diskusi user — audit CHF/JPY: bias tetap
+        // bullish walau makro_alignment "konflik" itu SAH karena bias murni dari
+        // teknikal (Daily+H4+BOS), sedangkan makro_alignment field terpisah yang
+        // membandingkan — TAPI penjelasan "kenapa teknikalnya masih kuat" itu cuma
+        // ada di paragraf commentary, yang SEBELUM INI TIDAK PERNAH disimpan ke
+        // setup_log_auto:v1 sama sekali — hilang permanen begitu response dibalas,
+        // karena tidak ada manusia yang nonton live saat cron jalan). Disimpan apa
+        // adanya (bisa null kalau model gagal generate teks), TANPA cap panjang —
+        // sudah dibatasi alami oleh instruksi prompt (5 paragraf).
+        commentary: commentary || null,
         horizon_days: structured.time_horizon_days ?? null,
         model, ts: Date.now(), status: 'pending',
         source: isAutoCall ? 'auto' : 'manual',
@@ -5678,7 +5691,23 @@ async function ohlcvAnalyzeHandler(req, res) {
           if (isTimingConflictBlocked(structured.conflict)) {
             redisCmd('INCR', 'auto_guard_stats:conflict_waktu_flagged').catch(() => {});
           }
-          if (isCorrelatedExposureBlocked({ symbol, bias: structured.bias, openPositions: log })) {
+          // Gate makro_conflict (2026-08-10, diskusi user — audit CHF/JPY & pola
+          // berulang di pair lain: setup dengan makro_alignment "konflik" tetap
+          // lolos jadi pending/live). Instruksi prompt ("kalau makro_alignment
+          // konflik, null-kan entry_zone/sl/tp") sudah ADA sejak awal tapi TIDAK
+          // PERNAH code-enforced — kemungkinan root cause: entry_zone/sl/tp
+          // diminta LEBIH DULU dari makro_alignment di skema JSON, jadi levelnya
+          // sudah ter-commit sebelum model "memutuskan" konflik di field
+          // belakangnya. Ditaruh sebagai GATE (bukan nulling `structured` langsung
+          // di titik parsing) supaya ikut pola ghost-tracking yang sama persis
+          // dengan correlation_cap/drawdown di bawah — kandidat yang ditahan
+          // tetap punya jejak (canceled + level asli) untuk dievaluasi counterfactual
+          // via `_evaluateCanceledGhost`, bukan hilang senyap. HANYA auto (pola sama
+          // semua gate D/B/A di sini) — manual TIDAK disentuh, `makro_alignment`
+          // tetap tampil apa adanya ke pembaca supaya keputusan tetap di tangan user.
+          if (structured.makro_alignment === 'konflik') {
+            autoGuardReason = 'makro_conflict';
+          } else if (isCorrelatedExposureBlocked({ symbol, bias: structured.bias, openPositions: log })) {
             autoGuardReason = 'correlation_cap';
           } else {
             const closedSetups = log

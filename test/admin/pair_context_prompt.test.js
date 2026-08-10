@@ -190,6 +190,11 @@ test('ohlcv_analyze: source=manual default (tanpa auto=1); alignment setup_log m
       assert.equal(log.length, 1);
       assert.equal(log[0].source, 'manual');
       assert.equal(log[0].alignment, 'konflik', 'conflict=arah harus dipetakan ke alignment=konflik walau makro_alignment null');
+      // (2026-08-10, diskusi user — audit CHF/JPY: "kenapa bias tetap X" jawabannya
+      // ada di commentary AI, tapi field ini sebelumnya TIDAK PERNAH disimpan ke log
+      // sama sekali — hilang permanen begitu response dibalas untuk setup auto-entry
+      // tanpa penonton live) commentary sekarang ikut tersimpan apa adanya.
+      assert.equal(log[0].commentary, AI_RAW_TEXT.split('===COMMENTARY===')[1].trim());
     } finally { global.fetch = origFetch; }
   });
 });
