@@ -131,7 +131,7 @@ const FUND_INDICATOR_MAP = [
   { kw: ['flash cpi','cpi flash'],                                                key: 'CPI Flash YoY' },
   { kw: ['german cpi','germany cpi'],                                             key: 'German CPI YoY' },
   { kw: ['cpi y/y','cpi yoy','cpi annual','consumer price index y'],             key: 'CPI YoY' },
-  { kw: ['cpi q/q','cpi qq','cpi quarter'],                                      key: 'CPI QoQ' },
+  { kw: ['cpi q/q','cpi qq','cpi qoq','cpi quarter'],                            key: 'CPI QoQ' },
   { kw: ['cpi m/m','cpi mom','consumer price index m'],                          key: 'CPI MoM' },
   { kw: ['consumer price index','consumer prices'],                               key: 'CPI YoY' },
   { kw: ['gdp q/q','gdp qq','gdp quarter','gdp prelim','gdp flash','gdp growth'],key: 'GDP QoQ' },
@@ -146,6 +146,18 @@ const FUND_INDICATOR_MAP = [
   { kw: ['durable goods'],                                                        key: 'Durable Goods Orders' },
   { kw: ['inflation rate','inflation data'],                                      key: 'CPI YoY' },
 ];
+
+// lowercase(key) -> key kanonik dari FUND_INDICATOR_MAP di atas. Dipakai fallback
+// "tebak key dari judul" (lihat parseFundamentalFromHeadline di bawah) untuk
+// mencegah duplikat key yang cuma beda casing — audit 2026-08-10 (laporan user)
+// menemukan "CPI QoQ" (key kanonik, seed lama tidak pernah ke-update) vs "Cpi Qoq"
+// (hasil tebakan title-case naif per-kata yang merusak akronim CPI/QoQ) hidup
+// berdampingan untuk AUD, karena keyword 'cpi qoq' waktu itu belum ada di map di
+// atas (sudah ditambah) sehingga headline "CPI QoQ Actual 0.6%..." jatuh ke
+// fallback tebakan alih-alih match langsung. Reconciliation ini jadi jaring
+// pengaman untuk keyword gap SEJENIS yang belum ketahuan (akronim lain: GDP/PMI/
+// PPI/dst), bukan cuma fix satu kasus CPI.
+const FUND_INDICATOR_CANONICAL = new Map(FUND_INDICATOR_MAP.map(({ key }) => [key.toLowerCase(), key]));
 
 const CB_RATE_MAP = [
   { kw: ['federal reserve','fed ','fomc rate','fed rate','fed funds'],       cur: 'USD' },
@@ -282,7 +294,11 @@ function parseFundamentalFromHeadline(title) {
       .replace(/\s*\(.*$/i, '')
       .trim();
     if (stripped && stripped.length >= 3 && stripped.length <= 60) {
-      indicatorKey = stripped.split(/\s+/).map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
+      const guessed = stripped.split(/\s+/).map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
+      // Reuse casing kanonik kalau tebakan ini sebenarnya sudah dikenal FUND_INDICATOR_MAP
+      // (cuma gagal match keyword-nya) — cegah duplikat key beda casing, lihat komentar
+      // FUND_INDICATOR_CANONICAL di atas.
+      indicatorKey = FUND_INDICATOR_CANONICAL.get(guessed.toLowerCase()) || guessed;
     }
   }
 

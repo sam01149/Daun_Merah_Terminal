@@ -49,6 +49,25 @@ test('qualifier Flash di akhir judul redirect ke key CPI Flash YoY', () => {
   assert.strictEqual(r.key, 'CPI Flash YoY');
 });
 
+// Regresi bug 2026-08-10 (laporan user — AUD "Retail Sales" + "CPI QoQ" tak pernah
+// terverifikasi): headline literal "CPI QoQ" (bukan "CPI Q/Q"/"CPI QQ") gagal match
+// keyword FUND_INDICATOR_MAP, jatuh ke fallback tebak-key title-case naif yang
+// merusak akronim jadi "Cpi Qoq" — bikin duplikat key beda casing dari "CPI QoQ"
+// kanonik, jadi seed lama permanen tidak pernah ke-update walau data barunya
+// sebenarnya sudah masuk (cuma nyasar ke key yang salah).
+test('Australia CPI QoQ (ejaan "qoq" tanpa slash) match langsung ke key kanonik "CPI QoQ"', () => {
+  const r = parseFundamentalFromHeadline('Australia CPI QoQ: Actual 0.6% Forecast 0.5% Previous 1.4%');
+  assert.strictEqual(r.currency, 'AUD');
+  assert.strictEqual(r.key, 'CPI QoQ');
+  assert.strictEqual(r.value, '0.6%');
+});
+
+test('fallback tebak-key: kalau tebakan title-case kebetulan cocok key kanonik (case-insensitive), pakai casing kanonik bukan tebakan mentah', () => {
+  // Indikator fiktif yang sengaja tidak ada di FUND_INDICATOR_MAP -> tetap dari tebakan mentah (tidak ada acuan kanonik).
+  const r = parseFundamentalFromHeadline('Australia Made Up Indicator: Actual 1.0% Forecast 0.9% Previous 0.8%');
+  assert.strictEqual(r.key, 'Made Up Indicator');
+});
+
 test('headline non-fundamental (tanpa currency match) → null', () => {
   assert.strictEqual(parseFundamentalFromHeadline('Gold rises above 2700 as dollar weakens'), null);
 });
