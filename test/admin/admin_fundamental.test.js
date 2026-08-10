@@ -1,8 +1,9 @@
 // test/admin_fundamental.test.js
-// Unit test fundamentalAnalysisHandler (api/admin.js) 2-tier fallback: SambaNova akun2
-// primary -> Gemini flash fallback (Cerebras/Groq diputus kontraknya 2026-07-25).
+// Unit test fundamentalAnalysisHandler (api/admin.js): Gemini flash = satu-satunya
+// provider (2026-08-10, permintaan eksplisit user — jangan pakai model
+// DeepSeek/SambaNova di fitur ini; dulu 2-tier SambaNova primary -> Gemini fallback).
 // Redis/APP_KEY tidak dikonfigurasi -> semua guard fail-open (lihat guards.test.js),
-// jadi test ini murni memverifikasi urutan fallback HTTP-level lewat handler penuh.
+// jadi test ini murni memverifikasi pemanggilan HTTP lewat handler penuh.
 const { test } = require('node:test');
 const assert = require('node:assert');
 
@@ -58,52 +59,49 @@ function fakeReqRes() {
 
 const handler = require('../../api/admin.js');
 
-test('fundamental_analysis: SambaNova primary sukses — 1 fetch call ke api.sambanova.ai model DeepSeek-V3.2', async () => {
-  await withEnv({ SAMBANOVA_API_KEY_CALL1: 'sk-s', GEMINI_API_KEY: 'sk-gm' }, async () => {
+test('fundamental_analysis: Gemini sukses — 1 fetch call ke generativelanguage.googleapis.com model gemini-flash-latest', async () => {
+  await withEnv({ GEMINI_API_KEY: 'sk-gm' }, async () => {
     const calls = [];
     const { req, res } = fakeReqRes();
     await withFetch(async (url, opts) => {
       calls.push({ url, body: JSON.parse(opts.body) });
-      return okResponse('ranking sambanova');
-    }, async () => {
-      await handler(req, res);
-    });
-    assert.strictEqual(res.statusCode, 200);
-    assert.strictEqual(res.body.analysis, 'ranking sambanova');
-    assert.strictEqual(calls.length, 1);
-    assert.strictEqual(calls[0].url, 'https://api.sambanova.ai/v1/chat/completions');
-    assert.strictEqual(calls[0].body.model, 'DeepSeek-V3.2');
-  });
-});
-
-test('fundamental_analysis: SambaNova gagal -> fallback Gemini flash', async () => {
-  await withEnv({ SAMBANOVA_API_KEY_CALL1: 'sk-s', GEMINI_API_KEY: 'sk-gm' }, async () => {
-    const calls = [];
-    const { req, res } = fakeReqRes();
-    await withFetch(async (url, opts) => {
-      calls.push({ url, body: JSON.parse(opts.body) });
-      if (url.includes('sambanova.ai')) return errResponse(500);
-      if (url.includes('generativelanguage.googleapis.com')) return okResponse('ranking gemini');
-      throw new Error('should not reach ' + url);
+      return okResponse('ranking gemini');
     }, async () => {
       await handler(req, res);
     });
     assert.strictEqual(res.statusCode, 200);
     assert.strictEqual(res.body.analysis, 'ranking gemini');
-    assert.strictEqual(calls.length, 2);
-    assert.strictEqual(calls[1].body.model, 'gemini-flash-latest');
-    assert.strictEqual(calls[1].body.reasoning_effort, 'low');
+    assert.strictEqual(calls.length, 1);
+    assert.strictEqual(calls[0].url, 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions');
+    assert.strictEqual(calls[0].body.model, 'gemini-flash-latest');
+    assert.strictEqual(calls[0].body.reasoning_effort, 'low');
   });
 });
 
-test('fundamental_analysis: semua provider gagal -> 500 "All providers failed"', async () => {
+test('fundamental_analysis: SambaNova key ada tapi TIDAK dipakai (Gemini satu-satunya provider) — tidak ada fetch ke sambanova.ai', async () => {
   await withEnv({ SAMBANOVA_API_KEY_CALL1: 'sk-s', GEMINI_API_KEY: 'sk-gm' }, async () => {
+    const calls = [];
+    const { req, res } = fakeReqRes();
+    await withFetch(async (url, opts) => {
+      calls.push({ url, body: JSON.parse(opts.body) });
+      return okResponse('ranking gemini');
+    }, async () => {
+      await handler(req, res);
+    });
+    assert.strictEqual(res.statusCode, 200);
+    assert.strictEqual(calls.length, 1);
+    assert.ok(!calls[0].url.includes('sambanova.ai'));
+  });
+});
+
+test('fundamental_analysis: Gemini gagal -> 500 "Gemini failed"', async () => {
+  await withEnv({ GEMINI_API_KEY: 'sk-gm' }, async () => {
     const { req, res } = fakeReqRes();
     await withFetch(async () => errResponse(500), async () => {
       await handler(req, res);
     });
     assert.strictEqual(res.statusCode, 500);
-    assert.match(res.body.error, /All providers failed/);
+    assert.match(res.body.error, /Gemini failed/);
   });
 });
 

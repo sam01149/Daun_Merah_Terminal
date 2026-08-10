@@ -11,10 +11,22 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-10 (Session 297 — Harga live jurnal posisi open: Deriv diutamakan, bukan Yahoo)
+> **Last updated:** 2026-08-10 (Session 298 — Rombak prompt Analisis Fundamental + pindah ke Gemini-only)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 298 (2026-08-10) — Rombak Prompt Analisis Fundamental + Pindah ke Gemini-Only
+
+**Konteks:** User komplain fitur "Analisis Fundamental" (tab Fundamental) cuma menghasilkan ranking terkuat/terlemah + daftar divergensi — kurang dalam, tidak ada sintesa gambaran makro yang koheren per currency.
+
+**Perubahan prompt (`api/admin.js`, `fundamentalAnalysisHandler`):** dirombak dari format "RANKING → TERKUAT/TERLEMAH → DIVERGENSI TERBESAR" jadi lebih kaya: **TEMA MAKRO LINTAS-CURRENCY** (pola besar lintas 8 currency), **OUTLOOK PER CURRENCY** (klasifikasi rezim pertumbuhan-inflasi — reflasi/disinflasi sehat/stagflasi/perlambatan — + arah-momentum kebijakan moneter + tenaga kerja + confidence data per currency), lalu ranking (tetap ada, tapi jadi kesimpulan bukan isi utama), TERKUAT/TERLEMAH, **SETUP FUNDAMENTAL PALING SEARAH** (dulu "Divergensi Terbesar"), dan bagian baru **PERLU DIWASPADAI** (flag currency berdata tipis/basi via tag confidence, atau yang arah fundamentalnya baru mulai berbalik). Instruksi eksplisit "jangan mengarang tanggal/angka/event kalender yang tidak ada di data" ditambahkan karena kerangka baru mendorong AI menyusun narasi, bukan cuma membaca ulang angka. `max_tokens` dinaikkan 1500→2200 (SambaNova & Gemini) mengikuti output yang lebih panjang — lalu SambaNova dihapus total di iterasi berikutnya (lihat di bawah).
+
+**Provider (permintaan eksplisit user, terpisah dari rombak prompt):** SambaNova akun-2 (`DeepSeek-V3.2`) dihapus total dari fitur ini — Gemini flash (`gemini-flash-latest`) sekarang **satu-satunya provider**, tanpa fallback. Kalau Gemini gagal, fitur langsung error `500` (bukan lagi fallback 2-tier). Precheck env var disederhanakan jadi hanya cek `GEMINI_API_KEY`.
+
+**Test:** `test/admin/admin_fundamental.test.js` dirombak — 2 test lama ("SambaNova primary sukses", "SambaNova gagal → fallback Gemini") diganti test Gemini-satu-satunya-provider + test baru yang eksplisit memverifikasi SambaNova key ada tapi tidak pernah dipanggil. `npm test` 900/900 hijau.
+
+**Dokumentasi:** `daun_merah_ai.md` §2 (tabel peta fitur) & §3.3 diupdate in-place (provider chain + deskripsi fitur), termasuk perbaikan referensi lama di §4 yang masih menyebut Fundamental berbagi kuota `sambanova_c1`. Label tombol UI "Urutkan Currency Terkuat–Terlemah" → **"Buat Analisis Fundamental"** (`index.html`, 2 lokasi: teks awal tombol + restore text setelah cooldown).
 
 ## Changelog Session 297 (2026-08-10) — Harga Live Jurnal Posisi Open: Deriv Diutamakan, Bukan Yahoo
 
@@ -6692,7 +6704,7 @@ Seed data awal fundamental (dijalankan sekali). Auth: `x-admin-secret`.
 Refresh fundamental dari dua sumber: (1) `news_history` Redis — 100 headline FJ terbaru, (2) FF calendar (this week + last week) — ambil events dengan `actual` non-null. Kedua sumber diproses paralel dan hasilnya di-merge. Auth: `x-admin-secret`.
 
 ### `POST /api/admin?action=fundamental_analysis`
-AI analysis currency terkuat/terlemah dari data fundamental. Cache Redis `fundamental_analysis` TTL 6h. Provider: Groq `llama-3.3-70b-versatile`.
+Sintesa AI makro per currency (rezim pertumbuhan-inflasi, kebijakan moneter, ranking, setup fundamental paling searah, flag data lemah) dari data fundamental — bukan cuma ranking terkuat/terlemah (dirombak 2026-08-10). Cache Redis `fundamental_analysis` TTL 6h. Provider: Gemini flash saja (`gemini-flash-latest`, tanpa fallback).
 
 ### `POST /api/admin?action=journal_import`
 Bulk import historical trades dengan timestamp asli (preserves `created_at`). Body: `{device_id, entries:[...]}`. Auth: `x-admin-secret`.

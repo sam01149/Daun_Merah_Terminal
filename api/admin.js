@@ -501,7 +501,7 @@ const KEY_REGISTRY = [
   { key: 'journal:*',          owner: 'api/journal.js',        ttl_expected: null,   note: 'Full journal entry JSON per device' },
   { key: 'journal_index:*',      owner: 'api/journal.js',        ttl_expected: null,   note: 'Sorted set: journal entry IDs by created_at timestamp' },
   { key: 'fundamental:*',        owner: 'api/admin.js',          ttl_expected: null,   note: 'HSET fundamental data per currency (no TTL — overwritten when new data)' },
-  { key: 'fundamental_analysis', owner: 'api/admin.js',          ttl_expected: 21600,  note: 'AI analysis of fundamental data (SambaNova/Gemini), cached 6h' },
+  { key: 'fundamental_analysis', owner: 'api/admin.js',          ttl_expected: 21600,  note: 'AI analysis of fundamental data (Gemini only), cached 6h' },
   { key: 'cb_decisions',         owner: 'api/market-digest.js',  ttl_expected: null,   note: 'HSET CB rate decisions detected from headlines, overrides CB_FALLBACK metadata' },
   { key: 'vps:heartbeat',        owner: 'vps/heartbeat.js',      ttl_expected: 300,    note: 'Plan Q-1: epoch beat daemon Render, dibaca api/admin.js?action=health source=vps_heartbeat' },
   { key: 'vps:heartbeat:configured', owner: 'vps/heartbeat.js',  ttl_expected: null,   note: 'Plan Q-1: marker permanen "daemon pernah jalan" — beda UNCONFIGURED (belum deploy) vs DOWN asli' },
@@ -1130,8 +1130,10 @@ async function fundamentalRefreshHandler(req, res) {
 }
 const CB_SAMBA_C1_ADMIN  = 'ai:sambanova:c1'; // sama seperti CB_SAMBA_C1 di market-digest.js — akun 2 dipakai bersama
 
-// Gemini AI Studio — fallback terakhir fundamental_analysis + journal AI Coach
-// (2026-07-19). Konstanta sama dengan market-digest.js (GEMINI_URL/GEMINI_MODEL/
+// Gemini AI Studio — satu-satunya provider fundamental_analysis (2026-08-10,
+// permintaan eksplisit user: jangan pakai DeepSeek/SambaNova di fitur ini) +
+// fallback terakhir journal AI Coach (2026-07-19). Konstanta sama dengan
+// market-digest.js (GEMINI_URL/GEMINI_MODEL/
 // CB_GEMINI di sana): endpoint OpenAI-compat resmi, alias -latest supaya tidak basi
 // saat Google ganti generasi (sekarang resolve ke gemini-3.5-flash). Lolos gate ToS
 // produksi (daun_merah_riset.md S183: free tier boleh produksi, prompt = berita
@@ -1360,10 +1362,9 @@ async function fundamentalAnalysisHandler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Cache-Control', 'no-cache');
   if (req.method === 'OPTIONS') return res.status(204).end();
-  const SAMBANOVA_KEY_CALL1 = process.env.SAMBANOVA_API_KEY_CALL1;
   const GEMINI_KEY_PRECHECK = process.env.GEMINI_API_KEY;
-  if (!SAMBANOVA_KEY_CALL1 && !GEMINI_KEY_PRECHECK) {
-    return res.status(500).json({ error: 'No AI provider configured (SAMBANOVA_API_KEY_CALL1 / GEMINI_API_KEY)' });
+  if (!GEMINI_KEY_PRECHECK) {
+    return res.status(500).json({ error: 'No AI provider configured (GEMINI_API_KEY)' });
   }
 
   // Return cached if fresh (6h)
@@ -1401,31 +1402,46 @@ async function fundamentalAnalysisHandler(req, res) {
     return `${cur}:\n${lines || '  (no data)'}`;
   }).join('\n\n');
 
-  const prompt = `Kamu adalah analis forex makro. Berikut data fundamental ekonomi terbaru per currency:
+  const prompt = `Kamu adalah analis forex makro senior. Berikut data fundamental ekonomi terbaru per currency:
 
 ${dataBlock}
 
-Berdasarkan data di atas, analisis dan rankingkan 8 currency dari TERKUAT hingga TERLEMAH dari sisi fundamental ekonomi.
+Tugasmu BUKAN sekadar mengurutkan 8 currency dari terkuat ke terlemah — itu cuma kesimpulan akhir. Yang lebih penting adalah SINTESA: gambaran koheren tiap currency (rezim pertumbuhan-inflasi, arah kebijakan moneter, tenaga kerja) dan tema besar yang menghubungkan mereka, bukan daftar angka yang dibaca ulang.
 
 ATURAN BOBOT WAKTU (penting — pasar men-trade data terbaru, bukan level lama):
 - Beri bobot TERBESAR pada data dengan tag "rilis <=14 hari lalu", terutama yang berubah vs "sebelumnya" — arah perubahan (membaik/memburuk) lebih penting daripada level absolutnya.
 - Data tanpa tag rilis atau lebih tua dari ~45 hari perlakukan sebagai latar belakang, BUKAN bukti utama ranking.
 - Currency yang beberapa rilis terbarunya konsisten membaik layak naik ranking meski levelnya biasa saja; sebaliknya level bagus yang datanya basi dan mulai memburuk harus turun.
 
-Pertimbangkan juga:
-- Pertumbuhan GDP vs ekspektasi global
-- Tingkat inflasi vs target bank sentral (umumnya 2%)
-- Kondisi pasar tenaga kerja (unemployment rate, employment change)
-- Arah kebijakan moneter (tingkat suku bunga — makin tinggi/baru dinaikkan = makin hawkish = bullish; makin rendah/baru dipangkas = dovish = bearish). PAKAI KRITERIA INI KONSISTEN untuk SEMUA 8 currency TERMASUK CHF — status "safe-haven" CHF adalah karakteristik struktural, BUKAN alasan untuk mengabaikan suku bunga rendah/inflasi ultra-rendahnya sendiri saat menentukan ranking. Kalau CHF tetap dinaikkan ranking meski suku bunganya terendah, jelaskan alasan konkret (mis. capital inflow risk-off), bukan cuma label "safe-haven" generik.
-- PMI: >50 = ekspansi, <50 = kontraksi
-- Untuk AUD: bergantung pada commodity prices (terutama minerals); untuk NZD: ekspor dairy sensitive terhadap demand Asia
-- Untuk CAD: correlate kuat dengan harga minyak (Oil mencerminkan ekonomi Canada), tidak fluktuasi independent
-- JANGAN memakai satu indikator sebagai bukti kesimpulan indikator lain yang tidak berkaitan langsung — misal PPI (harga di level produsen) TIDAK membuktikan kuat/lemahnya permintaan konsumen (itu urusan Retail Sales/Consumer Spending); PPI turun/negatif berarti tekanan deflasi di sisi produsen, BUKAN bukti demand domestik kuat.
+KERANGKA ANALISIS per currency (pakai ini untuk menyusun OUTLOOK, bukan buat mengarang indikator yang tidak ada di data):
+1. Arah & momentum kebijakan moneter: level suku bunga + status (baru dinaikkan/dipangkas/ditahan) = hawkish/netral/dovish. PAKAI KRITERIA INI KONSISTEN untuk SEMUA 8 currency TERMASUK CHF — status "safe-haven" CHF adalah karakteristik struktural, BUKAN alasan untuk mengabaikan suku bunga rendah/inflasi ultra-rendahnya sendiri. Kalau CHF tetap dinaikkan ranking meski suku bunganya terendah, jelaskan alasan konkret (mis. capital inflow risk-off), bukan cuma label "safe-haven" generik.
+2. Rezim pertumbuhan-inflasi: klasifikasikan tiap currency sebagai salah satu — "reflasi" (growth & inflasi sama-sama naik), "disinflasi sehat" (inflasi turun, growth tetap positif — goldilocks), "stagflasi" (growth lemah, inflasi masih tinggi), atau "perlambatan" (growth & inflasi sama-sama turun). Dasarkan pada GDP/PMI vs CPI/PPI yang ADA di data, jangan menebak angka yang tidak disebutkan.
+3. Tenaga kerja: unemployment rate + employment change + klaim (kalau datanya ada) — ketat/melonggar/lemah.
+4. Sensitivitas komoditas kalau relevan: AUD terhadap commodity prices (terutama minerals), NZD terhadap ekspor dairy & demand Asia, CAD terhadap harga minyak.
+5. PMI: >50 = ekspansi, <50 = kontraksi.
+6. JANGAN memakai satu indikator sebagai bukti kesimpulan indikator lain yang tidak berkaitan langsung — misal PPI (harga di level produsen) TIDAK membuktikan kuat/lemahnya permintaan konsumen (itu urusan Retail Sales/Consumer Spending); PPI turun/negatif berarti tekanan deflasi di sisi produsen, BUKAN bukti demand domestik kuat.
+7. Confidence data: kalau mayoritas indikator currency itu bertag data seed / belum terkonfirmasi update, atau usianya lebih dari ~45 hari, tandai confidence currency itu "rendah" secara eksplisit — jangan menutupi kelemahan data dengan narasi yang terdengar percaya diri.
 
-Format jawaban WAJIB (Bahasa Indonesia, singkat dan actionable):
+JANGAN mengarang tanggal rilis, angka, atau event kalender yang tidak ada di data di atas.
 
-RANKING FUNDAMENTAL:
-1. [currency] — [alasan satu kalimat]
+Format jawaban WAJIB (Bahasa Indonesia, padat tapi tersintesa — fokus pada MAKNA & keterkaitan antar indikator, bukan menyalin ulang angka mentah yang sudah ada di grid data):
+
+TEMA MAKRO LINTAS-CURRENCY:
+[2-3 kalimat: pola besar yang terlihat lintas 8 currency — misal rate divergence yang melebar/menyempit, kelompok currency yang bergerak searah karena tema sama (commodity, risk sentiment, dsb)]
+
+OUTLOOK PER CURRENCY:
+USD — [rezim growth-inflasi] + [arah/momentum kebijakan moneter] + [tenaga kerja singkat]. Confidence data: [tinggi/sedang/rendah].
+EUR — ...
+GBP — ...
+JPY — ...
+CAD — ...
+AUD — ...
+NZD — ...
+CHF — ...
+(1-2 kalimat per currency; jelaskan MAKNA gabungan datanya, bukan sekadar sebut ulang angka)
+
+RANKING KEKUATAN FUNDAMENTAL:
+1. [currency] — [alasan satu kalimat, merujuk outlook di atas]
 2. [currency] — [alasan satu kalimat]
 ... (8 currency)
 
@@ -1435,52 +1451,29 @@ TERKUAT: [currency]
 TERLEMAH: [currency]
 [2 kalimat ringkasan kenapa paling lemah]
 
-DIVERGENSI TERBESAR:
-1. [currency A] vs [currency B] — [1 kalimat kenapa divergensi ini paling besar]
+SETUP FUNDAMENTAL PALING SEARAH:
+1. [currency A] vs [currency B] — [1 kalimat kenapa fundamental dua sisi paling mendukung satu arah]
 2. [currency C] vs [currency D] — [1 kalimat]
 3. [currency E] vs [currency F] — [1 kalimat]
-(Ini untuk identify pair dengan setup fundamental paling kuat — bukan rekomendasi entry)`;
+(Ini untuk identifikasi pair dengan setup fundamental paling kuat — bukan rekomendasi entry)
+
+PERLU DIWASPADAI:
+[1-3 poin singkat: currency dengan confidence data rendah yang rankingnya jangan terlalu dipercaya, ATAU currency yang arah fundamentalnya baru mulai berbalik (momentum belum established) sehingga posisinya di ranking rawan berubah di rilis berikutnya. Kalau tidak ada yang perlu diwaspadai, tulis satu baris: "Tidak ada — data cukup segar dan konsisten."]`;
 
   const fundMessages = [{ role: 'user', content: prompt }];
   let analysis = null;
 
-  // Primary: SambaNova akun 2 (Cerebras diputus kontraknya 2026-07-25 — dulu primary
-  // di sini, lihat git history kalau perlu rollback)
-  if (SAMBANOVA_KEY_CALL1 && await cb.canCall(CB_SAMBA_C1_ADMIN)) {
-    try {
-      if (!await allowAiCall('sambanova_c1')) throw new Error('AI daily budget exceeded');
-      const r = await fetch('https://api.sambanova.ai/v1/chat/completions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SAMBANOVA_KEY_CALL1}` },
-        body: JSON.stringify({ model: 'DeepSeek-V3.2', messages: fundMessages, max_tokens: 1500, temperature: 0.3 }),
-        signal: AbortSignal.timeout(25000),
-      });
-      if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e?.error?.message || `HTTP ${r.status}`); }
-      const data = await r.json();
-      const txt = data?.choices?.[0]?.message?.content?.trim() || '';
-      if (!txt) throw new Error('Empty response');
-      if (data?.choices?.[0]?.finish_reason === 'length') console.warn('fundamental_analysis: SambaNova output truncated (finish_reason=length) — pertimbangkan naikkan max_tokens');
-      analysis = txt;
-      console.log('fundamental_analysis: SambaNova akun2 OK');
-      await cb.onSuccess(CB_SAMBA_C1_ADMIN);
-    } catch(e) {
-      console.warn('fundamental_analysis SambaNova akun2 failed:', e.message);
-      await cb.onFailure(CB_SAMBA_C1_ADMIN);
-    }
-  } else if (SAMBANOVA_KEY_CALL1) {
-    console.log('fundamental_analysis: SambaNova akun2 circuit OPEN — skipping to Gemini');
-  }
-
-  // Fallback: Gemini flash (2026-07-19) — last resort. Free tier AI Studio, lolos
-  // gate ToS produksi (lihat komentar konstanta GEMINI_URL_FUND).
+  // Gemini flash = satu-satunya provider untuk fitur ini (2026-08-10, permintaan
+  // eksplisit user — jangan pakai model DeepSeek/SambaNova di sini). Free tier AI
+  // Studio, lolos gate ToS produksi (lihat komentar konstanta GEMINI_URL_FUND).
   const GEMINI_KEY = process.env.GEMINI_API_KEY;
-  if (!analysis && GEMINI_KEY && await cb.canCall(CB_GEMINI_ADMIN)) {
+  if (GEMINI_KEY && await cb.canCall(CB_GEMINI_ADMIN)) {
     try {
       if (!await allowAiCall('gemini')) throw new Error('AI daily budget exceeded');
       const r = await fetch(GEMINI_URL_FUND, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${GEMINI_KEY}` },
-        body: JSON.stringify({ model: GEMINI_MODEL_FUND, messages: fundMessages, max_tokens: 1500, temperature: 0.3, reasoning_effort: 'low' }),
+        body: JSON.stringify({ model: GEMINI_MODEL_FUND, messages: fundMessages, max_tokens: 2200, temperature: 0.3, reasoning_effort: 'low' }),
         signal: AbortSignal.timeout(25000),
       });
       if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e?.error?.message || `HTTP ${r.status}`); }
@@ -1489,14 +1482,14 @@ DIVERGENSI TERBESAR:
       if (!txt) throw new Error('Empty response');
       analysis = txt;
       await cb.onSuccess(CB_GEMINI_ADMIN);
-      console.log('fundamental_analysis: Gemini fallback OK');
+      console.log('fundamental_analysis: Gemini OK');
     } catch(e) {
-      console.warn('fundamental_analysis Gemini fallback failed:', e.message);
+      console.warn('fundamental_analysis Gemini failed:', e.message);
       await cb.onFailure(CB_GEMINI_ADMIN);
     }
   }
 
-  if (!analysis) return res.status(500).json({ error: 'All providers failed for fundamental_analysis' });
+  if (!analysis) return res.status(500).json({ error: 'Gemini failed for fundamental_analysis' });
 
   try {
     const result = { analysis, generated_at: new Date().toISOString(), from_cache: false };
