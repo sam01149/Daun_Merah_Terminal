@@ -373,6 +373,18 @@ tr.rowdetail .row b{color:var(--fg);font-weight:500;white-space:normal;word-brea
     { symbol: 'USDCHF=X',  label: 'USD/CHF' },
     { symbol: 'NZDUSD=X',  label: 'NZD/USD' },
   ];
+  // Label tampilan untuk SEMUA symbol yang bisa muncul di s.symbol (setup_stats
+  // ?scope=auto) — lebih luas dari PAIRS di atas (yang cuma dipakai tombol Trigger
+  // Analisa manual, 8 pair historis). symbol tetap key internal Yahoo-style apa
+  // adanya (GC=F dst, lihat AUTO_ENTRY_SYMBOL_MAP di vps/daemon.js — sengaja
+  // dipertahankan utk konsistensi lintas API meski sumber data sudah Deriv), map
+  // ini murni utk apa yang ditampilkan ke mata user supaya tidak lagi kelihatan
+  // "GC=F" mentah di tabel/filter.
+  const SYMBOL_LABEL = Object.assign(
+    { 'AUDNZD=X': 'AUD/NZD', 'EURGBP=X': 'EUR/GBP', 'CHFJPY=X': 'CHF/JPY' },
+    Object.fromEntries(PAIRS.map(p => [p.symbol, p.label]))
+  );
+  function symLabel(sym){ return SYMBOL_LABEL[sym] || sym; }
 
   function getSecret(){ return localStorage.getItem(SECRET_LS) || ''; }
   function setSecret(v){ if (v) localStorage.setItem(SECRET_LS, v); else localStorage.removeItem(SECRET_LS); }
@@ -540,10 +552,10 @@ tr.rowdetail .row b{color:var(--fg);font-weight:500;white-space:normal;word-brea
     html += statBlock('Global vs Target (n=TP+SL)', `${globalDecided} / ${GATE_GLOBAL_N}`, globalOk ? 'green' : 'yellow');
     for (const k of keys) {
       const t = (symbols[k].tp || 0) + (symbols[k].sl || 0);
-      html += statBlock(k, `${t} / ${GATE_PER_PAIR_N}`, t >= GATE_PER_PAIR_N ? 'green' : 'red');
+      html += statBlock(symLabel(k), `${t} / ${GATE_PER_PAIR_N}`, t >= GATE_PER_PAIR_N ? 'green' : 'red');
     }
     if (!allPairsOk) {
-      html += `<div class="stat" style="grid-column:1/-1;"><div class="l" style="text-transform:none;font-size:9.5px;color:var(--accent);">Belum lolos: ${perPairFails.map(esc).join(', ')} — jangan simpulkan win-rate dulu walau total global sudah tinggi.</div></div>`;
+      html += `<div class="stat" style="grid-column:1/-1;"><div class="l" style="text-transform:none;font-size:9.5px;color:var(--accent);">Belum lolos: ${perPairFails.map(k => esc(symLabel(k))).join(', ')} — jangan simpulkan win-rate dulu walau total global sudah tinggi.</div></div>`;
     }
     document.getElementById('gateStats').innerHTML = html;
   }
@@ -662,7 +674,7 @@ tr.rowdetail .row b{color:var(--fg);font-weight:500;white-space:normal;word-brea
       const s = symbols[k];
       const decided = (s.tp || 0) + (s.sl || 0);
       return `<div class="symcard">
-        <h3>${esc(k)}</h3>
+        <h3>${esc(symLabel(k))}</h3>
         <div class="row"><span>Total</span><b>${s.total}</b></div>
         <div class="row"><span>Pending / Open / Canceled</span><b>${s.pending} / ${s.open} / ${s.canceled || 0}</b></div>
         <div class="row"><span>TP / SL</span><b>${s.tp} / ${s.sl}</b></div>
@@ -706,7 +718,7 @@ tr.rowdetail .row b{color:var(--fg);font-weight:500;white-space:normal;word-brea
     const all = [...known, ...extra];
     if (!all.includes(filterSymbolVal)) filterSymbolVal = '';
     const el = document.getElementById('filterSymbolBtns');
-    const mk = v => `<button type="button" class="pagebtn${filterSymbolVal === v ? ' active' : ''}" data-v="${esc(v)}">${esc(v || 'Semua')}</button>`;
+    const mk = v => `<button type="button" class="pagebtn${filterSymbolVal === v ? ' active' : ''}" data-v="${esc(v)}">${esc(v ? symLabel(v) : 'Semua')}</button>`;
     el.innerHTML = mk('') + all.map(mk).join('');
     el.querySelectorAll('[data-v]').forEach(b => b.addEventListener('click', () => {
       filterSymbolVal = b.dataset.v; recentPage = 1; populateSymbolFilter(allRecent); renderRecentFiltered(); updateFilterToggleState();
@@ -804,7 +816,7 @@ tr.rowdetail .row b{color:var(--fg);font-weight:500;white-space:normal;word-brea
   }
   function buildExecutiveSummary(s){
     if (!s) return '';
-    const base = `${s.symbol || '-'} ${s.bias || '-'}${s.entry_zone ? `, entry ${s.entry_zone}` : ''}${s.sl ? `, SL ${s.sl}` : ''}${s.tp ? `, TP ${s.tp}` : ''}.`;
+    const base = `${s.symbol ? symLabel(s.symbol) : '-'} ${s.bias || '-'}${s.entry_zone ? `, entry ${s.entry_zone}` : ''}${s.sl ? `, SL ${s.sl}` : ''}${s.tp ? `, TP ${s.tp}` : ''}.`;
     const risk = [];
     if (s.rr != null && s.rr !== '') risk.push(`RR ${s.rr}`);
     if (s.horizon_days != null && s.horizon_days !== '') risk.push(`horizon ${s.horizon_days} hari`);
@@ -926,7 +938,7 @@ tr.rowdetail .row b{color:var(--fg);font-weight:500;white-space:normal;word-brea
     tbody.innerHTML = filtered.slice(start, start + RECENT_PAGE_SIZE).map((s, i) => `<tr class="rowmain" data-detail="detail-${start + i}">
       <td class="expander">▸</td>
       <td class="small">${esc(s.id)}</td>
-      <td>${esc(s.symbol)}</td>
+      <td>${esc(symLabel(s.symbol))}</td>
       <td>${esc(s.bias)}</td>
       <td><span class="badge ${esc(s.status)}">${esc(s.status)}</span>${s.status === 'sl' ? ` <span class="badge ${s.loss_label ? 'pending' : 'stale'}" style="font-size:8.5px">${esc(s.loss_label || 'teknikal')}</span>` : ''}</td>
       <td>${esc(s.entry_zone)}</td>

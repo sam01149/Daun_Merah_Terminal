@@ -11,10 +11,20 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-10 (Session 299 — Jurnal tidak pernah deteksi posisi kena SL/TP di MT5)
+> **Last updated:** 2026-08-10 (Session 300 — Dashboard Auto-Entry Masih Tampilkan Symbol Mentah "GC=F" dkk, Bukan Label Pair)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 300 (2026-08-10) — Dashboard Auto-Entry Masih Tampilkan Symbol Mentah "GC=F" dkk, Bukan Label Pair
+
+**Konteks:** User lapor di dashboard dev `dev-auto-entry.html` (fitur auto-entry trade), pair emas masih tertampil sebagai "GC=F" — nama simbol Yahoo Finance lama, padahal sumber data harga sudah dipindah penuh ke Deriv (`frxXAUUSD`, lihat [[project-gcf-futures-spot-basis-blowout]] Session 268). Root cause: `symbol` ('GC=F', 'EURUSD=X', dst.) memang **sengaja dipertahankan** sebagai key internal lintas-API (konsisten dengan `AUTO_ENTRY_SYMBOL_MAP` di `vps/daemon.js`, dipakai `ohlcv_analyze` dkk) — tapi dashboard salah menampilkan key internal itu langsung ke user di beberapa tempat, alih-alih label yang sudah tersedia ('XAU/USD', dst.). Bukan bug data/perdagangan, murni salah tampil di 5 titik render.
+
+**Perubahan (`dev-auto-entry.html`):** tambah helper `SYMBOL_LABEL`/`symLabel(sym)` (mapping symbol→label, mencakup 8 pair di `PAIRS` yang sudah ada + 3 pair tambahan AUD/NZD, EUR/GBP, CHF/JPY yang belum ada di situ — fallback ke symbol mentah kalau ada pair baru belum termapping, tidak pernah error). Dipakai untuk mengganti tampilan symbol mentah di: kartu ringkasan per pair (`renderSymbols`), breakdown status gate per pair (`renderGate`, termasuk daftar "belum lolos"), tombol filter tabel riwayat setup, ringkasan eksekutif per setup (`buildExecutiveSummary`), dan kolom Symbol di tabel riwayat setup. Input "Setup ID" (placeholder `GC=F:...`) sengaja TIDAK diubah — itu memang harus diisi pakai symbol mentah asli karena itu format ID sungguhan yang dipakai lookup ke Redis.
+
+**Cakupan:** murni perbaikan tampilan di dashboard dev-only (`dev-auto-entry.html`), tidak menyentuh data tersimpan, key Redis, atau logika trading apa pun. `index.html` publik tidak terdampak (auto-entry tidak ditampilkan di sana, sudah isolasi sesuai [[project-plan-u-visibility-revision]]).
+
+**Test:** Tidak ada test otomatis untuk file ini (di luar cakupan `npm test`, sama seperti `index.html`). Diverifikasi: sintaks JS inline lolos `node --check`.
 
 ## Changelog Session 299 (2026-08-10) — Jurnal Tidak Pernah Deteksi Posisi Kena SL/TP di MT5
 
