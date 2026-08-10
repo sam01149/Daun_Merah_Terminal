@@ -129,7 +129,7 @@ Ini fitur AI yang **paling hemat** secara desain: hasilnya di-cache **6 jam untu
 
 **Provider (2026-08-10, permintaan eksplisit user — DeepSeek/SambaNova SENGAJA tidak dipakai di fitur ini):** Gemini flash SAJA, tanpa fallback provider lain. Kalau Gemini gagal, fitur langsung error (tidak ada jaring pengaman lain) — trade-off sadar demi kesederhanaan chain untuk fitur non-kritikal & low-volume ini.
 
-**Prompt dirombak (2026-08-10)** dari sekadar "ranking terkuat→terlemah + divergensi" jadi sintesa penuh: tema makro lintas-currency, outlook per currency (rezim pertumbuhan-inflasi + arah kebijakan moneter + tenaga kerja + confidence data), ranking, setup fundamental paling searah, dan bagian baru "Perlu Diwaspadai" (flag currency berdata tipis/basi atau momentum baru berbalik). `max_tokens` dinaikkan 1500→2200 mengikuti output yang lebih panjang.
+**Prompt dirombak (2026-08-10)** dari sekadar "ranking terkuat→terlemah + divergensi" jadi sintesa penuh: tema makro lintas-currency, outlook per currency (rezim pertumbuhan-inflasi + arah kebijakan moneter + tenaga kerja + confidence data), ranking, setup fundamental paling searah, dan bagian baru "Perlu Diwaspadai" (flag currency berdata tipis/basi atau momentum baru berbalik). `max_tokens` dinaikkan 1500→2200→**3500** (2200 terbukti masih memotong output di tengah kalimat pada test live — lihat changelog `daun_merah.md` Session 298). Output juga di-pasang backstop `_stripMarkdown()` server-side karena instruksi prompt "jangan pakai markdown" saja terbukti tidak cukup dipatuhi Gemini.
 
 ### 3.4 AI Coach Jurnal — `api/journal.js` (`action=analyze`)
 

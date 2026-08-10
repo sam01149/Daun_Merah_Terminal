@@ -1495,13 +1495,14 @@ PERLU DIWASPADAI:
       const r = await fetch(GEMINI_URL_FUND, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${GEMINI_KEY}` },
-        body: JSON.stringify({ model: GEMINI_MODEL_FUND, messages: fundMessages, max_tokens: 2200, temperature: 0.3, reasoning_effort: 'low' }),
+        body: JSON.stringify({ model: GEMINI_MODEL_FUND, messages: fundMessages, max_tokens: 3500, temperature: 0.3, reasoning_effort: 'low' }),
         signal: AbortSignal.timeout(25000),
       });
       if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e?.error?.message || `HTTP ${r.status}`); }
       const data = await r.json();
       const txt = data?.choices?.[0]?.message?.content?.trim() || '';
       if (!txt) throw new Error('Empty response');
+      if (data?.choices?.[0]?.finish_reason === 'length') console.warn('fundamental_analysis: Gemini output truncated (finish_reason=length) — pertimbangkan naikkan max_tokens lagi');
       analysis = _stripMarkdown(txt);
       await cb.onSuccess(CB_GEMINI_ADMIN);
       console.log('fundamental_analysis: Gemini OK');
