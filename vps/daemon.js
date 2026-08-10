@@ -1107,7 +1107,6 @@ async function triggerWithRetry(path) {
 
 async function runDigestCycle() {
   await triggerWithRetry('/api/market-digest');
-  await triggerWithRetry('/api/admin?action=ohlcv_analyze&symbol=GC%3DF&label=XAU%2FUSD');
 }
 
 function startScheduler() {

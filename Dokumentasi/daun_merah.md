@@ -11,10 +11,22 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-08 (Session 295 — Audit adaptivitas: data fixed/manual yang seharusnya live, sesi FX/no-trade-window konsolidasi single-source)
+> **Last updated:** 2026-08-10 (Session 296 — Analisa XAU/USD: hapus jadwal cron, hasil klik tidak pernah hilang otomatis)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 296 (2026-08-10) — Analisa XAU/USD: Hapus Jadwal Cron, Hasil Klik Tidak Pernah Hilang Otomatis
+
+**Konteks:** Sejak Session 141, tab ANALISA untuk XAU/USD (satu-satunya pair dengan perlakuan khusus) auto-generate lewat cron 3x/hari (mengikuti jadwal digest Ringkasan: 00:00/07:00/12:30 UTC), sementara 13 pair FX lain murni manual via tombol "Analisa Pair Ini". User minta disamakan: XAU/USD juga full manual — alasannya pola pemakaian nyata, sebelum entry trader pasti menekan ulang tombol Analisa untuk konfirmasi harga terkini, jadi versi cron jadi mubazir. Syarat tambahan: hasil analisa yang SUDAH ditekan tidak boleh hilang sendiri (termasuk setelah app ditutup-buka lagi) — sebelumnya cache lokal (localStorage) diam-diam membuang hasil AI yang berumur >8 jam saat halaman dimuat ulang, jadi trader yang buka app di pagi hari sering mendapati Analisa kemarin sudah lenyap padahal belum pernah menekan ulang.
+
+**Perubahan:**
+- **`vps/daemon.js`** (`runDigestCycle`) & **`.github/workflows/market-digest.yml`** — hapus trigger `ohlcv_analyze?symbol=GC=F&label=XAU/USD` yang dulu jalan paralel di setiap slot digest (GH Actions + VPS daemon). Slot digest sekarang murni memicu `/api/market-digest` (Ringkasan) saja.
+- **`index.html`** (`_analisaRestoreFromStorage`) — cache AI hasil Analisa (`analisaAiCache`, key `LS_ANALISA_AI`) tidak lagi dibuang berdasar umur (>8 jam) saat restore dari localStorage; sekali di-generate, tetap tampil sampai user menekan ulang tombolnya sendiri (klik baru menimpa `saved_at`). Cache data OHLCV mentah (`analisaDataCache`, TTL 2 jam) TIDAK diubah — itu harga live yang memang wajib refresh, beda dari hasil analisa tertulis yang jadi rujukan trader.
+- **`_autoLoadXauAnalysis`** dipertahankan tapi diklarifikasi perannya: sekarang murni fallback baca cache server (`mode=cached`, tidak memicu AI call) untuk kasus localStorage klien masih kosong (device/browser baru) — begitu pernah ada hasil lokal, cabang ini tidak jalan lagi.
+- Update komentar `api/admin.js` (`ohlcvAnalyzeHandler`) yang masih menyebut "session cron" untuk XAU/USD — dedup cron 30 menit di endpoint yang sama TETAP relevan untuk sumber cron lain yang masih ada (auto-entry Plan U/`auto=1`, lihat `Dokumentasi/professional_llm_trader/changelog.md` — pipeline itu TIDAK disentuh, tetap jalan di jadwalnya sendiri lewat `runAutoEntryCycle`, hanya kebetulan menulis ke cache Redis (`ohlcv_analysis:GC=F`) yang sama; karena tab Analisa sekarang tidak lagi auto-refresh dari server untuk pair yang sudah punya cache lokal, tulisan auto-entry itu tidak lagi bocor ke tampilan trader).
+
+**Test:** `npm test` 900/900 hijau.
 
 ## Changelog Session 295 (2026-08-08) — Audit Adaptivitas: Data Fixed/Manual di Seluruh Codebase
 

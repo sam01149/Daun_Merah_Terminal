@@ -4539,8 +4539,12 @@ async function ohlcvAnalyzeHandler(req, res) {
   if (!symbol) return res.status(400).json({ error: 'symbol required' });
 
   // Read-only path: return whatever the last successful analysis for this symbol
-  // was (session cron or an earlier manual click) without spending an AI call —
-  // used by the frontend to auto-show XAU/USD analysis when the tab opens.
+  // was (manual click, or — for XAU/USD only — an auto-entry Plan U auto=1 run)
+  // without spending an AI call. Frontend fallback: dipanggil hanya kalau
+  // localStorage klien untuk XAU/USD masih kosong (device/browser baru) — REVISI
+  // 2026-08-10, digest cron 3x/hari yang dulu memicu ANALISA XAU/USD sudah
+  // dihapus (lihat runDigestCycle di vps/daemon.js & market-digest.yml), Analisa
+  // XAU/USD sekarang murni tombol "Analisa Pair Ini" seperti pair lain.
   if (req.query.mode === 'cached') {
     try {
       const raw = await redisCmd('GET', `ohlcv_analysis:${symbol}`);
@@ -4572,17 +4576,16 @@ async function ohlcvAnalyzeHandler(req, res) {
     });
   }
 
-  // Q-6 (Plan Q, 2026-07-18): market-digest.yml (GH Actions) memicu ANALISA
-  // XAU/USD lewat action ini setiap slot digest — vps/daemon.js SEKARANG ikut
-  // memicu endpoint yang SAMA secara paralel (sengaja, untuk bandingkan
-  // ketepatan jadwal). Endpoint ini TIDAK PERNAH punya guard "jangan generate
-  // ulang kalau baru saja generate" (beda dari market-digest.js yang setidaknya
-  // punya single-flight 55 detik) — tanpa guard di bawah, 2 sumber cron akan
-  // memanggil AI 2x per slot untuk simbol yang sama, sia-sia (datanya identik).
-  // Window 30 menit: jauh lebih pendek dari jarak antar slot (~7 jam) jadi
-  // tidak pernah menahan generate slot berikutnya, cukup panjang menutupi
-  // keterlambatan salah satu sumber cron (GH Actions pernah telat berjam-jam,
-  // tapi kalaupun cuma beda beberapa menit dengan VPS, tetap ke-dedup).
+  // Q-6 (Plan Q, 2026-07-18) — REVISI 2026-08-10: market-digest.yml (GH Actions)
+  // & vps/daemon.js DULU sama-sama memicu ANALISA XAU/USD tiap slot digest
+  // (3x/hari); trigger itu sudah dihapus, Analisa XAU/USD kini murni tombol
+  // manual seperti pair lain. Dedup 30 menit di bawah ini TETAP relevan untuk
+  // cron sumber lain yang masih memanggil endpoint ini dengan header cron
+  // (mis. auto-entry Plan U, flag auto=1, lihat isAutoCall) — tanpa guard ini,
+  // slot auto-entry yang jatuh berdekatan bisa memanggil AI 2x untuk data yang
+  // identik. Endpoint ini TIDAK PERNAH punya guard "jangan generate ulang kalau
+  // baru saja generate" di luar jalur cron (beda dari market-digest.js yang
+  // setidaknya punya single-flight 55 detik).
   const isCronCall = _isCronCallReq(req);
   // PLAN U-2: flag auto=1 menandai source:'auto' di setup_log (dipakai U-3 daemon
   // scheduler auto-entry). HANYA berlaku kalau request terautentikasi sebagai cron

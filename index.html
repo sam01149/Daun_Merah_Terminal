@@ -4391,7 +4391,7 @@ window.addEventListener('DOMContentLoaded', () => _updateNewsLangBtn());
 
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.08.08.1';
+const APP_VERSION = '2026.08.10.1';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
@@ -6439,10 +6439,13 @@ function _analisaRestoreFromStorage() {
       if (d && d.loaded_at && (now - new Date(d.loaded_at).getTime()) < 2 * 3600 * 1000)
         analisaDataCache[sym] = d;
     }
-    // Restore AI cache — discard if older than 8h (intraday analysis goes stale)
+    // Restore AI cache — hasil analisa yang sudah ditekan user TIDAK PERNAH dibuang
+    // berdasarkan umur (permintaan user 2026-08-10): sekali di-generate, tetap tampil
+    // sampai user tekan ulang tombolnya sendiri (loadAnalisa/_analisaSaveAi menimpa
+    // entry lama dgn saved_at baru). Sebelumnya entry >8 jam dibuang diam-diam saat
+    // app dibuka lagi — itu yang tidak diinginkan.
     for (const [sym, a] of Object.entries(ai)) {
-      if (a && a.saved_at && (now - a.saved_at) < 8 * 3600 * 1000)
-        analisaAiCache[sym] = a;
+      if (a) analisaAiCache[sym] = a;
     }
   } catch(e) {}
 }
@@ -6500,11 +6503,14 @@ async function loadAnalisa(symbol, label, chipEl) {
     if (chipEl) chipEl.classList.remove('loading');
   }
 
-  // XAU/USD only (session 141): auto-show the session-cron-generated AI analysis
-  // instead of requiring a manual "Analisa AI" click first, mirroring how Ringkasan
-  // now auto-updates on the same 3x/day session cron. Other pairs stay manual-only.
-  // Skipped if a client-cached result already exists (still fresh, <8h — see
-  // _analisaRestoreFromStorage) so this never clobbers a more recent manual click.
+  // XAU/USD only (session 141; REVISI 2026-08-10 — tidak lagi ada cron terjadwal,
+  // lihat runDigestCycle di vps/daemon.js & market-digest.yml): Analisa XAU/USD
+  // sekarang murni via tombol "Analisa Pair Ini", sama seperti pair lain. Fungsi di
+  // bawah ini HANYA fallback baca cache server (mode=cached, TIDAK memicu AI call
+  // baru) untuk kasus localStorage klien kosong (device/browser baru) — begitu pernah
+  // ada hasil di analisaAiCache (baik dari klik manual maupun fallback ini), cabang
+  // ini tidak jalan lagi karena hasil itu kini disimpan permanen (lihat
+  // _analisaRestoreFromStorage, tidak lagi dibuang berdasar umur 8 jam).
   if (symbol === 'GC=F' && !analisaAiCache[symbol]) _autoLoadXauAnalysis(symbol);
 }
 
@@ -6518,7 +6524,7 @@ async function _autoLoadXauAnalysis(symbol) {
     analisaAiCache[symbol] = { commentary: data.commentary, structured: data.structured || null, model: data.model, hasMakro: !!data.hasMakro, hasFund: !!data.hasFund, makroAt: data.makro_generated_at || null, analyzedAt: data.loaded_at || null, saved_at: Date.now(), marketClosed: !!data.market_closed };
     _analisaSaveAi(symbol);
     if (analisaActive.symbol === symbol) _restoreAiResult(symbol);
-    // Checklist teknikal XAU/USD ikut ter-update dari hasil cron yang baru dimuat
+    // Checklist teknikal XAU/USD ikut ter-update dari hasil yang baru dimuat
     const _ckSel = document.getElementById('ckPairSelector');
     if (_ckSel && _ckSel.value === 'XAU/USD' && symbol === 'GC=F') ckAutoTickFromAnalisa('XAU/USD');
   } catch(e) { /* silent — tombol "Analisa AI" manual tetap tersedia */ }
