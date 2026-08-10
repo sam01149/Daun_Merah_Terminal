@@ -14678,19 +14678,24 @@ async function jnFetchLivePrices() {
   jnRenderEntries();
 }
 
-// Cross-checks pending limit/stop orders against MT5 directly. Without this, a
-// journal entry's fill_state never changes on its own — a pending order that
-// actually got filled (or cancelled/expired) in MT5 would show "PENDING"
-// forever until the user notices and fixes it manually. The bridge only
-// answers on localhost, so this silently no-ops when viewed from another
-// device or when the PC/bridge is offline — the badge just keeps its last
+// Cross-checks open MT5-linked journal entries against MT5 directly. Without this, a
+// journal entry never changes on its own once it's created:
+//  - a pending limit/stop order that actually got filled (or cancelled/expired) in
+//    MT5 would show "PENDING" forever until the user notices and fixes it manually.
+//  - a filled (live) position that MT5 closed on its own — SL hit, TP hit, or the
+//    user closing it from the MT5 terminal directly instead of this app — would
+//    stay "OPEN" forever, since nothing here was ever watching for that. Confirmed
+//    the hard way: a real SL got triggered by NFP volatility and the journal never
+//    recorded it, entry sat "open" indefinitely.
+// The bridge only answers on localhost, so this silently no-ops when viewed from
+// another device or when the PC/bridge is offline — entries just keep their last
 // known state rather than guessing from a delayed price quote (see jn-status
-// design note: deliberately no "possibly filled" estimate, only confirmed
-// MT5 state).
+// design note: deliberately no "possibly filled" estimate, only confirmed MT5 state).
 let jnLastReconcileTs = 0;
 async function jnReconcilePendingOrders() {
   const pending = jnAllEntries.filter(e => e.status === 'open' && e.fill_state === 'pending' && e.mt5_ticket != null);
-  if (pending.length === 0) return;
+  const live    = jnAllEntries.filter(e => e.status === 'open' && e.fill_state === 'filled'  && e.mt5_ticket != null);
+  if (pending.length === 0 && live.length === 0) return;
   const now = Date.now();
   if (now - jnLastReconcileTs < 20000) return;
   jnLastReconcileTs = now;
@@ -14730,7 +14735,45 @@ async function jnReconcilePendingOrders() {
         });
       } catch(_) {}
     }));
-    if (changed) jnRenderEntries();
+
+    // Live position no longer in MT5's open list = MT5 closed it (SL, TP, or manual
+    // close in the terminal). /history looks up the closing deal for exit price +
+    // reason; if the bridge is too old to have /history yet, or the deal can't be
+    // found (e.g. history beyond MT5's server-side retention), still mark it closed
+    // with what we know rather than leave a dead position sitting as "open" forever —
+    // exit_price/r_actual/reason just come back null/manual_close in that case.
+    await Promise.all(live.map(async (e) => {
+      if (filledTickets.has(e.mt5_ticket)) return; // still open in MT5 — no change
+
+      let closeInfo = null;
+      try {
+        const hRes = await fetch(MT5_BRIDGE + '/history?ticket=' + encodeURIComponent(e.mt5_ticket), { signal: AbortSignal.timeout(4000) });
+        if (hRes.ok) { const hData = await hRes.json(); if (hData.found) closeInfo = hData; }
+      } catch(_) {}
+
+      const exitPrice = closeInfo ? closeInfo.close_price : null;
+      e.status      = 'closed';
+      e.exit_price  = exitPrice;
+      e.exit_reason = closeInfo ? closeInfo.reason : 'manual_close';
+      e.r_actual    = jnComputeRMultiple(e, exitPrice);
+      changed = true;
+      try {
+        await fetch(`/api/journal?device_id=${encodeURIComponent(deviceId)}&id=${encodeURIComponent(e.id)}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            status: 'closed',
+            exit_price: exitPrice,
+            r_actual: e.r_actual,
+            exit_reason: e.exit_reason,
+            attribution_notes: 'Auto-reconciled dari MT5 — posisi sudah tidak ada di /positions saat dicek.',
+          }),
+          signal: AbortSignal.timeout(6000),
+        });
+      } catch(_) {}
+    }));
+
+    if (changed) { jnRenderEntries(); jnRenderVaR(); }
   } catch(e) { /* bridge unreachable — leave last known state, no guess */ }
 }
 
@@ -15362,14 +15405,19 @@ function jnRenderCurve() {
   `;
 }
 
+function jnComputeRMultiple(e, exitPrice) {
+  if (!e || e.entry_price == null || e.stop_price == null || exitPrice == null || isNaN(exitPrice)) return null;
+  const dirSign = e.direction === 'long' ? 1 : -1;
+  const r = dirSign * (exitPrice - e.entry_price) / Math.abs(e.entry_price - e.stop_price);
+  return Math.round(r * 100) / 100;
+}
+
 function jnAutoComputeR() {
   const e = window._jnClosingEntry;
   if (!e || !e.entry_price || !e.stop_price) return;
   const exitVal = parseFloat(document.getElementById('jnExitPrice').value);
-  if (isNaN(exitVal)) return;
-  const dirSign = e.direction === 'long' ? 1 : -1;
-  const r = dirSign * (exitVal - e.entry_price) / Math.abs(e.entry_price - e.stop_price);
-  document.getElementById('jnRAct').value = Math.round(r * 100) / 100;
+  const r = jnComputeRMultiple(e, exitVal);
+  if (r != null) document.getElementById('jnRAct').value = r;
 }
 
 function jnStartClose(id) {

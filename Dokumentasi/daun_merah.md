@@ -11,10 +11,23 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-10 (Session 298 — Rombak prompt Analisis Fundamental + pindah ke Gemini-only)
+> **Last updated:** 2026-08-10 (Session 299 — Jurnal tidak pernah deteksi posisi kena SL/TP di MT5)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 299 (2026-08-10) — Jurnal Tidak Pernah Deteksi Posisi Kena SL/TP di MT5
+
+**Konteks:** User lapor: ambil posisi via tombol "Entry MT5" (Pre-Entry Checklist → Sizing Calculator → auto-journal), harusnya kena SL Jumat (NFP lemah, volatilitas), tapi Jurnal tidak mencatat apa-apa — status tetap "open" selamanya. Root cause: `jnReconcilePendingOrders` (`index.html`) — satu-satunya jalur yang cross-check Jurnal ke MT5 lewat `bridge/mt5_bridge.py` lokal — HANYA menangani transisi `fill_state` `pending → filled/cancelled` (order resting yang belum tereksekusi). Begitu sebuah entry sudah `filled` (posisi live), tidak ada kode apa pun yang mengecek lagi apakah posisi itu MASIH ada di `/positions` MT5 — kalau MT5 menutupnya sendiri (SL, TP, atau user close manual dari terminal), Jurnal tidak pernah tahu. Ini gap desain murni (fitur reconcile-nya memang cuma dibangun untuk kasus pending order), bukan regresi dari perubahan lain.
+
+**Perubahan:**
+- **`bridge/mt5_bridge.py`** (lokal, sengaja gitignored — lihat `.gitignore`, bukan bagian deploy Vercel) — endpoint baru `GET /history?ticket=<id>` pakai `mt5.history_deals_get(position=ticket)`, ambil deal `DEAL_ENTRY_OUT` terakhir (kalau partial-close ada >1), map `DEAL_REASON_SL/SO`→`sl_hit`, `DEAL_REASON_TP`→`tp_hit`, sisanya (`CLIENT`/`MOBILE`/`WEB`/`EXPERT`)→`manual_close`. `BRIDGE_VERSION` 2→3. **User perlu restart proses bridge lokal (`start_bridge.bat`/`start_bridge_min.vbs` atau `python bridge/mt5_bridge.py` manual) supaya endpoint baru ini aktif** — kode lama yang masih jalan di background tidak hot-reload.
+- **`index.html`** (`jnReconcilePendingOrders`) — sekarang juga menyisir entry `status:'open', fill_state:'filled'` yang punya `mt5_ticket`: kalau ticket-nya sudah hilang dari `/positions`, artinya MT5 sudah menutup posisi itu sendiri. Dicek ke `/history` untuk harga exit + alasan, lalu Jurnal di-PATCH otomatis jadi `status:'closed'` dengan `exit_price`/`exit_reason`/`r_actual` terisi (attribution_notes ditandai "Auto-reconciled dari MT5"). Kalau bridge lama (belum ada `/history`) atau deal tidak ketemu, tetap ditutup dengan `exit_reason:'manual_close'` dan `exit_price:null` — prioritas: status yang benar (closed) lebih penting daripada detail exit yang sempurna, daripada posisi mati nyangkut "open" selamanya.
+- Fungsi hitung R-multiple diekstrak jadi `jnComputeRMultiple(entry, exitPrice)` (pure), dipakai bareng oleh form tutup-manual (`jnAutoComputeR`) dan reconcile otomatis di atas — sebelumnya duplikat rumus yang sama di 1 tempat, sekarang 1 sumber.
+
+**Cakupan/limitasi:** Reconcile jalan tiap kali tab Jurnal dibuka/di-refresh (bukan polling background terus-menerus — pola sama dengan reconcile pending order yang sudah ada), throttle 20 detik. Hanya berlaku untuk entry yang match_ticket dari MT5 (dibuat lewat tombol "Entry MT5", bukan entry yang diketik manual tanpa ticket). Begitu bridge di-restart, posisi yang SUDAH kena SL Jumat kemarin seharusnya otomatis ketutup benar di kunjungan Jurnal berikutnya (MT5 masih simpan histori deal-nya) — tidak perlu ditutup manual, TAPI ini belum bisa diverifikasi live dari sisi saya (butuh MT5 terminal + bridge jalan di PC user).
+
+**Test:** Tidak ada test otomatis untuk logika ini (kode UI/bridge lokal, di luar cakupan `npm test` yang hanya menyasar `api/`+`vps/`). Diverifikasi: sintaks JS inline `index.html` (parse via `new Function`) OK, `bridge/mt5_bridge.py` lolos `python -m py_compile`, `npm test` tetap 900/900 hijau (tidak tersentuh).
 
 ## Changelog Session 298 (2026-08-10) — Rombak Prompt Analisis Fundamental + Pindah ke Gemini-Only
 
