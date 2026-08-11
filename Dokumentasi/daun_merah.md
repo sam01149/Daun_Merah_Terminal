@@ -11,10 +11,37 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-10 (Session 302 — Currency Strength Ranking Salah Dipakai sebagai Bukti Makro Alignment + COT Selalu Diberi Catatan Basi)
+> **Last updated:** 2026-08-11 (Session 304 — Notifikasi Telegram Posisi Manual Open + Kalender Ekonomi Impact High)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 304 (2026-08-11) — Notifikasi Telegram Posisi Manual Open + Kalender Ekonomi Impact High
+
+**Konteks (rapat user):** User sering tidak sempat tutup posisi karena telat tahu berita yang relevan ke pair yang sedang dia buka SENDIRI di broker (trading manual/diskresi, bukan eksperimen auto-entry `setup_log_auto:v1`) — dia harus terus menatap layar untuk menghindari kejutan berita. Minta: notifikasi Telegram instan begitu ada headline yang menyentuh currency kaki pair yang sedang open, plus kalender ekonomi impact High (TradingView) dan berita market-moving umum — tanpa link FinancialJuice (biar tidak kepanjangan) dan tanpa notifikasi econ-data impact rendah/medium (noise).
+
+Ditemukan saat investigasi: sebagian besar infra yang dibutuhkan SUDAH ADA, tapi tersambung ke tujuan lain — pencocokan currency-kaki-pair-ke-headline (`detectCurrencyLegs`) dan poll berita 30 detik (`pollNews`, `vps/daemon.js`) sebelumnya hanya melayani review posisi VIRTUAL eksperimen auto-entry (U-5b/`positionReviewHandler`), bukan posisi manual pengguna. Alert Telegram market-moving (`sendNewsAlert`, "Q-4") sudah ada tapi masih menyertakan link FinancialJuice.
+
+**Keputusan rapat (beda desain sengaja dari U-5b):**
+- Sumber "posisi mana yang open" = jurnal manual (`setup_log:v1` via `journal.js`), bukan integrasi broker — user sadar konsekuensinya: akurasi notifikasi bergantung penuh pada kedisiplinan update status open/closed di app.
+- TIDAK ada gate kategori (geopolitical/energy/macro saja) dan TIDAK ada syarat korroborasi (>=2 sumber independen) — user eksplisit menolak syarat itu ("aku sendiri yang cek dan tentukan itu masalah atau enggak"), beda dari U-5b/Lapis 1b yang mensyaratkan korroborasi.
+- Satu-satunya anti-spam yang disetujui: dedup wire re-hash (statement yang sama diberitakan ulang dengan kata berbeda dalam window pendek) via overlap token signifikan — BUKAN korroborasi, tujuannya "jangan kirim ulang cerita yang sama", bukan "cukup sumber untuk dipercaya".
+- >1 posisi open yang share currency yang sama dan match headline yang sama → digabung jadi SATU notifikasi (bukan dikirim terpisah per pair), supaya tidak numpuk.
+
+**Perubahan (`vps/daemon.js`):**
+- `sendNewsAlert` (alert market-moving existing) — link FinancialJuice dihapus dari teks Telegram (web push tetap pakai url in-app, tidak terdampak).
+- Fungsi baru, di-hook ke `pollNews()` (jalan tiap 30 detik, semua kategori, tidak digate seperti U-5b):
+  - `fetchOpenJournalPairs`/`getOpenJournalPairsCached` (cache 60 detik) — baca semua pair status `open` dari jurnal manual lintas semua device (`journal_devices`, pola sama `runCronThesisSweep` di `api/market-digest.js`).
+  - `matchOpenPairsToHeadline` (pure) — cocokkan currency kaki headline (reuse `detectCurrencyLegs`) ke pair open, gabung kalau >1 pair match.
+  - `isDuplicateHeadline` (pure) — anti wire re-hash: overlap token signifikan (reuse `posReviewSignificantTokens`) >=3 dalam window 20 menit (`POSNOTIFY_DEDUP_WINDOW_MS`/`POSNOTIFY_OVERLAP_THRESHOLD`) terhadap notifikasi yang baru dikirim (in-memory, bukan Redis — restart = reset, dampak minor). Threshold lebih ketat dari `isCorroborated` (>=2) karena tujuannya beda.
+  - `checkOpenPositionNewsMatch` — orkestrasi di atas + dedup guid (`posnotify_sent:<guid>`) + kirim Telegram format `*PAIR1, PAIR2*: "headline"` (tanpa link).
+  - `detectEconCountryCurrency` (pure) — deteksi currency dari prefix nama negara di AWAL judul rilis kalender FinancialJuice ("US Nonfarm Payrolls Actual..." dst.), sengaja prefix-only (bukan cari di mana pun) supaya tidak salah tangkap kata seperti "us" sebagai pronoun.
+  - `checkEconDataHighImpact` — silangkan headline rilis kalender (`cat==='econ-data'`) dengan `calendar_v1`/`calendar_next_v1` (reuse `findRecentHardNewsEvent`, jendela 90 menit) — HANYA kirim Telegram (`*[HIGH] CCY*: "headline"`) kalau ada event impact High terjadwal untuk currency itu. Sengaja silang ke headline real-time (bukan menunggu field `actual` calendar_v1 sendiri terisi) — sub-riset `pollCalendarLatency` (U-3, masih berjalan) belum membuktikan itu cukup cepat.
+  - `getMergedCalendarEventsCached` (cache 5 menit) — hindari 2 GET Redis tiap tick 30 detik padahal econ-data cuma muncul sesekali.
+
+**Test:** `test/vps/position_notify.test.js` (19 test baru, pure functions saja — bagian async/Redis/Telegram disimulasikan manual, pola sama `position_review.test.js`, TIDAK dipakai `node:test`). `npm test` 946/946 hijau.
+
+**Cakupan/limitasi:** Belum diverifikasi live (butuh posisi open riil di jurnal manual + headline nyata untuk konfirmasi Telegram benar-benar terkirim dengan format yang tepat) — akan dipantau sesi berikutnya begitu ada trade manual open. Dedup anti-rehash in-memory (bukan Redis) berarti restart daemon mereset window 20 menit — risiko diterima (minor, konsisten pola toleransi restart yang sudah ada di `pollNews`).
 
 ## Changelog Session 302 (2026-08-10) — Currency Strength Ranking Salah Dipakai sebagai Bukti Makro Alignment + COT Selalu Diberi Catatan Basi
 

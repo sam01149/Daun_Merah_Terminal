@@ -426,7 +426,9 @@ function isHighImpactCategory(cat) {
 }
 
 async function sendNewsAlert(item, cat) {
-  const text = `*Berita High-Impact* (${cat})\n${item.title}${item.link ? '\n' + item.link : ''}`;
+  // Rapat user 2026-08-11: Telegram tanpa link FinancialJuice (biar tidak
+  // kepanjangan) — web push tetap pakai url in-app '/#ringkasan', bukan link FJ.
+  const text = `*Berita High-Impact* (${cat})\n${item.title}`;
   await Promise.allSettled([
     sendTelegram(text),
     sendWebPushToSubscribers({ title: 'Berita High-Impact', body: item.title, url: '/#ringkasan', icon: '/icon.svg' }),
@@ -469,6 +471,21 @@ async function pollNews() {
         catch (e) { console.warn('daemon: U-5b handlePosReviewCandidate gagal:', e.message); }
       }
 
+      // Rapat user 2026-08-11: notifikasi Telegram posisi manual open — lihat
+      // blok komentar besar di bawah pollNews(). Semua kategori (tidak digate
+      // seperti U-5b di atas), tanpa syarat korroborasi (keputusan user).
+      try { await checkOpenPositionNewsMatch(item); }
+      catch (e) { console.warn('daemon: checkOpenPositionNewsMatch gagal:', e.message); }
+
+      // Rapat user 2026-08-11: notifikasi kalender ekonomi impact High — hanya
+      // headline rilis kalender (cat 'econ-data') yang dicek terhadap calendar_v1.
+      if (cat === 'econ-data') {
+        try {
+          const calEvents = await getMergedCalendarEventsCached();
+          await checkEconDataHighImpact(item, calEvents);
+        } catch (e) { console.warn('daemon: checkEconDataHighImpact gagal:', e.message); }
+      }
+
       if (!isHighImpactCategory(cat)) continue;
       if (!guid) continue;
       const dedupOk = await redisCmd('SET', `news_alert_sent:${guid}`, '1', 'EX', '172800', 'NX');
@@ -487,6 +504,165 @@ async function pollNews() {
     // bukan cuma saat item baru datang (korroborasi bisa muncul di poll berikutnya).
     await processPosReviewRecheckQueue().catch(e => console.warn('daemon: U-5b processPosReviewRecheckQueue gagal:', e.message));
   } catch (e) { console.warn('daemon: pollNews gagal:', e.message); }
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// Notifikasi Telegram posisi manual open (rapat user, 2026-08-11): user sering
+// kena masalah tidak sempat tutup posisi karena telat tahu berita yang relevan
+// ke pair yang sedang dia buka SENDIRI di broker (bukan eksperimen auto-entry
+// setup_log_auto:v1 — itu domain U-5b/positionReviewHandler di atas). Satu-
+// satunya sumber "posisi mana yang open" yang app ini punya adalah jurnal
+// manual (setup_log:v1 via journal.js) — keputusan rapat: pakai itu apa
+// adanya, user sendiri yang bertanggung jawab menjaga status open/closed
+// akurat, TIDAK ada integrasi broker.
+//
+// SENGAJA beda desain dari U-5b/Lapis 1b: TIDAK ada gate kategori
+// (geopolitical/energy/macro saja) dan TIDAK ada syarat korroborasi (>=2
+// sumber) — user eksplisit menolak syarat itu di rapat ("aku sendiri yang
+// cek dan tentukan itu masalah atau enggak"). Satu-satunya anti-spam yang
+// DIA setujui: dedup wire re-hash (statement yang sama diberitakan ulang
+// dengan kata berbeda dalam window pendek) via overlap token signifikan,
+// pola sama posReviewSignificantTokens/isCorroborated tapi tujuannya beda
+// (itu "cukup sumber untuk dipercaya", ini "jangan kirim ulang cerita sama").
+// ══════════════════════════════════════════════════════════════════════════
+
+function pairToLegs(pairLabel) {
+  return String(pairLabel || '').toUpperCase().split('/').map(s => s.trim()).filter(Boolean);
+}
+
+// Pure: pair open mana saja yang currency-nya disebut headline ini — dipakai
+// gabung jadi SATU notifikasi kalau >1 posisi share currency yang sama
+// (keputusan rapat: gabung, bukan kirim terpisah per pair, biar tidak numpuk).
+function matchOpenPairsToHeadline(openPairs, headlineLegs) {
+  if (!Array.isArray(openPairs) || !Array.isArray(headlineLegs) || headlineLegs.length === 0) return [];
+  return openPairs.filter(pair => pairToLegs(pair).some(leg => headlineLegs.includes(leg)));
+}
+
+const POSNOTIFY_DEDUP_WINDOW_MS = 20 * 60 * 1000; // 20 menit — jendela anti-rehash disepakati rapat
+const POSNOTIFY_OVERLAP_THRESHOLD = 3; // lebih ketat dari isCorroborated (>=2) — hindari salah anggap 2 cerita beda jadi "sama"
+
+// Pure: `recentSent` = [{ tokens:Set, sentAt:ms }]. True kalau newTokens
+// overlap signifikan dengan salah satu entry yang masih dalam window waktu.
+function isDuplicateHeadline(newTokens, recentSent, nowMs, windowMs = POSNOTIFY_DEDUP_WINDOW_MS, threshold = POSNOTIFY_OVERLAP_THRESHOLD) {
+  if (!Array.isArray(recentSent)) return false;
+  return recentSent.some(e => {
+    if (!e || nowMs - e.sentAt > windowMs) return false;
+    let overlap = 0;
+    for (const t of newTokens) if (e.tokens.has(t)) overlap++;
+    return overlap >= threshold;
+  });
+}
+
+let posNotifyRecentSent = []; // in-memory, sengaja tidak di-persist Redis (restart = anti-rehash reset, dampak minor)
+
+// Baca semua pair berstatus 'open' dari jurnal manual, lintas semua device
+// yang pernah menulis journal (`journal_devices`, pola sama runCronThesisSweep
+// di api/market-digest.js). Cap devices/entries — single-user, cukup generos.
+async function fetchOpenJournalPairs() {
+  try {
+    const deviceIds = (await redisCmd('SMEMBERS', 'journal_devices') || []).slice(0, 10);
+    const pairs = new Set();
+    for (const devId of deviceIds) {
+      const ids = (await redisCmd('ZRANGE', `journal_index:${devId}`, '0', '14', 'REV')) || [];
+      for (const id of ids) {
+        try {
+          const raw = await redisCmd('GET', `journal:${devId}:${id}`);
+          if (!raw) continue;
+          const entry = JSON.parse(raw);
+          if (entry.status === 'open' && entry.pair) pairs.add(String(entry.pair).toUpperCase().trim());
+        } catch (e) { /* satu entry korup tidak boleh menggagalkan yang lain */ }
+      }
+    }
+    return Array.from(pairs);
+  } catch (e) { console.warn('daemon: fetchOpenJournalPairs gagal:', e.message); return []; }
+}
+
+// Cache 60 detik — posisi open jarang berubah (user buka/tutup manual,
+// bukan tiap 30 detik), tidak perlu baca jurnal tiap tick pollNews.
+let openPairsCache = null, openPairsCacheAt = 0;
+const OPEN_PAIRS_CACHE_MS = 60 * 1000;
+async function getOpenJournalPairsCached() {
+  const now = Date.now();
+  if (openPairsCache && now - openPairsCacheAt < OPEN_PAIRS_CACHE_MS) return openPairsCache;
+  openPairsCache = await fetchOpenJournalPairs();
+  openPairsCacheAt = now;
+  return openPairsCache;
+}
+
+async function checkOpenPositionNewsMatch(item) {
+  const headlineLegs = detectCurrencyLegs(item.title);
+  if (headlineLegs.length === 0) return;
+  const openPairs = await getOpenJournalPairsCached();
+  const matched = matchOpenPairsToHeadline(openPairs, headlineLegs);
+  if (matched.length === 0) return;
+
+  const guid = item.guid || item.link;
+  if (guid) {
+    const dedupOk = await redisCmd('SET', `posnotify_sent:${guid}`, '1', 'EX', '21600', 'NX');
+    if (dedupOk !== 'OK') return; // guid ini sudah pernah dinotif (mis. replay backlog restart)
+  }
+
+  const nowMs = Date.now();
+  posNotifyRecentSent = posNotifyRecentSent.filter(e => nowMs - e.sentAt <= POSNOTIFY_DEDUP_WINDOW_MS);
+  const tokens = new Set(posReviewSignificantTokens(item.title));
+  if (isDuplicateHeadline(tokens, posNotifyRecentSent, nowMs)) return; // wire re-hash, sudah dikirim beberapa menit lalu
+  posNotifyRecentSent.push({ tokens, sentAt: nowMs });
+
+  await sendTelegram(`*${matched.join(', ')}*: "${item.title}"`);
+}
+
+// Deteksi currency dari headline rilis kalender FinancialJuice ("<Negara>
+// <Indikator> Actual X (Forecast Y, Previous Z)") — prefix nama negara di
+// AWAL judul (bukan cari di mana pun dalam teks, supaya tidak salah tangkap
+// mis. kata "us" sebagai pronoun di headline lain — headline econ-data selalu
+// mulai dengan nama negara/wilayah per template FinancialJuice).
+const ECON_COUNTRY_PREFIX_CURRENCY = [
+  { re: /^u\.?s\.?\b/i, ccy: 'USD' }, { re: /^united states\b/i, ccy: 'USD' },
+  { re: /^u\.?k\.?\b/i, ccy: 'GBP' }, { re: /^united kingdom\b/i, ccy: 'GBP' }, { re: /^britain\b/i, ccy: 'GBP' },
+  { re: /^eurozone\b/i, ccy: 'EUR' }, { re: /^euro area\b/i, ccy: 'EUR' }, { re: /^germany\b/i, ccy: 'EUR' },
+  { re: /^france\b/i, ccy: 'EUR' }, { re: /^italy\b/i, ccy: 'EUR' }, { re: /^spain\b/i, ccy: 'EUR' },
+  { re: /^japan\b/i, ccy: 'JPY' }, { re: /^australia\b/i, ccy: 'AUD' }, { re: /^canada\b/i, ccy: 'CAD' },
+  { re: /^switzerland\b/i, ccy: 'CHF' }, { re: /^new zealand\b/i, ccy: 'NZD' },
+];
+
+function detectEconCountryCurrency(title) {
+  const t = String(title || '').trim();
+  const hit = ECON_COUNTRY_PREFIX_CURRENCY.find(e => e.re.test(t));
+  return hit ? hit.ccy : null;
+}
+
+// Jendela pencocokan longgar (90 menit) ke calendar_v1 — bukan menunggu field
+// `actual` calendar_v1 sendiri terisi (sub-riset pollCalendarLatency di bawah
+// belum membuktikan itu cukup cepat untuk notifikasi real-time), cukup
+// pastikan ADA event impact High terjadwal untuk currency ini di sekitar
+// waktu headline rilis muncul — kecepatan datang dari poll berita 30 detik.
+const ECON_RELEASE_WINDOW_MS = 90 * 60 * 1000;
+
+async function checkEconDataHighImpact(item, calEvents) {
+  const ccy = detectEconCountryCurrency(item.title);
+  if (!ccy) return;
+  const hit = findRecentHardNewsEvent(calEvents, [ccy], Date.now(), ECON_RELEASE_WINDOW_MS);
+  if (!hit) return; // tidak match event impact High terjadwal manapun -> bukan noise yang diinginkan user
+
+  const guid = item.guid || item.link;
+  if (guid) {
+    const dedupOk = await redisCmd('SET', `posnotify_econ_sent:${guid}`, '1', 'EX', '21600', 'NX');
+    if (dedupOk !== 'OK') return;
+  }
+  await sendTelegram(`*[HIGH] ${ccy}*: "${item.title}"`);
+}
+
+// calendar_v1/calendar_next_v1 jarang berubah dalam skala menit (beda dari
+// berita) — cache 5 menit cukup aman, hindari 2 GET Redis tiap tick 30 detik
+// padahal econ-data cuma muncul sesekali.
+let calEventsCache = null, calEventsCacheAt = 0;
+const CAL_EVENTS_CACHE_MS = 5 * 60 * 1000;
+async function getMergedCalendarEventsCached() {
+  const now = Date.now();
+  if (calEventsCache && now - calEventsCacheAt < CAL_EVENTS_CACHE_MS) return calEventsCache;
+  calEventsCache = await fetchMergedCalendarEvents();
+  calEventsCacheAt = now;
+  return calEventsCache;
 }
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -1826,4 +2002,9 @@ module.exports = {
   // U-5b (async, di-export untuk simulasi lokal manual — bukan dipakai node:test):
   handlePosReviewCandidate, tryTriggerPosReview, triggerPositionReview, processPosReviewRecheckQueue,
   persistNewsBufferItem, loadNewsBufferFromRedis,
+  // Notifikasi Telegram posisi manual open (rapat user 2026-08-11, pure/testable):
+  pairToLegs, matchOpenPairsToHeadline, isDuplicateHeadline, detectEconCountryCurrency,
+  POSNOTIFY_DEDUP_WINDOW_MS, POSNOTIFY_OVERLAP_THRESHOLD, ECON_RELEASE_WINDOW_MS,
+  // Notifikasi Telegram posisi manual open (async, di-export untuk simulasi lokal manual):
+  fetchOpenJournalPairs, checkOpenPositionNewsMatch, checkEconDataHighImpact,
 };
