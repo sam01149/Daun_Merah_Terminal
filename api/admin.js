@@ -719,8 +719,6 @@ async function pushHandler(req, res) {
 
   const CRON_SECRET   = process.env.CRON_SECRET;
   const REDIS_URL     = process.env.UPSTASH_REDIS_REST_URL;
-  const TG_TOKEN      = process.env.TELEGRAM_BOT_TOKEN;
-  const TG_CHAT_ID    = process.env.TELEGRAM_CHAT_ID;
 
   if (!CRON_SECRET || req.headers['x-cron-secret'] !== CRON_SECRET) {
     return res.status(401).json({ error: 'Unauthorized' });
@@ -783,7 +781,11 @@ async function pushHandler(req, res) {
 
   if (newItems.length === 0) return res.status(200).json({ status: isFirst ? 'Initialized' : 'No new items' });
 
-  await sendPushTelegram(newItems, TG_TOKEN, TG_CHAT_ID);
+  // Telegram batch "N berita baru" DIHAPUS 2026-08-11 (Session 305 lanjutan) —
+  // duplikat dengan alert Telegram Q-4/S304 (vps/daemon.js, sumber berita sama
+  // FinancialJuice), sekarang jalur satu-satunya untuk Telegram. Push
+  // notification ke device/browser subscriber (di bawah) TIDAK terdampak,
+  // fitur beda (push_subs, bukan Telegram).
 
   // A2.3 Fase 1: kurangi kebisingan device push — hanya kategori bernilai tinggi.
   // 'market-moving' selalu lolos (override semua filter). Diperketat sesuai feedback user
@@ -950,19 +952,6 @@ async function _notifyDivergenceHold(setup) {
     const staleKeys = await sendWebPush(subs, payload);
     if (staleKeys.length) await redisCmd('HDEL', 'push_subs_dev', ...staleKeys).catch(() => {});
   } catch (e) { console.warn('_notifyDivergenceHold: sendWebPush gagal:', e.message); }
-}
-
-async function sendPushTelegram(newItems, TG_TOKEN, TG_CHAT_ID) {
-  if (!TG_TOKEN || !TG_CHAT_ID) return;
-  const EMOJI = { 'market-moving': '🔴', 'forex': '💱', 'energy': '⚡', 'macro': '🏦', 'geopolitical': '🌐', 'econ-data': '📋', 'news': '📰' };
-  const lines = newItems.slice(0, 10).map(i => `${EMOJI[detectPushCat(i.title)] || '📰'} ${i.link ? `[${i.title}](${i.link})` : i.title}`);
-  try {
-    await fetch(`https://api.telegram.org/bot${TG_TOKEN}/sendMessage`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chat_id: TG_CHAT_ID, text: `*Daun Merah — ${newItems.length} berita baru*\n\n${lines.join('\n')}`, parse_mode: 'Markdown', disable_web_page_preview: true }),
-      signal: AbortSignal.timeout(10000),
-    });
-  } catch(e) { console.warn('Telegram:', e.message); }
 }
 
 function parsePushRSS(xml) {

@@ -26,7 +26,11 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 
 **Test:** tidak ada test baru — perubahan murni orkestrasi dedup key lintas fungsi, ditutupi test pure-function yang sudah ada (`isHighImpactCategory`, `test/vps/position_notify.test.js`). `npm test` 946/946 hijau (tidak ada regresi).
 
-**Cakupan/limitasi:** Fix ini hanya menutup overlap Jalur B (Q-4) x Jalur C (S304) yang dipastikan aktif di proses daemon yang sama. Jalur A (`pushHandler`/`api/admin.js`) TIDAK disentuh — statusnya (masih dipicu cron-job.org atau tidak) tidak diketahui dari kode, keputusan apakah perlu ditutup/dihapus menunggu konfirmasi user. Belum diverifikasi live (butuh headline market-moving nyata yang match pair open di jurnal untuk konfirmasi cuma 1 pesan Telegram yang terkirim).
+**Lanjutan sesi sama — Jalur A dihapus atas keputusan user:** User minta jalur `pushHandler`/`api/admin.js` (dipicu cron eksternal cron-job.org) dihapus. Ditemukan handler ini TERNYATA dua fungsi sekaligus dalam satu endpoint: (1) kirim Telegram batch "N berita baru", DAN (2) kirim push notification ke browser/device untuk subscriber publik fitur berita (`push_subs`, via `sendWebPush`) — dua fitur berbeda yang numpang satu handler. Dikonfirmasi ke user sebelum eksekusi (AskUserQuestion) — hanya bagian (1) yang dihapus, bagian (2) (push device publik) dipertahankan karena itu fitur aktif tak terkait bug ini.
+- `pushHandler` (`api/admin.js`): pemanggilan `sendPushTelegram(...)` dihapus. Fungsi `sendPushTelegram` sendiri (dead code setelah itu) dihapus total, begitu juga var `TG_TOKEN`/`TG_CHAT_ID` yang jadi tak terpakai di scope itu. Alur RSS fetch → dedup `seen_guids_set` → filter kategori (`PUSH_CATS`) → kirim ke `push_subs` via `sendWebPush` TIDAK berubah.
+- Setelah ini, Telegram cuma dikirim dari SATU tempat: `vps/daemon.js` (`sendNewsAlert`/Q-4, `checkOpenPositionNewsMatch`/S304, `checkEconDataHighImpact`), semua sudah saling dedup lewat fix di atas.
+
+**Cakupan/limitasi:** `npm test` 946/946 hijau setelah penghapusan (tidak ada test yang menguji `sendPushTelegram` langsung). Belum diverifikasi live (butuh headline market-moving nyata yang match pair open di jurnal untuk konfirmasi cuma 1 pesan Telegram yang terkirim, dan konfirmasi push device publik tetap jalan normal).
 
 ## Changelog Session 304 (2026-08-11) — Notifikasi Telegram Posisi Manual Open + Kalender Ekonomi Impact High
 
