@@ -49,6 +49,15 @@ test('qualifier Flash di akhir judul redirect ke key CPI Flash YoY', () => {
   assert.strictEqual(r.key, 'CPI Flash YoY');
 });
 
+// Bug 2026-08-11 (laporan user): headline FJ "US ADP Wkly Employment Change" —
+// qualifier "Wkly" nempel di TENGAH judul (ADP [Wkly] Employment Change), beda
+// posisi dari versi calendar_v1 (lihat test extractFundamentalFromCalendarEvent
+// di bawah) — kedua bentuk harus tetap ke-redirect, bukan cuma satu.
+test('ADP Wkly Employment Change (headline FJ, qualifier di tengah) redirect ke key ADP Employment Weekly, tidak menimpa rilis bulanan resmi', () => {
+  const r = parseFundamentalFromHeadline('US ADP Wkly Employment Change Actual 8.25K Previous 15K');
+  assert.strictEqual(r.key, 'ADP Employment Weekly');
+});
+
 // Regresi bug 2026-08-10 (laporan user — AUD "Retail Sales" + "CPI QoQ" tak pernah
 // terverifikasi): headline literal "CPI QoQ" (bukan "CPI Q/Q"/"CPI QQ") gagal match
 // keyword FUND_INDICATOR_MAP, jatuh ke fallback tebak-key title-case naif yang
@@ -259,6 +268,24 @@ test('extractFundamentalFromCalendarEvent: actual belum keluar (null) -> null (r
 test('extractFundamentalFromCalendarEvent: date tidak valid -> null', () => {
   const r = extractFundamentalFromCalendarEvent(calEvent({ date: 'Tentative' }));
   assert.strictEqual(r, null);
+});
+
+// Bug 2026-08-11 (laporan user): calendar_v1 menulis "ADP Employment Change
+// Weekly" — qualifier di AKHIR judul (beda posisi dari headline FJ di atas) —
+// tetap harus ke-redirect ke key terpisah, bukan menimpa 'ADP Employment' (rilis
+// bulanan resmi, ADPMNUSNERSA).
+test('extractFundamentalFromCalendarEvent: ADP Employment Change Weekly redirect ke key ADP Employment Weekly', () => {
+  const r = extractFundamentalFromCalendarEvent(calEvent({
+    currency: 'USD', event: 'ADP Employment Change Weekly', actual: '8.25K', previous: '15K',
+  }));
+  assert.strictEqual(r.key, 'ADP Employment Weekly');
+});
+
+test('extractFundamentalFromCalendarEvent: rilis bulanan resmi ADP Employment Change (tanpa qualifier weekly) tetap masuk key ADP Employment', () => {
+  const r = extractFundamentalFromCalendarEvent(calEvent({
+    currency: 'USD', event: 'ADP Employment Change', actual: '104K', previous: '62K',
+  }));
+  assert.strictEqual(r.key, 'ADP Employment');
 });
 
 test('extractFundamentalFromCalendarEvent: NFP dengan actual % (bukan K/M) ditolak (QUANTITY_INDICATORS guard)', () => {

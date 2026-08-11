@@ -8751,6 +8751,7 @@ const IND_DIR_EXTRA = {
   'Continuing Claims': -1,
   'JOLTS Job Openings': 1,
   'ADP Employment': 1,
+  'ADP Employment Weekly': 1,
   'Existing Home Sales': 1,
   'New Home Sales': 1,
 };
@@ -8788,6 +8789,9 @@ const FUND_IND_IMPORTANCE = {
   'Housing Starts':0.5,'Building Permits':0.5,'Building Approvals':0.5,'Factory Orders':0.5,
   'Existing Home Sales':0.5,'New Home Sales':0.5,'Chicago PMI':0.5,'Capacity Utilization':0.5,
   'Personal Income':0.5,'Personal Spending':0.5,'GfK Consumer Climate':0.5,
+  // Preliminary/eksperimental (2026-08-11) — four-week moving average, bukan rilis
+  // resmi bulanan ADP National Employment ('ADP Employment' di atas, bobot normal).
+  'ADP Employment Weekly':0.5,
   // German CPI YoY diredam ke 0.5 (2026-07-29): EUR satu-satunya currency dengan
   // 2 sinyal inflasi independen (CPI Flash YoY bobot 2 + German CPI YoY) padahal
   // keduanya sangat berkorelasi (data Jerman kerap bocor duluan sebelum flash
@@ -9372,7 +9376,7 @@ const FUND_SECTIONS_MAP = {
   'NFP':'Ketenagakerjaan','Employment Change':'Ketenagakerjaan',
   'Unemployment Rate':'Ketenagakerjaan','Jobless Claims':'Ketenagakerjaan','Continuing Claims':'Ketenagakerjaan',
   'Claimant Count':'Ketenagakerjaan','Participation Rate':'Ketenagakerjaan','Wage Growth':'Ketenagakerjaan',
-  'JOLTS Job Openings':'Ketenagakerjaan','ADP Employment':'Ketenagakerjaan',
+  'JOLTS Job Openings':'Ketenagakerjaan','ADP Employment':'Ketenagakerjaan','ADP Employment Weekly':'Ketenagakerjaan',
   'ISM Services':'Aktivitas','ISM Manufacturing':'Aktivitas',
   'Manufacturing PMI':'Aktivitas','Services PMI':'Aktivitas','Composite PMI':'Aktivitas','Chicago PMI':'Aktivitas',
   'Industrial Production':'Aktivitas','Ivey PMI':'Aktivitas','Tankan Mfg Index':'Aktivitas',
@@ -9645,7 +9649,7 @@ async function generateFundamentalAnalysis() {
   btn.disabled    = true;
   btn.textContent = 'Menganalisis...';
   try {
-    const res = await fetch('/api/admin?action=fundamental_analysis', { signal: AbortSignal.timeout(30000) });
+    const res = await fetch('/api/admin?action=fundamental_analysis', { signal: AbortSignal.timeout(55000) });
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const json = await res.json();
     if (json.analysis) {

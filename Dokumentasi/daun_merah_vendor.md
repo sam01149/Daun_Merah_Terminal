@@ -54,6 +54,8 @@ Semua workflow di atas autentikasi ke `api/*.js` lewat header `x-cron-secret`, d
 
 **GLM 5.2 — DITOLAK 2 KALI, dua alasan beda:** (1) via NVIDIA NIM trial (S190/S191) — ToS trial melarang "not in production", BUKAN soal kualitas (malah dicatat "lebih natural" dari model lain saat itu). (2) via API resmi z.ai (dicek 2026-07-29) — ToS resmi (`docs.z.ai/legal-agreement/terms-of-use`) SECARA EKSPLISIT DAN KATEGORIS melarang penggunaan untuk "investment and financial management", "finance, investments", dan "decision-making activities" (Section III.6.a/b, Additional Terms 1.f.iii/iv) — TANPA pengecualian disclaimer/human-oversight. Ini blocker kategoris untuk SELURUH use case Daun Merah (analisa finansial + auto-entry trading decision), bukan cuma satu fitur — jangan evaluasi ulang tanpa z.ai mengubah ToS-nya secara eksplisit.
 
+**Nemotron/NVIDIA NIM diusulkan ulang 2026-08-11, DITOLAK LAGI, dicek ulang live 2 sisi:** (1) ToS trial (`assets.ngc.nvidia.com/products/api-catalog/legal/NVIDIA API Trial Terms of Service.pdf`) masih sama persis — "may only use the API Service for internal testing and evaluation purposes, not in production"; pembatasannya berbasis TUJUAN pemakaian (nyata vs sekadar uji coba), BUKAN jumlah user — argumen "cuma 1 user" tidak mengubah status "production" di mata ToS ini. (2) Teknis: riwayat tes live proyek ini sendiri (Plan N session 145-147, 2026-07-06/07 & 2026-07-18) sudah gagal — Nemotron 3 Ultra/Super 0/4 & 0/6 percobaan via OpenRouter (kosong/timeout), DAN via NVIDIA NIM langsung format failure (skip section FX total) + latency 20,9-24,1 detik (mepet timeout Vercel 25s). User setuju tidak dipasang, tetap pakai retry Gemini/swap provider lain.
+
 ---
 
 ## 3. Data Makro & Bank Sentral

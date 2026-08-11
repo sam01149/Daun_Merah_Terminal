@@ -1117,18 +1117,26 @@ async function fundamentalRefreshHandler(req, res) {
     return res.status(500).json({ error: e.message });
   }
 }
-const CB_SAMBA_C1_ADMIN  = 'ai:sambanova:c1'; // sama seperti CB_SAMBA_C1 di market-digest.js — akun 2 dipakai bersama
+// SambaNova akun 2 — PRIMARY fundamental_analysis (2026-08-11, keputusan eksplisit
+// user: Gemini dianggap model lemah/kurang worth dipakai walau gratis, jadi
+// didemote jadi fallback saja, bukan dihapus). Sama akun/circuit dengan journal.js
+// aiCall() primary & market-digest.js Call 1 fallback — 'ai:sambanova:c1' dipakai
+// bersama supaya outage di satu tempat langsung terdeteksi di semua pemakai akun ini.
+const CB_SAMBA_C1_ADMIN = 'ai:sambanova:c1';
+const SAMBANOVA_URL_C1_FUND = 'https://api.sambanova.ai/v1/chat/completions';
+const SAMBANOVA_MODEL_C1_FUND = 'DeepSeek-V3.2';
 
-// Gemini AI Studio — satu-satunya provider fundamental_analysis (2026-08-10,
-// permintaan eksplisit user: jangan pakai DeepSeek/SambaNova di fitur ini) +
-// fallback terakhir journal AI Coach (2026-07-19). Konstanta sama dengan
-// market-digest.js (GEMINI_URL/GEMINI_MODEL/
-// CB_GEMINI di sana): endpoint OpenAI-compat resmi, alias -latest supaya tidak basi
-// saat Google ganti generasi (sekarang resolve ke gemini-3.5-flash). Lolos gate ToS
-// produksi (daun_merah_riset.md S183: free tier boleh produksi, prompt = berita
-// publik). Budget guard 'gemini' sudah ada di _ai_guard.js. NVIDIA API (GLM 5.2/
-// Nemotron) SENGAJA tidak dipakai — ToS Trial melarang produksi, lihat KEPUTUSAN
-// GATE AWAL di daun_merah_riset.md.
+// Gemini AI Studio — FALLBACK fundamental_analysis (2026-08-10 sempat jadi
+// satu-satunya provider; 2026-08-11 didemote ke fallback, lihat komentar
+// CB_SAMBA_C1_ADMIN di atas) + fallback terakhir journal AI Coach (2026-07-19).
+// Konstanta sama dengan market-digest.js (GEMINI_URL/GEMINI_MODEL/CB_GEMINI di
+// sana): endpoint OpenAI-compat resmi, alias -latest supaya tidak basi saat Google
+// ganti generasi (sekarang resolve ke gemini-3.5-flash). Lolos gate ToS produksi
+// (daun_merah_riset.md S183: free tier boleh produksi, prompt = berita publik).
+// Budget guard 'gemini' sudah ada di _ai_guard.js. NVIDIA API (GLM 5.2/Nemotron)
+// SENGAJA tidak dipakai — ToS Trial melarang produksi (dicek ulang live 2026-08-11,
+// masih berlaku) DAN riwayat tes live proyek ini sendiri gagal teknis (Plan N,
+// session 145-147) — lihat KEPUTUSAN GATE AWAL di daun_merah_riset.md.
 const GEMINI_URL_FUND   = 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions';
 const GEMINI_MODEL_FUND = 'gemini-flash-latest';
 const CB_GEMINI_ADMIN   = 'ai:gemini'; // circuit dipakai bersama market-digest.js & journal.js — provider sama
@@ -1372,27 +1380,64 @@ function _stripMarkdown(text) {
     .trim();
 }
 
+// Ekstrak urutan 8 currency dari section "RANKING KEKUATAN FUNDAMENTAL:" di output AI
+// (2026-08-11 — fitur "pergerakan ranking vs update sebelumnya", respons user "gimana
+// kalau dikembangkan"). Parse murni deterministik dari teks yang SUDAH di-generate —
+// TIDAK minta AI menghitung delta sendiri (rawan salah hitung/hallucinate), delta
+// dihitung di kode lewat _formatFundRankingDelta di bawah. Gagal parse (format AI
+// menyimpang) -> null, fail-open (delta cuma tidak ditampilkan, bukan error).
+function _parseFundRankingOrder(text) {
+  if (!text) return null;
+  const m = text.match(/RANKING KEKUATAN FUNDAMENTAL:\s*([\s\S]*?)(?:\n\s*\n|TERKUAT:|$)/i);
+  if (!m) return null;
+  const CUR_RE = /\b(USD|EUR|GBP|JPY|CAD|AUD|NZD|CHF)\b/;
+  const order = [];
+  for (const line of m[1].split('\n')) {
+    const lm = line.trim().match(/^\d+\.\s*(.*)$/);
+    if (!lm) continue;
+    const cm = lm[1].match(CUR_RE);
+    if (cm) order.push(cm[1]);
+  }
+  const uniq = [...new Set(order)];
+  return uniq.length === 8 ? uniq : null;
+}
+
+// Bandingkan ranking baru vs sebelumnya, hasilkan 1 blok teks deterministik (bukan
+// ditulis AI) yang ditempel ke akhir `analysis`. hoursLabel sudah diformat pemanggil.
+function _formatFundRankingDelta(prevOrder, newOrder, hoursLabel) {
+  if (!Array.isArray(prevOrder) || !Array.isArray(newOrder) || prevOrder.length !== 8 || newOrder.length !== 8) return null;
+  const prevPos = {}; prevOrder.forEach((c, i) => { prevPos[c] = i + 1; });
+  const clauses = newOrder.map((cur, i) => {
+    const np = i + 1, pp = prevPos[cur];
+    if (pp == null) return `${cur} baru di #${np}`;
+    if (pp === np) return `${cur} tetap #${np}`;
+    return `${cur} ${pp > np ? 'naik' : 'turun'} ke #${np} (dari #${pp})`;
+  });
+  return `PERGERAKAN RANKING VS UPDATE SEBELUMNYA (${hoursLabel}):\n${clauses.join('. ')}.`;
+}
+
 async function fundamentalAnalysisHandler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Cache-Control', 'no-cache');
   if (req.method === 'OPTIONS') return res.status(204).end();
-  const GEMINI_KEY_PRECHECK = process.env.GEMINI_API_KEY;
-  if (!GEMINI_KEY_PRECHECK) {
-    return res.status(500).json({ error: 'No AI provider configured (GEMINI_API_KEY)' });
+  if (!process.env.SAMBANOVA_API_KEY_CALL1 && !process.env.GEMINI_API_KEY) {
+    return res.status(500).json({ error: 'No AI provider configured (SAMBANOVA_API_KEY_CALL1 / GEMINI_API_KEY)' });
   }
 
-  // Return cached if fresh (6h)
-  if (req.query.force !== 'true') {
-    try {
-      const cached = await redisCmd('GET', 'fundamental_analysis');
-      if (cached) {
-        const obj = JSON.parse(cached);
-        if (Date.now() - new Date(obj.generated_at).getTime() < 6 * 3600 * 1000) {
-          return res.status(200).json({ ...obj, from_cache: true });
-        }
+  // Return cached if fresh (6h). Cache lama juga dipertahankan sebagai `previousObj`
+  // (dipakai di bawah untuk hitung pergerakan ranking vs update sebelumnya, 2026-08-11)
+  // BAHKAN kalau sudah basi/force=true — delta tetap valid selama ada angka lama untuk
+  // dibandingkan, cuma label "X jam lalu" jadi lebih besar.
+  let previousObj = null;
+  try {
+    const cached = await redisCmd('GET', 'fundamental_analysis');
+    if (cached) {
+      previousObj = JSON.parse(cached);
+      if (req.query.force !== 'true' && Date.now() - new Date(previousObj.generated_at).getTime() < 6 * 3600 * 1000) {
+        return res.status(200).json({ ...previousObj, from_cache: true });
       }
-    } catch(e) {}
-  }
+    }
+  } catch(e) {}
 
   // Load all fundamental data
   const fundData = {};
@@ -1479,11 +1524,37 @@ PERLU DIWASPADAI:
   const fundMessages = [{ role: 'user', content: prompt }];
   let analysis = null;
 
-  // Gemini flash = satu-satunya provider untuk fitur ini (2026-08-10, permintaan
-  // eksplisit user — jangan pakai model DeepSeek/SambaNova di sini). Free tier AI
-  // Studio, lolos gate ToS produksi (lihat komentar konstanta GEMINI_URL_FUND).
+  // Primary: SambaNova akun 2 (2026-08-11, keputusan user — lihat komentar
+  // CB_SAMBA_C1_ADMIN). Retry 1x — pola sama seperti Gemini di bawah, transient
+  // 5xx tidak boleh langsung gagal total kalau fitur ini cuma punya 1 primary.
+  const SAMBA_C1_KEY = process.env.SAMBANOVA_API_KEY_CALL1;
+  if (SAMBA_C1_KEY && await cb.canCall(CB_SAMBA_C1_ADMIN)) {
+    for (let attempt = 1; attempt <= 2 && !analysis; attempt++) {
+      try {
+        if (!await allowAiCall('sambanova_c1')) throw new Error('AI daily budget exceeded');
+        const r = await fetch(SAMBANOVA_URL_C1_FUND, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SAMBA_C1_KEY}` },
+          body: JSON.stringify({ model: SAMBANOVA_MODEL_C1_FUND, messages: fundMessages, max_tokens: 3500, temperature: 0.3 }),
+          signal: AbortSignal.timeout(30000),
+        });
+        if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e?.error?.message || `HTTP ${r.status}`); }
+        const data = await r.json();
+        const txt = data?.choices?.[0]?.message?.content?.trim() || '';
+        if (!txt) throw new Error('Empty response');
+        analysis = _stripMarkdown(txt);
+        await cb.onSuccess(CB_SAMBA_C1_ADMIN);
+        console.log(`fundamental_analysis: SambaNova akun2 OK (attempt ${attempt})`);
+      } catch(e) {
+        console.warn(`fundamental_analysis SambaNova akun2 failed (attempt ${attempt}):`, e.message);
+      }
+    }
+    if (!analysis) await cb.onFailure(CB_SAMBA_C1_ADMIN);
+  }
+
+  // Fallback: Gemini (2026-08-11 didemote dari primary — lihat komentar GEMINI_URL_FUND).
   const GEMINI_KEY = process.env.GEMINI_API_KEY;
-  if (GEMINI_KEY && await cb.canCall(CB_GEMINI_ADMIN)) {
+  if (!analysis && GEMINI_KEY && await cb.canCall(CB_GEMINI_ADMIN)) {
     try {
       if (!await allowAiCall('gemini')) throw new Error('AI daily budget exceeded');
       const r = await fetch(GEMINI_URL_FUND, {
@@ -1499,17 +1570,28 @@ PERLU DIWASPADAI:
       if (data?.choices?.[0]?.finish_reason === 'length') console.warn('fundamental_analysis: Gemini output truncated (finish_reason=length) — pertimbangkan naikkan max_tokens lagi');
       analysis = _stripMarkdown(txt);
       await cb.onSuccess(CB_GEMINI_ADMIN);
-      console.log('fundamental_analysis: Gemini OK');
+      console.log('fundamental_analysis: Gemini (fallback) OK');
     } catch(e) {
-      console.warn('fundamental_analysis Gemini failed:', e.message);
+      console.warn('fundamental_analysis Gemini (fallback) failed:', e.message);
       await cb.onFailure(CB_GEMINI_ADMIN);
     }
   }
 
-  if (!analysis) return res.status(500).json({ error: 'Gemini failed for fundamental_analysis' });
+  if (!analysis) return res.status(500).json({ error: 'All AI providers failed for fundamental_analysis (SambaNova akun2 / Gemini)' });
+
+  // Pergerakan ranking vs update sebelumnya (2026-08-11) — murni dihitung di kode dari
+  // ranking yang barusan di-generate vs ranking tersimpan dari cache lama (`previousObj`,
+  // lihat atas). Fail-open total: parse gagal / belum ada cache lama -> analysis tetap
+  // dikirim apa adanya tanpa blok delta, bukan error.
+  const rankingOrder = _parseFundRankingOrder(analysis);
+  if (rankingOrder && previousObj && Array.isArray(previousObj.ranking) && previousObj.generated_at) {
+    const hoursAgo = Math.max(1, Math.round((Date.now() - new Date(previousObj.generated_at).getTime()) / 3600000));
+    const deltaBlock = _formatFundRankingDelta(previousObj.ranking, rankingOrder, `~${hoursAgo} jam lalu`);
+    if (deltaBlock) analysis = `${analysis}\n\n${deltaBlock}`;
+  }
 
   try {
-    const result = { analysis, generated_at: new Date().toISOString(), from_cache: false };
+    const result = { analysis, generated_at: new Date().toISOString(), from_cache: false, ranking: rankingOrder || undefined };
     await redisCmd('SET', 'fundamental_analysis', JSON.stringify(result), 'EX', '21600');
     return res.status(200).json(result);
   } catch(e) {
@@ -6326,6 +6408,8 @@ module.exports._fundAgeDays = _fundAgeDays;
 module.exports._fundSeedAgeDays = _fundSeedAgeDays;
 module.exports._formatFundDataLine = _formatFundDataLine;
 module.exports._stripMarkdown = _stripMarkdown;
+module.exports._parseFundRankingOrder = _parseFundRankingOrder;
+module.exports._formatFundRankingDelta = _formatFundRankingDelta;
 module.exports._pickExpiryLevels = _pickExpiryLevels;
 module.exports._confluenceZones = _confluenceZones;
 module.exports._formatConfluenceBlock = _formatConfluenceBlock;

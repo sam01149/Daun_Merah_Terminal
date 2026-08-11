@@ -184,7 +184,7 @@ const CB_RATE_MAP = [
 const QUANTITY_INDICATORS = new Set([
   'NFP', 'Jobless Claims', 'Claimant Count', 'Continuing Claims',
   'Building Permits', 'Housing Starts', 'Durable Goods Orders',
-  'JOLTS Job Openings', 'ADP Employment', 'Existing Home Sales', 'New Home Sales',
+  'JOLTS Job Openings', 'ADP Employment', 'ADP Employment Weekly', 'Existing Home Sales', 'New Home Sales',
 ]);
 
 // Text (headline ATAU judul event calendar_v1) -> key FUND_INDICATOR_MAP, plus
@@ -193,6 +193,25 @@ const QUANTITY_INDICATORS = new Set([
 // di bawah pakai logic yang SAMA PERSIS, bukan duplikat yang bisa drift kayak
 // bug urutan keyword W-4).
 function _matchIndicatorKey(t, currency) {
+  // BUG DITEMUKAN & DIFIX (2026-08-11, laporan user — kartu USD nampilin ADP 8,25K
+  // yang jelas bukan skala rilis bulanan ADP National Employment/ADPMNUSNERSA):
+  // FinancialJuice/calendar_v1 mulai publish rilis eksperimental "ADP Employment
+  // Change Weekly" (preliminary, four-week moving average, skala ribuan — beda
+  // total dari rilis resmi bulanan yang sudah lama di-track sebagai 'ADP
+  // Employment', lihat LABOUR_ROW_MAP.ADPMNUSNERSA di index.html). Qualifier
+  // "Weekly"/"Wkly" posisinya TIDAK KONSISTEN antar sumber — kalender menulis
+  // "ADP Employment Change Weekly" (nempel ke 'adp employment', lolos matcher di
+  // bawah), tapi headline FinancialJuice menulis "ADP Wkly Employment Change"
+  // (qualifier di TENGAH — tidak nempel ke 'adp employment' SAMA SEKALI, malah
+  // nyasar ke keyword generik 'employment change' → key 'Employment Change',
+  // indikator yang seharusnya cuma dipakai GBP/CAD/AUD, bukan USD). Cek eksplisit
+  // "adp" + qualifier weekly di mana pun posisinya, SEBELUM loop keyword generik,
+  // supaya kedua bentuk konsisten diarahkan ke key terpisah dan tidak ada yang
+  // menimpa rilis bulanan resmi ataupun nyasar ke key currency lain.
+  if (/\badp\b/i.test(t) && /\bweekly\b|\bwkly\b/i.test(t)) {
+    return 'ADP Employment Weekly';
+  }
+
   let indicatorKey = null;
   for (const { kw, key } of FUND_INDICATOR_MAP) {
     if (kw.some(k => t.includes(k))) { indicatorKey = key; break; }
