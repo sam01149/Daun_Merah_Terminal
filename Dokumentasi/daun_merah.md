@@ -11,10 +11,22 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-11 (Session 304 — Notifikasi Telegram Posisi Manual Open + Kalender Ekonomi Impact High)
+> **Last updated:** 2026-08-11 (Session 305 — Fix Notifikasi Telegram Dobel: Posisi Manual Open vs Alert Market-Moving)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 305 (2026-08-11) — Fix Notifikasi Telegram Dobel: Posisi Manual Open vs Alert Market-Moving
+
+**Konteks:** Audit atas permintaan user menemukan `pollNews()` (`vps/daemon.js`) punya 2 jalur alert Telegram yang jalan independen di proses daemon yang sama — `sendNewsAlert`/Q-4 (existing, gate kategori `market-moving`) dan `checkOpenPositionNewsMatch`/S304 (baru, semua kategori, cocokkan currency ke pair open di jurnal manual) — masing-masing pakai dedup key Redis SENDIRI-SENDIRI (`news_alert_sent:<guid>` vs `posnotify_sent:<guid>`), jadi tidak saling tahu. Skenario nyata: headline kategori `market-moving` yang currency-nya match pair open di jurnal → terkirim DUA pesan Telegram terpisah untuk berita yang sama (satu generik dari Q-4, satu sebut nama pair dari S304). Ditemukan juga jalur ketiga di luar daemon, `pushHandler` (`api/admin.js`, dipicu cron eksternal cron-job.org, di luar repo) yang membaca RSS FinancialJuice langsung — berpotensi overlap juga tapi statusnya (aktif/tidak) tidak bisa dipastikan dari kode, perlu user cek dashboard cron-job.org sendiri kalau mau dipastikan.
+
+**Perubahan (`vps/daemon.js`):**
+- `checkOpenPositionNewsMatch` sekarang menerima parameter `cat` (dikirim dari `pollNews()`). Kalau kategori berita ini `market-moving` (`isHighImpactCategory`) DAN ada pair open yang match, jalur ini kirim SATU pesan gabungan berformat `*[HIGH IMPACT] PAIR*: "headline"` (bukan pesan generik + pesan pair terpisah) **sekaligus** menandai dedup key milik Q-4 (`news_alert_sent:<guid>`, SET NX) supaya gate `isHighImpactCategory` di `pollNews()` yang jalan setelahnya skip kirim ulang versi generiknya.
+- Kalau bukan `market-moving` atau tidak ada pair match, perilaku lama tidak berubah (S304 kirim seperti biasa, atau Q-4 kirim generik seperti biasa) — fix ini murni menutup celah tumpang-tindih, tidak mengubah desain "tanpa gate kategori" yang sudah disepakati rapat 2026-08-11.
+
+**Test:** tidak ada test baru — perubahan murni orkestrasi dedup key lintas fungsi, ditutupi test pure-function yang sudah ada (`isHighImpactCategory`, `test/vps/position_notify.test.js`). `npm test` 946/946 hijau (tidak ada regresi).
+
+**Cakupan/limitasi:** Fix ini hanya menutup overlap Jalur B (Q-4) x Jalur C (S304) yang dipastikan aktif di proses daemon yang sama. Jalur A (`pushHandler`/`api/admin.js`) TIDAK disentuh — statusnya (masih dipicu cron-job.org atau tidak) tidak diketahui dari kode, keputusan apakah perlu ditutup/dihapus menunggu konfirmasi user. Belum diverifikasi live (butuh headline market-moving nyata yang match pair open di jurnal untuk konfirmasi cuma 1 pesan Telegram yang terkirim).
 
 ## Changelog Session 304 (2026-08-11) — Notifikasi Telegram Posisi Manual Open + Kalender Ekonomi Impact High
 

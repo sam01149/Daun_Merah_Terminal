@@ -474,7 +474,10 @@ async function pollNews() {
       // Rapat user 2026-08-11: notifikasi Telegram posisi manual open — lihat
       // blok komentar besar di bawah pollNews(). Semua kategori (tidak digate
       // seperti U-5b di atas), tanpa syarat korroborasi (keputusan user).
-      try { await checkOpenPositionNewsMatch(item); }
+      // Fix 2026-08-11: kirim `cat` supaya kalau berita ini JUGA market-moving,
+      // pesannya digabung jadi satu (bukan dobel dengan alert Q-4 di bawah) —
+      // lihat catatan dalam checkOpenPositionNewsMatch.
+      try { await checkOpenPositionNewsMatch(item, cat); }
       catch (e) { console.warn('daemon: checkOpenPositionNewsMatch gagal:', e.message); }
 
       // Rapat user 2026-08-11: notifikasi kalender ekonomi impact High — hanya
@@ -589,7 +592,16 @@ async function getOpenJournalPairsCached() {
   return openPairsCache;
 }
 
-async function checkOpenPositionNewsMatch(item) {
+// `cat` opsional — kalau diisi dan hasilnya market-moving (lihat
+// isHighImpactCategory), pesan ini DIGABUNG dengan alert Q-4 (sendNewsAlert)
+// biar tidak dobel: audit 2026-08-11 menemukan headline market-moving yang
+// match currency posisi open bisa memicu DUA pesan Telegram terpisah untuk
+// berita yang sama (jalur ini + jalur Q-4 sendNewsAlert, dedup key beda-beda
+// per jalur jadi tidak saling cegah). Fix: kalau kondisi ini terjadi, jalur
+// ini yang kirim (lebih spesifik, sebut pair-nya) SEKALIGUS menandai dedup
+// key milik Q-4 (`news_alert_sent:<guid>`) supaya gate isHighImpactCategory
+// di pollNews() skip kirim ulang versi generiknya.
+async function checkOpenPositionNewsMatch(item, cat) {
   const headlineLegs = detectCurrencyLegs(item.title);
   if (headlineLegs.length === 0) return;
   const openPairs = await getOpenJournalPairsCached();
@@ -608,7 +620,12 @@ async function checkOpenPositionNewsMatch(item) {
   if (isDuplicateHeadline(tokens, posNotifyRecentSent, nowMs)) return; // wire re-hash, sudah dikirim beberapa menit lalu
   posNotifyRecentSent.push({ tokens, sentAt: nowMs });
 
-  await sendTelegram(`*${matched.join(', ')}*: "${item.title}"`);
+  const isMarketMoving = isHighImpactCategory(cat);
+  if (isMarketMoving && guid) {
+    await redisCmd('SET', `news_alert_sent:${guid}`, '1', 'EX', '172800', 'NX');
+  }
+  const label = isMarketMoving ? `*[HIGH IMPACT] ${matched.join(', ')}*` : `*${matched.join(', ')}*`;
+  await sendTelegram(`${label}: "${item.title}"`);
 }
 
 // Deteksi currency dari headline rilis kalender FinancialJuice ("<Negara>
