@@ -11,10 +11,22 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-11 (Session 305 — Fix Notifikasi Telegram Dobel: Posisi Manual Open vs Alert Market-Moving)
+> **Last updated:** 2026-08-11 (Session 306 — Geser Jadwal Market Digest +2 Menit dari Jam Buka Sesi)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 306 (2026-08-11) — Geser Jadwal Market Digest +2 Menit dari Jam Buka Sesi
+
+**Konteks:** User mengamati jadwal generate market digest (3x/hari, match jam buka sesi Asia/Eropa/New York) berhimpitan persis dengan jam rilis data kalender ekonomi — khususnya sesi New York `30 12 * * *` (12:30 UTC = 08:30 ET), yang juga jam rilis standar data high-impact USD (NFP, CPI, PPI, Retail Sales, Jobless Claims, dll). Kalau digest jalan di menit yang sama persis dengan rilis, angka actual belum tentu sudah kepropagasi ke sumber (`calendar_v1`, TradingView via `api/calendar.js`) saat AI fetch — jadi ringkasan/analisa AI membaca data lama, bukan angka terbaru.
+
+**Perubahan:** Jadwal cron digeser +2 menit dari jam buka sesi persis di kedua tempat yang menjalankannya (harus identik, salah satu redundan/cadangan):
+- `.github/workflows/market-digest.yml`: `0 0`/`0 7`/`30 12` → `2 0`/`2 7`/`32 12` (UTC).
+- `vps/daemon.js` (`startScheduler`, scheduler cadangan Q-6 yang jalan paralel GitHub Actions): disamakan persis.
+
+**Test:** `node --test test/market_digest/*.js test/vps/self_healing.test.js` — 66/66 hijau, tidak ada test yang bergantung ke string cron persis.
+
+**Cakupan/limitasi:** Buffer 2 menit dipilih berdasar estimasi kasar (bukan diukur empiris seberapa cepat TradingView mem-publish angka actual setelah rilis resmi) — kalau ternyata masih kadang kepotong, bisa dinaikkan lagi. Belum diverifikasi live (perlu menunggu jam rilis data high-impact sungguhan yang jatuh tepat di jam buka sesi untuk konfirmasi).
 
 ## Changelog Session 305 (2026-08-11) — Fix Notifikasi Telegram Dobel: Posisi Manual Open vs Alert Market-Moving
 

@@ -1305,10 +1305,14 @@ async function runDigestCycle() {
 function startScheduler() {
   if (!cron) { console.warn('daemon: paket node-cron tidak terpasang, Q-6 scheduler di-skip'); return; }
   if (!CRON_SECRET) { console.warn('daemon: CRON_SECRET kosong, Q-6 scheduler di-skip'); return; }
-  // 3 jadwal identik .github/workflows/market-digest.yml (UTC).
-  cron.schedule('0 0 * * *',   () => runDigestCycle().catch(() => {}));
-  cron.schedule('0 7 * * *',   () => runDigestCycle().catch(() => {}));
-  cron.schedule('30 12 * * *', () => runDigestCycle().catch(() => {}));
+  // 3 jadwal identik .github/workflows/market-digest.yml (UTC). Digeser +2
+  // menit dari jam buka sesi persis (S305 lanjutan) — kasih buffer supaya
+  // data kalender ekonomi yang rilis tepat di jam buka sesi (mis. NY 12:30
+  // UTC = 08:30 ET jam rilis NFP/CPI/dll) sempat kepropagasi ke sumber
+  // sebelum digest fetch.
+  cron.schedule('2 0 * * *',   () => runDigestCycle().catch(() => {}));
+  cron.schedule('2 7 * * *',   () => runDigestCycle().catch(() => {}));
+  cron.schedule('32 12 * * *', () => runDigestCycle().catch(() => {}));
   // ohlcv_sync tiap jam, offset menit ke-5 supaya tidak tabrakan detik dengan
   // ohlcv-sync.yml (keduanya sengaja jalan paralel selama masa observasi Q-6).
   cron.schedule('5 * * * *', () => triggerWithRetry('/api/admin?action=ohlcv_sync').catch(() => {}));

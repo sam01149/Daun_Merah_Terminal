@@ -4,11 +4,21 @@ name: Market Digest Session-Open Runs
 # terjamin menjalankan >1 cron/hari secara konsisten (lihat catatan [VERIFY] di
 # daun_merah.md), sama seperti OHLCV sync yang sudah lebih dulu dipindah kesini.
 # 3 jadwal ini match waktu buka sesi: Asia/Eropa/New York.
+#
+# Digeser +2 menit dari jam buka sesi persis (S305 lanjutan, 2026-08-11,
+# permintaan user) — data kalender ekonomi (calendar_v1, sumber TradingView di
+# api/calendar.js) sering rilis TEPAT di jam buka sesi juga: NY 12:30 UTC =
+# 08:30 ET adalah jam rilis standar NFP/CPI/PPI/Retail Sales/Jobless Claims;
+# Eropa/Asia juga sering berhimpitan (data UK/AU rilis dekat jam buka sesi
+# masing-masing). Kalau digest jalan di menit yang SAMA dengan rilis, angka
+# actual belum tentu sudah kepropagasi ke TradingView saat kita fetch — jadi
+# AI ringkasan/analisa membaca data lama. Buffer 2 menit kasih waktu source
+# publish duluan sebelum kita generate.
 on:
   schedule:
-    - cron: '0 0 * * *'   # 00:00 UTC = 07:00 WIB — sesi Asia
-    - cron: '0 7 * * *'   # 07:00 UTC = 14:00 WIB — sesi Eropa/London
-    - cron: '30 12 * * *' # 12:30 UTC = 19:30 WIB — sesi New York
+    - cron: '2 0 * * *'   # 00:02 UTC = 07:02 WIB — sesi Asia (+2 menit)
+    - cron: '2 7 * * *'   # 07:02 UTC = 14:02 WIB — sesi Eropa/London (+2 menit)
+    - cron: '32 12 * * *' # 12:32 UTC = 19:32 WIB — sesi New York (+2 menit)
   workflow_dispatch:
 
 jobs:
