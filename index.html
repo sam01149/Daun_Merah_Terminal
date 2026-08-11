@@ -4134,7 +4134,14 @@ body:not(.light-theme) .ringkasan-gen-btn {
         <div class="fund-analysis-card">
           <div class="fund-analysis-header">
             <span>Analisis Fundamental</span>
-            <span id="fundAnalysisAge" style="color:var(--muted)"></span>
+            <span style="display:flex;align-items:center;gap:8px">
+              <span id="fundAnalysisAge" style="color:var(--muted)"></span>
+              <button class="print-btn no-print" onclick="downloadFundamentalPdf()" title="Download PDF">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M4 21h16"/>
+                </svg>
+              </button>
+            </span>
           </div>
           <div class="fund-analysis-text" id="fundAnalysisText"></div>
         </div>
@@ -6219,6 +6226,80 @@ async function downloadAnalisaPdf() {
   b.footer(`⚠ Level & bias di atas dihasilkan AI${ai.model ? ' (' + ai.model + ')' : ''} dan bisa keliru — bukan nasihat keuangan. Verifikasi ke chart sebelum dipakai.`);
   _stampWatermark(b.doc, await _getPdfWatermarkDataUrl());
   b.doc.save(`${_pdfSanitizeFilePart(`Analisa ${label} ${_pdfSessionLabel()} ${_pdfClockLabel()}`)}.pdf`);
+}
+
+// Header section yang DIJAMIN muncul di format prompt fundamental_analysis
+// (api/admin.js) + blok "pergerakan ranking" yang ditempel kode (bukan AI) — dipakai
+// whitelist supaya splitter tidak salah kira baris body sebagai header baru. Beberapa
+// header (TERKUAT/TERLEMAH) punya nilai inline di baris yang sama ("TERKUAT: AUD"),
+// sisanya body-nya di baris berikut. 2026-08-11, permintaan user "buat bisa didownload".
+const FUND_PDF_KNOWN_HEADERS = [
+  'TEMA MAKRO LINTAS-CURRENCY', 'OUTLOOK PER CURRENCY', 'RANKING KEKUATAN FUNDAMENTAL',
+  'TERKUAT', 'TERLEMAH', 'SETUP FUNDAMENTAL PALING SEARAH', 'PERLU DIWASPADAI',
+  'PERGERAKAN RANKING VS UPDATE SEBELUMNYA',
+];
+function _fundamentalTextToPdfSections(text) {
+  const sections = [];
+  let cur = null;
+  text.split('\n').forEach(raw => {
+    const line  = raw.trim();
+    const upper = line.toUpperCase();
+    const known = FUND_PDF_KNOWN_HEADERS.find(h => upper.startsWith(h));
+    const colonIdx = line.indexOf(':');
+    // Header valid: baris DIAWALI salah satu frasa di atas DAN ada ":" tidak jauh
+    // sesudahnya (parenthetical singkat macam label jam boleh, kalimat body panjang
+    // yang kebetulan diawali kata sama tidak akan lolos guard jarak ini).
+    if (known && colonIdx !== -1 && colonIdx <= known.length + 25) {
+      cur = { header: known, bodyLines: [] };
+      const afterColon = line.slice(colonIdx + 1).trim();
+      if (afterColon) cur.bodyLines.push(afterColon);
+      sections.push(cur);
+    } else if (cur && line) {
+      cur.bodyLines.push(line);
+    }
+  });
+  return sections;
+}
+
+async function downloadFundamentalPdf() {
+  const d = fundAnalysisCache;
+  if (!d?.analysis) { showToast('Belum Ada Data', 'Generate Analisis Fundamental dulu sebelum download.', 3000); return; }
+  if (!_pdfLibReady()) { window.print(); return; }
+  const b = _pdfBuilder();
+  b.letterhead('Analisis Fundamental — 8 Currency Utama', [
+    `Dibuat: ${fmtCBTime(d.generated_at)}`,
+    `Diunduh: ${_printWibNow().display}`,
+  ]);
+
+  const sections = _fundamentalTextToPdfSections(d.analysis);
+  sections.forEach(sec => {
+    if (sec.header === 'TERKUAT' || sec.header === 'TERLEMAH') {
+      const value = sec.bodyLines[0] || '—';
+      b.banner(sec.header, value);
+      sec.bodyLines.slice(1).forEach(line => b.para(line));
+      return;
+    }
+    b.heading(sec.header);
+    // Section berisi daftar bernomor/per-currency (OUTLOOK, RANKING, SETUP) sudah
+    // berupa baris pendek terpisah dari AI — tampilkan apa adanya per baris. Section
+    // prosa (TEMA MAKRO, PERLU DIWASPADAI, PERGERAKAN RANKING kode) dipecah jadi
+    // bullet per kalimat kalau panjang, sama pola _renderArticlePdfBlocks Ringkasan.
+    if (sec.bodyLines.length > 1) {
+      sec.bodyLines.forEach(line => b.para(line, { gapAfter: 1.8 }));
+    } else {
+      const body = sec.bodyLines.join(' ');
+      const sentences = _pdfSentenceSplit(body);
+      if (body.length > 220 && sentences.length >= 3) {
+        sentences.forEach((s, i) => b.para(`-  ${s}`, { gapAfter: i === sentences.length - 1 ? 3.6 : 1.6 }));
+      } else {
+        b.para(body);
+      }
+    }
+  });
+
+  b.footer('⚠ Sintesa fundamental dihasilkan AI dari data ekonomi pihak ketiga — bisa keliru atau basi, bukan nasihat keuangan. Verifikasi tanggal rilis tiap indikator sebelum dipakai.');
+  _stampWatermark(b.doc, await _getPdfWatermarkDataUrl());
+  b.doc.save(`${_pdfSanitizeFilePart(`Analisis Fundamental ${_pdfClockLabel()}`)}.pdf`);
 }
 
 function decodeHtmlEntities(s) {
@@ -9638,6 +9719,10 @@ function _startAiBtnCooldown(btnId, restoreHtml) {
   }, 1000);
 }
 
+// Cache hasil generate terakhir — dipakai downloadFundamentalPdf() (2026-08-11),
+// pola sama ringkasanCache/analisaDataCache untuk fitur PDF lain.
+let fundAnalysisCache = null;
+
 async function generateFundamentalAnalysis() {
   const btn     = document.getElementById('fundAnalysisBtn');
   const card    = document.getElementById('fundAnalysisCard');
@@ -9657,6 +9742,7 @@ async function generateFundamentalAnalysis() {
       const ageMin = Math.floor((Date.now() - new Date(json.generated_at).getTime()) / 60000);
       ageEl.textContent = ageMin < 1 ? 'baru saja' : `Diperbarui ${ageMin}m lalu`;
       card.style.display = 'block';
+      fundAnalysisCache = json;
     }
   } catch(e) {
     if (textEl) textEl.textContent = 'Gagal: ' + e.message;

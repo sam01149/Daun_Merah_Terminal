@@ -1,0 +1,94 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - generic [ref=e4]:
+      - generic [ref=e5]: DAUN MERAH
+      - generic [ref=e6]: FX TERMINAL
+    - button "Menu" [ref=e9] [cursor=pointer]
+  - generic [ref=e14]:
+    - generic [ref=e15]:
+      - paragraph [ref=e16]: Install Daun Merah ke homescreen untuk notifikasi background
+      - button "INSTALL" [ref=e17] [cursor=pointer]
+    - generic [ref=e19] [cursor=pointer]:
+      - generic [ref=e20]: "REGIME: —"
+      - generic [ref=e21]:
+        - generic [ref=e22]: TOKYO
+        - generic [ref=e23]: ›
+        - generic [ref=e24]: LONDON
+        - generic [ref=e25]: ›
+        - generic [ref=e26]: OVERLAP
+        - generic [ref=e27]: ›
+        - generic [ref=e28]: NY
+        - generic [ref=e29]: ›
+        - generic [ref=e30]: CLOSED
+        - generic [ref=e31]: → NY in 2j 2m
+  - tablist "Navigasi utama" [ref=e32]:
+    - tab "Dashboard" [selected] [ref=e33] [cursor=pointer]
+    - tab "News" [ref=e40] [cursor=pointer]
+    - tab "Ringkasan" [ref=e46] [cursor=pointer]
+    - tab "Analisa" [ref=e51] [cursor=pointer]
+    - tab "Check" [ref=e56] [cursor=pointer]
+    - tab "Tek" [ref=e61] [cursor=pointer]
+    - button "Menu tab lainnya" [ref=e67] [cursor=pointer]:
+      - generic [ref=e72]: Lainnya
+  - generic [ref=e73]:
+    - generic [ref=e74]:
+      - generic [ref=e75]: LIVE NEWS auto-refresh 60s
+      - generic [ref=e76]: Buka tab NEWS untuk memuat berita.
+    - generic [ref=e78]:
+      - generic [ref=e79]: RINGKASAN PASAR
+      - generic [ref=e80]:
+        - generic [ref=e81]: Belum ada briefing.
+        - button "Ringkas Berita" [ref=e82] [cursor=pointer]
+      - generic [ref=e83]: THESIS
+      - generic [ref=e84]: —
+    - generic [ref=e86]:
+      - generic [ref=e87]: CB BIAS
+      - generic [ref=e88]: Buka tab RINGKASAN untuk memuat bias CB.
+      - generic [ref=e90]: FUNDAMENTAL RANKING
+      - generic [ref=e91]: —
+      - generic [ref=e93]: DAILY PULSE
+      - generic [ref=e94]: Memuat...
+      - generic [ref=e96]: RETAIL SENTIMENT
+      - generic [ref=e97]: —
+    - generic [ref=e99]:
+      - generic [ref=e100]: "TEKNIKAL:"
+      - generic [ref=e101]:
+        - generic "Buka Analisa XAU/USD" [ref=e102] [cursor=pointer]:
+          - generic [ref=e103]: XAU/USD
+          - generic [ref=e104]: —
+          - generic [ref=e105]: —
+        - generic "Buka Analisa EUR/USD" [ref=e107] [cursor=pointer]:
+          - generic [ref=e108]: EUR/USD
+          - generic [ref=e109]: —
+          - generic [ref=e110]: —
+        - generic "Buka Analisa GBP/USD" [ref=e112] [cursor=pointer]:
+          - generic [ref=e113]: GBP/USD
+          - generic [ref=e114]: —
+          - generic [ref=e115]: —
+        - generic "Buka Analisa USD/JPY" [ref=e117] [cursor=pointer]:
+          - generic [ref=e118]: USD/JPY
+          - generic [ref=e119]: —
+          - generic [ref=e120]: —
+        - generic "Buka Analisa AUD/USD" [ref=e122] [cursor=pointer]:
+          - generic [ref=e123]: AUD/USD
+          - generic [ref=e124]: —
+          - generic [ref=e125]: —
+        - generic "Buka Analisa USD/CAD" [ref=e127] [cursor=pointer]:
+          - generic [ref=e128]: USD/CAD
+          - generic [ref=e129]: —
+          - generic [ref=e130]: —
+        - generic "Buka Analisa USD/CHF" [ref=e132] [cursor=pointer]:
+          - generic [ref=e133]: USD/CHF
+          - generic [ref=e134]: —
+          - generic [ref=e135]: —
+        - generic "Buka Analisa NZD/USD" [ref=e137] [cursor=pointer]:
+          - generic [ref=e138]: NZD/USD
+          - generic [ref=e139]: —
+          - generic [ref=e140]: —
+    - generic [ref=e142]:
+      - generic [ref=e143]: "EVENT BERIKUTNYA:"
+      - generic [ref=e144]: Buka tab CAL untuk memuat event.
+  - generic [ref=e147]:
+    - generic [ref=e148]: Menu Lainnya
+    - button "✕" [ref=e149] [cursor=pointer]
+  - generic: G —
