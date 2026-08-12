@@ -37,6 +37,14 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 
 **Cakupan/limitasi:** `FUND_KNOWN_SYNONYM_KEYS` dikurasi manual (baru JPY+CHF, 3 pasang) berdasar domain-knowledge penamaan rilis ekonomi — kalau muncul pola sinonim baru di currency lain, tetap perlu ditambah manual (safety net case-insensitive di `reconcileFundamentalKeys` menangani varian casing otomatis, tapi tidak menebak sinonim kata yang beda total).
 
+**Lanjutan sesi sama — Tangkap & tampilkan forecast (respons user "apa lagi yang bisa diperluas dari prompt"):** audit lanjutan menemukan "Forecast" (ekspektasi konsensus pasar sebelum rilis) sudah tersedia di kedua sumber sejak lama — `api/calendar.js` sudah menyimpan `e.forecast` per event TradingView, headline FinancialJuice sudah dipakai kata "Forecast" untuk deteksi format rilis (`isCalendarFormat`) — tapi nilainya sendiri tidak pernah diekstrak/diteruskan ke AI. AI cuma bisa lihat actual vs previous (arah bulan-ke-bulan), tidak pernah tahu apakah rilis itu beat/miss ekspektasi pasar — sinyal yang sering lebih market-moving daripada arah vs bulan lalu saja.
+
+Fix: `parseFundamentalFromHeadline` & `extractFundamentalFromCalendarEvent` sekarang ekstrak `forecast` (regex sama pola seperti `previous`); `autoUpdateFundamentals`/`autoUpdateFundamentalsFromCalendar` simpan ke Redis (pertahankan nilai lama kalau re-scan tidak bawa forecast baru, pola sama seperti `previous`); `_formatFundDataLine` tampilkan tag `forecast X` di data block prompt; instruksi baru di prompt eksplisit minta AI bandingkan actual vs forecast (beat/in-line/miss), bukan cuma vs previous.
+
+Verifikasi live: deploy → trigger `fundamental_refresh` → `fundamental_get` konfirmasi field baru terisi benar (mis. `Api Crude Oil Stock Change: actual 9.072M, forecast -0.5M`; `Existing Home Sales: actual 4.06M, forecast 4.05M`) — field yang memang tidak ada forecast-nya di sumber asli (mis. hasil lelang obligasi) tetap kosong seperti seharusnya, bukan bug.
+
+Test tambahan: 3 test baru (2 headline forecast + 1 calendar forecast) + 2 test existing disesuaikan shape return. `npm test` 970/970 hijau.
+
 ## Changelog Session 307 (2026-08-11) — Fix Bug ADP Weekly + Swap Provider Analisa Fundamental + Fitur Pergerakan Ranking
 
 **Konteks:** User melaporkan tombol "Analisis Fundamental" gagal `HTTP 500`. Diagnosa live (reproduksi langsung ke Gemini API pakai prompt & data produksi asli) menemukan Gemini free tier (`gemini-flash-latest`) sesekali balas `503 overloaded` — transient, percobaan ulang identik langsung sukses. Sejak 2026-08-10 (Session sebelumnya) fitur ini SENGAJA cuma pakai Gemini tanpa fallback, jadi satu 503 langsung tampil sebagai 500 total ke user.
