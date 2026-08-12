@@ -11,12 +11,22 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-12 (Session 309 — Fix Jurnal Macet "PENDING" Padahal Sudah OPEN di MT5)
+> **Last updated:** 2026-08-12 (Session 310 — Fix "Analisis Fundamental" Gagal "signal timed out")
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
 
-## Changelog Session 309 (2026-08-12) — Fix Jurnal Macet "PENDING" Padahal Sudah OPEN di MT5
+## Changelog Session 310 (2026-08-12) — Fix "Analisis Fundamental" Gagal "signal timed out"
+
+**Konteks:** User lapor tombol "Buat Analisis Fundamental" gagal dengan pesan "Gagal: signal timed out".
+
+**Root cause:** `fundamentalAnalysisHandler` (`api/admin.js`) memakai timeout FIXED (bukan adaptif) di rantai AI-nya: SambaNova akun-2 primary retry 2x @30s + fallback Gemini @25s — worst-case bisa berjumlah sampai 85 detik. Ini menembus DUA batas sekaligus: `maxDuration: 60` Vercel Hobby untuk `api/admin.js` (fungsi bisa dibunuh platform di tengah jalan) dan `AbortSignal.timeout(55000)` di sisi client (`index.html`) yang sudah menyerah lebih dulu. Pola bug ini sama persis dengan yang sudah pernah difix di `ohlcv_analyze` (Plan O-6, session 2026-07-18) — timeout-nya sudah dibikin adaptif terhadap sisa budget waktu di sana, tapi perbaikan itu tidak pernah diperluas ke `fundamental_analysis` yang menambah provider Gemini fallback belakangan.
+
+**Fix (`api/admin.js`, `fundamentalAnalysisHandler`):** terapkan pola adaptif yang sama seperti `ohlcv_analyze` — `AI_HARD_BUDGET_MS = 48000` dihitung dari awal cascade, tiap percobaan (2x SambaNova + 1x Gemini) pakai timeout `min(timeout_lama, sisa_budget - 3000)`, dan percobaan di-skip (bukan tetap dicoba lalu keburu terpotong) kalau sisa budget di bawah 10 detik. Total cascade sekarang selalu selesai (sukses atau gagal total) dalam ~48 detik, jauh di bawah `maxDuration` 60 detik dan timeout client 55 detik.
+
+**Test:** tidak ada test baru (6 test existing di `test/admin/admin_fundamental.test.js` — sukses primary, retry+fallback, fallback-only, retry-sukses, semua-gagal, delta ranking — sudah cukup menutupi jumlah/urutan panggilan; test itu tidak mengasersi nilai timeout literal jadi tetap hijau tanpa perubahan). `npm test` 972/972 hijau (1 kegagalan tidak terkait: `scripts/test-deribit.js` gagal karena sertifikat TLS Deribit expired di lingkungan lokal, bukan bug kode ini).
+
+**Cakupan/limitasi:** fix ini menghilangkan skenario worst-case timeout, tapi tidak menjamin SambaNova+Gemini selalu selesai < 48 detik kalau provider sungguh lambat (bukan timeout) — dalam kasus itu user tetap akan lihat pesan gagal, cuma sekarang gagal-cepat dengan pesan jelas ("All AI providers failed") alih-alih request yang menggantung sampai dipotong paksa oleh platform tanpa penjelasan.
 
 **Konteks:** User lapor entry EUR/AUD di tab JURNAL tetap berlabel "PENDING" (kuning) padahal posisinya sudah OPEN di terminal MT5 — integrasi lain (auto-entry, sizing, dsb) berjalan normal, jadi ini spesifik ke mekanisme rekonsiliasi status.
 

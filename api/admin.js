@@ -1537,19 +1537,31 @@ PERLU DIWASPADAI:
   const fundMessages = [{ role: 'user', content: prompt }];
   let analysis = null;
 
+  // Batas waktu keras cascade AI (pola sama Plan O-6 di ohlcv_analyze, 2026-08-12
+  // fix bug "signal timed out"): SambaNova retry 2x @30s + Gemini fallback @25s
+  // fixed timeout bisa berjumlah sampai 85s — tembus maxDuration 60s Vercel (dan
+  // client-side AbortSignal.timeout 55s di index.html), bikin request mati di tengah
+  // tanpa pernah sampai ke fallback. Timeout tiap percobaan sekarang ADAPTIF terhadap
+  // sisa budget supaya cascade selalu selesai (sukses/gagal) sebelum limit platform.
+  const aiCascadeStart = Date.now();
+  const AI_HARD_BUDGET_MS = 48000;
+  const aiBudgetLeftMs = () => AI_HARD_BUDGET_MS - (Date.now() - aiCascadeStart);
+
   // Primary: SambaNova akun 2 (2026-08-11, keputusan user — lihat komentar
-  // CB_SAMBA_C1_ADMIN). Retry 1x — pola sama seperti Gemini di bawah, transient
-  // 5xx tidak boleh langsung gagal total kalau fitur ini cuma punya 1 primary.
+  // CB_SAMBA_C1_ADMIN). Retry 1x — transient 5xx tidak boleh langsung gagal total
+  // kalau fitur ini cuma punya 1 primary sebelum jatuh ke fallback Gemini.
   const SAMBA_C1_KEY = process.env.SAMBANOVA_API_KEY_CALL1;
   if (SAMBA_C1_KEY && await cb.canCall(CB_SAMBA_C1_ADMIN)) {
     for (let attempt = 1; attempt <= 2 && !analysis; attempt++) {
+      const attemptTimeout = Math.max(0, Math.min(30000, aiBudgetLeftMs() - 3000));
+      if (attemptTimeout < 10000) { console.log(`fundamental_analysis: SambaNova akun2 skip attempt ${attempt} — budget mepet`); break; }
       try {
         if (!await allowAiCall('sambanova_c1')) throw new Error('AI daily budget exceeded');
         const r = await fetch(SAMBANOVA_URL_C1_FUND, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SAMBA_C1_KEY}` },
           body: JSON.stringify({ model: SAMBANOVA_MODEL_C1_FUND, messages: fundMessages, max_tokens: 3500, temperature: 0.3 }),
-          signal: AbortSignal.timeout(30000),
+          signal: AbortSignal.timeout(attemptTimeout),
         });
         if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e?.error?.message || `HTTP ${r.status}`); }
         const data = await r.json();
@@ -1567,14 +1579,16 @@ PERLU DIWASPADAI:
 
   // Fallback: Gemini (2026-08-11 didemote dari primary — lihat komentar GEMINI_URL_FUND).
   const GEMINI_KEY = process.env.GEMINI_API_KEY;
-  if (!analysis && GEMINI_KEY && await cb.canCall(CB_GEMINI_ADMIN)) {
+  const geminiTimeout = Math.max(0, Math.min(25000, aiBudgetLeftMs() - 3000));
+  if (!analysis && geminiTimeout < 10000) console.log('fundamental_analysis: Gemini fallback skip — budget mepet');
+  if (!analysis && geminiTimeout >= 10000 && GEMINI_KEY && await cb.canCall(CB_GEMINI_ADMIN)) {
     try {
       if (!await allowAiCall('gemini')) throw new Error('AI daily budget exceeded');
       const r = await fetch(GEMINI_URL_FUND, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${GEMINI_KEY}` },
         body: JSON.stringify({ model: GEMINI_MODEL_FUND, messages: fundMessages, max_tokens: 3500, temperature: 0.3, reasoning_effort: 'low' }),
-        signal: AbortSignal.timeout(25000),
+        signal: AbortSignal.timeout(geminiTimeout),
       });
       if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e?.error?.message || `HTTP ${r.status}`); }
       const data = await r.json();
