@@ -419,6 +419,12 @@ module.exports = async function handler(req, res) {
       if (data.attribution_notes         ) entry.attribution_notes = clampStr(data.attribution_notes, 8000);
       if (data.status                    ) entry.status          = data.status;
       if (data.fill_state                ) entry.fill_state      = data.fill_state;
+      // Pending order yang tereksekusi di MT5 kadang muncul dengan ticket posisi
+      // BARU, beda dari ticket order pending semula (perilaku broker saat aktivasi
+      // pending order) — jnReconcilePendingOrders() di index.html mencari posisi
+      // pengganti via magic number lalu menulis ulang ticket ke sini supaya
+      // rekonsiliasi "posisi ditutup" berikutnya tetap bisa match.
+      if (data.mt5_ticket != null) entry.mt5_ticket = parseInt(data.mt5_ticket, 10) || entry.mt5_ticket;
 
       // Auto-set closed_at when status becomes closed/archived
       if (data.status === 'closed' || data.status === 'archived') {

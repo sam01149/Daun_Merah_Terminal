@@ -11,12 +11,24 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-12 (Session 308 — Audit & Fix Data Fundamental Macet Permanen JPY/AUD/NZD/CHF)
+> **Last updated:** 2026-08-12 (Session 309 — Fix Jurnal Macet "PENDING" Padahal Sudah OPEN di MT5)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
 
-## Changelog Session 308 (2026-08-12) — Audit & Fix Data Fundamental Macet Permanen JPY/AUD/NZD/CHF
+## Changelog Session 309 (2026-08-12) — Fix Jurnal Macet "PENDING" Padahal Sudah OPEN di MT5
+
+**Konteks:** User lapor entry EUR/AUD di tab JURNAL tetap berlabel "PENDING" (kuning) padahal posisinya sudah OPEN di terminal MT5 — integrasi lain (auto-entry, sizing, dsb) berjalan normal, jadi ini spesifik ke mekanisme rekonsiliasi status.
+
+**Root cause:** `jnReconcilePendingOrders()` (`index.html`) mencocokkan entry jurnal `pending` ke posisi MT5 murni via `mt5_ticket`. Asumsi lama (didokumentasikan Session ~140-an): ticket order PENDING semula = ticket POSISI hasil eksekusinya. Untuk EUR/AUD ternyata tidak — begitu limit/stop order tereksekusi di MT5, posisi barunya muncul dengan ticket berbeda. Akibatnya: ticket lama sudah hilang dari `/orders` (order pending sudah tidak ada) TAPI juga tidak match ke `/positions` (ticket beda) — seharusnya kasus ini otomatis jatuh ke status "DIBATALKAN", tapi karena reconcile juga gagal-diam total kalau bridge/positions/orders sempat tidak terbaca sempurna pada satu kunjungan tab, entry-nya keburu tersangkut di "PENDING" tanpa pernah dicoba ulang sampai user membuka tab lagi.
+
+**Fix:**
+- `index.html` (`jnReconcilePendingOrders`): tambah fallback — kalau ticket order pending tidak ketemu di `/positions` maupun `/orders`, sebelum divonis "DIBATALKAN", cari posisi MT5 yang belum diklaim entry lain dengan `magic` number yang sama persis dengan yang selalu dikirim app ini (`MT5_MAGIC = 20260601`, harus sama dengan `mt5_bridge.py`) + symbol + direction cocok. Kalau ketemu, entry ditandai `filled` dan `mt5_ticket` ditulis ulang ke ticket posisi yang baru (supaya rekonsiliasi "posisi ditutup" berikutnya tetap bisa match). Kalau ada >1 kandidat (jarang), pilih yang lot size-nya paling dekat.
+- `api/journal.js` (PATCH): tambah dukungan update field `mt5_ticket`, sebelumnya hanya `fill_state`/`status`/close-fields yang bisa di-PATCH.
+
+**Test:** 2 test baru di `test/journal/journal_patch_mt5_ticket.test.js` (PATCH menulis ulang `mt5_ticket` bareng `fill_state`; PATCH tanpa `mt5_ticket` di body tidak mengubah ticket lama). `npm test` 972/972 hijau. Logika matching di `jnReconcilePendingOrders()` sendiri tidak bisa di-unit-test (inline browser JS tanpa harness DOM di repo ini, konsisten dengan kode index.html lain) — perlu diverifikasi live oleh user saat entry pending berikutnya benar-benar tereksekusi di MT5.
+
+**Cakupan/limitasi:** fallback ini butuh posisi masih ada magic number 20260601 (semua order yang dikirim lewat bridge app ini selalu pakai magic ini, jadi tidak butuh migrasi data lama). Kalau user membuka posisi manual langsung dari terminal MT5 (bukan lewat tombol Entry MT5 app ini), posisi itu tidak akan pernah punya magic ini — di luar cakupan fitur (memang bukan entry yang dicatat app).
 
 **Konteks:** User membaca output PDF "Analisis Fundamental" dan bertanya kenapa confidence JPY selalu "rendah" (banyak data seed berlabel "Mar 2026"), curiga ada yang salah di auto-update dari FinancialJuice/kalender TradingView. Diminta audit menyeluruh: pipeline data per-currency, prompt AI, dan mekanisme auto-update.
 

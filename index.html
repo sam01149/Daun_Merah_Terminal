@@ -12776,6 +12776,11 @@ function ckPrefillJurnalAction(pct, verdict) {
 const MT5_BRIDGE = 'http://localhost:5000';
 // Bump bareng BRIDGE_VERSION di mt5_bridge.py setiap kali logika /order berubah.
 const MT5_BRIDGE_MIN_PENDING_VERSION = 2;
+// Harus sama persis dengan 'magic' di request_obj mt5_bridge.py — dipakai
+// jnReconcilePendingOrders() untuk mencocokkan posisi baru ke entry pending
+// saat MT5 mengganti nomor ticket pada aktivasi pending order (lihat komentar
+// di sana).
+const MT5_MAGIC = 20260601;
 
 // PLAN U-4: tombol Entry MT5 di Checklist diganti navigasi murni ke Sizing —
 // guard verdict+gates+ckProceedIfNotSuspicious pindah ke szShowMt5Modal()
@@ -14829,24 +14834,60 @@ async function jnReconcilePendingOrders() {
     if (!posRes.ok || !ordRes.ok) return; // old bridge without /orders yet, or transient error — leave as-is
     const posData = await posRes.json();
     const ordData = await ordRes.json();
-    const filledTickets  = new Set((posData.positions || []).map(p => p.ticket));
-    const pendingTickets = new Set((ordData.orders    || []).map(o => o.ticket));
+    const positions = posData.positions || [];
+    const filledTickets  = new Set(positions.map(p => p.ticket));
+    const pendingTickets = new Set((ordData.orders || []).map(o => o.ticket));
+
+    // Positions already spoken for: tickets any currently-'filled' journal entry
+    // already points at. Anything left over is a candidate for the magic-number
+    // fallback below, and gets removed from the pool as each pending entry claims one
+    // so two stale pending entries can't both grab the same replacement position.
+    const claimedTickets = new Set(live.map(e => e.mt5_ticket));
 
     const deviceId = szGetDeviceId();
     let changed = false;
     await Promise.all(pending.map(async (e) => {
       let newState = null;
-      if (filledTickets.has(e.mt5_ticket)) newState = 'filled';
-      else if (!pendingTickets.has(e.mt5_ticket)) newState = 'cancelled'; // gone from both = cancelled/expired in MT5
-      if (!newState) return; // still resting — no change
+      let newTicket = null;
+      if (filledTickets.has(e.mt5_ticket)) { newState = 'filled'; claimedTickets.add(e.mt5_ticket); }
+      else if (pendingTickets.has(e.mt5_ticket)) { return; } // still resting — no change
+      else {
+        // Ticket is gone from both lists. Usual read: cancelled/expired in MT5.
+        // But MT5 sometimes assigns the resulting POSITION a different ticket than
+        // the original PENDING ORDER when the order activates — confirmed on EUR/AUD,
+        // where MT5 showed the position open while the journal kept "PENDING" forever
+        // because the tickets never matched (see daun_merah.md untuk detail). Before
+        // giving up as cancelled, look for an unclaimed position that is unmistakably
+        // ours (same magic number this app always sends, matching symbol + direction).
+        const symbol = e.pair ? e.pair.replace(/\//g, '').toUpperCase() : '';
+        const candidates = positions.filter(p =>
+          !claimedTickets.has(p.ticket) &&
+          p.magic === MT5_MAGIC &&
+          p.symbol === symbol &&
+          p.direction === e.direction
+        );
+        if (candidates.length > 0) {
+          // Multiple simultaneous candidates (rare) — prefer the closest lot size match.
+          candidates.sort((a, b) => Math.abs((a.volume ?? 0) - (e.size_lots ?? 0)) - Math.abs((b.volume ?? 0) - (e.size_lots ?? 0)));
+          newState = 'filled';
+          newTicket = candidates[0].ticket;
+          claimedTickets.add(newTicket);
+        } else {
+          newState = 'cancelled';
+        }
+      }
+      if (!newState) return;
 
       e.fill_state = newState;
+      if (newTicket != null) e.mt5_ticket = newTicket;
       changed = true;
       try {
+        const patchBody = { fill_state: newState };
+        if (newTicket != null) patchBody.mt5_ticket = newTicket;
         await fetch(`/api/journal?device_id=${encodeURIComponent(deviceId)}&id=${encodeURIComponent(e.id)}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ fill_state: newState }),
+          body: JSON.stringify(patchBody),
           signal: AbortSignal.timeout(6000),
         });
       } catch(_) {}
