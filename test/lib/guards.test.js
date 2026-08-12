@@ -16,36 +16,26 @@ const cb = require('../../api/_circuit_breaker');
 // ── _ai_guard ───────────────────────────────────────────────────────────────
 
 test('providerFromUrl mengenali provider yang masih aktif', () => {
-  assert.strictEqual(providerFromUrl('https://api.sambanova.ai/v1/chat/completions'), 'sambanova');
   assert.strictEqual(providerFromUrl('https://api.deepseek.com/chat/completions'), 'deepseek');
   assert.strictEqual(providerFromUrl('https://example.com/v1'), null);
   assert.strictEqual(providerFromUrl(null), null);
 });
 
 test('allowAiCall fail-open tanpa Redis env', async () => {
-  assert.strictEqual(await allowAiCall('sambanova_main'), true);
+  assert.strictEqual(await allowAiCall('deepseek'), true);
 });
 
 test('allowAiCall provider tak dikenal → diizinkan (jangan blokir)', async () => {
   assert.strictEqual(await allowAiCall(null), true);
 });
 
-// Regression: 2 akun SambaNova (kunci API beda, kuota real terpisah) sempat berbagi
-// satu counter budget 'sambanova' — Call 1 (akun 2, Ringkasan) yang sering di-generate
-// ulang bisa menghabiskan kuota gabungan lebih dulu dan bikin ohlcv_analyze (akun 1,
-// Analisa) ikut diblokir "budget exceeded" walau akun 1-nya sendiri masih longgar,
-// lalu jatuh ke fallback Groq llama-3.3 (dianggap kualitasnya kurang oleh user).
-// Fix: pisah jadi 'sambanova_main' (akun 1) dan 'sambanova_c1' (akun 2), senada
-// dengan circuit breaker yang sudah dipisah sejak session 125.
-test('DEFAULT_LIMITS: 2 akun SambaNova punya counter budget terpisah', () => {
-  assert.strictEqual(DEFAULT_LIMITS.sambanova_main, 200);
-  assert.strictEqual(DEFAULT_LIMITS.sambanova_c1, 200);
-  assert.strictEqual(DEFAULT_LIMITS.sambanova, undefined, 'counter gabungan lama harus sudah tidak dipakai');
-});
-
-test('allowAiCall: sambanova_main dan sambanova_c1 masing-masing fail-open tanpa Redis', async () => {
-  assert.strictEqual(await allowAiCall('sambanova_main'), true);
-  assert.strictEqual(await allowAiCall('sambanova_c1'), true);
+// SambaNova (akun 1 & 2) diputus kontrak total 2026-08-12 — counter budget-nya
+// dihapus dari DEFAULT_LIMITS bersamaan dengan kode yang memanggilnya (billing lapse
+// tak terpulihkan meski ganti API key, lihat daun_merah_vendor.md).
+test('DEFAULT_LIMITS: sambanova_main/sambanova_c1 sudah tidak ada (vendor diputus)', () => {
+  assert.strictEqual(DEFAULT_LIMITS.sambanova_main, undefined);
+  assert.strictEqual(DEFAULT_LIMITS.sambanova_c1, undefined);
+  assert.strictEqual(DEFAULT_LIMITS.sambanova, undefined);
 });
 
 // OpenRouter/Cerebras/Groq/Ollama diputus kontraknya 2026-07-25 — counter budget-nya
@@ -62,21 +52,17 @@ test('DEFAULT_LIMITS: openrouter/cerebras/groq/ollama sudah tidak ada (vendor di
 // counter KUOTA HARIAN sempat lupa ikut dipisah — auto-entry & manual publik rebutan
 // pool deepseek 50/hari BERBAYAR yang sama. Golden Trio (S217) menaikkan volume
 // eksperimen sampai 9 call/hari, cukup untuk menggerus pagar biaya publik diam-diam.
-// Fix: counter khusus 'deepseek_experimental'/'sambanova_main_experimental'/
-// 'sambanova_c1_experimental', senada pola isolasi ':experimental' circuit breaker.
+// Fix: counter khusus 'deepseek_experimental', senada pola isolasi ':experimental'
+// circuit breaker.
 test('DEFAULT_LIMITS: counter kuota harian eksperimen (auto-entry) terpisah dari produksi', () => {
   assert.strictEqual(typeof DEFAULT_LIMITS.deepseek_experimental, 'number');
   assert.ok(DEFAULT_LIMITS.deepseek_experimental > 0);
   assert.ok(DEFAULT_LIMITS.deepseek_experimental < DEFAULT_LIMITS.deepseek,
     'pagar eksperimen harus tetap lebih ketat dari produksi, bukan menggandakan anggaran');
-  assert.strictEqual(typeof DEFAULT_LIMITS.sambanova_main_experimental, 'number');
-  assert.strictEqual(typeof DEFAULT_LIMITS.sambanova_c1_experimental, 'number');
 });
 
 test('allowAiCall: counter experimental fail-open tanpa Redis (independen dari counter produksi)', async () => {
   assert.strictEqual(await allowAiCall('deepseek_experimental'), true);
-  assert.strictEqual(await allowAiCall('sambanova_main_experimental'), true);
-  assert.strictEqual(await allowAiCall('sambanova_c1_experimental'), true);
 });
 
 // ── _ratelimit ──────────────────────────────────────────────────────────────

@@ -89,33 +89,38 @@ function criticResponse(verdict) {
   return JSON.stringify({ objections: verdict === 'batalkan' ? [{ severity: 'tinggi', reason: 'contoh keberatan tes' }] : [], verdict });
 }
 
-// onCriticCall: hook opsional dipanggil TEPAT SEBELUM stub membalas request SambaNova
-// (Gate A) — dipakai test (c) untuk menyuntik "perubahan state pihak lain" di titik
-// yang persis meniru race window nyata (state berubah SELAMA AI mikir).
+// onCriticCall: hook opsional dipanggil TEPAT SEBELUM stub membalas request Gate A
+// Sistem Hakim (AI Kritikus, DeepSeek — sama provider dengan analisa setup utama,
+// dibedakan dari isi body request bukan URL karena keduanya sama-sama ke
+// api.deepseek.com) — dipakai test (c) untuk menyuntik "perubahan state pihak lain"
+// di titik yang persis meniru race window nyata (state berubah SELAMA AI mikir).
 function makeAnalyzeFetchStub(store, { criticVerdict = 'lanjut', onCriticCall = null } = {}) {
   const redisStub = redisFetchStub(store);
   return async (url, opts) => {
     const u = String(url);
     if (u.includes('fake-upstash.test')) return redisStub(url, opts);
-    if (u.includes('api.deepseek.com')) return { ok: true, json: async () => ({ choices: [{ message: { content: AI_RAW_TEXT } }] }) };
-    if (u.includes('api.sambanova.ai')) {
-      if (onCriticCall) onCriticCall();
-      return { ok: true, json: async () => ({ choices: [{ message: { content: criticResponse(criticVerdict) } }] }) };
+    if (u.includes('api.deepseek.com')) {
+      const isCritic = String(opts.body).includes('objections');
+      if (isCritic) {
+        if (onCriticCall) onCriticCall();
+        return { ok: true, json: async () => ({ choices: [{ message: { content: criticResponse(criticVerdict) } }] }) };
+      }
+      return { ok: true, json: async () => ({ choices: [{ message: { content: AI_RAW_TEXT } }] }) };
     }
     throw new Error('unexpected network call di test: ' + u);
   };
 }
 
 async function withEnv(vars, fn) {
-  const prev = { CRON_SECRET: process.env.CRON_SECRET, DEEPSEEK_API_KEY: process.env.DEEPSEEK_API_KEY, SAMBANOVA_API_KEY: process.env.SAMBANOVA_API_KEY };
-  delete process.env.CRON_SECRET; delete process.env.DEEPSEEK_API_KEY; delete process.env.SAMBANOVA_API_KEY;
+  const prev = { CRON_SECRET: process.env.CRON_SECRET, DEEPSEEK_API_KEY: process.env.DEEPSEEK_API_KEY };
+  delete process.env.CRON_SECRET; delete process.env.DEEPSEEK_API_KEY;
   Object.assign(process.env, vars);
   const origIsOpen = marketHours.isFxMarketOpen;
   marketHours.isFxMarketOpen = () => true;
   try { return await fn(); }
   finally {
     marketHours.isFxMarketOpen = origIsOpen;
-    delete process.env.CRON_SECRET; delete process.env.DEEPSEEK_API_KEY; delete process.env.SAMBANOVA_API_KEY;
+    delete process.env.CRON_SECRET; delete process.env.DEEPSEEK_API_KEY;
     for (const k of Object.keys(prev)) { if (prev[k] !== undefined) process.env[k] = prev[k]; }
   }
 }
@@ -129,7 +134,7 @@ function baseStore() {
 }
 
 test('Gate A lanjut: entri tetap tersimpan (lock dilepas sebelum AI, re-acquire sukses)', async () => {
-  await withEnv({ CRON_SECRET: 'topsecret', DEEPSEEK_API_KEY: 'k', SAMBANOVA_API_KEY: 'sk' }, async () => {
+  await withEnv({ CRON_SECRET: 'topsecret', DEEPSEEK_API_KEY: 'k' }, async () => {
     const store = baseStore();
     const origFetch = global.fetch;
     global.fetch = makeAnalyzeFetchStub(store, { criticVerdict: 'lanjut' });
@@ -151,7 +156,7 @@ test('Gate A lanjut: entri tetap tersimpan (lock dilepas sebelum AI, re-acquire 
 });
 
 test('Gate A batalkan: TIDAK ada entri live (pending/open), tapi tersimpan sebagai ghost canceled + auto_guard_stats:critic_veto naik', async () => {
-  await withEnv({ CRON_SECRET: 'topsecret', DEEPSEEK_API_KEY: 'k', SAMBANOVA_API_KEY: 'sk' }, async () => {
+  await withEnv({ CRON_SECRET: 'topsecret', DEEPSEEK_API_KEY: 'k' }, async () => {
     const store = baseStore();
     const origFetch = global.fetch;
     global.fetch = makeAnalyzeFetchStub(store, { criticVerdict: 'batalkan' });
@@ -180,7 +185,7 @@ test('Gate A batalkan: TIDAK ada entri live (pending/open), tapi tersimpan sebag
 });
 
 test('Race terdeteksi selama Gate A berjalan: posisi open baru muncul untuk symbol sama -> entri BARU dibuang, tidak menimpa', async () => {
-  await withEnv({ CRON_SECRET: 'topsecret', DEEPSEEK_API_KEY: 'k', SAMBANOVA_API_KEY: 'sk' }, async () => {
+  await withEnv({ CRON_SECRET: 'topsecret', DEEPSEEK_API_KEY: 'k' }, async () => {
     const store = baseStore();
     const origFetch = global.fetch;
     // Selama Gate A "berpikir" (dipanggil ke SambaNova), proses LAIN (simulasi) menulis
@@ -211,7 +216,7 @@ test('Race terdeteksi selama Gate A berjalan: posisi open baru muncul untuk symb
 });
 
 test('Flip-cancel lalu Gate A batalkan kandidat baru: pembatalan stalePending TETAP tersimpan (bug sekunder difix)', async () => {
-  await withEnv({ CRON_SECRET: 'topsecret', DEEPSEEK_API_KEY: 'k', SAMBANOVA_API_KEY: 'sk' }, async () => {
+  await withEnv({ CRON_SECRET: 'topsecret', DEEPSEEK_API_KEY: 'k' }, async () => {
     const stalePending = {
       id: 'GBPUSD=X:111', symbol: 'GBPUSD=X', label: 'GBP/USD', bias: 'bullish',
       entry_zone: '1.2700-1.2710', sl: '1.2650', tp: '1.2800',
@@ -258,7 +263,7 @@ test('Flip-cancel lalu Gate A batalkan kandidat baru: pembatalan stalePending TE
 // api/_auto_entry_guard.js. Sekarang conflict:'waktu' cuma flag observasi non-blocking,
 // kandidatnya TETAP diteruskan ke Gate A (AI Kritikus) yang independen menilai.
 test('Gate E conflict:"waktu" — flag observasi naik TAPI Gate A tetap dipanggil, verdict "lanjut" -> entri tersimpan', async () => {
-  await withEnv({ CRON_SECRET: 'topsecret', DEEPSEEK_API_KEY: 'k', SAMBANOVA_API_KEY: 'sk' }, async () => {
+  await withEnv({ CRON_SECRET: 'topsecret', DEEPSEEK_API_KEY: 'k' }, async () => {
     const aiJsonConflictWaktu = { ...AI_JSON_BEARISH, conflict: 'waktu', conflict_note: 'FOMC dalam 18 jam, horizon 3 hari' };
     const aiRawText = `${JSON.stringify(aiJsonConflictWaktu)}\n===COMMENTARY===\nKomentar singkat untuk tes Gate E.`;
     const store = baseStore();
@@ -267,8 +272,10 @@ test('Gate E conflict:"waktu" — flag observasi naik TAPI Gate A tetap dipanggi
     global.fetch = async (url, opts) => {
       const u = String(url);
       if (u.includes('fake-upstash.test')) return redisStub(url, opts);
-      if (u.includes('api.deepseek.com')) return { ok: true, json: async () => ({ choices: [{ message: { content: aiRawText } }] }) };
-      if (u.includes('api.sambanova.ai')) return { ok: true, json: async () => ({ choices: [{ message: { content: criticResponse('lanjut') } }] }) };
+      if (u.includes('api.deepseek.com')) {
+        if (String(opts.body).includes('objections')) return { ok: true, json: async () => ({ choices: [{ message: { content: criticResponse('lanjut') } }] }) };
+        return { ok: true, json: async () => ({ choices: [{ message: { content: aiRawText } }] }) };
+      }
       throw new Error('unexpected network call di test: ' + u);
     };
     try {
@@ -290,7 +297,7 @@ test('Gate E conflict:"waktu" — flag observasi naik TAPI Gate A tetap dipanggi
 });
 
 test('Gate E conflict:"waktu" — Gate A tetap bisa veto (critic_veto), bukan lagi auto-reject buta oleh Gate E sendiri', async () => {
-  await withEnv({ CRON_SECRET: 'topsecret', DEEPSEEK_API_KEY: 'k', SAMBANOVA_API_KEY: 'sk' }, async () => {
+  await withEnv({ CRON_SECRET: 'topsecret', DEEPSEEK_API_KEY: 'k' }, async () => {
     const aiJsonConflictWaktu = { ...AI_JSON_BEARISH, conflict: 'waktu', conflict_note: 'FOMC dalam 18 jam, horizon 3 hari' };
     const aiRawText = `${JSON.stringify(aiJsonConflictWaktu)}\n===COMMENTARY===\nKomentar singkat untuk tes Gate E.`;
     const store = baseStore();
@@ -299,8 +306,10 @@ test('Gate E conflict:"waktu" — Gate A tetap bisa veto (critic_veto), bukan la
     global.fetch = async (url, opts) => {
       const u = String(url);
       if (u.includes('fake-upstash.test')) return redisStub(url, opts);
-      if (u.includes('api.deepseek.com')) return { ok: true, json: async () => ({ choices: [{ message: { content: aiRawText } }] }) };
-      if (u.includes('api.sambanova.ai')) return { ok: true, json: async () => ({ choices: [{ message: { content: criticResponse('batalkan') } }] }) };
+      if (u.includes('api.deepseek.com')) {
+        if (String(opts.body).includes('objections')) return { ok: true, json: async () => ({ choices: [{ message: { content: criticResponse('batalkan') } }] }) };
+        return { ok: true, json: async () => ({ choices: [{ message: { content: aiRawText } }] }) };
+      }
       throw new Error('unexpected network call di test: ' + u);
     };
     try {
@@ -331,7 +340,7 @@ test('Gate E conflict:"waktu" — Gate A tetap bisa veto (critic_veto), bukan la
 // Dipakai untuk Plan U item #10 (gating berbasis rezim, KONDISIONAL pada bukti
 // regime-dependency) + audit apakah bias yang dipilih AI konsisten dengan regime.
 test('Track 1b: field "regime" pada setup baru = risk_regime yang berlaku saat itu (nol fetch tambahan, sudah dipakai Gate B)', async () => {
-  await withEnv({ CRON_SECRET: 'topsecret', DEEPSEEK_API_KEY: 'k', SAMBANOVA_API_KEY: 'sk' }, async () => {
+  await withEnv({ CRON_SECRET: 'topsecret', DEEPSEEK_API_KEY: 'k' }, async () => {
     const store = baseStore();
     store.strings['risk_regime'] = JSON.stringify({ regime: 'risk_off', computed_at: new Date().toISOString() });
     const origFetch = global.fetch;
@@ -352,7 +361,7 @@ test('Track 1b: field "regime" pada setup baru = risk_regime yang berlaku saat i
 });
 
 test('Track 1b: risk_regime cache kosong/gagal parse -> field "regime" null, TIDAK menggagalkan penyimpanan setup', async () => {
-  await withEnv({ CRON_SECRET: 'topsecret', DEEPSEEK_API_KEY: 'k', SAMBANOVA_API_KEY: 'sk' }, async () => {
+  await withEnv({ CRON_SECRET: 'topsecret', DEEPSEEK_API_KEY: 'k' }, async () => {
     const store = baseStore(); // tanpa key 'risk_regime' -> GET null
     const origFetch = global.fetch;
     global.fetch = makeAnalyzeFetchStub(store, { criticVerdict: 'lanjut' });

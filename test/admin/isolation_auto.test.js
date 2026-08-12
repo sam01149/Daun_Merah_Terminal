@@ -46,15 +46,15 @@ function fakeReqRes({ action, method = 'POST', headers = {}, body = '', query = 
 }
 
 async function withEnv(vars, fn) {
-  const prev = { CRON_SECRET: process.env.CRON_SECRET, DEEPSEEK_API_KEY: process.env.DEEPSEEK_API_KEY, SAMBANOVA_API_KEY: process.env.SAMBANOVA_API_KEY, GROQ_API_KEY: process.env.GROQ_API_KEY };
-  delete process.env.CRON_SECRET; delete process.env.DEEPSEEK_API_KEY; delete process.env.SAMBANOVA_API_KEY; delete process.env.GROQ_API_KEY;
+  const prev = { CRON_SECRET: process.env.CRON_SECRET, DEEPSEEK_API_KEY: process.env.DEEPSEEK_API_KEY, GROQ_API_KEY: process.env.GROQ_API_KEY };
+  delete process.env.CRON_SECRET; delete process.env.DEEPSEEK_API_KEY; delete process.env.GROQ_API_KEY;
   Object.assign(process.env, vars);
   const origIsOpen = marketHours.isFxMarketOpen;
   marketHours.isFxMarketOpen = () => true;
   try { return await fn(); }
   finally {
     marketHours.isFxMarketOpen = origIsOpen;
-    delete process.env.CRON_SECRET; delete process.env.DEEPSEEK_API_KEY; delete process.env.SAMBANOVA_API_KEY; delete process.env.GROQ_API_KEY;
+    delete process.env.CRON_SECRET; delete process.env.DEEPSEEK_API_KEY; delete process.env.GROQ_API_KEY;
     for (const k of Object.keys(prev)) { if (prev[k] !== undefined) process.env[k] = prev[k]; }
   }
 }
@@ -506,8 +506,7 @@ test('PLAN U-3 lanjutan: call auto -> track record GABUNGAN manual+auto disuap k
 
       assert.equal(res.statusCode, 200);
       // 2 call DeepSeek: [0] ohlcv_analyze primary (thesis+track record), [1] Gate A
-      // Kritikus fallback (2026-07-30 — SambaNova di-stub "unexpected network call"
-      // jadi selalu gagal, Kritikus otomatis jatuh ke DeepSeek v4-flash fallback).
+      // Kritikus (DeepSeek v4-flash, primary/satu-satunya provider di _runCriticVerdict).
       assert.equal(captured.length, 2, 'harus ada 2 call ke DeepSeek: ohlcv_analyze primary + Kritikus Gate A fallback');
       const promptBody = JSON.stringify(captured[0]);
       assert.ok(promptBody.includes('gabungan seluruh sumber'), 'label prompt harus menandai gabungan');
@@ -772,7 +771,7 @@ test('PLAN U-7(d): position_review menolak id yang ada di setup_log:v1 (manual) 
 });
 
 test('PLAN U-7(d): position_review tetap memproses id yang ADA di setup_log_auto:v1 (kontrol positif)', async () => {
-  await withEnv({ CRON_SECRET: 'rahasia', SAMBANOVA_API_KEY: 'k' }, async () => {
+  await withEnv({ CRON_SECRET: 'rahasia', DEEPSEEK_API_KEY: 'k' }, async () => {
     const autoSetup = baseSetup({ id: 'GC=F:auto1', status: 'open', source: 'auto', filled_t: 500 });
     const store = makeStore({ 'setup_log:v1': JSON.stringify([]), 'setup_log_auto:v1': JSON.stringify([autoSetup]) });
     const { req, res } = fakeReqRes({
@@ -781,7 +780,7 @@ test('PLAN U-7(d): position_review tetap memproses id yang ADA di setup_log_auto
     });
     const origFetch = global.fetch;
     global.fetch = async (url, opts) => {
-      if (String(url).includes('sambanova.ai')) {
+      if (String(url).includes('deepseek.com')) {
         return { ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify({ decision: 'HOLD', new_sl: null, reason: 'aman', confidence: 'sedang' }) } }] }) };
       }
       return redisFetchStub(store)(url, opts);
@@ -802,10 +801,12 @@ test('PLAN U-7(d): position_review tetap memproses id yang ADA di setup_log_auto
 // position_review masih pakai key produksi ('ai:sambanova:main'/'sambanova_main'),
 // padahal fitur ini developer-only (HANYA proses id dari setup_log_auto:v1, lihat
 // test (d) di atas). Fallback DeepSeek di handler yang sama SUDAH benar pakai pool
-// eksperimen sejak awal — call SambaNova primer kelewatan. Pola test sama V-3 di
-// bawah: pastikan breaker/counter yang tersentuh eksperimen, produksi tidak disentuh.
-test('PLAN V-3 (audit S274 lanjutan): position_review call SambaNova pakai pool eksperimen, BUKAN produksi', async () => {
-  await withEnv({ CRON_SECRET: 'rahasia', SAMBANOVA_API_KEY: 'k' }, async () => {
+// eksperimen sejak awal — call SambaNova primer kelewatan. SambaNova sendiri diputus
+// kontrak total 2026-08-12 (lihat daun_merah_vendor.md); DeepSeek eksperimen yang
+// dulu jadi fallback sekarang jadi primary/satu-satunya di sini — pool isolasinya
+// (test di bawah) tetap relevan diverifikasi.
+test('PLAN V-3 (audit S274 lanjutan): position_review call DeepSeek pakai pool eksperimen, BUKAN produksi', async () => {
+  await withEnv({ CRON_SECRET: 'rahasia', DEEPSEEK_API_KEY: 'k' }, async () => {
     const autoSetup = baseSetup({ id: 'GC=F:auto1', status: 'open', source: 'auto', filled_t: 500 });
     const store = makeStore({ 'setup_log:v1': JSON.stringify([]), 'setup_log_auto:v1': JSON.stringify([autoSetup]) });
     const { req, res } = fakeReqRes({
@@ -814,7 +815,7 @@ test('PLAN V-3 (audit S274 lanjutan): position_review call SambaNova pakai pool 
     });
     const origFetch = global.fetch;
     global.fetch = async (url, opts) => {
-      if (String(url).includes('sambanova.ai')) {
+      if (String(url).includes('deepseek.com')) {
         return { ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify({ decision: 'HOLD', new_sl: null, reason: 'aman', confidence: 'sedang' }) } }] }) };
       }
       return redisFetchStub(store)(url, opts);
@@ -829,8 +830,8 @@ test('PLAN V-3 (audit S274 lanjutan): position_review call SambaNova pakai pool 
       // closed with no record, nothing to reset") — jadi cek counter budget harian
       // (SELALU ditulis tiap call, pola sama test Audit S218 di atas), bukan circuit.
       const day = new Date().toISOString().slice(0, 10);
-      assert.equal(store.strings[`ai_budget:sambanova_main_experimental:${day}`], '1', 'counter budget EKSPERIMEN harus naik');
-      assert.equal(store.strings[`ai_budget:sambanova_main:${day}`], undefined, 'counter budget PRODUKSI tidak boleh tersentuh oleh position_review');
+      assert.equal(store.strings[`ai_budget:deepseek_experimental:${day}`], '1', 'counter budget EKSPERIMEN harus naik');
+      assert.equal(store.strings[`ai_budget:deepseek:${day}`], undefined, 'counter budget PRODUKSI tidak boleh tersentuh oleh position_review');
     } finally { global.fetch = origFetch; }
   });
 });
@@ -951,9 +952,8 @@ test('Audit S218: call auto=1 sukses -> ai_budget:deepseek_experimental naik, ai
       }, res);
       assert.equal(res.statusCode, 200);
       const day = new Date().toISOString().slice(0, 10);
-      // '2' (bukan '1'): ohlcv_analyze primary + Gate A Kritikus fallback (2026-07-30 —
-      // SambaNova di-stub selalu gagal di test ini, Kritikus jatuh ke DeepSeek v4-flash
-      // fallback yang berbagi pool 'deepseek_experimental' yang sama dengan primary).
+      // '2' (bukan '1'): ohlcv_analyze primary + Gate A Kritikus, keduanya DeepSeek
+      // v4-flash berbagi pool 'deepseek_experimental' yang sama.
       assert.equal(store.strings[`ai_budget:deepseek_experimental:${day}`], '2');
       assert.equal(store.strings[`ai_budget:deepseek:${day}`], undefined, 'counter produksi TIDAK BOLEH tersentuh oleh call auto');
     } finally { global.fetch = origFetch; }
@@ -980,37 +980,9 @@ test('Audit S218 (kontrol negatif): call PUBLIK (manual) sukses -> ai_budget:dee
   });
 });
 
-function failingSambaMainFetchStub(store) {
-  const redisStub = redisFetchStub(store);
-  return async (url, opts) => {
-    const u = String(url);
-    if (u.includes('fake-upstash.test')) return redisStub(url, opts);
-    if (u.includes('sambanova.ai')) return { ok: false, status: 500, json: async () => ({ error: { message: 'boom' } }) };
-    throw new Error('unexpected network call di test: ' + u);
-  };
-}
-
-test('PLAN V-3: 3x call auto=1 (fallback SambaNova akun-1, tanpa DEEPSEEK_API_KEY) gagal beruntun -> circuit:ai:sambanova:main:experimental OPEN, circuit:ai:sambanova:main (produksi) TIDAK TERSENTUH', async () => {
-  await withEnv({ CRON_SECRET: 'topsecret', SAMBANOVA_API_KEY: 'k' }, async () => {
-    const store = makeStore({
-      'ohlcv_fresh:GBPUSD=X': '1',
-      'ohlcv:GBPUSD=X:1h': JSON.stringify(mkTrendCandles(1.30, 1.28)),
-    });
-    const origFetch = global.fetch;
-    global.fetch = failingSambaMainFetchStub(store);
-    try {
-      const handler = loadHandler();
-      for (let i = 0; i < 3; i++) {
-        const res = fakeRes();
-        await handler({
-          headers: { 'x-cron-secret': 'topsecret' }, method: 'GET',
-          query: { action: 'ohlcv_analyze', symbol: 'GBPUSD=X', label: 'GBP/USD', auto: '1' },
-        }, res);
-        assert.equal(res.statusCode, 200);
-      }
-      const expCircuit = JSON.parse(store.strings['circuit:ai:sambanova:main:experimental']);
-      assert.equal(expCircuit.state, 'open', 'breaker experimental SambaNova akun-1 harus OPEN setelah 3x gagal beruntun call auto');
-      assert.equal(store.strings['circuit:ai:sambanova:main'], undefined, 'breaker produksi ai:sambanova:main TIDAK BOLEH tersentuh oleh kegagalan call auto');
-    } finally { global.fetch = origFetch; }
-  });
-});
+// SambaNova akun 1 (fallback lama ohlcv_analyze, target test isolasi circuit
+// eksperimen-vs-produksi khusus SambaNova) diputus kontrak total 2026-08-12 — lihat
+// daun_merah_vendor.md. Cakupan intinya (isolasi 'ai:*:experimental' vs produksi)
+// sudah dites tuntas lewat DeepSeek di atas ("PLAN V-3: 3x call auto=1 gagal beruntun
+// -> circuit:ai:deepseek:experimental OPEN..." dkk), jadi test khusus SambaNova ini
+// dihapus alih-alih dipertahankan untuk mekanisme yang sudah tidak ada.

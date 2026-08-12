@@ -1,6 +1,6 @@
 // api/journal.js
 // Trade journal — POST (create), PATCH (close), GET (list), DELETE (soft-delete)
-// GET ?action=analyze — AI analysis of closed trades (SambaNova, cached 1h per device)
+// GET ?action=analyze — AI analysis of closed trades (Gemini, cached 1h per device)
 // Redis: journal:{device_id}:{id} (full entry), journal_index:{device_id} (sorted set by created_at ms)
 
 const CORS = { 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-cache' };
@@ -37,12 +37,12 @@ function sanitizeChecklistSnapshot(snap) {
   return n > 0 ? out : null;
 }
 
-// Sama seperti CB_SAMBA_C1 di market-digest.js — akun 2 SambaNova dipakai bersama
-// sebagai fallback1 journal_analysis + fundamental_analysis + primary Call 1 digest.
-const CB_SAMBA_C1 = 'ai:sambanova:c1';
-// Gemini AI Studio — fallback terakhir AI Coach (2026-07-19), konstanta & alasan sama
-// dengan GEMINI_URL_FUND di admin.js (alias -latest → gemini-3.5-flash; lolos gate ToS
-// produksi daun_merah_riset.md S183; budget guard 'gemini' sudah ada di _ai_guard.js).
+// Gemini AI Studio — primary/satu-satunya provider AI Coach (2026-08-12: SambaNova
+// akun 2, primary lama di sini, diputus kontrak total — akunnya diblokir billing
+// SambaNova sendiri, ganti API key tidak memperbaikinya, lihat daun_merah_vendor.md).
+// Konstanta & alasan sama dengan GEMINI_URL_FUND di admin.js (alias -latest →
+// gemini-3.5-flash; lolos gate ToS produksi daun_merah_riset.md S183; budget guard
+// 'gemini' sudah ada di _ai_guard.js).
 const GEMINI_URL   = 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions';
 const GEMINI_MODEL = 'gemini-flash-latest';
 const CB_GEMINI    = 'ai:gemini'; // circuit dipakai bersama market-digest.js & admin.js — provider sama
@@ -71,24 +71,11 @@ async function callProvider(url, apiKey, model, messages, maxTokens, temperature
   return txt;
 }
 
-// Vendor cleanup (2026-07-25): Cerebras & Groq diputus kontraknya (tidak dipakai
-// lagi di app manapun). Chain sekarang 2-tier: SambaNova akun2 primary -> Gemini
-// flash fallback (2026-07-19), last resort.
+// Vendor cleanup: Cerebras & Groq diputus 2026-07-25; SambaNova (akun 1 & 2) diputus
+// 2026-08-12 (billing lapse tak terpulihkan, lihat daun_merah_vendor.md). Gemini flash
+// sekarang satu-satunya provider AI Coach.
 async function aiCall(messages, maxTokens = 1000) {
-  const SAMBANOVA_KEY_CALL1 = process.env.SAMBANOVA_API_KEY_CALL1;
-  const GEMINI_KEY          = process.env.GEMINI_API_KEY;
-
-  if (SAMBANOVA_KEY_CALL1 && await cb.canCall(CB_SAMBA_C1)) {
-    try {
-      if (!await allowAiCall('sambanova_c1')) throw new Error('AI daily budget exceeded');
-      const txt = await callProvider('https://api.sambanova.ai/v1/chat/completions', SAMBANOVA_KEY_CALL1, 'DeepSeek-V3.2', messages, maxTokens, 0.4, 30000);
-      await cb.onSuccess(CB_SAMBA_C1);
-      return txt;
-    } catch(e) {
-      console.warn('journal aiCall: SambaNova akun2 failed:', e.message);
-      await cb.onFailure(CB_SAMBA_C1);
-    }
-  }
+  const GEMINI_KEY = process.env.GEMINI_API_KEY;
 
   if (GEMINI_KEY && await cb.canCall(CB_GEMINI)) {
     try {
@@ -102,7 +89,7 @@ async function aiCall(messages, maxTokens = 1000) {
     }
   }
 
-  throw new Error('All AI providers failed or none configured (SAMBANOVA_API_KEY_CALL1 / GEMINI_API_KEY)');
+  throw new Error('All AI providers failed or none configured (GEMINI_API_KEY)');
 }
 
 async function redisCmd(...args) {

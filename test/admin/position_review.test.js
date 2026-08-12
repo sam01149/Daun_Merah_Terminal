@@ -295,12 +295,12 @@ function fakeReqRes({ method = 'POST', headers = {}, body = '' } = {}) {
 }
 
 async function withEnv(vars, fn) {
-  const prev = { CRON_SECRET: process.env.CRON_SECRET, APP_KEY: process.env.APP_KEY, SAMBANOVA_API_KEY: process.env.SAMBANOVA_API_KEY, GROQ_API_KEY: process.env.GROQ_API_KEY };
-  delete process.env.CRON_SECRET; delete process.env.APP_KEY; delete process.env.SAMBANOVA_API_KEY; delete process.env.GROQ_API_KEY;
+  const prev = { CRON_SECRET: process.env.CRON_SECRET, APP_KEY: process.env.APP_KEY, DEEPSEEK_API_KEY: process.env.DEEPSEEK_API_KEY, GROQ_API_KEY: process.env.GROQ_API_KEY };
+  delete process.env.CRON_SECRET; delete process.env.APP_KEY; delete process.env.DEEPSEEK_API_KEY; delete process.env.GROQ_API_KEY;
   Object.assign(process.env, vars);
   try { return await fn(); }
   finally {
-    delete process.env.CRON_SECRET; delete process.env.APP_KEY; delete process.env.SAMBANOVA_API_KEY; delete process.env.GROQ_API_KEY;
+    delete process.env.CRON_SECRET; delete process.env.APP_KEY; delete process.env.DEEPSEEK_API_KEY; delete process.env.GROQ_API_KEY;
     for (const k of Object.keys(prev)) { if (prev[k] !== undefined) process.env[k] = prev[k]; }
   }
 }
@@ -312,13 +312,13 @@ async function withFetch(stub, fn) {
 }
 
 // Stub gabungan: Upstash Redis REST (setup_log_auto/candle/calendar/circuit/budget) +
-// SambaNova AI. `log` di-mutate in-place oleh SET supaya assertion baca state akhir.
+// DeepSeek AI. `log` di-mutate in-place oleh SET supaya assertion baca state akhir.
 // PLAN U-7 (REVISI VISIBILITAS 2026-07-20): position_review HANYA melayani setup
 // eksperimen di `setup_log_auto:v1` (dulu `setup_log:v1` sebelum revisi) — fixture
 // `log` di sini merepresentasikan log EKSPERIMEN, bukan log manual pengguna.
 function combinedStub({ log, candles = [], calThis = { events: [] }, calNext = { events: [] }, aiJson, aiFail = false }) {
   return async (url, opts) => {
-    if (typeof url === 'string' && url.includes('sambanova.ai')) {
+    if (typeof url === 'string' && url.includes('deepseek.com')) {
       if (aiFail || aiJson === undefined) throw new Error('AI down (test)');
       return { ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify(aiJson) } }] }) };
     }
@@ -406,7 +406,7 @@ test('position_review: sudah punya intervention -> skip already_managed, TANPA c
 // dipisah (`tech_invalidated`) — test ini memverifikasi posisi dengan
 // `tech_invalidated` terisi (TANPA `intervention`) TETAP diproses normal oleh AI.
 test('position_review: tech_invalidated terisi (TANPA intervention) -> TETAP diproses AI, bukan skip already_managed', async () => {
-  await withEnv({ CRON_SECRET: 'rahasia', SAMBANOVA_API_KEY: 'k' }, async () => {
+  await withEnv({ CRON_SECRET: 'rahasia', DEEPSEEK_API_KEY: 'k' }, async () => {
     const log = [{ ...openSetup, tech_invalidated: { at: 500, level: 4050, type: 'ma_break', direction: 'above' } }];
     const { req, res } = fakeReqRes({ headers: { 'x-cron-secret': 'rahasia' }, body: JSON.stringify({ id: 'GC=F:1', trigger: { guid: 'g', title: 't', cat: 'market-moving' } }) });
     await withFetch(combinedStub({ log, candles: [mkC(1, 4020, 4025, 4015, 4018)], aiJson: { decision: 'HOLD', new_sl: null, reason: 'aman', confidence: 'sedang' } }),
@@ -419,7 +419,7 @@ test('position_review: tech_invalidated terisi (TANPA intervention) -> TETAP dip
 });
 
 test('position_review: AI HOLD -> review_count naik, tidak ada intervention', async () => {
-  await withEnv({ CRON_SECRET: 'rahasia', SAMBANOVA_API_KEY: 'k' }, async () => {
+  await withEnv({ CRON_SECRET: 'rahasia', DEEPSEEK_API_KEY: 'k' }, async () => {
     const log = [{ ...openSetup }];
     const { req, res } = fakeReqRes({ headers: { 'x-cron-secret': 'rahasia' }, body: JSON.stringify({ id: 'GC=F:1', trigger: { guid: 'g', title: 't', cat: 'market-moving' } }) });
     await withFetch(combinedStub({ log, candles: [mkC(1, 4020, 4025, 4015, 4018)], aiJson: { decision: 'HOLD', new_sl: null, reason: 'aman', confidence: 'sedang' } }),
@@ -432,7 +432,7 @@ test('position_review: AI HOLD -> review_count naik, tidak ada intervention', as
 });
 
 test('position_review: AI TIGHTEN_SL valid -> intervention tersimpan, data mentah tidak berubah', async () => {
-  await withEnv({ CRON_SECRET: 'rahasia', SAMBANOVA_API_KEY: 'k' }, async () => {
+  await withEnv({ CRON_SECRET: 'rahasia', DEEPSEEK_API_KEY: 'k' }, async () => {
     const log = [{ ...openSetup }];
     const { req, res } = fakeReqRes({ headers: { 'x-cron-secret': 'rahasia' }, body: JSON.stringify({ id: 'GC=F:1', trigger: { guid: 'g', title: 't', cat: 'market-moving' } }) });
     await withFetch(combinedStub({ log, candles: [mkC(1, 4020, 4025, 4015, 4018)], aiJson: { decision: 'TIGHTEN_SL', new_sl: 4050, reason: 'risk naik', confidence: 'tinggi' } }),
@@ -448,7 +448,7 @@ test('position_review: AI TIGHTEN_SL valid -> intervention tersimpan, data menta
 });
 
 test('position_review: AI TIGHTEN_SL dengan new_sl melebar -> downgrade ke HOLD, intervention tetap null', async () => {
-  await withEnv({ CRON_SECRET: 'rahasia', SAMBANOVA_API_KEY: 'k' }, async () => {
+  await withEnv({ CRON_SECRET: 'rahasia', DEEPSEEK_API_KEY: 'k' }, async () => {
     const log = [{ ...openSetup }];
     const { req, res } = fakeReqRes({ headers: { 'x-cron-secret': 'rahasia' }, body: JSON.stringify({ id: 'GC=F:1', trigger: { guid: 'g', title: 't', cat: 'market-moving' } }) });
     await withFetch(combinedStub({ log, candles: [mkC(1, 4020, 4025, 4015, 4018)], aiJson: { decision: 'TIGHTEN_SL', new_sl: 4070, reason: 'x', confidence: 'tinggi' } }),
@@ -461,7 +461,7 @@ test('position_review: AI TIGHTEN_SL dengan new_sl melebar -> downgrade ke HOLD,
 });
 
 test('position_review: AI CLOSE_EARLY valid -> managed_status closed_early, price dari close candle terakhir (bukan karangan AI)', async () => {
-  await withEnv({ CRON_SECRET: 'rahasia', SAMBANOVA_API_KEY: 'k' }, async () => {
+  await withEnv({ CRON_SECRET: 'rahasia', DEEPSEEK_API_KEY: 'k' }, async () => {
     const log = [{ ...openSetup }];
     const { req, res } = fakeReqRes({ headers: { 'x-cron-secret': 'rahasia' }, body: JSON.stringify({ id: 'GC=F:1', trigger: { guid: 'g', title: 't', cat: 'market-moving' } }) });
     await withFetch(combinedStub({ log, candles: [mkC(1, 4020, 4025, 4015, 4018.5)], aiJson: { decision: 'CLOSE_EARLY', new_sl: null, reason: 'tesis batal', confidence: 'tinggi' } }),
@@ -475,7 +475,7 @@ test('position_review: AI CLOSE_EARLY valid -> managed_status closed_early, pric
 });
 
 test('position_review: AI down (timeout/offline) -> downgrade HOLD, TIDAK ada intervensi tanpa output valid', async () => {
-  await withEnv({ CRON_SECRET: 'rahasia', SAMBANOVA_API_KEY: 'k' }, async () => {
+  await withEnv({ CRON_SECRET: 'rahasia', DEEPSEEK_API_KEY: 'k' }, async () => {
     const log = [{ ...openSetup }];
     const { req, res } = fakeReqRes({ headers: { 'x-cron-secret': 'rahasia' }, body: JSON.stringify({ id: 'GC=F:1', trigger: { guid: 'g', title: 't', cat: 'market-moving' } }) });
     await withFetch(combinedStub({ log, candles: [mkC(1, 4020, 4025, 4015, 4018)], aiFail: true }),
@@ -488,12 +488,12 @@ test('position_review: AI down (timeout/offline) -> downgrade HOLD, TIDAK ada in
 });
 
 test('position_review: output AI JSON tak patuh skema -> downgrade HOLD, bukan crash', async () => {
-  await withEnv({ CRON_SECRET: 'rahasia', SAMBANOVA_API_KEY: 'k' }, async () => {
+  await withEnv({ CRON_SECRET: 'rahasia', DEEPSEEK_API_KEY: 'k' }, async () => {
     const log = [{ ...openSetup }];
     const { req, res } = fakeReqRes({ headers: { 'x-cron-secret': 'rahasia' }, body: JSON.stringify({ id: 'GC=F:1', trigger: { guid: 'g', title: 't', cat: 'market-moving' } }) });
     const stub = combinedStub({ log, candles: [mkC(1, 4020, 4025, 4015, 4018)] });
     const badStub = async (url, opts) => {
-      if (typeof url === 'string' && url.includes('sambanova.ai')) {
+      if (typeof url === 'string' && url.includes('deepseek.com')) {
         return { ok: true, json: async () => ({ choices: [{ message: { content: 'bukan json' } }] }) };
       }
       return stub(url, opts);
@@ -506,7 +506,7 @@ test('position_review: output AI JSON tak patuh skema -> downgrade HOLD, bukan c
 });
 
 test('position_review: setup lama tanpa field U-5a (intervention/review_count undefined) -> tetap diproses aman', async () => {
-  await withEnv({ CRON_SECRET: 'rahasia', SAMBANOVA_API_KEY: 'k' }, async () => {
+  await withEnv({ CRON_SECRET: 'rahasia', DEEPSEEK_API_KEY: 'k' }, async () => {
     const oldSetup = { id: 'GC=F:2', symbol: 'GC=F', label: 'XAU/USD', bias: 'bearish', entry_zone: '4030-4040', sl: '4065', tp: '3960', status: 'open', ts: 1000, filled_t: 1500 };
     const log = [oldSetup];
     const { req, res } = fakeReqRes({ headers: { 'x-cron-secret': 'rahasia' }, body: JSON.stringify({ id: 'GC=F:2', trigger: { guid: 'g', title: 't', cat: 'market-moving' } }) });
@@ -519,7 +519,7 @@ test('position_review: setup lama tanpa field U-5a (intervention/review_count un
 
 // ── Handler friday_tighten (api/admin.js, U-3 lanjutan) ──────────────────────
 // Tighten preventif MURNI KODE (tanpa AI) — combinedStub tetap dipakai apa adanya,
-// cabang sambanova.ai-nya tidak akan pernah kena kalau handler ini benar (fail-safe
+// cabang deepseek.com-nya tidak akan pernah kena kalau handler ini benar (fail-safe
 // test: aiJson sengaja dibiarkan undefined di semua test di bawah supaya kalau
 // handler tidak sengaja memanggil AI, stub throw dan test gagal).
 

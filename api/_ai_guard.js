@@ -16,20 +16,8 @@
 // Limit harian per provider — di bawah kuota resmi free-tier supaya ada headroom
 // untuk retry/fallback. Override per provider via env AI_DAILY_LIMIT_{PROVIDER}.
 const DEFAULT_LIMITS = {
-  // SambaNova pakai 2 akun terpisah (kunci API beda, kuota real masing-masing
-  // sendiri) — counter kuota HARUS dipisah juga, senada dengan circuit breaker
-  // yang sudah dipisah sejak session 125 (ai:sambanova:main vs ai:sambanova:c1).
-  // Sebelum ini keduanya berbagi satu counter 'sambanova', jadi Call 1 (akun 2)
-  // yang sering di-klik ulang bisa menghabiskan kuota gabungan lebih dulu dan
-  // membuat ohlcv_analyze (akun 1) ikut ditolak "budget exceeded" padahal
-  // akun 1-nya sendiri belum tentu penuh.
-  sambanova_main:  200,   // akun 1 — Call 2/3/4 (market-digest) + ohlcv_analyze (admin.js)
-  // akun 2 — Call 1 prose (market-digest) + fallback1 journal_analysis + fallback1
-  // fundamental_analysis (session 145, re-arsitektur Nemotron). 3 fitur berbagi counter
-  // ini SENGAJA (lihat daun_merah.md Session 145) — semuanya cuma fallback jarang
-  // terpanggil, bukan primary aktif, jadi risiko starvation (lihat Session 144 lanjutan 4)
-  // jauh lebih kecil daripada saat sambanova_main/sambanova_c1 dulu digabung.
-  sambanova_c1:    200,
+  // SambaNova (akun 1 & 2) diputus kontrak total 2026-08-12 — counter sambanova_main/
+  // sambanova_c1 dihapus, sudah tidak dipanggil call site manapun (daun_merah_vendor.md).
   // Plan N (session 182) — diagnostik ?test_gemini=1/?test_mistral=1/?test_nvidia=1,
   // BUKAN chain produksi. Limit konservatif di bawah kuota resmi riset (daun_merah_riset.md):
   // Gemini Flash free tier 250-1.500 RPD per PROJECT (bukan per key) — 200 aman untuk
@@ -58,8 +46,6 @@ const DEFAULT_LIMITS = {
   // per jalur", bukan menggandakan total anggaran; sesuaikan naik kalau AUTO_ENTRY_PAIRS
   // diperluas lagi dan sering kena limit (cek via getUsage('deepseek_experimental')).
   deepseek_experimental:        15,
-  sambanova_main_experimental:  30,
-  sambanova_c1_experimental:    30,
 
   // Translate headline NEWS ke Bahasa Indonesia (S272, 2026-08-02, redesign BATCH
   // — 1 panggilan sampai 20 headline, lihat api/_news_translate.js). Riwayat provider
@@ -102,7 +88,6 @@ async function redisCmd(...args) {
 // Provider dari URL endpoint — dipakai call site yang menerima URL dinamis.
 function providerFromUrl(url) {
   if (!url) return null;
-  if (url.includes('sambanova.ai'))   return 'sambanova';
   if (url.includes('deepseek.com'))   return 'deepseek';
   return null;
 }

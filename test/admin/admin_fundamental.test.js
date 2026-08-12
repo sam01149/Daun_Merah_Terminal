@@ -1,8 +1,8 @@
 // test/admin_fundamental.test.js
-// Unit test fundamentalAnalysisHandler (api/admin.js): SambaNova akun 2 = primary,
-// Gemini = fallback (2026-08-11, keputusan eksplisit user — Gemini dianggap model
-// lemah/kurang worth walau gratis, didemote ke fallback saja. Sempat 1 hari jadi
-// satu-satunya provider 2026-08-10 sebelum HTTP 500 di produksi memicu switch ini).
+// Unit test fundamentalAnalysisHandler (api/admin.js): Gemini = primary/satu-satunya
+// provider (2026-08-12 — SambaNova akun 2, primary sebelumnya, diputus kontrak total
+// setelah akunnya diblokir billing SambaNova sendiri, "A payment method is required",
+// ganti API key tidak memperbaikinya, lihat daun_merah_vendor.md).
 // Redis/APP_KEY tidak dikonfigurasi -> semua guard fail-open (lihat guards.test.js),
 // jadi test ini murni memverifikasi pemanggilan HTTP lewat handler penuh.
 const { test } = require('node:test');
@@ -13,7 +13,7 @@ delete process.env.UPSTASH_REDIS_REST_TOKEN;
 delete process.env.APP_KEY;
 delete process.env.CRON_SECRET;
 
-const ENV_KEYS = ['SAMBANOVA_API_KEY_CALL1', 'GEMINI_API_KEY'];
+const ENV_KEYS = ['GEMINI_API_KEY'];
 
 async function withEnv(vars, fn) {
   const prev = {};
@@ -60,46 +60,7 @@ function fakeReqRes() {
 
 const handler = require('../../api/admin.js');
 
-test('fundamental_analysis: SambaNova akun2 sukses — 1 fetch call ke api.sambanova.ai model DeepSeek-V3.2, Gemini tidak disentuh', async () => {
-  await withEnv({ SAMBANOVA_API_KEY_CALL1: 'sk-s', GEMINI_API_KEY: 'sk-gm' }, async () => {
-    const calls = [];
-    const { req, res } = fakeReqRes();
-    await withFetch(async (url, opts) => {
-      calls.push({ url, body: JSON.parse(opts.body) });
-      return okResponse('ranking sambanova');
-    }, async () => {
-      await handler(req, res);
-    });
-    assert.strictEqual(res.statusCode, 200);
-    assert.strictEqual(res.body.analysis, 'ranking sambanova');
-    assert.strictEqual(calls.length, 1);
-    assert.strictEqual(calls[0].url, 'https://api.sambanova.ai/v1/chat/completions');
-    assert.strictEqual(calls[0].body.model, 'DeepSeek-V3.2');
-  });
-});
-
-test('fundamental_analysis: SambaNova akun2 gagal (2x) -> fallback ke Gemini, tetap 200', async () => {
-  await withEnv({ SAMBANOVA_API_KEY_CALL1: 'sk-s', GEMINI_API_KEY: 'sk-gm' }, async () => {
-    const calls = [];
-    const { req, res } = fakeReqRes();
-    await withFetch(async (url, opts) => {
-      calls.push(url);
-      if (url.includes('sambanova.ai')) return errResponse(503);
-      return okResponse('ranking gemini fallback');
-    }, async () => {
-      await handler(req, res);
-    });
-    // 2x retry SambaNova + 1x Gemini fallback
-    assert.strictEqual(calls.length, 3);
-    assert.strictEqual(calls[0], 'https://api.sambanova.ai/v1/chat/completions');
-    assert.strictEqual(calls[1], 'https://api.sambanova.ai/v1/chat/completions');
-    assert.strictEqual(calls[2], 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions');
-    assert.strictEqual(res.statusCode, 200);
-    assert.strictEqual(res.body.analysis, 'ranking gemini fallback');
-  });
-});
-
-test('fundamental_analysis: hanya Gemini key tersedia (tanpa SambaNova) — langsung pakai Gemini', async () => {
+test('fundamental_analysis: Gemini sukses — 1 fetch call, model gemini-flash-latest', async () => {
   await withEnv({ GEMINI_API_KEY: 'sk-gm' }, async () => {
     const calls = [];
     const { req, res } = fakeReqRes();
@@ -110,6 +71,7 @@ test('fundamental_analysis: hanya Gemini key tersedia (tanpa SambaNova) — lang
       await handler(req, res);
     });
     assert.strictEqual(res.statusCode, 200);
+    assert.strictEqual(res.body.analysis, 'ranking gemini');
     assert.strictEqual(calls.length, 1);
     assert.strictEqual(calls[0].url, 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions');
     assert.strictEqual(calls[0].body.model, 'gemini-flash-latest');
@@ -117,36 +79,49 @@ test('fundamental_analysis: hanya Gemini key tersedia (tanpa SambaNova) — lang
   });
 });
 
-test('fundamental_analysis: SambaNova akun2 (retry 1x) + Gemini semua gagal -> 500', async () => {
-  await withEnv({ SAMBANOVA_API_KEY_CALL1: 'sk-s', GEMINI_API_KEY: 'sk-gm' }, async () => {
+test('fundamental_analysis: tanpa GEMINI_API_KEY -> 500 tanpa network call', async () => {
+  await withEnv({}, async () => {
+    const { req, res } = fakeReqRes();
+    let fetchCalled = false;
+    await withFetch(async () => { fetchCalled = true; return okResponse('x'); }, async () => {
+      await handler(req, res);
+    });
+    assert.strictEqual(res.statusCode, 500);
+    assert.strictEqual(fetchCalled, false);
+  });
+});
+
+test('fundamental_analysis: Gemini (retry 1x) semua gagal -> 500', async () => {
+  await withEnv({ GEMINI_API_KEY: 'sk-gm' }, async () => {
     const { req, res } = fakeReqRes();
     await withFetch(async () => errResponse(500), async () => {
       await handler(req, res);
     });
     assert.strictEqual(res.statusCode, 500);
-    assert.match(res.body.error, /All AI providers failed/);
+    assert.match(res.body.error, /Gemini AI provider failed/);
   });
 });
 
 // Regresi bug 2026-08-11 (laporan user — HTTP 500 di produksi saat Gemini masih
 // satu-satunya provider): 5xx transient direproduksi live saat diagnosa (percobaan
-// ulang identik langsung sukses). Retry 1x di primary (sekarang SambaNova akun2)
-// supaya satu blip tidak langsung jatuh ke fallback/gagal total.
-test('fundamental_analysis: SambaNova akun2 percobaan 1 gagal (503), percobaan 2 sukses -> 200, tanpa sentuh Gemini', async () => {
-  await withEnv({ SAMBANOVA_API_KEY_CALL1: 'sk-s', GEMINI_API_KEY: 'sk-gm' }, async () => {
+// ulang identik langsung sukses). Retry 1x di primary (Gemini, sejak 2026-08-12
+// satu-satunya provider lagi — lihat daun_merah_vendor.md) supaya satu blip tidak
+// langsung jatuh ke gagal total.
+test('fundamental_analysis: Gemini percobaan 1 gagal (503), percobaan 2 sukses -> 200', async () => {
+  await withEnv({ GEMINI_API_KEY: 'sk-gm' }, async () => {
     const calls = [];
     const { req, res } = fakeReqRes();
     await withFetch(async (url, opts) => {
       calls.push(url);
       if (calls.length === 1) return errResponse(503);
-      return okResponse('ranking sambanova retry');
+      return okResponse('ranking gemini retry');
     }, async () => {
       await handler(req, res);
     });
     assert.strictEqual(calls.length, 2);
-    assert.ok(calls.every(u => u.includes('sambanova.ai')));
+    assert.ok(calls.every(u => u.includes('generativelanguage.googleapis.com')));
     assert.strictEqual(res.statusCode, 200);
-    assert.strictEqual(res.body.analysis, 'ranking sambanova retry');
+    assert.strictEqual(res.body.analysis, 'ranking gemini retry');
   });
 });
 
@@ -173,7 +148,7 @@ test('fundamental_analysis: cache lama ada ranking -> delta ditempel ke analysis
   process.env.UPSTASH_REDIS_REST_URL = REDIS_URL;
   process.env.UPSTASH_REDIS_REST_TOKEN = 'tok';
   try {
-    await withEnv({ SAMBANOVA_API_KEY_CALL1: 'sk-s' }, async () => {
+    await withEnv({ GEMINI_API_KEY: 'sk-gm' }, async () => {
       const { req, res } = fakeReqRes();
       await withFetch(async (url, opts) => {
         if (url === REDIS_URL) {
@@ -338,18 +313,6 @@ test('_formatFundDataLine: date "—" DAN seeded_at TIDAK ada (data lama pra-fix
 test('_formatFundDataLine: date valid (bukan seed) menang atas seeded_at (age rilis dipakai, bukan age seed)', () => {
   const line = _formatFundDataLine('CPI YoY', { actual: '3.3%', period: 'Jun 2026', date: '2026-07-16', seeded_at: '2020-01-01T00:00:00.000Z' }, NOW_MS);
   assert.strictEqual(line, '  CPI YoY: 3.3% (Jun 2026) [rilis 3 hari lalu]');
-});
-
-test('fundamental_analysis: tanpa API key sama sekali -> 500 tanpa network call', async () => {
-  await withEnv({}, async () => {
-    const { req, res } = fakeReqRes();
-    let fetchCalled = false;
-    await withFetch(async () => { fetchCalled = true; return okResponse('x'); }, async () => {
-      await handler(req, res);
-    });
-    assert.strictEqual(res.statusCode, 500);
-    assert.strictEqual(fetchCalled, false);
-  });
 });
 
 test('fundamental_refresh: calendar layer menulis update dan muncul di response', async () => {

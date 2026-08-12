@@ -11,10 +11,34 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-12 (Session 311 — Catatan Analisa Manual di Tab CHECKLIST)
+> **Last updated:** 2026-08-12 (Session 312 — SambaNova Diputus Kontrak Total)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 312 (2026-08-12) — SambaNova Diputus Kontrak Total
+
+**Konteks:** Lanjutan dari Session 310 (fix timeout Analisis Fundamental). User minta dicek apakah AI-nya sendiri bermasalah — investigasi live (Vercel log real-time saat trigger ulang produksi) menemukan akar masalah sebenarnya: SambaNova akun-2 (primary Analisis Fundamental) gagal konsisten dengan pesan eksplisit dari SambaNova sendiri, "A payment method is required. Add one at https://cloud.sambanova.ai/plans/billing to continue." — bukan sekadar timeout/instabilitas seperti dugaan awal.
+
+**Diagnosa akun-1:** dites cross-check via fitur lain (`ohlcv_critic`, AI Kritikus) — akun-1 juga gagal, tapi dengan gejala berbeda (HTTP 429 rate-limit, bukan hang). Kesimpulan: dua masalah terpisah, bukan satu insiden SambaNova platform-wide (429 adalah respons gateway yang sehat & cepat, bukan tanda seluruh SambaNova down).
+
+**User update API key baru untuk kedua akun** (dipasang ke Vercel Production via `vercel env add --sensitive --force`, lalu redeploy) — **TIDAK memperbaiki masalah**. Verifikasi live pasca-redeploy: akun-2 tetap gagal dengan pesan billing yang SAMA PERSIS (2x percobaan berturut, keduanya "A payment method is required"), akun-1 tetap timeout. Ini membuktikan masalahnya di level akun/billing, bukan API key kedaluwarsa. Gemini (fallback) sukses bersih di percobaan yang sama ("circuit:ai:gemini → CLOSED (recovered)").
+
+**Keputusan user: putuskan kontrak SambaNova total**, bukan terus bertahan dengan provider yang mendadak mewajibkan pembayaran padahal awalnya dipilih murni karena free tier.
+
+**Cakupan penghapusan kode (pola sama vendor cut OpenRouter/Cerebras/Groq/Ollama, 2026-07-25):**
+- `api/admin.js` — `fundamentalAnalysisHandler` (Gemini jadi primary/satu-satunya, retry 1x), `ohlcvAnalyzeHandler` (DeepSeek primary/satu-satunya, adaptive-budget cascade dari Session 310 disederhanakan jadi timeout tetap karena cuma 1 tier), `_runCriticVerdict`/`ohlcvCriticHandler` (DeepSeek primary/satu-satunya, dipakai baik tombol manual publik maupun Gate A auto-entry dengan pool budget terpisah), `positionReviewHandler` (DeepSeek pool eksperimen), `preEntryCheckHandler` (DeepSeek primary/satu-satunya), `KNOWN_CIRCUITS`, health usage array.
+- `api/journal.js` — `aiCall()` AI Coach (Gemini primary/satu-satunya).
+- `api/market-digest.js` — Call 1 (DeepSeek → Gemini, SambaNova akun-2 dicabut dari tengah), Call 2 (sama), Call 3 (DeepSeek primary/satu-satunya), Call 4 `checkThesisContradictions`/`runCronThesisSweep` (SambaNova akun-1 yang TANPA fallback sama sekali di sini diganti DeepSeek — kalau dibiarkan kosong, fitur Thesis Alert mati total, bukan cuma turun kualitas).
+- `api/_ai_guard.js` — hapus `sambanova_main`/`sambanova_c1`/`sambanova_main_experimental`/`sambanova_c1_experimental` dari `DEFAULT_LIMITS`, hapus cabang `sambanova.ai` di `providerFromUrl`.
+- `dev-auto-entry.html` — perbaiki teks hint yang masih menyebut "auto-fallback SambaNova".
+- Vercel: `SAMBANOVA_API_KEY` & `SAMBANOVA_API_KEY_CALL1` dihapus total dari Production & Preview (`vercel env rm`).
+
+**Test:** 6 file test diupdate (`admin_fundamental.test.js`, `gate_a_race.test.js`, `isolation_auto.test.js`, `position_review.test.js`, `journal_ai.test.js`, `guards.test.js`) — stub URL SambaNova diganti DeepSeek sesuai chain baru (di `gate_a_race.test.js`, dua call DeepSeek yang sekarang berbagi endpoint — analisa setup utama & Kritikus Gate A — dibedakan lewat isi body request, bukan URL), 1 test yang mekanismenya sudah tidak ada (`test_samba_c1`-style circuit isolation khusus SambaNova akun-1 di `ohlcv_analyze`, redundant dengan test DeepSeek yang sudah ada) dihapus alih-alih dipertahankan untuk sesuatu yang tidak ada lagi. `npm test` 965/966 hijau (1 gagal pra-ada tidak terkait — `scripts/test-deribit.js`, sertifikat TLS Deribit expired di lingkungan lokal).
+
+**Verifikasi live:** deploy → `fundamental_analysis&force=true` sukses murni via Gemini ("Gemini (fallback) OK" di log, sekarang jadi primary) dalam 10 detik, tanpa lagi mencoba SambaNova sama sekali. Tombol manual "UJI KELEMAHAN" (Kritikus AI, DeepSeek) diverifikasi tetap normal.
+
+**Cakupan/limitasi:** beberapa rantai fallback jadi lebih pendek (Call 3/4 Ringkasan Berita, Analisa AI per Pair, Pre-Entry Check, Review Posisi Virtual, Sistem Hakim Gate A sekarang DeepSeek-only tanpa jaring pengaman kedua — dulu ada SambaNova sebagai fallback). Gemini sekarang primary (bukan cuma fallback jarang aktif) untuk Analisis Fundamental & AI Coach Jurnal, sementara kuota resmi gratisnya cuma 20/hari (temuan 2026-08-02) — worst case realistis (±8-18 request/hari gabungan dua fitur) masih di bawah itu tapi headroom jauh lebih tipis dari sebelumnya, perlu dipantau.
 
 ## Changelog Session 311 (2026-08-12) — Catatan Analisa Manual di Tab CHECKLIST
 

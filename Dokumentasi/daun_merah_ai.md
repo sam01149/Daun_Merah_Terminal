@@ -14,7 +14,7 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
 > **Dibuat:** 2026-07-11 (session 157)
-> **Update besar terakhir:** 2026-07-25 — OpenRouter, Cerebras, Groq, Ollama Cloud diputus kontraknya (user), semua kode chain-nya dihapus. Chain sekarang murni DeepSeek (berbayar, saldo top-up) → SambaNova (2 akun, gratis) → Gemini (gratis) tergantung fitur.
+> **Update besar terakhir:** 2026-08-12 — SambaNova (2 akun) diputus kontrak total (akun diblokir billing SambaNova sendiri, ganti API key tidak memperbaikinya), semua kode chain-nya dihapus. Chain sekarang murni DeepSeek (berbayar, saldo top-up) ↔ Gemini (gratis) tergantung fitur. Sebelumnya (2026-07-25): OpenRouter, Cerebras, Groq, Ollama Cloud diputus kontraknya.
 > **Tujuan dokumen:** satu tempat untuk menjawab "fitur AI apa saja yang ada, dipanggil pakai model/provider apa, dan paling banyak dipakai berapa kali sehari" — supaya kalau ada laporan "AI error/limit habis", tinggal buka file ini dulu sebelum ngoprek kode.
 > **Vendor & non-AI infra:** lihat [daun_merah_vendor.md](daun_merah_vendor.md).
 > **Riset perbandingan provider (kenapa provider ini yang dipilih):** lihat [daun_merah.md § Research: Free AI Inference API Providers](daun_merah.md#research-free-ai-inference-api-providers-2026-05-28).
@@ -23,7 +23,7 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 
 ## 1. Cara baca dokumen ini (ringkas dulu, baru detail)
 
-Aplikasi ini punya **4 fitur yang memanggil AI**. DeepSeek berbayar dari saldo top-up user (bukan free tier); SambaNova dan Gemini gratis. "Gratis" tetap ada plafonnya — baik dari provider aslinya maupun dari **jatah harian buatan sendiri** (`api/_ai_guard.js`) yang dipasang supaya satu fitur nakal (loop bug, di-spam) tidak menghabiskan kuota gratis punya fitur lain.
+Aplikasi ini punya **4 fitur yang memanggil AI**. DeepSeek berbayar dari saldo top-up user (bukan free tier); Gemini gratis. "Gratis" tetap ada plafonnya — baik dari provider aslinya maupun dari **jatah harian buatan sendiri** (`api/_ai_guard.js`) yang dipasang supaya satu fitur nakal (loop bug, di-spam) tidak menghabiskan kuota gratis punya fitur lain.
 
 Ada 2 lapis pembatas yang perlu dibedakan:
 
@@ -73,32 +73,29 @@ Satu kali "generate" sebenarnya adalah **3-4 panggilan AI sekaligus**, bukan 1:
 
 Call 1/2/3 hasilnya SAMA untuk semua orang (ditulis ke `latest_article`, satu key Redis global), jadi kalau banyak device klik "Ringkas Ulang" hampir bersamaan, generate ulang berkali-kali cuma menghasilkan kalimat beda-beda dari data yang sama — bukan informasi baru. Sekarang: request PERTAMA yang lolos rate limit mengunci `lock:market_digest_generate` lalu generate seperti biasa. Request LAIN yang datang selagi lock masih hidup (baik karena generate lagi berlangsung ATAU baru saja selesai — lock TIDAK di-release manual, TTL 55 detik dibiarkan jadi cooldown alami) langsung disajikan `latest_article` apa adanya, **tanpa** ikut generate — nol tambahan panggilan AI. Pengecualian: kalau `latest_article` benar-benar kosong (cold start, belum pernah ada cache sama sekali), request tetap lanjut generate walau lock dipegang, supaya user tidak dapat respons kosong. `thesis_alerts` di-null-kan pada respons short-circuit ini karena itu data personal (Call 4) — device yang "kalah" lock tidak ikut menampilkan alert milik device lain.
 
-**Rantai fallback provider (2026-07-25 — OpenRouter/Cerebras/Groq/Ollama sudah dihapus total dari kode):**
+**Rantai fallback provider (2026-08-12 — SambaNova akun-1/akun-2 diputus kontrak total, dihapus dari semua Call 1-4; sebelumnya 2026-07-25 OpenRouter/Cerebras/Groq/Ollama sudah dihapus total dari kode):**
 
 ```
 Call 1 (prosa):
   1. DeepSeek v4-flash (API resmi)        — PRIMARY produksi (Plan O-3, 2026-07-18, timeout 30s)
-  2. SambaNova akun-2 (DeepSeek-V3.2)     — fallback 1 (primary lama sejak session 165, sekarang digeser)
-  3. Google AI Studio (Gemini-Flash)      — fallback 2
-  4. Template deterministik non-AI (berdasarkan kategori berita) — fallback absolut, tidak pernah kosong
+  2. Google AI Studio (Gemini-Flash)      — fallback
+  3. Template deterministik non-AI (berdasarkan kategori berita) — fallback absolut, tidak pernah kosong
 
 Call 2 (bias bank sentral, JSON):
   1. DeepSeek v4-flash (API resmi)        — PRIMARY produksi (response_format json_object native)
-  2. SambaNova akun-1 (DeepSeek-V3.2)     — fallback 1
-  3. Google AI Studio (Gemini-Flash)      — fallback 2 (response_format native)
+  2. Google AI Studio (Gemini-Flash)      — fallback (response_format native)
   (kalau semua gagal: bias bank sentral TIDAK diupdate siklus itu — data lama di Redis tetap dipakai, bukan kosong/error)
 
 Call 3 (trade thesis, JSON):
-  1. DeepSeek v4-flash (API resmi)        — PRIMARY produksi (maxTokens 1200, cegah truncation JSON thesis skema 13 field)
-  2. SambaNova akun-1 (DeepSeek-V3.2)     — fallback 1
-  (kalau semua gagal: tidak ada trade thesis baru ditampilkan siklus itu, bukan error)
+  1. DeepSeek v4-flash (API resmi)        — PRIMARY/SATU-SATUNYA (maxTokens 1200, cegah truncation JSON thesis skema 13 field)
+  (kalau gagal: tidak ada trade thesis baru ditampilkan siklus itu, bukan error)
 
 Call 4 (cek kontradiksi thesis terbuka):
-  1. SambaNova akun-1 (DeepSeek-V3.2)     — PRIMARY produksi (SENGAJA TETAP SambaNova, bukan DeepSeek flash — jarang terpanggil, hemat saldo top-up)
+  1. DeepSeek v4-flash (API resmi)        — PRIMARY/SATU-SATUNYA (2026-08-12, sebelumnya SambaNova akun-1 primary/satu-satunya di sini — diputus kontrak, DeepSeek langsung menggantikan slot ini supaya fitur Thesis Alert tidak mati total)
   (kalau gagal: tidak ada thesis alert siklus itu, bukan error)
 ```
 
-**Saldo habis (HTTP 402) di tengah bulan (Plan O-4):** aiCall() melempar 402 sebagai error status biasa (tidak beda dari 429/500) — ditangkap catch di tiap tingkat, ditandai eksplisit `deepseek:HTTP402_insufficient_balance` di log/providerLog, lalu fallback lanjut otomatis ke SambaNova. TIDAK hang, TIDAK butuh perubahan kode setelah user top-up lagi — begitu saldo terisi, request berikutnya otomatis balik pakai DeepSeek (tidak ada circuit breaker permanen untuk 402, hanya threshold kegagalan beruntun yang sama seperti error lain).
+**Saldo habis (HTTP 402) di tengah bulan (Plan O-4):** aiCall() melempar 402 sebagai error status biasa (tidak beda dari 429/500) — ditangkap catch di tiap tingkat, ditandai eksplisit `deepseek:HTTP402_insufficient_balance` di log/providerLog, lalu fallback lanjut otomatis ke Gemini (Call 1/2) atau gagal total tanpa jaring pengaman lain (Call 3/4, sekarang DeepSeek-only). TIDAK hang, TIDAK butuh perubahan kode setelah user top-up lagi — begitu saldo terisi, request berikutnya otomatis balik pakai DeepSeek (tidak ada circuit breaker permanen untuk 402, hanya threshold kegagalan beruntun yang sama seperti error lain).
 
 **Riwayat Nemotron/Hermes/GLM (OpenRouter/Ollama/Cerebras) — DIHAPUS 2026-07-25:** sempat jadi kandidat primary Call 1 (session 162-163, kualitas bagus tapi latency 100% tidak terprediksi 7-41s), lalu didemote ke fallback cron-only, akhirnya dihapus total bersama kontrak vendornya (OpenRouter, Cerebras, Ollama Cloud diputus user). Riwayat lengkap eksperimen ada di git history / `daun_merah.md` kalau perlu rujukan — jangan diusulkan lagi tanpa alasan baru.
 
@@ -119,7 +116,7 @@ Hasil tiap analisa disimpan 6 jam supaya kalau tab ditutup-buka lagi, versi tera
 
 **Otomatis:** hanya XAU/USD, 3×/hari, nempel di jadwal cron Ringkasan Berita (workflow yang sama, langkah kedua).
 
-**Rantai fallback (Plan O-6, 2026-07-18):** DeepSeek v4-flash → SambaNova akun-1 (DeepSeek-V3.2) → SambaNova akun-2 (DeepSeek-V3.2) — 3 tingkat, tanpa Groq/Cerebras (sudah tidak ada sejak dulu di rantai ini, dan sekarang benar-benar terhapus dari kode). DeepSeek dipromosikan jadi primary setelah gate diagnostik `?test_deepseek=1` lolos 3/3 sampel live (XAU/USD, EUR/USD, GBP/JPY): JSON valid, entry/SL/TP konsisten arah & RR positif, tidak ada kontaminasi angka antar-pair (kekhawatiran utama sebelum promosi). Timeout SambaNova akun-1/akun-2 dibuat ADAPTIF terhadap sisa budget (bukan fixed 30s/25s lagi) supaya cascade 3-tier tetap di bawah 60s Vercel. Kalau ketiga tier gagal sekaligus, fitur ini **langsung menampilkan "AI tidak tersedia"**, tidak ada jaring pengaman lain.
+**Rantai (Plan O-6, 2026-07-18; 2026-08-12: SambaNova akun-1/akun-2, dulu fallback berurutan di sini, diputus kontrak total):** DeepSeek v4-flash — PRIMARY/SATU-SATUNYA, tanpa Groq/Cerebras (sudah tidak ada sejak dulu di rantai ini) dan tanpa SambaNova lagi. DeepSeek dipromosikan jadi primary setelah gate diagnostik `?test_deepseek=1` lolos 3/3 sampel live (XAU/USD, EUR/USD, GBP/JPY): JSON valid, entry/SL/TP konsisten arah & RR positif, tidak ada kontaminasi angka antar-pair (kekhawatiran utama sebelum promosi). Kalau DeepSeek gagal, fitur ini **langsung menampilkan "AI tidak tersedia"**, tidak ada jaring pengaman lain — data teknikal deterministik (candle, level S/R, dsb) tetap tampil apa adanya, cuma commentary/setup AI-nya kosong.
 
 ### 3.3 Analisa Fundamental — `api/admin.js` (`action=fundamental_analysis`)
 
@@ -127,7 +124,7 @@ Ini fitur AI yang **paling hemat** secara desain: hasilnya di-cache **6 jam untu
 
 > **Berapa pun banyak orang yang klik tombol ini, AI-nya paling banyak benar-benar jalan 4 kali sehari** (24 jam ÷ 6 jam cache) — sisanya semua orang cuma baca hasil yang sama dari cache.
 
-**Provider (2026-08-11, keputusan eksplisit user — Gemini dianggap model lemah/kurang worth walau gratis):** SambaNova akun-2 (`DeepSeek-V3.2`) **primary** → Gemini flash **fallback**. Sempat 1 hari (2026-08-10) jadi Gemini-only tanpa fallback sama sekali — dibalik keesokan harinya setelah laporan user HTTP 500 di produksi (Gemini free tier terbukti sesekali balas 503 "overloaded" transient, lihat `daun_merah.md` Session 307). Primary (SambaNova akun-2) retry 1x kalau gagal sebelum jatuh ke fallback Gemini — circuit breaker/budget guard cuma dicatat gagal kalau kedua percobaan primary gagal.
+**Provider (2026-08-12): Gemini flash — PRIMARY/SATU-SATUNYA, retry 1x.** Riwayat: 2026-08-10 sempat Gemini-only (503 transient bikin HTTP 500 di produksi, lihat `daun_merah.md` Session 307) → 2026-08-11 didemote jadi fallback di belakang SambaNova akun-2 (permintaan eksplisit user saat itu, Gemini dianggap kualitas lebih lemah) → 2026-08-12 SambaNova akun-2 diputus kontrak total (akun diblokir billing SambaNova sendiri, "A payment method is required", ganti API key tidak memperbaikinya — lihat `daun_merah_vendor.md`) sehingga Gemini dipromosikan BALIK jadi primary/satu-satunya. Retry 1x tetap dipasang (Gemini free tier sesekali balas 503 "overloaded" transient, percobaan ulang identik langsung sukses) — circuit breaker/budget guard cuma dicatat gagal kalau kedua percobaan gagal.
 
 **Prompt dirombak (2026-08-10)** dari sekadar "ranking terkuat→terlemah + divergensi" jadi sintesa penuh: tema makro lintas-currency, outlook per currency (rezim pertumbuhan-inflasi + arah kebijakan moneter + tenaga kerja + confidence data), ranking, setup fundamental paling searah, dan bagian "Perlu Diwaspadai" (flag currency berdata tipis/basi atau momentum baru berbalik). `max_tokens` dinaikkan 1500→2200→**3500** (2200 terbukti masih memotong output di tengah kalimat pada test live — lihat changelog `daun_merah.md` Session 298). Output juga di-pasang backstop `_stripMarkdown()` server-side karena instruksi prompt "jangan pakai markdown" saja terbukti tidak cukup dipatuhi provider manapun.
 
@@ -137,33 +134,33 @@ Ini fitur AI yang **paling hemat** secara desain: hasilnya di-cache **6 jam untu
 
 Menganalisis pola menang/kalah dari trade yang sudah ditutup (butuh minimal 3 trade closed). Cache 1 jam **per device** (device lain / hari lain dapat cache masing-masing), dan ada tombol "paksa ulang" yang melewati cache.
 
-**Rantai fallback (2026-07-25, setelah Cerebras/Groq dihapus):** SambaNova akun-2 (DeepSeek-V3.2) → Gemini flash.
+**Provider (2026-08-12): Gemini flash — PRIMARY/SATU-SATUNYA.** SambaNova akun-2 (dulu primary di sini, Cerebras/Groq sudah dihapus lebih dulu 2026-07-25) diputus kontrak total — lihat `daun_merah_vendor.md`.
 
 ### 3.5 Pre-Entry Check — `api/admin.js` (`action=pre_entry_check`, Plan R 2026-07-18)
 
 Berbeda dari 4 fitur di atas: **fact sheet dibangun 100% client-side** (checklist state cuma hidup di localStorage per-device, tidak ada di Redis), bukan fetch server dari cache. Kode client (`ckAutoTick`/`ckAutoBlock`/`ckAutoTickFromAnalisa` di `index.html`) sudah men-auto-tick semua item yang datanya tersedia (CB bias, COT, real yield, retail sentiment, kalender, OHLCV/pola candle, sizing calculator) SEBELUM tombol ditekan — endpoint ini menerima daftar item lengkap (status FAKTA-tick/FAKTA-block/manual-checked/manual-unchecked + evidence tiap item auto), lalu **satu call AI** menilai HANYA item manual yang masih kosong + mencari kontradiksi logis antar item FAKTA. Server TIDAK fetch Redis apa pun untuk fitur ini — payload dari client sudah cukup.
 
-**Rantai fallback:** DeepSeek v4-flash (primary, sama seperti Ringkasan Berita) → SambaNova akun-1 (DeepSeek-V3.2). Kalau keduanya gagal: `error: 'ai_unavailable'`, client tampilkan skor deterministik saja dengan label "penilaian AI tidak tersedia" — fitur tetap berguna tanpa AI, bukan mati total.
+**Provider:** DeepSeek v4-flash — PRIMARY/SATU-SATUNYA (sama seperti Ringkasan Berita; SambaNova akun-1, dulu fallback di sini, diputus kontrak total 2026-08-12). Kalau gagal: `error: 'ai_unavailable'`, client tampilkan skor deterministik saja dengan label "penilaian AI tidak tersedia" — fitur tetap berguna tanpa AI, bukan mati total.
 
 **Garis keras (desain, bukan implementasi teknis):** verdict LAYAK/TIDAK LAYAK adalah **konteks keputusan, bukan sinyal eksekusi** — tidak ada auto-entry di jalur mana pun, user tetap yang menekan tombol entry MT5/manual sendiri.
 
 ### 3.6 Auto-Entry Virtual + Uji Konsistensi LLM — `vps/daemon.js` → `api/admin.js` (`action=ohlcv_analyze&auto=1`, Plan U-3)
 
-**DILARANG provider AI baru untuk fitur ini (aturan plan sendiri)** — memakai rantai fallback yang PERSIS SAMA dengan Analisa AI per Pair §3.2 (`DeepSeek v4-flash → SambaNova akun-1 → SambaNova akun-2`), jadi berbagi jatah harian yang sama, bukan pool terpisah. Bedanya murni di sisi penulisan data (lihat §2 baris #7/#8 dan `Dokumentasi/daun_merah.md` Session 201 §U-7): call `auto=1` TIDAK menulis cache `ohlcv_analysis:<symbol>` (publik tidak pernah melihat hasilnya) dan setup masuk `setup_log_auto:v1` (bukan log manual publik).
+**Analisa teknikal (setup entry/SL/TP) untuk call `auto=1` ini memakai provider PERSIS SAMA dengan Analisa AI per Pair §3.2** — DeepSeek v4-flash (primary/satu-satunya sejak 2026-08-12), berbagi jatah harian yang sama, bukan pool terpisah. Bedanya murni di sisi penulisan data (lihat §2 baris #7/#8 dan `Dokumentasi/daun_merah.md` Session 201 §U-7): call `auto=1` TIDAK menulis cache `ohlcv_analysis:<symbol>` (publik tidak pernah melihat hasilnya) dan setup masuk `setup_log_auto:v1` (bukan log manual publik).
 
-**Volume tambahan ke pool DeepSeek/SambaNova akun-1:** +2 call/hari (auto-entry, 2 slot) + 1 call/hari (uji konsistensi ×3 panggilan = +3 request) = **+5 request/hari**. Kecil dibanding pool 200/hari SambaNova, tapi tetap masuk hitungan headroom §5 kalau Analisa AI per Pair manual sedang ramai.
+**Volume tambahan ke pool DeepSeek:** +2 call/hari (auto-entry, 2 slot) + 1 call/hari (uji konsistensi ×3 panggilan = +3 request) = **+5 request/hari**. Kecil dibanding pool 50/hari DeepSeek, tapi tetap masuk hitungan headroom §5 kalau Analisa AI per Pair manual sedang ramai.
 
-**[2026-08-04, Track 2a "Road to Professional LLM Trader"] +1 call/hari khusus AUD/NZD:** slot ke-3 (`AUTO_ENTRY_HOURS_UTC_AUDNZD`, default 00:00 UTC/07:00 WIB, sesi Sydney-Tokyo) menambah **+1 request/hari** ke pool yang sama, HANYA untuk pair `frxAUDNZD` — 3 pair lain (XAU/EUR/GBP) tidak bertambah call. Rantai fallback & pool provider TIDAK berubah (masih DeepSeek v4-flash → SambaNova akun-1 → akun-2).
+**[2026-08-04, Track 2a "Road to Professional LLM Trader"] +1 call/hari khusus AUD/NZD:** slot ke-3 (`AUTO_ENTRY_HOURS_UTC_AUDNZD`, default 00:00 UTC/07:00 WIB, sesi Sydney-Tokyo) menambah **+1 request/hari** ke pool yang sama, HANYA untuk pair `frxAUDNZD` — 3 pair lain (XAU/EUR/GBP) tidak bertambah call. Provider (DeepSeek v4-flash, primary/satu-satunya sejak 2026-08-12) TIDAK berubah untuk slot ini.
 
-**[2026-07-28] Gate A "AI Kritikus" otomatis (audit celah kesalahan trader, `daun_merah.md` Session 250):** setiap kandidat setup auto-entry yang lolos 3 gate murah (regime-confidence/correlation-cap/drawdown, `_auto_entry_guard.js`, murni kode — 0 AI call) sekarang direview 1x lagi oleh AI Kritikus (verdict "batalkan" → setup tidak disimpan) sebelum masuk `setup_log_auto:v1`.
+**[2026-07-28] Gate A "AI Kritikus" ("Sistem Hakim") otomatis (audit celah kesalahan trader, `daun_merah.md` Session 250):** setiap kandidat setup auto-entry yang lolos 3 gate murah (regime-confidence/correlation-cap/drawdown, `_auto_entry_guard.js`, murni kode — 0 AI call) sekarang direview 1x lagi oleh AI Kritikus (verdict "batalkan" → setup tidak disimpan) sebelum masuk `setup_log_auto:v1`.
 
-- **Pool TERPISAH** dari §3.6 di atas — `ai:sambanova:main:experimental` / `sambanova_main_experimental` (limit 30/hari), BUKAN `ai:sambanova:main`/`sambanova_main` yang dipakai tombol manual "UJI KELEMAHAN" publik (isolasi U-7 tetap terjaga — tidak rebutan kuota).
-- SambaNova-only, tanpa fallback provider lain (sama seperti tombol manualnya).
+**Provider Kritikus Gate A:** DeepSeek v4-flash, pool eksperimen `ai:deepseek:experimental`/`deepseek_experimental` (SambaNova akun 1, primary lama di sini, diputus kontrak total 2026-08-12) — SAMA pool yang dipakai fallback Call 4/Analisa AI per Pair jalur auto-entry di atas. Tombol manual publik "UJI KELEMAHAN" (§3.7, handler `ohlcv_critic`) tetap DeepSeek juga tapi pool PRODUKSI terpisah (`ai:deepseek`/`deepseek`) supaya isolasi U-7 tetap terjaga (tidak rebutan kuota dengan traffic publik).
+
 - Volume: maksimal +2 call/hari (1 per slot auto-entry berhasil, hanya kalau setup itu genuinely baru — tidak jalan untuk kandidat yang sudah ditahan gate lain atau dup/blocked existing).
 
 ### 3.7 Review Posisi Virtual — `api/admin.js` (`action=position_review`, Plan U-5a/U-5b)
 
-Trigger event-driven dari daemon (headline market-moving/geopolitical yang match currency setup eksperimen `open`), **bukan jadwal tetap**. Rantai fallback: SambaNova akun-1 saja (Groq dulu jadi fallback terakhir, dihapus 2026-07-25 — kalau SambaNova gagal, langsung downgrade ke HOLD, fail-safe kode). Dibatasi cooldown 6 jam/posisi + cap 3 review/hari (kode, bukan AI) — **maksimal +3 call/hari** ke pool yang sama.
+Trigger event-driven dari daemon (headline market-moving/geopolitical yang match currency setup eksperimen `open`), **bukan jadwal tetap**. Provider: DeepSeek v4-flash saja, pool eksperimen `ai:deepseek:experimental`/`deepseek_experimental` (SambaNova akun-1, primary lama di sini, diputus kontrak total 2026-08-12; Groq dulu jadi fallback terakhir, dihapus 2026-07-25 — kalau DeepSeek gagal, langsung downgrade ke HOLD, fail-safe kode). Dibatasi cooldown 6 jam/posisi + cap 3 review/hari (kode, bukan AI) — **maksimal +3 call/hari** ke pool yang sama.
 
 ### 3.8 Tighten Preventif Weekend Gap — `api/admin.js` (`action=friday_tighten`, Plan U-3 lanjutan, 2026-07-24)
 
@@ -177,18 +174,17 @@ Ini lapisan pembatas paling penting untuk dipahami. **Jatah ini dibagi rata ke s
 
 | Provider | Jatah harian (buatan sendiri) | Limit resmi provider | Dipakai untuk |
 |---|---|---|---|
-| SambaNova (akun-1 & akun-2) | 200 request/hari masing-masing | ~10-20 RPM, free persisten | Fallback di semua Call 1/2/3/4, Analisa AI primary |
-| Google AI Studio (Gemini) | 200 request/hari (buatan sendiri) — **⚠️ TIDAK LAGI VALID, lihat catatan di bawah** | ~~10 RPM, 1.500 RPD~~ **TERBUKTI SALAH 2026-08-02**: alias `gemini-flash-latest` resolve ke `gemini-3.6-flash`, limit REAL cuma **20 request/HARI** (429 `RESOURCE_EXHAUSTED` terverifikasi live, quotaId `GenerateRequestsPerDayPerProjectPerModel-FreeTier`) | Fallback Call 1/2, Analisa Fundamental, AI Coach — SEMUA fitur ini rawan diam-diam kena limit 20/hari kalau fallback ke Gemini keseringan terpakai hari yang sama (jarang ketahuan karena Gemini biasanya fallback TERAKHIR, jarang aktif) |
-| DeepSeek API resmi | 50 request/hari (PAGAR BIAYA — provider berbayar dari saldo top-up user, bukan free tier) | Tidak ada limit request; yang membatasi saldo (top-up $2, 2026-07-18, burn rate live ±$0.0033/generate) | **PRIMARY Call 1/2/3 Ringkasan Berita** (Plan O-3) + **PRIMARY Analisa AI per Pair** (Plan O-6) + Pre-Entry Check (Plan R-2) |
-| Mistral — bucket `mistral_newstranslate` | 1000 request/hari (= 1000 PANGGILAN, bukan 1000 headline — 1 panggilan berisi batch sampai 20 headline), **TERPISAH** dari bucket `mistral` (200/hari, diagnostik manual) di atas | ±1M token/bulan (jauh lebih longgar per-request daripada provider lain, konservatif) | **HANYA** Translate NEWS (#10) — provider FINAL setelah 3 percobaan gagal (SambaNova akun 2 2x, Gemini 1x — lihat catatan di baris #10 §2 & temuan Gemini di bawah). Satu-satunya provider translate yang TIDAK dipakai fitur produksi lain sama sekali, jadi nol risiko rebutan kuota |
+| Google AI Studio (Gemini) | 200 request/hari (buatan sendiri) — **⚠️ TIDAK LAGI VALID, lihat catatan di bawah** | ~~10 RPM, 1.500 RPD~~ **TERBUKTI SALAH 2026-08-02**: alias `gemini-flash-latest` resolve ke `gemini-3.6-flash`, limit REAL cuma **20 request/HARI** (429 `RESOURCE_EXHAUSTED` terverifikasi live, quotaId `GenerateRequestsPerDayPerProjectPerModel-FreeTier`) | **PRIMARY/SATU-SATUNYA Analisa Fundamental & AI Coach Jurnal** (sejak 2026-08-12) + fallback Call 1/2 Ringkasan Berita — jadi PRIMARY provider berarti limit 20/hari yang tipis ini JAUH lebih rawan kepakai habis daripada saat Gemini masih sekadar fallback jarang aktif |
+| DeepSeek API resmi | 50 request/hari (PAGAR BIAYA — provider berbayar dari saldo top-up user, bukan free tier) | Tidak ada limit request; yang membatasi saldo (top-up $2, 2026-07-18, burn rate live ±$0.0033/generate) | **PRIMARY/SATU-SATUNYA** Call 1/2/3/4 Ringkasan Berita, Analisa AI per Pair, Pre-Entry Check, Review Posisi Virtual (sejak 2026-08-12, setelah SambaNova diputus kontrak) |
+| Mistral — bucket `mistral_newstranslate` | 1000 request/hari (= 1000 PANGGILAN, bukan 1000 headline — 1 panggilan berisi batch sampai 20 headline), **TERPISAH** dari bucket `mistral` (200/hari, diagnostik manual) di atas | ±1M token/bulan (jauh lebih longgar per-request daripada provider lain, konservatif) | **HANYA** Translate NEWS (#10) — provider FINAL setelah beberapa percobaan gagal (riwayat lengkap di baris #10 §2). Satu-satunya provider translate yang TIDAK dipakai fitur produksi lain sama sekali, jadi nol risiko rebutan kuota |
 
-**⚠️ TEMUAN PENTING (2026-08-02, ditemukan saat debug translate NEWS, berlaku untuk SEMUA fitur yang fallback ke Gemini, bukan cuma translate):** limit resmi Gemini free tier BUKAN 1.500 RPD seperti dokumentasi lama — provider mengembalikan HTTP 429 `RESOURCE_EXHAUSTED` dengan pesan eksplisit "limit: 20, model: gemini-3.6-flash" saat dites live. Google tidak lagi publikasikan angka statis di dokumentasi rate-limit (harus cek dashboard AI Studio live), dan alias `gemini-flash-latest` sudah bergeser generasi model 3x (2.5→3.5→3.6) tanpa mengubah kode kita — tiap pergeseran berpotensi mengubah kuota gratis secara diam-diam. Kalau ada fitur fallback Gemini tiba-tiba gagal terus, JANGAN asumsikan 1.500 RPD sebagai batas aman — cek dulu error message aslinya.
+**⚠️ TEMUAN PENTING (2026-08-02, ditemukan saat debug translate NEWS; makin krusial sejak 2026-08-12 karena Gemini jadi PRIMARY 2 fitur, bukan cuma fallback):** limit resmi Gemini free tier BUKAN 1.500 RPD seperti dokumentasi lama — provider mengembalikan HTTP 429 `RESOURCE_EXHAUSTED` dengan pesan eksplisit "limit: 20, model: gemini-3.6-flash" saat dites live. Google tidak lagi publikasikan angka statis di dokumentasi rate-limit (harus cek dashboard AI Studio live), dan alias `gemini-flash-latest` sudah bergeser generasi model 3x (2.5→3.5→3.6) tanpa mengubah kode kita — tiap pergeseran berpotensi mengubah kuota gratis secara diam-diam. Kalau Analisa Fundamental atau AI Coach Jurnal tiba-tiba gagal terus, JANGAN asumsikan 1.500 RPD sebagai batas aman — cek dulu error message aslinya, curigai limit 20/hari ini duluan.
 
-**⚠️ TEMUAN KEDUA (2026-08-02, sama sesi):** SambaNova akun 2 (`SAMBANOVA_API_KEY_CALL1`) terbukti punya latensi SANGAT TIDAK KONSISTEN terlepas dari volume panggilan kita — tes isolasi langsung (bukan lewat fitur apa pun) pernah sukses 2 detik untuk 1 headline dan 8,8 detik untuk batch 10 headline, tapi di lain waktu TIMEOUT 20+ detik bahkan untuk batch 3 headline. Ini bukan soal desain kode (concurrency/batching) — akun itu sendiri memang tidak stabil. Kalau ada fitur yang pakai akun ini (`sambanova_c1`: Journal primary, Call1 Ringkasan fallback, **Analisa Fundamental primary sejak 2026-08-11** — lihat §3.3) tiba-tiba lambat/gagal tanpa sebab jelas, curigai akun ini duluan sebelum audit kode. Keputusan 2026-08-11 memindahkan Fundamental ke akun ini TETAP dibuat sadar akan temuan ini (permintaan eksplisit user, Gemini dianggap kualitas lebih buruk daripada risiko latensi akun ini) — retry 1x di primary sengaja dipasang sebagai mitigasi parsial.
+**SambaNova (akun-1 & akun-2) — DIPUTUS KONTRAK TOTAL 2026-08-12.** Root cause: akun diblokir billing SambaNova sendiri ("A payment method is required"), ganti API key tidak memperbaiki. Sebelum diputus, akun 2 juga terbukti (2026-08-02) punya latensi SANGAT TIDAK KONSISTEN terlepas dari volume panggilan (2 detik kadang, timeout 20+ detik lain waktu) — akun itu sendiri memang tidak stabil, bukan soal desain kode. Detail lengkap kronologi & penggantinya per fitur di `daun_merah_vendor.md`.
 
-**OpenRouter, Cerebras, Groq, Ollama Cloud — kontrak diputus user 2026-07-25.** Semua kode chain-nya (fallback produksi maupun jalur diagnostik `?test_nemotron=1` dkk) sudah dihapus dari `api/market-digest.js`, `api/admin.js`, `api/journal.js`, `api/_ai_guard.js`; env var-nya dihapus dari Vercel. Kalau ada laporan salah satu fitur AI gagal dan providernya masih disebut Cerebras/Groq/OpenRouter/Ollama di log lama — itu log basi dari sebelum tanggal ini, bukan indikasi provider itu masih dipakai.
+**OpenRouter, Cerebras, Groq, Ollama Cloud — kontrak diputus user 2026-07-25.** Semua kode chain-nya (fallback produksi maupun jalur diagnostik `?test_nemotron=1` dkk) sudah dihapus dari `api/market-digest.js`, `api/admin.js`, `api/journal.js`, `api/_ai_guard.js`; env var-nya dihapus dari Vercel. Kalau ada laporan salah satu fitur AI gagal dan providernya masih disebut Cerebras/Groq/OpenRouter/Ollama/SambaNova di log lama — itu log basi dari sebelum tanggal cutover masing-masing, bukan indikasi provider itu masih dipakai.
 
-**Pool yang paling perlu diawasi: SambaNova akun-1 dan Google AI Studio (Gemini).** SambaNova 1 masih fallback di banyak tempat, sedangkan Gemini adalah fallback terakhir JSON yang jika SambaNova error akan memikul beban JSON parse. **Kuota Gemini gratis TERNYATA cuma 20/hari (lihat temuan di atas), BUKAN 1.500/hari — headroom-nya jauh lebih tipis dari yang diasumsikan.**
+**Pool yang paling perlu diawasi: Google AI Studio (Gemini).** Sekarang PRIMARY (bukan cuma fallback) untuk 2 fitur publik dengan kuota resmi cuma 20/hari — headroom-nya tipis.
 
 **Kenapa angkanya sengaja lebih rendah dari limit resmi provider?** Supaya selalu ada headroom untuk retry otomatis dan supaya 1 hari yang tiba-tiba ramai tidak langsung mentok di detik-detik terakhir kuota resmi. Override manual bisa lewat env var `AI_DAILY_LIMIT_{PROVIDER}` kalau suatu saat perlu dinaikkan.
 
@@ -200,47 +196,48 @@ Ini jawaban langsung untuk pertanyaan "penggunaan paling banyak fitur AI itu ber
 
 ### Ringkasan Berita
 
-- **Otomatis:** pasti 3× sehari, tidak bisa lebih, tidak bisa kurang (jadwal tetap). Tiap generate normal = 1 request akun-2 (Call 1, fallback saat DeepSeek gagal) + 2 request ke SambaNova akun-1 (Call 2 & Call 3, fallback) — dalam skenario normal (DeepSeek sehat) request SambaNova malah nol.
-- **Manual:** setiap 1× klik "Ringkas Ulang" bisa menambah beban SambaNova/Gemini KALAU DeepSeek gagal — dalam kondisi normal, DeepSeek primary yang menyerap sebagian besar beban (dibatasi pagar biaya 50/hari).
-- **Kesimpulan sederhana:** DeepSeek (pagar 50/hari BERBAYAR) sekarang jadi bottleneck utama, bukan SambaNova — begitu DeepSeek habis/gagal, otomatis pindah ke SambaNova akun-1/akun-2 (200/hari masing-masing, jauh lebih longgar).
+- **Otomatis:** pasti 3× sehari, tidak bisa lebih, tidak bisa kurang (jadwal tetap). Tiap generate normal = 4 request DeepSeek (Call 1-4) dalam skenario normal (DeepSeek sehat); Gemini (Call 1/2 fallback) request-nya nol.
+- **Manual:** setiap 1× klik "Ringkas Ulang" bisa menambah beban Gemini KALAU DeepSeek gagal — dalam kondisi normal, DeepSeek primary yang menyerap sebagian besar beban (dibatasi pagar biaya 50/hari).
+- **Kesimpulan sederhana:** DeepSeek (pagar 50/hari BERBAYAR) tetap jadi bottleneck utama — begitu DeepSeek habis/gagal untuk Call 1/2, otomatis pindah ke Gemini (fallback); Call 3/4 sekarang DeepSeek-only (2026-08-12, SambaNova yang dulu jadi fallback di sini sudah tidak ada), jadi kalau DeepSeek gagal untuk Call 3/4, tidak ada jaring pengaman lain.
 
 ### Analisa AI per Pair
 
-- **Otomatis:** 3× sehari, khusus XAU/USD saja (juga lewat DeepSeek/SambaNova akun-1, ikut cron Ringkasan Berita).
-- **Manual:** dibatasi 5 klik/menit/IP oleh server dan 90 detik cooldown/device oleh UI. **Setiap klik = 1 request** (DeepSeek primary, fallback ke SambaNova akun-1 lalu akun-2). Tidak ada cache-gate sebelum generate (beda dari Analisa Fundamental), jadi tiap klik selalu makan jatah.
+- **Otomatis:** 3× sehari, khusus XAU/USD saja (lewat DeepSeek, ikut cron Ringkasan Berita).
+- **Manual:** dibatasi 5 klik/menit/IP oleh server dan 90 detik cooldown/device oleh UI. **Setiap klik = 1 request** (DeepSeek primary/satu-satunya sejak 2026-08-12). Tidak ada cache-gate sebelum generate (beda dari Analisa Fundamental), jadi tiap klik selalu makan jatah.
 
 ### Analisa Fundamental
 
-- **Maksimal mutlak: 4 generate sehari**, apapun yang terjadi (cache global 6 jam, tidak ada tombol paksa refresh di UI). Fitur paling "aman" dari sisi jatah AI. Per generate bisa sampai 2 request SambaNova akun-2 (retry 1x kalau percobaan pertama gagal) + 1 request Gemini kalau primary tetap gagal setelah retry — worst case realistis tetap jauh di bawah pool 200/hari akun-2.
+- **Maksimal mutlak: 4 generate sehari**, apapun yang terjadi (cache global 6 jam, tidak ada tombol paksa refresh di UI). Fitur paling "aman" dari sisi jatah AI. Per generate bisa sampai 2 request Gemini (retry 1x kalau percobaan pertama gagal) — worst case realistis (8 request/hari) masih di bawah kuota resmi Gemini 20/hari, TAPI jauh lebih mepet dibanding dulu (pool SambaNova 200/hari) — lihat catatan kuota Gemini di §4.
 
 ### AI Coach Jurnal
 
-- Terikat pada aktivitas trading nyata user (butuh ≥3 trade closed) — secara alami jarang dipanggil. Ada tombol paksa ulang, jadi 1 device yang aktif bisa memicu beberapa kali sehari kalau memang lagi banyak menutup/mengevaluasi trade, tapi cache 1 jam/device tetap membatasi ini secara wajar.
+- Terikat pada aktivitas trading nyata user (butuh ≥3 trade closed) — secara alami jarang dipanggil. Ada tombol paksa ulang, jadi 1 device yang aktif bisa memicu beberapa kali sehari kalau memang lagi banyak menutup/mengevaluasi trade, tapi cache 1 jam/device tetap membatasi ini secara wajar. Provider Gemini sama dengan Analisa Fundamental — dua fitur ini SEKARANG berbagi kuota 20/hari yang sama, jadi hari yang ramai di salah satunya mengurangi headroom yang lain.
 
 ### Total gabungan (skenario ramai realistis dalam 1 hari)
 
 | Fitur | Perkiraan maksimal wajar/hari | Pool yang dipakai |
 |---|---|---|
-| Ringkasan Berita (otomatis, 3× cron) | 3 request DeepSeek (fallback: SambaNova akun-1/akun-2) | DeepSeek → SambaNova |
-| Ringkasan Berita (manual, ~15-20× klik/hari wajar) | ±15-20 request DeepSeek | DeepSeek → SambaNova → Gemini |
-| Analisa AI per Pair (otomatis + manual) | ±63-78 request | DeepSeek → SambaNova akun-1 (+akun-2 fallback) |
-| Analisa Fundamental | maksimal 4 request | SambaNova akun-2 → Gemini |
-| AI Coach Jurnal | ±5-10 request | SambaNova akun-2 → Gemini |
-| Auto-Entry Virtual + Uji Konsistensi LLM (Plan U-3, §3.6) | +5 request (2 auto-entry + 3 konsistensi) | DeepSeek → SambaNova akun-1 (chain sama Analisa AI per Pair) |
-| Review Posisi Virtual (Plan U-5a/b, §3.7) | maksimal +3 request (event-driven, cap harian kode) | SambaNova akun-1 |
+| Ringkasan Berita (otomatis, 3× cron) | 3-12 request DeepSeek (Call 1-4, fallback Call 1/2: Gemini) | DeepSeek → Gemini (Call 1/2 saja) |
+| Ringkasan Berita (manual, ~15-20× klik/hari wajar) | ±15-20 request DeepSeek | DeepSeek → Gemini (Call 1/2 saja) |
+| Analisa AI per Pair (otomatis + manual) | ±63-78 request | DeepSeek (primary/satu-satunya) |
+| Analisa Fundamental | maksimal 8 request | Gemini (primary/satu-satunya, retry 1x) |
+| AI Coach Jurnal | ±5-10 request | Gemini (primary/satu-satunya) |
+| Auto-Entry Virtual + Uji Konsistensi LLM (Plan U-3, §3.6) | +5 request (2 auto-entry + 3 konsistensi) | DeepSeek (chain sama Analisa AI per Pair) |
+| Sistem Hakim Gate A (bagian dari auto-entry di atas) | maksimal +2 request/hari | DeepSeek eksperimen |
+| Review Posisi Virtual (Plan U-5a/b, §3.7) | maksimal +3 request (event-driven, cap harian kode) | DeepSeek eksperimen |
 
-**Bottleneck utama sekarang DeepSeek (50/hari, berbayar)** — begitu habis/gagal, otomatis turun ke SambaNova (200/hari masing-masing akun, jauh dari mentok di traffic wajar).
+**Bottleneck utama sekarang DeepSeek (50/hari, berbayar)** untuk hampir semua fitur — SambaNova yang dulu jadi jaring pengaman 200/hari sudah tidak ada lagi (diputus kontrak 2026-08-12), jadi begitu DeepSeek habis/gagal, sebagian besar fitur (Call 3/4 Ringkasan, Analisa AI per Pair, Pre-Entry Check) langsung tanpa fallback AI sama sekali.
 
 ---
 
 ## 6. Kalau Semua Fallback di Satu Rantai Habis/Gagal
 
-Sejak Cerebras/Groq/OpenRouter/Ollama dihapus (2026-07-25), rantai fallback jadi lebih pendek (2-4 tingkat tergantung fitur, lihat §3). Kalau semua tingkat di satu rantai gagal, itu berarti salah satu dari dua hal:
+Sejak SambaNova diputus (2026-08-12) — Cerebras/Groq/OpenRouter/Ollama lebih dulu (2026-07-25) — rantai fallback jadi lebih pendek lagi (1-2 tingkat untuk sebagian besar fitur, lihat §3). Kalau semua tingkat di satu rantai gagal, itu berarti salah satu dari dua hal:
 
 1. Semua provider di rantai itu gagal di hari yang sama (jarang, beda infrastruktur), atau
 2. Jatah harian kita sendiri (§4) sudah habis di SEMUA provider dalam rantai tersebut.
 
-**Analisa AI per Pair dan Review Posisi Virtual** rantainya paling pendek (2 dan 1 tingkat) — paling rentan kalau SambaNova bermasalah.
+**Analisa AI per Pair, Pre-Entry Check, Call 3/4 Ringkasan Berita, dan Review Posisi Virtual** sekarang DeepSeek-only (1 tingkat, tanpa fallback sama sekali) — paling rentan kalau DeepSeek bermasalah/saldo habis, karena tidak ada lagi SambaNova sebagai jaring pengaman kedua.
 
 Ringkasan Berita Call 1 (prosa) punya pengaman ekstra di luar AI: kalau semua provider AI gagal, ada template non-AI berbasis kategori berita (lihat §3.1) — jadi khusus Call 1, "AI tidak tersedia" tidak pernah benar-benar terjadi di UI, cuma kualitasnya turun.
 
@@ -252,10 +249,10 @@ Kalau gagal total terjadi, user akan melihat pesan "AI tidak tersedia — coba b
 
 | Provider | Endpoint | Model ID yang dipakai | Peran saat ini | Env var |
 |---|---|---|---|---|
-| DeepSeek (API resmi, BERBAYAR) | `api.deepseek.com/chat/completions` | `deepseek-v4-flash` (thinking disabled) | **PRIMARY** — Ringkasan Berita Call 1/2/3, Analisa AI per Pair, Pre-Entry Check | `DEEPSEEK_API_KEY` |
-| SambaNova (akun-1) | `api.sambanova.ai/v1/chat/completions` | `DeepSeek-V3.2` | Fallback — Ringkasan Berita Call 2/3/4, Analisa AI per Pair | `SAMBANOVA_API_KEY` |
-| SambaNova (akun-2) | `api.sambanova.ai/v1/chat/completions` | `DeepSeek-V3.2` | Fallback — Ringkasan Berita Call 1, Analisa Fundamental, AI Coach | `SAMBANOVA_API_KEY_CALL1` |
-| Google AI Studio | `generativelanguage.googleapis.com/v1beta/openai/chat/completions` | `gemini-flash-latest` | Fallback terakhir — Ringkasan Berita Call 1/2, Analisa Fundamental, AI Coach | `GEMINI_API_KEY` |
+| DeepSeek (API resmi, BERBAYAR) | `api.deepseek.com/chat/completions` | `deepseek-v4-flash` (thinking disabled) | **PRIMARY/SATU-SATUNYA** — Ringkasan Berita Call 1-4, Analisa AI per Pair, Pre-Entry Check, Review Posisi Virtual, Sistem Hakim Gate A | `DEEPSEEK_API_KEY` |
+| Google AI Studio | `generativelanguage.googleapis.com/v1beta/openai/chat/completions` | `gemini-flash-latest` | **PRIMARY/SATU-SATUNYA** — Analisa Fundamental, AI Coach Jurnal; fallback Ringkasan Berita Call 1/2 | `GEMINI_API_KEY` |
+
+**Dihapus 2026-08-12 (kontrak diputus user, billing lapse):** SambaNova akun-1 & akun-2 (`SAMBANOVA_API_KEY`, `SAMBANOVA_API_KEY_CALL1`) — env var dihapus dari Vercel (Production & Preview), semua kode chain/circuit/budget-nya dihapus dari `api/market-digest.js`, `api/admin.js`, `api/journal.js`, `api/_ai_guard.js`. Detail root cause di `daun_merah_vendor.md`.
 
 **Dihapus 2026-07-25 (kontrak diputus user):** OpenRouter (`OPENROUTER_API_KEY`), Cerebras (`CEREBRAS_API_KEY`), Groq (`GROQ_API_KEY`), Ollama Cloud (`OLLAMA_API_KEY`) — env var dihapus dari Vercel, semua kode chain/diagnostik-nya dihapus dari `api/market-digest.js`, `api/admin.js`, `api/journal.js`, `api/_ai_guard.js`.
 
