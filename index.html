@@ -4175,6 +4175,10 @@ body:not(.light-theme) .ringkasan-gen-btn {
       </select>
       <span id="ckPairHint" style="font-size:9px;color:var(--muted);white-space:nowrap;cursor:default"></span>
     </div>
+    <div class="tek-note-wrap" id="ckTekNoteWrap" style="display:none">
+      <div class="tek-note-label">Catatan analisa (manual, dari TEKNIKAL)</div>
+      <textarea id="ckTekNote" placeholder="Key levels, setup yang dipantau, atau catatan sesi..." oninput="ckSaveTekNote()" style="min-height:70px"></textarea>
+    </div>
   </div>
   <div class="ck-sections" id="ckSectionsContainer"></div>
   <div class="ck-sidebar">
@@ -13968,10 +13972,45 @@ function ckOnPairChange() {
   ckBuildUI();
   ckRender();
   ckAutoTickRegimeCheck(pair);
+  ckSyncTekNoteForPair(pair);
   // Hasil Pre-Entry Check pair sebelumnya tidak relevan untuk pair baru — sembunyikan,
   // cache per-pair tetap tersimpan (dipakai lagi kalau user balik ke pair yang sama).
   const pecBox = document.getElementById('ckPecBox');
   if (pecBox) pecBox.style.display = 'none';
+}
+
+// Catatan analisa di Checklist itu bukan field terpisah — ia menampilkan &
+// mengedit bagian "manual" (di bawah TEK_AUTO_SEP) dari catatan yang sama
+// dipakai tab TEKNIKAL (tekNotes, key tanpa slash mis. "EURUSD"). Blok auto
+// D1/H4/H1 di atas separator tidak pernah disentuh dari sini — hanya bisa
+// diregenerasi lewat tombol "↻ Auto" di TEKNIKAL.
+function ckSyncTekNoteForPair(ckPair) {
+  const wrap = document.getElementById('ckTekNoteWrap');
+  const el = document.getElementById('ckTekNote');
+  if (!wrap || !el) return;
+  if (!ckPair) { wrap.style.display = 'none'; return; }
+  if (!tekInited) { loadTekNotes(); tekInited = true; }
+  const tekKey = ckPair.replace('/', '');
+  wrap.style.display = '';
+  el.value = _tekNoteManualPart(tekNotes[tekKey] || '');
+  el.dataset.tekKey = tekKey;
+}
+
+function ckSaveTekNote() {
+  const el = document.getElementById('ckTekNote');
+  const tekKey = el && el.dataset.tekKey;
+  if (!el || !tekKey) return;
+  const existing = tekNotes[tekKey] || '';
+  const sepIdx = existing.indexOf(TEK_AUTO_SEP);
+  const merged = sepIdx === -1 ? el.value : existing.slice(0, sepIdx + TEK_AUTO_SEP.length) + '\n' + el.value;
+  tekNotes[tekKey] = merged;
+  localStorage.setItem('tek_notes', JSON.stringify(tekNotes));
+  // Kalau tab TEKNIKAL sedang menampilkan pair yang sama, samakan textarea-nya
+  // juga supaya tidak ketimpa versi lama saat user pindah tab.
+  if (typeof tekPair !== 'undefined' && tekPair === tekKey) {
+    const tekEl = document.getElementById('tekNote');
+    if (tekEl) tekEl.value = merged;
+  }
 }
 
 function ckSwitchPlaybook(id) {
@@ -14050,6 +14089,7 @@ function initChecklist() {
     if (pbSel) pbSel.value = ckActivePlaybook;
     ckBuildUI();
     ckUpdateClock();
+    ckSyncTekNoteForPair(ckCurrentPair);
     if (!ckClockInterval) ckClockInterval = setInterval(ckUpdateClock, 1000);
     ckInitialized = true;
     const ckSel = document.getElementById('ckPairSelector');

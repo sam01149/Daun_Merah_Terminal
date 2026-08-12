@@ -11,10 +11,20 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-12 (Session 310 — Fix "Analisis Fundamental" Gagal "signal timed out")
+> **Last updated:** 2026-08-12 (Session 311 — Catatan Analisa Manual di Tab CHECKLIST)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 311 (2026-08-12) — Catatan Analisa Manual di Tab CHECKLIST
+
+**Konteks:** User minta catatan analisa (yang selama ini cuma ada di tab TEKNIKAL) juga muncul di tab CHECKLIST, tepat di bawah pair selector — biar tidak perlu bolak-balik tab TEKNIKAL cuma untuk lihat/ubah catatan setup saat mengisi checklist.
+
+**Implementasi (`index.html`):** field baru bukan catatan terpisah — ia membaca & mengedit LANGSUNG bagian "manual" dari catatan TEKNIKAL yang sama (localStorage `tek_notes`, key per-pair tanpa slash mis. `EURUSD`). Blok auto D1/H4/H1 (di atas separator `TEK_AUTO_SEP`, hasil tombol "↻ Auto" TEKNIKAL) tidak pernah ditampilkan/disentuh dari sini — cuma baris manual di bawahnya yang tampil editable. Fungsi baru: `ckSyncTekNoteForPair()` (isi textarea saat pair Checklist berganti, dipanggil dari `ckOnPairChange()` dan `initChecklist()`) dan `ckSaveTekNote()` (simpan balik ke `tekNotes[pair]` sambil mempertahankan blok auto utuh, plus sinkron langsung ke textarea `#tekNote` kalau tab TEKNIKAL kebetulan sedang menampilkan pair yang sama).
+
+**Test:** manual di browser (Playwright, server statis lokal) — field muncul & terisi cuma bagian manual saat pair dipilih; edit dari Checklist tersimpan ke `tek_notes` dengan blok auto D1/H4/H1 tetap utuh; sinkron live ke textarea TEKNIKAL kalau pair sama sedang terbuka; pair tanpa catatan/tanpa separator (belum pernah pakai Auto) tetap kebaca-tulis benar; field tersembunyi saat belum ada pair terpilih. Tidak ada test otomatis baru — kode UI inline di `index.html` ini tidak punya harness DOM di repo (konsisten dengan pola kode UI lain di file yang sama, lihat Session 309).
+
+**Cakupan/limitasi:** murni tampilan/edit, tidak ada perubahan skema data — `tek_notes` di localStorage tetap satu sumber untuk kedua tab, jadi kalau pernah dibersihkan/direset dari TEKNIKAL, Checklist otomatis ikut kosong.
 
 ## Changelog Session 310 (2026-08-12) — Fix "Analisis Fundamental" Gagal "signal timed out"
 
