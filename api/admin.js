@@ -1362,6 +1362,11 @@ function _formatFundDataLine(key, v, nowMs = Date.now()) {
     if (seedAge !== null) extras.push(seedAge === 0 ? 'berdasar data seed, belum terkonfirmasi update — diseed hari ini' : `berdasar data seed, belum terkonfirmasi update — sejak ${seedAge} hari lalu`);
   }
   if (v.previous && v.previous !== '—' && v.previous !== v.actual) extras.push(`sebelumnya ${v.previous}`);
+  // Audit 2026-08-12: forecast (ekspektasi konsensus pasar sebelum rilis) — dulu
+  // dibuang di parser walau sudah ada di sumber (FinancialJuice & calendar_v1),
+  // AI cuma bisa lihat actual vs previous (arah bulan-ke-bulan), tidak pernah tahu
+  // apakah rilis itu beat/miss ekspektasi pasar (sering lebih market-moving).
+  if (v.forecast && v.forecast !== '—' && v.forecast !== v.actual) extras.push(`forecast ${v.forecast}`);
   if (extras.length > 0) parts.push(` [${extras.join('; ')}]`);
   return parts.join('');
 }
@@ -1478,6 +1483,7 @@ ATURAN BOBOT WAKTU (penting — pasar men-trade data terbaru, bukan level lama):
 - Data tanpa tag rilis atau lebih tua dari ~45 hari perlakukan sebagai latar belakang, BUKAN bukti utama ranking.
 - Currency yang beberapa rilis terbarunya konsisten membaik layak naik ranking meski levelnya biasa saja; sebaliknya level bagus yang datanya basi dan mulai memburuk harus turun.
 - Indikator yang MEMANG kuartalan/musiman menurut sifatnya (mis. GDP QoQ, CPI QoQ negara yang rilis inflasinya per-kuartal seperti AUD/NZD) WAJAR berumur 1-3 bulan di antara rilis — itu bukan tanda data rusak/diabaikan, cuma siklus rilis normal. Bedakan dari indikator yang SEHARUSNYA rilis bulanan tapi tag-nya "berdasar data seed, belum terkonfirmasi update" — itu baru sinyal data benar-benar tidak ter-update, bukan sekadar tenor rilisnya panjang.
+- Kalau ada tag "forecast X" di suatu indikator, itu ekspektasi konsensus pasar SEBELUM rilis — bandingkan actual vs forecast (beat/in-line/miss), bukan cuma actual vs "sebelumnya". Rilis yang beat ekspektasi (walau levelnya turun dari bulan lalu) sering lebih bullish bagi currency itu daripada rilis yang cuma sama dengan bulan lalu tapi miss ekspektasi — beat/miss vs konsensus adalah sinyal yang biasanya lebih menggerakkan pasar daripada arah vs previous saja.
 
 KERANGKA ANALISIS per currency (pakai ini untuk menyusun OUTLOOK, bukan buat mengarang indikator yang tidak ada di data):
 1. Arah & momentum kebijakan moneter: level suku bunga + status (baru dinaikkan/dipangkas/ditahan) = hawkish/netral/dovish. PAKAI KRITERIA INI KONSISTEN untuk SEMUA 8 currency TERMASUK CHF — status "safe-haven" CHF adalah karakteristik struktural, BUKAN alasan untuk mengabaikan suku bunga rendah/inflasi ultra-rendahnya sendiri. Kalau CHF tetap dinaikkan ranking meski suku bunganya terendah, jelaskan alasan konkret (mis. capital inflow risk-off), bukan cuma label "safe-haven" generik.

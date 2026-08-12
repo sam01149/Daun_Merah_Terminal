@@ -346,7 +346,17 @@ function parseFundamentalFromHeadline(title) {
   const fjPrev = title.match(/[Pp]revious\s+([+-]?\d+\.?\d*)\s*(K|M|B|%|bps|pts?|points?)?/);
   if (fjPrev) previous = fjPrev[1] + (fjPrev[2] || '');
 
-  return { currency, key: indicatorKey, value, previous };
+  // Audit 2026-08-12 (respons user, "apa lagi yang bisa diperluas"): "Forecast"
+  // (ekspektasi konsensus pasar) sudah lama dipakai buat DETEKSI format rilis
+  // (isCalendarFormat di atas) tapi nilainya sendiri tidak pernah diekstrak/disimpan
+  // — AI cuma tahu actual vs previous (arah bulan-ke-bulan), padahal actual vs
+  // forecast (beat/miss vs ekspektasi pasar) sering lebih menggerakkan harga
+  // daripada arah vs bulan lalu.
+  let forecast = null;
+  const fjForecast = title.match(/[Ff]orecast\s+([+-]?\d+\.?\d*)\s*(K|M|B|%|bps|pts?|points?)?/);
+  if (fjForecast) forecast = fjForecast[1] + (fjForecast[2] || '');
+
+  return { currency, key: indicatorKey, value, previous, forecast };
 }
 
 // 8 currency yang punya kartu Fundamental (sama persis FUND_CURRENCIES di
@@ -388,7 +398,11 @@ function extractFundamentalFromCalendarEvent(e) {
   if (QUANTITY_INDICATORS.has(indicatorKey) && value.endsWith('%')) return null;
 
   const previous = (e.previous != null && e.previous !== '') ? String(e.previous) : null;
-  return { currency, key: indicatorKey, value, previous, date: e.date };
+  // Audit 2026-08-12: calendar_v1 (api/calendar.js) sudah menyimpan `forecast`
+  // (formatted, lihat formatTVValue) per event — sebelumnya dibuang begitu saja,
+  // AI tidak pernah tahu apakah rilis beat/miss ekspektasi pasar.
+  const forecast = (e.forecast != null && e.forecast !== '') ? String(e.forecast) : null;
+  return { currency, key: indicatorKey, value, previous, forecast, date: e.date };
 }
 
 // Ambil event calendar_v1 (minggu berjalan) + calendar_next_v1 (minggu depan) —
@@ -440,7 +454,7 @@ async function autoUpdateFundamentalsFromCalendar(calendarEvents, redisCmd) {
       const args = ['HSET', `fundamental:${currency}`];
       const writtenKeys = [];
       for (let i = 0; i < items.length; i++) {
-        const { key, value, previous, date } = items[i];
+        const { key, value, previous, forecast, date } = items[i];
         let existingEntry = null;
         if (existingRaw && existingRaw[i]) {
           try { existingEntry = JSON.parse(existingRaw[i]); } catch(_) {}
@@ -453,6 +467,10 @@ async function autoUpdateFundamentalsFromCalendar(calendarEvents, redisCmd) {
         const entry = { actual: value, period: '—', date, source: 'calendar' };
         if (previous) entry.previous = previous;
         else if (existingEntry && existingEntry.previous) entry.previous = existingEntry.previous;
+        // Audit 2026-08-12: forecast (ekspektasi konsensus) — beat/miss vs ini
+        // sering lebih menggerakkan pasar daripada arah vs previous saja.
+        if (forecast) entry.forecast = forecast;
+        else if (existingEntry && existingEntry.forecast) entry.forecast = existingEntry.forecast;
         args.push(key, JSON.stringify(entry));
         writtenKeys.push(key);
       }
@@ -501,7 +519,7 @@ async function autoUpdateFundamentals(headlines, redisCmd) {
     const fund = parseFundamentalFromHeadline(item.title);
     if (fund) {
       if (!byCurrency[fund.currency]) byCurrency[fund.currency] = [];
-      byCurrency[fund.currency].push({ key: fund.key, value: fund.value, headlinePrev: fund.previous });
+      byCurrency[fund.currency].push({ key: fund.key, value: fund.value, headlinePrev: fund.previous, headlineForecast: fund.forecast });
     }
 
     const cb = parseCBDecision(item.title);
@@ -528,7 +546,7 @@ async function autoUpdateFundamentals(headlines, redisCmd) {
       const existingRaw = await redisCmd('HMGET', `fundamental:${currency}`, ...items.map(i => i.key));
       const args = ['HSET', `fundamental:${currency}`];
       for (let i = 0; i < items.length; i++) {
-        const { key, value, headlinePrev } = items[i];
+        const { key, value, headlinePrev, headlineForecast } = items[i];
         let existingEntry = null;
         if (existingRaw && existingRaw[i]) {
           try { existingEntry = JSON.parse(existingRaw[i]); } catch(_) {}
@@ -552,6 +570,10 @@ async function autoUpdateFundamentals(headlines, redisCmd) {
         } else if (existingEntry && existingEntry.previous) {
           entry.previous = existingEntry.previous;
         }
+        // Audit 2026-08-12: forecast (ekspektasi konsensus) — pola sama seperti
+        // previous di atas, pertahankan nilai lama kalau re-scan tidak bawa forecast baru.
+        if (headlineForecast) entry.forecast = headlineForecast;
+        else if (existingEntry && existingEntry.forecast) entry.forecast = existingEntry.forecast;
         args.push(key, JSON.stringify(entry));
       }
       await redisCmd(...args);

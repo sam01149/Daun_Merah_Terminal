@@ -12,7 +12,23 @@ const {
 
 test('format FinancialJuice standar: US CPI YoY', () => {
   const r = parseFundamentalFromHeadline('US CPI YoY: Actual 3.2% Forecast 3.1% Previous 3.4%');
-  assert.deepStrictEqual(r, { currency: 'USD', key: 'CPI YoY', value: '3.2%', previous: '3.4%' });
+  assert.deepStrictEqual(r, { currency: 'USD', key: 'CPI YoY', value: '3.2%', previous: '3.4%', forecast: '3.1%' });
+});
+
+// Audit 2026-08-12 (respons user "apa lagi yang bisa diperluas"): forecast
+// (ekspektasi konsensus pasar) sudah lama dipakai buat DETEKSI format rilis
+// kalender (isCalendarFormat) tapi nilainya sendiri tidak pernah diekstrak —
+// AI cuma tahu actual vs previous, tidak pernah tahu beat/miss vs ekspektasi pasar.
+test('forecast diekstrak terpisah dari previous', () => {
+  const r = parseFundamentalFromHeadline('UK GDP MoM Actual 0.3% Forecast 0.1% Previous 0.1%');
+  assert.strictEqual(r.value, '0.3%');
+  assert.strictEqual(r.forecast, '0.1%');
+  assert.strictEqual(r.previous, '0.1%');
+});
+
+test('headline tanpa Forecast -> field forecast null (tidak crash)', () => {
+  const r = parseFundamentalFromHeadline('US NFP: Actual 175K Previous 227K');
+  assert.strictEqual(r.forecast, null);
 });
 
 test('NFP dengan nilai K (count) diterima', () => {
@@ -240,9 +256,16 @@ function calEvent(overrides) {
   };
 }
 
-test('extractFundamentalFromCalendarEvent: event terstruktur -> {currency,key,value,previous,date}', () => {
+test('extractFundamentalFromCalendarEvent: event terstruktur -> {currency,key,value,previous,forecast,date}', () => {
   const r = extractFundamentalFromCalendarEvent(calEvent());
-  assert.deepStrictEqual(r, { currency: 'JPY', key: 'Retail Sales YoY', value: '1.9%', previous: '1.7%', date: '2026-08-03' });
+  assert.deepStrictEqual(r, { currency: 'JPY', key: 'Retail Sales YoY', value: '1.9%', previous: '1.7%', forecast: '1.8%', date: '2026-08-03' });
+});
+
+// Audit 2026-08-12: forecast (ekspektasi konsensus) sudah ada di calendar_v1
+// (api/calendar.js) sejak lama tapi dibuang begitu saja — sekarang diteruskan.
+test('extractFundamentalFromCalendarEvent: forecast kosong -> field forecast null', () => {
+  const r = extractFundamentalFromCalendarEvent(calEvent({ forecast: null }));
+  assert.strictEqual(r.forecast, null);
 });
 
 test('extractFundamentalFromCalendarEvent: currency sudah kode ISO eksplisit, tidak perlu tebak dari nama negara', () => {
@@ -305,7 +328,7 @@ test('autoUpdateFundamentalsFromCalendar: HSET dengan source calendar, group per
   const updated = await autoUpdateFundamentalsFromCalendar(events, redis);
   assert.deepStrictEqual(updated, { JPY: ['Retail Sales YoY'], USD: ['NFP'] });
   const jpy = JSON.parse((await redis('HMGET', 'fundamental:JPY', 'Retail Sales YoY'))[0]);
-  assert.deepStrictEqual(jpy, { actual: '1.9%', period: '—', date: '2026-08-03', source: 'calendar', previous: '1.7%' });
+  assert.deepStrictEqual(jpy, { actual: '1.9%', period: '—', date: '2026-08-03', source: 'calendar', previous: '1.7%', forecast: '1.8%' });
 });
 
 test('autoUpdateFundamentalsFromCalendar: TIDAK mundur kalau entry existing sudah dari tanggal lebih baru', async () => {
