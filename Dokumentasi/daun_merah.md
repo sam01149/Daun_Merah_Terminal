@@ -11,10 +11,31 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-11 (Session 307 — Fix Bug ADP Weekly + Swap Provider Analisa Fundamental + Fitur Pergerakan Ranking)
+> **Last updated:** 2026-08-12 (Session 308 — Audit & Fix Data Fundamental Macet Permanen JPY/AUD/NZD/CHF)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 308 (2026-08-12) — Audit & Fix Data Fundamental Macet Permanen JPY/AUD/NZD/CHF
+
+**Konteks:** User membaca output PDF "Analisis Fundamental" dan bertanya kenapa confidence JPY selalu "rendah" (banyak data seed berlabel "Mar 2026"), curiga ada yang salah di auto-update dari FinancialJuice/kalender TradingView. Diminta audit menyeluruh: pipeline data per-currency, prompt AI, dan mekanisme auto-update.
+
+**Root cause ditemukan (verifikasi live ke `fundamental_get` produksi):** data JPY sebenarnya SUDAH ter-update — 40 field, mayoritas fresh Juli-Agustus 2026 — tapi 3 field yang dipakai kartu/prompt (`CPI YoY`, `Industrial Production`, sebagian `Retail Sales YoY`) tetap macet di nilai seed karena data segarnya ditulis ke KEY REDIS BERBEDA NAMA: judul rilis asli Jepang/Swiss ("CPI Overall Nationwide", "Industrial Output Prelim Mom Sa", "Kof Indicator") dan ejaan tanpa-slash ("CPI QoQ") tidak match keyword lama di `FUND_INDICATOR_MAP` (`api/_fundamental_parser.js`), jatuh ke fallback tebak-nama, dan numpuk sebagai field baru alih-alih menimpa key seed kanonik. Pola bug ini SAMA PERSIS dengan bug AUD "Cpi Qoq" yang pernah ditemukan & "difix" 2026-08-10 — tapi fix waktu itu cuma mencegah kasus BARU (lewat `FUND_INDICATOR_CANONICAL`), tidak pernah membersihkan key yatim yang SUDAH terlanjur tertulis di Redis. Scan otomatis ke seluruh 8 currency menemukan kasus yang sama juga masih aktif di AUD & NZD (`CPI QoQ` vs `Cpi Qoq`).
+
+**Fix (`api/_fundamental_parser.js`):**
+- Perluas `FUND_INDICATOR_MAP`: sinonim JPY (`cpi overall nationwide`/`nationwide cpi`/`national cpi` → `CPI YoY`; `industrial output` → `Industrial Production`; `retail trade yoy`/`retail trade` → alias `Retail Sales YoY`/`MoM`), CHF (`kof indicator`/`kof leading` → `KOF Barometer`) — mencegah field baru serupa muncul lagi ke depan.
+- Fungsi baru `reconcileFundamentalKeys(redisCmd)`: scan tiap currency, deteksi key duplikat case-insensitive (tebakan title-case naif) + daftar sinonim terkurasi manual (`FUND_KNOWN_SYNONYM_KEYS`), migrasikan nilai yang lebih segar (non-seed menang atas seed; kalau sama-sama non-seed, `date` lebih baru menang) ke key kanonik, hapus key yatim. Idempotent, aman gagal-diam.
+- Dipanggil otomatis di `fundamental_refresh` (`admin.js`, tombol manual) DAN di pipeline digest cron (`market-digest.js`) — self-heal tiap siklus, bukan operasi manual sekali jalan yang harus diulang tiap bug sejenis muncul lagi.
+
+**Fix arsitektur (`api/market-digest.js`):** blok auto-update fundamental (calendar + headline parsing) dipindah dari AKHIR handler (setelah Call 1-4 AI, ~1500 baris kemudian) ke tepat setelah `recentItems` tersedia (awal handler). Handler `market-digest.js` tidak punya satu try/catch pembungkus penuh — kalau salah satu AI call throw exception tak tertangkap di tengah jalan, seluruh sisa fungsi termasuk update fundamental tidak pernah jalan untuk siklus cron itu, tanpa sinyal kegagalan apapun. Update fundamental sekarang independen total dari sukses/gagalnya thesis/briefing AI.
+
+**Fix prompt (`api/admin.js`, `fundamentalAnalysisHandler`):** tambah instruksi bedakan indikator yang MEMANG kuartalan (GDP QoQ, CPI QoQ negara yang rilis inflasinya per-kuartal) — wajar berumur 1-3 bulan, bukan tanda data rusak — dari indikator yang tag-nya eksplisit "berdasar data seed, belum terkonfirmasi update" (baru itu sinyal data benar-benar tidak ter-update).
+
+**Verifikasi live:** deploy → trigger `fundamental_refresh` produksi sekali → reconcile langsung migrasi 5 field (`JPY: Cpi Overall Nationwide→CPI YoY, Industrial Output Prelim Mom Sa→Industrial Production`; `AUD/NZD: Cpi Qoq→CPI QoQ`; `CHF: Kof Indicator→KOF Barometer`) — dikonfirmasi lewat `fundamental_get` (nilai berubah dari `source:"seed"/date:"—"` ke `source:"headline"` dengan tanggal rilis asli) dan scan ulang case-dupe (0 tersisa). Regenerate `fundamental_analysis` (force) langsung menampilkan confidence JPY naik dari "rendah" ke "sedang". Sisa field seed yang TIDAK ikut termigrasi (GBP `GDP MoM`/`Claimant Count`, JPY `Retail Sales YoY`, AUD `GDP QoQ`/`Retail Sales MoM` — yang terakhir memang permanen dihentikan ABS, lihat Session 298) adalah gap data genuine (belum ada rilis fresh yang match indikator itu sejak seed, bukan bug key-mismatch) — confidence "rendah/sedang" untuk field itu sudah benar, bukan false positive.
+
+**Test:** 15 test baru di `test/lib/fundamental_parser.test.js` (4 keyword sinonim baru + 6 `reconcileFundamentalKeys` — case-mismatch, sinonim manual, idempotent, canonical belum ada, currency kosong). `npm test` 967/967 hijau.
+
+**Cakupan/limitasi:** `FUND_KNOWN_SYNONYM_KEYS` dikurasi manual (baru JPY+CHF, 3 pasang) berdasar domain-knowledge penamaan rilis ekonomi — kalau muncul pola sinonim baru di currency lain, tetap perlu ditambah manual (safety net case-insensitive di `reconcileFundamentalKeys` menangani varian casing otomatis, tapi tidak menebak sinonim kata yang beda total).
 
 ## Changelog Session 307 (2026-08-11) — Fix Bug ADP Weekly + Swap Provider Analisa Fundamental + Fitur Pergerakan Ranking
 
