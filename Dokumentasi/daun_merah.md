@@ -26,6 +26,8 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 
 **Cakupan/limitasi:** murni tampilan/edit, tidak ada perubahan skema data — `tek_notes` di localStorage tetap satu sumber untuk kedua tab, jadi kalau pernah dibersihkan/direset dari TEKNIKAL, Checklist otomatis ikut kosong.
 
+**Lanjutan sesi sama — kotak catatan dibuat full-height (respons user "biar bisa diperluas, gpp ke bawah aja" / "atau langsung fullkan aja vertikal"):** kolom kiri CHECKLIST (playbook + pair selector + catatan) sudah stretch penuh tinggi panel lewat `align-items:stretch` bawaan `.ck-wrap`, tapi sebelumnya ruang kosong di bawah kotak catatan (tinggi tetap 70px) tidak dipakai. Fix CSS: `#ckTekNoteWrap { flex:1 1 auto; min-height:0 }` + `#ckTekNoteWrap textarea { flex:1 1 auto; min-height:120px }` — kotak catatan sekarang otomatis mengisi seluruh sisa tinggi kolom (verified live ~533px di viewport desktop biasa, vs daftar checklist di sebelahnya yang juga ~638px). Di mobile (`.ck-wrap` jadi `flex-direction:column`, kolom kiri tidak lagi stretch penuh tinggi layar) otomatis jatuh ke `min-height:120px` sebagai lantai — tidak collapse ke 0, tidak merusak layout stacked. Diverifikasi live desktop (638px) & mobile (390×844, textarea tetap 120px rapi) via Playwright.
+
 ## Changelog Session 310 (2026-08-12) — Fix "Analisis Fundamental" Gagal "signal timed out"
 
 **Konteks:** User lapor tombol "Buat Analisis Fundamental" gagal dengan pesan "Gagal: signal timed out".

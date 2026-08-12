@@ -2338,6 +2338,11 @@ body.light-theme .cal-date-input { color-scheme: light; }
   font: 12px 'DM Mono',monospace; resize: vertical; outline: none; transition: border-color .15s;
 }
 .tek-note-wrap textarea:focus { border-color: #38bdf8; }
+/* Catatan analisa di CHECKLIST (#ckTekNoteWrap) mengisi penuh sisa tinggi
+   kolom kiri ke bawah, bukan kotak pendek — kolom itu sendiri sudah stretch
+   penuh tinggi panel lewat align-items:stretch default punya .ck-wrap. */
+#ckTekNoteWrap { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+#ckTekNoteWrap textarea { flex: 1 1 auto; min-height: 120px; height: auto; }
 /* ── TA Indicator Panel ── */
 .tek-ta-panel { padding: 8px 14px; border-bottom: 1px solid var(--border); flex-shrink: 0; background: var(--surface); }
 .tek-ta-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; }
@@ -4177,7 +4182,7 @@ body:not(.light-theme) .ringkasan-gen-btn {
     </div>
     <div class="tek-note-wrap" id="ckTekNoteWrap" style="display:none">
       <div class="tek-note-label">Catatan analisa (manual, dari TEKNIKAL)</div>
-      <textarea id="ckTekNote" placeholder="Key levels, setup yang dipantau, atau catatan sesi..." oninput="ckSaveTekNote()" style="min-height:70px"></textarea>
+      <textarea id="ckTekNote" placeholder="Key levels, setup yang dipantau, atau catatan sesi..." oninput="ckSaveTekNote()"></textarea>
     </div>
   </div>
   <div class="ck-sections" id="ckSectionsContainer"></div>
