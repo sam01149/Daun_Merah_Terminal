@@ -12,7 +12,7 @@
 
 const PUSH_KW  = require('./_push_keywords');
 const newscat  = require('../newscat');
-const { autoUpdateFundamentals, autoUpdateFundamentalsFromCalendar, _fetchCalendarEventsForFund } = require('./_fundamental_parser');
+const { autoUpdateFundamentals, autoUpdateFundamentalsFromCalendar, _fetchCalendarEventsForFund, reconcileFundamentalKeys } = require('./_fundamental_parser');
 const { getLiveCbRates } = require('./_cb_rates');
 const { configureVapid, sendWebPush, subKey } = require('./_webpush');
 const { isCronCall: _isCronCallReq, isCronDedupFresh } = require('./_cron_dedup');
@@ -1049,7 +1049,13 @@ async function fundamentalRefreshHandler(req, res) {
       if (calendarEvents.length > 0) calendarUpdated = await autoUpdateFundamentalsFromCalendar(calendarEvents, redisCmd);
     } catch(e) { console.warn('fundamental_refresh: calendar layer gagal:', e.message); }
 
-    if (headlines.length === 0) return res.status(200).json({ updated: calendarUpdated, calendar_updated: calendarUpdated, headlines: 0 });
+    // Audit 2026-08-12 (laporan user, confidence JPY selalu "rendah"): bersihkan key
+    // yatim (case-mismatch/sinonim rilis) tiap refresh — lihat komentar
+    // reconcileFundamentalKeys di _fundamental_parser.js. Idempotent, aman gagal-diam.
+    let reconciled = {};
+    try { reconciled = await reconcileFundamentalKeys(redisCmd); } catch(e) { console.warn('fundamental_refresh: reconcile gagal:', e.message); }
+
+    if (headlines.length === 0) return res.status(200).json({ updated: calendarUpdated, calendar_updated: calendarUpdated, reconciled, headlines: 0 });
 
     const updated = await autoUpdateFundamentals(headlines, redisCmd);
 
@@ -1112,7 +1118,7 @@ async function fundamentalRefreshHandler(req, res) {
       }
     } catch(e) { console.warn('gdpnow in fundamental_refresh failed:', e.message); }
 
-    return res.status(200).json({ updated, calendar_updated: calendarUpdated, headlines: headlines.length, gdp_nowcast_refreshed: gdpUpdated });
+    return res.status(200).json({ updated, calendar_updated: calendarUpdated, reconciled, headlines: headlines.length, gdp_nowcast_refreshed: gdpUpdated });
   } catch(e) {
     return res.status(500).json({ error: e.message });
   }
@@ -1471,6 +1477,7 @@ ATURAN BOBOT WAKTU (penting — pasar men-trade data terbaru, bukan level lama):
 - Beri bobot TERBESAR pada data dengan tag "rilis <=14 hari lalu", terutama yang berubah vs "sebelumnya" — arah perubahan (membaik/memburuk) lebih penting daripada level absolutnya.
 - Data tanpa tag rilis atau lebih tua dari ~45 hari perlakukan sebagai latar belakang, BUKAN bukti utama ranking.
 - Currency yang beberapa rilis terbarunya konsisten membaik layak naik ranking meski levelnya biasa saja; sebaliknya level bagus yang datanya basi dan mulai memburuk harus turun.
+- Indikator yang MEMANG kuartalan/musiman menurut sifatnya (mis. GDP QoQ, CPI QoQ negara yang rilis inflasinya per-kuartal seperti AUD/NZD) WAJAR berumur 1-3 bulan di antara rilis — itu bukan tanda data rusak/diabaikan, cuma siklus rilis normal. Bedakan dari indikator yang SEHARUSNYA rilis bulanan tapi tag-nya "berdasar data seed, belum terkonfirmasi update" — itu baru sinyal data benar-benar tidak ter-update, bukan sekadar tenor rilisnya panjang.
 
 KERANGKA ANALISIS per currency (pakai ini untuk menyusun OUTLOOK, bukan buat mengarang indikator yang tidak ada di data):
 1. Arah & momentum kebijakan moneter: level suku bunga + status (baru dinaikkan/dipangkas/ditahan) = hawkish/netral/dovish. PAKAI KRITERIA INI KONSISTEN untuk SEMUA 8 currency TERMASUK CHF — status "safe-haven" CHF adalah karakteristik struktural, BUKAN alasan untuk mengabaikan suku bunga rendah/inflasi ultra-rendahnya sendiri. Kalau CHF tetap dinaikkan ranking meski suku bunganya terendah, jelaskan alasan konkret (mis. capital inflow risk-off), bukan cuma label "safe-haven" generik.

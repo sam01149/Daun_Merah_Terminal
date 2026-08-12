@@ -1,7 +1,7 @@
 // api/unified-digest.js
 const rateLimit    = require('./_ratelimit');
 const cb           = require('./_circuit_breaker');
-const { autoUpdateFundamentals, autoUpdateFundamentalsFromCalendar, _fetchCalendarEventsForFund } = require('./_fundamental_parser');
+const { autoUpdateFundamentals, autoUpdateFundamentalsFromCalendar, _fetchCalendarEventsForFund, reconcileFundamentalKeys } = require('./_fundamental_parser');
 const { withSingleFlight } = require('./_fetch_lock');
 const { getLiveCbRates } = require('./_cb_rates');
 const { isCronCall: _isCronCallReq, isCronDedupFresh } = require('./_cron_dedup');
@@ -943,6 +943,36 @@ module.exports = async function handler(req, res) {
   }
 
   const recentItems = rssItems.slice(0, 150);
+
+  // ── Auto-update fundamental data + CB decisions from headlines ───────────────
+  // Plan W-5 (2026-08-03): calendar_v1.actual (TradingView, terstruktur) dicoba
+  // DULU sebagai lapis tambahan, headline FinancialJuice tetap jalan sesudahnya
+  // sebagai pelengkap/fallback untuk indikator yang tidak tercover kalender.
+  //
+  // Dipindah ke SINI dari akhir handler (audit 2026-08-12, laporan user "kenapa JPY
+  // tidak update otomatis"): posisi lama ada SETELAH Call 1-4 AI (~1500 baris kode
+  // di antaranya) — kalau salah satu call itu throw exception yang tidak ketangkap
+  // try/catch lokalnya (handler ini TIDAK punya satu try/catch pembungkus penuh),
+  // seluruh sisa fungsi termasuk blok update fundamental ini tidak pernah jalan
+  // untuk siklus cron itu, tanpa sinyal kegagalan apapun ke user. recentItems sudah
+  // tersedia di titik ini (baris di atas), jadi update fundamental tidak perlu
+  // menunggu thesis/briefing AI selesai sama sekali — keduanya independen.
+  try {
+    const calendarEvents = await _fetchCalendarEventsForFund(redisCmd);
+    if (calendarEvents.length > 0) await autoUpdateFundamentalsFromCalendar(calendarEvents, redisCmd);
+  } catch(e) {
+    console.warn('autoUpdateFundamentalsFromCalendar failed:', e.message);
+  }
+  try {
+    await autoUpdateFundamentals(recentItems.slice(0, 100), redisCmd);
+  } catch(e) {
+    console.warn('autoUpdateFundamentals failed:', e.message);
+  }
+  try {
+    await reconcileFundamentalKeys(redisCmd);
+  } catch(e) {
+    console.warn('reconcileFundamentalKeys failed:', e.message);
+  }
 
   // 2. Calendar
   let calEvents = [];
@@ -2334,22 +2364,6 @@ ${xauHistoryBlock}`;
   // Call 1 failure (quota, provider outage) previously wiped out real, already-
   // validated thesis_alerts, silently hiding genuine contra-headline warnings.
   const thesisAlerts = await _call4Promise;
-
-  // ── Auto-update fundamental data + CB decisions from headlines ───────────────
-  // Plan W-5 (2026-08-03): calendar_v1.actual (TradingView, terstruktur) dicoba
-  // DULU sebagai lapis tambahan, headline FinancialJuice tetap jalan sesudahnya
-  // sebagai pelengkap/fallback untuk indikator yang tidak tercover kalender.
-  try {
-    const calendarEvents = await _fetchCalendarEventsForFund(redisCmd);
-    if (calendarEvents.length > 0) await autoUpdateFundamentalsFromCalendar(calendarEvents, redisCmd);
-  } catch(e) {
-    console.warn('autoUpdateFundamentalsFromCalendar failed:', e.message);
-  }
-  try {
-    await autoUpdateFundamentals(recentItems.slice(0, 100), redisCmd);
-  } catch(e) {
-    console.warn('autoUpdateFundamentals failed:', e.message);
-  }
 
   const payload = {
     article, method, thesis,

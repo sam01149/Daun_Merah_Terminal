@@ -5,6 +5,7 @@ const assert = require('node:assert');
 const {
   parseFundamentalFromHeadline, parseCBDecision, autoUpdateFundamentals,
   extractFundamentalFromCalendarEvent, autoUpdateFundamentalsFromCalendar,
+  reconcileFundamentalKeys,
 } = require('../../api/_fundamental_parser');
 
 // ── parseFundamentalFromHeadline ────────────────────────────────────────────
@@ -364,4 +365,133 @@ test('headline data ekonomi biasa (bukan keputusan CB) → null', () => {
 
 test('keputusan tanpa angka rate/bps → null (tidak bisa dipakai)', () => {
   assert.strictEqual(parseCBDecision('Federal Reserve expected to cut rates next meeting'), null);
+});
+
+// ── Audit 2026-08-12 (laporan user: kenapa confidence JPY selalu "rendah") ─────
+// Root cause: judul rilis asli Jepang/Swiss ("CPI Overall Nationwide", "Industrial
+// Output Prelim MoM SA", "KOF Indicator") tidak match keyword lama di
+// FUND_INDICATOR_MAP, jatuh ke fallback tebak-nama dan numpuk sebagai key baru
+// alih-alih menimpa seed "CPI YoY"/"Industrial Production"/"KOF Barometer" — seed
+// itu macet PERMANEN walau datanya sebenarnya ada (di key lain yang tak pernah
+// dibaca sebagai representasi indikator itu). Keyword ditambah supaya match langsung.
+
+test('Japan CPI Overall Nationwide match langsung ke key kanonik CPI YoY', () => {
+  const r = parseFundamentalFromHeadline('Japan CPI Overall Nationwide Actual 1.7% Forecast 1.6% Previous 1.5%');
+  assert.strictEqual(r.currency, 'JPY');
+  assert.strictEqual(r.key, 'CPI YoY');
+  assert.strictEqual(r.value, '1.7%');
+});
+
+test('Japan Industrial Output Prelim MoM SA match ke key kanonik Industrial Production', () => {
+  const r = parseFundamentalFromHeadline('Japan Industrial Output Prelim Mom Sa Actual 1.3% Forecast 0.5% Previous 0.1%');
+  assert.strictEqual(r.currency, 'JPY');
+  assert.strictEqual(r.key, 'Industrial Production');
+});
+
+test('Switzerland KOF Indicator match ke key kanonik KOF Barometer', () => {
+  const r = parseFundamentalFromHeadline('Switzerland KOF Indicator Actual 103.5 Forecast 100.0 Previous 101.2');
+  assert.strictEqual(r.currency, 'CHF');
+  assert.strictEqual(r.key, 'KOF Barometer');
+});
+
+test('Japan Retail Trade YoY (terminologi alternatif) match ke key Retail Sales YoY', () => {
+  const r = parseFundamentalFromHeadline('Japan Retail Trade YoY Actual 2.0% Forecast 1.8% Previous 1.7%');
+  assert.strictEqual(r.currency, 'JPY');
+  assert.strictEqual(r.key, 'Retail Sales YoY');
+});
+
+// ── reconcileFundamentalKeys ────────────────────────────────────────────────
+
+function makeMultiKeyMockRedis(initialByRedisKey) {
+  const store = {};
+  for (const [rk, hash] of Object.entries(initialByRedisKey)) store[rk] = { ...hash };
+  const fn = async (...args) => {
+    const [cmd, redisKey] = args;
+    if (cmd === 'HGETALL') {
+      const h = store[redisKey] || {};
+      const out = [];
+      for (const [k, v] of Object.entries(h)) out.push(k, v);
+      return out;
+    }
+    if (cmd === 'HSET') {
+      const kv = args.slice(2);
+      if (!store[redisKey]) store[redisKey] = {};
+      for (let i = 0; i < kv.length; i += 2) store[redisKey][kv[i]] = kv[i + 1];
+      return kv.length / 2;
+    }
+    if (cmd === 'HDEL') {
+      const keys = args.slice(2);
+      let n = 0;
+      const h = store[redisKey] || {};
+      for (const k of keys) { if (k in h) { delete h[k]; n++; } }
+      return n;
+    }
+    return null;
+  };
+  fn.store = store;
+  return fn;
+}
+
+test('reconcileFundamentalKeys: case-mismatch (NZD "Cpi Qoq" vs seed "CPI QoQ") — data segar menang, orphan dihapus', async () => {
+  const redis = makeMultiKeyMockRedis({
+    'fundamental:NZD': {
+      'CPI QoQ': JSON.stringify({ actual: '0.6%', period: 'Q4 2025', date: '—', source: 'seed', seeded_at: '2026-08-03T06:12:06.524Z' }),
+      'Cpi Qoq': JSON.stringify({ actual: '1.5%', period: '—', date: '2026-07-21', source: 'headline', previous: '0.9%' }),
+    },
+  });
+  const reconciled = await reconcileFundamentalKeys(redis);
+  assert.ok(reconciled.NZD, 'NZD harus dilaporkan direkonsiliasi');
+  const nzd = redis.store['fundamental:NZD'];
+  assert.strictEqual(nzd['Cpi Qoq'], undefined, 'orphan case-mismatch harus dihapus');
+  const canonical = JSON.parse(nzd['CPI QoQ']);
+  assert.strictEqual(canonical.actual, '1.5%', 'nilai segar (bukan seed) yang menang');
+  assert.strictEqual(canonical.source, 'headline');
+});
+
+test('reconcileFundamentalKeys: sinonim JPY (seed "CPI YoY" vs "Cpi Overall Nationwide") — migrasi ke key kanonik', async () => {
+  const redis = makeMultiKeyMockRedis({
+    'fundamental:JPY': {
+      'CPI YoY': JSON.stringify({ actual: '1.5%', period: 'Mar 2026', date: '—', source: 'seed', seeded_at: '2026-08-03T06:12:03.952Z' }),
+      'Cpi Overall Nationwide': JSON.stringify({ actual: '1.7%', period: '—', date: '2026-07-24', source: 'headline', previous: '1.5%' }),
+    },
+  });
+  const reconciled = await reconcileFundamentalKeys(redis);
+  assert.ok(reconciled.JPY);
+  const jpy = redis.store['fundamental:JPY'];
+  assert.strictEqual(jpy['Cpi Overall Nationwide'], undefined);
+  const canonical = JSON.parse(jpy['CPI YoY']);
+  assert.strictEqual(canonical.actual, '1.7%');
+  assert.strictEqual(canonical.source, 'headline');
+});
+
+test('reconcileFundamentalKeys: idempotent — jalan kedua kali tanpa perubahan lagi', async () => {
+  const redis = makeMultiKeyMockRedis({
+    'fundamental:CHF': {
+      'KOF Barometer': JSON.stringify({ actual: '97.9', period: 'Apr 2026', date: '—', source: 'seed' }),
+      'Kof Indicator': JSON.stringify({ actual: '103.5', period: '—', date: '2026-07-30', source: 'headline' }),
+    },
+  });
+  await reconcileFundamentalKeys(redis);
+  const secondRun = await reconcileFundamentalKeys(redis);
+  assert.deepStrictEqual(secondRun, {}, 'tidak ada lagi yang perlu direkonsiliasi di jalan kedua');
+  const chf = redis.store['fundamental:CHF'];
+  assert.strictEqual(JSON.parse(chf['KOF Barometer']).actual, '103.5');
+});
+
+test('reconcileFundamentalKeys: canonical belum pernah ada sama sekali — orphan jadi isi key kanonik', async () => {
+  const redis = makeMultiKeyMockRedis({
+    'fundamental:CHF': {
+      'Kof Indicator': JSON.stringify({ actual: '103.5', period: '—', date: '2026-07-30', source: 'headline' }),
+    },
+  });
+  await reconcileFundamentalKeys(redis);
+  const chf = redis.store['fundamental:CHF'];
+  assert.strictEqual(chf['Kof Indicator'], undefined);
+  assert.strictEqual(JSON.parse(chf['KOF Barometer']).actual, '103.5');
+});
+
+test('reconcileFundamentalKeys: currency tanpa data sama sekali dilewati tanpa error', async () => {
+  const redis = makeMultiKeyMockRedis({});
+  const reconciled = await reconcileFundamentalKeys(redis);
+  assert.deepStrictEqual(reconciled, {});
 });

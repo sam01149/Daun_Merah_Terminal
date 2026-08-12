@@ -105,7 +105,7 @@ const FUND_INDICATOR_MAP = [
   { kw: ['ifo business','ifo climate'],                                           key: 'IFO Business' },
   { kw: ['gfk'],                                                                  key: 'GfK Consumer Climate' },
   { kw: ['claimant count'],                                                       key: 'Claimant Count' },
-  { kw: ['kof economic','kof barometer'],                                         key: 'KOF Barometer' },
+  { kw: ['kof economic','kof barometer','kof indicator','kof leading'],           key: 'KOF Barometer' },
   { kw: ['jolts','job openings'],                                                 key: 'JOLTS Job Openings' },
   { kw: ['adp employment','adp nonfarm','adp jobs','adp report'],                 key: 'ADP Employment' },
   { kw: ['chicago pmi'],                                                          key: 'Chicago PMI' },
@@ -118,15 +118,16 @@ const FUND_INDICATOR_MAP = [
   { kw: ['manufacturing pmi'],                                                    key: 'Manufacturing PMI' },
   { kw: ['services pmi','service pmi','non-manufacturing pmi'],                   key: 'Services PMI' },
   { kw: ['composite pmi'],                                                        key: 'Composite PMI' },
-  { kw: ['industrial production'],                                                key: 'Industrial Production' },
+  { kw: ['industrial production','industrial output'],                           key: 'Industrial Production' },
   { kw: ['trade balance'],                                                        key: 'Trade Balance' },
   { kw: ['current account'],                                                      key: 'Current Account' },
   { kw: ['employment change','employment count','jobs change'],                   key: 'Employment Change' },
   { kw: ['unemployment rate'],                                                    key: 'Unemployment Rate' },
   { kw: ['participation rate'],                                                   key: 'Participation Rate' },
   { kw: ['average earnings','average hourly earnings','wage growth'],             key: 'Wage Growth' },
-  { kw: ['retail sales yoy','retail sales y/y','retail sales annual'],           key: 'Retail Sales YoY' },
-  { kw: ['retail sales'],                                                         key: 'Retail Sales MoM' },
+  { kw: ['retail sales yoy','retail sales y/y','retail sales annual',
+         'retail trade yoy','retail trade y/y'],                                key: 'Retail Sales YoY' },
+  { kw: ['retail sales','retail trade'],                                        key: 'Retail Sales MoM' },
   // AUD-only (2026-08-10) — pengganti resmi "Retail Trade, Australia" yang dihentikan
   // ABS sejak rilis Juni 2025 (lihat FUND_SEED.AUD di admin.js). Frasa ini spesifik
   // terminologi ABS, belum pernah bentrok dengan indikator currency lain.
@@ -134,7 +135,8 @@ const FUND_INDICATOR_MAP = [
   { kw: ['producer price',' ppi ','ppi m/m'],                                    key: 'PPI MoM' },
   { kw: ['flash cpi','cpi flash'],                                                key: 'CPI Flash YoY' },
   { kw: ['german cpi','germany cpi'],                                             key: 'German CPI YoY' },
-  { kw: ['cpi y/y','cpi yoy','cpi annual','consumer price index y'],             key: 'CPI YoY' },
+  { kw: ['cpi y/y','cpi yoy','cpi annual','consumer price index y',
+         'cpi overall nationwide','nationwide cpi','national cpi'],             key: 'CPI YoY' },
   { kw: ['cpi q/q','cpi qq','cpi qoq','cpi quarter'],                            key: 'CPI QoQ' },
   { kw: ['cpi m/m','cpi mom','consumer price index m'],                          key: 'CPI MoM' },
   { kw: ['consumer price index','consumer prices'],                               key: 'CPI YoY' },
@@ -560,6 +562,96 @@ async function autoUpdateFundamentals(headlines, redisCmd) {
   return updated;
 }
 
+// Pasangan sinonim TERKONFIRMASI MANUAL — indikator sama, judul rilis beda dari
+// keyword FUND_INDICATOR_MAP yang berlaku SAAT key itu pertama ditulis (sudah
+// ditambah di atas untuk cegah kasus baru, tapi field yang SUDAH terlanjur tertulis
+// dengan nama lama tidak otomatis pindah tanpa reconciliation). Ditemukan lewat
+// audit 2026-08-12 (laporan user: kenapa confidence JPY selalu "rendah") — root
+// cause: `Cpi Overall Nationwide`/`Industrial Output Prelim Mom Sa`/`Kof Indicator`
+// adalah judul rilis asli TradingView/FinancialJuice untuk Jepang & Swiss yang
+// TIDAK match keyword lama, jadi jatuh ke fallback tebak-nama dan numpuk sebagai
+// field baru alih-alih menimpa field seed `CPI YoY`/`Industrial Production`/
+// `KOF Barometer` — seed itu jadi macet PERMANEN (bukan cuma basi ~45 hari) karena
+// data segarnya justru ada, cuma di key lain yang tidak pernah dibaca render kartu
+// atau prompt AI sebagai representasi indikator itu.
+const FUND_KNOWN_SYNONYM_KEYS = {
+  JPY: [
+    ['Cpi Overall Nationwide', 'CPI YoY'],
+    ['Industrial Output Prelim Mom Sa', 'Industrial Production'],
+  ],
+  CHF: [
+    ['Kof Indicator', 'KOF Barometer'],
+  ],
+};
+
+// Bersihkan key fundamental yang jadi "yatim": duplikat konsep yang sama tapi
+// ditulis Redis dengan nama beda — baik cuma beda kapitalisasi (tebakan title-case
+// naif dari fallback parseFundamentalFromHeadline SEBELUM FUND_INDICATOR_CANONICAL
+// sempat mengenalinya, mis. "Cpi Qoq" vs "CPI QoQ") maupun sinonim penamaan rilis
+// (FUND_KNOWN_SYNONYM_KEYS di atas). Idempotent & aman dipanggil berulang — tidak
+// melakukan apa-apa kalau sudah bersih. Dipasang di fundamental_refresh (admin.js)
+// DAN pipeline digest (market-digest.js) supaya self-heal otomatis tiap siklus cron,
+// bukan operasi manual sekali jalan yang harus diulang setiap bug sejenis muncul lagi.
+async function reconcileFundamentalKeys(redisCmd) {
+  const reconciled = {};
+  for (const cur of FUND_CALENDAR_CURRENCIES) {
+    try {
+      const raw = await redisCmd('HGETALL', `fundamental:${cur}`);
+      if (!Array.isArray(raw) || raw.length === 0) continue;
+      const data = {};
+      for (let i = 0; i < raw.length; i += 2) {
+        try { data[raw[i]] = JSON.parse(raw[i + 1]); } catch(_) {}
+      }
+      const keys = Object.keys(data);
+
+      const pairs = []; // [orphanKey, canonicalKey][]
+
+      const byLower = {};
+      for (const k of keys) { const lk = k.toLowerCase(); (byLower[lk] = byLower[lk] || []).push(k); }
+      for (const arr of Object.values(byLower)) {
+        if (arr.length < 2) continue;
+        let canonicalKey = null;
+        for (const k of arr) {
+          const c = FUND_INDICATOR_CANONICAL.get(k.toLowerCase());
+          if (c) { canonicalKey = c; break; }
+        }
+        if (!canonicalKey) canonicalKey = arr[0];
+        for (const k of arr) if (k !== canonicalKey) pairs.push([k, canonicalKey]);
+      }
+
+      for (const [orphan, canonical] of (FUND_KNOWN_SYNONYM_KEYS[cur] || [])) {
+        if (data[orphan]) pairs.push([orphan, canonical]);
+      }
+
+      if (pairs.length === 0) continue;
+
+      const setArgs = ['HSET', `fundamental:${cur}`];
+      const delArgs = ['HDEL', `fundamental:${cur}`];
+      for (const [orphanKey, canonicalKey] of pairs) {
+        const orphanEntry = data[orphanKey];
+        const canonicalEntry = data[canonicalKey];
+        if (!orphanEntry) continue;
+        // Menang: non-seed vs seed -> non-seed menang; non-seed vs non-seed -> date
+        // lebih baru menang; tak ada canonical existing -> orphan jadi isi canonical.
+        let winner = canonicalEntry || orphanEntry;
+        if (canonicalEntry && canonicalEntry.source === 'seed' && orphanEntry.source !== 'seed') {
+          winner = orphanEntry;
+        } else if (canonicalEntry && canonicalEntry.source !== 'seed' && orphanEntry.source !== 'seed') {
+          const cDate = /^\d{4}-\d{2}-\d{2}/.test(canonicalEntry.date || '') ? canonicalEntry.date : null;
+          const oDate = /^\d{4}-\d{2}-\d{2}/.test(orphanEntry.date || '') ? orphanEntry.date : null;
+          if (oDate && (!cDate || oDate > cDate)) winner = orphanEntry;
+        }
+        if (winner !== canonicalEntry) setArgs.push(canonicalKey, JSON.stringify(winner));
+        delArgs.push(orphanKey);
+      }
+      if (setArgs.length > 2) await redisCmd(...setArgs);
+      if (delArgs.length > 2) await redisCmd(...delArgs);
+      reconciled[cur] = pairs.map(([o, c]) => `${o} -> ${c}`);
+    } catch(e) { console.warn(`reconcileFundamentalKeys failed for ${cur}:`, e.message); }
+  }
+  return reconciled;
+}
+
 module.exports = {
   parseFundamentalFromHeadline,
   parseCBDecision,
@@ -567,4 +659,5 @@ module.exports = {
   extractFundamentalFromCalendarEvent,
   autoUpdateFundamentalsFromCalendar,
   _fetchCalendarEventsForFund,
+  reconcileFundamentalKeys,
 };
