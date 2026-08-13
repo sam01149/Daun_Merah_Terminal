@@ -72,6 +72,25 @@ const RSS_USER_AGENTS  = [
   'NewsBlur Feed Fetcher - 1000000 subscribers',
 ];
 
+// Judul auto-generated FinancialJuice yang pernah rusak ("Currency Strength Chart:
+// Strongest: GBP, USD, AUD, CAD, NZD, JPY, CHF, NZD - Weakest" — 7 currency sekaligus
+// diklaim "Strongest", currency "Weakest"-nya malah kosong/terpotong) pernah dibaca
+// mentah-mentah oleh AI Call 1 market-digest dan diparafrasekan jadi narasi
+// kontradiktif (USD disebut melemah SEKALIGUS masuk daftar "currency terkuat",
+// ditemukan 2026-08-13). User tidak menganggap info "currency strength board" ini
+// berguna sama sekali (bukan cuma soal instance rusak ini). Dibuang di titik paling
+// hulu — raw XML, sebelum di-cache & sebelum storeNewsHistory — supaya SEMUA
+// consumer (live feed index.html, tab NEWS, market-digest.js, admin.js auto-update
+// fundamental) otomatis ikut bersih tanpa perlu filter terpisah di tiap parser.
+const BLOCKED_HEADLINE_RE = /currency strength chart/i;
+function stripBlockedHeadlines(xml) {
+  return xml.replace(/<item>[\s\S]*?<\/item>/g, block => {
+    const m = /<title[^>]*>(?:<!\[CDATA\[([\s\S]*?)\]\]>|([\s\S]*?))<\/title>/.exec(block);
+    const title = ((m && (m[1] || m[2])) || '').trim();
+    return BLOCKED_HEADLINE_RE.test(title) ? '' : block;
+  });
+}
+
 async function rssHandler(req, res) {
   res.setHeader('Content-Type', 'application/xml; charset=utf-8');
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -141,7 +160,7 @@ async function rssHandler(req, res) {
         headers: { 'User-Agent': ua, 'Accept': 'application/rss+xml,*/*', 'Referer': 'https://www.financialjuice.com/', 'Cache-Control': 'no-cache' },
         signal: AbortSignal.timeout(12000),
       });
-      if (r.ok) { const t = await r.text(); if (t.includes('<rss')) xml = t; else fetchError = 'NOT_RSS'; }
+      if (r.ok) { const t = await r.text(); if (t.includes('<rss')) xml = stripBlockedHeadlines(t); else fetchError = 'NOT_RSS'; }
       else fetchError = 'HTTP_' + r.status;
     } catch(e) { fetchError = e.message; }
     if (xml) cbk.onSuccess('fj').catch(() => {});
@@ -1531,6 +1550,7 @@ module.exports.retailHistoryHandler = retailHistoryHandler;
 module.exports.newsHistoryHandler = newsHistoryHandler;
 module.exports.storeNewsHistory = storeNewsHistory;
 module.exports.parseRSSItems = parseRSSItems;
+module.exports.stripBlockedHeadlines = stripBlockedHeadlines;
 module.exports.newsTranslateHandler = newsTranslateHandler;
 module.exports.newsTranslateBackfillHandler = newsTranslateBackfillHandler;
 module.exports._pctileRank = _pctileRank;

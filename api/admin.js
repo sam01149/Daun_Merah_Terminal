@@ -991,7 +991,7 @@ function parsePushRSS(xml) {
     const b = m[1];
     const get = tag => { const r1 = new RegExp(`<${tag}[^>]*><!\\[CDATA\\[([\\s\\S]*?)\\]\\]><\\/${tag}>`).exec(b); const r2 = new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`).exec(b); return (r1 || r2)?.[1]?.trim() || ''; };
     const title = get('title').replace(/^FinancialJuice:\s*/i, '').trim(), guid = get('guid'), link = b.match(/<link>(.*?)<\/link>/)?.[1] || '';
-    if (guid && title) items.push({ title, guid, link });
+    if (guid && title && !BLOCKED_HEADLINE_RE.test(title)) items.push({ title, guid, link });
   }
   return items;
 }
@@ -1028,13 +1028,20 @@ const FUND_CURRENCIES = ['USD','EUR','GBP','JPY','CAD','AUD','NZD','CHF'];
 
 const FJ_RSS_URL = 'https://www.financialjuice.com/feed.ashx?xy=rss';
 
+// Judul auto-generated FinancialJuice yang pernah rusak ("Currency Strength Chart:
+// Strongest: GBP, USD, AUD, CAD, NZD, JPY, CHF, NZD - Weakest") ikut disaring di sini
+// juga — handler ini fetch FJ_RSS_URL LANGSUNG (bukan lewat /api/feeds?type=rss),
+// jadi filter di feeds.js:stripBlockedHeadlines tidak menjangkau jalur ini. Sama
+// persis pola/alasan dengan filter di feeds.js — lihat komentar di sana.
+const BLOCKED_HEADLINE_RE = /currency strength chart/i;
+
 function parseRSSHeadlines(xml) {
   const items = [], re = /<item>([\s\S]*?)<\/item>/g; let m;
   while ((m = re.exec(xml)) !== null) {
     const b = m[1];
     const get = tag => { const r1=new RegExp(`<${tag}[^>]*><!\\[CDATA\\[([\\s\\S]*?)\\]\\]><\\/${tag}>`).exec(b); const r2=new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`).exec(b); return (r1||r2)?.[1]?.trim()||''; };
     const title=get('title').replace(/^FinancialJuice:\s*/i,'').trim(), guid=get('guid'), pubDate=get('pubDate');
-    if (guid && title) items.push({ title, guid, pubDate });
+    if (guid && title && !BLOCKED_HEADLINE_RE.test(title)) items.push({ title, guid, pubDate });
   }
   return items;
 }
@@ -6409,3 +6416,6 @@ module.exports.COT_CME_PROMPT_VERSION = COT_CME_PROMPT_VERSION;
 module.exports._formatTrackRecordBlock = _formatTrackRecordBlock;
 module.exports._calEventMsWib = _calEventMsWib;
 module.exports._buildAnalyzeCalBlock = _buildAnalyzeCalBlock;
+module.exports.parseRSSHeadlines = parseRSSHeadlines;
+module.exports.parsePushRSS = parsePushRSS;
+module.exports.BLOCKED_HEADLINE_RE = BLOCKED_HEADLINE_RE;

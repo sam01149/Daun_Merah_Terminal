@@ -11,10 +11,26 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-13 (Session 313 — Audit AUD/NZD: False Alarm, Bukan Bug)
+> **Last updated:** 2026-08-13 (Session 314 — Filter Headline "Currency Strength Chart" FinancialJuice yang Rusak)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 314 (2026-08-13) — Filter Headline "Currency Strength Chart" FinancialJuice yang Rusak
+
+**Konteks:** User menempel contoh output AI Call 1 market-digest yang janggal: "...USD melemah di seluruh board dengan GBP, USD, AUD, CAD, NZD, JPY, CHF tercatat sebagai currency terkuat..." — USD disebut melemah SEKALIGUS masuk daftar "currency terkuat" dalam satu kalimat. User curiga ini fitur currency-strength yang tidak pernah diminta.
+
+**Investigasi:** dikonfirmasi `computeCurrencyStrength` (`api/_pair_context.js`) TIDAK pernah tersambung ke `market-digest.js` (hanya dipakai `admin.js` untuk analisa per-pair) — bukan data kita yang bocor. Prompt `DIGEST_SYSTEM_DEFAULT` (`market-digest.js:1702`) malah eksplisit MELARANG format "board", mewajibkan TEPAT SATU currency kuat + TEPAT SATU lemah. Ditelusuri langsung ke Redis produksi (`news_history` ZSET) — ketemu sumber aslinya: headline FinancialJuice **"Currency Strength Chart: Strongest: GBP, USD, AUD, CAD, NZD, JPY, CHF, NZD - Weakest"** (guid 9717574, 12 Agustus 2026 07:01 GMT) — judul auto-generated yang sudah rusak dari sumbernya sendiri (7 currency sekaligus diklaim "Strongest", currency "Weakest" kosong/terpotong). AI Call 1 membaca judul ini mentah-mentah dan memparafrasekannya tanpa sanity-check, menghasilkan narasi kontradiktif. Dicek `latest_article` (live saat investigasi) — pola sama masih berulang ("...posisi teratas di currency strength chart...").
+
+**Keputusan user:** headline jenis ini tidak informatif dan tidak boleh terpakai sama sekali — dibuang total, bukan cuma diperbaiki narasinya.
+
+**Fix — filter di titik paling hulu (raw XML), bukan per-parser:** ditemukan 5 fungsi parser RSS independen yang masing-masing membaca XML FinancialJuice mentah — `index.html` (client-side, tab NEWS), `market-digest.js` (Call 1 briefing), `feeds.js` `parseRSSItems` (arsip 36 jam `news_history`), dan DUA di `admin.js` (`parseRSSHeadlines`/auto-update fundamental, `parsePushRSS`/push notification browser). Titik yang menjangkau paling banyak consumer sekaligus: `api/feeds.js` `rssHandler` — raw XML dari FinancialJuice disaring (`stripBlockedHeadlines`, regex `/currency strength chart/i` per blok `<item>`) SEBELUM di-cache (`rss_cache`, TTL 60s) dan SEBELUM `storeNewsHistory()` — otomatis membersihkan live feed (`index.html`, `market-digest.js`, keduanya fetch `/api/feeds?type=rss`) dan arsip 36 jam sekaligus.
+
+`api/admin.js` fetch FinancialJuice LANGSUNG di 2 tempat tanpa lewat `feeds.js` — filter title yang sama (`BLOCKED_HEADLINE_RE`) ditambahkan terpisah di `parseRSSHeadlines` dan `parsePushRSS` supaya auto-update fundamental & push notification browser juga tidak pernah memproses headline ini.
+
+**Test:** `test/feeds/feeds_rss_filter.test.js` (baru — `stripBlockedHeadlines` buang item terblokir tapi sisakan lain, no-op kalau tidak ada yang cocok, terintegrasi dengan `parseRSSItems`) + `test/admin/admin_rss_filter.test.js` (baru — `parseRSSHeadlines` & `parsePushRSS`). `npm test` 972/972 hijau.
+
+**Catatan:** entri lama yang sudah kadung tersimpan di `news_history` (guid 9717574) TIDAK dihapus manual dari Redis produksi (aksi mutasi data langsung diblokir permission classifier sesi ini) — akan expired natural via `ZREMRANGEBYSCORE` cutoff 36 jam pada siklus refresh berikutnya, dampaknya tidak signifikan.
 
 ## Changelog Session 313 (2026-08-13) — Audit AUD/NZD: False Alarm, Bukan Bug
 
