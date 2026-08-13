@@ -178,6 +178,37 @@ async function trackYahooHealth(yahooFullyDownThisRun) {
   } catch (e) { console.warn('trackYahooHealth failed:', e.message); }
 }
 
+// 2026-08-13 (diskusi user, daun_merah.md Session 313): sejak fallback lintas-vendor
+// dihentikan untuk pair yang primary-nya Deriv (lihat komentar di ohlcvSyncHandler —
+// campur candle Deriv+Yahoo/Twelve Data di array yang sama dipakai evaluasi SL/TP
+// auto-entry lebih berisiko daripada cache sedikit basi), kalau Deriv down cache
+// TIDAK ter-refresh sama sekali (bukan diam-diam ganti vendor) — user perlu tahu ini
+// terjadi, bukan cuma log server yang tidak pernah dilihat. Pola SAMA persis dengan
+// trackYahooHealth (reuse shouldSendYahooAlert, generic pure function walau namanya
+// Yahoo — threshold 3x sync beruntun, cooldown 6 jam) supaya satu mekanisme alert
+// konsisten, bukan reinvent.
+async function trackDerivHealth(derivFullyDownThisRun) {
+  try {
+    if (!derivFullyDownThisRun) {
+      await redisCmd('DEL', 'deriv_fail_streak');
+      return;
+    }
+    const streak = Number(await redisCmd('INCR', 'deriv_fail_streak')) || 1;
+    const lastAlertRaw = await redisCmd('GET', 'deriv_last_alert_ts');
+    const lastAlertTs = lastAlertRaw ? Number(lastAlertRaw) : 0;
+    const now = Date.now();
+    if (shouldSendYahooAlert(streak, lastAlertTs, now)) {
+      await sendHealthTelegram(
+        `🔴 *Daun Merah — Deriv OHLCV Down*\n\n` +
+        `${streak}x sync beruntun: semua pair primary Deriv gagal fetch. Cache TIDAK di-fallback ke Yahoo/Twelve Data (kebijakan sejak Session 313 — hindari campur skala harga vendor di evaluasi SL/TP) — data candle akan makin basi sampai Deriv pulih.\n` +
+        `Cek status Deriv API (\`ws.derivws.com\`) / app_id.\n\n` +
+        `_Dicek: ${new Date(now).toISOString().substring(0, 16)} UTC_`
+      );
+      await redisCmd('SET', 'deriv_last_alert_ts', String(now));
+    }
+  } catch (e) { console.warn('trackDerivHealth failed:', e.message); }
+}
+
 async function probeFred() {
   const apiKey = process.env.FRED_API_KEY;
   if (!apiKey) return { status: 'UNCONFIGURED', note: 'FRED_API_KEY not set' };
@@ -1930,8 +1961,9 @@ async function ohlcvSyncHandler(req, res) {
   const results = await Promise.allSettled(
     pairsToSync.map(async ({ symbol, label }) => {
       const deriv = derivResults.get(symbol);
+      const isDerivPrimary = !!mapYahooSymbolToDeriv(symbol);
 
-      let candles1h, source1h = 'yahoo';
+      let candles1h, source1h, skip1h = false;
       if (deriv?.candles1h) {
         candles1h = deriv.candles1h; source1h = 'deriv';
         // Volume XAU: Deriv tidak punya volume — tarik terpisah dari Yahoo GC=F dan
@@ -1941,7 +1973,21 @@ async function ohlcvSyncHandler(req, res) {
         if (symbol === 'GC=F') {
           try { candles1h = mergeVolumeByTimestamp(candles1h, await fetchYahooOhlcv1h(symbol)); } catch (e) {}
         }
+      } else if (isDerivPrimary) {
+        // 2026-08-13 (diskusi user, daun_merah.md Session 313): pair yang MEMANG
+        // primary-nya Deriv (14 pair FX + GC=F) TIDAK BOLEH jatuh ke Yahoo/Twelve
+        // Data kalau Deriv gagal — candle campur vendor beda skala harga di array
+        // yang sama dipakai evaluasi SL/TP auto-entry lebih berisiko daripada cache
+        // sedikit basi (lihat insiden basis blowout GC=F & audit AUD/NZD S313).
+        // Biarkan cache LAMA (Deriv) apa adanya sampai Deriv pulih — trackDerivHealth
+        // di bawah alert Telegram kalau sistemik (bukan hiccup 1 pair).
+        skip1h = true;
+        source1h = 'skipped_deriv_down';
       } else {
+        // AUD/NZD & CHF/JPY: TIDAK ada di Deriv map sama sekali, Yahoo memang
+        // primary-nya sendiri (bukan fallback lintas-vendor dari Deriv) — perilaku
+        // tidak berubah.
+        source1h = 'yahoo';
         try {
           candles1h = await fetchYahooOhlcv1h(symbol);
           if (candles1h.length === 0) throw new Error(`${symbol}: empty candles`);
@@ -1951,15 +1997,19 @@ async function ohlcvSyncHandler(req, res) {
         }
       }
 
-      const candles4h = resampleTo4h(candles1h);
+      const candles4h = skip1h ? null : resampleTo4h(candles1h);
 
-      let candles1d, source1d = 'yahoo';
+      let candles1d, source1d, skip1d = false;
       if (deriv?.candles1d) {
         candles1d = deriv.candles1d; source1d = 'deriv';
         if (symbol === 'GC=F') {
           try { candles1d = mergeVolumeByTimestamp(candles1d, await fetchYahooOhlcvDaily(symbol)); } catch (e) {}
         }
+      } else if (isDerivPrimary) {
+        skip1d = true;
+        source1d = 'skipped_deriv_down';
       } else {
+        source1d = 'yahoo';
         try {
           candles1d = await fetchYahooOhlcvDaily(symbol);
           if (candles1d.length === 0) throw new Error(`${symbol}: empty daily candles`);
@@ -1969,29 +2019,54 @@ async function ohlcvSyncHandler(req, res) {
         }
       }
 
-      // Store 3 TFs + source tag (diagnosa M1) in parallel
-      await Promise.all([
-        redisCmd('SET', `ohlcv:${symbol}:1h`, JSON.stringify(candles1h.slice(-120)), 'EX', '90000'), // 25h TTL
-        redisCmd('SET', `ohlcv:${symbol}:4h`, JSON.stringify(candles4h.slice(-60)),  'EX', '90000'), // 25h TTL
-        redisCmd('SET', `ohlcv:${symbol}:1d`, JSON.stringify(candles1d.slice(-135)), 'EX', '90000'), // 25h TTL
+      // Store 3 TFs + source tag (diagnosa M1) in parallel — timeframe yang di-skip
+      // (skip1h/skip1d) TIDAK ditulis sama sekali, cache lama (TTL 25h) tetap dipakai
+      // apa adanya sampai Deriv pulih.
+      const writes = [
         redisCmd('SET', `ohlcv:${symbol}:source`, JSON.stringify({ '1h': source1h, '1d': source1d }), 'EX', '90000'),
-      ]);
+      ];
+      if (!skip1h) {
+        writes.push(redisCmd('SET', `ohlcv:${symbol}:1h`, JSON.stringify(candles1h.slice(-120)), 'EX', '90000'));
+        writes.push(redisCmd('SET', `ohlcv:${symbol}:4h`, JSON.stringify(candles4h.slice(-60)),  'EX', '90000'));
+      }
+      if (!skip1d) {
+        writes.push(redisCmd('SET', `ohlcv:${symbol}:1d`, JSON.stringify(candles1d.slice(-135)), 'EX', '90000'));
+      }
+      await Promise.all(writes);
 
-      const n1h = Math.min(120, candles1h.length), n4h = Math.min(60, candles4h.length), n1d = Math.min(135, candles1d.length);
+      const n1h = skip1h ? 0 : Math.min(120, candles1h.length);
+      const n4h = skip1h ? 0 : Math.min(60, candles4h.length);
+      const n1d = skip1d ? 0 : Math.min(135, candles1d.length);
       console.log(`ohlcv_sync: ${label} — 1H:${n1h}(${source1h}) 4H:${n4h} 1D:${n1d}(${source1d})`);
-      return { symbol, label, count1h: n1h, count4h: n4h, count1d: n1d, source1h, source1d };
+      return { symbol, label, count1h: n1h, count4h: n4h, count1d: n1d, source1h, source1d, skipped: skip1h || skip1d };
     })
   );
 
-  const synced = results
-    .filter(r => r.status === 'fulfilled').map(r => r.value);
-  const failed = results
-    .filter(r => r.status === 'rejected')
-    .map((r, i) => ({ symbol: pairsToSync[i]?.symbol, error: r.reason?.message }));
+  // BUG DITEMUKAN & DIFIX (2026-08-13, Session 313, ketahuan lewat test skenario
+  // campuran skip+gagal): sebelumnya `.filter(rejected).map((r,i)=>pairsToSync[i])`
+  // memakai index HASIL FILTER, bukan index ASLI di `results`/`pairsToSync` — begitu
+  // filter membuang elemen, index-nya bergeser dan symbol yang dilaporkan gagal jadi
+  // SALAH (menunjuk pair lain). Selama ini masih ketutupan karena skenario yang
+  // pernah diuji cuma "semua gagal" atau "semua sukses" (filter tidak mengubah
+  // panjang/urutan relatif index 0..n secara kebetulan) — begitu kebijakan skip
+  // pair-Deriv (Session 313) menciptakan skenario CAMPURAN (sebagian fulfilled,
+  // sebagian rejected) untuk pertama kali, baru ketahuan. Fix: zip index ASLI dulu
+  // SEBELUM filter.
+  const zipped = results.map((r, i) => ({ symbol: pairsToSync[i]?.symbol, r }));
+  const synced = zipped.filter(z => z.r.status === 'fulfilled').map(z => z.r.value);
+  const failed = zipped.filter(z => z.r.status === 'rejected')
+    .map(z => ({ symbol: z.symbol, error: z.r.reason?.message }));
 
   // M1: run ini dianggap "Yahoo down sistemik" kalau TIDAK ADA satu pair pun yang
   // berhasil via Yahoo (semua fallback/gagal) — hindari alert dari hiccup 1 simbol.
   await trackYahooHealth(!synced.some(s => s.source1h === 'yahoo'));
+
+  // 2026-08-13 (Session 313): sama semangat trackYahooHealth di atas — run ini
+  // dianggap "Deriv down sistemik" kalau SEMUA pair primary Deriv (14 FX + GC=F)
+  // di-skip (bukan cuma 1 pair hiccup). synced-nya sendiri dijamin ADA (skip tidak
+  // pernah throw), jadi cek `every` di sini aman dari false-positive kosong.
+  const derivPrimarySynced = synced.filter(s => mapYahooSymbolToDeriv(s.symbol));
+  await trackDerivHealth(derivPrimarySynced.length > 0 && derivPrimarySynced.every(s => s.source1h === 'skipped_deriv_down'));
 
   // V-2: tandai "baru saja sync" HANYA kalau run ini benar-benar dapat sesuatu —
   // run yang gagal total tidak boleh menahan pemicu berikutnya (fail-open, biar
@@ -2251,8 +2326,10 @@ async function refreshOhlcvFromYahoo(symbol) {
   } catch (e) { /* throttle check best-effort — fall through to fetch */ }
 
   // Plan P (2026-07-18): Deriv primary untuk pair FX — dicoba dulu SEBELUM Yahoo.
-  // GC=F (XAU/USD) ikut Deriv sejak 2026-07-30 (lihat catatan REVISI di _ohlcv_fetch.js) —
-  // gagal Deriv tetap fallback ke Yahoo→TwelveData di bawah, sama seperti pair FX lain.
+  // GC=F (XAU/USD) ikut Deriv sejak 2026-07-30 (lihat catatan REVISI di _ohlcv_fetch.js).
+  // REVISI 2026-08-13 (Session 313): gagal Deriv untuk pair `derivEligible` TIDAK LAGI
+  // fallback ke Yahoo/TwelveData (lihat catatan di bawah, dekat `need1h`/`need1d`) —
+  // cache lama dibiarkan, bukan diganti vendor lain.
   const derivEligible = !!mapYahooSymbolToDeriv(symbol);
   let candles1h = null, source1h = null, candles1d = null, source1d = null;
   if (derivEligible) {
@@ -2287,7 +2364,14 @@ async function refreshOhlcvFromYahoo(symbol) {
 
   // Aturan anti-campur-sumber (Plan P-3): hanya minta Yahoo untuk interval yang BELUM
   // didapat dari Deriv — satu array candle HARUS dari satu sumber, tidak pernah gabung.
-  const need1h = !candles1h, need1d = !candles1d;
+  //
+  // 2026-08-13 (diskusi user, daun_merah.md Session 313): kalau pair-nya MEMANG
+  // primary-nya Deriv (`derivEligible`) tapi Deriv-nya gagal, JANGAN fallback ke
+  // Yahoo/Twelve Data di sini juga — endpoint on-demand ini menulis key Redis
+  // (`ohlcv:<symbol>:1h`) yang SAMA dipakai `_evaluateSetups` untuk SL/TP auto-entry,
+  // jadi risikonya identik dengan ohlcvSyncHandler (campur skala harga vendor beda
+  // di array yang sama). Cache lama (Deriv) dibiarkan apa adanya, bukan ditimpa.
+  const need1h = !candles1h && !derivEligible, need1d = !candles1d && !derivEligible;
   const [r1h, r1d] = await Promise.allSettled([
     need1h ? fetchYahooOhlcv1h(symbol) : Promise.resolve(null),
     need1d ? fetchYahooOhlcvDaily(symbol) : Promise.resolve(null),
@@ -2320,13 +2404,19 @@ async function refreshOhlcvFromYahoo(symbol) {
     writes.push(redisCmd('SET', `ohlcv:${symbol}:1d`, JSON.stringify(candles1d.slice(-135)), 'EX', '90000'));
   }
   if (candles1h || candles1d) {
-    writes.push(redisCmd('SET', `ohlcv:${symbol}:source`, JSON.stringify({ '1h': source1h || 'yahoo', '1d': source1d || 'yahoo' }), 'EX', '90000'));
+    writes.push(redisCmd('SET', `ohlcv:${symbol}:source`, JSON.stringify({
+      '1h': source1h || (derivEligible ? 'skipped_deriv_down' : 'yahoo'),
+      '1d': source1d || (derivEligible ? 'skipped_deriv_down' : 'yahoo'),
+    }), 'EX', '90000'));
   }
   if (writes.length === 0) {
     // Arm a short throttle so a Yahoo outage doesn't make every read pay the full fetch timeout —
     // reads within 30s skip the retry and serve the last snapshot immediately.
     try { await redisCmd('SET', `ohlcv_fresh:${symbol}`, '0', 'EX', '30'); } catch (e) {}
-    throw new Error(`${symbol}: Yahoo fetch failed (1h: ${r1h.reason?.message || 'ok'}, 1d: ${r1d.reason?.message || 'ok'})`);
+    const reason = derivEligible
+      ? 'Deriv gagal, tidak di-fallback ke vendor lain (kebijakan Session 313) — cache lama tetap dipakai'
+      : `Yahoo fetch failed (1h: ${r1h.reason?.message || 'ok'}, 1d: ${r1d.reason?.message || 'ok'})`;
+    throw new Error(`${symbol}: ${reason}`);
   }
   // Only arm the throttle once we've actually written fresh candles.
   writes.push(redisCmd('SET', `ohlcv_fresh:${symbol}`, '1', 'EX', String(OHLCV_FRESH_THROTTLE)));
@@ -2833,7 +2923,7 @@ function _evaluateSetups(setups, candlesBySymbol, nowMs, calendarEvents, newsIte
         if (hitSl) {
           st.status = 'sl'; st.closed_t = c.t;
           const label = _detectLossLabel({ closedT: c.t, eLo, eHi, tp, bias: st.bias, pairLabel: st.label }, all, calendarEvents, newsItems);
-          if (label) { st.loss_label = label.loss_label; st.label_reason = label.reason; st.label_by = 'auto'; }
+          if (label) { st.loss_label = label.loss_label; st.label_reason = label.reason; st.label_by = 'auto'; st.label_criteria_v = label.criteria_v; }
           break;
         }
         if (hitTp) {
@@ -3064,6 +3154,22 @@ async function _fetchRecentNewsItems() {
 // - fakeout_sl (kriteria KETAT, jangan jadi mesin pemaaf): dalam <=4 jam setelah
 //   closedT, harga KEMBALI menembus zona entry DAN menyentuh TP asli — butuh KEDUA
 //   syarat, bukan salah satu.
+//
+// v2 (2026-08-13, diskusi user — daun_merah.md Session 313): jendela fundamental_shock
+// SEBELUMNYA simetris ±2 jam (Math.abs), jadi SL yang sebenarnya murni teknikal tapi
+// KEBETULAN ada event high-impact dalam 2 jam SEBELUM closedT ikut dilabel "bukan
+// salah AI" — bukti nyata ditemukan: EURUSD=X:1786004144720 & GC=F:1786004121103
+// closed_t 2026-08-07T12:00Z, dilabel "Non Farm Payrolls" padahal NFP baru rilis
+// 12:30 UTC (30 menit SETELAH SL kena). Diperbaiki jadi SATU ARAH: event/berita
+// HARUS terjadi PADA/SEBELUM closedT (SL adalah REAKSI atas shock, bukan kebetulan
+// mendahuluinya), maksimal 2 jam sebelumnya. `criteria_v` distempel di return value
+// SETIAP kali label diberikan (termasuk fakeout_sl, supaya field ini konsisten
+// menandai "ruleset versi berapa yang menghasilkan label ini") — label lama di
+// data historis TIDAK punya field ini sama sekali (null/absent = v1, jangan
+// diasumsikan kriteria v2 tanpa cek field ini eksplisit). Pola sama seperti
+// `cme_priority_prompt_v` (S292).
+const LOSS_LABEL_CRITERIA_V = 2;
+
 function _detectLossLabel({ closedT, eLo, eHi, tp, bias, pairLabel }, allCandles, calendarEvents, newsItems) {
   const legs = String(pairLabel || '').toUpperCase().split('/').map(s => s.trim()).filter(Boolean);
   const closedMs = closedT * 1000;
@@ -3073,9 +3179,9 @@ function _detectLossLabel({ closedT, eLo, eHi, tp, bias, pairLabel }, allCandles
       if (!ev || ev.impact !== 'High') return false;
       if (!legs.includes(String(ev.currency || '').toUpperCase())) return false;
       const evMs = _calEventMsWib(ev.date, ev.time_wib);
-      return evMs != null && Math.abs(evMs - closedMs) <= TWO_H;
+      return evMs != null && closedMs >= evMs && (closedMs - evMs) <= TWO_H;
     });
-    if (shock) return { loss_label: 'fundamental_shock', reason: shock.event || 'event high-impact' };
+    if (shock) return { loss_label: 'fundamental_shock', reason: shock.event || 'event high-impact', criteria_v: LOSS_LABEL_CRITERIA_V };
   }
 
   if (legs.length && Array.isArray(newsItems)) {
@@ -3083,10 +3189,10 @@ function _detectLossLabel({ closedT, eLo, eHi, tp, bias, pairLabel }, allCandles
     const relevant = newsItems.filter(n => n && _newsMatchesLegs(n.title, legs));
     const nearby = relevant.filter(n => {
       const t = Date.parse(n.pubDate);
-      return Number.isFinite(t) && Math.abs(t - closedMs) <= TWO_H;
+      return Number.isFinite(t) && closedMs >= t && (closedMs - t) <= TWO_H;
     });
     const shock = nearby.find(n => isCorroborated(n, relevant));
-    if (shock) return { loss_label: 'fundamental_shock', reason: shock.title || 'breaking news' };
+    if (shock) return { loss_label: 'fundamental_shock', reason: shock.title || 'breaking news', criteria_v: LOSS_LABEL_CRITERIA_V };
   }
 
   const FOUR_H = 4 * 3600000;
@@ -3102,7 +3208,7 @@ function _detectLossLabel({ closedT, eLo, eHi, tp, bias, pairLabel }, allCandles
     if (bias === 'bearish' ? c.l <= tp : c.h >= tp) touchedTp = true;
   }
   if (reenteredEntry && touchedTp) {
-    return { loss_label: 'fakeout_sl', reason: 'harga kembali ke zona entry dan mencapai TP asli dalam 4 jam setelah SL' };
+    return { loss_label: 'fakeout_sl', reason: 'harga kembali ke zona entry dan mencapai TP asli dalam 4 jam setelah SL', criteria_v: LOSS_LABEL_CRITERIA_V };
   }
   return null;
 }
@@ -6274,6 +6380,7 @@ module.exports._summarizeLatency = _summarizeLatency;
 module.exports.SPREAD_PRICE_ESTIMATE = SPREAD_PRICE_ESTIMATE;
 module.exports.probeCalendarCache = probeCalendarCache;
 module.exports._detectLossLabel = _detectLossLabel;
+module.exports.LOSS_LABEL_CRITERIA_V = LOSS_LABEL_CRITERIA_V;
 module.exports._detectTpLabel = _detectTpLabel;
 module.exports._newsMatchesLegs = _newsMatchesLegs;
 module.exports.LOSS_LABEL_CURRENCY_KEYWORDS = LOSS_LABEL_CURRENCY_KEYWORDS;

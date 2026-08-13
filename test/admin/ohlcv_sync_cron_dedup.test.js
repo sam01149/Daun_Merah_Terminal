@@ -151,10 +151,18 @@ test('ohlcv_sync: GET ohlcv_sync:last_run_at gagal (Redis error) -> fail-open, t
   }
 });
 
-test('ohlcv_sync: sync gagal total (synced kosong) -> marker last_run_at TIDAK ditulis (pemicu berikutnya boleh retry)', async () => {
+test('ohlcv_sync: Yahoo+TwelveData mati untuk pair non-Deriv, pair Deriv di-skip (bukan fallback) -> hanya pair non-Deriv yang gagal', async () => {
+  // REVISI 2026-08-13 (Session 313): dulu test ini simulasi "gagal total semua pair"
+  // (synced kosong) karena Deriv gagal -> Yahoo gagal -> TwelveData gagal, satu rantai
+  // panjang yang semuanya throw. Sekarang pair primary Deriv (9 dari 11 di
+  // OHLCV_FIXED_PAIRS) TIDAK LAGI fallback ke Yahoo/TwelveData kalau Deriv gagal —
+  // mereka di-skip (cache lama dipakai, tidak throw, tetap masuk `synced` dengan
+  // `skipped:true`). Hanya AUD/NZD & CHF/JPY (Yahoo-only, tidak ada di Deriv map)
+  // yang benar-benar gagal total di skenario Yahoo+TwelveData mati ini.
   process.env.UPSTASH_REDIS_REST_URL   = 'https://fake-redis.test';
   process.env.UPSTASH_REDIS_REST_TOKEN = 'fake-token';
   delete process.env.TWELVEDATA_API_KEY; // fetchFallbackCandles langsung throw tanpa key
+  delete process.env.DERIV_APP_ID; // fetchDerivCandles langsung throw tanpa app_id -> semua pair Deriv di-skip
 
   const setCalls = [];
   const origFetch = global.fetch;
@@ -177,8 +185,14 @@ test('ohlcv_sync: sync gagal total (synced kosong) -> marker last_run_at TIDAK d
     await handler({ method: 'GET', query: { action: 'ohlcv_sync' }, headers: { 'x-vercel-cron': '1' } }, res);
 
     assert.equal(res.statusCode, 200);
-    assert.equal(res.body.synced.length, 0, 'skenario ini memang harus gagal total semua pair');
-    assert.equal(setCalls.length, 0, 'run gagal total tidak boleh menulis marker — pemicu berikutnya harus tetap coba sync, bukan ke-dedup');
+    // 9 pair primary Deriv di-skip (bukan gagal) -> masuk synced dengan skipped:true.
+    const skipped = res.body.synced.filter(s => s.skipped);
+    assert.equal(skipped.length, 9, '9 pair primary Deriv harus di-skip, bukan fallback ke Yahoo/TwelveData');
+    assert.ok(skipped.every(s => s.source1h === 'skipped_deriv_down'));
+    // AUD/NZD & CHF/JPY (Yahoo-only) benar-benar gagal karena Yahoo DAN TwelveData mati.
+    assert.equal(res.body.failed.length, 2);
+    assert.deepEqual(res.body.failed.map(f => f.symbol).sort(), ['AUDNZD=X', 'CHFJPY=X']);
+    assert.equal(setCalls.length, 1, 'ada 9 pair yang "synced" (walau cuma skip) -> marker tetap ditulis');
   } finally {
     global.fetch = origFetch;
     delete process.env.UPSTASH_REDIS_REST_URL;

@@ -683,7 +683,7 @@ test('_buildMacroSnapshot: semua sumber kosong -> null (fail-open, tidak nulis o
 
 // ── PLAN U-1 (2026-07-20): loss_label, raw vs adjusted, _detectLossLabel ──────
 
-const { _detectLossLabel } = require('../../api/admin.js');
+const { _detectLossLabel, LOSS_LABEL_CRITERIA_V } = require('../../api/admin.js');
 
 // Bangun event kalender dari epoch ms target supaya _calEventMsWib(date, time_wib)
 // menghasilkan persis epochMs itu (wall-clock WIB = epochMs + 7 jam, pola sama
@@ -720,16 +720,25 @@ test('_evaluateSetups: candle terbalik (descending) diurutkan otomatis sehingga 
   assert.ok(setups[0].filled_t <= setups[0].closed_t);
 });
 
-test('_detectLossLabel: fundamental_shock — event High-impact currency kaki pair dalam ±2 jam dari closedT', () => {
+test('_detectLossLabel: fundamental_shock — event High-impact currency kaki pair dalam 2 jam SEBELUM closedT', () => {
+  // v2 (Session 313): jendela SATU ARAH — SL harus REAKSI atas event, jadi event
+  // harus terjadi PADA/SEBELUM closedT (bukan lagi ±2h simetris, lihat komentar
+  // LOSS_LABEL_CRITERIA_V di api/admin.js).
   const closedT = T0 + 7200;
-  const ev = mkCalEvent(closedT * 1000 + 3600000, 'USD', { event: 'NFP' }); // 1 jam setelah closed
+  const ev = mkCalEvent(closedT * 1000 - 3600000, 'USD', { event: 'NFP' }); // 1 jam SEBELUM closed
   const label = _detectLossLabel({ closedT, eLo: 4030, eHi: 4040, tp: 3960, bias: 'bearish', pairLabel: 'XAU/USD' }, [], [ev]);
-  assert.deepStrictEqual(label, { loss_label: 'fundamental_shock', reason: 'NFP' });
+  assert.deepStrictEqual(label, { loss_label: 'fundamental_shock', reason: 'NFP', criteria_v: LOSS_LABEL_CRITERIA_V });
 });
 
-test('_detectLossLabel: event > 2 jam dari closedT -> tidak dianggap shock', () => {
+test('_detectLossLabel: event SETELAH closedT -> tidak dianggap shock (SL tidak mungkin reaksi atas kejadian yang belum terjadi)', () => {
   const closedT = T0 + 7200;
-  const ev = mkCalEvent(closedT * 1000 + 3 * 3600000, 'USD', { event: 'NFP' }); // 3 jam
+  const ev = mkCalEvent(closedT * 1000 + 3600000, 'USD', { event: 'NFP' }); // 1 jam SETELAH closed
+  assert.strictEqual(_detectLossLabel({ closedT, eLo: 4030, eHi: 4040, tp: 3960, bias: 'bearish', pairLabel: 'XAU/USD' }, [], [ev]), null);
+});
+
+test('_detectLossLabel: event > 2 jam SEBELUM closedT -> tidak dianggap shock', () => {
+  const closedT = T0 + 7200;
+  const ev = mkCalEvent(closedT * 1000 - 3 * 3600000, 'USD', { event: 'NFP' }); // 3 jam sebelum
   assert.strictEqual(_detectLossLabel({ closedT, eLo: 4030, eHi: 4040, tp: 3960, bias: 'bearish', pairLabel: 'XAU/USD' }, [], [ev]), null);
 });
 
@@ -795,7 +804,7 @@ test('_detectLossLabel: prioritas fundamental_shock > fakeout_sl saat kedua kond
 
 test('_detectLossLabel: breaking news market-moving — otomatis dianggap terkonfirmasi (tanpa perlu sumber kedua)', () => {
   const closedT = T0 + 7200;
-  const news = [{ title: 'Fed announces emergency rate decision', pubDate: new Date(closedT * 1000 + 3600000).toISOString(), cat: 'market-moving', guid: 'n1' }];
+  const news = [{ title: 'Fed announces emergency rate decision', pubDate: new Date(closedT * 1000 - 3600000).toISOString(), cat: 'market-moving', guid: 'n1' }]; // 1 jam sebelum closed
   const label = _detectLossLabel({ closedT, eLo: 4030, eHi: 4040, tp: 3960, bias: 'bearish', pairLabel: 'XAU/USD' }, [], [], news);
   assert.strictEqual(label.loss_label, 'fundamental_shock');
   assert.strictEqual(label.reason, 'Fed announces emergency rate decision');
@@ -803,14 +812,14 @@ test('_detectLossLabel: breaking news market-moving — otomatis dianggap terkon
 
 test('_detectLossLabel: breaking news geopolitical — 1 sumber sendirian TIDAK cukup (belum terkonfirmasi)', () => {
   const closedT = T0 + 7200;
-  const news = [{ title: 'Iran mobilizes forces near Hormuz', pubDate: new Date(closedT * 1000 + 3600000).toISOString(), cat: 'geopolitical', guid: 'n1' }];
+  const news = [{ title: 'Iran mobilizes forces near Hormuz', pubDate: new Date(closedT * 1000 - 3600000).toISOString(), cat: 'geopolitical', guid: 'n1' }];
   assert.strictEqual(_detectLossLabel({ closedT, eLo: 4030, eHi: 4040, tp: 3960, bias: 'bearish', pairLabel: 'XAU/USD' }, [], [], news), null);
 });
 
 test('_detectLossLabel: breaking news geopolitical — 2 sumber berbeda GUID, overlap token, dalam 30 menit -> terkonfirmasi', () => {
   const closedT = T0 + 7200;
-  const t1 = new Date(closedT * 1000 + 3600000).toISOString();
-  const t2 = new Date(closedT * 1000 + 3600000 + 12 * 60000).toISOString(); // 12 menit setelah n1
+  const t1 = new Date(closedT * 1000 - 3600000).toISOString(); // 1 jam sebelum closed
+  const t2 = new Date(closedT * 1000 - 3600000 + 12 * 60000).toISOString(); // 12 menit setelah n1
   const news = [
     { title: 'Iran mobilizes forces near Strait of Hormuz', pubDate: t1, cat: 'geopolitical', guid: 'n1' },
     { title: 'Tanker traffic halted at Strait of Hormuz after Iran buildup', pubDate: t2, cat: 'geopolitical', guid: 'n2' },
@@ -821,7 +830,7 @@ test('_detectLossLabel: breaking news geopolitical — 2 sumber berbeda GUID, ov
 
 test('_detectLossLabel: breaking news — currency tidak cocok dengan kaki pair -> diabaikan', () => {
   const closedT = T0 + 7200;
-  const news = [{ title: 'BOJ Ueda signals emergency policy shift', pubDate: new Date(closedT * 1000 + 3600000).toISOString(), cat: 'market-moving', guid: 'n1' }];
+  const news = [{ title: 'BOJ Ueda signals emergency policy shift', pubDate: new Date(closedT * 1000 - 3600000).toISOString(), cat: 'market-moving', guid: 'n1' }];
   // XAU/USD tidak punya leg JPY — headline BOJ tidak relevan pair ini
   assert.strictEqual(_detectLossLabel({ closedT, eLo: 4030, eHi: 4040, tp: 3960, bias: 'bearish', pairLabel: 'XAU/USD' }, [], [], news), null);
 });
@@ -832,8 +841,8 @@ test('_detectLossLabel: breaking news — currency tidak cocok dengan kaki pair 
 // Kalau tidak difix, headline ini keliru dianggap breaking-news shock utk AUD/NZD.
 test('_detectLossLabel: breaking news — "Saudi" TIDAK salah match leg AUD (word-boundary, bukan substring)', () => {
   const closedT = T0 + 7200;
-  const t1 = new Date(closedT * 1000 + 3600000).toISOString();
-  const t2 = new Date(closedT * 1000 + 3600000 + 5 * 60000).toISOString();
+  const t1 = new Date(closedT * 1000 - 3600000).toISOString();
+  const t2 = new Date(closedT * 1000 - 3600000 + 5 * 60000).toISOString();
   const news = [
     { title: "Iran's General Rezaei: Saudi official denies involvement", pubDate: t1, cat: 'geopolitical', guid: 'n1' },
     { title: 'Saudi Arabia issues statement on regional tensions', pubDate: t2, cat: 'geopolitical', guid: 'n2' },
@@ -842,15 +851,21 @@ test('_detectLossLabel: breaking news — "Saudi" TIDAK salah match leg AUD (wor
   assert.strictEqual(_detectLossLabel({ closedT, eLo: 1.19, eHi: 1.20, tp: 1.18, bias: 'bearish', pairLabel: 'AUD/NZD' }, [], [], news), null);
 });
 
-test('_detectLossLabel: breaking news di luar jendela ±2 jam dari closedT -> diabaikan', () => {
+test('_detectLossLabel: breaking news lebih dari 2 jam SEBELUM closedT -> diabaikan', () => {
   const closedT = T0 + 7200;
-  const news = [{ title: 'Fed emergency rate decision', pubDate: new Date(closedT * 1000 + 3 * 3600000).toISOString(), cat: 'market-moving', guid: 'n1' }];
+  const news = [{ title: 'Fed emergency rate decision', pubDate: new Date(closedT * 1000 - 3 * 3600000).toISOString(), cat: 'market-moving', guid: 'n1' }];
+  assert.strictEqual(_detectLossLabel({ closedT, eLo: 4030, eHi: 4040, tp: 3960, bias: 'bearish', pairLabel: 'XAU/USD' }, [], [], news), null);
+});
+
+test('_detectLossLabel: breaking news SETELAH closedT -> diabaikan (SL tidak mungkin reaksi atas berita yang belum terbit)', () => {
+  const closedT = T0 + 7200;
+  const news = [{ title: 'Fed emergency rate decision', pubDate: new Date(closedT * 1000 + 3600000).toISOString(), cat: 'market-moving', guid: 'n1' }];
   assert.strictEqual(_detectLossLabel({ closedT, eLo: 4030, eHi: 4040, tp: 3960, bias: 'bearish', pairLabel: 'XAU/USD' }, [], [], news), null);
 });
 
 test('_detectLossLabel: breaking news terkonfirmasi menang atas fakeout_sl (prioritas sama seperti kalender)', () => {
   const closedT = T0;
-  const news = [{ title: 'Fed emergency rate decision', pubDate: new Date(closedT * 1000 + 3600000).toISOString(), cat: 'market-moving', guid: 'n1' }];
+  const news = [{ title: 'Fed emergency rate decision', pubDate: new Date(closedT * 1000 - 3600000).toISOString(), cat: 'market-moving', guid: 'n1' }]; // 1 jam sebelum closed
   const candles = [
     mkC(closedT + 3600, 4020, 4038, 3955, 3958), // reentry + TP juga terpenuhi (kandidat fakeout_sl)
   ];
@@ -883,6 +898,7 @@ test('_evaluateSetups: transisi open->sl menulis loss_label dari calendarEvents 
   assert.strictEqual(setups[0].loss_label, 'fundamental_shock');
   assert.strictEqual(setups[0].label_reason, 'CPI');
   assert.strictEqual(setups[0].label_by, 'auto');
+  assert.strictEqual(setups[0].label_criteria_v, LOSS_LABEL_CRITERIA_V, 'v2 (Session 313) harus tersimpan supaya label lama vs baru bisa dibedakan');
 });
 
 test('_aggSetupStats: raw vs adjusted berbeda saat ada sl berlabel + breakdown loss_causes', () => {

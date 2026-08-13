@@ -5,6 +5,14 @@
 // test ini memverifikasi WIRING end-to-end lewat handler admin.js action=ohlcv_sync
 // sungguhan — Yahoo dipaksa gagal total, Twelve Data di-mock sukses, dan hasil
 // akhir (response JSON) harus menandai source1h/source1d = 'twelvedata'.
+//
+// REVISI 2026-08-13 (Session 313): fallback Yahoo->TwelveData ini SEKARANG hanya
+// berlaku untuk pair yang Yahoo memang primary-nya sendiri (AUD/NZD, CHF/JPY —
+// tidak ada di Deriv map). Pair primary Deriv (9 pair lain) TIDAK LAGI fallback ke
+// Yahoo/TwelveData kalau Deriv gagal — mereka di-skip (cache lama dipakai). Test
+// ini SENGAJA tidak set DERIV_APP_ID supaya Deriv gagal utk semua pair juga, biar
+// premis lama "Yahoo mati total" tetap bisa diuji tapi assert-nya disesuaikan:
+// hanya 2 pair Yahoo-only yang benar-benar lewat rantai fallback TwelveData.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 
@@ -60,10 +68,16 @@ test('ohlcv_sync: Yahoo mati total -> semua pair fallback ke Twelve Data, shape 
   assert.equal(res.statusCode, 200);
   assert.ok(Array.isArray(res.body.synced) && res.body.synced.length > 0, 'harus ada pair yang berhasil sync via fallback');
 
-  for (const pair of res.body.synced) {
-    assert.equal(pair.source1h, 'twelvedata', `${pair.symbol}: source1h harus twelvedata saat Yahoo mati`);
+  const twelvedataPairs = res.body.synced.filter(p => p.source1h === 'twelvedata');
+  const skippedPairs = res.body.synced.filter(p => p.source1h === 'skipped_deriv_down');
+
+  // AUD/NZD & CHF/JPY: Yahoo-only, benar-benar lewat rantai fallback TwelveData.
+  assert.deepEqual(twelvedataPairs.map(p => p.symbol).sort(), ['AUDNZD=X', 'CHFJPY=X']);
+  for (const pair of twelvedataPairs) {
     assert.equal(pair.source1d, 'twelvedata', `${pair.symbol}: source1d harus twelvedata saat Yahoo mati`);
     assert.ok(pair.count1h > 0, `${pair.symbol}: candle 1h harus ada isinya`);
   }
-  assert.equal(res.body.failed.length, 0, 'tidak boleh ada pair gagal total — semua harus tertolong fallback');
+  // 9 pair primary Deriv: Deriv gagal (DERIV_APP_ID tak diset) -> di-skip, BUKAN fallback Yahoo/TwelveData.
+  assert.equal(skippedPairs.length, 9, '9 pair primary Deriv harus di-skip, bukan ikut fallback Yahoo/TwelveData');
+  assert.equal(res.body.failed.length, 0, 'tidak boleh ada pair gagal total — pair Deriv di-skip (bukan gagal), pair Yahoo-only tertolong fallback');
 });
