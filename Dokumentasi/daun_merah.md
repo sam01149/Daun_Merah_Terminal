@@ -11,10 +11,28 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-12 (Session 312 — SambaNova Diputus Kontrak Total)
+> **Last updated:** 2026-08-13 (Session 313 — Audit AUD/NZD: False Alarm, Bukan Bug)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 313 (2026-08-13) — Audit AUD/NZD: False Alarm, Bukan Bug
+
+**Konteks:** User minta cek riwayat setup AUD/NZD terbaru — apakah harga benar-benar menyentuh entry atau sistem "ngarang". Investigasi ini berputar-putar dan sempat salah arah 2x sebelum ketemu kesimpulan benar — dicatat lengkap di sini supaya sesi depan tidak mengulang jalan buntu yang sama.
+
+**Langkah 1 — kecurigaan awal (salah):** query ulang candle H1 AUD/NZD via Deriv `ticks_history` (WebSocket, sama fungsi `fetchDerivCandles`/`_ohlcv_fetch.js`) menunjukkan low candle 2026-08-12T12:00Z = 1.20414, BEDA dari yang tersimpan di cache (`ohlcv:AUDNZD=X:1h`, low 1.20153) dan dari log `setup_log_auto:v1` (status "tp", entry dianggap tersentuh 1.20194). Disimpulkan (keliru) cache tercemar data palsu. Audit diperluas ke semua 38 entri log — ketemu 7 entri (5 AUD/NZD + 2 GC=F) yang mismatch, dikoreksi via `setup_override` (`data_fix`, endpoint yang memang didesain untuk ini, lihat komentar `setupOverrideHandler` soal insiden GC=F 2026-07-25).
+
+**Langkah 2 — cross-check Yahoo Finance (ketahuan salah arah):** dicek independen ke Yahoo Finance langsung (`query1.finance.yahoo.com`) untuk candle yang sama — Yahoo **SEPAKAT dengan data ASLI** (1.20153), bukan dengan hasil query `ticks_history` (1.20414). Berlaku utk semua 5 entri AUD/NZD yang tadinya dikoreksi. Ke-7 koreksi **di-revert** kembali ke nilai asli via `setup_override` lagi (jejak `data_fix_reason` ganda tersimpan di tiap entri — REVERT tercatat di atas koreksi pertama).
+
+**Langkah 3 — akar masalah sebenarnya ditemukan:** AUD/NZD & CHF/JPY **Yahoo-only by design**, BUKAN pair yang pakai Deriv sama sekali (baik di `ohlcv_sync`/`api/_ohlcv_fetch.js` `YAHOO_TO_DERIV_SYMBOL` maupun di daemon VPS `vps/daemon.js` — dikonfirmasi test drift-guard `test/vps/vps_daemon.test.js:29` yang assert 14 pair FX Deriv persis sama antara kedua map, AUDNZD=X/CHFJPY=X TIDAK ada di keduanya, lihat juga komentar `api/admin.js` baris ~1779 "AUD/NZD TIDAK ada di Deriv map, tetap Yahoo-only"). Artinya query `ticks_history` yang dipakai untuk "verifikasi" dari awal itu membandingkan ke sumber data yang **sama sekali tidak dipakai sistem** untuk pair ini — bukan insiden fallback silent-switch seperti GC=F basis blowout dulu. **Tidak ada bug nyata** — data produksi benar sejak awal, sistem tidak "ngarang".
+
+**Pelajaran metodologi:** sebelum "memverifikasi" candle produksi terhadap query API manual, cek dulu SUMBER MANA yang benar-benar dipakai pipeline untuk pair itu (per `YAHOO_TO_DERIV_SYMBOL`/`mapYahooSymbolToDeriv`) — Deriv `ticks_history` untuk pair sintetis cross (seperti AUD/NZD, dihitung dari AUD/USD × NZD/USD) TIDAK otomatis representatif kalau pipeline produksi memang tidak pernah memanggilnya.
+
+**GC=F (2 entri) — TIDAK diselidiki tuntas, sengaja dibiarkan revert ke asli:** GC=F BEDA dari AUD/NZD — Deriv (`frxXAUUSD`) memang primary asli untuk pair ini (migrasi 2026-07-30). Tapi Yahoo GC=F adalah kontrak **futures**, bukan proxy valid untuk verifikasi (persis masalah basis blowout futures-vs-spot yang sudah didokumentasikan, lihat [[project-gcf-futures-spot-basis-blowout]]) — jadi tidak bisa dipakai cross-check seperti AUD/NZD di atas. 2 entri GC=F (`GC=F:1785399311205`, `GC=F:1785244513683`) tetap dikembalikan ke nilai asli (aman, konservatif) tapi validitasnya BELUM benar-benar diverifikasi tuntas. Kalau mau dicek lebih lanjut, pakai guard korroborasi Twelve Data yang sudah ada (`_corroborateLevel`/`GOLD_BASIS_TOLERANCE_USD`, `api/admin.js` ~3171), bukan Yahoo.
+
+**Temuan terpisah (belum diperbaiki) — celah desain `fundamental_shock`:** user tanya apakah label `fundamental_shock` bisa menyembunyikan kekalahan teknikal asli (posisi sudah mau kena SL murni teknikal, kebetulan ada event high-impact dekat waktu SL, jadi malah dianggap "bukan salah AI" padahal sebenarnya memang salah). Dicek `_detectLossLabel` (`api/admin.js:3067-3108`) — kriterianya PURE PROXIMITY (event impact "High" utk currency leg pair, dalam ±2 jam dari `closedT`), TIDAK ada cek kausalitas/arah/kecepatan pergerakan harga (apakah harga sudah trending ke arah SL SEBELUM event terjadi, atau baru spike TAJAM setelah event). Jadi kritik user VALID — celah nyata, belum ada mitigasi. Belum diperbaiki (butuh keputusan desain: window dipersempit? butuh syarat spike harga pasca-event? dll) — item tertunda, lihat [daun_merah_progress.md](daun_merah_progress.md) kalau mau dilanjutkan.
+
+**Tidak ada perubahan kode** — semua eksplorasi hari ini murni baca kode + manipulasi data Redis produksi (fetch/koreksi/revert via endpoint resmi `setup_override`), net effect nol (data kembali persis seperti sebelum sesi ini, hanya nambah jejak `data_fix_reason` di 7 entri). `git status` bersih.
 
 ## Changelog Session 312 (2026-08-12) — SambaNova Diputus Kontrak Total
 
