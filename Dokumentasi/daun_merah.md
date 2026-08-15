@@ -11,10 +11,22 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-13 (Session 314 — Filter Headline "Currency Strength Chart" FinancialJuice yang Rusak)
+> **Last updated:** 2026-08-15 (Session 315 — Fix Fragmentasi Key HICP EUR di Kartu Fundamental)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 315 (2026-08-15) — Fix Fragmentasi Key HICP EUR di Kartu Fundamental
+
+**Konteks:** User curiga kartu Fundamental EUR nampilkan "CPI YoY 2,1%" & "CPI MoM 0,6%" berlabel "1h lalu" (1 hari lalu) padahal tidak ingat ada rilis inflasi Eurozone kemarin.
+
+**Investigasi:** dicek langsung ke production (`curl .../api/admin?action=fundamental_get`) — data EUR memang berisi rilis asli tertanggal 2026-08-14, TAPI ditemukan bug nyata di sampingnya: 6 field duplikat/pecah untuk konsep yang sama — `Hicp Yoy Final`, `Hicp Final Yoy`, `Hicp Mom Final`, `Hicp Final Mom`, `Hicp Yoy Prelim`, `Hicp Mom Prelim` — hidup berdampingan dengan nilai & tanggal saling beda (mis. `Hicp Final Yoy` 2,9% tgl 12 Agustus vs `Hicp Yoy Final` 2,4% tgl 14 Agustus). Root cause: kata **"HICP"** (istilah resmi Eurostat untuk inflasi Eurozone/Jerman) TIDAK ADA SAMA SEKALI di keyword `FUND_INDICATOR_MAP` (`api/_fundamental_parser.js`) — semua headline HICP jatuh ke fallback tebak-nama title-case naif. Qualifier "Final"/"Prelim" posisinya tidak konsisten antar headline ("HICP Y/Y Final" vs "HICP Final Y/Y"), jadi tiap variasi urutan kata bikin key fallback BERBEDA walau rilis yang sama — field-field ini juga ikut menggembungkan `totalScorable` (menurunkan confidence tier EUR secara palsu) dan menyerobot slot kartu (`CARD_ROW_LIMIT`) dari indikator lain yang lebih relevan.
+
+**Fix:** `_matchIndicatorKey` (`api/_fundamental_parser.js`) ditambah deteksi `/\bhicp\b/i` word-order-agnostic — HICP Y/Y non-Jerman diarahkan ke key `CPI YoY` yang sudah ada, HICP M/M non-Jerman ke `CPI MoM`, HICP Y/Y Jerman ke `German CPI YoY` (key existing, BUKAN key baru — sengaja tidak menambah sinyal inflasi independen EUR ke-3, lihat komentar `FUND_IND_IMPORTANCE['German CPI YoY']` soal alasan sinyal inflasi EUR sengaja tidak diperbanyak karena sudah sangat berkorelasi dengan `CPI Flash YoY`). Qualifier "Final"/"Prelim" sengaja diabaikan (bukan dipisah key baru seperti "Flash") karena keduanya cuma tahap revisi rilis yang sama, bukan estimasi dini terpisah. 6 field orphan yang sudah kadung tersimpan di production ditambahkan ke `FUND_KNOWN_SYNONYM_KEYS.EUR` supaya self-heal otomatis lewat `reconcileFundamentalKeys` (jalan tiap siklus `fundamental_refresh`/digest cron) — data lebih basi dihapus, `CPI YoY`/`CPI MoM` yang sudah lebih baru tidak tertimpa.
+
+**Kesimpulan ke user:** kecurigaannya benar arahnya (ada yang salah), meski bukan berarti "tidak ada rilis" — rilis Aug 14 itu asli, tapi tercampur baur dengan pecahan duplikat HICP yang bikin kartu terlihat janggal/berlebihan.
+
+**Test:** `test/lib/fundamental_parser.test.js` — 4 test baru untuk deteksi HICP (Y/Y qualifier di akhir maupun tengah harus ketemu key sama, M/M, disambiguasi Jerman) + 1 test reconciliation EUR (reproduksi persis data orphan yang ditemukan live). `npm test` 977/977 hijau.
 
 ## Changelog Session 314 (2026-08-13) — Filter Headline "Currency Strength Chart" FinancialJuice yang Rusak
 

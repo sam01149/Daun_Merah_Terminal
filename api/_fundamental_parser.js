@@ -246,6 +246,34 @@ function _matchIndicatorKey(t, currency) {
   if (indicatorKey === 'GDP QoQ' && /y\/y|yoy|year.on.year/i.test(t) && !/q\/q|qoq|quarter.on.quarter/i.test(t)) {
     indicatorKey = 'GDP YoY';
   }
+  // BUG DITEMUKAN & DIFIX (2026-08-15, laporan user — curiga kartu EUR nampilkan
+  // "CPI YoY 2,1%" yang bukan rilis Eurozone asli): Eurostat/FinancialJuice pakai
+  // istilah "HICP" (Harmonised Index of Consumer Prices) untuk inflasi Eurozone
+  // resmi — kata "hicp" TIDAK ADA SAMA SEKALI di FUND_INDICATOR_MAP di atas, jadi
+  // SEMUA headline HICP (Eurozone maupun Jerman, Final/Prelim, Y/Y/M/M) jatuh ke
+  // fallback tebak-nama di parseFundamentalFromHeadline. Qualifier "Final"/"Prelim"
+  // posisinya tidak konsisten antar headline ("HICP Y/Y Final" vs "HICP Final
+  // Y/Y") sehingga tiap variasi urutan bikin key fallback BEDA ("Hicp Yoy Final"
+  // vs "Hicp Final Yoy") walau rilis yang sama — pecah jadi banyak field yang
+  // saling menimpa acak & menggembungkan totalScorable (confidence tier EUR
+  // turun palsu), sekaligus menyerobot slot kartu yang harusnya dipakai indikator
+  // lain (lihat FUND_KNOWN_SYNONYM_KEYS.EUR untuk migrasi field lama yang sudah
+  // terlanjur tertulis dengan nama fallback ini). Disatukan ke slot yang SUDAH
+  // ADA (bukan key baru) supaya tidak menambah sinyal inflasi independen EUR
+  // ke-3 — lihat FUND_IND_IMPORTANCE['German CPI YoY'] soal alasan sinyal inflasi
+  // EUR sengaja tidak diperbanyak (CPI Flash YoY & German CPI YoY sudah sangat
+  // berkorelasi). Jerman tetap ke 'German CPI YoY' (persis logic 'german
+  // cpi'/'germany cpi' di atas — key itu juga sudah lama tidak dipisah Y/Y vs
+  // M/M, jadi HICP M/M Jerman sengaja dibiarkan lewat fallback lama, bukan
+  // ditimpakan ke slot Y/Y). Non-Jerman (Eurozone agregat atau anggota lain) ke
+  // 'CPI YoY'/'CPI MoM' seperti rilis versi non-HICP yang senilai. "Final"/
+  // "Prelim" sengaja diabaikan (bukan dipisah key baru seperti Flash) — keduanya
+  // cuma tahap revisi rilis yang SAMA, bukan estimasi dini terpisah seperti Flash.
+  if (!indicatorKey && /\bhicp\b/i.test(t)) {
+    const isGerman = /\bgerman(y)?\b/i.test(t);
+    if (/y\/y|yoy|annual/i.test(t)) indicatorKey = isGerman ? 'German CPI YoY' : 'CPI YoY';
+    else if (!isGerman && /m\/m|mom|monthly/i.test(t)) indicatorKey = 'CPI MoM';
+  }
   // Flash/preliminary qualifier — kata "flash" bisa muncul di posisi mana pun di judul
   // ("Flash CPI", "CPI Flash", "CPI YoY Flash" — feed FinancialJuice paling sering
   // pakai bentuk terakhir, indikator dulu baru "Flash" di akhir). Kata sisipan ini
@@ -603,6 +631,18 @@ const FUND_KNOWN_SYNONYM_KEYS = {
   ],
   CHF: [
     ['Kof Indicator', 'KOF Barometer'],
+  ],
+  // Audit 2026-08-15 (laporan user) — pecahan fallback-tebak dari headline HICP
+  // sebelum fix 'hicp' di _matchIndicatorKey di atas (lihat komentar di sana).
+  // Ditulis manual di sini (bukan otomatis lewat byLower) karena beda kata, bukan
+  // cuma beda kapitalisasi seperti kasus JPY/CHF di atas.
+  EUR: [
+    ['Hicp Yoy Final', 'CPI YoY'],
+    ['Hicp Final Yoy', 'CPI YoY'],
+    ['Hicp Yoy Prelim', 'CPI YoY'],
+    ['Hicp Mom Final', 'CPI MoM'],
+    ['Hicp Final Mom', 'CPI MoM'],
+    ['Hicp Mom Prelim', 'CPI MoM'],
   ],
 };
 

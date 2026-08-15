@@ -66,6 +66,43 @@ test('qualifier Flash di akhir judul redirect ke key CPI Flash YoY', () => {
   assert.strictEqual(r.key, 'CPI Flash YoY');
 });
 
+// Bug 2026-08-15 (laporan user — curiga kartu EUR nampilkan CPI YoY yang bukan
+// rilis asli): kata "hicp" (istilah resmi Eurostat) tidak ada sama sekali di
+// FUND_INDICATOR_MAP, jadi dulu jatuh ke fallback tebak-key. Qualifier
+// "Final"/"Prelim" posisinya tidak konsisten antar headline ("HICP Y/Y Final"
+// vs "HICP Final Y/Y") — dua bentuk di bawah HARUS ketemu key kanonik yang SAMA
+// walau urutan katanya beda, tidak boleh pecah jadi 2 field berbeda.
+test('Eurozone HICP Y/Y Final (qualifier di akhir) match ke key kanonik CPI YoY', () => {
+  const r = parseFundamentalFromHeadline('Eurozone HICP Y/Y Final: Actual 2.1% Forecast 2.1% Previous 2.9%');
+  assert.strictEqual(r.currency, 'EUR');
+  assert.strictEqual(r.key, 'CPI YoY');
+  assert.strictEqual(r.value, '2.1%');
+});
+
+test('Eurozone HICP Final Y/Y (qualifier di tengah) match ke key kanonik yang SAMA, tidak pecah jadi field beda', () => {
+  const r = parseFundamentalFromHeadline('Eurozone HICP Final Y/Y: Actual 2.1% Forecast 2.1% Previous 2.9%');
+  assert.strictEqual(r.currency, 'EUR');
+  assert.strictEqual(r.key, 'CPI YoY');
+});
+
+test('Eurozone HICP M/M Final match ke key kanonik CPI MoM', () => {
+  const r = parseFundamentalFromHeadline('Eurozone HICP M/M Final: Actual 0.6% Forecast 0.6% Previous -0.3%');
+  assert.strictEqual(r.currency, 'EUR');
+  assert.strictEqual(r.key, 'CPI MoM');
+});
+
+// Jerman: HICP Y/Y diarahkan ke key 'German CPI YoY' yang sudah ada (bukan key
+// baru) supaya tidak menambah sinyal inflasi independen EUR ke-3 — lihat
+// FUND_IND_IMPORTANCE['German CPI YoY'] di index.html soal alasan sinyal
+// inflasi EUR sengaja tidak diperbanyak (CPI Flash YoY & German CPI YoY sudah
+// sangat berkorelasi).
+test('German HICP Y/Y Final diarahkan ke key German CPI YoY (bukan generic CPI YoY, bukan key baru)', () => {
+  const r = parseFundamentalFromHeadline('Germany HICP Y/Y Final: Actual 2.9% Forecast 2.9% Previous 2.8%');
+  assert.strictEqual(r.currency, 'EUR');
+  assert.strictEqual(r.key, 'German CPI YoY');
+  assert.strictEqual(r.value, '2.9%');
+});
+
 // Bug 2026-08-11 (laporan user): headline FJ "US ADP Wkly Employment Change" —
 // qualifier "Wkly" nempel di TENGAH judul (ADP [Wkly] Employment Change), beda
 // posisi dari versi calendar_v1 (lihat test extractFundamentalFromCalendarEvent
@@ -485,6 +522,30 @@ test('reconcileFundamentalKeys: sinonim JPY (seed "CPI YoY" vs "Cpi Overall Nati
   const canonical = JSON.parse(jpy['CPI YoY']);
   assert.strictEqual(canonical.actual, '1.7%');
   assert.strictEqual(canonical.source, 'headline');
+});
+
+// Audit produksi 2026-08-15 (laporan user): sebelum fix 'hicp' di
+// _matchIndicatorKey, headline HICP EUR pecah jadi field fallback beda-beda
+// tergantung urutan qualifier "Final"/"Prelim" — 3 field ini semua ditemukan
+// hidup berdampingan live di Redis produksi untuk EUR. Data segar (tanggal
+// lebih baru) menang, sisanya dihapus sebagai duplikat.
+test('reconcileFundamentalKeys: sinonim EUR (pecahan fallback HICP Final/Prelim Y/Y) — orphan lama dihapus, canonical CPI YoY tidak tertimpa data basi', async () => {
+  const redis = makeMultiKeyMockRedis({
+    'fundamental:EUR': {
+      'CPI YoY': JSON.stringify({ actual: '2.1%', period: '—', date: '2026-08-14', source: 'headline', previous: '2.9%', forecast: '2.1%' }),
+      'Hicp Yoy Final': JSON.stringify({ actual: '2.4%', period: '—', date: '2026-08-14', source: 'headline', previous: '2%', forecast: '2.4%' }),
+      'Hicp Final Yoy': JSON.stringify({ actual: '2.9%', period: '—', date: '2026-08-12', source: 'headline', forecast: '2.9%' }),
+      'Hicp Yoy Prelim': JSON.stringify({ actual: '2.4%', period: '—', date: '2026-07-31', source: 'headline', previous: '2.0%' }),
+    },
+  });
+  const reconciled = await reconcileFundamentalKeys(redis);
+  assert.ok(reconciled.EUR);
+  const eur = redis.store['fundamental:EUR'];
+  assert.strictEqual(eur['Hicp Yoy Final'], undefined);
+  assert.strictEqual(eur['Hicp Final Yoy'], undefined);
+  assert.strictEqual(eur['Hicp Yoy Prelim'], undefined);
+  const canonical = JSON.parse(eur['CPI YoY']);
+  assert.strictEqual(canonical.actual, '2.1%', 'CPI YoY yang sudah lebih baru tidak boleh tertimpa orphan yang lebih basi');
 });
 
 test('reconcileFundamentalKeys: idempotent — jalan kedua kali tanpa perubahan lagi', async () => {
