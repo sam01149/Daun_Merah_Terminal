@@ -116,6 +116,9 @@ Semua workflow di atas autentikasi ke `api/*.js` lewat header `x-cron-secret`, d
 | **ING Think** (`think.ing.com`) | RSS riset makro tambahan | Free, publik |
 | **rss2json** (`api.rss2json.com`) | Proxy konversi RSS→JSON untuk feed yang butuh parsing khusus | Free, publik |
 | **Federal Reserve, ECB, BIS press release feeds** | RSS resmi rilis kebijakan bank sentral | Free, publik |
+| **NBER** (`nber.org/rss/new.xml`) | RSS working paper ekonomi terbaru (SEMUA bidang, disaring `RESEARCH_RELEVANCE_RE` di kode ke FX/makro/LLM-trading) — ditambahkan 2026-08-15 supaya tab Artikel juga menampilkan riset dari PENELITI, bukan cuma institusi bank sentral di atas | Free, RSS publik, full-text PDF gratis |
+| **RePEc / NEP-IFN** (`nep.repec.org/rss/nep-ifn.rss.xml`) | Digest mingguan working paper kanal "International Finance", dikurasi editor manusia RePEc (tidak perlu filter tambahan di kode) — ditambahkan 2026-08-15 | Free, RSS publik, mayoritas link PDF gratis |
+| **Scopus (Elsevier Search API)** (`api.elsevier.com/content/search/scopus`) | Metadata bibliografi paper peer-review (judul/penulis/jurnal/link) — **BUKAN abstrak**. Ditambahkan 2026-08-15, query 2 topik (FX/makro + LLM-trading), 6 jam cache bareng sumber lain di atas. **Batas ToS Elsevier (diverifikasi live via `dev.elsevier.com`, 2026-08-15): akses key non-komersial DILARANG menampilkan abstrak di forum publik** — kode di `api/feeds.js` (`parseScopusEntries`) didesain sengaja TIDAK PERNAH meminta/membaca field abstrak sama sekali, hanya field yang "generally permissible" (judul, penulis, nama jurnal, link). Kalau suatu saat ada kebutuhan menampilkan abstrak/full-text, WAJIB nego lisensi komersial terpisah ke Elsevier dulu — jangan asumsikan key yang ada sekarang cukup. | Free tier developer (quota 20.000/minggu, dipakai ~56/minggu di sini — jauh dari batas) |
 
 ---
 
@@ -144,6 +147,8 @@ BARCHART_API_KEY
 SCRAPER_API_KEY
 TWELVEDATA_API_KEY   # RESOLVED S262 (2026-07-29) — di-set Production+Preview, dependency guard korroborasi GC=F, lihat §4
 DERIV_APP_ID         # Plan P (2026-07-18) — sementara app_id publik "1089", ganti begitu dapat app_id dedicated yang kompatibel (lihat §4)
+SCOPUS1_API_KEY      # Ditambahkan 2026-08-15 — Scopus Search API, lihat §6 untuk batas ToS (metadata saja, TANPA abstrak)
+SCOPUS_API_KEY       # Fallback nama var kalau SCOPUS1_API_KEY suatu saat di-rename di Vercel dashboard
 
 # Infra
 UPSTASH_REDIS_REST_URL

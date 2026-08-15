@@ -848,7 +848,12 @@ async function researchHandler(req, res) {
     } catch(e) {}
   }
 
-  const results = await Promise.allSettled(CB_RESEARCH_SOURCES.map(fetchCBFeed));
+  const results = await Promise.allSettled([
+    ...CB_RESEARCH_SOURCES.map(fetchCBFeed),
+    fetchNBERFeed(),
+    fetchRePEcIfnFeed(),
+    fetchScopusFeed(),
+  ]);
 
   let items = [];
   for (const r of results) {
@@ -869,7 +874,12 @@ async function researchHandler(req, res) {
     return !isNaN(t) && t <= nowMs + FUTURE_SKEW_MS;
   });
   items.sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate));
-  items = items.slice(0, 50);
+  // 50 → 90 (2026-08-15): NBER/RePEc-IFN/Scopus ditambahkan di atas, semuanya
+  // ber-pubDate dekat waktu-fetch (lihat komentar masing-masing parser), jadi
+  // cenderung menumpuk di puncak sort. Cap lama akan menggusur item bank
+  // sentral yang sebenarnya masih relevan sebelum sempat difilter per-sumber
+  // di client (checklist "riset-filter" sudah menangani preferensi tampil).
+  items = items.slice(0, 90);
 
   if (items.length === 0) {
     try {
@@ -971,6 +981,181 @@ function parseCBRSSItems(xml, sourceKey) {
     if (title && pubDate) items.push({ title, pubDate, link, source: sourceKey });
   }
   return items.slice(0, 20);
+}
+
+// ── Riset akademik: NBER, RePEc-IFN, Scopus (2026-08-15) ──────────────────────
+// Dicampur ke items yang SAMA dengan CB_RESEARCH_SOURCES di atas (numpang
+// type=research existing, tidak ada endpoint/action baru — ATURAN.md §4.5).
+// Tujuan: tab Artikel juga menampilkan riset dari PENELITI (working
+// paper/jurnal peer-review), bukan cuma dari institusi (bank sentral/analis
+// pasar di atas). Tampilan tetap headline-only (badge+judul+tanggal+link
+// keluar, tanpa fullText) — sama seperti item institusional yang sudah ada.
+
+const NBER_RSS_URL      = 'https://www.nber.org/rss/new.xml';
+const REPEC_IFN_RSS_URL = 'https://nep.repec.org/rss/nep-ifn.rss.xml';
+
+// Kata kunci relevansi — HANYA dipakai untuk menyaring NBER (feed-nya lintas
+// SEMUA bidang ekonomi, bukan cuma FX; dibuktikan live 2026-08-15: judul
+// seperti "Fortunate Sons: Elite Political Selection..." ikut nongol tanpa
+// filter ini). RePEc-IFN TIDAK perlu regex ini — kanal "International
+// Finance"-nya sendiri sudah dikurasi manual oleh editor RePEc, diperlakukan
+// sama seperti feed bank sentral di atas yang juga tidak difilter ulang.
+// Scopus disaring lewat query boolean-nya sendiri (SCOPUS_QUERIES), bukan ini.
+const RESEARCH_RELEVANCE_RE = /\b(forex|foreign exchange|exchange rate|currency|fx market|carry trade|purchasing power parity|central bank|monetary polic|interest rate|capital flow|large language model|\bllm\b|algorithmic trading)\b/i;
+
+function parseNBERItems(xml, fetchedAtMs) {
+  const items = [];
+  const re = /<item>([\s\S]*?)<\/item>/g;
+  let m;
+  while ((m = re.exec(xml)) !== null) {
+    const b = m[1];
+    const get = tag => {
+      const r1 = new RegExp(`<${tag}[^>]*><!\\[CDATA\\[([\\s\\S]*?)\\]\\]><\\/${tag}>`).exec(b);
+      const r2 = new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`).exec(b);
+      return (r1 || r2)?.[1]?.trim() || '';
+    };
+    const rawTitle = decodeXmlEntities(get('title'));
+    const description = decodeXmlEntities(get('description'));
+    const link = (get('link') || get('guid')).replace(/#fromrss$/, '');
+    if (!rawTitle || !link) continue;
+    if (!RESEARCH_RELEVANCE_RE.test(rawTitle) && !RESEARCH_RELEVANCE_RE.test(description)) continue;
+    // "-- by <penulis>" dipangkas dari judul biar konsisten gaya headline sumber lain.
+    const title = rawTitle.replace(/\s*--\s*by\s+.+$/i, '').trim();
+    // Feed NBER TIDAK menyertakan pubDate per-item (diverifikasi live 2026-08-15) —
+    // pakai waktu fetch sebagai proxy "pertama terlihat"; feed ini sendiri sudah
+    // terurut terbaru-dulu dan disegarkan tiap 6 jam (RESEARCH_CACHE_TTL_MS di
+    // bawah), beda dari RePEc-IFN yang punya tanggal edisi asli (lihat bawah).
+    items.push({ title, pubDate: new Date(fetchedAtMs).toUTCString(), link, source: 'NBER' });
+  }
+  return items.slice(0, 20);
+}
+
+// RePEc-IFN pakai format RDF/RSS 1.0 (tag berprefiks "rss:", beda dari <item>
+// polos RSS 2.0/Atom yang ditangani parseCBRSSItems di atas) — diverifikasi
+// live 2026-08-15. Tanggal per-item tidak ada, tapi channel <dc:date> memberi
+// tanggal edisi mingguan asli — dipakai untuk SEMUA item batch itu (lebih
+// akurat dari proxy waktu-fetch yang dipakai NBER).
+function parseRePEcIfnItems(xml) {
+  const dateMatch = xml.match(/<dc:date>([^<]+)<\/dc:date>/);
+  const issueDate = dateMatch ? new Date(dateMatch[1]) : null;
+  const pubDate = (issueDate && !isNaN(issueDate)) ? issueDate.toUTCString() : new Date().toUTCString();
+  const items = [];
+  const re = /<rss:item\b[^>]*>([\s\S]*?)<\/rss:item>/g;
+  let m;
+  while ((m = re.exec(xml)) !== null) {
+    const b = m[1];
+    const get = tag => (new RegExp(`<rss:${tag}[^>]*>([\\s\\S]*?)<\\/rss:${tag}>`).exec(b) || [])[1]?.trim() || '';
+    const title = decodeXmlEntities(get('title'));
+    const link = decodeXmlEntities(get('link'));
+    if (!title || !link) continue;
+    items.push({ title, pubDate, link, source: 'RePEc-IFN' });
+  }
+  return items.slice(0, 20);
+}
+
+async function fetchNBERFeed() {
+  try {
+    const ua = RESEARCH_UAS[Math.floor(Math.random() * RESEARCH_UAS.length)];
+    const r = await fetch(NBER_RSS_URL, { headers: { 'User-Agent': ua }, signal: AbortSignal.timeout(8000) });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return parseNBERItems(await r.text(), Date.now());
+  } catch(e) {
+    console.warn('NBER research fetch failed:', e.message);
+    return [];
+  }
+}
+
+async function fetchRePEcIfnFeed() {
+  try {
+    const ua = RESEARCH_UAS[Math.floor(Math.random() * RESEARCH_UAS.length)];
+    const r = await fetch(REPEC_IFN_RSS_URL, { headers: { 'User-Agent': ua }, signal: AbortSignal.timeout(8000) });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return parseRePEcIfnItems(await r.text());
+  } catch(e) {
+    console.warn('RePEc-IFN research fetch failed:', e.message);
+    return [];
+  }
+}
+
+// ── Scopus (Elsevier) ──────────────────────────────────────────────────────
+// HANYA metadata bibliografi (judul/penulis/jurnal/link) yang diambil & tampil,
+// TIDAK PERNAH abstrak. Batas ToS Elsevier (diverifikasi live 2026-08-15, lihat
+// daun_merah_vendor.md §Scopus): akses non-komersial dilarang menampilkan
+// abstrak di forum publik; judul+penulis+jurnal+link "generally permissible".
+// Query di bawah juga TIDAK meminta field abstrak sama sekali — aman dari
+// akarnya, bukan cuma disaring saat render.
+const SCOPUS_API_URL = 'https://api.elsevier.com/content/search/scopus';
+const SCOPUS_QUERIES = [
+  // Query naive "forex OR foreign exchange" saja terbukti noise tinggi saat
+  // dites live 2026-08-15 (hasil: manufaktur apparel Sri Lanka, ekspor
+  // pertanian Ethiopia — "foreign exchange" istilah umum di ekonomi
+  // pembangunan). Klausa kedua (trading/monetary/volatility) memaksa topik
+  // FX jadi pusat pembahasan, bukan sekadar disebut sekilas.
+  {
+    source: 'Scopus-FX',
+    query: 'TITLE-ABS-KEY("foreign exchange market" OR "exchange rate" OR "currency market" OR forex OR "carry trade" OR "purchasing power parity") AND TITLE-ABS-KEY(trading OR "monetary policy" OR "central bank" OR volatility OR "risk premium") AND PUBYEAR > 2023 AND DOCTYPE(ar)',
+  },
+  // Relevan ke Dokumentasi/professional_llm_trader/ (sistem auto-entry AI) —
+  // klausa kedua sengaja TANPA kata "finance" polos (terbukti live menarik
+  // paper tak nyambung, mis. legal reasoning benchmark, hanya karena kata itu
+  // disebut sekilas di abstrak).
+  {
+    source: 'Scopus-LLM',
+    query: 'TITLE-ABS-KEY("large language model" OR "generative ai" OR llm) AND TITLE-ABS-KEY("algorithmic trading" OR "stock market" OR "financial market" OR "portfolio management" OR "financial forecasting" OR forex OR "foreign exchange") AND PUBYEAR > 2023 AND DOCTYPE(ar)',
+  },
+];
+
+function parseScopusEntries(json, source) {
+  const entries = json?.['search-results']?.entry || [];
+  return entries.map(e => {
+    const title  = e['dc:title'] || '';
+    const creator = e['dc:creator'] || '';
+    const pubName = e['prism:publicationName'] || '';
+    const scopusLink = (Array.isArray(e.link) ? e.link : []).find(l => l['@ref'] === 'scopus')?.['@href'];
+    const doiLink = e['prism:doi'] ? `https://doi.org/${e['prism:doi']}` : '';
+    const link = scopusLink || doiLink;
+    const byline = [creator, pubName].filter(Boolean).join(', ');
+    const isOpenAccess = e.openaccessFlag === true || e.openaccessFlag === 'true';
+    // prism:coverDate sering berupa tanggal edisi cetak NOMINAL yang bisa berbulan-bulan
+    // ke depan dari kapan paper sebenarnya bisa diakses ("first online"/"in press" —
+    // diverifikasi live 2026-08-15: coverDate 2027-01-01/2026-12-01 padahal paper sudah
+    // terindeks & bisa diakses hari itu juga). Filter "buang tanggal masa depan" di
+    // researchHandler (FUTURE_SKEW_MS, didesain untuk entri kalender CB yang salah)
+    // akan membuang SEMUA item Scopus kalau coverDate mentah dipakai apa adanya — clamp
+    // ke waktu sekarang saat coverDate > sekarang.
+    const coverDate = e['prism:coverDate'] ? new Date(e['prism:coverDate']) : null;
+    const pubDate = (coverDate && !isNaN(coverDate) && coverDate.getTime() <= Date.now())
+      ? coverDate.toUTCString()
+      : new Date().toUTCString();
+    return { title: byline ? `${title} — ${byline}${isOpenAccess ? ' (Open Access)' : ''}` : title, pubDate, link, source };
+  }).filter(it => it.title && it.link);
+}
+
+async function fetchScopusEntries({ source, query }, apiKey) {
+  try {
+    const url = `${SCOPUS_API_URL}?${new URLSearchParams({ query, count: '10', sort: '-coverDate' })}`;
+    const r = await fetch(url, {
+      headers: { 'X-ELS-APIKey': apiKey, 'Accept': 'application/json' },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return parseScopusEntries(await r.json(), source);
+  } catch(e) {
+    console.warn(`Scopus fetch failed [${source}]:`, e.message);
+    return [];
+  }
+}
+
+async function fetchScopusFeed() {
+  // Dua nama var didukung — SCOPUS1_API_KEY yang dipakai user saat setup
+  // (2026-08-15, lihat .env.local), SCOPUS_API_KEY sebagai fallback. Tanpa
+  // key = skip diam-diam (fail-open, pola sama semua guard lain di file ini).
+  const apiKey = process.env.SCOPUS1_API_KEY || process.env.SCOPUS_API_KEY;
+  if (!apiKey) return [];
+  const results = await Promise.allSettled(SCOPUS_QUERIES.map(q => fetchScopusEntries(q, apiKey)));
+  let items = [];
+  for (const r of results) if (r.status === 'fulfilled') items = items.concat(r.value);
+  return items;
 }
 
 // ── FX Option Expiries handler (Investinglive + FinancialJuice) ───────────────
@@ -1577,3 +1762,7 @@ module.exports.newsTranslateBackfillHandler = newsTranslateBackfillHandler;
 module.exports._pctileRank = _pctileRank;
 module.exports._parseOpenInterest = _parseOpenInterest;
 module.exports._parseCotPercentLine = _parseCotPercentLine;
+module.exports.parseNBERItems = parseNBERItems;
+module.exports.parseRePEcIfnItems = parseRePEcIfnItems;
+module.exports.parseScopusEntries = parseScopusEntries;
+module.exports.RESEARCH_RELEVANCE_RE = RESEARCH_RELEVANCE_RE;

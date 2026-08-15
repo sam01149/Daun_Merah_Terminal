@@ -11,10 +11,34 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-15 (Session 315 lanjutan-8 — Koreksi EUR CPI YoY/MoM Bercampur Data Prancis, bukan Eurozone)
+> **Last updated:** 2026-08-15 (Session 315 lanjutan-9 — Riset Akademik NBER/RePEc/Scopus di tab Artikel)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
+
+## Changelog Session 315 lanjutan-9 (2026-08-15) — Riset Akademik NBER/RePEc/Scopus di Tab Artikel
+
+**Konteks:** Rapat konsep dari catatan mentah di baris terakhir `daun_merah_plan.md` — user ingin tab Artikel (riset) juga menampilkan riset dari PENELITI (paper peer-review/working paper), bukan cuma dari institusi (bank sentral/analis pasar yang sudah ada di `CB_RESEARCH_SOURCES`). Diskusi panjang sebelum eksekusi: (1) evaluasi 3 sumber (NBER/RePEc/Scopus) — NBER unggul di keterbacaan+kesegaran, RePEc butuh masuk lewat kanal tematik NEP-IFN (bukan pencarian umum, supaya tidak noise), Scopus unggul kualitas formal tapi lemah keterbacaan; (2) **cek ToS Elsevier via WebFetch ke `dev.elsevier.com` SEBELUM nulis kode** (pola wajib proyek ini, precedent NVIDIA/GLM) — ketemu: akses non-komersial dilarang tampilkan abstrak di forum publik, cuma metadata bibliografi dasar (judul/penulis/jurnal/link) yang "generally permissible". User mengonfirmasi itu memang maksudnya dari awal ("kayak headline aja") — jadi tidak ada konflik desain sama sekali begitu dipangkas ke bentuk itu.
+
+**Keputusan desain (semua dikonfirmasi user sebelum eksekusi):**
+- Ketiga sumber dipakai: NBER (RSS `nber.org/rss/new.xml`, semua bidang ekonomi — perlu filter kata kunci), RePEc-IFN (RSS `nep.repec.org/rss/nep-ifn.rss.xml`, sudah dikurasi editor manusia RePEc — tidak difilter ulang), Scopus (`api.elsevier.com/content/search/scopus`, 2 query: FX/makro + LLM-trading, key `SCOPUS1_API_KEY` sudah ditambahkan user di `.env.local`).
+- Tampilan: numpang `type=research` yang sudah ada di `api/feeds.js` (item digabung ke array `items` yang sama dengan CB feeds, TIDAK ada endpoint/action baru — ATURAN.md §4.5, tetap 12/12 function). Card headline-only (badge+judul+tanggal+link), sama seperti item institusional yang sudah ada — TIDAK ada `fullText`, konsisten dengan batas ToS Scopus.
+- Scopus: judul digabung jadi `"<judul> — <penulis>, <jurnal>"` (+ tag `(Open Access)` kalau `openaccessFlag` true) supaya tetap informatif tanpa reproduksi abstrak — query sengaja TIDAK meminta field abstrak sama sekali, aman dari akarnya.
+
+**File diubah:**
+- `api/feeds.js` — `parseNBERItems`, `parseRePEcIfnItems`, `parseScopusEntries` + `fetchNBERFeed`/`fetchRePEcIfnFeed`/`fetchScopusFeed`, disambung ke `Promise.allSettled` di `researchHandler`. Cap `items.slice(0, 50)` dinaikkan ke `90` (sumber nyaris dobel, supaya item bank sentral tidak tergusur).
+- `index.html` — 4 warna badge baru (`NBER`/`RePEc-IFN`/`Scopus-FX`/`Scopus-LLM`), `APP_VERSION` → `2026.08.15.2`. Tidak ada perubahan JS render (client sudah generic per-source dari desain lama).
+- `test/feeds/feeds_research.test.js` (baru, 14 test).
+
+**Bug ditemukan & diperbaiki lewat integration test live (bukan cuma unit test fixture) — poin 4 CLAUDE.md "uji sampai benar-benar berfungsi":**
+1. Query Scopus naive (`forex OR "foreign exchange"` saja) noise tinggi — dites live, hasil manufaktur apparel Sri Lanka/ekspor pertanian Ethiopia. Fix: query 2 klausa `TITLE-ABS-KEY` (topik FX/LLM AND konteks trading/monetary), diverifikasi live hasilnya relevan.
+2. `prism:coverDate` Scopus sering tanggal edisi cetak NOMINAL berbulan-bulan ke depan (`2027-01-01` untuk paper yang sudah bisa diakses hari itu juga) — filter anti-tanggal-masa-depan `researchHandler` (didesain untuk buang entri kalender CB yang salah) membuang SEMUA item Scopus. Fix: clamp ke waktu sekarang kalau `coverDate` > sekarang.
+3. Link RePEc mentah mengandung entity `&amp;` tak ter-decode (`...&amp;r=&amp;r=ifn`) — akan double-escape jadi `&amp;amp;` saat dirender lewat `escHtml()`. Fix: `decodeXmlEntities()` diterapkan ke link, bukan cuma judul.
+4. Feed NBER tidak menyertakan `<pubDate>` per-item sama sekali (beda dari asumsi awal generic RSS) — pakai waktu fetch sebagai proxy. RePEc-IFN juga tidak punya pubDate per-item, tapi channel `<dc:date>` memberi tanggal edisi mingguan asli — dipakai (lebih akurat dari proxy NBER).
+
+**Test:** `npm test` 1005/1005 hijau. Integration check live manual (network asli ke NBER/RePEc/Scopus/13 sumber CB sekaligus) — 90 item campuran, `Scopus-FX`/`Scopus-LLM` masing-masing 10 item relevan setelah fix, tidak ada field abstrak yang bocor ke output (diverifikasi via `JSON.stringify` tidak mengandung teks abstrak test fixture).
+
+**Dokumentasi:** entri vendor baru `daun_merah_vendor.md` §6 (NBER/RePEc/Scopus, termasuk catatan batas ToS Elsevier) + §8 (env var). Catatan mentah di `daun_merah_plan.md` baris terakhir dihapus (sudah dieksekusi).
 
 ## Changelog Session 315 lanjutan-8 (2026-08-15) — Koreksi EUR `CPI YoY`/`CPI MoM` Bercampur Data Prancis, bukan Eurozone
 
