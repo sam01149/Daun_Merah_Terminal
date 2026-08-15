@@ -15,9 +15,19 @@ name: News Translate Warm
 # (S276, 2026-08-02, permintaan user) arsip 36 jam PENUH via step kedua
 # (type=news_translate_backfill) — supaya "Muat Berita Lebih Lama" sudah Indonesia
 # duluan begitu diklik, bukan translate-on-demand yang bikin jeda.
+#
+# Frekuensi 5 menit -> 15 menit (2026-08-15, audit dashboard Upstash: 326K/500K
+# command/bulan di hari ke-15, proyeksi lewat limit sebelum akhir bulan). Biaya
+# per eksekusi DIDOMINASI overhead tetap (GET/SET cache RSS, ZADD news_history,
+# MGET cek status translate) — BUKAN proporsional ke jumlah headline baru (yang
+# genuinely baru tetap semua ke-translate, cuma batch-nya lebih jarang/besar).
+# Jadi 3x lebih jarang ~3x lebih hemat command tanpa headline yang terlewat —
+# cuma nambah jeda translate live-window (bukan fitur time-sensitive, beda dari
+# setup-tp-sl-watch.yml yang SENGAJA dipertahankan 5 menit karena itu fallback
+# evaluasi TP/SL auto-entry).
 on:
   schedule:
-    - cron: '*/5 * * * *'
+    - cron: '*/15 * * * *'
   workflow_dispatch:
 
 jobs:

@@ -11,10 +11,30 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-15 (Session 315 lanjutan-3 — EUR CPI Generic Cuma Terima Data Eurozone-Wide, Bukan 1 Negara)
+> **Last updated:** 2026-08-15 (Session 315 lanjutan-4 — Audit Workflow Doc + Efisiensi Command Redis + Reminder Inflasi Basi)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
+
+## Changelog Session 315 lanjutan-4 (2026-08-15) — Audit Workflow Doc + Efisiensi Command Redis + Reminder Inflasi Basi
+
+**Konteks:** Lanjutan sesi audit `Dokumentasi/audit_daun_merah.md` (dokumen lokal, di-gitignore). Sambil verifikasi checklist §3.4 (real yields), ditemukan GBP/AUD `INFLATION_EXPECTATIONS` sudah lewat ambang stale 90 hari — riset live ke sumber resmi (BoE/RBA) gagal (403 + angka kontradiktif antar sumber sekunder), user tolak auto-scrape, pilih reminder saja. Di tengah diskusi itu, user kirim screenshot dashboard Upstash: 326K/500K command terpakai di hari ke-15 bulan — proyeksi lewat limit sebelum akhir Agustus. Prioritas bergeser ke efisiensi command Redis.
+
+**1. Perbaikan akurasi `audit_daun_merah.md` (lokal, tidak ke git):** checklist §3.2-C sebelumnya bilang filter `stripBlockedHeadlines` "diterapkan di titik hulu feeds.js sehingga konsisten ke semua 5 consumer" — TERBUKTI SALAH lewat verifikasi kode. Yang benar: `index.html` & `market-digest.js` ikut filter SECARA TRANSITIF (fetch lewat `/api/feeds?type=rss`), tapi 2 parser `admin.js` (`parsePushRSS`, `parseRSSHeadlines`) fetch XML FinancialJuice LANGSUNG (bypass feeds.js) — butuh `BLOCKED_HEADLINE_RE` duplikat manual (fix S314) TANPA drift-guard test (beda dari `newscat.js` yang punya byte-identical guard). Checklist diperbaiki menyebutkan kedua titik eksplisit. §3.1 langkah eksekusi diperjelas: `reconcileFundamentalKeys` di-trigger via `admin.js?action=fundamental_refresh`, bukan dipanggil terpisah.
+
+**2. Efisiensi command Redis** (audit dashboard Upstash 326K/500K, ~21.700 command/hari rata-rata):
+   - `vps/daemon.js`: `NEWS_POLL_INTERVAL_MS` 30 detik → 60 detik. Tiap tick `pollNews()` SELALU 1x `ZRANGEBYSCORE news_history` walau tidak ada berita baru — baseline ~86.400 command/bulan HANYA untuk cek "ada yang baru?", turun jadi ~43.200/bulan. Alert Telegram (posisi manual/kalender/market-moving) tetap jalan, latensi terburuk naik dari ≤30s ke ≤60s (bukan fitur presisi sub-menit).
+   - `.github/workflows/news-translate-warm.yml`: cron 5 menit → 15 menit. Biaya per eksekusi didominasi overhead TETAP (GET/SET cache RSS, ZADD news_history, MGET cek status translate) — bukan proporsional jumlah headline baru (headline genuinely baru tetap semua ke-translate, cuma batch lebih jarang/besar). ~3x lebih hemat tanpa headline terlewat.
+   - `api/admin.js` `_buildAutoScopeStats`: 3 titik loop `active.map(sym => redisCmd('GET', 'ohlcv:<sym>:1h'))` terpisah (per-symbol) diganti helper baru `_fetchCandlesInto()` — 1x `MGET` untuk semua symbol yang belum ke-cache di `candlesBySymbol`, fail-open per-batch (filosofi sama: gagal → dicoba tick berikutnya). **`setup-tp-sl-watch.yml` SENGAJA TIDAK disentuh frekuensinya** — itu fallback evaluasi TP/SL `setup_log_auto:v1`, safety-sensitive, beda dari news-translate yang cuma display.
+   - Test lama (`test/admin/push_subscribe_dev.test.js`) sempat merah 2x karena mock `redisFetchStub` belum kenal `MGET` (cuma GET/SET/DEL/HSET/HGETALL/HDEL) — ditambah case `MGET` di mock.
+
+**3. `admin.js?action=health` diperluas:** `ai_budget` sebelumnya hardcode `['gemini','deepseek']` saja, sekarang `Object.keys(DEFAULT_LIMITS)` (semua provider — mistral/mistral_newstranslate/nvidia/deepseek_experimental ikut kebaca). Tambah `redis_key_count` (DBSIZE) sebagai proxy pertumbuhan key — dicatat eksplisit di response ini BUKAN pengganti command-count/storage-byte bulanan (itu cuma ada di Upstash Management API, kredensial terpisah, belum dikonfigurasi).
+
+**4. Reminder staleness inflasi (bukan auto-scrape):** action baru `admin.js?action=inflation_staleness_check` — baca `INFLATION_EXPECTATIONS` (di-export dari `real-yields.js`), currency yang `staleDays > 90` masuk daftar, kirim 1 Telegram gabungan (`sendHealthTelegram`) kalau ada yang BELUM pernah dialert untuk `as_of` yang sama (dedup Redis `inflation_stale_alerted:<CUR>`). Cron mingguan baru `.github/workflows/inflation-staleness-check.yml` (Senin 08:00 WIB). 3 test baru (`test/admin/inflation_staleness_check.test.js`): 401 tanpa secret, alert+dedup-key-tersimpan saat stale, tidak re-alert untuk `as_of` yang sama.
+
+**Test:** `npm test` 984/984 hijau (981 lama + 3 baru).
+
+**Belum diverifikasi:** dampak nyata command-count ke dashboard Upstash (parkir di `daun_merah_progress.md`, cek lagi setelah beberapa hari).
 
 ## Changelog Session 315 lanjutan-3 (2026-08-15) — EUR CPI Generic Cuma Terima Data Eurozone-Wide, Bukan 1 Negara
 

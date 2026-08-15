@@ -58,6 +58,7 @@ module.exports = async function handler(req, res) {
   if (action === 'redis-keys')    return redisKeysHandler(req, res);
   if (action === 'admin-prompts') return adminPromptsHandler(req, res);
   if (action === 'push')                return pushHandler(req, res);
+  if (action === 'inflation_staleness_check') return inflationStalenessCheckHandler(req, res);
   if (action === 'fundamental_get')     return fundamentalGetHandler(req, res);
   if (action === 'fundamental_seed')    return fundamentalSeedHandler(req, res);
   if (action === 'fundamental_refresh') return fundamentalRefreshHandler(req, res);
@@ -79,7 +80,7 @@ module.exports = async function handler(req, res) {
   if (action === 'friday_tighten')     return fridayTightenHandler(req, res);
   if (action === 'polymarket')         return polymarketHandler(req, res);
   if (action === 'push_subscribe_dev') return pushSubscribeDevHandler(req, res);
-  return res.status(400).json({ error: 'Missing ?action= — use health, redis-keys, admin-prompts, push, fundamental_get, fundamental_seed, fundamental_refresh, fundamental_analysis, journal_import, circuit-reset, circuit-status, deepseek_balance, gdpnow, ohlcv_sync, ohlcv_read, ohlcv_analyze, ohlcv_critic, pre_entry_check, ohlcv_dashboard, setup_stats, setup_override, position_review, friday_tighten, polymarket, or push_subscribe_dev' });
+  return res.status(400).json({ error: 'Missing ?action= — use health, redis-keys, admin-prompts, push, inflation_staleness_check, fundamental_get, fundamental_seed, fundamental_refresh, fundamental_analysis, journal_import, circuit-reset, circuit-status, deepseek_balance, gdpnow, ohlcv_sync, ohlcv_read, ohlcv_analyze, ohlcv_critic, pre_entry_check, ohlcv_dashboard, setup_stats, setup_override, position_review, friday_tighten, polymarket, or push_subscribe_dev' });
 };
 
 // ── Shared Redis helper ────────────────────────────────────────────────────────
@@ -493,13 +494,25 @@ async function healthHandler(req, res) {
   const overall  = statuses.every(s => s === 'OK' || s === 'UNCONFIGURED') ? 'OK'
     : statuses.some(s => s === 'OK') ? 'DEGRADED' : 'DOWN';
 
-  // Pemakaian budget AI hari ini (observability untuk guard _ai_guard.js)
+  // Pemakaian budget AI hari ini (observability untuk guard _ai_guard.js) — SEMUA
+  // provider yang punya limit terdaftar (2026-08-15, sebelumnya cuma gemini/deepseek
+  // hardcoded, luput mistral/mistral_newstranslate/nvidia/deepseek_experimental).
   let aiBudget = null;
   try {
-    const { getUsage } = require('./_ai_guard');
-    const usages = await Promise.all(['gemini', 'deepseek'].map(getUsage));
+    const { getUsage, DEFAULT_LIMITS } = require('./_ai_guard');
+    const usages = await Promise.all(Object.keys(DEFAULT_LIMITS).map(getUsage));
     aiBudget = Object.fromEntries(usages.map(u => [u.provider, { used: u.used, limit: u.limit }]));
   } catch(e) { /* diagnostik opsional — jangan gagalkan health check */ }
+
+  // Storage Redis (2026-08-15, dashboard Upstash 326K/500K command/bulan): REST
+  // API data-plane (UPSTASH_REDIS_REST_URL/TOKEN, yang dipakai app ini) TIDAK
+  // expose command-count bulanan atau ukuran byte — itu cuma ada di Management
+  // API (kredensial akun terpisah, belum dikonfigurasi). DBSIZE (jumlah key) jadi
+  // proxy TERDEKAT yang bisa diambil tanpa kredensial tambahan — cukup untuk
+  // mengendus pertumbuhan tak wajar (key sampah/orphan menumpuk), BUKAN pengganti
+  // cek dashboard Upstash langsung untuk command-count/storage-byte sesungguhnya.
+  let redisKeyCount = null;
+  try { redisKeyCount = await redisCmd('DBSIZE'); } catch(e) { /* opsional */ }
 
   return res.status(200).json({
     overall,
@@ -507,6 +520,10 @@ async function healthHandler(req, res) {
     duration_ms: Date.now() - startTime,
     sources: report,
     ...(aiBudget ? { ai_budget: aiBudget } : {}),
+    ...(redisKeyCount != null ? {
+      redis_key_count: redisKeyCount,
+      redis_note: 'DBSIZE — proxy jumlah key, BUKAN command-count/storage-byte bulanan (cek dashboard Upstash langsung untuk itu)',
+    } : {}),
   });
 }
 
@@ -874,6 +891,46 @@ async function pushHandler(req, res) {
   }
 
   return res.status(200).json({ status: 'OK', new_items: newItems.length, pushed_items: pushItems.length, subscribers: subs.length });
+}
+
+// ── Inflation staleness reminder (2026-08-15) ───────────────────────────────
+// GBP/AUD INFLATION_EXPECTATIONS (real-yields.js) ketahuan lewat ambang stale
+// 90 hari cuma karena diaudit manual — nilainya sendiri butuh riset per-currency
+// ke sumber resmi bank sentral tiap update (BoE IAS/RBA SoMP/dst berbeda format,
+// TIDAK aman di-auto-scrape, lihat daun_merah_progress.md). Daripada nunggu
+// ketahuan manual lagi, cron mingguan ping ini + kirim Telegram begitu ada
+// currency yang MELEWATI ambang — dedup per as_of (1x alert per rilis basi,
+// bukan spam tiap minggu untuk currency yang sama sampai user update).
+async function inflationStalenessCheckHandler(req, res) {
+  const CRON_SECRET = process.env.CRON_SECRET;
+  if (!CRON_SECRET || req.headers['x-cron-secret'] !== CRON_SECRET) {
+    return res.status(401).json({ error: 'Unauthorized — set x-cron-secret header' });
+  }
+  const { INFLATION_EXPECTATIONS } = require('./real-yields');
+  const now = Date.now();
+  const stale = [];
+  for (const [cur, inf] of Object.entries(INFLATION_EXPECTATIONS || {})) {
+    const staleDays = Math.floor((now - new Date(inf.as_of).getTime()) / 86400000);
+    if (staleDays > 90) stale.push({ cur, staleDays, source: inf.source, as_of: inf.as_of });
+  }
+
+  const toAlert = [];
+  for (const s of stale) {
+    const dedupKey = `inflation_stale_alerted:${s.cur}`;
+    const lastAlertedAsOf = await redisCmd('GET', dedupKey).catch(() => null);
+    if (lastAlertedAsOf === s.as_of) continue; // sudah pernah dialert untuk rilis yang sama
+    toAlert.push(s);
+    await redisCmd('SET', dedupKey, s.as_of).catch(() => {});
+  }
+
+  if (toAlert.length > 0) {
+    const lines = toAlert.map(s => `• *${s.cur}*: ${s.staleDays} hari sejak ${s.as_of} (${s.source})`).join('\n');
+    await sendHealthTelegram(
+      `🟡 *Daun Merah — Data Inflasi Basi*\n\nReal yield ${toAlert.map(s => s.cur).join('/')} pakai ekspektasi inflasi >90 hari — cari rilis kuartalan terbaru & update \`INFLATION_EXPECTATIONS\` di \`api/real-yields.js\`:\n\n${lines}\n\n_Dicek: ${new Date(now).toISOString().substring(0, 16)} UTC_`
+    );
+  }
+
+  return res.status(200).json({ stale_count: stale.length, alerted: toAlert.map(s => s.cur), stale: stale.map(s => s.cur) });
 }
 
 // ── Push Subscribe (dev-only, alert TP/SL setup_log_auto:v1) ────────────────
@@ -3642,6 +3699,25 @@ function _statsPayloadFromLog(log) {
 // dengan refine. Kalau lock sedang dipegang pihak lain, skip evaluasi pasif tick ini
 // (fail-open — baca snapshot mentah apa adanya, dicoba lagi tick berikutnya) daripada
 // ikut menulis dan berpotensi menimpa balik perubahan yang sedang berlangsung.
+// Efisiensi command Redis (2026-08-15, audit dashboard Upstash — 326K/500K
+// command/bulan): 3 titik di _buildAutoScopeStats dulu masing-masing loop N
+// GET ohlcv:<sym>:1h terpisah (1 command/symbol). MGET satu command untuk
+// semua symbol yang belum ada di cache lokal candlesBySymbol — fail-open per
+// BATCH (bukan per-symbol lagi, tapi filosofi sama: gagal = dicoba tick
+// berikutnya, bukan macet permanen).
+async function _fetchCandlesInto(symbols, candlesBySymbol) {
+  const missing = [...new Set(symbols)].filter(sym => sym && !candlesBySymbol[sym]);
+  if (!missing.length) return;
+  try {
+    const results = await redisCmd('MGET', ...missing.map(sym => `ohlcv:${sym}:1h`));
+    missing.forEach((sym, i) => {
+      const r = results && results[i];
+      if (!r) return;
+      try { candlesBySymbol[sym] = JSON.parse(r); } catch (e) { /* candle korup -> symbol itu tetap pending */ }
+    });
+  } catch (e) { /* Redis gagal -> semua symbol di batch ini tetap tak ter-update, dicoba lagi tick berikutnya */ }
+}
+
 async function _buildAutoScopeStats() {
   const setupLogKey = 'setup_log_auto:v1';
   const lockKey = `lock:setuplog_write:${setupLogKey}`;
@@ -3670,12 +3746,7 @@ async function _buildAutoScopeStats() {
   let calendarEvents = [];
   let newsItems = [];
   await Promise.all([
-    ...active.map(async sym => {
-      try {
-        const r = await redisCmd('GET', `ohlcv:${sym}:1h`);
-        if (r) candlesBySymbol[sym] = JSON.parse(r);
-      } catch (e) { /* candle hilang -> setup symbol itu tetap pending */ }
-    }),
+    _fetchCandlesInto(active, candlesBySymbol),
     (async () => {
       if (!active.length) return;
       try {
@@ -3708,13 +3779,7 @@ async function _buildAutoScopeStats() {
   log = _evaluateTechInvalidation(log, candlesBySymbol);
   const managedPending = log.filter(s => s && s.intervention?.type === 'tighten_sl' && !s.managed_status);
   if (managedPending.length) {
-    await Promise.all([...new Set(managedPending.map(s => s.symbol))].map(async sym => {
-      if (candlesBySymbol[sym]) return;
-      try {
-        const r = await redisCmd('GET', `ohlcv:${sym}:1h`);
-        if (r) candlesBySymbol[sym] = JSON.parse(r);
-      } catch (e) { /* symbol itu tetap tak ter-update, dicoba lagi tick berikutnya */ }
-    }));
+    await _fetchCandlesInto(managedPending.map(s => s.symbol), candlesBySymbol);
     log = _evaluateManaged(log, candlesBySymbol);
   }
   // PLAN U-3 lanjutan (2026-07-24): sama pola managedPending di atas, tapi untuk ghost
@@ -3722,13 +3787,7 @@ async function _buildAutoScopeStats() {
   // yang sudah dibatalkan mungkin belum ada di `active`/candlesBySymbol sama sekali.
   const ghostPending = log.filter(s => s && s.status === 'canceled' && GHOST_TRACKED_CANCEL_REASONS.has(s.canceled_reason) && !s.ghost_status);
   if (ghostPending.length) {
-    await Promise.all([...new Set(ghostPending.map(s => s.symbol))].map(async sym => {
-      if (candlesBySymbol[sym]) return;
-      try {
-        const r = await redisCmd('GET', `ohlcv:${sym}:1h`);
-        if (r) candlesBySymbol[sym] = JSON.parse(r);
-      } catch (e) { /* symbol itu tetap tak ter-update, dicoba lagi tick berikutnya */ }
-    }));
+    await _fetchCandlesInto(ghostPending.map(s => s.symbol), candlesBySymbol);
     log = _evaluateCanceledGhost(log, candlesBySymbol, Date.now());
   }
   const after = JSON.stringify(log);

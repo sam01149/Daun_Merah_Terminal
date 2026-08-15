@@ -415,10 +415,17 @@ function startDerivStream() {
 
 // ══════════════════════════════════════════════════════════════════════════
 // Q-4: alert berita high-impact — poll news_history (ditulis api/feeds.js) tiap
-// 30 detik, klasifikasi via newscat.js lokal (SAMA, lihat catatan atas file).
+// 60 detik, klasifikasi via newscat.js lokal (SAMA, lihat catatan atas file).
 // ══════════════════════════════════════════════════════════════════════════
+// Efisiensi command Redis (2026-08-15, audit dashboard Upstash — 326K/500K
+// command/bulan): tiap tick pollNews() SELALU 1x ZRANGEBYSCORE news_history
+// walau tidak ada berita baru (baseline biaya sebelumnya: 24 jam / 30 detik =
+// 2.880 command/hari HANYA untuk cek "ada yang baru?"). 30s -> 60s membelah
+// baseline ini jadi ~1.440/hari — alert Telegram (posisi manual/kalender/
+// market-moving) TETAP jalan, cuma latensi terburuk naik dari <=30s ke <=60s,
+// bukan fitur yang butuh presisi sub-menit.
 const NewsCat = require('./newscat.js');
-const NEWS_POLL_INTERVAL_MS = 30 * 1000;
+const NEWS_POLL_INTERVAL_MS = 60 * 1000;
 let newsCursorMs = 0;
 
 function isHighImpactCategory(cat) {

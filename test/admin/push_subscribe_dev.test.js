@@ -71,6 +71,10 @@ function redisFetchStub(store) {
     switch (cmd) {
       case 'GET':
         return { ok: true, json: async () => ({ result: Object.prototype.hasOwnProperty.call(store.strings, key) ? store.strings[key] : null }) };
+      case 'MGET': {
+        const keys = [key, ...rest];
+        return { ok: true, json: async () => ({ result: keys.map(k => Object.prototype.hasOwnProperty.call(store.strings, k) ? store.strings[k] : null) }) };
+      }
       case 'SET': {
         const value = rest[0];
         const flags = rest.slice(1).map(v => String(v).toUpperCase());

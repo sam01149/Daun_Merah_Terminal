@@ -1,0 +1,31 @@
+name: Inflation Staleness Check
+
+# Reminder mingguan (2026-08-15) — INFLATION_EXPECTATIONS di api/real-yields.js
+# hardcoded per-kuartal (BoE IAS, RBA SoMP, dst), TIDAK aman di-auto-scrape
+# (sumbernya beda format per bank sentral, riset dicoba live sempat dapat angka
+# yang saling kontradiktif antar sumber sekunder — lihat daun_merah_progress.md).
+# Daripada nunggu ketahuan manual/audit tidak terjadwal, cron ini cek tiap
+# Senin: kalau ada currency yang lewat ambang stale 90 hari (staleDays>90 di
+# api/real-yields.js), kirim Telegram supaya user tahu perlu riset update
+# manual — dedup per as_of di sisi handler (1x alert per rilis basi, bukan
+# spam mingguan untuk currency yang sama).
+on:
+  schedule:
+    - cron: '0 1 * * 1' # Senin 01:00 UTC = 08:00 WIB
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Cek staleness INFLATION_EXPECTATIONS
+        run: |
+          STATUS=$(curl -s -o /tmp/resp.json -w "%{http_code}" \
+            -H "x-cron-secret: ${{ secrets.CRON_SECRET }}" \
+            --max-time 20 \
+            "https://financial-feed-app.vercel.app/api/admin?action=inflation_staleness_check")
+          cat /tmp/resp.json
+          if [ "$STATUS" -ne 200 ]; then
+            echo "inflation_staleness_check gagal dengan HTTP $STATUS"
+            exit 1
+          fi

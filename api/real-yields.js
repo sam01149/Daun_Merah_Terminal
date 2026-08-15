@@ -511,3 +511,6 @@ async function redisCmd(...args) {
 // Ekspor helper murni untuk unit/live test — properti tambahan pada handler
 // function tidak mengubah perilaku Vercel (pola sama dengan feeds.js).
 module.exports.fetchEcbSpfEur = fetchEcbSpfEur
+// Dipakai admin.js?action=inflation_staleness_check (2026-08-15) — reminder
+// Telegram saat INFLATION_EXPECTATIONS lewat ambang stale, tanpa duplikasi tabel.
+module.exports.INFLATION_EXPECTATIONS = INFLATION_EXPECTATIONS
