@@ -1116,9 +1116,14 @@ function parseScopusEntries(json, source) {
     const title  = e['dc:title'] || '';
     const creator = e['dc:creator'] || '';
     const pubName = e['prism:publicationName'] || '';
+    // DOI DIUTAMAKAN, scopus.com fallback SAJA kalau tidak ada DOI — dibalik urutannya
+    // (2026-08-15) setelah user cek langsung: link scopus.com SELALU minta akun/institusi
+    // via halaman "Scopus Preview" walau paper-nya ditandai Open Access, sedangkan DOI
+    // langsung ke halaman penerbit yang untuk paper Open Access bisa dibaca tanpa login —
+    // link scopus.com jadi pilihan TERBURUK untuk pengunjung publik, bukan yang terbaik.
     const scopusLink = (Array.isArray(e.link) ? e.link : []).find(l => l['@ref'] === 'scopus')?.['@href'];
     const doiLink = e['prism:doi'] ? `https://doi.org/${e['prism:doi']}` : '';
-    const link = scopusLink || doiLink;
+    const link = doiLink || scopusLink;
     const byline = [creator, pubName].filter(Boolean).join(', ');
     const isOpenAccess = e.openaccessFlag === true || e.openaccessFlag === 'true';
     // prism:coverDate sering berupa tanggal edisi cetak NOMINAL yang bisa berbulan-bulan

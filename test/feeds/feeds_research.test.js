@@ -121,13 +121,23 @@ test('parseScopusEntries: title & byline TERPISAH (bukan digabung satu string), 
   assert.equal(JSON.stringify(items[0]).includes('RAHASIA'), false);
 });
 
-test('parseScopusEntries: link scopus diutamakan, fallback ke DOI kalau tidak ada', () => {
-  const withDoiOnly = fakeScopusJson({
-    'dc:title': 'Paper Tanpa Link Scopus',
+test('parseScopusEntries: link DOI diutamakan (bug live 2026-08-15: link scopus.com selalu ke-gate "Check access"/butuh akun institusi walau paper Open Access, DOI langsung ke penerbit)', () => {
+  const withBoth = fakeScopusJson({
+    'dc:title': 'Paper Dengan DOI dan Link Scopus',
     'prism:doi': '10.1000/xyz123',
+    link: [{ '@ref': 'scopus', '@href': 'https://www.scopus.com/inward/record.uri?scp=999' }],
   });
-  const items = parseScopusEntries(withDoiOnly, 'Scopus-FX');
+  const items = parseScopusEntries(withBoth, 'Scopus-FX');
   assert.equal(items[0].link, 'https://doi.org/10.1000/xyz123');
+});
+
+test('parseScopusEntries: fallback ke link scopus.com kalau memang tidak ada DOI sama sekali', () => {
+  const scopusOnly = fakeScopusJson({
+    'dc:title': 'Paper Tanpa DOI',
+    link: [{ '@ref': 'scopus', '@href': 'https://www.scopus.com/inward/record.uri?scp=888' }],
+  });
+  const items = parseScopusEntries(scopusOnly, 'Scopus-FX');
+  assert.equal(items[0].link, 'https://www.scopus.com/inward/record.uri?scp=888');
 });
 
 test('parseScopusEntries: openaccessFlag true -> field openAccess terpisah (bukan ditempel ke title)', () => {
