@@ -11,10 +11,18 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-15 (Session 315 lanjutan-9 — Riset Akademik NBER/RePEc/Scopus di tab Artikel)
+> **Last updated:** 2026-08-15 (Session 315 lanjutan-10 — journal_devices Cleanup + Keputusan TIDAK Lanjut Guard Kontradiksi Call1/Call3)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
+
+## Changelog Session 315 lanjutan-10 (2026-08-15) — `journal_devices` Cleanup + Keputusan TIDAK Lanjut Guard Kontradiksi Call1/Call3
+
+**1. `journal_devices` SET dibersihkan saat device kehilangan entry terakhir (SUDAH DIKERJAKAN, commit `a4ca073`):** temuan audit §3.6 (orphan `journal_devices` SET tidak pernah di-SREM) semula ditandai "prioritas rendah, jangan over-engineer" — user menolak penundaan ("nah itu jadi bom waktu kan nanti?"), fix dikerjakan langsung karena murah & aman. `api/journal.js` DELETE `?hard=1`: setelah `DEL`+`ZREM` entry, cek `ZCARD` index device — kalau nol, `SREM journal_devices <deviceId>` sekalian. Diverifikasi live (create → archive → hard-delete via curl), `npm test` 991/991 hijau saat itu.
+
+**2. Guard otomatis kontradiksi kalimat penutup Call 1 vs `thesis` Call 3 — DIBAHAS PANJANG, USER MEMUTUSKAN TIDAK DILANJUTKAN dulu:** audit §3.2/§3.5 menemukan 2 sample live dengan pola beda — sample 1 penutup Call 1 bertentangan dengan PARAGRAFNYA SENDIRI (JPY disebut melemah di body, tapi penutup malah simpulkan CAD terlemah); sample 2 penutup Call 1 (AUD terkuat) beda dari `thesis` Call 3 independen (USD terkuat), tapi bagian "terlemah"-nya (CAD) justru COCOK di keduanya. Diskusi menemukan nuansa penting: instruksi Call 3 eksplisit mensyaratkan divergensi bias bank sentral ≥2 level untuk `pair_recommendation` — artinya `thesis` condong ke gap KEBIJAKAN STRUKTURAL (kenapa USD/JPY sering muncul: Fed vs BOJ persisten lebar), sedangkan kalimat penutup Call 1 condong ke NARASI HARI ITU — dua lensa yang bisa sama-sama valid, beda horizon, BUKAN otomatis salah satu keliru. Rencana yang sempat disepakati: (a) perkuat instruksi Call 1 cek ulang ke headline mentah, (b) guard deterministik HANYA untuk kontradiksi Call1-vs-dirinya-sendiri (pakai marker `{{TAG: <CUR>}}` yang sudah ada di artikel + keyword sentiment sederhana), Call1-vs-Call3 cukup dicatat diam-diam ke log (TIDAK divonis salah, mengingat nuansa horizon di atas). **User memutuskan "udah gausah la" sebelum eksekusi** — TIDAK ada perubahan kode untuk item ini. Jangan diusulkan ulang tanpa sample/bukti baru (aturan audit §2 poin 2) — kalau nanti muncul pola serupa lagi dan ingin dibahas ulang, rujuk analisis horizon Call1-vs-Call3 di atas supaya tidak mengulang diskusi dari nol.
+
+**Test:** tidak ada perubahan kode baru di poin 2 (murni keputusan, batal eksekusi). Poin 1 sudah tercakup di `npm test` sebelumnya.
 
 ## Changelog Session 315 lanjutan-9 (2026-08-15) — Riset Akademik NBER/RePEc/Scopus di Tab Artikel
 
