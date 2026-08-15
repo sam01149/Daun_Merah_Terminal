@@ -1085,23 +1085,28 @@ async function fetchRePEcIfnFeed() {
 // Query di bawah juga TIDAK meminta field abstrak sama sekali — aman dari
 // akarnya, bukan cuma disaring saat render.
 const SCOPUS_API_URL = 'https://api.elsevier.com/content/search/scopus';
+const SCOPUS_RESULT_COUNT = '6'; // per query — dikecilkan dari 10 (2026-08-15): 2 query x 10
+// membanjiri tab (20 item/refresh, semuanya ber-pubDate "hari ini" jadi menumpuk di puncak
+// list, menggusur sumber institusi yang sebenarnya masih relevan ke bawah layar).
 const SCOPUS_QUERIES = [
-  // Query naive "forex OR foreign exchange" saja terbukti noise tinggi saat
-  // dites live 2026-08-15 (hasil: manufaktur apparel Sri Lanka, ekspor
-  // pertanian Ethiopia — "foreign exchange" istilah umum di ekonomi
-  // pembangunan). Klausa kedua (trading/monetary/volatility) memaksa topik
-  // FX jadi pusat pembahasan, bukan sekadar disebut sekilas.
+  // 3 iterasi sampai bersih (semua dites live 2026-08-15, bukan tebakan):
+  // (1) TITLE-ABS-KEY dobel, klausa longgar → noise tinggi (Kenya, biodiesel Indonesia,
+  //     wage moderation UE — cuma nyebut "volatility"/"monetary policy" sekilas di abstrak);
+  // (2) klausa FX dipindah ke TITLE (bukan TITLE-ABS-KEY) → jauh lebih bersih tapi klausa
+  //     kedua (trading/monetary/central bank/volatility) TETAP WAJIB ada — tanpanya bahkan
+  //     paper FISIKA lolos ("Giant energy exchange rate in mode-coupled resonators...",
+  //     istilah "exchange rate" di situ soal energi, bukan mata uang).
   {
     source: 'Scopus-FX',
-    query: 'TITLE-ABS-KEY("foreign exchange market" OR "exchange rate" OR "currency market" OR forex OR "carry trade" OR "purchasing power parity") AND TITLE-ABS-KEY(trading OR "monetary policy" OR "central bank" OR volatility OR "risk premium") AND PUBYEAR > 2023 AND DOCTYPE(ar)',
+    query: 'TITLE("exchange rate" OR "foreign exchange" OR forex OR "currency market" OR "carry trade" OR "purchasing power parity") AND TITLE-ABS-KEY(volatility OR trading OR "monetary policy" OR "central bank" OR forecasting OR prediction) AND PUBYEAR > 2023 AND DOCTYPE(ar)',
   },
-  // Relevan ke Dokumentasi/professional_llm_trader/ (sistem auto-entry AI) —
-  // klausa kedua sengaja TANPA kata "finance" polos (terbukti live menarik
-  // paper tak nyambung, mis. legal reasoning benchmark, hanya karena kata itu
-  // disebut sekilas di abstrak).
+  // Relevan ke Dokumentasi/professional_llm_trader/ (sistem auto-entry AI) — klausa kedua
+  // JUGA dipindah ke TITLE (bukan cuma TITLE-ABS-KEY seperti draft pertama, yang masih
+  // meloloskan paper legal-reasoning/vulnerability-discovery yang cuma nyebut "trading"
+  // sekilas di abstrak) — diverifikasi live: 10/10 hasil genuinely LLM+trading/finance.
   {
     source: 'Scopus-LLM',
-    query: 'TITLE-ABS-KEY("large language model" OR "generative ai" OR llm) AND TITLE-ABS-KEY("algorithmic trading" OR "stock market" OR "financial market" OR "portfolio management" OR "financial forecasting" OR forex OR "foreign exchange") AND PUBYEAR > 2023 AND DOCTYPE(ar)',
+    query: 'TITLE("large language model" OR "generative ai" OR llm OR "language model") AND TITLE(trading OR "stock market" OR "financial market" OR "algorithmic trading" OR portfolio OR forex OR "foreign exchange" OR "stock price" OR quant OR finance OR financial) AND PUBYEAR > 2023 AND DOCTYPE(ar)',
   },
 ];
 
@@ -1127,13 +1132,17 @@ function parseScopusEntries(json, source) {
     const pubDate = (coverDate && !isNaN(coverDate) && coverDate.getTime() <= Date.now())
       ? coverDate.toUTCString()
       : new Date().toUTCString();
-    return { title: byline ? `${title} — ${byline}${isOpenAccess ? ' (Open Access)' : ''}` : title, pubDate, link, source };
+    // title & byline TERPISAH (bukan digabung satu string panjang seperti draft pertama,
+    // "judul — penulis, jurnal (Open Access)" bikin baris terlalu padat/susah dipindai) —
+    // client (renderResearch di index.html) menaruh byline di baris kecil terpisah di
+    // bawah judul, konsisten dengan sumber lain yang cuma punya title polos.
+    return { title, byline: byline || null, openAccess: isOpenAccess, pubDate, link, source };
   }).filter(it => it.title && it.link);
 }
 
 async function fetchScopusEntries({ source, query }, apiKey) {
   try {
-    const url = `${SCOPUS_API_URL}?${new URLSearchParams({ query, count: '10', sort: '-coverDate' })}`;
+    const url = `${SCOPUS_API_URL}?${new URLSearchParams({ query, count: SCOPUS_RESULT_COUNT, sort: '-coverDate' })}`;
     const r = await fetch(url, {
       headers: { 'X-ELS-APIKey': apiKey, 'Accept': 'application/json' },
       signal: AbortSignal.timeout(10000),

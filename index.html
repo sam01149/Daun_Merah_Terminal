@@ -8389,11 +8389,17 @@ function renderResearch() {
     ? '<div class="state-box"><p style="font-size:11px;color:var(--muted)">Tidak ada artikel untuk sumber ini.</p></div>'
     : filtered.map((it, idx) => {
         if (!it.fullText) {
+          const bylineHtml = it.byline
+            ? `<div style="font-size:9px;color:var(--muted);margin-top:2px">${escHtml(it.byline)}${it.openAccess ? ' · Open Access' : ''}</div>`
+            : '';
           return `
           <div class="riset-item">
             <div class="riset-item-top">
               <span class="riset-badge ${escHtml(it.source)}">${escHtml(it.source)}</span>
-              <a href="${escHtml(it.link)}" target="_blank" rel="noopener noreferrer" class="riset-title">${escHtml(it.title)}</a>
+              <div style="flex:1;min-width:0">
+                <a href="${escHtml(it.link)}" target="_blank" rel="noopener noreferrer" class="riset-title">${escHtml(it.title)}</a>
+                ${bylineHtml}
+              </div>
             </div>
             <div class="riset-date">${fmtDate(it.pubDate)}</div>
           </div>`;

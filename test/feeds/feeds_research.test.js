@@ -102,7 +102,7 @@ function fakeScopusJson(entry) {
   return { 'search-results': { entry: [entry] } };
 }
 
-test('parseScopusEntries: judul digabung penulis+jurnal ala kartu rujukan, tanpa abstrak', () => {
+test('parseScopusEntries: title & byline TERPISAH (bukan digabung satu string), tanpa abstrak', () => {
   const json = fakeScopusJson({
     'dc:title': 'Investigation of Swedish Krona exchange rate volatility',
     'dc:creator': 'Karlsson H.K.',
@@ -116,7 +116,8 @@ test('parseScopusEntries: judul digabung penulis+jurnal ala kartu rujukan, tanpa
   });
   const items = parseScopusEntries(json, 'Scopus-FX');
   assert.equal(items.length, 1);
-  assert.match(items[0].title, /Investigation of Swedish Krona exchange rate volatility — Karlsson H\.K\., Financial Innovation/);
+  assert.equal(items[0].title, 'Investigation of Swedish Krona exchange rate volatility');
+  assert.equal(items[0].byline, 'Karlsson H.K., Financial Innovation');
   assert.equal(JSON.stringify(items[0]).includes('RAHASIA'), false);
 });
 
@@ -129,7 +130,7 @@ test('parseScopusEntries: link scopus diutamakan, fallback ke DOI kalau tidak ad
   assert.equal(items[0].link, 'https://doi.org/10.1000/xyz123');
 });
 
-test('parseScopusEntries: openaccessFlag true ditandai "(Open Access)" di judul', () => {
+test('parseScopusEntries: openaccessFlag true -> field openAccess terpisah (bukan ditempel ke title)', () => {
   const json = fakeScopusJson({
     'dc:title': 'Paper Open Access',
     'dc:creator': 'Levantesi S.',
@@ -138,7 +139,8 @@ test('parseScopusEntries: openaccessFlag true ditandai "(Open Access)" di judul'
     link: [{ '@ref': 'scopus', '@href': 'https://www.scopus.com/inward/record.uri?scp=456' }],
   });
   const items = parseScopusEntries(json, 'Scopus-LLM');
-  assert.match(items[0].title, /\(Open Access\)$/);
+  assert.equal(items[0].openAccess, true);
+  assert.equal(items[0].title, 'Paper Open Access');
 });
 
 test('parseScopusEntries: prism:coverDate di masa depan (edisi cetak nominal) di-clamp ke sekarang, bukan dipakai mentah (bug live 2026-08-15: coverDate 2027-01-01 bikin item lolos dari respons Scopus tapi lenyap di filter anti-tanggal-masa-depan researchHandler)', () => {
