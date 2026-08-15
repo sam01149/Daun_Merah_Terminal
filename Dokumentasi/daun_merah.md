@@ -11,10 +11,24 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-15 (Session 315 lanjutan-7 — Dedup source=cron5 setup_stats&scope=auto, Efisiensi Command Redis Lanjutan)
+> **Last updated:** 2026-08-15 (Session 315 lanjutan-8 — Koreksi EUR CPI YoY/MoM Bercampur Data Prancis, bukan Eurozone)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
+
+## Changelog Session 315 lanjutan-8 (2026-08-15) — Koreksi EUR `CPI YoY`/`CPI MoM` Bercampur Data Prancis, bukan Eurozone
+
+**Konteks:** Lanjutan S315 lanjutan-6 (audit penuh). Sesi itu melaporkan fix HICP EUR "terverifikasi live, CPI YoY sekarang 2,1% cocok Eurostat" — user langsung koreksi: "itu sepertinya kamu menampilkan inflasi dari negara perancis, bukan kesatuan dari euro". Verifikasi klaim awal ternyata SALAH — laporan sesi lalu cuma memverifikasi fragmentasi KEY sudah tergabung (6 key `Hicp...` -> 1), tidak memverifikasi NILAI hasil gabungannya benar.
+
+**Ground truth (WebSearch, sumber resmi):** [INSEE](https://www.insee.fr/en/statistiques/9032861) — CPI Prancis Juli 2026: YoY **2,1%** (naik dari 1,8% Juni), MoM **0,6%** (vs -0,3% Juni). [Eurostat](https://ec.europa.eu/eurostat/web/products-euro-indicators/w/2-31072026-ap) — HICP Eurozone flash Juli 2026: **2,9%** YoY. Redis `fundamental:EUR` `CPI YoY` (actual 2,1%/previous 2,9%) & `CPI MoM` (actual 0,6%/previous 0,3%) cocok PERSIS angka Prancis, bukan Eurozone — `CPI Flash YoY` (2,9%) yang justru benar-benar representasi Eurozone.
+
+**Root cause:** nilai ini ditulis SEBELUM guard `EUR_INFLATION_KEYS` (commit `71ee23a`, dideploy pagi hari yang sama) live — guard itu sendiri PERSIS ditulis untuk mencegah skenario ini (komentar kodenya bahkan mengutip contoh nyata "French CPI YoY NSA Actual 2.1%..."), tapi cuma mencegah tulisan BARU, tidak retroaktif membersihkan nilai lama yang sudah kepalang salah. Diverifikasi lokal: `parseFundamentalFromHeadline` sekarang benar-benar menolak 3 varian headline Prancis (`French CPI YoY...`, `France CPI YoY Final...`, `Insee Cpi Yoy Nsa...`) — guard bekerja untuk kasus baru, gap-nya murni di data lama yang sudah terlanjur tersimpan.
+
+**Fix:** one-time cleanup di `fundamentalRefreshHandler` (`api/admin.js`) — HDEL `CPI YoY`/`CPI MoM` EUR KALAU nilainya masih persis kombinasi yang sudah diverifikasi salah ini (exact-match terhadap actual+previous, bukan heuristik umum, supaya tidak pernah menghapus data baru yang sah). Auto no-op selamanya setelah sukses sekali. Diverifikasi live: setelah deploy, kedua field terhapus bersih, `CPI Flash YoY` (2,9%, benar) tidak tersentuh — dicek stabil di 5 panggilan berturut-turut sesudahnya (tidak ada flapping/terisi ulang tak sengaja).
+
+**Pelajaran:** klaim "sudah diverifikasi live" di sesi lalu HARUSNYA mencocokkan nilai ke sumber primer eksternal (persis §1 kategori A audit_daun_merah.md), bukan cuma cek key sudah tergabung + angka "kelihatan masuk akal". Kartu EUR sekarang HANYA menampilkan `CPI Flash YoY` sampai rilis Eurozone-wide final berikutnya masuk secara alami (bisa "kosong" untuk `CPI YoY`/`CPI MoM` generik sementara — sesuai desain guard, bukan bug baru).
+
+**Test:** `npm test` 991/991 hijau (rebase bersih di atas commit sesi lain yang berjalan paralel, S315 lanjutan-7 command Redis).
 
 ## Changelog Session 315 lanjutan-7 (2026-08-15) — Dedup `source=cron5` `setup_stats&scope=auto`, Efisiensi Command Redis Lanjutan
 
