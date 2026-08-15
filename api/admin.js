@@ -1212,6 +1212,42 @@ async function fundamentalRefreshHandler(req, res) {
       if (needFix && fixArgs.length > 2) await redisCmd(...fixArgs);
     } catch(e) { console.warn('sanitize quantity indicators failed:', e.message); }
 
+    // BUG DITEMUKAN & DIFIX (2026-08-15, audit §3.1, laporan user): 'CPI YoY'/
+    // 'CPI MoM' EUR ternyata rilis INSEE Prancis (actual 2.1%/prev 2.9% YoY,
+    // actual 0.6%/prev 0.3% MoM — dikonfirmasi cocok persis data resmi INSEE 14
+    // Agu 2026, BUKAN Eurostat/Eurozone yang seharusnya ~2.9% YoY, lihat 'CPI
+    // Flash YoY' yang tetap benar). Root cause: nilai ini DITULIS SEBELUM guard
+    // EUR_INFLATION_KEYS (commit 71ee23a, 2026-08-15 pagi) dideploy — guard
+    // sekarang mencegah tulisan BARU dari rilis 1 negara anggota, tapi tidak
+    // retroaktif membersihkan nilai lama yang sudah kepalang tertulis (beda dari
+    // reconcileFundamentalKeys yang menangani key DUPLIKAT, bukan value SALAH di
+    // key yang namanya sudah benar). One-time cleanup: hapus KALAU nilai masih
+    // persis kombinasi yang sudah diverifikasi salah ini (exact-match, bukan
+    // heuristik umum — supaya tidak pernah menghapus data baru yang sah begitu
+    // rilis Eurozone-wide resmi berikutnya masuk). Auto no-op selamanya setelah
+    // sukses sekali.
+    try {
+      const EUR_FR_CONTAMINATION = {
+        'CPI YoY': { actual: '2.1%', previous: '2.9%' },
+        'CPI MoM': { actual: '0.6%', previous: '0.3%' },
+      };
+      const eurBadKeys = Object.keys(EUR_FR_CONTAMINATION);
+      const eurRaw = await redisCmd('HMGET', 'fundamental:EUR', ...eurBadKeys);
+      const eurDelArgs = ['HDEL', 'fundamental:EUR'];
+      for (let i = 0; i < eurBadKeys.length; i++) {
+        const raw = eurRaw?.[i];
+        if (!raw) continue;
+        try {
+          const entry = JSON.parse(raw);
+          const bad = EUR_FR_CONTAMINATION[eurBadKeys[i]];
+          if (entry.actual === bad.actual && entry.previous === bad.previous) {
+            eurDelArgs.push(eurBadKeys[i]);
+          }
+        } catch(_) {}
+      }
+      if (eurDelArgs.length > 2) await redisCmd(...eurDelArgs);
+    } catch(e) { console.warn('sanitize EUR France-contamination failed:', e.message); }
+
     // Also refresh GDP Nowcast if data is stale (>6h) — piggyback on refresh call
     let gdpUpdated = false;
     try {
