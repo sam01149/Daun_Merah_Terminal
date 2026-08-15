@@ -730,8 +730,22 @@ async function reconcileFundamentalKeys(redisCmd) {
 
       const pairs = []; // [orphanKey, canonicalKey][]
 
+      // BUG DITEMUKAN & DIFIX (2026-08-15, audit §3.1): dedup di bawah cuma lowercase,
+      // tidak decode HTML entity — "External Migration & Visitors" vs "...&amp;..."
+      // (ketahuan live, NZD) tetap dianggap 2 key beda walau titik ingest sekarang sudah
+      // dibenahi (lihat decodeXmlEntitiesAdmin, admin.js). Normalisasi entity juga di
+      // sini supaya key LAMA yang sudah terlanjur fragmentasi ikut self-heal, bukan cuma
+      // mencegah fragmentasi baru.
+      const decodeEnt = s => s.replace(/&(#x?[0-9a-fA-F]+|[a-zA-Z]+);/g, (m, ent) => {
+        if (ent[0] === '#') {
+          const code = (ent[1] === 'x' || ent[1] === 'X') ? parseInt(ent.slice(2), 16) : parseInt(ent.slice(1), 10);
+          return Number.isFinite(code) ? String.fromCodePoint(code) : m;
+        }
+        const named = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' };
+        return named[ent] !== undefined ? named[ent] : m;
+      });
       const byLower = {};
-      for (const k of keys) { const lk = k.toLowerCase(); (byLower[lk] = byLower[lk] || []).push(k); }
+      for (const k of keys) { const lk = decodeEnt(k).toLowerCase(); (byLower[lk] = byLower[lk] || []).push(k); }
       for (const arr of Object.values(byLower)) {
         if (arr.length < 2) continue;
         let canonicalKey = null;
