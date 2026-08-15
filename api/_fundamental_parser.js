@@ -753,7 +753,11 @@ async function reconcileFundamentalKeys(redisCmd) {
           const c = FUND_INDICATOR_CANONICAL.get(k.toLowerCase());
           if (c) { canonicalKey = c; break; }
         }
-        if (!canonicalKey) canonicalKey = arr[0];
+        // Fallback tanpa key kanonik terdaftar: pilih varian yang SUDAH didecode
+        // (tidak mengandung entity mentah "&amp;" dst) daripada arr[0] acak —
+        // supaya hasil merge tidak kebetulan menyimpan key yang tampil rusak di UI
+        // (escHtml() akan escape "&amp;" jadi literal, lihat komentar decodeEnt di atas).
+        if (!canonicalKey) canonicalKey = arr.find(k => k === decodeEnt(k)) || decodeEnt(arr[0]);
         for (const k of arr) if (k !== canonicalKey) pairs.push([k, canonicalKey]);
       }
 
