@@ -242,7 +242,15 @@ module.exports = async function handler(req, res) {
     if (!inf) continue
 
     const staleDays = (Date.now() - new Date(inf.as_of).getTime()) / 86400000
-    const stale = staleDays > 90
+    // BUG DITEMUKAN & DIFIX (2026-08-15, audit §3.4): `stale` sebelumnya cuma
+    // mengecek umur inflation_exp — untuk EUR (satu-satunya currency dengan
+    // inflation_exp LIVE, di-refresh harian dari ECB SPF di atas) ini selalu lolos
+    // fresh, padahal komponen NOMINAL (FRED IRLTLT01EZM156N) berhenti update sejak
+    // Januari 2026 (~7 bulan, terverifikasi live saat audit) — real yield EUR yang
+    // ditampilkan diam-diam pakai nominal basi tanpa indikator apa pun. Cek juga
+    // umur `data.date` (nominal), bukan cuma `inf.as_of` (ekspektasi inflasi).
+    const nominalStaleDays = data ? (Date.now() - new Date(data.date).getTime()) / 86400000 : null
+    const stale = staleDays > 90 || (nominalStaleDays !== null && nominalStaleDays > 90)
 
     if (!data) {
       results[cur] = {

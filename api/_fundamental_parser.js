@@ -228,6 +228,24 @@ function _matchIndicatorKey(t, currency) {
   if (indicatorKey === 'Core CPI MoM') {
     if (/y\/y|yoy|annual|year.on.year/i.test(t)) indicatorKey = 'Core CPI YoY';
   }
+  // BUG DITEMUKAN & DIFIX (2026-08-15, audit §3.1): "Core PPI"/"Core Producer
+  // Price" dan "Retail Sales Control Group" match keyword generik 'ppi'/'retail
+  // sales' di FUND_INDICATOR_MAP di atas SAMA PERSIS seperti versi headline biasa
+  // ("PPI m/m", "Retail Sales m/m") — beda level agregasi total (core = exclude
+  // food & energy, control group = exclude auto/gas/building materials/food
+  // service, dipakai BEA untuk hitung PCE) tapi rilisnya SAMA HARI dengan versi
+  // headline, jadi siapa pun yang diproses terakhir menimpa slot 'PPI MoM'/
+  // 'Retail Sales MoM' — kartu USD bisa nampilkan "PPI MoM"/"Retail Sales MoM"
+  // yang isinya sebenarnya varian sempit (verifikasi live 2026-08-15: Redis PPI
+  // MoM 0.2/prev 0.4/forecast 0.3 cocok persis Core PPI BLS, headline resmi PPI
+  // MoM = 0.0/forecast 0.2/prev -0.1 — TIDAK cocok). Pisah ke key sendiri
+  // (pola sama Core CPI/Core PCE di atas), supaya tidak menimpa slot headline.
+  if (indicatorKey === 'PPI MoM' && /\bcore\b/i.test(t)) {
+    indicatorKey = 'Core PPI MoM';
+  }
+  if (indicatorKey === 'Retail Sales MoM' && /\bcontrol group\b/i.test(t)) {
+    indicatorKey = 'Retail Sales Control Group MoM';
+  }
   // 'NFP' = terminologi rilis jobs report AS (skala K/M). Prancis juga publish
   // "Non-Farm Payrolls QoQ" (skala % kuartalan) — beda satuan & sumber sama sekali,
   // jangan disatukan ke key 'NFP' walau lolos currency-fix di atas, supaya tidak
@@ -398,9 +416,13 @@ function parseFundamentalFromHeadline(title) {
   if (!indicatorKey) return null;
 
   let value = null;
-  const fjActual = title.match(/[Aa]ctual\s+([+-]?\d+\.?\d*)\s*(K|M|B|%|bps|pts?|points?)?/);
+  // BUG DITEMUKAN & DIFIX (2026-08-15, audit §3.1): \d+\.?\d* tidak menerima koma
+  // ribuan — angka format "1,214.3B" (rilis skala besar: Foreign Bond Investment
+  // JPY, Visitor Arrivals NZD, dst) kepotong jadi "1" (regex berhenti di koma
+  // pertama). [\d,]+ menerima koma di dalam angka, lalu di-strip sebelum disimpan.
+  const fjActual = title.match(/[Aa]ctual\s+([+-]?[\d,]+\.?\d*)\s*(K|M|B|%|bps|pts?|points?)?/);
   if (fjActual) {
-    value = fjActual[1] + (fjActual[2] || '');
+    value = fjActual[1].replace(/,/g, '') + (fjActual[2] || '');
   } else {
     const m = title.match(/([+-]?\d+\.?\d*)\s*(K|M|B|%|bps|pts?|points?)?(?:\s|$|,|\(|vs)/);
     if (m) value = m[1] + (m[2] || '');
@@ -411,8 +433,8 @@ function parseFundamentalFromHeadline(title) {
   if (QUANTITY_INDICATORS.has(indicatorKey) && value.endsWith('%')) return null;
 
   let previous = null;
-  const fjPrev = title.match(/[Pp]revious\s+([+-]?\d+\.?\d*)\s*(K|M|B|%|bps|pts?|points?)?/);
-  if (fjPrev) previous = fjPrev[1] + (fjPrev[2] || '');
+  const fjPrev = title.match(/[Pp]revious\s+([+-]?[\d,]+\.?\d*)\s*(K|M|B|%|bps|pts?|points?)?/);
+  if (fjPrev) previous = fjPrev[1].replace(/,/g, '') + (fjPrev[2] || '');
 
   // Audit 2026-08-12 (respons user, "apa lagi yang bisa diperluas"): "Forecast"
   // (ekspektasi konsensus pasar) sudah lama dipakai buat DETEKSI format rilis
@@ -421,8 +443,8 @@ function parseFundamentalFromHeadline(title) {
   // forecast (beat/miss vs ekspektasi pasar) sering lebih menggerakkan harga
   // daripada arah vs bulan lalu.
   let forecast = null;
-  const fjForecast = title.match(/[Ff]orecast\s+([+-]?\d+\.?\d*)\s*(K|M|B|%|bps|pts?|points?)?/);
-  if (fjForecast) forecast = fjForecast[1] + (fjForecast[2] || '');
+  const fjForecast = title.match(/[Ff]orecast\s+([+-]?[\d,]+\.?\d*)\s*(K|M|B|%|bps|pts?|points?)?/);
+  if (fjForecast) forecast = fjForecast[1].replace(/,/g, '') + (fjForecast[2] || '');
 
   return { currency, key: indicatorKey, value, previous, forecast };
 }

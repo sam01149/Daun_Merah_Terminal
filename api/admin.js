@@ -1047,7 +1047,7 @@ function parsePushRSS(xml) {
   while ((m = re.exec(xml)) !== null) {
     const b = m[1];
     const get = tag => { const r1 = new RegExp(`<${tag}[^>]*><!\\[CDATA\\[([\\s\\S]*?)\\]\\]><\\/${tag}>`).exec(b); const r2 = new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`).exec(b); return (r1 || r2)?.[1]?.trim() || ''; };
-    const title = get('title').replace(/^FinancialJuice:\s*/i, '').trim(), guid = get('guid'), link = b.match(/<link>(.*?)<\/link>/)?.[1] || '';
+    const title = decodeXmlEntitiesAdmin(get('title')).replace(/^FinancialJuice:\s*/i, '').trim(), guid = get('guid'), link = b.match(/<link>(.*?)<\/link>/)?.[1] || '';
     if (guid && title && !BLOCKED_HEADLINE_RE.test(title)) items.push({ title, guid, link });
   }
   return items;
@@ -1092,12 +1092,34 @@ const FJ_RSS_URL = 'https://www.financialjuice.com/feed.ashx?xy=rss';
 // persis pola/alasan dengan filter di feeds.js — lihat komentar di sana.
 const BLOCKED_HEADLINE_RE = /currency strength chart/i;
 
+// Duplikat dari feeds.js:decodeXmlEntities (bukan module `_*` bersama, sama alasan
+// duplikasi BLOCKED_HEADLINE_RE di atas — jalur ini fetch XML FinancialJuice
+// LANGSUNG, bukan lewat feeds.js). BUG DITEMUKAN & DIFIX (2026-08-15, audit §3.1):
+// parseRSSHeadlines TIDAK decode entity ("&amp;" tetap literal), beda dari
+// parseRSSItems (feeds.js, sudah didecode sejak fix S162) — akibatnya title yang
+// sama ("External Migration & Visitors") menghasilkan 2 key fundamental berbeda
+// tergantung pipeline mana yang memproses duluan (fragmentasi key NZD, ketahuan
+// live saat audit). Pasang decode yang sama di sini & parsePushRSS di bawah (pola
+// sama, XML mentah yang sama) supaya title selalu ternormalisasi sebelum dipakai
+// jadi key Redis atau ditampilkan di push notification.
+const XML_NAMED_ENTITIES_ADMIN = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' };
+function decodeXmlEntitiesAdmin(s) {
+  if (!s) return s;
+  return s.replace(/&(#x?[0-9a-fA-F]+|[a-zA-Z]+);/g, (m, ent) => {
+    if (ent[0] === '#') {
+      const code = (ent[1] === 'x' || ent[1] === 'X') ? parseInt(ent.slice(2), 16) : parseInt(ent.slice(1), 10);
+      return Number.isFinite(code) ? String.fromCodePoint(code) : m;
+    }
+    return XML_NAMED_ENTITIES_ADMIN[ent] !== undefined ? XML_NAMED_ENTITIES_ADMIN[ent] : m;
+  });
+}
+
 function parseRSSHeadlines(xml) {
   const items = [], re = /<item>([\s\S]*?)<\/item>/g; let m;
   while ((m = re.exec(xml)) !== null) {
     const b = m[1];
     const get = tag => { const r1=new RegExp(`<${tag}[^>]*><!\\[CDATA\\[([\\s\\S]*?)\\]\\]><\\/${tag}>`).exec(b); const r2=new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`).exec(b); return (r1||r2)?.[1]?.trim()||''; };
-    const title=get('title').replace(/^FinancialJuice:\s*/i,'').trim(), guid=get('guid'), pubDate=get('pubDate');
+    const title=decodeXmlEntitiesAdmin(get('title')).replace(/^FinancialJuice:\s*/i,'').trim(), guid=get('guid'), pubDate=get('pubDate');
     if (guid && title && !BLOCKED_HEADLINE_RE.test(title)) items.push({ title, guid, pubDate });
   }
   return items;

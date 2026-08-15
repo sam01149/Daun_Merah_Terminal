@@ -4407,7 +4407,7 @@ window.addEventListener('DOMContentLoaded', () => _updateNewsLangBtn());
 
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.08.10.1';
+const APP_VERSION = '2026.08.15.1';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
@@ -8778,6 +8778,7 @@ const FUND_SCORE_RULES = {
   'Core PCE':         { dir: 1,  threshold: 0.2   },
   'Core PCE YoY':     { dir: 1,  threshold: 2.0   },
   'PPI MoM':          { dir: 1,  threshold: 0.1   },
+  'Core PPI MoM':     { dir: 1,  threshold: 0.1   },
   'CPI Flash YoY':    { dir: 1,  threshold: 2.0   },
   'German CPI YoY':   { dir: 1,  threshold: 2.0   },
   'GDP QoQ':          { dir: 1,  threshold: 0     },
@@ -8795,6 +8796,7 @@ const FUND_SCORE_RULES = {
   'KOF Barometer':    { dir: 1,  threshold: 100   },
   'Retail Sales MoM': { dir: 1,  threshold: 0     },
   'Retail Sales YoY': { dir: 1,  threshold: 0     },
+  'Retail Sales Control Group MoM': { dir: 1, threshold: 0 },
   // AUD-only (2026-08-10) — pengganti "Retail Sales MoM" AUD yang dihentikan ABS,
   // lihat FUND_SEED.AUD di api/admin.js. Sama arah/threshold (% MoM naik = bullish).
   'Household Spending MoM': { dir: 1, threshold: 0 },
@@ -9460,7 +9462,7 @@ let fdSection = 'SEMUA';
 
 const FUND_SECTIONS_MAP = {
   'CPI YoY':'Inflasi','CPI MoM':'Inflasi','Core CPI MoM':'Inflasi','Core CPI YoY':'Inflasi',
-  'Core PCE':'Inflasi','Core PCE YoY':'Inflasi','PPI MoM':'Inflasi','CPI Flash YoY':'Inflasi',
+  'Core PCE':'Inflasi','Core PCE YoY':'Inflasi','PPI MoM':'Inflasi','Core PPI MoM':'Inflasi','CPI Flash YoY':'Inflasi',
   'German CPI YoY':'Inflasi','CPI QoQ':'Inflasi',
   'GDP QoQ':'Pertumbuhan','GDP QoQ Flash':'Pertumbuhan','GDP MoM':'Pertumbuhan','GDP Nowcast':'Pertumbuhan',
   'NFP':'Ketenagakerjaan','Employment Change':'Ketenagakerjaan',
@@ -9473,7 +9475,7 @@ const FUND_SECTIONS_MAP = {
   'Capacity Utilization':'Aktivitas','Factory Orders':'Aktivitas',
   'IFO Business':'Sentimen','ZEW Sentiment':'Sentimen','KOF Barometer':'Sentimen','GfK Consumer Climate':'Sentimen',
   'Consumer Confidence':'Sentimen','Business Confidence':'Sentimen','NAB Business Conf':'Sentimen',
-  'Retail Sales MoM':'Permintaan','Retail Sales YoY':'Permintaan','Household Spending MoM':'Permintaan',
+  'Retail Sales MoM':'Permintaan','Retail Sales YoY':'Permintaan','Retail Sales Control Group MoM':'Permintaan','Household Spending MoM':'Permintaan',
   'Building Approvals':'Permintaan','Building Permits':'Permintaan','Housing Starts':'Permintaan','Durable Goods Orders':'Permintaan',
   'Existing Home Sales':'Permintaan','New Home Sales':'Permintaan','Personal Income':'Permintaan','Personal Spending':'Permintaan',
   'Trade Balance':'Eksternal','Current Account':'Eksternal',
@@ -10117,9 +10119,19 @@ function renderTekPosisiBias() {
     return `<div class="tek-pb-cb-cell"><span class="tek-pb-cb-cur">${cur}</span><span class="cb-bias ${cls}">${bias || '—'}</span></div>`;
   };
 
+  // BUG DITEMUKAN & DIFIX (2026-08-15, audit §3.3): widget ini tidak pernah
+  // menampilkan tanggal/usia data COT sama sekali — beda dari tab COT & tab
+  // Retail yang sudah eksplisit (badge tanggal + "CACHE LAMA"). User bisa lihat
+  // verdict institusional "confirmed"/divergensi tanpa tahu itu berbasis laporan
+  // mingguan yang mungkin sudah basi (CFTC delay rilis). Tempel note tanggal +
+  // penanda basi memakai data `cotData` yang sudah ada (tidak perlu fetch baru).
+  const pbDateNote = cotData?.report_date
+    ? ` <span style="font-weight:400;letter-spacing:0;text-transform:none;color:var(--muted);font-size:8px">· COT per ${escHtml(cotData.report_date)}${cotData.stale ? ' <span class="cot-stale-badge" style="padding:1px 5px">BASI</span>' : ''}</span>`
+    : '';
+
   el.innerHTML = `<div class="tek-pb-wrap">
     <div class="tek-pb-hdr">
-      <span class="tek-pb-title">POSISI &amp; BIAS</span>
+      <span class="tek-pb-title">POSISI &amp; BIAS${pbDateNote}</span>
       <button type="button" class="tek-pb-detail-btn" onclick="document.querySelector('#navViews .nvtab[data-view=cot]').click()">Lihat Detail →</button>
     </div>
     <div class="tek-pb-cot-row">${cotHtml}</div>

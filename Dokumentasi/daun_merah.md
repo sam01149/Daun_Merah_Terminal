@@ -11,10 +11,31 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-15 (Session 315 lanjutan-5 — Throttle Adaptif news_history_lock untuk Alert Breaking-News)
+> **Last updated:** 2026-08-15 (Session 315 lanjutan-6 — Audit Penuh 5 Domain via audit_daun_merah.md)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
+
+## Changelog Session 315 lanjutan-6 (2026-08-15) — Audit Penuh 5 Domain (Fundamental/Berita/COT/Teknikal/Journal) via `audit_daun_merah.md`
+
+**Konteks:** User minta full sweep pakai framework `Dokumentasi/audit_daun_merah.md` (§1-2 metodologi generik + §3.1-3.7). 5 agent paralel audit §3.1 Fundamental, §3.2 Berita, §3.3 COT, §3.4 Teknikal/Makro, §3.6 Journal (baca kode + verifikasi live ke sumber eksternal: BLS/Eurostat/CFTC/FRED); §3.5 AI Narasi Gabungan & §3.7 Dashboard disintesis manual (cross-reference temuan domain lain, sesuai catatan SOP "domain paling rawan leakage"). §3.8 Auto-Entry dilewati (SOP sendiri, `professional_llm_trader/audit_workflow.md`).
+
+**Bug baru ditemukan & DIFIX (root cause jelas, sesuai aturan audit "bug parsing/key/skala boleh langsung difix"):**
+1. **Fundamental (B/D)** — `PPI MoM` & `Retail Sales MoM` USD: keyword generik `'ppi'`/`'retail sales'` (`FUND_INDICATOR_MAP`) match "Core PPI"/"Retail Sales Control Group" SAMA PERSIS dengan versi headline — siapa yang diproses terakhir menimpa slot. Verifikasi live: Redis `PPI MoM` ternyata berisi Core PPI (0,2/0,4/0,3 — cocok BLS core), bukan headline resmi (0,0/0,2/-0,1). Fix: disambiguasi ke key baru `Core PPI MoM`/`Retail Sales Control Group MoM` di `_matchIndicatorKey` (`api/_fundamental_parser.js`, pola sama disambiguasi Core CPI yang sudah ada) + entri baru di `FUND_SCORE_RULES`/`FUND_SECTIONS_MAP` (`index.html`).
+2. **Fundamental (B)** — fragmentasi key NZD: "External Migration & Visitors" vs "...&amp;..." hidup sebagai 2 key terpisah untuk rilis yang sama. Root cause: `parseRSSHeadlines`/`parsePushRSS` (`api/admin.js`, fetch XML FinancialJuice LANGSUNG, bypass `feeds.js`) tidak pernah decode HTML entity — beda dari `parseRSSItems` (`feeds.js`) yang sudah didecode sejak fix S162. Fix: tambah `decodeXmlEntitiesAdmin` (duplikat lokal, pola sama `BLOCKED_HEADLINE_RE`) dipasang di kedua parser.
+3. **Fundamental (A)** — regex `Actual`/`Previous`/`Forecast` (`parseFundamentalFromHeadline`) tidak terima koma ribuan — angka format "1,214.3B" terpotong jadi "1". 4 instance live ketemu (JPY Foreign Bond Investment, NZD Visitor Arrivals, EUR 10Yr Bund Bid-to-cover, GBP Citi/Yougov Inflation Expectations — semua indikator sekunder). Fix: `[\d,]+` + strip koma sebelum simpan.
+4. **Real Yields (E)** — flag `stale` (`api/real-yields.js`) cuma cek umur `inflation_exp.as_of`, tidak pernah cek umur nominal FRED. EUR (satu-satunya currency dengan `inflation_exp` LIVE, di-refresh harian dari ECB SPF) lolos flag stale walau nominalnya (FRED `IRLTLT01EZM156N`) beku sejak Januari 2026 (~7 bulan — dikonfirmasi independen via WebSearch, genuinely seri sumber FRED/OECD berhenti update, bukan bug fetch/cache kita). Real yield EUR yang ditampilkan (1,18%) berpotensi menyesatkan karena separuh input diam-diam basi tanpa indikator apa pun. Fix: `stale` sekarang OR dari umur `inflation_exp` MAUPUN umur nominal.
+5. **COT/Posisi Bias (E)** — widget "POSISI & BIAS" tab Teknikal (`renderTekPosisiBias`, `index.html`) tidak pernah menampilkan tanggal/usia laporan COT sama sekali, beda dari tab COT & tab Retail yang sudah eksplisit (badge tanggal + "CACHE LAMA"). User bisa lihat verdict institusional "confirmed"/divergensi tanpa tahu itu berbasis data mingguan yang mungkin basi. Fix: tempel note "COT per {tanggal}" + badge "BASI" (reuse `cotData` yang sudah di-fetch, tidak ada request baru).
+
+**Aksi live (tanpa perubahan kode):** trigger manual `admin.js?action=fundamental_refresh` untuk eksekusi fix HICP EUR (commit `98160e4`, dideploy pagi ini tapi reconciliation belum sempat jalan) — 6 key yatim (`Hicp Yoy Final`, `Hicp Final Yoy`, `Hicp Yoy Prelim`, `Hicp Mom Final`, `Hicp Final Mom`, `Hicp Mom Prelim`) berhasil digabung ke `CPI YoY`/`CPI MoM`. Diverifikasi live: EUR `CPI YoY` sekarang tampil 2,1% (cocok Eurostat) tanpa pecahan lagi.
+
+**Diverifikasi bersih, BUKAN bug (checked, false-alarm/desain sengaja — tidak diubah):** blocklist regex `feeds.js` vs `admin.js` masih sinkron byte-identical (S314 tetap fixed); klasifikasi `newscat.js` bersih atas sample 100 headline live; XAU secara struktural TIDAK MUNGKIN numpang skema kategori COT FX (`MARKET_MARKERS` tidak punya entri gold sama sekali, bukan cuma niat komentar); label sumber COT/currency-strength di prompt AI (`market-digest.js`/`admin.js`) masih eksplisit — tidak ada leakage S302-style baru; korelasi 60 hari, risk regime tier, rate-path, candle OHLCV semua cocok sumber eksternal (CFTC exact match 3/3 pair sample, VIX/MOVE/HY cocok FRED/Stooq); `api/journal.js`/`api/sizing-history.js` bersih via live CRUD test (device_id scoping, soft-delete, cap 10 entri semua sesuai desain).
+
+**Temuan dilaporkan, BELUM difix (butuh keputusan/sampling lebih banyak, bukan bug parsing sederhana — diparkir ke `daun_merah_progress.md`):** kontradiksi currency terlemah antara prosa Call 1 dan `thesis` Call 3 (`market-digest.js`) pada 1 sample live; orphan `journal_devices` SET (`api/journal.js`) tidak pernah di-SREM.
+
+**Test:** `npm test` 987/987 hijau setelah semua fix kode (tidak ada test baru — perubahan kategori "small parsing/key fix", divalidasi via verifikasi live ke API produksi, bukan unit test baru).
+
+**File diubah:** `api/_fundamental_parser.js`, `api/admin.js`, `api/real-yields.js`, `index.html` (`APP_VERSION` `2026.08.10.1` → `2026.08.15.1`, lockstep ATURAN.md §4 poin 7).
 
 ## Changelog Session 315 lanjutan-5 (2026-08-15) — Throttle Adaptif `news_history_lock` untuk Alert Breaking-News
 
