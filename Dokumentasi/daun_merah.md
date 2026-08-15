@@ -11,10 +11,18 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-15 (Session 315 — Fix Fragmentasi Key HICP EUR di Kartu Fundamental)
+> **Last updated:** 2026-08-15 (Session 315 lanjutan — Workflow Audit Data Fundamental Semua Pair)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+
+## Changelog Session 315 lanjutan (2026-08-15) — Workflow Audit Data Fundamental Semua Pair
+
+**Konteks:** User ingin audit menyeluruh data fundamental di semua pair, tapi butuh indikator audit yang terarah (bukan asal cek) — fokus: kebenaran data vs fakta/berita, kebocoran data ke pair yang salah, dan kategori lain yang mungkin terlewat.
+
+**Kerja:** Bukan eksekusi audit — dibuat SOP/checklist tetap di [Dokumentasi/audit_daun_merah.md](audit_daun_merah.md) (file baru, di luar 7 file routing §2 ATURAN.md karena sifatnya metodologi reusable, bukan changelog/plan/riset/vendor). Ditelusuri dulu arsitektur nyata fitur Fundamental (`api/_fundamental_parser.js`, `api/_pair_context.js`, `index.html` FUND_SCORE_RULES) dan pola bug historis yang sudah tercatat di komentar kode (HICP fragmentasi S315, ADP Weekly-vs-Monthly, GDP QoQ ketimpa YoY, CPI QoQ duplikat casing) untuk menyusun 5 kategori indikator audit: (A) akurasi vs fakta eksternal — nilai/tanggal/skala/keputusan CB cocok sumber resmi; (B) ketepatan atribusi currency & indicator key — tidak ada crossover currency atau key terfragmentasi; (C) kebocoran lintas pair/lintas jenis data — fundamental currency tidak nyasar ke pair tak relevan, data price-derived (currency strength/COT) tidak menyamar jadi bukti fundamental (persis pola 2 bug historis di memory); (D) narasi AI downstream tidak menyimpang dari data tersimpan; (E) kesehatan sistem/freshness. Tiap kategori dilengkapi 6 fase eksekusi (snapshot -> sampling prioritas -> scan struktural -> cross-check kebocoran -> narrative check -> dokumentasi) + kriteria selesai + slot "Riwayat Run" untuk log tiap audit ke depan.
+
+**Belum dieksekusi:** file ini cuma metodologi, audit sesungguhnya (Fase 0-6) belum dijalankan — menunggu keputusan user kapan mulai.
 
 ## Changelog Session 315 (2026-08-15) — Fix Fragmentasi Key HICP EUR di Kartu Fundamental
 
