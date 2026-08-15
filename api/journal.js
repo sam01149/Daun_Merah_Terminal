@@ -718,6 +718,19 @@ module.exports = async function handler(req, res) {
         }
         await redisCmd('DEL', entryKey);
         await redisCmd('ZREM', indexKey, id);
+        // BUG DITEMUKAN & DIFIX (2026-08-15, audit §3.6, feedback user "jadi bom
+        // waktu kan nanti?"): `journal_devices` SET (SADD tiap POST create) tidak
+        // pernah di-SREM — device yang SEMUA entry-nya di-hard-delete tertinggal
+        // permanen di set ini, menumpuk pelan seiring waktu. Cek di sini (bukan
+        // generik/heuristik — titik SATU-SATUNYA yang benar-benar tahu "device ini
+        // baru saja kehilangan entry terakhirnya") apakah index device sekarang
+        // kosong; kalau ya, SREM sekalian. runCronThesisSweep (market-digest.js)
+        // baca journal_devices via SMEMBERS tanpa urutan terjamin — tanpa cleanup
+        // ini, device kosong ikut numpang di situ selamanya.
+        try {
+          const remaining = await redisCmd('ZCARD', indexKey);
+          if (!remaining) await redisCmd('SREM', 'journal_devices', deviceId);
+        } catch(e) { console.warn('journal hard-delete: cleanup journal_devices gagal:', e.message); }
         return res.status(200).json({ ok: true, deleted: true });
       }
 
