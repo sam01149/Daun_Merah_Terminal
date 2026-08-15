@@ -222,6 +222,8 @@ body {
 .riset-badge.RePEc-IFN { background:rgba(163,230,53,.18);  color:#a3e635; }
 .riset-badge.Scopus-FX  { background:rgba(96,165,250,.18); color:#60a5fa; }
 .riset-badge.Scopus-LLM { background:rgba(129,140,248,.18); color:#818cf8; }
+.riset-section-label { font:700 9px 'Syne',sans-serif; color:var(--muted); letter-spacing:.1em; text-transform:uppercase; padding:10px 12px 4px; background:rgba(var(--fg-rgb),.02); border-bottom:1px solid var(--border); }
+.riset-section-label .cnt { font-family:'DM Mono',monospace; font-weight:400; letter-spacing:normal; text-transform:none; opacity:.7; }
 /* ── Option Expiries (TEK tab) ── */
 .tek-opts-section { margin-top:10px; padding-top:10px; border-top:1px solid var(--border); }
 .tek-opts-hdr { display:flex; align-items:center; justify-content:space-between; margin-bottom:6px; }
@@ -4411,7 +4413,7 @@ window.addEventListener('DOMContentLoaded', () => _updateNewsLangBtn());
 
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.08.15.2';
+const APP_VERSION = '2026.08.15.3';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
@@ -8222,6 +8224,10 @@ function renderPolymarket(data) {
 // = sumber yang DI-UNCHECK (disembunyikan); kosong = semua tampil (default).
 // Persist ke localStorage supaya pilihan bertahan antar sesi.
 const RISET_HIDDEN_LS_KEY = 'riset_hidden_sources_v1';
+// Golongan tampilan (2026-08-15) — dipisah dari sumber institusi (bank sentral/analis
+// pasar) supaya "riset dari peneliti" (tujuan awal fitur ini) kelihatan sebagai
+// golongan sendiri, bukan tercampur/tenggelam di list kronologis tunggal.
+const RISET_ACADEMIC_SOURCES = new Set(['NBER', 'RePEc-IFN', 'Scopus-FX', 'Scopus-LLM']);
 let risetHiddenSources = new Set();
 try { risetHiddenSources = new Set(JSON.parse(localStorage.getItem(RISET_HIDDEN_LS_KEY) || '[]')); } catch(e) {}
 
@@ -8382,45 +8388,66 @@ function renderResearch() {
 
   const filtered = items.filter(it => !risetHiddenSources.has(it.source));
   const fmtDate  = d => { const dt = new Date(d); return isNaN(dt) ? '' : dt.toLocaleDateString('id-ID', { day:'numeric', month:'short', year:'numeric' }); };
-  const srcBreak = availSources.map(s => `${s} ${items.filter(i=>i.source===s).length}`).join(' · ');
-  if (meta) meta.textContent = (stale ? 'cache · ' : '') + srcBreak;
+  // Ringkasan pendek (2026-08-15) — daftar per-sumber lama ("Scopus-FX 10 · Scopus-LLM
+  // 10 · NBER 1 · ...") jadi terlalu panjang begitu sumber bertambah ~14; rincian
+  // per-sumber sudah tersedia di dropdown filter (#risetFilterItems), tidak perlu
+  // diulang di baris meta ini.
+  if (meta) meta.textContent = (stale ? 'cache · ' : '') + `${items.length} artikel · ${availSources.length} sumber`;
 
-  list.innerHTML = filtered.length === 0
-    ? '<div class="state-box"><p style="font-size:11px;color:var(--muted)">Tidak ada artikel untuk sumber ini.</p></div>'
-    : filtered.map((it, idx) => {
-        if (!it.fullText) {
-          const bylineHtml = it.byline
-            ? `<div style="font-size:9px;color:var(--muted);margin-top:2px">${escHtml(it.byline)}${it.openAccess ? ' · Open Access' : ''}</div>`
-            : '';
-          return `
-          <div class="riset-item">
-            <div class="riset-item-top">
-              <span class="riset-badge ${escHtml(it.source)}">${escHtml(it.source)}</span>
-              <div style="flex:1;min-width:0">
-                <a href="${escHtml(it.link)}" target="_blank" rel="noopener noreferrer" class="riset-title">${escHtml(it.title)}</a>
-                ${bylineHtml}
-              </div>
-            </div>
-            <div class="riset-date">${fmtDate(it.pubDate)}</div>
-          </div>`;
-        }
-        const needCollapse = it.fullText.length > 280;
-        const textHtml = needCollapse ? `
-          <div class="riset-body-wrapper">
-            <div class="riset-title" id="risetPrev-${idx}" style="white-space:pre-wrap">${escHtml(it.fullText.slice(0, 260).trim())}...</div>
-            <div class="riset-title" id="risetFull-${idx}" style="white-space:pre-wrap; display:none">${escHtml(it.fullText)}</div>
-            <span onclick="risetToggleExpand(${idx})" id="risetToggleBtn-${idx}" class="riset-toggle-expand-btn" style="cursor:pointer; display:inline-block; margin-top:6px; font-size:9px; font-family:'DM Mono',monospace; color:var(--accent); text-decoration:underline; text-underline-offset:2px">Baca Selengkapnya ▾</span>
-          </div>` : `
-          <div class="riset-title" style="white-space:pre-wrap">${escHtml(it.fullText)}</div>`;
-        return `
-        <div class="riset-item">
-          <div class="riset-item-top">
-            <span class="riset-badge ${escHtml(it.source)}">${escHtml(it.source)}</span>
-            ${textHtml}
+  const renderItem = (it, idx) => {
+    if (!it.fullText) {
+      const bylineHtml = it.byline
+        ? `<div style="font-size:9px;color:var(--muted);margin-top:2px">${escHtml(it.byline)}${it.openAccess ? ' · Open Access' : ''}</div>`
+        : '';
+      return `
+      <div class="riset-item">
+        <div class="riset-item-top">
+          <span class="riset-badge ${escHtml(it.source)}">${escHtml(it.source)}</span>
+          <div style="flex:1;min-width:0">
+            <a href="${escHtml(it.link)}" target="_blank" rel="noopener noreferrer" class="riset-title">${escHtml(it.title)}</a>
+            ${bylineHtml}
           </div>
-          <div class="riset-date">${fmtDate(it.pubDate)} · <a href="${escHtml(it.link)}" target="_blank" rel="noopener noreferrer" style="color:var(--muted)">via FinancialJuice ↗</a></div>
-        </div>`;
-      }).join('');
+        </div>
+        <div class="riset-date">${fmtDate(it.pubDate)}</div>
+      </div>`;
+    }
+    const needCollapse = it.fullText.length > 280;
+    const textHtml = needCollapse ? `
+      <div class="riset-body-wrapper">
+        <div class="riset-title" id="risetPrev-${idx}" style="white-space:pre-wrap">${escHtml(it.fullText.slice(0, 260).trim())}...</div>
+        <div class="riset-title" id="risetFull-${idx}" style="white-space:pre-wrap; display:none">${escHtml(it.fullText)}</div>
+        <span onclick="risetToggleExpand(${idx})" id="risetToggleBtn-${idx}" class="riset-toggle-expand-btn" style="cursor:pointer; display:inline-block; margin-top:6px; font-size:9px; font-family:'DM Mono',monospace; color:var(--accent); text-decoration:underline; text-underline-offset:2px">Baca Selengkapnya ▾</span>
+      </div>` : `
+      <div class="riset-title" style="white-space:pre-wrap">${escHtml(it.fullText)}</div>`;
+    return `
+    <div class="riset-item">
+      <div class="riset-item-top">
+        <span class="riset-badge ${escHtml(it.source)}">${escHtml(it.source)}</span>
+        ${textHtml}
+      </div>
+      <div class="riset-date">${fmtDate(it.pubDate)} · <a href="${escHtml(it.link)}" target="_blank" rel="noopener noreferrer" style="color:var(--muted)">via FinancialJuice ↗</a></div>
+    </div>`;
+  };
+
+  if (filtered.length === 0) {
+    list.innerHTML = '<div class="state-box"><p style="font-size:11px;color:var(--muted)">Tidak ada artikel untuk sumber ini.</p></div>';
+    return;
+  }
+
+  // Golongan institusi vs akademik/riset (2026-08-15, permintaan user) — dulu satu
+  // list tunggal terurut tanggal, Scopus/NBER/RePEc (pubDate mepet waktu-fetch,
+  // lihat komentar parser masing-masing di api/feeds.js) jadi menumpuk di puncak
+  // dan menggusur sumber institusi ke bawah layar. idx TETAP dihitung dari posisi
+  // di `filtered` (bukan per-golongan) supaya id risetPrev-${idx}/risetFull-${idx}
+  // (dipakai risetToggleExpand) tetap unik & stabil.
+  const withIdx = filtered.map((it, idx) => ({ it, idx }));
+  const akademik  = withIdx.filter(x => RISET_ACADEMIC_SOURCES.has(x.it.source));
+  const institusi = withIdx.filter(x => !RISET_ACADEMIC_SOURCES.has(x.it.source));
+  const section = (label, arr) => arr.length === 0 ? '' : `
+    <div class="riset-section-label">${escHtml(label)} <span class="cnt">${arr.length}</span></div>
+    ${arr.map(({ it, idx }) => renderItem(it, idx)).join('')}`;
+
+  list.innerHTML = section('Institusi', institusi) + section('Akademik & Riset', akademik);
 }
 
 // Metadata for gold cross-asset correlations: label shown to user + context hint
