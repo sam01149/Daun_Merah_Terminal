@@ -11,10 +11,36 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-15 (Session 315 lanjutan — Workflow Audit Data Fundamental Semua Pair)
+> **Last updated:** 2026-08-15 (Session 315 lanjutan-3 — EUR CPI Generic Cuma Terima Data Eurozone-Wide, Bukan 1 Negara)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
-> **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris semua vendor/layanan eksternal).
+> **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi), [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal), dan [audit_daun_merah.md](audit_daun_merah.md) (SOP master audit lintas-fitur — WAJIB dibaca AI mana pun sebelum audit).
+
+## Changelog Session 315 lanjutan-3 (2026-08-15) — EUR CPI Generic Cuma Terima Data Eurozone-Wide, Bukan 1 Negara
+
+**Konteks:** Lanjutan investigasi Session 315 (fix fragmentasi HICP di atas/di bawah). User minta bukti headline asli rilis inflasi EUR yang dicurigai — setelah dibuktikan, user minta lebih jauh: kartu EUR jangan pakai data 1 negara anggota sama sekali, harus data Eurozone-wide asli.
+
+**Bukti (arsip `news_history` production, `/api/feeds?type=news_history`, retensi 36 jam):** headline asli ketemu — `French HICP YoY Final Actual 2.4% (Forecast 2.4%, Previous 2.4%)`, `French HICP MoM Final Actual 0.6%...`, `French CPI YoY NSA Actual 2.1% (Forecast 2.1%, Previous 2.1%)`, `French CPI MoM NSA Actual 0.6%...` — semua dari INSEE (Prancis), 14 Agustus 2026 06:45 GMT. Angka `CPI YoY` EUR (2,1%, forecast 2,1%) match PERSIS ke rilis Prancis ini — bukan data Eurozone gabungan.
+
+**Root cause:** `FUND_COUNTRY_ONLY` (`api/_fundamental_parser.js`) menyamakan SEMUA negara anggota (Prancis/Italia/Spanyol/dst — bukan cuma Jerman yang sudah dipisah ke key sendiri) sebagai currency EUR, tapi key indikator inflasi generik (`CPI YoY`/`CPI MoM`/dst) tidak pernah dibedakan antara headline "Eurozone HICP..." (agregat resmi Eurostat) vs rilis nasional 1 negara. `autoUpdateFundamentals` (jalur headline) juga tidak ada proteksi source-priority — siapa pun headline yang diproses terakhir menang menimpa slot generik. Beda dengan jalur `calendar_v1` (TradingView) yang sudah aman by design: di-query pakai kode negara `"EU"` (`CCY_TO_TV_COUNTRY.EUR` di `api/calendar.js`), yang memang murni agregat Eurozone, tidak pernah tercampur rilis 1 negara.
+
+**Fix:** `_matchIndicatorKey` ditambah guard — field inflasi generik EUR (`CPI YoY`/`CPI MoM`/`CPI QoQ`/`Core CPI YoY`/`Core CPI MoM`/`CPI Flash YoY`) HANYA diterima dari headline yang eksplisit sebut "Eurozone"/"Euro Area"/"Euro Zone"/"European Union" — dikonfirmasi format ini memang dipakai vendor (headline nyata "Eurozone GDP YoY Flash Estimate Actual..." tanggal sama dengan rilis Prancis di atas). Rilis 1 negara anggota (Jerman sudah dialihkan duluan ke `German CPI YoY`) DIBUANG total (bukan ditimpakan ke key lain) — dipakai sentinel `false` (bukan `null`) di `_matchIndicatorKey` supaya fallback tebak-nama title-case di `parseFundamentalFromHeadline` tidak ikut menciptakan key sampah baru untuk rilis yang barusan sengaja ditolak (bug turunan yang sempat kejadian saat nulis test — "French CPI YoY NSA" nyaris lolos jadi key palsu `"Cpi Yoy Nsa"`).
+
+**Konsekuensi yang disengaja:** field `CPI YoY`/`CPI MoM`/`CPI Flash YoY` EUR bisa kosong/basi sampai rilis Eurozone-wide resmi berikutnya keluar (Eurostat final biasanya ~seminggu setelah rilis nasional negara anggota terbesar) — trade-off yang diminta user secara eksplisit, bukan regresi.
+
+**Test:** `test/lib/fundamental_parser.test.js` — 4 test baru (rilis nasional Prancis versi CPI & HICP dibuang, indikator non-inflasi negara anggota tetap diterima, headline Eurozone eksplisit tetap diterima). `npm test` 981/981 hijau.
+
+**Catatan multi-sesi:** ditemukan sesi Claude Code lain sedang aktif mengedit `Dokumentasi/audit_daun_merah.md` & `Dokumentasi/audit_fundamental.md` (uncommitted) bersamaan di working directory yang sama saat sesi ini berjalan — perubahan kode (`api/_fundamental_parser.js`, test) sudah di-commit & push terpisah (`71ee23a`) tanpa menyentuh file yang sedang mereka kerjakan; entri changelog ini ditambahkan di atas entri "lanjutan"/"lanjutan-2" mereka tanpa mengubah isinya.
+
+## Changelog Session 315 lanjutan-2 (2026-08-15) — Workflow Audit Master Lintas-Fitur
+
+**Konteks:** Setelah `audit_fundamental.md` (SOP audit khusus Fundamental) dibuat sesi sebelumnya, user minta versi umum untuk SEMUA fitur — tujuannya supaya AI lain yang melakukan audit langsung tahu arah/lingkup dan tidak melenceng.
+
+**Kerja:** File `Dokumentasi/audit_daun_merah.md` (nama lama file khusus Fundamental) di-rename jadi `audit_fundamental.md`, lalu nama `audit_daun_merah.md` dipakai ulang sebagai **SOP master** yang isinya: (1) metodologi generik 5 kategori yang sama seperti versi Fundamental tapi digeneralisasi (akurasi vs fakta eksternal, ketepatan atribusi, kebocoran lintas fitur/jenis data, narasi AI menyimpang dari data mentah, kesehatan sistem/freshness) — tiap kategori dilengkapi bukti insiden nyata yang sudah pernah terjadi di proyek ini; (2) "rules of engagement" 7 poin supaya AI audit tidak melenceng (baca kode dulu sebelum menuduh bug, jangan usulkan ulang hal yang sudah ditolak, lingkup = temukan+lapor bukan redesign sepihak, ikuti tabel routing dokumentasi, auto-entry punya SOP sendiri, hormati 12/12 slot Vercel, sampling terarah bukan sensus); (3) peta domain data (BUKAN per-tab UI, karena bug historis cluster mengikuti pipa data yang dipakai bareng) — 7 domain: Berita mentah, Fundamental & kalender, COT & positioning, Harga/teknikal & derivatif makro, AI narasi gabungan (risiko leakage tertinggi karena konsumen semua domain lain), Journal & sizing (kelas risiko beda — integritas bukan fact-check), Professional LLM Trader (linked ke SOP sendiri, tidak diduplikasi) — masing-masing dengan file kunci + risiko khas yang sudah terbukti + link ke `audit_<fitur>.md` kalau sudah ada; (4) langkah eksekusi generik untuk domain yang belum punya file detail.
+
+`ATURAN.md` §1 (Peta Path Penting) ditambah 1 baris menunjuk `audit_daun_merah.md` sebagai "WAJIB DIBACA sebelum mengaudit fitur apa pun" — karena ATURAN.md wajib dibaca semua AI (CLAUDE.md/.agents/AGENTS.md merujuk ke sana), ini memastikan SOP audit langsung ketemu tanpa user perlu tunjukkan manual tiap kali.
+
+**Belum dieksekusi:** baru metodologi + peta, belum ada audit mendalam baru untuk 6 domain yang kolom "Audit detail"-nya masih *(belum ada)* — `audit_<fitur>.md` untuk domain itu dibuat nanti saat benar-benar ada audit pertama (sengaja tidak dibuat kosong duluan, lihat aturan file `audit_daun_merah.md` §0.4).
 
 ## Changelog Session 315 lanjutan (2026-08-15) — Workflow Audit Data Fundamental Semua Pair
 
