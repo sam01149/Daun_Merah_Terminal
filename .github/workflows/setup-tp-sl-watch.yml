@@ -8,6 +8,12 @@ name: Setup TP/SL Watch (Q-7 fallback)
 # daemon.js (pola sama ohlcv-sync.yml) supaya evaluasi tetap jalan tiap 5
 # menit walau VPS mati — endpoint sudah aman dipanggil ganda (lock
 # lock:setuplog_write:setup_log_auto:v1 di api/admin.js mencegah race).
+# `source=cron5` (S315 lanjutan-6, efisiensi command Redis): jadwal ini
+# identik dengan node-cron internal vps/daemon.js — tag dipakai admin.js
+# untuk dedup KHUSUS antara dua sumber cron 5-menit ini (jendela 3 menit,
+# lebih pendek dari interval 5 menit — tiap siklus tetap dapat 1x evaluasi
+# penuh). Trigger event-driven (harga sentuh TP/SL) TIDAK pakai tag ini,
+# jadi tidak pernah ikut ke-skip.
 on:
   schedule:
     - cron: '*/5 * * * *'
@@ -22,7 +28,7 @@ jobs:
           STATUS=$(curl -s -o /tmp/resp.json -w "%{http_code}" \
             -H "x-cron-secret: ${{ secrets.CRON_SECRET }}" \
             --max-time 20 \
-            "https://financial-feed-app.vercel.app/api/admin?action=setup_stats&scope=auto")
+            "https://financial-feed-app.vercel.app/api/admin?action=setup_stats&scope=auto&source=cron5")
           cat /tmp/resp.json
           if [ "$STATUS" -ne 200 ]; then
             echo "setup_stats scope=auto gagal dengan HTTP $STATUS"

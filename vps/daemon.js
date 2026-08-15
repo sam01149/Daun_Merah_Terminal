@@ -1330,7 +1330,13 @@ function startScheduler() {
   // live tick Deriv di jam tertentu) + memastikan notifikasi push dev tetap
   // terkirim walau tidak ada yang buka dev-auto-entry.html manual. Murni baca/
   // tulis Redis (tanpa call AI), jadi aman dipanggil sesering ini.
-  cron.schedule('*/5 * * * *', () => triggerEndpoint('/api/admin?action=setup_stats&scope=auto').catch(() => {}));
+  // `source=cron5` (S315 lanjutan-6, efisiensi command Redis): jadwal ini
+  // identik dengan .github/workflows/setup-tp-sl-watch.yml (sama-sama
+  // `*/5 * * * *`, tidak saling tahu) — tag ini dipakai admin.js untuk
+  // dedup KHUSUS antara dua sumber cron 5-menit ini. Trigger event-driven
+  // di atas (maybeTriggerSetupWatch) SENGAJA TIDAK dikasih tag ini — itu
+  // jalur cepat Q-7, tidak boleh ikut ke-skip oleh dedup.
+  cron.schedule('*/5 * * * *', () => triggerEndpoint('/api/admin?action=setup_stats&scope=auto&source=cron5').catch(() => {}));
   console.log('daemon: Q-7 watcher TP/SL aktif (event-driven per tick + baseline tiap 5 menit)');
 
   // U-3 (2026-07-20, Plan U): auto-entry virtual — menit ke-15 supaya tidak

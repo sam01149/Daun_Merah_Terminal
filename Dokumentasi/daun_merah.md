@@ -11,10 +11,29 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-15 (Session 315 lanjutan-6 — Audit Penuh 5 Domain via audit_daun_merah.md)
+> **Last updated:** 2026-08-15 (Session 315 lanjutan-7 — Dedup source=cron5 setup_stats&scope=auto, Efisiensi Command Redis Lanjutan)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
+
+## Changelog Session 315 lanjutan-7 (2026-08-15) — Dedup `source=cron5` `setup_stats&scope=auto`, Efisiensi Command Redis Lanjutan
+
+**Konteks:** Lanjutan diskusi command Redis (S315 lanjutan-4/5). User tanya "ada cara efisiensi lagi?" — audit `vps/daemon.js` `startScheduler()` ketemu: `setup_stats&scope=auto` (evaluasi TP/SL `setup_log_auto:v1`, Q-7) dipicu DOBEL tiap 5 menit tanpa saling tahu — GitHub Actions (`setup-tp-sl-watch.yml`) DAN node-cron internal daemon (`admin.js:3746` area), keduanya `*/5 * * * *`. Beda dari `ohlcv_sync`/`market-digest` yang sudah punya proteksi dedup window (`_cron_dedup.js`), `setup_stats` cuma punya lock mutual-exclusion 10 detik (`lock:setuplog_write:*`) — nyaris tidak pernah kena karena dua sumber jarang persis berdekatan dalam 10 detik, jadi RUTIN dobel evaluasi penuh (~10 command Redis/panggilan: GET log, MGET candle, GET kalender x2, fetch berita, consistency+pipeline summary, dst).
+
+**Risiko yang diidentifikasi SEBELUM implementasi:** Q-7 juga punya jalur KETIGA — trigger event-driven (`maybeTriggerSetupWatch`, harga live baru saja sentuh TP/SL, debounce 20 detik) — inilah fitur inti Q-7 untuk deteksi cepat. Dedup window naif ("skip kalau baru dievaluasi X menit lalu") berisiko ikut men-skip trigger event-driven ini kalau kebetulan datang tak lama setelah cron rutin — menunda deteksi TP/SL yang harusnya nyaris instan. Didiskusikan ke user dulu (termasuk analogi awam) sebelum eksekusi.
+
+**Fix (scoped, hanya dedup 2 sumber cron 5-menit yang identik):**
+- `vps/daemon.js` node-cron (baris ~1333) & `.github/workflows/setup-tp-sl-watch.yml`: URL trigger ditambah `&source=cron5`. Trigger event-driven (`maybeTriggerSetupWatch`) SENGAJA TIDAK diberi tag ini.
+- `api/admin.js` `setupStatsHandler`: kalau `scope=auto` DAN `source=cron5`, cek `setup_stats_auto:last_run_at` (Redis key baru) — kalau umurnya < 3 menit (window lebih pendek dari interval 5 menit, pola sama `OHLCV_SYNC_DEDUP_WINDOW_MS`), skip full evaluasi, balikin payload murah (`_cheapAutoScopeStats`, diekstrak dari fallback lock yang sudah ada — cuma GET log + consistency + pipeline summary, ~3 command). Panggilan TANPA `source=cron5` (event-driven, dev console `dev-auto-entry.html`) SELALU full evaluasi seperti sebelumnya — tidak ada perubahan perilaku untuk keduanya.
+- `_buildAutoScopeStats`: tulis `setup_stats_auto:last_run_at` (TTL 900s) di titik keluar sukses (baik early-return log kosong maupun full evaluasi) — dibaca sumber `source=cron5` mana pun yang datang duluan.
+
+**Dampak:** ~2.000-3.000 command/hari dihemat (estimasi dari ~288 siklus/hari dikurangi duplikasi × ~8-10 command/panggilan penuh), TANPA mengurangi kecepatan deteksi TP/SL (jalur event-driven & dev console tidak tersentuh).
+
+**Test:** 4 test baru di `test/admin/isolation_auto.test.js` — source=cron5 pertama tetap full eval + tulis timestamp, source=cron5 kedua dalam window di-skip, source=cron5 setelah window lewat full eval lagi (bukan skip permanen), panggilan tanpa source SELALU full eval meski timestamp baru saja ditulis. `npm test` 991/991 hijau (987 lama + 4 baru).
+
+**Belum diverifikasi live:** butuh beberapa siklus 5 menit di produksi untuk konfirmasi dedup benar-benar mengurangi command count TANPA menunda notifikasi TP/SL — dicatat di `daun_merah_progress.md`.
+
+**Catatan multi-sesi:** sesi Claude Code lain aktif paralel (`[S315 lanjutan-6]` — audit 5 domain via `audit_daun_merah.md`, 3 commit sudah di `origin/main` sebelum sesi ini push) — tag session dinaikkan ke `lanjutan-7` untuk hindari duplikasi heading, sesuai ATURAN.md §5.6.
 
 ## Changelog Session 315 lanjutan-6 (2026-08-15) — Audit Penuh 5 Domain (Fundamental/Berita/COT/Teknikal/Journal) via `audit_daun_merah.md`
 

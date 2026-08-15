@@ -744,6 +744,76 @@ test('PLAN U-7(c): scope=auto DENGAN CRON_SECRET valid -> data eksperimen (manag
   });
 });
 
+// ── S315 lanjutan-6: dedup source=cron5 (efisiensi command Redis) ──────────
+// GH Actions setup-tp-sl-watch.yml + node-cron internal vps/daemon.js sama-sama
+// `*/5 * * * *`, tidak saling tahu -> dobel evaluasi identik. `source=cron5`
+// dipakai KHUSUS 2 sumber ini; trigger event-driven (harga sentuh TP/SL) TIDAK
+// pernah kirim tag ini, jadi TIDAK PERNAH ikut di-skip. Sinyal "full evaluasi
+// terjadi": lock `lock:setuplog_write:*` selalu di-DEL di finally block
+// _buildAutoScopeStats — command DEL TIDAK PERNAH muncul di jalur skip/cheap.
+
+async function callSetupStatsTracked(store, extraQuery, headers) {
+  const handler = loadHandler();
+  const res = fakeRes();
+  const baseStub = redisFetchStub(store);
+  const calls = [];
+  const origFetch = global.fetch;
+  global.fetch = async (url, opts) => {
+    calls.push(JSON.parse(opts.body)[0]);
+    return baseStub(url, opts);
+  };
+  try {
+    await handler({ headers, method: 'GET', query: { action: 'setup_stats', ...extraQuery } }, res);
+    return { body: res.body, calls };
+  } finally { global.fetch = origFetch; }
+}
+
+test('S315 lanjutan-6: source=cron5 PERTAMA (belum ada last_run_at) -> full evaluasi + tulis last_run_at', async () => {
+  await withEnv({ CRON_SECRET: 'topsecret' }, async () => {
+    const store = makeStore({ 'setup_log_auto:v1': JSON.stringify(AUTO_LOG) });
+    const { body, calls } = await callSetupStatsTracked(store, { scope: 'auto', source: 'cron5' }, { 'x-cron-secret': 'topsecret' });
+    assert.equal(body.scope, 'auto');
+    assert.ok(calls.includes('DEL'), 'full evaluasi harus lepas lock (DEL) — bukti bukan jalur skip');
+    assert.ok(store.strings['setup_stats_auto:last_run_at'], 'last_run_at harus ditulis setelah full evaluasi');
+  });
+});
+
+test('S315 lanjutan-6: source=cron5 KEDUA dalam 3 menit -> di-skip (dedup), TIDAK full evaluasi lagi', async () => {
+  await withEnv({ CRON_SECRET: 'topsecret' }, async () => {
+    const store = makeStore({
+      'setup_log_auto:v1': JSON.stringify(AUTO_LOG),
+      'setup_stats_auto:last_run_at': new Date(Date.now() - 30 * 1000).toISOString(), // 30 detik lalu
+    });
+    const { body, calls } = await callSetupStatsTracked(store, { scope: 'auto', source: 'cron5' }, { 'x-cron-secret': 'topsecret' });
+    assert.equal(body.scope, 'auto');
+    assert.ok(!calls.includes('DEL'), 'dedup harus skip full evaluasi — tidak ada lock yang di-acquire/dilepas sama sekali');
+  });
+});
+
+test('S315 lanjutan-6: source=cron5 setelah window 3 menit lewat -> full evaluasi lagi (bukan skip permanen)', async () => {
+  await withEnv({ CRON_SECRET: 'topsecret' }, async () => {
+    const store = makeStore({
+      'setup_log_auto:v1': JSON.stringify(AUTO_LOG),
+      'setup_stats_auto:last_run_at': new Date(Date.now() - 4 * 60 * 1000).toISOString(), // 4 menit lalu, lewat window
+    });
+    const { body, calls } = await callSetupStatsTracked(store, { scope: 'auto', source: 'cron5' }, { 'x-cron-secret': 'topsecret' });
+    assert.equal(body.scope, 'auto');
+    assert.ok(calls.includes('DEL'), 'window sudah lewat -> harus full evaluasi lagi, bukan skip selamanya');
+  });
+});
+
+test('S315 lanjutan-6: TANPA source (trigger event-driven/dev console) -> SELALU full evaluasi meski last_run_at baru saja ditulis', async () => {
+  await withEnv({ CRON_SECRET: 'topsecret' }, async () => {
+    const store = makeStore({
+      'setup_log_auto:v1': JSON.stringify(AUTO_LOG),
+      'setup_stats_auto:last_run_at': new Date(Date.now() - 1000).toISOString(), // 1 detik lalu, sangat fresh
+    });
+    const { body, calls } = await callSetupStatsTracked(store, { scope: 'auto' }, { 'x-cron-secret': 'topsecret' });
+    assert.equal(body.scope, 'auto');
+    assert.ok(calls.includes('DEL'), 'panggilan tanpa source=cron5 (event-driven/dev console) tidak boleh ikut ke-skip oleh dedup');
+  });
+});
+
 // ── (d) position_review menolak id setup manual TANPA call AI ──────────────
 
 test('PLAN U-7(d): position_review menolak id yang ada di setup_log:v1 (manual) -> skipped not_experiment, TANPA call AI', async () => {

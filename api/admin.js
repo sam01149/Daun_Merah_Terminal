@@ -3740,22 +3740,38 @@ async function _fetchCandlesInto(symbols, candlesBySymbol) {
   } catch (e) { /* Redis gagal -> semua symbol di batch ini tetap tak ter-update, dicoba lagi tick berikutnya */ }
 }
 
+// Dedup KHUSUS sumber cron 5-menit yang dobel (GH Actions setup-tp-sl-watch.yml
+// + node-cron internal vps/daemon.js, keduanya `*/5 * * * *` tanpa saling tahu —
+// lihat komentar startScheduler Q-7). Trigger event-driven (harga baru saja
+// sentuh TP/SL, `maybeTriggerSetupWatch`) TIDAK PERNAH kirim `source=cron5`,
+// jadi TIDAK PERNAH kena skip di sini — itu jalur cepat Q-7 yang justru harus
+// selalu diproses penuh. Window (3 menit) SENGAJA lebih pendek dari interval
+// cron (5 menit) — pola sama `OHLCV_SYNC_DEDUP_WINDOW_MS`, supaya tiap siklus
+// tetap dapat 1x evaluasi penuh, cuma pemicu KEDUA yang datang belakangan
+// (dobel identik) yang di-skip. Dev console (dev-auto-entry.html) tidak pernah
+// kirim `source=cron5` — refresh manual tetap selalu full evaluasi seperti biasa.
+const SETUP_STATS_CRON5_DEDUP_WINDOW_MS = 3 * 60 * 1000;
+const SETUP_STATS_LAST_RUN_KEY = 'setup_stats_auto:last_run_at';
+
+async function _cheapAutoScopeStats() {
+  const rawFallback = await redisCmd('GET', 'setup_log_auto:v1');
+  let logFallback = rawFallback ? JSON.parse(rawFallback) : [];
+  if (!Array.isArray(logFallback)) logFallback = [];
+  return {
+    scope: 'auto', ..._statsPayloadFromLog(logFallback),
+    consistency: await _consistencySummary(), pipeline_latency: await _pipelineLatencySummary(),
+  };
+}
+
 async function _buildAutoScopeStats() {
   const setupLogKey = 'setup_log_auto:v1';
   const lockKey = `lock:setuplog_write:${setupLogKey}`;
   const gotLock = await redisCmd('SET', lockKey, '1', 'NX', 'EX', '10').catch(() => null);
-  if (gotLock !== 'OK') {
-    const rawFallback = await redisCmd('GET', setupLogKey);
-    let logFallback = rawFallback ? JSON.parse(rawFallback) : [];
-    if (!Array.isArray(logFallback)) logFallback = [];
-    return {
-      scope: 'auto', ..._statsPayloadFromLog(logFallback),
-      consistency: await _consistencySummary(), pipeline_latency: await _pipelineLatencySummary(),
-    };
-  }
+  if (gotLock !== 'OK') return _cheapAutoScopeStats();
   try {
   const raw = await redisCmd('GET', setupLogKey);
   if (!raw) {
+    await redisCmd('SET', SETUP_STATS_LAST_RUN_KEY, new Date().toISOString(), 'EX', '900').catch(() => {});
     return {
       scope: 'auto', symbols: {}, global: _aggSetupStats([]), recent: [],
       consistency: await _consistencySummary(), pipeline_latency: await _pipelineLatencySummary(),
@@ -3815,6 +3831,7 @@ async function _buildAutoScopeStats() {
   const after = JSON.stringify(log);
   if (after !== before) await redisCmd('SET', setupLogKey, after);
   await _finalizeSetupTransitions(log, statusBeforeById);
+  await redisCmd('SET', SETUP_STATS_LAST_RUN_KEY, new Date().toISOString(), 'EX', '900').catch(() => {});
   return {
     scope: 'auto', ..._statsPayloadFromLog(log),
     consistency: await _consistencySummary(), pipeline_latency: await _pipelineLatencySummary(),
@@ -3832,6 +3849,14 @@ async function setupStatsHandler(req, res) {
     // publik di bawah. Tanpa CRON_SECRET valid, JANGAN masuk sini (fall through ke
     // publik biasa — tidak ada respons yang membocorkan keberadaan scope ini).
     if (req.query.scope === 'auto' && _isCronCallReq(req)) {
+      if (req.query.source === 'cron5') {
+        try {
+          const lastRunAt = await redisCmd('GET', SETUP_STATS_LAST_RUN_KEY);
+          if (isCronDedupFresh(lastRunAt, Date.now(), SETUP_STATS_CRON5_DEDUP_WINDOW_MS)) {
+            return res.status(200).json(await _cheapAutoScopeStats());
+          }
+        } catch (e) { /* dedup check gagal -> fail-open, tetap evaluasi penuh */ }
+      }
       return res.status(200).json(await _buildAutoScopeStats());
     }
 
