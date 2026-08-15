@@ -103,6 +103,35 @@ test('German HICP Y/Y Final diarahkan ke key German CPI YoY (bukan generic CPI Y
   assert.strictEqual(r.value, '2.9%');
 });
 
+// Bug 2026-08-15 (laporan user — minta kartu "CPI EUR" cuma pakai data Eurozone
+// asli, bukan rilis 1 negara anggota): dikonfirmasi live production headline
+// asli "French CPI YoY NSA Actual 2.1% (Forecast 2.1%, Previous 2.1%)" (INSEE,
+// 14 Agustus 2026 06:45 GMT) sempat mengisi slot 'CPI YoY' EUR — rilis nasional
+// Prancis, BUKAN agregat Eurozone. Slot inflasi generik EUR sekarang menolak
+// rilis 1 negara anggota (kecuali eksplisit sebut Eurozone/Euro Area/Euro Zone).
+test('rilis nasional Prancis (bukan agregat Eurozone) DIBUANG dari slot CPI YoY generic EUR', () => {
+  const r = parseFundamentalFromHeadline('French CPI YoY NSA Actual 2.1% (Forecast 2.1%, Previous 2.1%)');
+  assert.strictEqual(r, null);
+});
+
+test('rilis nasional Prancis versi HICP juga DIBUANG dari slot CPI YoY generic EUR', () => {
+  const r = parseFundamentalFromHeadline('French HICP YoY Final Actual 2.4% (Forecast 2.4%, Previous 2.4%)');
+  assert.strictEqual(r, null);
+});
+
+test('rilis nasional Italia untuk indikator NON-inflasi (GDP) tetap diterima — pembatasan cuma untuk key inflasi', () => {
+  const r = parseFundamentalFromHeadline('Italian GDP QoQ Actual 0.2% Forecast 0.1% Previous 0.3%');
+  assert.strictEqual(r.currency, 'EUR');
+  assert.strictEqual(r.key, 'GDP QoQ');
+});
+
+test('headline Eurozone HICP eksplisit (bukan negara anggota) tetap diterima ke slot CPI YoY', () => {
+  const r = parseFundamentalFromHeadline('Eurozone HICP Y/Y Final Actual 2.4% (Forecast 2.4%, Previous 2.0%)');
+  assert.strictEqual(r.currency, 'EUR');
+  assert.strictEqual(r.key, 'CPI YoY');
+  assert.strictEqual(r.value, '2.4%');
+});
+
 // Bug 2026-08-11 (laporan user): headline FJ "US ADP Wkly Employment Change" —
 // qualifier "Wkly" nempel di TENGAH judul (ADP [Wkly] Employment Change), beda
 // posisi dari versi calendar_v1 (lihat test extractFundamentalFromCalendarEvent

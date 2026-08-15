@@ -287,6 +287,41 @@ function _matchIndicatorKey(t, currency) {
     else if (indicatorKey === 'GDP YoY') indicatorKey = 'GDP YoY Flash';
   }
 
+  // BUG DITEMUKAN & DIFIX (2026-08-15, laporan user — minta kartu "CPI EUR"
+  // cuma pakai data Eurozone ASLI, bukan rilis 1 negara anggota): FUND_COUNTRY_ONLY
+  // di atas menyamakan SEMUA negara anggota (Prancis/Italia/dst — bukan cuma
+  // Jerman yang sudah dipisah ke key sendiri di atas) sebagai currency EUR, tapi
+  // key indikator inflasi generik ('CPI YoY' dkk) tidak pernah dibedakan antara
+  // headline "Eurozone HICP..." (agregat resmi seluruh kawasan, dari Eurostat)
+  // vs "French CPI..."/"Italian CPI..." (rilis nasional 1 negara doang). Bukti
+  // nyata: kartu EUR sempat kepampang rilis INSEE (Prancis, headline "French CPI
+  // YoY NSA Actual 2.1%...") di slot yang mestinya representasi Eurozone —
+  // autoUpdateFundamentals (jalur headline) tidak ada proteksi source-priority
+  // sama sekali (beda dari jalur calendar_v1 yang sudah aman by design: TradingView
+  // di-query pakai kode negara "EU", lihat CCY_TO_TV_COUNTRY.EUR di calendar.js —
+  // "EU" itu MEMANG cuma agregat Eurozone, tidak pernah tercampur rilis 1 negara),
+  // jadi siapa pun headline yang diproses TERAKHIR menang menimpa slot generik.
+  // Fix: field inflasi generik EUR HANYA diterima dari headline yang eksplisit
+  // sebut "Eurozone"/"Euro Area"/"Euro Zone" (dikonfirmasi ini format asli vendor,
+  // lihat headline nyata "Eurozone GDP YoY Flash Estimate Actual..." tgl sama) —
+  // rilis 1 negara anggota (Jerman sudah dialihkan duluan di atas jadi tidak
+  // pernah sampai sini) DIBUANG total sesuai instruksi user, bukan dipindah ke
+  // key lain. Konsekuensi: field ini bisa kosong/basi sampai rilis Eurozone-wide
+  // resmi berikutnya keluar (biasanya ~seminggu setelah rilis nasional negara
+  // anggota) — trade-off yang disengaja, bukan bug.
+  const EUR_INFLATION_KEYS = new Set(['CPI YoY', 'CPI MoM', 'CPI QoQ', 'Core CPI YoY', 'Core CPI MoM', 'CPI Flash YoY']);
+  if (currency === 'EUR' && EUR_INFLATION_KEYS.has(indicatorKey)) {
+    const isEurozoneWide = /\beurozone\b|\beuro area\b|\beuro zone\b|\beuropean union\b/i.test(t);
+    const isMemberState = /\bfrance\b|\bfrench\b|\bitaly\b|\bitalian\b|\bspain\b|\bspanish\b|\bnetherlands\b|\bdutch\b|\bbelgium\b|\bbelgian\b|\bportugal\b|\bportuguese\b|\bgreece\b|\bgreek\b|\bireland\b|\birish\b|\baustria\b|\baustrian\b/i.test(t);
+    // `false` (bukan `null`) sengaja dipakai sebagai sinyal "ditolak eksplisit,
+    // JANGAN ditebak jadi key baru" — caller parseFundamentalFromHeadline (di
+    // bawah) punya fallback tebak-nama title-case naif tiap kali indicatorKey
+    // falsy, yang tanpa pembeda ini bakal tetap menciptakan key sampah baru
+    // (mis. "Cpi Yoy Nsa"/"Hicp Yoy Final") persis masalah yang barusan diperbaiki
+    // di atas — bukan benar-benar membuang rilis 1 negara sesuai maksud fix ini.
+    if (isMemberState && !isEurozoneWide) indicatorKey = false;
+  }
+
   return indicatorKey;
 }
 
@@ -333,6 +368,11 @@ function parseFundamentalFromHeadline(title) {
   if (!currency) return null;
 
   let indicatorKey = _matchIndicatorKey(t, currency);
+  // `false` = ditolak eksplisit (mis. rilis inflasi 1 negara anggota EUR, lihat
+  // guard EUR_INFLATION_KEYS di _matchIndicatorKey) — JANGAN masuk fallback
+  // tebak-nama di bawah, itu bakal menciptakan key sampah baru yang isinya
+  // rilis yang sama persis yang barusan sengaja ditolak.
+  if (indicatorKey === false) return null;
 
   if (!indicatorKey) {
     let stripped = title.trim();
