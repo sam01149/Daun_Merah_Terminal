@@ -157,6 +157,37 @@ test('newsHistoryHandler: before tidak valid → 400', withMockRedis(async () =>
   assert.equal(res.statusCode, 400);
 }));
 
+// ── Throttle news_history_lock: batch market-moving dapat lock terpisah (45s)
+//    ketimbang lock umum (300s), lihat catatan storeNewsHistory (S315 lanjutan). ──
+
+test('storeNewsHistory: batch tanpa item market-moving pakai lock umum 300s, ditolak kalau lock umum sudah dipegang', withMockRedis(async (redis) => {
+  const now = new Date('2026-08-15T09:00:00Z').getTime();
+  redis.kv.set('news_history_lock', '1'); // simulasi lock umum masih aktif
+  const xml = `<rss><channel>${fixtureItem({ title: 'Apple stock rises on earnings beat', guid: 'a1', pubDate: new Date(now).toUTCString() })}</channel></rss>`;
+  await storeNewsHistory(xml, now);
+  assert.equal(redis.zsets.get('news_history'), undefined, 'batch non-urgent harus di-skip, lock umum masih dipegang');
+}));
+
+test('storeNewsHistory: batch berisi item market-moving tetap tertulis meski lock umum sudah dipegang (lock urgent terpisah)', withMockRedis(async (redis) => {
+  const now = new Date('2026-08-15T09:00:00Z').getTime();
+  redis.kv.set('news_history_lock', '1'); // lock umum masih aktif dari fetch sebelumnya
+  const xml = `<rss><channel>${fixtureItem({ title: 'BREAKING: Fed announces emergency rate cut', guid: 'b1', pubDate: new Date(now).toUTCString() })}</channel></rss>`;
+  await storeNewsHistory(xml, now);
+  assert.equal(redis.zsets.get('news_history').length, 1, 'batch urgent harus tetap tertulis lewat lock terpisah');
+  assert.ok(redis.kv.has('news_history_lock_urgent'));
+}));
+
+test('storeNewsHistory: dua batch urgent berturutan tetap di-throttle oleh lock urgent-nya sendiri', withMockRedis(async (redis) => {
+  const now = new Date('2026-08-15T09:00:00Z').getTime();
+  const xml1 = `<rss><channel>${fixtureItem({ title: 'BREAKING: Fed announces emergency rate cut', guid: 'c1', pubDate: new Date(now).toUTCString() })}</channel></rss>`;
+  await storeNewsHistory(xml1, now);
+  assert.equal(redis.zsets.get('news_history').length, 1);
+
+  const xml2 = `<rss><channel>${fixtureItem({ title: 'BREAKING: ECB emergency statement', guid: 'c2', pubDate: new Date(now + 1000).toUTCString() })}</channel></rss>`;
+  await storeNewsHistory(xml2, now + 1000);
+  assert.equal(redis.zsets.get('news_history').length, 1, 'batch urgent kedua ditolak, lock urgent 45s masih dipegang batch pertama');
+}));
+
 test('newsHistoryHandler: limit dibatasi maksimal 100 meski diminta lebih besar', withMockRedis(async (redis) => {
   const now = new Date('2026-07-12T09:00:00Z').getTime();
   const xml = `<rss><channel>${

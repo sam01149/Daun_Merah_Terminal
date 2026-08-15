@@ -11,10 +11,22 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-15 (Session 315 lanjutan-4 — Audit Workflow Doc + Efisiensi Command Redis + Reminder Inflasi Basi)
+> **Last updated:** 2026-08-15 (Session 315 lanjutan-5 — Throttle Adaptif news_history_lock untuk Alert Breaking-News)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
+
+## Changelog Session 315 lanjutan-5 (2026-08-15) — Throttle Adaptif `news_history_lock` untuk Alert Breaking-News
+
+**Konteks:** Lanjutan dua item tertunda dari S315 lanjutan-4 (`daun_merah_progress.md`). User ditanya balik: (1) apakah ambang 5 menit `news_history_lock` genuinely pernah bikin alert telat — jawaban: belum ada kejadian konkret, tapi tetap mau breaking-news lebih cepat sebagai jaga-jaga; (2) cek dashboard Upstash pasca-fix efisiensi command — user kirim screenshot baru: 327K/500K (nyaris sama dengan 326K saat fix dideploy hari yang sama, jadi belum bisa disimpulkan apa-apa, butuh beberapa hari lagi sebelum rata-rata harian bergeser).
+
+**Fix throttle adaptif (`api/feeds.js` `storeNewsHistory`):** sebelumnya SATU lock `news_history_lock` (`EX 300`, `NX`) membatasi penulisan ke ZSET `news_history` maksimal sekali per 5 menit untuk SEMUA berita, tanpa pandang penting/tidaknya — ini jadi plafon kecepatan alert Telegram Q-4 (`vps/daemon.js` `pollNews`) karena alert baru bisa lihat headline setelah masuk ZSET. Sekarang batch RSS diklasifikasi (`detectCat` dari `newscat.js`, single source of truth yang sama dipakai `market-digest.js`/`admin.js`) SEBELUM cek lock: kalau ada minimal 1 item `market-moving` dalam window 36 jam, dipakai lock terpisah `news_history_lock_urgent` (`EX 45`) — throttle dipersingkat dari 5 menit jadi 45 detik KHUSUS untuk batch itu. Batch non-urgent (mayoritas trafik, sumber utama command Redis) tetap pakai lock umum 300 detik seperti sebelumnya — tidak ada regresi budget untuk kasus normal. Saat batch urgent berhasil menulis, lock umum ikut di-refresh (`SET` tanpa `NX`) supaya fetch non-urgent berikutnya tidak numpang menulis lebih awal dari jadwalnya sendiri.
+
+**Dampak kecepatan:** worst-case latensi alert breaking-news turun dari ≤360 detik (300s throttle tulis + 60s poll baca daemon) jadi ≤105 detik (45s + 60s). Dampak budget Redis: nol untuk trafik normal, tambahan kecil HANYA selama periode benar-benar ada berita market-moving beruntun (jarang, per definisi kategori ini eksplisit untuk BREAKING/rate cut/dst).
+
+**Test:** 3 test baru di `test/feeds/news_history.test.js` — batch non-urgent tetap ditolak saat lock umum aktif, batch urgent tetap tertulis meski lock umum aktif (lock terpisah), dua batch urgent beruntun tetap saling throttle oleh lock urgent-nya sendiri. `npm test` 987/987 hijau (984 lama + 3 baru).
+
+**Belum diverifikasi live:** perlu kejadian breaking-news nyata untuk konfirmasi alert Telegram benar-benar lebih cepat di produksi (bukan cuma unit test mock Redis). Item Upstash dashboard (checkpoint 327K/500K, hari yang sama dengan deploy fix efisiensi) juga masih perlu dicek lagi setelah beberapa hari — kedua hal ini diparkir balik ke `daun_merah_progress.md`.
 
 ## Changelog Session 315 lanjutan-4 (2026-08-15) — Audit Workflow Doc + Efisiensi Command Redis + Reminder Inflasi Basi
 

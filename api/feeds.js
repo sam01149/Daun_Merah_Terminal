@@ -19,6 +19,7 @@ const rateLimit = require('./_ratelimit');
 const cbk = require('./_circuit_breaker');
 const { requireAppKey } = require('./_app_key');
 const { translateNewItems, getTranslations } = require('./_news_translate');
+const { detectCat } = require('../newscat');
 
 module.exports = async function handler(req, res) {
   const type = req.query.type;
@@ -244,13 +245,33 @@ async function newsTranslateHandler(req, res) {
 }
 
 async function storeNewsHistory(xml, now) {
-  // Throttle: max once per 5 minutes to keep Upstash command usage low
-  const lock = await redisCmd('SET', 'news_history_lock', '1', 'EX', 300, 'NX');
-  if (!lock) return;
-
   const items = parseRSSItems(xml);
   if (items.length === 0) return;
   const cutoff = now - 36 * 60 * 60 * 1000;
+
+  // Throttle: max once per 5 minutes to keep Upstash command usage low — TAPI
+  // dipersingkat ke 45 detik kalau batch ini mengandung item market-moving
+  // (breaking-news precaution, rapat user 2026-08-15). Tanpa ini, alert Telegram
+  // Q-4 di vps/daemon.js baru bisa lihat headline baru setelah ZADD masuk ke
+  // sini, jadi throttle umum 5 menit jadi plafon kecepatan alert breaking-news
+  // juga. Lock terpisah (bukan menurunkan EX 300 yang umum) supaya trafik
+  // non-urgent yang mendominasi budget Redis tetap dapat throttle hemat yang
+  // sudah ada — cuma batch urgent yang bayar command lebih sering.
+  const hasUrgent = items.some(it => {
+    const ts = new Date(it.pubDate).getTime();
+    return !isNaN(ts) && ts > cutoff && detectCat(it.title || '') === 'market-moving';
+  });
+  let acquired;
+  if (hasUrgent) {
+    acquired = await redisCmd('SET', 'news_history_lock_urgent', '1', 'EX', 45, 'NX');
+    // Refresh lock umum juga supaya fetch non-urgent berikutnya tidak numpang
+    // menulis lebih awal dari jadwal 5 menitnya sendiri.
+    if (acquired) await redisCmd('SET', 'news_history_lock', '1', 'EX', 300);
+  } else {
+    acquired = await redisCmd('SET', 'news_history_lock', '1', 'EX', 300, 'NX');
+  }
+  if (!acquired) return;
+
   // FinancialJuice kadang mem-broadcast ulang headline identik dalam satu payload RSS
   // dengan guid BARU tiap kali (pubDate juga sama persis) — tanpa dedup ini, tiap repost
   // masuk sebagai member ZADD terpisah (member = JSON per-item, guid beda = string beda),
