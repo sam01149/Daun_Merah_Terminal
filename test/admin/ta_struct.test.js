@@ -340,7 +340,7 @@ test('_formatConfluenceBlock: render header + ID zona A1/B1', () => {
 
 // ── _evaluateSetups + _aggSetupStats (Tier 1 outcome logging, session 166) ────
 
-const { _evaluateSetups, _aggSetupStats, _formatTrackRecordBlock, _calEventMsWib, _buildAnalyzeCalBlock } = require('../../api/admin.js');
+const { _evaluateSetups, _aggSetupStats, _formatTrackRecordBlock, _calEventMsWib, _buildAnalyzeCalBlock, _buildLiveCorrSign } = require('../../api/admin.js');
 
 // Candle 1H sintetis: t dalam detik epoch
 const mkC = (t, o, h, l, c) => ({ t, o, h, l, c, v: 0 });
@@ -1041,4 +1041,67 @@ test('_buildAnalyzeCalBlock: gabung calThis + calNext, cap 10 event, dedup', () 
 test('_buildAnalyzeCalBlock: legs kosong atau kedua cache null → string kosong', () => {
   assert.strictEqual(_buildAnalyzeCalBlock(null, null, ['USD'], NOW_MS), '');
   assert.strictEqual(_buildAnalyzeCalBlock({ events: [{ date: '2026-07-20', time_wib: '08:00 WIB', currency: 'USD', impact: 'High', event: 'X' }] }, null, [], NOW_MS), '');
+});
+
+// ── _buildAnalyzeCalBlock: age-check cache (audit 2026-08-16) ──────────────────
+test('_buildAnalyzeCalBlock: fetched_at >4 jam lalu -> tambah catatan basi', () => {
+  const fetchedAt = new Date(NOW_MS - 5 * 3600 * 1000).toISOString(); // 5 jam lalu
+  const calThis = { fetched_at: fetchedAt, events: [
+    { date: '2026-07-20', time_wib: '08:30 WIB', currency: 'USD', impact: 'High', event: 'NFP' },
+  ] };
+  const block = _buildAnalyzeCalBlock(calThis, null, ['USD'], NOW_MS);
+  assert.ok(block.includes('SUDAH AGAK BASI'));
+  assert.ok(block.includes('5 jam lalu'));
+});
+
+test('_buildAnalyzeCalBlock: fetched_at <=4 jam lalu -> tidak ada catatan basi', () => {
+  const fetchedAt = new Date(NOW_MS - 1 * 3600 * 1000).toISOString(); // 1 jam lalu
+  const calThis = { fetched_at: fetchedAt, events: [
+    { date: '2026-07-20', time_wib: '08:30 WIB', currency: 'USD', impact: 'High', event: 'NFP' },
+  ] };
+  const block = _buildAnalyzeCalBlock(calThis, null, ['USD'], NOW_MS);
+  assert.ok(!block.includes('SUDAH AGAK BASI'));
+});
+
+test('_buildAnalyzeCalBlock: tanpa fetched_at (fixture lama) -> tidak ada catatan basi (fail-open)', () => {
+  const calThis = { events: [
+    { date: '2026-07-20', time_wib: '08:30 WIB', currency: 'USD', impact: 'High', event: 'NFP' },
+  ] };
+  const block = _buildAnalyzeCalBlock(calThis, null, ['USD'], NOW_MS);
+  assert.ok(!block.includes('SUDAH AGAK BASI'));
+});
+
+// ── _buildLiveCorrSign (Gate D live-sign lookup, audit 2026-08-16) ─────────────
+test('_buildLiveCorrSign: null/tanpa anomalies -> null', () => {
+  assert.strictEqual(_buildLiveCorrSign(null), null);
+  assert.strictEqual(_buildLiveCorrSign({}), null);
+  assert.strictEqual(_buildLiveCorrSign({ matrix_20d: { 'EUR|Gold': 0.62 } }), null); // ada matrix tapi bukan anomaly -> tetap null
+});
+
+test('_buildLiveCorrSign: pasangan MUNCUL di anomalies -> override sign dari r20 anomali', () => {
+  const corrData = { anomalies: [
+    { pair: 'EUR|Gold', r20: -0.3, r60: 0.585, delta: -0.885 }, // sign-flip nyata, terdeteksi anomali
+  ] };
+  const out = _buildLiveCorrSign(corrData);
+  assert.equal(out['GC=F|EURUSD=X'], 'negative');
+});
+
+test('_buildLiveCorrSign: pasangan TIDAK muncul di anomalies (korelasi masih normal) -> tidak dipetakan sama sekali', () => {
+  const corrData = { anomalies: [
+    { pair: 'AUD|SPX', r20: -0.5, r60: -0.1, delta: -0.4 }, // pasangan lain, tidak relevan ke CORRELATED_PAIRS
+  ] };
+  const out = _buildLiveCorrSign(corrData);
+  assert.deepEqual(out, {}); // r20 mentah TIDAK dipakai kalau bukan anomali terdeteksi (hindari noise-chasing)
+});
+
+test('_buildLiveCorrSign: pair CHF/JPY (bukan instrumen live) tetap tidak pernah dipetakan walau ada di anomalies', () => {
+  const corrData = { anomalies: [{ pair: 'EUR|Gold', r20: 0.5, r60: 0.1, delta: 0.4 }] };
+  const out = _buildLiveCorrSign(corrData);
+  assert.equal(out['EURUSD=X|CHFJPY=X'], undefined);
+});
+
+test('_buildLiveCorrSign: key anomaly urutan terbalik (Gold|EUR) tetap ketemu', () => {
+  const corrData = { anomalies: [{ pair: 'Gold|EUR', r20: -0.4, r60: 0.1, delta: -0.5 }] };
+  const out = _buildLiveCorrSign(corrData);
+  assert.equal(out['GC=F|EURUSD=X'], 'negative');
 });

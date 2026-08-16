@@ -11,10 +11,18 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-15 (Session 315 lanjutan-10 — journal_devices Cleanup + Keputusan TIDAK Lanjut Guard Kontradiksi Call1/Call3)
+> **Last updated:** 2026-08-16 (Session 316 — Age-Check Cache Kalender di Blok Analisa)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
+
+## Changelog Session 316 (2026-08-16) — Age-Check Cache Kalender di Blok Analisa
+
+**Konteks:** Diskusi soal buku ekonometrika (Enders/Tsay) memicu audit terpisah: apakah informasi yang disalurkan ke AI (Ringkasan/Analisa/auto-entry) sudah lengkap & prompt-nya berkualitas. Ditemukan dan diverifikasi langsung ke kode (bukan cuma laporan agent — sempat ada 1 klaim awal yang salah lalu dikoreksi, lihat entri `professional_llm_trader/changelog.md` Session 316 untuk detail Gate D): `calAnalyzeBlock` (`_buildAnalyzeCalBlock`, `api/admin.js`) adalah SATU-SATUNYA blok konteks di prompt Analisa yang tidak punya pengecekan umur cache — beda dari blok fundamental/makro lain yang semua sudah dikasih label umur data eksplisit ke AI (pola `makroAgeH`). Cache `calendar_v1`/`calendar_next_v1` (TTL 6 jam, ditulis `api/calendar.js`) cuma dijaga fresh oleh polling tab Kalender manual — kalau TTL habis tanpa ada yang buka tab itu, AI bisa diam-diam menganggap "tidak ada event kalender" padahal sebenarnya cache belum sempat di-refresh.
+
+**Fix:** `_buildAnalyzeCalBlock` sekarang baca `fetched_at` (field yang sudah ada di payload `calendar.js` sejak awal, cuma belum dipakai di sini) dan tambah catatan `"(Cache kalender N jam lalu — SUDAH AGAK BASI...)"` kalau umurnya >4 jam — ambang sama dengan `makroAgeH`. Fail-open: fixture/payload lama tanpa `fetched_at` tidak menambah baris apa pun (tidak mengubah perilaku lama).
+
+**Test:** 3 test baru di `test/admin/ta_struct.test.js` (stale >4 jam muncul catatan, segar ≤4 jam tidak, tanpa `fetched_at` fail-open). `npm test` 1017/1017 hijau.
 
 ## Changelog Session 315 lanjutan-10 (2026-08-15) — `journal_devices` Cleanup + Keputusan TIDAK Lanjut Guard Kontradiksi Call1/Call3
 

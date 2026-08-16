@@ -118,13 +118,34 @@ function isDrawdownHalted({ closedSetups, regime }) {
 // dari sebelumnya (dites eksplisit di test/api/_auto_entry_guard.test.js).
 // Pair lain di set (AUD/NZD, EUR/GBP) SENGAJA tidak dipetakan (korelasi nyaris nol
 // ke anggota lain, r=0,03-0,19) — tidak perlu di-cap.
+//
+// liveSign (opsional, audit 2026-08-16): angka r di atas snapshot manual dari
+// tanggal riset masing-masing, tidak pernah diperbarui otomatis walau sistem SUDAH
+// menghitung ulang matriks korelasi 20D/60D tiap hari (api/correlations.js,
+// correlations_v3). admin.js (_buildLiveCorrSign) boleh oper map
+// `{ "A|B": "positive"|"negative" }` ke fungsi di bawah untuk menimpa sign statis
+// per-pasangan — TAPI HANYA kalau correlations.js sendiri sudah mendeteksi anomali
+// nyata (|r20-r60|>0,4), BUKAN dari r20 mentah tiap hari (diskusi user 2026-08-16:
+// r20 harian berisik, bisa lintas-nol tanpa perubahan rezim sungguhan — menimpa
+// asumsi hasil riset dengan noise harian berisiko menurunkan kualitas gate, bukan
+// menaikkan). Kalau pasangannya tidak ada anomali terdeteksi, atau tidak ada di live
+// data sama sekali (mis. CHF/JPY — bukan instrumen langsung di correlations.js), atau
+// liveSign tidak dioper sama sekali, fallback diam-diam ke tabel statis di bawah
+// (fail-open, pola sama semua blok lain di codebase ini). TIDAK mengubah desain "heuristik
+// sederhana, bukan covariance-matrix penuh" — cuma sumber angka sign yang diperbarui.
 const CORRELATED_PAIRS = [
   { a: 'GC=F', b: 'EURUSD=X', sign: 'positive' }, // r=0,585, riset 2026-07-26
   { a: 'EURUSD=X', b: 'CHFJPY=X', sign: 'positive' }, // r=0,373, riset 2026-08-08
 ];
 
-function _correlationOf(symbol, partner) {
-  return CORRELATED_PAIRS.find(p => (p.a === symbol && p.b === partner) || (p.b === symbol && p.a === partner)) || null;
+function _correlationOf(symbol, partner, liveSign) {
+  const entry = CORRELATED_PAIRS.find(p => (p.a === symbol && p.b === partner) || (p.b === symbol && p.a === partner));
+  if (!entry) return null;
+  if (liveSign) {
+    const live = liveSign[`${symbol}|${partner}`] || liveSign[`${partner}|${symbol}`];
+    if (live === 'positive' || live === 'negative') return { ...entry, sign: live };
+  }
+  return entry;
 }
 
 function _correlatedPartnersOf(symbol) {
@@ -132,12 +153,12 @@ function _correlatedPartnersOf(symbol) {
 }
 
 // openPositions: array entri setup_log_auto:v1 (semua pair, status apa saja — fungsi
-// ini sendiri yang filter 'open').
-function isCorrelatedExposureBlocked({ symbol, bias, openPositions }) {
+// ini sendiri yang filter 'open'). liveSign: lihat komentar CORRELATED_PAIRS di atas.
+function isCorrelatedExposureBlocked({ symbol, bias, openPositions, liveSign }) {
   for (const partner of _correlatedPartnersOf(symbol)) {
     const openPartner = (openPositions || []).find(p => p && p.symbol === partner && p.status === 'open');
     if (!openPartner) continue;
-    const corr = _correlationOf(symbol, partner);
+    const corr = _correlationOf(symbol, partner, liveSign);
     const sameDirection = bias === openPartner.bias;
     if (corr.sign === 'positive' ? sameDirection : !sameDirection) return true;
   }
@@ -205,6 +226,7 @@ module.exports = {
   computeRollingR,
   isDrawdownHalted,
   isCorrelatedExposureBlocked,
+  CORRELATED_PAIRS,
   isTimingConflictBlocked,
   isInvalidationTriggered,
   INVALIDATION_TRIGGER_TYPES,

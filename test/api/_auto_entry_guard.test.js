@@ -170,6 +170,30 @@ test('isCorrelatedExposureBlocked: EUR/USD baru dengan GC=F DAN CHF/JPY open sea
   assert.equal(isCorrelatedExposureBlocked({ symbol: 'EURUSD=X', bias: 'bearish', openPositions: open }), true);
 });
 
+// ── isCorrelatedExposureBlocked: liveSign override (audit 2026-08-16) ───────
+test('isCorrelatedExposureBlocked: liveSign flip ke negative -> arah blocking terbalik dari tabel statis', () => {
+  const open = [{ symbol: 'EURUSD=X', bias: 'bullish', status: 'open' }];
+  // Statis: GC=F|EURUSD=X positive -> bias sama = blocked. Live bilang sudah negative
+  // (regime berubah) -> sekarang bias sama justru TIDAK blocked, bias BERLAWANAN yang blocked.
+  const liveSign = { 'GC=F|EURUSD=X': 'negative' };
+  assert.equal(isCorrelatedExposureBlocked({ symbol: 'GC=F', bias: 'bullish', openPositions: open, liveSign }), false);
+  assert.equal(isCorrelatedExposureBlocked({ symbol: 'GC=F', bias: 'bearish', openPositions: open, liveSign }), true);
+});
+
+test('isCorrelatedExposureBlocked: liveSign tidak punya entry untuk pasangan ini -> fallback ke sign statis', () => {
+  const open = [{ symbol: 'EURUSD=X', bias: 'bullish', status: 'open' }];
+  const liveSign = { 'AUDUSD=X|NZDUSD=X': 'positive' }; // pasangan lain, tidak relevan
+  assert.equal(isCorrelatedExposureBlocked({ symbol: 'GC=F', bias: 'bullish', openPositions: open, liveSign }), true);
+});
+
+test('isCorrelatedExposureBlocked: liveSign null/undefined -> perilaku identik tanpa param (backward compatible)', () => {
+  const open = [{ symbol: 'EURUSD=X', bias: 'bullish', status: 'open' }];
+  assert.equal(
+    isCorrelatedExposureBlocked({ symbol: 'GC=F', bias: 'bullish', openPositions: open }),
+    isCorrelatedExposureBlocked({ symbol: 'GC=F', bias: 'bullish', openPositions: open, liveSign: null }),
+  );
+});
+
 // ── isTimingConflictBlocked (Gate E, audit S277 2026-08-04) ─────────────────
 
 test('isTimingConflictBlocked: conflict "waktu" -> blocked', () => {

@@ -24,7 +24,37 @@ const { requireAppKey } = require('./_app_key');
 const { fetchYahooOhlcv1h, fetchFallbackCandles, shouldSendYahooAlert, mapYahooSymbolToDeriv, fetchDerivCandles, mergeVolumeByTimestamp } = require('./_ohlcv_fetch');
 const { buildPairContext, computeCurrencyStrength } = require('./_pair_context');
 const { validateTightenSl, computePreventiveTightenSl, _evaluateManaged, _aggManagementStats, isCorroborated } = require('./_position_review');
-const { isDrawdownHalted, isCorrelatedExposureBlocked, isTimingConflictBlocked, isInvalidationTriggered, INVALIDATION_TRIGGER_TYPES, INVALIDATION_TRIGGER_DIRECTIONS, INVALIDATION_TRIGGER_TIMEFRAMES } = require('./_auto_entry_guard');
+const { isDrawdownHalted, isCorrelatedExposureBlocked, isTimingConflictBlocked, isInvalidationTriggered, INVALIDATION_TRIGGER_TYPES, INVALIDATION_TRIGGER_DIRECTIONS, INVALIDATION_TRIGGER_TIMEFRAMES, CORRELATED_PAIRS } = require('./_auto_entry_guard');
+
+// Gate D live-sign lookup (audit 2026-08-16): terjemahkan simbol Yahoo di
+// CORRELATED_PAIRS ke label instrumen api/correlations.js, supaya sign statis di
+// tabel itu bisa ditimpa kalau sistem SENDIRI sudah mendeteksi pergeseran rezim
+// nyata. SENGAJA pakai `anomalies` (syarat |r20-r60|>0,4, ambang yang sudah dipakai
+// & tervalidasi di tempat lain di correlations.js), BUKAN r20 mentah — r20 harian itu
+// berisik (bisa lintas-nol tanpa perubahan rezim sungguhan untuk pasangan yang
+// korelasinya memang tidak kuat); menimpa asumsi hasil riset manual dengan noise
+// harian berisiko MENURUNKAN kualitas gate, bukan menaikkan (diskusi user
+// 2026-08-16). Kalau tidak ada anomali terdeteksi untuk pasangan ini, diam-diam
+// TIDAK override -> tetap pakai sign statis yang sudah diriset. Pasangan yang salah
+// satu legnya bukan instrumen langsung di correlations.js (mis. CHFJPY=X, cross rate
+// yang tidak difetch sendiri) juga sengaja TIDAK dipetakan -> fallback sign statis.
+const CORR_SYMBOL_TO_LABEL = {
+  'DX-Y.NYB': 'DXY', 'EURUSD=X': 'EUR', 'GBPUSD=X': 'GBP', 'USDJPY=X': 'JPY',
+  'AUDUSD=X': 'AUD', 'USDCAD=X': 'CAD', 'NZDUSD=X': 'NZD', 'USDCHF=X': 'CHF',
+  'GC=F': 'Gold',
+};
+function _buildLiveCorrSign(corrData) {
+  if (!corrData || !Array.isArray(corrData.anomalies)) return null;
+  const out = {};
+  for (const { a, b } of CORRELATED_PAIRS) {
+    const la = CORR_SYMBOL_TO_LABEL[a], lb = CORR_SYMBOL_TO_LABEL[b];
+    if (!la || !lb) continue;
+    const anomaly = corrData.anomalies.find(x => x.pair === `${la}|${lb}` || x.pair === `${lb}|${la}`);
+    if (!anomaly || anomaly.r20 == null) continue;
+    out[`${a}|${b}`] = anomaly.r20 >= 0 ? 'positive' : 'negative';
+  }
+  return out;
+}
 
 // Actions callable from the frontend without a secret → rate-limited per IP.
 // AI-triggering actions get a tighter budget than cache reads.
@@ -4912,7 +4942,18 @@ function _buildAnalyzeCalBlock(calThis, calNext, legs, nowMs) {
     const fp = (e.forecast || e.previous) ? ` [F: ${e.forecast || '—'} | P: ${e.previous || '—'}]` : '';
     return `- ${e.date} | ${e.time_wib} | ${e.currency} | ${e.event}${fp}`;
   });
-  return `[EVENT HIGH-IMPACT 7 HARI KE DEPAN]\n${lines.join('\n')}\nKalau event di atas jatuh dalam rentang time_horizon_days yang kamu tulis, WAJIB disebut di invalidation_condition atau trigger.`;
+  // Umur cache: calendar_v1/calendar_next_v1 (TTL 6 jam) cuma dijaga fresh oleh
+  // polling tab Kalender manual — beda dari blok lain (fundamental/makro) yang semua
+  // sudah punya age-guard eksplisit. Fail-open kalau fetched_at tidak ada (fixture
+  // lama/format belum punya field ini) — TIDAK menambah baris, pola sama makroAgeH.
+  const ages = [calThis?.fetched_at, calNext?.fetched_at]
+    .map(ts => { const ms = ts ? nowMs - new Date(ts).getTime() : NaN; return (!isNaN(ms) && ms >= 0) ? ms / 3600000 : null; })
+    .filter(h => h != null);
+  const ageH = ages.length > 0 ? Math.round(Math.max(...ages) * 10) / 10 : null;
+  const staleNote = (ageH != null && ageH > 4)
+    ? `\n(Cache kalender ${ageH} jam lalu — SUDAH AGAK BASI, mungkin ada event/rilis baru yang belum masuk daftar ini.)`
+    : '';
+  return `[EVENT HIGH-IMPACT 7 HARI KE DEPAN]\n${lines.join('\n')}${staleNote}\nKalau event di atas jatuh dalam rentang time_horizon_days yang kamu tulis, WAJIB disebut di invalidation_condition atau trigger.`;
 }
 
 async function ohlcvAnalyzeHandler(req, res) {
@@ -5197,6 +5238,17 @@ async function ohlcvAnalyzeHandler(req, res) {
         legs, Date.now(),
       );
     } catch (e) { /* opsional — jangan gagalkan analisa kalau cache kalender kosong */ }
+
+    // Gate D live-sign (audit 2026-08-16): fetch di luar lock (pola sama trackBlock/
+    // calAnalyzeBlock di atas — JANGAN tambah I/O di dalam critical section mutasi
+    // log di bawah). Hanya perlu untuk isAutoCall (Gate D cuma jalan untuk auto-entry).
+    let liveCorrSign = null;
+    if (isAutoCall) {
+      try {
+        const rawCorr = await redisCmd('GET', 'correlations_v3');
+        liveCorrSign = rawCorr ? _buildLiveCorrSign(JSON.parse(rawCorr)) : null;
+      } catch (e) { /* opsional — fallback ke sign statis di isCorrelatedExposureBlocked */ }
+    }
 
     // PLAN U-2 (2026-07-20): rezim volatilitas (ATR14 H1 pair ini) + currency
     // strength (14 pair FX, %change H1 ~3 hari) — modul murni api/_pair_context.js,
@@ -5921,7 +5973,7 @@ async function ohlcvAnalyzeHandler(req, res) {
           // keputusan hard-block, tambahkan counter OBSERVASI non-blocking di sini
           // (pola sama conflict_waktu_flagged di atas) — JANGAN langsung set
           // autoGuardReason tanpa data.
-          if (isCorrelatedExposureBlocked({ symbol, bias: structured.bias, openPositions: log })) {
+          if (isCorrelatedExposureBlocked({ symbol, bias: structured.bias, openPositions: log, liveSign: liveCorrSign })) {
             autoGuardReason = 'correlation_cap';
           } else {
             const closedSetups = log
@@ -6558,6 +6610,7 @@ module.exports.COT_CME_PROMPT_VERSION = COT_CME_PROMPT_VERSION;
 module.exports._formatTrackRecordBlock = _formatTrackRecordBlock;
 module.exports._calEventMsWib = _calEventMsWib;
 module.exports._buildAnalyzeCalBlock = _buildAnalyzeCalBlock;
+module.exports._buildLiveCorrSign = _buildLiveCorrSign;
 module.exports.parseRSSHeadlines = parseRSSHeadlines;
 module.exports.parsePushRSS = parsePushRSS;
 module.exports.BLOCKED_HEADLINE_RE = BLOCKED_HEADLINE_RE;
