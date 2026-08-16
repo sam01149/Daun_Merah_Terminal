@@ -216,3 +216,44 @@ test('CEK KONTRADIKSI cron: reasoning konsisten (tanpa kontradiksi) -> tidak dis
     } finally { global.fetch = origFetch; }
   });
 });
+
+// Regresi (audit end-to-end 2026-08-16, ditemukan dari setup live nyata
+// CHFJPY=X:1786436246374): guard kontradiksi mempertahankan conflict:'waktu' kalau
+// model SUDAH melapor 'waktu' (tidak ditimpa turun ke 'arah', lihat komentar
+// "jangan ditimpa turun" di admin.js). conflict_source SEBELUMNYA hanya diisi kalau
+// conflict==='arah', jadi provenance guard hilang jadi null persis di kasus ini —
+// walau makro_alignment_reason sudah membawa prefix [CEK KONTRADIKSI]. Setup live
+// itu membuktikan bug ini nyata: reason terkoreksi tapi conflict_source tidak
+// merekam contradiction_guard sebagai sumbernya.
+test('CEK KONTRADIKSI cron: conflict SUDAH "waktu" sebelum guard jalan -> conflict_source tetap terekam "contradiction_guard" (bukan null)', async () => {
+  await withEnv({ CRON_SECRET: 'topsecret', DEEPSEEK_API_KEY: 'k' }, async () => {
+    const jsonWithWaktu = { ...AI_JSON_CONTRADICTORY, conflict: 'waktu', conflict_note: 'Rilis data JPY dalam 2 jam.' };
+    const rawText = `${JSON.stringify(jsonWithWaktu)}\n===COMMENTARY===\nKomentar singkat untuk tes CEK KONTRADIKSI + waktu.`;
+    const store = makeStore({
+      'ohlcv_fresh:CHFJPY=X': '1',
+      'ohlcv:CHFJPY=X:1h': JSON.stringify(mkTrendCandles(195.0, 195.6)),
+      'cb_bias': JSON.stringify({
+        JPY: { bias: 'hawkish', confidence: 'High', updated_at: new Date().toISOString() },
+      }),
+    });
+    const origFetch = global.fetch;
+    global.fetch = makeAnalyzeFetchStub(store, rawText);
+    try {
+      const handler = loadHandler();
+      const res = fakeRes();
+      await handler({
+        headers: { 'x-cron-secret': 'topsecret' }, method: 'GET',
+        query: { action: 'ohlcv_analyze', symbol: 'CHFJPY=X', label: 'CHF/JPY', auto: '1' },
+      }, res);
+
+      assert.equal(res.statusCode, 200);
+      assert.equal(res.body.structured.makro_alignment, 'konflik', 'guard tetap mengoreksi makro_alignment walau conflict sudah waktu');
+      assert.equal(res.body.structured.conflict, 'waktu', 'conflict TIDAK ditimpa turun jadi arah — waktu dipertahankan by design');
+      assert.match(res.body.structured.makro_alignment_reason, /CEK KONTRADIKSI/);
+
+      const log = JSON.parse(store.strings['setup_log_auto:v1']);
+      assert.equal(log[0].conflict_source, 'contradiction_guard', 'BUG LAMA: ini sebelumnya null walau guard nyata-nyata aktif');
+      assert.equal(store.strings['contradiction_guard_stats:fired'], '1');
+    } finally { global.fetch = origFetch; }
+  });
+});

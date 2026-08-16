@@ -11,10 +11,24 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-16 (Session 316 — Age-Check Cache Kalender di Blok Analisa)
+> **Last updated:** 2026-08-16 (Session 316 lanjutan — Fix `conflict_source` Hilang Provenance)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
+
+## Changelog Session 316 lanjutan (2026-08-16) — Fix `conflict_source` Hilang Provenance Saat Guard Aktif pada `conflict:'waktu'`
+
+**Konteks:** Audit end-to-end "Professional LLM Trader" (permintaan user, pakai `professional_llm_trader/audit_workflow.md`) — lanjutan audit kualitas informasi sesi yang sama (lihat Session 316 di bawah). Data live production (`setup_stats`, `redis-keys`, `health`) diambil langsung via `x-admin-secret` untuk menjalankan checklist §3a-3e audit_workflow.md terhadap setup `source:auto` aktif.
+
+**Bug ditemukan & diverifikasi ke kode (bukan spekulasi) — contoh live nyata `CHFJPY=X:1786436246374` (posisi masih `open` saat audit):** `makro_alignment_reason` setup ini membawa prefix `[CEK KONTRADIKSI]` — bukti guard `_detectAlignmentReasonContradiction` (Session 301) benar-benar aktif mengoreksi `makro_alignment` jadi `konflik`. Tapi field `conflict_source` (dimaksudkan sebagai jejak audit "siapa yang menandai konflik ini" — AI sendiri/Sistem Hakim/guard kontradiksi, lihat tabel field §1 `audit_workflow.md`) tercatat **`null`**, seolah tidak ada mekanisme yang menandainya.
+
+**Root cause:** `conflict_source` (dua tempat, `api/admin.js` — entry baru & jalur refine-in-place) digerbang `structured.conflict === 'arah'`. Tapi baik Sistem Hakim (Session 283) maupun guard kontradiksi (Session 301) SENGAJA **mempertahankan** `conflict:'waktu'` kalau model sudah melapor itu duluan (komentar kode: "lebih serius, jangan ditimpa turun") — mereka TIDAK menimpanya jadi `'arah'`. Akibatnya, kapan pun salah satu guard itu aktif pada setup yang `conflict`-nya sudah `'waktu'`, provenance-nya hilang jatuh ke `null` — persis kasus CHF/JPY di atas. Bug murni pada perhitungan field metadata (tidak memengaruhi `makro_alignment`/`entry_zone`/`sl`/`tp` — keputusan trading itu sendiri tidak terpengaruh), tapi merusak jejak audit yang `audit_workflow.md` sendiri andalkan untuk membedakan "AI salah nalar sendiri" vs "sistem sudah menangkapnya".
+
+**Fix (`api/admin.js`, 2 lokasi):** `conflict_source` sekarang diprioritaskan dari flag `conflictForcedBySistemHakim`/`contradictionGuardFired` (independen dari nilai akhir `conflict`), baru fallback ke `structured.conflict === 'arah' ? 'ai' : null` kalau tidak ada guard yang aktif. Perilaku untuk semua kasus lama (conflict `'arah'`/`'none'`) tidak berubah.
+
+**Test:** 1 test regresi baru `test/admin/alignment_contradiction.test.js` (guard aktif dengan `conflict:'waktu'` sejak awal → `conflict_source` harus `'contradiction_guard'`, bukan `null`). `npm test` 1018/1018 hijau.
+
+**Temuan lain dari audit yang sama (butuh keputusan desain, TIDAK dieksekusi sepihak) & jawaban pertanyaan "apakah AI sudah dapat info berkualitas sebelum entry" — dicatat lengkap di `professional_llm_trader/riset.md` dan `professional_llm_trader/audit_workflow.md` §5 (bukan di sini, sesuai routing — temuan itu murni observasi/menunggu keputusan, bukan kode yang diubah).**
 
 ## Changelog Session 316 (2026-08-16) — Age-Check Cache Kalender di Blok Analisa
 

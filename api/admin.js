@@ -5776,9 +5776,18 @@ async function ohlcvAnalyzeHandler(req, res) {
         // untuk agregat terpisah yang MEMBACA field ini). null = cbDir tidak tersedia
         // saat itu (fail-closed _computeCbDirServerSide, atau manual tanpa cbDir).
         sistem_hakim: sistemHakimEvaluated ? (sistemHakimFired ? 'fired' : (sistemHakimCorrected ? 'corrected' : 'clear')) : null,
-        conflict_source: structured.conflict === 'arah'
-          ? (conflictForcedBySistemHakim ? 'sistem_hakim' : (contradictionGuardFired ? 'contradiction_guard' : 'ai'))
-          : null,
+        // BUG DITEMUKAN & DIFIX (audit end-to-end 2026-08-16): sebelumnya digerbang
+        // `structured.conflict === 'arah'` — tapi Sistem Hakim & guard kontradiksi
+        // SENGAJA mempertahankan conflict:'waktu' kalau sudah ada (lihat komentar
+        // "jangan ditimpa turun" di kedua blok di atas), bukan menimpanya jadi 'arah'.
+        // Akibatnya conflict_source diam-diam jatuh ke null persis saat salah satu
+        // guard itu benar-benar aktif pada setup conflict:'waktu' — jejak audit hilang
+        // padahal makro_alignment_reason sudah membawa prefix [SISTEM HAKIM]/[CEK
+        // KONTRADIKSI]. Sekarang provenance guard diprioritaskan dulu, independen dari
+        // nilai akhir conflict (contoh nyata ketahuan: CHFJPY=X:1786436246374).
+        conflict_source: (conflictForcedBySistemHakim || contradictionGuardFired)
+          ? (conflictForcedBySistemHakim ? 'sistem_hakim' : 'contradiction_guard')
+          : (structured.conflict === 'arah' ? 'ai' : null),
         loss_label: null, label_reason: null, label_by: null,
         // PLAN U-5a: manajemen posisi VIRTUAL — null/0 = belum pernah direview.
         intervention: null, managed_status: null, managed_closed_t: null, review_count: 0,
@@ -5880,9 +5889,12 @@ async function ohlcvAnalyzeHandler(req, res) {
                 // [SISTEM HAKIM] tag pengukuran ikut diperbarui ke generasi terbaru — pola
                 // sama PLAN W di atas, jangan nyimpen snapshot dari generasi pertama.
                 stalePending.sistem_hakim = sistemHakimEvaluated ? (sistemHakimFired ? 'fired' : (sistemHakimCorrected ? 'corrected' : 'clear')) : null;
-                stalePending.conflict_source = structured.conflict === 'arah'
-                  ? (conflictForcedBySistemHakim ? 'sistem_hakim' : (contradictionGuardFired ? 'contradiction_guard' : 'ai'))
-                  : null;
+                // Sama seperti buildNewSetupEntry di atas (bug conflict_source jatuh ke
+                // null saat guard aktif pada conflict:'waktu' yang dipertahankan) — fix
+                // sama diterapkan di jalur refine-in-place ini.
+                stalePending.conflict_source = (conflictForcedBySistemHakim || contradictionGuardFired)
+                  ? (conflictForcedBySistemHakim ? 'sistem_hakim' : 'contradiction_guard')
+                  : (structured.conflict === 'arah' ? 'ai' : null);
                 stalePending.model = model;
                 // BUG DITEMUKAN & DIFIX (2026-07-25, diskusi user soal filled_t < closed_t):
                 // `ts` di sini SEMPAT di-reset ke Date.now() supaya horizon_days terasa
