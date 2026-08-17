@@ -5425,10 +5425,55 @@ async function ohlcvAnalyzeHandler(req, res) {
       }
     }
 
+    // Diagnostik one-off (2026-08-17) — bandingkan deepseek-v4-pro vs flash persis di
+    // titik Analisa AI per Pair (bukan cuma Ringkasan), pola isolasi identik dengan
+    // blok flash di atas: circuit terpisah (ai:deepseek:pro_test), TIDAK PERNAH promosi
+    // otomatis ke primary, TIDAK menyentuh cache produksi (lihat isDiagnosticOnly).
+    const testDeepseekProOnly = req.query.test_deepseek_pro === '1' || req.body?.test_deepseek_pro === true;
+    let deepseekProError = null, deepseekProElapsedMs = null;
+
+    if (testDeepseekProOnly) {
+      const DEEPSEEK_KEY = process.env.DEEPSEEK_API_KEY;
+      if (DEEPSEEK_KEY && await cb.canCall('ai:deepseek:pro_test')) {
+        const t0dsp = Date.now();
+        try {
+          if (!await allowAiCall('deepseek_experimental')) throw new Error('AI daily budget exceeded');
+          console.log('ohlcv_analyze: trying DeepSeek v4-pro — diagnostik test_deepseek_pro=1');
+          const r = await fetch('https://api.deepseek.com/chat/completions', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${DEEPSEEK_KEY}` },
+            body: JSON.stringify({ model: 'deepseek-v4-pro', messages, max_tokens: 1500, temperature: 0, thinking: { type: 'disabled' } }),
+            signal: AbortSignal.timeout(30000),
+          });
+          if (r.ok) {
+            const j = await r.json(); rawText = j.choices?.[0]?.message?.content?.trim() || null; model = 'deepseek-v4-pro';
+            if (rawText) await cb.onSuccess('ai:deepseek:pro_test');
+            else throw new Error('Empty response');
+          } else {
+            const errJ = await r.json().catch(() => ({}));
+            throw new Error(r.status === 402 ? 'HTTP402_insufficient_balance' : (errJ?.error?.message || `HTTP ${r.status}`));
+          }
+          deepseekProElapsedMs = Date.now() - t0dsp;
+          console.log('ohlcv_analyze: DeepSeek v4-pro OK,', deepseekProElapsedMs, 'ms');
+        } catch(e) {
+          deepseekProElapsedMs = Date.now() - t0dsp;
+          deepseekProError = e.message;
+          console.warn('ohlcv_analyze DeepSeek v4-pro failed:', e.message);
+          await cb.onFailure('ai:deepseek:pro_test');
+        }
+      } else if (DEEPSEEK_KEY) {
+        deepseekProError = 'circuit_open';
+        console.log('ohlcv_analyze: test_deepseek_pro=1 — circuit OPEN');
+      } else {
+        deepseekProError = 'no_key';
+        console.log('ohlcv_analyze: test_deepseek_pro=1 — DEEPSEEK_API_KEY belum diset');
+      }
+    }
+
     // Dipakai untuk menggerbang cache produksi — SATU flag untuk SEMUA diagnostik
     // terisolasi (DeepSeek dkk), supaya nambah kandidat baru nanti tinggal OR ke sini,
     // bukan cari-cari tiap titik guard satu-satu.
-    const isDiagnosticOnly = testDeepseekOnly;
+    const isDiagnosticOnly = testDeepseekOnly || testDeepseekProOnly;
     // Scope terpisah dari DEEPSEEK_KEY di blok testDeepseekOnly di atas (itu lokal ke
     // if-block-nya sendiri) — dibutuhkan lagi di sini untuk tier primary produksi.
     const DEEPSEEK_KEY = process.env.DEEPSEEK_API_KEY;
