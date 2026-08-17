@@ -11,18 +11,20 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-17 (Session 317 — Netralkan Warna Pair di Tab Fundamental)
+> **Last updated:** 2026-08-17 (Session 317 — Netralkan Warna Pair di Tab Fundamental & Dashboard)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
-## Changelog Session 317 (2026-08-17) — Netralkan Warna Pair di Tab Fundamental
+## Changelog Session 317 (2026-08-17) — Netralkan Warna Pair di Tab Fundamental & Dashboard
 
-**Permintaan:** Warna label tiap currency di tab FUNDAMENTAL (kartu, strip ranking, overlay detail) dulu beda-beda per pair (`CUR_COLORS`, warna sama yang dipakai tab Kalender) — user minta disamakan semua jadi netral, biar tidak ada kesan satu currency "lebih penting" dari yang lain secara visual.
+**Permintaan:** Warna label tiap currency di tab FUNDAMENTAL (kartu, strip ranking, overlay detail) dulu beda-beda per pair (`CUR_COLORS`, warna sama yang dipakai tab Kalender) — user minta disamakan semua jadi netral, biar tidak ada kesan satu currency "lebih penting" dari yang lain secara visual. Lanjutan permintaan: disamakan juga di tab Dashboard.
 
-**Fix (`index.html`, `renderFundamental`):** Satu titik perubahan — `col` (dulu `CUR_COLORS[cur]`) sekarang selalu `var(--text-mid)`. Karena `col` disimpan di array `scores` dan dipakai ulang (`s.col`) di semua render turunan tab Fundamental (border kartu, teks kode currency, bar ranking, header overlay detail, tab currency, blok CB rate), satu perubahan ini otomatis menyeragamkan seluruh tab tanpa menyentuh tab lain (Kalender tetap pakai `CUR_COLORS` asli — di luar cakupan permintaan).
+**Fix Fundamental (`index.html`, `renderFundamental`):** Satu titik perubahan — `col` (dulu `CUR_COLORS[cur]`) sekarang selalu `var(--text-mid)`. Karena `col` disimpan di array `scores` dan dipakai ulang (`s.col`) di semua render turunan tab Fundamental (border kartu, teks kode currency, bar ranking, header overlay detail, tab currency, blok CB rate), satu perubahan ini otomatis menyeragamkan seluruh tab tanpa menyentuh tab lain (Kalender tetap pakai `CUR_COLORS` asli — di luar cakupan permintaan).
 
-**Verifikasi:** `npm test` 1018/1018 hijau (perubahan murni CSS-color, tidak ada test yang menyentuh path ini). Tidak ada server dev lokal untuk screenshot langsung (app fetch data live dari `/api`, deploy via `git push`) — dicek manual tidak ada pola `${col}22` (concat hex-alpha) di scope Fundamental yang bisa rusak akibat ganti ke CSS var, dan `--text-mid` sudah terdefinisi di semua varian tema (dark/light).
+**Fix Dashboard (`index.html`):** Disisir seluruh widget Dashboard (`renderDashBias`, `renderDailySnapshot`, `renderDashAnalisa`, `renderDashRetail`, `renderDashEvents`) untuk pola warna per-pair yang sama. Ditemukan 2 titik: (1) `renderDashBias` — label currency di CB BIAS list pakai `CUR_COLORS_DB` (peta warna terpisah, khusus dashboard), diganti `var(--text-mid)` dan objek `CUR_COLORS_DB` yang jadi tak terpakai dihapus; (2) `renderDashRetail` — label pair di RETAIL SENTIMENT strip pakai `RETAIL_PAIR_COLORS`, diganti `var(--text-mid)`. Warna sinyal yang punya makna (hawkish/dovish di CB Bias, naik/turun di Daily Pulse & Analisa strip) **tidak disentuh** — hanya warna identitas per-pair yang dinetralkan. `RETAIL_PAIR_COLORS` tetap dipakai di tab COT sendiri (`renderRetailSentiment`, `retailGrid`) — di luar cakupan permintaan ini, jadi tidak diubah.
+
+**Verifikasi:** `npm test` 1018/1018 hijau (perubahan murni CSS-color, tidak ada test yang menyentuh path ini). Tidak ada server dev lokal untuk screenshot langsung (app fetch data live dari `/api`, deploy via `git push`) — dicek manual tidak ada pola `${col}22`/hex-alpha-concat di titik-titik yang diubah, dan `--text-mid` sudah terdefinisi di semua varian tema (dark/light).
 
 ## Changelog Session 316 lanjutan (2026-08-16) — Fix `conflict_source` Hilang Provenance Saat Guard Aktif pada `conflict:'waktu'`
 

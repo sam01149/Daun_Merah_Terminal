@@ -9935,13 +9935,12 @@ function renderDashRetail() {
     .sort((a, b) => Math.abs(b.long_pct - 50) - Math.abs(a.long_pct - 50))
     .map(d => {
       const { pair, long_pct, short_pct, signal } = d;
-      const color   = RETAIL_PAIR_COLORS[pair] || '#888';
       const label   = pair.slice(0,3) + '/' + pair.slice(3);
       const sigClass = signal === 'CONTRARIAN_LONG' ? 'long' : signal === 'CONTRARIAN_SHORT' ? 'short' : 'neut';
       const arrow    = signal === 'CONTRARIAN_LONG' ? '↑' : signal === 'CONTRARIAN_SHORT' ? '↓' : '—';
       const title    = `Retail ${long_pct}% long / ${short_pct}% short — ${sigClass === 'neut' ? 'netral' : 'sinyal kontrarian ' + (sigClass === 'long' ? 'LEAN LONG' : 'LEAN SHORT')}`;
       return `<div class="dash-retail-row" title="${escHtml(title)}">
-        <span class="dash-retail-pair" style="color:${color}">${label}</span>
+        <span class="dash-retail-pair" style="color:var(--text-mid)">${label}</span>
         <div class="dash-retail-bar-wrap"><div class="dash-retail-bar-fill" style="width:${long_pct}%"></div></div>
         <span class="dash-retail-sig ${sigClass}">${arrow}</span>
       </div>`;
@@ -18044,16 +18043,14 @@ function renderDashBias() {
   const BIAS_COLORS = {
     'very hawkish':'#ff4757','hawkish':'var(--orange)','neutral':'var(--muted)','dovish':'var(--green)','very dovish':'var(--green)'
   };
-  const CUR_COLORS_DB = { USD:'#38bdf8', EUR:'#c0392b', GBP:'#a78bfa', JPY:'#ffd32a', CAD:'#ff6b35', AUD:'#00c896', NZD:'#34d399', CHF:'#ff4757' };
   const ORDER = ['USD','EUR','GBP','JPY','CAD','AUD','NZD','CHF'];
   const sorted = ORDER.map(c => cbData.find(d => d.currency === c)).filter(Boolean);
 
   biasEl.innerHTML = sorted.map(cb => {
     const bias   = (cb.bias || 'neutral').toLowerCase();
     const color  = BIAS_COLORS[bias] || '#94a3b8';
-    const curClr = CUR_COLORS_DB[cb.currency] || '#fff';
     return `<div class="dash-bias-row">
-      <span class="dash-bias-cur" style="color:${curClr}">${cb.currency}</span>
+      <span class="dash-bias-cur" style="color:var(--text-mid)">${cb.currency}</span>
       <span class="dash-bias-pill" style="background:${color}22;color:${color}">${cb.bias || '—'}</span>
     </div>`;
   }).join('');
