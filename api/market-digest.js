@@ -2365,6 +2365,9 @@ ${xauHistoryBlock}`;
     provider_log:   providerLog,
     quality_flags:  phraseHits.length > 0 ? { forbidden_phrases: phraseHits } : undefined,
     generated_at:   new Date().toISOString(),
+    // Echo prompt persis yang dikirim ke model — HANYA saat isolated test (2026-08-17,
+    // dipakai user buat verifikasi manual di web DeepSeek), tidak pernah di jalur produksi.
+    debug_prompt:   isIsolatedTest ? { system: call1Messages[0].content, user: call1Messages[1].content } : undefined,
   };
 
   // Persist full payload to Redis so cached mode works (exclude thesis_alerts — device-specific).

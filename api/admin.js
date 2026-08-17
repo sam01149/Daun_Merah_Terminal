@@ -5729,6 +5729,10 @@ async function ohlcvAnalyzeHandler(req, res) {
       // PLAN U-2: rezim volatilitas + currency strength diikutkan di payload supaya
       // U-4 bisa menampilkan tanpa call baru (numpang response existing).
       pair_context: { regime: pairCtx.regime, strength: pairCtx.strength },
+      // Echo prompt persis yang dikirim ke model — HANYA saat diagnostik isolated
+      // (2026-08-17, dipakai user buat verifikasi manual di web DeepSeek), tidak pernah
+      // di jalur produksi.
+      debug_prompt: isDiagnosticOnly ? { system: messages[0].content, user: messages[1].content } : undefined,
     };
 
     if (!commentary && !structured) {
