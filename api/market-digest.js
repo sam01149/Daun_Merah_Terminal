@@ -1998,31 +1998,38 @@ ${xauHistoryBlock}`;
     const CALL1_HARD_BUDGET_MS = 48000;
     const call1BudgetLeft = () => Date.now() - handlerStart < CALL1_HARD_BUDGET_MS;
 
-    // Primary Call 1 (Plan O-3, 2026-07-18): DeepSeek v4-flash API resmi — promosi dari
-    // diagnostik ?test_deepseek=1 (session 186) ke tier produksi nomor 1. Keputusan user
-    // setelah tes live 3 sampel flash vs 2 sampel SambaNova V3.2: flash unggul kualitas
-    // (FX per-pair lengkap 3/3 sampel vs V3.2 menipiskan FX 1/2 sampel), latency setara,
-    // biaya nyata $0.0033/generate (proyeksi cron 3 bulan ≈$0.90, saldo top-up $2 cukup).
-    // Chain gratis existing (Nemotron cron/SambaNova/Cerebras/Gemini/Groq) TURUN jadi
-    // fallback berurutan, TIDAK dihapus — lihat edge case saldo habis (HTTP 402) di
+    // Primary Call 1 (Plan O-3, 2026-07-18: promosi flash; 2026-08-17: promosi ke
+    // deepseek-v4-pro). Keputusan user setelah audit sesi berjalan — 3 sampel non-blind
+    // (API + web chat.deepseek.com, Instant vs Expert, dengan & tanpa DeepThink) konsisten
+    // menunjukkan flash melewatkan tema lintas-pair yang genuinely ada di headline (mis.
+    // data China yang menekan AUD), sementara pro selalu menangkapnya. Biaya tambahan kecil
+    // (~$0.005/request pro vs flash, lihat daun_merah.md Session 317 lanjutan) dan burn
+    // rate terverifikasi dari dashboard DeepSeek (~$0.03/hari baseline hari kerja) — proyeksi
+    // saldo tetap sehat >30 hari. HANYA Call 1 yang naik ke pro — Call 2/3/4 dan seluruh
+    // fitur lain (Analisa AI per Pair/auto-entry, Pre-Entry Check, dst) TETAP flash; bukti
+    // untuk ohlcv_analyze belum sekuat Call 1 (lihat evaluasi terpisah di daun_merah.md).
+    // max_tokens 1300->1600 & timeout 30s->40s: pro ~2x lebih lambat & sedikit lebih
+    // verbose dari flash di sampel kita, beri headroom cegah truncation (masih di bawah
+    // CALL1_HARD_BUDGET_MS 48s). Chain gratis existing (Gemini dkk) tetap fallback
+    // berurutan, TIDAK dihapus — lihat edge case saldo habis (HTTP 402) di
     // catch: error biasa → fallback lanjut, BUKAN hang. Skip saat isIsolatedTest
-    // (termasuk ?test_deepseek=1 sendiri, sudah ditangani blok diagnostik terpisah di
-    // atas dengan hasil TIDAK ditulis ke latest_article).
+    // (termasuk ?test_deepseek=1/?test_deepseek_pro=1 sendiri, sudah ditangani blok
+    // diagnostik terpisah di atas dengan hasil TIDAK ditulis ke latest_article).
     if (isIsolatedTest) {
       if (!article) providerLog.push('deepseek_primary:skipped_test');
     } else if (!article && DEEPSEEK_KEY && await cb.canCall(CB_DEEPSEEK)) {
       const t0dsp = Date.now();
       try {
-        console.log('Call 1: trying DeepSeek v4-flash (primary)');
-        const raw = await aiCall(DEEPSEEK_URL, DEEPSEEK_KEY, DEEPSEEK_MODEL, call1Messages, 1300, 0.25, 30000, {}, { thinking: { type: 'disabled' } }, 'deepseek');
+        console.log('Call 1: trying DeepSeek v4-pro (primary)');
+        const raw = await aiCall(DEEPSEEK_URL, DEEPSEEK_KEY, 'deepseek-v4-pro', call1Messages, 1600, 0.25, 40000, {}, { thinking: { type: 'disabled' } }, 'deepseek');
         const elapsed = Date.now() - t0dsp;
         if (raw.trim()) {
-          article = raw.trim(); method = 'deepseek-v4-flash';
+          article = raw.trim(); method = 'deepseek-v4-pro';
           providerLog.push(`deepseek:ok(${elapsed}ms,${article.length}c)`);
         } else {
           providerLog.push(`deepseek:empty(${elapsed}ms)`);
         }
-        console.log('Call 1: DeepSeek v4-flash OK, length', article?.length);
+        console.log('Call 1: DeepSeek v4-pro OK, length', article?.length);
         await cb.onSuccess(CB_DEEPSEEK);
       } catch(e) {
         const elapsed = Date.now() - t0dsp;
