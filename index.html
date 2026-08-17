@@ -42,6 +42,7 @@
   --orange: #e67e22;
   --purple: #a78bfa;
   --pink: #f472b6;
+  --slate: #7d92a8;
   --fg-rgb: 232, 228, 217;
   --bg-rgb: 7, 10, 8;
   --accent-rgb: 168, 50, 38;
@@ -2659,7 +2660,7 @@ body.light-theme .cal-date-input { color-scheme: light; }
     --green: #1a1a1a; --green-dim: #1a1a1a; --red: #1a1a1a;
     --fg-rgb: 26, 26, 26; --bg-rgb: 255, 255, 255;
     --accent-rgb: 26, 26, 26; --green-rgb: 26, 26, 26;
-    --yellow: #1a1a1a; --orange: #1a1a1a; --purple: #1a1a1a; --pink: #5a5a5a;
+    --yellow: #1a1a1a; --orange: #1a1a1a; --purple: #1a1a1a; --pink: #5a5a5a; --slate: #1a1a1a;
   }
   /* Highlight berwarna di teks artikel (angka kuning, currency merah, dst)
      + warna hardcoded lain: netralkan ke warna teks biasa. */
@@ -2787,6 +2788,7 @@ body.light-theme {
   --orange: #ea580c;
   --purple: #7c3aed;
   --pink: #db2777;
+  --slate: #4a5f75;
   --fg-rgb: 0, 0, 0;
   --bg-rgb: 248, 247, 245;
   --accent-rgb: 179, 45, 34;
@@ -9333,7 +9335,7 @@ function renderFundamental() {
     const confLabel  = confTier === 'high' ? 'High' : confTier === 'med' ? 'Med' : confTier === 'low' ? 'Low' : null;
     // Warna pair sengaja dinetralkan (2026-08-17): dulu tiap currency punya warna beda
     // (CUR_COLORS), sekarang seragam biar tak ada kesan currency tertentu "lebih penting".
-    const col        = 'var(--purple)';
+    const col        = 'var(--slate)';
     return { cur, data, rateKey, rateVal, score, scoreLabel, scoreColor, confTier, confLabel, scoredCt, totalScorable, col };
   });
 
@@ -9940,7 +9942,7 @@ function renderDashRetail() {
       const arrow    = signal === 'CONTRARIAN_LONG' ? '↑' : signal === 'CONTRARIAN_SHORT' ? '↓' : '—';
       const title    = `Retail ${long_pct}% long / ${short_pct}% short — ${sigClass === 'neut' ? 'netral' : 'sinyal kontrarian ' + (sigClass === 'long' ? 'LEAN LONG' : 'LEAN SHORT')}`;
       return `<div class="dash-retail-row" title="${escHtml(title)}">
-        <span class="dash-retail-pair" style="color:var(--purple)">${label}</span>
+        <span class="dash-retail-pair" style="color:var(--slate)">${label}</span>
         <div class="dash-retail-bar-wrap"><div class="dash-retail-bar-fill" style="width:${long_pct}%"></div></div>
         <span class="dash-retail-sig ${sigClass}">${arrow}</span>
       </div>`;
@@ -18050,7 +18052,7 @@ function renderDashBias() {
     const bias   = (cb.bias || 'neutral').toLowerCase();
     const color  = BIAS_COLORS[bias] || '#94a3b8';
     return `<div class="dash-bias-row">
-      <span class="dash-bias-cur" style="color:var(--purple)">${cb.currency}</span>
+      <span class="dash-bias-cur" style="color:var(--slate)">${cb.currency}</span>
       <span class="dash-bias-pill" style="background:${color}22;color:${color}">${cb.bias || '—'}</span>
     </div>`;
   }).join('');

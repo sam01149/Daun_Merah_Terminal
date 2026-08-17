@@ -28,6 +28,8 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 
 **Revisi warna 2 (sama sesi):** `var(--accent)` (merah) dirasa aneh dipakai di semua pair sekaligus — karena merah sudah punya makna lain di app (bearish/negatif). Diganti lagi ke `var(--purple)` di 3 titik yang sama — warna ungu ini tidak dipakai untuk sinyal bull/bear di manapun dalam scope Fundamental/Dashboard (skor tetap pakai hijau/merah/kuning terpisah), jadi aman dari ambiguitas makna sekaligus tetap terlihat hidup.
 
+**Revisi warna 3 (sama sesi):** User minta nuansa "profesional ala Bloomberg" — sempat dipertimbangkan `var(--orange)` tapi ternyata identik hex-nya dengan `var(--yellow)` (`#e67e22`) dan bentrok visual dengan badge "hawkish" di widget CB Bias (sama-sama oren, bersebelahan). Diputuskan pakai token warna BARU `--slate` (steel blue-gray, belum pernah dipakai di app — dark `#7d92a8`, light `#4a5f75`, print monokrom `#1a1a1a`) ditambahkan ke ketiga blok tema (`:root`, `body.light-theme`, print override) supaya konsisten lintas tema. Dipasang di 3 titik yang sama (`renderFundamental`, `renderDashBias`, `renderDashRetail`) — user eksplisit oke kalau kesannya kalem/"mati", asal terasa profesional dan tidak tabrakan makna dengan warna sinyal lain.
+
 **Verifikasi:** `npm test` 1018/1018 hijau (perubahan murni CSS-color, tidak ada test yang menyentuh path ini). Tidak ada server dev lokal untuk screenshot langsung (app fetch data live dari `/api`, deploy via `git push`) — dicek manual tidak ada pola `${col}22`/hex-alpha-concat di titik-titik yang diubah, dan `--accent`/`--text-mid` sudah terdefinisi di semua varian tema (dark/light).
 
 ## Changelog Session 316 lanjutan (2026-08-16) — Fix `conflict_source` Hilang Provenance Saat Guard Aktif pada `conflict:'waktu'`
