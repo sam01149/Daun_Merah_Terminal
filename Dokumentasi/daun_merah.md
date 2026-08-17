@@ -11,10 +11,18 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-16 (Session 316 lanjutan — Fix `conflict_source` Hilang Provenance)
+> **Last updated:** 2026-08-17 (Session 317 — Netralkan Warna Pair di Tab Fundamental)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
+
+## Changelog Session 317 (2026-08-17) — Netralkan Warna Pair di Tab Fundamental
+
+**Permintaan:** Warna label tiap currency di tab FUNDAMENTAL (kartu, strip ranking, overlay detail) dulu beda-beda per pair (`CUR_COLORS`, warna sama yang dipakai tab Kalender) — user minta disamakan semua jadi netral, biar tidak ada kesan satu currency "lebih penting" dari yang lain secara visual.
+
+**Fix (`index.html`, `renderFundamental`):** Satu titik perubahan — `col` (dulu `CUR_COLORS[cur]`) sekarang selalu `var(--text-mid)`. Karena `col` disimpan di array `scores` dan dipakai ulang (`s.col`) di semua render turunan tab Fundamental (border kartu, teks kode currency, bar ranking, header overlay detail, tab currency, blok CB rate), satu perubahan ini otomatis menyeragamkan seluruh tab tanpa menyentuh tab lain (Kalender tetap pakai `CUR_COLORS` asli — di luar cakupan permintaan).
+
+**Verifikasi:** `npm test` 1018/1018 hijau (perubahan murni CSS-color, tidak ada test yang menyentuh path ini). Tidak ada server dev lokal untuk screenshot langsung (app fetch data live dari `/api`, deploy via `git push`) — dicek manual tidak ada pola `${col}22` (concat hex-alpha) di scope Fundamental yang bisa rusak akibat ganti ke CSS var, dan `--text-mid` sudah terdefinisi di semua varian tema (dark/light).
 
 ## Changelog Session 316 lanjutan (2026-08-16) — Fix `conflict_source` Hilang Provenance Saat Guard Aktif pada `conflict:'waktu'`
 

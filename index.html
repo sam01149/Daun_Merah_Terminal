@@ -9331,7 +9331,9 @@ function renderFundamental() {
     const scoredRatio = totalScorable > 0 ? scoredCt / totalScorable : 0;
     const confTier   = scoredRatio >= 0.7 ? 'high' : scoredRatio >= 0.4 ? 'med' : scoredCt > 0 ? 'low' : null;
     const confLabel  = confTier === 'high' ? 'High' : confTier === 'med' ? 'Med' : confTier === 'low' ? 'Low' : null;
-    const col        = CUR_COLORS[cur] || '#888';
+    // Warna pair sengaja dinetralkan (2026-08-17): dulu tiap currency punya warna beda
+    // (CUR_COLORS), sekarang seragam biar tak ada kesan currency tertentu "lebih penting".
+    const col        = 'var(--text-mid)';
     return { cur, data, rateKey, rateVal, score, scoreLabel, scoreColor, confTier, confLabel, scoredCt, totalScorable, col };
   });
 
