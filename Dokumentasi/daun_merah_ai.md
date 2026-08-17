@@ -249,7 +249,7 @@ Kalau gagal total terjadi, user akan melihat pesan "AI tidak tersedia — coba b
 
 | Provider | Endpoint | Model ID yang dipakai | Peran saat ini | Env var |
 |---|---|---|---|---|
-| DeepSeek (API resmi, BERBAYAR) | `api.deepseek.com/chat/completions` | `deepseek-v4-flash` (thinking disabled) | **PRIMARY/SATU-SATUNYA** — Ringkasan Berita Call 1-4, Analisa AI per Pair, Pre-Entry Check, Review Posisi Virtual, Sistem Hakim Gate A | `DEEPSEEK_API_KEY` |
+| DeepSeek (API resmi, BERBAYAR) | `api.deepseek.com/chat/completions` | **Call 1 Ringkasan: `deepseek-v4-pro`** (2026-08-17, promosi — lihat `daun_merah.md` Session 317 lanjutan 2); **Call 2/3/4 + semua fitur lain: `deepseek-v4-flash`** (thinking disabled) | **PRIMARY/SATU-SATUNYA** — Ringkasan Berita Call 1-4, Analisa AI per Pair, Pre-Entry Check, Review Posisi Virtual, Sistem Hakim Gate A | `DEEPSEEK_API_KEY` |
 | Google AI Studio | `generativelanguage.googleapis.com/v1beta/openai/chat/completions` | `gemini-flash-latest` | **PRIMARY/SATU-SATUNYA** — Analisa Fundamental, AI Coach Jurnal; fallback Ringkasan Berita Call 1/2 | `GEMINI_API_KEY` |
 
 **Dihapus 2026-08-12 (kontrak diputus user, billing lapse):** SambaNova akun-1 & akun-2 (`SAMBANOVA_API_KEY`, `SAMBANOVA_API_KEY_CALL1`) — env var dihapus dari Vercel (Production & Preview), semua kode chain/circuit/budget-nya dihapus dari `api/market-digest.js`, `api/admin.js`, `api/journal.js`, `api/_ai_guard.js`. Detail root cause di `daun_merah_vendor.md`.

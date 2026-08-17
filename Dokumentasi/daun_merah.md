@@ -11,10 +11,25 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-17 (Session 317 lanjutan — Diagnostik `deepseek-v4-pro` vs `deepseek-v4-flash` di Call 1)
+> **Last updated:** 2026-08-17 (Session 317 lanjutan — Call 1 Ringkasan dipromosikan ke `deepseek-v4-pro`)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
+
+## Changelog Session 317 lanjutan 2 (2026-08-17) — Call 1 Ringkasan DIPROMOSIKAN ke `deepseek-v4-pro`
+
+**Keputusan akhir setelah audit panjang** (lanjutan investigasi di bawah): user memutuskan promosikan Call 1 (Market Briefing) dari `deepseek-v4-flash` ke `deepseek-v4-pro` sebagai primary produksi, commit `f3bbfcb`. Call 2/3/4 dan seluruh fitur lain (Analisa AI per Pair/auto-entry, Pre-Entry Check, Review Posisi, dst) **TETAP flash** — bukti untuk `ohlcv_analyze` belum sekuat Call 1 (lihat 2 tes terpisah di bawah: hasil pertama nyaris identik flash vs pro, hasil kedua Instant-web sempat kelewatan konflik kalender FOMC yang Expert-web tangkap — campur, belum cukup meyakinkan untuk dipromosikan).
+
+**Bukti yang mendasari keputusan (akumulasi 3 sampel non-blind, beda waktu & beda jalur):**
+1. Tes API (`test_deepseek_pro=1` vs `test_deepseek=1`, data live identik): pro nol pelanggaran frasa terlarang vs 1 di flash; pro menangkap tema AUD (data China lemah — retail sales/industrial output/unemployment) yang sama sekali tidak disebut flash.
+2. Tes manual user di web resmi DeepSeek (Instant vs Expert, DeepThink OFF): pola sama persis — Instant tidak menyebut AUD, Expert menyebutnya lengkap dengan angka.
+3. Tes manual user (Instant + DeepThink ON): tetap tidak menangkap link AUD-China walau reasoning dinyalakan — mengonfirmasi bedanya soal kapasitas model (V4 Pro 1,6T vs V4 Flash 284B parameter), bukan sekadar "kurang mikir".
+
+**Temuan sampingan penting (independen dari pilihan model) — dicatat sebagai item terbuka:** dua run Expert-vs-Expert-sendiri (input identik) menghasilkan SL berbeda 16 poin dan `invalidation_trigger` beda TIPE (`swing_break` vs `price_level`) — variasi run-to-run yang nyata bahkan dalam model yang sama. Kode `ohlcv_analyze` cuma mengunci `entry_zone` (lewat daftar zona konfluensi deterministik); SL/TP/`invalidation_trigger` dihitung bebas oleh AI tiap generate tanpa pengaman apapun — ini akan tetap terjadi di produksi kita sendiri, model apapun yang dipakai. Belum ditindaklanjuti sesi ini, kandidat perbaikan desain terpisah (bukan soal flash-vs-pro).
+
+**Analisis biaya (data billing riil dari dashboard DeepSeek, bukan estimasi token):** baseline hari kerja normal ~$0,037/hari (224 request/7 hari, sebelum sesi tes ini). Biaya pro riil ~$0,005/request (2 sampel: $0,01/2 request). Proyeksi saldo $3,04 turun ke $0,50: semua-flash ~69 hari, Call 1→pro-saja ~38-40 hari (**yang dipilih**), keduanya→pro ~23 hari. Delta cost Call 1→pro cuma ~$1/bulan — user sempat ragu lihat rasio 69→40 hari (~42% lebih pendek), tapi diputuskan tetap lanjut karena nominal dolarnya kecil dan bukti kualitas cukup kuat.
+
+**Perbaikan kode saat implementasi:** `max_tokens` primary Call 1 dinaikkan 1300→1600, timeout 30s→40s (pro ~2x lebih lambat & sedikit lebih verbose dari flash, cegah truncation — masih di bawah `CALL1_HARD_BUDGET_MS` 48s). **Verifikasi live production** (bukan cuma diagnostik): trigger langsung ke `api/market-digest.js` tanpa query param test — hasil `method:"deepseek-v4-pro"`, 22,7 detik, 4.852 karakter, nol `quality_flags` (pelanggaran frasa terlarang), `from_cache:undefined` (fresh generate, bukan cache lama). `npm test` 1018/1018 hijau.
 
 ## Changelog Session 317 lanjutan (2026-08-17) — Diagnostik `deepseek-v4-pro` vs `deepseek-v4-flash` di Call 1
 
