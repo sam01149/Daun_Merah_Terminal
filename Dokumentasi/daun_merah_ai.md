@@ -77,7 +77,7 @@ Call 1/2/3 hasilnya SAMA untuk semua orang (ditulis ke `latest_article`, satu ke
 
 ```
 Call 1 (prosa):
-  1. DeepSeek v4-flash (API resmi)        — PRIMARY produksi (Plan O-3, 2026-07-18, timeout 30s)
+  1. DeepSeek v4-pro (API resmi)          — PRIMARY produksi (promosi 2026-08-17 dari v4-flash, lihat daun_merah.md Session 317 lanjutan 2; max_tokens 1600, timeout 40s — v4-pro ~2x lebih lambat & lebih verbose dari flash)
   2. Google AI Studio (Gemini-Flash)      — fallback
   3. Template deterministik non-AI (berdasarkan kategori berita) — fallback absolut, tidak pernah kosong
 
@@ -263,4 +263,4 @@ Kalau gagal total terjadi, user akan melihat pesan "AI tidak tersedia — coba b
 - Kalau mau menaikkan jatah harian salah satu provider, set env var `AI_DAILY_LIMIT_{PROVIDER}` di Vercel — jangan ubah `DEFAULT_LIMITS` di kode tanpa konfirmasi status akun aslinya dulu.
 - Cek pemakaian real-time tanpa nambah counter: `getUsage(provider)` di `_ai_guard.js`, biasanya diekspos lewat `admin?action=health`.
 - Kalau ada model/provider baru mau dicoba, selalu tes dulu via query param diagnostik terisolasi (pola `?test_gemini=1`/`?test_mistral=1`/`?test_nvidia=1`/`?test_deepseek=1`/`?test_deepseek_pro=1` yang masih ada) sebelum jadi primary permanen — pelajaran dari beberapa model yang "katanya gratis" ternyata 403/subscription-required saat dites nyata (lihat riwayat di [daun_merah.md](daun_merah.md)).
-- `?test_deepseek_pro=1` (2026-08-17, ada di Call 1 `market-digest.js` DAN `ohlcv_analyze` `admin.js`) — bandingkan `deepseek-v4-pro` (3x harga per token vs `deepseek-v4-flash`) di data live identik. Hasil: di Call 1, pro lebih patuh aturan prompt & menangkap 1 tema tambahan (tapi 2,2x lebih lambat); di `ohlcv_analyze`, hasilnya nyaris identik (pro TIDAK memberi manfaat berarti di titik ini). Kedua response diagnostik juga menyertakan field `debug_prompt` (system+user message persis yang dikirim ke model) untuk uji manual independen di web resmi DeepSeek. Model produksi TIDAK diganti — lihat detail di [daun_merah.md](daun_merah.md) Session 317 lanjutan.
+- `?test_deepseek_pro=1` (2026-08-17, ada di Call 1 `market-digest.js` DAN `ohlcv_analyze` `admin.js`) — bandingkan `deepseek-v4-pro` (3x harga per token vs `deepseek-v4-flash`) di data live identik. Hasil: di Call 1, pro lebih patuh aturan prompt & menangkap 1 tema tambahan (tapi 2,2x lebih lambat) — **model produksi DIGANTI ke pro untuk Call 1** (2026-08-17, lihat §7); di `ohlcv_analyze`, hasilnya nyaris identik (pro TIDAK memberi manfaat berarti di titik ini) — **model produksi TETAP flash** di sini. Kedua response diagnostik juga menyertakan field `debug_prompt` (system+user message persis yang dikirim ke model) untuk uji manual independen di web resmi DeepSeek. Detail lengkap di [daun_merah.md](daun_merah.md) Session 317 lanjutan 2.
