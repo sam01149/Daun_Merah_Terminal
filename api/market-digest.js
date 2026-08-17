@@ -1661,6 +1661,10 @@ module.exports = async function handler(req, res) {
 
   // ── 4. Call 1: Market Briefing — DeepSeek primary → Gemini fallback ──
   let article = null, method = 'fallback';
+  // Diangkat ke scope luar if(recentItems.length>0) di bawah supaya bisa diakses saat
+  // membangun payload debug_prompt (2026-08-17) — kalau recentItems kosong, tetap null,
+  // debug_prompt otomatis undefined (guard di payload sudah cek array index).
+  let call1Messages = null;
   const providerLog = [];
   if (recentItems.length > 0) {
     const DIGEST_SYSTEM_DEFAULT = `Kamu analis macro FX senior. Tulis briefing pre-session Bahasa Indonesia untuk trader Indonesia yang sudah fasih: DXY, real yield, carry, risk-on/off, basis point — jangan jelaskan istilah ini.
@@ -1801,7 +1805,7 @@ ${historyBlock}
 === RIWAYAT XAUUSD SESI SEBELUMNYA (4 sesi terakhir) ===
 ${xauHistoryBlock}`;
 
-    const call1Messages = [
+    call1Messages = [
       { role: 'system', content: digestSystemMsg },
       { role: 'user', content: digestUserMsg },
     ];
@@ -2367,7 +2371,7 @@ ${xauHistoryBlock}`;
     generated_at:   new Date().toISOString(),
     // Echo prompt persis yang dikirim ke model — HANYA saat isolated test (2026-08-17,
     // dipakai user buat verifikasi manual di web DeepSeek), tidak pernah di jalur produksi.
-    debug_prompt:   isIsolatedTest ? { system: call1Messages[0].content, user: call1Messages[1].content } : undefined,
+    debug_prompt:   (isIsolatedTest && call1Messages) ? { system: call1Messages[0].content, user: call1Messages[1].content } : undefined,
   };
 
   // Persist full payload to Redis so cached mode works (exclude thesis_alerts — device-specific).
