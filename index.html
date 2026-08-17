@@ -9333,7 +9333,7 @@ function renderFundamental() {
     const confLabel  = confTier === 'high' ? 'High' : confTier === 'med' ? 'Med' : confTier === 'low' ? 'Low' : null;
     // Warna pair sengaja dinetralkan (2026-08-17): dulu tiap currency punya warna beda
     // (CUR_COLORS), sekarang seragam biar tak ada kesan currency tertentu "lebih penting".
-    const col        = 'var(--text-mid)';
+    const col        = 'var(--accent)';
     return { cur, data, rateKey, rateVal, score, scoreLabel, scoreColor, confTier, confLabel, scoredCt, totalScorable, col };
   });
 
@@ -9940,7 +9940,7 @@ function renderDashRetail() {
       const arrow    = signal === 'CONTRARIAN_LONG' ? '↑' : signal === 'CONTRARIAN_SHORT' ? '↓' : '—';
       const title    = `Retail ${long_pct}% long / ${short_pct}% short — ${sigClass === 'neut' ? 'netral' : 'sinyal kontrarian ' + (sigClass === 'long' ? 'LEAN LONG' : 'LEAN SHORT')}`;
       return `<div class="dash-retail-row" title="${escHtml(title)}">
-        <span class="dash-retail-pair" style="color:var(--text-mid)">${label}</span>
+        <span class="dash-retail-pair" style="color:var(--accent)">${label}</span>
         <div class="dash-retail-bar-wrap"><div class="dash-retail-bar-fill" style="width:${long_pct}%"></div></div>
         <span class="dash-retail-sig ${sigClass}">${arrow}</span>
       </div>`;
@@ -18050,7 +18050,7 @@ function renderDashBias() {
     const bias   = (cb.bias || 'neutral').toLowerCase();
     const color  = BIAS_COLORS[bias] || '#94a3b8';
     return `<div class="dash-bias-row">
-      <span class="dash-bias-cur" style="color:var(--text-mid)">${cb.currency}</span>
+      <span class="dash-bias-cur" style="color:var(--accent)">${cb.currency}</span>
       <span class="dash-bias-pill" style="background:${color}22;color:${color}">${cb.bias || '—'}</span>
     </div>`;
   }).join('');
