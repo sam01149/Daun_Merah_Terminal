@@ -11,10 +11,23 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-17 (Session 317 — Netralkan Warna Pair di Tab Fundamental & Dashboard)
+> **Last updated:** 2026-08-17 (Session 317 lanjutan — Diagnostik `deepseek-v4-pro` vs `deepseek-v4-flash` di Call 1)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
+
+## Changelog Session 317 lanjutan (2026-08-17) — Diagnostik `deepseek-v4-pro` vs `deepseek-v4-flash` di Call 1
+
+**Konteks:** User mempertimbangkan apakah upgrade model auto-entry/Ringkasan dari `deepseek-v4-flash` (primary sekarang) ke `deepseek-v4-pro` (3x harga per token, dikonfirmasi dari `api-docs.deepseek.com/quick_start/pricing/`) sepadan. Sebelum memutuskan, diminta perbandingan langsung kualitas output Call 1 (Market Briefing) di data live yang identik.
+
+**Implementasi:** Ditambahkan hook diagnostik `?test_deepseek_pro=1` di `api/market-digest.js` Call 1, mengikuti pola isolasi persis seperti `?test_deepseek=1` yang sudah ada (session 186): masuk ke `isIsolatedTest` (hasil TIDAK ditulis ke `latest_article`/tidak memicu push notifikasi), circuit breaker terpisah (`ai:deepseek:pro_test`, bukan `ai:deepseek` produksi) supaya kegagalan pro tidak mentrip breaker yang dipakai traffic publik. Call 2/3 untuk kedua flag diarahkan ke jalur diagnostik yang sama (model flash, tidak relevan buat perbandingan ini) supaya tidak jatuh ke tier produksi. `npm test` 1018/1018 hijau setelah perubahan.
+
+**Hasil tes live (data identik, headline & harga sama, temperature 0.25, thinking disabled di keduanya):**
+- **Latency:** flash 8,6 detik vs pro 18,5 detik (~2,2x lebih lambat).
+- **Panjang output:** flash 3.076 karakter vs pro 3.325 karakter.
+- **Kepatuhan aturan prompt:** flash memicu 1 frasa terlarang ("di tengah"), pro nol pelanggaran. Pro juga memenuhi format wajib "jika beat/jika miss" dua skenario untuk event kalender CAD (CPI) — flash cuma menulis satu arah. Pro menyisipkan kalimat teknikal SMA/RSI XAU yang diwajibkan prompt saat blok TEKNIKAL tersedia — flash melewatkannya.
+- **Cakupan tema:** pro menambahkan paragraf AUD dengan mekanisme sendiri (data China: retail sales/industrial output/unemployment) yang genuinely berdiri sendiri sesuai aturan tagging — flash tidak menangkap tema ini. Pro juga eksplisit menyebut konflik dua sumber berita (Al Arabiya vs bantahan Iran soal MOU 60 hari) sesuai instruksi "Konflik" di prompt — flash tidak menonjolkan kontradiksi ini.
+- **Kesimpulan:** pro lebih patuh ke instruksi prompt (nol pelanggaran vs 1, format kalender lengkap, elemen wajib tidak terlewat) dan menangkap tema tambahan yang valid — tapi ini baru 1 sampel non-blind, bukan bukti statistik. Model TIDAK diganti di produksi (masih `deepseek-v4-flash`) — kalau mau lanjut, perlu sampel lebih banyak atau evaluasi n≥100 seperti gate Plan U lainnya sebelum promosi. Hook `test_deepseek_pro=1` dibiarkan inert di kode untuk pengujian susulan (pola sama seperti `test_gemini`/`test_mistral`/`test_nvidia`).
 
 ## Changelog Session 317 (2026-08-17) — Netralkan Warna Pair di Tab Fundamental & Dashboard
 
