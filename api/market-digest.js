@@ -897,8 +897,14 @@ module.exports = async function handler(req, res) {
   // lihat DEEPSEEK_URL. Pola isolasi sama seperti Plan N di atas: Call 1/2/3 dialihkan
   // semua ke DeepSeek, hasil TIDAK ditulis ke latest_article.
   const testDeepseekOnly = req.query.test_deepseek === '1';
+  // Diagnostik one-off (2026-08-17) — bandingkan Call 1 deepseek-v4-flash (produksi)
+  // vs deepseek-v4-pro pada data live yang identik, sebelum pertimbangkan upgrade
+  // model. Isolasi sama seperti testDeepseekOnly: hasil TIDAK ditulis ke
+  // latest_article/latest_thesis produksi, circuit breaker terpisah (ai:deepseek:pro_test)
+  // biar kalau pro gagal/timeout tidak mentrip breaker produksi 'ai:deepseek'.
+  const testDeepseekProOnly = req.query.test_deepseek_pro === '1';
 
-  const isIsolatedTest = testGeminiOnly || testMistralOnly || testNvidiaOnly || testDeepseekOnly;
+  const isIsolatedTest = testGeminiOnly || testMistralOnly || testNvidiaOnly || testDeepseekOnly || testDeepseekProOnly;
 
   const host  = req.headers.host || 'financial-feed-app.vercel.app';
   const proto = host.includes('localhost') ? 'http' : 'https';
@@ -1524,7 +1530,7 @@ module.exports = async function handler(req, res) {
       // DeepSeek v4-flash (API resmi) — diagnostik session 186. response_format json_object
       // didukung native (docs api-docs.deepseek.com/guides/json_mode); max_tokens 700 sama
       // seperti SambaNova supaya perbandingan setara dan hemat saldo.
-      if (!biasRaw && testDeepseekOnly && DEEPSEEK_KEY && await cb.canCall(CB_DEEPSEEK)) {
+      if (!biasRaw && (testDeepseekOnly || testDeepseekProOnly) && DEEPSEEK_KEY && await cb.canCall(CB_DEEPSEEK)) {
         try {
           console.log('Call 2: trying DeepSeek v4-flash — diagnostik test_deepseek=1');
           biasRaw = await aiCall(DEEPSEEK_URL, DEEPSEEK_KEY, DEEPSEEK_MODEL, call2Messages, 700, 0.1, 15000, {}, { response_format: { type: 'json_object' }, thinking: { type: 'disabled' } }, 'deepseek');
@@ -1537,7 +1543,7 @@ module.exports = async function handler(req, res) {
       // fallback berurutan lama di sini, diputus kontrak 2026-08-12). HTTP 402 (saldo
       // habis) ditangkap sebagai error biasa oleh aiCall() → catch di bawah → fallback
       // lanjut (Plan O-4), bukan hang.
-      if (!biasRaw && !testGeminiOnly && !testMistralOnly && !testDeepseekOnly && DEEPSEEK_KEY && await cb.canCall(CB_DEEPSEEK)) {
+      if (!biasRaw && !testGeminiOnly && !testMistralOnly && !testDeepseekOnly && !testDeepseekProOnly && DEEPSEEK_KEY && await cb.canCall(CB_DEEPSEEK)) {
         try {
           console.log('Call 2: trying DeepSeek v4-flash (primary)');
           biasRaw = await aiCall(DEEPSEEK_URL, DEEPSEEK_KEY, DEEPSEEK_MODEL, call2Messages, 700, 0.1, 15000, {}, { response_format: { type: 'json_object' }, thinking: { type: 'disabled' } }, 'deepseek');
@@ -1548,18 +1554,18 @@ module.exports = async function handler(req, res) {
           console.warn('Call 2 DeepSeek v4-flash (primary) failed:', errTag);
           await cb.onFailure(CB_DEEPSEEK, AI_CB_THRESHOLD);
         }
-      } else if (!biasRaw && DEEPSEEK_KEY && !testGeminiOnly && !testMistralOnly && !testDeepseekOnly) { console.log('Call 2: DeepSeek circuit OPEN — skipping to Gemini'); }
+      } else if (!biasRaw && DEEPSEEK_KEY && !testGeminiOnly && !testMistralOnly && !testDeepseekOnly && !testDeepseekProOnly) { console.log('Call 2: DeepSeek circuit OPEN — skipping to Gemini'); }
 
       // Fallback 1: Gemini (Google AI Studio) — dipromosikan dari riset Plan N (2026-07-18).
       // key dari GEMINI_API_KEY. max_tokens diset 3000 untuk reasoning headroom Gemini 3.x.
-      if (!biasRaw && !testGeminiOnly && !testMistralOnly && !testDeepseekOnly && GEMINI_KEY && await cb.canCall(CB_GEMINI)) {
+      if (!biasRaw && !testGeminiOnly && !testMistralOnly && !testDeepseekOnly && !testDeepseekProOnly && GEMINI_KEY && await cb.canCall(CB_GEMINI)) {
         try {
           console.log('Call 2: trying Gemini (flash-latest)');
           biasRaw = await aiCall(GEMINI_URL, GEMINI_KEY, GEMINI_MODEL, call2Messages, 3000, 0.1, 15000, {}, { response_format: { type: 'json_object' }, reasoning_effort: 'low' }, 'gemini');
           console.log('Call 2: Gemini OK');
           await cb.onSuccess(CB_GEMINI);
         } catch(e) { console.warn('Call 2 Gemini failed:', e.status || e.message); await cb.onFailure(CB_GEMINI, AI_CB_THRESHOLD); }
-      } else if (!biasRaw && GEMINI_KEY && !testGeminiOnly && !testMistralOnly && !testDeepseekOnly) { console.log('Call 2: Gemini circuit OPEN'); }
+      } else if (!biasRaw && GEMINI_KEY && !testGeminiOnly && !testMistralOnly && !testDeepseekOnly && !testDeepseekProOnly) { console.log('Call 2: Gemini circuit OPEN'); }
 
       if (biasRaw) {
         try {
@@ -1947,6 +1953,41 @@ ${xauHistoryBlock}`;
       }
     }
 
+    // DeepSeek v4-pro — diagnostik one-off (2026-08-17, lihat testDeepseekProOnly di
+    // atas). Sama persis dengan blok flash di atas (max_tokens, thinking disabled, data
+    // live identik) supaya perbandingan apple-to-apple — cuma model & circuit breaker
+    // yang beda (isolated, TIDAK share 'ai:deepseek' produksi).
+    const CB_DEEPSEEK_PRO_TEST = 'ai:deepseek:pro_test';
+    if (testDeepseekProOnly) {
+      const deepseekProTimeout = 45000;
+      if (DEEPSEEK_KEY && await cb.canCall(CB_DEEPSEEK_PRO_TEST)) {
+        const t0dsp2 = Date.now();
+        try {
+          console.log('Call 1: trying DeepSeek v4-pro — diagnostik test_deepseek_pro=1');
+          const raw = await aiCall(DEEPSEEK_URL, DEEPSEEK_KEY, 'deepseek-v4-pro', call1Messages, 1300, 0.25, deepseekProTimeout, {}, { thinking: { type: 'disabled' } }, 'deepseek');
+          const elapsed = Date.now() - t0dsp2;
+          if (raw.trim()) {
+            article = raw.trim(); method = 'deepseek-v4-pro';
+            providerLog.push(`deepseek_pro:ok(${elapsed}ms,${article.length}c)`);
+          } else {
+            providerLog.push(`deepseek_pro:empty(${elapsed}ms)`);
+          }
+          console.log('Call 1: DeepSeek v4-pro OK, length', article?.length);
+          await cb.onSuccess(CB_DEEPSEEK_PRO_TEST);
+        } catch(e) {
+          const elapsed = Date.now() - t0dsp2;
+          const errMsg = e.status ? `HTTP${e.status}` : (e.message || 'err').slice(0, 40);
+          providerLog.push(`deepseek_pro:${errMsg}(${elapsed}ms)`);
+          console.warn('Call 1 DeepSeek v4-pro failed:', e.status || e.message);
+          await cb.onFailure(CB_DEEPSEEK_PRO_TEST, AI_CB_THRESHOLD);
+        }
+      } else if (DEEPSEEK_KEY) {
+        providerLog.push('deepseek_pro:circuit_open');
+      } else {
+        providerLog.push('deepseek_pro:no_key');
+      }
+    }
+
     // Batas waktu keras cascade Call 1 (session 163) — dipindah ke sini (Plan O-3,
     // 2026-07-18) supaya bisa menggerbang tier DeepSeek primary DAN cabang Nemotron
     // cron di bawah, bukan cuma SambaNova/Cerebras/Gemini/Groq seperti semula.
@@ -2244,7 +2285,7 @@ ${xauHistoryBlock}`;
       if (GEMINI_KEY)     call3Providers.push({ url: GEMINI_URL, key: GEMINI_KEY, model: GEMINI_MODEL, label: 'Gemini (flash-latest)', timeout: 15000, provider: 'gemini', circuit: CB_GEMINI, maxTokens: 3000, extraBody: { response_format: { type: 'json_object' }, reasoning_effort: 'low' } });
     } else if (testMistralOnly) {
       if (MISTRAL_KEY)    call3Providers.push({ url: MISTRAL_URL, key: MISTRAL_KEY, model: MISTRAL_MODEL, label: 'Mistral', timeout: 15000, provider: 'mistral', circuit: CB_MISTRAL, maxTokens: 3000, extraBody: { response_format: { type: 'json_object' }, reasoning_effort: 'low' } });
-    } else if (testDeepseekOnly) {
+    } else if (testDeepseekOnly || testDeepseekProOnly) {
       // DeepSeek v4-flash (API resmi) — session 186/S186 lanjutan (Plan O-1). maxTokens
       // dinaikkan 800→1200 (2026-07-18): 1/3 sampel S186 kembali thesis:null, kandidat
       // akar truncation JSON di 800 token — 1200 masih murah ($0.28/M output) dan
