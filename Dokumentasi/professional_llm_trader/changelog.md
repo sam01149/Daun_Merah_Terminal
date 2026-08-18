@@ -53,6 +53,14 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 
 **Batas presisi (didokumentasikan di kode, bukan disembunyikan):** `from` = waktu commit; deploy Vercel menyusul ~1 menit, perubahan `vps/daemon.js` menunggu redeploy Railway. Setup yang `ts`-nya jatuh dalam ~15 menit setelah batas epoch harus diperlakukan sebagai versi TIDAK PASTI.
 
+**Tambahan sesi yang sama (pertanyaan user: "gimana kalau nanti ada keanehan dan saya harus memperbaikinya lagi?"):** registry epoch awalnya cuma punya `impact` (APA yang berubah). Itu belum cukup — dua jenis perubahan minta perlakuan BERLAWANAN saat analisis, dan tanpa dibedakan keduanya terlihat sama. Ditambah field `kind`:
+
+- **`fix`** — memperbaiki sesuatu yang memang rusak/tidak sesuai maksud desain. Yang tercemar adalah data SEBELUM perbaikan (dihasilkan sistem cacat), bukan sesudah. Perbaikan jenis ini TIDAK boleh ditahan demi "menjaga kemurnian sampel" — menunda bug fix justru menambah data cacat.
+- **`policy`** — mengubah strateginya sendiri walau tidak ada yang rusak (pair baru, gate baru, ambang baru). Ini batas populasi sungguhan. Jenis INI yang layak diransum/dikumpulkan sampai titik evaluasi, bukan `fix`.
+- **`mixed`** — satu deploy membawa keduanya (v15 contoh nyata). Dihindari ke depan: pisahkan commit fix dan commit policy supaya batasnya tajam.
+
+Klasifikasi 27 epoch yang ada: 17 `policy`, 9 `fix`, 1 `mixed`. Aturan pemeliharaan di kode ikut diperjelas — kalau ragu, tanya "apakah perilaku lama itu memang yang diniatkan?"; kalau ya `policy`, kalau tidak pernah diniatkan siapa pun `fix`. Salah menandai bikin analisis nanti tertipu ke dua arah (batas populasi tak kelihatan, atau sampel dipotong tanpa alasan). Dashboard menampilkan sifat ini di baris "Versi Kebijakan" ("perbaikan bug" / "perubahan strategi" / "campuran fix+strategi").
+
 ### 2. Gate D menghitung posisi `pending` sebagai exposure — poin A1
 
 **Masalah:** `isCorrelatedExposureBlocked` hanya menghitung partner ber-status `'open'`. Karena semua entry sistem ini limit order di zona konfluensi, `pending` justru state yang paling lama dihuni — dua setup korelatif bisa sama-sama `pending` searah lalu terisi di jam yang sama tanpa cap korelasi pernah menyala.

@@ -324,6 +324,7 @@ test('EXPOSURE_BINDING_STATUSES: tepat open + pending, tidak lebih', () => {
 
 test('POLICY_EPOCHS: urut naik, tanggal valid & monoton, tiap epoch punya label+impact', () => {
   const IMPACTS = new Set(['baseline', 'entry', 'pair_set', 'levels', 'exit', 'context', 'eval']);
+  const KINDS = new Set(['policy', 'fix', 'mixed']);
   let prevV = 0, prevMs = -Infinity;
   for (const e of POLICY_EPOCHS) {
     assert.equal(e.v, prevV + 1, `versi harus berurutan tanpa lompat (ketemu v=${e.v} setelah ${prevV})`);
@@ -332,6 +333,7 @@ test('POLICY_EPOCHS: urut naik, tanggal valid & monoton, tiap epoch punya label+
     assert.ok(ms >= prevMs, `tanggal epoch v${e.v} mundur dari versi sebelumnya`);
     assert.ok(e.label && e.label.length > 10, `epoch v${e.v} wajib punya label deskriptif`);
     assert.ok(IMPACTS.has(e.impact), `impact epoch v${e.v} tidak dikenal: ${e.impact}`);
+    assert.ok(KINDS.has(e.kind), `kind epoch v${e.v} tidak dikenal: ${e.kind} (wajib policy/fix/mixed)`);
     prevV = e.v; prevMs = ms;
   }
 });

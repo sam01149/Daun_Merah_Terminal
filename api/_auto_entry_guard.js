@@ -276,11 +276,36 @@ function isInvalidationTriggered({ invalidation_trigger, candles, startMs, bound
 //   perubahan `entry`/`pair_set`/`levels`/`exit`, sedangkan perubahan `context`
 //   (informasi yang dilihat AI) dan `eval` (cara hasil dinilai) dibelah hanya kalau
 //   pertanyaannya memang menyangkut itu.
+// - `kind` menandai SIFAT perubahannya, dan ini yang menentukan data sebelah MANA
+//   yang dicurigai — dua jenis di bawah minta perlakuan BERLAWANAN, jadi jangan
+//   diperlakukan sama hanya karena sama-sama "perubahan":
+//   * `'fix'` — memperbaiki sesuatu yang MEMANG rusak/tidak sesuai maksud desain
+//     (bug, celah, gate yang tidak menutup apa yang seharusnya ditutup). Yang
+//     tercemar adalah data SEBELUM perbaikan, bukan sesudah — data lama dihasilkan
+//     sistem yang cacat. Perlakuan analis: curigai/keluarkan jendela SEBELUM epoch
+//     ini kalau bug-nya menyentuh hal yang sedang dianalisis; data sesudahnya justru
+//     lebih bersih, BUKAN "generasi baru yang tidak bisa digabung". Perbaikan jenis
+//     ini TIDAK PERLU ditahan/dijadwalkan — menunda perbaikan bug demi "menjaga
+//     kemurnian sampel" justru menambah data cacat, bukan menjaganya.
+//   * `'policy'` — mengubah STRATEGINYA sendiri walau tidak ada yang rusak (pair
+//     baru, gate baru, ambang baru, framing prompt baru). Ini benar-benar memecah
+//     populasi: sebelum & sesudah adalah dua sistem berbeda yang sama-sama sah.
+//     Perlakuan analis: batas populasi. Perubahan jenis inilah yang layak DIRANSUM
+//     (kumpulkan dulu, terapkan berbarengan di titik evaluasi), bukan yang `'fix'`.
+//   * `'mixed'` — satu deploy membawa keduanya sekaligus. Sedapat mungkin DIHINDARI
+//     ke depan: pisahkan commit fix dan commit policy supaya batasnya tetap tajam
+//     (v15 contoh nyata kenapa ini merepotkan — fix buffer korroborasi menumpang di
+//     deploy yang sama dengan gate baru, jadi tidak bisa dinilai terpisah).
 //
 // ATURAN PEMELIHARAAN (WAJIB): tiap kali mengubah apa pun yang menentukan TRADE
 // MANA yang terjadi, DI LEVEL BERAPA, DI PAIR APA, atau KAPAN KELUAR — tambahkan
-// epoch baru di bawah (jangan mengedit epoch lama, itu memalsukan sejarah) dan
-// isi `from` dengan waktu commit deploy-nya. Perubahan yang MURNI observability/UI/
+// epoch baru di bawah (jangan mengedit epoch lama, itu memalsukan sejarah), isi
+// `from` dengan waktu commit deploy-nya, dan TENTUKAN `kind` dengan jujur: kalau
+// ragu antara 'fix' dan 'policy', tanya "apakah perilaku lama itu memang yang
+// diniatkan?" — kalau ya, itu 'policy'; kalau perilaku lama tidak pernah diniatkan
+// siapa pun, itu 'fix'. Menandai perubahan strategi sebagai 'fix' akan menipu
+// analisis nanti (batas populasi jadi tidak kelihatan), dan sebaliknya menandai
+// perbaikan bug sebagai 'policy' bikin sampel dipotong tanpa alasan. Perubahan yang MURNI observability/UI/
 // dokumentasi TIDAK perlu epoch baru (tidak mengubah trade yang terjadi) — itu
 // sengaja, supaya jumlah epoch tetap bermakna, bukan bertambah tiap commit.
 //
@@ -289,33 +314,33 @@ function isInvalidationTriggered({ invalidation_trigger, candles, startMs, bound
 // (bisa beberapa menit lebih lama). Untuk setup yang `ts`-nya jatuh dalam ~15 menit
 // setelah batas epoch, perlakukan versinya sebagai TIDAK PASTI, bukan akurat.
 const POLICY_EPOCHS = [
-  { v: 1,  from: '2026-07-20T12:39:39Z', impact: 'baseline', label: 'Plan U live — auto-entry virtual pertama (XAU/USD + EUR/USD)' },
-  { v: 2,  from: '2026-07-20T13:43:38Z', impact: 'entry',    label: 'U-3: cegah posisi menumpuk per symbol (skip kalau open, ganti kalau pending)' },
-  { v: 3,  from: '2026-07-22T15:45:31Z', impact: 'entry',    label: 'S216: refinemen in-place setup pending + Flip Guard whipsaw' },
-  { v: 4,  from: '2026-07-23T12:00:20Z', impact: 'pair_set', label: 'S217: Golden Trio — 3 pair (XAU/USD, EUR/USD, GBP/USD)' },
-  { v: 5,  from: '2026-07-23T13:08:18Z', impact: 'entry',    label: 'S219+S220: filter berita keras breaking news + buffer korroborasi persisten (skip pra-entry)' },
-  { v: 6,  from: '2026-07-24T16:26:06Z', impact: 'exit',     label: 'S231: tighten SL preventif sebelum weekend close' },
-  { v: 7,  from: '2026-07-25T18:51:02Z', impact: 'eval',     label: 'S242: fix timestamp fill/close terbalik + scan TP/SL dari filled_t (mengubah cara hasil dinilai, bukan trade yang diambil)' },
-  { v: 8,  from: '2026-07-26T23:28:19Z', impact: 'pair_set', label: 'S247: redesain independensi — GBP/USD dibuang, AUD/NZD + EUR/GBP masuk (4 pair)' },
-  { v: 9,  from: '2026-07-28T12:01:21Z', impact: 'entry',    label: 'S250: 4 gate audit-guard aktif (Gate A Kritikus, B drawdown, C regime, D korelasi)' },
-  { v: 10, from: '2026-07-28T14:24:49Z', impact: 'entry',    label: 'S251: Gate C dihapus + Gate B butuh ambang sampel minimum' },
-  { v: 11, from: '2026-07-28T17:27:20Z', impact: 'eval',     label: 'S253: watcher TP/SL real-time Q-7 (deteksi hasil dalam detik, bukan jam)' },
-  { v: 12, from: '2026-07-29T16:08:05Z', impact: 'context',  label: 'S259: Sistem Hakim aktif di jalur cron (koreksi label makro_alignment)' },
-  { v: 13, from: '2026-07-29T16:46:20Z', impact: 'entry',    label: 'S261: fix race condition Gate A + 3 celah statistik' },
-  { v: 14, from: '2026-07-29T17:35:49Z', impact: 'levels',   label: 'S262: guard korroborasi sumber kedua GC=F sebelum finalisasi tp/sl' },
-  { v: 15, from: '2026-08-04T14:52:09Z', impact: 'entry',    label: 'S277: fix prune buffer korroborasi + Gate E timing-risk sebagai hard block' },
-  { v: 16, from: '2026-08-04T17:52:35Z', impact: 'entry',    label: 'S280: deteksi kejutan ekonomi (actual vs forecast) sebagai alasan skip' },
-  { v: 17, from: '2026-08-04T18:44:24Z', impact: 'entry',    label: 'S281: Gate E dilonggarkan — conflict waktu tidak lagi auto-reject, diteruskan ke Gate A' },
-  { v: 18, from: '2026-08-04T19:26:22Z', impact: 'exit',     label: 'S282: Track 1 invalidasi teknikal deterministik + Track 2a jam khusus AUD/NZD' },
-  { v: 19, from: '2026-08-05T11:13:40Z', impact: 'context',  label: 'S283: Sistem Hakim bisa mengoreksi balik (state corrected)' },
-  { v: 20, from: '2026-08-05T19:05:08Z', impact: 'entry',    label: 'S284: fix korroborasi palsu Interest Rate Probabilities (dulu men-skip 4 pair sekaligus)' },
-  { v: 21, from: '2026-08-06T11:06:02Z', impact: 'entry',    label: 'S286: retry persisten untuk slot yang di-skip berita (mengubah laju & jam entry)' },
-  { v: 22, from: '2026-08-08T16:43:04Z', impact: 'context',  label: 'S293+S294: framing CME-priority di prompt, dikarantina ke jalur auto (lihat juga cme_priority_prompt_v)' },
-  { v: 23, from: '2026-08-08T19:03:05Z', impact: 'pair_set', label: 'S296: CHF/JPY masuk sebagai pair ke-5' },
-  { v: 24, from: '2026-08-10T16:04:02Z', impact: 'context',  label: 'S301: guard kontradiksi arah mengoreksi makro_alignment otomatis' },
-  { v: 25, from: '2026-08-16T13:58:32Z', impact: 'entry',    label: 'S316: Gate D — sign korelasi statis bisa ditimpa anomali korelasi live' },
-  { v: 26, from: '2026-08-18T12:05:11Z', impact: 'entry',    label: 'S318: Gate A (Kritikus) ikut menimbang level hasil refine-in-place' },
-  { v: 27, from: '2026-08-18T16:00:00Z', impact: 'entry',    label: 'S319: Gate D menghitung posisi pending sebagai exposure, bukan cuma open' },
+  { v: 1,  from: '2026-07-20T12:39:39Z', kind: 'policy', impact: 'baseline', label: 'Plan U live — auto-entry virtual pertama (XAU/USD + EUR/USD)' },
+  { v: 2,  from: '2026-07-20T13:43:38Z', kind: 'policy', impact: 'entry',    label: 'U-3: cegah posisi menumpuk per symbol (skip kalau open, ganti kalau pending)' },
+  { v: 3,  from: '2026-07-22T15:45:31Z', kind: 'policy', impact: 'entry',    label: 'S216: refinemen in-place setup pending + Flip Guard whipsaw' },
+  { v: 4,  from: '2026-07-23T12:00:20Z', kind: 'policy', impact: 'pair_set', label: 'S217: Golden Trio — 3 pair (XAU/USD, EUR/USD, GBP/USD)' },
+  { v: 5,  from: '2026-07-23T13:08:18Z', kind: 'policy', impact: 'entry',    label: 'S219+S220: filter berita keras breaking news + buffer korroborasi persisten (skip pra-entry)' },
+  { v: 6,  from: '2026-07-24T16:26:06Z', kind: 'policy', impact: 'exit',     label: 'S231: tighten SL preventif sebelum weekend close' },
+  { v: 7,  from: '2026-07-25T18:51:02Z', kind: 'fix', impact: 'eval',     label: 'S242: fix timestamp fill/close terbalik + scan TP/SL dari filled_t (mengubah cara hasil dinilai, bukan trade yang diambil)' },
+  { v: 8,  from: '2026-07-26T23:28:19Z', kind: 'policy', impact: 'pair_set', label: 'S247: redesain independensi — GBP/USD dibuang, AUD/NZD + EUR/GBP masuk (4 pair)' },
+  { v: 9,  from: '2026-07-28T12:01:21Z', kind: 'policy', impact: 'entry',    label: 'S250: 4 gate audit-guard aktif (Gate A Kritikus, B drawdown, C regime, D korelasi)' },
+  { v: 10, from: '2026-07-28T14:24:49Z', kind: 'policy', impact: 'entry',    label: 'S251: Gate C dihapus + Gate B butuh ambang sampel minimum' },
+  { v: 11, from: '2026-07-28T17:27:20Z', kind: 'fix', impact: 'eval',     label: 'S253: watcher TP/SL real-time Q-7 (deteksi hasil dalam detik, bukan jam)' },
+  { v: 12, from: '2026-07-29T16:08:05Z', kind: 'policy', impact: 'context',  label: 'S259: Sistem Hakim aktif di jalur cron (koreksi label makro_alignment)' },
+  { v: 13, from: '2026-07-29T16:46:20Z', kind: 'fix', impact: 'entry',    label: 'S261: fix race condition Gate A + 3 celah statistik' },
+  { v: 14, from: '2026-07-29T17:35:49Z', kind: 'fix', impact: 'levels',   label: 'S262: guard korroborasi sumber kedua GC=F sebelum finalisasi tp/sl' },
+  { v: 15, from: '2026-08-04T14:52:09Z', kind: 'mixed', impact: 'entry',    label: 'S277: fix prune buffer korroborasi + Gate E timing-risk sebagai hard block' },
+  { v: 16, from: '2026-08-04T17:52:35Z', kind: 'policy', impact: 'entry',    label: 'S280: deteksi kejutan ekonomi (actual vs forecast) sebagai alasan skip' },
+  { v: 17, from: '2026-08-04T18:44:24Z', kind: 'policy', impact: 'entry',    label: 'S281: Gate E dilonggarkan — conflict waktu tidak lagi auto-reject, diteruskan ke Gate A' },
+  { v: 18, from: '2026-08-04T19:26:22Z', kind: 'policy', impact: 'exit',     label: 'S282: Track 1 invalidasi teknikal deterministik + Track 2a jam khusus AUD/NZD' },
+  { v: 19, from: '2026-08-05T11:13:40Z', kind: 'fix', impact: 'context',  label: 'S283: Sistem Hakim bisa mengoreksi balik (state corrected)' },
+  { v: 20, from: '2026-08-05T19:05:08Z', kind: 'fix', impact: 'entry',    label: 'S284: fix korroborasi palsu Interest Rate Probabilities (dulu men-skip 4 pair sekaligus)' },
+  { v: 21, from: '2026-08-06T11:06:02Z', kind: 'policy', impact: 'entry',    label: 'S286: retry persisten untuk slot yang di-skip berita (mengubah laju & jam entry)' },
+  { v: 22, from: '2026-08-08T16:43:04Z', kind: 'policy', impact: 'context',  label: 'S293+S294: framing CME-priority di prompt, dikarantina ke jalur auto (lihat juga cme_priority_prompt_v)' },
+  { v: 23, from: '2026-08-08T19:03:05Z', kind: 'policy', impact: 'pair_set', label: 'S296: CHF/JPY masuk sebagai pair ke-5' },
+  { v: 24, from: '2026-08-10T16:04:02Z', kind: 'fix', impact: 'context',  label: 'S301: guard kontradiksi arah mengoreksi makro_alignment otomatis' },
+  { v: 25, from: '2026-08-16T13:58:32Z', kind: 'policy', impact: 'entry',    label: 'S316: Gate D — sign korelasi statis bisa ditimpa anomali korelasi live' },
+  { v: 26, from: '2026-08-18T12:05:11Z', kind: 'fix', impact: 'entry',    label: 'S318: Gate A (Kritikus) ikut menimbang level hasil refine-in-place' },
+  { v: 27, from: '2026-08-18T16:00:00Z', kind: 'fix', impact: 'entry',    label: 'S319: Gate D menghitung posisi pending sebagai exposure, bukan cuma open' },
 ];
 
 const POLICY_VERSION = POLICY_EPOCHS[POLICY_EPOCHS.length - 1].v;

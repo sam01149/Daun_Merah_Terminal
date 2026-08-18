@@ -728,7 +728,8 @@ tr.rowdetail .longtext{white-space:pre-wrap;font-size:10.5px;line-height:1.55;co
     if (v == null) return '';
     const ep = POLICY_EPOCHS.find(e => e.v === v);
     const asal = recorded ? 'direkam saat setup dibuat' : 'perkiraan dari waktu setup, bukan data asli';
-    return `v${v} — ${ep ? ep.label : 'keterangan versi tidak tersedia'} [${asal}]`;
+    const sifat = ep ? ({ fix: 'perbaikan bug', policy: 'perubahan strategi', mixed: 'campuran fix+strategi' })[ep.kind] || ep.kind : null;
+    return `v${v} — ${ep ? ep.label : 'keterangan versi tidak tersedia'}${sifat ? ` (${sifat})` : ''} [${asal}]`;
   }
   function populateSymbolFilter(recent){
     const known = ACTIVE_FILTER_PAIRS;
