@@ -5904,7 +5904,18 @@ async function ohlcvAnalyzeHandler(req, res) {
         // keputusan sudah berubah ±26 kali sejak deploy Plan U). Distempel juga di
         // jalur refine-in-place di bawah — level yang benar-benar live itu lahir dari
         // kebijakan SAAT refine, bukan saat setup pertama dibuat.
-        policy_v: POLICY_VERSION,
+        //
+        // DIGERBANG `isAutoCall` (bukan distempel ke semua setup): closure ini dipakai
+        // BERSAMA oleh setup_log:v1 (manual, payload PUBLIK) dan setup_log_auto:v1
+        // (auto). POLICY_EPOCHS seluruhnya bicara soal kebijakan auto-entry — Gate A/B/D
+        // bahkan TIDAK PERNAH jalan untuk manual — jadi menempelkan versinya ke entri
+        // manual (a) menyesatkan: seolah aturan itu berlaku di sana, dan (b) menyalahi
+        // isolasi senyap U-7: field bernuansa eksperimen auto-entry tidak boleh muncul di
+        // payload publik. Sengaja DIHILANGKAN SAMA SEKALI untuk manual (spread kondisional),
+        // bukan diisi `null` seperti `cme_priority_prompt_v` di atas — U-7 melarang
+        // PERUBAHAN payload publik, dan key baru bernilai null tetap perubahan payload.
+        // Beda pola dengan tetangganya itu disengaja, bukan kelalaian.
+        ...(isAutoCall ? { policy_v: POLICY_VERSION } : {}),
       });
       let needsGateA = false;
       // Gate A (Kritikus) juga menimbang refine-in-place (2026-08-18, lihat catatan lengkap di
