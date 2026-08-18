@@ -87,7 +87,7 @@ Call 2 (bias bank sentral, JSON):
   (kalau semua gagal: bias bank sentral TIDAK diupdate siklus itu — data lama di Redis tetap dipakai, bukan kosong/error)
 
 Call 3 (trade thesis, JSON):
-  1. DeepSeek v4-flash (API resmi)        — PRIMARY/SATU-SATUNYA (maxTokens 1200, cegah truncation JSON thesis skema 13 field)
+  1. DeepSeek v4-flash (API resmi)        — PRIMARY/SATU-SATUNYA (maxTokens 1500 — dokumen ini sempat tertulis 1200, dikoreksi 2026-08-18 setelah dicek ke kode; truncation JSON thesis 13 field tetap jadi alasan angkanya dipatok, dan sejak 2026-08-18 kejadian kepotong dideteksi lewat finish_reason=length di log)
   (kalau gagal: tidak ada trade thesis baru ditampilkan siklus itu, bukan error)
 
 Call 4 (cek kontradiksi thesis terbuka):

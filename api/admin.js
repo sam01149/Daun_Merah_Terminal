@@ -5531,6 +5531,16 @@ async function ohlcvAnalyzeHandler(req, res) {
         });
         if (r.ok) {
           const j = await r.json(); rawText = j.choices?.[0]?.message?.content?.trim() || null; model = 'deepseek-v4-flash';
+          // Deteksi output kepotong (2026-08-18, audit kinerja — pola sama peringatan
+          // Gemini di fundamental_analysis). PENTING untuk jalur ini karena urutan output
+          // = JSON dulu, `===COMMENTARY===`, baru narasi: kalau kena batas max_tokens yang
+          // hilang justru EKOR narasi, jadi JSON tetap valid & setup tetap tersimpan tanpa
+          // ada tanda apa pun bahwa "Ringkasan Eksekutif" yang dibaca manusia terputus di
+          // tengah kalimat. Warn-only (tidak menggagalkan analisa) — cuma supaya kalau
+          // gejalanya muncul, penyebabnya ketahuan dari log, bukan ditebak.
+          if (j.choices?.[0]?.finish_reason === 'length') {
+            console.warn(`ohlcv_analyze: output ${data.label} KEPOTONG di batas max_tokens (finish_reason=length) — commentary kemungkinan terputus, pertimbangkan naikkan max_tokens`);
+          }
           if (rawText) await cb.onSuccess(CB_DEEPSEEK_KEY);
           else throw new Error('Empty response');
         } else {
