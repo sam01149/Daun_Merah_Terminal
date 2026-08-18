@@ -224,6 +224,7 @@ body.light-theme .pairtab.active{color:var(--accent);}
 .chartbox .zoneline.sl .cap{background:var(--accent);color:#fff;}
 .chartbox .zoneline.entry{background:rgba(var(--fg-rgb),.4);border-top:1px dashed rgba(var(--fg-rgb),.5);}
 .chartbox .zoneline.entry .cap{background:rgba(var(--fg-rgb),.85);color:var(--bg);}
+.chartbox .rsiband{position:absolute;left:0;right:56px;pointer-events:none;opacity:.12;background:#7e57c2;z-index:4;}
 .chartbox .chart-msg{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:10.5px;text-align:center;padding:0 16px;}
 .chartcard.noposition .chartbox{opacity:.85;}
 .chart-toolbar{display:flex;justify-content:flex-end;margin-bottom:10px;}
@@ -1418,6 +1419,7 @@ if (localStorage.getItem('dm_dev_theme') === 'light') document.body.classList.ad
     if (!st || !st.chart || !st.series) return;
     const { box, series, chart, setup } = st;
     box.querySelectorAll('.zoneband, .zoneline').forEach(el => el.remove());
+    positionRsiBand(symbol); // dipanggil dari sini juga (bukan cuma reposisi mandiri) supaya semua trigger existing (resize/zoom/theme/refresh) otomatis ikut nge-refresh pita RSI tanpa perlu nambah call-site baru di tiap tempat
     if (!setup) return;
     const entries = parseNums(setup.entry_zone);
     const sl = parseNums(setup.sl)[0];
@@ -1462,6 +1464,24 @@ if (localStorage.getItem('dm_dev_theme') === 'light') document.body.classList.ad
     line(yEntry, 'entry', `Entry ${eLo === eHi ? eLo : eLo + '–' + eHi}`);
   }
 
+  // Pita 30-70 RSI (tinted band, sama seperti "Latar Belakang" di dialog style RSI
+  // TradingView) — <div> overlay, pola SAMA PERSIS dengan zoneband entry/SL/TP di atas
+  // (priceToCoordinate lalu posisikan absolute), cuma untuk 2 level tetap (30/70) di
+  // price-scale RSI ('rsi'), bukan level entry/SL/TP di price-scale utama.
+  function positionRsiBand(symbol){
+    const st = chartState[symbol];
+    if (!st || !st.box) return;
+    st.box.querySelectorAll('.rsiband').forEach(el => el.remove());
+    if (!st.rsi) return;
+    const y70 = st.rsi.priceToCoordinate(70), y30 = st.rsi.priceToCoordinate(30);
+    if (y70 == null || y30 == null) return;
+    const d = document.createElement('div');
+    d.className = 'rsiband';
+    d.style.top = Math.min(y70, y30) + 'px';
+    d.style.height = Math.abs(y30 - y70) + 'px';
+    st.box.appendChild(d);
+  }
+
   function computeBars(candles){
     return (candles || [])
       .filter(b => b && typeof b.t === 'number' && typeof b.o === 'number')
@@ -1472,6 +1492,13 @@ if (localStorage.getItem('dm_dev_theme') === 'light') document.body.classList.ad
   // SMA sederhana dihitung sendiri (tanpa library indikator) — cukup buat MA
   // overlay ala tab TEK (index.html pakai MASimple@tv-basicstudies bawaan tv.js;
   // di sini chart-nya Lightweight Charts jadi dihitung manual dari candle close).
+  // Warna baku TradingView (dikirim user dari dialog style TradingView asli) — FIXED,
+  // sengaja TIDAK ikut var(--...) tema gelap/terang, sama seperti platform aslinya.
+  const CANDLE_UP_COLOR = '#089981', CANDLE_DOWN_COLOR = '#f23645';
+  const MA_COLORS = { ma50: '#2962ff', ma200: '#2962ff' }; // user: "semua MA nya warnanya samain" — dua-duanya pakai swatch biru "MA" yang sama persis
+  const RSI_COLOR = '#7e57c2'; // swatch ungu "RSI" yang ditunjukkan user
+  const RSI_BAND_COLOR = 'rgba(120,123,134,.9)'; // abu netral, sama seperti pita atas/bawah default TradingView
+
   function computeSMA(bars, period){
     const out = [];
     let sum = 0;
@@ -1479,6 +1506,29 @@ if (localStorage.getItem('dm_dev_theme') === 'light') document.body.classList.ad
       sum += bars[i].close;
       if (i >= period) sum -= bars[i - period].close;
       if (i >= period - 1) out.push({ time: bars[i].time, value: sum / period });
+    }
+    return out;
+  }
+
+  // RSI Wilder standar (period 14) — dihitung sendiri client-side, sama caranya dengan
+  // computeSMA di atas (tanpa library indikator terpisah).
+  function computeRSI(bars, period){
+    const out = [];
+    if (!bars || bars.length < period + 1) return out;
+    let gainSum = 0, lossSum = 0;
+    for (let i = 1; i <= period; i++) {
+      const diff = bars[i].close - bars[i - 1].close;
+      if (diff >= 0) gainSum += diff; else lossSum -= diff;
+    }
+    let avgGain = gainSum / period, avgLoss = lossSum / period;
+    const rsiAt = () => avgLoss === 0 ? 100 : 100 - 100 / (1 + avgGain / avgLoss);
+    out.push({ time: bars[period].time, value: rsiAt() });
+    for (let i = period + 1; i < bars.length; i++) {
+      const diff = bars[i].close - bars[i - 1].close;
+      const gain = diff > 0 ? diff : 0, loss = diff < 0 ? -diff : 0;
+      avgGain = (avgGain * (period - 1) + gain) / period;
+      avgLoss = (avgLoss * (period - 1) + loss) / period;
+      out.push({ time: bars[i].time, value: rsiAt() });
     }
     return out;
   }
@@ -1546,6 +1596,7 @@ if (localStorage.getItem('dm_dev_theme') === 'light') document.body.classList.ad
     st.series.setData(bars);
     if (st.ma50) st.ma50.setData(computeSMA(bars, 50));
     if (st.ma200) st.ma200.setData(computeSMA(bars, 200));
+    if (st.rsi) st.rsi.setData(computeRSI(bars, 14));
     st.setup = pickChartSetup(symbol);
     applyMarkers(symbol);
     positionOverlay(symbol);
@@ -1567,15 +1618,16 @@ if (localStorage.getItem('dm_dev_theme') === 'light') document.body.classList.ad
     box.innerHTML = '<div class="lwc-host"></div>';
     const host = box.querySelector('.lwc-host');
     const c = chartColors();
-    // Layout disamakan dengan gaya tab TEK (index.html): candle + MA50/MA200 overlay,
-    // grid tipis, harga di kanan. RSI sub-pane SENGAJA dilewati (bukan tidak dikerjakan —
-    // Lightweight Charts butuh price-scale kedua yang lebih rawan berantakan di grid
-    // sekecil ini; MA sudah cukup mewakili gaya visual TEK tanpa risiko itu).
+    // Layout disamakan dengan gaya tab TEK (index.html): candle + MA + RSI sub-pane,
+    // grid tipis, harga di kanan. Warna candle/MA/RSI FIXED (bukan var(--...) tema
+    // gelap/terang) — persis warna baku TradingView (user kirim swatch dari dialog
+    // style TradingView asli), supaya identik lintas tema, tidak ikut redup pas
+    // toggle terang (lihat restyleAllCharts — 3 series ini sengaja TIDAK direstyle).
     const chart = LightweightCharts.createChart(host, {
       autoSize: true, // canvas ikut resize otomatis (dibutuhkan buat mode maximize di bawah, bukan cuma kosmetik)
       layout: { background: { color: c.bg }, textColor: c.muted, fontFamily: "'DM Mono',monospace", fontSize: 10 },
       grid: { vertLines: { color: c.border }, horzLines: { color: c.border } },
-      rightPriceScale: { borderColor: c.border },
+      rightPriceScale: { borderColor: c.border, scaleMargins: { top: 0.06, bottom: 0.3 } },
       timeScale: { borderColor: c.border, timeVisible: true, secondsVisible: false },
       crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
       // Scroll mouse = zoom in/out (permintaan user, sama seperti kebiasaan TradingView asli)
@@ -1585,16 +1637,26 @@ if (localStorage.getItem('dm_dev_theme') === 'light') document.body.classList.ad
       handleScale: { mouseWheel: true, pinch: true, axisPressedMouseMove: true },
     });
     const series = chart.addCandlestickSeries({
-      upColor: c.green, downColor: c.accent, borderVisible: false, wickUpColor: c.green, wickDownColor: c.accent,
+      upColor: CANDLE_UP_COLOR, downColor: CANDLE_DOWN_COLOR, borderVisible: false, wickUpColor: CANDLE_UP_COLOR, wickDownColor: CANDLE_DOWN_COLOR,
     });
     series.setData(bars);
-    const ma50 = chart.addLineSeries({ color: c.blue, lineWidth: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
-    const ma200 = chart.addLineSeries({ color: c.yellow, lineWidth: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
+    const ma50 = chart.addLineSeries({ color: MA_COLORS.ma50, lineWidth: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
+    const ma200 = chart.addLineSeries({ color: MA_COLORS.ma200, lineWidth: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
     ma50.setData(computeSMA(bars, 50));
     ma200.setData(computeSMA(bars, 200));
+    // Sub-pane RSI: series terpisah dengan priceScaleId sendiri ('rsi'), scaleMargins
+    // dibagi supaya duduk di ~28% bawah kanvas yang SAMA (bukan chart kedua) — teknik
+    // baku Lightweight Charts buat panel indikator di bawah candle (mis. volume/RSI/MACD).
+    const rsi = chart.addLineSeries({
+      color: RSI_COLOR, lineWidth: 1, priceScaleId: 'rsi', priceLineVisible: false, lastValueVisible: true, crosshairMarkerVisible: false,
+    });
+    chart.priceScale('rsi').applyOptions({ scaleMargins: { top: 0.74, bottom: 0.02 }, borderVisible: false });
+    rsi.setData(computeRSI(bars, 14));
+    rsi.createPriceLine({ price: 70, color: RSI_BAND_COLOR, lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, axisLabelVisible: true, title: 'RSI' });
+    rsi.createPriceLine({ price: 30, color: RSI_BAND_COLOR, lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, axisLabelVisible: false, title: '' });
     chart.timeScale().fitContent();
 
-    chartState[symbol] = { chart, series, ma50, ma200, box, tf: useTf, bars, setup: pickChartSetup(symbol) };
+    chartState[symbol] = { chart, series, ma50, ma200, rsi, box, tf: useTf, bars, setup: pickChartSetup(symbol) };
     applyMarkers(symbol);
     const overlay = () => positionOverlay(symbol);
     chart.timeScale().subscribeVisibleLogicalRangeChange(overlay);
@@ -1623,9 +1685,9 @@ if (localStorage.getItem('dm_dev_theme') === 'light') document.body.classList.ad
         rightPriceScale: { borderColor: c.border },
         timeScale: { borderColor: c.border },
       });
-      if (st.series) st.series.applyOptions({ upColor: c.green, downColor: c.accent, wickUpColor: c.green, wickDownColor: c.accent });
-      if (st.ma50) st.ma50.applyOptions({ color: c.blue });
-      if (st.ma200) st.ma200.applyOptions({ color: c.yellow });
+      // series (candle), ma50, ma200, rsi TIDAK direstyle di sini — warnanya FIXED
+      // (lihat CANDLE_UP_COLOR dkk), sama seperti platform TradingView aslinya yang
+      // tidak ganti warna candle/indikator cuma gara-gara tema UI di-toggle.
       applyMarkers(symbol);
       positionOverlay(symbol);
     });
