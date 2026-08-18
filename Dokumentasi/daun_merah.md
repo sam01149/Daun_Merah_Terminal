@@ -11,10 +11,14 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-18 (Session 320 — lihat penunjuk PLAN Y di bawah)
+> **Last updated:** 2026-08-18 (Session 322 — lihat penunjuk PLAN Z di bawah)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
+
+## Changelog Session 322 (2026-08-18) — Penunjuk: Kandidat SL/TP/Invalidasi Deterministik (PLAN Z)
+
+**Penunjuk saja — entri lengkap di `Dokumentasi/professional_llm_trader/changelog.md` §Session 322.** `ohlcvAnalyzeHandler` (dipakai bersama "Analisa AI" manual publik dan auto-entry) sekarang menghitung kandidat SL/TP deterministik dari struktur teknikal (modul baru `api/_levels.js`), memperluas pola yang sudah lama menstabilkan `entry_zone`. AI wajib pilih dari kandidat itu (di-snap/ditolak kalau menyimpang jauh) alih-alih bebas mengarang SL/TP tiap generate — mengurangi variasi acak risiko per trade (1R) antar-run untuk input identik. Pekerjaan ini dipicu & ditujukan untuk auto-entry (lihat entri lengkap), makanya detailnya di folder `professional_llm_trader/`, bukan di sini.
 
 ## Changelog Session 320 (2026-08-18) — Penunjuk: Detak Kalender Terjadwal untuk `calendar_v1`
 
