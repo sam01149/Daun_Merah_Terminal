@@ -205,6 +205,13 @@ body.light-theme .chart-tf button.active{color:var(--accent);}
 .chartcard.maximized{position:fixed;inset:22px;z-index:60;display:flex;flex-direction:column;box-shadow:0 24px 70px rgba(0,0,0,.55);}
 .chartcard.maximized .chartbox{flex:1;height:auto;}
 body.chart-max-open{overflow:hidden;}
+/* Tab pindah-pindah pair selagi 1 kartu di-maximize (cuma pernah tampil di dalam
+   .chartcard.maximized — elemen ini di-insertBefore ke situ oleh JS, tidak pernah
+   dirender terpisah). */
+.chart-pairtabs{display:flex;gap:5px;flex-wrap:wrap;padding-bottom:9px;margin-bottom:9px;border-bottom:1px solid var(--border);}
+.pairtab{padding:4px 11px;font-size:10px;border-radius:12px;}
+.pairtab.active{background:var(--accent-dim);border-color:var(--accent);color:#fff;}
+body.light-theme .pairtab.active{color:var(--accent);}
 .chartbox .lwc-host{position:absolute;inset:0;}
 .chartbox .zoneband{position:absolute;left:0;right:56px;pointer-events:none;opacity:.16;z-index:5;}
 .chartbox .zoneband.tp{background:var(--green);}
@@ -1641,15 +1648,45 @@ if (localStorage.getItem('dm_dev_theme') === 'light') document.body.classList.ad
     }
     return bd;
   }
+  // Tab pair di dalam mode maximize (permintaan user: "pengen bisa beralih ke pair
+  // lain" tanpa keluar-masuk maximize dulu) — 1 elemen singleton (#chartMaxTabs)
+  // dipindah-pindah (insertBefore) ke kartu yang lagi maximized, BUKAN digandakan ke
+  // tiap kartu, supaya cuma ada 1 salinan hidup & selalu sinkron.
+  function ensureMaxTabs(){
+    let el = document.getElementById('chartMaxTabs');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'chartMaxTabs';
+      el.className = 'chart-pairtabs';
+      el.addEventListener('click', e => {
+        const btn = e.target.closest('button[data-symbol]');
+        if (btn) switchMaximizedTo(btn.dataset.symbol);
+      });
+    }
+    return el;
+  }
+  function renderMaxTabs(activeSymbol){
+    const el = ensureMaxTabs();
+    const symbols = Object.keys(chartState);
+    el.innerHTML = symbols.map(sym => `<button type="button" class="pairtab${sym === activeSymbol ? ' active' : ''}" data-symbol="${esc(sym)}">${esc(symLabel(sym))}</button>`).join('');
+    return el;
+  }
+  function switchMaximizedTo(symbol){
+    const target = document.querySelector(`#chartGrid .chartcard[data-symbol="${symbol}"]`);
+    if (!target) return;
+    document.querySelectorAll('#chartGrid .chartcard.maximized').forEach(c => c.classList.remove('maximized'));
+    target.classList.add('maximized');
+    document.body.classList.add('chart-max-open');
+    chartBackdrop().classList.add('show');
+    const tabs = renderMaxTabs(symbol);
+    target.insertBefore(tabs, target.firstChild);
+    setTimeout(() => positionOverlay(symbol), 60);
+  }
   function toggleCardMaximize(symbol){
     const card = document.querySelector(`#chartGrid .chartcard[data-symbol="${symbol}"]`);
     if (!card) return;
     if (card.classList.contains('maximized')) { restoreMaximizedChart(); return; }
-    document.querySelectorAll('#chartGrid .chartcard.maximized').forEach(c => c.classList.remove('maximized'));
-    card.classList.add('maximized');
-    document.body.classList.add('chart-max-open');
-    chartBackdrop().classList.add('show');
-    setTimeout(() => positionOverlay(symbol), 60);
+    switchMaximizedTo(symbol);
   }
   function restoreMaximizedChart(){
     const card = document.querySelector('#chartGrid .chartcard.maximized');
@@ -1659,6 +1696,8 @@ if (localStorage.getItem('dm_dev_theme') === 'light') document.body.classList.ad
     document.body.classList.remove('chart-max-open');
     const bd = document.getElementById('chartBackdrop');
     if (bd) bd.classList.remove('show');
+    const tabs = document.getElementById('chartMaxTabs');
+    if (tabs && tabs.parentNode) tabs.parentNode.removeChild(tabs);
     setTimeout(() => positionOverlay(symbol), 60);
   }
   document.addEventListener('keydown', e => { if (e.key === 'Escape') restoreMaximizedChart(); });
