@@ -11,10 +11,22 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-18 (Session 318 — bug commentary tidak ter-refresh saat refine-in-place setup auto-entry)
+> **Last updated:** 2026-08-18 (Session 319 lanjutan — routing dokumentasi: semua yang berhubungan auto-entry pindah ke folder professional_llm_trader)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
+
+## Changelog Session 319 lanjutan (2026-08-18) — Routing Dokumentasi: SEMUA yang Berhubungan Auto-Entry Pindah ke Folder Professional LLM Trader
+
+**Konteks:** keputusan user setelah 2 plan baru (PLAN Y detak kalender, PLAN Z kandidat SL/TP deterministik) sempat ditulis di `daun_merah_plan.md` mengikuti aturan LAMA. Aturan lama membelah satu pekerjaan ke dua tempat: bagian yang eksklusif auto-entry masuk folder `professional_llm_trader/`, tapi bagian yang menyentuh kode bersama (`ohlcvAnalyzeHandler`, cache `calendar_v1`) tetap di file umum. Praktiknya bikin AI pelaksana harus menebak, dan jejak satu inisiatif jadi terpencar.
+
+**Aturan baru (`ATURAN.md` §2, gitignored — sudah diperbarui lokal):** APA PUN yang berhubungan dengan auto-entry masuk `Dokumentasi/professional_llm_trader/`, termasuk perubahan di kode/prompt/infra bersama SELAMA pekerjaan itu dipicu/ditujukan untuk auto-entry. Yang tetap di sini: infra yang murni melayani aplikasi umum dan TIDAK dipicu kebutuhan auto-entry (daemon Plan Q, OHLCV sync umum, streaming candle, alert generik, fitur informasi publik).
+
+**Mitigasi hilangnya jejak (ditambahkan supaya aturan baru tidak bikin fitur publik sulit didiagnosa):** kalau pekerjaan auto-entry mengubah perilaku yang DILIHAT PENGGUNA PUBLIK (mis. output "Analisa AI" manual ikut berubah), WAJIB tulis SATU baris penunjuk di file ini yang merujuk entri lengkapnya di folder itu — penunjuk, BUKAN salinan.
+
+**File yang diselaraskan:** `ATURAN.md` §2 (baris tabel + paragraf batas + kewajiban penunjuk silang), `professional_llm_trader/plan.md` (blok ATURAN: larangan "plan non-auto-entry" dilonggarkan ke "plan yang sama sekali tidak berhubungan dengan auto-entry"), `professional_llm_trader/changelog.md` (blok ATURAN: BOLEH/DILARANG ditulis ulang), `professional_llm_trader/audit_workflow.md` §4 (routing eskalasi temuan — aturan "logika bersama manual+auto -> daun_merah.md" DICABUT). PLAN Y & Z dipindah utuh ke `professional_llm_trader/plan.md` beserta catatan penempatan supaya tidak dipindah balik AI berikutnya.
+
+**Konsekuensi yang diterima sadar:** preseden Session 301/302 (bugfix reasoning lintas-pair, dicatat di file ini karena dianggap infra bersama) TIDAK dipindah retroaktif — entri lama tetap di tempatnya, aturan baru berlaku ke depan saja. Memindahkan riwayat lama berisiko memutus rujukan silang yang sudah menunjuk ke sini.
 
 ## Changelog Session 318 (2026-08-18) — Bug `commentary` tidak ikut ter-refresh saat refine-in-place
 

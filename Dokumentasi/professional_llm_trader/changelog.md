@@ -5,12 +5,16 @@
 TUJUAN   : Changelog teknis KHUSUS inisiatif "Professional LLM Trader" (eks-Plan U) — sistem
            auto-entry AI eksperimental (setup_log_auto:v1, Gate A-E, pair auto-entry, Track 1-3,
            dev-auto-entry.html). Mirror aturan daun_merah.md, discope ke inisiatif ini saja.
-BOLEH    : Fitur, bugfix, keputusan arsitektur, hasil verifikasi — SEMUA yang menyentuh logika/
-           keputusan trading auto-entry (pair, gate, track, prompt AI khusus auto-entry, cost/
-           win-rate/korelasi khusus auto-entry).
-DILARANG : Infra umum yang melayani SELURUH app walau auto-entry numpang di atasnya (daemon VPS
-           Plan Q, OHLCV sync umum, streaming candle 14 pair FX, alert berita/harga generik) ->
-           tetap di Dokumentasi/daun_merah.md. Riset/eksperimen -> riset.md (folder ini).
+BOLEH    : Fitur, bugfix, keputusan arsitektur, hasil verifikasi — SEMUA yang BERHUBUNGAN dengan
+           auto-entry (pair, gate, track, prompt AI, cost/win-rate/korelasi), TERMASUK perubahan
+           di kode/prompt/infra yang dipakai bersama jalur manual publik selama perubahan itu
+           dipicu/ditujukan untuk auto-entry (keputusan user 2026-08-18, ATURAN.md §2 — mengganti
+           batas lama "infra bersama tetap di daun_merah.md"). Kalau perubahan itu mengubah
+           perilaku yang DILIHAT PUBLIK, tulis SATU baris penunjuk di daun_merah.md yang merujuk
+           entri lengkap di sini — penunjuk, BUKAN salinan.
+DILARANG : Infra yang murni melayani aplikasi umum dan TIDAK dipicu kebutuhan auto-entry (daemon
+           VPS Plan Q, OHLCV sync umum, streaming candle 14 pair FX, alert berita/harga generik)
+           -> tetap di Dokumentasi/daun_merah.md. Riset/eksperimen -> riset.md (folder ini).
            Pekerjaan tertunda -> progress.md (folder ini). Plan aktif -> plan.md (folder ini).
 FORMAT   : Changelog append per sesi (terbaru di atas), sama persis format daun_merah.md.
 Entri yang melanggar = salah tempat, wajib dipindah.
