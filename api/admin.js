@@ -25,6 +25,7 @@ const { fetchYahooOhlcv1h, fetchFallbackCandles, shouldSendYahooAlert, mapYahooS
 const { buildPairContext, computeCurrencyStrength } = require('./_pair_context');
 const { validateTightenSl, computePreventiveTightenSl, _evaluateManaged, _aggManagementStats, isCorroborated } = require('./_position_review');
 const { isDrawdownHalted, isCorrelatedExposureBlocked, isTimingConflictBlocked, isInvalidationTriggered, INVALIDATION_TRIGGER_TYPES, INVALIDATION_TRIGGER_DIRECTIONS, INVALIDATION_TRIGGER_TIMEFRAMES, CORRELATED_PAIRS, POLICY_VERSION, POLICY_EPOCHS, policyVersionForTs } = require('./_auto_entry_guard');
+const { computeLevelCandidates } = require('./_levels');
 
 // Gate D live-sign lookup (audit 2026-08-16): terjemahkan simbol Yahoo di
 // CORRELATED_PAIRS ke label instrumen api/correlations.js, supaya sign statis di
@@ -4481,6 +4482,33 @@ function _formatConfluenceBlock(zones, dec) {
   return lines.join('\n');
 }
 
+// Render blok [KANDIDAT SL/TP] untuk prompt AI (PLAN Z, 2026-08-18) — perluasan pola
+// [ZONA KONFLUENSI] di atas ke sl/tp. Bias belum diketahui saat prompt dibangun (sama
+// seperti entryZoneInstr), jadi dua varian (bearish & bullish) disajikan sekaligus;
+// AI memilih sesuai bias yang ia tentukan sendiri di respons yang sama. Lihat
+// api/_levels.js untuk cara kandidat ini dihitung & alasan desainnya.
+function _formatLevelCandidatesBlock(lc) {
+  if (!lc || (!lc.bearish && !lc.bullish)) return '';
+  const f = n => n.toFixed(lc.dec ?? 5);
+  const fmtList = (list, prefix) => list.map((c, i) => `    ${prefix}${i + 1}. ${f(c.price)} = ${c.label}`).join('\n');
+  const lines = ['[KANDIDAT SL/TP — dihitung DETERMINISTIK oleh kode dari struktur yang sama dengan ZONA KONFLUENSI; pilih SATU sesuai bias yang kamu tentukan, JANGAN mengarang angka di luar daftar ini]'];
+  if (lc.bearish) {
+    lines.push('  Kalau bias BEARISH:');
+    lines.push('    SL (di atas Now, melindungi entry):');
+    lines.push(fmtList(lc.bearish.sl, 'S'));
+    lines.push('    TP (di bawah Now, sisi profit):');
+    lines.push(fmtList(lc.bearish.tp, 'T'));
+  }
+  if (lc.bullish) {
+    lines.push('  Kalau bias BULLISH:');
+    lines.push('    SL (di bawah Now, melindungi entry):');
+    lines.push(fmtList(lc.bullish.sl, 'S'));
+    lines.push('    TP (di atas Now, sisi profit):');
+    lines.push(fmtList(lc.bullish.tp, 'T'));
+  }
+  return lines.join('\n');
+}
+
 // Ekstrak konteks makro dari artikel Ringkasan untuk pair tertentu (pure — dites unit).
 // XAU: blok "XAUUSD:" (memang self-contained). Pair FX: bagian FX dipecah per marker
 // {{TAG: NAMA}} yang disisipkan AI digest — ambil jangkar (teks sebelum tag pertama,
@@ -5296,6 +5324,14 @@ async function ohlcvAnalyzeHandler(req, res) {
     // dengan yang dilihat AI, supaya entry/SL/TP tidak "di-reroll" tiap re-generate.
     const confZones = _confluenceZones(data, expiryLvls);
     const confBlock = _formatConfluenceBlock(confZones, data.dec);
+    // PLAN Z (2026-08-18): kandidat SL/TP deterministik — perluasan pola confZones
+    // di atas. null kalau confZones sendiri null (data minim) ATAU tidak ada arah
+    // (bearish/bullish) yang punya SL+TP layak (lihat api/_levels.js) — di kedua
+    // kasus, levelBlock kosong dan slInstr/tpInstr di bawah JATUH ke instruksi lama.
+    const levelCandidates = confZones
+      ? computeLevelCandidates({ zones: confZones, atrD: (data.d1_ext?.available ? data.d1_ext.atr_d : null), isXau: data.is_xau, dec: data.dec })
+      : null;
+    const levelBlock = _formatLevelCandidatesBlock(levelCandidates);
 
     const ctxParts = [];
     if (ringkasanContext) ctxParts.push(`${makroHeader}\n${ringkasanContext}`);
@@ -5304,7 +5340,7 @@ async function ohlcvAnalyzeHandler(req, res) {
     if (trackBlock)       ctxParts.push(trackBlock);
     if (calAnalyzeBlock)  ctxParts.push(calAnalyzeBlock);
     if (pairCtx.block)    ctxParts.push(pairCtx.block);
-    ctxParts.push(`DATA TEKNIKAL:\n${textBlock}${expiryBlock}${confBlock ? '\n\n' + confBlock : ''}`);
+    ctxParts.push(`DATA TEKNIKAL:\n${textBlock}${expiryBlock}${confBlock ? '\n\n' + confBlock : ''}${levelBlock ? '\n\n' + levelBlock : ''}`);
     const makroBlock = ctxParts.join('\n\n');
 
     const extraCtx = [
@@ -5349,10 +5385,32 @@ async function ohlcvAnalyzeHandler(req, res) {
     // major (rentang harian ratusan dolar bukan tak lazim), 0.5x ATR-14 H1 terlalu
     // sempit dan kena stop dari noise normal, bukan invalidasi struktur asli.
     const slBufferMult = data.is_xau ? '1x' : '0.5x';
-    const slInstr = confBlock
+    // PLAN Z (2026-08-18): tiga varian sekarang, bukan dua. levelCandidates (paling
+    // ketat, [KANDIDAT SL/TP] terhitung) > confBlock (fallback lama, struktur bebas
+    // tapi tetap dari DATA TEKNIKAL) > generic (data paling minim). Kode DI LUAR sini
+    // (blok snap/tolak dekat sanity-check RR) yang menegakkan varian pertama — instruksi
+    // ini hanya mengarahkan AI, bukan satu-satunya jaring pengaman.
+    //
+    // levelCandidates BISA cuma punya SATU arah (mis. bearish ada, bullish null —
+    // umum terjadi kalau filter RR di api/_levels.js membuang semua TP satu sisi).
+    // Kalau AI akhirnya pilih bias yang arahnya TIDAK punya kandidat, instruksi
+    // "wajib pilih dari daftar" itu mustahil dipatuhi — makanya varian levelCandidates
+    // di bawah SELALU menyertakan klausa fallback eksplisit ke instruksi lama untuk
+    // kasus itu, supaya AI tidak dipaksa taat pada daftar yang tidak ada.
+    const slFallbackTail = confBlock
+      ? ` struktur berikutnya setelah entry_zone dari [ZONA KONFLUENSI]/[LEVEL S/R], dengan buffer minimal ~${slBufferMult} ATR-14 H1 dari level itu`
+      : ` swing H4, cluster S/R, atau Prev Day H/L yang ADA di data, dengan buffer minimal ~${slBufferMult} ATR-14 H1 dari level itu`;
+    const slInstr = levelCandidates
+      ? `- sl: WAJIB pilih SATU angka PERSIS dari [KANDIDAT SL/TP] di atas, baris SL sesuai bias yang kamu tentukan (bearish pakai daftar SL di bawah "Kalau bias BEARISH", bullish pakai daftar SL di bawah "Kalau bias BULLISH") — JANGAN mengarang angka lain. KALAU bias yang kamu pilih TIDAK punya baris SL sendiri di [KANDIDAT SL/TP] (daftar itu bisa cuma render satu arah), baru gunakan level di${slFallbackTail} (jangan tepat di level, rawan wick hunt). Untuk bearish, sl harus di atas entry_zone. Untuk bullish, sl harus di bawah entry_zone.`
+      : confBlock
       ? `- sl: level stop loss konkret DI LUAR zona konfluensi yang melindungi entry — di balik zona [ZONA KONFLUENSI] atau struktur berikutnya setelah entry_zone, dengan buffer minimal ~${slBufferMult} ATR-14 H1 dari level itu (jangan tepat di level, rawan wick hunt)${data.is_xau ? '. XAU/USD historis lebih volatile per-jam dari FX major — buffer sempit gampang kena stop oleh noise, bukan invalidasi struktur asli' : ''}. Untuk bearish, sl harus di atas entry_zone. Untuk bullish, sl harus di bawah entry_zone.`
       : `- sl: level stop loss konkret DI LUAR struktur yang melindungi entry — di balik swing H4, cluster S/R, atau Prev Day H/L yang ADA di data, dengan buffer minimal ~${slBufferMult} ATR-14 H1 dari level itu (jangan tepat di level, rawan wick hunt)${data.is_xau ? '. XAU/USD historis lebih volatile per-jam dari FX major — buffer sempit gampang kena stop oleh noise, bukan invalidasi struktur asli' : ''}. Untuk bearish, sl harus di atas entry_zone. Untuk bullish, sl harus di bawah entry_zone.`;
-    const tpInstr = confBlock
+    const tpFallbackTail = confBlock
+      ? ' zona konfluensi BERIKUTNYA searah bias dari [ZONA KONFLUENSI] (atau struktur [LEVEL S/R] berikutnya)'
+      : ' struktur berikutnya searah bias yang ADA di data (cluster S/R, swing, pivot, fib)';
+    const tpInstr = levelCandidates
+      ? `- tp: WAJIB pilih SATU angka PERSIS dari [KANDIDAT SL/TP] di atas, baris TP sesuai bias yang kamu tentukan — JANGAN mengarang angka lain. KALAU bias yang kamu pilih TIDAK punya baris TP sendiri di [KANDIDAT SL/TP], baru gunakan${tpFallbackTail}. Untuk bearish, tp harus di bawah entry_zone. Untuk bullish, tp harus di atas entry_zone. Daftar TP (kalau ada untuk bias-mu) sudah disaring kode supaya risk/reward minimal 1:1 terhadap SL terdekat; kalau pakai fallback, WAJIB risk/reward minimal 1:1 sendiri — kalau tidak memungkinkan, sebutkan itu di trigger/commentary alih-alih memaksakan level palsu.`
+      : confBlock
       ? '- tp: zona konfluensi BERIKUTNYA searah bias dari daftar [ZONA KONFLUENSI] (atau struktur [LEVEL S/R] berikutnya kalau tidak ada zona lagi searah itu) — jangan mengarang. Untuk bearish, tp harus di bawah entry_zone. Untuk bullish, tp harus di atas entry_zone. WAJIB risk/reward (jarak entry→tp dibanding entry→sl) minimal 1:1 — kalau struktur data tidak memungkinkan RR ≥1, sebutkan itu di trigger/commentary alih-alih memaksakan level palsu.'
       : '- tp: level take profit konkret = struktur berikutnya searah bias yang ADA di data (cluster S/R, swing, pivot, fib) — jangan mengarang. Untuk bearish, tp harus di bawah entry_zone. Untuk bullish, tp harus di atas entry_zone. WAJIB risk/reward (jarak entry→tp dibanding entry→sl) minimal 1:1 — kalau struktur data tidak memungkinkan RR ≥1, sebutkan itu di trigger/commentary alih-alih memaksakan level palsu.';
     const userMsg = [
@@ -5368,7 +5426,8 @@ async function ohlcvAnalyzeHandler(req, res) {
       tpInstr,
       '- trigger: SATU kondisi price action spesifik yang HARUS terpenuhi sebelum entry — utamakan konfirmasi berbasis candle/pola di level konkret (misal "tunggu candle H4 close di bawah 1.1710" atau "tunggu rejection/pin bar H1 di area 3340") daripada indikator murni. Jangan sebut dua kondisi alternatif yang saling kontradiksi relatif ke Now. Manfaatkan [POLA CANDLE terdeteksi] kalau relevan.',
       '- invalidation_condition: kondisi spesifik yang membatalkan skenario ini sepenuhnya (beda dari sl — ini soal struktur/tesis, misal "kalau Daily close balik di bawah SMA50 atau swing low H4 terakhir jebol, bias bullish batal")',
-      '- invalidation_trigger: versi TERSTRUKTUR dari invalidation_condition di atas, supaya KODE (bukan AI) bisa mendeteksi otomatis tanpa call AI tambahan — objek {"type":"ma_break"|"price_level"|"swing_break","level":<satu angka>,"timeframe":"1h"|"4h"|"1d","direction":"above"|"below"}. "level" WAJIB satu angka konkret yang ADA di data (nilai SMA/level struktur/swing yang kamu sebut di invalidation_condition), "direction" = arah CLOSE candle yang membatalkan skenario ("below" kalau close balik ke bawah level itu membatalkan, "above" kalau close balik ke atas). Kalau invalidation_condition-mu TIDAK BISA diringkas jadi satu level angka tunggal (butuh multi-kondisi atau deskripsi kualitatif), set invalidation_trigger ke null — JANGAN mengarang angka.',
+      '- invalidation_trigger: versi TERSTRUKTUR dari invalidation_condition di atas, supaya KODE (bukan AI) bisa mendeteksi otomatis tanpa call AI tambahan — objek {"type":"ma_break"|"price_level"|"swing_break","level":<satu angka>,"timeframe":"1h"|"4h"|"1d","direction":"above"|"below"}. "level" WAJIB satu angka konkret yang ADA di data (nilai SMA/level struktur/swing yang kamu sebut di invalidation_condition), "direction" = arah CLOSE candle yang membatalkan skenario ("below" kalau close balik ke bawah level itu membatalkan, "above" kalau close balik ke atas). Kalau invalidation_condition-mu TIDAK BISA diringkas jadi satu level angka tunggal (butuh multi-kondisi atau deskripsi kualitatif), set invalidation_trigger ke null — JANGAN mengarang angka.'
+        + (levelCandidates ? ' Kalau type-nya "price_level" atau "swing_break", SEBAIKNYA level ini sama dengan salah satu angka di [KANDIDAT SL/TP] atau [ZONA KONFLUENSI] di atas (bukan angka baru yang tidak berkaitan) — konsisten dengan sl yang kamu pilih.' : ''),
       '- time_horizon_days: estimasi jumlah hari realistis skenario ini main out (angka, misal 3, 5, 10) berdasarkan jarak entry-tp dibanding rata-rata gerak harian (ATR/sigma) yang ada di data',
       '- makro_alignment: "searah" kalau KONTEKS MAKRO / FUNDAMENTAL TERSTRUKTUR mendukung arah bias teknikalmu, "konflik" kalau berlawanan, "netral" kalau sinyal makro tidak jelas/campuran. Kalau blok makro dan fundamental dua-duanya tidak tersedia di atas, isi null. JANGAN pakai ranking currency strength / rezim volatilitas (kalau ada di atas) sebagai bukti di sini — itu price-derived teknikal (turunan %perubahan harga H1), bukan fundamental catalyst, sama seperti headline "Currency Strength Chart" yang historisnya sering salah dibaca sebagai sinyal fundamental; field ini HANYA boleh berdasar KONTEKS MAKRO (Ringkasan) dan FUNDAMENTAL TERSTRUKTUR (cb_bias, COT, real yield, dsb) — kalau HANYA currency strength/rezim yang mendukung suatu arah tanpa dukungan fundamental sungguhan, itu BUKAN alasan valid untuk "searah". SEBELUM memutuskan searah/konflik, tentukan dulu mata uang mana yang diuntungkan oleh bias teknikalmu: bias bullish = mata uang BASE (kiri) menguat vs QUOTE (kanan); bias bearish = mata uang QUOTE menguat vs BASE — berlaku SAMA untuk pair mayor maupun pair silang non-USD (misal AUD/NZD bearish = NZD menguat vs AUD, EUR/GBP bearish = GBP menguat vs EUR, BUKAN sebaliknya). Baru bandingkan: kalau sinyal fundamental mendukung penguatan mata uang yang SAMA itu, itu "searah" — JANGAN dibalik jadi "konflik" hanya karena satu mata uang disebut "hawkish/kuat" tanpa mengecek dulu apakah itu mata uang yang diuntungkan atau dirugikan oleh biasmu. WAJIB cek ulang sebelum menjawab: kalau kesimpulanmu "searah", pastikan mata uang yang kamu anggap "diuntungkan" oleh biasmu itu SAMA dengan mata uang yang sinyal fundamentalnya (bias CB hawkish, COT crowded short berisiko short-squeeze, dsb) menunjukkan MENGUAT — jangan sampai makro_alignment_reason-mu menyebut mata uang yang SAMA "menguat" sekaligus "melemah" hanya karena kamu ingin memaksakan "searah". Contoh kesalahan nyata yang harus dihindari: bias BoJ hawkish + COT JPY net short crowded (persentil rendah, rawan short-squeeze naik) dua-duanya sinyal JPY MENGUAT — untuk pair CHF/JPY itu berarti QUOTE menguat, jadi sinyal itu searah dengan bias BEARISH CHF/JPY (bukan bullish); kalau biasmu justru bullish CHF/JPY, sinyal itu KONFLIK, bukan searah.',
       '- makro_alignment_reason: SATU kalimat pendek alasannya dengan menyebut data spesifik (misal "bias Fed Dovish + COT USD net short searah dengan bias bearish USD/JPY"). Kalau alasannya menyangkut mekanisme dolar/komoditas/yield (misal "safe-haven vs real yield", "geopolitik vs oil"), WAJIB pakai angka konkret dari baris DOLLAR & KOMODITAS / REAL YIELD USD di FUNDAMENTAL TERSTRUKTUR kalau tersedia (level DXY/WTI, atau breakdown nominal-vs-ekspektasi inflasi) — jangan cuma bilang "real yield tinggi" tanpa angka atau tanpa menjelaskan apakah itu didorong sisi nominal atau sisi inflasi. Kalau data itu tidak tersedia di atas, jangan mengarang angka — tetap boleh pakai bahasa umum. Null kalau makro_alignment null.',
@@ -5587,6 +5646,43 @@ async function ohlcvAnalyzeHandler(req, res) {
           structured.time_horizon_days = isNaN(h) ? null : h;
         }
 
+        // PLAN Z (2026-08-18): snap sl/tp ke [KANDIDAT SL/TP] (api/_levels.js) kalau
+        // tersedia untuk bias yang dipilih AI — samakan filosofi dengan entry_zone
+        // (sudah lama dipaksa dari [ZONA KONFLUENSI]). AI yang menulis angka DALAM
+        // toleransi cluster zona (levelCandidates.tolerance — granularitas SAMA yang
+        // dipakai _confluenceZones menyatukan level berdekatan) disamakan presisinya
+        // ke kandidat itu (snap, hilangkan drift pembulatan AI); yang menyimpang jauh
+        // dari SEMUA kandidat dianggap tidak patuh instruksi -> level trio di-null-kan
+        // (perlakuan SAMA seperti sanity-check RR/direction di bawah — BUKAN mekanisme
+        // penolakan baru). levelCandidates null (data minim) atau bias bukan
+        // bullish/bearish -> langkah ini dilewati total, fallback ke instruksi lama
+        // tanpa constraint tambahan (pola dua-varian yang sama seperti entryZoneInstr).
+        if (levelCandidates && structured.sl && structured.tp
+          && (structured.bias === 'bearish' || structured.bias === 'bullish')) {
+          const dir = levelCandidates[structured.bias]; // { sl:[...], tp:[...] } | null
+          if (dir) {
+            const numsLC = s => (String(s).match(/[\d.]+/g) || []).map(Number).filter(n => !isNaN(n));
+            const snapTo = (rawVal, pool) => {
+              const val = numsLC(rawVal)[0];
+              if (val == null || !pool?.length) return null;
+              let best = null, bestDist = Infinity;
+              for (const c of pool) {
+                const dist = Math.abs(c.price - val);
+                if (dist < bestDist) { bestDist = dist; best = c; }
+              }
+              return bestDist <= levelCandidates.tolerance ? best : null;
+            };
+            const slSnap = snapTo(structured.sl, dir.sl);
+            const tpSnap = snapTo(structured.tp, dir.tp);
+            if (slSnap && tpSnap) {
+              structured.sl = slSnap.price.toFixed(levelCandidates.dec);
+              structured.tp = tpSnap.price.toFixed(levelCandidates.dec);
+            } else {
+              console.warn('ohlcv_analyze: sl/tp di luar [KANDIDAT SL/TP] — level trio di-null-kan', { bias: structured.bias, sl: structured.sl, tp: structured.tp });
+              structured.entry_zone = structured.sl = structured.tp = null;
+            }
+          }
+        }
         // Sanity-check entry_zone/sl/tp direction vs current price AND risk/reward —
         // drop the levels (keep bias/trigger/commentary) if the model produced a setup
         // that contradicts the live price it was given, or has RR < 1.
@@ -6715,6 +6811,7 @@ module.exports._formatFundRankingDelta = _formatFundRankingDelta;
 module.exports._pickExpiryLevels = _pickExpiryLevels;
 module.exports._confluenceZones = _confluenceZones;
 module.exports._formatConfluenceBlock = _formatConfluenceBlock;
+module.exports._formatLevelCandidatesBlock = _formatLevelCandidatesBlock;
 module.exports._evaluateSetups = _evaluateSetups;
 module.exports._evaluateTechInvalidation = _evaluateTechInvalidation;
 module.exports._evaluateCanceledGhost = _evaluateCanceledGhost;

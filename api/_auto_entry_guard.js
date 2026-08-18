@@ -339,8 +339,16 @@ const POLICY_EPOCHS = [
   { v: 23, from: '2026-08-08T19:03:05Z', kind: 'policy', impact: 'pair_set', label: 'S296: CHF/JPY masuk sebagai pair ke-5' },
   { v: 24, from: '2026-08-10T16:04:02Z', kind: 'fix', impact: 'context',  label: 'S301: guard kontradiksi arah mengoreksi makro_alignment otomatis' },
   { v: 25, from: '2026-08-16T13:58:32Z', kind: 'policy', impact: 'entry',    label: 'S316: Gate D — sign korelasi statis bisa ditimpa anomali korelasi live' },
-  { v: 26, from: '2026-08-18T12:05:11Z', kind: 'fix', impact: 'entry',    label: 'S318: Gate A (Kritikus) ikut menimbang level hasil refine-in-place' },
-  { v: 27, from: '2026-08-18T16:00:00Z', kind: 'fix', impact: 'entry',    label: 'S319: Gate D menghitung posisi pending sebagai exposure, bukan cuma open' },
+  // v26 & v27 `from` DIKOREKSI 2026-08-18 (audit PLAN Z, menemukan value asli tidak
+  // cocok waktu commit git log — v26 salah salin waktu lokal WIB tanpa konversi
+  // (+07:00 ditulis seolah Z), v27 angka bulat yang tidak cocok waktu lokal MAUPUN
+  // UTC commit-nya sama sekali). Nilai commit asli (git log --format=%aI): v26
+  // `923e886` = 2026-08-18T12:05:11+07:00 = 05:05:11Z; v27 `a843c5a` =
+  // 2026-08-18T12:56:31+07:00 = 05:56:31Z. Epoch v1-v25 BELUM diaudit ulang untuk
+  // pola bug yang sama — lihat progress.md folder professional_llm_trader.
+  { v: 26, from: '2026-08-18T05:05:11Z', kind: 'fix', impact: 'entry',    label: 'S318: Gate A (Kritikus) ikut menimbang level hasil refine-in-place' },
+  { v: 27, from: '2026-08-18T05:56:31Z', kind: 'fix', impact: 'entry',    label: 'S319: Gate D menghitung posisi pending sebagai exposure, bukan cuma open' },
+  { v: 28, from: '2026-08-18T09:20:00Z', kind: 'policy', impact: 'levels',  label: 'PLAN Z: sl/tp/invalidation_trigger wajib dari kandidat deterministik (api/_levels.js), dulu bebas dikarang AI' },
 ];
 
 const POLICY_VERSION = POLICY_EPOCHS[POLICY_EPOCHS.length - 1].v;

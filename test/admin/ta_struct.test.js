@@ -338,6 +338,25 @@ test('_formatConfluenceBlock: render header + ID zona A1/B1', () => {
   assert.strictEqual(_formatConfluenceBlock(null, 5), '');
 });
 
+// ── _formatLevelCandidatesBlock (PLAN Z, 2026-08-18) ──────────────────────────
+
+const { _formatLevelCandidatesBlock } = require('../../api/admin.js');
+const { computeLevelCandidates } = require('../../api/_levels.js');
+
+test('_formatLevelCandidatesBlock: render header + varian bearish & bullish dari fixture nyata', () => {
+  const z = _confluenceZones(fullData(), []);
+  const lc = computeLevelCandidates({ zones: z, atrD: 0.008, isXau: false, dec: 5 });
+  assert.ok(lc, 'kandidat harus terhitung untuk fixture ini');
+  const txt = _formatLevelCandidatesBlock(lc);
+  assert.ok(txt.includes('[KANDIDAT SL/TP'));
+  if (lc.bearish) { assert.ok(txt.includes('bias BEARISH')); assert.ok(txt.includes('S1.')); assert.ok(txt.includes('T1.')); }
+  if (lc.bullish) { assert.ok(txt.includes('bias BULLISH')); }
+});
+
+test('_formatLevelCandidatesBlock: string kosong kalau kandidat null', () => {
+  assert.strictEqual(_formatLevelCandidatesBlock(null), '');
+});
+
 // ── _evaluateSetups + _aggSetupStats (Tier 1 outcome logging, session 166) ────
 
 const { _evaluateSetups, _aggSetupStats, _formatTrackRecordBlock, _calEventMsWib, _buildAnalyzeCalBlock, _buildLiveCorrSign } = require('../../api/admin.js');
