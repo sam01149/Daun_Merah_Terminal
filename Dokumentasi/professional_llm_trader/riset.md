@@ -19,6 +19,17 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 
 ## Riset Aktif
 
+### [2026-08-18] AI "menyebut" risiko tapi tidak "bertindak" — audit lanjutan dari cek status SL AUD/NZD
+
+Dipicu user cek status SL setup `AUDNZD=X:1786695344751` (kena SL 18/8, candle 10:00 WIB, high 1,20733 ≥ SL 1,20721). Commentary tersimpan menyebut level trading yang beda total dari yang live (`refined_count:2`, narasi macet di generasi pertama) — **FIXED sesi ini** (`daun_merah.md` Session 318, commit `a5f96d6`): `stalePending.commentary` sekarang ikut disalin tiap kali refine-in-place jalan.
+
+**Update ke S316 poin 2 di atas ("gap commentary vs field terstruktur, BELUM DIFIX"):** fix ini menutup SEBAGIAN — commentary sekarang selalu generasi terbaru saat refine. Tapi skenario asli S316 (guard koreksi `makro_alignment` terjadi SETELAH AI selesai nulis commentary, di generasi manapun — pertama atau hasil refine) TETAP belum tersentuh, karena commentary ditulis AI SEBELUM server sempat mengoreksi field terstruktur di response yang sama. Poin 2 S316 masih valid, scope-nya menyempit jadi "commentary vs koreksi guard di generasi yang sama" (bukan lagi soal refine).
+
+Audit lanjutan (trigger: "apakah Sistem Hakim kasih tahu AI soal event Westpac sebelum entry?") nemuin AI memang SUDAH dikasih tahu (blok S-2 "[EVENT HIGH-IMPACT 7 HARI KE DEPAN]" di prompt `ohlcv_analyze`, terbukti dari commentary yang eksplisit menyebut risiko Westpac) — tapi 2 celah lain pola sama ("disebut, tidak ditindak") ditemukan:
+
+1. **`invalidation_trigger` skema cuma dukung trigger HARGA** (`ma_break`/`price_level`/`swing_break`, `INVALIDATION_TRIGGER_TYPES` di `api/_auto_entry_guard.js`) — AI diminta sebut risiko kalender di teks, tapi nggak ada cara encode itu jadi trigger terstruktur yang ditegakkan `_evaluateTechInvalidation`. **IDE DIPARKIR (bagus, bukan ditolak)** — riset window ideal (via web search: akademik EBS 20 tahun bilang reaksi FX mayoritas selesai <10 menit, tapi klaim "2-3 jam sesi Asia" cuma dari blog praktisi tanpa data — tidak cukup buat kalibrasi angka) + nambah mekanisme baru bertentangan sama prioritas "minimalkan noise, kejar n≥100 metrik inti dulu" (event kalender dekat posisi terbuka jarang kejadian → validasi fitur baru ini sendiri bakal lama). Kalau dilanjutkan nanti: tambah tipe `calendar_event` (currency + jam maksimal sejak event) ke `INVALIDATION_TRIGGER_TYPES`, cek di `_evaluateTechInvalidation` vs `calendar_v1`, WAJIB pola ghost-tracking sama seperti `tech_invalidation` existing (`saved`/`cost`) sebelum dipercaya.
+2. **Gate A (Kritikus) di-skip total saat refine-in-place** — `blockedByOpenPosition=true` di jalur refine bikin `needsGateA` selalu `false` (`api/admin.js` ~baris 6063), jadi level entry/SL/TP FINAL yang benar-benar live tidak pernah diaudit Kritikus, cuma versi generasi pertama (kalau itu pun sempat lolos Gate D/B) yang pernah dicek. Riwayat veto Kritikus cuma 1x dari 42 setup total (`gate_critic_veto`). **DIKERJAKAN sesi ini** — lihat `changelog.md`.
+
 ### [2026-08-16] Audit end-to-end "Professional LLM Trader" + jawaban "apakah AI sudah dapat info berkualitas sebelum entry?"
 
 Audit atas permintaan user, pakai `audit_workflow.md` (folder ini) sebagai SOP. Data live diambil langsung dari production (`setup_stats`, `redis-keys`, `health`) via `x-admin-secret`, bukan cuma baca kode. Checklist §3a-3e dijalankan terhadap seluruh setup `source:auto` yang masih `pending`/`open` (4 posisi) + sample setup `konflik` closed.

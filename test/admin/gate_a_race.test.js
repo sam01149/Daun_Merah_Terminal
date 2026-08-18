@@ -379,3 +379,88 @@ test('Track 1b: risk_regime cache kosong/gagal parse -> field "regime" null, TID
     } finally { global.fetch = origFetch; }
   });
 });
+
+// BUG DITEMUKAN & DIFIX (2026-08-18, audit lanjutan investigasi SL AUD/NZD): refine-
+// in-place (PENDING lama, bias searah) dulu SELALU set blockedByOpenPosition=true, yang
+// sebagai efek samping membuat Gate A (Kritikus) TIDAK PERNAH dipanggil untuk refine —
+// level entry/SL/TP FINAL yang benar-benar live tidak pernah diaudit, cuma generasi
+// pertama (kalau itu pun lolos). Sekarang refine di-stage ke `refineCandidate`, lewat
+// Gate A yang sama seperti kandidat baru, baru diterapkan di Fase 2 kalau lolos.
+test('Refine-in-place SEKARANG lewat Gate A juga: verdict lanjut -> level baru diterapkan + refined_count naik', async () => {
+  await withEnv({ CRON_SECRET: 'topsecret', DEEPSEEK_API_KEY: 'k' }, async () => {
+    const oldPending = {
+      id: 'GBPUSD=X:111', symbol: 'GBPUSD=X', label: 'GBP/USD', bias: 'bearish',
+      entry_zone: '1.2900-1.2910', sl: '1.2960', tp: '1.2800',
+      rr: 2, horizon_days: 3, model: 'deepseek-v4-flash', ts: Date.now() - 3600000, status: 'pending',
+      source: 'auto', alignment: null, confidence: null,
+      conflict: 'none', conflict_note: null, makro_alignment: null, makro_alignment_reason: null,
+      loss_label: null, label_reason: null, label_by: null,
+      intervention: null, managed_status: null, managed_closed_t: null, review_count: 0,
+      commentary: 'Komentar generasi PERTAMA.',
+    };
+    const store = makeStore({
+      'ohlcv_fresh:GBPUSD=X': '1',
+      'ohlcv:GBPUSD=X:1h': JSON.stringify(mkTrendCandles(1.30, 1.28)),
+      'setup_log_auto:v1': JSON.stringify([oldPending]),
+    });
+    const origFetch = global.fetch;
+    global.fetch = makeAnalyzeFetchStub(store, { criticVerdict: 'lanjut' });
+    try {
+      const handler = loadHandler();
+      const res = fakeRes();
+      await handler({
+        headers: { 'x-cron-secret': 'topsecret' }, method: 'GET',
+        query: { action: 'ohlcv_analyze', symbol: 'GBPUSD=X', label: 'GBP/USD', auto: '1' },
+      }, res);
+      assert.equal(res.statusCode, 200);
+      const log = JSON.parse(store.strings['setup_log_auto:v1']);
+      assert.equal(log.length, 1, 'refine tidak menambah entry baru');
+      assert.equal(log[0].status, 'pending');
+      assert.equal(log[0].entry_zone, '1.2795-1.2805', 'level diperbarui ke generasi terbaru (Gate A lanjut)');
+      assert.equal(log[0].commentary, 'Komentar singkat untuk tes Gate A/race.', 'commentary ikut ke-refresh ke generasi terbaru');
+      assert.equal(log[0].refined_count, 1);
+      assert.equal(store.strings['auto_guard_stats:saved_refine'], '1');
+    } finally { global.fetch = origFetch; }
+  });
+});
+
+test('Refine-in-place: Gate A verdict batalkan -> level LAMA dipertahankan, refined_count TIDAK naik, critic_veto_refine naik', async () => {
+  await withEnv({ CRON_SECRET: 'topsecret', DEEPSEEK_API_KEY: 'k' }, async () => {
+    const oldPending = {
+      id: 'GBPUSD=X:111', symbol: 'GBPUSD=X', label: 'GBP/USD', bias: 'bearish',
+      entry_zone: '1.2900-1.2910', sl: '1.2960', tp: '1.2800',
+      rr: 2, horizon_days: 3, model: 'deepseek-v4-flash', ts: Date.now() - 3600000, status: 'pending',
+      source: 'auto', alignment: null, confidence: null,
+      conflict: 'none', conflict_note: null, makro_alignment: null, makro_alignment_reason: null,
+      loss_label: null, label_reason: null, label_by: null,
+      intervention: null, managed_status: null, managed_closed_t: null, review_count: 0,
+      commentary: 'Komentar generasi PERTAMA — harus TETAP setelah veto.',
+    };
+    const store = makeStore({
+      'ohlcv_fresh:GBPUSD=X': '1',
+      'ohlcv:GBPUSD=X:1h': JSON.stringify(mkTrendCandles(1.30, 1.28)),
+      'setup_log_auto:v1': JSON.stringify([oldPending]),
+    });
+    const origFetch = global.fetch;
+    global.fetch = makeAnalyzeFetchStub(store, { criticVerdict: 'batalkan' });
+    try {
+      const handler = loadHandler();
+      const res = fakeRes();
+      await handler({
+        headers: { 'x-cron-secret': 'topsecret' }, method: 'GET',
+        query: { action: 'ohlcv_analyze', symbol: 'GBPUSD=X', label: 'GBP/USD', auto: '1' },
+      }, res);
+      assert.equal(res.statusCode, 200);
+      const log = JSON.parse(store.strings['setup_log_auto:v1']);
+      assert.equal(log.length, 1, 'veto pada refine TIDAK membuat ghost entry baru — posisi pending lama tetap satu-satunya baris');
+      assert.equal(log[0].id, 'GBPUSD=X:111');
+      assert.equal(log[0].status, 'pending', 'posisi lama TETAP pending, veto refine bukan cancel posisi');
+      assert.equal(log[0].entry_zone, '1.2900-1.2910', 'level LAMA dipertahankan, refine ditolak Gate A');
+      assert.equal(log[0].sl, '1.2960');
+      assert.equal(log[0].commentary, 'Komentar generasi PERTAMA — harus TETAP setelah veto.');
+      assert.equal(log[0].refined_count, undefined, 'refined_count TIDAK naik karena refine ditolak');
+      assert.equal(store.strings['auto_guard_stats:critic_veto_refine'], '1');
+      assert.equal(store.strings['auto_guard_stats:saved_refine'], undefined);
+    } finally { global.fetch = origFetch; }
+  });
+});

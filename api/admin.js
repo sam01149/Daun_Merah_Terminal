@@ -598,6 +598,13 @@ const KEY_REGISTRY = [
   { key: 'auto_guard_stats:correlation_cap',         owner: 'api/admin.js', ttl_expected: null, note: 'Audit-guard Gate D: ditahan (correlated exposure XAU/USD-EUR/USD)' },
   { key: 'auto_guard_stats:drawdown_circuit_breaker', owner: 'api/admin.js', ttl_expected: null, note: 'Audit-guard Gate B: ditahan (rolling R melewati ambang regime)' },
   { key: 'auto_guard_stats:critic_veto',              owner: 'api/admin.js', ttl_expected: null, note: 'Audit-guard Gate A: AI Kritikus verdict "batalkan"' },
+  // Gate A juga menimbang refine-in-place (2026-08-18) — counter TERPISAH dari yang di atas
+  // (bukan campur ke 'considered'/'saved'/'critic_veto' milik kandidat BARU) karena semantiknya
+  // beda: refine yang ditahan tidak membatalkan posisi pending-nya, cuma level baru yang tidak
+  // diterapkan. '_refine' bisa nempel ke gateKey manapun (critic_veto/correlation_cap/
+  // drawdown_circuit_breaker) tergantung gate mana yang menahan.
+  { key: 'auto_guard_stats:saved_refine',             owner: 'api/admin.js', ttl_expected: null, note: 'Audit-guard: refine-in-place lolos semua gate, level baru diterapkan ke setup pending' },
+  { key: 'auto_guard_stats:critic_veto_refine',        owner: 'api/admin.js', ttl_expected: null, note: 'Audit-guard Gate A: AI Kritikus verdict "batalkan" pada REFINE — level lama dipertahankan' },
   // Gate E DILONGGARKAN (2026-08-04, sesi sama dengan pembuatannya) dari hard block jadi
   // flag observasi non-blocking + konteks tambahan ke Gate A — lihat api/_auto_entry_guard.js.
   // TIDAK ikut invarian considered=saved+correlation_cap+drawdown+critic_veto di atas
@@ -5876,6 +5883,10 @@ async function ohlcvAnalyzeHandler(req, res) {
         regime: autoGuardRegime,
       });
       let needsGateA = false;
+      // Gate A (Kritikus) juga menimbang refine-in-place (2026-08-18, lihat catatan lengkap di
+      // blok "Skenario Refinemen" di bawah) — level baru di-stage di sini dulu, diterapkan di
+      // Fase 2 SETELAH Gate A, bukan langsung ditulis seperti sebelumnya.
+      let refineCandidate = null;
       const gotLock = await _acquireLockWithRetry(lockKey);
       if (!gotLock) {
         console.warn(`setup_log write GAGAL PERMANEN setelah retry: lock ${lockKey} sedang dipegang — sinyal AI hilang, tidak tersimpan`);
@@ -5908,65 +5919,67 @@ async function ohlcvAnalyzeHandler(req, res) {
             const stalePending = log.find(x => x && x.symbol === symbol && x.status === 'pending');
             if (stalePending) {
               if (stalePending.bias === structured.bias) {
-                // Skenario Refinemen (bias searah): update level entry & SL in-place, jangan di-cancel
-                stalePending.entry_zone = structured.entry_zone;
-                stalePending.sl = structured.sl;
-                stalePending.tp = structured.tp;
-                if (structured.risk_reward != null) stalePending.rr = structured.risk_reward;
-                if (structured.time_horizon_days != null) stalePending.horizon_days = structured.time_horizon_days;
-                if (structured.confidence != null) stalePending.confidence = structured.confidence;
-                // Track 1 (2026-08-04): trigger invalidasi ikut diperbarui ke generasi
-                // terbaru, pola sama field lain di blok refine ini — jangan nyimpen
-                // trigger dari generasi pertama yang mungkin sudah tidak relevan.
-                // `tech_invalidated` di-reset (kalaupun sempat kesentuh sebelum refine
-                // ini, itu milik trigger LAMA — thesis baru butuh evaluasi fresh dari nol).
-                stalePending.invalidation_trigger = structured.invalidation_trigger ?? null;
-                stalePending.tech_invalidated = null;
-                // Track 1b (2026-08-04): regime ikut diperbarui ke generasi TERBARU —
-                // pola sama field lain di blok refine ini, thesis baru dievaluasi
-                // dengan konteks rezim SAAT refine ini terjadi, bukan snapshot lama.
-                stalePending.regime = autoGuardRegime;
-                stalePending.alignment = (structured.conflict && structured.conflict !== 'none')
-                  ? 'konflik'
-                  : (structured.makro_alignment || null);
-                // PLAN W: field mentah ikut diperbarui ke generasi TERBARU, jangan
-                // sampai nyimpen snapshot conflict dari generasi pertama (bug diam-diam).
-                stalePending.conflict = structured.conflict ?? null;
-                stalePending.conflict_note = structured.conflict_note ?? null;
-                stalePending.makro_alignment = structured.makro_alignment ?? null;
-                stalePending.makro_alignment_reason = structured.makro_alignment_reason ?? null;
-                // [SISTEM HAKIM] tag pengukuran ikut diperbarui ke generasi terbaru — pola
-                // sama PLAN W di atas, jangan nyimpen snapshot dari generasi pertama.
-                stalePending.sistem_hakim = sistemHakimEvaluated ? (sistemHakimFired ? 'fired' : (sistemHakimCorrected ? 'corrected' : 'clear')) : null;
-                // Sama seperti buildNewSetupEntry di atas (bug conflict_source jatuh ke
-                // null saat guard aktif pada conflict:'waktu' yang dipertahankan) — fix
-                // sama diterapkan di jalur refine-in-place ini.
-                stalePending.conflict_source = (conflictForcedBySistemHakim || contradictionGuardFired)
-                  ? (conflictForcedBySistemHakim ? 'sistem_hakim' : 'contradiction_guard')
-                  : (structured.conflict === 'arah' ? 'ai' : null);
-                stalePending.model = model;
-                // BUG DITEMUKAN & DIFIX (2026-08-18, user tanya kenapa SL AUD/NZD "kelihatan
-                // bodoh" — investigasi menemukan narasi `commentary` yang tampil di dashboard
-                // TIDAK PERNAH ikut di-refresh di jalur refine-in-place ini, padahal entry/sl/tp
-                // di atas SUDAH diganti ke generasi terbaru. Akibatnya "Analisa Lengkap (AI)"
-                // yang dibaca user bisa menceritakan rencana/level dari generasi PERTAMA (mis.
-                // "tunggu harga ke 1.20711, SL 1.21180"), sementara posisi yang benar-benar
-                // live pakai level generasi terakhir (1.20407/1.20721/1.20037) — reasoning yang
-                // ditampilkan jadi tidak nyambung dengan trade yang sebenarnya dieksekusi.
-                stalePending.commentary = commentary || stalePending.commentary;
-                // BUG DITEMUKAN & DIFIX (2026-07-25, diskusi user soal filled_t < closed_t):
-                // `ts` di sini SEMPAT di-reset ke Date.now() supaya horizon_days terasa
-                // "fresh" pasca-refine. Efek sampingnya fatal — `_evaluateSetups` memakai
-                // `st.ts` sebagai satu-satunya titik mulai scan candle (line ~2490); reset
-                // ini membuat evaluator "buta" terhadap histori harga sebelum saat refine,
-                // dan (kalau refine terjadi setelah closed_t versi lama sempat kehitung di
-                // pass evaluasi lain) bisa membuat closed_t tersimpan LEBIH AWAL dari
-                // filled_t yang baru — urutan yang mustahil. `ts` SENGAJA TIDAK di-reset lagi;
-                // `horizon_days` tetap ter-update ke nilai baru (baris di atas) dan dihitung
-                // dari `ts` ASLI (waktu ide trade ini lahir), bukan waktu refine terakhir.
-                stalePending.refined_count = (stalePending.refined_count || 0) + 1;
-                blockedByOpenPosition = true;
-                shouldSaveLog = true;
+                // Skenario Refinemen (bias searah): STAGE level baru dulu — JANGAN ditulis
+                // langsung. BUG DITEMUKAN & DIFIX (2026-08-18, audit lanjutan investigasi SL
+                // AUD/NZD): sebelum ini, refine-in-place LANGSUNG menimpa stalePending +
+                // `blockedByOpenPosition = true` dipasang di sini — efek sampingnya,
+                // `autoGuardConsidered` (baris ~6018) jadi SELALU false untuk refine, artinya
+                // Gate A (Kritikus) TIDAK PERNAH kebagian giliran mengaudit level FINAL yang
+                // benar-benar live, cuma sempat lihat generasi PERTAMA (kalau itu pun lolos
+                // Gate D/B). Sekarang level baru di-stage ke `refineCandidate`, diterapkan di
+                // Fase 2 SETELAH Gate A (pola sama persis `buildNewSetupEntry()` untuk
+                // kandidat baru) — kalau Kritikus verdict "batalkan", level lama TETAP
+                // dipertahankan apa adanya, refine ini dianggap tidak pernah terjadi.
+                refineCandidate = {
+                  id: stalePending.id,
+                  fields: {
+                    entry_zone: structured.entry_zone,
+                    sl: structured.sl,
+                    tp: structured.tp,
+                    rr: structured.risk_reward != null ? structured.risk_reward : stalePending.rr,
+                    horizon_days: structured.time_horizon_days != null ? structured.time_horizon_days : stalePending.horizon_days,
+                    confidence: structured.confidence != null ? structured.confidence : stalePending.confidence,
+                    // Track 1 (2026-08-04): trigger invalidasi ikut diperbarui ke generasi
+                    // terbaru, pola sama field lain di blok refine ini — jangan nyimpen
+                    // trigger dari generasi pertama yang mungkin sudah tidak relevan.
+                    // `tech_invalidated` di-reset (kalaupun sempat kesentuh sebelum refine
+                    // ini, itu milik trigger LAMA — thesis baru butuh evaluasi fresh dari nol).
+                    invalidation_trigger: structured.invalidation_trigger ?? null,
+                    tech_invalidated: null,
+                    // Track 1b (2026-08-04): regime ikut diperbarui ke generasi TERBARU —
+                    // pola sama field lain di blok refine ini, thesis baru dievaluasi
+                    // dengan konteks rezim SAAT refine ini terjadi, bukan snapshot lama.
+                    regime: autoGuardRegime,
+                    alignment: (structured.conflict && structured.conflict !== 'none')
+                      ? 'konflik'
+                      : (structured.makro_alignment || null),
+                    // PLAN W: field mentah ikut diperbarui ke generasi TERBARU, jangan
+                    // sampai nyimpen snapshot conflict dari generasi pertama (bug diam-diam).
+                    conflict: structured.conflict ?? null,
+                    conflict_note: structured.conflict_note ?? null,
+                    makro_alignment: structured.makro_alignment ?? null,
+                    makro_alignment_reason: structured.makro_alignment_reason ?? null,
+                    // [SISTEM HAKIM] tag pengukuran ikut diperbarui ke generasi terbaru — pola
+                    // sama PLAN W di atas, jangan nyimpen snapshot dari generasi pertama.
+                    sistem_hakim: sistemHakimEvaluated ? (sistemHakimFired ? 'fired' : (sistemHakimCorrected ? 'corrected' : 'clear')) : null,
+                    // Sama seperti buildNewSetupEntry di atas (bug conflict_source jatuh ke
+                    // null saat guard aktif pada conflict:'waktu' yang dipertahankan) — fix
+                    // sama diterapkan di jalur refine-in-place ini.
+                    conflict_source: (conflictForcedBySistemHakim || contradictionGuardFired)
+                      ? (conflictForcedBySistemHakim ? 'sistem_hakim' : 'contradiction_guard')
+                      : (structured.conflict === 'arah' ? 'ai' : null),
+                    model,
+                    // (2026-08-18) `commentary` ikut di-stage bareng field lain — dengan ini
+                    // otomatis SELALU dari generasi yang benar-benar diterapkan, tidak bisa
+                    // basi lagi seperti bug lama.
+                    commentary: commentary || stalePending.commentary,
+                    // BUG DITEMUKAN & DIFIX (2026-07-25, diskusi user soal filled_t < closed_t):
+                    // `ts` SENGAJA TIDAK di-reset di sini (lihat catatan lengkap di
+                    // `_evaluateSetups`) — `horizon_days` di atas tetap dihitung dari `ts` ASLI
+                    // (waktu ide trade ini lahir), bukan waktu refine terakhir.
+                    refined_count: (stalePending.refined_count || 0) + 1,
+                  },
+                };
               } else {
                 // Skenario Pembalikan Bias (berlawanan): Flip Guard — jika whipsaw (conflict === 'arah'), tahan pending lama
                 const isWhipsaw = structured.conflict === 'arah';
@@ -6136,7 +6149,26 @@ async function ohlcvAnalyzeHandler(req, res) {
             && (x.status === 'pending' || x.status === 'open')
             && x.entry_zone === structured.entry_zone && x.sl === structured.sl && x.tp === structured.tp);
           const openNow = log2.find(x => x && x.symbol === symbol && x.status === 'open');
-          if (dup2 || openNow) {
+          // Refine-in-place (2026-08-18) — cabang TERPISAH dari alur buildNewSetupEntry() di
+          // bawah, karena target-nya entry LAMA (dicari via id), bukan entry baru. Race guard
+          // sama semangatnya dengan dup2/openNow: kalau di antara Gate A mikir posisi ini sudah
+          // berubah status (terisi/di-cancel proses lain), buang staged fields daripada menimpa
+          // buta. Verdict "batalkan" -> level lama dipertahankan APA ADANYA, refine dianggap
+          // tidak pernah terjadi (BUKAN membatalkan posisi pending-nya sendiri).
+          if (refineCandidate) {
+            const target = log2.find(x => x && x.id === refineCandidate.id && x.status === 'pending');
+            if (!target) {
+              console.log(`auto-entry ${symbol}: state berubah selama Gate A berjalan (race_detected, refine) — staged fields dibuang`);
+            } else if (autoGuardReason) {
+              console.log(`auto-entry ${symbol} refine ditahan oleh Gate A (Kritikus): ${autoGuardReason} — level lama dipertahankan`);
+              const gateKey = autoGuardReason.split(/[(:]/)[0];
+              redisCmd('INCR', `auto_guard_stats:${gateKey}_refine`).catch(() => {});
+            } else {
+              Object.assign(target, refineCandidate.fields);
+              redisCmd('INCR', 'auto_guard_stats:saved_refine').catch(() => {});
+              await redisCmd('SET', setupLogKey, JSON.stringify(log2.slice(0, 200)));
+            }
+          } else if (dup2 || openNow) {
             console.log(`auto-entry ${symbol}: state berubah selama Gate A berjalan (race_detected) — dibuang, tidak ditulis dobel`);
           } else if (autoGuardReason) {
             console.log(`auto-entry ${symbol} ditahan oleh audit-guard: ${autoGuardReason}`);
