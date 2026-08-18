@@ -19,3 +19,14 @@ jobs:
             echo "Sync failed with HTTP $STATUS"
             exit 1
           fi
+
+      - name: Keep economic calendar warm
+        continue-on-error: true
+        run: |
+          for URL in "https://financial-feed-app.vercel.app/api/calendar" "https://financial-feed-app.vercel.app/api/calendar?week=next"; do
+            STATUS=$(curl -s -o /tmp/cal_resp.json -w "%{http_code}" \
+              -H "x-cron-secret: ${{ secrets.CRON_SECRET }}" \
+              "$URL")
+            FETCHED_AT=$(jq -r '.fetched_at // "n/a"' /tmp/cal_resp.json 2>/dev/null || echo "n/a")
+            echo "GET $URL -> HTTP $STATUS, fetched_at=$FETCHED_AT"
+          done

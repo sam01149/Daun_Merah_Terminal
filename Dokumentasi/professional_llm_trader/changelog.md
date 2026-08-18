@@ -23,6 +23,18 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 > **Dibuat:** 2026-08-08 — dipisah dari `Dokumentasi/daun_merah.md` atas permintaan user: inisiatif jangka panjang (tujuan akhir: AI kelola dana riil) butuh ruang dokumentasi sendiri, bukan bercampur dengan changelog fitur publik lain. Seluruh entri historis yang secara eksplisit tentang auto-entry/Plan U dimigrasi ke sini dari `daun_merah.md` pada tanggal yang sama (lihat commit migrasi) — entri yang TIDAK dipindah berarti dinilai infra umum/campuran, tetap di `daun_merah.md`.
 
 
+## Changelog Session 320 (2026-08-18) — PLAN Y: Detak Kalender Terjadwal untuk `calendar_v1`
+
+**Konteks:** eksekusi `plan.md` folder ini §PLAN Y (root cause ditelusuri audit kinerja 2026-08-18, gejala "`calendar_v1` chronic stale" sudah tercatat 2x sebelumnya di S294 & audit end-to-end 16/8 tanpa pernah dilacak ke kode). Root cause: `calendar_v1`/`calendar_next_v1` HANYA disegarkan lewat request nyata ke `/api/calendar` (dipicu manusia buka tab Kalender, polling 90 detik) — jalur otomatis (`vps/daemon.js` `runAutoEntryCycle`, blok konteks kalender `ohlcvAnalyzeHandler`) baca Redis langsung tanpa pernah memicu refresh. Kalau tidak ada trafik manusia >6 jam (`CACHE_TTL`), key EXPIRED total dan semua pembaca fail-open diam-diam (AI menganalisa tanpa kesadaran event high-impact, tanpa error/jejak apa pun).
+
+**Fix:** satu step baru `Keep economic calendar warm` ditambahkan di `.github/workflows/ohlcv-sync.yml` (sudah jalan tiap jam, `cron: '0 * * * *'`), setelah step sync OHLCV yang sudah ada. Isi: dua `curl` berurutan ke `/api/calendar` dan `/api/calendar?week=next` dengan header `x-cron-secret` (pola sama step existing, lolos gate `requireAppKey` — dikonfirmasi baca `api/_app_key.js`). `continue-on-error: true` dipasang (satu mekanisme saja, bukan campur dengan `|| true`) supaya kegagalan step ini TIDAK PERNAH menjagal step sync OHLCV yang jauh lebih kritis. Log mencetak HTTP status + `fetched_at` per URL saja (bukan seluruh body — payload kalender panjang).
+
+**Tidak diubah (sesuai batas plan):** `api/calendar.js` (`CACHE_TTL`/`FRESH_TTL`/perilaku fail-open pembaca), tidak ada endpoint/serverless function baru, tidak ada cron baru di `vercel.json`. Tidak menyentuh logika keputusan trading apa pun, jadi **tidak menambah epoch** di `POLICY_EPOCHS` (kesegaran data masukan berubah, bukan aturan mainnya).
+
+**Test:** `npm test` 1033/1033 hijau (perubahan ini murni workflow YAML, tidak menyentuh kode teruji).
+
+**Verifikasi live — status TERTUNDA (butuh 2 hari terpisah, lihat `progress.md` folder ini):** `workflow_dispatch` manual dijalankan sekali untuk membuktikan step sukses HTTP 200 di kedua URL sebelum menunggu jadwal. Kriteria selesai #3 (cek `?action=health&check=calendar_cache` di jam 05:00-06:00 WIB pada 2 hari berbeda, `age_mins` <= 70 di keduanya) belum bisa dituntaskan dalam satu sesi — butuh observasi lintas hari nyata, bukan cuma trigger manual sekali.
+
 ## Changelog Session 318 (2026-08-18) — Gate A (Kritikus) Sekarang Juga Menimbang Refine-in-Place
 
 **Konteks:** Audit lanjutan dari user cek status SL setup `AUDNZD=X:1786695344751` (lihat `daun_merah.md` Session 318 untuk fix `commentary` yang tidak ter-refresh saat refine — bug berbeda tapi ditemukan di sesi & investigasi yang sama). Pertanyaan user "apakah Sistem Hakim kasih tahu soal event Westpac sebelum entry?" menuntun ke audit Gate A (AI Kritikus, `_runCriticVerdict`) — ternyata Kritikus TIDAK PERNAH dipanggil untuk skenario refine-in-place sama sekali.
