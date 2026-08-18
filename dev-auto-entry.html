@@ -195,8 +195,16 @@ body.light-theme .chart-tf button.active{color:var(--accent);}
 /* Mode fokus layar penuh per kartu (Fullscreen API di elemen .chartcard, bukan
    seluruh halaman) — chartbox melar mengisi tinggi layar, autoSize (opsi createChart)
    yang bikin kanvas Lightweight Charts ikut menyesuaikan otomatis. */
-.chartcard:fullscreen,.chartcard:-webkit-full-screen{background:var(--bg);display:flex;flex-direction:column;padding:16px 20px;border-radius:0;}
-.chartcard:fullscreen .chartbox,.chartcard:-webkit-full-screen .chartbox{flex:1;height:auto;}
+/* "Maximize" ala jendela chart MT5 — BUKAN Fullscreen API browser (itu ambil alih
+   seluruh layar OS/browser chrome). Ini murni CSS position:fixed di dalam halaman
+   sendiri: kartu yang dipilih membesar menutupi area konten, header/tab APLIKASI
+   tetap ada di baliknya (cuma ketutup backdrop, tinggal Esc/klik backdrop buat balik)
+   — mirip jendela chart di MT5 yang bisa di-maximize tanpa keluar dari aplikasi. */
+.chart-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:55;display:none;}
+.chart-backdrop.show{display:block;}
+.chartcard.maximized{position:fixed;inset:22px;z-index:60;display:flex;flex-direction:column;box-shadow:0 24px 70px rgba(0,0,0,.55);}
+.chartcard.maximized .chartbox{flex:1;height:auto;}
+body.chart-max-open{overflow:hidden;}
 .chartbox .lwc-host{position:absolute;inset:0;}
 .chartbox .zoneband{position:absolute;left:0;right:56px;pointer-events:none;opacity:.16;z-index:5;}
 .chartbox .zoneband.tp{background:var(--green);}
@@ -1388,7 +1396,7 @@ if (localStorage.getItem('dm_dev_theme') === 'light') document.body.classList.ad
             <button type="button" class="toolbtn" data-action="reset-zoom" title="Reset zoom ke tampilan awal">
               <svg viewBox="0 0 16 16"><path d="M13.5 8A5.5 5.5 0 1 1 8 2.5M8 2.5V6M8 2.5h3.5"/></svg>
             </button>
-            <button type="button" class="toolbtn" data-action="fullscreen" title="Fokus layar penuh (scroll mouse = zoom)">
+            <button type="button" class="toolbtn" data-action="maximize" title="Maksimalkan chart ini (Esc untuk kembali; scroll mouse = zoom)">
               <svg viewBox="0 0 16 16"><path d="M2 6V2h4M14 6V2h-4M2 10v4h4M14 10v4h-4"/></svg>
             </button>
           </div>
@@ -1557,7 +1565,7 @@ if (localStorage.getItem('dm_dev_theme') === 'light') document.body.classList.ad
     // Lightweight Charts butuh price-scale kedua yang lebih rawan berantakan di grid
     // sekecil ini; MA sudah cukup mewakili gaya visual TEK tanpa risiko itu).
     const chart = LightweightCharts.createChart(host, {
-      autoSize: true, // canvas ikut resize otomatis (dibutuhkan buat mode fullscreen di bawah, bukan cuma kosmetik)
+      autoSize: true, // canvas ikut resize otomatis (dibutuhkan buat mode maximize di bawah, bukan cuma kosmetik)
       layout: { background: { color: c.bg }, textColor: c.muted, fontFamily: "'DM Mono',monospace", fontSize: 10 },
       grid: { vertLines: { color: c.border }, horzLines: { color: c.border } },
       rightPriceScale: { borderColor: c.border },
@@ -1565,7 +1573,7 @@ if (localStorage.getItem('dm_dev_theme') === 'light') document.body.classList.ad
       crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
       // Scroll mouse = zoom in/out (permintaan user, sama seperti kebiasaan TradingView asli)
       // — konsekuensinya scroll HALAMAN berhenti selagi kursor di atas chart; tombol
-      // fullscreen di bawah ada buat kasus itu (fokus 1 chart tanpa perlu scroll page).
+      // maximize di bawah ada buat kasus itu (fokus 1 chart tanpa perlu scroll page).
       handleScroll: { mouseWheel: false, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: false },
       handleScale: { mouseWheel: true, pinch: true, axisPressedMouseMove: true },
     });
@@ -1616,31 +1624,44 @@ if (localStorage.getItem('dm_dev_theme') === 'light') document.body.classList.ad
     });
   }
 
-  // Fullscreen per-kartu (Fullscreen API pada elemen .chartcard, BUKAN document —
-  // cuma chart yang dipilih yang membesar, bukan seluruh halaman). Prefiks -webkit-
-  // masih perlu buat Safari lama; browser modern (Chrome/Edge/Firefox) pakai API polos.
-  function toggleCardFullscreen(symbol){
+  // "Maximize" ala jendela chart MT5 (bukan Fullscreen API browser — lihat catatan
+  // CSS .chartcard.maximized) — cuma 1 kartu boleh maximized dalam satu waktu, klik
+  // tombol yang sama/backdrop/Esc buat kembali. autoSize (opsi createChart) bikin
+  // kanvas LWC ikut melar/menyusut otomatis; overlay kotak entry/SL/TP (<div> milik
+  // kita sendiri, bukan bagian LWC) direposisi manual lewat positionOverlay setelah
+  // transisi ukuran selesai.
+  function chartBackdrop(){
+    let bd = document.getElementById('chartBackdrop');
+    if (!bd) {
+      bd = document.createElement('div');
+      bd.id = 'chartBackdrop';
+      bd.className = 'chart-backdrop';
+      bd.addEventListener('click', restoreMaximizedChart);
+      document.body.appendChild(bd);
+    }
+    return bd;
+  }
+  function toggleCardMaximize(symbol){
     const card = document.querySelector(`#chartGrid .chartcard[data-symbol="${symbol}"]`);
     if (!card) return;
-    const fsEl = document.fullscreenElement || document.webkitFullscreenElement;
-    if (fsEl === card) {
-      (document.exitFullscreen || document.webkitExitFullscreen)?.call(document);
-    } else {
-      (card.requestFullscreen || card.webkitRequestFullscreen)?.call(card).catch(() => {});
-    }
+    if (card.classList.contains('maximized')) { restoreMaximizedChart(); return; }
+    document.querySelectorAll('#chartGrid .chartcard.maximized').forEach(c => c.classList.remove('maximized'));
+    card.classList.add('maximized');
+    document.body.classList.add('chart-max-open');
+    chartBackdrop().classList.add('show');
+    setTimeout(() => positionOverlay(symbol), 60);
   }
-  // autoSize (opsi createChart) sudah bikin kanvas Lightweight Charts ikut melar/
-  // menyusut otomatis pas .chartcard keluar-masuk fullscreen — tapi overlay kotak
-  // entry/SL/TP itu <div> KITA SENDIRI (bukan bagian LWC), koordinatnya perlu
-  // dihitung ulang manual tiap ukuran box berubah. ResizeObserver per-chart yang
-  // sudah ada (lihat renderChartCard) sebenarnya sudah nangkep ini, baris di bawah
-  // cuma jaring pengaman tambahan pas transisi fullscreen (durasinya beda-beda per
-  // browser, kadang ResizeObserver keburu/telat menangkap ukuran akhir).
-  function handleFullscreenChange(){
-    setTimeout(() => { Object.keys(chartState).forEach(s => positionOverlay(s)); }, 150);
+  function restoreMaximizedChart(){
+    const card = document.querySelector('#chartGrid .chartcard.maximized');
+    if (!card) return;
+    const symbol = card.dataset.symbol;
+    card.classList.remove('maximized');
+    document.body.classList.remove('chart-max-open');
+    const bd = document.getElementById('chartBackdrop');
+    if (bd) bd.classList.remove('show');
+    setTimeout(() => positionOverlay(symbol), 60);
   }
-  document.addEventListener('fullscreenchange', handleFullscreenChange);
-  document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') restoreMaximizedChart(); });
 
   function removeChartCard(symbol){
     destroyChart(symbol);
@@ -1821,8 +1842,8 @@ if (localStorage.getItem('dm_dev_theme') === 'light') document.body.classList.ad
         if (btn.dataset.action === 'reset-zoom') {
           const st = chartState[symbol];
           if (st && st.chart) st.chart.timeScale().fitContent();
-        } else if (btn.dataset.action === 'fullscreen') {
-          toggleCardFullscreen(symbol);
+        } else if (btn.dataset.action === 'maximize') {
+          toggleCardMaximize(symbol);
         }
       });
     });
