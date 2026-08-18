@@ -718,6 +718,18 @@ tr.rowdetail .longtext{white-space:pre-wrap;font-size:10.5px;line-height:1.55;co
   // 8 pair historis + 3 pair yang menyusul (AUD/NZD, EUR/GBP, CHF/JPY). Kosong
   // sebelum secret diisi / data pertama masuk — wajar.
   let ACTIVE_FILTER_PAIRS = [];
+  // Registry versi kebijakan auto-entry (dikirim server di payload scope=auto, sumber:
+  // POLICY_EPOCHS di api/_auto_entry_guard.js) — dipakai menerjemahkan angka versi jadi
+  // kalimat yang bisa dibaca di panel detail setup.
+  let POLICY_EPOCHS = [];
+  function policyLabel(s){
+    const recorded = s.policy_v != null;
+    const v = recorded ? s.policy_v : s.policy_v_est;
+    if (v == null) return '';
+    const ep = POLICY_EPOCHS.find(e => e.v === v);
+    const asal = recorded ? 'direkam saat setup dibuat' : 'perkiraan dari waktu setup, bukan data asli';
+    return `v${v} — ${ep ? ep.label : 'keterangan versi tidak tersedia'} [${asal}]`;
+  }
   function populateSymbolFilter(recent){
     const known = ACTIVE_FILTER_PAIRS;
     const extra = [...new Set((recent || []).map(s => s.symbol))].filter(sym => !known.includes(sym));
@@ -909,6 +921,7 @@ tr.rowdetail .longtext{white-space:pre-wrap;font-size:10.5px;line-height:1.55;co
         fld('Risk/Reward', s.rr),
         fld('Horizon (hari)', s.horizon_days),
         fld('Model', s.model),
+        fld('Versi Kebijakan', policyLabel(s)),
       ]),
       fldGroup('Label Hasil', [
         fld('Loss Label', s.status === 'sl' ? (s.loss_label || 'teknikal (default: murni teknikal, tidak ada berita ±2j)') : s.loss_label),
@@ -1011,6 +1024,7 @@ tr.rowdetail .longtext{white-space:pre-wrap;font-size:10.5px;line-height:1.55;co
     renderCalibration(json.global && json.global.confidence_calibration);
     renderSymbols(json.symbols);
     ACTIVE_FILTER_PAIRS = Object.keys(json.symbols || {});
+    POLICY_EPOCHS = Array.isArray(json.policy_epochs) ? json.policy_epochs : [];
     renderRecent(json.recent);
   }
   document.getElementById('btnRefresh').addEventListener('click', loadDashboard);

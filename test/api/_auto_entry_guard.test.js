@@ -10,6 +10,10 @@ const {
   isCorrelatedExposureBlocked,
   isTimingConflictBlocked,
   isInvalidationTriggered,
+  EXPOSURE_BINDING_STATUSES,
+  POLICY_EPOCHS,
+  POLICY_VERSION,
+  policyVersionForTs,
 } = require('../../api/_auto_entry_guard.js');
 
 // ── computeRollingR / isDrawdownHalted (Gate B) ─────────────────────────────
@@ -119,9 +123,16 @@ test('isCorrelatedExposureBlocked: GC=F bullish baru, EUR/USD bearish sudah open
   assert.equal(isCorrelatedExposureBlocked({ symbol: 'GC=F', bias: 'bullish', openPositions: open }), false);
 });
 
-test('isCorrelatedExposureBlocked: partner pending (belum open) -> TIDAK blocked', () => {
-  const open = [{ symbol: 'EURUSD=X', bias: 'bullish', status: 'pending' }];
-  assert.equal(isCorrelatedExposureBlocked({ symbol: 'GC=F', bias: 'bullish', openPositions: open }), false);
+// PERILAKU SENGAJA DIUBAH 2026-08-18 (audit menyeluruh, disetujui user — riset.md
+// folder professional_llm_trader §Audit menyeluruh 2026-08-18 poin A1). Test ini DULU
+// menegaskan "partner pending -> TIDAK blocked"; itu justru celahnya: semua entry
+// sistem ini limit order, jadi 'pending' adalah state yang paling lama dihuni dan dua
+// setup korelatif bisa terisi bersamaan tanpa cap pernah menyala. Ekspektasi dibalik,
+// BUKAN dihapus — supaya kalau suatu saat perilaku ini balik lagi ke lama, ketahuan
+// sebagai perubahan sadar, bukan regresi diam-diam.
+test('isCorrelatedExposureBlocked: partner pending searah -> BLOCKED (dulu tidak, diubah 2026-08-18)', () => {
+  const positions = [{ symbol: 'EURUSD=X', bias: 'bullish', status: 'pending' }];
+  assert.equal(isCorrelatedExposureBlocked({ symbol: 'GC=F', bias: 'bullish', openPositions: positions }), true);
 });
 
 test('isCorrelatedExposureBlocked: pair tanpa mapping korelasi (AUD/NZD, EUR/GBP) -> selalu false', () => {
@@ -272,4 +283,80 @@ test('isInvalidationTriggered: candles kosong/bukan array -> triggered false, bu
   const trig = { type: 'ma_break', level: 4000, direction: 'below' };
   assert.equal(isInvalidationTriggered({ invalidation_trigger: trig, candles: [], startMs: 0 }).triggered, false);
   assert.equal(isInvalidationTriggered({ invalidation_trigger: trig, candles: null, startMs: 0 }).triggered, false);
+});
+
+// ── Gate D: pending ikut mengikat exposure (2026-08-18, audit menyeluruh) ───────
+
+test('isCorrelatedExposureBlocked: partner PENDING searah ikut memblokir (bukan cuma open)', () => {
+  const positions = [{ symbol: 'EURUSD=X', bias: 'bullish', status: 'pending' }];
+  assert.equal(isCorrelatedExposureBlocked({ symbol: 'GC=F', bias: 'bullish', positions }), true);
+});
+
+test('isCorrelatedExposureBlocked: partner pending BERLAWANAN arah tetap lolos (sign positive)', () => {
+  const positions = [{ symbol: 'EURUSD=X', bias: 'bearish', status: 'pending' }];
+  assert.equal(isCorrelatedExposureBlocked({ symbol: 'GC=F', bias: 'bullish', positions }), false);
+});
+
+test('isCorrelatedExposureBlocked: status yang TIDAK mengikat exposure diabaikan (canceled/tp/sl/expired)', () => {
+  for (const status of ['canceled', 'tp', 'sl', 'expired', 'stale', 'invalid', 'ambiguous']) {
+    const positions = [{ symbol: 'EURUSD=X', bias: 'bullish', status }];
+    assert.equal(
+      isCorrelatedExposureBlocked({ symbol: 'GC=F', bias: 'bullish', positions }),
+      false,
+      `status ${status} seharusnya tidak mengikat exposure`,
+    );
+  }
+});
+
+test('isCorrelatedExposureBlocked: nama parameter lama `openPositions` tetap diterima (backward-compatible)', () => {
+  const list = [{ symbol: 'EURUSD=X', bias: 'bullish', status: 'pending' }];
+  assert.equal(
+    isCorrelatedExposureBlocked({ symbol: 'GC=F', bias: 'bullish', openPositions: list }),
+    isCorrelatedExposureBlocked({ symbol: 'GC=F', bias: 'bullish', positions: list }),
+  );
+});
+
+test('EXPOSURE_BINDING_STATUSES: tepat open + pending, tidak lebih', () => {
+  assert.deepEqual([...EXPOSURE_BINDING_STATUSES].sort(), ['open', 'pending']);
+});
+
+// ── Stempel versi kebijakan (POLICY_EPOCHS / policyVersionForTs) ────────────────
+
+test('POLICY_EPOCHS: urut naik, tanggal valid & monoton, tiap epoch punya label+impact', () => {
+  const IMPACTS = new Set(['baseline', 'entry', 'pair_set', 'levels', 'exit', 'context', 'eval']);
+  let prevV = 0, prevMs = -Infinity;
+  for (const e of POLICY_EPOCHS) {
+    assert.equal(e.v, prevV + 1, `versi harus berurutan tanpa lompat (ketemu v=${e.v} setelah ${prevV})`);
+    const ms = Date.parse(e.from);
+    assert.ok(Number.isFinite(ms), `tanggal epoch v${e.v} tidak valid: ${e.from}`);
+    assert.ok(ms >= prevMs, `tanggal epoch v${e.v} mundur dari versi sebelumnya`);
+    assert.ok(e.label && e.label.length > 10, `epoch v${e.v} wajib punya label deskriptif`);
+    assert.ok(IMPACTS.has(e.impact), `impact epoch v${e.v} tidak dikenal: ${e.impact}`);
+    prevV = e.v; prevMs = ms;
+  }
+});
+
+test('POLICY_VERSION: selalu sama dengan versi epoch terakhir', () => {
+  assert.equal(POLICY_VERSION, POLICY_EPOCHS[POLICY_EPOCHS.length - 1].v);
+});
+
+test('policyVersionForTs: memetakan ts ke epoch yang berlaku saat itu', () => {
+  const v1 = POLICY_EPOCHS[0];
+  // tepat di batas epoch -> epoch itu sendiri (bukan sebelumnya)
+  assert.equal(policyVersionForTs(Date.parse(v1.from)), v1.v);
+  // satu milidetik sebelum epoch pertama -> null, jangan mengarang versi
+  assert.equal(policyVersionForTs(Date.parse(v1.from) - 1), null);
+  // jauh setelah epoch terakhir -> versi terakhir
+  assert.equal(policyVersionForTs(Date.parse('2099-01-01T00:00:00Z')), POLICY_VERSION);
+  // di antara dua epoch -> epoch yang lebih tua
+  const a = POLICY_EPOCHS[3], b = POLICY_EPOCHS[4];
+  const mid = Math.floor((Date.parse(a.from) + Date.parse(b.from)) / 2);
+  assert.equal(policyVersionForTs(mid), a.v);
+});
+
+test('policyVersionForTs: input tidak valid -> null (fail-open, bukan crash)', () => {
+  assert.equal(policyVersionForTs(null), null);
+  assert.equal(policyVersionForTs(undefined), null);
+  assert.equal(policyVersionForTs('bukan-angka'), null);
+  assert.equal(policyVersionForTs(NaN), null);
 });

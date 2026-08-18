@@ -24,7 +24,7 @@ const { requireAppKey } = require('./_app_key');
 const { fetchYahooOhlcv1h, fetchFallbackCandles, shouldSendYahooAlert, mapYahooSymbolToDeriv, fetchDerivCandles, mergeVolumeByTimestamp } = require('./_ohlcv_fetch');
 const { buildPairContext, computeCurrencyStrength } = require('./_pair_context');
 const { validateTightenSl, computePreventiveTightenSl, _evaluateManaged, _aggManagementStats, isCorroborated } = require('./_position_review');
-const { isDrawdownHalted, isCorrelatedExposureBlocked, isTimingConflictBlocked, isInvalidationTriggered, INVALIDATION_TRIGGER_TYPES, INVALIDATION_TRIGGER_DIRECTIONS, INVALIDATION_TRIGGER_TIMEFRAMES, CORRELATED_PAIRS } = require('./_auto_entry_guard');
+const { isDrawdownHalted, isCorrelatedExposureBlocked, isTimingConflictBlocked, isInvalidationTriggered, INVALIDATION_TRIGGER_TYPES, INVALIDATION_TRIGGER_DIRECTIONS, INVALIDATION_TRIGGER_TIMEFRAMES, CORRELATED_PAIRS, POLICY_VERSION, POLICY_EPOCHS, policyVersionForTs } = require('./_auto_entry_guard');
 
 // Gate D live-sign lookup (audit 2026-08-16): terjemahkan simbol Yahoo di
 // CORRELATED_PAIRS ke label instrumen api/correlations.js, supaya sign statis di
@@ -3772,6 +3772,17 @@ function _summarizeLatency(entries) {
 // dievaluasi TERPISAH dari `setup_log:v1` (tidak pernah digabung satu array, aturan
 // satu-array-satu-sumber), + blok `management` (U-5a) + ringkasan konsistensi (U-3).
 function _statsPayloadFromLog(log) {
+  // Rekonstruksi versi kebijakan untuk entri LAMA (dibuat sebelum stempel `policy_v`
+  // ada, 2026-08-18) — dihitung SAAT DIBACA, TIDAK pernah ditulis balik ke Redis:
+  // `policy_v` = fakta yang direkam saat setup lahir, `policy_v_est` = perkiraan dari
+  // `ts` (prinsip U-5a — rekonstruksi tidak boleh menyamar jadi data asli). Salinan
+  // dangkal HANYA untuk entri yang perlu (entri baru dipakai apa adanya, nol overhead).
+  const decorated = (log || []).map(s => {
+    if (!s || s.policy_v != null) return s;
+    const est = policyVersionForTs(s.ts);
+    return est == null ? s : { ...s, policy_v_est: est };
+  });
+  log = decorated;
   const bySymbol = {};
   for (const s of log) { (bySymbol[s.symbol] = bySymbol[s.symbol] || []).push(s); }
   const symbols = {};
@@ -3780,7 +3791,12 @@ function _statsPayloadFromLog(log) {
   // 10 baris tanpa filter/paginasi. Sekarang dikirim penuh (log sudah newest-first,
   // ditulis via unshift) — dashboard yang paginasi client-side supaya bisa filter
   // status/pair tanpa kehilangan baris lama di luar 10 teratas.
-  return { symbols, global: _aggSetupStats(log), recent: log };
+  // `policy_epochs` ikut dikirim (developer scope saja — kedua pemanggil fungsi ini
+  // adalah jalur scope=auto) supaya siapa pun yang menganalisis statistiknya tidak
+  // perlu membuka source code untuk tahu versi berapa artinya apa: tiap epoch bawa
+  // tanggal, label perubahan, dan `impact` (entry/pair_set/levels/exit/context/eval)
+  // sebagai panduan di mana sampel LAYAK dibelah.
+  return { symbols, global: _aggSetupStats(log), recent: log, policy_epochs: POLICY_EPOCHS };
 }
 
 // BUG DITEMUKAN & DIFIX (2026-07-25, diskusi user — status 'tp' palsu tersimpan di
@@ -3846,7 +3862,7 @@ async function _buildAutoScopeStats() {
   if (!raw) {
     await redisCmd('SET', SETUP_STATS_LAST_RUN_KEY, new Date().toISOString(), 'EX', '900').catch(() => {});
     return {
-      scope: 'auto', symbols: {}, global: _aggSetupStats([]), recent: [],
+      scope: 'auto', symbols: {}, global: _aggSetupStats([]), recent: [], policy_epochs: POLICY_EPOCHS,
       consistency: await _consistencySummary(), pipeline_latency: await _pipelineLatencySummary(),
     };
   }
@@ -5881,6 +5897,14 @@ async function ohlcvAnalyzeHandler(req, res) {
         // regime-dependent) DAN audit apakah bias yang dipilih AI benar-benar
         // konsisten dengan regime (risk_off -> condong safe haven, dst).
         regime: autoGuardRegime,
+        // Stempel versi kebijakan auto-entry (2026-08-18, keputusan user pasca-audit
+        // menyeluruh) — lihat POLICY_EPOCHS di api/_auto_entry_guard.js untuk daftar
+        // lengkap versi + apa yang berubah di tiap versi. Tanpa ini, sampel n>=100
+        // yang sedang dikumpulkan tidak bisa dipisahkan per rezim kebijakan (jalur
+        // keputusan sudah berubah ±26 kali sejak deploy Plan U). Distempel juga di
+        // jalur refine-in-place di bawah — level yang benar-benar live itu lahir dari
+        // kebijakan SAAT refine, bukan saat setup pertama dibuat.
+        policy_v: POLICY_VERSION,
       });
       let needsGateA = false;
       // Gate A (Kritikus) juga menimbang refine-in-place (2026-08-18, lihat catatan lengkap di
@@ -5978,6 +6002,10 @@ async function ohlcvAnalyzeHandler(req, res) {
                     // `_evaluateSetups`) — `horizon_days` di atas tetap dihitung dari `ts` ASLI
                     // (waktu ide trade ini lahir), bukan waktu refine terakhir.
                     refined_count: (stalePending.refined_count || 0) + 1,
+                    // (2026-08-18) stempel versi kebijakan ikut diperbarui — pola sama
+                    // `regime`/`model` di blok ini: level yang benar-benar dipasang lahir
+                    // dari aturan main SAAT refine ini, bukan saat generasi pertama.
+                    policy_v: POLICY_VERSION,
                   },
                 };
               } else {
@@ -6056,7 +6084,7 @@ async function ohlcvAnalyzeHandler(req, res) {
           // keputusan hard-block, tambahkan counter OBSERVASI non-blocking di sini
           // (pola sama conflict_waktu_flagged di atas) — JANGAN langsung set
           // autoGuardReason tanpa data.
-          if (isCorrelatedExposureBlocked({ symbol, bias: structured.bias, openPositions: log, liveSign: liveCorrSign })) {
+          if (isCorrelatedExposureBlocked({ symbol, bias: structured.bias, positions: log, liveSign: liveCorrSign })) {
             autoGuardReason = 'correlation_cap';
           } else {
             const closedSetups = log
@@ -6673,6 +6701,7 @@ module.exports._aggCancelFlipGhostStats = _aggCancelFlipGhostStats;
 module.exports._aggGateRejectGhostStats = _aggGateRejectGhostStats;
 module.exports.GHOST_TRACKED_CANCEL_REASONS = GHOST_TRACKED_CANCEL_REASONS;
 module.exports._aggSetupStats = _aggSetupStats;
+module.exports._statsPayloadFromLog = _statsPayloadFromLog;
 module.exports._costAdjustedR = _costAdjustedR;
 module.exports._aggCostExpectancy = _aggCostExpectancy;
 module.exports._confidenceCalibration = _confidenceCalibration;

@@ -31,6 +31,40 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 
 **Ide terkait yang DIPARKIR (bukan dikerjakan sesi ini):** tambah tipe trigger `calendar_event` ke `invalidation_trigger` (skema sekarang cuma dukung trigger harga) — lihat `riset.md` folder ini untuk detail & alasan penundaan.
 
+## Changelog Session 319 (2026-08-18) — Stempel Versi Kebijakan per Setup + Gate D Menghitung Pending
+
+**Konteks:** eksekusi 2 dari 3 temuan audit menyeluruh sesi sebelumnya (`riset.md` folder ini §Audit menyeluruh 2026-08-18, poin A1 & A3) setelah user memilih opsinya. Poin A2 (rumusan Plan U item #8 salah karena `riskMultiplier` tidak pernah menyentuh jalur auto) tidak butuh kode — rumusannya dikoreksi langsung di `progress.md` folder ini.
+
+### 1. Stempel versi kebijakan (`policy_v`) — poin A3
+
+**Masalah:** jalur keputusan auto-entry berubah ±26 kali sejak deploy Plan U (2026-07-20) sementara sampel n≥100 sedang dikumpulkan, dan tidak ada satu pun field yang merekam "setup ini lahir di bawah aturan versi berapa". Sampel yang terkumpul karena itu bukan satu populasi, dan tidak ada cara memisahkannya lagi selain rekonstruksi manual `ts` vs tanggal commit.
+
+**Keputusan user: stempel versi, BUKAN pembekuan perubahan.** Sistem boleh terus berkembang; yang dibenahi adalah kemampuan menelusuri. Konsekuensinya diterima sadar: analisis n≥100 nanti harus dilakukan per-segmen (atau setidaknya sadar segmennya), bukan satu kolam besar.
+
+**Implementasi (`api/_auto_entry_guard.js`):** `POLICY_EPOCHS` — 27 epoch, tiap entri `{ v, from (waktu commit UTC), impact, label }`. `from` diambil dari waktu commit asli di `git log` (bukan tanggal kira-kira), sehingga setup lama bisa dipetakan retroaktif dengan presisi jam, bukan hari. `impact` (`baseline`/`entry`/`pair_set`/`levels`/`exit`/`context`/`eval`) menandai APA yang berubah supaya penganalisis tidak wajib membelah sampel di setiap versi — pertanyaan win-rate cukup dibelah di `entry`/`pair_set`/`levels`/`exit`. `POLICY_VERSION` = versi epoch terakhir; `policyVersionForTs(ts)` memetakan setup lama.
+
+**Aturan pemeliharaan yang ikut ditulis di kode:** epoch baru WAJIB ditambah setiap kali mengubah apa yang menentukan trade mana yang terjadi, di level berapa, di pair apa, atau kapan keluar. Perubahan murni observability/UI TIDAK menambah epoch (kalau tidak, jumlah epoch jadi tak bermakna). Epoch lama TIDAK boleh diedit.
+
+**Perubahan (`api/admin.js`):** `policy_v: POLICY_VERSION` di `buildNewSetupEntry` DAN di `refineCandidate.fields` (level yang benar-benar live lahir dari kebijakan saat refine, bukan saat generasi pertama — pola sama `regime`/`model`). `_statsPayloadFromLog` mengisi `policy_v_est` untuk entri lama **saat dibaca saja, tanpa menulis balik ke Redis** — nama field sengaja dibedakan (`policy_v` = fakta yang direkam, `policy_v_est` = rekonstruksi), prinsip U-5a. Payload scope=auto sekarang juga membawa registry `policy_epochs` supaya penganalisis tidak perlu membuka source code. Payload publik tidak tersentuh (kedua pemanggil `_statsPayloadFromLog` adalah jalur scope=auto).
+
+**Perubahan (`dev-auto-entry.html`):** baris "Versi Kebijakan" di grup Parameter Trade — menampilkan `v{n} — {label epoch} [direkam saat setup dibuat | perkiraan dari waktu setup, bukan data asli]`, jadi asal-usul angkanya kelihatan langsung tanpa perlu tahu bedanya dua field itu.
+
+**Batas presisi (didokumentasikan di kode, bukan disembunyikan):** `from` = waktu commit; deploy Vercel menyusul ~1 menit, perubahan `vps/daemon.js` menunggu redeploy Railway. Setup yang `ts`-nya jatuh dalam ~15 menit setelah batas epoch harus diperlakukan sebagai versi TIDAK PASTI.
+
+### 2. Gate D menghitung posisi `pending` sebagai exposure — poin A1
+
+**Masalah:** `isCorrelatedExposureBlocked` hanya menghitung partner ber-status `'open'`. Karena semua entry sistem ini limit order di zona konfluensi, `pending` justru state yang paling lama dihuni — dua setup korelatif bisa sama-sama `pending` searah lalu terisi di jam yang sama tanpa cap korelasi pernah menyala.
+
+**Perubahan:** `EXPOSURE_BINDING_STATUSES = new Set(['open', 'pending'])`. Parameter `positions` (nama lama `openPositions` tetap diterima supaya call site & test lama tidak berubah beramai-ramai). Call site `api/admin.js` memakai nama baru.
+
+**Yang SENGAJA tidak dilakukan:** tidak ada ambang umur pending ("hitung hanya yang < N jam") — itu akan menambah satu angka tebakan baru yang tidak tervalidasi, persis pola yang dihindari proyek ini (preseden Gate E). Biaya/manfaat perubahan ini tidak perlu ditebak: kandidat yang ditahan sudah otomatis jadi ghost (`canceled_reason: 'gate_correlation_cap'`), jadi `gate_reject_ghost` akan menunjukkan `saved` vs `cost` apa adanya.
+
+**Trade-off diterima sadar:** gate jadi lebih sering menahan → laju sampel bisa sedikit melambat. Dampaknya terbatas: hanya 2 pasangan yang dipetakan di `CORRELATED_PAIRS` (bukan seluruh 5 pair), dan `pending` punya umur terbatas sendiri (jadi `expired` setelah horizon×1,5).
+
+**Test:** 11 test baru — 5 di `test/api/_auto_entry_guard.test.js` untuk Gate D (pending searah blocked, pending berlawanan lolos, 7 status non-binding diabaikan, alias parameter lama, isi `EXPOSURE_BINDING_STATUSES`), 4 untuk registry versi (urutan/tanggal/label/impact valid, `POLICY_VERSION` sinkron, pemetaan `ts` termasuk tepat-di-batas & sebelum epoch pertama, input invalid → null), 4 di `test/admin/ta_struct.test.js` (`policy_v_est` diisi untuk entri lama, objek asli TIDAK dimutasi, entri baru tidak ditimpa, `ts` invalid tidak dikarang, registry ikut di payload). Satu test lama (`partner pending -> TIDAK blocked`) ekspektasinya DIBALIK, bukan dihapus — supaya kalau perilaku ini balik lagi ke lama, ketahuan sebagai perubahan sadar, bukan regresi diam-diam. `npm test` 1033/1033 hijau.
+
+**Verifikasi live: BELUM.** Perlu minimal 1 siklus `runAutoEntryCycle` produksi setelah deploy untuk konfirmasi (a) setup baru benar membawa `policy_v: 27`, (b) entri lama tampil dengan `policy_v_est` di dashboard. Diparkir di `progress.md` folder ini.
+
 ## Changelog Session 316 (2026-08-16) — Gate D: Sign Statis Bisa Ditimpa Anomali Korelasi Live
 
 **Konteks:** Audit kualitas informasi ke LLM trader (dipicu diskusi buku ekonometrika, lihat `daun_merah.md` Session 316 untuk konteks lengkap & 1 koreksi klaim yang sempat salah). Temuan: Gate D (`isCorrelatedExposureBlocked`, `api/_auto_entry_guard.js`) pakai tabel `CORRELATED_PAIRS` statis — sign korelasi (`positive`/`negative`) hasil riset manual bertanggal (GC=F-EURUSD=X: 26 Juli; EURUSD=X-CHFJPY=X: 8 Agustus), tidak pernah diperbarui otomatis — padahal `api/correlations.js` (`correlations_v3`) sudah menghitung ulang matriks korelasi 20D/60D TIAP HARI, termasuk deteksi anomali (`|r20-r60|>0,4`, sign-flip). Kalau korelasi riil sudah bergeser rezim sejak tanggal riset, Gate D tetap menahan/meloloskan posisi berdasar asumsi arah yang mungkin sudah tidak berlaku.

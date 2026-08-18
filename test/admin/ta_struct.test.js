@@ -1105,3 +1105,36 @@ test('_buildLiveCorrSign: key anomaly urutan terbalik (Gold|EUR) tetap ketemu', 
   const out = _buildLiveCorrSign(corrData);
   assert.equal(out['GC=F|EURUSD=X'], 'negative');
 });
+
+// ── Stempel versi kebijakan di payload scope=auto (2026-08-18, audit menyeluruh) ──
+
+const { _statsPayloadFromLog } = require('../../api/admin.js');
+const { POLICY_EPOCHS, POLICY_VERSION, policyVersionForTs } = require('../../api/_auto_entry_guard.js');
+
+test('_statsPayloadFromLog: entri lama tanpa policy_v dapat policy_v_est, entri asli TIDAK dimutasi', () => {
+  const tsLama = Date.parse('2026-08-01T09:00:00Z');
+  const lama = { id: 'A', symbol: 'GC=F', status: 'tp', ts: tsLama };
+  const out = _statsPayloadFromLog([lama]);
+  const entri = out.recent[0];
+  assert.strictEqual(entri.policy_v_est, policyVersionForTs(tsLama));
+  assert.strictEqual(entri.policy_v, undefined, 'jangan mengisi policy_v — itu khusus fakta yang direkam');
+  assert.strictEqual(lama.policy_v_est, undefined, 'objek asli tidak boleh ikut dimutasi (rekonstruksi hanya di payload)');
+});
+
+test('_statsPayloadFromLog: entri yang sudah membawa policy_v tidak ditimpa & tidak dapat estimasi', () => {
+  const baru = { id: 'B', symbol: 'EURUSD=X', status: 'pending', ts: Date.now(), policy_v: 3 };
+  const entri = _statsPayloadFromLog([baru]).recent[0];
+  assert.strictEqual(entri.policy_v, 3);
+  assert.strictEqual(entri.policy_v_est, undefined);
+});
+
+test('_statsPayloadFromLog: ts tidak valid -> tidak mengarang versi apa pun', () => {
+  const entri = _statsPayloadFromLog([{ id: 'C', symbol: 'GC=F', status: 'sl', ts: 'bukan-angka' }]).recent[0];
+  assert.strictEqual(entri.policy_v_est, undefined);
+});
+
+test('_statsPayloadFromLog: payload membawa registry policy_epochs untuk penganalisis statistik', () => {
+  const out = _statsPayloadFromLog([]);
+  assert.deepStrictEqual(out.policy_epochs, POLICY_EPOCHS);
+  assert.strictEqual(out.policy_epochs[out.policy_epochs.length - 1].v, POLICY_VERSION);
+});

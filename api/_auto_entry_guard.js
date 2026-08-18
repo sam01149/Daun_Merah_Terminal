@@ -152,14 +152,42 @@ function _correlatedPartnersOf(symbol) {
   return CORRELATED_PAIRS.filter(p => p.a === symbol || p.b === symbol).map(p => (p.a === symbol ? p.b : p.a));
 }
 
-// openPositions: array entri setup_log_auto:v1 (semua pair, status apa saja — fungsi
-// ini sendiri yang filter 'open'). liveSign: lihat komentar CORRELATED_PAIRS di atas.
-function isCorrelatedExposureBlocked({ symbol, bias, openPositions, liveSign }) {
+// CELAH DITEMUKAN & DITUTUP (2026-08-18, audit menyeluruh — riset.md folder
+// professional_llm_trader §Audit menyeluruh 2026-08-18 poin A1, disetujui user):
+// gate ini dulu HANYA menghitung partner ber-status 'open'. Padahal SEMUA entry
+// sistem ini limit order di zona konfluensi, jadi 'pending' (order sudah hidup,
+// tinggal menunggu harga) justru state yang paling lama dihuni — dua setup
+// korelatif bisa sama-sama 'pending' searah lalu terisi di jam yang sama, dan cap
+// korelasi tidak pernah menyala sama sekali. Di mode virtual efeknya "cuma"
+// mencemari statistik; kalau nanti jalan dengan dana riil, itu eksposur ganda yang
+// tidak pernah diputuskan siapa pun. 'pending' sekarang ikut dihitung sebagai
+// exposure yang mengikat.
+//
+// TRADE-OFF YANG DITERIMA SADAR: gate jadi lebih sering menahan, jadi laju
+// pengumpulan sampel bisa sedikit melambat — tapi dampaknya terbatas karena hanya
+// 2 pasangan yang dipetakan di CORRELATED_PAIRS (bukan seluruh 5 pair), dan
+// 'pending' punya umur terbatas sendiri (jadi 'expired' setelah horizon*1.5 di
+// _evaluateSetups). Biaya/manfaatnya TIDAK perlu ditebak: kandidat yang ditahan
+// gate ini sudah otomatis direkam sebagai ghost (canceled_reason
+// 'gate_correlation_cap' -> _evaluateCanceledGhost), jadi `gate_reject_ghost`
+// nanti menunjukkan berapa yang benar diselamatkan (saved) vs berapa yang
+// sebenarnya menang (cost). Sengaja TIDAK memakai ambang umur pending ("hitung
+// hanya yang < N jam") — itu akan menambah satu angka tebakan baru yang tidak
+// tervalidasi, persis pola yang dihindari proyek ini.
+const EXPOSURE_BINDING_STATUSES = new Set(['open', 'pending']);
+
+// positions: array entri setup_log_auto:v1 (semua pair, status apa saja — fungsi
+// ini sendiri yang filter status yang mengikat exposure). `openPositions` = nama
+// parameter lama, tetap diterima supaya call site & test lama tidak perlu diubah
+// beramai-ramai; keduanya berarti hal yang sama sekarang (open + pending).
+// liveSign: lihat komentar CORRELATED_PAIRS di atas.
+function isCorrelatedExposureBlocked({ symbol, bias, positions, openPositions, liveSign }) {
+  const list = positions || openPositions || [];
   for (const partner of _correlatedPartnersOf(symbol)) {
-    const openPartner = (openPositions || []).find(p => p && p.symbol === partner && p.status === 'open');
-    if (!openPartner) continue;
+    const boundPartner = list.find(p => p && p.symbol === partner && EXPOSURE_BINDING_STATUSES.has(p.status));
+    if (!boundPartner) continue;
     const corr = _correlationOf(symbol, partner, liveSign);
-    const sameDirection = bias === openPartner.bias;
+    const sameDirection = bias === boundPartner.bias;
     if (corr.sign === 'positive' ? sameDirection : !sameDirection) return true;
   }
   return false;
@@ -222,11 +250,97 @@ function isInvalidationTriggered({ invalidation_trigger, candles, startMs, bound
   return { triggered: false, at: null };
 }
 
+// ── Stempel versi kebijakan auto-entry (2026-08-18, keputusan user setelah audit
+// menyeluruh — lihat riset.md folder professional_llm_trader §Audit menyeluruh
+// 2026-08-18 poin A3) ──────────────────────────────────────────────────────────
+// MASALAH YANG DIPECAHKAN: sejak deploy Plan U (2026-07-20) jalur keputusan
+// auto-entry berubah puluhan kali (ganti komposisi pair, tambah/hapus gate, ubah
+// prompt, ubah cara refine), tapi tidak ada satu pun field yang merekam "setup ini
+// lahir di bawah aturan main versi berapa". Akibatnya sampel n>=100 yang sedang
+// dikumpulkan sebenarnya campuran belasan rezim kebijakan, dan tidak ada cara
+// memisahkannya lagi selain rekonstruksi manual dari `ts` vs tanggal commit.
+// User memilih STEMPEL VERSI (bukan pembekuan perubahan): sistem boleh terus
+// berkembang, tapi tiap setup membawa penanda supaya siapa pun (manusia atau AI)
+// yang menganalisis statistiknya bisa memisahkan populasi sendiri.
+//
+// CARA PAKAI UNTUK ANALISIS STATISTIK:
+// - Setup baru membawa `policy_v` (distempel saat dibuat/di-refine, lihat
+//   buildNewSetupEntry & refineCandidate di api/admin.js).
+// - Setup LAMA (sebelum 2026-08-18) tidak punya field itu — payload scope=auto
+//   mengisi `policy_v_est` hasil rekonstruksi dari `ts` lewat policyVersionForTs().
+//   SENGAJA nama field berbeda: `policy_v` = fakta yang direkam, `policy_v_est` =
+//   perkiraan retroaktif (prinsip U-5a — jangan pernah menyamarkan rekonstruksi
+//   sebagai data asli).
+// - `impact` tiap epoch menandai APA yang berubah, supaya segmentasi tidak harus
+//   membelah sampel di SETIAP versi: pertanyaan soal win-rate cukup dibelah di
+//   perubahan `entry`/`pair_set`/`levels`/`exit`, sedangkan perubahan `context`
+//   (informasi yang dilihat AI) dan `eval` (cara hasil dinilai) dibelah hanya kalau
+//   pertanyaannya memang menyangkut itu.
+//
+// ATURAN PEMELIHARAAN (WAJIB): tiap kali mengubah apa pun yang menentukan TRADE
+// MANA yang terjadi, DI LEVEL BERAPA, DI PAIR APA, atau KAPAN KELUAR — tambahkan
+// epoch baru di bawah (jangan mengedit epoch lama, itu memalsukan sejarah) dan
+// isi `from` dengan waktu commit deploy-nya. Perubahan yang MURNI observability/UI/
+// dokumentasi TIDAK perlu epoch baru (tidak mengubah trade yang terjadi) — itu
+// sengaja, supaya jumlah epoch tetap bermakna, bukan bertambah tiap commit.
+//
+// PRESISI BATAS: `from` = waktu commit (UTC) perubahan itu masuk `main`. Deploy
+// Vercel menyusul ~1 menit; perubahan di `vps/daemon.js` menunggu redeploy Railway
+// (bisa beberapa menit lebih lama). Untuk setup yang `ts`-nya jatuh dalam ~15 menit
+// setelah batas epoch, perlakukan versinya sebagai TIDAK PASTI, bukan akurat.
+const POLICY_EPOCHS = [
+  { v: 1,  from: '2026-07-20T12:39:39Z', impact: 'baseline', label: 'Plan U live — auto-entry virtual pertama (XAU/USD + EUR/USD)' },
+  { v: 2,  from: '2026-07-20T13:43:38Z', impact: 'entry',    label: 'U-3: cegah posisi menumpuk per symbol (skip kalau open, ganti kalau pending)' },
+  { v: 3,  from: '2026-07-22T15:45:31Z', impact: 'entry',    label: 'S216: refinemen in-place setup pending + Flip Guard whipsaw' },
+  { v: 4,  from: '2026-07-23T12:00:20Z', impact: 'pair_set', label: 'S217: Golden Trio — 3 pair (XAU/USD, EUR/USD, GBP/USD)' },
+  { v: 5,  from: '2026-07-23T13:08:18Z', impact: 'entry',    label: 'S219+S220: filter berita keras breaking news + buffer korroborasi persisten (skip pra-entry)' },
+  { v: 6,  from: '2026-07-24T16:26:06Z', impact: 'exit',     label: 'S231: tighten SL preventif sebelum weekend close' },
+  { v: 7,  from: '2026-07-25T18:51:02Z', impact: 'eval',     label: 'S242: fix timestamp fill/close terbalik + scan TP/SL dari filled_t (mengubah cara hasil dinilai, bukan trade yang diambil)' },
+  { v: 8,  from: '2026-07-26T23:28:19Z', impact: 'pair_set', label: 'S247: redesain independensi — GBP/USD dibuang, AUD/NZD + EUR/GBP masuk (4 pair)' },
+  { v: 9,  from: '2026-07-28T12:01:21Z', impact: 'entry',    label: 'S250: 4 gate audit-guard aktif (Gate A Kritikus, B drawdown, C regime, D korelasi)' },
+  { v: 10, from: '2026-07-28T14:24:49Z', impact: 'entry',    label: 'S251: Gate C dihapus + Gate B butuh ambang sampel minimum' },
+  { v: 11, from: '2026-07-28T17:27:20Z', impact: 'eval',     label: 'S253: watcher TP/SL real-time Q-7 (deteksi hasil dalam detik, bukan jam)' },
+  { v: 12, from: '2026-07-29T16:08:05Z', impact: 'context',  label: 'S259: Sistem Hakim aktif di jalur cron (koreksi label makro_alignment)' },
+  { v: 13, from: '2026-07-29T16:46:20Z', impact: 'entry',    label: 'S261: fix race condition Gate A + 3 celah statistik' },
+  { v: 14, from: '2026-07-29T17:35:49Z', impact: 'levels',   label: 'S262: guard korroborasi sumber kedua GC=F sebelum finalisasi tp/sl' },
+  { v: 15, from: '2026-08-04T14:52:09Z', impact: 'entry',    label: 'S277: fix prune buffer korroborasi + Gate E timing-risk sebagai hard block' },
+  { v: 16, from: '2026-08-04T17:52:35Z', impact: 'entry',    label: 'S280: deteksi kejutan ekonomi (actual vs forecast) sebagai alasan skip' },
+  { v: 17, from: '2026-08-04T18:44:24Z', impact: 'entry',    label: 'S281: Gate E dilonggarkan — conflict waktu tidak lagi auto-reject, diteruskan ke Gate A' },
+  { v: 18, from: '2026-08-04T19:26:22Z', impact: 'exit',     label: 'S282: Track 1 invalidasi teknikal deterministik + Track 2a jam khusus AUD/NZD' },
+  { v: 19, from: '2026-08-05T11:13:40Z', impact: 'context',  label: 'S283: Sistem Hakim bisa mengoreksi balik (state corrected)' },
+  { v: 20, from: '2026-08-05T19:05:08Z', impact: 'entry',    label: 'S284: fix korroborasi palsu Interest Rate Probabilities (dulu men-skip 4 pair sekaligus)' },
+  { v: 21, from: '2026-08-06T11:06:02Z', impact: 'entry',    label: 'S286: retry persisten untuk slot yang di-skip berita (mengubah laju & jam entry)' },
+  { v: 22, from: '2026-08-08T16:43:04Z', impact: 'context',  label: 'S293+S294: framing CME-priority di prompt, dikarantina ke jalur auto (lihat juga cme_priority_prompt_v)' },
+  { v: 23, from: '2026-08-08T19:03:05Z', impact: 'pair_set', label: 'S296: CHF/JPY masuk sebagai pair ke-5' },
+  { v: 24, from: '2026-08-10T16:04:02Z', impact: 'context',  label: 'S301: guard kontradiksi arah mengoreksi makro_alignment otomatis' },
+  { v: 25, from: '2026-08-16T13:58:32Z', impact: 'entry',    label: 'S316: Gate D — sign korelasi statis bisa ditimpa anomali korelasi live' },
+  { v: 26, from: '2026-08-18T12:05:11Z', impact: 'entry',    label: 'S318: Gate A (Kritikus) ikut menimbang level hasil refine-in-place' },
+  { v: 27, from: '2026-08-18T16:00:00Z', impact: 'entry',    label: 'S319: Gate D menghitung posisi pending sebagai exposure, bukan cuma open' },
+];
+
+const POLICY_VERSION = POLICY_EPOCHS[POLICY_EPOCHS.length - 1].v;
+const _POLICY_EPOCH_MS = POLICY_EPOCHS.map(e => ({ v: e.v, ms: Date.parse(e.from) }));
+
+// Rekonstruksi versi kebijakan untuk setup LAMA yang tidak membawa `policy_v`.
+// Return null kalau ts tidak valid atau lebih tua dari epoch pertama (jangan
+// mengarang versi untuk data pra-Plan U / setup manual lama).
+function policyVersionForTs(ts) {
+  const t = Number(ts);
+  if (!Number.isFinite(t)) return null;
+  let found = null;
+  for (const e of _POLICY_EPOCH_MS) { if (t >= e.ms) found = e.v; }
+  return found;
+}
+
 module.exports = {
   computeRollingR,
+  POLICY_EPOCHS,
+  POLICY_VERSION,
+  policyVersionForTs,
   isDrawdownHalted,
   isCorrelatedExposureBlocked,
   CORRELATED_PAIRS,
+  EXPOSURE_BINDING_STATUSES,
   isTimingConflictBlocked,
   isInvalidationTriggered,
   INVALIDATION_TRIGGER_TYPES,
