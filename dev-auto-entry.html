@@ -615,7 +615,14 @@ if (localStorage.getItem('dm_dev_theme') === 'light') document.body.classList.ad
       document.querySelectorAll('.pane').forEach(x => x.classList.remove('active'));
       t.classList.add('active');
       document.getElementById('pane-' + t.dataset.pane).classList.add('active');
-      if (t.dataset.pane === 'charts' && !chartsBuilt) ensureChartsBuilt();
+      // Polling candle (lihat CHART_POLL_MS) cuma jalan selagi tab Chart Posisi aktif —
+      // pindah ke tab lain berhenti, balik lagi lanjut, supaya tidak nge-fetch percuma
+      // di background selagi user sedang lihat Dashboard/tab lain.
+      if (t.dataset.pane === 'charts') {
+        if (!chartsBuilt) ensureChartsBuilt(); else startChartPolling();
+      } else {
+        stopChartPolling();
+      }
     });
   });
 
@@ -1140,7 +1147,13 @@ if (localStorage.getItem('dm_dev_theme') === 'light') document.body.classList.ad
     // didefinisikan di bawah fungsi ini tapi tetap bisa diakses di sini karena closure
     // atas scope IIFE yang sama, bukan dipanggil sebelum deklarasinya jalan).
     if (typeof chartsBuilt !== 'undefined' && chartsBuilt) {
-      Object.keys(chartState).forEach(symbol => { chartState[symbol].setup = pickChartSetup(symbol); positionOverlay(symbol); });
+      Object.keys(chartState).forEach(symbol => {
+        const s = pickChartSetup(symbol);
+        if (!s || (s.status !== 'open' && s.status !== 'pending')) { removeChartCard(symbol); return; }
+        chartState[symbol].setup = s;
+        applyMarkers(symbol);
+        positionOverlay(symbol);
+      });
     }
   }
   document.getElementById('btnRefresh').addEventListener('click', loadDashboard);
@@ -1305,7 +1318,7 @@ if (localStorage.getItem('dm_dev_theme') === 'light') document.body.classList.ad
   function chartColors(){
     const cs = getComputedStyle(document.body);
     const g = name => cs.getPropertyValue(name).trim();
-    return { bg: g('--bg'), fg: g('--fg'), muted: g('--muted'), border: g('--border'), green: g('--green'), accent: g('--accent') };
+    return { bg: g('--bg'), fg: g('--fg'), muted: g('--muted'), border: g('--border'), green: g('--green'), accent: g('--accent'), blue: g('--blue'), yellow: g('--yellow') };
   }
 
   const chartState = {}; // symbol -> { chart, series, box, tf, setup, ro }
@@ -1318,22 +1331,31 @@ if (localStorage.getItem('dm_dev_theme') === 'light') document.body.classList.ad
     delete chartState[symbol];
   }
 
+  // Kartu chart HANYA dibuat untuk pair yang lagi open/pending (difilter di
+  // ensureChartsBuilt) — setup di sini dijamin ada & aktif, jadi tidak perlu cabang
+  // "belum ada setup".
   function buildChartCard(pair){
     const symbol = pair.symbol, label = pair.label || symLabel(symbol);
     const setup = pickChartSetup(symbol);
-    const hasPos = setup && (setup.status === 'open' || setup.status === 'pending');
-    const metaHtml = setup
-      ? `<span class="${setup.bias === 'bullish' ? 'up' : 'down'}"><b>${esc(setup.bias || '-')}</b></span>
-         <span class="badge ${esc(setup.status)}">${esc(setup.status)}</span>
-         <span>Entry <b>${esc(setup.entry_zone)}</b></span>
-         <span>SL <b>${esc(setup.sl)}</b></span>
-         <span>TP <b>${esc(setup.tp)}</b></span>`
-      : `<span>Belum ada setup tercatat untuk pair ini.</span>`;
-    return `<div class="chartcard${hasPos ? '' : ' noposition'}" data-symbol="${esc(symbol)}">
+    const horizonHtml = setup.horizon_days != null
+      ? `${esc(setup.horizon_days)} hari (s.d. ${esc(fmtTs(setup.ts + setup.horizon_days * 86400000))})`
+      : '—';
+    return `<div class="chartcard" data-symbol="${esc(symbol)}">
       <div class="chartcard-head">
         <div>
           <h3>${esc(label)}</h3>
-          <div class="chartcard-meta">${metaHtml}</div>
+          <div class="chartcard-meta">
+            <span class="${setup.bias === 'bullish' ? 'up' : 'down'}"><b>${esc(setup.bias || '-')}</b></span>
+            <span class="badge ${esc(setup.status)}">${esc(setup.status)}</span>
+            <span>Entry <b>${esc(setup.entry_zone)}</b></span>
+            <span>SL <b>${esc(setup.sl)}</b></span>
+            <span>TP <b>${esc(setup.tp)}</b></span>
+          </div>
+          <div class="chartcard-meta">
+            <span>Dibuat <b>${esc(fmtTs(setup.ts))}</b></span>
+            <span>Filled <b>${setup.filled_t ? esc(fmtTs(setup.filled_t * 1000)) : 'menunggu fill'}</b></span>
+            <span>Horizon <b>${horizonHtml}</b></span>
+          </div>
         </div>
         <div class="chart-tf" data-symbol="${esc(symbol)}">
           <button data-tf="1h" class="active">1H</button>
@@ -1348,7 +1370,7 @@ if (localStorage.getItem('dm_dev_theme') === 'light') document.body.classList.ad
   function positionOverlay(symbol){
     const st = chartState[symbol];
     if (!st || !st.chart || !st.series) return;
-    const { box, series, setup } = st;
+    const { box, series, chart, setup } = st;
     box.querySelectorAll('.zoneband, .zoneline').forEach(el => el.remove());
     if (!setup) return;
     const entries = parseNums(setup.entry_zone);
@@ -1361,9 +1383,21 @@ if (localStorage.getItem('dm_dev_theme') === 'light') document.body.classList.ad
     const ySl = series.priceToCoordinate(sl);
     const yTp = series.priceToCoordinate(tp);
     if (yEntry == null || ySl == null || yTp == null) return;
+    // Zona warna dianchor mulai dari candle Filled (kalau sudah live) atau Dibuat
+    // (kalau masih pending) — biar kelihatan SEJAK KAPAN kotak ini berlaku, bukan
+    // menutupi seluruh histori chart dari kiri (permintaan user: "gatau kapan
+    // fillednya"). Fallback ke tepi kiri kalau anchor di luar jangkauan candle yang
+    // sedang dimuat (posisi lama, chart baru nampilin data terbaru saja).
+    const anchorSec = setup.filled_t != null ? setup.filled_t : (setup.ts != null ? Math.round(setup.ts / 1000) : null);
+    let xLeft = 0;
+    if (anchorSec != null) {
+      const x = chart.timeScale().timeToCoordinate(anchorSec);
+      if (x != null && x > 0) xLeft = x;
+    }
     const band = (top, height, cls) => {
       const d = document.createElement('div');
       d.className = 'zoneband ' + cls;
+      d.style.left = xLeft + 'px';
       d.style.top = Math.min(top, top + height) + 'px';
       d.style.height = Math.abs(height) + 'px';
       box.appendChild(d);
@@ -1382,24 +1416,101 @@ if (localStorage.getItem('dm_dev_theme') === 'light') document.body.classList.ad
     line(yEntry, 'entry', `Entry ${eLo === eHi ? eLo : eLo + '–' + eHi}`);
   }
 
+  function computeBars(candles){
+    return (candles || [])
+      .filter(b => b && typeof b.t === 'number' && typeof b.o === 'number')
+      .map(b => ({ time: b.t > 2e10 ? Math.round(b.t / 1000) : b.t, open: b.o, high: b.h, low: b.l, close: b.c }))
+      .sort((a, b) => a.time - b.time);
+  }
+
+  // SMA sederhana dihitung sendiri (tanpa library indikator) — cukup buat MA
+  // overlay ala tab TEK (index.html pakai MASimple@tv-basicstudies bawaan tv.js;
+  // di sini chart-nya Lightweight Charts jadi dihitung manual dari candle close).
+  function computeSMA(bars, period){
+    const out = [];
+    let sum = 0;
+    for (let i = 0; i < bars.length; i++) {
+      sum += bars[i].close;
+      if (i >= period) sum -= bars[i - period].close;
+      if (i >= period - 1) out.push({ time: bars[i].time, value: sum / period });
+    }
+    return out;
+  }
+
+  function nearestBarTime(bars, targetSec){
+    if (!bars || !bars.length || targetSec == null || isNaN(targetSec)) return null;
+    let best = bars[0].time, bestDiff = Math.abs(bars[0].time - targetSec);
+    for (const b of bars) { const d = Math.abs(b.time - targetSec); if (d < bestDiff) { bestDiff = d; best = b.time; } }
+    return best;
+  }
+
+  // Marker "Dibuat"/"Filled" di candle-nya sendiri — jawab langsung pertanyaan "kapan
+  // entry/filled-nya" tanpa harus buka tabel Riwayat Setup terpisah. `time` marker LWC
+  // WAJIB persis sama dengan salah satu time di data series, makanya di-snap ke bar
+  // terdekat (nearestBarTime), bukan dipakai mentah dari ts/filled_t.
+  function applyMarkers(symbol){
+    const st = chartState[symbol];
+    if (!st || !st.series || !st.bars || !st.bars.length) return;
+    const setup = st.setup;
+    const markers = [];
+    if (setup) {
+      const c = chartColors();
+      if (setup.ts != null) {
+        const t = nearestBarTime(st.bars, Math.round(setup.ts / 1000));
+        if (t != null) markers.push({ time: t, position: 'belowBar', color: c.blue, shape: 'circle', text: 'Dibuat' });
+      }
+      if (setup.filled_t != null) {
+        const t = nearestBarTime(st.bars, setup.filled_t);
+        if (t != null) markers.push({ time: t, position: 'aboveBar', color: c.green, shape: 'arrowUp', text: 'Filled' });
+      }
+    }
+    markers.sort((a, b) => a.time - b.time);
+    st.series.setMarkers(markers);
+  }
+
+  // Update data candle + MA TANPA membongkar-pasang chart (beda dari renderChartCard) —
+  // dipakai polling berkala supaya pan/zoom user tidak ke-reset tiap refresh.
+  async function fetchAndApplyBars(symbol){
+    const st = chartState[symbol];
+    if (!st || !st.series) return false;
+    const { json, errMsg } = await api('ohlcv_chart', { query: { symbol, tf: st.tf || '1h' }, silent: true });
+    if (errMsg || !json || json.error) return false;
+    const bars = computeBars(json.candles);
+    if (!bars.length) return false;
+    st.bars = bars;
+    st.series.setData(bars);
+    if (st.ma50) st.ma50.setData(computeSMA(bars, 50));
+    if (st.ma200) st.ma200.setData(computeSMA(bars, 200));
+    st.setup = pickChartSetup(symbol);
+    applyMarkers(symbol);
+    positionOverlay(symbol);
+    return true;
+  }
+
   async function renderChartCard(symbol, tf){
     const box = document.getElementById(chartBoxId(symbol));
     if (!box) return;
     destroyChart(symbol);
     box.innerHTML = '<div class="chart-msg">Memuat chart...</div>';
     try { await loadLWC(); } catch (e) { box.innerHTML = `<div class="chart-msg">${esc(e.message)}</div>`; return; }
-    const { json, errMsg } = await api('ohlcv_chart', { query: { symbol, tf: tf || '1h' }, silent: true });
+    const useTf = tf || '1h';
+    const { json, errMsg } = await api('ohlcv_chart', { query: { symbol, tf: useTf }, silent: true });
     if (errMsg || !json || json.error) {
       box.innerHTML = `<div class="chart-msg">Gagal memuat candle: ${esc(errMsg || json.error)}</div>`;
       return;
     }
-    if (!Array.isArray(json.candles) || !json.candles.length) {
+    const bars = computeBars(json.candles);
+    if (!bars.length) {
       box.innerHTML = '<div class="chart-msg">Candle belum tersedia untuk pair/timeframe ini.</div>';
       return;
     }
     box.innerHTML = '<div class="lwc-host"></div>';
     const host = box.querySelector('.lwc-host');
     const c = chartColors();
+    // Layout disamakan dengan gaya tab TEK (index.html): candle + MA50/MA200 overlay,
+    // grid tipis, harga di kanan. RSI sub-pane SENGAJA dilewati (bukan tidak dikerjakan —
+    // Lightweight Charts butuh price-scale kedua yang lebih rawan berantakan di grid
+    // sekecil ini; MA sudah cukup mewakili gaya visual TEK tanpa risiko itu).
     const chart = LightweightCharts.createChart(host, {
       layout: { background: { color: c.bg }, textColor: c.muted, fontFamily: "'DM Mono',monospace", fontSize: 10 },
       grid: { vertLines: { color: c.border }, horzLines: { color: c.border } },
@@ -1412,14 +1523,15 @@ if (localStorage.getItem('dm_dev_theme') === 'light') document.body.classList.ad
     const series = chart.addCandlestickSeries({
       upColor: c.green, downColor: c.accent, borderVisible: false, wickUpColor: c.green, wickDownColor: c.accent,
     });
-    const bars = json.candles
-      .filter(b => b && typeof b.t === 'number' && typeof b.o === 'number')
-      .map(b => ({ time: b.t > 2e10 ? Math.round(b.t / 1000) : b.t, open: b.o, high: b.h, low: b.l, close: b.c }))
-      .sort((a, b) => a.time - b.time);
     series.setData(bars);
+    const ma50 = chart.addLineSeries({ color: c.blue, lineWidth: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
+    const ma200 = chart.addLineSeries({ color: c.yellow, lineWidth: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
+    ma50.setData(computeSMA(bars, 50));
+    ma200.setData(computeSMA(bars, 200));
     chart.timeScale().fitContent();
 
-    chartState[symbol] = { chart, series, box, tf: tf || '1h', setup: pickChartSetup(symbol) };
+    chartState[symbol] = { chart, series, ma50, ma200, box, tf: useTf, bars, setup: pickChartSetup(symbol) };
+    applyMarkers(symbol);
     const overlay = () => positionOverlay(symbol);
     chart.timeScale().subscribeVisibleLogicalRangeChange(overlay);
     const ro = new ResizeObserver(overlay);
@@ -1448,16 +1560,48 @@ if (localStorage.getItem('dm_dev_theme') === 'light') document.body.classList.ad
         timeScale: { borderColor: c.border },
       });
       if (st.series) st.series.applyOptions({ upColor: c.green, downColor: c.accent, wickUpColor: c.green, wickDownColor: c.accent });
+      if (st.ma50) st.ma50.applyOptions({ color: c.blue });
+      if (st.ma200) st.ma200.applyOptions({ color: c.yellow });
+      applyMarkers(symbol);
       positionOverlay(symbol);
     });
+  }
+
+  function removeChartCard(symbol){
+    destroyChart(symbol);
+    const card = document.querySelector(`#chartGrid .chartcard[data-symbol="${symbol}"]`);
+    if (card) card.remove();
+    const grid = document.getElementById('chartGrid');
+    if (grid && !grid.querySelector('.chartcard')) grid.innerHTML = '<div class="empty">Tidak ada posisi open/pending saat ini — pair yang sudah closed/canceled tidak lagi ditampilkan di sini (cek riwayatnya di tab Dashboard).</div>';
+  }
+
+  // Polling ringan (bukan tick-by-tick asli — sudah dicoba live-stream langsung ke
+  // Deriv WS, tapi endpoint tick live-nya menolak symbol forex untuk app_id publik
+  // yang dipakai proyek ini, konsisten dengan catatan kerapuhan app_id 1089 di
+  // _ohlcv_fetch.js; ticks_history/candle historis-nya sendiri tetap normal). Ini
+  // jalur yang TERBUKTI jalan: baca ulang snapshot candle server setiap ~20 detik
+  // supaya candle terakhir ikut bergerak tanpa perlu klik refresh manual.
+  const CHART_POLL_MS = 20000;
+  let chartPollTimer = null;
+  function stopChartPolling(){ if (chartPollTimer) { clearInterval(chartPollTimer); chartPollTimer = null; } }
+  function startChartPolling(){
+    stopChartPolling();
+    chartPollTimer = setInterval(() => {
+      if (document.hidden) return;
+      Object.keys(chartState).forEach(symbol => fetchAndApplyBars(symbol));
+    }, CHART_POLL_MS);
   }
 
   let chartsBuilt = false;
   async function ensureChartsBuilt(){
     const grid = document.getElementById('chartGrid');
     if (!getSecret()) { grid.innerHTML = '<div class="empty">Login dulu untuk memuat chart.</div>'; return; }
-    const pairs = ACTIVE_FILTER_PAIRS.length ? ACTIVE_FILTER_PAIRS.map(sym => ({ symbol: sym, label: symLabel(sym) })) : PAIRS;
-    if (!pairs.length) { grid.innerHTML = '<div class="empty">Belum ada pair aktif — buka tab Dashboard dulu (klik Refresh) untuk memuat daftar pair.</div>'; return; }
+    const all = ACTIVE_FILTER_PAIRS.length ? ACTIVE_FILTER_PAIRS.map(sym => ({ symbol: sym, label: symLabel(sym) })) : PAIRS;
+    // Hanya pair yang BENAR-BENAR open/pending — yang sudah tp/sl/canceled tidak perlu
+    // kartu chart (riwayatnya sudah ada di tabel Riwayat Setup, tab ini murni monitoring
+    // posisi hidup, bukan arsip).
+    const pairs = all.filter(p => { const s = pickChartSetup(p.symbol); return s && (s.status === 'open' || s.status === 'pending'); });
+    if (!pairs.length) { grid.innerHTML = '<div class="empty">Tidak ada posisi open/pending saat ini.</div>'; chartsBuilt = true; return; }
     grid.innerHTML = pairs.map(buildChartCard).join('');
     grid.querySelectorAll('.chart-tf').forEach(tfEl => {
       tfEl.addEventListener('click', e => {
@@ -1470,6 +1614,7 @@ if (localStorage.getItem('dm_dev_theme') === 'light') document.body.classList.ad
     });
     chartsBuilt = true;
     for (const p of pairs) renderChartCard(p.symbol, '1h');
+    startChartPolling();
   }
   document.getElementById('btnRefreshCharts').addEventListener('click', () => { chartsBuilt = false; ensureChartsBuilt(); });
 
