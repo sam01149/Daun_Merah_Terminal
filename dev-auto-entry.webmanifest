@@ -1,0 +1,19 @@
+{
+  "name": "Auto-Entry Dev Console",
+  "short_name": "AutoEntry Dev",
+  "description": "Konsol developer eksperimen Professional LLM Trader (Plan U) — terpisah dari aplikasi publik Daun Merah, tidak ditautkan dari sana.",
+  "start_url": "./dev-auto-entry.html",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "background_color": "#070a08",
+  "theme_color": "#070a08",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

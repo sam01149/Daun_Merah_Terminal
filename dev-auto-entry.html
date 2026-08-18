@@ -13,16 +13,40 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="robots" content="noindex, nofollow">
 <title>Auto-Entry Dev Console</title>
+<!-- Shortcut "Add to Home Screen" (2026-08-18, permintaan user: buka cepat dari HP/desktop)
+     — manifest & meta app SENDIRI, TERPISAH dari manifest.json aplikasi publik supaya
+     install-nya tidak numpuk/collide dengan ikon Daun Merah utama, dan supaya identitas
+     "ini konsol dev, bukan app publik" tetap jelas di layar utama. Halaman ini TETAP
+     TIDAK ditautkan dari index.html (isolasi senyap U-7 dipertahankan) — shortcut hanya
+     bisa dibuat oleh yang sudah tahu URL langsungnya, sama seperti sebelumnya. -->
+<link rel="manifest" href="dev-auto-entry.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="brand/apple-touch-icon.png">
+<meta name="theme-color" content="#070a08">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="AutoEntry Dev">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;700;800&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet">
 <style>
 :root{
-  --bg:#070a08; --panel:#0e1310; --border:#1c2420; --fg:#e8e4d9; --muted:#7a8079;
+  --bg:#070a08; --panel:#0e1310; --panel2:#121712; --border:#1c2420; --fg:#e8e4d9; --muted:#7a8079;
   --accent:#a83226; --accent-dim:#6b1f16; --green:#3ea86b; --yellow:#c9a13b; --blue:#38bdf8;
-  --fg-rgb:232,228,217; --accent-rgb:168,50,38;
+  --fg-rgb:232,228,217; --accent-rgb:168,50,38; --green-rgb:62,168,107;
+  --shadow:0 1px 2px rgba(0,0,0,.35), 0 8px 20px -12px rgba(0,0,0,.5);
+}
+/* Tema terang (2026-08-18, revamp dashboard) — dipicu class .light-theme di <body>,
+   pola yang sama persis dengan index.html (body.classList.contains('light-theme'))
+   supaya konsisten lintas halaman kalau nanti disatukan. */
+body.light-theme{
+  --bg:#f4f2ec; --panel:#ffffff; --panel2:#faf9f5; --border:#e0ddd2; --fg:#211f1a; --muted:#84806f;
+  --accent:#a8321f; --accent-dim:#f1d9d3; --green:#1f8a52; --yellow:#96700f; --blue:#0d76a8;
+  --fg-rgb:33,31,26; --accent-rgb:168,50,31; --green-rgb:31,138,82;
+  --shadow:0 1px 2px rgba(30,25,15,.06), 0 8px 20px -14px rgba(30,25,15,.18);
 }
 *{box-sizing:border-box;}
-body{background:var(--bg);color:var(--fg);font-family:'DM Mono',monospace;font-size:12px;margin:0;padding:0;line-height:1.5;}
+body{background:var(--bg);color:var(--fg);font-family:'DM Mono',monospace;font-size:12px;margin:0;padding:0;line-height:1.5;transition:background .15s ease,color .15s ease;}
 h1,h2,h3{font-family:'Syne',sans-serif;font-weight:800;margin:0 0 8px;}
 h1{font-size:18px;color:var(--accent);}
 h2{font-size:13px;color:var(--fg);letter-spacing:.02em;margin-top:0;}
@@ -30,19 +54,23 @@ a{color:var(--blue);}
 .wrap{max-width:1180px;margin:0 auto;padding:16px;}
 header{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border);padding-bottom:12px;margin-bottom:16px;flex-wrap:wrap;gap:8px;}
 header .sub{font-size:9px;color:var(--muted);letter-spacing:.1em;text-transform:uppercase;margin-top:2px;}
-.secret-status{font-size:10px;color:var(--muted);display:flex;align-items:center;gap:8px;}
+.secret-status{font-size:10px;color:var(--muted);display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
 .dot{width:7px;height:7px;border-radius:50%;background:var(--muted);display:inline-block;}
 .dot.ok{background:var(--green);}
 .dot.bad{background:var(--accent);}
-button,input,select,textarea{font-family:'DM Mono',monospace;font-size:11px;background:var(--panel);color:var(--fg);border:1px solid var(--border);border-radius:3px;padding:6px 8px;}
-button{cursor:pointer;color:var(--fg);background:rgba(var(--fg-rgb),.04);}
+button,input,select,textarea{font-family:'DM Mono',monospace;font-size:11px;background:var(--panel);color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:6px 8px;}
+button{cursor:pointer;color:var(--fg);background:rgba(var(--fg-rgb),.04);transition:border-color .12s ease,color .12s ease,background .12s ease;}
 button:hover{border-color:var(--accent);color:var(--accent);}
 button:disabled{opacity:.4;cursor:not-allowed;}
 button.primary{background:var(--accent-dim);border-color:var(--accent);color:#fff;}
+body.light-theme button.primary{color:var(--accent);}
 button.primary:hover{background:var(--accent);color:#fff;}
 input,select,textarea{width:100%;}
 label{display:block;font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px;margin-top:8px;}
-.card{background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:12px 14px;margin-bottom:14px;scroll-margin-top:10px;}
+.card{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:12px 14px;margin-bottom:14px;scroll-margin-top:10px;box-shadow:var(--shadow);}
+.themebtn{display:inline-flex;align-items:center;gap:5px;}
+.themebtn svg{width:12px;height:12px;stroke:var(--muted);fill:none;stroke-width:1.5;}
+.themebtn:hover svg{stroke:var(--accent);}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;}
 /* Label kelompok di dalam satu .grid (2026-08-08, rapikan dashboard dev) — beda dari
    .stat (kotak angka): ini caption teks murni, dipakai buat misahin beberapa kelompok
@@ -53,12 +81,14 @@ label{display:block;font-size:9px;color:var(--muted);text-transform:uppercase;le
 .quicknav{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px;}
 .quicknav a{font-size:9.5px;color:var(--muted);text-decoration:none;padding:4px 9px;border:1px solid var(--border);border-radius:12px;background:rgba(var(--fg-rgb),.02);}
 .quicknav a:hover{color:var(--accent);border-color:var(--accent);}
-.stat{background:rgba(var(--fg-rgb),.02);border:1px solid var(--border);border-radius:4px;padding:8px 10px;}
+.stat{background:rgba(var(--fg-rgb),.02);border:1px solid var(--border);border-radius:5px;padding:8px 10px;transition:border-color .12s ease;}
+.stat:hover{border-color:rgba(var(--fg-rgb),.25);}
 .stat .v{font-size:17px;font-weight:500;color:var(--fg);}
 .stat .l{font-size:8.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-top:2px;}
 .stat .v.green{color:var(--green);} .stat .v.red{color:var(--accent);} .stat .v.yellow{color:var(--yellow);}
 .symbols{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px;}
-.symcard{background:rgba(var(--fg-rgb),.02);border:1px solid var(--border);border-radius:5px;padding:10px;}
+.symcard{background:rgba(var(--fg-rgb),.02);border:1px solid var(--border);border-radius:6px;padding:10px;transition:border-color .12s ease;}
+.symcard:hover{border-color:rgba(var(--accent-rgb),.4);}
 .symcard h3{font-size:11px;color:var(--accent);margin-bottom:6px;}
 .symcard .row{display:flex;justify-content:space-between;font-size:10.5px;padding:2px 0;color:var(--muted);}
 .symcard .row b{color:var(--fg);font-weight:500;}
@@ -85,7 +115,8 @@ tr:hover td{background:rgba(var(--fg-rgb),.02);}
 .badge-btn.all{background:rgba(var(--fg-rgb),.07);color:var(--muted);}
 .badge-btn.all.active{border-color:var(--fg);color:var(--fg);}
 .tabs{display:flex;gap:4px;border-bottom:1px solid var(--border);margin-bottom:12px;flex-wrap:wrap;}
-.tab{padding:7px 12px;font-size:10.5px;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent;}
+.tab{padding:7px 12px;font-size:10.5px;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent;transition:color .12s ease,border-color .12s ease;}
+.tab:hover{color:var(--fg);}
 .tab.active{color:var(--accent);border-bottom-color:var(--accent);}
 .pane{display:none;}
 .pane.active{display:block;}
@@ -132,9 +163,50 @@ tr.rowdetail .row{display:flex;gap:8px;font-size:10px;padding:2px 0;color:var(--
 tr.rowdetail .row span{min-width:170px;flex-shrink:0;}
 tr.rowdetail .row b{color:var(--fg);font-weight:500;white-space:normal;word-break:break-word;}
 tr.rowdetail .longtext{white-space:pre-wrap;font-size:10.5px;line-height:1.55;color:var(--fg);padding:2px 0 6px;word-break:break-word;}
+
+/* ── Chart Posisi (2026-08-18, revamp dashboard) ──────────────────────────────
+   Candle asli (Lightweight Charts, CDN, MIT — bukan tv.js embed widget yang dipakai
+   index.html/TEK: widget itu cuma bisa dikonfigurasi via constructor, TIDAK ada API JS
+   untuk menggambar shape/line custom berbasis data kita sendiri, lihat catatan di
+   ATURAN routing dokumentasi). Zona entry/SL/TP digambar sendiri di atas kanvas pakai
+   overlay <div> yang posisinya dihitung dari priceToCoordinate() milik candle series —
+   supaya "kotak posisi" (mirip Long/Short Position tool TradingView) ikut update pas
+   pan/zoom, bukan cuma gambar statis. */
+.chartgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(380px,1fr));gap:12px;}
+.chartcard{background:var(--panel2);border:1px solid var(--border);border-radius:8px;padding:10px 12px 12px;box-shadow:var(--shadow);}
+.chartcard-head{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:6px;flex-wrap:wrap;}
+.chartcard-head h3{font-family:'Syne',sans-serif;font-size:12.5px;font-weight:800;color:var(--fg);margin:0;}
+.chartcard-meta{font-size:9.5px;color:var(--muted);margin-top:2px;display:flex;gap:8px;flex-wrap:wrap;}
+.chartcard-meta b{color:var(--fg);font-weight:500;}
+.chartcard-meta .up{color:var(--green);} .chartcard-meta .down{color:var(--accent);}
+.chart-tf{display:flex;gap:3px;}
+.chart-tf button{padding:3px 7px;font-size:9.5px;}
+.chart-tf button.active{background:var(--accent-dim);border-color:var(--accent);color:#fff;}
+body.light-theme .chart-tf button.active{color:var(--accent);}
+.chartbox{position:relative;height:260px;border-radius:5px;overflow:hidden;background:var(--bg);}
+.chartbox .lwc-host{position:absolute;inset:0;}
+.chartbox .zoneband{position:absolute;left:0;right:56px;pointer-events:none;opacity:.16;z-index:5;}
+.chartbox .zoneband.tp{background:var(--green);}
+.chartbox .zoneband.sl{background:var(--accent);}
+.chartbox .zoneline{position:absolute;left:0;right:0;height:1px;pointer-events:none;z-index:6;}
+.chartbox .zoneline .cap{position:absolute;right:2px;top:-7px;font-size:8.5px;padding:1px 4px;border-radius:2px;font-family:'DM Mono',monospace;white-space:nowrap;}
+.chartbox .zoneline.tp{background:rgba(var(--green-rgb),.55);}
+.chartbox .zoneline.tp .cap{background:var(--green);color:#04140b;}
+.chartbox .zoneline.sl{background:rgba(var(--accent-rgb),.55);}
+.chartbox .zoneline.sl .cap{background:var(--accent);color:#fff;}
+.chartbox .zoneline.entry{background:rgba(var(--fg-rgb),.4);border-top:1px dashed rgba(var(--fg-rgb),.5);}
+.chartbox .zoneline.entry .cap{background:rgba(var(--fg-rgb),.85);color:var(--bg);}
+.chartbox .chart-msg{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:10.5px;text-align:center;padding:0 16px;}
+.chartcard.noposition .chartbox{opacity:.85;}
+.chart-toolbar{display:flex;justify-content:flex-end;margin-bottom:10px;}
 </style>
 </head>
 <body>
+<script>
+// Terapkan tema TERSIMPAN sebelum <body> dirender supaya tidak ada kedipan
+// gelap->terang (dibaca sinkron, script inline paling awal di <body>).
+if (localStorage.getItem('dm_dev_theme') === 'light') document.body.classList.add('light-theme');
+</script>
 
 <div id="gate">
   <div class="box">
@@ -153,6 +225,10 @@ tr.rowdetail .longtext{white-space:pre-wrap;font-size:10.5px;line-height:1.55;co
       <div class="sub">Plan U — Eksperimen Paper-Trading (developer-only)</div>
     </div>
     <div class="secret-status">
+      <button class="themebtn" id="btnThemeToggle" title="Ganti tema terang/gelap">
+        <svg viewBox="0 0 16 16" id="themeIcon"><circle cx="8" cy="8" r="3.4"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.05 3.05l1.4 1.4M11.55 11.55l1.4 1.4M3.05 12.95l1.4-1.4M11.55 4.45l1.4-1.4"/></svg>
+        <span id="themeLabel">Gelap</span>
+      </button>
       <span class="dot" id="notifDot"></span>
       <button id="btnNotifToggle">Notif TP/SL: off</button>
       <span class="dot" id="secretDot"></span>
@@ -163,6 +239,7 @@ tr.rowdetail .longtext{white-space:pre-wrap;font-size:10.5px;line-height:1.55;co
 
   <div class="tabs">
     <div class="tab active" data-pane="dash">Dashboard</div>
+    <div class="tab" data-pane="charts">Chart Posisi</div>
     <div class="tab" data-pane="trigger">Trigger Analisa</div>
     <div class="tab" data-pane="override">Setup Override</div>
     <div class="tab" data-pane="review">Position Review</div>
@@ -264,6 +341,14 @@ tr.rowdetail .longtext{white-space:pre-wrap;font-size:10.5px;line-height:1.55;co
       </div>
       <div class="pager" id="recentPager"></div>
     </div>
+  </div>
+
+  <!-- ── CHART POSISI ── -->
+  <div class="pane" id="pane-charts">
+    <div class="chart-toolbar">
+      <button id="btnRefreshCharts">Refresh Semua Chart</button>
+    </div>
+    <div class="chartgrid" id="chartGrid"><div class="empty">Login dulu untuk memuat chart.</div></div>
   </div>
 
   <!-- ── TRIGGER ANALISA ── -->
@@ -530,6 +615,7 @@ tr.rowdetail .longtext{white-space:pre-wrap;font-size:10.5px;line-height:1.55;co
       document.querySelectorAll('.pane').forEach(x => x.classList.remove('active'));
       t.classList.add('active');
       document.getElementById('pane-' + t.dataset.pane).classList.add('active');
+      if (t.dataset.pane === 'charts' && !chartsBuilt) ensureChartsBuilt();
     });
   });
 
@@ -1048,6 +1134,14 @@ tr.rowdetail .longtext{white-space:pre-wrap;font-size:10.5px;line-height:1.55;co
     ACTIVE_FILTER_PAIRS = Object.keys(json.symbols || {});
     POLICY_EPOCHS = Array.isArray(json.policy_epochs) ? json.policy_epochs : [];
     renderRecent(json.recent);
+    // Setup yang lagi ditampilkan di tab Chart Posisi bisa saja sudah pindah status
+    // (mis. pending -> open, atau kena TP/SL) — sinkronkan overlay entry/SL/TP tanpa
+    // fetch ulang candle (chartsBuilt/chartState/pickChartSetup/positionOverlay
+    // didefinisikan di bawah fungsi ini tapi tetap bisa diakses di sini karena closure
+    // atas scope IIFE yang sama, bukan dipanggil sebelum deklarasinya jalan).
+    if (typeof chartsBuilt !== 'undefined' && chartsBuilt) {
+      Object.keys(chartState).forEach(symbol => { chartState[symbol].setup = pickChartSetup(symbol); positionOverlay(symbol); });
+    }
   }
   document.getElementById('btnRefresh').addEventListener('click', loadDashboard);
 
@@ -1146,6 +1240,238 @@ tr.rowdetail .longtext{white-space:pre-wrap;font-size:10.5px;line-height:1.55;co
     await api('friday_tighten', { method: 'POST' });
     await loadDashboard();
   });
+
+  // ── Tema terang/gelap (2026-08-18, revamp dashboard) — class body.light-theme,
+  // pola sama dengan index.html supaya konsisten. Tersimpan per-browser (localStorage
+  // TERPISAH dari tema index.html — dev console ini memang isolasi senyap U-7).
+  const THEME_LS = 'dm_dev_theme';
+  function applyTheme(light){
+    document.body.classList.toggle('light-theme', light);
+    document.getElementById('themeLabel').textContent = light ? 'Terang' : 'Gelap';
+    restyleAllCharts();
+  }
+  document.getElementById('btnThemeToggle').addEventListener('click', () => {
+    const light = !document.body.classList.contains('light-theme');
+    localStorage.setItem(THEME_LS, light ? 'light' : 'dark');
+    applyTheme(light);
+  });
+  document.getElementById('themeLabel').textContent = document.body.classList.contains('light-theme') ? 'Terang' : 'Gelap';
+
+  // ── Chart Posisi ── Lightweight Charts (CDN, MIT, dibuat TradingView sendiri) —
+  // BUKAN tv.js embed widget yang dipakai index.html/TEK: widget itu cuma bisa
+  // dikonfigurasi lewat constructor, tidak ada API JS untuk menggambar shape/line
+  // custom dari data kita. Di sini candle asli (action=ohlcv_chart, baca snapshot
+  // Redis yang sama dengan pipeline auto-entry) + zona entry/SL/TP digambar sendiri
+  // via overlay <div> yang posisinya dihitung dari series.priceToCoordinate() —
+  // ikut update saat pan/zoom, mirip Position Tool TradingView.
+  let lwcLoaded = false, lwcLoading = null;
+  function loadLWC(){
+    if (lwcLoaded && window.LightweightCharts) return Promise.resolve();
+    if (lwcLoading) return lwcLoading;
+    lwcLoading = new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      // ^4 (bukan latest) — v5 mengganti API addCandlestickSeries() jadi addSeries(),
+      // pin major version supaya tidak diam-diam patah kalau CDN naik versi.
+      s.src = 'https://unpkg.com/lightweight-charts@^4.1.0/dist/lightweight-charts.standalone.production.js';
+      s.onload = () => { lwcLoaded = true; resolve(); };
+      s.onerror = () => reject(new Error('Gagal memuat library chart dari CDN (cek koneksi internet)'));
+      document.head.appendChild(s);
+    });
+    return lwcLoading;
+  }
+
+  // SENGAJA sama persis dengan helper `nums()` server (api/admin.js, _evaluateSetups
+  // dkk) — [\d.]+ TANPA `-?` di depan. Field ini selalu harga positif; "-" di antara
+  // dua angka zona entry (mis. "1.1380-1.1390") itu PEMISAH rentang, bukan tanda minus
+  // — regex dengan `-?` di depan salah menelan minus itu jadi bagian angka kedua.
+  function parseNums(str){
+    if (str == null) return [];
+    const m = String(str).match(/[\d.]+/g);
+    return m ? m.map(Number).filter(n => !isNaN(n)) : [];
+  }
+
+  // Setup paling relevan buat dicharting per pair: open > pending > (kalau tidak ada
+  // posisi aktif) yang paling baru dibuat, supaya kartu tidak kosong walau lagi flat.
+  function pickChartSetup(symbol){
+    const rows = allRecent.filter(s => s.symbol === symbol);
+    if (!rows.length) return null;
+    const prio = st => st === 'open' ? 0 : st === 'pending' ? 1 : 2;
+    return rows.slice().sort((a, b) => {
+      const pa = prio(a.status), pb = prio(b.status);
+      return pa !== pb ? pa - pb : (b.ts || 0) - (a.ts || 0);
+    })[0];
+  }
+
+  function chartColors(){
+    const cs = getComputedStyle(document.body);
+    const g = name => cs.getPropertyValue(name).trim();
+    return { bg: g('--bg'), fg: g('--fg'), muted: g('--muted'), border: g('--border'), green: g('--green'), accent: g('--accent') };
+  }
+
+  const chartState = {}; // symbol -> { chart, series, box, tf, setup, ro }
+  function chartBoxId(symbol){ return 'chartcard_' + symbol.replace(/[^a-zA-Z0-9]/g, '_') + '_box'; }
+  function destroyChart(symbol){
+    const st = chartState[symbol];
+    if (!st) return;
+    if (st.ro) { try { st.ro.disconnect(); } catch(e){} }
+    if (st.chart) { try { st.chart.remove(); } catch(e){} }
+    delete chartState[symbol];
+  }
+
+  function buildChartCard(pair){
+    const symbol = pair.symbol, label = pair.label || symLabel(symbol);
+    const setup = pickChartSetup(symbol);
+    const hasPos = setup && (setup.status === 'open' || setup.status === 'pending');
+    const metaHtml = setup
+      ? `<span class="${setup.bias === 'bullish' ? 'up' : 'down'}"><b>${esc(setup.bias || '-')}</b></span>
+         <span class="badge ${esc(setup.status)}">${esc(setup.status)}</span>
+         <span>Entry <b>${esc(setup.entry_zone)}</b></span>
+         <span>SL <b>${esc(setup.sl)}</b></span>
+         <span>TP <b>${esc(setup.tp)}</b></span>`
+      : `<span>Belum ada setup tercatat untuk pair ini.</span>`;
+    return `<div class="chartcard${hasPos ? '' : ' noposition'}" data-symbol="${esc(symbol)}">
+      <div class="chartcard-head">
+        <div>
+          <h3>${esc(label)}</h3>
+          <div class="chartcard-meta">${metaHtml}</div>
+        </div>
+        <div class="chart-tf" data-symbol="${esc(symbol)}">
+          <button data-tf="1h" class="active">1H</button>
+          <button data-tf="4h">4H</button>
+          <button data-tf="1d">1D</button>
+        </div>
+      </div>
+      <div class="chartbox" id="${chartBoxId(symbol)}"><div class="chart-msg">Memuat chart...</div></div>
+    </div>`;
+  }
+
+  function positionOverlay(symbol){
+    const st = chartState[symbol];
+    if (!st || !st.chart || !st.series) return;
+    const { box, series, setup } = st;
+    box.querySelectorAll('.zoneband, .zoneline').forEach(el => el.remove());
+    if (!setup) return;
+    const entries = parseNums(setup.entry_zone);
+    const sl = parseNums(setup.sl)[0];
+    const tp = parseNums(setup.tp)[0];
+    if (!entries.length || sl == null || isNaN(sl) || tp == null || isNaN(tp)) return;
+    const eLo = Math.min(...entries), eHi = Math.max(...entries);
+    const entryMid = (eLo + eHi) / 2;
+    const yEntry = series.priceToCoordinate(entryMid);
+    const ySl = series.priceToCoordinate(sl);
+    const yTp = series.priceToCoordinate(tp);
+    if (yEntry == null || ySl == null || yTp == null) return;
+    const band = (top, height, cls) => {
+      const d = document.createElement('div');
+      d.className = 'zoneband ' + cls;
+      d.style.top = Math.min(top, top + height) + 'px';
+      d.style.height = Math.abs(height) + 'px';
+      box.appendChild(d);
+    };
+    band(yTp, yEntry - yTp, 'tp');
+    band(yEntry, ySl - yEntry, 'sl');
+    const line = (yPos, cls, text) => {
+      const d = document.createElement('div');
+      d.className = 'zoneline ' + cls;
+      d.style.top = yPos + 'px';
+      d.innerHTML = `<span class="cap">${esc(text)}</span>`;
+      box.appendChild(d);
+    };
+    line(yTp, 'tp', `TP ${tp}`);
+    line(ySl, 'sl', `SL ${sl}`);
+    line(yEntry, 'entry', `Entry ${eLo === eHi ? eLo : eLo + '–' + eHi}`);
+  }
+
+  async function renderChartCard(symbol, tf){
+    const box = document.getElementById(chartBoxId(symbol));
+    if (!box) return;
+    destroyChart(symbol);
+    box.innerHTML = '<div class="chart-msg">Memuat chart...</div>';
+    try { await loadLWC(); } catch (e) { box.innerHTML = `<div class="chart-msg">${esc(e.message)}</div>`; return; }
+    const { json, errMsg } = await api('ohlcv_chart', { query: { symbol, tf: tf || '1h' }, silent: true });
+    if (errMsg || !json || json.error) {
+      box.innerHTML = `<div class="chart-msg">Gagal memuat candle: ${esc(errMsg || json.error)}</div>`;
+      return;
+    }
+    if (!Array.isArray(json.candles) || !json.candles.length) {
+      box.innerHTML = '<div class="chart-msg">Candle belum tersedia untuk pair/timeframe ini.</div>';
+      return;
+    }
+    box.innerHTML = '<div class="lwc-host"></div>';
+    const host = box.querySelector('.lwc-host');
+    const c = chartColors();
+    const chart = LightweightCharts.createChart(host, {
+      layout: { background: { color: c.bg }, textColor: c.muted, fontFamily: "'DM Mono',monospace", fontSize: 10 },
+      grid: { vertLines: { color: c.border }, horzLines: { color: c.border } },
+      rightPriceScale: { borderColor: c.border },
+      timeScale: { borderColor: c.border, timeVisible: true, secondsVisible: false },
+      crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+      handleScroll: { mouseWheel: false, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: false },
+      handleScale: { mouseWheel: false, pinch: true, axisPressedMouseMove: true },
+    });
+    const series = chart.addCandlestickSeries({
+      upColor: c.green, downColor: c.accent, borderVisible: false, wickUpColor: c.green, wickDownColor: c.accent,
+    });
+    const bars = json.candles
+      .filter(b => b && typeof b.t === 'number' && typeof b.o === 'number')
+      .map(b => ({ time: b.t > 2e10 ? Math.round(b.t / 1000) : b.t, open: b.o, high: b.h, low: b.l, close: b.c }))
+      .sort((a, b) => a.time - b.time);
+    series.setData(bars);
+    chart.timeScale().fitContent();
+
+    chartState[symbol] = { chart, series, box, tf: tf || '1h', setup: pickChartSetup(symbol) };
+    const overlay = () => positionOverlay(symbol);
+    chart.timeScale().subscribeVisibleLogicalRangeChange(overlay);
+    const ro = new ResizeObserver(overlay);
+    ro.observe(box);
+    chartState[symbol].ro = ro;
+    // fitContent() menyesuaikan price scale secara internal-async — priceToCoordinate()
+    // yang dipanggil terlalu dini (sebelum layout itu selesai) balikin null diam-diam,
+    // jadi overlay tidak pernah muncul kalau cuma diandalkan 1x rAF. Beberapa percobaan
+    // pendek di sini menutup celah timing itu; subscribeVisibleLogicalRangeChange di
+    // atas tetap menjaga overlay ikut update pas user pan/zoom setelahnya.
+    overlay();
+    requestAnimationFrame(overlay);
+    setTimeout(overlay, 60);
+    setTimeout(overlay, 250);
+  }
+
+  function restyleAllCharts(){
+    const c = chartColors();
+    Object.keys(chartState).forEach(symbol => {
+      const st = chartState[symbol];
+      if (!st.chart) return;
+      st.chart.applyOptions({
+        layout: { background: { color: c.bg }, textColor: c.muted },
+        grid: { vertLines: { color: c.border }, horzLines: { color: c.border } },
+        rightPriceScale: { borderColor: c.border },
+        timeScale: { borderColor: c.border },
+      });
+      if (st.series) st.series.applyOptions({ upColor: c.green, downColor: c.accent, wickUpColor: c.green, wickDownColor: c.accent });
+      positionOverlay(symbol);
+    });
+  }
+
+  let chartsBuilt = false;
+  async function ensureChartsBuilt(){
+    const grid = document.getElementById('chartGrid');
+    if (!getSecret()) { grid.innerHTML = '<div class="empty">Login dulu untuk memuat chart.</div>'; return; }
+    const pairs = ACTIVE_FILTER_PAIRS.length ? ACTIVE_FILTER_PAIRS.map(sym => ({ symbol: sym, label: symLabel(sym) })) : PAIRS;
+    if (!pairs.length) { grid.innerHTML = '<div class="empty">Belum ada pair aktif — buka tab Dashboard dulu (klik Refresh) untuk memuat daftar pair.</div>'; return; }
+    grid.innerHTML = pairs.map(buildChartCard).join('');
+    grid.querySelectorAll('.chart-tf').forEach(tfEl => {
+      tfEl.addEventListener('click', e => {
+        const btn = e.target.closest('button[data-tf]');
+        if (!btn) return;
+        tfEl.querySelectorAll('button').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        renderChartCard(tfEl.dataset.symbol, btn.dataset.tf);
+      });
+    });
+    chartsBuilt = true;
+    for (const p of pairs) renderChartCard(p.symbol, '1h');
+  }
+  document.getElementById('btnRefreshCharts').addEventListener('click', () => { chartsBuilt = false; ensureChartsBuilt(); });
 
   if (getSecret()) loadDashboard();
 })();

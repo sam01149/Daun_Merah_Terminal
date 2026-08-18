@@ -64,6 +64,7 @@ const PUBLIC_ACTION_LIMITS = {
   fundamental_refresh:  10,
   fundamental_analysis:  5,
   ohlcv_read:           30,
+  ohlcv_chart:          30,
   ohlcv_analyze:         5,
   ohlcv_critic:          3,
   pre_entry_check:       3,
@@ -101,6 +102,7 @@ module.exports = async function handler(req, res) {
   if (action === 'gdpnow')             return gdpnowHandler(req, res);
   if (action === 'ohlcv_sync')         return ohlcvSyncHandler(req, res);
   if (action === 'ohlcv_read')         return ohlcvReadHandler(req, res);
+  if (action === 'ohlcv_chart')        return ohlcvChartHandler(req, res);
   if (action === 'ohlcv_analyze')      return ohlcvAnalyzeHandler(req, res);
   if (action === 'ohlcv_critic')       return ohlcvCriticHandler(req, res);
   if (action === 'pre_entry_check')    return preEntryCheckHandler(req, res);
@@ -111,7 +113,7 @@ module.exports = async function handler(req, res) {
   if (action === 'friday_tighten')     return fridayTightenHandler(req, res);
   if (action === 'polymarket')         return polymarketHandler(req, res);
   if (action === 'push_subscribe_dev') return pushSubscribeDevHandler(req, res);
-  return res.status(400).json({ error: 'Missing ?action= — use health, redis-keys, admin-prompts, push, inflation_staleness_check, fundamental_get, fundamental_seed, fundamental_refresh, fundamental_analysis, journal_import, circuit-reset, circuit-status, deepseek_balance, gdpnow, ohlcv_sync, ohlcv_read, ohlcv_analyze, ohlcv_critic, pre_entry_check, ohlcv_dashboard, setup_stats, setup_override, position_review, friday_tighten, polymarket, or push_subscribe_dev' });
+  return res.status(400).json({ error: 'Missing ?action= — use health, redis-keys, admin-prompts, push, inflation_staleness_check, fundamental_get, fundamental_seed, fundamental_refresh, fundamental_analysis, journal_import, circuit-reset, circuit-status, deepseek_balance, gdpnow, ohlcv_sync, ohlcv_read, ohlcv_chart, ohlcv_analyze, ohlcv_critic, pre_entry_check, ohlcv_dashboard, setup_stats, setup_override, position_review, friday_tighten, polymarket, or push_subscribe_dev' });
 };
 
 // ── Shared Redis helper ────────────────────────────────────────────────────────
@@ -2921,6 +2923,30 @@ async function ohlcvReadHandler(req, res) {
   try {
     return res.status(200).json(await loadOhlcvData(symbol, label || symbol));
   } catch(e) {
+    return res.status(500).json({ error: e.message });
+  }
+}
+
+// Candle mentah (bukan metrik turunan seperti ohlcv_read/computeOhlcvMetrics) untuk
+// chart Lightweight Charts di dev-auto-entry.html (revamp dashboard Professional LLM
+// Trader, 2026-08-18) — baca langsung snapshot `ohlcv:<symbol>:<tf>` yang SUDAH ada di
+// Redis (dipopulasi ohlcv_sync cron + refresh-on-read di bawah), tanpa fetch/hitung baru.
+// Same throttled-refresh pattern dengan loadOhlcvData supaya candle tidak basi kalau
+// tab chart baru dibuka lama setelah sync cron terakhir.
+async function ohlcvChartHandler(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Cache-Control', 'no-cache');
+  if (req.method === 'OPTIONS') return res.status(204).end();
+  const { symbol } = req.query;
+  if (!symbol) return res.status(400).json({ error: 'symbol required' });
+  const tf = ['1h', '4h', '1d'].includes(req.query.tf) ? req.query.tf : '1h';
+  try {
+    try { await refreshOhlcvFromYahoo(symbol); } catch (e) {
+      console.warn(`ohlcv_chart: fresh fetch failed for ${symbol}, using snapshot:`, e.message);
+    }
+    const raw = await redisCmd('GET', `ohlcv:${symbol}:${tf}`);
+    return res.status(200).json({ symbol, tf, candles: raw ? JSON.parse(raw) : [] });
+  } catch (e) {
     return res.status(500).json({ error: e.message });
   }
 }
