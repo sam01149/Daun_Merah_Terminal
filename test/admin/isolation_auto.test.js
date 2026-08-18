@@ -212,6 +212,7 @@ test('PLAN U-3 lanjutan: auto=1 dengan PENDING lama bias SEARAH di symbol sama -
       rr: 2, horizon_days: 3, model: 'deepseek-v4-flash', ts: 111, status: 'pending',
       source: 'auto', alignment: null, loss_label: null, label_reason: null, label_by: null,
       intervention: null, managed_status: null, managed_closed_t: null, review_count: 0,
+      commentary: 'Komentar generasi PERTAMA (harus diganti setelah refine).',
     };
     const store = makeStore({
       'ohlcv_fresh:GBPUSD=X': '1',
@@ -235,6 +236,14 @@ test('PLAN U-3 lanjutan: auto=1 dengan PENDING lama bias SEARAH di symbol sama -
       assert.equal(item.status, 'pending', 'status tetap pending, tidak di-cancel');
       assert.equal(item.entry_zone, '1.2795-1.2805', 'entry_zone di-update ke level analisa terbaru');
       assert.equal(item.refined_count, 1, 'refined_count bertambah 1');
+      // BUG DITEMUKAN & DIFIX (2026-08-18): commentary dulu tidak ikut di-refresh saat
+      // refine-in-place — dashboard bisa menampilkan narasi generasi lama yang levelnya
+      // sudah tidak sama dengan entry/sl/tp yang benar-benar live.
+      assert.equal(
+        item.commentary,
+        'Paragraf komentar singkat untuk kebutuhan test isolasi auto-entry.',
+        'commentary ikut di-refresh ke narasi generasi terbaru saat refine-in-place'
+      );
     } finally { global.fetch = origFetch; }
   });
 });

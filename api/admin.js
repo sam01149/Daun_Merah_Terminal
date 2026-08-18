@@ -5945,6 +5945,15 @@ async function ohlcvAnalyzeHandler(req, res) {
                   ? (conflictForcedBySistemHakim ? 'sistem_hakim' : 'contradiction_guard')
                   : (structured.conflict === 'arah' ? 'ai' : null);
                 stalePending.model = model;
+                // BUG DITEMUKAN & DIFIX (2026-08-18, user tanya kenapa SL AUD/NZD "kelihatan
+                // bodoh" — investigasi menemukan narasi `commentary` yang tampil di dashboard
+                // TIDAK PERNAH ikut di-refresh di jalur refine-in-place ini, padahal entry/sl/tp
+                // di atas SUDAH diganti ke generasi terbaru. Akibatnya "Analisa Lengkap (AI)"
+                // yang dibaca user bisa menceritakan rencana/level dari generasi PERTAMA (mis.
+                // "tunggu harga ke 1.20711, SL 1.21180"), sementara posisi yang benar-benar
+                // live pakai level generasi terakhir (1.20407/1.20721/1.20037) — reasoning yang
+                // ditampilkan jadi tidak nyambung dengan trade yang sebenarnya dieksekusi.
+                stalePending.commentary = commentary || stalePending.commentary;
                 // BUG DITEMUKAN & DIFIX (2026-07-25, diskusi user soal filled_t < closed_t):
                 // `ts` di sini SEMPAT di-reset ke Date.now() supaya horizon_days terasa
                 // "fresh" pasca-refine. Efek sampingnya fatal — `_evaluateSetups` memakai

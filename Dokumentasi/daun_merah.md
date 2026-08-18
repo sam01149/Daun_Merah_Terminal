@@ -11,12 +11,18 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-17 (Session 317 lanjutan — Call 1 Ringkasan dipromosikan ke `deepseek-v4-pro`)
+> **Last updated:** 2026-08-18 (Session 318 — bug commentary tidak ter-refresh saat refine-in-place setup auto-entry)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
-## Changelog Session 317 lanjutan 2 (2026-08-17) — Call 1 Ringkasan DIPROMOSIKAN ke `deepseek-v4-pro`
+## Changelog Session 318 (2026-08-18) — Bug `commentary` tidak ikut ter-refresh saat refine-in-place
+
+**Konteks:** User cek status setup auto-entry `AUDNZD=X:1786695344751` (short, entry 1.20407/SL 1.20721/TP 1.20037) — hasil verifikasi candle 1H Deriv (via `ohlcv_read`): SL tersentuh 2026-08-18 03:00 UTC (10:00 WIB), high 1.20733 ≥ SL 1.20721, TP tidak pernah tersentuh lebih dulu. Dashboard `setup_stats` masih menampilkan status `open` saat dicek — evaluator lazy belum sempat jalan ulang sejak candle itu closed, watcher cron 5 menit (GH Actions + `vps/daemon.js`) akan menangkapnya di siklus berikutnya.
+
+**Temuan bug saat investigasi "kenapa AI ambil setup ini":** field `commentary` (narasi "Analisa Lengkap (AI)" yang tampil di [dev-auto-entry.html](../dev-auto-entry.html)) pada entry ini menceritakan rencana level yang BERBEDA dari entry/sl/tp yang benar-benar live (`KESIMPULAN` narasi menyebut entry 1.20711/SL 1.21180/TP 1.20190, sedangkan field terekam 1.20407/1.20721/1.20037 — RR 1.18 recorded cuma cocok dengan level terekam, bukan level di narasi). Root cause: `refined_count: 2` — blok refine-in-place di `api/admin.js` (skenario "PENDING lama bias SEARAH", dekat `stalePending.model = model`) meng-update `entry_zone`/`sl`/`tp`/`rr`/`conflict`/dst ke generasi terbaru tiap kali auto-entry menemukan pending lama sebiasa, TAPI tidak pernah menyalin `commentary` baru ke `stalePending.commentary` — jadi narasi yang tersimpan/ditampilkan selalu dari generasi PERTAMA sebelum di-refine, walau field tradingnya sudah beda generasi. Bukan penyebab SL (SL murni tersentuh karena harga bergerak), tapi bikin reasoning yang ditampilkan tidak nyambung dengan trade yang benar-benar dieksekusi.
+
+**Fix:** tambah `stalePending.commentary = commentary || stalePending.commentary;` di blok refine-in-place (`api/admin.js`, dekat `stalePending.model = model`) — variabel `commentary` sudah tersedia di scope yang sama (hasil parse response AI generasi terbaru di call yang sama). Assertion baru ditambahkan ke test refine-in-place existing di `test/admin/isolation_auto.test.js` (cek `item.commentary` ikut berubah ke narasi terbaru setelah refine). Entry historis yang sudah kadung ke-refine sebelum fix ini tidak diperbaiki retroaktif (di luar scope, dan setup AUD/NZD ini sudah closed). `npm test` 1018/1018 hijau.
 
 **Keputusan akhir setelah audit panjang** (lanjutan investigasi di bawah): user memutuskan promosikan Call 1 (Market Briefing) dari `deepseek-v4-flash` ke `deepseek-v4-pro` sebagai primary produksi, commit `f3bbfcb`. Call 2/3/4 dan seluruh fitur lain (Analisa AI per Pair/auto-entry, Pre-Entry Check, Review Posisi, dst) **TETAP flash** — bukti untuk `ohlcv_analyze` belum sekuat Call 1 (lihat 2 tes terpisah di bawah: hasil pertama nyaris identik flash vs pro, hasil kedua Instant-web sempat kelewatan konflik kalender FOMC yang Expert-web tangkap — campur, belum cukup meyakinkan untuk dipromosikan).
 
