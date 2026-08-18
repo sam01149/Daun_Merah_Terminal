@@ -176,6 +176,9 @@ tr.rowdetail .longtext{white-space:pre-wrap;font-size:10.5px;line-height:1.55;co
 .chartcard{background:var(--panel2);border:1px solid var(--border);border-radius:8px;padding:10px 12px 12px;box-shadow:var(--shadow);}
 .chartcard-head{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:6px;flex-wrap:wrap;}
 .chartcard-head h3{font-family:'Syne',sans-serif;font-size:12.5px;font-weight:800;color:var(--fg);margin:0;}
+.livedot{display:inline-flex;align-items:center;gap:4px;font-family:'DM Mono',monospace;font-size:8px;font-weight:400;text-transform:uppercase;letter-spacing:.06em;color:var(--green);vertical-align:middle;}
+.livedot::before{content:'';width:6px;height:6px;border-radius:50%;background:var(--green);display:inline-block;animation:livepulse 1.6s ease-in-out infinite;}
+@keyframes livepulse{0%,100%{opacity:1;}50%{opacity:.25;}}
 .chartcard-meta{font-size:9.5px;color:var(--muted);margin-top:2px;display:flex;gap:8px;flex-wrap:wrap;}
 .chartcard-meta b{color:var(--fg);font-weight:500;}
 .chartcard-meta .up{color:var(--green);} .chartcard-meta .down{color:var(--accent);}
@@ -619,9 +622,10 @@ if (localStorage.getItem('dm_dev_theme') === 'light') document.body.classList.ad
       // pindah ke tab lain berhenti, balik lagi lanjut, supaya tidak nge-fetch percuma
       // di background selagi user sedang lihat Dashboard/tab lain.
       if (t.dataset.pane === 'charts') {
-        if (!chartsBuilt) ensureChartsBuilt(); else startChartPolling();
+        if (!chartsBuilt) ensureChartsBuilt(); else { startChartPolling(); startLiveTicks(); }
       } else {
         stopChartPolling();
+        stopLiveTicks();
       }
     });
   });
@@ -1340,10 +1344,13 @@ if (localStorage.getItem('dm_dev_theme') === 'light') document.body.classList.ad
     const horizonHtml = setup.horizon_days != null
       ? `${esc(setup.horizon_days)} hari (s.d. ${esc(fmtTs(setup.ts + setup.horizon_days * 86400000))})`
       : '—';
+    const liveBadge = YAHOO_TO_DERIV_SYMBOL[symbol]
+      ? '<span class="livedot" title="Harga live dari Deriv, digilir tiap beberapa detik">live</span>'
+      : '';
     return `<div class="chartcard" data-symbol="${esc(symbol)}">
       <div class="chartcard-head">
         <div>
-          <h3>${esc(label)}</h3>
+          <h3>${esc(label)} ${liveBadge}</h3>
           <div class="chartcard-meta">
             <span class="${setup.bias === 'bullish' ? 'up' : 'down'}"><b>${esc(setup.bias || '-')}</b></span>
             <span class="badge ${esc(setup.status)}">${esc(setup.status)}</span>
@@ -1575,12 +1582,97 @@ if (localStorage.getItem('dm_dev_theme') === 'light') document.body.classList.ad
     if (grid && !grid.querySelector('.chartcard')) grid.innerHTML = '<div class="empty">Tidak ada posisi open/pending saat ini — pair yang sudah closed/canceled tidak lagi ditampilkan di sini (cek riwayatnya di tab Dashboard).</div>';
   }
 
-  // Polling ringan (bukan tick-by-tick asli — sudah dicoba live-stream langsung ke
-  // Deriv WS, tapi endpoint tick live-nya menolak symbol forex untuk app_id publik
-  // yang dipakai proyek ini, konsisten dengan catatan kerapuhan app_id 1089 di
-  // _ohlcv_fetch.js; ticks_history/candle historis-nya sendiri tetap normal). Ini
-  // jalur yang TERBUKTI jalan: baca ulang snapshot candle server setiap ~20 detik
-  // supaya candle terakhir ikut bergerak tanpa perlu klik refresh manual.
+  // ── Live tick Deriv (dicoba ulang, 2026-08-18 lanjutan-2) ────────────────────
+  // `{"ticks": "<symbol>", "subscribe": 1}` (live push) DITOLAK server Deriv untuk
+  // semua symbol forex di app_id publik ini (lihat catatan CHART_POLL_MS di bawah).
+  // TAPI `{"ticks_history": "<symbol>", "style": "ticks", "count": 1}` — permintaan
+  // biasa (bukan subscribe), sama seperti dipakai fetchDerivLatestPrice server —
+  // TERBUKTI anonim & tetap boleh diulang cepat lewat 1 koneksi WS yang sama (dites
+  // live: 5x panggilan @1.5s, semua sukses, harga benar-benar berubah tiap kali).
+  // Jadi dipakai POLLING CEPAT via WS (bukan subscribe asli) sebagai jalur realtime —
+  // 1 koneksi dipakai bersama semua chart, digilir round-robin (1 simbol/800ms) biar
+  // beban ke app_id publik yang sama dipakai server tetap kecil & rata, bukan burst.
+  // Hanya pair dengan mapping frx* (YAHOO_TO_DERIV_SYMBOL) yang kebagian; AUD/NZD &
+  // CHF/JPY TIDAK punya mapping Deriv sama sekali (sama seperti server, lihat
+  // _ohlcv_fetch.js) — dua pair itu tetap hidup lewat CHART_POLL_MS di bawah saja.
+  const DERIV_APP_ID_PUBLIC = 1089;
+  const YAHOO_TO_DERIV_SYMBOL = {
+    'EURUSD=X': 'frxEURUSD', 'GBPUSD=X': 'frxGBPUSD', 'USDJPY=X': 'frxUSDJPY',
+    'AUDUSD=X': 'frxAUDUSD', 'USDCAD=X': 'frxUSDCAD', 'USDCHF=X': 'frxUSDCHF',
+    'NZDUSD=X': 'frxNZDUSD', 'EURGBP=X': 'frxEURGBP', 'GC=F': 'frxXAUUSD',
+  };
+  const DERIV_SYMBOL_TO_YAHOO = Object.fromEntries(Object.entries(YAHOO_TO_DERIV_SYMBOL).map(([k, v]) => [v, k]));
+
+  let derivWs = null, derivWsOpen = false, derivWsQueue = [];
+  function ensureDerivWs(){
+    if (derivWs && (derivWs.readyState === WebSocket.OPEN || derivWs.readyState === WebSocket.CONNECTING)) return;
+    try { derivWs = new WebSocket(`wss://ws.derivws.com/websockets/v3?app_id=${DERIV_APP_ID_PUBLIC}`); }
+    catch (e) { derivWs = null; return; }
+    derivWsOpen = false;
+    derivWs.addEventListener('open', () => {
+      derivWsOpen = true;
+      derivWsQueue.splice(0).forEach(m => { try { derivWs.send(JSON.stringify(m)); } catch (e) {} });
+    });
+    derivWs.addEventListener('message', ev => {
+      let data; try { data = JSON.parse(ev.data); } catch (e) { return; }
+      if (data.error || data.msg_type !== 'history' || !data.history) return; // symbol tanpa mapping/gangguan sesaat -> abaikan diam-diam, chart tetap jalan via CHART_POLL_MS
+      const derivSym = data.echo_req && data.echo_req.ticks_history;
+      const localSym = DERIV_SYMBOL_TO_YAHOO[derivSym];
+      if (!localSym) return;
+      const prices = data.history.prices, times = data.history.times;
+      if (!prices || !prices.length) return;
+      applyLiveTick(localSym, prices[prices.length - 1], times[times.length - 1]);
+    });
+    derivWs.addEventListener('close', () => { derivWsOpen = false; derivWs = null; });
+    derivWs.addEventListener('error', () => {}); // best-effort — gagal konek diam-diam, tidak boleh bikin chart error
+  }
+  function sendDerivTickRequest(derivSymbol){
+    const msg = { ticks_history: derivSymbol, style: 'ticks', count: 1, end: 'latest' };
+    ensureDerivWs();
+    if (derivWsOpen && derivWs && derivWs.readyState === WebSocket.OPEN) { try { derivWs.send(JSON.stringify(msg)); } catch (e) {} }
+    else derivWsQueue.push(msg);
+  }
+  // Update candle TERAKHIR saja (close/high/low) dari 1 tick — TIDAK PERNAH bikin bar
+  // baru di sini (menebak batas jam candle baru itu rawan salah); pergantian ke candle
+  // berikutnya diserahkan ke fetchAndApplyBars (CHART_POLL_MS) yang baca ulang snapshot
+  // resmi dari server. Kalau bucket waktu tick sudah beda dari bar terakhir yang
+  // dimuat, tick ini dilewati (nunggu poll berikutnya menyusul candle barunya).
+  function applyLiveTick(symbol, price, epochSec){
+    const st = chartState[symbol];
+    if (!st || !st.series || !st.bars || !st.bars.length || typeof price !== 'number') return;
+    const gran = st.tf === '4h' ? 14400 : st.tf === '1d' ? 86400 : 3600;
+    const bucket = Math.floor(epochSec / gran) * gran;
+    const last = st.bars[st.bars.length - 1];
+    if (last.time !== bucket) return;
+    const updated = { ...last, close: price, high: Math.max(last.high, price), low: Math.min(last.low, price) };
+    st.bars[st.bars.length - 1] = updated;
+    st.series.update(updated);
+    positionOverlay(symbol);
+  }
+
+  const LIVE_TICK_INTERVAL_MS = 800; // round-robin 1 simbol/interval — makin banyak chart, makin jarang per-pair, bukan makin banyak beban sekaligus
+  let liveTickTimer = null, liveTickCursor = 0;
+  function stopLiveTicks(){
+    if (liveTickTimer) { clearInterval(liveTickTimer); liveTickTimer = null; }
+    if (derivWs) { try { derivWs.close(); } catch (e) {} derivWs = null; derivWsOpen = false; }
+    derivWsQueue = [];
+  }
+  function startLiveTicks(){
+    stopLiveTicks();
+    liveTickTimer = setInterval(() => {
+      if (document.hidden) return;
+      const symbols = Object.keys(chartState).filter(s => YAHOO_TO_DERIV_SYMBOL[s]);
+      if (!symbols.length) return;
+      liveTickCursor = (liveTickCursor + 1) % symbols.length;
+      sendDerivTickRequest(YAHOO_TO_DERIV_SYMBOL[symbols[liveTickCursor]]);
+    }, LIVE_TICK_INTERVAL_MS);
+  }
+
+  // Polling penuh (baca ulang snapshot ohlcv_chart dari server) — pelengkap live tick
+  // di atas, bukan pengganti: live tick cuma update candle TERAKHIR, jadi tetap butuh
+  // ini untuk (a) pair AUD/NZD & CHF/JPY yang tidak punya live tick sama sekali, (b)
+  // menutup celah pergantian candle baru (lihat applyLiveTick), (c) jaring pengaman
+  // kalau koneksi Deriv WS putus/diblokir — dashboard tetap hidup, cuma kurang instan.
   const CHART_POLL_MS = 20000;
   let chartPollTimer = null;
   function stopChartPolling(){ if (chartPollTimer) { clearInterval(chartPollTimer); chartPollTimer = null; } }
@@ -1615,6 +1707,7 @@ if (localStorage.getItem('dm_dev_theme') === 'light') document.body.classList.ad
     chartsBuilt = true;
     for (const p of pairs) renderChartCard(p.symbol, '1h');
     startChartPolling();
+    startLiveTicks();
   }
   document.getElementById('btnRefreshCharts').addEventListener('click', () => { chartsBuilt = false; ensureChartsBuilt(); });
 
