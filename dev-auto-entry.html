@@ -172,7 +172,7 @@ tr.rowdetail .longtext{white-space:pre-wrap;font-size:10.5px;line-height:1.55;co
    overlay <div> yang posisinya dihitung dari priceToCoordinate() milik candle series —
    supaya "kotak posisi" (mirip Long/Short Position tool TradingView) ikut update pas
    pan/zoom, bukan cuma gambar statis. */
-.chartgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(380px,1fr));gap:12px;}
+.chartgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(520px,100%),1fr));gap:14px;}
 .chartcard{background:var(--panel2);border:1px solid var(--border);border-radius:8px;padding:10px 12px 12px;box-shadow:var(--shadow);}
 .chartcard-head{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:6px;flex-wrap:wrap;}
 .chartcard-head h3{font-family:'Syne',sans-serif;font-size:12.5px;font-weight:800;color:var(--fg);margin:0;}
@@ -183,7 +183,7 @@ tr.rowdetail .longtext{white-space:pre-wrap;font-size:10.5px;line-height:1.55;co
 .chartcard-meta b{color:var(--fg);font-weight:500;}
 .chartcard-meta .up{color:var(--green);} .chartcard-meta .down{color:var(--accent);}
 .chart-toolstack{display:flex;flex-direction:column;gap:4px;align-items:flex-end;}
-.chart-tf{display:flex;gap:3px;flex-wrap:wrap;justify-content:flex-end;max-width:220px;}
+.chart-tf{display:flex;gap:3px;flex-wrap:wrap;justify-content:flex-end;}
 .chart-tf button{padding:3px 6px;font-size:9px;}
 .chart-tf button.active{background:var(--accent-dim);border-color:var(--accent);color:#fff;}
 body.light-theme .chart-tf button.active{color:var(--accent);}
@@ -191,7 +191,7 @@ body.light-theme .chart-tf button.active{color:var(--accent);}
 .toolbtn{padding:3px 5px;line-height:0;}
 .toolbtn svg{width:11px;height:11px;stroke:var(--muted);fill:none;stroke-width:1.6;display:block;}
 .toolbtn:hover svg{stroke:var(--accent);}
-.chartbox{position:relative;height:260px;border-radius:5px;overflow:hidden;background:var(--bg);}
+.chartbox{position:relative;height:420px;border-radius:5px;overflow:hidden;background:var(--bg);}
 /* Mode fokus layar penuh per kartu (Fullscreen API di elemen .chartcard, bukan
    seluruh halaman) — chartbox melar mengisi tinggi layar, autoSize (opsi createChart)
    yang bikin kanvas Lightweight Charts ikut menyesuaikan otomatis. */
