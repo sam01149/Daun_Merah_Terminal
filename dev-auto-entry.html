@@ -182,11 +182,21 @@ tr.rowdetail .longtext{white-space:pre-wrap;font-size:10.5px;line-height:1.55;co
 .chartcard-meta{font-size:9.5px;color:var(--muted);margin-top:2px;display:flex;gap:8px;flex-wrap:wrap;}
 .chartcard-meta b{color:var(--fg);font-weight:500;}
 .chartcard-meta .up{color:var(--green);} .chartcard-meta .down{color:var(--accent);}
-.chart-tf{display:flex;gap:3px;}
-.chart-tf button{padding:3px 7px;font-size:9.5px;}
+.chart-toolstack{display:flex;flex-direction:column;gap:4px;align-items:flex-end;}
+.chart-tf{display:flex;gap:3px;flex-wrap:wrap;justify-content:flex-end;max-width:220px;}
+.chart-tf button{padding:3px 6px;font-size:9px;}
 .chart-tf button.active{background:var(--accent-dim);border-color:var(--accent);color:#fff;}
 body.light-theme .chart-tf button.active{color:var(--accent);}
+.chart-tools{display:flex;gap:3px;}
+.toolbtn{padding:3px 5px;line-height:0;}
+.toolbtn svg{width:11px;height:11px;stroke:var(--muted);fill:none;stroke-width:1.6;display:block;}
+.toolbtn:hover svg{stroke:var(--accent);}
 .chartbox{position:relative;height:260px;border-radius:5px;overflow:hidden;background:var(--bg);}
+/* Mode fokus layar penuh per kartu (Fullscreen API di elemen .chartcard, bukan
+   seluruh halaman) — chartbox melar mengisi tinggi layar, autoSize (opsi createChart)
+   yang bikin kanvas Lightweight Charts ikut menyesuaikan otomatis. */
+.chartcard:fullscreen,.chartcard:-webkit-full-screen{background:var(--bg);display:flex;flex-direction:column;padding:16px 20px;border-radius:0;}
+.chartcard:fullscreen .chartbox,.chartcard:-webkit-full-screen .chartbox{flex:1;height:auto;}
 .chartbox .lwc-host{position:absolute;inset:0;}
 .chartbox .zoneband{position:absolute;left:0;right:56px;pointer-events:none;opacity:.16;z-index:5;}
 .chartbox .zoneband.tp{background:var(--green);}
@@ -1364,10 +1374,24 @@ if (localStorage.getItem('dm_dev_theme') === 'light') document.body.classList.ad
             <span>Horizon <b>${horizonHtml}</b></span>
           </div>
         </div>
-        <div class="chart-tf" data-symbol="${esc(symbol)}">
-          <button data-tf="1h" class="active">1H</button>
-          <button data-tf="4h">4H</button>
-          <button data-tf="1d">1D</button>
+        <div class="chart-toolstack">
+          <div class="chart-tf" data-symbol="${esc(symbol)}">
+            ${['1m', '5m', '15m'].map(tf => {
+              const disabled = !YAHOO_TO_DERIV_SYMBOL[symbol];
+              return `<button data-tf="${tf}"${disabled ? ' disabled title="Tidak ada sumber candle menit langsung untuk pair ini"' : ''}>${tf.toUpperCase()}</button>`;
+            }).join('')}
+            <button data-tf="1h" class="active">1H</button>
+            <button data-tf="4h">4H</button>
+            <button data-tf="1d">1D</button>
+          </div>
+          <div class="chart-tools" data-symbol="${esc(symbol)}">
+            <button type="button" class="toolbtn" data-action="reset-zoom" title="Reset zoom ke tampilan awal">
+              <svg viewBox="0 0 16 16"><path d="M13.5 8A5.5 5.5 0 1 1 8 2.5M8 2.5V6M8 2.5h3.5"/></svg>
+            </button>
+            <button type="button" class="toolbtn" data-action="fullscreen" title="Fokus layar penuh (scroll mouse = zoom)">
+              <svg viewBox="0 0 16 16"><path d="M2 6V2h4M14 6V2h-4M2 10v4h4M14 10v4h-4"/></svg>
+            </button>
+          </div>
         </div>
       </div>
       <div class="chartbox" id="${chartBoxId(symbol)}"><div class="chart-msg">Memuat chart...</div></div>
@@ -1477,12 +1501,31 @@ if (localStorage.getItem('dm_dev_theme') === 'light') document.body.classList.ad
 
   // Update data candle + MA TANPA membongkar-pasang chart (beda dari renderChartCard) —
   // dipakai polling berkala supaya pan/zoom user tidak ke-reset tiap refresh.
+  // Timeframe 1m/5m/15m TIDAK ADA di pipeline server (ohlcv_sync cuma simpan 1h/4h/1d)
+  // — diambil langsung dari Deriv (fetchDerivCandlesDirect); 1h/4h/1d tetap lewat
+  // server (satu-satunya jalur yang juga menjangkau AUD/NZD & CHF/JPY, pair tanpa
+  // mapping Deriv). Dipakai bersama oleh renderChartCard (bangun chart baru/ganti TF)
+  // dan fetchAndApplyBars (polling 20 detik).
+  async function fetchCandlesForTf(symbol, tf){
+    if (DERIV_GRANULARITY[tf]) {
+      const bars = await fetchDerivCandlesDirect(symbol, tf);
+      if (bars && bars.length) return { bars };
+      return {
+        bars: [],
+        error: YAHOO_TO_DERIV_SYMBOL[symbol]
+          ? 'Gagal mengambil candle dari Deriv, coba lagi sesaat lagi.'
+          : 'Timeframe ini tidak tersedia untuk pair ini (tidak ada sumber candle menit langsung).',
+      };
+    }
+    const { json, errMsg } = await api('ohlcv_chart', { query: { symbol, tf }, silent: true });
+    if (errMsg || !json || json.error) return { bars: [], error: errMsg || (json && json.error) };
+    return { bars: computeBars(json.candles) };
+  }
+
   async function fetchAndApplyBars(symbol){
     const st = chartState[symbol];
     if (!st || !st.series) return false;
-    const { json, errMsg } = await api('ohlcv_chart', { query: { symbol, tf: st.tf || '1h' }, silent: true });
-    if (errMsg || !json || json.error) return false;
-    const bars = computeBars(json.candles);
+    const { bars } = await fetchCandlesForTf(symbol, st.tf || '1h');
     if (!bars.length) return false;
     st.bars = bars;
     st.series.setData(bars);
@@ -1501,14 +1544,9 @@ if (localStorage.getItem('dm_dev_theme') === 'light') document.body.classList.ad
     box.innerHTML = '<div class="chart-msg">Memuat chart...</div>';
     try { await loadLWC(); } catch (e) { box.innerHTML = `<div class="chart-msg">${esc(e.message)}</div>`; return; }
     const useTf = tf || '1h';
-    const { json, errMsg } = await api('ohlcv_chart', { query: { symbol, tf: useTf }, silent: true });
-    if (errMsg || !json || json.error) {
-      box.innerHTML = `<div class="chart-msg">Gagal memuat candle: ${esc(errMsg || json.error)}</div>`;
-      return;
-    }
-    const bars = computeBars(json.candles);
+    const { bars, error } = await fetchCandlesForTf(symbol, useTf);
     if (!bars.length) {
-      box.innerHTML = '<div class="chart-msg">Candle belum tersedia untuk pair/timeframe ini.</div>';
+      box.innerHTML = `<div class="chart-msg">${esc(error || 'Candle belum tersedia untuk pair/timeframe ini.')}</div>`;
       return;
     }
     box.innerHTML = '<div class="lwc-host"></div>';
@@ -1519,13 +1557,17 @@ if (localStorage.getItem('dm_dev_theme') === 'light') document.body.classList.ad
     // Lightweight Charts butuh price-scale kedua yang lebih rawan berantakan di grid
     // sekecil ini; MA sudah cukup mewakili gaya visual TEK tanpa risiko itu).
     const chart = LightweightCharts.createChart(host, {
+      autoSize: true, // canvas ikut resize otomatis (dibutuhkan buat mode fullscreen di bawah, bukan cuma kosmetik)
       layout: { background: { color: c.bg }, textColor: c.muted, fontFamily: "'DM Mono',monospace", fontSize: 10 },
       grid: { vertLines: { color: c.border }, horzLines: { color: c.border } },
       rightPriceScale: { borderColor: c.border },
       timeScale: { borderColor: c.border, timeVisible: true, secondsVisible: false },
       crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+      // Scroll mouse = zoom in/out (permintaan user, sama seperti kebiasaan TradingView asli)
+      // — konsekuensinya scroll HALAMAN berhenti selagi kursor di atas chart; tombol
+      // fullscreen di bawah ada buat kasus itu (fokus 1 chart tanpa perlu scroll page).
       handleScroll: { mouseWheel: false, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: false },
-      handleScale: { mouseWheel: false, pinch: true, axisPressedMouseMove: true },
+      handleScale: { mouseWheel: true, pinch: true, axisPressedMouseMove: true },
     });
     const series = chart.addCandlestickSeries({
       upColor: c.green, downColor: c.accent, borderVisible: false, wickUpColor: c.green, wickDownColor: c.accent,
@@ -1574,6 +1616,32 @@ if (localStorage.getItem('dm_dev_theme') === 'light') document.body.classList.ad
     });
   }
 
+  // Fullscreen per-kartu (Fullscreen API pada elemen .chartcard, BUKAN document —
+  // cuma chart yang dipilih yang membesar, bukan seluruh halaman). Prefiks -webkit-
+  // masih perlu buat Safari lama; browser modern (Chrome/Edge/Firefox) pakai API polos.
+  function toggleCardFullscreen(symbol){
+    const card = document.querySelector(`#chartGrid .chartcard[data-symbol="${symbol}"]`);
+    if (!card) return;
+    const fsEl = document.fullscreenElement || document.webkitFullscreenElement;
+    if (fsEl === card) {
+      (document.exitFullscreen || document.webkitExitFullscreen)?.call(document);
+    } else {
+      (card.requestFullscreen || card.webkitRequestFullscreen)?.call(card).catch(() => {});
+    }
+  }
+  // autoSize (opsi createChart) sudah bikin kanvas Lightweight Charts ikut melar/
+  // menyusut otomatis pas .chartcard keluar-masuk fullscreen — tapi overlay kotak
+  // entry/SL/TP itu <div> KITA SENDIRI (bukan bagian LWC), koordinatnya perlu
+  // dihitung ulang manual tiap ukuran box berubah. ResizeObserver per-chart yang
+  // sudah ada (lihat renderChartCard) sebenarnya sudah nangkep ini, baris di bawah
+  // cuma jaring pengaman tambahan pas transisi fullscreen (durasinya beda-beda per
+  // browser, kadang ResizeObserver keburu/telat menangkap ukuran akhir).
+  function handleFullscreenChange(){
+    setTimeout(() => { Object.keys(chartState).forEach(s => positionOverlay(s)); }, 150);
+  }
+  document.addEventListener('fullscreenchange', handleFullscreenChange);
+  document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+
   function removeChartCard(symbol){
     destroyChart(symbol);
     const card = document.querySelector(`#chartGrid .chartcard[data-symbol="${symbol}"]`);
@@ -1603,7 +1671,22 @@ if (localStorage.getItem('dm_dev_theme') === 'light') document.body.classList.ad
   };
   const DERIV_SYMBOL_TO_YAHOO = Object.fromEntries(Object.entries(YAHOO_TO_DERIV_SYMBOL).map(([k, v]) => [v, k]));
 
+  // Granularitas Deriv (detik) buat timeframe yang TIDAK dipunyai server (1m/5m/15m —
+  // pipeline ohlcv_sync cuma nyimpen 1h/4h/1d, lihat api/admin.js). Diambil LANGSUNG
+  // dari Deriv client-side (dites live: style:'candles' granularity 60/300/900 semua
+  // sukses & anonim, sama seperti 3600 yang sudah dipakai). 1h/4h/1d TETAP lewat
+  // server (ohlcv_chart) — itu satu-satunya jalur yang juga menjangkau AUD/NZD &
+  // CHF/JPY (tidak punya mapping Deriv sama sekali).
+  const DERIV_GRANULARITY = { '1m': 60, '5m': 300, '15m': 900 };
+
+  // req_id (fitur bawaan Deriv API — dikirim di request, DIKEMBALIKAN persis di
+  // respons) dipakai buat mencocokkan respons ke request yang benar. Sebelumnya
+  // dicocokkan cuma dari `echo_req.ticks_history` (nama symbol) — rawan salah pasang
+  // kalau ada 2 request untuk symbol yang sama nyaris bersamaan (mis. live-tick round-
+  // robin kebetulan bertabrakan dengan fetch candle 1m saat ganti timeframe).
   let derivWs = null, derivWsOpen = false, derivWsQueue = [];
+  let derivReqSeq = 1;
+  const derivPending = {}; // req_id -> { resolve, reject, timer }
   function ensureDerivWs(){
     if (derivWs && (derivWs.readyState === WebSocket.OPEN || derivWs.readyState === WebSocket.CONNECTING)) return;
     try { derivWs = new WebSocket(`wss://ws.derivws.com/websockets/v3?app_id=${DERIV_APP_ID_PUBLIC}`); }
@@ -1611,36 +1694,41 @@ if (localStorage.getItem('dm_dev_theme') === 'light') document.body.classList.ad
     derivWsOpen = false;
     derivWs.addEventListener('open', () => {
       derivWsOpen = true;
-      derivWsQueue.splice(0).forEach(m => { try { derivWs.send(JSON.stringify(m)); } catch (e) {} });
+      derivWsQueue.splice(0).forEach(raw => { try { derivWs.send(raw); } catch (e) {} });
     });
     derivWs.addEventListener('message', ev => {
       let data; try { data = JSON.parse(ev.data); } catch (e) { return; }
-      if (data.error || data.msg_type !== 'history' || !data.history) return; // symbol tanpa mapping/gangguan sesaat -> abaikan diam-diam, chart tetap jalan via CHART_POLL_MS
-      const derivSym = data.echo_req && data.echo_req.ticks_history;
-      const localSym = DERIV_SYMBOL_TO_YAHOO[derivSym];
-      if (!localSym) return;
-      const prices = data.history.prices, times = data.history.times;
-      if (!prices || !prices.length) return;
-      applyLiveTick(localSym, prices[prices.length - 1], times[times.length - 1]);
+      const p = data.req_id != null ? derivPending[data.req_id] : null;
+      if (!p) return; // bukan balasan request kita (atau sudah timeout) -> abaikan diam-diam
+      delete derivPending[data.req_id];
+      clearTimeout(p.timer);
+      if (data.error) p.reject(new Error(data.error.message || 'Deriv error'));
+      else p.resolve(data);
     });
     derivWs.addEventListener('close', () => { derivWsOpen = false; derivWs = null; });
     derivWs.addEventListener('error', () => {}); // best-effort — gagal konek diam-diam, tidak boleh bikin chart error
   }
-  function sendDerivTickRequest(derivSymbol){
-    const msg = { ticks_history: derivSymbol, style: 'ticks', count: 1, end: 'latest' };
-    ensureDerivWs();
-    if (derivWsOpen && derivWs && derivWs.readyState === WebSocket.OPEN) { try { derivWs.send(JSON.stringify(msg)); } catch (e) {} }
-    else derivWsQueue.push(msg);
+  function sendDerivRequest(msg, timeoutMs){
+    return new Promise((resolve, reject) => {
+      ensureDerivWs();
+      if (!derivWs) { reject(new Error('Deriv WS tidak tersedia')); return; }
+      const reqId = derivReqSeq++;
+      const raw = JSON.stringify({ ...msg, req_id: reqId });
+      const timer = setTimeout(() => { delete derivPending[reqId]; reject(new Error('Deriv WS timeout')); }, timeoutMs || 8000);
+      derivPending[reqId] = { resolve, reject, timer };
+      if (derivWsOpen && derivWs.readyState === WebSocket.OPEN) { try { derivWs.send(raw); } catch (e) { clearTimeout(timer); delete derivPending[reqId]; reject(e); } }
+      else derivWsQueue.push(raw);
+    });
   }
   // Update candle TERAKHIR saja (close/high/low) dari 1 tick — TIDAK PERNAH bikin bar
   // baru di sini (menebak batas jam candle baru itu rawan salah); pergantian ke candle
   // berikutnya diserahkan ke fetchAndApplyBars (CHART_POLL_MS) yang baca ulang snapshot
-  // resmi dari server. Kalau bucket waktu tick sudah beda dari bar terakhir yang
-  // dimuat, tick ini dilewati (nunggu poll berikutnya menyusul candle barunya).
+  // resmi. Kalau bucket waktu tick sudah beda dari bar terakhir yang dimuat, tick ini
+  // dilewati (nunggu poll berikutnya menyusul candle barunya).
   function applyLiveTick(symbol, price, epochSec){
     const st = chartState[symbol];
     if (!st || !st.series || !st.bars || !st.bars.length || typeof price !== 'number') return;
-    const gran = st.tf === '4h' ? 14400 : st.tf === '1d' ? 86400 : 3600;
+    const gran = DERIV_GRANULARITY[st.tf] || (st.tf === '4h' ? 14400 : st.tf === '1d' ? 86400 : 3600);
     const bucket = Math.floor(epochSec / gran) * gran;
     const last = st.bars[st.bars.length - 1];
     if (last.time !== bucket) return;
@@ -1650,21 +1738,42 @@ if (localStorage.getItem('dm_dev_theme') === 'light') document.body.classList.ad
     positionOverlay(symbol);
   }
 
+  // Ambil candle 1m/5m/15m LANGSUNG dari Deriv (bukan lewat server — tidak ada
+  // pipeline-nya di sana). null kalau pair tidak punya mapping Deriv atau request gagal
+  // — pemanggil WAJIB fallback anggun (lihat renderChartCard/fetchAndApplyBars).
+  async function fetchDerivCandlesDirect(symbol, tf){
+    const derivSym = YAHOO_TO_DERIV_SYMBOL[symbol], gran = DERIV_GRANULARITY[tf];
+    if (!derivSym || !gran) return null;
+    try {
+      const data = await sendDerivRequest({ ticks_history: derivSym, style: 'candles', granularity: gran, count: 300, end: 'latest' });
+      if (!data.candles || !data.candles.length) return null;
+      return data.candles.map(c => ({ time: c.epoch, open: c.open, high: c.high, low: c.low, close: c.close })).sort((a, b) => a.time - b.time);
+    } catch (e) { return null; }
+  }
+
   const LIVE_TICK_INTERVAL_MS = 800; // round-robin 1 simbol/interval — makin banyak chart, makin jarang per-pair, bukan makin banyak beban sekaligus
   let liveTickTimer = null, liveTickCursor = 0;
   function stopLiveTicks(){
     if (liveTickTimer) { clearInterval(liveTickTimer); liveTickTimer = null; }
     if (derivWs) { try { derivWs.close(); } catch (e) {} derivWs = null; derivWsOpen = false; }
     derivWsQueue = [];
+    Object.values(derivPending).forEach(p => { clearTimeout(p.timer); p.reject(new Error('Deriv WS ditutup')); });
+    for (const k of Object.keys(derivPending)) delete derivPending[k];
   }
   function startLiveTicks(){
     stopLiveTicks();
-    liveTickTimer = setInterval(() => {
+    liveTickTimer = setInterval(async () => {
       if (document.hidden) return;
       const symbols = Object.keys(chartState).filter(s => YAHOO_TO_DERIV_SYMBOL[s]);
       if (!symbols.length) return;
       liveTickCursor = (liveTickCursor + 1) % symbols.length;
-      sendDerivTickRequest(YAHOO_TO_DERIV_SYMBOL[symbols[liveTickCursor]]);
+      const localSym = symbols[liveTickCursor];
+      try {
+        const data = await sendDerivRequest({ ticks_history: YAHOO_TO_DERIV_SYMBOL[localSym], style: 'ticks', count: 1, end: 'latest' });
+        if (data.history && data.history.prices && data.history.prices.length) {
+          applyLiveTick(localSym, data.history.prices[data.history.prices.length - 1], data.history.times[data.history.times.length - 1]);
+        }
+      } catch (e) { /* diam-diam gagal — poll 20 detik tetap jaga chart tetap update */ }
     }, LIVE_TICK_INTERVAL_MS);
   }
 
@@ -1702,6 +1811,19 @@ if (localStorage.getItem('dm_dev_theme') === 'light') document.body.classList.ad
         tfEl.querySelectorAll('button').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
         renderChartCard(tfEl.dataset.symbol, btn.dataset.tf);
+      });
+    });
+    grid.querySelectorAll('.chart-tools').forEach(toolsEl => {
+      toolsEl.addEventListener('click', e => {
+        const btn = e.target.closest('button[data-action]');
+        if (!btn) return;
+        const symbol = toolsEl.dataset.symbol;
+        if (btn.dataset.action === 'reset-zoom') {
+          const st = chartState[symbol];
+          if (st && st.chart) st.chart.timeScale().fitContent();
+        } else if (btn.dataset.action === 'fullscreen') {
+          toggleCardFullscreen(symbol);
+        }
       });
     });
     chartsBuilt = true;
