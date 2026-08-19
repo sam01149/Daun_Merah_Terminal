@@ -64,6 +64,22 @@ Signal bulanan dari differential yield 10Y nominal (proxy carry — BUKAN short 
 - **Bobot lebih untuk posisi harga vs option expiry besar H-1** — datanya sudah ada, belum diberi peran di scoring.
 - **Carry trade / currency crash risk** — masih tahap riset literatur, BELUM diverifikasi ke sumber primer; jangan dieksekusi sebelum itu (lihat juga catatan "Ditahan" Plan G).
 
+### [2026-08-19] Riset Terbuka: Antisipasi Pump Meme Coin (di luar scope Daun Merah FX/Gold — parkiran ide, BUKAN plan)
+
+Riset permintaan user (asset class beda total dari FX/Gold Daun Merah, murni eksplorasi/idea parking): apakah bisa mengantisipasi meme coin yang pump puluhan-ribuan persen.
+
+**Base rate (realita statistik, WAJIB jadi konteks sebelum baca insight di bawah):** ~65-70% token baru Solana rug/mati dalam 72 jam (Pump.fun sedikit lebih rendah ~55-60% berkat proteksi bonding curve bawaan); rata-rata 97% meme coin mati/kehilangan volume dalam ~1 tahun; <5% wallet unik pembeli token Pump.fun net profitable sepanjang histori trading mereka. Sumber: Chainalysis 2024-2025, deepstrike.io, arxiv.org/pdf/2603.24625 (studi rug pull Solana).
+
+**4 kategori sinyal yang benar-benar dipakai trader (bukan teori):**
+1. **Speed/infra sniping** — bot beli di blok yang sama dengan token launch (sub-100-400ms). Ini BUKAN analisis/insight, murni infrastruktur latensi (RPC/gRPC). Data Pine Analytics: sniper wallet profesional 87% profitable per-snipe, tapi ini kelompok elit (~4.600 wallet) dari total populasi trader yang <5%-nya profitable — mayoritas retail yang coba DIY sniping (90%) gagal karena latency leak/rug filter lemah.
+2. **On-chain wallet clustering / smart money** — lacak wallet berlabel "smart money" (ROI historis tinggi, win-rate >60%) via Nansen/Arkham/GMGN; sinyal paling meyakinkan bukan 1 whale besar, tapi BEBERAPA wallet smart money beli bersamaan di token yang sama secara independen.
+3. **Struktur holder & likuiditas (checklist anti-rug)** — LP terkunci/burned, freeze authority dicabut, distribusi holder tidak terkonsentrasi di top-10 wallet, velocity holder baru naik organik (bukan lonjakan lalu plateau — pola itu ciri FOMO sesaat).
+4. **Social velocity/sentiment** — LunarCrush/Santiment: lonjakan mention+engagement di X/Telegram/Reddit SEBELUM harga bergerak, dikombinasi dengan konfirmasi lintas-platform (bukan 1 platform saja).
+
+**Insight paling jujur:** kombinasi (2)+(3)+(4) adalah pendekatan paling "actionable" untuk manusia non-infrastruktur — tapi false positive tetap tinggi karena permainan ini terstruktur asimetris untuk insider/bot berkecepatan tinggi (kategori 1), bukan untuk analis. Riset akademis ML/AI multimodal (arxiv 2412.18848, 2412.04913) ada tapi masih tahap riset, belum jadi tool retail siap pakai — dan studi itu sendiri mengakui AI "tidak bisa memprediksi penuh" karena pasar digerakkan emosi/viralitas, bukan fundamental.
+
+**Kenapa ini beda total dari cara kerja Daun Merah:** sistem FX/Gold di sini pakai gate statistik ketat (n≥100, bootstrap CI, permutation test — lihat backtest confluence di atas) karena base rate FX jauh lebih stabil/predictable dibanding meme coin. Base rate rug pull 55-70% + distribusi return sangat fat-tailed (sebagian besar 100x cerita adalah survivorship bias dari jutaan token yang gagal) membuat "edge" di ranah ini jauh lebih sulit dibuktikan signifikan secara statistik dibanding forex. Belum ada rencana integrasi ke sistem Daun Merah — murni catatan riset atas permintaan eksplorasi user.
+
 ### Roadmap Data Feed & Infra Always-On (hasil diskusi + verifikasi live session 186, 2026-07-18 — menggantikan ide lama "MT5 + Free VPS" session 185)
 
 **Urutan disepakati:**
