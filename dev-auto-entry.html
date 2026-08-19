@@ -233,8 +233,14 @@ body.light-theme .pairtab.active{color:var(--accent);}
 <body>
 <script>
 // Terapkan tema TERSIMPAN sebelum <body> dirender supaya tidak ada kedipan
-// gelap->terang (dibaca sinkron, script inline paling awal di <body>).
-if (localStorage.getItem('dm_dev_theme') === 'light') document.body.classList.add('light-theme');
+// gelap->terang (dibaca sinkron, script inline paling awal di <body>). Meta
+// theme-color ikut disamakan di sini juga — kalau cuma diupdate pas toggle
+// diklik, title bar PWA kebuka pertama kali di tema terang bakal tetap gelap.
+if (localStorage.getItem('dm_dev_theme') === 'light') {
+  document.body.classList.add('light-theme');
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute('content', '#f4f2ec');
+}
 </script>
 
 <div id="gate">
@@ -1288,9 +1294,18 @@ if (localStorage.getItem('dm_dev_theme') === 'light') document.body.classList.ad
   // pola sama dengan index.html supaya konsisten. Tersimpan per-browser (localStorage
   // TERPISAH dari tema index.html — dev console ini memang isolasi senyap U-7).
   const THEME_LS = 'dm_dev_theme';
+  // Warna sama persis dengan var(--bg) di masing-masing tema (lihat :root/.light-theme
+  // di <style>) — meta theme-color ini yang mewarnai title bar jendela PWA terinstal
+  // (bukan dikontrol CSS), jadi kalau tidak disinkron manual di sini "pinggiran" title
+  // bar-nya tetap gelap walau isi halaman sudah pindah ke tema terang.
+  function syncThemeColorMeta(light){
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.setAttribute('content', light ? '#f4f2ec' : '#070a08');
+  }
   function applyTheme(light){
     document.body.classList.toggle('light-theme', light);
     document.getElementById('themeLabel').textContent = light ? 'Terang' : 'Gelap';
+    syncThemeColorMeta(light);
     restyleAllCharts();
   }
   document.getElementById('btnThemeToggle').addEventListener('click', () => {
@@ -1349,6 +1364,31 @@ if (localStorage.getItem('dm_dev_theme') === 'light') document.body.classList.ad
     const cs = getComputedStyle(document.body);
     const g = name => cs.getPropertyValue(name).trim();
     return { bg: g('--bg'), fg: g('--fg'), muted: g('--muted'), border: g('--border'), green: g('--green'), accent: g('--accent'), blue: g('--blue'), yellow: g('--yellow') };
+  }
+
+  // Sumbu waktu chart pakai WIB (bukan UTC bawaan Lightweight Charts) — candle
+  // (time: c.epoch) TETAP UTC mentah di data, cuma label yang diformat ulang lewat
+  // Intl.DateTimeFormat timeZone Asia/Jakarta supaya jam kelihatan di chart sama
+  // dengan jam WIB yang dipakai di tempat lain (fmtTs dkk).
+  const WIB_TZ_FMT = new Intl.DateTimeFormat('id-ID', {
+    timeZone: 'Asia/Jakarta', year: 'numeric', month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false,
+  });
+  function wibParts(epochSec){
+    const parts = {};
+    WIB_TZ_FMT.formatToParts(new Date(epochSec * 1000)).forEach(p => { parts[p.type] = p.value; });
+    return parts;
+  }
+  function wibTickMarkFormatter(time, tickMarkType){
+    const p = wibParts(time);
+    const T = LightweightCharts.TickMarkType;
+    if (tickMarkType === T.Year) return p.year;
+    if (tickMarkType === T.Month) return `${p.month} '${p.year.slice(2)}`;
+    if (tickMarkType === T.DayOfMonth) return `${p.day} ${p.month}`;
+    return `${p.hour}:${p.minute}`;
+  }
+  function wibTimeFormatter(time){
+    const p = wibParts(time);
+    return `${p.day} ${p.month} '${p.year.slice(2)}  ${p.hour}:${p.minute} WIB`;
   }
 
   const chartState = {}; // symbol -> { chart, series, box, tf, setup, ro }
@@ -1628,7 +1668,9 @@ if (localStorage.getItem('dm_dev_theme') === 'light') document.body.classList.ad
       layout: { background: { color: c.bg }, textColor: c.muted, fontFamily: "'DM Mono',monospace", fontSize: 10 },
       grid: { vertLines: { color: c.border }, horzLines: { color: c.border } },
       rightPriceScale: { borderColor: c.border, scaleMargins: { top: 0.06, bottom: 0.3 } },
-      timeScale: { borderColor: c.border, timeVisible: true, secondsVisible: false },
+      // WIB (bukan UTC bawaan LWC) — lihat wibTickMarkFormatter/wibTimeFormatter di atas.
+      timeScale: { borderColor: c.border, timeVisible: true, secondsVisible: false, tickMarkFormatter: wibTickMarkFormatter },
+      localization: { timeFormatter: wibTimeFormatter },
       crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
       // Scroll mouse = zoom in/out (permintaan user, sama seperti kebiasaan TradingView asli)
       // — konsekuensinya scroll HALAMAN berhenti selagi kursor di atas chart; tombol
