@@ -1264,16 +1264,18 @@ async function maybeTriggerSetupWatch(yahooSymbol, price) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════
-// Q-6: scheduler node-cron — memicu endpoint yang sama lewat HTTP.
-// - market-digest: jadwal `schedule:` di GitHub Actions DIMATIKAN (Session 323,
-//   2026-08-20) — GH Actions free tier terpantau telat sampai 93 menit,
-//   generate ULANG + buang AI call tiap kali telat lewat window dedup. VPS
-//   sekarang SATU-SATUNYA sumber terjadwal; workflow GH Actions masih ada
-//   untuk workflow_dispatch manual saja (failsafe kalau VPS/Railway down).
-// - ohlcv_sync: TETAP jalan PARALEL dengan ohlcv-sync.yml (GH Actions belum
-//   dimatikan di sini — beda karakteristik risiko, gap antar run cuma 1 jam).
-//   ohlcv_sync sudah men-warm cache TA sendiri di akhir handler-nya
-//   (admin.js ohlcvSyncHandler) — TIDAK perlu trigger ta-warm terpisah dari sini.
+// Q-6: scheduler node-cron — memicu endpoint yang sama lewat HTTP, PARALEL
+// dengan GitHub Actions (market-digest.yml, ohlcv-sync.yml) untuk redundansi.
+// market-digest: sempat dicoba matikan `schedule:` GH Actions (Session 323,
+// 2026-08-20, VPS dianggap cukup) lalu DIKEMBALIKAN di sesi yang sama —
+// pengecekan live Redis produksi hari itu menemukan `vps:heartbeat` kosong +
+// `setup_log_auto:v1` mandek 2 hari (VPS/Railway down beneran saat itu).
+// GH Actions tetap perlu jadi failsafe nyata, bukan cuma manual dispatch.
+// CRON_DEDUP_WINDOW_MS 3 jam di api/market-digest.js (dinaikkan sesi yang
+// sama) yang jaga supaya paralel ini tidak generate dobel + buang AI call.
+// ohlcv_sync: sama, TETAP paralel dengan ohlcv-sync.yml. ohlcv_sync sudah
+// men-warm cache TA sendiri di akhir handler-nya (admin.js ohlcvSyncHandler)
+// — TIDAK perlu trigger ta-warm terpisah dari sini.
 // ══════════════════════════════════════════════════════════════════════════
 let cron = null;
 try { cron = require('node-cron'); } catch (e) { /* ditangani di startScheduler */ }

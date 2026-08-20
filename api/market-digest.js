@@ -814,18 +814,21 @@ module.exports = async function handler(req, res) {
   const isCronCall = _isCronCallReq(req);
 
   // Q-6 (Plan Q, 2026-07-18): vps/daemon.js memicu endpoint ini via
-  // x-cron-secret. SEJAK Session 323 (2026-08-20) VPS jadi SATU-SATUNYA
-  // sumber terjadwal — jadwal `schedule:` di
-  // .github/workflows/market-digest.yml sudah dimatikan (GH Actions free
-  // tier terpantau telat sampai 93 menit untuk sesi Asia, generate ULANG +
-  // buang 1 AI call + menimpa "Terakhir diringkas" jadi jam telatnya,
-  // padahal VPS sudah generate tepat waktu). Workflow GH Actions masih ada
-  // untuk workflow_dispatch manual (failsafe kalau VPS/Railway down) — dedup
-  // di bawah ini jaga-jaga untuk kasus itu (trigger manual berdekatan waktu
-  // dengan VPS), bukan lagi penanganan utama telat rutin. Window dicek dari
-  // umur latest_article (isCronDedupFresh, api/_cron_dedup.js) — jauh lebih
-  // pendek dari jarak antar 3 jadwal (~5,5 jam Eropa→NY, gap tersempit)
-  // supaya slot BERIKUTNYA tidak ikut ke-skip.
+  // x-cron-secret, PARALEL dengan jadwal identik di
+  // .github/workflows/market-digest.yml (GH Actions) — sengaja DUA sumber
+  // untuk redundansi (Session 323, 2026-08-20: dicoba matikan GH Actions
+  // lalu DIKEMBALIKAN sesi yang sama setelah pengecekan live Redis produksi
+  // menemukan VPS/Railway sedang down — vps:heartbeat kosong, setup_log_auto
+  // mandek 2 hari — jadi GH Actions tetap perlu jadi failsafe nyata).
+  // Window dedup di bawah ini yang jaga supaya 2 sumber ini tidak generate
+  // dobel + buang AI call — dinaikkan 30 menit -> 3 jam sesi yang sama
+  // setelah terpantau GH Actions telat 93 menit untuk sesi Asia (VPS sudah
+  // generate tepat waktu, tapi GH Actions yang telat >30 menit lolos dedup
+  // lama dan generate ULANG, menimpa "Terakhir diringkas" jadi jam
+  // telatnya). Dicek dari umur latest_article (isCronDedupFresh,
+  // api/_cron_dedup.js) — 3 jam masih jauh lebih pendek dari jarak antar 3
+  // jadwal (~5,5 jam Eropa→NY, gap tersempit) supaya slot BERIKUTNYA tidak
+  // ikut ke-skip.
   if (isCronCall) {
     const CRON_DEDUP_WINDOW_MS = 3 * 60 * 60 * 1000;
     try {

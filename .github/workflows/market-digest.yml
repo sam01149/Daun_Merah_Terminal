@@ -15,13 +15,22 @@ name: Market Digest Session-Open Runs
 # AI ringkasan/analisa membaca data lama. Buffer 2 menit kasih waktu source
 # publish duluan sebelum kita generate.
 #
-# `schedule:` DIMATIKAN (Session 323, 2026-08-20) — vps/daemon.js (Q-6, sejak
-# Session 141) sudah memicu endpoint yang sama di 3 jadwal identik ini dan
-# jauh lebih tepat waktu (GH Actions free tier terpantau telat sampai 93
-# menit, generate ULANG + buang 1 AI call tiap kali telat >window dedup).
-# VPS sekarang jadi satu-satunya sumber terjadwal; workflow ini masih ada
-# untuk trigger manual (workflow_dispatch) kalau VPS/Railway down.
+# `schedule:` sempat DIMATIKAN lalu DIKEMBALIKAN dalam sesi yang sama (Session
+# 323, 2026-08-20). vps/daemon.js (Q-6, sejak Session 141) memicu endpoint
+# yang sama di 3 jadwal identik ini dan biasanya lebih tepat waktu — tapi
+# pengecekan live Redis produksi HARI INI menemukan `vps:heartbeat` kosong
+# (harusnya diperbarui tiap 60 detik) dan `setup_log_auto:v1` tidak nambah
+# entri sama sekali sejak 2026-08-18 — indikasi kuat VPS/Railway sedang down.
+# Kalau schedule GH Actions ikut dimatikan saat VPS down, market-digest bisa
+# tidak ter-generate SAMA SEKALI. Jadwal dikembalikan sebagai failsafe;
+# CRON_DEDUP_WINDOW_MS 3 jam di api/market-digest.js tetap mencegah generate
+# dobel begitu VPS pulih (lihat komentar di sana untuk detail insiden 08:35
+# WIB yang jadi pemicu window itu dinaikkan).
 on:
+  schedule:
+    - cron: '2 0 * * *'   # 00:02 UTC = 07:02 WIB — sesi Asia (+2 menit)
+    - cron: '2 7 * * *'   # 07:02 UTC = 14:02 WIB — sesi Eropa/London (+2 menit)
+    - cron: '32 12 * * *' # 12:32 UTC = 19:32 WIB — sesi New York (+2 menit)
   workflow_dispatch:
 
 jobs:
