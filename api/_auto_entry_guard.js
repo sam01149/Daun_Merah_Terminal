@@ -349,6 +349,7 @@ const POLICY_EPOCHS = [
   { v: 26, from: '2026-08-18T05:05:11Z', kind: 'fix', impact: 'entry',    label: 'S318: Gate A (Kritikus) ikut menimbang level hasil refine-in-place' },
   { v: 27, from: '2026-08-18T05:56:31Z', kind: 'fix', impact: 'entry',    label: 'S319: Gate D menghitung posisi pending sebagai exposure, bukan cuma open' },
   { v: 28, from: '2026-08-18T09:12:12Z', kind: 'policy', impact: 'levels',  label: 'PLAN Z: sl/tp/invalidation_trigger wajib dari kandidat deterministik (api/_levels.js), dulu bebas dikarang AI' },
+  { v: 29, from: '2026-08-20T08:36:35Z', kind: 'policy', impact: 'entry',    label: 'S323 lanj.4: Gate B (drawdown circuit breaker) dinonaktifkan sementara selama fase pengumpulan sampel n>=100' },
 ];
 
 const POLICY_VERSION = POLICY_EPOCHS[POLICY_EPOCHS.length - 1].v;

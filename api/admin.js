@@ -24,7 +24,10 @@ const { requireAppKey } = require('./_app_key');
 const { fetchYahooOhlcv1h, fetchFallbackCandles, shouldSendYahooAlert, mapYahooSymbolToDeriv, fetchDerivCandles, mergeVolumeByTimestamp } = require('./_ohlcv_fetch');
 const { buildPairContext, computeCurrencyStrength } = require('./_pair_context');
 const { validateTightenSl, computePreventiveTightenSl, _evaluateManaged, _aggManagementStats, isCorroborated } = require('./_position_review');
-const { isDrawdownHalted, isCorrelatedExposureBlocked, isTimingConflictBlocked, isInvalidationTriggered, INVALIDATION_TRIGGER_TYPES, INVALIDATION_TRIGGER_DIRECTIONS, INVALIDATION_TRIGGER_TIMEFRAMES, CORRELATED_PAIRS, POLICY_VERSION, POLICY_EPOCHS, policyVersionForTs } = require('./_auto_entry_guard');
+// isDrawdownHalted (Gate B) SENGAJA tidak diimpor di sini — gate-nya dinonaktifkan
+// 2026-08-20 (lihat komentar POLICY_EPOCHS v29 di bawah), fungsinya tetap ada di
+// _auto_entry_guard.js untuk dipakai lagi setelah ambangnya dikalibrasi dari data live.
+const { isCorrelatedExposureBlocked, isTimingConflictBlocked, isInvalidationTriggered, INVALIDATION_TRIGGER_TYPES, INVALIDATION_TRIGGER_DIRECTIONS, INVALIDATION_TRIGGER_TIMEFRAMES, CORRELATED_PAIRS, POLICY_VERSION, POLICY_EPOCHS, policyVersionForTs } = require('./_auto_entry_guard');
 const { computeLevelCandidates } = require('./_levels');
 
 // Gate D live-sign lookup (audit 2026-08-16): terjemahkan simbol Yahoo di
@@ -594,12 +597,15 @@ const KEY_REGISTRY = [
   // baru). 'considered' = penyebut (kandidat yang lolos guard dup/blockedByOpenPosition
   // lama, dievaluasi ke-3 gate sisa); 'saved' = lolos semua gate; 3 sisanya = alasan
   // ditahan. considered = saved + correlation_cap + drawdown_circuit_breaker +
-  // critic_veto (invarian, boleh dicek manual). Gate C (regime_confidence) DIHAPUS
-  // sesi sama (2026-07-28) — lihat DEPRECATED_KEYS + api/_auto_entry_guard.js.
+  // critic_veto HANYA berlaku untuk data SEBELUM 2026-08-20 (invarian, boleh dicek
+  // manual) — sejak POLICY_EPOCHS v29, drawdown_circuit_breaker BEKU (Gate B
+  // dinonaktifkan sementara, lihat komentar di dekat pemanggilan isDrawdownHalted yang
+  // sudah dihapus), jadi invarian di atas TIDAK lagi berlaku untuk data setelahnya. Gate C
+  // (regime_confidence) DIHAPUS sesi sama (2026-07-28) — lihat DEPRECATED_KEYS + api/_auto_entry_guard.js.
   { key: 'auto_guard_stats:considered',              owner: 'api/admin.js', ttl_expected: null, note: 'Audit-guard: total kandidat auto-entry yang dievaluasi ke-3 gate sisa' },
   { key: 'auto_guard_stats:saved',                   owner: 'api/admin.js', ttl_expected: null, note: 'Audit-guard: kandidat lolos semua gate, tersimpan ke setup_log_auto:v1' },
   { key: 'auto_guard_stats:correlation_cap',         owner: 'api/admin.js', ttl_expected: null, note: 'Audit-guard Gate D: ditahan (correlated exposure XAU/USD-EUR/USD)' },
-  { key: 'auto_guard_stats:drawdown_circuit_breaker', owner: 'api/admin.js', ttl_expected: null, note: 'Audit-guard Gate B: ditahan (rolling R melewati ambang regime)' },
+  { key: 'auto_guard_stats:drawdown_circuit_breaker', owner: 'api/admin.js', ttl_expected: null, note: 'Audit-guard Gate B: BEKU sejak 2026-08-20 (dinonaktifkan sementara, v29) — angka historis sebelum itu tetap valid' },
   { key: 'auto_guard_stats:critic_veto',              owner: 'api/admin.js', ttl_expected: null, note: 'Audit-guard Gate A: AI Kritikus verdict "batalkan"' },
   // Gate A juga menimbang refine-in-place (2026-08-18) — counter TERPISAH dari yang di atas
   // (bukan campur ke 'considered'/'saved'/'critic_veto' milik kandidat BARU) karena semantiknya
@@ -6229,15 +6235,23 @@ async function ohlcvAnalyzeHandler(req, res) {
           // autoGuardReason tanpa data.
           if (isCorrelatedExposureBlocked({ symbol, bias: structured.bias, positions: log, liveSign: liveCorrSign })) {
             autoGuardReason = 'correlation_cap';
-          } else {
-            const closedSetups = log
-              .filter(x => x && (x.status === 'tp' || x.status === 'sl'))
-              .sort((a, b) => (a.ts || 0) - (b.ts || 0));
-            const dd = isDrawdownHalted({ closedSetups, regime: autoGuardRegime });
-            if (dd.halted) {
-              autoGuardReason = `drawdown_circuit_breaker(R=${dd.rollingR})`;
-            }
           }
+          // Gate B (drawdown circuit breaker) DINONAKTIFKAN 2026-08-20 (diskusi user,
+          // POLICY_EPOCHS v29) — SELAMA masih fase pengumpulan sampel (n>=100 belum
+          // tercapai, lihat daun_merah_plan.md §PLAN U). Dua alasan: (1) ambangnya
+          // sendiri masih heuristik awal belum dikalibrasi dari data live (lihat
+          // komentar DRAWDOWN_HALT_THRESHOLD_R di _auto_entry_guard.js) — menahan
+          // sampel demi ambang yang belum tentu benar itu terbalik; harusnya kumpulkan
+          // dulu apa adanya (termasuk periode kalah beruntun), baru kalibrasi ambang
+          // dari situ. (2) gate ini GLOBAL lintas-pair dan tidak punya katup darurat
+          // berbasis waktu — kalau rolling-R jatuh di bawah ambang PERSIS saat tidak
+          // ada satupun posisi pending/open tersisa di semua pair, tidak ada trade baru
+          // yang bisa closed untuk memperbaiki angkanya (satu-satunya jalan keluar
+          // tersisa adalah rezim risiko membaik dari luar) — risiko macet total yang
+          // tidak proporsional untuk trading virtual (belum ada uang riil dilindungi).
+          // `isDrawdownHalted`/`computeRollingR` (_auto_entry_guard.js) SENGAJA
+          // dipertahankan (bukan dihapus) — dipakai lagi setelah n>=100 tercapai dan
+          // ambangnya bisa dikalibrasi dari data live sungguhan, bukan tebakan awal.
         }
         // Gate A (AI Kritikus) butuh Gate D/B lolos dulu. KALAU perlu, JANGAN panggil di
         // sini (masih di bawah lock) — serahkan ke Fase 2 di luar lock (lihat komentar
