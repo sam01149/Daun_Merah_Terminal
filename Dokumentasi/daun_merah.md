@@ -11,7 +11,7 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-20 (Session 323 — fix dedup market-digest + temuan VPS/Railway down)
+> **Last updated:** 2026-08-20 (Session 323 lanjutan — root cause VPS down: Railway wajib serverless, dicoba pindah Render)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
@@ -30,9 +30,20 @@ Dua sinyal ini konsisten menunjukkan **proses daemon VPS/Railway sedang tidak ja
 
 **File yang diubah:** `.github/workflows/market-digest.yml` (schedule dikembalikan, komentar diperbarui dengan kronologi lengkap), `api/market-digest.js` (window dedup 3 jam + komentar), `vps/daemon.js` (komentar blok Q-6 diperbarui). Window dedup terpisah di `api/admin.js` (`ohlcv_analyze`, gap antar slot cuma 1 jam) sengaja TIDAK disentuh, beda karakteristik risiko.
 
-**Tindak lanjut TERTUNDA (VPS/Railway down):** dipindah ke `Dokumentasi/professional_llm_trader/progress.md` (juga berdampak ke auto-entry, bukan cuma market-digest) — perlu cek dashboard/log Railway langsung untuk cari penyebab & restart, tidak bisa diverifikasi/diperbaiki dari sesi kerja ini (tidak ada akses Railway).
+**Verifikasi:** `node --check api/market-digest.js` lolos; full suite `npm test` 1055/1055 hijau (termasuk `test/lib/cron_dedup.test.js`, pure function, tidak tersentuh perubahan konstanta).
 
-**Verifikasi:** `node --check api/market-digest.js` lolos; full suite `npm test` 1055/1055 hijau (termasuk `test/lib/cron_dedup.test.js`, pure function, tidak tersentuh perubahan konstanta). Verifikasi live tersisa: cek Railway lalu pantau `vps:heartbeat` & `setup_log_auto:v1` mulai nambah lagi.
+### Lanjutan sesi sama — Root cause ketemu: Railway free plan sekarang wajib serverless
+
+User forward pesan error Railway: *"Free plan deployments must be serverless. Please go to your service settings and turn on the serverless flag."* — ini **root cause** temuan VPS down di atas, bukan insiden terpisah. Dicek live docs Railway (WebSearch): kebijakan free plan berubah dari opt-in (Session 187 dulu) jadi WAJIB serverless (auto-sleep saat idle). Railway sendiri secara eksplisit TIDAK merekomendasikan mode ini untuk WebSocket server/background job processor — persis fungsi `daemon.js` (heartbeat 60 detik, node-cron Q-6/Q-7, streaming Q-3). Menyalakan flag itu akan bikin deploy sukses lagi, TAPI heartbeat/cron/streaming jadi tidak bisa diandalkan (tidur saat idle) — bukan solusi, cuma menghilangkan pesan error.
+
+**Opsi dipresentasikan ke user** (upgrade Railway berbayar / nyalakan serverless & terima risiko / pindah scheduling ke GitHub Actions total / minta penjelasan detail dulu) — **user pilih coba Render lagi**, kandidat yang dulu (Session 187) gagal karena verifikasi kartu BNI ditolak. Sumber terkini soal kebijakan kartu Render beragam (sebagian bilang tidak wajib kartu lagi untuk Free Web Service) — diputuskan dicoba ulang langsung, bukan diasumsikan dari riwayat lama.
+
+**Kerja yang dilakukan (dokumentasi only, TIDAK ada kode yang berubah — kode sudah platform-agnostic dari awal, `daemon.js` baca `process.env.PORT` + `listen(..., '0.0.0.0', ...)`):**
+- `vps/README-deploy.md` §0 (baru): kronologi temuan + panduan deploy Render lengkap (root directory, env var Q-2..Q-9, catatan PENTING soal Render butuh pinger eksternal — beda dari Railway yang sleep-nya berbasis outbound traffic, Render berbasis INBOUND, jadi heartbeat kita sendiri tidak cukup mencegah tidur). **Pinger direkomendasikan cron-job.org, BUKAN GitHub Actions `schedule:`** — jadwal GH Actions sendiri baru terbukti live sesi ini bisa telat sampai 93 menit (lihat bagian atas), jauh melebihi ambang tidur 15 menit Render, jadi tidak layak dipakai sebagai keep-alive interval pendek.
+- `daun_merah_vendor.md` §1: tambah baris Railway (sebelumnya tidak pernah dicatat sebagai vendor row walau sudah dipakai sejak Session 187) dengan status "BERMASALAH" + link ke panduan Render.
+- Railway **TIDAK** dimatikan/dihapus — dibiarkan apa adanya sampai Render terbukti jalan, supaya tidak kehilangan opsi kalau Render gagal lagi.
+
+**Tindak lanjut TERTUNDA:** deploy Render adalah aksi manual di dashboard (butuh akun/kartu user, tidak bisa dieksekusi dari sesi kerja ini) — dipindah ke `Dokumentasi/professional_llm_trader/progress.md` (berdampak langsung ke auto-entry). Kalau Render juga gagal di verifikasi kartu, opsi berikutnya: Railway paket berbayar (~$5/bulan, tanpa ubah kode/pinger) atau CepatCloud (kandidat lama, nunggu approval).
 
 ## Changelog Session 322 (2026-08-18) — Penunjuk: Kandidat SL/TP/Invalidasi Deterministik (PLAN Z)
 

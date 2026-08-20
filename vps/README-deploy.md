@@ -1,5 +1,89 @@
 # Deploy — Plan Q-1 (Railway free trial)
 
+## 0. UPDATE 2026-08-20 (Session 323) — Railway free plan sekarang WAJIB serverless, dicoba pindah Render
+
+Railway mengubah kebijakan free plan: deploy sekarang GAGAL dengan pesan *"Free
+plan deployments must be serverless. Please go to your service settings and
+turn on the serverless flag."* — beda dari catatan §2 di bawah (dulu opt-in,
+sekarang wajib). Dicek live docs Railway: mode Serverless = auto-sleep saat
+idle, dan Railway sendiri TIDAK merekomendasikan mode ini untuk WebSocket
+server/background job processor/proses yang harus hidup terus — persis fungsi
+`daemon.js` (heartbeat 60 detik, node-cron Q-6/Q-7, WebSocket streaming Q-3).
+Kalau serverless dinyalakan, deploy akan berhasil tapi heartbeat/cron/streaming
+jadi tidak bisa diandalkan (service tidur saat tidak ada trafik).
+
+**Ditemukan tidak sengaja:** `vps:heartbeat` kosong 2 hari + `setup_log_auto:v1`
+(auto-entry) tidak nambah entri sama sekali sejak 2026-08-18 — VPS sudah down
+duluan sebelum policy error ini ketahuan (kemungkinan Railway sudah mulai
+menegakkan aturan ini beberapa hari sebelum errornya baru terlihat).
+
+**Keputusan (2026-08-20):** coba pindah ke Render dulu (kandidat lama yang
+gagal di §"Riwayat percobaan" bawah gara-gara verifikasi kartu BNI ditolak) —
+sumber terkini beragam soal apakah Render sekarang masih wajib kartu untuk
+Free Web Service atau tidak, jadi perlu dicoba ulang langsung, bukan diasumsikan
+dari riwayat sebulan lalu. Railway TIDAK dihapus/dimatikan dulu — dibiarkan
+apa adanya (biar tidak kehilangan opsi) sampai Render terbukti jalan.
+
+### Langkah deploy ke Render
+
+Kode SUDAH platform-agnostic dari awal (`daemon.js` baca `process.env.PORT`,
+`listen(PORT, '0.0.0.0', ...)`) — TIDAK perlu ubah kode sama sekali, tinggal
+deploy ulang di platform baru.
+
+1. https://render.com → daftar/login. **Kalau diminta verifikasi kartu $1 USD
+   dan kartu yang dicoba ditolak (persis kejadian dulu) — STOP, laporkan balik,
+   JANGAN coba kartu lain berulang-ulang tanpa konfirmasi user (bisa kena flag
+   anti-fraud).**
+2. **New** → **Web Service** → **Build and deploy from a Git repository** →
+   pilih `sam01149/Daun_Merah_Terminal` (repo privat, authorize Render GitHub
+   App kalau pertama kali).
+3. Konfigurasi service:
+   - **Root Directory**: `vps`
+   - **Runtime**: Docker (Render otomatis pakai `vps/Dockerfile`)
+   - **Branch**: `main`
+   - **Instance Type**: Free
+4. **Environment Variables** — copy nilai yang SAMA dengan Railway/Vercel env
+   (jangan buat token baru). Env var inti (heartbeat, wajib):
+   - `UPSTASH_REDIS_REST_URL`
+   - `UPSTASH_REDIS_REST_TOKEN`
+
+   Env var tambahan untuk fungsi penuh Q-2..Q-9 (lihat §6 di bawah untuk detail
+   tiap fitur) — semua fail-open (kosong = modul terkait di-skip, TIDAK
+   mematikan modul lain):
+   - `DERIV_APP_ID`, `CRON_SECRET`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`,
+     `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`, `APP_BASE_URL`,
+     `AUTO_ENTRY_PAIRS`, `AUTO_ENTRY_HOURS_UTC`, `AUTO_ENTRY_HOURS_UTC_AUDNZD`,
+     `AUTO_CONSISTENCY_HOUR_UTC`, `FRIDAY_TIGHTEN_HOUR_UTC`,
+     `POSREVIEW_COOLDOWN_SECS`, `POSREVIEW_DAILY_CAP`
+5. Deploy. Catat domain publik Render (contoh:
+   `https://daun-merah-daemon.onrender.com`).
+6. Verifikasi manual: buka domain tsb — harus balas JSON
+   `{"status":"up","last_beat_epoch":...}` (sama seperti respons Railway).
+
+### PENTING — Render butuh pinger eksternal (BEDA dari Railway)
+
+Railway (§2 bawah) dulu tidak butuh pinger karena sleep-nya berbasis OUTBOUND
+traffic (heartbeat kita sendiri cukup). **Render sebaliknya: spin-down free
+tier berbasis INBOUND traffic** — 15 menit tanpa request MASUK, service tidur
+(cold start 30-60 detik). Heartbeat kita yang kirim OUTBOUND ke Upstash setiap
+60 detik TIDAK mencegah ini sama sekali di Render.
+
+**Jangan pakai GitHub Actions `schedule:` sebagai pinger** — sudah terbukti
+live sesi ini (lihat `daun_merah.md` §Session 323) jadwal GH Actions bisa telat
+sampai 93 menit, jauh melebihi ambang tidur 15 menit Render, jadi tidak
+reliable untuk keep-alive interval pendek. Pakai **cron-job.org** (gratis,
+tanpa kartu, dirancang khusus untuk ping interval pendek) — daftar, tambah
+monitor baru: URL = domain Render di atas, interval 10 menit. Ini keputusan
+yang sudah diantisipasi dari awal, lihat §2 baris "kalau nanti pindah balik ke
+Render... pinger cron-job.org jadi wajib lagi".
+
+### Kalau Render juga gagal (kartu ditolak lagi / alasan lain)
+
+Jangan coba platform ketiga tanpa konfirmasi user — laporkan balik dulu.
+Opsi yang sudah diketahui: (a) Railway paket berbayar (~$5/bulan, tidak perlu
+ubah kode/pinger sama sekali), (b) evaluasi ulang kandidat lain yang belum
+dicoba dari draft awal (CepatCloud, kalau approval-nya sudah aktif).
+
 ## Riwayat percobaan (2026-07-18, Session 187 lanjutan)
 
 Urutan kandidat semula di `daun_merah_plan.md` (CepatCloud → Render → Oracle
