@@ -11,10 +11,20 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-20 (Session 323 lanjutan 2 — padatkan tampilan Kalender Ekonomi)
+> **Last updated:** 2026-08-20 (Session 323 lanjutan 3 — fix overflow strip sesi FX di header)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
+
+## Changelog Session 323 lanjutan 3 (2026-08-20) — Fix Overflow Strip Sesi FX (TOKYO›LONDON›...) di Header Desktop
+
+**Konteks:** user kirim screenshot PWA desktop (window ~900px) — strip sesi FX di kanan header ("TOKYO › LONDON › OVERLAP › NY › CLOSED → LONDON in 3j 28m") kepotong mentah di tepi window, tanpa "...".
+
+**Root cause:** `.regime-sessions` (`index.html`) sengaja `flex-shrink:0` + `overflow:hidden` tanpa ellipsis (desain lama: biarkan `.regime-meta` di kiri yang mengalah/ellipsis, sesi FX di kanan selalu tampil penuh). Ada media query `@media (max-width:820px)` yang menyembunyikan chip non-aktif + separator, cuma sisakan sesi aktif + countdown ringkas ("TOKYO → LONDON in 3j 28m") — TAPI ambangnya 820px, sementara window ~900px di screenshot user ada di ATAS ambang itu, jadi breadcrumb penuh 5-chip yang tampil, kepotong karena tidak cukup ruang bersama teks REGIME/VIX/MOVE/HY di kiri.
+
+**Fix:** breakpoint dinaikkan 820px → 1024px (reuse breakpoint yang sudah dipakai di 3 tempat lain di file yang sama, bukan angka baru). Sempat dicoba tambahan `flex-shrink:1`+`text-overflow:ellipsis` di `.regime-sessions` supaya ada fallback graceful — TAPI terbukti lewat tes visual (Playwright, viewport 390px) ini malah bikin REGRESI di HP sempit (sesi FX yang kepotong, padahal sebelumnya utuh) karena `text-overflow:ellipsis` tidak render rapi di container `display:flex` dengan banyak child inline — DIBATALKAN, cukup naikkan breakpoint saja.
+
+**Verifikasi:** Playwright, 5 lebar viewport (390/900/1024/1100/1400px) dengan data mock identik (`REGIME: NEUTRAL · VIX 14.9 ▼ · MOVE 71 ▼ · HY 2.75% ▲ · VIX & MOVE live · HY Data 19 Agu`). 390px & 900px: bentuk ringkas ("TOKYO → LONDON in Xj Ym"), tidak kepotong. 1024/1100/1400px: breadcrumb 5-chip penuh, muat tanpa overflow. `npm test` 1055/1055 hijau.
 
 ## Changelog Session 323 lanjutan 2 (2026-08-20) — Padatkan Tampilan Kalender Ekonomi
 
