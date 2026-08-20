@@ -11,10 +11,25 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-18 (Session 322 — lihat penunjuk PLAN Z di bawah)
+> **Last updated:** 2026-08-20 (Session 323 — matikan jadwal GitHub Actions market-digest, VPS jadi satu-satunya sumber)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
+
+## Changelog Session 323 (2026-08-20) — Matikan Jadwal GitHub Actions Market-Digest, VPS Jadi Satu-Satunya Sumber
+
+**Konteks:** user tanya kenapa "Terakhir diringkas" sesi Asia tercatat jam 08:35 WIB padahal jadwalnya 07:02 WIB. Investigasi: `vps/daemon.js` (Q-6, sejak Session 141) sudah memicu `/api/market-digest` di jadwal yang SAMA persis dengan `.github/workflows/market-digest.yml`, sengaja paralel untuk redundansi — jadi mekanisme "pakai VPS biar cepat" yang diminta user **sudah ada**, bukan perlu dibangun baru.
+
+**Bug yang ditemukan:** window dedup cron (`isCronDedupFresh`, `api/_cron_dedup.js`) di `api/market-digest.js` cuma 30 menit. VPS sukses generate tepat jam 07:02 WIB, tapi GitHub Actions (yang memang dikenal kadang telat, lihat komentar existing "GH Actions pernah telat berjam-jam") baru jalan 08:35 WIB — 93 menit kemudian, melewati window 30 menit. Dedup gagal mendeteksi ini sebagai duplikat, GitHub Actions generate ULANG (buang 1 AI call) dan menimpa `generated_at` di cache jadi jam telatnya — versi VPS yang sudah tepat waktu tertutup oleh duplikat yang telat.
+
+**Keputusan user:** daripada sekadar memperlebar window dedup (masih berisiko buang AI call kalau GH Actions telat lebih dari window-nya), matikan saja jadwal otomatis GitHub Actions-nya — VPS jadi satu-satunya sumber terjadwal, tidak ada lagi peluang generate dobel sama sekali.
+
+**Fix:**
+- `.github/workflows/market-digest.yml` — blok `schedule:` (3 cron) dihapus, hanya `workflow_dispatch:` yang tersisa (tetap bisa dipicu manual dari tab Actions kalau VPS/Railway down — pola sama seperti `ta-warm.yml`).
+- `api/market-digest.js` — `CRON_DEDUP_WINDOW_MS` tetap dinaikkan 30 menit → 3 jam sebagai jaga-jaga defense-in-depth (bukan lagi penanganan utama), untuk kasus trigger manual `workflow_dispatch` berdekatan waktu dengan VPS. Window dedup terpisah di `api/admin.js` (`ohlcv_analyze`, gap antar slot cuma 1 jam, `ohlcv-sync.yml` TETAP paralel jalan) sengaja TIDAK disentuh, beda karakteristik risiko.
+- Komentar di `vps/daemon.js` (blok Q-6) dan `api/market-digest.js` diperbarui supaya tidak lagi menyebut "sengaja paralel untuk bandingkan ketepatan jadwal" — itu sudah tidak akurat untuk market-digest (masih akurat untuk ohlcv_sync).
+
+**Verifikasi:** `node --check api/market-digest.js` lolos; full suite `npm test` 1055/1055 hijau (termasuk `test/lib/cron_dedup.test.js` yang menguji fungsi pure `isCronDedupFresh` dengan window sebagai parameter eksplisit, tidak tersentuh perubahan konstanta ini). Verifikasi live tersisa: pantau `generated_at` 3 sesi berikutnya — seharusnya konsisten dekat jadwal VPS (07:02/14:02/19:32 WIB), dan tab Actions GitHub tidak lagi menampilkan run terjadwal untuk `market-digest.yml` (cuma manual kalau dipicu).
 
 ## Changelog Session 322 (2026-08-18) — Penunjuk: Kandidat SL/TP/Invalidasi Deterministik (PLAN Z)
 

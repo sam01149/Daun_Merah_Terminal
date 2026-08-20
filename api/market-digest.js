@@ -813,18 +813,21 @@ module.exports = async function handler(req, res) {
   // every user's dashboard reads via mode=cached.
   const isCronCall = _isCronCallReq(req);
 
-  // Q-6 (Plan Q, 2026-07-18): vps/daemon.js SEKARANG ikut memicu endpoint ini
-  // via x-cron-secret, PARALEL dengan GitHub Actions (sengaja, untuk bandingkan
-  // ketepatan jadwal — daun_merah_plan.md §Plan Q Q-6). Asumsi lama di komentar
-  // DIGEST_LOCK_KEY di bawah ("cron cuma 1 sumber, tidak pernah tabrakan") TIDAK
-  // LAGI benar begitu ada 2 sumber cron. DIGEST_LOCK_TTL (55 detik) untuk
-  // trafik non-cron TERLALU PENDEK untuk kasus ini (GH Actions pernah telat
-  // berjam-jam), jadi dedup cron pakai window sendiri yang lebih panjang
-  // (isCronDedupFresh, api/_cron_dedup.js), dicek dari umur latest_article —
-  // jauh lebih pendek dari jarak antar 3 jadwal (~7 jam) supaya slot
-  // BERIKUTNYA tidak ikut ke-skip.
+  // Q-6 (Plan Q, 2026-07-18): vps/daemon.js memicu endpoint ini via
+  // x-cron-secret. SEJAK Session 323 (2026-08-20) VPS jadi SATU-SATUNYA
+  // sumber terjadwal — jadwal `schedule:` di
+  // .github/workflows/market-digest.yml sudah dimatikan (GH Actions free
+  // tier terpantau telat sampai 93 menit untuk sesi Asia, generate ULANG +
+  // buang 1 AI call + menimpa "Terakhir diringkas" jadi jam telatnya,
+  // padahal VPS sudah generate tepat waktu). Workflow GH Actions masih ada
+  // untuk workflow_dispatch manual (failsafe kalau VPS/Railway down) — dedup
+  // di bawah ini jaga-jaga untuk kasus itu (trigger manual berdekatan waktu
+  // dengan VPS), bukan lagi penanganan utama telat rutin. Window dicek dari
+  // umur latest_article (isCronDedupFresh, api/_cron_dedup.js) — jauh lebih
+  // pendek dari jarak antar 3 jadwal (~5,5 jam Eropa→NY, gap tersempit)
+  // supaya slot BERIKUTNYA tidak ikut ke-skip.
   if (isCronCall) {
-    const CRON_DEDUP_WINDOW_MS = 30 * 60 * 1000;
+    const CRON_DEDUP_WINDOW_MS = 3 * 60 * 60 * 1000;
     try {
       const raw = await redisCmd('GET', 'latest_article');
       if (raw) {

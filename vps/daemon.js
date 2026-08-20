@@ -1264,10 +1264,16 @@ async function maybeTriggerSetupWatch(yahooSymbol, price) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════
-// Q-6: scheduler node-cron — jalan PARALEL dengan GitHub Actions (workflow
-// TIDAK dimatikan), memicu endpoint yang SAMA lewat HTTP. ohlcv_sync sudah
-// men-warm cache TA sendiri di akhir handler-nya (admin.js ohlcvSyncHandler) —
-// TIDAK perlu trigger ta-warm terpisah dari sini.
+// Q-6: scheduler node-cron — memicu endpoint yang sama lewat HTTP.
+// - market-digest: jadwal `schedule:` di GitHub Actions DIMATIKAN (Session 323,
+//   2026-08-20) — GH Actions free tier terpantau telat sampai 93 menit,
+//   generate ULANG + buang AI call tiap kali telat lewat window dedup. VPS
+//   sekarang SATU-SATUNYA sumber terjadwal; workflow GH Actions masih ada
+//   untuk workflow_dispatch manual saja (failsafe kalau VPS/Railway down).
+// - ohlcv_sync: TETAP jalan PARALEL dengan ohlcv-sync.yml (GH Actions belum
+//   dimatikan di sini — beda karakteristik risiko, gap antar run cuma 1 jam).
+//   ohlcv_sync sudah men-warm cache TA sendiri di akhir handler-nya
+//   (admin.js ohlcvSyncHandler) — TIDAK perlu trigger ta-warm terpisah dari sini.
 // ══════════════════════════════════════════════════════════════════════════
 let cron = null;
 try { cron = require('node-cron'); } catch (e) { /* ditangani di startScheduler */ }
