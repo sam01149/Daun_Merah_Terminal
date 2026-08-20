@@ -11,10 +11,21 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-20 (Session 323 lanjutan — root cause VPS down: Railway wajib serverless, dicoba pindah Render)
+> **Last updated:** 2026-08-20 (Session 323 lanjutan 2 — padatkan tampilan Kalender Ekonomi)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
+
+## Changelog Session 323 lanjutan 2 (2026-08-20) — Padatkan Tampilan Kalender Ekonomi
+
+**Konteks:** user minta tab Kalender dipadatkan supaya tidak perlu scroll panjang tiap buka.
+
+**Fix (CSS + label saja, tidak ada perubahan struktur data):** `index.html`
+- `.cal-event-main` padding dikurangi (9px→6px atas, 8px→5px bawah, breakpoint desktop 10px→7px/9px→6px); `.cal-event-header` margin-bottom 4px→2px; `.cal-event` margin-bottom 6px→4px.
+- `.cal-date-group`/`.cal-date-label`: margin & padding antar-hari dipangkas (14px→9px, dll).
+- Baris Previous/Forecast/Actual (`.cal-data-row`/`.cal-data-cell`) diubah dari 2 baris (label di atas, angka di bawah) jadi 1 baris sejajar per sel; label dipersingkat "Previous/Forecast/Actual" → "Prev/Fcst/Act" supaya tetap muat di layar sempit.
+
+**Verifikasi:** dites via Playwright (harness baru — tidak ada skill `run` project sebelumnya untuk app ini, direkomendasikan `/run-skill-generator` kalau butuh lagi) — index.html tidak bisa dibuka langsung via `file://` karena script `<script src="/newscat.js">` pakai path root-relative yang gagal resolve tanpa server (`FxSessions is not defined` dkk), jadi diserve via `npx serve` lokal. `calData` di-mock langsung (bare identifier assignment, BUKAN `window.calData` — variabelnya `let` di top-level script, beda binding dari property `window`) supaya tidak perlu backend/API asli. Screenshot before/after dengan 5 event mock identik: `#calPanelInner` scrollHeight **582px → 439px (turun ~25%, ~29px/event)**. Tidak ada teks terpotong/tumpang tindih di kedua tema. `npm test` 1055/1055 hijau (perubahan CSS/label murni, tidak menyentuh logic).
 
 ## Changelog Session 323 (2026-08-20) — Fix Dedup Cron Market-Digest + Temuan VPS/Railway Down
 
