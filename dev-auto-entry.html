@@ -833,7 +833,7 @@ if (localStorage.getItem('dm_dev_theme') === 'light') {
 
   function renderStatusFilterBtns(){
     const el = document.getElementById('filterStatusBtns');
-    const mk = (v, cls) => `<span class="badge badge-btn ${cls}${filterStatusVal === v ? ' active' : ''}" data-v="${esc(v)}">${esc(v || 'semua')}</span>`;
+    const mk = (v, cls) => `<span class="badge badge-btn ${cls}${filterStatusVal === v ? ' active' : ''}" data-v="${esc(v)}">${esc(v || 'semua (tanpa canceled)')}</span>`;
     el.innerHTML = mk('', 'all') + STATUS_FILTER_OPTIONS.map(v => mk(v, v)).join('');
     el.querySelectorAll('[data-v]').forEach(b => b.addEventListener('click', () => {
       filterStatusVal = b.dataset.v; recentPage = 1; renderStatusFilterBtns(); renderRecentFiltered(); updateFilterToggleState();
@@ -891,8 +891,16 @@ if (localStorage.getItem('dm_dev_theme') === 'light') {
     document.getElementById('filterRow').classList.toggle('open');
   });
 
+  // (2026-08-20) Default ("semua", filterStatusVal kosong) SENGAJA menyembunyikan
+  // status 'canceled' — diskusi user: baris canceled (bias_flip/gate_*, TIDAK PERNAH
+  // jadi posisi live) mendominasi tabel dan bikin susah scan riwayat trade sungguhan.
+  // Tetap bisa dilihat via filter badge 'canceled' eksplisit (STATUS_FILTER_OPTIONS di
+  // atas) — cuma disembunyikan dari tampilan default, datanya tidak hilang sama sekali.
   function getFilteredRecent(){
-    return allRecent.filter(s => (!filterStatusVal || s.status === filterStatusVal) && (!filterSymbolVal || s.symbol === filterSymbolVal));
+    return allRecent.filter(s =>
+      (filterStatusVal ? s.status === filterStatusVal : s.status !== 'canceled')
+      && (!filterSymbolVal || s.symbol === filterSymbolVal)
+    );
   }
 
   function renderRecentPager(page, totalPages){

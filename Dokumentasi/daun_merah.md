@@ -11,10 +11,14 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-20 (Session 323 lanjutan 4 — Gate B drawdown circuit breaker dinonaktifkan sementara)
+> **Last updated:** 2026-08-20 (Session 323 lanjutan 5 — Riwayat Setup sembunyikan `canceled` dari tampilan default)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
+
+## Changelog Session 323 lanjutan 5 (2026-08-20) — Riwayat Setup: Status `canceled` Disembunyikan dari Tampilan Default
+
+Auto-entry/Professional LLM Trader — entri lengkap di `Dokumentasi/professional_llm_trader/changelog.md` (Session 323 lanjutan 5): tabel Riwayat Setup (`dev-auto-entry.html`) sekarang sembunyikan baris `canceled` di filter default (badge "semua" → "semua (tanpa canceled)"), tetap bisa dilihat via filter badge `canceled` eksplisit. Juga: trigger manual 5 pair auto-entry pasca Gate B dinonaktifkan (lanjutan 4) — dikonfirmasi berhasil, tidak ada lagi yang tertahan `gate_drawdown_circuit_breaker`.
 
 ## Changelog Session 323 lanjutan 4 (2026-08-20) — Gate B (Drawdown Circuit Breaker) Dinonaktifkan Sementara
 
