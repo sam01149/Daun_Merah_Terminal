@@ -105,6 +105,44 @@ function isDrawdownHalted({ closedSetups, regime }) {
   return { halted, rollingR, threshold, sampleSize, regime_known: regimeKnown };
 }
 
+// ── Gate B katup darurat berbasis waktu (2026-08-22, syarat aktivasi ulang Gate B
+// yang disebut sendiri di catatan nonaktifnya, POLICY_EPOCHS v29) ──────────────────
+// Celah desain asli: Gate B GLOBAL lintas-pair, cuma bisa membaik lewat (a) trade
+// baru yang closed profit, atau (b) rezim risiko membaik dari luar. Kalau di titik
+// tertentu SEMUA pair kebetulan nol posisi pending/open sekaligus DAN rolling-R masih
+// di bawah ambang, jalan (a) mustahil (entry baru itu sendiri yang diblokir) — macet
+// permanen sampai (b) terjadi, yang bisa tidak pernah terjadi.
+//
+// Fix: kalau TIDAK ADA posisi pending/open di SELURUH log (lintas semua pair) DAN
+// sudah >= N hari sejak entri REAL terakhir (status apa pun SELAIN 'canceled' — ghost
+// yang ditahan gate tetap tercatat 'canceled' tiap siklus, jadi timestamp log TIDAK
+// berhenti maju cuma karena gate menyala; harus diukur dari entri yang benar-benar
+// tembus, bukan dari entri log APAPUN), izinkan SATU kandidat lolos supaya siklus
+// (a) bisa jalan lagi. N hari (bukan jam) sengaja dipilih jauh di atas kadence normal
+// (2 slot/hari/pair) supaya valve tidak menyala di kondisi flat yang wajar/singkat,
+// cuma di kemacetan yang genuinely berkepanjangan.
+const DRAWDOWN_EMERGENCY_VALVE_DAYS = 3; // HEURISTIK AWAL, belum dikalibrasi dari data live — pola sama DRAWDOWN_HALT_THRESHOLD_R
+
+function isDrawdownEmergencyValveOpen({ log, nowMs }) {
+  const entries = Array.isArray(log) ? log : [];
+  const hasPendingOrOpen = entries.some(s => s && (s.status === 'pending' || s.status === 'open'));
+  if (hasPendingOrOpen) return false; // ada posisi yang masih bisa closed -> jalan (a) masih hidup, valve tidak perlu
+
+  const realTsList = entries
+    .filter(s => s && s.status !== 'canceled')
+    .map(s => {
+      const m = String(s.id || '').match(/:(\d+)$/);
+      return m ? Number(m[1]) : (s.ts ? new Date(s.ts).getTime() : null);
+    })
+    .filter(t => Number.isFinite(t));
+  if (realTsList.length === 0) return true; // tidak pernah ada entri real sama sekali -> jangan macet dari awal umur sistem
+
+  const lastRealTs = Math.max(...realTsList);
+  const now = Number.isFinite(nowMs) ? nowMs : Date.now();
+  const daysSinceLastReal = (now - lastRealTs) / 86400000;
+  return daysSinceLastReal >= DRAWDOWN_EMERGENCY_VALVE_DAYS;
+}
+
 // ── Gate D: Correlation cap (heuristik sederhana, pasangan terbukti korelatif) ──
 // Daftar pasangan pair yang korelasinya cukup besar untuk di-cap (r absolut >= ~0,3
 // ke pair aktif lain — ambang & metode di pair_workflow.md folder professional_llm_trader,
@@ -350,6 +388,7 @@ const POLICY_EPOCHS = [
   { v: 27, from: '2026-08-18T05:56:31Z', kind: 'fix', impact: 'entry',    label: 'S319: Gate D menghitung posisi pending sebagai exposure, bukan cuma open' },
   { v: 28, from: '2026-08-18T09:12:12Z', kind: 'policy', impact: 'levels',  label: 'PLAN Z: sl/tp/invalidation_trigger wajib dari kandidat deterministik (api/_levels.js), dulu bebas dikarang AI' },
   { v: 29, from: '2026-08-20T08:36:35Z', kind: 'policy', impact: 'entry',    label: 'S323 lanj.4: Gate B (drawdown circuit breaker) dinonaktifkan sementara selama fase pengumpulan sampel n>=100' },
+  { v: 30, from: '2026-08-21T18:54:19Z', kind: 'fix', impact: 'entry',    label: 'Gate B diaktifkan ulang dengan katup darurat waktu (isDrawdownEmergencyValveOpen) — celah macet total dari v29 diperbaiki, ambang R tetap heuristik belum dikalibrasi' },
 ];
 
 const POLICY_VERSION = POLICY_EPOCHS[POLICY_EPOCHS.length - 1].v;
@@ -372,6 +411,8 @@ module.exports = {
   POLICY_VERSION,
   policyVersionForTs,
   isDrawdownHalted,
+  isDrawdownEmergencyValveOpen,
+  DRAWDOWN_EMERGENCY_VALVE_DAYS,
   isCorrelatedExposureBlocked,
   CORRELATED_PAIRS,
   EXPOSURE_BINDING_STATUSES,

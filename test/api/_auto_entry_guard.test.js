@@ -7,6 +7,8 @@ const assert = require('node:assert/strict');
 const {
   computeRollingR,
   isDrawdownHalted,
+  isDrawdownEmergencyValveOpen,
+  DRAWDOWN_EMERGENCY_VALVE_DAYS,
   isCorrelatedExposureBlocked,
   isTimingConflictBlocked,
   isInvalidationTriggered,
@@ -105,6 +107,62 @@ test('isDrawdownHalted: array kosong -> rollingR 0, tidak pernah halted', () => 
 // Gate C (isRegimeConfidenceBlocked) DIHAPUS 2026-07-28 (sesi sama dengan pembuatannya)
 // — buta arah (blok confidence rendah saat regime stres tanpa cek align bias vs regime),
 // keputusan user. Lihat api/_auto_entry_guard.js.
+
+// ── isDrawdownEmergencyValveOpen (katup darurat Gate B, 2026-08-22) ─────────
+const DAY_MS = 86400000;
+
+test('isDrawdownEmergencyValveOpen: ADA posisi pending/open -> valve TERTUTUP walau lama tidak ada entri real', () => {
+  const nowMs = Date.now();
+  const log = [
+    { status: 'pending', ts: nowMs - 10 * DAY_MS },
+    { status: 'canceled', canceled_reason: 'gate_drawdown_circuit_breaker', ts: nowMs - 1 * DAY_MS },
+  ];
+  assert.equal(isDrawdownEmergencyValveOpen({ log, nowMs }), false);
+});
+
+test('isDrawdownEmergencyValveOpen: nol pending/open, entri real TERAKHIR < N hari -> valve TERTUTUP', () => {
+  const nowMs = Date.now();
+  const log = [
+    { status: 'sl', ts: nowMs - (DRAWDOWN_EMERGENCY_VALVE_DAYS - 1) * DAY_MS },
+    { status: 'canceled', canceled_reason: 'gate_drawdown_circuit_breaker', ts: nowMs - 1 * DAY_MS },
+  ];
+  assert.equal(isDrawdownEmergencyValveOpen({ log, nowMs }), false);
+});
+
+test('isDrawdownEmergencyValveOpen: nol pending/open, entri real TERAKHIR >= N hari -> valve TERBUKA', () => {
+  const nowMs = Date.now();
+  const log = [
+    { status: 'sl', ts: nowMs - (DRAWDOWN_EMERGENCY_VALVE_DAYS + 1) * DAY_MS },
+    // ghost 'canceled' baru terus bertambah tiap siklus SELAMA macet — timestamp-nya
+    // TIDAK BOLEH ikut dianggap "entri real" (kalau salah, valve tidak akan pernah
+    // terbuka karena selalu ada ghost yang "baru").
+    { status: 'canceled', canceled_reason: 'gate_drawdown_circuit_breaker', ts: nowMs - 1 * DAY_MS },
+    { status: 'canceled', canceled_reason: 'gate_drawdown_circuit_breaker', ts: nowMs - 0.1 * DAY_MS },
+  ];
+  assert.equal(isDrawdownEmergencyValveOpen({ log, nowMs }), true);
+});
+
+test('isDrawdownEmergencyValveOpen: tidak pernah ada entri real sama sekali -> valve TERBUKA (jangan macet dari awal umur sistem)', () => {
+  const nowMs = Date.now();
+  const log = [
+    { status: 'canceled', canceled_reason: 'gate_drawdown_circuit_breaker', ts: nowMs },
+  ];
+  assert.equal(isDrawdownEmergencyValveOpen({ log, nowMs }), true);
+});
+
+test('isDrawdownEmergencyValveOpen: log kosong/null -> valve TERBUKA (fail-open, tidak menahan tanpa data)', () => {
+  const nowMs = Date.now();
+  assert.equal(isDrawdownEmergencyValveOpen({ log: [], nowMs }), true);
+  assert.equal(isDrawdownEmergencyValveOpen({ log: null, nowMs }), true);
+});
+
+test('isDrawdownEmergencyValveOpen: timestamp dibaca dari id (":<epoch>") kalau ts tidak ada', () => {
+  const nowMs = Date.now();
+  const log = [
+    { id: `EURUSD=X:${nowMs - (DRAWDOWN_EMERGENCY_VALVE_DAYS + 1) * DAY_MS}`, status: 'tp' },
+  ];
+  assert.equal(isDrawdownEmergencyValveOpen({ log, nowMs }), true);
+});
 
 // ── isCorrelatedExposureBlocked (Gate D) ────────────────────────────────────
 
