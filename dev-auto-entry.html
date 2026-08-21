@@ -312,12 +312,13 @@ if (localStorage.getItem('dm_dev_theme') === 'light') {
         <h2>Gate Plan U — Cukup Data?</h2>
         <button id="btnRefresh">Refresh</button>
       </div>
-      <p class="hint">Kriteria SELESAI (2026-07-26, redesain independensi — lihat daun_merah_riset.md): BUKAN cuma total gabungan ≥100, tapi n global ≥100 <b>DAN</b> SETIAP pair individual ≥30 (ambang CLT). n di sini = setup yang sudah <b>closed (TP+SL)</b>, bukan total baris log (pending/canceled/ambiguous tidak dijadikan pelajaran, jadi tidak dihitung). Kalau ada pair di bawah 30 walau n gabungan sudah ≥100, gate BELUM terpenuhi — jangan tarik kesimpulan win-rate dulu.</p>
+      <p class="hint">Kriteria SELESAI (ambang diturunkan 2026-08-22, keputusan permanen): n global ≥30 <b>DAN</b> SETIAP pair individual ≥30 (ambang CLT). Dihitung dari NOL sejak AATAS live — sampel arsitektur lama (teknikal-dulu) tidak ikut, karena itu populasi sistem yang berbeda. n di sini = setup yang sudah <b>closed (TP+SL)</b>, bukan total baris log (pending/canceled/ambiguous tidak dijadikan pelajaran, jadi tidak dihitung). Kalau ada pair di bawah 30 walau n gabungan sudah ≥100, gate BELUM terpenuhi — jangan tarik kesimpulan win-rate dulu.</p>
       <div class="grid" id="gateStats"><div class="empty">Belum dimuat — klik Refresh.</div></div>
     </div>
 
     <div class="card" id="card-global">
       <h2>Ringkasan Global (setup_log_auto:v1)</h2>
+      <p class="hint" id="globalEpochHint">Sejak AATAS live (2026-08-22), SEMUA angka agregat di kartu ini dihitung ulang HANYA dari setup kebijakan AATAS ke atas — urutan keputusannya dibalik jadi makro-dulu, jadi win rate arsitektur lama tidak bisa digabung. Angka nol di awal itu wajar, bukan data hilang: tabel Riwayat Setup di bawah tetap menampilkan seluruh histori lama apa adanya.</p>
       <div class="grid" id="globalStats"><div class="empty">Belum dimuat — klik Refresh.</div></div>
     </div>
 
@@ -339,7 +340,7 @@ if (localStorage.getItem('dm_dev_theme') === 'light') {
 
     <div class="card" id="card-calib">
       <h2>Kalibrasi Confidence AI</h2>
-      <p class="hint">Confidence (tinggi/sedang/rendah) BUKAN hasil rumus — itu penilaian AI sendiri atas setup yang dibuatnya. Tabel ini yang jadi rumus pengecekannya: kalau win rate tidak turun berurutan tinggi &gt; sedang &gt; rendah, confidence AI belum kalibrasi bagus (jangan dipakai untuk sizing).</p>
+      <p class="hint">Confidence (tinggi/sedang/rendah) BUKAN hasil rumus — itu penilaian AI sendiri atas setup yang dibuatnya. Tabel ini yang jadi rumus pengecekannya: kalau win rate tidak turun berurutan tinggi &gt; sedang &gt; rendah, confidence AI belum kalibrasi bagus (jangan dipakai untuk sizing). CATATAN sejak AATAS (2026-08-22): field <b>confidence</b> sudah DIGANTI checklist_pct + verdict di jalur auto, jadi tabel ini PERMANEN kosong untuk setup baru — bukan bug. Histori lama tetap sah dibaca.</p>
       <div class="grid" id="calibStats"><div class="empty">—</div></div>
     </div>
 
@@ -672,7 +673,11 @@ if (localStorage.getItem('dm_dev_theme') === 'light') {
     return `<div class="stat"><div class="v${cls ? ' ' + cls : ''}">${esc(value)}</div><div class="l">${esc(label)}</div></div>`;
   }
 
-  const GATE_GLOBAL_N = 100, GATE_PER_PAIR_N = 30;
+  // Ambang gate DITURUNKAN 100 -> 30 (2026-08-22, keputusan PERMANEN user, lihat
+  // plan.md folder professional_llm_trader Kriteria Fase Tes). n=30 bukan angka
+  // baru: itu ambang CLT yang sudah dipakai per-pair, sekarang berlaku global juga.
+  // Trade-off diterima sadar: 95% CI melebar dari sekitar +-10pp ke +-18pp.
+  const GATE_GLOBAL_N = 30, GATE_PER_PAIR_N = 30;
 
   function renderGate(global, symbols){
     const keys = Object.keys(symbols || {});
@@ -939,6 +944,21 @@ if (localStorage.getItem('dm_dev_theme') === 'light') {
   // yang tadinya mengulang nama kelompok (mis. "Alasan Intervensi") dipersingkat jadi
   // "Alasan" karena judul kelompok "Intervensi Posisi" sudah kasih konteksnya. Kelompok
   // yang seluruh isinya kosong untuk setup ini otomatis tidak tampil sama sekali.
+  // AATAS: gate dicatat sebagai {pass, note}. `pass` null = model tidak melaporkan
+  // (fail-open di server, TIDAK dibaca sebagai gagal) — dibedakan eksplisit di layar
+  // supaya "tidak dilaporkan" tidak salah dibaca jadi "lolos".
+  function gateLabel(g){
+    if (!g) return '';
+    const st = g.pass === true ? 'LOLOS' : (g.pass === false ? 'GAGAL' : 'tidak dilaporkan');
+    return g.note ? `${st} — ${g.note}` : st;
+  }
+  // Objek per-step ditampilkan apa adanya (ringkas, satu baris) — sengaja tidak dipilih
+  // sebagian field-nya di sini: bentuk isinya masih bisa berkembang di sisi prompt, dan
+  // dashboard ini alat audit developer, bukan tampilan produk.
+  function jsonLabel(o){
+    if (!o || typeof o !== 'object') return '';
+    try { return JSON.stringify(o); } catch(e) { return ''; }
+  }
   function fldGroup(title, rowsArr){
     const rows = rowsArr.filter(Boolean).join('');
     if (!rows) return '';
@@ -1069,6 +1089,22 @@ if (localStorage.getItem('dm_dev_theme') === 'light') {
         // sebelumnya tidak pernah disimpan/ditampilkan sama sekali untuk setup auto-entry.
         fldLong('Analisa Lengkap (AI)', s.commentary),
       ]),
+      // AATAS (2026-08-22): jejak keputusan per-step untuk setup jalur auto. Ditaruh
+      // PALING ATAS setelah Ringkasan karena inilah dasar keputusan yang sebenarnya
+      // sekarang — kelompok "Makro & Konflik" di bawahnya jadi warisan (field-nya null
+      // untuk setup baru, tapi tetap dirender supaya setup LAMA masih bisa dibaca).
+      fldGroup('Checklist AATAS (macro-first)', [
+        fld('Skor Checklist', s.checklist_pct != null ? s.checklist_pct + '%' : ''),
+        fld('Verdict', s.verdict),
+        fld('Gate Validitas Driver', gateLabel(s.gate_validitas_driver)),
+        fld('Gate Risk Management', gateLabel(s.gate_risk_management)),
+        fld('Regime Check (Step 0)', jsonLabel(s.regime_check)),
+        fld('Fundamental Bias (Step 2)', jsonLabel(s.fundamental_bias)),
+        fld('Teknikal (Step 4-5)', jsonLabel(s.technical)),
+        fld('Validasi Akhir (Step 8)', jsonLabel(s.final_validation)),
+        fldLong('Catatan Penalaran AI', s.reasoning_note),
+        fld('Versi Prompt AATAS', s.aatas_v),
+      ]),
       fldGroup('Makro & Konflik', [
         fld('Alignment', s.alignment),
         fld('Makro Alignment (mentah)', s.makro_alignment),
@@ -1076,7 +1112,10 @@ if (localStorage.getItem('dm_dev_theme') === 'light') {
         fld('Conflict', s.conflict),
         fld('Catatan Conflict', s.conflict_note),
         fld('Sumber Conflict', s.conflict_source),
-        fld('Sistem Hakim', s.sistem_hakim),
+        // Sistem Hakim & contradiction guard dinonaktifkan untuk jalur auto sejak AATAS
+        // (field yang mereka koreksi sudah tidak diproduksi di sana). Kosong di setup
+        // baru = memang begitu desainnya, bukan data yang hilang.
+        fld('Sistem Hakim', s.sistem_hakim != null ? s.sistem_hakim : (s.aatas_v ? 'tidak berlaku (AATAS)' : '')),
         fld('Rezim Risiko Saat Dibuat', s.risk_regime),
       ]),
       fldGroup('Parameter Trade', [

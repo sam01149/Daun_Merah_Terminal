@@ -26,7 +26,7 @@ const { buildPairContext, computeCurrencyStrength } = require('./_pair_context')
 const { validateTightenSl, computePreventiveTightenSl, _evaluateManaged, _aggManagementStats, isCorroborated } = require('./_position_review');
 // isDrawdownHalted (Gate B) diaktifkan ulang 2026-08-22 (POLICY_EPOCHS v30) — lihat
 // komentar di titik pemanggilannya untuk riwayat lengkap nonaktif (v29) -> aktif lagi.
-const { isCorrelatedExposureBlocked, isTimingConflictBlocked, isInvalidationTriggered, INVALIDATION_TRIGGER_TYPES, INVALIDATION_TRIGGER_DIRECTIONS, INVALIDATION_TRIGGER_TIMEFRAMES, CORRELATED_PAIRS, POLICY_VERSION, POLICY_EPOCHS, policyVersionForTs, isDrawdownHalted, isDrawdownEmergencyValveOpen } = require('./_auto_entry_guard');
+const { isCorrelatedExposureBlocked, isTimingConflictBlocked, isInvalidationTriggered, INVALIDATION_TRIGGER_TYPES, INVALIDATION_TRIGGER_DIRECTIONS, INVALIDATION_TRIGGER_TIMEFRAMES, CORRELATED_PAIRS, POLICY_VERSION, POLICY_EPOCHS, policyVersionForTs, isDrawdownHalted, isDrawdownEmergencyValveOpen, AATAS_EPOCH, isGoldRegimeBlocked } = require('./_auto_entry_guard');
 const { computeLevelCandidates } = require('./_levels');
 
 // Gate D live-sign lookup (audit 2026-08-16): terjemahkan simbol Yahoo di
@@ -3815,10 +3815,25 @@ function _statsPayloadFromLog(log) {
     return est == null ? s : { ...s, policy_v_est: est };
   });
   log = decorated;
+  // AATAS (2026-08-22, permintaan eksplisit user): angka AGREGAT direset ke populasi
+  // kebijakan baru — dihitung ULANG hanya dari setup ber-`policy_v` (atau `policy_v_est`
+  // untuk entri lama) >= AATAS_EPOCH. Alasannya bukan kosmetik: sebelum AATAS, arah
+  // trade ditentukan teknikal dulu dengan makro sebagai catatan kaki; sesudahnya makro
+  // yang jadi gate. Win-rate gabungan dua arsitektur itu tidak menjawab pertanyaan apa
+  // pun. Entri TANPA policy_v maupun policy_v_est (ts korup) DIKELUARKAN dari agregat —
+  // tidak bisa dipastikan milik populasi mana, jangan ditebak.
+  //
+  // `recent` (tabel Riwayat Setup) & `symbols[k].history` SENGAJA TIDAK difilter: histori
+  // lengkap tetap terlihat apa adanya, cuma tidak ikut dihitung. Ini permintaan user yang
+  // spesifik — reset statistik, BUKAN menyembunyikan riwayat.
+  const aatasLog = log.filter(_isAatasEpochSetup);
   const bySymbol = {};
   for (const s of log) { (bySymbol[s.symbol] = bySymbol[s.symbol] || []).push(s); }
   const symbols = {};
-  for (const k of Object.keys(bySymbol)) { symbols[k] = _aggSetupStats(bySymbol[k]); symbols[k].history = bySymbol[k]; }
+  for (const k of Object.keys(bySymbol)) {
+    symbols[k] = _aggSetupStats(bySymbol[k].filter(_isAatasEpochSetup));
+    symbols[k].history = bySymbol[k];
+  }
   // `recent` dulu di-cap slice(0,10) di sini + dashboard sengaja bikin tabel selalu
   // 10 baris tanpa filter/paginasi. Sekarang dikirim penuh (log sudah newest-first,
   // ditulis via unshift) — dashboard yang paginasi client-side supaya bisa filter
@@ -3828,7 +3843,9 @@ function _statsPayloadFromLog(log) {
   // perlu membuka source code untuk tahu versi berapa artinya apa: tiap epoch bawa
   // tanggal, label perubahan, dan `impact` (entry/pair_set/levels/exit/context/eval)
   // sebagai panduan di mana sampel LAYAK dibelah.
-  return { symbols, global: _aggSetupStats(log), recent: log, policy_epochs: POLICY_EPOCHS };
+  // `stats_from_policy_v` ikut dikirim supaya dashboard bisa menjelaskan sendiri kenapa
+  // angkanya nol/kecil (bukan "data hilang") tanpa siapa pun harus membuka source code.
+  return { symbols, global: _aggSetupStats(aatasLog), recent: log, policy_epochs: POLICY_EPOCHS, stats_from_policy_v: AATAS_EPOCH };
 }
 
 // BUG DITEMUKAN & DIFIX (2026-07-25, diskusi user — status 'tp' palsu tersimpan di
@@ -3894,7 +3911,7 @@ async function _buildAutoScopeStats() {
   if (!raw) {
     await redisCmd('SET', SETUP_STATS_LAST_RUN_KEY, new Date().toISOString(), 'EX', '900').catch(() => {});
     return {
-      scope: 'auto', symbols: {}, global: _aggSetupStats([]), recent: [], policy_epochs: POLICY_EPOCHS,
+      scope: 'auto', symbols: {}, global: _aggSetupStats([]), recent: [], policy_epochs: POLICY_EPOCHS, stats_from_policy_v: AATAS_EPOCH,
       consistency: await _consistencySummary(), pipeline_latency: await _pipelineLatencySummary(),
     };
   }
@@ -4916,6 +4933,203 @@ function _extractMacroDrivers(rawSnap, rawRY) {
 // Naikkan angka ini setiap kali TEKS framing di bawah direvisi lagi.
 const COT_CME_PROMPT_VERSION = 1;
 
+// ── AATAS — "Auto AI to Auto System" (2026-08-22) ─────────────────────────────
+// Porting checklist SMC/ICT manual (index.html PB_REGIME_CHECK + PLAYBOOKS.smc_ict)
+// ke jalur auto-entry, dengan 8 delta hasil rekonsiliasi dengan cara trading nyata
+// user. Latar: audit 2026-08-21/22 menemukan win rate auto-entry anjlok 64% -> 25%
+// dengan DUA pola mekanistik (bukan sekadar variasi statistik):
+//   1. conflict='waktu' (AI menandai sendiri risiko event lalu tetap entry) -> 20% WR.
+//   2. Fade-tren GC=F & CHF/JPY — short di tengah uptrend kuat karena "RSI overbought".
+// Root cause: bias ditentukan dari TEKNIKAL dulu, makro cuma catatan kaki non-blocking.
+// AATAS membalik urutannya: makro jadi GATE di depan, teknikal cuma presisi timing.
+//
+// ISOLASI (Opsi A plan AATAS, keputusan arsitektur wajib — dipilih & dicatat 2026-08-22):
+// SELURUH blok ini HANYA aktif saat `isAutoCall === true`. Jalur manual publik ("Analisa
+// AI") tetap memakai makro_alignment/confidence/Sistem Hakim/contradiction-guard APA
+// ADANYA — dua tempat render badge "Keselarasan Makro" di index.html adalah fitur PUBLIK,
+// mengganti field-nya = memutus fitur publik. Preseden pola karantina yang sama:
+// framing CME-priority (`hasCmeData && isAutoCall`, 2026-08-08).
+//
+// Naikkan AATAS_PROMPT_VERSION setiap kali TEKS checklist di bawah direvisi — angka ini
+// direkam per setup (`aatas_v`) supaya generasi prompt lama/baru bisa dibedakan tanpa
+// menebak dari `ts`.
+const AATAS_PROMPT_VERSION = 1;
+
+// Label verdict SENGAJA sama persis dengan ckGetVerdict() di index.html (checklist
+// manual) — supaya angka checklist_pct/verdict auto-entry bisa dibandingkan langsung
+// dengan jurnal manual user tanpa tabel penerjemah.
+const AATAS_VERDICT_CANON = new Map([
+  ['NOTRADE', 'NO TRADE'], ['NO TRADE', 'NO TRADE'],
+  ['KONFLIKREVIEW', 'KONFLIK-REVIEW'], ['KONFLIK REVIEW', 'KONFLIK-REVIEW'], ['KONFLIK', 'KONFLIK-REVIEW'],
+  ['PERTIMBANGKAN', 'PERTIMBANGKAN'],
+  ['SIAPTRADE', 'SIAP TRADE'], ['SIAP TRADE', 'SIAP TRADE'],
+  ['ENTRY', 'ENTRY'],
+]);
+
+// Anomali korelasi live yield-emas dari cache `correlations_v3` (api/correlations.js
+// `gold_correlations.RealYield`). Ambang |r20-r60| > 0,4 = ambang anomali yang SUDAH
+// tervalidasi & dipakai modul korelasi itu sendiri — bukan angka baru yang dikarang di
+// sini (pelajaran 2026-08-16: jangan pakai r20 mentah harian sebagai pemicu, itu noise).
+// Return null = TIDAK DIKETAHUI (cache kosong / seri RealYield tidak terhitung) — caller
+// WAJIB memperlakukannya fail-open, bukan sebagai "tidak anomali".
+function _goldYieldCorrAnomaly(corrData) {
+  const ry = corrData && corrData.gold_correlations && corrData.gold_correlations.RealYield;
+  if (!ry || ry.r20 == null || ry.r60 == null) return null;
+  return Math.abs(ry.r20 - ry.r60) > 0.4;
+}
+
+// Blok instruksi checklist yang disisipkan ke prompt auto-entry, TEPAT SEBELUM daftar
+// field JSON. Murni string-building (pure) supaya bisa diuji tanpa Redis/AI.
+function _buildAatasChecklistBlock({ label, isXau, goldCorr }) {
+  const legs = String(label || '').toUpperCase().split('/').map(x => x.trim()).filter(Boolean);
+  const legA = legs[0] || 'BASE', legB = legs[1] || 'QUOTE';
+  const L = [];
+  L.push('[CHECKLIST AATAS — URUTAN KEPUTUSAN WAJIB: MAKRO DULU, TEKNIKAL BELAKANGAN]');
+  L.push('Ini urutan kerja yang WAJIB kamu ikuti. Arah trade LAHIR dari Step 0-2 (makro/fundamental). Step 4-5 (teknikal) HANYA menentukan DI MANA dan KAPAN masuk — bukan menentukan arah. DILARANG menentukan arah dari chart dulu lalu mencari pembenaran makro sesudahnya.');
+  L.push('GATE = wajib lolos penuh, tidak bisa ditawar: kalau gagal, TIDAK ADA setup (entry_zone/sl/tp/entry_basis = null). Bobot biasa = menyumbang skor persen, tidak menggagalkan sendirian.');
+  L.push('');
+  if (isXau) {
+    L.push('STEP 0 REGIME CHECK (PRE-GATE, cabang XAU/USD):');
+    L.push('- Real Yield + DXY + Risk Regime: nilai satu per satu apakah masing-masing mendukung emas NAIK (bullish), TURUN (bearish), atau netral. Ketiganya WAJIB sepakat (3/3) supaya arah makro dianggap bulat. Laporkan hasilnya di regime_check.gold (termasuk unanimous true/false).');
+    const corrTxt = goldCorr && goldCorr.r20 != null && goldCorr.r60 != null
+      ? `Korelasi live emas vs real yield saat ini: r20 ${goldCorr.r20.toFixed(2)} vs r60 ${goldCorr.r60.toFixed(2)} (selisih ${Math.abs(goldCorr.r20 - goldCorr.r60).toFixed(2)}) — status: ${goldCorr.anomaly ? 'ANOMALI (di luar ambang 0,4)' : 'NORMAL'}.`
+      : 'Korelasi live emas vs real yield: data tidak tersedia saat ini.';
+    L.push(`- Kalau TIDAK bulat 3/3: ${corrTxt} Korelasi NORMAL berarti Real Yield sendiri boleh jadi penentu arah, lanjut. Korelasi ANOMALI berarti TIDAK ENTRY sama sekali (satu-satunya hard-stop baru di Step 0), karena penentu tunggal yang tersisa sedang tidak bisa dipercaya.`);
+    L.push('- Rate Path Fed implied (kalau ada di data di atas): konteks tambahan saja, TIDAK memblokir.');
+    L.push('- Event high-impact <6 jam ke depan untuk USD/emas: TUNGGU sampai lewat (entry ditunda, ukuran risiko TIDAK dikecilkan) — set regime_check.event_wait=true dan jelaskan di conflict_note. Ini BUKAN alasan membatalkan tesis.');
+    L.push('- COT & retail sentiment TIDAK dipakai di sini — dipindah ke Step 8 (catatan: laporan COT gold beda skema CFTC dari FX, jangan disamakan).');
+  } else {
+    L.push('STEP 0 REGIME CHECK (PRE-GATE):');
+    L.push('- Regime saat ini (risk_on/neutral/elevated/risk_off) dari baris RISK REGIME.');
+    L.push(`- CB Bias ${legA} dan ${legB} dari DUA sumber sekaligus: (a) bias resmi bank sentral di FUNDAMENTAL TERSTRUKTUR, dan (b) pembacaanmu sendiri atas data inflasi/GDP/tenaga kerja mentah di blok fundamental/konteks makro. Kalau dua sumber ini BERBEDA untuk leg yang sama, itu TIDAK memblokir — set regime_check.cb_source_conflict=true dan turunkan checklist_pct sedikit.`);
+    L.push('- Event high-impact <6 jam ke depan untuk pair ini: TUNGGU sampai lewat (entry ditunda, ukuran risiko TIDAK dikecilkan) — set regime_check.event_wait=true dan jelaskan di conflict_note. Ini BUKAN alasan membatalkan tesis, dan BUKAN alasan mengecilkan size.');
+    L.push('- Real yield differential TIDAK dipakai sebagai pre-gate di pair FX (hanya relevan untuk XAU/USD).');
+    L.push('- COT & retail sentiment TIDAK dipakai di sini — dipindah ke Step 8.');
+  }
+  L.push('');
+  L.push('STEP 1 VALIDITAS DRIVER (GATE): driver makro yang kamu pakai WAJIB (a) bukan asumsi pribadi, (b) punya bukti nyata — data rilis/statement resmi/event aktual yang ADA di konteks di atas, (c) bisa diverifikasi, (d) sudah mulai tercermin di harga, dan (e) dirumuskan TANPA kata "akan"/"harusnya"/"kemungkinan"/"biasanya". Kalau salah satu tidak terpenuhi: gate_validitas_driver.pass=false dan TIDAK ADA setup.');
+  L.push('');
+  L.push(`STEP 2 FUNDAMENTAL BIAS (bobot tinggi): ada driver utama yang jelas; ${legA} jelas menguat atau melemah; ${legB} kebalikannya; minimal 2 konfirmasi dari kategori berbeda (data ekonomi / kebijakan moneter / geopolitik-risk sentiment); tidak ada konflik antar faktor; pair ini strong-vs-weak (bukan strong-vs-strong atau weak-vs-weak). Arah hasil step inilah CALON bias-mu.`);
+  L.push('');
+  L.push('STEP 3 PRE-MARKET DECISION: bias dikunci dan tidak berubah kecuali ada berita besar (market-moving/geopolitik/data ekonomi penting). Pembatalan karena berita besar SUDAH ditangani mekanisme kode terpisah (filter breaking-news + deteksi kejutan ekonomi actual-vs-forecast) — kamu cukup memastikan skenariomu punya area entry dan arah yang eksplisit.');
+  L.push('');
+  L.push('STEP 4 STRUKTUR TEKNIKAL (bobot tinggi): arah teknikal WAJIB sejalan dengan arah fundamental Step 2; ada Break of Structure (BOS)/shift; market tidak dalam ranging sempit; ada area jelas (supply-demand / cluster S/R). Konteks likuiditas (equal highs/lows, stop hunt/sweep) boleh disebut sebagai sinyal TAMBAHAN dengan bobot LEBIH RENDAH dari BOS/S-R — jangan pernah menjadikannya satu-satunya alasan entry.');
+  if (isXau) L.push('- Tambahan XAU/USD: option expiry/volume sebagai lapis konfirmasi, dan sentimen options CME (kalau ada di atas) sebagai pemanis konfirmasi — TIDAK PERNAH jadi penentu sendiri.');
+  L.push('- Kalau struktur teknikal jelas BERLAWANAN dengan arah fundamental Step 2: JANGAN membalik bias mengikuti teknikal. Pakai bias "mixed" dan set entry_zone/sl/tp null (tunggu struktur menyusul).');
+  L.push('');
+  L.push('STEP 5 ENTRY LOCATION + TRIGGER: entry HANYA di area valid (pullback/retest/liquidity sweep), bukan di tengah impuls. Fibonacci dipakai sebagai ZONA 0,382-0,618, bukan titik tunggal 0,618: tren KUAT (BOS bermomentum kuat) berarti retracement dangkal, condong ke 0,382; tren LEMAH/ranging berarti retracement dalam, condong ke 0,618; kalau kekuatan tren AMBIGU, pakai titik tengah zona (~0,5). Wajib ada konfirmasi candle di trigger.');
+  L.push('');
+  L.push('STEP 6 RISK MANAGEMENT (GATE): RR minimal 1:2 (ideal 1:3 ke atas) dan SL di balik struktur (bukan angka random). Risiko per entry FLAT 2% tanpa pengecualian kondisi apa pun — konflik/keraguan TIDAK PERNAH mengecilkan ukuran posisi, itu hanya alarm perhatian. Kalau RR di bawah 1:2 atau SL tidak punya dasar struktural: gate_risk_management.pass=false dan TIDAK ADA setup.');
+  L.push('');
+  L.push('STEP 7 TIMING: utamakan sesi London/New York; hindari sesi Tokyo kecuali setup sangat jelas; jangan entry berdempetan dengan rilis high-impact.');
+  L.push('');
+  L.push('STEP 8 VALIDASI TERAKHIR (bobot RENDAH): COT selaras + retail sentiment kontrarian tidak melawan arah. Kalau tidak selaras, ini TIDAK PERNAH menggagalkan setup — hanya menurunkan checklist_pct sedikit.');
+  L.push('');
+  L.push('STEP 9 DISIPLIN: urusan setelah entry (manajemen posisi berjalan), BUKAN syarat sebelum entry — tidak dinilai di sini.');
+  L.push('');
+  L.push('INDIKATOR YANG DIBUANG DARI KEPUTUSAN: RSI, MACD, SMA, dan pivot TIDAK BOLEH memengaruhi arah maupun keputusan entry. Data itu masih ada di DATA TEKNIKAL untuk deskripsi, tapi "RSI overbought/oversold" DILARANG dipakai sebagai alasan melawan tren — pola itu penyebab langsung rentetan kerugian sistem ini sebelumnya (short di tengah uptrend kuat yang diakui sendiri kuat di analisisnya). Yang dipakai untuk keputusan hanya BOS, area S/R, dan zona Fibonacci.');
+  return L.join('\n');
+}
+
+// Normalisasi field AATAS dari jawaban model (pure, dipakai hanya di jalur isAutoCall).
+// Prinsip sama seluruh normalisasi lain di handler ini: model tidak patuh skema ->
+// null, JANGAN dipaksa ke satu nilai (nilai keliru mencemari data evaluasi lebih parah
+// daripada nilai kosong). Tidak melempar apa pun — dipanggil di dalam try parse.
+function _normalizeAatasFields(structured) {
+  const obj = v => (v && typeof v === 'object' && !Array.isArray(v)) ? v : null;
+  const str = v => (typeof v === 'string' && v.trim()) ? v.trim() : null;
+  const gate = v => {
+    const o = obj(v);
+    if (!o) return null;
+    return { pass: (o.pass === true || o.pass === false) ? o.pass : null, note: str(o.note) };
+  };
+  const pctRaw = Number(structured.checklist_pct);
+  const verdictRaw = String(structured.verdict || '').toUpperCase().replace(/[^A-Z ]/g, '').trim().replace(/\s+/g, ' ');
+  return {
+    regime_check: obj(structured.regime_check),
+    gate_validitas_driver: gate(structured.gate_validitas_driver),
+    gate_risk_management: gate(structured.gate_risk_management),
+    fundamental_bias: obj(structured.fundamental_bias),
+    technical: obj(structured.technical),
+    final_validation: obj(structured.final_validation),
+    checklist_pct: Number.isFinite(pctRaw) ? Math.max(0, Math.min(100, Math.round(pctRaw))) : null,
+    verdict: AATAS_VERDICT_CANON.get(verdictRaw) || AATAS_VERDICT_CANON.get(verdictRaw.replace(/ /g, '')) || null,
+    reasoning_note: str(structured.reasoning_note),
+  };
+}
+
+// AATAS Step 0 cabang XAU/USD: "Rate Path Fed implied" sebagai konteks tambahan
+// (non-blocking, sesuai plan). Datanya SUDAH ada di cache `rate_path` (api/rate-path.js)
+// tapi selama ini hanya dipakai Ringkasan (market-digest.js) — tidak pernah sampai ke
+// prompt analisa per-pair. Formatter pure, pola sama _formatOptionsSentimentBlock.
+// Return '' kalau data tidak ada (fail-open, jangan bikin blok kosong di prompt).
+function _formatRatePathBlock(ratePathData) {
+  const rp = ratePathData && ratePathData.USD;
+  if (!rp || rp.cumulative_3m_bps == null) return '';
+  const arah = bps => bps < 0 ? `${Math.abs(bps)}bps PEMANGKASAN sudah diharga`
+    : bps > 0 ? `${bps}bps KENAIKAN sudah diharga` : 'tidak ada perubahan diharga';
+  const parts = [`3 bulan: ${arah(rp.cumulative_3m_bps)}`];
+  if (rp.cumulative_6m_bps != null) parts.push(`6 bulan: ${arah(rp.cumulative_6m_bps)}`);
+  return `RATE PATH FED (implied dari pasar suku bunga — konteks tambahan untuk emas, BUKAN penentu arah sendiri; ekspektasi pemangkasan biasanya menekan real yield dan mendukung emas, kenaikan sebaliknya):
+${parts.join(' | ')}`;
+}
+
+// Apakah satu entri setup termasuk POPULASI AATAS (arsitektur macro-first)?
+// Urutan sumber: `policy_v` (fakta yang direkam) -> `policy_v_est` (kalau caller sudah
+// mendekorasi) -> rekonstruksi dari `ts`. Entri yang tidak bisa ditentukan versinya
+// (ts korup) dianggap BUKAN populasi AATAS — jangan menebak keanggotaan populasi.
+function _isAatasEpochSetup(s) {
+  if (!s) return false;
+  const v = s.policy_v != null ? s.policy_v
+    : (s.policy_v_est != null ? s.policy_v_est : policyVersionForTs(s.ts));
+  return typeof v === 'number' && v >= AATAS_EPOCH;
+}
+
+// Ringkasan satu-dua baris hasil checklist AATAS untuk fact sheet AI Kritikus (Gate A).
+// Sengaja padat: Kritikus sudah menerima blok fundamental/COT/CME/kalender lengkap di
+// bawahnya — yang belum dia punya cuma HASIL PENILAIAN step-nya sendiri.
+function _formatAatasCriticLine(structured) {
+  if (!structured) return null;
+  const parts = [];
+  if (structured.checklist_pct != null || structured.verdict) {
+    parts.push(`Checklist AATAS: ${structured.checklist_pct != null ? structured.checklist_pct + '%' : '—'}${structured.verdict ? ` (${structured.verdict})` : ''}`);
+  }
+  const rc = structured.regime_check;
+  if (rc) {
+    const rcBits = [];
+    if (rc.regime) rcBits.push(`regime ${rc.regime}`);
+    if (rc.cb_source_conflict === true) rcBits.push('CB bias dua sumber BERBEDA');
+    if (rc.event_wait === true) rcBits.push(`menunggu event${rc.event_note ? ` (${rc.event_note})` : ''}`);
+    if (rc.gold && rc.gold.unanimous === false) rcBits.push('gold: real yield/DXY/regime TIDAK bulat');
+    if (rcBits.length) parts.push(`Regime check: ${rcBits.join('; ')}`);
+  }
+  const fb = structured.fundamental_bias;
+  if (fb && (fb.arah || fb.driver)) {
+    parts.push(`Fundamental bias: ${fb.arah || '—'}${fb.driver ? ` — ${fb.driver}` : ''}${fb.konflik ? ` [konflik: ${fb.konflik}]` : ''}`);
+  }
+  const tc = structured.technical;
+  if (tc && (tc.bos || tc.area)) {
+    parts.push(`Teknikal: BOS ${tc.bos || '—'}${tc.area ? `, area ${tc.area}` : ''}${tc.fib_zone ? `, fib ${tc.fib_zone}` : ''}`);
+  }
+  const fv = structured.final_validation;
+  if (fv && (fv.cot || fv.retail)) parts.push(`Validasi akhir: COT ${fv.cot || '—'}, retail ${fv.retail || '—'}`);
+  if (structured.reasoning_note) parts.push(`Catatan analis: ${structured.reasoning_note}`);
+  return parts.length ? parts.join('\n') : null;
+}
+
+// Keputusan "setup ini boleh lahir atau tidak" versi AATAS — pure & deterministik di
+// KODE, bukan cuma imbauan di prompt (kriteria selesai plan AATAS: delta wajib ter-wire
+// ke prompt DAN/ATAU logika gate kode). Return alasan (string) kalau setup harus
+// dibatalkan, null kalau boleh lanjut. Fail-open: gate yang TIDAK dilaporkan model
+// (null) tidak memblokir — pola sama seluruh guard lain di codebase ini.
+function _aatasRejectReason({ gate_validitas_driver, gate_risk_management, verdict, goldBlocked }) {
+  if (goldBlocked) return 'gold_regime_split_corr_anomali';
+  if (gate_validitas_driver && gate_validitas_driver.pass === false) return 'gate_validitas_driver';
+  if (gate_risk_management && gate_risk_management.pass === false) return 'gate_risk_management';
+  if (verdict === 'NO TRADE') return 'verdict_no_trade';
+  return null;
+}
+
 function _formatOptionsSentimentBlock(rr, prioritized) {
   if (!rr) return '';
   const val = rr.rr_value;
@@ -5324,12 +5538,32 @@ async function ohlcvAnalyzeHandler(req, res) {
     // Gate D live-sign (audit 2026-08-16): fetch di luar lock (pola sama trackBlock/
     // calAnalyzeBlock di atas — JANGAN tambah I/O di dalam critical section mutasi
     // log di bawah). Hanya perlu untuk isAutoCall (Gate D cuma jalan untuk auto-entry).
+    // AATAS (2026-08-22): cache yang SAMA juga membawa `gold_correlations.RealYield`
+    // (korelasi live emas vs real yield) — dipakai sebagai arbitrase Step 0 cabang gold.
+    // Numpang fetch ini, NOL I/O tambahan.
     let liveCorrSign = null;
+    let goldCorrLive = null;
     if (isAutoCall) {
       try {
         const rawCorr = await redisCmd('GET', 'correlations_v3');
-        liveCorrSign = rawCorr ? _buildLiveCorrSign(JSON.parse(rawCorr)) : null;
+        const corrData = rawCorr ? JSON.parse(rawCorr) : null;
+        liveCorrSign = corrData ? _buildLiveCorrSign(corrData) : null;
+        if (data.is_xau && corrData) {
+          const ry = corrData.gold_correlations && corrData.gold_correlations.RealYield;
+          const anomaly = _goldYieldCorrAnomaly(corrData);
+          goldCorrLive = ry ? { r20: ry.r20, r60: ry.r60, anomaly } : { r20: null, r60: null, anomaly };
+        }
       } catch (e) { /* opsional — fallback ke sign statis di isCorrelatedExposureBlocked */ }
+    }
+
+    // AATAS Step 0 gold: rate path Fed implied (non-blocking). HANYA untuk XAU/USD jalur
+    // auto — satu GET tambahan yang tidak menyentuh jalur manual publik sama sekali.
+    let ratePathBlock = '';
+    if (isAutoCall && data.is_xau) {
+      try {
+        const rawRate = await redisCmd('GET', 'rate_path');
+        ratePathBlock = rawRate ? _formatRatePathBlock(JSON.parse(rawRate)) : '';
+      } catch (e) { /* opsional — konteks tambahan, bukan syarat */ }
     }
 
     // PLAN U-2 (2026-07-20): rezim volatilitas (ATR14 H1 pair ini) + currency
@@ -5367,6 +5601,7 @@ async function ohlcvAnalyzeHandler(req, res) {
     const ctxParts = [];
     if (ringkasanContext) ctxParts.push(`${makroHeader}\n${ringkasanContext}`);
     if (fundBlock)        ctxParts.push(fundBlock);
+    if (ratePathBlock)    ctxParts.push(ratePathBlock);
     if (rrBlock)          ctxParts.push(rrBlock);
     if (trackBlock)       ctxParts.push(trackBlock);
     if (calAnalyzeBlock)  ctxParts.push(calAnalyzeBlock);
@@ -5405,9 +5640,16 @@ async function ohlcvAnalyzeHandler(req, res) {
     // WAJIB memilih dari ranking deterministik itu (bukan mengarang kombinasi sendiri —
     // akar masalah hasil lompat-lompat antar re-generate); fallback ke instruksi lama
     // "pilih bebas dari struktur" hanya kalau zona gagal dihitung (data minim).
+    // AATAS (2026-08-22): klausa "kapan TIDAK boleh keluarkan setup" beda antara jalur
+    // manual (dasar lama: makro_alignment konflik) dan jalur auto (dasar baru: gate Step
+    // 1/2 tidak lolos — makro sekarang PENENTU arah, bukan pembanding terpisah). Sisa
+    // instruksi entry/sl/tp identik untuk dua jalur, jadi cuma klausa ini yang bercabang.
+    const noSetupClause = isAutoCall
+      ? 'ATAU jika GATE Step 1 (validitas driver) / Step 2 (fundamental bias) tidak lolos, ATAU arah teknikal berlawanan dengan arah fundamental Step 2, set entry_zone, sl, tp, entry_basis ke null dan jelaskan di trigger kondisi apa yang ditunggu — JANGAN memaksakan setup teknikal saat gate makro belum lolos.'
+      : 'ATAU jika makro_alignment adalah "konflik", set entry_zone, sl, tp, entry_basis ke null dan jelaskan di trigger kondisi apa yang ditunggu — JANGAN memaksakan setup saat makro dan teknikal bertabrakan.';
     const entryZoneInstr = confBlock
-      ? '- entry_zone: WAJIB pilih dari daftar [ZONA KONFLUENSI] di atas — ambil zona dengan SKOR TERTINGGI yang searah bias dan konsisten dengan harga "Now": bias bearish → zona di ATAS Now (jual di rally ke resistance); bias bullish → zona di BAWAH Now (beli di pullback ke support); pengecualian hanya breakout/breakdown confirmation dengan trigger jelas. Tulis center zona itu atau range sempit di sekitarnya — JANGAN mengarang level di luar daftar. Kalau dua zona skornya sama, pilih yang lebih dekat ke Now. KALAU TIDAK ADA zona layak searah bias (struktur Mixed, harga di tengah range, semua zona skor rendah), ATAU jika makro_alignment adalah "konflik", set entry_zone, sl, tp, entry_basis ke null dan jelaskan di trigger kondisi apa yang ditunggu — JANGAN memaksakan setup saat makro dan teknikal bertabrakan.'
-      : '- entry_zone: level atau range harga ideal untuk entry (angka konkret). WAJIB berpijak pada level STRUKTUR yang benar-benar ada di DATA TEKNIKAL: cluster [LEVEL S/R], level [FIBONACCI], [PIVOT HARIAN], Prev Day/Week H-L, swing H4, SMA, atau option expiry — jangan mengarang angka yang tidak ada di data. PRIORITASKAN KONFLUENSI: area di mana 2+ struktur berbeda jatuh berdekatan (misal fib 61.8% bertepatan dengan cluster S/R yang banyak disentuh dan pivot S1) — itu entry dengan dasar terkuat. WAJIB konsisten dengan harga "Now": kalau bias bearish, entry_zone >= Now (jual di rally ke resistance) ATAU di bawah Now kalau memang breakdown confirmation, TAPI jangan keduanya sekaligus. Kalau Now sudah melewati level breakdown/breakout relevan, jangan minta retracement ke arah berlawanan — definisikan entry di struktur terdekat dari Now. KALAU TIDAK ADA setup dengan dasar struktur jelas searah bias (misal struktur Mixed dan harga di tengah range, jauh dari semua level kuat), ATAU jika makro_alignment adalah "konflik", set entry_zone, sl, tp, entry_basis ke null dan jelaskan di trigger kondisi apa yang ditunggu — JANGAN memaksakan setup saat makro dan teknikal bertabrakan.';
+      ? `- entry_zone: WAJIB pilih dari daftar [ZONA KONFLUENSI] di atas — ambil zona dengan SKOR TERTINGGI yang searah bias dan konsisten dengan harga "Now": bias bearish → zona di ATAS Now (jual di rally ke resistance); bias bullish → zona di BAWAH Now (beli di pullback ke support); pengecualian hanya breakout/breakdown confirmation dengan trigger jelas. Tulis center zona itu atau range sempit di sekitarnya — JANGAN mengarang level di luar daftar. Kalau dua zona skornya sama, pilih yang lebih dekat ke Now. KALAU TIDAK ADA zona layak searah bias (struktur Mixed, harga di tengah range, semua zona skor rendah), ${noSetupClause}`
+      : `- entry_zone: level atau range harga ideal untuk entry (angka konkret). WAJIB berpijak pada level STRUKTUR yang benar-benar ada di DATA TEKNIKAL: cluster [LEVEL S/R], level [FIBONACCI], [PIVOT HARIAN], Prev Day/Week H-L, swing H4, SMA, atau option expiry — jangan mengarang angka yang tidak ada di data. PRIORITASKAN KONFLUENSI: area di mana 2+ struktur berbeda jatuh berdekatan (misal fib 61.8% bertepatan dengan cluster S/R yang banyak disentuh dan pivot S1) — itu entry dengan dasar terkuat. WAJIB konsisten dengan harga "Now": kalau bias bearish, entry_zone >= Now (jual di rally ke resistance) ATAU di bawah Now kalau memang breakdown confirmation, TAPI jangan keduanya sekaligus. Kalau Now sudah melewati level breakdown/breakout relevan, jangan minta retracement ke arah berlawanan — definisikan entry di struktur terdekat dari Now. KALAU TIDAK ADA setup dengan dasar struktur jelas searah bias (misal struktur Mixed dan harga di tengah range, jauh dari semua level kuat), ${noSetupClause}`;
     const entryBasisInstr = confBlock
       ? '- entry_basis: salin daftar struktur penyusun zona yang kamu pilih dari [ZONA KONFLUENSI] (bagian setelah tanda "=" di baris zona itu; boleh diringkas tapi minimal satu struktur bernama dengan angkanya). Kalau entry_zone null, field ini juga null.'
       : '- entry_basis: sebutkan struktur mana saja dari DATA TEKNIKAL yang jadi dasar entry_zone, dengan angkanya (contoh format: "fib 61.8% 1.1712 + cluster S/R 1.1709 (4x sentuh) + pivot S1 1.1705"). Minimal satu struktur bernama; makin banyak konfluensi makin baik. Kalau entry_zone null, field ini juga null.';
@@ -5444,13 +5686,78 @@ async function ohlcvAnalyzeHandler(req, res) {
       : confBlock
       ? '- tp: zona konfluensi BERIKUTNYA searah bias dari daftar [ZONA KONFLUENSI] (atau struktur [LEVEL S/R] berikutnya kalau tidak ada zona lagi searah itu) — jangan mengarang. Untuk bearish, tp harus di bawah entry_zone. Untuk bullish, tp harus di atas entry_zone. WAJIB risk/reward (jarak entry→tp dibanding entry→sl) minimal 1:1 — kalau struktur data tidak memungkinkan RR ≥1, sebutkan itu di trigger/commentary alih-alih memaksakan level palsu.'
       : '- tp: level take profit konkret = struktur berikutnya searah bias yang ADA di data (cluster S/R, swing, pivot, fib) — jangan mengarang. Untuk bearish, tp harus di bawah entry_zone. Untuk bullish, tp harus di atas entry_zone. WAJIB risk/reward (jarak entry→tp dibanding entry→sl) minimal 1:1 — kalau struktur data tidak memungkinkan RR ≥1, sebutkan itu di trigger/commentary alih-alih memaksakan level palsu.';
+    // AATAS (2026-08-22) — percabangan prompt jalur auto-entry. Isolasi Opsi A: SEMUA
+    // instruksi baru di bawah HANYA menyentuh `isAutoCall`; cabang `: ...` di tiap
+    // variabel adalah teks lama PERSIS, jadi jalur manual publik ("Analisa AI") tidak
+    // berubah satu karakter pun. Jangan menggabungkan dua cabang ini "biar rapi" —
+    // pemisahan inilah yang menjaga fitur publik tetap hidup saat auto-entry berevolusi.
+    const aatasBlock = isAutoCall
+      ? _buildAatasChecklistBlock({ label: data.label, isXau: data.is_xau, goldCorr: goldCorrLive })
+      : '';
+    const biasInstr = isAutoCall
+      ? '- bias: ARAH AKHIR hasil Step 0-2 (makro/fundamental), yang lalu DIKONFIRMASI Step 4 (struktur teknikal) — bullish/bearish/neutral/mixed. Urutannya WAJIB begitu: tentukan dulu dari fundamental mata uang mana menguat dan mana melemah, BARU cek apakah struktur teknikal mengizinkan masuk ke arah itu. Kalau struktur teknikal jelas berlawanan dengan arah fundamental, JANGAN membalik bias mengikuti chart — pakai "mixed" dan kosongkan level. Pakai "neutral" hanya kalau fundamental sendiri memang tidak punya arah. RSI/MACD/SMA/pivot TIDAK BOLEH jadi alasan bias — khususnya "RSI overbought" DILARANG dipakai sebagai alasan short di tren naik (dan sebaliknya).'
+      : '- bias: trend dominan — bullish/bearish/neutral/mixed. Dasarkan pada GABUNGAN trend Daily + [STRUKTUR H4] (HH+HL vs LH+LL) + BOS kalau ada — bukan cuma perubahan %. Pakai "mixed" kalau timeframe saling kontradiksi (misal Daily naik tapi struktur H4 LH+LL) atau makro vs teknikal berlawanan jelas — jangan paksa ke "neutral" kalau sebenarnya konflik, bukan tanpa-trend.';
+    // Formula ATR tetap jadi baseline horizon (tidak diganti) — AATAS cuma menambahkan
+    // event high-impact di dalam window sebagai CHECKPOINT tesis, bukan exit otomatis.
+    const timeHorizonInstr = isAutoCall
+      ? '- time_horizon_days: estimasi jumlah hari realistis skenario ini main out (angka, misal 3, 5, 10) berdasarkan jarak entry-tp dibanding rata-rata gerak harian (ATR/sigma) yang ada di data' + ' Kalau ada [EVENT HIGH-IMPACT] relevan pair ini yang jatuh DI DALAM rentang hari itu, sebut eventnya di conflict_note — event itu jadi CHECKPOINT alami tesis (titik di mana tesis ini layak ditinjau ulang), BUKAN alasan otomatis memperpendek horizon atau membatalkan setup. Posisi yang sudah jalan tetap dilindungi mekanisme tighten-SL reaktif berita yang terpisah.'
+      : '- time_horizon_days: estimasi jumlah hari realistis skenario ini main out (angka, misal 3, 5, 10) berdasarkan jarak entry-tp dibanding rata-rata gerak harian (ATR/sigma) yang ada di data';
+    // makro_alignment/makro_alignment_reason DIGANTIKAN di jalur auto oleh field per-step
+    // (regime_check/fundamental_bias/technical/...) — konsep "makro vs teknikal selaras
+    // atau konflik" tidak relevan lagi begitu makro jadi PENENTU arah, bukan pembanding.
+    const decisionFieldInstr = isAutoCall
+      ? [
+        '- regime_check: hasil Step 0 sebagai objek — {"regime":"risk_on|neutral|elevated|risk_off" atau null, "cb_bias":{"<LEG>":"hawkish|dovish|netral"} untuk kedua leg pair (null kalau tidak ada data), "cb_source_conflict":true/false (bias resmi bank sentral vs pembacaanmu atas data mentah berbeda), "event_wait":true/false, "event_note":"..." atau null, "gold":null untuk pair FX}. Khusus XAU/USD, "gold" WAJIB diisi {"real_yield":"bullish|bearish|netral","dxy":"bullish|bearish|netral","risk_regime":"bullish|bearish|netral","unanimous":true/false} — ketiganya dinilai dari sudut pandang EMAS (bullish = mendukung emas naik). Isi apa adanya dari data di atas, jangan mengarang angka yang tidak dikirim.',
+        '- gate_validitas_driver: hasil GATE Step 1 — {"pass":true/false,"note":"satu kalimat, sebut driver + buktinya"}. false kalau driver tidak punya bukti nyata di data, tidak bisa diverifikasi, belum tercermin di harga, atau cuma bisa dirumuskan dengan kata "akan/harusnya/kemungkinan/biasanya".',
+        '- fundamental_bias: hasil Step 2 — {"score_pct":0-100,"arah":"bullish|bearish|netral","driver":"...","konfirmasi":["...","..."],"konflik":"..." atau null,"strong_vs_weak":true/false}. konfirmasi minimal 2 item dari kategori berbeda, masing-masing menyebut data konkret.',
+        '- technical: hasil Step 4-5 — {"score_pct":0-100,"bos":"ada|lemah|tidak ada","area":"level/zona yang dipakai + angkanya","fib_zone":"angka level fib yang dipakai","fib_reason":"kenapa dangkal (~0,382) / dalam (~0,618) / tengah (~0,5), dikaitkan ke kekuatan BOS","liquidity_context":"..." atau null,"ranging":true/false}. liquidity_context bobotnya LEBIH RENDAH dari BOS/S-R.',
+        '- gate_risk_management: hasil GATE Step 6 — {"pass":true/false,"note":"sebut RR aktual dan dasar struktural SL"}. false kalau RR di bawah 1:2 atau SL tidak berpijak struktur. Risiko per entry selalu flat 2%, jangan pernah mengusulkan mengecilkan size.',
+        '- final_validation: hasil Step 8 (bobot RENDAH, non-blocking) — {"cot":"searah|melawan|tidak tersedia","retail":"searah|melawan|netral|tidak tersedia","efek":"kalimat singkat pengaruhnya ke checklist_pct"}. Ini TIDAK PERNAH boleh menggagalkan setup.',
+      ]
+      : [
+        '- makro_alignment: "searah" kalau KONTEKS MAKRO / FUNDAMENTAL TERSTRUKTUR mendukung arah bias teknikalmu, "konflik" kalau berlawanan, "netral" kalau sinyal makro tidak jelas/campuran. Kalau blok makro dan fundamental dua-duanya tidak tersedia di atas, isi null. JANGAN pakai ranking currency strength / rezim volatilitas (kalau ada di atas) sebagai bukti di sini — itu price-derived teknikal (turunan %perubahan harga H1), bukan fundamental catalyst, sama seperti headline "Currency Strength Chart" yang historisnya sering salah dibaca sebagai sinyal fundamental; field ini HANYA boleh berdasar KONTEKS MAKRO (Ringkasan) dan FUNDAMENTAL TERSTRUKTUR (cb_bias, COT, real yield, dsb) — kalau HANYA currency strength/rezim yang mendukung suatu arah tanpa dukungan fundamental sungguhan, itu BUKAN alasan valid untuk "searah". SEBELUM memutuskan searah/konflik, tentukan dulu mata uang mana yang diuntungkan oleh bias teknikalmu: bias bullish = mata uang BASE (kiri) menguat vs QUOTE (kanan); bias bearish = mata uang QUOTE menguat vs BASE — berlaku SAMA untuk pair mayor maupun pair silang non-USD (misal AUD/NZD bearish = NZD menguat vs AUD, EUR/GBP bearish = GBP menguat vs EUR, BUKAN sebaliknya). Baru bandingkan: kalau sinyal fundamental mendukung penguatan mata uang yang SAMA itu, itu "searah" — JANGAN dibalik jadi "konflik" hanya karena satu mata uang disebut "hawkish/kuat" tanpa mengecek dulu apakah itu mata uang yang diuntungkan atau dirugikan oleh biasmu. WAJIB cek ulang sebelum menjawab: kalau kesimpulanmu "searah", pastikan mata uang yang kamu anggap "diuntungkan" oleh biasmu itu SAMA dengan mata uang yang sinyal fundamentalnya (bias CB hawkish, COT crowded short berisiko short-squeeze, dsb) menunjukkan MENGUAT — jangan sampai makro_alignment_reason-mu menyebut mata uang yang SAMA "menguat" sekaligus "melemah" hanya karena kamu ingin memaksakan "searah". Contoh kesalahan nyata yang harus dihindari: bias BoJ hawkish + COT JPY net short crowded (persentil rendah, rawan short-squeeze naik) dua-duanya sinyal JPY MENGUAT — untuk pair CHF/JPY itu berarti QUOTE menguat, jadi sinyal itu searah dengan bias BEARISH CHF/JPY (bukan bullish); kalau biasmu justru bullish CHF/JPY, sinyal itu KONFLIK, bukan searah.',
+        '- makro_alignment_reason: SATU kalimat pendek alasannya dengan menyebut data spesifik (misal "bias Fed Dovish + COT USD net short searah dengan bias bearish USD/JPY"). Kalau alasannya menyangkut mekanisme dolar/komoditas/yield (misal "safe-haven vs real yield", "geopolitik vs oil"), WAJIB pakai angka konkret dari baris DOLLAR & KOMODITAS / REAL YIELD USD di FUNDAMENTAL TERSTRUKTUR kalau tersedia (level DXY/WTI, atau breakdown nominal-vs-ekspektasi inflasi) — jangan cuma bilang "real yield tinggi" tanpa angka atau tanpa menjelaskan apakah itu didorong sisi nominal atau sisi inflasi. Kalau data itu tidak tersedia di atas, jangan mengarang angka — tetap boleh pakai bahasa umum. Null kalau makro_alignment null.',
+      ];
+    const conflictInstr = isAutoCall
+      ? '- conflict: khusus jalur ini, isi "waktu" kalau ada event high-impact relevan yang jatuh sebelum skenario selesai (termasuk kasus Step 0 event <6 jam yang bikin entry ditunda) — ini yang paling sering terjadi dan WAJIB dilaporkan jujur. Isi "arah" HANYA kalau kamu tetap mengeluarkan setup padahal arah fundamental Step 2 berlawanan dengan arah teknikal Step 4 (seharusnya tidak pernah terjadi di urutan baru — kalau terjadi, laporkan apa adanya, jangan disamarkan jadi "none"). Isi "none" kalau tidak ada keduanya.'
+      : '- conflict: bandingkan bias TEKNIKALMU vs (a) arah yang tersirat KONTEKS MAKRO/FUNDAMENTAL TERSTRUKTUR di atas (kalau ada), DAN (b) [EVENT HIGH-IMPACT 7 HARI KE DEPAN] (kalau ada). Isi "arah" kalau makro/fundamental berlawanan jelas dengan bias teknikalmu — INI BUKAN alasan otomatis untuk tidak keluarkan setup, tapi WAJIB dilaporkan di sini. Isi "waktu" kalau ada event high-impact dalam beberapa jam ke depan (sebelum time_horizon_days-mu selesai) yang bisa membatalkan skenario mendadak — ini LEBIH SERIUS dari konflik arah, pilih "waktu" kalau dua-duanya terjadi sekaligus. Isi "none" kalau tidak ada konflik terdeteksi atau data pembanding tidak tersedia.';
+    // confidence (label subjektif tinggi/sedang/rendah) DIGANTIKAN checklist_pct + verdict
+    // + reasoning_note di jalur auto — skor terukur & naratif yang bisa diaudit ulang.
+    const tailFieldInstr = isAutoCall
+      ? [
+        '- checklist_pct: skor akhir gabungan seluruh step dalam persen (angka bulat 0-100), tertimbang: GATE (Step 1 & 6) bobot dua kali lipat, Step 2 & 4-5 bobot tinggi, Step 8 bobot rendah. Ini PENGGANTI field confidence lama — jangan mengisi confidence.',
+        '- verdict: label akhir dari checklist_pct + status gate, salah satu PERSIS: "NO TRADE" (di bawah 50% atau ada GATE gagal), "KONFLIK-REVIEW" (skor cukup tapi ada konflik arah yang belum selesai), "PERTIMBANGKAN" (50-74%), "SIAP TRADE" (75-89%), "ENTRY" (90% ke atas). "NO TRADE" berarti setup TIDAK dikeluarkan (entry_zone/sl/tp null).',
+        '- reasoning_note: SATU paragraf ringkas (3-5 kalimat) yang menjelaskan kenapa tiap step dinilai begitu, dengan angka konkret. WAJIB diisi, tidak boleh null selama ada penilaian — field terstruktur di atas tidak cukup untuk audit kualitatif nanti, justru teks bebas seperti ini yang dulu membuat pola kesalahan sistem ini ketahuan.',
+      ]
+      : [
+        '- confidence: level keyakinanmu sendiri atas SELURUH setup ini (bukan cuma bias arah) — salah satu "tinggi"/"sedang"/"rendah". HARUS konsisten dengan level keyakinan yang kamu sebut di paragraf KESIMPULAN nanti (field ini SATU-SATUNYA sumber terstruktur untuk itu, dibaca kode/statistik — paragraf teks tidak diparsing). Null HANYA kalau entry_zone null (tidak ada setup untuk dinilai).',
+      ];
+    // Lima paragraf commentary ikut dibalik urutannya (makro dulu) untuk jalur auto —
+    // narasi yang masih dibuka dengan "trend Daily" akan menarik model balik ke pola
+    // teknikal-dulu yang justru sedang diperbaiki.
+    const commentaryParas = isAutoCall
+      ? [
+        'Isi paragraf pertama (tanpa header) — REGIME & DRIVER (Step 0-1): regime risiko saat ini, bias bank sentral kedua leg dari dua sumber (dan apakah keduanya sepakat), status event high-impact terdekat, serta driver utama yang kamu pakai beserta bukti konkretnya.',
+        'Isi paragraf kedua (tanpa header) — FUNDAMENTAL BIAS (Step 2): mata uang mana yang menguat, mana yang melemah, minimal dua konfirmasi dari kategori berbeda dengan angkanya, dan apakah pair ini benar strong-vs-weak.',
+        'Isi paragraf ketiga (tanpa header) — STRUKTUR & LOKASI ENTRY (Step 4-5): status BOS, area S/R yang dipakai, zona Fibonacci yang dipilih beserta alasan dangkal/dalam dari kekuatan tren, dan konteks likuiditas kalau ada (sebutkan sebagai sinyal tambahan berbobot rendah). JANGAN memakai RSI/MACD/SMA sebagai alasan keputusan di sini.',
+        'Isi paragraf keempat (tanpa header) — RISIKO & VALIDASI AKHIR (Step 6-8): RR aktual dan dasar struktural SL, sesi/timing entry, posisi COT dan retail sentiment sebagai catatan non-blocking, serta risiko utama yang bisa membatalkan skenario ini.',
+        'Isi paragraf kelima — mulai literal dengan "KESIMPULAN:" lalu isi (WAJIB, paragraf penutup terpisah — jangan digabung ke paragraf keempat): 3-4 kalimat MAKSIMAL. Harus BISA BERDIRI SENDIRI: (1) bias akhir + checklist_pct/verdict dengan alasan singkat kenapa segitu, (2) SATU kondisi konkret yang ditunggu sebelum entry (ulangi trigger utama, minimal sebutkan levelnya), (3) SATU risiko/pembatal utama dalam satu kalimat.' + p5Track,
+      ]
+      : [
+        `Isi paragraf pertama (tanpa header) — bias & posisi makro harga: arah trend Daily dengan alasan konkret (perubahan %, close vs open, posisi dalam range 6 bulan dari [KONTEKS 6 BULAN] — dekat puncak/lembah/tengah).`,
+        `Isi paragraf kedua (tanpa header) — struktur H4: pakai [STRUKTUR H4] (HH+HL / LH+LL / mixed) dan posisi harga terhadap cluster [LEVEL S/R] terdekat; fase akumulasi/distribusi/breakout; MACD H4 konfirmasi atau divergensi.`,
+        `Isi paragraf ketiga (tanpa header) — momentum & pola: momentum H1 terkini, RSI H4 (arah naik/turun), pola candle yang terdeteksi dan artinya di posisi sekarang${p3Atr}, konfluensi atau perbedaan arah dengan H4.`,
+        `Isi paragraf keempat (tanpa header) — integrasi ${p4Label}: simpulkan kekuatan setup (berapa struktur yang konfluens di entry_zone), risiko utama, dan kondisi pasar yang memvalidasi atau membatalkan skenario ini${p4Macro}.`,
+        `Isi paragraf kelima — mulai literal dengan "KESIMPULAN:" lalu isi (WAJIB, paragraf penutup terpisah — jangan digabung ke paragraf keempat): 3-4 kalimat MAKSIMAL setelah kata "KESIMPULAN:", jangan mengulang detail/angka yang sudah dijelaskan panjang di paragraf sebelumnya. Harus BISA BERDIRI SENDIRI untuk trader yang cuma sempat baca satu paragraf ini: (1) bias akhir + level keyakinan (tinggi/sedang/rendah) dengan alasan singkat kenapa segitu, (2) SATU kondisi konkret yang ditunggu sebelum entry (ulangi trigger utama secara ringkas, minimal sebutkan levelnya), (3) SATU risiko/pembatal utama dalam satu kalimat. Nada tegas dan actionable, bukan mengulang narasi eksploratif paragraf sebelumnya.${p5Track}`,
+      ];
     const userMsg = [
       `Analisa ${data.label}:`,
       '',
       makroBlock,
       '',
+      ...(aatasBlock ? [aatasBlock, ''] : []),
       'Isi field JSON berikut:',
-      '- bias: trend dominan — bullish/bearish/neutral/mixed. Dasarkan pada GABUNGAN trend Daily + [STRUKTUR H4] (HH+HL vs LH+LL) + BOS kalau ada — bukan cuma perubahan %. Pakai "mixed" kalau timeframe saling kontradiksi (misal Daily naik tapi struktur H4 LH+LL) atau makro vs teknikal berlawanan jelas — jangan paksa ke "neutral" kalau sebenarnya konflik, bukan tanpa-trend.',
+      biasInstr,
       entryZoneInstr,
       entryBasisInstr,
       slInstr,
@@ -5459,19 +5766,14 @@ async function ohlcvAnalyzeHandler(req, res) {
       '- invalidation_condition: kondisi spesifik yang membatalkan skenario ini sepenuhnya (beda dari sl — ini soal struktur/tesis, misal "kalau Daily close balik di bawah SMA50 atau swing low H4 terakhir jebol, bias bullish batal")',
       '- invalidation_trigger: versi TERSTRUKTUR dari invalidation_condition di atas, supaya KODE (bukan AI) bisa mendeteksi otomatis tanpa call AI tambahan — objek {"type":"ma_break"|"price_level"|"swing_break","level":<satu angka>,"timeframe":"1h"|"4h"|"1d","direction":"above"|"below"}. "level" WAJIB satu angka konkret yang ADA di data (nilai SMA/level struktur/swing yang kamu sebut di invalidation_condition), "direction" = arah CLOSE candle yang membatalkan skenario ("below" kalau close balik ke bawah level itu membatalkan, "above" kalau close balik ke atas). Kalau invalidation_condition-mu TIDAK BISA diringkas jadi satu level angka tunggal (butuh multi-kondisi atau deskripsi kualitatif), set invalidation_trigger ke null — JANGAN mengarang angka.'
         + (levelCandidates ? ' Kalau type-nya "price_level" atau "swing_break", SEBAIKNYA level ini sama dengan salah satu angka di [KANDIDAT SL/TP] atau [ZONA KONFLUENSI] di atas (bukan angka baru yang tidak berkaitan) — konsisten dengan sl yang kamu pilih.' : ''),
-      '- time_horizon_days: estimasi jumlah hari realistis skenario ini main out (angka, misal 3, 5, 10) berdasarkan jarak entry-tp dibanding rata-rata gerak harian (ATR/sigma) yang ada di data',
-      '- makro_alignment: "searah" kalau KONTEKS MAKRO / FUNDAMENTAL TERSTRUKTUR mendukung arah bias teknikalmu, "konflik" kalau berlawanan, "netral" kalau sinyal makro tidak jelas/campuran. Kalau blok makro dan fundamental dua-duanya tidak tersedia di atas, isi null. JANGAN pakai ranking currency strength / rezim volatilitas (kalau ada di atas) sebagai bukti di sini — itu price-derived teknikal (turunan %perubahan harga H1), bukan fundamental catalyst, sama seperti headline "Currency Strength Chart" yang historisnya sering salah dibaca sebagai sinyal fundamental; field ini HANYA boleh berdasar KONTEKS MAKRO (Ringkasan) dan FUNDAMENTAL TERSTRUKTUR (cb_bias, COT, real yield, dsb) — kalau HANYA currency strength/rezim yang mendukung suatu arah tanpa dukungan fundamental sungguhan, itu BUKAN alasan valid untuk "searah". SEBELUM memutuskan searah/konflik, tentukan dulu mata uang mana yang diuntungkan oleh bias teknikalmu: bias bullish = mata uang BASE (kiri) menguat vs QUOTE (kanan); bias bearish = mata uang QUOTE menguat vs BASE — berlaku SAMA untuk pair mayor maupun pair silang non-USD (misal AUD/NZD bearish = NZD menguat vs AUD, EUR/GBP bearish = GBP menguat vs EUR, BUKAN sebaliknya). Baru bandingkan: kalau sinyal fundamental mendukung penguatan mata uang yang SAMA itu, itu "searah" — JANGAN dibalik jadi "konflik" hanya karena satu mata uang disebut "hawkish/kuat" tanpa mengecek dulu apakah itu mata uang yang diuntungkan atau dirugikan oleh biasmu. WAJIB cek ulang sebelum menjawab: kalau kesimpulanmu "searah", pastikan mata uang yang kamu anggap "diuntungkan" oleh biasmu itu SAMA dengan mata uang yang sinyal fundamentalnya (bias CB hawkish, COT crowded short berisiko short-squeeze, dsb) menunjukkan MENGUAT — jangan sampai makro_alignment_reason-mu menyebut mata uang yang SAMA "menguat" sekaligus "melemah" hanya karena kamu ingin memaksakan "searah". Contoh kesalahan nyata yang harus dihindari: bias BoJ hawkish + COT JPY net short crowded (persentil rendah, rawan short-squeeze naik) dua-duanya sinyal JPY MENGUAT — untuk pair CHF/JPY itu berarti QUOTE menguat, jadi sinyal itu searah dengan bias BEARISH CHF/JPY (bukan bullish); kalau biasmu justru bullish CHF/JPY, sinyal itu KONFLIK, bukan searah.',
-      '- makro_alignment_reason: SATU kalimat pendek alasannya dengan menyebut data spesifik (misal "bias Fed Dovish + COT USD net short searah dengan bias bearish USD/JPY"). Kalau alasannya menyangkut mekanisme dolar/komoditas/yield (misal "safe-haven vs real yield", "geopolitik vs oil"), WAJIB pakai angka konkret dari baris DOLLAR & KOMODITAS / REAL YIELD USD di FUNDAMENTAL TERSTRUKTUR kalau tersedia (level DXY/WTI, atau breakdown nominal-vs-ekspektasi inflasi) — jangan cuma bilang "real yield tinggi" tanpa angka atau tanpa menjelaskan apakah itu didorong sisi nominal atau sisi inflasi. Kalau data itu tidak tersedia di atas, jangan mengarang angka — tetap boleh pakai bahasa umum. Null kalau makro_alignment null.',
-      '- conflict: bandingkan bias TEKNIKALMU vs (a) arah yang tersirat KONTEKS MAKRO/FUNDAMENTAL TERSTRUKTUR di atas (kalau ada), DAN (b) [EVENT HIGH-IMPACT 7 HARI KE DEPAN] (kalau ada). Isi "arah" kalau makro/fundamental berlawanan jelas dengan bias teknikalmu — INI BUKAN alasan otomatis untuk tidak keluarkan setup, tapi WAJIB dilaporkan di sini. Isi "waktu" kalau ada event high-impact dalam beberapa jam ke depan (sebelum time_horizon_days-mu selesai) yang bisa membatalkan skenario mendadak — ini LEBIH SERIUS dari konflik arah, pilih "waktu" kalau dua-duanya terjadi sekaligus. Isi "none" kalau tidak ada konflik terdeteksi atau data pembanding tidak tersedia.',
+      timeHorizonInstr,
+      ...decisionFieldInstr,
+      conflictInstr,
       '- conflict_note: SATU kalimat pendek alasan konkret (sebut data/event spesifik) kalau conflict bukan "none"; null kalau conflict "none".',
-      '- confidence: level keyakinanmu sendiri atas SELURUH setup ini (bukan cuma bias arah) — salah satu "tinggi"/"sedang"/"rendah". HARUS konsisten dengan level keyakinan yang kamu sebut di paragraf KESIMPULAN nanti (field ini SATU-SATUNYA sumber terstruktur untuk itu, dibaca kode/statistik — paragraf teks tidak diparsing). Null HANYA kalau entry_zone null (tidak ada setup untuk dinilai).',
+      ...tailFieldInstr,
       '',
       'Setelah objek JSON, di baris baru tulis PERSIS "===COMMENTARY===" lalu tulis commentary sebagai teks biasa (BUKAN di dalam JSON): analisa naratif mendalam 5 paragraf, pisah tiap paragraf dengan baris baru. PENTING — label "paragraf 1/2/3/4/5" di instruksi di bawah ini HANYA panduan urutan untukmu menulis, BUKAN teks yang harus muncul di output: paragraf 1-4 WAJIB ditulis sebagai prosa mengalir TANPA header/judul/angka urutan apapun di depannya (langsung mulai dengan kalimat isi). Paragraf 5 SATU-SATUNYA pengecualian yang harus mulai literal dengan kata "KESIMPULAN:" — jangan tambahkan header serupa di paragraf lain.',
-      `Isi paragraf pertama (tanpa header) — bias & posisi makro harga: arah trend Daily dengan alasan konkret (perubahan %, close vs open, posisi dalam range 6 bulan dari [KONTEKS 6 BULAN] — dekat puncak/lembah/tengah).`,
-      `Isi paragraf kedua (tanpa header) — struktur H4: pakai [STRUKTUR H4] (HH+HL / LH+LL / mixed) dan posisi harga terhadap cluster [LEVEL S/R] terdekat; fase akumulasi/distribusi/breakout; MACD H4 konfirmasi atau divergensi.`,
-      `Isi paragraf ketiga (tanpa header) — momentum & pola: momentum H1 terkini, RSI H4 (arah naik/turun), pola candle yang terdeteksi dan artinya di posisi sekarang${p3Atr}, konfluensi atau perbedaan arah dengan H4.`,
-      `Isi paragraf keempat (tanpa header) — integrasi ${p4Label}: simpulkan kekuatan setup (berapa struktur yang konfluens di entry_zone), risiko utama, dan kondisi pasar yang memvalidasi atau membatalkan skenario ini${p4Macro}.`,
-      `Isi paragraf kelima — mulai literal dengan "KESIMPULAN:" lalu isi (WAJIB, paragraf penutup terpisah — jangan digabung ke paragraf keempat): 3-4 kalimat MAKSIMAL setelah kata "KESIMPULAN:", jangan mengulang detail/angka yang sudah dijelaskan panjang di paragraf sebelumnya. Harus BISA BERDIRI SENDIRI untuk trader yang cuma sempat baca satu paragraf ini: (1) bias akhir + level keyakinan (tinggi/sedang/rendah) dengan alasan singkat kenapa segitu, (2) SATU kondisi konkret yang ditunggu sebelum entry (ulangi trigger utama secara ringkas, minimal sebutkan levelnya), (3) SATU risiko/pembatal utama dalam satu kalimat. Nada tegas dan actionable, bukan mengulang narasi eksploratif paragraf sebelumnya.${p5Track}`,
+      ...commentaryParas,
       '4 paragraf pertama wajib sebut minimal 2 angka konkret masing-masing (harga, %, atau nilai indikator); paragraf kelima minimal 1 angka (level trigger). DILARANG kalimat generik tanpa angka (misal "harga bergerak sideways", "momentum masih lemah", "perlu konfirmasi lebih lanjut" tanpa data pendukung) — setiap klaim harus berpijak pada angka yang ada di DATA TEKNIKAL.',
     ].join('\n');
 
@@ -5479,7 +5781,9 @@ async function ohlcvAnalyzeHandler(req, res) {
     // — prosa panjang 4-5 paragraf sebagai string JSON rawan gagal JSON.parse (kutip/newline
     // tak ter-escape), yang dulu bikin structured null dan bias/entry/sl/tp hilang total.
     const messages = [
-      { role: 'system', content: 'Kamu analis senior teknikal dan makro. WAJIB jawab dalam DUA bagian persis seperti diminta: (1) SATU objek JSON valid tanpa markdown fence berisi HANYA field {"bias":"...","entry_zone":"...","entry_basis":"...","sl":"...","tp":"...","trigger":"...","invalidation_condition":"...","invalidation_trigger":{"type":"...","level":0,"timeframe":"...","direction":"..."},"time_horizon_days":0,"makro_alignment":"...","makro_alignment_reason":"...","conflict":"...","conflict_note":"...","confidence":"..."} — invalidation_trigger boleh null kalau tidak bisa distrukturkan; JANGAN sertakan field commentary di JSON ini; (2) setelah JSON, baris berisi PERSIS "===COMMENTARY===", lalu teks commentary biasa (bukan JSON, bebas tanda kutip/baris baru). Bahasa Indonesia.' },
+      { role: 'system', content: isAutoCall
+        ? 'Kamu analis senior makro dan teknikal yang bekerja dengan urutan MAKRO DULU, TEKNIKAL BELAKANGAN (lihat [CHECKLIST AATAS] di pesan pengguna — itu aturan main yang mengikat, bukan saran). WAJIB jawab dalam DUA bagian persis seperti diminta: (1) SATU objek JSON valid tanpa markdown fence berisi HANYA field {"bias":"...","entry_zone":"...","entry_basis":"...","sl":"...","tp":"...","trigger":"...","invalidation_condition":"...","invalidation_trigger":{"type":"...","level":0,"timeframe":"...","direction":"..."},"time_horizon_days":0,"regime_check":{...},"gate_validitas_driver":{"pass":true,"note":"..."},"fundamental_bias":{...},"technical":{...},"gate_risk_management":{"pass":true,"note":"..."},"final_validation":{...},"conflict":"...","conflict_note":"...","checklist_pct":0,"verdict":"...","reasoning_note":"..."} — invalidation_trigger boleh null kalau tidak bisa distrukturkan; JANGAN sertakan field makro_alignment/confidence (sudah tidak dipakai di jalur ini); JANGAN sertakan field commentary di JSON ini; (2) setelah JSON, baris berisi PERSIS "===COMMENTARY===", lalu teks commentary biasa (bukan JSON, bebas tanda kutip/baris baru). Bahasa Indonesia.'
+        : 'Kamu analis senior teknikal dan makro. WAJIB jawab dalam DUA bagian persis seperti diminta: (1) SATU objek JSON valid tanpa markdown fence berisi HANYA field {"bias":"...","entry_zone":"...","entry_basis":"...","sl":"...","tp":"...","trigger":"...","invalidation_condition":"...","invalidation_trigger":{"type":"...","level":0,"timeframe":"...","direction":"..."},"time_horizon_days":0,"makro_alignment":"...","makro_alignment_reason":"...","conflict":"...","conflict_note":"...","confidence":"..."} — invalidation_trigger boleh null kalau tidak bisa distrukturkan; JANGAN sertakan field commentary di JSON ini; (2) setelah JSON, baris berisi PERSIS "===COMMENTARY===", lalu teks commentary biasa (bukan JSON, bebas tanda kutip/baris baru). Bahasa Indonesia.' },
       { role: 'user',   content: userMsg },
     ];
 
@@ -5803,8 +6107,63 @@ async function ohlcvAnalyzeHandler(req, res) {
           } : null;
         }
 
+        // ── AATAS (2026-08-22): normalisasi field checklist + penegakan GATE ────────
+        // Dijalankan SETELAH seluruh sanity-check level (arah vs harga, RR, snap ke
+        // [KANDIDAT SL/TP]) supaya keputusan "batalkan setup" di bawah punya gambaran
+        // final, bukan level yang masih mungkin di-null-kan blok lain sesudahnya.
+        if (isAutoCall) {
+          Object.assign(structured, _normalizeAatasFields(structured));
+          // makro_alignment/reason BUKAN bagian skema AATAS lagi. Dinolkan EKSPLISIT
+          // (bukan sekadar "tidak diminta") supaya model yang tetap mengirimnya karena
+          // kebiasaan tidak meninggalkan label menyesatkan di log auto — pembaca data
+          // nanti akan mengira konsep alignment masih hidup di populasi ini.
+          structured.makro_alignment = null;
+          structured.makro_alignment_reason = null;
+          // Step 0 cabang gold — SATU-SATUNYA hard-block baru dari porting AATAS.
+          // Pembagian sumber disengaja: penilaian kualitatif (apakah Real Yield/DXY/
+          // Risk Regime sepakat) milik model, sedangkan FAKTA anomali korelasi dihitung
+          // KODE dari cache correlations_v3 — angka tidak boleh ikut dikarang model.
+          const goldReport = (data.is_xau && structured.regime_check) ? structured.regime_check.gold : null;
+          const goldUnanimous = (goldReport && (goldReport.unanimous === true || goldReport.unanimous === false))
+            ? goldReport.unanimous : null;
+          const goldBlocked = !!data.is_xau && isGoldRegimeBlocked({
+            unanimous: goldUnanimous,
+            corrAnomaly: goldCorrLive ? goldCorrLive.anomaly : null,
+          });
+          const rejectReason = _aatasRejectReason({
+            gate_validitas_driver: structured.gate_validitas_driver,
+            gate_risk_management: structured.gate_risk_management,
+            verdict: structured.verdict,
+            goldBlocked,
+          });
+          structured.aatas_reject_reason = rejectReason;
+          if (rejectReason && (structured.entry_zone || structured.sl || structured.tp)) {
+            // Level di-null-kan = setup tidak pernah lahir (blok penulisan setup_log di
+            // bawah mensyaratkan entry_zone+sl+tp). Bias/commentary/field checklist TETAP
+            // dikembalikan ke daemon supaya alasan penolakan tidak hilang dari log runtime.
+            console.warn('AATAS: kandidat dibatalkan sebelum jadi setup', {
+              symbol, reason: rejectReason, verdict: structured.verdict, pct: structured.checklist_pct,
+            });
+            structured.entry_zone = structured.sl = structured.tp = structured.entry_basis = null;
+            structured.risk_reward = null;
+          }
+        }
+
         // [SISTEM HAKIM] Soft Block (Hak Veto User) - Mencegat halusinasi makro_alignment
-        if (cbDir && structured.bias) {
+        // AATAS (2026-08-22): DILEWATI untuk jalur auto — field yang dikoreksinya
+        // (`makro_alignment`) sudah tidak diproduksi di jalur itu, dan pekerjaannya
+        // (membandingkan arah makro vs bias) sekarang jadi urutan keputusan itu sendiri
+        // (Step 0-2 menentukan arah, bukan membandingkannya belakangan). Kodenya TIDAK
+        // dihapus: jalur manual publik masih memakainya persis seperti sebelumnya.
+        // Konsekuensi yang DISENGAJA & wajib diketahui pembaca berikutnya:
+        //  - `sistem_hakim` di setup auto baru selalu null -> _sistemHakimCalibration
+        //    (fired/clear/corrected) PERMANEN kosong untuk populasi AATAS. Histori lama
+        //    tetap valid. Itu bukan data hilang.
+        //  - tidak ada lagi yang men-set conflict='arah' di jalur auto selain model sendiri,
+        //    jadi Gate E (isTimingConflictBlocked) di sana praktis cuma akan melihat
+        //    'waktu'/'none', dan `isWhipsaw` (conflict==='arah', Flip Guard) nyaris tidak
+        //    pernah true lagi di jalur auto. Bukan gate rusak.
+        if (cbDir && structured.bias && !isAutoCall) {
           sistemHakimEvaluated = true;
           const techBias = structured.bias.toLowerCase();
           const isTechLong = techBias.includes('bullish') || techBias === 'long';
@@ -5858,7 +6217,10 @@ async function ohlcvAnalyzeHandler(req, res) {
         // status makro_alignment saat ini (termasuk hasil Sistem Hakim, tapi teksnya sendiri
         // tidak pernah menyebut arah currency jadi tidak akan kena regex). Hanya perlu koreksi
         // kalau saat ini masih 'searah' — 'konflik'/'netral' sudah aman.
-        if (structured.makro_alignment === 'searah'
+        // AATAS: `!isAutoCall` ditulis EKSPLISIT walau makro_alignment jalur auto memang
+        // selalu null (jadi kondisi ini tidak akan true) — supaya niatnya terbaca, bukan
+        // bergantung pada efek samping yang bisa berubah diam-diam nanti.
+        if (!isAutoCall && structured.makro_alignment === 'searah'
           && _detectAlignmentReasonContradiction(structured.makro_alignment_reason)) {
           contradictionGuardFired = true;
           const originalReason = structured.makro_alignment_reason;
@@ -5960,7 +6322,14 @@ async function ohlcvAnalyzeHandler(req, res) {
         // Narasi lengkap AI (2026-08-10, diskusi user — audit CHF/JPY: bias tetap
         // bullish walau makro_alignment "konflik" itu SAH karena bias murni dari
         // teknikal (Daily+H4+BOS), sedangkan makro_alignment field terpisah yang
-        // membandingkan — TAPI penjelasan "kenapa teknikalnya masih kuat" itu cuma
+        // membandingkan.
+        // PREMIS DI ATAS SUDAH TIDAK BERLAKU UNTUK JALUR AUTO sejak AATAS (2026-08-22):
+        // di sana bias TIDAK LAGI murni teknikal — arah lahir dari makro (Step 0-2) dan
+        // teknikal cuma memilih lokasi/timing, jadi "bias melawan makro" bukan lagi
+        // kondisi yang sah, melainkan justru yang dicegah. Rasionalisasi lama tetap
+        // ditulis di sini apa adanya karena masih berlaku untuk jalur MANUAL publik —
+        // jangan dibaca sebagai penjelasan perilaku auto-entry.
+        // Alasan `commentary` disimpan tetap sama untuk dua jalur: penjelasan naratif cuma
         // ada di paragraf commentary, yang SEBELUM INI TIDAK PERNAH disimpan ke
         // setup_log_auto:v1 sama sekali — hilang permanen begitu response dibalas,
         // karena tidak ada manusia yang nonton live saat cron jalan). Disimpan apa
@@ -5970,9 +6339,18 @@ async function ohlcvAnalyzeHandler(req, res) {
         horizon_days: structured.time_horizon_days ?? null,
         model, ts: Date.now(), status: 'pending',
         source: isAutoCall ? 'auto' : 'manual',
+        // `alignment` (turunan lossy dari conflict + makro_alignment) SUPERSEDED untuk
+        // jalur auto sejak AATAS: makro_alignment selalu null di sana, jadi nilainya cuma
+        // 'konflik' (kalau ada conflict) atau null. Kriteria Plan U "bandingkan kinerja
+        // alignment 'konflik' vs selaras untuk memvalidasi multiplier 0.5" TIDAK BOLEH
+        // dihitung lagi dari populasi AATAS — pembandingnya sudah tidak ada. Field-nya
+        // dipertahankan apa adanya karena masih dipakai jalur manual & histori lama.
         alignment: (structured.conflict && structured.conflict !== 'none')
           ? 'konflik'
           : (structured.makro_alignment || null),
+        // `confidence` di jalur auto sekarang SELALU null (model tidak lagi diminta
+        // mengisinya) — digantikan checklist_pct/verdict di bawah. Konsekuensi yang
+        // disengaja: _confidenceCalibration ikut kosong untuk populasi AATAS.
         confidence: structured.confidence ?? null,
         // PLAN W (2026-07-24): sinyal mentah sebelum digabung jadi `alignment`
         // (lossy) — murni observasi, tidak dipakai keputusan apa pun di sini.
@@ -6053,6 +6431,26 @@ async function ohlcvAnalyzeHandler(req, res) {
         // PERUBAHAN payload publik, dan key baru bernilai null tetap perubahan payload.
         // Beda pola dengan tetangganya itu disengaja, bukan kelalaian.
         ...(isAutoCall ? { policy_v: POLICY_VERSION } : {}),
+        // AATAS (2026-08-22): jejak keputusan per-step. Pola spread-kondisional yang SAMA
+        // dengan policy_v di atas (bukan diisi null untuk manual) — closure ini dipakai
+        // bersama setup_log:v1 (payload PUBLIK), dan key baru bernilai null pun tetap
+        // perubahan payload publik yang dilarang isolasi senyap U-7.
+        // `reasoning_note` WAJIB ikut disimpan walau sudah ada field terstruktur di
+        // atasnya: audit yang menemukan pola fade-tren & conflict='waktu' cuma mungkin
+        // karena ada teks bebas yang bisa dibaca ulang manusia/AI lain. Skema terstruktur
+        // hanya menangkap pertanyaan yang sudah terpikirkan saat skema dibuat.
+        ...(isAutoCall ? {
+          regime_check: structured.regime_check ?? null,
+          gate_validitas_driver: structured.gate_validitas_driver ?? null,
+          gate_risk_management: structured.gate_risk_management ?? null,
+          fundamental_bias: structured.fundamental_bias ?? null,
+          technical: structured.technical ?? null,
+          final_validation: structured.final_validation ?? null,
+          checklist_pct: structured.checklist_pct ?? null,
+          verdict: structured.verdict ?? null,
+          reasoning_note: structured.reasoning_note ?? null,
+          aatas_v: AATAS_PROMPT_VERSION,
+        } : {}),
       });
       let needsGateA = false;
       // Gate A (Kritikus) juga menimbang refine-in-place (2026-08-18, lihat catatan lengkap di
@@ -6154,6 +6552,20 @@ async function ohlcvAnalyzeHandler(req, res) {
                     // `regime`/`model` di blok ini: level yang benar-benar dipasang lahir
                     // dari aturan main SAAT refine ini, bukan saat generasi pertama.
                     policy_v: POLICY_VERSION,
+                    // AATAS: field checklist ikut diperbarui ke generasi TERBARU — pola sama
+                    // regime/model/commentary di blok ini. Level yang benar-benar dipasang
+                    // lahir dari penilaian checklist SAAT refine, bukan generasi pertama;
+                    // menyimpan skor lama di sebelah level baru itu jejak audit yang bohong.
+                    regime_check: structured.regime_check ?? null,
+                    gate_validitas_driver: structured.gate_validitas_driver ?? null,
+                    gate_risk_management: structured.gate_risk_management ?? null,
+                    fundamental_bias: structured.fundamental_bias ?? null,
+                    technical: structured.technical ?? null,
+                    final_validation: structured.final_validation ?? null,
+                    checklist_pct: structured.checklist_pct ?? null,
+                    verdict: structured.verdict ?? null,
+                    reasoning_note: structured.reasoning_note ?? null,
+                    aatas_v: AATAS_PROMPT_VERSION,
                   },
                 };
               } else {
@@ -6247,8 +6659,19 @@ async function ohlcvAnalyzeHandler(req, res) {
           // supaya siklus bisa jalan lagi. Alasan (1) TETAP diterima sadar (sama seperti
           // sebelum dinonaktifkan) — ambang dikalibrasi ulang setelah n>=100.
           if (!autoGuardReason) {
+            // AATAS (2026-08-22): jendela drawdown dibatasi ke POPULASI AATAS saja.
+            // Kalau kerugian arsitektur LAMA (teknikal-dulu, 12 SL Agustus) ikut dihitung,
+            // Gate B praktis menyala sejak menit pertama arsitektur baru hidup — sistem
+            // yang justru dibuat untuk memperbaiki kerugian itu tidak akan pernah dapat
+            // kesempatan mengeluarkan satu pun trade untuk membuktikan dirinya, dan satu-
+            // satunya jalan keluarnya cuma katup darurat 3 hari. Ini konsekuensi langsung
+            // dari keputusan user "statistik direset ke populasi AATAS": rem otomatis pun
+            // harus mengukur mobil yang sekarang, bukan mobil sebelumnya. Konsekuensi yang
+            // diterima sadar: Gate B tidur sampai DRAWDOWN_MIN_SAMPLE setup AATAS closed
+            // (persis kondisi awal Plan U dulu), jadi perlindungan drawdown belum aktif di
+            // hari-hari pertama.
             const closedForDrawdown = log
-              .filter(s => s && (s.status === 'tp' || s.status === 'sl'))
+              .filter(s => s && (s.status === 'tp' || s.status === 'sl') && _isAatasEpochSetup(s))
               .sort((a, b) => new Date(a.ts) - new Date(b.ts));
             const drawdownCheck = isDrawdownHalted({ closedSetups: closedForDrawdown, regime: autoGuardRegime });
             if (drawdownCheck.halted && !isDrawdownEmergencyValveOpen({ log, nowMs: Date.now() })) {
@@ -6306,7 +6729,13 @@ async function ohlcvAnalyzeHandler(req, res) {
             `[SETUP YANG DIUSULKAN]`,
             `Pair: ${data.label} | Bias: ${structured.bias || '—'} | Entry: ${structured.entry_zone} | SL: ${structured.sl} | TP: ${structured.tp}${structured.risk_reward ? ` | RR: ${structured.risk_reward}` : ''}`,
             structured.invalidation_condition ? `Invalidation: ${structured.invalidation_condition}` : null,
-            structured.makro_alignment ? `Makro alignment: ${structured.makro_alignment}${structured.makro_alignment_reason ? ` (${structured.makro_alignment_reason})` : ''}` : null,
+            // AATAS (2026-08-22): jalur auto tidak lagi memproduksi makro_alignment —
+            // Kritikus sekarang menerima ringkasan checklist per-step (dasar keputusan
+            // yang sebenarnya) supaya keberatannya bisa menunjuk step mana yang lemah,
+            // bukan label yang sudah tidak ada. Baris lama dipertahankan sebagai fallback
+            // (mis. kalau suatu saat jalur non-auto memakai blok ini juga).
+            isAutoCall ? _formatAatasCriticLine(structured) : null,
+            (!isAutoCall && structured.makro_alignment) ? `Makro alignment: ${structured.makro_alignment}${structured.makro_alignment_reason ? ` (${structured.makro_alignment_reason})` : ''}` : null,
             structured.conflict === 'waktu'
               ? `Catatan timing dari analisa awal: ${structured.conflict_note || 'ada event high-impact dekat, dalam rentang horizon skenario ini'} — nilai apakah risikonya cukup serius untuk verdict "batalkan", atau setup ini cukup kuat untuk tetap lanjut (posisi open tetap dilindungi tighten-SL reaktif berita kalau eventnya benar-benar bergerak melawan).`
               : null,
@@ -6903,6 +7332,14 @@ module.exports._formatTrackRecordBlock = _formatTrackRecordBlock;
 module.exports._calEventMsWib = _calEventMsWib;
 module.exports._buildAnalyzeCalBlock = _buildAnalyzeCalBlock;
 module.exports._buildLiveCorrSign = _buildLiveCorrSign;
+module.exports._goldYieldCorrAnomaly = _goldYieldCorrAnomaly;
+module.exports._isAatasEpochSetup = _isAatasEpochSetup;
+module.exports._formatRatePathBlock = _formatRatePathBlock;
+module.exports._buildAatasChecklistBlock = _buildAatasChecklistBlock;
+module.exports._normalizeAatasFields = _normalizeAatasFields;
+module.exports._aatasRejectReason = _aatasRejectReason;
+module.exports._formatAatasCriticLine = _formatAatasCriticLine;
+module.exports.AATAS_PROMPT_VERSION = AATAS_PROMPT_VERSION;
 module.exports.parseRSSHeadlines = parseRSSHeadlines;
 module.exports.parsePushRSS = parsePushRSS;
 module.exports.BLOCKED_HEADLINE_RE = BLOCKED_HEADLINE_RE;

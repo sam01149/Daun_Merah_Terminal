@@ -210,7 +210,14 @@ const STRONG_CB_BIAS = JSON.stringify({
   USD: { bias: 'dovish', confidence: 'High', updated_at: new Date().toISOString() },
 });
 
-test('SISTEM HAKIM cron: auto=1 tanpa body + cb_bias divergen kuat (High/High) -> cbDir dihitung server-side, veto nyala, entri ditandai fired', async () => {
+// AATAS (2026-08-22): Sistem Hakim DINONAKTIFKAN untuk jalur auto — field yang dia
+// koreksi (`makro_alignment`) sudah tidak diproduksi di sana, dan pekerjaannya (menimbang
+// arah makro vs bias) sekarang jadi urutan keputusan itu sendiri (Step 0-2 menentukan
+// arah). Dua test di bawah mengunci NIAT itu: jalur auto harus DIAM, jalur manual harus
+// tetap berperilaku persis seperti sebelum AATAS. Fallback cbDir server-side
+// (_computeCbDirServerSide) tetap dihitung untuk auto — dipakai blok lain — jadi yang
+// diverifikasi di sini adalah efeknya ke setup, bukan keberadaan cbDir-nya.
+test('AATAS: auto=1 + cb_bias divergen kuat -> Sistem Hakim TIDAK menyala lagi (tag null, conflict apa adanya dari AI, counter tidak naik)', async () => {
   await withEnv({ CRON_SECRET: 'topsecret', DEEPSEEK_API_KEY: 'k' }, async () => {
     const store = makeStore({
       'ohlcv_fresh:GBPUSD=X': '1',
@@ -228,15 +235,43 @@ test('SISTEM HAKIM cron: auto=1 tanpa body + cb_bias divergen kuat (High/High) -
       }, res);
 
       assert.equal(res.statusCode, 200);
-      assert.equal(res.body.structured.conflict, 'arah', 'Sistem Hakim harus memaksa conflict=arah');
-      assert.equal(res.body.structured.makro_alignment, 'konflik');
+      assert.equal(res.body.structured.conflict, 'none', 'conflict dari AI TIDAK boleh dipaksa jadi arah lagi di jalur auto');
+      assert.equal(res.body.structured.makro_alignment, null, 'makro_alignment sudah bukan bagian skema jalur auto');
 
       const log = JSON.parse(store.strings['setup_log_auto:v1']);
+      assert.equal(log[0].sistem_hakim, null, 'tag Sistem Hakim permanen null untuk populasi AATAS');
+      assert.equal(log[0].conflict_source, null);
+
+      assert.equal(store.strings['sistem_hakim_stats:considered'], undefined, 'counter tidak boleh naik lagi di jalur auto');
+      assert.equal(store.strings['sistem_hakim_stats:fired'], undefined);
+    } finally { global.fetch = origFetch; }
+  });
+});
+
+test('AATAS: jalur MANUAL (cbDir dari body) -> Sistem Hakim tetap memaksa conflict=arah seperti sebelum AATAS', async () => {
+  await withEnv({ DEEPSEEK_API_KEY: 'k' }, async () => {
+    const store = makeStore({
+      'ohlcv_fresh:GBPUSD=X': '1',
+      'ohlcv:GBPUSD=X:1h': JSON.stringify(mkTrendCandles(1.30, 1.28)),
+      'cb_bias': STRONG_CB_BIAS,
+    });
+    const origFetch = global.fetch;
+    global.fetch = makeAnalyzeFetchStub(store);
+    try {
+      const handler = loadHandler();
+      const res = fakeRes();
+      await handler({
+        headers: {}, method: 'POST', body: { cbDir: 'long' },
+        query: { action: 'ohlcv_analyze', symbol: 'GBPUSD=X', label: 'GBP/USD' },
+      }, res);
+
+      assert.equal(res.statusCode, 200);
+      assert.equal(res.body.structured.conflict, 'arah', 'jalur manual TIDAK boleh ikut berubah oleh AATAS');
+      assert.equal(res.body.structured.makro_alignment, 'konflik');
+
+      const log = JSON.parse(store.strings['setup_log:v1']);
       assert.equal(log[0].sistem_hakim, 'fired');
       assert.equal(log[0].conflict_source, 'sistem_hakim');
-
-      assert.equal(store.strings['sistem_hakim_stats:considered'], '1');
-      assert.equal(store.strings['sistem_hakim_stats:fired'], '1');
     } finally { global.fetch = origFetch; }
   });
 });
@@ -251,7 +286,35 @@ const ALIGNED_CB_BIAS = JSON.stringify({
   USD: { bias: 'hawkish', confidence: 'High', updated_at: new Date().toISOString() },
 });
 
-test('SISTEM HAKIM cron: cbDir SEARAH dgn bias tapi AI salah klaim konflik -> dikoreksi balik ke searah/none, ditandai corrected', async () => {
+test('AATAS: jalur MANUAL — cbDir SEARAH tapi AI salah klaim konflik -> tetap dikoreksi balik ke searah/none (corrected)', async () => {
+  await withEnv({ DEEPSEEK_API_KEY: 'k' }, async () => {
+    const store = makeStore({
+      'ohlcv_fresh:GBPUSD=X': '1',
+      'ohlcv:GBPUSD=X:1h': JSON.stringify(mkTrendCandles(1.30, 1.28)),
+      'cb_bias': ALIGNED_CB_BIAS,
+    });
+    const origFetch = global.fetch;
+    global.fetch = makeAnalyzeFetchStub(store, AI_RAW_TEXT_FALSE_CONFLICT);
+    try {
+      const handler = loadHandler();
+      const res = fakeRes();
+      await handler({
+        headers: {}, method: 'POST', body: { cbDir: 'short' },
+        query: { action: 'ohlcv_analyze', symbol: 'GBPUSD=X', label: 'GBP/USD' },
+      }, res);
+
+      assert.equal(res.statusCode, 200);
+      assert.equal(res.body.structured.conflict, 'none', 'Sistem Hakim harus mengoreksi klaim konflik AI yang keliru');
+      assert.equal(res.body.structured.makro_alignment, 'searah');
+
+      const log = JSON.parse(store.strings['setup_log:v1']);
+      assert.equal(log[0].sistem_hakim, 'corrected');
+      assert.equal(log[0].conflict_source, null, 'conflict sudah none, tidak ada sumber konflik lagi');
+    } finally { global.fetch = origFetch; }
+  });
+});
+
+test('AATAS: auto=1 — klaim konflik keliru dari AI TIDAK dikoreksi lagi (dibiarkan apa adanya, Sistem Hakim diam)', async () => {
   await withEnv({ CRON_SECRET: 'topsecret', DEEPSEEK_API_KEY: 'k' }, async () => {
     const store = makeStore({
       'ohlcv_fresh:GBPUSD=X': '1',
@@ -269,16 +332,9 @@ test('SISTEM HAKIM cron: cbDir SEARAH dgn bias tapi AI salah klaim konflik -> di
       }, res);
 
       assert.equal(res.statusCode, 200);
-      assert.equal(res.body.structured.conflict, 'none', 'Sistem Hakim harus mengoreksi klaim konflik AI yang keliru');
-      assert.equal(res.body.structured.makro_alignment, 'searah');
-
-      const log = JSON.parse(store.strings['setup_log_auto:v1']);
-      assert.equal(log[0].sistem_hakim, 'corrected');
-      assert.equal(log[0].conflict_source, null, 'conflict sudah none, tidak ada sumber konflik lagi');
-
-      assert.equal(store.strings['sistem_hakim_stats:considered'], '1');
-      assert.equal(store.strings['sistem_hakim_stats:fired'], undefined, 'bukan kasus fired');
-      assert.equal(store.strings['sistem_hakim_stats:corrected'], '1');
+      assert.equal(res.body.structured.conflict, 'arah', 'klaim AI dibiarkan apa adanya — Gate E/Kritikus yang menimbang, bukan Sistem Hakim');
+      assert.equal(res.body.structured.makro_alignment, null);
+      assert.equal(store.strings['sistem_hakim_stats:corrected'], undefined);
     } finally { global.fetch = origFetch; }
   });
 });

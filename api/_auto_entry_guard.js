@@ -389,7 +389,19 @@ const POLICY_EPOCHS = [
   { v: 28, from: '2026-08-18T09:12:12Z', kind: 'policy', impact: 'levels',  label: 'PLAN Z: sl/tp/invalidation_trigger wajib dari kandidat deterministik (api/_levels.js), dulu bebas dikarang AI' },
   { v: 29, from: '2026-08-20T08:36:35Z', kind: 'policy', impact: 'entry',    label: 'S323 lanj.4: Gate B (drawdown circuit breaker) dinonaktifkan sementara selama fase pengumpulan sampel n>=100' },
   { v: 30, from: '2026-08-21T18:54:19Z', kind: 'fix', impact: 'entry',    label: 'Gate B diaktifkan ulang dengan katup darurat waktu (isDrawdownEmergencyValveOpen) — celah macet total dari v29 diperbaiki, ambang R tetap heuristik belum dikalibrasi' },
+  { v: 31, from: '2026-08-21T19:31:00Z', kind: 'policy', impact: 'entry',    label: 'AATAS: urutan keputusan auto-entry dibalik jadi makro-first (REGIME CHECK + gate driver/fundamental dulu, teknikal cuma presisi timing) — porting checklist SMC/ICT manual ke jalur isAutoCall' },
 ];
+
+// AATAS_EPOCH (2026-08-22, keputusan user): batas populasi statistik dashboard
+// auto-entry. Semua angka AGREGAT (win rate, jumlah TP/SL, cost_expectancy, dst)
+// dihitung ULANG hanya dari setup ber-`policy_v` >= angka ini — arsitektur keputusan
+// sebelum AATAS beda mendasar (teknikal dulu, makro catatan kaki), jadi menggabungkan
+// dua populasi itu memberi angka yang tidak berarti apa-apa. TABEL Riwayat Setup
+// TIDAK ikut difilter (histori lengkap tetap tampil) — yang direset cuma agregat.
+// Nilainya SENGAJA dikunci ke v31 (bukan POLICY_VERSION yang bergerak): epoch baru
+// SESUDAH ini masih satu arsitektur yang sama, jangan mereset sampel lagi tiap ada
+// perubahan kebijakan kecil.
+const AATAS_EPOCH = 31;
 
 const POLICY_VERSION = POLICY_EPOCHS[POLICY_EPOCHS.length - 1].v;
 const _POLICY_EPOCH_MS = POLICY_EPOCHS.map(e => ({ v: e.v, ms: Date.parse(e.from) }));
@@ -405,9 +417,25 @@ function policyVersionForTs(ts) {
   return found;
 }
 
+// AATAS Step 0 cabang XAU/USD — SATU-SATUNYA hard-block baru dari porting ini.
+// Aturan (plan AATAS, cabang gold): Real Yield + DXY + Risk Regime WAJIB 3/3 sepakat.
+// Kalau tidak bulat, korelasi live yield-emas jadi arbitrase: korelasi NORMAL -> Real
+// Yield sendiri boleh jadi penentu (lanjut, bukan blok); korelasi ANOMALI (ambang
+// |r20-r60|>0,4 yang sudah tervalidasi, sama seperti Gate D live-sign) -> TIDAK ENTRY,
+// karena penentu tunggal yang tersisa itu sendiri sedang tidak bisa dipercaya.
+//
+// Fail-open disengaja (pola sama semua gate di file ini): `unanimous` null/undefined
+// (AI tidak melaporkan) atau `corrAnomaly` null (cache korelasi kosong/tanpa data
+// RealYield) TIDAK memblokir — blok hanya kalau DUA-DUANYA fakta positif.
+function isGoldRegimeBlocked({ unanimous, corrAnomaly } = {}) {
+  return unanimous === false && corrAnomaly === true;
+}
+
 module.exports = {
   computeRollingR,
   POLICY_EPOCHS,
+  AATAS_EPOCH,
+  isGoldRegimeBlocked,
   POLICY_VERSION,
   policyVersionForTs,
   isDrawdownHalted,

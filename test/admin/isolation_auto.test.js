@@ -12,6 +12,7 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
 const marketHours = require('../../api/_market_hours');
+const { AATAS_EPOCH } = require('../../api/_auto_entry_guard');
 
 process.env.UPSTASH_REDIS_REST_URL   = 'https://fake-upstash.test';
 process.env.UPSTASH_REDIS_REST_TOKEN = 'fake-token';
@@ -678,9 +679,13 @@ const MANUAL_LOG = [
   baseSetup({ id: 'GC=F:1', status: 'tp', source: 'manual' }),
   baseSetup({ id: 'GC=F:2', status: 'sl', bias: 'bearish', source: 'manual' }),
 ];
+// `policy_v: AATAS_EPOCH` WAJIB ada sejak 2026-08-22: agregat scope=auto sekarang
+// dihitung HANYA dari populasi kebijakan AATAS ke atas (lihat _statsPayloadFromLog).
+// Tanpa stempel ini, fixture jatuh ke populasi lama dan seluruh angka agregat nol —
+// yang justru diuji terpisah di test "reset statistik" di bawah.
 const AUTO_LOG = [
   baseSetup({
-    id: 'GC=F:9', status: 'tp', source: 'auto',
+    id: 'GC=F:9', status: 'tp', source: 'auto', policy_v: AATAS_EPOCH,
     intervention: { type: 'tighten_sl', t: 1200, new_sl: 4020, reason: 'x', trigger_guid: 'g' },
     managed_status: 'tp', managed_closed_t: 1500, review_count: 1,
   }),

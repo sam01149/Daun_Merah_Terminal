@@ -11,10 +11,14 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-21/22 (Session 325 — Checklist `index.html`: verdict "KONFLIK — HALF SIZE" berhenti auto-mengecilkan risk size)
+> **Last updated:** 2026-08-22 (Session 326 — AATAS: urutan keputusan auto-entry dibalik jadi makro-first; jalur manual publik sengaja TIDAK berubah)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
+
+## Changelog Session 326 (2026-08-22) — Penunjuk: AATAS (Auto-Entry Makro-First) Mengubah Banyak Kode Bersama, Fitur Publik TIDAK Berubah
+
+Auto-entry/Professional LLM Trader — entri lengkap di `Dokumentasi/professional_llm_trader/changelog.md` (Session 326). Ditulis di sini sebagai PENUNJUK karena porting AATAS menyentuh banyak baris di `api/admin.js` yang dipakai BERSAMA fitur publik "Analisa AI": siapa pun yang nanti mendiagnosa fitur publik itu akan melihat diff besar dan perlu tahu konteksnya. **Perilaku jalur manual publik SENGAJA tidak berubah sama sekali** — prompt manual (system + user message) diverifikasi byte-per-byte identik dengan versi sebelum perubahan; seluruh logika baru digerbang `isAutoCall`. Kalau ada laporan pengguna bahwa Analisa AI berubah setelah 2026-08-22, itu bug isolasi, bukan perilaku yang diniatkan.
 
 ## Changelog Session 325 (2026-08-21/22) — Checklist Manual: Bug Auto-Half-Size Diperbaiki (Auto-Entry: lihat professional_llm_trader/changelog.md)
 

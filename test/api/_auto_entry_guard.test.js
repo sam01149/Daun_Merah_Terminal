@@ -16,6 +16,8 @@ const {
   POLICY_EPOCHS,
   POLICY_VERSION,
   policyVersionForTs,
+  AATAS_EPOCH,
+  isGoldRegimeBlocked,
 } = require('../../api/_auto_entry_guard.js');
 
 // ── computeRollingR / isDrawdownHalted (Gate B) ─────────────────────────────
@@ -419,4 +421,36 @@ test('policyVersionForTs: input tidak valid -> null (fail-open, bukan crash)', (
   assert.equal(policyVersionForTs(undefined), null);
   assert.equal(policyVersionForTs('bukan-angka'), null);
   assert.equal(policyVersionForTs(NaN), null);
+});
+
+// ── AATAS (2026-08-22): hard-stop Step 0 cabang XAU/USD ─────────────────
+// SATU-SATUNYA hard-block baru dari porting checklist macro-first. Blok HANYA kalau
+// dua fakta positif bertemu: arah makro TIDAK bulat 3/3 DAN korelasi live yield-emas
+// sedang anomali (penentu tunggal yang tersisa tidak bisa dipercaya).
+
+test('isGoldRegimeBlocked: tidak bulat 3/3 + korelasi anomali -> BLOK', () => {
+  assert.equal(isGoldRegimeBlocked({ unanimous: false, corrAnomaly: true }), true);
+});
+
+test('isGoldRegimeBlocked: tidak bulat tapi korelasi NORMAL -> lanjut (real yield boleh jadi penentu)', () => {
+  assert.equal(isGoldRegimeBlocked({ unanimous: false, corrAnomaly: false }), false);
+});
+
+test('isGoldRegimeBlocked: bulat 3/3 -> lanjut walau korelasi anomali', () => {
+  assert.equal(isGoldRegimeBlocked({ unanimous: true, corrAnomaly: true }), false);
+});
+
+test('isGoldRegimeBlocked: data tidak lengkap (null/undefined) -> fail-open, TIDAK memblokir', () => {
+  assert.equal(isGoldRegimeBlocked({ unanimous: null, corrAnomaly: true }), false);
+  assert.equal(isGoldRegimeBlocked({ unanimous: false, corrAnomaly: null }), false);
+  assert.equal(isGoldRegimeBlocked({}), false);
+  assert.equal(isGoldRegimeBlocked(), false);
+});
+
+test('AATAS_EPOCH: menunjuk epoch yang benar-benar ada di POLICY_EPOCHS dan tidak melampaui versi terbaru', () => {
+  assert.ok(POLICY_EPOCHS.some(e => e.v === AATAS_EPOCH), 'AATAS_EPOCH harus epoch nyata, bukan angka tebakan');
+  assert.ok(AATAS_EPOCH <= POLICY_VERSION);
+  const ep = POLICY_EPOCHS.find(e => e.v === AATAS_EPOCH);
+  assert.equal(ep.kind, 'policy', 'AATAS mengubah strategi (batas populasi), bukan memperbaiki bug');
+  assert.ok(Number.isFinite(Date.parse(ep.from)), 'from wajib timestamp valid — dipakai policyVersionForTs');
 });

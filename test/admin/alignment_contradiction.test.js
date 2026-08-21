@@ -145,16 +145,49 @@ function makeAnalyzeFetchStub(store, rawText) {
   };
 }
 
-test('CEK KONTRADIKSI cron: bias CHF tidak tersedia (cbDir null, Sistem Hakim diam) + reasoning kontradiktif -> tetap dikoreksi jadi konflik', async () => {
-  await withEnv({ CRON_SECRET: 'topsecret', DEEPSEEK_API_KEY: 'k' }, async () => {
+// AATAS (2026-08-22): guard kontradiksi ini membaca teks `makro_alignment_reason` —
+// field yang sudah tidak diproduksi jalur auto. Jadi efeknya berhenti relevan DI SANA
+// (bukan dihapus: jalur manual publik masih memakainya persis seperti dulu). Dua test
+// di bawah mengunci pembagian itu.
+test('CEK KONTRADIKSI manual: reasoning kontradiktif -> tetap dikoreksi jadi konflik (jalur publik tidak berubah)', async () => {
+  await withEnv({ DEEPSEEK_API_KEY: 'k' }, async () => {
     const store = makeStore({
       'ohlcv_fresh:CHFJPY=X': '1',
       'ohlcv:CHFJPY=X:1h': JSON.stringify(mkTrendCandles(195.0, 195.6)),
       // cb_bias HANYA berisi leg JPY (confidence High) — bikin FUNDAMENTAL TERSTRUKTUR
       // terisi (hasFund true, jadi makro_alignment AI tidak dinolkan oleh normalisasi),
-      // tapi leg CHF sengaja TIDAK ADA supaya _computeCbDirServerSide (butuh KEDUA leg
-      // confidence High) tetap null -> Sistem Hakim tidak boleh evaluasi sama sekali.
-      // Ini meniru situasi nyata CHF/JPY: bias SNB untuk CHF tidak tersedia/tidak High.
+      // tapi leg CHF sengaja TIDAK ADA supaya Sistem Hakim (butuh cbDir) tetap diam.
+      'cb_bias': JSON.stringify({
+        JPY: { bias: 'hawkish', confidence: 'High', updated_at: new Date().toISOString() },
+      }),
+    });
+    const origFetch = global.fetch;
+    global.fetch = makeAnalyzeFetchStub(store, AI_RAW_TEXT_CONTRADICTORY);
+    try {
+      const handler = loadHandler();
+      const res = fakeRes();
+      await handler({
+        headers: {}, method: 'POST', body: {},
+        query: { action: 'ohlcv_analyze', symbol: 'CHFJPY=X', label: 'CHF/JPY' },
+      }, res);
+
+      assert.equal(res.statusCode, 200);
+      assert.equal(res.body.structured.makro_alignment, 'konflik', 'guard kontradiksi harus mengoreksi searah -> konflik');
+      assert.equal(res.body.structured.conflict, 'arah');
+      assert.match(res.body.structured.makro_alignment_reason, /CEK KONTRADIKSI/);
+
+      const log = JSON.parse(store.strings['setup_log:v1']);
+      assert.equal(log[0].sistem_hakim, null, 'Sistem Hakim tidak boleh ikut nyala (cbDir null)');
+      assert.equal(log[0].conflict_source, 'contradiction_guard');
+    } finally { global.fetch = origFetch; }
+  });
+});
+
+test('AATAS: auto=1 dengan reasoning kontradiktif -> guard TIDAK jalan lagi (makro_alignment null, conflict apa adanya, counter diam)', async () => {
+  await withEnv({ CRON_SECRET: 'topsecret', DEEPSEEK_API_KEY: 'k' }, async () => {
+    const store = makeStore({
+      'ohlcv_fresh:CHFJPY=X': '1',
+      'ohlcv:CHFJPY=X:1h': JSON.stringify(mkTrendCandles(195.0, 195.6)),
       'cb_bias': JSON.stringify({
         JPY: { bias: 'hawkish', confidence: 'High', updated_at: new Date().toISOString() },
       }),
@@ -170,20 +203,18 @@ test('CEK KONTRADIKSI cron: bias CHF tidak tersedia (cbDir null, Sistem Hakim di
       }, res);
 
       assert.equal(res.statusCode, 200);
-      assert.equal(res.body.structured.makro_alignment, 'konflik', 'guard kontradiksi harus mengoreksi searah -> konflik');
-      assert.equal(res.body.structured.conflict, 'arah');
-      assert.match(res.body.structured.makro_alignment_reason, /CEK KONTRADIKSI/);
+      assert.equal(res.body.structured.makro_alignment, null, 'label alignment tidak boleh menyusup lagi ke populasi AATAS');
+      assert.equal(res.body.structured.conflict, 'none', 'conflict dibiarkan apa adanya dari AI');
 
       const log = JSON.parse(store.strings['setup_log_auto:v1']);
-      assert.equal(log[0].sistem_hakim, null, 'Sistem Hakim tidak boleh ikut nyala (cbDir null, tanpa cb_bias)');
-      assert.equal(log[0].conflict_source, 'contradiction_guard');
-      assert.equal(store.strings['contradiction_guard_stats:fired'], '1');
+      assert.equal(log[0].conflict_source, null);
+      assert.equal(store.strings['contradiction_guard_stats:fired'], undefined, 'counter guard berhenti naik di jalur auto');
     } finally { global.fetch = origFetch; }
   });
 });
 
-test('CEK KONTRADIKSI cron: reasoning konsisten (tanpa kontradiksi) -> tidak disentuh, tetap searah', async () => {
-  await withEnv({ CRON_SECRET: 'topsecret', DEEPSEEK_API_KEY: 'k' }, async () => {
+test('CEK KONTRADIKSI manual: reasoning konsisten (tanpa kontradiksi) -> tidak disentuh, tetap searah', async () => {
+  await withEnv({ DEEPSEEK_API_KEY: 'k' }, async () => {
     const cleanJson = {
       ...AI_JSON_CONTRADICTORY,
       makro_alignment_reason: 'Bias SNB hawkish mendukung penguatan CHF, searah dengan bias bullish CHF/JPY.',
@@ -202,15 +233,15 @@ test('CEK KONTRADIKSI cron: reasoning konsisten (tanpa kontradiksi) -> tidak dis
       const handler = loadHandler();
       const res = fakeRes();
       await handler({
-        headers: { 'x-cron-secret': 'topsecret' }, method: 'GET',
-        query: { action: 'ohlcv_analyze', symbol: 'CHFJPY=X', label: 'CHF/JPY', auto: '1' },
+        headers: {}, method: 'POST', body: {},
+        query: { action: 'ohlcv_analyze', symbol: 'CHFJPY=X', label: 'CHF/JPY' },
       }, res);
 
       assert.equal(res.statusCode, 200);
       assert.equal(res.body.structured.makro_alignment, 'searah');
       assert.equal(res.body.structured.conflict, 'none');
 
-      const log = JSON.parse(store.strings['setup_log_auto:v1']);
+      const log = JSON.parse(store.strings['setup_log:v1']);
       assert.equal(log[0].conflict_source, null);
       assert.equal(store.strings['contradiction_guard_stats:fired'], undefined);
     } finally { global.fetch = origFetch; }
@@ -225,7 +256,7 @@ test('CEK KONTRADIKSI cron: reasoning konsisten (tanpa kontradiksi) -> tidak dis
 // walau makro_alignment_reason sudah membawa prefix [CEK KONTRADIKSI]. Setup live
 // itu membuktikan bug ini nyata: reason terkoreksi tapi conflict_source tidak
 // merekam contradiction_guard sebagai sumbernya.
-test('CEK KONTRADIKSI cron: conflict SUDAH "waktu" sebelum guard jalan -> conflict_source tetap terekam "contradiction_guard" (bukan null)', async () => {
+test('CEK KONTRADIKSI manual: conflict SUDAH "waktu" sebelum guard jalan -> conflict_source tetap terekam "contradiction_guard" (bukan null)', async () => {
   await withEnv({ CRON_SECRET: 'topsecret', DEEPSEEK_API_KEY: 'k' }, async () => {
     const jsonWithWaktu = { ...AI_JSON_CONTRADICTORY, conflict: 'waktu', conflict_note: 'Rilis data JPY dalam 2 jam.' };
     const rawText = `${JSON.stringify(jsonWithWaktu)}\n===COMMENTARY===\nKomentar singkat untuk tes CEK KONTRADIKSI + waktu.`;
@@ -242,8 +273,8 @@ test('CEK KONTRADIKSI cron: conflict SUDAH "waktu" sebelum guard jalan -> confli
       const handler = loadHandler();
       const res = fakeRes();
       await handler({
-        headers: { 'x-cron-secret': 'topsecret' }, method: 'GET',
-        query: { action: 'ohlcv_analyze', symbol: 'CHFJPY=X', label: 'CHF/JPY', auto: '1' },
+        headers: {}, method: 'POST', body: {},
+        query: { action: 'ohlcv_analyze', symbol: 'CHFJPY=X', label: 'CHF/JPY' },
       }, res);
 
       assert.equal(res.statusCode, 200);
@@ -251,9 +282,8 @@ test('CEK KONTRADIKSI cron: conflict SUDAH "waktu" sebelum guard jalan -> confli
       assert.equal(res.body.structured.conflict, 'waktu', 'conflict TIDAK ditimpa turun jadi arah — waktu dipertahankan by design');
       assert.match(res.body.structured.makro_alignment_reason, /CEK KONTRADIKSI/);
 
-      const log = JSON.parse(store.strings['setup_log_auto:v1']);
+      const log = JSON.parse(store.strings['setup_log:v1']);
       assert.equal(log[0].conflict_source, 'contradiction_guard', 'BUG LAMA: ini sebelumnya null walau guard nyata-nyata aktif');
-      assert.equal(store.strings['contradiction_guard_stats:fired'], '1');
     } finally { global.fetch = origFetch; }
   });
 });
