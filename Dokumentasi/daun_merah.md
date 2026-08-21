@@ -11,10 +11,14 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-20 (Session 323 lanjutan 5 — Riwayat Setup sembunyikan `canceled` dari tampilan default)
+> **Last updated:** 2026-08-21/22 (Session 325 — Checklist `index.html`: verdict "KONFLIK — HALF SIZE" berhenti auto-mengecilkan risk size)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
+
+## Changelog Session 325 (2026-08-21/22) — Checklist Manual: Bug Auto-Half-Size Diperbaiki (Auto-Entry: lihat professional_llm_trader/changelog.md)
+
+Fitur "Checklist" (`index.html`, dipakai user untuk trading manual MT5) verdict "KONFLIK — HALF SIZE" selama ini diam-diam mengecilkan `riskMultiplier` ke 0,5 di Sizing Calculator begitu ada konflik arah terdeteksi — tidak pernah diminta user, yang selama ini mengakalinya dengan input risk% 2x lipat. Diperbaiki: size sekarang flat sesuai input user, verdict jadi "KONFLIK — REVIEW" (alarm perhatian, bukan pemicu resize). Entri lengkap (termasuk pekerjaan Gate B auto-entry terkait sesi sama): `Dokumentasi/professional_llm_trader/changelog.md` §Session 2026-08-21/22.
 
 ## Changelog Session 323 lanjutan 5 (2026-08-20) — Riwayat Setup: Status `canceled` Disembunyikan dari Tampilan Default
 

@@ -12494,9 +12494,15 @@ function ckGetVerdict() {
   else if (pct < 50)    { verdict = 'NO TRADE';     cls = 'fail';    sub = `${pct}% — syarat belum cukup`; riskMultiplier = 0; }
   else if (!gatesOk)    { verdict = 'NO TRADE';     cls = 'fail';    sub = `Gate belum lengkap: ${incompleteGates.map(s => s.title).join(', ')}`; riskMultiplier = 0; }
   else if (hasArahConflict) {
-    verdict = 'KONFLIK — HALF SIZE'; cls = 'konflik';
+    // Risk multiplier TIDAK lagi otomatis mengecilkan size (2026-08-21, diskusi user):
+    // dulu 0.5 di sini diam-diam memangkas risk% ke setengah di Sizing Calculator
+    // (lihat riskMultiplier di calcSizing) tanpa user pernah memintanya — user sadar
+    // ini terjadi cuma karena mengakalinya dengan input riskPct 2x lipat. Aturan
+    // riil user: flat risk% apa pun kondisinya, checklist cuma menandai KONFLIK
+    // sebagai alarm perhatian, bukan pemicu resize otomatis.
+    verdict = 'KONFLIK — REVIEW'; cls = 'konflik';
     sub = `${pct}% — konflik arah: ${conflictItems.map(it => it.label).join(', ')}`;
-    riskMultiplier = 0.5;
+    riskMultiplier = 1;
   }
   else if (pct < 75)    { verdict = 'PERTIMBANGKAN'; cls = 'warn';   sub = `${pct}% — ada celah, review ulang`; riskMultiplier = 1; }
   else if (pct < 90)    { verdict = 'SIAP TRADE';   cls = 'ready';   sub = `${pct}% — kondisi terpenuhi`; riskMultiplier = 1; }
@@ -12772,12 +12778,14 @@ function ckPrefillJurnalAction(pct, verdict) {
   // Build thesis from checklist state
   const lines = [`[${pbName} | ${pct}% — ${verdict}]`];
   if (pair) lines.push(`Pair: ${pair}`);
-  // PLAN U-4: rekam konflik arah + risk multiplier ke snapshot jurnal — checklist_snapshot
-  // (id->boolean, lihat sanitizeChecklistSnapshot di api/journal.js) tidak muat metadata
-  // ini, jadi disimpan sebagai baris tesis biasa (tetap terbaca manusia di riwayat jurnal).
-  const { riskMultiplier: _jRiskMult, conflictItems: _jConflictItems } = ckGetVerdict();
-  if (_jRiskMult < 1 && _jConflictItems.length > 0) {
-    lines.push(`Risk Multiplier: ${_jRiskMult}x [KONFLIK ARAH — ${_jConflictItems.map(ckFormatConflictLabel).join(', ')}]`);
+  // PLAN U-4: rekam konflik arah ke snapshot jurnal — checklist_snapshot (id->boolean,
+  // lihat sanitizeChecklistSnapshot di api/journal.js) tidak muat metadata ini, jadi
+  // disimpan sebagai baris tesis biasa (tetap terbaca manusia di riwayat jurnal).
+  // Tidak lagi diframe sebagai "Risk Multiplier: Nx" (2026-08-21) — size tidak pernah
+  // dikecilkan otomatis lagi, ini murni flag kesadaran, bukan pemicu resize.
+  const { conflictItems: _jConflictItems } = ckGetVerdict();
+  if (_jConflictItems.length > 0) {
+    lines.push(`[KONFLIK ARAH — ${_jConflictItems.map(ckFormatConflictLabel).join(', ')}]`);
   }
   const speedNote = ckConsumeSpeedAckNote();
   if (speedNote) lines.push(speedNote);
@@ -13044,10 +13052,11 @@ async function ckMt5AutoJournal(pair, direction, fill, lots, sl, tp) {
     `Pair: ${pair} | Entry via Daun Merah MT5 Bridge`,
     `Ticket: #${fill.ticket}`,
   ];
-  // PLAN U-4: rekam konflik arah + risk multiplier yang berlaku saat entry ini dikirim
-  // (lots yang dikirim ke bridge sudah dihitung dengan risk efektif di szShowMt5Modal/calcSizing).
-  if (riskMultiplier < 1 && conflictItems.length > 0) {
-    lines.push(`Risk Multiplier: ${riskMultiplier}x [KONFLIK ARAH — ${conflictItems.map(ckFormatConflictLabel).join(', ')}]`);
+  // PLAN U-4: rekam konflik arah yang berlaku saat entry ini dikirim. Tidak lagi
+  // diframe sebagai "Risk Multiplier: Nx" (2026-08-21) — lots yang dikirim ke bridge
+  // sudah risk% flat apa adanya, tidak pernah dikecilkan otomatis oleh checklist.
+  if (conflictItems.length > 0) {
+    lines.push(`[KONFLIK ARAH — ${conflictItems.map(ckFormatConflictLabel).join(', ')}]`);
   }
   const speedNote = ckConsumeSpeedAckNote();
   if (speedNote) lines.push(speedNote);

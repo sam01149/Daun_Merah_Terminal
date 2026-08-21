@@ -1,7 +1,11 @@
 // test/frontend/checklist_verdict_multiplier.test.js
 // PLAN U-4: verdict bertingkat + risk multiplier di ckGetVerdict().
 // 1. Kelas ARAH (ckAutoConflict) tidak menggagalkan gate/pct (ckState tetap true),
-//    tapi menurunkan verdict lewat riskMultiplier 0.5 ("KONFLIK — HALF SIZE").
+//    dan (2026-08-21, diskusi user) TIDAK LAGI mengecilkan riskMultiplier — dulu 0.5
+//    ("KONFLIK — HALF SIZE") diam-diam memangkas size di Sizing Calculator tanpa
+//    pernah diminta user, sampai user harus mengakalinya dengan input riskPct 2x
+//    lipat. Sekarang cuma verdict "KONFLIK — REVIEW" (alarm perhatian), riskMultiplier
+//    tetap 1 — size flat, murni keputusan risk% manual user.
 // 2. Kelas WAKTU (ckAutoBlock, mis. rc4) tetap mutlak — riskMultiplier 0 (NO TRADE).
 // 3. pct<50 tanpa gate/conflict tetap NO TRADE murni seperti sebelum U-4.
 const { test } = require('node:test');
@@ -61,15 +65,15 @@ test('clean pass (semua tercentang, tanpa konflik) -> riskMultiplier 1', () => {
   assert.notStrictEqual(v.verdict, 'NO TRADE');
 });
 
-test('konflik ARAH (ckAutoConflict) -> gate tetap lolos, riskMultiplier 0.5, verdict KONFLIK', () => {
+test('konflik ARAH (ckAutoConflict) -> gate tetap lolos, riskMultiplier TETAP 1 (flat, tidak auto-resize), verdict KONFLIK — REVIEW', () => {
   setup();
   api.ckAutoTick('t1', 'ok');
   api.ckAutoConflict('t2', 'COT kontra arah');
   api.ckAutoTick('t3', 'ok');
   const v = api.ckGetVerdict();
   assert.strictEqual(v.gatesOk, true, 'item konflik ARAH tidak boleh menggagalkan gate');
-  assert.strictEqual(v.riskMultiplier, 0.5);
-  assert.strictEqual(v.verdict, 'KONFLIK — HALF SIZE');
+  assert.strictEqual(v.riskMultiplier, 1, 'konflik ARAH cuma alarm perhatian, TIDAK boleh mengecilkan size otomatis');
+  assert.strictEqual(v.verdict, 'KONFLIK — REVIEW');
   assert.strictEqual(v.cls, 'konflik');
   assert.strictEqual(v.hasArahConflict, true);
   assert.strictEqual(v.conflictItems.length, 1);
