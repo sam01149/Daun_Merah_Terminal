@@ -389,7 +389,7 @@ const POLICY_EPOCHS = [
   { v: 28, from: '2026-08-18T09:12:12Z', kind: 'policy', impact: 'levels',  label: 'PLAN Z: sl/tp/invalidation_trigger wajib dari kandidat deterministik (api/_levels.js), dulu bebas dikarang AI' },
   { v: 29, from: '2026-08-20T08:36:35Z', kind: 'policy', impact: 'entry',    label: 'S323 lanj.4: Gate B (drawdown circuit breaker) dinonaktifkan sementara selama fase pengumpulan sampel n>=100' },
   { v: 30, from: '2026-08-21T18:54:19Z', kind: 'fix', impact: 'entry',    label: 'Gate B diaktifkan ulang dengan katup darurat waktu (isDrawdownEmergencyValveOpen) — celah macet total dari v29 diperbaiki, ambang R tetap heuristik belum dikalibrasi' },
-  { v: 31, from: '2026-08-21T19:31:00Z', kind: 'policy', impact: 'entry',    label: 'AATAS: urutan keputusan auto-entry dibalik jadi makro-first (REGIME CHECK + gate driver/fundamental dulu, teknikal cuma presisi timing) — porting checklist SMC/ICT manual ke jalur isAutoCall' },
+  { v: 31, from: '2026-08-21T19:57:42Z', kind: 'policy', impact: 'entry',    label: 'AATAS: urutan keputusan auto-entry dibalik jadi makro-first (REGIME CHECK + gate driver/fundamental dulu, teknikal cuma presisi timing) — porting checklist SMC/ICT manual ke jalur isAutoCall' },
 ];
 
 // AATAS_EPOCH (2026-08-22, keputusan user): batas populasi statistik dashboard
