@@ -666,3 +666,43 @@ test('AATAS e2e XAU: rate path masuk prompt jalur auto; pair FX & jalur manual T
     assert.doesNotMatch(cap[0].messages[1].content, /RATE PATH FED/, 'rate path itu delta cabang gold, bukan FX');
   });
 });
+
+// ── Konsistensi LLM ikut discope, latensi pipeline TIDAK ─────────────────────
+// Konsistensi = properti PROMPT (prompt jalur auto diganti total oleh AATAS, jadi
+// sampel lama menjawab pertanyaan tentang prompt yang sudah tidak dipakai).
+// Latensi = murni infrastruktur kalender, tidak ada hubungannya dengan keputusan AI.
+
+test('_consistencySummary: agregat hanya dari populasi AATAS, `recent` tetap penuh; latensi tidak difilter', async () => {
+  const tsLama  = Date.parse('2026-08-10T10:45:00Z'); // arsitektur lama
+  const tsBaru  = Date.now();                          // pasca-AATAS
+  const konsistensi = [
+    { ts: tsBaru, pair: 'frxXAUUSD', bias_identical: true },
+    { ts: tsLama, pair: 'frxXAUUSD', bias_identical: false },
+    { ts: tsLama - 1000, pair: 'frxXAUUSD', bias_identical: false },
+  ].map(o => JSON.stringify(o));
+  const latensi = [
+    { ts: tsLama, latency_ms: 600000 },
+    { ts: tsLama - 1000, latency_ms: 1200000 },
+  ].map(o => JSON.stringify(o));
+
+  const origFetch = global.fetch;
+  global.fetch = async (url, opts) => {
+    const [cmd, key] = JSON.parse(opts.body);
+    if (cmd === 'LRANGE' && key === 'consistency_log:v1') return { ok: true, json: async () => ({ result: konsistensi }) };
+    if (cmd === 'LRANGE' && key === 'calendar_actual_latency_log:v1') return { ok: true, json: async () => ({ result: latensi }) };
+    return { ok: true, json: async () => ({ result: null }) };
+  };
+  try {
+    const { _consistencySummary, _summarizeLatency } = loadHandler();
+    const c = await _consistencySummary();
+    assert.equal(c.total, 1, 'cuma sampel pasca-AATAS yang dihitung');
+    assert.equal(c.bias_identical, 1);
+    assert.equal(c.bias_identical_pct, 100, 'sampel prompt lama tidak boleh menyeret angka prompt baru');
+    assert.equal(c.recent.length, 3, 'riwayat mentah tetap bisa dibaca');
+    assert.equal(c.from_policy_v, AATAS_EPOCH);
+
+    // Latensi: entri LAMA tetap dihitung — ini data infrastruktur yang masih berlaku.
+    const l = _summarizeLatency([{ latency_ms: 600000 }, { latency_ms: 1200000 }]);
+    assert.equal(l.n, 2, 'latensi pipeline TIDAK ikut direset');
+  } finally { global.fetch = origFetch; }
+});

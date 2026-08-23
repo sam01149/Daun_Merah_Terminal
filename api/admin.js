@@ -3756,18 +3756,39 @@ async function _consistencySummary() {
     const entries = Array.isArray(raw)
       ? raw.map(s => { try { return JSON.parse(s); } catch (e) { return null; } }).filter(Boolean)
       : [];
-    const identical = entries.filter(e => e.bias_identical).length;
-    return {
-      total: entries.length,
-      bias_identical: identical,
-      bias_identical_pct: entries.length ? Math.round(identical / entries.length * 100) : null,
-      recent: entries.slice(0, 10),
+    // AATAS (2026-08-22): angka agregat discope ke populasi kebijakan AATAS, alasan yang
+    // SAMA dengan reset statistik setup (_statsPayloadFromLog). Konsistensi = properti
+    // PROMPT + model ("kalau AI ditanya 3x, jawabannya sama tidak?"). AATAS mengganti
+    // prompt jalur auto seluruhnya, jadi 24 sampel lama menjawab pertanyaan tentang
+    // prompt yang sudah tidak dipakai auto-entry — menggabungkannya membuat angkanya
+    // tidak berarti apa-apa, persis kesalahan yang dihindari di reset win rate.
+    // Entri tidak punya `policy_v` (probe tidak menyimpan setup), jadi keanggotaan
+    // populasi direkonstruksi dari `ts` — sah di sini karena `ts`-nya waktu probe
+    // benar-benar jalan, bukan estimasi retroaktif atas data pihak lain.
+    // `recent` TIDAK difilter (pola sama tabel Riwayat Setup): riwayat mentah tetap
+    // bisa dibaca, cuma tidak ikut dihitung.
+    const inAatas = e => {
+      const v = policyVersionForTs(e && e.ts);
+      return typeof v === 'number' && v >= AATAS_EPOCH;
     };
-  } catch (e) { return { total: 0, bias_identical: 0, bias_identical_pct: null, recent: [] }; }
+    const scoped = entries.filter(inAatas);
+    const identical = scoped.filter(e => e.bias_identical).length;
+    return {
+      total: scoped.length,
+      bias_identical: identical,
+      bias_identical_pct: scoped.length ? Math.round(identical / scoped.length * 100) : null,
+      recent: entries.slice(0, 10),
+      from_policy_v: AATAS_EPOCH,
+    };
+  } catch (e) { return { total: 0, bias_identical: 0, bias_identical_pct: null, recent: [], from_policy_v: AATAS_EPOCH }; }
 }
 
 // Baca `calendar_actual_latency_log:v1` (list Redis, cap 100 — vps/daemon.js) dan
 // ringkas via _summarizeLatency. Best-effort seperti _consistencySummary.
+// SENGAJA TIDAK discope ke populasi AATAS (beda dari _consistencySummary di atas):
+// ini mengukur seberapa cepat pipeline data kalender mendapat angka rilis aktual —
+// murni infrastruktur, tidak ada hubungannya dengan cara AI mengambil keputusan.
+// Membuangnya cuma akan menghapus data infra yang masih berlaku tanpa alasan.
 async function _pipelineLatencySummary() {
   try {
     const raw = await redisCmd('LRANGE', 'calendar_actual_latency_log:v1', '0', '-1');
@@ -7335,6 +7356,7 @@ module.exports._buildLiveCorrSign = _buildLiveCorrSign;
 module.exports._goldYieldCorrAnomaly = _goldYieldCorrAnomaly;
 module.exports._isAatasEpochSetup = _isAatasEpochSetup;
 module.exports._formatRatePathBlock = _formatRatePathBlock;
+module.exports._consistencySummary = _consistencySummary;
 module.exports._buildAatasChecklistBlock = _buildAatasChecklistBlock;
 module.exports._normalizeAatasFields = _normalizeAatasFields;
 module.exports._aatasRejectReason = _aatasRejectReason;

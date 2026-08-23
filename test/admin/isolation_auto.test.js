@@ -736,9 +736,13 @@ test('PLAN U-7(c): scope=auto TANPA CRON_SECRET valid -> response publik biasa (
 test('PLAN U-7(c): scope=auto DENGAN CRON_SECRET valid -> data eksperimen (management + consistency), beda dari payload publik', async () => {
   await withEnv({ CRON_SECRET: 'topsecret' }, async () => {
     const store = makeStore({ 'setup_log:v1': JSON.stringify(MANUAL_LOG), 'setup_log_auto:v1': JSON.stringify(AUTO_LOG) });
+    // `ts` harus jatuh di populasi AATAS: sejak 2026-08-22 agregat konsistensi discope
+    // ke `policy_v` >= AATAS_EPOCH (prompt jalur auto diganti total, sampel prompt lama
+    // tidak dihitung). Scoping itu sendiri diuji terpisah di test/admin/aatas.test.js —
+    // test ini soal STRUKTUR payload scope=auto, jadi fixture-nya dibuat "zaman sekarang".
     store.lists['consistency_log:v1'] = [
-      JSON.stringify({ ts: 1, pair: 'XAU/USD', bias_identical: true }),
-      JSON.stringify({ ts: 2, pair: 'XAU/USD', bias_identical: false }),
+      JSON.stringify({ ts: Date.now(), pair: 'XAU/USD', bias_identical: true }),
+      JSON.stringify({ ts: Date.now() - 1000, pair: 'XAU/USD', bias_identical: false }),
     ];
     const autoPayload = await callSetupStats(store, { scope: 'auto' }, { 'x-cron-secret': 'topsecret' });
 

@@ -1867,13 +1867,24 @@ const CONSISTENCY_CALL_GAP_MS = 5000; // jeda antar 3x panggilan berturut
 // lihat api/admin.js sekitar testDeepseekOnly) dalam mode isDiagnosticOnly
 // (TIDAK menulis cache produksi/setup_log — jalur existing, bukan modifikasi
 // baru). 1x/hari, pair pertama dari AUTO_ENTRY_PAIRS.
+//
+// `auto=1` DITAMBAHKAN 2026-08-22 (AATAS). Sebelumnya probe ini sengaja polos karena
+// jalur auto & manual memakai prompt yang PERSIS SAMA — mengukur salah satunya sama
+// saja. AATAS memutus kesetaraan itu: jalur auto sekarang memakai prompt checklist
+// macro-first, jalur manual tetap prompt lama. Tanpa `auto=1`, angka konsistensi
+// diam-diam mengukur prompt yang TIDAK dipakai auto-entry — metrik yang gunanya
+// justru untuk menilai apakah keputusan auto-entry layak dipercaya.
+// AMAN dari efek samping: seluruh blok penulisan setup_log/cache/gate di
+// api/admin.js digerbang `!isDiagnosticOnly`, dan counter Sistem Hakim/contradiction
+// guard sudah tidak pernah menyala di jalur auto sejak AATAS. Jadi kombinasi
+// `auto=1&test_deepseek=1` = prompt auto-entry sungguhan, nol tulisan.
 async function runConsistencyCheck() {
   if (!CRON_SECRET) { console.warn('daemon: CRON_SECRET kosong, U-3 uji konsistensi di-skip'); return; }
   if (!isFxMarketOpen()) return;
   const pair = AUTO_ENTRY_PAIRS[0];
   const map = pair && AUTO_ENTRY_SYMBOL_MAP[pair];
   if (!map) { console.warn('daemon: U-3 uji konsistensi — AUTO_ENTRY_PAIRS kosong/tak dikenal, di-skip'); return; }
-  const path = `/api/admin?action=ohlcv_analyze&symbol=${encodeURIComponent(map.symbol)}&label=${encodeURIComponent(map.label)}&test_deepseek=1`;
+  const path = `/api/admin?action=ohlcv_analyze&symbol=${encodeURIComponent(map.symbol)}&label=${encodeURIComponent(map.label)}&auto=1&test_deepseek=1`;
   const calls = [];
   for (let i = 0; i < 3; i++) {
     const json = await fetchJsonWithTimeout(path);
