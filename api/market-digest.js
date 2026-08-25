@@ -68,7 +68,13 @@ const GEMINI_URL   = 'https://generativelanguage.googleapis.com/v1beta/openai/ch
 // otomatis ke rilis stabil terbaru, ai.google.dev/gemini-api/docs/models) supaya tidak
 // basi lagi kalau Google merilis versi baru — sekarang resolve ke gemini-3.5-flash.
 const GEMINI_MODEL = 'gemini-flash-latest';
-const CB_GEMINI     = 'ai:gemini';
+// Circuit key SENGAJA khusus fitur ini (2026-08-25, sebelumnya 'ai:gemini' dipakai
+// bersama journal.js & admin.js) — Ringkasan Berita jauh lebih sering panggil Gemini
+// (cron 3x/hari + ~15-20 klik manual/hari, threshold trip cuma 2 kegagalan) daripada
+// AI Coach Jurnal/Analisa Fundamental yang jarang dipakai. Key bersama menyebabkan
+// burst 503 di sini men-trip circuit utk SEMUA fitur Gemini sekaligus 5 menit,
+// termasuk yang tidak pernah gagal sendiri — lihat daun_merah.md Session 328.
+const CB_GEMINI     = 'ai:gemini:digest';
 // Mistral La Plateforme, tier gratis "Experiment". Pakai alias -latest (bukan versi
 // tertanggal eksplisit) supaya tidak perlu update manual tiap Mistral merilis versi baru
 // — konvensi resmi Mistral untuk semua model line-nya.

@@ -51,7 +51,12 @@ function sanitizeChecklistSnapshot(snap) {
 // 'gemini' sudah ada di _ai_guard.js).
 const GEMINI_URL   = 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions';
 const GEMINI_MODEL = 'gemini-flash-latest';
-const CB_GEMINI    = 'ai:gemini'; // circuit dipakai bersama market-digest.js & admin.js — provider sama
+// Circuit key SENGAJA khusus fitur ini (2026-08-25, sebelumnya 'ai:gemini' dipakai
+// bersama market-digest.js & admin.js) — lihat penjelasan lengkap di CB_GEMINI
+// market-digest.js & daun_merah.md Session 328. Root cause bug user-facing: pesan
+// error dulu selalu menyebut literal "(GEMINI_API_KEY)" walau penyebab sebenarnya
+// circuit breaker OPEN akibat kegagalan fitur LAIN — user salah kira API key rusak.
+const CB_GEMINI    = 'ai:gemini:journal';
 const ANALYSIS_CACHE_TTL = 60 * 60; // 1 hour
 
 async function callProvider(url, apiKey, model, messages, maxTokens, temperature, timeoutMs, extraBody = {}) {
@@ -87,8 +92,14 @@ async function callProvider(url, apiKey, model, messages, maxTokens, temperature
 // jeda 2s supaya 2 percobaan tetap muat aman di bawah maxDuration 45s (vercel.json).
 async function aiCall(messages, maxTokens = 1000) {
   const GEMINI_KEY = process.env.GEMINI_API_KEY;
+  // Pesan error dipisah per penyebab (2026-08-25) — dulu satu pesan generik menyebut
+  // literal "(GEMINI_API_KEY)" untuk 3 kondisi berbeda (key kosong, circuit breaker
+  // OPEN, retry habis), bikin user salah kira API key rusak padahal Gemini cuma lagi
+  // dijeda otomatis. Lihat CB_GEMINI di atas.
+  if (!GEMINI_KEY) throw new Error('Gemini API key tidak dikonfigurasi di server');
 
-  if (GEMINI_KEY && await cb.canCall(CB_GEMINI)) {
+  if (await cb.canCall(CB_GEMINI)) {
+    let lastErr = null;
     for (let attempt = 1; attempt <= 2; attempt++) {
       try {
         if (!await allowAiCall('gemini')) throw new Error('AI daily budget exceeded');
@@ -96,14 +107,16 @@ async function aiCall(messages, maxTokens = 1000) {
         await cb.onSuccess(CB_GEMINI);
         return txt;
       } catch(e) {
+        lastErr = e;
         console.warn(`journal aiCall: Gemini failed (attempt ${attempt}):`, e.message);
         if (attempt === 1) await new Promise(r => setTimeout(r, 2000));
       }
     }
     await cb.onFailure(CB_GEMINI);
+    throw new Error(`Gemini gagal setelah 2 percobaan: ${lastErr?.message || 'unknown error'}`);
   }
 
-  throw new Error('All AI providers failed or none configured (GEMINI_API_KEY)');
+  throw new Error('Gemini sedang dijeda otomatis (circuit breaker) akibat kegagalan beruntun sebelumnya — coba lagi dalam beberapa menit');
 }
 
 async function redisCmd(...args) {

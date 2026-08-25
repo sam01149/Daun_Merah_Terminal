@@ -1337,7 +1337,10 @@ async function fundamentalRefreshHandler(req, res) {
 // session 145-147) — lihat KEPUTUSAN GATE AWAL di daun_merah_riset.md.
 const GEMINI_URL_FUND   = 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions';
 const GEMINI_MODEL_FUND = 'gemini-flash-latest';
-const CB_GEMINI_ADMIN   = 'ai:gemini'; // circuit dipakai bersama market-digest.js & journal.js — provider sama
+// Circuit key SENGAJA khusus fitur ini (2026-08-25, sebelumnya 'ai:gemini' dipakai
+// bersama market-digest.js & journal.js) — lihat penjelasan lengkap di CB_GEMINI
+// market-digest.js & daun_merah.md Session 328.
+const CB_GEMINI_ADMIN   = 'ai:gemini:fundamental';
 
 const FUND_SEED = {
   USD: {
@@ -1849,13 +1852,17 @@ async function journalImportHandler(req, res) {
 
 // ── Circuit breaker status + reset ───────────────────────────────────────────
 
-const KNOWN_CIRCUITS = ['ai:deepseek', 'ai:gemini', 'fred', 'stooq', 'ff', 'fj', 'cftc', 'redis', 'fxssi', 'actionforex',
+const KNOWN_CIRCUITS = ['ai:deepseek', 'fred', 'stooq', 'ff', 'fj', 'cftc', 'redis', 'fxssi', 'actionforex',
   // PLAN V-3 (2026-07-20): breaker terpisah untuk call isAutoCall/test_deepseek=1 (developer-only)
   'ai:deepseek:experimental',
   // Translate NEWS (api/_news_translate.js) — TADINYA absen dari daftar ini, ketahuan
   // 2026-08-05 saat circuit-nya trip berulang (macet total) TAPI tak kelihatan sama
   // sekali di endpoint diagnostik ?action=circuit-status/circuit-reset ini.
-  'ai:mistral:newstranslate'];
+  'ai:mistral:newstranslate',
+  // 2026-08-25 (Session 328): 'ai:gemini' dipecah 3 karena dulu dipakai bersama lintas
+  // fitur (lihat CB_GEMINI di market-digest.js) — burst kegagalan di satu fitur men-trip
+  // circuit fitur lain yang tidak pernah gagal sendiri.
+  'ai:gemini:digest', 'ai:gemini:journal', 'ai:gemini:fundamental'];
 
 async function circuitStatusHandler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');

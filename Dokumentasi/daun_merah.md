@@ -11,10 +11,22 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-25 (Session 327 — Gemini AI Coach Jurnal & Analisa Fundamental dikeraskan (retry 2x + jeda); Nemotron 3 Ultra dicoba & DIBATALKAN, blocker ToS trial NVIDIA sama yang menolaknya 2026-08-11 ternyata tetap berlaku lewat gateway OpenCode Zen)
+> **Last updated:** 2026-08-25 (Session 328 — Bug fix: circuit breaker Gemini yang dipakai bersama 3 fitur dipecah per-fitur; pesan error AI Coach Jurnal yang salah menyebut "GEMINI_API_KEY" diperjelas)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
+
+## Changelog Session 328 (2026-08-25) — Fix: Circuit Breaker Gemini Dipakai Bersama 3 Fitur (Ringkasan Berita Bikin Jurnal/Fundamental Ikut Terkunci)
+
+**Laporan user:** klik pertama "Ringkasan" di AI Coach Jurnal maupun Analisa Fundamental sering langsung gagal dengan pesan yang menyebut "GEMINI_API_KEY", tapi setelah refresh halaman lalu klik ulang malah berhasil — padahal API key tidak pernah diubah.
+
+**Root cause ditemukan lewat audit kode (bukan reproduksi manual):** ketiga fitur pemakai Gemini (`api/market-digest.js` Ringkasan Berita, `api/journal.js` AI Coach Jurnal, `api/admin.js` Analisa Fundamental) ternyata berbagi SATU key circuit breaker Redis yang sama persis, `'ai:gemini'`. Ringkasan Berita jauh lebih sering panggil Gemini sebagai fallback (cron otomatis 3×/hari + ~15-20 klik manual/hari wajar, dengan threshold trip cuma 2 kegagalan beruntun — beda dari default 3 yang dipakai journal.js/admin.js, tapi tetap nulis ke Redis key yang sama). Begitu Ringkasan Berita kena 2 kali 503 "high demand" beruntun (kondisi transient yang memang sudah didokumentasikan Session 327), circuit `ai:gemini` OPEN selama 5 menit — dan selama itu, AI Coach Jurnal & Analisa Fundamental ikut diblokir instan (skip total tanpa retry) walau keduanya tidak pernah gagal sendiri. journal.js kemudian melempar pesan generik `'All AI providers failed or none configured (GEMINI_API_KEY)'` untuk KETIGA kemungkinan penyebab (key kosong / circuit OPEN / retry habis) sekaligus — makanya user salah kira ini soal API key rusak.
+
+**Fix (`api/market-digest.js`, `api/journal.js`, `api/admin.js`):**
+- Circuit key dipecah jadi 3 independen: `ai:gemini:digest` (Ringkasan Berita), `ai:gemini:journal` (AI Coach Jurnal), `ai:gemini:fundamental` (Analisa Fundamental) — kegagalan beruntun di satu fitur tidak lagi mengunci fitur lain.
+- `KNOWN_CIRCUITS` di `api/admin.js` (dipakai endpoint diagnostik `?action=circuit-status`/`circuit-reset`) diupdate ke 3 key baru — pola sama seperti celah `ai:mistral:newstranslate` yang pernah luput dari daftar ini, sengaja dicek supaya tidak terulang.
+- `api/journal.js` `aiCall()`: pesan error dipecah 3 sesuai penyebab asli — key kosong ("Gemini API key tidak dikonfigurasi di server"), circuit breaker OPEN ("Gemini sedang dijeda otomatis... coba lagi dalam beberapa menit"), retry habis (pesan asli dari Gemini, bukan lagi generik). Tidak ada lagi pesan yang menyebut literal "GEMINI_API_KEY" untuk kondisi selain key benar-benar kosong.
+- Test `journal_ai.test.js` diupdate mengikuti pesan baru. Suite penuh 1096/1096 lulus.
 
 ## Changelog Session 327 (2026-08-25) — Gemini AI Coach Jurnal/Analisa Fundamental Dikeraskan; Nemotron 3 Ultra Dicoba & Dibatalkan (Blocker ToS)
 

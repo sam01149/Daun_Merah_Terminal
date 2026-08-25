@@ -68,10 +68,10 @@ test('aiCall: Gemini sukses — 1 fetch call, gemini-flash-latest, reasoning_eff
   });
 });
 
-test('aiCall: Gemini gagal -> melempar error agregat', async () => {
+test('aiCall: Gemini gagal -> melempar error dengan pesan asli (bukan generik "GEMINI_API_KEY")', async () => {
   await withEnv({ GEMINI_API_KEY: 'sk-gm' }, async () => {
     await withFetch(async () => errResponse(500), async () => {
-      await assert.rejects(() => aiCall([{ role: 'user', content: 'hi' }], 500), /All AI providers failed/);
+      await assert.rejects(() => aiCall([{ role: 'user', content: 'hi' }], 500), /Gemini gagal setelah 2 percobaan/);
     });
   });
 });
@@ -94,7 +94,7 @@ test('aiCall: tanpa API key sama sekali -> melempar tanpa network call', async (
   await withEnv({}, async () => {
     let fetchCalled = false;
     await withFetch(async () => { fetchCalled = true; return okResponse('x'); }, async () => {
-      await assert.rejects(() => aiCall([{ role: 'user', content: 'hi' }], 500), /All AI providers failed or none configured/);
+      await assert.rejects(() => aiCall([{ role: 'user', content: 'hi' }], 500), /API key tidak dikonfigurasi/);
     });
     assert.strictEqual(fetchCalled, false);
   });
