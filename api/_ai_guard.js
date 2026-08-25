@@ -45,7 +45,18 @@ const DEFAULT_LIMITS = {
   // sengaja MASIH KETAT (bukan disamakan produksi) — prinsipnya tetap "pagar biaya kecil
   // per jalur", bukan menggandakan total anggaran; sesuaikan naik kalau AUTO_ENTRY_PAIRS
   // diperluas lagi dan sering kena limit (cek via getUsage('deepseek_experimental')).
-  deepseek_experimental:        15,
+  //
+  // 15 -> 35 (2026-08-25, AATAS v2): satu panggilan analisa auto dipecah jadi DUA
+  // (Call 1 makro + Call 2 teknikal), jadi biaya per kandidat naik dari 1-2 call
+  // (analisa + Gate A kalau kebagian) ke 1-3 call (Gate 1 gagal berhenti di 1). Aritmetika
+  // beban harian: 5 pair x 2 slot = 10 kandidat; kalau separuh lolos Gate 1 -> 10 + 5x2 = 20,
+  // plus probe uji konsistensi 3x2 = 6, total ~26; 35 memberi kepala ruang tanpa mendekati
+  // pagar produksi 50. Ketahuan dari live-verify hari ini: pemakaian sudah 17/15 (call
+  // diblokir) SEBELUM v2 benar-benar dapat giliran — jadi angka lama memang sudah mepet,
+  // bukan cuma kurang untuk v2. Biaya per call v2 JUSTRU LEBIH KECIL dari v1 (Call 1 tidak
+  // membawa candle/indikator, Call 2 tidak membawa blok makro), jadi 35 call v2 kira-kira
+  // sebanding biayanya dengan ~20 call v1 — pagar rupiahnya tidak benar-benar naik 2x.
+  deepseek_experimental:        35,
 
   // Translate headline NEWS ke Bahasa Indonesia (S272, 2026-08-02, redesign BATCH
   // — 1 panggilan sampai 20 headline, lihat api/_news_translate.js). Riwayat provider
