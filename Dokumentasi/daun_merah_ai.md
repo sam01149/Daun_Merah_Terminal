@@ -134,7 +134,9 @@ Ini fitur AI yang **paling hemat** secara desain: hasilnya di-cache **6 jam untu
 
 Menganalisis pola menang/kalah dari trade yang sudah ditutup (butuh minimal 3 trade closed). Cache 1 jam **per device** (device lain / hari lain dapat cache masing-masing), dan ada tombol "paksa ulang" yang melewati cache.
 
-**Provider (2026-08-12): Gemini flash — PRIMARY/SATU-SATUNYA.** SambaNova akun-2 (dulu primary di sini, Cerebras/Groq sudah dihapus lebih dulu 2026-07-25) diputus kontrak total — lihat `daun_merah_vendor.md`.
+**Provider (2026-08-12): Gemini flash — PRIMARY/SATU-SATUNYA.** SambaNova akun-2 (dulu primary di sini, Cerebras/Groq sudah dihapus lebih dulu 2026-07-25) diputus kontrak total — lihat `daun_merah_vendor.md`. Retry 2x + jeda 2s antar percobaan (2026-08-25, sebelumnya sekali gagal langsung mati total — Gemini free tier sesekali balas 503 "high demand" transient, tapi retry beruntun tanpa jeda sering kena kondisi overload identik; timeout per percobaan 20s).
+
+**[2026-08-25] Nemotron 3 Ultra (OpenCode Zen, gratis) SEMPAT dicoba sebagai primary di sini, DIBATALKAN hari yang sama.** Awalnya terlihat menjanjikan — dikalibrasi khusus untuk tugas ini (4 trade, 6 section, ≤500 kata): selesai natural (`finish_reason=stop`) di ~16 detik. Tapi dokumentasi resmi OpenCode Zen sendiri ternyata menyatakan Nemotron Free **"Trial use only — do not submit personal or confidential data"** + wajib setuju **NVIDIA API Trial Terms of Service** — PERSIS blocker yang sama sudah bikin Nemotron ditolak 2026-08-11 lewat jalur lain (NVIDIA NIM/OpenRouter, lihat `daun_merah_vendor.md` §2), dan data jurnal trading (thesis, catatan personal trader) termasuk kategori data yang eksplisit dilarang dikirim. Jangan diusulkan ulang untuk fitur produksi manapun tanpa ToS berubah. (Untuk Analisa Fundamental §3.3, Nemotron juga TERBUKTI secara terpisah tidak muat di batas waktu Vercel manapun untuk prompt sebesar itu — >150 detik, tidak pernah selesai — jadi dua alasan independen sama-sama mengeliminasi Nemotron dari kedua fitur ini.)
 
 ### 3.5 Pre-Entry Check — `api/admin.js` (`action=pre_entry_check`, Plan R 2026-07-18)
 
@@ -211,11 +213,11 @@ Ini jawaban langsung untuk pertanyaan "penggunaan paling banyak fitur AI itu ber
 
 ### Analisa Fundamental
 
-- **Maksimal mutlak: 4 generate sehari**, apapun yang terjadi (cache global 6 jam, tidak ada tombol paksa refresh di UI). Fitur paling "aman" dari sisi jatah AI. Per generate bisa sampai 2 request Gemini (retry 1x kalau percobaan pertama gagal) — worst case realistis (8 request/hari) masih di bawah kuota resmi Gemini 20/hari, TAPI jauh lebih mepet dibanding dulu (pool SambaNova 200/hari) — lihat catatan kuota Gemini di §4.
+- **Maksimal mutlak: 4 generate sehari**, apapun yang terjadi (cache global 6 jam, tidak ada tombol paksa refresh di UI). Fitur paling "aman" dari sisi jatah AI. Per generate bisa sampai 2 request Gemini (retry 1x, sekarang dikasih jeda 2s antar percobaan sejak 2026-08-25 — dibuktikan manual retry beruntun tanpa jeda sering kena 503 "high demand" identik) — worst case realistis (8 request/hari) masih di bawah kuota resmi Gemini 20/hari, TAPI jauh lebih mepet dibanding dulu (pool SambaNova 200/hari) — lihat catatan kuota Gemini di §4.
 
 ### AI Coach Jurnal
 
-- Terikat pada aktivitas trading nyata user (butuh ≥3 trade closed) — secara alami jarang dipanggil. Ada tombol paksa ulang, jadi 1 device yang aktif bisa memicu beberapa kali sehari kalau memang lagi banyak menutup/mengevaluasi trade, tapi cache 1 jam/device tetap membatasi ini secara wajar. Provider Gemini sama dengan Analisa Fundamental — dua fitur ini SEKARANG berbagi kuota 20/hari yang sama, jadi hari yang ramai di salah satunya mengurangi headroom yang lain.
+- Terikat pada aktivitas trading nyata user (butuh ≥3 trade closed) — secara alami jarang dipanggil. Ada tombol paksa ulang, jadi 1 device yang aktif bisa memicu beberapa kali sehari kalau memang lagi banyak menutup/mengevaluasi trade, tapi cache 1 jam/device tetap membatasi ini secara wajar. Provider Gemini sama dengan Analisa Fundamental — dua fitur ini SEKARANG berbagi kuota 20/hari yang sama, jadi hari yang ramai di salah satunya mengurangi headroom yang lain. (Nemotron 3 Ultra/OpenCode Zen sempat dicoba gantikan Gemini di sini 2026-08-25, dibatalkan hari yang sama karena ToS "trial use only" — lihat §3.4.)
 
 ### Total gabungan (skenario ramai realistis dalam 1 hari)
 
@@ -224,8 +226,8 @@ Ini jawaban langsung untuk pertanyaan "penggunaan paling banyak fitur AI itu ber
 | Ringkasan Berita (otomatis, 3× cron) | 3-12 request DeepSeek (Call 1-4, fallback Call 1/2: Gemini) | DeepSeek → Gemini (Call 1/2 saja) |
 | Ringkasan Berita (manual, ~15-20× klik/hari wajar) | ±15-20 request DeepSeek | DeepSeek → Gemini (Call 1/2 saja) |
 | Analisa AI per Pair (otomatis + manual) | ±63-78 request | DeepSeek (primary/satu-satunya) |
-| Analisa Fundamental | maksimal 8 request | Gemini (primary/satu-satunya, retry 1x) |
-| AI Coach Jurnal | ±5-10 request | Gemini (primary/satu-satunya) |
+| Analisa Fundamental | maksimal 8 request | Gemini (primary/satu-satunya, retry 1x + jeda 2s) |
+| AI Coach Jurnal | ±5-10 request | Gemini (primary/satu-satunya, retry 1x + jeda 2s) |
 | Auto-Entry Virtual + Uji Konsistensi LLM (Plan U-3, §3.6) | +5 request (2 auto-entry + 3 konsistensi) | DeepSeek (chain sama Analisa AI per Pair) |
 | Sistem Hakim Gate A (bagian dari auto-entry di atas) | maksimal +2 request/hari | DeepSeek eksperimen |
 | Review Posisi Virtual (Plan U-5a/b, §3.7) | maksimal +3 request (event-driven, cap harian kode) | DeepSeek eksperimen |

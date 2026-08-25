@@ -1,9 +1,13 @@
 // test/journal_ai.test.js
 // Unit test journal.js aiCall() — Gemini flash satu-satunya provider (SambaNova akun2
 // diputus kontrak 2026-08-12, billing lapse tak terpulihkan meski ganti API key, lihat
-// daun_merah_vendor.md; Cerebras/Groq diputus kontraknya 2026-07-25). Redis tidak
-// dikonfigurasi di test ini, jadi circuit breaker/budget guard fail-open (lihat
-// guards.test.js) — test ini fokus ke HTTP-level, bukan skip akibat circuit OPEN.
+// daun_merah_vendor.md; Cerebras/Groq diputus kontraknya 2026-07-25). Nemotron 3 Ultra
+// via OpenCode Zen SEMPAT dipasang 2026-08-25, DIBATALKAN hari yang sama — ToS resmi
+// OpenCode Zen sendiri: Nemotron Free "Trial use only — do not submit personal or
+// confidential data" + wajib setuju NVIDIA API Trial ToS (blocker sama yang sudah
+// menolak Nemotron 2026-08-11, lihat daun_merah_vendor.md §2). Redis tidak dikonfigurasi
+// di test ini, jadi circuit breaker/budget guard fail-open (lihat guards.test.js) — test
+// ini fokus ke HTTP-level, bukan skip akibat circuit OPEN.
 const { test } = require('node:test');
 const assert = require('node:assert');
 
@@ -69,6 +73,20 @@ test('aiCall: Gemini gagal -> melempar error agregat', async () => {
     await withFetch(async () => errResponse(500), async () => {
       await assert.rejects(() => aiCall([{ role: 'user', content: 'hi' }], 500), /All AI providers failed/);
     });
+  });
+});
+
+test('aiCall: Gemini gagal di percobaan 1, sukses di percobaan 2 -> retry menyelamatkan (2026-08-25 fix)', async () => {
+  await withEnv({ GEMINI_API_KEY: 'sk-gm' }, async () => {
+    let calls = 0;
+    await withFetch(async () => {
+      calls++;
+      return calls === 1 ? errResponse(503) : okResponse('hasil percobaan kedua');
+    }, async () => {
+      const out = await aiCall([{ role: 'user', content: 'hi' }], 500);
+      assert.strictEqual(out, 'hasil percobaan kedua');
+    });
+    assert.strictEqual(calls, 2, 'harus retry tepat 1x (total 2 fetch call), bukan langsung menyerah di percobaan pertama');
   });
 });
 

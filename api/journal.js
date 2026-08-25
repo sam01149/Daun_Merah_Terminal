@@ -1,6 +1,6 @@
 // api/journal.js
 // Trade journal — POST (create), PATCH (close), GET (list), DELETE (soft-delete)
-// GET ?action=analyze — AI analysis of closed trades (Gemini, cached 1h per device)
+// GET ?action=analyze — AI analysis of closed trades (Gemini, retry 2x + backoff, cached 1h per device)
 // Redis: journal:{device_id}:{id} (full entry), journal_index:{device_id} (sorted set by created_at ms)
 
 const CORS = { 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-cache' };
@@ -40,6 +40,12 @@ function sanitizeChecklistSnapshot(snap) {
 // Gemini AI Studio — primary/satu-satunya provider AI Coach (2026-08-12: SambaNova
 // akun 2, primary lama di sini, diputus kontrak total — akunnya diblokir billing
 // SambaNova sendiri, ganti API key tidak memperbaikinya, lihat daun_merah_vendor.md).
+// Nemotron 3 Ultra via OpenCode Zen SEMPAT dipasang di sini 2026-08-25, DIBATALKAN hari
+// yang sama: dokumentasi resmi OpenCode Zen sendiri menyatakan Nemotron Free "Trial use
+// only — do not submit personal or confidential data" + wajib setuju NVIDIA API Trial
+// ToS — PERSIS blocker yang sama sudah bikin Nemotron ditolak 2026-08-11 (lihat
+// daun_merah_vendor.md §2), plus data jurnal trading itu sendiri termasuk "personal/
+// confidential data" yang eksplisit dilarang. Jangan diusulkan ulang tanpa ToS berubah.
 // Konstanta & alasan sama dengan GEMINI_URL_FUND di admin.js (alias -latest →
 // gemini-3.5-flash; lolos gate ToS produksi daun_merah_riset.md S183; budget guard
 // 'gemini' sudah ada di _ai_guard.js).
@@ -74,19 +80,27 @@ async function callProvider(url, apiKey, model, messages, maxTokens, temperature
 // Vendor cleanup: Cerebras & Groq diputus 2026-07-25; SambaNova (akun 1 & 2) diputus
 // 2026-08-12 (billing lapse tak terpulihkan, lihat daun_merah_vendor.md). Gemini flash
 // sekarang satu-satunya provider AI Coach.
+// Retry 2x + jeda antar percobaan (2026-08-25): dulu sekali gagal langsung mati total —
+// Gemini free tier sesekali balas 503 "high demand", terbukti transient tapi retry
+// BERUNTUN tanpa jeda sering kena kondisi overload yang sama persis (dibuktikan manual
+// 2x 503 identik berturut-turut). Timeout per percobaan dikecilkan (20s, bukan 25s) +
+// jeda 2s supaya 2 percobaan tetap muat aman di bawah maxDuration 45s (vercel.json).
 async function aiCall(messages, maxTokens = 1000) {
   const GEMINI_KEY = process.env.GEMINI_API_KEY;
 
   if (GEMINI_KEY && await cb.canCall(CB_GEMINI)) {
-    try {
-      if (!await allowAiCall('gemini')) throw new Error('AI daily budget exceeded');
-      const txt = await callProvider(GEMINI_URL, GEMINI_KEY, GEMINI_MODEL, messages, maxTokens, 0.4, 25000, { reasoning_effort: 'low' });
-      await cb.onSuccess(CB_GEMINI);
-      return txt;
-    } catch(e) {
-      console.warn('journal aiCall: Gemini failed:', e.message);
-      await cb.onFailure(CB_GEMINI);
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        if (!await allowAiCall('gemini')) throw new Error('AI daily budget exceeded');
+        const txt = await callProvider(GEMINI_URL, GEMINI_KEY, GEMINI_MODEL, messages, maxTokens, 0.4, 20000, { reasoning_effort: 'low' });
+        await cb.onSuccess(CB_GEMINI);
+        return txt;
+      } catch(e) {
+        console.warn(`journal aiCall: Gemini failed (attempt ${attempt}):`, e.message);
+        if (attempt === 1) await new Promise(r => setTimeout(r, 2000));
+      }
     }
+    await cb.onFailure(CB_GEMINI);
   }
 
   throw new Error('All AI providers failed or none configured (GEMINI_API_KEY)');

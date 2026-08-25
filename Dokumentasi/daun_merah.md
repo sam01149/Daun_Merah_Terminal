@@ -11,10 +11,29 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-22 (Session 326 — AATAS: urutan keputusan auto-entry dibalik jadi makro-first; jalur manual publik sengaja TIDAK berubah)
+> **Last updated:** 2026-08-25 (Session 327 — Gemini AI Coach Jurnal & Analisa Fundamental dikeraskan (retry 2x + jeda); Nemotron 3 Ultra dicoba & DIBATALKAN, blocker ToS trial NVIDIA sama yang menolaknya 2026-08-11 ternyata tetap berlaku lewat gateway OpenCode Zen)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
+
+## Changelog Session 327 (2026-08-25) — Gemini AI Coach Jurnal/Analisa Fundamental Dikeraskan; Nemotron 3 Ultra Dicoba & Dibatalkan (Blocker ToS)
+
+**Konteks:** user mengeluh Gemini "sering bermasalah" di AI Coach Jurnal (`api/journal.js`) & Analisa Fundamental (`api/admin.js`, `action=fundamental_analysis`) — dua-duanya satu-satunya provider (Gemini) sejak SambaNova diputus kontrak 2026-08-12. Dieksplorasi: model gratis "Ox Alpha" (stealth model viral, ternyata cuma setara GPT-5.6 di benchmark independen setelah sampel diperbesar, bukan "ngalahin Claude/GPT" seperti hype media — server-nya sendiri juga terbukti rate-limited karena lonjakan trafik viral), lalu Nemotron 3 Ultra via gateway gratis OpenCode Zen.
+
+**Perbaikan yang JADI production (root cause: transient 503 "high demand" Gemini, dibuktikan retry beruntun tanpa jeda kena kondisi identik 2x berturut-turut):**
+- `api/journal.js` — `aiCall()` sekarang retry 2x dengan jeda 2 detik antar percobaan (sebelumnya 0 retry sama sekali — sekali gagal langsung mati total). Timeout per percobaan 25s→20s supaya 2×20s+2s jeda tetap muat di bawah `maxDuration=45s` (vercel.json).
+- `api/admin.js` (`fundamentalAnalysisHandler`) — retry yang sudah ada (2x) ditambah jeda 2s antar percobaan (dulu beruntun tanpa jeda). Timeout per percobaan 25s→22s supaya tetap muat di bawah `maxDuration=60s` + `AbortSignal` client 55s (`index.html`).
+- Test baru: `journal_ai.test.js` — skenario "gagal di percobaan 1, sukses di percobaan 2" (sebelumnya tidak ada test untuk retry sama sekali).
+
+**Nemotron 3 Ultra (OpenCode Zen) — dieksplorasi mendalam, TERNYATA DIBATALKAN untuk KEDUA fitur, dua alasan independen:**
+
+1. **Analisa Fundamental (admin.js): gagal murni teknis.** Prompt-nya berat (8 currency, sintesa makro, ~32rb karakter). Dites live dengan token budget besar (8000) + timeout longgar (150 detik, jauh di atas `maxDuration=60s` platform) — **tetap tidak pernah selesai**. Kesimpulan: bukan soal token budget, tapi arsitektur/kecepatan Nemotron untuk prompt sebesar ini secara struktural tidak muat di batas waktu Vercel manapun. Gemini (dikeraskan seperti di atas) tetap dipertahankan di sini.
+
+2. **AI Coach Jurnal (journal.js): sempat berhasil diimplementasi live, lalu DIBATALKAN karena ToS.** Setelah dikalibrasi (prompt lebih ringan, 4 trade/6 section/≤500 kata), Nemotron 3 Ultra terbukti cepat (~16 detik, selesai natural `finish_reason=stop`) dan kualitas jawabannya bagus (bisa bedakan trade "thesis salah" vs "thesis benar tapi panic-exit" dari data MFE/MAE — persis yang diminta prompt). Sempat di-deploy sebagai primary + Gemini fallback, lengkap dengan test baru dan update dokumentasi. **Dibatalkan hari yang sama** setelah ditemukan: dokumentasi resmi OpenCode Zen menyatakan Nemotron Free tier **"Trial use only — do not submit personal or confidential data"** + wajib setuju **NVIDIA API Trial Terms of Service** — PERSIS blocker ToS yang sudah menolak Nemotron 2026-08-11 (lewat NVIDIA NIM/OpenRouter langsung, lihat `daun_merah_vendor.md` §2). OpenCode Zen cuma jadi perantara, bukan lisensi baru — ganti gateway tidak menghilangkan ToS asli si model kalau gateway itu sendiri masih mewajibkan persetujuan ToS yang sama. Data jurnal trading (thesis, catatan pribadi trader) juga masuk kategori data yang eksplisit dilarang dikirim ke sana.
+
+**Perubahan yang DIREVERT total (kembali ke Gemini-only + hardening di atas):** konstanta `NEMOTRON_URL`/`NEMOTRON_MODEL`/`CB_NEMOTRON` di `journal.js`, cascade `AI_CASCADE_HARD_BUDGET_MS`, `max_tokens` analysis call (sempat 2200→1800 buat kalibrasi Nemotron, dikembalikan ke 2200), test skenario Nemotron di `journal_ai.test.js`, env var `OPEN_ZEN_API` (dihapus dari `.env.local` — sempat kesimpan campur dengan kredensial produksi asli, pelajaran: pisahkan credential eksperimen dari file secret produksi sejak awal).
+
+**Pelajaran didokumentasikan** di `daun_merah_vendor.md` §2 (update catatan penolakan Nemotron — sekarang eksplisit: blocker ToS melekat ke MODEL-nya, bukan cuma satu jalur akses; cek ToS provider ASLI di balik model manapun sebelum coba lagi lewat gateway pihak ketiga) dan `daun_merah_ai.md` §3.4 (riwayat lengkap percobaan+pembatalan). Test suite penuh 1096/1096 lulus pasca-revert.
 
 ## Changelog Session 326 (2026-08-22) — Penunjuk: AATAS (Auto-Entry Makro-First) Mengubah Banyak Kode Bersama, Fitur Publik TIDAK Berubah
 

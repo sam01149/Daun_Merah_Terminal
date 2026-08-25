@@ -1735,16 +1735,21 @@ PERLU DIWASPADAI:
   // provider yang butuh bayar. Gemini dipromosikan balik jadi primary, lihat
   // daun_merah_vendor.md). Retry 1x — Gemini free tier sesekali balas 503 overloaded,
   // transient, percobaan ulang identik langsung sukses (temuan Session 307).
+  // Jeda 2s antar percobaan (2026-08-25): dibuktikan manual 2x retry BERUNTUN tanpa
+  // jeda kena 503 "high demand" identik berturut-turut — kemungkinan overload belum
+  // sempat reda. Timeout per percobaan dikecilkan 25s->22s supaya 2 percobaan + jeda
+  // (22+22+2=46s) tetap muat aman di bawah maxDuration 60s & AbortSignal client 55s.
   const GEMINI_KEY = process.env.GEMINI_API_KEY;
   if (GEMINI_KEY && await cb.canCall(CB_GEMINI_ADMIN)) {
     for (let attempt = 1; attempt <= 2 && !analysis; attempt++) {
       try {
         if (!await allowAiCall('gemini')) throw new Error('AI daily budget exceeded');
+        if (attempt === 2) await new Promise(r => setTimeout(r, 2000));
         const r = await fetch(GEMINI_URL_FUND, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${GEMINI_KEY}` },
           body: JSON.stringify({ model: GEMINI_MODEL_FUND, messages: fundMessages, max_tokens: 3500, temperature: 0.3, reasoning_effort: 'low' }),
-          signal: AbortSignal.timeout(25000),
+          signal: AbortSignal.timeout(22000),
         });
         if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e?.error?.message || `HTTP ${r.status}`); }
         const data = await r.json();
