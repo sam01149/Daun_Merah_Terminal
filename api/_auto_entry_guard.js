@@ -390,6 +390,13 @@ const POLICY_EPOCHS = [
   { v: 29, from: '2026-08-20T08:36:35Z', kind: 'policy', impact: 'entry',    label: 'S323 lanj.4: Gate B (drawdown circuit breaker) dinonaktifkan sementara selama fase pengumpulan sampel n>=100' },
   { v: 30, from: '2026-08-21T18:54:19Z', kind: 'fix', impact: 'entry',    label: 'Gate B diaktifkan ulang dengan katup darurat waktu (isDrawdownEmergencyValveOpen) — celah macet total dari v29 diperbaiki, ambang R tetap heuristik belum dikalibrasi' },
   { v: 31, from: '2026-08-21T19:57:42Z', kind: 'policy', impact: 'entry',    label: 'AATAS: urutan keputusan auto-entry dibalik jadi makro-first (REGIME CHECK + gate driver/fundamental dulu, teknikal cuma presisi timing) — porting checklist SMC/ICT manual ke jalur isAutoCall' },
+  // 'mixed' (bukan 'fix' murni): sisi FIX = kebocoran RSI/arah-pinjaman ke fundamental
+  // memang tidak pernah diniatkan siapa pun (v1 sudah melarangnya, cuma tidak menegakkan);
+  // sisi POLICY = memecah satu panggilan jadi dua mengubah prompt SETIAP setup, dan Gate 1
+  // sekarang menolak kandidat yang dulu lolos (konfirmasi<2, fundamental_bias kosong).
+  // AATAS_EPOCH TETAP 31 (lihat di bawah) — ini penegakan arsitektur makro-first yang sama,
+  // bukan arsitektur baru, jadi sampel v31 & v32 tetap satu populasi.
+  { v: 32, from: '2026-08-25T16:27:00Z', kind: 'mixed',  impact: 'entry',    label: 'AATAS v2: Call 1 makro-only (nol data teknikal) + Call 2 teknikal terpisah, Gate 1 (strong_vs_weak/konfirmasi>=2/pemindaian kata indikator) ditegakkan KODE bukan laporan AI, commentary 5 paragraf dihapus dari jalur auto' },
 ];
 
 // AATAS_EPOCH (2026-08-22, keputusan user): batas populasi statistik dashboard
