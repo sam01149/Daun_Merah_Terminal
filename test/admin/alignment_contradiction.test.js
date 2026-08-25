@@ -123,7 +123,11 @@ async function withEnv(vars, fn) {
   }
 }
 
+const { AATAS_OK_FIELDS } = require('./_aatas_fixture');
+
 const AI_JSON_CONTRADICTORY = {
+  ...AATAS_OK_FIELDS,
+  fundamental_bias: { ...AATAS_OK_FIELDS.fundamental_bias, arah: 'bullish' },
   bias: 'bullish',
   entry_zone: '195.400-195.700', entry_basis: 'cluster S/R',
   sl: '195.100', tp: '197.827',

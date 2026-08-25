@@ -126,7 +126,12 @@ function mkTrendCandles(startClose, endClose, hours = 80) {
 // nowPrice mengikuti close terakhir mkTrendCandles(1.30, 1.28) = 1.28 — entry/sl/tp
 // harus konsisten arah & RR>=1 terhadap harga itu, kalau tidak sanity-check kode
 // (admin.js "entry/sl/tp inconsistent or RR<1") men-drop level jadi null.
+const { AATAS_OK_FIELDS } = require('./_aatas_fixture');
+
+// AATAS v2: field checklist wajib ada supaya Gate 1 (penegakan kode) lolos — pokok
+// bahasan test ini isolasi payload publik, bukan gate AATAS.
 const AI_JSON = {
+  ...AATAS_OK_FIELDS,
   bias: 'bearish',
   entry_zone: '1.2795-1.2805', entry_basis: 'cluster S/R',
   sl: '1.2850', tp: '1.2700',
@@ -240,9 +245,12 @@ test('PLAN U-3 lanjutan: auto=1 dengan PENDING lama bias SEARAH di symbol sama -
       // BUG DITEMUKAN & DIFIX (2026-08-18): commentary dulu tidak ikut di-refresh saat
       // refine-in-place — dashboard bisa menampilkan narasi generasi lama yang levelnya
       // sudah tidak sama dengan entry/sl/tp yang benar-benar live.
+      // AATAS v2 (2026-08-25): jalur auto tidak lagi memproduksi narasi 5 paragraf, jadi
+      // yang benar sekarang adalah commentary lama DIBUANG (null), bukan dipertahankan —
+      // semangatnya sama: jangan menempelkan narasi generasi lama ke level baru.
       assert.equal(
         item.commentary,
-        'Paragraf komentar singkat untuk kebutuhan test isolasi auto-entry.',
+        null,
         'commentary ikut di-refresh ke narasi generasi terbaru saat refine-in-place'
       );
     } finally { global.fetch = origFetch; }
@@ -515,13 +523,18 @@ test('PLAN U-3 lanjutan: call auto -> track record GABUNGAN manual+auto disuap k
       }, res);
 
       assert.equal(res.statusCode, 200);
-      // 2 call DeepSeek: [0] ohlcv_analyze primary (thesis+track record), [1] Gate A
+      // AATAS v2: 3 call DeepSeek: [0] Call 1 makro, [1] Call 2 teknikal, [2] Gate A
       // Kritikus (DeepSeek v4-flash, primary/satu-satunya provider di _runCriticVerdict).
-      assert.equal(captured.length, 2, 'harus ada 2 call ke DeepSeek: ohlcv_analyze primary + Kritikus Gate A fallback');
-      const promptBody = JSON.stringify(captured[0]);
-      assert.ok(promptBody.includes('gabungan seluruh sumber'), 'label prompt harus menandai gabungan');
-      assert.ok(promptBody.includes('6 setup selesai'), 'total harus 3 manual + 3 auto = 6, bukan cuma salah satu');
-      assert.ok(promptBody.includes('3 TP / 3 SL'), 'TP/SL harus tergabung (2+1 TP, 1+2 SL)');
+      assert.equal(captured.length, 3, 'harus ada 3 call ke DeepSeek: Call 1 makro + Call 2 teknikal + Kritikus Gate A');
+      const macroBody = JSON.stringify(captured[0]);
+      const techBody = JSON.stringify(captured[1]);
+      // Track record adalah rapor kelayakan setup, bukan penentu arah makro — sejak v2
+      // dia ikut ke Call 2 saja. Assert dua sisi supaya pembagiannya tidak diam-diam
+      // bergeser lagi nanti.
+      assert.ok(techBody.includes('gabungan seluruh sumber'), 'label prompt harus menandai gabungan');
+      assert.ok(techBody.includes('6 setup selesai'), 'total harus 3 manual + 3 auto = 6, bukan cuma salah satu');
+      assert.ok(techBody.includes('3 TP / 3 SL'), 'TP/SL harus tergabung (2+1 TP, 1+2 SL)');
+      assert.ok(!macroBody.includes('TRACK RECORD'), 'track record TIDAK boleh ikut ke Call 1 (penentu arah)');
     } finally { global.fetch = origFetch; }
   });
 });
@@ -1040,9 +1053,9 @@ test('Audit S218: call auto=1 sukses -> ai_budget:deepseek_experimental naik, ai
       }, res);
       assert.equal(res.statusCode, 200);
       const day = new Date().toISOString().slice(0, 10);
-      // '2' (bukan '1'): ohlcv_analyze primary + Gate A Kritikus, keduanya DeepSeek
-      // v4-flash berbagi pool 'deepseek_experimental' yang sama.
-      assert.equal(store.strings[`ai_budget:deepseek_experimental:${day}`], '2');
+      // '3' (AATAS v2, naik dari 2): Call 1 makro + Call 2 teknikal + Gate A Kritikus,
+      // ketiganya DeepSeek v4-flash berbagi pool 'deepseek_experimental' yang sama.
+      assert.equal(store.strings[`ai_budget:deepseek_experimental:${day}`], '3');
       assert.equal(store.strings[`ai_budget:deepseek:${day}`], undefined, 'counter produksi TIDAK BOLEH tersentuh oleh call auto');
     } finally { global.fetch = origFetch; }
   });

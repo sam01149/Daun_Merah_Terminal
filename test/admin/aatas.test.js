@@ -24,32 +24,37 @@ function loadHandler() {
 }
 
 const {
-  _buildAatasChecklistBlock, _normalizeAatasFields, _aatasRejectReason,
+  _buildAatasMacroChecklistBlock, _buildAatasTechnicalChecklistBlock, _stripIndicatorLines,
+  _evaluateAatasGate1, _splitJsonCommentary,
+  _normalizeAatasFields, _aatasRejectReason,
   _goldYieldCorrAnomaly, _formatAatasCriticLine, _statsPayloadFromLog, AATAS_PROMPT_VERSION,
 } = loadHandler();
 
-// ── (b) blok checklist: cabang FX vs XAU ─────────────────────────────────────
+// ── (b) blok checklist: Call 1 (makro) vs Call 2 (teknikal), cabang FX vs XAU ─
 
-test('AATAS block FX: makro jadi urutan pertama, real yield BUKAN pre-gate, RSI/MACD dibuang dari keputusan', () => {
-  const b = _buildAatasChecklistBlock({ label: 'EUR/USD', isXau: false, goldCorr: null });
-  assert.match(b, /MAKRO DULU, TEKNIKAL BELAKANGAN/);
+test('AATAS block MAKRO (Call 1) FX: makro berdiri sendiri, real yield BUKAN pre-gate, chart tidak disebut sama sekali', () => {
+  const b = _buildAatasMacroChecklistBlock({ label: 'EUR/USD', isXau: false, goldCorr: null });
+  assert.match(b, /BAGIAN 1 DARI 2: MAKRO\/FUNDAMENTAL/);
   assert.match(b, /STEP 0 REGIME CHECK \(PRE-GATE\):/);
   assert.match(b, /Real yield differential TIDAK dipakai sebagai pre-gate di pair FX/);
   assert.match(b, /COT & retail sentiment TIDAK dipakai di sini — dipindah ke Step 8/);
-  assert.match(b, /RSI, MACD, SMA, dan pivot TIDAK BOLEH memengaruhi arah/);
-  // Delta sizing: flat 2%, tidak ada half-size saat konflik (bug checklist manual lama).
-  assert.match(b, /FLAT 2% tanpa pengecualian/);
-  assert.match(b, /TIDAK PERNAH mengecilkan ukuran posisi/);
-  // Delta Fibonacci: zona, bukan titik tunggal 0,618.
-  assert.match(b, /ZONA 0,382-0,618, bukan titik tunggal 0,618/);
-  // Delta pre-market: aturan "maksimal 2 pair/hari" dibuang untuk sistem otomatis.
-  assert.doesNotMatch(b, /Maksimal 2 pair/i);
+  assert.match(b, /DILARANG menyebut RSI, MACD, SMA, EMA, pivot/);
+  // AATAS v2 poin 4: strong_vs_weak harus lewat penelusuran mekanisme lintas-faktor,
+  // bukan perbandingan label bias CB mentah.
+  assert.match(b, /telusuri MEKANISME lintas-faktor/);
+  assert.match(b, /CAD ke harga minyak\/WTI/);
+  // AATAS v2 poin 3: syarat gate diberitahukan sebagai hal yang DIPERIKSA KODE.
+  assert.match(b, /kode MEMERIKSA jawabannya/);
+  assert.match(b, /Kode menghitung jumlahnya/);
+  // Step 4-8 bukan urusan Call 1 — kalau bocor ke sini, pemisahan datanya percuma.
+  assert.doesNotMatch(b, /STEP 4 STRUKTUR TEKNIKAL/);
+  assert.doesNotMatch(b, /STEP 6 RISK MANAGEMENT/);
   // Cabang gold tidak boleh bocor ke FX.
   assert.doesNotMatch(b, /unanimous/);
 });
 
-test('AATAS block XAU: real yield+DXY+regime wajib 3/3, korelasi live jadi arbitrase, angka korelasi ikut dikirim', () => {
-  const b = _buildAatasChecklistBlock({
+test('AATAS block MAKRO (Call 1) XAU: real yield+DXY+regime wajib 3/3, korelasi live jadi arbitrase, angka korelasi ikut dikirim', () => {
+  const b = _buildAatasMacroChecklistBlock({
     label: 'XAU/USD', isXau: true, goldCorr: { r20: -0.11, r60: -0.72, anomaly: true },
   });
   assert.match(b, /STEP 0 REGIME CHECK \(PRE-GATE, cabang XAU\/USD\)/);
@@ -57,14 +62,171 @@ test('AATAS block XAU: real yield+DXY+regime wajib 3/3, korelasi live jadi arbit
   assert.match(b, /r20 -0\.11 vs r60 -0\.72/, 'angka korelasi live wajib dikutip, bukan cuma label');
   assert.match(b, /ANOMALI/);
   assert.match(b, /TIDAK ENTRY sama sekali/);
-  assert.match(b, /Option Expiry|option expiry/i);
 });
 
-test('AATAS block XAU: korelasi tidak tersedia -> dinyatakan apa adanya, bukan diasumsikan normal', () => {
-  const b = _buildAatasChecklistBlock({ label: 'XAU/USD', isXau: true, goldCorr: null });
+test('AATAS block MAKRO (Call 1) XAU: korelasi tidak tersedia -> dinyatakan apa adanya, bukan diasumsikan normal', () => {
+  const b = _buildAatasMacroChecklistBlock({ label: 'XAU/USD', isXau: true, goldCorr: null });
   assert.match(b, /data tidak tersedia saat ini/);
   assert.doesNotMatch(b, /status: NORMAL/);
 });
+
+test('AATAS block TEKNIKAL (Call 2): bias dikunci sebagai fakta, Step 4-8 ada, penentuan arah dilarang', () => {
+  const b = _buildAatasTechnicalChecklistBlock({ isXau: false, lockedBias: 'bearish' });
+  assert.match(b, /BAGIAN 2 DARI 2: STRUKTUR & LOKASI ENTRY/);
+  assert.match(b, /SUDAH DIKUNCI dari analisa makro\/fundamental: BEARISH/);
+  assert.match(b, /TIDAK BOLEH kamu ubah, tawar, atau balik/);
+  assert.match(b, /STEP 4 STRUKTUR TEKNIKAL/);
+  assert.match(b, /STEP 6 RISK MANAGEMENT \(GATE\)/);
+  assert.match(b, /STEP 8 VALIDASI TERAKHIR/);
+  // Delta lama yang harus tetap hidup di v2.
+  assert.match(b, /FLAT 2% tanpa pengecualian/);
+  assert.match(b, /TIDAK PERNAH mengecilkan ukuran posisi/);
+  assert.match(b, /ZONA 0,382-0,618, bukan titik tunggal 0,618/);
+  assert.match(b, /INDIKATOR MOMENTUM DIBUANG/);
+  assert.match(b, /TIDAK PERNAH sebagai sinyal arah atau momentum/);
+  // Aturan "maksimal 2 pair/hari" dari checklist manual tetap tidak diporting.
+  assert.doesNotMatch(b, /Maksimal 2 pair/i);
+  // Step 0-2 sudah selesai di Call 1 — tidak boleh diulang di sini.
+  assert.doesNotMatch(b, /STEP 0 REGIME CHECK/);
+  assert.doesNotMatch(b, /STEP 2 FUNDAMENTAL BIAS/);
+});
+
+test('AATAS block TEKNIKAL: cabang XAU menambah option expiry sebagai lapis konfirmasi', () => {
+  const b = _buildAatasTechnicalChecklistBlock({ isXau: true, lockedBias: 'bullish' });
+  assert.match(b, /option expiry/i);
+  assert.match(b, /SUDAH DIKUNCI dari analisa makro\/fundamental: BULLISH/);
+});
+
+// ── AATAS v2: penegakan kode atas Gate 1 (poin 3 plan) ───────────────────────
+// Dua test pertama adalah regression test LANGSUNG dari dua pelanggaran nyata yang
+// ditemukan di 4 setup live pertama v1 (2026-08-24). Kalau salah satunya merah lagi,
+// artinya lubang yang sama terbuka kembali.
+
+test('_evaluateAatasGate1: kasus nyata AUD/NZD — AI lapor pass:true tapi strong_vs_weak:false -> kode override jadi false', () => {
+  const g = _evaluateAatasGate1({
+    aiPass: true,
+    fundamental_bias: {
+      score_pct: 55, arah: 'bullish',
+      driver: 'Struktur teknikal H4 menunjukkan bullish (HH+HL)',
+      konfirmasi: ['AUD hawkish', 'NZD hawkish'],
+      strong_vs_weak: false,
+    },
+  });
+  assert.equal(g.pass, false, 'arah tidak boleh lahir saat fundamental sendiri mengaku tidak ada keunggulan');
+  assert.equal(g.override_reason, 'strong_vs_weak_bukan_true');
+});
+
+test('_evaluateAatasGate1: kasus nyata XAU/USD — "RSI 76.5" di driver tertangkap pemindaian kata kunci', () => {
+  const g = _evaluateAatasGate1({
+    aiPass: true,
+    fundamental_bias: {
+      score_pct: 70, arah: 'bearish',
+      driver: 'posisi long yang ramai (RSI 76.5, skew call-skewed ekstrem)',
+      konfirmasi: ['DXY menguat 0,4%', 'real yield naik 5bps'],
+      strong_vs_weak: true,
+    },
+  });
+  assert.equal(g.pass, false);
+  assert.equal(g.override_reason, 'indikator_teknikal_di_driver');
+});
+
+test('_evaluateAatasGate1: kata indikator di KONFIRMASI (bukan cuma driver) juga tertangkap', () => {
+  const g = _evaluateAatasGate1({
+    aiPass: true,
+    fundamental_bias: {
+      driver: 'divergensi kebijakan Fed-ECB', konfirmasi: ['CPI melandai', 'MACD H4 bullish crossover'],
+      strong_vs_weak: true,
+    },
+  });
+  assert.equal(g.override_reason, 'indikator_teknikal_di_driver');
+});
+
+test('_evaluateAatasGate1: konfirmasi kurang dari 2 (atau item kosong) -> gagal', () => {
+  const satu = _evaluateAatasGate1({
+    aiPass: true,
+    fundamental_bias: { driver: 'BoE dovish', konfirmasi: ['CPI melandai'], strong_vs_weak: true },
+  });
+  assert.equal(satu.override_reason, 'konfirmasi_kurang_dari_2');
+  const kosong = _evaluateAatasGate1({
+    aiPass: true,
+    fundamental_bias: { driver: 'BoE dovish', konfirmasi: ['CPI melandai', '   '], strong_vs_weak: true },
+  });
+  assert.equal(kosong.override_reason, 'konfirmasi_kurang_dari_2', 'item whitespace tidak boleh dihitung');
+});
+
+test('_evaluateAatasGate1: AI sendiri lapor gagal -> BUKAN override kode (dibedakan untuk counter observabilitas)', () => {
+  const g = _evaluateAatasGate1({ aiPass: false, fundamental_bias: null });
+  assert.equal(g.pass, false);
+  assert.equal(g.override_reason, null, 'kegagalan yang diakui AI tidak boleh dihitung sebagai override kode');
+});
+
+test('_evaluateAatasGate1: fundamental_bias hilang total -> fail-CLOSED (beda sengaja dari v1)', () => {
+  assert.equal(_evaluateAatasGate1({ aiPass: null, fundamental_bias: null }).override_reason, 'fundamental_bias_kosong');
+  assert.equal(_evaluateAatasGate1({ aiPass: null, fundamental_bias: 'bukan objek' }).override_reason, 'fundamental_bias_kosong');
+});
+
+test('_evaluateAatasGate1: laporan patuh penuh -> lolos tanpa override', () => {
+  const g = _evaluateAatasGate1({
+    aiPass: true,
+    fundamental_bias: {
+      driver: 'divergensi BoE-Fed, statement resmi 12 Agustus',
+      konfirmasi: ['CPI UK melandai ke 2,1%', 'BoE memangkas 25bps'],
+      strong_vs_weak: true,
+    },
+  });
+  assert.deepEqual(g, { pass: true, override_reason: null });
+});
+
+test('_evaluateAatasGate1: kata biasa yang KEBETULAN memuat substring indikator tidak boleh kena', () => {
+  const g = _evaluateAatasGate1({
+    aiPass: true,
+    fundamental_bias: {
+      driver: 'permintaan domestik melemah (retail sales -0,3%)',
+      konfirmasi: ['klaim pengangguran naik', 'PMI manufaktur di bawah 50'],
+      strong_vs_weak: true,
+    },
+  });
+  assert.equal(g.pass, true, 'batas kata harus mencegah false positive dari substring');
+});
+
+// ── _stripIndicatorLines: data indikator tidak dikirim, bukan cuma dilarang ──
+
+test('_stripIndicatorLines: baris RSI/MACD/SMA/pivot dibuang, struktur & S/R & fib tetap utuh', () => {
+  const txt = [
+    '[INDIKATOR Daily] RSI 14: 76.5 (overbought) | SMA 50: 1.2800',
+    '[MACD H4 12,26,9] Line: 0.001 | Signal: 0.000',
+    '[STRUKTUR H4] Bearish (LH + LL) — swing high 1.30 -> 1.29',
+    '[LEVEL S/R — cluster pivot Daily 6 bulan]',
+    '[FIBONACCI leg 4H] 38.2%: 1.2820',
+    '[PIVOT HARIAN klasik dari daily kemarin] P: 1.2810',
+    '[RSI-14 H4] 62 (naik vs 3 candle lalu)',
+    '[LEVEL REFERENSI] Prev Day H/L/C: 1.30/1.28/1.29',
+  ].join('\n');
+  const out = _stripIndicatorLines(txt);
+  assert.doesNotMatch(out, /INDIKATOR Daily/);
+  assert.doesNotMatch(out, /MACD H4/);
+  assert.doesNotMatch(out, /RSI-14 H4/);
+  // Pivot TETAP dikirim: itu level harga struktural (setara S/R), bukan pembacaan
+  // momentum — dan instruksi pemilihan entry/SL/TP memang merujuk ke sana.
+  assert.match(out, /PIVOT HARIAN/);
+  assert.match(out, /STRUKTUR H4/);
+  assert.match(out, /LEVEL S\/R/);
+  assert.match(out, /FIBONACCI/);
+  assert.match(out, /LEVEL REFERENSI/);
+  assert.equal(_stripIndicatorLines(null), '');
+});
+
+// ── _splitJsonCommentary: dipakai bersama jalur manual & dua panggilan AATAS ─
+
+test('_splitJsonCommentary: prosa setelah delimiter dipisah, JSON diekstrak dari kurung pertama sampai terakhir', () => {
+  const r = _splitJsonCommentary('bla {"a":1}\n===COMMENTARY===\n  Paragraf prosa.  ');
+  assert.equal(r.jsonText, '{"a":1}');
+  assert.equal(r.commentary, 'Paragraf prosa.');
+  const tanpaDelim = _splitJsonCommentary('```json\n{"a":2}\n```');
+  assert.equal(tanpaDelim.jsonText, '{"a":2}');
+  assert.equal(tanpaDelim.commentary, null);
+});
+
 
 // ── _goldYieldCorrAnomaly: ambang tervalidasi, bukan r20 mentah ──────────────
 
@@ -202,6 +364,16 @@ function redisFetchStub(store) {
         store.strings[key] = String(n);
         return { ok: true, json: async () => ({ result: n }) };
       }
+      // AATAS v2: `aatas_reject_log:v1` (jejak kandidat yang ditolak) bertipe LIST.
+      case 'LPUSH': {
+        store.lists[key] = [rest[0], ...(store.lists[key] || [])];
+        return { ok: true, json: async () => ({ result: store.lists[key].length }) };
+      }
+      case 'LTRIM': {
+        const stop = parseInt(rest[1], 10);
+        if (store.lists[key]) store.lists[key] = store.lists[key].slice(0, stop + 1);
+        return { ok: true, json: async () => ({ result: 'OK' }) };
+      }
       default: return { ok: true, json: async () => ({ result: 'OK' }) };
     }
   };
@@ -266,9 +438,16 @@ const AATAS_JSON = {
   reasoning_note: 'Driver BoE dovish sudah tercermin di harga; struktur H4 LH+LL mengonfirmasi arah fundamental.',
 };
 
-function rawFrom(json) {
-  return `${JSON.stringify(json)}\n===COMMENTARY===\nParagraf komentar untuk test AATAS.`;
+function rawFrom(json, prosa = 'Paragraf komentar untuk test AATAS.') {
+  return `${JSON.stringify(json)}\n===COMMENTARY===\n${prosa}`;
 }
+
+// AATAS v2: jalur auto memanggil DeepSeek dua kali (Call 1 makro, Call 2 teknikal).
+// Stub di bawah mengembalikan JSON yang sama untuk keduanya — yang dibedakan cuma
+// PROSA-nya, supaya penggabungan reasoning_note (makro + teknikal) benar-benar teruji,
+// bukan cuma kelihatan benar karena dua string identik.
+const PROSA_MAKRO = 'Paragraf komentar MAKRO untuk test AATAS (BoE dovish).';
+const PROSA_TEKNIKAL = 'Paragraf komentar TEKNIKAL untuk test AATAS (BOS H4).';
 
 function makeAnalyzeFetchStub(store, rawText, capture) {
   const redisStub = redisFetchStub(store);
@@ -276,8 +455,16 @@ function makeAnalyzeFetchStub(store, rawText, capture) {
     const u = String(url);
     if (u.includes('fake-upstash.test')) return redisStub(url, opts);
     if (u.includes('api.deepseek.com')) {
-      if (capture) capture.push(JSON.parse(opts.body));
-      return { ok: true, json: async () => ({ choices: [{ message: { content: rawText } }] }) };
+      const body = JSON.parse(opts.body);
+      if (capture) capture.push(body);
+      // Panggilan AATAS dibedakan dari blok checklist yang dikirim, bukan dari urutan —
+      // urutan bisa berubah kalau Gate A/Kritikus ikut memanggil di tengah.
+      const isCall2 = String(body.messages?.[1]?.content || '').includes('BAGIAN 2 DARI 2');
+      const isCall1 = String(body.messages?.[1]?.content || '').includes('BAGIAN 1 DARI 2');
+      const out = isCall2 ? rawText.replace(/(?<====COMMENTARY===\n)[\s\S]*$/, PROSA_TEKNIKAL)
+        : isCall1 ? rawText.replace(/(?<====COMMENTARY===\n)[\s\S]*$/, PROSA_MAKRO)
+          : rawText;
+      return { ok: true, json: async () => ({ choices: [{ message: { content: out } }] }) };
     }
     throw new Error('unexpected network call di test: ' + u);
   };
@@ -304,15 +491,39 @@ test('AATAS e2e: prompt jalur auto membawa blok checklist + field baru; jalur ma
       }, fakeRes());
     } finally { global.fetch = origFetch; }
 
-    const autoUser = capAuto[0].messages[1].content;
-    const autoSys  = capAuto[0].messages[0].content;
-    assert.match(autoUser, /\[CHECKLIST AATAS/);
-    assert.match(autoUser, /- checklist_pct:/);
-    assert.match(autoUser, /- reasoning_note:/);
-    assert.doesNotMatch(autoUser, /- makro_alignment:/, 'field lama tidak boleh diminta lagi di jalur auto');
-    assert.doesNotMatch(autoUser, /- confidence:/);
-    assert.match(autoSys, /"checklist_pct"/);
-    assert.doesNotMatch(autoSys, /"makro_alignment"/);
+    // AATAS v2: DUA panggilan analisa (+1 Gate A Kritikus).
+    assert.equal(capAuto.length, 3, 'jalur auto = Call 1 makro + Call 2 teknikal + Gate A');
+    const call1User = capAuto[0].messages[1].content;
+    const call1Sys  = capAuto[0].messages[0].content;
+    const call2User = capAuto[1].messages[1].content;
+    const call2Sys  = capAuto[1].messages[0].content;
+
+    // Call 1 = makro murni. INI inti fix v2: bukan sekadar teks larangan, datanya
+    // memang tidak dikirim — kalau assert di bawah merah, kebocoran RSI mungkin lagi.
+    assert.match(call1User, /\[CHECKLIST AATAS — BAGIAN 1 DARI 2/);
+    assert.doesNotMatch(call1User, /DATA TEKNIKAL:/, 'Call 1 TIDAK BOLEH menerima data teknikal');
+    assert.doesNotMatch(call1User, /RSI 14:/, 'Call 1 TIDAK BOLEH melihat angka RSI sama sekali');
+    assert.doesNotMatch(call1User, /\[MACD H4/);
+    assert.doesNotMatch(call1User, /\[ZONA KONFLUENSI/);
+    assert.doesNotMatch(call1User, /- makro_alignment:/, 'field lama tidak boleh diminta lagi di jalur auto');
+    assert.doesNotMatch(call1User, /- confidence:/);
+    assert.match(call1Sys, /"fundamental_bias"/);
+    assert.doesNotMatch(call1Sys, /"makro_alignment"/);
+
+    // Call 2 = teknikal, dengan bias Call 1 masuk sebagai fakta terkunci.
+    assert.match(call2User, /\[CHECKLIST AATAS — BAGIAN 2 DARI 2/);
+    assert.match(call2User, /HASIL ANALISA MAKRO — FAKTA TERKUNCI/);
+    assert.match(call2User, /Arah \(bias\): BEARISH/);
+    assert.match(call2User, /DATA TEKNIKAL:/);
+    assert.match(call2User, /- checklist_pct:/);
+    assert.doesNotMatch(call2User, /RSI 14:/, 'pembacaan momentum dibuang dari data Call 2 juga');
+    assert.doesNotMatch(call2User, /\[MACD H4/);
+    assert.doesNotMatch(call2User, /\[RSI-14 H4\]/);
+    assert.match(call2Sys, /"checklist_pct"/);
+    assert.doesNotMatch(call2Sys, /"makro_alignment"/);
+
+    // Kalender wajib ada di KEDUA call (Step 0 event <6 jam vs conflict waktu) —
+    // di test ini cache kalender kosong, jadi yang dikunci cuma pembagian di atas.
   });
 
   await withEnv({ DEEPSEEK_API_KEY: 'k' }, async () => {
@@ -420,7 +631,12 @@ test('AATAS e2e: verdict NO TRADE saja (gate lolos) juga membatalkan setup', asy
   });
 });
 
-test('AATAS e2e: model tidak melaporkan gate/verdict sama sekali -> fail-open, setup tetap lahir', async () => {
+// AATAS v2 (2026-08-25) — PERUBAHAN PERILAKU YANG DISENGAJA. v1 fail-OPEN di sini
+// ("skema tidak dipatuhi bukan alasan menggagalkan setup"). v2 fail-CLOSED: seluruh
+// tugas Call 1 adalah menghasilkan fundamental_bias, jadi ketiadaannya berarti
+// panggilan itu gagal — bukan "model memilih tidak menilai". Membiarkan setup lahir
+// tanpa dasar fundamental apa pun persis lubang yang plan ini dibuat untuk menutup.
+test('AATAS e2e: Call 1 tidak melaporkan fundamental_bias -> fail-CLOSED, setup TIDAK lahir', async () => {
   await withEnv({ CRON_SECRET: 'topsecret', DEEPSEEK_API_KEY: 'k' }, async () => {
     const store = baseStore();
     const origFetch = global.fetch;
@@ -432,11 +648,92 @@ test('AATAS e2e: model tidak melaporkan gate/verdict sama sekali -> fail-open, s
         headers: { 'x-cron-secret': 'topsecret' }, method: 'GET',
         query: { action: 'ohlcv_analyze', symbol: 'GBPUSD=X', label: 'GBP/USD', auto: '1' },
       }, res);
-      assert.equal(res.body.structured.aatas_reject_reason, null);
-      assert.ok(store.strings['setup_log_auto:v1'], 'skema tidak dipatuhi bukan alasan menggagalkan setup');
-      const st = JSON.parse(store.strings['setup_log_auto:v1'])[0];
-      assert.equal(st.checklist_pct, null);
-      assert.equal(st.verdict, null);
+      assert.equal(res.body.structured.aatas_reject_reason, 'gate_validitas_driver_kode:fundamental_bias_kosong');
+      assert.equal(res.body.structured.entry_zone, null);
+      assert.equal(store.strings['setup_log_auto:v1'], undefined, 'tidak ada setup yang boleh tersimpan');
+      assert.equal(store.strings['auto_guard_stats:gate1_code_override'], '1', 'override kode wajib tercatat di counter');
+    } finally { global.fetch = origFetch; }
+  });
+});
+
+// ── AATAS v2: short-circuit hemat biaya + jejak kandidat yang ditolak ────────
+
+test('AATAS v2: Gate 1 gagal -> Call 2 TIDAK dipanggil sama sekali (penghematan biaya nyata)', async () => {
+  await withEnv({ CRON_SECRET: 'topsecret', DEEPSEEK_API_KEY: 'k' }, async () => {
+    // Kasus nyata AUD/NZD: AI lapor gate lolos, tapi strong_vs_weak false.
+    const bocor = {
+      ...AATAS_JSON,
+      fundamental_bias: { ...AATAS_JSON.fundamental_bias, strong_vs_weak: false },
+    };
+    const cap = [];
+    const store = baseStore();
+    const origFetch = global.fetch;
+    global.fetch = makeAnalyzeFetchStub(store, rawFrom(bocor), cap);
+    try {
+      const handler = loadHandler();
+      const res = fakeRes();
+      await handler({
+        headers: { 'x-cron-secret': 'topsecret' }, method: 'GET',
+        query: { action: 'ohlcv_analyze', symbol: 'GBPUSD=X', label: 'GBP/USD', auto: '1' },
+      }, res);
+      assert.equal(cap.length, 1, 'hanya Call 1 yang boleh terpanggil — Call 2 & Gate A tidak kebagian budget');
+      assert.doesNotMatch(cap[0].messages[1].content, /BAGIAN 2 DARI 2/);
+      assert.equal(res.body.structured.aatas_reject_reason, 'gate_validitas_driver_kode:strong_vs_weak_bukan_true');
+      assert.equal(res.body.structured.verdict, 'NO TRADE');
+      assert.equal(store.strings['setup_log_auto:v1'], undefined);
+    } finally { global.fetch = origFetch; }
+  });
+});
+
+test('AATAS v2: kandidat yang ditolak direkam ke aatas_reject_log:v1 (bukan hilang), setup_log_auto TIDAK tercemar', async () => {
+  await withEnv({ CRON_SECRET: 'topsecret', DEEPSEEK_API_KEY: 'k' }, async () => {
+    const bocor = {
+      ...AATAS_JSON,
+      fundamental_bias: {
+        ...AATAS_JSON.fundamental_bias,
+        driver: 'RSI 76.5 sudah overbought, posisi long ramai',
+      },
+    };
+    const store = baseStore();
+    const origFetch = global.fetch;
+    global.fetch = makeAnalyzeFetchStub(store, rawFrom(bocor));
+    try {
+      const handler = loadHandler();
+      await handler({
+        headers: { 'x-cron-secret': 'topsecret' }, method: 'GET',
+        query: { action: 'ohlcv_analyze', symbol: 'GBPUSD=X', label: 'GBP/USD', auto: '1' },
+      }, fakeRes());
+
+      const raw = store.lists['aatas_reject_log:v1'];
+      assert.ok(Array.isArray(raw) && raw.length === 1, 'alasan penolakan wajib punya jejak persisten');
+      const entry = JSON.parse(raw[0]);
+      assert.equal(entry.reason, 'gate_validitas_driver_kode:indikator_teknikal_di_driver');
+      assert.equal(entry.symbol, 'GBPUSD=X');
+      // Field checklist ikut tersimpan penuh — itu gunanya, bukan cuma label alasan.
+      assert.match(entry.fundamental_bias.driver, /RSI 76\.5/);
+      assert.match(entry.reasoning_note || '', /MAKRO/);
+      assert.match(entry.gate_validitas_driver.note, /OVERRIDE KODE/);
+      assert.equal(entry.aatas_v, AATAS_PROMPT_VERSION);
+      // Cap 200 setup_log_auto:v1 adalah sampel n>=30 — tidak boleh digeser oleh
+      // kandidat tertolak (alasan key ini dipisah, lihat komentar di api/admin.js).
+      assert.equal(store.strings['setup_log_auto:v1'], undefined);
+    } finally { global.fetch = origFetch; }
+  });
+});
+
+test('AATAS v2: jalur MANUAL tidak pernah menulis aatas_reject_log (isolasi Opsi A)', async () => {
+  await withEnv({ DEEPSEEK_API_KEY: 'k' }, async () => {
+    const store = baseStore();
+    const origFetch = global.fetch;
+    global.fetch = makeAnalyzeFetchStub(store, rawFrom(BASE_JSON));
+    try {
+      const handler = loadHandler();
+      await handler({
+        headers: {}, method: 'POST', body: {},
+        query: { action: 'ohlcv_analyze', symbol: 'GBPUSD=X', label: 'GBP/USD' },
+      }, fakeRes());
+      assert.equal(store.lists['aatas_reject_log:v1'], undefined);
+      assert.ok(store.strings['setup_log:v1'], 'setup manual tetap lahir seperti biasa');
     } finally { global.fetch = origFetch; }
   });
 });
@@ -453,6 +750,13 @@ const XAU_JSON_BASE = {
   trigger: 'tunggu rejection H1 di 3990', invalidation_condition: 'close H4 di bawah 3950',
   time_horizon_days: 3, conflict: 'none', conflict_note: null,
   gate_validitas_driver: { pass: true, note: 'real yield turun, data rilis resmi' },
+  // AATAS v2: Gate 1 ditegakkan kode, jadi fundamental_bias WAJIB patuh skema — pokok
+  // bahasan test XAU di bawah adalah hard-stop gold Step 0, bukan Gate 1.
+  fundamental_bias: {
+    score_pct: 78, arah: 'bullish', driver: 'real yield riil turun 8bps setelah rilis CPI',
+    konfirmasi: ['DXY melemah 0,4%', 'ekspektasi pemangkasan Fed naik di rate path'],
+    konflik: null, strong_vs_weak: true,
+  },
   gate_risk_management: { pass: true, note: 'RR 1:2, SL di bawah swing' },
   checklist_pct: 80, verdict: 'SIAP TRADE',
   reasoning_note: 'Real yield turun mendukung emas; struktur H4 HH+HL.',

@@ -75,7 +75,13 @@ function redisFetchStub(store) {
   };
 }
 
+const { AATAS_OK_FIELDS } = require('./_aatas_fixture');
+
+// AATAS v2 (2026-08-25): jalur auto sekarang menegakkan Gate 1 di KODE, jadi jawaban
+// AI di test ini WAJIB patuh skema fundamental (lihat _aatas_fixture.js) — tanpa itu
+// kandidat dibatalkan sebelum sempat sampai ke Gate A yang justru sedang diuji di sini.
 const AI_JSON_BEARISH = {
+  ...AATAS_OK_FIELDS,
   bias: 'bearish',
   entry_zone: '1.2795-1.2805', entry_basis: 'cluster S/R',
   sl: '1.2850', tp: '1.2700',
@@ -417,7 +423,11 @@ test('Refine-in-place SEKARANG lewat Gate A juga: verdict lanjut -> level baru d
       assert.equal(log.length, 1, 'refine tidak menambah entry baru');
       assert.equal(log[0].status, 'pending');
       assert.equal(log[0].entry_zone, '1.2795-1.2805', 'level diperbarui ke generasi terbaru (Gate A lanjut)');
-      assert.equal(log[0].commentary, 'Komentar singkat untuk tes Gate A/race.', 'commentary ikut ke-refresh ke generasi terbaru');
+      // AATAS v2: jalur auto tidak lagi memproduksi narasi 5 paragraf — commentary lama
+      // dibuang (null) alih-alih dipertahankan, supaya narasi generasi lama tidak nempel
+      // di sebelah level baru. Naratifnya sekarang di `reasoning_note`.
+      assert.equal(log[0].commentary, null, 'commentary generasi lama tidak boleh bertahan di jalur auto');
+      assert.match(log[0].reasoning_note || '', /./, 'reasoning_note tetap terisi sebagai jejak naratif');
       assert.equal(log[0].refined_count, 1);
       assert.equal(store.strings['auto_guard_stats:saved_refine'], '1');
     } finally { global.fetch = origFetch; }

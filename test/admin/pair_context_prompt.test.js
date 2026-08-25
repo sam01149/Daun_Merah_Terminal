@@ -47,7 +47,11 @@ const REDIS_FIXTURES = {
 
 // bearish setup konsisten dengan nowPrice=100 (close flat EURUSD=X) — lolos
 // sanity-check arah/RR di ohlcvAnalyzeHandler (lihat admin.js ~3400an).
+const { AATAS_OK_FIELDS } = require('./_aatas_fixture');
+
+// AATAS v2: field checklist wajib ada supaya Gate 1 (penegakan kode) lolos di jalur auto.
 const AI_JSON = {
+  ...AATAS_OK_FIELDS,
   bias: 'bearish',
   entry_zone: '100.02-100.05', entry_basis: 'cluster S/R 100.03 (2x sentuh)',
   sl: '100.10', tp: '99.90',

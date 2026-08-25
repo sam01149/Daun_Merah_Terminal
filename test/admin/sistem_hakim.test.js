@@ -162,7 +162,12 @@ function redisFetchStub(store) {
 
 // Bias teknikal AI: bearish (short) — dibuat berlawanan dgn cbDir 'long' (GBP hawkish
 // vs USD dovish, keduanya High confidence) supaya Sistem Hakim seharusnya nyala.
+const { AATAS_OK_FIELDS } = require('./_aatas_fixture');
+
+// AATAS v2: field checklist wajib ada supaya Gate 1 (penegakan kode) lolos — pokok
+// bahasan test ini Sistem Hakim, bukan gate AATAS.
 const AI_JSON_BEARISH = {
+  ...AATAS_OK_FIELDS,
   bias: 'bearish',
   entry_zone: '1.2795-1.2805', entry_basis: 'cluster S/R',
   sl: '1.2850', tp: '1.2700',
