@@ -11,10 +11,18 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-25 (Session 328 — Bug fix: circuit breaker Gemini yang dipakai bersama 3 fitur dipecah per-fitur; pesan error AI Coach Jurnal yang salah menyebut "GEMINI_API_KEY" diperjelas)
+> **Last updated:** 2026-08-25 (Session 329 — AATAS v2 auto-entry: panggilan AI Analisa diekstrak jadi helper bersama; fitur publik "Analisa AI" tidak berubah. Entri lengkap di professional_llm_trader/changelog.md)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
+
+## Changelog Session 329 (2026-08-25) — [PENUNJUK] AATAS v2: Panggilan AI Analisa Diekstrak jadi Helper Bersama
+
+**Ini penunjuk, bukan salinan** (kewajiban penunjuk silang ATURAN.md §2). Entri lengkapnya di [professional_llm_trader/changelog.md](professional_llm_trader/changelog.md) §Session 329.
+
+Pekerjaan ini auto-entry (AATAS v2: satu panggilan AI jalur `auto=1` dipecah jadi Call 1 makro-only + Call 2 teknikal-only, Gate 1 ditegakkan kode). **Perilaku fitur publik "Analisa AI" TIDAK berubah sama sekali** — prompt-nya diverifikasi byte-identik terhadap commit sebelumnya dan diuji live di produksi (commentary tetap 5 paragraf, `makro_alignment`/`confidence` tetap terisi). Yang dicatat di sini cuma satu hal yang menyentuh kode jalur publik: **blok fetch DeepSeek inline di `ohlcvAnalyzeHandler` diekstrak jadi helper `_callDeepSeekAnalyze`** (config identik: `deepseek-v4-flash`, `max_tokens` 1500, `temperature` 0, timeout 25s, pool circuit/budget sama). Kalau nanti mendiagnosa "Analisa AI tidak keluar hasilnya", titik panggilannya sekarang di helper itu, bukan lagi inline. Logika pemisahan JSON vs prosa juga pindah ke `_splitJsonCommentary`.
+
+---
 
 ## Changelog Session 328 (2026-08-25) — Fix: Circuit Breaker Gemini Dipakai Bersama 3 Fitur (Ringkasan Berita Bikin Jurnal/Fundamental Ikut Terkunci)
 
