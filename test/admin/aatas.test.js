@@ -738,6 +738,153 @@ test('AATAS v2: jalur MANUAL tidak pernah menulis aatas_reject_log (isolasi Opsi
   });
 });
 
+
+// ── Fill hantu: entry di sisi SALAH dari harga berjalan ──────────────────────
+// Ditemukan 2026-08-25 dari chart CHF/JPY di dev-auto-entry.html — marker "Filled"
+// jauh dari garis Entry. Akar masalahnya: sanity-check level membandingkan harga
+// berjalan dengan SL dan TP, tapi TIDAK dengan entry_zone. Refine-in-place bisa
+// memindahkan entry ke sisi salah (jual di BAWAH harga / beli di ATAS harga), dan
+// deteksi fill yang menyimpulkan arah tunggu dari `bias` saja langsung menganggapnya
+// terisi oleh candle apa pun.
+//
+// nowPrice di store test = 1.28 (close terakhir mkTrendCandles(1.30, 1.28)).
+
+// Lolos SEMUA pemeriksaan lama (sl > entryHigh, entryLow > tp, now < sl, now > tp,
+// RR >= 1) — yang gagal HANYA aturan sisi entry yang baru. Kalau test ini hijau
+// karena kebetulan tertolak aturan lama, dia tidak membuktikan apa-apa.
+const ENTRY_SISI_SALAH_BEARISH = {
+  ...AATAS_JSON,
+  bias: 'bearish',
+  entry_zone: '1.2770-1.2780', // seluruhnya DI BAWAH harga 1.28 -> salah untuk jual
+  sl: '1.2850', tp: '1.2650',    // RR ~1.67, jauh dari batas 1.0 (lihat catatan di bawah)
+};
+// CATATAN kenapa RR sengaja dibuat 1.67, bukan pas 1.0: kombinasi entry 1.2775 mid /
+// SL 1.2850 / TP 1.2700 menghasilkan RR yang secara desimal PERSIS 1.0, tapi di floating
+// point jatuh ke 0.999... sehingga tertolak pemeriksaan RR LAMA. Test-nya tetap hijau,
+// tapi membuktikan hal yang salah. Fixture harus gagal HANYA karena aturan sisi entry.
+
+test('Fill hantu: jalur auto MENOLAK entry jual yang di BAWAH harga berjalan (kasus nyata CHF/JPY)', async () => {
+  await withEnv({ CRON_SECRET: 'topsecret', DEEPSEEK_API_KEY: 'k' }, async () => {
+    const store = baseStore();
+    const origFetch = global.fetch;
+    global.fetch = makeAnalyzeFetchStub(store, rawFrom(ENTRY_SISI_SALAH_BEARISH));
+    try {
+      const handler = loadHandler();
+      const res = fakeRes();
+      await handler({
+        headers: { 'x-cron-secret': 'topsecret' }, method: 'GET',
+        query: { action: 'ohlcv_analyze', symbol: 'GBPUSD=X', label: 'GBP/USD', auto: '1' },
+      }, res);
+      assert.equal(res.body.structured.entry_zone, null, 'entry jual di bawah harga = akan langsung dianggap terisi, wajib ditolak');
+      assert.equal(res.body.structured.sl, null);
+      assert.equal(res.body.structured.tp, null);
+      assert.equal(store.strings['setup_log_auto:v1'], undefined, 'tidak boleh ada setup tersimpan');
+    } finally { global.fetch = origFetch; }
+  });
+});
+
+test('Fill hantu: jalur auto MENOLAK entry beli yang di ATAS harga berjalan (kasus nyata EUR/GBP)', async () => {
+  await withEnv({ CRON_SECRET: 'topsecret', DEEPSEEK_API_KEY: 'k' }, async () => {
+    const salah = {
+      ...AATAS_JSON,
+      bias: 'bullish',
+      entry_zone: '1.2820-1.2830', // seluruhnya DI ATAS harga 1.28 -> salah untuk beli
+      sl: '1.2750', tp: '1.2950',
+    };
+    const store = baseStore();
+    const origFetch = global.fetch;
+    global.fetch = makeAnalyzeFetchStub(store, rawFrom(salah));
+    try {
+      const handler = loadHandler();
+      const res = fakeRes();
+      await handler({
+        headers: { 'x-cron-secret': 'topsecret' }, method: 'GET',
+        query: { action: 'ohlcv_analyze', symbol: 'GBPUSD=X', label: 'GBP/USD', auto: '1' },
+      }, res);
+      assert.equal(res.body.structured.entry_zone, null);
+      assert.equal(store.strings['setup_log_auto:v1'], undefined);
+    } finally { global.fetch = origFetch; }
+  });
+});
+
+test('Fill hantu: harga DI DALAM zona entry tetap sah (batas <=/>=, bukan penolakan berlebihan)', async () => {
+  await withEnv({ CRON_SECRET: 'topsecret', DEEPSEEK_API_KEY: 'k' }, async () => {
+    // harga 1.28 berada DI DALAM 1.2795-1.2805 (AATAS_JSON asli) — ini fill sah di
+    // harga zona itu sendiri, jangan ikut tertolak oleh aturan baru.
+    const store = baseStore();
+    const origFetch = global.fetch;
+    global.fetch = makeAnalyzeFetchStub(store, rawFrom(AATAS_JSON));
+    try {
+      const handler = loadHandler();
+      const res = fakeRes();
+      await handler({
+        headers: { 'x-cron-secret': 'topsecret' }, method: 'GET',
+        query: { action: 'ohlcv_analyze', symbol: 'GBPUSD=X', label: 'GBP/USD', auto: '1' },
+      }, res);
+      assert.equal(res.body.structured.entry_zone, '1.2795-1.2805');
+      assert.ok(store.strings['setup_log_auto:v1'], 'setup normal harus tetap lahir');
+    } finally { global.fetch = origFetch; }
+  });
+});
+
+test('Fill hantu: REFINE dengan entry sisi salah DIBATALKAN — level lama dipertahankan utuh', async () => {
+  await withEnv({ CRON_SECRET: 'topsecret', DEEPSEEK_API_KEY: 'k' }, async () => {
+    const oldPending = {
+      id: 'GBPUSD=X:111', symbol: 'GBPUSD=X', label: 'GBP/USD', bias: 'bearish',
+      entry_zone: '1.2900-1.2910', sl: '1.2960', tp: '1.2800',
+      rr: 2, horizon_days: 3, model: 'deepseek-v4-flash', ts: 111, status: 'pending',
+      source: 'auto', refined_count: 1,
+    };
+    const store = makeStore({
+      'ohlcv_fresh:GBPUSD=X': '1',
+      'ohlcv:GBPUSD=X:1h': JSON.stringify(mkTrendCandles(1.30, 1.28)),
+      'setup_log_auto:v1': JSON.stringify([oldPending]),
+    });
+    const origFetch = global.fetch;
+    global.fetch = makeAnalyzeFetchStub(store, rawFrom(ENTRY_SISI_SALAH_BEARISH));
+    try {
+      const handler = loadHandler();
+      await handler({
+        headers: { 'x-cron-secret': 'topsecret' }, method: 'GET',
+        query: { action: 'ohlcv_analyze', symbol: 'GBPUSD=X', label: 'GBP/USD', auto: '1' },
+      }, fakeRes());
+
+      const log = JSON.parse(store.strings['setup_log_auto:v1']);
+      assert.equal(log.length, 1);
+      const it = log[0];
+      assert.equal(it.entry_zone, '1.2900-1.2910', 'level LAMA wajib dipertahankan apa adanya');
+      assert.equal(it.sl, '1.2960');
+      assert.equal(it.tp, '1.2800');
+      assert.equal(it.refined_count, 1, 'refine yang ditolak tidak boleh menaikkan refined_count');
+      assert.equal(it.status, 'pending', 'setup lama tetap menunggu, bukan dibatalkan');
+    } finally { global.fetch = origFetch; }
+  });
+});
+
+test('Fill hantu: jalur MANUAL publik TIDAK ikut diperketat (isolasi Opsi A)', async () => {
+  await withEnv({ DEEPSEEK_API_KEY: 'k' }, async () => {
+    const manualSalah = {
+      ...BASE_JSON,
+      bias: 'bearish',
+      entry_zone: '1.2770-1.2780', sl: '1.2850', tp: '1.2650',
+    };
+    const store = baseStore();
+    const origFetch = global.fetch;
+    global.fetch = makeAnalyzeFetchStub(store, rawFrom(manualSalah));
+    try {
+      const handler = loadHandler();
+      const res = fakeRes();
+      await handler({
+        headers: {}, method: 'POST', body: {},
+        query: { action: 'ohlcv_analyze', symbol: 'GBPUSD=X', label: 'GBP/USD' },
+      }, res);
+      assert.equal(res.body.structured.entry_zone, '1.2770-1.2780',
+        'entry di sisi salah HARUS tetap lolos di jalur manual — pengetatan ini khusus auto (isolasi Opsi A)');
+      assert.ok(store.strings['setup_log:v1'], 'setup manual tetap tercatat seperti sebelumnya');
+    } finally { global.fetch = origFetch; }
+  });
+});
+
 // ── hard-stop Step 0 cabang XAU/USD (end-to-end) ─────────────────────────────
 // Satu-satunya hard-block baru AATAS. `unanimous` datang dari laporan model,
 // FAKTA anomali korelasinya dihitung kode dari cache correlations_v3 — dua sumber

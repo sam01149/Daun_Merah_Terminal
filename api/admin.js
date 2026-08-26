@@ -6457,6 +6457,56 @@ async function ohlcvAnalyzeHandler(req, res) {
             } else if (structured.bias === 'bullish') {
               valid = slNum < entryLow && entryHigh < tpNum && nowPrice > slNum && nowPrice < tpNum;
             }
+            // BUG DITEMUKAN & DIFIX (2026-08-25, user melihat chart CHF/JPY di dashboard:
+            // marker "Filled" jauh dari garis Entry, harga tidak pernah menyentuh entry tapi
+            // status sudah `open`). Pemeriksaan di atas membandingkan harga berjalan dengan
+            // SL dan TP, tapi TIDAK PERNAH dengan entry_zone itu sendiri — satu-satunya
+            // level yang justru menentukan kapan posisi dianggap terisi.
+            //
+            // Akibatnya (khusus jalur auto, lewat refine-in-place): level baru bisa mendarat
+            // di sisi SALAH dari harga — entry jual di BAWAH harga berjalan, atau entry beli
+            // di ATAS harga berjalan. Deteksi fill (`_evaluateSetups`, cari "const filled =")
+            // menyimpulkan arah tunggu dari `bias` saja: bearish -> terisi begitu ada candle
+            // dengan high >= entry. Kalau entry sudah di bawah harga, syarat itu dipenuhi
+            // candle APA PUN — setup langsung ditandai `open` di harga yang tidak pernah
+            // dipakai, bahkan retroaktif ke jam sebelum level itu ditulis.
+            //
+            // Kasus nyata: CHF/JPY entry di-refine ke 198.011 saat harga 198.424 -> ditandai
+            // terisi pada candle 198.285-198.470; EUR/GBP entry di-refine ke 0.85613 saat
+            // harga 0.85600 -> ditandai terisi pada candle 0.85560-0.85606. Dari 13 setup
+            // yang candle-nya masih bisa dicek, 3 entry-nya di sisi salah dan KETIGANYA
+            // hasil refine — nol setup yang LAHIR di sisi salah.
+            //
+            // Fix: entry wajib di sisi TUNGGU yang benar terhadap harga berjalan (jual =
+            // entry >= harga, tunggu rally; beli = entry <= harga, tunggu pullback). Ini
+            // sekaligus membuat rumus deteksi fill yang ada BENAR DENGAN SENDIRINYA, tanpa
+            // mengubah rumusnya. Harga yang sedang berada DI DALAM zona tetap sah (batas
+            // pakai <=/>=) — itu fill sah pada harga zona itu juga.
+            //
+            // Entry breakout/breakdown (sisi sebaliknya, ditunggu dari arah lain) SENGAJA
+            // TIDAK didukung: AATAS Step 5 sendiri meminta entry di area pullback/retest
+            // "bukan di tengah impuls", dan data live menunjukkan AI tidak pernah sekali pun
+            // membuatnya saat setup lahir. Membangun jalur khusus untuknya berarti menambah
+            // mekanisme yang tidak pernah terpakai dan belum tervalidasi.
+            //
+            // DIGERBANG `isAutoCall`: jalur manual publik ("Analisa AI") TIDAK disentuh —
+            // isolasi Opsi A. Manual juga tidak pernah kena refine (refine hanya untuk auto),
+            // jadi jalur itu tidak punya mekanisme yang memindahkan entry ke sisi salah.
+            // Gate untuk refine-nya sendiri TIDAK perlu kode terpisah: blok penulisan
+            // setup_log di bawah (termasuk cabang refineCandidate) mensyaratkan
+            // entry_zone+sl+tp non-null, jadi menolak level di sini otomatis membatalkan
+            // refine dan MEMPERTAHANKAN level lama apa adanya.
+            if (valid && isAutoCall) {
+              const entrySideOk = structured.bias === 'bearish' ? nowPrice <= entryHigh
+                : structured.bias === 'bullish' ? nowPrice >= entryLow
+                  : true;
+              if (!entrySideOk) {
+                console.warn('ohlcv_analyze: entry di sisi SALAH dari harga berjalan — level ditolak (refine dibatalkan, level lama dipertahankan)', {
+                  symbol, bias: structured.bias, entry_zone: structured.entry_zone, nowPrice,
+                });
+                valid = false;
+              }
+            }
             // RR check (only meaningful once direction itself is valid)
             if (valid) {
               const entryMid = (entryLow + entryHigh) / 2;
