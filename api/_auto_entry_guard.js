@@ -397,6 +397,14 @@ const POLICY_EPOCHS = [
   // AATAS_EPOCH TETAP 31 (lihat di bawah) — ini penegakan arsitektur makro-first yang sama,
   // bukan arsitektur baru, jadi sampel v31 & v32 tetap satu populasi.
   { v: 32, from: '2026-08-25T16:27:00Z', kind: 'mixed',  impact: 'entry',    label: 'AATAS v2: Call 1 makro-only (nol data teknikal) + Call 2 teknikal terpisah, Gate 1 (strong_vs_weak/konfirmasi>=2/pemindaian kata indikator) ditegakkan KODE bukan laporan AI, commentary 5 paragraf dihapus dari jalur auto' },
+  // 'fix' murni, bukan 'policy': menerima entry di sisi salah TIDAK PERNAH diniatkan
+  // siapa pun — akibatnya setup ditandai `open` di harga yang tidak pernah dipakai,
+  // bahkan retroaktif ke jam sebelum level itu ditulis. Tetap dapat epoch sendiri karena
+  // mengubah setup mana yang lahir DAN mana yang dianggap terisi, jadi batas populasinya
+  // harus kelihatan. Sampel sebelum v33 yang pernah di-refine perlu dicurigai: dari 13
+  // setup yang candle-nya masih bisa dicek saat fix ini dibuat, 3 fill-nya palsu dan
+  // ketiganya hasil refine.
+  { v: 33, from: '2026-08-26T10:37:00Z', kind: 'fix',    impact: 'entry',    label: 'Fix fill hantu: entry wajib di sisi tunggu yang benar terhadap harga berjalan (jual >= harga, beli <= harga) — refine tidak lagi bisa memindahkan entry ke sisi yang bikin setup langsung dianggap terisi' },
 ];
 
 // AATAS_EPOCH (2026-08-22, keputusan user): batas populasi statistik dashboard
