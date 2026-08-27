@@ -11,10 +11,35 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-27 (Session 332 — audit vendor rate-limit menyeluruh: guard harian Gemini 200->16, satu-satunya gap ditemukan dari 200 lebih request/hari + limit resmi Google cuma 20/hari)
+> **Last updated:** 2026-08-27 (Session 333 — audit keamanan repo & runtime: timingSafeEqual di semua pembanding secret cron/admin, fix spoofing X-Forwarded-For, CSP/HSTS/Permissions-Policy, fallback GH Actions health-watch)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
+
+## Changelog Session 333 (2026-08-27) — Audit Keamanan: timingSafeEqual, Fix XFF, Security Headers, Fallback Health-Watch
+
+**Konteks:** Tindak lanjut audit statis read-only (proyek + workflow AATAS + kualitas data, sesi sama) — user pilih 3 dari 4 kelompok temuan untuk dieksekusi: Keamanan, Operasional, Housekeeping (kelompok "Risk layer AATAS" — sizing/plafon eksposur/model biaya — sengaja DITUNDA, tidak disentuh sesi ini).
+
+**Keamanan:**
+- **Pembanding secret cron/admin** (`api/admin.js` ~17 titik, `api/feeds.js`, `api/correlations.js`, `api/_cron_dedup.js`) sebelumnya pakai `===`/`!==` string biasa untuk `CRON_SECRET` — cuma `api/_app_key.js` (gate `APP_KEY`) yang sudah pakai `crypto.timingSafeEqual`. Sekarang `safeEqual` diekspor dari `_app_key.js` dan dipakai konsisten di semua titik. Risiko timing-attack pada endpoint dev/cron rendah secara praktis, tapi inkonsistensi ini sudah 2x jadi temuan audit.
+- **`api/_ratelimit.js` `getClientIp`**: sebelumnya ambil entri **paling kiri** `X-Forwarded-For` — bisa dispoof klien untuk bypass rate limit (klien kirim header XFF sendiri, hop terakhir Vercel MENAMBAHKAN IP asli di ujung, bukan menimpa). Diperbaiki ambil entri **paling kanan**.
+- **`vercel.json`**: tambah `Content-Security-Policy`, `Strict-Transport-Security`, `Referrer-Policy`, `Permissions-Policy`. CSP butuh 2 iterasi — deploy pertama memblokir widget chart TradingView (`s3.tradingview.com/tv.js`, ketahuan dari live-test Playwright di tab Tek), fix ke-2 menambah domain TradingView ke `script-src`/`connect-src`/`frame-src`. Verifikasi live: 0 console error pasca-fix, chart render normal (screenshot).
+- **`vps/Dockerfile`**: `npm install` → `npm ci` + copy `package-lock.json` (build reproducible), tambah `USER node` (sebelumnya jalan sebagai root). **Catatan jujur:** tidak ada Docker lokal di mesin ini untuk test-build — perubahan pola standar/rendah-risiko, tapi build-nya sendiri belum diverifikasi langsung, cek log deploy Railway berikutnya.
+- **`.claude/settings.json` + `.claude/settings.local.json`**: hapus ~10 entri allow-list berisi API key OpenRouter mentah + `CRON_SECRET` lama (`fjfeed123`) — command test model lama yang sudah tidak dipakai (evaluasi model terkait sudah kelar, lihat `daun_merah_ai.md`). File-file ini gitignored (tidak pernah ke GitHub), jadi ini murni higiene disk lokal, bukan kebocoran repo. **User tetap perlu rotasi manual key OpenRouter di dashboard openrouter.ai** — key yang ada di allow-list lama (`sk-or-v1-09e7c7ba...`) beda dari key aktif di `.env.local` sekarang, kemungkinan sudah basi, tapi tidak diverifikasi (sengaja tidak dites live untuk hindari pemakaian kuota tanpa perlu).
+
+**Operasional:**
+- **`.github/workflows/health-watch.yml`** (baru): memicu `admin?action=health` tiap 5 menit. `probeVpsHeartbeat` + `sendHealthTelegram` sudah ada di kode sejak Plan Q-1, tapi TIDAK ADA pemicu terjadwal dari dalam repo — bergantung layanan luar (cron-job.org, tak terlacak git) atau cek manual. Insiden VPS Railway down 2026-08-20 sempat luput karena ini. Pola sama `setup-tp-sl-watch.yml` (fallback GH Actions paralel daemon Railway).
+- **`api/admin.js` action baru `setup_log_archive`** + **`.github/workflows/setup-log-archive.yml`** (jadwal harian): detail lengkap di `professional_llm_trader/changelog.md` (terkait `setup_log_auto:v1`, auto-entry) — penunjuk ini sesuai ATURAN.md §2.
+
+**Housekeeping:** `.env.local.example` dibuat (README sudah lama menyuruh copy file ini, tapi filenya tidak ada), `engines.node>=20` ditambah ke `package.json` root (sudah ada di `vps/package.json`), duplikat `.vercel`/`.env*` di `.gitignore` dihapus (+ exception `!.env.local.example` supaya template tetap ke-track git).
+
+**Ditemukan tapi TIDAK diperbaiki (di luar scope sesi ini, dicatat untuk nanti):** `api/correlations.js` action `atr` — `YAHOO_SYMBOL_MAP` punya beberapa key dengan backslash tertukar garis miring (`'EUR\USD'` bukan `'EUR/USD'`, dst — typo lama, bukan regresi sesi ini) + pemanggil frontend kirim `pair=XAUUSD` (tanpa garis miring) yang tidak match `'XAU/USD'` di map manapun. Konsisten 400 di live-test Playwright tab Tek. Bug pre-existing, tidak disentuh supaya tidak bundling perubahan tak diminta ke deploy keamanan ini.
+
+**Verifikasi live:** `npm test` 1116/1116 hijau. Auth cron dicek langsung (`x-admin-secret` valid→200, salah→401, kosong→401). `setup_log_archive` dicek 2x panggilan (pertama `added:57`, kedua `added:0` — idempotent, dedup by id bekerja). Kedua workflow GH Actions baru di-trigger manual (`gh workflow run`) dan **sukses** (`conclusion: success`). CSP diverifikasi via Playwright live (screenshot dashboard + tab Tek, 0 console error pasca-fix).
+
+**File diubah:** `api/_app_key.js`, `api/admin.js`, `api/feeds.js`, `api/correlations.js`, `api/_cron_dedup.js`, `api/_ratelimit.js`, `vercel.json`, `vps/Dockerfile`, `package.json`, `.gitignore`, `.env.local.example` (baru), `.github/workflows/health-watch.yml` (baru), `.github/workflows/setup-log-archive.yml` (baru), `.claude/settings.json`, `.claude/settings.local.json` (keduanya gitignored, tidak ikut commit).
+
+---
 
 ## Changelog Session 332 (2026-08-27) — Audit Rate-Limit Semua Vendor: Fix Guard Gemini 200 -> 16/hari
 
