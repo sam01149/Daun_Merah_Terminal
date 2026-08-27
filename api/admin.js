@@ -549,6 +549,23 @@ async function healthHandler(req, res) {
   let redisKeyCount = null;
   try { redisKeyCount = await redisCmd('DBSIZE'); } catch(e) { /* opsional */ }
 
+  // Akun 2 (2026-08-27): rate limit counter dipindah ke sini supaya tidak rebutan
+  // kuota command dengan akun utama di atas — lihat api/_ratelimit.js.
+  let redisKeyCount2 = null;
+  try {
+    const url2   = process.env.UPSTASH2_REDIS_REST_URL;
+    const token2 = process.env.UPSTASH2_REDIS_REST_TOKEN;
+    if (url2 && token2) {
+      const r2 = await fetch(url2, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token2}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(['DBSIZE']),
+        signal: AbortSignal.timeout(5000),
+      });
+      redisKeyCount2 = (await r2.json()).result;
+    }
+  } catch(e) { /* opsional */ }
+
   return res.status(200).json({
     overall,
     checked_at: now,
@@ -559,6 +576,7 @@ async function healthHandler(req, res) {
       redis_key_count: redisKeyCount,
       redis_note: 'DBSIZE — proxy jumlah key, BUKAN command-count/storage-byte bulanan (cek dashboard Upstash langsung untuk itu)',
     } : {}),
+    ...(redisKeyCount2 != null ? { redis2_key_count: redisKeyCount2, redis2_note: 'DBSIZE akun 2 (rate limit)' } : {}),
   });
 }
 

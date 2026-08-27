@@ -11,10 +11,22 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-25 (Session 329 — AATAS v2 auto-entry: panggilan AI Analisa diekstrak jadi helper bersama; fitur publik "Analisa AI" tidak berubah. Entri lengkap di professional_llm_trader/changelog.md)
+> **Last updated:** 2026-08-27 (Session 331 — Redis dipecah 2 akun: rate limit counter dipindah ke akun kedua supaya tidak rebutan kuota command dengan fitur kritikal di akun utama)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
+
+## Changelog Session 331 (2026-08-27) — Redis Dipecah 2 Akun: Rate Limit Diisolasi dari Fitur Kritikal
+
+**Masalah:** command bulanan akun Upstash Redis utama mepet kuota free tier (326K/500K, lihat catatan lama di `admin.js`) — kalau limit kena, SEMUA fitur yang bergantung Redis (cache, circuit breaker, jatah harian AI, journal, gate AATAS) ikut mati serentak karena berbagi satu akun.
+
+**Fix:** user menyiapkan akun Upstash kedua (env `UPSTASH2_REDIS_REST_URL`/`UPSTASH2_REDIS_REST_TOKEN`, ditambahkan ke Vercel — Production/Preview/Development). `api/_ratelimit.js` (dipanggil di HAMPIR SEMUA endpoint publik — 2 command Redis per request non-whitelist, kontributor volume command terbesar) dipindah ke akun kedua ini, terisolasi total dari fitur lain. Perilaku fail-open tidak berubah: kalau akun kedua kosong/down, request tetap lolos tanpa rate limit (bukan diblokir) — sama seperti sebelumnya kalau Redis utama down.
+
+**Kenapa rate limit yang dipindah (bukan fitur lain):** paling isolatable (key `rl:*` tidak dibaca fitur lain), paling tinggi volume (jalan di 12 endpoint x tiap request publik vs fitur lain yang jalan per-fetch-eksternal/per-panggilan-AI), dan paling toleran kalau akun keduanya bermasalah (sudah fail-open by design, beda dengan circuit breaker/ai_guard yang perannya justru mencegah pemborosan).
+
+File diubah: `api/_ratelimit.js` (env var), `.env.local` (kredensial lokal), `test/lib/guards.test.js` (tambah `delete process.env.UPSTASH2_*` biar test fail-open tetap valid). `npm test` tetap 1117/1118 hijau (1 gagal pre-existing, `scripts/test-deribit.js`, tidak terkait — dikonfirmasi gagal juga di `main` sebelum perubahan ini).
+
+---
 
 ## Changelog Session 329 (2026-08-25) — [PENUNJUK] AATAS v2: Panggilan AI Analisa Diekstrak jadi Helper Bersama
 

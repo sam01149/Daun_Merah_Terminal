@@ -9,6 +9,13 @@
 //
 // Default: 60 req / 60s per IP. Heavy endpoints (market-digest, correlations) use lower limits.
 // Cron-job.org and Vercel internal traffic are whitelisted automatically.
+//
+// Redis account: pakai UPSTASH2_* (akun kedua), TERPISAH dari UPSTASH_REDIS_REST_URL/TOKEN
+// utama. Rate limit jalan di HAMPIR SEMUA endpoint publik (2 command/request: SET NX + INCR)
+// jadi ini kontributor volume command terbesar — dipindah ke akun sendiri (2026-08-27) supaya
+// tidak menghabiskan kuota akun utama yang dipakai fitur kritikal (circuit breaker, ai_guard,
+// journal, gate AATAS). Fail-open tetap berlaku: kalau akun kedua kosong/down, request lolos
+// tanpa rate limit (bukan diblokir).
 
 // IPs that are always allowed (cron services, internal Vercel, localhost)
 const WHITELIST_PREFIXES = [
@@ -64,8 +71,8 @@ async function redisCmd(url, token, ...args) {
 module.exports = async function rateLimit(req, res, opts = {}) {
   const { limit = 60, windowSecs = 60, endpoint } = opts;
 
-  const REDIS_URL   = process.env.UPSTASH_REDIS_REST_URL;
-  const REDIS_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
+  const REDIS_URL   = process.env.UPSTASH2_REDIS_REST_URL;
+  const REDIS_TOKEN = process.env.UPSTASH2_REDIS_REST_TOKEN;
 
   // If Redis is unavailable, fail open (don't block legitimate traffic)
   if (!REDIS_URL || !REDIS_TOKEN) return false;

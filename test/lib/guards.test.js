@@ -8,6 +8,8 @@ const assert = require('node:assert');
 // Pastikan Redis dianggap tidak terkonfigurasi di seluruh suite ini
 delete process.env.UPSTASH_REDIS_REST_URL;
 delete process.env.UPSTASH_REDIS_REST_TOKEN;
+delete process.env.UPSTASH2_REDIS_REST_URL;
+delete process.env.UPSTASH2_REDIS_REST_TOKEN;
 
 const { allowAiCall, providerFromUrl, DEFAULT_LIMITS } = require('../../api/_ai_guard');
 const rateLimit = require('../../api/_ratelimit');
