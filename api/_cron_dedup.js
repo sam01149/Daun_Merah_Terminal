@@ -13,10 +13,11 @@
 // Underscore prefix = bukan serverless function (limit Vercel Hobby 12/12 penuh).
 
 function isCronCall(req) {
+  const { safeEqual } = require('./_app_key');
   return req.headers['x-vercel-cron'] === '1' ||
     !!(process.env.CRON_SECRET && (
-      req.headers['x-cron-secret']  === process.env.CRON_SECRET ||
-      req.headers['x-admin-secret'] === process.env.CRON_SECRET));
+      safeEqual(req.headers['x-cron-secret']  || '', process.env.CRON_SECRET) ||
+      safeEqual(req.headers['x-admin-secret'] || '', process.env.CRON_SECRET)));
 }
 
 // timestampIso: field waktu dari payload cache (generated_at / loaded_at).

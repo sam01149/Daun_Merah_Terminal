@@ -41,8 +41,16 @@ function isWhitelisted(ip) {
 }
 
 function getClientIp(req) {
+  // Ambil entri PALING KANAN, bukan paling kiri (audit 2026-08-27, S-3). Konvensi
+  // proxy standar: tiap hop MENAMBAHKAN IP-nya sendiri di ujung rantai — entri
+  // kiri boleh disetel bebas oleh klien (header X-Forwarded-For dikirim manual),
+  // entri kanan-lah yang ditulis hop terakhir (Vercel edge) dan tidak bisa
+  // dipalsukan klien. Pakai entri kiri = rate limit bisa di-bypass spoof XFF acak.
   const forwarded = req.headers['x-forwarded-for'];
-  if (forwarded) return forwarded.split(',')[0].trim();
+  if (forwarded) {
+    const parts = forwarded.split(',').map(s => s.trim()).filter(Boolean);
+    if (parts.length) return parts[parts.length - 1];
+  }
   return req.socket?.remoteAddress || req.connection?.remoteAddress || 'unknown';
 }
 

@@ -203,7 +203,7 @@ function resample4h(candles1h) {
   return [...map.values()].sort((a, b) => a.time - b.time);
 }
 
-const { requireAppKey } = require('./_app_key');
+const { requireAppKey, safeEqual } = require('./_app_key');
 const handler = async function handler(req, res) {
   if (requireAppKey(req, res)) return; // gate APP_KEY (cron/admin secret lolos) — lihat api/_app_key.js
   Object.entries(CORS).forEach(([k, v]) => res.setHeader(k, v));
@@ -279,7 +279,7 @@ const handler = async function handler(req, res) {
 
   // --- ENDPOINT TEKNIKAL ANALISIS (TA) ---
   if (req.query.action === 'ta') {
-    const isCronWarm = req.headers['x-cron-secret'] && req.headers['x-cron-secret'] === process.env.CRON_SECRET;
+    const isCronWarm = !!process.env.CRON_SECRET && safeEqual(req.headers['x-cron-secret'] || '', process.env.CRON_SECRET);
     if (!isCronWarm && await rateLimit(req, res, { limit: 5, windowSecs: 60, endpoint: 'correlations' })) return;
 
     const symbol   = req.query.symbol   || 'GC=F';

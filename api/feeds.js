@@ -17,7 +17,7 @@
 const { autoUpdateFundamentals, autoUpdateFundamentalsFromCalendar, _fetchCalendarEventsForFund } = require('./_fundamental_parser');
 const rateLimit = require('./_ratelimit');
 const cbk = require('./_circuit_breaker');
-const { requireAppKey } = require('./_app_key');
+const { requireAppKey, safeEqual } = require('./_app_key');
 const { translateNewItems, getTranslations } = require('./_news_translate');
 const { detectCat } = require('../newscat');
 
@@ -354,7 +354,7 @@ async function newsHistoryHandler(req, res) {
 async function newsTranslateBackfillHandler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   const CRON_SECRET = process.env.CRON_SECRET;
-  if (!CRON_SECRET || req.headers['x-cron-secret'] !== CRON_SECRET) {
+  if (!CRON_SECRET || !safeEqual(req.headers['x-cron-secret'] || '', CRON_SECRET)) {
     return res.status(401).json({ error: 'Unauthorized — set x-cron-secret header' });
   }
 

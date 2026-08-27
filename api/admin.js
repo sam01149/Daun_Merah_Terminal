@@ -20,7 +20,7 @@ const marketHours = require('./_market_hours');
 const cb = require('./_circuit_breaker');
 const rateLimit = require('./_ratelimit');
 const { allowAiCall } = require('./_ai_guard');
-const { requireAppKey } = require('./_app_key');
+const { requireAppKey, safeEqual } = require('./_app_key');
 const { fetchYahooOhlcv1h, fetchFallbackCandles, shouldSendYahooAlert, mapYahooSymbolToDeriv, fetchDerivCandles, mergeVolumeByTimestamp } = require('./_ohlcv_fetch');
 const { buildPairContext, computeCurrencyStrength } = require('./_pair_context');
 const { validateTightenSl, computePreventiveTightenSl, _evaluateManaged, _aggManagementStats, isCorroborated } = require('./_position_review');
@@ -83,8 +83,8 @@ module.exports = async function handler(req, res) {
   // Cron traffic (Vercel cron header atau secret valid) tidak pernah kena 429
   const isCron = req.headers['x-vercel-cron'] === '1' ||
     (process.env.CRON_SECRET && (
-      req.headers['x-cron-secret']  === process.env.CRON_SECRET ||
-      req.headers['x-admin-secret'] === process.env.CRON_SECRET));
+      safeEqual(req.headers['x-cron-secret']  || '', process.env.CRON_SECRET) ||
+      safeEqual(req.headers['x-admin-secret'] || '', process.env.CRON_SECRET)));
   if (!isCron && PUBLIC_ACTION_LIMITS[action]) {
     if (await rateLimit(req, res, { limit: PUBLIC_ACTION_LIMITS[action], windowSecs: 60, endpoint: `admin_${action}` })) return;
   }
@@ -115,7 +115,8 @@ module.exports = async function handler(req, res) {
   if (action === 'friday_tighten')     return fridayTightenHandler(req, res);
   if (action === 'polymarket')         return polymarketHandler(req, res);
   if (action === 'push_subscribe_dev') return pushSubscribeDevHandler(req, res);
-  return res.status(400).json({ error: 'Missing ?action= — use health, redis-keys, admin-prompts, push, inflation_staleness_check, fundamental_get, fundamental_seed, fundamental_refresh, fundamental_analysis, journal_import, circuit-reset, circuit-status, deepseek_balance, gdpnow, ohlcv_sync, ohlcv_read, ohlcv_chart, ohlcv_analyze, ohlcv_critic, pre_entry_check, ohlcv_dashboard, setup_stats, setup_override, position_review, friday_tighten, polymarket, or push_subscribe_dev' });
+  if (action === 'setup_log_archive')  return setupLogArchiveHandler(req, res);
+  return res.status(400).json({ error: 'Missing ?action= — use health, redis-keys, admin-prompts, push, inflation_staleness_check, fundamental_get, fundamental_seed, fundamental_refresh, fundamental_analysis, journal_import, circuit-reset, circuit-status, deepseek_balance, gdpnow, ohlcv_sync, ohlcv_read, ohlcv_chart, ohlcv_analyze, ohlcv_critic, pre_entry_check, ohlcv_dashboard, setup_stats, setup_override, position_review, friday_tighten, polymarket, push_subscribe_dev, or setup_log_archive' });
 };
 
 // ── Shared Redis helper ────────────────────────────────────────────────────────
@@ -131,6 +132,46 @@ async function redisCmd(...args) {
     signal: AbortSignal.timeout(5000),
   });
   return (await r.json()).result;
+}
+
+// ── Arsip setup_log_auto:v1 sebelum tergeser cap 200 (audit 2026-08-27) ────────
+// Populasi AATAS v2 (policy_v>=31) baru n=5 (0 closed) saat audit ditulis — laju
+// pengisian ~1.5 entri/hari BARU menyentuh cap 200 sekitar 9 minggu lagi, TAPI
+// begitu tersentuh, entri tertua (bisa termasuk sampel n>=30 yang jadi dasar
+// statistik AATAS) tergeser keluar PERMANEN (setup_log_auto:v1 ditulis via SET
+// overwrite penuh, bukan append — lihat api/admin.js .slice(0,200) di jalur
+// tulis auto-entry). Handler ini MURNI ADDITIVE dan read-mostly terhadap
+// setup_log_auto:v1: baca apa adanya, gabung (dedup by id) ke key TERPISAH
+// `setup_log_auto_archive:v1` (cap jauh lebih besar, 5000 — bukan 200). TIDAK
+// PERNAH menulis balik ke setup_log_auto:v1 dan TIDAK menyentuh gate/keputusan
+// auto-entry apa pun — nol risiko terhadap alur trading yang sedang berjalan.
+// Dipicu terjadwal dari .github/workflows/setup-log-archive.yml (GH Actions),
+// pola sama persis dengan setup-tp-sl-watch.yml (fallback GH Actions paralel
+// daemon Railway, auth x-admin-secret/x-cron-secret === CRON_SECRET).
+async function setupLogArchiveHandler(req, res) {
+  if (req.method === 'OPTIONS') return res.status(204).end();
+  const CRON_SECRET = process.env.CRON_SECRET;
+  const secret = req.headers['x-admin-secret'] || req.headers['x-cron-secret'];
+  const isVercelCron = req.headers['x-vercel-cron'] === '1';
+  if (!isVercelCron && (!CRON_SECRET || !safeEqual(secret || '', CRON_SECRET))) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  try {
+    const rawCurrent = await redisCmd('GET', 'setup_log_auto:v1');
+    const current = rawCurrent ? JSON.parse(rawCurrent) : [];
+    const rawArchive = await redisCmd('GET', 'setup_log_auto_archive:v1');
+    const archiveParsed = rawArchive ? JSON.parse(rawArchive) : [];
+    const archive = Array.isArray(archiveParsed) ? archiveParsed : [];
+    const seen = new Set(archive.map(x => x && x.id).filter(Boolean));
+    const added = current.filter(x => x && x.id && !seen.has(x.id));
+    if (added.length) {
+      const merged = archive.concat(added).slice(-5000);
+      await redisCmd('SET', 'setup_log_auto_archive:v1', JSON.stringify(merged));
+    }
+    return res.status(200).json({ ok: true, current_total: current.length, archive_total: archive.length + added.length, added: added.length });
+  } catch (e) {
+    return res.status(500).json({ error: e.message });
+  }
 }
 
 // BUG DITEMUKAN & DIFIX (2026-07-25, audit lanjutan pasca-insiden GC=F): lock
@@ -424,7 +465,7 @@ async function healthHandler(req, res) {
   if (req.method === 'OPTIONS') return res.status(204).end();
 
   const CRON_SECRET = process.env.CRON_SECRET;
-  if (!CRON_SECRET || req.headers['x-admin-secret'] !== CRON_SECRET) {
+  if (!CRON_SECRET || !safeEqual(req.headers['x-admin-secret'] || '', CRON_SECRET)) {
     return res.status(401).json({ error: 'Unauthorized — set x-admin-secret header' });
   }
 
@@ -643,6 +684,9 @@ const KEY_REGISTRY = [
   // considered=saved+... di atas (gate ini jalan SEBELUM kandidat sampai ke gate itu).
   { key: 'auto_guard_stats:gate1_code_override',      owner: 'api/admin.js', ttl_expected: null, note: 'AATAS v2 Gate 1: Step 1-2 digagalkan pemeriksaan KODE (bukan laporan AI) — indikator penilaian apakah aturan barunya terlalu ketat/longgar' },
   { key: 'aatas_reject_log:v1',                       owner: 'api/admin.js', ttl_expected: null, note: 'List (cap 200): kandidat auto-entry AATAS yang ditolak (alasan + seluruh field checklist + reasoning_note). Key TERPISAH dari setup_log_auto:v1 supaya cap 200 sampel nyata tidak tergeser keluar' },
+  // Audit 2026-08-27: arsip preventif sebelum setup_log_auto:v1 (cap 200) menggeser
+  // keluar entri lama secara permanen — lihat komentar lengkap di setupLogArchiveHandler.
+  { key: 'setup_log_auto_archive:v1',                 owner: 'api/admin.js', ttl_expected: null, note: 'List gabungan (cap 5000) dari setup_log_auto:v1, di-merge dedup-by-id via action=setup_log_archive (GH Actions terjadwal). TIDAK PERNAH dibaca alur trading — murni cadangan sebelum cap 200 tergeser' },
   // [SISTEM HAKIM] aktivasi jalur cron (2026-07-29) — counter INCR polos terpisah dari
   // auto_guard_stats:* karena BUKAN gate (tidak pernah membatalkan penyimpanan sendiri).
   // 'considered' = setup auto-entry di mana cbDir tersedia (client/manual atau fallback
@@ -716,7 +760,7 @@ async function redisKeysHandler(req, res) {
   if (req.method === 'OPTIONS') return res.status(204).end();
 
   const CRON_SECRET = process.env.CRON_SECRET;
-  if (!CRON_SECRET || req.headers['x-admin-secret'] !== CRON_SECRET) {
+  if (!CRON_SECRET || !safeEqual(req.headers['x-admin-secret'] || '', CRON_SECRET)) {
     return res.status(401).json({ error: 'Unauthorized — set x-admin-secret header' });
   }
 
@@ -788,7 +832,7 @@ async function adminPromptsHandler(req, res) {
   if (req.method === 'OPTIONS') return res.status(204).end();
 
   const CRON_SECRET = process.env.CRON_SECRET;
-  if (!CRON_SECRET || req.headers['x-admin-secret'] !== CRON_SECRET) {
+  if (!CRON_SECRET || !safeEqual(req.headers['x-admin-secret'] || '', CRON_SECRET)) {
     return res.status(401).json({ error: 'Unauthorized — set x-admin-secret header' });
   }
 
@@ -838,7 +882,7 @@ async function pushHandler(req, res) {
   const CRON_SECRET   = process.env.CRON_SECRET;
   const REDIS_URL     = process.env.UPSTASH_REDIS_REST_URL;
 
-  if (!CRON_SECRET || req.headers['x-cron-secret'] !== CRON_SECRET) {
+  if (!CRON_SECRET || !safeEqual(req.headers['x-cron-secret'] || '', CRON_SECRET)) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
@@ -973,7 +1017,7 @@ async function pushHandler(req, res) {
 // bukan spam tiap minggu untuk currency yang sama sampai user update).
 async function inflationStalenessCheckHandler(req, res) {
   const CRON_SECRET = process.env.CRON_SECRET;
-  if (!CRON_SECRET || req.headers['x-cron-secret'] !== CRON_SECRET) {
+  if (!CRON_SECRET || !safeEqual(req.headers['x-cron-secret'] || '', CRON_SECRET)) {
     return res.status(401).json({ error: 'Unauthorized — set x-cron-secret header' });
   }
   const { INFLATION_EXPECTATIONS } = require('./real-yields');
@@ -1024,7 +1068,7 @@ async function pushSubscribeDevHandler(req, res) {
   if (req.method === 'OPTIONS') return res.status(204).end();
   const CRON_SECRET = process.env.CRON_SECRET;
   const secret = req.headers['x-admin-secret'] || req.headers['x-cron-secret'];
-  if (!CRON_SECRET || secret !== CRON_SECRET) return res.status(401).json({ error: 'Unauthorized' });
+  if (!CRON_SECRET || !safeEqual(secret || '', CRON_SECRET)) return res.status(401).json({ error: 'Unauthorized' });
 
   try {
     let body = '';
@@ -1519,7 +1563,7 @@ async function fundamentalSeedHandler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   if (req.method === 'OPTIONS') return res.status(204).end();
   const CRON_SECRET = process.env.CRON_SECRET;
-  if (!CRON_SECRET || req.headers['x-admin-secret'] !== CRON_SECRET) {
+  if (!CRON_SECRET || !safeEqual(req.headers['x-admin-secret'] || '', CRON_SECRET)) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
   if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
@@ -1824,7 +1868,7 @@ PERLU DIWASPADAI:
 async function journalImportHandler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
   const secret = req.headers['x-admin-secret'] || req.headers['x-cron-secret'];
-  if (!process.env.CRON_SECRET || !secret || secret !== process.env.CRON_SECRET) return res.status(403).json({ error: 'Forbidden' });
+  if (!process.env.CRON_SECRET || !secret || !safeEqual(secret || '', process.env.CRON_SECRET || '')) return res.status(403).json({ error: 'Forbidden' });
 
   let body = '';
   await new Promise(r => { req.on('data', c => body += c); req.on('end', r); });
@@ -1892,7 +1936,7 @@ const KNOWN_CIRCUITS = ['ai:deepseek', 'fred', 'stooq', 'ff', 'fj', 'cftc', 'red
 async function circuitStatusHandler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   const secret = req.headers['x-admin-secret'];
-  if (!secret || secret !== process.env.CRON_SECRET) return res.status(401).json({ error: 'Unauthorized' });
+  if (!secret || !safeEqual(secret || '', process.env.CRON_SECRET || '')) return res.status(401).json({ error: 'Unauthorized' });
 
   const results = {};
   for (const src of KNOWN_CIRCUITS) {
@@ -1916,7 +1960,7 @@ async function deepseekBalanceHandler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Cache-Control', 'no-cache');
   const secret = req.headers['x-admin-secret'] || req.headers['x-cron-secret'];
-  if (!secret || secret !== process.env.CRON_SECRET) return res.status(401).json({ error: 'Unauthorized' });
+  if (!secret || !safeEqual(secret || '', process.env.CRON_SECRET || '')) return res.status(401).json({ error: 'Unauthorized' });
 
   const DEEPSEEK_KEY = process.env.DEEPSEEK_API_KEY;
   if (!DEEPSEEK_KEY) return res.status(200).json({ error: 'DEEPSEEK_API_KEY belum diset' });
@@ -2091,7 +2135,7 @@ async function ohlcvSyncHandler(req, res) {
   // Auth: GitHub Actions sends x-cron-secret; Vercel internal cron sends x-vercel-cron
   const isVercelCron = req.headers['x-vercel-cron'] === '1';
   const cronSecret   = req.headers['x-cron-secret'];
-  if (!isVercelCron && (!cronSecret || cronSecret !== process.env.CRON_SECRET)) {
+  if (!isVercelCron && (!cronSecret || !safeEqual(cronSecret || '', process.env.CRON_SECRET || ''))) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
@@ -4174,7 +4218,7 @@ async function setupOverrideHandler(req, res) {
   if (req.method === 'OPTIONS') return res.status(204).end();
   const CRON_SECRET = process.env.CRON_SECRET;
   const secret = req.headers['x-admin-secret'] || req.headers['x-cron-secret'];
-  if (!CRON_SECRET || secret !== CRON_SECRET) return res.status(401).json({ error: 'Unauthorized' });
+  if (!CRON_SECRET || !safeEqual(secret || '', CRON_SECRET)) return res.status(401).json({ error: 'Unauthorized' });
   if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
   try {
     let body = '';
@@ -4257,7 +4301,7 @@ async function positionReviewHandler(req, res) {
   if (req.method === 'OPTIONS') return res.status(204).end();
   const CRON_SECRET = process.env.CRON_SECRET;
   const secret = req.headers['x-admin-secret'] || req.headers['x-cron-secret'];
-  if (!CRON_SECRET || secret !== CRON_SECRET) return res.status(401).json({ error: 'Unauthorized' });
+  if (!CRON_SECRET || !safeEqual(secret || '', CRON_SECRET)) return res.status(401).json({ error: 'Unauthorized' });
   if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
   try {
     let body = '';
@@ -4513,7 +4557,7 @@ async function fridayTightenHandler(req, res) {
   if (req.method === 'OPTIONS') return res.status(204).end();
   const isVercelCron = req.headers['x-vercel-cron'] === '1';
   const cronSecret   = req.headers['x-cron-secret'];
-  if (!isVercelCron && (!cronSecret || cronSecret !== process.env.CRON_SECRET)) {
+  if (!isVercelCron && (!cronSecret || !safeEqual(cronSecret || '', process.env.CRON_SECRET || ''))) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
   // BUG DITEMUKAN & DIFIX (2026-07-25): GET->mutate->SET di sini dulu TANPA lock, sumber
@@ -7705,7 +7749,7 @@ async function circuitResetHandler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   if (req.method === 'OPTIONS') return res.status(204).end();
   const secret = req.headers['x-admin-secret'];
-  if (!secret || secret !== process.env.CRON_SECRET) return res.status(401).json({ error: 'Unauthorized' });
+  if (!secret || !safeEqual(secret || '', process.env.CRON_SECRET || '')) return res.status(401).json({ error: 'Unauthorized' });
 
   const source = req.query.source;
   const targets = source ? [source] : KNOWN_CIRCUITS;

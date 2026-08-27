@@ -1,0 +1,31 @@
+name: Setup Log Archive (pre cap-200 backup)
+
+# Audit 2026-08-27: setup_log_auto:v1 di-cap 200 entri (SET overwrite penuh, bukan
+# append) — begitu cap tersentuh, entri tertua tergeser PERMANEN, termasuk sampel
+# AATAS v2 (policy_v>=31, n=5 saat audit) yang jadi dasar statistik n>=30. Laju
+# pengisian saat ini (~1.5 entri/hari) masih ~9 minggu dari cap, tapi arsip ini
+# dipasang sekarang selagi murah & aman — action=setup_log_archive di api/admin.js
+# MURNI additive (baca setup_log_auto:v1, gabung dedup-by-id ke key terpisah
+# setup_log_auto_archive:v1, cap 5000), tidak pernah menulis balik ke key asli
+# atau menyentuh gate/keputusan auto-entry apa pun.
+
+on:
+  schedule:
+    - cron: '0 4 * * *'
+  workflow_dispatch:
+
+jobs:
+  archive:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger arsip setup_log_auto:v1
+        run: |
+          STATUS=$(curl -s -o /tmp/resp.json -w "%{http_code}" \
+            -H "x-cron-secret: ${{ secrets.CRON_SECRET }}" \
+            --max-time 20 \
+            "https://financial-feed-app.vercel.app/api/admin?action=setup_log_archive")
+          cat /tmp/resp.json
+          if [ "$STATUS" -ne 200 ]; then
+            echo "setup_log_archive gagal dengan HTTP $STATUS"
+            exit 1
+          fi

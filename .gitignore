@@ -27,6 +27,7 @@ __pycache__/
 # Riset/model BTC ML dipindah keluar dari kode app aktif, diasingkan dari git tracking
 project_delay/
 .env*
+!.env.local.example
 node_modules/
 
 # Arsip lokal (plan lama yang sudah selesai dieksekusi, dsb) — beres-beres 2026-07-12
@@ -43,6 +44,3 @@ asset/
 
 # Cache lokal query/abstrak Scopus MCP — hapus setelah temuan ditulis ke daun_merah_riset.md (ATURAN.md §3.6)
 .cache/
-
-.vercel
-.env*

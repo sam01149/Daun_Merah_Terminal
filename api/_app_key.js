@@ -48,4 +48,4 @@ function requireAppKey(req, res) {
   return true;
 }
 
-module.exports = { requireAppKey };
+module.exports = { requireAppKey, safeEqual };
