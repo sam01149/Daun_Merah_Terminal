@@ -18,13 +18,25 @@
 const DEFAULT_LIMITS = {
   // SambaNova (akun 1 & 2) diputus kontrak total 2026-08-12 — counter sambanova_main/
   // sambanova_c1 dihapus, sudah tidak dipanggil call site manapun (daun_merah_vendor.md).
-  // Plan N (session 182) — diagnostik ?test_gemini=1/?test_mistral=1/?test_nvidia=1,
-  // BUKAN chain produksi. Limit konservatif di bawah kuota resmi riset (daun_merah_riset.md):
-  // Gemini Flash free tier 250-1.500 RPD per PROJECT (bukan per key) — 200 aman untuk
-  // dites manual tanpa mepet limit asli Google. Mistral ±1M token/bulan (jauh lebih
-  // longgar per-request) tetap dikonservatifkan sama dengan provider lain. NVIDIA 40 RPM
-  // baseline — 200/hari jauh di bawah itu (dites manual, bukan burst).
-  gemini:          200,
+  // Plan N (session 182) — diagnostik ?test_mistral=1/?test_nvidia=1,
+  // BUKAN chain produksi. Limit konservatif di bawah kuota resmi riset (daun_merah_riset.md).
+  // Mistral ±1M token/bulan (jauh lebih longgar per-request) tetap dikonservatifkan sama
+  // dengan provider lain. NVIDIA 40 RPM baseline — 200/hari jauh di bawah itu (dites
+  // manual, bukan burst).
+  //
+  // Gemini 200 -> 16 (2026-08-27, audit vendor rate-limit): angka 200 di atas ditulis waktu
+  // Gemini masih dianggap 250-1.500 RPD DAN cuma dipakai diagnostik manual (?test_gemini=1,
+  // sudah dihapus). Sejak 2026-08-02 terverifikasi live limit REAL cuma 20 request/HARI per
+  // project (429 RESOURCE_EXHAUSTED, lihat daun_merah_ai.md §4) — dan sejak 2026-08-12 Gemini
+  // jadi PRIMARY/SATU-SATUNYA untuk 2 fitur produksi (Analisa Fundamental + AI Coach Jurnal)
+  // yang BERBAGI kuota 20/hari yang sama. Guard 200 tidak pernah memberi proteksi nyata
+  // (Google sendiri sudah menolak di request ke-21 jauh sebelum guard kita sempat trip) —
+  // bertentangan dengan tujuan guard ini ("selalu ada jarak aman"). 16 memberi headroom 4
+  // request di bawah limit asli Google, sambil masih menampung skenario wajar (Fundamental
+  // maks 8 + retry, Jurnal ±5-10 + retry, lihat daun_merah_ai.md §5) di hari yang tidak
+  // ekstrem. Kalau tetap sering kena, opsi berikutnya: API key/project Gemini KEDUA
+  // (pola sama split Upstash Redis 2026-08-27) supaya 2 fitur ini tidak lagi berbagi kuota.
+  gemini:          16,
   mistral:         200,
   nvidia:          200,
   // DeepSeek API resmi (platform.deepseek.com) — BERBAYAR dari saldo top-up user

@@ -11,10 +11,31 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-27 (Session 331 — Redis dipecah 2 akun: rate limit counter dipindah ke akun kedua supaya tidak rebutan kuota command dengan fitur kritikal di akun utama)
+> **Last updated:** 2026-08-27 (Session 332 — audit vendor rate-limit menyeluruh: guard harian Gemini 200->16, satu-satunya gap ditemukan dari 200 lebih request/hari + limit resmi Google cuma 20/hari)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
+
+## Changelog Session 332 (2026-08-27) — Audit Rate-Limit Semua Vendor: Fix Guard Gemini 200 -> 16/hari
+
+**Konteks:** Lanjutan diskusi Redis 2 akun (Session 331) — user minta cek vendor LAIN yang berpotensi kena rate limit juga, bukan cuma Redis. Disurvei semua vendor di `daun_merah_vendor.md`/`daun_merah_ai.md`: AI providers (Gemini/DeepSeek), Twelve Data, ScraperAPI, Scopus, FRED, TradingView, dst.
+
+**Temuan (1 gap nyata, bukan cuma spekulasi):** `api/_ai_guard.js` `DEFAULT_LIMITS.gemini` masih **200 request/hari**, ditulis waktu Gemini dianggap 250-1.500 RPD dan cuma dipakai diagnostik manual. Sejak 2026-08-02 (sudah dicatat di `daun_merah_ai.md` §4, TIDAK PERNAH diperbaiki ke kode) limit REAL Google cuma **20 request/hari** — dan sejak 2026-08-12 Gemini jadi PRIMARY/SATU-SATUNYA untuk 2 fitur produksi (Analisa Fundamental + AI Coach Jurnal) yang berbagi kuota 20/hari yang sama. Guard 200 secara matematis TIDAK PERNAH bisa trip duluan — Google sendiri sudah menolak (429 `RESOURCE_EXHAUSTED`) di request ke-21, jauh di bawah 200. Guard ini jadi dekorasi, bukan proteksi, bertentangan dengan tujuan desainnya sendiri ("selalu ada jarak aman" — lihat komentar asli di kode).
+
+**Fix:** `gemini` diturunkan **200 → 16** (headroom 4 request di bawah limit asli 20, cukup menampung skenario wajar: Fundamental maks 8 + Jurnal ±5-10, keduanya termasuk retry). Kalau hari yang sangat ramai tetap kena, opsi berikutnya: API key/project Gemini KEDUA (pola sama split Upstash Redis Session 331) supaya 2 fitur ini tidak lagi berbagi 1 kuota — dicatat sebagai opsi di `daun_merah_ai.md` §4, belum dieksekusi (butuh user bikin API key baru).
+
+**Vendor lain dicek, TIDAK ada gap sebanding (tidak diubah):**
+- **DeepSeek** — bukan rate limit provider (tidak ada hard request cap), guard 50/hari & `deepseek_experimental` 35/hari murni pagar biaya dari saldo top-up, sudah sesuai desain.
+- **Twelve Data** (800 credit/hari, 8 req/menit) — cuma fallback tier-3 OHLCV (setelah Deriv & Yahoo), dipanggil sekuensial dengan budget guard 20 detik per sync run — risiko burst rendah, tidak ada insiden.
+- **ScraperAPI** (1.000 credit/bulan) — CVOL batch 1 credit/refresh x 24 refresh/hari ≈ 720 credit/bulan (72%), sudah diaudit & dimonitor sejak S157 (`daun_merah_vendor.md` §9), stabil, tidak ada tren naik baru.
+- **Scopus** (20.000 request/hari-atau-minggu) — pemakaian aktual ~8/hari, headroom sangat besar.
+- **FRED, TradingView, CFTC, RSS feeds (FinancialJuice/InvestingLive/ActionForex/dst), Telegram, VAPID** — free/publik tanpa limit ketat yang terdokumentasi, tidak ada indikasi mepet.
+
+**Test:** `npm test` tetap 1117/1118 hijau (1 gagal pre-existing `scripts/test-deribit.js`, tidak terkait, terkonfirmasi gagal juga sebelum sesi ini).
+
+**File diubah:** `api/_ai_guard.js`, `Dokumentasi/daun_merah_ai.md`.
+
+---
 
 ## Changelog Session 331 (2026-08-27) — Redis Dipecah 2 Akun: Rate Limit Diisolasi dari Fitur Kritikal
 
