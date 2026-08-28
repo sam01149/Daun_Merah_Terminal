@@ -220,6 +220,40 @@ test('setup_override: data_fix sukses -> status/filled_t diubah, closed_t:null d
   });
 });
 
+// (2026-08-28, fix fill hantu varian 2) data_fix.level_set_at — anchor baru dipakai
+// _evaluateSetups, WAJIB bisa diisi lewat override supaya koreksi 'open'->'pending'
+// tidak langsung kena bug yang sama lagi (evaluator scan dari ts lama).
+test('setup_override: data_fix.level_set_at bukan angka positif -> 400', async () => {
+  await withEnv({ CRON_SECRET: 'rahasia' }, async () => {
+    const { req, res } = fakeReqRes({
+      headers: { 'x-admin-secret': 'rahasia' },
+      body: JSON.stringify({ id: 'GC=F:123', data_fix: { level_set_at: -5, reason: 'x' } }),
+    });
+    await handler(req, res);
+    assert.strictEqual(res.statusCode, 400);
+  });
+});
+
+test('setup_override: data_fix mengembalikan open->pending + set level_set_at, hapus filled_t', async () => {
+  await withEnv({ CRON_SECRET: 'rahasia' }, async () => {
+    const log = [{ ...baseSetup, status: 'open', filled_t: 1787742000, refined_count: 1 }];
+    const { req, res } = fakeReqRes({
+      headers: { 'x-admin-secret': 'rahasia' },
+      body: JSON.stringify({
+        id: 'GC=F:123',
+        data_fix: { status: 'pending', filled_t: null, level_set_at: 1787900000000, reason: 'fill hantu v34, kembalikan ke pending' },
+      }),
+    });
+    await withFetch(upstashStub(log), async () => { await handler(req, res); });
+    assert.strictEqual(res.statusCode, 200);
+    assert.strictEqual(res.body.setup.status, 'pending');
+    assert.strictEqual(res.body.setup.filled_t, undefined);
+    assert.strictEqual(res.body.setup.level_set_at, 1787900000000);
+    // entry_zone/sl/tp (levelnya sendiri) tidak disentuh
+    assert.strictEqual(res.body.setup.entry_zone, '4030-4040');
+  });
+});
+
 test('setup_override: data_fix bisa dipakai bersamaan loss_label dalam satu request', async () => {
   await withEnv({ CRON_SECRET: 'rahasia' }, async () => {
     const log = [{ ...baseSetup, status: 'sl' }];

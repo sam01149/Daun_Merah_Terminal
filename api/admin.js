@@ -4262,6 +4262,15 @@ async function setupOverrideHandler(req, res) {
           return res.status(400).json({ error: `data_fix.${k} harus unix timestamp detik (angka > 0) atau null` });
         }
       }
+      // (2026-08-28, fix fill hantu varian 2, POLICY_EPOCHS v34) `level_set_at` epoch
+      // MILIDETIK (beda unit dari filled_t/closed_t yang detik) — dipakai _evaluateSetups
+      // sebagai anchor scan fill pertama kali. WAJIB diisi (bukan null) kalau data_fix
+      // mengembalikan status ke 'pending': tanpa ini, ts LAMA yang masih menempel akan
+      // membuat evaluator langsung scan ulang candle historis yang sama dan mem-fill
+      // ulang setup ini di detik yang sama persis (bug yang sedang diperbaiki di sini).
+      if (dataFix.level_set_at !== undefined && dataFix.level_set_at !== null && !(Number.isFinite(dataFix.level_set_at) && dataFix.level_set_at > 0)) {
+        return res.status(400).json({ error: 'data_fix.level_set_at harus unix timestamp milidetik (angka > 0) atau null' });
+      }
     }
 
     // PLAN U-7: scope=auto melabel setup EKSPERIMEN (setup_log_auto:v1), default
@@ -4286,7 +4295,7 @@ async function setupOverrideHandler(req, res) {
       }
       if (dataFix) {
         if (dataFix.status != null) log[idx].status = dataFix.status;
-        for (const k of ['filled_t', 'closed_t']) {
+        for (const k of ['filled_t', 'closed_t', 'level_set_at']) {
           if (dataFix[k] === undefined) continue;
           if (dataFix[k] === null) delete log[idx][k]; else log[idx][k] = dataFix[k];
         }
