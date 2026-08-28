@@ -631,7 +631,7 @@ const KEY_REGISTRY = [
   { key: 'rss_cache',          owner: 'api/feeds.js',          ttl_expected: 60,     note: 'FinancialJuice RSS XML' },
   { key: 'real_yields',        owner: 'api/real-yields.js',    ttl_expected: 21600,  note: 'Real yield per currency (DGS10-T10YIE for USD)' },
   { key: 'rate_path',          owner: 'api/rate-path.js',      ttl_expected: 14400,  note: 'USD rate path heuristic (SOFR/EFFR)' },
-  { key: 'latest_thesis',      owner: 'api/market-digest.js',  ttl_expected: 21600,  note: 'Structured trade thesis JSON from Call 3 (DeepSeek)' },
+  { key: 'latest_thesis',      owner: 'api/market-digest.js',  ttl_expected: 86400,  note: 'Structured trade thesis JSON from Call 3 (DeepSeek). TTL 6j->24j (audit 2026-08-28): jarak terjauh jadwal session-open 11,5j, lebih panjang dari TTL lama' },
   { key: 'correlations',       owner: 'api/correlations.js',   ttl_expected: 86400,  note: '20d+60d cross-asset correlation matrix' },
   { key: 'prompt_digest',      owner: 'api/admin.js',          ttl_expected: null,   note: 'AI prompt for market briefing (fallback: hardcoded)' },
   { key: 'health_last_ok',     owner: 'api/admin.js',          ttl_expected: null,   note: 'HSET: source → last OK timestamp for alerting' },

@@ -2361,7 +2361,9 @@ ${xauHistoryBlock}`;
         thesis = guarded;
       }
       try {
-        await redisCmd('SET', 'latest_thesis', JSON.stringify(thesis), 'EX', 21600);
+        // TTL selaras dengan latest_article (21600 -> 86400) — dihasilkan di siklus
+        // digest yang sama, harus basi/segar bareng, lihat komentar lengkap di sana.
+        await redisCmd('SET', 'latest_thesis', JSON.stringify(thesis), 'EX', 86400);
         console.log('Thesis saved to Redis');
       } catch(e) {
         console.warn('Thesis Redis save failed:', e.message);
@@ -2403,7 +2405,15 @@ ${xauHistoryBlock}`;
   // also fired a push notification with that garbage content (found in production 2026-07-07).
   if (article && method !== 'fallback' && method !== 'fallback_quota' && !isIsolatedTest) {
     const toCache = { ...payload, thesis_alerts: null };
-    redisCmd('SET', 'latest_article', JSON.stringify(toCache), 'EX', 21600).catch(() => {});
+    // TTL dinaikkan 21600 (6j) -> 86400 (24j) — audit 2026-08-28: jadwal generate
+    // session-open (Asia/Eropa/NY) punya jarak TERJAUH 11,5 jam (NY tutup ke Asia
+    // buka), lebih panjang dari TTL 6 jam lama -> kartu Ringkasan Pasar kosong total
+    // tiap hari di jendela itu walau semua jadwal jalan tepat waktu. Diperparah GH
+    // Actions (failsafe kalau VPS/Railway down) kadang delay berjam-jam (terverifikasi
+    // dari run history: terlambat sampai ~10 jam dari jadwal). Frontend sudah
+    // menampilkan umur "X jam lalu" (lihat ageStr, ringkasanGeneratedAt) jadi kartu
+    // basi tetap jujur ke user — basi-tapi-tampil jauh lebih baik dari kosong total.
+    redisCmd('SET', 'latest_article', JSON.stringify(toCache), 'EX', 86400).catch(() => {});
     // A2.2: notify subscribers once per successful digest — fire-and-forget, never block the response.
     notifyDigestReady(article).catch(e => console.warn('Digest-ready push failed:', e.message));
   }
