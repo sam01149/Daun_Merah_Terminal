@@ -3257,8 +3257,17 @@ function _evaluateTechInvalidation(setups, candlesBySymbol) {
     if (!ACTIVE_OR_JUST_RESOLVED.has(st.status)) continue;
     const candles = candlesBySymbol?.[st.symbol] || [];
     const boundaryMs = st.closed_t ? st.closed_t * 1000 : Infinity;
+    // BUG DITEMUKAN & DIFIX (2026-08-28, sama root cause `level_set_at` di
+    // _evaluateSetups): `invalidation_trigger` diperbarui ke generasi TERBARU setiap
+    // kali setup di-refine (lihat komentar "ikut diperbarui" di refineCandidate.fields),
+    // tapi start-scan-nya dulu selalu `st.ts` (lahirnya ide PERTAMA) — trigger BARU bisa
+    // salah tercatat "tersentuh" oleh candle SEBELUM refine yang bahkan memunculkan
+    // trigger itu terjadi. `level_set_at` (fallback ke `ts` untuk record lama) dipasang
+    // di sini SUPAYA histori sebelum trigger ini berlaku diabaikan, TANPA mengubah
+    // prinsip "cek walau masih pending, jangan tunggu fill" (lihat komentar
+    // isInvalidationTriggered di api/_auto_entry_guard.js).
     const result = isInvalidationTriggered({
-      invalidation_trigger: st.invalidation_trigger, candles, startMs: st.ts, boundaryMs,
+      invalidation_trigger: st.invalidation_trigger, candles, startMs: st.level_set_at || st.ts, boundaryMs,
     });
     if (result?.triggered) {
       st.tech_invalidated = {

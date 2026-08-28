@@ -262,8 +262,12 @@ function isTimingConflictBlocked(conflict) {
 // tersentuh di candle sama/lebih dulu MENANG, konsisten prinsip "SL/TP asli
 // adalah kontrak trade, invalidasi teknikal cuma exit dini SEBELUM itu terjadi".
 //
-// `startMs`: WAJIB dari `st.ts` (bukan `filled_t`) — thesis bisa batal SEBELUM
-// posisi sempat fill (PENDING), jangan tunggu fill dulu baru dicek.
+// `startMs`: WAJIB dari `st.ts`/`st.level_set_at` (BUKAN `filled_t`) — thesis bisa
+// batal SEBELUM posisi sempat fill (PENDING), jangan tunggu fill dulu baru dicek.
+// Caller (api/admin.js, `_evaluateTechInvalidation`) pakai `level_set_at || ts` sejak
+// 2026-08-28 (POLICY_EPOCHS v34) — `invalidation_trigger` ikut diperbarui tiap refine,
+// jadi start-scan-nya juga harus mengikuti generasi trigger TERBARU, bukan lahirnya
+// ide pertama (pola bug sama seperti fill hantu varian 2 di `_evaluateSetups`).
 const INVALIDATION_TRIGGER_TYPES = new Set(['ma_break', 'price_level', 'swing_break']);
 const INVALIDATION_TRIGGER_DIRECTIONS = new Set(['above', 'below']);
 const INVALIDATION_TRIGGER_TIMEFRAMES = new Set(['1h', '4h', '1d']);

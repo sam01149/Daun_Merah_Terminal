@@ -114,6 +114,54 @@ test('_evaluateTechInvalidation: status expired/canceled/invalid -> tidak dieval
   for (const s of setups) assert.equal(s.tech_invalidated, null);
 });
 
+// BUG DITEMUKAN & DIFIX (2026-08-28, root cause sama fill hantu varian 2 di
+// _evaluateSetups): invalidation_trigger diperbarui tiap refine, tapi start-scan
+// dulu selalu ts (lahir ide pertama) -- trigger BARU bisa salah tercatat tersentuh
+// oleh candle SEBELUM refine yang memunculkannya.
+test('_evaluateTechInvalidation: trigger BARU hasil refine -- sentuhan SEBELUM level_set_at diabaikan', () => {
+  const setups = [{
+    symbol: 'EURUSD=X', status: 'pending', ts: 0, level_set_at: 3 * 3600 * 1000,
+    invalidation_trigger: { type: 'price_level', level: 1.1000, timeframe: '1h', direction: 'below' },
+    intervention: null, tech_invalidated: null,
+  }];
+  const candles = {
+    'EURUSD=X': [
+      mkC(1, 1.1050, 1.1055, 1.0980, 1.0990), // sebelum level_set_at, harus diabaikan
+      mkC(4, 1.1050, 1.1055, 1.1040, 1.1045), // setelah level_set_at, tidak menyentuh
+    ],
+  };
+  _evaluateTechInvalidation(setups, candles);
+  assert.equal(setups[0].tech_invalidated, null, 'sentuhan sebelum level_set_at tidak boleh dianggap invalidasi');
+});
+
+test('_evaluateTechInvalidation: trigger BARU hasil refine -- sentuhan SETELAH level_set_at tetap terdeteksi', () => {
+  const setups = [{
+    symbol: 'EURUSD=X', status: 'pending', ts: 0, level_set_at: 3 * 3600 * 1000,
+    invalidation_trigger: { type: 'price_level', level: 1.1000, timeframe: '1h', direction: 'below' },
+    intervention: null, tech_invalidated: null,
+  }];
+  const candles = {
+    'EURUSD=X': [
+      mkC(1, 1.1050, 1.1055, 1.0980, 1.0990), // sebelum level_set_at, diabaikan
+      mkC(4, 1.1050, 1.1055, 1.0970, 1.0980), // setelah level_set_at, close 1.0980 <= 1.1000
+    ],
+  };
+  _evaluateTechInvalidation(setups, candles);
+  assert.ok(setups[0].tech_invalidated);
+  assert.equal(setups[0].tech_invalidated.at, 4 * 3600);
+});
+
+test('_evaluateTechInvalidation: entri lama tanpa level_set_at fallback ke ts (backward compatible)', () => {
+  const setups = [{
+    symbol: 'EURUSD=X', status: 'pending', ts: 0,
+    invalidation_trigger: { type: 'price_level', level: 1.1000, timeframe: '1h', direction: 'below' },
+    intervention: null, tech_invalidated: null,
+  }];
+  const candles = { 'EURUSD=X': [mkC(1, 1.1050, 1.1055, 1.0980, 1.0990)] };
+  _evaluateTechInvalidation(setups, candles);
+  assert.ok(setups[0].tech_invalidated, 'tanpa level_set_at harus tetap scan dari ts seperti sebelumnya');
+});
+
 test('_evaluateTechInvalidation: entri null/tanpa field -> aman, tidak crash', () => {
   assert.doesNotThrow(() => _evaluateTechInvalidation([null, {}, { symbol: 'EURUSD=X', status: 'open' }], {}));
 });
