@@ -3180,8 +3180,21 @@ function _evaluateSetups(setups, candlesBySymbol, nowMs, calendarEvents, newsIte
     // sekali), evaluator salah menganggap itu TP/SL posisi ini. Ini akar masalah yang lebih
     // dalam dari sekadar bug reset `ts` saat refine (sudah difix terpisah) — bug ini bisa
     // muncul kapan pun `filled_t` > `ts` secara wajar (bukan cuma gara-gara refine).
+    //
+    // BUG DITEMUKAN & DIFIX (2026-08-28, kasus XAU/USD false-fill): untuk transisi
+    // pending->open PERTAMA KALI (belum `wasAlreadyOpen`), scan dulu SELALU mulai dari
+    // `st.ts` — waktu ide trade ini PERTAMA lahir, bukan waktu level entry YANG BERLAKU
+    // SEKARANG dipasang. Kalau setup ini sempat di-refine (level entry berubah), harga
+    // yang kebetulan menyentuh level baru itu SEBELUM refine terjadi (periode SEBELUM
+    // level itu sendiri ada) salah dianggap fill — phantom fill varian baru, tidak
+    // ditutup oleh guard v33 (guard v33 cuma memvalidasi sisi harga SAAT refine, bukan
+    // titik mulai scan histori). `level_set_at` (fallback ke `ts` untuk record lama
+    // sebelum field ini ada) menandai kapan level entry TERBARU mulai berlaku — dipakai
+    // di sini SUPAYA scan fill pertama kali tidak menengok ke histori sebelum level itu
+    // ada. `ts` sendiri tetap dipertahankan apa adanya (horizon_days masih dihitung dari
+    // `ts` ASLI, lihat catatan di blok refine `_evaluateSetups`).
     const wasAlreadyOpen = st.status === 'open';
-    const scanFromMs = (wasAlreadyOpen && st.filled_t) ? st.filled_t * 1000 : st.ts;
+    const scanFromMs = (wasAlreadyOpen && st.filled_t) ? st.filled_t * 1000 : (st.level_set_at || st.ts);
     for (const c of all) {
       if (c.t * 1000 <= scanFromMs) continue;
       if (st.status === 'pending') {
@@ -6929,7 +6942,7 @@ async function ohlcvAnalyzeHandler(req, res) {
         // sudah dibatasi alami oleh instruksi prompt (5 paragraf).
         commentary: commentary || null,
         horizon_days: structured.time_horizon_days ?? null,
-        model, ts: Date.now(), status: 'pending',
+        model, ts: Date.now(), level_set_at: Date.now(), status: 'pending',
         source: isAutoCall ? 'auto' : 'manual',
         // `alignment` (turunan lossy dari conflict + makro_alignment) SUPERSEDED untuk
         // jalur auto sejak AATAS: makro_alignment selalu null di sana, jadi nilainya cuma
@@ -7146,6 +7159,19 @@ async function ohlcvAnalyzeHandler(req, res) {
                     // `_evaluateSetups`) — `horizon_days` di atas tetap dihitung dari `ts` ASLI
                     // (waktu ide trade ini lahir), bukan waktu refine terakhir.
                     refined_count: (stalePending.refined_count || 0) + 1,
+                    // BUG DITEMUKAN & DIFIX (2026-08-28, kasus XAU/USD false-fill): guard v33
+                    // (entrySideOk) cuma mengecek level baru ini di sisi harga yang benar
+                    // TERHADAP HARGA SAAT REFINE — tapi `_evaluateSetups` tetap scan mundur dari
+                    // `ts` ASLI (bisa berhari-hari sebelum level baru ini bahkan ada) untuk
+                    // deteksi fill pertama kali. Kalau harga sempat liar menyentuh level itu
+                    // SEBELUM refine ini terjadi (kebetulan, bukan hasil pergerakan nyata
+                    // setelah level dipasang), setup langsung dianggap 'open' dengan `filled_t`
+                    // yang jauh lebih tua dari kapan level itu sendiri lahir — phantom fill
+                    // varian baru, guard v33 tidak menutup jalur ini. `level_set_at` dipisah dari
+                    // `ts` (yang tetap dipertahankan apa adanya untuk horizon_days) supaya
+                    // _evaluateSetups bisa scan HANYA dari saat level YANG BERLAKU SEKARANG
+                    // dipasang, bukan dari lahirnya ide pertama.
+                    level_set_at: Date.now(),
                     // (2026-08-18) stempel versi kebijakan ikut diperbarui — pola sama
                     // `regime`/`model` di blok ini: level yang benar-benar dipasang lahir
                     // dari aturan main SAAT refine ini, bukan saat generasi pertama.

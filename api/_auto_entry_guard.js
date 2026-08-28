@@ -405,6 +405,15 @@ const POLICY_EPOCHS = [
   // setup yang candle-nya masih bisa dicek saat fix ini dibuat, 3 fill-nya palsu dan
   // ketiganya hasil refine.
   { v: 33, from: '2026-08-26T10:37:00Z', kind: 'fix',    impact: 'entry',    label: 'Fix fill hantu: entry wajib di sisi tunggu yang benar terhadap harga berjalan (jual >= harga, beli <= harga) — refine tidak lagi bisa memindahkan entry ke sisi yang bikin setup langsung dianggap terisi' },
+  // 'fix' murni: scan fill pertama kali TIDAK PERNAH diniatkan menengok histori
+  // sebelum level entry yang berlaku SEKARANG bahkan ada — akibatnya guard v33
+  // (yang cuma memvalidasi sisi harga SAAT refine) masih bisa lolos-loloskan phantom
+  // fill kalau harga kebetulan menyentuh level baru itu di histori SEBELUM refine
+  // terjadi. Ketahuan dari kasus nyata GC=F:1787663717837 (2026-08-28): level jual
+  // 4635.17 di-refine 28 Agustus, tapi tercatat `filled_t` 25 Agustus — 3 hari
+  // sebelum level itu sendiri ada, gara-gara candle 25 Agustus kebetulan menyentuh
+  // 4635 duluan (harga gold liar 4565-4696 saat itu).
+  { v: 34, from: '2026-08-28T12:08:15Z', kind: 'fix',    impact: 'entry',    label: 'Fix fill hantu varian 2: scan fill pertama kali mulai dari `level_set_at` (kapan level entry TERBARU dipasang), bukan `ts` (kapan ide trade PERTAMA lahir) — mencegah histori sebelum refine dihitung sebagai fill' },
 ];
 
 // AATAS_EPOCH (2026-08-22, keputusan user): batas populasi statistik dashboard

@@ -465,6 +465,58 @@ test('_evaluateSetups: re-evaluasi status "open" — TP yang benar-benar terjadi
   assert.strictEqual(setups[0].closed_t, T0 + 14400);
 });
 
+// BUG DITEMUKAN & DIFIX (2026-08-28, kasus nyata GC=F:1787663717837): transisi
+// pending->open PERTAMA KALI dulu SELALU scan dari `ts` (waktu ide trade PERTAMA
+// lahir) — kalau setup sempat di-refine (level entry berubah, `level_set_at` >
+// `ts`) dan harga kebetulan menyentuh level BARU itu di histori SEBELUM refine
+// terjadi, itu salah dianggap fill (phantom fill retroaktif ke sebelum level itu
+// sendiri ada). Guard v33 (fix fill hantu varian 1) tidak menutup jalur ini karena
+// cuma memvalidasi sisi harga SAAT refine, bukan titik mulai scan histori.
+test('_evaluateSetups: refine mengubah level_set_at — sentuhan harga SEBELUM level_set_at tidak boleh dianggap fill', () => {
+  const setups = [mkSetup({
+    bias: 'bearish', entry_zone: '4635.17', sl: '4686.43', tp: '4516.32',
+    ts: MS0, level_set_at: MS0 + 3 * 86400000, // level baru dipasang 3 hari setelah ide lahir
+  })];
+  const candles = {
+    'GC=F': [
+      // Sebelum level_set_at (histori 3 hari sebelum level ini ada) — harga liar
+      // sempat menyentuh 4635, TAPI level ini belum berlaku saat itu.
+      mkC(T0 + 3600, 4616, 4640, 4610, 4635),
+      // Setelah level_set_at — tidak ada apa-apa, harus tetap pending.
+      mkC(T0 + 4 * 86400, 4590, 4600, 4585, 4595),
+    ],
+  };
+  _evaluateSetups(setups, candles, MS0 + 5 * 86400000);
+  assert.strictEqual(setups[0].status, 'pending', 'sentuhan harga sebelum level_set_at tidak boleh mem-fill setup');
+  assert.strictEqual(setups[0].filled_t, undefined);
+});
+
+test('_evaluateSetups: refine mengubah level_set_at — sentuhan harga SETELAH level_set_at tetap terdeteksi fill', () => {
+  const setups = [mkSetup({
+    bias: 'bearish', entry_zone: '4635.17', sl: '4686.43', tp: '4516.32',
+    ts: MS0, level_set_at: MS0 + 3 * 86400000,
+  })];
+  const candles = {
+    'GC=F': [
+      mkC(T0 + 3600, 4616, 4640, 4610, 4635),                 // sebelum level_set_at, diabaikan
+      mkC(T0 + 3 * 86400 + 3600, 4590, 4640, 4585, 4630),      // setelah level_set_at, fill nyata
+    ],
+  };
+  _evaluateSetups(setups, candles, MS0 + 5 * 86400000);
+  assert.strictEqual(setups[0].status, 'open');
+  assert.strictEqual(setups[0].filled_t, T0 + 3 * 86400 + 3600);
+});
+
+test('_evaluateSetups: entri lama tanpa field level_set_at fallback ke ts (backward compatible)', () => {
+  const setups = [mkSetup()]; // tanpa level_set_at sama sekali, seperti record lama
+  const candles = {
+    'GC=F': [mkC(T0 + 7200, 4005, 4035, 4000, 4020)], // h 4035 >= 4030 → fill dari ts seperti biasa
+  };
+  _evaluateSetups(setups, candles, MS0 + 3 * 3600 * 1000);
+  assert.strictEqual(setups[0].status, 'open');
+  assert.strictEqual(setups[0].filled_t, T0 + 7200);
+});
+
 test('_evaluateSetups: pending kadaluarsa (> horizon x1.5) → expired; belum → tetap pending', () => {
   const far = [mkSetup()];
   _evaluateSetups(far, { 'GC=F': [mkC(T0 + 3600, 4000, 4005, 3995, 4000)] }, MS0 + 8 * 86400000); // 8 hari > 5*1.5
