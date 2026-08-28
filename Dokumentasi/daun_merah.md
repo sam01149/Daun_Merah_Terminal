@@ -11,10 +11,28 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-27 (Session 333 — audit keamanan repo & runtime: timingSafeEqual di semua pembanding secret cron/admin, fix spoofing X-Forwarded-For, CSP/HSTS/Permissions-Policy, fallback GH Actions health-watch)
+> **Last updated:** 2026-08-28 (Session 334 — fix Ringkasan Pasar/Thesis kosong total tiap hari: TTL cache 6j->24j; investigasi kredit Railway hampir habis, ditemukan user dari dashboard, belum ada fix kode — perlu tindakan user di dashboard Railway)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
+
+## Changelog Session 334 (2026-08-28) — Fix Ringkasan Pasar Kosong Total (TTL 6j->24j) + Investigasi Kredit Railway
+
+**Konteks:** User tanya kenapa kartu "Ringkasan Pasar" tidak auto-generate. Cek langsung ke Redis produksi: key `latest_article` **benar-benar kosong** (TTL -2 = tidak ada), padahal sehari sebelumnya (sesi audit keamanan, Session 333) masih tampil normal saat di-screenshot.
+
+**Root cause:** `api/market-digest.js` cache `latest_article`/`latest_thesis` TTL 6 jam (21600 detik), sementara jadwal generate cuma 3x/hari di jam buka sesi (`market-digest.yml`: 00:02, 07:02, 12:32 UTC). Jarak TERJAUH antar-jadwal (NY tutup → Asia buka) **11,5 jam** — lebih panjang dari TTL 6 jam, jadi kartu kosong total tiap hari di jendela itu WALAU semua jadwal jalan tepat waktu. Diperparah temuan dari riwayat run GH Actions (`gh run list`): jadwal yang seharusnya presisi (`00:02`/`07:02`/`12:32`) realisasinya melenceng 1-10 jam (GitHub dikenal menunda scheduled workflow di repo dengan traffic rendah).
+
+**Fix:** TTL `latest_article` & `latest_thesis` dinaikkan **21600 → 86400** (6j → 24j) — commit `7782ab5`. Frontend sudah menampilkan umur "X jam lalu" (`ageStr`, `ringkasanGeneratedAt`), jadi kartu basi tetap jujur ke user; basi-tapi-tampil jauh lebih baik dari kosong total. TTL cache LAIN yang kebetulan sama-sama 21600 (`cot_cache_v2`, `real_yields`, `fundamental_analysis`, `rr_cache_v2`) SENGAJA tidak disentuh — itu siklus refresh data sumbernya sendiri, tidak terkait jadwal session-open.
+
+**Verifikasi live:** trigger manual `market-digest` (tanpa `mode=cached`) berhasil generate artikel baru (3208 char), dikonfirmasi tampil normal via `mode=cached` dan screenshot browser (Playwright) — kartu Ringkasan Pasar & CB Bias/Fundamental Ranking terisi penuh.
+
+**Temuan sampingan penting, BELUM ada fix kode — perlu tindakan user:** User cek dashboard Railway, ketemu indikator merah **"0 days or $0.90 left"** di pojok kanan atas (beda dari "$0,50 terpakai dari $1,00 grant bulanan" yang tampil di grafik Usage) — kemungkinan kredit trial/kredit terpisah yang hampir habis, BUKAN cuma info biasa (Railway biasanya pakai merah untuk ambang kritis). Kalau kredit ini habis ke $0, Railway lazimnya **menangguhkan service** — ini kandidat kuat penyebab MENDASAR kenapa `latest_article` bisa kosong total (bukan cuma soal TTL/jadwal GH Actions, tapi VPS-nya sendiri sempat berhenti). Tidak bisa diverifikasi dari sini (tidak ada token API Railway tersimpan). **Rekomendasi ke user:** cek tab Deployments project `rare-wisdom` untuk riwayat crash/suspend, atau langsung upgrade ke Hobby Plan ($5/bulan) supaya daemon tidak lagi bergantung kredit yang bisa habis — relevan karena sistem AATAS sudah dianggap serius, bukan eksperimen sekali pakai. **Item ini belum diparkir ke progress.md — user belum konfirmasi mau ambil langkah mana.**
+
+**Test:** `npm test` 1116/1116 hijau.
+
+**File diubah:** `api/market-digest.js`, `api/admin.js` (update dokumentasi `ttl_expected` untuk `latest_thesis` di `KEY_REGISTRY`).
+
+---
 
 ## Changelog Session 333 (2026-08-27) — Audit Keamanan: timingSafeEqual, Fix XFF, Security Headers, Fallback Health-Watch
 
