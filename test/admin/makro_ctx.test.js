@@ -282,3 +282,74 @@ test('_extractMacroDrivers: cache kosong/korup/null -> semua null, tidak throw',
   const rawSnapNoDrivers = JSON.stringify({ fx: { EUR: { pct: 0.1 } } });
   assert.deepStrictEqual(_extractMacroDrivers(rawSnapNoDrivers, null), { dxy: null, wti: null, realYieldUsd: null, realYields: null });
 });
+
+// ── Label umur real yield (audit S336, 2026-08-29) ────────────────────────────
+// Cache `real_yields` sudah membawa `as_of` (tanggal observasi nominal) sejak audit
+// 2026-08-15, tapi blok prompt MEMBUANGNYA. Masalahnya nyata: yield 10Y non-USD
+// memakai seri OECD BULANAN (IRLTLT01*M156N) yang observasi terakhirnya bisa
+// berumur 3-8 bulan, sementara USD (DGS10) harian — dan AI disuruh memakai real
+// yield sebagai bukti makro_alignment tanpa tahu angkanya dari kapan.
+
+const NOW_S336 = new Date('2026-08-29T12:00:00Z').getTime();
+
+test('real yield SEGAR: label umur singkat, tanpa peringatan keras', () => {
+  const block = _formatFundamentalBlock({
+    label: 'EUR/USD', isXau: false, cbBias: null, cot: null, risk: null, retail: null,
+    drivers: { realYields: { USD: { nominal: 4.67, inflation_exp: 2.33, real: 2.34, as_of: '2026-08-27' } } },
+    nowMs: NOW_S336,
+  });
+  assert.match(block, /REAL YIELD USD/);
+  assert.match(block, /\[data 2026-08-27, 2 hari lalu\]/);
+  assert.doesNotMatch(block, /PERHATIAN/);
+});
+
+test('real yield BASI (>45 hari): peringatan keras + larangan klaim jangka pendek', () => {
+  const block = _formatFundamentalBlock({
+    label: 'EUR/USD', isXau: false, cbBias: null, cot: null, risk: null, retail: null,
+    // 2026-01-01 = nilai NYATA yang ditemukan di produksi saat audit (~8 bulan basi)
+    drivers: { realYields: { EUR: { nominal: 3.22, inflation_exp: 2.04, real: 1.18, as_of: '2026-01-01' } } },
+    nowMs: NOW_S336,
+  });
+  assert.match(block, /PERHATIAN: komponen nominal dari 2026-01-01, 240 hari lalu/);
+  assert.match(block, /seri BULANAN, bukan harian/);
+  assert.match(block, /JANGAN pakai angka ini untuk klaim pergerakan/);
+});
+
+test('as_of hilang -> tidak ada label sama sekali (jangan mengarang umur)', () => {
+  const block = _formatFundamentalBlock({
+    label: 'EUR/USD', isXau: false, cbBias: null, cot: null, risk: null, retail: null,
+    drivers: { realYields: { USD: { nominal: 4.67, inflation_exp: 2.33, real: 2.34 } } },
+    nowMs: NOW_S336,
+  });
+  assert.match(block, /REAL YIELD USD/);
+  assert.doesNotMatch(block, /\[data /);
+  assert.doesNotMatch(block, /PERHATIAN/);
+});
+
+test('DIFFERENTIAL EUR-USD: vintage berjauhan -> larangan klaim menyempit/melebar', () => {
+  const block = _formatFundamentalBlock({
+    label: 'EUR/USD', isXau: false, cbBias: null, cot: null, risk: null, retail: null,
+    drivers: { realYields: {
+      EUR: { nominal: 3.22, inflation_exp: 2.04, real: 1.18, as_of: '2026-01-01' },
+      USD: { nominal: 4.67, inflation_exp: 2.33, real: 2.34, as_of: '2026-08-27' },
+    } },
+    nowMs: NOW_S336,
+  });
+  assert.match(block, /DIFFERENTIAL SUKU BUNGA EUR-USD/);
+  assert.match(block, /PERHATIAN VINTAGE/);
+  assert.match(block, /beda 238 hari/);
+  assert.match(block, /DILARANG menyimpulkan differential sedang "menyempit" atau "melebar"/);
+});
+
+test('DIFFERENTIAL EUR-USD: vintage sejajar -> tanpa peringatan (jangan alarm palsu)', () => {
+  const block = _formatFundamentalBlock({
+    label: 'EUR/USD', isXau: false, cbBias: null, cot: null, risk: null, retail: null,
+    drivers: { realYields: {
+      EUR: { nominal: 3.28, inflation_exp: 2.04, real: 1.24, as_of: '2026-08-27' },
+      USD: { nominal: 4.67, inflation_exp: 2.33, real: 2.34, as_of: '2026-08-27' },
+    } },
+    nowMs: NOW_S336,
+  });
+  assert.match(block, /DIFFERENTIAL SUKU BUNGA EUR-USD/);
+  assert.doesNotMatch(block, /PERHATIAN VINTAGE/);
+});
