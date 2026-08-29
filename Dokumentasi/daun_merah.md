@@ -11,10 +11,62 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-29 (Session 335 — fix notif Telegram EUR/AUD nyangkut selamanya: pending order MT5 Bridge yang dibatalkan tidak pernah menutup `status` jurnal; sekaligus bersihkan 8 device test yang nyasar ke Redis production)
+> **Last updated:** 2026-08-29 (Session 336 — audit menyeluruh sumber data + proyek, READ-ONLY tanpa perubahan kode: 7 temuan diparkir, terbesar = AI auto-entry memutuskan tanpa 66-86% data makronya karena cache dingin + cron GitHub Actions ternyata cuma jalan ~3-4x/hari)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
+
+## Changelog Session 336 (2026-08-29) — Audit Menyeluruh Sumber Data + Proyek (READ-ONLY, nol perubahan kode)
+
+**Konteks:** user minta audit proyek dengan urutan prioritas eksplisit — pertama sumber data (data yang belum dikoleksi, data vendor yang belum diekstrak habis, data untuk keputusan lebih akurat), baru audit keseluruhan. Sesi lain sedang aktif di `api/admin.js`/`api/market-digest.js`/`api/_auto_entry_guard.js`, jadi sesi ini **sengaja tidak menyentuh satu baris kode pun** (ATURAN.md §5.7) — seluruh temuan diparkir ke `daun_merah_progress.md` / `professional_llm_trader/progress.md` untuk dieksekusi setelah user memilih prioritas.
+
+**Metodologi:** bukan pembacaan kode saja. Semua klaim diverifikasi live — Redis produksi (kredensial `.env.local`), fetch langsung ke FRED/ECB/BoE/BoJ/RBA/RBNZ/SNB/FXSSI, `curl` ke endpoint produksi, dan `gh run list` untuk riwayat cron.
+
+### Temuan 1 (paling berdampak) — AI auto-entry memutuskan tanpa mayoritas data makronya
+
+Dihitung dari 29 `macro_snapshot` di `setup_log_auto:v1` (rekaman numerik input makro yang PERSIS dilihat AI): `retail` kosong 86%, `vix`/`move` 69%, `dxy`/`wti` 66%, `rr` (CME skew) 76%, `cot` 34%. Hanya `cb_bias` (0%) dan `real_yields` (7%) yang andal. Tingkat kosong berkorelasi hampir sempurna dengan panjang TTL cache-nya, karena `ohlcvAnalyzeHandler` membaca semua cache itu **read-only** dan tidak pernah memicu refresh. Dua akar terpisah (operasional: cache dingin; struktural: 3 dari 5 pair auto-entry memang tidak dilayani CME/FXSSI). Detail + opsi fix di `professional_llm_trader/progress.md` S336.
+
+### Temuan 2 — cron GitHub Actions cuma jalan ~3-4x/hari untuk SEMUA workflow
+
+`gh run list` 2026-08-27 s/d 29: `*/5` (288/hari) dan `*/15` (96/hari) sama-sama realisasinya ~3-4 run/hari. Ini memperluas observasi S334 ("jadwal melenceng 1-10 jam", waktu itu cuma dilihat di `market-digest`): polanya bukan delay acak tapi **plafon ~24 run terjadwal/hari untuk seluruh akun**, dibagi round-robin ke 7 workflow. Konsekuensi: `health-watch` (alarm VPS mati) dan `setup-tp-sl-watch` (fallback TP/SL) telat sampai 7 jam — dan keduanya adalah cadangan untuk daemon Railway yang kreditnya hampir habis (S334). Ini juga penyebab utama Temuan 1. Diparkir di `daun_merah_progress.md` S336.
+
+### Temuan 3 — 6 dari 8 scraper suku bunga bank sentral mati diam-diam
+
+`cb_rates_live_v2` di Redis produksi cuma berisi EUR + CAD. `scrapeUSD` selalu throw karena FRED mengganti header CSV (`DATE,` menjadi `observation_date,`) sekaligus karena `fredgraph.csv` **mengabaikan** `sort_order`/`limit` (diverifikasi: `limit=2` mengembalikan 6.467 baris ascending). Pola bug yang sama ada di `api/rate-path.js` `fetchFredCsv()`. Lima sisanya gagal karena regex tidak lagi cocok, RBA malah 403. Fallback statis `CB_FALLBACK` menutupi kegagalan tanpa alarm — dan fallback EUR-nya sudah terbukti salah (2.15% vs 2.40% live). Pengganti BoE (IADB CSV, wajib follow redirect) sudah diverifikasi jalan. Diparkir di `daun_merah_progress.md` S336.
+
+### Temuan 4 — yield 10Y non-USD basi 3-8 bulan, tanpa label umur
+
+`FRED_NOMINAL_SERIES` memakai seri OECD bulanan `IRLTLT01*M156N`: EUR observasi terakhir **2026-01-01** (~8 bulan), enam lainnya 2026-06-01 (~3 bulan), sementara USD `DGS10` 2026-08-27. Dipakai untuk baris REAL YIELD tiap kaki non-USD dan untuk baris DIFFERENTIAL SUKU BUNGA EUR-USD — yang berarti membandingkan yield USD 2 hari lalu dengan yield EUR bulan Januari. Baris real yield tidak membawa label umur sama sekali, padahal baris COT di blok yang sama sudah punya. Ironisnya `real-yields.js` di fungsi yang sama sudah menarik yield curve EUR HARIAN dari ECB untuk keperluan lain. Diparkir di `daun_merah_progress.md` S336.
+
+### Temuan 5 — panel ATR/Range tab Teknikal mati total (400), bukan cuma XAU
+
+Diverifikasi live: `?action=atr&pair=EURUSD` balas 400 `Unknown pair`, `pair=EUR%2FUSD` balas 200. Tab TEK mengirim `tekPair` tanpa garis miring, `YAHOO_SYMBOL_MAP` ber-key garis miring. Sekaligus **mengoreksi catatan S333** yang menyebut penyebabnya "typo backslash di `YAHOO_SYMBOL_MAP`" — backslash itu tidak ada di kode saat ini; penyebabnya murni ketidakcocokan format pemanggil. Diparkir di `daun_merah_progress.md` S336.
+
+### Temuan 6 — gate `APP_KEY` terpasang penuh tapi inert di produksi
+
+`api/_app_key.js` dipasang di 12 endpoint dan `index.html` sudah membungkus `fetch`-nya, tapi env `APP_KEY` belum diset di Vercel dan gate-nya fail-open. Dibuktikan: `curl` tanpa header apa pun balas 200 + data. Pola sama dengan temuan S332 (guard Gemini 200/hari yang tidak pernah bisa trip). Ada satu blocker sebelum diaktifkan: `dev-auto-entry.html` belum punya wiring `x-app-key` sama sekali. Diparkir di `daun_merah_progress.md` S336.
+
+### Temuan 7 — sisa ekstraksi vendor yang sudah dipakai
+
+Ditulis lengkap sebagai tabel baru **§12 di `daun_merah_vendor.md`**. Ringkas: 4 pair FXSSI gratis dibuang oleh filter `RETAIL_PAIRS`; seri FRED berdampak-FX belum dipakai sama sekali (`NFCI`, `STLFSI4`, `T5YIFR`, `DTWEXBGS`, `DFII10`, `BAA10Y`); `actual`/`forecast` kalender sudah ditarik tapi cuma jadi gate skip, belum jadi indeks kejutan ekonomi per currency (komentar `vps/daemon.js` sendiri menyebutnya "fondasi Opsi B" yang belum dibangun); baris DIFFERENTIAL SUKU BUNGA di-hardcode hanya untuk EUR/USD padahal data kedua kaki untuk 4 pair lain sudah ada di cache yang sama; kedalaman riwayat harga (~6 bulan D1, ~5 hari H1) adalah batas yang dipilih sendiri, bukan batas vendor (Deriv melayani 5.000 candle), dan itulah sebabnya label rezim volatilitas dihitung relatif terhadap seminggu terakhir saja.
+
+### Statistik evaluasi AATAS (dicek karena relevan ke semua rekomendasi di atas)
+
+`setup_log_auto:v1`: 57 setup, 29 selesai (11 TP), tapi **0 selesai dengan `policy_v` >= 31** — yaitu tidak ada satu pun trade yang tuntas sejak AATAS live 2026-08-22. Gate n>=30 posisinya 0/30. `setup_log_auto_archive:v1` berisi 57 entri yang sama (cadangan, bukan riwayat lebih panjang). Konsekuensi praktis: perbaikan Temuan 1 sebaiknya dikerjakan sekaligus dalam SATU epoch, karena tiap kenaikan `POLICY_EPOCHS` mereset hitungan ini ke nol. Diparkir di `professional_llm_trader/progress.md` S336.
+
+### Yang dicek dan TIDAK bermasalah (supaya tidak diaudit ulang)
+
+- `npm test` **1124/1124 hijau**.
+- Higiene git/secret bersih: `.env*` ter-gitignore, tidak ada secret ter-track (`git ls-files` cuma menemukan `.env.local.example`).
+- Slot Vercel tepat 12/12 sesuai catatan; header keamanan `vercel.json` (CSP dkk) konsisten dengan host yang benar-benar dipakai `index.html` (`cdn.jsdelivr.net`, bukan `unpkg.com` seperti tertulis di `daun_merah_vendor.md` §4 — **catatan dokumen yang salah, kodenya benar**).
+- Workflow riset lama (`btc-sync`, `btc-backfill`, `test-deribit`, `ta-warm`) sudah dinonaktifkan dengan benar, tidak membakar kuota.
+- Cakupan `correlations.js` justru kaya (19 instrumen lintas aset) — bukan area yang kurang data.
+- COT sudah ditarik cukup dalam (AM + Leveraged, OI, % of OI, persentil 3 tahun via Socrata) — hanya kategori Dealer/Other/Non-Reportable yang belum, nilainya belum tentu tinggi.
+- Item yang SUDAH diparkir sesi lain sengaja tidak diusulkan ulang (ATURAN.md §4.10): ekspektasi inflasi hardcode 6 currency (S295, tidak ada API gratis), tabel FOMC manual (S295), COT Gold laporan CFTC kedua (S270).
+
+**File diubah:** hanya dokumentasi — `Dokumentasi/daun_merah_vendor.md` (§3/§4/§6 diperbarui in place + §12 baru), `Dokumentasi/daun_merah_progress.md` (5 entri S336), `Dokumentasi/professional_llm_trader/progress.md` (2 entri S336). **Nol perubahan kode.**
+
+---
 
 ## Changelog Session 335 (2026-08-29) — Fix Notif Telegram Pair Cancelled Nyangkut Selamanya + Cleanup Test Device di Redis Prod
 
