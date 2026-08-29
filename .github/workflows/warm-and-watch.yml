@@ -86,16 +86,41 @@ jobs:
           echo "HTTP $STATUS"
           [ "$STATUS" -eq 200 ] || { echo "Translate backfill gagal HTTP $STATUS"; exit 1; }
 
+      # Warm makro RINGAN — dijalankan SETELAH health probe dengan sengaja.
+      # `?action=health` menghapus cache turunan sumber yang baru pulih
+      # (SOURCE_CACHE_KEYS di api/admin.js: fred -> real_yields+risk_regime,
+      # stooq -> risk_regime, cftc -> cot_cache_v2). Perilaku itu benar, tapi tanpa
+      # pengisian ulang di sini, key-nya menganggur kosong sampai market-digest
+      # berikutnya (3x/hari) — dan blok makro di prompt AI ikut kosong selama itu.
+      # Ketiga endpoint ini murah: `real_yields` & `cot` ambang segarnya 6 jam dan
+      # `risk_regime` 5 menit, jadi mayoritas panggilan cuma cache-hit tanpa fetch luar.
+      # `daily_snapshot` SENGAJA tidak diikutkan — ambang segarnya 5 menit DAN sekali
+      # fetch menyentuh ~19 simbol Yahoo, jadi kalau suatu saat GitHub benar-benar
+      # melayani jadwal */10 ini, itu jadi beban tak wajar ke Yahoo. Key-nya sudah
+      # bertahan 12 jam (S336) dan tetap dihangatkan market-digest.
+      - name: Warm makro (risk regime, real yield, COT) — isi ulang pasca clear-on-recovery
+        id: macro
+        continue-on-error: true
+        run: |
+          FAIL=0
+          for EP in "/api/risk-regime" "/api/real-yields" "/api/feeds?type=cot"; do
+            CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 "$BASE$EP")
+            echo "$EP -> HTTP $CODE"
+            [ "$CODE" = "200" ] || FAIL=1
+          done
+          [ "$FAIL" = "0" ] || { echo "Sebagian warm makro gagal"; exit 1; }
+
       # Gagal kalau SEMUA step gagal (indikasi app/Vercel down, bukan satu vendor rewel).
       # Kalau cuma sebagian gagal, workflow tetap hijau tapi statusnya tercetak di log —
       # ini disengaja: satu RSS yang lagi 503 tidak boleh bikin notifikasi gagal tiap
       # 10 menit sampai orang berhenti membacanya.
       - name: Ringkasan
         run: |
-          echo "health=${{ steps.health.outcome }} retail=${{ steps.retail.outcome }} rss=${{ steps.rss.outcome }} backfill=${{ steps.backfill.outcome }}"
+          echo "health=${{ steps.health.outcome }} retail=${{ steps.retail.outcome }} rss=${{ steps.rss.outcome }} backfill=${{ steps.backfill.outcome }} macro=${{ steps.macro.outcome }}"
           if [ "${{ steps.health.outcome }}" = "failure" ] && \
              [ "${{ steps.retail.outcome }}" = "failure" ] && \
              [ "${{ steps.rss.outcome }}" = "failure" ] && \
+             [ "${{ steps.macro.outcome }}" = "failure" ] && \
              [ "${{ steps.backfill.outcome }}" = "failure" ]; then
             echo "SEMUA step gagal — indikasi app/Vercel down, bukan satu vendor rewel."
             exit 1

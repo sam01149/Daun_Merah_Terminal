@@ -199,6 +199,9 @@ async function _acquireLockWithRetry(lockKey, { retries = 4, delayMs = 300, ttlS
 const HEALTH_CORS            = { 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-cache' };
 const HEALTH_ALERT_THRESHOLD = 2 * 60 * 60 * 1000;
 const HEALTH_REDIS_KEY       = 'health_last_ok';
+// Hash "sumber ini sedang/pernah DOWN sejak kapan" — dipakai deteksi PULIH yang benar
+// (audit S336). Field dihapus begitu sumbernya OK lagi, jadi hash ini hampir selalu kosong.
+const HEALTH_DOWN_KEY        = 'health_down_since';
 const HEALTH_RECOVER_THRESHOLD_MS = 5 * 60 * 1000; // 5 min down before recovery event
 
 // Maps each health source to the Redis cache keys it populates.
@@ -488,6 +491,25 @@ async function healthHandler(req, res) {
     }
   } catch(e) { console.warn('health: Redis HGETALL failed:', e.message); }
 
+  // Catatan sumber yang BENAR-BENAR pernah teramati DOWN (audit S336, 2026-08-29).
+  // Sebelumnya "pulih" disimpulkan dari `gapMs > 5 menit` saja — asumsinya health-watch
+  // jalan tiap 5 menit, jadi jeda panjang sejak OK terakhir PASTI berarti sumbernya
+  // sempat mati. Asumsi itu SALAH di produksi: GitHub Actions cuma melayani ~3-4 run
+  // per hari (lihat warm-and-watch.yml), jadi `gapMs` untuk sumber yang sehat sempurna
+  // pun selalu ~7 jam > ambang 5 menit. Akibatnya SETIAP kali health jalan, ia mengira
+  // FRED/Stooq/CFTC "baru pulih" lalu MENGHAPUS `real_yields`, `risk_regime`, dan
+  // `cot_cache_v2` — jadi watchdog-nya sendiri ikut jadi penyebab blok makro kosong di
+  // prompt AI (diverifikasi live: ketiga key hilang persis setelah satu run health).
+  // Sekarang pulih = "pernah tercatat DOWN, sekarang OK" — tidak lagi bergantung pada
+  // seberapa sering health dipanggil.
+  let downMap = {};
+  try {
+    const raw = await redisCmd('HGETALL', HEALTH_DOWN_KEY);
+    if (raw && Array.isArray(raw)) {
+      for (let i = 0; i < raw.length; i += 2) downMap[raw[i]] = raw[i + 1];
+    }
+  } catch(e) { console.warn('health: Redis HGETALL (down) failed:', e.message); }
+
   const settled = await Promise.allSettled(
     Object.entries(targetProbes).map(async ([key, probe]) => {
       const t0 = Date.now();
@@ -526,21 +548,35 @@ async function healthHandler(req, res) {
     if (status === 'OK') {
       redisCmd('HSET', HEALTH_REDIS_KEY, key, now).catch(() => {});
 
-      // Recovery detection: OK now but was down for > threshold
-      if (lastOk && gapMs > HEALTH_RECOVER_THRESHOLD_MS) {
-        toRecover.push({ key, label, downMins: Math.round(gapMs / 60000) });
+      // Deteksi PULIH (diperbaiki S336): syaratnya sumber ini PERNAH TERCATAT DOWN di
+      // `health:down_since`, bukan sekadar "sudah lama tidak terlihat OK". Lihat komentar
+      // panjang di dekat `downMap` di atas — versi lama memakai `gapMs > 5 menit`, yang
+      // dengan kadence health nyata (~3-4x/hari) SELALU benar, sehingga setiap run
+      // menghapus real_yields/risk_regime/cot_cache_v2 tanpa ada outage sama sekali.
+      const downSince = downMap[key] || null;
+      if (downSince) {
+        const outageMs = Date.now() - new Date(downSince).getTime();
+        redisCmd('HDEL', HEALTH_DOWN_KEY, key).catch(() => {});
+        // Ambang tetap dipakai, tapi sekarang mengukur LAMA OUTAGE yang benar-benar
+        // teramati — bukan jarak antar-pemanggilan health.
+        if (outageMs > HEALTH_RECOVER_THRESHOLD_MS) {
+          toRecover.push({ key, label, downMins: Math.round(outageMs / 60000) });
 
-        // Clear cache SAAT RECOVERY (bukan saat DOWN) — supaya request berikutnya
-        // langsung fetch data segar pasca-outage. Dulu clear dilakukan saat DOWN,
-        // yang justru menghapus salinan stale yang dipakai handler sebagai fallback
-        // "serve stale" selama outage — user dapat 502 padahal ada data lama.
-        const cacheKeys = SOURCE_CACHE_KEYS[key] || [];
-        for (const ck of cacheKeys) {
-          redisCmd('DEL', ck).catch(() => {});
-          console.log(`health: cleared cache key "${ck}" — ${label} recovered, next request refetches fresh`);
+          // Clear cache SAAT RECOVERY (bukan saat DOWN) — supaya request berikutnya
+          // langsung fetch data segar pasca-outage. Dulu clear dilakukan saat DOWN,
+          // yang justru menghapus salinan stale yang dipakai handler sebagai fallback
+          // "serve stale" selama outage — user dapat 502 padahal ada data lama.
+          const cacheKeys = SOURCE_CACHE_KEYS[key] || [];
+          for (const ck of cacheKeys) {
+            redisCmd('DEL', ck).catch(() => {});
+            console.log(`health: cleared cache key "${ck}" — ${label} pulih setelah ${Math.round(outageMs / 60000)} menit down, request berikutnya fetch segar`);
+          }
         }
       }
     } else {
+      // Stempel awal outage SEKALI saja (jangan ditimpa tiap run, kalau ditimpa maka
+      // durasi outage selalu terbaca 0 dan cache tidak pernah dibersihkan saat pulih).
+      if (!downMap[key]) redisCmd('HSET', HEALTH_DOWN_KEY, key, now).catch(() => {});
       if (!lastOk || downMs > HEALTH_ALERT_THRESHOLD) {
         toAlert.push({ label, error, lastOk });
       }
