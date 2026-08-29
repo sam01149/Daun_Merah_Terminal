@@ -80,8 +80,23 @@ function _parseFredCsvLatest(csv, seriesId) {
   throw new Error(seriesId + ': tidak ada observasi valid di CSV FRED');
 }
 
+// Parameter yang BENAR-BENAR berefek di fredgraph.csv adalah `cosd` (start date) —
+// BUKAN `sort_order`/`limit` yang diabaikan diam-diam. Diverifikasi live 2026-08-29:
+// DTB3 tanpa cosd = 300 KB / 18.000+ baris; dengan cosd 3 bulan = 1 KB / 65 baris.
+// Ini bukan sekadar optimasi: mengunduh seri penuh (5 seri paralel ~800 KB di
+// rate-path.js) cukup untuk menabrak timeout dari Vercel, dan itulah kenapa
+// rate-path jatuh ke `heuristic_sofr` walau parser-nya sudah benar.
+// 400 hari dipilih supaya selalu memuat observasi walau serinya jarang/ada libur
+// panjang, tapi tetap ~1-2 KB.
+const FRED_LOOKBACK_DAYS = 400;
+
+function _fredCsvUrl(seriesId, lookbackDays = FRED_LOOKBACK_DAYS) {
+  const cosd = new Date(Date.now() - lookbackDays * 86400000).toISOString().slice(0, 10);
+  return 'https://fred.stlouisfed.org/graph/fredgraph.csv?id=' + encodeURIComponent(seriesId) + '&cosd=' + cosd;
+}
+
 async function fetchFredCsvLatest(seriesId, timeout = 10000) {
-  const csv = await getText('https://fred.stlouisfed.org/graph/fredgraph.csv?id=' + seriesId, timeout);
+  const csv = await getText(_fredCsvUrl(seriesId), timeout);
   return _parseFredCsvLatest(csv, seriesId);
 }
 

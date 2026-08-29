@@ -38,7 +38,15 @@ async function redisCmd(...args) {
 // sort_order/limit sengaja tidak dipasang lagi — memang tidak berefek.
 // Returns { date, value } observasi valid TERBARU, atau null.
 async function fetchFredCsv(seriesId) {
-  const url = `https://fred.stlouisfed.org/graph/fredgraph.csv?id=${seriesId}`;
+  // `cosd` (start date) adalah SATU-SATUNYA parameter pembatas yang benar-benar
+  // dihormati fredgraph.csv — `sort_order`/`limit` diabaikan diam-diam. Ini bukan
+  // sekadar optimasi: 5 seri di bawah diambil PARALEL, dan tanpa cosd totalnya
+  // ~800 KB (DTB3 saja 300 KB / 18.000+ baris sejak 1954) — cukup untuk menabrak
+  // timeout dari Vercel, dan itulah kenapa endpoint ini terus jatuh ke
+  // `heuristic_sofr` di produksi walau parser CSV-nya sudah diperbaiki.
+  // Diverifikasi live 2026-08-29: dengan cosd, DTB3 turun jadi ~1 KB / 65 baris.
+  const cosd = new Date(Date.now() - 400 * 86400000).toISOString().slice(0, 10);
+  const url = `https://fred.stlouisfed.org/graph/fredgraph.csv?id=${seriesId}&cosd=${cosd}`;
   const r = await fetch(url, { headers: { 'User-Agent': 'DaunMerah/1.0' }, signal: AbortSignal.timeout(10000) });
   if (!r.ok) throw new Error(`FRED CSV ${seriesId} HTTP ${r.status}`);
   const text = await r.text();
