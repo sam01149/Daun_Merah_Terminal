@@ -37,28 +37,25 @@ async function redisCmd(...args) {
 // Sekarang: buang baris pertama (selalu header), pindai dari BELAKANG. Parameter
 // sort_order/limit sengaja tidak dipasang lagi — memang tidak berefek.
 // Returns { date, value } observasi valid TERBARU, atau null.
+// Delegasi ke reader tunggal di `_cb_rates.js` (audit S336, 2026-08-29). Dulu file ini
+// punya SALINAN sendiri, dan salinan itulah yang membuat bug CSV FRED yang sama terjadi
+// di DUA tempat sekaligus (header `DATE` -> `observation_date`, plus asumsi keliru bahwa
+// `sort_order=desc&limit=10` berefek). Sekarang satu implementasi saja.
+//
+// Perbaikan ketiga yang cuma kelihatan dari verifikasi LIVE (bukan dari membaca kode):
+// versi lama di sini memakai header telanjang `User-Agent: DaunMerah/1.0` tanpa `Accept`,
+// dan konsisten mengembalikan null untuk KEEMPAT seri T-bill dari IP Vercel — sehingga
+// endpoint ini selalu jatuh ke `heuristic_sofr` walau parser-nya sudah benar. Reader di
+// `_cb_rates.js` memakai UA+Accept yang terbukti dilayani FRED dari Vercel (scrapeUSD
+// berhasil di produksi dengan endpoint CSV yang sama persis).
+//
+// Returns { date, value } observasi valid TERBARU (value string, kompatibel dengan
+// pemanggil lama yang melakukan parseFloat sendiri), atau null kalau gagal.
+const { fetchFredCsvLatest } = require('./_cb_rates');
+
 async function fetchFredCsv(seriesId) {
-  // `cosd` (start date) adalah SATU-SATUNYA parameter pembatas yang benar-benar
-  // dihormati fredgraph.csv — `sort_order`/`limit` diabaikan diam-diam. Ini bukan
-  // sekadar optimasi: 5 seri di bawah diambil PARALEL, dan tanpa cosd totalnya
-  // ~800 KB (DTB3 saja 300 KB / 18.000+ baris sejak 1954) — cukup untuk menabrak
-  // timeout dari Vercel, dan itulah kenapa endpoint ini terus jatuh ke
-  // `heuristic_sofr` di produksi walau parser CSV-nya sudah diperbaiki.
-  // Diverifikasi live 2026-08-29: dengan cosd, DTB3 turun jadi ~1 KB / 65 baris.
-  const cosd = new Date(Date.now() - 400 * 86400000).toISOString().slice(0, 10);
-  const url = `https://fred.stlouisfed.org/graph/fredgraph.csv?id=${seriesId}&cosd=${cosd}`;
-  const r = await fetch(url, { headers: { 'User-Agent': 'DaunMerah/1.0' }, signal: AbortSignal.timeout(10000) });
-  if (!r.ok) throw new Error(`FRED CSV ${seriesId} HTTP ${r.status}`);
-  const text = await r.text();
-  const lines = text.trim().split(/\r?\n/);
-  for (let i = lines.length - 1; i >= 1; i--) {
-    const [date, val] = lines[i].split(',');
-    const v = (val || '').trim();
-    if (!v || v === '.') continue;
-    if (isNaN(parseFloat(v))) continue;
-    return { date: (date || '').trim(), value: v };
-  }
-  return null;
+  const r = await fetchFredCsvLatest(seriesId);
+  return r ? { date: r.date, value: String(r.rate) } : null;
 }
 
 // Ambil event calendar_v1 (minggu berjalan) + calendar_next_v1 (minggu depan) —

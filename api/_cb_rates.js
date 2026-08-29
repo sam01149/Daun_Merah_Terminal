@@ -370,5 +370,12 @@ function mergeCbRate(cur, fb, live, dec, rateSource) {
 
 // _parseFredCsvLatest & _parseBisCbpol diekspor untuk unit test (pure, tanpa network) —
 // pola sama _parseCotPercentLine di api/feeds.js.
+// `fetchFredCsvLatest` diekspor supaya api/rate-path.js memakai reader yang SAMA
+// (audit S336): sebelumnya kedua file punya salinan sendiri, dan salinan itulah yang
+// membuat bug header/urutan CSV FRED terjadi DUA KALI di dua tempat. Satu reader =
+// satu tempat untuk diperbaiki kalau FRED mengubah formatnya lagi. Header request
+// (User-Agent + Accept) di `getText` juga ikut seragam — versi rate-path yang lama
+// memakai UA telanjang `DaunMerah/1.0` tanpa Accept dan konsisten gagal dari IP Vercel,
+// sementara UA di file ini terbukti dilayani FRED.
 module.exports = { CB_FALLBACK, getLiveCbRates, mergeCbRate, RATES_CACHE_KEY, RATES_TTL_MS,
-                   _parseFredCsvLatest, _parseBisCbpol, _splitCsvLine };
+                   fetchFredCsvLatest, _parseFredCsvLatest, _parseBisCbpol, _splitCsvLine };
