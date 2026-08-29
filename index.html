@@ -14878,7 +14878,7 @@ function jnPairToYahooSymbol(pair) {
 // do. Cached 60s client-side (sessionStorage) so re-render/tab-switch doesn't
 // re-hit the rate-limited /api/correlations?action=ta endpoint every time.
 async function jnFetchLivePrices() {
-  const openPairs = [...new Set(jnAllEntries.filter(e => e.status === 'open').map(e => e.pair))];
+  const openPairs = [...new Set(jnAllEntries.filter(e => e.status === 'open' && e.fill_state !== 'cancelled').map(e => e.pair))];
   if (openPairs.length === 0) return;
 
   const now = Date.now();

@@ -626,7 +626,11 @@ async function fetchOpenThesisEntries(deviceId) {
       const raw = await redisCmd('GET', `journal:${deviceId}:${id}`);
       if (!raw) continue;
       const entry = JSON.parse(raw);
-      if (entry.status === 'open' && entry.thesis_text?.trim()) openEntries.push(entry);
+      // fill_state:'cancelled' = pending order MT5 Bridge yang batal/expired, tidak
+      // pernah ada eksposur pasar — status tetap 'open' selamanya by design (lihat
+      // jnReconcilePendingOrders di index.html). Exclude biar tidak minta AI cek
+      // kontradiksi headline utk thesis trade yang sudah tidak pernah jalan.
+      if (entry.status === 'open' && entry.fill_state !== 'cancelled' && entry.thesis_text?.trim()) openEntries.push(entry);
       if (openEntries.length >= 5) break;
     } catch(e) {}
   }

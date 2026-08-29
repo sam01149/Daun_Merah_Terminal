@@ -11,10 +11,29 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-28 (Session 334 — fix Ringkasan Pasar/Thesis kosong total tiap hari: TTL cache 6j->24j; investigasi kredit Railway hampir habis, ditemukan user dari dashboard, belum ada fix kode — perlu tindakan user di dashboard Railway)
+> **Last updated:** 2026-08-29 (Session 335 — fix notif Telegram EUR/AUD nyangkut selamanya: pending order MT5 Bridge yang dibatalkan tidak pernah menutup `status` jurnal; sekaligus bersihkan 8 device test yang nyasar ke Redis production)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
+
+## Changelog Session 335 (2026-08-29) — Fix Notif Telegram Pair Cancelled Nyangkut Selamanya + Cleanup Test Device di Redis Prod
+
+**Konteks:** User lapor notif Telegram EUR/AUD terus terkirim padahal posisi itu "sudah close". Cek langsung ke Redis produksi (kredensial `.env.local`): entry jurnal `mt11jfxohck6e` (EUR/AUD, dibuka 2026-08-20) statusnya **`open`**, tapi `fill_state: "cancelled"` — ini pending `buy_limit` order via MT5 Bridge yang batal/expired, **tidak pernah ada eksposur pasar sama sekali**.
+
+**Root cause:** `jnReconcilePendingOrders()` (index.html) sengaja tidak pernah mengubah `status` saat order MT5 terdeteksi cancelled/expired — hanya set `fill_state:'cancelled'`, `status` tetap `'open'` selamanya by design (biar histori "DIBATALKAN" tetap terlihat di UI jurnal). Tapi 3 jalur konsumen lain baca `status==='open'` TANPA exclude `fill_state:'cancelled'`, jadi order yang batal dianggap "posisi terbuka" selamanya:
+1. `vps/daemon.js` `fetchOpenJournalPairs()` — sumber notif Telegram posisi-open (rapat 2026-08-11). Ini penyebab langsung laporan user.
+2. `api/market-digest.js` `fetchOpenThesisEntries()` — Call 4 AI "Thesis Alert" (cek kontradiksi headline vs thesis open), push notif + toast "headline kontra buy/sell limit" — bug yang sama, ditemukan lewat sapu proaktif, belum sempat dilaporkan user.
+3. `index.html` `jnFetchLivePrices()` — fetch harga live sia-sia untuk pair yang sudah tidak relevan (kosmetik, bukan bug notif, ikut dibereskan).
+
+**Fix:** ketiga jalur ditambah exclude `entry.fill_state !== 'cancelled'`, pola yang sudah dipakai konsisten di UI jurnal (`e.status === 'open' && e.fill_state !== 'cancelled'`, lihat baris render entry). `npm test` 157/157 hijau untuk `test/vps/*` + `test/journal/*`.
+
+**Data cleanup production (dikonfirmasi user sebelum eksekusi):**
+- Entry `mt11jfxohck6e` di-PATCH manual jadi `status:'closed'`, `exit_reason:'order_cancelled'`, `closed_at` sekarang — biar konsisten dengan entry lain yang sudah closed & langsung berhenti dari deteksi manapun.
+- **Temuan sampingan:** `journal_devices` (set Redis yang dibaca semua jalur "open pairs" di atas) berisi 8 device ID sisa (`audit-cleanup-test-*`, `test_editnote_*`) — dicek ke test suite ter-track git (`grep` seluruh repo), tidak ada kecocokan, jadi ini bukan dari `npm test` otomatis, melainkan sisa panggilan curl/debugging manual ke API production di sesi audit sebelumnya (pola yang sama seperti verifikasi Redis di sesi ini). 6 di antaranya punya entry palsu pair `EURUSD` (tanpa garis miring, format salah) status `open`. Format salah itu kebetulan membuatnya tidak pernah match logic pencocokan currency (`pairToLegs` split by `/`), jadi tidak ikut menyebabkan notif nyasar — tapi tetap sampah di DB prod. Semua 8 device + entry-nya dihapus (`DEL journal:*`, `DEL journal_index:*`, `SREM journal_devices`). Device asli (`dev_p68niua97hmmp2ftvwx`) tidak disentuh.
+
+**File diubah:** `vps/daemon.js`, `api/market-digest.js`, `index.html`.
+
+---
 
 ## Changelog Session 334 (2026-08-28) — Fix Ringkasan Pasar Kosong Total (TTL 6j->24j) + Investigasi Kredit Railway
 

@@ -579,7 +579,14 @@ async function fetchOpenJournalPairs() {
           const raw = await redisCmd('GET', `journal:${devId}:${id}`);
           if (!raw) continue;
           const entry = JSON.parse(raw);
-          if (entry.status === 'open' && entry.pair) pairs.add(String(entry.pair).toUpperCase().trim());
+          // fill_state:'cancelled' = pending order via MT5 Bridge yang batal/expired,
+          // tidak pernah ada eksposur pasar riil — status tetap 'open' selamanya by
+          // design (jnReconcilePendingOrders di index.html sengaja tidak menutupnya,
+          // biar histori "DIBATALKAN" tetap terlihat di UI jurnal). Tanpa exclude ini,
+          // order batal memicu notif Telegram pair itu selamanya (kasus EUR/AUD).
+          if (entry.status === 'open' && entry.fill_state !== 'cancelled' && entry.pair) {
+            pairs.add(String(entry.pair).toUpperCase().trim());
+          }
         } catch (e) { /* satu entry korup tidak boleh menggagalkan yang lain */ }
       }
     }
