@@ -26,17 +26,29 @@ async function redisCmd(...args) {
   return (await r.json()).result;
 }
 
-// Keyless FRED CSV fetch — same pattern as cb-status.js scrapeUSD(), no API key required.
-// Returns { date, value } of the most recent non-missing observation.
+// Keyless FRED CSV fetch — tanpa API key.
+// FIX audit S336 (2026-08-29), bug KEMBAR dengan `_cb_rates.js scrapeUSD` lama:
+//   1. Header CSV FRED sudah berganti nama `DATE` -> `observation_date`, jadi filter
+//      lama `!l.startsWith('DATE')` tidak membuang header. Akibatnya fungsi ini
+//      mengembalikan BARIS HEADER sebagai data: {date:'observation_date', value:'<nama seri>'}.
+//   2. `fredgraph.csv` MENGABAIKAN `sort_order`/`limit` (diverifikasi live: limit=10
+//      tetap mengembalikan seluruh seri urut ASCENDING), jadi loop dari depan
+//      mengambil observasi TERTUA, bukan terbaru.
+// Sekarang: buang baris pertama (selalu header), pindai dari BELAKANG. Parameter
+// sort_order/limit sengaja tidak dipasang lagi — memang tidak berefek.
+// Returns { date, value } observasi valid TERBARU, atau null.
 async function fetchFredCsv(seriesId) {
-  const url = `https://fred.stlouisfed.org/graph/fredgraph.csv?id=${seriesId}&sort_order=desc&limit=10`;
-  const r = await fetch(url, { headers: { 'User-Agent': 'DaunMerah/1.0' }, signal: AbortSignal.timeout(8000) });
+  const url = `https://fred.stlouisfed.org/graph/fredgraph.csv?id=${seriesId}`;
+  const r = await fetch(url, { headers: { 'User-Agent': 'DaunMerah/1.0' }, signal: AbortSignal.timeout(10000) });
   if (!r.ok) throw new Error(`FRED CSV ${seriesId} HTTP ${r.status}`);
   const text = await r.text();
-  const lines = text.trim().split('\n').filter(l => l && !l.startsWith('DATE'));
-  for (const line of lines) {
-    const [date, val] = line.split(',');
-    if (val?.trim() && val.trim() !== '.') return { date: date.trim(), value: val.trim() };
+  const lines = text.trim().split(/\r?\n/);
+  for (let i = lines.length - 1; i >= 1; i--) {
+    const [date, val] = lines[i].split(',');
+    const v = (val || '').trim();
+    if (!v || v === '.') continue;
+    if (isNaN(parseFloat(v))) continue;
+    return { date: (date || '').trim(), value: v };
   }
   return null;
 }

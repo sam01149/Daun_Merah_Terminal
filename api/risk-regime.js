@@ -9,6 +9,20 @@ const rateLimit = require('./_ratelimit');
 
 const CACHE_KEY = 'risk_regime'
 const CACHE_TTL = 5 * 60 // 5 minutes — VIX now from Yahoo (15-min delay), worth refreshing often
+// Umur KEY di Redis, BUKAN ambang kesegaran (audit S336, 2026-08-29). Dua hal berbeda
+// yang dulu dipaksa jadi satu angka:
+//   - CACHE_TTL di atas = kapan handler ini memutuskan fetch ulang (dibandingkan
+//     terhadap `computed_at`). Tetap 5 menit — UI live tidak berubah sama sekali.
+//   - KEY_TTL di bawah = berapa lama key-nya masih ADA di Redis untuk PEMBACA PASIF.
+//     `ohlcvAnalyzeHandler` (jalur Analisa/auto-entry) membaca key ini read-only dan
+//     TIDAK PERNAH memicu refresh; kalau key sudah hilang, blok RISK REGIME (VIX/MOVE)
+//     hilang dari prompt AI tanpa jejak. Dengan EX 5 menit sementara yang menghangatkan
+//     (market-digest `fetchOrWarm`) cuma jalan 3-4x/hari, key ini kosong 69% dari waktu
+//     — diukur dari 29 macro_snapshot setup auto-entry di produksi.
+// 12 jam dipilih supaya penghangatan 3-4x/hari SELALU menyambung, dan tetap jauh lebih
+// pendek dari horizon perubahan label regime (harian, bukan menitan). Pola sama dengan
+// fix TTL `latest_article` S334: basi-tapi-ada lebih baik dari kosong total.
+const KEY_TTL = 12 * 60 * 60
 
 // FRED series: VIXCLS = CBOE VIX, BAMLH0A0HYM2 = ICE BofA US HY OAS spread
 const FRED_BASE = 'https://api.stlouisfed.org/fred/series/observations'
@@ -203,7 +217,7 @@ module.exports = async function handler(req, res) {
     vix_date:  vixDate,   // kept for debugging; frontend uses vix_source to decide display
   }
 
-  redisCmd('SET', CACHE_KEY, JSON.stringify(payload), 'EX', CACHE_TTL).catch(e => {
+  redisCmd('SET', CACHE_KEY, JSON.stringify(payload), 'EX', KEY_TTL).catch(e => {
     console.warn('risk-regime: Redis SET failed:', e.message)
   })
   if (sf.gotLock) sf.release()

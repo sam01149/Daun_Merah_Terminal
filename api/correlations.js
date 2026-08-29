@@ -56,6 +56,18 @@ const INVERT = new Set(['JPY', 'CAD', 'CHF']);
 // BTC (debasement co-movement), GoldSilverRatio (stretch gauge), GoldCopperRatio (safe-haven vs growth) added per COR-G
 const GOLD_CORR_ASSETS = ['DXY', 'Silver', 'Copper', 'WTI', 'US10Y', 'RealYield', 'SPX', 'VIX', 'JPY', 'AUD', 'EUR', 'BTC', 'GoldSilverRatio', 'GoldCopperRatio'];
 
+// Normalisasi key pair ke bentuk kanonik "XXX/YYY" (audit S336, 2026-08-29).
+// Pemanggil endpoint `?action=atr` memakai dua konvensi berbeda: tab Teknikal
+// mengirim `EURUSD`/`XAUUSD` (tanpa garis miring), sedangkan Sizing Calculator &
+// Jurnal mengirim `EUR/USD`. Fungsi ini menerima keduanya, plus huruf kecil dan
+// spasi di ujung. Pure — diekspor untuk unit test.
+function normalizePairKey(raw) {
+  const s = String(raw || '').trim().toUpperCase().replace(/\s+/g, '');
+  if (/^[A-Z]{3}\/[A-Z]{3}$/.test(s)) return s;              // sudah kanonik
+  if (/^[A-Z]{6}$/.test(s)) return s.slice(0, 3) + '/' + s.slice(3);
+  return s;                                                   // biar caller yang menolak
+}
+
 // Plan I Fase 2 (2026-07-24): gabungkan snapshot r20 hari ini ke histori tersimpan.
 // Pure function (tanpa I/O) supaya bisa diuji langsung tanpa mock Redis.
 // - hist: { dates: string[], series: { [pairKey]: (number|null)[] } } — semua array sepanjang dates.
@@ -349,7 +361,18 @@ const handler = async function handler(req, res) {
 
   // --- ATR + 1-day VaR for sizing calculator ---
   if (req.query.action === 'atr') {
-    const pairInput = req.query.pair || 'EUR/USD';
+    // FIX audit S336 (2026-08-29): tab Teknikal (`index.html`, variabel `tekPair`)
+    // mengirim pair TANPA garis miring (`EURUSD`, `XAUUSD`) sementara kedua map di
+    // bawah ber-key GARIS MIRING — akibatnya endpoint ini membalas 400 "Unknown pair"
+    // untuk SEMUA pair dari tab TEK, dan errornya ditelan `.catch()` di frontend
+    // sehingga panel Range/ATR diam-diam kosong (diverifikasi live: pair=EURUSD -> 400,
+    // pair=EUR/USD -> 200). Dinormalisasi di SISI SERVER, bukan di `index.html`, karena
+    // pemanggilnya ada 3 tempat (tab TEK, Sizing Calculator, Jurnal) dengan konvensi
+    // berbeda-beda — satu titik normalisasi lebih aman daripada tiga.
+    // CATATAN: normalisasi WAJIB dilakukan sebelum `PIP_SIZE_MAP` juga, bukan cuma
+    // sebelum `YAHOO_SYMBOL_MAP` — kalau tidak, `XAUUSD` akan jatuh ke pip default
+    // 0.0001 (bukan 0.01) dan atr_pips gold meleset 100x.
+    const pairInput = normalizePairKey(req.query.pair || 'EUR/USD');
 
     const YAHOO_SYMBOL_MAP = {
       'EUR/USD': 'EURUSD=X', 'GBP/USD': 'GBPUSD=X', 'AUD/USD': 'AUDUSD=X',
@@ -482,6 +505,17 @@ const handler = async function handler(req, res) {
     // aman — 1h dipilih sebagai titik seimbang, BUKAN 30/45 menit yang sudah lewat budget bahkan
     // di skenario batched ini (lihat perhitungan session 157 lanjutan 5).
     const RR_CACHE_TTL = 3600;
+    // Umur KEY di Redis, terpisah dari RR_CACHE_TTL di atas (audit S336, 2026-08-29).
+    // RR_CACHE_TTL tetap 1 jam = kapan fetch CME baru dipicu (jadi anggaran ScraperAPI
+    // di perhitungan session 157 TIDAK berubah sama sekali — ini bukan menaikkan
+    // frekuensi fetch). Yang diperpanjang cuma umur key untuk PEMBACA PASIF:
+    // `ohlcvAnalyzeHandler` membaca `rr_cache_v2` read-only untuk blok SENTIMEN PASAR
+    // OPTIONS — blok yang menurut framing prompt sendiri DIPRIORITASKAN di atas COT
+    // untuk menentukan arah di jalur auto. Diukur di produksi: kosong 76% dari waktu,
+    // artinya keputusan desain itu praktis tidak pernah benar-benar jalan.
+    // Skew/CVOL bergerak lambat secara alami (sudah dicatat di komentar di atas), jadi
+    // data beberapa jam masih informatif — beda jauh dengan tidak ada data sama sekali.
+    const RR_KEY_TTL = 12 * 60 * 60;
 
     try {
       const cached = await redisCmd('GET', RR_CACHE_KEY);
@@ -687,7 +721,7 @@ const handler = async function handler(req, res) {
     }
 
     const payload = { available: true, pairs, source, computed_at: new Date().toISOString() };
-    redisCmd('SET', RR_CACHE_KEY, JSON.stringify(payload), 'EX', RR_CACHE_TTL).catch(() => {});
+    redisCmd('SET', RR_CACHE_KEY, JSON.stringify(payload), 'EX', RR_KEY_TTL).catch(() => {});
     if (rrSf.gotLock) rrSf.release();
     return res.status(200).json({ ...payload, from_cache: false });
   }
@@ -762,7 +796,15 @@ const handler = async function handler(req, res) {
   if (req.query.action === 'daily-snapshot') {
     if (await rateLimit(req, res, { limit: 10, windowSecs: 60, endpoint: 'correlations_snapshot' })) return;
     const SNAP_KEY = 'daily_snapshot';
-    const SNAP_TTL = 300; // 5 minutes
+    const SNAP_TTL = 300; // 5 menit — ambang KESEGARAN (kapan handler ini fetch ulang). Tidak diubah.
+    // Umur KEY di Redis, terpisah dari ambang kesegaran (audit S336, 2026-08-29).
+    // `daily_snapshot` dibaca PASIF oleh admin.js (`_extractMacroDrivers` -> DXY/WTI di
+    // blok makro prompt AI) tanpa pernah memicu refresh. Dengan EX 5 menit sementara
+    // penghangatnya (market-digest `fetchOrWarm`) cuma jalan 3-4x/hari, key ini kosong
+    // 66% dari waktu — diukur dari macro_snapshot setup auto-entry di produksi.
+    // Konsekuensi yang diterima sadar: angka "%chg hari ini" bisa beberapa jam basi.
+    // Itu jauh lebih baik daripada blok DOLLAR & KOMODITAS hilang total dari prompt.
+    const SNAP_KEY_TTL = 12 * 60 * 60;
 
     try {
       const cached = await redisCmd('GET', SNAP_KEY);
@@ -865,7 +907,7 @@ const handler = async function handler(req, res) {
 
       if (Object.keys(fx).length === 0) throw new Error('all FX fetches failed');
       const payload = { fx, yields, drivers, fetched_at: new Date().toISOString() };
-      redisCmd('SET', SNAP_KEY, JSON.stringify(payload), 'EX', SNAP_TTL).catch(() => {});
+      redisCmd('SET', SNAP_KEY, JSON.stringify(payload), 'EX', SNAP_KEY_TTL).catch(() => {});
       if (snapSf.gotLock) snapSf.release();
       return res.status(200).json({ ...payload, from_cache: false });
     } catch(e) {
@@ -1047,3 +1089,4 @@ const handler = async function handler(req, res) {
 
 module.exports = handler;
 module.exports.mergeCorrHistory = mergeCorrHistory;
+module.exports.normalizePairKey = normalizePairKey;

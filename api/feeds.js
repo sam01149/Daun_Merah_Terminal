@@ -422,7 +422,14 @@ function parseRSSItems(xml) {
 // ── COT handler (was api/cot.js) ──────────────────────────────────────────────
 
 const CFTC_URL      = 'https://www.cftc.gov/dea/options/financial_lof.htm';
-const COT_CACHE_TTL = 6 * 60 * 60 * 1000;
+const COT_CACHE_TTL = 6 * 60 * 60 * 1000; // ambang KESEGARAN (kapan fetch CFTC baru). Tidak diubah.
+// Umur KEY di Redis, terpisah dari ambang kesegaran di atas (audit S336, 2026-08-29).
+// `cot_cache_v2` dibaca PASIF oleh admin.js (blok FUNDAMENTAL TERSTRUKTUR) tanpa pernah
+// memicu fetch — diukur di produksi: kosong 34% dari waktu saat AI auto-entry memutuskan.
+// 48 jam bukan angka longgar-longgaran: laporan COT CFTC memang MINGGUAN, jadi data
+// 48 jam masih laporan yang sama persis, bukan versi lebih basi. Prompt sudah menampilkan
+// umur laporan ("laporan N hari lalu") sehingga AI tetap tahu tingkat kebasiannya.
+const COT_KEY_TTL_SEC = 48 * 60 * 60;
 
 const MARKET_MARKERS = {
   USD: ['u.s. dollar index', 'dollar index'],
@@ -603,7 +610,7 @@ async function cotHandler(req, res) {
     fetched_at: new Date().toISOString(),
   };
 
-  redisCmd('SET', 'cot_cache_v2', JSON.stringify(payload), 'EX', 21600).catch(() => {});
+  redisCmd('SET', 'cot_cache_v2', JSON.stringify(payload), 'EX', COT_KEY_TTL_SEC).catch(() => {});
 
   // Fire-and-forget: accumulate weekly snapshots for future trend display
   storeCOTHistory(positions, reportDate).catch(() => {});

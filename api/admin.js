@@ -4920,13 +4920,37 @@ function _formatFundamentalBlock({ label, isXau, cbBias, cot, risk, retail, driv
   // pernah dapat baris ini walau datanya sudah ada di cache. Loop semua leg pair ini, bukan
   // hardcode USD — cakupan otomatis ikut legs, tidak perlu daftar pair manual.
   const realYields = drivers?.realYields || {};
+  // Label umur data (audit S336, 2026-08-29). Cache `real_yields` SUDAH membawa `as_of`
+  // (tanggal observasi nominal) dan flag `stale` — dua-duanya sudah dihitung benar sejak
+  // audit 2026-08-15 — tapi baris prompt di bawah ini MEMBUANGNYA, jadi AI tidak pernah
+  // tahu seberapa basi angka yang dia kutip. Ini penting karena yield 10Y non-USD memakai
+  // seri OECD BULANAN (`IRLTLT01*M156N`): observasi terakhir EUR = Januari 2026 (~8 bulan),
+  // enam currency lain = Juni 2026 (~3 bulan), sementara USD (`DGS10`) harian. Tanpa label,
+  // AI menyajikan yield Januari sebagai fakta hari ini — dan prompt di file ini secara
+  // eksplisit menyuruh AI memakai real yield sebagai bukti `makro_alignment`.
+  // Pola labelnya sengaja dibuat SAMA dengan baris COT di atas ("laporan N hari lalu"),
+  // supaya AI membaca kebasian dengan cara yang sudah dikenalnya.
+  const ryAgeDays = iso => {
+    if (!iso) return null;
+    const d = (nowMs - new Date(iso).getTime()) / 86400000;
+    return (isNaN(d) || d < 0) ? null : Math.floor(d);
+  };
   for (const leg of legs) {
     const ry = realYields[leg];
     if (!ry || ry.nominal == null || ry.inflation_exp == null || ry.real == null) continue;
     const goldNote = (isXau && leg === 'USD')
       ? ' (driver utama gold — kalau mau klaim "real yield naik/turun karena X", cek dulu apakah X ini sejalan dengan komponen nominal atau inflasi di atas, bukan cuma angka real yield akhir)'
       : '';
-    lines.push(`REAL YIELD ${leg}: nominal ${ry.nominal}% − ekspektasi inflasi ${ry.inflation_exp}% = real yield ${ry.real}%${goldNote}`);
+    const ageD = ryAgeDays(ry.as_of);
+    // >45 hari = pasti bukan data harian lagi (seri bulanan + lag publikasi). Diberi
+    // peringatan keras, bukan cuma angka, supaya tidak dipakai untuk klaim pergerakan
+    // jangka pendek ("yield naik hari ini") yang datanya memang tidak bisa mendukung.
+    const ageNote = ageD == null
+      ? ''
+      : ageD > 45
+        ? ` [PERHATIAN: komponen nominal dari ${ry.as_of}, ${ageD} hari lalu — seri BULANAN, bukan harian. JANGAN pakai angka ini untuk klaim pergerakan/perubahan jangka pendek; pakai hanya sebagai level struktural kasar]`
+        : ` [data ${ry.as_of}, ${ageD} hari lalu]`;
+    lines.push(`REAL YIELD ${leg}: nominal ${ry.nominal}% − ekspektasi inflasi ${ry.inflation_exp}% = real yield ${ry.real}%${goldNote}${ageNote}`);
   }
   // Catatan kausal EUR/USD (2026-08-08, pair_workflow.md folder professional_llm_trader
   // §"Faktor Kekuatan/Kelemahan per Pair"): driver dominan EUR/USD horizon 1-3 tahun
@@ -4938,7 +4962,22 @@ function _formatFundamentalBlock({ label, isXau, cbBias, cot, risk, retail, driv
   if (label === 'EUR/USD' && realYields.EUR && realYields.USD
     && realYields.EUR.nominal != null && realYields.USD.nominal != null) {
     const diff = realYields.EUR.nominal - realYields.USD.nominal;
-    lines.push(`DIFFERENTIAL SUKU BUNGA EUR-USD: ${diff >= 0 ? '+' : ''}${diff.toFixed(2)}pp (nominal, EUR minus USD) — ini driver dominan EUR/USD horizon 1-3 tahun (lebih penting dari level tiap kaki sendiri-sendiri); differential MENYEMPIT (ECB relatif lebih hawkish / Fed relatif lebih dovish) historisnya EUR/USD-bullish, MELEBAR sebaliknya bearish.`);
+    // Peringatan beda VINTAGE (audit S336, 2026-08-29). Baris ini mengurangkan dua
+    // angka yang tanggal observasinya bisa berjarak berbulan-bulan: USD dari `DGS10`
+    // (harian, umur ~2 hari) dikurangi EUR dari `IRLTLT01EZM156N` (bulanan, observasi
+    // terakhir Januari 2026 saat audit). Selisih dua vintage berbeda BUKAN differential
+    // yang sesungguhnya — dan justru baris inilah yang prompt sebut "driver dominan",
+    // jadi salahnya paling mahal. Kalau jaraknya lebar, larang eksplisit klaim ARAH
+    // ("menyempit/melebar"), karena perubahan arah persis yang tidak bisa dibaca dari
+    // dua titik waktu yang tidak sejajar.
+    const dEur = realYields.EUR.as_of ? new Date(realYields.EUR.as_of).getTime() : null;
+    const dUsd = realYields.USD.as_of ? new Date(realYields.USD.as_of).getTime() : null;
+    const vintageGapD = (dEur && dUsd && !isNaN(dEur) && !isNaN(dUsd))
+      ? Math.round(Math.abs(dUsd - dEur) / 86400000) : null;
+    const vintageNote = (vintageGapD != null && vintageGapD > 45)
+      ? ` [PERHATIAN VINTAGE: angka EUR dari ${realYields.EUR.as_of} dan USD dari ${realYields.USD.as_of} — beda ${vintageGapD} hari, jadi selisih di atas BUKAN differential sejati pada satu titik waktu. Pakai hanya sebagai gambaran level kasar; DILARANG menyimpulkan differential sedang "menyempit" atau "melebar" dari angka ini]`
+      : '';
+    lines.push(`DIFFERENTIAL SUKU BUNGA EUR-USD: ${diff >= 0 ? '+' : ''}${diff.toFixed(2)}pp (nominal, EUR minus USD) — ini driver dominan EUR/USD horizon 1-3 tahun (lebih penting dari level tiap kaki sendiri-sendiri); differential MENYEMPIT (ECB relatif lebih hawkish / Fed relatif lebih dovish) historisnya EUR/USD-bullish, MELEBAR sebaliknya bearish.${vintageNote}`);
   }
   if (lines.length === 0) return '';
   const baseNote = isXau

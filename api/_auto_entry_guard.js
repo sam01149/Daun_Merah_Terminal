@@ -418,6 +418,15 @@ const POLICY_EPOCHS = [
   // sebelum level itu sendiri ada, gara-gara candle 25 Agustus kebetulan menyentuh
   // 4635 duluan (harga gold liar 4565-4696 saat itu).
   { v: 34, from: '2026-08-28T12:08:15Z', kind: 'fix',    impact: 'entry',    label: 'Fix fill hantu varian 2: scan fill pertama kali mulai dari `level_set_at` (kapan level entry TERBARU dipasang), bukan `ts` (kapan ide trade PERTAMA lahir) — mencegah histori sebelum refine dihitung sebagai fill' },
+  // v35 (audit S336): SATU tema saja — KETERSEDIAAN & KEJUJURAN DATA MAKRO yang dilihat
+  // AI. Tidak ada aturan trading yang diubah, tidak ada gate baru, tidak ada ambang yang
+  // digeser. Yang berubah cuma: (a) data makro yang dulu sering HILANG dari prompt sekarang
+  // ada, (b) data yang basi sekarang membawa label umurnya. Sengaja dibundel jadi satu
+  // epoch (bukan dicicil beberapa deploy) karena tiap kenaikan epoch mereset hitungan
+  // n>=30 ke nol — mencicil berarti tidak akan pernah ada epoch yang cukup panjang untuk
+  // dievaluasi. Lihat memory feedback-isolate-one-variable-per-policy-change: satu VARIABEL
+  // (ketersediaan data), walau menyentuh beberapa file.
+  { v: 35, from: '2026-08-29T15:30:00Z', kind: 'mixed',  impact: 'entry',    label: 'Ketersediaan & kejujuran data makro: umur key Redis dipisah dari ambang kesegaran (risk_regime/daily_snapshot/rr_cache_v2/cot_cache_v2 tidak lagi kosong saat cron auto-entry menembak — sebelumnya kosong 34-76%), 8/8 suku bunga bank sentral hidup lagi (dari 2/8; BoJ 0.75->1.0 & RBNZ 2.25->2.5 selama ini salah), baris REAL YIELD + DIFFERENTIAL sekarang membawa label umur/vintage' },
 ];
 
 // AATAS_EPOCH (2026-08-22, keputusan user): batas populasi statistik dashboard

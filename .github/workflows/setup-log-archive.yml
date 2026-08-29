@@ -29,3 +29,28 @@ jobs:
             echo "setup_log_archive gagal dengan HTTP $STATUS"
             exit 1
           fi
+
+      # DIPINDAH KE SINI dari inflation-staleness-check.yml (audit S336, 2026-08-29).
+      # Alasan: tiap workflow terjadwal memakan satu slot dari jatah cron akun yang
+      # ternyata cuma ~24 run/hari total (lihat komentar panjang di warm-and-watch.yml).
+      # Cek staleness ini cuma butuh 1x/minggu, jadi memegang slot sendiri itu boros —
+      # ditumpangkan ke workflow harian ini dengan penjaga hari Senin.
+      # Guard `date -u +%u` = 1 (Senin). Jadwal harian workflow ini melenceng jam-nya
+      # (GitHub menunda), tapi HARI-nya tetap benar, dan handler-nya sendiri sudah
+      # dedup per `as_of` (1 alert per rilis basi, bukan spam) — jadi kalaupun suatu
+      # Senin terlewat atau kejalan dua kali, tidak ada dampak.
+      - name: Cek staleness INFLATION_EXPECTATIONS (hanya hari Senin)
+        run: |
+          if [ "$(date -u +%u)" != "1" ]; then
+            echo "Bukan Senin (hari ke-$(date -u +%u)) — lewati cek staleness inflasi."
+            exit 0
+          fi
+          STATUS=$(curl -s -o /tmp/infl.json -w "%{http_code}" \
+            -H "x-cron-secret: ${{ secrets.CRON_SECRET }}" \
+            --max-time 20 \
+            "https://financial-feed-app.vercel.app/api/admin?action=inflation_staleness_check")
+          cat /tmp/infl.json
+          if [ "$STATUS" -ne 200 ]; then
+            echo "inflation_staleness_check gagal dengan HTTP $STATUS"
+            exit 1
+          fi

@@ -54,13 +54,42 @@ async function getJson(url, timeout = 8000) {
   return r.json();
 }
 
+// Reader CSV FRED keyless yang BENAR (fix audit S336, 2026-08-29). Dua jebakan
+// yang sebelumnya bikin scrapeUSD SELALU gagal diam-diam:
+//   1. FRED sudah mengganti nama kolom header dari `DATE` jadi `observation_date`,
+//      jadi filter lama `!l.startsWith('DATE')` TIDAK lagi membuang header — baris
+//      header jadi lines[0] dan parseFloat(nama seri) = NaN, fungsi selalu throw.
+//   2. `fredgraph.csv` MENGABAIKAN `sort_order` & `limit` (diverifikasi live:
+//      request limit=2 mengembalikan 6.467 baris urut ASCENDING). Jadi baris
+//      pertama itu observasi TERTUA, bukan terbaru.
+// Solusi: buang baris pertama apa pun (itu selalu header), lalu pindai dari
+// BELAKANG untuk observasi valid pertama (FRED menandai data kosong dengan '.').
+// Parameter sort_order/limit sengaja TIDAK dipasang — memang tidak berefek, dan
+// memasangnya bikin pembaca kode berikutnya salah asumsi lagi.
+function _parseFredCsvLatest(csv, seriesId) {
+  const lines = String(csv || '').trim().split(/\r?\n/);
+  if (lines.length < 2) throw new Error(seriesId + ': CSV FRED kosong');
+  for (let i = lines.length - 1; i >= 1; i--) {
+    const parts = lines[i].split(',');
+    const v = (parts[1] || '').trim();
+    if (!v || v === '.') continue;
+    const rate = parseFloat(v);
+    if (isNaN(rate)) continue;
+    return { rate, date: (parts[0] || '').trim() || null };
+  }
+  throw new Error(seriesId + ': tidak ada observasi valid di CSV FRED');
+}
+
+async function fetchFredCsvLatest(seriesId, timeout = 10000) {
+  const csv = await getText('https://fred.stlouisfed.org/graph/fredgraph.csv?id=' + seriesId, timeout);
+  return _parseFredCsvLatest(csv, seriesId);
+}
+
 async function scrapeUSD() {
-  const csv = await getText('https://fred.stlouisfed.org/graph/fredgraph.csv?id=DFEDTARU&sort_order=desc&limit=2');
-  const lines = csv.trim().split('\n').filter(l => l && !l.startsWith('DATE'));
-  const [date, val] = lines[0].split(',');
-  const rate = parseFloat(val);
-  if (isNaN(rate)) throw new Error('USD: NaN');
-  return { rate, date };
+  // DFEDTARU = batas ATAS target range Fed. Sengaja DIPERTAHANKAN (bukan diganti
+  // midpoint versi BIS yang 3.625) supaya angka yang tampil konsisten dengan
+  // seluruh riwayat app ini dan dengan CB_FALLBACK.USD.
+  return fetchFredCsvLatest('DFEDTARU');
 }
 
 async function scrapeEUR() {
@@ -78,26 +107,30 @@ async function scrapeEUR() {
   return { rate, date: null };
 }
 
+// GBP: BoE IADB (Interactive Database), seri IUDBEDR = Official Bank Rate harian.
+// Menggantikan scraping halaman HTML yang MATI (audit S336: fetch balas 200 tapi 0
+// match untuk ketiga regex lama — struktur halaman BoE berubah). IADB itu database
+// statistik resmi BoE dengan format CSV stabil, bukan halaman marketing yang sering
+// di-redesain. PENTING: endpoint ini membalas 302 — `fetch` Node mengikuti redirect
+// secara default, tapi kalau logika ini pernah dipindah ke klien lain, redirect WAJIB
+// diikuti; tanpa itu balasannya 302 body kosong dan parser di bawah akan throw.
 async function scrapeGBP() {
-  const html = await getText('https://www.bankofengland.co.uk/monetary-policy/the-interest-rate-bank-rate');
-  const m = html.match(/Bank Rate is ([\d.]+) per cent/i)
-         || html.match(/([\d.]+)\s*per cent[^<]{0,60}Bank Rate/i)
-         || html.match(/current Bank Rate[^<]{0,80}([\d.]+)\s*(?:per cent|%)/i);
-  if (!m) throw new Error('GBP: pattern not found');
-  const rate = parseFloat(m[1]);
-  if (isNaN(rate)) throw new Error('GBP: NaN');
-  return { rate, date: null };
-}
-
-async function scrapeJPY() {
-  const html = await getText('https://www.boj.or.jp/en/mopo/mpmdeci/index.htm');
-  const m = html.match(/short-term policy[^<]{0,120}([\d.]+)\s*(?:percent|%)/i)
-         || html.match(/policy interest rate[^<]{0,80}([\d.]+)\s*(?:percent|%)/i)
-         || html.match(/uncollateralized overnight call rate[^<]{0,120}([\d.]+)\s*(?:percent|%)/i);
-  if (!m) throw new Error('JPY: pattern not found');
-  const rate = parseFloat(m[1]);
-  if (isNaN(rate)) throw new Error('JPY: NaN');
-  return { rate, date: null };
+  const MON  = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const fmt  = d => String(d.getUTCDate()).padStart(2, '0') + '/' + MON[d.getUTCMonth()] + '/' + d.getUTCFullYear();
+  const now  = new Date();
+  const from = new Date(now.getTime() - 90 * 86400000); // 90 hari: Bank Rate diumumkan ~8x/tahun, pasti kena minimal 1 observasi
+  const url  = 'https://www.bankofengland.co.uk/boeapps/iadb/fromshowcolumns.asp?csv.x=yes'
+             + '&Datefrom=' + fmt(from) + '&Dateto=' + fmt(now)
+             + '&SeriesCodes=IUDBEDR&CSVF=TN&UsingCodes=Y&VPD=Y&VFD=N';
+  const csv   = await getText(url, 10000);
+  const lines = csv.trim().split(/\r?\n/);
+  if (lines.length < 2) throw new Error('GBP: CSV BoE kosong (redirect tidak diikuti?)');
+  for (let i = lines.length - 1; i >= 1; i--) {
+    const parts = lines[i].split(',');
+    const rate  = parseFloat((parts[1] || '').trim());
+    if (!isNaN(rate)) return { rate, date: (parts[0] || '').trim() || null };
+  }
+  throw new Error('GBP: tidak ada observasi valid di CSV BoE');
 }
 
 async function scrapeCAD() {
@@ -108,55 +141,128 @@ async function scrapeCAD() {
   return { rate, date: obs?.d || null };
 }
 
-async function scrapeAUD() {
-  const html = await getText('https://www.rba.gov.au/statistics/cash-rate/');
-  const m = html.match(/Cash Rate Target[^<]{0,200}([\d.]+)\s*%/is)
-         || html.match(/([\d.]+)\s*%[^<]{0,60}(?:cash rate|target)/i);
-  if (!m) throw new Error('AUD: pattern not found');
-  const rate = parseFloat(m[1]);
-  if (isNaN(rate)) throw new Error('AUD: NaN');
-  return { rate, date: null };
+// ── BIS WS_CBPOL — pengganti 4 scraper HTML yang mati (JPY/AUD/NZD/CHF) ───────
+// Audit S336 (2026-08-29): keempat scraper situs resmi mati — BoJ 404, RBA HTTP 403,
+// RBNZ HTTP 403, SNB 0 match regex. BIS Data Portal menerbitkan "Central bank policy
+// rates" (dataflow WS_CBPOL) untuk semua negara ini dalam SATU dataset SDMX, gratis,
+// tanpa key, dan membawa TANGGAL observasi (scraper lama semua mengembalikan
+// date:null). Satu request untuk 4 currency sekaligus, bukan 4 request terpisah.
+//
+// Kenapa BIS TIDAK dipakai untuk USD & EUR walau datanya ada di sini juga:
+//   - USD: BIS memakai MIDPOINT target range Fed (3.625), app ini memakai batas ATAS
+//     (DFEDTARU, 3.75) di seluruh riwayatnya. Beda definisi, bukan beda kesegaran.
+//   - EUR: BIS memakai main refinancing operations versi sendiri (2.25), sementara
+//     scrapeEUR mengambil MRR_FR langsung dari API resmi ECB (2.40). Sumber primer
+//     menang.
+// Verifikasi live 2026-08-29 (deret bulanan, bukan satu titik): BIS menangkap dua
+// kenaikan yang SELAMA INI TIDAK PERNAH MASUK ke app karena scraper-nya mati —
+// BoJ 0.75 -> 1.0 (Juni 2026) dan RBNZ 2.25 -> 2.5 (Juli 2026).
+const BIS_CBPOL_URL = 'https://stats.bis.org/api/v2/data/dataflow/BIS/WS_CBPOL/1.0/D.JP+AU+NZ+CH?lastNObservations=1&format=csv';
+const BIS_AREA_TO_CUR = { JP: 'JPY', AU: 'AUD', NZ: 'NZD', CH: 'CHF' };
+
+// Parser CSV minimal yang menghormati field ber-tanda-kutip — WAJIB di sini karena
+// kolom TITLE/COMPILATION BIS berisi koma di dalam kutip (split(',') polos menghasilkan
+// kolom yang bergeser dan nilai yang salah).
+function _splitCsvLine(line) {
+  const out = [];
+  let cur = '', inQuote = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') {
+      if (inQuote && line[i + 1] === '"') { cur += '"'; i++; }
+      else inQuote = !inQuote;
+    } else if (ch === ',' && !inQuote) { out.push(cur); cur = ''; }
+    else cur += ch;
+  }
+  out.push(cur);
+  return out;
 }
 
-async function scrapeNZD() {
-  const html = await getText('https://www.rbnz.govt.nz/monetary-policy/about-monetary-policy/the-official-cash-rate');
-  const m = html.match(/OCR[^<]{0,60}?([\d]+\.[\d]+)\s*(?:per cent|%)/i)
-         || html.match(/official cash rate[^<]{0,80}?([\d]+\.[\d]+)\s*(?:per cent|%)/i)
-         || html.match(/([\d]+\.[\d]+)\s*per cent[^<]{0,80}OCR/i);
-  if (!m) throw new Error('NZD: pattern not found');
-  const rate = parseFloat(m[1]);
-  if (isNaN(rate)) throw new Error('NZD: NaN');
-  return { rate, date: null };
+function _parseBisCbpol(csv) {
+  const lines = String(csv || '').trim().split(/\r?\n/);
+  if (lines.length < 2) throw new Error('BIS: CSV kosong');
+  const head = _splitCsvLine(lines[0]);
+  const iArea = head.indexOf('REF_AREA'), iTime = head.indexOf('TIME_PERIOD'), iVal = head.indexOf('OBS_VALUE');
+  if (iArea < 0 || iVal < 0) throw new Error('BIS: kolom REF_AREA/OBS_VALUE tidak ada (format berubah?)');
+  const out = {};
+  for (let i = 1; i < lines.length; i++) {
+    const row = _splitCsvLine(lines[i]);
+    const cur = BIS_AREA_TO_CUR[(row[iArea] || '').trim()];
+    if (!cur) continue;
+    const rate = parseFloat((row[iVal] || '').trim());
+    if (isNaN(rate)) continue;
+    out[cur] = { rate, date: (iTime >= 0 ? (row[iTime] || '').trim() : '') || null };
+  }
+  return out;
 }
 
-async function scrapeCHF() {
-  const html = await getText('https://www.snb.ch/en/the-snb/mandates-goals/statistics/statistics-pub/current_interest_exchange_rates');
-  const m = html.match(/SNB policy rate[^<]{0,120}(-?[\d.]+)\s*%/i)
-         || html.match(/(-?[\d.]+)\s*%[^<]{0,80}policy rate/i);
-  if (!m) throw new Error('CHF: pattern not found');
-  const rate = parseFloat(m[1]);
-  if (isNaN(rate)) throw new Error('CHF: NaN');
-  return { rate, date: null };
+async function scrapeBisPolicyRates() {
+  const csv = await getText(BIS_CBPOL_URL, 12000);
+  const rates = _parseBisCbpol(csv);
+  if (Object.keys(rates).length === 0) throw new Error('BIS: 0 currency terparse');
+  return rates;
 }
 
-const SCRAPERS = { USD: scrapeUSD, EUR: scrapeEUR, GBP: scrapeGBP, JPY: scrapeJPY,
-                   CAD: scrapeCAD, AUD: scrapeAUD, NZD: scrapeNZD, CHF: scrapeCHF };
+// Scraper per-currency yang punya sumber PRIMER sendiri. JPY/AUD/NZD/CHF tidak ada
+// di sini — keempatnya diambil sekaligus lewat scrapeBisPolicyRates() di bawah.
+const SCRAPERS = { USD: scrapeUSD, EUR: scrapeEUR, GBP: scrapeGBP, CAD: scrapeCAD };
+
+// Ambang alarm (audit S336): kalau cakupan live turun di bawah ini, sesuatu di
+// sumber luar berubah lagi dan kita WAJIB tahu. Sebelum ada alarm ini, 6 dari 8
+// scraper mati berbulan-bulan tanpa satu pun sinyal — CB_FALLBACK menelan
+// kegagalannya diam-diam, dan dua suku bunga (JPY, NZD) tertinggal 2-3 bulan.
+const CB_COVERAGE_MIN = 6; // dari 8 currency
 
 async function scrapeAllRates() {
-  const entries = await Promise.allSettled(
-    Object.entries(SCRAPERS).map(async ([cur, fn]) => [cur, await fn()])
-  );
+  const [primary, bis] = await Promise.all([
+    Promise.allSettled(Object.entries(SCRAPERS).map(async ([cur, fn]) => [cur, await fn()])),
+    scrapeBisPolicyRates().catch(e => { console.warn('[cb-scrape] BIS gagal:', e.message); return {}; }),
+  ]);
+
   const rates = {};
-  for (const r of entries) {
+  const failed = [];
+  for (const r of primary) {
     if (r.status === 'fulfilled') {
       const [cur, data] = r.value;
       rates[cur] = data;
-      console.log(`[cb-scrape] ${cur}: ${data.rate}%`);
+      console.log(`[cb-scrape] ${cur}: ${data.rate}% (sumber primer)`);
     } else {
-      console.warn('[cb-scrape] failed:', r.reason?.message);
+      failed.push(r.reason?.message || 'unknown');
+      console.warn('[cb-scrape] gagal:', r.reason?.message);
     }
   }
+  for (const [cur, data] of Object.entries(bis)) {
+    rates[cur] = data;
+    console.log(`[cb-scrape] ${cur}: ${data.rate}% (BIS, ${data.date || 'tanpa tanggal'})`);
+  }
+
+  const total = Object.keys(CB_FALLBACK).length;
+  const live  = Object.keys(rates).length;
+  if (live < CB_COVERAGE_MIN) {
+    const missing = Object.keys(CB_FALLBACK).filter(c => !rates[c]);
+    notifyCbCoverageDrop(live, total, missing, failed).catch(() => {});
+  }
   return rates;
+}
+
+// Alarm Telegram sekali per 24 jam (dedup lewat Redis SET NX) supaya kegagalan
+// scraper tidak lagi senyap, tapi juga tidak spam tiap kali cache 6 jam expired.
+// Fail-silent total: alarm yang gagal TIDAK boleh menggagalkan pengambilan rate.
+async function notifyCbCoverageDrop(live, total, missing, failed) {
+  const lock = await redisCmd('SET', 'cb_rates_alert_lock', '1', 'EX', 86400, 'NX');
+  if (!lock) return;
+  const token = process.env.TELEGRAM_BOT_TOKEN, chat = process.env.TELEGRAM_CHAT_ID;
+  console.warn(`[cb-scrape] CAKUPAN TURUN: ${live}/${total} live, hilang: ${missing.join(',')}`);
+  if (!token || !chat) return;
+  const text = `Suku bunga bank sentral: cuma ${live}/${total} berhasil diambil live.\n`
+             + `Hilang (pakai tabel statis): ${missing.join(', ')}\n`
+             + (failed.length ? `Error: ${failed.slice(0, 4).join(' | ')}` : '');
+  await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ chat_id: chat, text }),
+    signal: AbortSignal.timeout(6000),
+  });
 }
 
 // Returns array of { currency, bank, short, rate, last_meeting, last_decision, last_bps, rate_source }
@@ -247,4 +353,7 @@ function mergeCbRate(cur, fb, live, dec, rateSource) {
   };
 }
 
-module.exports = { CB_FALLBACK, getLiveCbRates, mergeCbRate, RATES_CACHE_KEY, RATES_TTL_MS };
+// _parseFredCsvLatest & _parseBisCbpol diekspor untuk unit test (pure, tanpa network) —
+// pola sama _parseCotPercentLine di api/feeds.js.
+module.exports = { CB_FALLBACK, getLiveCbRates, mergeCbRate, RATES_CACHE_KEY, RATES_TTL_MS,
+                   _parseFredCsvLatest, _parseBisCbpol, _splitCsvLine };

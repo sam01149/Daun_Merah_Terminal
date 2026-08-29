@@ -1,0 +1,97 @@
+name: Warm and Watch (gabungan retail + translate + health)
+
+# GABUNGAN dari 3 workflow terpisah (audit S336, 2026-08-29):
+#   retail-sentiment-warm.yml (*/15) + news-translate-warm.yml (*/15) + health-watch.yml (*/5)
+#
+# ALASAN DIGABUNG — bukan sekadar kerapian. Diukur dari `gh run list` (2026-08-27 s/d
+# 29): SEMUA workflow terjadwal di repo ini jalan pada kecepatan yang SAMA, ~3-4 run/hari
+# per workflow, TERLEPAS dari cron yang ditulis. `*/5` (harusnya 288/hari) dan `*/15`
+# (96/hari) sama-sama realisasinya ~3-4. Polanya bukan delay acak melainkan JATAH yang
+# dibagi round-robin ke seluruh workflow terjadwal di akun ini (total ~24 run/hari).
+#
+# Konsekuensinya: makin banyak workflow terjadwal, makin jarang MASING-MASING dilayani.
+# Menggabungkan 3 workflow jadi 1 membebaskan 2 slot untuk yang benar-benar kritikal
+# (`setup-tp-sl-watch.yml`, `ohlcv-sync.yml`, `market-digest.yml`), dan membuat health
+# probe ikut jalan setiap kali warm jalan.
+#
+# CATATAN JUJUR: hipotesis "jatah per-akun" ini BELUM terbukti — bisa saja jatahnya
+# per-workflow. Kalaupun begitu, penggabungan ini tetap tidak merugikan (tiap job tetap
+# dapat >=3-4 run/hari seperti sebelumnya). Cek ulang `gh run list` setelah ~2 hari:
+# kalau workflow yang tersisa jadi lebih sering, hipotesisnya benar.
+#
+# Cron ditulis */10 (bukan */5 atau */15) — angka ini SENGAJA lebih tinggi dari yang
+# GitHub layani supaya tidak ada kehilangan kalau suatu saat jatahnya dilonggarkan,
+# tapi tidak lagi berpura-pura presisi menit-menitan. Jangan percaya angka ini sebagai
+# jaminan; yang menjaga kesegaran data sebenarnya adalah TTL key Redis yang sudah
+# diperpanjang di S336 (lihat KEY_TTL di api/risk-regime.js dkk).
+#
+# Tiap step BERDIRI SENDIRI (continue-on-error) — satu sumber luar yang lagi down tidak
+# boleh membatalkan dua tugas lainnya. Ringkasan status dicetak di step terakhir.
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+jobs:
+  warm-and-watch:
+    runs-on: ubuntu-latest
+    env:
+      BASE: https://financial-feed-app.vercel.app
+    steps:
+      - name: Health probe (heartbeat VPS Railway + alert Telegram kalau mati)
+        id: health
+        continue-on-error: true
+        run: |
+          STATUS=$(curl -s -o /tmp/health.json -w "%{http_code}" \
+            -H "x-cron-secret: ${{ secrets.CRON_SECRET }}" \
+            --max-time 25 \
+            "$BASE/api/admin?action=health")
+          cat /tmp/health.json
+          echo "HTTP $STATUS"
+          [ "$STATUS" -eq 200 ] || { echo "Health check gagal HTTP $STATUS"; exit 1; }
+
+      - name: Retail sentiment warm (paksa refresh cache FXSSI)
+        id: retail
+        continue-on-error: true
+        run: |
+          STATUS=$(curl -s -o /tmp/retail.json -w "%{http_code}" \
+            -H "x-cron-secret: ${{ secrets.CRON_SECRET }}" \
+            --max-time 20 \
+            "$BASE/api/feeds?type=retail&force=1")
+          echo "HTTP $STATUS"
+          [ "$STATUS" -eq 200 ] || { echo "Retail warm gagal HTTP $STATUS"; cat /tmp/retail.json; exit 1; }
+
+      - name: News warm (isi ulang cache RSS + translate jendela live)
+        id: rss
+        continue-on-error: true
+        run: |
+          STATUS=$(curl -s -o /tmp/rss.xml -w "%{http_code}" --max-time 25 "$BASE/api/feeds?type=rss")
+          echo "HTTP $STATUS"
+          [ "$STATUS" -eq 200 ] || { echo "RSS warm gagal HTTP $STATUS"; exit 1; }
+
+      - name: News translate backfill (sapu arsip 36 jam penuh)
+        id: backfill
+        continue-on-error: true
+        run: |
+          STATUS=$(curl -s -o /tmp/bf.json -w "%{http_code}" \
+            -H "x-cron-secret: ${{ secrets.CRON_SECRET }}" \
+            --max-time 25 \
+            "$BASE/api/feeds?type=news_translate_backfill")
+          cat /tmp/bf.json
+          echo "HTTP $STATUS"
+          [ "$STATUS" -eq 200 ] || { echo "Translate backfill gagal HTTP $STATUS"; exit 1; }
+
+      # Gagal kalau SEMUA step gagal (indikasi app/Vercel down, bukan satu vendor rewel).
+      # Kalau cuma sebagian gagal, workflow tetap hijau tapi statusnya tercetak di log —
+      # ini disengaja: satu RSS yang lagi 503 tidak boleh bikin notifikasi gagal tiap
+      # 10 menit sampai orang berhenti membacanya.
+      - name: Ringkasan
+        run: |
+          echo "health=${{ steps.health.outcome }} retail=${{ steps.retail.outcome }} rss=${{ steps.rss.outcome }} backfill=${{ steps.backfill.outcome }}"
+          if [ "${{ steps.health.outcome }}" = "failure" ] && \
+             [ "${{ steps.retail.outcome }}" = "failure" ] && \
+             [ "${{ steps.rss.outcome }}" = "failure" ] && \
+             [ "${{ steps.backfill.outcome }}" = "failure" ]; then
+            echo "SEMUA step gagal — indikasi app/Vercel down, bukan satu vendor rewel."
+            exit 1
+          fi
