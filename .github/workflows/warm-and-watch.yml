@@ -38,12 +38,17 @@ jobs:
     env:
       BASE: https://financial-feed-app.vercel.app
     steps:
+      # HEADER: `x-admin-secret`, BUKAN `x-cron-secret`. `?action=health` di admin.js
+      # memakai gate admin, bukan gate cron — dan keduanya sama-sama dicocokkan ke
+      # CRON_SECRET sehingga gampang tertukar. Ketahuan dari verifikasi live saat
+      # penggabungan workflow S336 (401 "set x-admin-secret header"), bukan dari
+      # membaca kode. Jangan "rapikan" jadi seragam dengan step lain di bawah.
       - name: Health probe (heartbeat VPS Railway + alert Telegram kalau mati)
         id: health
         continue-on-error: true
         run: |
           STATUS=$(curl -s -o /tmp/health.json -w "%{http_code}" \
-            -H "x-cron-secret: ${{ secrets.CRON_SECRET }}" \
+            -H "x-admin-secret: ${{ secrets.CRON_SECRET }}" \
             --max-time 25 \
             "$BASE/api/admin?action=health")
           cat /tmp/health.json
