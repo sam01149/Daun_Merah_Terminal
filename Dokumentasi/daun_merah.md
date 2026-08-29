@@ -11,10 +11,97 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-29 (Session 336 — audit menyeluruh sumber data + proyek, READ-ONLY tanpa perubahan kode: 7 temuan diparkir, terbesar = AI auto-entry memutuskan tanpa 66-86% data makronya karena cache dingin + cron GitHub Actions ternyata cuma jalan ~3-4x/hari)
+> **Last updated:** 2026-08-29 (Session 336 lanjutan — eksekusi temuan audit: suku bunga bank sentral 2/8 -> 8/8 hidup (BoJ & RBNZ ternyata salah 2-3 bulan), watchdog health berhenti menghapus cache makro tanpa outage nyata, rate-path pakai FRED asli, panel ATR tab Teknikal hidup lagi, 8 workflow terjadwal -> 6)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
+
+## Changelog Session 336 lanjutan (2026-08-29) — Eksekusi Temuan Audit: Suku Bunga CB 2/8 -> 8/8, Watchdog Berhenti Menghapus Cache Makro, Panel ATR Hidup Lagi
+
+**Konteks:** eksekusi temuan audit S336 di atas setelah user memilih ("kalau ada perlu perbaikan, perbaiki"). Sesi lain aktif di `market-digest.js`, jadi file itu TIDAK disentuh. Semua klaim di bawah diverifikasi LIVE di produksi, bukan cuma unit test.
+
+### 1. Suku bunga bank sentral: 2/8 -> 8/8 hidup
+
+Live sebelum: `cb_rates_live_v2` cuma berisi EUR + CAD; enam sisanya diam-diam pakai tabel statis `CB_FALLBACK`. **Dua angka di produksi memang SALAH selama 2-3 bulan** — BoJ 0.75 (harusnya 1.0, naik Juni 2026) dan RBNZ 2.25 (harusnya 2.5, naik Juli 2026). Diverifikasi lewat deret BULANAN BIS (bukan satu titik) sehingga terlihat kapan persis kenaikannya.
+
+Penyebab & perbaikan per sumber:
+- **USD** — dua bug bertumpuk di `scrapeUSD`. (a) FRED mengganti header CSV dari `DATE,` jadi `observation_date,`, jadi filter `!l.startsWith('DATE')` tidak lagi membuang header dan `parseFloat(nama seri)` = NaN, fungsi SELALU throw. (b) `fredgraph.csv` **mengabaikan** `sort_order`/`limit` — diverifikasi live: `limit=2` mengembalikan 6.467 baris ASCENDING, jadi baris pertama itu observasi 2008. Diganti `_parseFredCsvLatest` (buang header, pindai dari belakang).
+- **GBP** — halaman HTML BoE 200 tapi 0 match ketiga regex. Pindah ke **BoE IADB** seri `IUDBEDR` (CSV stabil). Endpoint membalas 302, jadi redirect WAJIB diikuti.
+- **JPY/AUD/NZD/CHF** — BoJ 404, RBA HTTP 403, RBNZ HTTP 403, SNB 0 match. Keempatnya diganti **satu** request ke **BIS Data Portal `WS_CBPOL`** (dataflow policy rate lintas negara, gratis, tanpa key, membawa tanggal observasi — scraper lama semua `date:null`).
+- **USD & EUR SENGAJA tidak ikut BIS** walau datanya ada: BIS memakai MIDPOINT target range Fed (3.625) sedangkan app ini konsisten memakai batas ATAS (`DFEDTARU`, 3.75); dan BIS XM memberi 2.25 sedangkan API resmi ECB (`MRR_FR`) memberi 2.40. Beda definisi, bukan beda kesegaran — sumber primer menang.
+- **`CB_FALLBACK` SENGAJA tidak diperbarui** walau nilainya basi. Tabel itu berperan sebagai BASELINE untuk heuristik diff di `mergeCbRate` (deteksi hike/cut saat `cb_decisions` kosong) — memperbaruinya justru mematikan mekanisme itu. Terbukti bekerja: begitu live JPY = 1.0 vs baseline 0.75, sistem otomatis melaporkan "hike 25bps".
+- **Alarm baru:** kalau cakupan live turun di bawah 6/8, kirim Telegram (dedup 24 jam lewat Redis `SET NX`). Sebelumnya kegagalan ditelan `CB_FALLBACK` tanpa sinyal apa pun — itulah kenapa bisa mati berbulan-bulan.
+
+Verifikasi live: `DEL cb_rates_live_v2` lalu panggil `/api/cb-status` -> **8/8 `live_fresh`**, semuanya membawa tanggal.
+
+### 2. `rate-path.js` — bug kembar, plus penyebab ketiga yang cuma kelihatan dari produksi
+
+`fetchFredCsv()` punya pola bug yang SAMA PERSIS (salinan kedua dari kode yang sama), sehingga mengembalikan baris header sebagai data dan endpoint selalu jatuh ke `heuristic_sofr`.
+
+Perbaikan parser saja **TIDAK cukup** — setelah deploy, produksi masih `heuristic_sofr` dengan keempat seri T-bill null. Dua penyebab tambahan yang hanya ketahuan dari verifikasi live berulang:
+- **Parameter yang benar-benar berefek di `fredgraph.csv` adalah `cosd`** (start date), bukan `sort_order`/`limit`. Tanpa `cosd`, 5 seri paralel = ~800 KB (DTB3 saja 300 KB / 18.000+ baris sejak 1954). Dengan `cosd` 400 hari: ~1 KB.
+- **Header request.** Versi lama memakai `User-Agent: DaunMerah/1.0` tanpa `Accept` dan konsisten gagal dari IP Vercel, sementara `getText` di `_cb_rates.js` (UA + Accept lengkap) berhasil untuk endpoint CSV yang SAMA PERSIS. Salinan kedua dihapus total; `rate-path.js` sekarang mengimpor `fetchFredCsvLatest` dari `_cb_rates.js`. Satu reader, satu tempat perbaikan kalau FRED berubah lagi.
+
+Verifikasi live: `source: "fred_tbill_term"`, `tbill_1m: 3.81`, `tbill_3m: 3.84` (sebelumnya `heuristic_sofr`, tanpa field T-bill).
+
+### 3. Watchdog `?action=health` ternyata IKUT menghapus cache makro — penyebab ketiga blok makro kosong
+
+Ini ditemukan HANYA karena verifikasi live: setelah semua TTL diperpanjang, `real_yields`/`risk_regime`/`cot_cache_v2` hilang lagi dalam ~15 menit. Pelakunya `?action=health` sendiri.
+
+Logikanya menyimpulkan sumber "baru pulih" dari `gapMs > 5 menit` sejak OK terakhir, dengan asumsi implisit health-watch jalan tiap 5 menit. Di produksi GitHub cuma melayani ~3-4 run/hari, jadi `gapMs` untuk sumber yang **sehat sempurna** pun selalu ~7 jam > ambang. Akibatnya SETIAP run health mengira FRED/Stooq/CFTC baru pulih lalu `DEL` cache turunannya (`SOURCE_CACHE_KEYS`).
+
+Perbaikan: "pulih" sekarang berarti **pernah tercatat DOWN** di hash baru `health_down_since`, lalu OK — tidak lagi bergantung pada seberapa sering health dipanggil. Stempel DOWN ditulis sekali saja supaya durasi outage terbaca benar. Clear-on-recovery yang SAH tetap jalan seperti desain aslinya.
+
+### 4. Ketersediaan data makro: umur key dipisah dari ambang kesegaran
+
+Akar masalah dari audit: `market-digest.js` SUDAH menghangatkan semua cache makro lewat `fetchOrWarm`, tapi TTL-nya (5 menit - 1 jam) jauh lebih pendek dari jarak antar-jalannya (6-8 jam). Kelas bug yang sama persis dengan `latest_article` di S334.
+
+Perbaikan: pisahkan dua hal yang dulu dipaksa jadi satu angka — **ambang kesegaran** (kapan handler fetch ulang, dibanding `computed_at`) TIDAK diubah sama sekali, sementara **umur key Redis** (`EX`) diperpanjang untuk pembaca pasif (`ohlcvAnalyzeHandler` yang membaca read-only dan tidak pernah memicu refresh):
+
+| Key | EX lama | EX baru | Kosong saat AI memutuskan (audit) |
+|---|---|---|---|
+| `risk_regime` | 5 menit | 12 jam | 69% |
+| `daily_snapshot` | 5 menit | 12 jam | 66% |
+| `rr_cache_v2` | 1 jam | 12 jam | 76% |
+| `cot_cache_v2` | 6 jam | 48 jam | 34% |
+
+Karena ambang kesegaran tidak disentuh, **UI live tidak berubah** dan **anggaran fetch ScraperAPI untuk CVOL tidak berubah** (tetap 1 credit/jam, perhitungan S157 masih berlaku). `retail_sentiment_cache` SENGAJA tidak diperpanjang — sentimen ritel genuinely bergerak intraday, dan menurut penilaian audit ini nilainya paling rendah dari semua input yang hilang (prompt-nya sendiri sudah melabeli "kontrarian lemah kalau melawan COT").
+
+### 5. Label umur real yield + peringatan vintage differential (`POLICY_EPOCHS` v35)
+
+Cache `real_yields` SUDAH membawa `as_of` dan flag `stale` sejak audit 2026-08-15, tapi `_formatFundamentalBlock` membuangnya. Padahal yield 10Y non-USD memakai seri OECD BULANAN: observasi terakhir EUR **2026-01-01** (~8 bulan), enam lainnya Juni 2026, sementara USD `DGS10` harian.
+
+Sekarang: baris `REAL YIELD` membawa umur data; kalau >45 hari, peringatan keras + larangan memakainya untuk klaim pergerakan jangka pendek. Baris `DIFFERENTIAL SUKU BUNGA EUR-USD` (yang oleh prompt sendiri disebut "driver dominan") membawa peringatan beda VINTAGE dan **melarang** menyimpulkan differential "menyempit/melebar" kalau kedua kaki berjarak >45 hari — karena mengurangkan angka Agustus dengan angka Januari bukan differential pada satu titik waktu.
+
+`POLICY_EPOCHS` v35 dinaikkan dengan SATU tema: ketersediaan & kejujuran data makro. Tidak ada aturan trading, gate, atau ambang yang diubah. Sengaja dibundel jadi satu epoch (bukan dicicil) karena tiap kenaikan epoch mereset hitungan n>=30 ke nol.
+
+### 6. Panel ATR/Range tab Teknikal hidup lagi
+
+`?action=atr` mencocokkan map ber-key garis miring, sedangkan tab TEK mengirim `tekPair` tanpa garis miring — 400 untuk SEMUA pair, errornya ditelan `.catch()` sehingga tidak pernah terlihat. Ditambah `normalizePairKey` di SISI SERVER (3 pemanggil dengan konvensi berbeda; satu titik normalisasi lebih aman dari tiga). Normalisasi dipasang SEBELUM `PIP_SIZE_MAP` juga — kalau tidak, `XAUUSD` jatuh ke pip 0.0001 dan atr_pips gold meleset 100x.
+
+Verifikasi live: EURUSD/XAUUSD/CHFJPY/AUDNZD/EURGBP semua 200 dengan pip_size benar (gold 0.01); pair ngaco tetap 400.
+
+### 7. Konsolidasi workflow GitHub Actions: 8 terjadwal -> 6
+
+`gh run list` menunjukkan semua workflow dilayani ~3-4 run/hari terlepas dari cron yang ditulis, terbagi round-robin (total akun ~24/hari). `health-watch` + `retail-sentiment-warm` + `news-translate-warm` digabung jadi `warm-and-watch.yml`; `inflation-staleness-check` ditumpangkan ke `setup-log-archive.yml` dengan penjaga hari Senin.
+
+`warm-and-watch.yml` juga menghangatkan `risk-regime`/`real-yields`/`cot` SETELAH health probe — supaya clear-on-recovery yang SAH langsung diikuti pengisian ulang, bukan menunggu market-digest berikutnya. `daily_snapshot` sengaja tidak diikutkan (ambang segar 5 menit x ~19 simbol Yahoo per fetch).
+
+**Bug yang ketahuan dari verifikasi live workflow baru:** health probe sempat 401 karena saya memakai `x-cron-secret`, padahal `?action=health` memakai gate `x-admin-secret` (keduanya dicocokkan ke `CRON_SECRET` yang sama, jadi gampang tertukar). Sudah diperbaiki + diberi komentar peringatan supaya tidak "dirapikan" jadi seragam.
+
+**Hipotesis yang belum terbukti (dicatat jujur):** apakah jatah itu per-akun atau per-workflow belum bisa dipastikan. Penggabungan ini tidak merugikan kalau hipotesisnya salah. Cek ulang `gh run list` ~2 hari lagi — diparkir di `daun_merah_progress.md`.
+
+### Verifikasi akhir (live, Redis produksi)
+
+Seluruh 11 cache yang dibaca jalur Analisa/auto-entry ADA: `cb_bias`, `real_yields` (6j), `cot_cache_v2` (48j), `rr_cache_v2` (11,7j), `risk_regime` (12j), `daily_snapshot` (11,7j), `rate_path` (3,9j), `latest_article` (20,9j), `calendar_v1` (5,8j), `cb_rates_live_v2` (6,7j), `retail_sentiment_cache`. Hash `health_down_since` kosong (tidak ada sumber yang benar-benar down, jadi tidak ada penghapusan cache palsu).
+
+**Test:** `npm test` **1142/1142 hijau** (18 test regresi baru: parser CSV FRED, parser BIS, `normalizePairKey`, label umur real yield, peringatan vintage).
+
+**File diubah:** `api/_cb_rates.js`, `api/rate-path.js`, `api/correlations.js`, `api/risk-regime.js`, `api/feeds.js`, `api/admin.js`, `api/_auto_entry_guard.js`, `.github/workflows/warm-and-watch.yml` (baru), `.github/workflows/setup-log-archive.yml`, `test/lib/cb_rates.test.js`, `test/lib/corr_pair_key.test.js` (baru), `test/admin/makro_ctx.test.js`. Dihapus: `health-watch.yml`, `retail-sentiment-warm.yml`, `news-translate-warm.yml`, `inflation-staleness-check.yml`.
+
+**Penunjuk silang (ATURAN.md §2):** perubahan `POLICY_EPOCHS` v35 dan isi prompt auto-entry dicatat lengkap di [professional_llm_trader/changelog.md](professional_llm_trader/changelog.md) §Session 336.
+
+---
 
 ## Changelog Session 336 (2026-08-29) — Audit Menyeluruh Sumber Data + Proyek (READ-ONLY, nol perubahan kode)
 
