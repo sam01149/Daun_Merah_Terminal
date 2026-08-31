@@ -1,2 +1,0 @@
-[    1710ms] [WARNING] <meta name="apple-mobile-web-app-capable" content="yes"> is deprecated. Please include <meta name="mobile-web-app-capable" content="yes"> @ https://financial-feed-app.vercel.app/#ringkasan:0
-[    1808ms] [INFO] Banner not shown: beforeinstallpromptevent.preventDefault() called. The page must call beforeinstallpromptevent.prompt() to show the banner. @ https://financial-feed-app.vercel.app/#ringkasan:0

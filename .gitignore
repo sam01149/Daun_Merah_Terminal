@@ -44,3 +44,6 @@ asset/
 
 # Cache lokal query/abstrak Scopus MCP — hapus setelah temuan ditulis ke daun_merah_riset.md (ATURAN.md §3.6)
 .cache/
+
+# Artefak sesi Playwright MCP (snapshot/console log verifikasi visual)
+.playwright-mcp/
