@@ -11,10 +11,41 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-31 (Session 337 — Ringkasan dikembalikan ke jobdesknya: makro murni dari headline, input teknikal/COT/skew/korelasi dicabut ke tab Analisa, peringkat headline ditulis ulang, bug digest_history WRONGTYPE senyap 4 bulan diperbaiki, daftar headline sumber tampil di UI)
+> **Last updated:** 2026-08-31 (Session 338 — Gate D correlation cap: penjelasan pembatalan sekarang menyebut pair pengikatnya secara eksplisit; diverifikasi ulang dengan korelasi live)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
+
+## Changelog Session 338 (2026-08-31) — Gate D (Correlation Cap): Penjelasan Pembatalan Menyebut Pair Pengikatnya
+
+**Konteks:** user membuka kartu EUR/USD bearish yang dibatalkan 31 Agustus (`EURUSD=X:1788164130074`, `canceled_reason: gate_correlation_cap`) lalu melapor: *"aku sudah cek, di auto entry, ga ada entryan ganda loh"*. Laporan itu **benar** — dan gate-nya juga benar. Dua-duanya bisa benar sekaligus karena Gate D tidak pernah memeriksa entri ganda di pair yang sama (itu tugas dup-guard/Flip Guard); yang dia periksa adalah posisi pair LAIN yang berkorelasi.
+
+### 1. Verifikasi live: gate menyala karena sebab yang nyata
+
+Dibaca langsung dari `setup_log_auto:v1` produksi:
+
+| Entri | Bias | Status | Keterangan |
+|---|---|---|---|
+| `EURUSD=X:1788164130074` | bearish | canceled (`gate_correlation_cap`) | kandidat yang dilaporkan user |
+| `CHFJPY=X:1787559368567` | bearish | **open** (fill 2026-08-27) | pengikat exposure-nya |
+
+`CORRELATED_PAIRS` memetakan EUR/USD–CHF/JPY sebagai korelasi positif (r=0,373, riset 2026-08-08), jadi dua-duanya bearish = satu taruhan arah yang sama. Angka risetnya dicek ulang sesi ini dari candle harian yang tersimpan di Redis (log-return, 2026-04-14 s/d 2026-08-31): **r20 = 0,403 / r60 = 0,559 / r80 = 0,433** untuk EUR/USD–CHF/JPY, dan **r20 = 0,656 / r60 = 0,523 / r100 = 0,597** untuk EUR/USD–XAU/USD. Korelasinya bukan cuma masih berlaku, tapi sekarang lebih kuat dari angka riset yang dipakai tabel. **Tidak ada bug perilaku, dan tidak ada gate yang dilonggarkan sesi ini.**
+
+### 2. Yang memang salah: penjelasannya, bukan keputusannya
+
+Kalimat yang sampai ke user berbunyi *"pair berkorelasi (lihat CORRELATED_PAIRS di api/_auto_entry_guard.js) sudah punya posisi pending/open searah"* — menunjuk ke file kode, tidak menyebut pair mana, biasnya apa, statusnya apa, korelasinya berapa. Dari sisi user itu **tidak bisa diverifikasi sama sekali**: dia buka pair yang dibatalkan, tidak menemukan entri ganda di sana (memang tidak ada), lalu wajar menyimpulkan gate-nya salah nyala. Penyebabnya di kode: `isCorrelatedExposureBlocked` cuma mengembalikan `true`/`false`, jadi alasan spesifiknya hilang di detik gate menyala dan tidak pernah tersimpan.
+
+**Perbaikan:**
+
+1. **`api/_auto_entry_guard.js`** — fungsi baru `correlatedExposureBlock()` mengembalikan detail blokir (`partner`, `partner_label`, `partner_bias`, `partner_status`, `partner_id`, `sign`, `sign_source`, `r`, `r_asof`) atau `null`. `isCorrelatedExposureBlocked()` tinggal pembungkus tipis di atasnya — call site & test lama tidak berubah, **logika memblokirnya identik**. Angka `r`/`r_asof` dipindah dari komentar ke data tabel `CORRELATED_PAIRS` (bukan ambang — semua pasangan terdaftar tetap memblokir apa pun nilai r-nya, murni untuk transparansi). Kalau sign ditimpa data live (anomali |r20-r60|>0,4), `r` riset sengaja dikosongkan supaya tidak menampilkan angka yang bukan dasar keputusan.
+2. **`api/admin.js`** — Gate D memanggil versi detail dan menulis kalimat siap-baca ke field baru `canceled_detail` pada entri ghost. Dirakit di **server**, bukan di frontend: satu-satunya saat kebenarannya bisa dipastikan adalah detik gate menyala — partner pengikatnya bisa sudah closed/expired waktu kartunya dibuka nanti, jadi rekonstruksi di klien akan menebak, bukan melaporkan.
+3. **`dev-auto-entry.html`** — `buildStatusNarrative` menampilkan `canceled_detail` sesudah kalimat generiknya; kalimat generik Gate D sendiri ditulis ulang menjadi *"pair LAIN yang berkorelasi ... Gate ini TIDAK memeriksa entri ganda di pair yang sama (itu tugas dup/Flip Guard)"*. Entri lama (sebelum field ini ada) tetap memakai kalimat generik apa adanya, **tidak** direkonstruksi di klien.
+
+Contoh hasilnya sekarang: *"Yang mengikat exposure BUKAN pair ini sendiri (pair ini tidak punya entri ganda), melainkan CHF/JPY bearish yang sudah terisi (open): korelasi positif, jadi bias yang SAMA dihitung sebagai satu taruhan arah yang sama (r=0,373, riset 2026-08-08)."*
+
+**Tes:** 1173/1173 hijau (4 tes baru untuk `correlatedExposureBlock`: detail partner, `null` saat lolos, `sign_source:'live'` menyembunyikan r riset, konsistensi dengan predikat lama).
+
+**Catatan tabrakan multi-sesi:** perubahan kode di atas ikut tersapu ke commit `7271fa4` (sesi lain yang berjalan paralel memakai `git add -A` saat file ini sedang diedit) — isinya benar dan sudah ter-deploy, tapi pesan commit-nya cuma bicara soal `_extractRingkasanExcerpt`. Sengaja **tidak** di-rewrite (`amend`/`rebase`) karena sesi itu masih aktif di working tree yang sama; jejaknya dicatat di sini saja. Pola yang sama sudah pernah terjadi (lihat memory "Tabrakan Multi-Sesi Git").
 
 ## Changelog Session 337 (2026-08-31) — Ringkasan Dikembalikan ke Jobdesknya: Makro Murni dari Headline, Teknikal/COT/Retail/Korelasi Pindah ke Analisa
 

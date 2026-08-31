@@ -10,6 +10,7 @@ const {
   isDrawdownEmergencyValveOpen,
   DRAWDOWN_EMERGENCY_VALVE_DAYS,
   isCorrelatedExposureBlocked,
+  correlatedExposureBlock,
   isTimingConflictBlocked,
   isInvalidationTriggered,
   EXPOSURE_BINDING_STATUSES,
@@ -193,6 +194,51 @@ test('isCorrelatedExposureBlocked: GC=F bullish baru, EUR/USD bearish sudah open
 test('isCorrelatedExposureBlocked: partner pending searah -> BLOCKED (dulu tidak, diubah 2026-08-18)', () => {
   const positions = [{ symbol: 'EURUSD=X', bias: 'bullish', status: 'pending' }];
   assert.equal(isCorrelatedExposureBlocked({ symbol: 'GC=F', bias: 'bullish', openPositions: positions }), true);
+});
+
+// ── correlatedExposureBlock: DETAIL blokir (2026-08-31) ─────────────────────
+// Predikat lama sengaja dipertahankan sebagai pembungkus; test di bawah menjaga agar
+// detail yang dipakai UI (`canceled_detail`) benar-benar menunjuk pair PENGIKAT, bukan
+// pair kandidatnya sendiri — persis kebingungan yang memicu fitur ini ("di pair ini
+// tidak ada entri ganda kok").
+test('correlatedExposureBlock: menyebut partner pengikat + bias/status + angka korelasi riset', () => {
+  const positions = [{ symbol: 'CHFJPY=X', label: 'CHF/JPY', bias: 'bearish', status: 'open', id: 'CHFJPY=X:1' }];
+  const d = correlatedExposureBlock({ symbol: 'EURUSD=X', bias: 'bearish', positions });
+  assert.equal(d.partner, 'CHFJPY=X');
+  assert.equal(d.partner_label, 'CHF/JPY');
+  assert.equal(d.partner_bias, 'bearish');
+  assert.equal(d.partner_status, 'open');
+  assert.equal(d.partner_id, 'CHFJPY=X:1');
+  assert.equal(d.sign, 'positive');
+  assert.equal(d.sign_source, 'riset');
+  assert.equal(d.r, 0.373);
+  assert.equal(d.r_asof, '2026-08-08');
+});
+
+test('correlatedExposureBlock: lolos gate -> null (bukan objek kosong)', () => {
+  const positions = [{ symbol: 'CHFJPY=X', bias: 'bullish', status: 'open' }];
+  assert.equal(correlatedExposureBlock({ symbol: 'EURUSD=X', bias: 'bearish', positions }), null);
+});
+
+// Kalau sign ditimpa data live (anomali |r20-r60|>0,4), angka r riset TIDAK ikut
+// ditampilkan — bisa beda tanda dari sign yang benar-benar dipakai memutuskan.
+test('correlatedExposureBlock: sign dari liveSign -> sign_source live & r riset disembunyikan', () => {
+  const positions = [{ symbol: 'EURUSD=X', bias: 'bearish', status: 'open' }];
+  const d = correlatedExposureBlock({
+    symbol: 'GC=F', bias: 'bullish', positions,
+    liveSign: { 'GC=F|EURUSD=X': 'negative' },
+  });
+  assert.equal(d.sign, 'negative');
+  assert.equal(d.sign_source, 'live');
+  assert.equal(d.r, null);
+  assert.equal(d.r_asof, null);
+});
+
+test('isCorrelatedExposureBlocked: tetap boolean & konsisten dengan correlatedExposureBlock', () => {
+  const positions = [{ symbol: 'CHFJPY=X', bias: 'bearish', status: 'open' }];
+  const args = { symbol: 'EURUSD=X', bias: 'bearish', positions };
+  assert.equal(isCorrelatedExposureBlocked(args), true);
+  assert.equal(correlatedExposureBlock(args) !== null, isCorrelatedExposureBlocked(args));
 });
 
 test('isCorrelatedExposureBlocked: pair tanpa mapping korelasi (AUD/NZD, EUR/GBP) -> selalu false', () => {
