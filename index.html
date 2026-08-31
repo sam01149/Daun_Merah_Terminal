@@ -4454,7 +4454,7 @@ window.addEventListener('DOMContentLoaded', () => _updateNewsLangBtn());
 
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.08.31.1';
+const APP_VERSION = '2026.08.31.2';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
@@ -16663,6 +16663,15 @@ let tekTF = '240';
 let tekNotes = {};
 let tvScriptLoaded = false;
 let tekInited = false;
+// Tanda-tangan widget TradingView yang sedang hidup di DOM ('SYMBOL|interval|theme')
+// + id div-nya. Dipakai createTVChart() untuk MEMAKAI ULANG iframe yang sudah ada
+// alih-alih membangun ulang. Penting: gambar manual user (trendline, garis
+// horizontal, fibo) hidup di dalam iframe cross-origin TradingView dan TIDAK bisa
+// kita baca/tulis — begitu iframe dibuang, gambarnya ikut hilang. Karena panel
+// disembunyikan pakai display:none (bukan dibuang dari DOM), iframe-nya selamat
+// selama kita tidak memanggil container.innerHTML = ''.
+let tvChartSig = null;
+let tvChartDivId = null;
 
 const MTF_SELS = [
   { id:'mtfSelD1', key:'D1' }, { id:'mtfSelH4', key:'H4' },
@@ -16865,6 +16874,7 @@ function loadTVScript(cb) {
   s.src = 'https://s3.tradingview.com/tv.js';
   s.onload = () => { tvScriptLoaded = true; cb(); };
   s.onerror = () => {
+    tvChartSig = null; tvChartDivId = null;
     const c = document.getElementById('tekChartContainer');
     if (c) c.innerHTML = '<div class="tek-chart-offline"><span>Chart tidak tersedia</span><span style="font-size:9px">Periksa koneksi internet</span></div>';
   };
@@ -16874,6 +16884,14 @@ function loadTVScript(cb) {
 function createTVChart() {
   const container = document.getElementById('tekChartContainer');
   if (!container) return;
+  const theme = document.body.classList.contains('light-theme') ? 'light' : 'dark';
+  const sym = TEK_TV_SYM[tekPair] || 'FX:EURUSD';
+  const sig = sym + '|' + tekTF + '|' + theme;
+  // Widget yang sama (simbol + timeframe + tema) sudah hidup di container ini:
+  // jangan dibangun ulang. Rebuild tanpa alasan = iframe baru = semua garis
+  // analisa yang digambar user di chart hilang tiap kali pindah tab / toggle tema.
+  if (sig === tvChartSig && tvChartDivId && container.contains(document.getElementById(tvChartDivId))) return;
+  tvChartSig = null; tvChartDivId = null;
   container.innerHTML = '<div style="height:100%;display:flex;align-items:center;justify-content:center;color:var(--muted);font:11px DM Mono,monospace">Memuat chart TradingView...</div>';
   loadTVScript(() => {
     if (typeof TradingView === 'undefined') {
@@ -16888,13 +16906,13 @@ function createTVChart() {
     container.appendChild(div);
     new TradingView.widget({
       autosize: true,
-      symbol: TEK_TV_SYM[tekPair] || 'FX:EURUSD',
+      symbol: sym,
       interval: tekTF,
       timezone: 'Asia/Jakarta',
-      theme: document.body.classList.contains('light-theme') ? 'light' : 'dark',
+      theme: theme,
       style: '1',
       locale: 'id',
-      toolbar_bg: document.body.classList.contains('light-theme') ? '#f8f7f5' : '#0e130f',
+      toolbar_bg: theme === 'light' ? '#f8f7f5' : '#0e130f',
       enable_publishing: false,
       withdateranges: false,
       hide_side_toolbar: true,
@@ -16930,6 +16948,10 @@ function createTVChart() {
         { id: 'RSI@tv-basicstudies', version: 60 },
       ],
     });
+    // Catat tanda-tangan HANYA setelah widget benar-benar dibuat, supaya jalur
+    // gagal (script offline / TradingView undefined) tetap mencoba ulang.
+    tvChartSig = sig;
+    tvChartDivId = id;
   });
 }
 

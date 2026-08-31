@@ -11,10 +11,32 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-31 (Session 340 — Fix MT5 Bridge terbaca offline akibat blokir Private Network Access / PNA browser; Session 339 — Fix pemuatan CDN Lightweight Charts & candle Deriv 1M/5M/15M di tab Chart Posisi dev-auto-entry.html; Session 338 — Gate D correlation cap)
+> **Last updated:** 2026-08-31 (Session 341 — Chart TEK dipakai ulang antar-tab supaya garis analisa manual tidak hilang saat pindah fitur; Session 340 — Fix MT5 Bridge terbaca offline akibat blokir Private Network Access / PNA browser; Session 339 — Fix pemuatan CDN Lightweight Charts & candle Deriv 1M/5M/15M di tab Chart Posisi dev-auto-entry.html)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
+
+## Changelog Session 341 (2026-08-31) — Garis Analisa Manual di Chart TEK Tidak Lagi Hilang Saat Pindah Tab
+
+**Konteks:** User menggambar garis analisa (trendline / garis horizontal / fibo) langsung di chart tab TEK, lalu bertanya apakah garis itu bisa bertahan saat pindah fitur atau refresh aplikasi.
+
+**Akar masalah (dua sebab terpisah, jangan disamakan):**
+1. **Pindah tab — sebab ada di kode kita.** `createTVChart()` selalu dipanggil dari `initTeknikal()` (juga dari `selectTekPair()`, `onTekTFChange()`, dan `updateThemeIcon()`), dan baris pertamanya `container.innerHTML = '...'` membuang isi `#tekChartContainer`. Iframe TradingView lama ikut terbuang lalu dibangun ulang dari nol, jadi seluruh gambar manual hilang — padahal panel view sebenarnya disembunyikan dengan `display:none` (tidak dibuang dari DOM), sehingga iframe-nya sebetulnya bisa selamat kalau tidak dibongkar sendiri.
+2. **Refresh halaman — sebab ada di luar jangkauan kode kita.** Gambar manual hidup di dalam iframe cross-origin `s3.tradingview.com`. Widget embed gratis (`tv.js`) tidak punya API save/load maupun login akun, dan same-origin policy melarang kita membaca/menulis isinya. Tidak ada jalan memperbaikinya tanpa mengganti mesin chart (lihat catatan di `daun_merah_progress.md`).
+
+**Perbaikan (`index.html`, hanya menyentuh sebab #1):**
+- Dua state baru `tvChartSig` (`'SYMBOL|interval|theme'`) dan `tvChartDivId` mencatat widget yang sedang hidup di DOM.
+- `createTVChart()` menghitung signature di awal; kalau simbol + timeframe + tema sama DAN div widget lama masih ada di dalam container, fungsi langsung `return` tanpa menyentuh `innerHTML` — iframe (beserta gambarnya) dipakai ulang apa adanya.
+- Signature dicatat **hanya setelah** `new TradingView.widget()` benar-benar dieksekusi, dan direset ke `null` pada jalur gagal (`s.onerror` di `loadTVScript()`, serta sebelum rebuild) supaya kondisi offline tetap dicoba ulang, bukan terkunci menganggap chart sudah ada.
+- Sekalian merapikan duplikasi: `symbol`, `theme`, dan `toolbar_bg` sekarang memakai variabel `sym`/`theme` yang sudah dihitung untuk signature, bukan mengevaluasi `classList.contains('light-theme')` dua kali.
+- Ganti pair / ganti timeframe / toggle tema tetap membangun ulang widget (signature berubah) — memang harus, karena widget gratis tidak bisa ganti simbol atau tema tanpa dibuat ulang. Konsekuensinya gambar hilang pada tiga aksi itu, dan ini trade-off yang disadari.
+
+**Verifikasi live (Playwright, server statis lokal):**
+- Gambar garis horizontal di XAU/USD 4H (shortcut Alt+H, harga 4.275,70) -> klik tab COT -> balik ke tab TEK: garis masih terlihat di posisi yang sama, `tvChartSig` tidak berubah, jumlah iframe tetap 1, dan elemen iframe-nya identik secara referensi (`before === after`, penanda `dataset.probe` ikut selamat).
+- Chart tetap merender penuh setelah container sempat `display:none` — tidak ada gejala kanvas blank/ukuran 0 saat panel ditampilkan lagi.
+- `selectTekPair('EURUSD')` -> signature berubah jadi `FX:EURUSD|240|light` dan widget dibangun ulang (perilaku yang diinginkan, bukan regresi).
+- Refresh halaman: garis hilang, sesuai keterbatasan yang dijelaskan di sebab #2.
+- `npm test` 1183/1183 hijau. `APP_VERSION` naik `2026.08.31.1` -> `2026.08.31.2`.
 
 ## Changelog Session 340 (2026-08-31) — Fix MT5 Bridge Terbaca Offline Akibat Blokir PNA (Private Network Access) di Browser
 
