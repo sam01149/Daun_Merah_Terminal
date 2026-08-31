@@ -5658,7 +5658,11 @@ function _ringkasanDisclaimerHtml(method) {
 // punya field ini, jadi absennya harus diam (return '') bukan kotak kosong.
 function renderRingkasanSources(items, total) {
   if (!Array.isArray(items) || items.length === 0) return '';
+  // Cache lama (sebelum 2026-08-31) belum membawa total — jangan menebak, cukup
+  // sembunyikan klausa "N dari total" supaya tidak menulis "20 teratas dari 20"
+  // yang saling bertentangan dengan kalimat "sisanya tetap dibaca AI".
   const totalDikirim = Number.isFinite(total) && total > items.length ? total : items.length;
+  const sebagian = totalDikirim > items.length;
   const rows = items.map(h => {
     const t = h.at ? new Date(h.at) : null;
     let jam = '';
@@ -5673,10 +5677,10 @@ function renderRingkasanSources(items, total) {
   }).join('');
   return `
     <details class="ringkasan-sources no-print">
-      <summary>Headline sumber (${items.length} dari ${totalDikirim}) <span class="ringkasan-sources-caret"></span></summary>
+      <summary>Headline sumber (${sebagian ? items.length + ' dari ' + totalDikirim : items.length}) <span class="ringkasan-sources-caret"></span></summary>
       <div class="ringkasan-sources-body">
         ${rows}
-        <div class="ringkasan-sources-note">Urut peringkat relevansi makro, bukan waktu. Jam dalam WIB. Ini ${items.length} teratas dari ${totalDikirim} headline yang dikirim ke AI — sisanya tetap dibaca AI walau tidak ditampilkan di sini. Kalau ada berita besar yang ada di daftar ini tapi tidak dibahas di ringkasan, itu masalah penulisan.</div>
+        <div class="ringkasan-sources-note">Urut peringkat relevansi makro, bukan waktu. Jam dalam WIB.${sebagian ? ` Ini ${items.length} teratas dari ${totalDikirim} headline yang dikirim ke AI — sisanya tetap dibaca AI walau tidak ditampilkan di sini.` : ''} Kalau ada berita besar yang ada di daftar ini tapi tidak dibahas di ringkasan, itu masalah penulisan.</div>
       </div>
     </details>`;
 }

@@ -68,10 +68,15 @@ test('menyebut "N dari total" — daftar cuma sebagian dari yang dibaca AI', () 
     'catatan wajib menjelaskan headline di luar daftar tetap dilihat AI — kalau tidak, user salah menyimpulkan berita itu terlewat');
 });
 
-test('total tidak dikirim / lebih kecil dari jumlah item → jatuh ke jumlah item, bukan angka aneh', () => {
-  const items = [H('A', '2026-08-31T03:00:00Z'), H('B', '2026-08-31T03:00:00Z')];
-  assert.ok(renderRingkasanSources(items, undefined).includes('2 dari 2'));
-  assert.ok(renderRingkasanSources(items, 1).includes('2 dari 2'));
+test('total tidak dikirim / tidak lebih besar → klausa "N dari total" disembunyikan, bukan "2 dari 2"', () => {
+  // Payload cache lama belum membawa total. Menulis "2 teratas dari 2 ... sisanya tetap
+  // dibaca AI" saling bertentangan, jadi klausanya hilang sama sekali.
+  for (const total of [undefined, 1, 2]) {
+    const out = renderRingkasanSources([H('A', '2026-08-31T03:00:00Z'), H('B', '2026-08-31T03:00:00Z')], total);
+    assert.ok(out.includes('Headline sumber (2)'), `total=${total}: header cukup jumlah item`);
+    assert.ok(!out.includes('dari 2'), `total=${total}: tidak boleh menulis "dari 2"`);
+    assert.ok(!out.includes('sisanya tetap dibaca AI'), `total=${total}: klausa sisanya harus hilang`);
+  }
 });
 
 test('disembunyikan saat cetak PDF (kelas no-print + aturan @media print)', () => {

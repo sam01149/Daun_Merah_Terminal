@@ -1,0 +1,312 @@
+- generic [ref=e1]:
+  - generic [ref=e2]:
+    - generic [ref=e3]: DAUN MERAH
+    - button "Menu" [ref=e8] [cursor=pointer]
+  - generic [ref=e13]:
+    - generic [ref=e68]:
+      - paragraph [ref=e69]: Install Daun Merah ke homescreen untuk notifikasi background
+      - button "INSTALL" [ref=e70] [cursor=pointer]
+    - generic [ref=e71]:
+      - paragraph [ref=e72]: Versi baru tersedia — ketuk untuk memuat ulang
+      - button "MUAT ULANG" [ref=e73] [cursor=pointer]
+    - generic [ref=e15] [cursor=pointer]:
+      - generic [ref=e16]: "REGIME: RISK-ON"
+      - generic [ref=e74]: · VIX 14.4 ▼ · MOVE 71 ▲ · HY 2.63% ▼ · VIX & MOVE live · HY Data 28 Agu
+      - generic [ref=e17]:
+        - generic [ref=e18]: TOKYO
+        - generic [ref=e19]: → LONDON in 3j 24m
+  - generic [ref=e20]:
+    - generic [ref=e21]:
+      - generic [ref=e75]: 11:31 WIB · 117 berita · 22 XAU · 9 kalender
+      - generic [ref=e77]:
+        - generic [ref=e78]:
+          - generic [ref=e79]: "117"
+          - generic [ref=e80]: Berita (36j)
+        - generic [ref=e81]:
+          - generic [ref=e82]: "9"
+          - generic [ref=e83]: Event Kalender
+      - generic [ref=e84]:
+        - generic [ref=e85]: THESIS · CB BIAS + TA
+        - generic [ref=e86]:
+          - generic [ref=e87]: USD/JPY
+          - generic [ref=e88]: LONG
+        - generic [ref=e101]: INVALIDASI
+        - generic [ref=e102]: Jika USD/JPY turun di bawah level support harian terdekat (misal 145.00) atau jika rilis ISM Manufacturing PMI AS (1 Sep 21:00 WIB) menunjukkan angka di bawah 50, yang dapat memicu risk-off dan mendorong penguatan JPY.
+        - generic [ref=e103]: KATALIS
+        - generic [ref=e104]: Komentar Bessent yang tidak mendorong kenaikan BoJ beruntun membatasi penguatan JPY, sementara data ritel Jepang yang kuat tidak cukup untuk mengubah sikap dovish BoJ. Namun, potensi intervensi verbal atau aksi BoJ tetap menjadi risiko.
+        - generic [ref=e105]: HORIZON
+        - generic [ref=e106]: 5 hari
+        - generic [ref=e107]: "Horizon: fundamental, relevan untuk pergerakan menengah-panjang — bukan sinyal entry presisi jangka pendek."
+        - button "Mulai ke Checklist →" [ref=e108] [cursor=pointer]
+      - generic [ref=e109]:
+        - generic [ref=e110]: THESIS · XAU/USD
+        - generic [ref=e111]:
+          - generic [ref=e112]: XAU/USD
+          - generic [ref=e113]: BEARISH
+        - generic [ref=e126]: DRIVER
+        - generic [ref=e127]: REAL YIELD
+        - generic [ref=e128]: BUKTI
+        - generic [ref=e129]: Emas dibuka turun 0.87% di $4,415.57, dengan real yield USD 2.36% yang elevated dan probabilitas 53% Fed menaikkan 25 bps (dari Polymarket).
+        - generic [ref=e130]: TRIGGER
+        - generic [ref=e131]: Rilis ISM Manufacturing PMI AS (1 Sep 21:00 WIB) – jika data di atas 55.2, real yield naik dan emas tertekan lebih lanjut; jika di bawah 50, emas bisa rebound sebagai safe haven.
+        - button "Mulai ke Checklist →" [ref=e132] [cursor=pointer]
+      - generic [ref=e133]:
+        - generic [ref=e134]: ANALISIS BERITA · HEADLINE MOMENTUM
+        - generic [ref=e135]:
+          - paragraph [ref=e136]: Iran’s Revolutionary Guards menembak jatuh drone MQ-9 AS di atas Selat Hormuz dan mengklaim serangan rudal balistik ke dua pangkalan AS di Yordania sebagai balasan atas serangan AS ke Pulau Larak, sementara kapal komoditas yang melintasi Selat Hormuz anjlok ke 5 per hari. Eskalasi ini berbarengan dengan pernyataan Menteri Keuangan AS Bessent bahwa sanksi sekunder Iran akan diberlakukan mingguan mulai dari bank, dan blokade pelabuhan Iran telah membatasi impor minyak Iran oleh China.
+          - generic [ref=e137]: JPY
+          - paragraph [ref=e138]: Safe haven flow ke JPY tertahan oleh komentar Bessent bahwa fluktuasi yen "cukup terkendali" dan ia tidak akan menyarankan BoJ soal kenaikan beruntun, sementara data ritel Jepang Juli melonjak 4.0% y/y jauh di atas konsensus 2.9% dan output manufaktur Agustus naik 6.4% m/m di atas proyeksi 4.5% — kombinasi yang menjaga ekspektasi normalisasi BoJ tetap hidup tanpa memicu intervensi verbal.
+          - generic [ref=e139]: China
+          - paragraph [ref=e140]: PMI manufaktur resmi China Agustus di 49.8, sedikit di atas konsensus 49.5 dan naik dari 49.2, namun PMI non-manufaktur stagnan di 49.0 dan PMI komposit 49.5 masih di zona kontraksi — perbaikan marginal yang belum cukup untuk mengubah narasi permintaan domestik lemah, sehingga AUD dan NZD tidak mendapat katalis berarti dari data ini.
+          - generic [ref=e141]: Konfirmasi
+          - paragraph [ref=e142]: USD memimpin sebagai mata uang terkuat hari ini karena eskalasi geopolitik mendorong demand safe haven ke aset AS dan real yield 2.36% tetap elevated, sementara NZD paling rentan menjelang keputusan RBNZ Rabu pagi dengan konsensus kenaikan 25 bps ke 2.75% yang sudah price-in dan ruang kejutan hawkish terbatas.
+      - generic [ref=e143]:
+        - generic [ref=e144]: XAUUSD
+        - generic [ref=e145]:
+          - paragraph [ref=e146]: Emas dibuka Senin pagi di $4,415.57, turun 0.87% dari sesi sebelumnya, melanjutkan tekanan dari real yield USD 2.36% yang elevated dan masih sekitar 6% di bawah puncak historis.
+          - generic [ref=e147]: Geopolitik
+          - paragraph [ref=e148]: Eskalasi Iran akhir pekan ini nyata — IRGC menembak jatuh drone MQ-9 AS, mengklaim serangan rudal ke pangkalan AS di Yordania, dan kapal komoditas yang melintasi Selat Hormuz anjlok ke 5 per hari — namun respons harga emas justru negatif, menunjukkan bahwa driver saat ini bukan safe-haven demand melainkan tekanan struktural dari real yield tinggi.
+          - generic [ref=e149]: Rate Differential
+          - paragraph [ref=e150]: Market masih mem-priced 18 bps cut dalam 3 bulan, tetapi Polymarket menunjukkan 53% probabilitas Fed menaikkan 25 bps setelah pertemuan September, naik 6 poin dalam 24 jam — konflik antara ekspektasi futures dan pasar prediksi ini menciptakan ketidakpastian arah kebijakan yang menahan emas dari rebound.
+          - generic [ref=e151]: Risk Regime
+          - paragraph [ref=e152]: VIX di 14.43 dengan struktur contango dan HY OAS 2.63% yang justru turun mengonfirmasi risk-on regime, sehingga eskalasi geopolitik belum diterjemahkan pasar sebagai ancaman sistemik — demand safe-haven ke emas tidak terkonfirmasi data. Tidak ada trigger kalender untuk XAU dalam 24 jam ke depan.
+      - group [ref=e153]:
+        - generic "Headline sumber (20 dari 20) tutup" [active] [ref=e154] [cursor=pointer]:
+          - text: Headline sumber (20 dari 20)
+          - generic [ref=e155]: tutup
+        - generic [ref=e156]:
+          - generic [ref=e157]:
+            - generic [ref=e158]: 08:30
+            - generic [ref=e159]: Chinese NBS Non-Manufacturing PMI Actual 49.0 (Forecast 49.5, Previous 49.0)
+          - generic [ref=e160]:
+            - generic [ref=e161]: 11:26
+            - generic [ref=e162]: "Iran's Revolutionary Guards: vessels must follow its rules for transit through Strait of Hormuz"
+          - generic [ref=e163]:
+            - generic [ref=e164]: 11:25
+            - generic [ref=e165]: "Iran’s Revolutionary Guards: Supertanker caught fire, stopped after hitting two naval mines in Strait of Hormuz - state TV"
+          - generic [ref=e166]:
+            - generic [ref=e167]: 11:16
+            - generic [ref=e168]: "Iran: U.S. and allies backing its military moves hold full responsibility for escalation consequences - foreign ministry"
+          - generic [ref=e169]:
+            - generic [ref=e170]: 11:16
+            - generic [ref=e171]: "Iran: will respond decisively to any further hostile military aggression - foreign ministry"
+          - generic [ref=e172]:
+            - generic [ref=e173]: 11:15
+            - generic [ref=e174]: "Iran: U.S. bases in Jordan used to launch and back attack on Larak Island - foreign ministry"
+          - generic [ref=e175]:
+            - generic [ref=e176]: 11:15
+            - generic [ref=e177]: "Iran: armed forces hit U.S. military bases in Jordan in retaliation for U.S. strike on Larak island - foreign ministry statement"
+          - generic [ref=e178]:
+            - generic [ref=e179]: 11:06
+            - generic [ref=e180]: "Iran's army: drone strike targeted UAE's Al Minhad air base early Monday - state TV"
+          - generic [ref=e181]:
+            - generic [ref=e182]: 10:22
+            - generic [ref=e183]: "Iran’s Revolutionary Guards: They shot down U.S. MQ-9 drone over Strait of Hormuz - Mehr News Agency"
+          - generic [ref=e184]:
+            - generic [ref=e185]: 09:19
+            - generic [ref=e186]: "Trump: Kharg Island being destroyed"
+          - generic [ref=e187]:
+            - generic [ref=e188]: 06:53
+            - generic [ref=e189]: Japanese Large Scale Retail Sales YoY Actual 2% (Forecast -, Previous -1%)
+          - generic [ref=e190]:
+            - generic [ref=e191]: 06:50
+            - generic [ref=e192]: Japanese Retail Sales YoY Actual 4.0% (Forecast 3.3%, Previous 0.5%)
+          - generic [ref=e193]:
+            - generic [ref=e194]: 06:50
+            - generic [ref=e195]: Japanese Industrial Output Prelim MoM SA Actual 0.1% (Forecast -0.7%, Previous 1.9%)
+          - generic [ref=e196]:
+            - generic [ref=e197]: 06:47
+            - generic [ref=e198]: "US Treasury Secretary Bessent: U.S. blockade of Iran ports has limited Chinese imports of Iranian oil"
+          - generic [ref=e199]:
+            - generic [ref=e200]: 05:25
+            - generic [ref=e201]: "Bessent: he won’t advise on whether BoJ should consider back-to-back rate increases"
+          - generic [ref=e202]:
+            - generic [ref=e203]: 05:25
+            - generic [ref=e204]: "Bessent: With Japan Prime Minister's support, BoJ Governor Ueda will act appropriately on monetary policy"
+          - generic [ref=e205]:
+            - generic [ref=e206]: 05:25
+            - generic [ref=e207]: "Bessent: will meet BoJ's Ueda on sidelines of G20 finance leaders' summit, praises Ueda as an underrated market-savvy economist"
+          - generic [ref=e208]:
+            - generic [ref=e209]: 05:25
+            - generic [ref=e210]: "U.S. Treasury Secretary Bessent: yen fluctuations are 'pretty well contained' when questioned about disorderly moves"
+          - generic [ref=e211]:
+            - generic [ref=e212]: 08:37
+            - generic [ref=e213]: China August official manufacturing PMI at 49.8 Poll 49.6 vs 49.2 in July
+          - generic [ref=e214]:
+            - generic [ref=e215]: 08:32
+            - generic [ref=e216]: Chinese Composite PMI Actual 49.5 (Forecast -, Previous 49.3)
+          - generic [ref=e217]: Urut peringkat relevansi makro, bukan waktu. Jam dalam WIB. Ini 20 teratas dari 20 headline yang dikirim ke AI — sisanya tetap dibaca AI walau tidak ditampilkan di sini. Kalau ada berita besar yang ada di daftar ini tapi tidak dibahas di ringkasan, itu masalah penulisan.
+      - generic [ref=e218]:
+        - button "Ringkas Ulang" [ref=e219] [cursor=pointer]
+        - button "Download PDF" [ref=e225] [cursor=pointer]
+      - generic [ref=e228]: "Data: 117 headline + 9 event high-impact"
+    - generic [ref=e34]:
+      - generic [ref=e35]:
+        - generic [ref=e229]: POLYMARKET — PROBABILITAS PASAR
+        - generic [ref=e230]: 11.30 WIB · 24 market · Cache 30m
+        - generic [ref=e231]:
+          - button "Semua (24)" [ref=e232] [cursor=pointer]
+          - button "CB Policy" [ref=e233] [cursor=pointer]
+          - button "Geopolitical" [ref=e234] [cursor=pointer]
+          - button "Political" [ref=e235] [cursor=pointer]
+          - button "Commodity" [ref=e236] [cursor=pointer]
+        - generic [ref=e237]:
+          - generic [ref=e238]:
+            - generic [ref=e239]: CB PolicyWill there be no change in Fed interest rates after the September 2026 meeting?
+            - generic [ref=e240]: "Tutup: 16 Sep 2026 · Vol 24j: $578K"
+          - generic [ref=e241]:
+            - text: 47% YA
+            - generic "Pergeseran probabilitas 24 jam terakhir" [ref=e242]: ▼ -4pp / 24j
+        - generic [ref=e243]:
+          - generic [ref=e244]:
+            - generic [ref=e245]: CB PolicyWill the Fed decrease interest rates by 25 bps after the September 2026 meeting?
+            - generic [ref=e246]: "Tutup: 16 Sep 2026 · Vol 24j: $567K"
+          - generic [ref=e247]: 1% YA
+        - generic [ref=e248]:
+          - generic [ref=e249]:
+            - generic [ref=e250]: CB PolicyWill the Fed increase interest rates by 25 bps after the September 2026 meeting?
+            - generic [ref=e251]: "Tutup: 16 Sep 2026 · Vol 24j: $463K"
+          - generic [ref=e252]:
+            - text: 53% YA
+            - generic "Pergeseran probabilitas 24 jam terakhir" [ref=e253]: ▲ +6pp / 24j
+        - generic [ref=e254]:
+          - generic [ref=e255]:
+            - generic [ref=e256]: CB PolicyWill the Fed increase interest rates by 50+ bps after the September 2026 meeting?
+            - generic [ref=e257]: "Tutup: 16 Sep 2026 · Vol 24j: $209K"
+          - generic [ref=e258]: 1% YA
+        - generic [ref=e259]:
+          - generic [ref=e260]:
+            - generic [ref=e261]: CB PolicyWill the Fed decrease interest rates by 50+ bps after the September 2026 meeting?
+            - generic [ref=e262]: "Tutup: 16 Sep 2026 · Vol 24j: $166K"
+          - generic [ref=e263]: 0% YA
+        - generic [ref=e264]:
+          - generic [ref=e265]:
+            - generic [ref=e266]: "GeopoliticalUS Open ATP: Thiago Agustin Tirante vs Adrian Mannarino"
+            - generic [ref=e267]: "Tutup: 06 Sep 2026 · Vol 24j: $807K"
+          - generic [ref=e268]: 10% Thiago Agustin Tirante91% Adrian Mannarino
+        - generic [ref=e269]:
+          - generic [ref=e270]:
+            - generic [ref=e271]: GeopoliticalWill the U.S. invade Iran before 2027?
+            - generic [ref=e272]: "Tutup: 01 Jan 2027 · Vol 24j: $650K"
+          - generic [ref=e273]:
+            - text: 16% YA
+            - generic "Pergeseran probabilitas 24 jam terakhir" [ref=e274]: ▲ +2pp / 24j
+        - generic [ref=e275]:
+          - generic [ref=e276]:
+            - generic [ref=e277]: GeopoliticalKharg Island no longer under Iranian control by August 31?
+            - generic [ref=e278]: "Tutup: 01 Sep 2026 · Vol 24j: $313K"
+          - generic [ref=e279]: 0% YA
+        - generic [ref=e280]:
+          - generic [ref=e281]:
+            - generic [ref=e282]: PoliticalTrump out as President by August 31?
+            - generic [ref=e283]: "Tutup: 01 Sep 2026 · Vol 24j: $257K"
+          - generic [ref=e284]: 0% YA
+        - generic [ref=e285]:
+          - generic [ref=e286]:
+            - generic [ref=e287]: GeopoliticalIsrael x Iran ceasefire continues through August 31?
+            - generic [ref=e288]: "Tutup: 01 Sep 2026 · Vol 24j: $253K"
+          - generic [ref=e289]: 99% YA
+        - generic [ref=e290]:
+          - generic [ref=e291]:
+            - generic [ref=e292]: CommodityWill WTI Crude Oil (WTI) hit (HIGH) $90 in August?
+            - generic [ref=e293]: "Tutup: 01 Sep 2026 · Vol 24j: $172K"
+          - generic [ref=e294]:
+            - text: 4% YA
+            - generic "Pergeseran probabilitas 24 jam terakhir" [ref=e295]: ▲ +2pp / 24j
+        - generic [ref=e296]:
+          - generic [ref=e297]:
+            - generic [ref=e298]: GeopoliticalIsrael x Iran ceasefire continues through September 30?
+            - generic [ref=e299]: "Tutup: 01 Okt 2026 · Vol 24j: $167K"
+          - generic [ref=e300]:
+            - text: 85% YA
+            - generic "Pergeseran probabilitas 24 jam terakhir" [ref=e301]: ▼ -5pp / 24j
+        - generic [ref=e302]:
+          - generic [ref=e303]:
+            - generic [ref=e304]: GeopoliticalUS announces end of Iranian blockade by September 30, 2026?
+            - generic [ref=e305]: "Tutup: 01 Okt 2026 · Vol 24j: $140K"
+          - generic [ref=e306]:
+            - text: 22% YA
+            - generic "Pergeseran probabilitas 24 jam terakhir" [ref=e307]: ▼ -1pp / 24j
+        - generic [ref=e308]:
+          - generic [ref=e309]:
+            - generic [ref=e310]: GeopoliticalUS announces end of Iranian blockade by August 31, 2026?
+            - generic [ref=e311]: "Tutup: 01 Sep 2026 · Vol 24j: $127K"
+          - generic [ref=e312]: 0% YA
+        - generic [ref=e313]:
+          - generic [ref=e314]:
+            - generic [ref=e315]: GeopoliticalKharg Island no longer under Iranian control by September 30?
+            - generic [ref=e316]: "Tutup: 01 Okt 2026 · Vol 24j: $108K"
+          - generic [ref=e317]:
+            - text: 2% YA
+            - generic "Pergeseran probabilitas 24 jam terakhir" [ref=e318]: ▲ +1pp / 24j
+        - generic [ref=e319]:
+          - generic [ref=e320]:
+            - generic [ref=e321]: CommodityWill WTI Crude Oil (WTI) hit (LOW) $60 in August?
+            - generic [ref=e322]: "Tutup: 01 Sep 2026 · Vol 24j: $86K"
+          - generic [ref=e323]: 0% YA
+        - generic [ref=e324]:
+          - generic [ref=e325]:
+            - generic [ref=e326]: GeopoliticalUS announces end of Iranian blockade by September 7, 2026?
+            - generic [ref=e327]: "Tutup: 08 Sep 2026 · Vol 24j: $81K"
+          - generic [ref=e328]:
+            - text: 4% YA
+            - generic "Pergeseran probabilitas 24 jam terakhir" [ref=e329]: ▼ -1pp / 24j
+        - generic [ref=e330]:
+          - generic [ref=e331]:
+            - generic [ref=e332]: GeopoliticalIran full airspace closure by August 31?
+            - generic [ref=e333]: "Tutup: 01 Sep 2026 · Vol 24j: $79K"
+          - generic [ref=e334]:
+            - text: 1% YA
+            - generic "Pergeseran probabilitas 24 jam terakhir" [ref=e335]: ▲ +1pp / 24j
+        - generic [ref=e336]:
+          - generic [ref=e337]:
+            - generic [ref=e338]: GeopoliticalIsrael x Iran ceasefire continues through October 31?
+            - generic [ref=e339]: "Tutup: 01 Nov 2026 · Vol 24j: $75K"
+          - generic [ref=e340]:
+            - text: 76% YA
+            - generic "Pergeseran probabilitas 24 jam terakhir" [ref=e341]: ▼ -8pp / 24j
+        - generic [ref=e342]:
+          - generic [ref=e343]:
+            - generic [ref=e344]: GeopoliticalUS announces end of Iranian blockade by December 31, 2026?
+            - generic [ref=e345]: "Tutup: 01 Jan 2027 · Vol 24j: $68K"
+          - generic [ref=e346]:
+            - text: 59% YA
+            - generic "Pergeseran probabilitas 24 jam terakhir" [ref=e347]: ▼ -2pp / 24j
+        - generic [ref=e348]:
+          - generic [ref=e349]:
+            - generic [ref=e350]: GeopoliticalIran leadership change by August 31?
+            - generic [ref=e351]: "Tutup: 01 Sep 2026 · Vol 24j: $68K"
+          - generic [ref=e352]: 0% YA
+        - generic [ref=e353]:
+          - generic [ref=e354]:
+            - generic [ref=e355]: GeopoliticalIran full airspace closure by September 30?
+            - generic [ref=e356]: "Tutup: 01 Okt 2026 · Vol 24j: $67K"
+          - generic [ref=e357]:
+            - text: 11% YA
+            - generic "Pergeseran probabilitas 24 jam terakhir" [ref=e358]: ▲ +5pp / 24j
+        - generic [ref=e359]:
+          - generic [ref=e360]:
+            - generic [ref=e361]: GeopoliticalWill Iran target Qatar by August 31, 2026?
+            - generic [ref=e362]: "Tutup: 01 Sep 2026 · Vol 24j: $63K"
+          - generic [ref=e363]:
+            - text: 34% YA
+            - generic "Pergeseran probabilitas 24 jam terakhir" [ref=e364]: ▲ +33pp / 24j
+        - generic [ref=e365]:
+          - generic [ref=e366]:
+            - generic [ref=e367]: CommodityWill WTI Crude Oil (WTI) hit (HIGH) $95 in August?
+            - generic [ref=e368]: "Tutup: 01 Sep 2026 · Vol 24j: $55K"
+          - generic [ref=e369]:
+            - text: 2% YA
+            - generic "Pergeseran probabilitas 24 jam terakhir" [ref=e370]: ▲ +1pp / 24j
+      - button "↻ Muat Polymarket" [ref=e371] [cursor=pointer]
+      - generic [ref=e40]: Ringkasan dihasilkan AI (deepseek-v4-pro) dari headline & data pihak ketiga — bisa keliru, bukan nasihat keuangan. Detail di tab PETUNJUK › Disclaimer.
+  - navigation [ref=e41]:
+    - button "News" [ref=e42] [cursor=pointer]
+    - button "Ringkasan" [ref=e45] [cursor=pointer]
+    - button "Analisa" [ref=e49] [cursor=pointer]
+    - button "Tek" [ref=e54] [cursor=pointer]
+    - button "Lainnya" [ref=e60] [cursor=pointer]
+  - generic [ref=e64]:
+    - generic [ref=e65]: Menu Lainnya
+    - button "✕" [ref=e66] [cursor=pointer]
+  - generic: G —
