@@ -680,6 +680,41 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   margin-bottom: 12px; line-height: 1.6;
 }
 
+/* Headline sumber — daftar berita yang benar-benar dikirim ke AI, dibuka-tutup
+   sendiri oleh user (2026-08-31). Sengaja <details>/<summary> bawaan browser:
+   tidak butuh state JS, tidak ikut ke-render ulang saat renderRingkasan() dipanggil
+   lagi, dan otomatis tertutup lagi kalau ringkasannya di-generate ulang. */
+.ringkasan-sources {
+  border: 1px solid var(--border); border-radius: 8px;
+  background: var(--surface); margin-bottom: 14px; overflow: hidden;
+}
+.ringkasan-sources > summary {
+  cursor: pointer; list-style: none; padding: 10px 12px;
+  font-size: 10px; font-weight: 700; letter-spacing: .8px; text-transform: uppercase;
+  color: var(--muted); display: flex; align-items: center; justify-content: space-between; gap: 8px;
+}
+.ringkasan-sources > summary::-webkit-details-marker { display: none; }
+.ringkasan-sources > summary:hover { color: var(--text); }
+.ringkasan-sources-caret { font-size: 9px; opacity: .7; letter-spacing: 0; text-transform: none; }
+.ringkasan-sources[open] .ringkasan-sources-caret::after { content: 'tutup'; }
+.ringkasan-sources:not([open]) .ringkasan-sources-caret::after { content: 'lihat'; }
+.ringkasan-sources-body {
+  border-top: 1px solid var(--border); padding: 4px 12px 10px;
+  max-height: 320px; overflow-y: auto;
+}
+.ringkasan-source-item {
+  display: flex; gap: 8px; padding: 7px 0; font-size: 11px; line-height: 1.5;
+  border-bottom: 1px solid rgba(var(--fg-rgb),.05); color: var(--text);
+}
+.ringkasan-source-item:last-child { border-bottom: none; }
+.ringkasan-source-time {
+  flex: 0 0 auto; font-family: 'DM Mono', monospace; font-size: 10px;
+  color: var(--muted); padding-top: 1px;
+}
+.ringkasan-sources-note {
+  font-size: 10px; color: var(--muted); padding: 8px 0 0; line-height: 1.5;
+}
+
 .thesis-alert-card {
   background: rgba(var(--accent-rgb),.08); border: 1px solid rgba(var(--accent-rgb),.35);
   border-radius: 10px; padding: 14px 16px; margin-bottom: 14px;
@@ -2691,6 +2726,7 @@ body.light-theme .cal-date-input { color-scheme: light; }
      ada di letterhead + baris meta), baris "Data: N headline..." (sama),
      badge model ber-emoji (blob aneh di print), provider log debug. */
   .ringkasan-stats, .ringkasan-ts,
+  .ringkasan-sources,
   .ringkasan-provider-log { display: none !important; }
 
   /* Kartu jadi FLAT: hilangkan rounded corner + shadow + bar warna tebal
@@ -5613,6 +5649,37 @@ function _ringkasanDisclaimerHtml(method) {
     : `Ringkasan dihasilkan AI dari headline &amp; data pihak ketiga — bisa keliru, bukan nasihat keuangan. Detail di tab PETUNJUK › Disclaimer.`;
 }
 
+// Daftar headline sumber (2026-08-31). Ringkasan sekarang dinilai dari apakah dia
+// benar-benar merangkum berita, jadi user harus bisa membandingkan sendiri narasinya
+// dengan bahan mentahnya — sebelumnya tab ini cuma menampilkan hitungan "N berita"
+// tanpa satu pun judul, jadi tidak ada cara memeriksa berita besar yang terlewat.
+// SENGAJA tidak bisa diklik: headline FinancialJuice hanya boleh jadi teks (ATURAN.md;
+// yang boleh diklik cuma ActionForex di tab TEK). Data lama dari cache Redis belum
+// punya field ini, jadi absennya harus diam (return '') bukan kotak kosong.
+function renderRingkasanSources(items) {
+  if (!Array.isArray(items) || items.length === 0) return '';
+  const rows = items.map(h => {
+    const t = h.at ? new Date(h.at) : null;
+    let jam = '';
+    if (t && !isNaN(t)) {
+      const w = new Date(t.getTime() + 7 * 3600000);
+      jam = `${String(w.getUTCHours()).padStart(2, '0')}:${String(w.getUTCMinutes()).padStart(2, '0')}`;
+    }
+    return `<div class="ringkasan-source-item">
+        <span class="ringkasan-source-time">${jam || '--:--'}</span>
+        <span>${escHtml(h.title || '')}</span>
+      </div>`;
+  }).join('');
+  return `
+    <details class="ringkasan-sources no-print">
+      <summary>Headline sumber (${items.length}) <span class="ringkasan-sources-caret"></span></summary>
+      <div class="ringkasan-sources-body">
+        ${rows}
+        <div class="ringkasan-sources-note">Urut peringkat relevansi makro, bukan waktu. Jam dalam WIB. Ini headline teratas yang dikirim ke AI — kalau ada berita besar yang tidak muncul di ringkasan padahal ada di daftar ini, itu masalah penulisan; kalau tidak ada di daftar sama sekali, itu masalah pemilihan berita.</div>
+      </div>
+    </details>`;
+}
+
 function renderRingkasan() {
   const inner = document.getElementById('ringkasanInner');
   const d = ringkasanCache;
@@ -5673,6 +5740,8 @@ function renderRingkasan() {
       : ''}
 
     ${renderArticleSections(d.article)}
+
+    ${renderRingkasanSources(d.headlines_used)}
 
     <div class="print-btn-row">
       <button class="ringkasan-gen-btn" id="ringkasanBtn" onclick="generateRingkasan()">

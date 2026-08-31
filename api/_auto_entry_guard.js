@@ -427,6 +427,17 @@ const POLICY_EPOCHS = [
   // dievaluasi. Lihat memory feedback-isolate-one-variable-per-policy-change: satu VARIABEL
   // (ketersediaan data), walau menyentuh beberapa file.
   { v: 35, from: '2026-08-29T15:30:00Z', kind: 'mixed',  impact: 'entry',    label: 'Ketersediaan & kejujuran data makro: umur key Redis dipisah dari ambang kesegaran (risk_regime/daily_snapshot/rr_cache_v2/cot_cache_v2 tidak lagi kosong saat cron auto-entry menembak — sebelumnya kosong 34-76%), 8/8 suku bunga bank sentral hidup lagi (dari 2/8; BoJ 0.75->1.0 & RBNZ 2.25->2.5 selama ini salah), baris REAL YIELD + DIFFERENTIAL sekarang membawa label umur/vintage' },
+  // v36 (2026-08-31, keputusan user): Ringkasan dikembalikan ke jobdesknya — MAKRO
+  // MURNI. Teknikal, COT, retail sentiment, dan korelasi dicabut dari prompt Ringkasan
+  // dan diserahkan sepenuhnya ke tab Analisa ("RINGKASAN UNTUK MAKRO, ANALISA UNTUK
+  // TEKNIKAL"). Kenapa ini menyentuh auto-entry: potongan artikel Ringkasan disuntikkan
+  // ke AATAS Call 1 sebagai KONTEKS MAKRO (`_extractRingkasanExcerpt` di admin.js), dan
+  // Call 1 itu by design "makro-only, nol data teknikal" (v32) — selama ini kalimat
+  // teknikal/positioning di dalam excerpt (support/resistance, skew opsi, COT persentil)
+  // ikut masuk ke sana, jadi pemisahan v32 bocor lewat pintu belakang. Sekarang tertutup.
+  // Ikut di epoch yang sama karena satu variabel: ISI konteks makro yang dilihat AI.
+  // Tidak ada gate, ambang, atau aturan trading yang digeser.
+  { v: 36, from: '2026-08-31T04:30:00Z', kind: 'policy', impact: 'context',  label: 'Ringkasan jadi makro murni: teknikal/COT/retail/korelasi dicabut dari prompt digest (pindah ke Analisa), peringkat headline dinilai kategori+kejutan+kesegaran (dulu hanya kata kunci bank sentral), tema tanpa jangkar headline dibuang — konteks makro yang disuntik ke AATAS Call 1 ikut berubah' },
 ];
 
 // AATAS_EPOCH (2026-08-22, keputusan user): batas populasi statistik dashboard

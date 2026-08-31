@@ -11,10 +11,91 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-29 (Session 336 lanjutan — eksekusi temuan audit: suku bunga bank sentral 2/8 -> 8/8 hidup (BoJ & RBNZ ternyata salah 2-3 bulan), watchdog health berhenti menghapus cache makro tanpa outage nyata, rate-path pakai FRED asli, panel ATR tab Teknikal hidup lagi, 8 workflow terjadwal -> 6)
+> **Last updated:** 2026-08-31 (Session 337 — Ringkasan dikembalikan ke jobdesknya: makro murni dari headline, input teknikal/COT/skew/korelasi dicabut ke tab Analisa, peringkat headline ditulis ulang, bug digest_history WRONGTYPE senyap 4 bulan diperbaiki, daftar headline sumber tampil di UI)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
+
+## Changelog Session 337 (2026-08-31) — Ringkasan Dikembalikan ke Jobdesknya: Makro Murni dari Headline, Teknikal/COT/Retail/Korelasi Pindah ke Analisa
+
+**Konteks:** user melaporkan output Ringkasan "kebanyakan teknikal dan membahas perkembangan pair", lalu minta validasi objektif apakah itu ideal. Audit membuktikan laporan itu benar dan bisa diangkakan, bukan soal selera. Keputusan user setelahnya tegas: **"RINGKASAN UNTUK MAKRO, ANALISA UNTUK TEKNIKAL"** — teknikal, COT, retail sentiment, dan korelasi diserahkan sepenuhnya ke tab Analisa.
+
+### 1. Audit: seberapa jauh output menyimpang dari jobdesknya
+
+Sampel output produksi 31 Agustus 07:02 WIB (DeepSeek, `deepseek-v4-pro`). Bagian FX-nya dipecah AI jadi 5 blok bertag:
+
+| Blok | Sumber klaim | Ada headline? |
+|---|---|---|
+| Jangkar USD/JPY | retail sales Jepang, industrial output, kutipan Bessent | ya |
+| `{{TAG: USD/JPY}}` | support 158.356, skew opsi 2.085, rate path 18bps | tidak |
+| `{{TAG: EUR/USD}}` | skew put -0.476, COT net short EUR P3/3thn | tidak |
+| `{{TAG: CAD}}` | kalender BOC, COT P9, korelasi DXY vs Copper | tidak |
+| `{{TAG: AUD}}` | COT P94, skew -0.464, kalender GDP | tidak |
+| `{{TAG: Konfirmasi}}` | VIX/real yield/positioning + Bessent | sebagian |
+
+**4 dari 5 blok tema tidak punya satu pun klaim dari headline.** Dari ~18 angka konkret di bagian FX, hanya 4 berasal dari berita. Padahal kartunya berlabel `ANALISIS BERITA · HEADLINE MOMENTUM` dan promptnya sendiri sudah memerintahkan *"Klaim: Sebut nama pejabat, angka, atau pair spesifik dari headline. Tidak ada? Skip tema itu sepenuhnya"* — jadi outputnya melanggar aturan yang sudah tertulis, bukan sekadar tidak sesuai selera.
+
+Hari itu feed didominasi eskalasi militer AS-Iran (±20 headline: serangan ke Pulau Larak, rudal balistik ke pangkalan AS di Yordania, drone MQ-9 ditembak jatuh di Hormuz, "Trump: Kharg Island being destroyed", kapal komoditas lewat Hormuz anjlok ke 5/hari) plus PMI manufaktur China 49,8 yang beat konsensus. Di bagian FX, **Iran cuma disebut sekali sebagai bantahan, China PMI tidak disebut sama sekali** — dan blok AUD justru diisi COT + skew.
+
+### 2. Empat akar masalah (semuanya level kode, berlaku setiap run)
+
+**(a) Fungsi peringkat headline cuma mengenal kata kunci bank sentral.** `_headlineRelevance` lama memberi skor hanya kalau judul cocok `CB_KW`, dan skornya = jumlah kemunculan mata uang itu di seluruh feed. Direproduksi ulang di feed live saat audit:
+
+```
+recentItems 108  |  hanya 8 headline berskor >0  |  72 dari 80 teratas berskor 0
+rank 1-7 (skor 7): rilis data rutin Jepang + Bessent soal BoJ
+rank 8   (skor 1): Iceland tolak eurozone — umur 20 jam
+rank 9   (skor 0): Iran tembak jatuh drone MQ-9 di Hormuz — umur 2 jam
+rank 12  (skor 0): China manufacturing PMI 49,8 (beat)
+rank 57  (skor 0): IRGC rudal balistik ke 2 pangkalan AS di Yordania
+rank 86+ [terpotong dari 80 besar]: Venezuela oil, Khamenei, ekspor Kurdistan
+```
+
+Geopolitik, minyak, tarif, dan data China semuanya bernilai nol. Skornya juga popularitas mata uang, bukan bobot berita: "Japanese Large Scale Retail Sales" dapat skor sama dengan pernyataan Bessent soal BoJ.
+
+**(b) Iran/Hormuz dimiliki blok emas, sementara bagian FX dilarang menyentuh emas.** `'iran'`, `'hormuz'`, `'risk-off'`, `'trade war'`, `'beijing'` ada di `GOLD_KEYWORDS`, jadi masuk blok "HEADLINE RELEVAN XAUUSD"; aturan FX lalu bilang "semua gold content masuk ke bagian XAUUSD". Klaster berita terbesar hari itu tersalur ke paragraf emas, dan ruang kosong di bagian FX diisi data positioning.
+
+**(c) Timbangan prompt berat sebelah.** Satu baris menuntut klaim dari headline; sembilan sub-aturan mengundang isi non-headline. Aturan `{{TAG: NAMA}}` yang mewajibkan tag tiap mata uang mendorong format "ronde per pair". Tidak ada penegakan di kode — dan pencatat frasa terlarang pun bocor: output memakai **"patut dicermati"**, varian yang tidak ada di daftar (`perlu dicermati`/`mencermati` ada).
+
+**(d) Bug: memori sesi FX mati sejak 27 April 2026.** Key Redis `digest_history` bertipe **string** (format pra-migrasi 2026-04-27, dulu GET/SET), sedangkan kode sejak migrasi atomic memakai `LPUSH`/`LRANGE`. Setiap operasi gagal `WRONGTYPE`, dan `redisCmd` mengembalikan `.result` yang undefined saat error tanpa throw — gagal senyap total. Selama ±4 bulan blok "RINGKASAN SESI SEBELUMNYA (FX)" selalu berisi `(Belum ada riwayat — ini sesi pertama)`. `xau_history` selamat karena lahir setelah migrasi; itu sebabnya paragraf emas terasa nyambung antar sesi dan bagian FX tidak.
+
+### 3. Yang dikerjakan
+
+**Prompt Ringkasan (`api/market-digest.js`)** — ditulis ulang dengan blok JOBDESK di paling atas ("Tugasmu MERINGKAS BERITA jadi konteks makro & fundamental"), plus:
+- **GERBANG TEMA**: sebuah tema hanya boleh masuk output kalau punya jangkar kejadian (headline hari ini atau event kalender). Tidak ada → tema dibuang seluruhnya, bukan diselamatkan pakai angka pasar. Beritanya tipis → tulis apa adanya, jangan diisi angka.
+- **Daftar larangan eksplisit**: kosakata teknikal (trend/support/resistance/swing/RSI/SMA/breakout/…), positioning (COT/net long/skew/persentil/retail sentiment), dan korelasi. Disertai kalimat "datanya sengaja tidak dikirim ke kamu; kalau kamu menuliskannya, artinya kamu mengarang".
+- **Koreksi routing emas**: geopolitik, minyak, tarif, dan data negara non-major dinyatakan **BUKAN konten emas** — wajib dibahas di bagian FX lewat jalur transmisinya (safe haven, terms of trade, risk sentiment).
+- Tag `{{TAG: …}}` sekarang menandai TEMA yang lolos gerbang, boleh bernama tema makro (`{{TAG: Hormuz}}`), bukan lagi daftar mata uang yang harus kebagian paragraf.
+- Ditambah aturan "Kejutan vs konsensus" dan peringatan bahwa urutan daftar headline (hasil mesin) bukan ukuran kepentingan.
+
+**Input teknikal dicabut total dari Ringkasan** — blok `PRICE ACTION XAU/USD`, `PRICE ACTION <pair FX>`, `TEKNIKAL XAU DAILY`, `TEKNIKAL <pair> DAILY` dihapus dari Call 1 DAN Call 3 (tesis). Ikut dihapus: pemilihan pair OHLCV dari "dominant headline currency", `fetchOhlcvContext`, `fetchTaCache`, `fetchXauTA`, `OHLCV_SYMBOL_MAP`, `CUR_TO_OHLCV_PAIR` (semuanya jadi kode mati). Yang tersisa dari sisi harga hanya **level + persentase perubahan XAU/USD**, dan prompt menyatakan eksplisit itu satu-satunya data harga yang dia punya.
+
+**COT, skew opsi, dan korelasi juga dicabut** dari prompt Call 1 & Call 3 (permintaan lanjutan user: "unsur teknikal, COT, retail position, korelasi serahkan semuanya ke analisa"). Analisa per Pair memang sudah menerima ketiganya (`_formatFundamentalBlock` + Step 8 checklist di `admin.js`), jadi tidak ada informasi yang hilang dari sistem. **Fetch-nya SENGAJA dipertahankan** — cron Ringkasan adalah pemanas cache `cot_cache_v2`/`rr_cache_v2`/`correlations_v3` untuk jalur Analisa & auto-entry (POLICY_EPOCHS v35); hasilnya kini tidak di-destructure lagi, dengan komentar peringatan supaya tidak ikut terhapus di masa depan. Ada tes regresi khusus untuk ini.
+
+**Peringkat headline ditulis ulang** jadi `headlineRankScore(item, nowMs)` (pure, module scope, diuji unit). Menilai tiga hal, memakai `newscat.js` sebagai single source of truth klasifikasi (bukan daftar keyword baru yang bakal drift):
+1. kategori — `market-moving` 7, `macro`/`geopolitical` 6, `econ-data` 5, `energy` 4, `forex`/`bonds` 3, `commodities` 2, `equities` 1, `indexes`/`crypto` 0;
+2. kejutan — bonus +3 kalau severity tag menyala (actual meleset ke sisi lemah);
+3. kesegaran — +4/+3/+2/+1 untuk ≤3j/≤6j/≤12j/≤24j.
+Bonus CB_KW tetap ada tapi **flat +2**, tidak lagi dikali frekuensi. Ditambah guard penting: `detectCat` mengembalikan `'macro'` juga sebagai **fallback** saat tidak ada kategori yang cocok (`return best || 'macro'`) — tanpa guard, judul sampah seperti "Grok bot now compatible with X" kebagian bobot makro tertinggi. Sekarang dicocokkan ulang ke daftar makro asli; tidak cocok → bobot 0.
+
+Hasil di feed live yang sama (114 item): klaster Iran naik ke **rank 6-12** (dari rank 9-70 dengan sebagian terpotong), China PMI jadi **rank 1**, judul sampah turun dari skor 10 ke 4.
+
+**Bug `digest_history` diperbaiki dengan self-heal**, bukan hapus manual sekali: sebelum `LPUSH`, kode mengecek `TYPE`; kalau bukan `list`, key dihapus dulu. Pola yang sama akan menyelamatkan key ini kalau ada jalur lain menulisnya sebagai string lagi.
+
+**Detektor penyimpangan jobdesk (observabilitas, tidak auto-edit)** — `OFF_TOPIC_TERMS` + `offTopicTermsIn()`: kalau artikel memuat kosakata teknikal/positioning/korelasi padahal datanya sudah tidak dikirim, itu bukti model mengarang. Muncul di `provider_log` (`offtopic:N`) dan `quality_flags.off_topic_terms`. Kata ambigu di konteks makro **sengaja tidak dimasukkan** (`level` → "level suku bunga", `trend` → "trend inflasi", `range` → "range harga minyak") supaya bukan alarm palsu; diverifikasi: artikel lama kena 9 term, kalimat makro sah + "cotton"/"Scotland" kena nol. Daftar frasa terlarang juga disinkronkan (`dicermati`, `perlu diwaspadai`, `layak dicermati`).
+
+**Daftar headline sumber di tab Ringkasan** (permintaan user: "apakah headline-nya diberikan ke saya?" — sebelumnya tidak, tab itu cuma menampilkan hitungan "N berita"). Response `/api/market-digest` sekarang membawa `headlines_used` (20 teratas: judul + waktu), ikut tersimpan ke `latest_article` sehingga `mode=cached` juga mendapatkannya. UI-nya `<details>/<summary>` bawaan browser di `index.html` (`renderRingkasanSources`) — tanpa state JS, otomatis tertutup lagi saat ringkasan di-generate ulang, disembunyikan saat cetak PDF. **Tidak bisa diklik** sesuai ATURAN.md (headline FinancialJuice hanya teks; yang boleh diklik cuma ActionForex di tab TEK). Payload lama dari cache yang belum punya field ini → bagian ini tidak dirender sama sekali, bukan kotak kosong.
+
+### 4. Dampak ke auto-entry
+
+Potongan artikel Ringkasan disuntikkan ke AATAS Call 1 sebagai KONTEKS MAKRO (`_extractRingkasanExcerpt` di `admin.js`), dan Call 1 itu by design "makro-only, nol data teknikal" (POLICY_EPOCHS v32). Selama ini kalimat teknikal/positioning di dalam excerpt (support/resistance, skew opsi, COT persentil) ikut masuk ke sana — **pemisahan v32 bocor lewat pintu belakang**, dan perubahan ini menutupnya. Dicatat sebagai **POLICY_EPOCHS v36**; entri lengkap di [professional_llm_trader/changelog.md](professional_llm_trader/changelog.md) §Session 337.
+
+Biaya menaikkan epoch saat ini nol: `setup_log_auto:v1` belum punya satu pun sampel di v34/v35 (setup terakhir ber-`policy_v` 33, 27 Agustus).
+
+### 5. Verifikasi
+
+- 1157/1157 test hijau (15 tes baru di `test/market_digest/digest_makro_scope.test.js`), termasuk penguncian: fetch pemanas cache tidak boleh ikut terhapus, blok teknikal tidak boleh kembali ke prompt, self-heal `digest_history` ada, `headlines_used` terkirim.
+- Peringkat baru diadu dengan feed produksi nyata, bukan cuma fixture.
 
 ## Changelog Session 336 lanjutan (2026-08-29) — Eksekusi Temuan Audit: Suku Bunga CB 2/8 -> 8/8, Watchdog Berhenti Menghapus Cache Makro, Panel ATR Hidup Lagi
 

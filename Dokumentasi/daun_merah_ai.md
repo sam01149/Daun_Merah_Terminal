@@ -55,6 +55,10 @@ Semua 6 tombol AI di atas sekarang punya **cooldown 90 detik di browser** (disim
 
 ### 3.1 Ringkasan Berita — `api/market-digest.js`
 
+**[2026-08-31, Session 337] Cakupan fitur ini dipersempit jadi MAKRO MURNI.** Keputusan user: *"RINGKASAN UNTUK MAKRO, ANALISA UNTUK TEKNIKAL"*. Data yang **TIDAK LAGI** dikirim ke Call 1 maupun Call 3: price action multi-timeframe (XAU & pair FX), TA harian (RSI/SMA), skew opsi 25-delta, positioning COT, dan korelasi cross-asset. Semuanya sudah ditangani tab Analisa per Pair (`_formatFundamentalBlock` + Step 8 di `admin.js`), jadi tidak ada informasi yang hilang dari sistem. Yang tersisa sebagai input: headline (36 jam), kalender ekonomi, real yield + likuiditas + kurva imbal hasil, risk regime (VIX/MOVE/HY), rate path Fed Funds, status keputusan CB terdekat, Polymarket, harga XAU/USD (hanya level + %perubahan), dan riwayat sesi sebelumnya. Prompt sekarang punya **GERBANG TEMA**: tema tanpa jangkar headline/kalender wajib dibuang, bukan diisi angka pasar. Alasan & audit lengkap: `daun_merah.md` §Session 337.
+
+**Fetch cache yang tetap jalan walau datanya tidak dipakai prompt:** `cot_cache_v2`, `rr_cache_v2`, `correlations_v3` — cron Ringkasan adalah **pemanas cache** untuk tab Analisa & jalur auto-entry (POLICY_EPOCHS v35). Jangan dihapus; sudah dikunci tes regresi.
+
 Satu kali "generate" sebenarnya adalah **3-4 panggilan AI sekaligus**, bukan 1:
 
 | Sub-panggilan | Isinya | Kapan jalan |
