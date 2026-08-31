@@ -4454,7 +4454,7 @@ window.addEventListener('DOMContentLoaded', () => _updateNewsLangBtn());
 
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.08.15.3';
+const APP_VERSION = '2026.08.31.1';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
@@ -13064,7 +13064,7 @@ function ckShowMt5ModalAction(pair) {
       }
     })
     .catch(() => {
-      document.getElementById('mt5ModalStatus').innerHTML = '<span style="color:var(--accent)">✗ Bridge offline — jalankan mt5_bridge.py</span>';
+      document.getElementById('mt5ModalStatus').innerHTML = '<span style="color:var(--accent)">✗ Bridge tidak terhubung. Jika mt5_bridge.py sudah jalan: klik ikon setelan di sebelah kiri URL browser lalu izinkan "Aplikasi di perangkat / Jaringan lokal".</span>';
       const confirmBtn = document.getElementById('mt5ModalConfirmBtn');
       if (confirmBtn) confirmBtn.disabled = true;
     });
@@ -13122,7 +13122,7 @@ async function ckMt5OrderConfirm() {
 
   } catch(e) {
     const msg = (e.message.includes('fetch') || e.message.includes('Failed'))
-      ? 'Bridge offline — jalankan mt5_bridge.py'
+      ? 'Bridge tidak terhubung — cek mt5_bridge.py atau izinkan "Aplikasi di perangkat" di setelan browser'
       : e.message;
     document.getElementById('mt5ModalStatus').innerHTML = `<span style="color:var(--accent)">✗ ${escHtml(msg)}</span>`;
   } finally {
