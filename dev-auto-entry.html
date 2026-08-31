@@ -1384,14 +1384,35 @@ if (localStorage.getItem('dm_dev_theme') === 'light') {
   function loadLWC(){
     if (lwcLoaded && window.LightweightCharts) return Promise.resolve();
     if (lwcLoading) return lwcLoading;
+    // Pinned version 4.2.3 (bukan ^4) agar tidak butuh redirect 302 di unpkg.
+    // Sedia CDN fallback jsDelivr kalau unpkg diblokir/lambat di ISP tertentu.
+    const CDNS = [
+      'https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js',
+      'https://cdn.jsdelivr.net/npm/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js',
+    ];
     lwcLoading = new Promise((resolve, reject) => {
-      const s = document.createElement('script');
-      // ^4 (bukan latest) — v5 mengganti API addCandlestickSeries() jadi addSeries(),
-      // pin major version supaya tidak diam-diam patah kalau CDN naik versi.
-      s.src = 'https://unpkg.com/lightweight-charts@^4.1.0/dist/lightweight-charts.standalone.production.js';
-      s.onload = () => { lwcLoaded = true; resolve(); };
-      s.onerror = () => reject(new Error('Gagal memuat library chart dari CDN (cek koneksi internet)'));
-      document.head.appendChild(s);
+      let idx = 0;
+      function tryNext(){
+        if (idx >= CDNS.length) {
+          lwcLoading = null;
+          reject(new Error('Gagal memuat library chart dari CDN (cek koneksi internet atau pemblokir DNS/iklan)'));
+          return;
+        }
+        const s = document.createElement('script');
+        s.src = CDNS[idx++];
+        s.async = true;
+        s.onload = () => {
+          lwcLoaded = true;
+          lwcLoading = null;
+          resolve();
+        };
+        s.onerror = () => {
+          s.remove();
+          tryNext();
+        };
+        document.head.appendChild(s);
+      }
+      tryNext();
     });
     return lwcLoading;
   }
@@ -1706,7 +1727,14 @@ if (localStorage.getItem('dm_dev_theme') === 'light') {
     if (!box) return;
     destroyChart(symbol);
     box.innerHTML = '<div class="chart-msg">Memuat chart...</div>';
-    try { await loadLWC(); } catch (e) { box.innerHTML = `<div class="chart-msg">${esc(e.message)}</div>`; return; }
+    try {
+      await loadLWC();
+    } catch (e) {
+      box.innerHTML = `<div class="chart-msg">${esc(e.message)}<br><button class="chart-retry-btn" style="margin-top:6px;font-size:10px;padding:3px 8px;cursor:pointer;background:var(--card);color:var(--fg);border:1px solid var(--border);border-radius:3px;">Coba Lagi</button></div>`;
+      const retryBtn = box.querySelector('.chart-retry-btn');
+      if (retryBtn) retryBtn.addEventListener('click', () => renderChartCard(symbol, tf));
+      return;
+    }
     const useTf = tf || '1h';
     const { bars, error } = await fetchCandlesForTf(symbol, useTf);
     if (!bars.length) {

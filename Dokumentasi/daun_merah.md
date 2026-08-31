@@ -11,10 +11,14 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-31 (Session 338 — Gate D correlation cap: penjelasan pembatalan sekarang menyebut pair pengikatnya secara eksplisit, diverifikasi ulang dengan korelasi live. Session 337 + lanjutan (sesi paralel) — Ringkasan jadi makro murni dari headline & teknikal/COT/korelasi pindah ke Analisa, bug digest_history 4 bulan diperbaiki, daftar headline sumber di UI, AATAS Call 1 naik ke deepseek-v4-pro)
+> **Last updated:** 2026-08-31 (Session 339 — Fix pemuatan CDN Lightweight Charts di tab Chart Posisi dev-auto-entry.html; Session 338 — Gate D correlation cap; Session 337 — Ringkasan makro murni & AATAS Call 1 naik ke deepseek-v4-pro)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
+
+## Changelog Session 339 (2026-08-31) — [PENUNJUK] Fix Pemuatan CDN Lightweight Charts di Tab Chart Posisi (`dev-auto-entry.html`)
+
+Perbaikan internal developer console auto-entry: loader CDN Lightweight Charts di tab Chart Posisi di-pin ke versi 4.2.3, ditambah fallback otomatis ke jsDelivr, pembersihan script saat gagal, dan tombol retry interaktif. Detail lengkap di [Dokumentasi/professional_llm_trader/changelog.md](professional_llm_trader/changelog.md) §Session 339.
 
 ## Changelog Session 338 (2026-08-31) — Gate D (Correlation Cap): Penjelasan Pembatalan Menyebut Pair Pengikatnya
 
