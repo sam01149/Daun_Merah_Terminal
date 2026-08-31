@@ -1548,9 +1548,11 @@ ${goldBlock}
 ${calBlock}
 
 === RINGKASAN SESI SEBELUMNYA (FX) ===
+(PERINGATAN: riwayat ini bisa berisi output format LAMA yang masih memuat angka teknikal/positioning — support, resistance, posisi dalam range, RSI, skew, COT. Data itu SUDAH TIDAK dikirim ke kamu lagi, jadi angka semacam itu di riwayat TIDAK BOLEH disalin, didaur ulang, atau diperbarui sendiri. Ambil hanya TEMA dan DRIVER-nya untuk menilai apakah cerita hari ini lanjutan atau berbalik.)
 ${historyBlock}
 
 === RIWAYAT XAUUSD SESI SEBELUMNYA (4 sesi terakhir) ===
+(Peringatan yang sama berlaku di sini: angka level/range/indikator di riwayat adalah sisa format lama, jangan dikutip ulang.)
 ${xauHistoryBlock}`;
 
     call1Messages = [
@@ -2145,11 +2147,15 @@ ${xauHistoryBlock}`;
     // Headline sumber yang BENAR-BENAR dikirim ke AI, urut peringkat, supaya user bisa
     // memeriksa sendiri apakah briefing melewatkan berita besar (permintaan user
     // 2026-08-31: "apakah headline-nya diberikan ke saya?" — sebelumnya tidak, tab
-    // Ringkasan cuma menampilkan hitungan "N berita"). 20 teratas: cukup untuk audit
-    // cepat, tidak membengkakkan payload yang juga disimpan ke `latest_article`.
+    // Ringkasan cuma menampilkan hitungan "N berita"). 25 teratas dari 80 yang dikirim
+    // ke AI: cukup untuk audit cepat tanpa membengkakkan payload yang juga disimpan ke
+    // `latest_article`. UI WAJIB menyebut "dari N" supaya tidak menyesatkan — headline
+    // yang tidak muncul di daftar ini belum tentu tidak dilihat AI (terbukti 2026-08-31:
+    // dua headline Jepang yang dikutip briefing ada di peringkat 21-80).
     // Judul dikirim apa adanya (tanpa link) — headline FinancialJuice memang tidak
     // boleh diklik di luar tab TEK/ActionForex, lihat ATURAN.md.
-    headlines_used: headlinesForBriefing.slice(0, 20).map(h => ({
+    headlines_used_total: headlinesForBriefing.length,
+    headlines_used: headlinesForBriefing.slice(0, 25).map(h => ({
       title: h.title,
       at:    h.pubDate ? new Date(h.pubDate).toISOString() : null,
     })),
