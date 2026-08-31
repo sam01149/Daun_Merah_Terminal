@@ -133,6 +133,29 @@ test('prompt: jobdesk makro + gerbang tema tertulis eksplisit di system prompt',
     'geopolitik/minyak/tarif/data China harus dinyatakan bukan konten emas, biar tidak dioper ke paragraf XAU');
 });
 
+test('prompt: tense event kalender dikunci ke tag/tanggal, kata relatif dilarang', () => {
+  // Pelanggaran nyata 2026-08-31: RBNZ bertag "[AKAN RILIS dalam 41 jam]" (Rabu) ditulis
+  // "besok" (Selasa) — salah satu hari penuh. Akarnya instruksi lama yang justru
+  // MENYONTOHKAN kata "besok" sebagai tense yang boleh dipakai.
+  assert.ok(SRC.includes('DILARANG KERAS menerjemahkannya sendiri jadi "besok"'),
+    'kata relatif hasil hitungan sendiri harus dilarang eksplisit');
+  assert.ok(!/menentukan tense \("tadi pagi", "nanti", "besok"\)/.test(SRC),
+    'contoh lama yang mengundang parafrase "besok" tidak boleh hidup lagi');
+});
+
+test('prompt: tema wajib berbobot, rilis tier rendah bukan tema', () => {
+  assert.ok(SRC.includes('JANGKAR KEJADIAN SAJA TIDAK CUKUP'),
+    'gerbang tema harus menolak rilis tier rendah, bukan cuma menolak tema tanpa berita');
+  for (const contoh of ['inventories', 'kredit sektor swasta']) {
+    assert.ok(SRC.includes(contoh), `contoh data tier rendah "${contoh}" harus disebut`);
+  }
+});
+
+test('prompt: kaitan yang sering terlewat (China->AUD/NZD, minyak->CAD) wajib dirajut', () => {
+  assert.ok(SRC.includes('data China ke AUD/NZD'),
+    'kaitan China->AUD/NZD harus disebut eksplisit — paling sering terlewat');
+});
+
 test('digest_history: self-heal tipe key sebelum LPUSH (bug WRONGTYPE senyap 4 bulan)', () => {
   assert.ok(/TYPE', 'digest_history'/.test(SRC), 'harus mengecek TYPE sebelum LPUSH');
   assert.ok(/DEL', 'digest_history'/.test(SRC), 'harus menghapus key bertipe salah supaya LPUSH jalan lagi');
