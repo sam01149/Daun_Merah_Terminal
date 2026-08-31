@@ -492,7 +492,7 @@ const POLICY_EPOCHS = [
   // Dipisah dari v36 (bukan dibundel) karena memang variabel BERBEDA: v36 mengubah ISI
   // konteks, v37 mengubah SIAPA yang menalar. Ongkosnya 2 sampel v36 keluar populasi —
   // sengaja dibayar sekarang selagi murah, bukan ditunda sampai puluhan sampel.
-  { v: 37, from: '2026-08-31T09:10:00Z', kind: 'policy', impact: 'entry',    label: 'AATAS Call 1 (penentu arah) dinaikkan ke deepseek-v4-pro, Call 2 (pemilih lokasi dari kandidat deterministik) tetap deepseek-v4-flash — dipicu uji banding live yang menemukan flash memberi label makro_alignment yang melawan penalarannya sendiri' },
+  { v: 37, from: '2026-08-31T08:57:07Z', kind: 'policy', impact: 'entry',    label: 'AATAS Call 1 (penentu arah) dinaikkan ke deepseek-v4-pro, Call 2 (pemilih lokasi dari kandidat deterministik) tetap deepseek-v4-flash — dipicu uji banding live yang menemukan flash memberi label makro_alignment yang melawan penalarannya sendiri' },
 ];
 
 // AATAS_EPOCH (2026-08-22, keputusan user): batas populasi statistik dashboard
