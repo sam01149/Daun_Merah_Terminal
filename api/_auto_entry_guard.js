@@ -475,6 +475,24 @@ const POLICY_EPOCHS = [
   // Ikut di epoch yang sama karena satu variabel: ISI konteks makro yang dilihat AI.
   // Tidak ada gate, ambang, atau aturan trading yang digeser.
   { v: 36, from: '2026-08-31T04:30:00Z', kind: 'policy', impact: 'context',  label: 'Ringkasan jadi makro murni: teknikal/COT/retail/korelasi dicabut dari prompt digest (pindah ke Analisa), peringkat headline dinilai kategori+kejutan+kesegaran (dulu hanya kata kunci bank sentral), tema tanpa jangkar headline dibuang — konteks makro yang disuntik ke AATAS Call 1 ikut berubah' },
+  // v37 (2026-08-31, keputusan user setelah uji banding live): AATAS Call 1 — SATU-SATUNYA
+  // titik yang memutuskan long/short — dinaikkan dari `deepseek-v4-flash` ke
+  // `deepseek-v4-pro`. Call 2 TETAP flash (tugasnya memilih level dari menu deterministik
+  // `_levels.js` dengan arah yang sudah terkunci, beban penilaiannya jauh lebih ringan).
+  //
+  // Bukti yang mendasarinya, pada data live IDENTIK (XAU/USD, konteks makro sama persis):
+  // keputusan trade kedua model SAMA (bias/entry/SL/TP/RR/confidence) — yang berbeda justru
+  // `makro_alignment`, field yang menggerbang keputusan. flash melabeli "konflik" padahal
+  // paragrafnya sendiri sudah menyelesaikan konflik itu; pro melabeli "searah" dengan
+  // penyelesaian berbasis bukti (VIX contango + HY OAS turun = risk-on, safe-haven tidak
+  // terkonfirmasi) DAN spontan menandai jebakan price-derived yang jadi akar bug S302.
+  // Catatan kejujuran: uji itu n=1 pair, satu momen, dan di jalur Analisa manual (satu
+  // panggilan berisi makro+teknikal), BUKAN Call 1 makro-only — indikasi kuat, bukan bukti.
+  //
+  // Dipisah dari v36 (bukan dibundel) karena memang variabel BERBEDA: v36 mengubah ISI
+  // konteks, v37 mengubah SIAPA yang menalar. Ongkosnya 2 sampel v36 keluar populasi —
+  // sengaja dibayar sekarang selagi murah, bukan ditunda sampai puluhan sampel.
+  { v: 37, from: '2026-08-31T09:10:00Z', kind: 'policy', impact: 'entry',    label: 'AATAS Call 1 (penentu arah) dinaikkan ke deepseek-v4-pro, Call 2 (pemilih lokasi dari kandidat deterministik) tetap deepseek-v4-flash — dipicu uji banding live yang menemukan flash memberi label makro_alignment yang melawan penalarannya sendiri' },
 ];
 
 // AATAS_EPOCH (2026-08-22, keputusan user): batas populasi statistik dashboard

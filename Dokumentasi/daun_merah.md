@@ -11,7 +11,7 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-31 (Session 338 — Gate D correlation cap: penjelasan pembatalan sekarang menyebut pair pengikatnya secara eksplisit; diverifikasi ulang dengan korelasi live)
+> **Last updated:** 2026-08-31 (Session 338 — Gate D correlation cap: penjelasan pembatalan sekarang menyebut pair pengikatnya secara eksplisit, diverifikasi ulang dengan korelasi live. Session 337 + lanjutan (sesi paralel) — Ringkasan jadi makro murni dari headline & teknikal/COT/korelasi pindah ke Analisa, bug digest_history 4 bulan diperbaiki, daftar headline sumber di UI, AATAS Call 1 naik ke deepseek-v4-pro)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
@@ -73,6 +73,10 @@ Entri hasil trigger di atas menyimpan `checklist_pct: 0` dan `verdict: null` pad
 **Fix:** hanya `number` atau string angka non-kosong yang diterima; `null`/`''`/`'   '`/field hilang → `null` (angka 0 sungguhan tetap 0). 6 assertion regresi ditambahkan di `test/admin/aatas.test.js`. Entri `EURUSD=X:1788165295691` yang terlanjur menyimpan 0 sengaja TIDAK dikoreksi manual — statusnya `canceled` (ghost), tidak masuk win-rate manapun.
 
 **Catatan tabrakan multi-sesi:** perubahan kode di atas ikut tersapu ke commit `7271fa4` (sesi lain yang berjalan paralel memakai `git add -A` saat file ini sedang diedit) — isinya benar dan sudah ter-deploy, tapi pesan commit-nya cuma bicara soal `_extractRingkasanExcerpt`. Sengaja **tidak** di-rewrite (`amend`/`rebase`) karena sesi itu masih aktif di working tree yang sama; jejaknya dicatat di sini saja. Pola yang sama sudah pernah terjadi (lihat memory "Tabrakan Multi-Sesi Git").
+
+## Changelog Session 337 lanjutan (2026-08-31) — Penunjuk: AATAS Call 1 Naik ke `deepseek-v4-pro`
+
+Model penentu arah auto-entry dinaikkan dari `deepseek-v4-flash` ke `deepseek-v4-pro` (POLICY_EPOCHS v37), Call 2 tetap flash. Tidak mengubah perilaku fitur publik mana pun — Ringkasan, Analisa manual, dan Pre-Entry Check tidak disentuh. Dicatat di sini sebagai penunjuk karena dipicu langsung oleh perubahan Ringkasan di entri bawah ini. Entri lengkap + bukti uji banding live: [professional_llm_trader/changelog.md](professional_llm_trader/changelog.md) §Session 337 lanjutan.
 
 ## Changelog Session 337 (2026-08-31) — Ringkasan Dikembalikan ke Jobdesknya: Makro Murni dari Headline, Teknikal/COT/Retail/Korelasi Pindah ke Analisa
 

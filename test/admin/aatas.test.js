@@ -1166,3 +1166,30 @@ test('_consistencySummary: agregat hanya dari populasi AATAS, `recent` tetap pen
     assert.equal(l.n, 2, 'latensi pipeline TIDAK ikut direset');
   } finally { global.fetch = origFetch; }
 });
+
+// ── Model per-panggilan (POLICY_EPOCHS v37, 2026-08-31) ──────────────────────
+// Call 1 memutuskan long/short; Call 2 cuma memilih level dari menu deterministik.
+// Kalau keduanya diam-diam kembali memakai model yang sama, perubahan v37 batal tanpa
+// jejak — dan yang paling mungkin terjadi adalah Call 1 ikut turun ke flash saat orang
+// merapikan aiCfg. Dikunci di sini.
+const AATAS_SRC = require('fs').readFileSync(
+  require('path').join(__dirname, '..', '..', 'api', 'admin.js'), 'utf8');
+
+test('v37: Call 1 (penentu arah) pakai deepseek-v4-pro, Call 2 tetap flash', () => {
+  assert.match(AATAS_SRC, /const AATAS_CALL1_MODEL = 'deepseek-v4-pro'/,
+    'Call 1 harus pro — itu satu-satunya titik yang memutuskan arah');
+  assert.match(AATAS_SRC, /const AATAS_CALL2_MODEL = 'deepseek-v4-flash'/,
+    'Call 2 tetap flash — memilih level dari kandidat deterministik, beban penilaian ringan');
+});
+
+test('v37: Call 1 benar-benar memakai model terpisah, bukan ikut aiCfg Call 2', () => {
+  assert.match(AATAS_SRC, /modelName: call1ModelName \|\| aiCfg\.modelName, maxTokens: 900, tag: 'aatas_call1'/,
+    'Call 1 wajib menerima override model sendiri');
+  assert.match(AATAS_SRC, /call1ModelName: testDeepseekProOnly \? 'deepseek-v4-pro' : AATAS_CALL1_MODEL/,
+    'pemanggil wajib mengirim model Call 1 terpisah');
+});
+
+test('v37: flag diagnostik test_deepseek_pro tetap memaksa KEDUA call ke pro (apple-to-apple)', () => {
+  assert.match(AATAS_SRC, /modelName: testDeepseekProOnly \? 'deepseek-v4-pro' : AATAS_CALL2_MODEL/,
+    'dengan flag, Call 2 ikut pro supaya perbandingan adil');
+});

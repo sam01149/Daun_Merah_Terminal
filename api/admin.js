@@ -5556,8 +5556,38 @@ async function _callDeepSeekAnalyze(messages, {
 //   parsed = objek gabungan Call 1 + Call 2 (null kalau Call 1 gagal total — perilaku
 //            sama seperti kegagalan AI tunggal di v1: tidak ada setup untuk siklus itu)
 //   gate1  = { pass, override_reason } hasil penegakan kode atas Step 1-2
+// Model dipisah per-panggilan (2026-08-31, POLICY_EPOCHS v37) — sebelumnya kedua call
+// memakai `deepseek-v4-flash` yang sama.
+//
+// Alasannya bukan "pro selalu lebih baik", tapi beban penilaian dua call ini memang tidak
+// setara. Call 1 adalah SATU-SATUNYA titik di seluruh sistem yang memutuskan long/short,
+// dan sejak v36 ia bekerja dengan konteks yang lebih ramping (makro murni, tanpa prosa
+// teknikal) — makin sedikit datanya, makin berat bobot penalarannya. Call 2 tinggal
+// memilih level dari menu deterministik `_levels.js` dengan arah yang sudah terkunci.
+//
+// Uji banding pada data live identik (XAU/USD, 2026-08-31, konteks makro yang sama):
+// keputusan trade-nya IDENTIK (bias/entry/SL/TP/RR/confidence), yang berbeda justru
+// `makro_alignment` — field yang menggerbang keputusan. flash melabeli "konflik" padahal
+// paragrafnya sendiri sudah menyelesaikan konflik itu ("harga emas justru turun saat
+// eskalasi terjadi, driver utamanya real yield, bukan geopolitik") — label melawan
+// penalarannya sendiri. pro melabeli "searah" dengan penyelesaian berbasis bukti (VIX
+// 14.43 contango + HY OAS turun = risk-on, jadi demand safe-haven tidak terkonfirmasi),
+// dan spontan menandai jebakan price-derived ("currency strength ... tidak boleh
+// dijadikan bukti fundamental") yang justru akar bug Session 302.
+//
+// Timeout SENGAJA tidak diubah (tetap 25s default `_callDeepSeekAnalyze`): satu variabel
+// per perubahan, dan Call 1 pro pada prompt sebesar Ringkasan hanya makan ~15s sementara
+// output di sini dibatasi 900 token. KALAU nanti muncul timeout di log `aatas_call1`,
+// perbaikannya menaikkan timeout Call 1 — BUKAN mengembalikan model ke flash. Timeout =
+// setup hilang diam-diam untuk siklus itu, dan itu mencemari sampel (terbaca "tidak ada
+// sinyal" padahal sebenarnya gagal teknis). Anggaran waktu: 25s + 25s masih di bawah
+// maxDuration 60s admin.js dan AbortSignal 55s daemon.
+const AATAS_CALL1_MODEL = 'deepseek-v4-pro';   // penentu ARAH — penalaran murni, data paling sedikit
+const AATAS_CALL2_MODEL = 'deepseek-v4-flash'; // pemilih LOKASI dari kandidat deterministik
+
 async function _runAatasTwoCall({
   label, isXau, macroParts, technicalParts, goldCorrLive, levelInstrs, invalidationTail, aiCfg,
+  call1ModelName,
 }) {
   const prompts = { call1: null, call2: null };
 
@@ -5582,7 +5612,7 @@ async function _runAatasTwoCall({
 
   const r1 = await _callDeepSeekAnalyze(
     [{ role: 'system', content: call1Sys }, { role: 'user', content: call1User }],
-    { ...aiCfg, maxTokens: 900, tag: 'aatas_call1' },
+    { ...aiCfg, modelName: call1ModelName || aiCfg.modelName, maxTokens: 900, tag: 'aatas_call1' },
   );
   if (!r1.rawText) return { parsed: null, commentary: null, model: null, gate1: null, prompts, error: r1.error };
 
@@ -5717,7 +5747,12 @@ async function _runAatasTwoCall({
     fundamental_bias: base.fundamental_bias,
     reasoning_note: [macroNote, techNote].filter(Boolean).join(' ') || null,
   };
-  return { parsed, commentary: parsed.reasoning_note, model: r1.model, gate1, prompts, error: null };
+  // Sejak v37 kedua call bisa memakai model BERBEDA (Call 1 pro, Call 2 flash), jadi satu
+  // nama model tidak lagi jujur menggambarkan siapa yang memutuskan apa. Dilaporkan
+  // gabungan "call1+call2" supaya atribusi sampel nanti tidak menebak — jalur yang berhenti
+  // di Call 1 (Gate 1 gagal / parse gagal) tetap melaporkan satu nama, memang cuma itu yang jalan.
+  const modelLabel = r2.model && r2.model !== r1.model ? `${r1.model}+${r2.model}` : r1.model;
+  return { parsed, commentary: parsed.reasoning_note, model: modelLabel, gate1, prompts, error: null };
 }
 
 // Ringkasan satu-dua baris hasil checklist AATAS untuk fact sheet AI Kritikus (Gate A).
@@ -6579,8 +6614,12 @@ async function ohlcvAnalyzeHandler(req, res) {
           // dari traffic publik (isolasi PLAN V-3), berlaku juga saat probe konsistensi
           // daemon memakai test_deepseek=1 bersamaan.
           cbKey: CB_DEEPSEEK_KEY, budgetKey: AI_BUDGET_DEEPSEEK_KEY,
-          modelName: testDeepseekProOnly ? 'deepseek-v4-pro' : 'deepseek-v4-flash',
+          // aiCfg.modelName = model Call 2. Call 1 dikirim terpisah di bawah.
+          modelName: testDeepseekProOnly ? 'deepseek-v4-pro' : AATAS_CALL2_MODEL,
         },
+        // Flag diagnostik tetap bermakna: dengan test_deepseek_pro=1 KEDUA call pakai pro
+        // (perbandingan apple-to-apple), tanpa flag dipakai pembagian produksi pro/flash.
+        call1ModelName: testDeepseekProOnly ? 'deepseek-v4-pro' : AATAS_CALL1_MODEL,
       });
       aatasParsed = run.parsed;
       aatasCommentary = run.commentary;
