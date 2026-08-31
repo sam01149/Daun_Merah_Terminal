@@ -3084,7 +3084,20 @@ async function ohlcvChartHandler(req, res) {
   if (req.method === 'OPTIONS') return res.status(204).end();
   const { symbol } = req.query;
   if (!symbol) return res.status(400).json({ error: 'symbol required' });
-  const tf = ['1h', '4h', '1d'].includes(req.query.tf) ? req.query.tf : '1h';
+  const requestedTf = req.query.tf || '1h';
+
+  // Timeframe menit (1m, 5m, 15m) diambil on-demand dari Deriv lewat server —
+  // jadi jembatan bagi client di jaringan Indonesia yang koneksi browser-nya diblokir ISP (TrustPositif).
+  if (['1m', '5m', '15m'].includes(requestedTf)) {
+    try {
+      const candles = await fetchDerivCandles(symbol, requestedTf, 300);
+      return res.status(200).json({ symbol, tf: requestedTf, candles });
+    } catch (e) {
+      return res.status(502).json({ error: `Gagal mengambil candle ${requestedTf} dari Deriv: ${e.message}` });
+    }
+  }
+
+  const tf = ['1h', '4h', '1d'].includes(requestedTf) ? requestedTf : '1h';
   try {
     try { await refreshOhlcvFromYahoo(symbol); } catch (e) {
       console.warn(`ohlcv_chart: fresh fetch failed for ${symbol}, using snapshot:`, e.message);

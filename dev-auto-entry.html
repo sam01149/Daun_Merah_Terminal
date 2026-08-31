@@ -1692,12 +1692,21 @@ if (localStorage.getItem('dm_dev_theme') === 'light') {
   // dan fetchAndApplyBars (polling 20 detik).
   async function fetchCandlesForTf(symbol, tf){
     if (DERIV_GRANULARITY[tf]) {
-      const bars = await fetchDerivCandlesDirect(symbol, tf);
-      if (bars && bars.length) return { bars };
+      // 1. Coba ambil langsung dari browser (cepat jika ISP tidak memblokir Deriv)
+      const directBars = await fetchDerivCandlesDirect(symbol, tf);
+      if (directBars && directBars.length) return { bars: directBars };
+
+      // 2. Fallback otomatis ke server proxy /api/admin?action=ohlcv_chart (aman dari blokir TrustPositif ISP Indonesia)
+      const { json, errMsg } = await api('ohlcv_chart', { query: { symbol, tf }, silent: true });
+      if (json && Array.isArray(json.candles) && json.candles.length) {
+        const bars = computeBars(json.candles);
+        if (bars.length) return { bars };
+      }
+
       return {
         bars: [],
         error: YAHOO_TO_DERIV_SYMBOL[symbol]
-          ? 'Gagal mengambil candle dari Deriv, coba lagi sesaat lagi.'
+          ? (errMsg || (json && json.error) || 'Gagal mengambil candle dari Deriv (koneksi diblokir atau timeout).')
           : 'Timeframe ini tidak tersedia untuk pair ini (tidak ada sumber candle menit langsung).',
       };
     }
@@ -1955,8 +1964,17 @@ if (localStorage.getItem('dm_dev_theme') === 'light') {
       if (data.error) p.reject(new Error(data.error.message || 'Deriv error'));
       else p.resolve(data);
     });
-    derivWs.addEventListener('close', () => { derivWsOpen = false; derivWs = null; });
-    derivWs.addEventListener('error', () => {}); // best-effort — gagal konek diam-diam, tidak boleh bikin chart error
+    derivWs.addEventListener('close', () => {
+      derivWsOpen = false;
+      derivWs = null;
+      Object.values(derivPending).forEach(p => { clearTimeout(p.timer); p.reject(new Error('Deriv WS closed')); });
+      for (const k of Object.keys(derivPending)) delete derivPending[k];
+    });
+    derivWs.addEventListener('error', () => {
+      derivWsOpen = false;
+      Object.values(derivPending).forEach(p => { clearTimeout(p.timer); p.reject(new Error('Deriv WS error')); });
+      for (const k of Object.keys(derivPending)) delete derivPending[k];
+    });
   }
   function sendDerivRequest(msg, timeoutMs){
     return new Promise((resolve, reject) => {
@@ -1964,7 +1982,7 @@ if (localStorage.getItem('dm_dev_theme') === 'light') {
       if (!derivWs) { reject(new Error('Deriv WS tidak tersedia')); return; }
       const reqId = derivReqSeq++;
       const raw = JSON.stringify({ ...msg, req_id: reqId });
-      const timer = setTimeout(() => { delete derivPending[reqId]; reject(new Error('Deriv WS timeout')); }, timeoutMs || 8000);
+      const timer = setTimeout(() => { delete derivPending[reqId]; reject(new Error('Deriv WS timeout')); }, timeoutMs || 3500);
       derivPending[reqId] = { resolve, reject, timer };
       if (derivWsOpen && derivWs.readyState === WebSocket.OPEN) { try { derivWs.send(raw); } catch (e) { clearTimeout(timer); delete derivPending[reqId]; reject(e); } }
       else derivWsQueue.push(raw);

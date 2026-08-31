@@ -202,7 +202,8 @@ async function fetchDerivCandles(yahooSymbol, interval, count) {
   if (!derivSymbol) throw new Error(`fetchDerivCandles: tidak ada mapping Deriv untuk ${yahooSymbol}`);
   const appId = process.env.DERIV_APP_ID;
   if (!appId) throw new Error('fetchDerivCandles: DERIV_APP_ID belum diset');
-  const granularity = interval === '1d' ? 86400 : 3600;
+  const granMap = { '1m': 60, '5m': 300, '15m': 900, '1h': 3600, '4h': 14400, '1d': 86400 };
+  const granularity = granMap[interval] || (interval === '1d' ? 86400 : 3600);
 
   return new Promise((resolve, reject) => {
     // Timeout total 8s (Plan P-2) — di bawah timeout Yahoo (12s) supaya rantai
