@@ -165,13 +165,28 @@ test('prompt: konteks SESI ikut dikirim (dulu sesiLabel cuma dipakai judul notif
   assert.ok(/'sesi Eropa':\s*'EUR, GBP, CHF'/.test(SRC), 'peta mata uang per sesi harus ada');
 });
 
-test('prompt: sesi tanpa katalis WAJIB dinyatakan, bukan didiamkan atau ditambal tema', () => {
+test('prompt: sesi tanpa katalis dinyatakan sebagai KETIADAAN, bukan diisi penggerak karangan', () => {
   assert.ok(SRC.includes('dibuka tanpa katalis domestik'),
-    'harus mewajibkan satu kalimat eksplisit saat mata uang sesi sepi berita');
-  assert.ok(SRC.includes('JANGAN mengarang tema untuknya'),
-    'jangan sampai aturan ini jadi pintu belakang tema pengisi yang baru ditutup Gerbang Tema');
+    'harus ada kalimat eksplisit saat mata uang sesi sepi berita');
+  assert.ok(SRC.includes('MENYATAKAN KETIADAAN'),
+    'tujuannya menyatakan ketiadaan, bukan menyelipkan tema mini');
   assert.ok(SRC.includes('Interest Rate Probabilities'),
     'boilerplate wire harus dinyatakan BUKAN katalis — dua bug lama (S284, S302) lahir dari sini');
+});
+
+test('prompt: penggerak hanya boleh ditunjuk kalau sudah dibuktikan, "tidak ada" itu jawaban sah', () => {
+  // Versi pertama aturan ini memberi MENU penggerak ("biasanya tema dolar, geopolitik,
+  // atau risk sentiment global") — itu praktis mengundang model selalu menunjuk salah
+  // satunya, termasuk di hari yang memang sepi. User menangkapnya: "kalau ga ada, jangan
+  // maksa harus di ada-adakan, nanti menyesatkan."
+  assert.ok(!/biasanya tema dolar, geopolitik, atau risk sentiment global/.test(SRC),
+    'menu penggerak tidak boleh hidup lagi — itu memancing sebab karangan');
+  assert.ok(SRC.includes('tema yang SUDAH kamu bangun dengan bukti'),
+    'penggerak hanya boleh menunjuk tema yang sudah dibuktikan di paragraf sebelumnya');
+  assert.ok(SRC.includes('tidak ada penggerak yang jelas'),
+    '"tidak ada penggerak" wajib jadi jawaban yang sah, bukan kegagalan');
+  assert.ok(SRC.includes('penjelasan langganan'),
+    'geopolitik dilarang jadi penjelasan langganan harian');
 });
 
 test('digest_history: self-heal tipe key sebelum LPUSH (bug WRONGTYPE senyap 4 bulan)', () => {

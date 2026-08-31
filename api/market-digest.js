@@ -991,7 +991,31 @@ SESI YANG SEDANG/AKAN DIBUKA: ${sesiNow} — mata uang utamanya ${SESI_CURRENCIE
   const _calFP = e => (e.forecast || e.previous)
     ? ` [F: ${e.forecast || '—'} | P: ${e.previous || '—'}]`
     : '';
-  const calBlock = calEvents.length > 0 ? calEvents.map(e=>`- ${e.date} | ${e.time_wib} | ${e.currency} | ${e.event}${_calFP(e)}${_calEventStatusTag(e)}`).join('\n') : '(Tidak ada event high-impact)';
+  // Penanda "jatuh di dalam sesi ini" (2026-08-31, lanjutan laporan sesi London). Daftar
+  // kalender selama ini RATA 3 hari ke depan — pembaca yang baru masuk sesi tidak bisa
+  // langsung melihat mana yang rilis dalam jam-jam sesinya sendiri dan mana yang masih
+  // lusa. Dihitung di KODE, bukan diserahkan ke LLM: aritmetika tanggal/jam relatif sudah
+  // terbukti jadi sumber kesalahan nyata di fitur ini (RBNZ hari Rabu ditulis "besok").
+  // Jendela sesi dalam UTC sengaja mengikuti pembagian sesiLabel() yang sudah ada supaya
+  // tidak lahir dua definisi sesi yang bisa drift.
+  const SESI_WINDOW_UTC = { 'sesi Asia': [0, 8], 'sesi Eropa': [7, 16], 'sesi NY': [12, 21] };
+  const _sesiEndMs = (() => {
+    const w = SESI_WINDOW_UTC[sesiNow];
+    if (!w) return null;
+    const n = new Date();
+    const end = Date.UTC(n.getUTCFullYear(), n.getUTCMonth(), n.getUTCDate(), w[1], 0);
+    return end > Date.now() ? end : null; // ujung sesi sudah lewat -> jangan menandai apa pun
+  })();
+  const _calSesiTag = e => {
+    if (!_sesiEndMs || !e.time_wib || e.time_wib === 'Tentative') return '';
+    const [hS, mS] = e.time_wib.replace(' WIB', '').split(':');
+    const h = parseInt(hS, 10), m = parseInt(mS, 10);
+    if (isNaN(h) || isNaN(m)) return '';
+    const [y, mo, d] = e.date.split('-').map(Number);
+    const evMs = Date.UTC(y, mo - 1, d, h - 7, m); // WIB = UTC+7
+    return (evMs > Date.now() && evMs <= _sesiEndMs) ? ` [JATUH DI DALAM ${sesiNow.toUpperCase()}]` : '';
+  };
+  const calBlock = calEvents.length > 0 ? calEvents.map(e=>`- ${e.date} | ${e.time_wib} | ${e.currency} | ${e.event}${_calFP(e)}${_calEventStatusTag(e)}${_calSesiTag(e)}`).join('\n') : '(Tidak ada event high-impact)';
 
   // Gold-specific headline filter — split recent vs historical so AI weights correctly
   const cutoff12h = Date.now() - 12 * 60 * 60 * 1000;
@@ -1500,7 +1524,13 @@ Risk Sentiment: Kalau tema melibatkan risk-on/risk-off (safe haven flow, JPY/CHF
 Konflik: Dua signal berlawanan dalam satu tema? Sebut keduanya, putuskan mana lebih berat, jelaskan kenapa.
 Kalender: Hanya event dengan asymmetri beat/miss jelas. Untuk setiap event yang dianalisis, gunakan format prosa ini persis: "[EVENT] ([CURRENCY]) [TIME WIB] — jika beat: [pair] [naik/turun] karena [mekanisme konkret]; jika miss: [pair] [naik/turun] karena [mekanisme konkret]." Event tanpa edge antisipatif → skip sepenuhnya, jangan disebutkan. WAJIB: tiap event kalender sudah punya tag "[SUDAH RILIS X lalu]" atau "[AKAN RILIS dalam X]" di blok KALENDER EKONOMI — PAKAI TAG ITU APA ADANYA, JANGAN hitung sendiri dari tanggal/jam mentah (rawan salah). Untuk menyebut waktunya, kamu HANYA boleh memakai salah satu dari dua bentuk ini: (a) frasa persis dari tag ("dalam 41 jam", "3 jam lalu"), atau (b) tanggal + jam WIB yang tertulis di baris kalender itu ("Rabu 2 September 02:00 WIB"). DILARANG KERAS menerjemahkannya sendiri jadi "besok", "lusa", "hari ini", "nanti malam", atau kata relatif lain — pelanggaran nyata 2026-08-31: event RBNZ bertag "[AKAN RILIS dalam 41 jam]" (hari Rabu) ditulis sebagai "besok" (Selasa) di satu output, salah satu hari penuh. Event yang ber-tag "SUDAH RILIS" tidak boleh disebut sebagai akan datang — kalau actual-nya belum diketahui dari headline, sebut sebagai "hasil belum tercermin di headline" bukan menebak arah.
 Pejabat CB: Hanya analisa jika menyentuh rate path, balance sheet, atau inflation framework. Non-policy → sebut sekali "tidak ada sinyal kebijakan dari [nama]" lalu lanjut.
-Mata uang sesi yang dibuka: Blok SESI di atas menyebut mata uang utama sesi yang sedang/akan dibuka — pembaca briefing ini sedang masuk ke sesi itu. Kalau salah satunya punya berita substantif, wajar ia jadi tema. Kalau TIDAK ADA satu pun berita substantif untuk mata uang sesi itu, JANGAN diam saja dan JANGAN mengarang tema untuknya — sebut dalam SATU kalimat bahwa sesi itu dibuka tanpa katalis domestik, lalu sebutkan apa yang sebenarnya menggerakkan mata uang itu hari ini (biasanya tema dolar, geopolitik, atau risk sentiment global). Diam membuat pembaca tidak bisa membedakan "memang sepi" dari "terlewat". Ingat, post rutin bertajuk "Interest Rate Probabilities" dan "Currency Strength Chart" BUKAN berita substantif — itu boilerplate wire dan ranking turunan harga, dua-duanya pernah menyebabkan kesalahan nyata di sistem ini; keberadaannya TIDAK membatalkan kalimat "tanpa katalis domestik".
+Mata uang sesi yang dibuka: Blok SESI di atas menyebut mata uang utama sesi yang sedang/akan dibuka — pembaca briefing ini sedang masuk ke sesi itu. Kalau salah satunya punya berita substantif, wajar ia jadi tema.
+Kalau TIDAK ADA satu pun berita substantif untuk mata uang sesi itu, tulis SATU kalimat bahwa sesi itu dibuka tanpa katalis domestik. Tujuan kalimat ini MENYATAKAN KETIADAAN, supaya pembaca bisa membedakan "memang sepi" dari "terlewat" — BUKAN kesempatan menyelipkan tema mini. Aturannya ketat:
+   - Kalimat itu berdiri sendiri. DILARANG menambahkan angka, mekanisme, atau klaim baru apa pun di dalamnya.
+   - Kamu boleh menyebut apa yang menggerakkan mata uang itu HANYA kalau penggeraknya adalah tema yang SUDAH kamu bangun dengan bukti di paragraf sebelumnya. Menunjuk tema yang sudah ada = merangkum; menyebut penggerak yang belum kamu buktikan = mengarang.
+   - Kalau tidak ada tema yang masuk akal menggerakkannya, jawaban yang BENAR adalah berhenti di "tanpa katalis domestik" atau menulis bahwa tidak ada penggerak yang jelas. Itu bukan jawaban yang gagal — itu keadaan pasar yang sebenarnya, dan memaksakan penggerak justru menyesatkan pembaca yang akan mengambil posisi.
+   - DILARANG menjadikan geopolitik (atau tema apa pun) sebagai penjelasan langganan. Geopolitik hanya boleh disebut kalau memang ADA headline geopolitiknya hari itu. Hari yang sepi harus terbaca sepi.
+   Ingat, post rutin bertajuk "Interest Rate Probabilities" dan "Currency Strength Chart" BUKAN berita substantif — itu boilerplate wire dan ranking turunan harga, dua-duanya pernah menyebabkan kesalahan nyata di sistem ini; keberadaannya TIDAK membatalkan kalimat "tanpa katalis domestik".
 Penutup FX: Satu kalimat menyimpulkan kekuatan mata uang hari ini (HANYA pilih dari 8 majors: USD, EUR, GBP, JPY, CAD, AUD, NZD, CHF). Kalau ada SATU currency yang jelas paling kuat dan SATU yang paling lemah tanpa kontradiksi — sebut TEPAT SATU di tiap sisi, dengan alasan spesifik dari headline. Kalau buktinya genuinely campuran (misal USD kuat vs satu currency tapi lemah vs currency lain) — JANGAN dipaksa pilih satu pemenang palsu, sebut eksplisit sebagai "sinyal campuran" dan jelaskan singkat kenapa (kuat vs siapa, lemah vs siapa). Currency paling lemah/rentan tetap WAJIB disebut kalau buktinya jelas, dengan alasan spesifik dari headline — jangan jatuh ke "pasar volatile" generik tanpa alasan, baik di skenario satu pemenang maupun campuran. Kesimpulan ini WAJIB berdasar berita/kebijakan, bukan pergerakan harga semata.
 
 ATURAN XAUUSD (paragraf baru, mulai tepat "XAUUSD:"):
@@ -1565,7 +1595,7 @@ ${headlinesBlock}
 ${goldBlock}
 
 === EVENT KALENDER EKONOMI HIGH-IMPACT (3 hari ke depan) ===
-(Tag [F: x | P: y] = konsensus Forecast & angka Previous — gunakan untuk menilai asymmetri beat/miss secara konkret: seberapa jauh konsensus dari previous menentukan skenario mana yang lebih mengejutkan market.)
+(Tag [F: x | P: y] = konsensus Forecast & angka Previous — gunakan untuk menilai asymmetri beat/miss secara konkret: seberapa jauh konsensus dari previous menentukan skenario mana yang lebih mengejutkan market. Tag [JATUH DI DALAM SESI ...] = event itu rilis di dalam jam sesi yang sedang dibuka, jadi paling relevan untuk pembaca briefing ini — dahulukan event bertag itu daripada yang masih besok/lusa. Kalau TIDAK ADA satu pun event bertag itu, jangan mengarang urgensi: sesi ini memang tanpa event high-impact, dan itu informasi sah untuk disebut singkat.)
 ${calBlock}
 
 === RINGKASAN SESI SEBELUMNYA (FX) ===
