@@ -932,6 +932,24 @@ module.exports = async function handler(req, res) {
   const timeStr = `${String(wibNow.getUTCHours()).padStart(2,'0')}:${String(wibNow.getUTCMinutes()).padStart(2,'0')} WIB`;
   const DAYS_ID = ['Minggu','Senin','Selasa','Rabu','Kamis','Jumat','Sabtu'];
   const dayStr  = DAYS_ID[wibNow.getUTCDay()];
+  // Konteks SESI untuk prompt (2026-08-31, laporan user: "kita kan di sesi London, kok
+  // tidak ada bahasan mata uang London?"). `sesiLabel()` sudah ada sejak A2.2 tapi selama
+  // ini HANYA dipakai untuk judul notifikasi push — tidak pernah masuk prompt. Jadi
+  // briefing yang kalimat pertamanya sendiri berbunyi "briefing pre-session" ditulis tanpa
+  // tahu sesi mana yang dibuka.
+  //
+  // Ini BUKAN izin membuat paragraf mata uang tanpa berita (itu masalah tema pengisi yang
+  // baru saja ditutup Gerbang Tema). Gunanya menghilangkan AMBIGUITAS DIAM: pembaca yang
+  // masuk sesi London tidak bisa membedakan "EUR/GBP memang sepi katalis" dari "AI-nya
+  // melewatkan". Satu kalimat eksplisit menyelesaikan itu tanpa mengarang tema.
+  const SESI_CURRENCIES = {
+    'sesi Asia':  'JPY, AUD, NZD (plus dampak data China)',
+    'sesi Eropa': 'EUR, GBP, CHF',
+    'sesi NY':    'USD, CAD',
+  };
+  const sesiNow = sesiLabel();
+  const sesiNote = `
+SESI YANG SEDANG/AKAN DIBUKA: ${sesiNow} — mata uang utamanya ${SESI_CURRENCIES[sesiNow]}.`;
   const isMonEarly = wibNow.getUTCDay() === 1 && wibNow.getUTCHours() < 15;
   const marketClosed = !isFxMarketOpen();
   let weekendNote = isMonEarly ? '\nCATATAN KONTEKS: Ini Senin pagi — bagian "12-36 jam lalu" mencakup weekend, volume berita tipis, tidak market-moving.' : '';
@@ -1482,6 +1500,7 @@ Risk Sentiment: Kalau tema melibatkan risk-on/risk-off (safe haven flow, JPY/CHF
 Konflik: Dua signal berlawanan dalam satu tema? Sebut keduanya, putuskan mana lebih berat, jelaskan kenapa.
 Kalender: Hanya event dengan asymmetri beat/miss jelas. Untuk setiap event yang dianalisis, gunakan format prosa ini persis: "[EVENT] ([CURRENCY]) [TIME WIB] — jika beat: [pair] [naik/turun] karena [mekanisme konkret]; jika miss: [pair] [naik/turun] karena [mekanisme konkret]." Event tanpa edge antisipatif → skip sepenuhnya, jangan disebutkan. WAJIB: tiap event kalender sudah punya tag "[SUDAH RILIS X lalu]" atau "[AKAN RILIS dalam X]" di blok KALENDER EKONOMI — PAKAI TAG ITU APA ADANYA, JANGAN hitung sendiri dari tanggal/jam mentah (rawan salah). Untuk menyebut waktunya, kamu HANYA boleh memakai salah satu dari dua bentuk ini: (a) frasa persis dari tag ("dalam 41 jam", "3 jam lalu"), atau (b) tanggal + jam WIB yang tertulis di baris kalender itu ("Rabu 2 September 02:00 WIB"). DILARANG KERAS menerjemahkannya sendiri jadi "besok", "lusa", "hari ini", "nanti malam", atau kata relatif lain — pelanggaran nyata 2026-08-31: event RBNZ bertag "[AKAN RILIS dalam 41 jam]" (hari Rabu) ditulis sebagai "besok" (Selasa) di satu output, salah satu hari penuh. Event yang ber-tag "SUDAH RILIS" tidak boleh disebut sebagai akan datang — kalau actual-nya belum diketahui dari headline, sebut sebagai "hasil belum tercermin di headline" bukan menebak arah.
 Pejabat CB: Hanya analisa jika menyentuh rate path, balance sheet, atau inflation framework. Non-policy → sebut sekali "tidak ada sinyal kebijakan dari [nama]" lalu lanjut.
+Mata uang sesi yang dibuka: Blok SESI di atas menyebut mata uang utama sesi yang sedang/akan dibuka — pembaca briefing ini sedang masuk ke sesi itu. Kalau salah satunya punya berita substantif, wajar ia jadi tema. Kalau TIDAK ADA satu pun berita substantif untuk mata uang sesi itu, JANGAN diam saja dan JANGAN mengarang tema untuknya — sebut dalam SATU kalimat bahwa sesi itu dibuka tanpa katalis domestik, lalu sebutkan apa yang sebenarnya menggerakkan mata uang itu hari ini (biasanya tema dolar, geopolitik, atau risk sentiment global). Diam membuat pembaca tidak bisa membedakan "memang sepi" dari "terlewat". Ingat, post rutin bertajuk "Interest Rate Probabilities" dan "Currency Strength Chart" BUKAN berita substantif — itu boilerplate wire dan ranking turunan harga, dua-duanya pernah menyebabkan kesalahan nyata di sistem ini; keberadaannya TIDAK membatalkan kalimat "tanpa katalis domestik".
 Penutup FX: Satu kalimat menyimpulkan kekuatan mata uang hari ini (HANYA pilih dari 8 majors: USD, EUR, GBP, JPY, CAD, AUD, NZD, CHF). Kalau ada SATU currency yang jelas paling kuat dan SATU yang paling lemah tanpa kontradiksi — sebut TEPAT SATU di tiap sisi, dengan alasan spesifik dari headline. Kalau buktinya genuinely campuran (misal USD kuat vs satu currency tapi lemah vs currency lain) — JANGAN dipaksa pilih satu pemenang palsu, sebut eksplisit sebagai "sinyal campuran" dan jelaskan singkat kenapa (kuat vs siapa, lemah vs siapa). Currency paling lemah/rentan tetap WAJIB disebut kalau buktinya jelas, dengan alasan spesifik dari headline — jangan jatuh ke "pasar volatile" generik tanpa alasan, baik di skenario satu pemenang maupun campuran. Kesimpulan ini WAJIB berdasar berita/kebijakan, bukan pergerakan harga semata.
 
 ATURAN XAUUSD (paragraf baru, mulai tepat "XAUUSD:"):
@@ -1516,7 +1535,7 @@ CEK AKHIR SEBELUM KIRIM: (1) Ganti semua "dapat mempengaruhi/berpotensi/mungkin/
     }
     const digestSystemMsg = isValidDigestPrompt(promptDigestInstr) ? promptDigestInstr : DIGEST_SYSTEM_DEFAULT;
     const digestUserMsg = `PENTING: TULIS SELURUH OUTPUT DALAM BAHASA INDONESIA. JANGAN GUNAKAN BAHASA INGGRIS SAMA SEKALI.
-WAKTU: ${dayStr}, ${dateStr}, ${timeStr}${weekendNote}
+WAKTU: ${dayStr}, ${dateStr}, ${timeStr}${sesiNote}${weekendNote}
 
 === HARGA XAU/USD LIVE (fakta pasar: HANYA level harga & persentase perubahan sesi — TIDAK ADA data trend/support/resistance/swing/RSI/SMA di prompt ini, dan kamu DILARANG mengarangnya) ===
 ${xauSpotBlock}

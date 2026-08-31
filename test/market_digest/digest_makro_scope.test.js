@@ -156,6 +156,24 @@ test('prompt: kaitan yang sering terlewat (China->AUD/NZD, minyak->CAD) wajib di
     'kaitan China->AUD/NZD harus disebut eksplisit — paling sering terlewat');
 });
 
+test('prompt: konteks SESI ikut dikirim (dulu sesiLabel cuma dipakai judul notifikasi)', () => {
+  // Laporan user 2026-08-31: "kita kan di sesi London, kok tidak ada bahasan mata uang
+  // London?". Ternyata prompt yang kalimat pertamanya berbunyi "briefing pre-session"
+  // tidak pernah diberi tahu sesi mana yang dibuka.
+  assert.ok(SRC.includes('SESI YANG SEDANG/AKAN DIBUKA'), 'blok sesi wajib masuk prompt');
+  assert.ok(SRC.includes('${sesiNote}'), 'sesiNote wajib disisipkan ke blok WAKTU prompt');
+  assert.ok(/'sesi Eropa':\s*'EUR, GBP, CHF'/.test(SRC), 'peta mata uang per sesi harus ada');
+});
+
+test('prompt: sesi tanpa katalis WAJIB dinyatakan, bukan didiamkan atau ditambal tema', () => {
+  assert.ok(SRC.includes('dibuka tanpa katalis domestik'),
+    'harus mewajibkan satu kalimat eksplisit saat mata uang sesi sepi berita');
+  assert.ok(SRC.includes('JANGAN mengarang tema untuknya'),
+    'jangan sampai aturan ini jadi pintu belakang tema pengisi yang baru ditutup Gerbang Tema');
+  assert.ok(SRC.includes('Interest Rate Probabilities'),
+    'boilerplate wire harus dinyatakan BUKAN katalis — dua bug lama (S284, S302) lahir dari sini');
+});
+
 test('digest_history: self-heal tipe key sebelum LPUSH (bug WRONGTYPE senyap 4 bulan)', () => {
   assert.ok(/TYPE', 'digest_history'/.test(SRC), 'harus mengecek TYPE sebelum LPUSH');
   assert.ok(/DEL', 'digest_history'/.test(SRC), 'harus menghapus key bertipe salah supaya LPUSH jalan lagi');
