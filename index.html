@@ -7245,6 +7245,25 @@ function renderAnalisa() {
 // yang bisa sama sekali tidak menyinggung pair yang dianalisa.
 function _extractRingkasanExcerptJs(article, label, isXau) {
   if (!article || typeof article !== 'string') return null;
+  // Mirror dari CUR_TEXT_ALIASES/_segmentMentionsLeg di api/admin.js — WAJIB berperilaku
+  // identik (dijaga tes konsistensi mirror di test/admin/makro_ctx.test.js, yang meng-eval
+  // fungsi ini SENDIRIAN — makanya helper-nya lokal di sini, bukan di scope modul seperti
+  // versi server). Alasan USD tidak ikut pencocokan teks: lihat komentar versi server.
+  const CUR_TEXT_ALIASES_JS = {
+    EUR: ['eur', 'euro'],
+    GBP: ['gbp', 'sterling', 'poundsterling', 'pound'],
+    JPY: ['jpy', 'yen'],
+    CHF: ['chf', 'franc', 'swissy'],
+    CAD: ['cad', 'loonie'],
+    AUD: ['aud', 'aussie'],
+    NZD: ['nzd', 'kiwi'],
+  };
+  const _segmentMentionsLegJs = (text, leg) => {
+    const aliases = CUR_TEXT_ALIASES_JS[leg];
+    if (!aliases) return false;
+    const t = String(text || '').toLowerCase();
+    return aliases.some(a => new RegExp('(^|[^a-z0-9])' + a + '([^a-z0-9]|$)').test(t));
+  };
   const cap = (s, n) => { s = s.trim(); return s.length > n ? s.slice(0, n - 3) + '...' : s; };
   if (isXau) {
     const clean = article.replace(/\{\{TAG:[^}]*\}\}/g, '').trim();
@@ -7265,7 +7284,10 @@ function _extractRingkasanExcerptJs(article, label, isXau) {
     const tag  = (parts[i] || '').toUpperCase();
     const text = (parts[i + 1] || '').trim();
     if (!text) continue;
-    if (tag.includes('KONFIRMASI') || legs.some(leg => tag.includes(leg))) picked.push(text);
+    const relevan = tag.includes('KONFIRMASI')
+      || legs.some(leg => tag.includes(leg))
+      || legs.some(leg => _segmentMentionsLegJs(text, leg));
+    if (relevan) picked.push(text);
   }
   if (picked.length === 0) return cap(fxPart.replace(/\{\{TAG:[^}]*\}\}/g, ' ').trim().split(/\n\n+/).slice(0, 3).join('\n\n'), 700);
   return cap(picked.join('\n\n'), 2500);

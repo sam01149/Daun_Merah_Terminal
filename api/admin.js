@@ -26,7 +26,7 @@ const { buildPairContext, computeCurrencyStrength } = require('./_pair_context')
 const { validateTightenSl, computePreventiveTightenSl, _evaluateManaged, _aggManagementStats, isCorroborated } = require('./_position_review');
 // isDrawdownHalted (Gate B) diaktifkan ulang 2026-08-22 (POLICY_EPOCHS v30) — lihat
 // komentar di titik pemanggilannya untuk riwayat lengkap nonaktif (v29) -> aktif lagi.
-const { isCorrelatedExposureBlocked, isTimingConflictBlocked, isInvalidationTriggered, INVALIDATION_TRIGGER_TYPES, INVALIDATION_TRIGGER_DIRECTIONS, INVALIDATION_TRIGGER_TIMEFRAMES, CORRELATED_PAIRS, POLICY_VERSION, POLICY_EPOCHS, policyVersionForTs, isDrawdownHalted, isDrawdownEmergencyValveOpen, AATAS_EPOCH, isGoldRegimeBlocked } = require('./_auto_entry_guard');
+const { isCorrelatedExposureBlocked, correlatedExposureBlock, isTimingConflictBlocked, isInvalidationTriggered, INVALIDATION_TRIGGER_TYPES, INVALIDATION_TRIGGER_DIRECTIONS, INVALIDATION_TRIGGER_TIMEFRAMES, CORRELATED_PAIRS, POLICY_VERSION, POLICY_EPOCHS, policyVersionForTs, isDrawdownHalted, isDrawdownEmergencyValveOpen, AATAS_EPOCH, isGoldRegimeBlocked } = require('./_auto_entry_guard');
 const { computeLevelCandidates } = require('./_levels');
 
 // Gate D live-sign lookup (audit 2026-08-16): terjemahkan simbol Yahoo di
@@ -57,6 +57,29 @@ function _buildLiveCorrSign(corrData) {
     out[`${a}|${b}`] = anomaly.r20 >= 0 ? 'positive' : 'negative';
   }
   return out;
+}
+
+// Kalimat penjelas Gate D untuk entri ghost (2026-08-31, `canceled_detail`). Dibuat di
+// server, BUKAN di frontend, karena satu-satunya saat kebenarannya bisa dipastikan adalah
+// detik gate menyala: partner yang mengikat bisa saja sudah closed/expired waktu user
+// membuka kartunya nanti, jadi rekonstruksi di klien akan menebak, bukan melaporkan.
+// Sengaja menyebut nama pair pengikat + bias + status + angka korelasinya: keluhan yang
+// memicu ini persis karena user mengecek pair yang dibatalkan, tidak menemukan entri
+// ganda di sana (memang tidak ada — yang mengikat pair LAIN), dan menyimpulkan gate-nya
+// salah nyala.
+function _formatCorrelationBlockDetail(block) {
+  if (!block) return null;
+  const label = block.partner_label
+    || (OHLCV_FIXED_PAIRS.find(p => p.symbol === block.partner) || {}).label
+    || block.partner;
+  const statusTxt = block.partner_status === 'open' ? 'sudah terisi (open)' : 'masih menunggu fill (pending)';
+  const rTxt = block.r != null
+    ? ` (r=${String(block.r).replace('.', ',')}, riset ${block.r_asof || '—'})`
+    : ' (tanda korelasi dari data live hari itu, bukan angka riset statis)';
+  const arah = block.sign === 'positive'
+    ? 'korelasi positif, jadi bias yang SAMA dihitung sebagai satu taruhan arah yang sama'
+    : 'korelasi negatif, jadi bias yang BERLAWANAN dihitung sebagai satu taruhan arah yang sama';
+  return `Yang mengikat exposure BUKAN pair ini sendiri (pair ini tidak punya entri ganda), melainkan ${label} ${block.partner_bias || '—'} yang ${statusTxt}: ${arah}${rTxt}.`;
 }
 
 // Actions callable from the frontend without a secret → rate-limited per IP.
@@ -4726,6 +4749,35 @@ function _formatLevelCandidatesBlock(lc) {
   return lines.join('\n');
 }
 
+// Kode mata uang + julukan yang lazim muncul di narasi Bahasa Indonesia — dipakai
+// _extractRingkasanExcerpt untuk menilai apakah SEGMEN bicara soal satu leg pair,
+// bukan cuma dari nama tag-nya. Ditambah 2026-08-31 setelah prompt Ringkasan
+// mengizinkan tag bertema (misal {{TAG: China}}, {{TAG: Hormuz}}), bukan lagi wajib
+// nama mata uang: verifikasi live menemukan paragraf ber-tag "China" yang isinya
+// eksplisit "AUD dan NZD tidak mendapat katalis berarti" TIDAK terambil untuk pair
+// AUD/NZD, karena string "China" memang tidak memuat "AUD"/"NZD".
+//
+// USD SENGAJA TIDAK ikut pencocokan teks (tetap lewat nama tag saja): hampir semua
+// tema makro menyebut dolar/real yield USD, jadi mencocokkan teks untuk USD sama saja
+// mengambil SEMUA segmen dan membatalkan penargetan per-pair yang jadi alasan fungsi
+// ini ada (S194). Konteks USD sudah dijamin lewat jangkar tema + blok Konfirmasi yang
+// selalu ikut.
+const CUR_TEXT_ALIASES = {
+  EUR: ['eur', 'euro'],
+  GBP: ['gbp', 'sterling', 'poundsterling', 'pound'],
+  JPY: ['jpy', 'yen'],
+  CHF: ['chf', 'franc', 'swissy'],
+  CAD: ['cad', 'loonie'],
+  AUD: ['aud', 'aussie'],
+  NZD: ['nzd', 'kiwi'],
+};
+function _segmentMentionsLeg(text, leg) {
+  const aliases = CUR_TEXT_ALIASES[leg];
+  if (!aliases) return false;
+  const t = String(text || '').toLowerCase();
+  return aliases.some(a => new RegExp('(^|[^a-z0-9])' + a + '([^a-z0-9]|$)').test(t));
+}
+
 // Ekstrak konteks makro dari artikel Ringkasan untuk pair tertentu (pure — dites unit).
 // XAU: blok "XAUUSD:" (memang self-contained). Pair FX: bagian FX dipecah per marker
 // {{TAG: NAMA}} yang disisipkan AI digest — ambil jangkar (teks sebelum tag pertama,
@@ -4759,7 +4811,10 @@ function _extractRingkasanExcerpt(article, label, isXau) {
     const tag  = (parts[i] || '').toUpperCase();
     const text = (parts[i + 1] || '').trim();
     if (!text) continue;
-    if (tag.includes('KONFIRMASI') || legs.some(leg => tag.includes(leg))) picked.push(text);
+    const relevan = tag.includes('KONFIRMASI')
+      || legs.some(leg => tag.includes(leg))
+      || legs.some(leg => _segmentMentionsLeg(text, leg));
+    if (relevan) picked.push(text);
   }
   if (picked.length === 0) {
     return cap(fxPart.replace(/\{\{TAG:[^}]*\}\}/g, ' ').trim().split(/\n\n+/).slice(0, 3).join('\n\n'), 700);
@@ -7336,6 +7391,12 @@ async function ohlcvAnalyzeHandler(req, res) {
         const autoGuardConsidered = isAutoCall && !dup && !blockedByOpenPosition;
         if (autoGuardConsidered) redisCmd('INCR', 'auto_guard_stats:considered').catch(() => {});
         let autoGuardReason = null;
+        // Kalimat siap-baca "kenapa gate ini menyala" untuk entri ghost yang disimpan di
+        // bawah (2026-08-31) — supaya user bisa memverifikasi sendiri tanpa membaca kode:
+        // sebelum ini penjelasan di UI cuma generik ("pair berkorelasi sudah punya posisi
+        // searah") sehingga terlihat salah dari sisi user yang mengecek pair yang
+        // dibatalkan dan memang tidak menemukan entri ganda di sana.
+        let autoGuardDetail = null;
         if (autoGuardConsidered) {
           // Gate E DILONGGARKAN (diskusi user, 2026-08-04, sesi sama dengan audit S277
           // yang membuatnya hard block) — lihat api/_auto_entry_guard.js untuk alasan
@@ -7361,8 +7422,10 @@ async function ohlcvAnalyzeHandler(req, res) {
           // keputusan hard-block, tambahkan counter OBSERVASI non-blocking di sini
           // (pola sama conflict_waktu_flagged di atas) — JANGAN langsung set
           // autoGuardReason tanpa data.
-          if (isCorrelatedExposureBlocked({ symbol, bias: structured.bias, positions: log, liveSign: liveCorrSign })) {
+          const corrBlock = correlatedExposureBlock({ symbol, bias: structured.bias, positions: log, liveSign: liveCorrSign });
+          if (corrBlock) {
             autoGuardReason = 'correlation_cap';
+            autoGuardDetail = _formatCorrelationBlockDetail(corrBlock);
           }
           // Gate B (drawdown circuit breaker) DIAKTIFKAN ULANG 2026-08-22 (POLICY_EPOCHS
           // v30) — nonaktif sejak 2026-08-20 (v29) karena 2 alasan: (1) ambang masih
@@ -7419,7 +7482,7 @@ async function ohlcvAnalyzeHandler(req, res) {
             // manapun) dengan canceled_reason:'gate_<gateKey>' supaya _evaluateCanceledGhost
             // (sekarang digeneralisasi, lihat GHOST_TRACKED_CANCEL_REASONS) bisa memantau
             // counterfactual-nya lewat field ghost_* terpisah, pola sama persis bias_flip.
-            log.unshift({ ...buildNewSetupEntry(), status: 'canceled', canceled_reason: `gate_${gateKey}`, canceled_t: Date.now() });
+            log.unshift({ ...buildNewSetupEntry(), status: 'canceled', canceled_reason: `gate_${gateKey}`, canceled_detail: autoGuardDetail, canceled_t: Date.now() });
             shouldSaveLog = true;
           }
           // Jalur ini yang dieksekusi manual (isAutoCall false -> autoGuardConsidered

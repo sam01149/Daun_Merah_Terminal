@@ -84,6 +84,52 @@ test('cap tertarget 2500 (S194): picked panjang tidak lagi terpotong di 900, fal
   assert.ok(outXau.length > 700 && outXau.length <= 2500, `dapat ${outXau.length}`);
 });
 
+// ── Tag bertema (bukan nama mata uang) — regresi 2026-08-31 ──────────────────
+// Sejak prompt Ringkasan jadi makro murni (S337), tag boleh bernama TEMA
+// ({{TAG: China}}, {{TAG: Hormuz}}, {{TAG: Tarif}}), bukan lagi wajib nama mata uang.
+// Pencocokan lama yang cuma melihat NAMA TAG langsung membuang paragraf yang isinya
+// eksplisit soal pair terkait. Ketahuan dari output live 31 Agustus: paragraf ber-tag
+// "China" berbunyi "...sehingga AUD dan NZD tidak mendapat katalis berarti dari data
+// ini" TIDAK terambil untuk pair AUD/NZD — padahal itu justru konteks makro paling
+// relevan untuk pair itu hari itu, dan excerpt inilah yang disuntik ke AATAS Call 1.
+const ARTICLE_TEMA = [
+  'Iran menembak jatuh drone MQ-9 AS di Selat Hormuz dan kapal komoditas yang melintas anjlok ke 5 per hari.',
+  '{{TAG: JPY}} Safe haven flow ke JPY tertahan komentar Bessent bahwa fluktuasi yen cukup terkendali.',
+  '{{TAG: China}} PMI manufaktur China 49.8 di atas konsensus 49.5, namun komposit masih kontraksi sehingga AUD dan NZD tidak mendapat katalis berarti.',
+  '{{TAG: Konfirmasi}} USD terkuat hari ini, NZD paling rentan menjelang RBNZ Rabu.',
+].join('\n\n');
+
+test('excerpt AUD/NZD: paragraf ber-tag tema ("China") ikut karena TEKS-nya menyebut AUD & NZD', () => {
+  const out = _extractRingkasanExcerpt(ARTICLE_TEMA, 'AUD/NZD', false);
+  assert.ok(out.includes('PMI manufaktur China'),
+    'paragraf yang membahas AUD/NZD tidak boleh hilang cuma karena nama tag-nya "China"');
+  assert.ok(out.includes('Iran menembak jatuh'), 'jangkar tema utama tetap ikut');
+  assert.ok(out.includes('USD terkuat'), 'blok Konfirmasi tetap ikut');
+  assert.ok(!out.includes('Safe haven flow ke JPY'), 'paragraf JPY tidak relevan untuk AUD/NZD');
+});
+
+test('excerpt CHF/JPY: paragraf JPY ikut lewat nama tag, paragraf China tidak nyasar masuk', () => {
+  const out = _extractRingkasanExcerpt(ARTICLE_TEMA, 'CHF/JPY', false);
+  assert.ok(out.includes('Safe haven flow ke JPY'));
+  assert.ok(!out.includes('PMI manufaktur China'), 'segmen tanpa sebutan CHF/JPY jangan ikut');
+});
+
+test('excerpt EUR/GBP: tidak kebagian segmen JPY maupun China (penargetan tetap ketat)', () => {
+  const out = _extractRingkasanExcerpt(ARTICLE_TEMA, 'EUR/GBP', false);
+  assert.ok(out.includes('Iran menembak jatuh') && out.includes('USD terkuat'));
+  assert.ok(!out.includes('Safe haven flow ke JPY'));
+  assert.ok(!out.includes('PMI manufaktur China'));
+});
+
+test('excerpt: leg USD TIDAK dicocokkan lewat teks — kalau tidak, semua segmen ikut dan penargetan mati', () => {
+  // Hampir semua tema makro menyebut dolar/USD. Kalau USD ikut pencocokan teks,
+  // EUR/USD bakal menelan paragraf JPY & China sekaligus.
+  const out = _extractRingkasanExcerpt(ARTICLE_TEMA, 'EUR/USD', false);
+  assert.ok(!out.includes('Safe haven flow ke JPY'),
+    'paragraf JPY (menyebut Bessent/yen, bukan EUR) tidak boleh ikut hanya karena pair-nya ber-leg USD');
+  assert.ok(!out.includes('PMI manufaktur China'));
+});
+
 // ── Mirror client vs server ──────────────────────────────────────────────────
 
 test('mirror: _extractRingkasanExcerptJs (index.html) identik dengan versi server', () => {

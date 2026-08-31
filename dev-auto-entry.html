@@ -1003,7 +1003,7 @@ if (localStorage.getItem('dm_dev_theme') === 'light') {
   // pending lalu di-flip) — dua mekanisme yang beda arti sama sekali.
   const CANCELED_REASON_EXPLAIN = {
     bias_flip: 'Pending lama ini digantikan sinyal auto-entry baru dengan bias berlawanan untuk pair yang sama (Flip Guard, bukan whipsaw) — dibatalkan sebelum harga sempat masuk zona entry lama.',
-    gate_correlation_cap: 'Kandidat ini TIDAK PERNAH jadi pending — ditahan Gate D (correlation cap): pair berkorelasi (lihat CORRELATED_PAIRS di api/_auto_entry_guard.js) sudah punya posisi pending/open searah, jadi dianggap exposure ganda.',
+    gate_correlation_cap: 'Kandidat ini TIDAK PERNAH jadi pending — ditahan Gate D (correlation cap): pair LAIN yang berkorelasi (lihat CORRELATED_PAIRS di api/_auto_entry_guard.js) sudah punya posisi pending/open searah, jadi dianggap exposure ganda. Gate ini TIDAK memeriksa entri ganda di pair yang sama (itu tugas dup/Flip Guard).',
     gate_drawdown_circuit_breaker: 'Kandidat ini TIDAK PERNAH jadi pending — ditahan Gate B (drawdown circuit breaker): performa realized-R belakangan di rezim risiko saat ini menembus ambang, entry baru pair ini dihentikan sementara.',
     gate_critic_veto: 'Kandidat ini TIDAK PERNAH jadi pending — ditahan Gate A (AI Kritikus): AI kedua yang mengaudit setup ini memutuskan verdict "batalkan" (detail keberatan spesifiknya cuma tercatat di server log, tidak ikut tersimpan ke entri ini).',
   };
@@ -1017,7 +1017,14 @@ if (localStorage.getItem('dm_dev_theme') === 'light') {
     if (s.status === 'closed_early') return 'Posisi ditutup lebih cepat oleh mekanisme manajemen risiko sistem sebelum TP/SL pasif tercapai.';
     if (s.status === 'canceled') {
       const specific = CANCELED_REASON_EXPLAIN[s.canceled_reason];
-      if (specific) return specific + (s.label_reason ? ` Catatan: ${s.label_reason}` : '');
+      // `canceled_detail` (2026-08-31) — kalimat spesifik yang direkam server PERSIS saat
+      // gate menyala (pair pengikat + bias + status + korelasinya). Hanya ada di entri
+      // baru; entri lama jatuh ke kalimat generik di atas apa adanya, TIDAK direkonstruksi
+      // di klien (partner pengikatnya bisa sudah closed/expired sekarang — menebak-nebak
+      // di sini akan menampilkan sebab yang belum tentu benar).
+      if (specific) return specific
+        + (s.canceled_detail ? ` ${s.canceled_detail}` : '')
+        + (s.label_reason ? ` Catatan: ${s.label_reason}` : '');
       // Entri lama sebelum canceled_reason mulai direkam (pra-2026-08-08) — tidak ada
       // cara mengetahui sebab pastinya lagi dari data yang tersimpan.
       return 'Sebab spesifik tidak tercatat di entri ini (dibuat sebelum canceled_reason mulai direkam) — kemungkinan digantikan sinyal baru atau ditahan gerbang risiko otomatis.';

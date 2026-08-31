@@ -171,9 +171,16 @@ function isDrawdownEmergencyValveOpen({ log, nowMs }) {
 // liveSign tidak dioper sama sekali, fallback diam-diam ke tabel statis di bawah
 // (fail-open, pola sama semua blok lain di codebase ini). TIDAK mengubah desain "heuristik
 // sederhana, bukan covariance-matrix penuh" — cuma sumber angka sign yang diperbarui.
+// `r`/`r_asof` (2026-08-31): angka riset yang sama persis dengan komentar di atas,
+// dipindahkan ke DATA supaya bisa ikut ditampilkan ke user saat gate ini menahan
+// kandidat (lihat correlatedExposureBlock di bawah) — sebelumnya angka ini cuma hidup
+// di komentar, jadi penjelasan yang sampai ke user cuma "pair berkorelasi" tanpa
+// menyebut pair mana & seberapa besar korelasinya. TIDAK dipakai sebagai ambang
+// (semua pasangan yang terdaftar di sini tetap memblokir, apa pun nilai r-nya) —
+// murni untuk transparansi.
 const CORRELATED_PAIRS = [
-  { a: 'GC=F', b: 'EURUSD=X', sign: 'positive' }, // r=0,585, riset 2026-07-26
-  { a: 'EURUSD=X', b: 'CHFJPY=X', sign: 'positive' }, // r=0,373, riset 2026-08-08
+  { a: 'GC=F', b: 'EURUSD=X', sign: 'positive', r: 0.585, r_asof: '2026-07-26' },
+  { a: 'EURUSD=X', b: 'CHFJPY=X', sign: 'positive', r: 0.373, r_asof: '2026-08-08' },
 ];
 
 function _correlationOf(symbol, partner, liveSign) {
@@ -219,16 +226,46 @@ const EXPOSURE_BINDING_STATUSES = new Set(['open', 'pending']);
 // parameter lama, tetap diterima supaya call site & test lama tidak perlu diubah
 // beramai-ramai; keduanya berarti hal yang sama sekarang (open + pending).
 // liveSign: lihat komentar CORRELATED_PAIRS di atas.
-function isCorrelatedExposureBlocked({ symbol, bias, positions, openPositions, liveSign }) {
+// CELAH TRANSPARANSI DITUTUP (2026-08-31, diskusi user "di auto entry ga ada entryan
+// ganda loh"): gate ini dulu cuma mengembalikan true/false, jadi satu-satunya jejak yang
+// sampai ke user adalah kalimat generik "pair berkorelasi sudah punya posisi searah" —
+// TIDAK menyebut pair mana, biasnya apa, statusnya apa, korelasinya berapa. Dari sisi
+// user itu tidak bisa diverifikasi sama sekali (dia lihat pair yang dibatalkan memang
+// tidak punya entri ganda, dan memang benar — yang mengikat justru pair LAIN). Fungsi
+// utamanya sekarang mengembalikan DETAIL blokir (atau null kalau lolos); predikat lama
+// tinggal pembungkus tipis supaya call site & test lama tidak perlu diubah.
+// Perilaku memblokirnya sendiri TIDAK berubah sedikit pun.
+function correlatedExposureBlock({ symbol, bias, positions, openPositions, liveSign }) {
   const list = positions || openPositions || [];
   for (const partner of _correlatedPartnersOf(symbol)) {
     const boundPartner = list.find(p => p && p.symbol === partner && EXPOSURE_BINDING_STATUSES.has(p.status));
     if (!boundPartner) continue;
     const corr = _correlationOf(symbol, partner, liveSign);
     const sameDirection = bias === boundPartner.bias;
-    if (corr.sign === 'positive' ? sameDirection : !sameDirection) return true;
+    if (corr.sign === 'positive' ? sameDirection : !sameDirection) {
+      const overridden = !!(liveSign && (liveSign[`${symbol}|${partner}`] || liveSign[`${partner}|${symbol}`]));
+      return {
+        partner,
+        partner_label: boundPartner.label || null,
+        partner_bias: boundPartner.bias || null,
+        partner_status: boundPartner.status,
+        partner_id: boundPartner.id || null,
+        sign: corr.sign,
+        sign_source: overridden ? 'live' : 'riset',
+        // r riset SENGAJA dikosongkan kalau sign-nya ditimpa data live (anomali
+        // |r20-r60|>0,4) — angka lama bisa beda tanda dari sign yang benar-benar dipakai,
+        // menampilkannya akan menyesatkan. Lebih baik tidak menyebut angka daripada
+        // menyebut angka yang bukan dasar keputusan.
+        r: overridden ? null : (corr.r ?? null),
+        r_asof: overridden ? null : (corr.r_asof ?? null),
+      };
+    }
   }
-  return false;
+  return null;
+}
+
+function isCorrelatedExposureBlocked(args) {
+  return correlatedExposureBlock(args) !== null;
 }
 
 // ── Gate E: Timing conflict flag (AI's own conflict:'waktu' self-assessment) ────
@@ -491,6 +528,7 @@ module.exports = {
   DRAWDOWN_EMERGENCY_VALVE_DAYS,
   isCorrelatedExposureBlocked,
   CORRELATED_PAIRS,
+  correlatedExposureBlock,
   EXPOSURE_BINDING_STATUSES,
   isTimingConflictBlocked,
   isInvalidationTriggered,
