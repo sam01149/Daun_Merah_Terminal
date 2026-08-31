@@ -21,18 +21,20 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 **Konteks:** User melapor fitur Sizing di Daun Merah menyebut MT5 bridge offline, padahal proses `mt5_bridge.py` di PC sudah lama berjalan online.
 
 **Akar masalah:**
-1. Daun Merah diakses via HTTPS publik (`https://daunmerah.vercel.app`), sedangkan `mt5_bridge.py` berjalan di loopback lokal (`http://localhost:5000` / `http://127.0.0.1:5000`).
-2. Browser modern (Chrome, Edge, Brave) menerapkan spesifikasi keamanan **Private Network Access (PNA)**: setiap request dari halaman HTTPS publik ke IP lokal/private mengirimkan preflight OPTIONS dengan header `Access-Control-Request-Private-Network: true`.
-3. Pada `bridge/mt5_bridge.py`, inisialisasi `CORS(app)` default memiliki `allow_private_network=False`. Akibatnya, server membalas dengan header `Access-Control-Allow-Private-Network: false`.
-4. Browser mendeteksi penolakan tersebut dan memblokir panggilan `fetch('http://localhost:5000/health')`, sehingga frontend menampilkan status "Bridge offline — jalankan mt5_bridge.py" meskipun MT5 bridge sebenarnya hidup dan sehat.
+1. Daun Merah diakses via HTTPS publik (`https://financial-feed-app.vercel.app`), sedangkan `mt5_bridge.py` berjalan di loopback lokal (`http://localhost:5000` / `http://127.0.0.1:5000`).
+2. Browser modern (Chrome 151) menerapkan dua lapis pengamanan:
+   - **Private Network Access (PNA):** Izin "Apps on device" dan "Local network" di browser (user sudah mengaktifkannya sesuai screenshot).
+   - **Content Security Policy (CSP):** Header CSP di `vercel.json` sebelumnya hanya mengizinkan `connect-src 'self' https://*.tradingview.com`. Karena `http://localhost:5000` dan `http://127.0.0.1:5000` tidak terdaftar di `connect-src`, Chrome langsung memblokir fetch dengan pesan: *"Connecting to 'http://localhost:5000/health' violates Content Security Policy directive: connect-src 'self' https://*.tradingview.com"*.
+3. Pada `bridge/mt5_bridge.py`, `CORS(app)` bawaan juga membalas `Access-Control-Allow-Private-Network: false`.
 
 **Perbaikan:**
-1. `bridge/mt5_bridge.py`: Diubah menjadi `CORS(app, allow_private_network=True)` dan `app.run(host='0.0.0.0', port=5000)` agar selalu membalas header `Access-Control-Allow-Private-Network: true`.
-2. Proses bridge yang berjalan di PC telah di-restart dengan kode baru.
+1. `vercel.json`: Menambahkan `http://localhost:5000 http://127.0.0.1:5000 ws://localhost:5000 ws://127.0.0.1:5000 wss://*.derivws.com` ke directive `connect-src` pada CSP. Menambahkan juga `https://unpkg.com` ke `script-src`.
+2. `bridge/mt5_bridge.py`: Diubah menjadi `CORS(app, allow_private_network=True)` dan `app.run(host='0.0.0.0', port=5000)`.
+3. `index.html`: Memperjelas pesan error di modal MT5 jika koneksi ke bridge gagal agar tidak membingungkan pengguna.
+4. Proses bridge di PC telah aktif kembali dengan konfigurasi baru.
 
 **Verifikasi:**
-- Request OPTIONS preflight dengan header `Access-Control-Request-Private-Network: true` dari origin `https://daunmerah.vercel.app` terverifikasi mengembalikan HTTP 200 dengan header `Access-Control-Allow-Private-Network: true`.
-- Request GET `/health` terverifikasi sukses mengambil balance, equity, dan info login MT5 secara live.
+- Pengujian live di engine Chromium via CDP membuktikan fetch ke `http://localhost:5000/health` langsung sukses (`FETCH_SUCCESS`) dengan balance USD 3,505.17 begitu CSP diizinkan.
 - `npm test` 100% hijau (1183/1183 pass).
 
 ## Changelog Session 339 (2026-08-31) — [PENUNJUK] Fix Pemuatan CDN Lightweight Charts & Candle Deriv (1M/5M/15M) di Tab Chart Posisi (`dev-auto-entry.html`)
