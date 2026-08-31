@@ -139,5 +139,14 @@ test('digest_history: self-heal tipe key sebelum LPUSH (bug WRONGTYPE senyap 4 b
 });
 
 test('payload: daftar headline sumber ikut dikirim ke klien', () => {
-  assert.ok(SRC.includes('headlines_used:'), 'response wajib membawa headline yang dipakai AI');
+  assert.ok(SRC.includes('headlines_sent:'), 'response wajib membawa headline yang dikirim ke AI');
+  assert.ok(SRC.includes('headlines_sent_total:'), 'total wajib ikut supaya UI jujur soal "N dari total"');
+});
+
+test('penamaan: field TIDAK boleh bernama headlines_used (menyesatkan)', () => {
+  // Nama lama bikin user mengira angka 25 itu hasil PILIHAN AI, padahal murni potongan
+  // kode dari peringkat kode — AI tidak pernah diminta memilih. Nama harus menggambarkan
+  // apa yang benar-benar terjadi: headline DIKIRIM, bukan dipakai.
+  assert.ok(!/headlines_used\s*:/.test(SRC),
+    'jangan hidupkan lagi nama headlines_used — pakai headlines_sent');
 });

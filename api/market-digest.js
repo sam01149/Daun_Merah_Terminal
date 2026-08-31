@@ -2144,7 +2144,12 @@ ${xauHistoryBlock}`;
     article, method, thesis,
     thesis_alerts:  thesisAlerts,
     news_count:     recentItems.length,
-    // Headline sumber yang BENAR-BENAR dikirim ke AI, urut peringkat, supaya user bisa
+    // Headline yang DIKIRIM ke AI (bukan yang "dipakai" — nama field lama `headlines_used`
+    // menyesatkan dan sudah menimbulkan salah paham nyata: user mengira angka 25 itu hasil
+    // PILIHAN AI, padahal murni potongan kode dari peringkat kode. AI tidak diminta memilih,
+    // tidak ditanya, dan tidak tahu daftar ini ada — satu-satunya "pemilihan" oleh AI adalah
+    // berita mana yang akhirnya dia TULIS di artikel, dan itu tidak tercermin di sini).
+    // Urut peringkat, supaya user bisa
     // memeriksa sendiri apakah briefing melewatkan berita besar (permintaan user
     // 2026-08-31: "apakah headline-nya diberikan ke saya?" — sebelumnya tidak, tab
     // Ringkasan cuma menampilkan hitungan "N berita"). 25 teratas dari 80 yang dikirim
@@ -2154,8 +2159,8 @@ ${xauHistoryBlock}`;
     // dua headline Jepang yang dikutip briefing ada di peringkat 21-80).
     // Judul dikirim apa adanya (tanpa link) — headline FinancialJuice memang tidak
     // boleh diklik di luar tab TEK/ActionForex, lihat ATURAN.md.
-    headlines_used_total: headlinesForBriefing.length,
-    headlines_used: headlinesForBriefing.slice(0, 25).map(h => ({
+    headlines_sent_total: headlinesForBriefing.length,
+    headlines_sent: headlinesForBriefing.slice(0, 25).map(h => ({
       title: h.title,
       at:    h.pubDate ? new Date(h.pubDate).toISOString() : null,
     })),

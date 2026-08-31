@@ -5746,7 +5746,9 @@ function renderRingkasan() {
 
     ${renderArticleSections(d.article)}
 
-    ${renderRingkasanSources(d.headlines_used, d.headlines_used_total)}
+    ${renderRingkasanSources(
+      d.headlines_sent ?? d.headlines_used,
+      d.headlines_sent_total ?? d.headlines_used_total)}
 
     <div class="print-btn-row">
       <button class="ringkasan-gen-btn" id="ringkasanBtn" onclick="generateRingkasan()">
