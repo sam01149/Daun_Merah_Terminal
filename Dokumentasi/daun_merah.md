@@ -11,10 +11,29 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-31 (Session 339 — Fix pemuatan CDN Lightweight Charts & candle Deriv 1M/5M/15M di tab Chart Posisi dev-auto-entry.html; Session 338 — Gate D correlation cap; Session 337 — Ringkasan makro murni & AATAS Call 1 naik ke deepseek-v4-pro)
+> **Last updated:** 2026-08-31 (Session 340 — Fix MT5 Bridge terbaca offline akibat blokir Private Network Access / PNA browser; Session 339 — Fix pemuatan CDN Lightweight Charts & candle Deriv 1M/5M/15M di tab Chart Posisi dev-auto-entry.html; Session 338 — Gate D correlation cap)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
+
+## Changelog Session 340 (2026-08-31) — Fix MT5 Bridge Terbaca Offline Akibat Blokir PNA (Private Network Access) di Browser
+
+**Konteks:** User melapor fitur Sizing di Daun Merah menyebut MT5 bridge offline, padahal proses `mt5_bridge.py` di PC sudah lama berjalan online.
+
+**Akar masalah:**
+1. Daun Merah diakses via HTTPS publik (`https://daunmerah.vercel.app`), sedangkan `mt5_bridge.py` berjalan di loopback lokal (`http://localhost:5000` / `http://127.0.0.1:5000`).
+2. Browser modern (Chrome, Edge, Brave) menerapkan spesifikasi keamanan **Private Network Access (PNA)**: setiap request dari halaman HTTPS publik ke IP lokal/private mengirimkan preflight OPTIONS dengan header `Access-Control-Request-Private-Network: true`.
+3. Pada `bridge/mt5_bridge.py`, inisialisasi `CORS(app)` default memiliki `allow_private_network=False`. Akibatnya, server membalas dengan header `Access-Control-Allow-Private-Network: false`.
+4. Browser mendeteksi penolakan tersebut dan memblokir panggilan `fetch('http://localhost:5000/health')`, sehingga frontend menampilkan status "Bridge offline — jalankan mt5_bridge.py" meskipun MT5 bridge sebenarnya hidup dan sehat.
+
+**Perbaikan:**
+1. `bridge/mt5_bridge.py`: Diubah menjadi `CORS(app, allow_private_network=True)` dan `app.run(host='0.0.0.0', port=5000)` agar selalu membalas header `Access-Control-Allow-Private-Network: true`.
+2. Proses bridge yang berjalan di PC telah di-restart dengan kode baru.
+
+**Verifikasi:**
+- Request OPTIONS preflight dengan header `Access-Control-Request-Private-Network: true` dari origin `https://daunmerah.vercel.app` terverifikasi mengembalikan HTTP 200 dengan header `Access-Control-Allow-Private-Network: true`.
+- Request GET `/health` terverifikasi sukses mengambil balance, equity, dan info login MT5 secara live.
+- `npm test` 100% hijau (1183/1183 pass).
 
 ## Changelog Session 339 (2026-08-31) — [PENUNJUK] Fix Pemuatan CDN Lightweight Charts & Candle Deriv (1M/5M/15M) di Tab Chart Posisi (`dev-auto-entry.html`)
 
