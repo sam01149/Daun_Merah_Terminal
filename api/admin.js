@@ -4911,15 +4911,17 @@ const ALIGNMENT_MAX_DIST = 45;
 // SENGAJA tidak ikut dibagi — tiap penjaga membawa daftar katanya sendiri, supaya
 // memperluas kosakata penjaga baru tidak diam-diam mengubah perilaku penjaga lama
 // yang sudah jalan di produksi (satu variabel per perubahan).
-function _scanCcyDirectionPairs(text, strengthenSrc, weakenSrc) {
+function _scanCcyDirectionPairs(text, strengthenSrc, weakenSrc, refPrefixRe, refWindow) {
   if (!text || typeof text !== 'string') return [];
+  const refRe = refPrefixRe || ALIGNMENT_REF_PREFIX_RE;
+  const refWin = Number.isFinite(refWindow) ? refWindow : 15;
   const ccyPositions = [];
   {
     const re = new RegExp(ALIGNMENT_CCY_RE.source, 'g');
     let m;
     while ((m = re.exec(text))) {
       const start = m.index, end = m.index + m[0].length;
-      const isReference = ALIGNMENT_REF_PREFIX_RE.test(text.slice(Math.max(0, start - 15), start));
+      const isReference = refRe.test(text.slice(Math.max(0, start - refWin), start));
       ccyPositions.push({ ccy: m[1], start, end, isReference });
     }
   }
@@ -5477,6 +5479,15 @@ function _isAatasEpochSetup(s) {
 // Ditulis sebagai literal RegExp (bukan string) dan dipakai lewat `.source` — pola sama
 // ALIGNMENT_* di atas. Dalam bentuk string, '' terlanjur jadi karakter BACKSPACE saat
 // JS mem-parse sumbernya, bukan word boundary; literal menutup kelas bug itu sepenuhnya.
+// Pembanding versi AATAS: lebih luas dari ALIGNMENT_REF_PREFIX_RE (yang cuma tahu
+// "terhadap"/"vs"). Ditemukan dari trigger live pertama (2026-08-31): driver berbunyi
+// "AUD relatif lebih kuat dari NZD" — kata "lebih kuat" nempel ke NZD (jarak 6) alih-alih
+// AUD (jarak 9), padahal NZD di situ TARGET PERBANDINGAN, bukan subjek yang bergerak.
+// Akibatnya gate salah menuduh inversi pada driver yang justru koheren. Jendela lookbehind
+// dilebarkan ke 30 karakter karena "dibandingkan dengan " sendiri sudah 20 karakter.
+// Daftarnya TIDAK digabung ke penjaga lama: perilaku jalur manual sengaja dibiarkan utuh.
+const AATAS_REF_PREFIX_RE = /\b(?:terhadap|vs|versus|melawan|dari|daripada|dibanding|dibandingkan|ketimbang)\s*(?:dengan\s*)?$/i;
+const AATAS_REF_WINDOW = 30;
 const AATAS_DIR_STRENGTHEN_RE = /\b(?:menguat(?:kan|nya)?|penguatan|menopang|terkuat|outperform)\b|\blebih kuat\b|\bpaling kuat\b/gi;
 const AATAS_DIR_WEAKEN_RE     = /\b(?:melemah(?:kan|nya)?|pelemahan|menekan|tertekan|terpuruk|underperform)\b|\blebih lemah\b|\bpaling lemah\b/gi;
 function _detectAatasDirectionMismatch({ label, arah, texts }) {
@@ -5488,7 +5499,7 @@ function _detectAatasDirectionMismatch({ label, arah, texts }) {
 
   let support = 0, oppose = 0;
   for (const t of (Array.isArray(texts) ? texts : [])) {
-    for (const p of _scanCcyDirectionPairs(t, AATAS_DIR_STRENGTHEN_RE.source, AATAS_DIR_WEAKEN_RE.source)) {
+    for (const p of _scanCcyDirectionPairs(t, AATAS_DIR_STRENGTHEN_RE.source, AATAS_DIR_WEAKEN_RE.source, AATAS_REF_PREFIX_RE, AATAS_REF_WINDOW)) {
       // Mata uang di luar kedua kaki pair (misal USD di teks AUD/NZD) TIDAK bersuara —
       // itu justru inti kesalahan yang mau ditangkap: driver sumbu USD dipakai untuk
       // cross non-USD, di mana kedua kaki berbagi faktor yang sama.

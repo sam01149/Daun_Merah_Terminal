@@ -195,6 +195,24 @@ test('[CEK ARAH DRIVER] label tidak dikirim -> no-op (tidak boleh menggagalkan s
   assert.equal(g.pass, true, 'ketiadaan label adalah kekurangan data, bukan bukti inversi arah');
 });
 
+test('[CEK ARAH DRIVER] regresi salah-tembak: "AUD lebih kuat DARI NZD" -> NZD cuma pembanding', () => {
+  // Trigger live pertama setelah gate ini dipasang (2026-08-31) langsung salah tuduh:
+  // kata "lebih kuat" berjarak 6 karakter ke NZD tapi 9 ke AUD, jadi tertarik ke NZD
+  // padahal NZD di situ TARGET PERBANDINGAN. Penjaga lama cuma mengecualikan pembanding
+  // setelah "terhadap"/"vs"; AATAS_REF_PREFIX_RE menambah "dari/daripada/dibanding/...".
+  const g = _evaluateAatasGate1({
+    aiPass: true, label: 'AUD/NZD',
+    fundamental_bias: {
+      score_pct: 68, arah: 'bullish',
+      driver: "AUD relatif lebih kuat dari NZD karena perbaikan PMI manufaktur China (49.8 vs 49.2) dan posisi crowded short NZD yang rawan squeeze naik, sementara NZD terbebani ekspektasi kenaikan RBNZ yang sudah ter-price dan kerentanan terhadap eskalasi geopolitik.",
+      konfirmasi: ["Data ekonomi: PMI manufaktur resmi China Agustus naik ke 49.8 dari 49.2, di atas konsensus 49.5, memberi dukungan marginal bagi AUD sebagai proksi China.", "Kebijakan moneter: RBNZ dipricing naik 25bps ke 2.75% dalam 37 jam, menciptakan risiko event yang menahan NZD, sementara AUD tidak memiliki event kebijakan setara dalam jendela yang sama."],
+      strong_vs_weak: true,
+    },
+  });
+  assert.equal(g.pass, true, 'driver ini KOHEREN dengan arah bullish — gate tidak boleh menahannya');
+  assert.equal(g.override_reason, null);
+});
+
 test('_detectAatasDirectionMismatch: quote MENGUAT searah dengan bearish -> false', () => {
   assert.equal(_detectAatasDirectionMismatch({
     label: 'AUD/NZD', arah: 'bearish',
