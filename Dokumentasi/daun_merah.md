@@ -45,6 +45,33 @@ Contoh hasilnya sekarang: *"Yang mengikat exposure BUKAN pair ini sendiri (pair 
 
 **Tes:** 1173/1173 hijau (4 tes baru untuk `correlatedExposureBlock`: detail partner, `null` saat lolos, `sign_source:'live'` menyembunyikan r riset, konsistensi dengan predikat lama).
 
+### 3. Verifikasi live (trigger manual, 1 kandidat)
+
+Trigger `ohlcv_analyze&auto=1` untuk EUR/USD dijalankan sekali (HTTP 200, 17,4s, 2 call DeepSeek). Hasilnya persis seperti yang diperkirakan: bias bearish lagi, **ditahan Gate D lagi** (CHF/JPY masih open), entri baru `EURUSD=X:1788165295691` — dan kali ini `canceled_detail` terisi:
+
+> Yang mengikat exposure BUKAN pair ini sendiri (pair ini tidak punya entri ganda), melainkan CHF/JPY bearish yang sudah terisi (open): korelasi positif, jadi bias yang SAMA dihitung sebagai satu taruhan arah yang sama (r=0,373, riset 2026-08-08).
+
+Dicek juga terender benar di browser (Playwright, production, kartu Riwayat Setup diperluas) — bukan cuma ada di payload JSON.
+
+**Kenapa korelasinya bukan kebetulan** (dekomposisi log-return harian, sumber `ohlcv:*:1d`):
+
+| Pasangan | r20 | r60 | rALL |
+|---|---|---|---|
+| EUR/USD ~ CHF/JPY | 0,40 | 0,56 | 0,43 (n=80) |
+| EUR/USD ~ **CHF/USD** (kaki CHF) | **0,92** | **0,87** | 0,86 (n=100) |
+| EUR/USD ~ JPY/USD (kaki JPY) | 0,75 | 0,52 | 0,52 (n=100) |
+| CHF/USD ~ CHF/JPY | 0,38 | 0,58 | 0,44 (n=80) |
+
+Mekanismenya jelas: **CHF praktis bergerak sebagai klon EUR terhadap dolar** (r 0,86-0,92). CHF/JPY membawa kaki CHF itu, jadi mewarisi korelasi ke EUR/USD; kaki JPY (yang juga ikut naik saat dolar melemah, r 0,52) membatalkan sebagian, itulah sebabnya angka akhirnya 0,4-0,56 dan bukan 0,9. Jadi ini hubungan struktural, bukan kebetulan sampel.
+
+**Frekuensi gate ini menahan** (counter `auto_guard_stats:*` produksi): 64 kandidat dipertimbangkan → 4 ditahan Gate D (~6%), 6 Gate B, 3 veto Kritikus, 37 tersimpan. Dari kandidat Gate D yang ghost-nya sudah selesai dilacak, **1 dari 1 ternyata bakal kena SL** — sejauh ini gate menyelamatkan, walau n-nya masih terlalu kecil untuk disimpulkan.
+
+### 4. Bug ikutan yang ketahuan saat verifikasi: skor checklist null tersimpan sebagai 0%
+
+Entri hasil trigger di atas menyimpan `checklist_pct: 0` dan `verdict: null` padahal `technical.score_pct` = 70 — Call 2 memang tidak mengisi `checklist_pct`/`final_validation` di run itu. Akar masalahnya di `_normalizeAatasFields` (`api/admin.js`): `Number(null)` dan `Number('')` dua-duanya **0**, jadi skor yang tidak diisi model tersimpan sebagai "dinilai 0%" — bukan "tidak diketahui". Untuk populasi eksperimen yang nanti dipakai menganalisis hubungan `checklist_pct` vs hasil trade, itu data palsu yang menyeret rata-rata ke bawah.
+
+**Fix:** hanya `number` atau string angka non-kosong yang diterima; `null`/`''`/`'   '`/field hilang → `null` (angka 0 sungguhan tetap 0). 6 assertion regresi ditambahkan di `test/admin/aatas.test.js`. Entri `EURUSD=X:1788165295691` yang terlanjur menyimpan 0 sengaja TIDAK dikoreksi manual — statusnya `canceled` (ghost), tidak masuk win-rate manapun.
+
 **Catatan tabrakan multi-sesi:** perubahan kode di atas ikut tersapu ke commit `7271fa4` (sesi lain yang berjalan paralel memakai `git add -A` saat file ini sedang diedit) — isinya benar dan sudah ter-deploy, tapi pesan commit-nya cuma bicara soal `_extractRingkasanExcerpt`. Sengaja **tidak** di-rewrite (`amend`/`rebase`) karena sesi itu masih aktif di working tree yang sama; jejaknya dicatat di sini saja. Pola yang sama sudah pernah terjadi (lihat memory "Tabrakan Multi-Sesi Git").
 
 ## Changelog Session 337 (2026-08-31) — Ringkasan Dikembalikan ke Jobdesknya: Makro Murni dari Headline, Teknikal/COT/Retail/Korelasi Pindah ke Analisa

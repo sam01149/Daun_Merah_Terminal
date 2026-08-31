@@ -5368,7 +5368,18 @@ function _normalizeAatasFields(structured) {
     if (!o) return null;
     return { pass: (o.pass === true || o.pass === false) ? o.pass : null, note: str(o.note) };
   };
-  const pctRaw = Number(structured.checklist_pct);
+  // BUG DITEMUKAN & DIFIX (2026-08-31, verifikasi live sesi Gate D): `Number(null)` dan
+  // `Number('')` dua-duanya = 0 — jadi Call 2 yang memulangkan `checklist_pct: null`
+  // (atau string kosong) tersimpan sebagai skor **0%**, bukan "tidak diketahui". Bedanya
+  // besar untuk populasi eksperimen ini: 0% terbaca seperti setup yang dinilai gagal
+  // total padahal modelnya cuma tidak mengisi angkanya (ketahuan di
+  // EURUSD=X:1788165295691 — `technical.score_pct` 70, tapi checklist_pct 0 & verdict
+  // null). Sekarang hanya angka/string-angka yang benar-benar ada yang diterima; sisanya
+  // null, sama seperti field checklist lain yang hilang.
+  const pctIn = structured.checklist_pct;
+  const pctRaw = (typeof pctIn === 'number' || (typeof pctIn === 'string' && pctIn.trim() !== ''))
+    ? Number(pctIn)
+    : NaN;
   const verdictRaw = String(structured.verdict || '').toUpperCase().replace(/[^A-Z ]/g, '').trim().replace(/\s+/g, ' ');
   return {
     regime_check: obj(structured.regime_check),

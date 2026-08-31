@@ -252,6 +252,15 @@ test('_normalizeAatasFields: verdict dinormalkan ke label ckGetVerdict, pct dibu
   assert.equal(_normalizeAatasFields({ checklist_pct: 140 }).checklist_pct, 100);
   assert.equal(_normalizeAatasFields({ checklist_pct: -5 }).checklist_pct, 0);
   assert.equal(_normalizeAatasFields({ checklist_pct: 'entah' }).checklist_pct, null);
+  // REGRESI (2026-08-31): Number(null)/Number('')/Number([]) semuanya 0 — skor yang TIDAK
+  // diisi model dulu tersimpan sebagai "0%" (terbaca seperti setup yang dinilai gagal
+  // total), ketahuan live di EURUSD=X:1788165295691. Yang tidak ada harus null, bukan 0.
+  assert.equal(_normalizeAatasFields({ checklist_pct: null }).checklist_pct, null, 'null -> null, BUKAN 0');
+  assert.equal(_normalizeAatasFields({ checklist_pct: '' }).checklist_pct, null, 'string kosong -> null, BUKAN 0');
+  assert.equal(_normalizeAatasFields({ checklist_pct: '   ' }).checklist_pct, null);
+  assert.equal(_normalizeAatasFields({}).checklist_pct, null, 'field hilang -> null');
+  assert.equal(_normalizeAatasFields({ checklist_pct: 0 }).checklist_pct, 0, 'angka 0 sungguhan tetap 0');
+  assert.equal(_normalizeAatasFields({ checklist_pct: '72' }).checklist_pct, 72, 'string angka tetap diterima');
   assert.equal(_normalizeAatasFields({ verdict: 'NO_TRADE' }).verdict, 'NO TRADE');
   assert.equal(_normalizeAatasFields({ verdict: 'mantap' }).verdict, null, 'label ngawur -> null, jangan dipaksa ke salah satu');
 });
