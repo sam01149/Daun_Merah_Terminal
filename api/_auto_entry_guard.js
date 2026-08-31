@@ -493,6 +493,14 @@ const POLICY_EPOCHS = [
   // konteks, v37 mengubah SIAPA yang menalar. Ongkosnya 2 sampel v36 keluar populasi —
   // sengaja dibayar sekarang selagi murah, bukan ditunda sampai puluhan sampel.
   { v: 37, from: '2026-08-31T08:57:07Z', kind: 'policy', impact: 'entry',    label: 'AATAS Call 1 (penentu arah) dinaikkan ke deepseek-v4-pro, Call 2 (pemilih lokasi dari kandidat deterministik) tetap deepseek-v4-flash — dipicu uji banding live yang menemukan flash memberi label makro_alignment yang melawan penalarannya sendiri' },
+  // v38 (2026-08-31, Session 341): [CEK ARAH DRIVER] ditambahkan ke Gate 1 AATAS. Dipicu
+  // audit setup live AUD/NZD yang `arah`-nya bearish (= NZD harus MENGUNGGULI AUD) tapi
+  // driver-nya berargumen "risk-off menekan NZD lebih dalam daripada AUD" — argumen untuk
+  // pair NAIK dipakai membenarkan setup JUAL, dan lolos karena Gate 1 selama ini cuma
+  // menghitung JUMLAH konfirmasi, bukan apakah isinya menunjuk arah yang sama. Gate KERAS
+  // (Call 2 tidak dipanggil) mengikuti keputusan gate keras v2 yang sudah ada. Laju entry
+  // BISA turun — itu memang tujuannya; ukur lewat `auto_guard_stats:gate1_arah_mismatch`.
+  { v: 38, from: '2026-08-31T14:42:46Z', kind: 'policy', impact: 'entry',    label: '[CEK ARAH DRIVER] Gate 1 AATAS menolak setup yang driver/konfirmasi makronya menunjuk arah BERLAWANAN dengan arah trade-nya sendiri (kasus nyata AUD/NZD bearish dengan driver "NZD tertekan") — penjaga inversi arah yang selama ini cuma ada di jalur manual' },
 ];
 
 // AATAS_EPOCH (2026-08-22, keputusan user): batas populasi statistik dashboard

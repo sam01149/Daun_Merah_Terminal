@@ -25,7 +25,7 @@ function loadHandler() {
 
 const {
   _buildAatasMacroChecklistBlock, _buildAatasTechnicalChecklistBlock, _stripIndicatorLines,
-  _evaluateAatasGate1, _splitJsonCommentary,
+  _evaluateAatasGate1, _detectAatasDirectionMismatch, _splitJsonCommentary,
   _normalizeAatasFields, _aatasRejectReason,
   _goldYieldCorrAnomaly, _formatAatasCriticLine, _statsPayloadFromLog, AATAS_PROMPT_VERSION,
 } = loadHandler();
@@ -152,6 +152,100 @@ test('_evaluateAatasGate1: konfirmasi kurang dari 2 (atau item kosong) -> gagal'
     fundamental_bias: { driver: 'BoE dovish', konfirmasi: ['CPI melandai', '   '], strong_vs_weak: true },
   });
   assert.equal(kosong.override_reason, 'konfirmasi_kurang_dari_2', 'item whitespace tidak boleh dihitung');
+});
+
+// ── [CEK ARAH DRIVER] (2026-08-31, Session 341) ──────────────────────────────
+// Regression test dari setup live AUD/NZD: `arah: "bearish"` (= NZD harus MENGUNGGULI
+// AUD) padahal driver-nya berargumen NZD tertekan — argumen untuk pair NAIK dipakai
+// membenarkan setup JUAL. Lolos semua penjaga karena Gate 1 cuma menghitung JUMLAH
+// konfirmasi, dan `_detectAlignmentReasonContradiction` (Session 301) mati di jalur auto.
+
+const AUDNZD_DRIVER = 'Eskalasi geopolitik Iran-AS memicu risk-off yang menekan NZD lebih dalam daripada AUD, sementara data China yang timpang tidak memberi dukungan berarti bagi kedua mata uang komoditas; NZD menghadapi risiko event RBNZ dalam 37 jam.';
+const AUDNZD_K1 = 'Geopolitik/risk sentiment: eskalasi Iran-AS mendorong USD sebagai safe haven terkuat hari ini dan menekan NZD sebagai mata uang paling rentan menjelang RBNZ.';
+const AUDNZD_K2 = 'Data ekonomi China: PMI manufaktur 49.8 namun non-manufaktur 49.0, tidak memberi dorongan berarti bagi AUD maupun NZD.';
+
+test('[CEK ARAH DRIVER] kasus nyata AUD/NZD: arah bearish tapi driver bilang NZD tertekan -> gate gagal', () => {
+  const g = _evaluateAatasGate1({
+    aiPass: true,
+    label: 'AUD/NZD',
+    fundamental_bias: {
+      score_pct: 68, arah: 'bearish',
+      driver: AUDNZD_DRIVER,
+      konfirmasi: [AUDNZD_K1, AUDNZD_K2],
+      strong_vs_weak: true,
+    },
+  });
+  assert.equal(g.pass, false, 'bearish AUD/NZD butuh NZD MENGUNGGULI AUD — driver ini justru argumen kebalikannya');
+  assert.equal(g.override_reason, 'arah_driver_berlawanan');
+});
+
+test('[CEK ARAH DRIVER] `arah` kosong -> jatuh ke lockedBias, bukan diam-diam lolos', () => {
+  const g = _evaluateAatasGate1({
+    aiPass: true, label: 'AUD/NZD', lockedBias: 'bearish',
+    fundamental_bias: { driver: AUDNZD_DRIVER, konfirmasi: [AUDNZD_K1, AUDNZD_K2], strong_vs_weak: true },
+  });
+  assert.equal(g.override_reason, 'arah_driver_berlawanan');
+});
+
+test('[CEK ARAH DRIVER] label tidak dikirim -> no-op (tidak boleh menggagalkan setup)', () => {
+  const g = _evaluateAatasGate1({
+    aiPass: true,
+    fundamental_bias: { arah: 'bearish', driver: AUDNZD_DRIVER, konfirmasi: [AUDNZD_K1, AUDNZD_K2], strong_vs_weak: true },
+  });
+  assert.equal(g.pass, true, 'ketiadaan label adalah kekurangan data, bukan bukti inversi arah');
+});
+
+test('_detectAatasDirectionMismatch: quote MENGUAT searah dengan bearish -> false', () => {
+  assert.equal(_detectAatasDirectionMismatch({
+    label: 'AUD/NZD', arah: 'bearish',
+    texts: ['RBNZ hawkish menopang NZD sementara ekspor Australia melambat'],
+  }), false);
+});
+
+test('_detectAatasDirectionMismatch: ada pernyataan pendukung -> TIDAK gagal walau ada yang melawan', () => {
+  // Konservatif dengan sengaja: pemasangan kata-arah ke currency terdekat bisa salah
+  // tembak (subjek ditulis sebagai nama negara), jadi satu suara melawan tidak pernah
+  // cukup untuk membatalkan setup sendirian.
+  assert.equal(_detectAatasDirectionMismatch({
+    label: 'AUD/NZD', arah: 'bearish',
+    texts: ['risk-off menekan NZD, tapi differential suku bunga menopang NZD'],
+  }), false);
+});
+
+test('_detectAatasDirectionMismatch: mata uang di luar kedua kaki tidak bersuara', () => {
+  // Justru inti kesalahan yang mau ditangkap: driver sumbu USD dipakai untuk cross
+  // non-USD, di mana kedua kaki berbagi faktor yang sama.
+  assert.equal(_detectAatasDirectionMismatch({
+    label: 'AUD/NZD', arah: 'bearish', texts: ['USD melemah tajam pasca data tenaga kerja'],
+  }), false);
+});
+
+test('_detectAatasDirectionMismatch: "menekankan" bukan "menekan" (batas kata)', () => {
+  assert.equal(_detectAatasDirectionMismatch({
+    label: 'EUR/USD', arah: 'bullish',
+    texts: ['Lagarde menekankan inflasi sudah mereda', 'ECB hawkish menopang EUR'],
+  }), false);
+});
+
+test('_detectAatasDirectionMismatch: arah netral/kosong tidak pernah dinilai', () => {
+  for (const arah of ['netral', 'mixed', '', null]) {
+    assert.equal(_detectAatasDirectionMismatch({ label: 'AUD/NZD', arah, texts: ['menekan NZD'] }), false, String(arah));
+  }
+});
+
+test('_detectAatasDirectionMismatch: XAU/USD ikut terjaga lewat kaki USD-nya', () => {
+  assert.equal(_detectAatasDirectionMismatch({
+    label: 'XAU/USD', arah: 'bullish', texts: ['USD menguat tajam didukung permintaan safe haven'],
+  }), true, 'USD menguat = emas tertekan, jadi melawan bias bullish XAU/USD');
+  assert.equal(_detectAatasDirectionMismatch({
+    label: 'XAU/USD', arah: 'bearish', texts: ['USD menguat tajam didukung permintaan safe haven'],
+  }), false);
+});
+
+test('_detectAatasDirectionMismatch: currency pembanding setelah "terhadap"/"vs" tidak ditarik jadi subjek', () => {
+  assert.equal(_detectAatasDirectionMismatch({
+    label: 'EUR/USD', arah: 'bearish', texts: ['USD menguat terhadap EUR karena Fed hawkish'],
+  }), false);
 });
 
 test('_evaluateAatasGate1: AI sendiri lapor gagal -> BUKAN override kode (dibedakan untuk counter observabilitas)', () => {

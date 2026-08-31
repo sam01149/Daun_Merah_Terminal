@@ -742,6 +742,7 @@ const KEY_REGISTRY = [
   // padahal AI sendiri melaporkan lolos atau diam. TIDAK ikut invarian
   // considered=saved+... di atas (gate ini jalan SEBELUM kandidat sampai ke gate itu).
   { key: 'auto_guard_stats:gate1_code_override',      owner: 'api/admin.js', ttl_expected: null, note: 'AATAS v2 Gate 1: Step 1-2 digagalkan pemeriksaan KODE (bukan laporan AI) — indikator penilaian apakah aturan barunya terlalu ketat/longgar' },
+  { key: 'auto_guard_stats:gate1_arah_mismatch',      owner: 'api/admin.js', ttl_expected: null, note: '[CEK ARAH DRIVER] (2026-08-31): subset gate1_code_override — driver/konfirmasi menunjuk arah BERLAWANAN dengan fundamental_bias.arah (kasus nyata AUD/NZD: bearish tapi driver bilang NZD tertekan). Dipisah supaya ketatnya aturan termuda bisa dinilai sendiri' },
   { key: 'aatas_reject_log:v1',                       owner: 'api/admin.js', ttl_expected: null, note: 'List (cap 200): kandidat auto-entry AATAS yang ditolak (alasan + seluruh field checklist + reasoning_note). Key TERPISAH dari setup_log_auto:v1 supaya cap 200 sampel nyata tidak tergeser keluar' },
   // Audit 2026-08-27: arsip preventif sebelum setup_log_auto:v1 (cap 200) menggeser
   // keluar entri lama secara permanen — lihat komentar lengkap di setupLogArchiveHandler.
@@ -4905,33 +4906,33 @@ const ALIGNMENT_STRENGTHEN_RE = /menguat|penguatan/gi;
 const ALIGNMENT_WEAKEN_RE = /melemah|pelemahan/gi;
 const ALIGNMENT_REF_PREFIX_RE = /\b(terhadap|vs)\s*$/i;
 const ALIGNMENT_MAX_DIST = 45;
-function _detectAlignmentReasonContradiction(reason) {
-  if (!reason || typeof reason !== 'string') return false;
+// Mesin pemindainya diekstrak (2026-08-31) supaya dipakai BERSAMA oleh dua penjaga:
+// [CEK KONTRADIKSI] di bawah dan [CEK ARAH DRIVER] jalur AATAS. Kosakata arahnya
+// SENGAJA tidak ikut dibagi — tiap penjaga membawa daftar katanya sendiri, supaya
+// memperluas kosakata penjaga baru tidak diam-diam mengubah perilaku penjaga lama
+// yang sudah jalan di produksi (satu variabel per perubahan).
+function _scanCcyDirectionPairs(text, strengthenSrc, weakenSrc) {
+  if (!text || typeof text !== 'string') return [];
   const ccyPositions = [];
   {
     const re = new RegExp(ALIGNMENT_CCY_RE.source, 'g');
     let m;
-    while ((m = re.exec(reason))) {
+    while ((m = re.exec(text))) {
       const start = m.index, end = m.index + m[0].length;
-      const isReference = ALIGNMENT_REF_PREFIX_RE.test(reason.slice(Math.max(0, start - 15), start));
+      const isReference = ALIGNMENT_REF_PREFIX_RE.test(text.slice(Math.max(0, start - 15), start));
       ccyPositions.push({ ccy: m[1], start, end, isReference });
     }
   }
-  if (ccyPositions.length === 0) return false;
+  if (ccyPositions.length === 0) return [];
 
   const dirWords = [];
-  {
-    const re = new RegExp(ALIGNMENT_STRENGTHEN_RE.source, 'gi');
+  for (const [src, dir] of [[strengthenSrc, 'strengthen'], [weakenSrc, 'weaken']]) {
+    const re = new RegExp(src, 'gi');
     let m;
-    while ((m = re.exec(reason))) dirWords.push({ dir: 'strengthen', start: m.index, end: m.index + m[0].length });
-  }
-  {
-    const re = new RegExp(ALIGNMENT_WEAKEN_RE.source, 'gi');
-    let m;
-    while ((m = re.exec(reason))) dirWords.push({ dir: 'weaken', start: m.index, end: m.index + m[0].length });
+    while ((m = re.exec(text))) dirWords.push({ dir, start: m.index, end: m.index + m[0].length });
   }
 
-  const dirByCcy = {};
+  const out = [];
   for (const d of dirWords) {
     let nearest = null, nearestGap = Infinity;
     for (const c of ccyPositions) {
@@ -4940,9 +4941,17 @@ function _detectAlignmentReasonContradiction(reason) {
       if (gap < nearestGap) { nearestGap = gap; nearest = c; }
     }
     if (!nearest || nearestGap > ALIGNMENT_MAX_DIST) continue;
-    const prevDir = dirByCcy[nearest.ccy];
-    if (prevDir && prevDir !== d.dir) return true;
-    dirByCcy[nearest.ccy] = d.dir;
+    out.push({ ccy: nearest.ccy, dir: d.dir });
+  }
+  return out;
+}
+
+function _detectAlignmentReasonContradiction(reason) {
+  const dirByCcy = {};
+  for (const p of _scanCcyDirectionPairs(reason, ALIGNMENT_STRENGTHEN_RE.source, ALIGNMENT_WEAKEN_RE.source)) {
+    const prevDir = dirByCcy[p.ccy];
+    if (prevDir && prevDir !== p.dir) return true;
+    dirByCcy[p.ccy] = p.dir;
   }
   return false;
 }
@@ -5436,6 +5445,63 @@ function _isAatasEpochSetup(s) {
 
 // ── AATAS v2: penegakan kode atas laporan AI (semua pure, dites unit) ─────────
 
+// [CEK ARAH DRIVER] (2026-08-31, Session 341) — penjaga inversi arah untuk jalur AATAS.
+// Ditemukan dari setup live AUD/NZD: `arah: "bearish"` (= NZD harus MENGUNGGULI AUD) tapi
+// driver-nya menulis "risk-off yang menekan NZD lebih dalam daripada AUD" — argumen untuk
+// pair NAIK dipakai membenarkan setup JUAL. Seluruh pemetaan bukti tertukar sisi: faktor
+// yang benar-benar bearish (real yield NZD > AUD, COT NZD crowded short) justru diparkir
+// di field `konflik`.
+//
+// Kenapa penjaga BARU dan bukan memperluas yang lama: `_detectAlignmentReasonContradiction`
+// (Session 301) hanya mencari SATU mata uang yang disebut menguat DAN melemah sekaligus,
+// dan hanya dipasang di `makro_alignment_reason` — field jalur MANUAL, yang di jalur AATAS
+// justru di-null-kan by design. Kasus ini beda bentuk: teksnya konsisten dengan dirinya
+// sendiri (NZD melemah, titik), yang tidak konsisten adalah teks vs `arah`. Instruksi
+// base/quote paling lengkap di codebase (contohnya bahkan menyebut AUD/NZD persis) menempel
+// di spesifikasi field `makro_alignment` — jadi waktu AATAS memindahkan penentuan arah ke
+// Call 1, penjaga inversi arah (prompt MAUPUN kode) ketinggalan di jalur lama.
+//
+// Kosakata arah sengaja LEBIH LUAS dari penjaga lama (menekan/menopang/terkuat/...): kasus
+// nyata ini tidak memakai kata "menguat/melemah" sama sekali, jadi daftar lama tidak akan
+// menangkapnya. Semua pakai batas kata, jadi "menekan" tidak ikut menangkap "menekankan".
+//
+// KONSERVATIF DENGAN SENGAJA: gagal HANYA kalau ada pernyataan yang melawan `arah` DAN
+// NOL pernyataan yang mendukungnya. Alasannya, pemasangan kata-arah ke currency terdekat
+// bisa salah tembak kalau subjek kalimatnya ditulis sebagai nama negara ("data tenaga kerja
+// Australia melemah" -> kata "melemah" bisa nempel ke NZD yang cuma lewat di klausa
+// sebelumnya). Aturan "nol pendukung" membuat salah-tembak semacam itu tidak pernah cukup
+// untuk membatalkan setup sendirian — harga yang dibayar: sebagian inversi bercampur lolos
+// (false negative). Trade-off itu dipilih karena ini gate KERAS di sistem yang sedang
+// mengumpulkan sampel; counter `auto_guard_stats:gate1_arah_mismatch` yang mengukur apakah
+// ambangnya perlu diperketat nanti.
+// Ditulis sebagai literal RegExp (bukan string) dan dipakai lewat `.source` — pola sama
+// ALIGNMENT_* di atas. Dalam bentuk string, '' terlanjur jadi karakter BACKSPACE saat
+// JS mem-parse sumbernya, bukan word boundary; literal menutup kelas bug itu sepenuhnya.
+const AATAS_DIR_STRENGTHEN_RE = /\b(?:menguat(?:kan|nya)?|penguatan|menopang|terkuat|outperform)\b|\blebih kuat\b|\bpaling kuat\b/gi;
+const AATAS_DIR_WEAKEN_RE     = /\b(?:melemah(?:kan|nya)?|pelemahan|menekan|tertekan|terpuruk|underperform)\b|\blebih lemah\b|\bpaling lemah\b/gi;
+function _detectAatasDirectionMismatch({ label, arah, texts }) {
+  const dir = String(arah || '').toLowerCase().replace(/[^a-z]/g, '');
+  if (dir !== 'bullish' && dir !== 'bearish') return false;
+  const legs = String(label || '').toUpperCase().split('/').map(x => x.trim()).filter(Boolean);
+  if (legs.length !== 2 || legs[0] === legs[1]) return false;
+  const [base, quote] = legs;
+
+  let support = 0, oppose = 0;
+  for (const t of (Array.isArray(texts) ? texts : [])) {
+    for (const p of _scanCcyDirectionPairs(t, AATAS_DIR_STRENGTHEN_RE.source, AATAS_DIR_WEAKEN_RE.source)) {
+      // Mata uang di luar kedua kaki pair (misal USD di teks AUD/NZD) TIDAK bersuara —
+      // itu justru inti kesalahan yang mau ditangkap: driver sumbu USD dipakai untuk
+      // cross non-USD, di mana kedua kaki berbagi faktor yang sama.
+      let implied = null;
+      if (p.ccy === base) implied = (p.dir === 'strengthen') ? 'bullish' : 'bearish';
+      else if (p.ccy === quote) implied = (p.dir === 'strengthen') ? 'bearish' : 'bullish';
+      if (!implied) continue;
+      if (implied === dir) support++; else oppose++;
+    }
+  }
+  return oppose > 0 && support === 0;
+}
+
 // GATE Step 1+2 versi v2. `pass` FINAL = laporan AI **DAN** tiga pemeriksaan kode.
 // Alasan gate keras (bukan pengurangan skor) sudah didebat & diputuskan: kasus nyata
 // AUD/NZD 2026-08-24 punya score_pct 55 — pengurangan poin tetap menyisakan verdict
@@ -5449,7 +5515,7 @@ function _isAatasEpochSetup(s) {
 // Fail-CLOSED kalau `fundamental_bias` tidak ada sama sekali — beda sengaja dari
 // fail-open v1: di v2 seluruh tugas Call 1 adalah menghasilkan objek ini, jadi
 // ketiadaannya berarti panggilan itu gagal, bukan "model tidak menilai".
-function _evaluateAatasGate1({ fundamental_bias, aiPass }) {
+function _evaluateAatasGate1({ fundamental_bias, aiPass, label, lockedBias }) {
   if (aiPass === false) return { pass: false, override_reason: null };
   const fb = (fundamental_bias && typeof fundamental_bias === 'object' && !Array.isArray(fundamental_bias)) ? fundamental_bias : null;
   if (!fb) return { pass: false, override_reason: 'fundamental_bias_kosong' };
@@ -5460,6 +5526,15 @@ function _evaluateAatasGate1({ fundamental_bias, aiPass }) {
   if (konfirmasi.length < 2) return { pass: false, override_reason: 'konfirmasi_kurang_dari_2' };
   const teks = [typeof fb.driver === 'string' ? fb.driver : '', ...konfirmasi].join(' ');
   if (AATAS_FORBIDDEN_INDICATOR_RE.test(teks)) return { pass: false, override_reason: 'indikator_teknikal_di_driver' };
+  // [CEK ARAH DRIVER] — dipindai per-teks (bukan `teks` yang sudah digabung) supaya kata
+  // arah di ujung satu kalimat tidak salah dipasangkan ke currency di awal kalimat lain.
+  // `label` boleh tidak dikirim (pemanggil lama/test unit lain): detektornya no-op, jadi
+  // ketiadaan label TIDAK PERNAH menggagalkan setup.
+  const arah = (typeof fb.arah === 'string' && fb.arah.trim()) ? fb.arah : lockedBias;
+  if (_detectAatasDirectionMismatch({
+    label, arah,
+    texts: [typeof fb.driver === 'string' ? fb.driver : '', ...konfirmasi],
+  })) return { pass: false, override_reason: 'arah_driver_berlawanan' };
   return { pass: true, override_reason: null };
 }
 
@@ -5643,9 +5718,18 @@ async function _runAatasTwoCall({
     ? p1.fundamental_bias : null;
   const aiGate1 = (p1.gate_validitas_driver && typeof p1.gate_validitas_driver === 'object')
     ? p1.gate_validitas_driver : null;
+  // `lockedBias` dihitung SEBELUM gate (2026-08-31) karena [CEK ARAH DRIVER] memakainya
+  // sebagai cadangan waktu `fundamental_bias.arah` tidak diisi model. Murni pemindahan
+  // urutan — nilainya tidak berubah, tidak ada yang lain di antara sini dan pemakaian lama.
+  const biasRaw = String(p1.bias || '').toLowerCase().replace(/[^a-z]/g, '');
+  const lockedBias = ['bullish', 'bearish', 'neutral'].includes(biasRaw)
+    ? biasRaw
+    : (['mixed', 'conflicting', 'campuran', 'konflik'].includes(biasRaw) ? 'mixed' : 'neutral');
+
   const gate1 = _evaluateAatasGate1({
     fundamental_bias: fb,
     aiPass: (aiGate1 && (aiGate1.pass === true || aiGate1.pass === false)) ? aiGate1.pass : null,
+    label, lockedBias,
   });
   // Laporan gate yang tersimpan = hasil FINAL (kode), dengan jejak siapa yang
   // menggagalkan. Laporan asli AI tidak dibuang — ikut di note supaya perbedaan
@@ -5656,11 +5740,6 @@ async function _runAatasTwoCall({
       ? `[OVERRIDE KODE] ${gate1.override_reason} — laporan AI: ${(aiGate1 && aiGate1.note) || 'tidak ada'}`
       : ((aiGate1 && aiGate1.note) || null),
   };
-
-  const biasRaw = String(p1.bias || '').toLowerCase().replace(/[^a-z]/g, '');
-  const lockedBias = ['bullish', 'bearish', 'neutral'].includes(biasRaw)
-    ? biasRaw
-    : (['mixed', 'conflicting', 'campuran', 'konflik'].includes(biasRaw) ? 'mixed' : 'neutral');
 
   // Bentuk jawaban gabungan — sengaja SAMA PERSIS dengan skema jawaban satu-panggilan
   // v1, supaya seluruh logika hilir (normalisasi, gate, penulisan setup_log) tidak
@@ -6907,6 +6986,12 @@ async function ohlcvAnalyzeHandler(req, res) {
           // gunanya mengukur laju penolakan PRODUKSI akan diisi lalu lintas diagnostik.
           if (!isDiagnosticOnly && aatasGate1 && aatasGate1.override_reason) {
             redisCmd('INCR', 'auto_guard_stats:gate1_code_override').catch(() => {});
+            // Counter TERPISAH untuk aturan termuda ([CEK ARAH DRIVER], 2026-08-31): tanpa
+            // ini, penolakannya melebur ke counter gabungan dan pertanyaan "aturan baru ini
+            // kelewat ketat atau tidak" tidak bisa dijawab tanpa membaca ulang tiap setup.
+            if (aatasGate1.override_reason === 'arah_driver_berlawanan') {
+              redisCmd('INCR', 'auto_guard_stats:gate1_arah_mismatch').catch(() => {});
+            }
           }
           if (rejectReason && (structured.entry_zone || structured.sl || structured.tp)) {
             // Level di-null-kan = setup tidak pernah lahir (blok penulisan setup_log di
@@ -8183,6 +8268,7 @@ module.exports._buildAatasMacroChecklistBlock = _buildAatasMacroChecklistBlock;
 module.exports._buildAatasTechnicalChecklistBlock = _buildAatasTechnicalChecklistBlock;
 module.exports._stripIndicatorLines = _stripIndicatorLines;
 module.exports._evaluateAatasGate1 = _evaluateAatasGate1;
+module.exports._detectAatasDirectionMismatch = _detectAatasDirectionMismatch;
 module.exports._splitJsonCommentary = _splitJsonCommentary;
 module.exports._normalizeAatasFields = _normalizeAatasFields;
 module.exports._aatasRejectReason = _aatasRejectReason;
