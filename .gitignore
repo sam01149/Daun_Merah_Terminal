@@ -47,3 +47,7 @@ asset/
 
 # Artefak sesi Playwright MCP (snapshot/console log verifikasi visual)
 .playwright-mcp/
+
+# Tooling dev internal (bukan bagian app)
+ai-relay/
+AI_Comms/
