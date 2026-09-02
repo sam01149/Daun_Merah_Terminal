@@ -26,6 +26,20 @@ name: Market Digest Session-Open Runs
 # CRON_DEDUP_WINDOW_MS 3 jam di api/market-digest.js tetap mencegah generate
 # dobel begitu VPS pulih (lihat komentar di sana untuk detail insiden 08:35
 # WIB yang jadi pemicu window itu dinaikkan).
+#
+# Digate ke heartbeat VPS (Session 348, 2026-09-02) — kedua pemicu ini tadinya
+# SAMA-SAMA menembak endpoint secara buta, tanpa saling tahu. GH Actions cuma
+# dapat jatah ~3-4 run/hari dari GitHub (lihat warm-and-watch.yml) TERLEPAS
+# dari 3 jadwal yang didaftarkan, jadi realisasinya sering meleset berjam-jam
+# dari jam sesi yang dituju. Ditemukan live: straggler GH Actions untuk slot
+# Eropa (target 07:02 UTC) baru nembak jam 12:04 UTC — cuma 28 menit sebelum
+# jadwal VPS untuk slot New York (12:32 UTC). Saat VPS menembak tepat waktu di
+# 12:32, dedup 3 jam di atas menganggap cache 28 menit itu "masih fresh" dan
+# SKIP — digest New York yang harusnya segar jadi tidak pernah benar-benar
+# ter-generate, walau VPS-nya sendiri sudah benar jalan on-time. Sekarang GH
+# Actions cek `vps:heartbeat` (Plan Q-1) dulu: VPS hidup -> GH Actions diam
+# (VPS yang pegang jadwal, tepat waktu), VPS mati/tidak kebaca -> GH Actions
+# BARU jalan sebagai fallback sungguhan seperti niat aslinya Session 323.
 on:
   schedule:
     - cron: '2 0 * * *'   # 00:02 UTC = 07:02 WIB — sesi Asia (+2 menit)
@@ -37,7 +51,24 @@ jobs:
   generate:
     runs-on: ubuntu-latest
     steps:
-      - name: Trigger market digest generation
+      - name: Cek heartbeat VPS Railway (VPS hidup = biar VPS saja yang pegang jadwal ini)
+        id: vps
+        run: |
+          STATUS=$(curl -s -o /tmp/health.json -w "%{http_code}" \
+            -H "x-admin-secret: ${{ secrets.CRON_SECRET }}" \
+            --max-time 15 \
+            "https://financial-feed-app.vercel.app/api/admin?action=health&source=vps_heartbeat")
+          cat /tmp/health.json
+          VPS_STATUS=$(jq -r '.sources.vps_heartbeat.status // "DOWN"' /tmp/health.json 2>/dev/null || echo "DOWN")
+          echo "HTTP $STATUS, vps_heartbeat status: $VPS_STATUS"
+          if [ "$STATUS" = "200" ] && [ "$VPS_STATUS" = "OK" ]; then
+            echo "alive=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "alive=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Trigger market digest generation (fallback — VPS tidak sehat)
+        if: steps.vps.outputs.alive == 'false'
         run: |
           STATUS=$(curl -s -o /tmp/resp.json -w "%{http_code}" \
             -H "x-cron-secret: ${{ secrets.CRON_SECRET }}" \
