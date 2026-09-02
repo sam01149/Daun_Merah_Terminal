@@ -26,7 +26,7 @@ function loadHandler() {
 const {
   _buildAatasMacroChecklistBlock, _buildAatasTechnicalChecklistBlock, _stripIndicatorLines,
   _evaluateAatasGate1, _detectAatasDirectionMismatch, _splitJsonCommentary,
-  _normalizeAatasFields, _aatasRejectReason,
+  _normalizeAatasFields, _aatasRejectReason, _deriveAatasVerdict, AATAS_STEP8_UNAVAILABLE,
   _goldYieldCorrAnomaly, _formatAatasCriticLine, _statsPayloadFromLog, AATAS_PROMPT_VERSION,
 } = loadHandler();
 
@@ -51,6 +51,14 @@ test('AATAS block MAKRO (Call 1) FX: makro berdiri sendiri, real yield BUKAN pre
   assert.doesNotMatch(b, /STEP 6 RISK MANAGEMENT/);
   // Cabang gold tidak boleh bocor ke FX.
   assert.doesNotMatch(b, /unanimous/);
+  // (2026-09-02) KONVENSI ARAH — regresi audit AUD/NZD (n=3 kejadian, Sesi 341/342):
+  // prompt Call 1 sebelumnya tidak pernah menjelaskan base/quote sama sekali.
+  assert.match(b, /KONVENSI ARAH/);
+  assert.match(b, /pair EUR\/USD ditulis base\/quote/);
+  assert.match(b, /"bullish" berarti EUR MENGUAT relatif ke USD/);
+  assert.match(b, /"bearish" berarti EUR MELEMAH relatif ke USD/);
+  // (2026-09-02) definisi field `konflik` — sebelumnya diminta tanpa penjelasan apa pun.
+  assert.match(b, /konflik BUKAN tempat menaruh bukti pendukung sekunder/);
 });
 
 test('AATAS block MAKRO (Call 1) XAU: real yield+DXY+regime wajib 3/3, korelasi live jadi arbitrase, angka korelasi ikut dikirim', () => {
@@ -89,11 +97,17 @@ test('AATAS block TEKNIKAL (Call 2): bias dikunci sebagai fakta, Step 4-8 ada, p
   // Step 0-2 sudah selesai di Call 1 — tidak boleh diulang di sini.
   assert.doesNotMatch(b, /STEP 0 REGIME CHECK/);
   assert.doesNotMatch(b, /STEP 2 FUNDAMENTAL BIAS/);
+  // (2026-09-02) Step 8 jujur: Call 2 tidak pernah menerima data COT/retail (hanya masuk
+  // aatasMacroParts/Call 1) — instruksi lama menyuruh menilai data yang tidak ada.
+  assert.match(b, /data COT\/retail TIDAK dikirim ke panggilan ini/);
+  assert.match(b, /final_validation diisi kode, bukan kamu/);
+  assert.doesNotMatch(b, /COT selaras \+ retail sentiment kontrarian/, 'instruksi lama yang minta AI menilai data yang tidak dikirim harus sudah hilang');
 });
 
 test('AATAS block TEKNIKAL: cabang XAU menambah option expiry sebagai lapis konfirmasi', () => {
   const b = _buildAatasTechnicalChecklistBlock({ isXau: true, lockedBias: 'bullish' });
   assert.match(b, /option expiry/i);
+  assert.match(b, /sentimen options CME.*kalau ada di atas/);
   assert.match(b, /SUDAH DIKUNCI dari analisa makro\/fundamental: BULLISH/);
 });
 
@@ -418,13 +432,20 @@ test('_goldYieldCorrAnomaly: |r20-r60| > 0,4 -> anomali; di bawah ambang -> norm
 
 // ── (c) normalisasi field baru ───────────────────────────────────────────────
 
-test('_normalizeAatasFields: verdict dinormalkan ke label ckGetVerdict, pct dibulatkan & di-clamp', () => {
-  const out = _normalizeAatasFields({
-    checklist_pct: 87.6, verdict: 'siap trade',
+// (2026-09-02) verdict TIDAK LAGI diambil dari string bebas AI — diturunkan KODE dari
+// checklist_pct + conflict + gate_risk_management + keberadaan `technical` (lihat
+// _deriveAatasVerdict). Root cause yang ditutup: live 2026-09-02 menemukan checklist_pct
+// 78 (band 75-89 = "SIAP TRADE" per prompt) tersimpan dengan verdict "PERTIMBANGKAN" —
+// AI menulis skor DAN label sendiri, kadang saling tidak konsisten.
+const withTechnical = extra => ({ technical: { bos: 'ada' }, ...extra });
+
+test('_normalizeAatasFields: checklist_pct dibulatkan & di-clamp (perilaku lama, tidak berubah)', () => {
+  const out = _normalizeAatasFields(withTechnical({
+    checklist_pct: 87.6, verdict: 'label apa pun dari AI, harus diabaikan',
     reasoning_note: '  Driver ECB hawkish sudah tercermin di harga.  ',
-  });
+  }));
   assert.equal(out.checklist_pct, 88);
-  assert.equal(out.verdict, 'SIAP TRADE');
+  assert.equal(out.verdict, 'SIAP TRADE', 'diturunkan dari angka 88 (band 75-89), BUKAN dari string AI');
   assert.equal(out.reasoning_note, 'Driver ECB hawkish sudah tercermin di harga.');
 
   assert.equal(_normalizeAatasFields({ checklist_pct: 140 }).checklist_pct, 100);
@@ -437,10 +458,53 @@ test('_normalizeAatasFields: verdict dinormalkan ke label ckGetVerdict, pct dibu
   assert.equal(_normalizeAatasFields({ checklist_pct: '' }).checklist_pct, null, 'string kosong -> null, BUKAN 0');
   assert.equal(_normalizeAatasFields({ checklist_pct: '   ' }).checklist_pct, null);
   assert.equal(_normalizeAatasFields({}).checklist_pct, null, 'field hilang -> null');
-  assert.equal(_normalizeAatasFields({ checklist_pct: 0 }).checklist_pct, 0, 'angka 0 sungguhan tetap 0');
-  assert.equal(_normalizeAatasFields({ checklist_pct: '72' }).checklist_pct, 72, 'string angka tetap diterima');
-  assert.equal(_normalizeAatasFields({ verdict: 'NO_TRADE' }).verdict, 'NO TRADE');
-  assert.equal(_normalizeAatasFields({ verdict: 'mantap' }).verdict, null, 'label ngawur -> null, jangan dipaksa ke salah satu');
+  assert.equal(_normalizeAatasFields(withTechnical({ checklist_pct: 0 })).checklist_pct, 0, 'angka 0 sungguhan tetap 0');
+  assert.equal(_normalizeAatasFields(withTechnical({ checklist_pct: '72' })).checklist_pct, 72, 'string angka tetap diterima');
+});
+
+test('_normalizeAatasFields: verdict AI (string bebas) diabaikan total, tidak pernah dipakai', () => {
+  assert.equal(_normalizeAatasFields({ verdict: 'NO_TRADE' }).verdict, 'NO TRADE',
+    'kebetulan sama, TAPI alasannya karena nol technical (Call 2 tidak jalan), bukan canonicalisasi string');
+  assert.equal(_normalizeAatasFields(withTechnical({ checklist_pct: 82, verdict: 'mantap sekali entry' })).verdict, 'SIAP TRADE',
+    'label ngawur dari AI tidak lagi bocor ke output — yang dipakai cuma checklist_pct');
+});
+
+test('_deriveAatasVerdict: band skor (perilaku 100% sama dengan definisi band di prompt AATAS)', () => {
+  const v = (checklistPct) => _deriveAatasVerdict({ checklistPct, conflict: 'none', hasTechnical: true, gateRiskPass: true });
+  assert.equal(v(0), 'NO TRADE');
+  assert.equal(v(49), 'NO TRADE');
+  assert.equal(v(50), 'PERTIMBANGKAN');
+  assert.equal(v(74), 'PERTIMBANGKAN');
+  assert.equal(v(75), 'SIAP TRADE');
+  assert.equal(v(89), 'SIAP TRADE');
+  assert.equal(v(90), 'ENTRY');
+  assert.equal(v(100), 'ENTRY');
+});
+
+test('_deriveAatasVerdict: conflict "arah" -> KONFLIK-REVIEW walau skor tinggi (bukan SIAP TRADE/ENTRY)', () => {
+  assert.equal(_deriveAatasVerdict({ checklistPct: 95, conflict: 'arah', hasTechnical: true, gateRiskPass: true }), 'KONFLIK-REVIEW');
+  assert.equal(_deriveAatasVerdict({ checklistPct: 60, conflict: 'arah', hasTechnical: true, gateRiskPass: true }), 'KONFLIK-REVIEW');
+});
+
+test('_deriveAatasVerdict: gate_risk_management gagal -> NO TRADE terlepas dari skor', () => {
+  assert.equal(_deriveAatasVerdict({ checklistPct: 95, conflict: 'none', hasTechnical: true, gateRiskPass: false }), 'NO TRADE');
+});
+
+test('_deriveAatasVerdict: tidak ada `technical` sama sekali (Call 2 tidak pernah jalan: gate 1 gagal/Call 2 gagal/parse gagal) -> NO TRADE, terlepas dari checklist_pct', () => {
+  assert.equal(_deriveAatasVerdict({ checklistPct: 45, conflict: 'none', hasTechnical: false, gateRiskPass: null }), 'NO TRADE',
+    'jalur short-circuit Gate 1 (checklist_pct di-cap <=45 dari skor Call 1)');
+  assert.equal(_deriveAatasVerdict({ checklistPct: null, conflict: 'none', hasTechnical: false, gateRiskPass: null }), 'NO TRADE',
+    'jalur Call 2 gagal total/parse gagal (checklist_pct memang tidak pernah ada)');
+});
+
+test('_deriveAatasVerdict: checklist_pct hilang tapi technical ADA -> null (bukan ditebak)', () => {
+  assert.equal(_deriveAatasVerdict({ checklistPct: null, conflict: 'none', hasTechnical: true, gateRiskPass: true }), null);
+});
+
+test('AATAS_STEP8_UNAVAILABLE: nilai jujur konstan untuk final_validation (Call 2 tidak pernah menerima data COT/retail)', () => {
+  assert.equal(AATAS_STEP8_UNAVAILABLE.cot, 'tidak tersedia');
+  assert.equal(AATAS_STEP8_UNAVAILABLE.retail, 'tidak tersedia');
+  assert.match(AATAS_STEP8_UNAVAILABLE.efek, /tidak dikirim/);
 });
 
 test('_normalizeAatasFields: gate dinormalkan {pass,note}; pass non-boolean -> null (fail-open, bukan false)', () => {
@@ -758,7 +822,10 @@ test('AATAS e2e: field checklist (termasuk reasoning_note) tersimpan ke setup_lo
       assert.equal(st.regime_check.regime, 'risk_off');
       assert.deepEqual(st.gate_validitas_driver.pass, true);
       assert.equal(st.technical.fib_zone, '0.382');
-      assert.equal(st.final_validation.cot, 'searah');
+      // (2026-09-02) final_validation SEKARANG dipaksa kode ke AATAS_STEP8_UNAVAILABLE —
+      // Call 2 tidak pernah menerima data COT/retail, jadi 'searah' dari fixture di atas
+      // (kebiasaan lama sebelum fix ini) sekarang harus DIBUANG, bukan tersimpan apa adanya.
+      assert.deepEqual(st.final_validation, AATAS_STEP8_UNAVAILABLE);
       assert.equal(st.aatas_v, AATAS_PROMPT_VERSION);
       assert.ok(st.policy_v >= AATAS_EPOCH, 'setup AATAS wajib membawa stempel epoch baru');
       // Field execution-critical TETAP ADA (dibaca gate/evaluasi existing).
@@ -1092,6 +1159,10 @@ const XAU_JSON_BASE = {
     konflik: null, strong_vs_weak: true,
   },
   gate_risk_management: { pass: true, note: 'RR 1:2, SL di bawah swing' },
+  // (2026-09-02) `technical` WAJIB ada di fixture ini — _deriveAatasVerdict sekarang
+  // memaksa NO TRADE kalau field ini kosong (tanda Call 2 tidak pernah jalan), dan
+  // fixture ini merepresentasikan Call 2 yang SUKSES.
+  technical: { score_pct: 75, bos: 'ada', area: '3990', fib_zone: '0.382', fib_reason: 'tren kuat', liquidity_context: null, ranging: false },
   checklist_pct: 80, verdict: 'SIAP TRADE',
   reasoning_note: 'Real yield turun mendukung emas; struktur H4 HH+HL.',
 };
@@ -1157,6 +1228,54 @@ test('AATAS e2e XAU: bulat 3/3 -> setup lahir walau korelasi sedang anomali', as
     });
     assert.equal(res.body.structured.aatas_reject_reason, null);
     assert.ok(store.strings['setup_log_auto:v1']);
+  });
+});
+
+// (2026-09-02) Checklist Call 2 cabang XAU sudah lama menyebut "sentimen options CME"
+// (_buildAatasTechnicalChecklistBlock) tapi datanya (rrBlock) sebelumnya cuma dikirim ke
+// Call 1 — Call 2 menilai instruksi yang menunjuk data yang tidak ada di konteksnya.
+test('AATAS e2e XAU: rrBlock (sentimen options CME) SEKARANG ikut dikirim ke Call 2, bukan cuma Call 1', async () => {
+  await withEnv({ CRON_SECRET: 'topsecret', DEEPSEEK_API_KEY: 'k' }, async () => {
+    const store = xauStore(CORR_NORMAL);
+    store.strings['rr_cache_v2'] = JSON.stringify({ pairs: { 'XAU/USD': { rr_value: 0.55 } } });
+    const cap = [];
+    const origFetch = global.fetch;
+    global.fetch = makeAnalyzeFetchStub(store, rawFrom({
+      ...XAU_JSON_BASE,
+      regime_check: { regime: 'neutral', gold: { real_yield: 'bullish', dxy: 'bearish', risk_regime: 'netral', unanimous: false } },
+    }), cap);
+    try {
+      const handler = loadHandler();
+      await handler({
+        headers: { 'x-cron-secret': 'topsecret' }, method: 'GET',
+        query: { action: 'ohlcv_analyze', symbol: 'GC=F', label: 'XAU/USD', auto: '1' },
+      }, fakeRes());
+    } finally { global.fetch = origFetch; }
+    const call1User = cap[0].messages[1].content;
+    const call2User = cap[1].messages[1].content;
+    assert.match(call1User, /skor \+0\.55/, 'Call 1 tetap menerima seperti sebelumnya');
+    assert.match(call2User, /skor \+0\.55/, 'Call 2 SEKARANG juga menerima — instruksi "sentimen options CME" di checklistnya tidak lagi menunjuk data kosong');
+  });
+});
+
+test('AATAS e2e FX: rrBlock TIDAK ikut dikirim ke Call 2 (instruksi CME memang cuma untuk cabang XAU)', async () => {
+  await withEnv({ CRON_SECRET: 'topsecret', DEEPSEEK_API_KEY: 'k' }, async () => {
+    const store = baseStore();
+    store.strings['rr_cache_v2'] = JSON.stringify({ pairs: { 'GBP/USD': { rr_value: 0.55 } } });
+    const cap = [];
+    const origFetch = global.fetch;
+    global.fetch = makeAnalyzeFetchStub(store, rawFrom(AATAS_JSON), cap);
+    try {
+      const handler = loadHandler();
+      await handler({
+        headers: { 'x-cron-secret': 'topsecret' }, method: 'GET',
+        query: { action: 'ohlcv_analyze', symbol: 'GBPUSD=X', label: 'GBP/USD', auto: '1' },
+      }, fakeRes());
+    } finally { global.fetch = origFetch; }
+    const call1User = cap[0].messages[1].content;
+    const call2User = cap[1].messages[1].content;
+    assert.match(call1User, /skor \+0\.55/, 'Call 1 tetap menerima seperti sebelumnya (semua pair)');
+    assert.doesNotMatch(call2User, /skor \+0\.55/, 'Call 2 FX TIDAK boleh menerima — checklist FX tidak pernah menyebut CME sebagai konfirmasi Step 4');
   });
 });
 
