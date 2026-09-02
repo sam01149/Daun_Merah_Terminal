@@ -10971,7 +10971,7 @@ function calRunScenario(evId, currency, direction, eventName) {
     return;
   }
 
-  const pairs = scenarioRankCurrencies(currency, direction);
+  const pairs = scenarioRankCurrencies(currency, direction, eventName);
   if (!pairs || pairs.length === 0) {
     resultsEl.innerHTML = `<div class="cal-scenario-nodata">Tidak ada rekomendasi pair tersedia.</div>`;
     return;
@@ -10984,7 +10984,7 @@ function calRunScenario(evId, currency, direction, eventName) {
   scenarioEnsureData(evId, currency, direction, eventName);
 }
 
-function scenarioRankCurrencies(eventCur, direction) {
+function scenarioRankCurrencies(eventCur, direction, eventName) {
   // direction 'beat' = eventCur menguat, 'miss' = eventCur melemah
   const getCBScore = cur => {
     const cb = cbData && cbData.find(c => c.currency === cur);
@@ -11062,7 +11062,7 @@ function scenarioRankCurrencies(eventCur, direction) {
   // dan korelasi antar-leg ikut menimbang ranking supaya pair yang naik ke atas
   // memang punya sisi lain yang menopang arah trade.
   for (const r of results) {
-    r.conf = scenarioConfluence(r.pair, r.dir, eventCur, direction);
+    r.conf = scenarioConfluence(r.pair, r.dir, eventCur, direction, eventName);
     r.score += r.conf.bonus;
   }
 
@@ -11118,6 +11118,11 @@ function scenarioRenderResults(pairs, eventCur, direction, eventName, evId) {
 // kontrarian searah, dan apakah kedua leg pair memang bergerak berlawanan
 // (korelasi). verdict: 1 mendukung ✓, -1 konflik ✕, 0 netral −, null data belum ada.
 const SCEN_FUND_RATE_KEYS = { USD:'Fed Rate', EUR:'ECB Rate', GBP:'BOE Rate', JPY:'BOJ Rate', CAD:'BOC Rate', AUD:'RBA Rate', NZD:'RBNZ Rate', CHF:'SNB Rate' };
+// Event rate decision itu sendiri (mis. "BoC Interest Rate Decision") sengaja TIDAK
+// ikut menambah skor Makro simulasi — kejutan kebijakan sudah diwakili faktor
+// "Bias CB" terpisah (poin 1 di scenarioConfluence), sama alasan SCEN_FUND_RATE_KEYS
+// dikecualikan dari scenarioFundScore untuk data rilis biasa.
+const CAL_RATE_DECISION_RE = /interest rate decision/i;
 
 // simDirection ('beat'/'miss', opsional): event yang sedang disimulasikan itu
 // sendiri adalah satu titik data makro buat eventCur-nya, tapi belum pernah
@@ -11139,8 +11144,10 @@ function scenarioFundScore(cur, simDirection) {
   return scored > 0 ? Math.round(bull / scored * 100) : null;
 }
 
-function scenarioConfluence(pairName, pairDir, eventCur, direction) {
+function scenarioConfluence(pairName, pairDir, eventCur, direction, eventName) {
   const [base, quote] = pairName.split('/');
+  // Rate decision sendiri jangan ikut bonus Makro — sudah diwakili Bias CB.
+  const fundSimDirection = CAL_RATE_DECISION_RE.test(eventName || '') ? undefined : direction;
   const counter = base === eventCur ? quote : base;
   const rows = [];
   let plus = 0, minus = 0, bonus = 0;
@@ -11178,12 +11185,12 @@ function scenarioConfluence(pairName, pairDir, eventCur, direction) {
   // 2. Fundamental makro — skor indikator (Bull/Bear) kedua sisi pair. Skor
   //    eventCur ikut menghitung hasil simulasi BEAT/MISS ini sendiri sebagai
   //    satu indikator tambahan (lihat catatan di scenarioFundScore).
-  const eS = scenarioFundScore(eventCur, direction), cS = scenarioFundScore(counter);
+  const eS = scenarioFundScore(eventCur, fundSimDirection), cS = scenarioFundScore(counter);
   if (eS === null && cS === null) {
     add(null, 'Makro:', 'data fundamental belum dimuat…');
   } else {
     const lbl  = s => s === null ? '—' : `${s}% ${s >= 60 ? 'Bull' : s < 40 ? 'Bear' : 'Neut'}`;
-    const simNote = ' (termasuk hasil simulasi ini)';
+    const simNote = fundSimDirection ? ' (termasuk hasil simulasi ini)' : '';
     let v = 0, msg;
     if (eS !== null && cS !== null) {
       const gap = direction === 'beat' ? eS - cS : cS - eS;

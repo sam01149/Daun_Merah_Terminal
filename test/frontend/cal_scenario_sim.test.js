@@ -153,6 +153,14 @@ test('makro: hasil simulasi MISS ikut mengurangi skor fundamental eventCur sendi
   assert.ok(rows.includes('fundamental CAD lemah menopang skenario'));
 });
 
+test('makro: event rate decision TIDAK ikut menambah skor (sudah diwakili Bias CB)', () => {
+  api.set({ cbData: null, fundData: { CAD: {} }, cotData: null, corrData: null, retailData: null });
+  const c = api.scenarioConfluence('CAD/CHF', 'long', 'CAD', 'beat', 'BoC Interest Rate Decision');
+  const rows = c.rows.join('');
+  assert.ok(rows.includes('data fundamental belum dimuat'), 'fundData CAD kosong tanpa bump simulasi -> tetap null');
+  assert.ok(!rows.includes('termasuk hasil simulasi ini'));
+});
+
 test('bias CB ortogonal: Data Dependent diberi tanda (≈netral), bias axis tidak', () => {
   api.set({
     cbData: [{ currency: 'CAD', bias: 'Cautious Hawkish', rate_display: '2.25' },
