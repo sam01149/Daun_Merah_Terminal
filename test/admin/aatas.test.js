@@ -28,7 +28,7 @@ const {
   _evaluateAatasGate1, _detectAatasDirectionMismatch, _splitJsonCommentary,
   _normalizeAatasFields, _aatasRejectReason, _deriveAatasVerdict, AATAS_STEP8_UNAVAILABLE,
   _isStructureOpposingBias,
-  _goldYieldCorrAnomaly, _formatAatasCriticLine, _statsPayloadFromLog, AATAS_PROMPT_VERSION,
+  _goldYieldCorrAnomaly, _countGoldRegimeAligned, _formatAatasCriticLine, _statsPayloadFromLog, AATAS_PROMPT_VERSION,
 } = loadHandler();
 
 // ── (b) blok checklist: Call 1 (makro) vs Call 2 (teknikal), cabang FX vs XAU ─
@@ -62,14 +62,16 @@ test('AATAS block MAKRO (Call 1) FX: makro berdiri sendiri, real yield BUKAN pre
   assert.match(b, /konflik BUKAN tempat menaruh bukti pendukung sekunder/);
 });
 
-test('AATAS block MAKRO (Call 1) XAU: real yield+DXY+regime wajib 3/3, korelasi live jadi arbitrase, angka korelasi ikut dikirim', () => {
+test('AATAS block MAKRO (Call 1) XAU: real yield+DXY+regime dinilai satu per satu, korelasi live jadi arbitrase mayoritas, angka korelasi ikut dikirim', () => {
   const b = _buildAatasMacroChecklistBlock({
     label: 'XAU/USD', isXau: true, goldCorr: { r20: -0.11, r60: -0.72, anomaly: true },
   });
   assert.match(b, /STEP 0 REGIME CHECK \(PRE-GATE, cabang XAU\/USD\)/);
-  assert.match(b, /Ketiganya WAJIB sepakat \(3\/3\)/);
+  assert.match(b, /bertiga sepakat \(3\/3\)/);
+  assert.match(b, /regime_check\.gold: real_yield, dxy, risk_regime/);
   assert.match(b, /r20 -0\.11 vs r60 -0\.72/, 'angka korelasi live wajib dikutip, bukan cuma label');
   assert.match(b, /ANOMALI/);
+  assert.match(b, /minimal 2 dari 3 sinyal tetap sepakat/, '2026-09-02: mayoritas menutupi korelasi anomali, bukan unanimity mutlak');
   assert.match(b, /TIDAK ENTRY sama sekali/);
 });
 
@@ -429,6 +431,26 @@ test('_goldYieldCorrAnomaly: |r20-r60| > 0,4 -> anomali; di bawah ambang -> norm
   assert.equal(_goldYieldCorrAnomaly({ gold_correlations: { RealYield: { r20: null, r60: -0.7 } } }), null);
   assert.equal(_goldYieldCorrAnomaly({ gold_correlations: {} }), null);
   assert.equal(_goldYieldCorrAnomaly(null), null);
+});
+
+// ── _countGoldRegimeAligned: dihitung kode dari vote real_yield/dxy/risk_regime ──
+// (2026-09-02) Ganti sumber `unanimous` yang dulu klaim ringkasan model sendiri.
+
+test('_countGoldRegimeAligned: hitung berapa dari 3 vote yang searah arah', () => {
+  assert.equal(_countGoldRegimeAligned({ real_yield: 'bullish', dxy: 'bullish', risk_regime: 'bullish' }, 'bullish'), 3);
+  assert.equal(_countGoldRegimeAligned({ real_yield: 'bullish', dxy: 'bearish', risk_regime: 'netral' }, 'bullish'), 1);
+  assert.equal(_countGoldRegimeAligned({ real_yield: 'bearish', dxy: 'bearish', risk_regime: 'bearish' }, 'bullish'), 0);
+});
+
+test('_countGoldRegimeAligned: "netral" tidak dihitung ke arah manapun', () => {
+  assert.equal(_countGoldRegimeAligned({ real_yield: 'bullish', dxy: 'netral', risk_regime: 'netral' }, 'bullish'), 1);
+});
+
+test('_countGoldRegimeAligned: arah tidak valid atau data kosong -> null (fail-open)', () => {
+  assert.equal(_countGoldRegimeAligned({ real_yield: 'bullish', dxy: 'bullish', risk_regime: 'bullish' }, 'mixed'), null);
+  assert.equal(_countGoldRegimeAligned(null, 'bullish'), null);
+  assert.equal(_countGoldRegimeAligned({}, 'bullish'), null);
+  assert.equal(_countGoldRegimeAligned({ foo: 'bar' }, 'bullish'), null);
 });
 
 // ── (c) normalisasi field baru ───────────────────────────────────────────────
@@ -1208,9 +1230,12 @@ test('Fill hantu: jalur MANUAL publik TIDAK ikut diperketat (isolasi Opsi A)', a
 });
 
 // ── hard-stop Step 0 cabang XAU/USD (end-to-end) ─────────────────────────────
-// Satu-satunya hard-block baru AATAS. `unanimous` datang dari laporan model,
-// FAKTA anomali korelasinya dihitung kode dari cache correlations_v3 — dua sumber
-// terpisah, supaya angka tidak ikut dikarang model.
+// Satu-satunya hard-block baru AATAS. Vote per-sinyal (real_yield/dxy/risk_regime)
+// datang dari laporan model, tapi PENGHITUNGAN berapa yang sepakat (`alignedCount`)
+// dihitung kode (_countGoldRegimeAligned) — begitu juga FAKTA anomali korelasi
+// (dari cache correlations_v3) — dua sumber terpisah, angka tidak ikut dikarang model.
+// Revisi 2026-09-02: mayoritas (>=2/3) sekarang cukup menutupi korelasi anomali,
+// bukan cuma unanimity mutlak 3/3 (lihat komentar isGoldRegimeBlocked).
 
 const XAU_JSON_BASE = {
   bias: 'bullish',
@@ -1261,12 +1286,12 @@ async function runXau(store, json) {
   } finally { global.fetch = origFetch; }
 }
 
-test('AATAS e2e XAU: real yield/DXY/regime TIDAK bulat + korelasi live anomali -> setup dibatalkan (hard-stop)', async () => {
+test('AATAS e2e XAU: cuma 1/3 sepakat + korelasi live anomali -> setup dibatalkan (hard-stop)', async () => {
   await withEnv({ CRON_SECRET: 'topsecret', DEEPSEEK_API_KEY: 'k' }, async () => {
     const store = xauStore(CORR_ANOMALI);
     const res = await runXau(store, {
       ...XAU_JSON_BASE,
-      regime_check: { regime: 'neutral', gold: { real_yield: 'bullish', dxy: 'bearish', risk_regime: 'netral', unanimous: false } },
+      regime_check: { regime: 'neutral', gold: { real_yield: 'bullish', dxy: 'bearish', risk_regime: 'netral' } },
     });
     assert.equal(res.statusCode, 200);
     assert.equal(res.body.structured.aatas_reject_reason, 'gold_regime_split_corr_anomali');
@@ -1275,12 +1300,12 @@ test('AATAS e2e XAU: real yield/DXY/regime TIDAK bulat + korelasi live anomali -
   });
 });
 
-test('AATAS e2e XAU: TIDAK bulat tapi korelasi NORMAL -> setup tetap lahir (real yield jadi penentu)', async () => {
+test('AATAS e2e XAU: 1/3 sepakat tapi korelasi NORMAL -> setup tetap lahir (real yield jadi penentu)', async () => {
   await withEnv({ CRON_SECRET: 'topsecret', DEEPSEEK_API_KEY: 'k' }, async () => {
     const store = xauStore(CORR_NORMAL);
     const res = await runXau(store, {
       ...XAU_JSON_BASE,
-      regime_check: { regime: 'neutral', gold: { real_yield: 'bullish', dxy: 'bearish', risk_regime: 'netral', unanimous: false } },
+      regime_check: { regime: 'neutral', gold: { real_yield: 'bullish', dxy: 'bearish', risk_regime: 'netral' } },
     });
     assert.equal(res.body.structured.aatas_reject_reason, null);
     assert.ok(store.strings['setup_log_auto:v1'], 'korelasi normal bukan alasan memblokir');
@@ -1292,10 +1317,25 @@ test('AATAS e2e XAU: bulat 3/3 -> setup lahir walau korelasi sedang anomali', as
     const store = xauStore(CORR_ANOMALI);
     const res = await runXau(store, {
       ...XAU_JSON_BASE,
-      regime_check: { regime: 'risk_off', gold: { real_yield: 'bullish', dxy: 'bullish', risk_regime: 'bullish', unanimous: true } },
+      regime_check: { regime: 'risk_off', gold: { real_yield: 'bullish', dxy: 'bullish', risk_regime: 'bullish' } },
     });
     assert.equal(res.body.structured.aatas_reject_reason, null);
     assert.ok(store.strings['setup_log_auto:v1']);
+  });
+});
+
+// (2026-09-02, revisi diskusi user) Mayoritas 2/3 sekarang cukup menutupi korelasi
+// anomali — dulu ini akan diblokir (unanimity mutlak 3/3 satu-satunya jalan lolos
+// saat korelasi anomali), sekarang tidak lagi.
+test('AATAS e2e XAU: 2/3 sepakat + korelasi anomali -> TETAP LAHIR (revisi baru, dulu blok)', async () => {
+  await withEnv({ CRON_SECRET: 'topsecret', DEEPSEEK_API_KEY: 'k' }, async () => {
+    const store = xauStore(CORR_ANOMALI);
+    const res = await runXau(store, {
+      ...XAU_JSON_BASE,
+      regime_check: { regime: 'neutral', gold: { real_yield: 'bullish', dxy: 'bullish', risk_regime: 'netral' } },
+    });
+    assert.equal(res.body.structured.aatas_reject_reason, null);
+    assert.ok(store.strings['setup_log_auto:v1'], '2 dari 3 sinyal cukup, tidak butuh unanimity mutlak lagi');
   });
 });
 
@@ -1310,7 +1350,7 @@ test('AATAS e2e XAU: rrBlock (sentimen options CME) SEKARANG ikut dikirim ke Cal
     const origFetch = global.fetch;
     global.fetch = makeAnalyzeFetchStub(store, rawFrom({
       ...XAU_JSON_BASE,
-      regime_check: { regime: 'neutral', gold: { real_yield: 'bullish', dxy: 'bearish', risk_regime: 'netral', unanimous: false } },
+      regime_check: { regime: 'neutral', gold: { real_yield: 'bullish', dxy: 'bearish', risk_regime: 'netral' } },
     }), cap);
     try {
       const handler = loadHandler();
@@ -1463,7 +1503,7 @@ test('AATAS e2e XAU: rate path masuk prompt jalur auto; pair FX & jalur manual T
     const origFetch = global.fetch;
     global.fetch = makeAnalyzeFetchStub(store, rawFrom({
       ...XAU_JSON_BASE,
-      regime_check: { regime: 'risk_off', gold: { real_yield: 'bullish', dxy: 'bullish', risk_regime: 'bullish', unanimous: true } },
+      regime_check: { regime: 'risk_off', gold: { real_yield: 'bullish', dxy: 'bullish', risk_regime: 'bullish' } },
     }), cap);
     try {
       const handler = loadHandler();

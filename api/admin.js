@@ -5360,6 +5360,26 @@ function _goldYieldCorrAnomaly(corrData) {
   return Math.abs(ry.r20 - ry.r60) > 0.4;
 }
 
+// Hitung berapa dari 3 vote regime_check.gold (real_yield/dxy/risk_regime) yang searah
+// dengan `arah` (bias makro terkunci) — pure, dipakai isGoldRegimeBlocked (2026-09-02).
+// "netral" tidak dihitung ke arah manapun (bukan pendukung, bukan penentang). Return
+// null kalau arah tidak valid ATAU tidak satu pun dari 3 field itu vote yang valid
+// (AI belum ikut skema baru sama sekali) — caller (isGoldRegimeBlocked) WAJIB
+// memperlakukan null sebagai fail-open, pola sama seluruh guard di file ini.
+function _countGoldRegimeAligned(goldReport, arah) {
+  const dir = String(arah || '').toLowerCase().trim();
+  if (dir !== 'bullish' && dir !== 'bearish') return null;
+  if (!goldReport || typeof goldReport !== 'object') return null;
+  let count = 0, reported = 0;
+  for (const k of ['real_yield', 'dxy', 'risk_regime']) {
+    const v = String(goldReport[k] || '').toLowerCase().trim();
+    if (v !== 'bullish' && v !== 'bearish' && v !== 'netral') continue;
+    reported++;
+    if (v === dir) count++;
+  }
+  return reported > 0 ? count : null;
+}
+
 // ── AATAS v2 (2026-08-25): checklist dipecah dua ──────────────────────────────
 // v1 memakai SATU blok checklist Step 0-9 untuk satu panggilan AI yang melihat semua
 // data. v2 memecahnya jadi dua blok yang dikirim ke dua panggilan berbeda, karena
@@ -5388,11 +5408,11 @@ function _buildAatasMacroChecklistBlock({ label, isXau, goldCorr }) {
   L.push('');
   if (isXau) {
     L.push('STEP 0 REGIME CHECK (PRE-GATE, cabang XAU/USD):');
-    L.push('- Real Yield + DXY + Risk Regime: nilai satu per satu apakah masing-masing mendukung emas NAIK (bullish), TURUN (bearish), atau netral. Ketiganya WAJIB sepakat (3/3) supaya arah makro dianggap bulat. Laporkan hasilnya di regime_check.gold (termasuk unanimous true/false).');
+    L.push('- Real Yield + DXY + Risk Regime: nilai SATU PER SATU secara eksplisit apakah masing-masing mendukung emas NAIK (bullish), TURUN (bearish), atau netral. Laporkan TIGA field terpisah di regime_check.gold: real_yield, dxy, risk_regime (isi persis salah satu dari "bullish"/"bearish"/"netral") — kode yang menghitung berapa banyak yang sepakat dengan arahmu, jangan menyimpulkan sendiri kata "unanimous" atau semacamnya.');
     const corrTxt = goldCorr && goldCorr.r20 != null && goldCorr.r60 != null
       ? `Korelasi live emas vs real yield saat ini: r20 ${goldCorr.r20.toFixed(2)} vs r60 ${goldCorr.r60.toFixed(2)} (selisih ${Math.abs(goldCorr.r20 - goldCorr.r60).toFixed(2)}) — status: ${goldCorr.anomaly ? 'ANOMALI (di luar ambang 0,4)' : 'NORMAL'}.`
       : 'Korelasi live emas vs real yield: data tidak tersedia saat ini.';
-    L.push(`- Kalau TIDAK bulat 3/3: ${corrTxt} Korelasi NORMAL berarti Real Yield sendiri boleh jadi penentu arah, lanjut. Korelasi ANOMALI berarti TIDAK ENTRY sama sekali (satu-satunya hard-stop baru di Step 0), karena penentu tunggal yang tersisa sedang tidak bisa dipercaya.`);
+    L.push(`- Idealnya ketiganya bertiga sepakat (3/3) dengan arahmu — itu conviction penuh, entry tetap boleh jalan berapa pun status korelasinya. Kalau TIDAK 3/3: ${corrTxt} Korelasi NORMAL (atau data tidak tersedia) -> tetap boleh lanjut, Real Yield sendiri cukup jadi penentu. Korelasi ANOMALI -> HANYA boleh lanjut kalau minimal 2 dari 3 sinyal tetap sepakat dengan arahmu (mayoritas menutupi korelasi yang sedang tidak bisa dipercaya); kalau cuma 0-1 dari 3 yang sepakat DAN korelasi anomali, itu TIDAK ENTRY sama sekali (satu-satunya hard-stop baru di Step 0).`);
     L.push('- Rate Path Fed implied (kalau ada di data di atas): konteks tambahan saja, TIDAK memblokir.');
     L.push('- Event high-impact <6 jam ke depan untuk USD/emas: TUNGGU sampai lewat (entry ditunda, ukuran risiko TIDAK dikecilkan) — set regime_check.event_wait=true dan jelaskan di conflict_note. Ini BUKAN alasan membatalkan tesis.');
     L.push('- COT & retail sentiment TIDAK dipakai di sini — dipindah ke Step 8 (catatan: laporan COT gold beda skema CFTC dari FX, jangan disamakan).');
@@ -5804,7 +5824,7 @@ async function _runAatasTwoCall({
     _buildAatasMacroChecklistBlock({ label, isXau, goldCorr: goldCorrLive }),
     '',
     'Isi field JSON berikut:',
-    '- regime_check: hasil Step 0 sebagai objek — {"regime":"risk_on|neutral|elevated|risk_off" atau null, "cb_bias":{"<LEG>":"hawkish|dovish|netral"} untuk kedua leg pair (null kalau tidak ada data), "cb_source_conflict":true/false (bias resmi bank sentral vs pembacaanmu atas data mentah berbeda), "event_wait":true/false, "event_note":"..." atau null, "gold":null untuk pair FX}. Khusus XAU/USD, "gold" WAJIB diisi {"real_yield":"bullish|bearish|netral","dxy":"bullish|bearish|netral","risk_regime":"bullish|bearish|netral","unanimous":true/false} — ketiganya dinilai dari sudut pandang EMAS (bullish = mendukung emas naik). Isi apa adanya dari data di atas, jangan mengarang angka yang tidak dikirim.',
+    '- regime_check: hasil Step 0 sebagai objek — {"regime":"risk_on|neutral|elevated|risk_off" atau null, "cb_bias":{"<LEG>":"hawkish|dovish|netral"} untuk kedua leg pair (null kalau tidak ada data), "cb_source_conflict":true/false (bias resmi bank sentral vs pembacaanmu atas data mentah berbeda), "event_wait":true/false, "event_note":"..." atau null, "gold":null untuk pair FX}. Khusus XAU/USD, "gold" WAJIB diisi {"real_yield":"bullish|bearish|netral","dxy":"bullish|bearish|netral","risk_regime":"bullish|bearish|netral"} — ketiganya dinilai dari sudut pandang EMAS (bullish = mendukung emas naik), MASING-MASING diisi sendiri-sendiri apa adanya dari data di atas (jangan mengarang angka yang tidak dikirim); kode yang menghitung berapa yang sepakat, kamu TIDAK perlu (dan JANGAN) menyimpulkan sendiri satu label ringkasan seperti "unanimous".',
     '- gate_validitas_driver: hasil GATE Step 1 — {"pass":true/false,"note":"satu kalimat, sebut driver + buktinya"}. false kalau driver tidak punya bukti nyata di data, tidak bisa diverifikasi, belum tercermin di harga, atau cuma bisa dirumuskan dengan kata "akan/harusnya/kemungkinan/biasanya".',
     '- fundamental_bias: hasil Step 2 — {"score_pct":0-100,"arah":"bullish|bearish|netral","driver":"...","konfirmasi":["...","..."],"konflik":"..." atau null,"strong_vs_weak":true/false}. konfirmasi minimal 2 item dari kategori berbeda, masing-masing menyebut data konkret DAN mendukung arah yang sama dengan "arah" (lihat KONVENSI ARAH di atas) — bukti yang justru melawan arah masuk konflik, bukan konfirmasi.',
     '- bias: ARAH AKHIR hasil Step 0-2 — bullish/bearish/neutral/mixed, MURNI dari makro/fundamental. Pakai "neutral" kalau fundamental memang tidak punya arah, "mixed" kalau faktor-faktornya saling bertabrakan. DILARANG menyebut atau memakai RSI/MACD/SMA/EMA/pivot/struktur chart sebagai alasan di field manapun. HARUS PERSIS SAMA dengan fundamental_bias.arah — cek ulang KONVENSI ARAH sebelum memutuskan.',
@@ -5981,7 +6001,12 @@ function _formatAatasCriticLine(structured) {
     if (rc.regime) rcBits.push(`regime ${rc.regime}`);
     if (rc.cb_source_conflict === true) rcBits.push('CB bias dua sumber BERBEDA');
     if (rc.event_wait === true) rcBits.push(`menunggu event${rc.event_note ? ` (${rc.event_note})` : ''}`);
-    if (rc.gold && rc.gold.unanimous === false) rcBits.push('gold: real yield/DXY/regime TIDAK bulat');
+    if (rc.gold) {
+      const fbArah = (structured.fundamental_bias && typeof structured.fundamental_bias.arah === 'string' && structured.fundamental_bias.arah)
+        || (typeof structured.bias === 'string' ? structured.bias : null);
+      const alignedCount = _countGoldRegimeAligned(rc.gold, fbArah);
+      if (Number.isInteger(alignedCount) && alignedCount < 3) rcBits.push(`gold: real yield/DXY/regime cuma ${alignedCount}/3 sepakat`);
+    }
     if (rcBits.length) parts.push(`Regime check: ${rcBits.join('; ')}`);
   }
   const fb = structured.fundamental_bias;
@@ -7084,14 +7109,18 @@ async function ohlcvAnalyzeHandler(req, res) {
           structured.makro_alignment = null;
           structured.makro_alignment_reason = null;
           // Step 0 cabang gold — SATU-SATUNYA hard-block baru dari porting AATAS.
-          // Pembagian sumber disengaja: penilaian kualitatif (apakah Real Yield/DXY/
-          // Risk Regime sepakat) milik model, sedangkan FAKTA anomali korelasi dihitung
-          // KODE dari cache correlations_v3 — angka tidak boleh ikut dikarang model.
+          // Pembagian sumber disengaja: vote per-sinyal (apakah Real Yield/DXY/Risk
+          // Regime masing-masing searah) milik model, PENGHITUNGAN berapa yang sepakat
+          // dihitung KODE (_countGoldRegimeAligned) — bukan dipercaya dari klaim
+          // ringkasan AI sendiri (2026-09-02, closes potensi salah hitung model, pola
+          // sama _detectAatasDirectionMismatch) — sedangkan FAKTA anomali korelasi
+          // dihitung KODE dari cache correlations_v3 — angka tidak boleh ikut dikarang model.
           const goldReport = (data.is_xau && structured.regime_check) ? structured.regime_check.gold : null;
-          const goldUnanimous = (goldReport && (goldReport.unanimous === true || goldReport.unanimous === false))
-            ? goldReport.unanimous : null;
+          const goldArah = (structured.fundamental_bias && typeof structured.fundamental_bias.arah === 'string' && structured.fundamental_bias.arah)
+            || (typeof structured.bias === 'string' ? structured.bias : null);
+          const goldAlignedCount = _countGoldRegimeAligned(goldReport, goldArah);
           const goldBlocked = !!data.is_xau && isGoldRegimeBlocked({
-            unanimous: goldUnanimous,
+            alignedCount: goldAlignedCount,
             corrAnomaly: goldCorrLive ? goldCorrLive.anomaly : null,
           });
           const structureOpposing = !!structured._structureOpposing;
@@ -8410,6 +8439,7 @@ module.exports._calEventMsWib = _calEventMsWib;
 module.exports._buildAnalyzeCalBlock = _buildAnalyzeCalBlock;
 module.exports._buildLiveCorrSign = _buildLiveCorrSign;
 module.exports._goldYieldCorrAnomaly = _goldYieldCorrAnomaly;
+module.exports._countGoldRegimeAligned = _countGoldRegimeAligned;
 module.exports._isAatasEpochSetup = _isAatasEpochSetup;
 module.exports._formatRatePathBlock = _formatRatePathBlock;
 module.exports._consistencySummary = _consistencySummary;

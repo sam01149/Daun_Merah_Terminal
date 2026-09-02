@@ -470,25 +470,40 @@ test('policyVersionForTs: input tidak valid -> null (fail-open, bukan crash)', (
 });
 
 // ── AATAS (2026-08-22): hard-stop Step 0 cabang XAU/USD ─────────────────
-// SATU-SATUNYA hard-block baru dari porting checklist macro-first. Blok HANYA kalau
-// dua fakta positif bertemu: arah makro TIDAK bulat 3/3 DAN korelasi live yield-emas
-// sedang anomali (penentu tunggal yang tersisa tidak bisa dipercaya).
-
-test('isGoldRegimeBlocked: tidak bulat 3/3 + korelasi anomali -> BLOK', () => {
-  assert.equal(isGoldRegimeBlocked({ unanimous: false, corrAnomaly: true }), true);
-});
-
-test('isGoldRegimeBlocked: tidak bulat tapi korelasi NORMAL -> lanjut (real yield boleh jadi penentu)', () => {
-  assert.equal(isGoldRegimeBlocked({ unanimous: false, corrAnomaly: false }), false);
-});
+// SATU-SATUNYA hard-block baru dari porting checklist macro-first. `alignedCount`
+// (0-3) = berapa dari Real Yield/DXY/Risk Regime yang searah bias, dihitung KODE dari
+// vote individual AI (api/admin.js `_countGoldRegimeAligned`), bukan klaim ringkasan.
+//
+// Revisi 2026-09-02 (diskusi user): unanimity mutlak 3/3 sebagai satu-satunya jalan
+// "lolos saat korelasi anomali" dianggap terlalu blunt — 3 sinyal ini tidak independen
+// penuh (DXY & real yield sering searah, sama-sama fungsi ekspektasi Fed) dan gate
+// lama pernah menutup kandidat yang levelnya sendiri sudah "PERTIMBANGKAN". Sekarang
+// mayoritas (>=2/3) juga cukup menutupi korelasi yang goyah; hanya <=1/3 + korelasi
+// anomali yang tetap TIDAK ENTRY. Kasus 3/3 dan "korelasi tidak anomali" TIDAK berubah
+// dari perilaku lama (masih dites di bawah untuk regresi).
 
 test('isGoldRegimeBlocked: bulat 3/3 -> lanjut walau korelasi anomali', () => {
-  assert.equal(isGoldRegimeBlocked({ unanimous: true, corrAnomaly: true }), false);
+  assert.equal(isGoldRegimeBlocked({ alignedCount: 3, corrAnomaly: true }), false);
+});
+
+test('isGoldRegimeBlocked: korelasi NORMAL -> selalu lanjut berapa pun alignedCount-nya (perilaku lama dipertahankan)', () => {
+  assert.equal(isGoldRegimeBlocked({ alignedCount: 0, corrAnomaly: false }), false);
+  assert.equal(isGoldRegimeBlocked({ alignedCount: 1, corrAnomaly: false }), false);
+  assert.equal(isGoldRegimeBlocked({ alignedCount: 2, corrAnomaly: false }), false);
+});
+
+test('isGoldRegimeBlocked: 2/3 sepakat + korelasi anomali -> TETAP LANJUT (revisi baru, dulu blok)', () => {
+  assert.equal(isGoldRegimeBlocked({ alignedCount: 2, corrAnomaly: true }), false);
+});
+
+test('isGoldRegimeBlocked: <=1/3 sepakat + korelasi anomali -> BLOK', () => {
+  assert.equal(isGoldRegimeBlocked({ alignedCount: 1, corrAnomaly: true }), true);
+  assert.equal(isGoldRegimeBlocked({ alignedCount: 0, corrAnomaly: true }), true);
 });
 
 test('isGoldRegimeBlocked: data tidak lengkap (null/undefined) -> fail-open, TIDAK memblokir', () => {
-  assert.equal(isGoldRegimeBlocked({ unanimous: null, corrAnomaly: true }), false);
-  assert.equal(isGoldRegimeBlocked({ unanimous: false, corrAnomaly: null }), false);
+  assert.equal(isGoldRegimeBlocked({ alignedCount: null, corrAnomaly: true }), false);
+  assert.equal(isGoldRegimeBlocked({ alignedCount: 1, corrAnomaly: null }), false);
   assert.equal(isGoldRegimeBlocked({}), false);
   assert.equal(isGoldRegimeBlocked(), false);
 });

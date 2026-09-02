@@ -532,17 +532,29 @@ function policyVersionForTs(ts) {
 }
 
 // AATAS Step 0 cabang XAU/USD — SATU-SATUNYA hard-block baru dari porting ini.
-// Aturan (plan AATAS, cabang gold): Real Yield + DXY + Risk Regime WAJIB 3/3 sepakat.
-// Kalau tidak bulat, korelasi live yield-emas jadi arbitrase: korelasi NORMAL -> Real
-// Yield sendiri boleh jadi penentu (lanjut, bukan blok); korelasi ANOMALI (ambang
-// |r20-r60|>0,4 yang sudah tervalidasi, sama seperti Gate D live-sign) -> TIDAK ENTRY,
-// karena penentu tunggal yang tersisa itu sendiri sedang tidak bisa dipercaya.
+// Aturan (plan AATAS, cabang gold): Real Yield + DXY + Risk Regime dinilai satu per
+// satu, `alignedCount` (0-3) = berapa dari ketiganya yang searah dengan bias terkunci
+// — DIHITUNG KODE dari vote individual AI (api/admin.js `_countGoldRegimeAligned`),
+// bukan dipercaya dari klaim ringkasan AI sendiri.
 //
-// Fail-open disengaja (pola sama semua gate di file ini): `unanimous` null/undefined
-// (AI tidak melaporkan) atau `corrAnomaly` null (cache korelasi kosong/tanpa data
-// RealYield) TIDAK memblokir — blok hanya kalau DUA-DUANYA fakta positif.
-function isGoldRegimeBlocked({ unanimous, corrAnomaly } = {}) {
-  return unanimous === false && corrAnomaly === true;
+// 3/3 (unanimous) -> conviction penuh, selalu lanjut berapa pun status korelasi.
+// Tidak 3/3: korelasi live yield-emas (`corrAnomaly`) jadi arbitrase — NORMAL/tidak
+// diketahui -> tetap lanjut (Real Yield sendiri boleh jadi penentu, perilaku asli
+// dipertahankan). ANOMALI (ambang |r20-r60|>0,4 tervalidasi, sama seperti Gate D
+// live-sign) -> hanya lanjut kalau MAYORITAS (>=2/3) tetap sepakat; korelasi yang
+// goyah baru jadi alasan TIDAK ENTRY kalau sinyalnya sendiri juga lemah (<=1/3) —
+// revisi 2026-09-02, diskusi user: unanimity mutlak 3/3 terlalu blunt karena ketiga
+// sinyal tidak independen penuh (DXY & real yield sering searah karena sama-sama
+// fungsi ekspektasi Fed) dan rawan salah tembak saat regime emas berotasi.
+//
+// Fail-open disengaja (pola sama semua gate di file ini): `alignedCount` bukan
+// integer (AI tidak melaporkan vote yang valid sama sekali) atau `corrAnomaly` null
+// (cache korelasi kosong/tanpa data RealYield) TIDAK memblokir.
+function isGoldRegimeBlocked({ alignedCount, corrAnomaly } = {}) {
+  if (!Number.isInteger(alignedCount)) return false;
+  if (alignedCount >= 3) return false;
+  if (corrAnomaly !== true) return false;
+  return alignedCount < 2;
 }
 
 module.exports = {
