@@ -24,6 +24,19 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 
 ## Riset Aktif
 
+### [2026-09-02] Pencarian data premium gratis di GitHub — follow-up evaluasi TimesFM (NFP & BTC)
+
+Dipicu pertanyaan user: data premium apa yang bisa menutup celah NFP (STOP) & BTC vol-regime (ceiling AUC 0.63), siapa tahu ada versi gratis di GitHub. Web search 2026-09-02:
+
+- **NFP — nihil temuan baru, celah tetap tertutup:** LinkUp (enterprise-only, tidak ada free tier/mirror), Conference Board Data Central (2 komponen ETI sisa — jobs-hard-to-get % & NFIB positions-not-able-to-fill — tetap paywalled, tidak ada dataset publik), Bloomberg Individual Economist Estimates panel 1.600 forecaster (Terminal-only, tidak ada API publik/GitHub). Ini menguatkan status STOP `nfp-causal-research-framework`, bukan membuka jalan baru.
+- **BTC vol-regime — 3 kandidat genuinely-baru (independen dari harga, beda kategori dari GARCH/DVOL yang sudah gagal):**
+  1. Funding rate perpetual futures (leverage/positioning) — **gratis siap pakai**: [dataset Kaggle Binance Futures](https://www.kaggle.com/datasets/jesusgraterol/bitcoin-funding-rate-binance-futures) atau [Binance API resmi](https://developers.binance.com/docs/derivatives/coin-margined-futures/market-data/rest-api/Get-Funding-Rate-History-of-Perpetual-Futures).
+  2. Data liquidation ([CoinGlass](https://www.coinglass.com/FundingRate/BTC)) — cascade liquidation kausal memicu lonjakan vol, histori gratis perlu dicek panjangnya.
+  3. On-chain exchange netflow/whale movement — CryptoQuant/Glassnode free tier terbatas, atau Dune Analytics (query SQL gratis ke data blockchain mentah + dashboard komunitas publik).
+  4. Order book L2 historis (ByBit gratis harian) — lebih relevan microstructure/HFT (sudah ditandai blocker infra) daripada vol-regime horizon 4 jam, prioritas rendah.
+
+  **Belum diuji** — dicatat sebagai kandidat di `project_delay/machine learning/ml/STATUS.md`, bukan rekomendasi final. DVOL juga tadinya "genuinely baru" secara konsep tapi tetap gagal (redundan dgn realized_vol), jadi funding rate/on-chain tidak otomatis berhasil — kalau dieksekusi wajib rigor sama (walk-forward CV + permutation test langsung ke delta AUC) sebelum dipercaya.
+
 > **Seluruh riset khusus auto-entry/Plan U/Professional LLM Trader dipindah ke `Dokumentasi/professional_llm_trader/riset.md`** (2026-08-08) — termasuk audit total Plan U, audit "professional trader", profil struktural AUD/NZD & EUR/GBP, riset HFT, riset akurasi auto-entry, caveat korelasi XAU/USD-EUR/USD, dan latensi calendar_v1 Plan U-3.
 
 ### [2026-07-23] Evaluasi & Perbandingan Biaya Model AI Kandidat (DeepSeek v4-flash vs GLM 5.2 vs Kimi K3)
