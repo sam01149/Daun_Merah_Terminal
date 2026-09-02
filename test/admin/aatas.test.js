@@ -266,6 +266,72 @@ test('_detectAatasDirectionMismatch: currency pembanding setelah "terhadap"/"vs"
   }), false);
 });
 
+// Regresi (2026-09-02) — kasus nyata LIVE PENDING `AUDNZD=X:1788308131973` (policy_v 38,
+// SETELAH fix v38 [CEK ARAH DRIVER] live): arah bearish, tapi seluruh driver+konfirmasi
+// argumennya NZD melemah relatif ke AUD (mendukung bullish). Lolos v38 karena DUA celah
+// terpisah yang SALING MENUTUPI SATU SAMA LAIN — masing-masing dites sendiri di bawah:
+const AUDNZD_V38_DRIVER = 'NZD paling rentan menjelang RBNZ yang berpotensi dovish, sementara AUD relatif lebih stabil karena GDP forecast sesuai previous dan bias CB hawkish; JPY sebagai safe haven terkuat hari ini menekan pair AUD/NZD secara tidak langsung melalui risk sentiment.';
+const AUDNZD_V38_K1 = 'Kebijakan moneter: RBNZ dijadwalkan naik 25 bps ke 2.75% dengan risiko framing dovish sebagai langkah terakhir, sementara BoJ sinyal kenaikan September tetap hidup — diferensial ekspektasi kebijakan menekan NZD relatif terhadap AUD.';
+const AUDNZD_V38_K2 = 'Data ekonomi: GDP Australia forecast 0.3% q/q sama dengan previous, tidak memberi ruang kejutan besar, sehingga AUD cenderung stabil; tidak ada data NZD yang mendukung penguatan signifikan.';
+
+test('[CEK ARAH DRIVER] regresi live AUDNZD=X:1788308131973 (policy_v 38) -> gate HARUS gagal', () => {
+  const g = _evaluateAatasGate1({
+    aiPass: true, label: 'AUD/NZD',
+    fundamental_bias: {
+      score_pct: 62, arah: 'bearish',
+      driver: AUDNZD_V38_DRIVER,
+      konfirmasi: [AUDNZD_V38_K1, AUDNZD_V38_K2],
+      strong_vs_weak: true,
+    },
+  });
+  assert.equal(g.pass, false, 'seluruh argumen driver ini NZD melemah relatif ke AUD -> bullish, bukan bearish');
+  assert.equal(g.override_reason, 'arah_driver_berlawanan');
+});
+
+test('_scanCcyDirectionPairs (via mismatch): sebutan pair generik "pair AUD/NZD" tidak jadi target kata arah terdekat', () => {
+  // Celah #1 dari kasus di atas, diisolasi: TANPA konfirmasi apa pun, driver sendirian
+  // sebelum fix ini salah menempelkan "menekan" ke AUD (kode terdekat di dalam "AUD/NZD"),
+  // menghasilkan sinyal MENDUKUNG bearish yang seharusnya tidak ada (JPY di luar kedua kaki
+  // tidak bersuara, dan "AUD/NZD" cuma menamai instrumen, bukan subjek kalimat).
+  assert.equal(_detectAatasDirectionMismatch({
+    label: 'AUD/NZD', arah: 'bearish',
+    texts: ['JPY sebagai safe haven terkuat hari ini menekan pair AUD/NZD secara tidak langsung melalui risk sentiment.'],
+  }), false, 'driver ini tidak membuat klaim spesifik soal AUD atau NZD sama sekali, tidak boleh dibaca sebagai pendukung ATAU pelawan');
+});
+
+test('_scanCcyDirectionPairs (via mismatch): klausa "tidak ada data yang mendukung X menguat" tidak dibaca sebagai "X menguat"', () => {
+  // Celah #2 dari kasus di atas, diisolasi: negasi keberadaan dukungan tidak boleh
+  // ditarik jadi klaim arah positif hanya karena kata arahnya masih ada di kalimat.
+  assert.equal(_detectAatasDirectionMismatch({
+    label: 'AUD/NZD', arah: 'bearish',
+    texts: ['tidak ada data NZD yang mendukung penguatan signifikan'],
+  }), false, 'negasi "tidak ada ... mendukung penguatan" tidak boleh dibaca sebagai NZD benar-benar menguat (yang akan melawan bearish)');
+});
+
+test('_scanCcyDirectionPairs: currency yang sama TETAP jadi target kalau disebut berdiri sendiri di kalimat lain (bukan cuma di dalam "XXX/YYY")', () => {
+  // Pengecualian pair-mention harus presisi ke kemunculan token, bukan currency-nya secara
+  // keseluruhan — currency yang sama yang disebut berdiri sendiri di tempat lain pada teks
+  // yang sama tetap harus bisa ditangkap seperti biasa. Pakai arah BULLISH supaya "NZD
+  // menguat" (quote strengthen) jadi PELAWAN, bukan pendukung — kalau standalone NZD ini
+  // ikut salah dikecualikan (dianggap bagian "AUD/NZD"), sinyal pelawannya hilang dan test
+  // ini gagal mendeteksi mismatch yang seharusnya ada.
+  assert.equal(_detectAatasDirectionMismatch({
+    label: 'AUD/NZD', arah: 'bullish',
+    texts: ['Pair AUD/NZD dipantau ketat; NZD menguat tajam pasca data inflasi.'],
+  }), true, 'NZD di kalimat kedua berdiri sendiri (bukan di dalam "AUD/NZD") dan NZD menguat (quote) melawan bullish');
+});
+
+test('_scanCcyDirectionPairs: negasi hanya menetralkan klausa yang sama, tidak menjangkau lintas kalimat', () => {
+  // Klausa pertama ("Tidak ada data yang mendukung.") tidak boleh menetralkan kata arah
+  // di klausa KEDUA yang dipisah titik — arah BULLISH dipakai supaya "NZD menguat" (quote
+  // strengthen) jadi PELAWAN; kalau negasi salah menjangkau lintas kalimat, sinyal pelawan
+  // ini hilang dan test gagal mendeteksi mismatch yang seharusnya ada.
+  assert.equal(_detectAatasDirectionMismatch({
+    label: 'AUD/NZD', arah: 'bullish',
+    texts: ['Tidak ada data yang mendukung. NZD menguat tajam pasca RBNZ hawkish surprise.'],
+  }), true, 'kalimat kedua adalah klausa baru (dipisah titik), tidak dinegasikan oleh kalimat pertama; NZD menguat melawan bullish');
+});
+
 test('_evaluateAatasGate1: AI sendiri lapor gagal -> BUKAN override kode (dibedakan untuk counter observabilitas)', () => {
   const g = _evaluateAatasGate1({ aiPass: false, fundamental_bias: null });
   assert.equal(g.pass, false);

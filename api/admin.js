@@ -4906,6 +4906,37 @@ const ALIGNMENT_STRENGTHEN_RE = /menguat|penguatan/gi;
 const ALIGNMENT_WEAKEN_RE = /melemah|pelemahan/gi;
 const ALIGNMENT_REF_PREFIX_RE = /\b(terhadap|vs)\s*$/i;
 const ALIGNMENT_MAX_DIST = 45;
+// Pola "XXX/YYY" (mis. "pair AUD/NZD", "CHF/JPY") menamai INSTRUMEN, bukan membuat klaim
+// arah tentang satu currency spesifik — kedua kode di dalamnya HARUS dikecualikan sebagai
+// target kata arah terdekat, sama semangatnya dengan pengecualian "terhadap/vs" di atas.
+// Ditambahkan 2026-09-02 setelah temuan live: "...menekan pair AUD/NZD secara tidak
+// langsung..." membuat "menekan" (kata arah) salah nempel ke AUD (kode currency TERDEKAT
+// di dalam "AUD/NZD", cuma kebetulan disebut duluan) padahal kalimatnya tidak membuat
+// klaim spesifik soal AUD — ini menghasilkan sinyal "mendukung" palsu yang menggagalkan
+// syarat "nol pendukung" milik `_detectAatasDirectionMismatch`, sehingga inversi arah
+// nyata (AUD/NZD) lolos gate walau gate-nya sendiri sudah ada (lihat riset.md folder
+// professional_llm_trader). Currency yang SAMA yang disebut BERDIRI SENDIRI di tempat
+// lain pada teks yang sama TETAP bisa jadi target seperti biasa — yang dikecualikan
+// HANYA kemunculan token yang benar-benar berada di dalam konstruksi "XXX/YYY" itu.
+const CCY_PAIR_MENTION_RE = /\b(USD|EUR|GBP|JPY|AUD|NZD|CAD|CHF)\/(USD|EUR|GBP|JPY|AUD|NZD|CAD|CHF)\b/g;
+// Klausa yang menegasikan KEBERADAAN dukungan ("tidak ada data yang mendukung penguatan
+// NZD") secara harfiah TIDAK mengklaim penguatan terjadi — kebalikannya, ia bilang tidak
+// ada bukti untuk itu. Tanpa penjaga ini, kata arah di klausa semacam itu tetap ditarik
+// jadi sinyal seolah arahnya benar-benar terjadi. Ditemukan sepasang dengan temuan
+// CCY_PAIR_MENTION_RE di atas (2026-09-02, live nyata `AUDNZD=X:1788308131973`):
+// "...tidak ada data NZD yang mendukung penguatan signifikan" tetap tertarik jadi
+// "NZD menguat" tanpa penjaga ini, cukup untuk membuat gate arah AATAS diam walau fix
+// pair-mention di atas sudah menutup jalur pertama. Batas klausa = pemisah kalimat
+// (. atau ;) terdekat SEBELUM kata arah — koma tidak menutup klausa (banyak driver
+// menyusun beberapa alasan dalam satu kalimat panjang berkoma).
+const NEGATION_MARKER_RE = /\b(?:tidak ada|belum ada|tanpa|tidak (?:satu ?pun|pernah))\b/i;
+function _isNegatedDirectionWord(text, start) {
+  let clauseStart = 0;
+  for (let i = start - 1; i >= 0; i--) {
+    if (text[i] === '.' || text[i] === ';') { clauseStart = i + 1; break; }
+  }
+  return NEGATION_MARKER_RE.test(text.slice(clauseStart, start));
+}
 // Mesin pemindainya diekstrak (2026-08-31) supaya dipakai BERSAMA oleh dua penjaga:
 // [CEK KONTRADIKSI] di bawah dan [CEK ARAH DRIVER] jalur AATAS. Kosakata arahnya
 // SENGAJA tidak ikut dibagi — tiap penjaga membawa daftar katanya sendiri, supaya
@@ -4915,6 +4946,13 @@ function _scanCcyDirectionPairs(text, strengthenSrc, weakenSrc, refPrefixRe, ref
   if (!text || typeof text !== 'string') return [];
   const refRe = refPrefixRe || ALIGNMENT_REF_PREFIX_RE;
   const refWin = Number.isFinite(refWindow) ? refWindow : 15;
+  const pairMentionSpans = [];
+  {
+    const re = new RegExp(CCY_PAIR_MENTION_RE.source, 'g');
+    let m;
+    while ((m = re.exec(text))) pairMentionSpans.push([m.index, m.index + m[0].length]);
+  }
+  const isInPairMention = (start, end) => pairMentionSpans.some(([s, e]) => start >= s && end <= e);
   const ccyPositions = [];
   {
     const re = new RegExp(ALIGNMENT_CCY_RE.source, 'g');
@@ -4922,7 +4960,8 @@ function _scanCcyDirectionPairs(text, strengthenSrc, weakenSrc, refPrefixRe, ref
     while ((m = re.exec(text))) {
       const start = m.index, end = m.index + m[0].length;
       const isReference = refRe.test(text.slice(Math.max(0, start - refWin), start));
-      ccyPositions.push({ ccy: m[1], start, end, isReference });
+      const isPairMention = isInPairMention(start, end);
+      ccyPositions.push({ ccy: m[1], start, end, isReference, isPairMention });
     }
   }
   if (ccyPositions.length === 0) return [];
@@ -4931,14 +4970,17 @@ function _scanCcyDirectionPairs(text, strengthenSrc, weakenSrc, refPrefixRe, ref
   for (const [src, dir] of [[strengthenSrc, 'strengthen'], [weakenSrc, 'weaken']]) {
     const re = new RegExp(src, 'gi');
     let m;
-    while ((m = re.exec(text))) dirWords.push({ dir, start: m.index, end: m.index + m[0].length });
+    while ((m = re.exec(text))) {
+      if (_isNegatedDirectionWord(text, m.index)) continue;
+      dirWords.push({ dir, start: m.index, end: m.index + m[0].length });
+    }
   }
 
   const out = [];
   for (const d of dirWords) {
     let nearest = null, nearestGap = Infinity;
     for (const c of ccyPositions) {
-      if (c.isReference) continue;
+      if (c.isReference || c.isPairMention) continue;
       const gap = c.start >= d.end ? c.start - d.end : (d.start >= c.end ? d.start - c.end : 0);
       if (gap < nearestGap) { nearestGap = gap; nearest = c; }
     }

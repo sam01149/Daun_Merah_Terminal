@@ -501,6 +501,7 @@ const POLICY_EPOCHS = [
   // (Call 2 tidak dipanggil) mengikuti keputusan gate keras v2 yang sudah ada. Laju entry
   // BISA turun — itu memang tujuannya; ukur lewat `auto_guard_stats:gate1_arah_mismatch`.
   { v: 38, from: '2026-08-31T14:42:46Z', kind: 'policy', impact: 'entry',    label: '[CEK ARAH DRIVER] Gate 1 AATAS menolak setup yang driver/konfirmasi makronya menunjuk arah BERLAWANAN dengan arah trade-nya sendiri (kasus nyata AUD/NZD bearish dengan driver "NZD tertekan") — penjaga inversi arah yang selama ini cuma ada di jalur manual' },
+  { v: 39, from: '2026-09-02T01:16:08Z', kind: 'fix',    impact: 'entry',    label: 'Fix celah gate arah v38: kode currency di dalam sebutan pair generik ("pair AUD/NZD") tidak lagi bisa jadi target kata arah terdekat — sebelumnya "...menekan pair AUD/NZD..." salah nempel ke AUD (kode terdekat) dan menghasilkan sinyal "mendukung" palsu yang menggagalkan syarat nol-pendukung, meloloskan inversi arah nyata (AUD/NZD:1788308131973, policy_v 38)' },
 ];
 
 // AATAS_EPOCH (2026-08-22, keputusan user): batas populasi statistik dashboard
