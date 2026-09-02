@@ -1,14 +1,16 @@
 // test/cal_scenario_sim.test.js
-// Simulasi kalender (dasar bertumpu) — audit S155:
+// Simulasi kalender (dasar bertumpu) — audit S155 + revisi rapat Retail/COT/Makro:
 // 1. Indikator terbalik (unemployment/claims/...): tombol & header BEAT/MISS harus
 //    mengikuti arah ANGKA rilis (BEAT = ▼ angka turun), bukan panah ▲ hardcoded yang
 //    dulu bikin "Unemployment Rate ▲ BEAT → CAD menguat" terbaca kontradiktif dan
 //    bisa menjebak user memilih arah pair yang persis terbalik.
-// 2. Baris Retail selalu dirender (tersedia / tidak tersedia / belum dimuat) supaya
-//    jumlah faktor yang dinilai setara antar pair — verdict badge apples-to-apples.
-// 3. Tag "⚡ reaksi langsung" menandai pair mayor mata uang event (bukan utk event USD).
-// 4. Bias CB ortogonal (Data Dependent/On Hold/Split) diberi tanda (≈netral).
-// 5. escJs: nama event ber-apostrof tidak mematahkan literal JS di atribut onclick.
+// 2. Baris Retail DICABUT dari faktor konfluensi (cross pair mayoritas "tidak
+//    tersedia" karena FXSSI cuma nyakup 8 pair mayor — jadi noise, bukan sinyal).
+// 3. Makro (scenarioFundScore) ikut menghitung hasil simulasi BEAT/MISS event itu
+//    sendiri sebagai satu indikator tambahan buat eventCur (sebelumnya nol pengaruh).
+// 4. Tag "⚡ reaksi langsung" menandai pair mayor mata uang event (bukan utk event USD).
+// 5. Bias CB ortogonal (Data Dependent/On Hold/Split) diberi tanda (≈netral).
+// 6. escJs: nama event ber-apostrof tidak mematahkan literal JS di atribut onclick.
 const { test } = require('node:test');
 const assert = require('node:assert');
 const fs = require('fs');
@@ -113,7 +115,7 @@ test('caption & footer: jujur soal basis ranking + besaran deviasi', () => {
   assert.ok(!out.includes('faktor independen'), 'klaim independen dihapus');
 });
 
-test('retail: pair tak tercakup data → baris netral "tidak tersedia", tidak dihitung', () => {
+test('retail dihapus: baris Retail tidak pernah muncul lagi di konfluensi, walau data retail ada', () => {
   api.set({
     cbData: [{ currency: 'CAD', bias: 'Cautious Hawkish', rate_display: '2.25' },
              { currency: 'CHF', bias: 'Cautious Dovish',  rate_display: '0.00' }],
@@ -122,24 +124,33 @@ test('retail: pair tak tercakup data → baris netral "tidak tersedia", tidak di
   });
   const c = api.scenarioConfluence('CAD/CHF', 'long', 'CAD', 'beat');
   const rows = c.rows.join('');
-  assert.ok(rows.includes('tidak tersedia untuk CAD/CHF'));
+  assert.ok(!rows.includes('Retail:'), 'baris Retail wajib hilang total dari konfluensi');
   // CB ✓ (Cautious Hawkish 5 vs Cautious Dovish 3) satu-satunya yang dihitung
   assert.strictEqual(c.plus, 1);
   assert.strictEqual(c.minus, 0);
 });
 
-test('retail: belum dimuat → baris "belum dimuat…" (bukan hilang diam-diam)', () => {
-  api.set({ retailData: null });
-  const c = api.scenarioConfluence('CAD/CHF', 'long', 'CAD', 'beat');
-  assert.ok(c.rows.join('').includes('data retail belum dimuat'));
+test('caption "dasar bertumpu": 5 faktor (retail dikeluarkan dari hitungan)', () => {
+  const out = api.scenarioRenderResults(
+    [mkPair('EUR/USD', 'long')], 'EUR', 'beat', 'CPI y/y', 'ev1');
+  assert.ok(out.includes('5 faktor pendukung'));
+  assert.ok(!out.includes('· retail ·') && !out.includes('retail · korelasi'));
 });
 
-test('retail: pair tercakup → kontrarian dinilai seperti sebelumnya', () => {
-  api.set({ retailData: { positions: { USDCAD: { long_pct: 79.8, short_pct: 20.2, signal: 'CONTRARIAN_SHORT' } } } });
-  const c = api.scenarioConfluence('USD/CAD', 'short', 'CAD', 'beat');
+test('makro: hasil simulasi BEAT ikut menambah skor fundamental eventCur sendiri', () => {
+  api.set({ cbData: null, fundData: { CAD: {} }, cotData: null, corrData: null, retailData: null });
+  const c = api.scenarioConfluence('CAD/CHF', 'long', 'CAD', 'beat');
   const rows = c.rows.join('');
-  assert.ok(rows.includes('79.8% long / 20.2% short'));
-  assert.ok(rows.includes('kontrarian mendukung SHORT'));
+  assert.ok(rows.includes('CAD 100% Bull'), 'satu-satunya indikator (simulasi ini) harus bull 100%');
+  assert.ok(rows.includes('termasuk hasil simulasi ini'));
+});
+
+test('makro: hasil simulasi MISS ikut mengurangi skor fundamental eventCur sendiri', () => {
+  api.set({ cbData: null, fundData: { CAD: {} }, cotData: null, corrData: null, retailData: null });
+  const c = api.scenarioConfluence('CAD/CHF', 'short', 'CAD', 'miss');
+  const rows = c.rows.join('');
+  assert.ok(rows.includes('CAD 0% Bear'), 'satu-satunya indikator (simulasi ini) harus bear 0%');
+  assert.ok(rows.includes('fundamental CAD lemah menopang skenario'));
 });
 
 test('bias CB ortogonal: Data Dependent diberi tanda (≈netral), bias axis tidak', () => {

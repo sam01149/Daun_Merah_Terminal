@@ -11059,8 +11059,8 @@ function scenarioRankCurrencies(eventCur, direction) {
 
   // Konfluensi "dasar bertumpu": divergensi CB saja belum cukup buat milih pair —
   // kejutan data cuma katalis satu sisi. Fundamental counter-currency, flow COT,
-  // retail kontrarian, dan korelasi antar-leg ikut menimbang ranking supaya pair
-  // yang naik ke atas memang punya sisi lain yang menopang arah trade.
+  // dan korelasi antar-leg ikut menimbang ranking supaya pair yang naik ke atas
+  // memang punya sisi lain yang menopang arah trade.
   for (const r of results) {
     r.conf = scenarioConfluence(r.pair, r.dir, eventCur, direction);
     r.score += r.conf.bonus;
@@ -11104,7 +11104,7 @@ function scenarioRenderResults(pairs, eventCur, direction, eventName, evId) {
 
   return `
     <div class="cal-scenario-subheading">SIMULASI: ${escHtml(eventName)} ${dirLabel}</div>
-    <div class="scen-conf-caption">Dasar bertumpu — tiap pair diuji terhadap 6 faktor pendukung: bias bank sentral · fundamental makro · flow COT · retail · korelasi antar-leg · teknikal (dimuat menyusul, tidak mengubah urutan). Makin banyak ✓ makin kuat alasan trade selain kejutan data itu sendiri — tapi faktor-faktor ini saling berkaitan, dan ranking mengukur konteks latar, bukan seberapa besar pair biasanya bereaksi ke rilis ini.</div>
+    <div class="scen-conf-caption">Dasar bertumpu — tiap pair diuji terhadap 5 faktor pendukung: bias bank sentral · fundamental makro · flow COT · korelasi antar-leg · teknikal (dimuat menyusul, tidak mengubah urutan). Makin banyak ✓ makin kuat alasan trade selain kejutan data itu sendiri — tapi faktor-faktor ini saling berkaitan, dan ranking mengukur konteks latar, bukan seberapa besar pair biasanya bereaksi ke rilis ini.</div>
     ${pairsHtml}
     <div class="cal-scenario-warn">
       Ini rekomendasi awal, bukan sinyal entry — besaran deviasi actual vs forecast ikut menentukan kekuatan reaksi (beat/miss tipis sering diabaikan pasar). Validasi kondisi pasar via CHECKLIST, lalu hitung ukuran lot yang aman via SIZING sebelum eksekusi.
@@ -11119,7 +11119,14 @@ function scenarioRenderResults(pairs, eventCur, direction, eventName, evId) {
 // (korelasi). verdict: 1 mendukung ✓, -1 konflik ✕, 0 netral −, null data belum ada.
 const SCEN_FUND_RATE_KEYS = { USD:'Fed Rate', EUR:'ECB Rate', GBP:'BOE Rate', JPY:'BOJ Rate', CAD:'BOC Rate', AUD:'RBA Rate', NZD:'RBNZ Rate', CHF:'SNB Rate' };
 
-function scenarioFundScore(cur) {
+// simDirection ('beat'/'miss', opsional): event yang sedang disimulasikan itu
+// sendiri adalah satu titik data makro buat eventCur-nya, tapi belum pernah
+// rilis (makanya belum ada di fundData) — jadi belum pernah ikut tertimbang
+// di skor ini. Dihitung sebagai SATU indikator tambahan (bobot setara indikator
+// lain, sama seperti cara fitur Fundamental Data nge-skor tiap indikator),
+// bukan menggantikan entri fundData manapun (tidak ada pemetaan andal dari
+// judul event kalender ke key FUND_SCORE_RULES).
+function scenarioFundScore(cur, simDirection) {
   if (!fundData || !fundData[cur]) return null;
   const rateKey = SCEN_FUND_RATE_KEYS[cur];
   let bull = 0, scored = 0;
@@ -11128,6 +11135,7 @@ function scenarioFundScore(cur) {
     const s = scoreInd(k, v.actual, v.previous);
     if (s !== null) { scored++; if (s > 0) bull++; }
   });
+  if (simDirection) { scored++; if (simDirection === 'beat') bull++; }
   return scored > 0 ? Math.round(bull / scored * 100) : null;
 }
 
@@ -11167,20 +11175,23 @@ function scenarioConfluence(pairName, pairDir, eventCur, direction) {
     add(null, 'Bias CB:', 'data bank sentral belum dimuat');
   }
 
-  // 2. Fundamental makro — skor indikator (Bull/Bear) kedua sisi pair
-  const eS = scenarioFundScore(eventCur), cS = scenarioFundScore(counter);
+  // 2. Fundamental makro — skor indikator (Bull/Bear) kedua sisi pair. Skor
+  //    eventCur ikut menghitung hasil simulasi BEAT/MISS ini sendiri sebagai
+  //    satu indikator tambahan (lihat catatan di scenarioFundScore).
+  const eS = scenarioFundScore(eventCur, direction), cS = scenarioFundScore(counter);
   if (eS === null && cS === null) {
     add(null, 'Makro:', 'data fundamental belum dimuat…');
   } else {
     const lbl  = s => s === null ? '—' : `${s}% ${s >= 60 ? 'Bull' : s < 40 ? 'Bear' : 'Neut'}`;
+    const simNote = ' (termasuk hasil simulasi ini)';
     let v = 0, msg;
     if (eS !== null && cS !== null) {
       const gap = direction === 'beat' ? eS - cS : cS - eS;
       v = gap >= 15 ? 1 : gap <= -15 ? -1 : 0;
       bonus += Math.max(-2, Math.min(2, gap / 40));
-      msg = v === 1 ? `fundamental ${counter} ${direction === 'beat' ? 'lebih lemah' : 'lebih kuat'}, jadi dasar bertumpu arah trade`
+      msg = (v === 1 ? `fundamental ${counter} ${direction === 'beat' ? 'lebih lemah' : 'lebih kuat'}, jadi dasar bertumpu arah trade`
           : v === -1 ? 'fundamental melawan — kejutan data harus cukup besar untuk membalik tren makro'
-          : 'fundamental berimbang, belum jadi penopang';
+          : 'fundamental berimbang, belum jadi penopang') + simNote;
     } else if (cS !== null) {
       // hanya counter yang punya data: beat → counter sebaiknya lemah, miss → kuat
       v = (direction === 'beat' ? cS < 40 : cS >= 60) ? 1
@@ -11190,13 +11201,14 @@ function scenarioConfluence(pairName, pairDir, eventCur, direction) {
           : v === -1 ? `fundamental ${counter} melawan arah skenario`
           : `fundamental ${counter} netral, belum jadi penopang`;
     } else {
-      // hanya event currency yang punya data: beat → sebaiknya kuat, miss → lemah
+      // hanya event currency yang punya data (dari simulasi ini sendiri): beat
+      // → sebaiknya kuat, miss → lemah
       v = (direction === 'beat' ? eS >= 60 : eS < 40) ? 1
         : (direction === 'beat' ? eS < 40 : eS >= 60) ? -1 : 0;
       bonus += v * 0.75;
-      msg = v === 1 ? `fundamental ${eventCur} ${direction === 'beat' ? 'kuat' : 'lemah'} menopang skenario — data ${counter} belum tersedia`
+      msg = (v === 1 ? `fundamental ${eventCur} ${direction === 'beat' ? 'kuat' : 'lemah'} menopang skenario — data ${counter} belum tersedia`
           : v === -1 ? `fundamental ${eventCur} melawan arah skenario — data ${counter} belum tersedia`
-          : `fundamental ${eventCur} netral — data ${counter} belum tersedia`;
+          : `fundamental ${eventCur} netral — data ${counter} belum tersedia`) + simNote;
     }
     add(v, 'Makro:', `${eventCur} ${lbl(eS)} vs ${counter} ${lbl(cS)} — ${msg}`);
   }
@@ -11214,25 +11226,7 @@ function scenarioConfluence(pairName, pairDir, eventCur, direction) {
     add(null, 'COT:', 'data COT belum dimuat…');
   }
 
-  // 4. Retail sentiment — kontrarian. Baris tetap dirender saat data tidak
-  //    tersedia supaya jumlah faktor yang dinilai setara antar pair (verdict
-  //    badge apples-to-apples), bukan diam-diam hilang.
-  const rp = retailData?.positions?.[pairName.replace('/', '')];
-  if (rp && rp.long_pct != null) {
-    const v = rp.signal === 'NEUTRAL' || !rp.signal ? 0
-      : ((rp.signal === 'CONTRARIAN_LONG') === (pairDir === 'long') ? 1 : -1);
-    add(v, 'Retail:', `${rp.long_pct}% long / ${rp.short_pct}% short — ${
-      v === 1 ? `mayoritas retail terjebak di sisi lawan → kontrarian mendukung ${pairDir.toUpperCase()}`
-      : v === -1 ? 'sinyal kontrarian retail justru melawan arah trade'
-      : 'posisi retail berimbang (netral)'}`);
-    if (v !== 0) bonus += v * 0.5;
-  } else if (retailData) {
-    add(0, 'Retail:', `data sentimen retail tidak tersedia untuk ${pairName} — faktor ini tidak ikut dinilai`);
-  } else {
-    add(null, 'Retail:', 'data retail belum dimuat…');
-  }
-
-  // 5. Korelasi antar-leg — seberapa berlawanan kekuatan kedua mata uang bergerak
+  // 4. Korelasi antar-leg — seberapa berlawanan kekuatan kedua mata uang bergerak
   //    (seri strength: X/USD, JPY·CAD·CHF di-invert, USD diwakili DXY)
   const instA = TEK_CORR_LEG[base], instB = TEK_CORR_LEG[quote];
   const m20 = corrData?.matrix_20d;
@@ -11334,7 +11328,6 @@ async function scenarioEnsureData(evId, currency, direction, eventName) {
   if (!cbData || cbData.length === 0) jobs.push(fetchCBStatus().catch(() => {}));
   if (!fundData)   jobs.push(fetchFundamental().catch(() => {}));
   if (!cotData)    jobs.push(fetch('/api/feeds?type=cot', { signal: AbortSignal.timeout(25000) }).then(r => r.json()).then(d => { cotData = d; cotFetchedAt = Date.now(); }).catch(() => {}));
-  if (!retailData) jobs.push(fetchRetailSentiment().catch(() => {}));
   if (!corrData)   jobs.push(fetchCorrelations().catch(() => {}));
   if (jobs.length === 0) return;
   if (Date.now() - _scenEnsureLastTs < 60000) return;
