@@ -11,10 +11,24 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-08-31 (Session 341 — Chart TEK dipakai ulang antar-tab supaya garis analisa manual tidak hilang saat pindah fitur; Session 340 — Fix MT5 Bridge terbaca offline akibat blokir Private Network Access / PNA browser; Session 339 — Fix pemuatan CDN Lightweight Charts & candle Deriv 1M/5M/15M di tab Chart Posisi dev-auto-entry.html)
+> **Last updated:** 2026-09-02 (Session 345 — Analisa AI manual: paragraf narasi sekarang dapat catatan otomatis saat Sistem Hakim/guard kontradiksi mengoreksi badge Keselarasan Makro/Conflict, supaya narasi tidak menyesatkan pembaca yang cuma baca teks; Session 341 — Chart TEK dipakai ulang antar-tab supaya garis analisa manual tidak hilang saat pindah fitur; Session 340 — Fix MT5 Bridge terbaca offline akibat blokir Private Network Access / PNA browser)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
+
+## Changelog Session 345 (2026-09-02) — Analisa AI Manual: Narasi Sekarang Dikoreksi Ikut Saat Badge Makro Dikoreksi Sistem
+
+**Konteks:** user minta audit apakah fitur Ringkasan & Analisa (manual, publik) sudah dapat semua data dan AI-nya bisa memberi output berkualitas. Ringkasan (`api/market-digest.js`) dicek matang — data lengkap (real yield, likuiditas, kurva yield, risk regime, rate path, Polymarket, kalender), sudah melalui banyak iterasi anti-halusinasi, tidak ada temuan baru. Analisa manual (`ohlcvAnalyzeHandler`, `!isAutoCall`) menerima data PALING lengkap di seluruh aplikasi (satu panggilan melihat semua: berita, COT, retail, real yield, regime, DXY/WTI, rate path, sentimen opsi, track record, kalender, currency strength, DAN seluruh data chart termasuk RSI/MACD/SMA) — tapi ditemukan 1 celah kualitas yang sudah lama didokumentasikan tapi belum pernah ditutup.
+
+**Masalah (sudah tercatat sejak Session 316, `professional_llm_trader/audit_workflow.md` §3b, belum pernah dieksekusi).** Dua mekanisme otomatis — Sistem Hakim (`_computeCbDirServerSide`, veto kalau cbDir bank sentral melawan bias teknikal AI) dan guard kontradiksi (`_detectAlignmentReasonContradiction`, deteksi mata uang sama disebut menguat+melemah di kalimat sama) — mengoreksi field TERSTRUKTUR (`makro_alignment`/`conflict`/`conflict_note`) SETELAH AI selesai menjawab. Paragraf narasi bebas (`commentary`, tampil sebagai "Ringkasan Eksekutif" di UI) ditulis AI SEBELUM koreksi ini terjadi dan tidak pernah disentuh ulang — jadi badge di layar bisa bilang "konflik" sementara paragraf yang paling sering dibaca pengguna masih bilang "searah"/"konflik tidak terdeteksi". Kasus nyata lama yang sudah didokumentasikan: `CHFJPY=X:1786436246374`.
+
+**Fix (`api/admin.js`, jalur `!isAutoCall` saja — AATAS tidak tersentuh, guard-guard ini memang sudah digerbang `!isAutoCall` sejak porting AATAS).** Setelah blok Sistem Hakim + guard kontradiksi selesai jalan, kalau salah satu (atau lebih) benar-benar mengoreksi sesuatu (`sistemHakimFired`/`sistemHakimCorrected`/`contradictionGuardFired`), satu catatan pendek DITAMBAHKAN di akhir `commentary` — bukan regenerasi ulang paragraf (tidak ada panggilan AI baru), teks asli AI tetap utuh, cuma ditempeli catatan `[KOREKSI SISTEM setelah paragraf ini ditulis: ...]` yang menyebut jenis koreksinya dan mengarahkan pembaca ke badge/field yang benar. Kalau tidak ada guard yang menyala, `commentary` byte-identik seperti sebelumnya (diverifikasi test).
+
+**Verifikasi.** `npm test` 1212/1212 hijau — 3 test existing diperluas (bukan test baru terpisah): kasus guard kontradiksi menyala (assert catatan muncul di response DAN di `setup_log:v1` yang tersimpan), kasus Sistem Hakim `fired`, kasus Sistem Hakim `corrected`; plus 1 assert baru memastikan kasus TANPA koreksi (`commentary` tetap byte-identik, tidak keliru menambah catatan).
+
+**Yang TIDAK diubah:** cara Sistem Hakim/guard kontradiksi mendeteksi & mengoreksi field terstruktur — nol perubahan. Jalur `isAutoCall` (AATAS) — nol perubahan, guard-guard ini sudah lama tidak jalan di sana.
+
+**Penunjuk:** detail audit lengkap kedua fitur (Ringkasan + Analisa) ada di percakapan sesi ini — bukan entri terpisah di folder `professional_llm_trader/` karena perubahan ini murni jalur manual publik, tidak dipicu/ditujukan untuk auto-entry.
 
 ## Changelog Session 341 (2026-08-31) — Garis Analisa Manual di Chart TEK Tidak Lagi Hilang Saat Pindah Tab
 

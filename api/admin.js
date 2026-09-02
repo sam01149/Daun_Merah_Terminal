@@ -7226,6 +7226,23 @@ async function ohlcvAnalyzeHandler(req, res) {
         if (isAutoCall && contradictionGuardFired) {
           redisCmd('INCR', 'contradiction_guard_stats:fired').catch(() => {});
         }
+
+        // (2026-09-02) Sistem Hakim dan [CEK KONTRADIKSI] di atas cuma membetulkan field
+        // TERSTRUKTUR (makro_alignment/conflict/conflict_note) — `commentary` (paragraf
+        // "Ringkasan Eksekutif" yang paling sering dibaca manusia) sudah ditulis AI
+        // SEBELUM koreksi ini jalan dan tidak pernah disentuh ulang. Celah ini didokumentasikan
+        // sejak Session 316 (`audit_workflow.md` §3b) tapi tidak pernah ditutup — kasus nyata
+        // `CHFJPY=X:1786436246374`: badge sudah "konflik" tapi paragraf masih bilang "konflik
+        // tidak terdeteksi". Fix RINGAN (bukan regenerasi ulang, bukan panggilan AI baru):
+        // sisipkan satu catatan singkat di akhir paragraf supaya pembaca yang cuma baca
+        // narasi tidak tertipu — badge/field tetap sumber kebenaran final.
+        if (!isAutoCall && commentary && (sistemHakimFired || sistemHakimCorrected || contradictionGuardFired)) {
+          const noteParts = [];
+          if (sistemHakimFired) noteParts.push('Sistem Hakim mendeteksi konflik makro-vs-teknikal yang tidak disebutkan di atas');
+          if (sistemHakimCorrected) noteParts.push('Sistem Hakim mengoreksi klaim "konflik" yang ternyata salah (fundamental sebenarnya searah)');
+          if (contradictionGuardFired) noteParts.push('sistem mendeteksi arah yang saling berlawanan untuk mata uang yang sama di paragraf ini (dugaan salah nalar arah)');
+          commentary = `${commentary}\n\n[KOREKSI SISTEM setelah paragraf ini ditulis: ${noteParts.join('; ')} — paragraf di atas ditulis SEBELUM koreksi ini, mungkin tidak lagi mencerminkan status final. Cek badge/field "Keselarasan Makro" dan "Conflict" untuk status yang benar.]`;
+        }
       } catch(e) {
         // Keep rawText as commentary, structured stays null
       }

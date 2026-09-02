@@ -273,10 +273,16 @@ test('AATAS: jalur MANUAL (cbDir dari body) -> Sistem Hakim tetap memaksa confli
       assert.equal(res.statusCode, 200);
       assert.equal(res.body.structured.conflict, 'arah', 'jalur manual TIDAK boleh ikut berubah oleh AATAS');
       assert.equal(res.body.structured.makro_alignment, 'konflik');
+      // (2026-09-02) Fix celah "commentary vs field terstruktur" (audit_workflow.md §3b) —
+      // Sistem Hakim mengoreksi badge jadi 'konflik' tapi paragraf AI aslinya tidak tahu-menahu
+      // soal ini (ditulis sebelum koreksi) — WAJIB dapat catatan, bukan dibiarkan menyesatkan.
+      assert.match(res.body.commentary, /KOREKSI SISTEM/);
+      assert.match(res.body.commentary, /Komentar singkat untuk tes Sistem Hakim\./);
 
       const log = JSON.parse(store.strings['setup_log:v1']);
       assert.equal(log[0].sistem_hakim, 'fired');
       assert.equal(log[0].conflict_source, 'sistem_hakim');
+      assert.match(log[0].commentary, /KOREKSI SISTEM/);
     } finally { global.fetch = origFetch; }
   });
 });
@@ -311,10 +317,15 @@ test('AATAS: jalur MANUAL — cbDir SEARAH tapi AI salah klaim konflik -> tetap 
       assert.equal(res.statusCode, 200);
       assert.equal(res.body.structured.conflict, 'none', 'Sistem Hakim harus mengoreksi klaim konflik AI yang keliru');
       assert.equal(res.body.structured.makro_alignment, 'searah');
+      // (2026-09-02) Sama seperti kasus 'fired' di atas — paragraf AI aslinya mengklaim
+      // ada konflik yang ternyata salah; pembaca yang cuma baca narasi berhak tahu itu
+      // sudah dikoreksi, bukan cuma mengandalkan badge yang mungkin tidak ia perhatikan.
+      assert.match(res.body.commentary, /KOREKSI SISTEM/);
 
       const log = JSON.parse(store.strings['setup_log:v1']);
       assert.equal(log[0].sistem_hakim, 'corrected');
       assert.equal(log[0].conflict_source, null, 'conflict sudah none, tidak ada sumber konflik lagi');
+      assert.match(log[0].commentary, /KOREKSI SISTEM/);
     } finally { global.fetch = origFetch; }
   });
 });

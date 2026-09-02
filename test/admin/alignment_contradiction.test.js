@@ -180,9 +180,17 @@ test('CEK KONTRADIKSI manual: reasoning kontradiktif -> tetap dikoreksi jadi kon
       assert.equal(res.body.structured.conflict, 'arah');
       assert.match(res.body.structured.makro_alignment_reason, /CEK KONTRADIKSI/);
 
+      // (2026-09-02) Fix celah "commentary vs field terstruktur" (audit_workflow.md §3b,
+      // BELUM DIFIX sejak Session 316) — paragraf narasi (`commentary`) ditulis AI SEBELUM
+      // guard mengoreksi field terstruktur di atas, jadi tanpa fix ini paragraf masih akan
+      // bilang "searah" padahal badge sudah "konflik". Sekarang WAJIB ada catatan koreksi.
+      assert.match(res.body.commentary, /KOREKSI SISTEM/, 'paragraf narasi wajib dapat catatan supaya tidak menyesatkan pembaca yang cuma baca narasi');
+      assert.match(res.body.commentary, /Komentar singkat untuk tes CEK KONTRADIKSI\./, 'teks asli AI tetap utuh, catatan cuma DITAMBAHKAN di akhir');
+
       const log = JSON.parse(store.strings['setup_log:v1']);
       assert.equal(log[0].sistem_hakim, null, 'Sistem Hakim tidak boleh ikut nyala (cbDir null)');
       assert.equal(log[0].conflict_source, 'contradiction_guard');
+      assert.match(log[0].commentary, /KOREKSI SISTEM/, 'commentary yang TERSIMPAN ke setup_log juga wajib bawa catatan, bukan cuma respons API');
     } finally { global.fetch = origFetch; }
   });
 });
@@ -244,6 +252,9 @@ test('CEK KONTRADIKSI manual: reasoning konsisten (tanpa kontradiksi) -> tidak d
       assert.equal(res.statusCode, 200);
       assert.equal(res.body.structured.makro_alignment, 'searah');
       assert.equal(res.body.structured.conflict, 'none');
+      // (2026-09-02) Tidak ada guard yang menyala -> commentary TIDAK BOLEH disentuh sama
+      // sekali (bukan cuma "tidak salah", betul-betul byte-identik dengan yang AI tulis).
+      assert.equal(res.body.commentary, 'Komentar singkat.');
 
       const log = JSON.parse(store.strings['setup_log:v1']);
       assert.equal(log[0].conflict_source, null);
