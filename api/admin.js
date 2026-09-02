@@ -743,6 +743,7 @@ const KEY_REGISTRY = [
   // considered=saved+... di atas (gate ini jalan SEBELUM kandidat sampai ke gate itu).
   { key: 'auto_guard_stats:gate1_code_override',      owner: 'api/admin.js', ttl_expected: null, note: 'AATAS v2 Gate 1: Step 1-2 digagalkan pemeriksaan KODE (bukan laporan AI) — indikator penilaian apakah aturan barunya terlalu ketat/longgar' },
   { key: 'auto_guard_stats:gate1_arah_mismatch',      owner: 'api/admin.js', ttl_expected: null, note: '[CEK ARAH DRIVER] (2026-08-31): subset gate1_code_override — driver/konfirmasi menunjuk arah BERLAWANAN dengan fundamental_bias.arah (kasus nyata AUD/NZD: bearish tapi driver bilang NZD tertekan). Dipisah supaya ketatnya aturan termuda bisa dinilai sendiri' },
+  { key: 'auto_guard_stats:gate_struktur_melawan_bias', owner: 'api/admin.js', ttl_expected: null, note: '(2026-09-02) technical.struktur_vs_bias==="berlawanan" — sebelumnya cuma imbauan teks Step 4 (kasus nyata AUDNZD=X:1788182128048: struktur H4 bullish diakui sendiri, tapi tetap keluar setup bearish). Sekarang gate keras di kode, counter ini mengukur seberapa sering menyala' },
   { key: 'aatas_reject_log:v1',                       owner: 'api/admin.js', ttl_expected: null, note: 'List (cap 200): kandidat auto-entry AATAS yang ditolak (alasan + seluruh field checklist + reasoning_note). Key TERPISAH dari setup_log_auto:v1 supaya cap 200 sampel nyata tidak tergeser keluar' },
   // Audit 2026-08-27: arsip preventif sebelum setup_log_auto:v1 (cap 200) menggeser
   // keluar entri lama secara permanen — lihat komentar lengkap di setupLogArchiveHandler.
@@ -5290,7 +5291,7 @@ const COT_CME_PROMPT_VERSION = 1;
 // sendiri (RSI 76.5 dipakai sebagai driver bearish XAU/USD; arah AUD/NZD dipinjam dari
 // "struktur teknikal H4" padahal `strong_vs_weak:false`) — dua-duanya lolos karena
 // larangan itu cuma imbauan teks di prompt.
-const AATAS_PROMPT_VERSION = 3;
+const AATAS_PROMPT_VERSION = 4;
 
 // (2026-09-02) `final_validation` (Step 8, COT/retail) dipaksa nilai ini untuk SEMUA
 // setup AATAS — Call 2 (yang mengisi field ini di v1/v2) tidak pernah menerima data
@@ -5315,13 +5316,30 @@ const AATAS_STEP8_UNAVAILABLE = Object.freeze({
 // dihitung (tetap sepenuhnya opini AI, bobot fundamental/Step 2 tetap "tinggi" sesuai
 // instruksi prompt — poin 9 plan lama "checklist_pct dihitung kode" TETAP DITUNDA,
 // lihat progress.md).
-function _deriveAatasVerdict({ checklistPct, conflict, gateRiskPass, hasTechnical }) {
+// (2026-09-02, dipertimbangkan ulang sesi ini) enum 4-state, BUKAN boolean biner:
+// gate keras HANYA untuk "berlawanan" (struktur dominan jelas menunjuk arah kebalikan
+// bias) — "campur"/"netral" LOLOS, sama filosofinya dengan gate arah_driver_berlawanan
+// (konservatif, cuma menahan kasus yang benar-benar jelas, supaya struktur
+// ambigu/campuran tidak salah tembak).
+// TIDAK memakai skor "confidence" tambahan (sempat dipertimbangkan) — angka self-report baru
+// persis pola yang baru diperbaiki di checklist_pct/verdict (Session 343), sengaja
+// dihindari supaya tidak menambah lapisan angka yang butuh kalibrasi baru.
+function _isStructureOpposingBias(technical) {
+  return !!(technical && technical.struktur_vs_bias === 'berlawanan');
+}
+
+function _deriveAatasVerdict({ checklistPct, conflict, gateRiskPass, hasTechnical, structureOpposing }) {
   if (gateRiskPass === false) return 'NO TRADE';
   // Call 2 tidak pernah menghasilkan penilaian teknikal (Gate 1 gagal -> short-circuit,
   // Call 2 gagal total, atau jawabannya tidak bisa diparse) -> tidak ada dasar untuk
   // verdict apa pun selain NO TRADE, terlepas dari checklist_pct (yang bisa saja null
   // ATAU sudah di-cap <=45 dari skor Call 1 di jalur short-circuit gate 1).
   if (!hasTechnical) return 'NO TRADE';
+  // Struktur dominan JELAS berlawanan dengan bias terkunci — sebelumnya cuma imbauan
+  // teks (kasus nyata: AUDNZD=X:1788182128048, technical.fib_reason sendiri menulis
+  // "struktur H4 masih bullish... tapi entry di resistance karena bias bearish" dan
+  // tetap keluar setup 78%). Sekarang ditegakkan kode, sama pola gate_risk_management.
+  if (structureOpposing) return 'NO TRADE';
   if (!Number.isFinite(checklistPct)) return null;
   if (checklistPct < 50) return 'NO TRADE';
   if (conflict === 'arah') return 'KONFLIK-REVIEW';
@@ -5416,6 +5434,7 @@ function _buildAatasTechnicalChecklistBlock({ isXau, lockedBias }) {
   L.push('STEP 4 STRUKTUR TEKNIKAL (bobot tinggi): arah teknikal WAJIB sejalan dengan bias terkunci; ada Break of Structure (BOS)/shift; market tidak dalam ranging sempit; ada area jelas (supply-demand / cluster S/R). Konteks likuiditas (equal highs/lows, stop hunt/sweep) boleh disebut sebagai sinyal TAMBAHAN dengan bobot LEBIH RENDAH dari BOS/S-R — jangan pernah menjadikannya satu-satunya alasan entry.');
   if (isXau) L.push('- Tambahan XAU/USD: option expiry/volume sebagai lapis konfirmasi, dan sentimen options CME (kalau ada di atas) sebagai pemanis konfirmasi — TIDAK PERNAH jadi penentu sendiri.');
   L.push('- Kalau struktur teknikal jelas BERLAWANAN dengan bias terkunci, atau pasar ranging sempit: JANGAN membalik bias dan JANGAN memaksakan setup. Set entry_zone/sl/tp null, verdict "NO TRADE", dan jelaskan kondisi yang ditunggu di trigger.');
+  L.push('- WAJIB isi technical.struktur_vs_bias, salah satu PERSIS: "selaras" (struktur jelas mendukung arah bias), "netral" (struktur tidak jelas mendukung ATAU melawan), "campur" (ada elemen mendukung DAN melawan sekaligus, timeframe/sinyal tidak sepakat), "berlawanan" (struktur dominan JELAS menunjuk arah kebalikan dari bias — bukan cuma satu pullback/retracement minor). HANYA pilih "berlawanan" kalau kamu sendiri akan menulis verdict NO TRADE karena ini — kode akan menegakkan ulang isian ini, JANGAN pilih "berlawanan" lalu tetap memaksakan setup, dan JANGAN pilih label lain padahal strukturnya jelas berlawanan.');
   L.push('');
   L.push('STEP 5 ENTRY LOCATION + TRIGGER: entry HANYA di area valid (pullback/retest/liquidity sweep), bukan di tengah impuls. Fibonacci dipakai sebagai ZONA 0,382-0,618, bukan titik tunggal 0,618: tren KUAT (BOS bermomentum kuat) berarti retracement dangkal, condong ke 0,382; tren LEMAH/ranging berarti retracement dalam, condong ke 0,618; kalau kekuatan tren AMBIGU, pakai titik tengah zona (~0,5). Wajib ada konfirmasi candle di trigger.');
   L.push('');
@@ -5479,6 +5498,7 @@ function _normalizeAatasFields(structured) {
   const gateRiskManagement = gate(structured.gate_risk_management);
   const conflict = typeof structured.conflict === 'string' ? structured.conflict.toLowerCase().trim() : null;
   const technical = obj(structured.technical);
+  const structureOpposing = _isStructureOpposingBias(technical);
   return {
     regime_check: obj(structured.regime_check),
     gate_validitas_driver: gate(structured.gate_validitas_driver),
@@ -5488,9 +5508,13 @@ function _normalizeAatasFields(structured) {
     final_validation: obj(structured.final_validation),
     checklist_pct: checklistPct,
     verdict: _deriveAatasVerdict({
-      checklistPct, conflict, hasTechnical: !!technical,
+      checklistPct, conflict, hasTechnical: !!technical, structureOpposing,
       gateRiskPass: gateRiskManagement ? gateRiskManagement.pass : null,
     }),
+    // Diekspos terpisah (bukan cuma dibaca dari technical.struktur_vs_bias di caller)
+    // supaya _aatasRejectReason dapat sinyal yang SAMA PERSIS dipakai verdict — satu
+    // sumber kebenaran, tidak ada risiko caller menghitung ulang dengan logika beda.
+    _structureOpposing: structureOpposing,
     reasoning_note: str(structured.reasoning_note),
   };
 }
@@ -5652,11 +5676,14 @@ function _splitJsonCommentary(rawText) {
 // yang lapor gagal". Bedanya penting: satu mengukur ketatnya aturan baru, satunya
 // mengukur kejujuran model — kalau dilebur jadi satu label, data itu hilang dan
 // pertanyaan "apakah gate ini kelewat ketat?" tidak bisa dijawab dari log nanti.
-function _aatasRejectReason({ gate_validitas_driver, gate_risk_management, verdict, goldBlocked, gate1Override }) {
+function _aatasRejectReason({ gate_validitas_driver, gate_risk_management, verdict, goldBlocked, gate1Override, structureOpposing }) {
   if (goldBlocked) return 'gold_regime_split_corr_anomali';
   if (gate1Override) return `gate_validitas_driver_kode:${gate1Override}`;
   if (gate_validitas_driver && gate_validitas_driver.pass === false) return 'gate_validitas_driver';
   if (gate_risk_management && gate_risk_management.pass === false) return 'gate_risk_management';
+  // (2026-09-02) technical.struktur_vs_bias === 'berlawanan' — sebelumnya cuma imbauan
+  // teks Step 4, sekarang gate keras (ditegakkan kode, pola sama gate_risk_management).
+  if (structureOpposing) return 'gate_struktur_melawan_bias';
   if (verdict === 'NO TRADE') return 'verdict_no_trade';
   return null;
 }
@@ -5879,7 +5906,7 @@ async function _runAatasTwoCall({
     '- invalidation_condition: kondisi spesifik yang membatalkan skenario ini sepenuhnya (beda dari sl — ini soal struktur/tesis).',
     '- invalidation_trigger: versi TERSTRUKTUR dari invalidation_condition supaya KODE bisa mendeteksinya otomatis — {"type":"ma_break"|"price_level"|"swing_break","level":<satu angka>,"timeframe":"1h"|"4h"|"1d","direction":"above"|"below"}. "level" WAJIB satu angka konkret yang ADA di data di atas, "direction" = arah CLOSE candle yang membatalkan skenario. Kalau tidak bisa diringkas jadi satu level tunggal, set null — JANGAN mengarang angka.' + (invalidationTail || ''),
     '- time_horizon_days: estimasi jumlah hari realistis skenario ini main out (angka, misal 3, 5, 10) berdasarkan jarak entry-tp dibanding rata-rata gerak harian (ATR/sigma) di data.',
-    '- technical: hasil Step 4-5 — {"score_pct":0-100,"bos":"ada|lemah|tidak ada","area":"level/zona yang dipakai + angkanya","fib_zone":"angka level fib yang dipakai","fib_reason":"kenapa dangkal (~0,382) / dalam (~0,618) / tengah (~0,5), dikaitkan ke kekuatan BOS","liquidity_context":"..." atau null,"ranging":true/false}. liquidity_context bobotnya LEBIH RENDAH dari BOS/S-R.',
+    '- technical: hasil Step 4-5 — {"score_pct":0-100,"bos":"ada|lemah|tidak ada","area":"level/zona yang dipakai + angkanya","fib_zone":"angka level fib yang dipakai","fib_reason":"kenapa dangkal (~0,382) / dalam (~0,618) / tengah (~0,5), dikaitkan ke kekuatan BOS","liquidity_context":"..." atau null,"ranging":true/false,"struktur_vs_bias":"selaras|netral|campur|berlawanan"}. liquidity_context bobotnya LEBIH RENDAH dari BOS/S-R. struktur_vs_bias: lihat definisi & syarat di STEP 4 di atas — kode akan menegakkan ulang ("berlawanan" WAJIB berakibat NO TRADE, kamu tidak bisa memaksakan setup sambil menulis label ini).',
     '- gate_risk_management: hasil GATE Step 6 — {"pass":true/false,"note":"sebut RR aktual dan dasar struktural SL"}. false kalau RR di bawah 1:2 atau SL tidak berpijak struktur. Risiko per entry selalu flat 2%, jangan pernah mengusulkan mengecilkan size.',
     '- JANGAN isi final_validation atau verdict — dua-duanya dihitung server, bukan kamu (lihat instruksi Step 8 di atas).',
     '- conflict: "waktu" kalau ada event high-impact relevan yang jatuh sebelum skenario selesai (termasuk event <6 jam yang bikin entry ditunda) — ini yang paling sering terjadi dan WAJIB dilaporkan jujur. "arah" HANYA kalau kamu tetap mengeluarkan setup padahal struktur berlawanan dengan bias terkunci (seharusnya tidak pernah terjadi — kalau terjadi, laporkan apa adanya, jangan disamarkan jadi "none"). "none" kalau tidak ada keduanya.',
@@ -7067,14 +7094,20 @@ async function ohlcvAnalyzeHandler(req, res) {
             unanimous: goldUnanimous,
             corrAnomaly: goldCorrLive ? goldCorrLive.anomaly : null,
           });
+          const structureOpposing = !!structured._structureOpposing;
+          delete structured._structureOpposing; // internal-only, jangan bocor ke response/log
           const rejectReason = _aatasRejectReason({
             gate_validitas_driver: structured.gate_validitas_driver,
             gate_risk_management: structured.gate_risk_management,
             verdict: structured.verdict,
             goldBlocked,
             gate1Override: aatasGate1 ? aatasGate1.override_reason : null,
+            structureOpposing,
           });
           structured.aatas_reject_reason = rejectReason;
+          if (!isDiagnosticOnly && structureOpposing) {
+            redisCmd('INCR', 'auto_guard_stats:gate_struktur_melawan_bias').catch(() => {});
+          }
           // Observabilitas v2 (poin 11 plan): berapa kali KODE — bukan laporan AI —
           // yang menggagalkan Step 1-2. Tanpa angka ini, pertanyaan "apakah gate baru
           // ini kelewat ketat/longgar?" cuma bisa dijawab dengan tebakan. Pola sama
@@ -8372,6 +8405,7 @@ module.exports._splitJsonCommentary = _splitJsonCommentary;
 module.exports._normalizeAatasFields = _normalizeAatasFields;
 module.exports._aatasRejectReason = _aatasRejectReason;
 module.exports._deriveAatasVerdict = _deriveAatasVerdict;
+module.exports._isStructureOpposingBias = _isStructureOpposingBias;
 module.exports.AATAS_STEP8_UNAVAILABLE = AATAS_STEP8_UNAVAILABLE;
 module.exports._formatAatasCriticLine = _formatAatasCriticLine;
 module.exports.AATAS_PROMPT_VERSION = AATAS_PROMPT_VERSION;

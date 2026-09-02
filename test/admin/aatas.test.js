@@ -27,6 +27,7 @@ const {
   _buildAatasMacroChecklistBlock, _buildAatasTechnicalChecklistBlock, _stripIndicatorLines,
   _evaluateAatasGate1, _detectAatasDirectionMismatch, _splitJsonCommentary,
   _normalizeAatasFields, _aatasRejectReason, _deriveAatasVerdict, AATAS_STEP8_UNAVAILABLE,
+  _isStructureOpposingBias,
   _goldYieldCorrAnomaly, _formatAatasCriticLine, _statsPayloadFromLog, AATAS_PROMPT_VERSION,
 } = loadHandler();
 
@@ -501,6 +502,40 @@ test('_deriveAatasVerdict: checklist_pct hilang tapi technical ADA -> null (buka
   assert.equal(_deriveAatasVerdict({ checklistPct: null, conflict: 'none', hasTechnical: true, gateRiskPass: true }), null);
 });
 
+// (2026-09-02) Gate baru: technical.struktur_vs_bias
+// enum 4-state ("selaras"/"netral"/"campur"/"berlawanan") — gate keras HANYA untuk
+// "berlawanan". Sebelumnya cuma imbauan teks Step 4, kasus nyata AUDNZD=X:1788182128048
+// (technical.fib_reason sendiri: "struktur H4 masih bullish... tapi entry di resistance
+// karena bias bearish") tetap keluar setup 78% walau strukturnya diakui berlawanan.
+
+test('_isStructureOpposingBias: HANYA "berlawanan" yang dianggap opposing, bukan "campur"/"netral"/"selaras"', () => {
+  assert.equal(_isStructureOpposingBias({ struktur_vs_bias: 'berlawanan' }), true);
+  assert.equal(_isStructureOpposingBias({ struktur_vs_bias: 'campur' }), false, 'campur SENGAJA lolos -- konservatif, hindari salah tembak struktur ambigu');
+  assert.equal(_isStructureOpposingBias({ struktur_vs_bias: 'netral' }), false);
+  assert.equal(_isStructureOpposingBias({ struktur_vs_bias: 'selaras' }), false);
+  assert.equal(_isStructureOpposingBias(null), false);
+  assert.equal(_isStructureOpposingBias({}), false, 'field tidak diisi -> tidak dianggap opposing (fail-open)');
+  assert.equal(_isStructureOpposingBias({ struktur_vs_bias: 'BERLAWANAN' }), false, 'match persis, tidak case-insensitive -- AI diinstruksikan pakai lowercase persis');
+});
+
+test('_deriveAatasVerdict: structureOpposing -> NO TRADE terlepas dari skor', () => {
+  assert.equal(_deriveAatasVerdict({ checklistPct: 95, conflict: 'none', hasTechnical: true, gateRiskPass: true, structureOpposing: true }), 'NO TRADE');
+});
+
+test('regresi live AUDNZD=X:1788182128048: technical.struktur_vs_bias="berlawanan" -> _normalizeAatasFields menurunkan verdict NO TRADE, bukan lolos 78%', () => {
+  const out = _normalizeAatasFields({
+    checklist_pct: 78,
+    conflict: 'none',
+    gate_risk_management: { pass: true, note: 'RR 1:2, SL sah secara struktur' },
+    technical: {
+      score_pct: 78, bos: 'lemah',
+      fib_reason: 'BOS lemah karena struktur H4 masih bullish (HH+HL)... tapi entry di resistance karena bias bearish',
+      struktur_vs_bias: 'berlawanan',
+    },
+  });
+  assert.equal(out.verdict, 'NO TRADE', 'AI mengakui struktur berlawanan -- kode WAJIB menegakkan NO TRADE, bukan meloloskan checklist_pct 78%');
+});
+
 test('AATAS_STEP8_UNAVAILABLE: nilai jujur konstan untuk final_validation (Call 2 tidak pernah menerima data COT/retail)', () => {
   assert.equal(AATAS_STEP8_UNAVAILABLE.cot, 'tidak tersedia');
   assert.equal(AATAS_STEP8_UNAVAILABLE.retail, 'tidak tersedia');
@@ -529,10 +564,11 @@ test('_normalizeAatasFields: objek per-step non-objek (string/array) dibuang jad
 
 // ── (d) GATE mengikat di kode ────────────────────────────────────────────────
 
-test('_aatasRejectReason: gold hard-stop menang duluan, lalu gate driver, gate risk, baru verdict', () => {
+test('_aatasRejectReason: gold hard-stop menang duluan, lalu gate driver, gate risk, struktur, baru verdict', () => {
   assert.equal(_aatasRejectReason({ goldBlocked: true, verdict: 'ENTRY' }), 'gold_regime_split_corr_anomali');
   assert.equal(_aatasRejectReason({ gate_validitas_driver: { pass: false }, verdict: 'ENTRY' }), 'gate_validitas_driver');
   assert.equal(_aatasRejectReason({ gate_risk_management: { pass: false }, verdict: 'ENTRY' }), 'gate_risk_management');
+  assert.equal(_aatasRejectReason({ structureOpposing: true, verdict: 'ENTRY' }), 'gate_struktur_melawan_bias');
   assert.equal(_aatasRejectReason({ verdict: 'NO TRADE' }), 'verdict_no_trade');
 });
 
@@ -862,6 +898,38 @@ test('AATAS e2e: GATE gagal (validitas driver) -> setup TIDAK pernah lahir, leve
       assert.equal(res.body.structured.sl, null);
       assert.equal(res.body.structured.tp, null);
       assert.equal(res.body.structured.aatas_reject_reason, 'gate_validitas_driver');
+      assert.equal(store.strings['setup_log_auto:v1'], undefined, 'tidak ada setup yang boleh tersimpan');
+    } finally { global.fetch = origFetch; }
+  });
+});
+
+// (2026-09-02) regresi live AUDNZD=X:1788182128048 di level e2e penuh — Call 2 BERJALAN
+// (beda dari test Gate 1 di atas yang short-circuit sebelum Call 2 sempat dipanggil),
+// tapi melaporkan struktur berlawanan bias sendiri lewat technical.struktur_vs_bias.
+test('AATAS e2e: technical.struktur_vs_bias="berlawanan" -> setup TIDAK pernah lahir walau checklist_pct tinggi', async () => {
+  await withEnv({ CRON_SECRET: 'topsecret', DEEPSEEK_API_KEY: 'k' }, async () => {
+    const berlawanan = {
+      ...AATAS_JSON,
+      technical: { ...AATAS_JSON.technical, struktur_vs_bias: 'berlawanan' },
+      checklist_pct: 78, verdict: 'SIAP TRADE', // AI tetap optimis -- kode yang wajib menahan
+    };
+    const store = baseStore();
+    const origFetch = global.fetch;
+    global.fetch = makeAnalyzeFetchStub(store, rawFrom(berlawanan));
+    try {
+      const handler = loadHandler();
+      const res = fakeRes();
+      await handler({
+        headers: { 'x-cron-secret': 'topsecret' }, method: 'GET',
+        query: { action: 'ohlcv_analyze', symbol: 'GBPUSD=X', label: 'GBP/USD', auto: '1' },
+      }, res);
+
+      assert.equal(res.statusCode, 200);
+      assert.equal(res.body.structured.entry_zone, null, 'gate keras wajib menahan walau checklist_pct/verdict laporan AI optimis');
+      assert.equal(res.body.structured.sl, null);
+      assert.equal(res.body.structured.tp, null);
+      assert.equal(res.body.structured.verdict, 'NO TRADE', 'verdict diturunkan ulang kode, bukan dipakai apa adanya dari laporan AI');
+      assert.equal(res.body.structured.aatas_reject_reason, 'gate_struktur_melawan_bias');
       assert.equal(store.strings['setup_log_auto:v1'], undefined, 'tidak ada setup yang boleh tersimpan');
     } finally { global.fetch = origFetch; }
   });
