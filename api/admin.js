@@ -743,6 +743,7 @@ const KEY_REGISTRY = [
   // considered=saved+... di atas (gate ini jalan SEBELUM kandidat sampai ke gate itu).
   { key: 'auto_guard_stats:gate1_code_override',      owner: 'api/admin.js', ttl_expected: null, note: 'AATAS v2 Gate 1: Step 1-2 digagalkan pemeriksaan KODE (bukan laporan AI) — indikator penilaian apakah aturan barunya terlalu ketat/longgar' },
   { key: 'auto_guard_stats:gate1_arah_mismatch',      owner: 'api/admin.js', ttl_expected: null, note: '[CEK ARAH DRIVER] (2026-08-31): subset gate1_code_override — driver/konfirmasi menunjuk arah BERLAWANAN dengan fundamental_bias.arah (kasus nyata AUD/NZD: bearish tapi driver bilang NZD tertekan). Dipisah supaya ketatnya aturan termuda bisa dinilai sendiri' },
+  { key: 'auto_guard_stats:gate1_skor_dua_sisi',      owner: 'api/admin.js', ttl_expected: null, note: 'Gate skema dua-sisi fundamental (2026-09-04): subset gate1_code_override — case_bullish_pct/case_bearish_pct hilang, jumlahnya bukan 100, atau sisi yang menang berlawanan dengan arah yang dideklarasikan. Dipantau supaya laju entry nol karena ketidakpatuhan skema bisa dibedakan dari nol karena kondisi pasar' },
   { key: 'auto_guard_stats:gate_struktur_melawan_bias', owner: 'api/admin.js', ttl_expected: null, note: '(2026-09-02) technical.struktur_vs_bias==="berlawanan" — sebelumnya cuma imbauan teks Step 4 (kasus nyata AUDNZD=X:1788182128048: struktur H4 bullish diakui sendiri, tapi tetap keluar setup bearish). Sekarang gate keras di kode, counter ini mengukur seberapa sering menyala' },
   { key: 'aatas_reject_log:v1',                       owner: 'api/admin.js', ttl_expected: null, note: 'List (cap 200): kandidat auto-entry AATAS yang ditolak (alasan + seluruh field checklist + reasoning_note). Key TERPISAH dari setup_log_auto:v1 supaya cap 200 sampel nyata tidak tergeser keluar' },
   // Audit 2026-08-27: arsip preventif sebelum setup_log_auto:v1 (cap 200) menggeser
@@ -5291,7 +5292,7 @@ const COT_CME_PROMPT_VERSION = 1;
 // sendiri (RSI 76.5 dipakai sebagai driver bearish XAU/USD; arah AUD/NZD dipinjam dari
 // "struktur teknikal H4" padahal `strong_vs_weak:false`) — dua-duanya lolos karena
 // larangan itu cuma imbauan teks di prompt.
-const AATAS_PROMPT_VERSION = 4;
+const AATAS_PROMPT_VERSION = 5;
 
 // (2026-09-02) `final_validation` (Step 8, COT/retail) dipaksa nilai ini untuk SEMUA
 // setup AATAS — Call 2 (yang mengisi field ini di v1/v2) tidak pernah menerima data
@@ -5474,6 +5475,7 @@ function _buildAatasMacroChecklistBlock({ label, isXau, goldCorr }) {
   L.push('');
   L.push(`STEP 2 FUNDAMENTAL BIAS (GATE, bobot tinggi): ada driver utama yang jelas; ${legA} jelas menguat atau melemah; ${legB} kebalikannya; minimal 2 konfirmasi dari kategori berbeda (data ekonomi / kebijakan moneter / geopolitik-risk sentiment); tidak ada konflik antar faktor; pair ini strong-vs-weak (bukan strong-vs-strong atau weak-vs-weak). Arah hasil step inilah bias-mu, dan itu FINAL — tahap teknikal setelah ini TIDAK BOLEH mengubahnya.`);
   L.push(`- KONVENSI ARAH (WAJIB dipatuhi persis, ini penyebab paling sering kesalahan): pair ${legA}/${legB} ditulis base/quote. "bullish" berarti ${legA} MENGUAT relatif ke ${legB} (pair naik). "bearish" berarti ${legA} MELEMAH relatif ke ${legB} — SAMA ARTINYA DENGAN ${legB} MENGUAT relatif ke ${legA} (pair turun). Sebelum menjawab, cek ulang: setiap driver/konfirmasi yang kamu tulis harus mendukung arah ini, BUKAN kebalikannya — kalau drivermu bilang "${legB} tertekan/melemah/rentan", itu argumen BULLISH (${legA} menang), bukan bearish, walau ${legB} kedengarannya "kena masalah".`);
+  L.push(`- DUA SISI KASUS (case_bullish_pct / case_bearish_pct): sebelum menyimpulkan arah, susun dulu kasus untuk KEDUA arah, lalu bagi 100 di antara keduanya sesuai kekuatan bukti — bukan sesuai seberapa yakin kamu pada kesimpulan yang sudah kamu ambil. case_bullish_pct = kekuatan kasus ${legA} menguat; case_bearish_pct = kekuatan kasus ${legB} menguat; jumlahnya WAJIB tepat 100. Kalau buktinya benar-benar berimbang, tulis apa adanya (mis. 52 dan 48) — angka mepet BUKAN kegagalan dan TIDAK membatalkan setup, itu informasi yang berguna. Yang salah adalah memaksakan angka tinggi supaya kesimpulanmu terlihat kuat: kalau kamu memberi 70 ke satu sisi, itu berarti kasus sisi lawan hanya 30 — pastikan kamu memang bersedia mengatakan itu. "arah" WAJIB sama dengan sisi yang angkanya lebih besar.`);
   L.push(`- konflik BUKAN tempat menaruh bukti pendukung sekunder — isi HANYA kalau ada faktor yang benar-benar MELAWAN arah yang kamu simpulkan di atas (mis. COT crowded posisi searah risiko squeeze, data lawas yang berlainan sinyal). Bukti yang justru MENDUKUNG arahmu (walau kekuatannya sedang/lemah) masuk konfirmasi, bukan konflik. Kalau semua bukti searah, konflik null.`);
   L.push(`- strong_vs_weak WAJIB kamu nilai sendiri, dan kode MEMERIKSA jawabannya: kalau kamu isi false, setup otomatis dibatalkan. Jangan mengisi true supaya "lolos" — isi apa adanya.`);
   L.push(`- SEBELUM menjawab strong_vs_weak, telusuri MEKANISME lintas-faktornya, jangan cuma membandingkan label bias bank sentral mentah. Dua mata uang bisa sama-sama berlabel "hawkish" tapi salah satunya relatif lebih kuat karena faktor lain: pair komoditas WAJIB dicek ke penggeraknya (CAD ke harga minyak/WTI, NOK ke minyak, AUD & NZD ke logam industri/produk susu dan selera risiko China, JPY & CHF ke arus safe haven, EUR ke differential suku bunga vs Fed) — pola yang sama seperti instruksi WTI -> ekspektasi inflasi -> real yield. Kalau angka penggeraknya ada di data di atas, sebut angkanya.`);
@@ -5693,6 +5695,65 @@ function _detectAatasDirectionMismatch({ label, arah, texts }) {
 // observability `auto_guard_stats:gate1_code_override` mengukur ketatnya ATURAN INI,
 // bukan kejujuran modelnya.
 //
+// Toleransi penjumlahan dua sisi kasus fundamental. Model menulis angka bulat; ±5
+// menampung pembulatan wajar tanpa menerima jawaban yang jelas-jelas bukan pasangan
+// komplementer (mis. 70 & 70 = 140 -> ditolak, itu justru pola yang mau ditutup).
+const AATAS_CASE_SUM_TOLERANCE = 5;
+
+// BUG DITEMUKAN & DIFIX (2026-09-04, ditunjukkan user): `fundamental_bias.score_pct`
+// selama ini angka yang TIDAK MENGUKUR APA PUN. Bukti dari 16 setup populasi AATAS:
+// AUD/NZD dapat 55/72/72/68 saat bullish DAN 70/68/62/62 saat bearish (rata-rata 66,8
+// vs 65,5 — tidak bisa dibedakan); EUR/USD dapat angka yang SAMA PERSIS (62) untuk
+// bullish maupun bearish. Sebarannya cuma 55-75, tidak pernah sekali pun di bawah 55 —
+// artinya dalam 16 setup sistem ini TIDAK PERNAH mengatakan "fundamental di sini lemah".
+//
+// Akar masalahnya ada di prompt, bukan di model: spesifikasi JSON Call 1 cuma menulis
+// `"score_pct":0-100` tanpa SATU KALIMAT PUN tentang angka itu mengukur apa, dan
+// `_evaluateAatasGate1` tidak pernah membacanya. Tak terdefinisi + tak dipakai = model
+// mengisinya sebagai keyakinan atas arah yang SUDAH dia pilih (dan struktur Step 2
+// mengunci arah lebih dulu, "itu FINAL"), jadi angkanya secara desain tidak pernah bisa
+// rendah. Logika user: kalau kasus bullish 70%, kasus bearish HARUS 30% — mustahil
+// dua-duanya 70%.
+//
+// Fix: model sekarang diminta DUA angka yang WAJIB berjumlah 100 (`case_bullish_pct` +
+// `case_bearish_pct`). `score_pct` tidak dihapus (dashboard & jalur short-circuit Gate 1
+// masih memakainya, dan entri historis masih membawanya) tapi TIDAK LAGI diambil dari
+// model — diturunkan kode dari sisi yang menang. `margin_pct` = selisihnya, ukuran
+// keyakinan yang sesungguhnya: 52 vs 48 sekarang bisa dibedakan dari 80 vs 20, sesuatu
+// yang mustahil dilakukan angka lama.
+//
+// SENGAJA TIDAK ADA GATE ATAS `margin_pct` (belum): apakah model benar-benar terkalibrasi
+// -- apakah setup margin 60 memang menang lebih sering daripada margin 10 -- BELUM
+// TERUKUR, dan memasang ambang atas angka yang belum tervalidasi persis kesalahan yang
+// sudah berulang di proyek ini. Angka ini informasional dulu; ambang menyusul kalau
+// datanya sudah bicara (rujuk aturan n>=30 untuk gerbang keputusan mesin).
+//
+// FAIL-OPEN: kalau pasangan angkanya tidak ada / bukan angka / jumlahnya di luar
+// toleransi, fb dikembalikan APA ADANYA (score_pct lama dipertahankan, margin_pct null).
+// Model lama atau jawaban cacat tidak boleh menggagalkan setup lewat jalur ini —
+// penilaian ketidakpatuhan itu urusan Gate 1, bukan normalisasi.
+function _normalizeFundamentalCase(fb) {
+  if (!fb || typeof fb !== 'object' || Array.isArray(fb)) return fb;
+  const num = v => (typeof v === 'number' || (typeof v === 'string' && String(v).trim() !== '')) ? Number(v) : NaN;
+  const bull = num(fb.case_bullish_pct);
+  const bear = num(fb.case_bearish_pct);
+  if (!Number.isFinite(bull) || !Number.isFinite(bear)) return fb;
+  if (bull < 0 || bear < 0) return fb;
+  const sum = bull + bear;
+  if (Math.abs(sum - 100) > AATAS_CASE_SUM_TOLERANCE || sum <= 0) return fb;
+  // Renormalisasi ke tepat 100 supaya dua angka tersimpan konsisten dengan definisinya —
+  // pembulatan sisi bullish, sisi bearish jadi komplemennya (tidak mungkin meleset 1).
+  const b = Math.max(0, Math.min(100, Math.round(bull / sum * 100)));
+  const r = 100 - b;
+  return {
+    ...fb,
+    case_bullish_pct: b,
+    case_bearish_pct: r,
+    score_pct: Math.max(b, r),
+    margin_pct: Math.abs(b - r),
+  };
+}
+
 // Fail-CLOSED kalau `fundamental_bias` tidak ada sama sekali — beda sengaja dari
 // fail-open v1: di v2 seluruh tugas Call 1 adalah menghasilkan objek ini, jadi
 // ketiadaannya berarti panggilan itu gagal, bukan "model tidak menilai".
@@ -5712,6 +5773,43 @@ function _evaluateAatasGate1({ fundamental_bias, aiPass, label, lockedBias }) {
   // `label` boleh tidak dikirim (pemanggil lama/test unit lain): detektornya no-op, jadi
   // ketiadaan label TIDAK PERNAH menggagalkan setup.
   const arah = (typeof fb.arah === 'string' && fb.arah.trim()) ? fb.arah : lockedBias;
+  // [CEK ARAH SKOR] Tanpa ini, dua angka baru case_bullish_pct/case_bearish_pct bisa
+  // kembali jadi hiasan: model boleh saja menulis "bullish 30 / bearish 70" lalu tetap
+  // mendeklarasikan arah bullish, dan tidak ada yang menangkapnya. Kelas SAMA dengan
+  // arah_driver_berlawanan, cuma sumbernya angka bukan teks — jadi tidak butuh heuristik
+  // sama sekali, murni perbandingan. Hanya dijalankan kalau pasangan angkanya memang
+  // sudah lolos normalisasi (margin_pct terisi) DAN arahnya bullish/bearish; netral atau
+  // angka tak ada -> tidak dinilai (fail-open, pola sama seluruh gate lain di sini).
+  // Kepatuhan skema dua-sisi ditegakkan DI SINI, bukan cuma diminta di prompt — prompt
+  // sekarang menjanjikan "kode akan menolak jawaban yang jumlahnya bukan 100", dan janji
+  // prompt yang tidak ditegakkan kode persis kelas masalah yang sedang diperbaiki (lihat
+  // _normalizeFundamentalCase). Gate ini SENGAJA memeriksa angka MENTAH-nya sendiri, BUKAN
+  // `margin_pct` (field turunan _normalizeFundamentalCase): menggantungkan gate pada efek
+  // samping fungsi lain berarti pemanggil yang lupa menormalisasi akan ditolak seolah
+  // modelnya tidak patuh. Konsisten dengan gate skema lain di fungsi ini (strong_vs_weak,
+  // konfirmasi<2) yang juga fail-closed. RISIKO yang disadari: kalau model rutin
+  // mengabaikan field baru ini, laju entry bisa jatuh ke nol — dipantau lewat
+  // auto_guard_stats:gate1_skor_dua_sisi (preseden Gate E hari pertama nol entry).
+  const numPct = v => (typeof v === 'number' || (typeof v === 'string' && String(v).trim() !== '')) ? Number(v) : NaN;
+  const bullPct = numPct(fb.case_bullish_pct), bearPct = numPct(fb.case_bearish_pct);
+  if (!Number.isFinite(bullPct) || !Number.isFinite(bearPct)) {
+    return { pass: false, override_reason: 'skor_dua_sisi_hilang' };
+  }
+  if (bullPct < 0 || bearPct < 0 || Math.abs(bullPct + bearPct - 100) > AATAS_CASE_SUM_TOLERANCE) {
+    return { pass: false, override_reason: 'skor_dua_sisi_tidak_100' };
+  }
+  // Tanpa ini dua angka baru bisa kembali jadi hiasan: model boleh menulis "bullish 30 /
+  // bearish 70" lalu tetap mendeklarasikan arah bullish dan tidak ada yang menangkapnya.
+  // Kelas SAMA dengan arah_driver_berlawanan, cuma sumbernya angka bukan teks — jadi nol
+  // heuristik, murni perbandingan. Arah netral tidak dinilai (tidak ada sisi yang "harus"
+  // menang), dan seri (50/50) juga tidak — itu keraguan yang sah, bukan kontradiksi.
+  const arahLower = String(arah).toLowerCase();
+  if (arahLower === 'bullish' || arahLower === 'bearish') {
+    if (bullPct !== bearPct
+      && ((arahLower === 'bullish' && bearPct > bullPct) || (arahLower === 'bearish' && bullPct > bearPct))) {
+      return { pass: false, override_reason: 'arah_vs_skor_berlawanan' };
+    }
+  }
   if (_detectAatasDirectionMismatch({
     label, arah,
     texts: [typeof fb.driver === 'string' ? fb.driver : '', ...konfirmasi],
@@ -5875,7 +5973,7 @@ async function _runAatasTwoCall({
     'Isi field JSON berikut:',
     '- regime_check: hasil Step 0 sebagai objek — {"regime":"risk_on|neutral|elevated|risk_off" atau null, "cb_bias":{"<LEG>":"hawkish|dovish|netral"} untuk kedua leg pair (null kalau tidak ada data), "cb_source_conflict":true/false (bias resmi bank sentral vs pembacaanmu atas data mentah berbeda), "event_wait":true/false, "event_note":"..." atau null, "gold":null untuk pair FX}. Khusus XAU/USD, "gold" WAJIB diisi {"real_yield":"bullish|bearish|netral","dxy":"bullish|bearish|netral","risk_regime":"bullish|bearish|netral"} — ketiganya dinilai dari sudut pandang EMAS (bullish = mendukung emas naik), MASING-MASING diisi sendiri-sendiri apa adanya dari data di atas (jangan mengarang angka yang tidak dikirim); kode yang menghitung berapa yang sepakat, kamu TIDAK perlu (dan JANGAN) menyimpulkan sendiri satu label ringkasan seperti "unanimous".',
     '- gate_validitas_driver: hasil GATE Step 1 — {"pass":true/false,"note":"satu kalimat, sebut driver + buktinya"}. false kalau driver tidak punya bukti nyata di data, tidak bisa diverifikasi, belum tercermin di harga, atau cuma bisa dirumuskan dengan kata "akan/harusnya/kemungkinan/biasanya".',
-    '- fundamental_bias: hasil Step 2 — {"score_pct":0-100,"arah":"bullish|bearish|netral","driver":"...","konfirmasi":["...","..."],"konflik":"..." atau null,"strong_vs_weak":true/false}. konfirmasi minimal 2 item dari kategori berbeda, masing-masing menyebut data konkret DAN mendukung arah yang sama dengan "arah" (lihat KONVENSI ARAH di atas) — bukti yang justru melawan arah masuk konflik, bukan konfirmasi.',
+    '- fundamental_bias: hasil Step 2 — {"case_bullish_pct":0-100,"case_bearish_pct":0-100,"arah":"bullish|bearish|netral","driver":"...","konfirmasi":["...","..."],"konflik":"..." atau null,"strong_vs_weak":true/false}. konfirmasi minimal 2 item dari kategori berbeda, masing-masing menyebut data konkret DAN mendukung arah yang sama dengan "arah" (lihat KONVENSI ARAH di atas) — bukti yang justru melawan arah masuk konflik, bukan konfirmasi. case_bullish_pct dan case_bearish_pct WAJIB berjumlah TEPAT 100 — dua-duanya angka bulat. Kode akan menolak jawaban yang jumlahnya bukan 100, dan menolak setup kalau sisi yang lebih besar berlawanan dengan \"arah\" yang kamu tulis.',
     '- bias: ARAH AKHIR hasil Step 0-2 — bullish/bearish/neutral/mixed, MURNI dari makro/fundamental. Pakai "neutral" kalau fundamental memang tidak punya arah, "mixed" kalau faktor-faktornya saling bertabrakan. DILARANG menyebut atau memakai RSI/MACD/SMA/EMA/pivot/struktur chart sebagai alasan di field manapun. HARUS PERSIS SAMA dengan fundamental_bias.arah — cek ulang KONVENSI ARAH sebelum memutuskan.',
     '',
     'Setelah objek JSON, di baris baru tulis PERSIS "===COMMENTARY===" lalu tulis SATU paragraf ringkas (3-5 kalimat) sebagai teks biasa: kenapa tiap step dinilai begitu, dengan angka konkret. WAJIB diisi — paragraf inilah satu-satunya jejak naratif makro untuk audit nanti.',
@@ -5898,8 +5996,13 @@ async function _runAatasTwoCall({
     return { parsed: null, commentary: null, model: r1.model, gate1: null, prompts, error: 'call1_parse_gagal' };
   }
 
-  const fb = (p1.fundamental_bias && typeof p1.fundamental_bias === 'object' && !Array.isArray(p1.fundamental_bias))
-    ? p1.fundamental_bias : null;
+  // Normalisasi dua-sisi dijalankan SEBELUM apa pun menyentuh fb (gate 1, base,
+  // checklist short-circuit, prompt Call 2) supaya seluruh hilir melihat satu bentuk
+  // yang sama — score_pct di bawah ini SUDAH angka turunan kode, bukan angka model.
+  const fb = _normalizeFundamentalCase(
+    (p1.fundamental_bias && typeof p1.fundamental_bias === 'object' && !Array.isArray(p1.fundamental_bias))
+      ? p1.fundamental_bias : null
+  );
   const aiGate1 = (p1.gate_validitas_driver && typeof p1.gate_validitas_driver === 'object')
     ? p1.gate_validitas_driver : null;
   // `lockedBias` dihitung SEBELUM gate (2026-08-31) karena [CEK ARAH DRIVER] memakainya
@@ -7202,6 +7305,16 @@ async function ohlcvAnalyzeHandler(req, res) {
             if (aatasGate1.override_reason === 'arah_driver_berlawanan') {
               redisCmd('INCR', 'auto_guard_stats:gate1_arah_mismatch').catch(() => {});
             }
+            // Counter TERPISAH untuk gate skema dua-sisi (2026-09-04). Ini SATU-SATUNYA
+            // cara tahu cepat kalau model ternyata rutin mengabaikan field baru dan laju
+            // entry jatuh ke nol karena kepatuhan skema, bukan karena kondisi pasar —
+            // tanpa angka ini, dua sebab itu tidak bisa dibedakan tanpa membaca log satu
+            // per satu (preseden Gate E hari pertama nol entry).
+            if (aatasGate1.override_reason === 'skor_dua_sisi_hilang'
+              || aatasGate1.override_reason === 'skor_dua_sisi_tidak_100'
+              || aatasGate1.override_reason === 'arah_vs_skor_berlawanan') {
+              redisCmd('INCR', 'auto_guard_stats:gate1_skor_dua_sisi').catch(() => {});
+            }
           }
           if (rejectReason && (structured.entry_zone || structured.sl || structured.tp)) {
             // Level di-null-kan = setup tidak pernah lahir (blok penulisan setup_log di
@@ -8454,6 +8567,7 @@ module.exports._sistemHakimCalibration = _sistemHakimCalibration;
 module.exports._computeCbDirServerSide = _computeCbDirServerSide;
 module.exports._detectAlignmentReasonContradiction = _detectAlignmentReasonContradiction;
 module.exports._enforceAatasRrGate = _enforceAatasRrGate;
+module.exports._normalizeFundamentalCase = _normalizeFundamentalCase;
 module.exports._summarizeLatency = _summarizeLatency;
 module.exports.SPREAD_PRICE_ESTIMATE = SPREAD_PRICE_ESTIMATE;
 module.exports.probeCalendarCache = probeCalendarCache;

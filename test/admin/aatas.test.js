@@ -28,7 +28,7 @@ const {
   _evaluateAatasGate1, _detectAatasDirectionMismatch, _splitJsonCommentary,
   _normalizeAatasFields, _aatasRejectReason, _deriveAatasVerdict, AATAS_STEP8_UNAVAILABLE,
   _isStructureOpposingBias,
-  _enforceAatasRrGate,
+  _enforceAatasRrGate, _normalizeFundamentalCase,
   _goldYieldCorrAnomaly, _countGoldRegimeAligned, _formatAatasCriticLine, _statsPayloadFromLog, AATAS_PROMPT_VERSION,
 } = loadHandler();
 
@@ -124,7 +124,7 @@ test('_evaluateAatasGate1: kasus nyata AUD/NZD — AI lapor pass:true tapi stron
   const g = _evaluateAatasGate1({
     aiPass: true,
     fundamental_bias: {
-      score_pct: 55, arah: 'bullish',
+      case_bullish_pct: 55, case_bearish_pct: 45, arah: 'bullish',
       driver: 'Struktur teknikal H4 menunjukkan bullish (HH+HL)',
       konfirmasi: ['AUD hawkish', 'NZD hawkish'],
       strong_vs_weak: false,
@@ -138,7 +138,7 @@ test('_evaluateAatasGate1: kasus nyata XAU/USD — "RSI 76.5" di driver tertangk
   const g = _evaluateAatasGate1({
     aiPass: true,
     fundamental_bias: {
-      score_pct: 70, arah: 'bearish',
+      case_bullish_pct: 30, case_bearish_pct: 70, arah: 'bearish',
       driver: 'posisi long yang ramai (RSI 76.5, skew call-skewed ekstrem)',
       konfirmasi: ['DXY menguat 0,4%', 'real yield naik 5bps'],
       strong_vs_weak: true,
@@ -187,7 +187,7 @@ test('[CEK ARAH DRIVER] kasus nyata AUD/NZD: arah bearish tapi driver bilang NZD
     aiPass: true,
     label: 'AUD/NZD',
     fundamental_bias: {
-      score_pct: 68, arah: 'bearish',
+      case_bullish_pct: 32, case_bearish_pct: 68, arah: 'bearish',
       driver: AUDNZD_DRIVER,
       konfirmasi: [AUDNZD_K1, AUDNZD_K2],
       strong_vs_weak: true,
@@ -200,7 +200,7 @@ test('[CEK ARAH DRIVER] kasus nyata AUD/NZD: arah bearish tapi driver bilang NZD
 test('[CEK ARAH DRIVER] `arah` kosong -> jatuh ke lockedBias, bukan diam-diam lolos', () => {
   const g = _evaluateAatasGate1({
     aiPass: true, label: 'AUD/NZD', lockedBias: 'bearish',
-    fundamental_bias: { driver: AUDNZD_DRIVER, konfirmasi: [AUDNZD_K1, AUDNZD_K2], strong_vs_weak: true },
+    fundamental_bias: { case_bullish_pct: 38, case_bearish_pct: 62, driver: AUDNZD_DRIVER, konfirmasi: [AUDNZD_K1, AUDNZD_K2], strong_vs_weak: true },
   });
   assert.equal(g.override_reason, 'arah_driver_berlawanan');
 });
@@ -208,7 +208,7 @@ test('[CEK ARAH DRIVER] `arah` kosong -> jatuh ke lockedBias, bukan diam-diam lo
 test('[CEK ARAH DRIVER] label tidak dikirim -> no-op (tidak boleh menggagalkan setup)', () => {
   const g = _evaluateAatasGate1({
     aiPass: true,
-    fundamental_bias: { arah: 'bearish', driver: AUDNZD_DRIVER, konfirmasi: [AUDNZD_K1, AUDNZD_K2], strong_vs_weak: true },
+    fundamental_bias: { case_bullish_pct: 38, case_bearish_pct: 62, arah: 'bearish', driver: AUDNZD_DRIVER, konfirmasi: [AUDNZD_K1, AUDNZD_K2], strong_vs_weak: true },
   });
   assert.equal(g.pass, true, 'ketiadaan label adalah kekurangan data, bukan bukti inversi arah');
 });
@@ -221,7 +221,7 @@ test('[CEK ARAH DRIVER] regresi salah-tembak: "AUD lebih kuat DARI NZD" -> NZD c
   const g = _evaluateAatasGate1({
     aiPass: true, label: 'AUD/NZD',
     fundamental_bias: {
-      score_pct: 68, arah: 'bullish',
+      case_bullish_pct: 68, case_bearish_pct: 32, arah: 'bullish',
       driver: "AUD relatif lebih kuat dari NZD karena perbaikan PMI manufaktur China (49.8 vs 49.2) dan posisi crowded short NZD yang rawan squeeze naik, sementara NZD terbebani ekspektasi kenaikan RBNZ yang sudah ter-price dan kerentanan terhadap eskalasi geopolitik.",
       konfirmasi: ["Data ekonomi: PMI manufaktur resmi China Agustus naik ke 49.8 dari 49.2, di atas konsensus 49.5, memberi dukungan marginal bagi AUD sebagai proksi China.", "Kebijakan moneter: RBNZ dipricing naik 25bps ke 2.75% dalam 37 jam, menciptakan risiko event yang menahan NZD, sementara AUD tidak memiliki event kebijakan setara dalam jendela yang sama."],
       strong_vs_weak: true,
@@ -296,7 +296,7 @@ test('[CEK ARAH DRIVER] regresi live AUDNZD=X:1788308131973 (policy_v 38) -> gat
   const g = _evaluateAatasGate1({
     aiPass: true, label: 'AUD/NZD',
     fundamental_bias: {
-      score_pct: 62, arah: 'bearish',
+      case_bullish_pct: 38, case_bearish_pct: 62, arah: 'bearish',
       driver: AUDNZD_V38_DRIVER,
       konfirmasi: [AUDNZD_V38_K1, AUDNZD_V38_K2],
       strong_vs_weak: true,
@@ -365,6 +365,7 @@ test('_evaluateAatasGate1: laporan patuh penuh -> lolos tanpa override', () => {
   const g = _evaluateAatasGate1({
     aiPass: true,
     fundamental_bias: {
+      case_bullish_pct: 30, case_bearish_pct: 70,
       driver: 'divergensi BoE-Fed, statement resmi 12 Agustus',
       konfirmasi: ['CPI UK melandai ke 2,1%', 'BoE memangkas 25bps'],
       strong_vs_weak: true,
@@ -377,6 +378,7 @@ test('_evaluateAatasGate1: kata biasa yang KEBETULAN memuat substring indikator 
   const g = _evaluateAatasGate1({
     aiPass: true,
     fundamental_bias: {
+      case_bullish_pct: 30, case_bearish_pct: 70,
       driver: 'permintaan domestik melemah (retail sales -0,3%)',
       konfirmasi: ['klaim pengangguran naik', 'PMI manufaktur di bawah 50'],
       strong_vs_weak: true,
@@ -462,6 +464,80 @@ test('_countGoldRegimeAligned: arah tidak valid atau data kosong -> null (fail-o
 // 78 (band 75-89 = "SIAP TRADE" per prompt) tersimpan dengan verdict "PERTIMBANGKAN" —
 // AI menulis skor DAN label sendiri, kadang saling tidak konsisten.
 const withTechnical = extra => ({ technical: { bos: 'ada' }, ...extra });
+
+// ── Skor fundamental dua sisi (2026-09-04) ───────────────────────────────────
+// Dipicu user: "kalau bullish 70%, gamungkin bearish juga 70%". Terbukti di data —
+// AUD/NZD dapat 55/72/72/68 saat bullish DAN 70/68/62/62 saat bearish; EUR/USD dapat
+// angka SAMA PERSIS (62) untuk dua arah berlawanan. Akarnya: score_pct tidak pernah
+// didefinisikan di prompt dan tidak pernah dibaca gate mana pun. Yang dikunci di sini:
+// dua angka wajib berjumlah 100, score_pct jadi turunan KODE, margin jadi ukuran
+// keyakinan sungguhan, dan ketidakpatuhan benar-benar ditolak (bukan cuma diminta).
+
+const AATAS_SRC_FB = require('fs').readFileSync(require('path').join(__dirname, '..', '..', 'api', 'admin.js'), 'utf8');
+const fbBase = extra => ({ strong_vs_weak: true, konfirmasi: ['a data konkret', 'b data konkret'], driver: 'd', ...extra });
+
+test('skor dua sisi: 68/32 -> score_pct turunan kode = sisi menang, margin = selisih', () => {
+  const out = _normalizeFundamentalCase({ case_bullish_pct: 68, case_bearish_pct: 32, score_pct: 99 });
+  assert.equal(out.score_pct, 68, 'score_pct diturunkan kode, angka model (99) diabaikan');
+  assert.equal(out.margin_pct, 36);
+});
+
+test('skor dua sisi: bukti berimbang tetap sah dan bisa dibedakan dari keyakinan tinggi', () => {
+  assert.equal(_normalizeFundamentalCase({ case_bullish_pct: 52, case_bearish_pct: 48 }).margin_pct, 4);
+  assert.equal(_normalizeFundamentalCase({ case_bullish_pct: 80, case_bearish_pct: 20 }).margin_pct, 60);
+});
+
+test('skor dua sisi: "70 dan 70" (pola nyata yang diadukan user) TIDAK diterima sebagai pasangan', () => {
+  const out = _normalizeFundamentalCase({ case_bullish_pct: 70, case_bearish_pct: 70 });
+  assert.equal(out.margin_pct, undefined, 'jumlah 140 bukan pasangan komplementer -> tidak dinormalisasi');
+});
+
+test('skor dua sisi: jumlah dalam toleransi direnormalisasi ke tepat 100', () => {
+  const out = _normalizeFundamentalCase({ case_bullish_pct: 66, case_bearish_pct: 36 });
+  assert.equal(out.case_bullish_pct + out.case_bearish_pct, 100);
+  assert.equal(out.case_bullish_pct, 65);
+});
+
+test('skor dua sisi: FAIL-OPEN untuk entri lama / angka cacat — fb dikembalikan apa adanya', () => {
+  const lama = { score_pct: 62, arah: 'bearish' };  // entri generasi lama: cuma punya score_pct
+  assert.equal(_normalizeFundamentalCase(lama), lama, 'entri legacy tidak disentuh');
+  assert.equal(_normalizeFundamentalCase(null), null);
+  assert.equal(_normalizeFundamentalCase({ case_bullish_pct: 'entah', case_bearish_pct: 40 }).margin_pct, undefined);
+  assert.equal(_normalizeFundamentalCase({ case_bullish_pct: -10, case_bearish_pct: 110 }).margin_pct, undefined);
+});
+
+test('Gate 1: skema dua sisi ditegakkan, bukan cuma diminta di prompt', () => {
+  const g = fb => _evaluateAatasGate1({ fundamental_bias: fb, aiPass: true, label: 'EUR/USD', lockedBias: 'bullish' });
+  assert.equal(g(fbBase({ arah: 'bullish' })).override_reason, 'skor_dua_sisi_hilang',
+    'field baru tidak diisi = tidak patuh skema, bukan "data tidak tersedia"');
+  assert.equal(g(fbBase({ arah: 'bullish', case_bullish_pct: 70, case_bearish_pct: 70 })).override_reason,
+    'skor_dua_sisi_tidak_100', 'inilah pola yang diadukan user — sekarang ditolak eksplisit');
+});
+
+test('Gate 1: arah yang dideklarasikan WAJIB sama dengan sisi yang angkanya menang', () => {
+  const fb = _normalizeFundamentalCase(fbBase({ arah: 'bullish', case_bullish_pct: 30, case_bearish_pct: 70 }));
+  const r = _evaluateAatasGate1({ fundamental_bias: fb, aiPass: true, label: 'EUR/USD', lockedBias: 'bullish' });
+  assert.equal(r.pass, false);
+  assert.equal(r.override_reason, 'arah_vs_skor_berlawanan');
+});
+
+test('Gate 1: skema dua sisi yang benar tetap LOLOS (gate ini tidak boleh memblokir setup sehat)', () => {
+  const fb = _normalizeFundamentalCase(fbBase({ arah: 'bullish', case_bullish_pct: 68, case_bearish_pct: 32 }));
+  const r = _evaluateAatasGate1({ fundamental_bias: fb, aiPass: true, label: 'EUR/USD', lockedBias: 'bullish' });
+  assert.equal(r.pass, true, 'margin kecil/besar TIDAK digate — belum terukur kalibrasinya, sengaja informasional dulu');
+  const tipis = _normalizeFundamentalCase(fbBase({ arah: 'bullish', case_bullish_pct: 51, case_bearish_pct: 49 }));
+  assert.equal(_evaluateAatasGate1({ fundamental_bias: tipis, aiPass: true, label: 'EUR/USD', lockedBias: 'bullish' }).pass,
+    true, 'margin 2 poin tetap lolos — TIDAK boleh diam-diam jadi ambang baru');
+});
+
+test('prompt Call 1: dua angka didefinisikan DAN dijanjikan ditegakkan', () => {
+  assert.match(AATAS_SRC_FB, /case_bullish_pct.*case_bearish_pct/, 'skema JSON wajib menyebut dua field');
+  assert.match(AATAS_SRC_FB, /jumlahnya WAJIB tepat 100/, 'definisi konsep wajib ada di teks STEP 2');
+  const iFb = AATAS_SRC_FB.indexOf('- fundamental_bias: hasil Step 2');
+  const barisFb = AATAS_SRC_FB.slice(iFb, AATAS_SRC_FB.indexOf(String.fromCharCode(10), iFb));
+  assert.ok(barisFb, 'baris spesifikasi fundamental_bias harus ada');
+  assert.doesNotMatch(barisFb, /"score_pct":0-100/, 'score_pct tidak boleh lagi diminta dari model di Step 2');
+});
 
 // ── Gate RR Step 6 ditegakkan KODE, bukan klaim model (2026-09-04) ───────────
 // Audit 16 setup AATAS: 12 menulis angka RR di `note` yang tidak cocok dengan level
@@ -808,7 +884,7 @@ const AATAS_JSON = {
     cb_source_conflict: false, event_wait: false, event_note: null, gold: null,
   },
   gate_validitas_driver: { pass: true, note: 'BoE dovish, statement resmi, sudah tercermin di harga' },
-  fundamental_bias: { score_pct: 80, arah: 'bearish', driver: 'divergensi BoE-Fed', konfirmasi: ['CPI UK melandai', 'BoE dovish'], konflik: null, strong_vs_weak: true },
+  fundamental_bias: { case_bullish_pct: 20, case_bearish_pct: 80, arah: 'bearish', driver: 'divergensi BoE-Fed', konfirmasi: ['CPI UK melandai', 'BoE dovish'], konflik: null, strong_vs_weak: true },
   technical: { score_pct: 70, bos: 'ada', area: '1.2800', fib_zone: '0.382', fib_reason: 'tren kuat, retracement dangkal', liquidity_context: null, ranging: false },
   gate_risk_management: { pass: true, note: 'RR 1:2, SL di atas swing H4' },
   final_validation: { cot: 'searah', retail: 'netral', efek: 'skor naik sedikit' },
@@ -1316,7 +1392,7 @@ const XAU_JSON_BASE = {
   // AATAS v2: Gate 1 ditegakkan kode, jadi fundamental_bias WAJIB patuh skema — pokok
   // bahasan test XAU di bawah adalah hard-stop gold Step 0, bukan Gate 1.
   fundamental_bias: {
-    score_pct: 78, arah: 'bullish', driver: 'real yield riil turun 8bps setelah rilis CPI',
+    case_bullish_pct: 78, case_bearish_pct: 22, arah: 'bullish', driver: 'real yield riil turun 8bps setelah rilis CPI',
     konfirmasi: ['DXY melemah 0,4%', 'ekspektasi pemangkasan Fed naik di rate path'],
     konflik: null, strong_vs_weak: true,
   },

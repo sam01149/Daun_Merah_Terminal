@@ -127,7 +127,7 @@ const { AATAS_OK_FIELDS } = require('./_aatas_fixture');
 
 const AI_JSON_CONTRADICTORY = {
   ...AATAS_OK_FIELDS,
-  fundamental_bias: { ...AATAS_OK_FIELDS.fundamental_bias, arah: 'bullish' },
+  fundamental_bias: { ...AATAS_OK_FIELDS.fundamental_bias, arah: 'bullish', case_bullish_pct: 78, case_bearish_pct: 22 },
   bias: 'bullish',
   entry_zone: '195.400-195.700', entry_basis: 'cluster S/R',
   sl: '195.100', tp: '197.827',

@@ -1107,6 +1107,12 @@ if (localStorage.getItem('dm_dev_theme') === 'light') {
         fld('Gate Validitas Driver', gateLabel(s.gate_validitas_driver)),
         fld('Gate Risk Management', gateLabel(s.gate_risk_management)),
         fld('Regime Check (Step 0)', jsonLabel(s.regime_check)),
+        // Kasus dua sisi (2026-09-04): dibaca manusia lebih dulu, JSON mentah tetap di
+        // baris bawah. `margin_pct` hanya ada di setup yang lahir setelah skema dua-sisi
+        // berlaku — entri lama diam, bukan menampilkan angka palsu.
+        fld('Kasus Dua Sisi (Step 2)', (s.fundamental_bias && Number.isFinite(Number(s.fundamental_bias.margin_pct)))
+          ? `bullish ${s.fundamental_bias.case_bullish_pct}% vs bearish ${s.fundamental_bias.case_bearish_pct}% — selisih ${s.fundamental_bias.margin_pct} poin${Number(s.fundamental_bias.margin_pct) <= 10 ? ' (bukti nyaris berimbang)' : ''}`
+          : ''),
         fld('Fundamental Bias (Step 2)', jsonLabel(s.fundamental_bias)),
         fld('Teknikal (Step 4-5)', jsonLabel(s.technical)),
         fld('Validasi Akhir (Step 8)', jsonLabel(s.final_validation)),

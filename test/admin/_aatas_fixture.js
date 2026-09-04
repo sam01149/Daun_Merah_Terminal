@@ -16,7 +16,7 @@ const AATAS_OK_FIELDS = {
   },
   gate_validitas_driver: { pass: true, note: 'driver terverifikasi dari statement resmi bank sentral' },
   fundamental_bias: {
-    score_pct: 78, arah: 'bearish',
+    case_bullish_pct: 22, case_bearish_pct: 78, arah: 'bearish',
     driver: 'divergensi kebijakan bank sentral kedua leg',
     konfirmasi: ['CPI melandai di bawah forecast', 'statement resmi condong dovish'],
     konflik: null, strong_vs_weak: true,
