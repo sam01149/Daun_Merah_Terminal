@@ -28,6 +28,7 @@ const {
   _evaluateAatasGate1, _detectAatasDirectionMismatch, _splitJsonCommentary,
   _normalizeAatasFields, _aatasRejectReason, _deriveAatasVerdict, AATAS_STEP8_UNAVAILABLE,
   _isStructureOpposingBias,
+  _enforceAatasRrGate,
   _goldYieldCorrAnomaly, _countGoldRegimeAligned, _formatAatasCriticLine, _statsPayloadFromLog, AATAS_PROMPT_VERSION,
 } = loadHandler();
 
@@ -461,6 +462,74 @@ test('_countGoldRegimeAligned: arah tidak valid atau data kosong -> null (fail-o
 // 78 (band 75-89 = "SIAP TRADE" per prompt) tersimpan dengan verdict "PERTIMBANGKAN" —
 // AI menulis skor DAN label sendiri, kadang saling tidak konsisten.
 const withTechnical = extra => ({ technical: { bos: 'ada' }, ...extra });
+
+// ── Gate RR Step 6 ditegakkan KODE, bukan klaim model (2026-09-04) ───────────
+// Audit 16 setup AATAS: 12 menulis angka RR di `note` yang tidak cocok dengan level
+// entry/sl/tp di respons yang sama, klaimnya hampir selalu mendarat 2,1-2,6 (persis di
+// atas ambang) sementara RR aktual 1,02-11,90. Dua setup ber-RR di bawah 1:2 tetap
+// pass=true lalu jadi setup hidup (AUDNZD=X:1788480927701 rr 1,24; :1788221723137 rr
+// 1,02) padahal Step 6 sendiri memerintahkan NO TRADE. Yang dikunci di sini: angka
+// kode yang menang, klaim model tetap terbawa di note, dan ketiadaan angka TIDAK
+// dipakai untuk mengarang kegagalan.
+
+test('gate RR: klaim pass=true dengan RR aktual di bawah 1:2 dipaksa gagal oleh kode', () => {
+  const out = _enforceAatasRrGate({ pass: true, note: 'RR aktual 1:2.5, SL di balik struktur B3' }, 1.24);
+  assert.equal(out.pass, false, 'RR 1,24 di bawah ambang 1:2 -> gate WAJIB gagal');
+  assert.match(out.note, /\[CEK RR KODE\]/);
+  assert.match(out.note, /1:1\.24/, 'angka hasil hitung kode wajib disebut');
+  assert.match(out.note, /RR aktual 1:2\.5/, 'klaim asli model TIDAK boleh hilang (jejak audit)');
+});
+
+test('gate RR: kasus nyata AUDNZD rr 1,02 juga tertutup', () => {
+  assert.equal(_enforceAatasRrGate({ pass: true, note: 'RR 1:2.1' }, 1.02).pass, false);
+});
+
+test('gate RR: RR memadai lolos apa adanya, objek gate TIDAK disentuh', () => {
+  const g = { pass: true, note: 'RR aktual 1:3.09' };
+  assert.equal(_enforceAatasRrGate(g, 3.09), g, 'objek asli dikembalikan, bukan salinan baru');
+  assert.equal(_enforceAatasRrGate(g, 2).pass, true, 'persis 1:2 = ambang minimal, LOLOS');
+  assert.equal(_enforceAatasRrGate(g, 1.995).pass, true, 'toleransi pembulatan 2 desimal, bukan pelonggaran');
+  assert.equal(_enforceAatasRrGate(g, 1.98).pass, false, 'di luar toleransi -> tetap gagal');
+});
+
+test('gate RR: FAIL-OPEN kalau rr tidak diketahui — jangan mengarang kegagalan dari ketiadaan data', () => {
+  const g = { pass: true, note: 'apa pun' };
+  for (const rr of [null, undefined, NaN, 'entah']) {
+    assert.equal(_enforceAatasRrGate(g, rr), g, `rr=${String(rr)} -> gate dikembalikan apa adanya`);
+  }
+});
+
+test('gate RR: gate yang sudah gagal / tidak ada TIDAK diubah', () => {
+  const gagal = { pass: false, note: 'SL tidak berpijak struktur' };
+  assert.equal(_enforceAatasRrGate(gagal, 5), gagal);
+  assert.equal(_enforceAatasRrGate({ pass: null, note: null }, 1.1).pass, null, 'pass null = tidak dinilai, bukan lulus');
+  assert.equal(_enforceAatasRrGate(null, 1.1), null);
+});
+
+test('gate RR: menembus sampai verdict & reject reason lewat _normalizeAatasFields', () => {
+  const out = _normalizeAatasFields(withTechnical({
+    checklist_pct: 78,
+    risk_reward: 1.24,
+    gate_risk_management: { pass: true, note: 'RR aktual 1:2.5' },
+  }));
+  assert.equal(out.gate_risk_management.pass, false);
+  assert.equal(out.verdict, 'NO TRADE', 'checklist 78 tidak lagi cukup kalau RR aktual di bawah 1:2');
+  assert.equal(_aatasRejectReason({
+    gate_validitas_driver: { pass: true },
+    gate_risk_management: out.gate_risk_management,
+    verdict: out.verdict,
+  }), 'gate_risk_management', 'setup batal lahir lewat jalur reject yang sudah ada');
+});
+
+test('gate RR: setup ber-RR sehat tetap lolos utuh lewat _normalizeAatasFields', () => {
+  const out = _normalizeAatasFields(withTechnical({
+    checklist_pct: 78,
+    risk_reward: 3.16,
+    gate_risk_management: { pass: true, note: 'RR aktual 1:2.5' },
+  }));
+  assert.equal(out.gate_risk_management.pass, true);
+  assert.equal(out.verdict, 'SIAP TRADE');
+});
 
 test('_normalizeAatasFields: checklist_pct dibulatkan & di-clamp (perilaku lama, tidak berubah)', () => {
   const out = _normalizeAatasFields(withTechnical({

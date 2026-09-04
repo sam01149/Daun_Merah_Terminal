@@ -5328,6 +5328,51 @@ function _isStructureOpposingBias(technical) {
   return !!(technical && technical.struktur_vs_bias === 'berlawanan');
 }
 
+// Ambang RR minimal AATAS Step 6. Angkanya BUKAN angka baru: prompt Step 6 sudah lama
+// menulis "RR minimal 1:2 (ideal 1:3 ke atas) ... Kalau RR di bawah 1:2 ... 
+// gate_risk_management.pass=false dan TIDAK ADA setup" — yang belum ada cuma
+// penegakannya.
+const AATAS_MIN_RR = 2;
+
+// BUG DITEMUKAN & DIFIX (2026-09-04, audit setup harian atas permintaan user):
+// `gate_risk_management` adalah SATU-SATUNYA gate AATAS yang masih 100% laporan bebas
+// AI — `pass` dipercaya apa adanya, `note` tidak pernah diadu dengan level yang model
+// itu sendiri kirim. Audit 16 setup populasi AATAS (policy_v>=31): 12 di antaranya
+// menulis angka RR di `note` yang TIDAK cocok dengan entry/sl/tp di respons yang SAMA
+// (9 dari 12 level-nya tidak pernah di-refine, jadi bukan efek perubahan level
+// belakangan), dan klaimnya nyaris selalu mendarat di 2,1-2,6 — persis di atas ambang —
+// sementara RR aktual berkisar 1,02 sampai 11,90. Pola itu bukan salah hitung acak,
+// melainkan "menulis angka yang lolos". Akibat nyatanya: dua setup dengan RR aktual DI
+// BAWAH 1:2 (AUDNZD=X:1788480927701 rr 1,24 dan AUDNZD=X:1788221723137 rr 1,02) tetap
+// pass=true lalu jadi setup hidup, padahal aturan sistem sendiri memerintahkan NO TRADE.
+//
+// Kode SUDAH memegang angka yang benar sejak dulu: `structured.risk_reward` dihitung
+// dari level FINAL di sanity-check RR (cari "RR check (only meaningful once direction"),
+// setelah snap ke [KANDIDAT SL/TP]. Sekarang angka itu yang memutuskan; klaim model
+// disimpan utuh di dalam note supaya jejak auditnya tidak hilang (prinsip sama seperti
+// [CEK KONTRADIKSI]: koreksi ditandai, teks asli tetap dibawa).
+//
+// Pola & alasan SAMA dengan POLICY_EPOCHS v40 poin (3) dan (4) — `verdict` dan
+// `final_validation` sudah lebih dulu dicabut dari laporan bebas AI ke perhitungan kode.
+// Efeknya otomatis merambat tanpa cabang baru: pass=false -> _deriveAatasVerdict
+// mengembalikan 'NO TRADE' -> _aatasRejectReason mengembalikan 'gate_risk_management'
+// -> level di-null-kan -> setup tidak pernah lahir.
+//
+// FAIL-OPEN kalau `rr` bukan angka (level sudah di-drop sanity-check, atau memang bukan
+// setup): gate dikembalikan APA ADANYA, jangan mengarang kegagalan dari ketiadaan data —
+// pola sama _goldYieldCorrAnomaly (null = TIDAK DIKETAHUI, bukan "aman").
+function _enforceAatasRrGate(gateRisk, rr) {
+  if (!gateRisk || gateRisk.pass !== true) return gateRisk;
+  if (!Number.isFinite(rr)) return gateRisk;
+  // `rr` sudah dibulatkan 2 desimal di sanity-check — toleransi kecil supaya RR yang
+  // memang persis 1:2 tidak gugur gara-gara pembulatan, bukan pelonggaran ambang.
+  if (rr >= AATAS_MIN_RR - 0.005) return gateRisk;
+  return {
+    pass: false,
+    note: `[CEK RR KODE] RR aktual dari level yang dikirim model = 1:${rr.toFixed(2)}, di bawah ambang Step 6 (1:${AATAS_MIN_RR}) — gate dipaksa gagal oleh kode, bukan oleh laporan model. Catatan asli model: ${gateRisk.note || '(kosong)'}`,
+  };
+}
+
 function _deriveAatasVerdict({ checklistPct, conflict, gateRiskPass, hasTechnical, structureOpposing }) {
   if (gateRiskPass === false) return 'NO TRADE';
   // Call 2 tidak pernah menghasilkan penilaian teknikal (Gate 1 gagal -> short-circuit,
@@ -5515,7 +5560,11 @@ function _normalizeAatasFields(structured) {
     ? Number(pctIn)
     : NaN;
   const checklistPct = Number.isFinite(pctRaw) ? Math.max(0, Math.min(100, Math.round(pctRaw))) : null;
-  const gateRiskManagement = gate(structured.gate_risk_management);
+  // Klaim gate risk model diadu dengan RR yang DIHITUNG KODE dari level final — lihat
+  // _enforceAatasRrGate. `structured.risk_reward` sudah terisi di titik ini: seluruh
+  // sanity-check level berjalan sebelum _normalizeAatasFields dipanggil (lihat komentar
+  // "Dijalankan SETELAH seluruh sanity-check level" di pemanggilnya).
+  const gateRiskManagement = _enforceAatasRrGate(gate(structured.gate_risk_management), structured.risk_reward);
   const conflict = typeof structured.conflict === 'string' ? structured.conflict.toLowerCase().trim() : null;
   const technical = obj(structured.technical);
   const structureOpposing = _isStructureOpposingBias(technical);
@@ -8404,6 +8453,7 @@ module.exports._confidenceCalibration = _confidenceCalibration;
 module.exports._sistemHakimCalibration = _sistemHakimCalibration;
 module.exports._computeCbDirServerSide = _computeCbDirServerSide;
 module.exports._detectAlignmentReasonContradiction = _detectAlignmentReasonContradiction;
+module.exports._enforceAatasRrGate = _enforceAatasRrGate;
 module.exports._summarizeLatency = _summarizeLatency;
 module.exports.SPREAD_PRICE_ESTIMATE = SPREAD_PRICE_ESTIMATE;
 module.exports.probeCalendarCache = probeCalendarCache;
