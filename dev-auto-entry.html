@@ -860,14 +860,29 @@ if (localStorage.getItem('dm_dev_theme') === 'light') {
   // POLICY_EPOCHS di api/_auto_entry_guard.js) — dipakai menerjemahkan angka versi jadi
   // kalimat yang bisa dibaca di panel detail setup.
   let POLICY_EPOCHS = [];
+  // Label POLICY_EPOCHS ditulis untuk changelog kode (audit lengkap, bisa ratusan
+  // kata) — bukan untuk muat di satu baris ringkasan dashboard. Dipotong di SINI
+  // (tampilan saja, sumber di api/_auto_entry_guard.js TIDAK disentuh) supaya
+  // "Ringkasan Eksekutif" tidak tenggelam jadi satu dinding teks (2026-09-04,
+  // ketahuan dari label v43 1734 karakter). Potong di batas kalimat/spasi
+  // terdekat sebelum limit, bukan di tengah kata.
+  const POLICY_LABEL_DISPLAY_LIMIT = 220;
+  function truncateLabel(text, limit){
+    if (!text || text.length <= limit) return text || '';
+    const cut = text.slice(0, limit);
+    const lastSpace = cut.lastIndexOf(' ');
+    return (lastSpace > limit * 0.6 ? cut.slice(0, lastSpace) : cut) + '…';
+  }
   function policyLabel(s){
     const recorded = s.policy_v != null;
     const v = recorded ? s.policy_v : s.policy_v_est;
-    if (v == null) return '';
+    if (v == null) return { short: '', full: '' };
     const ep = POLICY_EPOCHS.find(e => e.v === v);
     const asal = recorded ? 'direkam saat setup dibuat' : 'perkiraan dari waktu setup, bukan data asli';
     const sifat = ep ? ({ fix: 'perbaikan bug', policy: 'perubahan strategi', mixed: 'campuran fix+strategi' })[ep.kind] || ep.kind : null;
-    return `v${v} — ${ep ? ep.label : 'keterangan versi tidak tersedia'}${sifat ? ` (${sifat})` : ''} [${asal}]`;
+    const labelFull = ep ? ep.label : 'keterangan versi tidak tersedia';
+    const suffix = `${sifat ? ` (${sifat})` : ''} [${asal}]`;
+    return { short: `v${v} — ${truncateLabel(labelFull, POLICY_LABEL_DISPLAY_LIMIT)}${suffix}`, full: `v${v} — ${labelFull}${suffix}` };
   }
   function populateSymbolFilter(recent){
     const known = ACTIVE_FILTER_PAIRS;
@@ -926,9 +941,13 @@ if (localStorage.getItem('dm_dev_theme') === 'light') {
   // catatan konflik, tag Sistem Hakim) — sudah ada di payload setup_stats?scope=auto,
   // hanya belum pernah dirender di tabel ini. Baris klik-untuk-expand di bawah supaya
   // pertanyaan "kenapa AI ambil entry ini" bisa dijawab langsung dari dashboard.
-  function fld(label, value){
+  function fld(label, value, fullValue){
     if (value == null || value === '') return '';
-    return `<div class="row"><span>${esc(label)}</span><b>${esc(value)}</b></div>`;
+    // title= native browser tooltip: berguna kalau `value` dipotong untuk tampilan
+    // (mis. policyLabel yang sengaja dipangkas 2026-09-04) — teks LENGKAP (`fullValue`,
+    // fallback ke `value` kalau caller tidak punya versi panjang terpisah) tetap bisa
+    // dibaca dengan hover, tanpa mekanisme expand/collapse baru.
+    return `<div class="row"><span>${esc(label)}</span><b title="${esc(fullValue != null ? fullValue : value)}">${esc(value)}</b></div>`;
   }
   // Narasi panjang (2026-08-10, audit CHF/JPY: "kenapa bias tetap bullish walau makro
   // konflik" jawabannya ADA di commentary AI, tapi field ini sebelumnya tidak pernah
@@ -1136,7 +1155,7 @@ if (localStorage.getItem('dm_dev_theme') === 'light') {
         fld('Risk/Reward', s.rr),
         fld('Horizon (hari)', s.horizon_days),
         fld('Model', s.model),
-        fld('Versi Kebijakan', policyLabel(s)),
+        (() => { const pl = policyLabel(s); return fld('Versi Kebijakan', pl.short, pl.full); })(),
       ]),
       fldGroup('Label Hasil', [
         fld('Loss Label', s.status === 'sl' ? (s.loss_label || 'teknikal (default: murni teknikal, tidak ada berita ±2j)') : s.loss_label),
