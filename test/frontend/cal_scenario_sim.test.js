@@ -29,7 +29,10 @@ function grab(startMarker, endMarker) {
 const src = [
   // stub data global yang direferensikan scenarioConfluence — bisa dimutasi via set()
   'var cbData = null, fundData = null, cotData = null, retailData = null, corrData = null;',
-  'function scoreInd() { return null; }',
+  // scoreInd + bobot kepentingan/umur ASLI (bukan stub) — scenarioFundScore sejak
+  // 2026-09-05 pakai formula tertimbang yang sama dengan tab FUNDAMENTAL, jadi harus
+  // diuji dengan implementasi nyata, bukan stub null yang menyembunyikan regresi bobot.
+  grab('const FUND_CUR_ORDER', '\nasync function fetchFundamental'),
   grab('const CAL_INVERSE_INDICATOR_RE', '\nfunction compareActualForecast'),
   grab('function decodeHtmlEntities(s)', 'function escHtml(s)'),
   grab('function escHtml(s)', '\n// ── ANALISA'),
@@ -45,7 +48,7 @@ const src = [
 const api = new Function(src + `
   return {
     CAL_INVERSE_INDICATOR_RE, escHtml, escJs,
-    scenarioRenderResults, scenarioConfluence, scenarioVerdictBadge,
+    scenarioRenderResults, scenarioConfluence, scenarioVerdictBadge, scenarioFundScore,
     set: p => {
       if ('cbData'     in p) cbData     = p.cbData;
       if ('fundData'   in p) fundData   = p.fundData;
@@ -151,6 +154,25 @@ test('makro: hasil simulasi MISS ikut mengurangi skor fundamental eventCur sendi
   const rows = c.rows.join('');
   assert.ok(rows.includes('CAD 0% Bear'), 'satu-satunya indikator (simulasi ini) harus bear 0%');
   assert.ok(rows.includes('fundamental CAD lemah menopang skenario'));
+});
+
+test('makro: scenarioFundScore pakai bobot kepentingan+umur sama seperti tab FUNDAMENTAL, bukan hitungan mentah', () => {
+  const today = new Date().toISOString().slice(0, 10);
+  api.set({
+    cbData: null, cotData: null, corrData: null, retailData: null,
+    fundData: {
+      CAD: {
+        // importance 2 (indikator inti), bullish — naik dari 0.5 ke 1.0
+        'GDP QoQ':        { actual: '1.0%', previous: '0.5%', date: today },
+        // importance 0.5 (indikator minor), bearish — turun dari 10 ke 5
+        'Housing Starts': { actual: '5%',   previous: '10%',  date: today },
+      },
+    },
+  });
+  const score = api.scenarioFundScore('CAD');
+  // Tertimbang: bullW = 2 (GDP QoQ), totW = 2 + 0.5 (Housing Starts) = 2.5 -> 80%.
+  // Hitungan mentah lama (bug): 1 bull / 2 scored -> 50% — GDP & Housing dianggap setara.
+  assert.strictEqual(score, 80, 'GDP QoQ (bobot 2) harus mendominasi Housing Starts (bobot 0.5), bukan dihitung setara seperti hitungan mentah lama');
 });
 
 test('makro: event rate decision TIDAK ikut menambah skor (sudah diwakili Bias CB)', () => {

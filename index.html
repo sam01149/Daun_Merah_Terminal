@@ -11134,14 +11134,26 @@ const CAL_RATE_DECISION_RE = /interest rate decision/i;
 function scenarioFundScore(cur, simDirection) {
   if (!fundData || !fundData[cur]) return null;
   const rateKey = SCEN_FUND_RATE_KEYS[cur];
-  let bull = 0, scored = 0;
+  // Tertimbang (2026-09-05): dulu hitungan mentah (tiap indikator bobot sama),
+  // beda dari skor yang ditampilkan tab FUNDAMENTAL (bullW/totW × fundIndImportance
+  // × fundRecencyWeight sejak 2026-07-19) — dua angka "kekuatan fundamental" yang
+  // sama-sama diklaim, beda metodologi. Disamakan supaya baris "Makro:" di sini
+  // konsisten dengan skor yang user lihat di tab FUNDAMENTAL untuk currency yang sama.
+  let bullW = 0, totW = 0;
   Object.entries(fundData[cur]).forEach(([k, v]) => {
     if (k === rateKey) return;
     const s = scoreInd(k, v.actual, v.previous);
-    if (s !== null) { scored++; if (s > 0) bull++; }
+    if (s !== null) {
+      const w = fundIndImportance(k) * fundRecencyWeight(fundAgeDays(v.date));
+      totW += w;
+      if (s > 0) bullW += w;
+    }
   });
-  if (simDirection) { scored++; if (simDirection === 'beat') bull++; }
-  return scored > 0 ? Math.round(bull / scored * 100) : null;
+  // Event simulasi sendiri: bobot 1 (setara indikator biasa, bukan tier GDP/CPI/NFP)
+  // — tidak ada pemetaan andal judul event kalender ke FUND_SCORE_RULES buat tahu
+  // importance-nya, jadi default aman daripada menebak bobot 2.
+  if (simDirection) { totW += 1; if (simDirection === 'beat') bullW += 1; }
+  return totW > 0 ? Math.round(bullW / totW * 100) : null;
 }
 
 function scenarioConfluence(pairName, pairDir, eventCur, direction, eventName) {

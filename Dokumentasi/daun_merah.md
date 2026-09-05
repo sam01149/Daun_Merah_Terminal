@@ -11,10 +11,24 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-09-02 (Session 349 — Simulasi Kalender Ekonomi: Retail dicabut dari faktor konfluensi + Makro ikut menghitung hasil simulasi BEAT/MISS event itu sendiri; Session 348 — `market-digest.yml` digate ke heartbeat VPS: GH Actions sekarang cek `vps:heartbeat` dulu, VPS hidup -> diam, VPS mati -> baru jalan sebagai fallback; ditemukan live straggler GH Actions (slot Eropa, telat ~5 jam) mendarat 28 menit sebelum slot New York dan bikin trigger VPS yang tepat waktu ikut kena skip dedup 3 jam; Session 347 — Gate gold Step 0: mayoritas 2/3 sekarang cukup menutupi korelasi yield-emas yang anomali, dulu wajib unanimity mutlak 3/3; ditemukan dari data live gate ini 2x menahan kandidat gold yang verdict sisanya sudah "PERTIMBANGKAN")
+> **Last updated:** 2026-09-05 (Session 350 — Simulasi Kalender Ekonomi: baris "Makro:" dibetulkan supaya pakai formula tertimbang yang sama dengan tab FUNDAMENTAL (bobot kepentingan indikator × bobot umur data), bukan hitungan mentah — dua skor "kekuatan fundamental" yang tadinya bisa beda angka untuk currency yang sama sekarang konsisten; Session 349 — Simulasi Kalender Ekonomi: Retail dicabut dari faktor konfluensi + Makro ikut menghitung hasil simulasi BEAT/MISS event itu sendiri; Session 348 — `market-digest.yml` digate ke heartbeat VPS: GH Actions sekarang cek `vps:heartbeat` dulu, VPS hidup -> diam, VPS mati -> baru jalan sebagai fallback; ditemukan live straggler GH Actions (slot Eropa, telat ~5 jam) mendarat 28 menit sebelum slot New York dan bikin trigger VPS yang tepat waktu ikut kena skip dedup 3 jam)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
+
+## Changelog Session 350 (2026-09-05) — Simulasi Kalender Ekonomi: Skor "Makro:" Disamakan dengan Tab FUNDAMENTAL (Tertimbang, Bukan Hitungan Mentah)
+
+**Konteks.** User lapor samar: "fitur kalendar kurang sepertinya dibagian insight ... bagian poin fundamental, entah aku yang salah liat atau gimana". Ditelusuri via klarifikasi ke user: yang dimaksud adalah baris "Makro:" di kartu simulasi kalender ekonomi (`cal-scenario`, tombol SIMULASI di event High impact — "Dasar bertumpu", `scenarioConfluence`/`scenarioFundScore` di `index.html`).
+
+**Bug ditemukan.** Ada DUA fungsi yang sama-sama mengklaim skor "kekuatan fundamental" satu currency, tapi beda metodologi:
+- `renderFundamental` (tab FUNDAMENTAL, sejak 2026-07-19) — skor TERTIMBANG: tiap indikator dikali `fundIndImportance` (GDP/CPI/NFP/dst. bobot 2, indikator minor macam Housing Starts/Building Permits bobot 0,5, sisanya bobot 1) × `fundRecencyWeight` (rilis ≤14 hari bobot 1.0, 15-45 hari 0.5, lebih lama/tak diketahui 0.25) — supaya rilis penting & segar mendominasi, bukan indikator minor/basi yang kebetulan jumlahnya banyak.
+- `scenarioFundScore` (baris "Makro:" di simulasi kalender, ditulis 2026-09-02) — HITUNGAN MENTAH: tiap indikator dihitung `bull++`/`scored++` rata, tidak peduli importance atau umur data. Housing Starts basi 2 bulan bobotnya sama persis dengan GDP QoQ yang baru rilis kemarin.
+
+Akibatnya angka "Makro: CAD 46% Neut" di simulasi kalender bisa BEDA dari angka ranking currency CAD yang user lihat sendiri di tab FUNDAMENTAL untuk currency yang sama pada saat yang sama — inkonsistensi yang bikin fitur "insight fundamental" kerasa kurang/janggal walau tidak crash atau kosong.
+
+**Perbaikan (`index.html`, `scenarioFundScore`):** diganti ke formula tertimbang yang identik dengan `renderFundamental` (`fundIndImportance(k) * fundRecencyWeight(fundAgeDays(v.date))`, `bullW/totW`). Bonus indikator tambahan dari hasil simulasi BEAT/MISS event itu sendiri (fitur Session 349) dipertahankan dengan bobot 1 (setara indikator biasa) — SENGAJA tidak ditebak sebagai bobot 2 (tier GDP/CPI/NFP) karena tidak ada pemetaan andal dari judul event kalender TradingView ke key `FUND_SCORE_RULES` untuk tahu importance aslinya.
+
+**Verifikasi.** `test/frontend/cal_scenario_sim.test.js` diperbarui: stub `scoreInd() { return null; }` diganti implementasi ASLI (`scoreInd`, `fundIndImportance`, `fundRecencyWeight`, `fundAgeDays`, dst. di-grab dari `index.html`, bukan stub, supaya bug bobot tidak tersembunyi lagi) + 1 test baru yang membuktikan fix (GDP QoQ bobot 2 vs Housing Starts bobot 0,5 dalam satu currency yang sama → 80% tertimbang, BUKAN 50% hitungan mentah lama). `npm test` 1236/1236 hijau (1235 lama + 1 baru).
 
 ## Changelog Session 349 (2026-09-02) — Simulasi Kalender Ekonomi: Retail Dicabut, Makro Ikut Hitung Hasil Simulasi Sendiri
 
