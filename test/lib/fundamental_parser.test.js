@@ -608,3 +608,47 @@ test('reconcileFundamentalKeys: currency tanpa data sama sekali dilewati tanpa e
   const reconciled = await reconcileFundamentalKeys(redis);
   assert.deepStrictEqual(reconciled, {});
 });
+
+// ── parseCBDecision: tolak perkiraan/polling/taruhan pasar (audit 2026-09-06) ──
+// 7 dari 8 entri cb_decisions produksi ternyata BUKAN keputusan resmi — headline
+// nyata di bawah ini semuanya sempat tercatat sebagai keputusan bank sentral.
+const CB_SPECULATIVE_HEADLINES = [
+  'Citi expects Fed to deliver 25 BPS rate cuts in June, September and December 2027 vs prior forecast of cuts in October',
+  'Poll: Reserve Bank of New Zealand to raise cash rate by 25 basis points to 2.75% on September 2, 27 of 31 economists say',
+  'Traders lift ECB rate bets, fully price 25 BPS hike by September.',
+  'Traders boost BoE rate-hike bets, price 50bps by February.',
+  'BoJ rate hike probability in September rises to 97% - Money broker Tokyo tanshi data',
+  'Bank of Canada to hold overnight rate at 2.25% on September 2, said all 35 economists surveyed - Poll.',
+  'Poll: Swiss national bank to keep policy rate on hold at 0% through 2026 - All 28 economists',
+  "Fed's Waller: Rate decision in September hinges on August inflation, could cut 25 bps",
+  'Markets see Federal Reserve holding rates at 3.75% next week',
+];
+for (const h of CB_SPECULATIVE_HEADLINES) {
+  test(`parseCBDecision menolak perkiraan/poll/pasar: "${h.slice(0, 60)}..."`, () => {
+    assert.strictEqual(parseCBDecision(h), null);
+  });
+}
+
+test('parseCBDecision: keputusan asli dengan "as expected"/"in line with expectations" TETAP diterima', () => {
+  const r1 = parseCBDecision('Reserve Bank of Australia holds cash rate at 4.35% as widely expected');
+  assert.deepStrictEqual(r1, { currency: 'AUD', rate: 4.35, bps: null, decision: 'hold' });
+  const r2 = parseCBDecision('Federal Reserve cuts rates by 25 bps to 4.25%, in line with expectations');
+  assert.deepStrictEqual(r2, { currency: 'USD', rate: 4.25, bps: -25, decision: 'cut' });
+  const r3 = parseCBDecision("Reserve Bank of Australia: board keeps cash rate target steady at 4.35% in today's meeting");
+  assert.strictEqual(r3?.decision, 'hold');
+  assert.strictEqual(r3?.rate, 4.35);
+});
+
+test('parseCBDecision: "unexpectedly" (keputusan asli yang mengejutkan) tidak ikut tertolak', () => {
+  const r = parseCBDecision('Bank of Japan unexpectedly hikes policy rate by 25 bps to 1.0%');
+  assert.strictEqual(r?.decision, 'hike');
+  assert.strictEqual(r?.rate, 1.0);
+});
+
+test('parseCBDecision: angka di luar rentang suku bunga (probabilitas 97%) tidak dibaca sebagai rate', () => {
+  // Kalau lolos filter spekulasi pun, rate 97 harus dibuang; tanpa bps -> null total.
+  assert.strictEqual(parseCBDecision('Bank of Japan hikes, rate at 97%'), null);
+  const r = parseCBDecision('Bank of Japan hikes policy rate by 25 bps, rate at 97%');
+  assert.strictEqual(r?.rate, null);
+  assert.strictEqual(r?.bps, 25);
+});

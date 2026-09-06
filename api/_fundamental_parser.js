@@ -572,6 +572,28 @@ async function autoUpdateFundamentalsFromCalendar(calendarEvents, redisCmd) {
   return updated;
 }
 
+// BUG DITEMUKAN & DIFIX (2026-09-06, audit cb_decisions produksi): parser ini menerima
+// headline APA PUN yang menyebut bank sentral + kata cut/hike/hold + angka — termasuk
+// PERKIRAAN. Dicek live: 7 dari 8 entri `cb_decisions` berasal dari polling/perkiraan
+// analis/taruhan pasar, bukan keputusan resmi — "Citi expects Fed to deliver 25 BPS
+// rate cuts..." tercatat sebagai Fed CUT 5 Sep; "Poll: RBNZ to raise cash rate..."
+// sebagai keputusan RBNZ; "BoJ rate hike probability ... rises to 97%" sebagai BoJ
+// HIKE dengan rate 97 (angka probabilitas dibaca sebagai suku bunga). Hanya AUD
+// ("board keeps cash rate target steady at 4.35% in today's meeting") yang asli.
+// Dampak: kartu CB publik (`mergeCbRate` memakai `dec` sebagai sumber paling akurat
+// untuk keputusan & tanggal rapat) menampilkan keputusan/tanggal palsu.
+//
+// Fix: (1) tolak headline berbahasa perkiraan/atribusi pihak ketiga/pasar (poll,
+// survey, economists, expects, forecast, likely, traders price, probability, bets,
+// "to raise/cut/hold" bentuk infinitif masa depan, dst.) — frasa "as expected"/"in line
+// with expectations" pada keputusan asli dibuang DULU supaya tidak ikut tertolak;
+// (2) rate absolut di luar rentang suku bunga wajar (>25% atau <-1%) dianggap bukan
+// suku bunga (itu probabilitas/persentase lain). Prinsip sama guard "korroborasi palsu
+// Interest Rate Probabilities" S284: boilerplate wire soal ekspektasi BUKAN fakta rilis.
+const CB_DECISION_REAL_QUALIFIER_RE = /\bas (?:widely |broadly |largely )?(?:expected|anticipated|forecast)\b|\bin line with (?:expectations|forecasts?|consensus)\b|\bmatching (?:expectations|forecasts?)\b/gi;
+const CB_DECISION_SPECULATIVE_RE = /\b(?:poll|surveys?|surveyed|economists?|analysts?|strategists?|traders?|investors?|markets? (?:price|pricing|priced|bet|see|expect)|money markets?|swaps? (?:price|pricing)|expects?|expected|expectations?|forecasts?|forecasting|predicts?|predicted|predictions?|projects?|projected|anticipates?|anticipated|likely|unlikely|could|may|might|would|should|probabilit(?:y|ies)|odds|bets?|betting|wagers?|calls? for|urges?|wants?|pushes? for|preview|ahead of|before the|scenario|if the)\b|\bto (?:deliver|raise|hike|cut|lower|reduce|hold|keep|leave|maintain|pause|ease|tighten)\b|\bwill (?:raise|hike|cut|lower|hold|keep|leave|deliver)\b/i;
+const CB_RATE_SANE_MIN = -1, CB_RATE_SANE_MAX = 25;
+
 function parseCBDecision(title) {
   const t = title.toLowerCase();
   if (!/rate|interest|bps|basis point|hold|hike|cut|raise|lower|unchanged/i.test(t)) return null;
@@ -581,6 +603,12 @@ function parseCBDecision(title) {
     if (kw.some(k => t.includes(k))) { currency = cur; break; }
   }
   if (!currency) return null;
+
+  // Keputusan asli sering membawa "as expected"/"in line with expectations" — buang
+  // frasa itu dulu, baru pindai bahasa perkiraan. Kalau sisanya masih spekulatif
+  // (poll/analis/pasar/infinitif masa depan), ini BUKAN keputusan: abaikan.
+  const stripped = t.replace(CB_DECISION_REAL_QUALIFIER_RE, ' ');
+  if (CB_DECISION_SPECULATIVE_RE.test(stripped)) return null;
 
   // Terima bentuk present-tense headline ("Fed cuts", "BoJ holds", "SNB hikes") —
   // tanpa s? opsional, semua headline bentuk orang-ketiga lolos tak terdeteksi.
@@ -592,7 +620,9 @@ function parseCBDecision(title) {
 
   const absM = title.match(/(?:at|to)\s+([+-]?\d+\.?\d*)\s*%/i);
   const bpsM = title.match(/(\d+\.?\d*)\s*bps/i);
-  const rate = absM ? parseFloat(absM[1]) : null;
+  let   rate = absM ? parseFloat(absM[1]) : null;
+  // Angka di luar rentang suku bunga wajar = bukan suku bunga (probabilitas 97%, dsb).
+  if (rate !== null && (rate < CB_RATE_SANE_MIN || rate > CB_RATE_SANE_MAX)) rate = null;
   let   bps  = bpsM ? parseFloat(bpsM[1]) : null;
   if (bps !== null && isCut && bps > 0) bps = -bps;
   if (rate === null && bps === null) return null;
