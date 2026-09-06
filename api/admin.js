@@ -13,7 +13,10 @@
 const PUSH_KW  = require('./_push_keywords');
 const newscat  = require('../newscat');
 const { autoUpdateFundamentals, autoUpdateFundamentalsFromCalendar, _fetchCalendarEventsForFund, reconcileFundamentalKeys } = require('./_fundamental_parser');
-const { getLiveCbRates } = require('./_cb_rates');
+// PLAN AC Tahap 1 (2026-09-06): mergeCbRate/CB_FALLBACK/RATES_CACHE_KEY/RATES_TTL_MS
+// dipakai jalur auto untuk overlay suku bunga CB (cache saja, tanpa scrape) ke blok
+// [DATA RILIS EKONOMI] — lihat _formatFundIndicatorLines.
+const { getLiveCbRates, mergeCbRate, CB_FALLBACK, RATES_CACHE_KEY, RATES_TTL_MS } = require('./_cb_rates');
 const { configureVapid, sendWebPush, subKey } = require('./_webpush');
 const { isCronCall: _isCronCallReq, isCronDedupFresh } = require('./_cron_dedup');
 const marketHours = require('./_market_hours');
@@ -5401,7 +5404,10 @@ const COT_CME_PROMPT_VERSION = 1;
 // sendiri (RSI 76.5 dipakai sebagai driver bearish XAU/USD; arah AUD/NZD dipinjam dari
 // "struktur teknikal H4" padahal `strong_vs_weak:false`) — dua-duanya lolos karena
 // larangan itu cuma imbauan teks di prompt.
-const AATAS_PROMPT_VERSION = 5;
+// v6 (2026-09-06, PLAN AC Tahap 1) — blok [DATA RILIS EKONOMI] (fundamental:<CUR> kedua
+// kaki) masuk Call 1 + Kritikus; Step 0(b) & Step 2 menunjuk blok itu secara eksplisit
+// dan menegaskan driver harus tentang negara kaki pair sendiri.
+const AATAS_PROMPT_VERSION = 6;
 
 // (2026-09-02) `final_validation` (Step 8, COT/retail) dipaksa nilai ini untuk SEMUA
 // setup AATAS — Call 2 (yang mengisi field ini di v1/v2) tidak pernah menerima data
@@ -5574,7 +5580,7 @@ function _buildAatasMacroChecklistBlock({ label, isXau, goldCorr }) {
   } else {
     L.push('STEP 0 REGIME CHECK (PRE-GATE):');
     L.push('- Regime saat ini (risk_on/neutral/elevated/risk_off) dari baris RISK REGIME.');
-    L.push(`- CB Bias ${legA} dan ${legB} dari DUA sumber sekaligus: (a) bias resmi bank sentral di FUNDAMENTAL TERSTRUKTUR, dan (b) pembacaanmu sendiri atas data inflasi/GDP/tenaga kerja mentah di blok fundamental/konteks makro. Kalau dua sumber ini BERBEDA untuk leg yang sama, itu TIDAK memblokir — set regime_check.cb_source_conflict=true dan turunkan checklist_pct sedikit.`);
+    L.push(`- CB Bias ${legA} dan ${legB} dari DUA sumber sekaligus: (a) bias resmi bank sentral di FUNDAMENTAL TERSTRUKTUR, dan (b) pembacaanmu sendiri atas angka rilis mentah di blok [DATA RILIS EKONOMI] (inflasi/GDP/tenaga kerja/PMI/retail, actual vs forecast vs previous) — kalau blok itu tidak ada untuk salah satu leg, katakan datanya tidak tersedia, jangan menebak dari negara lain. Kalau dua sumber ini BERBEDA untuk leg yang sama, itu TIDAK memblokir — set regime_check.cb_source_conflict=true dan turunkan checklist_pct sedikit.`);
     L.push('- Event high-impact <6 jam ke depan untuk pair ini: TUNGGU sampai lewat (entry ditunda, ukuran risiko TIDAK dikecilkan) — set regime_check.event_wait=true dan jelaskan di conflict_note. Ini BUKAN alasan membatalkan tesis, dan BUKAN alasan mengecilkan size.');
     L.push('- Real yield differential TIDAK dipakai sebagai pre-gate di pair FX (hanya relevan untuk XAU/USD).');
     L.push('- COT & retail sentiment TIDAK dipakai di sini — dipindah ke Step 8.');
@@ -5589,7 +5595,7 @@ function _buildAatasMacroChecklistBlock({ label, isXau, goldCorr }) {
   L.push(`- strong_vs_weak WAJIB kamu nilai sendiri, dan kode MEMERIKSA jawabannya: kalau kamu isi false, setup otomatis dibatalkan. Jangan mengisi true supaya "lolos" — isi apa adanya.`);
   L.push(`- SEBELUM menjawab strong_vs_weak, telusuri MEKANISME lintas-faktornya, jangan cuma membandingkan label bias bank sentral mentah. Dua mata uang bisa sama-sama berlabel "hawkish" tapi salah satunya relatif lebih kuat karena faktor lain: pair komoditas WAJIB dicek ke penggeraknya (CAD ke harga minyak/WTI, NOK ke minyak, AUD & NZD ke logam industri/produk susu dan selera risiko China, JPY & CHF ke arus safe haven, EUR ke differential suku bunga vs Fed) — pola yang sama seperti instruksi WTI -> ekspektasi inflasi -> real yield. Kalau angka penggeraknya ada di data di atas, sebut angkanya.`);
   L.push('- konfirmasi WAJIB minimal 2 item dari KATEGORI BERBEDA, masing-masing menyebut data konkret. Kode menghitung jumlahnya — kurang dari 2 berarti setup dibatalkan.');
-  L.push('- Boleh memakai TREN DATA AKUMULATIF sebagai fakta terhitung (contoh: "3 dari 3 rilis data CAD terakhir meleset di bawah forecast") dan data pasar forward-looking RIIL kalau tersedia di atas (rate path). Yang tetap DILARANG: spekulasi ("akan"/"harusnya"/"kemungkinan"/"biasanya") tanpa angka di baliknya.');
+  L.push('- Boleh memakai TREN DATA AKUMULATIF sebagai fakta terhitung dari blok [DATA RILIS EKONOMI] (contoh: "3 dari 3 rilis data CAD terakhir meleset di bawah forecast") dan data pasar forward-looking RIIL kalau tersedia di atas (rate path). Driver dan konfirmasi utamamu HARUS tentang negara kaki pair ini sendiri — data negara lain (mis. AS untuk AUD/NZD) hanya boleh jadi pendukung tambahan, bukan satu-satunya alasan. Yang tetap DILARANG: spekulasi ("akan"/"harusnya"/"kemungkinan"/"biasanya") tanpa angka di baliknya.');
   L.push('');
   L.push('STEP 3 PRE-MARKET DECISION: bias dikunci dan tidak berubah kecuali ada berita besar (market-moving/geopolitik/data ekonomi penting). Pembatalan karena berita besar SUDAH ditangani mekanisme kode terpisah (filter breaking-news + deteksi kejutan ekonomi actual-vs-forecast) — kamu cukup memastikan arahmu eksplisit.');
   L.push('');
@@ -5713,6 +5719,161 @@ function _formatRatePathBlock(ratePathData) {
   if (rp.cumulative_6m_bps != null) parts.push(`6 bulan: ${arah(rp.cumulative_6m_bps)}`);
   return `RATE PATH FED (implied dari pasar suku bunga — konteks tambahan untuk emas, BUKAN penentu arah sendiri; ekspektasi pemangkasan biasanya menekan real yield dan mendukung emas, kenaikan sebaliknya):
 ${parts.join(' | ')}`;
+}
+
+// ── PLAN AC Tahap 1 (2026-09-06, POLICY_EPOCHS v44): data rilis ekonomi domestik ke Call 1 ──
+// BUG DITEMUKAN & DIFIX (audit kualitatif Session 350 lanjutan): `fundamental:<CUR>`
+// (CPI/GDP/tenaga kerja/PMI/keputusan bank sentral, actual vs forecast vs previous,
+// 8 currency) SUDAH ADA di Redis dan dipakai kartu Fundamental publik + digest, tapi
+// TIDAK PERNAH dibaca handler Analisa — Call 1 AATAS (penentu arah, makro-only)
+// selama ini cuma menerima excerpt Ringkasan, label cb_bias, COT, retail, risk
+// regime, DXY/WTI, real yield bulanan, dan kalender 7 hari KE DEPAN. Padahal
+// checklist Step 0(b)/Step 2 menyuruh AI membaca "data inflasi/GDP/tenaga kerja
+// mentah" dan "tren data akumulatif" — dua instruksi yang menunjuk data yang tidak
+// ada di prompt. Akibat nyata: 9/9 kandidat AUD/NZD (08-31 s/d 09-04) driver-nya
+// PMI China / Iran-AS / German orders / NFP AS / COT — nol data domestik, padahal
+// AUD GDP beat, NZD rate hike, NZD unemployment naik, NZD retail miss semuanya
+// tersimpan. Ini akar mekanistik flip-flop AUD/NZD: tanpa jangkar domestik, arah
+// dibangun dari berita global yang berganti tiap slot.
+//
+// Desain: pure formatter (dites unit), HANYA jalur isAutoCall (jalur manual publik
+// tidak berubah — isolasi Opsi A), dikirim ke Call 1 DAN fact sheet Kritikus (Gate A)
+// supaya keduanya menilai bahan yang sama. Pemilihan indikator pakai REGEX KATEGORI,
+// bukan nama key persis — key di Redis bervariasi casing/kata sisipan (bug
+// fragmentasi HICP S315), dan per kategori diambil SATU entri bertanggal terbaru
+// supaya key duplikat tidak jadi dua baris CPI. Cap 8 baris per currency & ambang
+// umur 45 hari BUKAN angka baru: 45 hari sudah dipakai _formatFundamentalBlock untuk
+// real yield, ~8 indikator utama = yang ditampilkan kartu Fundamental publik.
+// Biaya: ~205 token/panggilan Call 1 (+4,4%), ≈ $0,09/bulan pada tarif v4-pro peak.
+const FUND_RELEASE_CATEGORIES = [
+  { id: 'rate',     max: 1, re: /cash rate|interest rate|rate decision|policy rate|refinanc|fed funds|\bocr\b|\b(?:rba|rbnz|ecb|boe|boj|snb|boc|fed)\s+rate\b/i,
+    exclude: /unemployment|participation|inflation|exchange|jobless|mortgage|probabilit/i },
+  { id: 'cpi_core', max: 1, re: /(?:core|trimmed|median|underlying)[^|]*(?:cpi|inflation|pce)|(?:cpi|inflation|pce)[^|]*(?:core|trimmed|median|underlying)/i,
+    exclude: /expectation/i },
+  { id: 'cpi',      max: 1, re: /\bcpi\b|\bhicp\b|inflation rate|\bpce\b/i,
+    exclude: /core|trimmed|median|underlying|expectation|prelim|advance/i, prefer: /yoy|y\/y|annual/i },
+  { id: 'gdp',      max: 2, re: /\bgdp\b/i, exclude: /deflator|price index/i, prefer: /qoq|q\/q/i },
+  { id: 'jobs',     max: 2, re: /unemployment rate|employment change|\bnfp\b|non-?farm|payroll|jobless|claimant|jobs report/i,
+    exclude: /weekly|\badp\b|manufacturing payroll|government payroll|private payroll/i },
+  { id: 'pmi',      max: 1, re: /\bpmi\b|\bism\b/i, exclude: /employment index|new orders index|prices|construction/i, prefer: /manufactur|composite/i },
+  { id: 'retail',   max: 1, re: /retail sales/i },
+  { id: 'wage',     max: 1, re: /wage|earnings|labou?r cost/i },
+];
+const FUND_RELEASE_MAX_LINES = 8;
+const FUND_RELEASE_OLD_DAYS = 45;
+
+// Flat array hasil HGETALL ([k, v, k, v, ...]) -> objek {key: parsed}. Nilai yang
+// bukan JSON dibungkus {actual: raw} — pola sama endpoint fundamental (cari
+// "try { data[raw[i]] = JSON.parse"). Input bukan array -> objek kosong (fail-open).
+function _hgetallToObj(raw) {
+  const out = {};
+  if (!Array.isArray(raw)) return out;
+  for (let i = 0; i + 1 < raw.length; i += 2) {
+    const k = String(raw[i]);
+    const v = raw[i + 1];
+    if (v && typeof v === 'object') { out[k] = v; continue; }
+    try { out[k] = JSON.parse(v); } catch (e) { out[k] = { actual: v }; }
+  }
+  return out;
+}
+
+function _fundReleaseDateMs(ind) {
+  const d = ind && typeof ind.date === 'string' ? ind.date.trim() : '';
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return null;
+  const ms = Date.parse(d + 'T00:00:00Z');
+  return Number.isFinite(ms) ? ms : null;
+}
+
+// Baris-baris indikator inti SATU currency. `indicators` = objek {namaKey: {actual,
+// forecast, previous, date, source}} (hasil _hgetallToObj). Return [] kalau kosong.
+// `cbLive` (opsional) = hasil `mergeCbRate` untuk currency ini ({short, rate,
+// last_meeting, last_decision, last_bps, rate_source}) dari cache `cb_rates_live_v2`
+// + `cb_decisions` — SUMBER YANG SAMA dengan baris "{Bank} Rate" di kartu Fundamental
+// publik (endpoint fundamental_get meng-overlay ini di atas seed). Tanpa overlay, baris
+// rate di hash sering tinggal SEED tanpa tanggal yang bisa basi (insiden ECB Rate,
+// lihat header _cb_rates.js) — persis jenis angka yang tidak boleh disodorkan ke
+// penentu arah sebagai fakta. Aturan pilih: live (bukan fallback) > baris rate
+// BERTANGGAL di hash (mis. "Cash Rate" dari headline) > fallback statis (dilabeli) >
+// seed tanpa tanggal.
+function _formatFundIndicatorLines(indicators, nowMs, cbLive) {
+  if (!indicators || typeof indicators !== 'object') return [];
+  const entries = Object.entries(indicators)
+    .filter(([k, v]) => k && v && typeof v === 'object' && v.actual != null && String(v.actual).trim() !== '' && String(v.actual).trim() !== '—');
+  const clean = s => (s == null) ? null : (String(s).trim() && !['-', '—', 'null'].includes(String(s).trim()) ? String(s).trim() : null);
+  const used = new Set();
+  const lines = [];
+  // Overlay suku bunga bank sentral (lihat komentar fungsi).
+  const rateCat = FUND_RELEASE_CATEGORIES[0];
+  const hashRateDated = entries.some(([k, v]) => rateCat.re.test(k) && !rateCat.exclude.test(k) && _fundReleaseDateMs(v) != null);
+  const liveOk = cbLive && Number.isFinite(Number(cbLive.rate)) && cbLive.short;
+  if (liveOk && (cbLive.rate_source !== 'fallback' || !hashRateDated)) {
+    const isFallback = cbLive.rate_source === 'fallback';
+    const ms = _fundReleaseDateMs({ date: cbLive.last_meeting });
+    const ageD = ms != null ? Math.max(0, Math.floor((nowMs - ms) / 86400000)) : null;
+    // Klaim keputusan (hike/cut/hold + bp) HANYA ditulis kalau angka rate-nya sendiri
+    // terverifikasi live. Pada fallback, `rate` = konstanta statis sedangkan
+    // `last_decision` datang dari parse headline (`cb_decisions`) — dua sumber yang
+    // bisa saling bertentangan (dicek live 2026-09-06: "3.75% | cut -25bp 1 hari lalu",
+    // rate tidak ikut turun). Menyodorkan pasangan kontradiktif itu ke AI lebih buruk
+    // daripada cuma menulis angkanya dengan label "belum terverifikasi".
+    const dec = (!isFallback && cbLive.last_decision)
+      ? ` | keputusan terakhir ${cbLive.last_decision}${Number.isFinite(Number(cbLive.last_bps)) && Number(cbLive.last_bps) !== 0 ? ` ${Number(cbLive.last_bps) > 0 ? '+' : ''}${cbLive.last_bps}bp` : ''}`
+      : '';
+    const when = isFallback
+      ? 'nilai cadangan statis, belum terverifikasi live — cek bias CB resmi di blok fundamental'
+      : (ms != null ? `rapat ${cbLive.last_meeting}, ${ageD} hari lalu` : 'tanggal rapat tidak diketahui');
+    lines.push(`- ${cbLive.short} Rate: ${cbLive.rate}%${dec} (${when})`);
+    for (const [k] of entries) if (rateCat.re.test(k) && !rateCat.exclude.test(k)) used.add(k);
+  }
+  if (!entries.length && !lines.length) return [];
+  for (const cat of FUND_RELEASE_CATEGORIES) {
+    const matches = entries
+      .filter(([k]) => !used.has(k) && cat.re.test(k) && !(cat.exclude && cat.exclude.test(k)))
+      .map(([k, v]) => ({ k, v, ms: _fundReleaseDateMs(v), pref: cat.prefer && cat.prefer.test(k) ? 1 : 0 }))
+      // Tanggal terbaru dulu; tanpa tanggal (seed) paling belakang; tanggal sama ->
+      // varian yang lebih informatif (YoY di atas MoM, manufaktur/komposit di atas
+      // jasa) supaya pilihannya tidak bergantung urutan key di Redis.
+      .sort((a, b) => ((b.ms ?? -Infinity) - (a.ms ?? -Infinity)) || (b.pref - a.pref));
+    for (const m of matches.slice(0, cat.max)) {
+      if (lines.length >= FUND_RELEASE_MAX_LINES) break;
+      used.add(m.k);
+      const f = clean(m.v.forecast), p = clean(m.v.previous);
+      const parts = [`${m.k}: ${clean(m.v.actual)}`];
+      if (f) parts.push(`forecast ${f}`);
+      if (p) parts.push(`previous ${p}`);
+      let when;
+      if (m.ms == null) {
+        when = m.v.source === 'seed' ? 'seed, tanggal rilis tidak diketahui' : 'tanggal rilis tidak diketahui';
+      } else {
+        const ageD = Math.max(0, Math.floor((nowMs - m.ms) / 86400000));
+        when = `${m.v.date}, ${ageD} hari lalu${ageD > FUND_RELEASE_OLD_DAYS ? ' — LAMA' : ''}`;
+      }
+      lines.push(`- ${parts.join(' | ')} (${when})`);
+    }
+    if (lines.length >= FUND_RELEASE_MAX_LINES) break;
+  }
+  return lines;
+}
+
+// Blok lengkap untuk prompt: `legs` = currency kaki pair yang ada di FUND_CURRENCIES
+// (XAU/USD -> ['USD']), `rawHashes` = array hasil HGETALL sejajar `legs`. Return ''
+// kalau tidak ada satu pun baris (fail-open: prompt tetap jalan tanpa blok, pola sama
+// semua blok lain di handler).
+// `cbLiveByCur` (opsional) = {CUR: hasil mergeCbRate} — lihat _formatFundIndicatorLines.
+function _formatFundReleaseBlock(legs, rawHashes, nowMs, cbLiveByCur) {
+  const L = [];
+  (Array.isArray(legs) ? legs : []).forEach((cur, i) => {
+    const lines = _formatFundIndicatorLines(_hgetallToObj(rawHashes && rawHashes[i]), nowMs, cbLiveByCur && cbLiveByCur[cur]);
+    if (!lines.length) return;
+    L.push(`${cur}:`);
+    L.push(...lines);
+  });
+  if (!L.length) return '';
+  return [
+    '[DATA RILIS EKONOMI — per kaki pair, actual vs forecast vs previous; TANGGAL = kapan dirilis]',
+    ...L,
+    'Cara pakai: actual vs forecast = kejutan (beat/miss), actual vs previous = arah tren; deretan beat/miss berturut boleh dipakai sebagai TREN DATA AKUMULATIF. Data berlabel LAMA (>45 hari) hanya level struktural, JANGAN dipakai untuk klaim momentum jangka pendek. Ini bahan utama Step 0(b) dan Step 2 — driver yang tidak menyentuh data negara pair ini sendiri bukan driver fundamental pair ini.',
+  ].join('\n');
 }
 
 // Apakah satu entri setup termasuk POPULASI AATAS (arsitektur macro-first)?
@@ -6598,15 +6759,44 @@ async function ohlcvAnalyzeHandler(req, res) {
     let retailParsed = null;
     let macroDrivers = null;
     let riskParsed = null;
+    // PLAN AC Tahap 1 (2026-09-06): data rilis ekonomi domestik kedua kaki pair —
+    // HANYA isAutoCall (jalur manual publik tidak berubah). Numpang Promise.all yang
+    // sama (bukan round-trip terpisah). XAU/USD -> kaki USD saja (tidak ada
+    // `fundamental:XAU`). Lihat komentar FUND_RELEASE_CATEGORIES.
+    let fundReleaseBlock = '';
+    const fundLegs = isAutoCall
+      ? String(data.label || '').toUpperCase().split('/').map(s => s.trim()).filter(c => FUND_CURRENCIES.includes(c))
+      : [];
     try {
-      const [rawBias, rawCot, rawRisk, rawRetail, rawSnap, rawRY] = await Promise.all([
+      const [rawBias, rawCot, rawRisk, rawRetail, rawSnap, rawRY, rawFundHashes, rawCbRatesLive, rawCbDecisions] = await Promise.all([
         redisCmd('GET', 'cb_bias'),
         redisCmd('GET', 'cot_cache_v2'),
         redisCmd('GET', 'risk_regime'),
         redisCmd('GET', 'retail_sentiment_cache'),
         redisCmd('GET', 'daily_snapshot'),
         redisCmd('GET', 'real_yields'),
+        Promise.all(fundLegs.map(c => redisCmd('HGETALL', `fundamental:${c}`).catch(() => null))),
+        // Suku bunga CB live — HANYA cache (`cb_rates_live_v2`, TTL 6 jam) + `cb_decisions`,
+        // TIDAK memanggil getLiveCbRates() yang bisa scrape 8 situs bank sentral kalau cache
+        // kedaluwarsa (anggaran waktu handler ini sudah dipakai dua panggilan AI).
+        fundLegs.length ? redisCmd('GET', RATES_CACHE_KEY).catch(() => null) : Promise.resolve(null),
+        fundLegs.length ? redisCmd('HGETALL', 'cb_decisions').catch(() => null) : Promise.resolve(null),
       ]);
+      let cbLiveByCur = null;
+      if (fundLegs.length) {
+        let liveRates = {}, liveSrc = 'fallback';
+        try {
+          const obj = rawCbRatesLive ? JSON.parse(rawCbRatesLive) : null;
+          if (obj && obj.rates && (Date.now() - obj.fetchedAt) < RATES_TTL_MS) { liveRates = obj.rates; liveSrc = 'live_cached'; }
+        } catch (e) { /* cache korup -> fallback statis berlabel */ }
+        const decs = _hgetallToObj(rawCbDecisions);
+        cbLiveByCur = {};
+        for (const c of fundLegs) {
+          if (!CB_FALLBACK[c]) continue;
+          cbLiveByCur[c] = mergeCbRate(c, CB_FALLBACK[c], liveRates[c], decs[c], liveRates[c] ? liveSrc : 'fallback');
+        }
+      }
+      fundReleaseBlock = _formatFundReleaseBlock(fundLegs, rawFundHashes, Date.now(), cbLiveByCur);
       riskParsed = rawRisk ? JSON.parse(rawRisk) : null;
       autoGuardRegime = riskParsed?.regime || null;
       cbBiasParsed = rawBias ? JSON.parse(rawBias) : null;
@@ -6784,6 +6974,10 @@ async function ohlcvAnalyzeHandler(req, res) {
     if (isAutoCall) {
       if (ringkasanContext) aatasMacroParts.push(`${makroHeader}\n${ringkasanContext}`);
       if (fundBlock)        aatasMacroParts.push(fundBlock);
+      // PLAN AC Tahap 1: data rilis domestik — persis setelah fundamental terstruktur,
+      // sebelum rate path/CME/kalender, supaya AI membaca "bias resmi CB" lalu "angka
+      // rilis mentahnya" berurutan (Step 0(b) membandingkan keduanya).
+      if (fundReleaseBlock) aatasMacroParts.push(fundReleaseBlock);
       if (ratePathBlock)    aatasMacroParts.push(ratePathBlock);
       if (rrBlock)          aatasMacroParts.push(rrBlock);
       if (calAnalyzeBlock)  aatasMacroParts.push(calAnalyzeBlock);
@@ -8122,7 +8316,10 @@ async function ohlcvAnalyzeHandler(req, res) {
               ? `Catatan timing dari analisa awal: ${structured.conflict_note || 'ada event high-impact dekat, dalam rentang horizon skenario ini'} — nilai apakah risikonya cukup serius untuk verdict "batalkan", atau setup ini cukup kuat untuk tetap lanjut (posisi open tetap dilindungi tighten-SL reaktif berita kalau eventnya benar-benar bergerak melawan).`
               : null,
           ].filter(Boolean).join('\n');
-          const criticFactParts = [criticSetupBlock, fundBlock, rrBlock, trackBlock, calAnalyzeBlock].filter(Boolean);
+          // PLAN AC Tahap 1: Kritikus menerima blok data rilis domestik yang SAMA dengan
+          // Call 1 — kalau tidak, dia menilai setup dengan bahan yang lebih sedikit dari
+          // pembuatnya. fundReleaseBlock '' untuk jalur manual (tidak pernah sampai sini).
+          const criticFactParts = [criticSetupBlock, fundBlock, fundReleaseBlock, rrBlock, trackBlock, calAnalyzeBlock].filter(Boolean);
           // Pool eksperimental (BUKAN 'ai:deepseek'/'deepseek' milik tombol manual
           // publik) — isolasi U-7, sama pola dengan AI_BUDGET_DEEPSEEK_KEY di ohlcv_analyze.
           const critic = await _runCriticVerdict(criticFactParts.join('\n\n') + CRITIC_JSON_INSTRUCTION, {
@@ -8728,6 +8925,9 @@ module.exports._goldYieldCorrAnomaly = _goldYieldCorrAnomaly;
 module.exports._countGoldRegimeAligned = _countGoldRegimeAligned;
 module.exports._isAatasEpochSetup = _isAatasEpochSetup;
 module.exports._formatRatePathBlock = _formatRatePathBlock;
+module.exports._hgetallToObj = _hgetallToObj;
+module.exports._formatFundIndicatorLines = _formatFundIndicatorLines;
+module.exports._formatFundReleaseBlock = _formatFundReleaseBlock;
 module.exports._consistencySummary = _consistencySummary;
 module.exports._buildAatasMacroChecklistBlock = _buildAatasMacroChecklistBlock;
 module.exports._buildAatasTechnicalChecklistBlock = _buildAatasTechnicalChecklistBlock;

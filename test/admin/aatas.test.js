@@ -32,6 +32,154 @@ const {
   _goldYieldCorrAnomaly, _countGoldRegimeAligned, _formatAatasCriticLine, _statsPayloadFromLog, AATAS_PROMPT_VERSION,
 } = loadHandler();
 
+// ── PLAN AC Tahap 1 (2026-09-06): blok [DATA RILIS EKONOMI] — fundamental:<CUR> ke Call 1 ─
+const { _hgetallToObj, _formatFundIndicatorLines, _formatFundReleaseBlock } = loadHandler();
+const NOW_T1 = Date.parse('2026-09-06T12:00:00Z');
+const AUD_HASH = {
+  'RBA Rate': { actual: '4.35%', period: 'May 2026', date: '—', source: 'seed' },
+  'Cpi Trimmed Mean Yoy': { actual: '3.6%', forecast: '3.5%', previous: '3.4%', date: '2026-06-24', source: 'headline' },
+  'CPI YoY': { actual: '1%', forecast: '0.8%', previous: '-0.1%', date: '2026-08-26', source: 'calendar' },
+  'Cpi Yoy': { actual: '0.9%', date: '2026-07-30', source: 'headline' }, // duplikat casing (bug HICP S315) — harus KALAH dari yang lebih baru
+  'GDP QoQ': { actual: '0.4%', forecast: '0.3%', previous: '0.3%', date: '2026-09-02', source: 'calendar' },
+  'GDP YoY': { actual: '2.1%', forecast: '1.8%', previous: '2.5%', date: '2026-09-02', source: 'calendar' },
+  'Unemployment Rate': { actual: '4.5%', forecast: '4.4%', previous: '4.4%', date: '2026-08-20', source: 'calendar' },
+  'Employment Change': { actual: '-15.8K', forecast: '15K', previous: '80.3K', date: '2026-08-20', source: 'calendar' },
+  'Participation Rate': { actual: '66.9%', date: '2026-08-20', source: 'headline' }, // "Rate" tapi BUKAN suku bunga
+  'Services PMI': { actual: '53.2', previous: '52.9', forecast: '-', date: '2026-09-02', source: 'headline' },
+  'Construction Pmi': { actual: '44.3', date: '2026-09-04', source: 'headline' }, // lebih baru tapi dikecualikan
+  'Retail Sales MoM': { actual: '0.6%', date: '2026-08-29', source: 'headline' },
+  'Wage Price Index Qoq': { actual: '0.8%', forecast: '0.8%', date: '2026-08-19', source: 'headline' },
+  'Building Approvals': { actual: '2.1%', date: '2026-09-01', source: 'headline' }, // bukan kategori inti
+};
+const flat = h => Object.entries(h).flatMap(([k, v]) => [k, JSON.stringify(v)]);
+
+test('Tahap 1 _hgetallToObj: array datar HGETALL -> objek; nilai non-JSON dibungkus {actual}; bukan array -> {}', () => {
+  const o = _hgetallToObj(['A', '{"actual":"1%"}', 'B', 'teks polos']);
+  assert.deepEqual(o.A, { actual: '1%' });
+  assert.deepEqual(o.B, { actual: 'teks polos' });
+  assert.deepEqual(_hgetallToObj('OK'), {});
+  assert.deepEqual(_hgetallToObj(null), {});
+});
+
+test('Tahap 1 formatter: prioritas kategori, satu entri terbaru per kategori, cap 8 baris, label umur & seed', () => {
+  const lines = _formatFundIndicatorLines(_hgetallToObj(flat(AUD_HASH)), NOW_T1);
+  assert.equal(lines.length, 8, 'cap 8 baris per currency');
+  const txt = lines.join('\n');
+  assert.match(txt, /RBA Rate: 4\.35% \(seed, tanggal rilis tidak diketahui\)/);
+  assert.match(txt, /Cpi Trimmed Mean Yoy: 3\.6% \| forecast 3\.5% \| previous 3\.4% \(2026-06-24, 74 hari lalu — LAMA\)/);
+  assert.match(txt, /CPI YoY: 1% \| forecast 0\.8% \| previous -0\.1% \(2026-08-26, 11 hari lalu\)/);
+  assert.doesNotMatch(txt, /Cpi Yoy: 0\.9%/, 'duplikat casing yang lebih lama TIDAK ikut (satu entri per kategori)');
+  assert.match(txt, /GDP QoQ: 0\.4% \| forecast 0\.3% \| previous 0\.3% \(2026-09-02, 4 hari lalu\)/);
+  assert.match(txt, /GDP YoY: 2\.1%/);
+  assert.match(txt, /Unemployment Rate: 4\.5%/);
+  assert.match(txt, /Employment Change: -15\.8K \| forecast 15K \| previous 80\.3K/);
+  assert.doesNotMatch(txt, /Participation Rate/, '"Rate" bukan suku bunga tidak boleh nyasar ke kategori rate');
+  assert.match(txt, /Services PMI: 53\.2 \| previous 52\.9 \(/, 'forecast "-" dibuang, PMI konstruksi dikecualikan walau lebih baru');
+  assert.doesNotMatch(txt, /Construction Pmi/);
+  // Cap 8 tercapai sebelum retail/wage — itu konsekuensi prioritas (rate, cpi core, cpi,
+  // gdp x2, jobs x2, pmi = 8), dan Building Approvals memang bukan kategori inti.
+  assert.doesNotMatch(txt, /Building Approvals/);
+});
+
+test('Tahap 1 formatter: hash kosong / actual "—" / nilai kosong -> tidak ada baris, blok -> string kosong (fail-open)', () => {
+  assert.deepEqual(_formatFundIndicatorLines({}, NOW_T1), []);
+  assert.deepEqual(_formatFundIndicatorLines({ 'CPI YoY': { actual: '—', date: '2026-09-01' }, 'GDP QoQ': { actual: '' } }, NOW_T1), []);
+  assert.equal(_formatFundReleaseBlock(['AUD', 'NZD'], [[], null], NOW_T1), '');
+  assert.equal(_formatFundReleaseBlock([], [], NOW_T1), '');
+});
+
+test('Tahap 1 overlay suku bunga CB: live menang atas seed; fallback statis kalah dari baris rate bertanggal di hash; fallback dilabeli kalau satu-satunya', () => {
+  const live = { short: 'RBA', rate: 4.6, last_meeting: '2026-09-01', last_decision: 'hike', last_bps: 25, rate_source: 'live_cached' };
+  const l1 = _formatFundIndicatorLines(_hgetallToObj(flat(AUD_HASH)), NOW_T1, live).join('\n');
+  assert.match(l1, /- RBA Rate: 4\.6% \| keputusan terakhir hike \+25bp \(rapat 2026-09-01, 5 hari lalu\)/);
+  assert.doesNotMatch(l1, /RBA Rate: 4\.35%/, 'seed tanpa tanggal tidak ikut kalau live ada');
+  // Hash punya "Cash Rate" BERTANGGAL (dari headline) -> menang atas fallback statis.
+  const nzd = { 'Cash Rate': { actual: '2.75%', previous: '2.50%', date: '2026-09-02', source: 'headline' }, 'RBNZ Rate': { actual: '2.25%', date: '—', source: 'seed' } };
+  const fb = { short: 'RBNZ', rate: 2.25, last_meeting: '2026-05-27', last_decision: 'hold', last_bps: 0, rate_source: 'fallback' };
+  const l2 = _formatFundIndicatorLines(_hgetallToObj(flat(nzd)), NOW_T1, fb).join('\n');
+  assert.match(l2, /- Cash Rate: 2\.75% \| previous 2\.50% \(2026-09-02, 4 hari lalu\)/);
+  assert.doesNotMatch(l2, /RBNZ Rate/);
+  // Hash cuma punya seed tanpa tanggal + fallback statis -> fallback dipakai TAPI dilabeli.
+  const chf = { 'SNB Rate': { actual: '0.0%', date: '—', source: 'seed' } };
+  const fb2 = { short: 'SNB', rate: 0, last_meeting: '2026-03-19', last_decision: 'hold', last_bps: 0, rate_source: 'fallback' };
+  const l3 = _formatFundIndicatorLines(_hgetallToObj(flat(chf)), NOW_T1, fb2).join('\n');
+  // Fallback: HANYA angka + label, TANPA klaim keputusan/tanggal rapat (rate statis vs
+  // keputusan hasil parse headline bisa saling bertentangan — kasus live USD 2026-09-06:
+  // rate 3.75% tapi cb_decisions "cut -25bp" dari headline "Citi expects...").
+  assert.match(l3, /- SNB Rate: 0% \(nilai cadangan statis, belum terverifikasi live — cek bias CB resmi di blok fundamental\)/);
+  assert.doesNotMatch(l3, /keputusan terakhir|rapat 2026-03-19/);
+  // Tanpa cbLive sama sekali -> perilaku lama (seed dilabeli seed).
+  const l4 = _formatFundIndicatorLines(_hgetallToObj(flat(chf)), NOW_T1).join('\n');
+  assert.match(l4, /SNB Rate: 0\.0% \(seed, tanggal rilis tidak diketahui\)/);
+});
+
+test('Tahap 1 blok: dua kaki dirender berurutan dengan header & cara pakai; kaki tanpa data dilewati', () => {
+  const nzd = { 'Cash Rate': { actual: '2.75%', forecast: '2.75%', previous: '2.50%', date: '2026-09-02', source: 'headline' } };
+  const block = _formatFundReleaseBlock(['AUD', 'NZD'], [flat(AUD_HASH), flat(nzd)], NOW_T1);
+  assert.match(block, /^\[DATA RILIS EKONOMI — per kaki pair/);
+  assert.ok(block.indexOf('AUD:') < block.indexOf('NZD:'));
+  assert.match(block, /NZD:\n- Cash Rate: 2\.75% \| forecast 2\.75% \| previous 2\.50% \(2026-09-02, 4 hari lalu\)/);
+  assert.match(block, /Cara pakai: actual vs forecast = kejutan/);
+  const onlyAud = _formatFundReleaseBlock(['AUD', 'NZD'], [flat(AUD_HASH), []], NOW_T1);
+  assert.match(onlyAud, /AUD:/);
+  assert.doesNotMatch(onlyAud, /NZD:/);
+});
+
+test('Tahap 1 e2e: blok [DATA RILIS EKONOMI] kedua kaki masuk Call 1 DAN Kritikus; TIDAK masuk Call 2; jalur manual TIDAK berubah', async () => {
+  const hashes = {
+    'fundamental:GBP': { 'CPI YoY': { actual: '0.3%', forecast: '0.3%', previous: '0.1%', date: '2026-08-19', source: 'calendar' } },
+    'fundamental:USD': { 'NFP': { actual: '162K', forecast: '56K', previous: '21K', date: '2026-09-04', source: 'calendar' } },
+  };
+  await withEnv({ CRON_SECRET: 'topsecret', DEEPSEEK_API_KEY: 'k' }, async () => {
+    const cap = [];
+    const store = makeStore({
+      'ohlcv_fresh:GBPUSD=X': '1',
+      'ohlcv:GBPUSD=X:1h': JSON.stringify(mkTrendCandles(1.30, 1.28)),
+    }, hashes);
+    const origFetch = global.fetch;
+    global.fetch = makeAnalyzeFetchStub(store, rawFrom(AATAS_JSON), cap);
+    try {
+      const handler = loadHandler();
+      await handler({
+        headers: { 'x-cron-secret': 'topsecret' }, method: 'GET',
+        query: { action: 'ohlcv_analyze', symbol: 'GBPUSD=X', label: 'GBP/USD', auto: '1' },
+      }, fakeRes());
+    } finally { global.fetch = origFetch; }
+    assert.equal(cap.length, 3);
+    const call1 = cap[0].messages[1].content, call2 = cap[1].messages[1].content, critic = cap[2].messages[1].content;
+    assert.match(call1, /\[DATA RILIS EKONOMI — per kaki pair/);
+    // Tanpa cache `cb_rates_live_v2` di store, baris rate = fallback statis berlabel
+    // (bukan seed, bukan klaim keputusan) — lalu indikator dari hash.
+    assert.match(call1, /GBP:\n- BOE Rate: 3\.75% \(nilai cadangan statis, belum terverifikasi live[^\n]*\n- CPI YoY: 0\.3% \| forecast 0\.3% \| previous 0\.1%/);
+    assert.match(call1, /USD:\n- Fed Rate: 3\.75% \(nilai cadangan statis[^\n]*\n- NFP: 162K \| forecast 56K \| previous 21K/);
+    assert.match(call1, /angka rilis mentah di blok \[DATA RILIS EKONOMI\]/, 'Step 0(b) menunjuk blok baru');
+    assert.match(call1, /HARUS tentang negara kaki pair ini sendiri/, 'Step 2 menegaskan relevansi negara');
+    assert.match(critic, /\[DATA RILIS EKONOMI — per kaki pair/, 'Kritikus menerima bahan yang sama');
+    assert.doesNotMatch(call2, /\[DATA RILIS EKONOMI/, 'Call 2 (teknikal) tidak butuh & tidak menerima');
+    // Blok data rilis dikirim SETELAH fundamental terstruktur (kalau ada), SEBELUM kalender.
+    assert.ok(call1.indexOf('[DATA RILIS EKONOMI') < call1.indexOf('[CHECKLIST AATAS — BAGIAN 1'));
+  });
+  await withEnv({ DEEPSEEK_API_KEY: 'k' }, async () => {
+    const cap = [];
+    const store = makeStore({
+      'ohlcv_fresh:GBPUSD=X': '1',
+      'ohlcv:GBPUSD=X:1h': JSON.stringify(mkTrendCandles(1.30, 1.28)),
+    }, hashes);
+    const origFetch = global.fetch;
+    global.fetch = makeAnalyzeFetchStub(store, rawFrom(BASE_JSON), cap);
+    try {
+      const handler = loadHandler();
+      await handler({ headers: {}, method: 'POST', body: {}, query: { action: 'ohlcv_analyze', symbol: 'GBPUSD=X', label: 'GBP/USD' } }, fakeRes());
+    } finally { global.fetch = origFetch; }
+    assert.equal(cap.length, 1);
+    assert.doesNotMatch(cap[0].messages[1].content, /\[DATA RILIS EKONOMI/, 'jalur manual publik byte-identik: blok tidak pernah dikirim');
+  });
+});
+
+test('Tahap 1: AATAS_PROMPT_VERSION naik ke 6 (teks checklist Call 1 berubah)', () => {
+  assert.equal(AATAS_PROMPT_VERSION, 6);
+});
+
 // ── (b) blok checklist: Call 1 (makro) vs Call 2 (teknikal), cabang FX vs XAU ─
 
 test('AATAS block MAKRO (Call 1) FX: makro berdiri sendiri, real yield BUKAN pre-gate, chart tidak disebut sama sekali', () => {
@@ -795,7 +943,9 @@ test('_statsPayloadFromLog: entri lama tanpa policy_v dinilai lewat policy_v_est
 
 // ── (a)(d)(e) end-to-end jalur auto vs manual ────────────────────────────────
 
-function makeStore(seed = {}) { return { strings: { ...seed }, lists: {} }; }
+// `hashes` (PLAN AC Tahap 1): `fundamental:<CUR>` bertipe HASH — HGETALL memulangkan
+// array datar [k, v, k, v, ...] persis seperti Upstash.
+function makeStore(seed = {}, hashes = {}) { return { strings: { ...seed }, lists: {}, hashes: { ...hashes } }; }
 
 function redisFetchStub(store) {
   return async (url, opts) => {
@@ -827,6 +977,11 @@ function redisFetchStub(store) {
         const stop = parseInt(rest[1], 10);
         if (store.lists[key]) store.lists[key] = store.lists[key].slice(0, stop + 1);
         return { ok: true, json: async () => ({ result: 'OK' }) };
+      }
+      case 'HGETALL': {
+        const h = (store.hashes || {})[key];
+        const flat = h ? Object.entries(h).flatMap(([k, v]) => [k, typeof v === 'string' ? v : JSON.stringify(v)]) : [];
+        return { ok: true, json: async () => ({ result: flat }) };
       }
       default: return { ok: true, json: async () => ({ result: 'OK' }) };
     }
