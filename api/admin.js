@@ -3461,9 +3461,27 @@ function _evaluateCanceledGhost(setups, candlesBySymbol, nowMs) {
     const eLo = Math.min(...e), eHi = Math.max(...e);
     const rawCandles = candlesBySymbol?.[st.symbol] || [];
     const all = Array.isArray(rawCandles) ? [...rawCandles].sort((a, b) => a.t - b.t) : [];
-    let ghostPhase = 'pending';
+    // BUG DITEMUKAN & DIFIX (audit AATAS 2026-09-06): evaluator ini dulu SELALU mengulang
+    // dari fase 'pending' + scan dari `canceled_t`, walau `ghost_filled_t` sudah tercatat
+    // di tick sebelumnya — padahal Redis cuma menyimpan 120 candle H1 terakhir (~5 hari
+    // trading, `ohlcv:<sym>:1h` slice(-120)) sementara horizon ghost 1,5x horizon_days
+    // (7,5 hari). Begitu candle yang mengisi ghost tergeser keluar jendela, tick
+    // berikutnya "membatalkan" fill itu (mulai lagi dari pending pada candle yang
+    // tersisa) — kalau harga tidak menyentuh entry lagi, ghost yang sebenarnya sudah
+    // terisi berakhir 'expired' (dihitung `expired_no_fill`), padahal nasib aslinya
+    // (TP/SL) tidak pernah dievaluasi. _evaluateSetups SUDAH menangani kelas ini untuk
+    // setup asli (`wasAlreadyOpen` -> scan dari `filled_t`) dan punya penjaga gap data
+    // (candle tertua > 24 jam setelah lahir -> 'stale', jangan mengarang hasil); dua-
+    // duanya direplikasi di sini apa adanya, bukan aturan baru.
+    const wasGhostOpen = Number.isFinite(st.ghost_filled_t);
+    let ghostPhase = wasGhostOpen ? 'open' : 'pending';
+    const scanFromMs = wasGhostOpen ? st.ghost_filled_t * 1000 : startTs;
+    if (!wasGhostOpen && all.length && all[0].t * 1000 > startTs + DAY) {
+      st.ghost_status = 'stale';
+      continue;
+    }
     for (const c of all) {
-      if (c.t * 1000 <= startTs) continue;
+      if (c.t * 1000 <= scanFromMs) continue;
       if (ghostPhase === 'pending') {
         const filled = st.bias === 'bearish' ? c.h >= eLo : c.l <= eHi;
         if (filled) { ghostPhase = 'open'; st.ghost_filled_t = c.t; }
@@ -3476,8 +3494,11 @@ function _evaluateCanceledGhost(setups, candlesBySymbol, nowMs) {
         if (hitTp) { st.ghost_status = 'tp'; st.ghost_closed_t = c.t; break; }
       }
     }
+    // Kadaluarsa HANYA untuk ghost yang belum pernah terisi — sama seperti _evaluateSetups
+    // yang cuma meng-expire 'pending'. Ghost yang sudah terisi tapi belum kena TP/SL tetap
+    // dipantau (dulu ikut di-expire dan salah dihitung sebagai "expired tanpa fill").
     const horizonMs = Math.max(2, st.horizon_days || 5) * 1.5 * DAY;
-    if (!st.ghost_status && nowMs - startTs > horizonMs) st.ghost_status = 'expired';
+    if (!st.ghost_status && ghostPhase === 'pending' && nowMs - startTs > horizonMs) st.ghost_status = 'expired';
   }
   return setups;
 }
@@ -3495,6 +3516,9 @@ function _aggCancelFlipGhostStats(arr) {
     cost: list.filter(x => x.ghost_status === 'tp').length,
     ambiguous: list.filter(x => x.ghost_status === 'ambiguous').length,
     expired_no_fill: list.filter(x => x.ghost_status === 'expired').length,
+    // 'stale' (2026-09-06): candle di jendela Redis sudah tidak menjangkau waktu
+    // pembatalan — hasil tidak diketahui, dipisah supaya tidak menggembungkan pending.
+    stale: list.filter(x => x.ghost_status === 'stale').length,
     pending: list.filter(x => !x.ghost_status).length,
   };
 }
@@ -3513,13 +3537,14 @@ function _aggGateRejectGhostStats(arr) {
   const byGate = {};
   for (const x of list) {
     const g = byGate[x.canceled_reason] || (byGate[x.canceled_reason] = {
-      total: 0, saved: 0, cost: 0, ambiguous: 0, expired_no_fill: 0, pending: 0,
+      total: 0, saved: 0, cost: 0, ambiguous: 0, expired_no_fill: 0, stale: 0, pending: 0,
     });
     g.total++;
     if (x.ghost_status === 'sl') g.saved++;
     else if (x.ghost_status === 'tp') g.cost++;
     else if (x.ghost_status === 'ambiguous') g.ambiguous++;
     else if (x.ghost_status === 'expired') g.expired_no_fill++;
+    else if (x.ghost_status === 'stale') g.stale++;
     else g.pending++;
   }
   return byGate;

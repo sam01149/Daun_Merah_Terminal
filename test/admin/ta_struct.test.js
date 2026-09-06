@@ -688,6 +688,68 @@ test('_evaluateCanceledGhost: kandidat ditahan gate_critic_veto ikut dievaluasi'
   assert.strictEqual(setups[0].ghost_status, 'sl');
 });
 
+// ── Audit AATAS 2026-09-06: ghost vs jendela candle 120 jam ──────────────────────
+// Redis cuma menyimpan 120 candle H1; ghost dipantau sampai 1,5x horizon (7,5 hari).
+// Evaluator dulu selalu mengulang dari fase pending + scan dari canceled_t — begitu
+// candle yang mengisi ghost tergeser keluar jendela, fill-nya "dibatalkan" sendiri.
+test('_evaluateCanceledGhost: ghost_filled_t dari tick sebelumnya dipakai — fill tidak dibatalkan walau candle pengisinya sudah keluar jendela', () => {
+  // Fill terjadi di T0+3600 (tick lama). Sekarang jendela candle mulai T0+7200 (candle fill hilang).
+  const setups = [mkCanceled({ ghost_filled_t: T0 + 3600 })]; // bearish, entry 4030-4040, sl 4065, tp 3960
+  const candles = {
+    'GC=F': [
+      mkC(T0 + 7200, 4020, 4025, 4000, 4010),   // tidak menyentuh entry lagi (dulu: tetap pending)
+      mkC(T0 + 10800, 4010, 4070, 4005, 4060),  // h 4070 >= 4065 -> SL
+    ],
+  };
+  _evaluateCanceledGhost(setups, candles, MS0 + 4 * 3600 * 1000);
+  assert.strictEqual(setups[0].ghost_status, 'sl');
+  assert.strictEqual(setups[0].ghost_filled_t, T0 + 3600); // fill lama tidak ditimpa
+  assert.strictEqual(setups[0].ghost_closed_t, T0 + 10800);
+});
+
+test('_evaluateCanceledGhost: sudah terisi tapi belum TP/SL -> TIDAK di-expire walau lewat horizon (pola sama posisi open asli)', () => {
+  const setups = [mkCanceled({ ghost_filled_t: T0 + 3600 })];
+  const candles = { 'GC=F': [mkC(T0 + 7200, 4020, 4025, 4000, 4010)] }; // tidak kena SL/TP
+  _evaluateCanceledGhost(setups, candles, MS0 + 8 * 86400000); // > 5 hari x 1,5
+  assert.strictEqual(setups[0].ghost_status, undefined); // masih dipantau, bukan "expired tanpa fill"
+});
+
+test('_evaluateCanceledGhost: belum fill + candle tertua > 24 jam setelah pembatalan -> stale (hasil tidak diketahui, jangan mengarang)', () => {
+  const setups = [mkCanceled()];
+  const candles = {
+    'GC=F': [
+      mkC(T0 + 2 * 86400, 4000, 4035, 3995, 4020), // fill "kelihatan" di sini, tapi 2 hari data sebelumnya hilang
+      mkC(T0 + 2 * 86400 + 3600, 4020, 4030, 3955, 3960),
+    ],
+  };
+  _evaluateCanceledGhost(setups, candles, MS0 + 3 * 86400000);
+  assert.strictEqual(setups[0].ghost_status, 'stale');
+  assert.strictEqual(setups[0].ghost_filled_t, undefined);
+});
+
+test('_evaluateCanceledGhost: penjaga gap data TIDAK berlaku kalau ghost sudah terisi sebelumnya (candle lama memang boleh hilang)', () => {
+  const setups = [mkCanceled({ ghost_filled_t: T0 + 3600 })];
+  const candles = {
+    'GC=F': [
+      mkC(T0 + 2 * 86400, 4020, 4030, 3955, 3960), // jauh setelah fill; l 3955 <= 3960 -> TP
+    ],
+  };
+  _evaluateCanceledGhost(setups, candles, MS0 + 3 * 86400000);
+  assert.strictEqual(setups[0].ghost_status, 'tp');
+});
+
+test('_aggCancelFlipGhostStats & _aggGateRejectGhostStats: stale dihitung terpisah, tidak menggembungkan pending', () => {
+  const cf = _aggCancelFlipGhostStats([mkCanceled({ ghost_status: 'stale' }), mkCanceled()]);
+  assert.strictEqual(cf.stale, 1);
+  assert.strictEqual(cf.pending, 1);
+  const gg = _aggGateRejectGhostStats([
+    mkSetup({ status: 'canceled', canceled_reason: 'gate_correlation_cap', ghost_status: 'stale' }),
+    mkSetup({ status: 'canceled', canceled_reason: 'gate_correlation_cap' }),
+  ]);
+  assert.strictEqual(gg.gate_correlation_cap.stale, 1);
+  assert.strictEqual(gg.gate_correlation_cap.pending, 1);
+});
+
 test('_aggGateRejectGhostStats: dipecah per gate, abaikan bias_flip & non-gate_*', () => {
   const arr = [
     mkSetup({ status: 'canceled', canceled_reason: 'gate_correlation_cap', ghost_status: 'sl' }),

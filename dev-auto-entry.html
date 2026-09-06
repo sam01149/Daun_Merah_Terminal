@@ -748,6 +748,7 @@ if (localStorage.getItem('dm_dev_theme') === 'light') {
       statBlock('Ghost Saved', cf.saved, 'green'),
       statBlock('Ghost Cost', cf.cost, 'red'),
       statBlock('Ghost Ambiguous', cf.ambiguous),
+      statBlock('Ghost Stale (gap data)', cf.stale || 0),
       statBlock('Ghost Pending', cf.pending),
     ].join('');
     document.getElementById('mgmtStats').innerHTML = html;
@@ -775,6 +776,7 @@ if (localStorage.getItem('dm_dev_theme') === 'light') {
         statBlock('Ghost Cost (gate salah)', s.cost, 'red'),
         statBlock('Ambiguous', s.ambiguous),
         statBlock('Expired (tak fill)', s.expired_no_fill),
+        statBlock('Stale (gap data)', s.stale || 0),
         statBlock('Pending', s.pending, 'yellow'),
       ].join('');
     }
