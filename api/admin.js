@@ -7992,7 +7992,7 @@ async function ohlcvAnalyzeHandler(req, res) {
           // keputusan hard-block, tambahkan counter OBSERVASI non-blocking di sini
           // (pola sama conflict_waktu_flagged di atas) — JANGAN langsung set
           // autoGuardReason tanpa data.
-          const corrBlock = correlatedExposureBlock({ symbol, bias: structured.bias, positions: log, liveSign: liveCorrSign });
+          const corrBlock = correlatedExposureBlock({ symbol, bias: structured.bias, positions: log, liveSign: liveCorrSign, nowMs: Date.now() });
           if (corrBlock) {
             autoGuardReason = 'correlation_cap';
             autoGuardDetail = _formatCorrelationBlockDetail(corrBlock);

@@ -221,11 +221,32 @@ function _correlatedPartnersOf(symbol) {
 // tervalidasi, persis pola yang dihindari proyek ini.
 const EXPOSURE_BINDING_STATUSES = new Set(['open', 'pending']);
 
+// CELAH DITEMUKAN & DITUTUP (audit populasi AATAS 2026-09-04, dieksekusi 2026-09-06
+// setelah disetujui user): `horizon_days` cuma berlaku ke 'pending' (expired setelah
+// 1,5x horizon, lihat _evaluateSetups di admin.js) — TIDAK PERNAH ke posisi yang
+// SUDAH terisi. Kasus nyata: CHF/JPY open 6 hari (horizon 5) tetap dihitung
+// mengikat, memblokir 4 kandidat EUR/USD berturut-turut lewat gate ini padahal
+// horizon-nya sendiri sudah lewat sejak hari ke-5. BEDA dengan keputusan "sengaja
+// TIDAK memakai ambang umur pending" di komentar atas (2026-08-18) — itu soal
+// menghindari MENEMUKAN angka ambang baru yang tidak tervalidasi untuk 'pending'.
+// Di sini TIDAK ada angka baru: `horizon_days` per-setup yang dipakai SUDAH ada &
+// sudah dikalibrasi tiap pair, cuma belum pernah dibaca lagi setelah posisi terisi.
+// BUKAN time-stop — posisi 'open' yang lewat horizon TETAP hidup apa adanya sampai
+// TP/SL asli, cuma berhenti dihitung "mengikat" untuk gate korelasi INI.
+function _isOpenPastHorizon(position, nowMs) {
+  if (!position || position.status !== 'open') return false;
+  const filledMs = Number.isFinite(position.filled_t) ? position.filled_t * 1000 : null;
+  if (filledMs == null) return false; // data tidak lengkap -> fail-open, tetap dianggap mengikat
+  const horizonMs = Math.max(2, position.horizon_days || 5) * 86400000;
+  return (nowMs - filledMs) > horizonMs;
+}
+
 // positions: array entri setup_log_auto:v1 (semua pair, status apa saja — fungsi
 // ini sendiri yang filter status yang mengikat exposure). `openPositions` = nama
 // parameter lama, tetap diterima supaya call site & test lama tidak perlu diubah
 // beramai-ramai; keduanya berarti hal yang sama sekarang (open + pending).
-// liveSign: lihat komentar CORRELATED_PAIRS di atas.
+// liveSign: lihat komentar CORRELATED_PAIRS di atas. nowMs: opsional (default
+// Date.now()), dioper eksplisit di test _isOpenPastHorizon supaya deterministik.
 // CELAH TRANSPARANSI DITUTUP (2026-08-31, diskusi user "di auto entry ga ada entryan
 // ganda loh"): gate ini dulu cuma mengembalikan true/false, jadi satu-satunya jejak yang
 // sampai ke user adalah kalimat generik "pair berkorelasi sudah punya posisi searah" —
@@ -234,11 +255,13 @@ const EXPOSURE_BINDING_STATUSES = new Set(['open', 'pending']);
 // tidak punya entri ganda, dan memang benar — yang mengikat justru pair LAIN). Fungsi
 // utamanya sekarang mengembalikan DETAIL blokir (atau null kalau lolos); predikat lama
 // tinggal pembungkus tipis supaya call site & test lama tidak perlu diubah.
-// Perilaku memblokirnya sendiri TIDAK berubah sedikit pun.
-function correlatedExposureBlock({ symbol, bias, positions, openPositions, liveSign }) {
+// Perilaku memblokirnya sendiri TIDAK berubah sedikit pun (di luar celah horizon di atas).
+function correlatedExposureBlock({ symbol, bias, positions, openPositions, liveSign, nowMs }) {
   const list = positions || openPositions || [];
+  const now = Number.isFinite(nowMs) ? nowMs : Date.now();
   for (const partner of _correlatedPartnersOf(symbol)) {
-    const boundPartner = list.find(p => p && p.symbol === partner && EXPOSURE_BINDING_STATUSES.has(p.status));
+    const boundPartner = list.find(p => p && p.symbol === partner
+      && EXPOSURE_BINDING_STATUSES.has(p.status) && !_isOpenPastHorizon(p, now));
     if (!boundPartner) continue;
     const corr = _correlationOf(symbol, partner, liveSign);
     const sameDirection = bias === boundPartner.bias;
@@ -573,6 +596,7 @@ module.exports = {
   CORRELATED_PAIRS,
   correlatedExposureBlock,
   EXPOSURE_BINDING_STATUSES,
+  _isOpenPastHorizon,
   isTimingConflictBlocked,
   isInvalidationTriggered,
   INVALIDATION_TRIGGER_TYPES,

@@ -11,6 +11,7 @@ const {
   DRAWDOWN_EMERGENCY_VALVE_DAYS,
   isCorrelatedExposureBlocked,
   correlatedExposureBlock,
+  _isOpenPastHorizon,
   isTimingConflictBlocked,
   isInvalidationTriggered,
   EXPOSURE_BINDING_STATUSES,
@@ -239,6 +240,78 @@ test('isCorrelatedExposureBlocked: tetap boolean & konsisten dengan correlatedEx
   const args = { symbol: 'EURUSD=X', bias: 'bearish', positions };
   assert.equal(isCorrelatedExposureBlocked(args), true);
   assert.equal(correlatedExposureBlock(args) !== null, isCorrelatedExposureBlocked(args));
+});
+
+// ── _isOpenPastHorizon + celah "horizon tidak berlaku setelah terisi" (2026-09-06) ──
+// Kasus nyata yang memicu ini: CHF/JPY open 6 hari (horizon 5) tetap memblokir 4
+// kandidat EUR/USD lewat correlatedExposureBlock — BUKAN time-stop (posisi TETAP
+// hidup), cuma berhenti dihitung "mengikat" untuk gate korelasi.
+// (DAY_MS sudah dideklarasikan di atas, baris ~116.)
+
+test('_isOpenPastHorizon: bukan open (pending/tp/dst) -> selalu false', () => {
+  assert.equal(_isOpenPastHorizon({ status: 'pending', filled_t: 0, horizon_days: 5 }, 999 * DAY_MS), false);
+  assert.equal(_isOpenPastHorizon(null, Date.now()), false);
+});
+
+test('_isOpenPastHorizon: open, belum lewat horizon -> false', () => {
+  const filledT = 1000; // detik
+  const nowMs = filledT * 1000 + 4 * DAY_MS; // 4 hari sejak terisi, horizon 5
+  assert.equal(_isOpenPastHorizon({ status: 'open', filled_t: filledT, horizon_days: 5 }, nowMs), false);
+});
+
+test('_isOpenPastHorizon: open, sudah lewat horizon -> true (kasus nyata CHF/JPY 6 hari/horizon 5)', () => {
+  const filledT = 1000;
+  const nowMs = filledT * 1000 + 6 * DAY_MS;
+  assert.equal(_isOpenPastHorizon({ status: 'open', filled_t: filledT, horizon_days: 5 }, nowMs), true);
+});
+
+test('_isOpenPastHorizon: horizon_days hilang -> fallback 5 (pola sama _evaluateSetups)', () => {
+  const filledT = 1000;
+  assert.equal(_isOpenPastHorizon({ status: 'open', filled_t: filledT }, filledT * 1000 + 4 * DAY_MS), false);
+  assert.equal(_isOpenPastHorizon({ status: 'open', filled_t: filledT }, filledT * 1000 + 6 * DAY_MS), true);
+});
+
+test('_isOpenPastHorizon: horizon_days=1 (di bawah lantai) -> lantai minimal 2 hari (Math.max(2,...), pola sama _evaluateSetups)', () => {
+  const filledT = 1000;
+  assert.equal(_isOpenPastHorizon({ status: 'open', filled_t: filledT, horizon_days: 1 }, filledT * 1000 + 1.5 * DAY_MS), false);
+  assert.equal(_isOpenPastHorizon({ status: 'open', filled_t: filledT, horizon_days: 1 }, filledT * 1000 + 2.5 * DAY_MS), true);
+});
+
+test('_isOpenPastHorizon: filled_t hilang/bukan angka -> fail-open (false, tetap dianggap mengikat)', () => {
+  assert.equal(_isOpenPastHorizon({ status: 'open', horizon_days: 5 }, Date.now()), false);
+  assert.equal(_isOpenPastHorizon({ status: 'open', filled_t: 'x', horizon_days: 5 }, Date.now()), false);
+});
+
+test('correlatedExposureBlock: open lewat horizon -> TIDAK dihitung mengikat lagi -> lolos (null)', () => {
+  const filledT = 1000;
+  const nowMs = filledT * 1000 + 6 * DAY_MS; // 6 hari, horizon 5 -> lewat
+  const positions = [{ symbol: 'CHFJPY=X', bias: 'bearish', status: 'open', filled_t: filledT, horizon_days: 5 }];
+  const result = correlatedExposureBlock({ symbol: 'EURUSD=X', bias: 'bearish', positions, nowMs });
+  assert.equal(result, null);
+});
+
+test('correlatedExposureBlock: open BELUM lewat horizon -> tetap memblokir seperti biasa', () => {
+  const filledT = 1000;
+  const nowMs = filledT * 1000 + 3 * DAY_MS; // 3 hari, horizon 5 -> belum lewat
+  const positions = [{ symbol: 'CHFJPY=X', bias: 'bearish', status: 'open', filled_t: filledT, horizon_days: 5 }];
+  const result = correlatedExposureBlock({ symbol: 'EURUSD=X', bias: 'bearish', positions, nowMs });
+  assert.notEqual(result, null);
+  assert.equal(result.partner, 'CHFJPY=X');
+});
+
+test('correlatedExposureBlock: pending TIDAK terpengaruh perubahan ini, tetap mengikat walau "tua"', () => {
+  // pending sudah punya expiry sendiri di _evaluateSetups (1.5x horizon) — gate ini
+  // sengaja tidak menyentuh 'pending' sama sekali, cuma 'open'.
+  const positions = [{ symbol: 'CHFJPY=X', bias: 'bearish', status: 'pending', ts: 1000, horizon_days: 5 }];
+  const nowMs = 1000 + 999 * DAY_MS;
+  const result = correlatedExposureBlock({ symbol: 'EURUSD=X', bias: 'bearish', positions, nowMs });
+  assert.notEqual(result, null);
+});
+
+test('correlatedExposureBlock: nowMs diam -> default Date.now() (call site lama tanpa nowMs tetap jalan)', () => {
+  const positions = [{ symbol: 'CHFJPY=X', bias: 'bearish', status: 'open', filled_t: Math.floor(Date.now() / 1000), horizon_days: 5 }];
+  const result = correlatedExposureBlock({ symbol: 'EURUSD=X', bias: 'bearish', positions });
+  assert.notEqual(result, null); // baru saja terisi -> jelas belum lewat horizon
 });
 
 test('isCorrelatedExposureBlocked: pair tanpa mapping korelasi (AUD/NZD, EUR/GBP) -> selalu false', () => {
