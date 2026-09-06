@@ -241,7 +241,10 @@ const SOURCE_CACHE_KEYS = {
   data_freshness: [], // self-heal-nya trigger ohlcv_sync (lihat trySelfHealOhlcvSync), bukan clear cache
 };
 
-async function sendHealthTelegram(text) {
+// Dipakai bersama sendHealthTelegram (alert developer) & _notifyAutoEntryTelegram
+// (2026-09-06, notifikasi siklus sinyal auto-entry) — satu chat Telegram yang sama
+// (TELEGRAM_CHAT_ID), `logPrefix` cuma beda label di log kalau gagal kirim.
+async function _sendTelegramRaw(text, { logPrefix = 'Telegram' } = {}) {
   const TG_TOKEN   = process.env.TELEGRAM_BOT_TOKEN;
   const TG_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
   if (!TG_TOKEN || !TG_CHAT_ID) return;
@@ -252,7 +255,11 @@ async function sendHealthTelegram(text) {
       body: JSON.stringify({ chat_id: TG_CHAT_ID, text, parse_mode: 'Markdown', disable_web_page_preview: true }),
       signal: AbortSignal.timeout(10000),
     });
-  } catch(e) { console.warn('health: Telegram alert failed:', e.message); }
+  } catch(e) { console.warn(`${logPrefix}: Telegram alert failed:`, e.message); }
+}
+
+async function sendHealthTelegram(text) {
+  return _sendTelegramRaw(text, { logPrefix: 'health' });
 }
 
 // M1 (audit 2026-07-18): Yahoo Finance = titik gagal tunggal semua candle FX.
@@ -1188,6 +1195,65 @@ async function _notifySetupOutcome(setup) {
     const staleKeys = await sendWebPush(subs, payload);
     if (staleKeys.length) await redisCmd('HDEL', 'push_subs_dev', ...staleKeys).catch(() => {});
   } catch (e) { console.warn('_notifySetupOutcome: sendWebPush gagal:', e.message); }
+}
+
+// Notifikasi Telegram siklus hidup sinyal auto-entry (2026-09-06, diskusi user) —
+// BEDA dari _notifySetupOutcome di atas (web push, subscriber dev PWA, cuma
+// tp/sl/ambiguous): ini mencakup SELURUH siklus (lahir/refine/terisi/dibatalkan/
+// kadaluarsa/closed), dikirim ke chat Telegram yang SAMA dengan alert developer
+// (sendHealthTelegram/_sendTelegramRaw) — auto-entry masih eksperimen
+// developer-only (isolasi senyap Plan U-7), jadi TIDAK PERNAH boleh menyentuh
+// setup_log:v1 (manual, publik). Guard `setup.source !== 'auto'` di
+// _notifyAutoEntryTelegram menjaga itu di titik terakhir sebelum kirim.
+function _autoEntryDirectionLabel(bias) {
+  return bias === 'bearish' ? 'SELL' : bias === 'bullish' ? 'BUY' : '—';
+}
+
+// Skema dua-sisi fundamental (POLICY_EPOCHS v43, gate1_skor_dua_sisi) — ambil
+// angka SISI YANG MENANG (searah bias yang sudah dikunci), bukan breakdown dua sisi.
+function _resolveFundamentalPct(fundamentalBias, bias) {
+  if (!fundamentalBias) return null;
+  const pct = bias === 'bearish' ? fundamentalBias.case_bearish_pct : fundamentalBias.case_bullish_pct;
+  return (pct === undefined || pct === null || isNaN(Number(pct))) ? null : Number(pct);
+}
+
+function _autoEntryStatusLabel(status) {
+  return status === 'canceled' ? 'cancel' : status;
+}
+
+// Pure, dites unit terpisah dari network (pola sama _corroborateLevel). Format
+// PERSIS sesuai keputusan user (rapat 2026-09-06) — jangan ubah wording/urutan
+// baris tanpa diskusi ulang.
+function _formatAutoEntrySignalMessage({ pair, bias, price, tp, sl, fundamentalPct, teknikalPct, status, refined }) {
+  const priceLine = refined ? `${price} (refined)` : `${price}`;
+  return [
+    'signal entry',
+    `${pair} ${_autoEntryDirectionLabel(bias)}`,
+    `Price: ${priceLine}`,
+    `Take Profit : ${tp}`,
+    `Stop Loss: ${sl}`,
+    `Fundamental: ${fundamentalPct != null ? fundamentalPct + '%' : '—'}`,
+    `Teknikal: ${teknikalPct != null ? teknikalPct + '%' : '—'}`,
+    `status: ${_autoEntryStatusLabel(status)}`,
+  ].join('\n');
+}
+
+async function _notifyAutoEntryTelegram(setup, status, opts = {}) {
+  if (!setup || setup.source !== 'auto') return; // isolasi U-7: manual (setup_log:v1) tidak pernah dikirim
+  try {
+    const text = _formatAutoEntrySignalMessage({
+      pair: setup.label || setup.symbol,
+      bias: setup.bias,
+      price: setup.entry_zone,
+      tp: setup.tp,
+      sl: setup.sl,
+      fundamentalPct: _resolveFundamentalPct(setup.fundamental_bias, setup.bias),
+      teknikalPct: setup.checklist_pct ?? null,
+      status,
+      refined: !!opts.refined,
+    });
+    await _sendTelegramRaw(text, { logPrefix: 'auto-entry' });
+  } catch (e) { console.warn('_notifyAutoEntryTelegram gagal:', e.message); }
 }
 
 // Push terpisah untuk transisi tp/sl yang DITAHAN oleh _corroborateGoldTransitions
@@ -3736,14 +3802,21 @@ async function _corroborateGoldTransitions(log, transitioned) {
 // kedua jalur yang bisa memfinalisasi transisi tp/sl konsisten — sama-sama lewat
 // korroborasi sebelum notifikasi, tidak ada jalur yang lolos tanpa guard ini.
 async function _finalizeSetupTransitions(log, statusBeforeById) {
-  const transitioned = log.filter(s => s && statusBeforeById.has(s.id) &&
-    statusBeforeById.get(s.id) !== s.status && (s.status === 'tp' || s.status === 'sl' || s.status === 'ambiguous'));
-  if (!transitioned.length) return;
-  const divergenceFlagged = await _corroborateGoldTransitions(log, transitioned);
+  const changed = s => s && statusBeforeById.has(s.id) && statusBeforeById.get(s.id) !== s.status;
+  // 'outcome' (tp/sl/ambiguous) tetap lewat _corroborateGoldTransitions (basis
+  // blowout GC=F) sebelum dianggap final, persis perilaku lama. 'lifecycle'
+  // (open/expired, 2026-09-06, notifikasi Telegram siklus sinyal) TIDAK relevan
+  // dengan korroborasi basis futures-vs-spot, jadi langsung dianggap confirmed.
+  const outcomeTransitioned = log.filter(s => changed(s) && (s.status === 'tp' || s.status === 'sl' || s.status === 'ambiguous'));
+  const lifecycleTransitioned = log.filter(s => changed(s) && (s.status === 'open' || s.status === 'expired'));
+  if (!outcomeTransitioned.length && !lifecycleTransitioned.length) return;
+  const divergenceFlagged = outcomeTransitioned.length ? await _corroborateGoldTransitions(log, outcomeTransitioned) : [];
   const divergenceIds = new Set(divergenceFlagged.map(s => s.id));
-  const confirmed = transitioned.filter(s => !divergenceIds.has(s.id));
+  const confirmed = outcomeTransitioned.filter(s => !divergenceIds.has(s.id));
   await Promise.allSettled([
     ...confirmed.map(s => _notifySetupOutcome(s)),
+    ...confirmed.map(s => _notifyAutoEntryTelegram(s, s.status)),
+    ...lifecycleTransitioned.map(s => _notifyAutoEntryTelegram(s, s.status)),
     ...divergenceFlagged.map(s => _notifyDivergenceHold(s)),
   ]);
 }
@@ -4466,7 +4539,15 @@ async function positionReviewHandler(req, res) {
     // setup_log_auto:v1 tanpa lock — sumber race yang sama, TERBUKTI nyata (koreksi manual
     // GC=F sempat ketiban balik oleh handler ini). persistTick sekarang pakai lock yang sama.
     const before = JSON.stringify(log);
-    const statusBeforeById = new Map([[log[idx].id, log[idx].status]]);
+    // Snapshot SELURUH log (bukan cuma id yang direview) — 2026-09-06: _evaluateSetups
+    // di bawah jalan atas SELURUH `log`, bukan cuma symbol yang direview (cek expired
+    // TIDAK butuh candle, bisa kena setup LAIN yang kebetulan lewat horizon di tick
+    // yang sama). Snapshot sempit sebelum ini membuat transisi status pending->expired
+    // pada setup lain itu tidak pernah masuk _finalizeSetupTransitions (statusBeforeById
+    // tidak kenal id-nya) — notifikasi Telegram hilang permanen (fresh snapshot
+    // _buildAutoScopeStats berikutnya sudah melihat status baru itu sebagai "sudah
+    // dari awal begitu", bukan transisi).
+    const statusBeforeById = new Map(log.map(s => [s.id, s.status]));
     _evaluateSetups(log, { [symbol]: candles }, Date.now(), calendarEvents, newsItems);
     await _finalizeSetupTransitions(log, statusBeforeById);
     const persistTick = async () => {
@@ -7854,6 +7935,7 @@ async function ohlcvAnalyzeHandler(req, res) {
                   // membalik bias) ikut hilang tanpa pernah tersimpan (silent, tidak ada
                   // warning). Sekarang disimpan segera, terlepas dari nasib kandidat baru.
                   shouldSaveLog = true;
+                  _notifyAutoEntryTelegram(stalePending, 'cancel').catch(() => {});
                 }
               }
             }
@@ -7977,8 +8059,12 @@ async function ohlcvAnalyzeHandler(req, res) {
           // selalu false -> needsGateA selalu false) — Gate A tidak pernah menyentuh
           // manual, TIDAK ada perubahan perilaku/latensi untuk manual sama sekali.
           if (!dup && !blockedByOpenPosition) {
-            log.unshift(buildNewSetupEntry());
+            const newEntry = buildNewSetupEntry();
+            log.unshift(newEntry);
             shouldSaveLog = true;
+            // isAutoCall: cabang ini JUGA dieksekusi manual (lihat komentar di atas) —
+            // notifikasi Telegram HANYA untuk auto (setup_log_auto:v1), isolasi U-7.
+            if (isAutoCall) _notifyAutoEntryTelegram(newEntry, 'pending').catch(() => {});
           }
           if (shouldSaveLog) await redisCmd('SET', setupLogKey, JSON.stringify(log.slice(0, 200)));
         }
@@ -8052,6 +8138,7 @@ async function ohlcvAnalyzeHandler(req, res) {
               Object.assign(target, refineCandidate.fields);
               redisCmd('INCR', 'auto_guard_stats:saved_refine').catch(() => {});
               await redisCmd('SET', setupLogKey, JSON.stringify(log2.slice(0, 200)));
+              _notifyAutoEntryTelegram(target, 'pending', { refined: true }).catch(() => {});
             }
           } else if (dup2 || openNow) {
             console.log(`auto-entry ${symbol}: state berubah selama Gate A berjalan (race_detected) — dibuang, tidak ditulis dobel`);
@@ -8066,8 +8153,10 @@ async function ohlcvAnalyzeHandler(req, res) {
             await redisCmd('SET', setupLogKey, JSON.stringify(log2.slice(0, 200)));
           } else {
             redisCmd('INCR', 'auto_guard_stats:saved').catch(() => {});
-            log2.unshift(buildNewSetupEntry());
+            const newEntry2 = buildNewSetupEntry();
+            log2.unshift(newEntry2);
             await redisCmd('SET', setupLogKey, JSON.stringify(log2.slice(0, 200)));
+            _notifyAutoEntryTelegram(newEntry2, 'pending').catch(() => {});
           }
         } catch (e) { console.warn('setup_log write failed (fase 2):', e.message); }
         finally { redisCmd('DEL', lockKey).catch(() => {}); } }
@@ -8581,6 +8670,11 @@ module.exports._breachDirection = _breachDirection;
 module.exports._corroborateGoldTransitions = _corroborateGoldTransitions;
 module.exports._finalizeSetupTransitions = _finalizeSetupTransitions;
 module.exports.GOLD_BASIS_TOLERANCE_USD = GOLD_BASIS_TOLERANCE_USD;
+module.exports._autoEntryDirectionLabel = _autoEntryDirectionLabel;
+module.exports._resolveFundamentalPct = _resolveFundamentalPct;
+module.exports._autoEntryStatusLabel = _autoEntryStatusLabel;
+module.exports._formatAutoEntrySignalMessage = _formatAutoEntrySignalMessage;
+module.exports._notifyAutoEntryTelegram = _notifyAutoEntryTelegram;
 module.exports._findSwings = _findSwings;
 module.exports._classifyStructure = _classifyStructure;
 module.exports._clusterSrLevels = _clusterSrLevels;
