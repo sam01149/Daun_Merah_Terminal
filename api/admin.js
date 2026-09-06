@@ -5407,7 +5407,12 @@ const COT_CME_PROMPT_VERSION = 1;
 // v6 (2026-09-06, PLAN AC Tahap 1) — blok [DATA RILIS EKONOMI] (fundamental:<CUR> kedua
 // kaki) masuk Call 1 + Kritikus; Step 0(b) & Step 2 menunjuk blok itu secara eksplisit
 // dan menegaskan driver harus tentang negara kaki pair sendiri.
-const AATAS_PROMPT_VERSION = 6;
+// v7 (2026-09-06, permintaan user "kerjakan sekarang") — definisi `technical.score_pct`
+// diperjelas di Call 2: skor STRUKTUR & LOKASI saja (Step 4-5 + 7), terpisah dari
+// fundamental, bukan salinan checklist_pct. Latar: audit S350 lanjutan — 15/15 setup
+// angkanya nyaris identik checklist_pct (AI menyalin skor total). Murni observability
+// (angka ini tidak dibaca gate/verdict mana pun), jadi TIDAK ada epoch POLICY_EPOCHS baru.
+const AATAS_PROMPT_VERSION = 7;
 
 // (2026-09-02) `final_validation` (Step 8, COT/retail) dipaksa nilai ini untuk SEMUA
 // setup AATAS — Call 2 (yang mengisi field ini di v1/v2) tidak pernah menerima data
@@ -6348,7 +6353,7 @@ async function _runAatasTwoCall({
     '- invalidation_condition: kondisi spesifik yang membatalkan skenario ini sepenuhnya (beda dari sl — ini soal struktur/tesis).',
     '- invalidation_trigger: versi TERSTRUKTUR dari invalidation_condition supaya KODE bisa mendeteksinya otomatis — {"type":"ma_break"|"price_level"|"swing_break","level":<satu angka>,"timeframe":"1h"|"4h"|"1d","direction":"above"|"below"}. "level" WAJIB satu angka konkret yang ADA di data di atas, "direction" = arah CLOSE candle yang membatalkan skenario. Kalau tidak bisa diringkas jadi satu level tunggal, set null — JANGAN mengarang angka.' + (invalidationTail || ''),
     '- time_horizon_days: estimasi jumlah hari realistis skenario ini main out (angka, misal 3, 5, 10) berdasarkan jarak entry-tp dibanding rata-rata gerak harian (ATR/sigma) di data.',
-    '- technical: hasil Step 4-5 — {"score_pct":0-100,"bos":"ada|lemah|tidak ada","area":"level/zona yang dipakai + angkanya","fib_zone":"angka level fib yang dipakai","fib_reason":"kenapa dangkal (~0,382) / dalam (~0,618) / tengah (~0,5), dikaitkan ke kekuatan BOS","liquidity_context":"..." atau null,"ranging":true/false,"struktur_vs_bias":"selaras|netral|campur|berlawanan"}. liquidity_context bobotnya LEBIH RENDAH dari BOS/S-R. struktur_vs_bias: lihat definisi & syarat di STEP 4 di atas — kode akan menegakkan ulang ("berlawanan" WAJIB berakibat NO TRADE, kamu tidak bisa memaksakan setup sambil menulis label ini).',
+    '- technical: hasil Step 4-5 — {"score_pct":0-100,"bos":"ada|lemah|tidak ada","area":"level/zona yang dipakai + angkanya","fib_zone":"angka level fib yang dipakai","fib_reason":"kenapa dangkal (~0,382) / dalam (~0,618) / tengah (~0,5), dikaitkan ke kekuatan BOS","liquidity_context":"..." atau null,"ranging":true/false,"struktur_vs_bias":"selaras|netral|campur|berlawanan"}. liquidity_context bobotnya LEBIH RENDAH dari BOS/S-R. technical.score_pct = skor STRUKTUR & LOKASI SAJA (Step 4-5 + timing Step 7): kualitas BOS, kejelasan area, posisi entry di zona pullback yang benar, jarak dari impuls — dinilai TERPISAH dari fundamental dan BUKAN salinan checklist_pct. Struktur "campur"/"netral", BOS lemah, atau ranging WAJIB membuat angka ini jelas lebih rendah (di bawah 60) daripada struktur "selaras" dengan BOS kuat (di atas 70); kalau angkamu sama dengan checklist_pct, kamu belum menilai teknikalnya. struktur_vs_bias: lihat definisi & syarat di STEP 4 di atas — kode akan menegakkan ulang ("berlawanan" WAJIB berakibat NO TRADE, kamu tidak bisa memaksakan setup sambil menulis label ini).',
     '- gate_risk_management: hasil GATE Step 6 — {"pass":true/false,"note":"sebut RR aktual dan dasar struktural SL"}. false kalau RR di bawah 1:2 atau SL tidak berpijak struktur. Risiko per entry selalu flat 2%, jangan pernah mengusulkan mengecilkan size.',
     '- JANGAN isi final_validation atau verdict — dua-duanya dihitung server, bukan kamu (lihat instruksi Step 8 di atas).',
     '- conflict: "waktu" kalau ada event high-impact relevan yang jatuh sebelum skenario selesai (termasuk event <6 jam yang bikin entry ditunda) — ini yang paling sering terjadi dan WAJIB dilaporkan jujur. "arah" HANYA kalau kamu tetap mengeluarkan setup padahal struktur berlawanan dengan bias terkunci (seharusnya tidak pernah terjadi — kalau terjadi, laporkan apa adanya, jangan disamarkan jadi "none"). "none" kalau tidak ada keduanya.',

@@ -176,8 +176,31 @@ test('Tahap 1 e2e: blok [DATA RILIS EKONOMI] kedua kaki masuk Call 1 DAN Kritiku
   });
 });
 
-test('Tahap 1: AATAS_PROMPT_VERSION naik ke 6 (teks checklist Call 1 berubah)', () => {
-  assert.equal(AATAS_PROMPT_VERSION, 6);
+test('Tahap 1: AATAS_PROMPT_VERSION naik (6 = blok data rilis di Call 1; 7 = definisi technical.score_pct di Call 2)', () => {
+  assert.equal(AATAS_PROMPT_VERSION, 7);
+});
+
+test('technical.score_pct (v7): instruksi Call 2 mendefinisikannya sebagai skor struktur & lokasi saja, bukan salinan checklist_pct', async () => {
+  await withEnv({ CRON_SECRET: 'topsecret', DEEPSEEK_API_KEY: 'k' }, async () => {
+    const cap = [];
+    const store = baseStore();
+    const origFetch = global.fetch;
+    global.fetch = makeAnalyzeFetchStub(store, rawFrom(AATAS_JSON), cap);
+    try {
+      const handler = loadHandler();
+      await handler({
+        headers: { 'x-cron-secret': 'topsecret' }, method: 'GET',
+        query: { action: 'ohlcv_analyze', symbol: 'GBPUSD=X', label: 'GBP/USD', auto: '1' },
+      }, fakeRes());
+    } finally { global.fetch = origFetch; }
+    const call2 = cap[1].messages[1].content;
+    assert.match(call2, /technical\.score_pct = skor STRUKTUR & LOKASI SAJA \(Step 4-5 \+ timing Step 7\)/);
+    assert.match(call2, /BUKAN salinan checklist_pct/);
+    assert.match(call2, /kalau angkamu sama dengan checklist_pct, kamu belum menilai teknikalnya/);
+    // Rumus checklist_pct TIDAK disentuh (poin 9 plan lama tetap ditunda).
+    assert.match(call2, /- checklist_pct: skor akhir gabungan seluruh step/);
+    assert.doesNotMatch(cap[0].messages[1].content, /technical\.score_pct/, 'Call 1 tidak ikut berubah');
+  });
 });
 
 // ── (b) blok checklist: Call 1 (makro) vs Call 2 (teknikal), cabang FX vs XAU ─
