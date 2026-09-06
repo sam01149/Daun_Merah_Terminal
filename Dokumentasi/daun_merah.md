@@ -11,10 +11,27 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-09-05 (Session 350 — Simulasi Kalender Ekonomi: baris "Makro:" dibetulkan supaya pakai formula tertimbang yang sama dengan tab FUNDAMENTAL (bobot kepentingan indikator × bobot umur data), bukan hitungan mentah — dua skor "kekuatan fundamental" yang tadinya bisa beda angka untuk currency yang sama sekarang konsisten; Session 349 — Simulasi Kalender Ekonomi: Retail dicabut dari faktor konfluensi + Makro ikut menghitung hasil simulasi BEAT/MISS event itu sendiri; Session 348 — `market-digest.yml` digate ke heartbeat VPS: GH Actions sekarang cek `vps:heartbeat` dulu, VPS hidup -> diam, VPS mati -> baru jalan sebagai fallback; ditemukan live straggler GH Actions (slot Eropa, telat ~5 jam) mendarat 28 menit sebelum slot New York dan bikin trigger VPS yang tepat waktu ikut kena skip dedup 3 jam)
+> **Last updated:** 2026-09-06 (Session 352 — Beres-beres folder proyek: `ai-relay/` + `AI_Comms/` (bridge konsultasi Qwen/Big Pickle, sudah tidak dipakai) dihapus permanen atas keputusan user + entrinya dicabut dari `.gitignore`; `.playwright-mcp/` (log/screenshot verifikasi lama) dibersihkan; `.cache/` (raw hasil query Scopus) diaudit satu per satu — 15 file yang temuannya sudah tercatat di `daun_merah_riset.md`/`daun_merah_referensi_riset.md`/riset proyek Daun_Merah_Crypto dihapus, 23 file yang BELUM ditulis dipertahankan sesuai ATURAN.md §3; Session 350 — Simulasi Kalender Ekonomi: baris "Makro:" dibetulkan supaya pakai formula tertimbang yang sama dengan tab FUNDAMENTAL (bobot kepentingan indikator × bobot umur data), bukan hitungan mentah — dua skor "kekuatan fundamental" yang tadinya bisa beda angka untuk currency yang sama sekarang konsisten; Session 349 — Simulasi Kalender Ekonomi: Retail dicabut dari faktor konfluensi + Makro ikut menghitung hasil simulasi BEAT/MISS event itu sendiri)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
+
+## Changelog Session 352 (2026-09-06) — Beres-beres Folder Proyek: Hapus Tooling Mati, Audit Cache Riset
+
+**Konteks.** User perhatikan folder proyek makin banyak dan minta digolongkan/dibersihkan. Ditelusuri isi tiap folder yang mencurigakan + status git-nya (tracked vs gitignored) sebelum mengusulkan apa pun dihapus.
+
+**Keputusan user (per folder):**
+- `ai-relay/` + `AI_Comms/` (bridge dev-only buat konsultasi Qwen & "Big Pickle" sebagai tim penasihat Claude, gitignored) — **dihapus**, sudah tidak dipakai. Entrinya di `.gitignore` ikut dicabut karena jadi rujukan mati.
+- `bridge/` (`mt5_bridge.py`, eksekusi MT5/Deriv) — **dipertahankan**, masih kandidat execution layer.
+- `project_delay/` (riset ML BTC lama) — **dipertahankan**, akan dimigrasi ke proyek Daun_Merah_Crypto.
+- `.playwright-mcp/` (log/screenshot verifikasi visual sesi lama) — dihapus tanpa nanya, murni disposable dan otomatis ter-generate ulang.
+- `test/`, `vps/`, `brand/`, `scripts/`, `api/`, `.agents/`, `.vercel/` — semua ter-track/aktif dipakai, tidak disentuh.
+
+**Audit `.cache/` (raw JSON hasil query Scopus MCP, 38 file).** ATURAN.md §3 melarang hapus cache riset sebelum temuannya tercatat. Dicocokkan tiap file (topik query + judul paper) terhadap `daun_merah_riset.md`, `daun_merah_referensi_riset.md`, dan (untuk topik yang sudah dipindah) `Daun_Merah_Crypto/Dokumentasi/daun_merah_crypto_referensi_riset.md`:
+- **15 file dihapus** — temuannya sudah tercatat: kalibrasi/overconfidence LLM (Leng dkk., Chhikara dkk., Ni dkk.), self-correct/self-critique (Huang dkk., Wu dkk., FinCon), sycophancy/anchoring/position bias (Ermakova dkk., Malmqvist), LLM agent trading (TrustTrade, PolySwarm, TradingAgents, FinCon, Saha dkk.), decomposisi penilaian (MacGregor 1994), 5 paper pump-and-dump/meme coin (sudah dikutip lengkap di dokumentasi Daun_Merah_Crypto), dan 1 query generik forex yang hasilnya ternyata noise tidak relevan (artikel manufaktur/pertanian, bukan forex).
+- **23 file DIPERTAHANKAN** — belum ada tulisannya di mana pun: dua klaster besar — (a) optimasi inferensi LLM di hardware konsumen (quantization, pruning, offloading, mixture-of-experts, speculative decoding, PowerInfer, Granite/Mamba, dll — ~14 file) dan (b) arsitektur multi-agent LLM buat kolaborasi software/code review + role specialization + error propagation/cascading errors (~9 file). Topik (a) tidak jelas kaitannya ke fitur trading manapun di proyek ini — kemungkinan eksplorasi lepas yang belum diputuskan relevan atau tidak; topik (b) berpotensi relevan ke desain AATAS/ai-relay tapi belum ditulis ke `daun_merah_riset.md`. **Belum ada keputusan** — file cache ini tetap ada sampai user putuskan ditulis atau dianggap usang lalu dihapus.
+
+**Dampak.** Tidak ada perubahan ke kode aplikasi/perilaku produksi — murni kebersihan repo lokal. Satu-satunya perubahan yang masuk git: `.gitignore` (cabut 2 baris `ai-relay/`/`AI_Comms/`).
 
 ## Changelog Session 350 (2026-09-05) — Simulasi Kalender Ekonomi: Skor "Makro:" Disamakan dengan Tab FUNDAMENTAL (Tertimbang, Bukan Hitungan Mentah)
 
