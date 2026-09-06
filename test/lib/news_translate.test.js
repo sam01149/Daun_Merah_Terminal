@@ -1,11 +1,12 @@
 // test/lib/news_translate.test.js
 // Translate NEWS ke Bahasa Indonesia (S272, 2026-08-02, api/_news_translate.js;
-// redesign batch 2026-08-02 lanj. — balik ke Mistral, satu panggilan API menerjemahkan
-// sampai BATCH_SIZE headline sekaligus, bukan satu-satu — lihat catatan BATCH
-// REDESIGN di api/_news_translate.js untuk kronologi lengkap).
-// Cakupan: parsing respons Mistral (format single-item & batch), pengecualian
+// redesign batch 2026-08-02 lanj. — satu panggilan API menerjemahkan sampai
+// BATCH_SIZE headline sekaligus, bukan satu-satu — lihat catatan BATCH REDESIGN
+// di api/_news_translate.js untuk kronologi lengkap. Provider saat ini: Gemini
+// flash-lite sejak 2026-09-06, S351-352, lihat §PIVOT KE GEMINI di sana).
+// Cakupan: parsing respons AI (format single-item & batch), pengecualian
 // kategori econ-data, skip item yang sudah pernah diterjemahkan, anti-starvation
-// batch kedua = tertua, dan fail-open tanpa MISTRAL_API_KEY/Redis.
+// batch kedua = tertua, dan fail-open tanpa GEMINI_API_KEY/Redis.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 
@@ -84,7 +85,7 @@ test('parseBatchResponse: respons kosong/tanpa marker sama sekali → semua null
   assert.deepEqual(parseBatchResponse('cuma teks acak', 2), [null, null]);
 });
 
-// ── translateNewItems / getTranslations (mock Redis + mock Mistral fetch) ─
+// ── translateNewItems / getTranslations (mock Redis + mock Gemini fetch) ─
 
 function makeRedisCmd(store) {
   return async (...args) => {
@@ -108,12 +109,12 @@ function withEnv(vars, fn) {
   };
 }
 
-// Mock Mistral yang membaca ulang [N]\nJUDUL: <title> dari prompt batch dan membalas
+// Mock Gemini yang membaca ulang [N]\nJUDUL: <title> dari prompt batch dan membalas
 // format [N]\nJUDUL_ID: <title> yang sama persis (echo) — cukup untuk verifikasi
 // item mana yang benar-benar ditembak & tersimpan, tanpa perlu terjemahan asli.
-function mockMistralEchoWithBody(calledBatches) {
+function mockGeminiEchoWithBody(calledBatches) {
   return async (url, opts) => {
-    if (String(url).includes('api.mistral.ai')) {
+    if (String(url).includes('generativelanguage.googleapis.com')) {
       const body = JSON.parse(opts.body);
       const prompt = body.messages[0].content;
       const matches = [...prompt.matchAll(/\[(\d+)\]\nJUDUL: (.*)/g)];
@@ -127,8 +128,8 @@ function mockMistralEchoWithBody(calledBatches) {
   };
 }
 
-test('translateNewItems: tanpa MISTRAL_API_KEY → no-op, tidak crash, tidak ada yang tersimpan', withEnv({}, async () => {
-  delete process.env.MISTRAL_API_KEY;
+test('translateNewItems: tanpa GEMINI_API_KEY → no-op, tidak crash, tidak ada yang tersimpan', withEnv({}, async () => {
+  delete process.env.GEMINI_API_KEY;
   delete process.env.UPSTASH_REDIS_REST_URL;
   delete process.env.UPSTASH_REDIS_REST_TOKEN;
   const store = new Map();
@@ -143,13 +144,13 @@ test('translateNewItems: array kosong/invalid → no-op', async () => {
 });
 
 test('translateNewItems: kategori econ-data DIKECUALIKAN dari translate (permintaan user S272)', withEnv({
-  MISTRAL_API_KEY: 'fake-key',
+  GEMINI_API_KEY: 'fake-key',
   UPSTASH_REDIS_REST_URL: 'https://mock-redis.test',
   UPSTASH_REDIS_REST_TOKEN: 'mock-token',
 }, async () => {
   const realFetch = global.fetch;
   const calledBatches = [];
-  global.fetch = mockMistralEchoWithBody(calledBatches);
+  global.fetch = mockGeminiEchoWithBody(calledBatches);
   try {
     const store = new Map();
     const items = [
@@ -159,36 +160,36 @@ test('translateNewItems: kategori econ-data DIKECUALIKAN dari translate (permint
     ];
     await translateNewItems(items, makeRedisCmd(store));
     assert.equal(calledBatches.length, 1, 'satu batch call untuk semua item non-econ-data');
-    assert.equal(calledBatches[0].length, 1, 'cuma item non-econ-data yang boleh masuk batch ke Mistral');
+    assert.equal(calledBatches[0].length, 1, 'cuma item non-econ-data yang boleh masuk batch ke Gemini');
     assert.equal(store.has('news_tr:econ-1'), false, 'econ-data TIDAK PERNAH punya entri terjemahan');
     assert.equal(store.has('news_tr:geo-1'), true);
   } finally { global.fetch = realFetch; }
 }));
 
-test('translateNewItems: item yang sudah ada news_tr:<guid> di-skip, tidak manggil Mistral lagi', withEnv({
-  MISTRAL_API_KEY: 'fake-key',
+test('translateNewItems: item yang sudah ada news_tr:<guid> di-skip, tidak manggil Gemini lagi', withEnv({
+  GEMINI_API_KEY: 'fake-key',
   UPSTASH_REDIS_REST_URL: 'https://mock-redis.test',
   UPSTASH_REDIS_REST_TOKEN: 'mock-token',
 }, async () => {
   const realFetch = global.fetch;
   const calledBatches = [];
-  global.fetch = mockMistralEchoWithBody(calledBatches);
+  global.fetch = mockGeminiEchoWithBody(calledBatches);
   try {
     const store = new Map();
     store.set('news_tr:already-1', JSON.stringify({ title_id: 'Sudah diterjemahkan', desc_id: '' }));
     await translateNewItems([{ title: 'Some ordinary headline', guid: 'already-1', description: '' }], makeRedisCmd(store));
-    assert.equal(calledBatches.length, 0, 'item yang sudah punya cache tidak boleh ditembak ulang ke Mistral');
+    assert.equal(calledBatches.length, 0, 'item yang sudah punya cache tidak boleh ditembak ulang ke Gemini');
   } finally { global.fetch = realFetch; }
 }));
 
 test('translateNewItems: todo <= BATCH_SIZE (20) -> SATU panggilan API untuk semua item', withEnv({
-  MISTRAL_API_KEY: 'fake-key',
+  GEMINI_API_KEY: 'fake-key',
   UPSTASH_REDIS_REST_URL: 'https://mock-redis.test',
   UPSTASH_REDIS_REST_TOKEN: 'mock-token',
 }, async () => {
   const realFetch = global.fetch;
   const calledBatches = [];
-  global.fetch = mockMistralEchoWithBody(calledBatches);
+  global.fetch = mockGeminiEchoWithBody(calledBatches);
   try {
     const store = new Map();
     const items = Array.from({ length: 12 }, (_, i) => ({ title: `t${i}`, guid: `g${i}`, description: '' }));
@@ -200,13 +201,13 @@ test('translateNewItems: todo <= BATCH_SIZE (20) -> SATU panggilan API untuk sem
 }));
 
 test('translateNewItems: todo > BATCH_SIZE -> dipecah jadi beberapa panggilan, batch kedua ambil dari ujung tertua (anti-starvation)', withEnv({
-  MISTRAL_API_KEY: 'fake-key',
+  GEMINI_API_KEY: 'fake-key',
   UPSTASH_REDIS_REST_URL: 'https://mock-redis.test',
   UPSTASH_REDIS_REST_TOKEN: 'mock-token',
 }, async () => {
   const realFetch = global.fetch;
   const calledBatches = [];
-  global.fetch = mockMistralEchoWithBody(calledBatches);
+  global.fetch = mockGeminiEchoWithBody(calledBatches);
   try {
     const store = new Map();
     // urutan feed asli: index 0 = headline TERBARU ... index 44 = TERTUA (45 item, > 2x BATCH_SIZE 20)
@@ -221,14 +222,14 @@ test('translateNewItems: todo > BATCH_SIZE -> dipecah jadi beberapa panggilan, b
 }));
 
 test('translateNewItems: budget habis -> panggilan berikutnya benar-benar DIBATALKAN (AbortSignal), tidak orphaned di background', withEnv({
-  MISTRAL_API_KEY: 'fake-key',
+  GEMINI_API_KEY: 'fake-key',
   UPSTASH_REDIS_REST_URL: 'https://mock-redis.test',
   UPSTASH_REDIS_REST_TOKEN: 'mock-token',
 }, async () => {
   const realFetch = global.fetch;
   const calledBatches = [];
   global.fetch = async (url, opts) => {
-    if (String(url).includes('api.mistral.ai')) {
+    if (String(url).includes('generativelanguage.googleapis.com')) {
       // Simulasikan network 100ms per panggilan, TAPI hormati AbortSignal seperti fetch
       // asli — supaya test ini benar-benar menguji bahwa translateBatch's timeoutMs
       // (sisa budget) MEMBATALKAN panggilan yang kelewat lambat, bukan cuma diabaikan.
@@ -269,13 +270,13 @@ test('buildBatchPrompt: deskripsi outlier (>1200 char) dipotong, deskripsi norma
 });
 
 test('translateNewItems: item yang gagal >MAX_FAIL_ATTEMPTS(5) kali dilewati permanen, tidak terus memblokir antrean', withEnv({
-  MISTRAL_API_KEY: 'fake-key',
+  GEMINI_API_KEY: 'fake-key',
   UPSTASH_REDIS_REST_URL: 'https://mock-redis.test',
   UPSTASH_REDIS_REST_TOKEN: 'mock-token',
 }, async () => {
   const realFetch = global.fetch;
   const calledBatches = [];
-  global.fetch = mockMistralEchoWithBody(calledBatches);
+  global.fetch = mockGeminiEchoWithBody(calledBatches);
   try {
     const store = new Map();
     store.set('news_tr_fail:poison-1', '5'); // sudah gagal 5x sebelumnya
@@ -285,20 +286,20 @@ test('translateNewItems: item yang gagal >MAX_FAIL_ATTEMPTS(5) kali dilewati per
     ];
     await translateNewItems(items, makeRedisCmd(store));
     assert.equal(calledBatches.length, 1);
-    assert.deepEqual(calledBatches[0], ['Headline baru normal'], 'item poison tidak ikut dikirim ke Mistral');
+    assert.deepEqual(calledBatches[0], ['Headline baru normal'], 'item poison tidak ikut dikirim ke Gemini');
     assert.equal(store.has('news_tr:poison-1'), false);
     assert.equal(store.has('news_tr:ok-1'), true);
   } finally { global.fetch = realFetch; }
 }));
 
 test('translateNewItems: kegagalan batch menaikkan counter news_tr_fail per guid', withEnv({
-  MISTRAL_API_KEY: 'fake-key',
+  GEMINI_API_KEY: 'fake-key',
   UPSTASH_REDIS_REST_URL: 'https://mock-redis.test',
   UPSTASH_REDIS_REST_TOKEN: 'mock-token',
 }, async () => {
   const realFetch = global.fetch;
   global.fetch = async (url) => {
-    if (String(url).includes('api.mistral.ai')) throw new Error('simulasi gagal');
+    if (String(url).includes('generativelanguage.googleapis.com')) throw new Error('simulasi gagal');
     return { ok: true, json: async () => ({ result: null }) };
   };
   try {

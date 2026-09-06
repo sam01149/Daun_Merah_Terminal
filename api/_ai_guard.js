@@ -71,19 +71,23 @@ const DEFAULT_LIMITS = {
   deepseek_experimental:        35,
 
   // Translate headline NEWS ke Bahasa Indonesia (S272, 2026-08-02, redesign BATCH
-  // — 1 panggilan sampai 20 headline, lihat api/_news_translate.js). Riwayat provider
-  // hari yang sama, SEMUA gagal sebelum settle: (1) SambaNova akun 2 — 3 fitur lain
-  // berbagi akun, circuit trip 22x; (2) Gemini `gemini-flash-latest` — TERNYATA cuma
-  // 20 request/HARI (429 RESOURCE_EXHAUSTED live, bukan 1.500 RPD seperti asumsi
-  // lama, kuota Google mengetat tiap alias `-latest` bergeser generasi); (3) balik
-  // SambaNova akun 2 + batch — TETAP trip lagi (72 kegagalan ~1 jam pasca-deploy),
-  // akun itu sendiri memang tidak stabil terlepas dari desain kode. **FINAL: Mistral**
-  // — bucket TERPISAH dari 'mistral' (200/hari, diagnostik manual) di atas SENGAJA,
-  // supaya volume translate tidak rebutan kuota sama jalur test manual. Satu-satunya
-  // kandidat TANPA kontensi fitur produksi lain sama sekali (SambaNova akun1/akun2
-  // dipakai fitur aktif, Gemini flash kuotanya sudah kebukti kecil) — 1000/hari
-  // konservatif di bawah kuota resmi ±1M token/bulan (lihat catatan 'mistral' di atas).
-  mistral_newstranslate: 1000,
+  // — 1 panggilan sampai 20 headline, lihat api/_news_translate.js). Riwayat lengkap
+  // provider (SambaNova x2, Gemini flash 20RPD, Mistral, Big Pickle — semua gagal
+  // beda alasan) ada di komentar §PIVOT KE GEMINI di api/_news_translate.js dan
+  // daun_merah_vendor.md — SEMUA counter provider lama di atas TIDAK dipakai lagi
+  // oleh fitur ini.
+  //
+  // FINAL (2026-09-06, S351-352): `gemini-flash-lite-latest`. Bucket TERPISAH dari
+  // 'gemini' (16/hari, dipakai Analisa Fundamental+AI Coach Jurnal via model
+  // `gemini-flash-latest` — BEDA model, jadi seharusnya BEDA pool kuota di sisi
+  // Google) supaya volume translate tidak numpang/rebutan kuota kecil (16/hari) itu.
+  // 800/hari dipilih konservatif: kuota resmi model `-lite` generasi sebelumnya
+  // pernah terdokumentasi 1.000 RPD (daun_merah_riset.md), TAPI belum terverifikasi
+  // live di skala produksi penuh untuk alias `-latest` saat ini (baru 3 panggilan
+  // tes) — 800 kasih headroom di bawah 1.000 kalau angka itu masih akurat, sambil
+  // tetap generous untuk volume translate harian wajar. Turunkan via env
+  // AI_DAILY_LIMIT_GEMINI_NEWSTRANSLATE kalau ternyata sering ketahuan mepet.
+  gemini_newstranslate: 800,
 };
 
 function dailyLimit(provider) {
