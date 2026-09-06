@@ -176,8 +176,48 @@ test('Tahap 1 e2e: blok [DATA RILIS EKONOMI] kedua kaki masuk Call 1 DAN Kritiku
   });
 });
 
-test('Tahap 1: AATAS_PROMPT_VERSION naik (6 = blok data rilis di Call 1; 7 = definisi technical.score_pct di Call 2)', () => {
-  assert.equal(AATAS_PROMPT_VERSION, 7);
+test('AATAS_PROMPT_VERSION: 6 = blok data rilis di Call 1; 7 = definisi technical.score_pct; 8 = Tahap 3 jalan tengah (menu TP 1:2 + tanpa paksaan zona terdekat)', () => {
+  assert.equal(AATAS_PROMPT_VERSION, 8);
+});
+
+test('Tahap 3 jalan tengah (v8): Call 2 auto menyebut menu TP 1:2 dan menuntut entry konsisten fib_reason, TANPA "pilih yang lebih dekat ke Now"; manual tetap 1:1 + tie-break lama', async () => {
+  await withEnv({ CRON_SECRET: 'topsecret', DEEPSEEK_API_KEY: 'k' }, async () => {
+    const cap = [];
+    const store = baseStore();
+    const origFetch = global.fetch;
+    global.fetch = makeAnalyzeFetchStub(store, rawFrom(AATAS_JSON), cap);
+    try {
+      const handler = loadHandler();
+      await handler({
+        headers: { 'x-cron-secret': 'topsecret' }, method: 'GET',
+        query: { action: 'ohlcv_analyze', symbol: 'GBPUSD=X', label: 'GBP/USD', auto: '1' },
+      }, fakeRes());
+    } finally { global.fetch = origFetch; }
+    const call2 = cap[1].messages[1].content;
+    assert.match(call2, /konsisten dengan kesimpulanmu sendiri di technical\.fib_reason/i);
+    assert.match(call2, /JANGAN otomatis mengambil yang paling dekat ke Now/);
+    assert.doesNotMatch(call2, /pilih yang lebih dekat ke Now/, 'paksaan zona terdekat harus hilang di jalur auto');
+    // Instruksi tp menyebut 1:2 hanya kalau [KANDIDAT SL/TP] tersedia di fixture ini;
+    // kalau tidak tersedia, yang wajib adalah TIDAK ada teks "minimal 1:1" versi menu.
+    if (/\[KANDIDAT SL\/TP\]/.test(call2)) {
+      assert.match(call2, /risk\/reward minimal 1:2 \(sama dengan gate Step 6\)/);
+      assert.doesNotMatch(call2, /risk\/reward minimal 1:1 terhadap SL terdekat/);
+    }
+  });
+  await withEnv({ DEEPSEEK_API_KEY: 'k' }, async () => {
+    const cap = [];
+    const store = baseStore();
+    const origFetch = global.fetch;
+    global.fetch = makeAnalyzeFetchStub(store, rawFrom(BASE_JSON), cap);
+    try {
+      const handler = loadHandler();
+      await handler({ headers: {}, method: 'POST', body: {}, query: { action: 'ohlcv_analyze', symbol: 'GBPUSD=X', label: 'GBP/USD' } }, fakeRes());
+    } finally { global.fetch = origFetch; }
+    const manual = cap[0].messages[1].content;
+    assert.doesNotMatch(manual, /1:2 \(sama dengan gate Step 6\)/, 'manual tidak boleh ikut 1:2');
+    assert.doesNotMatch(manual, /konsisten dengan kesimpulanmu sendiri/i, 'manual tidak boleh ikut instruksi auto');
+    if (/\[ZONA KONFLUENSI\]/.test(manual)) assert.match(manual, /pilih yang lebih dekat ke Now/, 'tie-break lama tetap di manual');
+  });
 });
 
 test('technical.score_pct (v7): instruksi Call 2 mendefinisikannya sebagai skor struktur & lokasi saja, bukan salinan checklist_pct', async () => {

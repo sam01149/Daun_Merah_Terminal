@@ -129,3 +129,28 @@ test('computeLevelCandidates: tolerance di-passthrough dari zones.tolerance (dip
   const r = computeLevelCandidates(OPTS);
   assert.strictEqual(r.tolerance, 1);
 });
+
+// ── PLAN AC Tahap 3 bagian 1 (2026-09-06): `minRr` — menu TP jalur auto konsisten gate 1:2 ──
+// Fixture: SL bearish terdekat = 106 (jarak 6 dari now 100); TP bearish 98/94/88 (jarak
+// 2/6/12). Default (1:1) meloloskan 94 & 88; 1:2 hanya 88; 1:3 tidak ada -> arah itu null.
+test('computeLevelCandidates minRr=2: TP wajib >= 2x jarak SL terdekat (menu konsisten gate Step 6)', () => {
+  const r = computeLevelCandidates({ ...OPTS, minRr: 2 });
+  assert.deepEqual(r.bearish.tp.map(t => t.price), [88]);
+  assert.deepEqual(r.bullish.tp.map(t => t.price), [112]);
+  // SL tidak tersentuh oleh minRr.
+  assert.ok(r.bearish.sl.some(c => c.price === 106));
+});
+
+test('computeLevelCandidates minRr default/invalid: perilaku lama 1:1 (jalur manual byte-identik)', () => {
+  const base = computeLevelCandidates(OPTS);
+  assert.deepEqual(base.bearish.tp.map(t => t.price), [94, 88]);
+  for (const bad of [undefined, 0, -1, NaN, 'x']) {
+    const r = computeLevelCandidates({ ...OPTS, minRr: bad });
+    assert.deepEqual(r.bearish.tp.map(t => t.price), [94, 88], `minRr=${bad} harus jatuh ke 1`);
+  }
+});
+
+test('computeLevelCandidates minRr terlalu tinggi untuk struktur: arah tanpa TP layak jadi null, keduanya kosong -> null total', () => {
+  const r = computeLevelCandidates({ ...OPTS, minRr: 3 });
+  assert.equal(r, null, 'tidak ada TP >= 3x jarak SL di kedua arah -> tidak ada menu (bukan menu palsu)');
+});

@@ -5412,7 +5412,11 @@ const COT_CME_PROMPT_VERSION = 1;
 // fundamental, bukan salinan checklist_pct. Latar: audit S350 lanjutan — 15/15 setup
 // angkanya nyaris identik checklist_pct (AI menyalin skor total). Murni observability
 // (angka ini tidak dibaca gate/verdict mana pun), jadi TIDAK ada epoch POLICY_EPOCHS baru.
-const AATAS_PROMPT_VERSION = 7;
+// v8 (2026-09-06, PLAN AC Tahap 3 jalan tengah, POLICY_EPOCHS v45) — Call 2: menu
+// kandidat TP disaring RR>=AATAS_MIN_RR (bukan 1:1) & instruksi tp menyebut 1:2;
+// paksaan "pilih zona terdekat ke Now" DIHAPUS, diganti tuntutan konsisten dengan
+// fib_reason AI sendiri (bukan tabel kedalaman baru — keputusan user).
+const AATAS_PROMPT_VERSION = 8;
 
 // (2026-09-02) `final_validation` (Step 8, COT/retail) dipaksa nilai ini untuk SEMUA
 // setup AATAS — Call 2 (yang mengisi field ini di v1/v2) tidak pernah menerima data
@@ -6943,7 +6947,11 @@ async function ohlcvAnalyzeHandler(req, res) {
     // (bearish/bullish) yang punya SL+TP layak (lihat api/_levels.js) — di kedua
     // kasus, levelBlock kosong dan slInstr/tpInstr di bawah JATUH ke instruksi lama.
     const levelCandidates = confZones
-      ? computeLevelCandidates({ zones: confZones, atrD: (data.d1_ext?.available ? data.d1_ext.atr_d : null), isXau: data.is_xau, dec: data.dec })
+      // PLAN AC Tahap 3 bagian 1 (2026-09-06, POLICY_EPOCHS v45): jalur auto menyaring
+      // kandidat TP dengan AATAS_MIN_RR (2) supaya menu yang dilihat Call 2 konsisten
+      // dengan gate Step 6 — manual tetap default 1 (byte-identik). Menu yang sama
+      // dipakai snap-atau-tolak di hilir, jadi TP di luar menu auto ikut ditolak.
+      ? computeLevelCandidates({ zones: confZones, atrD: (data.d1_ext?.available ? data.d1_ext.atr_d : null), isXau: data.is_xau, dec: data.dec, minRr: isAutoCall ? AATAS_MIN_RR : 1 })
       : null;
     const levelBlock = _formatLevelCandidatesBlock(levelCandidates);
 
@@ -7043,10 +7051,19 @@ async function ohlcvAnalyzeHandler(req, res) {
     // divergen diam-diam suatu saat).
     const noSetupClause = 'ATAU jika makro_alignment adalah "konflik", set entry_zone, sl, tp, entry_basis ke null dan jelaskan di trigger kondisi apa yang ditunggu — JANGAN memaksakan setup saat makro dan teknikal bertabrakan.';
     const noSetupClauseAuto = 'ATAU jika struktur teknikal berlawanan dengan bias yang SUDAH DIKUNCI analisa makro, ATAU pasar sedang ranging sempit, set entry_zone, sl, tp, entry_basis ke null dan jelaskan di trigger kondisi apa yang ditunggu — JANGAN membalik bias mengikuti chart, dan JANGAN memaksakan setup supaya ada.';
-    const buildEntryZoneInstr = (noSetupClause) => {
+    // `auto` (PLAN AC Tahap 3 bagian 2, 2026-09-06): jalur auto TIDAK lagi disuruh
+    // "pilih yang lebih dekat ke Now" saat skor seri — kalimat itu sumber kontradiksi
+    // nyata (AI menulis "retracement cenderung dalam" di fib_reason lalu tetap masuk di
+    // zona terdekat, audit S350 lanjutan). Diganti tuntutan konsisten dengan kesimpulan
+    // kedalaman retracement yang AI tulis sendiri — BUKAN tabel aturan baru (keputusan
+    // user: jalan tengah, hapus paksaan, jangan tambah heuristik). Manual byte-identik.
+    const buildEntryZoneInstr = (noSetupClause, { auto = false } = {}) => {
+      const tieBreak = auto
+        ? 'Kalau lebih dari satu zona layak, pilih yang KONSISTEN dengan kesimpulanmu sendiri di technical.fib_reason tentang kedalaman retracement (BOS kuat -> pullback dangkal, BOS lemah/struktur campur -> pullback lebih dalam) — JANGAN otomatis mengambil yang paling dekat ke Now hanya karena dekat; kalau kamu menulis "retracement cenderung dalam" lalu memilih zona terdekat, itu kontradiksi.'
+        : 'Kalau dua zona skornya sama, pilih yang lebih dekat ke Now.';
       return confBlock
-      ? `- entry_zone: WAJIB pilih dari daftar [ZONA KONFLUENSI] di atas — ambil zona dengan SKOR TERTINGGI yang searah bias dan konsisten dengan harga "Now": bias bearish → zona di ATAS Now (jual di rally ke resistance); bias bullish → zona di BAWAH Now (beli di pullback ke support); pengecualian hanya breakout/breakdown confirmation dengan trigger jelas. Tulis center zona itu atau range sempit di sekitarnya — JANGAN mengarang level di luar daftar. Kalau dua zona skornya sama, pilih yang lebih dekat ke Now. KALAU TIDAK ADA zona layak searah bias (struktur Mixed, harga di tengah range, semua zona skor rendah), ${noSetupClause}`
-      : `- entry_zone: level atau range harga ideal untuk entry (angka konkret). WAJIB berpijak pada level STRUKTUR yang benar-benar ada di DATA TEKNIKAL: cluster [LEVEL S/R], level [FIBONACCI], [PIVOT HARIAN], Prev Day/Week H-L, swing H4, SMA, atau option expiry — jangan mengarang angka yang tidak ada di data. PRIORITASKAN KONFLUENSI: area di mana 2+ struktur berbeda jatuh berdekatan (misal fib 61.8% bertepatan dengan cluster S/R yang banyak disentuh dan pivot S1) — itu entry dengan dasar terkuat. WAJIB konsisten dengan harga "Now": kalau bias bearish, entry_zone >= Now (jual di rally ke resistance) ATAU di bawah Now kalau memang breakdown confirmation, TAPI jangan keduanya sekaligus. Kalau Now sudah melewati level breakdown/breakout relevan, jangan minta retracement ke arah berlawanan — definisikan entry di struktur terdekat dari Now. KALAU TIDAK ADA setup dengan dasar struktur jelas searah bias (misal struktur Mixed dan harga di tengah range, jauh dari semua level kuat), ${noSetupClause}`;
+      ? `- entry_zone: WAJIB pilih dari daftar [ZONA KONFLUENSI] di atas — ambil zona dengan SKOR TERTINGGI yang searah bias dan konsisten dengan harga "Now": bias bearish → zona di ATAS Now (jual di rally ke resistance); bias bullish → zona di BAWAH Now (beli di pullback ke support); pengecualian hanya breakout/breakdown confirmation dengan trigger jelas. Tulis center zona itu atau range sempit di sekitarnya — JANGAN mengarang level di luar daftar. ${tieBreak} KALAU TIDAK ADA zona layak searah bias (struktur Mixed, harga di tengah range, semua zona skor rendah), ${noSetupClause}`
+      : `- entry_zone: level atau range harga ideal untuk entry (angka konkret). WAJIB berpijak pada level STRUKTUR yang benar-benar ada di DATA TEKNIKAL: cluster [LEVEL S/R], level [FIBONACCI], [PIVOT HARIAN], Prev Day/Week H-L, swing H4, SMA, atau option expiry — jangan mengarang angka yang tidak ada di data. PRIORITASKAN KONFLUENSI: area di mana 2+ struktur berbeda jatuh berdekatan (misal fib 61.8% bertepatan dengan cluster S/R yang banyak disentuh dan pivot S1) — itu entry dengan dasar terkuat. WAJIB konsisten dengan harga "Now": kalau bias bearish, entry_zone >= Now (jual di rally ke resistance) ATAU di bawah Now kalau memang breakdown confirmation, TAPI jangan keduanya sekaligus. Kalau Now sudah melewati level breakdown/breakout relevan, jangan minta retracement ke arah berlawanan — definisikan entry di struktur terdekat dari Now.${auto ? ' Kedalaman entry WAJIB konsisten dengan kesimpulanmu sendiri di technical.fib_reason (BOS kuat -> pullback dangkal, BOS lemah/struktur campur -> pullback lebih dalam) — JANGAN otomatis mengambil yang paling dekat ke Now hanya karena dekat.' : ''} KALAU TIDAK ADA setup dengan dasar struktur jelas searah bias (misal struktur Mixed dan harga di tengah range, jauh dari semua level kuat), ${noSetupClause}`;
     };
     const entryZoneInstr = buildEntryZoneInstr(noSetupClause);
     const entryBasisInstr = confBlock
@@ -7081,7 +7098,7 @@ async function ohlcvAnalyzeHandler(req, res) {
       ? ' zona konfluensi BERIKUTNYA searah bias dari [ZONA KONFLUENSI] (atau struktur [LEVEL S/R] berikutnya)'
       : ' struktur berikutnya searah bias yang ADA di data (cluster S/R, swing, pivot, fib)';
     const tpInstr = levelCandidates
-      ? `- tp: WAJIB pilih SATU angka PERSIS dari [KANDIDAT SL/TP] di atas, baris TP sesuai bias yang kamu tentukan — JANGAN mengarang angka lain. KALAU bias yang kamu pilih TIDAK punya baris TP sendiri di [KANDIDAT SL/TP], baru gunakan${tpFallbackTail}. Untuk bearish, tp harus di bawah entry_zone. Untuk bullish, tp harus di atas entry_zone. Daftar TP (kalau ada untuk bias-mu) sudah disaring kode supaya risk/reward minimal 1:1 terhadap SL terdekat; kalau pakai fallback, WAJIB risk/reward minimal 1:1 sendiri — kalau tidak memungkinkan, sebutkan itu di trigger/commentary alih-alih memaksakan level palsu.`
+      ? `- tp: WAJIB pilih SATU angka PERSIS dari [KANDIDAT SL/TP] di atas, baris TP sesuai bias yang kamu tentukan — JANGAN mengarang angka lain. KALAU bias yang kamu pilih TIDAK punya baris TP sendiri di [KANDIDAT SL/TP], baru gunakan${tpFallbackTail}. Untuk bearish, tp harus di bawah entry_zone. Untuk bullish, tp harus di atas entry_zone. Daftar TP (kalau ada untuk bias-mu) sudah disaring kode supaya risk/reward minimal ${isAutoCall ? '1:2 (sama dengan gate Step 6)' : '1:1'} terhadap SL terdekat; kalau pakai fallback, WAJIB risk/reward minimal ${isAutoCall ? '1:2' : '1:1'} sendiri — kalau tidak memungkinkan, sebutkan itu di trigger/commentary alih-alih memaksakan level palsu.`
       : confBlock
       ? '- tp: zona konfluensi BERIKUTNYA searah bias dari daftar [ZONA KONFLUENSI] (atau struktur [LEVEL S/R] berikutnya kalau tidak ada zona lagi searah itu) — jangan mengarang. Untuk bearish, tp harus di bawah entry_zone. Untuk bullish, tp harus di atas entry_zone. WAJIB risk/reward (jarak entry→tp dibanding entry→sl) minimal 1:1 — kalau struktur data tidak memungkinkan RR ≥1, sebutkan itu di trigger/commentary alih-alih memaksakan level palsu.'
       : '- tp: level take profit konkret = struktur berikutnya searah bias yang ADA di data (cluster S/R, swing, pivot, fib) — jangan mengarang. Untuk bearish, tp harus di bawah entry_zone. Untuk bullish, tp harus di atas entry_zone. WAJIB risk/reward (jarak entry→tp dibanding entry→sl) minimal 1:1 — kalau struktur data tidak memungkinkan RR ≥1, sebutkan itu di trigger/commentary alih-alih memaksakan level palsu.';
@@ -7304,7 +7321,7 @@ async function ohlcvAnalyzeHandler(req, res) {
         // tahu wajib memilih dari [ZONA KONFLUENSI]/[KANDIDAT SL/TP] dan snap-atau-tolak
         // di hilir akan menolak hampir semua levelnya.
         levelInstrs: [
-          buildEntryZoneInstr(noSetupClauseAuto),
+          buildEntryZoneInstr(noSetupClauseAuto, { auto: true }),
           entryBasisInstr,
           slInstr,
           tpInstr,

@@ -62,10 +62,18 @@ function _slSide(zones, now, buffer, sign, dec) {
   return [...rest, synthetic];
 }
 
-function _direction(slPool, tpPool, now) {
+// `minRr` (PLAN AC Tahap 3 bagian 1, 2026-09-06): rasio minimal jarak TP terhadap
+// jarak SL TERDEKAT. Default 1 = perilaku lama (jalur manual publik tidak berubah).
+// Jalur auto mengoper AATAS_MIN_RR (2) supaya menu yang dilihat Call 2 konsisten dengan
+// gate Step 6 yang menolak RR<2 di hilir — sebelumnya menu disaring 1:1 lalu gate
+// menolak 1:2, jadi AI memilih dari daftar yang isinya sering tidak ada yang bisa lolos
+// (4 dari 6 output Call 2 pasca-v42 gugur [CEK RR KODE] di level yang sama berulang).
+// Ini BUKAN ambang baru: 1:2 sudah tertulis di checklist sejak AATAS v1.
+function _direction(slPool, tpPool, now, minRr = 1) {
   if (!slPool || !tpPool) return null;
   const minSlDist = Math.min(...slPool.map(s => Math.abs(s.price - now)));
-  const tp = tpPool.filter(t => Math.abs(t.price - now) >= minSlDist);
+  const ratio = (Number.isFinite(minRr) && minRr > 0) ? minRr : 1;
+  const tp = tpPool.filter(t => Math.abs(t.price - now) >= minSlDist * ratio);
   if (!tp.length) return null;
   return { sl: slPool, tp };
 }
@@ -74,7 +82,8 @@ function _direction(slPool, tpPool, now) {
 // atrD: `data.d1_ext.atr_d` kalau tersedia, else null (fallback persentase, pola sama _confluenceZones).
 // isXau: `data.is_xau` — menentukan buffer SL 1x ATR (XAU) vs 0.5x ATR (FX), pola sama slBufferMult admin.js.
 // dec: `data.dec` — presisi desimal pair ini.
-function computeLevelCandidates({ zones, atrD, isXau, dec }) {
+// minRr: lihat _direction — opsional, default 1 (manual), jalur auto mengoper 2.
+function computeLevelCandidates({ zones, atrD, isXau, dec, minRr = 1 }) {
   if (!zones || typeof zones.now !== 'number' || !Number.isFinite(zones.now)) return null;
   const now = zones.now;
   const d = dec ?? 5;
@@ -86,8 +95,8 @@ function computeLevelCandidates({ zones, atrD, isXau, dec }) {
   const tpAbove = _zoneList(zones.above, d);                // kandidat TP bullish
   const tpBelow = _zoneList(zones.below, d);                // kandidat TP bearish
 
-  const bearish = _direction(slAbove, tpBelow, now); // SL di atas Now, TP di bawah Now
-  const bullish = _direction(slBelow, tpAbove, now); // SL di bawah Now, TP di atas Now
+  const bearish = _direction(slAbove, tpBelow, now, minRr); // SL di atas Now, TP di bawah Now
+  const bullish = _direction(slBelow, tpAbove, now, minRr); // SL di bawah Now, TP di atas Now
   if (!bearish && !bullish) return null;
 
   return { now: +now.toFixed(d), dec: d, tolerance: zones.tolerance, bearish, bullish };

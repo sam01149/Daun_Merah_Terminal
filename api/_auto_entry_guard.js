@@ -534,6 +534,12 @@ const POLICY_EPOCHS = [
   // gate/ambang/level yang digeser. Tahap 2 (gate isi) & Tahap 3 (menu TP) SENGAJA
   // epoch terpisah — satu variabel per perubahan kebijakan.
   { v: 44, from: '2026-09-06T14:40:00Z', kind: 'policy', impact: 'context',  label: 'PLAN AC Tahap 1: blok [DATA RILIS EKONOMI] (fundamental:<CUR> kedua kaki pair — CPI/GDP/tenaga kerja/PMI/retail/keputusan CB, actual vs forecast vs previous + umur) dikirim ke AATAS Call 1 dan fact sheet Kritikus. Audit Session 350 lanjutan: Call 1 tidak pernah menerima data ini padahal sudah ada di Redis dan checklist Step 0/2 menyuruh membacanya — 9/9 kandidat AUD/NZD driver-nya data negara lain/geopolitik/COT (akar flip-flop). AATAS_PROMPT_VERSION 6. Jalur manual publik tidak berubah.' },
+  // v45 (2026-09-06, PLAN AC Tahap 3 "jalan tengah"): 'policy' impact 'levels' — menu
+  // kandidat TP jalur auto disaring RR>=2 (dulu 1:1, gate hilir 1:2 -> penolakan berulang
+  // di level yang sama), dan paksaan "pilih zona terdekat" di instruksi entry dihapus
+  // (diganti konsisten dengan fib_reason AI sendiri). TIDAK ada tabel kedalaman baru —
+  // user memilih hapus kontradiksi, bukan tambah heuristik. Dipisah dari v44 (context).
+  { v: 45, from: '2026-09-06T15:20:00Z', kind: 'policy', impact: 'levels',   label: 'PLAN AC Tahap 3 (jalan tengah): kandidat TP jalur auto disaring AATAS_MIN_RR (2) terhadap SL terdekat (menu konsisten dengan gate Step 6; sebelumnya 1:1 -> 4/6 output Call 2 gugur [CEK RR KODE] berulang di level sama), instruksi tp auto menyebut 1:2, dan tie-break "pilih zona terdekat ke Now" dihapus dari instruksi entry_zone auto — diganti "konsisten dengan kesimpulan fib_reason-mu sendiri". Manual publik byte-identik. AATAS_PROMPT_VERSION 8.' },
 ];
 
 // AATAS_EPOCH (2026-08-22, keputusan user): batas populasi statistik dashboard
