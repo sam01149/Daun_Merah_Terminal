@@ -1003,7 +1003,7 @@ if (localStorage.getItem('dm_dev_theme') === 'light') {
     tighten_sl_preventive: 'SL diperketat (preventif sebelum weekend)',
     close_early: 'Ditutup dini oleh sistem (bukan TP/SL alami)',
   };
-  const MANAGED_STATUS_LABEL = { tp: 'kena TP', sl: 'kena SL', ambiguous: 'ambigu (SL & TP di candle sama)', closed_early: 'ditutup langsung saat intervensi' };
+  const MANAGED_STATUS_LABEL = { tp: 'kena TP', sl: 'kena SL', ambiguous: 'ambigu (SL & TP di candle sama)', closed_early: 'ditutup langsung saat intervensi', stale: 'tidak diketahui (celah data candle sejak intervensi, tidak dikarang)' };
   // Track 1 (Road to Professional LLM Trader, 2026-08-04): `tech_invalidated`
   // SENGAJA field terpisah dari intervention/managed_status di atas (bukan reuse) —
   // lihat komentar _evaluateTechInvalidation (api/admin.js) soal kenapa: reuse field
@@ -1028,14 +1028,37 @@ if (localStorage.getItem('dm_dev_theme') === 'light') {
     gate_drawdown_circuit_breaker: 'Kandidat ini TIDAK PERNAH jadi pending — ditahan Gate B (drawdown circuit breaker): performa realized-R belakangan di rezim risiko saat ini menembus ambang, entry baru pair ini dihentikan sementara.',
     gate_critic_veto: 'Kandidat ini TIDAK PERNAH jadi pending — ditahan Gate A (AI Kritikus): AI kedua yang mengaudit setup ini memutuskan verdict "batalkan" (detail keberatan spesifiknya cuma tercatat di server log, tidak ikut tersimpan ke entri ini).',
   };
+  // (2026-09-07, user: "statusnya masih open padahal katanya ada intervensi posisi")
+  // `status` posisi yang sudah ditutup dini oleh AI position review SENGAJA tetap
+  // 'open' lalu jalan terus ke tp/sl (ghost U-5a — dipakai server menghitung
+  // close_early_saved/cost). Tiga narasi di bawah dulu membaca `status` mentah, jadi
+  // menulis "posisi masih berjalan" untuk posisi yang secara riil sudah ditutup —
+  // kebalikan dari fakta. Sekarang cabang closed-early dicek PALING DULU. (Cabang lama
+  // `s.status === 'closed_early'` dihapus: nilai itu tidak pernah ditulis ke `status`,
+  // cuma ke `managed_status` — cabang mati yang menyesatkan pembaca kode.)
+  function isClosedEarly(s){ return !!(s && s.intervention && s.intervention.type === 'close_early'); }
+  function isLiveExposure(s){ return !!(s && (s.status === 'open' || s.status === 'pending') && !isClosedEarly(s)); }
+  function buildClosedEarlyNarrative(s){
+    const iv = s.intervention || {};
+    const when = iv.t ? ` pada ${fmtTs(iv.t)}` : '';
+    const at = iv.price != null ? ` di harga ${iv.price}` : '';
+    const realClosed = `Posisi RIIL sudah ditutup dini oleh sistem${when}${at} (alasan di kelompok "Intervensi Posisi").`;
+    if (s.status === 'open' || s.status === 'pending') {
+      return `${realClosed} Badge "${s.status}" di sini BUKAN posisi hidup — itu jejak hantu: level entry/SL/TP asli tetap dipantau untuk mengukur apakah penutupan dini itu menyelamatkan (hantu kena SL) atau merugikan (hantu kena TP). Pair ini sudah bebas untuk sinyal baru.`;
+    }
+    if (s.status === 'sl') return `${realClosed} Hantu kena SL${s.sl ? ` di ${s.sl}` : ''} — penutupan dini TERBUKTI MENYELAMATKAN: andai dibiarkan, posisi akan menyentuh SL.`;
+    if (s.status === 'tp') return `${realClosed} Hantu kena TP${s.tp ? ` di ${s.tp}` : ''} — penutupan dini TERBUKTI MERUGIKAN: andai dibiarkan, posisi akan mencapai TP.`;
+    if (s.status === 'ambiguous') return `${realClosed} Hantu ambigu (SL & TP di candle sama) — tidak bisa dinilai menyelamatkan atau merugikan.`;
+    return `${realClosed} Status hantu: ${s.status}.`;
+  }
   function buildStatusNarrative(s){
     if (!s) return '';
+    if (isClosedEarly(s)) return buildClosedEarlyNarrative(s);
     if (s.status === 'tp') return `Trade berakhir profit (TP)${s.tp ? ` di level ${s.tp}` : ''}.`;
     if (s.status === 'sl') return buildSlReasonSummary(s);
     if (s.status === 'open') return 'Order sudah terisi dan posisi masih berjalan; hasil akhir belum terkunci.';
     if (s.status === 'pending') return 'Setup sudah dibuat, tapi harga belum masuk zona entry sehingga posisi belum aktif.';
     if (s.status === 'ambiguous') return 'Dalam satu candle, level SL dan TP sama-sama tersentuh sehingga urutan kejadian tidak bisa dipastikan dari data yang ada.';
-    if (s.status === 'closed_early') return 'Posisi ditutup lebih cepat oleh mekanisme manajemen risiko sistem sebelum TP/SL pasif tercapai.';
     if (s.status === 'canceled') {
       const specific = CANCELED_REASON_EXPLAIN[s.canceled_reason];
       // `canceled_detail` (2026-08-31) — kalimat spesifik yang direkam server PERSIS saat
@@ -1065,11 +1088,17 @@ if (localStorage.getItem('dm_dev_theme') === 'light') {
     const conflict = s.conflict && s.conflict !== 'none'
       ? `Ada conflict ${s.conflict}${s.conflict_note ? ` (${s.conflict_note})` : ''}.`
       : 'Tidak ada conflict utama yang tercatat.';
-    const outcome = `Status saat ini: ${s.status}. ${buildStatusNarrative(s)}`;
+    const outcome = `Status saat ini: ${s.status}${isClosedEarly(s) ? ' (hantu — posisi riil sudah ditutup dini)' : ''}. ${buildStatusNarrative(s)}`;
     return `${base} ${risk.length ? `${risk.join(', ')}.` : ''} ${macro} ${conflict} ${outcome}`;
   }
   function buildExecutiveAction(s){
     if (!s) return '';
+    if (isClosedEarly(s)) {
+      if (s.status === 'sl') return 'Post-mortem otomatis: penutupan dini MENYELAMATKAN (hantu kena SL). Bukti mekanisme review posisi bekerja untuk kasus ini — tetap nilai per-batch (close_early_saved vs cost), bukan per-trade.';
+      if (s.status === 'tp') return 'Post-mortem otomatis: penutupan dini MERUGIKAN (hantu kena TP). Cek apakah pemicu berita yang dipakai AI position review memang relevan dengan tesis — tetap nilai per-batch, bukan per-trade.';
+      if (s.status === 'ambiguous') return 'Hantu ambigu — jangan dipakai sebagai bukti penutupan dini tepat atau salah.';
+      return 'Tidak ada aksi pada posisi ini: sudah ditutup dini oleh sistem. Tunggu hantu resolve (TP/SL) untuk menilai apakah keputusan penutupan itu tepat.';
+    }
     if (s.status === 'open' || s.status === 'pending') return 'Pertahankan disiplin eksekusi; tunggu trigger berikutnya dan hindari intervensi manual yang tidak perlu.';
     if (s.status === 'tp') return 'Pertahankan pendekatan pair serupa; fokus replikasi setup dengan karakteristik konfluensi yang sama.';
     if (s.status === 'sl') {
@@ -1104,6 +1133,16 @@ if (localStorage.getItem('dm_dev_theme') === 'light') {
     if (s.rr != null && s.rr !== '') context.push(`RR ${s.rr}`);
     if (s.horizon_days != null && s.horizon_days !== '') context.push(`horizon ${s.horizon_days} hari`);
     return `Status SL${slLevel} (murni teknikal: tidak ada rilis berita high-impact ±2 jam).${context.length ? ` Konteks saat setup dibuat: ${context.join(', ')}.` : ''}`;
+  }
+  // (2026-09-07) Badge kedua di kolom status kalau ada intervensi — supaya "open" hantu
+  // (posisi riil sudah ditutup dini) langsung kelihatan dari tabel, bukan baru ketahuan
+  // setelah expand ke kelompok "Intervensi Posisi". Warna muted (kelas canceled) sengaja:
+  // ini keterangan, bukan status baru.
+  function interventionBadge(s){
+    const t = s && s.intervention && s.intervention.type;
+    if (!t) return '';
+    const txt = t === 'close_early' ? 'ditutup dini' : (t === 'tighten_sl' || t === 'tighten_sl_preventive') ? 'SL diperketat' : t;
+    return ` <span class="badge canceled" style="font-size:8.5px" title="${esc(INTERVENTION_LABEL[t] || t)}">${esc(txt)}</span>`;
   }
   function buildSetupDetail(s){
     const groups = [
@@ -1208,7 +1247,7 @@ if (localStorage.getItem('dm_dev_theme') === 'light') {
       <td class="small">${esc(s.id)}</td>
       <td>${esc(symLabel(s.symbol))}</td>
       <td>${esc(s.bias)}</td>
-      <td><span class="badge ${esc(s.status)}">${esc(s.status)}</span>${s.status === 'sl' ? ` <span class="badge ${s.loss_label ? 'pending' : 'stale'}" style="font-size:8.5px">${esc(s.loss_label || 'teknikal')}</span>` : ''}</td>
+      <td><span class="badge ${esc(s.status)}">${esc(s.status)}</span>${s.status === 'sl' ? ` <span class="badge ${s.loss_label ? 'pending' : 'stale'}" style="font-size:8.5px">${esc(s.loss_label || 'teknikal')}</span>` : ''}${interventionBadge(s)}</td>
       <td>${esc(s.entry_zone)}</td>
       <td>${esc(s.sl)}</td>
       <td>${esc(s.tp)}</td>
@@ -1270,7 +1309,7 @@ if (localStorage.getItem('dm_dev_theme') === 'light') {
     if (typeof chartsBuilt !== 'undefined' && chartsBuilt) {
       Object.keys(chartState).forEach(symbol => {
         const s = pickChartSetup(symbol);
-        if (!s || (s.status !== 'open' && s.status !== 'pending')) { removeChartCard(symbol); return; }
+        if (!isLiveExposure(s)) { removeChartCard(symbol); return; }
         chartState[symbol].setup = s;
         applyMarkers(symbol);
         positionOverlay(symbol);
@@ -1459,9 +1498,11 @@ if (localStorage.getItem('dm_dev_theme') === 'light') {
   function pickChartSetup(symbol){
     const rows = allRecent.filter(s => s.symbol === symbol);
     if (!rows.length) return null;
-    const prio = st => st === 'open' ? 0 : st === 'pending' ? 1 : 2;
+    // (2026-09-07) posisi yang sudah ditutup dini (status 'open' hantu) bukan posisi
+    // hidup — jangan menang prioritas atas pending/open baru pair yang sama.
+    const prio = s => !isLiveExposure(s) ? 2 : s.status === 'open' ? 0 : 1;
     return rows.slice().sort((a, b) => {
-      const pa = prio(a.status), pb = prio(b.status);
+      const pa = prio(a), pb = prio(b);
       return pa !== pb ? pa - pb : (b.ts || 0) - (a.ts || 0);
     })[0];
   }
@@ -2096,7 +2137,7 @@ if (localStorage.getItem('dm_dev_theme') === 'light') {
     // Hanya pair yang BENAR-BENAR open/pending — yang sudah tp/sl/canceled tidak perlu
     // kartu chart (riwayatnya sudah ada di tabel Riwayat Setup, tab ini murni monitoring
     // posisi hidup, bukan arsip).
-    const pairs = all.filter(p => { const s = pickChartSetup(p.symbol); return s && (s.status === 'open' || s.status === 'pending'); });
+    const pairs = all.filter(p => isLiveExposure(pickChartSetup(p.symbol)));
     if (!pairs.length) { grid.innerHTML = '<div class="empty">Tidak ada posisi open/pending saat ini.</div>'; chartsBuilt = true; return; }
     grid.innerHTML = pairs.map(buildChartCard).join('');
     grid.querySelectorAll('.chart-tf').forEach(tfEl => {

@@ -588,3 +588,46 @@ test('AATAS_EPOCH: menunjuk epoch yang benar-benar ada di POLICY_EPOCHS dan tida
   assert.equal(ep.kind, 'policy', 'AATAS mengubah strategi (batas populasi), bukan memperbaiki bug');
   assert.ok(Number.isFinite(Date.parse(ep.from)), 'from wajib timestamp valid — dipakai policyVersionForTs');
 });
+
+// ── isClosedEarly / isLiveExposure (2026-09-07, POLICY_EPOCHS v46) ───────────
+// Kasus nyata EURUSD=X:1788423350010: `status` posisi yang sudah ditutup dini oleh AI
+// position review SENGAJA tetap 'open' (ghost U-5a), tapi gate eksposur membacanya
+// mentah -> pair terkunci diam-diam sampai ghost kena TP/SL.
+const { isClosedEarly, isLiveExposure } = require('../../api/_auto_entry_guard.js');
+
+test('isClosedEarly: hanya intervention.type close_early; tighten_sl/preventif/tanpa intervensi -> false', () => {
+  assert.equal(isClosedEarly({ status: 'open', intervention: { type: 'close_early' } }), true);
+  assert.equal(isClosedEarly({ status: 'open', intervention: { type: 'tighten_sl' } }), false);
+  assert.equal(isClosedEarly({ status: 'open', intervention: { type: 'tighten_sl_preventive' } }), false);
+  assert.equal(isClosedEarly({ status: 'open' }), false);
+  assert.equal(isClosedEarly(null), false);
+});
+
+test('isLiveExposure: open/pending tanpa close_early -> true; open hantu (close_early) -> false; tp/sl/canceled -> false', () => {
+  assert.equal(isLiveExposure({ status: 'open' }), true);
+  assert.equal(isLiveExposure({ status: 'pending' }), true);
+  assert.equal(isLiveExposure({ status: 'open', intervention: { type: 'tighten_sl' } }), true);
+  assert.equal(isLiveExposure({ status: 'open', intervention: { type: 'close_early' }, managed_status: 'closed_early' }), false);
+  assert.equal(isLiveExposure({ status: 'tp' }), false);
+  assert.equal(isLiveExposure({ status: 'canceled' }), false);
+  assert.equal(isLiveExposure(undefined), false);
+});
+
+test('correlatedExposureBlock: partner open yang sudah ditutup dini (close_early) TIDAK mengikat', () => {
+  const positions = [{ symbol: 'CHFJPY=X', bias: 'bearish', status: 'open', intervention: { type: 'close_early', t: Date.now() }, managed_status: 'closed_early' }];
+  assert.equal(correlatedExposureBlock({ symbol: 'EURUSD=X', bias: 'bearish', positions }), null);
+});
+
+test('correlatedExposureBlock: partner open dengan tighten_sl (posisi masih hidup) TETAP mengikat', () => {
+  const positions = [{ symbol: 'CHFJPY=X', bias: 'bearish', status: 'open', intervention: { type: 'tighten_sl', new_sl: 1 } }];
+  const d = correlatedExposureBlock({ symbol: 'EURUSD=X', bias: 'bearish', positions });
+  assert.equal(d && d.partner, 'CHFJPY=X');
+});
+
+test('POLICY_EPOCHS: v46 ada, kind fix, impact entry, dan POLICY_VERSION >= 46', () => {
+  const e = POLICY_EPOCHS.find(x => x.v === 46);
+  assert.ok(e, 'epoch v46 hilang');
+  assert.equal(e.kind, 'fix');
+  assert.equal(e.impact, 'entry');
+  assert.ok(POLICY_VERSION >= 46);
+});

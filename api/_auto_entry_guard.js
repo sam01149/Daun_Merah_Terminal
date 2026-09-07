@@ -221,6 +221,25 @@ function _correlatedPartnersOf(symbol) {
 // tervalidasi, persis pola yang dihindari proyek ini.
 const EXPOSURE_BINDING_STATUSES = new Set(['open', 'pending']);
 
+// CELAH DITEMUKAN & DITUTUP (2026-09-07, user: "statusnya masih open padahal katanya
+// ada intervensi posisi" — kasus nyata EURUSD=X:1788423350010, close_early 2026-09-04
+// 13:11Z): setelah AI position review memutuskan CLOSE_EARLY, `status` SENGAJA tetap
+// 'open' (prinsip U-5a: `status` = jejak ghost/pasif, dipakai _aggManagementStats
+// mengukur close_early_saved/cost — TIDAK diubah di sini). Tapi SEMUA pembaca "posisi
+// hidup" membaca `status` mentah tanpa melihat `intervention`, jadi posisi yang secara
+// riil sudah ditutup masih dianggap eksposur: (1) guard "1 posisi open per symbol"
+// (ohlcvAnalyzeHandler, admin.js) membuang DIAM-DIAM setiap kandidat baru pair itu sampai
+// ghost-nya kena TP/SL — bisa berhari-hari, tanpa jejak apa pun (bukan canceled, bukan
+// counter; EUR/USD nol entri sejak penutupan itu); (2) Gate D korelasi di bawah tetap
+// menghitungnya mengikat pair partner. Yang berubah HANYA definisi "hidup" untuk gate
+// eksposur (POLICY_EPOCHS v46); ghost tetap dievaluasi apa adanya.
+function isClosedEarly(s) {
+  return !!(s && s.intervention && s.intervention.type === 'close_early');
+}
+function isLiveExposure(s) {
+  return !!(s && EXPOSURE_BINDING_STATUSES.has(s.status) && !isClosedEarly(s));
+}
+
 // CELAH DITEMUKAN & DITUTUP (audit populasi AATAS 2026-09-04, dieksekusi 2026-09-06
 // setelah disetujui user): `horizon_days` cuma berlaku ke 'pending' (expired setelah
 // 1,5x horizon, lihat _evaluateSetups di admin.js) — TIDAK PERNAH ke posisi yang
@@ -261,7 +280,7 @@ function correlatedExposureBlock({ symbol, bias, positions, openPositions, liveS
   const now = Number.isFinite(nowMs) ? nowMs : Date.now();
   for (const partner of _correlatedPartnersOf(symbol)) {
     const boundPartner = list.find(p => p && p.symbol === partner
-      && EXPOSURE_BINDING_STATUSES.has(p.status) && !_isOpenPastHorizon(p, now));
+      && isLiveExposure(p) && !_isOpenPastHorizon(p, now));
     if (!boundPartner) continue;
     const corr = _correlationOf(symbol, partner, liveSign);
     const sameDirection = bias === boundPartner.bias;
@@ -540,6 +559,11 @@ const POLICY_EPOCHS = [
   // (diganti konsisten dengan fib_reason AI sendiri). TIDAK ada tabel kedalaman baru —
   // user memilih hapus kontradiksi, bukan tambah heuristik. Dipisah dari v44 (context).
   { v: 45, from: '2026-09-06T15:20:00Z', kind: 'policy', impact: 'levels',   label: 'PLAN AC Tahap 3 (jalan tengah): kandidat TP jalur auto disaring AATAS_MIN_RR (2) terhadap SL terdekat (menu konsisten dengan gate Step 6; sebelumnya 1:1 -> 4/6 output Call 2 gugur [CEK RR KODE] berulang di level sama), instruksi tp auto menyebut 1:2, dan tie-break "pilih zona terdekat ke Now" dihapus dari instruksi entry_zone auto — diganti "konsisten dengan kesimpulan fib_reason-mu sendiri". Manual publik byte-identik. AATAS_PROMPT_VERSION 8.' },
+  // v46 (2026-09-07): 'fix' impact 'entry' — posisi yang sudah ditutup dini oleh AI
+  // position review (intervention.type close_early) berhenti dihitung sebagai eksposur
+  // hidup oleh guard 1-posisi-per-symbol, dup guard, dan Gate D korelasi. Bukan gate/
+  // ambang baru — cuma definisi "hidup" yang sebelumnya salah baca ghost sebagai posisi.
+  { v: 46, from: '2026-09-07T00:00:00Z', kind: 'fix',    impact: 'entry',    label: 'Posisi yang sudah ditutup dini oleh AI position review (close_early) tidak lagi dianggap eksposur hidup oleh guard "1 posisi open per symbol", dup guard, dan Gate D korelasi (isLiveExposure). Sebelumnya `status` yang sengaja tetap open (ghost U-5a untuk mengukur close_early_saved/cost) dibaca mentah oleh ketiga gate itu, jadi pair yang posisinya sudah ditutup terkunci diam-diam (tanpa jejak canceled/counter) sampai ghost-nya kena TP/SL — kasus nyata EURUSD=X:1788423350010 (close_early 2026-09-04 13:11Z, nol kandidat EUR/USD tersimpan setelahnya). Ghost/statistik tidak disentuh.' },
 ];
 
 // AATAS_EPOCH (2026-08-22, keputusan user): batas populasi statistik dashboard
@@ -607,6 +631,8 @@ module.exports = {
   CORRELATED_PAIRS,
   correlatedExposureBlock,
   EXPOSURE_BINDING_STATUSES,
+  isClosedEarly,
+  isLiveExposure,
   _isOpenPastHorizon,
   isTimingConflictBlocked,
   isInvalidationTriggered,

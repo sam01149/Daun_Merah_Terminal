@@ -57,6 +57,18 @@ function computePreventiveTightenSl({ bias, slOld, closeLast, eLo, eHi }) {
 // diterapkan handler (managed_status='closed_early' langsung, tidak lewat sini).
 // Pure function, mutasi in-place (pola _evaluateSetups).
 const TIGHTEN_TYPES = new Set(['tighten_sl', 'tighten_sl_preventive']);
+// BUG DITEMUKAN & DIFIX (2026-09-07, sapu menyeluruh saat audit close_early EUR/USD):
+// caller di admin.js (_buildAutoScopeStats & positionReviewHandler) memilih kandidat
+// evaluasi dengan `intervention.type === 'tighten_sl'` saja — `tighten_sl_preventive`
+// (jadwal Jumat) TIDAK PERNAH masuk, dan _evaluateManaged sendiri cuma dipanggil kalau
+// daftar itu tidak kosong. Akibat di data live: SEMUA preventif sejak 2026-08-05
+// (8 entri, beberapa sudah TP/SL berhari-hari lalu) `managed_status`-nya kosong ->
+// `tighten_preventive.saved/cost` selalu 0 (satu-satunya yang resolve, AUD/NZD 07-30,
+// kebetulan numpang tick saat ada tighten_sl reaktif pending). Satu predikat di sini
+// jadi SOT-nya supaya caller tidak menulis ulang filter sendiri-sendiri.
+function isManagedPending(s) {
+  return !!(s && s.intervention && TIGHTEN_TYPES.has(s.intervention.type) && !s.managed_status);
+}
 function _evaluateManaged(setups, candlesBySymbol) {
   const nums = s => (String(s).match(/[\d.]+/g) || []).map(Number).filter(n => !isNaN(n));
   for (const st of setups || []) {
@@ -65,7 +77,19 @@ function _evaluateManaged(setups, candlesBySymbol) {
     const newSl = st.intervention.new_sl;
     const tp = nums(st.tp)[0];
     if (!Number.isFinite(newSl) || tp == null || (st.bias !== 'bullish' && st.bias !== 'bearish')) continue;
-    const all = candlesBySymbol?.[st.symbol] || [];
+    const raw = candlesBySymbol?.[st.symbol] || [];
+    const all = Array.isArray(raw) ? [...raw].sort((a, b) => a.t - b.t) : [];
+    // Gap data (2026-09-07, ditemukan saat dry-run fix isManagedPending di atas terhadap
+    // data live): jendela candle H1 di Redis cuma ~120 batang (~5 hari kerja). Entri
+    // preventif yang intervensinya lebih tua dari itu TIDAK BOLEH diresolusi pakai candle
+    // yang tidak mencakup periodenya — hasilnya karangan (dry-run: 6 dari 8 entri lama
+    // "resolve" di candle pertama jendela, 31 Agustus, padahal ghost-nya sudah TP/SL
+    // tanggal 12-25 Agustus). Aturan SAMA PERSIS dengan _evaluateSetups (admin.js):
+    // candle tertua > 24 jam setelah waktu intervensi -> 'stale', jangan mengarang.
+    if (all.length && all[0].t * 1000 > st.intervention.t + 86400000) {
+      st.managed_status = 'stale'; st.managed_closed_t = null;
+      continue;
+    }
     for (const c of all) {
       if (c.t * 1000 <= st.intervention.t) continue;
       const hitSl = st.bias === 'bearish' ? c.h >= newSl : c.l <= newSl;
@@ -201,4 +225,4 @@ function isCorroborated(item, recentItems) {
   return false;
 }
 
-module.exports = { validateTightenSl, computePreventiveTightenSl, _evaluateManaged, _aggManagementStats, isCorroborated, _significantTokens };
+module.exports = { validateTightenSl, computePreventiveTightenSl, _evaluateManaged, _aggManagementStats, isCorroborated, _significantTokens, TIGHTEN_TYPES, isManagedPending };

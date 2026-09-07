@@ -105,3 +105,4 @@ test('_formatAutoEntrySignalMessage: closed tp/sl/ambiguous pakai status apa ada
     assert.match(text, new RegExp(`^status: ${status}$`, 'm'));
   }
 });
+

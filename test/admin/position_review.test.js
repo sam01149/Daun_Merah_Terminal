@@ -631,3 +631,54 @@ test('friday_tighten: dua posisi open beda symbol -> keduanya diproses independe
     assert.equal(log[1].intervention.type, 'tighten_sl_preventive');
   });
 });
+
+// ── isManagedPending / TIGHTEN_TYPES (2026-09-07) ───────────────────────────
+// BUG: caller admin.js dulu memilih kandidat _evaluateManaged dengan type 'tighten_sl'
+// saja -> tighten_sl_preventive (Jumat) tidak pernah dievaluasi, managed_status kosong
+// selamanya (8 entri live sejak 2026-08-05). Predikat ini sekarang SOT-nya.
+const { isManagedPending, TIGHTEN_TYPES } = require('../../api/_position_review.js');
+
+test('TIGHTEN_TYPES: memuat reaktif DAN preventif, bukan close_early', () => {
+  assert.ok(TIGHTEN_TYPES.has('tighten_sl'));
+  assert.ok(TIGHTEN_TYPES.has('tighten_sl_preventive'));
+  assert.ok(!TIGHTEN_TYPES.has('close_early'));
+});
+
+test('isManagedPending: tighten_sl & tighten_sl_preventive tanpa managed_status -> true', () => {
+  assert.equal(isManagedPending({ intervention: { type: 'tighten_sl', new_sl: 1 } }), true);
+  assert.equal(isManagedPending({ intervention: { type: 'tighten_sl_preventive', new_sl: 1 } }), true);
+});
+
+test('isManagedPending: sudah resolve / close_early / tanpa intervensi / null -> false', () => {
+  assert.equal(isManagedPending({ intervention: { type: 'tighten_sl' }, managed_status: 'sl' }), false);
+  assert.equal(isManagedPending({ intervention: { type: 'tighten_sl_preventive' }, managed_status: 'tp' }), false);
+  assert.equal(isManagedPending({ intervention: { type: 'close_early' }, managed_status: 'closed_early' }), false);
+  assert.equal(isManagedPending({ status: 'open' }), false);
+  assert.equal(isManagedPending(null), false);
+});
+
+test('_evaluateManaged: tighten_sl_preventive resolve ke tp (regresi bug caller 2026-09-07)', () => {
+  const st = { symbol: 'X', bias: 'bullish', tp: '110', sl: '90', intervention: { type: 'tighten_sl_preventive', new_sl: 95, t: 1000 } };
+  const candles = { X: [{ t: 2, o: 100, h: 111, l: 99, c: 110 }] };
+  _evaluateManaged([st], candles);
+  assert.equal(st.managed_status, 'tp');
+});
+
+test('_evaluateManaged: candle tertua > 24 jam setelah intervensi -> managed_status stale (jangan mengarang), bukan resolve di candle pertama', () => {
+  const st = { symbol: 'X', bias: 'bullish', tp: '110', sl: '90', intervention: { type: 'tighten_sl_preventive', new_sl: 95, t: 0 } };
+  // candle pertama 3 hari setelah intervensi, dan langsung menembus new_sl — TANPA guard
+  // ini akan salah jadi 'sl' padahal kejadian di celah 3 hari itu tidak diketahui.
+  const dayS = 86400;
+  const candles = { X: [{ t: 3 * dayS, o: 100, h: 101, l: 94, c: 96 }, { t: 3 * dayS + 3600, o: 96, h: 111, l: 95, c: 110 }] };
+  _evaluateManaged([st], candles);
+  assert.equal(st.managed_status, 'stale');
+  assert.equal(st.managed_closed_t, null);
+});
+
+test('_evaluateManaged: candle tertua <= 24 jam setelah intervensi -> dievaluasi normal; candle tidak terurut tetap benar', () => {
+  const st = { symbol: 'X', bias: 'bullish', tp: '110', sl: '90', intervention: { type: 'tighten_sl_preventive', new_sl: 95, t: 0 } };
+  const candles = { X: [{ t: 7200, o: 96, h: 111, l: 95.5, c: 110 }, { t: 3600, o: 100, h: 101, l: 94, c: 96 }] };
+  _evaluateManaged([st], candles);
+  assert.equal(st.managed_status, 'sl'); // candle t=3600 (lebih dulu) tembus new_sl 95 sebelum TP di t=7200
+  assert.equal(st.managed_closed_t, 3600);
+});

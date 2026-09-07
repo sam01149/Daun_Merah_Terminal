@@ -26,10 +26,10 @@ const { allowAiCall } = require('./_ai_guard');
 const { requireAppKey, safeEqual } = require('./_app_key');
 const { fetchYahooOhlcv1h, fetchFallbackCandles, shouldSendYahooAlert, mapYahooSymbolToDeriv, fetchDerivCandles, mergeVolumeByTimestamp } = require('./_ohlcv_fetch');
 const { buildPairContext, computeCurrencyStrength } = require('./_pair_context');
-const { validateTightenSl, computePreventiveTightenSl, _evaluateManaged, _aggManagementStats, isCorroborated } = require('./_position_review');
+const { validateTightenSl, computePreventiveTightenSl, _evaluateManaged, _aggManagementStats, isCorroborated, isManagedPending } = require('./_position_review');
 // isDrawdownHalted (Gate B) diaktifkan ulang 2026-08-22 (POLICY_EPOCHS v30) — lihat
 // komentar di titik pemanggilannya untuk riwayat lengkap nonaktif (v29) -> aktif lagi.
-const { isCorrelatedExposureBlocked, correlatedExposureBlock, isTimingConflictBlocked, isInvalidationTriggered, INVALIDATION_TRIGGER_TYPES, INVALIDATION_TRIGGER_DIRECTIONS, INVALIDATION_TRIGGER_TIMEFRAMES, CORRELATED_PAIRS, POLICY_VERSION, POLICY_EPOCHS, policyVersionForTs, isDrawdownHalted, isDrawdownEmergencyValveOpen, AATAS_EPOCH, isGoldRegimeBlocked } = require('./_auto_entry_guard');
+const { isCorrelatedExposureBlocked, correlatedExposureBlock, isClosedEarly, isLiveExposure, isTimingConflictBlocked, isInvalidationTriggered, INVALIDATION_TRIGGER_TYPES, INVALIDATION_TRIGGER_DIRECTIONS, INVALIDATION_TRIGGER_TIMEFRAMES, CORRELATED_PAIRS, POLICY_VERSION, POLICY_EPOCHS, policyVersionForTs, isDrawdownHalted, isDrawdownEmergencyValveOpen, AATAS_EPOCH, isGoldRegimeBlocked } = require('./_auto_entry_guard');
 const { computeLevelCandidates } = require('./_levels');
 
 // Gate D live-sign lookup (audit 2026-08-16): terjemahkan simbol Yahoo di
@@ -1188,9 +1188,12 @@ async function _notifySetupOutcome(setup) {
   const label = setup.label || setup.symbol;
   const outcomeText = setup.status === 'tp' ? 'kena TP' : setup.status === 'sl' ? 'kena SL' : 'ambigu (SL & TP di candle sama)';
   const level = setup.status === 'tp' ? setup.tp : setup.status === 'sl' ? setup.sl : `${setup.sl} / ${setup.tp}`;
+  // (2026-09-07) posisi yang sudah ditutup dini: outcome ini HANTU (andai dibiarkan),
+  // bukan hasil posisi riil — beri label supaya tidak dibaca sebagai TP/SL sungguhan.
+  const ghost = isClosedEarly(setup);
   const payload = {
-    title: `${label} ${outcomeText}`,
-    body: `${setup.bias === 'bearish' ? 'Bearish' : 'Bullish'} entry ${setup.entry_zone} — level ${level}`,
+    title: `${label} ${ghost ? 'hantu ' : ''}${outcomeText}`,
+    body: `${setup.bias === 'bearish' ? 'Bearish' : 'Bullish'} entry ${setup.entry_zone} — level ${level}${ghost ? ' (posisi riil sudah ditutup dini oleh sistem; ini hasil andai dibiarkan)' : ''}`,
     url: '/dev-auto-entry.html',
     icon: '/icon.svg',
   };
@@ -3844,9 +3847,13 @@ async function _finalizeSetupTransitions(log, statusBeforeById) {
   const divergenceFlagged = outcomeTransitioned.length ? await _corroborateGoldTransitions(log, outcomeTransitioned) : [];
   const divergenceIds = new Set(divergenceFlagged.map(s => s.id));
   const confirmed = outcomeTransitioned.filter(s => !divergenceIds.has(s.id));
+  // (2026-09-07) Ghost outcome posisi yang SUDAH ditutup dini (close_early) TIDAK
+  // dikirim ke Telegram sebagai "status: tp/sl" — itu bukan hasil posisi riil (posisi
+  // ditutup di harga intervensi), pembaca sinyal akan salah baca. Push PWA dev tetap
+  // dikirim dengan label "hantu" (lihat _notifySetupOutcome) karena itu alat audit.
   await Promise.allSettled([
     ...confirmed.map(s => _notifySetupOutcome(s)),
-    ...confirmed.map(s => _notifyAutoEntryTelegram(s, s.status)),
+    ...confirmed.filter(s => !isClosedEarly(s)).map(s => _notifyAutoEntryTelegram(s, s.status)),
     ...lifecycleTransitioned.map(s => _notifyAutoEntryTelegram(s, s.status)),
     ...divergenceFlagged.map(s => _notifyDivergenceHold(s)),
   ]);
@@ -4256,7 +4263,7 @@ async function _buildAutoScopeStats() {
   // supaya `closed_t` (kalau ada) jadi boundary prioritas TP/SL asli. Candle SAMA
   // (candlesBySymbol sudah difetch di atas untuk `active`), nol fetch tambahan.
   log = _evaluateTechInvalidation(log, candlesBySymbol);
-  const managedPending = log.filter(s => s && s.intervention?.type === 'tighten_sl' && !s.managed_status);
+  const managedPending = log.filter(isManagedPending); // reaktif + preventif (fix 2026-09-07, lihat isManagedPending)
   if (managedPending.length) {
     await _fetchCandlesInto(managedPending.map(s => s.symbol), candlesBySymbol);
     log = _evaluateManaged(log, candlesBySymbol);
@@ -4351,7 +4358,7 @@ async function setupStatsHandler(req, res) {
     // butuh candle symbol yang sudah punya intervention, mungkin di luar `active`
     // (posisi yang di-manage tapi status ghost-nya sudah tp/sl/dst) — fetch tambahan
     // best-effort, gagal = _evaluateManaged tetap jalan tanpa update (fail-open).
-    const managedPending = log.filter(s => s && s.intervention?.type === 'tighten_sl' && !s.managed_status);
+    const managedPending = log.filter(isManagedPending); // reaktif + preventif (fix 2026-09-07, lihat isManagedPending)
     if (managedPending.length) {
       await Promise.all([...new Set(managedPending.map(s => s.symbol))].map(async sym => {
         if (candlesBySymbol[sym]) return;
@@ -4747,6 +4754,11 @@ async function positionReviewHandler(req, res) {
         stFresh.intervention = { type: 'close_early', t: Date.now(), price: closeLast, new_sl: null, reason, trigger_guid: trigger.guid };
         stFresh.managed_status = 'closed_early';
         stFresh.managed_closed_t = Math.floor(Date.now() / 1000);
+        // CATATAN (2026-09-07): TIDAK ada notifikasi Telegram di titik ini — status
+        // closed_early di luar scope yang disepakati user (rapat 2026-09-06: pending/
+        // refined/open/cancel/expired/tp/sl). Konsekuensinya posisi ini "hilang" dari
+        // Telegram (open -> tidak pernah ada kabar lagi, ghost tp/sl-nya sengaja tidak
+        // dikirim, lihat _finalizeSetupTransitions). Menambahkannya = keputusan user.
       }
       await redisCmd('SET', 'setup_log_auto:v1', JSON.stringify(logFresh));
       st.review_count = stFresh.review_count; st.intervention = stFresh.intervention;
@@ -8031,7 +8043,7 @@ async function ohlcvAnalyzeHandler(req, res) {
         let log = rawLog ? JSON.parse(rawLog) : [];
         if (!Array.isArray(log)) log = [];
         const dup = log.find(x => x && x.symbol === symbol
-          && (x.status === 'pending' || x.status === 'open')
+          && isLiveExposure(x) // (2026-09-07) posisi yang sudah ditutup dini (close_early) bukan lagi eksposur hidup
           && x.entry_zone === structured.entry_zone && x.sl === structured.sl && x.tp === structured.tp);
         // PLAN U-3 lanjutan (2026-07-20, diskusi user): auto-entry berjadwal (2 slot/hari)
         // bisa numpuk >1 posisi virtual PENDING di symbol yang sama kalau AI ganti level
@@ -8048,7 +8060,12 @@ async function ohlcvAnalyzeHandler(req, res) {
         let blockedByOpenPosition = false;
         let shouldSaveLog = false;
         if (isAutoCall && !dup) {
-          const openSame = log.find(x => x && x.symbol === symbol && x.status === 'open');
+          // CELAH DITEMUKAN & DITUTUP (2026-09-07, POLICY_EPOCHS v46): `status` posisi yang
+          // sudah ditutup dini oleh AI position review SENGAJA tetap 'open' (ghost U-5a) —
+          // guard ini membacanya sebagai posisi live dan membuang DIAM-DIAM semua kandidat
+          // baru pair itu (tanpa canceled/counter) sampai ghost kena TP/SL. Kasus nyata
+          // EURUSD=X:1788423350010. Lihat isClosedEarly (_auto_entry_guard.js).
+          const openSame = log.find(x => x && x.symbol === symbol && x.status === 'open' && !isClosedEarly(x));
           if (openSame) {
             blockedByOpenPosition = true;
           } else {
@@ -8364,9 +8381,9 @@ async function ohlcvAnalyzeHandler(req, res) {
           let log2 = rawLog2 ? JSON.parse(rawLog2) : [];
           if (!Array.isArray(log2)) log2 = [];
           const dup2 = log2.find(x => x && x.symbol === symbol
-            && (x.status === 'pending' || x.status === 'open')
+            && isLiveExposure(x)
             && x.entry_zone === structured.entry_zone && x.sl === structured.sl && x.tp === structured.tp);
-          const openNow = log2.find(x => x && x.symbol === symbol && x.status === 'open');
+          const openNow = log2.find(x => x && x.symbol === symbol && x.status === 'open' && !isClosedEarly(x));
           // Refine-in-place (2026-08-18) — cabang TERPISAH dari alur buildNewSetupEntry() di
           // bawah, karena target-nya entry LAMA (dicari via id), bukan entry baru. Race guard
           // sama semangatnya dengan dup2/openNow: kalau di antara Gate A mikir posisi ini sudah
