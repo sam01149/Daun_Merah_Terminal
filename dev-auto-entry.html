@@ -1052,6 +1052,28 @@ if (localStorage.getItem('dm_dev_theme') === 'light') {
   // (a) gate eksposur di server dan (b) PRIORITAS pemilihan setup per pair di bawah —
   // dua hal yang memang benar dan TIDAK diubah balik.
   function isChartGhost(s){ return isClosedEarly(s) || isTightenResolved(s); }
+  // KOREKSI (2026-09-07, user: "ga masuk akal perkataanmu" / "mana ada tutup, itu jelas
+  // jelas ada 2 eur/usd dengan status pending dan open") — badge UTAMA di tabel & kartu
+  // chart sebelumnya selalu menampilkan `s.status` MENTAH ("open"), dan kejujuran
+  // "sebenarnya sudah ditutup" cuma dititip di badge KEDUA yang kecil (8.5px, gampang
+  // tak terlihat saat scan cepat). Dari sudut pandang orang yang baca tabel, kolom
+  // berjudul STATUS bilang "open" ya artinya open — meminta mereka membaca badge kecil
+  // di sebelahnya untuk tahu itu sebenarnya "closed" bukan permintaan yang wajar.
+  // `s.status` MENTAH TETAP TIDAK DISENTUH (prinsip U-5a — dipakai filter tabel,
+  // gate server, statistik saved/cost) — yang berubah HANYA teks/warna badge yang
+  // ditampilkan ke mata. Kalau posisi riilnya sudah selesai (close_early ATAU
+  // tighten yang sudah resolve), badge sekarang menyebut HASIL RIILNYA, bukan status
+  // ghost yang masih dipantau di baliknya.
+  function displayStatus(s){
+    if (isClosedEarly(s)) return { cls: 'canceled', txt: 'ditutup dini' };
+    if (isTightenResolved(s)) {
+      const ms = s.managed_status;
+      const cls = ms === 'tp' ? 'tp' : ms === 'ambiguous' ? 'ambiguous' : 'sl';
+      const txt = ms === 'tp' ? 'kena tp (SL diperketat)' : ms === 'ambiguous' ? 'ambigu (SL diperketat)' : 'kena sl (SL diperketat)';
+      return { cls, txt };
+    }
+    return { cls: s.status, txt: s.status };
+  }
   function isChartTracked(s){ return !!(s && (s.status === 'open' || s.status === 'pending')); }
   function chartGhostNote(s){
     if (!isChartGhost(s)) return '';
@@ -1288,7 +1310,7 @@ if (localStorage.getItem('dm_dev_theme') === 'light') {
       <td class="small">${esc(s.id)}</td>
       <td>${esc(symLabel(s.symbol))}</td>
       <td>${esc(s.bias)}</td>
-      <td><span class="badge ${esc(s.status)}">${esc(s.status)}</span>${s.status === 'sl' ? ` <span class="badge ${s.loss_label ? 'pending' : 'stale'}" style="font-size:8.5px">${esc(s.loss_label || 'teknikal')}</span>` : ''}${interventionBadge(s)}</td>
+      <td><span class="badge ${esc(displayStatus(s).cls)}" title="${isChartGhost(s) ? `Status mentah tersimpan: ${esc(s.status)} (dipertahankan untuk statistik ghost, lihat kelompok Intervensi Posisi)` : ''}">${esc(displayStatus(s).txt)}</span>${s.status === 'sl' && !isChartGhost(s) ? ` <span class="badge ${s.loss_label ? 'pending' : 'stale'}" style="font-size:8.5px">${esc(s.loss_label || 'teknikal')}</span>` : ''}${isChartGhost(s) ? '' : interventionBadge(s)}</td>
       <td>${esc(s.entry_zone)}</td>
       <td>${esc(s.sl)}</td>
       <td>${esc(s.tp)}</td>
@@ -1611,7 +1633,7 @@ if (localStorage.getItem('dm_dev_theme') === 'light') {
           <h3>${esc(label)} ${liveBadge}</h3>
           <div class="chartcard-meta">
             <span class="${setup.bias === 'bullish' ? 'up' : 'down'}"><b>${esc(setup.bias || '-')}</b></span>
-            <span class="badge ${esc(setup.status)}">${esc(setup.status)}</span>${isChartGhost(setup) ? ` <span class="badge canceled" title="Posisi riil sudah selesai lewat intervensi sistem. Garis entry/SL/TP di chart ini jejak hantu — dipakai mengukur apakah intervensi itu menyelamatkan (hantu kena SL) atau merugikan (hantu kena TP).">hantu</span>` : ''}
+            <span class="badge ${esc(displayStatus(setup).cls)}">${esc(displayStatus(setup).txt)}</span>${isChartGhost(setup) ? ` <span class="badge canceled" title="Level entry/SL/TP di chart ini jejak hantu (bukan posisi hidup) — dipantau untuk mengukur apakah intervensi itu menyelamatkan atau merugikan.">hantu</span>` : ''}
             <span>Entry <b>${esc(setup.entry_zone)}</b></span>
             <span>SL <b>${esc(setup.sl)}</b></span>
             <span>TP <b>${esc(setup.tp)}</b></span>
