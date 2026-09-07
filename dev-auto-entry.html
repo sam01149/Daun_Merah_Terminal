@@ -1040,6 +1040,30 @@ if (localStorage.getItem('dm_dev_theme') === 'light') {
   // SL-perketat (reaktif/preventif) yang sudah tersentuh = posisi riil selesai, ghost SL asli lanjut.
   function isTightenResolved(s){ return !!(s && s.intervention && (s.intervention.type === 'tighten_sl' || s.intervention.type === 'tighten_sl_preventive') && (s.managed_status === 'sl' || s.managed_status === 'tp' || s.managed_status === 'ambiguous')); }
   function isLiveExposure(s){ return !!(s && (s.status === 'open' || s.status === 'pending') && !isClosedEarly(s) && !isTightenResolved(s)); }
+  // KOREKSI keputusan beberapa jam sebelumnya di sesi yang SAMA (2026-09-07, dilaporkan
+  // user: "posisi eur/usd open tapi tampilan chartnya ga ada di fitur chart posisi").
+  // Kartu Chart Posisi untuk setup yang intervensinya sudah resolve (close_early, atau
+  // SL-perketat yang tersentuh) sempat DIHAPUS karena bukan eksposur hidup. Itu terlalu
+  // jauh: level entry/SL/TP ASLI masih terus dievaluasi server sebagai hantu (angka yang
+  // mengisi close_early_saved/cost & tighten_saved/cost), dan justru di chart itulah
+  // pertanyaan "hantunya bakal kena TP atau SL?" bisa dibaca. Menghilangkan kartunya tanpa
+  // jejak = kelas bug yang SAMA dengan yang diperbaiki sesi ini (sesuatu hilang diam-diam).
+  // Sekarang: kartu tetap tampil + ditandai "hantu". `isLiveExposure` tetap dipakai untuk
+  // (a) gate eksposur di server dan (b) PRIORITAS pemilihan setup per pair di bawah —
+  // dua hal yang memang benar dan TIDAK diubah balik.
+  function isChartGhost(s){ return isClosedEarly(s) || isTightenResolved(s); }
+  function isChartTracked(s){ return !!(s && (s.status === 'open' || s.status === 'pending')); }
+  function chartGhostNote(s){
+    if (!isChartGhost(s)) return '';
+    const iv = s.intervention || {};
+    if (iv.type === 'close_early') {
+      return `Posisi riil ditutup dini ${iv.t ? fmtTs(iv.t) : ''}${iv.price != null ? ` di ${iv.price}` : ''}`.trim();
+    }
+    const lvl = iv.new_sl != null ? ` ${iv.new_sl}` : '';
+    const when = s.managed_closed_t ? ` ${fmtTs(s.managed_closed_t * 1000)}` : '';
+    const hasil = s.managed_status === 'tp' ? 'TP' : s.managed_status === 'ambiguous' ? 'ambigu' : 'SL diperketat';
+    return `Posisi riil selesai (${hasil}${lvl})${when}`;
+  }
   function buildTightenResolvedNarrative(s){
     const iv = s.intervention || {};
     const what = iv.type === 'tighten_sl_preventive' ? 'SL preventif Jumat' : 'SL hasil review berita';
@@ -1326,7 +1350,7 @@ if (localStorage.getItem('dm_dev_theme') === 'light') {
     if (typeof chartsBuilt !== 'undefined' && chartsBuilt) {
       Object.keys(chartState).forEach(symbol => {
         const s = pickChartSetup(symbol);
-        if (!isLiveExposure(s)) { removeChartCard(symbol); return; }
+        if (!isChartTracked(s)) { removeChartCard(symbol); return; }
         chartState[symbol].setup = s;
         applyMarkers(symbol);
         positionOverlay(symbol);
@@ -1515,9 +1539,13 @@ if (localStorage.getItem('dm_dev_theme') === 'light') {
   function pickChartSetup(symbol){
     const rows = allRecent.filter(s => s.symbol === symbol);
     if (!rows.length) return null;
-    // (2026-09-07) posisi yang sudah ditutup dini (status 'open' hantu) bukan posisi
-    // hidup — jangan menang prioritas atas pending/open baru pair yang sama.
-    const prio = s => !isLiveExposure(s) ? 2 : s.status === 'open' ? 0 : 1;
+    // (2026-09-07) Empat tingkat, bukan tiga: posisi hidup (open lalu pending) menang atas
+    // HANTU yang masih dievaluasi, dan hantu menang atas entri yang sudah benar-benar
+    // selesai (tp/sl/canceled/expired). Tingkat ketiga itu WAJIB — tanpa dia, entri
+    // 'canceled' yang lebih baru bisa mengalahkan hantu yang masih dipantau dan kartu
+    // chart pair itu hilang lagi lewat pintu belakang (EUR/USD punya 4 canceled setelah
+    // hantunya lahir).
+    const prio = s => isLiveExposure(s) ? (s.status === 'open' ? 0 : 1) : (isChartTracked(s) ? 2 : 3);
     return rows.slice().sort((a, b) => {
       const pa = prio(a), pb = prio(b);
       return pa !== pb ? pa - pb : (b.ts || 0) - (a.ts || 0);
@@ -1583,7 +1611,7 @@ if (localStorage.getItem('dm_dev_theme') === 'light') {
           <h3>${esc(label)} ${liveBadge}</h3>
           <div class="chartcard-meta">
             <span class="${setup.bias === 'bullish' ? 'up' : 'down'}"><b>${esc(setup.bias || '-')}</b></span>
-            <span class="badge ${esc(setup.status)}">${esc(setup.status)}</span>
+            <span class="badge ${esc(setup.status)}">${esc(setup.status)}</span>${isChartGhost(setup) ? ` <span class="badge canceled" title="Posisi riil sudah selesai lewat intervensi sistem. Garis entry/SL/TP di chart ini jejak hantu — dipakai mengukur apakah intervensi itu menyelamatkan (hantu kena SL) atau merugikan (hantu kena TP).">hantu</span>` : ''}
             <span>Entry <b>${esc(setup.entry_zone)}</b></span>
             <span>SL <b>${esc(setup.sl)}</b></span>
             <span>TP <b>${esc(setup.tp)}</b></span>
@@ -1592,6 +1620,7 @@ if (localStorage.getItem('dm_dev_theme') === 'light') {
             <span>Dibuat <b>${esc(fmtTs(setup.ts))}</b></span>
             <span>Filled <b>${setup.filled_t ? esc(fmtTs(setup.filled_t * 1000)) : 'menunggu fill'}</b></span>
             <span>Horizon <b>${horizonHtml}</b></span>
+            ${isChartGhost(setup) ? `<span>${esc(chartGhostNote(setup))}</span>` : ''}
           </div>
         </div>
         <div class="chart-toolstack">
@@ -2154,7 +2183,7 @@ if (localStorage.getItem('dm_dev_theme') === 'light') {
     // Hanya pair yang BENAR-BENAR open/pending — yang sudah tp/sl/canceled tidak perlu
     // kartu chart (riwayatnya sudah ada di tabel Riwayat Setup, tab ini murni monitoring
     // posisi hidup, bukan arsip).
-    const pairs = all.filter(p => isLiveExposure(pickChartSetup(p.symbol)));
+    const pairs = all.filter(p => isChartTracked(pickChartSetup(p.symbol)));
     if (!pairs.length) { grid.innerHTML = '<div class="empty">Tidak ada posisi open/pending saat ini.</div>'; chartsBuilt = true; return; }
     grid.innerHTML = pairs.map(buildChartCard).join('');
     grid.querySelectorAll('.chart-tf').forEach(tfEl => {
