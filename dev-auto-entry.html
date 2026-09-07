@@ -1037,7 +1037,22 @@ if (localStorage.getItem('dm_dev_theme') === 'light') {
   // `s.status === 'closed_early'` dihapus: nilai itu tidak pernah ditulis ke `status`,
   // cuma ke `managed_status` — cabang mati yang menyesatkan pembaca kode.)
   function isClosedEarly(s){ return !!(s && s.intervention && s.intervention.type === 'close_early'); }
-  function isLiveExposure(s){ return !!(s && (s.status === 'open' || s.status === 'pending') && !isClosedEarly(s)); }
+  // SL-perketat (reaktif/preventif) yang sudah tersentuh = posisi riil selesai, ghost SL asli lanjut.
+  function isTightenResolved(s){ return !!(s && s.intervention && (s.intervention.type === 'tighten_sl' || s.intervention.type === 'tighten_sl_preventive') && (s.managed_status === 'sl' || s.managed_status === 'tp' || s.managed_status === 'ambiguous')); }
+  function isLiveExposure(s){ return !!(s && (s.status === 'open' || s.status === 'pending') && !isClosedEarly(s) && !isTightenResolved(s)); }
+  function buildTightenResolvedNarrative(s){
+    const iv = s.intervention || {};
+    const what = iv.type === 'tighten_sl_preventive' ? 'SL preventif Jumat' : 'SL hasil review berita';
+    const when = s.managed_closed_t ? ` pada ${fmtTs(s.managed_closed_t * 1000)}` : '';
+    const ms = s.managed_status;
+    const real = ms === 'sl' ? `Posisi RIIL sudah selesai: ${what}${iv.new_sl != null ? ` (${iv.new_sl})` : ''} tersentuh${when} — rugi lebih kecil dari SL asli.`
+      : ms === 'tp' ? `Posisi RIIL sudah selesai kena TP${when} setelah ${what} dipasang.`
+      : `Posisi RIIL sudah selesai${when}: ${what} dan TP tersentuh di candle yang sama (ambigu).`;
+    if (s.status === 'open' || s.status === 'pending') return `${real} Badge "${s.status}" di sini BUKAN posisi hidup — jejak hantu SL asli${s.sl ? ` (${s.sl})` : ''} untuk mengukur apakah pengetatan menyelamatkan (hantu kena SL) atau merugikan (hantu kena TP). Pair ini sudah bebas untuk sinyal baru.`;
+    if (s.status === 'sl') return `${real} Hantu SL asli juga tersentuh — pengetatan TERBUKTI MENYELAMATKAN sebagian risiko.`;
+    if (s.status === 'tp') return `${real} Hantu kena TP — pengetatan TERBUKTI MERUGIKAN: tanpa pengetatan posisi akan mencapai TP.`;
+    return `${real} Status hantu: ${s.status}.`;
+  }
   function buildClosedEarlyNarrative(s){
     const iv = s.intervention || {};
     const when = iv.t ? ` pada ${fmtTs(iv.t)}` : '';
@@ -1054,6 +1069,7 @@ if (localStorage.getItem('dm_dev_theme') === 'light') {
   function buildStatusNarrative(s){
     if (!s) return '';
     if (isClosedEarly(s)) return buildClosedEarlyNarrative(s);
+    if (isTightenResolved(s)) return buildTightenResolvedNarrative(s);
     if (s.status === 'tp') return `Trade berakhir profit (TP)${s.tp ? ` di level ${s.tp}` : ''}.`;
     if (s.status === 'sl') return buildSlReasonSummary(s);
     if (s.status === 'open') return 'Order sudah terisi dan posisi masih berjalan; hasil akhir belum terkunci.';
@@ -1088,7 +1104,7 @@ if (localStorage.getItem('dm_dev_theme') === 'light') {
     const conflict = s.conflict && s.conflict !== 'none'
       ? `Ada conflict ${s.conflict}${s.conflict_note ? ` (${s.conflict_note})` : ''}.`
       : 'Tidak ada conflict utama yang tercatat.';
-    const outcome = `Status saat ini: ${s.status}${isClosedEarly(s) ? ' (hantu — posisi riil sudah ditutup dini)' : ''}. ${buildStatusNarrative(s)}`;
+    const outcome = `Status saat ini: ${s.status}${isClosedEarly(s) ? ' (hantu — posisi riil sudah ditutup dini)' : isTightenResolved(s) ? ' (hantu — posisi riil sudah selesai di SL yang diperketat)' : ''}. ${buildStatusNarrative(s)}`;
     return `${base} ${risk.length ? `${risk.join(', ')}.` : ''} ${macro} ${conflict} ${outcome}`;
   }
   function buildExecutiveAction(s){
@@ -1099,6 +1115,7 @@ if (localStorage.getItem('dm_dev_theme') === 'light') {
       if (s.status === 'ambiguous') return 'Hantu ambigu — jangan dipakai sebagai bukti penutupan dini tepat atau salah.';
       return 'Tidak ada aksi pada posisi ini: sudah ditutup dini oleh sistem. Tunggu hantu resolve (TP/SL) untuk menilai apakah keputusan penutupan itu tepat.';
     }
+    if (isTightenResolved(s) && (s.status === 'open' || s.status === 'pending')) return 'Tidak ada aksi: posisi riil sudah selesai di SL yang diperketat. Tunggu hantu SL asli resolve untuk menilai apakah pengetatan itu tepat (nilai per-batch, bukan per-trade).';
     if (s.status === 'open' || s.status === 'pending') return 'Pertahankan disiplin eksekusi; tunggu trigger berikutnya dan hindari intervensi manual yang tidak perlu.';
     if (s.status === 'tp') return 'Pertahankan pendekatan pair serupa; fokus replikasi setup dengan karakteristik konfluensi yang sama.';
     if (s.status === 'sl') {

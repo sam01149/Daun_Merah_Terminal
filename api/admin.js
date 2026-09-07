@@ -29,7 +29,7 @@ const { buildPairContext, computeCurrencyStrength } = require('./_pair_context')
 const { validateTightenSl, computePreventiveTightenSl, _evaluateManaged, _aggManagementStats, isCorroborated, isManagedPending } = require('./_position_review');
 // isDrawdownHalted (Gate B) diaktifkan ulang 2026-08-22 (POLICY_EPOCHS v30) — lihat
 // komentar di titik pemanggilannya untuk riwayat lengkap nonaktif (v29) -> aktif lagi.
-const { isCorrelatedExposureBlocked, correlatedExposureBlock, isClosedEarly, isLiveExposure, isTimingConflictBlocked, isInvalidationTriggered, INVALIDATION_TRIGGER_TYPES, INVALIDATION_TRIGGER_DIRECTIONS, INVALIDATION_TRIGGER_TIMEFRAMES, CORRELATED_PAIRS, POLICY_VERSION, POLICY_EPOCHS, policyVersionForTs, isDrawdownHalted, isDrawdownEmergencyValveOpen, AATAS_EPOCH, isGoldRegimeBlocked } = require('./_auto_entry_guard');
+const { isCorrelatedExposureBlocked, correlatedExposureBlock, isClosedEarly, isManagedResolved, isLiveExposure, isTimingConflictBlocked, isInvalidationTriggered, INVALIDATION_TRIGGER_TYPES, INVALIDATION_TRIGGER_DIRECTIONS, INVALIDATION_TRIGGER_TIMEFRAMES, CORRELATED_PAIRS, POLICY_VERSION, POLICY_EPOCHS, policyVersionForTs, isDrawdownHalted, isDrawdownEmergencyValveOpen, AATAS_EPOCH, isGoldRegimeBlocked } = require('./_auto_entry_guard');
 const { computeLevelCandidates } = require('./_levels');
 
 // Gate D live-sign lookup (audit 2026-08-16): terjemahkan simbol Yahoo di
@@ -8069,7 +8069,7 @@ async function ohlcvAnalyzeHandler(req, res) {
           // guard ini membacanya sebagai posisi live dan membuang DIAM-DIAM semua kandidat
           // baru pair itu (tanpa canceled/counter) sampai ghost kena TP/SL. Kasus nyata
           // EURUSD=X:1788423350010. Lihat isClosedEarly (_auto_entry_guard.js).
-          const openSame = log.find(x => x && x.symbol === symbol && x.status === 'open' && !isClosedEarly(x));
+          const openSame = log.find(x => x && x.symbol === symbol && x.status === 'open' && !isClosedEarly(x) && !isManagedResolved(x));
           if (openSame) {
             blockedByOpenPosition = true;
           } else {
@@ -8387,7 +8387,7 @@ async function ohlcvAnalyzeHandler(req, res) {
           const dup2 = log2.find(x => x && x.symbol === symbol
             && isLiveExposure(x)
             && x.entry_zone === structured.entry_zone && x.sl === structured.sl && x.tp === structured.tp);
-          const openNow = log2.find(x => x && x.symbol === symbol && x.status === 'open' && !isClosedEarly(x));
+          const openNow = log2.find(x => x && x.symbol === symbol && x.status === 'open' && !isClosedEarly(x) && !isManagedResolved(x));
           // Refine-in-place (2026-08-18) — cabang TERPISAH dari alur buildNewSetupEntry() di
           // bawah, karena target-nya entry LAMA (dicari via id), bukan entry baru. Race guard
           // sama semangatnya dengan dup2/openNow: kalau di antara Gate A mikir posisi ini sudah

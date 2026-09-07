@@ -236,8 +236,17 @@ const EXPOSURE_BINDING_STATUSES = new Set(['open', 'pending']);
 function isClosedEarly(s) {
   return !!(s && s.intervention && s.intervention.type === 'close_early');
 }
+// Perluasan konsisten (2026-09-07, sesi yang sama, sebelum ada setup lahir di v46):
+// posisi yang SL-nya diperketat (tighten_sl reaktif / tighten_sl_preventive Jumat)
+// lalu SL baru itu tersentuh (`managed_status` sl/tp/ambiguous) juga sudah selesai
+// secara riil — hanya ghost SL/TP aslinya yang masih 'open'. Definisi "hidup" yang
+// sama: managed_status apa pun yang sudah resolve = bukan eksposur lagi.
+const MANAGED_RESOLVED = new Set(['sl', 'tp', 'ambiguous', 'closed_early']);
+function isManagedResolved(s) {
+  return !!(s && s.intervention && MANAGED_RESOLVED.has(s.managed_status));
+}
 function isLiveExposure(s) {
-  return !!(s && EXPOSURE_BINDING_STATUSES.has(s.status) && !isClosedEarly(s));
+  return !!(s && EXPOSURE_BINDING_STATUSES.has(s.status) && !isClosedEarly(s) && !isManagedResolved(s));
 }
 
 // CELAH DITEMUKAN & DITUTUP (audit populasi AATAS 2026-09-04, dieksekusi 2026-09-06
@@ -563,7 +572,7 @@ const POLICY_EPOCHS = [
   // position review (intervention.type close_early) berhenti dihitung sebagai eksposur
   // hidup oleh guard 1-posisi-per-symbol, dup guard, dan Gate D korelasi. Bukan gate/
   // ambang baru — cuma definisi "hidup" yang sebelumnya salah baca ghost sebagai posisi.
-  { v: 46, from: '2026-09-07T00:00:00Z', kind: 'fix',    impact: 'entry',    label: 'Posisi yang sudah ditutup dini oleh AI position review (close_early) tidak lagi dianggap eksposur hidup oleh guard "1 posisi open per symbol", dup guard, dan Gate D korelasi (isLiveExposure). Sebelumnya `status` yang sengaja tetap open (ghost U-5a untuk mengukur close_early_saved/cost) dibaca mentah oleh ketiga gate itu, jadi pair yang posisinya sudah ditutup terkunci diam-diam (tanpa jejak canceled/counter) sampai ghost-nya kena TP/SL — kasus nyata EURUSD=X:1788423350010 (close_early 2026-09-04 13:11Z, nol kandidat EUR/USD tersimpan setelahnya). Ghost/statistik tidak disentuh.' },
+  { v: 46, from: '2026-09-07T00:00:00Z', kind: 'fix',    impact: 'entry',    label: 'Posisi yang sudah ditutup dini oleh AI position review (close_early) — dan, diperluas sesi yang sama sebelum ada setup lahir di epoch ini, posisi yang SL-perketatnya sudah tersentuh (managed_status resolve) — tidak lagi dianggap eksposur hidup oleh guard "1 posisi open per symbol", dup guard, dan Gate D korelasi (isLiveExposure). Sebelumnya `status` yang sengaja tetap open (ghost U-5a untuk mengukur close_early_saved/cost) dibaca mentah oleh ketiga gate itu, jadi pair yang posisinya sudah ditutup terkunci diam-diam (tanpa jejak canceled/counter) sampai ghost-nya kena TP/SL — kasus nyata EURUSD=X:1788423350010 (close_early 2026-09-04 13:11Z, nol kandidat EUR/USD tersimpan setelahnya). Ghost/statistik tidak disentuh.' },
 ];
 
 // AATAS_EPOCH (2026-08-22, keputusan user): batas populasi statistik dashboard
@@ -632,6 +641,7 @@ module.exports = {
   correlatedExposureBlock,
   EXPOSURE_BINDING_STATUSES,
   isClosedEarly,
+  isManagedResolved,
   isLiveExposure,
   _isOpenPastHorizon,
   isTimingConflictBlocked,

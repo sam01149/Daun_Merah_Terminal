@@ -631,3 +631,19 @@ test('POLICY_EPOCHS: v46 ada, kind fix, impact entry, dan POLICY_VERSION >= 46',
   assert.equal(e.impact, 'entry');
   assert.ok(POLICY_VERSION >= 46);
 });
+
+// Perluasan konsisten (2026-09-07): SL-perketat yang sudah tersentuh = posisi selesai.
+const { isManagedResolved } = require('../../api/_auto_entry_guard.js');
+
+test('isManagedResolved: tighten dengan managed_status sl/tp/ambiguous -> true; belum resolve/tanpa intervensi -> false', () => {
+  assert.equal(isManagedResolved({ status: 'open', intervention: { type: 'tighten_sl_preventive', new_sl: 1 }, managed_status: 'sl' }), true);
+  assert.equal(isManagedResolved({ status: 'open', intervention: { type: 'tighten_sl', new_sl: 1 }, managed_status: 'tp' }), true);
+  assert.equal(isManagedResolved({ status: 'open', intervention: { type: 'tighten_sl', new_sl: 1 }, managed_status: null }), false);
+  assert.equal(isManagedResolved({ status: 'open', intervention: { type: 'tighten_sl', new_sl: 1 }, managed_status: 'stale' }), false);
+  assert.equal(isManagedResolved({ status: 'open' }), false);
+});
+
+test('isLiveExposure: open dengan SL-perketat sudah tersentuh -> false; SL-perketat belum tersentuh -> true', () => {
+  assert.equal(isLiveExposure({ status: 'open', intervention: { type: 'tighten_sl_preventive', new_sl: 1 }, managed_status: 'sl' }), false);
+  assert.equal(isLiveExposure({ status: 'open', intervention: { type: 'tighten_sl_preventive', new_sl: 1 }, managed_status: null }), true);
+});

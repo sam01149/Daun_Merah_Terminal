@@ -16,6 +16,35 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
+## Changelog Session 355 (2026-09-07) — Audit Tampilan Mobile (Playwright 390x844 & 360x740): 2 Fix CSS + Daftar Temuan yang Sengaja Dibiarkan (`APP_VERSION` 2026.09.07.1)
+
+**Metode.** Situs produksi dibuka via Playwright di viewport ponsel (iPhone 14 390x844, lalu Android kecil 360x740). 13 tampilan di-screenshot & dibaca satu per satu (NEWS, Ringkasan, Analisa, Tek, laci Lainnya, Kalender, Artikel, COT, Checklist, Fundamental, Sizing, Jurnal, Petunjuk) + pengukuran programatik lewat `page.evaluate`: overflow horizontal (`scrollWidth` vs `clientWidth`, per-elemen `getBoundingClientRect().right`), elemen tertutup bottom-nav, ukuran tap target (<32px), distribusi `font-size`, dan konsol.
+
+**RUSAK — DIFIX (2 item, keduanya di `index.html`, `@media (max-width:767px)`).**
+1. **Baris regime terpotong.** `.regime-meta` dijepit jadi ~76px lalu ellipsis: user cuma membaca `· VIX 14.5 ▲ · M…` — angka MOVE dan HY OAS TIDAK PERNAH terbaca di ponsel. Sebab: `.regime-row` `flex-wrap:nowrap` dengan `.regime-main` `white-space:nowrap` (102px) dan `.regime-sessions` `flex-shrink:0` (146px) mengambil ruang lebih dulu, meta dapat sisanya. Fix: di mobile `.regime-row` boleh wrap, `.regime-meta` `order:3` + `flex-basis:100%` (turun ke baris kedua, penuh, tanpa ellipsis). Biaya: tinggi banner +~12px.
+2. **Kolom "Penilaian" tabel COT terpotong.** Tabel `Arah Spekulan Besar vs Trader Retail` (tab COT) pakai `table-layout:fixed` + `td { white-space:nowrap; text-overflow:ellipsis }` — 4 kolom x ~72px di layar 390px membuat badge terbaca `DORONGAN TU…`, `BELUM JELAS` terpotong. Fix: di mobile padding `6px 4px`, kolom terakhir `white-space:normal` (boleh wrap), `.div-badge` 9px.
+
+**BUKAN BUG (sempat dicurigai saat audit, dipastikan lewat pengukuran — jangan dilaporkan ulang).**
+- Bar MTF `D1/H4/H1/M15` tab Tek tampak menempel/terpotong bottom-nav di posisi scroll awal, TAPI `#teknikalPanel` memang scrollable (`scrollHeight` 4316 vs `clientHeight` 554) dan `.tek-mtf-section` sudah punya `padding-bottom: calc(60px + safe-area)`. Setelah scroll, bar terlihat utuh.
+- Banner "Versi baru tersedia" muncul di semua screenshot — itu probe versi (`dm_index_etag`) BEKERJA BENAR: profil browser Playwright menyimpan ETag lama dari kunjungan sebelumnya. Bukan false positive.
+- Tidak ada overflow horizontal di 390px maupun 360px: `scrollWidth == clientWidth` di semua tab.
+
+**DILAPORKAN, TIDAK DIUBAH (keputusan desain / butuh keputusan user — bukan temuan yang menunggu dieksekusi diam-diam).**
+- (a) **Font sangat kecil:** 112 elemen teks 8px + 5 elemen 7px (label bottom-nav 7px, kicker section, chip). Di bawah ambang nyaman-baca ponsel pada umumnya. Menaikkannya mengubah kepadatan informasi seluruh app — keputusan estetika user, bukan bug.
+- (b) **Tap target di bawah rekomendasi:** chip filter NEWS 24px, tombol INSTALL 25px, REFRESH 26px, tombol tutup `✕` 24x20px (rekomendasi umum >=40px). Bottom-nav sendiri sudah 44px (aman).
+- (c) **`text-align: justify !important`** pada `.ringkasan-text`/`.analisa-ai-result` menghasilkan celah antar-kata lebar di kolom sempit (~340px) karena `hyphens:auto` tidak punya kamus id-ID di Chrome Android. Justify itu keputusan user eksplisit (lihat entri lama "Penyelarasan Text Alignment") — DIBIARKAN, dicatat supaya tidak "ditemukan" berulang.
+- (d) **Dua banner persisten** (INSTALL + MUAT ULANG) + banner regime memakan ~140px (17%) tinggi layar di SEMUA tab; banner INSTALL tidak punya tombol tutup, hanya hilang setelah di-install.
+- (e) **Konsol:** `ERR_CONNECTION_REFUSED http://localhost:5000/health` — probe MT5 bridge (`MT5_BRIDGE`) ikut jalan di ponsel padahal bridge itu hanya ada di PC. Tidak berdampak fungsi (fail-silent), tapi memicu 1 error konsol per kunjungan tab Sizing/Jurnal.
+- (f) **Glyph `▲ ▼ →` (banner regime) dan `↻` (tombol Auto tab Tek)** — bukan emoji berwarna, tapi tergolong simbol non-teks. Dicatat kalau ATURAN.md §4.1 mau diperketat.
+
+**OK (diperiksa, tidak ada masalah).** Laci "Lainnya" (8 menu, tap target besar), Kalender (countdown + kartu CB rapi), Artikel, Checklist (accordion + progress), Fundamental (grid ranking 4 kolom muat), Sizing, Jurnal, Petunjuk. Tidak ada error JS selain (e).
+
+**Verifikasi.** `npm test` 1300/1300 hijau. Sintaks seluruh inline `<script>` dicek `new Function`. `APP_VERSION` `2026.08.31.2` -> `2026.09.07.1` (lockstep ATURAN.md §4 poin 7; `sw.js` tidak berubah, `NEWSCAT_VERSION` tetap). Verifikasi live pasca-deploy via Playwright: baris regime menampilkan MOVE & HY penuh di baris kedua, badge Penilaian tabel COT terbaca utuh.
+
+**Penunjuk silang:** perbaikan auto-entry di sesi yang sama (posisi `close_early`/SL-perketat tidak lagi dianggap eksposur hidup, POLICY_EPOCHS v46) ada di `Dokumentasi/professional_llm_trader/changelog.md` Session 355 — developer-only, tidak mengubah perilaku publik.
+
+---
+
 ## Changelog Session 354 (2026-09-06) — Fix Parser Keputusan Bank Sentral: Perkiraan/Polling/Taruhan Pasar Tidak Lagi Dibaca sebagai Keputusan Resmi
 
 **Konteks.** Ditemukan sampingan saat verifikasi PLAN AC Tahap 1 (auto-entry, `professional_llm_trader/changelog.md` Session 351), lalu user minta "perbaiki". Dicek ke `HGETALL cb_decisions` produksi: **7 dari 8 entri bukan keputusan resmi** — USD dari "Citi expects Fed to deliver 25 BPS rate cuts..." (tercatat Fed CUT 5 Sep), NZD & CAD & CHF dari "Poll: ... economists say", EUR & GBP dari "Traders ... price 25/50 bps", JPY dari "BoJ rate hike probability ... rises to 97%" (rate 97 = angka probabilitas dibaca sebagai suku bunga). Hanya AUD ("board keeps cash rate target steady at 4.35% in today's meeting") asli. Dampak publik: `mergeCbRate` (`api/_cb_rates.js`) memakai `cb_decisions` sebagai sumber paling akurat untuk keputusan & tanggal rapat terakhir -> kartu CB / baris "{Bank} Rate" Fundamental menampilkan keputusan & tanggal palsu (mis. "Fed cut -25bp 2026-09-05", Sabtu).
