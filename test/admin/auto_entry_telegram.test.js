@@ -106,3 +106,18 @@ test('_formatAutoEntrySignalMessage: closed tp/sl/ambiguous pakai status apa ada
   }
 });
 
+// (2026-09-07, disetujui user) closed_early: posisi ditutup dini oleh AI position review —
+// tanpa pesan ini posisi "hilang" dari Telegram (ghost tp/sl setelahnya sengaja tidak dikirim).
+test('_autoEntryStatusLabel: closed_early -> "closed early"; status lain apa adanya', () => {
+  assert.equal(_autoEntryStatusLabel('closed_early'), 'closed early');
+  assert.equal(_autoEntryStatusLabel('open'), 'open');
+  assert.equal(_autoEntryStatusLabel('tp'), 'tp');
+});
+
+test('_formatAutoEntrySignalMessage: status closed_early tampil "status: closed early", format 8 baris tidak berubah', () => {
+  const msg = _formatAutoEntrySignalMessage({ pair: 'EUR/USD', bias: 'bullish', price: '1.16025', tp: '1.16712', sl: '1.15726', fundamentalPct: 68, teknikalPct: 78, status: 'closed_early', refined: false });
+  const lines = msg.split('\n');
+  assert.equal(lines.length, 8);
+  assert.equal(lines[0], 'signal entry');
+  assert.equal(lines[7], 'status: closed early');
+});

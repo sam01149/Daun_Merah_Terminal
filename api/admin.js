@@ -1224,7 +1224,9 @@ function _resolveFundamentalPct(fundamentalBias, bias) {
 }
 
 function _autoEntryStatusLabel(status) {
-  return status === 'canceled' ? 'cancel' : status;
+  if (status === 'canceled') return 'cancel';
+  if (status === 'closed_early') return 'closed early'; // (2026-09-07) ditutup dini oleh AI position review
+  return status;
 }
 
 // Pure, dites unit terpisah dari network (pola sama _corroborateLevel). Format
@@ -4754,11 +4756,13 @@ async function positionReviewHandler(req, res) {
         stFresh.intervention = { type: 'close_early', t: Date.now(), price: closeLast, new_sl: null, reason, trigger_guid: trigger.guid };
         stFresh.managed_status = 'closed_early';
         stFresh.managed_closed_t = Math.floor(Date.now() / 1000);
-        // CATATAN (2026-09-07): TIDAK ada notifikasi Telegram di titik ini — status
-        // closed_early di luar scope yang disepakati user (rapat 2026-09-06: pending/
-        // refined/open/cancel/expired/tp/sl). Konsekuensinya posisi ini "hilang" dari
-        // Telegram (open -> tidak pernah ada kabar lagi, ghost tp/sl-nya sengaja tidak
-        // dikirim, lihat _finalizeSetupTransitions). Menambahkannya = keputusan user.
+        // (2026-09-07, disetujui user "tambahkan saja pesannya") Scope notifikasi Telegram
+        // diperluas: closed_early. Tanpa ini posisi "hilang" dari Telegram — pembaca tahu
+        // 'open', lalu tidak pernah dapat kabar lagi (ghost tp/sl-nya sengaja tidak
+        // dikirim, lihat _finalizeSetupTransitions). Format tetap 8 baris yang sama,
+        // status: "closed early". Satu baris kode = tepat sekali per kejadian (invarian
+        // exactly-once yang sama dengan pending/cancel), fire-and-forget.
+        _notifyAutoEntryTelegram(stFresh, 'closed_early').catch(() => {});
       }
       await redisCmd('SET', 'setup_log_auto:v1', JSON.stringify(logFresh));
       st.review_count = stFresh.review_count; st.intervention = stFresh.intervention;
