@@ -2267,7 +2267,9 @@ body.light-theme .cal-date-input { color-scheme: light; }
      nowrap/ellipsis memotong badge Penilaian ("DORONGAN TU…") di 4 kolom x ~72px.
      Di mobile kolom terakhir boleh wrap dan padding dirapatkan. */
   .div-matrix-table th, .div-matrix-table td { padding: 6px 4px; }
-  .div-matrix-table td:last-child { white-space: normal; overflow: visible; }
+  /* Kolom 3 (Trader Retail "39% L / 61% S") & 4 (badge Penilaian) boleh wrap — dua-duanya
+     tidak muat di ~72px. Kolom 1 (pair) & 2 (net, "-118K") pendek, tetap nowrap. */
+  .div-matrix-table td:nth-child(n+3) { white-space: normal; overflow: visible; }
   .div-matrix-table .div-badge { font-size: 9px; padding: 2px 5px; line-height: 1.3; }
 
   /* Checklist: stack vertically, hide desktop sidebar */
@@ -4466,7 +4468,7 @@ window.addEventListener('DOMContentLoaded', () => _updateNewsLangBtn());
 
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.09.07.1';
+const APP_VERSION = '2026.09.07.2';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
