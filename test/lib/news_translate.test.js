@@ -10,7 +10,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 
-const { translateNewItems, getTranslations, parseResponse, buildPrompt, buildBatchPrompt, parseBatchResponse } = require('../../api/_news_translate');
+const { translateNewItems, getTranslations, parseResponse, buildPrompt, buildBatchPrompt, parseBatchResponse, contentKey } = require('../../api/_news_translate');
 
 // ── parseResponse (pure, no I/O) ────────────────────────────────────────────
 
@@ -279,9 +279,10 @@ test('translateNewItems: item yang gagal >MAX_FAIL_ATTEMPTS(5) kali dilewati per
   global.fetch = mockGeminiEchoWithBody(calledBatches);
   try {
     const store = new Map();
-    store.set('news_tr_fail:poison-1', '5'); // sudah gagal 5x sebelumnya
+    const poisonItem = { title: 'Item macet berkali-kali', guid: 'poison-1', description: '' };
+    store.set(`news_tr_fail:${contentKey(poisonItem)}`, '5'); // sudah gagal 5x sebelumnya
     const items = [
-      { title: 'Item macet berkali-kali', guid: 'poison-1', description: '' },
+      poisonItem,
       { title: 'Headline baru normal', guid: 'ok-1', description: '' },
     ];
     await translateNewItems(items, makeRedisCmd(store));
@@ -292,7 +293,7 @@ test('translateNewItems: item yang gagal >MAX_FAIL_ATTEMPTS(5) kali dilewati per
   } finally { global.fetch = realFetch; }
 }));
 
-test('translateNewItems: kegagalan batch menaikkan counter news_tr_fail per guid', withEnv({
+test('translateNewItems: kegagalan batch menaikkan counter news_tr_fail per konten (bukan guid — repost FinancialJuice ganti guid tiap kali)', withEnv({
   GEMINI_API_KEY: 'fake-key',
   UPSTASH_REDIS_REST_URL: 'https://mock-redis.test',
   UPSTASH_REDIS_REST_TOKEN: 'mock-token',
@@ -304,8 +305,52 @@ test('translateNewItems: kegagalan batch menaikkan counter news_tr_fail per guid
   };
   try {
     const store = new Map();
-    await translateNewItems([{ title: 'Gagal terus', guid: 'fail-1', description: '' }], makeRedisCmd(store));
-    assert.equal(store.get('news_tr_fail:fail-1'), 1);
+    const item = { title: 'Gagal terus', guid: 'fail-1', description: '' };
+    await translateNewItems([item], makeRedisCmd(store));
+    assert.equal(store.get(`news_tr_fail:${contentKey(item)}`), 1);
+  } finally { global.fetch = realFetch; }
+}));
+
+test('translateNewItems: repost FinancialJuice (guid baru, judul+pubDate identik) SUDAH pernah diterjemahkan → disalin dari cache konten, TANPA panggil AI', withEnv({
+  GEMINI_API_KEY: 'fake-key',
+  UPSTASH_REDIS_REST_URL: 'https://mock-redis.test',
+  UPSTASH_REDIS_REST_TOKEN: 'mock-token',
+}, async () => {
+  const realFetch = global.fetch;
+  let geminiCallCount = 0;
+  global.fetch = async (url) => {
+    if (String(url).includes('generativelanguage.googleapis.com')) geminiCallCount++;
+    return { ok: true, json: async () => ({ result: null }) };
+  };
+  try {
+    const store = new Map();
+    const original = { title: 'Fed pertahankan suku bunga', guid: 'old-guid-1', pubDate: 'Mon, 08 Sep 2026 10:00:00 GMT', description: '' };
+    store.set(`news_tr_c:${contentKey(original)}`, JSON.stringify({ title_id: 'Fed pertahankan suku bunga (ID)', desc_id: '' }));
+    const repost = { title: 'Fed pertahankan suku bunga', guid: 'new-guid-2', pubDate: 'Mon, 08 Sep 2026 10:00:00 GMT', description: '' };
+    await translateNewItems([repost], makeRedisCmd(store));
+    assert.equal(geminiCallCount, 0, 'tidak boleh ada panggilan ke Gemini sama sekali');
+    assert.deepEqual(JSON.parse(store.get('news_tr:new-guid-2')), { title_id: 'Fed pertahankan suku bunga (ID)', desc_id: '' });
+  } finally { global.fetch = realFetch; }
+}));
+
+test('translateNewItems: repost dalam SATU payload RSS yang sama (2 guid, konten identik, keduanya baru) → cukup 1x panggilan AI, hasil disalin ke guid saudara', withEnv({
+  GEMINI_API_KEY: 'fake-key',
+  UPSTASH_REDIS_REST_URL: 'https://mock-redis.test',
+  UPSTASH_REDIS_REST_TOKEN: 'mock-token',
+}, async () => {
+  const realFetch = global.fetch;
+  const calledBatches = [];
+  global.fetch = mockGeminiEchoWithBody(calledBatches);
+  try {
+    const store = new Map();
+    const dupA = { title: 'Duplikat dalam satu payload', guid: 'dup-a', pubDate: 'Mon, 08 Sep 2026 11:00:00 GMT', description: '' };
+    const dupB = { title: 'Duplikat dalam satu payload', guid: 'dup-b', pubDate: 'Mon, 08 Sep 2026 11:00:00 GMT', description: '' };
+    await translateNewItems([dupA, dupB], makeRedisCmd(store));
+    assert.equal(calledBatches.length, 1);
+    assert.deepEqual(calledBatches[0], ['Duplikat dalam satu payload'], 'cuma 1 perwakilan yang dikirim ke Gemini');
+    assert.equal(store.has('news_tr:dup-a'), true);
+    assert.equal(store.has('news_tr:dup-b'), true);
+    assert.deepEqual(JSON.parse(store.get('news_tr:dup-a')), JSON.parse(store.get('news_tr:dup-b')));
   } finally { global.fetch = realFetch; }
 }));
 

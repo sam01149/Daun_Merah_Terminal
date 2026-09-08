@@ -135,6 +135,19 @@ const MAX_DESC_CHARS = 1200;
 const MAX_FAIL_ATTEMPTS = 5;
 const FAIL_KEY_TTL = 48 * 3600; // detik
 
+// Identitas KONTEN (bukan guid) — SAMA PERSIS formulanya dengan dedup repost di
+// storeNewsHistory (api/feeds.js) & _newsDedupKey (index.html): FinancialJuice
+// kadang mem-broadcast ulang headline yang PERSIS SAMA dengan guid BARU (pubDate
+// tetap sama persis), kadang bahkan dalam SATU payload RSS yang sama. guid saja
+// BUKAN identitas stabil untuk cache translate — tanpa ini, tiap repost dianggap
+// item baru dan dikirim ulang ke AI, membakar kuota provider untuk headline yang
+// sebenarnya sudah pernah diterjemahkan (dugaan user: refresh berulang → rate
+// limit — root cause-nya di sini, bukan literal "refresh" tapi guid FJ yang
+// berputar untuk konten identik).
+function contentKey(item) {
+  return (item.title || '').toLowerCase().replace(/\s+/g, ' ').trim() + '|' + item.pubDate;
+}
+
 function buildPrompt(title, desc) {
   const hasDesc = !!(desc && desc.trim());
   let body = `JUDUL:\n${title}`;
@@ -218,7 +231,7 @@ function parseBatchResponse(raw, count) {
   return out;
 }
 
-async function translateBatch(items, redisCmd, timeoutMs) {
+async function translateBatch(items, redisCmd, timeoutMs, siblingsByGuid) {
   if (!await allowAiCall('gemini_newstranslate')) return; // pagar kuota — nyusul siklus berikutnya
   const GEMINI_KEY = process.env.GEMINI_API_KEY;
   if (!GEMINI_KEY) return;
@@ -248,15 +261,33 @@ async function translateBatch(items, redisCmd, timeoutMs) {
     const raw = data?.choices?.[0]?.message?.content?.trim() || '';
     const parsed = parseBatchResponse(raw, items.length);
     if (!parsed.some(Boolean)) throw new Error('Unparseable batch response');
-    await Promise.all(parsed.map((p, i) => (p ? redisCmd('SET', `news_tr:${items[i].guid}`, JSON.stringify(p), 'EX', TR_KEY_TTL) : null)));
+    await Promise.all(parsed.map((p, i) => {
+      if (!p) return null;
+      const it = items[i];
+      const val = JSON.stringify(p);
+      // Simpan di key guid (dibaca client via newsTranslateHandler) DAN key konten
+      // (dibaca ulang oleh translateNewItems supaya repost guid-baru berikutnya
+      // tidak perlu panggil AI lagi — lihat contentKey() di atas).
+      const ops = [
+        redisCmd('SET', `news_tr:${it.guid}`, val, 'EX', TR_KEY_TTL),
+        redisCmd('SET', `news_tr_c:${contentKey(it)}`, val, 'EX', TR_KEY_TTL),
+      ];
+      // Guid lain dalam batch INI dengan konten identik (repost dalam satu payload
+      // RSS yang sama, lihat contentKey()) — salin hasil yang sama, jangan biarkan
+      // mereka nunggu MGET konten di siklus berikutnya.
+      const sibs = siblingsByGuid && siblingsByGuid.get(it.guid);
+      if (sibs) for (const g of sibs) ops.push(redisCmd('SET', `news_tr:${g}`, val, 'EX', TR_KEY_TTL));
+      return Promise.all(ops);
+    }));
     await cb.onSuccess(CB_GEMINI_TR);
   } catch(e) {
     await cb.onFailure(CB_GEMINI_TR);
     console.warn('news_translate batch failed:', items.map(it => it.guid).join(','), e.message);
-    // Catat kegagalan per-guid (poison-item guard, lihat MAX_FAIL_ATTEMPTS) — fire-and-forget,
-    // kegagalan mencatat ini sendiri tidak boleh ikut menjatuhkan alur (redisCmd tidak reject).
+    // Catat kegagalan per-KONTEN, bukan per-guid (poison-item guard, lihat
+    // MAX_FAIL_ATTEMPTS & catatan contentKey di atas) — fire-and-forget, kegagalan
+    // mencatat ini sendiri tidak boleh ikut menjatuhkan alur (redisCmd tidak reject).
     await Promise.all(items.map(async it => {
-      const fk = `news_tr_fail:${it.guid}`;
+      const fk = `news_tr_fail:${contentKey(it)}`;
       await redisCmd('INCR', fk);
       await redisCmd('EXPIRE', fk, FAIL_KEY_TTL);
     }));
@@ -288,15 +319,53 @@ async function translateNewItems(items, redisCmd, budgetMs = DEFAULT_BUDGET_MS) 
   const todoAll = candidates.filter((_, i) => !existing || existing[i] == null);
   if (todoAll.length === 0) return;
 
+  // Repost guard (lihat contentKey() di atas): kelompokkan sisa item BELUM
+  // punya cache guid berdasarkan identitas KONTEN (judul+pubDate ternormalisasi).
+  // Ini menangkap 2 pola repost FinancialJuice yang sama-sama sudah pernah
+  // ketahuan live: (a) headline identik muncul lagi belakangan dengan guid BARU
+  // (lintas fetch), dan (b) headline identik dobel dalam SATU payload RSS yang
+  // sama (dalam batch ini juga). Cuma 1 perwakilan per grup konten yang perlu
+  // dicek/diterjemahkan — guid lain di grup yang sama tinggal disalin hasilnya.
+  const groups = new Map(); // contentKey -> { rep, siblingGuids: [] }
+  for (const it of todoAll) {
+    const ck = contentKey(it);
+    let g = groups.get(ck);
+    if (!g) { g = { rep: it, siblingGuids: [] }; groups.set(ck, g); }
+    else g.siblingGuids.push(it.guid);
+  }
+  const groupKeys = [...groups.keys()];
+  const contentHits = await redisCmd('MGET', ...groupKeys.map(ck => `news_tr_c:${ck}`));
+  const repsNeedingAi = [];
+  const copyOps = [];
+  const siblingsByGuid = new Map();
+  groupKeys.forEach((ck, i) => {
+    const g = groups.get(ck);
+    const hit = contentHits && contentHits[i];
+    if (hit) {
+      // Konten sudah pernah diterjemahkan di bawah guid lain sebelumnya — salin
+      // ke SEMUA guid grup ini (termasuk rep) tanpa panggil AI sama sekali.
+      copyOps.push(redisCmd('SET', `news_tr:${g.rep.guid}`, hit, 'EX', TR_KEY_TTL));
+      for (const guid of g.siblingGuids) copyOps.push(redisCmd('SET', `news_tr:${guid}`, hit, 'EX', TR_KEY_TTL));
+    } else {
+      repsNeedingAi.push(g.rep);
+      if (g.siblingGuids.length) siblingsByGuid.set(g.rep.guid, g.siblingGuids);
+    }
+  });
+  if (copyOps.length) await Promise.all(copyOps);
+  if (repsNeedingAi.length === 0) return;
+
   // Poison-item guard (bug live 2026-08-05 — lihat catatan MAX_FAIL_ATTEMPTS di atas):
   // item yang sudah gagal berkali-kali TIDAK BOLEH terus dipilih FIFO tiap siklus,
   // karena kalau dibiarkan dia jadi kepala antrean permanen yang memblokir SEMUA
   // headline baru di belakangnya — translate berhenti total, bukan cuma telat.
-  const failKeys = todoAll.map(it => `news_tr_fail:${it.guid}`);
+  // Key pakai contentKey (bukan guid) — kalau item bermasalah ini jenis yang
+  // di-repost FJ dengan guid baru tiap fetch, fail-count berbasis guid TIDAK
+  // PERNAH terakumulasi (guid selalu "baru"), poison guard jadi mati fungsi.
+  const failKeys = repsNeedingAi.map(it => `news_tr_fail:${contentKey(it)}`);
   const failCounts = await redisCmd('MGET', ...failKeys);
-  const todo = todoAll.filter((_, i) => !(failCounts && parseInt(failCounts[i], 10) >= MAX_FAIL_ATTEMPTS));
-  if (todoAll.length !== todo.length) {
-    console.warn(`news_translate: ${todoAll.length - todo.length} item menyerah (>${MAX_FAIL_ATTEMPTS}x gagal), dilewati permanen`);
+  const todo = repsNeedingAi.filter((_, i) => !(failCounts && parseInt(failCounts[i], 10) >= MAX_FAIL_ATTEMPTS));
+  if (repsNeedingAi.length !== todo.length) {
+    console.warn(`news_translate: ${repsNeedingAi.length - todo.length} item menyerah (>${MAX_FAIL_ATTEMPTS}x gagal), dilewati permanen`);
   }
   if (todo.length === 0) return;
 
@@ -323,7 +392,7 @@ async function translateNewItems(items, redisCmd, budgetMs = DEFAULT_BUDGET_MS) 
   for (const chunk of chunks) {
     const remaining = deadline - Date.now();
     if (remaining <= 0) break;
-    await translateBatch(chunk, redisCmd, Math.min(PER_CALL_TIMEOUT_MS, remaining));
+    await translateBatch(chunk, redisCmd, Math.min(PER_CALL_TIMEOUT_MS, remaining), siblingsByGuid);
   }
 }
 
@@ -346,4 +415,4 @@ async function getTranslations(guids, redisCmd) {
   return out;
 }
 
-module.exports = { translateNewItems, getTranslations, parseResponse, buildPrompt, buildBatchPrompt, parseBatchResponse };
+module.exports = { translateNewItems, getTranslations, parseResponse, buildPrompt, buildBatchPrompt, parseBatchResponse, contentKey };

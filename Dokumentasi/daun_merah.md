@@ -11,10 +11,26 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-09-06 (Session 354 — Fix parser keputusan bank sentral: perkiraan/polling/taruhan pasar tidak lagi dibaca sebagai keputusan resmi; 7/8 entri cb_decisions produksi dibersihkan)
+> **Last updated:** 2026-09-08 (Session 356 — Fix bug translate NEWS ditembak ulang ke AI saat headline di-repost FinancialJuice dengan guid baru, berisiko rate limit Gemini)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
+
+## Changelog Session 356 (2026-09-08) — Fix Translate NEWS Ditembak Ulang ke AI Saat FinancialJuice Repost Headline dengan Guid Baru (Risiko Rate Limit)
+
+**Laporan user:** dugaan "kalau refresh, AI translate NEWS melakukan translate lagi, jadi rate limit".
+
+**Root cause (bukan literal refresh browser).** Cache hasil translate (`api/_news_translate.js`) di-key murni per `guid` (`news_tr:<guid>`). FinancialJuice (sumber RSS) kadang mem-broadcast ulang headline yang PERSIS SAMA (judul+pubDate identik) dengan **guid BARU** — kadang lintas fetch, kadang bahkan dobel dalam SATU payload RSS yang sama (perilaku ini sudah didokumentasikan sebelumnya untuk dedup tampilan di `index.html`/`storeNewsHistory`, tapi belum pernah diterapkan ke cache translate). Akibatnya `news_tr:<guid-baru>` selalu cache-miss walau kontennya sudah pernah diterjemahkan, jadi headline yang sama ditembak ulang ke Gemini tiap kali guid-nya berganti — makin sering fetch/repost terjadi, makin boros kuota `gemini_newstranslate`, berisiko trip circuit breaker/rate limit.
+
+**Fix (`api/_news_translate.js`).**
+1. Cache tambahan berbasis **identitas konten** (`news_tr_c:<judul+pubDate ternormalisasi>`, formula sama dengan dedup repost `storeNewsHistory`) — sebelum antre ke AI, item yang belum punya `news_tr:<guid>` dicek dulu ke cache konten ini; kalau ketemu, tinggal disalin ke key guid barunya, **0 panggilan AI**.
+2. Repost dalam SATU payload RSS yang sama (2+ guid, konten identik, sama-sama baru) dikelompokkan — cuma 1 perwakilan yang dikirim ke Gemini, hasilnya disalin ke semua guid saudara di grup itu.
+3. Poison-item guard (`news_tr_fail:<key>`, MAX_FAIL_ATTEMPTS=5) dipindah dari key guid ke key konten yang sama — sebelumnya kalau item bermasalah (mis. deskripsi terlalu panjang) kebetulan termasuk jenis yang di-repost dengan guid baru, fail-count tidak pernah terakumulasi (guid selalu "baru"), guard jadi mati fungsi untuk kasus itu.
+4. 3 unit test baru di `test/lib/news_translate.test.js` (repost lintas-fetch disalin tanpa AI, repost dalam satu payload cukup 1x AI, poison guard tetap konsisten). Total `npm test`: 1302/1302 hijau.
+
+**Dampak.** Guid FinancialJuice yang berputar untuk konten identik tidak lagi membakar kuota AI berulang — mengurangi risiko rate limit `gemini_newstranslate` tanpa mengubah UX (toggle 🇮🇩/🇬🇧 tetap sama, translate tetap otomatis di background).
+
+Dokumentasi terkait: [daun_merah_ai.md](daun_merah_ai.md) §2 baris #10 (Translate NEWS) diupdate menjelaskan cache konten baru ini.
 
 ## Changelog Session 355 (2026-09-07) — Audit Tampilan Mobile (Playwright 390x844 & 360x740): 2 Fix CSS + Daftar Temuan yang Sengaja Dibiarkan (`APP_VERSION` 2026.09.07.1)
 
