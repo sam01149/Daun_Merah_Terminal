@@ -11,10 +11,14 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-09-08 (Session 356 — Fix bug translate NEWS ditembak ulang ke AI saat headline di-repost FinancialJuice dengan guid baru, berisiko rate limit Gemini)
+> **Last updated:** 2026-09-10 (Session 357 - Audit pending AATAS; penunjuk dokumentasi lokal)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
+
+## Changelog Session 357 (2026-09-10) - Penunjuk audit pending AATAS
+
+Hasil pemeriksaan pending AATAS 10 September dan batas verifikasi dicatat di `professional_llm_trader/changelog.md` Session 357; tindak lanjut akses log runtime di `professional_llm_trader/progress.md` (keduanya tetap lokal sesuai .gitignore). Tidak ada perubahan runtime. Validasi: npm.cmd test 1302/1302 lulus.
 
 ## Changelog Session 356 (2026-09-08) — Fix Translate NEWS Ditembak Ulang ke AI Saat FinancialJuice Repost Headline dengan Guid Baru (Risiko Rate Limit)
 
