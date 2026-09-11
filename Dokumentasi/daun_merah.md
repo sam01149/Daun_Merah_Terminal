@@ -11,10 +11,63 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-09-10 (Session 357 - Audit pending AATAS; penunjuk dokumentasi lokal)
+> **Last updated:** 2026-09-11 (Session 358 — Audit kualitas dan keputusan data)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
+
+## Changelog Session 358 (2026-09-11) — Audit kualitas, distribusi, kelengkapan, akurasi, dan keputusan data
+
+**Kesimpulan:** data belum layak dianggap benar hanya karena tersedia dan cache aktif. Kesalahan periode inflasi sudah terbukti pada data produksi dan mengalir ke keputusan AATAS. Audit ini menghasilkan diagnosis dan prioritas perbaikan, bukan perubahan kebijakan trading. Tidak ada kode runtime/data produksi yang diubah atau panggilan AI yang dipicu.
+
+**Metode dan batas bukti.** Source HEAD f708dda, SOP audit umum + auto-entry, riwayat S336/S345/S350–357; npm.cmd test 1302/1302 lulus. Baca metadata Redis produksi dan hash ekonomi publik 8 currency; bandingkan sampel angka ke ABS/RBNZ, baca publikasi BoE/RBA. Log AATAS diperbarui dari produksi 11 September 20:41 WIB setelah izin eksplisit user, dibandingkan dengan snapshot 10 September 18:49 WIB: rincian lengkap di professional_llm_trader/changelog.md S358. Akses penyalinan massal Redis ditolak automatic approval review (potensi log/config sensitif); akses yang dipersempit ke metadata dan indikator ekonomi publik kemudian diizinkan. User kemudian mengizinkan pembacaan dua log AATAS saja dan penyimpanan lokal .cache; pembacaan tersebut berhasil, tanpa membuka konfigurasi/log lainnya. TTL membuktikan cache/key ada, bukan umur observasi atau scheduler selalu berhasil.
+
+### Temuan berurutan menurut dampak
+
+**D1 — Tinggi, terkonfirmasi produksi: inflasi bulanan menyamar sebagai tahunan; varian core masuk headline.** api/_fundamental_parser.js:100–153, _matchIndicatorKey. HMGET fundamental:AUD: CPI YoY=1%, previous=-0.1%, date=2026-08-26, source=calendar. ABS untuk Juli, dirilis 26 Agustus, menyatakan tahunan 3.5% (previous 3.8%), bulanan 1.0% (previous -0.1%), trimmed mean bulanan 0.5%. CPI MoM di hash justru 0.5%. Reproduksi parser: Inflation Rate MoM -> CPI YoY; Trimmed Mean CPI MoM -> CPI MoM; German CPI MoM -> German CPI YoY. Jadi ada kelas cacat pemetaan, bukan angka salah ketik tunggal. Produksi GBP CPI YoY dan CPI MoM sama-sama 0.3% (19 Agustus); German CPI YoY=0.2% (10 September): indikator tambahan untuk diperiksa, belum dinyatakan salah vs sumber resmi dalam audit ini. Solusi: pisahkan periode dan definisi indikator sebelum pemilihan key; uji dua urutan masuk annual/monthly/core; koreksi hash dan turunannya dengan jejak sumber. Jangan sekadar menimpa angka tanpa menutup parser, karena akan rusak kembali. [ABS Juli 2026](https://www.abs.gov.au/statistics/economy/price-indexes-and-inflation/consumer-price-index-australia/jul-2026).
+
+**D2 — Tinggi, terkonfirmasi reproduksi: actual baru dapat dipasangkan dengan forecast/previous rilis lama.** autoUpdateFundamentalsFromCalendar (api/_fundamental_parser.js:553–565) mempertahankan existingEntry.forecast/previous ketika event baru tidak memiliki keduanya, tanpa mensyaratkan tanggal rilis sama. Probe: existing 11 Agustus actual 2%, forecast 2.1%, previous 1.9%; event 11 September actual 3%, tanpa pembanding -> hasil 11 September tetap membawa forecast 2.1%/previous 1.9%. Dampak: label beat/miss dan tren semu. Solusi: carry hanya untuk revisi rilis yang sama; rilis baru tanpa pembanding tetap kosong. Belum dihitung jumlah rekaman produksi yang terdampak; perlu rekonstruksi sumber per rilis.
+
+**D3 — Tinggi, mekanisme terkonfirmasi; angka model berbeda dari resmi: rate dan keputusan bank sentral beda umur digabung.** mergeCbRate (api/_cb_rates.js:353) selalu memilih live.rate atau seed, tetapi tanggal/hike/bps dari dec; dec.rate tidak dipakai dan tanggal observasi live tidak dibandingkan dengan tanggal keputusan. Reproduksi konseptual langsung dari fungsi: live NZD 2.50% sebelum 2 September + dec 2.75%/hike 25bp tanggal 2 September -> keluaran rate 2.50% dengan label keputusan baru. HGET cb_decisions NZD produksi benar 2.75%; snapshot AATAS 8–9 September berulang mengutip 2.50% sebagai hasil kenaikan 2 September. RBNZ resmi 2.75%. Belum ada snapshot cache rate tepat saat setiap call untuk memastikan apakah angka salah berasal dari cache lag, model, atau keduanya. Solusi: konsistensikan angka dan provenance per tanggal; jangan menempel tanggal rapat baru pada angka lama. [RBNZ OCR](https://www.rbnz.govt.nz/monetary-policy/about-monetary-policy/the-official-cash-rate).
+
+**D4 — Sedang, terkonfirmasi kode: korelasi 60 hari bukan jendela tetap 60 observasi.** api/correlations.js fetchYahoo default range=3mo; r20 dibatasi lastN(...,20), r60=pearson(xa,xb) seluruh irisan. Instrumen dengan hari perdagangan berbeda punya jumlah observasi berbeda; minimal pearson hanya 5, tanpa jumlah observasi per koefisien di respons. Probe sintetis 90 titik menghasilkan -0.801 untuk seluruh data vs +1 untuk 60 terakhir (ilustrasi mekanisme, BUKAN angka pasar). Selain itu input pearson adalah level close, bukan return; changelog lama menyebut return, sehingga interpretasi dokumentasi tidak cocok kode. Perubahan level -> return adalah keputusan metode yang harus dinilai dampaknya ke seluruh konsumen, bukan digabung diam-diam dengan fix label/window.
+
+**D5 — Sedang, terkonfirmasi kode: real yield non-USD tidak sebanding penuh dan beberapa asumsi melewati jadwal pembaruan.** api/real-yields.js:30–66 memakai horizon/metrik inflasi berbeda: GBP 1 tahun, EUR jangka panjang, AUD underlying, CHF proyeksi tahun kalender. GBP as_of 5 Mei (129 hari), AUD 6 Mei (128), NZD 27 Mei (107) per 11 September. Flag stale yang sudah ada membantu, tetapi tidak memperbarui nilainya atau menyamakan definisi. RBA edisi Agustus sudah tersedia; asumsi AUD masih edisi Mei. BoE Agustus dijadwalkan 11 September: tidak menganggap isinya sudah tersedia hanya dari halaman jadwal. Solusi: refresh sumber yang sudah terbit dan tampilkan perbedaan horizon; hindari memperlakukan selisih lintas negara sebagai ukuran identik. [RBA Agustus](https://www.rba.gov.au/publications/smp/2026/aug/outlook.html), [BoE Mei](https://www.bankofengland.co.uk/inflation-attitudes-survey/2026/may-2026).
+
+**D6 — Sedang, terkonfirmasi reproduksi: boolean checklist dapat berubah arti.** api/journal.js:27–36 menyebut whitelist boolean tetapi memakai !!v: string 'false' disimpan true, sedangkan false tetap false. Data ini masuk edge_stats untuk membandingkan hasil ketika item dicentang/tidak. API angka jurnal juga memakai parseFloat tanpa validasi finite/format penuh (contoh string '12abc' menjadi 12, bukan ditolak); sizing-history menerima objek bebas. Dampak produksi dari input malformed belum diukur; UI normal bukan bukti boundary API aman. Solusi: validasi tipe dan angka di batas API sambil mempertahankan kompatibilitas payload UI/bridge yang sah.
+
+### Kelengkapan dan distribusi produksi (11 September; hash mentah sebelum overlay bank sentral)
+
+| Currency | Kolom | Tanggal tidak valid/kosong | Forecast tidak ada* | Umur >45 hari |
+|---|---:|---:|---:|---:|
+| USD | 118 | 1 | 11 | 4 |
+| EUR | 74 | 1 | 9 | 5 |
+| GBP | 53 | 2 | 15 | 10 |
+| JPY | 43 | 1 | 7 | 3 |
+| CAD | 28 | 1 | 2 | 0 |
+| AUD | 34 | 2 | 8 | 1 |
+| NZD | 24 | 1 | 15 | 7 |
+| CHF | 18 | 1 | 5 | 1 |
+| Total | 392 | 10 | 72 | 31 |
+
+*Hitungan minimum: null/undefined/empty; placeholder '-' belum dihitung sebagai hilang. Tidak semua indikator harus memiliki konsensus forecast; tidak ada angka coverage valid global yang bisa diturunkan dari tabel ini. Data kuartalan berumur >45 hari juga tidak otomatis basi. Seed rate tanpa tanggal memang dioverlay oleh endpoint; jangan melaporkan seed mentah sebagai angka yang pasti tampil. Rasio 118:18 menunjukkan volume timpang, bukan tuntutan menyamakan jumlah kolom. Prioritas kelengkapan adalah kategori relevan dan periode benar, bukan menambah field.
+
+### Cakupan fitur lain dan yang belum dibuktikan
+
+| Area | Verifikasi | Batas/kesimpulan |
+|---|---|---|
+| Fundamental + kalender | Parser/formatter, 8 hash, metadata calendar, probe periode/forecast | D1–D3; belum seluruh indikator dibandingkan ke instansi asal |
+| Berita + terjemahan + digest | Suite RSS/dedup/translate/filter dan pemisahan makro dalam test | Fix repost S356 lulus regresi; tidak memanggil AI/cek semua headline live |
+| COT + retail | Jalur parse/fallback/stale dan test positioning; key COT hidup | Belum angka laporan CFTC minggu ini diverifikasi; kekosongan retail cross-pair sudah keputusan terdokumentasi |
+| Harga/teknikal/korelasi | Test OHLCV/fallback/struktur + perhitungan jendela | D4; 2 pair AATAS non-streaming masih temuan lama di progress auto, bukan bug baru |
+| Makro/rate path/yields | Test FRED/kalender dan source asumsi | D3/D5; belum semua seri FRED live dibandingkan |
+| Journal/sizing/checklist | Test jurnal, kode CRUD/validasi/cap10, probe boolean | D6; belum CRUD produksi/UI/MT5 aktual; orphan registry sudah ada SREM, tidak mengulang observasi lama sebagai bug |
+| Dashboard/PWA/frontend | Test integritas versi/escaping/sumber/widget | Tidak menjalankan audit visual baru; hasil mobile S355 tetap historis |
+| Daemon/cron/notifikasi | Suite daemon/self-healing/auto-entry; heartbeat key hidup TTL 271s saat cek | Bukan bukti setiap slot berhasil; tidak mengirim notifikasi uji |
+| AATAS | 26 setup era AATAS + 34 reject tersimpan; subset v8 25 keputusan; probe gate/fill | Rincian dan batas populasi di changelog auto S358; dua log terbaru tercakup; arsip historis penuh dan log runtime cron belum tercakup |
+
+**Prioritas tindakan:** perbaiki semantik periode/varian D1 dan provenance D2/D3 sebelum memperluas data atau menyetel gate AATAS. Perubahan gate, metode korelasi, dan kebijakan event harus dipisah per epoch/keputusan. Tindak lanjut di daun_merah_progress.md dan progress auto. Bukti uji lokal: .cache/audit-probes-20260911.cjs + .json, .cache/audit-tests-20260911.txt; snapshot lama tetap disimpan. Dokumentasi auto tetap lokal sesuai .gitignore; hanya penunjuk ini dan laporan umum masuk GitHub. Perubahan .gitignore/.codex milik user tidak disentuh.
+
 
 ## Changelog Session 357 (2026-09-10) - Penunjuk audit pending AATAS
 

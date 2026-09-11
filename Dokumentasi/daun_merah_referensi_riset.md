@@ -343,3 +343,14 @@ Sebelum memulai riset/fitur makro baru di Daun Merah:
 - [[nfp-causal-research-framework]] — memory: kill-gate NFP final, kenapa proyek itu STOP
 - [[labour-market-assessment-pivot]] — memory: pivot ke nowcasting rule-based, sudah dieksekusi S154
 - `daun_merah.md` Session 150-153 — detail teknis lengkap riset NFP (Klein sebagai constraint utama)
+
+
+## Sumber primer definisi data ekonomi — verifikasi audit 11 September 2026
+
+| Dokumen | Tipe | Temuan inti |
+|---|---|---|
+| Australian Bureau of Statistics (2026), [Consumer Price Index, Australia, July 2026](https://www.abs.gov.au/statistics/economy/price-indexes-and-inflation/consumer-price-index-australia/jul-2026), rilis 26 Agustus | Constraint | CPI 3.5% tahunan, 1.0% bulanan original, 0.6% bulanan seasonally adjusted; trimmed mean bulanan 0.5%. Angka tidak boleh ditukar antarperiode/definisi. |
+| Reserve Bank of New Zealand (2026), [The official cash rate](https://www.rbnz.govt.nz/monetary-policy/about-monetary-policy/the-official-cash-rate), keputusan 2 September | Constraint | OCR dinaikkan 25bp ke 2.75%; angka 2.50% bukan hasil keputusan tersebut. Halaman dinamis, tanggal keputusan wajib dicatat. |
+| Reserve Bank of Australia (2026), [Statement on Monetary Policy — August, Outlook](https://www.rba.gov.au/publications/smp/2026/aug/outlook.html) | Application | Publikasi kuartalan Agustus tersedia untuk memperbarui asumsi yang masih memakai Mei; pemilihan horizon/metrik harus dipertahankan eksplisit. |
+
+**Implikasi untuk Daun Merah:** validasi key menyertakan periode dan varian; suku bunga dan tanggal keputusan harus satu provenance. Temuan implementasi di daun_merah.md S358; tabel ini sumber resmi, bukan laporan perbaikan.
