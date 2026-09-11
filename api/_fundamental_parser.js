@@ -292,6 +292,21 @@ function _matchIndicatorKey(t, currency) {
     if (/y\/y|yoy|annual/i.test(t)) indicatorKey = isGerman ? 'German CPI YoY' : 'CPI YoY';
     else if (!isGerman && /m\/m|mom|monthly/i.test(t)) indicatorKey = 'CPI MoM';
   }
+  // S359: periode/varian melekat pada indikator, bukan urutan keyword.
+  // "Inflation Rate MoM" dahulu menimpa CPI YoY; trimmed mean menimpa
+  // headline CPI MoM; German CPI MoM menimpa German CPI YoY.
+  if (/\bcpi\b|\bhicp\b|consumer price|inflation rate/i.test(t) && !/expectation/i.test(t)) {
+    const period = /\byoy\b|y\/y|year.on.year|\bannual\b/i.test(t) ? 'YoY'
+      : /\bqoq\b|q\/q|quarter.on.quarter|\bquarterly\b/i.test(t) ? 'QoQ'
+      : /\bmom\b|m\/m|month.on.month|\bmonthly\b/i.test(t) ? 'MoM' : null;
+    if (period) {
+      const german = /\bgerman(y)?\b/i.test(t);
+      const variant = /trimmed mean/i.test(t) ? 'CPI Trimmed Mean'
+        : /weighted median/i.test(t) ? 'CPI Weighted Median'
+        : /\bcore\b/i.test(t) ? 'Core CPI' : 'CPI';
+      indicatorKey = `${german ? 'German ' : ''}${variant} ${period}`;
+    }
+  }
   // Flash/preliminary qualifier — kata "flash" bisa muncul di posisi mana pun di judul
   // ("Flash CPI", "CPI Flash", "CPI YoY Flash" — feed FinancialJuice paling sering
   // pakai bentuk terakhir, indikator dulu baru "Flash" di akhir). Kata sisipan ini

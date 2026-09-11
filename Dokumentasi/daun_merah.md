@@ -11,10 +11,16 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-09-11 (Session 358 — Audit kualitas dan keputusan data)
+> **Last updated:** 2026-09-11 (Session 359 — Perbaikan kualitas data)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
+
+## Changelog Session 359 (2026-09-11) — Perbaikan hasil audit kualitas data
+
+Perintah user: perbaiki hasil audit memakai framework CLAUDE.md. Perbaikan dikerjakan serial per cacat; status tiap paket dicatat di bawah. Runtime baru dinyatakan terverifikasi setelah tes dan pemeriksaan fungsional.
+
+**D1 — Parser inflasi:** periode YoY/MoM/QoQ dan varian trimmed mean/weighted median/core dipisahkan sebelum key disimpan, termasuk German CPI/HICP. Uji dua urutan rilis memastikan annual/monthly/core tidak saling menimpa. POLICY_EPOCHS v47. Kalender TradingView sumber aplikasi diverifikasi: AUD annual 3.5%, monthly 1%, trimmed monthly 0.5%; GBP annual 2.9%. Pemulihan hash produksi menyusul setelah deployment parser.
 
 ## Changelog Session 358 (2026-09-11) — Audit kualitas, distribusi, kelengkapan, akurasi, dan keputusan data
 

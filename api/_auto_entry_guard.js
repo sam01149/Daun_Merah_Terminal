@@ -573,6 +573,7 @@ const POLICY_EPOCHS = [
   // hidup oleh guard 1-posisi-per-symbol, dup guard, dan Gate D korelasi. Bukan gate/
   // ambang baru — cuma definisi "hidup" yang sebelumnya salah baca ghost sebagai posisi.
   { v: 46, from: '2026-09-07T00:00:00Z', kind: 'fix',    impact: 'entry',    label: 'Posisi yang sudah ditutup dini oleh AI position review (close_early) — dan, diperluas sesi yang sama sebelum ada setup lahir di epoch ini, posisi yang SL-perketatnya sudah tersentuh (managed_status resolve) — tidak lagi dianggap eksposur hidup oleh guard "1 posisi open per symbol", dup guard, dan Gate D korelasi (isLiveExposure). Sebelumnya `status` yang sengaja tetap open (ghost U-5a untuk mengukur close_early_saved/cost) dibaca mentah oleh ketiga gate itu, jadi pair yang posisinya sudah ditutup terkunci diam-diam (tanpa jejak canceled/counter) sampai ghost-nya kena TP/SL — kasus nyata EURUSD=X:1788423350010 (close_early 2026-09-04 13:11Z, nol kandidat EUR/USD tersimpan setelahnya). Ghost/statistik tidak disentuh.' },
+  { v: 47, from: '2026-09-11T13:50:18.295Z', kind: 'fix', impact: 'context', label: "D1: pisahkan periode dan varian CPI, cegah rilis bulanan/trimmed mean menimpa inflasi tahunan/headline." },
 ];
 
 // AATAS_EPOCH (2026-08-22, keputusan user): batas populasi statistik dashboard
