@@ -188,13 +188,12 @@ async function setupLogArchiveHandler(req, res) {
     const rawArchive = await redisCmd('GET', 'setup_log_auto_archive:v1');
     const archiveParsed = rawArchive ? JSON.parse(rawArchive) : [];
     const archive = Array.isArray(archiveParsed) ? archiveParsed : [];
-    const seen = new Set(archive.map(x => x && x.id).filter(Boolean));
-    const added = current.filter(x => x && x.id && !seen.has(x.id));
-    if (added.length) {
-      const merged = archive.concat(added).slice(-5000);
-      await redisCmd('SET', 'setup_log_auto_archive:v1', JSON.stringify(merged));
+    const { mergeSetupArchive } = require('./_data_values');
+    const merged = mergeSetupArchive(archive, current);
+    if (JSON.stringify(archive) !== JSON.stringify(merged.entries)) {
+      await redisCmd('SET', 'setup_log_auto_archive:v1', JSON.stringify(merged.entries));
     }
-    return res.status(200).json({ ok: true, current_total: current.length, archive_total: archive.length + added.length, added: added.length });
+    return res.status(200).json({ ok: true, current_total: Array.isArray(current) ? current.length : 0, archive_total: merged.entries.length, added: merged.added, updated: merged.updated });
   } catch (e) {
     return res.status(500).json({ error: e.message });
   }

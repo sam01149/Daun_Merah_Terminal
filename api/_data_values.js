@@ -29,3 +29,22 @@ function sanitizeSizing(entry) {
   return out;
 }
 module.exports = { finiteDecimal, normalizeJournalNumbers, sanitizeSizing };
+
+function mergeSetupArchive(archive, current, limit = 5000) {
+  const map = new Map();
+  for (const row of Array.isArray(archive) ? archive : []) if (row && row.id != null) map.set(String(row.id), row);
+  const old = new Map(map), seen = new Set();
+  let added = 0, updated = 0;
+  for (const row of Array.isArray(current) ? current : []) {
+    if (!row || row.id == null) continue;
+    const key = String(row.id);
+    map.set(key, row); seen.add(key);
+  }
+  for (const key of seen) {
+    if (!old.has(key)) added++;
+    else if (JSON.stringify(old.get(key)) !== JSON.stringify(map.get(key))) updated++;
+  }
+  const entries = [...map.values()].sort((a,b)=>(Number(a.ts)||0)-(Number(b.ts)||0)).slice(-limit);
+  return {entries,added,updated};
+}
+module.exports.mergeSetupArchive = mergeSetupArchive;

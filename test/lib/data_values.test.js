@@ -17,3 +17,10 @@ test('sizing accepts calculator payload, rejects incoherent derived risk',()=>{
  assert.equal(sanitizeSizing({...e,lotSize:'1abc'}),null);
  assert.equal(sanitizeSizing({}),null);
 });
+
+test('archive updates existing outcomes, deduplicates batch and reports capped total',()=>{
+ const {mergeSetupArchive}=require('../../api/_data_values');
+ const r=mergeSetupArchive([{id:1,status:'open',ts:1},{id:2,ts:2}],[{id:'1',status:'tp',ts:1},{id:3,ts:3},{id:3,ts:3}],2);
+ assert.equal(r.added,1);assert.equal(r.updated,1);assert.equal(r.entries.length,2);
+ assert.equal(mergeSetupArchive([{id:1,status:'open'}],[{id:1,status:'sl'}]).entries[0].status,'sl');
+});
