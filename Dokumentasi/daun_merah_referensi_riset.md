@@ -375,3 +375,10 @@ Implikasi untuk Daun Merah: sumber, horizon, tanggal rilis dan batas keterbandin
 | [CFTC: AI Trading Bots](https://www.cftc.gov/LearnAndProtect/AdvisoriesAndArticles/AITradingBots.html) | Advisory | Kemampuan AI dan otomatisasi tidak membuktikan prediksi pasar atau menjamin keuntungan. |
 
 Implikasi untuk Daun Merah: kualitas kode/analisa, keselamatan eksekusi, dan bukti keuntungan harus dinilai terpisah. FINRA digunakan sebagai referensi praktik, bukan penetapan yurisdiksi hukum aplikasi. Penilaian khusus AATAS disimpan di professional_llm_trader/riset.md, entri 12 September 2026.
+
+
+| Paper | Tipe | Temuan inti |
+|---|---|---|
+| [CFTC: Commodity Trading Systems Sold on the Internet](https://www.cftc.gov/LearnAndProtect/AdvisoriesAndArticles/fraudadv_tradingsystem.html) | Advisory, diverifikasi 12 September 2026 | Asumsi pengujian hipotetis dapat melebihkan atau meremehkan hasil pada kondisi pasar aktual. |
+
+Implikasi untuk Daun Merah: ketepatan perhitungan dan kepatuhan workflow tidak membuktikan akurasi prediksi; evaluasi arah, timing dan hasil setelah biaya perlu dibedakan. Penilaian metodologi AATAS berada di professional_llm_trader/riset.md, entri 12 September 2026.
