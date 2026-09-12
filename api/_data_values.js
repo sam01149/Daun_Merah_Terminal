@@ -48,3 +48,13 @@ function mergeSetupArchive(archive, current, limit = 5000) {
   return {entries,added,updated};
 }
 module.exports.mergeSetupArchive = mergeSetupArchive;
+
+function snapshotRevision(current, capturedAt, prior) {
+  const fields = {macro_snapshot:current,macro_snapshot_at:capturedAt};
+  if (prior) {
+    fields.macro_snapshot_origin = Object.hasOwn(prior,'macro_snapshot_origin') ? prior.macro_snapshot_origin : (prior.macro_snapshot ?? null);
+    fields.macro_snapshot_origin_at = Object.hasOwn(prior,'macro_snapshot_origin_at') ? prior.macro_snapshot_origin_at : (prior.macro_snapshot_at ?? null);
+  }
+  return fields;
+}
+module.exports.snapshotRevision = snapshotRevision;

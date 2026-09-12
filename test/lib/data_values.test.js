@@ -24,3 +24,13 @@ test('archive updates existing outcomes, deduplicates batch and reports capped t
  assert.equal(r.added,1);assert.equal(r.updated,1);assert.equal(r.entries.length,2);
  assert.equal(mergeSetupArchive([{id:1,status:'open'}],[{id:1,status:'sl'}]).entries[0].status,'sl');
 });
+
+test('refine refreshes current snapshot while preserving original provenance',()=>{
+ const {snapshotRevision}=require('../../api/_data_values');
+ const initial={macro_snapshot:{rate:2.5},macro_snapshot_at:1};
+ const revised=snapshotRevision({rate:2.75},2,initial);
+ assert.equal(revised.macro_snapshot.rate,2.75);assert.equal(revised.macro_snapshot_origin.rate,2.5);
+ const again=snapshotRevision(null,3,revised);
+ assert.equal(again.macro_snapshot,null);assert.equal(again.macro_snapshot_origin.rate,2.5);assert.equal(again.macro_snapshot_origin_at,1);
+ assert.equal(initial.macro_snapshot.rate,2.5);
+});

@@ -5319,7 +5319,8 @@ function _buildMacroSnapshot({ label, isXau, cbBias, cot, retail, risk, drivers,
     }
     const ry = drivers?.realYields?.[leg];
     if (ry && ry.nominal != null && ry.inflation_exp != null && ry.real != null) {
-      realYieldByLeg[leg] = { nominal: ry.nominal, inflation_exp: ry.inflation_exp, real: ry.real };
+      realYieldByLeg[leg] = { nominal: ry.nominal, inflation_exp: ry.inflation_exp, real: ry.real,
+        ...Object.fromEntries(['as_of','inflation_as_of','source_inflation','source_nominal','stale','comparability_note'].filter(k=>ry[k] != null).map(k=>[k,ry[k]])) };
     }
   }
   const pairKey = isXau ? 'XAUUSD' : legs.join('');
@@ -6822,6 +6823,7 @@ async function ohlcvAnalyzeHandler(req, res) {
     // sama (bukan round-trip terpisah). XAU/USD -> kaki USD saja (tidak ada
     // `fundamental:XAU`). Lihat komentar FUND_RELEASE_CATEGORIES.
     let fundReleaseBlock = '';
+    let macroCapturedAt = null;
     const fundLegs = isAutoCall
       ? String(data.label || '').toUpperCase().split('/').map(s => s.trim()).filter(c => FUND_CURRENCIES.includes(c))
       : [];
@@ -6854,7 +6856,8 @@ async function ohlcvAnalyzeHandler(req, res) {
           cbLiveByCur[c] = mergeCbRate(c, CB_FALLBACK[c], liveRates[c], decs[c], liveRates[c] ? liveSrc : 'fallback');
         }
       }
-      fundReleaseBlock = _formatFundReleaseBlock(fundLegs, rawFundHashes, Date.now(), cbLiveByCur);
+      macroCapturedAt = Date.now();
+      fundReleaseBlock = _formatFundReleaseBlock(fundLegs, rawFundHashes, macroCapturedAt, cbLiveByCur);
       riskParsed = rawRisk ? JSON.parse(rawRisk) : null;
       autoGuardRegime = riskParsed?.regime || null;
       cbBiasParsed = rawBias ? JSON.parse(rawBias) : null;
@@ -7948,6 +7951,15 @@ async function ohlcvAnalyzeHandler(req, res) {
       // tidak perlu Gate A, selesai & tersimpan di sini juga (manual SELALU lewat sini,
       // Gate A tidak pernah menyentuh manual). Fase 2 (di bawah, di luar lock) = Gate A
       // (AI) TANPA lock, lalu re-acquire + baca ulang state segar sebelum tulis akhir.
+      const { snapshotRevision } = require('./_data_values');
+      const latestMacroSnapshot = _buildMacroSnapshot({
+        label: data.label, isXau: data.is_xau,
+        cbBias: cbBiasParsed, cot: cotParsed, retail: retailParsed,
+        risk: riskParsed, drivers: macroDrivers, rrPair: rrPairSnapshot,
+      });
+      const snapshotWithReleases = isAutoCall && fundReleaseBlock
+        ? { ...(latestMacroSnapshot || {}), v: 2, releases_as_supplied: fundReleaseBlock }
+        : latestMacroSnapshot;
       const buildNewSetupEntry = () => ({
         id: `${symbol}:${Date.now()}`,
         symbol, label: data.label, bias: structured.bias,
@@ -8021,11 +8033,7 @@ async function ohlcvAnalyzeHandler(req, res) {
         tech_invalidated: null,
         // Snapshot makro (2026-08-08, diskusi user, lihat _buildMacroSnapshot) — nullable
         // kalau semua sumber cache kosong saat itu, sama fail-open-nya dengan `regime`.
-        macro_snapshot: _buildMacroSnapshot({
-          label: data.label, isXau: data.is_xau,
-          cbBias: cbBiasParsed, cot: cotParsed, retail: retailParsed,
-          risk: riskParsed, drivers: macroDrivers, rrPair: rrPairSnapshot,
-        }),
+        ...snapshotRevision(snapshotWithReleases, macroCapturedAt),
         // Penanda versi framing prompt CME-vs-COT (2026-08-08, diskusi user — mitigasi
         // "gimana nanti bedain setup sebelum/sesudah reordering ini"). null = framing
         // lama (manual, atau auto tapi pair tanpa data CME); angka = framing baru
@@ -8147,6 +8155,7 @@ async function ohlcvAnalyzeHandler(req, res) {
                 refineCandidate = {
                   id: stalePending.id,
                   fields: {
+                    ...snapshotRevision(snapshotWithReleases, macroCapturedAt, stalePending),
                     entry_zone: structured.entry_zone,
                     sl: structured.sl,
                     tp: structured.tp,
