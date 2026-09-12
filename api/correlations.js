@@ -10,6 +10,7 @@ const { mapYahooSymbolToDeriv, fetchDerivLatestPrice } = require('./_ohlcv_fetch
 const CORS = { 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-cache' };
 const CACHE_KEY = 'correlations_v3';
 const CACHE_TTL = 86400;
+const DATA_VERSION = 4; // fixed observation windows + explicit methodology/sample sizes
 // Plan I Fase 2: histori r20 harian (sparkline drift), ±1 titik/hari lewat gate CACHE_TTL di atas
 const HIST_KEY = 'correlations_hist_v1';
 const HIST_TTL = 20 * 86400;
@@ -196,6 +197,12 @@ function alignSeries(a, b) {
 
 function lastN(arr, n) {
   return arr.slice(Math.max(0, arr.length - n));
+}
+
+function windowedCorrelation(a, b) {
+  const clean = rows => [...new Map(rows.filter(p => typeof p.date === 'string' && Number.isFinite(p.close) && p.close > 0).map(p => [p.date, p])).values()].sort((x, y) => x.date.localeCompare(y.date));
+  const [x, y] = alignSeries(clean(a), clean(b));
+  return { r20: pearson(lastN(x, 20), lastN(y, 20)), r60: pearson(lastN(x, 60), lastN(y, 60)), n20: Math.min(20, x.length), n60: Math.min(60, x.length) };
 }
 
 function resample4h(candles1h) {
@@ -931,7 +938,7 @@ const handler = async function handler(req, res) {
     if (cached) {
       const d = JSON.parse(cached);
       const age = Date.now() - new Date(d.computed_at).getTime();
-      if (age < CACHE_TTL * 1000) {
+      if (d.data_version === DATA_VERSION && age < CACHE_TTL * 1000) {
         res.setHeader('X-Cache', 'HIT');
         return res.status(200).json({ ...d, stale: false });
       }
@@ -943,7 +950,7 @@ const handler = async function handler(req, res) {
   const mainSf = await withSingleFlight(redisCmd, {
     lockKey: 'lock:correlations',
     cacheKey: CACHE_KEY,
-    isFresh: (raw) => { try { return Date.now() - new Date(JSON.parse(raw).computed_at).getTime() < CACHE_TTL * 1000; } catch(e) { return false; } },
+    isFresh: (raw) => { try { const d = JSON.parse(raw); return d.data_version === DATA_VERSION && Date.now() - new Date(d.computed_at).getTime() < CACHE_TTL * 1000; } catch(e) { return false; } },
   });
   if (!mainSf.gotLock && mainSf.fresh) {
     res.setHeader('X-Cache', 'HIT');
@@ -1005,16 +1012,15 @@ const handler = async function handler(req, res) {
   // Include synthetic series (GoldSilverRatio, GoldCopperRatio) which are not in INSTRUMENTS
   const syntheticNames = Object.keys(series).filter(n => !names.includes(n));
   const pairNames = [...names.filter(n => series[n]), ...syntheticNames];
-  const matrix20 = {}, matrix60 = {};
+  const matrix20 = {}, matrix60 = {}, sampleSizes = {};
   const anomalies = [];
 
   for (let i = 0; i < pairNames.length; i++) {
     for (let j = i + 1; j < pairNames.length; j++) {
       const a = pairNames[i], b = pairNames[j];
-      const [xa, xb] = alignSeries(series[a], series[b]);
-      const r20 = pearson(lastN(xa, 20), lastN(xb, 20));
-      const r60 = pearson(xa, xb);
+      const { r20, r60, n20, n60 } = windowedCorrelation(series[a], series[b]);
       const key = `${a}|${b}`;
+      sampleSizes[key] = { n20, n60 };
       matrix20[key] = r20;
       matrix60[key] = r60;
 
@@ -1023,6 +1029,7 @@ const handler = async function handler(req, res) {
           pair: key,
           r20,
           r60,
+          n20, n60,
           delta: Math.round((r20 - r60) * 1000) / 1000,
           label: `${a} vs ${b}`,
         });
@@ -1037,13 +1044,12 @@ const handler = async function handler(req, res) {
   if (series['Gold']) {
     for (const asset of GOLD_CORR_ASSETS) {
       if (!series[asset]) continue;
-      const [xg, xa] = alignSeries(series['Gold'], series[asset]);
-      const r20 = pearson(lastN(xg, 20), lastN(xa, 20));
-      const r60 = pearson(xg, xa);
+      const { r20, r60, n20, n60 } = windowedCorrelation(series['Gold'], series[asset]);
       if (r20 !== null || r60 !== null) {
         goldCorr[asset] = {
           r20,
           r60,
+          n20, n60,
           delta: (r20 !== null && r60 !== null) ? Math.round((r20 - r60) * 1000) / 1000 : null,
         };
       }
@@ -1067,6 +1073,9 @@ const handler = async function handler(req, res) {
   }
 
   const data = {
+    data_version: DATA_VERSION,
+    methodology: 'Pearson pada level harga penutupan, bukan return. Jendela 20/60 observasi bertanggal sama; sampel dapat lebih pendek. Korelasi bukan sebab-akibat.',
+    sample_sizes: sampleSizes,
     instruments: pairNames,
     matrix_20d: matrix20,
     matrix_60d: matrix60,
@@ -1090,3 +1099,4 @@ const handler = async function handler(req, res) {
 module.exports = handler;
 module.exports.mergeCorrHistory = mergeCorrHistory;
 module.exports.normalizePairKey = normalizePairKey;
+module.exports.windowedCorrelation = windowedCorrelation;

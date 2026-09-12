@@ -576,6 +576,7 @@ const POLICY_EPOCHS = [
   { v: 47, from: '2026-09-11T13:50:18.295Z', kind: 'fix', impact: 'context', label: "D1: pisahkan periode dan varian CPI, cegah rilis bulanan/trimmed mean menimpa inflasi tahunan/headline." },
   { v: 48, from: '2026-09-12T01:21:55.772Z', kind: 'fix', impact: 'context', label: "D2: pembanding forecast/previous hanya diwarisi dari rilis yang sama; forecast headline baru tidak memakai konsensus lama." },
   { v: 49, from: '2026-09-12T01:27:02.189Z', kind: 'fix', impact: 'context', label: "D3: rate dan tanggal observasi dipilih satu sumber; keputusan resmi terbaru mengalahkan observasi BIS lama." },
+  { v: 50, from: '2026-09-12T01:30:29.684Z', kind: 'fix', impact: 'context', label: "S359 D4: jendela korelasi level 20/60 observasi dan jumlah sampel eksplisit" },
 ];
 
 // AATAS_EPOCH (2026-08-22, keputusan user): batas populasi statistik dashboard

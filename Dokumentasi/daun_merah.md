@@ -26,6 +26,8 @@ Perintah user: perbaiki hasil audit memakai framework CLAUDE.md. Perbaikan diker
 
 **D3 — Suku bunga:** mergeCbRate kini membandingkan tanggal observasi dengan keputusan resmi. Keputusan baru mengalahkan BIS yang baru di-fetch tetapi observasinya lama; rate_as_of dan decision_rate menjaga provenance, kartu Fundamental memakai tanggal angka yang dipilih. Epoch v49. Nilai fallback/keputusan tanpa tanggal tidak diperlakukan sebagai observasi baru.
 
+D4: r60 kini memakai tepat maksimal 60 observasi berpasangan (urut tanggal, duplikat dan nonfinite dibuang). Respons mempertahankan key correlations_v3 untuk seluruh konsumen, schema data_version=4 memaksa recompute; n20/n60 dan metodologi level harga ditampilkan di UI. Bukan perubahan ke return dan bukan kalibrasi ulang ambang. Catatan lama yang menyebut return harian pada modul ini keliru. POLICY_EPOCHS v50 memisahkan dampak window terhadap konsumen auto. Versi UI/SW 2026.09.12.1.
+
 ## Changelog Session 358 (2026-09-11) — Audit kualitas, distribusi, kelengkapan, akurasi, dan keputusan data
 
 **Kesimpulan:** data belum layak dianggap benar hanya karena tersedia dan cache aktif. Kesalahan periode inflasi sudah terbukti pada data produksi dan mengalir ke keputusan AATAS. Audit ini menghasilkan diagnosis dan prioritas perbaikan, bukan perubahan kebijakan trading. Tidak ada kode runtime/data produksi yang diubah atau panggilan AI yang dipicu.
