@@ -7,6 +7,7 @@ const rateLimit = require('./_ratelimit');
 // device_id dipakai langsung sebagai bagian key Redis — batasi charset & panjang
 const DEVICE_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
 const MAX_ENTRY_BYTES = 2048;
+const { sanitizeSizing } = require('./_data_values');
 
 async function redisCmd(...args) {
   const REDIS_URL   = process.env.UPSTASH_REDIS_REST_URL;
@@ -36,8 +37,8 @@ module.exports = async function handler(req, res) {
   const key = `sizing_history:${deviceId}`;
 
   if (req.method === 'POST') {
-    let body = '';
-    await new Promise(r => { req.on('data', c => body += c); req.on('end', r); });
+    let body = req.body && typeof req.body === 'object' ? JSON.stringify(req.body) : (typeof req.body === 'string' ? req.body : '');
+    if (req.body == null) await new Promise(r => { req.on('data', c => body += c); req.on('end', r); });
     if (Buffer.byteLength(body, 'utf8') > MAX_ENTRY_BYTES) {
       return res.status(413).json({ error: 'Entry too large' });
     }
@@ -48,6 +49,8 @@ module.exports = async function handler(req, res) {
     if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
       return res.status(400).json({ error: 'Invalid entry' });
     }
+    entry = sanitizeSizing(entry);
+    if (!entry) return res.status(400).json({ error: 'Invalid sizing values' });
     entry.timestamp = Date.now();
     try {
       await redisCmd('ZADD', key, entry.timestamp, JSON.stringify(entry));

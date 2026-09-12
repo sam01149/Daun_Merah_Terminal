@@ -22,13 +22,13 @@ test('sanitizeChecklistSnapshot: null/non-object/array -> null', () => {
   assert.equal(sanitizeChecklistSnapshot({}), null);
 });
 
-test('sanitizeChecklistSnapshot: coerce ke boolean, drop key kosong/kepanjangan', () => {
+test('sanitizeChecklistSnapshot: hanya boolean, drop key kosong/kepanjangan', () => {
   const out = sanitizeChecklistSnapshot({
     rc1: true, rc2: false, rc3: 'truthy-string', rc4: 0,
     '': true, // key kosong, ditolak
     ['x'.repeat(41)]: true, // key >40 char, ditolak
   });
-  assert.deepEqual(out, { rc1: true, rc2: false, rc3: true, rc4: false });
+  assert.deepEqual(out, { rc1: true, rc2: false });
 });
 
 test('sanitizeChecklistSnapshot: cap di 40 key', () => {
@@ -207,7 +207,7 @@ test('POST + GET list: checklist_snapshot tersimpan ter-sanitasi', withMockRedis
       pair: 'EUR/USD', direction: 'long', thesis_text: 'test thesis',
       checklist_snapshot: { rc1: true, rc2: 'yes', '': true },
       checklist_playbook: 'smc_ict',
-      checklist_pct: 150, // out-of-range, harus diclamp ke 100
+      checklist_pct: 100, // persentase valid
     },
   }, postRes);
   assert.equal(postRes.statusCode, 200);
@@ -218,7 +218,7 @@ test('POST + GET list: checklist_snapshot tersimpan ter-sanitasi', withMockRedis
   assert.equal(listRes.statusCode, 200);
   assert.equal(listRes.body.entries.length, 1);
   const saved = listRes.body.entries[0];
-  assert.deepEqual(saved.checklist_snapshot, { rc1: true, rc2: true });
+  assert.deepEqual(saved.checklist_snapshot, { rc1: true });
   assert.equal(saved.checklist_playbook, 'smc_ict');
   assert.equal(saved.checklist_pct, 100);
 }));

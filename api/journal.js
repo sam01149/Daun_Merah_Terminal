@@ -19,6 +19,7 @@ const VALID_FILL_STATE = new Set(['pending', 'filled', 'cancelled']);
 function clampStr(v, max) {
   return typeof v === 'string' ? v.slice(0, max) : '';
 }
+const { normalizeJournalNumbers } = require('./_data_values');
 
 // Checklist tick-state at the moment a trade was saved (see jnSave() in index.html) —
 // a flat map of item-id -> boolean. Whitelisted to plain booleans and a sane key
@@ -31,7 +32,8 @@ function sanitizeChecklistSnapshot(snap) {
   for (const [k, v] of Object.entries(snap)) {
     if (n >= 40) break;
     if (typeof k !== 'string' || !k || k.length > 40) continue;
-    out[k] = !!v;
+    if (typeof v !== 'boolean') continue;
+    out[k] = v;
     n++;
   }
   return n > 0 ? out : null;
@@ -343,6 +345,9 @@ module.exports = async function handler(req, res) {
       return res.status(400).json({ error: 'direction must be long/short' });
     }
 
+    const badNumber = normalizeJournalNumbers(data, ['entry_price','stop_price','target_price','size_lots','rr_planned','checklist_pct','mt5_ticket']);
+    if (badNumber) return res.status(400).json({ error: `${badNumber} must be a valid number` });
+    if (data.cot_alignment != null && typeof data.cot_alignment !== 'boolean') return res.status(400).json({ error: 'cot_alignment must be boolean' });
     const id = uid();
     const now = Date.now();
     const entry = {
@@ -419,6 +424,8 @@ module.exports = async function handler(req, res) {
     if (data.fill_state && !VALID_FILL_STATE.has(data.fill_state)) {
       return res.status(400).json({ error: 'fill_state must be pending/filled/cancelled' });
     }
+    const badNumber = normalizeJournalNumbers(data, ['exit_price','r_actual','mt5_ticket']);
+    if (badNumber) return res.status(400).json({ error: `${badNumber} must be a valid number` });
 
     try {
       const entryKey = `journal:${deviceId}:${id}`;
