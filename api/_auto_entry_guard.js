@@ -582,6 +582,7 @@ const POLICY_EPOCHS = [
   { v: 53, from: '2026-09-12T01:42:40.978Z', kind: 'fix', impact: 'entry', label: "S359 A2: waktu tunggu event dihitung kalender dan berlaku pada fill" },
   { v: 54, from: '2026-09-12T01:45:11.128Z', kind: 'fix', impact: 'context', label: "S359 A4: catatan efektif mengikuti RR dan waktu final, laporan asli terpisah" },
   { v: 55, from: '2026-09-12T07:39:24.033Z', kind: 'fix', impact: 'entry', label: "S359 A7: cegah inversi mekanisme short squeeze mata uang quote" },
+  { v: 56, from: '2026-09-12T07:43:44.299Z', kind: 'fix', impact: 'context', label: "S359 D1 QA: normalisasi alias varian inflasi ke key periode kanonik" },
 ];
 
 // AATAS_EPOCH (2026-08-22, keputusan user): batas populasi statistik dashboard

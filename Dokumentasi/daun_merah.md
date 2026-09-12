@@ -44,6 +44,8 @@ A5: snapshot AATAS kini diperbarui bersama refine dengan snapshot asal tetap ter
 
 A7: pemeriksaan mekanisme short squeeze termasuk teks konflik AATAS; detail dan batas deteksi di professional_llm_trader/changelog.md S359.
 
+Evaluasi mandiri D1: varian CPI baru ditambahkan ke kamus kanonik agar alias title-case lama tidak menjadi indikator ganda. Reconcile membandingkan alias berikutnya dengan pemenang terbaru dalam batch. Tes memastikan data lebih tua tidak menimpa varian resmi.
+
 ## Changelog Session 358 (2026-09-11) — Audit kualitas, distribusi, kelengkapan, akurasi, dan keputusan data
 
 **Kesimpulan:** data belum layak dianggap benar hanya karena tersedia dan cache aktif. Kesalahan periode inflasi sudah terbukti pada data produksi dan mengalir ke keputusan AATAS. Audit ini menghasilkan diagnosis dan prioritas perbaikan, bukan perubahan kebijakan trading. Tidak ada kode runtime/data produksi yang diubah atau panggilan AI yang dipicu.

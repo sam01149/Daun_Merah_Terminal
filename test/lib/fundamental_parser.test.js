@@ -652,3 +652,12 @@ test('parseCBDecision: angka di luar rentang suku bunga (probabilitas 97%) tidak
   assert.strictEqual(r?.rate, null);
   assert.strictEqual(r?.bps, 25);
 });
+
+test('S359 CPI variant aliases retain canonical casing and newest observation',async()=>{
+ const latest={actual:'3.6%',date:'2026-08-26',source:'calendar'};
+ const old={actual:'3.5%',date:'2026-07-29',source:'headline'};
+ const redis=makeMultiKeyMockRedis({'fundamental:AUD':{'Cpi Trimmed Mean Yoy':JSON.stringify(old),'CPI Trimmed Mean YoY':JSON.stringify(latest)}});
+ await reconcileFundamentalKeys(redis);
+ assert.equal(redis.store['fundamental:AUD']['Cpi Trimmed Mean Yoy'],undefined);
+ assert.deepEqual(JSON.parse(redis.store['fundamental:AUD']['CPI Trimmed Mean YoY']),latest);
+});

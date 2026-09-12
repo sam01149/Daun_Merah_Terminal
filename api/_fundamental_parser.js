@@ -164,6 +164,11 @@ const FUND_INDICATOR_MAP = [
 // pengaman untuk keyword gap SEJENIS yang belum ketahuan (akronim lain: GDP/PMI/
 // PPI/dst), bukan cuma fix satu kasus CPI.
 const FUND_INDICATOR_CANONICAL = new Map(FUND_INDICATOR_MAP.map(({ key }) => [key.toLowerCase(), key]));
+// Period-aware variants must share canonical casing with the reconciliation path.
+for (const prefix of ['', 'German ']) for (const variant of ['CPI','Core CPI','CPI Trimmed Mean','CPI Weighted Median']) for (const period of ['YoY','MoM','QoQ']) {
+  const key = prefix + variant + ' ' + period;
+  FUND_INDICATOR_CANONICAL.set(key.toLowerCase(), key);
+}
 
 const CB_RATE_MAP = [
   { kw: ['federal reserve','fed ','fomc rate','fed rate','fed funds'],       cur: 'USD' },
@@ -830,6 +835,7 @@ async function reconcileFundamentalKeys(redisCmd) {
           if (oDate && (!cDate || oDate > cDate)) winner = orphanEntry;
         }
         if (winner !== canonicalEntry) setArgs.push(canonicalKey, JSON.stringify(winner));
+        data[canonicalKey] = winner; // later aliases compare against the newest selected value
         delArgs.push(orphanKey);
       }
       if (setArgs.length > 2) await redisCmd(...setArgs);
