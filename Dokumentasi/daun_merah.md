@@ -42,6 +42,8 @@ A4: angka dan waktu final menjadi catatan efektif AATAS; laporan model tetap ter
 
 A5: snapshot AATAS kini diperbarui bersama refine dengan snapshot asal tetap tersimpan; detail di professional_llm_trader/changelog.md S359.
 
+A7: pemeriksaan mekanisme short squeeze termasuk teks konflik AATAS; detail dan batas deteksi di professional_llm_trader/changelog.md S359.
+
 ## Changelog Session 358 (2026-09-11) — Audit kualitas, distribusi, kelengkapan, akurasi, dan keputusan data
 
 **Kesimpulan:** data belum layak dianggap benar hanya karena tersedia dan cache aktif. Kesalahan periode inflasi sudah terbukti pada data produksi dan mengalir ke keputusan AATAS. Audit ini menghasilkan diagnosis dan prioritas perbaikan, bukan perubahan kebijakan trading. Tidak ada kode runtime/data produksi yang diubah atau panggilan AI yang dipicu.

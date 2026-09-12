@@ -581,6 +581,7 @@ const POLICY_EPOCHS = [
   { v: 52, from: '2026-09-12T01:40:23.140Z', kind: 'fix', impact: 'entry', label: "S359 A3: driver wajib terisi, konfirmasi tidak duplikat, arah konsisten" },
   { v: 53, from: '2026-09-12T01:42:40.978Z', kind: 'fix', impact: 'entry', label: "S359 A2: waktu tunggu event dihitung kalender dan berlaku pada fill" },
   { v: 54, from: '2026-09-12T01:45:11.128Z', kind: 'fix', impact: 'context', label: "S359 A4: catatan efektif mengikuti RR dan waktu final, laporan asli terpisah" },
+  { v: 55, from: '2026-09-12T07:39:24.033Z', kind: 'fix', impact: 'entry', label: "S359 A7: cegah inversi mekanisme short squeeze mata uang quote" },
 ];
 
 // AATAS_EPOCH (2026-08-22, keputusan user): batas populasi statistik dashboard

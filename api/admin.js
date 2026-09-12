@@ -5436,7 +5436,7 @@ const COT_CME_PROMPT_VERSION = 1;
 // kandidat TP disaring RR>=AATAS_MIN_RR (bukan 1:1) & instruksi tp menyebut 1:2;
 // paksaan "pilih zona terdekat ke Now" DIHAPUS, diganti tuntutan konsisten dengan
 // fib_reason AI sendiri (bukan tabel kedalaman baru — keputusan user).
-const AATAS_PROMPT_VERSION = 9;
+const AATAS_PROMPT_VERSION = 10;
 
 // (2026-09-02) `final_validation` (Step 8, COT/retail) dipaksa nilai ini untuk SEMUA
 // setup AATAS — Call 2 (yang mengisi field ini di v1/v2) tidak pernah menerima data
@@ -5635,6 +5635,7 @@ function _buildAatasMacroChecklistBlock({ label, isXau, goldCorr }) {
   L.push('');
   L.push(`STEP 2 FUNDAMENTAL BIAS (GATE, bobot tinggi): ada driver utama yang jelas; ${legA} jelas menguat atau melemah; ${legB} kebalikannya; minimal 2 konfirmasi dari kategori berbeda (data ekonomi / kebijakan moneter / geopolitik-risk sentiment); tidak ada konflik antar faktor; pair ini strong-vs-weak (bukan strong-vs-strong atau weak-vs-weak). Arah hasil step inilah bias-mu, dan itu FINAL — tahap teknikal setelah ini TIDAK BOLEH mengubahnya.`);
   L.push(`- KONVENSI ARAH (WAJIB dipatuhi persis, ini penyebab paling sering kesalahan): pair ${legA}/${legB} ditulis base/quote. "bullish" berarti ${legA} MENGUAT relatif ke ${legB} (pair naik). "bearish" berarti ${legA} MELEMAH relatif ke ${legB} — SAMA ARTINYA DENGAN ${legB} MENGUAT relatif ke ${legA} (pair turun). Sebelum menjawab, cek ulang: setiap driver/konfirmasi yang kamu tulis harus mendukung arah ini, BUKAN kebalikannya — kalau drivermu bilang "${legB} tertekan/melemah/rentan", itu argumen BULLISH (${legA} menang), bukan bearish, walau ${legB} kedengarannya "kena masalah".`);
+  L.push('- MEKANISME SHORT SQUEEZE: penutupan short suatu mata uang berarti pembelian mata uang itu, sehingga mendukung penguatannya. Short squeeze mata uang quote mendukung pair turun, bukan naik. Terapkan konvensi ini juga dalam konflik dan paragraf penjelasan; crowded short sendiri tidak membuktikan squeeze akan terjadi.');
   L.push(`- DUA SISI KASUS (case_bullish_pct / case_bearish_pct): sebelum menyimpulkan arah, susun dulu kasus untuk KEDUA arah, lalu bagi 100 di antara keduanya sesuai kekuatan bukti — bukan sesuai seberapa yakin kamu pada kesimpulan yang sudah kamu ambil. case_bullish_pct = kekuatan kasus ${legA} menguat; case_bearish_pct = kekuatan kasus ${legB} menguat; jumlahnya WAJIB tepat 100. Kalau buktinya benar-benar berimbang, tulis apa adanya (mis. 52 dan 48) — angka mepet BUKAN kegagalan dan TIDAK membatalkan setup, itu informasi yang berguna. Yang salah adalah memaksakan angka tinggi supaya kesimpulanmu terlihat kuat: kalau kamu memberi 70 ke satu sisi, itu berarti kasus sisi lawan hanya 30 — pastikan kamu memang bersedia mengatakan itu. "arah" WAJIB sama dengan sisi yang angkanya lebih besar.`);
   L.push(`- konflik BUKAN tempat menaruh bukti pendukung sekunder — isi HANYA kalau ada faktor yang benar-benar MELAWAN arah yang kamu simpulkan di atas (mis. COT crowded posisi searah risiko squeeze, data lawas yang berlainan sinyal). Bukti yang justru MENDUKUNG arahmu (walau kekuatannya sedang/lemah) masuk konfirmasi, bukan konflik. Kalau semua bukti searah, konflik null.`);
   L.push(`- strong_vs_weak WAJIB kamu nilai sendiri, dan kode MEMERIKSA jawabannya: kalau kamu isi false, setup otomatis dibatalkan. Jangan mengisi true supaya "lolos" — isi apa adanya.`);
@@ -6072,7 +6073,32 @@ function _normalizeFundamentalCase(fb) {
 // Fail-CLOSED kalau `fundamental_bias` tidak ada sama sekali — beda sengaja dari
 // fail-open v1: di v2 seluruh tugas Call 1 adalah menghasilkan objek ini, jadi
 // ketiadaannya berarti panggilan itu gagal, bukan "model tidak menilai".
-function _evaluateAatasGate1({ fundamental_bias, aiPass, label, lockedBias }) {
+// Narrow guard for an explicit inverted short-squeeze mechanism, including conflict text.
+// Negated/contrasting statements are left to semantic review; this is not general NLP.
+function _detectSqueezeInversion(label, texts) {
+  const legs = String(label || '').toUpperCase().split('/');
+  if (legs.length !== 2 || !legs.every(x=>/^[A-Z]{3}$/.test(x))) return false;
+  const quote = legs[1], pair = legs.join('/');
+  for (const text of texts) {
+    if (typeof text !== 'string') continue;
+    for (const clause of text.split(/[;\n]/)) {
+      if (/\b(tidak|bukan|namun|tetapi)\b/i.test(clause)) continue;
+      const normalized = clause.toLowerCase();
+      const q = quote.toLowerCase();
+      const posShort = normalized.indexOf('short');
+      const posSqueeze = normalized.indexOf('squeeze');
+      const posQuote = normalized.lastIndexOf(q, posSqueeze);
+      if (posShort < 0 || posQuote < 0 || Math.abs(posShort-posQuote)>45 || posSqueeze<Math.max(posShort,posQuote)) continue;
+      const consequence = normalized.slice(posSqueeze);
+      const directWeakening = new RegExp('\\b'+q+'\\s+(?:bisa\\s+|dapat\\s+)?melemah\\b').test(consequence);
+      const directPairRise = consequence.includes('rebound ' + pair.toLowerCase()) || consequence.includes('mendorong pair naik');
+      if (/memicu|mendorong|menyebabkan|jika terjadi/.test(consequence) && (directWeakening || directPairRise)) return true;
+    }
+  }
+  return false;
+}
+
+function _evaluateAatasGate1({ fundamental_bias, aiPass, label, lockedBias, macroNote }) {
   if (aiPass === false) return { pass: false, override_reason: null };
   const fb = (fundamental_bias && typeof fundamental_bias === 'object' && !Array.isArray(fundamental_bias)) ? fundamental_bias : null;
   if (!fb) return { pass: false, override_reason: 'fundamental_bias_kosong' };
@@ -6129,6 +6155,7 @@ function _evaluateAatasGate1({ fundamental_bias, aiPass, label, lockedBias }) {
     label, arah,
     texts: [typeof fb.driver === 'string' ? fb.driver : '', ...konfirmasi],
   })) return { pass: false, override_reason: 'arah_driver_berlawanan' };
+  if (_detectSqueezeInversion(label, [fb.driver, ...konfirmasi, fb.konflik, macroNote])) return { pass: false, override_reason: 'mekanisme_short_squeeze_terbalik' };
   if (typeof fb.driver !== 'string' || !fb.driver.trim()) return { pass: false, override_reason: 'driver_kosong' };
   const normalized = text => text.normalize('NFKC').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
   if (new Set(konfirmasi.map(normalized)).size < 2) return { pass: false, override_reason: 'konfirmasi_duplikat' };
@@ -6337,7 +6364,7 @@ async function _runAatasTwoCall({
   const gate1 = _evaluateAatasGate1({
     fundamental_bias: fb,
     aiPass: (aiGate1 && (aiGate1.pass === true || aiGate1.pass === false)) ? aiGate1.pass : null,
-    label, lockedBias,
+    label, lockedBias, macroNote,
   });
   // Laporan gate yang tersimpan = hasil FINAL (kode), dengan jejak siapa yang
   // menggagalkan. Laporan asli AI tidak dibuang — ikut di note supaya perbedaan
@@ -9063,3 +9090,5 @@ module.exports.BLOCKED_HEADLINE_RE = BLOCKED_HEADLINE_RE;
 module.exports._aatasEventWait = _aatasEventWait;
 
 module.exports._finalizeAatasDataNotes = _finalizeAatasDataNotes;
+
+module.exports._detectSqueezeInversion = _detectSqueezeInversion;

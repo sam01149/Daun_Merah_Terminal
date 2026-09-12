@@ -177,7 +177,7 @@ test('Tahap 1 e2e: blok [DATA RILIS EKONOMI] kedua kaki masuk Call 1 DAN Kritiku
 });
 
 test('AATAS_PROMPT_VERSION: 6 = blok data rilis di Call 1; 7 = definisi technical.score_pct; 8 = Tahap 3 jalan tengah (menu TP 1:2 + tanpa paksaan zona terdekat)', () => {
-  assert.equal(AATAS_PROMPT_VERSION, 9);
+  assert.equal(AATAS_PROMPT_VERSION, 10);
 });
 
 test('Tahap 3 jalan tengah (v8): Call 2 auto menyebut menu TP 1:2 dan menuntut entry konsisten fib_reason, TANPA "pilih yang lebih dekat ke Now"; manual tetap 1:1 + tie-break lama', async () => {
@@ -1990,4 +1990,13 @@ test('S359 effective note uses final RR and retains original claims with provena
  assert.match(st.gate_risk_management.note,/1:2.75/);assert.equal(st.gate_risk_management.note_reported,'RR 2.6');
  assert.match(st.reasoning_note,/HASIL KODE.*RR final 1:2.75/);assert.equal(st.reasoning_note_reported,'RR 2.6, event dalam 4 jam');
  const once=st.reasoning_note;_finalizeAatasDataNotes(st);assert.equal(st.reasoning_note,once);
+});
+
+test('S359 squeeze guard checks conflict mechanism, not merely opposite trade direction',()=>{
+ const {_detectSqueezeInversion}=require('../../api/admin');
+ assert.equal(_detectSqueezeInversion('CHF/JPY',['Posisi short JPY crowded rawan squeeze naik yang bisa memicu rebound CHF/JPY']),true);
+ assert.equal(_detectSqueezeInversion('CHF/JPY',['Posisi short JPY rawan squeeze naik; jika terjadi JPY bisa melemah']),false); // separate clauses: deliberately narrow
+ assert.equal(_detectSqueezeInversion('CHF/JPY',['Posisi short JPY rawan squeeze naik, jika terjadi JPY bisa melemah dan mendorong pair naik']),true);
+ assert.equal(_detectSqueezeInversion('CHF/JPY',['Short JPY rawan squeeze naik yang menguatkan JPY dan menekan CHF/JPY']),false);
+ assert.equal(_detectSqueezeInversion('CHF/JPY',['Bukan short JPY squeeze yang memicu rebound CHF/JPY']),false);
 });
