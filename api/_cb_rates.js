@@ -371,8 +371,8 @@ function mergeCbRate(cur, fb, live, dec, rateSource) {
     last_meeting:  dec?.last_meeting  || fb.last_meeting,
     last_decision: dec?.last_decision || (useHeuristic ? (diff > 0 ? 'hike' : 'cut') : fb.last_decision),
     last_bps:      dec?.last_bps ?? (useHeuristic ? diff : fb.last_bps),
-    rate_source:   useDecisionRate ? 'decision' : rateSource,
-    rate_as_of:    useDecisionRate ? dec.last_meeting : (live?.date || null),
+    rate_source:   useDecisionRate ? 'decision' : (validRate(live?.rate) ? rateSource : 'fallback'),
+    rate_as_of:    useDecisionRate ? dec.last_meeting : (validRate(live?.rate) && liveDate != null ? live.date : null),
     decision_rate: validRate(dec?.rate) ? dec.rate : null,
   };
 }

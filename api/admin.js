@@ -5436,7 +5436,7 @@ const COT_CME_PROMPT_VERSION = 1;
 // kandidat TP disaring RR>=AATAS_MIN_RR (bukan 1:1) & instruksi tp menyebut 1:2;
 // paksaan "pilih zona terdekat ke Now" DIHAPUS, diganti tuntutan konsisten dengan
 // fib_reason AI sendiri (bukan tabel kedalaman baru — keputusan user).
-const AATAS_PROMPT_VERSION = 10;
+const AATAS_PROMPT_VERSION = 11;
 
 // (2026-09-02) `final_validation` (Step 8, COT/retail) dipaksa nilai ini untuk SEMUA
 // setup AATAS — Call 2 (yang mengisi field ini di v1/v2) tidak pernah menerima data
@@ -6422,7 +6422,7 @@ async function _runAatasTwoCall({
     '',
     'Isi field JSON berikut:',
     ...(Array.isArray(levelInstrs) ? levelInstrs : []),
-    '- trigger: SATU kondisi price action spesifik yang HARUS terpenuhi sebelum entry — utamakan konfirmasi berbasis candle/pola di level konkret (misal "tunggu candle H4 close di bawah 1.1710" atau "tunggu rejection/pin bar H1 di area 3340"). Jangan sebut dua kondisi alternatif yang saling kontradiksi relatif ke harga sekarang. Manfaatkan [POLA CANDLE terdeteksi] kalau relevan.',
+    '- trigger: eksekusi otomatis hanya mendukung sentuhan zona entry setelah waktu tunggu kalender. Jangan mensyaratkan pola candle, close H4, atau konfirmasi tambahan yang tidak dapat dieksekusi evaluator. Pola candle boleh menjadi dasar pemilihan zona, bukan syarat fill yang belum terpenuhi.',
     '- invalidation_condition: kondisi spesifik yang membatalkan skenario ini sepenuhnya (beda dari sl — ini soal struktur/tesis).',
     '- invalidation_trigger: versi TERSTRUKTUR dari invalidation_condition supaya KODE bisa mendeteksinya otomatis — {"type":"ma_break"|"price_level"|"swing_break","level":<satu angka>,"timeframe":"1h"|"4h"|"1d","direction":"above"|"below"}. "level" WAJIB satu angka konkret yang ADA di data di atas, "direction" = arah CLOSE candle yang membatalkan skenario. Kalau tidak bisa diringkas jadi satu level tunggal, set null — JANGAN mengarang angka.' + (invalidationTail || ''),
     '- time_horizon_days: estimasi jumlah hari realistis skenario ini main out (angka, misal 3, 5, 10) berdasarkan jarak entry-tp dibanding rata-rata gerak harian (ATR/sigma) di data.',
@@ -7927,6 +7927,7 @@ async function ohlcvAnalyzeHandler(req, res) {
       structured.trigger_reported = structured.trigger ?? null;
       structured.trigger = structured.entry_zone ? 'Sentuhan zona ' + structured.entry_zone + (wait.until ? ' setelah ' + new Date(wait.until).toISOString() : '') + '; tunduk jadwal event High relevan' : null;
       _finalizeAatasDataNotes(structured);
+      resultPayload.commentary = structured.reasoning_note;
     }
 
     if (isAutoCall && !isDiagnosticOnly && structured && structured.aatas_reject_reason) {
@@ -8256,10 +8257,10 @@ async function ohlcvAnalyzeHandler(req, res) {
                     // lahir dari penilaian checklist SAAT refine, bukan generasi pertama;
                     // menyimpan skor lama di sebelah level baru itu jejak audit yang bohong.
                     entry_execution: 'zone_touch_after_calendar',
-          trigger: structured.trigger ?? null,
-          trigger_reported: structured.trigger_reported ?? null,
-          entry_wait_until: structured.entry_wait_until ?? null,
-          regime_check: structured.regime_check ?? null,
+                    trigger: structured.trigger ?? null,
+                    trigger_reported: structured.trigger_reported ?? null,
+                    entry_wait_until: structured.entry_wait_until ?? null,
+                    regime_check: structured.regime_check ?? null,
                     gate_validitas_driver: structured.gate_validitas_driver ?? null,
                     gate_risk_management: structured.gate_risk_management ?? null,
                     fundamental_bias: structured.fundamental_bias ?? null,
@@ -8268,7 +8269,7 @@ async function ohlcvAnalyzeHandler(req, res) {
                     checklist_pct: structured.checklist_pct ?? null,
                     verdict: structured.verdict ?? null,
                     reasoning_note: structured.reasoning_note ?? null,
-          reasoning_note_reported: structured.reasoning_note_reported ?? null,
+                    reasoning_note_reported: structured.reasoning_note_reported ?? null,
                     aatas_v: AATAS_PROMPT_VERSION,
                   },
                 };

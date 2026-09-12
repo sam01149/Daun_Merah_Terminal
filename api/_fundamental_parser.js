@@ -798,7 +798,7 @@ async function reconcileFundamentalKeys(redisCmd) {
       const byLower = {};
       for (const k of keys) { const lk = decodeEnt(k).toLowerCase(); (byLower[lk] = byLower[lk] || []).push(k); }
       for (const arr of Object.values(byLower)) {
-        if (arr.length < 2) continue;
+        // A lone noncanonical spelling also needs normalization.
         let canonicalKey = null;
         for (const k of arr) {
           const c = FUND_INDICATOR_CANONICAL.get(k.toLowerCase());

@@ -11,12 +11,12 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-09-11 (Session 359 — Perbaikan kualitas data)
+> **Last updated:** 2026-09-12 (Session 359 — Perbaikan kualitas data)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
-## Changelog Session 359 (2026-09-11) — Perbaikan hasil audit kualitas data
+## Changelog Session 359 (2026-09-11 sampai 12) — Perbaikan hasil audit kualitas data
 
 Perintah user: perbaiki hasil audit memakai framework CLAUDE.md. Perbaikan dikerjakan serial per cacat; status tiap paket dicatat di bawah. Runtime baru dinyatakan terverifikasi setelah tes dan pemeriksaan fungsional.
 
@@ -45,6 +45,16 @@ A5: snapshot AATAS kini diperbarui bersama refine dengan snapshot asal tetap ter
 A7: pemeriksaan mekanisme short squeeze termasuk teks konflik AATAS; detail dan batas deteksi di professional_llm_trader/changelog.md S359.
 
 Evaluasi mandiri D1: varian CPI baru ditambahkan ke kamus kanonik agar alias title-case lama tidak menjadi indikator ganda. Reconcile membandingkan alias berikutnya dengan pemenang terbaru dalam batch. Tes memastikan data lebih tua tidak menimpa varian resmi.
+
+QA akhir: nama CPI tunggal yang casing-nya nonkanonik juga dinormalisasi tanpa mengubah nilainya; respons commentary auto ikut memakai hasil final agar konsisten dengan structured/log. Browser CUA tidak tersedia, sehingga pemeriksaan visual interaktif belum bisa dilakukan.
+
+## Changelog Session 359 (2026-09-11) — Perbaikan hasil audit kualitas data
+
+Perintah user: perbaiki hasil audit memakai framework CLAUDE.md. Perbaikan dikerjakan serial per cacat; status tiap paket dicatat di bawah. Runtime baru dinyatakan terverifikasi setelah tes dan pemeriksaan fungsional.
+
+Verifikasi akhir 12 Sep: seluruh 1320 tes lulus; sintaks inline JS valid. Live: korelasi v4 (contoh DXY/EUR n20=20,n60=53), proyeksi terbaru + nominal lama tetap stale, jurnal/sizing invalid=400, arsip AATAS 78/78 dengan 24 status diperbarui. Normalisasi nama CPI AUD selesai secara CAS + backup, angka 3.6% tetap. Jalur AATAS akhir pekan terverifikasi market_closed/ai_skipped; generasi keputusan baru menunggu pasar buka. Browser tidak tersedia, verifikasi visual belum selesai. Sisa pemeriksaan tercatat di progress yang sesuai; tidak ada klaim semua fitur/semua narasi/strategi telah tervalidasi.
+
+QA kontrak prompt: instruksi Call 2 lama ternyata masih tersisa; sekarang diganti dan diverifikasi melalui tes batas auto/manual. Versi aktif prompt 11, policy 57. Seluruh 1321 tes lulus sebelum push; hasil API produksi dan batas verifikasi tetap tercatat di atas.
 
 ## Changelog Session 358 (2026-09-11) — Audit kualitas, distribusi, kelengkapan, akurasi, dan keputusan data
 

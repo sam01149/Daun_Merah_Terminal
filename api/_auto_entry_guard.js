@@ -1,4 +1,4 @@
-﻿// api/_auto_entry_guard.js — Audit celah "kesalahan trader" auto-entry (2026-07-28,
+// api/_auto_entry_guard.js — Audit celah "kesalahan trader" auto-entry (2026-07-28,
 // daun_merah_progress.md). Pure functions saja (pola sama api/_position_review.js) —
 // I/O (Redis/HTTP/AI) tetap di api/admin.js, supaya bisa dites unit tanpa mock jaringan.
 //
@@ -583,6 +583,7 @@ const POLICY_EPOCHS = [
   { v: 54, from: '2026-09-12T01:45:11.128Z', kind: 'fix', impact: 'context', label: "S359 A4: catatan efektif mengikuti RR dan waktu final, laporan asli terpisah" },
   { v: 55, from: '2026-09-12T07:39:24.033Z', kind: 'fix', impact: 'entry', label: "S359 A7: cegah inversi mekanisme short squeeze mata uang quote" },
   { v: 56, from: '2026-09-12T07:43:44.299Z', kind: 'fix', impact: 'context', label: "S359 D1 QA: normalisasi alias varian inflasi ke key periode kanonik" },
+  { v: 57, from: '2026-09-12T07:50:53.950Z', kind: 'fix', impact: 'entry', label: "S359 A2 QA: instruksi trigger auto sesuai kontrak evaluator" },
 ];
 
 // AATAS_EPOCH (2026-08-22, keputusan user): batas populasi statistik dashboard

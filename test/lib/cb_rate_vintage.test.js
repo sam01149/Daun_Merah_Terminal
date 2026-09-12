@@ -15,3 +15,8 @@ test('newer observation wins, invalid or undated decision cannot overwrite it',(
   assert.equal(r.rate,3);assert.equal(r.rate_as_of,'2026-10-10');
  }
 });
+
+test('invalid live values cannot label fallback as a live observation',()=>{
+ const r=mergeCbRate('NZD',CB_FALLBACK.NZD,{rate:NaN,date:'2026-09-10'},undefined,'live_cached');
+ assert.equal(r.rate,CB_FALLBACK.NZD.rate);assert.equal(r.rate_source,'fallback');assert.equal(r.rate_as_of,null);
+});

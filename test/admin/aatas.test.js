@@ -177,7 +177,7 @@ test('Tahap 1 e2e: blok [DATA RILIS EKONOMI] kedua kaki masuk Call 1 DAN Kritiku
 });
 
 test('AATAS_PROMPT_VERSION: 6 = blok data rilis di Call 1; 7 = definisi technical.score_pct; 8 = Tahap 3 jalan tengah (menu TP 1:2 + tanpa paksaan zona terdekat)', () => {
-  assert.equal(AATAS_PROMPT_VERSION, 10);
+  assert.equal(AATAS_PROMPT_VERSION, 11);
 });
 
 test('Tahap 3 jalan tengah (v8): Call 2 auto menyebut menu TP 1:2 dan menuntut entry konsisten fib_reason, TANPA "pilih yang lebih dekat ke Now"; manual tetap 1:1 + tie-break lama', async () => {
@@ -1999,4 +1999,11 @@ test('S359 squeeze guard checks conflict mechanism, not merely opposite trade di
  assert.equal(_detectSqueezeInversion('CHF/JPY',['Posisi short JPY rawan squeeze naik, jika terjadi JPY bisa melemah dan mendorong pair naik']),true);
  assert.equal(_detectSqueezeInversion('CHF/JPY',['Short JPY rawan squeeze naik yang menguatkan JPY dan menekan CHF/JPY']),false);
  assert.equal(_detectSqueezeInversion('CHF/JPY',['Bukan short JPY squeeze yang memicu rebound CHF/JPY']),false);
+});
+
+test('S359 auto trigger prompt promises only conditions supported by evaluator',()=>{
+ const src=require('node:fs').readFileSync(require.resolve('../../api/admin'),'utf8');
+ const auto=src.slice(src.indexOf('async function _runAatasTwoCall('),src.indexOf('function _formatAatasCriticLine('));
+ assert.match(auto,/- trigger: eksekusi otomatis hanya mendukung sentuhan zona entry/);
+ assert.doesNotMatch(auto,/- trigger: SATU kondisi price action/);
 });

@@ -661,3 +661,11 @@ test('S359 CPI variant aliases retain canonical casing and newest observation',a
  assert.equal(redis.store['fundamental:AUD']['Cpi Trimmed Mean Yoy'],undefined);
  assert.deepEqual(JSON.parse(redis.store['fundamental:AUD']['CPI Trimmed Mean YoY']),latest);
 });
+
+test('S359 lone CPI variant alias is renamed without changing the observation',async()=>{
+ const value=JSON.stringify({actual:'3.6%',date:'2026-08-26',source:'calendar'});
+ const redis=makeMultiKeyMockRedis({'fundamental:AUD':{'Cpi Trimmed Mean Yoy':value}});
+ await reconcileFundamentalKeys(redis);
+ assert.equal(redis.store['fundamental:AUD']['Cpi Trimmed Mean Yoy'],undefined);
+ assert.equal(redis.store['fundamental:AUD']['CPI Trimmed Mean YoY'],value);
+});
