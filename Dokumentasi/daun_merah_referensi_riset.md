@@ -382,3 +382,10 @@ Implikasi untuk Daun Merah: kualitas kode/analisa, keselamatan eksekusi, dan buk
 | [CFTC: Commodity Trading Systems Sold on the Internet](https://www.cftc.gov/LearnAndProtect/AdvisoriesAndArticles/fraudadv_tradingsystem.html) | Advisory, diverifikasi 12 September 2026 | Asumsi pengujian hipotetis dapat melebihkan atau meremehkan hasil pada kondisi pasar aktual. |
 
 Implikasi untuk Daun Merah: ketepatan perhitungan dan kepatuhan workflow tidak membuktikan akurasi prediksi; evaluasi arah, timing dan hasil setelah biaya perlu dibedakan. Penilaian metodologi AATAS berada di professional_llm_trader/riset.md, entri 12 September 2026.
+
+
+| Paper | Tipe | Temuan inti |
+|---|---|---|
+| [Bailey et al., The Probability of Backtest Overfitting](https://www.davidhbailey.com/dhbpapers/backtest-prob.pdf) | Paper metodologi, 2015 | Mencoba banyak konfigurasi pada data finansial yang sama meningkatkan false positive; penilaian representativitas backtest perlu memperhitungkan jumlah percobaan dan hasil out-of-sample. |
+
+Implikasi untuk Daun Merah: setiap perubahan kebijakan AATAS harus dicatat sebagai eksperimen berversi dan dinilai pada keputusan forward yang terpisah. Ambang sampel internal bukan bukti mandiri bahwa strategi memiliki edge. Jalur pematangan AATAS dicatat di professional_llm_trader/riset.md, entri 12 September 2026.
