@@ -38,6 +38,8 @@ A3: validasi integritas laporan Gate 1; detail dan batas penegakan semantik di p
 
 A2: waktu tunggu kalender AATAS ditegakkan saat fill; detail di professional_llm_trader/changelog.md S359.
 
+A4: angka dan waktu final menjadi catatan efektif AATAS; laporan model tetap tersimpan dengan penanda asal. Detail di professional_llm_trader/changelog.md S359.
+
 ## Changelog Session 358 (2026-09-11) — Audit kualitas, distribusi, kelengkapan, akurasi, dan keputusan data
 
 **Kesimpulan:** data belum layak dianggap benar hanya karena tersedia dan cache aktif. Kesalahan periode inflasi sudah terbukti pada data produksi dan mengalir ke keputusan AATAS. Audit ini menghasilkan diagnosis dan prioritas perbaikan, bukan perubahan kebijakan trading. Tidak ada kode runtime/data produksi yang diubah atau panggilan AI yang dipicu.

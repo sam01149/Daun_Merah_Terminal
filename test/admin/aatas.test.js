@@ -1982,3 +1982,12 @@ test('S359 event wait uses the actual WIB schedule and only relevant legs within
  _evaluateSetups([st],{'EURUSD=X':[c(1),c(4)]},now+5*3600000,[ev]);
  assert.equal(st.status,'open');assert.equal(st.filled_t,c(4).t);
 });
+
+test('S359 effective note uses final RR and retains original claims with provenance',()=>{
+ const {_finalizeAatasDataNotes}=require('../../api/admin');
+ const st={bias:'bearish',risk_reward:2.75,checklist_pct:80,gate_risk_management:{pass:true,note:'RR 2.6'},reasoning_note:'RR 2.6, event dalam 4 jam',regime_check:{event_note:'Tidak ada event High relevan'},trigger:'Sentuhan zona'};
+ _finalizeAatasDataNotes(st);
+ assert.match(st.gate_risk_management.note,/1:2.75/);assert.equal(st.gate_risk_management.note_reported,'RR 2.6');
+ assert.match(st.reasoning_note,/HASIL KODE.*RR final 1:2.75/);assert.equal(st.reasoning_note_reported,'RR 2.6, event dalam 4 jam');
+ const once=st.reasoning_note;_finalizeAatasDataNotes(st);assert.equal(st.reasoning_note,once);
+});

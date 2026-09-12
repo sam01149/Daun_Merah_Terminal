@@ -5505,6 +5505,22 @@ const AATAS_MIN_RR = 2;
 // FAIL-OPEN kalau `rr` bukan angka (level sudah di-drop sanity-check, atau memang bukan
 // setup): gate dikembalikan APA ADANYA, jangan mengarang kegagalan dari ketiadaan data —
 // pola sama _goldYieldCorrAnomaly (null = TIDAK DIKETAHUI, bukan "aman").
+function _finalizeAatasDataNotes(st) {
+  const original = st.reasoning_note_reported ?? st.reasoning_note ?? null;
+  st.reasoning_note_reported = original;
+  if (st.gate_risk_management && Number.isFinite(st.risk_reward)) {
+    const gate = st.gate_risk_management;
+    st.gate_risk_management = { ...gate, note_reported: gate.note_reported ?? gate.note ?? null,
+      note: 'RR dari level final = 1:' + st.risk_reward.toFixed(2) + '; status gate: ' + String(gate.pass) + '. Catatan model tersedia di note_reported.' };
+  }
+  const facts = ['HASIL KODE: bias ' + (st.bias || 'tidak diketahui'),
+    'RR final ' + (Number.isFinite(st.risk_reward) ? '1:' + st.risk_reward.toFixed(2) : 'tidak tersedia'),
+    'checklist final ' + (st.checklist_pct ?? 'tidak tersedia') + '%',
+    st.regime_check?.event_note, st.trigger].filter(Boolean).join('; ');
+  st.reasoning_note = facts + (original ? '\nLAPORAN ASLI MODEL (klaim angka/waktu dapat berbeda dari hasil kode di atas): ' + original : '');
+  return st;
+}
+
 function _enforceAatasRrGate(gateRisk, rr) {
   if (!gateRisk || gateRisk.pass !== true) return gateRisk;
   if (!Number.isFinite(rr)) return gateRisk;
@@ -7880,6 +7896,7 @@ async function ohlcvAnalyzeHandler(req, res) {
       structured.entry_wait_until = wait.until;
       structured.trigger_reported = structured.trigger ?? null;
       structured.trigger = structured.entry_zone ? 'Sentuhan zona ' + structured.entry_zone + (wait.until ? ' setelah ' + new Date(wait.until).toISOString() : '') + '; tunduk jadwal event High relevan' : null;
+      _finalizeAatasDataNotes(structured);
     }
 
     if (isAutoCall && !isDiagnosticOnly && structured && structured.aatas_reject_reason) {
@@ -7896,6 +7913,7 @@ async function ohlcvAnalyzeHandler(req, res) {
         checklist_pct: structured.checklist_pct ?? null,
         verdict: structured.verdict ?? null,
         reasoning_note: structured.reasoning_note ?? null,
+          reasoning_note_reported: structured.reasoning_note_reported ?? null,
         conflict: structured.conflict ?? null,
         regime: autoGuardRegime,
         model, policy_v: POLICY_VERSION, aatas_v: AATAS_PROMPT_VERSION,
@@ -8069,6 +8087,7 @@ async function ohlcvAnalyzeHandler(req, res) {
           checklist_pct: structured.checklist_pct ?? null,
           verdict: structured.verdict ?? null,
           reasoning_note: structured.reasoning_note ?? null,
+          reasoning_note_reported: structured.reasoning_note_reported ?? null,
           aatas_v: AATAS_PROMPT_VERSION,
         } : {}),
       });
@@ -8213,6 +8232,7 @@ async function ohlcvAnalyzeHandler(req, res) {
                     checklist_pct: structured.checklist_pct ?? null,
                     verdict: structured.verdict ?? null,
                     reasoning_note: structured.reasoning_note ?? null,
+          reasoning_note_reported: structured.reasoning_note_reported ?? null,
                     aatas_v: AATAS_PROMPT_VERSION,
                   },
                 };
@@ -9032,3 +9052,5 @@ module.exports.parsePushRSS = parsePushRSS;
 module.exports.BLOCKED_HEADLINE_RE = BLOCKED_HEADLINE_RE;
 
 module.exports._aatasEventWait = _aatasEventWait;
+
+module.exports._finalizeAatasDataNotes = _finalizeAatasDataNotes;
