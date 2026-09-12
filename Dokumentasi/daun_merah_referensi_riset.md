@@ -354,3 +354,14 @@ Sebelum memulai riset/fitur makro baru di Daun Merah:
 | Reserve Bank of Australia (2026), [Statement on Monetary Policy — August, Outlook](https://www.rba.gov.au/publications/smp/2026/aug/outlook.html) | Application | Publikasi kuartalan Agustus tersedia untuk memperbarui asumsi yang masih memakai Mei; pemilihan horizon/metrik harus dipertahankan eksplisit. |
 
 **Implikasi untuk Daun Merah:** validasi key menyertakan periode dan varian; suku bunga dan tanggal keputusan harus satu provenance. Temuan implementasi di daun_merah.md S358; tabel ini sumber resmi, bukan laporan perbaikan.
+
+
+## S359 ? Sumber proyeksi inflasi (diverifikasi 12 September 2026)
+
+| Paper | Tipe | Temuan inti |
+|---|---|---|
+| [BoE/Savanta IAS August 2026](https://www.bankofengland.co.uk/inflation-attitudes-survey/2026/august-2026) | Data resmi | Ekspektasi satu tahun 3.2%; pergantian penyedia membatasi perbandingan Mei. |
+| [RBA SoMP August 2026, Table 3.1](https://www.rba.gov.au/publications/smp/2026/aug/outlook.html) | Proyeksi resmi | Trimmed mean YoY Juni 2027: 3.0%. |
+| [RBNZ MPS September 2026, Table 6.1](https://www.rbnz.govt.nz/monetary-policy/monetary-policy-statement/monetary-policy-statement-filtered-listing-page/2026/sep-0209/monetary-policy-statement-september-2026/web-version) | Proyeksi resmi | Headline CPI YoY Juni 2027: 2.6%. |
+
+Implikasi untuk Daun Merah: sumber, horizon, tanggal rilis dan batas keterbandingan wajib ikut angka proksi real yield.

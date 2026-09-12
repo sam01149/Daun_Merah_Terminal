@@ -30,6 +30,8 @@ D4: r60 kini memakai tepat maksimal 60 observasi berpasangan (urut tanggal, dupl
 
 D6: jurnal menolak angka parsial/nonfinite, tipe boolean COT keliru, ticket pecahan; checklist hanya menerima boolean asli. Riwayat sizing memvalidasi field kalkulator dan konsistensi dollarRisk sebelum simpan, juga mendukung req.body Vercel. Data historis tidak diubah tanpa bukti input asal.
 
+D5: GBP diperbarui 3.2% survei BoE/Savanta Agustus (rilis 11 Sep; perubahan penyedia membatasi perbandingan Mei). AUD 3.0% trimmed mean YoY Jun 2027 dari RBA SoMP Aug Tabel 3.1; NZD 2.6% headline CPI YoY Jun 2027 dari RBNZ MPS Sep Tabel 6.1. Horizon lama AUD/NZD tidak spesifik, kini Jun 2027 eksplisit. API/prompt/UI membawa sumber serta batas perbandingan: nominal 10Y dikurangi horizon inflasi berbeda bukan real yield 10Y setara. Nilai nominal basi tetap ditandai. POLICY_EPOCHS v51, UI/SW 2026.09.12.2.
+
 ## Changelog Session 358 (2026-09-11) — Audit kualitas, distribusi, kelengkapan, akurasi, dan keputusan data
 
 **Kesimpulan:** data belum layak dianggap benar hanya karena tersedia dan cache aktif. Kesalahan periode inflasi sudah terbukti pada data produksi dan mengalir ke keputusan AATAS. Audit ini menghasilkan diagnosis dan prioritas perbaikan, bukan perubahan kebijakan trading. Tidak ada kode runtime/data produksi yang diubah atau panggilan AI yang dipicu.

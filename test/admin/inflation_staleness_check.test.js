@@ -45,6 +45,9 @@ function fetchStub(store, telegramCalls) {
 }
 
 async function withEnv(fn) {
+  const originalNow = Date.now;
+  const { INFLATION_EXPECTATIONS } = require('../../api/real-yields.js');
+  Date.now = () => Date.parse(INFLATION_EXPECTATIONS.GBP.as_of) + 100 * 86400000;
   const keys = ['CRON_SECRET', 'TELEGRAM_BOT_TOKEN', 'TELEGRAM_CHAT_ID'];
   const prev = {};
   for (const k of keys) prev[k] = process.env[k];
@@ -52,6 +55,7 @@ async function withEnv(fn) {
   process.env.TELEGRAM_BOT_TOKEN = 'test-bot-token';
   process.env.TELEGRAM_CHAT_ID = 'test-chat-id';
   try { return await fn(); } finally {
+    Date.now = originalNow;
     for (const k of keys) { if (prev[k] === undefined) delete process.env[k]; else process.env[k] = prev[k]; }
   }
 }
@@ -74,7 +78,7 @@ test('inflation_staleness_check: currency lewat 90 hari -> masuk daftar stale + 
       const { req, res } = fakeReqRes({ 'x-cron-secret': 'test-secret' });
       await handler(req, res);
       assert.equal(res.statusCode, 200);
-      // GBP/AUD sudah lewat 90 hari per data hardcoded saat ini (as_of Mei 2026, jauh di belakang "sekarang").
+      // Jam fixture 100 hari setelah vintage GBP; tidak bergantung tanggal nyata.
       assert.ok(res.body.stale.includes('GBP'), `GBP harus terdeteksi stale, dapat: ${JSON.stringify(res.body.stale)}`);
       assert.ok(res.body.alerted.includes('GBP'), 'GBP harus masuk daftar alerted (belum pernah dialert)');
       assert.equal(telegramCalls.length, 1, 'harus kirim tepat 1 pesan Telegram gabungan, bukan per-currency');

@@ -31,11 +31,8 @@ const INFLATION_EXPECTATIONS = {
   // Source: ECB Survey of Professional Forecasters Q3 2026 (rilis 2026-07-24,
   // ecb.europa.eu/stats/ecb_surveys/survey_of_professional_forecasters) — refresh ~Oct 2026 (Q4 SPF)
   EUR: { value: 2.0,  source: 'ECB SPF Q3 2026',    as_of: '2026-07-24' },
-  // Metrik: median 1-year-ahead inflation expectation (IAS "coming year").
-  // Source: BoE/Ipsos Inflation Attitudes Survey May 2026 (fielded 30 Apr-5 Mei
-  // 2026, bankofengland.co.uk/inflation-attitudes-survey/2026/may-2026), naik
-  // dari 3.2% (Feb) — refresh ~Aug 2026 (survei berikutnya kuartalan)
-  GBP: { value: 4.0,  source: 'BoE IAS May 2026',   as_of: '2026-05-05' },
+  // BoE/Savanta IAS Aug 2026: median 1-year ahead, published 11 Sep. Provider break vs May.
+  GBP: { value: 3.2, source: 'BoE/Savanta IAS Aug 2026 (1-year; provider berubah dari Ipsos, tren tidak sepenuhnya sebanding)', as_of: '2026-09-11' },
   // Metrik: firms' 1-year-ahead CPI outlook (Tankan "General Outlook for General
   // Prices", all enterprises). Source: BoJ Tankan Jun 2026 (rilis 2026-07-01,
   // boj.or.jp/en/statistics/tk/yoshi/tk2606.htm), naik dari 2.6% (Mar) — refresh ~Oct 2026
@@ -44,23 +41,19 @@ const INFLATION_EXPECTATIONS = {
   // target 2% awal 2027"). Source: Bank of Canada Monetary Policy Report Jul
   // 2026 (rilis 2026-07-15, bankofcanada.ca/publications/mpr/mpr-2026-07-15) — refresh ~Oct 2026
   CAD: { value: 2.5,  source: 'BoC MPR Jul 2026 (H2 2026 avg)', as_of: '2026-07-15' },
-  // Audit 2026-08-03: SoMP Agustus 2026 BELUM terbit (jadwal resmi 2026-08-11) —
-  // nilai TETAP dari edisi Mei 2026 (masih publikasi terbaru yang tersedia),
-  // bukan tebakan. Metrik: underlying (trimmed mean) inflation, above 3% until mid-2027.
-  // Source: RBA Statement on Monetary Policy May 2026 — refresh setelah SoMP Aug 2026 terbit
-  AUD: { value: 3.2,  source: 'RBA SoMP May 2026',  as_of: '2026-05-06' },
-  // Audit 2026-08-03: keputusan OCR 2026-07-08 adalah "Monetary Policy Review"
-  // (bukan Monetary Policy Statement kuartalan penuh — MPS berikutnya baru
-  // 2026-09-02, rbnz.govt.nz) — belum ada tabel proyeksi resmi baru, nilai TETAP
-  // dari edisi Mei 2026. Metrik: proyeksi inflasi jangka menengah (~2% mid-2027).
-  // Source: RBNZ Monetary Policy Statement May 2026 — refresh setelah MPS Sep 2026 terbit
-  NZD: { value: 2.1,  source: 'RBNZ MPS May 2026',  as_of: '2026-05-27' },
+  // RBA SoMP Aug 2026 Table 3.1: trimmed mean YoY forecast, June 2027.
+  AUD: { value: 3.0, source: 'RBA SoMP Aug 2026 Table 3.1 (trimmed mean YoY Jun 2027)', as_of: '2026-08-11' },
+  // RBNZ Sep 2026 Table 6.1: headline CPI YoY forecast, June 2027.
+  NZD: { value: 2.6, source: 'RBNZ MPS Sep 2026 Table 6.1 (headline CPI YoY Jun 2027)', as_of: '2026-09-02' },
   // Metrik: conditional inflation forecast tahun kalender 2026 (assumsi policy
   // rate tetap 0%). Source: SNB Monetary Policy Assessment 18 Jun 2026 (rilis
   // 2026-06-18, snb.ch/en/publications/communication/press-releases-restricted/pre_20260618),
   // naik dari 0.4% (Mar) — refresh ~Sep 2026 (assessment berikutnya)
   CHF: { value: 0.6,  source: 'SNB Jun 2026 (2026 forecast)', as_of: '2026-06-18' },
 }
+
+const DATA_VERSION = '2026-09-12';
+const YIELD_COMPARABILITY = 'Proksi nominal 10Y dikurangi inflasi dengan horizon/metode berbeda antarnegara; bukan real yield 10Y yang setara atau sinyal perubahan harian.';
 
 // FRED series IDs for 10Y government bond nominal yields (monthly for non-USD)
 const FRED_NOMINAL_SERIES = {
@@ -113,7 +106,7 @@ module.exports = async function handler(req, res) {
     try {
       const parsed = JSON.parse(mainCached)
       const ageMs = Date.now() - new Date(parsed.computed_at).getTime()
-      if (ageMs < CACHE_TTL * 1000) {
+      if (parsed.data_version === DATA_VERSION && ageMs < CACHE_TTL * 1000) {
         const toRefresh = []
         if (!liquidityData) toRefresh.push(
           fetchLiquidityIndicators()
@@ -139,7 +132,7 @@ module.exports = async function handler(req, res) {
   const mainSf = await withSingleFlight(redisCmd, {
     lockKey: 'lock:real_yields',
     cacheKey: CACHE_KEY,
-    isFresh: (raw) => { try { return Date.now() - new Date(JSON.parse(raw).computed_at).getTime() < CACHE_TTL * 1000 } catch(e) { return false } },
+    isFresh: (raw) => { try { return JSON.parse(raw).data_version === DATA_VERSION && Date.now() - new Date(JSON.parse(raw).computed_at).getTime() < CACHE_TTL * 1000 } catch(e) { return false } },
   })
   if (!mainSf.gotLock && mainSf.fresh) {
     const parsed = JSON.parse(mainSf.fresh)
@@ -257,6 +250,7 @@ module.exports = async function handler(req, res) {
         nominal: null, inflation_exp: inf.value, real: null,
         source_nominal: FRED_NOMINAL_SERIES[cur],
         source_inflation: inf.source,
+      comparability_note: YIELD_COMPARABILITY,
         inflation_as_of: inf.as_of,
         as_of: null,
         stale,
@@ -271,6 +265,7 @@ module.exports = async function handler(req, res) {
       nominal, inflation_exp: inf.value, real,
       source_nominal: FRED_NOMINAL_SERIES[cur],
       source_inflation: inf.source,
+      comparability_note: YIELD_COMPARABILITY,
       inflation_as_of: inf.as_of,
       as_of: data.date,
       stale,
@@ -287,7 +282,7 @@ module.exports = async function handler(req, res) {
     return res.status(502).json({ error: 'All real yield sources unavailable' })
   }
 
-  const payload = { currencies: results, computed_at: new Date().toISOString() }
+  const payload = { data_version: DATA_VERSION, currencies: results, computed_at: new Date().toISOString() }
 
   redisCmd('SET', CACHE_KEY, JSON.stringify(payload), 'EX', CACHE_TTL)
     .catch(e => console.warn('real-yields: Redis SET failed:', e.message))

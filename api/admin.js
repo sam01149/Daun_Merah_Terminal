@@ -5237,7 +5237,7 @@ function _formatFundamentalBlock({ label, isXau, cbBias, cot, risk, retail, driv
       : ageD > 45
         ? ` [PERHATIAN: komponen nominal dari ${ry.as_of}, ${ageD} hari lalu — seri BULANAN, bukan harian. JANGAN pakai angka ini untuk klaim pergerakan/perubahan jangka pendek; pakai hanya sebagai level struktural kasar]`
         : ` [data ${ry.as_of}, ${ageD} hari lalu]`;
-    lines.push(`REAL YIELD ${leg}: nominal ${ry.nominal}% − ekspektasi inflasi ${ry.inflation_exp}% = real yield ${ry.real}%${goldNote}${ageNote}`);
+    lines.push(`REAL YIELD ${leg}: nominal ${ry.nominal}% − ekspektasi inflasi ${ry.inflation_exp}% = real yield ${ry.real}%${goldNote}${ageNote}${ry.source_inflation ? ` [Sumber inflasi: ${ry.source_inflation}; rilis ${ry.inflation_as_of || "tidak diketahui"}]` : ""}${ry.comparability_note ? ` [${ry.comparability_note}]` : ""}`);
   }
   // Catatan kausal EUR/USD (2026-08-08, pair_workflow.md folder professional_llm_trader
   // §"Faktor Kekuatan/Kelemahan per Pair"): driver dominan EUR/USD horizon 1-3 tahun

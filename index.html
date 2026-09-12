@@ -4416,7 +4416,7 @@ body:not(.light-theme) .ringkasan-gen-btn {
 <!-- newscat.js: engine klasifikasi kategori berita (single source of truth,
      dipakai juga sw.js & api/). Query ?v= = cache-buster — naikkan tiap kali
      newscat.js berubah, samakan dengan NEWSCAT_VERSION di sw.js. -->
-<script src="/newscat.js?v=2026.09.12.1"></script>
+<script src="/newscat.js?v=2026.09.12.2"></script>
 <!-- fx-sessions.js: batas jam sesi FX (single source of truth, dipakai juga
      api/journal.js). Query ?v= = cache-buster — naikkan tiap kali file berubah. -->
 <script src="/fx-sessions.js?v=2026.08.08.1"></script>
@@ -4468,7 +4468,7 @@ window.addEventListener('DOMContentLoaded', () => _updateNewsLangBtn());
 
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.09.12.1';
+const APP_VERSION = '2026.09.12.2';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
@@ -8043,7 +8043,7 @@ function renderCBTracker() {
     if (ry && ry.real != null) {
       const rySign  = ry.real >= 0 ? '+' : '';
       const ryColor = ry.stale ? 'var(--yellow)' : (ry.real >= 0 ? 'var(--green)' : 'var(--accent)');
-      realHtml = '<br><span style="font-size:7px;color:' + ryColor + '" title="Real = Nom - Inf Est">real ' + rySign + ry.real.toFixed(2) + '%</span>';
+      realHtml = '<br><span style="font-size:7px;color:' + ryColor + '" title="' + escHtml([ry.source_inflation, ry.comparability_note].filter(Boolean).join('. ') || 'Real = Nom - Inf Est') + '">real ' + rySign + ry.real.toFixed(2) + '%</span>';
     }
 
     const confDot = cb.confidence
