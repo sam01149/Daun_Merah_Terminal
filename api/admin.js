@@ -6108,6 +6108,12 @@ function _evaluateAatasGate1({ fundamental_bias, aiPass, label, lockedBias }) {
     label, arah,
     texts: [typeof fb.driver === 'string' ? fb.driver : '', ...konfirmasi],
   })) return { pass: false, override_reason: 'arah_driver_berlawanan' };
+  if (typeof fb.driver !== 'string' || !fb.driver.trim()) return { pass: false, override_reason: 'driver_kosong' };
+  const normalized = text => text.normalize('NFKC').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+  if (new Set(konfirmasi.map(normalized)).size < 2) return { pass: false, override_reason: 'konfirmasi_duplikat' };
+  const locked = String(lockedBias || '').trim().toLowerCase();
+  const reported = String(fb.arah || '').trim().toLowerCase();
+  if (['bullish','bearish'].includes(locked) && reported && locked !== reported) return { pass: false, override_reason: 'arah_vs_bias_terkunci' };
   return { pass: true, override_reason: null };
 }
 

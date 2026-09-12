@@ -1,4 +1,4 @@
-// api/_auto_entry_guard.js — Audit celah "kesalahan trader" auto-entry (2026-07-28,
+﻿// api/_auto_entry_guard.js — Audit celah "kesalahan trader" auto-entry (2026-07-28,
 // daun_merah_progress.md). Pure functions saja (pola sama api/_position_review.js) —
 // I/O (Redis/HTTP/AI) tetap di api/admin.js, supaya bisa dites unit tanpa mock jaringan.
 //
@@ -578,6 +578,7 @@ const POLICY_EPOCHS = [
   { v: 49, from: '2026-09-12T01:27:02.189Z', kind: 'fix', impact: 'context', label: "D3: rate dan tanggal observasi dipilih satu sumber; keputusan resmi terbaru mengalahkan observasi BIS lama." },
   { v: 50, from: '2026-09-12T01:30:29.684Z', kind: 'fix', impact: 'context', label: "S359 D4: jendela korelasi level 20/60 observasi dan jumlah sampel eksplisit" },
   { v: 51, from: '2026-09-12T01:36:26.627Z', kind: 'fix', impact: 'context', label: "S359 D5: refresh proyeksi inflasi resmi dan jelaskan perbedaan horizon" },
+  { v: 52, from: '2026-09-12T01:40:23.140Z', kind: 'fix', impact: 'entry', label: "S359 A3: driver wajib terisi, konfirmasi tidak duplikat, arah konsisten" },
 ];
 
 // AATAS_EPOCH (2026-08-22, keputusan user): batas populasi statistik dashboard
@@ -658,3 +659,4 @@ module.exports = {
   DRAWDOWN_HALT_THRESHOLD_R,
   _realizedWinR,
 };
+

@@ -34,6 +34,8 @@ D5: GBP diperbarui 3.2% survei BoE/Savanta Agustus (rilis 11 Sep; perubahan peny
 
 A6: sinkronisasi status arsip AATAS diperbaiki; detail di professional_llm_trader/changelog.md S359 (dokumen lokal sesuai routing).
 
+A3: validasi integritas laporan Gate 1; detail dan batas penegakan semantik di professional_llm_trader/changelog.md S359.
+
 ## Changelog Session 358 (2026-09-11) — Audit kualitas, distribusi, kelengkapan, akurasi, dan keputusan data
 
 **Kesimpulan:** data belum layak dianggap benar hanya karena tersedia dan cache aktif. Kesalahan periode inflasi sudah terbukti pada data produksi dan mengalir ke keputusan AATAS. Audit ini menghasilkan diagnosis dan prioritas perbaikan, bukan perubahan kebijakan trading. Tidak ada kode runtime/data produksi yang diubah atau panggilan AI yang dipicu.

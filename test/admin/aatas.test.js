@@ -1961,3 +1961,11 @@ test('v37: flag diagnostik test_deepseek_pro tetap memaksa KEDUA call ke pro (ap
   assert.match(AATAS_SRC, /modelName: testDeepseekProOnly \? 'deepseek-v4-pro' : AATAS_CALL2_MODEL/,
     'dengan flag, Call 2 ikut pro supaya perbandingan adil');
 });
+
+test('S359 Gate1 rejects empty driver, duplicate confirmations and direction disagreement',()=>{
+ const fb={driver:'Divergensi kebijakan bank sentral',konfirmasi:['Inflasi domestik meningkat','Kebijakan moneter diperketat'],strong_vs_weak:true,case_bullish_pct:70,case_bearish_pct:30,arah:'bullish'};
+ for(const [edit,bias,reason] of [[{driver:' '},'bullish','driver_kosong'],[{konfirmasi:['Inflasi naik!',' inflasi naik. ']},'bullish','konfirmasi_duplikat'],[{},'bearish','arah_vs_bias_terkunci']]){
+  const r=_evaluateAatasGate1({fundamental_bias:{...fb,...edit},lockedBias:bias,aiPass:true});
+  assert.equal(r.pass,false);assert.equal(r.override_reason,reason);
+ }
+});
