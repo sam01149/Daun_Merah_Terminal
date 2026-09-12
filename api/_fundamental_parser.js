@@ -569,13 +569,14 @@ async function autoUpdateFundamentalsFromCalendar(calendarEvents, redisCmd) {
         // jangan MUNDUR kalau entry existing sudah dari rilis yang lebih baru
         // (mis. calendar_v1 sempat serve cache basi minggu lalu).
         if (existingEntry && existingEntry.date && existingEntry.date > date) continue;
+        const sameRelease = existingEntry && existingEntry.date === date;
         const entry = { actual: value, period: '—', date, source: 'calendar' };
         if (previous) entry.previous = previous;
-        else if (existingEntry && existingEntry.previous) entry.previous = existingEntry.previous;
+        else if (sameRelease && existingEntry.previous) entry.previous = existingEntry.previous;
         // Audit 2026-08-12: forecast (ekspektasi konsensus) — beat/miss vs ini
         // sering lebih menggerakkan pasar daripada arah vs previous saja.
         if (forecast) entry.forecast = forecast;
-        else if (existingEntry && existingEntry.forecast) entry.forecast = existingEntry.forecast;
+        else if (sameRelease && existingEntry.forecast) entry.forecast = existingEntry.forecast;
         args.push(key, JSON.stringify(entry));
         writtenKeys.push(key);
       }
@@ -698,7 +699,7 @@ async function autoUpdateFundamentals(headlines, redisCmd) {
         // Kalau actual TIDAK berubah (re-scan headline lama), pertahankan `previous`
         // yang sudah tersimpan — sebelum fix ini field previous hilang begitu saja
         // di scan kedua karena entry selalu dibangun dari objek kosong.
-        if (headlinePrev && headlinePrev !== value) {
+        if (headlinePrev != null) {
           entry.previous = headlinePrev;
         } else if (existingEntry && existingEntry.actual && existingEntry.actual !== value) {
           entry.previous = existingEntry.actual;
@@ -708,7 +709,7 @@ async function autoUpdateFundamentals(headlines, redisCmd) {
         // Audit 2026-08-12: forecast (ekspektasi konsensus) — pola sama seperti
         // previous di atas, pertahankan nilai lama kalau re-scan tidak bawa forecast baru.
         if (headlineForecast) entry.forecast = headlineForecast;
-        else if (existingEntry && existingEntry.forecast) entry.forecast = existingEntry.forecast;
+        else if (!isNewValue && existingEntry && existingEntry.forecast) entry.forecast = existingEntry.forecast;
         args.push(key, JSON.stringify(entry));
       }
       await redisCmd(...args);

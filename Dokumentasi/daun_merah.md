@@ -22,6 +22,8 @@ Perintah user: perbaiki hasil audit memakai framework CLAUDE.md. Perbaikan diker
 
 **D1 — Parser inflasi:** periode YoY/MoM/QoQ dan varian trimmed mean/weighted median/core dipisahkan sebelum key disimpan, termasuk German CPI/HICP. Uji dua urutan rilis memastikan annual/monthly/core tidak saling menimpa. POLICY_EPOCHS v47. Kalender TradingView sumber aplikasi diverifikasi: AUD annual 3.5%, monthly 1%, trimmed monthly 0.5%; GBP annual 2.9%. Pemulihan hash produksi menyusul setelah deployment parser.
 
+**D1 live (12 September):** 10 indikator GBP/AUD/EUR dipulihkan dari kalender sumber asli dengan backup .cache/inflation-repair-backup.json dan CAS atomik; baca ulang seluruhnya cocok. **D2:** forecast/previous kosong pada rilis kalender baru tidak lagi mewarisi rilis lama; headline actual baru membuang forecast lama dan mempertahankan previous eksplisit walaupun sama dengan actual. Epoch v48; tes regresi lintas rilis dan revisi.
+
 ## Changelog Session 358 (2026-09-11) — Audit kualitas, distribusi, kelengkapan, akurasi, dan keputusan data
 
 **Kesimpulan:** data belum layak dianggap benar hanya karena tersedia dan cache aktif. Kesalahan periode inflasi sudah terbukti pada data produksi dan mengalir ke keputusan AATAS. Audit ini menghasilkan diagnosis dan prioritas perbaikan, bukan perubahan kebijakan trading. Tidak ada kode runtime/data produksi yang diubah atau panggilan AI yang dipicu.
