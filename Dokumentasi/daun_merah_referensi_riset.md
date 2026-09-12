@@ -365,3 +365,13 @@ Sebelum memulai riset/fitur makro baru di Daun Merah:
 | [RBNZ MPS September 2026, Table 6.1](https://www.rbnz.govt.nz/monetary-policy/monetary-policy-statement/monetary-policy-statement-filtered-listing-page/2026/sep-0209/monetary-policy-statement-september-2026/web-version) | Proyeksi resmi | Headline CPI YoY Juni 2027: 2.6%. |
 
 Implikasi untuk Daun Merah: sumber, horizon, tanggal rilis dan batas keterbandingan wajib ikut angka proksi real yield.
+
+
+## Praktik pengendalian trading algoritmik (diverifikasi 12 September 2026)
+
+| Paper | Tipe | Temuan inti |
+|---|---|---|
+| [FINRA Regulatory Notice 15-09](https://www.finra.org/rules-guidance/notices/15-09) | Panduan praktik, 2015 | Kesiapan sistem meliputi penilaian risiko, pengujian, validasi, supervisi, serta kontrol trading. |
+| [CFTC: AI Trading Bots](https://www.cftc.gov/LearnAndProtect/AdvisoriesAndArticles/AITradingBots.html) | Advisory | Kemampuan AI dan otomatisasi tidak membuktikan prediksi pasar atau menjamin keuntungan. |
+
+Implikasi untuk Daun Merah: kualitas kode/analisa, keselamatan eksekusi, dan bukti keuntungan harus dinilai terpisah. FINRA digunakan sebagai referensi praktik, bukan penetapan yurisdiksi hukum aplikasi. Penilaian khusus AATAS disimpan di professional_llm_trader/riset.md, entri 12 September 2026.
