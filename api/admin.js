@@ -3349,6 +3349,10 @@ function _evaluateSetups(setups, candlesBySymbol, nowMs, calendarEvents, newsIte
     for (const c of all) {
       if (c.t * 1000 <= scanFromMs) continue;
       if (st.status === 'pending') {
+        if (st.entry_execution === 'zone_touch_after_calendar') {
+          const eventWait = _aatasEventWait(calendarEvents, st.label, c.t * 1000);
+          if ((st.entry_wait_until && c.t * 1000 <= st.entry_wait_until) || eventWait.until) continue;
+        }
         const filled = st.bias === 'bearish' ? c.h >= eLo : c.l <= eHi;
         if (filled) { st.status = 'open'; st.filled_t = c.t; }
       }
@@ -5431,7 +5435,7 @@ const COT_CME_PROMPT_VERSION = 1;
 // kandidat TP disaring RR>=AATAS_MIN_RR (bukan 1:1) & instruksi tp menyebut 1:2;
 // paksaan "pilih zona terdekat ke Now" DIHAPUS, diganti tuntutan konsisten dengan
 // fib_reason AI sendiri (bukan tabel kedalaman baru — keputusan user).
-const AATAS_PROMPT_VERSION = 8;
+const AATAS_PROMPT_VERSION = 9;
 
 // (2026-09-02) `final_validation` (Step 8, COT/retail) dipaksa nilai ini untuk SEMUA
 // setup AATAS — Call 2 (yang mengisi field ini di v1/v2) tidak pernah menerima data
@@ -6562,6 +6566,14 @@ function _calEventMsWib(dateStr, timeWib) {
 // (~baris 3376). XAU otomatis ke-filter ke leg USD saja karena calendar events
 // tidak pernah punya currency "XAU" — tidak perlu isXau khusus. Pure function,
 // dites di ta_struct.test.js.
+function _aatasEventWait(events, label, nowMs) {
+  const legs = String(label || '').toUpperCase().split('/');
+  const upcoming = (Array.isArray(events) ? events : []).filter(e => e && e.impact === 'High' && legs.includes(e.currency))
+    .map(e => ({event:e.event,currency:e.currency,at:_calEventMsWib(e.date,e.time_wib)}))
+    .filter(e => Number.isFinite(e.at) && e.at >= nowMs && e.at - nowMs < 6 * 3600000);
+  return { until: upcoming.length ? Math.max(...upcoming.map(e=>e.at)) : null, events: upcoming };
+}
+
 function _buildAnalyzeCalBlock(calThis, calNext, legs, nowMs) {
   if (!Array.isArray(legs) || legs.length === 0) return '';
   const events = [...(calThis?.events || []), ...(calNext?.events || [])];
@@ -6581,7 +6593,7 @@ function _buildAnalyzeCalBlock(calThis, calNext, legs, nowMs) {
 
   const lines = upcoming.map(e => {
     const fp = (e.forecast || e.previous) ? ` [F: ${e.forecast || '—'} | P: ${e.previous || '—'}]` : '';
-    return `- ${e.date} | ${e.time_wib} | ${e.currency} | ${e.event}${fp}`;
+    return `- ${e.date} | ${e.time_wib} WIB | ${e.currency} | ${e.event}${fp} [dalam ${((e._ms-nowMs)/3600000).toFixed(1)} jam]`;
   });
   // Umur cache: calendar_v1/calendar_next_v1 (TTL 6 jam) cuma dijaga fresh oleh
   // polling tab Kalender manual — beda dari blok lain (fundamental/makro) yang semua
@@ -6896,12 +6908,16 @@ async function ohlcvAnalyzeHandler(req, res) {
     // baca cache calendar_v1/calendar_next_v1 (ditulis api/calendar.js, TTL 6h,
     // dijaga fresh oleh polling tab Kalender) — JANGAN fetch TradingView baru di sini.
     let calAnalyzeBlock = '';
+    let aatasCalendarEvents = [];
     try {
       const [rawCalThis, rawCalNext] = await Promise.all([
         redisCmd('GET', 'calendar_v1'),
         redisCmd('GET', 'calendar_next_v1'),
       ]);
       const legs = String(data.label).toUpperCase().split('/').map(s => s.trim()).filter(Boolean);
+      const calendarThis = rawCalThis ? JSON.parse(rawCalThis) : null;
+      const calendarNext = rawCalNext ? JSON.parse(rawCalNext) : null;
+      aatasCalendarEvents = [...(calendarThis?.events || []), ...(calendarNext?.events || [])];
       calAnalyzeBlock = _buildAnalyzeCalBlock(
         rawCalThis ? JSON.parse(rawCalThis) : null,
         rawCalNext ? JSON.parse(rawCalNext) : null,
@@ -7853,6 +7869,19 @@ async function ohlcvAnalyzeHandler(req, res) {
     // nyata yang jadi dasar statistik — merusak persis data yang mau dijaga. Pola list
     // terpisah ini sudah dipakai `auto_skip_log`/`surprise_log:v1` untuk kebutuhan yang
     // sama ("kenapa kita TIDAK entry"). Baca via redis-keys?key=aatas_reject_log:v1.
+    if (isAutoCall && structured) {
+      const wait = _aatasEventWait(aatasCalendarEvents, data.label, Date.now());
+      structured.regime_check = { ...(structured.regime_check || {}),
+        event_wait_reported: structured.regime_check?.event_wait ?? null,
+        event_note_reported: structured.regime_check?.event_note ?? null,
+        event_wait: wait.until != null,
+        event_note: wait.until ? 'Tunggu sampai ' + new Date(wait.until).toISOString() + ' (jadwal kalender)' : 'Tidak ada event High relevan dalam kurang dari 6 jam pada kalender tersedia',
+      };
+      structured.entry_wait_until = wait.until;
+      structured.trigger_reported = structured.trigger ?? null;
+      structured.trigger = structured.entry_zone ? 'Sentuhan zona ' + structured.entry_zone + (wait.until ? ' setelah ' + new Date(wait.until).toISOString() : '') + '; tunduk jadwal event High relevan' : null;
+    }
+
     if (isAutoCall && !isDiagnosticOnly && structured && structured.aatas_reject_reason) {
       const rejectEntry = {
         ts: Date.now(), symbol, label: data.label,
@@ -8027,6 +8056,10 @@ async function ohlcvAnalyzeHandler(req, res) {
         // karena ada teks bebas yang bisa dibaca ulang manusia/AI lain. Skema terstruktur
         // hanya menangkap pertanyaan yang sudah terpikirkan saat skema dibuat.
         ...(isAutoCall ? {
+          entry_execution: 'zone_touch_after_calendar',
+          trigger: structured.trigger ?? null,
+          trigger_reported: structured.trigger_reported ?? null,
+          entry_wait_until: structured.entry_wait_until ?? null,
           regime_check: structured.regime_check ?? null,
           gate_validitas_driver: structured.gate_validitas_driver ?? null,
           gate_risk_management: structured.gate_risk_management ?? null,
@@ -8167,7 +8200,11 @@ async function ohlcvAnalyzeHandler(req, res) {
                     // regime/model/commentary di blok ini. Level yang benar-benar dipasang
                     // lahir dari penilaian checklist SAAT refine, bukan generasi pertama;
                     // menyimpan skor lama di sebelah level baru itu jejak audit yang bohong.
-                    regime_check: structured.regime_check ?? null,
+                    entry_execution: 'zone_touch_after_calendar',
+          trigger: structured.trigger ?? null,
+          trigger_reported: structured.trigger_reported ?? null,
+          entry_wait_until: structured.entry_wait_until ?? null,
+          regime_check: structured.regime_check ?? null,
                     gate_validitas_driver: structured.gate_validitas_driver ?? null,
                     gate_risk_management: structured.gate_risk_management ?? null,
                     fundamental_bias: structured.fundamental_bias ?? null,
@@ -8993,3 +9030,5 @@ module.exports.AATAS_PROMPT_VERSION = AATAS_PROMPT_VERSION;
 module.exports.parseRSSHeadlines = parseRSSHeadlines;
 module.exports.parsePushRSS = parsePushRSS;
 module.exports.BLOCKED_HEADLINE_RE = BLOCKED_HEADLINE_RE;
+
+module.exports._aatasEventWait = _aatasEventWait;

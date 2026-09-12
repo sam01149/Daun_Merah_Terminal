@@ -177,7 +177,7 @@ test('Tahap 1 e2e: blok [DATA RILIS EKONOMI] kedua kaki masuk Call 1 DAN Kritiku
 });
 
 test('AATAS_PROMPT_VERSION: 6 = blok data rilis di Call 1; 7 = definisi technical.score_pct; 8 = Tahap 3 jalan tengah (menu TP 1:2 + tanpa paksaan zona terdekat)', () => {
-  assert.equal(AATAS_PROMPT_VERSION, 8);
+  assert.equal(AATAS_PROMPT_VERSION, 9);
 });
 
 test('Tahap 3 jalan tengah (v8): Call 2 auto menyebut menu TP 1:2 dan menuntut entry konsisten fib_reason, TANPA "pilih yang lebih dekat ke Now"; manual tetap 1:1 + tie-break lama', async () => {
@@ -1968,4 +1968,17 @@ test('S359 Gate1 rejects empty driver, duplicate confirmations and direction dis
   const r=_evaluateAatasGate1({fundamental_bias:{...fb,...edit},lockedBias:bias,aiPass:true});
   assert.equal(r.pass,false);assert.equal(r.override_reason,reason);
  }
+});
+
+test('S359 event wait uses the actual WIB schedule and only relevant legs within six hours',()=>{
+ const {_aatasEventWait,_evaluateSetups}=require('../../api/admin');
+ const now=Date.parse('2026-09-10T00:00:00Z');
+ const ev={currency:'EUR',impact:'High',date:'2026-09-10',time_wib:'10:00',event:'ECB'};
+ assert.equal(_aatasEventWait([ev],'EUR/USD',now).until,now+3*3600000);
+ assert.equal(_aatasEventWait([ev],'AUD/NZD',now).until,null);
+ assert.equal(_aatasEventWait([{...ev,date:'2026-09-11'}],'EUR/USD',now).until,null);
+ const st={id:'test',symbol:'EURUSD=X',label:'EUR/USD',bias:'bullish',entry_zone:'100',sl:'90',tp:'120',status:'pending',ts:now,entry_execution:'zone_touch_after_calendar',horizon_days:3};
+ const c=h=>({t:(now+h*3600000)/1000,o:102,h:103,l:99,c:101});
+ _evaluateSetups([st],{'EURUSD=X':[c(1),c(4)]},now+5*3600000,[ev]);
+ assert.equal(st.status,'open');assert.equal(st.filled_t,c(4).t);
 });

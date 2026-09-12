@@ -579,6 +579,7 @@ const POLICY_EPOCHS = [
   { v: 50, from: '2026-09-12T01:30:29.684Z', kind: 'fix', impact: 'context', label: "S359 D4: jendela korelasi level 20/60 observasi dan jumlah sampel eksplisit" },
   { v: 51, from: '2026-09-12T01:36:26.627Z', kind: 'fix', impact: 'context', label: "S359 D5: refresh proyeksi inflasi resmi dan jelaskan perbedaan horizon" },
   { v: 52, from: '2026-09-12T01:40:23.140Z', kind: 'fix', impact: 'entry', label: "S359 A3: driver wajib terisi, konfirmasi tidak duplikat, arah konsisten" },
+  { v: 53, from: '2026-09-12T01:42:40.978Z', kind: 'fix', impact: 'entry', label: "S359 A2: waktu tunggu event dihitung kalender dan berlaku pada fill" },
 ];
 
 // AATAS_EPOCH (2026-08-22, keputusan user): batas populasi statistik dashboard
