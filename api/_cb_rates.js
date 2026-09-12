@@ -351,7 +351,14 @@ async function getLiveCbRates() {
 // bisa basi kapan saja). Bug lama (2026-07-29): heuristik diff ini dulu SELALU
 // menang kalau selisih >=5bps, walau dec sudah ada dan valid.
 function mergeCbRate(cur, fb, live, dec, rateSource) {
-  const rate = live?.rate ?? fb.rate;
+  const validRate = v => typeof v === 'number' && Number.isFinite(v) && v >= -1 && v <= 25;
+  const dateMs = v => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) && Number.isFinite(Date.parse(v)) ? Date.parse(v) : null;
+  const liveDate = dateMs(live?.date), decisionDate = dateMs(dec?.last_meeting);
+  // A freshly fetched BIS observation can still predate the latest decision.
+  // Keep the value and observation date together, not the fetch timestamp.
+  const useDecisionRate = validRate(dec?.rate) && decisionDate != null
+    && (!validRate(live?.rate) || liveDate == null || decisionDate >= liveDate);
+  const rate = useDecisionRate ? dec.rate : (validRate(live?.rate) ? live.rate : fb.rate);
   const diff = live?.rate != null ? Math.round((live.rate - fb.rate) * 100) : 0;
   const rateChanged = Math.abs(diff) >= 5;
   const useHeuristic = !dec && rateChanged;
@@ -364,7 +371,9 @@ function mergeCbRate(cur, fb, live, dec, rateSource) {
     last_meeting:  dec?.last_meeting  || fb.last_meeting,
     last_decision: dec?.last_decision || (useHeuristic ? (diff > 0 ? 'hike' : 'cut') : fb.last_decision),
     last_bps:      dec?.last_bps ?? (useHeuristic ? diff : fb.last_bps),
-    rate_source:   rateSource,
+    rate_source:   useDecisionRate ? 'decision' : rateSource,
+    rate_as_of:    useDecisionRate ? dec.last_meeting : (live?.date || null),
+    decision_rate: validRate(dec?.rate) ? dec.rate : null,
   };
 }
 

@@ -1676,7 +1676,7 @@ async function fundamentalGetHandler(req, res) {
       bucket[`${cb.short} Rate`] = {
         actual: `${cb.rate}%`,
         period: cb.last_meeting,
-        date: cb.last_meeting,
+        date: cb.rate_as_of || cb.last_meeting,
         source: cb.rate_source,
       };
     }

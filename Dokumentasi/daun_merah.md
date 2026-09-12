@@ -24,6 +24,8 @@ Perintah user: perbaiki hasil audit memakai framework CLAUDE.md. Perbaikan diker
 
 **D1 live (12 September):** 10 indikator GBP/AUD/EUR dipulihkan dari kalender sumber asli dengan backup .cache/inflation-repair-backup.json dan CAS atomik; baca ulang seluruhnya cocok. **D2:** forecast/previous kosong pada rilis kalender baru tidak lagi mewarisi rilis lama; headline actual baru membuang forecast lama dan mempertahankan previous eksplisit walaupun sama dengan actual. Epoch v48; tes regresi lintas rilis dan revisi.
 
+**D3 — Suku bunga:** mergeCbRate kini membandingkan tanggal observasi dengan keputusan resmi. Keputusan baru mengalahkan BIS yang baru di-fetch tetapi observasinya lama; rate_as_of dan decision_rate menjaga provenance, kartu Fundamental memakai tanggal angka yang dipilih. Epoch v49. Nilai fallback/keputusan tanpa tanggal tidak diperlakukan sebagai observasi baru.
+
 ## Changelog Session 358 (2026-09-11) — Audit kualitas, distribusi, kelengkapan, akurasi, dan keputusan data
 
 **Kesimpulan:** data belum layak dianggap benar hanya karena tersedia dan cache aktif. Kesalahan periode inflasi sudah terbukti pada data produksi dan mengalir ke keputusan AATAS. Audit ini menghasilkan diagnosis dan prioritas perbaikan, bukan perubahan kebijakan trading. Tidak ada kode runtime/data produksi yang diubah atau panggilan AI yang dipicu.
