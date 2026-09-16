@@ -24,6 +24,19 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 
 ## Riset Aktif
 
+### [2026-09-16] Alternatif DeepSeek setelah top-up dibatalkan — seleksi legal, teknis, dan biaya
+
+Dipicu seluruh top-up DeepSeek akun ini (`Card`, `Google Pay`, `PayPal`) berstatus `Cancelled` sejak 7 Agu; sebelumnya PayPal dan Card pernah sukses. Tujuan riset ini **bukan** mengganti provider atau membuka akun baru, melainkan menentukan kandidat yang legal dan realistis bila DeepSeek tidak memulihkan pembayaran.
+
+| Kandidat | Hasil | Alasan yang diverifikasi |
+|---|---|---|
+| **Gemini API (sudah aktif)** | **Satu-satunya kandidat operasional segera, tetapi hanya fallback fitur yang tetap ditinjau manusia** | Sudah ada `GEMINI_API_KEY`, kode fallback Call 1/2, dan produksi Fundamental/Jurnal/Translate. Free tier tetap tersedia; paid tier memakai Google Cloud Billing/prepay. Namun kuota akun yang pernah terukur proyek ini hanya ~20 request/hari (guard 16/hari), jadi tidak cukup menggantikan seluruh trafik DeepSeek/auto-entry tanpa billing dan uji kualitas. [Billing](https://ai.google.dev/gemini-api/docs/billing), [Pricing](https://ai.google.dev/gemini-api/docs/pricing) |
+| **OpenAI API** | **Tidak cocok untuk jalur auto-entry; mungkin hanya kandidat manual jika nanti user memilih provider berbayar baru** | Kebijakan OpenAI melarang otomatisasi keputusan berisiko tinggi di area finansial tanpa human review. Karena auto-entry tidak memiliki review manusia sebelum hasil dipakai, provider ini tidak boleh dipasang di jalur tersebut. Pemakaian informasi/manual masih harus diputuskan terpisah, termasuk metode bayar dan uji output. [Usage Policies](https://openai.com/policies/usage-policies/) |
+| **Mistral API** | **DITOLAK** | Usage Policy efektif 11 Jun 2026 secara eksplisit melarang investment advice, financial planning, dan financial guidance. Ini menutup pemakaian Daun Merah, terlepas dari saldo $9,96 dan opsi PAYG-nya. [Usage Policy](https://legal.mistral.ai/terms/usage-policy/) |
+| **Together AI** | **DITOLAK** | Terms melarang pengiriman financial information "of any nature" ke layanan. Prompt dan konteks harga/makro Daun Merah tidak aman diasumsikan lolos batas ini. [Terms](https://www.together.ai/terms-of-service) |
+
+**Kesimpulan kerja:** DeepSeek tetap dipertahankan sebagai pilihan utama karena murah, efisien, dan sudah terbukti cocok kualitas/formatnya di aplikasi ini; tunggu respons support dan jangan retry payment. Akun **Gemini Plus** dan **ChatGPT Plus** milik user bukan kredit/API key produksi, sedangkan **Qwen 3.8** khusus pekerjaan kantor—semuanya di luar scope dan tidak digunakan. Big Pickle juga bukan jalan keluar: sudah ditolak 2026-09-06 karena latensi 6-27 detik yang tak konsisten dan free-usage limit sangat kecil. Tidak ada perubahan kode atau provider.
+
 ### [2026-09-02] Pencarian data premium gratis di GitHub — follow-up evaluasi TimesFM (NFP & BTC)
 
 Dipicu pertanyaan user: data premium apa yang bisa menutup celah NFP (STOP) & BTC vol-regime (ceiling AUC 0.63), siapa tahu ada versi gratis di GitHub. Web search 2026-09-02:
