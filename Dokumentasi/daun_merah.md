@@ -16,6 +16,10 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
+## Changelog Session 360 (2026-09-16) — Pemberitahuan AI tidak tersedia
+
+Analisa AI per Pair kini menampilkan pesan singkat ketika DeepSeek tidak dapat dihubungi, tanpa menghapus data teknikal yang masih dapat dibaca. Detail perubahan AATAS (status persisten serta alert gagal/pulih) dicatat di `professional_llm_trader/changelog.md` sesuai routing auto-entry.
+
 ## Changelog Session 359 (2026-09-11 sampai 12) — Perbaikan hasil audit kualitas data
 
 Perintah user: perbaiki hasil audit memakai framework CLAUDE.md. Perbaikan dikerjakan serial per cacat; status tiap paket dicatat di bawah. Runtime baru dinyatakan terverifikasi setelah tes dan pemeriksaan fungsional.

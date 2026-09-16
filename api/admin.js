@@ -705,6 +705,8 @@ const KEY_REGISTRY = [
   { key: 'health_last_ok',     owner: 'api/admin.js',          ttl_expected: null,   note: 'HSET: source → last OK timestamp for alerting' },
   { key: 'push_subs',          owner: 'api/admin.js',          ttl_expected: null,   note: 'HSET push subscriptions endpoint → JSON' },
   { key: 'push_subs_dev',      owner: 'api/admin.js',          ttl_expected: null,   note: 'HSET push subscriptions dev-only (alert TP/SL setup_log_auto:v1) endpoint → JSON, terpisah dari push_subs publik' },
+  { key: 'aatas_ai_health:v1', owner: 'api/admin.js',          ttl_expected: null,   note: 'Status operasional AI AATAS (unavailable dipertahankan hingga sukses; available TTL 24j), dibaca konsol developer' },
+  { key: 'aatas_ai_alert:v1',  owner: 'api/admin.js',          ttl_expected: 21600,  note: 'Dedup alert Telegram/PWA kesehatan AI AATAS, maksimum satu alert gagal per 6 jam' },
   { key: 'seen_guids_set',     owner: 'api/admin.js',          ttl_expected: 86400,  note: 'Redis SET of seen RSS GUIDs for push dedup (SADD/SMEMBERS, atomic)' },
   { key: 'push_lock',          owner: 'api/admin.js',          ttl_expected: 55,     note: 'Distributed lock to prevent concurrent push cron runs' },
   { key: 'sizing_history:*',   owner: 'api/sizing-history.js', ttl_expected: null,   note: 'Sorted set: sizing calculations per device (max 10 entries)' },
@@ -1261,6 +1263,126 @@ async function _notifyAutoEntryTelegram(setup, status, opts = {}) {
     });
     await _sendTelegramRaw(text, { logPrefix: 'auto-entry' });
   } catch (e) { console.warn('_notifyAutoEntryTelegram gagal:', e.message); }
+}
+
+// Status AI AATAS sengaja dipisah dari circuit breaker. Circuit breaker adalah rem
+// internal yang berdurasi pendek; status ini adalah jejak yang dibaca manusia di
+// konsol developer agar slot auto yang gagal tidak terlihat seperti "memang tidak ada
+// kandidat". Hanya jalur auto terautentikasi yang menulisnya.
+const AATAS_AI_HEALTH_KEY = 'aatas_ai_health:v1';
+const AATAS_AI_ALERT_DEDUP_KEY = 'aatas_ai_alert:v1';
+const AATAS_AI_ALERT_DEDUP_SEC = 6 * 60 * 60;
+
+function _describeAatasAiFailure(error) {
+  const value = String(error || 'unknown');
+  if (value.includes('HTTP402_insufficient_balance')) return 'Saldo API DeepSeek habis (HTTP 402).';
+  if (value.includes('AI daily budget exceeded')) return 'Batas panggilan harian internal AATAS tercapai.';
+  if (value.includes('circuit_open')) return 'Circuit breaker sedang menahan panggilan setelah kegagalan sebelumnya.';
+  if (value.includes('no_key')) return 'Kunci API DeepSeek belum tersedia di server.';
+  if (value.includes('parse_gagal')) return 'Respons AI tidak dapat dibaca oleh validator.';
+  return 'DeepSeek tidak merespons atau menolak panggilan.';
+}
+
+function _formatAatasAiHealthNotification(health) {
+  const unavailable = health?.state === 'unavailable';
+  if (unavailable) {
+    return {
+      telegram: [
+        '*AATAS: AI sedang bermasalah*',
+        health.reason || 'Penyebab belum teridentifikasi.',
+        'Tidak ada setup virtual baru yang dibuat. Pemantauan TP/SL setup yang sudah ada tetap berjalan.',
+      ].join('\n'),
+      push: {
+        title: 'AATAS: AI sedang bermasalah',
+        body: 'Setup virtual baru ditahan aman. Pemantauan setup lama tetap berjalan.',
+        url: '/dev-auto-entry.html', icon: '/icon.svg',
+      },
+    };
+  }
+  return {
+    telegram: '*AATAS: AI pulih*\nPanggilan DeepSeek kembali berhasil. Siklus berikutnya dapat menilai kandidat baru.',
+    push: {
+      title: 'AATAS: AI pulih',
+      body: 'Panggilan DeepSeek kembali berhasil; kandidat berikutnya dapat dinilai.',
+      url: '/dev-auto-entry.html', icon: '/icon.svg',
+    },
+  };
+}
+
+async function _getAatasAiHealth() {
+  try {
+    const raw = await redisCmd('GET', AATAS_AI_HEALTH_KEY);
+    const parsed = raw ? JSON.parse(raw) : null;
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch (e) {
+    console.warn('AATAS AI health read gagal:', e.message);
+    return null;
+  }
+}
+
+async function _recordAatasAiUnavailable(error) {
+  try {
+    const previous = await _getAatasAiHealth();
+    const now = new Date().toISOString();
+    const health = {
+      state: 'unavailable',
+      reason: _describeAatasAiFailure(error),
+      since: previous?.state === 'unavailable' && previous.since ? previous.since : now,
+      checked_at: now,
+    };
+    await redisCmd('SET', AATAS_AI_HEALTH_KEY, JSON.stringify(health));
+    const firstAlert = await redisCmd('SET', AATAS_AI_ALERT_DEDUP_KEY, '1', 'NX', 'EX', String(AATAS_AI_ALERT_DEDUP_SEC));
+    return { health, shouldNotify: firstAlert === 'OK' };
+  } catch (e) {
+    console.warn('AATAS AI health unavailable record gagal:', e.message);
+    return null;
+  }
+}
+
+async function _recordAatasAiRecovered() {
+  try {
+    const previous = await _getAatasAiHealth();
+    if (previous?.state !== 'unavailable') return { health: previous, shouldNotify: false };
+    const health = {
+      state: 'available',
+      recovered_at: new Date().toISOString(),
+      previous_reason: previous.reason || null,
+    };
+    await redisCmd('SET', AATAS_AI_HEALTH_KEY, JSON.stringify(health), 'EX', '86400');
+    await redisCmd('DEL', AATAS_AI_ALERT_DEDUP_KEY);
+    return { health, shouldNotify: true };
+  } catch (e) {
+    console.warn('AATAS AI health recovery record gagal:', e.message);
+    return null;
+  }
+}
+
+async function _sendAatasAiHealthPush(payload) {
+  if (!configureVapid()) return;
+  let subs = [];
+  try {
+    const raw = await redisCmd('HGETALL', 'push_subs_dev');
+    if (Array.isArray(raw)) {
+      for (let i = 0; i < raw.length; i += 2) { try { subs.push(JSON.parse(raw[i + 1])); } catch (e) {} }
+    }
+  } catch (e) { return; }
+  if (!subs.length) return;
+  try {
+    const staleKeys = await sendWebPush(subs, payload);
+    if (staleKeys.length) await redisCmd('HDEL', 'push_subs_dev', ...staleKeys).catch(() => {});
+  } catch (e) { console.warn('AATAS AI health web push gagal:', e.message); }
+}
+
+async function _dispatchAatasAiHealthNotification(health) {
+  const notification = _formatAatasAiHealthNotification(health);
+  // Alert best-effort tidak boleh memperpanjang slot AI sampai timeout Vercel.
+  await Promise.race([
+    Promise.allSettled([
+      _sendTelegramRaw(notification.telegram, { logPrefix: 'aatas-ai-health' }),
+      _sendAatasAiHealthPush(notification.push),
+    ]),
+    new Promise(resolve => setTimeout(resolve, 2500)),
+  ]);
 }
 
 // Push terpisah untuk transisi tp/sl yang DITAHAN oleh _corroborateGoldTransitions
@@ -4306,11 +4428,11 @@ async function setupStatsHandler(req, res) {
         try {
           const lastRunAt = await redisCmd('GET', SETUP_STATS_LAST_RUN_KEY);
           if (isCronDedupFresh(lastRunAt, Date.now(), SETUP_STATS_CRON5_DEDUP_WINDOW_MS)) {
-            return res.status(200).json(await _cheapAutoScopeStats());
+            return res.status(200).json({ ...(await _cheapAutoScopeStats()), ai_health: await _getAatasAiHealth() });
           }
         } catch (e) { /* dedup check gagal -> fail-open, tetap evaluasi penuh */ }
       }
-      return res.status(200).json(await _buildAutoScopeStats());
+      return res.status(200).json({ ...(await _buildAutoScopeStats()), ai_health: await _getAatasAiHealth() });
     }
 
     const raw = await redisCmd('GET', 'setup_log:v1');
@@ -7388,6 +7510,7 @@ async function ohlcvAnalyzeHandler(req, res) {
       });
       rawText = r.rawText;
       model = r.model;
+      if (r.error) deepseekError = r.error;
     }
 
     // ── AATAS v2: pipeline dua panggilan (HANYA jalur auto-entry) ──────────────
@@ -7430,6 +7553,15 @@ async function ohlcvAnalyzeHandler(req, res) {
       aatasPrompts = run.prompts;
       model = run.model;
       if (run.error) deepseekError = run.error;
+      // Kegagalan AATAS sebelumnya hanya jadi console log/response cron 200; operator
+      // tidak bisa membedakannya dari siklus yang memang tidak menemukan kandidat.
+      // Simpan state dulu, lalu alert transisi saja (1x/6 jam + satu alert pulih).
+      if (!isDiagnosticOnly) {
+        const healthEvent = run.error
+          ? await _recordAatasAiUnavailable(run.error)
+          : await _recordAatasAiRecovered();
+        if (healthEvent?.shouldNotify) await _dispatchAatasAiHealthNotification(healthEvent.health);
+      }
     }
 
     let structured = null, commentary = aatasParsed ? aatasCommentary : rawText;
@@ -7869,6 +8001,12 @@ async function ohlcvAnalyzeHandler(req, res) {
         : undefined,
     };
 
+    if (deepseekError && !isDiagnosticOnly) {
+      resultPayload.ai_status = {
+        state: 'unavailable',
+        reason: _describeAatasAiFailure(deepseekError),
+      };
+    }
     if (!commentary && !structured) {
       resultPayload.error = 'DeepSeek sedang offline, timeout, atau limit harian habis';
     }
@@ -9042,6 +9180,8 @@ module.exports._resolveFundamentalPct = _resolveFundamentalPct;
 module.exports._autoEntryStatusLabel = _autoEntryStatusLabel;
 module.exports._formatAutoEntrySignalMessage = _formatAutoEntrySignalMessage;
 module.exports._notifyAutoEntryTelegram = _notifyAutoEntryTelegram;
+module.exports._describeAatasAiFailure = _describeAatasAiFailure;
+module.exports._formatAatasAiHealthNotification = _formatAatasAiHealthNotification;
 module.exports._findSwings = _findSwings;
 module.exports._classifyStructure = _classifyStructure;
 module.exports._clusterSrLevels = _clusterSrLevels;

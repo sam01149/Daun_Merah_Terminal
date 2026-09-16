@@ -4468,7 +4468,7 @@ window.addEventListener('DOMContentLoaded', () => _updateNewsLangBtn());
 
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.09.12.2';
+const APP_VERSION = '2026.09.16.1';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
@@ -4827,7 +4827,7 @@ if ('serviceWorker' in navigator) {
     window.location.reload();
   });
 
-  navigator.serviceWorker.register('./sw.js').then(reg => {
+  navigator.serviceWorker.register('./sw.js?v=' + APP_VERSION).then(reg => {
     if ('periodicSync' in reg) {
       navigator.permissions.query({ name:'periodic-background-sync' }).then(status => {
         if (status.state === 'granted') {
@@ -7392,12 +7392,16 @@ async function analyzeOhlcvAi(force) {
         const errText = /[.!?]$/.test(errMsg) ? errMsg : errMsg + '.';
         resultEl.innerHTML = `<div class="analisa-ai-result" style="color:var(--muted)">${escHtml(errText)}</div>`;
         resultEl.style.display = 'block';
+        if (data.ai_status?.state === 'unavailable') {
+          showToast('AI sedang bermasalah', 'Analisa AI baru tidak dibuat. Data teknikal tetap tersedia; coba lagi setelah DeepSeek pulih.', 7000);
+        }
       }
     }
   } catch(e) {
     if (analisaActive.symbol === reqSymbol) {
       resultEl.innerHTML = `<div class="analisa-ai-result" style="color:var(--red)">Error: ${escHtml(e.message)}</div>`;
       resultEl.style.display = 'block';
+      showToast('AI sedang bermasalah', 'Analisa AI tidak dapat dihubungi. Data teknikal yang sudah tampil tidak dihapus.', 7000);
     }
   } finally {
     btn.classList.remove('loading');

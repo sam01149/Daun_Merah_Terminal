@@ -265,7 +265,7 @@ if (localStorage.getItem('dm_dev_theme') === 'light') {
         <span id="themeLabel">Gelap</span>
       </button>
       <span class="dot" id="notifDot"></span>
-      <button id="btnNotifToggle">Notif TP/SL: off</button>
+      <button id="btnNotifToggle">Notif AATAS: off</button>
       <span class="dot" id="secretDot"></span>
       <span id="secretLabel">belum login</span>
       <button id="btnChangeSecret">ganti secret</button>
@@ -305,6 +305,11 @@ if (localStorage.getItem('dm_dev_theme') === 'light') {
       </div>
       <p class="hint">On-demand saja (tidak auto-refresh) — query langsung ke DeepSeek, bukan generate call, tidak masuk pagar biaya 50/hari. Deteksi saldo habis di jalur produksi tetap reaktif (HTTP 402 saat generate, auto-fallback Gemini) — cek manual di sini untuk tahu LEBIH AWAL sebelum itu terjadi.</p>
       <div class="grid" id="balanceStats"><div class="empty">Belum dicek — klik "Cek Saldo".</div></div>
+    </div>
+
+    <div class="card" id="card-ai-health">
+      <h2>Status AI AATAS</h2>
+      <div id="aatasAiHealth"><div class="empty">Belum dimuat — klik Refresh.</div></div>
     </div>
 
     <div class="card" id="card-gate">
@@ -518,7 +523,7 @@ if (localStorage.getItem('dm_dev_theme') === 'light') {
   function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
   function fmtTs(t){ if (!t) return '—'; try { return new Date(t).toLocaleString('id-ID', { hour12:false }); } catch(e){ return String(t); } }
 
-  // Q-7 (2026-07-28): notifikasi push TP/SL setup_log_auto:v1 — subscription
+  // Notifikasi push AATAS: transisi TP/SL dan kesehatan AI — subscription
   // TERPISAH dari push berita index.html (endpoint push_subscribe_dev, hash
   // Redis push_subs_dev, lihat api/admin.js). Sengaja pakai VAPID public key
   // YANG SAMA dengan index.html (satu pasang kunci untuk seluruh app), tapi
@@ -534,7 +539,7 @@ if (localStorage.getItem('dm_dev_theme') === 'light') {
   const NOTIF_LS = 'dm_dev_notif_subscribed';
   function refreshNotifStatus(on){
     document.getElementById('notifDot').className = 'dot ' + (on ? 'ok' : 'bad');
-    document.getElementById('btnNotifToggle').textContent = 'Notif TP/SL: ' + (on ? 'on' : 'off');
+    document.getElementById('btnNotifToggle').textContent = 'Notif AATAS: ' + (on ? 'on' : 'off');
   }
   async function enableNotif(){
     if (!('serviceWorker' in navigator) || !('PushManager' in window)) { alert('Browser ini tidak mendukung push notification.'); return; }
@@ -1340,6 +1345,21 @@ if (localStorage.getItem('dm_dev_theme') === 'light') {
   }
   renderStatusFilterBtns();
 
+  function renderAatasAiHealth(health){
+    const el = document.getElementById('aatasAiHealth');
+    if (!health) {
+      el.innerHTML = '<div class="empty">Belum ada kegagalan AI AATAS yang tercatat.</div>';
+      return;
+    }
+    if (health.state === 'unavailable') {
+      const since = health.since ? fmtTs(health.since) : '—';
+      el.innerHTML = `<div class="warnbox"><b>AI AATAS sedang bermasalah</b><br>${esc(health.reason || 'Penyebab belum teridentifikasi.')} Sejak ${esc(since)}. Setup virtual baru ditahan aman; pemantauan TP/SL setup yang sudah ada tetap berjalan.</div>`;
+      return;
+    }
+    const recovered = health.recovered_at ? fmtTs(health.recovered_at) : '—';
+    el.innerHTML = `<div class="grid">${statBlock('Status AI AATAS', 'PULIH', 'green')}${statBlock('Pulih pada', recovered)}</div>`;
+  }
+
   async function loadDashboard(){
     if (!getSecret()) return;
     const { json } = await api('setup_stats', { query: { scope: 'auto' }, silent: true });
@@ -1351,6 +1371,7 @@ if (localStorage.getItem('dm_dev_theme') === 'light') {
       document.getElementById('metaStats').innerHTML = '';
       document.getElementById('calibStats').innerHTML = '';
       document.getElementById('symbolCards').innerHTML = '';
+      document.getElementById('aatasAiHealth').innerHTML = '<div class="empty">Status AI tidak dapat dibaca karena akses ditolak.</div>';
       renderRecent([]);
       return;
     }
@@ -1360,6 +1381,7 @@ if (localStorage.getItem('dm_dev_theme') === 'light') {
     renderGateGhost(json.global);
     renderMeta(json.consistency, json.pipeline_latency);
     renderCalibration(json.global && json.global.confidence_calibration);
+    renderAatasAiHealth(json.ai_health);
     renderSymbols(json.symbols);
     ACTIVE_FILTER_PAIRS = Object.keys(json.symbols || {});
     POLICY_EPOCHS = Array.isArray(json.policy_epochs) ? json.policy_epochs : [];
@@ -1428,7 +1450,10 @@ if (localStorage.getItem('dm_dev_theme') === 'light') {
     const orig = btn.textContent;
     btn.textContent = '...';
     try {
-      await api('ohlcv_analyze', { query: { symbol: btn.dataset.symbol, label: btn.dataset.label, auto: '1' } });
+      const { json, errMsg } = await api('ohlcv_analyze', { query: { symbol: btn.dataset.symbol, label: btn.dataset.label, auto: '1' } });
+      if (errMsg || json?.ai_status?.state === 'unavailable') {
+        alert('AATAS: AI sedang bermasalah. Setup virtual baru tidak dibuat; pemantauan TP/SL setup lama tetap berjalan. Lihat Status AI AATAS untuk penyebabnya.');
+      }
       await loadDashboard();
     } finally { btn.disabled = !document.getElementById('triggerUnlock').checked; btn.textContent = orig; }
   });

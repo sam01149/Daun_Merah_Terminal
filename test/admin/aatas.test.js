@@ -30,7 +30,17 @@ const {
   _isStructureOpposingBias,
   _enforceAatasRrGate, _normalizeFundamentalCase,
   _goldYieldCorrAnomaly, _countGoldRegimeAligned, _formatAatasCriticLine, _statsPayloadFromLog, AATAS_PROMPT_VERSION,
+  _describeAatasAiFailure, _formatAatasAiHealthNotification,
 } = loadHandler();
+
+test('AATAS AI health: penyebab disanitasi untuk operator dan pesan selalu menegaskan fail-safe setup baru', () => {
+  assert.equal(_describeAatasAiFailure('HTTP402_insufficient_balance'), 'Saldo API DeepSeek habis (HTTP 402).');
+  assert.equal(_describeAatasAiFailure('AI daily budget exceeded'), 'Batas panggilan harian internal AATAS tercapai.');
+  assert.equal(_describeAatasAiFailure('circuit_open'), 'Circuit breaker sedang menahan panggilan setelah kegagalan sebelumnya.');
+  const notice = _formatAatasAiHealthNotification({ state: 'unavailable', reason: 'Saldo API DeepSeek habis (HTTP 402).' });
+  assert.match(notice.telegram, /Tidak ada setup virtual baru yang dibuat/);
+  assert.match(notice.push.body, /ditahan aman/);
+});
 
 // ── PLAN AC Tahap 1 (2026-09-06): blok [DATA RILIS EKONOMI] — fundamental:<CUR> ke Call 1 ─
 const { _hgetallToObj, _formatFundIndicatorLines, _formatFundReleaseBlock } = loadHandler();
@@ -1148,6 +1158,39 @@ function baseStore() {
     'ohlcv:GBPUSD=X:1h': JSON.stringify(mkTrendCandles(1.30, 1.28)),
   });
 }
+
+test('AATAS AI health: HTTP 402 mencatat status persisten dan payload dashboard tanpa membuat setup', async () => {
+  await withEnv({ CRON_SECRET: 'topsecret', DEEPSEEK_API_KEY: 'k' }, async () => {
+    const store = baseStore();
+    const redisStub = redisFetchStub(store);
+    const origFetch = global.fetch;
+    global.fetch = async (url, opts) => {
+      if (String(url).includes('fake-upstash.test')) return redisStub(url, opts);
+      if (String(url).includes('api.deepseek.com')) {
+        return { ok: false, status: 402, json: async () => ({ error: { message: 'insufficient balance' } }) };
+      }
+      throw new Error('unexpected network call: ' + url);
+    };
+    try {
+      const handler = loadHandler();
+      const failed = fakeRes();
+      await handler({
+        headers: { 'x-cron-secret': 'topsecret' }, method: 'GET',
+        query: { action: 'ohlcv_analyze', symbol: 'GBPUSD=X', label: 'GBP/USD', auto: '1' },
+      }, failed);
+      assert.equal(failed.statusCode, 200);
+      assert.equal(failed.body.ai_status.state, 'unavailable');
+      assert.match(failed.body.ai_status.reason, /saldo API DeepSeek habis/i);
+      assert.equal(store.strings['setup_log_auto:v1'], undefined, 'Call 1 gagal tidak boleh membuat setup virtual');
+      assert.equal(JSON.parse(store.strings['aatas_ai_health:v1']).state, 'unavailable');
+
+      const stats = fakeRes();
+      await handler({ headers: { 'x-cron-secret': 'topsecret' }, method: 'GET', query: { action: 'setup_stats', scope: 'auto' } }, stats);
+      assert.equal(stats.statusCode, 200);
+      assert.equal(stats.body.ai_health.state, 'unavailable');
+    } finally { global.fetch = origFetch; }
+  });
+});
 
 test('AATAS e2e: prompt jalur auto membawa blok checklist + field baru; jalur manual TIDAK berubah', async () => {
   await withEnv({ CRON_SECRET: 'topsecret', DEEPSEEK_API_KEY: 'k' }, async () => {
