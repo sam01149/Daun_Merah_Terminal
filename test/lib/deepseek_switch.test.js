@@ -20,15 +20,15 @@ function withEnv(values, fn) {
   }
 }
 
-test('DeepSeek nonaktif secara default dan kunci tidak dapat dipakai', () => {
-  withEnv({ DEEPSEEK_DISABLED: undefined, DEEPSEEK_API_KEY: 'secret-test' }, () => {
+test('DeepSeek nonaktif hanya bila DEEPSEEK_DISABLED=true diset eksplisit', () => {
+  withEnv({ DEEPSEEK_DISABLED: 'true', DEEPSEEK_API_KEY: 'secret-test' }, () => {
     assert.equal(isDeepSeekDisabled(), true);
     assert.equal(getDeepSeekApiKey(), null);
   });
 });
 
-test('DeepSeek hanya aktif lewat sakelar eksplisit dan semua konsumen memakai sakelar pusat', () => {
-  withEnv({ DEEPSEEK_DISABLED: 'false', DEEPSEEK_API_KEY: 'secret-test' }, () => {
+test('DeepSeek aktif secara default (tanpa env var) dan konsumen memakai sakelar pusat', () => {
+  withEnv({ DEEPSEEK_DISABLED: undefined, DEEPSEEK_API_KEY: 'secret-test' }, () => {
     assert.equal(isDeepSeekDisabled(), false);
     assert.equal(getDeepSeekApiKey(), 'secret-test');
   });

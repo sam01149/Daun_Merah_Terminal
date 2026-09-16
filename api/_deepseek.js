@@ -1,9 +1,8 @@
-// Sakelar global DeepSeek. Keadaan bawaan sengaja NONAKTIF agar deploy tidak bisa
-// mengirim prompt atau memakai saldo DeepSeek sebelum operator mengaktifkannya lagi.
-// Untuk mengaktifkan kembali setelah provider pengganti siap, set env produksi
-// DEEPSEEK_DISABLED=false lalu deploy/redeploy sesuai prosedur operasional.
+// Sakelar global DeepSeek. Default AKTIF — DeepSeek dinonaktifkan hanya jika
+// DEEPSEEK_DISABLED=true diset eksplisit di env. Kalau var tidak ada atau kosong,
+// DeepSeek tetap jalan selama DEEPSEEK_API_KEY tersedia.
 function isDeepSeekDisabled() {
-  return process.env.DEEPSEEK_DISABLED !== 'false';
+  return process.env.DEEPSEEK_DISABLED === 'true';
 }
 
 function getDeepSeekApiKey() {
