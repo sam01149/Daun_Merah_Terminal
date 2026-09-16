@@ -101,6 +101,18 @@ Call 4 (cek kontradiksi thesis terbuka):
 
 **Saldo habis (HTTP 402) di tengah bulan (Plan O-4):** aiCall() melempar 402 sebagai error status biasa (tidak beda dari 429/500) — ditangkap catch di tiap tingkat, ditandai eksplisit `deepseek:HTTP402_insufficient_balance` di log/providerLog, lalu fallback lanjut otomatis ke Gemini (Call 1/2) atau gagal total tanpa jaring pengaman lain (Call 3/4, sekarang DeepSeek-only). TIDAK hang, TIDAK butuh perubahan kode setelah user top-up lagi — begitu saldo terisi, request berikutnya otomatis balik pakai DeepSeek (tidak ada circuit breaker permanen untuk 402, hanya threshold kegagalan beruntun yang sama seperti error lain).
 
+**Matriks dampak saldo DeepSeek = 0 (audit kode 2026-09-16):** saldo habis tidak menghapus data maupun mematikan aplikasi. Setelah dua kegagalan beruntun, circuit breaker DeepSeek menahan panggilan AI sekitar 5 menit agar tidak terus mengirim request gagal; sesudah saldo terisi, request/probe berikutnya pulih otomatis.
+
+| Jalur | Yang tetap berjalan | Yang tidak tersedia/baru |
+|---|---|---|
+| Data pasar dan riwayat | RSS mentah, kalender/fundamental deterministik, COT/risk, sinkron candle OHLCV, cache dan jurnal tetap tersimpan. | Tidak ada penghapusan maupun backfill keputusan AI yang terlewat. |
+| Ringkasan Berita | Call 1 memakai Gemini lalu template deterministik; Call 2 memakai Gemini. Headline dan payload mentah tetap terbentuk. | Trade thesis baru (Call 3) dan alert kontradiksi thesis baru (Call 4) tidak dibuat; bias bank sentral mempertahankan nilai Redis lama bila Gemini juga gagal. |
+| Analisa AI per Pair | Candle, S/R, konfluensi dan konteks pair deterministik tetap dikirim; cache analisa yang terakhir berhasil tidak ditimpa hasil gagal. | Commentary, level entry/SL/TP dan struktur AI baru kosong; respons menandai `ai_unavailable`. |
+| Pre-entry dan Kritikus manual | Skor/checklist deterministik tetap tampil. | Verdict konsistensi dan verdict kritikus AI baru tidak ada. |
+| Auto-entry virtual | Pemantauan setup yang sudah ada (harga serta TP/SL) tetap berjalan karena kode/daemon, bukan AI. Position Review yang gagal memilih `HOLD`, bukan mengubah posisi. | Tidak lahir setup virtual baru: Call 1 DeepSeek gagal lebih dulu. Jika Call 2 gagal setelah Call 1 sukses, jalur juga dipaksa `NO TRADE`. Tidak ada order broker dari jalur ini. |
+
+**Celah informasi yang nyata:** bahan mentah tetap ada, tetapi periode saat AI tidak dapat dipanggil tidak memiliki narasi/thesis, alert kontradiksi, atau observasi kandidat auto-entry baru. Keputusan AI yang tidak sempat dibuat tidak dapat direkonstruksi persis setelah top-up karena harga dan berita sudah berubah. Karena itu, selama saldo kosong jangan menjadikan thesis/alert lama sebagai sinyal terkini; cek data harga dan kalender mentah. Gate A kritikus secara terpisah memang fail-open bila panggilannya sendiri error, tetapi pada saldo DeepSeek benar-benar nol tidak tercapai kandidat terstruktur untuk melewati Gate A karena Call 1 sudah gagal terlebih dahulu.
+
 **Riwayat Nemotron/Hermes/GLM (OpenRouter/Ollama/Cerebras) — DIHAPUS 2026-07-25:** sempat jadi kandidat primary Call 1 (session 162-163, kualitas bagus tapi latency 100% tidak terprediksi 7-41s), lalu didemote ke fallback cron-only, akhirnya dihapus total bersama kontrak vendornya (OpenRouter, Cerebras, Ollama Cloud diputus user). Riwayat lengkap eksperimen ada di git history / `daun_merah.md` kalau perlu rujukan — jangan diusulkan lagi tanpa alasan baru.
 
 ### 3.2 Analisa AI per Pair — `api/admin.js` (`action=ohlcv_analyze`)
