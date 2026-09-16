@@ -11,10 +11,26 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-09-12 (Session 359 — Perbaikan kualitas data)
+> **Last updated:** 2026-09-16 (Session 362 — Reaktivasi DeepSeek)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
+
+## Changelog Session 362 (2026-09-16) — Reaktivasi DeepSeek setelah top-up sukses
+
+User berhasil melakukan top-up $2,00 ke API resmi DeepSeek dan memperbarui `DEEPSEEK_API_KEY` di `.env.local`. Sakelar operator `DEEPSEEK_DISABLED=false` ditambahkan ke `.env.local` dan `.env.local.example` untuk mengalirkan kunci melalui modul sakelar pusat `api/_deepseek.js`.
+
+**Verifikasi:**
+1. Cek saldo via DeepSeek API (`/user/balance`) langsung dan via `admin.js?action=deepseek_balance`: total balance $2,00, `is_available: true`.
+2. Uji inferensi `deepseek-v4-flash` dan `deepseek-v4-pro` dengan parameter `thinking: { type: 'disabled' }`: kedua model membalas 200 OK secara instan.
+3. Uji diagnostik `admin.js?action=ohlcv_analyze&symbol=EURUSD=X&test_deepseek=1`: berhasil 200 OK dengan model `deepseek-v4-flash` dalam 7.741 ms tanpa error.
+4. Tes regresi unit test `npm test`: 1.325/1.325 test lulus 100%.
+
+## Changelog Session 361 (2026-09-16) — DeepSeek dihentikan sementara secara global
+
+Sakelar pusat `api/_deepseek.js` sekarang menonaktifkan DeepSeek secara default di seluruh aplikasi sebelum kunci atau jaringan disentuh. Karena itu tidak ada prompt maupun biaya baru ke DeepSeek; Ringkasan melanjutkan Call 1/2 via Gemini/template, sedangkan Call 3/4 menunggu provider pengganti. Detail dampak AATAS dicatat di `professional_llm_trader/changelog.md`.
+
+**Verifikasi:** tes regresi 1.325/1.325 lulus; tes baru memastikan key tidak dapat dipakai pada keadaan default dan seluruh pemanggil produksi wajib melalui sakelar pusat.
 
 ## Changelog Session 360 (2026-09-16) — Pemberitahuan AI tidak tersedia
 

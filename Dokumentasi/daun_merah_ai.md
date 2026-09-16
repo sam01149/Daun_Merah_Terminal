@@ -14,7 +14,7 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
 > **Dibuat:** 2026-07-11 (session 157)
-> **Update besar terakhir:** 2026-08-12 — SambaNova (2 akun) diputus kontrak total (akun diblokir billing SambaNova sendiri, ganti API key tidak memperbaikinya), semua kode chain-nya dihapus. Chain sekarang murni DeepSeek (berbayar, saldo top-up) ↔ Gemini (gratis) tergantung fitur. Sebelumnya (2026-07-25): OpenRouter, Cerebras, Groq, Ollama Cloud diputus kontraknya.
+> **Status provider DeepSeek (2026-09-16):** **PULIH & AKTIF KEMBALI.** User berhasil melakukan top-up $2,00. Kunci baru telah diset di `.env.local` bersama sakelar operator `DEEPSEEK_DISABLED=false`. Panggilan API terverifikasi normal (saldo $2,00 aktif, endpoint diagnostik `ohlcv_analyze` HTTP 200). Untuk Vercel produksi, pastikan `DEEPSEEK_API_KEY` dan `DEEPSEEK_DISABLED=false` diset di dashboard Vercel.
 > **Tujuan dokumen:** satu tempat untuk menjawab "fitur AI apa saja yang ada, dipanggil pakai model/provider apa, dan paling banyak dipakai berapa kali sehari" — supaya kalau ada laporan "AI error/limit habis", tinggal buka file ini dulu sebelum ngoprek kode.
 > **Vendor & non-AI infra:** lihat [daun_merah_vendor.md](daun_merah_vendor.md).
 > **Riset perbandingan provider (kenapa provider ini yang dipilih):** lihat [daun_merah.md § Research: Free AI Inference API Providers](daun_merah.md#research-free-ai-inference-api-providers-2026-05-28).
@@ -77,7 +77,7 @@ Satu kali "generate" sebenarnya adalah **3-4 panggilan AI sekaligus**, bukan 1:
 
 Call 1/2/3 hasilnya SAMA untuk semua orang (ditulis ke `latest_article`, satu key Redis global), jadi kalau banyak device klik "Ringkas Ulang" hampir bersamaan, generate ulang berkali-kali cuma menghasilkan kalimat beda-beda dari data yang sama — bukan informasi baru. Sekarang: request PERTAMA yang lolos rate limit mengunci `lock:market_digest_generate` lalu generate seperti biasa. Request LAIN yang datang selagi lock masih hidup (baik karena generate lagi berlangsung ATAU baru saja selesai — lock TIDAK di-release manual, TTL 55 detik dibiarkan jadi cooldown alami) langsung disajikan `latest_article` apa adanya, **tanpa** ikut generate — nol tambahan panggilan AI. Pengecualian: kalau `latest_article` benar-benar kosong (cold start, belum pernah ada cache sama sekali), request tetap lanjut generate walau lock dipegang, supaya user tidak dapat respons kosong. `thesis_alerts` di-null-kan pada respons short-circuit ini karena itu data personal (Call 4) — device yang "kalah" lock tidak ikut menampilkan alert milik device lain.
 
-**Rantai fallback provider (2026-08-12 — SambaNova akun-1/akun-2 diputus kontrak total, dihapus dari semua Call 1-4; sebelumnya 2026-07-25 OpenRouter/Cerebras/Groq/Ollama sudah dihapus total dari kode):**
+**Rantai fallback provider (2026-08-12 — SambaNova akun-1/akun-2 diputus kontrak total, dihapus dari semua Call 1-4; 2026-09-16 DeepSeek pulih setelah top-up):**
 
 ```
 Call 1 (prosa):
@@ -99,21 +99,21 @@ Call 4 (cek kontradiksi thesis terbuka):
   (kalau gagal: tidak ada thesis alert siklus itu, bukan error)
 ```
 
-**Saldo habis (HTTP 402) di tengah bulan (Plan O-4):** aiCall() melempar 402 sebagai error status biasa (tidak beda dari 429/500) — ditangkap catch di tiap tingkat, ditandai eksplisit `deepseek:HTTP402_insufficient_balance` di log/providerLog, lalu fallback lanjut otomatis ke Gemini (Call 1/2) atau gagal total tanpa jaring pengaman lain (Call 3/4, sekarang DeepSeek-only). TIDAK hang, TIDAK butuh perubahan kode setelah user top-up lagi — begitu saldo terisi, request berikutnya otomatis balik pakai DeepSeek (tidak ada circuit breaker permanen untuk 402, hanya threshold kegagalan beruntun yang sama seperti error lain).
+**Sakelar darurat operator (`api/_deepseek.js`, 2026-09-16):** modul sakelar pusat mengontrol akses ke API DeepSeek sebelum circuit breaker, counter jatah, maupun request HTTP DeepSeek dijalankan. Di lingkungan aktif, set `DEEPSEEK_DISABLED=false` agar `getDeepSeekApiKey()` mengalirkan kunci. Jika suatu saat operator ingin mematikan DeepSeek darurat (misalnya saldo habis), set `DEEPSEEK_DISABLED=true` (atau hilangkan env `DEEPSEEK_DISABLED=false`).
 
 **Matriks dampak saldo DeepSeek = 0 (audit kode 2026-09-16):** saldo habis tidak menghapus data maupun mematikan aplikasi. Setelah dua kegagalan beruntun, circuit breaker DeepSeek menahan panggilan AI sekitar 5 menit agar tidak terus mengirim request gagal; sesudah saldo terisi, request/probe berikutnya pulih otomatis.
 
 | Jalur | Yang tetap berjalan | Yang tidak tersedia/baru |
 |---|---|---|
 | Data pasar dan riwayat | RSS mentah, kalender/fundamental deterministik, COT/risk, sinkron candle OHLCV, cache dan jurnal tetap tersimpan. | Tidak ada penghapusan maupun backfill keputusan AI yang terlewat. |
-| Ringkasan Berita | Call 1 memakai Gemini lalu template deterministik; Call 2 memakai Gemini. Headline dan payload mentah tetap terbentuk. | Trade thesis baru (Call 3) dan alert kontradiksi thesis baru (Call 4) tidak dibuat; bias bank sentral mempertahankan nilai Redis lama bila Gemini juga gagal. |
+| Ringkasan Berita | Call 1 memakai Gemini lalu template deterministik; Call 2 memakai Gemini. Headline dan payload mentah tetap terbentuk. | Trade thesis baru (Call 3) dan alert kontradiksi thesis baru (Call 4) tidak dibuat sampai provider pengganti dipasang; bias bank sentral mempertahankan nilai Redis lama bila Gemini juga gagal. |
 | Analisa AI per Pair | Candle, S/R, konfluensi dan konteks pair deterministik tetap dikirim; cache analisa yang terakhir berhasil tidak ditimpa hasil gagal. | Commentary, level entry/SL/TP dan struktur AI baru kosong; respons menandai `ai_unavailable`. |
 | Pre-entry dan Kritikus manual | Skor/checklist deterministik tetap tampil. | Verdict konsistensi dan verdict kritikus AI baru tidak ada. |
 | Auto-entry virtual | Pemantauan setup yang sudah ada (harga serta TP/SL) tetap berjalan karena kode/daemon, bukan AI. Position Review yang gagal memilih `HOLD`, bukan mengubah posisi. | Tidak lahir setup virtual baru: Call 1 DeepSeek gagal lebih dulu. Jika Call 2 gagal setelah Call 1 sukses, jalur juga dipaksa `NO TRADE`. Tidak ada order broker dari jalur ini. |
 
 **Celah informasi yang nyata:** bahan mentah tetap ada, tetapi periode saat AI tidak dapat dipanggil tidak memiliki narasi/thesis, alert kontradiksi, atau observasi kandidat auto-entry baru. Keputusan AI yang tidak sempat dibuat tidak dapat direkonstruksi persis setelah top-up karena harga dan berita sudah berubah. Karena itu, selama saldo kosong jangan menjadikan thesis/alert lama sebagai sinyal terkini; cek data harga dan kalender mentah. Gate A kritikus secara terpisah memang fail-open bila panggilannya sendiri error, tetapi pada saldo DeepSeek benar-benar nol tidak tercapai kandidat terstruktur untuk melewati Gate A karena Call 1 sudah gagal terlebih dahulu.
 
-**Pemberitahuan gangguan (2026-09-16):** ketika Analisa AI per Pair tidak memperoleh respons DeepSeek, UI sekarang menampilkan toast `AI sedang bermasalah` sambil mempertahankan data teknikal yang sudah ada. Jalur AATAS memiliki state kesehatan khusus di Redis/dashboard developer serta notifikasi Telegram dan PWA pada transisi gagal dan pulih. Alert gagal dideduplikasi enam jam agar tidak mengirim satu pesan untuk setiap slot/pair; bukan bukti semua AI global sehat, melainkan status panggilan AATAS yang benar-benar dicoba.
+**Pemberitahuan gangguan (2026-09-16):** ketika Analisa AI per Pair tidak memperoleh respons DeepSeek, UI sekarang menampilkan toast `AI sedang bermasalah` sambil mempertahankan data teknikal yang sudah ada. Jalur AATAS memiliki state kesehatan khusus di Redis/dashboard developer serta notifikasi Telegram dan PWA pada transisi gagal dan pulih. Alert gagal dideduplikasi enam jam agar tidak mengirim satu pesan untuk setiap slot/pair; bukan bukti semua AI global sehat, melainkan status panggilan AATAS yang benar-benar dicoba. Saat pause operator aktif, AATAS tetap gagal-aman dan alert tersebut menunjukkan ketiadaan Call 1/2, bukan kegagalan jaringan DeepSeek.
 
 **Riwayat Nemotron/Hermes/GLM (OpenRouter/Ollama/Cerebras) — DIHAPUS 2026-07-25:** sempat jadi kandidat primary Call 1 (session 162-163, kualitas bagus tapi latency 100% tidak terprediksi 7-41s), lalu didemote ke fallback cron-only, akhirnya dihapus total bersama kontrak vendornya (OpenRouter, Cerebras, Ollama Cloud diputus user). Riwayat lengkap eksperimen ada di git history / `daun_merah.md` kalau perlu rujukan — jangan diusulkan lagi tanpa alasan baru.
 

@@ -23,6 +23,7 @@ const marketHours = require('./_market_hours');
 const cb = require('./_circuit_breaker');
 const rateLimit = require('./_ratelimit');
 const { allowAiCall } = require('./_ai_guard');
+const { isDeepSeekDisabled, getDeepSeekApiKey } = require('./_deepseek');
 const { requireAppKey, safeEqual } = require('./_app_key');
 const { fetchYahooOhlcv1h, fetchFallbackCandles, shouldSendYahooAlert, mapYahooSymbolToDeriv, fetchDerivCandles, mergeVolumeByTimestamp } = require('./_ohlcv_fetch');
 const { buildPairContext, computeCurrencyStrength } = require('./_pair_context');
@@ -2222,8 +2223,10 @@ async function deepseekBalanceHandler(req, res) {
   const secret = req.headers['x-admin-secret'] || req.headers['x-cron-secret'];
   if (!secret || !safeEqual(secret || '', process.env.CRON_SECRET || '')) return res.status(401).json({ error: 'Unauthorized' });
 
-  const DEEPSEEK_KEY = process.env.DEEPSEEK_API_KEY;
-  if (!DEEPSEEK_KEY) return res.status(200).json({ error: 'DEEPSEEK_API_KEY belum diset' });
+  const DEEPSEEK_KEY = getDeepSeekApiKey();
+  if (!DEEPSEEK_KEY) {
+    return res.status(200).json({ error: isDeepSeekDisabled() ? 'DeepSeek dinonaktifkan sementara' : 'DEEPSEEK_API_KEY belum diset' });
+  }
 
   try {
     const r = await fetch('https://api.deepseek.com/user/balance', {
@@ -4793,7 +4796,7 @@ async function positionReviewHandler(req, res) {
     // — BUKAN pool produksi publik) karena fitur ini developer-only, hanya melayani id
     // dari setup_log_auto:v1 — sama isolasi dengan Gate A Kritikus & ohlcv_analyze
     // auto-entry. SambaNova akun 1 (primary lama di sini) diputus kontrak 2026-08-12.
-    const DEEPSEEK_KEY = process.env.DEEPSEEK_API_KEY;
+    const DEEPSEEK_KEY = getDeepSeekApiKey();
     if (!rawText && DEEPSEEK_KEY && await cb.canCall('ai:deepseek:experimental')) {
       try {
         if (!await allowAiCall('deepseek_experimental')) throw new Error('AI daily budget exceeded');
@@ -6334,7 +6337,7 @@ async function _callDeepSeekAnalyze(messages, {
   maxTokens = 1500, timeoutMs = 25000, cbKey = 'ai:deepseek', budgetKey = 'deepseek',
   modelName = 'deepseek-v4-flash', tag = 'ohlcv_analyze',
 } = {}) {
-  const DEEPSEEK_KEY = process.env.DEEPSEEK_API_KEY;
+  const DEEPSEEK_KEY = getDeepSeekApiKey();
   if (!DEEPSEEK_KEY) return { rawText: null, model: null, error: 'no_key', elapsedMs: null };
   if (!await cb.canCall(cbKey)) {
     console.log(`${tag}: DeepSeek circuit OPEN (${cbKey})`);
@@ -7383,7 +7386,7 @@ async function ohlcvAnalyzeHandler(req, res) {
     // daemon) tetap jalan: pipeline AATAS di bawah yang dipakai, dan `isDiagnosticOnly`
     // tetap menggerbang semua penulisan cache/setup_log seperti sebelumnya.
     if (testDeepseekOnly && !isAutoCall) {
-      const DEEPSEEK_KEY = process.env.DEEPSEEK_API_KEY;
+      const DEEPSEEK_KEY = getDeepSeekApiKey();
       // PLAN V-3: breaker key khusus ':experimental' — blok ini SELALU diagnostik developer-only,
       // kegagalannya TIDAK BOLEH mentrip 'ai:deepseek' yang dipakai Ringkasan/Analisa/Pre-Entry publik.
       if (DEEPSEEK_KEY && await cb.canCall('ai:deepseek:experimental')) {
@@ -7433,7 +7436,7 @@ async function ohlcvAnalyzeHandler(req, res) {
     let deepseekProError = null, deepseekProElapsedMs = null;
 
     if (testDeepseekProOnly && !isAutoCall) {
-      const DEEPSEEK_KEY = process.env.DEEPSEEK_API_KEY;
+      const DEEPSEEK_KEY = getDeepSeekApiKey();
       if (DEEPSEEK_KEY && await cb.canCall('ai:deepseek:pro_test')) {
         const t0dsp = Date.now();
         try {
@@ -7476,7 +7479,7 @@ async function ohlcvAnalyzeHandler(req, res) {
     const isDiagnosticOnly = testDeepseekOnly || testDeepseekProOnly;
     // Scope terpisah dari DEEPSEEK_KEY di blok testDeepseekOnly di atas (itu lokal ke
     // if-block-nya sendiri) — dibutuhkan lagi di sini untuk tier primary produksi.
-    const DEEPSEEK_KEY = process.env.DEEPSEEK_API_KEY;
+    const DEEPSEEK_KEY = getDeepSeekApiKey();
 
     // PLAN V-3 (2026-07-20): call isAutoCall (auto-entry, developer-only) berbagi provider
     // dengan traffic publik (Ringkasan/Analisa manual/Pre-Entry Check) — tanpa isolasi ini,
@@ -8711,7 +8714,7 @@ async function _runCriticVerdict(userMsg, {
     { role: 'system', content: CRITIC_SYSTEM_PROMPT },
     { role: 'user', content: userMsg },
   ];
-  const DEEPSEEK_KEY = process.env.DEEPSEEK_API_KEY;
+  const DEEPSEEK_KEY = getDeepSeekApiKey();
   let rawText = null, model = null;
 
   if (DEEPSEEK_KEY && await cb.canCall(cbKey)) {
@@ -8910,7 +8913,7 @@ async function preEntryCheckHandler(req, res) {
     { role: 'user', content: userMsg },
   ];
 
-  const DEEPSEEK_KEY  = process.env.DEEPSEEK_API_KEY;
+  const DEEPSEEK_KEY  = getDeepSeekApiKey();
   let rawText = null, model = null;
 
   // Primary/satu-satunya: DeepSeek v4-flash — 1 call/klik masuk pool 'deepseek' di _ai_guard.js

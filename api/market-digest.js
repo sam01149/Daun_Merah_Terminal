@@ -7,6 +7,7 @@ const { getLiveCbRates } = require('./_cb_rates');
 const { isCronCall: _isCronCallReq, isCronDedupFresh } = require('./_cron_dedup');
 const { configureVapid, sendWebPush } = require('./_webpush');
 const { allowAiCall, providerFromUrl } = require('./_ai_guard');
+const { getDeepSeekApiKey } = require('./_deepseek');
 const { CB_KW, kwTest, isCbHeadline, stripHtml } = require('./_cb_keywords');
 const { isFxMarketOpen } = require('./_market_hours');
 const { fetchDerivLatestPrice, fetchDerivCandles } = require('./_ohlcv_fetch');
@@ -811,7 +812,7 @@ module.exports = async function handler(req, res) {
   const GEMINI_KEY     = process.env.GEMINI_API_KEY;
   const MISTRAL_KEY    = process.env.MISTRAL_API_KEY;
   const NVIDIA_KEY     = process.env.NVIDIA_API_KEY;
-  const DEEPSEEK_KEY   = process.env.DEEPSEEK_API_KEY;
+  const DEEPSEEK_KEY   = getDeepSeekApiKey();
 
   // Diagnostik provider baru (Plan N, session 182) — Gemini/Mistral/NVIDIA NIM, pola
   // isolasi: skip semua tier lain di Call 1, hasil TIDAK ditulis ke digest_history/
