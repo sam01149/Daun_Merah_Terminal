@@ -18,7 +18,7 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 
 ## Changelog Session 364 (2026-09-18) — Pemeriksaan seluruh SL auto-entry
 
-Audit baca-saja seluruh 25 status SL auto-entry, termasuk 18 sebelum kebijakan AATAS (`policy_v<31`/kosong). Pemisahan outcome posisi/intervensi/ghost, tiga false fill lama, label sebab lama, bukti candle, dan probe evaluator dicatat di `professional_llm_trader/riset.md` S364; tindak lanjut di `professional_llm_trader/progress.md` (keduanya lokal sesuai `.gitignore`). Tidak mengubah runtime, kebijakan, atau data produksi; `npm.cmd test` 1.325/1.325 lulus. Entri ini hanya penunjuk, rincian tetap mengikuti routing auto-entry.
+Audit baca-saja seluruh 25 status SL auto-entry, termasuk 18 sebelum kebijakan AATAS (`policy_v<31`/kosong). Pola terkuat adalah konflik waktu (14 SL/3 TP) dan tiga setup entry+SL dalam candle H1 yang sama; pemisahan outcome posisi/intervensi/ghost, tiga false fill lama, label sebab lama, bukti candle, dan probe evaluator dicatat di `professional_llm_trader/riset.md` S364; tindak lanjut di `professional_llm_trader/progress.md` (keduanya lokal sesuai `.gitignore`). Tidak mengubah runtime, kebijakan, atau data produksi; `npm.cmd test` 1.325/1.325 lulus. Entri ini hanya penunjuk, rincian tetap mengikuti routing auto-entry.
 
 ## Changelog Session 363 (2026-09-18) — Penyesuaian Tipografi Output AI Fundamental
 
