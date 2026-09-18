@@ -11,14 +11,14 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-09-18 (Session 364 — Pemeriksaan SL AATAS)
+> **Last updated:** 2026-09-18 (Session 364 — Pemeriksaan seluruh SL auto-entry)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
-## Changelog Session 364 (2026-09-18) — Pemeriksaan SL AATAS
+## Changelog Session 364 (2026-09-18) — Pemeriksaan seluruh SL auto-entry
 
-Audit baca-saja seluruh status SL era AATAS, pemisahan outcome posisi/intervensi/ghost, bukti candle dan probe evaluator dicatat di `professional_llm_trader/riset.md` S364; tindak lanjut di `professional_llm_trader/progress.md` (keduanya lokal sesuai `.gitignore`). Tidak mengubah runtime, kebijakan, atau data produksi; `npm.cmd test` 1.325/1.325 lulus. Entri ini hanya penunjuk, rincian tetap mengikuti routing auto-entry.
+Audit baca-saja seluruh 25 status SL auto-entry, termasuk 18 sebelum kebijakan AATAS (`policy_v<31`/kosong). Pemisahan outcome posisi/intervensi/ghost, tiga false fill lama, label sebab lama, bukti candle, dan probe evaluator dicatat di `professional_llm_trader/riset.md` S364; tindak lanjut di `professional_llm_trader/progress.md` (keduanya lokal sesuai `.gitignore`). Tidak mengubah runtime, kebijakan, atau data produksi; `npm.cmd test` 1.325/1.325 lulus. Entri ini hanya penunjuk, rincian tetap mengikuti routing auto-entry.
 
 ## Changelog Session 363 (2026-09-18) — Penyesuaian Tipografi Output AI Fundamental
 
