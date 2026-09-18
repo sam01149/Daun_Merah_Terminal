@@ -11,10 +11,14 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-09-18 (Session 364 — Pemeriksaan seluruh SL auto-entry)
+> **Last updated:** 2026-09-18 (Session 365 — Kontrak entry AATAS sesudah event)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
+
+## Changelog Session 365 (2026-09-18) — Kontrak entry AATAS sesudah event
+
+Perbaikan evaluator auto-entry AATAS diterapkan setelah audit SL: setup yang memakai kontrak `zone_touch_after_calendar` sekarang hanya tercatat terisi bila candle sesudah event membuka dari sisi tunggu lalu menyentuh zona entry. Jika candle sudah membuka melewati SL, setup dibatalkan sebagai `entry_invalidated_before_fill`, bukan dicatat sebagai fill dan SL virtual. Perubahan dipisah pada POLICY_EPOCHS v58; setup manual serta histori final tidak diubah. Detail auto-entry dicatat di `professional_llm_trader/changelog.md` Session 365 dan pola pantauan berikutnya di `professional_llm_trader/riset.md`. Tes fokus `ta_struct`: 111/111; suite penuh `npm.cmd test`: 1.327/1.327 lulus.
 
 ## Changelog Session 364 (2026-09-18) — Pemeriksaan seluruh SL auto-entry
 

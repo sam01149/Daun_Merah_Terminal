@@ -517,6 +517,58 @@ test('_evaluateSetups: entri lama tanpa field level_set_at fallback ke ts (backw
   assert.strictEqual(setups[0].filled_t, T0 + 7200);
 });
 
+// S364: v53 sudah menahan fill sampai event berlalu, tetapi H/L candle pertama
+// sesudahnya dahulu masih bisa mengubah spike event menjadi fill retroaktif. Kontrak
+// baru hanya untuk auto AATAS (`zone_touch_after_calendar`), agar riwayat/manual tidak
+// ditulis ulang: candle wajib berangkat dari sisi tunggu lalu menyentuh zona.
+test('_evaluateSetups: auto AATAS pasca-event hanya fill pada fresh touch dari sisi tunggu', () => {
+  // T0 berakhir pada detik :40; kalender berpresisi menit. Letakkan event 20 detik
+  // setelah pembukaan candle supaya tetap masuk jendela tunggu evaluator.
+  const eventMs = (T0 + 3600) * 1000 + 20 * 1000;
+  const bearish = [mkSetup({ entry_execution: 'zone_touch_after_calendar', label: 'XAU/USD' })];
+  const bullish = [mkSetup({
+    entry_execution: 'zone_touch_after_calendar', label: 'XAU/USD', bias: 'bullish',
+    entry_zone: '3960-3970', sl: '3940', tp: '4030',
+  })];
+  const candles = {
+    'GC=F': [
+      mkC(T0 + 3600, 4010, 4070, 3990, 4040), // jam event: wajib ditunggu
+      mkC(T0 + 7200, 4000, 4035, 3995, 4030), // bearish: mulai di bawah entry lalu sentuh zona
+    ],
+  };
+  _evaluateSetups(bearish, candles, MS0 + 3 * 3600 * 1000, [mkCalEvent(eventMs, 'USD')]);
+  assert.strictEqual(bearish[0].status, 'open');
+  assert.strictEqual(bearish[0].filled_t, T0 + 7200);
+
+  const bullishCandles = {
+    'GC=F': [
+      mkC(T0 + 3600, 3960, 4000, 3930, 3950), // jam event: wajib ditunggu
+      mkC(T0 + 7200, 4000, 4005, 3968, 3972), // bullish: mulai di atas entry lalu sentuh zona
+    ],
+  };
+  _evaluateSetups(bullish, bullishCandles, MS0 + 3 * 3600 * 1000, [mkCalEvent(eventMs, 'USD')]);
+  assert.strictEqual(bullish[0].status, 'open');
+  assert.strictEqual(bullish[0].filled_t, T0 + 7200);
+});
+
+test('_evaluateSetups: auto AATAS pasca-event membatalkan setup bila SL terlewati sebelum fresh touch', () => {
+  const eventMs = (T0 + 3600) * 1000 + 20 * 1000;
+  const setups = [mkSetup({ entry_execution: 'zone_touch_after_calendar', label: 'XAU/USD' })];
+  const candles = {
+    'GC=F': [
+      mkC(T0 + 3600, 4010, 4070, 3990, 4040), // ditunggu karena event USD High
+      mkC(T0 + 7200, 4045, 4050, 4035, 4048), // sudah di sisi entry; bukan fresh touch, tetap pending
+      mkC(T0 + 10800, 4066, 4072, 4060, 4070), // pembukaan sudah di atas SL4065
+    ],
+  };
+  _evaluateSetups(setups, candles, MS0 + 4 * 3600 * 1000, [mkCalEvent(eventMs, 'USD')]);
+  assert.strictEqual(setups[0].status, 'canceled');
+  assert.strictEqual(setups[0].canceled_reason, 'entry_invalidated_before_fill');
+  assert.strictEqual(setups[0].canceled_t, (T0 + 10800) * 1000);
+  assert.strictEqual(setups[0].filled_t, undefined);
+  assert.strictEqual(setups[0].closed_t, undefined);
+});
+
 test('_evaluateSetups: pending kadaluarsa (> horizon x1.5) → expired; belum → tetap pending', () => {
   const far = [mkSetup()];
   _evaluateSetups(far, { 'GC=F': [mkC(T0 + 3600, 4000, 4005, 3995, 4000)] }, MS0 + 8 * 86400000); // 8 hari > 5*1.5

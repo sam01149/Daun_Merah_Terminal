@@ -3477,6 +3477,30 @@ function _evaluateSetups(setups, candlesBySymbol, nowMs, calendarEvents, newsIte
         if (st.entry_execution === 'zone_touch_after_calendar') {
           const eventWait = _aatasEventWait(calendarEvents, st.label, c.t * 1000);
           if ((st.entry_wait_until && c.t * 1000 <= st.entry_wait_until) || eventWait.until) continue;
+
+          // Kontrak eksekusi AATAS: sesudah jendela kalender berakhir, H/L candle
+          // saja tidak cukup untuk membuktikan entry. Candle yang SUDAH dibuka di
+          // sisi entry (atau bahkan melewati SL) dapat berisi spike saat event yang
+          // sebelumnya sengaja ditunggu; menandainya filled akan menciptakan posisi
+          // virtual di harga rencana yang tidak pernah terkonfirmasi. Entry baru
+          // sah hanya bila candle dimulai dari sisi tunggu yang benar lalu menyentuh
+          // zona. Jika pembukaannya sudah melewati SL, tesis telah invalid sebelum
+          // fill yang sah sehingga setup dibatalkan, bukan dihitung sebagai SL.
+          //
+          // Scope sengaja hanya `zone_touch_after_calendar`: ini kontrak auto-entry
+          // baru (v53+), tidak menulis ulang semantik/riwayat setup manual atau lama.
+          const candleOpen = Number(c.o);
+          if (c.o == null || !Number.isFinite(candleOpen)) continue; // data tanpa urutan pembuka tidak cukup untuk mengarang fill
+          const invalidatedBeforeFill = st.bias === 'bearish' ? candleOpen >= sl : candleOpen <= sl;
+          if (invalidatedBeforeFill) {
+            st.status = 'canceled';
+            st.canceled_reason = 'entry_invalidated_before_fill';
+            st.canceled_t = c.t * 1000;
+            st.canceled_detail = 'Harga pembukaan candle setelah masa tunggu kalender sudah melewati SL sebelum entry dapat dikonfirmasi.';
+            break;
+          }
+          const freshTouch = st.bias === 'bearish' ? candleOpen < eLo && c.h >= eLo : candleOpen > eHi && c.l <= eHi;
+          if (!freshTouch) continue;
         }
         const filled = st.bias === 'bearish' ? c.h >= eLo : c.l <= eHi;
         if (filled) { st.status = 'open'; st.filled_t = c.t; }
