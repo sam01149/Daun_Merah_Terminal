@@ -11,10 +11,21 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-09-16 (Session 362 — Reaktivasi DeepSeek)
+> **Last updated:** 2026-09-18 (Session 363 — Penyesuaian Tipografi Output AI Fundamental)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
+
+## Changelog Session 363 (2026-09-18) — Penyesuaian Tipografi Output AI Fundamental
+
+Perubahan tipografi pada kartu output analisis AI di tab Fundamental (`.fund-analysis-text`):
+- Perataan teks diubah menjadi `justify` (`text-align: justify; text-justify: inter-word;`) agar rapi di kedua sisi kiri-kanan.
+- Ukuran font dinaikkan dari `11px` menjadi `13px`, disamakan dengan kartu Ringkasan Pasar di Dashboard (`.dash-digest-text`). Spasi baris disesuaikan menjadi `line-height: 1.75` untuk kenyamanan membaca.
+- `APP_VERSION` dinaikkan ke `2026.09.18.1`.
+
+**Verifikasi:**
+1. CSS `.fund-analysis-text` tervalidasi memiliki `font-size: 13px; line-height: 1.75; text-align: justify; text-justify: inter-word;`.
+2. Tes regresi unit test `npm test`: 1.325/1.325 test lulus 100%.
 
 ## Changelog Session 362 (2026-09-16) — Reaktivasi DeepSeek setelah top-up sukses
 
