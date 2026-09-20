@@ -585,6 +585,7 @@ const POLICY_EPOCHS = [
   { v: 56, from: '2026-09-12T07:43:44.299Z', kind: 'fix', impact: 'context', label: "S359 D1 QA: normalisasi alias varian inflasi ke key periode kanonik" },
   { v: 57, from: '2026-09-12T07:50:53.950Z', kind: 'fix', impact: 'entry', label: "S359 A2 QA: instruksi trigger auto sesuai kontrak evaluator" },
   { v: 58, from: '2026-09-18T14:02:23Z', kind: 'fix', impact: 'entry', label: 'S364: sesudah masa tunggu kalender, entry AATAS wajib menyentuh zona dari sisi tunggu yang benar; candle yang sudah membuka melewati SL dibatalkan sebagai invalidated_before_fill, bukan dicatat fill/SL palsu' },
+  { v: 59, from: '2026-09-20T00:00:00Z', kind: 'fix', impact: 'entry', label: 'PLAN AD: setup auto baru mengikat SL/TP efektif ke ID kandidat deterministik dan anchor struktur yang tersedia saat keputusan; ID/angka/arah yang tidak konsisten ditolak, histori legacy tidak dimutasi' },
 ];
 
 // AATAS_EPOCH (2026-08-22, keputusan user): batas populasi statistik dashboard

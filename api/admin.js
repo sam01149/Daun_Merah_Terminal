@@ -32,6 +32,7 @@ const { validateTightenSl, computePreventiveTightenSl, _evaluateManaged, _aggMan
 // komentar di titik pemanggilannya untuk riwayat lengkap nonaktif (v29) -> aktif lagi.
 const { isCorrelatedExposureBlocked, correlatedExposureBlock, isClosedEarly, isManagedResolved, isLiveExposure, isTimingConflictBlocked, isInvalidationTriggered, INVALIDATION_TRIGGER_TYPES, INVALIDATION_TRIGGER_DIRECTIONS, INVALIDATION_TRIGGER_TIMEFRAMES, CORRELATED_PAIRS, POLICY_VERSION, POLICY_EPOCHS, policyVersionForTs, isDrawdownHalted, isDrawdownEmergencyValveOpen, AATAS_EPOCH, isGoldRegimeBlocked } = require('./_auto_entry_guard');
 const { computeLevelCandidates } = require('./_levels');
+const { bindExecutionContract, validateStoredExecutionContract } = require('./_aatas_execution_contract');
 
 // Gate D live-sign lookup (audit 2026-08-16): terjemahkan simbol Yahoo di
 // CORRELATED_PAIRS ke label instrumen api/correlations.js, supaya sign statis di
@@ -3438,6 +3439,14 @@ function _evaluateSetups(setups, candlesBySymbol, nowMs, calendarEvents, newsIte
       st.status = 'invalid';
       continue;
     }
+    // PLAN AD: hanya record baru yang membawa kontrak harus tetap konsisten saat
+    // evaluator berjalan. Histori legacy tanpa kontrak sengaja tidak disentuh.
+    const contractCheck = validateStoredExecutionContract(st);
+    if (!contractCheck.ok) {
+      st.status = 'invalid';
+      st.execution_contract_error = contractCheck.reason;
+      continue;
+    }
     const eLo = Math.min(...e), eHi = Math.max(...e);
     const rawCandles = candlesBySymbol?.[st.symbol] || [];
     const all = Array.isArray(rawCandles) ? [...rawCandles].sort((a, b) => a.t - b.t) : [];
@@ -6454,7 +6463,7 @@ const AATAS_CALL2_MODEL = 'deepseek-v4-flash'; // pemilih LOKASI dari kandidat d
 
 async function _runAatasTwoCall({
   label, isXau, macroParts, technicalParts, goldCorrLive, levelInstrs, invalidationTail, aiCfg,
-  call1ModelName,
+  call1ModelName, hasLevelCandidates = false,
 }) {
   const prompts = { call1: null, call2: null };
 
@@ -6554,7 +6563,7 @@ async function _runAatasTwoCall({
   }
 
   // ── Call 2: struktur & lokasi entry ────────────────────────────────────────
-  const call2Sys = 'Kamu analis struktur pasar. Arah trade SUDAH DIKUNCI oleh analisa makro terpisah dan TIDAK BOLEH kamu ubah — tugasmu menentukan DI MANA dan KAPAN masuk, plus menilai apakah struktur mengizinkan masuk sama sekali. Kamu sengaja TIDAK menerima pembacaan momentum RSI/MACD, dan DILARANG memakainya sebagai alasan; SMA/pivot boleh dipakai hanya sebagai level harga struktural, tidak pernah sebagai sinyal arah. WAJIB jawab dalam DUA bagian: (1) SATU objek JSON valid tanpa markdown fence berisi HANYA field {"entry_zone":"...","entry_basis":"...","sl":"...","tp":"...","trigger":"...","invalidation_condition":"...","invalidation_trigger":{"type":"...","level":0,"timeframe":"...","direction":"..."},"time_horizon_days":0,"technical":{...},"gate_risk_management":{"pass":true,"note":"..."},"conflict":"...","conflict_note":"...","checklist_pct":0} — invalidation_trigger boleh null kalau tidak bisa distrukturkan; JANGAN sertakan field final_validation atau verdict, itu dihitung server (kamu tidak diberi data COT/retail, dan verdict diturunkan dari checklist_pct-mu); (2) setelah JSON, baris berisi PERSIS "===COMMENTARY===", lalu SATU paragraf prosa (bukan JSON, bebas tanda kutip). Bahasa Indonesia.';
+  const call2Sys = 'Kamu analis struktur pasar. Arah trade SUDAH DIKUNCI oleh analisa makro terpisah dan TIDAK BOLEH kamu ubah — tugasmu menentukan DI MANA dan KAPAN masuk, plus menilai apakah struktur mengizinkan masuk sama sekali. Kamu sengaja TIDAK menerima pembacaan momentum RSI/MACD, dan DILARANG memakainya sebagai alasan; SMA/pivot boleh dipakai hanya sebagai level harga struktural, tidak pernah sebagai sinyal arah. WAJIB jawab dalam DUA bagian: (1) SATU objek JSON valid tanpa markdown fence berisi HANYA field {"entry_zone":"...","entry_basis":"...","sl":"...","tp":"...","selected_sl_id":"...","selected_tp_id":"...","trigger":"...","invalidation_condition":"...","invalidation_trigger":{"type":"...","level":0,"timeframe":"...","direction":"..."},"time_horizon_days":0,"technical":{...},"gate_risk_management":{"pass":true,"note":"..."},"conflict":"...","conflict_note":"...","checklist_pct":0} — invalidation_trigger boleh null kalau tidak bisa distrukturkan; JANGAN sertakan field final_validation atau verdict, itu dihitung server (kamu tidak diberi data COT/retail, dan verdict diturunkan dari checklist_pct-mu); (2) setelah JSON, baris berisi PERSIS "===COMMENTARY===", lalu SATU paragraf prosa (bukan JSON, bebas tanda kutip). Bahasa Indonesia.';
   const call2User = [
     `Tentukan lokasi & waktu entry ${label}:`,
     '',
@@ -6571,6 +6580,7 @@ async function _runAatasTwoCall({
     '',
     'Isi field JSON berikut:',
     ...(Array.isArray(levelInstrs) ? levelInstrs : []),
+    hasLevelCandidates ? '- selected_sl_id dan selected_tp_id: WAJIB isi ID kandidat yang persis kamu pilih. Untuk bias bullish gunakan "bullish_sl_N" dan "bullish_tp_N"; untuk bearish gunakan "bearish_sl_N" dan "bearish_tp_N". N adalah nomor S/T pada daftar kandidat mulai dari 1. Jika daftar kandidat untuk arah ini tidak lengkap atau tidak menyediakan anchor struktur, set entry_zone, sl, tp, selected_sl_id, selected_tp_id ke null — jangan mengarang level.' : null,
     '- trigger: eksekusi otomatis hanya mendukung sentuhan zona entry setelah waktu tunggu kalender. Jangan mensyaratkan pola candle, close H4, atau konfirmasi tambahan yang tidak dapat dieksekusi evaluator. Pola candle boleh menjadi dasar pemilihan zona, bukan syarat fill yang belum terpenuhi.',
     '- invalidation_condition: kondisi spesifik yang membatalkan skenario ini sepenuhnya (beda dari sl — ini soal struktur/tesis).',
     '- invalidation_trigger: versi TERSTRUKTUR dari invalidation_condition supaya KODE bisa mendeteksinya otomatis — {"type":"ma_break"|"price_level"|"swing_break","level":<satu angka>,"timeframe":"1h"|"4h"|"1d","direction":"above"|"below"}. "level" WAJIB satu angka konkret yang ADA di data di atas, "direction" = arah CLOSE candle yang membatalkan skenario. Kalau tidak bisa diringkas jadi satu level tunggal, set null — JANGAN mengarang angka.' + (invalidationTail || ''),
@@ -7559,6 +7569,7 @@ async function ohlcvAnalyzeHandler(req, res) {
           slInstr,
           tpInstr,
         ],
+        hasLevelCandidates: !!levelCandidates,
         invalidationTail: levelCandidates
           ? ' Kalau type-nya "price_level" atau "swing_break", SEBAIKNYA level ini sama dengan salah satu angka di [KANDIDAT SL/TP] atau [ZONA KONFLUENSI] di atas (bukan angka baru yang tidak berkaitan) — konsisten dengan sl yang kamu pilih.'
           : '',
@@ -7762,6 +7773,25 @@ async function ohlcvAnalyzeHandler(req, res) {
         // di-drop sanity check / model memang tidak memberi setup; buang juga non-string.
         if (typeof structured.entry_basis !== 'string' || !structured.entry_basis.trim() || !structured.entry_zone) {
           structured.entry_basis = null;
+        }
+        // PLAN AD: sesudah snap + sanity-check memakai angka efektif, ikat tiap setup
+        // auto ke kandidat SL/TP yang dipilih. Kontrak gagal berarti tidak ada setup
+        // baru; ia tidak boleh diam-diam memakai buffer ATR sebagai "struktur".
+        if (isAutoCall && structured.entry_zone && structured.sl && structured.tp
+          && levelCandidates?.[structured.bias]?.sl?.length && levelCandidates?.[structured.bias]?.tp?.length) {
+          const contractResult = bindExecutionContract({
+            structured, levelCandidates,
+            revisionId: `${symbol}:${Date.now()}`,
+            decidedAt: Date.now(),
+          });
+          if (contractResult.ok) {
+            structured = contractResult.structured;
+          } else {
+            console.warn('ohlcv_analyze: kontrak entry/SL AATAS tidak valid — level ditolak', { symbol, reason: contractResult.reason });
+            structured.entry_zone = structured.sl = structured.tp = null;
+            structured.risk_reward = null;
+            structured.execution_contract_reject = contractResult.reason;
+          }
         }
         // Normalisasi makro_alignment: badge UI hanya kenal 3 nilai; paksa null kalau
         // memang tidak ada sumber makro/fundamental di prompt (model tidak boleh mengaku
@@ -8276,6 +8306,9 @@ async function ohlcvAnalyzeHandler(req, res) {
         // hanya menangkap pertanyaan yang sudah terpikirkan saat skema dibuat.
         ...(isAutoCall ? {
           entry_execution: 'zone_touch_after_calendar',
+          selected_sl_id: structured.selected_sl_id ?? null,
+          selected_tp_id: structured.selected_tp_id ?? null,
+          execution_contract: structured.execution_contract ?? null,
           trigger: structured.trigger ?? null,
           trigger_reported: structured.trigger_reported ?? null,
           entry_wait_until: structured.entry_wait_until ?? null,
@@ -8422,6 +8455,9 @@ async function ohlcvAnalyzeHandler(req, res) {
                     // lahir dari penilaian checklist SAAT refine, bukan generasi pertama;
                     // menyimpan skor lama di sebelah level baru itu jejak audit yang bohong.
                     entry_execution: 'zone_touch_after_calendar',
+                    selected_sl_id: structured.selected_sl_id ?? null,
+                    selected_tp_id: structured.selected_tp_id ?? null,
+                    execution_contract: structured.execution_contract ?? null,
                     trigger: structured.trigger ?? null,
                     trigger_reported: structured.trigger_reported ?? null,
                     entry_wait_until: structured.entry_wait_until ?? null,
