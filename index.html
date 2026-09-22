@@ -4469,7 +4469,7 @@ window.addEventListener('DOMContentLoaded', () => _updateNewsLangBtn());
 
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.09.18.1';
+const APP_VERSION = '2026.09.22.1';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
@@ -7089,6 +7089,7 @@ function renderAnalisa() {
   if (!d) return;
   const fmt = n => typeof n === 'number' ? n.toFixed(d.dec) : String(n);
   const pct = n => `${n >= 0 ? '+' : ''}${n}%`;
+  const displaySource = tf => d.display_source?.[tf] ? `<div class="analisa-levels" style="margin-top:7px"><span>Sumber tampilan: ${escHtml(d.display_source[tf])}</span></div>` : '';
   const trendIcon = t => t === 'Uptrend' ? '↑' : t === 'Downtrend' ? '↓' : '→';
   const trendCls  = t => t === 'Uptrend' ? 'up' : t === 'Downtrend' ? 'down' : '';
   const fmtWib = ts => {
@@ -7136,6 +7137,7 @@ function renderAnalisa() {
           <span>Resistance: <span class="res">${d1.resistance.map(fmt).join(' · ')}</span></span>
           <span>Support: <span class="sup">${d1.support.map(fmt).join(' · ')}</span></span>
         </div>
+        ${displaySource('d1')}
       </div>`;
   } else {
     document.getElementById('analisaD1Card').innerHTML = `<div class="analisa-tf-card d1"><div class="analisa-tf-label">MAKRO — Daily 30D</div><div style="color:var(--muted);font-size:11px">Data belum tersedia — tunggu sync.</div></div>`;
@@ -7153,10 +7155,11 @@ function renderAnalisa() {
           <div class="analisa-stat"><div class="analisa-stat-label">RANGE 10D</div><div class="analisa-stat-val">${fmt(h4.low)} – ${fmt(h4.high)}</div></div>
           <div class="analisa-stat"><div class="analisa-stat-label">10D</div><div class="analisa-stat-val ${h4.change_pct >= 0 ? 'up' : 'down'}">${pct(h4.change_pct)}</div></div>
         </div>
-        <div class="analisa-levels">
+        ${h4.swing_high && h4.swing_low ? `<div class="analisa-levels">
           <span>Swing High: <span class="res">${fmt(h4.swing_high.price)}</span> · ${fmtWib(h4.swing_high.t)}</span>
           <span>Swing Low: <span class="sup">${fmt(h4.swing_low.price)}</span> · ${fmtWib(h4.swing_low.t)}</span>
-        </div>
+        </div>` : '<div class="analisa-levels"><span>Belum ada swing terkonfirmasi.</span></div>'}
+        ${displaySource('h4')}
       </div>`;
   } else {
     document.getElementById('analisaH4Card').innerHTML = `<div class="analisa-tf-card h4"><div class="analisa-tf-label">SWING — 4H 10D</div><div style="color:var(--muted);font-size:11px">Data belum tersedia.</div></div>`;
@@ -7174,6 +7177,7 @@ function renderAnalisa() {
           <div class="analisa-stat"><div class="analisa-stat-label">RANGE 3D</div><div class="analisa-stat-val">${fmt(h1.low)} – ${fmt(h1.high)}</div></div>
           <div class="analisa-stat"><div class="analisa-stat-label">3D</div><div class="analisa-stat-val ${h1.change_pct >= 0 ? 'up' : 'down'}">${pct(h1.change_pct)}</div></div>
         </div>
+        ${displaySource('h1')}
       </div>`;
   } else {
     document.getElementById('analisaH1Card').innerHTML = `<div class="analisa-tf-card h1"><div class="analisa-tf-label">ENTRY — 1H 3D</div><div style="color:var(--muted);font-size:11px">Data belum tersedia.</div></div>`;

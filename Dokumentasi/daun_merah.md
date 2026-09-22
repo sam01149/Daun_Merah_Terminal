@@ -11,10 +11,20 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-09-18 (Session 365 — Kontrak entry AATAS sesudah event)
+> **Last updated:** 2026-09-22 (Session 372 — Data kartu Analisa tetap tersedia)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
+
+**Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 372 (2026-09-22) — Data kartu Analisa tetap tersedia saat cache Deriv kosong
+
+**Masalah.** Pada kartu Analisa XAU/USD, indikator/Risk Reversal masih tampil tetapi tiga kartu harga — Makro Daily 30D, Swing 4H, dan Entry 1H — menjadi “Data belum tersedia”. Penyebabnya bukan perhitungan kartu, melainkan kebijakan sumber harga: saat Deriv gagal, snapshot evaluator sengaja tidak boleh ditimpa Yahoo/Twelve Data agar level evaluasi dan auto-entry tidak tercampur lintas vendor. Akibat sampingnya, UI publik juga tidak punya candle untuk dirender.
+
+**Perbaikan.** `ohlcv_read` sekarang, khusus untuk kartu Analisa publik yang snapshot Deriv-nya kosong/terlalu pendek, mengambil Twelve Data H1 dan D1 di cache display terpisah selama 60 detik lalu menghitung kembali Daily/H4/H1 hanya untuk respons itu. Hasil tidak pernah menulis `ohlcv:<symbol>:*`; auto-entry dan evaluator tetap memegang aturan Deriv yang sama. UI menampilkan “Sumber tampilan: Twelve Data (tampilan)” pada tiap kartu yang memakai cadangan, sehingga tidak ada pergantian sumber diam-diam. Kartu H4 juga tidak lagi crash bila candle ada tetapi swing belum terkonfirmasi; ia menampilkan pesan status yang tepat.
+
+**Verifikasi.** Tes regresi meniru cache Deriv XAU/USD yang kosong dan memastikan ketiga kartu mendapat data dari Twelve Data, label sumber kembali, serta key evaluator tetap tidak dibuat. `test/admin/ohlcv_chart.test.js`: 7/7 lulus; pemeriksaan sintaks `api/admin.js` lulus. `APP_VERSION` dinaikkan ke `2026.09.22.1` agar PWA memuat frontend baru.
 
 ## Changelog Session 365 (2026-09-18) — Kontrak entry AATAS sesudah event
 

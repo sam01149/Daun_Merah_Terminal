@@ -107,6 +107,46 @@ test('ohlcv_chart: cache Deriv basi memakai Twelve Data untuk TAMPILAN saja tanp
   }
 });
 
+test('ohlcv_read: cache Deriv kosong memakai Twelve Data hanya untuk kartu Analisa', async () => {
+  const store = makeStore({ 'ohlcv_fresh:GC=F': '1' });
+  const hourStart = Math.floor(Date.now() / 3600000) * 3600000;
+  const dayStart = Math.floor(Date.now() / 86400000) * 86400000;
+  const hourly = Array.from({ length: 120 }, (_, i) => ({
+    datetime: new Date(hourStart - (119 - i) * 3600000).toISOString().slice(0, 19).replace('T', ' '),
+    open: String(4300 + i), high: String(4302 + i), low: String(4298 + i), close: String(4301 + i),
+  }));
+  const daily = Array.from({ length: 140 }, (_, i) => ({
+    datetime: new Date(dayStart - (139 - i) * 86400000).toISOString().slice(0, 19).replace('T', ' '),
+    open: String(4100 + i), high: String(4103 + i), low: String(4097 + i), close: String(4101 + i),
+  }));
+  const origFetch = global.fetch, oldKey = process.env.TWELVEDATA_API_KEY;
+  process.env.TWELVEDATA_API_KEY = 'display-only-test-key';
+  global.fetch = async (url, opts) => {
+    if (String(url).includes('fake-upstash.test')) return redisFetchStub(store)(url, opts);
+    if (String(url).startsWith('https://api.twelvedata.com/')) {
+      return { ok: true, json: async () => ({ values: String(url).includes('interval=1day') ? daily : hourly }) };
+    }
+    throw new Error('unexpected fetch: ' + url);
+  };
+  try {
+    const handler = loadHandler();
+    const { req, res } = fakeReqRes({ action: 'ohlcv_read', query: { symbol: 'GC=F', label: 'XAU/USD' } });
+    await handler(req, res);
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.body.d1.available, true);
+    assert.equal(res.body.h4.available, true);
+    assert.equal(res.body.h1.available, true);
+    assert.deepEqual(res.body.display_source, {
+      h1: 'Twelve Data (tampilan)', h4: 'Twelve Data (tampilan)', d1: 'Twelve Data (tampilan)',
+    });
+    assert.equal(store.strings['ohlcv:GC=F:1h'], undefined, 'candle tampilan tidak boleh masuk cache evaluator');
+    assert.equal(store.strings['ohlcv:GC=F:1d'], undefined, 'daily tampilan tidak boleh masuk cache evaluator');
+  } finally {
+    global.fetch = origFetch;
+    if (oldKey === undefined) delete process.env.TWELVEDATA_API_KEY; else process.env.TWELVEDATA_API_KEY = oldKey;
+  }
+});
+
 test('ohlcv_chart: tf tidak dikenal -> fallback ke 1h', async () => {
   const store = makeStore({ 'ohlcv_fresh:GC=F': '1', 'ohlcv:GC=F:1h': JSON.stringify([]) });
   const origFetch = global.fetch;

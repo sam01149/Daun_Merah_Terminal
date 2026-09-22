@@ -2953,13 +2953,43 @@ async function loadOhlcvData(symbol, label) {
     redisCmd('GET', `ta:${symbol}:1d`),
   ]);
 
-  return computeOhlcvMetrics({
+  const input = {
     symbol, label,
     c1h:     raw1h ? JSON.parse(raw1h) : null,
     c4h:     raw4h ? JSON.parse(raw4h) : null,
     c1dFull: raw1d ? JSON.parse(raw1d) : null,
     ta:      rawTa ? JSON.parse(rawTa) : null,
-  });
+  };
+  let data = computeOhlcvMetrics(input);
+
+  // Sumber spot Deriv adalah satu-satunya sumber yang BOLEH masuk snapshot
+  // evaluator. Namun bila snapshot itu kosong/terlalu pendek, kartu Analisa publik
+  // tidak perlu menjadi blank: ambil Twelve Data secara terpisah untuk tampilan.
+  // Tidak ada satu pun hasil di bawah yang ditulis ke `ohlcv:<symbol>:*`, sehingga
+  // auto-entry tetap menahan diri saat Deriv bermasalah (kebijakan Session 313).
+  const needDisplay1h = !data.h1.available || !data.h4.available;
+  const needDisplay1d = !data.d1.available;
+  if ((needDisplay1h || needDisplay1d) && mapYahooSymbolToDeriv(symbol)) {
+    const [fallback1h, fallback1d] = await Promise.allSettled([
+      needDisplay1h ? getDisplayFallbackCandles(symbol, '1h') : Promise.resolve(null),
+      needDisplay1d ? getDisplayFallbackCandles(symbol, '1d') : Promise.resolve(null),
+    ]);
+    const display1h = fallback1h.status === 'fulfilled' ? fallback1h.value : input.c1h;
+    const display1d = fallback1d.status === 'fulfilled' ? fallback1d.value : input.c1dFull;
+    if ((needDisplay1h && Array.isArray(display1h) && display1h.length) || (needDisplay1d && Array.isArray(display1d) && display1d.length)) {
+      data = computeOhlcvMetrics({
+        ...input,
+        c1h: display1h,
+        c4h: (needDisplay1h && Array.isArray(display1h) && display1h.length) ? resampleTo4h(display1h) : input.c4h,
+        c1dFull: display1d,
+      });
+      data.display_source = {
+        ...(needDisplay1h && fallback1h.status === 'fulfilled' ? { h1: 'Twelve Data (tampilan)', h4: 'Twelve Data (tampilan)' } : {}),
+        ...(needDisplay1d && fallback1d.status === 'fulfilled' ? { d1: 'Twelve Data (tampilan)' } : {}),
+      };
+    }
+  }
+  return data;
 }
 
 // Perakitan metrik murni dari candle mentah — dipisah dari I/O Redis/Yahoo supaya bisa
@@ -3286,9 +3316,12 @@ async function ohlcvReadHandler(req, res) {
 // snapshot evaluator auto-entry.
 // Same throttled-refresh pattern dengan loadOhlcvData supaya candle tidak basi kalau
 // tab chart baru dibuka lama setelah sync cron terakhir.
-const CHART_DISPLAY_FALLBACK_TTL = 60; // <= 1 request Twelve Data/pair/menit (free tier 8 RPM)
-async function getChartDisplayFallback(symbol) {
-  const cacheKey = `ohlcv_chart_display:twelvedata:${symbol}:1h`;
+const DISPLAY_FALLBACK_TTL = 60; // <= 1 request Twelve Data/pair/timeframe/menit (free tier 8 RPM)
+// Cadangan ini sengaja punya namespace Redis sendiri. Ia hanya untuk pembacaan
+// manusia (chart dan kartu Analisa); key `ohlcv:<symbol>:*` tetap eksklusif
+// snapshot Deriv yang dipakai evaluator/auto-entry.
+async function getDisplayFallbackCandles(symbol, interval) {
+  const cacheKey = `ohlcv_display:twelvedata:${symbol}:${interval}`;
   try {
     const cached = await redisCmd('GET', cacheKey);
     if (cached) {
@@ -3296,8 +3329,8 @@ async function getChartDisplayFallback(symbol) {
       if (Array.isArray(parsed?.candles) && parsed.candles.length) return parsed.candles;
     }
   } catch (e) { /* cache hanya optimasi kuota; fetch tetap boleh dicoba */ }
-  const candles = await fetchFallbackCandles(symbol, '1h');
-  try { await redisCmd('SET', cacheKey, JSON.stringify({ candles }), 'EX', String(CHART_DISPLAY_FALLBACK_TTL)); } catch (e) {}
+  const candles = await fetchFallbackCandles(symbol, interval);
+  try { await redisCmd('SET', cacheKey, JSON.stringify({ candles }), 'EX', String(DISPLAY_FALLBACK_TTL)); } catch (e) {}
   return candles;
 }
 
@@ -3342,7 +3375,7 @@ async function ohlcvChartHandler(req, res) {
     // sehingga ohlcv_analyze/auto-entry tetap memakai gate kualitas data Deriv yang sama.
     if (tf === '1h' && stale && mapYahooSymbolToDeriv(symbol)) {
       try {
-        const displayCandles = await getChartDisplayFallback(symbol);
+        const displayCandles = await getDisplayFallbackCandles(symbol, '1h');
         const displayLastT = marketHours.newestCandleEpoch(displayCandles);
         if (displayLastT != null && !marketHours.isCandleStale(displayCandles, Date.now())) {
           const displayAgeMins = Math.max(0, Math.round((Date.now() - displayLastT * 1000) / 60000));
