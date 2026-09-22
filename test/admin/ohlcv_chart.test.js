@@ -76,6 +76,37 @@ test('ohlcv_chart: mengembalikan candle mentah dari snapshot ohlcv:<symbol>:1h (
   } finally { global.fetch = origFetch; }
 });
 
+test('ohlcv_chart: cache Deriv basi memakai Twelve Data untuk TAMPILAN saja tanpa menulis cache evaluator', async () => {
+  const staleCandles = [{ t: 1000, o: 4300, h: 4305, l: 4295, c: 4302, v: 0 }];
+  const store = makeStore({
+    'ohlcv_fresh:GC=F': '1',
+    'ohlcv:GC=F:1h': JSON.stringify(staleCandles),
+  });
+  const currentHour = new Date(Math.floor(Date.now() / 3600000) * 3600000).toISOString().slice(0, 19).replace('T', ' ');
+  const origFetch = global.fetch, oldKey = process.env.TWELVEDATA_API_KEY;
+  process.env.TWELVEDATA_API_KEY = 'display-only-test-key';
+  global.fetch = async (url, opts) => {
+    if (String(url).includes('fake-upstash.test')) return redisFetchStub(store)(url, opts);
+    if (String(url).startsWith('https://api.twelvedata.com/')) {
+      return { ok: true, json: async () => ({ values: [{ datetime: currentHour, open: '4350', high: '4355', low: '4348', close: '4352' }] }) };
+    }
+    throw new Error('unexpected fetch: ' + url);
+  };
+  try {
+    const handler = loadHandler();
+    const { req, res } = fakeReqRes({ action: 'ohlcv_chart', query: { symbol: 'GC=F', tf: '1h' } });
+    await handler(req, res);
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.body.live_source, 'Twelve Data');
+    assert.equal(res.body.stale, false);
+    assert.equal(res.body.candles.at(-1).c, 4352);
+    assert.equal(store.strings['ohlcv:GC=F:1h'], JSON.stringify(staleCandles), 'cache Deriv evaluator tidak boleh ditimpa');
+  } finally {
+    global.fetch = origFetch;
+    if (oldKey === undefined) delete process.env.TWELVEDATA_API_KEY; else process.env.TWELVEDATA_API_KEY = oldKey;
+  }
+});
+
 test('ohlcv_chart: tf tidak dikenal -> fallback ke 1h', async () => {
   const store = makeStore({ 'ohlcv_fresh:GC=F': '1', 'ohlcv:GC=F:1h': JSON.stringify([]) });
   const origFetch = global.fetch;

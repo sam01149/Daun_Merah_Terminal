@@ -1859,13 +1859,13 @@ if (localStorage.getItem('dm_dev_theme') === 'light') {
     if (DERIV_GRANULARITY[tf]) {
       // 1. Coba ambil langsung dari browser (cepat jika ISP tidak memblokir Deriv)
       const directBars = await fetchDerivCandlesDirect(symbol, tf);
-      if (directBars && directBars.length) return { bars: directBars, live: true };
+      if (directBars && directBars.length) return { bars: directBars, liveSource: 'Deriv' };
 
       // 2. Fallback otomatis ke server proxy /api/admin?action=ohlcv_chart (aman dari blokir TrustPositif ISP Indonesia)
       const { json, errMsg } = await api('ohlcv_chart', { query: { symbol, tf }, silent: true });
       if (json && Array.isArray(json.candles) && json.candles.length) {
         const bars = computeBars(json.candles);
-        if (bars.length) return { bars, stale: !!json.stale, candleAgeMins: json.candle_age_mins };
+        if (bars.length) return { bars, stale: !!json.stale, candleAgeMins: json.candle_age_mins, liveSource: json.live_source || null };
       }
 
       return {
@@ -1877,17 +1877,19 @@ if (localStorage.getItem('dm_dev_theme') === 'light') {
     }
     const { json, errMsg } = await api('ohlcv_chart', { query: { symbol, tf }, silent: true });
     if (errMsg || !json || json.error) return { bars: [], error: errMsg || (json && json.error) };
-    return { bars: computeBars(json.candles), stale: !!json.stale, candleAgeMins: json.candle_age_mins };
+    return { bars: computeBars(json.candles), stale: !!json.stale, candleAgeMins: json.candle_age_mins, liveSource: json.live_source || null };
   }
 
-  function renderChartDataStatus(symbol, stale, candleAgeMins, live){
+  function renderChartDataStatus(symbol, stale, candleAgeMins, liveSource){
     const status = document.getElementById(chartStatusId(symbol));
     if (!status) return;
     status.className = 'chart-data-status';
-    if (live) {
+    if (liveSource) {
       status.classList.add('live');
-      status.textContent = 'Data live Deriv';
-      status.title = 'Candle aktif diperbarui oleh feed Deriv.';
+      status.textContent = `Data live ${liveSource}`;
+      status.title = liveSource === 'Twelve Data'
+        ? 'Cadangan tampilan XAU/USD/FX dari Twelve Data; auto-entry tetap menunggu candle Deriv yang segar.'
+        : 'Candle aktif diperbarui oleh feed Deriv.';
       return;
     }
     if (!stale) { status.textContent = ''; status.removeAttribute('title'); return; }
@@ -1900,7 +1902,7 @@ if (localStorage.getItem('dm_dev_theme') === 'light') {
   async function fetchAndApplyBars(symbol){
     const st = chartState[symbol];
     if (!st || !st.series) return false;
-    const { bars, stale, candleAgeMins, live } = await fetchCandlesForTf(symbol, st.tf || '1h');
+    const { bars, stale, candleAgeMins, liveSource } = await fetchCandlesForTf(symbol, st.tf || '1h');
     if (!bars.length) return false;
     st.bars = bars;
     st.series.setData(bars);
@@ -1910,7 +1912,7 @@ if (localStorage.getItem('dm_dev_theme') === 'light') {
     st.setup = pickChartSetup(symbol);
     applyMarkers(symbol);
     positionOverlay(symbol);
-    renderChartDataStatus(symbol, stale, candleAgeMins, live);
+    renderChartDataStatus(symbol, stale, candleAgeMins, liveSource);
     return true;
   }
 
@@ -1928,7 +1930,7 @@ if (localStorage.getItem('dm_dev_theme') === 'light') {
       return;
     }
     const useTf = tf || '1h';
-    const { bars, error, stale, candleAgeMins, live } = await fetchCandlesForTf(symbol, useTf);
+    const { bars, error, stale, candleAgeMins, liveSource } = await fetchCandlesForTf(symbol, useTf);
     if (!bars.length) {
       box.innerHTML = `<div class="chart-msg">${esc(error || 'Candle belum tersedia untuk pair/timeframe ini.')}<br><button class="chart-retry-btn" style="margin-top:6px;font-size:10px;padding:3px 8px;cursor:pointer;background:var(--card);color:var(--fg);border:1px solid var(--border);border-radius:3px;">Coba Lagi</button></div>`;
       const retryBtn = box.querySelector('.chart-retry-btn');
@@ -1985,7 +1987,7 @@ if (localStorage.getItem('dm_dev_theme') === 'light') {
     const ro = new ResizeObserver(overlay);
     ro.observe(box);
     chartState[symbol].ro = ro;
-    renderChartDataStatus(symbol, stale, candleAgeMins, live);
+    renderChartDataStatus(symbol, stale, candleAgeMins, liveSource);
     // fitContent() menyesuaikan price scale secara internal-async — priceToCoordinate()
     // yang dipanggil terlalu dini (sebelum layout itu selesai) balikin null diam-diam,
     // jadi overlay tidak pernah muncul kalau cuma diandalkan 1x rAF. Beberapa percobaan

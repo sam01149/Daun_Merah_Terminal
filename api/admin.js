@@ -3280,9 +3280,27 @@ async function ohlcvReadHandler(req, res) {
 // Candle mentah (bukan metrik turunan seperti ohlcv_read/computeOhlcvMetrics) untuk
 // chart Lightweight Charts di dev-auto-entry.html (revamp dashboard Professional LLM
 // Trader, 2026-08-18) — baca langsung snapshot `ohlcv:<symbol>:<tf>` yang SUDAH ada di
-// Redis (dipopulasi ohlcv_sync cron + refresh-on-read di bawah), tanpa fetch/hitung baru.
+// Redis (dipopulasi ohlcv_sync cron + refresh-on-read di bawah). Bila source Deriv
+// benar-benar tidak dapat dijangkau dan snapshot 1H sudah basi, handler ini boleh
+// memakai Twelve Data sebagai cadangan TAMPILAN chart saja — tidak pernah menulis
+// snapshot evaluator auto-entry.
 // Same throttled-refresh pattern dengan loadOhlcvData supaya candle tidak basi kalau
 // tab chart baru dibuka lama setelah sync cron terakhir.
+const CHART_DISPLAY_FALLBACK_TTL = 60; // <= 1 request Twelve Data/pair/menit (free tier 8 RPM)
+async function getChartDisplayFallback(symbol) {
+  const cacheKey = `ohlcv_chart_display:twelvedata:${symbol}:1h`;
+  try {
+    const cached = await redisCmd('GET', cacheKey);
+    if (cached) {
+      const parsed = JSON.parse(cached);
+      if (Array.isArray(parsed?.candles) && parsed.candles.length) return parsed.candles;
+    }
+  } catch (e) { /* cache hanya optimasi kuota; fetch tetap boleh dicoba */ }
+  const candles = await fetchFallbackCandles(symbol, '1h');
+  try { await redisCmd('SET', cacheKey, JSON.stringify({ candles }), 'EX', String(CHART_DISPLAY_FALLBACK_TTL)); } catch (e) {}
+  return candles;
+}
+
 async function ohlcvChartHandler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Cache-Control', 'no-cache');
@@ -3319,6 +3337,24 @@ async function ohlcvChartHandler(req, res) {
     const lastCandleT = marketHours.newestCandleEpoch(candles1h);
     const candleAgeMins = lastCandleT == null ? null : Math.max(0, Math.round((Date.now() - lastCandleT * 1000) / 60000));
     const stale = marketHours.isFxMarketOpen() && marketHours.isCandleStale(candles1h, Date.now());
+    // Cadangan ini EXPLICIT display-only: Twelve Data hanya menjawab Chart Posisi saat
+    // Deriv tidak tersedia dan cache 1H sudah basi. Ia TIDAK mengganti `ohlcv:<symbol>:1h`,
+    // sehingga ohlcv_analyze/auto-entry tetap memakai gate kualitas data Deriv yang sama.
+    if (tf === '1h' && stale && mapYahooSymbolToDeriv(symbol)) {
+      try {
+        const displayCandles = await getChartDisplayFallback(symbol);
+        const displayLastT = marketHours.newestCandleEpoch(displayCandles);
+        if (displayLastT != null && !marketHours.isCandleStale(displayCandles, Date.now())) {
+          const displayAgeMins = Math.max(0, Math.round((Date.now() - displayLastT * 1000) / 60000));
+          return res.status(200).json({
+            symbol, tf, candles: displayCandles, last_candle_t: displayLastT,
+            candle_age_mins: displayAgeMins, stale: false, live_source: 'Twelve Data',
+          });
+        }
+      } catch (e) {
+        console.warn(`ohlcv_chart: Twelve Data display fallback ${symbol} gagal:`, e.message);
+      }
+    }
     return res.status(200).json({ symbol, tf, candles, last_candle_t: lastCandleT, candle_age_mins: candleAgeMins, stale });
   } catch (e) {
     return res.status(500).json({ error: e.message });
