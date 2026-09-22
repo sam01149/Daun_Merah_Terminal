@@ -2328,6 +2328,11 @@ const OHLCV_FIXED_PAIRS = [
   { symbol: 'CHFJPY=X', label: 'CHF/JPY' },
 ];
 
+// Dashboard hanya menampilkan delapan pair pertama. Batasi display fallback ke
+// daftar ini: Twelve Data free tier menerima 8 request/menit, sehingga satu cold
+// load dashboard tidak pernah menarik pair auto-entry yang tidak dirender.
+const OHLCV_DASHBOARD_PAIRS = OHLCV_FIXED_PAIRS.slice(0, 8);
+
 const OHLCV_PAIR_SYMBOL_MAP = {
   'EUR/USD': 'EURUSD=X', 'GBP/USD': 'GBPUSD=X', 'USD/JPY': 'USDJPY=X',
   'AUD/USD': 'AUDUSD=X', 'USD/CAD': 'USDCAD=X', 'USD/CHF': 'USDCHF=X',
@@ -9165,14 +9170,26 @@ async function ohlcvDashboardHandler(req, res) {
   if (req.method === 'OPTIONS') return res.status(204).end();
   try {
     const pairs = await Promise.all(
-      OHLCV_FIXED_PAIRS.map(async ({ symbol, label }) => {
+      OHLCV_DASHBOARD_PAIRS.map(async ({ symbol, label }) => {
         try {
           const [raw, rawSource] = await Promise.all([
             redisCmd('GET', `ohlcv:${symbol}:1h`),
             redisCmd('GET', `ohlcv:${symbol}:source`),
           ]);
-          if (!raw) return { symbol, label, available: false };
-          const c = JSON.parse(raw);
+          let c = parseOhlcvCache(raw, `ohlcv:${symbol}:1h`, true);
+          let displayOnly = false;
+          // Konsumen dashboard adalah tampilan publik yang sama dengan kartu
+          // Analisa. Saat snapshot Deriv kosong, pakai cache display-only yang
+          // terpisah; hasil ini tidak pernah ditulis ke cache evaluator.
+          if (!Array.isArray(c) || c.length < 6) {
+            try {
+              const fallback = await getDisplayFallbackCandles(symbol, '1h');
+              if (Array.isArray(fallback) && fallback.length >= 6) {
+                c = fallback;
+                displayOnly = true;
+              }
+            } catch (e) { /* chip tetap unavailable bila display fallback gagal */ }
+          }
           if (!Array.isArray(c) || c.length < 6) return { symbol, label, available: false };
           const isXau = symbol === 'GC=F';
           const isJpy = symbol.includes('JPY');
@@ -9189,7 +9206,8 @@ async function ohlcvDashboardHandler(req, res) {
           // M1: source diagnostik — 'yahoo' (default) atau 'twelvedata' (fallback aktif).
           let source1h = 'yahoo';
           try { source1h = (rawSource && JSON.parse(rawSource)['1h']) || 'yahoo'; } catch(e) {}
-          return { symbol, label, available: true, trend, current: curr, change_pct: chg, dec, source: source1h };
+          if (displayOnly) source1h = 'Twelve Data (tampilan)';
+          return { symbol, label, available: true, trend, current: curr, change_pct: chg, dec, source: source1h, display_only: displayOnly };
         } catch(e) {
           return { symbol, label, available: false };
         }

@@ -154,6 +154,39 @@ test('ohlcv_read: cache Deriv kosong memakai Twelve Data hanya untuk kartu Anali
   }
 });
 
+test('ohlcv_dashboard: cache Deriv kosong tetap mengisi delapan chip publik dari Twelve Data display-only', async () => {
+  const store = makeStore();
+  const hourStart = Math.floor(Date.now() / 3600000) * 3600000;
+  const hourly = Array.from({ length: 8 }, (_, i) => ({
+    datetime: new Date(hourStart - (7 - i) * 3600000).toISOString().slice(0, 19).replace('T', ' '),
+    open: String(1 + i / 1000), high: String(1.001 + i / 1000), low: String(.999 + i / 1000), close: String(1.0005 + i / 1000),
+  }));
+  const origFetch = global.fetch, oldKey = process.env.TWELVEDATA_API_KEY;
+  let twelveDataCalls = 0;
+  process.env.TWELVEDATA_API_KEY = 'display-only-test-key';
+  global.fetch = async (url, opts) => {
+    if (String(url).includes('fake-upstash.test')) return redisFetchStub(store)(url, opts);
+    if (String(url).startsWith('https://api.twelvedata.com/')) {
+      twelveDataCalls++;
+      return { ok: true, json: async () => ({ values: hourly }) };
+    }
+    throw new Error('unexpected fetch: ' + url);
+  };
+  try {
+    const handler = loadHandler();
+    const { req, res } = fakeReqRes({ action: 'ohlcv_dashboard' });
+    await handler(req, res);
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.body.pairs.length, 8, 'dashboard hanya memuat delapan pair yang dirender');
+    assert.ok(res.body.pairs.every(p => p.available && p.display_only && p.source === 'Twelve Data (tampilan)'));
+    assert.equal(twelveDataCalls, 8, 'satu cold load berada tepat pada batas kuota 8 RPM');
+    assert.equal(store.strings['ohlcv:GC=F:1h'], undefined, 'fallback tampilan tidak boleh menulis cache evaluator');
+  } finally {
+    global.fetch = origFetch;
+    if (oldKey === undefined) delete process.env.TWELVEDATA_API_KEY; else process.env.TWELVEDATA_API_KEY = oldKey;
+  }
+});
+
 test('ohlcv_read: key H4 hilang dibentuk ulang dari candle H1 Deriv yang sama', async () => {
   const nowHour = Math.floor(Date.now() / 3600000) * 3600000;
   const nowDay = Math.floor(Date.now() / 86400000) * 86400000;

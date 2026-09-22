@@ -11,12 +11,18 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-09-22 (Session 373 — Audit ketahanan data Analisa)
+> **Last updated:** 2026-09-22 (Session 374 — Strip teknikal dashboard terisi)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 374 (2026-09-22) — Strip teknikal dashboard terisi saat cache primary kosong
+
+**Masalah dan perbaikan.** Baris TEKNIKAL pada Command Center hanya membaca `ohlcv:<pair>:1h` (cache primary Deriv), sedangkan fallback yang membuat kartu tab Analisa tetap terisi tidak pernah digunakan. Saat cache Deriv kosong, delapan chip dashboard semuanya menjadi “—”. `ohlcv_dashboard` kini memakai cache Twelve Data display-only H1 yang sama bila snapshot primary kosong/korup/terlalu pendek. Fallback dibatasi tepat ke delapan pair yang memang dirender agar satu cold load maksimal memakai delapan request, sesuai batas free tier per menit; cache bersama berlaku lima menit. Tidak ada candle yang ditulis ke cache evaluator/auto-entry. Chip fallback diberi penanda `TD tampilan`, sekaligus tooltip sumber lengkap.
+
+**Verifikasi lokal.** Regresi baru mensimulasikan cache Deriv kosong dan memastikan kedelapan chip kembali tersedia dari Twelve Data, hanya delapan request yang dibuat, dan key evaluator tetap tidak tersentuh. `test/admin/ohlcv_chart.test.js`: 11/11 lulus; suite penuh `npm test`: 1.345/1.345 lulus; sintaks `api/admin.js` serta skrip `index.html` lulus. `APP_VERSION` dinaikkan ke `2026.09.22.2` agar perubahan frontend tidak tertahan cache browser.
 
 ## Changelog Session 373 (2026-09-22) — Audit ketahanan data Analisa
 
