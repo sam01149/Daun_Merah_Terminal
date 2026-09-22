@@ -24,7 +24,7 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 
 **Cakupan aman.** Tidak ada peralihan evaluator ke Yahoo/Twelve Data: harga OHLCV evaluator tetap dari Deriv, hanya rute koneksinya yang diperbarui. Daemon juga memakai endpoint v1 dan menambah ping tiap 30 detik supaya sesi tidak ditutup ketika menunggu candle H1; dokumentasi deployment menghapus `DERIV_APP_ID` sebagai syarat lama.
 
-**Verifikasi lokal.** Probe live endpoint baru mengembalikan 10 candle EUR/USD serta tick XAU/USD. Regresi memastikan candle dan tick berhasil tanpa `DERIV_APP_ID`, URL endpoint benar, dan skenario Deriv gagal tetap fail-safe. `npm test`: 1.346/1.346 lulus; pemeriksaan sintaks `api/_ohlcv_fetch.js`, `api/admin.js`, dan `vps/daemon.js` lulus. Verifikasi production dicatat setelah deployment.
+**Verifikasi lokal dan live.** Probe live endpoint baru mengembalikan 10 candle EUR/USD serta tick XAU/USD. Regresi memastikan candle dan tick berhasil tanpa `DERIV_APP_ID`, URL endpoint benar, dan skenario Deriv gagal tetap fail-safe. `npm test`: 1.346/1.346 lulus; pemeriksaan sintaks `api/_ohlcv_fetch.js`, `api/admin.js`, dan `vps/daemon.js` lulus. Setelah deploy, Chart Posisi production memperoleh 300 candle Deriv 1 menit; cache primary XAU/USD dan seluruh tujuh pair dashboard lainnya dihangatkan lewat `ohlcv_read`. Verifikasi akhir `ohlcv_dashboard`: 8/8 `available:true`, `source:"deriv"`, tanpa display fallback atau pair kosong.
 
 ## Changelog Session 374 (2026-09-22) — Strip teknikal dashboard terisi saat cache primary kosong
 
