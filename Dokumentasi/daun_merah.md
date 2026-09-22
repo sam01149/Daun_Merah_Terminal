@@ -11,12 +11,20 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-09-22 (Session 374 — Strip teknikal dashboard terisi)
+> **Last updated:** 2026-09-22 (Session 375 — Pulihkan koneksi primary Deriv)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 375 (2026-09-22) — Pulihkan koneksi primary Deriv lewat endpoint publik v1
+
+**Akar masalah dan solusi.** Endpoint legacy `wss://ws.derivws.com/websockets/v3` gagal membuka koneksi dari production dengan `WebSocket error`; probe handshake mengembalikan non-101/Cloudflare 520. Endpoint market-data publik resmi Deriv v1 `wss://api.derivws.com/trading/v1/options/ws/public` diuji langsung berhasil: candle `frxEURUSD` dan tick `frxXAUUSD` kembali dengan kontrak `ticks_history` yang kompatibel. Semua pembacaan primary (`fetchDerivCandles` dan `fetchDerivLatestPrice`) dipindahkan ke endpoint v1 ini; ia tidak memerlukan `DERIV_APP_ID`. Error WebSocket sekarang menyertakan detail kegagalan atau close-code bila tersedia.
+
+**Cakupan aman.** Tidak ada peralihan evaluator ke Yahoo/Twelve Data: harga OHLCV evaluator tetap dari Deriv, hanya rute koneksinya yang diperbarui. Daemon juga memakai endpoint v1 dan menambah ping tiap 30 detik supaya sesi tidak ditutup ketika menunggu candle H1; dokumentasi deployment menghapus `DERIV_APP_ID` sebagai syarat lama.
+
+**Verifikasi lokal.** Probe live endpoint baru mengembalikan 10 candle EUR/USD serta tick XAU/USD. Regresi memastikan candle dan tick berhasil tanpa `DERIV_APP_ID`, URL endpoint benar, dan skenario Deriv gagal tetap fail-safe. `npm test`: 1.346/1.346 lulus; pemeriksaan sintaks `api/_ohlcv_fetch.js`, `api/admin.js`, dan `vps/daemon.js` lulus. Verifikasi production dicatat setelah deployment.
 
 ## Changelog Session 374 (2026-09-22) — Strip teknikal dashboard terisi saat cache primary kosong
 

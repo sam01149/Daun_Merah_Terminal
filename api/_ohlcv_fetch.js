@@ -154,18 +154,16 @@ async function fetchFallbackCandles(yahooSymbol, interval) {
 // bukan regresi/crash. Yahoo GC=F tetap fallback (lihat refreshOhlcvFromYahoo) kalau
 // Deriv down — dipakai apa adanya meski basis-nya beda, sama seperti fallback pair FX.
 //
-// DERIV_APP_ID (2026-07-18): sementara pakai app_id PUBLIK 1089 — app_id dedicated
-// yang didaftarkan user via developers.deriv.com TERNYATA tidak kompatibel dengan
-// endpoint ws.derivws.com ini (server balas {"error":"InvalidAppID"}, diverifikasi
-// live terhadap 3 titik server (ws/green/blue).derivws.com). Root cause: Deriv
-// punya 2 sistem developer terpisah (portal baru developers.deriv.com vs API lama
-// yang dipakai endpoint ini) yang app_id-nya belum/tidak saling kompatibel — belum
-// ditemukan jalur self-service untuk app_id lama yang kompatibel (semua link
-// "API developer" di akun mengarah ke portal baru). Risiko app_id publik: dibagi
-// SEMUA developer dunia (rate limit bisa kena walau traffic kita sendiri kecil),
-// dan Deriv bisa mematikan/membatasi 1089 sepihak kapan saja (bukan untuk trafik
-// produksi). Ganti via env var DERIV_APP_ID begitu dapat app_id dedicated yang
-// terbukti kompatibel — TIDAK perlu ubah kode apa pun di sini.
+// Market data publik Deriv kini memakai endpoint resmi v1. Endpoint legacy
+// ws.derivws.com mengembalikan Cloudflare 520/non-101 dari jalur produksi pada
+// 2026-09-22, sedangkan endpoint ini terbukti mengembalikan candle+tick untuk
+// frxEURUSD/frxXAUUSD. `ticks_history` tidak memerlukan autentikasi maupun app ID.
+const DERIV_PUBLIC_WS_URL = 'wss://api.derivws.com/trading/v1/options/ws/public';
+
+function derivWsFailureDetail(event) {
+  const detail = event?.error?.message || event?.message || event?.reason;
+  return detail ? `: ${String(detail).slice(0, 240)}` : '';
+}
 const YAHOO_TO_DERIV_SYMBOL = {
   'EURUSD=X': 'frxEURUSD', 'GBPUSD=X': 'frxGBPUSD', 'USDJPY=X': 'frxUSDJPY',
   'AUDUSD=X': 'frxAUDUSD', 'USDCAD=X': 'frxUSDCAD', 'USDCHF=X': 'frxUSDCHF',
@@ -200,8 +198,6 @@ function mergeVolumeByTimestamp(baseCandles, volumeCandles) {
 async function fetchDerivCandles(yahooSymbol, interval, count) {
   const derivSymbol = mapYahooSymbolToDeriv(yahooSymbol);
   if (!derivSymbol) throw new Error(`fetchDerivCandles: tidak ada mapping Deriv untuk ${yahooSymbol}`);
-  const appId = process.env.DERIV_APP_ID;
-  if (!appId) throw new Error('fetchDerivCandles: DERIV_APP_ID belum diset');
   const granMap = { '1m': 60, '5m': 300, '15m': 900, '1h': 3600, '4h': 14400, '1d': 86400 };
   const granularity = granMap[interval] || (interval === '1d' ? 86400 : 3600);
 
@@ -215,7 +211,7 @@ async function fetchDerivCandles(yahooSymbol, interval, count) {
       try { ws.close(); } catch (e) {}
       reject(new Error(`fetchDerivCandles ${derivSymbol}: timeout 8s`));
     }, 8000);
-    const ws = new WebSocket(`wss://ws.derivws.com/websockets/v3?app_id=${appId}`);
+    const ws = new WebSocket(DERIV_PUBLIC_WS_URL);
     ws.addEventListener('open', () => {
       ws.send(JSON.stringify({ ticks_history: derivSymbol, style: 'candles', granularity, count, end: 'latest' }));
     });
@@ -244,11 +240,18 @@ async function fetchDerivCandles(yahooSymbol, interval, count) {
       if (candles.length === 0) return reject(new Error(`fetchDerivCandles ${derivSymbol}: 0 candle valid setelah normalisasi`));
       resolve(candles);
     });
-    ws.addEventListener('error', () => {
+    ws.addEventListener('error', (event) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      reject(new Error(`fetchDerivCandles ${derivSymbol}: WebSocket error`));
+      reject(new Error(`fetchDerivCandles ${derivSymbol}: WebSocket error${derivWsFailureDetail(event)}`));
+    });
+    ws.addEventListener('close', (event) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      const reason = event?.reason ? ` — ${String(event.reason).slice(0, 240)}` : '';
+      reject(new Error(`fetchDerivCandles ${derivSymbol}: WebSocket closed (${event?.code ?? 'unknown'})${reason}`));
     });
   });
 }
@@ -261,8 +264,6 @@ async function fetchDerivCandles(yahooSymbol, interval, count) {
 async function fetchDerivLatestPrice(yahooSymbol) {
   const derivSymbol = mapYahooSymbolToDeriv(yahooSymbol);
   if (!derivSymbol) throw new Error(`fetchDerivLatestPrice: tidak ada mapping Deriv untuk ${yahooSymbol}`);
-  const appId = process.env.DERIV_APP_ID;
-  if (!appId) throw new Error('fetchDerivLatestPrice: DERIV_APP_ID belum diset');
 
   return new Promise((resolve, reject) => {
     let settled = false;
@@ -272,7 +273,7 @@ async function fetchDerivLatestPrice(yahooSymbol) {
       try { ws.close(); } catch (e) {}
       reject(new Error(`fetchDerivLatestPrice ${derivSymbol}: timeout 8s`));
     }, 8000);
-    const ws = new WebSocket(`wss://ws.derivws.com/websockets/v3?app_id=${appId}`);
+    const ws = new WebSocket(DERIV_PUBLIC_WS_URL);
     ws.addEventListener('open', () => {
       ws.send(JSON.stringify({ ticks_history: derivSymbol, style: 'ticks', count: 1, end: 'latest' }));
     });
@@ -292,11 +293,18 @@ async function fetchDerivLatestPrice(yahooSymbol) {
       if (isNaN(price) || price <= 0) return reject(new Error(`fetchDerivLatestPrice ${derivSymbol}: harga tidak valid`));
       resolve({ price, t: t || null });
     });
-    ws.addEventListener('error', () => {
+    ws.addEventListener('error', (event) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      reject(new Error(`fetchDerivLatestPrice ${derivSymbol}: WebSocket error`));
+      reject(new Error(`fetchDerivLatestPrice ${derivSymbol}: WebSocket error${derivWsFailureDetail(event)}`));
+    });
+    ws.addEventListener('close', (event) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      const reason = event?.reason ? ` — ${String(event.reason).slice(0, 240)}` : '';
+      reject(new Error(`fetchDerivLatestPrice ${derivSymbol}: WebSocket closed (${event?.code ?? 'unknown'})${reason}`));
     });
   });
 }
@@ -313,7 +321,7 @@ function shouldSendYahooAlert(streak, lastAlertTs, now, threshold = 3, cooldownM
 module.exports = {
   fetchYahooOhlcv1h, fetchBinancePaxg1h,
   mapYahooSymbolToTwelveData, normalizeTwelveDataCandles, fetchFallbackCandles,
-  mapYahooSymbolToDeriv, fetchDerivCandles, fetchDerivLatestPrice,
+  mapYahooSymbolToDeriv, fetchDerivCandles, fetchDerivLatestPrice, DERIV_PUBLIC_WS_URL,
   mergeVolumeByTimestamp,
   shouldSendYahooAlert,
 };

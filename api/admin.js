@@ -315,7 +315,7 @@ async function trackDerivHealth(derivFullyDownThisRun) {
       await sendHealthTelegram(
         `🔴 *Daun Merah — Deriv OHLCV Down*\n\n` +
         `${streak}x sync beruntun: semua pair primary Deriv gagal fetch. Cache TIDAK di-fallback ke Yahoo/Twelve Data (kebijakan sejak Session 313 — hindari campur skala harga vendor di evaluasi SL/TP) — data candle akan makin basi sampai Deriv pulih.\n` +
-        `Cek status Deriv API (\`ws.derivws.com\`) / app_id.\n\n` +
+        `Cek status Deriv API (\`api.derivws.com\`).\n\n` +
         `_Dicek: ${new Date(now).toISOString().substring(0, 16)} UTC_`
       );
       await redisCmd('SET', 'deriv_last_alert_ts', String(now));

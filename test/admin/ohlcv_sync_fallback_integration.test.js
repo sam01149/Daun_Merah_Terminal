@@ -10,8 +10,8 @@
 // berlaku untuk pair yang Yahoo memang primary-nya sendiri (AUD/NZD, CHF/JPY —
 // tidak ada di Deriv map). Pair primary Deriv (9 pair lain) TIDAK LAGI fallback ke
 // Yahoo/TwelveData kalau Deriv gagal — mereka di-skip (cache lama dipakai). Test
-// ini SENGAJA tidak set DERIV_APP_ID supaya Deriv gagal utk semua pair juga, biar
-// premis lama "Yahoo mati total" tetap bisa diuji tapi assert-nya disesuaikan:
+// ini memalsukan kegagalan WebSocket Deriv supaya premis "Yahoo mati total" tetap
+// bisa diuji, tetapi assert-nya disesuaikan:
 // hanya 2 pair Yahoo-only yang benar-benar lewat rantai fallback TwelveData.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
@@ -26,12 +26,20 @@ function fakeRes() {
   };
 }
 
+class RejectingDerivWebSocket {
+  constructor() { this.listeners = {}; queueMicrotask(() => this.listeners.error?.({ error: new Error('simulated Deriv outage') })); }
+  addEventListener(type, fn) { this.listeners[type] = fn; }
+  close() {}
+}
+
 test('ohlcv_sync: Yahoo mati total -> semua pair fallback ke Twelve Data, shape candle identik', async () => {
   process.env.TWELVEDATA_API_KEY = 'dummy-key-test';
   delete process.env.UPSTASH_REDIS_REST_URL; // redisCmd jadi no-op (return null), tidak butuh Redis nyata
   delete process.env.UPSTASH_REDIS_REST_TOKEN;
 
   const origFetch = global.fetch;
+  const origWs = global.WebSocket;
+  global.WebSocket = RejectingDerivWebSocket;
   global.fetch = async (url) => {
     const u = String(url);
     if (u.includes('query1.finance.yahoo.com')) {
@@ -63,6 +71,7 @@ test('ohlcv_sync: Yahoo mati total -> semua pair fallback ke Twelve Data, shape 
   }, res);
 
   global.fetch = origFetch;
+  global.WebSocket = origWs;
   delete process.env.TWELVEDATA_API_KEY;
 
   assert.equal(res.statusCode, 200);
@@ -77,7 +86,7 @@ test('ohlcv_sync: Yahoo mati total -> semua pair fallback ke Twelve Data, shape 
     assert.equal(pair.source1d, 'twelvedata', `${pair.symbol}: source1d harus twelvedata saat Yahoo mati`);
     assert.ok(pair.count1h > 0, `${pair.symbol}: candle 1h harus ada isinya`);
   }
-  // 9 pair primary Deriv: Deriv gagal (DERIV_APP_ID tak diset) -> di-skip, BUKAN fallback Yahoo/TwelveData.
+  // 9 pair primary Deriv: WebSocket gagal -> di-skip, BUKAN fallback Yahoo/TwelveData.
   assert.equal(skippedPairs.length, 9, '9 pair primary Deriv harus di-skip, bukan ikut fallback Yahoo/TwelveData');
   assert.equal(res.body.failed.length, 0, 'tidak boleh ada pair gagal total — pair Deriv di-skip (bukan gagal), pair Yahoo-only tertolong fallback');
 });

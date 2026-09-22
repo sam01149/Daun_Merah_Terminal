@@ -9,7 +9,9 @@ const {
   fetchFallbackCandles,
   shouldSendYahooAlert,
   mapYahooSymbolToDeriv,
+  fetchDerivCandles,
   fetchDerivLatestPrice,
+  DERIV_PUBLIC_WS_URL,
   mergeVolumeByTimestamp,
 } = require('../../api/_ohlcv_fetch.js');
 
@@ -145,17 +147,56 @@ test('mapYahooSymbolToDeriv: AUD/NZD tetap tidak terpetakan (Yahoo-only)', () =>
   assert.equal(mapYahooSymbolToDeriv('AUDNZD=X'), null);
 });
 
-// ── fetchDerivLatestPrice: guard clause sebelum connect WebSocket ───────────
+// ── Deriv public WebSocket v1 ───────────────────────────────────────────────
 
 test('fetchDerivLatestPrice: simbol tanpa mapping -> throw sebelum connect', async () => {
   await assert.rejects(() => fetchDerivLatestPrice('BTCUSD=X'), /tidak ada mapping/);
 });
 
-test('fetchDerivLatestPrice: DERIV_APP_ID belum diset -> throw sebelum connect', async () => {
-  const orig = process.env.DERIV_APP_ID;
+test('fetchDerivCandles: endpoint publik v1 mengembalikan candle tanpa DERIV_APP_ID', async () => {
+  const origWs = global.WebSocket, origAppId = process.env.DERIV_APP_ID;
+  let connectedUrl = null, sent = null;
   delete process.env.DERIV_APP_ID;
-  await assert.rejects(() => fetchDerivLatestPrice('GC=F'), /DERIV_APP_ID belum diset/);
-  if (orig) process.env.DERIV_APP_ID = orig;
+  global.WebSocket = class {
+    constructor(url) { connectedUrl = url; this.listeners = {}; queueMicrotask(() => this.listeners.open?.({})); }
+    addEventListener(type, fn) { this.listeners[type] = fn; }
+    send(payload) {
+      sent = JSON.parse(payload);
+      queueMicrotask(() => this.listeners.message?.({ data: JSON.stringify({ candles: [
+        { epoch: 100, open: 1.1, high: 1.2, low: 1.0, close: 1.15 },
+      ] }) }));
+    }
+    close() {}
+  };
+  try {
+    const candles = await fetchDerivCandles('EURUSD=X', '1h', 1);
+    assert.equal(connectedUrl, DERIV_PUBLIC_WS_URL);
+    assert.deepEqual(sent, { ticks_history: 'frxEURUSD', style: 'candles', granularity: 3600, count: 1, end: 'latest' });
+    assert.deepEqual(candles, [{ t: 100, o: 1.1, h: 1.2, l: 1, c: 1.15, v: 0 }]);
+  } finally {
+    global.WebSocket = origWs;
+    if (origAppId === undefined) delete process.env.DERIV_APP_ID; else process.env.DERIV_APP_ID = origAppId;
+  }
+});
+
+test('fetchDerivLatestPrice: endpoint publik v1 mengembalikan tick tanpa DERIV_APP_ID', async () => {
+  const orig = process.env.DERIV_APP_ID;
+  const origWs = global.WebSocket;
+  let connectedUrl = null;
+  delete process.env.DERIV_APP_ID;
+  global.WebSocket = class {
+    constructor(url) { connectedUrl = url; this.listeners = {}; queueMicrotask(() => this.listeners.open?.({})); }
+    addEventListener(type, fn) { this.listeners[type] = fn; }
+    send() { queueMicrotask(() => this.listeners.message?.({ data: JSON.stringify({ history: { prices: [4296.65], times: [100] } }) })); }
+    close() {}
+  };
+  try {
+    assert.deepEqual(await fetchDerivLatestPrice('GC=F'), { price: 4296.65, t: 100 });
+    assert.equal(connectedUrl, DERIV_PUBLIC_WS_URL);
+  } finally {
+    global.WebSocket = origWs;
+    if (orig === undefined) delete process.env.DERIV_APP_ID; else process.env.DERIV_APP_ID = orig;
+  }
 });
 
 // ── mergeVolumeByTimestamp: volume Yahoo digabung ke candle Deriv (harga tetap) ──

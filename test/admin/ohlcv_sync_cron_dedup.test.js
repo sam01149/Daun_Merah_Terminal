@@ -7,6 +7,15 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 
+// Semua skenario file ini memerlukan Deriv gagal supaya kebijakan fail-safe
+// primary dapat diuji. Endpoint publik v1 tidak lagi bergantung DERIV_APP_ID,
+// jadi kegagalan harus dimock eksplisit, bukan lewat env kosong.
+global.WebSocket = class {
+  constructor() { this.listeners = {}; queueMicrotask(() => this.listeners.error?.({ error: new Error('simulated Deriv outage') })); }
+  addEventListener(type, fn) { this.listeners[type] = fn; }
+  close() {}
+};
+
 function fakeRes() {
   return {
     headers: {},
@@ -162,7 +171,12 @@ test('ohlcv_sync: Yahoo+TwelveData mati untuk pair non-Deriv, pair Deriv di-skip
   process.env.UPSTASH_REDIS_REST_URL   = 'https://fake-redis.test';
   process.env.UPSTASH_REDIS_REST_TOKEN = 'fake-token';
   delete process.env.TWELVEDATA_API_KEY; // fetchFallbackCandles langsung throw tanpa key
-  delete process.env.DERIV_APP_ID; // fetchDerivCandles langsung throw tanpa app_id -> semua pair Deriv di-skip
+  const origWs = global.WebSocket;
+  global.WebSocket = class {
+    constructor() { this.listeners = {}; queueMicrotask(() => this.listeners.error?.({ error: new Error('simulated Deriv outage') })); }
+    addEventListener(type, fn) { this.listeners[type] = fn; }
+    close() {}
+  };
 
   const setCalls = [];
   const origFetch = global.fetch;
@@ -195,6 +209,7 @@ test('ohlcv_sync: Yahoo+TwelveData mati untuk pair non-Deriv, pair Deriv di-skip
     assert.equal(setCalls.length, 1, 'ada 9 pair yang "synced" (walau cuma skip) -> marker tetap ditulis');
   } finally {
     global.fetch = origFetch;
+    global.WebSocket = origWs;
     delete process.env.UPSTASH_REDIS_REST_URL;
     delete process.env.UPSTASH_REDIS_REST_TOKEN;
   }

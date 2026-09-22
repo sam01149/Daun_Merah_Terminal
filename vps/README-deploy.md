@@ -50,7 +50,7 @@ deploy ulang di platform baru.
    Env var tambahan untuk fungsi penuh Q-2..Q-9 (lihat §6 di bawah untuk detail
    tiap fitur) — semua fail-open (kosong = modul terkait di-skip, TIDAK
    mematikan modul lain):
-   - `DERIV_APP_ID`, `CRON_SECRET`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`,
+   - `CRON_SECRET`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`,
      `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`, `APP_BASE_URL`,
      `AUTO_ENTRY_PAIRS`, `AUTO_ENTRY_HOURS_UTC`, `AUTO_ENTRY_HOURS_UTC_AUDNZD`,
      `AUTO_CONSISTENCY_HOUR_UTC`, `FRIDAY_TIGHTEN_HOUR_UTC`,
@@ -223,7 +223,6 @@ selain 2 yang sudah ada:**
 
 | Env var | Sumber nilai | Wajib untuk |
 |---|---|---|
-| `DERIV_APP_ID` | sama dengan Vercel env (`1089` interim, lihat backlog `[DERIV-APPID]` di `daun_merah_plan.md`) | Q-3 |
 | `CRON_SECRET` | sama dengan Vercel env / GitHub Actions secret | Q-4 (baca `news_history` tidak butuh ini, tapi Q-6 wajib), Q-6 |
 | `TELEGRAM_BOT_TOKEN` | sama dengan Vercel env (bot sudah ada dari Plan M) | Q-3 (alert degraded), Q-4, Q-5 |
 | `TELEGRAM_CHAT_ID` | sama dengan Vercel env | Q-3, Q-4, Q-5 |
@@ -235,13 +234,13 @@ selain 2 yang sudah ada:**
 **Desain fail-open**: tiap modul (Q-3/Q-4/Q-5/Q-6) cek env var-nya sendiri di
 awal — kalau kosong, modul itu SKIP dengan log warning, heartbeat (Q-1) dan
 modul lain tetap jalan normal. Jadi env var di atas BOLEH ditambah bertahap
-(misal cuma `DERIV_APP_ID` dulu untuk uji Q-3 saja) tanpa mematikan yang sudah
+(misal cuma `CRON_SECRET` dulu untuk uji Q-6 saja) tanpa mematikan yang sudah
 jalan — tapi setiap kali menambah/mengubah Variables, klik **Redeploy** manual
 di Railway (env var baru tidak otomatis ke-pick-up proses yang sedang jalan).
 
 **Verifikasi setelah deploy:**
 - `GET /` (domain publik) → field `deriv_stream` harus `connecting_or_up`
-  (bukan `disabled`) kalau `DERIV_APP_ID` sudah diisi.
+  (bukan `down`) setelah daemon terhubung ke endpoint publik Deriv.
 - Redis key `ohlcv:EURUSD=X:1h` (dan 13 pair lain) harus ter-update dengan
   `source.1h == "deriv_stream"` dalam 1 jam pertama (candle H1 baru close di
   awal jam) — cek via `admin?action=redis-keys` atau Upstash console.

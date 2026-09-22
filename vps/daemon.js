@@ -26,7 +26,7 @@ const PORT        = process.env.PORT || 3000;
 const BEAT_INTERVAL_MS = 60 * 1000;
 const BEAT_TTL_SECS    = 300;
 
-const DERIV_APP_ID      = process.env.DERIV_APP_ID || '1089';
+const DERIV_PUBLIC_WS_URL = 'wss://api.derivws.com/trading/v1/options/ws/public';
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_CHAT_ID   = process.env.TELEGRAM_CHAT_ID;
 const CRON_SECRET        = process.env.CRON_SECRET;
@@ -344,7 +344,7 @@ function scheduleReconnect() {
 function connectDerivStream() {
   let ws;
   try {
-    ws = new WebSocket(`wss://ws.derivws.com/websockets/v3?app_id=${DERIV_APP_ID}`);
+    ws = new WebSocket(DERIV_PUBLIC_WS_URL);
   } catch (e) {
     console.warn('daemon: gagal buka WebSocket Deriv:', e.message);
     scheduleReconnect();
@@ -357,6 +357,7 @@ function connectDerivStream() {
   // paralel = tulis Redis dobel.
   let reconnectScheduled = false;
   let killed = false;
+  let keepAliveTimer = null;
   const scheduleOnce = () => {
     if (reconnectScheduled) return;
     reconnectScheduled = true;
@@ -386,6 +387,12 @@ function connectDerivStream() {
       }, i * 300);
       i++;
     }
+    // Deriv menutup sesi WebSocket yang diam sekitar 2 menit. Candle H1 bisa
+    // tidak berubah selama satu jam, jadi ping eksplisit menjaga stream daemon.
+    keepAliveTimer = setInterval(() => {
+      if (ws.readyState !== 1) return;
+      try { ws.send(JSON.stringify({ ping: 1 })); } catch (e) {}
+    }, 30000);
   });
 
   ws.addEventListener('message', (ev) => {
@@ -402,14 +409,17 @@ function connectDerivStream() {
     }
   });
 
-  ws.addEventListener('close', () => { console.warn('daemon: Deriv WS closed'); scheduleOnce(); });
+  ws.addEventListener('close', () => {
+    if (keepAliveTimer) clearInterval(keepAliveTimer);
+    console.warn('daemon: Deriv WS closed');
+    scheduleOnce();
+  });
   ws.addEventListener('error', () => { /* 'close' tetap terpicu setelahnya */ });
 
   return ws;
 }
 
 function startDerivStream() {
-  if (!DERIV_APP_ID) { console.warn('daemon: DERIV_APP_ID kosong, Q-3 streaming di-skip'); return; }
   derivWs = connectDerivStream();
 }
 
@@ -2002,7 +2012,7 @@ function startHttpServer() {
       status: 'up',
       last_beat_epoch: lastBeatOk,
       last_beat_error: lastBeatError,
-      deriv_stream: DERIV_APP_ID ? (derivWs ? 'connecting_or_up' : 'down') : 'disabled',
+      deriv_stream: derivWs ? 'connecting_or_up' : 'down',
       // Observability self-healing (lapis 1-3) — dibaca manual saat debug.
       ws_last_activity_age_s: lastWsActivityAt ? Math.round((Date.now() - lastWsActivityAt) / 1000) : null,
       redis_guard: redisGuard.state(),
