@@ -24,7 +24,7 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 
 **Perbaikan.** `ohlcv_read` sekarang, khusus untuk kartu Analisa publik yang snapshot Deriv-nya kosong/terlalu pendek, mengambil Twelve Data H1 dan D1 di cache display terpisah selama 60 detik lalu menghitung kembali Daily/H4/H1 hanya untuk respons itu. Hasil tidak pernah menulis `ohlcv:<symbol>:*`; auto-entry dan evaluator tetap memegang aturan Deriv yang sama. UI menampilkan “Sumber tampilan: Twelve Data (tampilan)” pada tiap kartu yang memakai cadangan, sehingga tidak ada pergantian sumber diam-diam. Kartu H4 juga tidak lagi crash bila candle ada tetapi swing belum terkonfirmasi; ia menampilkan pesan status yang tepat.
 
-**Verifikasi.** Tes regresi meniru cache Deriv XAU/USD yang kosong dan memastikan ketiga kartu mendapat data dari Twelve Data, label sumber kembali, serta key evaluator tetap tidak dibuat. `test/admin/ohlcv_chart.test.js`: 7/7 lulus; pemeriksaan sintaks `api/admin.js` lulus. `APP_VERSION` dinaikkan ke `2026.09.22.1` agar PWA memuat frontend baru.
+**Verifikasi.** Tes regresi meniru cache Deriv XAU/USD yang kosong dan memastikan ketiga kartu mendapat data dari Twelve Data, label sumber kembali, serta key evaluator tetap tidak dibuat. `test/admin/ohlcv_chart.test.js`: 7/7 lulus; pemeriksaan sintaks `api/admin.js` lulus; suite penuh `npm.cmd test`: 1.341/1.341 lulus. Setelah push, endpoint produksi `ohlcv_read` XAU/USD mengembalikan `d1`/`h4`/`h1` semuanya `available:true` dengan `display_source` Twelve Data, dan HTML produksi menyajikan `APP_VERSION` `2026.09.22.1` serta label sumber baru.
 
 ## Changelog Session 365 (2026-09-18) — Kontrak entry AATAS sesudah event
 
