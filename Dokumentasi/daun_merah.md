@@ -11,18 +11,26 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-09-22 (Session 372 — Data kartu Analisa tetap tersedia)
+> **Last updated:** 2026-09-22 (Session 373 — Audit ketahanan data Analisa)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
 
+## Changelog Session 373 (2026-09-22) — Audit ketahanan data Analisa
+
+**Celah yang ditemukan dan ditutup.** (1) Key cache H4 dapat hilang walau cache H1 Deriv sehat; sebelumnya kartu H4 lalu meminta Twelve Data dan mengganti H1 yang sebenarnya valid. Kini H4 dibangun ulang secara deterministik dari H1 Deriv yang sama. (2) JSON cache OHLCV/TA yang korup sebelumnya dapat membuat `ohlcv_read` atau Chart Posisi membalas 500. Cache korup sekarang diabaikan, lalu jalur tampilan cadangan tetap dicoba; cache evaluator tidak ditulis. (3) TTL cadangan semula 60 detik berisiko terlalu boros saat panel terbuka lama. Dipisah menjadi H1 5 menit dan D1 6 jam.
+
+**Pemeriksaan produksi.** Tiga pair dibaca langsung: XAU/USD dan EUR/USD memiliki Daily/H4/H1 melalui Twelve Data display fallback, AUD/NZD sehat dari cache utama. `ohlcv_dashboard` saat audit menunjukkan cache utama tidak tersedia pada seluruh pair primary Deriv yang tercakup dashboard, sedangkan AUD/NZD dan CHF/JPY (Yahoo-only) tersedia. Artinya fallback tampilan bekerja, tetapi sumber primary Deriv sedang tidak mengisi cache. Pemeriksaan WebSocket publik `app_id=1089` dari lingkungan audit juga gagal; tanpa log Vercel atau status konfigurasi rahasia, penyebab belum dapat dipastikan antara gangguan konektivitas Deriv dan konfigurasi deployment. Evaluator/auto-entry tetap fail-safe dan tidak diganti vendor.
+
+**Verifikasi lokal.** Tambahan tiga regresi mencakup key H4 hilang, snapshot korup pada Analisa, snapshot korup pada Chart Posisi, serta TTL per timeframe. `test/admin/ohlcv_chart.test.js`: 10/10 lulus; `api/admin.js` lolos pemeriksaan sintaks. Inventaris vendor dikoreksi: XAU/USD memang primary Deriv spot sejak 2026-07-30, bukan Yahoo futures seperti catatan lama.
+
 ## Changelog Session 372 (2026-09-22) — Data kartu Analisa tetap tersedia saat cache Deriv kosong
 
 **Masalah.** Pada kartu Analisa XAU/USD, indikator/Risk Reversal masih tampil tetapi tiga kartu harga — Makro Daily 30D, Swing 4H, dan Entry 1H — menjadi “Data belum tersedia”. Penyebabnya bukan perhitungan kartu, melainkan kebijakan sumber harga: saat Deriv gagal, snapshot evaluator sengaja tidak boleh ditimpa Yahoo/Twelve Data agar level evaluasi dan auto-entry tidak tercampur lintas vendor. Akibat sampingnya, UI publik juga tidak punya candle untuk dirender.
 
-**Perbaikan.** `ohlcv_read` sekarang, khusus untuk kartu Analisa publik yang snapshot Deriv-nya kosong/terlalu pendek, mengambil Twelve Data H1 dan D1 di cache display terpisah selama 60 detik lalu menghitung kembali Daily/H4/H1 hanya untuk respons itu. Hasil tidak pernah menulis `ohlcv:<symbol>:*`; auto-entry dan evaluator tetap memegang aturan Deriv yang sama. UI menampilkan “Sumber tampilan: Twelve Data (tampilan)” pada tiap kartu yang memakai cadangan, sehingga tidak ada pergantian sumber diam-diam. Kartu H4 juga tidak lagi crash bila candle ada tetapi swing belum terkonfirmasi; ia menampilkan pesan status yang tepat.
+**Perbaikan.** `ohlcv_read` sekarang, khusus untuk kartu Analisa publik yang snapshot Deriv-nya kosong/terlalu pendek, mengambil Twelve Data H1 dan D1 di cache display terpisah (H1 5 menit, D1 6 jam) lalu menghitung kembali Daily/H4/H1 hanya untuk respons itu. Hasil tidak pernah menulis `ohlcv:<symbol>:*`; auto-entry dan evaluator tetap memegang aturan Deriv yang sama. UI menampilkan “Sumber tampilan: Twelve Data (tampilan)” pada tiap kartu yang memakai cadangan, sehingga tidak ada pergantian sumber diam-diam. Kartu H4 juga tidak lagi crash bila candle ada tetapi swing belum terkonfirmasi; ia menampilkan pesan status yang tepat.
 
 **Verifikasi.** Tes regresi meniru cache Deriv XAU/USD yang kosong dan memastikan ketiga kartu mendapat data dari Twelve Data, label sumber kembali, serta key evaluator tetap tidak dibuat. `test/admin/ohlcv_chart.test.js`: 7/7 lulus; pemeriksaan sintaks `api/admin.js` lulus; suite penuh `npm.cmd test`: 1.341/1.341 lulus. Setelah push, endpoint produksi `ohlcv_read` XAU/USD mengembalikan `d1`/`h4`/`h1` semuanya `available:true` dengan `display_source` Twelve Data, dan HTML produksi menyajikan `APP_VERSION` `2026.09.22.1` serta label sumber baru.
 

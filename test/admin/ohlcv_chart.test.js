@@ -119,10 +119,15 @@ test('ohlcv_read: cache Deriv kosong memakai Twelve Data hanya untuk kartu Anali
     datetime: new Date(dayStart - (139 - i) * 86400000).toISOString().slice(0, 19).replace('T', ' '),
     open: String(4100 + i), high: String(4103 + i), low: String(4097 + i), close: String(4101 + i),
   }));
+  const displayTtls = {};
   const origFetch = global.fetch, oldKey = process.env.TWELVEDATA_API_KEY;
   process.env.TWELVEDATA_API_KEY = 'display-only-test-key';
   global.fetch = async (url, opts) => {
-    if (String(url).includes('fake-upstash.test')) return redisFetchStub(store)(url, opts);
+    if (String(url).includes('fake-upstash.test')) {
+      const args = JSON.parse(opts.body);
+      if (args[0] === 'SET' && String(args[1]).startsWith('ohlcv_display:')) displayTtls[args[1]] = args.at(-1);
+      return redisFetchStub(store)(url, opts);
+    }
     if (String(url).startsWith('https://api.twelvedata.com/')) {
       return { ok: true, json: async () => ({ values: String(url).includes('interval=1day') ? daily : hourly }) };
     }
@@ -141,6 +146,98 @@ test('ohlcv_read: cache Deriv kosong memakai Twelve Data hanya untuk kartu Anali
     });
     assert.equal(store.strings['ohlcv:GC=F:1h'], undefined, 'candle tampilan tidak boleh masuk cache evaluator');
     assert.equal(store.strings['ohlcv:GC=F:1d'], undefined, 'daily tampilan tidak boleh masuk cache evaluator');
+    assert.equal(displayTtls['ohlcv_display:twelvedata:GC=F:1h'], '300', 'cache H1 harus membatasi beban vendor');
+    assert.equal(displayTtls['ohlcv_display:twelvedata:GC=F:1d'], '21600', 'daily tidak perlu ditarik ulang tiap refresh');
+  } finally {
+    global.fetch = origFetch;
+    if (oldKey === undefined) delete process.env.TWELVEDATA_API_KEY; else process.env.TWELVEDATA_API_KEY = oldKey;
+  }
+});
+
+test('ohlcv_read: key H4 hilang dibentuk ulang dari candle H1 Deriv yang sama', async () => {
+  const nowHour = Math.floor(Date.now() / 3600000) * 3600000;
+  const nowDay = Math.floor(Date.now() / 86400000) * 86400000;
+  const h1 = Array.from({ length: 120 }, (_, i) => ({
+    t: Math.floor((nowHour - (119 - i) * 3600000) / 1000), o: 4300 + i, h: 4302 + i, l: 4298 + i, c: 4301 + i, v: 0,
+  }));
+  const d1 = Array.from({ length: 30 }, (_, i) => ({
+    t: Math.floor((nowDay - (29 - i) * 86400000) / 1000), o: 4100 + i, h: 4103 + i, l: 4097 + i, c: 4101 + i, v: 0,
+  }));
+  const store = makeStore({
+    'ohlcv_fresh:GC=F': '1',
+    'ohlcv:GC=F:1h': JSON.stringify(h1),
+    'ohlcv:GC=F:1d': JSON.stringify(d1),
+    // Key ohlcv:GC=F:4h sengaja tidak ada.
+  });
+  const origFetch = global.fetch;
+  global.fetch = redisFetchStub(store);
+  try {
+    const handler = loadHandler();
+    const { req, res } = fakeReqRes({ action: 'ohlcv_read', query: { symbol: 'GC=F', label: 'XAU/USD' } });
+    await handler(req, res);
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.body.h1.available, true);
+    assert.equal(res.body.h4.available, true);
+    assert.equal(res.body.display_source, undefined, 'H4 turunan H1 tetap data Deriv, bukan fallback vendor');
+  } finally { global.fetch = origFetch; }
+});
+
+test('ohlcv_read: snapshot Redis korup tidak membuat respons gagal; display fallback tetap jalan', async () => {
+  const store = makeStore({
+    'ohlcv_fresh:GC=F': '1',
+    'ohlcv:GC=F:1h': '{bukan-json',
+    'ohlcv:GC=F:1d': '[]}',
+  });
+  const currentHour = new Date(Math.floor(Date.now() / 3600000) * 3600000).toISOString().slice(0, 19).replace('T', ' ');
+  const currentDay = new Date(Math.floor(Date.now() / 86400000) * 86400000).toISOString().slice(0, 19).replace('T', ' ');
+  const origFetch = global.fetch, oldKey = process.env.TWELVEDATA_API_KEY;
+  process.env.TWELVEDATA_API_KEY = 'display-only-test-key';
+  global.fetch = async (url, opts) => {
+    if (String(url).includes('fake-upstash.test')) return redisFetchStub(store)(url, opts);
+    if (String(url).startsWith('https://api.twelvedata.com/')) {
+      const values = String(url).includes('interval=1day')
+        ? Array.from({ length: 30 }, (_, i) => ({ datetime: new Date(Date.parse(currentDay + 'Z') - (29 - i) * 86400000).toISOString().slice(0, 19).replace('T', ' '), open: '4300', high: '4302', low: '4298', close: '4301' }))
+        : Array.from({ length: 120 }, (_, i) => ({ datetime: new Date(Date.parse(currentHour + 'Z') - (119 - i) * 3600000).toISOString().slice(0, 19).replace('T', ' '), open: '4300', high: '4302', low: '4298', close: '4301' }));
+      return { ok: true, json: async () => ({ values }) };
+    }
+    throw new Error('unexpected fetch: ' + url);
+  };
+  try {
+    const handler = loadHandler();
+    const { req, res } = fakeReqRes({ action: 'ohlcv_read', query: { symbol: 'GC=F', label: 'XAU/USD' } });
+    await handler(req, res);
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.body.d1.available, true);
+    assert.equal(res.body.h4.available, true);
+    assert.equal(res.body.h1.available, true);
+  } finally {
+    global.fetch = origFetch;
+    if (oldKey === undefined) delete process.env.TWELVEDATA_API_KEY; else process.env.TWELVEDATA_API_KEY = oldKey;
+  }
+});
+
+test('ohlcv_chart: snapshot korup tidak menghasilkan 500 dan tetap memakai fallback tampilan', async () => {
+  const store = makeStore({
+    'ohlcv_fresh:GC=F': '1',
+    'ohlcv:GC=F:1h': '{broken',
+  });
+  const currentHour = new Date(Math.floor(Date.now() / 3600000) * 3600000).toISOString().slice(0, 19).replace('T', ' ');
+  const origFetch = global.fetch, oldKey = process.env.TWELVEDATA_API_KEY;
+  process.env.TWELVEDATA_API_KEY = 'display-only-test-key';
+  global.fetch = async (url, opts) => {
+    if (String(url).includes('fake-upstash.test')) return redisFetchStub(store)(url, opts);
+    if (String(url).startsWith('https://api.twelvedata.com/')) {
+      return { ok: true, json: async () => ({ values: [{ datetime: currentHour, open: '4350', high: '4355', low: '4348', close: '4352' }] }) };
+    }
+    throw new Error('unexpected fetch: ' + url);
+  };
+  try {
+    const handler = loadHandler();
+    const { req, res } = fakeReqRes({ action: 'ohlcv_chart', query: { symbol: 'GC=F', tf: '1h' } });
+    await handler(req, res);
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.body.live_source, 'Twelve Data');
+    assert.equal(res.body.candles.at(-1).c, 4352);
   } finally {
     global.fetch = origFetch;
     if (oldKey === undefined) delete process.env.TWELVEDATA_API_KEY; else process.env.TWELVEDATA_API_KEY = oldKey;

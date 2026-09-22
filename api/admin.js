@@ -2936,6 +2936,17 @@ async function refreshOhlcvFromYahoo(symbol) {
   return true;
 }
 
+function parseOhlcvCache(raw, key, arrayOnly = false) {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    return arrayOnly && !Array.isArray(parsed) ? null : parsed;
+  } catch (e) {
+    console.warn(`ohlcv: cache ${key} korup, diabaikan:`, e.message);
+    return null;
+  }
+}
+
 async function loadOhlcvData(symbol, label) {
   // Pull fresh candles from Yahoo on read (throttled) so the Analisa tab is near real-time
   // instead of bound to the ~daily sync cron. If Yahoo is down we fall through to the last
@@ -2953,12 +2964,20 @@ async function loadOhlcvData(symbol, label) {
     redisCmd('GET', `ta:${symbol}:1d`),
   ]);
 
+  // Redis adalah cache, bukan sumber kebenaran. Satu value korup tidak boleh
+  // menggagalkan seluruh kartu Analisa atau mencegah jalur display fallback.
+  const c1hCached = parseOhlcvCache(raw1h, `ohlcv:${symbol}:1h`, true);
+  const c4hCached = parseOhlcvCache(raw4h, `ohlcv:${symbol}:4h`, true);
+  const c1dCached = parseOhlcvCache(raw1d, `ohlcv:${symbol}:1d`, true);
+  const taCached = parseOhlcvCache(rawTa, `ta:${symbol}:1d`);
   const input = {
     symbol, label,
-    c1h:     raw1h ? JSON.parse(raw1h) : null,
-    c4h:     raw4h ? JSON.parse(raw4h) : null,
-    c1dFull: raw1d ? JSON.parse(raw1d) : null,
-    ta:      rawTa ? JSON.parse(rawTa) : null,
+    c1h:     c1hCached,
+    // H4 adalah turunan deterministik H1. Bila key H4 hilang tetapi H1 sehat,
+    // bentuk ulang dari snapshot Deriv yang sama, bukan ganti vendor tampilan.
+    c4h:     c4hCached || (c1hCached?.length ? resampleTo4h(c1hCached) : null),
+    c1dFull: c1dCached,
+    ta:      taCached,
   };
   let data = computeOhlcvMetrics(input);
 
@@ -2967,7 +2986,9 @@ async function loadOhlcvData(symbol, label) {
   // tidak perlu menjadi blank: ambil Twelve Data secara terpisah untuk tampilan.
   // Tidak ada satu pun hasil di bawah yang ditulis ke `ohlcv:<symbol>:*`, sehingga
   // auto-entry tetap menahan diri saat Deriv bermasalah (kebijakan Session 313).
-  const needDisplay1h = !data.h1.available || !data.h4.available;
+  const needDisplayH1 = !data.h1.available;
+  const needDisplayH4 = !data.h4.available;
+  const needDisplay1h = needDisplayH1 || needDisplayH4;
   const needDisplay1d = !data.d1.available;
   if ((needDisplay1h || needDisplay1d) && mapYahooSymbolToDeriv(symbol)) {
     const [fallback1h, fallback1d] = await Promise.allSettled([
@@ -2980,11 +3001,12 @@ async function loadOhlcvData(symbol, label) {
       data = computeOhlcvMetrics({
         ...input,
         c1h: display1h,
-        c4h: (needDisplay1h && Array.isArray(display1h) && display1h.length) ? resampleTo4h(display1h) : input.c4h,
+        c4h: (needDisplayH4 && Array.isArray(display1h) && display1h.length) ? resampleTo4h(display1h) : input.c4h,
         c1dFull: display1d,
       });
       data.display_source = {
-        ...(needDisplay1h && fallback1h.status === 'fulfilled' ? { h1: 'Twelve Data (tampilan)', h4: 'Twelve Data (tampilan)' } : {}),
+        ...(needDisplayH1 && fallback1h.status === 'fulfilled' ? { h1: 'Twelve Data (tampilan)' } : {}),
+        ...(needDisplayH4 && fallback1h.status === 'fulfilled' ? { h4: 'Twelve Data (tampilan)' } : {}),
         ...(needDisplay1d && fallback1d.status === 'fulfilled' ? { d1: 'Twelve Data (tampilan)' } : {}),
       };
     }
@@ -3316,7 +3338,7 @@ async function ohlcvReadHandler(req, res) {
 // snapshot evaluator auto-entry.
 // Same throttled-refresh pattern dengan loadOhlcvData supaya candle tidak basi kalau
 // tab chart baru dibuka lama setelah sync cron terakhir.
-const DISPLAY_FALLBACK_TTL = 60; // <= 1 request Twelve Data/pair/timeframe/menit (free tier 8 RPM)
+const DISPLAY_FALLBACK_TTL = { '1h': 300, '1d': 21600 }; // H1 5m, D1 6j — cukup segar tanpa membakar kuota
 // Cadangan ini sengaja punya namespace Redis sendiri. Ia hanya untuk pembacaan
 // manusia (chart dan kartu Analisa); key `ohlcv:<symbol>:*` tetap eksklusif
 // snapshot Deriv yang dipakai evaluator/auto-entry.
@@ -3330,7 +3352,7 @@ async function getDisplayFallbackCandles(symbol, interval) {
     }
   } catch (e) { /* cache hanya optimasi kuota; fetch tetap boleh dicoba */ }
   const candles = await fetchFallbackCandles(symbol, interval);
-  try { await redisCmd('SET', cacheKey, JSON.stringify({ candles }), 'EX', String(DISPLAY_FALLBACK_TTL)); } catch (e) {}
+  try { await redisCmd('SET', cacheKey, JSON.stringify({ candles }), 'EX', String(DISPLAY_FALLBACK_TTL[interval] || 60)); } catch (e) {}
   return candles;
 }
 
@@ -3365,8 +3387,8 @@ async function ohlcvChartHandler(req, res) {
       redisCmd('GET', `ohlcv:${symbol}:${tf}`),
       tf === '1h' ? Promise.resolve(null) : redisCmd('GET', `ohlcv:${symbol}:1h`),
     ]);
-    const candles = raw ? JSON.parse(raw) : [];
-    const candles1h = tf === '1h' ? candles : (raw1h ? JSON.parse(raw1h) : []);
+    const candles = parseOhlcvCache(raw, `ohlcv:${symbol}:${tf}`, true) || [];
+    const candles1h = tf === '1h' ? candles : (parseOhlcvCache(raw1h, `ohlcv:${symbol}:1h`, true) || []);
     const lastCandleT = marketHours.newestCandleEpoch(candles1h);
     const candleAgeMins = lastCandleT == null ? null : Math.max(0, Math.round((Date.now() - lastCandleT * 1000) / 60000));
     const stale = marketHours.isFxMarketOpen() && marketHours.isCandleStale(candles1h, Date.now());
