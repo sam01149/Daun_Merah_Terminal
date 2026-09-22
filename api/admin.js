@@ -3307,8 +3307,19 @@ async function ohlcvChartHandler(req, res) {
     try { await refreshOhlcvFromYahoo(symbol); } catch (e) {
       console.warn(`ohlcv_chart: fresh fetch failed for ${symbol}, using snapshot:`, e.message);
     }
-    const raw = await redisCmd('GET', `ohlcv:${symbol}:${tf}`);
-    return res.status(200).json({ symbol, tf, candles: raw ? JSON.parse(raw) : [] });
+    // `tf=1d` dan `tf=4h` tidak bisa dipakai sendiri untuk menilai kebaruan: candle
+    // Daily memang baru berganti sekali sehari. Status selalu diturunkan dari candle
+    // 1H, sumber yang sama dengan evaluator auto-entry.
+    const [raw, raw1h] = await Promise.all([
+      redisCmd('GET', `ohlcv:${symbol}:${tf}`),
+      tf === '1h' ? Promise.resolve(null) : redisCmd('GET', `ohlcv:${symbol}:1h`),
+    ]);
+    const candles = raw ? JSON.parse(raw) : [];
+    const candles1h = tf === '1h' ? candles : (raw1h ? JSON.parse(raw1h) : []);
+    const lastCandleT = marketHours.newestCandleEpoch(candles1h);
+    const candleAgeMins = lastCandleT == null ? null : Math.max(0, Math.round((Date.now() - lastCandleT * 1000) / 60000));
+    const stale = marketHours.isFxMarketOpen() && marketHours.isCandleStale(candles1h, Date.now());
+    return res.status(200).json({ symbol, tf, candles, last_candle_t: lastCandleT, candle_age_mins: candleAgeMins, stale });
   } catch (e) {
     return res.status(500).json({ error: e.message });
   }
@@ -6934,6 +6945,33 @@ async function ohlcvAnalyzeHandler(req, res) {
       data = clientOhlcv;
     }
     if (!data.h1.available) return res.status(200).json({ commentary: null, ai_skipped: true, error: 'OHLCV belum tersedia — tunggu GitHub Actions sync pertama.' });
+
+    // Cache lama masih berguna untuk pembacaan manusia (chart diberi badge basi),
+    // tetapi TIDAK boleh menjadi dasar setup virtual baru. Saat Deriv sedang down,
+    // kebijakan anti-campur-vendor sengaja mempertahankan cache terakhir; tanpa gate
+    // ini auto-entry tetap menjalankan AI dengan harga yang sudah tertinggal berjam-jam.
+    // Jalur manual tidak diubah: operator tetap bisa melihat/menilai cache dengan umur
+    // candle yang sudah ditampilkan UI. Ini bukan kebijakan trading baru, melainkan
+    // fail-safe kualitas data, jadi tidak mengubah POLICY_EPOCHS.
+    const lastCandleT = Number(data.last_candle_t);
+    const staleOhlcv = !Number.isFinite(lastCandleT)
+      || marketHours.isCandleStale([{ t: lastCandleT }], Date.now());
+    if (isAutoCall && staleOhlcv) {
+      const candleAgeMins = Number.isFinite(lastCandleT)
+        ? Math.max(0, Math.round((Date.now() - lastCandleT * 1000) / 60000))
+        : null;
+      const ageText = candleAgeMins == null ? 'tidak tersedia' : `${candleAgeMins} menit lalu`;
+      console.warn(`ohlcv_analyze: auto-entry ${symbol} ditahan karena candle 1H basi (${ageText})`);
+      return res.status(200).json({
+        commentary: null,
+        structured: null,
+        ai_skipped: true,
+        ohlcv_stale: true,
+        last_candle_t: Number.isFinite(lastCandleT) ? lastCandleT : null,
+        candle_age_mins: candleAgeMins,
+        error: `Data OHLCV 1H basi (${ageText}); auto-entry ditunda sampai data kembali segar.`,
+      });
+    }
 
     const textBlock = buildOhlcvText(data);
     const nowPrice = data.h1?.current;

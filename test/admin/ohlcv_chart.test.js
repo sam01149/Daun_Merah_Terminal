@@ -71,6 +71,8 @@ test('ohlcv_chart: mengembalikan candle mentah dari snapshot ohlcv:<symbol>:1h (
     assert.equal(res.body.symbol, 'EURUSD=X');
     assert.equal(res.body.tf, '1h');
     assert.deepEqual(res.body.candles, candles);
+    assert.equal(res.body.last_candle_t, 1000, 'umur chart selalu diturunkan dari candle 1H');
+    assert.equal(res.body.stale, true, 'snapshot tua harus ditandai, bukan tampak seperti chart live');
   } finally { global.fetch = origFetch; }
 });
 

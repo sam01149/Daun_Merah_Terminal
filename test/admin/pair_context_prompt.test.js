@@ -17,18 +17,20 @@ const marketHours = require('../../api/_market_hours');
 // rezim volatilitas pasti "bergejolak" (histori tenang -> baru-baru ini melebar).
 function mkRegimeCandles(n, rangeFn) {
   const arr = [];
+  const startT = Math.floor(Date.now() / 3600000) * 3600 - (n - 1) * 3600;
   for (let i = 0; i < n; i++) {
     const half = rangeFn(i) / 2;
-    arr.push({ t: i * 3600, o: 100, h: 100 + half, l: 100 - half, c: 100 });
+    arr.push({ t: startT + i * 3600, o: 100, h: 100 + half, l: 100 - half, c: 100 });
   }
   return arr;
 }
 // close bergerak linear — dipakai untuk leg currency strength selain EUR.
 function mkTrendCandles(startClose, endClose, hours = 80) {
   const arr = [];
+  const startT = Math.floor(Date.now() / 3600000) * 3600 - (hours - 1) * 3600;
   for (let i = 0; i < hours; i++) {
     const c = startClose + (endClose - startClose) * (i / (hours - 1));
-    arr.push({ t: i * 3600, o: c, h: c + 0.001, l: c - 0.001, c });
+    arr.push({ t: startT + i * 3600, o: c, h: c + 0.001, l: c - 0.001, c });
   }
   return arr;
 }

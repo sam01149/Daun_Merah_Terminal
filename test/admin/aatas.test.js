@@ -1087,9 +1087,10 @@ async function withEnv(vars, fn) {
 
 function mkTrendCandles(startClose, endClose, hours = 80) {
   const arr = [];
+  const startT = Math.floor(Date.now() / 3600000) * 3600 - (hours - 1) * 3600;
   for (let i = 0; i < hours; i++) {
     const c = startClose + (endClose - startClose) * (i / (hours - 1));
-    arr.push({ t: i * 3600, o: c, h: c + 0.001, l: c - 0.001, c });
+    arr.push({ t: startT + i * 3600, o: c, h: c + 0.001, l: c - 0.001, c });
   }
   return arr;
 }
@@ -1158,6 +1159,35 @@ function baseStore() {
     'ohlcv:GBPUSD=X:1h': JSON.stringify(mkTrendCandles(1.30, 1.28)),
   });
 }
+
+test('AATAS: candle 1H basi menghentikan auto-entry sebelum panggilan AI atau penulisan setup', async () => {
+  await withEnv({ CRON_SECRET: 'topsecret', DEEPSEEK_API_KEY: 'k' }, async () => {
+    const staleCandles = mkTrendCandles(1.30, 1.28).map(c => ({ ...c, t: c.t - 4 * 3600 }));
+    const store = makeStore({
+      'ohlcv_fresh:GBPUSD=X': '1',
+      'ohlcv:GBPUSD=X:1h': JSON.stringify(staleCandles),
+    });
+    const redisStub = redisFetchStub(store);
+    const origFetch = global.fetch;
+    global.fetch = async (url, opts) => {
+      if (String(url).includes('fake-upstash.test')) return redisStub(url, opts);
+      throw new Error('AI tidak boleh dipanggil saat OHLCV basi: ' + url);
+    };
+    try {
+      const handler = loadHandler();
+      const res = fakeRes();
+      await handler({
+        headers: { 'x-cron-secret': 'topsecret' }, method: 'GET',
+        query: { action: 'ohlcv_analyze', symbol: 'GBPUSD=X', label: 'GBP/USD', auto: '1' },
+      }, res);
+      assert.equal(res.statusCode, 200);
+      assert.equal(res.body.ai_skipped, true);
+      assert.equal(res.body.ohlcv_stale, true);
+      assert.match(res.body.error, /ditunda sampai data kembali segar/i);
+      assert.equal(store.strings['setup_log_auto:v1'], undefined);
+    } finally { global.fetch = origFetch; }
+  });
+});
 
 test('AATAS AI health: HTTP 402 mencatat status persisten dan payload dashboard tanpa membuat setup', async () => {
   await withEnv({ CRON_SECRET: 'topsecret', DEEPSEEK_API_KEY: 'k' }, async () => {

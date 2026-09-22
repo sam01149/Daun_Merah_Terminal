@@ -116,9 +116,10 @@ function redisFetchStub(store) {
 // available (pola sama dengan test/admin/pair_context_prompt.test.js).
 function mkTrendCandles(startClose, endClose, hours = 80) {
   const arr = [];
+  const startT = Math.floor(Date.now() / 3600000) * 3600 - (hours - 1) * 3600;
   for (let i = 0; i < hours; i++) {
     const c = startClose + (endClose - startClose) * (i / (hours - 1));
-    arr.push({ t: i * 3600, o: c, h: c + 0.001, l: c - 0.001, c });
+    arr.push({ t: startT + i * 3600, o: c, h: c + 0.001, l: c - 0.001, c });
   }
   return arr;
 }

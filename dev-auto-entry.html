@@ -226,6 +226,7 @@ body.light-theme .pairtab.active{color:var(--accent);}
 .chartbox .zoneline.entry .cap{background:rgba(var(--fg-rgb),.85);color:var(--bg);}
 .chartbox .rsiband{position:absolute;left:0;right:56px;pointer-events:none;opacity:.12;background:#7e57c2;z-index:4;}
 .chartbox .chart-msg{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:10.5px;text-align:center;padding:0 16px;}
+.chartbox .chart-stale{position:absolute;top:7px;left:7px;z-index:10;max-width:calc(100% - 78px);padding:4px 6px;border:1px solid rgba(var(--accent-rgb),.7);border-radius:3px;background:var(--panel2);color:var(--accent);font-size:9px;line-height:1.35;pointer-events:none;}
 .chartcard.noposition .chartbox{opacity:.85;}
 .chart-toolbar{display:flex;justify-content:flex-end;margin-bottom:10px;}
 </style>
@@ -1861,7 +1862,7 @@ if (localStorage.getItem('dm_dev_theme') === 'light') {
       const { json, errMsg } = await api('ohlcv_chart', { query: { symbol, tf }, silent: true });
       if (json && Array.isArray(json.candles) && json.candles.length) {
         const bars = computeBars(json.candles);
-        if (bars.length) return { bars };
+        if (bars.length) return { bars, stale: !!json.stale, candleAgeMins: json.candle_age_mins };
       }
 
       return {
@@ -1873,13 +1874,25 @@ if (localStorage.getItem('dm_dev_theme') === 'light') {
     }
     const { json, errMsg } = await api('ohlcv_chart', { query: { symbol, tf }, silent: true });
     if (errMsg || !json || json.error) return { bars: [], error: errMsg || (json && json.error) };
-    return { bars: computeBars(json.candles) };
+    return { bars: computeBars(json.candles), stale: !!json.stale, candleAgeMins: json.candle_age_mins };
+  }
+
+  function renderChartStaleWarning(box, stale, candleAgeMins){
+    if (!box) return;
+    const old = box.querySelector('.chart-stale');
+    if (old) old.remove();
+    if (!stale) return;
+    const age = Number.isFinite(Number(candleAgeMins)) ? `${Math.round(Number(candleAgeMins))} menit lalu` : 'tidak diketahui';
+    const note = document.createElement('div');
+    note.className = 'chart-stale';
+    note.textContent = `Candle 1H terakhir ${age}. Cache tetap ditampilkan; auto-entry ditahan sampai data segar.`;
+    box.appendChild(note);
   }
 
   async function fetchAndApplyBars(symbol){
     const st = chartState[symbol];
     if (!st || !st.series) return false;
-    const { bars } = await fetchCandlesForTf(symbol, st.tf || '1h');
+    const { bars, stale, candleAgeMins } = await fetchCandlesForTf(symbol, st.tf || '1h');
     if (!bars.length) return false;
     st.bars = bars;
     st.series.setData(bars);
@@ -1889,6 +1902,7 @@ if (localStorage.getItem('dm_dev_theme') === 'light') {
     st.setup = pickChartSetup(symbol);
     applyMarkers(symbol);
     positionOverlay(symbol);
+    renderChartStaleWarning(st.box, stale, candleAgeMins);
     return true;
   }
 
@@ -1906,9 +1920,11 @@ if (localStorage.getItem('dm_dev_theme') === 'light') {
       return;
     }
     const useTf = tf || '1h';
-    const { bars, error } = await fetchCandlesForTf(symbol, useTf);
+    const { bars, error, stale, candleAgeMins } = await fetchCandlesForTf(symbol, useTf);
     if (!bars.length) {
-      box.innerHTML = `<div class="chart-msg">${esc(error || 'Candle belum tersedia untuk pair/timeframe ini.')}</div>`;
+      box.innerHTML = `<div class="chart-msg">${esc(error || 'Candle belum tersedia untuk pair/timeframe ini.')}<br><button class="chart-retry-btn" style="margin-top:6px;font-size:10px;padding:3px 8px;cursor:pointer;background:var(--card);color:var(--fg);border:1px solid var(--border);border-radius:3px;">Coba Lagi</button></div>`;
+      const retryBtn = box.querySelector('.chart-retry-btn');
+      if (retryBtn) retryBtn.addEventListener('click', () => renderChartCard(symbol, useTf));
       return;
     }
     box.innerHTML = '<div class="lwc-host"></div>';
@@ -1961,6 +1977,7 @@ if (localStorage.getItem('dm_dev_theme') === 'light') {
     const ro = new ResizeObserver(overlay);
     ro.observe(box);
     chartState[symbol].ro = ro;
+    renderChartStaleWarning(box, stale, candleAgeMins);
     // fitContent() menyesuaikan price scale secara internal-async — priceToCoordinate()
     // yang dipanggil terlalu dini (sebelum layout itu selesai) balikin null diam-diam,
     // jadi overlay tidak pernah muncul kalau cuma diandalkan 1x rAF. Beberapa percobaan
