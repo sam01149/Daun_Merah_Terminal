@@ -24,7 +24,7 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 
 **Perbaikan.** Respons parsial kini menyimpan hasil yang benar lalu, selama masih ada anggaran waktu handler, langsung mengulang hanya nomor yang hilang satu kali. Bila retry masih tidak lengkap, hanya item tersebut yang dicatat gagal; berita lain tetap berjalan. Keberhasilan terjemahan sekarang menghapus counter gagal kontennya, sehingga batas lima kali kembali benar-benar berarti lima kegagalan berturut-turut. Timeout, pemisahan circuit Gemini, pengecualian `econ-data`, cache 36 jam, serta teks Inggris sumber tidak diubah.
 
-**Verifikasi.** Regresi baru mensimulasikan respons batch yang melewatkan nomor tengah dan memastikan retry hanya mengirim item tersebut serta seluruh hasil tersimpan. Regresi kedua memastikan item dengan empat kegagalan lama kembali normal dan counter-nya dibersihkan saat sukses. Tes fokus `test/lib/news_translate.test.js`: 25/25 lulus; suite penuh `npm.cmd test`: 1.348/1.348 lulus; verifikasi production dilakukan setelah auto-deploy push.
+**Verifikasi.** Regresi baru mensimulasikan respons batch yang melewatkan nomor tengah dan memastikan retry hanya mengirim item tersebut serta seluruh hasil tersimpan. Regresi kedua memastikan item dengan empat kegagalan lama kembali normal dan counter-nya dibersihkan saat sukses. Tes fokus `test/lib/news_translate.test.js`: 25/25 lulus; suite penuh `npm.cmd test`: 1.348/1.348 lulus. Setelah auto-deploy, endpoint RSS produksi dan pembacaan cache `news_translate` sama-sama mengembalikan HTTP 200; lookup guid yang tidak ada mengembalikan map kosong valid.
 
 ## Changelog Session 375 (2026-09-22) — Pulihkan koneksi primary Deriv lewat endpoint publik v1
 
