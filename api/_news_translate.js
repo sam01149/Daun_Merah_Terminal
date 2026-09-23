@@ -134,6 +134,12 @@ const MAX_DESC_CHARS = 1200;
 // kepala antrean FIFO yang memblokir headline baru di belakangnya selamanya.
 const MAX_FAIL_ATTEMPTS = 5;
 const FAIL_KEY_TTL = 48 * 3600; // detik
+// Respons batch kadang valid tetapi tidak lengkap (mis. model melewatkan nomor
+// di tengah). Jangan biarkan satu nomor yang hilang menunggu siklus RSS berikutnya:
+// jika anggaran masih cukup, kirim ulang HANYA nomor tersebut sekali. Batas ini
+// menyisakan waktu untuk fetch/Redis dan mencegah retry memaksa handler melewati
+// deadline pemanggil.
+const PARTIAL_RETRY_MIN_BUDGET_MS = 1200;
 
 // Identitas KONTEN (bukan guid) — SAMA PERSIS formulanya dengan dedup repost di
 // storeNewsHistory (api/feeds.js) & _newsDedupKey (index.html): FinancialJuice
@@ -231,10 +237,18 @@ function parseBatchResponse(raw, count) {
   return out;
 }
 
+async function recordFailures(items, redisCmd) {
+  await Promise.all(items.map(async it => {
+    const fk = `news_tr_fail:${contentKey(it)}`;
+    await redisCmd('INCR', fk);
+    await redisCmd('EXPIRE', fk, FAIL_KEY_TTL);
+  }));
+}
+
 async function translateBatch(items, redisCmd, timeoutMs, siblingsByGuid) {
-  if (!await allowAiCall('gemini_newstranslate')) return; // pagar kuota — nyusul siklus berikutnya
+  if (!await allowAiCall('gemini_newstranslate')) return null; // pagar kuota — nyusul siklus berikutnya
   const GEMINI_KEY = process.env.GEMINI_API_KEY;
-  if (!GEMINI_KEY) return;
+  if (!GEMINI_KEY) return null;
   try {
     const r = await fetch(GEMINI_URL, {
       method: 'POST',
@@ -271,6 +285,10 @@ async function translateBatch(items, redisCmd, timeoutMs, siblingsByGuid) {
       const ops = [
         redisCmd('SET', `news_tr:${it.guid}`, val, 'EX', TR_KEY_TTL),
         redisCmd('SET', `news_tr_c:${contentKey(it)}`, val, 'EX', TR_KEY_TTL),
+        // Counter ini melambangkan kegagalan BERUNTUN. Tanpa DEL di sini,
+        // kegagalan temporer yang diselingi sukses tetap terakumulasi hingga
+        // item sehat keliru dianggap poison dan dilewati permanen.
+        redisCmd('DEL', `news_tr_fail:${contentKey(it)}`),
       ];
       // Guid lain dalam batch INI dengan konten identik (repost dalam satu payload
       // RSS yang sama, lihat contentKey()) — salin hasil yang sama, jangan biarkan
@@ -280,17 +298,23 @@ async function translateBatch(items, redisCmd, timeoutMs, siblingsByGuid) {
       return Promise.all(ops);
     }));
     await cb.onSuccess(CB_GEMINI_TR);
+    // Respons parsial bukan outage provider: hasil yang valid tetap disimpan,
+    // circuit tetap sehat, lalu hanya item yang terlewat diberi satu retry kecil
+    // oleh translateNewItems(). Sebelumnya respons seperti ini dianggap sukses
+    // penuh sehingga item hilang tidak mendapat pemulihan terarah.
+    const missing = items.filter((_, i) => !parsed[i]);
+    if (missing.length) {
+      console.warn(`news_translate partial response: ${missing.length}/${items.length} item akan dicoba ulang`);
+    }
+    return missing;
   } catch(e) {
     await cb.onFailure(CB_GEMINI_TR);
     console.warn('news_translate batch failed:', items.map(it => it.guid).join(','), e.message);
     // Catat kegagalan per-KONTEN, bukan per-guid (poison-item guard, lihat
-    // MAX_FAIL_ATTEMPTS & catatan contentKey di atas) — fire-and-forget, kegagalan
-    // mencatat ini sendiri tidak boleh ikut menjatuhkan alur (redisCmd tidak reject).
-    await Promise.all(items.map(async it => {
-      const fk = `news_tr_fail:${contentKey(it)}`;
-      await redisCmd('INCR', fk);
-      await redisCmd('EXPIRE', fk, FAIL_KEY_TTL);
-    }));
+    // MAX_FAIL_ATTEMPTS & catatan contentKey di atas). redisCmd bersifat fail-open,
+    // jadi gangguan Redis saat pencatatan tidak menjatuhkan alur translate.
+    await recordFailures(items, redisCmd);
+    return null;
   }
 }
 
@@ -392,7 +416,22 @@ async function translateNewItems(items, redisCmd, budgetMs = DEFAULT_BUDGET_MS) 
   for (const chunk of chunks) {
     const remaining = deadline - Date.now();
     if (remaining <= 0) break;
-    await translateBatch(chunk, redisCmd, Math.min(PER_CALL_TIMEOUT_MS, remaining), siblingsByGuid);
+    let missing = await translateBatch(chunk, redisCmd, Math.min(PER_CALL_TIMEOUT_MS, remaining), siblingsByGuid);
+
+    // Gemini sesekali mengembalikan format yang benar tetapi melewatkan sebagian
+    // nomor. Ulangi subset itu segera (maksimum sekali per batch); ini tidak
+    // mengulang headline yang sudah berhasil dan tidak menjadikan satu respons
+    // parsial sebagai kegagalan seluruh antrean.
+    if (missing && missing.length) {
+      const retryRemaining = deadline - Date.now();
+      if (retryRemaining >= PARTIAL_RETRY_MIN_BUDGET_MS) {
+        missing = await translateBatch(missing, redisCmd, Math.min(PER_CALL_TIMEOUT_MS, retryRemaining), siblingsByGuid);
+      }
+      // Jika tidak ada waktu untuk retry, atau retry masih parsial, baru catat
+      // item yang memang belum berhasil. `null` berarti kegagalan penuh/deferred:
+      // translateBatch sudah mencatat failure penuh bila perlu.
+      if (missing && missing.length) await recordFailures(missing, redisCmd);
+    }
   }
 }
 

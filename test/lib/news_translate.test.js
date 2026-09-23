@@ -95,6 +95,7 @@ function makeRedisCmd(store) {
     if (cmd === 'MGET') { return rest.map(k => (store.has(k) ? store.get(k) : null)); }
     if (cmd === 'INCR') { const v = (parseInt(store.get(rest[0]), 10) || 0) + 1; store.set(rest[0], v); return v; }
     if (cmd === 'EXPIRE') { return 1; }
+    if (cmd === 'DEL') { return store.delete(rest[0]) ? 1 : 0; }
     return null;
   };
 }
@@ -308,6 +309,58 @@ test('translateNewItems: kegagalan batch menaikkan counter news_tr_fail per kont
     const item = { title: 'Gagal terus', guid: 'fail-1', description: '' };
     await translateNewItems([item], makeRedisCmd(store));
     assert.equal(store.get(`news_tr_fail:${contentKey(item)}`), 1);
+  } finally { global.fetch = realFetch; }
+}));
+
+test('translateNewItems: respons batch parsial langsung retry hanya nomor yang terlewat, tanpa mengulang yang sudah jadi', withEnv({
+  GEMINI_API_KEY: 'fake-key',
+  UPSTASH_REDIS_REST_URL: 'https://mock-redis.test',
+  UPSTASH_REDIS_REST_TOKEN: 'mock-token',
+}, async () => {
+  const realFetch = global.fetch;
+  const calledBatches = [];
+  global.fetch = async (url, opts) => {
+    if (String(url).includes('generativelanguage.googleapis.com')) {
+      const prompt = JSON.parse(opts.body).messages[0].content;
+      const titles = [...prompt.matchAll(/\[(\d+)\]\nJUDUL: (.*)/g)];
+      calledBatches.push(titles.map(m => m[2]));
+      // Respons pertama sengaja melewatkan nomor 2; retry berikutnya menerima
+      // satu item saja sehingga kembali bernomor [1].
+      const content = calledBatches.length === 1
+        ? '[1]\nJUDUL_ID: Satu\n[3]\nJUDUL_ID: Tiga'
+        : '[1]\nJUDUL_ID: Dua';
+      return { ok: true, json: async () => ({ choices: [{ message: { content } }] }) };
+    }
+    return { ok: true, json: async () => ({ result: null }) };
+  };
+  try {
+    const store = new Map();
+    const items = [
+      { title: 'One', guid: 'partial-1', description: '' },
+      { title: 'Two', guid: 'partial-2', description: '' },
+      { title: 'Three', guid: 'partial-3', description: '' },
+    ];
+    await translateNewItems(items, makeRedisCmd(store), 10000);
+    assert.deepEqual(calledBatches, [['One', 'Two', 'Three'], ['Two']]);
+    for (const item of items) assert.equal(store.has(`news_tr:${item.guid}`), true, `${item.guid} harus tersimpan`);
+    assert.equal(store.has(`news_tr_fail:${contentKey(items[1])}`), false, 'sukses retry harus menghapus jejak gagal sementara');
+  } finally { global.fetch = realFetch; }
+}));
+
+test('translateNewItems: keberhasilan berikutnya mereset counter gagal agar gangguan sementara tidak menjadi poison permanen', withEnv({
+  GEMINI_API_KEY: 'fake-key',
+  UPSTASH_REDIS_REST_URL: 'https://mock-redis.test',
+  UPSTASH_REDIS_REST_TOKEN: 'mock-token',
+}, async () => {
+  const realFetch = global.fetch;
+  global.fetch = mockGeminiEchoWithBody([]);
+  try {
+    const store = new Map();
+    const item = { title: 'Pulih setelah gangguan', guid: 'recovered-1', description: '' };
+    store.set(`news_tr_fail:${contentKey(item)}`, '4');
+    await translateNewItems([item], makeRedisCmd(store));
+    assert.equal(store.has(`news_tr:${item.guid}`), true);
+    assert.equal(store.has(`news_tr_fail:${contentKey(item)}`), false);
   } finally { global.fetch = realFetch; }
 }));
 

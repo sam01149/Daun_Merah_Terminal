@@ -11,12 +11,20 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-09-22 (Session 375 — Pulihkan koneksi primary Deriv)
+> **Last updated:** 2026-09-23 (Session 376 — Ketahanan terjemahan NEWS)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 376 (2026-09-23) — Ketahanan terjemahan NEWS saat respons AI tidak lengkap
+
+**Masalah dan akar penyebab.** Jalur batch Translate NEWS menyimpan nomor yang berhasil diparse, tetapi respons Gemini yang valid namun melewatkan satu nomor tetap dianggap sukses penuh. Berita yang terlewat lalu hanya menunggu siklus berikutnya tanpa pemulihan khusus. Selain itu, counter `news_tr_fail` tidak pernah dibersihkan setelah terjemahan sukses; gangguan sementara yang tersebar dari waktu ke waktu dapat terakumulasi sampai item sehat salah dianggap poison dan dilewati.
+
+**Perbaikan.** Respons parsial kini menyimpan hasil yang benar lalu, selama masih ada anggaran waktu handler, langsung mengulang hanya nomor yang hilang satu kali. Bila retry masih tidak lengkap, hanya item tersebut yang dicatat gagal; berita lain tetap berjalan. Keberhasilan terjemahan sekarang menghapus counter gagal kontennya, sehingga batas lima kali kembali benar-benar berarti lima kegagalan berturut-turut. Timeout, pemisahan circuit Gemini, pengecualian `econ-data`, cache 36 jam, serta teks Inggris sumber tidak diubah.
+
+**Verifikasi.** Regresi baru mensimulasikan respons batch yang melewatkan nomor tengah dan memastikan retry hanya mengirim item tersebut serta seluruh hasil tersimpan. Regresi kedua memastikan item dengan empat kegagalan lama kembali normal dan counter-nya dibersihkan saat sukses. Tes fokus `test/lib/news_translate.test.js`: 25/25 lulus; suite penuh `npm.cmd test`: 1.348/1.348 lulus; verifikasi production dilakukan setelah auto-deploy push.
 
 ## Changelog Session 375 (2026-09-22) — Pulihkan koneksi primary Deriv lewat endpoint publik v1
 
