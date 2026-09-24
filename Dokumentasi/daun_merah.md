@@ -26,6 +26,8 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 
 **Verifikasi.** Regresi baru meniru primary 404 lalu memastikan hanya cadangan stabil yang dipanggil dan hasilnya tersimpan; tes juga melarang alias `-latest`. Verifikasi produksi sebelum perbaikan membuktikan cache kosong pada GUID aktif, sehingga masalah tidak disimpulkan dari status endpoint saja. Dokumentasi AI/vendor diselaraskan ke model stabil dan fallback baru.
 
+**Lanjutan.** Verifikasi production pasca-deploy pertama masih kosong. Karena Google dapat menolak kuota satu model dengan 429 walau model lain pada key yang sama masih tersedia, respons 429 sekarang juga langsung mencoba cadangan `gemini-3.1-flash-lite`; timeout tetap tidak diulang agar NEWS tidak melambat.
+
 ## Changelog Session 376 (2026-09-23) — Ketahanan terjemahan NEWS saat respons AI tidak lengkap
 
 **Masalah dan akar penyebab.** Jalur batch Translate NEWS menyimpan nomor yang berhasil diparse, tetapi respons Gemini yang valid namun melewatkan satu nomor tetap dianggap sukses penuh. Berita yang terlewat lalu hanya menunggu siklus berikutnya tanpa pemulihan khusus. Selain itu, counter `news_tr_fail` tidak pernah dibersihkan setelah terjemahan sukses; gangguan sementara yang tersebar dari waktu ke waktu dapat terakumulasi sampai item sehat salah dianggap poison dan dilewati.

@@ -102,9 +102,10 @@ const GEMINI_URL    = 'https://generativelanguage.googleapis.com/v1beta/openai/c
 // Jangan pakai alias `-latest`: alias ini pernah hilang tanpa periode transisi dan
 // menghentikan seluruh penerjemahan NEWS. Nama versi stabil membuat perubahan model
 // eksplisit di kode/review. Cadangan hanya dipakai bila Google menolak NAMA model
-// (400/404), bukan untuk 429/timeout agar tidak menggandakan beban saat gangguan.
+// (400/404) atau kuota model khusus (429). Timeout tidak dicoba ulang agar
+// satu provider lambat tidak menyeret seluruh endpoint NEWS.
 const GEMINI_MODELS = ['gemini-3.5-flash-lite', 'gemini-3.1-flash-lite'];
-const MODEL_UNAVAILABLE_STATUSES = new Set([400, 404]);
+const MODEL_UNAVAILABLE_STATUSES = new Set([400, 404, 429]);
 
 const TR_KEY_TTL = 36 * 3600; // detik — samakan retensi 36 jam dengan news_history
 // Berapa headline digabung dalam SATU panggilan API (lihat catatan BATCH REDESIGN di
