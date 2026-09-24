@@ -77,8 +77,9 @@ const DEFAULT_LIMITS = {
   // daun_merah_vendor.md — SEMUA counter provider lama di atas TIDAK dipakai lagi
   // oleh fitur ini.
   //
-  // FINAL (2026-09-06, S351-352): `gemini-flash-lite-latest`. Bucket TERPISAH dari
-  // 'gemini' (16/hari, dipakai Analisa Fundamental+AI Coach Jurnal via model
+  // Translate NEWS memakai `gemini-3.5-flash-lite` dengan cadangan
+  // `gemini-3.1-flash-lite` saat nama primary dihentikan (400/404). Bucket TERPISAH
+  // dari 'gemini' (16/hari, dipakai Analisa Fundamental+AI Coach Jurnal via model
   // `gemini-flash-latest` — BEDA model, jadi seharusnya BEDA pool kuota di sisi
   // Google) supaya volume translate tidak numpang/rebutan kuota kecil (16/hari) itu.
   // 800/hari dipilih konservatif: kuota resmi model `-lite` generasi sebelumnya

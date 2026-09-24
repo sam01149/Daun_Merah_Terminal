@@ -99,7 +99,12 @@ const { detectCat } = require('../newscat');
 // Gemini lain dan sebaliknya.
 const CB_GEMINI_TR  = 'ai:gemini:newstranslate';
 const GEMINI_URL    = 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions';
-const GEMINI_MODEL  = 'gemini-flash-lite-latest';
+// Jangan pakai alias `-latest`: alias ini pernah hilang tanpa periode transisi dan
+// menghentikan seluruh penerjemahan NEWS. Nama versi stabil membuat perubahan model
+// eksplisit di kode/review. Cadangan hanya dipakai bila Google menolak NAMA model
+// (400/404), bukan untuk 429/timeout agar tidak menggandakan beban saat gangguan.
+const GEMINI_MODELS = ['gemini-3.5-flash-lite', 'gemini-3.1-flash-lite'];
+const MODEL_UNAVAILABLE_STATUSES = new Set([400, 404]);
 
 const TR_KEY_TTL = 36 * 3600; // detik — samakan retensi 36 jam dengan news_history
 // Berapa headline digabung dalam SATU panggilan API (lihat catatan BATCH REDESIGN di
@@ -250,27 +255,40 @@ async function translateBatch(items, redisCmd, timeoutMs, siblingsByGuid) {
   const GEMINI_KEY = process.env.GEMINI_API_KEY;
   if (!GEMINI_KEY) return null;
   try {
-    const r = await fetch(GEMINI_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${GEMINI_KEY}` },
-      body: JSON.stringify({
-        model: GEMINI_MODEL,
-        messages: [{ role: 'user', content: buildBatchPrompt(items) }],
-        max_tokens: 6000,
-        temperature: 0.2,
-        // Gemini 3.x SELALU "thinking" dan tidak bisa dimatikan total (lihat §PIVOT KE
-        // GEMINI di atas) — 'low' terbukti live cukup menekan reasoning trace supaya
-        // tidak menghabiskan token budget sebelum sampai jawaban (pola sama seperti
-        // market-digest.js/admin.js Call 1/2/Fundamental).
-        reasoning_effort: 'low',
-      }),
-      // signal pakai timeoutMs dari CALLER (sisa budget siklus ini), BUKAN konstanta
-      // tetap — lihat catatan di translateNewItems soal kenapa ini penting (mencegah
-      // panggilan lambat jadi orphaned/fire-and-forget diam-diam kalau dibiarkan
-      // jalan lebih lama dari budget yang tersisa).
-      signal: AbortSignal.timeout(timeoutMs),
-    });
-    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    // Satu deadline untuk seluruh rantai model. Model yang sudah pensiun menolak
+    // segera, tetapi fallback tidak boleh memperoleh jatah timeout baru sendiri.
+    const signal = AbortSignal.timeout(timeoutMs);
+    let r = null;
+    for (let i = 0; i < GEMINI_MODELS.length; i++) {
+      const model = GEMINI_MODELS[i];
+      const candidate = await fetch(GEMINI_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${GEMINI_KEY}` },
+        body: JSON.stringify({
+          model,
+          messages: [{ role: 'user', content: buildBatchPrompt(items) }],
+          max_tokens: 6000,
+          temperature: 0.2,
+          // Gemini 3.x SELALU "thinking" dan tidak bisa dimatikan total (lihat §PIVOT KE
+          // GEMINI di atas) — 'low' terbukti live cukup menekan reasoning trace supaya
+          // tidak menghabiskan token budget sebelum sampai jawaban (pola sama seperti
+          // market-digest.js/admin.js Call 1/2/Fundamental).
+          reasoning_effort: 'low',
+        }),
+        // signal pakai timeoutMs dari CALLER (sisa budget siklus ini), BUKAN konstanta
+        // tetap — lihat catatan di translateNewItems soal kenapa ini penting (mencegah
+        // panggilan lambat jadi orphaned/fire-and-forget diam-diam kalau dibiarkan
+        // jalan lebih lama dari budget yang tersisa).
+        signal,
+      });
+      if (candidate.ok) { r = candidate; break; }
+      if (MODEL_UNAVAILABLE_STATUSES.has(candidate.status) && i + 1 < GEMINI_MODELS.length) {
+        console.warn(`news_translate model ${model} unavailable (HTTP ${candidate.status}); mencoba cadangan`);
+        continue;
+      }
+      throw new Error(`HTTP ${candidate.status}`);
+    }
+    if (!r) throw new Error('No Gemini translation model available');
     const data = await r.json();
     const raw = data?.choices?.[0]?.message?.content?.trim() || '';
     const parsed = parseBatchResponse(raw, items.length);

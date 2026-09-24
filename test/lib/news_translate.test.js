@@ -201,6 +201,31 @@ test('translateNewItems: todo <= BATCH_SIZE (20) -> SATU panggilan API untuk sem
   } finally { global.fetch = realFetch; }
 }));
 
+test('translateNewItems: model stabil utama dipakai dan 404 model dipulihkan lewat cadangan tanpa melewati deadline bersama', withEnv({
+  GEMINI_API_KEY: 'fake-key',
+  UPSTASH_REDIS_REST_URL: 'https://mock-redis.test',
+  UPSTASH_REDIS_REST_TOKEN: 'mock-token',
+}, async () => {
+  const realFetch = global.fetch;
+  const models = [];
+  global.fetch = async (url, opts) => {
+    if (String(url).includes('generativelanguage.googleapis.com')) {
+      models.push(JSON.parse(opts.body).model);
+      if (models.length === 1) return { ok: false, status: 404 };
+      return { ok: true, json: async () => ({ choices: [{ message: { content: '[1]\nJUDUL_ID: Terjemahan cadangan' } }] }) };
+    }
+    return { ok: true, json: async () => ({ result: null }) };
+  };
+  try {
+    const store = new Map();
+    const item = { title: 'Stable model fallback', guid: 'model-fallback-1', description: '' };
+    await translateNewItems([item], makeRedisCmd(store), 10000);
+    assert.deepEqual(models, ['gemini-3.5-flash-lite', 'gemini-3.1-flash-lite']);
+    assert.equal(JSON.parse(store.get('news_tr:model-fallback-1')).title_id, 'Terjemahan cadangan');
+    assert.equal(models.some(model => model.includes('-latest')), false, 'alias model bergerak tidak boleh dipakai');
+  } finally { global.fetch = realFetch; }
+}));
+
 test('translateNewItems: todo > BATCH_SIZE -> dipecah jadi beberapa panggilan, batch kedua ambil dari ujung tertua (anti-starvation)', withEnv({
   GEMINI_API_KEY: 'fake-key',
   UPSTASH_REDIS_REST_URL: 'https://mock-redis.test',

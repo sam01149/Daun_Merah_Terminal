@@ -11,12 +11,20 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-09-23 (Session 376 — Ketahanan terjemahan NEWS)
+> **Last updated:** 2026-09-24 (Session 377 — Pulihkan Translate NEWS dari model Gemini yang dihentikan)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 377 (2026-09-24) — Pulihkan Translate NEWS dari model Gemini yang dihentikan
+
+**Masalah dan akar penyebab.** Endpoint RSS dan lookup cache produksi sama-sama sehat, tetapi delapan GUID berita terbaru tidak memiliki satu pun hasil terjemahan. Penyebabnya spesifik: kode meminta alias `gemini-flash-lite-latest`, sedangkan daftar model resmi Google saat ini tidak lagi menyediakan alias tersebut. Setiap batch ditolak sebelum hasil dapat disimpan; pengecekan HTTP 200 sebelumnya hanya membuktikan endpoint hidup, bukan penerjemahan berhasil.
+
+**Perbaikan.** Translate NEWS sekarang memakai model stabil eksplisit `gemini-3.5-flash-lite`, bukan alias bergerak. Jika Google menghentikan nama itu dan membalas 400/404, sistem langsung mencoba `gemini-3.1-flash-lite`. Cadangan tidak dipakai untuk 429 atau timeout agar gangguan provider tidak menggandakan konsumsi/latensi. Kedua percobaan berbagi satu deadline handler yang sama.
+
+**Verifikasi.** Regresi baru meniru primary 404 lalu memastikan hanya cadangan stabil yang dipanggil dan hasilnya tersimpan; tes juga melarang alias `-latest`. Verifikasi produksi sebelum perbaikan membuktikan cache kosong pada GUID aktif, sehingga masalah tidak disimpulkan dari status endpoint saja. Dokumentasi AI/vendor diselaraskan ke model stabil dan fallback baru.
 
 ## Changelog Session 376 (2026-09-23) — Ketahanan terjemahan NEWS saat respons AI tidak lengkap
 
