@@ -24,6 +24,14 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 
 ## Riset Aktif
 
+### [2026-09-28] RBA 29 September — kenaikan 25 bp hampir seluruhnya sudah diprice in
+
+Pengecekan menjelang keputusan RBA besok pukul **11.30 WIB** (14.30 AEST): cash rate saat ini 4,35%. Sumber resmi RBA mengonfirmasi jadwal dan waktu rilis tersebut. Pricing yang dapat diamati memberi arah yang sama: kontrak ASX 30-day interbank cash-rate futures (melalui tracker pihak ketiga yang dihitung dari kontrak ASX) terakhir pada 25 September mengindikasikan peluang kenaikan sekitar 75,38%; pasar prediksi yang diperbarui 28 September menempatkan kenaikan **25 bp** di sekitar **99%** dan hold sekitar 1%. Jadi konsensus trader sudah jelas: rate menuju **4,60%**.
+
+Implikasi interpretasi: kenaikan 25 bp sendiri bukan katalis bullish AUD yang bersih karena telah diantisipasi; reaksi besar lebih mungkin datang dari kejutan **hold** atau dari nada pernyataan RBA/rate path setelah keputusan. Angka 75% vs 99% tidak perlu diperlakukan sebagai kontradiksi: futures adalah instrumen pasar suku bunga utama tetapi inferensi probabilitasnya bergantung pada rata-rata rate bulanan dan model kalender; prediction market mengukur kontrak outcome langsung dengan likuiditas lebih kecil. Kesimpulan yang tahan kedua sumber: hike sudah sangat dominan, sehingga fokus trading seharusnya pada deviasi dari konsensus dan guidance, bukan sekadar headline “+25 bp”. Bukan rekomendasi transaksi.
+
+Sumber: [jadwal/cash rate RBA](https://www.rba.gov.au/), [metodologi ASX RBA Rate Tracker](https://www.asx.com.au/markets/trade-our-derivatives-market/futures-market/rba-rate-tracker), [RBA Rate Watch — snapshot futures 25 Sep](https://rbaratewatch.com/rba-meeting/september-2026/), [Polymarket — snapshot 28 Sep](https://polymarket.com/event/reserve-bank-of-australia-decision-in-september-20260729163823944).
+
 ### [2026-09-16] Alternatif DeepSeek setelah top-up dibatalkan — seleksi legal, teknis, dan biaya
 
 Dipicu seluruh top-up DeepSeek akun ini (`Card`, `Google Pay`, `PayPal`) berstatus `Cancelled` sejak 7 Agu; sebelumnya PayPal dan Card pernah sukses. Tujuan riset ini **bukan** mengganti provider atau membuka akun baru, melainkan menentukan kandidat yang legal dan realistis bila DeepSeek tidak memulihkan pembayaran.
