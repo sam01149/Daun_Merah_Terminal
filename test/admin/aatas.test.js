@@ -2065,6 +2065,15 @@ test('S359 effective note uses final RR and retains original claims with provena
  const once=st.reasoning_note;_finalizeAatasDataNotes(st);assert.equal(st.reasoning_note,once);
 });
 
+test('reasoning note makes an AI output cutoff explicit without changing final decision fields',()=>{
+ const {_finalizeAatasDataNotes}=require('../../api/admin');
+ const st={bias:'bearish',risk_reward:2.71,checklist_pct:62,gate_risk_management:{pass:true,note:'RR 1:2.2'},reasoning_note:'Kalimat model berhenti di tengah',reasoning_note_truncated:true,regime_check:{event_note:'Tidak ada event High relevan'},trigger:'Sentuhan zona'};
+ _finalizeAatasDataNotes(st);
+ assert.match(st.reasoning_note,/narasi model terpotong di batas keluaran/);
+ assert.equal(st.reasoning_note_reported,'Kalimat model berhenti di tengah');
+ assert.equal(st.bias,'bearish');assert.equal(st.risk_reward,2.71);assert.equal(st.checklist_pct,62);
+});
+
 test('S359 squeeze guard checks conflict mechanism, not merely opposite trade direction',()=>{
  const {_detectSqueezeInversion}=require('../../api/admin');
  assert.equal(_detectSqueezeInversion('CHF/JPY',['Posisi short JPY crowded rawan squeeze naik yang bisa memicu rebound CHF/JPY']),true);

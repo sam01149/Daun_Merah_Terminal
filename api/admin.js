@@ -5782,6 +5782,7 @@ function _finalizeAatasDataNotes(st) {
   const facts = ['HASIL KODE: bias ' + (st.bias || 'tidak diketahui'),
     'RR final ' + (Number.isFinite(st.risk_reward) ? '1:' + st.risk_reward.toFixed(2) : 'tidak tersedia'),
     'checklist final ' + (st.checklist_pct ?? 'tidak tersedia') + '%',
+    st.reasoning_note_truncated ? 'narasi model terpotong di batas keluaran; keputusan final tetap memakai field terstruktur dan kode' : null,
     st.regime_check?.event_note, st.trigger].filter(Boolean).join('; ');
   st.reasoning_note = facts + (original ? '\nLAPORAN ASLI MODEL (klaim angka/waktu dapat berbeda dari hasil kode di atas): ' + original : '');
   return st;
@@ -6478,10 +6479,10 @@ async function _callDeepSeekAnalyze(messages, {
   modelName = 'deepseek-v4-flash', tag = 'ohlcv_analyze',
 } = {}) {
   const DEEPSEEK_KEY = getDeepSeekApiKey();
-  if (!DEEPSEEK_KEY) return { rawText: null, model: null, error: 'no_key', elapsedMs: null };
+  if (!DEEPSEEK_KEY) return { rawText: null, model: null, error: 'no_key', elapsedMs: null, truncated: false };
   if (!await cb.canCall(cbKey)) {
     console.log(`${tag}: DeepSeek circuit OPEN (${cbKey})`);
-    return { rawText: null, model: null, error: 'circuit_open', elapsedMs: null };
+    return { rawText: null, model: null, error: 'circuit_open', elapsedMs: null, truncated: false };
   }
   const t0 = Date.now();
   try {
@@ -6502,15 +6503,16 @@ async function _callDeepSeekAnalyze(messages, {
     // Deteksi output kepotong (2026-08-18, audit kinerja): urutan output = JSON dulu,
     // lalu prosa — kalau kena batas max_tokens yang hilang justru EKOR prosa, jadi JSON
     // tetap valid dan tidak ada tanda apa pun bahwa narasinya terputus. Warn-only.
-    if (j.choices?.[0]?.finish_reason === 'length') {
+    const truncated = j.choices?.[0]?.finish_reason === 'length';
+    if (truncated) {
       console.warn(`${tag}: output KEPOTONG di batas max_tokens (finish_reason=length) — prosa kemungkinan terputus`);
     }
     await cb.onSuccess(cbKey);
-    return { rawText, model: modelName, error: null, elapsedMs: Date.now() - t0 };
+    return { rawText, model: modelName, error: null, elapsedMs: Date.now() - t0, truncated };
   } catch (e) {
     console.warn(`${tag}: DeepSeek gagal:`, e.message);
     await cb.onFailure(cbKey);
-    return { rawText: null, model: null, error: e.message, elapsedMs: Date.now() - t0 };
+    return { rawText: null, model: null, error: e.message, elapsedMs: Date.now() - t0, truncated: false };
   }
 }
 
@@ -6589,7 +6591,7 @@ async function _runAatasTwoCall({
     '- fundamental_bias: hasil Step 2 — {"case_bullish_pct":0-100,"case_bearish_pct":0-100,"arah":"bullish|bearish|netral","driver":"...","konfirmasi":["...","..."],"konflik":"..." atau null,"strong_vs_weak":true/false}. konfirmasi minimal 2 item dari kategori berbeda, masing-masing menyebut data konkret DAN mendukung arah yang sama dengan "arah" (lihat KONVENSI ARAH di atas) — bukti yang justru melawan arah masuk konflik, bukan konfirmasi. case_bullish_pct dan case_bearish_pct WAJIB berjumlah TEPAT 100 — dua-duanya angka bulat. Kode akan menolak jawaban yang jumlahnya bukan 100, dan menolak setup kalau sisi yang lebih besar berlawanan dengan \"arah\" yang kamu tulis.',
     '- bias: ARAH AKHIR hasil Step 0-2 — bullish/bearish/neutral/mixed, MURNI dari makro/fundamental. Pakai "neutral" kalau fundamental memang tidak punya arah, "mixed" kalau faktor-faktornya saling bertabrakan. DILARANG menyebut atau memakai RSI/MACD/SMA/EMA/pivot/struktur chart sebagai alasan di field manapun. HARUS PERSIS SAMA dengan fundamental_bias.arah — cek ulang KONVENSI ARAH sebelum memutuskan.',
     '',
-    'Setelah objek JSON, di baris baru tulis PERSIS "===COMMENTARY===" lalu tulis SATU paragraf ringkas (3-5 kalimat) sebagai teks biasa: kenapa tiap step dinilai begitu, dengan angka konkret. WAJIB diisi — paragraf inilah satu-satunya jejak naratif makro untuk audit nanti.',
+    'Setelah objek JSON, di baris baru tulis PERSIS "===COMMENTARY===" lalu tulis SATU paragraf ringkas 2-3 kalimat, maksimal 110 kata, sebagai teks biasa: kenapa tiap step dinilai begitu, dengan angka konkret. WAJIB diisi — paragraf inilah satu-satunya jejak naratif makro untuk audit nanti.',
   ].join('\n');
   prompts.call1 = { system: call1Sys, user: call1User };
 
@@ -6666,7 +6668,7 @@ async function _runAatasTwoCall({
     base.checklist_pct = fb && Number.isFinite(Number(fb.score_pct))
       ? Math.min(45, Math.max(0, Math.round(Number(fb.score_pct))))
       : null;
-    return { parsed: base, commentary: macroNote, model: r1.model, gate1, prompts, error: null };
+    return { parsed: base, commentary: macroNote, commentaryTruncated: r1.truncated, model: r1.model, gate1, prompts, error: null };
   }
 
   // ── Call 2: struktur & lokasi entry ────────────────────────────────────────
@@ -6699,7 +6701,7 @@ async function _runAatasTwoCall({
     '- conflict_note: SATU kalimat pendek alasan konkret (sebut data/event spesifik) kalau conflict bukan "none"; null kalau "none".',
     '- checklist_pct: skor akhir gabungan seluruh step dalam persen (angka bulat 0-100), tertimbang: GATE (Step 1 & 6) bobot dua kali lipat, Step 2 & 4-5 bobot tinggi (Step 8 tidak dinilai di sini, lihat instruksi Step 8 di atas). Step 1 & 2 sudah lolos dengan skor fundamental yang disebut di atas — pakai angka itu apa adanya, jangan menilai ulang makro. Server yang menentukan label verdict dari angka ini, bukan kamu.',
     '',
-    'Setelah objek JSON, di baris baru tulis PERSIS "===COMMENTARY===" lalu tulis SATU paragraf ringkas (3-5 kalimat, minimal 2 angka konkret) sebagai teks biasa tentang struktur, lokasi entry, dan risiko utamanya.',
+    'Setelah objek JSON, di baris baru tulis PERSIS "===COMMENTARY===" lalu tulis SATU paragraf ringkas 2-3 kalimat, maksimal 110 kata dan minimal 2 angka konkret, sebagai teks biasa tentang struktur, lokasi entry, dan risiko utamanya.',
   ].filter(x => x !== null).join('\n');
   prompts.call2 = { system: call2Sys, user: call2User };
 
@@ -6713,7 +6715,7 @@ async function _runAatasTwoCall({
     // seluruh hasil Call 1 tetap dikembalikan supaya siklusnya tidak hilang tanpa jejak.
     base.verdict = 'NO TRADE';
     base.gate_risk_management = { pass: null, note: 'Call 2 (struktur & lokasi) gagal — tidak ada penilaian teknikal untuk siklus ini' };
-    return { parsed: base, commentary: macroNote, model: r1.model, gate1, prompts, error: r2.error };
+    return { parsed: base, commentary: macroNote, commentaryTruncated: r1.truncated, model: r1.model, gate1, prompts, error: r2.error };
   }
 
   let p2 = null, techNote = null;
@@ -6725,7 +6727,7 @@ async function _runAatasTwoCall({
     console.warn('AATAS: Call 2 JSON parse gagal:', e.message);
     base.verdict = 'NO TRADE';
     base.gate_risk_management = { pass: null, note: 'Jawaban Call 2 tidak bisa diparse — tidak ada penilaian teknikal untuk siklus ini' };
-    return { parsed: base, commentary: macroNote, model: r1.model, gate1, prompts, error: 'call2_parse_gagal' };
+    return { parsed: base, commentary: macroNote, commentaryTruncated: r1.truncated || r2.truncated, model: r1.model, gate1, prompts, error: 'call2_parse_gagal' };
   }
 
   // Gabung: field Call 2 menimpa placeholder, KECUALI yang milik Call 1 (bias, gate 1,
@@ -6749,7 +6751,7 @@ async function _runAatasTwoCall({
   // gabungan "call1+call2" supaya atribusi sampel nanti tidak menebak — jalur yang berhenti
   // di Call 1 (Gate 1 gagal / parse gagal) tetap melaporkan satu nama, memang cuma itu yang jalan.
   const modelLabel = r2.model && r2.model !== r1.model ? `${r1.model}+${r2.model}` : r1.model;
-  return { parsed, commentary: parsed.reasoning_note, model: modelLabel, gate1, prompts, error: null };
+  return { parsed, commentary: parsed.reasoning_note, commentaryTruncated: r1.truncated || r2.truncated, model: modelLabel, gate1, prompts, error: null };
 }
 
 // Ringkasan satu-dua baris hasil checklist AATAS untuk fact sheet AI Kritikus (Gate A).
@@ -7687,7 +7689,7 @@ async function ohlcvAnalyzeHandler(req, res) {
     // ── AATAS v2: pipeline dua panggilan (HANYA jalur auto-entry) ──────────────
     // Call 1 makro-only menentukan & mengunci arah, Gate 1 ditegakkan kode, baru Call 2
     // teknikal-only menentukan lokasi/waktu. Gate 1 gagal = Call 2 tidak pernah dipanggil.
-    let aatasParsed = null, aatasCommentary = null, aatasGate1 = null, aatasPrompts = null;
+    let aatasParsed = null, aatasCommentary = null, aatasCommentaryTruncated = false, aatasGate1 = null, aatasPrompts = null;
     if (isAutoCall) {
       const run = await _runAatasTwoCall({
         label: data.label, isXau: data.is_xau,
@@ -7721,6 +7723,7 @@ async function ohlcvAnalyzeHandler(req, res) {
       });
       aatasParsed = run.parsed;
       aatasCommentary = run.commentary;
+      aatasCommentaryTruncated = run.commentaryTruncated === true;
       aatasGate1 = run.gate1;
       aatasPrompts = run.prompts;
       model = run.model;
@@ -8255,6 +8258,7 @@ async function ohlcvAnalyzeHandler(req, res) {
       structured.entry_wait_until = wait.until;
       structured.trigger_reported = structured.trigger ?? null;
       structured.trigger = structured.entry_zone ? 'Sentuhan zona ' + structured.entry_zone + (wait.until ? ' setelah ' + new Date(wait.until).toISOString() : '') + '; tunduk jadwal event High relevan' : null;
+      structured.reasoning_note_truncated = aatasCommentaryTruncated;
       _finalizeAatasDataNotes(structured);
       resultPayload.commentary = structured.reasoning_note;
     }
@@ -8273,7 +8277,8 @@ async function ohlcvAnalyzeHandler(req, res) {
         checklist_pct: structured.checklist_pct ?? null,
         verdict: structured.verdict ?? null,
         reasoning_note: structured.reasoning_note ?? null,
-          reasoning_note_reported: structured.reasoning_note_reported ?? null,
+        reasoning_note_reported: structured.reasoning_note_reported ?? null,
+        reasoning_note_truncated: structured.reasoning_note_truncated === true,
         conflict: structured.conflict ?? null,
         regime: autoGuardRegime,
         model, policy_v: POLICY_VERSION, aatas_v: AATAS_PROMPT_VERSION,
@@ -8456,6 +8461,7 @@ async function ohlcvAnalyzeHandler(req, res) {
           verdict: structured.verdict ?? null,
           reasoning_note: structured.reasoning_note ?? null,
           reasoning_note_reported: structured.reasoning_note_reported ?? null,
+          reasoning_note_truncated: structured.reasoning_note_truncated === true,
           aatas_v: AATAS_PROMPT_VERSION,
         } : {}),
       });
@@ -8605,6 +8611,7 @@ async function ohlcvAnalyzeHandler(req, res) {
                     verdict: structured.verdict ?? null,
                     reasoning_note: structured.reasoning_note ?? null,
                     reasoning_note_reported: structured.reasoning_note_reported ?? null,
+                    reasoning_note_truncated: structured.reasoning_note_truncated === true,
                     aatas_v: AATAS_PROMPT_VERSION,
                   },
                 };

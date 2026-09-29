@@ -968,6 +968,16 @@ if (localStorage.getItem('dm_dev_theme') === 'light') {
     if (value == null || value === '') return '';
     return `<div class="row" style="flex-direction:column;align-items:flex-start;gap:2px"><span>${esc(label)}</span><div class="longtext">${esc(value)}</div></div>`;
   }
+  // Entri lama dibuat sebelum provider melaporkan finish_reason disimpan ke log. Untuk
+  // jejak itu saja, akhir teks tanpa tanda akhir kalimat diberi peringatan "kemungkinan",
+  // bukan diperlakukan sebagai fakta. Entri baru memakai reasoning_note_truncated yang pasti.
+  function reasoningNoteStatus(s){
+    if (s?.reasoning_note_truncated === true) return 'TERPOTONG — keputusan memakai field terstruktur dan kode';
+    const legacy = String(s?.reasoning_note_reported ?? s?.reasoning_note ?? '').trim();
+    return legacy && !/[.!?…]["')\]]?$/.test(legacy)
+      ? 'KEMUNGKINAN TERPOTONG — entri lama tidak memiliki metadata provider'
+      : '';
+  }
   // (2026-08-08, user: baris detail setup masih berantakan — daftar datar 25+ field
   // campur narasi panjang & tag pendek tanpa kelompok) — bungkus beberapa fld() jadi
   // 1 kelompok berlabel. TIDAK ADA field yang dihilangkan, cuma dikelompokkan + label
@@ -1247,6 +1257,7 @@ if (localStorage.getItem('dm_dev_theme') === 'light') {
         fld('Fundamental Bias (Step 2)', jsonLabel(s.fundamental_bias)),
         fld('Teknikal (Step 4-5)', jsonLabel(s.technical)),
         fld('Validasi Akhir (Step 8)', jsonLabel(s.final_validation)),
+        fld('Status Catatan Penalaran', reasoningNoteStatus(s)),
         fldLong('Catatan Penalaran AI', s.reasoning_note),
         fld('Versi Prompt AATAS', s.aatas_v),
       ]),
