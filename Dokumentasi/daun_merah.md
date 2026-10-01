@@ -11,12 +11,29 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-09-24 (Session 377 — Pulihkan Translate NEWS dari model Gemini yang dihentikan)
+> **Last updated:** 2026-10-01 (Session 379 — Audit Komprehensif Aplikasi & AATAS, Peremajaan Ekspektasi Inflasi CHF & JPY)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 379 (2026-10-01) — Audit Komprehensif Aplikasi & AATAS, Peremajaan Ekspektasi Inflasi CHF & JPY
+
+**Cakupan dan hasil audit.** Audit menyeluruh dilakukan terhadap aplikasi utama Daun Merah dan subsistem AATAS (Professional LLM Trader).
+1. **Aplikasi Umum:**
+   - Vercel Serverless Function: 12/12 fungsi terpenuhi sesuai batas Hobby Tier (`api/` bersih, modul penunjang memakai prefix `_*.js`).
+   - Pipeline data & sinkronisasi: `newscat.js` root dan `vps/newscat.js` byte-identik; regex filter headline FinancialJuice `BLOCKED_HEADLINE_RE` sinkron antara `feeds.js` dan `admin.js`.
+   - Ketahanan Model AI: Model Translate NEWS stabil di `gemini-3.5-flash-lite` dengan fallback `gemini-3.1-flash-lite` (S377). Pengingat audit dicatat untuk alias `gemini-flash-latest` yang masih dipakai di `admin.js`, `journal.js`, dan `market-digest.js` agar dipantau terhadap risiko depresiasi nama oleh Google.
+   - Peringatan Kuartalan Ekspektasi Inflasi (§3.4 SOP Audit): Verifikasi `as_of` menemukan proyeksi SNB (CHF) berumur 105 hari (>90 hari batas basi) dan BoJ Tankan (JPY) berumur 91 hari. Diperbarui langsung ke rilis resmi terbaru: SNB Monetary Policy Assessment 24 Sep 2026 (proyeksi 2026 0.7%, naik dari 0.6%) dan BoJ Tankan Sep 2026 rilis 1 Okt 2026 (outlook inflasi 1 tahun 2.6%, turun dari 2.7%). `DATA_VERSION` dinaikkan ke `'2026-10-01'`.
+2. **AATAS / Professional LLM Trader:**
+   - Status semi-production dan isolasi jalur virtual diverifikasi: Two-Call pipeline (Call 1 `deepseek-v4-pro`, Call 2 `deepseek-v4-flash`), short-circuit Gate 1 kode, serta isolasi terhadap jalur manual publik berjalan konsisten.
+   - Kontrak eksekusi level (`_aatas_execution_contract.js`): Mengikat SL/TP ke ID kandidat deterministik dan melarang buffer ATR sintetis diklaim sebagai anchor struktur.
+   - Evaluator & penanganan event: Kontrak `zone_touch_after_calendar` (v58) teruji memvalidasi fresh touch dari sisi tunggu dan membatalkan setup jika harga membuka menembus SL.
+   - Integritas dokumentasi: Header ganda pada `Dokumentasi/professional_llm_trader/progress.md` dibersihkan.
+   - Penunjuk auto-entry: Sesuai ATURAN.md §2, rincian audit AATAS dicatat di SOP audit dan changelog terkait.
+
+**Verifikasi.** Suite tes unit penuh `npm test` lulus 1.350 / 1.350 (100% hijau).
 
 ## Changelog Session 377 (2026-09-24) — Pulihkan Translate NEWS dari model Gemini yang dihentikan
 
