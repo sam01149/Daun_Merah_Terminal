@@ -28,11 +28,15 @@ const { requireAppKey, safeEqual } = require('./_app_key');
 const { fetchYahooOhlcv1h, fetchFallbackCandles, shouldSendYahooAlert, mapYahooSymbolToDeriv, fetchDerivCandles, mergeVolumeByTimestamp } = require('./_ohlcv_fetch');
 const { buildPairContext, computeCurrencyStrength } = require('./_pair_context');
 const { validateTightenSl, computePreventiveTightenSl, _evaluateManaged, _aggManagementStats, isCorroborated, isManagedPending } = require('./_position_review');
-// isDrawdownHalted (Gate B) diaktifkan ulang 2026-08-22 (POLICY_EPOCHS v30) — lihat
-// komentar di titik pemanggilannya untuk riwayat lengkap nonaktif (v29) -> aktif lagi.
-const { isCorrelatedExposureBlocked, correlatedExposureBlock, isClosedEarly, isManagedResolved, isLiveExposure, isTimingConflictBlocked, isInvalidationTriggered, INVALIDATION_TRIGGER_TYPES, INVALIDATION_TRIGGER_DIRECTIONS, INVALIDATION_TRIGGER_TIMEFRAMES, CORRELATED_PAIRS, POLICY_VERSION, POLICY_EPOCHS, policyVersionForTs, isDrawdownHalted, isDrawdownEmergencyValveOpen, AATAS_EPOCH, isGoldRegimeBlocked } = require('./_auto_entry_guard');
+const { isCorrelatedExposureBlocked, correlatedExposureBlock, isClosedEarly, isManagedResolved, isLiveExposure, isTimingConflictBlocked, isInvalidationTriggered, INVALIDATION_TRIGGER_TYPES, INVALIDATION_TRIGGER_DIRECTIONS, INVALIDATION_TRIGGER_TIMEFRAMES, CORRELATED_PAIRS, POLICY_VERSION, POLICY_EPOCHS, policyVersionForTs, AATAS_EPOCH, isGoldRegimeBlocked } = require('./_auto_entry_guard');
 const { computeLevelCandidates } = require('./_levels');
 const { bindExecutionContract, validateStoredExecutionContract } = require('./_aatas_execution_contract');
+
+// Keputusan user 2026-10-02: selama fase pengumpulan data, Gate B tidak boleh
+// menghentikan kandidat baru berdasarkan rolling realized-R. Kode/perhitungannya
+// tetap berada di _auto_entry_guard.js beserta tesnya agar dapat diaktifkan lagi
+// secara eksplisit setelah sampel cukup; Gate lain tetap aktif.
+const GATE_B_DRAWDOWN_ENABLED = false;
 
 // Gate D live-sign lookup (audit 2026-08-16): terjemahkan simbol Yahoo di
 // CORRELATED_PAIRS ke label instrumen api/correlations.js, supaya sign statis di
@@ -8703,7 +8707,9 @@ async function ohlcvAnalyzeHandler(req, res) {
             autoGuardReason = 'correlation_cap';
             autoGuardDetail = _formatCorrelationBlockDetail(corrBlock);
           }
-          // Gate B (drawdown circuit breaker) DIAKTIFKAN ULANG 2026-08-22 (POLICY_EPOCHS
+          // Gate B (drawdown circuit breaker) dinonaktifkan oleh keputusan user
+          // 2026-10-02 selama fase pengumpulan data. Riwayat implementasi terakhir:
+          // DIAKTIFKAN ULANG 2026-08-22 (POLICY_EPOCHS
           // v30) — nonaktif sejak 2026-08-20 (v29) karena 2 alasan: (1) ambang masih
           // heuristik awal belum dikalibrasi [MASIH BERLAKU, belum dikalibrasi], (2) gate
           // GLOBAL lintas-pair tanpa katup darurat waktu -> risiko macet total kalau
@@ -8714,7 +8720,7 @@ async function ohlcvAnalyzeHandler(req, res) {
           // pending/open DAN >=3 hari sejak entri real terakhir), izinkan 1 kandidat lolos
           // supaya siklus bisa jalan lagi. Alasan (1) TETAP diterima sadar (sama seperti
           // sebelum dinonaktifkan) — ambang dikalibrasi ulang setelah n>=100.
-          if (!autoGuardReason) {
+          if (GATE_B_DRAWDOWN_ENABLED && !autoGuardReason) {
             // AATAS (2026-08-22): jendela drawdown dibatasi ke POPULASI AATAS saja.
             // Kalau kerugian arsitektur LAMA (teknikal-dulu, 12 SL Agustus) ikut dihitung,
             // Gate B praktis menyala sejak menit pertama arsitektur baru hidup — sistem

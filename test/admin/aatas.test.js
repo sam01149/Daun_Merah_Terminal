@@ -1876,10 +1876,10 @@ test('Gate B: rentetan SL arsitektur LAMA tidak lagi memblokir kandidat AATAS', 
   });
 });
 
-test('Gate B: rentetan SL dari populasi AATAS sendiri TETAP memblokir (rem tidak dimatikan, cuma discope)', async () => {
+test('Gate B nonaktif: rentetan SL dari populasi AATAS tetap meneruskan kandidat ke pending', async () => {
   await withEnv({ CRON_SECRET: 'topsecret', DEEPSEEK_API_KEY: 'k' }, async () => {
-    // ts SENGAJA baru (beberapa jam lalu): katup darurat waktu (>=3 hari sejak entri
-    // real terakhir) harus TERTUTUP supaya yang diuji benar-benar Gate B, bukan valve.
+    // ts SENGAJA baru (beberapa jam lalu): skenario ini akan menyalakan Gate B bila
+    // aktif, sehingga membuktikan flag nonaktif benar-benar meneruskan kandidat.
     const now = Date.now();
     const slBaru = [];
     for (let i = 0; i < 6; i++) {
@@ -1906,12 +1906,10 @@ test('Gate B: rentetan SL dari populasi AATAS sendiri TETAP memblokir (rem tidak
 
       const log = JSON.parse(store.strings['setup_log_auto:v1']);
       const baru = log.find(x => x.symbol === 'GBPUSD=X');
-      // Kandidat yang ditahan gate TETAP dicatat sebagai ghost (canceled) — itu memang
-      // desainnya (ghost-tracking gate_reject), yang penting dia tidak jadi posisi live.
-      assert.ok(baru, 'kandidat yang ditahan tetap direkam sebagai ghost, bukan hilang tanpa jejak');
-      assert.equal(baru.status, 'canceled',
-        'kalau kerugian datang dari arsitektur yang sekarang, Gate B wajib tetap menahan');
-      assert.equal(baru.canceled_reason, 'gate_drawdown_circuit_breaker');
+      assert.ok(baru, 'kandidat baru harus tetap direkam');
+      assert.equal(baru.status, 'pending',
+        'Gate B nonaktif: rolling-R buruk tidak boleh menahan kandidat pengumpulan data');
+      assert.equal(baru.canceled_reason, undefined);
     } finally { global.fetch = origFetch; }
   });
 });
