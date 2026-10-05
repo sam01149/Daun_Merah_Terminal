@@ -11,12 +11,18 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-10-05 (Session 381 — Pemeriksaan pemicu Risk-Off)
+> **Last updated:** 2026-10-05 (Session 382 — Evaluasi semantik status Risk-Off)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 382 (2026-10-05) — Evaluasi semantik status Risk-Off
+
+**Diagnosis.** Data dan implementasi tidak salah baca: `risk_off` memang konsekuensi literal dari aturan `HY OAS naik >15 bps dalam dua hari`, dan data resmi menunjukkan kenaikan 16 bps. Namun untuk use case Daun Merah, labelnya terlalu keras: sinyal tipis dari satu pasar kredit diberi bobot sama dengan VIX >25 atau MOVE >130, lalu mengalahkan VIX 15,31 yang turun dan term structure contango; MOVE 107,3 sendiri hanya mendukung `elevated`. Pembacaan yang lebih jujur adalah **tekanan kredit meningkat / elevated**, bukan penghindaran risiko luas yang telah terkonfirmasi lintas pasar.
+
+**Dampak nyata.** Saat ini Gate B auto-entry sedang dinonaktifkan untuk pengumpulan sampel, jadi label tersebut tidak menghentikan kandidat auto-entry. Namun `risk_off` mentah tetap dapat membatasi confidence thesis untuk posisi long AUD/NZD yang melawan safe haven dan dipakai narasi sebagai konfirmasi safe-haven emas; akibatnya label yang berlebihan tetap material bagi rekomendasi. Tidak ada perubahan kode pada sesi diagnosis ini: kalibrasi ulang ambang/urutan prioritas adalah keputusan kebijakan desain, bukan bug parsing yang aman diubah sepihak.
 
 ## Changelog Session 381 (2026-10-05) — Pemeriksaan pemicu Risk-Off
 
