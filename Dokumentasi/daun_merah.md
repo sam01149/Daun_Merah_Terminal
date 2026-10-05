@@ -24,7 +24,7 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 
 **Perbaikan.** Ketergantungan Stooq, circuit breaker, dan probe kesehatannya dihapus. `risk-regime.js` sekarang mengambil MOVE melalui Yahoo `query1` lalu otomatis mencoba host mirror `query2` bila host pertama gagal. Health monitor kini memeriksa respons harga MOVE valid dari dua host tersebut dan menamai statusnya `MOVE Index (Yahoo)`, jadi alarm hanya muncul bila jalur MOVE yang dipakai aplikasi benar-benar tidak tersedia. Tidak ada perubahan klasifikasi risk regime, cache, atau data auto-entry.
 
-**Verifikasi.** Dua regresi baru menyimulasikan `query1` gagal (termasuk HTTP 403) dan membuktikan runtime maupun health probe berpindah ke `query2` serta hanya menerima harga positif yang valid. Suite penuh `npm test` lulus 1.352 / 1.352 (100% hijau).
+**Verifikasi.** Dua regresi baru menyimulasikan `query1` gagal (termasuk HTTP 403) dan membuktikan runtime maupun health probe berpindah ke `query2` serta hanya menerima harga positif yang valid. Suite penuh `npm test` lulus 1.352 / 1.352 (100% hijau). Setelah Vercel menyatakan deployment sukses, pembacaan langsung endpoint produksi `/api/risk-regime` mengembalikan HTTP 200 pada 2026-10-05 06:23 UTC dengan `move: 107.3` dan `move_source: "yahoo"`; jalur Stooq tidak lagi tersentuh.
 
 ## Changelog Session 379 (2026-10-01) — Audit Komprehensif Aplikasi & AATAS, Peremajaan Ekspektasi Inflasi CHF & JPY
 
