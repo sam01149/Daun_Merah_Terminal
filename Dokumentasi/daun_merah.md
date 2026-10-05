@@ -24,7 +24,7 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 
 **Alasan objektif.** Ambang HY 15 bps sebelumnya tidak pernah ikut kalibrasi 10 tahun yang menjadi dasar ambang VIX/MOVE; ia hanya diperlakukan setara dengan pemicu volatilitas berat. Snapshot produksi 5 Oktober membuktikan masalah semantik itu: HY melebar 16 bps (hanya 1 bp di atas ambang), tetapi VIX 15,31 turun dan contango, sementara MOVE 107,3 sendiri berada di tier `ELEVATED`. Mengklaim kondisi itu sebagai risk-off luas lebih keras daripada bukti yang tersedia.
 
-**Antarmuka dan regresi.** Respons API kini memakai `components.hy_elevated`; detail kartu HY menjelaskan “ELEVATED”, dan ringkasan pemicu `RISK-OFF` hanya menghitung VIX/MOVE. `APP_VERSION` dinaikkan ke `2026.10.05.1` agar PWA mengambil renderer baru. Dua regresi mengunci bahwa HY yang melebar sendiri menghasilkan `elevated`, sedangkan VIX >25 atau MOVE >130 tetap `risk_off`. Verifikasi suite penuh dan produksi dicatat setelah deployment.
+**Antarmuka dan regresi.** Respons API kini memakai `components.hy_elevated`; detail kartu HY menjelaskan “ELEVATED”, dan ringkasan pemicu `RISK-OFF` hanya menghitung VIX/MOVE. `APP_VERSION` dinaikkan ke `2026.10.05.1` agar PWA mengambil renderer baru. Dua regresi mengunci bahwa HY yang melebar sendiri menghasilkan `elevated`, sedangkan VIX >25 atau MOVE >130 tetap `risk_off`. Suite penuh lulus 1.354/1.354. Sesudah deploy, pembacaan langsung produksi membalas HTTP 200 dengan `regime:"elevated"`, `hy_elevated:true`, VIX 15,31, MOVE 107,3, dan HY +0,16 — tepat sesuai kebijakan baru.
 
 ## Changelog Session 382 (2026-10-05) — Evaluasi semantik status Risk-Off
 
