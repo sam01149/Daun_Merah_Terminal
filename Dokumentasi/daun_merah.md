@@ -11,12 +11,20 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-10-05 (Session 382 — Evaluasi semantik status Risk-Off)
+> **Last updated:** 2026-10-05 (Session 383 — Kalibrasi ulang label Risk-Off)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 383 (2026-10-05) — Kalibrasi ulang label Risk-Off
+
+**Keputusan dan perbaikan.** `RISK-OFF` sekarang hanya dipakai untuk stres volatilitas luas yang terkonfirmasi: VIX >25 atau MOVE >130. Pelebaran HY OAS >15 bps dalam dua hari dipindahkan ke `ELEVATED`: ia tetap ditandai dan tetap membuat panel menyarankan selektif/kurangi ukuran, tetapi tidak lagi sendirian membatasi confidence rekomendasi seperti sebuah flight-to-safety lintas pasar. Ini satu perubahan kebijakan terisolasi; ambang VIX, MOVE, VIX spike, sumber data, cache, dan Gate B auto-entry tidak diubah.
+
+**Alasan objektif.** Ambang HY 15 bps sebelumnya tidak pernah ikut kalibrasi 10 tahun yang menjadi dasar ambang VIX/MOVE; ia hanya diperlakukan setara dengan pemicu volatilitas berat. Snapshot produksi 5 Oktober membuktikan masalah semantik itu: HY melebar 16 bps (hanya 1 bp di atas ambang), tetapi VIX 15,31 turun dan contango, sementara MOVE 107,3 sendiri berada di tier `ELEVATED`. Mengklaim kondisi itu sebagai risk-off luas lebih keras daripada bukti yang tersedia.
+
+**Antarmuka dan regresi.** Respons API kini memakai `components.hy_elevated`; detail kartu HY menjelaskan “ELEVATED”, dan ringkasan pemicu `RISK-OFF` hanya menghitung VIX/MOVE. `APP_VERSION` dinaikkan ke `2026.10.05.1` agar PWA mengambil renderer baru. Dua regresi mengunci bahwa HY yang melebar sendiri menghasilkan `elevated`, sedangkan VIX >25 atau MOVE >130 tetap `risk_off`. Verifikasi suite penuh dan produksi dicatat setelah deployment.
 
 ## Changelog Session 382 (2026-10-05) — Evaluasi semantik status Risk-Off
 

@@ -4470,7 +4470,7 @@ window.addEventListener('DOMContentLoaded', () => _updateNewsLangBtn());
 
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.09.22.2';
+const APP_VERSION = '2026.10.05.1';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
@@ -11793,9 +11793,9 @@ function renderRegimeBanner(data) {
 
   // Breakdown detail (shown on tap)
   const comp = data.components || {}
-  const triggerCount   = [comp.vix_trigger, comp.move_trigger, comp.hy_trigger].filter(Boolean).length
-  const availCount     = [comp.vix_trigger, comp.move_trigger, comp.hy_trigger].filter(v => v != null).length
-  const elevatedActive = comp.vix_elevated || comp.move_elevated || comp.vix_spike
+  const triggerCount   = [comp.vix_trigger, comp.move_trigger].filter(Boolean).length
+  const availCount     = [comp.vix_trigger, comp.move_trigger].filter(v => v != null).length
+  const elevatedActive = comp.vix_elevated || comp.move_elevated || comp.vix_spike || comp.hy_elevated
 
   const rows = []
 
@@ -11837,9 +11837,9 @@ function renderRegimeBanner(data) {
 
   // HY OAS row
   if (data.hy_spread != null) {
-    const cls    = comp.hy_trigger ? 'regime-trigger active' : 'regime-trigger'
+    const cls    = comp.hy_elevated ? 'regime-trigger active' : 'regime-trigger'
     const chg    = fmtChg(data.hy_change_2d)
-    const status = comp.hy_trigger ? 'melebar > +0.15% → RISK-OFF' : '→ stabil'
+    const status = comp.hy_elevated ? 'melebar > +0.15% → ELEVATED' : '→ stabil'
     rows.push(`<div class="${cls}">HY OAS (spread kredit) ${data.hy_spread.toFixed(2)}%${chg} — ${status}</div>`)
   }
 

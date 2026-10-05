@@ -36,3 +36,19 @@ test('MOVE memakai query2 Yahoo saat query1 gagal', async () => {
     global.fetch = originalFetch;
   }
 });
+
+test('pelebaran HY saja adalah elevated, bukan risk-off', () => {
+  const { _classifyRegime: classifyRegime } = loadRiskRegime();
+
+  // Snapshot produksi 5 Oktober: kredit melebar 16bps, sementara VIX rendah
+  // dan MOVE hanya elevated. Label harus tidak mengklaim penghindaran risiko luas.
+  assert.equal(classifyRegime(15.31, 107.3, 0.16, -1.08), 'elevated');
+  assert.equal(classifyRegime(16, 95, 0.16, 0.2), 'elevated');
+});
+
+test('ambang risk-off VIX dan MOVE tidak berubah', () => {
+  const { _classifyRegime: classifyRegime } = loadRiskRegime();
+
+  assert.equal(classifyRegime(25.01, 100, 0, 0), 'risk_off');
+  assert.equal(classifyRegime(18, 130.01, 0, 0), 'risk_off');
+});

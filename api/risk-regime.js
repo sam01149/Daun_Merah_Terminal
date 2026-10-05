@@ -31,16 +31,15 @@ const YAHOO_MOVE_HOSTS = ['query1.finance.yahoo.com', 'query2.finance.yahoo.com'
 // Regime tiers (ascending severity):
 //   risk_on  — VIX<15, MOVE<90, HY not widening (ALL benign)
 //   neutral  — no stress, but not all-clear
-//   elevated — VIX 20-25, MOVE 100-130, or rapid VIX spike (+3 in 2d)
-//   risk_off — VIX>25, MOVE>130, or HY widening >15bps in 2d
+//   elevated — VIX 20-25, MOVE 100-130, rapid VIX spike (+3 in 2d),
+//               or HY widening >15bps in 2d
+//   risk_off — VIX>25 or MOVE>130 (broad volatility stress)
 //
-// Backtested 2026-06-22 against 10y daily Yahoo history: these exact cutoffs
-// produce a healthy, non-dominant split (risk_on 26% / neutral 28% / elevated
-// 28% / risk_off 18%) — i.e. NOT a "stuck on neutral" calibration bug. "Neutral"
-// showing up a lot recently reflects that 2024-2026 realized vol has genuinely
-// run hotter than the 10y average, not a broken threshold. See VIX_PCTL_10Y /
-// MOVE_PCTL_10Y below — used to show users "how normal is today" alongside the
-// categorical label, since the bucket alone hides where today sits in context.
+// VIX/MOVE cutoffs were checked against 10y daily Yahoo history on 2026-06-22.
+// HY's 15bp change is an uncalibrated credit warning, so it must not by itself
+// claim a cross-market risk-off regime; it remains visible as Elevated instead.
+// See VIX_PCTL_10Y / MOVE_PCTL_10Y below for historical context alongside the
+// categorical label.
 
 // Percentile breakpoints from VIX/MOVE daily closes, trailing 10y (computed 2026-06-22
 // from Yahoo Finance ^VIX / ^MOVE). Refresh every year or two — distribution drifts slowly.
@@ -156,7 +155,7 @@ module.exports = async function handler(req, res) {
   const components = {
     vix_trigger:    vix      != null ? vix      > 25   : null,
     move_trigger:   move     != null ? move     > 130  : null,
-    hy_trigger:     hyChange != null ? hyChange > 0.15 : null,
+    hy_elevated:    hyChange != null ? hyChange > 0.15 : null,
     vix_elevated:   vix      != null ? (vix > 20 && vix <= 25)    : null,
     move_elevated:  move     != null ? (move > 100 && move <= 130) : null,
     vix_spike:      vixChange != null ? vixChange > 3  : null,
@@ -213,15 +212,15 @@ module.exports = async function handler(req, res) {
 // ── Classifier ────────────────────────────────────────────────────────────────
 
 function classifyRegime(vix, move, hyChange, vixChange) {
-  // Tier 1 — Risk-Off: any severe stress indicator
+  // Tier 1 — Risk-Off: broad volatility stress
   if (vix      != null && vix      > 25)   return 'risk_off'
   if (move     != null && move     > 130)  return 'risk_off'
-  if (hyChange != null && hyChange > 0.15) return 'risk_off'
 
   // Tier 2 — Elevated: above-average stress, below crisis
   if (vix       != null && vix       > 20) return 'elevated'
   if (move      != null && move      > 100) return 'elevated'
   if (vixChange != null && vixChange > 3)  return 'elevated'  // rapid spike
+  if (hyChange  != null && hyChange  > 0.15) return 'elevated' // credit stress warning
 
   // Tier 3 — Risk-On: ALL available indicators benign
   const vixOk  = vix      == null || vix  < 15
@@ -341,3 +340,4 @@ async function redisCmd(...args) {
 
 module.exports._fetchYahooMove = fetchYahooMove
 module.exports._fetchMove = fetchMove
+module.exports._classifyRegime = classifyRegime
