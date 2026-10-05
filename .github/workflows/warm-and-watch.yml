@@ -89,7 +89,7 @@ jobs:
       # Warm makro RINGAN — dijalankan SETELAH health probe dengan sengaja.
       # `?action=health` menghapus cache turunan sumber yang baru pulih
       # (SOURCE_CACHE_KEYS di api/admin.js: fred -> real_yields+risk_regime,
-      # stooq -> risk_regime, cftc -> cot_cache_v2). Perilaku itu benar, tapi tanpa
+      # yahoo_move -> risk_regime, cftc -> cot_cache_v2). Perilaku itu benar, tapi tanpa
       # pengisian ulang di sini, key-nya menganggur kosong sampai market-digest
       # berikutnya (3x/hari) — dan blok makro di prompt AI ikut kosong selama itu.
       # Ketiga endpoint ini murah: `real_yields` & `cot` ambang segarnya 6 jam dan
