@@ -240,7 +240,7 @@ const HEALTH_RECOVER_THRESHOLD_MS = 5 * 60 * 1000; // 5 min down before recovery
 // fetches fresh data immediately after recovery rather than serving stale.
 const SOURCE_CACHE_KEYS = {
   fred:           ['real_yields', 'risk_regime'],
-  stooq:          ['risk_regime'],
+  yahoo_move:     ['risk_regime'],
   financialjuice: ['rss_cache'],
   cftc:           ['cot_cache_v2'],
   forexfactory:   [],
@@ -341,16 +341,25 @@ async function probeFred() {
   return { latest_date: obs[0].date, series: 'VIXCLS' };
 }
 
-async function probeStooq() {
-  const r = await fetch('https://stooq.com/q/d/l/?s=%5evix&i=d&l=3', {
-    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124 Safari/537.36' },
-    signal: AbortSignal.timeout(10000),
-  });
-  if (!r.ok) throw new Error(`HTTP ${r.status}`);
-  const csv = await r.text();
-  const lines = csv.trim().split('\n').filter(l => l && !l.startsWith('Date'));
-  if (lines.length === 0) throw new Error('Empty CSV response');
-  return { rows: lines.length, symbol: '^vix' };
+async function probeYahooMove() {
+  const hosts = ['query1.finance.yahoo.com', 'query2.finance.yahoo.com'];
+  let lastError;
+  for (const host of hosts) {
+    try {
+      const r = await fetch(`https://${host}/v8/finance/chart/%5EMOVE?range=1d&interval=5m`, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+        signal: AbortSignal.timeout(10000),
+      });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const json = await r.json();
+      const price = json?.chart?.result?.[0]?.meta?.regularMarketPrice;
+      if (!price || price <= 0) throw new Error('no valid MOVE price');
+      return { price: +Number(price).toFixed(1), host };
+    } catch (e) {
+      lastError = e;
+    }
+  }
+  throw new Error(`both Yahoo MOVE hosts failed: ${lastError?.message || 'unknown error'}`);
 }
 
 async function probeForexFactory() {
@@ -491,7 +500,7 @@ async function trySelfHealOhlcvSync(req) {
 
 const PROBES = {
   fred:           { fn: probeFred,           label: 'FRED API' },
-  stooq:          { fn: probeStooq,          label: 'Stooq CSV' },
+  yahoo_move:     { fn: probeYahooMove,      label: 'MOVE Index (Yahoo)' },
   forexfactory:   { fn: probeForexFactory,   label: 'ForexFactory' },
   calendar_cache: { fn: probeCalendarCache,  label: 'Calendar Cache (calendar_v1, fundamental_shock)' },
   financialjuice: { fn: probeFinancialJuice, label: 'FinancialJuice RSS' },
@@ -535,7 +544,7 @@ async function healthHandler(req, res) {
   // sempat mati. Asumsi itu SALAH di produksi: GitHub Actions cuma melayani ~3-4 run
   // per hari (lihat warm-and-watch.yml), jadi `gapMs` untuk sumber yang sehat sempurna
   // pun selalu ~7 jam > ambang 5 menit. Akibatnya SETIAP kali health jalan, ia mengira
-  // FRED/Stooq/CFTC "baru pulih" lalu MENGHAPUS `real_yields`, `risk_regime`, dan
+  // FRED/MOVE/CFTC "baru pulih" lalu MENGHAPUS `real_yields`, `risk_regime`, dan
   // `cot_cache_v2` — jadi watchdog-nya sendiri ikut jadi penyebab blok makro kosong di
   // prompt AI (diverifikasi live: ketiga key hilang persis setelah satu run health).
   // Sekarang pulih = "pernah tercatat DOWN, sekarang OK" — tidak lagi bergantung pada
@@ -2184,7 +2193,7 @@ async function journalImportHandler(req, res) {
 
 // ── Circuit breaker status + reset ───────────────────────────────────────────
 
-const KNOWN_CIRCUITS = ['ai:deepseek', 'fred', 'stooq', 'ff', 'fj', 'cftc', 'redis', 'fxssi', 'actionforex',
+const KNOWN_CIRCUITS = ['ai:deepseek', 'fred', 'ff', 'fj', 'cftc', 'redis', 'fxssi', 'actionforex',
   // PLAN V-3 (2026-07-20): breaker terpisah untuk call isAutoCall/test_deepseek=1 (developer-only)
   'ai:deepseek:experimental',
   // Translate NEWS (api/_news_translate.js) — TADINYA absen dari daftar ini, ketahuan
@@ -9388,6 +9397,7 @@ module.exports._normalizeFundamentalCase = _normalizeFundamentalCase;
 module.exports._summarizeLatency = _summarizeLatency;
 module.exports.SPREAD_PRICE_ESTIMATE = SPREAD_PRICE_ESTIMATE;
 module.exports.probeCalendarCache = probeCalendarCache;
+module.exports.probeYahooMove = probeYahooMove;
 module.exports._detectLossLabel = _detectLossLabel;
 module.exports.LOSS_LABEL_CRITERIA_V = LOSS_LABEL_CRITERIA_V;
 module.exports._detectTpLabel = _detectTpLabel;

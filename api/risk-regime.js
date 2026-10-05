@@ -1,7 +1,7 @@
 // api/risk-regime.js
 // Classifies global risk regime: Risk-On / Neutral / Risk-Off
-// Sources: FRED (VIX, HY OAS), Stooq (MOVE index)
-// Cached in Redis under 'risk_regime' for 30 minutes (data is EOD, refreshing more often is wasteful)
+// Sources: Yahoo Finance (VIX, MOVE), FRED (VIX fallback, HY OAS)
+// Cached in Redis under 'risk_regime'; VIX/MOVE are near real-time while HY is EOD.
 
 const cb = require('./_circuit_breaker');
 const { withSingleFlight } = require('./_fetch_lock');
@@ -26,7 +26,7 @@ const KEY_TTL = 12 * 60 * 60
 
 // FRED series: VIXCLS = CBOE VIX, BAMLH0A0HYM2 = ICE BofA US HY OAS spread
 const FRED_BASE = 'https://api.stlouisfed.org/fred/series/observations'
-const STOOQ_MOVE = 'https://stooq.com/q/d/l/?s=%5emove&i=d&l=5'
+const YAHOO_MOVE_HOSTS = ['query1.finance.yahoo.com', 'query2.finance.yahoo.com']
 
 // Regime tiers (ascending severity):
 //   risk_on  — VIX<15, MOVE<90, HY not widening (ALL benign)
@@ -59,12 +59,6 @@ function percentileRank(value, table) {
   return Math.min(99, Math.round(pLast + (value - vLast) / vLast * 20))
 }
 
-const USER_AGENTS = [
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124 Safari/537.36',
-  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 Safari/605.1.15',
-  'Mozilla/5.0 (X11; Linux x86_64; rv:125.0) Gecko/20100101 Firefox/125.0',
-]
-
 const { requireAppKey } = require('./_app_key');
 module.exports = async function handler(req, res) {
   if (requireAppKey(req, res)) return; // gate APP_KEY (cron/admin secret lolos) — lihat api/_app_key.js
@@ -90,7 +84,7 @@ module.exports = async function handler(req, res) {
   }
 
   // Cache expired — single-flight lock so multiple tabs polling every 15min
-  // (or all loading at once) don't all fan out to Yahoo/FRED/Stooq simultaneously.
+  // (or all loading at once) don't all fan out to Yahoo/FRED simultaneously.
   const sf = await withSingleFlight(redisCmd, {
     lockKey: 'lock:risk_regime',
     cacheKey: CACHE_KEY,
@@ -106,14 +100,11 @@ module.exports = async function handler(req, res) {
   // Fetch all sources in parallel; partial failures are tolerable.
   // VIX: Yahoo Finance primary (near real-time, 15-min delay) → FRED fallback (EOD).
   // MOVE + HY: EOD only — no free real-time alternative exists.
-  const [stooqAllowed, fredAllowed] = await Promise.all([
-    cb.canCall('stooq'),
-    cb.canCall('fred'),
-  ])
+  const fredAllowed = await cb.canCall('fred')
 
   const [vixResult, moveResult, hyResult, vix1mResult, vix3mResult] = await Promise.allSettled([
     fetchYahooVix(),
-    fetchMove(stooqAllowed),  // always tries Yahoo first; Stooq fallback gated by circuit
+    fetchMove(),              // Yahoo query1 primary → query2 mirror
     fredAllowed  ? fetchFredSeries('BAMLH0A0HYM2') : Promise.reject(new Error('circuit:fred OPEN')),
     fetchYahooVixTerm('^VIX1M'),
     fetchYahooVixTerm('^VIX3M'),
@@ -135,16 +126,10 @@ module.exports = async function handler(req, res) {
   const moveData = moveResult.status === 'fulfilled' ? moveResult.value : null
   const hyData   = hyResult.status   === 'fulfilled' ? hyResult.value   : null
 
-  // Only credit Stooq circuit based on actual Stooq calls (not Yahoo successes)
-  if (stooqAllowed) {
-    if (moveData?.source === 'stooq') cb.onSuccess('stooq').catch(() => {});
-    else if (!moveData)               cb.onFailure('stooq').catch(() => {});
-    // moveData.source === 'yahoo' → Stooq circuit unchanged (Yahoo worked, Stooq unknown)
-  }
   if (fredAllowed && hyData) cb.onSuccess('fred').catch(() => {})
 
   if (!vixData)  console.warn('risk-regime: VIX fetch failed (Yahoo + FRED both failed)')
-  if (!moveData) console.warn('risk-regime: MOVE fetch failed — Stooq may have blocked')
+  if (!moveData) console.warn('risk-regime: MOVE fetch failed on both Yahoo hosts')
   if (!hyData)   console.warn('risk-regime: HY spread fetch failed')
 
   // All three sources failed — return stale cache rather than empty error
@@ -206,7 +191,7 @@ module.exports = async function handler(req, res) {
     vix_percentile_10y: percentileRank(vix, VIX_PCTL_10Y),
     vix_term_structure: vixTermStructure,
     move,
-    move_source: moveData?.source || null, // 'yahoo' = near real-time | 'stooq' = EOD fallback
+    move_source: moveData?.source || null, // 'yahoo' = near real-time
     move_percentile_10y: percentileRank(move, MOVE_PCTL_10Y),
     move_change_2d: moveChange,
     hy_spread: hySpread,
@@ -306,13 +291,14 @@ async function fetchFredSeries(seriesId) {
   }
 }
 
-// Yahoo Finance ^MOVE — near real-time (15-min delay), primary MOVE source
-async function fetchYahooMove() {
-  const r = await fetch('https://query1.finance.yahoo.com/v8/finance/chart/%5EMOVE?range=1d&interval=5m', {
+// Yahoo Finance ^MOVE — near real-time (15-min delay). query2 is an alternate
+// host, so a query1 edge outage does not immediately remove MOVE from risk-regime.
+async function fetchYahooMove(host = YAHOO_MOVE_HOSTS[0]) {
+  const r = await fetch(`https://${host}/v8/finance/chart/%5EMOVE?range=1d&interval=5m`, {
     headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
     signal: AbortSignal.timeout(8000),
   })
-  if (!r.ok) throw new Error(`Yahoo MOVE HTTP ${r.status}`)
+  if (!r.ok) throw new Error(`Yahoo MOVE ${host} HTTP ${r.status}`)
   const json = await r.json()
   const meta  = json?.chart?.result?.[0]?.meta
   const price = meta?.regularMarketPrice
@@ -325,45 +311,17 @@ async function fetchYahooMove() {
   return { latest: +price.toFixed(1), prev: prev ? +prev.toFixed(1) : null, date, source: 'yahoo' }
 }
 
-// Stooq ^MOVE — EOD fallback (sometimes blocked by anti-scraping)
-async function fetchStooqMove() {
-  const ua = USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)]
-  const r = await fetch(STOOQ_MOVE, {
-    headers: { 'User-Agent': ua },
-    signal: AbortSignal.timeout(10000),
-  })
-  if (!r.ok) throw new Error(`Stooq MOVE HTTP ${r.status}`)
-
-  const csv = await r.text()
-  const lines = csv.trim().split('\n').filter(l => l && !l.startsWith('Date'))
-  if (lines.length === 0) throw new Error('Stooq MOVE: empty CSV')
-
-  const parse = line => {
-    const cols = line.split(',')
-    return { date: cols[0], close: parseFloat(cols[4]) }
+async function fetchMove() {
+  let lastError
+  for (const host of YAHOO_MOVE_HOSTS) {
+    try {
+      return await fetchYahooMove(host)
+    } catch (e) {
+      lastError = e
+      console.warn(`risk-regime: Yahoo MOVE ${host} failed:`, e.message)
+    }
   }
-
-  const rows = lines.map(parse).filter(r => !isNaN(r.close))
-  if (rows.length === 0) throw new Error('Stooq MOVE: no parseable rows')
-
-  // Stooq returns newest-first; use rows[2] for ~2-day-ago prev
-  return {
-    latest: rows[0].close,
-    prev:   rows.length > 2 ? rows[2].close : null,
-    date:   rows[0].date,
-    source: 'stooq',
-  }
-}
-
-async function fetchMove(stooqAllowed = true) {
-  // Yahoo Finance primary (near real-time, more reliable than Stooq scraping)
-  try {
-    return await fetchYahooMove()
-  } catch (e) {
-    console.warn('risk-regime: Yahoo MOVE failed, trying Stooq fallback:', e.message)
-  }
-  if (!stooqAllowed) throw new Error('circuit:stooq OPEN — Stooq fallback blocked')
-  return fetchStooqMove()
+  throw lastError || new Error('Yahoo MOVE unavailable')
 }
 
 // ── Redis helper (matches cot.js pattern) ────────────────────────────────────
@@ -380,3 +338,6 @@ async function redisCmd(...args) {
   })
   return (await res.json()).result
 }
+
+module.exports._fetchYahooMove = fetchYahooMove
+module.exports._fetchMove = fetchMove

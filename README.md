@@ -156,7 +156,7 @@ Aplikasi ini dibagi menjadi beberapa panel antarmuka yang terintegrasi:
 │   ├── correlations.js     # Perhitungan korelasi cross-asset & Implied Volatility (CME CVOL)
 │   ├── real-yields.js      # Perhitungan US vs Global Real Yield Differential
 │   ├── rate-path.js        # Probabilitas suku bunga FedWatch (via ScraperAPI proxy)
-│   ├── risk-regime.js      # Pengukur sentimen Risk-On/Risk-Off (VIX, Stooq data)
+│   ├── risk-regime.js      # Pengukur sentimen Risk-On/Risk-Off (VIX, MOVE Yahoo, FRED)
 │   ├── journal.js          # CRUD Jurnal transaksi + evaluasi AI Coach Jurnal & Perilaku
 │   ├── sizing-history.js   # Histori kalkulasi lot per-device
 │   ├── subscribe.js        # Pendaftaran subscription token Web Push

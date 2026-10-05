@@ -116,7 +116,7 @@ async function onSuccess(source) {
 
 /**
  * Record a failed call. Opens the circuit after FAILURE_THRESHOLD consecutive failures.
- * @param {string} source  - Source name (e.g. 'fred', 'stooq', 'ai:cerebras')
+ * @param {string} source  - Source name (e.g. 'fred', 'cftc', 'ai:deepseek')
  * @param {number} threshold - Override failure threshold (default: FAILURE_THRESHOLD)
  */
 async function onFailure(source, threshold = FAILURE_THRESHOLD) {

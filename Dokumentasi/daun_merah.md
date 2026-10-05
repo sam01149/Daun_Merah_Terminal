@@ -11,12 +11,20 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-10-01 (Session 379 — Audit Komprehensif Aplikasi & AATAS, Peremajaan Ekspektasi Inflasi CHF & JPY)
+> **Last updated:** 2026-10-05 (Session 380 — Pensiunkan fallback Stooq CSV yang diblokir)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 380 (2026-10-05) — Pensiunkan fallback Stooq CSV yang diblokir
+
+**Masalah dan akar penyebab.** Health monitor terus menampilkan `Stooq CSV: HTTP 403` sejak respons sukses terakhir 23 September. Ini bukan kegagalan parsing atau header aplikasi: endpoint unduhan CSV Stooq lama kini melayani pembatasan anti-bot/akses berkunci kepada request server. Stooq hanya berperan sebagai fallback MOVE di belakang Yahoo, sehingga alarm tersebut tidak lagi mewakili jalur data produksi yang sesungguhnya.
+
+**Perbaikan.** Ketergantungan Stooq, circuit breaker, dan probe kesehatannya dihapus. `risk-regime.js` sekarang mengambil MOVE melalui Yahoo `query1` lalu otomatis mencoba host mirror `query2` bila host pertama gagal. Health monitor kini memeriksa respons harga MOVE valid dari dua host tersebut dan menamai statusnya `MOVE Index (Yahoo)`, jadi alarm hanya muncul bila jalur MOVE yang dipakai aplikasi benar-benar tidak tersedia. Tidak ada perubahan klasifikasi risk regime, cache, atau data auto-entry.
+
+**Verifikasi.** Dua regresi baru menyimulasikan `query1` gagal (termasuk HTTP 403) dan membuktikan runtime maupun health probe berpindah ke `query2` serta hanya menerima harga positif yang valid. Suite penuh `npm test` lulus 1.352 / 1.352 (100% hijau).
 
 ## Changelog Session 379 (2026-10-01) — Audit Komprehensif Aplikasi & AATAS, Peremajaan Ekspektasi Inflasi CHF & JPY
 
