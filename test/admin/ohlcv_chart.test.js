@@ -48,6 +48,16 @@ function redisFetchStub(store) {
   };
 }
 
+// Kasus fallback chart di bawah menguji perilaku SAAT market buka. Tanpa clock
+// eksplisit, suite berubah hasil pada Sabtu/Minggu karena handler memang tidak
+// menandai/fetch ulang candle FX ketika market tutup.
+function forceFxMarketOpen() {
+  const marketHours = require('../../api/_market_hours.js');
+  const original = marketHours.isFxMarketOpen;
+  marketHours.isFxMarketOpen = () => true;
+  return () => { marketHours.isFxMarketOpen = original; };
+}
+
 test('ohlcv_chart: symbol wajib diisi -> 400', async () => {
   const handler = loadHandler();
   const { req, res } = fakeReqRes({ action: 'ohlcv_chart' });
@@ -62,6 +72,7 @@ test('ohlcv_chart: mengembalikan candle mentah dari snapshot ohlcv:<symbol>:1h (
     'ohlcv:EURUSD=X:1h': JSON.stringify(candles),
   });
   const origFetch = global.fetch;
+  const restoreMarketOpen = forceFxMarketOpen();
   global.fetch = redisFetchStub(store);
   try {
     const handler = loadHandler();
@@ -73,7 +84,10 @@ test('ohlcv_chart: mengembalikan candle mentah dari snapshot ohlcv:<symbol>:1h (
     assert.deepEqual(res.body.candles, candles);
     assert.equal(res.body.last_candle_t, 1000, 'umur chart selalu diturunkan dari candle 1H');
     assert.equal(res.body.stale, true, 'snapshot tua harus ditandai, bukan tampak seperti chart live');
-  } finally { global.fetch = origFetch; }
+  } finally {
+    restoreMarketOpen();
+    global.fetch = origFetch;
+  }
 });
 
 test('ohlcv_chart: cache Deriv basi memakai Twelve Data untuk TAMPILAN saja tanpa menulis cache evaluator', async () => {
@@ -84,6 +98,7 @@ test('ohlcv_chart: cache Deriv basi memakai Twelve Data untuk TAMPILAN saja tanp
   });
   const currentHour = new Date(Math.floor(Date.now() / 3600000) * 3600000).toISOString().slice(0, 19).replace('T', ' ');
   const origFetch = global.fetch, oldKey = process.env.TWELVEDATA_API_KEY;
+  const restoreMarketOpen = forceFxMarketOpen();
   process.env.TWELVEDATA_API_KEY = 'display-only-test-key';
   global.fetch = async (url, opts) => {
     if (String(url).includes('fake-upstash.test')) return redisFetchStub(store)(url, opts);
@@ -102,6 +117,7 @@ test('ohlcv_chart: cache Deriv basi memakai Twelve Data untuk TAMPILAN saja tanp
     assert.equal(res.body.candles.at(-1).c, 4352);
     assert.equal(store.strings['ohlcv:GC=F:1h'], JSON.stringify(staleCandles), 'cache Deriv evaluator tidak boleh ditimpa');
   } finally {
+    restoreMarketOpen();
     global.fetch = origFetch;
     if (oldKey === undefined) delete process.env.TWELVEDATA_API_KEY; else process.env.TWELVEDATA_API_KEY = oldKey;
   }
@@ -256,6 +272,7 @@ test('ohlcv_chart: snapshot korup tidak menghasilkan 500 dan tetap memakai fallb
   });
   const currentHour = new Date(Math.floor(Date.now() / 3600000) * 3600000).toISOString().slice(0, 19).replace('T', ' ');
   const origFetch = global.fetch, oldKey = process.env.TWELVEDATA_API_KEY;
+  const restoreMarketOpen = forceFxMarketOpen();
   process.env.TWELVEDATA_API_KEY = 'display-only-test-key';
   global.fetch = async (url, opts) => {
     if (String(url).includes('fake-upstash.test')) return redisFetchStub(store)(url, opts);
@@ -272,6 +289,7 @@ test('ohlcv_chart: snapshot korup tidak menghasilkan 500 dan tetap memakai fallb
     assert.equal(res.body.live_source, 'Twelve Data');
     assert.equal(res.body.candles.at(-1).c, 4352);
   } finally {
+    restoreMarketOpen();
     global.fetch = origFetch;
     if (oldKey === undefined) delete process.env.TWELVEDATA_API_KEY; else process.env.TWELVEDATA_API_KEY = oldKey;
   }
