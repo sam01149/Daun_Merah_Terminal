@@ -587,6 +587,7 @@ const POLICY_EPOCHS = [
   { v: 58, from: '2026-09-18T14:02:23Z', kind: 'fix', impact: 'entry', label: 'S364: sesudah masa tunggu kalender, entry AATAS wajib menyentuh zona dari sisi tunggu yang benar; candle yang sudah membuka melewati SL dibatalkan sebagai invalidated_before_fill, bukan dicatat fill/SL palsu' },
   { v: 59, from: '2026-09-20T00:00:00Z', kind: 'fix', impact: 'entry', label: 'PLAN AD: setup auto baru mengikat SL/TP efektif ke ID kandidat deterministik dan anchor struktur yang tersedia saat keputusan; ID/angka/arah yang tidak konsisten ditolak, histori legacy tidak dimutasi' },
   { v: 60, from: '2026-10-12T13:20:16Z', kind: 'fix', impact: 'context', label: 'PLAN AF-1/2: selaraskan prompt auto dengan kontrak evaluator — trigger hanya sentuhan zona pasca-kalender, rezim/options tidak boleh mengubah arah/level/trigger, fallback level tetap RR>=2, verdict server-only, dan skor teknikal independen boleh kebetulan sama' },
+  { v: 61, from: '2026-10-12T13:27:21Z', kind: 'fix', impact: 'context', label: 'PLAN AF-3: keluarkan COT dan retail sentiment secara struktural dari input Call 1; positioning tetap tersedia pada snapshot audit, Gate A/Kritikus, dan jalur manual publik' },
 ];
 
 // AATAS_EPOCH (2026-08-22, keputusan user): batas populasi statistik dashboard

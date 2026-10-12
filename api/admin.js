@@ -5415,7 +5415,7 @@ function _detectAlignmentReasonContradiction(reason) {
 // Sumber: cb_bias (dirawat Call 2 digest), cot_cache_v2 (CFTC; USD = Dollar Index),
 // risk_regime — data langsung dari cache server, BUKAN turunan prosa artikel, jadi
 // Analisa tetap dapat fundamental kedua leg meski artikel hari itu tidak membahasnya.
-function _formatFundamentalBlock({ label, isXau, cbBias, cot, risk, retail, drivers, nowMs, hasCmeData }) {
+function _formatFundamentalBlock({ label, isXau, cbBias, cot, risk, retail, drivers, nowMs, hasCmeData, includePositioning = true }) {
   const legs = String(label || '').toUpperCase().split('/').map(s => s.trim()).filter(Boolean);
   if (legs.length === 0) return '';
   const ageH = iso => {
@@ -5432,7 +5432,7 @@ function _formatFundamentalBlock({ label, isXau, cbBias, cot, risk, retail, driv
       const a = ageH(cb.updated_at);
       parts.push(`bias CB ${cb.bias}${cb.confidence ? ` (confidence ${cb.confidence}${a != null ? `, update ${a}j lalu` : ''})` : ''}`);
     }
-    const cp = cot?.positions?.[leg];
+    const cp = includePositioning ? cot?.positions?.[leg] : null;
     if (cp && typeof cp.lev_net === 'number') {
       const k = n => `${n >= 0 ? '+' : ''}${(n / 1000).toFixed(1)}K`;
       // %OI + percentile 3thn (audit vendor 2026-07-12): normalisasi + ekstremitas —
@@ -5456,7 +5456,7 @@ function _formatFundamentalBlock({ label, isXau, cbBias, cot, risk, retail, driv
   }
   // Retail sentiment (mikro/taktis — intraday, kontrarian): keyed per PAIR, bukan per leg.
   const pairKey = isXau ? 'XAUUSD' : legs.join('');
-  const rt = retail?.positions?.[pairKey];
+  const rt = includePositioning ? retail?.positions?.[pairKey] : null;
   if (rt && rt.long_pct != null) {
     const sig = rt.signal === 'CONTRARIAN_SHORT'
       ? 'crowd retail berat LONG → sinyal kontrarian condong SHORT'
@@ -5563,7 +5563,7 @@ function _formatFundamentalBlock({ label, isXau, cbBias, cot, risk, retail, driv
   // staleness ini walau COT-nya sama basinya. Sekarang catatan dasar selalu muncul
   // kalau ada data COT sama sekali; kalimat tambahan soal prioritas CME cuma nempel
   // kalau hasCmeData true.
-  const cotNote = hasCotData
+  const cotNote = includePositioning && hasCotData
     ? ` COT CFTC di atas itu data MINGGUAN (bisa lag beberapa hari dari tanggal laporan) — untuk MENENTUKAN ARAH beri bobot lebih rendah dibanding sinyal yang lebih real-time (bias CB terbaru, DXY/real yield, retail sentiment intraday${hasCmeData ? ', CME options skew' : ''}); COT lebih andal untuk mendeteksi CROWDING/ekstremitas positioning (lihat persentil) daripada arah harian.${hasCmeData ? ' Kalau prompt ini juga berisi blok SENTIMEN PASAR OPTIONS CME untuk pair yang sama, itu real-time dan LEBIH DIPRIORITASKAN untuk menentukan arah dibanding COT.' : ''}`
     : '';
   return `FUNDAMENTAL TERSTRUKTUR (cache server, bukan dari artikel — ${baseNote}.${cotNote}):\n${lines.join('\n')}`;
@@ -5717,11 +5717,15 @@ const COT_CME_PROMPT_VERSION = 2;
 // v12 (PLAN AF-1/2, 2026-10-12): kontrak trigger/volatilitas/options diselaraskan
 // dengan evaluator dan menu level; fallback auto memakai RR>=2; Call 2 tidak diminta
 // menulis verdict; skor teknikal tetap independen tanpa dipaksa berbeda angkanya.
-const AATAS_PROMPT_VERSION = 12;
+// v13 (PLAN AF-3, 2026-10-12): data positioning COT/retail dikeluarkan secara
+// struktural dari Call 1 agar penentu arah tidak menerima input yang checklist-nya
+// sendiri nyatakan hanya untuk audit terpisah. Snapshot, jalur manual, dan Gate A
+// tetap menerima data lengkap.
+const AATAS_PROMPT_VERSION = 13;
 
 // (2026-09-02) `final_validation` (Step 8, COT/retail) dipaksa nilai ini untuk SEMUA
 // setup AATAS — Call 2 (yang mengisi field ini di v1/v2) tidak pernah menerima data
-// COT/retail sama sekali (`fundBlock` cuma masuk `aatasMacroParts`/Call 1), jadi nilai
+// COT/retail sama sekali, jadi nilai
 // apa pun yang pernah ditulis di sana ("searah"/"melawan"/"netral") adalah karangan
 // tanpa data — ditemukan dari audit live 2026-09-02 (`riset.md` folder
 // professional_llm_trader). Dibuat konstan (bukan dihitung ulang tiap kali) supaya
@@ -7142,6 +7146,9 @@ async function ohlcvAnalyzeHandler(req, res) {
     // Blok fundamental terstruktur per pair — langsung dari cache Redis (cb_bias, COT,
     // risk regime), bukan turunan artikel. Best-effort: gagal baca = blok kosong.
     let fundBlock = '';
+    // PLAN AF-3: Call 1 memakai render khusus tanpa positioning. `fundBlock` penuh
+    // tetap dipertahankan untuk jalur manual dan fact sheet Gate A/Kritikus.
+    let aatasFundBlock = '';
     // Gate B auto-entry (drawdown circuit breaker adaptif, audit celah kesalahan
     // trader 2026-07-28) butuh label regime MENTAH terpisah dari fundBlock (yang cuma
     // teks prompt) — diisi di try yang sama supaya tidak fetch 'risk_regime' dua kali.
@@ -7224,6 +7231,19 @@ async function ohlcvAnalyzeHandler(req, res) {
         // manual publik sampai tervalidasi data.
         hasCmeData: !!rrPairSnapshot && isAutoCall,
       });
+      aatasFundBlock = isAutoCall
+        ? _formatFundamentalBlock({
+          label: data.label, isXau: data.is_xau,
+          cbBias: cbBiasParsed,
+          cot: cotParsed,
+          risk: riskParsed,
+          retail: retailParsed,
+          drivers: macroDrivers,
+          nowMs: Date.now(),
+          hasCmeData: !!rrPairSnapshot,
+          includePositioning: false,
+        })
+        : fundBlock;
     } catch (e) { /* opsional — jangan gagalkan analisa kalau cache fundamental kosong */ }
     // Fallback HANYA untuk isAutoCall (cron auto-entry) — manual selalu sudah kirim
     // cbDir sendiri (atau sengaja null), perilakunya tidak disentuh sama sekali.
@@ -7383,7 +7403,7 @@ async function ohlcvAnalyzeHandler(req, res) {
     const aatasTechParts = [];
     if (isAutoCall) {
       if (ringkasanContext) aatasMacroParts.push(`${makroHeader}\n${ringkasanContext}`);
-      if (fundBlock)        aatasMacroParts.push(fundBlock);
+      if (aatasFundBlock)   aatasMacroParts.push(aatasFundBlock);
       // PLAN AC Tahap 1: data rilis domestik — persis setelah fundamental terstruktur,
       // sebelum rate path/CME/kalender, supaya AI membaca "bias resmi CB" lalu "angka
       // rilis mentahnya" berurutan (Step 0(b) membandingkan keduanya).

@@ -186,8 +186,8 @@ test('Tahap 1 e2e: blok [DATA RILIS EKONOMI] kedua kaki masuk Call 1 DAN Kritiku
   });
 });
 
-test('AATAS_PROMPT_VERSION: v12 menandai kontrak prompt PLAN AF-1/2', () => {
-  assert.equal(AATAS_PROMPT_VERSION, 12);
+test('AATAS_PROMPT_VERSION: v13 menandai pemisahan positioning PLAN AF-3', () => {
+  assert.equal(AATAS_PROMPT_VERSION, 13);
 });
 
 test('Tahap 3 jalan tengah (v8): Call 2 auto menyebut menu TP 1:2 dan menuntut entry konsisten fib_reason, TANPA "pilih yang lebih dekat ke Now"; manual tetap 1:1 + tie-break lama', async () => {
@@ -1230,10 +1230,15 @@ test('AATAS AI health: HTTP 402 mencatat status persisten dan payload dashboard 
   });
 });
 
-test('AATAS e2e: prompt jalur auto membawa blok checklist + field baru; jalur manual TIDAK berubah', async () => {
+test('AATAS e2e: Call 1 tanpa positioning; Gate A dan jalur manual tetap menerima COT/retail', async () => {
   await withEnv({ CRON_SECRET: 'topsecret', DEEPSEEK_API_KEY: 'k' }, async () => {
     const capAuto = [];
-    const store = baseStore();
+    const store = makeStore({
+      ...baseStore().strings,
+      'cb_bias': JSON.stringify({ GBP: { bias: 'Dovish', confidence: 'High' }, USD: { bias: 'Hawkish', confidence: 'High' } }),
+      'cot_cache_v2': JSON.stringify({ positions: { GBP: { lev_net: -12000 }, USD: { lev_net: 18000 } }, report_date: '2026-10-09' }),
+      'retail_sentiment_cache': JSON.stringify({ positions: { GBPUSD: { long_pct: 71, short_pct: 29, signal: 'CONTRARIAN_SHORT' } }, fetched_at: new Date().toISOString() }),
+    });
     const origFetch = global.fetch;
     global.fetch = makeAnalyzeFetchStub(store, rawFrom(AATAS_JSON), capAuto);
     try {
@@ -1250,6 +1255,7 @@ test('AATAS e2e: prompt jalur auto membawa blok checklist + field baru; jalur ma
     const call1Sys  = capAuto[0].messages[0].content;
     const call2User = capAuto[1].messages[1].content;
     const call2Sys  = capAuto[1].messages[0].content;
+    const criticUser = capAuto[2].messages[1].content;
 
     // Call 1 = makro murni. INI inti fix v2: bukan sekadar teks larangan, datanya
     // memang tidak dikirim — kalau assert di bawah merah, kebocoran RSI mungkin lagi.
@@ -1258,6 +1264,7 @@ test('AATAS e2e: prompt jalur auto membawa blok checklist + field baru; jalur ma
     assert.doesNotMatch(call1User, /RSI 14:/, 'Call 1 TIDAK BOLEH melihat angka RSI sama sekali');
     assert.doesNotMatch(call1User, /\[MACD H4/);
     assert.doesNotMatch(call1User, /\[ZONA KONFLUENSI/);
+    assert.doesNotMatch(call1User, /COT leveraged|COT CFTC|RETAIL SENTIMENT/, 'Call 1 tidak boleh menerima positioning');
     assert.doesNotMatch(call1User, /- makro_alignment:/, 'field lama tidak boleh diminta lagi di jalur auto');
     assert.doesNotMatch(call1User, /- confidence:/);
     assert.match(call1Sys, /"fundamental_bias"/);
@@ -1274,6 +1281,8 @@ test('AATAS e2e: prompt jalur auto membawa blok checklist + field baru; jalur ma
     assert.doesNotMatch(call2User, /\[RSI-14 H4\]/);
     assert.match(call2Sys, /"checklist_pct"/);
     assert.doesNotMatch(call2Sys, /"makro_alignment"/);
+    assert.match(criticUser, /COT leveraged net/);
+    assert.match(criticUser, /RETAIL SENTIMENT GBPUSD/);
 
     // Kalender wajib ada di KEDUA call (Step 0 event <6 jam vs conflict waktu) —
     // di test ini cache kalender kosong, jadi yang dikunci cuma pembagian di atas.
@@ -1281,7 +1290,11 @@ test('AATAS e2e: prompt jalur auto membawa blok checklist + field baru; jalur ma
 
   await withEnv({ DEEPSEEK_API_KEY: 'k' }, async () => {
     const capManual = [];
-    const store = baseStore();
+    const store = makeStore({
+      ...baseStore().strings,
+      'cot_cache_v2': JSON.stringify({ positions: { GBP: { lev_net: -12000 }, USD: { lev_net: 18000 } }, report_date: '2026-10-09' }),
+      'retail_sentiment_cache': JSON.stringify({ positions: { GBPUSD: { long_pct: 71, short_pct: 29, signal: 'CONTRARIAN_SHORT' } }, fetched_at: new Date().toISOString() }),
+    });
     const origFetch = global.fetch;
     global.fetch = makeAnalyzeFetchStub(store, rawFrom(BASE_JSON), capManual);
     try {
@@ -1299,6 +1312,8 @@ test('AATAS e2e: prompt jalur auto membawa blok checklist + field baru; jalur ma
     assert.match(manualUser, /- confidence:/);
     assert.match(manualUser, /Isi paragraf pertama \(tanpa header\) — bias & posisi makro harga/);
     assert.match(manualSys, /"makro_alignment"/);
+    assert.match(manualUser, /COT leveraged net/);
+    assert.match(manualUser, /RETAIL SENTIMENT GBPUSD/);
   });
 });
 

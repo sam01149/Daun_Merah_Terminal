@@ -213,6 +213,22 @@ test('fund block: tanpa data COT sama sekali → tidak ada catatan staleness COT
   assert.ok(!out.includes('data MINGGUAN'), out);
 });
 
+test('fund block AF-3: includePositioning=false membuang COT/retail saja, konteks makro non-positioning tetap utuh', () => {
+  const retail = {
+    positions: { EURUSD: { long_pct: 72, short_pct: 28, signal: 'CONTRARIAN_SHORT' } },
+    fetched_at: '2026-07-06T11:30:00Z',
+  };
+  const out = _formatFundamentalBlock({
+    label: 'EUR/USD', isXau: false, cbBias: CB, cot: COT, risk: RISK, retail,
+    drivers: DRIVERS, nowMs: NOW, hasCmeData: true, includePositioning: false,
+  });
+  assert.match(out, /EUR: bias CB Dovish/);
+  assert.match(out, /RISK REGIME:/);
+  assert.match(out, /DOLLAR & KOMODITAS:/);
+  assert.match(out, /REAL YIELD EUR:/);
+  assert.doesNotMatch(out, /COT leveraged|COT CFTC|RETAIL SENTIMENT|retail sentiment intraday|SENTIMEN PASAR OPTIONS/);
+});
+
 test('fund block: COT report_date tersedia → umur laporan dalam hari ditampilkan di baris COT', () => {
   const cotWithDate = { positions: { EUR: { lev_net: -23400, lev_change_net: 5100 } }, report_date: '2026-07-01' };
   const out = _formatFundamentalBlock({ label: 'EUR/USD', isXau: false, cbBias: CB, cot: cotWithDate, risk: RISK, nowMs: NOW });
