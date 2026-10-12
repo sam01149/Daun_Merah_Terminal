@@ -1133,6 +1133,30 @@ test('_formatTrackRecordBlock: sampel >= 5 → format blok benar + saran konserv
   assert.match(block, /WAJIB lebih konservatif/); // win-rate < 50%
 });
 
+test('_formatTrackRecordBlock AF-4: auto gabungan hanya deskriptif, tanpa mandat adaptasi dari raw win-rate', () => {
+  const log = [
+    { symbol: 'EURUSD', status: 'tp' }, { symbol: 'EURUSD', status: 'tp' },
+    { symbol: 'EURUSD', status: 'sl' }, { symbol: 'EURUSD', status: 'sl' },
+    { symbol: 'EURUSD', status: 'sl' },
+  ];
+  const block = _formatTrackRecordBlock(log, 'EURUSD', true, true);
+  assert.match(block, /gabungan seluruh sumber/);
+  assert.match(block, /hit-rate mentah gabungan manual\+auto/);
+  assert.match(block, /lintas versi kebijakan dan segala arah/);
+  assert.match(block, /bukan net expectancy/);
+  assert.match(block, /bukan probabilitas setup baru/);
+  assert.match(block, /DILARANG otomatis memperketat atau melonggarkan trigger, skor, maupun gate/);
+  assert.doesNotMatch(block, /WAJIB lebih konservatif/);
+});
+
+test('_formatTrackRecordBlock AF-4: raw win-rate tinggi juga bukan izin melonggarkan aturan', () => {
+  const log = Array.from({ length: 5 }, (_, i) => ({ symbol: 'EURUSD', status: i < 4 ? 'tp' : 'sl' }));
+  const block = _formatTrackRecordBlock(log, 'EURUSD', true, true);
+  assert.match(block, /win rate 80%/);
+  assert.match(block, /DILARANG otomatis memperketat atau melonggarkan/);
+  assert.doesNotMatch(block, /izin|boleh melonggarkan/i);
+});
+
 test('_formatTrackRecordBlock: ambiguous/expired/stale/pending/open TIDAK dihitung sebagai menang/kalah', () => {
   const log = [
     { symbol: 'EURUSD', status: 'tp' }, { symbol: 'EURUSD', status: 'tp' }, { symbol: 'EURUSD', status: 'tp' },

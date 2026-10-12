@@ -5721,7 +5721,10 @@ const COT_CME_PROMPT_VERSION = 2;
 // struktural dari Call 1 agar penentu arah tidak menerima input yang checklist-nya
 // sendiri nyatakan hanya untuk audit terpisah. Snapshot, jalur manual, dan Gate A
 // tetap menerima data lengkap.
-const AATAS_PROMPT_VERSION = 13;
+// v14 (PLAN AF-4, 2026-10-12): track record gabungan jalur auto menjadi statistik
+// deskriptif mentah, bukan mandat adaptasi trigger/skor/gate. Gate A menerima pagar
+// yang sama; formatter dan prompt Kritikus manual tetap memakai perilaku lama.
+const AATAS_PROMPT_VERSION = 14;
 
 // (2026-09-02) `final_validation` (Step 8, COT/retail) dipaksa nilai ini untuk SEMUA
 // setup AATAS — Call 2 (yang mengisi field ini di v1/v2) tidak pernah menerima data
@@ -6865,8 +6868,10 @@ function _formatOptionsSentimentBlock(rr, prioritized, lockedDirection) {
 // noise, jangan disuap ke AI (return ''). Pure function — dites di ta_struct.test.js.
 // PLAN U-3 lanjutan (2026-07-20): param `combined` opsional — true kalau `log` sudah
 // digabung dari >1 sumber (manual + auto), cuma mengubah label supaya jejaknya jelas
-// kalau prompt/log diperiksa nanti, tidak mengubah cara hitung.
-function _formatTrackRecordBlock(log, symbol, combined) {
+// kalau prompt/log diperiksa nanti, tidak mengubah cara hitung. PLAN AF-4 menambah
+// `descriptiveOnly` untuk jalur auto: statistik campuran tetap terlihat, tetapi tidak
+// boleh berubah menjadi perintah adaptasi otomatis. Default false menjaga manual.
+function _formatTrackRecordBlock(log, symbol, combined, descriptiveOnly = false) {
   if (!Array.isArray(log) || !symbol) return '';
   const decided = log.filter(s => s && s.symbol === symbol && (s.status === 'tp' || s.status === 'sl'));
   const tp = decided.filter(s => s.status === 'tp').length;
@@ -6874,11 +6879,14 @@ function _formatTrackRecordBlock(log, symbol, combined) {
   const total = tp + sl;
   if (total < 5) return '';
   const winRate = Math.round(tp / total * 100);
-  const advice = winRate < 50
+  const advice = !descriptiveOnly && winRate < 50
     ? ' Win-rate di bawah 50% — WAJIB lebih konservatif: naikkan syarat konfirmasi di trigger atau turunkan keyakinan di kesimpulan, jangan abaikan fakta ini.'
     : '';
   const label = combined ? '[TRACK RECORD setup AI pair ini — gabungan seluruh sumber]' : '[TRACK RECORD setup AI pair ini]';
-  return `${label}\n${total} setup selesai (segala arah): ${tp} TP / ${sl} SL (win rate ${winRate}%).${advice}`;
+  const caveat = descriptiveOnly
+    ? ' Catatan: ini hit-rate mentah gabungan manual+auto, lintas versi kebijakan dan segala arah; bukan net expectancy, bukan ukuran hasil setelah position management, dan bukan probabilitas setup baru. Angka ini hanya deskriptif — DILARANG otomatis memperketat atau melonggarkan trigger, skor, maupun gate hanya karena win rate ini.'
+    : '';
+  return `${label}\n${total} setup selesai (segala arah): ${tp} TP / ${sl} SL (win rate ${winRate}%).${advice}${caveat}`;
 }
 
 // Konversi event kalender (date "YYYY-MM-DD" kalender WIB + time_wib "HH:MM WIB",
@@ -7281,7 +7289,7 @@ async function ohlcvAnalyzeHandler(req, res) {
         const autoLog = rawAutoLog ? JSON.parse(rawAutoLog) : [];
         if (Array.isArray(autoLog)) combinedLog = combinedLog.concat(autoLog);
       }
-      trackBlock = _formatTrackRecordBlock(combinedLog, symbol, isAutoCall);
+      trackBlock = _formatTrackRecordBlock(combinedLog, symbol, isAutoCall, isAutoCall);
     } catch (e) { /* opsional — jangan gagalkan analisa kalau log setup kosong/korup */ }
 
     // S-2: event kalender high-impact 7 hari ke depan khusus currency pair ini —
@@ -8851,6 +8859,7 @@ async function ohlcvAnalyzeHandler(req, res) {
           // publik) — isolasi U-7, sama pola dengan AI_BUDGET_DEEPSEEK_KEY di ohlcv_analyze.
           const critic = await _runCriticVerdict(criticFactParts.join('\n\n') + CRITIC_JSON_INSTRUCTION, {
             cbKey: 'ai:deepseek:experimental', budgetKey: 'deepseek_experimental',
+            descriptiveTrackRecord: true,
           });
           if (critic.verdict === 'batalkan') {
             autoGuardReason = `critic_veto${critic.objections?.[0]?.reason ? ':' + critic.objections[0].reason.slice(0, 80) : ''}`;
@@ -8953,9 +8962,13 @@ const CRITIC_JSON_INSTRUCTION = '\n\nBalas HANYA satu objek JSON valid (tanpa ma
 // v4-flash sekarang satu-satunya provider (lihat daun_merah_vendor.md).
 async function _runCriticVerdict(userMsg, {
   cbKey = 'ai:deepseek', budgetKey = 'deepseek',
+  descriptiveTrackRecord = false,
 } = {}) {
+  const criticSystemPrompt = descriptiveTrackRecord
+    ? `${CRITIC_SYSTEM_PROMPT} Khusus track record gabungan yang terlampir: perlakukan sebagai statistik deskriptif mentah lintas sumber, versi kebijakan, dan arah. DILARANG memberi verdict tunda/batalkan atau meminta trigger/skor/gate diperketat maupun dilonggarkan hanya karena win rate tersebut; keberatan harus ditopang fakta setup sekarang atau data risiko lain.`
+    : CRITIC_SYSTEM_PROMPT;
   const messages = [
-    { role: 'system', content: CRITIC_SYSTEM_PROMPT },
+    { role: 'system', content: criticSystemPrompt },
     { role: 'user', content: userMsg },
   ];
   const DEEPSEEK_KEY = getDeepSeekApiKey();

@@ -186,8 +186,8 @@ test('Tahap 1 e2e: blok [DATA RILIS EKONOMI] kedua kaki masuk Call 1 DAN Kritiku
   });
 });
 
-test('AATAS_PROMPT_VERSION: v13 menandai pemisahan positioning PLAN AF-3', () => {
-  assert.equal(AATAS_PROMPT_VERSION, 13);
+test('AATAS_PROMPT_VERSION: v14 menandai track record deskriptif PLAN AF-4', () => {
+  assert.equal(AATAS_PROMPT_VERSION, 14);
 });
 
 test('Tahap 3 jalan tengah (v8): Call 2 auto menyebut menu TP 1:2 dan menuntut entry konsisten fib_reason, TANPA "pilih yang lebih dekat ke Now"; manual tetap 1:1 + tie-break lama', async () => {
@@ -1238,6 +1238,8 @@ test('AATAS e2e: Call 1 tanpa positioning; Gate A dan jalur manual tetap menerim
       'cb_bias': JSON.stringify({ GBP: { bias: 'Dovish', confidence: 'High' }, USD: { bias: 'Hawkish', confidence: 'High' } }),
       'cot_cache_v2': JSON.stringify({ positions: { GBP: { lev_net: -12000 }, USD: { lev_net: 18000 } }, report_date: '2026-10-09' }),
       'retail_sentiment_cache': JSON.stringify({ positions: { GBPUSD: { long_pct: 71, short_pct: 29, signal: 'CONTRARIAN_SHORT' } }, fetched_at: new Date().toISOString() }),
+      'setup_log:v1': JSON.stringify([{ symbol: 'GBPUSD=X', status: 'tp' }, { symbol: 'GBPUSD=X', status: 'sl' }, { symbol: 'GBPUSD=X', status: 'sl' }]),
+      'setup_log_auto:v1': JSON.stringify([{ symbol: 'GBPUSD=X', status: 'tp' }, { symbol: 'GBPUSD=X', status: 'sl' }]),
     });
     const origFetch = global.fetch;
     global.fetch = makeAnalyzeFetchStub(store, rawFrom(AATAS_JSON), capAuto);
@@ -1256,6 +1258,7 @@ test('AATAS e2e: Call 1 tanpa positioning; Gate A dan jalur manual tetap menerim
     const call2User = capAuto[1].messages[1].content;
     const call2Sys  = capAuto[1].messages[0].content;
     const criticUser = capAuto[2].messages[1].content;
+    const criticSys = capAuto[2].messages[0].content;
 
     // Call 1 = makro murni. INI inti fix v2: bukan sekadar teks larangan, datanya
     // memang tidak dikirim — kalau assert di bawah merah, kebocoran RSI mungkin lagi.
@@ -1283,6 +1286,11 @@ test('AATAS e2e: Call 1 tanpa positioning; Gate A dan jalur manual tetap menerim
     assert.doesNotMatch(call2Sys, /"makro_alignment"/);
     assert.match(criticUser, /COT leveraged net/);
     assert.match(criticUser, /RETAIL SENTIMENT GBPUSD/);
+    assert.match(call2User, /hit-rate mentah gabungan manual\+auto/);
+    assert.doesNotMatch(call2User, /WAJIB lebih konservatif/);
+    assert.match(criticUser, /bukan probabilitas setup baru/);
+    assert.match(criticSys, /DILARANG memberi verdict tunda\/batalkan/);
+    assert.match(criticSys, /hanya karena win rate tersebut/);
 
     // Kalender wajib ada di KEDUA call (Step 0 event <6 jam vs conflict waktu) —
     // di test ini cache kalender kosong, jadi yang dikunci cuma pembagian di atas.
@@ -1294,6 +1302,7 @@ test('AATAS e2e: Call 1 tanpa positioning; Gate A dan jalur manual tetap menerim
       ...baseStore().strings,
       'cot_cache_v2': JSON.stringify({ positions: { GBP: { lev_net: -12000 }, USD: { lev_net: 18000 } }, report_date: '2026-10-09' }),
       'retail_sentiment_cache': JSON.stringify({ positions: { GBPUSD: { long_pct: 71, short_pct: 29, signal: 'CONTRARIAN_SHORT' } }, fetched_at: new Date().toISOString() }),
+      'setup_log:v1': JSON.stringify([{ symbol: 'GBPUSD=X', status: 'tp' }, { symbol: 'GBPUSD=X', status: 'tp' }, { symbol: 'GBPUSD=X', status: 'sl' }, { symbol: 'GBPUSD=X', status: 'sl' }, { symbol: 'GBPUSD=X', status: 'sl' }]),
     });
     const origFetch = global.fetch;
     global.fetch = makeAnalyzeFetchStub(store, rawFrom(BASE_JSON), capManual);
@@ -1314,6 +1323,8 @@ test('AATAS e2e: Call 1 tanpa positioning; Gate A dan jalur manual tetap menerim
     assert.match(manualSys, /"makro_alignment"/);
     assert.match(manualUser, /COT leveraged net/);
     assert.match(manualUser, /RETAIL SENTIMENT GBPUSD/);
+    assert.match(manualUser, /WAJIB lebih konservatif/);
+    assert.doesNotMatch(manualUser, /hit-rate mentah gabungan manual\+auto/);
   });
 });
 
