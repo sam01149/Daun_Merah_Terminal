@@ -180,6 +180,18 @@ test('format: regime rezim ATR ditulis sebagai hitungan ordinal (X dari Y), buka
   assert.ok(!/\d+%/.test(out), 'baris rezim tidak boleh menampilkan angka persen mentah');
 });
 
+test('format auto: rezim bergejolak tetap informatif tanpa menambah trigger, buffer SL, arah, atau bobot berita', () => {
+  const regime = computeVolatilityRegime(mkCandles(100, i => (i < 70 ? 0.2 : 2.0)));
+  const out = formatPairContextBlock({ regime, strength: null, pairLabel: 'EUR/USD', auto: true });
+  assert.ok(out.includes('BERGEJOLAK'));
+  assert.ok(out.includes('sentuhan zona setelah waktu tunggu kalender'));
+  assert.match(out, /jangan mengubah bias terkunci/i);
+  assert.ok(out.includes('di luar kandidat kontrak'));
+  assert.match(out, /mengubah bobot berita secara otomatis/i);
+  assert.ok(!out.includes('syarat konfirmasi entry WAJIB lebih ketat'));
+  assert.ok(!out.includes('SL WAJIB diberi buffer lebih lebar'));
+});
+
 // ── Kartu spesialis struktural (2026-08-04) ───────────────────────────────────
 
 test('format: AUD/NZD rezim bergejolak -> catatan struktural AUD/NZD ikut muncul', () => {

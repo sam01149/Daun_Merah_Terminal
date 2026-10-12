@@ -111,6 +111,16 @@ const REGIME_INSTRUCTION = {
   bergejolak: 'Rezim bergejolak: syarat konfirmasi entry WAJIB lebih ketat (tunggu konfirmasi price action lebih jelas sebelum masuk), SL WAJIB diberi buffer lebih lebar dari biasanya, dan berita negatif untuk pair ini diberi bobot lebih besar dari kondisi normal.',
 };
 
+// AATAS memakai evaluator `zone_touch_after_calendar` dan menu level deterministik.
+// Statistik rezim tetap dikirim, tetapi tidak boleh menciptakan syarat fill, buffer,
+// atau pembobotan berita baru yang evaluator tidak dapat menegakkan. Default renderer
+// tetap REGIME_INSTRUCTION agar jalur manual byte-identik.
+const AUTO_REGIME_INSTRUCTION = {
+  tenang: 'Rezim ini hanya konteks pemilihan zona dari menu level yang diberikan; jangan melonggarkan guard atau memperbesar posisi.',
+  normal: 'Rezim ini hanya konteks pemilihan zona dari menu level yang diberikan; gunakan kontrak entry/SL/TP standar tanpa penyesuaian tambahan.',
+  bergejolak: 'Gunakan ATR dan struktur ini hanya untuk menilai kelayakan zona dari menu yang diberikan. Jangan mengubah bias terkunci, menambah syarat fill/konfirmasi di luar sentuhan zona setelah waktu tunggu kalender, memperlebar SL di luar kandidat kontrak, atau mengubah bobot berita secara otomatis.',
+};
+
 // Profil karakteristik per pair (2026-08-04, rapat user — riset di daun_merah_riset.md
 // "[2026-08-04] Profil struktural AUD/NZD & EUR/GBP"; diperluas 2026-08-08 saat CHF/JPY
 // ditambah — riset lengkap semua pair di pair_workflow.md folder professional_llm_trader
@@ -139,10 +149,11 @@ const STRUCTURAL_PROFILES = {
 // Format blok konteks untuk disuntik ke prompt AI Analisa. Fail-open murni: field
 // yang null di-skip (bukan ditulis kosong); kalau regime & strength dua-duanya
 // null, return '' supaya blok TIDAK MUNCUL sama sekali (plan U-2 kriteria selesai).
-function formatPairContextBlock({ regime, strength, pairLabel }) {
+function formatPairContextBlock({ regime, strength, pairLabel, auto = false }) {
   const lines = [];
   if (regime) {
-    lines.push(`Rezim volatilitas ${pairLabel || 'pair ini'}: ${regime.regime.toUpperCase()} — ATR14 H1 sekarang lebih tinggi dari ${regime.rank_below} dari ${regime.sample_size} titik historis yang tersedia (rentang data ${regime.span_hours} jam terakhir). ${REGIME_INSTRUCTION[regime.regime]}`);
+    const instruction = auto ? AUTO_REGIME_INSTRUCTION[regime.regime] : REGIME_INSTRUCTION[regime.regime];
+    lines.push(`Rezim volatilitas ${pairLabel || 'pair ini'}: ${regime.regime.toUpperCase()} — ATR14 H1 sekarang lebih tinggi dari ${regime.rank_below} dari ${regime.sample_size} titik historis yang tersedia (rentang data ${regime.span_hours} jam terakhir). ${instruction}`);
     // Kartu spesialis per pair — cuma muncul pas rezim 'bergejolak' (breakout dari kondisi
     // normal terdeteksi) DAN pair ini punya profil struktural. Fail-open: pair tanpa entri
     // (EUR/USD, XAU/USD) atau rezim selain bergejolak -> baris ini tidak pernah muncul.
@@ -164,11 +175,11 @@ function formatPairContextBlock({ regime, strength, pairLabel }) {
 // detail internal. candlesBySymbol: { 'EURUSD=X': [...], ... } (key = symbol Yahoo).
 // fxPairs: [{ symbol, label }] daftar pair FX yang dipakai untuk currency strength
 // (TIDAK termasuk XAU/USD — bukan currency).
-function buildPairContext({ candlesBySymbol, symbol, label, fxPairs }) {
+function buildPairContext({ candlesBySymbol, symbol, label, fxPairs, auto = false }) {
   const regime = computeVolatilityRegime(candlesBySymbol?.[symbol]);
   const strengthInput = (fxPairs || []).map(p => ({ label: p.label, candles: candlesBySymbol?.[p.symbol] }));
   const strength = computeCurrencyStrength(strengthInput);
-  const block = formatPairContextBlock({ regime, strength, pairLabel: label });
+  const block = formatPairContextBlock({ regime, strength, pairLabel: label, auto });
   return { regime, strength, block };
 }
 

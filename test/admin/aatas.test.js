@@ -186,8 +186,8 @@ test('Tahap 1 e2e: blok [DATA RILIS EKONOMI] kedua kaki masuk Call 1 DAN Kritiku
   });
 });
 
-test('AATAS_PROMPT_VERSION: 6 = blok data rilis di Call 1; 7 = definisi technical.score_pct; 8 = Tahap 3 jalan tengah (menu TP 1:2 + tanpa paksaan zona terdekat)', () => {
-  assert.equal(AATAS_PROMPT_VERSION, 11);
+test('AATAS_PROMPT_VERSION: v12 menandai kontrak prompt PLAN AF-1/2', () => {
+  assert.equal(AATAS_PROMPT_VERSION, 12);
 });
 
 test('Tahap 3 jalan tengah (v8): Call 2 auto menyebut menu TP 1:2 dan menuntut entry konsisten fib_reason, TANPA "pilih yang lebih dekat ke Now"; manual tetap 1:1 + tie-break lama', async () => {
@@ -207,8 +207,9 @@ test('Tahap 3 jalan tengah (v8): Call 2 auto menyebut menu TP 1:2 dan menuntut e
     assert.match(call2, /konsisten dengan kesimpulanmu sendiri di technical\.fib_reason/i);
     assert.match(call2, /JANGAN otomatis mengambil yang paling dekat ke Now/);
     assert.doesNotMatch(call2, /pilih yang lebih dekat ke Now/, 'paksaan zona terdekat harus hilang di jalur auto');
-    // Instruksi tp menyebut 1:2 hanya kalau [KANDIDAT SL/TP] tersedia di fixture ini;
-    // kalau tidak tersedia, yang wajib adalah TIDAK ada teks "minimal 1:1" versi menu.
+    assert.match(call2, /risk\/reward \(jarak entry→tp dibanding entry→sl\) minimal 1:2/, 'fallback tanpa menu kandidat tetap mengikuti gate RR auto');
+    assert.doesNotMatch(call2, /risk\/reward[^\n]*minimal 1:1/, 'tidak ada cabang fallback auto yang kembali ke RR manual');
+    // Instruksi menu kandidat, jika ada, juga tetap konsisten 1:2.
     if (/\[KANDIDAT SL\/TP\]/.test(call2)) {
       assert.match(call2, /risk\/reward minimal 1:2 \(sama dengan gate Step 6\)/);
       assert.doesNotMatch(call2, /risk\/reward minimal 1:1 terhadap SL terdekat/);
@@ -230,7 +231,7 @@ test('Tahap 3 jalan tengah (v8): Call 2 auto menyebut menu TP 1:2 dan menuntut e
   });
 });
 
-test('technical.score_pct (v7): instruksi Call 2 mendefinisikannya sebagai skor struktur & lokasi saja, bukan salinan checklist_pct', async () => {
+test('technical.score_pct (v12): independen secara alasan, tetapi angka yang kebetulan sama tetap sah', async () => {
   await withEnv({ CRON_SECRET: 'topsecret', DEEPSEEK_API_KEY: 'k' }, async () => {
     const cap = [];
     const store = baseStore();
@@ -245,8 +246,9 @@ test('technical.score_pct (v7): instruksi Call 2 mendefinisikannya sebagai skor 
     } finally { global.fetch = origFetch; }
     const call2 = cap[1].messages[1].content;
     assert.match(call2, /technical\.score_pct = skor STRUKTUR & LOKASI SAJA \(Step 4-5 \+ timing Step 7\)/);
-    assert.match(call2, /BUKAN salinan checklist_pct/);
-    assert.match(call2, /kalau angkamu sama dengan checklist_pct, kamu belum menilai teknikalnya/);
+    assert.match(call2, /bukan turunan checklist_pct/);
+    assert.match(call2, /boleh kebetulan menghasilkan angka sama/);
+    assert.doesNotMatch(call2, /kalau angkamu sama dengan checklist_pct, kamu belum menilai teknikalnya/);
     // Rumus checklist_pct TIDAK disentuh (poin 9 plan lama tetap ditunda).
     assert.match(call2, /- checklist_pct: skor akhir gabungan seluruh step/);
     assert.doesNotMatch(cap[0].messages[1].content, /technical\.score_pct/, 'Call 1 tidak ikut berubah');
@@ -260,7 +262,8 @@ test('AATAS block MAKRO (Call 1) FX: makro berdiri sendiri, real yield BUKAN pre
   assert.match(b, /BAGIAN 1 DARI 2: MAKRO\/FUNDAMENTAL/);
   assert.match(b, /STEP 0 REGIME CHECK \(PRE-GATE\):/);
   assert.match(b, /Real yield differential TIDAK dipakai sebagai pre-gate di pair FX/);
-  assert.match(b, /COT & retail sentiment TIDAK dipakai di sini — dipindah ke Step 8/);
+  assert.match(b, /COT & retail sentiment bukan bukti makro pada panggilan ini/);
+  assert.match(b, /Positioning tetap dinilai terpisah oleh lapisan audit risiko/);
   assert.match(b, /DILARANG menyebut RSI, MACD, SMA, EMA, pivot/);
   // AATAS v2 poin 4: strong_vs_weak harus lewat penelusuran mekanisme lintas-faktor,
   // bukan perbandingan label bias CB mentah.
@@ -315,6 +318,9 @@ test('AATAS block TEKNIKAL (Call 2): bias dikunci sebagai fakta, Step 4-8 ada, p
   assert.match(b, /FLAT 2% tanpa pengecualian/);
   assert.match(b, /TIDAK PERNAH mengecilkan ukuran posisi/);
   assert.match(b, /ZONA 0,382-0,618, bukan titik tunggal 0,618/);
+  assert.match(b, /hanya mendukung sentuhan zona setelah waktu tunggu kalender/);
+  assert.match(b, /pola candle boleh membantu memilih zona, tetapi bukan syarat fill tambahan/i);
+  assert.doesNotMatch(b, /Wajib ada konfirmasi candle di trigger/);
   assert.match(b, /INDIKATOR MOMENTUM DIBUANG/);
   assert.match(b, /TIDAK PERNAH sebagai sinyal arah atau momentum/);
   // Aturan "maksimal 2 pair/hari" dari checklist manual tetap tidak diporting.
@@ -326,6 +332,8 @@ test('AATAS block TEKNIKAL (Call 2): bias dikunci sebagai fakta, Step 4-8 ada, p
   // aatasMacroParts/Call 1) — instruksi lama menyuruh menilai data yang tidak ada.
   assert.match(b, /data COT\/retail TIDAK dikirim ke panggilan ini/);
   assert.match(b, /final_validation diisi kode, bukan kamu/);
+  assert.match(b, /server yang menghitung label verdict/);
+  assert.doesNotMatch(b, /menulis verdict NO TRADE/);
   assert.doesNotMatch(b, /COT selaras \+ retail sentiment kontrarian/, 'instruksi lama yang minta AI menilai data yang tidak dikirim harus sudah hilang');
 });
 

@@ -5672,7 +5672,7 @@ function _extractMacroDrivers(rawSnap, rawRY) {
 // (`cme_priority_prompt_v` di buildNewSetupEntry, ohlcvAnalyzeHandler) supaya generasi
 // data sebelum/sesudah perubahan framing bisa dibedakan tanpa nebak dari timestamp.
 // Naikkan angka ini setiap kali TEKS framing di bawah direvisi lagi.
-const COT_CME_PROMPT_VERSION = 1;
+const COT_CME_PROMPT_VERSION = 2;
 
 // ── AATAS — "Auto AI to Auto System" (2026-08-22) ─────────────────────────────
 // Porting checklist SMC/ICT manual (index.html PB_REGIME_CHECK + PLAYBOOKS.smc_ict)
@@ -5714,7 +5714,10 @@ const COT_CME_PROMPT_VERSION = 1;
 // kandidat TP disaring RR>=AATAS_MIN_RR (bukan 1:1) & instruksi tp menyebut 1:2;
 // paksaan "pilih zona terdekat ke Now" DIHAPUS, diganti tuntutan konsisten dengan
 // fib_reason AI sendiri (bukan tabel kedalaman baru — keputusan user).
-const AATAS_PROMPT_VERSION = 11;
+// v12 (PLAN AF-1/2, 2026-10-12): kontrak trigger/volatilitas/options diselaraskan
+// dengan evaluator dan menu level; fallback auto memakai RR>=2; Call 2 tidak diminta
+// menulis verdict; skor teknikal tetap independen tanpa dipaksa berbeda angkanya.
+const AATAS_PROMPT_VERSION = 12;
 
 // (2026-09-02) `final_validation` (Step 8, COT/retail) dipaksa nilai ini untuk SEMUA
 // setup AATAS — Call 2 (yang mengisi field ini di v1/v2) tidak pernah menerima data
@@ -5900,14 +5903,14 @@ function _buildAatasMacroChecklistBlock({ label, isXau, goldCorr }) {
     L.push(`- Idealnya ketiganya bertiga sepakat (3/3) dengan arahmu — itu conviction penuh, entry tetap boleh jalan berapa pun status korelasinya. Kalau TIDAK 3/3: ${corrTxt} Korelasi NORMAL (atau data tidak tersedia) -> tetap boleh lanjut, Real Yield sendiri cukup jadi penentu. Korelasi ANOMALI -> HANYA boleh lanjut kalau minimal 2 dari 3 sinyal tetap sepakat dengan arahmu (mayoritas menutupi korelasi yang sedang tidak bisa dipercaya); kalau cuma 0-1 dari 3 yang sepakat DAN korelasi anomali, itu TIDAK ENTRY sama sekali (satu-satunya hard-stop baru di Step 0).`);
     L.push('- Rate Path Fed implied (kalau ada di data di atas): konteks tambahan saja, TIDAK memblokir.');
     L.push('- Event high-impact <6 jam ke depan untuk USD/emas: TUNGGU sampai lewat (entry ditunda, ukuran risiko TIDAK dikecilkan) — set regime_check.event_wait=true dan jelaskan di conflict_note. Ini BUKAN alasan membatalkan tesis.');
-    L.push('- COT & retail sentiment TIDAK dipakai di sini — dipindah ke Step 8 (catatan: laporan COT gold beda skema CFTC dari FX, jangan disamakan).');
+    L.push('- COT & retail sentiment bukan bukti makro pada panggilan ini. Positioning tetap dinilai terpisah oleh lapisan audit risiko; jangan menebak atau memindahkannya ke field makro.');
   } else {
     L.push('STEP 0 REGIME CHECK (PRE-GATE):');
     L.push('- Regime saat ini (risk_on/neutral/elevated/risk_off) dari baris RISK REGIME.');
     L.push(`- CB Bias ${legA} dan ${legB} dari DUA sumber sekaligus: (a) bias resmi bank sentral di FUNDAMENTAL TERSTRUKTUR, dan (b) pembacaanmu sendiri atas angka rilis mentah di blok [DATA RILIS EKONOMI] (inflasi/GDP/tenaga kerja/PMI/retail, actual vs forecast vs previous) — kalau blok itu tidak ada untuk salah satu leg, katakan datanya tidak tersedia, jangan menebak dari negara lain. Kalau dua sumber ini BERBEDA untuk leg yang sama, itu TIDAK memblokir — set regime_check.cb_source_conflict=true dan turunkan checklist_pct sedikit.`);
     L.push('- Event high-impact <6 jam ke depan untuk pair ini: TUNGGU sampai lewat (entry ditunda, ukuran risiko TIDAK dikecilkan) — set regime_check.event_wait=true dan jelaskan di conflict_note. Ini BUKAN alasan membatalkan tesis, dan BUKAN alasan mengecilkan size.');
     L.push('- Real yield differential TIDAK dipakai sebagai pre-gate di pair FX (hanya relevan untuk XAU/USD).');
-    L.push('- COT & retail sentiment TIDAK dipakai di sini — dipindah ke Step 8.');
+    L.push('- COT & retail sentiment bukan bukti makro pada panggilan ini. Positioning tetap dinilai terpisah oleh lapisan audit risiko; jangan menebak atau memindahkannya ke field makro.');
   }
   L.push('');
   L.push('STEP 1 VALIDITAS DRIVER (GATE): driver makro yang kamu pakai WAJIB (a) bukan asumsi pribadi, (b) punya bukti nyata — data rilis/statement resmi/event aktual yang ADA di konteks di atas, (c) bisa diverifikasi, (d) sudah mulai tercermin di harga, dan (e) dirumuskan TANPA kata "akan"/"harusnya"/"kemungkinan"/"biasanya". Kalau salah satu tidak terpenuhi: gate_validitas_driver.pass=false dan TIDAK ADA setup.');
@@ -5940,10 +5943,10 @@ function _buildAatasTechnicalChecklistBlock({ isXau, lockedBias }) {
   L.push('');
   L.push('STEP 4 STRUKTUR TEKNIKAL (bobot tinggi): arah teknikal WAJIB sejalan dengan bias terkunci; ada Break of Structure (BOS)/shift; market tidak dalam ranging sempit; ada area jelas (supply-demand / cluster S/R). Konteks likuiditas (equal highs/lows, stop hunt/sweep) boleh disebut sebagai sinyal TAMBAHAN dengan bobot LEBIH RENDAH dari BOS/S-R — jangan pernah menjadikannya satu-satunya alasan entry.');
   if (isXau) L.push('- Tambahan XAU/USD: option expiry/volume sebagai lapis konfirmasi, dan sentimen options CME (kalau ada di atas) sebagai pemanis konfirmasi — TIDAK PERNAH jadi penentu sendiri.');
-  L.push('- Kalau struktur teknikal jelas BERLAWANAN dengan bias terkunci, atau pasar ranging sempit: JANGAN membalik bias dan JANGAN memaksakan setup. Set entry_zone/sl/tp null, verdict "NO TRADE", dan jelaskan kondisi yang ditunggu di trigger.');
-  L.push('- WAJIB isi technical.struktur_vs_bias, salah satu PERSIS: "selaras" (struktur jelas mendukung arah bias), "netral" (struktur tidak jelas mendukung ATAU melawan), "campur" (ada elemen mendukung DAN melawan sekaligus, timeframe/sinyal tidak sepakat), "berlawanan" (struktur dominan JELAS menunjuk arah kebalikan dari bias — bukan cuma satu pullback/retracement minor). HANYA pilih "berlawanan" kalau kamu sendiri akan menulis verdict NO TRADE karena ini — kode akan menegakkan ulang isian ini, JANGAN pilih "berlawanan" lalu tetap memaksakan setup, dan JANGAN pilih label lain padahal strukturnya jelas berlawanan.');
+  L.push('- Kalau struktur teknikal jelas BERLAWANAN dengan bias terkunci, atau pasar ranging sempit: JANGAN membalik bias dan JANGAN memaksakan setup. Set entry_zone/sl/tp null dan jelaskan kondisi yang ditunggu di trigger; server yang menghitung label verdict.');
+  L.push('- WAJIB isi technical.struktur_vs_bias, salah satu PERSIS: "selaras" (struktur jelas mendukung arah bias), "netral" (struktur tidak jelas mendukung ATAU melawan), "campur" (ada elemen mendukung DAN melawan sekaligus, timeframe/sinyal tidak sepakat), "berlawanan" (struktur dominan JELAS menunjuk arah kebalikan dari bias — bukan cuma satu pullback/retracement minor). HANYA pilih "berlawanan" jika kamu juga null-kan entry_zone/sl/tp karena struktur tidak layak — kode akan menegakkan ulang isian ini; JANGAN pilih label lain padahal strukturnya jelas berlawanan.');
   L.push('');
-  L.push('STEP 5 ENTRY LOCATION + TRIGGER: entry HANYA di area valid (pullback/retest/liquidity sweep), bukan di tengah impuls. Fibonacci dipakai sebagai ZONA 0,382-0,618, bukan titik tunggal 0,618: tren KUAT (BOS bermomentum kuat) berarti retracement dangkal, condong ke 0,382; tren LEMAH/ranging berarti retracement dalam, condong ke 0,618; kalau kekuatan tren AMBIGU, pakai titik tengah zona (~0,5). Wajib ada konfirmasi candle di trigger.');
+  L.push('STEP 5 ENTRY LOCATION + TRIGGER: entry HANYA di area valid (pullback/retest/liquidity sweep), bukan di tengah impuls. Fibonacci dipakai sebagai ZONA 0,382-0,618, bukan titik tunggal 0,618: tren KUAT (BOS bermomentum kuat) berarti retracement dangkal, condong ke 0,382; tren LEMAH/ranging berarti retracement dalam, condong ke 0,618; kalau kekuatan tren AMBIGU, pakai titik tengah zona (~0,5). Eksekusi otomatis hanya mendukung sentuhan zona setelah waktu tunggu kalender; pola candle boleh membantu memilih zona, tetapi bukan syarat fill tambahan.');
   L.push('');
   L.push('STEP 6 RISK MANAGEMENT (GATE): RR minimal 1:2 (ideal 1:3 ke atas) dan SL di balik struktur (bukan angka random). Risiko per entry FLAT 2% tanpa pengecualian kondisi apa pun — konflik/keraguan TIDAK PERNAH mengecilkan ukuran posisi, itu hanya alarm perhatian. Kalau RR di bawah 1:2 atau SL tidak punya dasar struktural: gate_risk_management.pass=false dan TIDAK ADA setup.');
   L.push('');
@@ -5953,7 +5956,7 @@ function _buildAatasTechnicalChecklistBlock({ isXau, lockedBias }) {
   L.push('');
   L.push('STEP 9 DISIPLIN: urusan setelah entry (manajemen posisi berjalan), BUKAN syarat sebelum entry — tidak dinilai di sini.');
   L.push('');
-  L.push('YANG BUKAN URUSANMU DI SINI: arah/bias (sudah dikunci Step 0-2 dan sudah diverifikasi kode), penilaian ulang fundamental, status COT/retail (Step 8), dan label verdict (dihitung kode dari checklist_pct-mu). Kalau kamu merasa fundamentalnya lemah, itu bukan alasan membalik arah — sampaikan di conflict/commentary.');
+  L.push('YANG BUKAN URUSANMU DI SINI: arah/bias (sudah dikunci Step 0-2 dan sudah diverifikasi kode), penilaian ulang fundamental, status COT/retail (Step 8), dan label verdict (dihitung kode dari checklist_pct-mu). Kalau struktur tidak layak, null-kan level dan jelaskan fakta teknikalnya; jangan membalik arah.');
   return L.join('\n');
 }
 
@@ -6702,12 +6705,12 @@ async function _runAatasTwoCall({
     '',
     'Isi field JSON berikut:',
     ...(Array.isArray(levelInstrs) ? levelInstrs : []),
-    hasLevelCandidates ? '- selected_sl_id dan selected_tp_id: WAJIB isi ID kandidat yang persis kamu pilih. Untuk bias bullish gunakan "bullish_sl_N" dan "bullish_tp_N"; untuk bearish gunakan "bearish_sl_N" dan "bearish_tp_N". N adalah nomor S/T pada daftar kandidat mulai dari 1. Jika daftar kandidat untuk arah ini tidak lengkap atau tidak menyediakan anchor struktur, set entry_zone, sl, tp, selected_sl_id, selected_tp_id ke null — jangan mengarang level.' : null,
+    hasLevelCandidates ? '- selected_sl_id dan selected_tp_id: jika [KANDIDAT SL/TP] menyediakan pool SL+TP lengkap untuk ARAH TERKUNCI, WAJIB isi ID kandidat yang persis dipilih (bullish_sl_N/bullish_tp_N atau bearish_sl_N/bearish_tp_N). Jika pool arah terkunci tidak tersedia/lengkap, ikuti fallback struktur pada instruksi sl/tp, set kedua ID null, dan JANGAN mengambil kandidat arah lawan atau mengarang ID.' : null,
     '- trigger: eksekusi otomatis hanya mendukung sentuhan zona entry setelah waktu tunggu kalender. Jangan mensyaratkan pola candle, close H4, atau konfirmasi tambahan yang tidak dapat dieksekusi evaluator. Pola candle boleh menjadi dasar pemilihan zona, bukan syarat fill yang belum terpenuhi.',
     '- invalidation_condition: kondisi spesifik yang membatalkan skenario ini sepenuhnya (beda dari sl — ini soal struktur/tesis).',
     '- invalidation_trigger: versi TERSTRUKTUR dari invalidation_condition supaya KODE bisa mendeteksinya otomatis — {"type":"ma_break"|"price_level"|"swing_break","level":<satu angka>,"timeframe":"1h"|"4h"|"1d","direction":"above"|"below"}. "level" WAJIB satu angka konkret yang ADA di data di atas, "direction" = arah CLOSE candle yang membatalkan skenario. Kalau tidak bisa diringkas jadi satu level tunggal, set null — JANGAN mengarang angka.' + (invalidationTail || ''),
     '- time_horizon_days: estimasi jumlah hari realistis skenario ini main out (angka, misal 3, 5, 10) berdasarkan jarak entry-tp dibanding rata-rata gerak harian (ATR/sigma) di data.',
-    '- technical: hasil Step 4-5 — {"score_pct":0-100,"bos":"ada|lemah|tidak ada","area":"level/zona yang dipakai + angkanya","fib_zone":"angka level fib yang dipakai","fib_reason":"kenapa dangkal (~0,382) / dalam (~0,618) / tengah (~0,5), dikaitkan ke kekuatan BOS","liquidity_context":"..." atau null,"ranging":true/false,"struktur_vs_bias":"selaras|netral|campur|berlawanan"}. liquidity_context bobotnya LEBIH RENDAH dari BOS/S-R. technical.score_pct = skor STRUKTUR & LOKASI SAJA (Step 4-5 + timing Step 7): kualitas BOS, kejelasan area, posisi entry di zona pullback yang benar, jarak dari impuls — dinilai TERPISAH dari fundamental dan BUKAN salinan checklist_pct. Struktur "campur"/"netral", BOS lemah, atau ranging WAJIB membuat angka ini jelas lebih rendah (di bawah 60) daripada struktur "selaras" dengan BOS kuat (di atas 70); kalau angkamu sama dengan checklist_pct, kamu belum menilai teknikalnya. struktur_vs_bias: lihat definisi & syarat di STEP 4 di atas — kode akan menegakkan ulang ("berlawanan" WAJIB berakibat NO TRADE, kamu tidak bisa memaksakan setup sambil menulis label ini).',
+    '- technical: hasil Step 4-5 — {"score_pct":0-100,"bos":"ada|lemah|tidak ada","area":"level/zona yang dipakai + angkanya","fib_zone":"angka level fib yang dipakai","fib_reason":"kenapa dangkal (~0,382) / dalam (~0,618) / tengah (~0,5), dikaitkan ke kekuatan BOS","liquidity_context":"..." atau null,"ranging":true/false,"struktur_vs_bias":"selaras|netral|campur|berlawanan"}. liquidity_context bobotnya LEBIH RENDAH dari BOS/S-R. technical.score_pct = skor STRUKTUR & LOKASI SAJA (Step 4-5 + timing Step 7): kualitas BOS, kejelasan area, posisi entry di zona pullback yang benar, jarak dari impuls — dinilai TERPISAH dari fundamental dan bukan turunan checklist_pct. Dua penilaian independen boleh kebetulan menghasilkan angka sama; yang wajib berbeda adalah alasan dan bukti yang dinilai. Struktur "campur"/"netral", BOS lemah, atau ranging WAJIB membuat skor teknikal rendah (di bawah 60), sedangkan struktur "selaras" dengan BOS kuat layak di atas 70. struktur_vs_bias: lihat definisi & syarat di STEP 4 di atas — kode akan menegakkan ulang ("berlawanan" WAJIB membuat level null; kamu tidak bisa memaksakan setup sambil menulis label ini).',
     '- gate_risk_management: hasil GATE Step 6 — {"pass":true/false,"note":"sebut RR aktual dan dasar struktural SL"}. false kalau RR di bawah 1:2 atau SL tidak berpijak struktur. Risiko per entry selalu flat 2%, jangan pernah mengusulkan mengecilkan size.',
     '- JANGAN isi final_validation atau verdict — dua-duanya dihitung server, bukan kamu (lihat instruksi Step 8 di atas).',
     '- conflict: "waktu" kalau ada event high-impact relevan yang jatuh sebelum skenario selesai (termasuk event <6 jam yang bikin entry ditunda) — ini yang paling sering terjadi dan WAJIB dilaporkan jujur. "arah" HANYA kalau kamu tetap mengeluarkan setup padahal struktur berlawanan dengan bias terkunci (seharusnya tidak pernah terjadi — kalau terjadi, laporkan apa adanya, jangan disamarkan jadi "none"). "none" kalau tidak ada keduanya.',
@@ -6804,7 +6807,7 @@ function _formatAatasCriticLine(structured) {
   return parts.length ? parts.join('\n') : null;
 }
 
-function _formatOptionsSentimentBlock(rr, prioritized) {
+function _formatOptionsSentimentBlock(rr, prioritized, lockedDirection) {
   if (!rr) return '';
   const val = rr.rr_value;
   const abs = Math.abs(val);
@@ -6842,6 +6845,9 @@ function _formatOptionsSentimentBlock(rr, prioritized) {
   // salah hitung, jadi dikarantina ke eksperimen dulu sampai tervalidasi data
   // (macro_snapshot, lihat daun_merah_progress.md), tidak langsung memengaruhi apa
   // yang dibaca publik hari ini (prinsip isolasi Plan U/U-7).
+  if (lockedDirection) {
+    return `SENTIMEN PASAR OPTIONS (dari CME, real-time — konteks RISIKO untuk arah yang sudah dikunci, bukan izin meninjau ulang bias. Kalau data ini bertentangan dengan bias, nilai apakah struktur tidak layak lalu null-kan level; DILARANG membalik arah, membuat syarat fill tambahan, atau memilih level di luar menu kontrak):\n${lines.join('\n')}`;
+  }
   return prioritized
     ? `SENTIMEN PASAR OPTIONS (dari CME, real-time — DIPRIORITASKAN di atas data COT mingguan untuk konfirmasi ARAH karena lebih up-to-date; kalau searah dengan bias teknikal, jadikan penguat keyakinan; kalau BERLAWANAN dengan bias teknikal, pertimbangkan serius sebagai alasan menurunkan keyakinan atau meninjau ulang arah — tetap keputusanmu berdasarkan kekuatan bukti lain, bukan otomatis dibatalkan):\n${lines.join('\n')}`
     : `SENTIMEN PASAR OPTIONS (dari CME, sumber terpisah dari data teknikal chart — pakai sebagai cross-check tambahan, BUKAN sinyal utama; kalau bertentangan dengan bias teknikal, sebut sebagai catatan risiko di paragraf integrasi, jangan mengubah bias):\n${lines.join('\n')}`;
@@ -7323,7 +7329,7 @@ async function ohlcvAnalyzeHandler(req, res) {
         if (!rawCandles[i]) return;
         try { candlesBySymbol[s] = JSON.parse(rawCandles[i]); } catch (e) { /* skip pair korup */ }
       });
-      pairCtx = buildPairContext({ candlesBySymbol, symbol, label: data.label, fxPairs: FX_PAIRS_FOR_STRENGTH });
+      pairCtx = buildPairContext({ candlesBySymbol, symbol, label: data.label, fxPairs: FX_PAIRS_FOR_STRENGTH, auto: isAutoCall });
     } catch (e) { console.warn('ohlcv_analyze: pair context gagal (fail-open):', e.message); }
 
     const makroHeader = makroAgeH != null
@@ -7395,7 +7401,7 @@ async function ohlcvAnalyzeHandler(req, res) {
       // menilai data yang tidak ada di konteksnya. rrBlock sudah membawa framing
       // non-blocking sendiri ("TIDAK PERNAH jadi penentu sendiri"), jadi aman dikirim ke
       // sini juga; pair FX tidak disentuh (instruksinya memang XAU-only).
-      if (data.is_xau && rrBlock) aatasTechParts.push(rrBlock);
+      if (data.is_xau && rrPairSnapshot) aatasTechParts.push(_formatOptionsSentimentBlock(rrPairSnapshot, true, true));
       aatasTechParts.push(`DATA TEKNIKAL:\n${_stripIndicatorLines(textBlock)}${expiryBlock}${confBlock ? '\n\n' + confBlock : ''}${levelBlock ? '\n\n' + levelBlock : ''}`);
     }
 
@@ -7488,11 +7494,13 @@ async function ohlcvAnalyzeHandler(req, res) {
     const tpFallbackTail = confBlock
       ? ' zona konfluensi BERIKUTNYA searah bias dari [ZONA KONFLUENSI] (atau struktur [LEVEL S/R] berikutnya)'
       : ' struktur berikutnya searah bias yang ADA di data (cluster S/R, swing, pivot, fib)';
+    const minimumRrText = isAutoCall ? `1:${AATAS_MIN_RR}` : '1:1';
+    const minimumRrValue = isAutoCall ? AATAS_MIN_RR : 1;
     const tpInstr = levelCandidates
       ? `- tp: WAJIB pilih SATU angka PERSIS dari [KANDIDAT SL/TP] di atas, baris TP sesuai bias yang kamu tentukan — JANGAN mengarang angka lain. KALAU bias yang kamu pilih TIDAK punya baris TP sendiri di [KANDIDAT SL/TP], baru gunakan${tpFallbackTail}. Untuk bearish, tp harus di bawah entry_zone. Untuk bullish, tp harus di atas entry_zone. Daftar TP (kalau ada untuk bias-mu) sudah disaring kode supaya risk/reward minimal ${isAutoCall ? '1:2 (sama dengan gate Step 6)' : '1:1'} terhadap SL terdekat; kalau pakai fallback, WAJIB risk/reward minimal ${isAutoCall ? '1:2' : '1:1'} sendiri — kalau tidak memungkinkan, sebutkan itu di trigger/commentary alih-alih memaksakan level palsu.`
       : confBlock
-      ? '- tp: zona konfluensi BERIKUTNYA searah bias dari daftar [ZONA KONFLUENSI] (atau struktur [LEVEL S/R] berikutnya kalau tidak ada zona lagi searah itu) — jangan mengarang. Untuk bearish, tp harus di bawah entry_zone. Untuk bullish, tp harus di atas entry_zone. WAJIB risk/reward (jarak entry→tp dibanding entry→sl) minimal 1:1 — kalau struktur data tidak memungkinkan RR ≥1, sebutkan itu di trigger/commentary alih-alih memaksakan level palsu.'
-      : '- tp: level take profit konkret = struktur berikutnya searah bias yang ADA di data (cluster S/R, swing, pivot, fib) — jangan mengarang. Untuk bearish, tp harus di bawah entry_zone. Untuk bullish, tp harus di atas entry_zone. WAJIB risk/reward (jarak entry→tp dibanding entry→sl) minimal 1:1 — kalau struktur data tidak memungkinkan RR ≥1, sebutkan itu di trigger/commentary alih-alih memaksakan level palsu.';
+      ? `- tp: zona konfluensi BERIKUTNYA searah bias dari daftar [ZONA KONFLUENSI] (atau struktur [LEVEL S/R] berikutnya kalau tidak ada zona lagi searah itu) — jangan mengarang. Untuk bearish, tp harus di bawah entry_zone. Untuk bullish, tp harus di atas entry_zone. WAJIB risk/reward (jarak entry→tp dibanding entry→sl) minimal ${minimumRrText} — kalau struktur data tidak memungkinkan RR ≥${minimumRrValue}, sebutkan itu di trigger/commentary alih-alih memaksakan level palsu.`
+      : `- tp: level take profit konkret = struktur berikutnya searah bias yang ADA di data (cluster S/R, swing, pivot, fib) — jangan mengarang. Untuk bearish, tp harus di bawah entry_zone. Untuk bullish, tp harus di atas entry_zone. WAJIB risk/reward (jarak entry→tp dibanding entry→sl) minimal ${minimumRrText} — kalau struktur data tidak memungkinkan RR ≥${minimumRrValue}, sebutkan itu di trigger/commentary alih-alih memaksakan level palsu.`;
     // AATAS (2026-08-22, direvisi v2 2026-08-25) — jalur `isAutoCall` TIDAK LAGI lewat
     // sini. Prompt auto-entry sekarang dibangun terpisah di `_runAatasTwoCall` (dua
     // panggilan: makro-only lalu teknikal-only). Seluruh instruksi di bawah ini murni

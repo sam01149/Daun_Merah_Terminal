@@ -243,6 +243,15 @@ test('_formatOptionsSentimentBlock: prioritized=false/tidak diisi (manual publik
   }
 });
 
+test('_formatOptionsSentimentBlock: Call 2 auto menerima CME sebagai konteks risiko tanpa izin membalik arah/level', () => {
+  const out = _formatOptionsSentimentBlock({ rr_value: -1.4 }, true, true);
+  assert.ok(out.includes('arah yang sudah dikunci'), out);
+  assert.ok(out.includes('DILARANG membalik arah'), out);
+  assert.ok(out.includes('null-kan level'), out);
+  assert.ok(out.includes('di luar menu kontrak'), out);
+  assert.ok(!out.includes('meninjau ulang arah'), out);
+});
+
 test('_formatOptionsSentimentBlock: rr null/kosong → string kosong (fail-open, tidak berubah)', () => {
   assert.strictEqual(_formatOptionsSentimentBlock(null), '');
 });
