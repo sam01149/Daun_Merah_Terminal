@@ -305,3 +305,20 @@ Tanpa top-up, proyeksi saldo habis sekitar 9 Desember. Rekomendasi operasional a
 Saldo API hanya memberi total dua desimal, bukan ledger biaya per fitur. Karena itu pemisahan biaya AATAS versus Daun Merah tidak dapat dihitung persis dari dolar; counter request dipakai untuk komposisi, sedangkan selisih saldo dipakai untuk total biaya. Estimasi perlu diaudit ulang bila model, frekuensi, jumlah pair, prompt, atau jumlah panggilan LLM shadow berubah.
 
 Sumber resmi: [DeepSeek Get User Balance](https://api-docs.deepseek.com/api/get-user-balance/), [DeepSeek Models & Pricing](https://api-docs.deepseek.com/quick_start/pricing).
+
+### Perbandingan As-is vs Full DeepSeek Pro
+
+| Aspek | As-is produksi | To-be seluruh call Pro |
+|---|---|---|
+| Pemilihan model | Pro untuk Call 1 Ringkasan dan Call 1 AATAS; Flash untuk Call 2/3/4, lokasi entry, kritik, pre-entry, dan review posisi | Semua call DeepSeek memakai `deepseek-v4-pro` |
+| Volume hari kerja yang diamati | 38 request pada 2026-10-13; perkiraan komposisi 17 Pro + 21 Flash | Tetap 38 request jika tidak ada timeout |
+| Burn-rate | $0,0237/hari rata-rata kalender sejak 16 September | Estimasi 1,6-2,2x as-is, sekitar $0,0379-$0,0521/hari |
+| Kebutuhan sampai akhir tahun | $1,90 baseline; $2,47 dengan buffer 30% | $3,03-$4,17 baseline; $3,94-$5,42 dengan buffer 30% |
+| Top-up aman dari saldo $1,36 | $2 | $4; $5 bila volume AI juga diperluas |
+| Bukti kualitas internal | Pro sudah dipasang pada dua titik yang pernah menunjukkan manfaat keputusan | Belum ada bukti bahwa Pro meningkatkan Call 2/lokasi, Gate A, atau review; tes `ohlcv_analyze` lama nyaris identik |
+| Latency/reliabilitas | Jalur berurutan mencampur Pro + Flash agar masih punya headroom | Pro historis ~2,2x lebih lambat; dua Pro berurutan + Gate A berisiko melewati `maxDuration` 60 detik dan menghilangkan sampel |
+| Dampak dataset | Cohort/policy tetap konsisten | Wajib policy/cohort baru; jangan campur dengan baseline sebelum A/B cukup |
+
+Rentang 1,6-2,2x diturunkan dari campuran request aktual dan rasio harga resmi. Rasio Pro:Flash saat audit adalah 4,4x untuk input cache-miss, 3,3x untuk output, dan 7,33x untuk input cache-hit. Total sistem tidak naik sebesar rasio tersebut karena sebagian call as-is memang sudah Pro. Estimasi mengasumsikan jumlah call sukses tetap sama; bila latency Pro menyebabkan timeout, tagihan mungkin lebih rendah tetapi data yang terkumpul juga berkurang—hasil yang lebih buruk untuk tujuan belajar AATAS.
+
+**Kesimpulan riset:** full Pro tidak direkomendasikan sebagai perubahan produksi langsung. Opsi yang rasional adalah mempertahankan as-is dan, bila ingin menguji, membuat arm shadow/A-B Pro pada subset kandidat dengan `policy_v`/cohort terpisah, ukuran sampel dan metrik keputusan yang ditentukan sebelum eksperimen.
