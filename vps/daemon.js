@@ -1636,7 +1636,7 @@ function findSurpriseEvent(events, legs, nowMs, windowMs = BREAKING_NEWS_SKIP_WI
 // SETIAP event yang actual-nya sudah terisi dalam window dicatat ke
 // surprise_log:v1 (bukan cuma yang lolos ambang) — fondasi Opsi B (z-score per
 // jenis event) begitu sampel cukup, TIDAK diaktifkan sebagai gate di sini.
-async function checkSurpriseSkip(pair, label) {
+async function checkSurpriseSkip(pair, label, academySlotId = null) {
   try {
     const events = await fetchMergedSurpriseEvents();
     const legs = legsFromLabel(label);
@@ -1657,7 +1657,7 @@ async function checkSurpriseSkip(pair, label) {
     const hit = findSurpriseEvent(events, legs, nowMs);
     if (!hit) return null;
     const entry = {
-      ts: nowMs, pair, label, reason: 'surprise',
+      ts: nowMs, pair, label, reason: 'surprise', record_kind: 'pre_ai_skip', academy_slot_id: academySlotId,
       event: hit.event, currency: hit.currency, event_time_wib: `${hit.date} ${hit.time_wib}`,
       ratio: hit.ratio, actual_raw: hit.actual_raw, forecast_raw: hit.forecast_raw,
     };
@@ -1737,7 +1737,7 @@ async function fetchMergedCalendarEvents() {
 // mungkin belum settle/tercermin penuh di candle yang dianalisa AI, berbasis
 // kasus SL nyata (AUD/NZD), bukan tebakan/self-report yang bisa diserahkan ke
 // judgment AI seperti conflict:'waktu'.
-async function checkHardNewsSkip(pair, label) {
+async function checkHardNewsSkip(pair, label, academySlotId = null) {
   try {
     const events = await fetchMergedCalendarEvents();
     const legs = legsFromLabel(label);
@@ -1746,7 +1746,7 @@ async function checkHardNewsSkip(pair, label) {
     if (!hit) return null;
     const eventMs = calEventMsWib(hit.date, hit.time_wib);
     const entry = {
-      ts: nowMs, pair, label, reason: 'hard_news',
+      ts: nowMs, pair, label, reason: 'hard_news', record_kind: 'pre_ai_skip', academy_slot_id: academySlotId,
       event: hit.event, currency: hit.currency, event_time_wib: `${hit.date} ${hit.time_wib}`, event_ms: eventMs,
     };
     await redisCmd('LPUSH', 'auto_skip_log', JSON.stringify(entry));
@@ -1797,7 +1797,7 @@ function findBreakingNewsMatch(pairLegs, buffer, nowMs = Date.now(), windowMs = 
   return null;
 }
 
-async function checkBreakingNewsSkip(pair, label) {
+async function checkBreakingNewsSkip(pair, label, academySlotId = null) {
   try {
     const pairLegs = legsFromLabel(label);
     const now = Date.now();
@@ -1805,7 +1805,7 @@ async function checkBreakingNewsSkip(pair, label) {
     const match = findBreakingNewsMatch(pairLegs, posReviewNewsBuffer, now);
     if (!match) return null;
     const entry = {
-      ts: now, pair, label, reason: 'breaking_news',
+      ts: now, pair, label, reason: 'breaking_news', record_kind: 'pre_ai_skip', academy_slot_id: academySlotId,
       event: match.title, cat: match.cat, pubDate: match.pubDate,
     };
     await redisCmd('LPUSH', 'auto_skip_log', JSON.stringify(entry));
@@ -1820,21 +1820,38 @@ async function checkBreakingNewsSkip(pair, label) {
 // `pairs` opsional (default AUTO_ENTRY_PAIRS, semua pair jadwal utama) — Track 2a
 // (2026-08-04) memanggil ini dengan array 1 pair ([AUTO_ENTRY_AUDNZD_PAIR]) di jam
 // tambahan khusus AUD/NZD, supaya pair lain TIDAK ikut bertambah call di jam itu.
+function buildAcademyCycleMeta(pairs, nowMs = Date.now()) {
+  const validPairs = (Array.isArray(pairs) ? pairs : []).filter(pair => AUTO_ENTRY_SYMBOL_MAP[pair]);
+  return {
+    slot_id: `${new Date(nowMs).toISOString().slice(0, 16)}Z:${validPairs.join('+')}`,
+    expected_labels: validPairs.map(pair => AUTO_ENTRY_SYMBOL_MAP[pair].label),
+  };
+}
+
 async function runAutoEntryCycle(pairs = AUTO_ENTRY_PAIRS) {
   if (!CRON_SECRET) { console.warn('daemon: CRON_SECRET kosong, U-3 auto-entry di-skip'); return; }
   if (!isFxMarketOpen()) return;
+  // Satu cohort ID untuk seluruh pair di siklus yang sama. Academy memakainya untuk
+  // membandingkan kesempatan as-of yang sama; ID ini tidak memengaruhi analisa/entry.
+  const academyMeta = buildAcademyCycleMeta(pairs);
+  const academySlotId = academyMeta.slot_id;
   for (const pair of pairs) {
     const map = AUTO_ENTRY_SYMBOL_MAP[pair];
     if (!map) { console.warn(`daemon: AUTO_ENTRY_PAIRS berisi pair tak dikenal "${pair}", di-skip`); continue; }
-    const skip = await checkHardNewsSkip(pair, map.label);
+    const skip = await checkHardNewsSkip(pair, map.label, academySlotId);
     if (skip) { console.log(`daemon: U-3 auto-entry ${pair} di-skip — hard news "${skip.event}" (${skip.event_time_wib})`); continue; }
-    const breakingSkip = await checkBreakingNewsSkip(pair, map.label);
+    const breakingSkip = await checkBreakingNewsSkip(pair, map.label, academySlotId);
     if (breakingSkip) { console.log(`daemon: U-3 auto-entry ${pair} di-skip — breaking news "${breakingSkip.event}" (${breakingSkip.cat})`); continue; }
-    const surpriseSkip = await checkSurpriseSkip(pair, map.label);
+    const surpriseSkip = await checkSurpriseSkip(pair, map.label, academySlotId);
     if (surpriseSkip) { console.log(`daemon: U-3 auto-entry ${pair} di-skip — kejutan ekonomi "${surpriseSkip.event}" (rasio ${surpriseSkip.ratio.toFixed(2)})`); continue; }
-    const path = `/api/admin?action=ohlcv_analyze&symbol=${encodeURIComponent(map.symbol)}&label=${encodeURIComponent(map.label)}&auto=1`;
+    const path = `/api/admin?action=ohlcv_analyze&symbol=${encodeURIComponent(map.symbol)}&label=${encodeURIComponent(map.label)}&auto=1&academy_slot_id=${encodeURIComponent(academySlotId)}`;
     await triggerWithRetry(path);
   }
+  // Finalisasi satu kali per cohort (bukan per pair): menggabungkan setup, reject,
+  // dan skip menjadi ranking shadow. Tidak ada pilihan top-N dan tidak ada entry baru.
+  const expectedLabels = academyMeta.expected_labels.join(',');
+  const finalizePath = `/api/admin?action=setup_stats&scope=auto&source=academy_finalize&academy_slot_id=${encodeURIComponent(academySlotId)}&academy_expected=${encodeURIComponent(expectedLabels)}`;
+  await triggerWithRetry(finalizePath);
 }
 
 // Sub-riset 3a — instrumentasi latensi field `actual` calendar_v1. Poll
@@ -2059,6 +2076,7 @@ module.exports = {
   legsFromLabel, calEventMsWib, findHardNewsEvent, findRecentHardNewsEvent, firstNumber, levelsWithinTolerance,
   computeConsistency, AUTO_ENTRY_SYMBOL_MAP, AUTO_ENTRY_PAIRS, AUTO_ENTRY_HOURS_UTC,
   AUTO_ENTRY_HOURS_UTC_AUDNZD, AUTO_ENTRY_AUDNZD_PAIR,
+  buildAcademyCycleMeta,
   findBreakingNewsMatch, BREAKING_NEWS_SKIP_WINDOW_MS,
   // Plan X (pure/testable):
   computeSurpriseRatio, findSurpriseEvent, SURPRISE_RATIO_THRESHOLD, SURPRISE_CURRENCIES,

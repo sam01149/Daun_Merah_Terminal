@@ -31,6 +31,7 @@ const { validateTightenSl, computePreventiveTightenSl, _evaluateManaged, _aggMan
 const { isCorrelatedExposureBlocked, correlatedExposureBlock, isClosedEarly, isManagedResolved, isLiveExposure, isTimingConflictBlocked, isInvalidationTriggered, INVALIDATION_TRIGGER_TYPES, INVALIDATION_TRIGGER_DIRECTIONS, INVALIDATION_TRIGGER_TIMEFRAMES, CORRELATED_PAIRS, POLICY_VERSION, POLICY_EPOCHS, policyVersionForTs, AATAS_EPOCH, isGoldRegimeBlocked } = require('./_auto_entry_guard');
 const { computeLevelCandidates } = require('./_levels');
 const { bindExecutionContract, validateStoredExecutionContract } = require('./_aatas_execution_contract');
+const { buildAcademyShadow, mergeAcademyShadow, applyCompletedEventReactions, rankAcademyCohort } = require('./_aatas_academy');
 
 // Keputusan user 2026-10-02: selama fase pengumpulan data, Gate B tidak boleh
 // menghentikan kandidat baru berdasarkan rolling realized-R. Kode/perhitungannya
@@ -772,6 +773,7 @@ const KEY_REGISTRY = [
   { key: 'auto_guard_stats:gate1_skor_dua_sisi',      owner: 'api/admin.js', ttl_expected: null, note: 'Gate skema dua-sisi fundamental (2026-09-04): subset gate1_code_override — case_bullish_pct/case_bearish_pct hilang, jumlahnya bukan 100, atau sisi yang menang berlawanan dengan arah yang dideklarasikan. Dipantau supaya laju entry nol karena ketidakpatuhan skema bisa dibedakan dari nol karena kondisi pasar' },
   { key: 'auto_guard_stats:gate_struktur_melawan_bias', owner: 'api/admin.js', ttl_expected: null, note: '(2026-09-02) technical.struktur_vs_bias==="berlawanan" — sebelumnya cuma imbauan teks Step 4 (kasus nyata AUDNZD=X:1788182128048: struktur H4 bullish diakui sendiri, tapi tetap keluar setup bearish). Sekarang gate keras di kode, counter ini mengukur seberapa sering menyala' },
   { key: 'aatas_reject_log:v1',                       owner: 'api/admin.js', ttl_expected: null, note: 'List (cap 200): kandidat auto-entry AATAS yang ditolak (alasan + seluruh field checklist + reasoning_note). Key TERPISAH dari setup_log_auto:v1 supaya cap 200 sampel nyata tidak tergeser keluar' },
+  { key: 'aatas_academy_rank:v1',                     owner: 'api/admin.js', ttl_expected: null, note: 'List (cap 400): snapshot ranking Academy shadow per slot auto-entry; observasi saja, tidak dibaca gate/entry' },
   // Audit 2026-08-27: arsip preventif sebelum setup_log_auto:v1 (cap 200) menggeser
   // keluar entri lama secara permanen — lihat komentar lengkap di setupLogArchiveHandler.
   { key: 'setup_log_auto_archive:v1',                 owner: 'api/admin.js', ttl_expected: null, note: 'List gabungan (cap 5000) dari setup_log_auto:v1, di-merge dedup-by-id via action=setup_log_archive (GH Actions terjadwal). TIDAK PERNAH dibaca alur trading — murni cadangan sebelum cap 200 tergeser' },
@@ -806,7 +808,7 @@ const KEY_REGISTRY = [
 const LIST_LOG_KEYS = new Set([
   'auto_skip_log', 'posreview_skip_log', 'surprise_log:v1',
   'calendar_actual_latency_log:v1', 'consistency_log:v1',
-  'position_review_log:v1', 'xau_history', 'aatas_reject_log:v1',
+  'position_review_log:v1', 'xau_history', 'aatas_reject_log:v1', 'aatas_academy_rank:v1',
 ]);
 const TIMESTAMP_KEYS = new Set(['daemon_news_cursor', 'daemon_degraded_alert_ts']);
 
@@ -4511,13 +4513,25 @@ async function _buildAutoScopeStats() {
   let log = JSON.parse(raw);
   if (!Array.isArray(log)) log = [];
   const active = [...new Set(log.filter(s => s && (s.status === 'pending' || s.status === 'open')).map(s => s.symbol))];
+  // Academy shadow: setup closed/canceled tetap dapat reaction sheet untuk skenario
+  // yang didaftarkan SEBELUM event. Hanya symbol dengan reaction belum tersimpan yang
+  // ikut MGET; sesudah lengkap/unavailable terminal, ia tidak menambah beban tick lagi.
+  const academyNow = Date.now();
+  const academyReactionPending = log.filter(s => s?.academy_shadow?.event_scenarios?.some(scenario => {
+    const eventMs = Date.parse(scenario?.event_at || '');
+    return scenario?.scenario_id
+      && !s.academy_shadow?.event_reactions?.[scenario.scenario_id]
+      && Number.isFinite(eventMs)
+      && academyNow >= eventMs + 3 * 3600000;
+  }));
+  const candleSymbols = [...new Set([...active, ...academyReactionPending.map(s => s.symbol).filter(Boolean)])];
   const candlesBySymbol = {};
   let calendarEvents = [];
   let newsItems = [];
   await Promise.all([
-    _fetchCandlesInto(active, candlesBySymbol),
+    _fetchCandlesInto(candleSymbols, candlesBySymbol),
     (async () => {
-      if (!active.length) return;
+      if (!candleSymbols.length) return;
       try {
         const [thisWeek, nextWeek] = await Promise.all([
           redisCmd('GET', 'calendar_v1'),
@@ -4559,6 +4573,12 @@ async function _buildAutoScopeStats() {
     await _fetchCandlesInto(ghostPending.map(s => s.symbol), candlesBySymbol);
     log = _evaluateCanceledGhost(log, candlesBySymbol, Date.now());
   }
+  // Tidak pernah mengubah status/level/setup produksi: hanya menempelkan hasil reaction
+  // deterministik pada envelope Academy yang sudah ada. Error tetap fail-open.
+  try {
+    const academyApplied = applyCompletedEventReactions(log, candlesBySymbol, calendarEvents, Date.now());
+    if (academyApplied.changed) log = academyApplied.records;
+  } catch (e) { console.warn('Academy reaction shadow gagal (diabaikan):', e.message); }
   const after = JSON.stringify(log);
   if (after !== before) await redisCmd('SET', setupLogKey, after);
   await _finalizeSetupTransitions(log, statusBeforeById);
@@ -4568,6 +4588,35 @@ async function _buildAutoScopeStats() {
     consistency: await _consistencySummary(), pipeline_latency: await _pipelineLatencySummary(),
   };
   } finally { redisCmd('DEL', lockKey).catch(() => {}); }
+}
+
+async function _finalizeAcademyRanking(slotId, expectedLabels, setupLog) {
+  if (!slotId) return null;
+  try {
+    const [rejectRaw, skipRaw] = await Promise.all([
+      redisCmd('LRANGE', 'aatas_reject_log:v1', '0', '199'),
+      redisCmd('LRANGE', 'auto_skip_log', '0', '199'),
+    ]);
+    const parseList = rows => (Array.isArray(rows) ? rows : []).map(row => {
+      try { return typeof row === 'string' ? JSON.parse(row) : row; } catch (e) { return null; }
+    }).filter(Boolean);
+    const ranking = rankAcademyCohort([
+      ...(Array.isArray(setupLog) ? setupLog : []),
+      ...parseList(rejectRaw),
+      ...parseList(skipRaw),
+    ], slotId, expectedLabels);
+    ranking.finalized_at = new Date().toISOString();
+    const seenKey = `aatas_academy_rank_seen:${slotId.replace(/[^a-zA-Z0-9:_-]/g, '_').slice(0, 120)}`;
+    const first = await redisCmd('SET', seenKey, '1', 'NX', 'EX', String(45 * 86400));
+    if (first === 'OK') {
+      await redisCmd('LPUSH', 'aatas_academy_rank:v1', JSON.stringify(ranking));
+      await redisCmd('LTRIM', 'aatas_academy_rank:v1', '0', '399');
+    }
+    return ranking;
+  } catch (e) {
+    console.warn('Academy ranking shadow gagal (diabaikan):', e.message);
+    return null;
+  }
 }
 
 async function setupStatsHandler(req, res) {
@@ -4588,7 +4637,14 @@ async function setupStatsHandler(req, res) {
           }
         } catch (e) { /* dedup check gagal -> fail-open, tetap evaluasi penuh */ }
       }
-      return res.status(200).json({ ...(await _buildAutoScopeStats()), ai_health: await _getAatasAiHealth() });
+      const stats = await _buildAutoScopeStats();
+      let academy = null;
+      if (req.query.source === 'academy_finalize') {
+        const slotId = String(req.query.academy_slot_id || '').trim().slice(0, 160);
+        const expectedLabels = String(req.query.academy_expected || '').split(',').map(x => x.trim()).filter(Boolean).slice(0, 10);
+        academy = await _finalizeAcademyRanking(slotId, expectedLabels, stats.recent);
+      }
+      return res.status(200).json({ ...stats, ai_health: await _getAatasAiHealth(), academy: academy || undefined });
     }
 
     const raw = await redisCmd('GET', 'setup_log:v1');
@@ -7015,6 +7071,11 @@ async function ohlcvAnalyzeHandler(req, res) {
   // call (CRON_SECRET valid) — publik TIDAK BISA spoof source:'auto' dan merusak
   // integritas statistik gate-live (n>=100 setup auto, kriteria fase tes plan U).
   const isAutoCall = isCronCall && (req.query.auto === '1' || req.body?.auto === 1 || req.body?.auto === true);
+  // ID cohort hanya diterima dari request auto yang terautentikasi. Nilai ini murni
+  // observasi Academy dan tidak dibaca oleh prompt, gate, atau evaluator entry.
+  const academySlotId = isAutoCall
+    ? String(req.query.academy_slot_id || req.body?.academy_slot_id || '').trim().replace(/[^a-zA-Z0-9:_+.-]/g, '_').slice(0, 160) || null
+    : null;
   if (isCronCall) {
     const CRON_DEDUP_WINDOW_MS = 30 * 60 * 1000;
     try {
@@ -8315,6 +8376,7 @@ async function ohlcvAnalyzeHandler(req, res) {
     if (isAutoCall && !isDiagnosticOnly && structured && structured.aatas_reject_reason) {
       const rejectEntry = {
         ts: Date.now(), symbol, label: data.label,
+        record_kind: 'aatas_reject', academy_slot_id: academySlotId,
         reason: structured.aatas_reject_reason,
         bias: structured.bias ?? null,
         regime_check: structured.regime_check ?? null,
@@ -8332,9 +8394,13 @@ async function ohlcvAnalyzeHandler(req, res) {
         regime: autoGuardRegime,
         model, policy_v: POLICY_VERSION, aatas_v: AATAS_PROMPT_VERSION,
       };
-      // Fire-and-forget: kegagalan pencatatan TIDAK PERNAH boleh menggagalkan response
-      // analisa (prinsip sama seluruh logging di handler ini).
-      redisCmd('LPUSH', 'aatas_reject_log:v1', JSON.stringify(rejectEntry))
+      rejectEntry.academy_shadow = buildAcademyShadow({
+        setup: { ...structured, symbol, label: data.label }, events: aatasCalendarEvents,
+        decisionMs: rejectEntry.ts, slotId: academySlotId,
+      });
+      // Ditunggu agar finalisasi cohort yang dipanggil daemon sesudah seluruh pair tidak
+      // mendahului log ini. Error tetap ditelan: pencatatan tidak boleh menggagalkan analisa.
+      await redisCmd('LPUSH', 'aatas_reject_log:v1', JSON.stringify(rejectEntry))
         .then(() => redisCmd('LTRIM', 'aatas_reject_log:v1', '0', '199'))
         .catch(() => {});
     }
@@ -8493,6 +8559,11 @@ async function ohlcvAnalyzeHandler(req, res) {
         // karena ada teks bebas yang bisa dibaca ulang manusia/AI lain. Skema terstruktur
         // hanya menangkap pertanyaan yang sudah terpikirkan saat skema dibuat.
         ...(isAutoCall ? {
+          academy_slot_id: academySlotId,
+          academy_shadow: buildAcademyShadow({
+            setup: { ...structured, symbol, label: data.label }, events: aatasCalendarEvents,
+            decisionMs: Date.now(), slotId: academySlotId,
+          }),
           entry_execution: 'zone_touch_after_calendar',
           selected_sl_id: structured.selected_sl_id ?? null,
           selected_tp_id: structured.selected_tp_id ?? null,
@@ -8662,6 +8733,11 @@ async function ohlcvAnalyzeHandler(req, res) {
                     reasoning_note_reported: structured.reasoning_note_reported ?? null,
                     reasoning_note_truncated: structured.reasoning_note_truncated === true,
                     aatas_v: AATAS_PROMPT_VERSION,
+                    academy_slot_id: academySlotId,
+                    academy_shadow: mergeAcademyShadow(stalePending.academy_shadow, buildAcademyShadow({
+                      setup: { ...structured, symbol, label: data.label }, events: aatasCalendarEvents,
+                      decisionMs: Date.now(), slotId: academySlotId,
+                    })),
                   },
                 };
               } else {

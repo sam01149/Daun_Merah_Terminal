@@ -8,7 +8,7 @@ const assert = require('node:assert/strict');
 const {
   legsFromLabel, calEventMsWib, findHardNewsEvent, findRecentHardNewsEvent, firstNumber,
   levelsWithinTolerance, computeConsistency, AUTO_ENTRY_SYMBOL_MAP,
-  AUTO_ENTRY_PAIRS, BREAKING_NEWS_SKIP_WINDOW_MS,
+  AUTO_ENTRY_PAIRS, BREAKING_NEWS_SKIP_WINDOW_MS, buildAcademyCycleMeta,
   computeSurpriseRatio, findSurpriseEvent, SURPRISE_RATIO_THRESHOLD, SURPRISE_CURRENCIES,
 } = require('../../vps/daemon.js');
 
@@ -209,6 +209,15 @@ test('AUTO_ENTRY_SYMBOL_MAP: AUD/NZD & EUR/GBP (pengganti GBP/USD) terpetakan', 
 
 test('AUTO_ENTRY_SYMBOL_MAP: CHF/JPY (pair ke-5, 2026-08-08) terpetakan', () => {
   assert.deepEqual(AUTO_ENTRY_SYMBOL_MAP.frxCHFJPY, { symbol: 'CHFJPY=X', label: 'CHF/JPY' });
+});
+
+test('Academy cycle meta: satu slot deterministik membawa seluruh label cohort dan mengabaikan pair tak dikenal', () => {
+  const meta = buildAcademyCycleMeta(
+    ['frxEURUSD', 'tidak-ada', 'frxCHFJPY'],
+    Date.parse('2026-10-13T08:15:30Z'),
+  );
+  assert.equal(meta.slot_id, '2026-10-13T08:15Z:frxEURUSD+frxCHFJPY');
+  assert.deepEqual(meta.expected_labels, ['EUR/USD', 'CHF/JPY']);
 });
 
 // ── Plan X (2026-08-04): computeSurpriseRatio ────────────────────────────────
