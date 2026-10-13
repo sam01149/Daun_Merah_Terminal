@@ -14,7 +14,7 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
 > **Dibuat:** 2026-07-11 (session 157)
-> **Status provider DeepSeek (2026-09-16):** **PULIH & AKTIF KEMBALI.** User berhasil melakukan top-up $2,00. Kunci baru telah diset di `.env.local` bersama sakelar operator `DEEPSEEK_DISABLED=false`. Panggilan API terverifikasi normal (saldo $2,00 aktif, endpoint diagnostik `ohlcv_analyze` HTTP 200). Untuk Vercel produksi, pastikan `DEEPSEEK_API_KEY` dan `DEEPSEEK_DISABLED=false` diset di dashboard Vercel.
+> **Status provider DeepSeek (dicek live 2026-10-13):** **AKTIF.** Saldo resmi $1,36 (`is_available=true`, seluruhnya topped-up) dan sakelar lokal `DEEPSEEK_DISABLED=false`. Counter produksi hari ini menunjukkan Daun Merah 9 call dan AATAS/eksperimen 29 call. Proyeksi serta rekomendasi top-up ada di §9.
 > **Tujuan dokumen:** satu tempat untuk menjawab "fitur AI apa saja yang ada, dipanggil pakai model/provider apa, dan paling banyak dipakai berapa kali sehari" — supaya kalau ada laporan "AI error/limit habis", tinggal buka file ini dulu sebelum ngoprek kode.
 > **Vendor & non-AI infra:** lihat [daun_merah_vendor.md](daun_merah_vendor.md).
 > **Riset perbandingan provider (kenapa provider ini yang dipilih):** lihat [daun_merah.md § Research: Free AI Inference API Providers](daun_merah.md#research-free-ai-inference-api-providers-2026-05-28).
@@ -23,7 +23,7 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 
 ## 1. Cara baca dokumen ini (ringkas dulu, baru detail)
 
-Aplikasi ini punya **4 fitur yang memanggil AI**. DeepSeek berbayar dari saldo top-up user (bukan free tier); Gemini gratis. "Gratis" tetap ada plafonnya — baik dari provider aslinya maupun dari **jatah harian buatan sendiri** (`api/_ai_guard.js`) yang dipasang supaya satu fitur nakal (loop bug, di-spam) tidak menghabiskan kuota gratis punya fitur lain.
+Aplikasi ini punya beberapa fitur yang memanggil AI, termasuk Ringkasan, AATAS, fungsi analisa manual, fundamental, jurnal, kritik, pre-entry, dan review posisi. DeepSeek berbayar dari saldo top-up user (bukan free tier); Gemini gratis. "Gratis" tetap ada plafonnya — baik dari provider aslinya maupun dari **jatah harian buatan sendiri** (`api/_ai_guard.js`) yang dipasang supaya satu fitur nakal (loop bug, di-spam) tidak menghabiskan kuota gratis punya fitur lain.
 
 Ada 2 lapis pembatas yang perlu dibedakan:
 
@@ -215,7 +215,7 @@ Ini lapisan pembatas paling penting untuk dipahami. **Jatah ini dibagi rata ke s
 | Provider | Jatah harian (buatan sendiri) | Limit resmi provider | Dipakai untuk |
 |---|---|---|---|
 | Google AI Studio (Gemini) | **16 request/hari (buatan sendiri, DIFIX 2026-08-27** — sebelumnya 200, sama sekali tidak melindungi karena Google sudah menolak duluan di request ke-21) | ~~10 RPM, 1.500 RPD~~ **TERBUKTI SALAH 2026-08-02**: alias `gemini-flash-latest` resolve ke `gemini-3.6-flash`, limit REAL cuma **20 request/HARI** (429 `RESOURCE_EXHAUSTED` terverifikasi live, quotaId `GenerateRequestsPerDayPerProjectPerModel-FreeTier`) | **PRIMARY/SATU-SATUNYA Analisa Fundamental & AI Coach Jurnal** (sejak 2026-08-12) + fallback Call 1/2 Ringkasan Berita — 2 fitur primary BERBAGI kuota 20/hari yang sama Google, worst-case gabungan (Fundamental 8 + Jurnal ±5-10, keduanya termasuk retry) bisa dekat sekali ke 20. **Opsi API key Gemini KEDUA (pola sama split Upstash Redis) DITUNDA 2026-08-27** — user cek pemakaian real, masih sedikit/jauh di bawah 16/hari, jadi belum perlu. Revisit kalau `ai_budget.gemini` (`admin?action=health`) sering mendekati 16 |
-| DeepSeek API resmi | 50 request/hari (PAGAR BIAYA — provider berbayar dari saldo top-up user, bukan free tier) | Tidak ada limit request; yang membatasi saldo (top-up $2, 2026-07-18, burn rate live ±$0.0033/generate) | **PRIMARY/SATU-SATUNYA** Call 1/2/3/4 Ringkasan Berita, Analisa AI per Pair, Pre-Entry Check, Review Posisi Virtual (sejak 2026-08-12, setelah SambaNova diputus kontrak) |
+| DeepSeek API resmi | 50 request/hari untuk pool publik + 35/hari untuk pool AATAS/eksperimen (PAGAR BIAYA — provider berbayar dari saldo top-up user, bukan free tier) | Biaya berdasarkan token dan tarif peak/off-peak; saldo live $1,36 pada 2026-10-13. Burn-rate gabungan aktual sejak 2026-09-16 ≈ $0,0237/hari | **PRIMARY/SATU-SATUNYA** Call 1/2/3/4 Ringkasan Berita, Analisa AI per Pair, Pre-Entry Check, AATAS, Gate A, dan Review Posisi Virtual |
 | Gemini `gemini-flash-lite-latest` — bucket `gemini_newstranslate` (2026-09-06, S351-352, ganti dari Mistral — lihat baris #10 §2 & `daun_merah_vendor.md`) | 800 request/hari (= 800 PANGGILAN, bukan 800 headline — 1 panggilan berisi batch sampai 20 headline), **TERPISAH** dari bucket `gemini` (16/hari, dipakai Fundamental/Jurnal via model `gemini-flash-latest` BEDA) | Model `-lite` generasi sebelumnya terdokumentasi 1.000 RPD (`daun_merah_riset.md`) — BELUM diverifikasi live di skala produksi penuh untuk alias `-latest` saat ini, cuma 3 panggilan tes sebelum deploy (semua sukses, lihat `daun_merah.md` S351-352) | **HANYA** Translate NEWS (#10). Model BEDA dari yang dipakai Fundamental/Jurnal, jadi pool kuota Google seharusnya terpisah — TAPI belum ada bukti live skala penuh, pantau `ai_budget.gemini_newstranslate` (`admin?action=health`) beberapa hari pertama |
 
 **Koreksi Translate NEWS (2026-09-24).** Baris bucket di atas yang masih menyebut `gemini-flash-lite-latest` adalah kondisi historis sebelum alias tersebut dihentikan Google. Bucket dan angka guard tetap sama, tetapi model aktifnya sekarang `gemini-3.5-flash-lite` dengan cadangan `gemini-3.1-flash-lite` khusus respons 400/404. Tidak ada alias `-latest` dalam jalur penerjemahan.
@@ -244,7 +244,7 @@ Ini jawaban langsung untuk pertanyaan "penggunaan paling banyak fitur AI itu ber
 
 ### Analisa AI per Pair
 
-- **Otomatis:** 3× sehari, khusus XAU/USD saja (lewat DeepSeek, ikut cron Ringkasan Berita).
+- **Otomatis:** tidak ada lagi generator terpisah untuk tab Analisa manual. Keputusan dan proyeksi pair otomatis sekarang menjadi tanggung jawab AATAS lewat jalur `ohlcv_analyze&auto=1`; pencarian kode 2026-10-13 mengonfirmasi `market-digest.js` tidak memanggil `ohlcv_analyze`.
 - **Manual:** dibatasi 5 klik/menit/IP oleh server dan 90 detik cooldown/device oleh UI. **Setiap klik = 1 request** (DeepSeek primary/satu-satunya sejak 2026-08-12). Tidak ada cache-gate sebelum generate (beda dari Analisa Fundamental), jadi tiap klik selalu makan jatah.
 
 ### Analisa Fundamental
@@ -261,7 +261,7 @@ Ini jawaban langsung untuk pertanyaan "penggunaan paling banyak fitur AI itu ber
 |---|---|---|
 | Ringkasan Berita (otomatis, 3× cron) | 3-12 request DeepSeek (Call 1-4, fallback Call 1/2: Gemini) | DeepSeek → Gemini (Call 1/2 saja) |
 | Ringkasan Berita (manual, ~15-20× klik/hari wajar) | ±15-20 request DeepSeek | DeepSeek → Gemini (Call 1/2 saja) |
-| Analisa AI per Pair (otomatis + manual) | ±63-78 request | DeepSeek (primary/satu-satunya) |
+| Analisa AI per Pair manual | Tidak masuk baseline; hanya bertambah bila user menekan tombol | DeepSeek (primary/satu-satunya) |
 | Analisa Fundamental | maksimal 8 request | Gemini (primary/satu-satunya, retry 1x + jeda 2s) |
 | AI Coach Jurnal | ±5-10 request | Gemini (primary/satu-satunya, retry 1x + jeda 2s) |
 | Auto-Entry Virtual + Uji Konsistensi LLM (Plan U-3, §3.6) | ±20-26 request (AATAS v2, 2026-08-25: tiap kandidat 2 panggilan — Call 1 makro + Call 2 teknikal; Gate 1 gagal berhenti di 1. Probe konsistensi 3×2) | DeepSeek eksperimen (pool `deepseek_experimental`, 35/hari) |
@@ -306,3 +306,17 @@ Kalau gagal total terjadi, user akan melihat pesan "AI tidak tersedia — coba b
 - Cek pemakaian real-time tanpa nambah counter: `getUsage(provider)` di `_ai_guard.js`, biasanya diekspos lewat `admin?action=health`.
 - Kalau ada model/provider baru mau dicoba, selalu tes dulu via query param diagnostik terisolasi (pola `?test_gemini=1`/`?test_mistral=1`/`?test_nvidia=1`/`?test_deepseek=1`/`?test_deepseek_pro=1` yang masih ada) sebelum jadi primary permanen — pelajaran dari beberapa model yang "katanya gratis" ternyata 403/subscription-required saat dites nyata (lihat riwayat di [daun_merah.md](daun_merah.md)).
 - `?test_deepseek_pro=1` (2026-08-17, ada di Call 1 `market-digest.js` DAN `ohlcv_analyze` `admin.js`) — bandingkan `deepseek-v4-pro` (3x harga per token vs `deepseek-v4-flash`) di data live identik. Hasil: di Call 1, pro lebih patuh aturan prompt & menangkap 1 tema tambahan (tapi 2,2x lebih lambat) — **model produksi DIGANTI ke pro untuk Call 1** (2026-08-17, lihat §7); di `ohlcv_analyze`, hasilnya nyaris identik (pro TIDAK memberi manfaat berarti di titik ini) — **model produksi TETAP flash** di sini. Kedua response diagnostik juga menyertakan field `debug_prompt` (system+user message persis yang dikirim ke model) untuk uji manual independen di web resmi DeepSeek. Detail lengkap di [daun_merah.md](daun_merah.md) Session 317 lanjutan 2.
+
+---
+
+## 9. Proyeksi Saldo sampai Akhir 2026 (audit 2026-10-13)
+
+Tujuan operasional sampai 31 Desember 2026 adalah menjadikan AATAS mesin belajar: mengumpulkan dataset keputusan yang bersih, menyimpan alasan dan konteks yang dapat diaudit, dan meningkatkan kualitas keputusan tanpa menambah entry manual. Generator Analisa lama tidak dimasukkan ke baseline; Daun Merah tetap dihitung untuk Ringkasan/briefing dan thesis yang memasok konteks sistem.
+
+**Data live:** saldo resmi DeepSeek $1,36 (`is_available=true`, topped-up $1,36, granted $0). Saldo terverifikasi 16 September adalah $2,00, sehingga konsumsi nyata 27 hari = $0,64 atau rata-rata **$0,0237/hari**. Counter produksi mendukung pola ini: 12 Oktober mencatat 8 call pool publik + 27 eksperimen, dan 13 Oktober 9 + 29. Pool eksperimen terutama AATAS dua tahap, Gate A, uji konsistensi, dan review posisi; pool publik terutama tiga siklus Daun Merah per hari.
+
+**Proyeksi 80 hari dari 13 Oktober sampai 1 Januari:** konsumsi baseline ≈ **$1,90**. Saldo sekarang kurang ≈ **$0,54** dan, bila burn-rate tidak berubah, diperkirakan habis sekitar **9 Desember 2026**. Dengan buffer 30%, kebutuhan saldo dari sekarang ≈ $2,47 (perlu tambah $1,11). Dengan skenario volume/biaya naik 50% karena pengumpulan data lebih masif, kebutuhan ≈ $2,84 (perlu tambah $1,48).
+
+**Keputusan anggaran yang disarankan:** top-up **$2,00**. Saldo sesudah top-up menjadi sekitar $3,36; estimasi sisa 31 Desember ≈ $1,46 pada baseline atau ≈ $0,52 bila konsumsi naik 50%. Shadow feature yang hanya menghitung/menyimpan data deterministik tidak menambah biaya DeepSeek; fitur baru yang menambah satu panggilan LLM per kandidat wajib dihitung ulang terhadap buffer ini.
+
+Harga resmi yang berlaku saat audit memakai tarif peak/off-peak dan alias `deepseek-v4-flash` kini dirutekan ke V4.1-Flash. Karena komposisi token, cache hit, Gate 1 short-circuit, dan waktu peak berbeda per call, burn-rate saldo live dipakai sebagai estimator utama; tabel harga terbaru ada di `daun_merah_vendor.md`.

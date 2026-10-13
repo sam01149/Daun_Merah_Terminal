@@ -273,3 +273,35 @@ Follow-up langsung dari ide #1 di bawah. User top-up US$2 (saldo top-up TIDAK ex
 
 - **CepatCloud.id:** VPS Linux murni gratis selamanya (1 vCPU, 2GB RAM) khusus untuk developer Indonesia. Hanya butuh verifikasi Email & WhatsApp.
 - **Hugging Face Spaces (Docker SDK):** ~~Container virtual gratis 2 vCPU/16GB~~ **BASI — per 2026-07-18 Docker/Gradio Space butuh plan PRO berbayar (verified langsung di halaman new-space); free tier tinggal Static tanpa compute.**
+
+---
+
+## Audit Biaya DeepSeek AATAS + Daun Merah sampai Akhir 2026 (2026-10-13)
+
+### Pertanyaan
+
+Berapa saldo DeepSeek saat ini dan berapa kebutuhan sampai 31 Desember 2026 bila AATAS difokuskan untuk belajar, mengumpulkan data berkualitas, serta menghasilkan keputusan otomatis; Daun Merah tetap membuat briefing/prompt, sedangkan generator Analisa manual tidak lagi berjalan otomatis?
+
+### Bukti produksi
+
+- Endpoint resmi `GET /user/balance`: saldo **US$1,36**, `is_available=true`, granted $0, topped-up $1,36.
+- Titik awal terverifikasi 2026-09-16: $2,00. Pemakaian sampai 2026-10-13: $0,64 dalam 27 hari = **$0,0237/hari**.
+- Counter Redis: 2026-10-12 pool publik 8 dan eksperimen 27; 2026-10-13 pool publik 9 dan eksperimen 29. Angka eksperimen masih di bawah guard 35/hari.
+- Jadwal kode: Daun Merah tiga siklus/hari; AATAS lima pair pada dua slot hari kerja + satu slot AUD/NZD + tiga probe konsistensi. Call AATAS dapat berhenti setelah Call 1 bila Gate 1 gagal, sehingga jumlah request aktual lebih rendah dari maksimum mekanis.
+- Tidak ada panggilan `ohlcv_analyze` dari `market-digest.js`; Analisa manual di luar AATAS dikeluarkan dari baseline sesuai pola pemakaian user.
+
+### Perhitungan
+
+| Skenario | Kebutuhan 13 Okt-31 Des | Kekurangan dari saldo $1,36 |
+|---|---:|---:|
+| Burn-rate aktual tetap | $1,90 | $0,54 |
+| Baseline + buffer 30% | $2,47 | $1,11 |
+| Konsumsi naik 50% | $2,84 | $1,48 |
+
+Tanpa top-up, proyeksi saldo habis sekitar 9 Desember. Rekomendasi operasional adalah **top-up $2,00**, bukan sekadar menutup kekurangan $0,54, karena memberi ruang terhadap pertumbuhan pengumpulan data, variasi Gate A/review posisi, cache miss, dan perubahan harga. Setelah top-up, estimasi saldo akhir tahun sekitar $1,46 pada baseline atau $0,52 pada skenario konsumsi +50%.
+
+### Batas kesimpulan
+
+Saldo API hanya memberi total dua desimal, bukan ledger biaya per fitur. Karena itu pemisahan biaya AATAS versus Daun Merah tidak dapat dihitung persis dari dolar; counter request dipakai untuk komposisi, sedangkan selisih saldo dipakai untuk total biaya. Estimasi perlu diaudit ulang bila model, frekuensi, jumlah pair, prompt, atau jumlah panggilan LLM shadow berubah.
+
+Sumber resmi: [DeepSeek Get User Balance](https://api-docs.deepseek.com/api/get-user-balance/), [DeepSeek Models & Pricing](https://api-docs.deepseek.com/quick_start/pricing).
