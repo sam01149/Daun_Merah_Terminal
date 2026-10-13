@@ -314,7 +314,7 @@ Sumber resmi: [DeepSeek Get User Balance](https://api-docs.deepseek.com/api/get-
 | Volume hari kerja yang diamati | 38 request pada 2026-10-13; perkiraan komposisi 17 Pro + 21 Flash | Tetap 38 request jika tidak ada timeout |
 | Burn-rate | $0,0237/hari rata-rata kalender sejak 16 September | Estimasi 1,6-2,2x as-is, sekitar $0,0379-$0,0521/hari |
 | Kebutuhan sampai akhir tahun | $1,90 baseline; $2,47 dengan buffer 30% | $3,03-$4,17 baseline; $3,94-$5,42 dengan buffer 30% |
-| Top-up aman dari saldo $1,36 | $2 | $4; $5 bila volume AI juga diperluas |
+| Top-up dari saldo $1,36 | $2 aman | $4 batas praktis bila volume tetap; $5 aman untuk ujung estimasi + buffer/ekspansi |
 | Bukti kualitas internal | Pro sudah dipasang pada dua titik yang pernah menunjukkan manfaat keputusan | Belum ada bukti bahwa Pro meningkatkan Call 2/lokasi, Gate A, atau review; tes `ohlcv_analyze` lama nyaris identik |
 | Latency/reliabilitas | Jalur berurutan mencampur Pro + Flash agar masih punya headroom | Pro historis ~2,2x lebih lambat; dua Pro berurutan + Gate A berisiko melewati `maxDuration` 60 detik dan menghilangkan sampel |
 | Dampak dataset | Cohort/policy tetap konsisten | Wajib policy/cohort baru; jangan campur dengan baseline sebelum A/B cukup |
