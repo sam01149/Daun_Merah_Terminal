@@ -401,7 +401,7 @@ if (localStorage.getItem('dm_dev_theme') === 'light') {
     <div class="card">
       <h2>Trigger Analisa Manual (auto=1)</h2>
       <div class="warnbox">
-        <b>PERINGATAN:</b> tombol di bawah IDENTIK dengan cron terjadwal daemon VPS — hasilnya nulis entry SUNGGUHAN ke setup_log_auto:v1 dengan source:'auto', ikut kehitung di statistik eksperimen (gate n≥100). Klik manual = intervensi ke sample yang seharusnya murni otomatis tanpa campur tangan. Jangan dipakai kecuali BENAR-BENAR sengaja (misal setelah perbaikan bug, butuh 1 sample tambahan) — terkunci ganda di bawah supaya tidak ke-pencet.
+        <b>PERINGATAN:</b> tombol di bawah IDENTIK dengan cron terjadwal daemon VPS — hasilnya nulis entry SUNGGUHAN ke setup_log_auto:v1 dengan source:'auto', ikut kehitung di statistik eksperimen (gate n≥30 global DAN n≥30 per pair). Klik manual = intervensi ke sample yang seharusnya murni otomatis tanpa campur tangan. Jangan dipakai kecuali BENAR-BENAR sengaja (misal setelah perbaikan bug, butuh 1 sample tambahan) — terkunci ganda di bawah supaya tidak ke-pencet.
       </div>
       <label style="margin-top:12px;"><input type="checkbox" id="triggerUnlock" style="width:auto;vertical-align:middle;"> Saya sengaja mau trigger manual dan paham ini akan tercatat sebagai source:'auto'</label>
       <div class="pairbtns" id="pairBtns" style="margin-top:10px;"></div>
@@ -1456,7 +1456,7 @@ if (localStorage.getItem('dm_dev_theme') === 'light') {
     const ok = confirm(
       `Trigger analisa auto=1 untuk ${btn.dataset.label}?\n\n` +
       `Ini akan tercatat sebagai source:'auto' di setup_log_auto:v1 — SAMA seperti cron ` +
-      `terjadwal, ikut masuk statistik eksperimen (gate n>=100). Lanjutkan hanya kalau ` +
+      `terjadwal, ikut masuk statistik eksperimen (gate n>=30 global DAN n>=30 per pair). Lanjutkan hanya kalau ` +
       `memang sengaja.`
     );
     if (!ok) return;
