@@ -330,6 +330,18 @@ Dipicu pertanyaan langsung apakah BENTUK workflow AATAS (bukan hasil tradingnya)
 
 ---
 
+## 16. Prediksi level harga emas dengan LSTM/GRU (relevan: XAU/USD dan eksperimen ML)
+
+| Paper | Tipe | Temuan inti |
+|---|---|---|
+| Marwondo & Hidayah (dipublikasikan 2023; issue 2022), *In Search*, ["Perbandingan Algoritma Long Short-Term Memory (LSTM) dan Gated Recurrent Unit (GRU) untuk Prediksi Harga Emas Dunia"](https://jurnalunibi.unibi.ac.id/ojs/index.php/in_search/article/view/600), DOI [10.37278/insearch.v21i2.600](https://doi.org/10.37278/insearch.v21i2.600) | Method (bukti terbatas) | Data benchmark LBMA 1968-2022 dirata-ratakan dari fixing AM/PM, diurutkan kronologis, dibagi 70/30, lalu diprediksi dari 60 observasi sebelumnya. Dengan satu konfigurasi empat recurrent layer x 64 unit, tanh, dropout, Adam dan 150 epoch, GRU dilaporkan memiliki error lebih rendah daripada LSTM. |
+
+**Catatan kritis setelah membaca PDF lengkap (2026-10-14):** hasil hanya mendukung klaim sempit bahwa GRU menang atas LSTM **pada konfigurasi dan satu split tersebut**. Paper tidak membandingkan keduanya dengan baseline naif *last value/random walk*, tidak memakai walk-forward lintas rezim, tidak melaporkan pengulangan seed/ketidakpastian, dan tidak menguji return, arah, biaya transaksi, drawdown, atau P/L. Status scaler juga tidak cukup rinci untuk memastikan MinMaxScaler di-fit hanya pada data training. Angka tabel tidak konsisten secara matematis: MSE 0,00017 dan 0,00011 seharusnya memberi RMSE sekitar 0,01304 dan 0,01049, bukan 0,1143 dan 0,1087. Error juga dilaporkan pada skala normalisasi tanpa konversi ke USD, sehingga besar kesalahan praktis tidak dapat dibaca. Kode screenshot mengompilasi regresi dengan metrik `accuracy`, yang tidak bermakna untuk target kontinu, walau kesimpulan paper memakai error.
+
+**Implikasi untuk Daun Merah:** paper ini berguna sebagai contoh implementasi pendidikan dan hipotesis bahwa GRU yang lebih sederhana dapat lebih efisien daripada LSTM. Ia bukan bukti adanya edge trading XAU/USD dan tidak cukup untuk mengganti pipeline keputusan yang berjalan. Model level-harga seperti ini baru layak diuji sebagai eksperimen shadow terisolasi jika mengalahkan baseline *last value* pada walk-forward, scaler train-only, metrik sesudah inverse transform dalam USD/return, beberapa seed, serta hasil bersih setelah spread/slippage.
+
+---
+
 ## Cara pakai file ini
 
 Sebelum memulai riset/fitur makro baru di Daun Merah:
