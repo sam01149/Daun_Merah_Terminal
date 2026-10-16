@@ -342,6 +342,20 @@ Dipicu pertanyaan langsung apakah BENTUK workflow AATAS (bukan hasil tradingnya)
 
 ---
 
+## 17. Pembelian saham oleh bank sentral dan interaksi dengan Yield Curve Control (relevan: konteks lintas-aset JPY, bukan sinyal FX)
+
+| Paper | Tipe | Temuan inti |
+|---|---|---|
+| Fukui & Yagasaki (2026), NBER Working Paper 35886, ["The Impact of Central Bank Stock Purchases: Evidence from Discontinuities in Policy Rules"](https://www.nber.org/papers/w35886), DOI 10.3386/w35886 | Method/Application (working paper, belum peer-reviewed) | Memakai *regression discontinuity* pada ambang tidak resmi pembelian ETF Bank of Japan. Sampel 15 Desember 2010-akhir 2020 mencakup 668 intervensi; pembelian tipikal sekitar 0,01% kapitalisasi pasar. Sebelum Yield Curve Control (YCC), pembelian menaikkan yield JGB 10 tahun sekitar 1-1,5 bp dan tidak memberi dampak harga saham yang terdeteksi setelah hari pertama. Setelah YCC menahan yield 10 tahun sekitar 0%, respons yield menjadi mendekati nol dan harga saham naik sekitar 0,2-0,3% hingga beberapa hari. Interpretasi penulis: tekanan aliran dana diserap yield ketika suku bunga boleh bergerak, tetapi diserap harga saham ketika yield dipatok. |
+
+**Kekuatan metodologi:** desain membandingkan hari ketika return TOPIX sesi pagi tepat di bawah vs tepat di atas ambang intervensi yang diestimasi, sehingga lebih dekat ke variasi kuasi-acak daripada regresi korelasi biasa. Diskontinuitas probabilitas intervensi sangat kuat (lonjakan 86,4 poin persentase; statistik instrumen jauh di atas ambang weak-instrument), tidak ditemukan penumpukan observasi di sekitar cutoff, pre-trend, atau pola placebo yang mendukung penjelasan alternatif. Hasil juga tahan terhadap perubahan bandwidth, polinomial, kontrol intervensi/return/yield sebelumnya, serta penghapusan minggu perubahan cutoff.
+
+**Batas penerapan:** estimasi adalah efek lokal di sekitar cutoff kebijakan, bukan efek universal setiap pembelian atau pembelian berukuran jauh lebih besar. Perbandingan sebelum/sesudah YCC bukan eksperimen acak atas YCC; rezim pasar lain juga berubah, walau penulis mengulang estimasi pada jendela satu tahun dan subsampel lebih halus. Mekanisme general-equilibrium konsisten dengan hasil, tetapi bukan satu-satunya mekanisme yang terbukti secara langsung. Sampel hanya Jepang 2010-2020, dengan bank sentral membeli ETF secara langsung; hasil tidak boleh dipindahkan otomatis ke QE obligasi, negara lain, atau kondisi kebijakan sekarang. Paper juga masih berstatus NBER working paper dan belum peer-reviewed.
+
+**Implikasi untuk Daun Merah:** berguna sebagai prinsip konteks lintas-aset: dampak intervensi tidak cukup dibaca dari besar aliran dana; perlu ditanya instrumen harga mana yang masih boleh menyesuaikan dalam rezim kebijakan. Namun paper tidak menguji USD/JPY, CHF/JPY, nilai tukar, atau strategi entry, sehingga tidak boleh menjadi driver arah, gate, atau rule auto-entry. Tidak ada perubahan kode/prompt yang dibenarkan. Jika berita pembelian ETF BoJ atau kebijakan pengendalian yield muncul, temuan ini hanya boleh dipakai sebagai konteks penjelas hubungan TOPIX-JGB dan harus dipadukan dengan kebijakan BoJ serta data pasar saat kejadian, bukan dijadikan pola historis permanen.
+
+---
+
 ## Cara pakai file ini
 
 Sebelum memulai riset/fitur makro baru di Daun Merah:
