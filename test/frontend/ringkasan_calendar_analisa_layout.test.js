@@ -42,14 +42,34 @@ test('kalender Ringkasan tetap nyaman: scroll internal desktop dan mengikuti hal
   assert.match(html, /grid-template-columns:46px repeat\(3,minmax\(0,1fr\)\)/);
 });
 
-test('Analisa memakai tiga zona dan urutan ponsel mengutamakan keputusan lalu narasi', () => {
+test('Analisa memakai tiga zona; kartu kanan menumpuk rapat tanpa dipengaruhi tinggi narasi', () => {
   const panel = between('<!-- ANALISA PANEL -->', '<!-- CALENDAR PANEL -->');
   assert.match(panel, /class="analisa-context-col"/);
   assert.match(panel, /class="analisa-main-col"/);
   assert.match(panel, /class="analisa-decision-col no-print"/);
   assert.match(html, /grid-template-areas:"execution" "main" "positioning" "context"/);
-  assert.match(html, /grid-template-areas:"main main" "context execution" "context positioning"/);
-  assert.match(html, /grid-template-areas:"context main execution" "context main positioning"/);
+  assert.match(html, /grid-template-areas:"main main" "context decision"/);
+  assert.match(html, /grid-template-areas:"context main decision"/);
+  assert.match(html, /\.analisa-decision-col\s*\{[^}]*grid-area:decision;[^}]*display:grid;[^}]*gap:10px;/s);
+  assert.match(html, /\.analisa-decision-col > #analisaExecutionPanel,[\s\S]*?#analisaPositioningPanel\s*\{\s*grid-area:auto;/);
+});
+
+test('ruang atas Analisa dipadatkan pada desktop dan ponsel', () => {
+  assert.match(html, /#analisaPanel\s*\{\s*padding-top:0;/);
+  assert.match(html, /@media \(min-width: 768px\)[\s\S]*?\.analisa-inner\s*\{\s*padding:\s*8px 24px 28px;/);
+  assert.match(html, /@media \(max-width: 480px\)[\s\S]*?\.analisa-inner\s*\{\s*padding:8px 10px 76px;/);
+  assert.match(html, /\.analisa-header\s*\{[^}]*margin-bottom:\s*8px;/);
+});
+
+test('arah eksekusi dan konfirmasi positioning memakai warna semantik yang aman', () => {
+  const decision = between('function _analisaDecisionRow(key, value, tone = \'\')', '\nfunction renderAnalisaDecisionPanel');
+  const positioning = between('function renderAnalisaPositioning()', '\nfunction renderAnalisa()');
+  assert.match(decision, /tone === 'bullish' \|\| tone === 'bearish' \|\| tone === 'neutral'/);
+  assert.match(html, /_analisaDecisionRow\('Arah', direction, directionTone\)/);
+  assert.match(positioning, /verdict\.badgeCls === 'strong-up'/);
+  assert.match(positioning, /analisa-position-confirm \$\{confirmTone\}/);
+  assert.match(html, /\.analisa-position-confirm\.strong-up\s*\{\s*color:var\(--green\);\s*font-weight:700;/);
+  assert.match(html, /\.analisa-position-confirm\.strong-down\s*\{\s*color:var\(--red\);\s*font-weight:700;/);
 });
 
 test('COT dan retail pada Analisa diberi batas sebagai indikator tambahan', () => {

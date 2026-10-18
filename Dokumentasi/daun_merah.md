@@ -11,12 +11,20 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-10-18 (Session 390 — Perbaikan Analisa dan kalender ekonomi Ringkasan)
+> **Last updated:** 2026-10-18 (Session 391 — Pemadatan layout dan warna sinyal Analisa)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 391 (2026-10-18) — Pemadatan layout dan warna sinyal Analisa
+
+**Layout.** Ruang kosong di atas konten Analisa dikurangi dengan menghapus padding atas ganda antara `feed-scroll` dan `.analisa-inner`, menurunkan padding desktop menjadi 8 px, serta merapatkan jarak chip pair, header pair, dan workspace. Akar gap besar antara Ringkasan Eksekusi dan Positioning Tambahan adalah kedua kartu sebelumnya ditempatkan pada dua baris grid terpisah sementara narasi tengah merentang kedua baris; kontribusi tinggi narasi membagi tinggi baris dan mendorong kartu kedua jauh ke bawah. Pada tablet dan desktop, keduanya kini berada dalam satu kolom keputusan yang menumpuk mandiri dengan jarak tetap 10 px. Urutan ponsel tetap Ringkasan Eksekusi → narasi → Positioning Tambahan → konteks teknikal.
+
+**Warna semantik.** Nilai Arah pada Ringkasan Eksekusi kini berwarna hijau untuk Bullish, merah untuk Bearish, dan redup untuk Neutral. Nilai Konfirmasi pada Positioning Tambahan memakai peta yang sama melalui `badgeCls` internal (`strong-up`, `strong-down`, `neutral`); kelas warna dibatasi lewat whitelist sebelum dirender, sementara teks eksternal tetap di-escape.
+
+**Verifikasi.** Uji visual pada viewport desktop 1.600 px menunjukkan jarak atas 8 px dan jarak antar kartu kanan tepat 10 px, walau narasi tengah dibuat setinggi 620 px. Pada ponsel 390 px, jarak atas tetap 8 px, urutan lama tetap terjaga, serta tidak ada overflow horizontal. Warna Bullish dan Konfirmasi naik terukur sama-sama memakai `rgb(31, 110, 74)`. Regresi fokus lulus 23/23 dan suite penuh `npm test` lulus 1.419/1.419. `APP_VERSION` dinaikkan menjadi `2026.10.18.9`; tidak ada panggilan AI berbayar atau transaksi selama verifikasi.
 
 ## Changelog Session 390 (2026-10-18) — Perbaikan Analisa dan kalender ekonomi Ringkasan
 

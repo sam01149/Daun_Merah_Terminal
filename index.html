@@ -847,8 +847,9 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 }
 
 /* ── ANALISA PANEL ── */
-.analisa-inner { padding: 16px; max-width: 1540px; margin: 0 auto; }
-.analisa-pairs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 16px; }
+#analisaPanel { padding-top:0; }
+.analisa-inner { padding: 10px 16px 16px; max-width: 1540px; margin: 0 auto; }
+.analisa-pairs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
 .analisa-chip {
   padding: 5px 12px; border-radius: 20px; border: 1px solid var(--border);
   background: var(--surface); color: var(--text); font-size: 11px;
@@ -869,7 +870,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .analisa-pair-more { position: relative; display: inline-block; }
 .analisa-pair-more .tek-pair-dropdown { width: 220px; }
 .analisa-pair-more.open .tek-pair-dropdown { display: block; }
-.analisa-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.analisa-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
 .analisa-pair-label { font-size: 15px; font-weight: 600; font-family: 'DM Mono', monospace; }
 .analisa-ts-label { font-size: 10px; color: var(--muted); }
 .analisa-tf-card {
@@ -933,6 +934,12 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .analisa-decision-row:last-child { padding-bottom:0; border-bottom:0; }
 .analisa-decision-key { font-size:8px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
 .analisa-decision-val { min-width:0; font-size:10px; color:var(--text); line-height:1.45; overflow-wrap:anywhere; }
+.analisa-decision-val.bullish,
+.analisa-position-confirm.strong-up { color:var(--green); font-weight:700; }
+.analisa-decision-val.bearish,
+.analisa-position-confirm.strong-down { color:var(--red); font-weight:700; }
+.analisa-decision-val.neutral,
+.analisa-position-confirm.neutral { color:var(--muted); font-weight:700; }
 .analisa-position-note { font-size:9px; color:var(--muted); line-height:1.5; margin-bottom:9px; }
 .analisa-position-stack { display:grid; gap:7px; }
 .analisa-position-row {
@@ -1959,7 +1966,7 @@ body.light-theme .cal-date-input { color-scheme: light; }
   .ringkasan-text { font-size: 14px; line-height: 1.8; }
   /* Analisa memakai workspace lebar: struktur pasar, narasi utama, dan keputusan
      eksekusi mendapat kolom masing-masing pada breakpoint desktop. */
-  .analisa-inner { padding: 20px 24px 28px; max-width: 1540px; margin: 0 auto; }
+  .analisa-inner { padding: 8px 24px 28px; max-width: 1540px; margin: 0 auto; }
   .cb-section { padding: 10px 24px 8px; }
   .cal-toolbar { padding: 9px 24px 7px; }
   .cal-panel-inner { padding: 4px 24px 24px; }
@@ -2057,9 +2064,17 @@ body.light-theme .cal-date-input { color-scheme: light; }
   }
   #analisaPanel .analisa-workspace {
     grid-template-columns:minmax(0,1fr) minmax(0,1fr);
-    grid-template-areas:"main main" "context execution" "context positioning";
+    grid-template-areas:"main main" "context decision";
     gap:16px;
   }
+}
+
+@media (min-width: 768px) {
+  #analisaPanel .analisa-decision-col {
+    grid-area:decision; display:grid; gap:10px; align-self:start; min-width:0;
+  }
+  #analisaPanel .analisa-decision-col > #analisaExecutionPanel,
+  #analisaPanel .analisa-decision-col > #analisaPositioningPanel { grid-area:auto; }
 }
 
 @media (min-width: 1200px) {
@@ -2070,7 +2085,7 @@ body.light-theme .cal-date-input { color-scheme: light; }
   }
   #analisaPanel .analisa-workspace {
     grid-template-columns:minmax(250px,300px) minmax(520px,1fr) minmax(280px,320px);
-    grid-template-areas:"context main execution" "context main positioning";
+    grid-template-areas:"context main decision";
     gap:16px;
   }
 }
@@ -2078,8 +2093,8 @@ body.light-theme .cal-date-input { color-scheme: light; }
 @media (max-width: 480px) {
   .nvtab { padding: 10px 11px; font-size: 11px; }
   .ftab  { padding: 6px 9px;  font-size: 8px; }
-  .analisa-inner { padding:12px 10px 76px; }
-  .analisa-pairs { margin-bottom:12px; }
+  .analisa-inner { padding:8px 10px 76px; }
+  .analisa-pairs { margin-bottom:8px; }
   .analisa-header { align-items:flex-start; gap:8px; }
   .analisa-ts-label { text-align:right; line-height:1.45; }
   .analisa-side-card { padding:11px 12px; }
@@ -4684,7 +4699,7 @@ window.addEventListener('DOMContentLoaded', () => _updateNewsLangBtn());
 
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.10.18.8';
+const APP_VERSION = '2026.10.18.9';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
@@ -7317,9 +7332,10 @@ async function analisaLoadTrackRecord(symbol) {
   } catch (e) { /* track record opsional — jangan ganggu hasil analisa */ }
 }
 
-function _analisaDecisionRow(key, value) {
+function _analisaDecisionRow(key, value, tone = '') {
   if (value === null || value === undefined || String(value).trim() === '') return '';
-  return `<div class="analisa-decision-row"><span class="analisa-decision-key">${escHtml(key)}</span><span class="analisa-decision-val">${escHtml(String(value))}</span></div>`;
+  const safeTone = tone === 'bullish' || tone === 'bearish' || tone === 'neutral' ? tone : '';
+  return `<div class="analisa-decision-row"><span class="analisa-decision-key">${escHtml(key)}</span><span class="analisa-decision-val ${safeTone}">${escHtml(String(value))}</span></div>`;
 }
 
 function renderAnalisaDecisionPanel() {
@@ -7339,6 +7355,7 @@ function renderAnalisaDecisionPanel() {
   const statusClass = stale || rejected ? 'blocked' : complete ? 'ready' : '';
   const strategyLabels = { momentum:'Momentum', range:'Range', tactical_fade:'Tactical Fade', no_trade:'No Trade' };
   const direction = structured.bias ? String(structured.bias).toUpperCase() : null;
+  const directionTone = ['bullish', 'bearish', 'neutral'].includes(String(structured.bias).toLowerCase()) ? String(structured.bias).toLowerCase() : '';
   const session = structured.trigger_contract?.session === 'london_or_new_york' ? 'London / New York' : structured.trigger_contract?.session;
   const rr = structured.risk_reward ? `1:${structured.risk_reward}` : null;
   const rejectReason = rejected ? structured.academy_reject_reason : null;
@@ -7347,7 +7364,7 @@ function renderAnalisaDecisionPanel() {
     <div class="analisa-decision-status ${statusClass}">${statusLabel}</div>
     ${stale ? '<div class="analisa-position-note">Level dipertahankan sebagai riwayat. Jalankan analisa ulang sebelum dipakai.</div>' : ''}
     <div class="analisa-decision-grid">
-      ${_analisaDecisionRow('Arah', direction)}
+      ${_analisaDecisionRow('Arah', direction, directionTone)}
       ${_analisaDecisionRow('Strategi', strategyLabels[structured.strategy_id] || structured.strategy_id)}
       ${_analisaDecisionRow('Sesi', session)}
       ${_analisaDecisionRow('Trigger', structured.trigger)}
@@ -7380,9 +7397,10 @@ function renderAnalisaPositioning() {
     const retail = retailData?.positions?.[pairKey];
     if (verdict) {
       const netK = `${verdict.cotNetPair >= 0 ? '+' : ''}${Math.round(verdict.cotNetPair / 1000)}K`;
+      const confirmTone = verdict.badgeCls === 'strong-up' ? 'strong-up' : verdict.badgeCls === 'strong-down' ? 'strong-down' : 'neutral';
       rows += `<div class="analisa-position-row"><span class="analisa-position-label">COT Leveraged Funds</span><span class="analisa-position-value">Net pair ${netK}</span></div>`;
       rows += `<div class="analisa-position-row"><span class="analisa-position-label">Retail Sentiment</span><span class="analisa-position-value">${escHtml(String(verdict.long_pct))}% long / ${escHtml(String(verdict.short_pct))}% short</span></div>`;
-      rows += `<div class="analisa-position-row"><span class="analisa-position-label">Konfirmasi</span><span class="analisa-position-value">${escHtml(verdict.badge)}</span><span class="analisa-position-detail">${escHtml(verdict.desc)}</span></div>`;
+      rows += `<div class="analisa-position-row"><span class="analisa-position-label">Konfirmasi</span><span class="analisa-position-value analisa-position-confirm ${confirmTone}">${escHtml(verdict.badge)}</span><span class="analisa-position-detail">${escHtml(verdict.desc)}</span></div>`;
     } else if (cotData || retail) {
       if (cotData?.positions) rows += '<div class="analisa-position-row"><span class="analisa-position-label">COT</span><span class="analisa-position-value">Belum membentuk arah pair yang jelas.</span></div>';
       if (retail) rows += `<div class="analisa-position-row"><span class="analisa-position-label">Retail Sentiment</span><span class="analisa-position-value">${escHtml(String(retail.long_pct))}% long / ${escHtml(String(retail.short_pct))}% short</span></div>`;
