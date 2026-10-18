@@ -847,7 +847,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 }
 
 /* ── ANALISA PANEL ── */
-.analisa-inner { padding: 16px; max-width: 680px; margin: 0 auto; }
+.analisa-inner { padding: 16px; max-width: 1540px; margin: 0 auto; }
 .analisa-pairs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 16px; }
 .analisa-chip {
   padding: 5px 12px; border-radius: 20px; border: 1px solid var(--border);
@@ -899,6 +899,50 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
    penting buat dilihat sekilas dibanding sumber & model, jadi dikecilkan & dilepas
    dari gaya kapital-tebal induknya biar hierarki baca jelas. */
 .analisa-ai-meta { text-transform: none; font-weight: 400; letter-spacing: normal; font-size: 8px; color: var(--muted); }
+.analisa-workspace {
+  display:grid; grid-template-columns:minmax(0,1fr);
+  grid-template-areas:"execution" "main" "positioning" "context";
+  gap:14px; align-items:start;
+}
+.analisa-context-col { grid-area:context; min-width:0; display:grid; gap:8px; }
+.analisa-main-col { grid-area:main; min-width:0; }
+.analisa-decision-col { display:contents; }
+#analisaExecutionPanel { grid-area:execution; }
+#analisaPositioningPanel { grid-area:positioning; }
+.analisa-context-col .analisa-tf-card { margin-bottom:0; }
+.analisa-side-card {
+  background:var(--surface); border:1px solid var(--border); border-radius:8px;
+  padding:12px 14px; min-width:0;
+}
+.analisa-side-title {
+  font-size:9px; font-weight:700; letter-spacing:.08em; color:var(--muted);
+  text-transform:uppercase; margin-bottom:9px;
+}
+.analisa-decision-status {
+  display:inline-flex; align-items:center; min-height:22px; margin-bottom:10px;
+  border:1px solid var(--border); border-radius:3px; padding:2px 7px;
+  color:var(--text); font-size:9px; font-weight:700; letter-spacing:.06em;
+}
+.analisa-decision-status.ready { border-color:var(--green); color:var(--green); }
+.analisa-decision-status.blocked { border-color:var(--yellow); color:var(--yellow); }
+.analisa-decision-grid { display:grid; gap:7px; }
+.analisa-decision-row {
+  display:grid; grid-template-columns:minmax(66px,auto) minmax(0,1fr); gap:8px;
+  align-items:start; padding-bottom:6px; border-bottom:1px solid rgba(var(--fg-rgb),.05);
+}
+.analisa-decision-row:last-child { padding-bottom:0; border-bottom:0; }
+.analisa-decision-key { font-size:8px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
+.analisa-decision-val { min-width:0; font-size:10px; color:var(--text); line-height:1.45; overflow-wrap:anywhere; }
+.analisa-position-note { font-size:9px; color:var(--muted); line-height:1.5; margin-bottom:9px; }
+.analisa-position-stack { display:grid; gap:7px; }
+.analisa-position-row {
+  padding:7px 8px; border:1px solid rgba(var(--fg-rgb),.07); border-radius:4px;
+  background:rgba(var(--fg-rgb),.02);
+}
+.analisa-position-label { display:block; font-size:8px; color:var(--muted); text-transform:uppercase; margin-bottom:3px; }
+.analisa-position-value { display:block; font-size:10px; color:var(--text); line-height:1.45; overflow-wrap:anywhere; }
+.analisa-position-detail { margin-top:6px; font-size:9px; color:var(--muted); line-height:1.45; }
+.analisa-side-empty { font-size:10px; color:var(--muted); line-height:1.55; }
 
 /* ── COT POSITIONING ──*/
 
@@ -1909,15 +1953,9 @@ body.light-theme .cal-date-input { color-scheme: light; }
   .ringkasan-inner { padding: 20px 24px 28px; max-width: 860px; margin: 0 auto; }
   .ringkasan-card { padding: 20px 24px; }
   .ringkasan-text { font-size: 14px; line-height: 1.8; }
-  /* ANALISA (request user 2026-07-13: "manjang banget" di desktop — kolom baca
-     680px terlalu sempit untuk kartu statistik yang sebenarnya cocok grid 2 kolom,
-     bukan teks panjang seperti Ringkasan). D1/H4/H1/Indikator jadi 2×2 di layar
-     lebar; header/tombol/hasil AI tetap full-width (lebih enak dibaca memanjang). */
-  .analisa-inner { padding: 20px 24px 28px; max-width: 1120px; margin: 0 auto; }
-  #analisaContent { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; align-items: start; }
-  #analisaContent > .analisa-header,
-  #analisaContent > .print-btn-row,
-  #analisaContent > #analisaAiResult { grid-column: 1 / -1; }
+  /* Analisa memakai workspace lebar: struktur pasar, narasi utama, dan keputusan
+     eksekusi mendapat kolom masing-masing pada breakpoint desktop. */
+  .analisa-inner { padding: 20px 24px 28px; max-width: 1540px; margin: 0 auto; }
   .cb-section { padding: 10px 24px 8px; }
   .cal-toolbar { padding: 9px 24px 7px; }
   .cal-panel-inner { padding: 4px 24px 24px; }
@@ -1962,12 +2000,38 @@ body.light-theme .cal-date-input { color-scheme: light; }
 #ringkasanPanel .ringkasan-side-left .cb-td-cur { width: 34px; }
 #ringkasanPanel .ringkasan-side-left .cb-td-rate { width: 52px; }
 #ringkasanPanel .ringkasan-side-left .cb-td-dec { width: 50px; }
+.ringkasan-calendar-card { margin-top:14px !important; padding:11px 12px; }
+.ringkasan-calendar-head {
+  display:flex; align-items:center; justify-content:space-between; gap:8px;
+  padding-bottom:7px; margin-bottom:3px; border-bottom:1px solid var(--border);
+}
+.ringkasan-calendar-title { font-size:9px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--text); }
+.ringkasan-calendar-link {
+  border:0; background:transparent; color:var(--accent); cursor:pointer;
+  font:8px 'DM Mono',monospace; padding:3px 0; white-space:nowrap;
+}
+.ringkasan-calendar-list { display:grid; }
+.ringkasan-calendar-row {
+  display:grid; grid-template-columns:42px 32px minmax(0,1fr); gap:7px;
+  align-items:start; padding:8px 0; border-bottom:1px solid rgba(var(--fg-rgb),.06);
+}
+.ringkasan-calendar-row:last-child { border-bottom:0; }
+.ringkasan-calendar-time { font-size:9px; color:var(--accent); line-height:1.4; }
+.ringkasan-calendar-cur { font-size:8px; font-weight:700; letter-spacing:.04em; line-height:1.5; }
+.ringkasan-calendar-event { min-width:0; font-size:9px; color:var(--text); line-height:1.4; overflow-wrap:anywhere; }
+.ringkasan-calendar-meta { display:block; margin-top:2px; color:var(--muted); font-size:8px; }
+.ringkasan-calendar-empty { padding:10px 0 4px; color:var(--muted); font-size:9px; line-height:1.5; }
 
 @media (min-width: 768px) and (max-width: 1199px) {
   #ringkasanPanel .ringkasan-workspace {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     grid-template-areas: "main main" "left right";
     gap: 16px;
+  }
+  #analisaPanel .analisa-workspace {
+    grid-template-columns:minmax(0,1fr) minmax(0,1fr);
+    grid-template-areas:"main main" "context execution" "context positioning";
+    gap:16px;
   }
 }
 
@@ -1977,11 +2041,23 @@ body.light-theme .cal-date-input { color-scheme: light; }
     grid-template-areas: "left main right";
     gap: 16px;
   }
+  #analisaPanel .analisa-workspace {
+    grid-template-columns:minmax(250px,300px) minmax(520px,1fr) minmax(280px,320px);
+    grid-template-areas:"context main execution" "context main positioning";
+    gap:16px;
+  }
 }
 
 @media (max-width: 480px) {
   .nvtab { padding: 10px 11px; font-size: 11px; }
   .ftab  { padding: 6px 9px;  font-size: 8px; }
+  .analisa-inner { padding:12px 10px 76px; }
+  .analisa-pairs { margin-bottom:12px; }
+  .analisa-header { align-items:flex-start; gap:8px; }
+  .analisa-ts-label { text-align:right; line-height:1.45; }
+  .analisa-side-card { padding:11px 12px; }
+  .analisa-decision-row { grid-template-columns:62px minmax(0,1fr); gap:6px; }
+  .ringkasan-calendar-row { grid-template-columns:40px 30px minmax(0,1fr); gap:6px; }
   .cot-row { grid-template-columns: 34px 1fr auto auto; gap: 6px; }
   .cot-net { min-width: 48px; font-size: 10px; }
   .cot-change { min-width: 40px; font-size: 8px; }
@@ -2790,6 +2866,13 @@ body.light-theme .cal-date-input { color-scheme: light; }
   body.printing-ringkasan #ringkasanPanel .ringkasan-main .ringkasan-inner {
     width: 100% !important; max-width: none !important;
   }
+  body.printing-analisa #analisaPanel .analisa-workspace {
+    display: block !important;
+  }
+  body.printing-analisa #analisaPanel .analisa-context-col,
+  body.printing-analisa #analisaPanel .analisa-main-col {
+    display: block !important; width: 100% !important;
+  }
 
   /* SEMUA tombol tidak pernah relevan di kertas — sembunyikan global
      (generate/refresh/Analisa AI/Mulai ke Sizing Calc/print sendiri).
@@ -3475,6 +3558,15 @@ body:not(.light-theme) .ringkasan-gen-btn {
           </div>
         </div>
       </section>
+      <section class="ringkasan-dashboard-card ringkasan-calendar-card no-print" id="ringkasanCalendarCard">
+        <div class="ringkasan-calendar-head">
+          <span class="ringkasan-calendar-title">Agenda High-Impact</span>
+          <button type="button" class="ringkasan-calendar-link" onclick="switchView('cal')">Buka Kalender</button>
+        </div>
+        <div class="ringkasan-calendar-list" id="ringkasanCalendarList">
+          <div class="ringkasan-calendar-empty">Memuat agenda terdekat...</div>
+        </div>
+      </section>
     </aside>
 
     <aside class="ringkasan-side ringkasan-side-right no-print">
@@ -3511,24 +3603,34 @@ body:not(.light-theme) .ringkasan-gen-btn {
     </div>
     <div id="analisaContent" style="display:none">
       <div class="analisa-header" id="analisaHeader"></div>
-      <div id="analisaD1Card"></div>
-      <div id="analisaH4Card"></div>
-      <div id="analisaH1Card"></div>
-      <div id="analisaIndCard"></div>
-      <div id="analisaAiResult" style="display:none"></div>
-      <div class="print-btn-row">
-        <button class="ringkasan-gen-btn" id="analisaAiBtn" onclick="analyzeOhlcvAi()" style="margin-top:4px">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2a10 10 0 1 0 10 10"/><path d="M12 8v4l3 3"/></svg>
-          <span>Analisa Pair Ini</span>
-        </button>
-        <button class="print-btn no-print" style="margin-top:4px" onclick="downloadAnalisaPdf()" title="Download PDF">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M4 21h16"/>
-          </svg>
-        </button>
+      <div class="analisa-workspace">
+        <aside class="analisa-context-col">
+          <div id="analisaD1Card"></div>
+          <div id="analisaH4Card"></div>
+          <div id="analisaH1Card"></div>
+          <div id="analisaIndCard"></div>
+        </aside>
+        <main class="analisa-main-col">
+          <div id="analisaAiResult" style="display:none"></div>
+          <div class="print-btn-row">
+            <button class="ringkasan-gen-btn" id="analisaAiBtn" onclick="analyzeOhlcvAi()" style="margin-top:4px">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2a10 10 0 1 0 10 10"/><path d="M12 8v4l3 3"/></svg>
+              <span>Analisa Pair Ini</span>
+            </button>
+            <button class="print-btn no-print" style="margin-top:4px" onclick="downloadAnalisaPdf()" title="Download PDF">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M4 21h16"/>
+              </svg>
+            </button>
+          </div>
+          <div id="analisaTrackRecord" class="no-print" style="display:none;font-size:10px;color:var(--muted);font-family:'DM Mono',monospace;margin-top:6px;padding:6px 10px;border:1px solid var(--border);border-radius:3px"></div>
+          <div class="ai-disclaimer" id="analisaDisclaimer">Level &amp; bias di atas dihasilkan AI dan bisa keliru — bukan nasihat keuangan. Verifikasi ke chart sebelum dipakai.</div>
+        </main>
+        <aside class="analisa-decision-col no-print">
+          <section class="analisa-side-card" id="analisaExecutionPanel"></section>
+          <section class="analisa-side-card" id="analisaPositioningPanel"></section>
+        </aside>
       </div>
-      <div id="analisaTrackRecord" class="no-print" style="display:none;font-size:10px;color:var(--muted);font-family:'DM Mono',monospace;margin-top:6px;padding:6px 10px;border:1px solid var(--border);border-radius:3px"></div>
-      <div class="ai-disclaimer" id="analisaDisclaimer">Level &amp; bias di atas dihasilkan AI dan bisa keliru — bukan nasihat keuangan. Verifikasi ke chart sebelum dipakai.</div>
     </div>
   </div>
 </div>
@@ -4541,7 +4643,7 @@ window.addEventListener('DOMContentLoaded', () => _updateNewsLangBtn());
 
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.10.18.5';
+const APP_VERSION = '2026.10.18.6';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
@@ -6717,6 +6819,8 @@ async function loadAnalisa(symbol, label, chipEl) {
   const resultEl  = document.getElementById('analisaAiResult');
   emptyEl.style.display   = 'none';
   contentEl.style.display = 'block';
+  renderAnalisaDecisionPanel();
+  renderAnalisaPositioning();
 
   // Render from cache instantly if available
   if (analisaDataCache[symbol]) {
@@ -6960,6 +7064,8 @@ function _restoreAiResult(symbol) {
   const banner = cached.marketClosed ? _analisaMarketClosedBanner(cached.analyzedAt || null) : '';
   resultEl.innerHTML = banner + _renderStructuredAi(cached.structured || null, cached.commentary, cached.model, !!cached.hasMakro, true, !!cached.hasFund, cached.makroAt || null, cached.analyzedAt || null);
   resultEl.style.display = 'block';
+  renderAnalisaDecisionPanel();
+  renderAnalisaPositioning();
   analisaLoadTrackRecord(symbol);
 }
 
@@ -7142,6 +7248,101 @@ async function analisaLoadTrackRecord(symbol) {
   } catch (e) { /* track record opsional — jangan ganggu hasil analisa */ }
 }
 
+function _analisaDecisionRow(key, value) {
+  if (value === null || value === undefined || String(value).trim() === '') return '';
+  return `<div class="analisa-decision-row"><span class="analisa-decision-key">${escHtml(key)}</span><span class="analisa-decision-val">${escHtml(String(value))}</span></div>`;
+}
+
+function renderAnalisaDecisionPanel() {
+  const el = document.getElementById('analisaExecutionPanel');
+  if (!el) return;
+  const structured = analisaAiCache[analisaActive.symbol]?.structured || null;
+  if (!structured) {
+    el.innerHTML = '<div class="analisa-side-title">Ringkasan Eksekusi</div><div class="analisa-side-empty">Jalankan Analisa Pair Ini untuk membentuk keputusan, trigger, dan level risiko.</div>';
+    return;
+  }
+
+  const rejected = structured.academy_contract_status === 'rejected' || structured.strategy_id === 'no_trade';
+  const complete = !rejected && structured.entry_zone && structured.sl && structured.tp;
+  const statusLabel = rejected ? 'NO TRADE' : complete ? 'SETUP TERSTRUKTUR' : 'MENUNGGU LEVEL';
+  const statusClass = rejected ? 'blocked' : complete ? 'ready' : '';
+  const strategyLabels = { momentum:'Momentum', range:'Range', tactical_fade:'Tactical Fade', no_trade:'No Trade' };
+  const direction = structured.bias ? String(structured.bias).toUpperCase() : null;
+  const session = structured.trigger_contract?.session === 'london_or_new_york' ? 'London / New York' : structured.trigger_contract?.session;
+  const rr = structured.risk_reward ? `1:${structured.risk_reward}` : null;
+  const rejectReason = rejected ? structured.academy_reject_reason : null;
+
+  el.innerHTML = `<div class="analisa-side-title">Ringkasan Eksekusi</div>
+    <div class="analisa-decision-status ${statusClass}">${statusLabel}</div>
+    <div class="analisa-decision-grid">
+      ${_analisaDecisionRow('Arah', direction)}
+      ${_analisaDecisionRow('Strategi', strategyLabels[structured.strategy_id] || structured.strategy_id)}
+      ${_analisaDecisionRow('Sesi', session)}
+      ${_analisaDecisionRow('Trigger', structured.trigger)}
+      ${_analisaDecisionRow('Entry', structured.entry_zone)}
+      ${_analisaDecisionRow('SL', structured.sl)}
+      ${_analisaDecisionRow('TP', structured.tp)}
+      ${_analisaDecisionRow('RR', rr)}
+      ${_analisaDecisionRow('Invalidasi', structured.invalidation_condition)}
+      ${_analisaDecisionRow('Alasan', rejectReason)}
+    </div>`;
+}
+
+function _analisaPairKey() {
+  return String(analisaActive.label || '').replace('/', '').toUpperCase();
+}
+
+function renderAnalisaPositioning() {
+  const el = document.getElementById('analisaPositioningPanel');
+  if (!el) return;
+  const pairKey = _analisaPairKey();
+  if (!pairKey) {
+    el.innerHTML = '<div class="analisa-side-title">Positioning Tambahan</div><div class="analisa-side-empty">Pilih pair untuk melihat COT dan retail sentiment.</div>';
+    return;
+  }
+
+  let rows = '';
+  let detail = '';
+  if (COT_RETAIL_PAIRS[pairKey]) {
+    const verdict = computeCotRetailVerdict(pairKey);
+    const retail = retailData?.positions?.[pairKey];
+    if (verdict) {
+      const netK = `${verdict.cotNetPair >= 0 ? '+' : ''}${Math.round(verdict.cotNetPair / 1000)}K`;
+      rows += `<div class="analisa-position-row"><span class="analisa-position-label">COT Leveraged Funds</span><span class="analisa-position-value">Net pair ${netK}</span></div>`;
+      rows += `<div class="analisa-position-row"><span class="analisa-position-label">Retail Sentiment</span><span class="analisa-position-value">${escHtml(String(verdict.long_pct))}% long / ${escHtml(String(verdict.short_pct))}% short</span></div>`;
+      rows += `<div class="analisa-position-row"><span class="analisa-position-label">Konfirmasi</span><span class="analisa-position-value">${escHtml(verdict.badge)}</span><span class="analisa-position-detail">${escHtml(verdict.desc)}</span></div>`;
+    } else if (cotData || retail) {
+      if (cotData?.positions) rows += '<div class="analisa-position-row"><span class="analisa-position-label">COT</span><span class="analisa-position-value">Belum membentuk arah pair yang jelas.</span></div>';
+      if (retail) rows += `<div class="analisa-position-row"><span class="analisa-position-label">Retail Sentiment</span><span class="analisa-position-value">${escHtml(String(retail.long_pct))}% long / ${escHtml(String(retail.short_pct))}% short</span></div>`;
+    }
+  } else if (pairKey === 'XAUUSD') {
+    const retail = retailData?.positions?.XAUUSD;
+    rows += '<div class="analisa-position-row"><span class="analisa-position-label">COT</span><span class="analisa-position-value">Belum tersedia untuk emas pada dataset aplikasi.</span></div>';
+    if (retail) {
+      const signal = retail.signal === 'CONTRARIAN_LONG' ? 'Kontrarian naik' : retail.signal === 'CONTRARIAN_SHORT' ? 'Kontrarian turun' : 'Netral';
+      rows += `<div class="analisa-position-row"><span class="analisa-position-label">Retail Sentiment</span><span class="analisa-position-value">${escHtml(String(retail.long_pct))}% long / ${escHtml(String(retail.short_pct))}% short · ${escHtml(signal)}</span></div>`;
+    }
+  } else if (pairKey === 'BTCUSD') {
+    detail = 'COT dan retail sentiment yang dipakai aplikasi belum mencakup Bitcoin.';
+  } else if (pairKey.length === 6) {
+    const base = pairKey.slice(0, 3), quote = pairKey.slice(3);
+    const lean = computeCotOnlyLean(base, quote);
+    if (lean) {
+      const direction = lean.dir === 'long' ? `${base} lebih kuat dari ${quote}` : lean.dir === 'short' ? `${base} lebih lemah dari ${quote}` : 'Belum jelas';
+      rows += `<div class="analisa-position-row"><span class="analisa-position-label">COT Relatif</span><span class="analisa-position-value">${direction}</span></div>`;
+      rows += '<div class="analisa-position-row"><span class="analisa-position-label">Retail Sentiment</span><span class="analisa-position-value">Tidak tersedia untuk pair silang.</span></div>';
+    }
+  }
+
+  const dataState = rows || detail
+    ? (rows + (detail ? `<div class="analisa-side-empty">${escHtml(detail)}</div>` : ''))
+    : '<div class="analisa-side-empty loading-pulse">Memuat data COT dan retail...</div>';
+  const reportDate = cotData?.report_date ? ` COT per ${escHtml(cotData.report_date)}${cotData.stale ? ' (basi)' : ''}.` : '';
+  el.innerHTML = `<div class="analisa-side-title">Positioning Tambahan</div>
+    <div class="analisa-position-note">Indikator pendukung, bukan penentu arah atau pengganti trigger chart.${reportDate}</div>
+    <div class="analisa-position-stack">${dataState}</div>`;
+}
+
 function renderAnalisa() {
   const d = analisaDataCache[analisaActive.symbol];
   if (!d) return;
@@ -7314,6 +7515,8 @@ function renderAnalisa() {
   } else {
     indEl.innerHTML = '';
   }
+  renderAnalisaDecisionPanel();
+  renderAnalisaPositioning();
 }
 
 // Ekstrak konteks makro dari artikel Ringkasan untuk pair tertentu — mirror dari
@@ -7436,6 +7639,8 @@ async function analyzeOhlcvAi(force) {
         _updateAnalisaDisclaimer(data.model);
         resultEl.innerHTML = marketClosedBanner + _renderStructuredAi(data.structured || null, data.commentary, data.model, hasMakro, false, hasFund, makroAt, data.loaded_at || null);
         resultEl.style.display = 'block';
+        renderAnalisaDecisionPanel();
+        renderAnalisaPositioning();
         _setupStatsAt = 0; // setup baru saja dicatat server — paksa refresh track record
         analisaLoadTrackRecord(reqSymbol);
       }
@@ -7694,6 +7899,8 @@ document.querySelectorAll('#navViews .nvtab').forEach(btn => {
       const now = Date.now();
       if (!cbData || (now - cbFetchedAt) > 5 * 60 * 1000) fetchCBStatus();
       else renderCBTracker();
+      if (!calData || (now - calFetchedAt) > 60 * 60 * 1000) fetchCalendar();
+      else renderRingkasanCalendar();
       if (!realYieldsData || (now - realYieldsFetAt) > 6 * 60 * 60 * 1000) fetchRealYields();
       if (!ratePathData || (now - ratePathFetAt) > 4 * 60 * 60 * 1000) fetchRatePath();
     } else if (view === 'analisa') {
@@ -7702,6 +7909,10 @@ document.querySelectorAll('#navViews .nvtab').forEach(btn => {
       document.getElementById('analisaPanel').style.display = 'block';
       if (Date.now() < analisaAiCooldownEnd) _tickAnalisaCooldown();
       renderAnalisaTrackedChips();
+      const analisaNow = Date.now();
+      if (!cotData || (analisaNow - cotFetchedAt) > 30 * 60 * 1000) fetchCOT();
+      else renderAnalisaPositioning();
+      fetchRetailSentiment();
       // Restore last viewed pair — tapi cuma kalau pair itu MASIH ada di daftar
       // tracked user (bisa saja sudah dihapus sejak kunjungan terakhir). Kalau
       // tidak ada match, fallback ke pair pertama di daftar; kalau daftar kosong,
@@ -7811,6 +8022,46 @@ document.querySelectorAll('#navFilters .ftab').forEach(btn => {
 });
 
 // ── CALENDAR ─────────────────────────────────────────────
+function renderRingkasanCalendar(errorMessage) {
+  const el = document.getElementById('ringkasanCalendarList');
+  if (!el) return;
+  if (errorMessage) {
+    el.innerHTML = `<div class="ringkasan-calendar-empty">Agenda belum tersedia: ${escHtml(errorMessage)}</div>`;
+    return;
+  }
+  if (!Array.isArray(calData)) {
+    el.innerHTML = '<div class="ringkasan-calendar-empty loading-pulse">Memuat agenda terdekat...</div>';
+    return;
+  }
+
+  const now = Date.now();
+  const events = calData
+    .filter(ev => ev.impact === 'High' && _ckEvTimestamp(ev) > now)
+    .sort((a, b) => _ckEvTimestamp(a) - _ckEvTimestamp(b))
+    .slice(0, 3);
+  if (events.length === 0) {
+    el.innerHTML = '<div class="ringkasan-calendar-empty">Tidak ada event high-impact mendatang pada data minggu ini.</div>';
+    return;
+  }
+
+  el.innerHTML = events.map(ev => {
+    const ts = _ckEvTimestamp(ev);
+    const totalMin = Math.max(0, Math.floor((ts - now) / 60000));
+    const days = Math.floor(totalMin / 1440);
+    const hours = Math.floor((totalMin % 1440) / 60);
+    const mins = totalMin % 60;
+    const eta = days > 0 ? `${days} hari ${hours} jam` : hours > 0 ? `${hours} jam ${mins} menit` : `${mins} menit`;
+    const day = new Intl.DateTimeFormat('id-ID', { weekday:'short', day:'numeric', month:'short', timeZone:'Asia/Jakarta' }).format(new Date(ts));
+    const time = String(ev.time_wib || '').replace(' WIB', '') || 'Tentative';
+    const color = CUR_COLORS[ev.currency] || 'var(--muted)';
+    return `<div class="ringkasan-calendar-row">
+      <span class="ringkasan-calendar-time">${escHtml(time)}</span>
+      <span class="ringkasan-calendar-cur" style="color:${color}">${escHtml(ev.currency || '—')}</span>
+      <span class="ringkasan-calendar-event">${escHtml(ev.event || 'Event ekonomi')}<span class="ringkasan-calendar-meta">${escHtml(day)} · ${eta} lagi</span></span>
+    </div>`;
+  }).join('');
+}
+
 function updateCalLastUpdated() {
   const el = document.getElementById('calLastUpdated');
   if (!el || !calFetchedAt) return;
@@ -7822,6 +8073,7 @@ async function fetchCalendar() {
   const inner = document.getElementById('calPanelInner');
   const btn = document.getElementById('calRefreshBtn');
   inner.innerHTML = `<div class="cal-empty loading-pulse">Memuat kalender ekonomi...</div>`;
+  renderRingkasanCalendar();
   if (btn) btn.classList.add('spinning');
   try {
     const res = await fetch('/api/calendar', { signal: AbortSignal.timeout(15000) });
@@ -7835,10 +8087,12 @@ async function fetchCalendar() {
     updateCalLastUpdated();
     enrichCalActuals();
     renderCalendar();
-    startCountdownTimer();
+    renderRingkasanCalendar();
+    if (activeView === 'cal') startCountdownTimer();
     const _calSel = document.getElementById('ckPairSelector');
     if (_calSel && _calSel.value) ckAutoTickRegimeCheck(_calSel.value);
   } catch(e) {
+    renderRingkasanCalendar(e.message);
     inner.innerHTML = `<div class="cal-empty">Gagal memuat kalender.<br><small style="color:var(--muted)">${e.message}</small><br><br>
       <button class="ringkasan-gen-btn" style="margin:0 auto;width:auto;padding:8px 20px" onclick="fetchCalendar()">Coba Lagi</button></div>`;
   } finally {
@@ -9957,6 +10211,7 @@ const RETAIL_PAIR_ORDER = ['EURUSD','GBPUSD','USDJPY','USDCAD','AUDUSD','NZDUSD'
 async function fetchRetailSentiment(force) {
   if (!force && retailData && Date.now() - retailFetchedAt < RETAIL_CLIENT_TTL) {
     renderRetailSentiment();
+    renderAnalisaPositioning();
     return;
   }
   const grid = document.getElementById('retailGrid');
@@ -9976,9 +10231,11 @@ async function fetchRetailSentiment(force) {
     if (meta) meta.textContent = 'error';
     const dashStrip = document.getElementById('dashRetailStrip');
     if (dashStrip && !retailData) dashStrip.innerHTML = '<div class="dash-no-data" style="padding:8px 12px">—</div>';
+    renderAnalisaPositioning();
     return;
   }
   renderRetailSentiment();
+  renderAnalisaPositioning();
 }
 
 function renderRetailSentiment() {
@@ -10098,12 +10355,14 @@ async function fetchCOT() {
     cotRenderTrendBadges();                    // badge tren 4W (async, fire-and-forget)
     if (retailData) renderRetailSentiment();   // refresh badge konfluensi retail×COT
     renderTekPosisiBias();
+    renderAnalisaPositioning();
     const _cotSel = document.getElementById('ckPairSelector');
     if (_cotSel && _cotSel.value) ckAutoTickRegimeCheck(_cotSel.value);
   } catch(e) {
     console.warn('COT fetch failed:', e.message);
     document.getElementById('cotGrid').innerHTML =
       '<div class="cot-empty">COT data tidak tersedia saat ini.</div>';
+    renderAnalisaPositioning();
   }
 }
 
@@ -11930,7 +12189,7 @@ window.addEventListener('load', () => {
   setTimeout(fetchRetailSentiment, 2000);
   setInterval(fetchRegime, 15 * 60 * 1000);
   setInterval(fetchDailySnapshot, 5 * 60 * 1000);
-  setInterval(updateCalLastUpdated, 60 * 1000);
+  setInterval(() => { updateCalLastUpdated(); renderRingkasanCalendar(); }, 60 * 1000);
   renderRegimeSessions();
   setInterval(renderRegimeSessions, 30 * 1000);
 });

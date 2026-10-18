@@ -11,12 +11,22 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-10-18 (Session 388 — Singkatan kategori News dan evaluasi pengayaan layout)
+> **Last updated:** 2026-10-18 (Session 389 — Agenda Ringkasan dan workspace Analisa responsif)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 389 (2026-10-18) — Agenda Ringkasan dan workspace Analisa responsif
+
+**Ringkasan.** Ruang kosong di bawah CB Bias kini diisi kartu `Agenda High-Impact` yang mengambil maksimal tiga event high-impact mendatang dari data Kalender yang sudah ada. Kartu menampilkan jam WIB, mata uang, nama event, tanggal, dan hitung mundur, serta menyediakan tombol ke Kalender penuh. Tidak ada sumber data atau endpoint baru; bila data kosong/gagal, kartu menampilkan status yang jujur tanpa mengganggu narasi Ringkasan.
+
+**Analisa.** Tampilan desktop kini memakai workspace tiga zona: kartu konteks teknikal D1/H4/H1 dan indikator di kiri, narasi Analisa AI sebagai fokus di tengah, serta Ringkasan Eksekusi dan Positioning Tambahan di kanan. Ringkasan Eksekusi mengangkat status kontrak, arah, strategi, sesi, trigger, entry, SL, TP, RR, dan invalidasi dari hasil `prime-v1` yang sudah ada. Positioning memakai helper COT dan retail sentiment yang sudah teruji, tetapi diberi batas eksplisit sebagai indikator pendukung—bukan penentu arah dan bukan pengganti trigger chart. Pair yang belum didukung mendapat penjelasan ketersediaan data; prompt, policy, API analisa, serta AATAS tidak diubah.
+
+**Responsif dan keamanan tampilan.** Tablet memakai narasi selebar dua kolom lalu membagi konteks dan kartu keputusan di bawahnya. Ponsel memakai urutan Ringkasan Eksekusi → narasi utama → positioning → detail teknikal, dengan padding dan tabel label yang dipadatkan. Mode cetak kembali ke alur satu kolom dan kartu samping non-cetak disembunyikan. Nilai positioning dari respons eksternal di-escape sebelum masuk DOM. `APP_VERSION` dinaikkan menjadi `2026.10.18.6`.
+
+**Verifikasi lokal.** Regresi baru mengunci posisi kalender, filter tiga event High mendatang, zona Analisa, urutan responsif, batas peran COT/retail, dan layout cetak. Tes fokus lulus 37/37. Uji visual nyata pada viewport 1.600 px, 900 px, dan 390 px menunjukkan grid sesuai breakpoint, tidak ada overflow horizontal, dan tidak ada error JavaScript. Suite penuh `npm test` lulus 1.413/1.413. Tidak ada panggilan AI berbayar atau transaksi dalam verifikasi.
 
 ## Changelog Session 388 (2026-10-18) — Singkatan kategori News dan evaluasi pengayaan layout
 
