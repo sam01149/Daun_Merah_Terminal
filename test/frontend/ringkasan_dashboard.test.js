@@ -27,7 +27,7 @@ test('desktop Ringkasan memakai tiga kolom: CB kiri, narasi tengah, Polymarket k
   assert.match(ringkasanMarkup, /class="ringkasan-side ringkasan-side-left"/);
   assert.match(ringkasanMarkup, /class="ringkasan-side ringkasan-side-right no-print"/);
   assert.match(html, /grid-template-areas:\s*"left main right"/);
-  assert.match(html, /grid-template-columns:\s*minmax\(250px, 300px\) minmax\(520px, 1fr\) minmax\(280px, 320px\)/);
+  assert.match(html, /grid-template-columns:\s*minmax\(310px, 380px\) minmax\(440px, 1fr\) minmax\(260px, 320px\)/);
 });
 
 test('Ringkasan turun responsif menjadi dua kolom tablet dan satu kolom ponsel', () => {

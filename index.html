@@ -943,6 +943,10 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .analisa-position-value { display:block; font-size:10px; color:var(--text); line-height:1.45; overflow-wrap:anywhere; }
 .analisa-position-detail { margin-top:6px; font-size:9px; color:var(--muted); line-height:1.45; }
 .analisa-side-empty { font-size:10px; color:var(--muted); line-height:1.55; }
+.analisa-stale-warning {
+  margin:0 0 10px; padding:9px 10px; border:1px solid var(--yellow); border-radius:5px;
+  color:var(--yellow); background:rgba(245,158,11,.05); font-size:10px; line-height:1.5;
+}
 
 /* ── COT POSITIONING ──*/
 
@@ -2006,20 +2010,43 @@ body.light-theme .cal-date-input { color-scheme: light; }
   padding-bottom:7px; margin-bottom:3px; border-bottom:1px solid var(--border);
 }
 .ringkasan-calendar-title { font-size:9px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--text); }
+.ringkasan-calendar-impact-legend { display:flex; align-items:center; gap:8px; margin-top:3px; color:var(--muted); font-size:7px; }
+.ringkasan-calendar-impact-key { display:inline-flex; align-items:center; gap:4px; }
 .ringkasan-calendar-link {
   border:0; background:transparent; color:var(--accent); cursor:pointer;
   font:8px 'DM Mono',monospace; padding:3px 0; white-space:nowrap;
 }
-.ringkasan-calendar-list { display:grid; }
-.ringkasan-calendar-row {
-  display:grid; grid-template-columns:42px 32px minmax(0,1fr); gap:7px;
-  align-items:start; padding:8px 0; border-bottom:1px solid rgba(var(--fg-rgb),.06);
+.ringkasan-calendar-list { max-height:680px; overflow-y:auto; scrollbar-width:thin; scrollbar-color:var(--border) transparent; }
+.ringkasan-calendar-columns,
+.ringkasan-calendar-values {
+  display:grid; grid-template-columns:46px repeat(3,minmax(0,1fr)); gap:5px;
+}
+.ringkasan-calendar-columns {
+  position:sticky; top:0; z-index:2; padding:7px 0 6px;
+  color:var(--muted); background:var(--surface); border-bottom:1px solid var(--border);
+  font-size:7px; font-weight:700; text-transform:uppercase; letter-spacing:.04em;
+}
+.ringkasan-calendar-columns span:not(:first-child),
+.ringkasan-calendar-value { text-align:right; }
+.ringkasan-calendar-date {
+  padding:9px 0 4px; color:var(--text); border-bottom:1px solid rgba(var(--fg-rgb),.16);
+  font-size:9px; font-weight:700;
+}
+.ringkasan-calendar-row { padding:7px 0; border-bottom:1px solid rgba(var(--fg-rgb),.06); }
+.ringkasan-calendar-event-line {
+  display:grid; grid-template-columns:46px minmax(0,1fr); gap:5px; align-items:start;
 }
 .ringkasan-calendar-row:last-child { border-bottom:0; }
-.ringkasan-calendar-time { font-size:9px; color:var(--accent); line-height:1.4; }
-.ringkasan-calendar-cur { font-size:8px; font-weight:700; letter-spacing:.04em; line-height:1.5; }
-.ringkasan-calendar-event { min-width:0; font-size:9px; color:var(--text); line-height:1.4; overflow-wrap:anywhere; }
-.ringkasan-calendar-meta { display:block; margin-top:2px; color:var(--muted); font-size:8px; }
+.ringkasan-calendar-time { font-size:9px; color:var(--muted); line-height:1.45; }
+.ringkasan-calendar-event { min-width:0; display:flex; align-items:flex-start; gap:5px; font-size:9px; color:var(--text); line-height:1.45; overflow-wrap:anywhere; }
+.ringkasan-calendar-impact { flex:0 0 7px; width:7px; height:7px; margin-top:3px; border-radius:50%; background:var(--yellow); }
+.ringkasan-calendar-impact.high { background:#ff4757; }
+.ringkasan-calendar-impact.medium { background:var(--yellow); }
+.ringkasan-calendar-cur { flex:0 0 auto; font-size:8px; font-weight:700; letter-spacing:.03em; }
+.ringkasan-calendar-values { margin-top:3px; color:var(--muted); font-size:8px; line-height:1.35; }
+.ringkasan-calendar-value.actual-beat { color:var(--green); }
+.ringkasan-calendar-value.actual-miss { color:#ff6b6b; }
+.ringkasan-calendar-value.actual-inline { color:var(--text); }
 .ringkasan-calendar-empty { padding:10px 0 4px; color:var(--muted); font-size:9px; line-height:1.5; }
 
 @media (min-width: 768px) and (max-width: 1199px) {
@@ -2037,7 +2064,7 @@ body.light-theme .cal-date-input { color-scheme: light; }
 
 @media (min-width: 1200px) {
   #ringkasanPanel .ringkasan-workspace {
-    grid-template-columns: minmax(250px, 300px) minmax(520px, 1fr) minmax(280px, 320px);
+    grid-template-columns: minmax(310px, 380px) minmax(440px, 1fr) minmax(260px, 320px);
     grid-template-areas: "left main right";
     gap: 16px;
   }
@@ -2057,7 +2084,11 @@ body.light-theme .cal-date-input { color-scheme: light; }
   .analisa-ts-label { text-align:right; line-height:1.45; }
   .analisa-side-card { padding:11px 12px; }
   .analisa-decision-row { grid-template-columns:62px minmax(0,1fr); gap:6px; }
-  .ringkasan-calendar-row { grid-template-columns:40px 30px minmax(0,1fr); gap:6px; }
+  .ringkasan-calendar-list { max-height:none; overflow:visible; }
+  .ringkasan-calendar-columns,
+  .ringkasan-calendar-values { grid-template-columns:42px repeat(3,minmax(0,1fr)); gap:4px; }
+  .ringkasan-calendar-columns { position:static; }
+  .ringkasan-calendar-event-line { grid-template-columns:42px minmax(0,1fr); gap:4px; }
   .cot-row { grid-template-columns: 34px 1fr auto auto; gap: 6px; }
   .cot-net { min-width: 48px; font-size: 10px; }
   .cot-change { min-width: 40px; font-size: 8px; }
@@ -3119,13 +3150,17 @@ body.light-theme .ck-bdg-gate { background: var(--accent-dim); color: var(--acce
   margin-top: 0 !important;
 }
 
-/* PEMBATASAN LEBAR BACAAN UTAMA (MEASURE) AGAR SESUAI STANDAR PROFESIONAL (MAX 680PX) */
+/* Batasi measure teks Ringkasan, tetapi Analisa adalah workspace multi-kolom dan
+   harus memakai bentang desktop penuh. Aturan lama 680px di sini pernah menimpa
+   grid Analisa baru karena memakai !important, lalu mendorong tiga kolom ke kanan. */
 @media (min-width: 768px) {
   .ringkasan-inner {
     max-width: 680px !important; /* Mempersempit kolom bacaan ringkasan agar mata tidak lelah */
   }
   .analisa-inner {
-    max-width: 680px !important; /* Mempersempit seluruh panel analisa agar sejajar simetris dari atas ke bawah */
+    width: 100%;
+    max-width: 1540px !important;
+    box-sizing: border-box;
   }
   .analisa-ai-result {
     max-width: 100% !important;
@@ -3560,11 +3595,17 @@ body:not(.light-theme) .ringkasan-gen-btn {
       </section>
       <section class="ringkasan-dashboard-card ringkasan-calendar-card no-print" id="ringkasanCalendarCard">
         <div class="ringkasan-calendar-head">
-          <span class="ringkasan-calendar-title">Agenda High-Impact</span>
+          <div>
+            <div class="ringkasan-calendar-title">Kalender Ekonomi</div>
+            <div class="ringkasan-calendar-impact-legend" aria-label="Dampak event yang ditampilkan">
+              <span class="ringkasan-calendar-impact-key"><span class="ringkasan-calendar-impact high"></span>High</span>
+              <span class="ringkasan-calendar-impact-key"><span class="ringkasan-calendar-impact medium"></span>Medium</span>
+            </div>
+          </div>
           <button type="button" class="ringkasan-calendar-link" onclick="switchView('cal')">Buka Kalender</button>
         </div>
         <div class="ringkasan-calendar-list" id="ringkasanCalendarList">
-          <div class="ringkasan-calendar-empty">Memuat agenda terdekat...</div>
+          <div class="ringkasan-calendar-empty">Memuat kalender ekonomi...</div>
         </div>
       </section>
     </aside>
@@ -4643,7 +4684,7 @@ window.addEventListener('DOMContentLoaded', () => _updateNewsLangBtn());
 
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.10.18.6';
+const APP_VERSION = '2026.10.18.8';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
@@ -6627,7 +6668,19 @@ let analisaActive = { symbol: null, label: null };
 // tidak perlu request server lagi selama 10 menit — klik manual dalam jendela ini
 // cukup menampilkan hasil terakhir + toast, tanpa AI call baru.
 const ANALISA_FRESH_MS = 10 * 60 * 1000;
+// Hasil AI tetap disimpan agar pengguna bisa melihat riwayatnya, tetapi hanya
+// boleh diperlakukan sebagai setup aktif selama 8 jam. Ini konsisten dengan TTL
+// yang sudah dipakai Checklist untuk level Analisa.
+const ANALISA_ACTIONABLE_MS = 8 * 60 * 60 * 1000;
 let analisaFreshUntil = {}; // { [symbol]: epochMs }
+
+function _analisaResultIsStale(ai, now = Date.now()) {
+  if (!ai) return true;
+  const analyzedTs = ai.analyzedAt ? new Date(ai.analyzedAt).getTime() : NaN;
+  const savedTs = Number(ai.saved_at);
+  const sourceTs = Number.isFinite(analyzedTs) ? analyzedTs : savedTs;
+  return !Number.isFinite(sourceTs) || (now - sourceTs) > ANALISA_ACTIONABLE_MS;
+}
 
 const LS_ANALISA_DATA = 'analisa_data_cache_v1';
 const LS_ANALISA_AI   = 'analisa_ai_cache_v2'; // v2: bersihkan cache lama yg tersimpan sebelum fix JSON parsing
@@ -6734,6 +6787,10 @@ function _renderCriticResult(data) {
 async function analisaRunCritic(symbol) {
   if (!symbol) return;
   const ai = analisaAiCache[symbol];
+  if (_analisaResultIsStale(ai)) {
+    showToast('Hasil lama', 'Jalankan Analisa Pair Ini ulang sebelum memakai Uji Kelemahan.', 3500);
+    return;
+  }
   const st = ai?.structured;
   if (!st || !st.entry_zone) { showToast('Info', 'Jalankan Analisa Pair Ini dulu sebelum uji kelemahan.', 3000); return; }
 
@@ -6904,7 +6961,7 @@ function _analisaMarketClosedBanner(analyzedAt) {
   return `<div style="font-size:10px;color:var(--muted);font-family:'DM Mono',monospace;padding:4px 0 8px">Pasar forex sedang tutup (Sabtu/Minggu) — berikut catatan analisa terakhir yang dianalisa${when}.</div>`;
 }
 
-function _renderStructuredAi(structured, commentary, model, hasMakro, isCached, hasFund, makroAt, analyzedAt) {
+function _renderStructuredAi(structured, commentary, model, hasMakro, isCached, hasFund, makroAt, analyzedAt, isStale = false) {
   const sources = ['teknikal'];
   if (hasMakro) sources.push('makro');
   if (hasFund)  sources.push('fundamental');
@@ -6919,6 +6976,9 @@ function _renderStructuredAi(structured, commentary, model, hasMakro, isCached, 
   let html = `<div class="analisa-ai-result-meta" style="font-size:9px;color:var(--muted);font-family:'DM Mono',monospace;margin: 12px 0 6px;text-transform:uppercase;letter-spacing:.05em" class="no-print">
     AI${srcTag}${secondaryTag}
   </div>`;
+  if (isStale) {
+    html += '<div class="analisa-stale-warning"><strong>HASIL LAMA.</strong> Level di bawah dipertahankan sebagai riwayat, bukan setup aktif. Jalankan Analisa Pair Ini ulang sebelum dipakai.</div>';
+  }
 
   if (structured) {
     const bias      = (structured.bias || 'neutral').toLowerCase();
@@ -6974,7 +7034,7 @@ function _renderStructuredAi(structured, commentary, model, hasMakro, isCached, 
         ${structured.sl ? `<span><span style="color:var(--red)">SL </span>${escHtml(structured.sl)}</span>` : ''}
         ${structured.tp ? `<span><span style="color:var(--green)">TP </span>${escHtml(structured.tp)}</span>` : ''}
         ${structured.risk_reward ? `<span><span style="color:var(--muted)">RR </span>1:${escHtml(String(structured.risk_reward))}</span>` : ''}
-        <button type="button" onclick="analisaGoToChecklist(analisaActive.symbol)" style="margin-left:auto;padding:3px 10px;font-family:'DM Mono',monospace;font-size:9px;border-radius:3px;border:1px solid var(--accent);background:var(--accent);color:#fff;cursor:pointer;font-weight:700">KE CHECKLIST</button>
+        ${!isStale ? '<button type="button" onclick="analisaGoToChecklist(analisaActive.symbol)" style="margin-left:auto;padding:3px 10px;font-family:\'DM Mono\',monospace;font-size:9px;border-radius:3px;border:1px solid var(--accent);background:var(--accent);color:#fff;cursor:pointer;font-weight:700">KE CHECKLIST</button>' : '<span style="margin-left:auto;color:var(--yellow);font-size:9px">LEVEL HISTORIS</span>'}
       </div>`;
 
       if (structured.entry_basis) {
@@ -6984,7 +7044,7 @@ function _renderStructuredAi(structured, commentary, model, hasMakro, isCached, 
       // AI Kritikus (Plan I item 3) — hanya muncul kalau ada entry_zone (kalau
       // makro_alignment konflik, entry_zone sudah di-null-kan di kode, jadi
       // tombol otomatis tidak muncul — tidak ada setup untuk dikritik).
-      if (structured.entry_zone) {
+      if (structured.entry_zone && !isStale) {
         html += `<div style="margin-top:8px">
           <button type="button" id="analisaCriticBtn" onclick="analisaRunCritic(analisaActive.symbol)" style="width:100%;padding:6px;font-family:'DM Mono',monospace;font-size:9px;letter-spacing:.05em;text-transform:uppercase;border-radius:3px;border:1px solid var(--yellow);background:transparent;color:var(--yellow);cursor:pointer;font-weight:700">Uji Kelemahan</button>
           <div id="analisaCriticBox" style="display:none;margin-top:8px"></div>
@@ -7062,7 +7122,8 @@ function _restoreAiResult(symbol) {
   const resultEl = document.getElementById('analisaAiResult');
   _updateAnalisaDisclaimer(cached.model);
   const banner = cached.marketClosed ? _analisaMarketClosedBanner(cached.analyzedAt || null) : '';
-  resultEl.innerHTML = banner + _renderStructuredAi(cached.structured || null, cached.commentary, cached.model, !!cached.hasMakro, true, !!cached.hasFund, cached.makroAt || null, cached.analyzedAt || null);
+  const isStale = _analisaResultIsStale(cached);
+  resultEl.innerHTML = banner + _renderStructuredAi(cached.structured || null, cached.commentary, cached.model, !!cached.hasMakro, true, !!cached.hasFund, cached.makroAt || null, cached.analyzedAt || null, isStale);
   resultEl.style.display = 'block';
   renderAnalisaDecisionPanel();
   renderAnalisaPositioning();
@@ -7071,6 +7132,10 @@ function _restoreAiResult(symbol) {
 
 function analisaGoToSizing(symbol) {
   const ai = analisaAiCache[symbol];
+  if (_analisaResultIsStale(ai)) {
+    showToast('Hasil lama', 'Jalankan Analisa Pair Ini ulang sebelum mengirim level ke Sizing Calculator.', 3500);
+    return;
+  }
   if (!ai || !ai.structured || !ai.structured.entry_zone) {
     showToast('Info', 'Tidak ada entry zone untuk dikirim ke Sizing Calc', 3000);
     return;
@@ -7151,6 +7216,10 @@ function _storePendingSizingSetup(pair, direction = null, aiStructured = null) {
 function analisaGoToChecklist(symbol) {
   const targetLabel = _analisaLabelForSymbol(symbol);
   const ai = analisaAiCache[symbol];
+  if (_analisaResultIsStale(ai)) {
+    showToast('Hasil lama', 'Jalankan Analisa Pair Ini ulang sebelum mengirim level ke Checklist.', 3500);
+    return;
+  }
   if (ai && ai.structured) {
     _storePendingSizingSetup(targetLabel, null, ai.structured);
   } else {
@@ -7256,16 +7325,18 @@ function _analisaDecisionRow(key, value) {
 function renderAnalisaDecisionPanel() {
   const el = document.getElementById('analisaExecutionPanel');
   if (!el) return;
-  const structured = analisaAiCache[analisaActive.symbol]?.structured || null;
+  const ai = analisaAiCache[analisaActive.symbol] || null;
+  const structured = ai?.structured || null;
   if (!structured) {
     el.innerHTML = '<div class="analisa-side-title">Ringkasan Eksekusi</div><div class="analisa-side-empty">Jalankan Analisa Pair Ini untuk membentuk keputusan, trigger, dan level risiko.</div>';
     return;
   }
 
+  const stale = _analisaResultIsStale(ai);
   const rejected = structured.academy_contract_status === 'rejected' || structured.strategy_id === 'no_trade';
   const complete = !rejected && structured.entry_zone && structured.sl && structured.tp;
-  const statusLabel = rejected ? 'NO TRADE' : complete ? 'SETUP TERSTRUKTUR' : 'MENUNGGU LEVEL';
-  const statusClass = rejected ? 'blocked' : complete ? 'ready' : '';
+  const statusLabel = stale ? 'HASIL LAMA' : rejected ? 'NO TRADE' : complete ? 'SETUP TERSTRUKTUR' : 'MENUNGGU LEVEL';
+  const statusClass = stale || rejected ? 'blocked' : complete ? 'ready' : '';
   const strategyLabels = { momentum:'Momentum', range:'Range', tactical_fade:'Tactical Fade', no_trade:'No Trade' };
   const direction = structured.bias ? String(structured.bias).toUpperCase() : null;
   const session = structured.trigger_contract?.session === 'london_or_new_york' ? 'London / New York' : structured.trigger_contract?.session;
@@ -7274,6 +7345,7 @@ function renderAnalisaDecisionPanel() {
 
   el.innerHTML = `<div class="analisa-side-title">Ringkasan Eksekusi</div>
     <div class="analisa-decision-status ${statusClass}">${statusLabel}</div>
+    ${stale ? '<div class="analisa-position-note">Level dipertahankan sebagai riwayat. Jalankan analisa ulang sebelum dipakai.</div>' : ''}
     <div class="analisa-decision-grid">
       ${_analisaDecisionRow('Arah', direction)}
       ${_analisaDecisionRow('Strategi', strategyLabels[structured.strategy_id] || structured.strategy_id)}
@@ -7637,7 +7709,7 @@ async function analyzeOhlcvAi(force) {
       if (analisaActive.symbol === reqSymbol) {
         const marketClosedBanner = data.market_closed ? _analisaMarketClosedBanner(data.loaded_at || null) : '';
         _updateAnalisaDisclaimer(data.model);
-        resultEl.innerHTML = marketClosedBanner + _renderStructuredAi(data.structured || null, data.commentary, data.model, hasMakro, false, hasFund, makroAt, data.loaded_at || null);
+        resultEl.innerHTML = marketClosedBanner + _renderStructuredAi(data.structured || null, data.commentary, data.model, hasMakro, false, hasFund, makroAt, data.loaded_at || null, false);
         resultEl.style.display = 'block';
         renderAnalisaDecisionPanel();
         renderAnalisaPositioning();
@@ -8026,40 +8098,64 @@ function renderRingkasanCalendar(errorMessage) {
   const el = document.getElementById('ringkasanCalendarList');
   if (!el) return;
   if (errorMessage) {
-    el.innerHTML = `<div class="ringkasan-calendar-empty">Agenda belum tersedia: ${escHtml(errorMessage)}</div>`;
+    el.innerHTML = `<div class="ringkasan-calendar-empty">Kalender belum tersedia: ${escHtml(errorMessage)}</div>`;
     return;
   }
   if (!Array.isArray(calData)) {
-    el.innerHTML = '<div class="ringkasan-calendar-empty loading-pulse">Memuat agenda terdekat...</div>';
+    el.innerHTML = '<div class="ringkasan-calendar-empty loading-pulse">Memuat kalender ekonomi...</div>';
     return;
   }
 
   const now = Date.now();
+  const nowWib = new Date(now + 7 * 3600000);
+  const todayWib = `${nowWib.getUTCFullYear()}-${String(nowWib.getUTCMonth() + 1).padStart(2, '0')}-${String(nowWib.getUTCDate()).padStart(2, '0')}`;
   const events = calData
-    .filter(ev => ev.impact === 'High' && _ckEvTimestamp(ev) > now)
-    .sort((a, b) => _ckEvTimestamp(a) - _ckEvTimestamp(b))
-    .slice(0, 3);
+    .filter(ev => (ev.impact === 'High' || ev.impact === 'Medium') && ev.date >= todayWib)
+    .sort((a, b) => {
+      const aTime = a.time_wib === 'Tentative' ? '99:99' : (a.time_wib || '99:99');
+      const bTime = b.time_wib === 'Tentative' ? '99:99' : (b.time_wib || '99:99');
+      return `${a.date}|${aTime}`.localeCompare(`${b.date}|${bTime}`);
+    });
   if (events.length === 0) {
-    el.innerHTML = '<div class="ringkasan-calendar-empty">Tidak ada event high-impact mendatang pada data minggu ini.</div>';
+    el.innerHTML = '<div class="ringkasan-calendar-empty">Tidak ada event medium atau high-impact pada data kalender saat ini.</div>';
     return;
   }
 
-  el.innerHTML = events.map(ev => {
-    const ts = _ckEvTimestamp(ev);
-    const totalMin = Math.max(0, Math.floor((ts - now) / 60000));
-    const days = Math.floor(totalMin / 1440);
-    const hours = Math.floor((totalMin % 1440) / 60);
-    const mins = totalMin % 60;
-    const eta = days > 0 ? `${days} hari ${hours} jam` : hours > 0 ? `${hours} jam ${mins} menit` : `${mins} menit`;
-    const day = new Intl.DateTimeFormat('id-ID', { weekday:'short', day:'numeric', month:'short', timeZone:'Asia/Jakarta' }).format(new Date(ts));
-    const time = String(ev.time_wib || '').replace(' WIB', '') || 'Tentative';
-    const color = CUR_COLORS[ev.currency] || 'var(--muted)';
-    return `<div class="ringkasan-calendar-row">
-      <span class="ringkasan-calendar-time">${escHtml(time)}</span>
-      <span class="ringkasan-calendar-cur" style="color:${color}">${escHtml(ev.currency || '—')}</span>
-      <span class="ringkasan-calendar-event">${escHtml(ev.event || 'Event ekonomi')}<span class="ringkasan-calendar-meta">${escHtml(day)} · ${eta} lagi</span></span>
-    </div>`;
+  const groups = {};
+  events.forEach(ev => {
+    if (!groups[ev.date]) groups[ev.date] = [];
+    groups[ev.date].push(ev);
+  });
+
+  const columns = `<div class="ringkasan-calendar-columns" aria-hidden="true">
+    <span>Waktu</span><span>Aktual</span><span>Forecast</span><span>Sebelumnya</span>
+  </div>`;
+  const displayValue = value => (value === null || value === undefined || value === '') ? '—' : value;
+  const rows = Object.entries(groups).map(([date, dayEvents]) => {
+    const dayLabel = formatCalDate(date);
+    const isToday = date === todayWib;
+    const eventRows = dayEvents.map(ev => {
+      const time = ev.time_wib === 'Tentative' ? 'TBD' : String(ev.time_wib || 'TBD').replace(' WIB', '');
+      const currency = ev.currency || '—';
+      const color = CUR_COLORS[currency] || 'var(--muted)';
+      const actualClass = compareActualForecast(ev.actual, ev.forecast, ev.event, ev);
+      const impactClass = ev.impact === 'High' ? 'high' : 'medium';
+      return `<div class="ringkasan-calendar-row">
+        <div class="ringkasan-calendar-event-line">
+          <span class="ringkasan-calendar-time">${escHtml(time)}</span>
+          <span class="ringkasan-calendar-event"><span class="ringkasan-calendar-impact ${impactClass}" aria-label="${escHtml(ev.impact)} impact"></span><span><span class="ringkasan-calendar-cur" style="color:${color}">${escHtml(currency)}</span> ${escHtml(ev.event || 'Event ekonomi')}</span></span>
+        </div>
+        <div class="ringkasan-calendar-values">
+          <span></span>
+          <span class="ringkasan-calendar-value ${actualClass}">${escHtml(displayValue(ev.actual))}</span>
+          <span class="ringkasan-calendar-value">${escHtml(displayValue(ev.forecast))}</span>
+          <span class="ringkasan-calendar-value">${escHtml(displayValue(ev.previous))}</span>
+        </div>
+      </div>`;
+    }).join('');
+    return `<section class="ringkasan-calendar-day"><div class="ringkasan-calendar-date">${isToday ? 'Hari ini · ' : ''}${escHtml(dayLabel)}</div>${eventRows}</section>`;
   }).join('');
+  el.innerHTML = columns + rows;
 }
 
 function updateCalLastUpdated() {
@@ -13973,7 +14069,7 @@ function _ckAutoSMC(base, quote) {
   // entry dari AI Analisa pair yang sama. p1/p2/p3 SELALU manusia (komitmen perilaku:
   // kapan bias ditentukan, tidak berubah tanpa news, batas jumlah pair).
   const _ai = (typeof analisaAiCache !== 'undefined') ? analisaAiCache[symbol] : null;
-  const _aiS = (_ai?.saved_at && (Date.now() - _ai.saved_at) < 8 * 3600 * 1000) ? _ai.structured : null;
+  const _aiS = !_analisaResultIsStale(_ai) ? _ai.structured : null;
   if (_lastThesis && _lastThesis.pair_recommendation === pair && _lastThesis.direction && _lastThesis.direction !== 'no_trade' && _aiS?.entry_zone) {
     ckAutoTick('p4', `AI: arah ${_lastThesis.direction.toUpperCase()} dari Thesis Ringkasan + area entry ${_aiS.entry_zone} dari Analisa`);
   }
@@ -14131,7 +14227,7 @@ function ckAutoTickFromAnalisa(pair) {
 
   // Hasil AI Analisa (structured sudah lolos sanity-check arah & RR di server; TTL 8 jam)
   const ai = (typeof analisaAiCache !== 'undefined') ? analisaAiCache[symbol] : null;
-  const s = (ai?.saved_at && (now - ai.saved_at) < 8 * 3600 * 1000) ? ai.structured : null;
+  const s = !_analisaResultIsStale(ai, now) ? ai.structured : null;
   if (!s) return;
 
   // Arah teknikal vs fundamental (CB bias) — selaras → tick, konflik → block (bisa

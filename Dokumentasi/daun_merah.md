@@ -11,12 +11,22 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-10-18 (Session 389 — Agenda Ringkasan dan workspace Analisa responsif)
+> **Last updated:** 2026-10-18 (Session 390 — Perbaikan Analisa dan kalender ekonomi Ringkasan)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 390 (2026-10-18) — Perbaikan Analisa dan kalender ekonomi Ringkasan
+
+**Akar masalah layout.** Aturan CSS lama di bagian akhir stylesheet masih memaksa `.analisa-inner` ke `max-width: 680px !important`. Ia mengalahkan batas workspace baru 1.540 px, sementara grid tiga kolom tetap mempertahankan minimum kolomnya; hasilnya konten meluber dari container sempit ke kanan dan meninggalkan ruang kosong besar di kiri. Override lama diganti menjadi `width: 100%` dengan maksimum 1.540 px, sehingga workspace kembali terpusat dan memakai layar desktop secara proporsional.
+
+**Pengaman hasil lama.** Screenshot juga memperlihatkan hasil XAU/USD tanggal 24 September tetap diberi badge hijau `SETUP TERSTRUKTUR`, padahal harga dan levelnya sudah berubah jauh. Riwayat Analisa tetap disimpan sesuai keputusan lama, tetapi hasil berumur lebih dari delapan jam sekarang diberi status `HASIL LAMA`, peringatan bahwa level hanya historis, dan tidak dapat dikirim ke Checklist/Sizing atau Uji Kelemahan sampai pengguna menjalankan analisa ulang. Pemeriksaan umur memakai `analyzedAt` asli terlebih dahulu—bukan `saved_at` saat cache server lama dimuat ulang—serta dipakai juga oleh auto-tick Checklist agar level lama tidak dianggap data aktif.
+
+**Kalender ekonomi Ringkasan.** Kartu di bawah CB Bias diubah dari tiga agenda High terdekat menjadi tabel kalender seperti referensi user. Seluruh event Medium dan High dari dataset aktif ditampilkan menurut tanggal dan waktu WIB, lengkap dengan kolom Aktual, Forecast, dan Sebelumnya. Titik merah/kuning membedakan dampak tanpa memenuhi baris dengan badge, nilai aktual memakai warna beat/miss yang sudah konsisten dengan Kalender utama, dan semua teks data eksternal tetap di-escape. Kolom kiri desktop diperlebar sampai 380 px agar empat kolom data terbaca; daftar memakai scroll internal 680 px di desktop, sedangkan ponsel mengikuti scroll halaman agar tidak menimbulkan nested-scroll yang menyulitkan.
+
+**Responsif, versi, dan verifikasi.** Uji visual dengan data yang menyerupai kedua screenshot user membuktikan workspace Analisa desktop selebar 1.540 px kembali terpusat dan hasil lama tidak lagi memiliki tombol `KE CHECKLIST`. Kalender Ringkasan memiliki lebar 380 px pada viewport 1.600 px dan 366 px pada viewport ponsel 390 px; judul, empat kolom nilai, sembilan baris uji, serta pemisah tanggal terbaca tanpa overflow horizontal. Pada ponsel, urutan Analisa `execution → main → positioning → context` tetap benar. Regresi fokus lulus 28/28 dan suite penuh `npm test` lulus 1.417/1.417. `APP_VERSION` dinaikkan menjadi `2026.10.18.8`. Tidak ada panggilan AI berbayar atau transaksi selama verifikasi.
 
 ## Changelog Session 389 (2026-10-18) — Agenda Ringkasan dan workspace Analisa responsif
 

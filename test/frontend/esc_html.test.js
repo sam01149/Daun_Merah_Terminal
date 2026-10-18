@@ -114,4 +114,9 @@ test('_renderStructuredAi: tidak crash saat sl/tp/entry_zone dari AI berupa numb
   assert.ok(out.includes('MOMENTUM') && out.includes('MAKRO BULLISH'));
   assert.ok(out.includes('body 0.5-1 ATR') && out.includes('SL di balik wick rejection'));
   assert.ok(out.includes('RR minimum 1:2') && out.includes('bukan breakout'));
+
+  const staleOut = _renderStructuredAi(structured, '', 'qwen-3-32b', true, true, true, '2026-07-06T10:00:00Z', null, true);
+  assert.match(staleOut, /HASIL LAMA/);
+  assert.match(staleOut, /LEVEL HISTORIS/);
+  assert.doesNotMatch(staleOut, /KE CHECKLIST/);
 });
