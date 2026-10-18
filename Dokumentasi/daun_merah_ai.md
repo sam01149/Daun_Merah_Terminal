@@ -37,7 +37,7 @@ Ada 2 lapis pembatas yang perlu dibedakan:
 | # | Fitur | Tombol di UI | Dipicu otomatis? | Cache | Rate limit server |
 |---|-------|--------------|-------------------|-------|--------------------|
 | 1 | **Ringkasan Berita** (briefing FX + bias bank sentral + thesis + alert) | "Ringkas Berita" / "Ringkas Ulang" | Ya — 3×/hari (cron) | Tidak ada cache untuk generate baru; hasil terakhir disimpan untuk mode baca cepat | 4 request/menit/IP + single-flight lock global 55 detik (lihat §3.1) |
-| 2 | **Analisa AI per Pair** (komentar + level entry/SL/TP teknikal per pasangan mata uang) | "Analisa Pair Ini" (per pair, termasuk XAU/USD) | Ya — XAU/USD saja, 3×/hari (nempel di cron #1) | Tidak ada cache sebelum generate (selalu fresh tiap klik); hasil disimpan 6 jam untuk auto-tampil | 5 request/menit/IP |
+| 2 | **Analisa AI per Pair** (komentar + level entry/SL/TP teknikal per pasangan mata uang) | "Analisa Pair Ini" (per pair, termasuk XAU/USD) | Tidak — jalur publik murni manual; jalur `auto=1` adalah AATAS terpisah dan tidak menulis cache publik | Tidak ada cache-gate untuk generate baru; hasil sukses disimpan 6 jam untuk mode baca cepat | 5 request/menit/IP |
 | 3 | **Analisa Fundamental** (sintesa makro per currency: rezim pertumbuhan-inflasi, kebijakan moneter, ranking, setup paling searah, flag data lemah — bukan cuma ranking terkuat/terlemah) | "Buat Analisis Fundamental" | Tidak | **6 jam, GLOBAL** (satu cache untuk semua orang — lihat §4.3) | 5 request/menit/IP |
 | 4 | **AI Coach Jurnal** (analisis pola menang/kalah dari trade yang sudah closed) | "Ringkas Jurnal Saya" di tab Jurnal | Tidak | 1 jam per device, ada tombol "Refresh" | 30 request/menit/IP (endpoint jurnal secara umum) |
 | 5 | **Pre-Entry Check** (Plan R, 2026-07-18 — verdict LAYAK/TIDAK LAYAK dari checklist: auto-tick deterministik client-side + 1 call AI menilai sisa item discretionary & kontradiksi) | "Periksa Sebelum Entry" di tab CHECKLIST | Tidak | 45 menit per pair, key = fingerprint state checklist (invalid begitu ada item ditoggle) | 3 request/menit/IP |
@@ -60,6 +60,8 @@ Semua 6 tombol AI di atas sekarang punya **cooldown 90 detik di browser** (disim
 **[2026-08-31, Session 337] Cakupan fitur ini dipersempit jadi MAKRO MURNI.** Keputusan user: *"RINGKASAN UNTUK MAKRO, ANALISA UNTUK TEKNIKAL"*. Data yang **TIDAK LAGI** dikirim ke Call 1 maupun Call 3: price action multi-timeframe (XAU & pair FX), TA harian (RSI/SMA), skew opsi 25-delta, positioning COT, dan korelasi cross-asset. Semuanya sudah ditangani tab Analisa per Pair (`_formatFundamentalBlock` + Step 8 di `admin.js`), jadi tidak ada informasi yang hilang dari sistem. Yang tersisa sebagai input: headline (36 jam), kalender ekonomi, real yield + likuiditas + kurva imbal hasil, risk regime (VIX/MOVE/HY), rate path Fed Funds, status keputusan CB terdekat, Polymarket, harga XAU/USD (hanya level + %perubahan), dan riwayat sesi sebelumnya. Prompt sekarang punya **GERBANG TEMA**: tema tanpa jangkar headline/kalender wajib dibuang, bukan diisi angka pasar. Alasan & audit lengkap: `daun_merah.md` §Session 337.
 
 **Fetch cache yang tetap jalan walau datanya tidak dipakai prompt:** `cot_cache_v2`, `rr_cache_v2`, `correlations_v3` — cron Ringkasan adalah **pemanas cache** untuk tab Analisa & jalur auto-entry (POLICY_EPOCHS v35). Jangan dihapus; sudah dikunci tes regresi.
+
+**Audit kesesuaian Prime Market Academy (2026-10-18).** Call 1 sesuai sebagai briefing makro sesi: memilih sedikit driver penting, membandingkan actual-vs-forecast, memakai rate path/risk regime/real yield, menyiapkan skenario kalender, dan tidak mencampur TA/positioning. Call 2 memakai fundamental + stance CB sehingga lebih dekat ke hirarki core-data Academy. Call 3 belum mempunyai kontrak input yang konsisten: ia memerintahkan divergence `cb_bias` minimal dua level, pemeriksaan options skew, dan anomali korelasi emas tanpa menerima nilai-nilai itu; data TA juga sudah tidak dikirim, sementara UI masih melabelinya `THESIS · CB BIAS + TA`. Karena itu kartu thesis adalah sintesis makro indikatif, bukan implementasi Smart Bias/TA Prime yang terbukti lengkap. Rincian perbandingan ada di `daun_merah_riset.md` entri 18 Oktober 2026.
 
 Satu kali "generate" sebenarnya adalah **3-4 panggilan AI sekaligus**, bukan 1:
 
@@ -93,7 +95,7 @@ Call 2 (bias bank sentral, JSON):
   (kalau semua gagal: bias bank sentral TIDAK diupdate siklus itu — data lama di Redis tetap dipakai, bukan kosong/error)
 
 Call 3 (trade thesis, JSON):
-  1. DeepSeek v4-flash (API resmi)        — PRIMARY/SATU-SATUNYA (maxTokens 1500 — dokumen ini sempat tertulis 1200, dikoreksi 2026-08-18 setelah dicek ke kode; truncation JSON thesis 13 field tetap jadi alasan angkanya dipatok, dan sejak 2026-08-18 kejadian kepotong dideteksi lewat finish_reason=length di log)
+  1. DeepSeek v4-flash (API resmi)        — PRIMARY/SATU-SATUNYA (maxTokens 1200 sesuai kode aktif; respons 13 field divalidasi sebelum dipakai)
   (kalau gagal: tidak ada trade thesis baru ditampilkan siklus itu, bukan error)
 
 Call 4 (cek kontradiksi thesis terbuka):
@@ -126,17 +128,18 @@ Call 4 (cek kontradiksi thesis terbuka):
 **Penting:** tombol "Analisa Pair Ini" **selalu memanggil AI baru setiap diklik** — tidak dicek dulu apakah sudah ada hasil baru-baru ini (beda dengan Analisa Fundamental di §3.3 yang pakai cache global). Yang menahan laju supaya tidak boros adalah:
 
 - Cooldown 90 detik/device di UI.
-- **Jendela kesegaran 10 menit (Plan T-5, Session 198 SESI-C):** `analisaFreshUntil[symbol]` — begitu satu pair berhasil dianalisa segar (manual atau via auto-chain di bawah), klik manual ulang pair yang sama dalam 10 menit **tidak mengirim request sama sekali**, cukup toast "tunggu X menit lagi". Reset per-symbol (in-memory, hilang saat reload), tidak berlaku kalau respons `market_closed` (lihat gate di bawah).
+- **Jendela kesegaran 10 menit (Plan T-5, Session 198 SESI-C):** `analisaFreshUntil[symbol]` — begitu satu pair berhasil dianalisa segar, klik manual ulang pair yang sama dalam 10 menit **tidak mengirim request sama sekali**, cukup toast "tunggu X menit lagi". Reset per-symbol (in-memory, hilang saat reload), tidak berlaku kalau respons `market_closed` (lihat gate di bawah).
 - **Gate pasar tutup (Plan T-1, Session 198 SESI-A):** di luar jam FX buka, endpoint tidak memanggil AI sama sekali — menyajikan `ohlcv_analysis:<symbol>` apa adanya (`market_closed:true`, nol AI call) atau pesan error kalau belum pernah ada cache untuk pair itu.
-- **Auto-chain (Plan T-5, Session 198 SESI-C):** setiap klik manual "Ringkas Berita"/"Ringkas Ulang" yang sukses otomatis memicu **satu** panggilan tambahan ke fitur ini untuk pair yang sedang aktif di tab Analisa (default XAU/USD kalau tab belum pernah dibuka) — chain ini menembus cooldown 90 detik & jendela kesegaran (input baru = analisa baru), tapi tetap dibatasi oleh lock generate Ringkasan sendiri (§3.1) jadi tidak bisa spam. Kalau sedang gate pasar tutup, chain otomatis dilayani cache tanpa AI call (sama seperti klik manual).
 - Rate limit server 5 request/menit/IP.
 - Jatah harian provider bersama (lihat §4).
 
 Hasil tiap analisa disimpan 6 jam supaya kalau tab ditutup-buka lagi, versi terakhir bisa langsung tampil tanpa panggil AI ulang (mode baca cepat, `mode=cached`).
 
-**Otomatis:** hanya XAU/USD, 3×/hari, nempel di jadwal cron Ringkasan Berita (workflow yang sama, langkah kedua).
+**Otomatis:** tidak ada generator otomatis untuk tab Analisa manual. Cron Ringkasan tidak memanggil `ohlcv_analyze`; jalur `auto=1` milik AATAS terpisah, memakai prompt/log sendiri, dan tidak menulis cache `ohlcv_analysis:<symbol>` publik.
 
 **Rantai (Plan O-6, 2026-07-18; 2026-08-12: SambaNova akun-1/akun-2, dulu fallback berurutan di sini, diputus kontrak total):** DeepSeek v4-flash — PRIMARY/SATU-SATUNYA, tanpa Groq/Cerebras (sudah tidak ada sejak dulu di rantai ini) dan tanpa SambaNova lagi. DeepSeek dipromosikan jadi primary setelah gate diagnostik `?test_deepseek=1` lolos 3/3 sampel live (XAU/USD, EUR/USD, GBP/JPY): JSON valid, entry/SL/TP konsisten arah & RR positif, tidak ada kontaminasi angka antar-pair (kekhawatiran utama sebelum promosi). Kalau DeepSeek gagal, fitur ini **langsung menampilkan "AI tidak tersedia"**, tidak ada jaring pengaman lain — data teknikal deterministik (candle, level S/R, dsb) tetap tampil apa adanya, cuma commentary/setup AI-nya kosong.
+
+**Audit kesesuaian Prime Market Academy (2026-10-18).** Fitur sudah kuat pada struktur, zona/level deterministik, trigger, invalidation, horizon, kalender, serta kemampuan mengosongkan setup saat makro dan teknikal konflik. Namun prompt manual masih memulai arah dari trend Daily + struktur H4 + BOS, sedangkan Prime memakai fundamental/strong-vs-weak untuk arah dan chart untuk timing. Minimum RR manual adalah 1:1 (Prime mempublikasikan 1:2 untuk momentum maupun range); trigger belum mengunci rejection H1 dengan body 0,5–1 ATR dan sesi London/NY; beberapa strategi teknikal dapat bercampur tanpa identitas strategi; COT/retail dapat ikut alasan alignment walau seharusnya lebih tepat mengubah conviction; serta track record manual WR<50% otomatis memerintahkan trigger lebih ketat walau statistiknya belum net expectancy/per-versi/per-arah. Jadi fitur ini selaras sebagai alat analisa gabungan, tetapi belum merupakan implementasi metode Academy yang persis.
 
 ### 3.3 Analisa Fundamental — `api/admin.js` (`action=fundamental_analysis`)
 
