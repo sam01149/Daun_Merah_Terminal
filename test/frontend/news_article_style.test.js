@@ -31,3 +31,18 @@ test('headline News menaruh badge kategori di kiri judul dan waktu di bawahnya',
     'badge kategori harus berada di kiri judul dalam baris headline');
   assert.ok(metaAt > titleAt, 'metadata waktu harus berada di bawah headline');
 });
+
+test('semua badge kategori News memakai singkatan tanpa mengubah kategori internal', () => {
+  const render = between('function _feedItemHtml(item, isNew, idx)', '\n// allItems');
+  const labels = between('const FEED_CAT_LABELS = Object.freeze({', '\n});\n\nfunction _feedItemHtml');
+  const expected = {
+    'market-moving': 'MKT', forex: 'FX', macro: 'MAC', 'econ-data': 'DATA',
+    bonds: 'BND', energy: 'NRG', commodities: 'CMD', equities: 'EQT',
+    geopolitical: 'GEO', indexes: 'IDX', crypto: 'CRYP',
+  };
+  for (const [category, shortLabel] of Object.entries(expected)) {
+    assert.match(labels, new RegExp(`['"]?${category}['"]?\\s*:\\s*['"]${shortLabel}['"]`));
+  }
+  assert.match(render, /FEED_CAT_LABELS\[cat\]/);
+  assert.match(render, /class="item-tag tag-\$\{cat\}">\$\{catLabel\}/);
+});

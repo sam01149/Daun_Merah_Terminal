@@ -4541,7 +4541,7 @@ window.addEventListener('DOMContentLoaded', () => _updateNewsLangBtn());
 
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.10.18.4';
+const APP_VERSION = '2026.10.18.5';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
@@ -5392,8 +5392,23 @@ function toggleFJImg(btn, id) {
   btn.textContent = showing ? btn.dataset.labelShow : btn.dataset.labelHide;
 }
 
+const FEED_CAT_LABELS = Object.freeze({
+  'market-moving': 'MKT',
+  'forex': 'FX',
+  'macro': 'MAC',
+  'econ-data': 'DATA',
+  'bonds': 'BND',
+  'energy': 'NRG',
+  'commodities': 'CMD',
+  'equities': 'EQT',
+  'geopolitical': 'GEO',
+  'indexes': 'IDX',
+  'crypto': 'CRYP',
+});
+
 function _feedItemHtml(item, isNew, idx) {
   const cat = detectCat(item.title); // SELALU teks Inggris asli — item.title_id BUKAN input klasifikasi
+  const catLabel = FEED_CAT_LABELS[cat] || cat.slice(0, 4).toUpperCase();
   const useId = newsLangPref === 'id';
   const dispTitle = useId ? (item.title_id || item.title) : item.title;
   const dispDesc  = useId ? (item.desc_id != null && item.desc_id !== '' ? item.desc_id : item.desc) : item.desc;
@@ -5416,7 +5431,7 @@ function _feedItemHtml(item, isNew, idx) {
   return `
     <div class="feed-item cat-${cat}" data-guid="${escHtml(item.guid)}" style="animation-delay:${Math.min(idx,15)*0.025}s">
       <div class="item-headline-row">
-        <span class="item-tag tag-${cat}">${cat.replace('-',' ')}</span>
+        <span class="item-tag tag-${cat}">${catLabel}</span>
         <div class="item-title">${escHtml(dispTitle)}</div>
         ${newBadge}
       </div>

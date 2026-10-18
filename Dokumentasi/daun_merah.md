@@ -11,12 +11,20 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-10-18 (Session 387 — Workspace Ringkasan tiga kolom dan daftar News profesional)
+> **Last updated:** 2026-10-18 (Session 388 — Singkatan kategori News dan evaluasi pengayaan layout)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 388 (2026-10-18) — Singkatan kategori News dan evaluasi pengayaan layout
+
+**News.** Seluruh badge kategori pada baris berita kini memakai label pendek yang konsisten: `MKT`, `FX`, `MAC`, `DATA`, `BND`, `NRG`, `CMD`, `EQT`, `GEO`, `IDX`, dan `CRYP`. Perubahan hanya pada label tampilan; nama kategori internal, warna, klasifikasi, filter, dan preferensi push tetap utuh. Fallback kategori tak dikenal juga dibatasi ke empat huruf kapital. `APP_VERSION` dinaikkan menjadi `2026.10.18.5`.
+
+**Evaluasi layout (belum diimplementasikan, menunggu keputusan user).** Penambahan Kalender di bawah CB Bias layak bila berbentuk agenda ringkas maksimum tiga event high-impact terdekat, memakai data Kalender yang sudah ada dan menyediakan jalan ke tab Kalender penuh; menyalin kalender lengkap justru akan membuat Ringkasan padat dan redundan. Untuk Analisa, rekomendasi adalah memakai workspace tiga zona yang sejalan secara visual dengan Ringkasan tetapi mengikuti proses Prime Academy: konteks timeframe/indikator di kiri, penjelasan analisa di tengah, dan ringkasan eksekusi (arah, strategi, trigger, entry, SL, TP, RR, sesi, status kontrak) di kanan. Pair selector tetap membentang di atas; pada ponsel urutannya harus menjadi keputusan eksekusi, penjelasan, lalu detail pendukung.
+
+**Ponsel dan verifikasi.** Grid Ringkasan tetap satu kolom di bawah 768 px dan dua panel samping hanya mulai berdampingan pada tablet; label kategori News yang dipendekkan mengurangi kebutuhan lebar sehingga lebih aman daripada label lama. Regresi frontend fokus lulus 13/13 dan suite penuh `npm test` lulus 1.408/1.408. Tidak ada panggilan AI berbayar atau transaksi dalam verifikasi.
 
 ## Changelog Session 387 (2026-10-18) — Workspace Ringkasan tiga kolom dan daftar News profesional
 
