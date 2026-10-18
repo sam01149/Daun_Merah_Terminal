@@ -28,6 +28,8 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 
 **Verifikasi lokal.** Regresi baru mengunci posisi kalender, filter tiga event High mendatang, zona Analisa, urutan responsif, batas peran COT/retail, dan layout cetak. Tes fokus lulus 37/37. Uji visual nyata pada viewport 1.600 px, 900 px, dan 390 px menunjukkan grid sesuai breakpoint, tidak ada overflow horizontal, dan tidak ada error JavaScript. Suite penuh `npm test` lulus 1.413/1.413. Tidak ada panggilan AI berbayar atau transaksi dalam verifikasi.
 
+**Verifikasi produksi.** Setelah commit `b588544` ter-deploy, `index.html` produksi merespons HTTP 200 dengan `APP_VERSION 2026.10.18.6`. HTML live memuat kartu `ringkasanCalendarCard`, panel `analisaExecutionPanel`, batas peran positioning, serta urutan mobile `execution → main → positioning → context`, sehingga build yang dilayani sudah sama dengan implementasi yang diuji.
+
 ## Changelog Session 388 (2026-10-18) — Singkatan kategori News dan evaluasi pengayaan layout
 
 **News.** Seluruh badge kategori pada baris berita kini memakai label pendek yang konsisten: `MKT`, `FX`, `MAC`, `DATA`, `BND`, `NRG`, `CMD`, `EQT`, `GEO`, `IDX`, dan `CRYP`. Perubahan hanya pada label tampilan; nama kategori internal, warna, klasifikasi, filter, dan preferensi push tetap utuh. Fallback kategori tak dikenal juga dibatasi ke empat huruf kapital. `APP_VERSION` dinaikkan menjadi `2026.10.18.5`.
