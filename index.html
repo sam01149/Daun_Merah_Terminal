@@ -493,21 +493,6 @@ body {
 .feed-item:active { transform:none; }
 @keyframes fadeUp { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:translateY(0)} }
 
-.feed-item::before {
-  content:''; position:absolute; left:0; top:0; bottom:0;
-  width:3px; border-radius:3px 0 0 3px;
-}
-.cat-market-moving::before { background:#ff4757; box-shadow:2px 0 6px rgba(255,71,87,.18); }
-.cat-forex::before { background:var(--green); }
-.cat-equities::before { background:var(--purple); }
-.cat-commodities::before { background:#f59e0b; }
-.cat-energy::before { background:var(--orange); }
-.cat-bonds::before { background:#60a5fa; }
-.cat-crypto::before { background:var(--pink); }
-.cat-indexes::before { background:#34d399; }
-.cat-macro::before { background:var(--accent); }
-.cat-econ-data::before { background:#c084fc; }
-.cat-geopolitical::before { background:#fb923c; }
 .item-meta { display:flex; align-items:center; gap:7px; margin-bottom:6px; flex-wrap:wrap; }
 .item-time { font-size:10px; color:var(--accent); letter-spacing:.3px; }
 
@@ -4470,7 +4455,7 @@ window.addEventListener('DOMContentLoaded', () => _updateNewsLangBtn());
 
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.10.05.1';
+const APP_VERSION = '2026.10.18.2';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
@@ -5812,7 +5797,7 @@ function _printMeta(bodyClass) {
     const price = d.h1?.current != null ? `Harga saat data: ${d.h1.current}` : '';
     const bias = ai.structured?.bias;
     const biasStr = bias ? ` · Bias AI: ${bias.toUpperCase()}` : '';
-    return { letterheadId: 'printLetterheadAnalisa', titleText: `Analisa Teknikal — ${label}`, meta: `${price}${biasStr}` };
+    return { letterheadId: 'printLetterheadAnalisa', titleText: `Analisa Makro & Teknikal — ${label}`, meta: `${price}${biasStr}` };
   }
   return null;
 }
@@ -6270,9 +6255,10 @@ async function downloadAnalisaPdf() {
   if (!_pdfLibReady()) { cetakAnalisa(); return; }
   const b = _pdfBuilder();
   const st = ai.structured;
-  const srcBits = ['teknikal'];
+  const srcBits = [];
   if (ai.hasMakro) { const age = _makroAgeLabel(ai.makroAt); srcBits.push(age ? `makro (${age})` : 'makro'); }
   if (ai.hasFund) srcBits.push('fundamental');
+  srcBits.push('teknikal');
   // Metadata dipadatkan jadi 2 baris (dulu 5 baris terpisah tampil seperti daftar biasa —
   // feedback review eksternal 2026-07-23) — letterhead() sekarang wrap otomatis kalau
   // kepanjangan, aman digabung.
@@ -6280,7 +6266,7 @@ async function downloadAnalisaPdf() {
   if (ai.analyzedAt) metaLine1.push(`Dianalisa: ${fmtCBTime(ai.analyzedAt)}`);
   metaLine1.push(`Diunduh: ${_printWibNow().display}`);
   if (d.h1?.current != null) metaLine1.push(`Harga saat data: ${d.h1.current}`);
-  b.letterhead(`Analisa Teknikal — ${label}`, [
+  b.letterhead(`Analisa Makro & Teknikal — ${label}`, [
     metaLine1.join('   ·   '),
   ]);
 
@@ -6290,6 +6276,8 @@ async function downloadAnalisaPdf() {
   if (st) {
     const biasLabel = { bullish: 'BULLISH', bearish: 'BEARISH', mixed: 'MIXED', neutral: 'NETRAL' }[(st.bias || 'neutral').toLowerCase()] || String(st.bias || 'NETRAL').toUpperCase();
     b.banner('BIAS', biasLabel);
+    if (st.strategy_id) b.kv('Strategi', String(st.strategy_id).replace(/_/g, ' ').toUpperCase());
+    if (st.macro_direction) b.kv('Arah Makro', String(st.macro_direction).toUpperCase() + (st.macro_reason ? ' — ' + st.macro_reason : ''));
     if (st.trigger) b.para(st.trigger, { size: 10, italic: true, gapAfter: 3.5 });
     if (st.makro_alignment) {
       const al = { searah: 'MAKRO SEARAH', konflik: 'MAKRO KONFLIK', netral: 'MAKRO NETRAL' }[st.makro_alignment] || String(st.makro_alignment).toUpperCase();
@@ -6318,7 +6306,7 @@ async function downloadAnalisaPdf() {
   // Permintaan review eksternal (2026-07-23): paragraf padat 20 baris tanpa struktur
   // melelahkan dibaca — sub-heading + bullet-split (>220 karakter & >=3 kalimat, pola sama
   // _renderArticlePdfBlocks Ringkasan) bikin lebih scan-friendly tanpa ubah kontennya.
-  const ANALISA_PARA_LABELS = ['Trend Daily', 'Struktur H4', 'Momentum & Pola', 'Integrasi & Risiko'];
+  const ANALISA_PARA_LABELS = ['Arah Makro', 'Strategi & Timing', 'Momentum & Pola', 'Integrasi & Risiko'];
   let analisaParaIdx = 0;
   text.split('\n').filter(l => l.trim()).forEach(l => {
     const trimmed = l.trim();
@@ -6335,7 +6323,7 @@ async function downloadAnalisaPdf() {
     }
   });
 
-  b.footer(`⚠ Level & bias di atas dihasilkan AI${ai.model ? ' (' + ai.model + ')' : ''} dan bisa keliru — bukan nasihat keuangan. Verifikasi ke chart sebelum dipakai.`);
+  b.footer(`Level & bias di atas dihasilkan AI${ai.model ? ' (' + ai.model + ')' : ''} dan bisa keliru — bukan nasihat keuangan. Verifikasi ke chart sebelum dipakai.`);
   _stampWatermark(b.doc, await _getPdfWatermarkDataUrl());
   b.doc.save(`${_pdfSanitizeFilePart(`Analisa ${label} ${_pdfSessionLabel()} ${_pdfClockLabel()}`)}.pdf`);
 }
@@ -6786,6 +6774,9 @@ function _renderStructuredAi(structured, commentary, model, hasMakro, isCached, 
     const bias      = (structured.bias || 'neutral').toLowerCase();
     const biasColor = bias === 'bullish' ? 'var(--green)' : bias === 'bearish' ? 'var(--red)' : bias === 'mixed' ? '#f5a623' : 'var(--muted)';
     const biasLabel = bias === 'bullish' ? '▲ BULLISH' : bias === 'bearish' ? '▼ BEARISH' : bias === 'mixed' ? '⟷ MIXED' : '→ NEUTRAL';
+    const strategyLabels = { momentum: 'MOMENTUM', range: 'RANGE', tactical_fade: 'TACTICAL FADE', no_trade: 'NO TRADE' };
+    const strategyLabel = strategyLabels[structured.strategy_id] || null;
+    const macroDirLabel = structured.macro_direction ? String(structured.macro_direction).toUpperCase() : null;
     
     let alignChip = '';
     if (structured.makro_alignment) {
@@ -6799,12 +6790,26 @@ function _renderStructuredAi(structured, commentary, model, hasMakro, isCached, 
       <div class="analisa-tf-label" style="color:var(--accent) !important">AI SETUP &amp; BIAS</div>
       <div style="display:flex;align-items:center;gap:10px;margin:8px 0 10px;flex-wrap:wrap">
         <span style="background:${biasColor};color:#0a0f1a;font-size:9px;font-weight:700;padding:3px 8px;border-radius:3px;font-family:'DM Mono',monospace;letter-spacing:.06em;flex-shrink:0">${biasLabel}</span>
+        ${strategyLabel ? `<span style="border:1px solid var(--accent);color:var(--accent);font-size:9px;font-weight:700;padding:2px 8px;border-radius:3px;font-family:'DM Mono',monospace;letter-spacing:.06em">${strategyLabel}</span>` : ''}
+        ${macroDirLabel ? `<span style="border:1px solid var(--border);color:var(--text);font-size:9px;font-weight:700;padding:2px 8px;border-radius:3px;font-family:'DM Mono',monospace;letter-spacing:.06em">MAKRO ${escHtml(macroDirLabel)}</span>` : ''}
         ${alignChip}
         ${structured.trigger ? `<span style="font-size:11px;color:var(--text);flex:1;min-width:160px;line-height:1.5">${escHtml(structured.trigger)}</span>` : ''}
       </div>`;
 
     if (structured.makro_alignment_reason) {
       html += `<div style="margin:-4px 0 10px;font-size:10px;color:var(--muted);line-height:1.5"><span style="color:var(--text)">MAKRO </span>${escHtml(structured.makro_alignment_reason)}</div>`;
+    }
+    if (structured.macro_reason) {
+      html += `<div style="margin:-4px 0 10px;font-size:10px;color:var(--muted);line-height:1.5"><span style="color:var(--text)">DASAR ARAH </span>${escHtml(structured.macro_reason)}</div>`;
+    }
+    if (structured.trigger_contract) {
+      const tc = structured.trigger_contract;
+      const bodyRule = tc.body_atr_min != null ? ` · body ${tc.body_atr_min}-${tc.body_atr_max} ATR` : '';
+      const extraRule = structured.strategy_id === 'range' ? ' · RSI divergence opsional' : structured.strategy_id === 'tactical_fade' ? ' · overreaction jangka pendek' : '';
+      html += `<div style="margin:-4px 0 10px;font-size:10px;color:var(--muted);line-height:1.5"><span style="color:var(--text)">ATURAN TRIGGER </span>Rejection H1 · sesi London/New York${bodyRule}${extraRule} · bukan breakout</div>`;
+    }
+    if (structured.academy_contract_status === 'rejected' && structured.academy_reject_reason) {
+      html += `<div style="margin:-4px 0 10px;font-size:10px;color:var(--yellow);line-height:1.5"><span style="color:var(--yellow)">NO TRADE </span>${escHtml(structured.academy_reject_reason)}</div>`;
     }
 
     if (structured.entry_zone || structured.sl || structured.tp) {
@@ -7521,13 +7526,14 @@ function renderThesisCard(t) {
   const dirClass = t.direction === 'long' ? 'long' : 'short';
   const dirLabel = t.direction === 'no_trade' ? 'NO TRADE' : t.direction.toUpperCase();
   return `<div class="thesis-card">
-    <div class="thesis-section-label" style="font-size:9px;color:var(--pink);font-family:'DM Mono',monospace;letter-spacing:.1em;margin-bottom:8px">THESIS · CB BIAS + TA</div>
+    <div class="thesis-section-label" style="font-size:9px;color:var(--pink);font-family:'DM Mono',monospace;letter-spacing:.1em;margin-bottom:8px">THESIS · MAKRO + CB BIAS</div>
     <div style="display:flex;align-items:center">
       <span class="thesis-pair">${t.pair_recommendation || '—'}</span>
       ${t.direction !== 'no_trade' ? `<span class="thesis-dir ${dirClass}">${dirLabel}</span>` : `<span class="thesis-dir" style="background:var(--border);color:var(--muted)">${dirLabel}</span>`}
       <span class="thesis-conf"><span class="conf-stars">${stars}</span><span class="conf-text">${confText}</span></span>
     </div>
     ${t.invalidation_condition ? `<div class="thesis-label">INVALIDASI</div><div class="thesis-val">${escHtml(t.invalidation_condition)}</div>` : ''}
+    ${t.cb_bias_note ? `<div class="thesis-label">DASAR CB</div><div class="thesis-val">${escHtml(t.cb_bias_note)}</div>` : ''}
     ${t.regime_note ? `<div class="thesis-label" style="color:var(--yellow)">CATATAN REGIME</div><div class="thesis-val" style="color:var(--yellow)">${escHtml(t.regime_note)}</div>` : ''}
     ${t.catalyst_dependency ? `<div class="thesis-label">KATALIS</div><div class="thesis-val">${escHtml(t.catalyst_dependency)}</div>` : ''}
     ${t.time_horizon_days ? `<div class="thesis-label">HORIZON</div><div class="thesis-val">${t.time_horizon_days} hari</div>` : ''}
@@ -12179,7 +12185,7 @@ const PLAYBOOKS = {
         items:[
           {id:'mr_r1', label:'Stop di luar range (bukan di dalam range)'},
           {id:'mr_r2', label:'Target: tengah range atau sisi opposite'},
-          {id:'mr_r3', label:'RR minimal 1:1.5 (range trade lebih sempit)'},
+          {id:'mr_r3', label:'RR minimal 1:2'},
           {id:'mr_r4', label:'Exit plan jika range break: langsung keluar'},
         ]
       },
@@ -13993,8 +13999,8 @@ function ckAutoTickFromAnalisa(pair) {
     }
   } else if (ckActivePlaybook === 'mean_reversion') {
     if (rrTxt) {
-      if (s.risk_reward >= 1.5) ckAutoTick('mr_r3', rrTxt);
-      else ckAutoBlock('mr_r3', `${rrTxt} — di bawah 1:1.5`);
+      if (s.risk_reward >= 2) ckAutoTick('mr_r3', rrTxt);
+      else ckAutoBlock('mr_r3', `${rrTxt} — di bawah 1:2`);
     }
     // mr_ra1 (Plan I item 4): struktur H4 Mixed/Range = TICK (kebalikan SMC s3 yang
     // justru BLOCK kondisi sama) — arah logika per playbook memang terbalik, itu
@@ -18151,13 +18157,14 @@ function renderDashDigest() {
       const dirLabel = t.direction === 'no_trade' ? 'NO TRADE' : (t.direction || '').toUpperCase();
       const stars = fundStarsRating(t.confidence_1_to_5 || 0);
       html += `<div class="thesis-card" style="margin-bottom:10px">
-        <div style="font-size:9px;color:var(--pink);font-family:'DM Mono',monospace;letter-spacing:.1em;margin-bottom:6px">THESIS · FX · CB BIAS + TA</div>
+        <div style="font-size:9px;color:var(--pink);font-family:'DM Mono',monospace;letter-spacing:.1em;margin-bottom:6px">THESIS · FX · MAKRO + CB BIAS</div>
         <div style="display:flex;align-items:center;flex-wrap:wrap;gap:4px;margin-bottom:6px">
           <span class="thesis-pair">${escHtml(t.pair_recommendation)}</span>
           ${t.direction !== 'no_trade' ? `<span class="thesis-dir ${dirClass}">${dirLabel}</span>` : `<span class="thesis-dir" style="background:var(--border);color:var(--muted)">${dirLabel}</span>`}
           <span class="thesis-conf">${stars}</span>
         </div>
         ${t.invalidation_condition ? `<div class="thesis-label">INVALIDASI</div><div class="thesis-val">${escHtml(t.invalidation_condition)}</div>` : ''}
+        ${t.cb_bias_note ? `<div class="thesis-label">DASAR CB</div><div class="thesis-val">${escHtml(t.cb_bias_note)}</div>` : ''}
         ${t.regime_note ? `<div class="thesis-label" style="color:var(--yellow)">CATATAN REGIME</div><div class="thesis-val" style="color:var(--yellow)">${escHtml(t.regime_note)}</div>` : ''}
         ${t.catalyst_dependency ? `<div class="thesis-label">KATALIS</div><div class="thesis-val">${escHtml(t.catalyst_dependency)}</div>` : ''}
         ${t.time_horizon_days ? `<div class="thesis-label">HORIZON</div><div class="thesis-val">${t.time_horizon_days} hari</div>` : ''}

@@ -11,12 +11,20 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-10-18 (Session 384 — Migrasi Sumber COT ke CFTC Socrata Open Data API)
+> **Last updated:** 2026-10-18 (Session 385 — Hilangkan strip warna pinggiran card news)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 385 (2026-10-18) — Hilangkan strip warna pinggiran card news
+
+**Latar belakang dan kebutuhan.** Kartu berita di feed utama sebelumnya memiliki garis/strip vertikal tebal berwarna di pinggiran kiri (`.feed-item::before` dan pembeda kategori `.cat-*::before`). Elemen visual ini terasa mencolok dan melelahkan bagi mata pengguna bila dibandingkan dengan tampilan kartu di tab Artikel/Riset yang minimalis dan bersih.
+
+**Perubahan antarmuka.** Pseudo-element `.feed-item::before` beserta pembeda kategori `.cat-*::before` dihapus dari berkas [index.html](file:///c:/Users/sam/Documents/kerja/Daun_Merah/index.html). Struktur kartu berita kini seragam dengan kartu artikel: kotak bernuansa gelap dengan garis batas tipis standar tanpa strip warna samping. Informasi kategori berita tetap tersedia melalui tag label (`.item-tag`) di dalam kartu. Stempel versi `APP_VERSION` dinaikkan menjadi `2026.10.18.2` agar klien PWA memuat perubahan style baru secara bersih.
+
+**Verifikasi.** Seluruh rangkaian pengujian frontend (`test/frontend/**/*.test.js`) dieksekusi dan lulus 63/63 (100% hijau).
 
 ## Changelog Session 384 (2026-10-18) — Migrasi Sumber COT ke CFTC Socrata Open Data API
 
