@@ -32,6 +32,8 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 
 **Verifikasi lokal.** Regresi baru mengunci perpindahan CB, urutan Ringkasan, top-3 Polymarket, penghapusan kartu thesis, arah CB dua kaki, kontrak setiap strategi, rejection setup tanpa level/arah trade, RR 1:2 termasuk saat quote live tidak tersedia, dan isolasi AATAS. Tes fokus lulus; suite penuh `npm test` lulus 1.402/1.402. Tidak ada panggilan AI berbayar atau transaksi dalam verifikasi.
 
+**Verifikasi produksi.** Setelah commit `9776397` ter-deploy, `index.html` produksi merespons HTTP 200 dengan `APP_VERSION 2026.10.18.3`, label CB Bias delapan bank sentral dan Polymarket top-3, serta tanpa renderer kartu Thesis FX/XAU lama. Endpoint baca-saja `/api/cb-status` merespons 200 dengan 8 bank dan `/api/admin?action=polymarket` merespons 200 dengan 20 market; `/api/admin?action=health` tetap terlindungi dan menolak request tanpa kredensial dengan 401. Tidak ada endpoint generasi AI yang dipanggil.
+
 ## Changelog Session 385 (2026-10-18) — Hilangkan strip warna pinggiran card news
 
 **Latar belakang dan kebutuhan.** Kartu berita di feed utama sebelumnya memiliki garis/strip vertikal tebal berwarna di pinggiran kiri (`.feed-item::before` dan pembeda kategori `.cat-*::before`). Elemen visual ini terasa mencolok dan melelahkan bagi mata pengguna bila dibandingkan dengan tampilan kartu di tab Artikel/Riset yang minimalis dan bersih.
