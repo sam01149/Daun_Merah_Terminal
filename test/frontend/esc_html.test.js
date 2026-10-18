@@ -92,6 +92,10 @@ test('_renderStructuredAi: tidak crash saat sl/tp/entry_zone dari AI berupa numb
   const _renderStructuredAi = eval(`(${html.slice(rsStart, rsEnd).trim()})`);
 
   const structured = {
+    strategy_id: 'momentum',
+    macro_direction: 'bullish',
+    macro_reason: 'Real yield turun dan bias Fed dovish',
+    trigger_contract: { timeframe: '1h', session: 'london_or_new_york', rejection_required: true, breakout_allowed: false, min_rr: 2, body_atr_min: 0.5, body_atr_max: 1, stop_rule: 'beyond_rejection_wick' },
     bias: 'bullish',
     trigger: 'Breakout di atas 4187',
     entry_zone: 4166.00,
@@ -107,4 +111,7 @@ test('_renderStructuredAi: tidak crash saat sl/tp/entry_zone dari AI berupa numb
   };
   const out = _renderStructuredAi(structured, '', 'qwen-3-32b', true, false, true, '2026-07-06T10:00:00Z');
   assert.ok(out.includes('4166') && out.includes('4155.5') && out.includes('4210'));
+  assert.ok(out.includes('MOMENTUM') && out.includes('MAKRO BULLISH'));
+  assert.ok(out.includes('body 0.5-1 ATR') && out.includes('SL di balik wick rejection'));
+  assert.ok(out.includes('RR minimum 1:2') && out.includes('bukan breakout'));
 });

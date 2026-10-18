@@ -133,6 +133,9 @@ const { AATAS_OK_FIELDS } = require('./_aatas_fixture');
 // bahasan test ini isolasi payload publik, bukan gate AATAS.
 const AI_JSON = {
   ...AATAS_OK_FIELDS,
+  strategy_id: 'momentum',
+  macro_direction: 'bearish',
+  macro_reason: 'BoE dovish vs Fed hawkish',
   bias: 'bearish',
   entry_zone: '1.2795-1.2805', entry_basis: 'cluster S/R',
   sl: '1.2850', tp: '1.2700',

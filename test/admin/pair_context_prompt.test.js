@@ -45,6 +45,10 @@ const REDIS_FIXTURES = {
   'ohlcv:AUDUSD=X:1h': JSON.stringify(mkTrendCandles(0.65, 0.64)),
   'ohlcv:USDCAD=X:1h': JSON.stringify(mkTrendCandles(1.35, 1.37)),
   'ohlcv:NZDUSD=X:1h': JSON.stringify(mkTrendCandles(0.60, 0.59)),
+  'cb_bias': JSON.stringify({
+    EUR: { bias: 'Dovish', confidence: 'High' },
+    USD: { bias: 'Hawkish', confidence: 'High' },
+  }),
 };
 
 // bearish setup konsisten dengan nowPrice=100 (close flat EURUSD=X) — lolos
@@ -54,6 +58,9 @@ const { AATAS_OK_FIELDS } = require('./_aatas_fixture');
 // AATAS v2: field checklist wajib ada supaya Gate 1 (penegakan kode) lolos di jalur auto.
 const AI_JSON = {
   ...AATAS_OK_FIELDS,
+  strategy_id: 'momentum',
+  macro_direction: 'bearish',
+  macro_reason: 'ECB dovish berlawanan dengan Fed hawkish',
   bias: 'bearish',
   entry_zone: '100.02-100.05', entry_basis: 'cluster S/R 100.03 (2x sentuh)',
   sl: '100.10', tp: '99.90',

@@ -280,6 +280,14 @@ const THESIS_VALID_CURR       = new Set(['USD','EUR','GBP','JPY','CAD','AUD','NZ
 const THESIS_VALID_XAU_BIAS   = ['bullish', 'bearish', 'neutral', 'conflicting'];
 const THESIS_VALID_XAU_DRIVER = ['real_yield', 'safe_haven', 'risk_sentiment', 'usd_strength', 'insufficient_data'];
 const THESIS_CURRENCY_CODE_RE = /\b(USD|EUR|GBP|JPY|CAD|AUD|NZD|CHF)\b/g;
+const THESIS_CB_AXIS = {
+  'Hawkish': 2,
+  'Cautious Hawkish': 1,
+  'Neutral': 0,
+  'Cautious Dovish': -1,
+  'Dovish': -2,
+};
+const THESIS_CB_ORTHOGONAL = new Set(['Data Dependent', 'On Hold', 'Split']);
 
 // "USD/JPY" -> ['USD','JPY']; null kalau formatnya rusak, sisi kiri=kanan, atau bukan major currency.
 function thesisPairCurrencies(pairRecommendation) {
@@ -315,6 +323,58 @@ function validateThesis(parsed) {
     THESIS_VALID_XAU_DRIVER.includes(parsed.xau_dominant_driver) &&
     thesisInvalidationCurrencyConsistent(parsed)
   );
+}
+
+function formatCbBiasForThesis(cbBias) {
+  if (!cbBias || typeof cbBias !== 'object') return 'CB bias snapshot: unavailable';
+  const lines = Object.entries(cbBias)
+    .filter(([cur, entry]) => THESIS_VALID_CURR.has(cur) && entry?.bias)
+    .map(([cur, entry]) => `${cur}: ${entry.bias} (confidence ${entry.confidence || 'unknown'}${entry.divergence_warning ? ', disputed' : ''})`);
+  return lines.length ? `CB bias snapshot (authoritative for FX pair selection):\n${lines.join('\n')}` : 'CB bias snapshot: unavailable';
+}
+
+function thesisCbDirection(pairRecommendation, cbBias) {
+  const pair = thesisPairCurrencies(pairRecommendation);
+  if (!pair || !cbBias || typeof cbBias !== 'object') return null;
+  const [base, quote] = pair;
+  const b = cbBias[base], q = cbBias[quote];
+  if (!b?.bias || !q?.bias || b.divergence_warning || q.divergence_warning) return null;
+  if (b.confidence === 'Low' || q.confidence === 'Low') return null;
+  if (THESIS_CB_ORTHOGONAL.has(b.bias) || THESIS_CB_ORTHOGONAL.has(q.bias)) return null;
+  const bLevel = THESIS_CB_AXIS[b.bias], qLevel = THESIS_CB_AXIS[q.bias];
+  if (!Number.isFinite(bLevel) || !Number.isFinite(qLevel)) return null;
+  const gap = Math.abs(bLevel - qLevel);
+  if (gap < 2) return null;
+  return { direction: bLevel > qLevel ? 'long' : 'short', gap, base, quote, baseBias: b.bias, quoteBias: q.bias };
+}
+
+// Prime Market Academy: arah FX harus lahir dari divergensi kebijakan yang nyata.
+// Model tidak boleh mengarang pengganti dari chart karena Call 3 memang tidak menerima TA.
+function applyCbBiasThesisGuard(thesis, cbBias) {
+  if (!thesis) return thesis;
+  const signal = thesisCbDirection(thesis.pair_recommendation, cbBias);
+  if (thesis.direction === 'no_trade') {
+    return {
+      ...thesis,
+      cb_bias_note: signal
+        ? `${signal.base} ${signal.baseBias} vs ${signal.quote} ${signal.quoteBias}; selisih ${signal.gap} tingkat tersedia, tetapi tesis akhir tetap no_trade karena filter makro lain.`
+        : 'Divergensi CB minimal dua tingkat dengan confidence memadai tidak tersedia; no_trade dipertahankan.',
+    };
+  }
+  if (!signal || signal.direction !== thesis.direction) {
+    return {
+      ...thesis,
+      direction: 'no_trade',
+      confidence_1_to_5: Math.min(thesis.confidence_1_to_5, 2),
+      cb_bias_note: signal
+        ? `Arah model tidak cocok dengan divergensi CB: ${signal.base} ${signal.baseBias} vs ${signal.quote} ${signal.quoteBias}. Setup dinonaktifkan.`
+        : 'Divergensi CB minimal dua tingkat dengan confidence memadai tidak tersedia. Setup dinonaktifkan.',
+    };
+  }
+  return {
+    ...thesis,
+    cb_bias_note: `${signal.base} ${signal.baseBias} vs ${signal.quote} ${signal.quoteBias}; selisih ${signal.gap} tingkat mendukung ${signal.direction}.`,
+  };
 }
 
 // ── Regime cross-check (plan G5) — jaring pengaman KODE, bukan instruksi prompt ──
@@ -2043,9 +2103,12 @@ ${xauHistoryBlock}`;
     console.warn(`Call 3 skipped — time budget exhausted (${elapsedBeforeCall3}ms elapsed)`);
     // thesis tetap null → UI sajikan latest_thesis lama dari Redis (tak fatal)
   } else if (recentItems.length > 0 && article) {
-    const cbSummary = biasUpdated.length > 0
-      ? `CB biases just updated for: ${biasUpdated.join(', ')}`
-      : 'CB biases unchanged this cycle';
+    let cbBiasForThesis = {};
+    try {
+      const rawCbBias = await redisCmd('GET', 'cb_bias');
+      if (rawCbBias) cbBiasForThesis = JSON.parse(rawCbBias);
+    } catch (e) { console.warn('Call 3: cb_bias read failed:', e.message); }
+    const cbSummary = formatCbBiasForThesis(cbBiasForThesis);
     const xauSectionMatch = article.indexOf('XAUUSD:');
     const xauSection = xauSectionMatch !== -1 ? article.slice(xauSectionMatch, xauSectionMatch + 700) : '';
     const briefingForThesis = article.slice(0, 900) + (xauSection && xauSectionMatch > 900 ? '\n\n' + xauSection : '');
@@ -2078,6 +2141,7 @@ ${xauHistoryBlock}`;
       '  "pair_recommendation": "USD/JPY",',
       '  "direction": "long" | "short" | "no_trade",',
       '  "confidence_1_to_5": 3,',
+      '  "cb_bias_note": "string, in Bahasa Indonesia",',
       '  "invalidation_condition": "string, in Bahasa Indonesia",',
       '  "time_horizon_days": 5,',
       '  "catalyst_dependency": "string, in Bahasa Indonesia",',
@@ -2093,11 +2157,11 @@ ${xauHistoryBlock}`;
       'FX rules:',
       'Use only 8 major currencies: USD EUR GBP JPY CAD AUD NZD CHF.',
       'Set direction to "no_trade" and confidence to 1-2 if conviction is low.',
-      'Only recommend a pair if CB bias divergence between the two currencies is at least 2 levels apart (e.g. Hawkish vs Dovish).',
-      'Use the calendar events to inform invalidation_condition — if a high-impact event for one of the pair currencies is scheduled within time_horizon_days, name it as the primary invalidation trigger. CRITICAL: the calendar list contains events for all 8 major currencies, not just the recommended pair — only cite an event whose currency is literally one of the two currencies in pair_recommendation (e.g. for USD/JPY, only a USD or JPY event qualifies; never cite a CAD, EUR, GBP, AUD, NZD or CHF event even if it is the most prominent one in the list). If no calendar event matches the pair\'s two currencies, base invalidation_condition on price/technical or fundamental grounds instead — do not borrow an unrelated currency\'s event.',
+      'Only recommend a pair if the supplied CB bias snapshot has both currencies, neither entry is disputed/Low confidence/orthogonal (Data Dependent, On Hold, Split), and the hawk-dove divergence is at least 2 levels. Otherwise direction MUST be "no_trade" with confidence 1-2.',
+      'cb_bias_note must name both supplied CB stances and explain why their divergence supports the selected direction, or why no trade is allowed.',
+      'Use the calendar events to inform invalidation_condition — if a high-impact event for one of the pair currencies is scheduled within time_horizon_days, name it as the primary invalidation trigger. CRITICAL: the calendar list contains events for all 8 major currencies, not just the recommended pair — only cite an event whose currency is literally one of the two currencies in pair_recommendation (e.g. for USD/JPY, only a USD or JPY event qualifies; never cite a CAD, EUR, GBP, AUD, NZD or CHF event even if it is the most prominent one in the list). If no calendar event matches the pair\'s two currencies, use a pair-specific fundamental invalidation — do not invent technical data and do not borrow an unrelated currency\'s event.',
       'dominant_regime must directly copy the "Regime" classification from the risk regime data above when available, using this exact mapping: risk_off or elevated → "risk_off"; risk_on → "risk_on"; neutral → "neutral". Do not reinterpret or override this with headline sentiment — if the data says neutral, output "neutral" even if headlines feel risk-on or risk-off. Only fall back to inferring from headlines if risk regime data is unavailable.',
       'If rate path data shows bps already priced in for USD, weigh this into confidence — a pair recommendation that fights an already-priced rate path needs stronger non-rate justification.',
-      'If options skew for the recommended pair contradicts the recommended direction (e.g. recommending long but skew is put-skewed), lower confidence by at least 1 point and mention the conflict in catalyst_dependency.',
       '',
       'XAU rules:',
       'xau_bias must be based on fundamental pressure from headlines, NOT price prediction.',
@@ -2106,7 +2170,6 @@ ${xauHistoryBlock}`;
       'xau_key_trigger must include WIB time if available from calendar, otherwise note "time TBD".',
       'xau_confidence: 1-5 where 5 = multiple converging headlines with clear direction.',
       'If xau_dominant_driver is "safe_haven", it must be corroborated by the risk regime data (VIX/MOVE elevated or risk_off) — if risk regime is benign/risk_on, do not select "safe_haven" as dominant_driver unless headlines show a very fresh, unpriced shock.',
-      'If gold correlation anomalies show a breakdown vs DXY or real yield (the usual negative correlation weakening), factor this into xau_confidence — a correlation breakdown signals the dominant driver may be shifting.',
       'When geopolitical or energy shocks occur alongside high Real Yield / hawkish Fed rate hike expectations (or calm VIX), evaluate whether "real_yield" or "usd_strength" is dominating over "safe_haven" — if rate hike / opportunity cost concerns are dampening gold, set xau_dominant_driver accordingly and adjust xau_bias to reflect the rate pressure.',
     ].join('\n');
 
@@ -2164,6 +2227,13 @@ ${xauHistoryBlock}`;
     }
 
     if (thesis) {
+      const cbGuarded = applyCbBiasThesisGuard(thesis, cbBiasForThesis);
+      if (cbGuarded !== thesis) {
+        if (cbGuarded.direction === 'no_trade' && thesis.direction !== 'no_trade') {
+          console.log(`CB bias guard TRIGGERED: ${thesis.pair_recommendation} ${thesis.direction} -> no_trade`);
+        }
+        thesis = cbGuarded;
+      }
       // Plan G5: guard regime dijalankan setelah validateThesis lolos, sebelum
       // cache/return. Log setiap trigger — bahan evaluasi sebelum tier 'elevated'
       // dipertimbangkan.
@@ -2387,6 +2457,9 @@ module.exports.annotateHeadlineSeverity = annotateHeadlineSeverity;
 module.exports.parseEconNumber = parseEconNumber;
 module.exports.thesisPairCurrencies = thesisPairCurrencies;
 module.exports.thesisInvalidationCurrencyConsistent = thesisInvalidationCurrencyConsistent;
+module.exports.formatCbBiasForThesis = formatCbBiasForThesis;
+module.exports.thesisCbDirection = thesisCbDirection;
+module.exports.applyCbBiasThesisGuard = applyCbBiasThesisGuard;
 module.exports.mergeSourceHeadlines = mergeSourceHeadlines;
 module.exports.toWIB = toWIB;
 module.exports.parseFFXML = parseFFXML;

@@ -11,6 +11,7 @@ delete process.env.UPSTASH_REDIS_REST_TOKEN;
 
 const {
   validateThesis, thesisPairCurrencies, thesisInvalidationCurrencyConsistent,
+  formatCbBiasForThesis, thesisCbDirection, applyCbBiasThesisGuard,
 } = require('../../api/market-digest.js');
 
 function baseThesis(overrides = {}) {
@@ -77,6 +78,45 @@ test('validateThesis: field lain tetap divalidasi seperti sebelumnya', () => {
   assert.strictEqual(validateThesis(baseThesis({ dominant_regime: 'bullish' })), false);
   assert.strictEqual(validateThesis(baseThesis({ confidence_1_to_5: 9 })), false);
   assert.strictEqual(validateThesis(baseThesis({ xau_bias: 'up' })), false);
+});
+
+test('CB thesis: arah hanya lahir dari divergensi hawk-dove minimal dua tingkat', () => {
+  const cb = {
+    EUR: { bias: 'Dovish', confidence: 'High' },
+    USD: { bias: 'Cautious Hawkish', confidence: 'Medium' },
+  };
+  assert.deepStrictEqual(thesisCbDirection('EUR/USD', cb), {
+    direction: 'short', gap: 3, base: 'EUR', quote: 'USD', baseBias: 'Dovish', quoteBias: 'Cautious Hawkish',
+  });
+  assert.match(formatCbBiasForThesis(cb), /EUR: Dovish/);
+  assert.match(formatCbBiasForThesis(cb), /USD: Cautious Hawkish/);
+});
+
+test('CB thesis guard: arah salah/no evidence menjadi no_trade dan confidence dibatasi', () => {
+  const cb = {
+    EUR: { bias: 'Dovish', confidence: 'High' },
+    USD: { bias: 'Hawkish', confidence: 'High' },
+  };
+  const wrong = baseThesis({ pair_recommendation: 'EUR/USD', direction: 'long', confidence_1_to_5: 5, invalidation_condition: 'EUR berbalik hawkish' });
+  const guarded = applyCbBiasThesisGuard(wrong, cb);
+  assert.strictEqual(guarded.direction, 'no_trade');
+  assert.strictEqual(guarded.confidence_1_to_5, 2);
+  assert.match(guarded.cb_bias_note, /tidak cocok/);
+
+  const disputed = { ...cb, EUR: { ...cb.EUR, divergence_warning: { suggested_bias: 'Hawkish' } } };
+  assert.strictEqual(thesisCbDirection('EUR/USD', disputed), null);
+  assert.strictEqual(applyCbBiasThesisGuard({ ...wrong, direction: 'short' }, disputed).direction, 'no_trade');
+});
+
+test('CB thesis guard: arah valid dipertahankan dan bukti ditulis', () => {
+  const cb = {
+    EUR: { bias: 'Dovish', confidence: 'High' },
+    USD: { bias: 'Hawkish', confidence: 'High' },
+  };
+  const t = baseThesis({ pair_recommendation: 'EUR/USD', direction: 'short', invalidation_condition: 'EUR berbalik hawkish' });
+  const guarded = applyCbBiasThesisGuard(t, cb);
+  assert.strictEqual(guarded.direction, 'short');
+  assert.match(guarded.cb_bias_note, /selisih 4 tingkat/);
 });
 
 // ── applyRegimeConfidenceGuard (plan G5): jaring pengaman kode berbasis regime mentah ──

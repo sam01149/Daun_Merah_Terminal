@@ -190,7 +190,7 @@ test('AATAS_PROMPT_VERSION: v14 menandai track record deskriptif PLAN AF-4', () 
   assert.equal(AATAS_PROMPT_VERSION, 14);
 });
 
-test('Tahap 3 jalan tengah (v8): Call 2 auto menyebut menu TP 1:2 dan menuntut entry konsisten fib_reason, TANPA "pilih yang lebih dekat ke Now"; manual tetap 1:1 + tie-break lama', async () => {
+test('Tahap 3 jalan tengah: auto tetap RR 1:2; manual Prime kini juga RR 1:2 tanpa membawa instruksi fib auto', async () => {
   await withEnv({ CRON_SECRET: 'topsecret', DEEPSEEK_API_KEY: 'k' }, async () => {
     const cap = [];
     const store = baseStore();
@@ -225,7 +225,7 @@ test('Tahap 3 jalan tengah (v8): Call 2 auto menyebut menu TP 1:2 dan menuntut e
       await handler({ headers: {}, method: 'POST', body: {}, query: { action: 'ohlcv_analyze', symbol: 'GBPUSD=X', label: 'GBP/USD' } }, fakeRes());
     } finally { global.fetch = origFetch; }
     const manual = cap[0].messages[1].content;
-    assert.doesNotMatch(manual, /1:2 \(sama dengan gate Step 6\)/, 'manual tidak boleh ikut 1:2');
+    assert.match(manual, /minimal 1:2/, 'manual Prime harus memakai RR minimum 1:2');
     assert.doesNotMatch(manual, /konsisten dengan kesimpulanmu sendiri/i, 'manual tidak boleh ikut instruksi auto');
     if (/\[ZONA KONFLUENSI\]/.test(manual)) assert.match(manual, /pilih yang lebih dekat ke Now/, 'tie-break lama tetap di manual');
   });
@@ -1105,6 +1105,9 @@ function mkTrendCandles(startClose, endClose, hours = 80) {
 
 // Level konsisten dengan close terakhir 1.28 (bearish) supaya lolos sanity-check RR.
 const BASE_JSON = {
+  strategy_id: 'momentum',
+  macro_direction: 'bearish',
+  macro_reason: 'BoE lebih dovish daripada Fed',
   bias: 'bearish',
   entry_zone: '1.2795-1.2805', entry_basis: 'cluster S/R',
   sl: '1.2850', tp: '1.2700',
@@ -1319,11 +1322,11 @@ test('AATAS e2e: Call 1 tanpa positioning; Gate A dan jalur manual tetap menerim
     assert.doesNotMatch(manualUser, /CHECKLIST AATAS/, 'isolasi Opsi A: fitur publik tidak boleh kena porting ini');
     assert.match(manualUser, /- makro_alignment:/);
     assert.match(manualUser, /- confidence:/);
-    assert.match(manualUser, /Isi paragraf pertama \(tanpa header\) — bias & posisi makro harga/);
+    assert.match(manualUser, /Isi paragraf pertama \(tanpa header\) — keputusan arah makro lebih dulu/);
     assert.match(manualSys, /"makro_alignment"/);
     assert.match(manualUser, /COT leveraged net/);
     assert.match(manualUser, /RETAIL SENTIMENT GBPUSD/);
-    assert.match(manualUser, /WAJIB lebih konservatif/);
+    assert.match(manualUser, /DILARANG otomatis memperketat/);
     assert.doesNotMatch(manualUser, /hit-rate mentah gabungan manual\+auto/);
   });
 });
@@ -1680,7 +1683,7 @@ test('Fill hantu: jalur MANUAL publik TIDAK ikut diperketat (isolasi Opsi A)', a
     const manualSalah = {
       ...BASE_JSON,
       bias: 'bearish',
-      entry_zone: '1.2770-1.2780', sl: '1.2850', tp: '1.2650',
+      entry_zone: '1.2770-1.2780', sl: '1.2850', tp: '1.2600',
     };
     const store = baseStore();
     const origFetch = global.fetch;

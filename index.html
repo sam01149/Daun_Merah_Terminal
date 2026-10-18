@@ -728,6 +728,28 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   border-radius: 10px; padding: 16px 18px; margin-bottom: 14px;
   position: relative; overflow: hidden;
 }
+.ringkasan-dashboard-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 10px; padding: 16px 18px; margin: 0 0 14px;
+  position: relative; overflow: hidden;
+}
+.ringkasan-dashboard-card.cb-section {
+  padding: 16px 18px; border-bottom: 1px solid var(--border); margin-bottom: 14px;
+}
+.ringkasan-dashboard-card.corr-section { margin-top: 0; }
+.ringkasan-dashboard-card .cb-section-title,
+.ringkasan-dashboard-card .corr-title {
+  font-size: 9px; font-family: 'DM Mono', monospace; letter-spacing: .12em;
+  color: var(--accent); margin-bottom: 10px; font-weight: 600;
+}
+.ringkasan-dashboard-card .cb-section-title span:first-child { color: var(--accent); }
+.ringkasan-dashboard-card-actions { margin-top: 10px; }
+.ringkasan-dashboard-card details > summary {
+  cursor: pointer; list-style: none; color: var(--muted); font-size: 9px;
+  font-family: 'DM Mono', monospace; padding: 9px 0 2px;
+}
+.ringkasan-dashboard-card details > summary::-webkit-details-marker { display: none; }
+.ringkasan-dashboard-card details > summary:hover { color: var(--text); }
 .ringkasan-card::before {
   content: ''; position: absolute; left: 0; top: 0; bottom: 0;
   width: 3px; background: var(--accent);
@@ -3363,9 +3385,31 @@ body:not(.light-theme) .ringkasan-gen-btn {
 <!-- RINGKASAN PANEL -->
 <div class="feed-scroll" id="ringkasanPanel" style="display:none">
   <div class="print-letterhead" id="printLetterheadRingkasan"></div>
+  <div class="ringkasan-inner" id="ringkasanOverview">
+    <section class="cb-section ringkasan-dashboard-card" id="cbSection">
+      <div class="cb-section-title">
+        <span>CB Bias · 8 Bank Sentral</span>
+        <span id="cbUpdatedAt" style="color:var(--muted);font-size:8px"></span>
+      </div>
+      <div id="cbGrid">
+        <div style="text-align:center;padding:12px;color:var(--muted);font-size:11px;font-family:'DM Mono',monospace">
+          Bias diperbarui otomatis saat Ringkas Berita
+        </div>
+      </div>
+    </section>
+    <section class="corr-section ringkasan-dashboard-card no-print" id="polymarketWrap">
+      <div id="polymarketPanel">
+        <div class="corr-title">Polymarket · Top 3 by Volume</div>
+        <div style="font-size:10px;color:var(--muted);font-family:'DM Mono',monospace">Probabilitas event makro dari prediction market (uang nyata).</div>
+      </div>
+      <div class="ringkasan-dashboard-card-actions">
+        <button id="polyBtn" class="jn-btn-sec" onclick="fetchPolymarket()" style="width:100%;font-size:10px">Refresh Polymarket Macro</button>
+      </div>
+    </section>
+  </div>
   <div class="ringkasan-inner" id="ringkasanInner">
     <div class="state-box">
-      <div class="icon">📋</div>
+      <div class="icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 5h6"/><path d="M9 9h6M9 13h6M9 17h4"/><rect x="5" y="3" width="14" height="18" rx="2"/></svg></div>
       <p>Tap tombol di bawah untuk<br>generate ringkasan pasar.</p>
     </div>
     <div class="print-btn-row">
@@ -3382,14 +3426,7 @@ body:not(.light-theme) .ringkasan-gen-btn {
       </button>
     </div>
   </div>
-  <div class="ringkasan-inner" style="padding-top:0" id="polymarketWrap">
-    <div class="corr-section no-print" id="polymarketPanel">
-      <div class="corr-title">POLYMARKET — PROBABILITAS PASAR</div>
-      <div style="font-size:10px;color:var(--muted);font-family:'DM Mono',monospace">Probabilitas event makro dari prediction market (uang nyata).</div>
-    </div>
-    <div class="no-print" style="margin-top:8px">
-      <button id="polyBtn" class="jn-btn-sec" onclick="fetchPolymarket()" style="width:100%;font-size:10px">↻ Refresh Polymarket Macro</button>
-    </div>
+  <div class="ringkasan-inner" style="padding-top:0">
     <div class="ai-disclaimer" id="ringkasanDisclaimer">Ringkasan dihasilkan AI dari headline &amp; data pihak ketiga — bisa keliru, bukan nasihat keuangan. Detail di tab PETUNJUK › Disclaimer.</div>
   </div>
 </div>
@@ -3447,17 +3484,6 @@ body:not(.light-theme) .ringkasan-gen-btn {
         <div class="cal-countdown-name" id="calCountdownName">—</div>
       </div>
       <div class="cal-countdown-time" id="calCountdownTime">—</div>
-    </div>
-  </div>
-  <div class="cb-section" id="cbSection">
-    <div class="cb-section-title">
-      <span>Central Banks</span>
-      <span id="cbUpdatedAt" style="color:var(--muted);font-size:8px"></span>
-    </div>
-    <div id="cbGrid">
-      <div style="text-align:center;padding:12px;color:var(--muted);font-size:11px;font-family:'DM Mono',monospace">
-        Bias diperbarui otomatis saat Ringkas Berita
-      </div>
     </div>
   </div>
   <div id="calSurpriseSection" style="margin: 10px 12px 14px;"></div>
@@ -4455,7 +4481,7 @@ window.addEventListener('DOMContentLoaded', () => _updateNewsLangBtn());
 
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.10.18.2';
+const APP_VERSION = '2026.10.18.3';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
@@ -5601,6 +5627,12 @@ function _applyRingkasanData(data) {
   const prevAlerts = Array.isArray(ringkasanCache?.thesis_alerts) ? ringkasanCache.thesis_alerts : null;
   const freshAlerts = Array.isArray(data.thesis_alerts) ? data.thesis_alerts : null;
   ringkasanCache = { ...data, thesis_alerts: freshAlerts !== null ? freshAlerts : prevAlerts };
+  // Thesis tidak lagi ditampilkan sebagai kartu di Ringkasan, tetapi tetap
+  // disimpan untuk kompatibilitas alur Checklist/Sizing yang sudah ada.
+  if (data.thesis) {
+    _lastThesis = data.thesis;
+    try { localStorage.setItem('daun_merah_thesis', JSON.stringify(data.thesis)); } catch(_) {}
+  }
 }
 
 async function generateRingkasan() {
@@ -5693,7 +5725,7 @@ function renderRingkasan() {
   if (!d) {
     inner.innerHTML = `
       <div class="state-box">
-        <div class="icon">📋</div>
+        <div class="icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 5h6"/><path d="M9 9h6M9 13h6M9 17h4"/><rect x="5" y="3" width="14" height="18" rx="2"/></svg></div>
         <p>Tap tombol di bawah untuk<br>generate ringkasan pasar.</p>
       </div>
       <div class="print-btn-row">
@@ -5720,25 +5752,6 @@ function renderRingkasan() {
   if (disclaimerEl) disclaimerEl.innerHTML = _ringkasanDisclaimerHtml(d.method);
 
   inner.innerHTML = `
-    <div class="ringkasan-meta">
-      <div class="ringkasan-meta-left">${tsStr} · ${d.news_count} berita${d.gold_count ? ' · ' + d.gold_count + ' XAU' : ''} · ${d.cal_count} kalender</div>
-    </div>
-
-    <div class="ringkasan-stats">
-      <div class="rstat">
-        <div class="rstat-val">${d.news_count}</div>
-        <div class="rstat-label">Berita (36j)</div>
-      </div>
-      <div class="rstat">
-        <div class="rstat-val">${d.cal_count}</div>
-        <div class="rstat-label">Event Kalender</div>
-      </div>
-    </div>
-
-    ${d.thesis && d.thesis.confidence_1_to_5 >= 3 ? renderThesisCard(d.thesis) : ''}
-
-    ${d.thesis && d.thesis.xau_bias && d.thesis.xau_dominant_driver !== 'insufficient_data' ? renderXauThesisCard(d.thesis) : ''}
-
     ${d.thesis_alerts && d.thesis_alerts.length > 0 ? renderThesisAlerts(d.thesis_alerts) : ''}
 
     ${(d.method === 'fallback' || d.method === 'fallback_quota') && d.provider_log && d.provider_log.length > 0
@@ -5750,6 +5763,10 @@ function renderRingkasan() {
     ${renderRingkasanSources(
       d.headlines_sent ?? d.headlines_used,
       d.headlines_sent_total ?? d.headlines_used_total)}
+
+    <div class="ringkasan-meta">
+      <div class="ringkasan-meta-left">${tsStr} · ${d.news_count} berita${d.gold_count ? ' · ' + d.gold_count + ' XAU' : ''} · ${d.cal_count} kalender</div>
+    </div>
 
     <div class="print-btn-row">
       <button class="ringkasan-gen-btn" id="ringkasanBtn" onclick="generateRingkasan()">
@@ -6137,29 +6154,7 @@ function _pdfClockLabel() {
 // Buang karakter tidak valid di nama file Windows (termasuk "/" di label pair, mis. "EUR/USD").
 function _pdfSanitizeFilePart(s) { return String(s ?? '').replace(/[\\/:*?"<>|]/g, '').replace(/\s{2,}/g, ' ').trim(); }
 
-// "Intisari" 1-kalimat di atas dokumen (permintaan: pembaca paham isi laporan dalam
-// hitungan detik) — dirakit deterministik dari field thesis yang SUDAH dihasilkan AI
-// (pair_recommendation, direction, xau_bias, dst), BUKAN panggilan AI baru. Return null
-// kalau tidak ada thesis sama sekali (jangan tampilkan kotak kosong/karangan).
-function _buildRingkasanExecSummary(d) {
-  const t = d.thesis;
-  if (!t) return null;
-  const bits = [];
-  if (t.pair_recommendation) {
-    const confLabel = t.confidence_1_to_5 >= 4 ? 'tinggi' : t.confidence_1_to_5 >= 3 ? 'sedang' : 'rendah';
-    bits.push(t.direction === 'no_trade'
-      ? `${t.pair_recommendation} belum ada peluang jelas (NO TRADE)`
-      : `${t.pair_recommendation} cenderung ${String(t.direction || '').toUpperCase()} (keyakinan ${confLabel})`);
-  }
-  if (t.xau_bias && t.xau_dominant_driver !== 'insufficient_data') {
-    const driverLabel = (t.xau_dominant_driver || '').replace(/_/g, ' ').toLowerCase();
-    bits.push(`XAU/USD ${t.xau_bias}${driverLabel ? ` — driver: ${driverLabel}` : ''}`);
-  }
-  if (bits.length === 0) return null;
-  return bits.join('. ') + '.';
-}
-
-// TL;DR untuk PDF Analisa — sama filosofi dgn _buildRingkasanExecSummary di atas:
+// TL;DR untuk PDF Analisa:
 // deterministik dari field `structured` yang SUDAH dihasilkan AI (bias/trigger/
 // invalidation_condition), BUKAN call AI baru. Permintaan review eksternal (user
 // forward hasil konsultasi ChatGPT soal PDF Analisa, 2026-07-23): pembaca yang cuma
@@ -6193,36 +6188,10 @@ async function downloadRingkasanPdf() {
     `Diunduh: ${_printWibNow().display}`,
   ]);
 
-  const execSummary = _buildRingkasanExecSummary(d);
-  if (execSummary) b.kesimpulanBox(execSummary, 'Intisari');
-
-  if (d.thesis && d.thesis.confidence_1_to_5 >= 3) {
-    const t = d.thesis;
-    b.heading('Thesis · CB Bias + TA');
-    const dirLabel  = t.direction === 'no_trade' ? 'NO TRADE' : String(t.direction || '').toUpperCase();
-    const confLabel = t.confidence_1_to_5 >= 4 ? 'Tinggi' : t.confidence_1_to_5 >= 3 ? 'Sedang' : 'Rendah';
-    b.subheading(`${t.pair_recommendation || '—'} · ${dirLabel}  (Keyakinan: ${confLabel}, ${t.confidence_1_to_5}/5)`);
-    b.kv('Invalidasi', t.invalidation_condition);
-    b.kv('Catatan Regime', t.regime_note);
-    b.kv('Katalis', t.catalyst_dependency);
-    if (t.time_horizon_days) b.kv('Horizon', `~${t.time_horizon_days} hari (fundamental, bukan sinyal entry presisi jangka pendek)`);
-  }
-
-  if (d.thesis && d.thesis.xau_bias && d.thesis.xau_dominant_driver !== 'insufficient_data') {
-    const t = d.thesis;
-    b.heading('Thesis · XAU/USD');
-    const confLabel = t.xau_confidence >= 4 ? 'Tinggi' : t.xau_confidence >= 3 ? 'Sedang' : 'Rendah';
-    b.subheading(`${(t.xau_bias || '').toUpperCase()}${t.xau_confidence ? ` (Keyakinan: ${confLabel}, ${t.xau_confidence}/5)` : ''}`);
-    const driverLabel = (t.xau_dominant_driver || '').replace(/_/g, ' ').toUpperCase();
-    b.kv('Driver', driverLabel);
-    b.kv('Bukti', t.xau_driver_evidence);
-    b.kv('Trigger', t.xau_key_trigger);
-  }
-
   if (d.thesis_alerts && d.thesis_alerts.length > 0) {
     b.heading(`Thesis Alert · ${d.thesis_alerts.length} headline kontra buy/sell limit`);
     d.thesis_alerts.forEach(a => {
-      b.subheading(`⚠ ${a.pair} ${(a.direction || '').toUpperCase()}`);
+      b.subheading(`${a.pair} ${(a.direction || '').toUpperCase()}`);
       b.para(`"${a.headline}"`, { size: 9.5, italic: true, gapAfter: 1.5 });
       b.para(a.reason, { size: 9.5, color: [90, 90, 90], gapAfter: 4 });
     });
@@ -6239,7 +6208,7 @@ async function downloadRingkasanPdf() {
   }
 
   const pdfModelLabel = d.method ? (AI_METHOD_LABELS[d.method] || d.method) : null;
-  b.footer(`⚠ Ringkasan dihasilkan AI${pdfModelLabel ? ' (' + pdfModelLabel + ')' : ''} dari headline & data pihak ketiga — bisa keliru, bukan nasihat keuangan. Detail di tab PETUNJUK › Disclaimer.`);
+  b.footer(`Ringkasan dihasilkan AI${pdfModelLabel ? ' (' + pdfModelLabel + ')' : ''} dari headline & data pihak ketiga — bisa keliru, bukan nasihat keuangan. Detail di tab PETUNJUK › Disclaimer.`);
   _stampWatermark(b.doc, await _getPdfWatermarkDataUrl());
   b.doc.save(`${_pdfSanitizeFilePart(`Ringkasan Sesi ${_pdfSessionLabel()} ${_pdfClockLabel()}`)}.pdf`);
 }
@@ -6773,7 +6742,7 @@ function _renderStructuredAi(structured, commentary, model, hasMakro, isCached, 
   if (structured) {
     const bias      = (structured.bias || 'neutral').toLowerCase();
     const biasColor = bias === 'bullish' ? 'var(--green)' : bias === 'bearish' ? 'var(--red)' : bias === 'mixed' ? '#f5a623' : 'var(--muted)';
-    const biasLabel = bias === 'bullish' ? '▲ BULLISH' : bias === 'bearish' ? '▼ BEARISH' : bias === 'mixed' ? '⟷ MIXED' : '→ NEUTRAL';
+    const biasLabel = bias === 'bullish' ? 'BULLISH' : bias === 'bearish' ? 'BEARISH' : bias === 'mixed' ? 'MIXED' : 'NEUTRAL';
     const strategyLabels = { momentum: 'MOMENTUM', range: 'RANGE', tactical_fade: 'TACTICAL FADE', no_trade: 'NO TRADE' };
     const strategyLabel = strategyLabels[structured.strategy_id] || null;
     const macroDirLabel = structured.macro_direction ? String(structured.macro_direction).toUpperCase() : null;
@@ -6805,8 +6774,14 @@ function _renderStructuredAi(structured, commentary, model, hasMakro, isCached, 
     if (structured.trigger_contract) {
       const tc = structured.trigger_contract;
       const bodyRule = tc.body_atr_min != null ? ` · body ${tc.body_atr_min}-${tc.body_atr_max} ATR` : '';
-      const extraRule = structured.strategy_id === 'range' ? ' · RSI divergence opsional' : structured.strategy_id === 'tactical_fade' ? ' · overreaction jangka pendek' : '';
-      html += `<div style="margin:-4px 0 10px;font-size:10px;color:var(--muted);line-height:1.5"><span style="color:var(--text)">ATURAN TRIGGER </span>Rejection H1 · sesi London/New York${bodyRule}${extraRule} · bukan breakout</div>`;
+      const extraRule = structured.strategy_id === 'momentum'
+        ? ' · SL di balik wick rejection'
+        : structured.strategy_id === 'range'
+          ? ' · RSI divergence opsional · ATR-14 6H: SL 1 ATR, TP 2 ATR'
+          : structured.strategy_id === 'tactical_fade'
+            ? ' · overreaction tipis/belum terkonfirmasi · jangka pendek · pandangan makro tetap'
+            : '';
+      html += `<div style="margin:-4px 0 10px;font-size:10px;color:var(--muted);line-height:1.5"><span style="color:var(--text)">ATURAN TRIGGER </span>Rejection H1 · sesi London/New York${bodyRule}${extraRule} · bukan breakout · RR minimum 1:${escHtml(tc.min_rr || 2)}</div>`;
     }
     if (structured.academy_contract_status === 'rejected' && structured.academy_reject_reason) {
       html += `<div style="margin:-4px 0 10px;font-size:10px;color:var(--yellow);line-height:1.5"><span style="color:var(--yellow)">NO TRADE </span>${escHtml(structured.academy_reject_reason)}</div>`;
@@ -7484,15 +7459,15 @@ function renderArticleSections(article) {
   if (!article) return '';
   const { fx: fxPart, xau: xauPart } = splitArticleParts(article);
   if (!xauPart) {
-    return `<div class="ringkasan-card"><div class="ringkasan-fx-label">ANALISIS BERITA · HEADLINE MOMENTUM</div><div class="ringkasan-text">${articleToHtml(fxPart)}</div></div>`;
+    return `<div class="ringkasan-card"><div class="ringkasan-fx-label">ANALISIS BERITA · FX</div><div class="ringkasan-text">${articleToHtml(fxPart)}</div></div>`;
   }
   return `
     <div class="ringkasan-card">
-      <div class="ringkasan-fx-label">ANALISIS BERITA · HEADLINE MOMENTUM</div>
+      <div class="ringkasan-fx-label">ANALISIS BERITA · FX</div>
       <div class="ringkasan-text">${articleToHtml(fxPart)}</div>
     </div>
     <div class="ringkasan-card ringkasan-card-xau">
-      <div class="ringkasan-xau-label">XAUUSD</div>
+      <div class="ringkasan-xau-label">ANALISIS BERITA · XAUUSD</div>
       <div class="ringkasan-text">${articleToHtml(xauPart)}</div>
     </div>`;
 }
@@ -7514,52 +7489,6 @@ function fundStarsRating(n, max = 5) {
   let html = '';
   for (let i = 0; i < max; i++) html += _fundStarSvg(i < n);
   return html;
-}
-
-function renderThesisCard(t) {
-  _lastThesis = t;
-  try { localStorage.setItem('daun_merah_thesis', JSON.stringify(t)); } catch(_) {}
-  const stars = fundStarsRating(t.confidence_1_to_5);
-  // conf-stars tampil di layar, conf-text (teks resmi tanpa simbol) menggantikannya
-  // di dokumen cetak — lihat pasangan CSS .conf-stars/.conf-text di @media print.
-  const confText = `Keyakinan: ${t.confidence_1_to_5 >= 4 ? 'Tinggi' : t.confidence_1_to_5 >= 3 ? 'Sedang' : 'Rendah'} (${t.confidence_1_to_5}/5)`;
-  const dirClass = t.direction === 'long' ? 'long' : 'short';
-  const dirLabel = t.direction === 'no_trade' ? 'NO TRADE' : t.direction.toUpperCase();
-  return `<div class="thesis-card">
-    <div class="thesis-section-label" style="font-size:9px;color:var(--pink);font-family:'DM Mono',monospace;letter-spacing:.1em;margin-bottom:8px">THESIS · MAKRO + CB BIAS</div>
-    <div style="display:flex;align-items:center">
-      <span class="thesis-pair">${t.pair_recommendation || '—'}</span>
-      ${t.direction !== 'no_trade' ? `<span class="thesis-dir ${dirClass}">${dirLabel}</span>` : `<span class="thesis-dir" style="background:var(--border);color:var(--muted)">${dirLabel}</span>`}
-      <span class="thesis-conf"><span class="conf-stars">${stars}</span><span class="conf-text">${confText}</span></span>
-    </div>
-    ${t.invalidation_condition ? `<div class="thesis-label">INVALIDASI</div><div class="thesis-val">${escHtml(t.invalidation_condition)}</div>` : ''}
-    ${t.cb_bias_note ? `<div class="thesis-label">DASAR CB</div><div class="thesis-val">${escHtml(t.cb_bias_note)}</div>` : ''}
-    ${t.regime_note ? `<div class="thesis-label" style="color:var(--yellow)">CATATAN REGIME</div><div class="thesis-val" style="color:var(--yellow)">${escHtml(t.regime_note)}</div>` : ''}
-    ${t.catalyst_dependency ? `<div class="thesis-label">KATALIS</div><div class="thesis-val">${escHtml(t.catalyst_dependency)}</div>` : ''}
-    ${t.time_horizon_days ? `<div class="thesis-label">HORIZON</div><div class="thesis-val">${t.time_horizon_days} hari</div>` : ''}
-    <div class="thesis-horizon-note">Horizon: fundamental, relevan untuk pergerakan menengah-panjang — bukan sinyal entry presisi jangka pendek.</div>
-    ${t.direction !== 'no_trade' ? `<button class="thesis-use-btn" onclick="thesisGoToChecklist('${t.pair_recommendation}', '${t.direction}')">Mulai ke Checklist →</button>` : ''}
-  </div>`;
-}
-
-function renderXauThesisCard(t) {
-  const xauColorMap = { bullish: 'var(--green)', bearish: 'var(--accent)', conflicting: 'var(--yellow)', neutral: 'var(--muted)' };
-  const xauColor = xauColorMap[t.xau_bias] || 'var(--muted)';
-  const xauStars = t.xau_confidence ? fundStarsRating(t.xau_confidence) : '';
-  const xauConfText = t.xau_confidence ? `Keyakinan: ${t.xau_confidence >= 4 ? 'Tinggi' : t.xau_confidence >= 3 ? 'Sedang' : 'Rendah'} (${t.xau_confidence}/5)` : '';
-  const driverLabel = (t.xau_dominant_driver || '').replace(/_/g, ' ').toUpperCase();
-  return `<div class="thesis-card xau">
-    <div class="thesis-section-label" style="font-size:9px;color:var(--yellow);font-family:'DM Mono',monospace;letter-spacing:.1em;margin-bottom:8px">THESIS · XAU/USD</div>
-    <div style="display:flex;align-items:center;flex-wrap:wrap;gap:4px;margin-bottom:6px">
-      <span class="thesis-pair" style="font-size:15px">XAU/USD</span>
-      <span class="thesis-dir" style="background:${xauColor}22;color:${xauColor}">${(t.xau_bias || '').toUpperCase()}</span>
-      ${xauStars ? `<span class="thesis-conf"><span class="conf-stars">${xauStars}</span><span class="conf-text">${xauConfText}</span></span>` : ''}
-    </div>
-    ${driverLabel ? `<div class="thesis-label">DRIVER</div><div class="thesis-val">${driverLabel}</div>` : ''}
-    ${t.xau_driver_evidence ? `<div class="thesis-label">BUKTI</div><div class="thesis-val">${escHtml(t.xau_driver_evidence)}</div>` : ''}
-    ${t.xau_key_trigger ? `<div class="thesis-label">TRIGGER</div><div class="thesis-val">${escHtml(t.xau_key_trigger)}</div>` : ''}
-    ${(t.xau_bias === 'bullish' || t.xau_bias === 'bearish') ? `<button class="thesis-use-btn" onclick="thesisGoToChecklist('XAU/USD', '${t.xau_bias === 'bullish' ? 'long' : 'short'}')">Mulai ke Checklist →</button>` : ''}
-  </div>`;
 }
 
 function renderThesisAlerts(alerts) {
@@ -7685,6 +7614,11 @@ document.querySelectorAll('#navViews .nvtab').forEach(btn => {
       if (Date.now() < ringkasanCooldownEnd) tickCooldown();
       // Auto-load polymarket (cache server 30 menit)
       if (!polyLastData || (Date.now() - polyFetchedAt) > 30 * 60 * 1000) fetchPolymarket();
+      const now = Date.now();
+      if (!cbData || (now - cbFetchedAt) > 5 * 60 * 1000) fetchCBStatus();
+      else renderCBTracker();
+      if (!realYieldsData || (now - realYieldsFetAt) > 6 * 60 * 60 * 1000) fetchRealYields();
+      if (!ratePathData || (now - ratePathFetAt) > 4 * 60 * 60 * 1000) fetchRatePath();
     } else if (view === 'analisa') {
       setFeedUI(false);
       activeView = 'analisa';
@@ -7708,10 +7642,6 @@ document.querySelectorAll('#navViews .nvtab').forEach(btn => {
       const now = Date.now();
       if (!calData || (now - calFetchedAt) > 60 * 60 * 1000) fetchCalendar();
       else { enrichCalActuals(); renderCalendar(); startCountdownTimer(); }
-      if (!cbData || (now - cbFetchedAt) > 5 * 60 * 1000) fetchCBStatus();
-      else renderCBTracker();
-      if (!realYieldsData || (now - realYieldsFetAt) > 6 * 60 * 60 * 1000) fetchRealYields();
-      if (!ratePathData || (now - ratePathFetAt) > 4 * 60 * 60 * 1000) fetchRatePath();
     } else if (view === 'cot') {
       setFeedUI(false);
       activeView = 'cot';
@@ -8038,12 +7968,14 @@ function _buildCbShockHtml() {
 
 function renderCBTracker() {
   const grid = document.getElementById('cbGrid');
-  if (!cbData || cbData.length === 0) return;
+  if (!grid || !cbData || cbData.length === 0) return;
 
   const CONF_COL = { 'High': 'var(--green)', 'Medium': '#e67e22', 'Low': 'var(--accent)' };
   const CUR_COL  = { USD:'#60a5fa', EUR:'#c0392b', GBP:'#a78bfa', JPY:'#ffd32a', CAD:'#ff6b35', AUD:'#00c896', NZD:'#34d399', CHF:'#ff4757' };
+  const CB_ORDER = ['USD','EUR','GBP','JPY','CAD','AUD','NZD','CHF'];
+  const orderedBanks = CB_ORDER.map(cur => cbData.find(cb => cb.currency === cur)).filter(Boolean);
 
-  const rows = cbData.map(cb => {
+  const rows = orderedBanks.map(cb => {
     const decisionText  = cb.last_bps > 0 ? '+' + cb.last_bps + 'bps' : cb.last_bps < 0 ? cb.last_bps + 'bps' : 'Hold';
     const decisionClass = cb.last_bps > 0 ? 'hike' : cb.last_bps < 0 ? 'cut' : 'hold';
     const biasLabel     = cb.bias || '—';
@@ -8123,7 +8055,8 @@ function renderCBTracker() {
 
   const latestUpdate = cbData.filter(c => c.bias_updated).map(c => c.bias_updated).sort().pop();
   if (latestUpdate) {
-    document.getElementById('cbUpdatedAt').textContent = fmtCBTime(latestUpdate);
+    const updatedAt = document.getElementById('cbUpdatedAt');
+    if (updatedAt) updatedAt.textContent = fmtCBTime(latestUpdate);
   }
 }
 
@@ -8235,18 +8168,12 @@ async function fetchCorrelations() {
 
 let polyLastData     = null;
 let polyFetchedAt    = 0;
-let polyActiveFilter = 'all';
-
-function setPolyFilter(cat) {
-  polyActiveFilter = cat;
-  if (polyLastData) renderPolymarket(polyLastData);
-}
 
 async function fetchPolymarket() {
   const panel = document.getElementById('polymarketPanel');
   const btn   = document.getElementById('polyBtn');
   if (btn) { btn.disabled = true; btn.textContent = 'Memuat…'; }
-  if (panel) panel.innerHTML = '<div class="corr-title">POLYMARKET — PROBABILITAS PASAR</div>'
+  if (panel) panel.innerHTML = '<div class="corr-title">POLYMARKET · TOP 3 BY VOLUME</div>'
     + '<div style="font-size:10px;color:var(--muted);font-family:\'DM Mono\',monospace">Mengambil data…</div>';
   try {
     const res = await fetch('/api/admin?action=polymarket', { signal: AbortSignal.timeout(15000) });
@@ -8254,14 +8181,13 @@ async function fetchPolymarket() {
     const data = await res.json();
     polyLastData = data;
     polyFetchedAt = Date.now();
-    polyActiveFilter = 'all';
     renderPolymarket(data);
   } catch(e) {
     console.warn('Polymarket fetch failed:', e.message);
-    if (panel) panel.innerHTML = '<div class="corr-title">POLYMARKET — PROBABILITAS PASAR</div>'
+    if (panel) panel.innerHTML = '<div class="corr-title">POLYMARKET · TOP 3 BY VOLUME</div>'
       + `<div style="font-size:10px;color:#e05c5c;font-family:'DM Mono',monospace">Gagal memuat: ${e.message}</div>`;
   } finally {
-    if (btn) { btn.disabled = false; btn.textContent = '↻ Muat Polymarket'; }
+    if (btn) { btn.disabled = false; btn.textContent = 'Refresh Polymarket Macro'; }
   }
 }
 
@@ -8273,43 +8199,30 @@ const POLY_CAT_COLORS = {
 function renderPolymarket(data) {
   const panel = document.getElementById('polymarketPanel');
   if (!panel) return;
-  const allMarkets = data.markets || [];
+  const allMarkets = Array.isArray(data.markets)
+    ? [...data.markets].sort((a, b) => (Number(b.volume24h) || 0) - (Number(a.volume24h) || 0))
+    : [];
   const age     = data.fetched_at ? new Date(data.fetched_at) : null;
   const ageStr  = age ? age.toLocaleTimeString('id-ID', { hour:'2-digit', minute:'2-digit' }) : '';
-  const staleTag = data.stale ? ' <span style="color:#f59e0b">(stale)</span>' : '';
+  const staleTag = data.stale ? ' <span style="color:#f59e0b">(data lama)</span>' : '';
+  const topMarkets = allMarkets.slice(0, 3);
+  const otherMarkets = allMarkets.slice(3);
 
-  // Apply category filter
-  const markets = polyActiveFilter === 'all'
-    ? allMarkets
-    : allMarkets.filter(m => m.category === polyActiveFilter);
-
-  // Collect available categories from data
-  const cats = ['all', ...new Set(allMarkets.map(m => m.category).filter(Boolean))];
-
-  let html = `<div class="corr-title">POLYMARKET — PROBABILITAS PASAR${staleTag}</div>`;
+  let html = `<div class="corr-title">POLYMARKET · TOP 3 BY VOLUME${staleTag}</div>`;
   if (ageStr) html += `<div style="font-size:9px;color:var(--muted);font-family:'DM Mono',monospace;margin-bottom:8px">` +
     `${ageStr} WIB · ${allMarkets.length} market · Cache 30m</div>`;
 
-  // Filter buttons
-  html += `<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:10px">` +
-    cats.map(c => {
-      const active = polyActiveFilter === c;
-      const col = c === 'all' ? 'var(--text)' : (POLY_CAT_COLORS[c] || 'var(--muted)');
-      const bg  = active ? (c === 'all' ? 'rgba(var(--fg-rgb),0.12)' : col + '22') : 'transparent';
-      const border = active ? col : 'var(--border)';
-      const label = c === 'all' ? `Semua (${allMarkets.length})` : c;
-      return `<button onclick="setPolyFilter('${escHtml(c)}')" style="font-size:8px;font-family:'DM Mono',monospace;padding:2px 7px;border-radius:3px;border:1px solid ${border};background:${bg};color:${col};cursor:pointer">${escHtml(label)}</button>`;
-    }).join('') + `</div>`;
-
-  if (!markets.length) {
-    html += '<div style="font-size:10px;color:var(--muted)">Tidak ada market untuk filter ini.</div>';
+  if (!topMarkets.length) {
+    html += '<div style="font-size:10px;color:var(--muted)">Belum ada market makro yang tersedia.</div>';
     panel.innerHTML = html;
     return;
   }
 
-  html += markets.map(m => {
+  const renderMarket = m => {
     const endDate = m.end_date ? new Date(m.end_date).toLocaleDateString('id-ID', { day:'2-digit', month:'short', year:'numeric' }) : '';
-    const vol = m.volume24h >= 1000 ? `$${(m.volume24h/1000).toFixed(0)}K` : `$${m.volume24h}`;
+    const volume24h = Number(m.volume24h) || 0;
+    const vol = volume24h >= 1000000 ? `$${(volume24h/1000000).toFixed(1)}M`
+      : volume24h >= 1000 ? `$${(volume24h/1000).toFixed(0)}K` : `$${Math.round(volume24h)}`;
 
     let probHtml = '';
     if (m.yes_prob !== null) {
@@ -8320,14 +8233,14 @@ function renderPolymarket(data) {
       let chgHtml = '';
       if (m.change_1d != null && m.change_1d !== 0) {
         const cCol = m.change_1d > 0 ? 'var(--green)' : '#f87171';
-        const cArrow = m.change_1d > 0 ? '▲' : '▼';
-        chgHtml = `<div style="font-size:8px;color:${cCol};font-family:'DM Mono',monospace;margin-top:1px" title="Pergeseran probabilitas 24 jam terakhir">${cArrow} ${m.change_1d > 0 ? '+' : ''}${m.change_1d}pp / 24j</div>`;
+        const movement = m.change_1d > 0 ? 'naik' : 'turun';
+        chgHtml = `<div style="font-size:8px;color:${cCol};font-family:'DM Mono',monospace;margin-top:1px" title="Pergeseran probabilitas 24 jam terakhir">${movement} ${Math.abs(m.change_1d)}pp / 24j</div>`;
       }
       probHtml = `<span style="color:${col};font-weight:700;font-size:13px;font-family:'DM Mono',monospace">${p}%</span>`
         + `<span style="font-size:9px;color:var(--muted)"> YA</span>` + chgHtml;
     } else {
-      probHtml = m.outcomes.map((o, i) => {
-        const p = m.prices[i] || 0;
+      probHtml = (Array.isArray(m.outcomes) ? m.outcomes : []).map((o, i) => {
+        const p = (Array.isArray(m.prices) ? m.prices[i] : 0) || 0;
         const col = p >= 70 ? 'var(--green)' : p <= 30 ? '#e05c5c' : '#888';
         return `<span style="color:${col};font-size:11px;font-family:'DM Mono',monospace">${p}%</span>`
           + `<span style="font-size:8px;color:var(--muted);margin-right:6px"> ${escHtml(o)}</span>`;
@@ -8345,7 +8258,13 @@ function renderPolymarket(data) {
       </div>
       <div style="text-align:right;white-space:nowrap;flex-shrink:0">${probHtml}</div>
     </div>`;
-  }).join('');
+  };
+
+  html += topMarkets.map(renderMarket).join('');
+  if (otherMarkets.length) {
+    html += `<details><summary>Lihat ${otherMarkets.length} market lainnya</summary>`
+      + otherMarkets.map(renderMarket).join('') + '</details>';
+  }
 
   panel.innerHTML = html;
 }

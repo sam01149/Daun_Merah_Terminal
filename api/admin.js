@@ -5350,6 +5350,87 @@ function _computeCbDirServerSide({ label, isXau, cbBiasObj, xauThesis }) {
   return bL === qL ? null : (bL > qL ? 'long' : 'short');
 }
 
+// Kontrak arah manual versi Prime Market Academy. Berbeda dari Sistem Hakim:
+// ini mensyaratkan selisih minimal dua tingkat dan menerima confidence Medium/High,
+// lalu dipakai sebagai pengunci arah makro untuk strategi momentum manual saja.
+function _computePrimeManualDirection({ label, isXau, cbBiasObj, xauThesis }) {
+  if (isXau) {
+    if (!xauThesis || Number(xauThesis.xau_confidence) < 4) return null;
+    if (xauThesis.xau_bias === 'bullish') return 'bullish';
+    if (xauThesis.xau_bias === 'bearish') return 'bearish';
+    return null;
+  }
+  const legs = String(label || '').toUpperCase().split('/').map(s => s.trim()).filter(Boolean);
+  if (legs.length !== 2) return null;
+  const [base, quote] = legs;
+  const b = cbBiasObj?.[base], q = cbBiasObj?.[quote];
+  if (!b?.bias || !q?.bias || b.divergence_warning || q.divergence_warning) return null;
+  if (!['High', 'Medium'].includes(b.confidence) || !['High', 'Medium'].includes(q.confidence)) return null;
+  const orthogonal = new Set(['data dependent', 'on hold', 'split']);
+  if (orthogonal.has(String(b.bias).toLowerCase()) || orthogonal.has(String(q.bias).toLowerCase())) return null;
+  const bLevel = CB_BIAS_LEVEL[String(b.bias).toLowerCase()];
+  const qLevel = CB_BIAS_LEVEL[String(q.bias).toLowerCase()];
+  if (!Number.isFinite(bLevel) || !Number.isFinite(qLevel) || Math.abs(bLevel - qLevel) < 2) return null;
+  return bLevel > qLevel ? 'bullish' : 'bearish';
+}
+
+const MANUAL_ANALYSIS_POLICY_VERSION = 'prime-v1';
+const MANUAL_MIN_RR = 2;
+const MANUAL_STRATEGIES = new Set(['momentum', 'range', 'tactical_fade', 'no_trade']);
+
+function _manualTriggerContract(strategyId) {
+  const common = { timeframe: '1h', session: 'london_or_new_york', rejection_required: true, breakout_allowed: false, min_rr: MANUAL_MIN_RR };
+  if (strategyId === 'momentum') return { ...common, body_atr_min: 0.5, body_atr_max: 1, stop_rule: 'beyond_rejection_wick' };
+  if (strategyId === 'range') return {
+    ...common, body_atr_min: null, body_atr_max: null, rsi14_h1_divergence: 'recommended_optional',
+    atr_period: 14, atr_timeframe: '6h', stop_atr: 1, target_atr: 2,
+  };
+  if (strategyId === 'tactical_fade') return {
+    ...common, body_atr_min: null, body_atr_max: null, overreaction_story: 'thin_or_unconfirmed',
+    horizon: 'short_term', macro_view_must_remain_unchanged: true,
+  };
+  return null;
+}
+
+function _enforceManualAcademyContract(structured, { lockedDirection = null } = {}) {
+  if (!structured || typeof structured !== 'object') return structured;
+  const result = { ...structured, analysis_policy_v: MANUAL_ANALYSIS_POLICY_VERSION };
+  const strategyId = String(result.strategy_id || '').trim().toLowerCase();
+  const macroDirection = String(result.macro_direction || '').trim().toLowerCase();
+  result.strategy_id = MANUAL_STRATEGIES.has(strategyId) ? strategyId : 'no_trade';
+  result.macro_direction = ['bullish', 'bearish', 'neutral', 'mixed', 'no_trade'].includes(macroDirection) ? macroDirection : 'no_trade';
+  result.macro_reason = typeof result.macro_reason === 'string' && result.macro_reason.trim() ? result.macro_reason.trim() : null;
+  result.trigger_contract = _manualTriggerContract(result.strategy_id);
+  let rejectReason = null;
+  if (result.strategy_id === 'no_trade') rejectReason = strategyId ? 'Strategi menetapkan no_trade.' : 'strategy_id tidak valid atau tidak tersedia.';
+  if (!rejectReason && lockedDirection && result.macro_direction !== lockedDirection) {
+    rejectReason = `Arah makro model tidak cocok dengan pengunci data (${lockedDirection}).`;
+  }
+  if (!rejectReason && result.strategy_id === 'momentum') {
+    if (!['bullish', 'bearish'].includes(result.macro_direction)) rejectReason = 'Momentum membutuhkan arah makro yang tegas.';
+    else if (result.bias !== result.macro_direction) rejectReason = 'Momentum tidak boleh melawan arah makro.';
+  }
+  if (!rejectReason && !['bullish', 'bearish'].includes(result.bias)) {
+    rejectReason = 'Setup aktif membutuhkan arah trade bullish atau bearish yang tegas.';
+  }
+  if (!rejectReason && !result.macro_reason) rejectReason = 'Setup aktif membutuhkan alasan makro yang eksplisit.';
+  if (!rejectReason && ![result.entry_zone, result.sl, result.tp].every(v => v !== null && v !== undefined && String(v).trim())) {
+    rejectReason = 'Setup aktif membutuhkan entry, stop loss, dan take profit yang lengkap.';
+  }
+  result.academy_contract_status = rejectReason ? 'rejected' : 'passed';
+  result.academy_reject_reason = rejectReason;
+  if (rejectReason) {
+    result.strategy_id = 'no_trade';
+    result.trigger_contract = null;
+    result.entry_zone = null;
+    result.entry_basis = null;
+    result.sl = null;
+    result.tp = null;
+    result.risk_reward = null;
+  }
+  return result;
+}
+
 // [CEK KONTRADIKSI] (2026-08-10) — independen dari Sistem Hakim di atas (yang butuh cbDir,
 // artinya bias bank sentral KEDUA kaki confidence High). Ditemukan dari kasus nyata CHF/JPY:
 // AI menulis "...mendukung penguatan JPY vs CHF, searah dengan bias bullish CHF/JPY karena
@@ -6926,7 +7007,8 @@ function _formatOptionsSentimentBlock(rr, prioritized, lockedDirection) {
 // digabung dari >1 sumber (manual + auto), cuma mengubah label supaya jejaknya jelas
 // kalau prompt/log diperiksa nanti, tidak mengubah cara hitung. PLAN AF-4 menambah
 // `descriptiveOnly` untuk jalur auto: statistik campuran tetap terlihat, tetapi tidak
-// boleh berubah menjadi perintah adaptasi otomatis. Default false menjaga manual.
+// boleh berubah menjadi perintah adaptasi otomatis. Pemanggil Analisa manual dan auto
+// sama-sama memilih descriptiveOnly=true; default dipertahankan untuk kompatibilitas helper.
 function _formatTrackRecordBlock(log, symbol, combined, descriptiveOnly = false) {
   if (!Array.isArray(log) || !symbol) return '';
   const decided = log.filter(s => s && s.symbol === symbol && (s.status === 'tp' || s.status === 'sl'));
@@ -6940,7 +7022,7 @@ function _formatTrackRecordBlock(log, symbol, combined, descriptiveOnly = false)
     : '';
   const label = combined ? '[TRACK RECORD setup AI pair ini — gabungan seluruh sumber]' : '[TRACK RECORD setup AI pair ini]';
   const caveat = descriptiveOnly
-    ? ' Catatan: ini hit-rate mentah gabungan manual+auto, lintas versi kebijakan dan segala arah; bukan net expectancy, bukan ukuran hasil setelah position management, dan bukan probabilitas setup baru. Angka ini hanya deskriptif — DILARANG otomatis memperketat atau melonggarkan trigger, skor, maupun gate hanya karena win rate ini.'
+    ? ` Catatan: ini hit-rate mentah ${combined ? 'gabungan manual+auto, ' : ''}lintas versi kebijakan dan segala arah; bukan net expectancy, bukan ukuran hasil setelah position management, dan bukan probabilitas setup baru. Angka ini hanya deskriptif — DILARANG otomatis memperketat atau melonggarkan trigger, skor, maupun gate hanya karena win rate ini.`
     : '';
   return `${label}\n${total} setup selesai (segala arah): ${tp} TP / ${sl} SL (win rate ${winRate}%).${advice}${caveat}`;
 }
@@ -7225,6 +7307,7 @@ async function ohlcvAnalyzeHandler(req, res) {
     // [SISTEM HAKIM] butuh objek cb_bias mentah (bukan fundBlock yang cuma teks prompt)
     // untuk _computeCbDirServerSide di bawah — diisi di try yang sama, tidak fetch dobel.
     let cbBiasParsed = null;
+    let manualMacroDirection = null;
     // Snapshot makro (2026-08-08, diskusi user) — sebelumnya cot/retail/drivers/risk
     // cuma di-parse INLINE di parameter _formatFundamentalBlock di bawah, tidak pernah
     // disimpan ke variabel scope luar, jadi hilang begitu selesai dipakai buat prompt.
@@ -7319,6 +7402,17 @@ async function ohlcvAnalyzeHandler(req, res) {
     if (!cbDir && isAutoCall) {
       cbDir = _computeCbDirServerSide({ label: data.label, isXau: data.is_xau, cbBiasObj: cbBiasParsed, xauThesis });
     }
+    if (!isAutoCall) {
+      if (data.is_xau && !xauThesis) {
+        try {
+          const rawLatestThesis = await redisCmd('GET', 'latest_thesis');
+          if (rawLatestThesis) xauThesis = JSON.parse(rawLatestThesis);
+        } catch (e) { /* best-effort; prompt tetap dapat menentukan macro_direction */ }
+      }
+      manualMacroDirection = _computePrimeManualDirection({
+        label: data.label, isXau: data.is_xau, cbBiasObj: cbBiasParsed, xauThesis,
+      });
+    }
 
     // Track record historis setup AI pair ini (Plan I item 2) — 1 GET Redis, 0 AI call.
     // BUG LAMA DITEMUKAN & DIFIX (2026-07-20, saat kerja Plan U-3 lanjutan): parameter
@@ -7350,7 +7444,10 @@ async function ohlcvAnalyzeHandler(req, res) {
         const autoLog = rawAutoLog ? JSON.parse(rawAutoLog) : [];
         if (Array.isArray(autoLog)) combinedLog = combinedLog.concat(autoLog);
       }
-      trackBlock = _formatTrackRecordBlock(combinedLog, symbol, isAutoCall, isAutoCall);
+      // Hit-rate mentah hanya konteks deskriptif untuk KEDUA jalur. Prime Academy
+      // tidak mengajarkan mengubah trigger setup baru dari win-rate campuran lintas
+      // versi, arah, dan kebijakan.
+      trackBlock = _formatTrackRecordBlock(combinedLog, symbol, isAutoCall, true);
     } catch (e) { /* opsional — jangan gagalkan analisa kalau log setup kosong/korup */ }
 
     // S-2: event kalender high-impact 7 hari ke depan khusus currency pair ini —
@@ -7435,9 +7532,9 @@ async function ohlcvAnalyzeHandler(req, res) {
     const levelCandidates = confZones
       // PLAN AC Tahap 3 bagian 1 (2026-09-06, POLICY_EPOCHS v45): jalur auto menyaring
       // kandidat TP dengan AATAS_MIN_RR (2) supaya menu yang dilihat Call 2 konsisten
-      // dengan gate Step 6 — manual tetap default 1 (byte-identik). Menu yang sama
+      // dengan gate Step 6 — manual Prime juga memakai minRr 2. Menu yang sama
       // dipakai snap-atau-tolak di hilir, jadi TP di luar menu auto ikut ditolak.
-      ? computeLevelCandidates({ zones: confZones, atrD: (data.d1_ext?.available ? data.d1_ext.atr_d : null), isXau: data.is_xau, dec: data.dec, minRr: isAutoCall ? AATAS_MIN_RR : 1 })
+      ? computeLevelCandidates({ zones: confZones, atrD: (data.d1_ext?.available ? data.d1_ext.atr_d : null), isXau: data.is_xau, dec: data.dec, minRr: isAutoCall ? AATAS_MIN_RR : MANUAL_MIN_RR })
       : null;
     const levelBlock = _formatLevelCandidatesBlock(levelCandidates);
 
@@ -7519,7 +7616,7 @@ async function ohlcvAnalyzeHandler(req, res) {
     const p3Atr = extraCtx?.includes('ATR') ? ', volatilitas berdasarkan ATR' : '';
     const p4Label = extraCtx ? `(${extraCtx})` : 'timeframe';
     const p5Track = trackBlock
-      ? ' Kalau [TRACK RECORD setup AI pair ini] tersedia di atas, WAJIB sebut win-rate historisnya secara singkat sebagai bagian pertimbangan level keyakinan.'
+      ? ' Kalau [TRACK RECORD setup AI pair ini] tersedia di atas, boleh sebut singkat sebagai statistik historis deskriptif; DILARANG mengubah arah, strategy_id, trigger, atau level keyakinan setup baru hanya karena hit-rate mentah itu.'
       : '';
     // Instruksi entry/sl/tp punya dua varian: kalau [ZONA KONFLUENSI] terhitung, AI
     // WAJIB memilih dari ranking deterministik itu (bukan mengarang kombinasi sendiri —
@@ -7535,7 +7632,7 @@ async function ohlcvAnalyzeHandler(req, res) {
     // Sisa instruksi entry/sl/tp IDENTIK untuk dua jalur — makanya cuma klausa ini yang
     // diparameterkan, bukan seluruh instruksinya disalin dua kali (salinan kedua pasti
     // divergen diam-diam suatu saat).
-    const noSetupClause = 'ATAU jika makro_alignment adalah "konflik", set entry_zone, sl, tp, entry_basis ke null dan jelaskan di trigger kondisi apa yang ditunggu — JANGAN memaksakan setup saat makro dan teknikal bertabrakan.';
+    const noSetupClause = 'ATAU jika strategy_id "momentum" tetapi makro_alignment adalah "konflik", set strategy_id "no_trade" serta entry_zone, sl, tp, entry_basis ke null dan jelaskan kondisi apa yang ditunggu. Pengecualian hanya: strategy_id "range" saat macro_direction netral/mixed dan entry berada di edge range, atau "tactical_fade" jangka pendek saat gerak terbukti overreaction dengan cerita tipis/belum terkonfirmasi; kedua pengecualian tidak boleh mengubah pandangan makro besar.';
     const noSetupClauseAuto = 'ATAU jika struktur teknikal berlawanan dengan bias yang SUDAH DIKUNCI analisa makro, ATAU pasar sedang ranging sempit, set entry_zone, sl, tp, entry_basis ke null dan jelaskan di trigger kondisi apa yang ditunggu — JANGAN membalik bias mengikuti chart, dan JANGAN memaksakan setup supaya ada.';
     // `auto` (PLAN AC Tahap 3 bagian 2, 2026-09-06): jalur auto TIDAK lagi disuruh
     // "pilih yang lebih dekat ke Now" saat skor seri — kalimat itu sumber kontradiksi
@@ -7583,34 +7680,35 @@ async function ohlcvAnalyzeHandler(req, res) {
     const tpFallbackTail = confBlock
       ? ' zona konfluensi BERIKUTNYA searah bias dari [ZONA KONFLUENSI] (atau struktur [LEVEL S/R] berikutnya)'
       : ' struktur berikutnya searah bias yang ADA di data (cluster S/R, swing, pivot, fib)';
-    const minimumRrText = isAutoCall ? `1:${AATAS_MIN_RR}` : '1:1';
-    const minimumRrValue = isAutoCall ? AATAS_MIN_RR : 1;
+    const minimumRrText = isAutoCall ? `1:${AATAS_MIN_RR}` : `1:${MANUAL_MIN_RR}`;
+    const minimumRrValue = isAutoCall ? AATAS_MIN_RR : MANUAL_MIN_RR;
     const tpInstr = levelCandidates
-      ? `- tp: WAJIB pilih SATU angka PERSIS dari [KANDIDAT SL/TP] di atas, baris TP sesuai bias yang kamu tentukan — JANGAN mengarang angka lain. KALAU bias yang kamu pilih TIDAK punya baris TP sendiri di [KANDIDAT SL/TP], baru gunakan${tpFallbackTail}. Untuk bearish, tp harus di bawah entry_zone. Untuk bullish, tp harus di atas entry_zone. Daftar TP (kalau ada untuk bias-mu) sudah disaring kode supaya risk/reward minimal ${isAutoCall ? '1:2 (sama dengan gate Step 6)' : '1:1'} terhadap SL terdekat; kalau pakai fallback, WAJIB risk/reward minimal ${isAutoCall ? '1:2' : '1:1'} sendiri — kalau tidak memungkinkan, sebutkan itu di trigger/commentary alih-alih memaksakan level palsu.`
+      ? `- tp: WAJIB pilih SATU angka PERSIS dari [KANDIDAT SL/TP] di atas, baris TP sesuai bias yang kamu tentukan — JANGAN mengarang angka lain. KALAU bias yang kamu pilih TIDAK punya baris TP sendiri di [KANDIDAT SL/TP], baru gunakan${tpFallbackTail}. Untuk bearish, tp harus di bawah entry_zone. Untuk bullish, tp harus di atas entry_zone. Daftar TP (kalau ada untuk bias-mu) sudah disaring kode supaya risk/reward minimal 1:2 terhadap SL terdekat; kalau pakai fallback, WAJIB risk/reward minimal 1:2 sendiri — kalau tidak memungkinkan, tetapkan strategy_id "no_trade" dan jangan memaksakan level palsu.`
       : confBlock
-      ? `- tp: zona konfluensi BERIKUTNYA searah bias dari daftar [ZONA KONFLUENSI] (atau struktur [LEVEL S/R] berikutnya kalau tidak ada zona lagi searah itu) — jangan mengarang. Untuk bearish, tp harus di bawah entry_zone. Untuk bullish, tp harus di atas entry_zone. WAJIB risk/reward (jarak entry→tp dibanding entry→sl) minimal ${minimumRrText} — kalau struktur data tidak memungkinkan RR ≥${minimumRrValue}, sebutkan itu di trigger/commentary alih-alih memaksakan level palsu.`
-      : `- tp: level take profit konkret = struktur berikutnya searah bias yang ADA di data (cluster S/R, swing, pivot, fib) — jangan mengarang. Untuk bearish, tp harus di bawah entry_zone. Untuk bullish, tp harus di atas entry_zone. WAJIB risk/reward (jarak entry→tp dibanding entry→sl) minimal ${minimumRrText} — kalau struktur data tidak memungkinkan RR ≥${minimumRrValue}, sebutkan itu di trigger/commentary alih-alih memaksakan level palsu.`;
+      ? `- tp: zona konfluensi BERIKUTNYA searah bias dari daftar [ZONA KONFLUENSI] (atau struktur [LEVEL S/R] berikutnya kalau tidak ada zona lagi searah itu) — jangan mengarang. Untuk bearish, tp harus di bawah entry_zone. Untuk bullish, tp harus di atas entry_zone. WAJIB risk/reward (jarak entry→tp dibanding entry→sl) minimal ${minimumRrText} — kalau struktur data tidak memungkinkan RR ≥${minimumRrValue}, tetapkan strategy_id "no_trade" dan kosongkan level.`
+      : `- tp: level take profit konkret = struktur berikutnya searah bias yang ADA di data (cluster S/R, swing, pivot, fib) — jangan mengarang. Untuk bearish, tp harus di bawah entry_zone. Untuk bullish, tp harus di atas entry_zone. WAJIB risk/reward (jarak entry→tp dibanding entry→sl) minimal ${minimumRrText} — kalau struktur data tidak memungkinkan RR ≥${minimumRrValue}, tetapkan strategy_id "no_trade" dan kosongkan level.`;
     // AATAS (2026-08-22, direvisi v2 2026-08-25) — jalur `isAutoCall` TIDAK LAGI lewat
     // sini. Prompt auto-entry sekarang dibangun terpisah di `_runAatasTwoCall` (dua
     // panggilan: makro-only lalu teknikal-only). Seluruh instruksi di bawah ini murni
-    // jalur MANUAL publik ("Analisa AI"), teksnya PERSIS seperti sebelum AATAS ada —
-    // dulu tiap variabel bercabang `isAutoCall ? ... : ...`, cabang auto-nya sekarang
-    // tidak punya pemanggil lagi jadi dibuang. Isolasi Opsi A tetap berlaku: fitur
-    // publik ini tidak boleh berubah satu karakter pun saat auto-entry berevolusi
-    // (dijaga test byte-identik di test/admin/aatas.test.js).
-    const biasInstr = '- bias: trend dominan — bullish/bearish/neutral/mixed. Dasarkan pada GABUNGAN trend Daily + [STRUKTUR H4] (HH+HL vs LH+LL) + BOS kalau ada — bukan cuma perubahan %. Pakai "mixed" kalau timeframe saling kontradiksi (misal Daily naik tapi struktur H4 LH+LL) atau makro vs teknikal berlawanan jelas — jangan paksa ke "neutral" kalau sebenarnya konflik, bukan tanpa-trend.';
+    // jalur MANUAL publik ("Analisa AI"). Cabang auto tidak punya pemanggil di sini;
+    // perubahan Prime Academy di bawah sengaja hanya mengubah manual dan tidak menyentuh
+    // prompt/policy AATAS dua-call. Isolasi dua jalur tetap dijaga test/admin/aatas.test.js.
+    const biasInstr = '- bias: arah TRADE akhir — bullish/bearish/neutral/mixed. Untuk strategy_id "momentum", bias WAJIB sama dengan macro_direction; chart hanya menentukan kapan/di mana masuk, bukan membalik arah. Untuk "range", pilih sisi edge range yang benar dan jelaskan makro campuran. Untuk "tactical_fade", boleh melawan gerak/makro besar hanya sebagai fade jangka pendek atas overreaction dengan cerita tipis atau belum terkonfirmasi; jangan mengubah label pandangan besar.';
     const timeHorizonInstr = '- time_horizon_days: estimasi jumlah hari realistis skenario ini main out (angka, misal 3, 5, 10) berdasarkan jarak entry-tp dibanding rata-rata gerak harian (ATR/sigma) yang ada di data';
     const decisionFieldInstr = [
-        '- makro_alignment: "searah" kalau KONTEKS MAKRO / FUNDAMENTAL TERSTRUKTUR mendukung arah bias teknikalmu, "konflik" kalau berlawanan, "netral" kalau sinyal makro tidak jelas/campuran. Kalau blok makro dan fundamental dua-duanya tidak tersedia di atas, isi null. JANGAN pakai ranking currency strength / rezim volatilitas (kalau ada di atas) sebagai bukti di sini — itu price-derived teknikal (turunan %perubahan harga H1), bukan fundamental catalyst, sama seperti headline "Currency Strength Chart" yang historisnya sering salah dibaca sebagai sinyal fundamental; field ini HANYA boleh berdasar KONTEKS MAKRO (Ringkasan) dan FUNDAMENTAL TERSTRUKTUR (cb_bias, COT, real yield, dsb) — kalau HANYA currency strength/rezim yang mendukung suatu arah tanpa dukungan fundamental sungguhan, itu BUKAN alasan valid untuk "searah". SEBELUM memutuskan searah/konflik, tentukan dulu mata uang mana yang diuntungkan oleh bias teknikalmu: bias bullish = mata uang BASE (kiri) menguat vs QUOTE (kanan); bias bearish = mata uang QUOTE menguat vs BASE — berlaku SAMA untuk pair mayor maupun pair silang non-USD (misal AUD/NZD bearish = NZD menguat vs AUD, EUR/GBP bearish = GBP menguat vs EUR, BUKAN sebaliknya). Baru bandingkan: kalau sinyal fundamental mendukung penguatan mata uang yang SAMA itu, itu "searah" — JANGAN dibalik jadi "konflik" hanya karena satu mata uang disebut "hawkish/kuat" tanpa mengecek dulu apakah itu mata uang yang diuntungkan atau dirugikan oleh biasmu. WAJIB cek ulang sebelum menjawab: kalau kesimpulanmu "searah", pastikan mata uang yang kamu anggap "diuntungkan" oleh biasmu itu SAMA dengan mata uang yang sinyal fundamentalnya (bias CB hawkish, COT crowded short berisiko short-squeeze, dsb) menunjukkan MENGUAT — jangan sampai makro_alignment_reason-mu menyebut mata uang yang SAMA "menguat" sekaligus "melemah" hanya karena kamu ingin memaksakan "searah". Contoh kesalahan nyata yang harus dihindari: bias BoJ hawkish + COT JPY net short crowded (persentil rendah, rawan short-squeeze naik) dua-duanya sinyal JPY MENGUAT — untuk pair CHF/JPY itu berarti QUOTE menguat, jadi sinyal itu searah dengan bias BEARISH CHF/JPY (bukan bullish); kalau biasmu justru bullish CHF/JPY, sinyal itu KONFLIK, bukan searah.',
-        '- makro_alignment_reason: SATU kalimat pendek alasannya dengan menyebut data spesifik (misal "bias Fed Dovish + COT USD net short searah dengan bias bearish USD/JPY"). Kalau alasannya menyangkut mekanisme dolar/komoditas/yield (misal "safe-haven vs real yield", "geopolitik vs oil"), WAJIB pakai angka konkret dari baris DOLLAR & KOMODITAS / REAL YIELD USD di FUNDAMENTAL TERSTRUKTUR kalau tersedia (level DXY/WTI, atau breakdown nominal-vs-ekspektasi inflasi) — jangan cuma bilang "real yield tinggi" tanpa angka atau tanpa menjelaskan apakah itu didorong sisi nominal atau sisi inflasi. Kalau data itu tidak tersedia di atas, jangan mengarang angka — tetap boleh pakai bahasa umum. Null kalau makro_alignment null.',
+        '- macro_direction: putuskan lebih dulu dari KONTEKS MAKRO + fundamental inti (kebijakan bank sentral, data ekonomi, risk regime, real yield): "bullish"/"bearish"/"neutral"/"mixed"/"no_trade". Untuk FX, bullish berarti BASE menguat vs QUOTE; bearish berarti QUOTE menguat vs BASE. JANGAN pakai ranking currency strength sebagai bukti makro karena itu price-derived teknikal. DILARANG memakai chart, candle, RSI, MACD, SMA, COT, retail, atau track record untuk menentukan/membalik arah inti.',
+        '- macro_reason: SATU kalimat pendek berisi bukti makro inti yang menentukan macro_direction. Positioning COT/retail hanya boleh memodulasi keyakinan atau timing, tidak boleh membalik arah inti.',
+        '- strategy_id: WAJIB salah satu "momentum", "range", "tactical_fade", "no_trade". momentum hanya saat arah makro tegas dan chart menyediakan timing searah. range hanya saat pasar objektif ranging/makro campuran dan entry di edge. tactical_fade hanya untuk overreaction dengan cerita tipis/belum terkonfirmasi, bersifat jangka pendek. Jika syarat atau RR 1:2 tidak tersedia, pilih no_trade.',
+        '- makro_alignment: turunan dari macro_direction vs bias: "searah", "konflik", "netral", atau null bila data makro tak tersedia.',
+        '- makro_alignment_reason: SATU kalimat ringkas yang konsisten dengan macro_reason dan arah pair.',
       ];
     const conflictInstr = '- conflict: bandingkan bias TEKNIKALMU vs (a) arah yang tersirat KONTEKS MAKRO/FUNDAMENTAL TERSTRUKTUR di atas (kalau ada), DAN (b) [EVENT HIGH-IMPACT 7 HARI KE DEPAN] (kalau ada). Isi "arah" kalau makro/fundamental berlawanan jelas dengan bias teknikalmu — INI BUKAN alasan otomatis untuk tidak keluarkan setup, tapi WAJIB dilaporkan di sini. Isi "waktu" kalau ada event high-impact dalam beberapa jam ke depan (sebelum time_horizon_days-mu selesai) yang bisa membatalkan skenario mendadak — ini LEBIH SERIUS dari konflik arah, pilih "waktu" kalau dua-duanya terjadi sekaligus. Isi "none" kalau tidak ada konflik terdeteksi atau data pembanding tidak tersedia.';
     const tailFieldInstr = [
         '- confidence: level keyakinanmu sendiri atas SELURUH setup ini (bukan cuma bias arah) — salah satu "tinggi"/"sedang"/"rendah". HARUS konsisten dengan level keyakinan yang kamu sebut di paragraf KESIMPULAN nanti (field ini SATU-SATUNYA sumber terstruktur untuk itu, dibaca kode/statistik — paragraf teks tidak diparsing). Null HANYA kalau entry_zone null (tidak ada setup untuk dinilai).',
       ];
     const commentaryParas = [
-        `Isi paragraf pertama (tanpa header) — bias & posisi makro harga: arah trend Daily dengan alasan konkret (perubahan %, close vs open, posisi dalam range 6 bulan dari [KONTEKS 6 BULAN] — dekat puncak/lembah/tengah).`,
-        `Isi paragraf kedua (tanpa header) — struktur H4: pakai [STRUKTUR H4] (HH+HL / LH+LL / mixed) dan posisi harga terhadap cluster [LEVEL S/R] terdekat; fase akumulasi/distribusi/breakout; MACD H4 konfirmasi atau divergensi.`,
+        `Isi paragraf pertama (tanpa header) — keputusan arah makro lebih dulu: macro_direction, bukti kebijakan/data inti, dan kenapa positioning hanya mengubah keyakinan/timing tanpa membalik arah.`,
+        `Isi paragraf kedua (tanpa header) — strategy_id dan timing chart: jelaskan mengapa kondisi termasuk momentum/range/tactical_fade/no_trade, lalu struktur H4 dan posisi terhadap level terdekat.`,
         `Isi paragraf ketiga (tanpa header) — momentum & pola: momentum H1 terkini, RSI H4 (arah naik/turun), pola candle yang terdeteksi dan artinya di posisi sekarang${p3Atr}, konfluensi atau perbedaan arah dengan H4.`,
         `Isi paragraf keempat (tanpa header) — integrasi ${p4Label}: simpulkan kekuatan setup (berapa struktur yang konfluens di entry_zone), risiko utama, dan kondisi pasar yang memvalidasi atau membatalkan skenario ini${p4Macro}.`,
         `Isi paragraf kelima — mulai literal dengan "KESIMPULAN:" lalu isi (WAJIB, paragraf penutup terpisah — jangan digabung ke paragraf keempat): 3-4 kalimat MAKSIMAL setelah kata "KESIMPULAN:", jangan mengulang detail/angka yang sudah dijelaskan panjang di paragraf sebelumnya. Harus BISA BERDIRI SENDIRI untuk trader yang cuma sempat baca satu paragraf ini: (1) bias akhir + level keyakinan (tinggi/sedang/rendah) dengan alasan singkat kenapa segitu, (2) SATU kondisi konkret yang ditunggu sebelum entry (ulangi trigger utama secara ringkas, minimal sebutkan levelnya), (3) SATU risiko/pembatal utama dalam satu kalimat. Nada tegas dan actionable, bukan mengulang narasi eksploratif paragraf sebelumnya.${p5Track}`,
@@ -7626,7 +7724,7 @@ async function ohlcvAnalyzeHandler(req, res) {
       entryBasisInstr,
       slInstr,
       tpInstr,
-      '- trigger: SATU kondisi price action spesifik yang HARUS terpenuhi sebelum entry — utamakan konfirmasi berbasis candle/pola di level konkret (misal "tunggu candle H4 close di bawah 1.1710" atau "tunggu rejection/pin bar H1 di area 3340") daripada indikator murni. Jangan sebut dua kondisi alternatif yang saling kontradiksi relatif ke Now. Manfaatkan [POLA CANDLE terdeteksi] kalau relevan.',
+      '- trigger: SATU kondisi H1 spesifik di level konkret, hanya pada sesi London atau New York, dan wajib berupa REJECTION terhadap level (bukan breakout). Untuk momentum, body candle searah bias harus 0.5-1.0 ATR-14 H1; body <0.5 ATR belum valid dan >1 ATR berarti terlambat/skip; SL harus melampaui wick rejection. Untuk range, ukuran body tidak menentukan, RSI-14 H1 divergence hanya konfirmasi opsional, dan model risiko Academy memakai ATR-14 6H: SL 1 ATR serta TP 2 ATR bila angka ATR-14 6H tersedia; jika tidak tersedia jangan mengarang angka, tetap gunakan level struktur dengan RR minimal 1:2 dan jelaskan keterbatasannya. Untuk tactical_fade, tunggu rejection valid setelah overreaction dengan cerita tipis/belum terkonfirmasi; entry hanya jangka pendek dan pandangan makro besar tidak berubah.',
       '- invalidation_condition: kondisi spesifik yang membatalkan skenario ini sepenuhnya (beda dari sl — ini soal struktur/tesis, misal "kalau Daily close balik di bawah SMA50 atau swing low H4 terakhir jebol, bias bullish batal")',
       '- invalidation_trigger: versi TERSTRUKTUR dari invalidation_condition di atas, supaya KODE (bukan AI) bisa mendeteksi otomatis tanpa call AI tambahan — objek {"type":"ma_break"|"price_level"|"swing_break","level":<satu angka>,"timeframe":"1h"|"4h"|"1d","direction":"above"|"below"}. "level" WAJIB satu angka konkret yang ADA di data (nilai SMA/level struktur/swing yang kamu sebut di invalidation_condition), "direction" = arah CLOSE candle yang membatalkan skenario ("below" kalau close balik ke bawah level itu membatalkan, "above" kalau close balik ke atas). Kalau invalidation_condition-mu TIDAK BISA diringkas jadi satu level angka tunggal (butuh multi-kondisi atau deskripsi kualitatif), set invalidation_trigger ke null — JANGAN mengarang angka.'
         + (levelCandidates ? ' Kalau type-nya "price_level" atau "swing_break", SEBAIKNYA level ini sama dengan salah satu angka di [KANDIDAT SL/TP] atau [ZONA KONFLUENSI] di atas (bukan angka baru yang tidak berkaitan) — konsisten dengan sl yang kamu pilih.' : ''),
@@ -7645,7 +7743,7 @@ async function ohlcvAnalyzeHandler(req, res) {
     // — prosa panjang 4-5 paragraf sebagai string JSON rawan gagal JSON.parse (kutip/newline
     // tak ter-escape), yang dulu bikin structured null dan bias/entry/sl/tp hilang total.
     const messages = [
-      { role: 'system', content: 'Kamu analis senior teknikal dan makro. WAJIB jawab dalam DUA bagian persis seperti diminta: (1) SATU objek JSON valid tanpa markdown fence berisi HANYA field {"bias":"...","entry_zone":"...","entry_basis":"...","sl":"...","tp":"...","trigger":"...","invalidation_condition":"...","invalidation_trigger":{"type":"...","level":0,"timeframe":"...","direction":"..."},"time_horizon_days":0,"makro_alignment":"...","makro_alignment_reason":"...","conflict":"...","conflict_note":"...","confidence":"..."} — invalidation_trigger boleh null kalau tidak bisa distrukturkan; JANGAN sertakan field commentary di JSON ini; (2) setelah JSON, baris berisi PERSIS "===COMMENTARY===", lalu teks commentary biasa (bukan JSON, bebas tanda kutip/baris baru). Bahasa Indonesia.' },
+      { role: 'system', content: 'Kamu analis senior makro dan struktur pasar dengan urutan keputusan Prime Market Academy: arah makro lebih dulu, chart hanya untuk timing. WAJIB jawab dalam DUA bagian persis seperti diminta: (1) SATU objek JSON valid tanpa markdown fence berisi HANYA field {"strategy_id":"momentum|range|tactical_fade|no_trade","macro_direction":"bullish|bearish|neutral|mixed|no_trade","macro_reason":"...","bias":"...","entry_zone":"...","entry_basis":"...","sl":"...","tp":"...","trigger":"...","invalidation_condition":"...","invalidation_trigger":{"type":"...","level":0,"timeframe":"...","direction":"..."},"time_horizon_days":0,"makro_alignment":"...","makro_alignment_reason":"...","conflict":"...","conflict_note":"...","confidence":"..."} — invalidation_trigger boleh null kalau tidak bisa distrukturkan; JANGAN sertakan field commentary di JSON ini; (2) setelah JSON, baris berisi PERSIS "===COMMENTARY===", lalu teks commentary biasa (bukan JSON, bebas tanda kutip/baris baru). Bahasa Indonesia.' },
       { role: 'user',   content: userMsg },
     ];
 
@@ -7896,6 +7994,9 @@ async function ohlcvAnalyzeHandler(req, res) {
           const h = Number(structured.time_horizon_days);
           structured.time_horizon_days = isNaN(h) ? null : h;
         }
+        if (!isAutoCall && structured.academy_contract_status !== 'rejected') {
+          structured = _enforceManualAcademyContract(structured, { lockedDirection: manualMacroDirection });
+        }
 
         // PLAN Z (2026-08-18): snap sl/tp ke [KANDIDAT SL/TP] (api/_levels.js) kalau
         // tersedia untuk bias yang dipilih AI — samakan filosofi dengan entry_zone
@@ -7936,8 +8037,14 @@ async function ohlcvAnalyzeHandler(req, res) {
         }
         // Sanity-check entry_zone/sl/tp direction vs current price AND risk/reward —
         // drop the levels (keep bias/trigger/commentary) if the model produced a setup
-        // that contradicts the live price it was given, or has RR < 1.
-        if (structured.entry_zone && structured.sl && structured.tp && typeof nowPrice === 'number') {
+        // that contradicts the live price it was given, atau RR di bawah kontrak
+        // jalurnya (manual Prime=2; AATAS=2).
+        // AATAS mempertahankan perilaku lama: validasi ini hanya berjalan bila harga live
+        // tersedia. Jalur manual Prime tetap dapat memeriksa struktur level + RR tanpa
+        // harga live, sehingga kontrak 1:2 tidak diam-diam lolos saat quote sementara kosong.
+        const shouldValidateLevels = structured.entry_zone && structured.sl && structured.tp
+          && (typeof nowPrice === 'number' || !isAutoCall);
+        if (shouldValidateLevels) {
           const nums = s => (String(s).match(/[\d.]+/g) || []).map(Number).filter(n => !isNaN(n));
           const entryNums = nums(structured.entry_zone);
           const slNum = nums(structured.sl)[0];
@@ -7946,9 +8053,11 @@ async function ohlcvAnalyzeHandler(req, res) {
             const entryLow = Math.min(...entryNums), entryHigh = Math.max(...entryNums);
             let valid = true;
             if (structured.bias === 'bearish') {
-              valid = slNum > entryHigh && entryLow > tpNum && nowPrice < slNum && nowPrice > tpNum;
+              valid = slNum > entryHigh && entryLow > tpNum;
+              if (valid && typeof nowPrice === 'number') valid = nowPrice < slNum && nowPrice > tpNum;
             } else if (structured.bias === 'bullish') {
-              valid = slNum < entryLow && entryHigh < tpNum && nowPrice > slNum && nowPrice < tpNum;
+              valid = slNum < entryLow && entryHigh < tpNum;
+              if (valid && typeof nowPrice === 'number') valid = nowPrice > slNum && nowPrice < tpNum;
             }
             // BUG DITEMUKAN & DIFIX (2026-08-25, user melihat chart CHF/JPY di dashboard:
             // marker "Filled" jauh dari garis Entry, harga tidak pernah menyentuh entry tapi
@@ -7989,7 +8098,7 @@ async function ohlcvAnalyzeHandler(req, res) {
             // setup_log di bawah (termasuk cabang refineCandidate) mensyaratkan
             // entry_zone+sl+tp non-null, jadi menolak level di sini otomatis membatalkan
             // refine dan MEMPERTAHANKAN level lama apa adanya.
-            if (valid && isAutoCall) {
+            if (valid && isAutoCall && typeof nowPrice === 'number') {
               const entrySideOk = structured.bias === 'bearish' ? nowPrice <= entryHigh
                 : structured.bias === 'bullish' ? nowPrice >= entryLow
                   : true;
@@ -8006,15 +8115,28 @@ async function ohlcvAnalyzeHandler(req, res) {
               const risk = Math.abs(entryMid - slNum), reward = Math.abs(tpNum - entryMid);
               if (risk > 0) {
                 structured.risk_reward = Math.round((reward / risk) * 100) / 100;
-                if (reward / risk < 1) valid = false;
-              }
+                const minRequiredRr = isAutoCall ? AATAS_MIN_RR : MANUAL_MIN_RR;
+                if (reward / risk < minRequiredRr - 1e-9) valid = false;
+              } else valid = false;
             }
             if (!valid) {
-              console.warn('ohlcv_analyze: entry/sl/tp inconsistent or RR<1 — dropping levels', { bias: structured.bias, entry_zone: structured.entry_zone, sl: structured.sl, tp: structured.tp, nowPrice, rr: structured.risk_reward });
+              console.warn(`ohlcv_analyze: entry/sl/tp inconsistent or RR<${isAutoCall ? AATAS_MIN_RR : MANUAL_MIN_RR} — dropping levels`, { bias: structured.bias, entry_zone: structured.entry_zone, sl: structured.sl, tp: structured.tp, nowPrice, rr: structured.risk_reward });
               structured.entry_zone = structured.sl = structured.tp = null;
               structured.risk_reward = null;
+              if (!isAutoCall) {
+                structured.strategy_id = 'no_trade';
+                structured.trigger_contract = null;
+                structured.academy_contract_status = 'rejected';
+                structured.academy_reject_reason = 'Level entry/SL/TP tidak konsisten atau RR di bawah 1:2.';
+              }
             }
           }
+        }
+        // Snap kandidat atau pemeriksaan level di atas dapat membuang level setelah
+        // kontrak awal lolos. Evaluasi ulang jalur manual agar status akhir dan
+        // strategy_id selalu mencerminkan payload efektif yang benar-benar dikirim.
+        if (!isAutoCall) {
+          structured = _enforceManualAcademyContract(structured, { lockedDirection: manualMacroDirection });
         }
         // entry_basis hanya bermakna bersama entry_zone — ikut di-null kalau level
         // di-drop sanity check / model memang tidak memberi setup; buang juga non-string.
@@ -8450,8 +8572,8 @@ async function ohlcvAnalyzeHandler(req, res) {
         // di sana bias TIDAK LAGI murni teknikal — arah lahir dari makro (Step 0-2) dan
         // teknikal cuma memilih lokasi/timing, jadi "bias melawan makro" bukan lagi
         // kondisi yang sah, melainkan justru yang dicegah. Rasionalisasi lama tetap
-        // ditulis di sini apa adanya karena masih berlaku untuk jalur MANUAL publik —
-        // jangan dibaca sebagai penjelasan perilaku auto-entry.
+        // ditulis di sini sebagai konteks historis. Sejak policy manual `prime-v1`,
+        // arah manual juga makro-first; chart hanya memilih strategi/lokasi/timing.
         // Alasan `commentary` disimpan tetap sama untuk dua jalur: penjelasan naratif cuma
         // ada di paragraf commentary, yang SEBELUM INI TIDAK PERNAH disimpan ke
         // setup_log_auto:v1 sama sekali — hilang permanen begitu response dibalas,
@@ -8462,6 +8584,14 @@ async function ohlcvAnalyzeHandler(req, res) {
         horizon_days: structured.time_horizon_days ?? null,
         model, ts: Date.now(), level_set_at: Date.now(), status: 'pending',
         source: isAutoCall ? 'auto' : 'manual',
+        ...(!isAutoCall ? {
+          strategy_id: structured.strategy_id ?? 'no_trade',
+          macro_direction: structured.macro_direction ?? 'no_trade',
+          macro_reason: structured.macro_reason ?? null,
+          analysis_policy_v: structured.analysis_policy_v ?? MANUAL_ANALYSIS_POLICY_VERSION,
+          trigger_contract: structured.trigger_contract ?? null,
+          academy_contract_status: structured.academy_contract_status ?? null,
+        } : {}),
         // `alignment` (turunan lossy dari conflict + makro_alignment) SUPERSEDED untuk
         // jalur auto sejak AATAS: makro_alignment selalu null di sana, jadi nilainya cuma
         // 'konflik' (kalau ada conflict) atau null. Kriteria Plan U "bandingkan kinerja
@@ -9508,6 +9638,10 @@ module.exports._aggCostExpectancy = _aggCostExpectancy;
 module.exports._confidenceCalibration = _confidenceCalibration;
 module.exports._sistemHakimCalibration = _sistemHakimCalibration;
 module.exports._computeCbDirServerSide = _computeCbDirServerSide;
+module.exports._computePrimeManualDirection = _computePrimeManualDirection;
+module.exports._enforceManualAcademyContract = _enforceManualAcademyContract;
+module.exports.MANUAL_ANALYSIS_POLICY_VERSION = MANUAL_ANALYSIS_POLICY_VERSION;
+module.exports.MANUAL_MIN_RR = MANUAL_MIN_RR;
 module.exports._detectAlignmentReasonContradiction = _detectAlignmentReasonContradiction;
 module.exports._enforceAatasRrGate = _enforceAatasRrGate;
 module.exports._normalizeFundamentalCase = _normalizeFundamentalCase;

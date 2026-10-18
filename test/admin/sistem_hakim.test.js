@@ -169,6 +169,9 @@ const { AATAS_OK_FIELDS } = require('./_aatas_fixture');
 // bahasan test ini Sistem Hakim, bukan gate AATAS.
 const AI_JSON_BEARISH = {
   ...AATAS_OK_FIELDS,
+  strategy_id: 'momentum',
+  macro_direction: 'bearish',
+  macro_reason: 'GBP dovish vs USD hawkish',
   bias: 'bearish',
   entry_zone: '1.2795-1.2805', entry_basis: 'cluster S/R',
   sl: '1.2850', tp: '1.2700',
@@ -177,6 +180,13 @@ const AI_JSON_BEARISH = {
   conflict: 'none', conflict_note: null,
 };
 const AI_RAW_TEXT = `${JSON.stringify(AI_JSON_BEARISH)}\n===COMMENTARY===\nKomentar singkat untuk tes Sistem Hakim.`;
+const AI_JSON_BEARISH_PRIME_FADE = {
+  ...AI_JSON_BEARISH,
+  strategy_id: 'tactical_fade',
+  macro_direction: 'bullish',
+  macro_reason: 'GBP hawkish vs USD dovish; entry bearish hanya fade jangka pendek',
+};
+const AI_RAW_TEXT_PRIME_FADE = `${JSON.stringify(AI_JSON_BEARISH_PRIME_FADE)}\n===COMMENTARY===\nKomentar singkat untuk tes Sistem Hakim.`;
 
 // AI mengklaim SENDIRI (teks bebas) makro_alignment='konflik'/conflict='arah' —
 // dipakai test koreksi arah sebaliknya (cbDir sebenarnya SEARAH dgn bias 'bearish' ini).
@@ -262,7 +272,7 @@ test('AATAS: jalur MANUAL (cbDir dari body) -> Sistem Hakim tetap memaksa confli
       'cb_bias': STRONG_CB_BIAS,
     });
     const origFetch = global.fetch;
-    global.fetch = makeAnalyzeFetchStub(store);
+    global.fetch = makeAnalyzeFetchStub(store, AI_RAW_TEXT_PRIME_FADE);
     try {
       const handler = loadHandler();
       const res = fakeRes();
@@ -387,7 +397,7 @@ test('SISTEM HAKIM cron: cb_bias divergen tapi confidence Medium -> fallback TID
   });
 });
 
-test('SISTEM HAKIM manual (bukan cron/auto): cb_bias divergen kuat tersedia TAPI tidak dipakai — perilaku manual tidak berubah', async () => {
+test('SISTEM HAKIM manual: cb_bias server tidak mengaktifkan fallback cbDir; kontrak Prime ditangani terpisah', async () => {
   await withEnv({ DEEPSEEK_API_KEY: 'k' }, async () => {
     const store = makeStore({
       'ohlcv_fresh:GBPUSD=X': '1',
@@ -395,7 +405,7 @@ test('SISTEM HAKIM manual (bukan cron/auto): cb_bias divergen kuat tersedia TAPI
       'cb_bias': STRONG_CB_BIAS,
     });
     const origFetch = global.fetch;
-    global.fetch = makeAnalyzeFetchStub(store);
+    global.fetch = makeAnalyzeFetchStub(store, AI_RAW_TEXT_PRIME_FADE);
     try {
       const handler = loadHandler();
       const res = fakeRes();

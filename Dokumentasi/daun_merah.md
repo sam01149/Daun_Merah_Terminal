@@ -11,12 +11,26 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-10-18 (Session 385 — Hilangkan strip warna pinggiran card news)
+> **Last updated:** 2026-10-18 (Session 386 — Penyelarasan Prime Academy dan revamp Ringkasan)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 386 (2026-10-18) — Penyelarasan Prime Academy dan revamp Ringkasan
+
+**Dasar keputusan.** Implementasi menutup audit 150/150 transkrip Prime Market Academy (parser error 0) terhadap fitur publik Ringkasan dan Analisa. Prinsip yang dipakai: fundamental/kebijakan menentukan arah, chart menentukan lokasi dan waktu; strong-vs-weak butuh bukti dua kaki; positioning hanya mengubah conviction/timing; momentum, range, dan tactical fade tidak boleh tercampur; trigger Academy menunggu rejection H1 di London/New York; setup aktif wajib RR minimum 1:2. Ini penyelarasan proses, bukan klaim bahwa strategi pasti menguntungkan.
+
+**Ringkasan — kontrak data dan guard.** Call 3 `api/market-digest.js` sekarang membaca snapshot Redis `cb_bias` aktual setelah Call 2 dan mengirim stance, confidence, serta status disputed ke model. Guard kode hanya mengizinkan arah FX aktif bila kedua kaki tersedia, confidence minimal Medium, bukan stance ortogonal (`Data Dependent`/`On Hold`/`Split`), tidak disputed, dan divergensi hawk-dove minimal dua tingkat; arah tanpa bukti atau berlawanan dipaksa `no_trade` dengan confidence maksimal 2 dan alasan CB faktual. Klaim options skew/korelasi emas yang tidak memiliki payload dicabut. Ringkasan tetap makro murni—TA, COT, retail, dan korelasi tidak dimasukkan kembali.
+
+**Analisa manual — policy `prime-v1`.** `api/admin.js` sekarang menetapkan `macro_direction` + `macro_reason` sebelum chart, lalu mewajibkan satu `strategy_id` (`momentum`, `range`, `tactical_fade`, `no_trade`). Kontrak terstruktur mencatat rejection H1, sesi London/NY, larangan breakout, RR 1:2, aturan body momentum 0,5–1 ATR dan SL di balik wick, aturan range RSI divergence opsional + ATR-14 6H SL 1 ATR/TP 2 ATR bila tersedia, serta batas tactical fade jangka pendek tanpa mengubah pandangan makro. Momentum yang melawan arah makro, output tanpa alasan makro, level yang tidak lengkap/tidak konsisten, atau RR <1:2 ditolak dan level dikosongkan. Track record mentah manual/auto hanya deskriptif dan tidak boleh mengubah arah/strategi/trigger/confidence. Setup log manual menyimpan policy, strategi, arah/alasan makro, trigger contract, dan status kontrak. Prompt/policy/log AATAS `auto=1` tidak diubah.
+
+**Revamp tab Ringkasan (handoff Gemini dilanjutkan).** CB Bias lengkap delapan bank sentral dipindah dari Kalender ke bagian paling atas Ringkasan; Kalender kembali event-only. Polymarket berada tepat di bawahnya dan selalu mengurutkan top 3 berdasarkan volume 24 jam, sementara market lain tetap tersedia melalui detail yang dapat dibuka. Kartu Thesis FX/XAU serta intisari thesis di PDF Ringkasan dihapus karena duplikatif dengan tab Analisa dan jarang dipakai; Thesis Alert dipertahankan sebagai pengaman posisi terbuka. Aliran baca sekarang: CB Bias → Polymarket → Thesis Alert bila ada → Analisis Berita FX/XAU → Headline Sumber → aksi. Narasi tetap terbuka. Thesis Call 3 tetap disimpan untuk kompatibilitas Dashboard/Checklist/Sizing. `APP_VERSION` naik ke `2026.10.18.3`.
+
+**Dampak pengguna.** Ringkasan lebih lapang dan langsung menunjukkan konteks makro utama; Kalender tidak lagi bercampur data non-event. Analisa akan lebih sering menghasilkan `no_trade` ketika bukti makro, trigger, level, atau RR tidak cukup—ini disengaja agar frekuensi turun tetapi alasan dan disiplin setup naik. Profitabilitas tidak diasumsikan membaik; hasil policy baru harus dinilai dari sampel manual `prime-v1` yang terpisah dari setup lama.
+
+**Verifikasi lokal.** Regresi baru mengunci perpindahan CB, urutan Ringkasan, top-3 Polymarket, penghapusan kartu thesis, arah CB dua kaki, kontrak setiap strategi, rejection setup tanpa level/arah trade, RR 1:2 termasuk saat quote live tidak tersedia, dan isolasi AATAS. Tes fokus lulus; suite penuh `npm test` lulus 1.402/1.402. Tidak ada panggilan AI berbayar atau transaksi dalam verifikasi.
 
 ## Changelog Session 385 (2026-10-18) — Hilangkan strip warna pinggiran card news
 
