@@ -21,6 +21,25 @@ test('CB Bias berada di Ringkasan dan tidak lagi memenuhi tab Kalender', () => {
   assert.doesNotMatch(calendarMarkup, /id="cbSection"|id="cbGrid"/);
 });
 
+test('desktop Ringkasan memakai tiga kolom: CB kiri, narasi tengah, Polymarket kanan', () => {
+  const ringkasanMarkup = between('<!-- RINGKASAN PANEL -->', '<!-- ANALISA PANEL -->');
+  assert.match(ringkasanMarkup, /class="ringkasan-main"/);
+  assert.match(ringkasanMarkup, /class="ringkasan-side ringkasan-side-left"/);
+  assert.match(ringkasanMarkup, /class="ringkasan-side ringkasan-side-right no-print"/);
+  assert.match(html, /grid-template-areas:\s*"left main right"/);
+  assert.match(html, /grid-template-columns:\s*minmax\(250px, 300px\) minmax\(520px, 1fr\) minmax\(280px, 320px\)/);
+});
+
+test('Ringkasan turun responsif menjadi dua kolom tablet dan satu kolom ponsel', () => {
+  assert.match(html, /grid-template-areas:\s*"main main" "left right"/);
+  assert.match(html, /grid-template-areas:\s*"main" "left" "right"/);
+  assert.match(html, /@media \(min-width: 768px\) and \(max-width: 1199px\)/);
+});
+
+test('Ringkasan kembali satu kolom saat dicetak agar isi tidak menyempit', () => {
+  assert.match(html, /body\.printing-ringkasan #ringkasanPanel \.ringkasan-workspace\s*\{\s*display:\s*block !important;/);
+});
+
 test('Ringkasan tidak merender kartu Thesis FX/XAU, tetapi Thesis Alert tetap ada', () => {
   const render = between('function renderRingkasan()', '\nfunction _printWibNow');
   assert.doesNotMatch(render, /renderThesisCard|renderXauThesisCard/);

@@ -11,12 +11,22 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-10-18 (Session 386 — Penyelarasan Prime Academy dan revamp Ringkasan)
+> **Last updated:** 2026-10-18 (Session 387 — Workspace Ringkasan tiga kolom dan daftar News profesional)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 387 (2026-10-18) — Workspace Ringkasan tiga kolom dan daftar News profesional
+
+**Ringkasan.** Tampilan Ringkasan di desktop dilebarkan menjadi satu workspace: CB Bias berada di kolom kiri, narasi ringkasan sebagai fokus utama di tengah, dan Polymarket di kolom kanan. Batas lebar workspace menjadi 1.540 px dengan kolom tengah fleksibel agar ruang tambahan dipakai untuk isi, bukan menjadi margin kosong. Pada tablet, narasi memenuhi baris atas lalu CB Bias dan Polymarket berdampingan di bawahnya; pada ponsel ketiganya turun menjadi satu kolom dengan narasi lebih dulu. Mode cetak sengaja kembali ke alur satu kolom supaya teks dan tabel tidak dipaksa sempit di PDF.
+
+**News.** Tampilan News diselaraskan dengan pola daftar Artikel: setiap berita kini berupa baris datar tanpa kotak membulat dan tanpa jarak antarkartu, dipisahkan garis tipis. Badge kategori ditempatkan di kiri judul, waktu berada di baris bawah, font judul memakai tipografi sistem yang lebih tenang, dan deskripsi/gambar tetap dibatasi agar nyaman dibaca di layar lebar. Warna kategori tetap dipertahankan sebagai penanda informasi, tetapi keseluruhan visual lebih rapat dan profesional.
+
+**Kompatibilitas dan versi.** Struktur ID yang dipakai renderer (`ringkasanInner`, `cbGrid`, `polymarketPanel`) dipertahankan sehingga alur data dan tombol lama tetap bekerja. Perubahan hanya menyentuh presentasi dan susunan DOM; prompt, API, serta kebijakan analisa tidak berubah. `APP_VERSION` dinaikkan menjadi `2026.10.18.4` agar cache PWA mengambil frontend baru.
+
+**Verifikasi.** Uji visual lokal dilakukan pada viewport desktop 1.600 px, tablet 900 px, dan ponsel 390 px untuk Ringkasan serta News. Regresi baru mengunci urutan tiga kolom desktop, fallback tablet/ponsel, reset satu kolom saat cetak, bentuk baris News datar, dan posisi badge/waktu. Suite penuh `npm test` lulus 1.407/1.407. Tidak ada panggilan AI berbayar atau transaksi dalam verifikasi.
 
 ## Changelog Session 386 (2026-10-18) — Penyelarasan Prime Academy dan revamp Ringkasan
 

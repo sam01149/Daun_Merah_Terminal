@@ -473,6 +473,9 @@ body {
   flex:1; overflow-y:auto; overflow-x:hidden; padding:10px 12px 16px;
   -webkit-overflow-scrolling:touch;
 }
+#feedScroll {
+  padding: 0 0 calc(64px + env(safe-area-inset-bottom));
+}
 .feed-scroll::-webkit-scrollbar { display:none; }
 @media (min-width:1024px) {
   .feed-scroll::-webkit-scrollbar { display:block; width:5px; }
@@ -485,20 +488,23 @@ body {
 .loading-pulse { animation: textPulse 1.6s ease-in-out infinite; }
 
 .feed-item {
-  background:var(--surface); border:1px solid var(--border);
-  border-radius:10px; padding:12px 14px; margin-bottom:8px;
-  cursor:default; transition:all .15s; position:relative;
+  background:transparent; border:0; border-bottom:1px solid var(--border);
+  border-radius:0; padding:12px 14px; margin:0;
+  cursor:default; transition:background .15s; position:relative;
   overflow:hidden; animation:fadeUp .25s ease-out both;
 }
+.feed-item:first-child { border-top:1px solid var(--border); }
+.feed-item:hover { background:rgba(var(--fg-rgb),.025); }
 .feed-item:active { transform:none; }
 @keyframes fadeUp { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:translateY(0)} }
 
-.item-meta { display:flex; align-items:center; gap:7px; margin-bottom:6px; flex-wrap:wrap; }
-.item-time { font-size:10px; color:var(--accent); letter-spacing:.3px; }
+.item-headline-row { display:flex; align-items:flex-start; gap:8px; min-width:0; }
+.item-meta { display:flex; align-items:center; gap:7px; margin-top:4px; flex-wrap:wrap; }
+.item-time { font-size:9px; color:var(--muted); letter-spacing:.3px; }
 
 .item-tag {
-  font-size:8px; padding:2px 6px; border-radius:3px;
-  letter-spacing:.5px; text-transform:uppercase; font-weight:400;
+  flex:0 0 auto; margin-top:1px; font-size:8px; padding:2px 5px; border-radius:2px;
+  letter-spacing:.5px; text-transform:uppercase; font-weight:600;
 }
 .tag-market-moving { background:rgba(255,71,87,.15); color:#ff4757; }
 .tag-forex         { background:rgba(var(--green-rgb),.12); color:var(--green); }
@@ -513,12 +519,12 @@ body {
 .tag-geopolitical  { background:rgba(251,146,60,.12); color:#fb923c; }
 
 .item-title {
-  font-family:'Syne',sans-serif; font-size:13px; font-weight:400;
-  line-height:1.45; color:var(--text);
+  min-width:0; font-family:system-ui,-apple-system,'Segoe UI',sans-serif;
+  font-size:13px; font-weight:400; line-height:1.45; color:var(--text);
 }
 .item-desc {
-  margin-top:8px; font-size:11px; color:var(--muted); line-height:1.5;
-  border-top:1px solid var(--border); padding-top:8px;
+  max-width:960px; margin-top:8px; font-size:11px; color:var(--muted); line-height:1.55;
+  border-top:0; padding-top:0;
 }
 
 .feed-chart-img { width:100%; border-radius:6px; display:block; background:var(--surface); }
@@ -528,7 +534,7 @@ body {
   font-size:9px; letter-spacing:.3px; cursor:pointer; transition:all .15s;
 }
 .feed-chart-toggle:hover { border-color:var(--accent); color:var(--accent); }
-.feed-chart-wrap { margin-top:8px; }
+.feed-chart-wrap { max-width:960px; margin-top:8px; }
 .feed-chart-error {
   padding:8px 10px; font-size:11px; color:var(--muted); text-align:center;
   background:rgba(var(--fg-rgb),.03); border-radius:6px;
@@ -1935,6 +1941,44 @@ body.light-theme .cal-date-input { color-scheme: light; }
   .nav-views::-webkit-scrollbar, .nav-filters::-webkit-scrollbar { display: none !important; }
 }
 
+/* Ringkasan workspace: narasi menjadi fokus di tengah, konteks pendukung tetap
+   terlihat di kiri/kanan pada desktop. Breakpoint menengah sengaja memakai dua
+   kolom untuk panel samping agar tabel CB tidak dipaksa terlalu sempit. */
+#ringkasanPanel .ringkasan-workspace {
+  width: 100%; max-width: 1540px; margin: 0 auto;
+  display: grid; grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: "main" "left" "right";
+  gap: 14px; align-items: start;
+}
+#ringkasanPanel .ringkasan-main { grid-area: main; min-width: 0; }
+#ringkasanPanel .ringkasan-side-left { grid-area: left; min-width: 0; }
+#ringkasanPanel .ringkasan-side-right { grid-area: right; min-width: 0; }
+#ringkasanPanel .ringkasan-main .ringkasan-inner {
+  width: 100%; max-width: none !important; margin: 0 !important; padding: 0 !important;
+}
+#ringkasanPanel .ringkasan-disclaimer-wrap { margin-top: 0; }
+#ringkasanPanel .ringkasan-dashboard-card { margin: 0; }
+#ringkasanPanel .ringkasan-side-left .cb-table { table-layout: fixed; }
+#ringkasanPanel .ringkasan-side-left .cb-td-cur { width: 34px; }
+#ringkasanPanel .ringkasan-side-left .cb-td-rate { width: 52px; }
+#ringkasanPanel .ringkasan-side-left .cb-td-dec { width: 50px; }
+
+@media (min-width: 768px) and (max-width: 1199px) {
+  #ringkasanPanel .ringkasan-workspace {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-areas: "main main" "left right";
+    gap: 16px;
+  }
+}
+
+@media (min-width: 1200px) {
+  #ringkasanPanel .ringkasan-workspace {
+    grid-template-columns: minmax(250px, 300px) minmax(520px, 1fr) minmax(280px, 320px);
+    grid-template-areas: "left main right";
+    gap: 16px;
+  }
+}
+
 @media (max-width: 480px) {
   .nvtab { padding: 10px 11px; font-size: 11px; }
   .ftab  { padding: 6px 9px;  font-size: 8px; }
@@ -2738,6 +2782,14 @@ body.light-theme .cal-date-input { color-scheme: light; }
   body.printing-ringkasan #ringkasanPanel, body.printing-analisa #analisaPanel {
     padding: 0 26mm 20mm !important; overflow: visible !important; max-height: none !important;
   }
+  /* Workspace tiga kolom hanya untuk layar lebar. Di PDF, narasi dan CB
+     kembali mengalir vertikal agar lebar baca dan pemisahan halaman stabil. */
+  body.printing-ringkasan #ringkasanPanel .ringkasan-workspace {
+    display: block !important; max-width: none !important;
+  }
+  body.printing-ringkasan #ringkasanPanel .ringkasan-main .ringkasan-inner {
+    width: 100% !important; max-width: none !important;
+  }
 
   /* SEMUA tombol tidak pernah relevan di kertas — sembunyikan global
      (generate/refresh/Analisa AI/Mulai ke Sizing Calc/print sendiri).
@@ -3385,49 +3437,57 @@ body:not(.light-theme) .ringkasan-gen-btn {
 <!-- RINGKASAN PANEL -->
 <div class="feed-scroll" id="ringkasanPanel" style="display:none">
   <div class="print-letterhead" id="printLetterheadRingkasan"></div>
-  <div class="ringkasan-inner" id="ringkasanOverview">
-    <section class="cb-section ringkasan-dashboard-card" id="cbSection">
-      <div class="cb-section-title">
-        <span>CB Bias · 8 Bank Sentral</span>
-        <span id="cbUpdatedAt" style="color:var(--muted);font-size:8px"></span>
-      </div>
-      <div id="cbGrid">
-        <div style="text-align:center;padding:12px;color:var(--muted);font-size:11px;font-family:'DM Mono',monospace">
-          Bias diperbarui otomatis saat Ringkas Berita
+  <div class="ringkasan-workspace" id="ringkasanOverview">
+    <main class="ringkasan-main">
+      <div class="ringkasan-inner" id="ringkasanInner">
+        <div class="state-box">
+          <div class="icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 5h6"/><path d="M9 9h6M9 13h6M9 17h4"/><rect x="5" y="3" width="14" height="18" rx="2"/></svg></div>
+          <p>Tap tombol di bawah untuk<br>generate ringkasan pasar.</p>
+        </div>
+        <div class="print-btn-row">
+          <button class="ringkasan-gen-btn" id="ringkasanBtn" onclick="generateRingkasan()">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/>
+            </svg>
+            <span>Ringkas Berita</span>
+          </button>
+          <button class="print-btn no-print" onclick="downloadRingkasanPdf()" title="Download PDF">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M4 21h16"/>
+            </svg>
+          </button>
         </div>
       </div>
-    </section>
-    <section class="corr-section ringkasan-dashboard-card no-print" id="polymarketWrap">
-      <div id="polymarketPanel">
-        <div class="corr-title">Polymarket · Top 3 by Volume</div>
-        <div style="font-size:10px;color:var(--muted);font-family:'DM Mono',monospace">Probabilitas event makro dari prediction market (uang nyata).</div>
+      <div class="ringkasan-inner ringkasan-disclaimer-wrap">
+        <div class="ai-disclaimer" id="ringkasanDisclaimer">Ringkasan dihasilkan AI dari headline &amp; data pihak ketiga — bisa keliru, bukan nasihat keuangan. Detail di tab PETUNJUK › Disclaimer.</div>
       </div>
-      <div class="ringkasan-dashboard-card-actions">
-        <button id="polyBtn" class="jn-btn-sec" onclick="fetchPolymarket()" style="width:100%;font-size:10px">Refresh Polymarket Macro</button>
-      </div>
-    </section>
-  </div>
-  <div class="ringkasan-inner" id="ringkasanInner">
-    <div class="state-box">
-      <div class="icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 5h6"/><path d="M9 9h6M9 13h6M9 17h4"/><rect x="5" y="3" width="14" height="18" rx="2"/></svg></div>
-      <p>Tap tombol di bawah untuk<br>generate ringkasan pasar.</p>
-    </div>
-    <div class="print-btn-row">
-      <button class="ringkasan-gen-btn" id="ringkasanBtn" onclick="generateRingkasan()">
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-          <circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/>
-        </svg>
-        <span>Ringkas Berita</span>
-      </button>
-      <button class="print-btn no-print" onclick="downloadRingkasanPdf()" title="Download PDF">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M4 21h16"/>
-        </svg>
-      </button>
-    </div>
-  </div>
-  <div class="ringkasan-inner" style="padding-top:0">
-    <div class="ai-disclaimer" id="ringkasanDisclaimer">Ringkasan dihasilkan AI dari headline &amp; data pihak ketiga — bisa keliru, bukan nasihat keuangan. Detail di tab PETUNJUK › Disclaimer.</div>
+    </main>
+
+    <aside class="ringkasan-side ringkasan-side-left">
+      <section class="cb-section ringkasan-dashboard-card" id="cbSection">
+        <div class="cb-section-title">
+          <span>CB Bias · 8 Bank Sentral</span>
+          <span id="cbUpdatedAt" style="color:var(--muted);font-size:8px"></span>
+        </div>
+        <div id="cbGrid">
+          <div style="text-align:center;padding:12px;color:var(--muted);font-size:11px;font-family:'DM Mono',monospace">
+            Bias diperbarui otomatis saat Ringkas Berita
+          </div>
+        </div>
+      </section>
+    </aside>
+
+    <aside class="ringkasan-side ringkasan-side-right no-print">
+      <section class="corr-section ringkasan-dashboard-card" id="polymarketWrap">
+        <div id="polymarketPanel">
+          <div class="corr-title">Polymarket · Top 3 by Volume</div>
+          <div style="font-size:10px;color:var(--muted);font-family:'DM Mono',monospace">Probabilitas event makro dari prediction market (uang nyata).</div>
+        </div>
+        <div class="ringkasan-dashboard-card-actions">
+          <button id="polyBtn" class="jn-btn-sec" onclick="fetchPolymarket()" style="width:100%;font-size:10px">Refresh Polymarket Macro</button>
+        </div>
+      </section>
+    </aside>
   </div>
 </div>
 
@@ -4481,7 +4541,7 @@ window.addEventListener('DOMContentLoaded', () => _updateNewsLangBtn());
 
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.10.18.3';
+const APP_VERSION = '2026.10.18.4';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
@@ -5355,12 +5415,14 @@ function _feedItemHtml(item, isNew, idx) {
   const newBadge = isNew ? `<span class="new-badge">NEW</span>` : '';
   return `
     <div class="feed-item cat-${cat}" data-guid="${escHtml(item.guid)}" style="animation-delay:${Math.min(idx,15)*0.025}s">
-      <div class="item-meta">
-        <span class="item-time">${fmtTime(item.pubDate)}</span>
+      <div class="item-headline-row">
         <span class="item-tag tag-${cat}">${cat.replace('-',' ')}</span>
+        <div class="item-title">${escHtml(dispTitle)}</div>
         ${newBadge}
       </div>
-      <div class="item-title">${escHtml(dispTitle)}</div>
+      <div class="item-meta">
+        <span class="item-time">${fmtTime(item.pubDate)}</span>
+      </div>
       ${chartHtml}
       ${descHtml}
     </div>`;
